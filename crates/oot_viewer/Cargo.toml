@@ -1,0 +1,19 @@
+[package]
+name = "oot_viewer"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Viewer that renders the synthetic test character through the full decode pipeline"
+
+[dependencies]
+oot_core.workspace = true
+oot_render = { path = "../oot_render" }
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
+egui-wgpu = "0.36"
+wgpu = "30"
+glam.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+image.workspace = true
+log.workspace = true
+env_logger.workspace = true

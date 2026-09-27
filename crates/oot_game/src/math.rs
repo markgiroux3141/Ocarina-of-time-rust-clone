@@ -1,0 +1,270 @@
+//! Fixed-point angle maths and the step helpers the game logic is built on.
+//!
+//! - `sins`/`coss` (libultra `gu/sins.c`, `gu/coss.c`) with the 1024-entry `sintable`
+//! - `Math_Atan2S` (`sys_math_atan.c`) with the 1025-entry `sATan2Tbl`
+//! - `Math_StepToF`, `Math_AsymStepToF`, `Math_ScaledStepToS`, ... (`z_lib.c`)
+//!
+//! The tables are read from the decomp source when available (`Tables::load`). Without it,
+//! they are generated from the formulas they match; `Tables::compare` checks the two agree.
+
+use std::path::Path;
+use std::sync::OnceLock;
+
+use anyhow::{Context, Result, bail};
+use oot_core::csrc::{find_initializer, strip_comments};
+
+/// `R_UPDATE_RATE` during gameplay (`SREG(30) = 3`, set in `z_play.c`): the game runs one
+/// logic frame per three 60 Hz vertical retraces.
+pub const R_UPDATE_RATE: i32 = 3;
+/// `R_UPDATE_RATE * 0.5f`, the scale several z_lib and SkelAnime functions apply.
+pub const UPDATE_SCALE: f32 = R_UPDATE_RATE as f32 * 0.5;
+/// Game logic rate in Hz.
+pub const GAME_HZ: f32 = 60.0 / R_UPDATE_RATE as f32;
+
+/// `SHT_MINV` (`libc/math.h`).
+pub const SHT_MINV: f32 = 1.0 / 32767.0;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tables {
+    pub sin: Vec<i16>,
+    pub atan: Vec<u16>,
+    pub from_decomp: bool,
+}
+
+static TABLES: OnceLock<Tables> = OnceLock::new();
+
+impl Tables {
+    /// `sintable[0x400]` from `src/libultra/gu/sintable.c` and `sATan2Tbl` from
+    /// `src/code/sys_math_atan.c`.
+    pub fn load(decomp: &Path) -> Result<Tables> {
+        let read = |rel: &str| -> Result<String> {
+            let p = decomp.join(rel);
+            Ok(strip_comments(&std::fs::read_to_string(&p).with_context(|| p.display().to_string())?))
+        };
+        let ints = |src: &str, name: &str| -> Result<Vec<i64>> {
+            find_initializer(src, name)?
+                .flatten()
+                .iter()
+                .map(|s| oot_core::csrc::Init::Atom(s.clone()).as_int().with_context(|| format!("{name}: {s}")))
+                .collect()
+        };
+        let sin: Vec<i16> = ints(&read("src/libultra/gu/sintable.c")?, "sintable")?.into_iter().map(|v| v as i16).collect();
+        let atan: Vec<u16> = ints(&read("src/code/sys_math_atan.c")?, "sATan2Tbl")?.into_iter().map(|v| v as u16).collect();
+        if sin.len() != 0x400 || atan.len() != 0x401 {
+            bail!("unexpected table sizes: sintable {} sATan2Tbl {}", sin.len(), atan.len());
+        }
+        Ok(Tables { sin, atan, from_decomp: true })
+    }
+
+    /// The formulas the shipped tables match: `trunc(sin(i·π/2046)·32767)` (entry 1023 is
+    /// exactly 90°, so `sins` runs 1023/1024 slow) and `round(atan(i/1024)·0x8000/π)`.
+    pub fn computed() -> Tables {
+        let sin = (0..0x400).map(|i| ((i as f64 * std::f64::consts::PI / 2046.0).sin() * 32767.0) as i16).collect();
+        let atan = (0..=0x400)
+            .map(|i| ((i as f64 / 1024.0).atan() * 32768.0 / std::f64::consts::PI).round() as u16)
+            .collect();
+        Tables { sin, atan, from_decomp: false }
+    }
+
+    /// Number of entries that differ between two table sets (sin, atan) and the largest
+    /// difference seen.
+    pub fn compare(&self, other: &Tables) -> (usize, usize, i64) {
+        let d = |a: &[i64], b: &[i64]| a.iter().zip(b).filter(|(x, y)| x != y).count();
+        let m = |a: &[i64], b: &[i64]| a.iter().zip(b).map(|(x, y)| (x - y).abs()).max().unwrap_or(0);
+        let s = |t: &Tables| t.sin.iter().map(|&v| v as i64).collect::<Vec<_>>();
+        let a = |t: &Tables| t.atan.iter().map(|&v| v as i64).collect::<Vec<_>>();
+        let (ss, so, aa, ao) = (s(self), s(other), a(self), a(other));
+        (d(&ss, &so), d(&aa, &ao), m(&ss, &so).max(m(&aa, &ao)))
+    }
+}
+
+/// Installs the tables used by the free functions below. The first call wins; later calls
+/// are ignored. Functions used before any call fall back to `Tables::computed()`.
+pub fn install(t: Tables) {
+    let _ = TABLES.set(t);
+}
+
+pub fn tables() -> &'static Tables {
+    TABLES.get_or_init(Tables::computed)
+}
+
+/// libultra `sins`.
+pub fn sins(x: u16) -> i16 {
+    let t = &tables().sin;
+    let x = x >> 4;
+    let value = if x & 0x400 != 0 { t[0x3FF - (x & 0x3FF) as usize] } else { t[(x & 0x3FF) as usize] };
+    if x & 0x800 != 0 { -value } else { value }
+}
+
+/// libultra `coss`.
+pub fn coss(x: u16) -> i16 {
+    sins(x.wrapping_add(0x4000))
+}
+
+/// `Math_SinS`.
+pub fn sin_s(angle: i16) -> f32 {
+    sins(angle as u16) as f32 * SHT_MINV
+}
+
+/// `Math_CosS`.
+pub fn cos_s(angle: i16) -> f32 {
+    coss(angle as u16) as f32 * SHT_MINV
+}
+
+fn atan2_tbl(x: f32, y: f32) -> u16 {
+    let t = &tables().atan;
+    if y == 0.0 {
+        t[0]
+    } else {
+        let idx = ((x / y) * 1024.0 + 0.5) as i32;
+        if idx < 0 || idx as usize >= t.len() { t[0] } else { t[idx as usize] }
+    }
+}
+
+/// `Math_Atan2S(x, y)`. Note the argument order: this is the conventional atan2(y, x).
+/// Yaw in the game is `Math_Atan2S(dz, dx)`: 0 faces +z, 0x4000 faces +x.
+pub fn atan2_s(x: f32, y: f32) -> i16 {
+    let ret: i32 = if y >= 0.0 {
+        if x >= 0.0 {
+            if y <= x { atan2_tbl(y, x) as i32 } else { 0x4000 - atan2_tbl(x, y) as i32 }
+        } else if -x < y {
+            atan2_tbl(-x, y) as i32 + 0x4000
+        } else {
+            0x8000 - atan2_tbl(y, -x) as i32
+        }
+    } else if x < 0.0 {
+        if -y <= -x { atan2_tbl(-y, -x) as i32 + 0x8000 } else { 0xC000 - atan2_tbl(-x, -y) as i32 }
+    } else if x < -y {
+        atan2_tbl(x, -y) as i32 + 0xC000
+    } else {
+        -(atan2_tbl(-y, x) as i32)
+    };
+    ret as i16
+}
+
+/// Yaw from `from` to `to` (`Math_Vec3f_Yaw`).
+pub fn vec3f_yaw(from: glam::Vec3, to: glam::Vec3) -> i16 {
+    atan2_s(to.z - from.z, to.x - from.x)
+}
+
+/// `Math_StepToF`.
+pub fn step_to_f(v: &mut f32, target: f32, step: f32) -> bool {
+    if step != 0.0 {
+        let step = if target < *v { -step } else { step };
+        *v += step;
+        if (*v - target) * step >= 0.0 {
+            *v = target;
+            return true;
+        }
+    } else if target == *v {
+        return true;
+    }
+    false
+}
+
+/// `Math_AsymStepToF`: `incr` when rising towards the target, `decr` when falling.
+pub fn asym_step_to_f(v: &mut f32, target: f32, incr: f32, decr: f32) -> bool {
+    let step = if target >= *v { incr } else { decr };
+    if step != 0.0 {
+        let step = if target < *v { -step } else { step };
+        *v += step;
+        if (*v - target) * step >= 0.0 {
+            *v = target;
+            return true;
+        }
+    } else if target == *v {
+        return true;
+    }
+    false
+}
+
+/// `Math_ScaledStepToS`: steps an angle towards `target` by `step * R_UPDATE_RATE * 0.5`.
+pub fn scaled_step_to_s(v: &mut i16, target: i16, step: i16) -> bool {
+    if step != 0 {
+        let step = if v.wrapping_sub(target) > 0 { step.wrapping_neg() } else { step };
+        *v = v.wrapping_add((step as f32 * UPDATE_SCALE) as i16);
+        if (v.wrapping_sub(target) as i32) * (step as i32) >= 0 {
+            *v = target;
+            return true;
+        }
+    } else if target == *v {
+        return true;
+    }
+    false
+}
+
+/// `Math_SmoothStepToS`.
+pub fn smooth_step_to_s(v: &mut i16, target: i16, scale: i16, step: i16, min_step: i16) -> i16 {
+    let diff = target.wrapping_sub(*v);
+    let mut step_size = (diff as i32 / scale as i32) as i16;
+    if *v != target {
+        if step_size > min_step || step_size < -min_step {
+            step_size = step_size.clamp(-step, step);
+            *v = v.wrapping_add(step_size);
+        } else if diff >= 0 {
+            *v = v.wrapping_add(min_step);
+            if target.wrapping_sub(*v) <= 0 {
+                *v = target;
+            }
+        } else {
+            *v = v.wrapping_sub(min_step);
+            if target.wrapping_sub(*v) >= 0 {
+                *v = target;
+            }
+        }
+    }
+    diff
+}
+
+/// Converts a C `f32 → s16` cast (truncation towards zero).
+pub fn f2s(v: f32) -> i16 {
+    v as i32 as i16
+}
+
+pub fn binang_to_rad(a: i16) -> f32 {
+    a as f32 * (std::f32::consts::PI / 32768.0)
+}
+
+pub fn rad_to_binang(r: f32) -> i16 {
+    (r * (32768.0 / std::f32::consts::PI)).round() as i32 as i16
+}
+
+/// `IS_ZERO` (`z64math.h`).
+pub fn is_zero(f: f32) -> bool {
+    f.abs() < 0.008
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn angles_follow_the_game_convention() {
+        assert_eq!(atan2_s(1.0, 0.0), 0); // +z
+        assert_eq!(atan2_s(0.0, 1.0), 0x4000); // +x
+        assert_eq!(atan2_s(1.0, 1.0), 0x2000);
+        assert_eq!(atan2_s(-1.0, 0.0), -0x8000);
+        assert!((sin_s(0x4000) - 1.0).abs() < 1e-4);
+        assert!((cos_s(0) - 1.0).abs() < 1e-6);
+        assert!(cos_s(-0x8000) < -0.999);
+    }
+
+    #[test]
+    fn scaled_step_uses_update_rate() {
+        let mut a = 0i16;
+        assert!(!scaled_step_to_s(&mut a, 10000, 1000));
+        assert_eq!(a, 1500);
+        let mut b = 0i16;
+        assert!(scaled_step_to_s(&mut b, -500, 1000));
+        assert_eq!(b, -500);
+    }
+
+    #[test]
+    fn asym_step() {
+        let mut v = 0.0;
+        asym_step_to_f(&mut v, 6.0, 2.0, 1.5);
+        assert_eq!(v, 2.0);
+        asym_step_to_f(&mut v, 0.0, 2.0, 1.5);
+        assert_eq!(v, 0.5);
+    }
+}

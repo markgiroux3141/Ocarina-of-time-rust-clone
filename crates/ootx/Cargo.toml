@@ -1,0 +1,17 @@
+[package]
+name = "ootx"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Inspection and validation CLI for OoT ROM data"
+
+[dependencies]
+oot_core.workspace = true
+oot_extract = { path = "../oot_extract" }
+anyhow.workspace = true
+clap.workspace = true
+glam.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+env_logger.workspace = true

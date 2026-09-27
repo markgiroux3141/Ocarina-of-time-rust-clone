@@ -1,0 +1,15 @@
+[package]
+name = "oot_render"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "wgpu renderer for decoded N64 draw lists (colour-combiner emulation in WGSL)"
+
+[dependencies]
+oot_core.workspace = true
+wgpu = "30"
+glam.workspace = true
+bytemuck.workspace = true
+anyhow.workspace = true
+log.workspace = true
+pollster = "0.4"

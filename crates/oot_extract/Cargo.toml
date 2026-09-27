@@ -1,0 +1,15 @@
+[package]
+name = "oot_extract"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Extracts assets from the user's ROM into editable formats (PNG, glTF, WAV, JSON) in a git-ignored folder"
+
+[dependencies]
+oot_core.workspace = true
+glam.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+image.workspace = true
+log.workspace = true

@@ -1,0 +1,3 @@
+# Copy to oot.toml and point at your own files. Nothing from the ROM is stored in this repo.
+rom = "D:/OOT Modding/Debug Roms/baserom.z64"
+decomp = "D:/OOT Modding/OTT decomp/z64oot"
