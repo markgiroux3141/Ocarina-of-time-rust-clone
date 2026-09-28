@@ -29,9 +29,12 @@
 //! reference when the hit is recorded (`HitElem`); in the game it is read through the pointer,
 //! and it only changes when the other actor re-initialises the collider.
 //!
+//! `CollisionCheck_LineOCCheck` (a segment against the OC colliders, for the talk camera) runs
+//! over a copy of the registered OC colliders' shapes (`OcLines`), taken when it's needed.
+//!
 //! Not ported: hit marks, blood, sparks and sounds (`CollisionCheck_HitEffects` keeps only its
-//! flag bookkeeping), the SAC list mode (unused), OC lines (unused), `CollisionCheck_LineOC`,
-//! and colliders without an actor.
+//! flag bookkeeping), the SAC list mode (unused), OC lines (unused), and colliders without an
+//! actor.
 
 use eng_collision::math3d::{self, Cylinder16, Sphere16, TriNorm};
 use eng_math::is_zero;
@@ -915,6 +918,22 @@ impl CollisionCheckContext {
         Self::register(&mut self.col_oc, COLLISION_CHECK_OC_MAX, owner, owner_actor, c.base_mut(), id, "OC")
     }
 
+    /// The registered OC colliders' shapes, in list order, for `CollisionCheck_LineOCCheck`.
+    pub fn oc_lines(&self, actors: &mut ActorContext) -> OcLines {
+        let mut out = Vec::new();
+        for &r in &self.col_oc {
+            let Some(cm) = actors.get_mut(r.actor).and_then(|a| a.collider_mut(r.id)) else { continue };
+            let shape = match cm {
+                ColliderMut::JntSph(c) => OcLine { actor: c.base.actor, on: c.base.oc_flags1 & OC1_ON != 0, shape: OcShape::JntSph(c.elements.iter().map(|e| (e.info.oc_elem_flags & OCELEM_ON != 0, e.dim.world_sphere)).collect()) },
+                ColliderMut::Cylinder(c) => OcLine { actor: c.base.actor, on: c.base.oc_flags1 & OC1_ON != 0, shape: OcShape::Cylinder(c.info.oc_elem_flags & OCELEM_ON != 0, c.dim) },
+                ColliderMut::Tris(c) => OcLine { actor: c.base.actor, on: c.base.oc_flags1 & OC1_ON != 0, shape: OcShape::Other },
+                ColliderMut::Quad(c) => OcLine { actor: c.base.actor, on: c.base.oc_flags1 & OC1_ON != 0, shape: OcShape::Other },
+            };
+            out.push(shape);
+        }
+        OcLines(out)
+    }
+
     /// `CollisionCheck_AT`, `CollisionCheck_OC` and `CollisionCheck_Damage` over the registered
     /// colliders, as `Play_Update` runs them. The colliders are taken out of their actors
     /// for the checks (`ActorImpl::collider_mut`) and put back after.
@@ -924,6 +943,51 @@ impl CollisionCheckContext {
         set.oc(actors);
         set.damage(actors);
         set.put_back(actors);
+    }
+}
+
+/// An OC collider's shape, as `CollisionCheck_LineOC` sees it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum OcShape {
+    /// The spheres, each with `OCELEM_ON`.
+    JntSph(Vec<(bool, Sphere16)>),
+    /// `OCELEM_ON`, and the cylinder.
+    Cylinder(bool, Cylinder16),
+    /// Triangles and quads (`sOCLineCheckFuncs` has no check for them).
+    Other,
+}
+
+/// A registered OC collider: its actor, `OC1_ON`, its shape.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OcLine {
+    pub actor: Option<ActorHandle>,
+    pub on: bool,
+    pub shape: OcShape,
+}
+
+/// The OC list's colliders (`CollisionCheckContext::oc_lines`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct OcLines(pub Vec<OcLine>);
+
+impl OcLines {
+    /// `CollisionCheck_LineOCCheck`: does the segment `a`-`b` cross an OC collider of an actor
+    /// not in `exclusions` (`CollisionCheck_LineOC_JntSph`, `_Cyl`)?
+    pub fn line_oc_check(&self, a: Vec3, b: Vec3, exclusions: &[Option<ActorHandle>]) -> bool {
+        for c in &self.0 {
+            // CollisionCheck_SkipOC.
+            if !c.on || exclusions.contains(&c.actor) {
+                continue;
+            }
+            let hit = match &c.shape {
+                OcShape::JntSph(spheres) => spheres.iter().any(|(on, s)| *on && math3d::line_vs_sph(s, &math3d::Linef { a, b })),
+                OcShape::Cylinder(on, cyl) => *on && math3d::cyl_vs_line_seg(cyl, a, b).0 != 0,
+                OcShape::Other => false,
+            };
+            if hit {
+                return true;
+            }
+        }
+        false
     }
 }
 

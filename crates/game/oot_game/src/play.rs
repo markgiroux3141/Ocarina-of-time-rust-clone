@@ -22,18 +22,23 @@
 //!    - the target context (`func_8002C7BC`), with `viewProjectionMtxF` from the last drawn
 //!      frame;
 //!    - `DynaPoly_UpdateBgActorTransforms`.
-//! 3. `AnimationContext_Update`: every actor's queued animation requests (Player's joint copies,
+//! 3. `Message_Update` (`crate::message`), then `Interface_Update` (`crate::interface`: the
+//!    buttons' status, the alpha fades, the health and rupee counters, the A button's flip).
+//! 4. `AnimationContext_Update`: every actor's queued animation requests (Player's joint copies,
 //!    blends and root motion).
-//! 4. `Letterbox_Update`, then the cameras: the spikes' follow camera, and `Camera_Update`
-//!    (in the mode Player asked for during its update), which sets the letterbox's next target.
-//! 5. What `Play_Draw` changes: each actor's draw-time state (Player's foot IK writes into its
+//! 5. `Letterbox_Update`, then the cameras: the spikes' follow camera, and `Camera_Update`
+//!    (in the mode Player asked for during its update), which sets the letterbox's next target
+//!    and the interface's alpha type (`Camera_UpdateInterface`).
+//! 6. What `Play_Draw` changes: each actor's draw-time state (Player's foot IK writes into its
 //!    joint table, so it's done once per game frame, not per rendered frame), the scene draw
-//!    config (`Scene_Draw`: this frame's texture scrolls and colours), and the view the next
-//!    frame's target context reads.
-//! 6. Without a scene from the pack (the test course), the sandbox's void-out: below y −2000,
+//!    config (`Scene_Draw`: this frame's texture scrolls and colours), the view the next
+//!    frame's target context reads, a second `Camera_Update` if the camera asked for one
+//!    (`view.unk_124`), and what the reticle and the message box draw (`func_8002C124` in
+//!    `Interface_Draw`, then `Message_Draw`).
+//! 7. Without a scene from the pack (the test course), the sandbox's void-out: below y −2000,
 //!    Player respawns. In a scene Player's own exit and void checks do this.
-//! 7. The render state of every actor and the camera is captured for blending.
-//! 8. If the transition ended the scene, `Play_Init` for the next entrance replaces this play
+//! 8. The render state of every actor and the camera is captured for blending.
+//! 9. If the transition ended the scene, `Play_Init` for the next entrance replaces this play
 //!    state (`PlayState::reinit`).
 //!
 //! The spikes' `World` ran step 3 and the foot IK right after Player's own update, and the
@@ -48,7 +53,9 @@
 //!   actor's draw function interprets. An actor that teleported (spawned, respawned) isn't
 //!   blended.
 //! - **Drawing:** `draw` asks every actor for its draws from its blended state, into OPA and
-//!   XLU lists (`eng_gfx::DrawLists`), in `Actor_DrawAll` order, then the target reticle.
+//!   XLU lists (`eng_gfx::DrawLists`), in `Actor_DrawAll` order, then into the overlay the
+//!   HUD (`Interface_Draw`, once `Play_Init` has run `Interface_Init`) either side of the
+//!   target reticle, and the message box (docs/adr/0017-interface-sprites.md).
 
 use std::sync::Arc;
 
@@ -63,7 +70,9 @@ use crate::actor_ctx::{ACTORCAT_BG, ACTORCAT_MAX, ActorContext, ActorHandle, Act
 use crate::camera::{CamFrame, CamView, CameraKind, FollowCamera, GameCamera, PlayerView};
 use crate::collision_check::{ColliderShape, CollisionCheckContext};
 use crate::data::GameData;
+use crate::interface::InterfaceContext;
 use crate::letterbox::Letterbox;
+use crate::message::{MessageContext, MessageTable, MsgFrame};
 use crate::object_ctx::ObjectContext;
 use crate::play_scene::{GameAssets, SceneState, TransitionState};
 use crate::player_lib::PlayerRules;
@@ -100,6 +109,17 @@ pub mod builtin {
 #[derive(Debug, Clone, Copy)]
 pub struct ViewInfo {
     pub eye: Vec3,
+    /// `play->billboardMtxF`: the view's rotation, inverted, so a mesh multiplied by it faces
+    /// the camera (the lists that `gSPMatrix` segment 1).
+    pub billboard: Mat4,
+}
+
+impl ViewInfo {
+    /// From the view matrix: `billboardMtxF` is `view.viewing` without its translation,
+    /// transposed.
+    pub fn new(eye: Vec3, view: Mat4) -> ViewInfo {
+        ViewInfo { eye, billboard: Mat4::from_mat3(glam::Mat3::from_mat4(view).transpose()) }
+    }
 }
 
 /// What the renderer blends between two game frames for one actor.
@@ -300,7 +320,19 @@ pub struct PlayState {
     /// `sRandInt` (`code_800FD970.c`): the game's random numbers, shared by the actors.
     /// (Player keeps its own sequence, as the spikes did.)
     pub rand: Rand,
+    /// `msgCtx`, and the messages it reads (the pack's, when the app has one).
+    pub msg_ctx: MessageContext,
+    pub messages: Option<Arc<MessageTable>>,
+    /// `interfaceCtx`.
+    pub interface_ctx: InterfaceContext,
     pub(crate) next_play_init: bool,
+    /// Whether a game frame has run since this state was made. `Play_Main` always runs
+    /// `Play_Update` before its first `Play_Draw`, but the frontends draw at the display rate
+    /// and can present a new state before its first tick.
+    pub(crate) updated: bool,
+    /// What covers the screen until then, when a transition is due (`screen_fill`): the fill
+    /// the previous state ended on (its finished fade-out), or black for a first `Play_Init`.
+    pub(crate) pre_update_fill: Option<[u8; 4]>,
     acc: f32,
     prev: Option<RenderFrame>,
     cur: Option<RenderFrame>,
@@ -349,7 +381,12 @@ impl PlayState {
             unk_11e18: 0,
             scene_changes: 0,
             rand: Rand::default(),
+            msg_ctx: MessageContext::new(),
+            messages: None,
+            interface_ctx: InterfaceContext::default(),
             next_play_init: false,
+            updated: false,
+            pre_update_fill: Some([0, 0, 0, 255]),
             acc: 0.0,
             prev: None,
             cur: None,
@@ -530,6 +567,9 @@ impl PlayState {
         self.update_all_actors();
         // (func_80095AA0 for both rooms: no room behaviour is ported.) The viewpoint.
         self.update_viewpoint();
+        // Message_Update (no pause menu or game over), then Interface_Update.
+        self.with_msg(|m, f| m.update(f));
+        self.interface_update();
         // AnimationContext_Update: every actor's queued animation requests.
         for h in self.actors.all() {
             if let Some(a) = self.actors.get_mut(h) {
@@ -541,14 +581,8 @@ impl PlayState {
         if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
             let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
             self.follow_camera.update(&input, pos, facing, speed);
-            if let Some(pv) = self.player_view() {
-                // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
-                let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
-                let door = self.game_camera.door_params.door_actor.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
-                let f = CamFrame { col: &self.col, player: pv, target_focus, door, transitioning: self.transition.mode != TRANS_MODE_OFF, frames: self.gameplay_frames, input };
-                self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
-            }
         }
+        self.camera_update(input);
         // Play_Draw: the actors' draw-time state (Player's foot IK), and the view it sets up
         // (play->viewProjectionMtxF), which the next frame's target context reads.
         for h in self.actors.all() {
@@ -563,12 +597,19 @@ impl PlayState {
         if let Some(s) = &mut self.scene {
             s.run_draw_config(frames);
         }
+        // The end of Play_Draw: a camera that asked for it (view.unk_124) updates again.
+        if self.game_camera.view_unk_124 != 0 {
+            self.camera_update(input);
+            self.game_camera.view_unk_124 = 0;
+        }
         self.view_proj = self.camera_view_proj();
         // Interface_Draw: the Z-target reticle (func_8002C124) with this frame's view.
         let reticle_player = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| crate::target::ReticlePlayer { state1_6: pi.state_flags1() & (1 << 6) != 0, target: pi.target() });
         if let Some(rp) = reticle_player {
             crate::target::draw_update(&mut self.target_ctx, &self.actors, self.view_proj, rp);
         }
+        // Message_Draw.
+        self.with_msg(|m, f| m.draw_update(f));
         // The sandbox's void-out (a scene from the pack has Player's own).
         if self.assets.is_none() && self.player.and_then(|ph| self.actors.actor(ph)).is_some_and(|a| a.world_pos.y < -2000.0) {
             self.respawn();
@@ -576,9 +617,86 @@ impl PlayState {
         }
         self.prev = self.cur.take();
         self.cur = Some(self.capture());
+        self.updated = true;
         if self.next_play_init {
             self.reinit();
         }
+    }
+
+    /// `Camera_Update` for the main camera, following Player.
+    fn camera_update(&mut self, input: Input) {
+        let Some(pv) = self.player_view() else { return };
+        // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
+        let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
+        let door = self.game_camera.door_params.door_actor.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
+        let oc_lines = self.col_chk.oc_lines(&mut self.actors);
+        let f = CamFrame {
+            col: &self.col,
+            player: pv,
+            target_focus,
+            door,
+            transitioning: self.transition.mode != TRANS_MODE_OFF,
+            frames: self.gameplay_frames,
+            input,
+            player_actor: self.player,
+            oc_lines: &oc_lines,
+        };
+        self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
+        // Camera_UpdateInterface's Interface_ChangeAlpha.
+        if let Some(alpha_type) = self.game_camera.interface_alpha_change.take() {
+            crate::interface::change_alpha(&mut self.save, alpha_type);
+        }
+    }
+
+    /// `Interface_Update` with this frame's view of play.
+    fn interface_update(&mut self) {
+        let (state1, state2) = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| (pi.state_flags1(), pi.state_flags2())).unwrap_or((0, 0));
+        let f = crate::interface::IfaceFrame {
+            scene_id: self.scene_id,
+            msg_none: self.msg_ctx.msg_mode == crate::message::MSGMODE_NONE,
+            climbing: state1 & PLAYER_STATE1_21 != 0,
+            state2_18: state2 & (1 << 18) != 0,
+            no_transition: self.transition.trigger == crate::transition::TRANS_TRIGGER_OFF && self.transition.mode == TRANS_MODE_OFF,
+            // ROOM_BEHAVIOR_TYPE1_1.
+            dungeon_room: self.room_ctx.cur.behavior_type1 == 1,
+        };
+        self.interface_ctx.update(&mut self.save, &f);
+    }
+
+    /// Runs `f` on the message context with this frame's view of play (nothing without the
+    /// messages).
+    pub fn with_msg(&mut self, f: impl FnOnce(&mut MessageContext, &mut MsgFrame)) {
+        let Some(table) = self.messages.clone() else { return };
+        let screen_y = |h: Option<ActorHandle>| h.and_then(|h| self.actors.actor(h)).map(|a| crate::target::actor_screen_pos(self.view_proj, a).1);
+        let player_screen_y = screen_y(self.player).unwrap_or(0);
+        let talk_actor_screen_y = screen_y(self.msg_ctx.talk_actor);
+        let input = self.input;
+        let mut frame = MsgFrame {
+            table: &table,
+            input: &input,
+            save: &mut self.save,
+            iface: &mut self.interface_ctx,
+            scene_cam_type: self.scene_cam_type,
+            scene_id: self.scene_id,
+            player_screen_y,
+            talk_actor_screen_y,
+        };
+        f(&mut self.msg_ctx, &mut frame);
+    }
+
+    /// `Message_StartTextbox`.
+    pub fn start_textbox(&mut self, text_id: u16, actor: Option<ActorHandle>) {
+        self.with_msg(|m, f| m.start_textbox(f, text_id, actor));
+    }
+
+    /// `Message_ContinueTextbox`.
+    pub fn continue_textbox(&mut self, text_id: u16) {
+        self.with_msg(|m, f| m.continue_textbox(f, text_id));
+    }
+
+    /// `Message_GetState(&play->msgCtx)`.
+    pub fn message_state(&self) -> u8 {
+        self.msg_ctx.get_state()
     }
 
     /// `Player_InCsMode`.
@@ -755,7 +873,19 @@ impl PlayState {
             }
         }
         let _ = view;
+        // Play_DrawOverlayElements → Interface_Draw: the HUD either side of the reticle, then
+        // the message box.
+        let hud = |f: fn(&InterfaceContext, &SaveContext, &mut Vec<crate::sprite::Sprite>), out: &mut DrawOut| {
+            if self.interface_ctx.initialised {
+                let mut sprites = Vec::new();
+                f(&self.interface_ctx, &self.save, &mut sprites);
+                out.overlay_2d.extend(sprites.iter().map(|s| s.draw_cmd()));
+            }
+        };
+        hud(InterfaceContext::draw_hud_1, out);
         crate::target::draw(&self.target_ctx, &self.actors, self.gameplay_frames, out);
+        hud(InterfaceContext::draw_hud_2, out);
+        self.msg_ctx.draw(out);
         out.letterbox_rows = frame.letterbox;
     }
 }

@@ -4,10 +4,13 @@
 //! Params: bits 0..1 the type (0 `gFieldBushDL` from `gameplay_field_keep`, 1 and 2
 //! `object_kusa`'s bush), bit 4 bugs hide in it, bits 8..11 the drop table.
 //!
+//! A cut bush drops from its table (`EnKusa_DropCollectible`: `Item_DropCollectibleRandom`,
+//! `crate::en_item00`).
+//!
 //! Not ported: lifting and throwing (Player can't lift yet: `Actor_HasParent` is never true, so
 //! `EnKusa_LiftedUp`, `EnKusa_Fall` and `EnKusa_UprootedWaitRegrow` aren't reached), the
-//! drops (`Item_DropCollectibleRandom`), the leaves (`EffectSsKakera`) and the sounds. The bugs
-//! spawn as `En_Insect` (a placeholder).
+//! leaves (`EffectSsKakera`, so the random numbers they'd draw before the drop aren't drawn)
+//! and the sounds. The bugs spawn as `En_Insect` (a placeholder).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
@@ -144,6 +147,26 @@ impl EnKusa {
         }
     }
 
+    /// `EnKusa_DropCollectible`: types 0 and 2 from their table (bits 8..11, 0 past 0xC), type
+    /// 1 seeds or a heart.
+    fn drop_collectible(&self, play: &mut PlayState) {
+        use crate::en_item00::*;
+        let pos = self.actor.world_pos;
+        match self.ty() {
+            ENKUSA_TYPE_1 => {
+                let id = if play.rand.zero_one() < 0.5 { ITEM00_SEEDS } else { ITEM00_RECOVERY_HEART };
+                item_drop_collectible(play, pos, id);
+            }
+            _ => {
+                let mut drop_params = (self.actor.params >> 8) & 0xF;
+                if drop_params >= 0xD {
+                    drop_params = 0;
+                }
+                item_drop_collectible_random(play, None, pos, drop_params << 4);
+            }
+        }
+    }
+
     /// `EnKusa_SetupMain`.
     fn setup_main(&mut self) {
         self.setup_action(Action::Main);
@@ -155,7 +178,8 @@ impl EnKusa {
         // Actor_HasParent (lifted): Player doesn't lift things yet.
         if self.collider.base.ac_flags & AC_HIT != 0 {
             self.collider.base.ac_flags &= !AC_HIT;
-            // EnKusa_SpawnFragments, EnKusa_DropCollectible and the sound: not ported.
+            // EnKusa_SpawnFragments and the sound: not ported.
+            self.drop_collectible(play);
             if (self.actor.params >> 4) & 1 != 0 {
                 self.spawn_bugs(play);
             }

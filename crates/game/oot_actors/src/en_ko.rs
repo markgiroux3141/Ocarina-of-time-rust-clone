@@ -13,7 +13,11 @@
 //! the eyes on 0x0A, opaque at full alpha (`func_80034BA0`) and translucent while fading
 //! (`func_80034CC4`), from meshes baked per head, eye and pass (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported: talking (the Player side and the message box), Fado's saw trade in the Lost Woods,
+//! Talking (`func_800343CC`): the child's text for the story's progress (`func_80A97610`), and
+//! the conversation's state each frame (`func_80A97738`): the flag a text sets once it's been
+//! read, and the answers to its questions.
+//!
+//! Not ported: Fado's saw trade in the Lost Woods,
 //! paths (child 3 with the emerald moves to its path's last point: paths aren't in the pack),
 //! and the fairy each child has (`En_Elf` params 3: a placeholder).
 
@@ -350,6 +354,8 @@ pub struct EnKo {
     pub model_alpha: f32,
     pub unk_2e4: [i16; 16],
     pub unk_304: [i16; 16],
+    /// `unk_210`: Fado's trade sound played.
+    pub unk_210: i16,
     animations: Vec<AnimationInfo>,
 }
 
@@ -378,6 +384,7 @@ impl EnKo {
             forest_quest_state: 0,
             blink_timer: 0,
             eye_texture_index: 0,
+            unk_210: 0,
             appear_dist: 0.0,
             look_dist: 0.0,
             model_alpha: 0.0,
@@ -792,9 +799,8 @@ impl EnKo {
         }
         let text = self.text(play);
         let mut talk_state = self.unk_1e8.talk_state;
-        // func_800343CC with func_80A97610 and func_80A97738 (the message states aren't ported:
-        // a talk never starts, so the second callback isn't reached).
-        oot_game::npc::talk_update(play, &mut self.actor, &mut talk_state, self.look_dist, |_, _| text, |_, _| 1);
+        let unk_210 = &mut self.unk_210;
+        oot_game::npc::talk_update(play, &mut self.actor, &mut talk_state, self.look_dist, |_, _| text, |play, actor| func_80a97738(play, actor, unk_210));
         self.unk_1e8.talk_state = talk_state;
         // Fado's trade in the Lost Woods (SCENE_SPOT10): not ported.
     }
@@ -978,5 +984,72 @@ impl ActorImpl for EnKo {
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+/// `func_80A97738`: the conversation's state each frame (`func_800343CC`'s second callback). 0
+/// once the box closes (setting the flag that the text was read), 1 while it's up, 3 after the
+/// last text's A; a question goes on to its answer's text (2 for the one Fado's trade acts on).
+fn func_80a97738(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> i16 {
+    use oot_game::message::*;
+    match play.message_state() {
+        TEXT_STATE_CLOSING => {
+            // INFTABLE_* (z64save.h) are the bit numbers.
+            let flag = match actor.text_id {
+                0x1005 => 0x1E,
+                0x1008 => 0x22,
+                0x100A => 0x24,
+                0x100C => 0x26,
+                0x100E => 0x28,
+                0x104F => 0x59,
+                0x1053 => 0x61,
+                0x1055 => 0x41,
+                0x1058 => 0x51,
+                0x105D => 0x47,
+                0x10D7 => 0xB7,
+                0x10BA => return 1,
+                _ => return 0,
+            };
+            play.save.set_inf_table(flag);
+            0
+        }
+        TEXT_STATE_DONE_FADING => {
+            if matches!(actor.text_id, 0x10B7 | 0x10B8) && *unk_210 == 0 {
+                // NA_SE_SY_TRE_BOX_APPEAR.
+                *unk_210 = 1;
+            }
+            1
+        }
+        TEXT_STATE_CHOICE => {
+            if should_advance(&play.input) {
+                let ci = play.msg_ctx.choice_index;
+                let next = match actor.text_id {
+                    0x1035 => Some(if ci == 0 { 0x1036 } else { 0x1037 }),
+                    0x1038 => Some(if ci != 0 { if ci == 1 { 0x103A } else { 0x103B } } else { 0x1039 }),
+                    0x103E => Some(if ci == 0 { 0x103F } else { 0x1040 }),
+                    0x10B7 | 0x10B8 => {
+                        if actor.text_id == 0x10B7 {
+                            play.save.set_inf_table(0xBC);
+                        }
+                        actor.text_id = if ci == 0 { 0x10BA } else { 0x10B9 };
+                        return if ci == 0 { 2 } else { 1 };
+                    }
+                    _ => None,
+                };
+                if let Some(id) = next {
+                    actor.text_id = id;
+                    play.continue_textbox(id);
+                }
+            }
+            1
+        }
+        TEXT_STATE_DONE => {
+            if should_advance(&play.input) {
+                3
+            } else {
+                1
+            }
+        }
+        _ => 1,
     }
 }

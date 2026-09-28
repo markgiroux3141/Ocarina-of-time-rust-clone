@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 5;
+pub const FORMAT_VERSION: u32 = 6;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -55,6 +55,12 @@ pub mod keys {
     pub const ACTORS: &str = "table/actors";
     /// `pack::Manifest`: what the import covered.
     pub const MANIFEST: &str = "meta/manifest";
+    /// `message::MessageTable`: the English messages.
+    pub const MESSAGES: &str = "table/messages";
+    /// `item::ItemDropTables`.
+    pub const ITEM_DROPS: &str = "table/item_drops";
+    /// `interface::InterfaceTables`.
+    pub const INTERFACE: &str = "table/interface";
 
     /// A texture from the decomp's XMLs (`pack::Texture`).
     pub fn texture(file: &str, symbol: &str) -> String {
@@ -324,6 +330,18 @@ impl GamePack {
 
     pub fn manifest(&self) -> Result<Manifest> {
         self.assets.get(keys::MANIFEST)
+    }
+
+    pub fn messages(&self) -> Result<crate::message::MessageTable> {
+        self.assets.get(keys::MESSAGES)
+    }
+
+    pub fn item_drops(&self) -> Result<crate::item::ItemDropTables> {
+        self.assets.get(keys::ITEM_DROPS)
+    }
+
+    pub fn interface(&self) -> Result<crate::interface::InterfaceTables> {
+        self.assets.get(keys::INTERFACE)
     }
 
     /// A scene by name: `spot04` or `spot04_scene`.

@@ -6,7 +6,8 @@
 |---|---|---|
 | 1 | The collision check; Kokiri's props with their real models; `En_Ko`; ladder and vine climbing; Z-targeting polish | done |
 | 2 | `En_Door`, the prerendered backgrounds and the fixed cameras | done |
-| 3 | The message box, Player talking, items and a minimal HUD | next |
+| 3 | The message box, Player talking, items and a minimal HUD | done |
+| 4 | `Bg_Treemouth` and a headless scripted playthrough | next |
 
 The working rules are the same as for GAME-01:
 - no game data in the repo;
@@ -15,7 +16,7 @@ The working rules are the same as for GAME-01:
 - ports go function by function with the decomp's names, every constant is cited, and faithful bugs are marked `@bug (game)`;
 - test expectations come from the C.
 
-Decisions are in [docs/adr/](adr/README.md) (0011 to 0016 so far).
+Decisions are in [docs/adr/](adr/README.md) (0011 to 0017 so far).
 
 ## Milestone 1: collisions, props, the first NPC, climbing, Z-targeting
 
@@ -208,12 +209,150 @@ The tests: 171 pass, 1 ignored (157 before). The goldens are unchanged: 78 of 78
 - **Backgrounds:** a pixel may be one 5-bit step off the console's JPEG decode. The quake offset and `Room_GetImageMultiBgEntry`'s write into Player's params aren't modelled.
 - **Carried over:** talking, items, the HUD (milestone 3); time passing, culling.
 
+## Milestone 3: the message box, talking, items, the HUD
+
+**Answer:** done. Link can now:
+- read the signs;
+- talk to the Kokiri;
+- check the spot by the window in his house, and the market's checkable doors.
+
+The text is in the game's message box, with its typing, arrows and choices.
+
+The talk camera swings in (`Camera_KeepOn3` outdoors, `Camera_KeepOn0` in the houses). Bushes and rocks drop rupees and hearts, and Link picks them up.
+
+The HUD shows the hearts, the rupee count, the B and C buttons, and the A button flipping to its do-action. Its fades follow the camera and the message box.
+
+The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78.
+
+### What was built
+
+1. **The message box** (`oot_game::message`, `z_message_PAL.c`; [ADR 0017](adr/0017-interface-sprites.md)).
+   - **The import:** the English message table and text (`oot_import::text`, with the table addresses as `tools/msgdis.py` finds them) into `table/messages`.
+   - **Opening a box:** `Message_StartTextbox`, `Message_ContinueTextbox`, and `Message_OpenText` (English only): the box type and position from `typePos`, the colours, `Interface_ChangeAlpha`.
+   - **`Message_Update`'s modes for plain boxes:**
+     - the start delay;
+     - the growth (`Message_GrowTextbox`) and the position: `XREG(94)` against the midpoint of Player's and the talker's screen heights;
+     - the typing, the waits, the fades and the persistent boxes;
+     - two- and three-way choices (`Message_HandleChoiceSelection`);
+     - A to advance or close;
+     - `Message_GetState` and `Actor_TextboxIsClosing`.
+   - **`Message_Decode`:**
+     - the control codes: colours, line breaks, boxes, shifts, waits, fades, the choice markers, the quick-text flags, the sound and event codes;
+     - Link's name, the numbers and the high scores;
+     - the heart piece count (`QUEST_HEART_PIECE_COUNT`).
+   - **`Message_Draw`:**
+     - the four box types (black, wooden, blue, ocarina) from `message_static`;
+     - the glyphs from `nes_font_static`, at `sFontWidths` and `R_TEXT_CHAR_SCALE`, with the shadow;
+     - the end icons (the arrow, the square, the triangle), flashing.
+   - **The text registers** are `z_construct.c`'s defaults (`TextRegs`).
+2. **Talking** (Player, `z_actor.c`, `z_camera.c`).
+   - **Player:**
+     - `func_8083B644` in the interrupt list (index 4): A talks to the target or `targetActor`;
+     - `func_80853148` and `func_8083A2F8`: an NPC after putting the item away, anything else at once;
+     - the talk action `func_8084B530`, until `Actor_TextboxIsClosing`;
+     - Player's `ACTOR_FLAG_8` keeps the target (`func_8083224C` in `func_80836BEC`);
+     - `func_808473D4`'s do-action (Check, Speak, Open, Next, Return and the rest);
+     - the ajar door's text 0xD0.
+   - **Player's writes** go through `PlayRequest` (ADR 0016): the talk request (`Actor_ProcessTalkRequest`), the text, `Message_StartTextbox`, the do-action.
+   - **The talk camera:**
+     - `Camera_KeepOn3` (TALK on NORMAL0) swings over `initTimer` frames, retries the line of sight against the collision and `CollisionCheck_LineOCCheck`, and holds until `unk_14C & 8`;
+     - its first call asks for another `Camera_Update` at the end of `Play_Draw` (`view.unk_124`), which `PlayState` now runs;
+     - `Camera_KeepOn0` (TALK in the prerendered rooms): the eye from the bg camera, the yaw turn and the fov scale.
+   - **`Camera_UpdateInterface`'s alpha half:** `sCameraInterfaceAlpha`, and `Interface_ChangeAlpha` from the setting's interface flags.
+3. **The talkers:**
+   - `En_Kanban` and `En_Ko` show their texts. `En_Ko`'s `func_80A97738` sets its `infTable` flags on closing and answers choices;
+   - `En_Wonder_Talk2`: the whole overlay except Player's cutscene modes (`func_8002DF54`);
+   - `En_Door`'s checkable doors (`EnDoor_WaitForCheck`, `EnDoor_Check`).
+4. **Items** (`oot_game::item`, `oot_actors::en_item00`).
+   - **The import:** `sItemDropIds` and `sDropQuantities` into `table/item_drops`.
+   - **`En_Item00`:**
+     - `EnItem00_Init` for the rupees, recovery hearts, heart pieces and containers, and the collectibles (with the scene's collectible flag);
+     - `func_8001DFC8` (resting and spinning), `func_8001E1C8` (bouncing), `func_8001E304` (a drop's pop);
+     - pickup within 30 across, then 15 frames over Link's head (`EnItem00_Collected`);
+     - `func_8001F404`: what Link can't use is cancelled, and a heart at full health is a green rupee.
+   - **`En_Item00`'s draws:**
+     - the rupees' five colours (`gRupeeDL`);
+     - the collectibles, billboarded: `gItemDropDL` on segment 1, with the view's billboard matrix;
+     - the heart piece and container.
+   - **The drops:** `Item_DropCollectible` and `Item_DropCollectibleRandom`, from `En_Kusa` (its table, or seeds and hearts) and `En_Ishi` (`EnIshi_DropCollectible`).
+   - **`Item_Give`:** rupees (through the accumulator), recovery hearts, heart containers and pieces; `Health_ChangeBy`, `Rupees_ChangeBy`.
+5. **The HUD** (`oot_game::interface`, `z_parameter.c`, `z_lifemeter.c`).
+   - **The import:** `sRestrictionFlags` into `table/interface`, with the scene names resolved against the scene table.
+   - **`Interface_Init`** in `Play_Init`, with `Health_InitMeter` and `Interface_SetSceneRestrictions`.
+   - **`Interface_Update`**, after `Message_Update`:
+     - `func_80083108` for the cases that apply: climbing, the scene's B restriction, `restrictions.all`;
+     - the alpha types (`func_80082850`'s 1 to 13, then 50 and 52; `func_8008277C`, `func_80082644`);
+     - the health and rupee accumulators;
+     - the beating heart and the heart colours (`Health_UpdateBeatingHeart`, `Health_UpdateMeter`);
+     - the A button's flip.
+   - **`Interface_Draw`**, before and after the reticle:
+     - `Health_DrawMeter`: quarter hearts, the beating heart;
+     - the rupee icon and the wallet's digits, coloured by the count;
+     - the B and C buttons with the empty-C arrows, and the B sword's icon;
+     - the A button and its label, turning in their own viewport (`func_8008A8B8`).
+   - **The save** has what these read: health, rupees, the wallet, the B and C items and their status, Link's name, the language.
+6. **Shared pieces:**
+   - `oot_game::gbi`, a display-list writer, shared with the skybox;
+   - `oot_game::sprite`, the sprite bakes (ADR 0017);
+   - `CollisionCheck_LineOCCheck` over the frame's OC colliders;
+   - `ViewInfo`'s billboard matrix;
+   - the engine divides a projective transform by w.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 190 passed, 1 ignored |
+| The sign (`oot_actors --test talk`) | Params 0x031F. "Check" shows a frame after the sign offers. A starts the talk action, sets Player's `ACTOR_FLAG_8`, and opens text 0x031F in a wooden box at the bottom (34, 142). The box grows over eight frames to 256x64, the text types out, and A closes it, with `Actor_TextboxIsClosing` for one frame |
+| The talk camera (`--test talk`) | Ten frames of swing, `at` closing 1/animTimer of the gap each frame; fov 45; the bars at 32; then it holds |
+| A Kokiri child (`--test talk`) | "Speak"; the item is put away first; 0x1005 read through; `INFTABLE_1E` set on closing; then 0x1006 |
+| Link's window, and the HUD while talking (`--test talk`) | The spot by the window: 0x22A with "Check" (not an NPC). While talking: alpha type 5 from KEEP3's flags 0x3500; B and C fade out by 32 a frame, A dips to 32 and comes back, the hearts stay |
+| Doors (`--test door`, 3) | Adds a market house's checkable door: text 0x20D on A |
+| Items (`--test items`, 4) | The drop tables against `z_en_item00.c` (table 2's row, `sDropQuantities`); `func_8001F404`'s cancellations. A bush's green rupee pops up at 8 with gravity -0.9, lands and grows to 0.015; Link collects it into the accumulator, and it's gone 15 frames later. A recovery heart heals 0x10 |
+| HUD (unit tests, 4) | The fade-in after alpha type 50, 32 a frame, with the minimap stopping at 170 in the overworld; the A flip's angles 10466, -15700, -5233, 0; the meter's sprites for 2.5 of 3 hearts and their quarter-pixel rectangles; the two rupee digits; Link's house disabling B (alpha 70) |
+| Other unit tests | The GBI writer's encodings (`G_CC_MODULATEIA_PRIM` is 0xFC119623 0xFF2FFFFF); the sprite quads; `Item_Give` |
+| Golden traces and renders | 78 of 78 identical: the golden cases don't enter by `Play_Init`, which starts the HUD and the messages |
+| Import | 11.2 s; 47.3 MB; format version 6. New: the messages, the drop tables, the restrictions, and 261 actor bakes (147 for the message box, 56 for the HUD) |
+| Headless screenshots | The HUD in Kokiri Forest; the sign ("Check", the talk camera, the box and "Return"); a Kokiri child's text; Link's house (B and C dimmed, "Next", the blue records box); a bush's rupee |
+
+### Decisions
+
+- **[ADR 0017](adr/0017-interface-sprites.md):** the message box and the HUD are baked sprites.
+  - Each texture and its setup is baked once as a quad, and drawn in `overlay_2d` with a transform and per-draw colours.
+  - The text's typing and the icons' flashing run once per game frame.
+  - The engine divides a projective transform by w.
+- **The talk camera's second update** (`view.unk_124`) runs at the end of the game frame, after the actors' draw-time state, as at the end of `Play_Draw`.
+- **Billboards take the view's matrix** (`ViewInfo::billboard`, the transpose of the view's rotation), as `Matrix_ReplaceRotation` with `play->billboardMtxF` does. The drop's display list is baked with an identity matrix in segment 1.
+- **The HUD and the messages start with `Play_Init`,** so the sandbox's scene views (and the goldens) stay the spikes'.
+- **A new play state isn't shown before its first frame.** `Play_Main` runs `Play_Update` (which starts the fade in) before its first `Play_Draw`, but the window draws at 60 Hz and could present the state `Play_Init` just made, unfaded and from its initial camera, for a display frame on every scene change. Until its first game frame, `screen_fill` now gives the fill the previous state ended on (its finished fade-out), or black after the first `Play_Init`.
+
+### Known gaps
+
+- **Messages:**
+  - the item icons in text (`MESSAGE_ITEM_ICON`) and the backgrounds (`MESSAGE_BACKGROUND`);
+  - the ocarina modes, the credits, German and French;
+  - the text sounds.
+- **Talking:** Player's cutscene modes (`func_8002DF54`) aren't ported, so `En_Wonder_Talk2`'s forced texts don't hold Link. There's no Navi, so no C-Up.
+- **Items:**
+  - placed recovery hearts aren't drawn: `GetItem_DrawRecoveryHeart` needs `Gfx_TwoTexScroll`'s dynamic tiles;
+  - the inventory isn't kept, so the get-item items aren't given: sticks, nuts, seeds, magic, keys, shields, and heart pieces given by `func_8002F554`;
+  - the shadows, the sparkles and the sounds;
+  - the effects' random numbers aren't drawn in the C's order.
+- **HUD:**
+  - the magic meter, the minimap, the timers, the ammo counts;
+  - the C items' icons and the B label (only the ocarina loads one);
+  - double defence's hearts, the low-health alarm, the pause menu;
+  - `func_80083108`'s riding, minigame, fishing and water cases, and the restrictions by item type (nothing is on the C buttons).
+- **Carried over:** time passing, culling, the exit's circle wipe, small keys.
+
 ## Recommended next step
 
-**Milestone 3: the message box, Player talking (A), items (`En_Item00`) and a minimal HUD,** drawn through `DrawLists::overlay_2d`, as planned. It unlocks the signs, the Kokiri's talk states, checkable doors, and the shopkeeper's browsing camera (`En_Ossan` switches the viewpoint).
+**Milestone 4: `Bg_Treemouth` and a headless scripted playthrough,** as planned:
+- the Deku Tree's mouth opens after the talk;
+- a scripted run goes from Link's house to the Deku Tree, with checks along the way (the signs, a Kokiri child, the drops).
 
 Checks first (interactive, in the windowed game or against Project64):
-- Link's house: the pivot view and its panorama as Link walks round, and C-Up to the fixed view, side by side with Project64 at the same spot (where the picture's furniture hides Link, and the fov);
-- the porch's front camera and a `START1` entrance, compared with Project64;
-- a door in Kakariko or the market: the opening's timing, the door camera's side, and the bars;
-- still pending from milestone 1: the Z-target camera and bars on a Kokiri child against Project64.
+- the message box side by side with Project64: the typing speed, the box's position against the talker, and the glyphs' edges (ADR 0017's half texel);
+- the talk camera's swing on a sign and on a Kokiri child, and the house's KEEP0 turn;
+- the HUD's layout and fades (entering, talking, climbing a ladder), and the A button's flip;
+- still pending from milestones 1 and 2: the Z-target camera and bars on a Kokiri child, and Link's house's pivot and fixed views.

@@ -612,3 +612,45 @@ impl LoadActorTable for ActorTable {
         Ok(ActorTable { actors })
     }
 }
+
+/// `sItemDropIds` and `sDropQuantities` from `src/code/z_en_item00.c`, the drop ids through
+/// `Item00Type` (`include/z64actor.h`).
+pub fn load_item_drops(decomp: &Path) -> Result<oot_game::item::ItemDropTables> {
+    let src = read(decomp, "src/code/z_en_item00.c")?;
+    let header = read(decomp, "include/z64actor.h")?;
+    let names: HashMap<String, i64> = crate::csrc::parse_enum(&header, "ITEM00_RUPEE_GREEN").into_iter().map(|(v, n)| (n, v)).collect();
+    let ids = find_initializer(&src, "sItemDropIds")?
+        .flatten()
+        .iter()
+        .map(|n| names.get(n.trim()).map(|&v| v as u8).with_context(|| format!("sItemDropIds: {n} isn't an Item00Type")))
+        .collect::<Result<Vec<u8>>>()?;
+    let quantities = find_initializer(&src, "sDropQuantities")?
+        .flatten()
+        .iter()
+        .map(|n| crate::csrc::parse_int(n).map(|v| v as u8).with_context(|| format!("sDropQuantities: {n}")))
+        .collect::<Result<Vec<u8>>>()?;
+    // 15 tables of 16 ids; sDropQuantities has 4 more (unread) entries.
+    anyhow::ensure!(ids.len() % 16 == 0 && quantities.len() >= ids.len(), "the drop tables have {} ids and {} quantities", ids.len(), quantities.len());
+    Ok(oot_game::item::ItemDropTables { ids, quantities })
+}
+
+/// `sRestrictionFlags` (`z_parameter.c`): `{ sceneId, flags1, flags2, flags3 }`, the scene ids
+/// from `scene_table.h`'s order, ending with `0xFF`.
+pub fn load_interface(decomp: &Path, scenes: &crate::room::SceneTables) -> Result<oot_game::interface::InterfaceTables> {
+    let src = read(decomp, "src/code/z_parameter.c")?;
+    let ids: HashMap<&str, usize> = scenes.scenes.iter().map(|s| (s.enum_name.as_str(), s.id)).collect();
+    let mut restrictions = Vec::new();
+    for entry in find_initializer(&src, "sRestrictionFlags")?.list() {
+        let f = entry.flatten();
+        anyhow::ensure!(f.len() == 4, "sRestrictionFlags: {f:?}");
+        let name = f[0].trim();
+        let id = match ids.get(name) {
+            Some(&id) => id as u8,
+            None => crate::csrc::parse_int(name).map(|v| v as u8).with_context(|| format!("sRestrictionFlags: {name} isn't a scene"))?,
+        };
+        let flag = |i: usize| crate::csrc::parse_int(&f[i]).map(|v| v as u8).with_context(|| format!("sRestrictionFlags: {}", f[i]));
+        restrictions.push([id, flag(1)?, flag(2)?, flag(3)?]);
+    }
+    anyhow::ensure!(restrictions.last().is_some_and(|r| r[0] == 0xFF), "sRestrictionFlags doesn't end with 0xFF");
+    Ok(oot_game::interface::InterfaceTables { restrictions })
+}

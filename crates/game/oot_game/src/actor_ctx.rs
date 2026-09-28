@@ -77,6 +77,8 @@ pub trait PlayerIface {
     fn adult(&self) -> bool;
     /// `stateFlags1`.
     fn state_flags1(&self) -> u32;
+    /// `stateFlags2`.
+    fn state_flags2(&self) -> u32;
     /// `unk_664`: the actor Player is locked on to.
     fn target(&self) -> Option<ActorHandle>;
     /// `unk_66C`: the Z timer.

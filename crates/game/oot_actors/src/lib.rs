@@ -29,10 +29,12 @@ pub mod bg_ydan_hasi;
 pub mod dummy_target;
 pub mod en_door;
 pub mod en_holl;
+pub mod en_item00;
 pub mod en_ishi;
 pub mod en_kanban;
 pub mod en_ko;
 pub mod en_kusa;
+pub mod en_wonder_talk2;
 pub mod obj_hana;
 pub mod player;
 pub mod script;
@@ -43,7 +45,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -57,6 +59,8 @@ pub fn overlays() -> Overlays {
     o.register(en_kanban::ACTOR_EN_KANBAN, en_kanban::EnKanban::init);
     o.register(en_ko::ACTOR_EN_KO, en_ko::EnKo::init);
     o.register(en_door::ACTOR_EN_DOOR, en_door::EnDoor::init);
+    o.register(en_wonder_talk2::ACTOR_EN_WONDER_TALK2, en_wonder_talk2::EnWonderTalk2::init);
+    o.register(en_item00::ACTOR_EN_ITEM00, en_item00::EnItem00::init);
     o
 }
 
@@ -65,8 +69,13 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     let mut v = en_kanban::bakes();
     v.extend(en_ko::bakes());
     v.extend(en_door::bakes());
+    v.extend(en_item00::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
+    // The message box's sprites (docs/adr/0017-interface-sprites.md).
+    v.extend(oot_game::message::bakes().iter().map(|b| b.mesh_bake()));
+    // The HUD's.
+    v.extend(oot_game::interface::bakes().iter().map(|b| b.mesh_bake()));
     v
 }
 

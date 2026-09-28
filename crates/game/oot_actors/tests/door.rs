@@ -154,3 +154,31 @@ fn room_door_loads_the_room_behind_with_the_door_camera() {
     let dr = door(&w, d);
     assert_eq!((dr.action, dr.player_is_opening), (en_door::Action::Idle, false));
 }
+
+#[test]
+fn a_checkable_door_shows_its_text() {
+    use oot_game::message::TEXT_STATE_NONE;
+    // market_day's transition 0: En_Door at (-482, 0, 615), rotation 0x8000, params 0x028D:
+    // DOOR_CHECKABLE with text 0x0D + 0x200 (EnDoor_SetupType), offering within 40
+    // (EnDoor_WaitForCheck).
+    let Some((mut w, mut prev)) = at_door("ENTR_MARKET_DAY_0", Vec3::new(-482.0, 0.0, 585.0), 0) else { return };
+    let d = doors(&w).into_iter().find(|&h| w.actors.actor(h).unwrap().home_pos.distance(Vec3::new(-482.0, 0.0, 615.0)) < 1.0).expect("the door");
+    assert_eq!((door(&w, d).door_type(), door(&w, d).action), (en_door::DOOR_CHECKABLE, en_door::Action::WaitForCheck));
+    assert_eq!(w.actors.actor(d).unwrap().text_id, 0x20D);
+    // Not a door to open: the door never tells Player it can be opened, it offers to talk.
+    let p = w.player();
+    assert_eq!((p.door_type, p.target_actor), (oot_actors::player::PLAYER_DOORTYPE_NONE, Some(d)));
+    frames(&mut w, &mut prev, PadState { button: BTN_A, ..Default::default() }, 1);
+    assert_eq!(w.player().action, Action::Talk);
+    assert_eq!(w.msg_ctx.text_id, 0x20D);
+    assert_eq!(door(&w, d).action, en_door::Action::Check);
+    // Read it (A at each wait), and the door waits to be checked again.
+    let mut n = 0;
+    while w.message_state() != TEXT_STATE_NONE {
+        let pad = if w.message_state() == oot_game::message::TEXT_STATE_DONE && prev.button == 0 { PadState { button: BTN_A, ..Default::default() } } else { PadState::default() };
+        frames(&mut w, &mut prev, pad, 1);
+        n += 1;
+        assert!(n < 400);
+    }
+    assert_eq!(door(&w, d).action, en_door::Action::WaitForCheck);
+}

@@ -4,8 +4,9 @@
 //! than 500 away puts the sign back whole and the pieces go.
 //!
 //! The sign offers to talk (`func_8002F2CC`, 68 units, facing it); its text is `params | 0x300`.
+//! Once the box closes it waits 20 frames before offering again.
 //!
-//! Not ported: the talk itself and the message box, the ocarina repair (Zelda's Lullaby: no
+//! Not ported: the ocarina repair (Zelda's Lullaby: no
 //! ocarina), the hammer's quake (`actorCtx.unk_02` is never set), the shadow (a texture the
 //! draw builds from the parts every frame), the dust and water effects, and the sounds.
 
@@ -300,7 +301,7 @@ impl EnKanban {
         }
     }
 
-    /// `EnKanban_Message`: offer to talk when facing it (the talk isn't ported).
+    /// `EnKanban_Message`: offer to talk when facing it; after the talk, 20 frames' pause.
     fn message(&mut self, play: &mut PlayState) {
         if !self.msg_flag {
             if self.msg_timer == 0 {

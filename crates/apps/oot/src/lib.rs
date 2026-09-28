@@ -427,7 +427,7 @@ pub fn draw_frame(
         None => lists.opa.push(DrawCmd::new(MeshKey::named(COURSE_MESH), Mat4::IDENTITY)),
     }
     // Actor_DrawAll.
-    play.draw(frame, &ViewInfo { eye: cam.eye() }, &mut lists);
+    play.draw(frame, &ViewInfo::new(cam.eye(), cam.view()), &mut lists);
     if play.scene.is_none() && !assets.collision.water_boxes.is_empty() {
         lists.xlu.push(DrawCmd::new(MeshKey::named(WATER_MESH), Mat4::IDENTITY));
     }

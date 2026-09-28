@@ -4,9 +4,8 @@
 //! `func_800344BC`, `func_80034810` with the `D_80116130` presets), and the idle limb sway
 //! (`func_80034F54`).
 //!
-//! The Player side of talking (accepting an offer on A: the talk interrupt, then the message
-//! box) isn't ported yet, so no talk request is ever made and `func_800343CC`'s talk state stays
-//! 0; the offers themselves are made as in the game.
+//! Player takes an offer on A (`func_8083B644`, in `oot_actors::player`): the actor gets
+//! `ACTOR_FLAG_8` and the message box opens with its `textId` (`crate::message`).
 
 use glam::Vec3;
 
@@ -59,9 +58,9 @@ pub fn offer_talk_default(play: &mut PlayState, actor: &Actor) -> bool {
     offer_talk(play, actor, r)
 }
 
-/// `Actor_TextboxIsClosing`: the message box isn't ported, so never.
-pub fn textbox_is_closing(_play: &PlayState) -> bool {
-    false
+/// `Actor_TextboxIsClosing`: the message box is on its closing frame (`TEXT_STATE_CLOSING`).
+pub fn textbox_is_closing(play: &PlayState) -> bool {
+    play.message_state() == crate::message::TEXT_STATE_CLOSING
 }
 
 /// `func_800343CC`: an NPC's talk handling for one frame. `talk_state` is the NPC's

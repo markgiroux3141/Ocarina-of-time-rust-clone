@@ -98,14 +98,16 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
     assert_eq!(ported, ported_placed + 3);
     // Each placement is where the room's actor list puts it, in its category and room. Ported
     // props may have moved in their init (snapped to the floor, `En_Kanban` lowered for child
-    // Link), so only their x and z are checked.
+    // Link), so only their x and z are checked; EnItem00_Init keeps only `params & 0xFF` (the
+    // collectible flag moves to collectibleFlag).
     let at = &w.assets.as_ref().unwrap().actors;
     for e in &room0.actors {
         let pos = Vec3::new(e.pos[0] as f32, e.pos[1] as f32, e.pos[2] as f32);
         let ported = ov.is_ported(e.id);
         let found = w.actors.all().into_iter().filter_map(|h| w.actors.actor(h)).any(|a| {
             let at_pos = if ported { a.home_pos.x == pos.x && a.home_pos.z == pos.z } else { a.home_pos == pos };
-            a.id == e.id && a.params == e.params && at_pos && a.room == 0 && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
+            let params = if e.id == oot_actors::en_item00::ACTOR_EN_ITEM00 { e.params & 0xFF } else { e.params };
+            a.id == e.id && a.params == params && at_pos && a.room == 0 && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
         });
         assert!(found, "{} at {:?}", at.name(e.id), e.pos);
     }
@@ -212,6 +214,10 @@ fn link_walks_into_his_house_and_back_out() {
     let spawn3 = Vec3::new(-31.0, 100.0, 1073.0);
     assert_eq!(w.player().actor.world_pos, spawn3);
     assert!(w.transition.trigger != TRANS_TRIGGER_OFF);
+    // Before its first frame the state shows black: its fade only starts in Play_Update, and
+    // Play_Main never draws before updating.
+    const BLACK: Option<[u8; 4]> = Some([0, 0, 0, 255]);
+    assert_eq!(w.screen_fill(), BLACK);
     // FADE_BLACK_FAST: set up on the first frame, then 7 updates of 3 (21 >= 20), then done.
     let mut fade_frames = 0;
     while w.transition.mode != TRANS_MODE_OFF || w.transition.trigger != TRANS_TRIGGER_OFF {
@@ -231,12 +237,18 @@ fn link_walks_into_his_house_and_back_out() {
     let n = until_scene_change(&mut w, &mut prev, 30);
     assert_eq!(n, 9);
     assert_eq!(w.scene_id, SCENE_LINK_HOME);
+    // Between Play_Init and the house's first frame the screen keeps the finished fade-out
+    // (not the house from its initial camera); the first frame starts the fade in, covered.
+    assert_eq!(w.screen_fill(), BLACK);
     assert_eq!(w.player().actor.id, ACTOR_PLAYER);
     // Spawn 1 (-4, 0, -114), params 0x0EFF: func_8083CA54 walks in at speed 2 for 15 frames.
     let spawn1 = Vec3::new(-4.0, 0.0, -114.0);
     assert_eq!(w.player().actor.world_pos, spawn1);
     assert_eq!(w.player().linear_velocity, 2.0);
-    for _ in 0..20 {
+    frame(&mut w, &mut prev, PadState::default());
+    assert_eq!(w.screen_fill(), BLACK);
+    assert_eq!(w.transition.mode, oot_game::transition::TRANS_MODE_INSTANCE_RUNNING);
+    for _ in 0..19 {
         frame(&mut w, &mut prev, PadState::default());
     }
     let inside = w.player().actor.world_pos;

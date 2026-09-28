@@ -4,7 +4,8 @@
 //! 1. **Tables** (`table/*`): the maths tables, Player's constants and animations
 //!    (`GameData`, with each animation its own `anim/gameplay_keep/<symbol>` record), Player's
 //!    draw rules, the environment's light configs and the scene table, all read from the C by
-//!    `crate::tables`, `crate::player` and `crate::room`.
+//!    `crate::tables`, `crate::player` and `crate::room`; and the English messages from the
+//!    ROM (`crate::text`).
 //! 2. **Objects**: every texture, skeleton (with its full mesh), standard animation, standalone
 //!    display list and collision header the XMLs name, decoded or interpreted
 //!    (`crate::objects`).
@@ -243,6 +244,9 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
     };
     w.put(keys::SCENES, &table)?;
     w.put(keys::ACTORS, &ActorTable::load(decomp).context("the actor table")?)?;
+    w.put(keys::MESSAGES, &crate::text::load_messages(p).context("the message table")?)?;
+    w.put(keys::ITEM_DROPS, &crate::tables::load_item_drops(decomp).context("the item drop tables")?)?;
+    w.put(keys::INTERFACE, &crate::tables::load_interface(decomp, &st).context("the interface tables")?)?;
     Ok(rules)
 }
 

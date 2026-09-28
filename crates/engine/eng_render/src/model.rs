@@ -158,12 +158,17 @@ impl Renderer {
 }
 
 impl GpuModel {
-    /// CPU skinning: every vertex follows the matrix of the bone it was loaded under.
+    /// CPU skinning: every vertex follows the matrix of the bone it was loaded under. A
+    /// projective `root` (a bottom row other than `0 0 0 1`, such as a perspective placed on
+    /// part of the overlay) is divided by w here, so the texture is interpolated affinely
+    /// across each triangle.
     pub fn pose(&mut self, bone_mats: &[Mat4], root: Mat4) {
+        let projective = root.row(3) != glam::Vec4::W;
         for ((out, v), &bone) in self.skinned.iter_mut().zip(&self.base).zip(&self.bones) {
             let m = if bone == NO_BONE { root } else { root * bone_mats.get(bone as usize).copied().unwrap_or(Mat4::IDENTITY) };
             let n = Mat3::from_mat4(m) * Vec3::from(v.normal);
-            out.pos = m.transform_point3(Vec3::from(v.pos)).to_array();
+            let p = Vec3::from(v.pos);
+            out.pos = if projective { m.project_point3(p) } else { m.transform_point3(p) }.to_array();
             out.normal = n.normalize_or_zero().to_array();
         }
         self.dirty.set(true);

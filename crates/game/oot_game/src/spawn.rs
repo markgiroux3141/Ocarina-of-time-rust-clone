@@ -285,6 +285,24 @@ impl SceneFlags {
         }
     }
 
+    /// `Flags_GetCollectible`.
+    pub fn get_collectible(&self, flag: i32) -> bool {
+        match flag {
+            0..=0x1F => self.collect & (1 << flag) != 0,
+            0x20..=0x3F => self.temp_collect & (1 << (flag - 0x20)) != 0,
+            _ => false,
+        }
+    }
+
+    /// `Flags_SetCollectible` (flag 0 is "none").
+    pub fn set_collectible(&mut self, flag: i32) {
+        match flag {
+            1..=0x1F => self.collect |= 1 << flag,
+            0x20..=0x3F => self.temp_collect |= 1 << (flag - 0x20),
+            _ => {}
+        }
+    }
+
     /// `Flags_GetClear`.
     pub fn get_clear(&self, room: i8) -> bool {
         match room {

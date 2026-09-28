@@ -2,10 +2,11 @@
 //! or a silver boulder (1, `gSilverRockDL`). The sword bounces off it (`AC_HARD`); a hammer or an
 //! explosion breaks a small one.
 //!
+//! A broken small rock drops from its table (`EnIshi_DropCollectible`).
+//!
 //! Not ported: lifting and throwing (Player can't lift yet, so `Actor_HasParent` is never
-//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached), the drops
-//! (`Item_DropCollectibleRandom`, `En_Item00`), the fragments and dust (effects) and the
-//! sounds.
+//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached), the fragments and
+//! dust (effects) and the sounds.
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
@@ -115,7 +116,12 @@ impl EnIshi {
         // Actor_HasParent: Player doesn't lift things yet.
         let hit = self.collider.base.ac_flags & AC_HIT != 0;
         if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_info.is_some_and(|h| h.toucher.dmg_flags & DMG_BREAKS_ROCK != 0) {
-            // EnIshi_DropCollectible, the sound, the fragments and dust: not ported.
+            // EnIshi_DropCollectible (the sound, the fragments and dust: not ported).
+            let mut drop_params = (self.actor.params >> 8) & 0xF;
+            if drop_params >= 0xD {
+                drop_params = 0;
+            }
+            crate::en_item00::item_drop_collectible_random(play, None, self.actor.world_pos, drop_params << 4);
             self.actor.kill();
         } else if self.actor.xz_dist_to_player < 600.0 {
             self.collider.update(&self.actor);

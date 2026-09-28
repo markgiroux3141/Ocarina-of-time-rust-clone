@@ -13,6 +13,7 @@
 //! Which skybox uses which files and how many faces (`Skybox_Setup`) is read from the C by the
 //! importer, which bakes `bake(...)` for each (`RoomSkybox`).
 
+use crate::gbi::{Dl, seg};
 use crate::pack::{BakeBody, BakeSegment, MeshBake};
 
 /// A room skybox from `Skybox_Setup`: its `SKYBOX_*` id and name, `unk_140` (1 or 2), and
@@ -71,93 +72,9 @@ const SEG_DLIST_BUF: u32 = 0x0B;
 const SEG_SETUP_DL: u8 = 0x0D;
 const SEG_DRAW: u8 = 0x0E;
 
-const fn seg(s: u32, off: u32) -> u32 {
-    (s << 24) | off
-}
-
-/// Display-list commands (F3DEX2 encodings of the `gbi.h` macros used here).
-#[derive(Default)]
-struct Dl(Vec<(u32, u32)>);
-
-impl Dl {
-    fn pipe_sync(&mut self) {
-        self.0.push((0xE700_0000, 0));
-    }
-    fn tile_sync(&mut self) {
-        self.0.push((0xE800_0000, 0));
-    }
-    fn load_sync(&mut self) {
-        self.0.push((0xE600_0000, 0));
-    }
-    fn end(&mut self) {
-        self.0.push((0xDF00_0000, 0));
-    }
-    fn display_list(&mut self, addr: u32) {
-        self.0.push((0xDE00_0000, addr));
-    }
-    /// `gSPVertex(v, n, v0)`.
-    fn vertex(&mut self, addr: u32, n: u32, v0: u32) {
-        self.0.push((0x0100_0000 | (n << 12) | ((v0 + n) << 1), addr));
-    }
-    /// `gSPCullDisplayList(vstart, vend)`.
-    fn cull_dl(&mut self, vstart: u32, vend: u32) {
-        self.0.push((0x0300_0000 | (vstart * 2), vend * 2));
-    }
-    /// `gSP1Quadrangle(v0, v1, v2, v3, 3)`: triangles (v3, v0, v1) and (v3, v1, v2).
-    fn quad3(&mut self, v0: u32, v1: u32, v2: u32, v3: u32) {
-        let tri = |a: u32, b: u32, c: u32| ((a * 2) << 16) | ((b * 2) << 8) | (c * 2);
-        self.0.push((0x0700_0000 | tri(v3, v0, v1), tri(v3, v1, v2)));
-    }
-    /// `gDPSetTextureImage(fmt, siz, width, img)`.
-    fn set_timg(&mut self, fmt: u32, siz: u32, width: u32, addr: u32) {
-        self.0.push((0xFD00_0000 | (fmt << 21) | (siz << 19) | (width - 1), addr));
-    }
-    /// `gDPSetTile(fmt, siz, line, tmem, tile, palette, 0...)` (no mirror, mask or shift).
-    fn set_tile(&mut self, fmt: u32, siz: u32, line: u32, tmem: u32, tile: u32, pal: u32) {
-        self.0.push((0xF500_0000 | (fmt << 21) | (siz << 19) | (line << 9) | tmem, (tile << 24) | (pal << 20)));
-    }
-    /// `gDPLoadTLUT_pal256(dram)`.
-    fn load_tlut_pal256(&mut self, addr: u32) {
-        self.set_timg(0, 2, 1, addr);
-        self.tile_sync();
-        self.set_tile(0, 0, 0, 256, 7, 0);
-        self.load_sync();
-        // gDPLoadTLUTCmd(G_TX_LOADTILE, 255).
-        self.0.push((0xF000_0000, (7 << 24) | (255 << 14)));
-        self.pipe_sync();
-    }
-    /// `gDPLoadTextureTile(timg, G_IM_FMT_CI, G_IM_SIZ_8b, width, 0, uls, ult, lrs, lrt, 0,
-    /// G_TX_NOMIRROR | G_TX_WRAP, same, G_TX_NOMASK, same, G_TX_NOLOD, same)`.
-    fn load_texture_tile_ci8(&mut self, addr: u32, width: u32, uls: u32, ult: u32, lrs: u32, lrt: u32) {
-        let (fmt, siz) = (2, 1);
-        // ((lrs - uls + 1) * G_IM_SIZ_8b_TILE_BYTES + 7) >> 3, and _LINE_BYTES (both 1).
-        let line = ((lrs - uls + 1) + 7) >> 3;
-        self.set_timg(fmt, siz, width, addr);
-        self.set_tile(fmt, siz, line, 0, 7, 0);
-        self.load_sync();
-        // gDPLoadTile(G_TX_LOADTILE, uls << 2, ult << 2, lrs << 2, lrt << 2).
-        self.0.push((0xF400_0000 | ((uls << 2) << 12) | (ult << 2), (7 << 24) | ((lrs << 2) << 12) | (lrt << 2)));
-        self.pipe_sync();
-        self.set_tile(fmt, siz, line, 0, 0, 0);
-        // gDPSetTileSize(G_TX_RENDERTILE, ...).
-        self.0.push((0xF200_0000 | ((uls << 2) << 12) | (ult << 2), ((lrs << 2) << 12) | (lrt << 2)));
-    }
-    /// `gDPSetOtherModeH`-style `G_SETOTHERMODE_H` (shift, len, value).
-    fn othermode_h(&mut self, shift: u32, len: u32, value: u32) {
-        self.0.push((0xE300_0000 | ((32 - shift - len) << 8) | (len - 1), value));
-    }
-}
-
-/// `Vtx` (16 bytes, big-endian): `ob`, `flag` 0, `tc`, `cn` (255, 0, 0; alpha unset, 255 here).
+/// `Vtx` with `cn` (255, 0, 0; alpha unset, 255 here).
 fn push_vtx(out: &mut Vec<u8>, ob: [i32; 3], tc: [i32; 2]) {
-    for v in ob {
-        out.extend_from_slice(&(v as i16).to_be_bytes());
-    }
-    out.extend_from_slice(&0u16.to_be_bytes());
-    for v in tc {
-        out.extend_from_slice(&(v as i16).to_be_bytes());
-    }
-    out.extend_from_slice(&[255, 0, 0, 255]);
+    crate::gbi::push_vtx(out, ob, tc, [255, 0, 0, 255]);
 }
 
 /// `func_800ADBB0`: face `arg8`'s two display lists (`dListBuf[arg9]`, `[arg9 + 1]`) and its 64

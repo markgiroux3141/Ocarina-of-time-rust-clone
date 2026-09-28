@@ -65,6 +65,12 @@ pub struct GameAssets {
     pub env: EnvTables,
     /// The ported actors' constructors.
     pub overlays: Overlays,
+    /// The English messages.
+    pub messages: Arc<crate::message::MessageTable>,
+    /// The random drops' tables.
+    pub item_drops: crate::item::ItemDropTables,
+    /// `sRestrictionFlags`.
+    pub interface: crate::interface::InterfaceTables,
     /// Skeletons and standard animations read so far (actors load theirs at init).
     skeletons: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::skeleton::Skeleton>>>,
     animations: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::anim::StandardAnimation>>>,
@@ -76,6 +82,9 @@ impl GameAssets {
             scenes: pack.scene_table()?,
             actors: pack.actor_table()?,
             env: pack.env_tables()?,
+            messages: Arc::new(pack.messages()?),
+            item_drops: pack.item_drops()?,
+            interface: pack.interface()?,
             overlays,
             pack,
             skeletons: Default::default(),
@@ -311,6 +320,7 @@ impl PlayState {
         let col = CollisionContext::new(assets.pack.collision(&ld.collision)?);
         let mut play = PlayState::new(data, rules, col, (Vec3::ZERO, 0), save.adult);
         play.assets = Some(assets.clone());
+        play.messages = Some(assets.messages.clone());
         play.scene_id = scene_id;
         play.cur_spawn = spawn;
         play.object_ctx = ObjectContext::init_bank();
@@ -339,6 +349,9 @@ impl PlayState {
             ty
         };
         play.save = save;
+        // Interface_Init (Interface_SetSceneRestrictions comes later in Play_Init; nothing reads
+        // the restrictions between).
+        play.interface_ctx = crate::interface::InterfaceContext::init(&mut play.save, &assets.interface, scene_id);
 
         // func_800304DC: Player.
         let p = play.actor_spawn_entry(&link_entry).map_err(|e| anyhow::anyhow!("spawning Player: {e:?}"))?;
@@ -375,6 +388,9 @@ impl PlayState {
         let Some(assets) = self.assets.clone() else { return };
         match PlayState::play_init(assets, self.data.clone(), self.rules.clone(), self.save.clone()) {
             Ok(mut next) => {
+                // Until the new state's first frame runs, the screen keeps the fade-out this
+                // one finished on.
+                next.pre_update_fill = self.screen_fill();
                 next.pad = std::mem::take(&mut self.pad);
                 next.debug = self.debug;
                 next.scene_changes = self.scene_changes + 1;
@@ -591,6 +607,11 @@ impl PlayState {
     /// What covers the screen this frame: the transition's fade, else the environment's fill.
     pub fn screen_fill(&self) -> Option<[u8; 4]> {
         let tr = &self.transition;
+        // A state from Play_Init that hasn't run a frame yet: its fade starts in its first
+        // Play_Update, and until then the screen is still what the last state left.
+        if !self.updated && tr.trigger != TRANS_TRIGGER_OFF {
+            return self.pre_update_fill;
+        }
         if (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT)
             && let Some(f) = tr.fade.fill()
         {

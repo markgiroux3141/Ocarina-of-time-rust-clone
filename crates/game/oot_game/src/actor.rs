@@ -36,6 +36,10 @@ pub const ACTOR_FLAG_5: u32 = 1 << 5;
 pub const ACTOR_FLAG_6: u32 = 1 << 6;
 /// A talk request was made (`Actor_ProcessTalkRequest` answers it).
 pub const ACTOR_FLAG_8: u32 = 1 << 8;
+/// Talking starts without A (`func_8083B644`: the actor's offer is taken at once).
+pub const ACTOR_FLAG_16: u32 = 1 << 16;
+/// With `ACTOR_FLAG_0`: Navi can be asked about it with C-Up (`func_8083B644`).
+pub const ACTOR_FLAG_18: u32 = 1 << 18;
 pub const ACTOR_FLAG_23: u32 = 1 << 23;
 pub const ACTOR_FLAG_24: u32 = 1 << 24;
 pub const ACTOR_FLAG_25: u32 = 1 << 25;
@@ -192,6 +196,12 @@ impl Actor {
     pub fn kill(&mut self) {
         self.killed = true;
         self.flags &= !ACTOR_FLAG_0;
+    }
+
+    /// `Actor_SetFocus`: the focus `y_offset` above the position, facing as the actor moves.
+    pub fn set_focus(&mut self, y_offset: f32) {
+        self.focus_pos = self.world_pos + Vec3::Y * y_offset;
+        self.focus_rot = self.world_rot;
     }
 
     /// `Actor_UpdateAll`'s per-actor distances to Player: `Actor_WorldDistXZToActor`,

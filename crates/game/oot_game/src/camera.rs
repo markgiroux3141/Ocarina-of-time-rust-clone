@@ -17,7 +17,7 @@
 //!   `Camera_Unique7` (`PREREND_PIVOT`) and `Camera_Special9` (`DOORC`);
 //! - the camera bgcheck (`Camera_BGCheckInfo`, `Camera_BGCheckCorner`, `Camera_GetFloorYLayer`,
 //!   `Camera_CheckOOB`);
-//! - `Camera_UpdateInterface`'s letterbox half, driving `crate::letterbox`.
+//! - `Camera_UpdateInterface`, driving `crate::letterbox` and the interface's alpha type.
 //!
 //! Vector-sphere maths is `z_olib.c`; `Math_FAtan2F` is the Taylor-series version from
 //! `code_800FCE80.c`. `OREG` values (`sOREGInit`) and every setting's modes, functions and
@@ -132,6 +132,8 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_NORM1",
     "CAM_FUNC_PARA1",
     "CAM_FUNC_KEEP1",
+    "CAM_FUNC_KEEP3",
+    "CAM_FUNC_KEEP0",
     "CAM_FUNC_FIXD2",
     "CAM_FUNC_FIXD3",
     "CAM_FUNC_FIXD4",
@@ -526,6 +528,48 @@ struct Keep1Ro {
     unk_2c: f32,
 }
 
+/// `KeepOn3ReadOnlyData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Keep3Ro {
+    y_offset: f32,
+    min_dist: f32,
+    max_dist: f32,
+    swing_yaw_initial: f32,
+    swing_yaw_final: f32,
+    swing_pitch_initial: f32,
+    swing_pitch_final: f32,
+    swing_pitch_adj: f32,
+    fov_target: f32,
+    at_lerp_scale_max: f32,
+    init_timer: i16,
+    flags: i16,
+}
+
+/// `KeepOn3ReadWriteData` (`eyeToAtTarget` is (r, yaw, pitch) steps as x, y, z).
+#[derive(Debug, Clone, Copy, Default)]
+struct Keep3Rw {
+    eye_to_at_target: Vec3,
+    target: Option<ActorHandle>,
+    at_target: Vec3,
+    anim_timer: i16,
+}
+
+/// `KeepOn0ReadOnlyData`, `KeepOn0ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Keep0 {
+    fov_scale: f32,
+    yaw_scale: f32,
+    timer_init: i16,
+    interface_flags: i16,
+    fov_target: f32,
+    anim_timer: i16,
+}
+
+/// `D_8011D3B0`, `D_8011D3CC` (`z_camera_data.c`): the yaw and pitch offsets `Camera_KeepOn3`
+/// tries in turn when the line to its eye is blocked.
+const D_8011D3B0: [u16; 14] = [0x0AAA, 0xF556, 0x1555, 0xEAAB, 0x2AAA, 0xD556, 0x3FFF, 0xC001, 0x5555, 0xAAAB, 0x6AAA, 0x9556, 0x7FFF, 0x0000];
+const D_8011D3CC: [u16; 14] = [0x0000, 0x02C6, 0x058C, 0x0000, 0x0000, 0xFD3A, 0x0000, 0x0852, 0x0000, 0x0000, 0x0B18, 0x02C6, 0xFA74, 0x0000];
+
 /// `KeepOn1ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default)]
 struct Keep1Rw {
@@ -626,6 +670,10 @@ pub struct CamFrame<'a> {
     pub frames: u32,
     /// `D_8015BD7C->state.input[0]`: the modes that end on a button press read it.
     pub input: Input,
+    /// Player (`camera->player`), and the OC colliders registered this frame, for
+    /// `CollisionCheck_LineOCCheck`.
+    pub player_actor: Option<ActorHandle>,
+    pub oc_lines: &'a crate::collision_check::OcLines,
 }
 
 /// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
@@ -771,12 +819,23 @@ pub struct GameCamera {
     player_pos_delta: Vec3,
     /// `sCameraInterfaceFlags`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits.
     pub interface_flags: i16,
+    /// `play->view.unk_124`: non-zero when a mode function asks for another `Camera_Update`
+    /// at the end of `Play_Draw` (`camId | 0x50`).
+    pub view_unk_124: u16,
+    /// `sCameraInterfaceAlpha` (0 from `Camera_Init`): the alpha type last asked for.
+    interface_alpha: u16,
+    /// The `Interface_ChangeAlpha` this frame's `Camera_UpdateInterface` asked for (PlayState
+    /// applies it to the save).
+    pub interface_alpha_change: Option<u16>,
     ro: Norm1Ro,
     rw: Norm1Rw,
     para1_ro: Para1Ro,
     para1_rw: Para1Rw,
     keep1_ro: Keep1Ro,
     keep1_rw: Keep1Rw,
+    keep3_ro: Keep3Ro,
+    keep3_rw: Keep3Rw,
+    keep0: Keep0,
     fixd: FixedData,
     uniq: UniqueData,
     update_direction: bool,
@@ -846,12 +905,18 @@ impl GameCamera {
             player_pos_delta: Vec3::ZERO,
             // Camera_InitPlayerSettings, for the main camera.
             interface_flags: 0xB200u16 as i16,
+            view_unk_124: 0,
+            interface_alpha: 0,
+            interface_alpha_change: None,
             ro: Norm1Ro::default(),
             rw: Norm1Rw::default(),
             para1_ro: Para1Ro::default(),
             para1_rw: Para1Rw::default(),
             keep1_ro: Keep1Ro::default(),
             keep1_rw: Keep1Rw::default(),
+            keep3_ro: Keep3Ro::default(),
+            keep3_rw: Keep3Rw::default(),
+            keep0: Keep0::default(),
             fixd: FixedData::default(),
             uniq: UniqueData::default(),
             update_direction: false,
@@ -1205,6 +1270,8 @@ impl GameCamera {
                 }
                 Some("CAM_FUNC_PARA1") => self.parallel1(d, col, p, frames),
                 Some("CAM_FUNC_KEEP1") => self.keep_on1(d, col, p, f.target_focus),
+                Some("CAM_FUNC_KEEP3") => self.keep_on3(d, col, p, f),
+                Some("CAM_FUNC_KEEP0") => self.keep_on0(d, col, f.target_focus),
                 Some("CAM_FUNC_FIXD2") => self.fixed2(d, col, p),
                 Some("CAM_FUNC_FIXD3") => self.fixed3(d, col),
                 Some("CAM_FUNC_FIXD4") => self.fixed4(d, col, p),
@@ -1235,10 +1302,11 @@ impl GameCamera {
         }
     }
 
-    /// `Camera_UpdateInterface(sCameraInterfaceFlags)`, the letterbox part: `flags & 0x7000`
-    /// picks the size (`sCameraLetterboxSize`), `0x8000` sets it at once; all of `0xF000` set
-    /// leaves the letterbox alone.
-    fn update_interface(&self, letterbox: &mut Letterbox) {
+    /// `Camera_UpdateInterface(sCameraInterfaceFlags)`: `flags & 0x7000` picks the letterbox's
+    /// size (`sCameraLetterboxSize`), `0x8000` sets it at once, all of `0xF000` set leaves it
+    /// alone; `flags & 0x0F00` is the interface's alpha type (0 is 50), all set leaves it alone,
+    /// and a new one is `Interface_ChangeAlpha`'s (`interface_alpha_change`).
+    fn update_interface(&mut self, letterbox: &mut Letterbox) {
         let flags = self.interface_flags as u16;
         if flags & 0xF000 != 0xF000 {
             let size = match flags & 0x7000 {
@@ -1251,6 +1319,16 @@ impl GameCamera {
                 letterbox.set_size(size);
             } else {
                 letterbox.set_size_target(size);
+            }
+        }
+        if flags & 0x0F00 != 0x0F00 {
+            let mut interface_alpha = (flags & 0x0F00) >> 8;
+            if interface_alpha == 0 {
+                interface_alpha = 0x32;
+            }
+            if interface_alpha != self.interface_alpha {
+                self.interface_alpha = interface_alpha;
+                self.interface_alpha_change = Some(interface_alpha);
             }
         }
     }
@@ -2174,6 +2252,191 @@ impl GameCamera {
         self.fov = lerp_ceil_f(ro.unk_20, self.fov, self.fov_update_rate, 1.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
         self.at_lerp_step_scale = self.clamp_lerp_scale(d, if sp80 { ro.unk_2c } else { ro.unk_24 });
+    }
+
+    /// `Camera_KeepOn3` (TALK in the normal settings): over `initTimer` frames the camera
+    /// swings to frame Player and the one talking, from the side the eye already is on, trying
+    /// other angles while the line to the new eye is blocked (by the scene or another actor's
+    /// OC collider). It holds there until Player is through (`func_8005B1A4`) and moves or
+    /// presses a button.
+    ///
+    /// Its first frame asks for another `Camera_Update` after `Play_Draw` (`view.unk_124`),
+    /// where the swing is set up.
+    fn keep_on3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, f: &CamFrame) {
+        let mut player_height = p.height();
+        let Some(focus) = f.target_focus.filter(|_| self.target.is_some()) else {
+            // "talk: target is not valid, change parallel".
+            self.target = None;
+            self.change_mode(d, CAM_MODE_TARGET);
+            return;
+        };
+        let reload = matches!(self.anim_state, 0 | 10 | 20);
+        if reload {
+            if self.view_unk_124 == 0 {
+                self.unk_14c |= 0x20;
+                // camera->camId | 0x50: the main camera.
+                self.view_unk_124 = 0x50;
+                return;
+            }
+            self.unk_14c &= !0x20;
+        }
+        self.unk_14c &= !0x10;
+        if reload {
+            let v = |i: usize| d.value(self.cur(), i) as f32;
+            let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
+            self.keep3_ro = Keep3Ro {
+                y_offset: v(0) * 0.01 * player_height * y_normal,
+                min_dist: v(1),
+                max_dist: v(2),
+                swing_yaw_initial: v(3),
+                swing_yaw_final: v(4),
+                swing_pitch_initial: v(5),
+                swing_pitch_final: v(6),
+                swing_pitch_adj: v(7) * 0.01,
+                fov_target: v(8),
+                at_lerp_scale_max: v(9) * 0.01,
+                init_timer: d.value(self.cur(), 10),
+                flags: d.value(self.cur(), 11),
+            };
+        }
+        let ro = self.keep3_ro;
+        player_height += ro.y_offset;
+        let at_to_eye_next_dir = diff_to_sph_geo(self.at, self.eye_next);
+        self.target_pos = focus;
+        let player_head = self.player_pos + Vec3::Y * player_height;
+        let mut target_to_player_dir = diff_to_sph_geo(player_head, self.target_pos);
+        self.interface_flags = ro.flags;
+        if reload {
+            self.anim_state += 1;
+            let rw = &mut self.keep3_rw;
+            rw.target = self.target;
+            let temp_f0 = if ro.max_dist < target_to_player_dir.r { 1.0 } else { target_to_player_dir.r / ro.max_dist };
+            rw.anim_timer = ro.init_timer;
+            let sp_bc = ((1.0 - temp_f0) * target_to_player_dir.r) / rw.anim_timer as f32;
+            let lerp = |a: f32, b: f32| a + (b - a) * temp_f0;
+            let mut adj = VecSph::default();
+            let swing = lerp(ro.swing_pitch_initial, ro.swing_pitch_final);
+            adj.pitch = cam_deg_to_binang(swing).wrapping_add((-(target_to_player_dir.pitch as f32 * ro.swing_pitch_adj)) as i32 as i16);
+            let swing = cam_deg_to_binang(lerp(ro.swing_yaw_initial, ro.swing_yaw_final));
+            let rel = target_to_player_dir.yaw.wrapping_sub(at_to_eye_next_dir.yaw);
+            let behind = target_to_player_dir.yaw.wrapping_sub(0x7FFF);
+            adj.yaw = if ro.flags & 0x10 != 0 {
+                if rel < 0 { target_to_player_dir.yaw.wrapping_add(swing) } else { target_to_player_dir.yaw.wrapping_sub(swing) }
+            } else if ro.flags & 0x20 != 0 {
+                if rel < 0 { behind.wrapping_sub(swing) } else { behind.wrapping_add(swing) }
+            } else if (rel as i32).abs() < 0x3FFF {
+                if rel < 0 { target_to_player_dir.yaw.wrapping_add(swing) } else { target_to_player_dir.yaw.wrapping_sub(swing) }
+            } else if rel < 0 {
+                behind.wrapping_sub(swing)
+            } else {
+                behind.wrapping_add(swing)
+            };
+            let prev_target_player_dist = target_to_player_dir.r;
+            target_to_player_dir.r = (sp_bc * 0.6) + (prev_target_player_dist * (1.0 - 0.6));
+            let (sp80, sp82) = (adj.yaw, adj.pitch);
+            rw.at_target = sph_geo_add(player_head, target_to_player_dir);
+            target_to_player_dir.r = prev_target_player_dist;
+            adj.r = ro.min_dist + (target_to_player_dir.r * (1.0 - 0.5)) - at_to_eye_next_dir.r + at_to_eye_next_dir.r;
+            let at_target = rw.at_target;
+            let mut line_b = sph_geo_add(at_target, adj);
+            if ro.flags & 0x80 == 0 {
+                let exclusions = [self.target, f.player_actor];
+                for i in 0..D_8011D3B0.len() {
+                    if !f.oc_lines.line_oc_check(at_target, line_b, &exclusions) && !Self::bg_check(col, at_target, &mut line_b) {
+                        break;
+                    }
+                    adj.yaw = sp80.wrapping_add(D_8011D3B0[i] as i16);
+                    adj.pitch = sp82.wrapping_add(D_8011D3CC[i] as i16);
+                    line_b = sph_geo_add(at_target, adj);
+                }
+            }
+            self.unk_14c &= !0xC;
+            let rw = &mut self.keep3_rw;
+            let pad = (((rw.anim_timer as i32 + 1) * rw.anim_timer as i32) >> 1) as f32;
+            rw.eye_to_at_target.y = adj.yaw.wrapping_sub(at_to_eye_next_dir.yaw) as f32 / pad;
+            rw.eye_to_at_target.z = adj.pitch.wrapping_sub(at_to_eye_next_dir.pitch) as f32 / pad;
+            rw.eye_to_at_target.x = (adj.r - at_to_eye_next_dir.r) / pad;
+            return;
+        }
+        if self.keep3_rw.anim_timer != 0 {
+            let rw = self.keep3_rw;
+            let t = rw.anim_timer as f32;
+            self.at += (rw.at_target - self.at) / t;
+            let adj = VecSph {
+                r: ((rw.eye_to_at_target.x * t) + at_to_eye_next_dir.r) + 1.0,
+                yaw: at_to_eye_next_dir.yaw.wrapping_add((rw.eye_to_at_target.y * t) as i32 as i16),
+                pitch: at_to_eye_next_dir.pitch.wrapping_add((rw.eye_to_at_target.z * t) as i32 as i16),
+            };
+            self.eye_next = sph_geo_add(self.at, adj);
+            self.eye = self.eye_next;
+            self.fov = lerp_ceil_f(ro.fov_target, self.fov, 0.5, 1.0);
+            self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+            self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.at_lerp_scale_max);
+            let mut eye = self.eye;
+            Self::bg_check(col, self.at, &mut eye);
+            self.eye = eye;
+            self.keep3_rw.anim_timer -= 1;
+        } else {
+            self.unk_14c |= 0x410;
+        }
+        if self.unk_14c & 8 != 0 {
+            self.interface_flags = 0;
+            self.func_80043b60(d);
+            self.at_lerp_step_scale = 0.0;
+            use eng_input::pad::*;
+            let pressed = [BTN_A, BTN_B, BTN_CLEFT, BTN_CDOWN, BTN_CUP, BTN_CRIGHT, BTN_R, BTN_Z].iter().any(|&b| f.input.press.held(b));
+            if self.xz_speed > 0.001 || pressed {
+                self.unk_14c |= 4;
+                self.unk_14c &= !8;
+            }
+        }
+    }
+
+    /// `Camera_KeepOn0` (TALK in the prerendered rooms): the eye stays at the bg camera, and
+    /// over `timerInit` frames `at` turns towards the one talking while the view narrows by
+    /// `fovScale`.
+    fn keep_on0(&mut self, d: &CameraData, col: &CollisionContext, target_focus: Option<Vec3>) {
+        self.unk_14c &= !0x10;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let cur = self.cur();
+            let v = |i: usize| d.value(cur, i);
+            self.keep0.fov_scale = v(0) as f32 * 0.01;
+            self.keep0.yaw_scale = v(1) as f32 * 0.01;
+            self.keep0.timer_init = v(2);
+            self.keep0.interface_flags = v(3);
+        }
+        let b = self.bg_cam_data(col);
+        self.eye_next = b.pos_f();
+        self.eye = self.eye_next;
+        let fov = if b.fov == -1 { 6000 } else { b.fov };
+        let Some(focus) = target_focus.filter(|_| self.target.is_some()) else {
+            // "talk: target is not valid, change normal camera".
+            self.target = None;
+            self.change_mode(d, CAM_MODE_NORMAL);
+            return;
+        };
+        self.target_pos = focus;
+        let mut eye_at_offset = diff_to_sph_geo(self.eye, self.at);
+        let eye_target_pos_offset = diff_to_sph_geo(self.eye, self.target_pos);
+        self.interface_flags = self.keep0.interface_flags;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            // CAM_DATA_SCALED.
+            self.fov = fov as f32 * 0.01;
+            self.roll = 0;
+            self.at_lerp_step_scale = 0.0;
+            self.keep0.anim_timer = self.keep0.timer_init;
+            self.keep0.fov_target = self.fov - (self.fov * self.keep0.fov_scale);
+        }
+        if self.keep0.anim_timer != 0 {
+            let step = (eye_target_pos_offset.yaw.wrapping_sub(eye_at_offset.yaw) / self.keep0.anim_timer) as f32 * self.keep0.yaw_scale;
+            eye_at_offset.yaw = (eye_at_offset.yaw as f32 + step) as i32 as i16;
+            self.at = sph_geo_add(self.eye, eye_at_offset);
+            self.keep0.anim_timer -= 1;
+        } else {
+            self.unk_14c |= 0x400 | 0x10;
+        }
+        self.fov = lerp_ceil_f(self.keep0.fov_target, self.fov, 0.5, 10.0);
     }
 
     // ---- The fixed, data, unique and special cameras ----------------------------------------

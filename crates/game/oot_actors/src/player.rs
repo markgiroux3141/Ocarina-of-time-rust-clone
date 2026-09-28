@@ -19,7 +19,7 @@ use eng_input::pad::{BTN_A, BTN_Z, Input, stick_to_mag_angle};
 use eng_math::*;
 use glam::Vec3;
 use oot_game::actor::*;
-use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PlayerIface};
+use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PlayerIface};
 use oot_game::play_scene::{PlayIo, SCENE_GANON_FINAL, SCENE_HAKADAN};
 use oot_game::save::{RESPAWN_MODE_DOWN, RESPAWN_MODE_RETURN};
 use oot_game::scene::EntranceInfo;
@@ -124,6 +124,15 @@ pub enum PlayRequest {
     OpenDoor { door: ActorHandle, open_anim: u8 },
     /// `doorActor->room = play->roomCtx.curRoom.num`, and its double's.
     DoorRoom { door: ActorHandle },
+    /// `actor->flags |= ACTOR_FLAG_8`: Player accepted the actor's talk offer (the actor's
+    /// `Actor_ProcessTalkRequest` sees it in its update this frame).
+    TalkRequest(ActorHandle),
+    /// `actor->textId = text_id` (an ajar door's 0xD0).
+    SetTextId { actor: ActorHandle, text_id: u16 },
+    /// `Message_StartTextbox(play, textId, actor)`.
+    StartTextbox { text_id: u16, actor: Option<ActorHandle> },
+    /// `Interface_SetDoAction(play, action)`.
+    DoAction(u16),
 }
 
 // floor properties (FLOOR_PROPERTY_*)
@@ -242,6 +251,8 @@ pub enum Action {
     ClimbEnd,
     /// `func_80845EF8`: opening a door and walking through it.
     DoorOpen,
+    /// `func_8084B530`: talking, until the message box closes.
+    Talk,
 }
 
 /// `func_A74`: what `func_808458D0` runs once the item is away.
@@ -249,6 +260,8 @@ pub enum Action {
 pub enum A74 {
     /// `func_8083A3B0`: start climbing.
     ClimbStart,
+    /// `func_8083A2F8`: start talking.
+    Talk,
 }
 
 /// Player's upper-body action (`this->func_82C`), run from `func_80836670`.
@@ -295,6 +308,7 @@ impl Action {
             Action::Climb => "func_8084BF1C",
             Action::ClimbEnd => "func_8084C5F8",
             Action::DoorOpen => "func_80845EF8",
+            Action::Talk => "func_8084B530",
         }
     }
 }
@@ -353,6 +367,10 @@ pub struct Env<'a> {
     pub prev_room: i8,
     /// `Play_GetCamera(play, CAM_ID_MAIN)->unk_14C`, as the last camera update left it.
     pub cam_unk_14c: i16,
+    /// `Message_GetState(&play->msgCtx)`, as the last `Message_Update` left it.
+    pub msg_state: u8,
+    /// `play->roomCtx.curRoom.behaviorType1`.
+    pub room_behavior_type1: u8,
 }
 
 impl Env<'_> {
@@ -509,6 +527,12 @@ pub struct Player {
     pub func_a74: Option<A74>,
     /// Start mode 0 (`func_80846648`): `update` is a no-op and `draw` is NULL.
     pub inert: bool,
+    /// `naviTextId`: what Navi would say (no Navi here: 0).
+    pub navi_text_id: i16,
+    /// `unk_88E`: frames after a talk that A, B and C-Up are ignored.
+    pub unk_88E: u8,
+    /// `unk_837`: frames before "Put Away" shows on the A button.
+    pub unk_837: u8,
 }
 
 /// `D_80854730`: the root translation Link's animations are authored around.
@@ -632,6 +656,9 @@ impl Player {
             cs_mode: 0,
             func_a74: None,
             inert: false,
+            navi_text_id: 0,
+            unk_88E: 0,
+            unk_837: 0,
         };
         // A plain start (the tests' and the sandbox's): standing still (`func_80853080`).
         p.func_80853080(data);
@@ -797,8 +824,11 @@ impl Player {
         let data = env.data;
         self.actor.prev_pos = self.actor.home_pos;
 
-        // unk_A73/88E/A87 timers, invincibility: not modelled.
-        // func_808473D4 (do-action HUD): not modelled.
+        // unk_A73/A87 timers, invincibility: not modelled.
+        if self.unk_88E != 0 {
+            self.unk_88E -= 1;
+        }
+        self.func_808473D4(env);
         self.func_80836BEC(env);
 
         scaled_step_to_s(&mut self.unk_6C2, 0, 400);
@@ -827,6 +857,10 @@ impl Player {
         self.func_8083AA10(env);
 
         self.func_8083D6EC();
+
+        if self.unk_664.is_none() && self.navi_text_id == 0 {
+            self.state2 &= !(STATE2_1 | STATE2_21);
+        }
 
         self.state1 &= !(STATE1_12 | STATE1_22 | (1 << 1) | (1 << 9));
         self.state2 &= !(STATE2_0 | STATE2_2 | STATE2_3 | STATE2_5 | STATE2_6 | STATE2_8 | (1 << 9) | STATE2_12 | STATE2_14 | STATE2_16 | STATE2_22 | STATE2_26);
@@ -973,6 +1007,7 @@ impl Player {
             Action::Climb => self.func_8084BF1C(env),
             Action::ClimbEnd => self.func_8084C5F8(env),
             Action::DoorOpen => self.func_80845EF8(env),
+            Action::Talk => self.func_8084B530(env),
         }
     }
 
@@ -1490,6 +1525,7 @@ impl Player {
         if !self.func_80836670(env) {
             match self.func_a74 {
                 Some(A74::ClimbStart) => self.func_8083A3B0(env.data),
+                Some(A74::Talk) => self.func_8083A2F8(env.data),
                 None => {}
             }
         }
@@ -2006,6 +2042,9 @@ impl Player {
             let e = list[i];
             let idx = e.unsigned_abs() as usize;
             if idx == 1 && self.func_80839800(env) {
+                return true;
+            }
+            if idx == 4 && self.func_8083B644(env) {
                 return true;
             }
             if idx == 5 && self.func_8083F7BC(env) {
@@ -2832,40 +2871,43 @@ impl Player {
             self.unk_66C -= 1;
         }
         let sp1c = self.unk_66C >= 6;
-        // func_8083224C (a talk request, ACTOR_FLAG_8) is never set here.
-        if self.unk_66C != 0 || self.state1 & (STATE1_12 | STATE1_25) != 0 {
-            if self.state1 & STATE1_25 == 0 && self.input.press.held(BTN_Z) {
-                let hold = false;
-                self.state1 |= STATE1_15;
-                match env.target.arrow_pointed.filter(|&t| env.target(t).is_some_and(|a| a.flags & ACTOR_FLAG_27 == 0)) {
-                    Some(t) => {
-                        let mut to = Some(t);
-                        if to == self.unk_664 {
-                            to = env.target.unk_94;
-                        }
-                        if to != self.unk_664 {
-                            if !hold {
-                                self.state2 |= STATE2_13;
+        // func_8083224C: talking (ACTOR_FLAG_8) keeps the target as it is.
+        let cond = self.actor.flags & ACTOR_FLAG_8 == ACTOR_FLAG_8;
+        if cond || self.unk_66C != 0 || self.state1 & (STATE1_12 | STATE1_25) != 0 {
+            if !cond {
+                if self.state1 & STATE1_25 == 0 && self.input.press.held(BTN_Z) {
+                    let hold = false;
+                    self.state1 |= STATE1_15;
+                    match env.target.arrow_pointed.filter(|&t| env.target(t).is_some_and(|a| a.flags & ACTOR_FLAG_27 == 0)) {
+                        Some(t) => {
+                            let mut to = Some(t);
+                            if to == self.unk_664 {
+                                to = env.target.unk_94;
                             }
-                            self.unk_664 = to;
-                            self.unk_66C = 15;
-                            self.state2 &= !(STATE2_1 | STATE2_21);
-                        } else if !hold {
-                            self.func_8008EDF0();
+                            if to != self.unk_664 {
+                                if !hold {
+                                    self.state2 |= STATE2_13;
+                                }
+                                self.unk_664 = to;
+                                self.unk_66C = 15;
+                                self.state2 &= !(STATE2_1 | STATE2_21);
+                            } else if !hold {
+                                self.func_8008EDF0();
+                            }
+                            self.state1 &= !STATE1_30;
                         }
-                        self.state1 &= !STATE1_30;
-                    }
-                    None => {
-                        if self.state1 & (STATE1_17 | STATE1_30) == 0 {
-                            self.func_808355DC();
+                        None => {
+                            if self.state1 & (STATE1_17 | STATE1_30) == 0 {
+                                self.func_808355DC();
+                            }
                         }
                     }
                 }
-            }
-            if let Some(t) = self.unk_664 {
-                if env.target(t).is_none_or(|a| oot_game::target::lost(&env.data.target_ranges, a, true, self.actor.shape_rot.y, sp1c)) {
-                    self.func_8008EDF0();
-                    self.state1 |= STATE1_30;
+                if let Some(t) = self.unk_664 {
+                    if env.target(t).is_none_or(|a| oot_game::target::lost(&env.data.target_ranges, a, true, self.actor.shape_rot.y, sp1c)) {
+                        self.func_8008EDF0();
+                        self.state1 |= STATE1_30;
+                    }
                 }
             }
             if let Some(t) = self.unk_664 {
@@ -4437,7 +4479,7 @@ impl Player {
                     }
                     io.save.respawn[RESPAWN_MODE_DOWN].data = 0;
                     drop(io);
-                    if !self.func_8083B644() {
+                    if !self.func_8083B644(env) {
                         self.func_8083CF5C(data);
                     }
                 }
@@ -4454,9 +4496,10 @@ impl Player {
     /// 0x28F). A scene-exit door starts the exit under its far side (`func_80839034`, entrance
     /// speed 2); any other gets the door camera and loads the room behind it.
     ///
-    /// Not ported: an ajar door's text (0xD0, which needs the message box), sliding doors
-    /// (`Door_Shutter`), `Door_Killer`, holding Ruto (`ACTOR_EN_RU1`), and
-    /// `func_8084F9A0` (a cutscene's door walk).
+    /// An ajar door (`PLAYER_DOORTYPE_AJAR`) shows text 0xD0 instead.
+    ///
+    /// Not ported: sliding doors (`Door_Shutter`), `Door_Killer`, holding Ruto
+    /// (`ACTOR_EN_RU1`), and `func_8084F9A0` (a cutscene's door walk).
     fn func_80839800(&mut self, env: &Env) -> bool {
         if self.door_type == PLAYER_DOORTYPE_NONE || self.state1 & STATE1_11 != 0 {
             return false;
@@ -4467,8 +4510,9 @@ impl Player {
         let Some(dh) = self.door_actor else { return false };
         let Some(door) = env.actors.actor(dh) else { return false };
         if self.door_type <= PLAYER_DOORTYPE_AJAR {
-            // doorActor->textId = 0xD0; func_80853148 (talking): not ported.
-            self.note("an ajar door's text needs the message box");
+            // doorActor->textId = 0xD0, then talking to it (and 0: no interrupt taken).
+            self.play_requests.push(PlayRequest::SetTextId { actor: dh, text_id: 0xD0 });
+            self.func_80853148(env, dh, 0xD0);
             return false;
         }
         let mut door_direction = self.door_direction as i32;
@@ -4625,9 +4669,247 @@ impl Player {
         false
     }
 
-    /// `func_8083B644`: talking to the target or Navi (no talking actors yet).
-    fn func_8083B644(&self) -> bool {
-        false
+    /// `func_8083B644` (interrupt 4): A talks to the actor that offered this frame
+    /// (`targetActor`, from `func_8002F1C4`), or C-Up has Navi speak about the target. On the
+    /// ground (or swimming at the surface), when nothing else is targeted.
+    ///
+    /// No Navi: `naviTextId` stays 0 and `naviActor` is absent, and no actor has a
+    /// `naviEnemyId`, so the C-Up branch only runs for `ACTOR_FLAG_0 | ACTOR_FLAG_18` targets,
+    /// and then has no text. Holding actors isn't ported (`PLAYER_STATE1_11` is never set).
+    fn func_8083B644(&mut self, env: &Env) -> bool {
+        let mut sp34 = self.target_actor;
+        let mut sp30 = self.unk_664;
+        let mut sp2c: Option<ActorHandle> = None;
+        let navi_actor: Option<ActorHandle> = None;
+        let checkable = |h: Option<ActorHandle>| h.and_then(|h| env.actors.actor(h)).is_some_and(|a| a.flags & (ACTOR_FLAG_0 | ACTOR_FLAG_18) == (ACTOR_FLAG_0 | ACTOR_FLAG_18));
+        let sp24 = checkable(sp30);
+        let mut sp28 = false;
+        if sp24 || self.navi_text_id != 0 {
+            sp28 = self.navi_text_id < 0 && ((self.navi_text_id as i32).abs() & 0xFF00) != 0x200;
+            if sp28 || !sp24 {
+                sp2c = navi_actor;
+                if sp28 {
+                    sp30 = None;
+                    sp34 = None;
+                }
+            } else {
+                sp2c = sp30;
+            }
+        }
+        if sp34.is_none() && sp2c.is_none() {
+            return false;
+        }
+        if !(sp30.is_none() || sp30 == sp34 || sp30 == sp2c) {
+            return false;
+        }
+        if self.state1 & STATE1_11 != 0 {
+            return false;
+        }
+        if !(self.grounded() || self.state1 & STATE1_23 != 0 || (self.func_808332B8() && self.state2 & STATE2_10 == 0)) {
+            return false;
+        }
+        if let Some(t) = sp34 {
+            self.state2 |= STATE2_1;
+            let flag16 = env.actors.actor(t).is_some_and(|a| a.flags & ACTOR_FLAG_16 != 0);
+            if self.input.press.held(BTN_A) || flag16 {
+                sp2c = None;
+            } else if sp2c.is_none() {
+                return false;
+            }
+        }
+        let mut text_override = None;
+        if let Some(n) = sp2c {
+            if !sp28 {
+                self.state2 |= STATE2_21;
+            }
+            if !self.input.press.held(eng_input::pad::BTN_CUP) && !sp28 {
+                return false;
+            }
+            sp34 = Some(n);
+            self.target_actor = None;
+            if sp28 || !sp24 {
+                let id = if self.navi_text_id >= 0 { self.navi_text_id } else { -self.navi_text_id };
+                text_override = Some(id as u16);
+            }
+            // (sp2c->naviEnemyId + 0x600: no actor has one.)
+        }
+        let Some(t) = sp34 else { return false };
+        let Some(text_id) = text_override.or_else(|| env.actors.actor(t).map(|a| a.text_id)) else { return false };
+        if let Some(id) = text_override {
+            self.play_requests.push(PlayRequest::SetTextId { actor: t, text_id: id });
+        }
+        // this->currentMask = D_80858AA4 (masks aren't ported).
+        self.func_80853148(env, t, text_id);
+        true
+    }
+
+    /// `func_80853148`: start talking with `actor` (whose `textId` is `text_id`). The actor
+    /// gets the talk request (`ACTOR_FLAG_8`) and Player its text; an NPC is faced after
+    /// putting the item away, anything else at once. Link steps back first when closer than
+    /// 40.
+    fn func_80853148(&mut self, env: &Env, h: ActorHandle, text_id: u16) {
+        let data = env.data;
+        let Some(actor) = env.actors.actor(h) else { return };
+        let (category, xz_dist, flags) = (actor.category, actor.xz_dist_to_player, actor.flags);
+        if self.target_actor.is_some() || flags & (ACTOR_FLAG_0 | ACTOR_FLAG_18) == (ACTOR_FLAG_0 | ACTOR_FLAG_18) {
+            self.play_requests.push(PlayRequest::TalkRequest(h));
+        }
+        self.target_actor = Some(h);
+        self.exchange_item_id = 0;
+        if text_id == 0xFFFF {
+            // func_8002DF54(play, actor, 1): a cutscene's talk, not ported.
+            self.note("a talk with text 0xFFFF (a cutscene) isn't ported");
+            self.play_requests.push(PlayRequest::TalkRequest(h));
+            self.func_80832528(data);
+            return;
+        }
+        if self.actor.flags & ACTOR_FLAG_8 != 0 {
+            self.actor.text_id = 0;
+        } else {
+            self.actor.flags |= ACTOR_FLAG_8;
+            self.actor.text_id = text_id;
+        }
+        // (Riding isn't ported.)
+        let backspace = data.anim("link_normal_backspace");
+        if self.func_808332B8() {
+            self.func_80836898(data, env, A74::Talk);
+            self.func_80832C6C(data, data.anim("link_swimer_swim_wait"));
+        } else if category != ACTORCAT_NPC {
+            // (Or the fishing pole in hand, which isn't ported.)
+            self.func_8083A2F8(data);
+            if self.state1 & STATE1_4 == 0 {
+                if xz_dist < 40.0 {
+                    self.skel.play_once_set_speed(data, backspace, 2.0 / 3.0);
+                } else {
+                    let a = self.anim(data, group::WAIT);
+                    self.skel.play_loop(data, a);
+                }
+            }
+        } else {
+            self.func_80836898(data, env, A74::Talk);
+            let a = if xz_dist < 40.0 { backspace } else { data.anim("link_normal_talk_free") };
+            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+        }
+        if self.skel.animation == backspace {
+            self.func_80832F54(0x19);
+        }
+        self.func_80832224();
+        self.state1 |= STATE1_6 | STATE1_29;
+        // (Navi's own text, func_80835EA4(play, 0xB): no Navi.)
+    }
+
+    /// `func_8083A2F8`: the talking action, and the message box for Player's `textId`.
+    fn func_8083A2F8(&mut self, data: &GameData) {
+        self.func_80835DAC(data, Action::Talk, 0);
+        self.state1 |= STATE1_6 | STATE1_29;
+        if self.actor.text_id != 0 {
+            self.play_requests.push(PlayRequest::StartTextbox { text_id: self.actor.text_id, actor: self.target_actor });
+            self.unk_664 = self.target_actor;
+        }
+    }
+
+    /// `func_8084B530`: talking, facing the target, until the box closes; then standing (or
+    /// treading water), with A, B and C-Up ignored for 10 frames (`unk_88E`).
+    fn func_8084B530(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5;
+        self.func_80836670(env);
+        let target = self.target_actor.and_then(|h| env.actors.actor(h));
+        if env.msg_state == oot_game::message::TEXT_STATE_CLOSING {
+            self.actor.flags &= !ACTOR_FLAG_8;
+            if !target.is_some_and(|t| t.flags & (ACTOR_FLAG_0 | ACTOR_FLAG_2) == (ACTOR_FLAG_0 | ACTOR_FLAG_2)) {
+                self.state2 &= !STATE2_13;
+            }
+            self.play_requests.push(PlayRequest::CamDone);
+            // func_8084B4D4 (the ocarina after a talk), func_8084B3CC (the shooting gallery),
+            // func_8083ADD4 (first person) and func_8083E5A8 (an item to pick up) don't apply.
+            if self.func_808332B8() {
+                self.func_80838F18(data);
+            } else {
+                self.func_80853080(data);
+            }
+            self.unk_88E = 10;
+            return;
+        }
+        if self.func_808332B8() {
+            self.func_8084D610(env);
+        } else if self.state1 & STATE1_4 == 0 && self.skel.update(data) {
+            if self.skel.move_flags != 0 {
+                self.func_80832DBC();
+                if target.is_some_and(|t| t.category == ACTORCAT_NPC) {
+                    self.skel.play_once_set_speed(data, data.anim("link_normal_talk_free"), 2.0 / 3.0);
+                } else {
+                    let a = self.anim(data, group::WAIT);
+                    self.skel.play_loop(data, a);
+                }
+            } else {
+                self.skel.play_loop_set_speed(data, data.anim("link_normal_talk_free_wait"), 2.0 / 3.0);
+            }
+        }
+        if self.unk_664.is_some() {
+            let y = self.func_8083DB98(env, false);
+            self.actor.shape_rot.y = y;
+            self.current_yaw = y;
+        }
+    }
+
+    /// `func_808473D4`: what the A button would do (`Interface_SetDoAction`), when no message
+    /// is open. Riding, the fishing pole, the ocarina, held and grabbable actors, and the
+    /// crawlspace's "Enter" aren't ported, so those actions never show.
+    fn func_808473D4(&mut self, env: &Env) {
+        use oot_game::interface::*;
+        if env.msg_state != oot_game::message::TEXT_STATE_NONE {
+            return;
+        }
+        let sp20 = self.unk_84B[self.unk_846 as usize];
+        let sp1c = self.func_808332B8();
+        let mut do_action = DO_ACTION_NONE;
+        if !self.in_cs_mode() {
+            if self.state1 & STATE1_20 != 0 {
+                do_action = DO_ACTION_RETURN;
+            } else if self.state2 & STATE2_18 == 0 {
+                let target_category = self.target_actor.and_then(|h| env.actors.actor(h)).map(|a| a.category);
+                if self.door_type != PLAYER_DOORTYPE_NONE && self.state1 & STATE1_11 == 0 {
+                    do_action = DO_ACTION_OPEN;
+                } else if !sp1c && self.state2 & STATE2_0 != 0 {
+                    do_action = DO_ACTION_GRAB;
+                } else if self.state2 & STATE2_2 != 0 {
+                    do_action = DO_ACTION_CLIMB;
+                } else if self.state2 & STATE2_1 != 0 && target_category.is_some() {
+                    do_action = if target_category == Some(ACTORCAT_NPC) { DO_ACTION_SPEAK } else { DO_ACTION_CHECK };
+                } else if self.state1 & (STATE1_13 | STATE1_21) != 0 {
+                    do_action = DO_ACTION_DOWN;
+                } else if self.state2 & STATE2_16 != 0 {
+                    do_action = DO_ACTION_ENTER;
+                } else if self.state2 & STATE2_11 != 0 {
+                    // D_80854784[CUR_UPG_VALUE(UPG_SCALE)] (no scale: 120) less the depth, per 40.
+                    let sp24 = ((120.0 - self.actor.y_dist_to_water) / 40.0) as i32;
+                    do_action = DO_ACTION_1 + sp24.clamp(0, 7) as u16;
+                } else if sp1c && self.state2 & STATE2_10 == 0 {
+                    do_action = DO_ACTION_DIVE;
+                } else if !sp1c && (self.state1 & STATE1_22 == 0 || self.func_80833BCC() || !(!self.adult && self.current_shield == 2)) {
+                    let behavior_2 = env.room_behavior_type1 == 2;
+                    if self.state1 & STATE1_14 == 0
+                        && sp20 <= 0
+                        && (self.state1 & STATE1_4 != 0 || (self.s.floor_type != FLOOR_TYPE_7 && (self.func_80833B2C() || (!behavior_2 && self.state1 & STATE1_22 == 0 && sp20 == 0))))
+                    {
+                        do_action = DO_ACTION_ATTACK;
+                    } else if !behavior_2 && self.func_80833BCC() && sp20 > 0 {
+                        do_action = DO_ACTION_JUMP;
+                    } else if self.held_item_ap >= env.data.items.ap("SWORD_MASTER") || (self.state2 & (1 << 20) != 0 && env.target.arrow_pointed.is_none()) {
+                        do_action = DO_ACTION_PUTAWAY;
+                    }
+                }
+            }
+        }
+        if do_action != DO_ACTION_PUTAWAY {
+            self.unk_837 = 20;
+        } else if self.unk_837 != 0 {
+            do_action = DO_ACTION_NONE;
+            self.unk_837 -= 1;
+        }
+        self.play_requests.push(PlayRequest::DoAction(do_action));
+        // (Interface_SetNaviCall: no Navi.)
     }
 
     // ================================================================================
@@ -5014,8 +5296,19 @@ impl ActorImpl for Player {
             transi_actors: &play.transi_actors,
             prev_room: play.room_ctx.prev.num,
             cam_unk_14c: play.game_camera.unk_14c,
+            msg_state: play.message_state(),
+            room_behavior_type1: play.room_ctx.cur.behavior_type1,
         };
-        let input = play.input;
+        // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
+        // _29), and no A, B or C-Up for unk_88E frames after a talk.
+        let mut input = play.input;
+        if self.state1 & ((1 << 5) | STATE1_29) != 0 {
+            input = Input::default();
+        } else if self.unk_88E != 0 {
+            let mask = !(BTN_A | eng_input::pad::BTN_B | eng_input::pad::BTN_CUP);
+            input.cur.button &= mask;
+            input.press.button &= mask;
+        }
         Player::update(self, &env, input);
         play.put_io(io.into_inner());
         for r in std::mem::take(&mut self.play_requests) {
@@ -5138,6 +5431,9 @@ impl PlayerIface for Player {
     fn state_flags1(&self) -> u32 {
         self.state1
     }
+    fn state_flags2(&self) -> u32 {
+        self.state2
+    }
     fn target(&self) -> Option<ActorHandle> {
         self.unk_664
     }
@@ -5205,6 +5501,18 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
                 a.room = room;
             }
         }
+        PlayRequest::TalkRequest(h) => {
+            if let Some(a) = play.actors.actor_mut(h) {
+                a.flags |= ACTOR_FLAG_8;
+            }
+        }
+        PlayRequest::SetTextId { actor, text_id } => {
+            if let Some(a) = play.actors.actor_mut(actor) {
+                a.text_id = text_id;
+            }
+        }
+        PlayRequest::StartTextbox { text_id, actor } => play.start_textbox(text_id, actor),
+        PlayRequest::DoAction(action) => play.interface_ctx.set_do_action(action),
     }
 }
 

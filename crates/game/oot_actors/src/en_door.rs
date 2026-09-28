@@ -17,8 +17,10 @@
 //! camera (or, while Player is still in the room it spawned in, the side for that room), from
 //! meshes baked per door list and side (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported: checkable doors' text (`EnDoor_WaitForCheck` offers to talk; talking comes
-//! with the message box), small keys (a locked door's lock never opens: there's no key count),
+//! A checkable door (a shop closed at night, a locked house) has text instead
+//! (`EnDoor_WaitForCheck` offers to talk within 40; `EnDoor_Check` waits for the box to close).
+//!
+//! Not ported: small keys (a locked door's lock never opens: there's no key count),
 //! the lock's chains (`Actor_DrawDoorLock`), the sounds, and the bubbles of a door opened
 //! underwater.
 
@@ -374,9 +376,20 @@ impl ActorImpl for EnDoor {
         match self.action {
             Action::SetupType => self.setup_type(play),
             Action::Idle => self.idle(play),
-            // EnDoor_WaitForCheck: func_8002F2CC(DOOR_CHECK_RANGE 40) offers to talk; Player
-            // doesn't accept talking yet, so it never becomes EnDoor_Check.
-            Action::WaitForCheck | Action::Check => {}
+            // EnDoor_WaitForCheck: DOOR_CHECK_RANGE 40.
+            Action::WaitForCheck => {
+                if oot_game::npc::process_talk_request(&mut self.actor) {
+                    self.action = Action::Check;
+                } else {
+                    oot_game::npc::offer_talk(play, &self.actor, 40.0);
+                }
+            }
+            // EnDoor_Check.
+            Action::Check => {
+                if oot_game::npc::textbox_is_closing(play) {
+                    self.action = Action::WaitForCheck;
+                }
+            }
             Action::AjarWait => {
                 if self.actor.xz_dist_to_player < DOOR_AJAR_SLAM_RANGE {
                     self.action = Action::AjarClose;
