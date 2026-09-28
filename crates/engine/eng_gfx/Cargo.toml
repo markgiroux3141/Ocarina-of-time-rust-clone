@@ -1,0 +1,10 @@
+[package]
+name = "eng_gfx"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Engine graphics types: the N64 material model (combiner, othermode, tiles), batches and draw lists, per-frame segment values. No GPU code"
+
+[dependencies]
+glam.workspace = true
+serde.workspace = true

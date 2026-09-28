@@ -1,0 +1,28 @@
+[package]
+name = "oot"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "The game: plays a scene from your ROM with the ported game logic. The library is the play client the sandbox shares."
+
+[dependencies]
+eng_math.workspace = true
+eng_gfx.workspace = true
+eng_anim.workspace = true
+eng_collision.workspace = true
+eng_input.workspace = true
+eng_render.workspace = true
+eng_app.workspace = true
+oot_import.workspace = true
+oot_game.workspace = true
+oot_actors.workspace = true
+eframe.workspace = true
+egui-wgpu.workspace = true
+wgpu.workspace = true
+glam.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+image.workspace = true
+log.workspace = true
+env_logger.workspace = true
+serde_json.workspace = true

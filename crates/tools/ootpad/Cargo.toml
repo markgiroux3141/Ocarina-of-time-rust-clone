@@ -1,0 +1,12 @@
+[package]
+name = "ootpad"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Controller probe: lists pads with their mapping profile and prints a [pad.buttons] table for oot.toml"
+
+[dependencies]
+eng_input.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+env_logger.workspace = true

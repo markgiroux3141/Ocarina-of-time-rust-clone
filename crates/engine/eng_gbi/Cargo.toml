@@ -1,0 +1,13 @@
+[package]
+name = "eng_gbi"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "F3DEX2 display-list interpreter and TMEM texture decoding: turns N64 display lists into eng_gfx draw lists"
+
+[dependencies]
+eng_gfx.workspace = true
+eng_anim.workspace = true
+glam.workspace = true
+anyhow.workspace = true
+log.workspace = true

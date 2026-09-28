@@ -1,0 +1,11 @@
+[package]
+name = "eng_collision"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Triangle-mesh collision (z_bgcheck.c): the static mesh, actor-owned DynaPoly meshes and water boxes, with raw surface data words"
+
+[dependencies]
+eng_math.workspace = true
+glam.workspace = true
+serde.workspace = true

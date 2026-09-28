@@ -1,0 +1,10 @@
+[package]
+name = "eng_anim"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Skeletons (limb hierarchies, flex/LOD display lists), joint tables and animations, and posing"
+
+[dependencies]
+glam.workspace = true
+serde.workspace = true

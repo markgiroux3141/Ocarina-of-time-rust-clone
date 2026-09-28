@@ -1,0 +1,25 @@
+[package]
+name = "oot_import"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "The importer: reads the user's ROM with the decomp's help (dmadata/Yaz0, the XML symbol index, z64 asset decoders, scenes and rooms, the C table reader, the scene draw-config interpreter) and writes the game's asset pack"
+
+[dependencies]
+eng_math.workspace = true
+eng_gfx.workspace = true
+eng_gbi.workspace = true
+eng_anim.workspace = true
+eng_collision.workspace = true
+eng_asset.workspace = true
+oot_game.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+quick-xml.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+log.workspace = true
+sha1_smol.workspace = true

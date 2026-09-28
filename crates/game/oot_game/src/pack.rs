@@ -1,0 +1,317 @@
+//! The game's asset pack: what's in it, where it lives, and typed access to its records.
+//!
+//! `oot_import` writes the pack from the ROM (`oot import`); the game reads it through
+//! `GamePack` and never touches the ROM or the decomp. The record names below are the
+//! contract between the two, and `FORMAT_VERSION` / `IMPORTER_VERSION` say which records and
+//! layouts a pack has: a pack with other versions is stale and gets rebuilt
+//! (docs/adr/0008-asset-pack.md).
+//!
+//! Names are `kind/…` with the decomp's file and symbol names: `tex/<file>/<symbol>`,
+//! `mesh/<file>/<symbol>`, `skel/…`, `anim/…`, `col/…`, plus `table/…` for game tables,
+//! `scene/<scene file>`, `room/<scene file>/<layer>/<room>` and `player/<age>/…` for Link.
+
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use eng_anim::anim::{LinkAnimation, StandardAnimation};
+use eng_anim::skeleton::Skeleton;
+use eng_asset::{Assets, PackHeader};
+use eng_collision::collision::CollisionHeader;
+use eng_gfx::DrawList;
+
+use crate::data::GameData;
+use crate::env::EnvTables;
+use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
+use crate::scene::{RoomData, SceneData, SceneTable};
+
+/// Bumped whenever a record type or the set of records changes.
+pub const FORMAT_VERSION: u32 = 2;
+/// The importer that writes game packs, and the version of its output.
+pub const IMPORTER: &str = "oot_import";
+pub const IMPORTER_VERSION: u32 = 1;
+
+/// The per-user folder name, and the environment variables that override where packs are.
+pub const APP_DIR: &str = "oot-clone";
+/// A pack file or loose folder to use instead of the default one.
+pub const ENV_PACK: &str = "OOT_PACK";
+/// The data folder to use instead of the per-user one.
+pub const ENV_DATA_DIR: &str = "OOT_DATA_DIR";
+
+/// Record names.
+pub mod keys {
+    use crate::player_lib::Age;
+
+    /// `eng_math::Tables`.
+    pub const MATH: &str = "table/math";
+    /// `data::GameData` (without its animations).
+    pub const PLAYER: &str = "table/player";
+    /// `player_lib::PlayerRules`.
+    pub const PLAYER_RULES: &str = "table/player_rules";
+    /// `env::EnvTables`.
+    pub const ENV: &str = "table/env";
+    /// `scene::SceneTable`.
+    pub const SCENES: &str = "table/scenes";
+    /// `actor_table::ActorTable`.
+    pub const ACTORS: &str = "table/actors";
+    /// `pack::Manifest`: what the import covered.
+    pub const MANIFEST: &str = "meta/manifest";
+
+    /// A texture from the decomp's XMLs (`pack::Texture`).
+    pub fn texture(file: &str, symbol: &str) -> String {
+        format!("tex/{file}/{symbol}")
+    }
+    /// A display list, or a skeleton's full mesh, interpreted (`eng_gfx::DrawList`).
+    pub fn mesh(file: &str, symbol: &str) -> String {
+        format!("mesh/{file}/{symbol}")
+    }
+    /// `eng_anim::skeleton::Skeleton`.
+    pub fn skeleton(file: &str, symbol: &str) -> String {
+        format!("skel/{file}/{symbol}")
+    }
+    /// `StandardAnimation`, or `LinkAnimation` for `gameplay_keep`'s `gPlayerAnim_*`.
+    pub fn anim(file: &str, symbol: &str) -> String {
+        format!("anim/{file}/{symbol}")
+    }
+    /// `eng_collision::collision::CollisionHeader`.
+    pub fn collision(file: &str, symbol: &str) -> String {
+        format!("col/{file}/{symbol}")
+    }
+    /// `scene::SceneData`.
+    pub fn scene(file: &str) -> String {
+        format!("scene/{file}")
+    }
+    /// A scene layer's collision (`CollisionHeader`).
+    pub fn scene_collision(file: &str, layer: usize) -> String {
+        format!("col/{file}/layer{layer}")
+    }
+    /// `scene::RoomData`.
+    pub fn room(file: &str, layer: usize, room: usize) -> String {
+        format!("room/{file}/{layer}/{room}")
+    }
+    /// `player_lib::LinkVariant`.
+    pub fn link_variant(age: Age, model_group: &str, fists: bool) -> String {
+        format!("player/{}/{model_group}/{}", age.name(), if fists { "fists" } else { "open" })
+    }
+    /// `player_lib::LinkFaces`.
+    pub fn link_faces(age: Age) -> String {
+        format!("player/{}/faces", age.name())
+    }
+}
+
+/// A texture from the decomp's XMLs: decoded, and its N64 data for effects that need it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Texture {
+    pub fmt: u8,
+    pub siz: u8,
+    pub width: u32,
+    pub height: u32,
+    /// RGBA8, `width * height * 4` bytes.
+    pub rgba: Vec<u8>,
+    /// The texels as stored in the ROM.
+    pub texels: Vec<u8>,
+    /// The palette (RGBA16) for CI textures, when the XML names one.
+    pub tlut: Option<Vec<u8>>,
+    /// CI texture whose palette is set by code: decoded against a grey ramp of the indices.
+    pub palette_from_code: bool,
+}
+
+/// What an import covered: per kind of asset, how many the decomp's XMLs list, how many are
+/// in the pack, and why the rest aren't.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Manifest {
+    /// Kind → (listed, imported).
+    pub counts: std::collections::BTreeMap<String, (usize, usize)>,
+    /// Kind → reason → how many.
+    pub skipped: std::collections::BTreeMap<String, std::collections::BTreeMap<String, usize>>,
+    /// Scene statistics that are compared with `ootx scan-scenes`.
+    pub scenes: SceneCounts,
+    pub notes: Vec<String>,
+    /// Seconds per import phase.
+    pub timings: Vec<(String, f64)>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SceneCounts {
+    pub scenes: usize,
+    /// Distinct headers over layers 0..3.
+    pub headers: usize,
+    /// Rooms and shape entries of the distinct headers.
+    pub rooms: usize,
+    pub entries: usize,
+    /// Triangles of the main headers (layer 0), and of the distinct headers.
+    pub main_triangles: usize,
+    pub triangles: usize,
+    pub unknown_opcodes: usize,
+    /// Unresolved segment references, `"<scene> <address>"`.
+    pub unresolved: Vec<String>,
+}
+
+/// The data folder: `$OOT_DATA_DIR`, else the per-user one (`eng_asset::user_data_dir`).
+pub fn data_dir() -> Result<PathBuf> {
+    if let Some(d) = std::env::var_os(ENV_DATA_DIR).filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(d));
+    }
+    eng_asset::user_data_dir(APP_DIR).context("no per-user data folder (set OOT_DATA_DIR)")
+}
+
+pub fn packs_dir() -> Result<PathBuf> {
+    Ok(data_dir()?.join("packs"))
+}
+
+/// Where the pack for a ROM with this SHA-1 goes.
+pub fn pack_path(rom_sha1: &str) -> Result<PathBuf> {
+    Ok(packs_dir()?.join(format!("{}.pak", rom_sha1.to_ascii_lowercase())))
+}
+
+/// The file naming the ROM of the pack to use (written by the last import).
+fn default_marker() -> Result<PathBuf> {
+    Ok(packs_dir()?.join("default"))
+}
+
+/// Records `rom_sha1`'s pack as the one to use.
+pub fn set_default(rom_sha1: &str) -> Result<()> {
+    let m = default_marker()?;
+    if let Some(d) = m.parent() {
+        std::fs::create_dir_all(d)?;
+    }
+    std::fs::write(&m, rom_sha1.to_ascii_lowercase())?;
+    Ok(())
+}
+
+/// The pack to use: `$OOT_PACK`, else the one the last import made the default.
+pub fn default_pack_path() -> Result<PathBuf> {
+    if let Some(p) = std::env::var_os(ENV_PACK).filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(p));
+    }
+    let m = default_marker()?;
+    let sha = std::fs::read_to_string(&m).with_context(|| format!("no default pack ({} missing): run `oot import` first", m.display()))?;
+    pack_path(sha.trim())
+}
+
+/// True if a pack at `path` exists and was written by this game's importer version, in this
+/// format (and from this ROM, if given).
+pub fn is_current(path: &Path, rom_sha1: Option<&str>) -> bool {
+    let header = if path.is_dir() {
+        std::fs::read_to_string(path.join("header.json")).ok().and_then(|t| serde_json::from_str::<PackHeader>(&t).ok())
+    } else {
+        eng_asset::PackFile::read_header(path).ok()
+    };
+    header.is_some_and(|h| h.is_current(FORMAT_VERSION, IMPORTER, IMPORTER_VERSION, rom_sha1))
+}
+
+/// The game's view of an asset pack.
+pub struct GamePack {
+    pub assets: Assets,
+}
+
+impl GamePack {
+    /// Opens a pack file or loose folder, and checks it's current.
+    pub fn open(path: &Path) -> Result<GamePack> {
+        let assets = Assets::open(path)?;
+        let h = assets.header();
+        if !h.is_current(FORMAT_VERSION, IMPORTER, IMPORTER_VERSION, None) {
+            bail!(
+                "{} is stale (format {}, {} {}; this game reads format {FORMAT_VERSION}, {IMPORTER} {IMPORTER_VERSION}): run `oot import` again",
+                path.display(),
+                h.format_version,
+                h.importer,
+                h.importer_version
+            );
+        }
+        Ok(GamePack { assets })
+    }
+
+    /// Opens `default_pack_path()`.
+    pub fn open_default() -> Result<GamePack> {
+        Self::open(&default_pack_path()?)
+    }
+
+    pub fn header(&self) -> &PackHeader {
+        self.assets.header()
+    }
+
+    /// Player's tables and animations, with the maths tables installed (`eng_math::install`).
+    pub fn game_data(&self) -> Result<GameData> {
+        let tables: eng_math::Tables = self.assets.get(keys::MATH)?;
+        eng_math::install(tables);
+        let mut gd: GameData = self.assets.get(keys::PLAYER)?;
+        let anims = gd
+            .anim_symbols
+            .iter()
+            .map(|sym| -> Result<crate::data::Anim> {
+                let a: LinkAnimation = self.assets.get(&keys::anim("gameplay_keep", sym))?;
+                let short = sym.strip_prefix("gPlayerAnim_").unwrap_or(sym);
+                Ok(crate::data::Anim { name: short.to_string(), frames: a.frames })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        gd.set_anims(anims);
+        Ok(gd)
+    }
+
+    pub fn env_tables(&self) -> Result<EnvTables> {
+        self.assets.get(keys::ENV)
+    }
+
+    pub fn player_rules(&self) -> Result<PlayerRules> {
+        self.assets.get(keys::PLAYER_RULES)
+    }
+
+    pub fn scene_table(&self) -> Result<SceneTable> {
+        self.assets.get(keys::SCENES)
+    }
+
+    pub fn actor_table(&self) -> Result<crate::actor_table::ActorTable> {
+        self.assets.get(keys::ACTORS)
+    }
+
+    pub fn manifest(&self) -> Result<Manifest> {
+        self.assets.get(keys::MANIFEST)
+    }
+
+    /// A scene by name: `spot04` or `spot04_scene`.
+    pub fn scene(&self, name: &str) -> Result<SceneData> {
+        let file = if name.ends_with("_scene") { name.to_string() } else { format!("{name}_scene") };
+        self.assets.get(&keys::scene(&file))
+    }
+
+    pub fn room(&self, key: &str) -> Result<RoomData> {
+        self.assets.get(key)
+    }
+
+    pub fn collision(&self, key: &str) -> Result<CollisionHeader> {
+        self.assets.get(key)
+    }
+
+    pub fn mesh(&self, file: &str, symbol: &str) -> Result<DrawList> {
+        self.assets.get(&keys::mesh(file, symbol))
+    }
+
+    pub fn skeleton(&self, file: &str, symbol: &str) -> Result<Skeleton> {
+        self.assets.get(&keys::skeleton(file, symbol))
+    }
+
+    pub fn standard_animation(&self, file: &str, symbol: &str) -> Result<StandardAnimation> {
+        self.assets.get(&keys::anim(file, symbol))
+    }
+
+    pub fn texture(&self, file: &str, symbol: &str) -> Result<Texture> {
+        self.assets.get(&keys::texture(file, symbol))
+    }
+
+    /// Link's skeleton for `age` (`gLinkAdultSkel` / `gLinkChildSkel`).
+    pub fn link_skeleton(&self, age: Age) -> Result<Skeleton> {
+        let sym = match age {
+            Age::Adult => "gLinkAdultSkel",
+            Age::Child => "gLinkChildSkel",
+        };
+        self.skeleton(age.object(), sym)
+    }
+
+    pub fn link_variant(&self, age: Age, model_group: &str, fists: bool) -> Result<LinkVariant> {
+        self.assets.get(&keys::link_variant(age, model_group, fists))
+    }
+
+    pub fn link_faces(&self, age: Age) -> Result<LinkFaces> {
+        self.assets.get(&keys::link_faces(age))
+    }
+}

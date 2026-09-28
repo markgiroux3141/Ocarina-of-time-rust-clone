@@ -1,0 +1,14 @@
+[package]
+name = "eng_input"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "N64 pad state (PadMgr/padutils) and the devices mapped onto it: gilrs pads with per-pad profiles, and a keyboard fallback"
+
+[dependencies]
+eng_math.workspace = true
+gilrs.workspace = true
+anyhow.workspace = true
+log.workspace = true
+serde.workspace = true
+toml.workspace = true

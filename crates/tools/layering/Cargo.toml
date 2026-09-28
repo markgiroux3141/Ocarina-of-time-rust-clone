@@ -1,0 +1,10 @@
+[package]
+name = "layering"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+publish = false
+description = "Checks the crate layering (docs/adr/0001-crate-layout.md) as a test: cargo test -p layering"
+
+[dev-dependencies]
+serde_json.workspace = true

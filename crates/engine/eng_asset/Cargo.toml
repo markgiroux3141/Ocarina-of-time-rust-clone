@@ -1,0 +1,14 @@
+[package]
+name = "eng_asset"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Asset packs: named serde records, zstd-compressed, in one versioned file or as loose files (dev mode), layered by name"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+bincode.workspace = true
+zstd.workspace = true
+anyhow.workspace = true
+log.workspace = true

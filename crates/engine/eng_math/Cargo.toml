@@ -1,0 +1,10 @@
+[package]
+name = "eng_math"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Engine maths: N64 binary angles, libultra sins/coss and guPerspective, the z_lib step helpers, the 20 Hz update rate"
+
+[dependencies]
+glam.workspace = true
+serde.workspace = true

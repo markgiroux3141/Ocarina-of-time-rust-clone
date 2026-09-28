@@ -1,0 +1,24 @@
+[package]
+name = "oot_viewer"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Viewer that renders the synthetic test character through the full decode pipeline"
+
+[dependencies]
+oot_import.workspace = true
+eng_gfx.workspace = true
+eng_gbi.workspace = true
+eng_anim.workspace = true
+eng_collision.workspace = true
+eng_render.workspace = true
+eng_app.workspace = true
+eframe.workspace = true
+egui-wgpu.workspace = true
+wgpu.workspace = true
+glam.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+image.workspace = true
+log.workspace = true
+env_logger.workspace = true

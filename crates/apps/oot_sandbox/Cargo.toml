@@ -1,0 +1,22 @@
+[package]
+name = "oot_sandbox"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Dev sandbox: the test course, scripted headless runs (contact sheets, traces, screenshots) and the spikes' debug views"
+
+[dependencies]
+oot.workspace = true
+eng_math.workspace = true
+eng_input.workspace = true
+eng_collision.workspace = true
+eng_render.workspace = true
+eng_app.workspace = true
+oot_game.workspace = true
+oot_actors.workspace = true
+glam.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+log.workspace = true
+env_logger.workspace = true
+serde_json.workspace = true

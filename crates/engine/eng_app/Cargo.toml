@@ -1,0 +1,15 @@
+[package]
+name = "eng_app"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "App shell: the eframe window, an offscreen render target shown as an egui image, keyboard mapping, PNG output"
+
+[dependencies]
+eng_render.workspace = true
+eng_input.workspace = true
+eframe.workspace = true
+egui-wgpu.workspace = true
+wgpu.workspace = true
+anyhow.workspace = true
+image.workspace = true

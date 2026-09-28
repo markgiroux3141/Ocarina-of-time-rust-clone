@@ -1,0 +1,19 @@
+[package]
+name = "oot_game"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Game framework ported from the decomp's src/code: actor base, SkelAnime, the camera, the target context, environment lights, foot IK, surface types, game data. No rendering."
+
+[dependencies]
+eng_math.workspace = true
+eng_gfx.workspace = true
+eng_anim.workspace = true
+eng_collision.workspace = true
+eng_input.workspace = true
+eng_asset.workspace = true
+glam.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
