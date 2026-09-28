@@ -65,8 +65,15 @@ pub struct DrawLists {
     pub opa: Vec<DrawCmd>,
     /// `POLY_XLU_DISP`, drawn after the OPA list.
     pub xlu: Vec<DrawCmd>,
-    /// Lines drawn over everything, without depth (the targeting reticle, debug views).
+    /// Lines drawn over everything, without depth (debug views).
     pub overlay: Vec<LinePoint>,
+    /// `OVERLAY_DISP`: meshes drawn after the 3D lists and the letterbox, in the interface's
+    /// orthographic projection (`View_ApplyOrthoToOverlay`): the 320x240 screen centred on 0,
+    /// x right, y up. A wider target extends x, so a point keeps its place over the 3D view.
+    pub overlay_2d: Vec<DrawCmd>,
+    /// The letterbox bars' height in rows of the 240-row frame (`Letterbox_GetSize`): black
+    /// over the 3D lists, under `overlay_2d`.
+    pub letterbox_rows: f32,
 }
 
 impl DrawLists {

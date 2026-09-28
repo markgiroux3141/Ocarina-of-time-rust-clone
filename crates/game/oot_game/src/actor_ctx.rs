@@ -75,6 +75,8 @@ pub struct ActorHandle {
 pub trait PlayerIface {
     /// `LINK_IS_ADULT`.
     fn adult(&self) -> bool;
+    /// `stateFlags1`.
+    fn state_flags1(&self) -> u32;
     /// `unk_664`: the actor Player is locked on to.
     fn target(&self) -> Option<ActorHandle>;
     /// `unk_66C`: the Z timer.
@@ -85,6 +87,11 @@ pub trait PlayerIface {
     fn focus(&self) -> Vec3;
     /// `speedXZ`, for the follow camera.
     fn speed_xz(&self) -> f32;
+    /// `targetActor` and `targetActorDistance`: the nearest actor offering to talk this frame
+    /// (`func_8002F1C4`), reset at the end of every Player update.
+    fn talk_target(&self) -> (Option<ActorHandle>, f32);
+    /// `func_8002F1C4`'s write: `targetActor`, `targetActorDistance`, `exchangeItemId`.
+    fn set_talk_target(&mut self, actor: ActorHandle, distance: f32, exchange_item: u8);
 }
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.
@@ -99,7 +106,7 @@ pub trait ActorImpl: Any {
     fn animation_update(&mut self) {}
     /// The part of `ActorInit.draw` that changes the actor (Player's foot IK writes into its
     /// joint table), run once per game frame.
-    fn draw_update(&mut self, _play: &PlayState) {}
+    fn draw_update(&mut self, _play: &mut PlayState) {}
     /// What the renderer blends between game frames.
     fn render_state(&self) -> RenderState {
         RenderState::of(self.base())
@@ -110,6 +117,14 @@ pub trait ActorImpl: Any {
     fn destroy(&mut self, _play: &mut PlayState) {}
     /// `GET_PLAYER`.
     fn as_player(&self) -> Option<&dyn PlayerIface> {
+        None
+    }
+    fn as_player_mut(&mut self) -> Option<&mut dyn PlayerIface> {
+        None
+    }
+    /// The actor's collider `id`, as it registered it with `CollisionCheck_Set*`: the checks
+    /// take it out and put it back (`crate::collision_check`).
+    fn collider_mut(&mut self, _id: u8) -> Option<crate::collision_check::ColliderMut<'_>> {
         None
     }
     fn as_any(&self) -> &dyn Any;

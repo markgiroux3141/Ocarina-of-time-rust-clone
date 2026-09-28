@@ -6,14 +6,17 @@
 //! (`Play_Update`, then the state `Play_Draw` leaves behind):
 //!
 //! 1. The transition (`crate::play_scene`: a scene's fade in or out), `Object_UpdateBank`,
-//!    `gameplayFrames++`, the frame's input, and a room load finishing (`func_800973FC`).
+//!    `gameplayFrames++`, the frame's input, a room load finishing (`func_800973FC`), and the
+//!    collision check over what the actors registered last frame (`CollisionCheck_AT`, `_OC`,
+//!    `_Damage`, then `_ClearContext`; `crate::collision_check`).
 //! 2. `Actor_UpdateAll`:
 //!    - first the room's actor list, if a room just loaded (`numSetupActors`);
 //!    - for each category in order (switch, BG, player, explosive, NPC, enemy, prop, item
 //!      action, misc, boss, door, chest), each actor newest first: `prevPos`, the distances
 //!      and yaw to Player, then its update if it's due (`freezeTimer` 0, `ACTOR_FLAG_4` or
-//!      `ACTOR_FLAG_6`). Killed actors are deleted, actors waiting for their object initialise
-//!      once it's loaded (and skip this frame), and actors whose object went are killed.
+//!      `ACTOR_FLAG_6`), then `CollisionCheck_ResetDamage`. Killed actors are deleted, actors
+//!      waiting for their object initialise once it's loaded (and skip this frame), and actors
+//!      whose object went are killed.
 //!      Player updates in its category, before the later ones, so they see where it went;
 //!    - after the BG category, `DynaPoly_UpdateContext`;
 //!    - the target context (`func_8002C7BC`), with `viewProjectionMtxF` from the last drawn
@@ -21,7 +24,8 @@
 //!    - `DynaPoly_UpdateBgActorTransforms`.
 //! 3. `AnimationContext_Update`: every actor's queued animation requests (Player's joint copies,
 //!    blends and root motion).
-//! 4. The cameras: the spikes' follow camera, and `Camera_Update` (`Camera_Normal1`).
+//! 4. `Letterbox_Update`, then the cameras: the spikes' follow camera, and `Camera_Update`
+//!    (in the mode Player asked for during its update), which sets the letterbox's next target.
 //! 5. What `Play_Draw` changes: each actor's draw-time state (Player's foot IK writes into its
 //!    joint table, so it's done once per game frame, not per rendered frame), the scene draw
 //!    config (`Scene_Draw`: this frame's texture scrolls and colours), and the view the next
@@ -56,8 +60,10 @@ use glam::{Mat4, Vec3};
 
 use crate::actor::{ACTOR_FLAG_4, ACTOR_FLAG_6, Actor};
 use crate::actor_ctx::{ACTORCAT_BG, ACTORCAT_MAX, ActorContext, ActorHandle, ActorImpl};
-use crate::camera::{CamView, CameraKind, FollowCamera, GameCamera, PlayerView};
+use crate::camera::{CamFrame, CamView, CameraKind, FollowCamera, GameCamera, PlayerView};
+use crate::collision_check::{ColliderShape, CollisionCheckContext};
 use crate::data::GameData;
+use crate::letterbox::Letterbox;
 use crate::object_ctx::ObjectContext;
 use crate::play_scene::{GameAssets, SceneState, TransitionState};
 use crate::player_lib::PlayerRules;
@@ -66,6 +72,10 @@ use crate::save::SaveContext;
 use crate::scene::{ActorEntry, TransitionActorEntry};
 use crate::spawn::{SceneFlags, Uninit};
 use crate::target::{TargetCtx, TargetFrame};
+use crate::transition::TRANS_MODE_OFF;
+
+/// `PLAYER_STATE1_21`: climbing (a ladder or a vine wall).
+pub const PLAYER_STATE1_21: u32 = 1 << 21;
 
 /// The draw lists actors submit into.
 pub type DrawOut = DrawLists;
@@ -95,6 +105,8 @@ pub struct RenderState {
     pub scale: Vec3,
     /// A skeleton's joint table (entry 0 the root translation).
     pub joints: Option<eng_anim::anim::JointTable>,
+    /// `shape.yOffset` (model units: `Actor_Draw` adds it times `scale.y`).
+    pub y_offset: f32,
     /// Blended the short way round (binary angles).
     pub angles: Vec<i16>,
     /// Blended linearly.
@@ -117,6 +129,7 @@ impl RenderState {
             pos: a.world_pos,
             rot: [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z],
             scale: a.scale,
+            y_offset: a.shape_y_offset,
             teleported: a.teleported,
             ..Default::default()
         }
@@ -131,13 +144,23 @@ impl RenderState {
             pos: self.pos.lerp(next.pos, t),
             rot: [0, 1, 2].map(|k| lerp_angle(self.rot[k], next.rot[k], t)),
             scale: self.scale.lerp(next.scale, t),
+            y_offset: self.y_offset + (next.y_offset - self.y_offset) * t,
             joints: match (&self.joints, &next.joints) {
                 (Some(a), Some(b)) => Some(a.lerp(b, t)),
                 (_, b) => b.clone(),
             },
-            angles: self.angles.iter().zip(&next.angles).map(|(&a, &b)| lerp_angle(a, b, t)).collect(),
-            values: self.values.iter().zip(&next.values).map(|(&a, &b)| a + (b - a) * t).collect(),
-            switches: if t < 0.5 { self.switches.clone() } else { next.switches.clone() },
+            // Extras of another shape (the actor was an `Uninit` last frame) aren't blended.
+            angles: if self.angles.len() == next.angles.len() {
+                self.angles.iter().zip(&next.angles).map(|(&a, &b)| lerp_angle(a, b, t)).collect()
+            } else {
+                next.angles.clone()
+            },
+            values: if self.values.len() == next.values.len() {
+                self.values.iter().zip(&next.values).map(|(&a, &b)| a + (b - a) * t).collect()
+            } else {
+                next.values.clone()
+            },
+            switches: if t < 0.5 && self.switches.len() == next.switches.len() { self.switches.clone() } else { next.switches.clone() },
             teleported: false,
         }
     }
@@ -151,6 +174,8 @@ pub struct RenderFrame {
     pub view: CamView,
     /// The spike's follow camera, for its own render mode.
     pub follow: FollowCamera,
+    /// The letterbox bars' height in rows of the 240-row frame (`Letterbox_GetSize`, blended).
+    pub letterbox: f32,
 }
 
 impl RenderFrame {
@@ -179,6 +204,7 @@ impl RenderFrame {
                 fov: self.view.fov + (next.view.fov - self.view.fov) * t,
             },
             follow,
+            letterbox: self.letterbox + (next.letterbox - self.letterbox) * t,
         }
     }
 
@@ -206,13 +232,19 @@ pub struct PlayState {
     pub actors: ActorContext,
     /// `actorCtx.actorLists[ACTORCAT_PLAYER].head`.
     pub player: Option<ActorHandle>,
-    /// `mainCamera` (`Camera_Normal1`).
+    /// `mainCamera`.
     pub game_camera: GameCamera,
+    /// `shrink_window.c`'s letterbox.
+    pub letterbox: Letterbox,
     /// The spikes' follow camera, and which camera drives Player and the view.
     pub follow_camera: FollowCamera,
     pub camera_kind: CameraKind,
     /// `actorCtx.targetCtx`.
     pub target_ctx: TargetCtx,
+    /// `colChkCtx`: the colliders registered this frame.
+    pub col_chk: CollisionCheckContext,
+    /// The actor whose update (or draw) is running: the owner of the colliders it registers.
+    pub cur_actor: Option<ActorHandle>,
     /// `gameplayFrames`.
     pub gameplay_frames: u32,
     /// `state.input[0]` for this frame, and the pad manager that builds it.
@@ -254,6 +286,9 @@ pub struct PlayState {
     pub unk_11e18: i16,
     /// How many scene changes led here (the renderer reloads its meshes when it changes).
     pub scene_changes: u32,
+    /// `sRandInt` (`code_800FD970.c`): the game's random numbers, shared by the actors.
+    /// (Player keeps its own sequence, as the spikes did.)
+    pub rand: Rand,
     pub(crate) next_play_init: bool,
     acc: f32,
     prev: Option<RenderFrame>,
@@ -264,11 +299,12 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45) };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false };
         let game_camera = GameCamera::new(&data.camera, &pv);
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
             game_camera,
+            letterbox: Letterbox::new(),
             camera_kind: CameraKind::Game,
             data,
             rules,
@@ -276,6 +312,8 @@ impl PlayState {
             actors: ActorContext::default(),
             player: None,
             target_ctx: TargetCtx::new(),
+            col_chk: CollisionCheckContext::default(),
+            cur_actor: None,
             gameplay_frames: 0,
             input: Input::default(),
             pad: PadMgr::default(),
@@ -297,6 +335,7 @@ impl PlayState {
             transition: TransitionState::default(),
             unk_11e18: 0,
             scene_changes: 0,
+            rand: Rand::default(),
             next_play_init: false,
             acc: 0.0,
             prev: None,
@@ -318,9 +357,17 @@ impl PlayState {
     pub fn player_view(&self) -> Option<PlayerView> {
         let h = self.player?;
         let p = self.actors.get(h)?;
-        let adult = p.as_player()?.adult();
+        let pi = p.as_player()?;
+        let adult = pi.adult();
         let a = p.base();
-        Some(PlayerView { pos: a.world_pos, shape_yaw: a.shape_rot.y, adult, run_speed_limit: self.data.regs[if adult { 0 } else { 1 }].reg(45) })
+        Some(PlayerView {
+            pos: a.world_pos,
+            shape_yaw: a.shape_rot.y,
+            adult,
+            run_speed_limit: self.data.regs[if adult { 0 } else { 1 }].reg(45),
+            gravity: a.gravity,
+            climbing: pi.state_flags1() & PLAYER_STATE1_21 != 0,
+        })
     }
 
     /// Puts both cameras behind Player (`Camera_Init` and the follow camera's start).
@@ -418,12 +465,32 @@ impl PlayState {
             true
         };
         if due && base.flags & (ACTOR_FLAG_4 | ACTOR_FLAG_6) != 0 {
-            if let Some(t) = self.player_target() {
-                base.is_targeted = t == h;
+            let target = self.player_target();
+            base.is_targeted = target == Some(h);
+            if base.target_priority != 0 && target.is_none() {
+                base.target_priority = 0;
             }
+            self.cur_actor = Some(h);
             a.update(self);
+            self.cur_actor = None;
         }
+        a.base_mut().col_chk_info.reset_damage();
         self.actors.put_back(h, a);
+    }
+
+    /// `CollisionCheck_SetAT` for the running actor's collider `id` (`owner` is its base).
+    pub fn collision_check_set_at(&mut self, owner: &Actor, id: u8, c: &mut impl ColliderShape) -> i32 {
+        self.col_chk.set_at(self.cur_actor, owner, id, c)
+    }
+
+    /// `CollisionCheck_SetAC`.
+    pub fn collision_check_set_ac(&mut self, owner: &Actor, id: u8, c: &mut impl ColliderShape) -> i32 {
+        self.col_chk.set_ac(self.cur_actor, owner, id, c)
+    }
+
+    /// `CollisionCheck_SetOC`.
+    pub fn collision_check_set_oc(&mut self, owner: &Actor, id: u8, c: &mut impl ColliderShape) -> i32 {
+        self.col_chk.set_oc(self.cur_actor, owner, id, c)
     }
 
     /// Player's `unk_664`.
@@ -438,6 +505,8 @@ impl PlayState {
         self.gameplay_frames += 1;
         self.input = input;
         self.room_finish_load();
+        self.col_chk.check(&mut self.actors);
+        self.col_chk.clear();
         self.update_all_actors();
         // AnimationContext_Update: every actor's queued animation requests.
         for h in self.actors.all() {
@@ -445,19 +514,25 @@ impl PlayState {
                 a.animation_update();
             }
         }
-        // Play_Update: the cameras (they follow Player).
+        // Play_Update: Letterbox_Update(R_UPDATE_RATE), then the cameras (they follow Player).
+        self.letterbox.update(3);
         if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
             let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
             self.follow_camera.update(&input, pos, facing, speed);
             if let Some(pv) = self.player_view() {
-                self.game_camera.update(&self.data.camera, &self.col, &pv, self.gameplay_frames);
+                // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
+                let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
+                let f = CamFrame { col: &self.col, player: pv, target_focus, transitioning: self.transition.mode != TRANS_MODE_OFF, frames: self.gameplay_frames };
+                self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
             }
         }
         // Play_Draw: the actors' draw-time state (Player's foot IK), and the view it sets up
         // (play->viewProjectionMtxF), which the next frame's target context reads.
         for h in self.actors.all() {
             if let Some(mut a) = self.actors.take(h) {
+                self.cur_actor = Some(h);
                 a.draw_update(self);
+                self.cur_actor = None;
                 self.actors.put_back(h, a);
             }
         }
@@ -466,6 +541,11 @@ impl PlayState {
             s.run_draw_config(frames);
         }
         self.view_proj = self.camera_view_proj();
+        // Interface_Draw: the Z-target reticle (func_8002C124) with this frame's view.
+        let reticle_player = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| crate::target::ReticlePlayer { state1_6: pi.state_flags1() & (1 << 6) != 0, target: pi.target() });
+        if let Some(rp) = reticle_player {
+            crate::target::draw_update(&mut self.target_ctx, &self.actors, self.view_proj, rp);
+        }
         // The sandbox's void-out (a scene from the pack has Player's own).
         if self.assets.is_none() && self.player.and_then(|ph| self.actors.actor(ph)).is_some_and(|a| a.world_pos.y < -2000.0) {
             self.respawn();
@@ -508,10 +588,19 @@ impl PlayState {
                 player_shape_yaw: self.actors.actor(ph).map(|a| a.shape_rot.y).unwrap_or(0),
                 player_focus: pi.focus(),
                 view_proj: self.view_proj,
+                view_eye: self.view_eye(),
             };
             crate::target::update(&mut self.target_ctx, &self.actors, &frame);
         }
         self.col.dyna.update_prev_transforms();
+    }
+
+    /// `play->view.eye` for the active camera.
+    fn view_eye(&self) -> Vec3 {
+        match self.camera_kind {
+            CameraKind::Game => self.game_camera.eye,
+            CameraKind::Follow => self.follow_camera.eye(),
+        }
     }
 
     /// `play->viewProjectionMtxF` for the active camera: the game's 320x240 view, `zNear` 10.
@@ -536,7 +625,7 @@ impl PlayState {
             CameraKind::Game => CamView { eye: self.game_camera.eye, at: self.game_camera.at, fov: self.game_camera.fov },
             CameraKind::Follow => CamView { eye: self.follow_camera.eye(), at: self.follow_camera.at, fov: 50.0 },
         };
-        RenderFrame { actors, view, follow: self.follow_camera }
+        RenderFrame { actors, view, follow: self.follow_camera, letterbox: self.letterbox.rows() as f32 }
     }
 
     /// Starts blending afresh from now (after spawning, respawning or switching cameras).
@@ -566,7 +655,7 @@ impl PlayState {
         match (&self.prev, &self.cur) {
             (Some(p), Some(c)) => p.lerp(c, t),
             (_, Some(c)) => c.clone(),
-            _ => RenderFrame { actors: Vec::new(), view: CamView { eye: Vec3::ZERO, at: Vec3::Z, fov: 60.0 }, follow: self.follow_camera },
+            _ => RenderFrame { actors: Vec::new(), view: CamView { eye: Vec3::ZERO, at: Vec3::Z, fov: 60.0 }, follow: self.follow_camera, letterbox: 0.0 },
         }
     }
 
@@ -584,7 +673,9 @@ impl PlayState {
                 a.draw(rs, self, view, out);
             }
         }
-        crate::target::draw_reticle(&self.target_ctx, &self.actors, self.gameplay_frames, view.eye, out);
+        let _ = view;
+        crate::target::draw(&self.target_ctx, &self.actors, self.gameplay_frames, out);
+        out.letterbox_rows = frame.letterbox;
     }
 }
 
@@ -601,6 +692,62 @@ pub fn scripted_input(prev: PadState, cur: PadState) -> Input {
 /// `Actor_Draw`'s model matrix: translate, rotate by the shape yaw, scale.
 pub fn actor_matrix(pos: Vec3, yaw: i16, scale: f32) -> Mat4 {
     Mat4::from_translation(pos) * Mat4::from_rotation_y(eng_math::binang_to_rad(yaw)) * Mat4::from_scale(Vec3::splat(scale))
+}
+
+/// `Actor_Draw`'s full model matrix from a render state: `Matrix_SetTranslateRotateYXZ` at the
+/// position raised by `shape.yOffset * scale.y`, with the shape rotation (Y, then X, then Z),
+/// then `Matrix_Scale`.
+pub fn actor_draw_matrix(rs: &RenderState) -> Mat4 {
+    let r = |a: i16| eng_math::binang_to_rad(a);
+    Mat4::from_translation(rs.pos + Vec3::Y * (rs.y_offset * rs.scale.y))
+        * Mat4::from_rotation_y(r(rs.rot[1]))
+        * Mat4::from_rotation_x(r(rs.rot[0]))
+        * Mat4::from_rotation_z(r(rs.rot[2]))
+        * Mat4::from_scale(rs.scale)
+}
+
+/// The game's random number generator (`code_800FD970.c`, and `z_actor.c`'s float helpers).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rand {
+    /// `sRandInt`.
+    pub state: u32,
+}
+
+impl Default for Rand {
+    /// `static u32 sRandInt = 1`.
+    fn default() -> Rand {
+        Rand { state: 1 }
+    }
+}
+
+impl Rand {
+    /// `Rand_Next`.
+    pub fn next(&mut self) -> u32 {
+        self.state = self.state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.state
+    }
+    /// `Rand_ZeroOne`: [0, 1).
+    pub fn zero_one(&mut self) -> f32 {
+        let s = self.next();
+        f32::from_bits((s >> 9) | 0x3F80_0000) - 1.0
+    }
+    /// `Rand_Centered`: [-0.5, 0.5).
+    pub fn centered(&mut self) -> f32 {
+        let s = self.next();
+        f32::from_bits((s >> 9) | 0x3F80_0000) - 1.5
+    }
+    /// `Rand_ZeroFloat`.
+    pub fn zero_float(&mut self, f: f32) -> f32 {
+        self.zero_one() * f
+    }
+    /// `Rand_CenteredFloat`.
+    pub fn centered_float(&mut self, f: f32) -> f32 {
+        (self.zero_one() - 0.5) * f
+    }
+    /// `Rand_S16Offset`.
+    pub fn s16_offset(&mut self, base: i16, range: i16) -> i16 {
+        ((self.zero_one() * range as f32) as i16).wrapping_add(base)
+    }
 }
 
 /// `!Object_IsLoaded(&play->objectCtx, actor->objBankIndex)` for an initialised actor that

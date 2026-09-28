@@ -185,6 +185,10 @@ pub fn import(p: &Project, out: &Output) -> Result<ImportReport> {
     m.timings.push(("objects".into(), t.elapsed().as_secs_f64()));
 
     let t = Instant::now();
+    import_bakes(p, &segs, &files, &w, &mut tally)?;
+    m.timings.push(("bakes".into(), t.elapsed().as_secs_f64()));
+
+    let t = Instant::now();
     import_link(p, &rules, &w, &mut tally)?;
     m.timings.push(("link".into(), t.elapsed().as_secs_f64()));
 
@@ -402,6 +406,19 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         t.skip(&s.kind, why);
     }
     Ok(t)
+}
+
+/// The meshes the ported actors need baked (`oot_actors::bakes()`, docs/adr/0012-actor-bakes.md).
+/// A bake whose lists leave segments unresolved is an error: it would draw with holes.
+fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWriter, tally: &mut Tally) -> Result<()> {
+    for b in oot_actors::bakes() {
+        let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
+        anyhow::ensure!(d.stats.unresolved_addresses.is_empty(), "bake {}: unresolved {:?}", b.name, d.stats.unresolved_addresses.keys().collect::<Vec<_>>());
+        anyhow::ensure!(d.stats.unknown_opcodes.is_empty(), "bake {}: unknown opcodes {:?}", b.name, d.stats.unknown_opcodes);
+        w.put(&keys::bake(&b.name), &d)?;
+        tally.ok("ActorBake");
+    }
+    Ok(())
 }
 
 /// Link's meshes and faces for both ages.

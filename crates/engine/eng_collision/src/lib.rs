@@ -5,3 +5,4 @@
 pub mod bgcheck;
 pub mod collision;
 pub mod dyna;
+pub mod math3d;

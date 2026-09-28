@@ -87,6 +87,17 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         layer: usize,
     },
+    /// The asset pack's record names that start with a prefix (e.g. `mesh/object_kusa/`); meshes
+    /// with their triangle count and unresolved segment references.
+    PackLs {
+        prefix: String,
+    },
+    /// The raw commands of a display list symbol (`file symbol`), up to its end, following
+    /// calls into the same file.
+    DlDump {
+        file: String,
+        symbol: String,
+    },
     /// Extract assets into editable formats (PNG, glTF, WAV, JSON) in a git-ignored folder.
     /// Local development only: the output is derived from the ROM and must not be shared.
     Extract {
@@ -107,6 +118,8 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Info => info(&project),
         Cmd::SceneInfo { scene, layer } => scene_info(&scene, layer),
+        Cmd::PackLs { prefix } => pack_ls(&prefix),
+        Cmd::DlDump { file, symbol } => dl_dump(&project, &file, &symbol),
         Cmd::Import { loose } => {
             let (r, path) = oot_import::pack::import_to_default(&project, loose.as_deref())?;
             print!("{}", oot_import::pack::summary(&r, &path));
@@ -714,6 +727,58 @@ fn extract(p: &Project, dir: &std::path::Path, only: &[String]) -> Result<()> {
 }
 
 /// `ootx scene-info`: reads the default asset pack (no ROM access).
+fn pack_ls(prefix: &str) -> Result<()> {
+    let pack = oot_game::pack::GamePack::open_default()?;
+    for name in pack.assets.names(prefix) {
+        if name.starts_with("mesh/") {
+            let d: eng_gfx::DrawList = pack.assets.get(&name)?;
+            let unresolved: Vec<String> = d.stats.unresolved_addresses.keys().cloned().collect();
+            println!("{name}: {} triangles, {} textures{}", d.triangle_count(), d.textures.len(), if unresolved.is_empty() { String::new() } else { format!(", unresolved {}", unresolved.join(" ")) });
+        } else {
+            println!("{name}");
+        }
+    }
+    Ok(())
+}
+
+fn dl_dump(p: &Project, file: &str, symbol: &str) -> Result<()> {
+    let (f, s) = oot_import::objects::symbol_in(p, file, symbol)?;
+    let data = p.rom.file_by_name(&f.name)?;
+    let seg = f.segment.unwrap_or(6) as u32;
+    let mut stack = vec![s.offset as usize];
+    while let Some(mut at) = stack.pop() {
+        println!("-- {:08X}", (seg << 24) | at as u32);
+        while at + 8 <= data.len() {
+            let w0 = u32::from_be_bytes(data[at..at + 4].try_into()?);
+            let w1 = u32::from_be_bytes(data[at + 4..at + 8].try_into()?);
+            println!("{:06X}: {w0:08X} {w1:08X}", at);
+            at += 8;
+            match w0 >> 24 {
+                0xDF => break,
+                // G_VTX in the same file: x y z, s t, colour/normal.
+                0x01 if w1 >> 24 == seg => {
+                    let n = ((w0 >> 12) & 0xFF) as usize;
+                    let base = (w1 & 0xFF_FFFF) as usize;
+                    for i in 0..n {
+                        let v = &data[base + i * 16..base + i * 16 + 16];
+                        let s16 = |o: usize| i16::from_be_bytes([v[o], v[o + 1]]);
+                        println!("        v{i}: ({}, {}, {}) st ({}, {}) rgba {:02X}{:02X}{:02X}{:02X}", s16(0), s16(2), s16(4), s16(8), s16(10), v[12], v[13], v[14], v[15]);
+                    }
+                }
+                0xDE if w1 >> 24 == seg => {
+                    if (w0 >> 16) & 0xFF == 1 {
+                        at = (w1 & 0xFF_FFFF) as usize;
+                    } else {
+                        stack.push((w1 & 0xFF_FFFF) as usize);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 fn scene_info(scene: &str, layer: usize) -> Result<()> {
     let pack = oot_game::pack::GamePack::open_default()?;
     let at = pack.actor_table()?;

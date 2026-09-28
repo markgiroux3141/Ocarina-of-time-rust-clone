@@ -2173,6 +2173,7 @@ dependencies = [
  "eng_math",
  "glam",
  "log",
+ "oot_actors",
  "oot_game",
  "quick-xml 0.42.0",
  "serde",

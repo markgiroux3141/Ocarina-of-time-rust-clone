@@ -170,6 +170,15 @@ fn vs_line(v: LIn) -> LOut {
     return o;
 }
 
+// Clip-space triangles (the letterbox bars): the position is already in clip space.
+@vertex
+fn vs_fill(v: LIn) -> LOut {
+    var o: LOut;
+    o.clip = vec4<f32>(v.pos, 1.0);
+    o.color = v.color;
+    return o;
+}
+
 @fragment
 fn fs_line(i: LOut) -> @location(0) vec4<f32> {
     return i.color;

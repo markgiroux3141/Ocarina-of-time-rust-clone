@@ -1,23 +1,36 @@
 //! The game camera from `z_camera.c`: `Camera_Init`, `Camera_InitPlayerSettings`, the
-//! player-following part of `Camera_Update`, and `Camera_Normal1` for `CAM_SET_NORMAL0` /
-//! `CAM_MODE_NORMAL`, with the helpers it uses (`Camera_CalcAtDefault`, `Camera_ClampDist`,
-//! `Camera_CalcDefaultYaw`/`Pitch`, `Camera_GetPitchAdjFromFloorHeightDiffs`, the swing
-//! `func_80046E20` / `func_80045508`) and the camera bgcheck (`Camera_BGCheckInfo`,
-//! `Camera_BGCheckCorner`, `Camera_GetFloorYLayer`). Vector-sphere maths is `z_olib.c`;
-//! `Math_FAtan2F` is the Taylor-series version from `code_800FCE80.c`.
+//! player-following part of `Camera_Update`, mode changes (`Camera_ChangeModeFlags`) and the
+//! `CAM_SET_NORMAL0` mode functions:
 //!
-//! `OREG` values (`sOREGInit`) and the NORMAL0 mode data (`sSetNormal0ModeNormalData`) come
-//! from `z_camera_data.c`, through the asset pack (`CameraData`).
+//! - `Camera_Normal1` (NORMAL and STILL), with `Camera_CalcAtDefault`, `Camera_ClampDist`,
+//!   `Camera_CalcDefaultYaw`/`Pitch`, `Camera_GetPitchAdjFromFloorHeightDiffs` and the swing
+//!   `func_80046E20` / `func_80045508`;
+//! - `Camera_Parallel1` (TARGET: Z held with nothing to lock on to, and PUSHPULL), with
+//!   `Camera_CalcAtForParallel` and `func_800458D4`;
+//! - `Camera_KeepOn1` (FOLLOWTARGET: locked on to a non-enemy), with `Camera_CalcAtForLockOn`;
+//! - the camera bgcheck (`Camera_BGCheckInfo`, `Camera_BGCheckCorner`, `Camera_GetFloorYLayer`);
+//! - `Camera_UpdateInterface`'s letterbox half, driving `crate::letterbox`.
 //!
-//! Not modelled: other settings and modes (targeting, jumping, climbing...), bg-camera
-//! setting changes from the floor poly (`Camera_ChangeBgCamIndex`), water and hot-room checks,
-//! quakes, the low-health wiggle, the debug camera.
+//! Vector-sphere maths is `z_olib.c`; `Math_FAtan2F` is the Taylor-series version from
+//! `code_800FCE80.c`. `OREG` values (`sOREGInit`) and each NORMAL0 mode's function and data
+//! (`sCamSetNormal0Modes`) come from `z_camera_data.c`, through the asset pack (`CameraData`).
+//! `PREG(75)` and `PREG(76)` are 0 (only the debug register editor sets them), so the
+//! at-calculations skip their slope adjustment and take the fov-based off-ground branch.
+//!
+//! Modes whose function isn't ported (BATTLE's `Camera_Battle1`, TALK's `Camera_KeepOn3`,
+//! JUMP, CLIMB, HANG...) run `Camera_Normal1` on NORMAL's data; `camera->mode` still changes
+//! as in the game. Not modelled: other settings, bg-camera setting changes from the floor poly
+//! (`Camera_ChangeBgCamIndex`), water and hot-room checks, quakes, the low-health wiggle, the
+//! debug camera, the mode-change sounds, `func_80043F94` (scenes with the skybox disabled) and
+//! the interface alpha.
 
 use eng_collision::bgcheck::{self, CollisionContext, PolyId};
 use eng_input::pad::{BTN_CLEFT, BTN_CRIGHT, Input};
 use eng_math::{binang_to_rad, cos_s, is_zero, rad_to_binang, sin_s};
 use glam::Vec3;
 
+use crate::actor_ctx::ActorHandle;
+use crate::letterbox::Letterbox;
 use crate::surface::SurfaceType;
 
 /// `BGCHECK_SCENE`: the bgId of static collision.
@@ -28,9 +41,21 @@ const BGCHECK_SCENE: i32 = 50;
 pub struct CameraData {
     /// `sOREGInit`: `OREG(0)`..
     pub oreg: Vec<i16>,
-    /// `sSetNormal0ModeNormalData`: `CAM_FUNCDATA_NORM1(yOffset, eyeDist, eyeDistNext,
-    /// pitchTarget, yawUpdateRateTarget, xzUpdateRateTarget, maxYawUpdate, fov, atLerpStepScale, flags)`.
-    pub normal0: [i16; 10],
+    /// `sCamSetNormal0Modes`, indexed by `CAM_MODE_*`: each mode's function and data.
+    pub normal0_modes: Vec<CamModeData>,
+    /// `sCameraSettings[CAM_SET_NORMAL0].unk_00`: bit `n` set when mode `n` is valid.
+    pub normal0_valid_modes: u32,
+}
+
+/// A `CameraMode` entry (`CAM_SETTING_MODE_ENTRY(func, data)`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CamModeData {
+    /// `CAM_FUNC_*`, e.g. `CAM_FUNC_PARA1`.
+    pub func: String,
+    /// The data's symbol, e.g. `sSetNormal0ModeTargetData`.
+    pub data: String,
+    /// The `CAM_FUNCDATA_*` arguments in order (`values[i].val`).
+    pub values: Vec<i16>,
 }
 
 impl CameraData {
@@ -41,10 +66,43 @@ impl CameraData {
     fn oreg_s(&self, n: usize) -> f32 {
         self.oreg(n) as f32 * 0.01
     }
+    /// NORMAL0's data for `mode`.
+    pub fn mode(&self, mode: i16) -> Option<&CamModeData> {
+        self.normal0_modes.get(mode as usize)
+    }
+    /// The value `i` of `mode`'s data (`GET_NEXT_RO_DATA` in order).
+    fn value(&self, mode: i16, i: usize) -> i16 {
+        self.mode(mode).and_then(|m| m.values.get(i)).copied().unwrap_or(0)
+    }
 }
+
+// CAM_MODE_* (z64camera.h).
+pub const CAM_MODE_NORMAL: i16 = 0;
+pub const CAM_MODE_TARGET: i16 = 1;
+pub const CAM_MODE_FOLLOWTARGET: i16 = 2;
+pub const CAM_MODE_TALK: i16 = 3;
+pub const CAM_MODE_BATTLE: i16 = 4;
+pub const CAM_MODE_CLIMB: i16 = 5;
+pub const CAM_MODE_FIRSTPERSON: i16 = 6;
+pub const CAM_MODE_BOWARROW: i16 = 7;
+pub const CAM_MODE_BOWARROWZ: i16 = 8;
+pub const CAM_MODE_HOOKSHOT: i16 = 9;
+pub const CAM_MODE_BOOMERANG: i16 = 10;
+pub const CAM_MODE_SLINGSHOT: i16 = 11;
+pub const CAM_MODE_CLIMBZ: i16 = 12;
+pub const CAM_MODE_JUMP: i16 = 13;
+pub const CAM_MODE_HANG: i16 = 14;
+pub const CAM_MODE_HANGZ: i16 = 15;
+pub const CAM_MODE_FREEFALL: i16 = 16;
+pub const CAM_MODE_CHARGE: i16 = 17;
+pub const CAM_MODE_STILL: i16 = 18;
+pub const CAM_MODE_PUSHPULL: i16 = 19;
+pub const CAM_MODE_FOLLOWBOOMERANG: i16 = 20;
 
 // Named OREGs (regs.h).
 const R_CAM_MAX_PITCH: usize = 5;
+const R_CAM_DEFAULT_ANIM_TIME: usize = 23;
+const R_CAM_MIN_PITCH_1: usize = 34;
 const R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV: usize = 7;
 const R_CAM_PITCH_FLOOR_CHECK_NEAR_DIST_FAC: usize = 17;
 const R_CAM_PITCH_FLOOR_CHECK_FAR_DIST_FAC: usize = 18;
@@ -131,6 +189,17 @@ fn rad_to_deg(r: f32) -> f32 {
 /// `CAM_DEG_TO_BINANG`: `(s16)((degrees) * 182.04167f + .5f)`.
 pub fn cam_deg_to_binang(d: f32) -> i16 {
     (d * 182.04167 + 0.5) as i32 as i16
+}
+
+/// `CAM_BINANG_TO_DEG` (the C's constants as written).
+#[allow(clippy::excessive_precision)]
+fn cam_binang_to_deg(b: i16) -> f32 {
+    b as f32 * (360.0001525 / 65535.0)
+}
+
+/// `DEG_TO_RAD`.
+fn deg_to_rad(d: f32) -> f32 {
+    d * (std::f32::consts::PI / 180.0)
 }
 
 /// `OLib_Vec3fToVecSph`.
@@ -332,6 +401,78 @@ struct Norm1Rw {
     start_swing_timer: i16,
 }
 
+/// `Parallel1ReadOnlyData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Para1Ro {
+    y_offset: f32,
+    dist_target: f32,
+    pitch_target: i16,
+    yaw_target: i16,
+    unk_08: f32,
+    unk_0c: f32,
+    fov_target: f32,
+    unk_14: f32,
+    interface_flags: i16,
+    unk_18: f32,
+    unk_1c: f32,
+}
+
+/// `Parallel1ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Para1Rw {
+    unk_00_x: f32,
+    y_target: f32,
+    unk_10: i16,
+    yaw_target: i16,
+    pitch_target: i16,
+    unk_16: i16,
+    anim_timer: i16,
+}
+
+/// `KeepOn1ReadOnlyData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Keep1Ro {
+    unk_00: f32,
+    unk_04: f32,
+    unk_08: f32,
+    unk_0c: f32,
+    unk_10: f32,
+    unk_14: f32,
+    unk_18: f32,
+    unk_1c: f32,
+    unk_20: f32,
+    unk_24: f32,
+    interface_flags: i16,
+    unk_28: f32,
+    unk_2c: f32,
+}
+
+/// `KeepOn1ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Keep1Rw {
+    unk_00: f32,
+    unk_04: f32,
+    unk_08: f32,
+    unk_0c: Option<ActorHandle>,
+    unk_10: i16,
+    unk_12: i16,
+    unk_14: i16,
+    unk_16: i16,
+}
+
+/// What `Camera_Update` is given each frame besides the camera data.
+pub struct CamFrame<'a> {
+    pub col: &'a CollisionContext,
+    pub player: PlayerView,
+    /// `Actor_GetFocus(camera->target)`, or `None` when there's no target or it was killed
+    /// (`target->update == NULL`).
+    pub target_focus: Option<Vec3>,
+    /// `play->transitionMode != TRANS_MODE_OFF`.
+    pub transitioning: bool,
+    /// `play->state.frames`.
+    pub frames: u32,
+}
+
 /// What `Camera_Update` reads from Player each frame.
 #[derive(Debug, Clone, Copy)]
 pub struct PlayerView {
@@ -342,6 +483,10 @@ pub struct PlayerView {
     pub adult: bool,
     /// `R_RUN_SPEED_LIMIT` (for `func_8002DCE4`).
     pub run_speed_limit: i16,
+    /// `actor.gravity`.
+    pub gravity: f32,
+    /// `stateFlags1 & PLAYER_STATE1_21` (climbing).
+    pub climbing: bool,
 }
 
 impl PlayerView {
@@ -378,8 +523,28 @@ pub struct GameCamera {
     y_offset_update_rate: f32,
     fov_update_rate: f32,
     anim_state: i16,
+    /// `mode`: a `CAM_MODE_*`.
+    pub mode: i16,
+    /// `unk_14A`: bits 0x20 and 2 mark a mode request this frame.
+    pub unk_14a: i16,
+    /// `unk_14C`: 0x20 while `Camera_Parallel1` animates (mode requests are then refused).
+    pub unk_14c: i16,
+    /// `paramFlags` (`Camera_SetParam`): 8 once `target` is set.
+    pub param_flags: i16,
+    /// `target` (`Camera_SetParam(camera, 8, actor)`): what KEEPON looks at.
+    pub target: Option<ActorHandle>,
+    /// `targetPosRot.pos`.
+    target_pos: Vec3,
+    /// `playerPosDelta`.
+    player_pos_delta: Vec3,
+    /// `sCameraInterfaceFlags`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits.
+    pub interface_flags: i16,
     ro: Norm1Ro,
     rw: Norm1Rw,
+    para1_ro: Para1Ro,
+    para1_rw: Para1Rw,
+    keep1_ro: Keep1Ro,
+    keep1_rw: Keep1Rw,
     update_direction: bool,
     oob_timer: u32,
     // Statics of Camera_GetPitchAdjFromFloorHeightDiffs and func_80046E20.
@@ -425,8 +590,22 @@ impl GameCamera {
             y_offset_update_rate: d.oreg_s(3),
             fov_update_rate: d.oreg_s(4),
             anim_state: 0,
+            mode: CAM_MODE_NORMAL,
+            unk_14a: 0,
+            // Camera_Init: 0x4000; Camera_InitPlayerSettings: |= 4.
+            unk_14c: 0x4000 | 4,
+            param_flags: 0,
+            target: None,
+            target_pos: Vec3::ZERO,
+            player_pos_delta: Vec3::ZERO,
+            // Camera_InitPlayerSettings, for the main camera.
+            interface_flags: 0xB200u16 as i16,
             ro: Norm1Ro::default(),
             rw: Norm1Rw::default(),
+            para1_ro: Para1Ro::default(),
+            para1_rw: Para1Rw::default(),
+            keep1_ro: Keep1Ro::default(),
+            keep1_rw: Keep1Rw::default(),
             update_direction: false,
             oob_timer: 0,
             floor_y_near: 0.0,
@@ -443,14 +622,110 @@ impl GameCamera {
         self.input_dir[1]
     }
 
-    /// `Camera_Update` for the main camera following Player. `frames` is
-    /// `play->state.frames`.
-    pub fn update(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32) {
+    /// `Camera_SetParam(camera, 8, actor)`: the actor KEEPON and BATTLE look at.
+    pub fn set_target(&mut self, actor: ActorHandle) {
+        self.target = Some(actor);
+        self.param_flags &= !(0x10 | 0x8 | 0x1);
+        self.param_flags |= 8;
+    }
+
+    /// `Camera_ChangeMode`: `Camera_ChangeModeFlags(camera, mode, 0)`.
+    pub fn change_mode(&mut self, d: &CameraData, mode: i16) -> i32 {
+        self.change_mode_flags(d, mode, 0)
+    }
+
+    /// `Camera_ChangeModeFlags`. Returns -1 when the request is refused or changes nothing,
+    /// `0x80000000 | mode` for a change. The sound effects aren't modelled.
+    pub fn change_mode_flags(&mut self, d: &CameraData, mode: i16, flags: u8) -> i32 {
+        if self.unk_14c & 0x20 != 0 && flags == 0 {
+            self.unk_14a |= 0x20;
+            return -1;
+        }
+        if (d.normal0_valid_modes & 0x3FFF_FFFF) & (1u32 << mode) == 0 {
+            if self.mode != CAM_MODE_NORMAL {
+                self.mode = CAM_MODE_NORMAL;
+                self.copy_data_to_regs();
+                self.func_8005a02c();
+                return (0xC000_0000u32 | mode as u32) as i32;
+            }
+            self.unk_14a |= 0x20 | 2;
+            return 0;
+        }
+        if mode == self.mode && flags == 0 {
+            self.unk_14a |= 0x20 | 2;
+            return -1;
+        }
+        self.unk_14a |= 0x20 | 2;
+        self.copy_data_to_regs();
+        let mut mode_change_flags = match mode {
+            CAM_MODE_FIRSTPERSON => 0x20,
+            CAM_MODE_BATTLE => 4,
+            // The boomerang (ACTOR_EN_BOOM) isn't ported.
+            CAM_MODE_FOLLOWTARGET if self.target.is_some() => 8,
+            CAM_MODE_TARGET | CAM_MODE_TALK | CAM_MODE_BOWARROWZ | CAM_MODE_HANGZ | CAM_MODE_PUSHPULL => 2,
+            _ => 0,
+        };
+        match self.mode {
+            CAM_MODE_FIRSTPERSON => {
+                if mode_change_flags & 0x20 != 0 {
+                    self.anim_state = 10;
+                }
+            }
+            CAM_MODE_TARGET => {
+                if mode_change_flags & 0x10 != 0 {
+                    self.anim_state = 10;
+                }
+                mode_change_flags |= 1;
+            }
+            CAM_MODE_CHARGE => mode_change_flags |= 1,
+            CAM_MODE_FOLLOWTARGET => {
+                if mode_change_flags & 8 != 0 {
+                    self.anim_state = 10;
+                }
+                mode_change_flags |= 1;
+            }
+            CAM_MODE_BATTLE => {
+                if mode_change_flags & 4 != 0 {
+                    self.anim_state = 10;
+                }
+                mode_change_flags |= 1;
+            }
+            CAM_MODE_BOWARROWZ | CAM_MODE_HANGZ | CAM_MODE_PUSHPULL => mode_change_flags |= 1,
+            CAM_MODE_NORMAL => {
+                if mode_change_flags & 0x10 != 0 {
+                    self.anim_state = 10;
+                }
+            }
+            _ => {}
+        }
+        // With CAM_STAT_ACTIVE, modeChangeFlags (1, 2, 4 or 8) picks a sound: not modelled.
+        let _ = mode_change_flags;
+        self.func_8005a02c();
+        self.mode = mode;
+        (0x8000_0000u32 | mode as u32) as i32
+    }
+
+    /// `Camera_CopyDataToRegs`: the `PREG` copy only feeds the debug register editor.
+    fn copy_data_to_regs(&mut self) {
+        self.anim_state = 0;
+    }
+
+    /// `func_8005A02C`.
+    fn func_8005a02c(&mut self) {
+        self.unk_14c |= 0xC;
+        self.unk_14c &= !(0x1000 | 0x8);
+    }
+
+    /// `Camera_Update` for the main camera following Player, with `Camera_UpdateInterface`'s
+    /// letterbox target at the end.
+    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox) {
+        let (col, p, frames) = (f.col, &f.player, f.frames);
         self.update_direction = false;
         let cur = p.pos;
         self.xz_speed = dist_xz(cur, self.player_pos);
         // func_8002DCE4: R_RUN_SPEED_LIMIT / 100 when not riding or swimming.
         self.speed_ratio = clamp_max_dist(self.xz_speed / ((p.run_speed_limit as f32 / 100.0) * d.oreg_s(8)), 1.0);
+        self.player_pos_delta = cur - self.player_pos;
         let pos = cur + Vec3::Y * p.height();
         // BgCheck_EntityRaycastDown5.
         let (ground, poly) = col.entity_raycast_down(pos);
@@ -466,17 +741,52 @@ impl GameCamera {
         self.player_pos = cur;
         self.player_rot_y = p.shape_yaw;
 
+        self.unk_14a = 0;
+        self.unk_14c &= !(0x400 | 0x20);
+        self.unk_14c |= 0x10;
         if self.oob_timer < 200 {
-            self.normal1(d, col, p, frames);
+            // sCameraFunctions[sCameraSettings[setting].cameraModes[mode].funcIdx].
+            match d.mode(self.mode).map(|m| m.func.as_str()) {
+                Some("CAM_FUNC_NORM1") => self.normal1(d, col, p, self.mode, frames),
+                Some("CAM_FUNC_PARA1") => self.parallel1(d, col, p, frames),
+                Some("CAM_FUNC_KEEP1") => self.keep_on1(d, col, p, f.target_focus),
+                _ => self.normal1(d, col, p, CAM_MODE_NORMAL, frames),
+            }
         } else {
             let e = diff_to_sph_geo(self.at, self.eye);
             self.calc_at_default(d, &e, 0.0, false, p);
         }
 
+        // CAM_STAT_ACTIVE: a running transition holds the interface (0xF200).
+        if f.transitioning {
+            self.interface_flags = 0xF200u16 as i16;
+        }
+        self.update_interface(letterbox);
+
         let angle = diff_to_sph_geo(self.eye, self.at);
         self.up = calc_up(angle.pitch, angle.yaw, self.roll);
         if !self.update_direction {
             self.input_dir = [angle.pitch, angle.yaw, 0];
+        }
+    }
+
+    /// `Camera_UpdateInterface(sCameraInterfaceFlags)`, the letterbox part: `flags & 0x7000`
+    /// picks the size (`sCameraLetterboxSize`), `0x8000` sets it at once; all of `0xF000` set
+    /// leaves the letterbox alone.
+    fn update_interface(&self, letterbox: &mut Letterbox) {
+        let flags = self.interface_flags as u16;
+        if flags & 0xF000 != 0xF000 {
+            let size = match flags & 0x7000 {
+                0x1000 => 26,
+                0x2000 => 27,
+                0x3000 => 32,
+                _ => 0,
+            };
+            if flags & 0x8000 != 0 {
+                letterbox.set_size(size);
+            } else {
+                letterbox.set_size_target(size);
+            }
         }
     }
 
@@ -801,13 +1111,13 @@ impl GameCamera {
         self.rw.swing = anim;
     }
 
-    /// `Camera_Normal1` for NORMAL0 / NORMAL mode.
-    fn normal1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32) {
+    /// `Camera_Normal1`, reading `data_mode`'s values.
+    fn normal1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, data_mode: i16, frames: u32) {
         let rate = 0.1f32;
         let player_height = p.height();
         // RELOAD_PARAMS: animState 0, 10 or 20.
         if matches!(self.anim_state, 0 | 10 | 20) {
-            let v = d.normal0.map(|x| x as f32);
+            let v: [f32; 10] = std::array::from_fn(|i| d.value(data_mode, i) as f32);
             let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
             let sp94 = y_normal * (player_height * 0.01);
             self.ro = Norm1Ro {
@@ -820,10 +1130,11 @@ impl GameCamera {
                 unk_14: v[6] * 0.01,
                 fov_target: v[7],
                 at_lerp_scale_max: v[8] * 0.01,
-                interface_flags: d.normal0[9],
+                interface_flags: d.value(data_mode, 9),
             };
         }
         let ro = self.ro;
+        self.interface_flags = ro.interface_flags;
         let at_eye_geo = diff_to_sph_geo(self.at, self.eye);
         let at_eye_next_geo = diff_to_sph_geo(self.at, self.eye_next);
 
@@ -982,6 +1293,422 @@ impl GameCamera {
         } else {
             d.oreg_s(R_CAM_AT_LERP_STEP_SCALE_FAC) * self.at_lerp_step_scale
         }
+    }
+
+    // ---- Camera_Parallel1 and Camera_KeepOn1 ---------------------------------------------
+
+    /// The at-calculations' ground test: `playerGroundY == pos.y`, `gravity > -0.1`, or
+    /// climbing (`PLAYER_STATE1_21`).
+    fn player_grounded(&self, p: &PlayerView) -> bool {
+        self.player_ground_y == self.player_pos.y || p.gravity > -0.1 || p.climbing
+    }
+
+    /// The off-ground branch shared by `Camera_CalcAtForParallel` and `Camera_CalcAtForLockOn`
+    /// with `PREG(75)` 0 (or without `FLG_OFFGROUND`): keep Player within `fov * 0.4` of the view
+    /// axis, moving `y_target` by what's left over. Returns the height to take off the offset.
+    fn off_ground_fov_adj(&self, y_target: &mut f32) -> f32 {
+        let mut dy = self.player_pos.y - *y_target;
+        let dist = dist_xz(self.at, self.eye);
+        let a = deg_to_rad(self.fov * 0.4);
+        let t = (a.sin() / a.cos()) * dist;
+        if t < dy {
+            *y_target += dy - t;
+            dy = t;
+        } else if dy < -t {
+            *y_target += dy + t;
+            dy = -t;
+        }
+        dy
+    }
+
+    /// The other off-ground branch (`func_800458D4`, `PREG(75)`, `FLG_OFFGROUND`): the height
+    /// difference scaled down outside `OREG(32)`..`OREG(33)` degrees of pitch.
+    fn off_ground_pitch_adj(&self, d: &CameraData, y_target: f32) -> f32 {
+        let dy = self.player_pos.y - y_target;
+        let angle = f_atan2f(dy, dist_xz(self.at, self.eye));
+        let (hi, lo) = (deg_to_rad(d.oreg(32) as f32), deg_to_rad(d.oreg(33) as f32));
+        let f = if angle > hi {
+            1.0 - (angle - hi).sin()
+        } else if angle < lo {
+            1.0 - (lo - angle).sin()
+        } else {
+            1.0
+        };
+        dy * f
+    }
+
+    /// `Camera_CalcAtForParallel`.
+    fn calc_at_for_parallel(&mut self, d: &CameraData, p: &PlayerView, y_offset: f32, y_target: &mut f32) {
+        let mut target = Vec3::new(0.0, p.height() + y_offset, 0.0);
+        if self.player_grounded(p) {
+            *y_target = lerp_ceil_f(self.player_pos.y, *y_target, d.oreg_s(43), 0.1);
+            target.y -= self.player_pos.y - *y_target;
+            let mut off = self.pos_offset;
+            lerp_ceil_vec3(target, &mut off, self.y_offset_update_rate, self.xz_offset_update_rate, 0.1);
+            self.pos_offset = off;
+        } else {
+            target.y -= self.off_ground_fov_adj(y_target);
+            let mut off = self.pos_offset;
+            lerp_ceil_vec3(target, &mut off, d.oreg_s(29), d.oreg_s(30), 0.1);
+            self.pos_offset = off;
+            self.y_offset_update_rate = d.oreg_s(29);
+            self.xz_offset_update_rate = d.oreg_s(30);
+        }
+        let at_target = self.player_pos + self.pos_offset;
+        let mut at = self.at;
+        lerp_ceil_vec3(at_target, &mut at, self.at_lerp_step_scale, self.at_lerp_step_scale, 0.2);
+        self.at = at;
+    }
+
+    /// `func_800458D4`: the at for Parallel1 in the air.
+    fn func_800458d4(&mut self, d: &CameraData, p: &PlayerView, eye_at_dir: &VecSph, y_offset: f32, y_target: f32, slope: bool) {
+        let mut target = Vec3::new(0.0, p.height() + y_offset, 0.0);
+        if slope {
+            target.y -= calc_slope_y_adj(self.floor_norm, self.player_rot_y, eye_at_dir.yaw, d.oreg(9) as f32);
+        }
+        target.y -= self.off_ground_pitch_adj(d, y_target);
+        let mut off = self.pos_offset;
+        lerp_ceil_vec3(target, &mut off, d.oreg_s(29), d.oreg_s(30), 0.1);
+        self.pos_offset = off;
+        let at_target = self.player_pos + self.pos_offset;
+        let mut at = self.at;
+        lerp_ceil_vec3(at_target, &mut at, self.at_lerp_step_scale, self.at_lerp_step_scale, 0.2);
+        self.at = at;
+    }
+
+    /// `Camera_Parallel1`: the camera swings behind Player over `R_CAM_DEFAULT_ANIM_TIME`
+    /// frames (`animTimer`, refusing mode changes meanwhile), then holds `distTarget` and
+    /// `pitchTarget` there. Only then does it set `sCameraInterfaceFlags` (the letterbox).
+    fn parallel1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let v = |i: usize| d.value(self.mode, i) as f32;
+            let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
+            self.para1_ro = Para1Ro {
+                y_offset: v(0) * 0.01 * player_height * y_normal,
+                dist_target: v(1) * 0.01 * player_height * y_normal,
+                pitch_target: cam_deg_to_binang(v(2)),
+                yaw_target: cam_deg_to_binang(v(3)),
+                unk_08: v(4),
+                unk_0c: v(5),
+                fov_target: v(6),
+                unk_14: v(7) * 0.01,
+                interface_flags: d.value(self.mode, 8),
+                unk_18: v(9) * 0.01 * player_height * y_normal,
+                unk_1c: v(10) * 0.01,
+            };
+        }
+        let ro = self.para1_ro;
+        let flags = ro.interface_flags;
+        let at_to_eye = diff_to_sph_geo(self.at, self.eye);
+        let at_to_eye_next = diff_to_sph_geo(self.at, self.eye_next);
+
+        if matches!(self.anim_state, 0 | 10 | 20 | 25) {
+            let rw = &mut self.para1_rw;
+            rw.unk_16 = 0;
+            rw.unk_10 = 0;
+            rw.anim_timer = if flags & 4 != 0 { 20 } else { d.oreg(R_CAM_DEFAULT_ANIM_TIME) };
+            rw.unk_00_x = 0.0;
+            rw.y_target = self.player_pos.y - self.player_pos_delta.y;
+            self.anim_state += 1;
+        }
+        let behind = self.player_rot_y.wrapping_sub(0x7FFF);
+        if self.para1_rw.anim_timer != 0 {
+            self.para1_rw.yaw_target = if flags & 2 != 0 {
+                // roData->yawTarget degrees from behind Player.
+                behind.wrapping_add(ro.yaw_target)
+            } else if flags & 4 != 0 {
+                ro.yaw_target
+            } else {
+                at_to_eye_next.yaw
+            };
+        } else {
+            if flags & 0x20 != 0 {
+                self.para1_rw.yaw_target = behind.wrapping_add(ro.yaw_target);
+            }
+            self.interface_flags = flags;
+        }
+        self.para1_rw.pitch_target = ro.pitch_target;
+        if self.anim_state == 21 {
+            self.para1_rw.unk_16 = 1;
+            self.anim_state = 1;
+        } else if self.anim_state == 11 {
+            self.anim_state = 1;
+        }
+
+        let spb8 = d.oreg_s(25) * self.speed_ratio;
+        let spb4 = d.oreg_s(26) * self.speed_ratio;
+        self.r_update_rate_inv = lerp_ceil_f(d.oreg(6) as f32, self.r_update_rate_inv, spb8, 0.1);
+        self.yaw_update_rate_inv = lerp_ceil_f(ro.unk_08, self.yaw_update_rate_inv, spb8, 0.1);
+        self.pitch_update_rate_inv = lerp_ceil_f(2.0, self.pitch_update_rate_inv, spb4, 0.1);
+        self.xz_offset_update_rate = lerp_ceil_f(d.oreg_s(2), self.xz_offset_update_rate, spb8, 0.1);
+        self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, spb4, 0.1);
+        self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.fov_update_rate, self.speed_ratio * 0.05, 0.1);
+
+        if flags & 1 != 0 {
+            let t = self.pitch_adj_from_floor(d, col, p, at_to_eye.yaw.wrapping_sub(0x7FFF), true, frames);
+            let a = (1.0 / ro.unk_0c) * 0.3;
+            let b = ((1.0 / ro.unk_0c) * 0.7) * (1.0 - self.speed_ratio);
+            self.para1_rw.unk_10 = lerp_ceil_s(t, self.para1_rw.unk_10, a + b, 0xF);
+        } else {
+            self.para1_rw.unk_10 = 0;
+        }
+
+        let off_ground = !self.player_grounded(p);
+        if !off_ground {
+            self.para1_rw.y_target = self.player_pos.y;
+        }
+        let mut y_target = self.para1_rw.y_target;
+        if flags & 0x80 == 0 && !off_ground {
+            self.calc_at_for_parallel(d, p, ro.y_offset, &mut y_target);
+        } else {
+            self.func_800458d4(d, p, &at_to_eye_next, ro.unk_18, y_target, flags & 1 != 0);
+        }
+        self.para1_rw.y_target = y_target;
+
+        let mut spa8;
+        let rw = &mut self.para1_rw;
+        if rw.anim_timer != 0 {
+            self.unk_14c |= 0x20;
+            let tangle = (((rw.anim_timer as i32 + 1) * rw.anim_timer as i32) >> 1) as i16;
+            let step = (rw.yaw_target.wrapping_sub(at_to_eye.yaw) / tangle) as i32 * rw.anim_timer as i32;
+            spa8 = VecSph { yaw: (at_to_eye.yaw as i32 + step) as i16, pitch: at_to_eye.pitch, r: at_to_eye.r };
+            rw.anim_timer -= 1;
+        } else {
+            rw.unk_16 = 0;
+            self.dist = lerp_ceil_f(ro.dist_target, self.dist, 1.0 / self.r_update_rate_inv, 2.0);
+            spa8 = diff_to_sph_geo(self.at, self.eye_next);
+            spa8.r = self.dist;
+            spa8.yaw = lerp_ceil_s(rw.yaw_target, at_to_eye_next.yaw, if flags & 0x40 != 0 { 0.6 } else { 0.8 }, 0xA);
+            let pitch = if flags & 1 != 0 { rw.pitch_target.wrapping_sub(rw.unk_10) } else { rw.pitch_target };
+            spa8.pitch = lerp_ceil_s(pitch, at_to_eye_next.pitch, 1.0 / self.pitch_update_rate_inv, 4);
+            if spa8.pitch > d.oreg(R_CAM_MAX_PITCH) {
+                spa8.pitch = d.oreg(R_CAM_MAX_PITCH);
+            }
+            if spa8.pitch < d.oreg(R_CAM_MIN_PITCH_1) {
+                spa8.pitch = d.oreg(R_CAM_MIN_PITCH_1);
+            }
+        }
+        self.eye_next = sph_geo_add(self.at, spa8);
+        // CAM_STAT_ACTIVE with the skybox shown: Camera_BGCheckInfo.
+        let mut c = ColChk { pos: self.eye_next, ..Default::default() };
+        Self::bg_check_info(col, self.at, &mut c);
+        self.eye = c.pos;
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, if off_ground { ro.unk_1c } else { ro.unk_14 });
+        // @bug (game): Camera_Parallel1 doesn't return a value; Camera_Update ignores it.
+    }
+
+    /// `Camera_CalcAtForLockOn`: `at` between Player's head and the target. Returns
+    /// `outPlayerToTargetDir`.
+    #[allow(clippy::too_many_arguments)]
+    fn calc_at_for_lock_on(&mut self, d: &CameraData, p: &PlayerView, target_pos: Vec3, y_offset: f32, distance: f32, y_pos_offset: &mut f32, flags: i16) -> VecSph {
+        let h = p.height();
+        let mut tmp0 = Vec3::new(0.0, h + y_offset, 0.0);
+        // Player's head.
+        let head = self.player_pos + Vec3::Y * h;
+        let out = diff_to_sph_geo(head, target_pos);
+        let mut dir = out;
+        if distance < dir.r {
+            dir.r *= d.oreg_s(38);
+        } else {
+            // Player's height off the ground, over his height.
+            let t = clamp_max_dist((self.player_pos.y - self.player_ground_y) / h, 1.0);
+            dir.r = (dir.r * d.oreg_s(39)) - (((d.oreg_s(39) - d.oreg_s(38)) * dir.r) * (dir.r / distance));
+            dir.r -= (dir.r * t) * t;
+        }
+        if flags & 0x80 != 0 {
+            dir.r *= 0.2;
+            self.xz_offset_update_rate = 0.01;
+            self.y_offset_update_rate = 0.01;
+        }
+        tmp0 += sph_geo_to_vec3(dir);
+        let mut off = self.pos_offset;
+        if self.player_grounded(p) {
+            *y_pos_offset = lerp_ceil_f(self.player_pos.y, *y_pos_offset, d.oreg_s(43), 0.1);
+            tmp0.y -= self.player_pos.y - *y_pos_offset;
+            lerp_ceil_vec3(tmp0, &mut off, self.y_offset_update_rate, self.xz_offset_update_rate, 0.1);
+        } else {
+            tmp0.y -= if flags & 0x80 == 0 { self.off_ground_fov_adj(y_pos_offset) } else { self.off_ground_pitch_adj(d, *y_pos_offset) };
+            lerp_ceil_vec3(tmp0, &mut off, d.oreg_s(29), d.oreg_s(30), 0.1);
+            self.y_offset_update_rate = d.oreg_s(29);
+            self.xz_offset_update_rate = d.oreg_s(30);
+        }
+        self.pos_offset = off;
+        let at_target = self.player_pos + self.pos_offset;
+        let mut at = self.at;
+        lerp_ceil_vec3(at_target, &mut at, self.at_lerp_step_scale, self.at_lerp_step_scale, 0.2);
+        self.at = at;
+        out
+    }
+
+    /// `Camera_KeepOn1`: locked on to a non-enemy, the camera frames Player and the target
+    /// (`camera->target`, whose focus is `target_focus`), swinging round over
+    /// `R_CAM_DEFAULT_ANIM_TIME` frames after `OREG(24)` still ones.
+    fn keep_on1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, target_focus: Option<Vec3>) {
+        let mut sp88 = false;
+        let mut player_height = p.height();
+        let Some(focus) = target_focus.filter(|_| self.target.is_some()) else {
+            // "keepon: target is not valid, change parallel".
+            self.target = None;
+            self.change_mode(d, CAM_MODE_TARGET);
+            return;
+        };
+        let reload = matches!(self.anim_state, 0 | 10 | 20);
+        if reload {
+            let v = |i: usize| d.value(self.mode, i) as f32;
+            let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
+            self.keep1_ro = Keep1Ro {
+                unk_00: v(0) * 0.01 * player_height * y_normal,
+                unk_04: v(1),
+                unk_08: v(2),
+                unk_0c: v(3),
+                unk_10: v(4),
+                unk_14: v(5),
+                unk_18: v(6),
+                unk_1c: v(7) * 0.01,
+                unk_20: v(8),
+                unk_24: v(9) * 0.01,
+                interface_flags: d.value(self.mode, 10),
+                unk_28: v(11) * 0.01 * player_height * y_normal,
+                unk_2c: v(12) * 0.01,
+            };
+        }
+        let ro = self.keep1_ro;
+        player_height += ro.unk_00;
+        let spc0 = diff_to_sph_geo(self.at, self.eye);
+        let spb8 = diff_to_sph_geo(self.at, self.eye_next);
+        self.interface_flags = ro.interface_flags;
+        if reload {
+            self.anim_state += 1;
+            let rw = &mut self.keep1_rw;
+            rw.unk_10 = 0;
+            rw.unk_04 = 0.0;
+            rw.unk_0c = self.target;
+            rw.unk_16 = d.oreg(R_CAM_DEFAULT_ANIM_TIME) + d.oreg(24);
+            rw.unk_12 = spc0.yaw;
+            rw.unk_14 = spc0.pitch;
+            rw.unk_00 = spc0.r;
+            rw.unk_08 = self.player_pos.y - self.player_pos_delta.y;
+        }
+        // CAM_STAT_ACTIVE.
+        self.update_direction = true;
+        self.input_dir = [spc0.pitch.wrapping_neg(), spc0.yaw.wrapping_sub(0x7FFF), 0];
+
+        let mut sp104 = ro.unk_04;
+        let mut sp84 = 1.0f32;
+        // Uninitialised in the C on the default path, which Player never takes (it sets the
+        // target, and paramFlags 8, whenever it asks for KEEPON).
+        let mut sp80 = false;
+        let mut spc8 = VecSph::default();
+        match self.param_flags & 0x18 {
+            flags @ (8 | 0x10) => {
+                if flags == 8 {
+                    // Player's interactRangeActor being the target (60 in front of Player's
+                    // focus) isn't modelled; the C then overwrites it with the target's focus.
+                    self.target_pos = focus;
+                    if self.keep1_rw.unk_0c != self.target {
+                        self.keep1_rw.unk_0c = self.target;
+                        self.at_lerp_step_scale = 0.0;
+                    }
+                    self.xz_offset_update_rate = lerp_ceil_f(1.0, self.xz_offset_update_rate, d.oreg_s(25) * self.speed_ratio, 0.1);
+                    self.y_offset_update_rate = lerp_ceil_f(1.0, self.y_offset_update_rate, d.oreg_s(26) * self.speed_ratio, 0.1);
+                    self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.fov_update_rate, self.speed_ratio * 0.05, 0.1);
+                } else {
+                    self.keep1_rw.unk_0c = None;
+                }
+                if self.player_grounded(p) {
+                    self.keep1_rw.unk_08 = self.player_pos.y;
+                    sp80 = false;
+                } else {
+                    sp80 = true;
+                }
+                let mut y = self.keep1_rw.unk_08;
+                let (y_off, fl) = if sp80 { (ro.unk_28, 0x80 | ro.interface_flags) } else { (ro.unk_00, ro.interface_flags) };
+                self.calc_at_for_lock_on(d, p, self.target_pos, y_off, sp104, &mut y, fl);
+                self.keep1_rw.unk_08 = y;
+                let head = self.player_pos + Vec3::Y * player_height;
+                spc8 = diff_to_sph_geo(head, self.target_pos);
+                sp84 = if spc8.r > sp104 { 1.0 } else { spc8.r / sp104 };
+            }
+            _ => {
+                self.at = self.player_pos + Vec3::Y * player_height;
+                self.keep1_rw.unk_0c = None;
+            }
+        }
+        let mut spd8 = diff_to_sph_geo(self.at, self.eye_next);
+        let mut spe8;
+        if spd8.r < ro.unk_04 {
+            sp104 = ro.unk_04;
+            spe8 = d.oreg(6) as f32;
+        } else if ro.unk_08 < spd8.r {
+            sp104 = ro.unk_08;
+            spe8 = d.oreg(6) as f32;
+        } else {
+            sp104 = spd8.r;
+            spe8 = 1.0;
+        }
+        self.r_update_rate_inv = lerp_ceil_f(spe8, self.r_update_rate_inv, d.oreg_s(25), 0.1);
+        self.dist = lerp_ceil_f(sp104, self.dist, 1.0 / self.r_update_rate_inv, 0.2);
+        spe8 = self.dist;
+        let mut spd0 = diff_to_sph_geo(self.at, self.target_pos);
+        spd0.r = spe8 - ((if spd0.r <= spe8 { spd0.r } else { spe8 }) * 0.5);
+        let spec = ro.unk_0c + ((ro.unk_10 - ro.unk_0c) * (1.1 - sp84));
+        let spf0 = d.oreg(13) as f32 + spec;
+        self.dist = lerp_ceil_f(spe8, self.dist, d.oreg_s(11), 2.0);
+        spd8.r = self.dist;
+        spd8.yaw = spb8.yaw;
+        let spe2 = spd0.yaw.wrapping_sub(spb8.yaw.wrapping_sub(0x7FFF));
+        let rw = &mut self.keep1_rw;
+        if rw.unk_16 != 0 {
+            if rw.unk_16 >= d.oreg(24) {
+                let sp82 = rw.unk_16 - d.oreg(24);
+                let yaw = spc8.yaw;
+                spc8 = diff_to_sph_geo(self.at, self.eye);
+                spc8.yaw = yaw.wrapping_sub(0x7FFF);
+                let t2 = 1.0 / d.oreg(R_CAM_DEFAULT_ANIM_TIME) as f32;
+                let dr = (rw.unk_00 - spc8.r) * t2;
+                let dyaw = (rw.unk_12.wrapping_sub(spc8.yaw) as f32 * t2) as i32 as i16;
+                let dpitch = (rw.unk_14.wrapping_sub(spc8.pitch) as f32 * t2) as i32 as i16;
+                spd8.r = lerp_ceil_f(spc8.r + (dr * sp82 as f32), spc0.r, d.oreg_s(28), 1.0);
+                spd8.yaw = lerp_ceil_s((spc8.yaw as i32 + dyaw as i32 * sp82 as i32) as i16, spc0.yaw, d.oreg_s(28), 0xA);
+                spd8.pitch = lerp_ceil_s((spc8.pitch as i32 + dpitch as i32 * sp82 as i32) as i16, spc0.pitch, d.oreg_s(28), 0xA);
+            } else {
+                sp88 = true;
+            }
+            rw.unk_16 -= 1;
+        } else if (spe2 as i32).abs() > cam_deg_to_binang(spec) as i32 {
+            let spf4 = cam_binang_to_deg(spe2);
+            let t2 = spec + (spf0 - spec) * (clamp_max_dist(spd0.r, spd8.r) / spd8.r);
+            let temp_f12_2 = (t2 * t2 - 2.0) / (t2 - 360.0);
+            let t1 = (temp_f12_2 * spf4) + (2.0 - (360.0 * temp_f12_2));
+            let temp_f14 = spf4 * spf4 / t1;
+            let spe0 = if spe2 >= 0 { cam_deg_to_binang(temp_f14) } else { cam_deg_to_binang(temp_f14).wrapping_neg() };
+            spd8.yaw = spb8.yaw.wrapping_sub(0x7FFF).wrapping_add(spe0).wrapping_sub(0x7FFF);
+        } else {
+            let spf4 = (1.0 - self.speed_ratio) * 0.02;
+            let spe0 = if spe2 >= 0 { cam_deg_to_binang(spec) } else { cam_deg_to_binang(spec).wrapping_neg() };
+            spd8.yaw = spb8.yaw.wrapping_sub(((spe0 as i32 - spe2 as i32) as f32 * spf4) as i32 as i16);
+        }
+
+        if !sp88 {
+            let mut pitch = cam_deg_to_binang(ro.unk_14 + ((ro.unk_18 - ro.unk_14) * sp84));
+            pitch = pitch.wrapping_sub((spc8.pitch as f32 * (0.5 + (sp84 * 0.5))) as i32 as i16);
+            pitch = pitch.wrapping_add((spd0.pitch as f32 * ro.unk_1c) as i32 as i16);
+            pitch = pitch.clamp(-0x3200, 0x3200);
+            spd8.pitch = lerp_ceil_s(pitch, spb8.pitch, d.oreg_s(12), 0xA);
+            self.eye_next = sph_geo_add(self.at, spd8);
+            // CAM_STAT_ACTIVE with the skybox shown: Camera_BGCheckInfo.
+            let mut c = ColChk { pos: self.eye_next, ..Default::default() };
+            Self::bg_check_info(col, self.at, &mut c);
+            self.eye = c.pos;
+            // Camera_Vec3fTranslateByUnitVector(eye, eye, eye→at, OREG(1)).
+            self.eye += dist_normalize(self.eye, self.at) * d.oreg(1) as f32;
+        }
+        self.fov = lerp_ceil_f(ro.unk_20, self.fov, self.fov_update_rate, 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, if sp80 { ro.unk_2c } else { ro.unk_24 });
     }
 
     /// Normal1's distance limits for this Player (read-only data after a reload).

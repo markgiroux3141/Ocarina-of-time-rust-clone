@@ -74,6 +74,35 @@ pub struct AgeProperties {
     pub wall_radius: f32,
     pub unk_3C: f32,
     pub unk_40: f32,
+    /// The rest of the struct: the climbing animations and their root offsets.
+    pub climb: AgeClimb,
+}
+
+/// `PlayerAgeProperties` from `unk_44`: root translations the climbing animations start from
+/// (`skelAnime.prevTransl`), and the animations (`func_8084BF1C` and friends).
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AgeClimb {
+    pub unk_44: [i16; 3],
+    pub unk_4A: [[i16; 3]; 4],
+    pub unk_62: [[i16; 3]; 4],
+    pub unk_7A: [[i16; 3]; 2],
+    pub unk_86: [[i16; 3]; 2],
+    pub unk_92: u16,
+    pub unk_94: u16,
+    /// Chest opening, the pedestal warps (unused here).
+    pub unk_98: AnimId,
+    pub unk_9C: AnimId,
+    pub unk_A0: AnimId,
+    /// `climb_startA` (onto a ladder from below), `climb_startB` (onto it from its top).
+    pub unk_A4: AnimId,
+    pub unk_A8: AnimId,
+    /// `climb_upL/R`, `Fclimb_upL/R`: one rung.
+    pub unk_AC: [AnimId; 4],
+    /// `Fclimb_sideL/R`.
+    pub unk_BC: [AnimId; 2],
+    /// `climb_endAL/R` (off the bottom), `climb_endBR/L` (off the top).
+    pub unk_C4: [AnimId; 2],
+    pub unk_CC: [AnimId; 2],
 }
 
 impl AgeProperties {
@@ -96,6 +125,7 @@ impl AgeProperties {
             wall_radius: f[14],
             unk_3C: f[15],
             unk_40: f[16],
+            climb: AgeClimb::default(),
         }
     }
 }

@@ -7,6 +7,8 @@ use eng_collision::bgcheck::{BGCHECK_Y_MIN, CollisionContext, IGNORE_ENTITY, Pol
 use eng_math::{UPDATE_SCALE, atan2_s, cos_s, sin_s};
 use glam::Vec3;
 
+use crate::collision_check::CollisionCheckInfo;
+
 pub const BGCHECKFLAG_GROUND: u16 = 1 << 0;
 pub const BGCHECKFLAG_GROUND_TOUCH: u16 = 1 << 1;
 pub const BGCHECKFLAG_GROUND_LEAVE: u16 = 1 << 2;
@@ -23,12 +25,18 @@ pub const BGCHECKFLAG_PLAYER_WALL_INTERACT: u16 = 1 << 9;
 pub const ACTOR_FLAG_0: u32 = 1 << 0;
 /// Hostile (with `ACTOR_FLAG_0`: Z-targeting locks on).
 pub const ACTOR_FLAG_2: u32 = 1 << 2;
+/// Talked to (`func_800343CC`'s NPCs; with `ACTOR_FLAG_0` Z-targeting treats the actor as
+/// friendly).
+pub const ACTOR_FLAG_3: u32 = 1 << 3;
 /// Updates even when not in view (`Actor_UpdateAll` updates actors with flag 4 or 6).
 pub const ACTOR_FLAG_4: u32 = 1 << 4;
 /// Drawn even when not in view.
 pub const ACTOR_FLAG_5: u32 = 1 << 5;
 /// In view this frame (set by `func_800314D4`'s culling).
 pub const ACTOR_FLAG_6: u32 = 1 << 6;
+/// A talk request was made (`Actor_ProcessTalkRequest` answers it).
+pub const ACTOR_FLAG_8: u32 = 1 << 8;
+pub const ACTOR_FLAG_23: u32 = 1 << 23;
 pub const ACTOR_FLAG_24: u32 = 1 << 24;
 pub const ACTOR_FLAG_25: u32 = 1 << 25;
 pub const ACTOR_FLAG_26: u32 = 1 << 26;
@@ -89,10 +97,13 @@ pub struct Actor {
     /// `objBankIndex`: the object bank the actor's assets are in (`None` for actors built
     /// directly rather than spawned by id).
     pub obj_bank_index: Option<usize>,
-    /// `colChkInfo.displacement` (pushes from other actors' colliders; always zero here).
-    pub displacement: Vec3,
+    /// `colChkInfo`: collision properties, and this frame's pushes and damage.
+    pub col_chk_info: CollisionCheckInfo,
     /// `focus.pos`: where targeting aims (Player: the head).
     pub focus_pos: Vec3,
+    /// `targetArrowOffset`: how far (times `scale.y`) above the focus the target arrow floats.
+    /// No ported actor sets it, so it stays at the zeroed actor memory's 0.
+    pub target_arrow_offset: f32,
     /// `targetMode`: the targeting range class (`D_80115FF8`).
     pub target_mode: u8,
     /// `targetPriority` (0 = normal).
@@ -108,6 +119,11 @@ pub struct Actor {
     pub yaw_towards_player: i16,
     /// `Actor_Kill` ran: `update` and `draw` are NULL, and `Actor_UpdateAll` deletes it.
     pub killed: bool,
+    /// `parent`, `child`: set by `Actor_SpawnAsChild` (and by Player when it holds or rides).
+    pub parent: Option<crate::actor_ctx::ActorHandle>,
+    pub child: Option<crate::actor_ctx::ActorHandle>,
+    /// `textId`: what the actor says when talked to.
+    pub text_id: u16,
     /// Moved without passing in between (spawned, respawned, a scene change): the renderer
     /// doesn't blend from the last frame.
     pub teleported: bool,
@@ -116,7 +132,8 @@ pub struct Actor {
 impl Actor {
     /// A spawned actor as `Actor_Spawn` + `Actor_Init` set it up before the actor's own init:
     /// home = world = `pos`, shape rotation = world rotation, focus at the position, scale 0.01,
-    /// `targetMode` 3, `minVelocityY` -20, `xyzDistToPlayerSq` `FLT_MAX`.
+    /// `targetMode` 3, `minVelocityY` -20, `xyzDistToPlayerSq` `FLT_MAX`, and
+    /// `CollisionCheck_InitInfo`.
     pub fn new(pos: Vec3, yaw: i16) -> Actor {
         let rot = Rot { x: 0, y: yaw, z: 0 };
         Actor {
@@ -147,8 +164,9 @@ impl Actor {
             room: 0,
             home_rot: rot,
             obj_bank_index: None,
-            displacement: Vec3::ZERO,
+            col_chk_info: CollisionCheckInfo::new(),
             focus_pos: pos,
+            target_arrow_offset: 0.0,
             target_mode: 3,
             target_priority: 0,
             is_targeted: false,
@@ -158,6 +176,9 @@ impl Actor {
             xyz_dist_to_player_sq: f32::MAX,
             yaw_towards_player: 0,
             killed: false,
+            parent: None,
+            child: None,
+            text_id: 0,
             teleported: true,
         }
     }
@@ -195,7 +216,7 @@ impl Actor {
 
     /// `func_8002D7EC` (`Actor_UpdatePos`).
     pub fn update_pos(&mut self) {
-        self.world_pos += self.velocity * UPDATE_SCALE + self.displacement;
+        self.world_pos += self.velocity * UPDATE_SCALE + self.col_chk_info.displacement;
     }
 
     /// `Actor_MoveForward`.

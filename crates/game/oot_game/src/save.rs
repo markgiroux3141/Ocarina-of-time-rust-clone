@@ -54,7 +54,20 @@ pub struct SaveContext {
     pub show_title_card: bool,
     /// `cutsceneIndex`: never a cutscene here (0).
     pub cutscene_index: u16,
+    /// `eventChkInf`, `itemGetInf`, `infTable`: the story and conversation flags (all clear
+    /// on a new save).
+    pub event_chk_inf: [u16; 14],
+    pub item_get_inf: [u16; 4],
+    pub inf_table: [u16; 30],
+    /// `inventory.questItems` (`QUEST_*` bits).
+    pub quest_items: u32,
 }
+
+/// `EVENTCHKINF_40`: Zelda's letter obtained (`(4 << 4) | 0`).
+pub const EVENTCHKINF_40: u16 = 0x40;
+/// `QUEST_MEDALLION_FOREST`, `QUEST_KOKIRI_EMERALD` (`z64item.h`).
+pub const QUEST_MEDALLION_FOREST: u32 = 0x00;
+pub const QUEST_KOKIRI_EMERALD: u32 = 0x12;
 
 impl Default for SaveContext {
     fn default() -> SaveContext {
@@ -80,7 +93,29 @@ impl SaveContext {
             retain_weather_mode: false,
             show_title_card: true,
             cutscene_index: 0,
+            event_chk_inf: [0; 14],
+            item_get_inf: [0; 4],
+            inf_table: [0; 30],
+            quest_items: 0,
         }
+    }
+
+    /// `GET_EVENTCHKINF`.
+    pub fn get_event_chk_inf(&self, flag: u16) -> bool {
+        self.event_chk_inf[(flag >> 4) as usize] & (1 << (flag & 0xF)) != 0
+    }
+
+    /// `GET_INFTABLE`, `SET_INFTABLE`.
+    pub fn get_inf_table(&self, flag: u16) -> bool {
+        self.inf_table[(flag >> 4) as usize] & (1 << (flag & 0xF)) != 0
+    }
+    pub fn set_inf_table(&mut self, flag: u16) {
+        self.inf_table[(flag >> 4) as usize] |= 1 << (flag & 0xF);
+    }
+
+    /// `CHECK_QUEST_ITEM` (`gBitFlags[item] & questItems`).
+    pub fn check_quest_item(&self, item: u32) -> bool {
+        self.quest_items & (1 << item) != 0
     }
 
     /// `IS_DAY`.

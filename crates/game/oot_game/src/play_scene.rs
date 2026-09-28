@@ -65,11 +65,48 @@ pub struct GameAssets {
     pub env: EnvTables,
     /// The ported actors' constructors.
     pub overlays: Overlays,
+    /// Skeletons and standard animations read so far (actors load theirs at init).
+    skeletons: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::skeleton::Skeleton>>>,
+    animations: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::anim::StandardAnimation>>>,
 }
 
 impl GameAssets {
     pub fn load(pack: GamePack, overlays: Overlays) -> Result<GameAssets> {
-        Ok(GameAssets { scenes: pack.scene_table()?, actors: pack.actor_table()?, env: pack.env_tables()?, overlays, pack })
+        Ok(GameAssets {
+            scenes: pack.scene_table()?,
+            actors: pack.actor_table()?,
+            env: pack.env_tables()?,
+            overlays,
+            pack,
+            skeletons: Default::default(),
+            animations: Default::default(),
+        })
+    }
+
+    /// `file`'s skeleton `symbol`, read once.
+    pub fn skeleton(&self, file: &str, symbol: &str) -> Result<Arc<eng_anim::skeleton::Skeleton>> {
+        let key = crate::pack::keys::skeleton(file, symbol);
+        if let Some(s) = self.skeletons.lock().unwrap().get(&key) {
+            return Ok(s.clone());
+        }
+        let s = Arc::new(self.pack.skeleton(file, symbol)?);
+        self.skeletons.lock().unwrap().insert(key, s.clone());
+        Ok(s)
+    }
+
+    /// `file`'s standard animation `symbol`, read once.
+    pub fn animation(&self, file: &str, symbol: &str) -> Result<crate::skelanime_std::Anim> {
+        let key = crate::pack::keys::anim(file, symbol);
+        let cached = self.animations.lock().unwrap().get(&key).cloned();
+        let data = match cached {
+            Some(a) => a,
+            None => {
+                let a = Arc::new(self.pack.standard_animation(file, symbol)?);
+                self.animations.lock().unwrap().insert(key, a.clone());
+                a
+            }
+        };
+        Ok(crate::skelanime_std::Anim { name: symbol.to_string(), data })
     }
 }
 

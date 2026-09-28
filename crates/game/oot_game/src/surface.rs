@@ -11,7 +11,10 @@ use eng_collision::bgcheck::{CollisionContext, PolyId};
 pub const WALL_FLAGS: [u32; 8] = [0, 1, 1 | 2, 1 | 4, 8, 16, 32, 64];
 pub const WALL_FLAG_0: u32 = 1;
 pub const WALL_FLAG_1: u32 = 2;
+pub const WALL_FLAG_2: u32 = 4;
 pub const WALL_FLAG_3: u32 = 8;
+pub const WALL_FLAG_4: u32 = 16;
+pub const WALL_FLAG_5: u32 = 32;
 pub const WALL_FLAG_6: u32 = 64;
 
 /// The `SurfaceType_Get*` accessors, on the collision context that owns the poly.

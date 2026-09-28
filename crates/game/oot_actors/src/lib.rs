@@ -28,6 +28,11 @@ use oot_game::spawn::Overlays;
 pub mod bg_ydan_hasi;
 pub mod dummy_target;
 pub mod en_holl;
+pub mod en_ishi;
+pub mod en_kanban;
+pub mod en_ko;
+pub mod en_kusa;
+pub mod obj_hana;
 pub mod player;
 pub mod script;
 
@@ -36,7 +41,8 @@ use dummy_target::DummyTarget;
 use player::Player;
 
 /// The profiles of the actors this crate ports.
-pub const PROFILES: &[ActorProfile] = &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE];
+pub const PROFILES: &[ActorProfile] =
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -44,7 +50,28 @@ pub fn overlays() -> Overlays {
     let mut o = Overlays::default();
     o.register(oot_game::actor_ctx::ACTOR_PLAYER, Player::init);
     o.register(en_holl::ACTOR_EN_HOLL, en_holl::EnHoll::init);
+    o.register(obj_hana::ACTOR_OBJ_HANA, obj_hana::ObjHana::init);
+    o.register(en_ishi::ACTOR_EN_ISHI, en_ishi::EnIshi::init);
+    o.register(en_kusa::ACTOR_EN_KUSA, en_kusa::EnKusa::init);
+    o.register(en_kanban::ACTOR_EN_KANBAN, en_kanban::EnKanban::init);
+    o.register(en_ko::ACTOR_EN_KO, en_ko::EnKo::init);
     o
+}
+
+/// The meshes the ported actors need baked (docs/adr/0012-actor-bakes.md), for the importer.
+pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
+    let mut v = en_kanban::bakes();
+    v.extend(en_ko::bakes());
+    // z_actor.c's target reticle.
+    v.extend(oot_game::target::bakes());
+    v
+}
+
+/// `Gfx_DrawDListOpa`: `file`'s display list `symbol` (baked with `Gfx_SetupDL_25Opa` in the
+/// pack) at `Actor_Draw`'s model matrix.
+pub(crate) fn gfx_draw_dlist_opa(out: &mut oot_game::play::DrawOut, file: &str, symbol: &str, rs: &oot_game::play::RenderState) {
+    let m = oot_game::play::actor_draw_matrix(rs);
+    out.opa.push(eng_gfx::DrawCmd::new(eng_gfx::MeshKey::named(oot_game::pack::keys::mesh(file, symbol)), m));
 }
 
 /// The game's assets for play from `pack`, with this crate's actors.
@@ -90,6 +117,9 @@ pub trait PlayExt {
     /// The `Bg_Ydan_Hasi` platforms, oldest first.
     fn platforms(&self) -> Vec<ActorHandle>;
     fn platform(&self, i: usize) -> &BgYdanHasi;
+    /// Moves Player to `pos` facing `yaw`, standing, with the cameras behind it (a test or
+    /// sandbox start somewhere other than the entrance's spawn).
+    fn place_player(&mut self, pos: Vec3, yaw: i16);
     /// Adds a dummy Z-target standing at `pos`.
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle;
     /// Adds a `Bg_Ydan_Hasi` floating block with `header` (`gDTSlidingPlatformCol`) at `home`,
@@ -124,6 +154,22 @@ impl PlayExt for PlayState {
     }
     fn platform(&self, i: usize) -> &BgYdanHasi {
         self.actors.downcast::<BgYdanHasi>(self.platforms()[i]).unwrap()
+    }
+    fn place_player(&mut self, pos: Vec3, yaw: i16) {
+        let data = self.data.clone();
+        let p = self.player_mut();
+        let a = &mut p.actor;
+        a.world_pos = pos;
+        a.home_pos = pos;
+        a.prev_pos = pos;
+        a.world_rot.y = yaw;
+        a.shape_rot.y = yaw;
+        a.teleported = true;
+        p.current_yaw = yaw;
+        p.fall_start_height = pos.y as i16;
+        p.stand_still(&data);
+        self.reset_cameras();
+        self.reset_blending();
     }
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle {
         let h = self.spawn(Box::new(DummyTarget::new(pos))).expect("spawn");

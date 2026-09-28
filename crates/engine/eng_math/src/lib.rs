@@ -239,6 +239,42 @@ pub fn smooth_step_to_s(v: &mut i16, target: i16, scale: i16, step: i16, min_ste
     diff
 }
 
+/// `Math_ApproachS`: a `scale`-th of the way to `target`, at most `step`.
+pub fn approach_s(v: &mut i16, target: i16, scale: i16, step: i16) {
+    let diff = (target.wrapping_sub(*v) as i32 / scale as i32) as i16;
+    if diff > step {
+        *v = v.wrapping_add(step);
+    } else if (diff as i32) < -(step as i32) {
+        *v = v.wrapping_sub(step);
+    } else {
+        *v = v.wrapping_add(diff);
+    }
+}
+
+/// `Math_ApproachF`: `fraction` of the way to `target`, at most `step`.
+pub fn approach_f(v: &mut f32, target: f32, fraction: f32, step: f32) {
+    if *v != target {
+        let mut s = (target - *v) * fraction;
+        if s > step {
+            s = step;
+        } else if s < -step {
+            s = -step;
+        }
+        *v += s;
+    }
+}
+
+/// `Math_ApproachZeroF`.
+pub fn approach_zero_f(v: &mut f32, fraction: f32, step: f32) {
+    let mut s = *v * fraction;
+    if s > step {
+        s = step;
+    } else if s < -step {
+        s = -step;
+    }
+    *v -= s;
+}
+
 /// Converts a C `f32 → s16` cast (truncation towards zero).
 pub fn f2s(v: f32) -> i16 {
     v as i32 as i16

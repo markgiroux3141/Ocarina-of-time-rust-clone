@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 4;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -96,6 +96,60 @@ pub mod keys {
     pub fn link_faces(age: Age) -> String {
         format!("player/{}/faces", age.name())
     }
+    /// An actor's baked mesh (`MeshBake`), e.g. `bake/En_Ko/km1_opa`.
+    pub fn bake(name: &str) -> String {
+        format!("bake/{name}")
+    }
+}
+
+/// A mesh an actor draws that the pack's plain meshes don't give as they are
+/// (docs/adr/0012-actor-bakes.md): several display lists in a row, a skeleton with a limb's list
+/// replaced, or lists that read segments the draw code binds (a texture, a colour it sets each
+/// frame, a render mode). The content crate lists them (`oot_actors::bakes()`); the importer
+/// builds each into `keys::bake(name)`, an `eng_gfx::DrawList` like any mesh.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeshBake {
+    pub name: String,
+    /// The object on segment 6 (the keeps are on 4 and 5 as for every mesh).
+    pub object: String,
+    /// What the draw code binds to segments.
+    pub segments: Vec<(u8, BakeSegment)>,
+    /// Segments the draw code's own commands are in, run in this order after
+    /// `Gfx_SetupDL_25Opa` and before the body (`gDPSetEnvColor` before `SkelAnime_DrawFlex`).
+    pub prelude: Vec<u8>,
+    pub body: BakeBody,
+}
+
+/// What a segment holds for a bake.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BakeSegment {
+    /// A texture from the XMLs: `gSPSegment(seg, SEGMENTED_TO_VIRTUAL(tex))` (eyes).
+    Texture { file: String, symbol: String },
+    /// A colour the draw sets every frame (`gsDPSetEnvColor` and/or `gsDPSetPrimColor`), marked
+    /// dynamic: the materials that take it read the draw's `SegmentValues` (`env[seg]`,
+    /// `prim[seg]`). The bake uses black, alpha 255.
+    DynamicColor { env: bool, prim: bool },
+    /// Fixed commands (`gsDPSetRenderMode`, ...).
+    Commands(Vec<(u32, u32)>),
+}
+
+/// What a bake draws.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BakeBody {
+    /// Display lists `(file, symbol)` run in order.
+    DLists(Vec<(String, String)>),
+    /// A skeleton's mesh as `SkelAnime_DrawFlex*` draws it, with limbs' lists replaced
+    /// (`OverrideLimbDraw` setting `*dList`).
+    Skeleton { file: String, symbol: String, limbs: Vec<LimbOverride> },
+}
+
+/// A limb whose list is replaced by `file`'s `symbol`, drawn with `file` on segment 6.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LimbOverride {
+    /// The limb's index in the skeleton (0-based: `OverrideLimbDraw`'s `limbIndex - 1`).
+    pub limb: u8,
+    pub file: String,
+    pub symbol: String,
 }
 
 /// A texture from the decomp's XMLs: decoded, and its N64 data for effects that need it.

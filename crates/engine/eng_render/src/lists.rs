@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use eng_gfx::{DrawCmd, DrawList, DrawLists, MeshKey};
 use glam::Mat4;
 
-use crate::{Camera, GpuModel, Lighting, LineVertex, Renderer, Target};
+use crate::{Camera, GpuModel, Lighting, LineVertex, Renderer, Screen, Target};
 
 /// Where meshes come from: the app resolves the game's mesh keys (asset-pack records and its
 /// own built-in meshes).
@@ -82,7 +82,8 @@ impl MeshCache {
 }
 
 impl Renderer {
-    /// Records `lists` (OPA, then XLU) with the world lines and the lists' overlay lines.
+    /// Records `lists` (OPA, then XLU) with the world lines, then the letterbox, the overlay
+    /// meshes and the overlay lines.
     #[allow(clippy::too_many_arguments)]
     pub fn render_lists(
         &mut self,
@@ -100,15 +101,18 @@ impl Renderer {
     ) {
         let mut uses: HashMap<&MeshKey, usize> = HashMap::new();
         let mut order: Vec<(&MeshKey, usize)> = Vec::new();
-        for cmd in lists.ordered() {
+        let mut order_2d: Vec<(&MeshKey, usize)> = Vec::new();
+        for (cmd, is_2d) in lists.ordered().map(|c| (c, false)).chain(lists.overlay_2d.iter().map(|c| (c, true))) {
             let n = uses.entry(&cmd.mesh).or_default();
             if cache.prepare(self, device, queue, source, cmd, *n) {
-                order.push((&cmd.mesh, *n));
+                if is_2d { &mut order_2d } else { &mut order }.push((&cmd.mesh, *n));
             }
             *n += 1;
         }
         let models: Vec<&GpuModel> = order.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
+        let models_2d: Vec<&GpuModel> = order_2d.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
         let overlay: Vec<LineVertex> = lists.overlay.iter().map(|p| LineVertex { pos: p.pos.to_array(), color: p.color }).collect();
-        self.render(device, queue, encoder, target, &models, camera, light, world_lines, &overlay, clear);
+        let screen = Screen { overlay_models: &models_2d, letterbox_rows: lists.letterbox_rows };
+        self.render_screen(device, queue, encoder, target, &models, camera, light, world_lines, &overlay, clear, &screen);
     }
 }

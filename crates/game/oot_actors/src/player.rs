@@ -29,8 +29,10 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::data::{AgeProperties, AnimId, GameData, Regs};
 use oot_game::player_lib::Blinker;
 use oot_game::skelanime::{ANIMMODE_LOOP, ANIMMODE_ONCE, SkelAnime};
-use oot_game::surface::{SurfaceType, WALL_FLAG_0, WALL_FLAG_1, WALL_FLAG_3};
+use oot_game::surface::{SurfaceType, WALL_FLAG_0, WALL_FLAG_1, WALL_FLAG_2, WALL_FLAG_3};
 use oot_game::target::{ACTOR_FLAG_27, TargetView};
+use oot_game::collision_check::{self as cc, ColliderCylinder, ColliderCylinderInit, ColliderInfoInit, ColliderInit, ColliderMut, ColliderQuad, ColliderQuadInit, ColliderTouch, ColliderBumpInit};
+use eng_collision::math3d::Cylinder16;
 
 // stateFlags1
 pub const STATE1_0: u32 = 1 << 0; // going through an exit
@@ -200,6 +202,19 @@ pub enum Action {
     ExitWalk,
     /// `func_8084F88C`: falling into a void.
     VoidFall,
+    /// `func_808458D0`: putting the held item away, then the pending action (`func_A74`).
+    ItemPutAway,
+    /// `func_8084BF1C`: on a ladder or a climbable wall.
+    Climb,
+    /// `func_8084C5F8`: stepping off a ladder at its top or bottom.
+    ClimbEnd,
+}
+
+/// `func_A74`: what `func_808458D0` runs once the item is away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum A74 {
+    /// `func_8083A3B0`: start climbing.
+    ClimbStart,
 }
 
 /// Player's upper-body action (`this->func_82C`), run from `func_80836670`.
@@ -242,6 +257,9 @@ impl Action {
             Action::Surface => "func_8084E1EC",
             Action::ExitWalk => "func_80845CA4",
             Action::VoidFall => "func_8084F88C",
+            Action::ItemPutAway => "func_808458D0",
+            Action::Climb => "func_8084BF1C",
+            Action::ClimbEnd => "func_8084C5F8",
         }
     }
 }
@@ -376,6 +394,9 @@ pub struct Player {
     pub melee_weapon_state: i8,
     /// `unk_664`: the targeted actor.
     pub unk_664: Option<ActorHandle>,
+    /// What `Player_UpdateCamAndSeqModes` asked of the camera this update (applied by
+    /// `ActorImpl::update`, which has the play state).
+    pub cam_request: Option<(i16, Option<ActorHandle>)>,
     /// `unk_66C`: Z-target timer.
     pub unk_66C: i16,
     /// `bodyPartsPos[PLAYER_BODYPART_HEAD]` from the last draw (also `actor.focus.pos`).
@@ -402,6 +423,21 @@ pub struct Player {
     pub unk_845: i8,
     /// `meleeWeaponAnimation` (PLAYER_MWA_*).
     pub melee_weapon_animation: usize,
+    /// `cylinder`: the body (OC against everything, AC from enemies). Collider id 0.
+    pub cylinder: ColliderCylinder,
+    /// `meleeWeaponQuads`: the sword's two AT quads, set from the draw. Collider ids 1 and 2.
+    pub melee_weapon_quads: [ColliderQuad; 2],
+    /// `shieldQuad`: collider id 3 (shielding isn't ported, so it's never registered).
+    pub shield_quad: ColliderQuad,
+    /// `meleeWeaponInfo`: the sword's tip and base last frame, for the blur and the two quads.
+    pub melee_weapon_info: [WeaponInfo; 3],
+    /// `bodyPartsPos` (`PLAYER_BODYPART_*`), from the last draw.
+    pub body_parts_pos: [Vec3; BODYPART_MAX],
+    /// `targetActor`, `targetActorDistance`, `exchangeItemId`: who offered to talk this frame
+    /// (`func_8002F1C4`). Accepting it (the talk interrupt) comes with the message box.
+    pub target_actor: Option<ActorHandle>,
+    pub target_actor_distance: f32,
+    pub exchange_item_id: u8,
     pub s: PlayerStatics,
     pub input: Input,
     /// `unk_3A8` blink timer; `actor.shape.face`.
@@ -421,6 +457,8 @@ pub struct Player {
     pub unk_A84: i16,
     /// `csMode` (no cutscenes: 0).
     pub cs_mode: u8,
+    /// `func_A74`.
+    pub func_a74: Option<A74>,
     /// Start mode 0 (`func_80846648`): `update` is a no-op and `draw` is NULL.
     pub inert: bool,
 }
@@ -502,6 +540,7 @@ impl Player {
             pushed_yaw: 0,
             melee_weapon_state: 0,
             unk_664: None,
+            cam_request: None,
             legs: None,
             unk_66C: 0,
             head_pos: pos + Vec3::Y * 50.0,
@@ -519,6 +558,14 @@ impl Player {
             unk_844: 0,
             unk_845: 0,
             melee_weapon_animation: 0,
+            cylinder: ColliderCylinder::new(&D_80854624),
+            melee_weapon_quads: [ColliderQuad::new(&D_80854650), ColliderQuad::new(&D_80854650)],
+            shield_quad: ColliderQuad::new(&D_808546A0),
+            melee_weapon_info: [WeaponInfo::default(); 3],
+            body_parts_pos: [pos; BODYPART_MAX],
+            target_actor: None,
+            target_actor_distance: f32::MAX,
+            exchange_item_id: 0,
             s: PlayerStatics { speed_scale: 1.0, ..Default::default() },
             input: Input::default(),
             blinker: Blinker::default(),
@@ -531,6 +578,7 @@ impl Player {
             door_timer: 0,
             unk_A84: pos.y as i16,
             cs_mode: 0,
+            func_a74: None,
             inert: false,
         };
         // A plain start (the tests' and the sandbox's): standing still (`func_80853080`).
@@ -744,7 +792,7 @@ impl Player {
             self.run_action(env);
         }
 
-        // Player_UpdateCamAndSeqModes: camera is not ported.
+        self.cam_request = self.update_cam_and_seq_modes();
         if self.skel.move_flags & 8 != 0 {
             let s = if self.skel.move_flags & 4 != 0 { 1.0 } else { self.age.translation_scale };
             self.skel.request_move_actor(s);
@@ -752,6 +800,56 @@ impl Player {
         self.func_808368EC(env);
         let _ = data;
         self.actor.home_pos = self.actor.world_pos;
+    }
+
+    /// `Player_UpdateCamAndSeqModes`'s camera half: the mode Player asks the main camera for
+    /// (`Camera_ChangeMode`), with the actor it passes to `Camera_SetParam(camera, 8, ...)`,
+    /// or `None` in first person (`PLAYER_STATE1_20`). The sequence mode isn't modelled.
+    /// Hookshot, `func_8084377C`, and the bow, slingshot and boomerang aren't ported, so
+    /// their modes never come up.
+    pub fn update_cam_and_seq_modes(&self) -> Option<(i16, Option<ActorHandle>)> {
+        use oot_game::camera::*;
+        if self.cs_mode != 0 {
+            return Some((CAM_MODE_NORMAL, None));
+        }
+        if self.state1 & STATE1_20 != 0 {
+            return None;
+        }
+        let mut target = None;
+        let mode = if self.state2 & STATE2_8 != 0 {
+            CAM_MODE_PUSHPULL
+        } else if let Some(t) = self.unk_664 {
+            target = Some(t);
+            if self.actor.flags & ACTOR_FLAG_8 == ACTOR_FLAG_8 {
+                CAM_MODE_TALK
+            } else if self.state1 & STATE1_16 != 0 {
+                if self.state1 & STATE1_25 != 0 { CAM_MODE_FOLLOWBOOMERANG } else { CAM_MODE_FOLLOWTARGET }
+            } else {
+                CAM_MODE_BATTLE
+            }
+        } else if self.state1 & STATE1_12 != 0 {
+            CAM_MODE_CHARGE
+        } else if self.state1 & STATE1_25 != 0 {
+            CAM_MODE_FOLLOWBOOMERANG
+        } else if self.state1 & (STATE1_13 | STATE1_14) != 0 {
+            // func_80833B2C.
+            if self.state1 & (STATE1_16 | STATE1_17 | STATE1_30) != 0 { CAM_MODE_HANGZ } else { CAM_MODE_HANG }
+        } else if self.state1 & (STATE1_17 | STATE1_30) != 0 {
+            // func_8002DD78 / func_808334B4 (bow, slingshot, boomerang in hand): not ported.
+            if self.state1 & STATE1_21 != 0 { CAM_MODE_CLIMBZ } else { CAM_MODE_TARGET }
+        } else if self.state1 & (STATE1_18 | STATE1_21) != 0 {
+            if self.action == Action::ClimbLedge || self.state1 & STATE1_21 != 0 { CAM_MODE_CLIMB } else { CAM_MODE_JUMP }
+        } else if self.state1 & STATE1_19 != 0 {
+            CAM_MODE_FREEFALL
+        } else if self.melee_weapon_state != 0
+            // PLAYER_MWA_FORWARD_SLASH_1H (0) .. PLAYER_MWA_SPIN_ATTACK_1H (24).
+            && self.melee_weapon_animation < 24
+        {
+            CAM_MODE_STILL
+        } else {
+            CAM_MODE_NORMAL
+        };
+        Some((mode, target))
     }
 
     /// `AnimationContext_Update`, run after all actors (only Player here) have updated.
@@ -819,6 +917,9 @@ impl Player {
             Action::Surface => self.func_8084E1EC(env),
             Action::ExitWalk => self.func_80845CA4(env),
             Action::VoidFall => self.func_8084F88C(env),
+            Action::ItemPutAway => self.func_808458D0(env),
+            Action::Climb => self.func_8084BF1C(env),
+            Action::ClimbEnd => self.func_8084C5F8(env),
         }
     }
 
@@ -1099,15 +1200,21 @@ impl Player {
                 let n = env.col.poly_normal(poly);
                 let sp54 = udist_plane_to_pos(n, env.col.poly(poly).dist as f32, self.actor.world_pos);
                 let climbable = self.s.floor_property == FLOOR_PROPERTY_6 || env.col.wall_flags(poly) & WALL_FLAG_3 != 0;
+                let anim = if climbable { data.anim("link_normal_Fclimb_startB") } else { data.anim("link_normal_fall") };
+                self.func_8083A5C4(data, env, poly, sp54, anim);
                 if climbable {
-                    // func_8083A5C4 with link_normal_Fclimb_startB, then func_8084BF1C (climbing
-                    // down a ladder or vine wall): not ported.
-                    self.note("climbing down onto a climbable wall (func_8084BF1C) not ported; falling instead");
-                    return false;
+                    // Down onto a climbable wall below the edge.
+                    self.func_80836898(data, env, A74::ClimbStart);
+                    self.current_yaw = self.current_yaw.wrapping_add(i16::MIN);
+                    self.actor.shape_rot.y = self.current_yaw;
+                    self.state1 |= STATE1_21;
+                    self.func_80832F54(0x9F);
+                    self.unk_850 = -1;
+                    self.unk_84F = 1;
+                } else {
+                    self.state1 |= STATE1_13;
+                    self.state1 &= !STATE1_17;
                 }
-                self.func_8083A5C4(data, env, poly, sp54, data.anim("link_normal_fall"));
-                self.state1 |= STATE1_13;
-                self.state1 &= !STATE1_17;
                 return true;
             }
         }
@@ -1297,6 +1404,322 @@ impl Player {
             return true;
         }
         false
+    }
+
+    // ================================================================================
+    // Climbing (ladders, vines and climbable walls)
+
+    /// `func_80836898`: the action `f` once the held item is put away (`func_808458D0`).
+    fn func_80836898(&mut self, data: &GameData, env: &Env, f: A74) -> bool {
+        let _ = env;
+        self.func_a74 = Some(f);
+        self.setup_action(data, Action::ItemPutAway, 0);
+        self.state2 |= STATE2_6;
+        self.func_80832528(data)
+    }
+
+    /// `func_80832528`: put a held item away (`func_80835F44(ITEM_NONE)`).
+    fn func_80832528(&mut self, data: &GameData) -> bool {
+        if self.held_item_ap >= data.items.ap("FISHING_POLE") {
+            self.func_80835F44(data, 0);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `func_808458D0`: the item change plays; when it's done (or there was none), the
+    /// pending action.
+    fn func_808458D0(&mut self, env: &Env) {
+        self.state2 |= STATE2_5 | STATE2_6;
+        self.skel.update(env.data);
+        // (Holding an actor with no item to get: Player doesn't hold actors yet.)
+        if !self.func_80836670(env) {
+            match self.func_a74 {
+                Some(A74::ClimbStart) => self.func_8083A3B0(env.data),
+                None => {}
+            }
+        }
+    }
+
+    /// `func_8083A3B0`: climbing, keeping `unk_850` and `unk_84F`.
+    fn func_8083A3B0(&mut self, data: &GameData) {
+        let (sp1c, sp18) = (self.unk_850, self.unk_84F);
+        self.func_80835DAC(data, Action::Climb, 0);
+        self.actor.velocity.y = 0.0;
+        self.unk_850 = sp1c;
+        self.unk_84F = sp18;
+    }
+
+    /// `func_8083F7BC` (interrupt 5): walking into a wall to climb it. (Crawlspaces,
+    /// `func_8083F0C8`, and pushing blocks aren't ported.)
+    fn func_8083F7BC(&mut self, env: &Env) -> bool {
+        if self.state1 & STATE1_11 == 0 && self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0 && self.s.wall_facing_diff < 0x3000 {
+            let flags = self.s.wall_flags;
+            if self.linear_velocity > 0.0 && self.func_8083EC18(env, flags) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `func_8083EC18`: onto the wall in front if it's 79 tall and climbable: vines and
+    /// climbable walls (`WALL_FLAG_3`) from where Link is, a ladder (`WALL_FLAG_1`) lined up to
+    /// its rungs, or a ladder's top (`WALL_FLAG_2`) turning round to climb down.
+    fn func_8083EC18(&mut self, env: &Env, arg2: u32) -> bool {
+        let data = env.data;
+        let col = env.col;
+        if self.wall_height < 79.0 {
+            return false;
+        }
+        // Kokiri boots.
+        if !(self.state1 & STATE1_27 == 0 || self.actor.y_dist_to_water < self.age.unk_2C) {
+            return false;
+        }
+        let Some(wall) = self.actor.wall_poly else { return false };
+        let sp8c: i8 = if arg2 & WALL_FLAG_3 != 0 { 2 } else { 0 };
+        if !(sp8c != 0 || arg2 & WALL_FLAG_1 != 0 || col.wall_flags(wall) & WALL_FLAG_2 != 0) {
+            return false;
+        }
+        let (mut phi_f20, mut phi_f12) = (0.0f32, 0.0f32);
+        let (sp80, sp7c);
+        if sp8c != 0 {
+            sp80 = self.actor.world_pos.x;
+            sp7c = self.actor.world_pos.z;
+        } else {
+            // The wall triangle's horizontal middle, and its lowest point.
+            let v = col.poly_vertices(wall);
+            let (mut x0, mut x1, mut z0, mut z1) = (v[0].x, v[0].x, v[0].z, v[0].z);
+            phi_f20 = v[0].y;
+            for p in &v[1..] {
+                if x0 > p.x {
+                    x0 = p.x;
+                } else if x1 < p.x {
+                    x1 = p.x;
+                }
+                if z0 > p.z {
+                    z0 = p.z;
+                } else if z1 < p.z {
+                    z1 = p.z;
+                }
+                if phi_f20 > p.y {
+                    phi_f20 = p.y;
+                }
+            }
+            sp80 = (x0 + x1) * 0.5;
+            sp7c = (z0 + z1) * 0.5;
+            let n = col.poly_normal(wall);
+            phi_f12 = ((self.actor.world_pos.x - sp80) * n.z) - ((self.actor.world_pos.z - sp7c) * n.x);
+            let sp48 = self.actor.world_pos.y - phi_f20;
+            // The height to the next rung, 15 apart, in double precision as written.
+            const RUNG: f64 = 15.000000223517418;
+            phi_f20 = ((((sp48 as f64 / RUNG) + 0.5) as i32 as f32) as f64 * RUNG - sp48 as f64) as f32;
+            phi_f12 = phi_f12.abs();
+        }
+        if phi_f12 >= 8.0 {
+            return false;
+        }
+        let n = col.poly_normal(wall);
+        let mut sp34 = self.wall_distance;
+        self.func_80836898(data, env, A74::ClimbStart);
+        self.state1 |= STATE1_21;
+        self.state1 &= !STATE1_27;
+        let anim;
+        if sp8c != 0 || arg2 & WALL_FLAG_1 != 0 {
+            self.unk_84F = sp8c;
+            if sp8c != 0 {
+                anim = if self.grounded() { data.anim("link_normal_Fclimb_startA") } else { data.anim("link_normal_Fclimb_hold2upL") };
+                sp34 = (self.age.wall_radius - 1.0) - sp34;
+            } else {
+                anim = self.age.climb.unk_A4;
+                sp34 -= 1.0;
+            }
+            self.unk_850 = -2;
+            self.actor.world_pos.y += phi_f20;
+            self.current_yaw = self.actor.wall_yaw.wrapping_add(i16::MIN);
+            self.actor.shape_rot.y = self.current_yaw;
+        } else {
+            anim = self.age.climb.unk_A8;
+            self.unk_850 = -4;
+            self.current_yaw = self.actor.wall_yaw;
+            self.actor.shape_rot.y = self.current_yaw;
+        }
+        self.actor.world_pos.x = (sp34 * n.x) + sp80;
+        self.actor.world_pos.z = (sp34 * n.z) + sp7c;
+        self.func_80832224();
+        self.actor.prev_pos = self.actor.world_pos;
+        self.skel.play_once(data, anim);
+        self.func_80832F54(0x9F);
+        true
+    }
+
+    /// `func_8083F360`: keep to the wall: a line from `arg4` to `arg3` ahead at height `arg1`;
+    /// on the wall, face it and stand `arg2` off it. True while there's a wall.
+    fn func_8083F360(&mut self, env: &Env, arg1: f32, arg2: f32, arg3: f32, arg4: f32) -> bool {
+        let (c, s) = (cos_s(self.actor.shape_rot.y), sin_s(self.actor.shape_rot.y));
+        let y = self.actor.world_pos.y + arg1;
+        let a = Vec3::new(self.actor.world_pos.x + arg4 * s, y, self.actor.world_pos.z + arg4 * c);
+        let b = Vec3::new(self.actor.world_pos.x + arg3 * s, y, self.actor.world_pos.z + arg3 * c);
+        let hit = env.col.entity_line_test(a, b, true, false, false, true);
+        self.actor.wall_poly = hit.map(|h| h.1);
+        if let Some((p, poly)) = hit {
+            self.actor.bg_check_flags |= BGCHECKFLAG_PLAYER_WALL_INTERACT;
+            self.s.wall_flags = env.col.wall_flags(poly);
+            let n = env.col.poly_normal(poly);
+            let t = atan2_s(-n.z, -n.x);
+            scaled_step_to_s(&mut self.actor.shape_rot.y, t, 800);
+            self.current_yaw = self.actor.shape_rot.y;
+            self.actor.world_pos.x = p.x - sin_s(self.actor.shape_rot.y) * arg2;
+            self.actor.world_pos.z = p.z - cos_s(self.actor.shape_rot.y) * arg2;
+            return true;
+        }
+        self.actor.bg_check_flags &= !BGCHECKFLAG_PLAYER_WALL_INTERACT;
+        false
+    }
+
+    /// `func_8083FBC0`: let go on A, or when the wall isn't climbable any more.
+    fn func_8083FBC0(&mut self, env: &Env) -> bool {
+        let f = self.s.wall_flags;
+        let flag2 = self.actor.wall_poly.is_some_and(|w| env.col.wall_flags(w) & WALL_FLAG_2 != 0);
+        if !self.input.press.held(BTN_A) && self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0 && (f & WALL_FLAG_3 != 0 || f & WALL_FLAG_1 != 0 || flag2) {
+            return false;
+        }
+        self.func_8083FB7C(env.data);
+        true
+    }
+
+    /// `func_8083FB7C`: off the wall, falling.
+    fn func_8083FB7C(&mut self, data: &GameData) {
+        self.state1 &= !(STATE1_21 | STATE1_27);
+        self.func_80837B9C(data);
+        self.linear_velocity = -0.4;
+    }
+
+    /// `func_8083973C`: the floor below a point `off` ahead of Link (`func_808395DC`,
+    /// `BgCheck_EntityRaycastDown3`).
+    fn func_8083973C(&self, env: &Env, off: Vec3) -> f32 {
+        let p = self.func_808395DC(self.actor.world_pos, off);
+        env.col.entity_raycast_down(p).0
+    }
+
+    /// `func_8083F070`: step off the ladder (`func_8084C5F8`).
+    fn func_8083F070(&mut self, data: &GameData, anim: AnimId) {
+        self.func_80835DAC(data, Action::ClimbEnd, 0);
+        self.skel.play_once_set_speed(data, anim, 4.0 / 3.0);
+    }
+
+    /// `LinkAnimation_Change(anim, -1, lastFrame, 0, ANIMMODE_ONCE, 0)`: an animation played
+    /// backwards (climbing down).
+    fn play_backwards(&mut self, data: &GameData, anim: AnimId) {
+        let last = data.anims[anim].last_frame();
+        self.skel.change(data, anim, -1.0, last, 0.0, ANIMMODE_ONCE, 0.0);
+    }
+
+    /// `func_8084BF1C`: climbing. Up and down one rung per animation (sideways on vines), at a
+    /// speed from the stick; off the top onto the ledge (vines) or the ladder's top step, off
+    /// the bottom near the floor.
+    fn func_8084BF1C(&mut self, env: &Env) {
+        let data = env.data;
+        let mut sp84 = self.input.rel.stick_y as i32;
+        let mut sp80 = self.input.rel.stick_x as i32;
+        self.fall_start_height = self.actor.world_pos.y as i32 as i16;
+        self.state2 |= STATE2_6;
+        let mut phi_f0 = if self.unk_84F != 0 && sp84.abs() < sp80.abs() {
+            sp84 = 0;
+            sp80.abs() as f32 * 0.0325
+        } else {
+            sp80 = 0;
+            sp84.abs() as f32 * 0.05
+        };
+        phi_f0 = phi_f0.clamp(1.0, 3.35);
+        let phi_f2 = if self.skel.play_speed >= 0.0 { 1.0 } else { -1.0 };
+        self.skel.play_speed = phi_f2 * phi_f0;
+        if self.unk_850 >= 0 {
+            // (A DynaPoly wall carries Link along: no climbable dyna walls are ported.)
+            self.actor.update_bg_check_info(env.col, 26.0, 6.0, self.age.ceiling_check_height, UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_1 | UPDBGCHECKINFO_FLAG_2);
+            let r = self.age.unk_3C;
+            self.func_8083F360(env, 26.0, r, 50.0, -20.0);
+        }
+        if (self.unk_850 < 0 || !self.func_8083FBC0(env)) && self.skel.update(data) {
+            if self.unk_850 < 0 {
+                self.unk_850 = (self.unk_850 as i32).abs() as i16 & 1;
+                return;
+            }
+            let c = self.age.climb;
+            if sp84 != 0 {
+                let mut sp68 = (self.unk_84F as i32 + self.unk_850 as i32) as usize;
+                if sp84 > 0 {
+                    // D_8085488C = { 0, unk_40, 26 }: the ledge above.
+                    let temp_f0 = self.func_8083973C(env, Vec3::new(0.0, self.age.unk_40, 26.0));
+                    if self.actor.world_pos.y < temp_f0 {
+                        if self.unk_84F != 0 {
+                            self.actor.world_pos.y = temp_f0;
+                            self.state1 &= !STATE1_21;
+                            if let Some(w) = self.actor.wall_poly {
+                                let r = self.age.unk_3C;
+                                self.func_8083A5C4(data, env, w, r, data.anim("link_normal_jump_climb_up_free"));
+                            }
+                            self.current_yaw = self.current_yaw.wrapping_add(i16::MIN);
+                            self.actor.shape_rot.y = self.current_yaw;
+                            self.func_8083A9B8(data, data.anim("link_normal_jump_climb_up_free"));
+                            self.state1 |= STATE1_14;
+                        } else {
+                            let a = c.unk_CC[self.unk_850 as usize & 1];
+                            self.func_8083F070(data, a);
+                        }
+                    } else {
+                        self.skel.prev_transl = c.unk_4A[sp68.min(3)];
+                        self.skel.play_once(data, c.unk_AC[sp68.min(3)]);
+                    }
+                } else if (self.actor.world_pos.y - self.actor.floor_height) < 15.0 {
+                    if self.unk_84F != 0 {
+                        self.func_8083FB7C(data);
+                    } else {
+                        if self.unk_850 != 0 {
+                            self.skel.prev_transl = c.unk_44;
+                        }
+                        let a = c.unk_C4[self.unk_850 as usize & 1];
+                        self.func_8083F070(data, a);
+                        self.unk_850 = 1;
+                    }
+                } else {
+                    sp68 ^= 1;
+                    self.skel.prev_transl = c.unk_62[sp68.min(3)];
+                    let a1 = c.unk_AC[sp68.min(3)];
+                    self.play_backwards(data, a1);
+                }
+                self.unk_850 ^= 1;
+            } else if self.unk_84F != 0 && sp80 != 0 {
+                let a2 = c.unk_BC[self.unk_850 as usize & 1];
+                if sp80 > 0 {
+                    self.skel.prev_transl = c.unk_7A[self.unk_850 as usize & 1];
+                    self.skel.play_once(data, a2);
+                } else {
+                    self.skel.prev_transl = c.unk_86[self.unk_850 as usize & 1];
+                    self.play_backwards(data, a2);
+                }
+            } else {
+                self.state2 |= STATE2_12;
+            }
+            return;
+        }
+        // func_8084BEE4 on the footfall frames: the climbing sound (not ported).
+    }
+
+    /// `func_8084C5F8`: the step off a ladder, standing at its end.
+    fn func_8084C5F8(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_6;
+        let temp = self.func_808374A0(env, 4.0);
+        if temp == 0 {
+            self.state1 &= !STATE1_21;
+            return;
+        }
+        if temp > 0 || self.skel.update(data) {
+            self.func_8083C0E8(data);
+            self.state1 &= !STATE1_21;
+        }
+        // The footstep sounds on frames D_80854898 / D_808548A0: not ported.
     }
 
     /// `func_80845668`: stepping up onto a ledge (100/150 step-up animations, the model
@@ -1529,6 +1952,9 @@ impl Player {
         loop {
             let e = list[i];
             let idx = e.unsigned_abs() as usize;
+            if idx == 5 && self.func_8083F7BC(env) {
+                return true;
+            }
             if idx == 6 && self.func_8083C1DC(env) {
                 return true;
             }
@@ -1657,6 +2083,15 @@ impl Player {
     // Transitions
 
     /// `func_80853080`: stand still, playing the wait animation.
+    /// Stands Player still where it is, out of any action (a test or sandbox placing it):
+    /// `func_80832440`'s interruption, then `func_80853080`.
+    pub fn stand_still(&mut self, data: &GameData) {
+        self.func_80832440();
+        self.func_80832210();
+        self.state1 &= !(STATE1_29 | STATE1_0);
+        self.func_80853080(data);
+    }
+
     fn func_80853080(&mut self, data: &GameData) {
         self.setup_action(data, Action::StandingStill, 1);
         let a = self.anim(data, group::WAIT);
@@ -3311,13 +3746,28 @@ impl Player {
             self.func_80832F54(0x209);
         }
         self.current_yaw = self.actor.shape_rot.y;
-        // func_80837918: the weapon colliders' damage flags (no actor collision here).
+        // Player_HoldsBrokenKnife: the Biggoron's Sword isn't held.
+        let row = (Self::melee_weapon(self.held_item_ap) - 1).clamp(0, 4) as usize;
+        let jump = arg2 >= flip0 && arg2 <= jump1;
+        let dmg_flags = D_80854488[row][usize::from(jump)];
+        self.func_80837918(0, dmg_flags);
+        self.func_80837918(1, dmg_flags);
+    }
+
+    /// `func_80837918`: the sword quad's damage type for this attack.
+    fn func_80837918(&mut self, quad: usize, dmg_flags: u32) {
+        let q = &mut self.melee_weapon_quads[quad];
+        q.info.toucher.dmg_flags = dmg_flags;
+        q.info.toucher_flags = if dmg_flags == cc::DMG_DEKU_STICK { cc::TOUCH_ON | cc::TOUCH_NEAREST | cc::TOUCH_SFX_WOOD } else { cc::TOUCH_ON | cc::TOUCH_NEAREST };
     }
 
     /// `func_80832318`: weapon inactive.
     fn func_80832318(&mut self) {
         self.state2 &= !STATE2_17;
         self.melee_weapon_state = 0;
+        for w in &mut self.melee_weapon_info {
+            w.active = false;
+        }
     }
 
     /// `func_80832F54`: animation-driven movement with `flags` (`ANIM_FLAG_*`, 0x200 scales
@@ -3999,6 +4449,107 @@ impl Player {
     }
 
     // ================================================================================
+    // Colliders (the end of Player_UpdateCommon, and Player_PostLimbDrawGameplay)
+
+    /// The end of `Player_UpdateCommon`: the body cylinder from the last draw's body parts,
+    /// registered for OC and AC; the mass; then the per-frame resets of the AC and the sword's
+    /// AT.
+    fn update_colliders(&mut self, play: &mut PlayState) {
+        use cc::ColliderShape;
+        // The talk offers of this frame end here (they're made again next frame), unless one
+        // was accepted (ACTOR_FLAG_8).
+        if self.actor.flags & ACTOR_FLAG_8 == ACTOR_FLAG_8 {
+            self.target_actor_distance = 0.0;
+        } else {
+            self.target_actor = None;
+            self.target_actor_distance = f32::MAX;
+            self.exchange_item_id = 0;
+        }
+        let mut temp_f0 = self.actor.world_pos.y - self.actor.prev_pos.y;
+        let bp = &self.body_parts_pos;
+        let mut phi_f12 = (bp[BODYPART_L_FOOT].y + bp[BODYPART_R_FOOT].y) * 0.5 + temp_f0;
+        temp_f0 += bp[BODYPART_HEAD].y + 10.0;
+        self.cylinder.dim.height = (temp_f0 - phi_f12) as i16;
+        if self.cylinder.dim.height < 0 {
+            phi_f12 = temp_f0;
+            self.cylinder.dim.height = -self.cylinder.dim.height;
+        }
+        self.cylinder.dim.y_shift = (phi_f12 - self.actor.world_pos.y) as i16;
+        if self.state1 & STATE1_22 != 0 {
+            self.cylinder.dim.height = (self.cylinder.dim.height as f32 * 0.8) as i16;
+        }
+        self.cylinder.update(&self.actor);
+        // invincibilityTimer: always 0 here (nothing damages Player yet).
+        let invincibility_timer = 0;
+        if self.state2 & STATE2_14 == 0 {
+            if self.state1 & (STATE1_7 | STATE1_13 | STATE1_14 | STATE1_23) == 0 {
+                play.collision_check_set_oc(&self.actor, COLLIDER_CYLINDER, &mut self.cylinder);
+            }
+            if self.state1 & (STATE1_7 | STATE1_26) == 0 && invincibility_timer <= 0 {
+                play.collision_check_set_ac(&self.actor, COLLIDER_CYLINDER, &mut self.cylinder);
+                if invincibility_timer < 0 {
+                    play.collision_check_set_at(&self.actor, COLLIDER_CYLINDER, &mut self.cylinder);
+                }
+            }
+        }
+        self.actor.col_chk_info.mass = if self.state1 & (STATE1_7 | STATE1_28 | STATE1_29) != 0 { cc::MASS_IMMOVABLE } else { 50 };
+        self.state3 &= !(1 << 2);
+        self.cylinder.reset_ac();
+        self.melee_weapon_quads[0].reset_at();
+        self.melee_weapon_quads[1].reset_at();
+        self.shield_quad.reset_ac();
+        self.shield_quad.reset_at();
+    }
+
+    /// `bodyPartsPos`: each body part's limb origin, as `Player_PostLimbDrawGameplay` records it
+    /// from the matrix the limb drew with (after the foot IK and the look rotations). Returns
+    /// every limb's world matrix.
+    fn update_body_parts(&mut self, data: &GameData) -> Vec<glam::Mat4> {
+        let rig = &data.rigs[if self.adult { 0 } else { 1 }];
+        let bones = pose(rig, &self.draw_joints(), &self.look_rotations(), data.limb("HEAD"), data.limb("UPPER"));
+        let r = self.actor.shape_rot;
+        let root = oot_game::footik::actor_matrix(self.actor.world_pos, self.actor.shape_y_offset, [r.x, r.y, r.z]);
+        let world: Vec<glam::Mat4> = bones.iter().map(|b| root * *b).collect();
+        for (i, name) in BODYPART_LIMBS.iter().enumerate() {
+            self.body_parts_pos[i] = world[data.limb(name)].transform_point3(Vec3::ZERO);
+        }
+        world
+    }
+
+    /// `Player_PostLimbDrawGameplay` for `PLAYER_LIMB_L_HAND`, the sword part: with the weapon
+    /// active, its tip and base from the hand's matrix (`func_80090A28`), then the quads
+    /// (`func_800906D4`).
+    fn post_limb_draw_l_hand(&mut self, play: &mut PlayState, hand: glam::Mat4) {
+        if self.actor.scale.y < 0.0 || self.melee_weapon_state == 0 {
+            return;
+        }
+        // Player_HoldsBrokenKnife: never. D_80126080.x = sMeleeWeaponLengths[...].
+        let len = MELEE_WEAPON_LENGTHS[Self::melee_weapon(self.held_item_ap) as usize];
+        let d_80126080 = Vec3::new(len, 400.0, 0.0);
+        // func_80090A28: the far edge is longer, and longer still in a combo's third attack.
+        let mut x = len;
+        if self.unk_845 >= 3 {
+            // As written: drawing advances unk_845 while the combo attack is active.
+            self.unk_845 += 1;
+            x *= 1.0 + ((9 - self.unk_845) as f32 * 0.1);
+        }
+        x += 1200.0;
+        let d_8012608c = Vec3::new(x, -400.0, 1000.0);
+        let d_80126098 = Vec3::new(x, 1400.0, -1000.0);
+        let tips = [hand.transform_point3(d_80126080), hand.transform_point3(d_8012608c), hand.transform_point3(d_80126098)];
+        // func_800906D4.
+        let bases = D_801260A4.map(|v| hand.transform_point3(v));
+        // The first edge is the sword trail's (EffectBlure isn't ported).
+        func_80090480(play, &self.actor, None, &mut self.melee_weapon_info[0], tips[0], bases[0]);
+        let spin = play.data.items.mwa("SPIN_ATTACK_1H");
+        if self.melee_weapon_state > 0 && (self.melee_weapon_animation < spin || self.state2 & STATE2_17 != 0) {
+            let [q0, q1] = &mut self.melee_weapon_quads;
+            func_80090480(play, &self.actor, Some((COLLIDER_SWORD_0, q0)), &mut self.melee_weapon_info[1], tips[1], bases[1]);
+            func_80090480(play, &self.actor, Some((COLLIDER_SWORD_1, q1)), &mut self.melee_weapon_info[2], tips[2], bases[2]);
+        }
+    }
+
+    // ================================================================================
     // Draw-time state
 
     /// The joint table the skeleton is drawn with, including
@@ -4052,6 +4603,120 @@ pub struct LookRotations {
 
 // ================================================================================
 // The actor system
+
+/// Player's collider ids (`ActorImpl::collider_mut`).
+pub const COLLIDER_CYLINDER: u8 = 0;
+pub const COLLIDER_SWORD_0: u8 = 1;
+pub const COLLIDER_SWORD_1: u8 = 2;
+pub const COLLIDER_SHIELD: u8 = 3;
+
+/// `PLAYER_BODYPART_MAX`, and the limbs of `PLAYER_BODYPART_*` in order: every limb after the
+/// root that has a display list (`Player_OverrideLimbDrawGameplayCommon`).
+pub const BODYPART_MAX: usize = 18;
+const BODYPART_LIMBS: [&str; BODYPART_MAX] =
+    ["WAIST", "R_THIGH", "R_SHIN", "R_FOOT", "L_THIGH", "L_SHIN", "L_FOOT", "HEAD", "HAT", "COLLAR", "L_SHOULDER", "L_FOREARM", "L_HAND", "R_SHOULDER", "R_FOREARM", "R_HAND", "SHEATH", "TORSO"];
+pub const BODYPART_R_FOOT: usize = 3;
+pub const BODYPART_L_FOOT: usize = 6;
+pub const BODYPART_HEAD: usize = 7;
+pub const BODYPART_L_HAND: usize = 12;
+
+/// `WeaponInfo`: a weapon edge's tip and base as last drawn.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WeaponInfo {
+    pub active: bool,
+    pub tip: Vec3,
+    pub base: Vec3,
+}
+
+/// `sMeleeWeaponLengths` (`z_player_lib.c`), by `Player_ActionToMeleeWeapon`.
+const MELEE_WEAPON_LENGTHS: [f32; 6] = [0.0, 4000.0, 3000.0, 5500.0, 0.0, 2500.0];
+
+/// `D_801260A4`: the sword's base points in the left hand's space.
+const D_801260A4: [Vec3; 3] = [Vec3::new(0.0, 400.0, 0.0), Vec3::new(0.0, 1400.0, -1000.0), Vec3::new(0.0, -400.0, 1000.0)];
+
+/// `D_80854488`: per melee weapon (`Player_GetMeleeWeaponHeld() - 1`), the damage type of a
+/// slash and of a jump attack.
+const D_80854488: [[u32; 2]; 5] = [
+    [cc::DMG_SLASH_MASTER, cc::DMG_JUMP_MASTER],
+    [cc::DMG_SLASH_KOKIRI, cc::DMG_JUMP_KOKIRI],
+    [cc::DMG_SLASH_GIANT, cc::DMG_JUMP_GIANT],
+    [cc::DMG_DEKU_STICK, cc::DMG_JUMP_MASTER],
+    [cc::DMG_HAMMER_SWING, cc::DMG_HAMMER_JUMP],
+];
+
+const NO_TOUCH: ColliderTouch = ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 };
+
+/// `D_80854624`: the body.
+const D_80854624: ColliderCylinderInit = ColliderCylinderInit {
+    base: ColliderInit { col_type: cc::COLTYPE_HIT5, at_flags: cc::AT_NONE, ac_flags: cc::AC_ON | cc::AC_TYPE_ENEMY, oc_flags1: cc::OC1_ON | cc::OC1_TYPE_ALL, oc_flags2: cc::OC2_TYPE_PLAYER, shape: cc::COLSHAPE_CYLINDER },
+    info: ColliderInfoInit {
+        elem_type: cc::ELEMTYPE_UNK1,
+        toucher: NO_TOUCH,
+        bumper: ColliderBumpInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
+        toucher_flags: cc::TOUCH_NONE,
+        bumper_flags: cc::BUMP_ON,
+        oc_elem_flags: cc::OCELEM_ON,
+    },
+    dim: Cylinder16 { radius: 12, height: 60, y_shift: 0, pos: [0; 3] },
+};
+
+/// `D_80854650`: a sword quad.
+const D_80854650: ColliderQuadInit = ColliderQuadInit {
+    base: ColliderInit { col_type: cc::COLTYPE_NONE, at_flags: cc::AT_ON | cc::AT_TYPE_PLAYER, ac_flags: cc::AC_NONE, oc_flags1: cc::OC1_NONE, oc_flags2: cc::OC2_TYPE_PLAYER, shape: cc::COLSHAPE_QUAD },
+    info: ColliderInfoInit {
+        elem_type: cc::ELEMTYPE_UNK2,
+        toucher: ColliderTouch { dmg_flags: 0x0000_0100, effect: 0, damage: 1 },
+        bumper: ColliderBumpInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
+        toucher_flags: cc::TOUCH_ON | cc::TOUCH_SFX_NORMAL,
+        bumper_flags: cc::BUMP_NONE,
+        oc_elem_flags: cc::OCELEM_NONE,
+    },
+    quad: [Vec3::ZERO; 4],
+};
+
+/// `D_808546A0`: the shield.
+const D_808546A0: ColliderQuadInit = ColliderQuadInit {
+    base: ColliderInit { col_type: cc::COLTYPE_METAL, at_flags: cc::AT_ON | cc::AT_TYPE_PLAYER, ac_flags: cc::AC_ON | cc::AC_HARD | cc::AC_TYPE_ENEMY, oc_flags1: cc::OC1_NONE, oc_flags2: cc::OC2_TYPE_PLAYER, shape: cc::COLSHAPE_QUAD },
+    info: ColliderInfoInit {
+        elem_type: cc::ELEMTYPE_UNK2,
+        toucher: ColliderTouch { dmg_flags: 0x0010_0000, effect: 0, damage: 0 },
+        bumper: ColliderBumpInit { dmg_flags: 0xDFCF_FFFF, effect: 0, defense: 0 },
+        toucher_flags: cc::TOUCH_ON | cc::TOUCH_SFX_NORMAL,
+        bumper_flags: cc::BUMP_ON,
+        oc_elem_flags: cc::OCELEM_NONE,
+    },
+    quad: [Vec3::ZERO; 4],
+};
+
+/// `func_80090480`: moves a weapon edge to its new tip and base. The first draw only records
+/// it; after that, if it moved, the quad spans the old and the new edge and attacks
+/// (`CollisionCheck_SetAT`). Returns whether the edge is new or moved.
+fn func_80090480(play: &mut PlayState, owner: &Actor, collider: Option<(u8, &mut ColliderQuad)>, info: &mut WeaponInfo, new_tip: Vec3, new_base: Vec3) -> bool {
+    use cc::ColliderShape;
+    if !info.active {
+        if let Some((_, c)) = collider {
+            c.reset_at();
+        }
+        info.tip = new_tip;
+        info.base = new_base;
+        info.active = true;
+        true
+    } else if info.tip == new_tip && info.base == new_base {
+        if let Some((_, c)) = collider {
+            c.reset_at();
+        }
+        false
+    } else {
+        if let Some((id, c)) = collider {
+            c.set_vertices(new_base, new_tip, info.base, info.tip);
+            play.collision_check_set_at(owner, id, c);
+        }
+        info.base = new_base;
+        info.tip = new_tip;
+        info.active = true;
+        true
+    }
+}
 
 /// `Player_InitVars` (`z_player_call.c`).
 pub const PROFILE: oot_game::actor_ctx::ActorProfile = oot_game::actor_ctx::ActorProfile {
@@ -4167,16 +4832,42 @@ impl ActorImpl for Player {
         let input = play.input;
         Player::update(self, &env, input);
         play.put_io(io.into_inner());
+        // Player_UpdateCamAndSeqModes' requests, in its order: Camera_SetParam, then
+        // Camera_ChangeMode.
+        if let Some((mode, target)) = self.cam_request.take() {
+            if let Some(t) = target {
+                play.game_camera.set_target(t);
+            }
+            play.game_camera.change_mode(&play.data.camera, mode);
+        }
+        self.update_colliders(play);
     }
 
     fn animation_update(&mut self) {
         self.finish_frame();
     }
 
-    /// `Player_Draw`'s foot IK (`func_8008F87C`), which writes into the joint table.
-    fn draw_update(&mut self, play: &PlayState) {
+    /// What `Player_Draw` changes: the foot IK (`func_8008F87C`) writes into the joint table,
+    /// then the limbs record the body parts, and the left hand places the sword's colliders.
+    fn draw_update(&mut self, play: &mut PlayState) {
+        if self.inert {
+            return;
+        }
         if play.debug.foot_ik {
             self.legs = Some(self.apply_foot_ik(&play.data, &play.col));
+        }
+        let data = play.data.clone();
+        let world = self.update_body_parts(&data);
+        self.post_limb_draw_l_hand(play, world[data.limb("L_HAND")]);
+    }
+
+    fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
+        match id {
+            COLLIDER_CYLINDER => Some(ColliderMut::Cylinder(&mut self.cylinder)),
+            COLLIDER_SWORD_0 => Some(ColliderMut::Quad(&mut self.melee_weapon_quads[0])),
+            COLLIDER_SWORD_1 => Some(ColliderMut::Quad(&mut self.melee_weapon_quads[1])),
+            COLLIDER_SHIELD => Some(ColliderMut::Quad(&mut self.shield_quad)),
+            _ => None,
         }
     }
 
@@ -4198,6 +4889,7 @@ impl ActorImpl for Player {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
             scale: self.actor.scale,
+            y_offset: self.actor.shape_y_offset,
             joints: Some(self.draw_joints()),
             angles,
             values,
@@ -4239,6 +4931,9 @@ impl ActorImpl for Player {
     fn as_player(&self) -> Option<&dyn PlayerIface> {
         Some(self)
     }
+    fn as_player_mut(&mut self) -> Option<&mut dyn PlayerIface> {
+        Some(self)
+    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -4250,6 +4945,9 @@ impl ActorImpl for Player {
 impl PlayerIface for Player {
     fn adult(&self) -> bool {
         self.adult
+    }
+    fn state_flags1(&self) -> u32 {
+        self.state1
     }
     fn target(&self) -> Option<ActorHandle> {
         self.unk_664
@@ -4265,6 +4963,14 @@ impl PlayerIface for Player {
     }
     fn speed_xz(&self) -> f32 {
         self.actor.speed_xz
+    }
+    fn talk_target(&self) -> (Option<ActorHandle>, f32) {
+        (self.target_actor, self.target_actor_distance)
+    }
+    fn set_talk_target(&mut self, actor: ActorHandle, distance: f32, exchange_item: u8) {
+        self.target_actor = Some(actor);
+        self.target_actor_distance = distance;
+        self.exchange_item_id = exchange_item;
     }
 }
 

@@ -9,7 +9,8 @@ use anyhow::{Context, Result, bail};
 use eng_anim::anim::StandardAnimation;
 use eng_anim::skeleton::{LimbType, Skeleton};
 use eng_gbi::gbi::{DrawList, Interpreter, Segment};
-use eng_gbi::model::{Binding, BuildOptions, build_draw_list, cull_back_builtin};
+use eng_gbi::model::{Binding, BuildOptions, build_draw_list, cull_back_builtin, display_list_bytes};
+use oot_game::pack::{BakeBody, BakeSegment, MeshBake};
 use eng_gbi::texture::{self, DecodedImage, decode_linear};
 
 use crate::project::Project;
@@ -133,6 +134,13 @@ pub fn decode_texture(f: &AssetFile, data: &Arc<[u8]>, t: &Symbol, files: &Files
     })
 }
 
+/// `file`'s XML symbol `symbol`.
+pub fn symbol_in<'a>(p: &'a Project, file: &str, symbol: &str) -> Result<(&'a AssetFile, &'a Symbol)> {
+    let f = p.symbols.file(file).with_context(|| format!("no XML for {file}"))?;
+    let s = f.find(symbol).with_context(|| format!("{file} has no {symbol}"))?;
+    Ok((f, s))
+}
+
 /// Why a skeleton symbol can't be read as a `Skeleton`.
 pub fn unsupported_limb_type(s: &Symbol) -> Option<String> {
     match s.attr("LimbType") {
@@ -220,6 +228,78 @@ impl ObjectSegments {
     /// A skeleton's full mesh (LOD 0), drawn in the game's limb order.
     pub fn skeleton_mesh(&self, f: &AssetFile, data: &Arc<[u8]>, skel: &Skeleton) -> Result<DrawList> {
         build_draw_list(skel, &BuildOptions { bindings: self.bindings(f, data), ..Default::default() })
+    }
+
+    /// An actor's `MeshBake` (docs/adr/0012-actor-bakes.md): the object on segment 6, the keeps
+    /// on 4 and 5, the bake's own segments; `Gfx_SetupDL_25Opa`, the prelude, then the body.
+    pub fn bake_mesh(&self, p: &Project, files: &Files, bake: &MeshBake) -> Result<DrawList> {
+        let file = p.symbols.file(&bake.object).with_context(|| format!("no XML for {}", bake.object))?;
+        let data = files.get(&bake.object).with_context(|| format!("{} not in the ROM", bake.object))?;
+        let mut bindings = self.bindings(file, &data);
+        let mut builtin = vec![(0x0C, cull_back_builtin())];
+        let mut dynamic = 0u16;
+        for (seg, s) in &bake.segments {
+            match s {
+                BakeSegment::Texture { file: f, symbol } => {
+                    let (sym_file, sym) = symbol_in(p, f, symbol)?;
+                    let buf = files.get(&sym_file.name).with_context(|| format!("{f} not in the ROM"))?;
+                    bindings.push(Binding { segment: *seg, buf, base: sym.offset as usize });
+                }
+                BakeSegment::DynamicColor { env, prim } => {
+                    let mut cmds = Vec::new();
+                    if *prim {
+                        cmds.push((0xFA00_0000, 0x0000_00FF));
+                    }
+                    if *env {
+                        cmds.push((0xFB00_0000, 0x0000_00FF));
+                    }
+                    bindings.push(Binding { segment: *seg, buf: display_list_bytes(&cmds), base: 0 });
+                    dynamic |= 1 << (seg & 0xF);
+                }
+                BakeSegment::Commands(cmds) => {
+                    // As data (not a builtin) so a call to it is an ordinary list.
+                    builtin.retain(|b| b.0 != *seg);
+                    bindings.push(Binding { segment: *seg, buf: display_list_bytes(cmds), base: 0 });
+                }
+            }
+        }
+        let prelude: Vec<u32> = bake.prelude.iter().map(|&s| (s as u32) << 24).collect();
+        match &bake.body {
+            BakeBody::DLists(lists) => {
+                let mut it = Interpreter::new();
+                for b in &bindings {
+                    it.segments[b.segment as usize & 0xF] = Some(Segment::Data { buf: b.buf.clone(), base: b.base });
+                }
+                for (seg, s) in &builtin {
+                    it.segments[*seg as usize & 0xF] = Some(s.clone());
+                }
+                it.apply_setup_dl_25();
+                it.dynamic_segments = dynamic;
+                for &dl in &prelude {
+                    it.run(dl);
+                }
+                for (f, symbol) in lists {
+                    let (sym_file, sym) = symbol_in(p, f, symbol)?;
+                    it.run(((sym_file.segment.unwrap_or(6) as u32) << 24) | sym.offset);
+                }
+                Ok(it.draw)
+            }
+            BakeBody::Skeleton { file: sf, symbol, limbs } => {
+                let (skel_file, s) = symbol_in(p, sf, symbol)?;
+                let skel_data = files.get(&skel_file.name).with_context(|| format!("{sf} not in the ROM"))?;
+                let skel = parse_skeleton(&skel_data, skel_file.segment.unwrap_or(6), s)?;
+                let mut limb_dlists = Vec::new();
+                let mut limb_segments = Vec::new();
+                for l in limbs {
+                    let (lf, ls) = symbol_in(p, &l.file, &l.symbol)?;
+                    let buf = files.get(&lf.name).with_context(|| format!("{} not in the ROM", l.file))?;
+                    limb_dlists.push((l.limb, (6u32 << 24) | ls.offset));
+                    limb_segments.push((l.limb, 6, Segment::Data { buf, base: 0 }));
+                }
+                let opts = BuildOptions { bindings, builtin_segments: builtin, limb_dlists, limb_segments, dynamic_segments: dynamic, prelude, ..Default::default() };
+                build_draw_list(&skel, &opts)
+            }
+        }
     }
 
     /// A standalone display list as `Gfx_DrawDListOpa` draws it: `Gfx_SetupDL_25Opa`, then the

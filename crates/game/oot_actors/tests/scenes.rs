@@ -79,22 +79,33 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
         n
     };
     let (waiting, placeholders, ported) = count(&w);
-    // Player + 2 En_Holl ported; Navi and every placement a placeholder (or still waiting).
-    assert_eq!(ported, 3);
-    assert_eq!(waiting + placeholders, room0.actors.len() + 1);
+    // Player and the 2 En_Holl, plus the ported placements; Navi and every other placement a
+    // placeholder, or still waiting for its object.
+    let ov = oot_actors::overlays();
+    let ported_placed = room0.actors.iter().filter(|e| ov.is_ported(e.id)).count();
+    assert_eq!(waiting + placeholders + ported, room0.actors.len() + 1 + 3);
     assert!(waiting > 0, "actors whose object loads with the room wait for it");
     for _ in 0..2 {
         frame(&mut w, &mut prev, PadState::default());
     }
-    let (waiting, placeholders, _) = count(&w);
+    let (waiting, placeholders, ported) = count(&w);
     assert_eq!(waiting, 0, "every object is loaded two frames after the room");
-    assert_eq!(placeholders, room0.actors.len() + 1);
-    // Each placement is where the room's actor list puts it, in its category and room.
+    // Navi's placeholder, and the fairy each Kokiri child spawns as its child (En_Elf params 3).
+    let fairies = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_ko::EnKo>(h).is_some()).count();
+    assert_eq!(fairies, 8);
+    assert_eq!(placeholders, room0.actors.len() - ported_placed + 1 + fairies);
+    // (None of the ported placements kills itself for child Link at 10:00 on a new save.)
+    assert_eq!(ported, ported_placed + 3);
+    // Each placement is where the room's actor list puts it, in its category and room. Ported
+    // props may have moved in their init (snapped to the floor, `En_Kanban` lowered for child
+    // Link), so only their x and z are checked.
     let at = &w.assets.as_ref().unwrap().actors;
     for e in &room0.actors {
         let pos = Vec3::new(e.pos[0] as f32, e.pos[1] as f32, e.pos[2] as f32);
+        let ported = ov.is_ported(e.id);
         let found = w.actors.all().into_iter().filter_map(|h| w.actors.actor(h)).any(|a| {
-            a.id == e.id && a.params == e.params && a.home_pos == pos && a.room == 0 && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
+            let at_pos = if ported { a.home_pos.x == pos.x && a.home_pos.z == pos.z } else { a.home_pos == pos };
+            a.id == e.id && a.params == e.params && at_pos && a.room == 0 && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
         });
         assert!(found, "{} at {:?}", at.name(e.id), e.pos);
     }

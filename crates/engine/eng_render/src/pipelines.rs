@@ -106,19 +106,31 @@ impl Renderer {
             layout: &globals_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: globals_buf.as_entire_binding() }],
         });
+        let overlay_globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay globals"),
+            size: std::mem::size_of::<Globals>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let overlay_globals_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay globals"),
+            layout: &globals_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: overlay_globals_buf.as_entire_binding() }],
+        });
 
         let line_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lines"),
             bind_group_layouts: &[Some(&globals_layout)],
             immediate_size: 0,
         });
-        let line_pipeline = |depth: bool| {
+        // Lines (world or overlay), or clip-space triangles (the letterbox bars).
+        let line_pipeline = |depth: bool, fill: bool| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("lines"),
+                label: Some(if fill { "fill" } else { "lines" }),
                 layout: Some(&line_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: Some("vs_line"),
+                    entry_point: Some(if fill { "vs_fill" } else { "vs_line" }),
                     compilation_options: Default::default(),
                     buffers: &[Some(wgpu::VertexBufferLayout {
                         array_stride: std::mem::size_of::<LineVertex>() as u64,
@@ -126,7 +138,10 @@ impl Renderer {
                         attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4],
                     })],
                 },
-                primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::LineList, ..Default::default() },
+                primitive: wgpu::PrimitiveState {
+                    topology: if fill { wgpu::PrimitiveTopology::TriangleList } else { wgpu::PrimitiveTopology::LineList },
+                    ..Default::default()
+                },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: Some(false),
@@ -149,8 +164,9 @@ impl Renderer {
                 cache: None,
             })
         };
-        let line_pipeline_depth = line_pipeline(true);
-        let line_pipeline_overlay = line_pipeline(false);
+        let line_pipeline_depth = line_pipeline(true, false);
+        let line_pipeline_overlay = line_pipeline(false, false);
+        let fill_pipeline = line_pipeline(false, true);
 
         let white_tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("white"),
@@ -169,6 +185,9 @@ impl Renderer {
             shader,
             globals_buf,
             globals_bg,
+            overlay_globals_buf,
+            overlay_globals_bg,
+            fill_pipeline,
             material_layout,
             texture_layout,
             pipeline_layout,

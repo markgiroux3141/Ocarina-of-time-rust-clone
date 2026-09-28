@@ -343,8 +343,13 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
         w = new_play_at(a, cli.child, p, y, true);
     }
     if let [x, y, z, yaw] = cli.at[..] {
-        // (The spikes placed no targets with --at.)
-        w = new_play_at(a, cli.child, Vec3::new(x, y, z), yaw as i32 as i16, false);
+        if a.entrance.is_some() {
+            // Entered by Play_Init: every actor stays; Player moves.
+            w.place_player(Vec3::new(x, y, z), yaw as i32 as i16);
+        } else {
+            // (The spikes placed no targets with --at.)
+            w = new_play_at(a, cli.child, Vec3::new(x, y, z), yaw as i32 as i16, false);
+        }
     }
     Ok(w)
 }

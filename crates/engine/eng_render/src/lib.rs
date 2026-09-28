@@ -7,7 +7,7 @@
 //! - `pipelines`: vertex formats and the render-mode pipeline and sampler caches.
 //! - `materials`: material uniforms (combiner selectors, colours, dynamic-segment values).
 //! - `model`: uploaded meshes (`GpuModel`), posing and per-frame segment values.
-//! - `passes`: recording a frame.
+//! - `passes`: recording a frame (the 3D, the letterbox, the orthographic overlay).
 //! - `lists`: drawing submitted OPA/XLU lists, with the mesh cache.
 
 use std::collections::HashMap;
@@ -25,6 +25,7 @@ mod view;
 pub use device::{COLOR_FORMAT, SAMPLES, Target, headless_device};
 pub use lists::{MeshCache, MeshSource};
 pub use model::GpuModel;
+pub use passes::Screen;
 pub use pipelines::LineVertex;
 pub use view::{Camera, Fog, Lighting};
 
@@ -34,6 +35,11 @@ pub struct Renderer {
     pub(crate) shader: wgpu::ShaderModule,
     pub(crate) globals_buf: wgpu::Buffer,
     pub(crate) globals_bg: wgpu::BindGroup,
+    /// The overlay's globals (the orthographic interface projection).
+    pub(crate) overlay_globals_buf: wgpu::Buffer,
+    pub(crate) overlay_globals_bg: wgpu::BindGroup,
+    /// Clip-space triangles (the letterbox bars).
+    pub(crate) fill_pipeline: wgpu::RenderPipeline,
     pub(crate) material_layout: wgpu::BindGroupLayout,
     pub(crate) texture_layout: wgpu::BindGroupLayout,
     pub(crate) pipeline_layout: wgpu::PipelineLayout,

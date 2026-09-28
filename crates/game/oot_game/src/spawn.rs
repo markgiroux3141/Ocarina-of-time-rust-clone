@@ -69,14 +69,22 @@ impl ActorImpl for Uninit {
 /// An actor that isn't ported: it spawns with its real profile (category, flags, object,
 /// room) and stays where it was placed, doing nothing. Drawn as a marker when
 /// `Debug::placeholders` is on.
+///
+/// **It can't be targeted** (a deviation): its `InitVars` flags may say targetable
+/// (`ACTOR_FLAG_0`), but the init that would set its focus, its target mode, or clear the flag
+/// again never runs, and it draws nothing. So `ACTOR_FLAG_0` is cleared, and the profile's
+/// flags are kept in `profile_flags`.
 pub struct Placeholder {
     pub actor: Actor,
+    pub profile_flags: u32,
 }
 
 impl Placeholder {
     /// The "init" of every unported actor.
-    pub fn init(actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
-        Box::new(Placeholder { actor })
+    pub fn init(mut actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
+        let profile_flags = actor.flags;
+        actor.flags &= !crate::actor::ACTOR_FLAG_0;
+        Box::new(Placeholder { actor, profile_flags })
     }
 }
 
@@ -153,6 +161,21 @@ impl PlayState {
         let actor: Box<dyn ActorImpl> =
             if self.object_ctx.is_loaded(bank.unwrap()) { ctor(a, self) } else { Box::new(Uninit { actor: a, ctor }) };
         self.spawn(actor).ok_or(SpawnFailure::TooMany)
+    }
+
+    /// `Actor_SpawnAsChild`: spawned by the updating actor (`parent` is its base, taken out of
+    /// its slot), which becomes the new actor's `parent`, and the new actor its `child`. The
+    /// child's init runs before the link is made, as in the game; it takes the parent's room.
+    pub fn actor_spawn_as_child(&mut self, parent: &mut Actor, id: i16, pos: Vec3, rot: [i16; 3], params: i16) -> Result<ActorHandle, SpawnFailure> {
+        let h = self.actor_spawn(id, pos, rot, params)?;
+        parent.child = Some(h);
+        if let Some(a) = self.actors.actor_mut(h) {
+            a.parent = self.cur_actor;
+            if a.room >= 0 {
+                a.room = parent.room;
+            }
+        }
+        Ok(h)
     }
 
     /// `Actor_SpawnEntry`.

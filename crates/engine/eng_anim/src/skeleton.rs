@@ -63,6 +63,28 @@ impl Skeleton {
         out
     }
 
+    /// `pose` with a hook per limb, like `SkelAnime_DrawFlex`'s `OverrideLimbDraw`: it gets the
+    /// limb's 1-based index (`limbIndex`), its position and rotation to change, and returns a
+    /// matrix applied before the limb's own `Translate * RotateZYX` (the callback's `Matrix_*`
+    /// calls, `MTXMODE_APPLY`).
+    pub fn pose_override(&self, joints: &[[i16; 3]], mut f: impl FnMut(usize, &mut Vec3, &mut [i16; 3]) -> Mat4) -> Vec<Mat4> {
+        let mut out = vec![Mat4::IDENTITY; self.limbs.len()];
+        for &l in &self.draw_order {
+            let limb = &self.limbs[l as usize];
+            let parent = self.parents[l as usize].map(|p| out[p as usize]).unwrap_or(Mat4::IDENTITY);
+            let mut pos = if l == 0 {
+                let r = joints.first().copied().unwrap_or([0; 3]);
+                Vec3::new(r[0] as f32, r[1] as f32, r[2] as f32)
+            } else {
+                Vec3::new(limb.joint_pos[0] as f32, limb.joint_pos[1] as f32, limb.joint_pos[2] as f32)
+            };
+            let mut rot = joints.get(l as usize + 1).copied().unwrap_or([0; 3]);
+            let pre = f(l as usize + 1, &mut pos, &mut rot);
+            out[l as usize] = parent * pre * local_transform(pos, rot);
+        }
+        out
+    }
+
     /// The rest pose (all rotations zero, root at its joint position).
     pub fn bind_pose(&self) -> Vec<Mat4> {
         let mut jt = JointTable::zeroed(self.limbs.len() + 1);

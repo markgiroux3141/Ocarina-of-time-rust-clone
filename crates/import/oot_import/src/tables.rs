@@ -14,7 +14,7 @@ use eng_anim::skeleton::{LimbType, Skeleton};
 use eng_math::Tables;
 use glam::Vec3;
 use oot_game::actor_table::{ACTOROVL_ALLOC_ABSOLUTE, ACTOROVL_ALLOC_NORMAL, ACTOROVL_ALLOC_PERSISTENT, ActorInfo, ActorInitInfo, ActorTable};
-use oot_game::camera::CameraData;
+use oot_game::camera::{CamModeData, CameraData};
 use oot_game::data::{AgeProperties, Anim, AnimId, AttackAnim, BOOTS_KOKIRI, BOOTS_KOKIRI_CHILD, GameData, ItemTables, Regs};
 use oot_game::env::{EnvTables, TimeBasedLightEntry, clock_time};
 use oot_game::footik::{FootIkData, Rig};
@@ -159,22 +159,6 @@ impl LoadGameData for GameData {
             .collect::<Result<_>>()?;
         let regs = [boot_regs(&lib, &boot_data, BOOTS_KOKIRI)?, boot_regs(&lib, &boot_data, BOOTS_KOKIRI_CHILD)?];
 
-        let ages_init = find_initializer(&player, "sAgeProperties")?;
-        let ages: Vec<AgeProperties> = ages_init
-            .list()
-            .iter()
-            .map(|a| {
-                let f: Vec<f32> = a.list().iter().take(17).map(|i| i.as_f32().context("sAgeProperties float")).collect::<Result<_>>()?;
-                if f.len() != 17 {
-                    bail!("sAgeProperties entry has {} leading floats", f.len());
-                }
-                Ok(AgeProperties::from_floats(&f))
-            })
-            .collect::<Result<_>>()?;
-        if ages.len() != 2 {
-            bail!("sAgeProperties has {} entries", ages.len());
-        }
-
         let mut anims = Vec::new();
         let mut anim_symbols = Vec::new();
         let mut by_name = HashMap::new();
@@ -183,6 +167,59 @@ impl LoadGameData for GameData {
             by_name.insert(short.clone(), anims.len());
             anims.push(player_anim(&short, &a));
             anim_symbols.push(name);
+        }
+
+        let ages_init = find_initializer(&player, "sAgeProperties")?;
+        let anim_ref = |i: &Init| -> Result<usize> {
+            let n = i.atom().context("sAgeProperties animation")?.trim().trim_start_matches('&').trim_start_matches("gPlayerAnim_");
+            by_name.get(n).copied().with_context(|| format!("sAgeProperties: animation {n} not in gameplay_keep"))
+        };
+        let vec3s = |i: &Init| -> Result<[i16; 3]> {
+            let v: Vec<i16> = i.list().iter().map(|x| x.as_int().map(|v| v as i16).context("sAgeProperties Vec3s")).collect::<Result<_>>()?;
+            v.try_into().map_err(|v: Vec<i16>| anyhow::anyhow!("sAgeProperties Vec3s of {}", v.len()))
+        };
+        let vec3s_n = |i: &Init, n: usize| -> Result<Vec<[i16; 3]>> {
+            let v: Vec<[i16; 3]> = i.list().iter().map(&vec3s).collect::<Result<_>>()?;
+            anyhow::ensure!(v.len() == n, "sAgeProperties: {} Vec3s where {n} were expected", v.len());
+            Ok(v)
+        };
+        let anims_n = |i: &Init, n: usize| -> Result<Vec<usize>> {
+            let v: Vec<usize> = i.list().iter().map(&anim_ref).collect::<Result<_>>()?;
+            anyhow::ensure!(v.len() == n, "sAgeProperties: {} animations where {n} were expected", v.len());
+            Ok(v)
+        };
+        let ages: Vec<AgeProperties> = ages_init
+            .list()
+            .iter()
+            .map(|a| {
+                let items = a.list();
+                let f: Vec<f32> = items.iter().take(17).map(|i| i.as_f32().context("sAgeProperties float")).collect::<Result<_>>()?;
+                if f.len() != 17 || items.len() != 33 {
+                    bail!("sAgeProperties entry has {} leading floats and {} fields", f.len(), items.len());
+                }
+                let mut age = AgeProperties::from_floats(&f);
+                let c = &mut age.climb;
+                c.unk_44 = vec3s(&items[17])?;
+                c.unk_4A = vec3s_n(&items[18], 4)?.try_into().unwrap();
+                c.unk_62 = vec3s_n(&items[19], 4)?.try_into().unwrap();
+                c.unk_7A = vec3s_n(&items[20], 2)?.try_into().unwrap();
+                c.unk_86 = vec3s_n(&items[21], 2)?.try_into().unwrap();
+                c.unk_92 = items[22].as_int().context("unk_92")? as u16;
+                c.unk_94 = items[23].as_int().context("unk_94")? as u16;
+                c.unk_98 = anim_ref(&items[24])?;
+                c.unk_9C = anim_ref(&items[25])?;
+                c.unk_A0 = anim_ref(&items[26])?;
+                c.unk_A4 = anim_ref(&items[27])?;
+                c.unk_A8 = anim_ref(&items[28])?;
+                c.unk_AC = anims_n(&items[29], 4)?.try_into().unwrap();
+                c.unk_BC = anims_n(&items[30], 2)?.try_into().unwrap();
+                c.unk_C4 = anims_n(&items[31], 2)?.try_into().unwrap();
+                c.unk_CC = anims_n(&items[32], 2)?.try_into().unwrap();
+                Ok(age)
+            })
+            .collect::<Result<_>>()?;
+        if ages.len() != 2 {
+            bail!("sAgeProperties has {} entries", ages.len());
         }
 
         let anim_types = enum_members(&header, "PLAYER_ANIMTYPE_").iter().filter(|m| !m.ends_with("_MAX")).count();
@@ -332,7 +369,8 @@ impl LoadGameData for GameData {
 }
 
 impl LoadCameraData for CameraData {
-    /// `sOREGInit` and `sSetNormal0ModeNormalData` from `z_camera_data.c`.
+    /// `sOREGInit`, `sCamSetNormal0Modes` (each mode's function and `CAM_FUNCDATA_*` values)
+    /// and NORMAL0's valid-mode mask in `sCameraSettings`, from `z_camera_data.c`.
     fn load(decomp: &Path) -> Result<CameraData> {
         let p = decomp.join("src/code/z_camera_data.c");
         let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
@@ -342,25 +380,40 @@ impl LoadCameraData for CameraData {
             .map(|i| i.as_int().map(|v| v as i16))
             .collect::<Option<Vec<_>>>()
             .context("sOREGInit: non-integer entry")?;
-        let norm = find_initializer(&src, "sSetNormal0ModeNormalData")?;
-        let call = norm.flatten().join(",");
-        let args = call
-            .strip_prefix("CAM_FUNCDATA_NORM1(")
-            .and_then(|s| s.strip_suffix(')'))
-            .context("sSetNormal0ModeNormalData is not a CAM_FUNCDATA_NORM1")?;
-        let v: Vec<i16> = args
-            .split(',')
-            .map(|a| {
-                let a = a.trim();
-                match a.strip_prefix("0x") {
-                    Some(h) => i16::from_str_radix(h, 16).ok(),
-                    None => a.parse().ok(),
-                }
-            })
-            .collect::<Option<_>>()
-            .context("CAM_FUNCDATA_NORM1 arguments")?;
-        let normal0 = v.try_into().map_err(|_| anyhow::anyhow!("CAM_FUNCDATA_NORM1 wants 10 arguments"))?;
-        Ok(CameraData { oreg, normal0 })
+        // CAM_SETTING_MODE_ENTRY(func, data): the atoms split at every comma, so rejoin them.
+        let entries = find_initializer(&src, "sCamSetNormal0Modes")?.flatten().join(",");
+        let mut normal0_modes = Vec::new();
+        for e in entries.split("CAM_SETTING_MODE_ENTRY(").skip(1) {
+            let e = e.split(')').next().unwrap_or_default();
+            let (func, data) = e.split_once(',').context("CAM_SETTING_MODE_ENTRY arguments")?;
+            let data = data.trim();
+            let call = find_initializer(&src, data)?.flatten().join(",");
+            let open = call.find('(').with_context(|| format!("{data} is not a CAM_FUNCDATA_* call"))?;
+            let args = call[open + 1..].strip_suffix(')').with_context(|| format!("{data}: unterminated"))?;
+            let values = args
+                .split(',')
+                .map(|a| {
+                    let a = a.trim();
+                    let (neg, a) = match a.strip_prefix('-') {
+                        Some(r) => (true, r.trim()),
+                        None => (false, a),
+                    };
+                    let v = match a.strip_prefix("0x") {
+                        Some(h) => i32::from_str_radix(h, 16).ok(),
+                        None => a.parse().ok(),
+                    }?;
+                    Some((if neg { -v } else { v }) as i16)
+                })
+                .collect::<Option<Vec<i16>>>()
+                .with_context(|| format!("{data}: non-integer argument"))?;
+            normal0_modes.push(CamModeData { func: func.trim().to_string(), data: data.to_string(), values });
+        }
+        anyhow::ensure!(normal0_modes.len() == 21, "sCamSetNormal0Modes has {} modes, not CAM_MODE_MAX (21)", normal0_modes.len());
+        // sCameraSettings[CAM_SET_NORMAL0] = { { validModes }, sCamSetNormal0Modes }.
+        let settings = find_initializer(&src, "sCameraSettings")?.flatten();
+        let at = settings.iter().position(|a| a.trim() == "sCamSetNormal0Modes").context("sCameraSettings: no NORMAL0 entry")?;
+        let mask = at.checked_sub(1).and_then(|i| Init::Atom(settings[i].clone()).as_int()).context("NORMAL0's valid-mode mask")?;
+        Ok(CameraData { oreg, normal0_modes, normal0_valid_modes: mask as u32 })
     }
 }
 

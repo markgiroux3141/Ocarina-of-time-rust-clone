@@ -14,3 +14,6 @@ One file per decision: the context, what was decided, and what follows from it. 
 | [0008](0008-asset-pack.md) | Asset pack: one versioned file per ROM in the user data dir, keyed by decomp names | Accepted, built |
 | [0009](0009-baked-state.md) | Baking what runtime state changes: meshes per scene layer, Link's face as a texture swap, draw configs ported | Accepted |
 | [0010](0010-scenes-and-spawning.md) | Scenes and spawning: `Play_Init` rebuilds the play state, actor profiles from the C, placeholders for unported actors, loads keep their timing | Accepted, built |
+| [0011](0011-collision-check.md) | The collision check: colliders stay in their actors; the context holds references, and the checks take them out and put them back | Accepted, built |
+| [0012](0012-actor-bakes.md) | Actor bakes: actors declare their meshes (lists or a skeleton, segments, a prelude), the importer bakes them | Accepted, built |
+| [0013](0013-camera-modes-and-screen.md) | Camera modes by the imported `CAM_FUNC`, unported modes on Normal1; the letterbox and an orthographic overlay list in the engine; the reticle at 20 Hz | Accepted, built |

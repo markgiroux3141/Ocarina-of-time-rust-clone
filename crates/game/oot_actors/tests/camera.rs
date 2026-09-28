@@ -17,8 +17,26 @@ fn camera_data_read_from_decomp() {
     // OREG(8) 150, R_CAM_YOFFSET_NORM -10, OREG(50) = OREG(51) = 20, 53 entries.
     assert_eq!(c.oreg.len(), 53);
     assert_eq!((c.oreg(2), c.oreg(5), c.oreg(6), c.oreg(7), c.oreg(8), c.oreg(46), c.oreg(50), c.oreg(51)), (5, 14500, 20, 16, 150, -10, 20, 20));
+    // sCamSetNormal0Modes: CAM_MODE_MAX (21) entries, every one valid (sCameraSettings'
+    // 0x051FFFFF).
+    assert_eq!(c.normal0_modes.len(), 21);
+    assert_eq!(c.normal0_valid_modes & 0x1F_FFFF, 0x1F_FFFF);
     // sSetNormal0ModeNormalData = CAM_FUNCDATA_NORM1(-20, 200, 300, 10, 12, 10, 35, 60, 60, 0x0003).
-    assert_eq!(c.normal0, [-20, 200, 300, 10, 12, 10, 35, 60, 60, 3]);
+    let m = &c.normal0_modes[camera::CAM_MODE_NORMAL as usize];
+    assert_eq!((m.func.as_str(), m.data.as_str()), ("CAM_FUNC_NORM1", "sSetNormal0ModeNormalData"));
+    assert_eq!(m.values, [-20, 200, 300, 10, 12, 10, 35, 60, 60, 3]);
+    // sSetNormal0ModeTargetData = CAM_FUNCDATA_PARA1(-20, 250, 0, 0, 5, 5, 45, 50, 0x200A, -40, 20).
+    let m = &c.normal0_modes[camera::CAM_MODE_TARGET as usize];
+    assert_eq!(m.func, "CAM_FUNC_PARA1");
+    assert_eq!(m.values, [-20, 250, 0, 0, 5, 5, 45, 50, 0x200A, -40, 20]);
+    // sSetNormal0ModeFollowTargetData = CAM_FUNCDATA_KEEP1(-20, 120, 140, 25, 45, -5, 15, 15, 45,
+    // 50, 0x2001, -50, 30).
+    let m = &c.normal0_modes[camera::CAM_MODE_FOLLOWTARGET as usize];
+    assert_eq!(m.func, "CAM_FUNC_KEEP1");
+    assert_eq!(m.values, [-20, 120, 140, 25, 45, -5, 15, 15, 45, 50, 0x2001, -50, 30]);
+    // STILL is Normal1 too; BATTLE is Camera_Battle1 (not ported).
+    assert_eq!(c.normal0_modes[camera::CAM_MODE_STILL as usize].func, "CAM_FUNC_NORM1");
+    assert_eq!(c.normal0_modes[camera::CAM_MODE_BATTLE as usize].func, "CAM_FUNC_BATT1");
 }
 
 #[test]
