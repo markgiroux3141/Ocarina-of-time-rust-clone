@@ -7,7 +7,7 @@
 use anyhow::{Context, Result, bail};
 use eng_anim::anim::{JointTable, LINK_ANIM_FRAME_BYTES, LINK_ANIM_JOINTS, LinkAnimation, StandardAnimation};
 use eng_anim::skeleton::{Limb, LimbType, Skeleton};
-use eng_collision::collision::{CollisionHeader, CollisionPoly, SurfaceType, WaterBox};
+use eng_collision::collision::{BgCamInfo, CollisionHeader, CollisionPoly, SurfaceType, WaterBox};
 
 fn be16(b: &[u8], o: usize) -> i16 {
     i16::from_be_bytes([b[o], b[o + 1]])
@@ -165,16 +165,67 @@ impl ParseLinkAnimation for LinkAnimation {
     }
 }
 
-/// `CollisionHeader`: a 0x2C-byte header pointing at the vertex, poly, surface type and water
-/// box lists.
+/// `CollisionHeader`: a 0x2C-byte header pointing at the vertex, poly, surface type, bg camera
+/// and water box lists.
 pub trait CollisionCodec: Sized {
     fn parse(file: &[u8], segment: u8, offset: usize) -> Result<Self>;
+    /// `parse`, reading at least `min_cams` bg camera entries (the indices the scene's spawns,
+    /// transition actors and room images name).
+    fn parse_with_cams(file: &[u8], segment: u8, offset: usize, min_cams: usize) -> Result<Self>;
     fn encode(&self, segment: u8) -> Vec<u8>;
+}
+
+/// `CAM_SET_MAX`: a bg camera entry with a setting at or past it isn't one.
+const CAM_SET_MAX: u16 = 0x42;
+
+/// `bgCamList`, which has no count: at least every index the surface types and water boxes
+/// name (and `min`), then on while the entries are plausible (a setting below `CAM_SET_MAX`, a
+/// count up to 0x400, a data pointer in the file or NULL) and don't run into any other list
+/// the header or an earlier entry points at. As the extractor (`oot_extract::scenes`) reads it.
+fn parse_bg_cams(file: &[u8], segment: u8, list: u32, min: usize, known: &[usize]) -> Result<Vec<BgCamInfo>> {
+    if list == 0 {
+        return Ok(Vec::new());
+    }
+    if (list >> 24) as u8 != segment {
+        bail!("bg camera list pointer {list:08X} is not in segment {segment:02X}");
+    }
+    let lo = (list & 0xFF_FFFF) as usize;
+    let mut stop: Vec<usize> = known.to_vec();
+    let mut out = Vec::new();
+    for i in 0..0x100 {
+        let o = lo + i * 8;
+        if o + 8 > file.len() {
+            break;
+        }
+        if i >= min && i > 0 && stop.contains(&o) {
+            break;
+        }
+        let (setting, count, data_p) = (beu16(file, o), beu16(file, o + 2) as i16, be32(file, o + 4));
+        let data_o = (data_p & 0xFF_FFFF) as usize;
+        let data_ok = data_p == 0 || ((data_p >> 24) as u8 == segment && data_o + count.max(0) as usize * 6 <= file.len());
+        let valid = setting < CAM_SET_MAX && (0..=0x400).contains(&count) && data_ok;
+        // An index something names is kept whatever it holds (its data only if it's readable).
+        if !valid && i >= min {
+            break;
+        }
+        let data = if data_p == 0 || !data_ok {
+            Vec::new()
+        } else {
+            stop.push(data_o);
+            (0..count as usize).map(|k| [beu16(file, data_o + k * 6) as i16, beu16(file, data_o + k * 6 + 2) as i16, beu16(file, data_o + k * 6 + 4) as i16]).collect()
+        };
+        out.push(BgCamInfo { setting, count, data });
+    }
+    Ok(out)
 }
 
 impl CollisionCodec for CollisionHeader {
     /// Decodes a header at `offset` in `file`, whose pointers are in `segment`.
     fn parse(file: &[u8], segment: u8, offset: usize) -> Result<CollisionHeader> {
+        Self::parse_with_cams(file, segment, offset, 0)
+    }
+
+    fn parse_with_cams(file: &[u8], segment: u8, offset: usize, min_cams: usize) -> Result<CollisionHeader> {
         let local = |addr: u32, len: usize, what: &str| -> Result<usize> {
             if addr == 0 && len == 0 {
                 return Ok(0);
@@ -226,7 +277,7 @@ impl CollisionCodec for CollisionHeader {
         let so = local(be32(h, 0x1C), num_types * 8, "surface type list")?;
         let surface_types = (0..num_types)
             .map(|i| SurfaceType { data: [be32(file, so + i * 8), be32(file, so + i * 8 + 4)] })
-            .collect();
+            .collect::<Vec<SurfaceType>>();
         let wo = local(be32(h, 0x28), num_water * 16, "water box list")?;
         let water_boxes = (0..num_water)
             .map(|i| {
@@ -240,8 +291,20 @@ impl CollisionCodec for CollisionHeader {
                     properties: be32(file, o + 12),
                 }
             })
-            .collect();
-        Ok(CollisionHeader { min_bounds: s3(0), max_bounds: s3(6), vertices, polys, surface_types, water_boxes })
+            .collect::<Vec<WaterBox>>();
+        let mut min = min_cams;
+        for s in &surface_types {
+            min = min.max((s.data[0] & 0xFF) as usize + 1);
+        }
+        for w in &water_boxes {
+            // WATERBOX_BGCAM_INDEX; 0xFF is none.
+            if w.properties & 0xFF != 0xFF {
+                min = min.max((w.properties & 0xFF) as usize + 1);
+            }
+        }
+        let known = [offset, vo, po, so, wo];
+        let bg_cams = parse_bg_cams(file, segment, be32(h, 0x20), min, &known).context("bg camera list")?;
+        Ok(CollisionHeader { min_bounds: s3(0), max_bounds: s3(6), vertices, polys, surface_types, bg_cams, water_boxes })
     }
 
     /// Encodes the header and its lists into one buffer mapped at `segment`, header first.
@@ -281,6 +344,27 @@ impl CollisionCodec for CollisionHeader {
             }
             out.extend_from_slice(&w.properties.to_be_bytes());
         }
+        // The bg cameras' data, then their list, last: parsing stops at the end of the buffer.
+        let mut cam_data = Vec::new();
+        for c in &self.bg_cams {
+            if c.data.is_empty() {
+                cam_data.push(0);
+                continue;
+            }
+            cam_data.push(seg(out.len()));
+            for v in &c.data {
+                for x in v {
+                    out.extend_from_slice(&x.to_be_bytes());
+                }
+            }
+        }
+        align4(&mut out);
+        let cams_off = out.len();
+        for (c, p) in self.bg_cams.iter().zip(&cam_data) {
+            out.extend_from_slice(&c.setting.to_be_bytes());
+            out.extend_from_slice(&c.count.to_be_bytes());
+            out.extend_from_slice(&p.to_be_bytes());
+        }
 
         let mut h = Vec::with_capacity(0x2C);
         for c in self.min_bounds.iter().chain(&self.max_bounds) {
@@ -293,7 +377,8 @@ impl CollisionCodec for CollisionHeader {
         h.extend_from_slice(&[0, 0]);
         h.extend_from_slice(&seg(poly_off).to_be_bytes());
         h.extend_from_slice(&seg(surf_off).to_be_bytes());
-        h.extend_from_slice(&0u32.to_be_bytes()); // bgCamList: none
+        let cams_ptr = if self.bg_cams.is_empty() { 0 } else { seg(cams_off) };
+        h.extend_from_slice(&cams_ptr.to_be_bytes());
         h.extend_from_slice(&(self.water_boxes.len() as u16).to_be_bytes());
         h.extend_from_slice(&[0, 0]);
         let water_ptr = if self.water_boxes.is_empty() { 0 } else { seg(water_off) };
@@ -318,6 +403,9 @@ mod tests {
         b.quad(Vec3::new(-100.0, 0.0, -100.0), Vec3::new(100.0, 0.0, -100.0), Vec3::new(100.0, 80.0, -100.0), Vec3::new(-100.0, 80.0, -100.0), wall);
         let mut h = b.finish();
         h.water_boxes.push(WaterBox { x_min: -10, y_surface: -5, z_min: -10, x_length: 20, z_length: 20, properties: 0x3F << 13 });
+        // A PREREND_FIXED camera's BgCamFuncData, and an empty CAM_SET_NONE entry.
+        h.bg_cams.push(BgCamInfo { setting: 0x19, count: 3, data: vec![[-118, 345, 47], [12743, 20389, 0], [4683, -1, -1]] });
+        h.bg_cams.push(BgCamInfo { setting: 0, count: 0, data: Vec::new() });
         let bytes = h.encode(2);
         let back = CollisionHeader::parse(&bytes, 2, 0).unwrap();
         assert_eq!(back, h);

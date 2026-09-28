@@ -27,6 +27,7 @@ use oot_game::spawn::Overlays;
 
 pub mod bg_ydan_hasi;
 pub mod dummy_target;
+pub mod en_door;
 pub mod en_holl;
 pub mod en_ishi;
 pub mod en_kanban;
@@ -42,7 +43,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -55,6 +56,7 @@ pub fn overlays() -> Overlays {
     o.register(en_kusa::ACTOR_EN_KUSA, en_kusa::EnKusa::init);
     o.register(en_kanban::ACTOR_EN_KANBAN, en_kanban::EnKanban::init);
     o.register(en_ko::ACTOR_EN_KO, en_ko::EnKo::init);
+    o.register(en_door::ACTOR_EN_DOOR, en_door::EnDoor::init);
     o
 }
 
@@ -62,6 +64,7 @@ pub fn overlays() -> Overlays {
 pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     let mut v = en_kanban::bakes();
     v.extend(en_ko::bakes());
+    v.extend(en_door::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     v

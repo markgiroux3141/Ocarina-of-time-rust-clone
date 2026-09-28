@@ -30,6 +30,7 @@ pub const CMD_EXIT_LIST: u8 = 0x13;
 pub const CMD_END: u8 = 0x14;
 pub const CMD_ECHO_SETTINGS: u8 = 0x16;
 pub const CMD_ALTERNATE_HEADER_LIST: u8 = 0x18;
+pub const CMD_MISC_SETTINGS: u8 = 0x19;
 /// Scene files are mapped to segment 2 while loaded.
 pub const SCENE_SEGMENT: u8 = 0x02;
 /// Room files are mapped to segment 3.
@@ -147,6 +148,8 @@ pub struct Scene {
     pub entrances: Vec<EntranceEntry>,
     pub exits: Vec<u16>,
     pub transition_actors: Vec<TransitionActorEntry>,
+    /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType` (`R_SCENE_CAM_TYPE`, `SCENE_CAM_TYPE_*`).
+    pub scene_cam_type: u8,
 }
 
 /// Every offset in a scene file that a header command points at, across all its headers (the
@@ -210,8 +213,9 @@ impl Scene {
         let local = |a: u32| (a & 0xFF_FFFF) as usize;
         let find = |code: u8| cmds.iter().find(|c| c.code == code).copied();
         let col = find(CMD_COLLISION_HEADER).ok_or_else(|| anyhow::anyhow!("{name}: no collision header command"))?;
-        let collision = CollisionHeader::parse(&file, SCENE_SEGMENT, local(col.data2))?;
         let spawns = find(CMD_SPAWN_LIST).map(|c| actor_entries(&file, local(c.data2), c.data1 as usize)).unwrap_or_default();
+        // SCENE_CMD_MISC_SETTINGS(sceneCamType, worldMapLocation): R_SCENE_CAM_TYPE.
+        let scene_cam_type = find(CMD_MISC_SETTINGS).map(|c| c.data1).unwrap_or(0);
         let rooms: Vec<RoomRef> = find(CMD_ROOM_LIST)
             .map(|c| {
                 (0..c.data1 as usize)
@@ -289,10 +293,29 @@ impl Scene {
                     .collect()
             })
             .unwrap_or_default();
+        // The bg cameras something outside the collision names: a spawn's start camera
+        // (`params & 0xFF`, 0xFF for none), a transition actor's sides, and the two a fixed
+        // viewpoint scene toggles between (BGCAM_INDEX_TOGGLE_LOCKED / _PIVOT).
+        let mut min_cams = if matches!(scene_cam_type, 0x10 | 0x20) { 2 } else { 0 };
+        for s in &spawns {
+            if s.params as u16 & 0xFF != 0xFF {
+                min_cams = min_cams.max((s.params as u16 & 0xFF) as usize + 1);
+            }
+        }
+        for t in &transition_actors {
+            let t: &TransitionActorEntry = t;
+            for (_, cam) in t.sides {
+                if cam >= 0 {
+                    min_cams = min_cams.max(cam as usize + 1);
+                }
+            }
+        }
+        let collision = CollisionHeader::parse_with_cams(&file, SCENE_SEGMENT, local(col.data2), min_cams)?;
         Ok(Scene {
             entrances,
             exits,
             transition_actors,
+            scene_cam_type,
             name: name.to_string(),
             layer,
             header_offset,

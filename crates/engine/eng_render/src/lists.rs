@@ -101,18 +101,24 @@ impl Renderer {
     ) {
         let mut uses: HashMap<&MeshKey, usize> = HashMap::new();
         let mut order: Vec<(&MeshKey, usize)> = Vec::new();
+        let mut ortho: Vec<bool> = Vec::new();
         let mut order_2d: Vec<(&MeshKey, usize)> = Vec::new();
         for (cmd, is_2d) in lists.ordered().map(|c| (c, false)).chain(lists.overlay_2d.iter().map(|c| (c, true))) {
             let n = uses.entry(&cmd.mesh).or_default();
             if cache.prepare(self, device, queue, source, cmd, *n) {
-                if is_2d { &mut order_2d } else { &mut order }.push((&cmd.mesh, *n));
+                if is_2d {
+                    order_2d.push((&cmd.mesh, *n));
+                } else {
+                    order.push((&cmd.mesh, *n));
+                    ortho.push(cmd.params.screen);
+                }
             }
             *n += 1;
         }
         let models: Vec<&GpuModel> = order.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
         let models_2d: Vec<&GpuModel> = order_2d.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
         let overlay: Vec<LineVertex> = lists.overlay.iter().map(|p| LineVertex { pos: p.pos.to_array(), color: p.color }).collect();
-        let screen = Screen { overlay_models: &models_2d, letterbox_rows: lists.letterbox_rows };
+        let screen = Screen { overlay_models: &models_2d, letterbox_rows: lists.letterbox_rows, ortho_models: &ortho };
         self.render_screen(device, queue, encoder, target, &models, camera, light, world_lines, &overlay, clear, &screen);
     }
 }

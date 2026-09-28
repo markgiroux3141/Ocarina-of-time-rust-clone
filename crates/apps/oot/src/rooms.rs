@@ -1,6 +1,7 @@
 //! Drawing a play state's scene (`oot_game::play_scene::SceneState`): the environment's lights
 //! and fog, and the rooms' draws in `Room_Draw`'s order, with the scene draw config's segment
-//! values for this frame.
+//! values for this frame; a prerendered room's background (`Room_DrawImage`) and the room
+//! skybox around the eye (docs/adr/0014-prerendered-backgrounds.md).
 
 use anyhow::Result;
 use eng_gfx::{DrawCmd, DrawList, DrawLists, MeshKey};
@@ -11,6 +12,7 @@ use oot_game::env::{self, EnvTables};
 use oot_game::pack::GamePack;
 use oot_game::play::PlayState;
 use oot_game::play_scene::SceneState;
+use oot_game::camera::CAM_SET_PREREND_FIXED;
 use oot_game::room::cullable_order;
 use oot_game::scene::{RoomData, ShapeKind, layer_for};
 
@@ -99,8 +101,32 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
                 }
             }
         }
+        // Room_DrawImage: after the room's opaque list, its background (the opaque geometry
+        // keeps only its depth under it).
+        if room.shape == Some(ShapeKind::Image)
+            && !s.all_rooms
+            // The image only fits the game camera's view (not the sandbox's follow camera).
+            && play.camera_kind == oot_game::camera::CameraKind::Game
+            && let Some(b) = oot_game::room::image_background(&play.game_camera, &play.col, room)
+        {
+            let mut cmd = DrawCmd::new(MeshKey::named(format!("room/{}/{}/{}/bg{b}", s.data.name, s.layer, room.index)), Mat4::IDENTITY);
+            cmd.params.screen = true;
+            out.opa.push(cmd);
+        }
     }
     drawn
+}
+
+/// `Play_Draw`'s room skybox (`skyboxCtx.unk_140 != 0`: the houses' and shops' 360° images),
+/// after the rooms, when the active camera isn't `CAM_SET_PREREND_FIXED`: centred on the eye.
+pub fn submit_room_skybox(play: &PlayState, s: &SceneState, eye: Vec3, out: &mut DrawLists) -> bool {
+    if s.all_rooms || play.game_camera.setting == CAM_SET_PREREND_FIXED {
+        return false;
+    }
+    let Some(sky) = play.assets.as_ref().and_then(|a| a.scenes.room_skybox(s.layer_data().skybox.skybox_id)) else { return false };
+    let key = oot_game::pack::keys::bake(&oot_game::skybox::bake_name(&sky.name));
+    out.opa.push(DrawCmd::new(MeshKey::named(key), Mat4::from_translation(eye)));
+    true
 }
 
 /// The mesh of a `room/<scene>/<layer>/<room>/<entry>/<opa|xlu>` key (without the `room/`).
@@ -113,6 +139,17 @@ pub fn entry_mesh(s: &SceneState, key: &str) -> Option<DrawList> {
     let r = s.rooms.iter().find(|r| Some(r.index) == room.parse().ok())?;
     let e = r.entries.get(entry.parse::<usize>().ok()?)?;
     if kind == "opa" { e.opa.clone() } else { e.xlu.clone() }
+}
+
+/// The mesh of a `room/<scene>/<layer>/<room>/bg<i>` key (without the `room/`): a background.
+pub fn background_mesh(s: &SceneState, key: &str) -> Option<DrawList> {
+    let f: Vec<&str> = key.split('/').collect();
+    let [scene, layer, room, bg] = f[..] else { return None };
+    if scene != s.data.name || layer.parse::<usize>().ok()? != s.layer {
+        return None;
+    }
+    let r = s.rooms.iter().find(|r| Some(r.index) == room.parse().ok())?;
+    Some(r.backgrounds.get(bg.strip_prefix("bg")?.parse::<usize>().ok()?)?.mesh.clone())
 }
 
 /// Every room's triangles (the HUD's count).

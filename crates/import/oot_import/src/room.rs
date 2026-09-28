@@ -26,8 +26,10 @@ use glam::Vec3;
 use crate::csrc::{define_rows, define_rows_nested, parse_enum, parse_int};
 use crate::drawcfg;
 use crate::project::Project;
+use crate::background::RawBackground;
 use crate::scene::{self, ActorEntry, Scene, SceneCommand};
-pub use oot_game::scene::{EntranceInfo, ShapeKind};
+pub use oot_game::scene::{EntranceInfo, RoomBackground, ShapeKind};
+pub use oot_game::skybox::RoomSkybox;
 
 // ---------------------------------------------------------------------------------------------
 // Decomp tables
@@ -53,6 +55,8 @@ pub struct SceneTables {
     pub drawcfg: drawcfg::Program,
     /// `gEntranceTable`, from `entrance_table.h`.
     pub entrances: Vec<EntranceInfo>,
+    /// `Skybox_Setup`'s room skyboxes, from `z_vr_box.c`.
+    pub room_skyboxes: Vec<RoomSkybox>,
 }
 
 /// A `TRANS_TYPE_*` of the entrance table: an enum member, or `TRANS_TYPE_CIRCLE(appearance,
@@ -106,6 +110,38 @@ fn load_entrances(decomp: &Path, scene_ids: &HashMap<String, i64>) -> Result<Vec
     Ok(out)
 }
 
+/// `Skybox_Setup`'s cases that set `skyboxCtx->unk_140` (the room skyboxes): each case's
+/// `SKYBOX_*` (its value from `z64.h`), `unk_140`, and the first `_vr_*_staticSegmentRomStart`
+/// and `_vr_*_pal_staticSegmentRomStart` it loads.
+pub fn load_room_skyboxes(decomp: &Path) -> Result<Vec<RoomSkybox>> {
+    let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
+    let ids = parse_enum(&read(&decomp.join("include/z64.h"))?, "SKYBOX_NONE");
+    let src = crate::csrc::strip_comments(&read(&decomp.join("src/code/z_vr_box.c"))?);
+    let body = src.split("void Skybox_Setup(").nth(1).context("z_vr_box.c: no Skybox_Setup")?;
+    let body = body.split("
+void ").next().unwrap_or(body);
+    let mut out = Vec::new();
+    for case in body.split("case ").skip(1) {
+        let Some((name, rest)) = case.split_once(':') else { continue };
+        let name = name.trim();
+        let Some(unk) = rest.split("unk_140 = ").nth(1).and_then(|r| r.split(';').next()).and_then(parse_int) else { continue };
+        let file = |suffix: &str| -> Option<String> {
+            let marker = format!("_{suffix}SegmentRomStart");
+            rest.split("_vr_").skip(1).find_map(|s| {
+                let (n, tail) = s.split_once(&marker)?;
+                (!n.contains(|c: char| !c.is_ascii_alphanumeric() && c != '_') && !tail.is_empty()).then(|| n.to_string())
+            })
+        };
+        let (Some(st), Some(pal)) = (file("static"), file("pal_static")) else { anyhow::bail!("Skybox_Setup {name}: no files") };
+        // `file("static")` also matches the palette's `_pal_static`: take the texture's name.
+        let st = st.strip_suffix("_pal").unwrap_or(&st).to_string();
+        let id = ids.iter().find(|(_, n)| n.as_str() == name).map(|(v, _)| *v).with_context(|| format!("no {name} in z64.h"))?;
+        out.push(RoomSkybox { id: id as u8, name: name.to_string(), unk_140: unk as u8, static_file: format!("vr_{st}_static"), pal_file: format!("vr_{pal}_pal_static") });
+    }
+    anyhow::ensure!(!out.is_empty(), "Skybox_Setup: no room skyboxes");
+    Ok(out)
+}
+
 impl SceneTables {
     pub fn load(decomp: &Path) -> Result<SceneTables> {
         let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
@@ -132,7 +168,8 @@ impl SceneTables {
             }
         }
         let entrances = load_entrances(decomp, &scene_ids)?;
-        Ok(SceneTables { scenes, scene_ids, objects, sdc_funcs, drawcfg: program, entrances })
+        let room_skyboxes = load_room_skyboxes(decomp)?;
+        Ok(SceneTables { scenes, scene_ids, objects, sdc_funcs, drawcfg: program, entrances, room_skyboxes })
     }
 
     pub fn scene(&self, file: &str) -> Option<&SceneDef> {
@@ -161,6 +198,24 @@ pub struct ShapeEntry {
 pub struct RoomShape {
     pub kind: ShapeKind,
     pub entries: Vec<ShapeEntry>,
+    /// Image shapes: the prerendered backgrounds (`crate::background`).
+    pub backgrounds: Vec<RawBackground>,
+}
+
+impl RoomShape {
+    /// Decodes each background (`crate::background::decode`) into its mesh. The image and TLUT
+    /// addresses are in the scene (2) or the room (3).
+    pub fn background_meshes(&self, scene: &[u8], room: &[u8]) -> Result<Vec<RoomBackground>> {
+        self.backgrounds
+            .iter()
+            .map(|b| {
+                let (d, o) = resolve(scene, room, b.source).with_context(|| format!("background at {:08X}", b.source))?;
+                let tlut = resolve(scene, room, b.tlut).map(|(t, to)| &t[to..]);
+                let img = crate::background::decode(b, &d[o..], tlut).with_context(|| format!("background at {:08X}", b.source))?;
+                Ok(RoomBackground { bg_cam_index: b.bg_cam_index, mesh: crate::background::mesh(img, b.fmt, b.siz) })
+            })
+            .collect()
+    }
 }
 
 fn be16(d: &[u8], o: usize) -> Option<u16> {
@@ -189,6 +244,7 @@ impl RoomShape {
         let (d, o) = resolve(scene, room, ptr)?;
         let ty = *d.get(o)?;
         let mut entries = Vec::new();
+        let mut backgrounds = Vec::new();
         let kind = match ty {
             0 | 2 => {
                 let n = *d.get(o + 1)? as usize;
@@ -209,11 +265,38 @@ impl RoomShape {
                 if let Some((ed, eo)) = resolve(scene, room, be32(d, o + 4)?) {
                     entries.push(ShapeEntry { bounds: None, opa: be32(ed, eo)?, xlu: be32(ed, eo + 4)? });
                 }
+                // RoomShapeImageSingle (amountType 1): the image at 0x08; RoomShapeImageMulti
+                // (2): numBackgrounds at 0x08, RoomShapeImageMultiBgEntry[] (0x1C each) at 0x0C.
+                let bg = |d: &[u8], b: usize, cam: Option<u8>| -> Option<RawBackground> {
+                    Some(RawBackground {
+                        bg_cam_index: cam,
+                        source: be32(d, b)?,
+                        tlut: be32(d, b + 8)?,
+                        width: be16(d, b + 0xC)?,
+                        height: be16(d, b + 0xE)?,
+                        fmt: *d.get(b + 0x10)?,
+                        siz: *d.get(b + 0x11)?,
+                        tlut_mode: be16(d, b + 0x12)?,
+                        tlut_count: be16(d, b + 0x14)?,
+                    })
+                };
+                match *d.get(o + 1)? {
+                    1 => backgrounds.extend(bg(d, o + 8, None)),
+                    2 => {
+                        let n = *d.get(o + 8)? as usize;
+                        let (bd, bo) = resolve(scene, room, be32(d, o + 0xC)?)?;
+                        for i in 0..n {
+                            let b = bo + i * 0x1C;
+                            backgrounds.extend(bg(bd, b + 4, Some(*bd.get(b + 2)?)));
+                        }
+                    }
+                    _ => {}
+                }
                 ShapeKind::Image
             }
             _ => return None,
         };
-        Some(RoomShape { kind, entries })
+        Some(RoomShape { kind, entries, backgrounds })
     }
 }
 

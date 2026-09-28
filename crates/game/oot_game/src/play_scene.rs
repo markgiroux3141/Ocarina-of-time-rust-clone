@@ -345,7 +345,20 @@ impl PlayState {
         play.player = Some(p);
         play.spawn = (Vec3::new(link_entry.pos[0] as f32, link_entry.pos[1] as f32, link_entry.pos[2] as f32), link_entry.rot[1]);
         while !play.room_finish_load() {}
+        // Camera_InitPlayerSettings (with func_8005AC48's 0xFF from earlier in Play_Init), then
+        // Camera_ChangeMode(NORMAL), and Player's start bg camera (params & 0xFF).
         play.reset_cameras();
+        play.game_camera.change_mode(&play.data.camera, crate::camera::CAM_MODE_NORMAL);
+        let start_bg_cam = play.actors.actor(p).map(|a| a.params as u16 & 0xFF).unwrap_or(0xFF);
+        if start_bg_cam != 0xFF {
+            play.game_camera.change_bg_cam_index(&play.data.camera, &play.col, start_bg_cam as i32);
+        }
+        play.scene_cam_type = ld.scene_cam_type;
+        play.viewpoint = match ld.scene_cam_type {
+            crate::scene::SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT => crate::play::VIEWPOINT_PIVOT,
+            crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT => crate::play::VIEWPOINT_LOCKED,
+            _ => crate::play::VIEWPOINT_NONE,
+        };
         for h in play.actors.all() {
             if let Some(a) = play.actors.get_mut(h) {
                 a.animation_update();

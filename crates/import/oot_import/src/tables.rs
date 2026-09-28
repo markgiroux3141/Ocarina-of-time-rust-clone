@@ -14,7 +14,7 @@ use eng_anim::skeleton::{LimbType, Skeleton};
 use eng_math::Tables;
 use glam::Vec3;
 use oot_game::actor_table::{ACTOROVL_ALLOC_ABSOLUTE, ACTOROVL_ALLOC_NORMAL, ACTOROVL_ALLOC_PERSISTENT, ActorInfo, ActorInitInfo, ActorTable};
-use oot_game::camera::{CamModeData, CameraData};
+use oot_game::camera::{CamModeData, CamSettingData, CameraData};
 use oot_game::data::{AgeProperties, Anim, AnimId, AttackAnim, BOOTS_KOKIRI, BOOTS_KOKIRI_CHILD, GameData, ItemTables, Regs};
 use oot_game::env::{EnvTables, TimeBasedLightEntry, clock_time};
 use oot_game::footik::{FootIkData, Rig};
@@ -368,9 +368,44 @@ impl LoadGameData for GameData {
     }
 }
 
+/// A `CameraModeValue[]` initializer: the arguments of its `CAM_FUNCDATA_*(...)` call.
+fn cam_mode_values(src: &str, data: &str) -> Result<Vec<i16>> {
+    let call = find_initializer(src, data)?.flatten().join(",");
+    let open = call.find('(').with_context(|| format!("{data} is not a CAM_FUNCDATA_* call"))?;
+    let args = call[open + 1..].strip_suffix(')').with_context(|| format!("{data}: unterminated"))?;
+    args.split(',')
+        .map(|a| Init::Atom(a.trim().to_string()).as_int().map(|v| v as i16))
+        .collect::<Option<Vec<i16>>>()
+        .with_context(|| format!("{data}: non-integer argument"))
+}
+
+/// A `CameraMode[]` initializer (`sCamSet*Modes`): `CAM_SETTING_MODE_ENTRY(func, data)`
+/// entries (one atom each) and `{ CAM_FUNC_NONE, 0, NULL }`.
+fn cam_setting_modes(src: &str, name: &str) -> Result<Vec<Option<CamModeData>>> {
+    let mut modes = Vec::new();
+    for item in find_initializer(src, name)?.list() {
+        match item {
+            Init::List(l) => {
+                let f = l.first().and_then(|a| a.atom()).unwrap_or_default().trim();
+                anyhow::ensure!(f == "CAM_FUNC_NONE", "{name}: unexpected entry {l:?}");
+                modes.push(None);
+            }
+            Init::Atom(a) => {
+                let args = a.trim().strip_prefix("CAM_SETTING_MODE_ENTRY(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("{name}: {a}"))?;
+                let (func, data) = args.split_once(',').with_context(|| format!("{name}: {a}"))?;
+                let (func, data) = (func.trim().to_string(), data.trim().to_string());
+                let values = cam_mode_values(src, &data)?;
+                modes.push(Some(CamModeData { func, data, values }));
+            }
+        }
+    }
+    Ok(modes)
+}
+
 impl LoadCameraData for CameraData {
-    /// `sOREGInit`, `sCamSetNormal0Modes` (each mode's function and `CAM_FUNCDATA_*` values)
-    /// and NORMAL0's valid-mode mask in `sCameraSettings`, from `z_camera_data.c`.
+    /// `sOREGInit`, and `sCameraSettings` with every setting's `sCamSet*Modes` (each mode's
+    /// function and `CAM_FUNCDATA_*` values), from `z_camera_data.c`; the setting names from
+    /// `z64camera.h`'s `CAM_SET_*` enum.
     fn load(decomp: &Path) -> Result<CameraData> {
         let p = decomp.join("src/code/z_camera_data.c");
         let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
@@ -380,40 +415,21 @@ impl LoadCameraData for CameraData {
             .map(|i| i.as_int().map(|v| v as i16))
             .collect::<Option<Vec<_>>>()
             .context("sOREGInit: non-integer entry")?;
-        // CAM_SETTING_MODE_ENTRY(func, data): the atoms split at every comma, so rejoin them.
-        let entries = find_initializer(&src, "sCamSetNormal0Modes")?.flatten().join(",");
-        let mut normal0_modes = Vec::new();
-        for e in entries.split("CAM_SETTING_MODE_ENTRY(").skip(1) {
-            let e = e.split(')').next().unwrap_or_default();
-            let (func, data) = e.split_once(',').context("CAM_SETTING_MODE_ENTRY arguments")?;
-            let data = data.trim();
-            let call = find_initializer(&src, data)?.flatten().join(",");
-            let open = call.find('(').with_context(|| format!("{data} is not a CAM_FUNCDATA_* call"))?;
-            let args = call[open + 1..].strip_suffix(')').with_context(|| format!("{data}: unterminated"))?;
-            let values = args
-                .split(',')
-                .map(|a| {
-                    let a = a.trim();
-                    let (neg, a) = match a.strip_prefix('-') {
-                        Some(r) => (true, r.trim()),
-                        None => (false, a),
-                    };
-                    let v = match a.strip_prefix("0x") {
-                        Some(h) => i32::from_str_radix(h, 16).ok(),
-                        None => a.parse().ok(),
-                    }?;
-                    Some((if neg { -v } else { v }) as i16)
-                })
-                .collect::<Option<Vec<i16>>>()
-                .with_context(|| format!("{data}: non-integer argument"))?;
-            normal0_modes.push(CamModeData { func: func.trim().to_string(), data: data.to_string(), values });
+        let h = decomp.join("include/z64camera.h");
+        let header = std::fs::read_to_string(&h).with_context(|| format!("reading {}", h.display()))?;
+        let names = crate::csrc::parse_enum(&header, "CAM_SET_NONE");
+        // sCameraSettings[] = { { { unk_00 } }, sCamSet*Modes or NULL }, one per CAM_SET_*.
+        let mut settings = Vec::new();
+        for (i, entry) in find_initializer(&src, "sCameraSettings")?.list().iter().enumerate() {
+            let atoms = entry.flatten();
+            let [flags, modes] = &atoms[..] else { bail!("sCameraSettings[{i}]: {atoms:?}") };
+            let flags = Init::Atom(flags.clone()).as_int().with_context(|| format!("sCameraSettings[{i}]: {flags}"))? as u32;
+            let modes = if modes.trim() == "NULL" { Vec::new() } else { cam_setting_modes(&src, modes.trim())? };
+            let name = names.get(&(i as i64)).cloned().with_context(|| format!("no CAM_SET_* {i}"))?;
+            settings.push(CamSettingData { name, flags, modes });
         }
-        anyhow::ensure!(normal0_modes.len() == 21, "sCamSetNormal0Modes has {} modes, not CAM_MODE_MAX (21)", normal0_modes.len());
-        // sCameraSettings[CAM_SET_NORMAL0] = { { validModes }, sCamSetNormal0Modes }.
-        let settings = find_initializer(&src, "sCameraSettings")?.flatten();
-        let at = settings.iter().position(|a| a.trim() == "sCamSetNormal0Modes").context("sCameraSettings: no NORMAL0 entry")?;
-        let mask = at.checked_sub(1).and_then(|i| Init::Atom(settings[i].clone()).as_int()).context("NORMAL0's valid-mode mask")?;
-        Ok(CameraData { oreg, normal0_modes, normal0_valid_modes: mask as u32 })
+        anyhow::ensure!(names.get(&(settings.len() as i64)).map(String::as_str) == Some("CAM_SET_MAX"), "sCameraSettings has {} entries, not CAM_SET_MAX", settings.len());
+        Ok(CameraData { oreg, settings })
     }
 }
 

@@ -24,3 +24,5 @@ serde_json.workspace = true
 toml.workspace = true
 log.workspace = true
 sha1_smol.workspace = true
+zune-jpeg.workspace = true
+zune-core.workspace = true

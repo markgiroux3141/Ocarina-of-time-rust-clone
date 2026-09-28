@@ -94,6 +94,38 @@ pub const STATE3_3: u32 = 1 << 3;
 pub const STATE3_4: u32 = 1 << 4;
 pub const STATE3_7: u32 = 1 << 7;
 
+// PlayerDoorType.
+pub const PLAYER_DOORTYPE_AJAR: i8 = -1;
+pub const PLAYER_DOORTYPE_NONE: i8 = 0;
+pub const PLAYER_DOORTYPE_HANDLE: i8 = 1;
+pub const PLAYER_DOORTYPE_SLIDING: i8 = 2;
+pub const PLAYER_DOORTYPE_FAKE: i8 = 3;
+
+/// What Player does to the play state, the camera and other actors during its update, applied
+/// in order right after it (Player is out of the actor context while it updates; the C calls
+/// these in place).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlayRequest {
+    /// `func_80835E44`: `Camera_ChangeSetting` on the main camera, unless the scene's camera
+    /// is fixed (`Play_CamIsNotFixed`), where `CAM_SET_SCENE_TRANSITION` only changes the
+    /// interface alpha.
+    CamSetting(i16),
+    /// `Camera_ChangeSetting(Play_GetCamera(play, CAM_ID_MAIN), setting)`.
+    ChangeSetting(i16),
+    /// `Camera_ChangeDoorCam(mainCam, door, bgCamIndex, 0, timer1, timer2, timer3)`.
+    DoorCam { door: ActorHandle, bg_cam_index: i16, timers: [i16; 3] },
+    /// `func_8005B1A4(mainCam)`.
+    CamDone,
+    /// `func_8009728C`: load a room.
+    RoomLoad(i8),
+    /// `func_80097534`: the previous room goes.
+    RoomChangeDone,
+    /// The door's `openAnim` and `playerIsOpening = true`.
+    OpenDoor { door: ActorHandle, open_anim: u8 },
+    /// `doorActor->room = play->roomCtx.curRoom.num`, and its double's.
+    DoorRoom { door: ActorHandle },
+}
+
 // floor properties (FLOOR_PROPERTY_*)
 const FLOOR_PROPERTY_5: u32 = 5;
 const FLOOR_PROPERTY_12: u32 = 12;
@@ -208,6 +240,8 @@ pub enum Action {
     Climb,
     /// `func_8084C5F8`: stepping off a ladder at its top or bottom.
     ClimbEnd,
+    /// `func_80845EF8`: opening a door and walking through it.
+    DoorOpen,
 }
 
 /// `func_A74`: what `func_808458D0` runs once the item is away.
@@ -260,6 +294,7 @@ impl Action {
             Action::ItemPutAway => "func_808458D0",
             Action::Climb => "func_8084BF1C",
             Action::ClimbEnd => "func_8084C5F8",
+            Action::DoorOpen => "func_80845EF8",
         }
     }
 }
@@ -313,6 +348,11 @@ pub struct Env<'a> {
     /// `play->setupExitList`, and `gEntranceTable`.
     pub exits: &'a [u16],
     pub entrances: &'a [EntranceInfo],
+    /// `transiActorCtx.list`, and `roomCtx.prevRoom.num`.
+    pub transi_actors: &'a [oot_game::scene::TransitionActorEntry],
+    pub prev_room: i8,
+    /// `Play_GetCamera(play, CAM_ID_MAIN)->unk_14C`, as the last camera update left it.
+    pub cam_unk_14c: i16,
 }
 
 impl Env<'_> {
@@ -453,6 +493,14 @@ pub struct Player {
     pub unk_450: Vec3,
     pub unk_45C: Vec3,
     pub door_timer: i16,
+    /// `doorType` (`PLAYER_DOORTYPE_*`), `doorDirection` (1 in front, -1 behind) and
+    /// `doorActor`: the door that offered to open this frame (`EnDoor_Idle`), reset at the end
+    /// of every update.
+    pub door_type: i8,
+    pub door_direction: i8,
+    pub door_actor: Option<ActorHandle>,
+    /// What the update asks of the play state (`PlayRequest`).
+    pub play_requests: Vec<PlayRequest>,
     /// `unk_A84`: the height the void check measures falls from.
     pub unk_A84: i16,
     /// `csMode` (no cutscenes: 0).
@@ -576,6 +624,10 @@ impl Player {
             unk_450: Vec3::ZERO,
             unk_45C: Vec3::ZERO,
             door_timer: 0,
+            door_type: PLAYER_DOORTYPE_NONE,
+            door_direction: 0,
+            door_actor: None,
+            play_requests: Vec::new(),
             unk_A84: pos.y as i16,
             cs_mode: 0,
             func_a74: None,
@@ -920,6 +972,7 @@ impl Player {
             Action::ItemPutAway => self.func_808458D0(env),
             Action::Climb => self.func_8084BF1C(env),
             Action::ClimbEnd => self.func_8084C5F8(env),
+            Action::DoorOpen => self.func_80845EF8(env),
         }
     }
 
@@ -1952,6 +2005,9 @@ impl Player {
         loop {
             let e = list[i];
             let idx = e.unsigned_abs() as usize;
+            if idx == 1 && self.func_80839800(env) {
+                return true;
+            }
             if idx == 5 && self.func_8083F7BC(env) {
                 return true;
             }
@@ -4259,7 +4315,7 @@ impl Player {
                 self.func_80832210();
             }
             self.state1 |= STATE1_0 | STATE1_29;
-            // func_80835E44(play, CAM_SET_SCENE_TRANSITION): camera settings aren't ported.
+            self.play_requests.push(PlayRequest::CamSetting(oot_game::camera::CAM_SET_SCENE_TRANSITION));
             return true;
         }
         if io.transition.trigger == TRANS_TRIGGER_OFF {
@@ -4301,7 +4357,7 @@ impl Player {
     fn func_80838F5C(&mut self, data: &GameData) {
         self.setup_action(data, Action::VoidFall, 0);
         self.state1 |= STATE1_29 | STATE1_31;
-        // Camera_ChangeSetting(CAM_SET_FREE0): camera settings aren't ported.
+        self.play_requests.push(PlayRequest::ChangeSetting(oot_game::camera::CAM_SET_FREE0));
     }
 
     /// `func_80838FB8`: falling off an edge while `func_80838F5C` is pending.
@@ -4371,10 +4427,9 @@ impl Player {
                     sp30 = -1;
                 }
                 let temp = self.func_80845BA0(env, &mut sp34, sp30);
-                // (Play_GetCamera(play, CAM_ID_MAIN)->unk_14C & 0x10: the camera isn't ported
-                // that far; taken as set.)
-                if self.unk_850 == 0 || (temp == 0 && self.linear_velocity == 0.0) {
-                    // func_8005B1A4 (camera): not ported. func_80845C68(play, respawn[DOWN].data):
+                if self.unk_850 == 0 || (temp == 0 && self.linear_velocity == 0.0 && env.cam_unk_14c & 0x10 != 0) {
+                    self.play_requests.push(PlayRequest::CamDone);
+                    // func_80845C68(play, respawn[DOWN].data):
                     let mut io = env.io.borrow_mut();
                     if io.save.respawn[RESPAWN_MODE_DOWN].data == 0 {
                         let (pos, yaw) = (self.actor.world_pos, self.actor.shape_rot.y);
@@ -4390,6 +4445,133 @@ impl Player {
         }
         if self.state1 & STATE1_11 != 0 {
             self.func_80836670(env);
+        }
+    }
+
+    /// `func_80839800`: A pressed with a door offering to open (`doorType`, set by `EnDoor_Idle`
+    /// last frame): Link lines up at the door, 22 in front, and plays the opening animation
+    /// for his side and age (`PLAYER_ANIMGROUP_9` .. `_12`), moved by it (`func_80832F54`,
+    /// 0x28F). A scene-exit door starts the exit under its far side (`func_80839034`, entrance
+    /// speed 2); any other gets the door camera and loads the room behind it.
+    ///
+    /// Not ported: an ajar door's text (0xD0, which needs the message box), sliding doors
+    /// (`Door_Shutter`), `Door_Killer`, holding Ruto (`ACTOR_EN_RU1`), and
+    /// `func_8084F9A0` (a cutscene's door walk).
+    fn func_80839800(&mut self, env: &Env) -> bool {
+        if self.door_type == PLAYER_DOORTYPE_NONE || self.state1 & STATE1_11 != 0 {
+            return false;
+        }
+        if !self.input.press.held(BTN_A) {
+            return false;
+        }
+        let Some(dh) = self.door_actor else { return false };
+        let Some(door) = env.actors.actor(dh) else { return false };
+        if self.door_type <= PLAYER_DOORTYPE_AJAR {
+            // doorActor->textId = 0xD0; func_80853148 (talking): not ported.
+            self.note("an ajar door's text needs the message box");
+            return false;
+        }
+        let mut door_direction = self.door_direction as i32;
+        let (sp78, sp74) = (cos_s(door.shape_rot.y), sin_s(door.shape_rot.y));
+        if self.door_type == PLAYER_DOORTYPE_SLIDING {
+            self.note("sliding doors (Door_Shutter) aren't ported");
+            return false;
+        }
+        use crate::en_door::{DOOR_OPEN_ANIM_ADULT_L, DOOR_OPEN_ANIM_ADULT_R, DOOR_OPEN_ANIM_CHILD_L, DOOR_OPEN_ANIM_CHILD_R, DOOR_SCENEEXIT};
+        let open_anim = match (door_direction < 0, self.adult) {
+            (true, true) => DOOR_OPEN_ANIM_ADULT_L,
+            (true, false) => DOOR_OPEN_ANIM_CHILD_L,
+            (false, true) => DOOR_OPEN_ANIM_ADULT_R,
+            (false, false) => DOOR_OPEN_ANIM_CHILD_R,
+        };
+        let group = match open_anim {
+            DOOR_OPEN_ANIM_ADULT_L => 9,
+            DOOR_OPEN_ANIM_CHILD_L => 10,
+            DOOR_OPEN_ANIM_ADULT_R => 11,
+            _ => 12,
+        };
+        let data = env.data;
+        let anim = self.anim(data, group);
+        let (door_pos, door_yaw, door_parent, door_params, door_category) = (door.world_pos, door.shape_rot.y, door.parent, door.params, door.category);
+        self.setup_action(data, Action::DoorOpen, 0);
+        self.func_80832528(data);
+        self.actor.shape_rot.y = if door_direction < 0 { door_yaw } else { door_yaw.wrapping_add(-0x8000i32 as i16) };
+        self.current_yaw = self.actor.shape_rot.y;
+        let sp6c = door_direction as f32 * 22.0;
+        self.actor.world_pos.x = door_pos.x + sp6c * sp74;
+        self.actor.world_pos.z = door_pos.z + sp6c * sp78;
+        // func_8083328C: LinkAnimation_PlayOnceSetSpeed at D_808535E8.
+        self.skel.play_once_set_speed(data, anim, self.s.speed_scale);
+        if self.door_timer != 0 {
+            self.skel.end_frame = 0.0;
+        }
+        self.func_80832224();
+        self.func_80832F54(0x28F);
+        // The second half of a double door (spawned as a child).
+        if door_parent.is_some() {
+            door_direction = -door_direction;
+        }
+        self.play_requests.push(PlayRequest::OpenDoor { door: dh, open_anim });
+        // Not a Door_Killer: an EnDoor.
+        self.state1 |= STATE1_29;
+        // (Actor_DisableLens: there's no lens.)
+        let side = if door_direction > 0 { 0 } else { 1 };
+        let entry = env.transi_actors.get((door_params as u16 >> oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize).copied();
+        if (door_params as u16 >> 7) & 7 == DOOR_SCENEEXIT {
+            let check = Vec3::new(door_pos.x - sp6c * sp74, door_pos.y + 10.0, door_pos.z - sp6c * sp78);
+            // BgCheck_EntityRaycastDown1. @bug (game): the poly's bgId is taken as BGCHECK_SCENE.
+            let (_, ground_poly) = env.col.entity_raycast_down(check);
+            if self.func_80839034(env, ground_poly) {
+                // gSaveContext.entranceSound = NA_SE_OC_DOOR_OPEN: no sound.
+                env.io.borrow_mut().save.entrance_speed = 2.0;
+            }
+        } else if let Some(t) = entry {
+            // 38, 26 and 10 frames times D_808535EC (1).
+            self.play_requests.push(PlayRequest::DoorCam { door: dh, bg_cam_index: t.sides[side].1 as i16, timers: [38, 26, 10] });
+        }
+        if door_category == oot_game::actor_ctx::ACTORCAT_DOOR
+            && let Some(t) = entry
+        {
+            let front_room = t.sides[side].0;
+            if front_room >= 0 && front_room != env.io.borrow().room {
+                self.play_requests.push(PlayRequest::RoomLoad(front_room));
+            }
+        }
+        self.play_requests.push(PlayRequest::DoorRoom { door: dh });
+        true
+    }
+
+    /// `func_80845EF8`: the door animation, then standing; the old room goes, the door camera
+    /// is told Player is through, and the void-out point moves here.
+    fn func_80845EF8(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5;
+        let done = self.skel.update(data);
+        self.func_80836670(env);
+        if done {
+            if self.unk_850 == 0 {
+                // DECR(doorTimer) == 0.
+                if self.door_timer != 0 {
+                    self.door_timer -= 1;
+                }
+                if self.door_timer == 0 {
+                    self.unk_850 = 1;
+                    self.skel.end_frame = self.skel.anim_length - 1.0;
+                }
+            } else {
+                self.func_8083C0E8(data);
+                if env.prev_room >= 0 {
+                    self.play_requests.push(PlayRequest::RoomChangeDone);
+                }
+                self.play_requests.push(PlayRequest::CamDone);
+                let (pos, yaw) = (self.actor.world_pos, self.actor.shape_rot.y);
+                env.io.borrow_mut().setup_respawn_point(RESPAWN_MODE_DOWN, 0xDFF, pos, yaw);
+            }
+            return;
+        }
+        if self.state1 & STATE1_29 == 0 && self.skel.on_frame(15.0) {
+            // play->func_11D54 (func_80853080): only a Door_Killer's opening gets here.
+            self.func_80853080(data);
         }
     }
 
@@ -4456,6 +4638,7 @@ impl Player {
     /// AT.
     fn update_colliders(&mut self, play: &mut PlayState) {
         use cc::ColliderShape;
+        self.door_type = PLAYER_DOORTYPE_NONE;
         // The talk offers of this frame end here (they're made again next frame), unless one
         // was accepted (ACTOR_FLAG_8).
         if self.actor.flags & ACTOR_FLAG_8 == ACTOR_FLAG_8 {
@@ -4828,10 +5011,16 @@ impl ActorImpl for Player {
             io: &io,
             exits: play.exit_list(),
             entrances: assets.as_ref().map(|a| a.scenes.entrances.as_slice()).unwrap_or(&[]),
+            transi_actors: &play.transi_actors,
+            prev_room: play.room_ctx.prev.num,
+            cam_unk_14c: play.game_camera.unk_14c,
         };
         let input = play.input;
         Player::update(self, &env, input);
         play.put_io(io.into_inner());
+        for r in std::mem::take(&mut self.play_requests) {
+            apply_play_request(play, r);
+        }
         // Player_UpdateCamAndSeqModes' requests, in its order: Camera_SetParam, then
         // Camera_ChangeMode.
         if let Some((mode, target)) = self.cam_request.take() {
@@ -4971,6 +5160,51 @@ impl PlayerIface for Player {
         self.target_actor = Some(actor);
         self.target_actor_distance = distance;
         self.exchange_item_id = exchange_item;
+    }
+    /// `Player_InBlockingCsMode` without `transitionTrigger` (magic isn't ported), or
+    /// `unk_6AD == 4`.
+    fn in_cs_mode(&self) -> bool {
+        self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0 || self.unk_6AD == 4
+    }
+}
+
+/// Applies a `PlayRequest` (see there), after Player's update.
+fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
+    let d = play.data.clone();
+    match r {
+        PlayRequest::CamSetting(s) => {
+            // !Play_CamIsNotFixed: Interface_ChangeAlpha(2) for SCENE_TRANSITION (no interface).
+            if play.cam_is_not_fixed() {
+                play.game_camera.change_setting(&d.camera, s);
+            }
+        }
+        PlayRequest::ChangeSetting(s) => {
+            play.game_camera.change_setting(&d.camera, s);
+        }
+        PlayRequest::DoorCam { door, bg_cam_index, timers } => {
+            play.game_camera.change_door_cam(&d.camera, &play.col, Some(door), bg_cam_index, timers[0], timers[1], timers[2]);
+        }
+        PlayRequest::CamDone => play.game_camera.func_8005b1a4(),
+        PlayRequest::RoomLoad(n) => {
+            play.room_request(n);
+        }
+        PlayRequest::RoomChangeDone => play.room_change_done(),
+        PlayRequest::OpenDoor { door, open_anim } => {
+            if let Some(dr) = play.actors.downcast_mut::<crate::en_door::EnDoor>(door) {
+                dr.open_anim = open_anim;
+                dr.player_is_opening = true;
+            }
+        }
+        PlayRequest::DoorRoom { door } => {
+            let room = play.room_ctx.cur.num;
+            let attached = play.actors.actor_mut(door).and_then(|a| {
+                a.room = room;
+                a.child.or(a.parent)
+            });
+            if let Some(a) = attached.and_then(|h| play.actors.actor_mut(h)) {
+                a.room = room;
+            }
+        }
     }
 }
 

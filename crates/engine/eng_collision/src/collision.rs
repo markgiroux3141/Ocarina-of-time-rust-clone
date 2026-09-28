@@ -47,6 +47,17 @@ pub struct WaterBox {
     pub properties: u32,
 }
 
+/// `BgCamInfo`: a camera setting and its data, which a surface type, a water box, a spawn or a
+/// transition actor names by index. The data is `count` `Vec3s`, usually a `BgCamFuncData`
+/// (position, rotation, then fov / flags / unused), empty for a NULL pointer.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct BgCamInfo {
+    /// `CAM_SET_*`.
+    pub setting: u16,
+    pub count: i16,
+    pub data: Vec<[i16; 3]>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CollisionHeader {
     pub min_bounds: [i16; 3],
@@ -54,6 +65,8 @@ pub struct CollisionHeader {
     pub vertices: Vec<[i16; 3]>,
     pub polys: Vec<CollisionPoly>,
     pub surface_types: Vec<SurfaceType>,
+    /// `bgCamList`. The header has no count; see the codec for how far it's read.
+    pub bg_cams: Vec<BgCamInfo>,
     pub water_boxes: Vec<WaterBox>,
 }
 

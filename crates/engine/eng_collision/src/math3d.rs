@@ -143,6 +143,15 @@ pub fn point_on_infinite_line(v0: Vec3, dir: Vec3, dist: f32) -> Vec3 {
     Vec3::new((dir.x * dist) + v0.x, (dir.y * dist) + v0.y, (dir.z * dist) + v0.z)
 }
 
+/// `Math3D_LineClosestToPoint`: the point of the line through `point` along `dir` closest to
+/// `pos`. @bug (game): with a zero `dir` it copies `pos`, then goes on without returning and
+/// divides by zero, as the C does.
+pub fn line_closest_to_point(point: Vec3, dir: Vec3, pos: Vec3) -> Vec3 {
+    let len_sq = vec3f_magnitude_sq(dir);
+    let t = (((pos.x - point.x) * dir.x) + ((pos.y - point.y) * dir.y) + ((pos.z - point.z) * dir.z)) / len_sq;
+    Vec3::new((dir.x * t) + point.x, (dir.y * t) + point.y, (dir.z * t) + point.z)
+}
+
 /// `Math3D_LineSplitRatio`: `v0 + (v1 - v0)·ratio`.
 pub fn line_split_ratio(v0: Vec3, v1: Vec3, ratio: f32) -> Vec3 {
     point_on_infinite_line(v0, diff(v1, v0), ratio)

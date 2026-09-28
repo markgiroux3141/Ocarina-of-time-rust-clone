@@ -787,6 +787,8 @@ fn scene_info(scene: &str, layer: usize) -> Result<()> {
     let ld = sd.layers.get(layer).context("no such layer")?;
     let obj = |id: i16| st.objects.get(id as usize).cloned().unwrap_or_else(|| format!("{id}"));
     println!("{} (id {}, layer {layer}, header {:#x}): keep {:?} ({:?})", sd.name, sd.id, ld.header_offset, ld.keep_object, ld.keep_object_id);
+    let sky = st.room_skybox(ld.skybox.skybox_id).map(|s| s.name.as_str()).unwrap_or("-");
+    println!("  scene cam type {:#04x}, skybox {} (room skybox {sky})", ld.scene_cam_type, ld.skybox.skybox_id);
     for (i, e) in ld.spawns.iter().enumerate() {
         println!("  spawn {i}: {} pos {:?} rot {:?} params {:#06x}", at.name(e.id), e.pos, e.rot, e.params as u16);
     }
@@ -804,6 +806,10 @@ fn scene_info(scene: &str, layer: usize) -> Result<()> {
         let r = pack.room(key)?;
         let objs: Vec<String> = r.objects.iter().map(|&o| obj(o)).collect();
         println!("  room {} ({}): objects {objs:?}", r.index, r.file);
+        for (i, b) in r.backgrounds.iter().enumerate() {
+            let t = &b.mesh.textures[0].image;
+            println!("    background {i}: {}x{} for bg camera {:?}", t.width, t.height, b.bg_cam_index);
+        }
         for a in &r.actors {
             let info = at.get(a.id).and_then(|i| i.init.as_ref());
             let o = info.map(|i| obj(i.object_id)).unwrap_or_default();
@@ -820,5 +826,10 @@ fn scene_info(scene: &str, layer: usize) -> Result<()> {
         }
     }
     println!("  collision: {} polys; exit index -> polys {exits:?}", col.polys.len());
+    let data = pack.game_data()?;
+    for (i, c) in col.bg_cams.iter().enumerate() {
+        let name = data.camera.setting(c.setting as i16).map(|s| s.name.as_str()).unwrap_or("?");
+        println!("  bg camera {i}: {name} ({:#04x}) data {:?}", c.setting, c.data);
+    }
     Ok(())
 }

@@ -17,26 +17,101 @@ fn camera_data_read_from_decomp() {
     // OREG(8) 150, R_CAM_YOFFSET_NORM -10, OREG(50) = OREG(51) = 20, 53 entries.
     assert_eq!(c.oreg.len(), 53);
     assert_eq!((c.oreg(2), c.oreg(5), c.oreg(6), c.oreg(7), c.oreg(8), c.oreg(46), c.oreg(50), c.oreg(51)), (5, 14500, 20, 16, 150, -10, 20, 20));
-    // sCamSetNormal0Modes: CAM_MODE_MAX (21) entries, every one valid (sCameraSettings'
-    // 0x051FFFFF).
-    assert_eq!(c.normal0_modes.len(), 21);
-    assert_eq!(c.normal0_valid_modes & 0x1F_FFFF, 0x1F_FFFF);
+    // sCameraSettings: CAM_SET_MAX (0x42) entries, named by z64camera.h's enum; entry 0
+    // (CAM_SET_NONE) is { { 0x00000000 }, NULL }.
+    assert_eq!(c.settings.len(), 0x42);
+    assert_eq!((c.settings[0].name.as_str(), c.settings[0].flags, c.settings[0].modes.len()), ("CAM_SET_NONE", 0, 0));
+    let s = &c.settings[camera::CAM_SET_NORMAL0 as usize];
+    // sCamSetNormal0Modes: CAM_MODE_MAX (21) entries, every one valid ({ { 0x051FFFFF }, ...}).
+    assert_eq!((s.name.as_str(), s.flags, s.modes.len()), ("CAM_SET_NORMAL0", 0x051F_FFFF, 21));
+    let mode = |set: i16, m: i16| c.mode(set, m).unwrap();
     // sSetNormal0ModeNormalData = CAM_FUNCDATA_NORM1(-20, 200, 300, 10, 12, 10, 35, 60, 60, 0x0003).
-    let m = &c.normal0_modes[camera::CAM_MODE_NORMAL as usize];
+    let m = mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_NORMAL);
     assert_eq!((m.func.as_str(), m.data.as_str()), ("CAM_FUNC_NORM1", "sSetNormal0ModeNormalData"));
     assert_eq!(m.values, [-20, 200, 300, 10, 12, 10, 35, 60, 60, 3]);
     // sSetNormal0ModeTargetData = CAM_FUNCDATA_PARA1(-20, 250, 0, 0, 5, 5, 45, 50, 0x200A, -40, 20).
-    let m = &c.normal0_modes[camera::CAM_MODE_TARGET as usize];
+    let m = mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_TARGET);
     assert_eq!(m.func, "CAM_FUNC_PARA1");
     assert_eq!(m.values, [-20, 250, 0, 0, 5, 5, 45, 50, 0x200A, -40, 20]);
     // sSetNormal0ModeFollowTargetData = CAM_FUNCDATA_KEEP1(-20, 120, 140, 25, 45, -5, 15, 15, 45,
     // 50, 0x2001, -50, 30).
-    let m = &c.normal0_modes[camera::CAM_MODE_FOLLOWTARGET as usize];
+    let m = mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_FOLLOWTARGET);
     assert_eq!(m.func, "CAM_FUNC_KEEP1");
     assert_eq!(m.values, [-20, 120, 140, 25, 45, -5, 15, 15, 45, 50, 0x2001, -50, 30]);
     // STILL is Normal1 too; BATTLE is Camera_Battle1 (not ported).
-    assert_eq!(c.normal0_modes[camera::CAM_MODE_STILL as usize].func, "CAM_FUNC_NORM1");
-    assert_eq!(c.normal0_modes[camera::CAM_MODE_BATTLE as usize].func, "CAM_FUNC_BATT1");
+    assert_eq!(mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_STILL).func, "CAM_FUNC_NORM1");
+    assert_eq!(mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_BATTLE).func, "CAM_FUNC_BATT1");
+
+    // The prerendered rooms' settings. sCamSetPreRendFixedModes = { FIXD3 sDataOnlyNullFlags,
+    // { CAM_FUNC_NONE, 0, NULL }, FIXD3 sSetPrerendFixedModeFollowTargetData (FLAGS 0x2000) x2 },
+    // valid 0x8C00000D.
+    let s = &c.settings[camera::CAM_SET_PREREND_FIXED as usize];
+    assert_eq!((s.name.as_str(), s.flags, s.modes.len()), ("CAM_SET_PREREND_FIXED", 0x8C00_000D, 4));
+    assert!(s.modes[1].is_none());
+    assert_eq!((mode(camera::CAM_SET_PREREND_FIXED, 0).func.as_str(), mode(camera::CAM_SET_PREREND_FIXED, 0).values.as_slice()), ("CAM_FUNC_FIXD3", &[0][..]));
+    assert_eq!(mode(camera::CAM_SET_PREREND_FIXED, camera::CAM_MODE_FOLLOWTARGET).values, [0x2000]);
+    // sCamSetPreRendPivotModes: UNIQ7 CAM_FUNCDATA_UNIQ7(60, 0x0000), none, UNIQ7 (60, 0x2000),
+    // KEEP0 CAM_FUNCDATA_KEEP0(30, 0, 4, 0x3500).
+    let m = mode(camera::CAM_SET_PREREND_PIVOT, camera::CAM_MODE_NORMAL);
+    assert_eq!((m.func.as_str(), m.values.as_slice()), ("CAM_FUNC_UNIQ7", &[60, 0][..]));
+    assert_eq!(mode(camera::CAM_SET_PREREND_PIVOT, camera::CAM_MODE_TALK).values, [30, 0, 4, 0x3500]);
+    // Doors, exits and FREE0: CAM_FUNCDATA_SPEC9(-5, 60, 0x3202), CAM_FUNCDATA_UNIQ2(-20, 150,
+    // 60, 0x0210), CAM_FUNCDATA_FLAGS(0xFF00); PIVOT_SHOP_BROWSING CAM_FUNCDATA_DATA4(-40, 60,
+    // 0x3F00); PIVOT_IN_FRONT CAM_FUNCDATA_FIXD4(-40, 50, 80, 60, 0x0004).
+    let m = mode(camera::CAM_SET_DOORC, camera::CAM_MODE_NORMAL);
+    assert_eq!((m.func.as_str(), m.values.as_slice()), ("CAM_FUNC_SPEC9", &[-5, 60, 0x3202][..]));
+    let m = mode(camera::CAM_SET_SCENE_TRANSITION, camera::CAM_MODE_NORMAL);
+    assert_eq!((m.func.as_str(), m.values.as_slice()), ("CAM_FUNC_UNIQ2", &[-20, 150, 60, 0x0210][..]));
+    assert_eq!(c.settings[camera::CAM_SET_SCENE_TRANSITION as usize].flags, 0x4500_0001);
+    let m = mode(camera::CAM_SET_FREE0, camera::CAM_MODE_NORMAL);
+    assert_eq!((m.func.as_str(), m.values.as_slice()), ("CAM_FUNC_UNIQ6", &[0xFF00u16 as i16][..]));
+    let m = mode(camera::CAM_SET_PIVOT_SHOP_BROWSING, camera::CAM_MODE_NORMAL);
+    assert_eq!((m.func.as_str(), m.values.as_slice()), ("CAM_FUNC_DATA4", &[-40, 60, 0x3F00][..]));
+    let m = mode(camera::CAM_SET_PIVOT_IN_FRONT, camera::CAM_MODE_NORMAL);
+    assert_eq!((m.func.as_str(), m.values.as_slice()), ("CAM_FUNC_FIXD4", &[-40, 50, 80, 60, 4][..]));
+    assert_eq!(c.setting_id("CAM_SET_PREREND_FIXED"), Some(camera::CAM_SET_PREREND_FIXED));
+}
+
+#[test]
+fn setting_changes_follow_camera_change_setting_flags() {
+    let Some(d) = data() else { return };
+    let c = &d.camera;
+    let pv = camera::PlayerView { pos: Vec3::ZERO, shape_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0 };
+    // A collision with two bg cameras: 0 PREREND_FIXED, 1 PREREND_PIVOT.
+    let mut h = eng_collision::collision::CollisionHeader::default();
+    h.bg_cams.push(eng_collision::collision::BgCamInfo { setting: camera::CAM_SET_PREREND_FIXED as u16, count: 3, data: vec![[0, 300, 0], [0x3000, 0, 0], [5000, -1, -1]] });
+    h.bg_cams.push(eng_collision::collision::BgCamInfo { setting: camera::CAM_SET_PREREND_PIVOT as u16, count: 3, data: vec![[0, 40, 0], [0, 0, 0], [6000, -1, -1]] });
+    let col = eng_collision::bgcheck::CollisionContext::new(h);
+    let mut cam = camera::GameCamera::new(c, &pv);
+    // func_80057FC4 for a prerendered room: CAM_SET_FREE0, bgCamIndex -1.
+    cam.func_80057fc4(camera::CamRoom { image: true, behavior_type1: 0 });
+    assert_eq!((cam.setting, cam.prev_setting, cam.bg_cam_index), (camera::CAM_SET_FREE0, camera::CAM_SET_FREE0, -1));
+    // Camera_ChangeBgCamIndex(1): the bg camera's setting with flags 5 (the index kept),
+    // unk_14A 0x40 | 0x10 | 4 (and 1: flags without 2); prevSetting FREE0.
+    assert_eq!(cam.change_bg_cam_index(c, &col, 1), (0x8000_0000u32 | 1) as i32);
+    assert_eq!((cam.setting, cam.prev_setting, cam.bg_cam_index), (camera::CAM_SET_PREREND_PIVOT, camera::CAM_SET_FREE0, 1));
+    assert_eq!(cam.unk_14a & 0x55, 0x55);
+    // Once a frame: a second index this frame changes nothing (unk_14A & 0x40).
+    cam.change_bg_cam_index(c, &col, 0);
+    assert_eq!((cam.setting, cam.bg_cam_index), (camera::CAM_SET_PREREND_PIVOT, 1));
+    // After a change this frame (unk_14A & 1), a setting of the same or lower priority: -2
+    // (sCameraSettings: PREREND_PIVOT 0x8C00000D is priority 0xC, DOORC 0xC5000003 priority
+    // 5), checked before the same setting's -1.
+    assert_eq!(cam.change_setting(c, camera::CAM_SET_PREREND_PIVOT), -2);
+    assert_eq!(cam.change_setting(c, camera::CAM_SET_DOORC), -2);
+    cam.unk_14a = 0;
+    assert_eq!(cam.change_setting(c, camera::CAM_SET_PREREND_PIVOT), -1);
+    // Not a setting: -99.
+    cam.unk_14a = 0;
+    assert_eq!(cam.change_setting(c, camera::CAM_SET_NONE), -99);
+    // A new frame (Camera_Update clears unk_14A): DOORC through Camera_ChangeDoorCam(-1), which
+    // also stores the door's timers; the bg camera goes to prevBgCamIndex (flags 0).
+    cam.unk_14a = 0;
+    assert_eq!(cam.change_door_cam(c, &col, None, -1, 38, 26, 10), -1);
+    assert_eq!((cam.setting, cam.prev_setting, cam.bg_cam_index, cam.prev_bg_cam_index), (camera::CAM_SET_DOORC, camera::CAM_SET_PREREND_PIVOT, -1, 1));
+    assert_eq!((cam.door_params.timer1, cam.door_params.timer2, cam.door_params.timer3), (38, 26, 10));
+    // DOORC takes no other door camera until it ends.
+    assert_eq!(cam.change_door_cam(c, &col, None, 0, 1, 1, 1), 0);
 }
 
 #[test]

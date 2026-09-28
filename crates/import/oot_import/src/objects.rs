@@ -261,6 +261,13 @@ impl ObjectSegments {
                     builtin.retain(|b| b.0 != *seg);
                     bindings.push(Binding { segment: *seg, buf: display_list_bytes(cmds), base: 0 });
                 }
+                BakeSegment::File(name) => {
+                    let buf = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
+                    bindings.push(Binding { segment: *seg, buf, base: 0 });
+                }
+                BakeSegment::Bytes(bytes) => {
+                    bindings.push(Binding { segment: *seg, buf: bytes.as_slice().into(), base: 0 });
+                }
             }
         }
         let prelude: Vec<u32> = bake.prelude.iter().map(|&s| (s as u32) << 24).collect();

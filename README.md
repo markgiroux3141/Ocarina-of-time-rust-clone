@@ -90,6 +90,10 @@ target/release/oot_sandbox --scene spot04 --child          # Kokiri Forest, the 
 target/release/oot_sandbox --scene spot04 --child --entrance --placeholders   # the game's way in, with markers on unported actors
 target/release/oot_sandbox --entrance ENTR_SPOT04_3 --child --script house --trace out/house.json --screenshot out/house.png --shots-at 12,60,120
                                                            # headless: into Link's house and back out
+target/release/oot_sandbox --entrance ENTR_LINK_HOME_1 --child --script cup --screenshot out/home.png --shots-at 29
+                                                           # the house's pivot camera and skybox, then C-Up: the fixed camera and its picture
+target/release/oot_sandbox --entrance ENTR_SOUKO_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png
+                                                           # A at a door: En_Door, the door camera, the room behind it
 target/release/oot_sandbox --scene spot04 --time 19:00 --target 200   # evening, with a dummy Z-target
 target/release/oot_sandbox --script swim --step 8 --sheet out/swim.png   # also: platform, target, parallel, sword, hang, climb50/70/100, tour
 target/release/oot_sandbox --script run-roll --sheet out/run_roll.png --trace out/run_roll.json
@@ -100,6 +104,7 @@ target/release/ootpad calibrate                            # prints a [pad.butto
 cargo test --workspace
 cargo test -p oot_actors                                   # movement, camera, foot IK, ledges, targeting, sword, water, platform, scenes
 cargo test -p oot_actors --test scenes                     # Kokiri's placements, the En_Holl room change, Link's house and back, every scene entering
+cargo test -p oot_actors --test prerendered --test door    # the interiors' cameras, backgrounds and skyboxes; En_Door
 cargo test -p oot_game                                     # Kokiri Forest's rooms, draw configs and environment
 cargo test -p oot_import --test pack                       # the pack against the ROM path: tables vs the C, draw configs vs the interpreter, meshes, counts, the scene lists
 cargo test -p layering                                     # the crate layering rules

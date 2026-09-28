@@ -1,6 +1,8 @@
 //! The game camera from `z_camera.c`: `Camera_Init`, `Camera_InitPlayerSettings`, the
-//! player-following part of `Camera_Update`, mode changes (`Camera_ChangeModeFlags`) and the
-//! `CAM_SET_NORMAL0` mode functions:
+//! player-following part of `Camera_Update` (with the floor's bg camera), the mode and setting
+//! changes (`Camera_ChangeModeFlags`, `Camera_ChangeSettingFlags`, `Camera_ChangeBgCamIndex`,
+//! `Camera_ChangeDoorCam`, `func_80057FC4`) and these mode functions
+//! (docs/adr/0013-camera-modes-and-screen.md, docs/adr/0015-camera-settings-and-bg-cameras.md):
 //!
 //! - `Camera_Normal1` (NORMAL and STILL), with `Camera_CalcAtDefault`, `Camera_ClampDist`,
 //!   `Camera_CalcDefaultYaw`/`Pitch`, `Camera_GetPitchAdjFromFloorHeightDiffs` and the swing
@@ -8,21 +10,28 @@
 //! - `Camera_Parallel1` (TARGET: Z held with nothing to lock on to, and PUSHPULL), with
 //!   `Camera_CalcAtForParallel` and `func_800458D4`;
 //! - `Camera_KeepOn1` (FOLLOWTARGET: locked on to a non-enemy), with `Camera_CalcAtForLockOn`;
-//! - the camera bgcheck (`Camera_BGCheckInfo`, `Camera_BGCheckCorner`, `Camera_GetFloorYLayer`);
+//! - the scene cameras: `Camera_Fixed2` (`PIVOT_CRAWLSPACE`), `Camera_Fixed3`
+//!   (`PREREND_FIXED`), `Camera_Fixed4` (`PIVOT_IN_FRONT`), `Camera_Data4`
+//!   (`PIVOT_SHOP_BROWSING`), `Camera_Unique0` (`START1`), `Camera_Unique2`
+//!   (`SCENE_TRANSITION`), `Camera_Unique3` (`DOOR0`), `Camera_Unique6` (`FREE0`),
+//!   `Camera_Unique7` (`PREREND_PIVOT`) and `Camera_Special9` (`DOORC`);
+//! - the camera bgcheck (`Camera_BGCheckInfo`, `Camera_BGCheckCorner`, `Camera_GetFloorYLayer`,
+//!   `Camera_CheckOOB`);
 //! - `Camera_UpdateInterface`'s letterbox half, driving `crate::letterbox`.
 //!
 //! Vector-sphere maths is `z_olib.c`; `Math_FAtan2F` is the Taylor-series version from
-//! `code_800FCE80.c`. `OREG` values (`sOREGInit`) and each NORMAL0 mode's function and data
-//! (`sCamSetNormal0Modes`) come from `z_camera_data.c`, through the asset pack (`CameraData`).
+//! `code_800FCE80.c`. `OREG` values (`sOREGInit`) and every setting's modes, functions and
+//! data (`sCameraSettings`) come from `z_camera_data.c`, through the asset pack
+//! (`CameraData`); the scene's bg cameras from its collision header (`BgCamInfo`).
 //! `PREG(75)` and `PREG(76)` are 0 (only the debug register editor sets them), so the
 //! at-calculations skip their slope adjustment and take the fov-based off-ground branch.
 //!
-//! Modes whose function isn't ported (BATTLE's `Camera_Battle1`, TALK's `Camera_KeepOn3`,
-//! JUMP, CLIMB, HANG...) run `Camera_Normal1` on NORMAL's data; `camera->mode` still changes
-//! as in the game. Not modelled: other settings, bg-camera setting changes from the floor poly
-//! (`Camera_ChangeBgCamIndex`), water and hot-room checks, quakes, the low-health wiggle, the
-//! debug camera, the mode-change sounds, `func_80043F94` (scenes with the skybox disabled) and
-//! the interface alpha.
+//! A mode whose function isn't ported (BATTLE's `Camera_Battle1`, TALK's `Camera_KeepOn3` and
+//! `Camera_KeepOn0`, JUMP, CLIMB, HANG...) runs its setting's NORMAL function if that one is
+//! ported, else `Camera_Normal1` on NORMAL0's NORMAL data; `camera->mode` still changes as in
+//! the game. Not modelled: water and hot-room checks, quakes, the low-health wiggle, the debug
+//! camera, the mode-change sounds, `func_80043F94` (scenes with the skybox disabled) and the
+//! interface alpha.
 
 use eng_collision::bgcheck::{self, CollisionContext, PolyId};
 use eng_input::pad::{BTN_CLEFT, BTN_CRIGHT, Input};
@@ -41,10 +50,22 @@ const BGCHECK_SCENE: i32 = 50;
 pub struct CameraData {
     /// `sOREGInit`: `OREG(0)`..
     pub oreg: Vec<i16>,
-    /// `sCamSetNormal0Modes`, indexed by `CAM_MODE_*`: each mode's function and data.
-    pub normal0_modes: Vec<CamModeData>,
-    /// `sCameraSettings[CAM_SET_NORMAL0].unk_00`: bit `n` set when mode `n` is valid.
-    pub normal0_valid_modes: u32,
+    /// `sCameraSettings`, indexed by `CAM_SET_*` (entry 0, `CAM_SET_NONE`, has no modes).
+    pub settings: Vec<CamSettingData>,
+}
+
+/// A `CameraSetting` (`sCameraSettings[setting]`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CamSettingData {
+    /// `CAM_SET_NORMAL0`.
+    pub name: String,
+    /// `unk_00`: the valid modes in bits 0..29 (`validModes`), the priority in bits 24..27
+    /// (`Camera_ChangeSettingFlags`), 0x40000000 (don't become `prevSetting`) and 0x80000000
+    /// (`Camera_ChangeBgCamIndex` keeps the index even when the setting change is refused).
+    pub flags: u32,
+    /// The `sCamSet*Modes` array, indexed by `CAM_MODE_*`; `{ CAM_FUNC_NONE, 0, NULL }`
+    /// entries are `None`, and the array can be shorter than `CAM_MODE_MAX`.
+    pub modes: Vec<Option<CamModeData>>,
 }
 
 /// A `CameraMode` entry (`CAM_SETTING_MODE_ENTRY(func, data)`).
@@ -66,15 +87,62 @@ impl CameraData {
     fn oreg_s(&self, n: usize) -> f32 {
         self.oreg(n) as f32 * 0.01
     }
-    /// NORMAL0's data for `mode`.
-    pub fn mode(&self, mode: i16) -> Option<&CamModeData> {
-        self.normal0_modes.get(mode as usize)
+    /// `sCameraSettings[setting]`.
+    pub fn setting(&self, setting: i16) -> Option<&CamSettingData> {
+        usize::try_from(setting).ok().and_then(|s| self.settings.get(s))
     }
-    /// The value `i` of `mode`'s data (`GET_NEXT_RO_DATA` in order).
-    fn value(&self, mode: i16, i: usize) -> i16 {
-        self.mode(mode).and_then(|m| m.values.get(i)).copied().unwrap_or(0)
+    /// `sCameraSettings[setting].unk_00` (0 for a setting past the table).
+    pub fn setting_flags(&self, setting: i16) -> u32 {
+        self.setting(setting).map(|s| s.flags).unwrap_or(0)
+    }
+    /// `sCameraSettings[setting].cameraModes[mode]`.
+    pub fn mode(&self, setting: i16, mode: i16) -> Option<&CamModeData> {
+        self.setting(setting)?.modes.get(usize::try_from(mode).ok()?)?.as_ref()
+    }
+    /// The value `i` of a mode's data (`GET_NEXT_RO_DATA` in order).
+    fn value(&self, (setting, mode): (i16, i16), i: usize) -> i16 {
+        self.mode(setting, mode).and_then(|m| m.values.get(i)).copied().unwrap_or(0)
+    }
+    /// The `CAM_SET_*` value of a setting name.
+    pub fn setting_id(&self, name: &str) -> Option<i16> {
+        self.settings.iter().position(|s| s.name == name).map(|i| i as i16)
     }
 }
+
+// CAM_SET_* (z64camera.h) the camera and the ported actors name.
+pub const CAM_SET_NONE: i16 = 0x00;
+pub const CAM_SET_NORMAL0: i16 = 0x01;
+pub const CAM_SET_DUNGEON0: i16 = 0x03;
+pub const CAM_SET_PIVOT_SHOP_BROWSING: i16 = 0x17;
+pub const CAM_SET_PIVOT_IN_FRONT: i16 = 0x18;
+pub const CAM_SET_PREREND_FIXED: i16 = 0x19;
+pub const CAM_SET_PREREND_PIVOT: i16 = 0x1A;
+pub const CAM_SET_DOOR0: i16 = 0x1C;
+pub const CAM_SET_DOORC: i16 = 0x1D;
+pub const CAM_SET_FREE0: i16 = 0x21;
+pub const CAM_SET_CS_ATTENTION: i16 = 0x2B;
+pub const CAM_SET_SCENE_TRANSITION: i16 = 0x2F;
+pub const CAM_SET_MEADOW_BIRDS_EYE: i16 = 0x35;
+pub const CAM_SET_MEADOW_UNUSED: i16 = 0x36;
+pub const CAM_SET_TURN_AROUND: i16 = 0x38;
+pub const CAM_SET_MAX: i16 = 0x42;
+
+/// The mode functions ported (`CAM_FUNC_*`); the others fall back (`GameCamera::update`).
+const PORTED: &[&str] = &[
+    "CAM_FUNC_NORM1",
+    "CAM_FUNC_PARA1",
+    "CAM_FUNC_KEEP1",
+    "CAM_FUNC_FIXD2",
+    "CAM_FUNC_FIXD3",
+    "CAM_FUNC_FIXD4",
+    "CAM_FUNC_DATA4",
+    "CAM_FUNC_UNIQ0",
+    "CAM_FUNC_UNIQ2",
+    "CAM_FUNC_UNIQ3",
+    "CAM_FUNC_UNIQ6",
+    "CAM_FUNC_UNIQ7",
+    "CAM_FUNC_SPEC9",
+];
 
 // CAM_MODE_* (z64camera.h).
 pub const CAM_MODE_NORMAL: i16 = 0;
@@ -277,6 +345,17 @@ pub fn lerp_ceil_s(target: i16, cur: i16, step_scale: f32, min_diff: i16) -> i16
     }
 }
 
+/// `Camera_LERPFloorS`: like `Camera_LERPCeilS`, but within `minDiff` it stays at `cur`.
+pub fn lerp_floor_s(target: i16, cur: i16, step_scale: f32, min_diff: i16) -> i16 {
+    let diff = target.wrapping_sub(cur);
+    if (diff as i32).abs() >= min_diff as i32 {
+        let step = (diff as f32 * step_scale + 0.5) as i32 as i16;
+        (cur as i32 + step as i32) as i16
+    } else {
+        cur
+    }
+}
+
 /// `Camera_LERPCeilVec3f`.
 fn lerp_ceil_vec3(target: Vec3, cur: &mut Vec3, y_step: f32, xz_step: f32, min_diff: f32) {
     cur.x = lerp_ceil_f(target.x, cur.x, xz_step, min_diff);
@@ -460,6 +539,77 @@ struct Keep1Rw {
     unk_16: i16,
 }
 
+/// The fixed and data cameras' `paramData` (`Fixed2`..`Fixed4`, `Data4`; `z64camera.h`).
+#[derive(Debug, Clone, Copy, Default)]
+struct FixedData {
+    // Fixed2ReadOnlyData / Fixed2ReadWriteData.
+    fixd2_y_offset: f32,
+    fixd2_eye_step_scale: f32,
+    fixd2_pos_step_scale: f32,
+    fixd2_fov: f32,
+    fixd2_interface_flags: i16,
+    fixd2_eye: Vec3,
+    fixd2_rw_fov: i16,
+    // Fixed3ReadOnlyData / Fixed3ReadWriteData.
+    fixd3_interface_flags: i16,
+    fixd3_rot: [i16; 3],
+    fixd3_fov: i16,
+    fixd3_upd_dir_timer: i16,
+    fixd3_room_image_override_bg_cam_index: i16,
+    // Fixed4ReadOnlyData / Fixed4ReadWriteData.
+    fixd4_y_offset: f32,
+    fixd4_speed_to_eye_pos: f32,
+    fixd4_follow_speed: f32,
+    fixd4_fov: f32,
+    fixd4_interface_flags: i16,
+    fixd4_eye_target: Vec3,
+    fixd4_rw_follow_speed: f32,
+    // Data4ReadOnlyData / Data4ReadWriteData.
+    data4_y_offset: f32,
+    data4_fov: f32,
+    data4_interface_flags: i16,
+    data4_eye_pos: Vec3,
+    data4_eye_rot: [i16; 3],
+    data4_rw_fov: i16,
+    data4_flags: i16,
+}
+
+/// The unique and special cameras' `paramData` (`Unique0`, `Unique2`, `Unique3`, `Unique6`,
+/// `Unique7`, `Special9`).
+#[derive(Debug, Clone, Copy, Default)]
+struct UniqueData {
+    // Unique0: roData.interfaceFlags; rwData.initalPos, animTimer, eyeAndDirection.
+    uniq0_interface_flags: i16,
+    uniq0_inital_pos: Vec3,
+    uniq0_anim_timer: i16,
+    uniq0_eye_point: Vec3,
+    uniq0_eye_dir: Vec3,
+    // Unique2ReadOnlyData / Unique2ReadWriteData.
+    uniq2_y_offset: f32,
+    uniq2_dist_target: f32,
+    uniq2_fov_target: f32,
+    uniq2_interface_flags: i16,
+    uniq2_unk_00: f32,
+    uniq2_unk_04: i16,
+    // Unique3ReadOnlyData / Unique3ReadWriteData.
+    uniq3_y_offset: f32,
+    uniq3_fov: f32,
+    uniq3_interface_flags: i16,
+    uniq3_initial_fov: f32,
+    uniq3_initial_dist: f32,
+    // Unique6ReadOnlyData.
+    uniq6_interface_flags: i16,
+    // Unique7ReadOnlyData / Unique7ReadWriteData.
+    uniq7_fov: f32,
+    uniq7_interface_flags: i16,
+    uniq7_unk_00_x: i16,
+    // Special9ReadOnlyData / Special9ReadWriteData.
+    spec9_y_offset: f32,
+    spec9_unk_04: f32,
+    spec9_interface_flags: i16,
+    spec9_target_yaw: i16,
+}
+
 /// What `Camera_Update` is given each frame besides the camera data.
 pub struct CamFrame<'a> {
     pub col: &'a CollisionContext,
@@ -467,10 +617,72 @@ pub struct CamFrame<'a> {
     /// `Actor_GetFocus(camera->target)`, or `None` when there's no target or it was killed
     /// (`target->update == NULL`).
     pub target_focus: Option<Vec3>,
+    /// `Actor_GetWorldPosShapeRot(doorParams.doorActor)`: the door's position and shape
+    /// rotation, if the door camera has one.
+    pub door: Option<(Vec3, [i16; 3])>,
     /// `play->transitionMode != TRANS_MODE_OFF`.
     pub transitioning: bool,
     /// `play->state.frames`.
     pub frames: u32,
+    /// `D_8015BD7C->state.input[0]`: the modes that end on a button press read it.
+    pub input: Input,
+}
+
+/// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
+/// in the union with the mode functions' data, so a function's reload overwrites it; here it
+/// stays until the next `Camera_ChangeDoorCam` (the only difference is for a `START1` camera
+/// whose own timer is -1, reached some other way than a spawn or a door).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DoorParams {
+    pub door_actor: Option<ActorHandle>,
+    pub bg_cam_index: i16,
+    pub timer1: i16,
+    pub timer2: i16,
+    pub timer3: i16,
+}
+
+/// What `func_80057FC4` reads of the current room.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CamRoom {
+    /// `roomShape->base.type == ROOM_SHAPE_TYPE_IMAGE`.
+    pub image: bool,
+    /// `behaviorType1` (`ROOM_BEHAVIOR_TYPE1_*`).
+    pub behavior_type1: u8,
+}
+
+/// `BgCamFuncData` (`z64bgcheck.h`): a bg camera's `Vec3s` data as position, rotation, fov and
+/// the field that's `roomImageOverrideBgCamIndex`, `timer` or `flags` by setting.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BgCamFuncData {
+    pub pos: [i16; 3],
+    pub rot: [i16; 3],
+    pub fov: i16,
+    pub flags: i16,
+    pub unk_10: i16,
+}
+
+impl BgCamFuncData {
+    fn pos_f(&self) -> Vec3 {
+        Vec3::new(self.pos[0] as f32, self.pos[1] as f32, self.pos[2] as f32)
+    }
+}
+
+/// `BgCheck_GetBgCamSettingImpl(colCtx, bgCamIndex, BGCHECK_SCENE)`. An index past the list is
+/// `CAM_SET_NONE` here (the C reads past the array).
+pub fn bg_cam_setting(col: &CollisionContext, bg_cam_index: i32) -> i16 {
+    usize::try_from(bg_cam_index).ok().and_then(|i| col.header.bg_cams.get(i)).map(|c| c.setting as i16).unwrap_or(CAM_SET_NONE)
+}
+
+/// `BgCheck_GetBgCamFuncDataImpl(colCtx, bgCamIndex, BGCHECK_SCENE)` as a `BgCamFuncData`
+/// (`None` for a NULL pointer or an index past the list; missing entries read as 0).
+pub fn bg_cam_func_data(col: &CollisionContext, bg_cam_index: i32) -> Option<BgCamFuncData> {
+    let c = col.header.bg_cams.get(usize::try_from(bg_cam_index).ok()?)?;
+    if c.data.is_empty() {
+        return None;
+    }
+    let v = |i: usize| c.data.get(i).copied().unwrap_or([0; 3]);
+    let (pos, rot, rest) = (v(0), v(1), v(2));
+    Some(BgCamFuncData { pos, rot, fov: rest[0], flags: rest[1], unk_10: rest[2] })
 }
 
 /// What `Camera_Update` reads from Player each frame.
@@ -487,7 +699,12 @@ pub struct PlayerView {
     pub gravity: f32,
     /// `stateFlags1 & PLAYER_STATE1_21` (climbing).
     pub climbing: bool,
+    /// `stateFlags1` (`Camera_Unique0` reads `PLAYER_STATE1_29`).
+    pub state1: u32,
 }
+
+/// `PLAYER_STATE1_29`: Player in a cutscene-like state (walking through an exit or a door).
+const PLAYER_STATE1_29: u32 = 1 << 29;
 
 impl PlayerView {
     /// `Player_GetHeight` (not riding Epona).
@@ -525,6 +742,21 @@ pub struct GameCamera {
     anim_state: i16,
     /// `mode`: a `CAM_MODE_*`.
     pub mode: i16,
+    /// `setting`, `prevSetting`: `CAM_SET_*`.
+    pub setting: i16,
+    pub prev_setting: i16,
+    /// `bgCamIndex`, `prevBgCamIndex`, `nextBgCamIndex`: the scene's bg camera in use (-1 for
+    /// none), the one before, and the one the floor asks for.
+    pub bg_cam_index: i16,
+    pub prev_bg_cam_index: i16,
+    pub next_bg_cam_index: i16,
+    /// `paramData.doorParams`.
+    pub door_params: DoorParams,
+    /// `timer` (-1: none).
+    pub timer: i16,
+    /// `data2`, `data3` (`Camera_SetCameraData`).
+    pub data2: i16,
+    pub data3: i16,
     /// `unk_14A`: bits 0x20 and 2 mark a mode request this frame.
     pub unk_14a: i16,
     /// `unk_14C`: 0x20 while `Camera_Parallel1` animates (mode requests are then refused).
@@ -545,6 +777,8 @@ pub struct GameCamera {
     para1_rw: Para1Rw,
     keep1_ro: Keep1Ro,
     keep1_rw: Keep1Rw,
+    fixd: FixedData,
+    uniq: UniqueData,
     update_direction: bool,
     oob_timer: u32,
     // Statics of Camera_GetPitchAdjFromFloorHeightDiffs and func_80046E20.
@@ -591,8 +825,20 @@ impl GameCamera {
             fov_update_rate: d.oreg_s(4),
             anim_state: 0,
             mode: CAM_MODE_NORMAL,
+            // func_80057FC4 for a room with behaviorType1 0 (Camera_Init has FREE0).
+            setting: CAM_SET_NORMAL0,
+            prev_setting: CAM_SET_NORMAL0,
+            bg_cam_index: -1,
+            prev_bg_cam_index: -1,
+            next_bg_cam_index: -1,
+            // func_80057FC4: Camera_ChangeDoorCam(camera, NULL, -99, 0, 0, 18, 10).
+            door_params: DoorParams { door_actor: None, bg_cam_index: -99, timer1: 0, timer2: 18, timer3: 10 },
+            timer: -1,
+            data2: 0,
+            data3: 0,
             unk_14a: 0,
-            // Camera_Init: 0x4000; Camera_InitPlayerSettings: |= 4.
+            // Camera_Init: 0x4000; Camera_InitPlayerSettings: |= 4. (Play_Init's func_8005AC48
+            // is `play_init_settings`.)
             unk_14c: 0x4000 | 4,
             param_flags: 0,
             target: None,
@@ -606,6 +852,8 @@ impl GameCamera {
             para1_rw: Para1Rw::default(),
             keep1_ro: Keep1Ro::default(),
             keep1_rw: Keep1Rw::default(),
+            fixd: FixedData::default(),
+            uniq: UniqueData::default(),
             update_direction: false,
             oob_timer: 0,
             floor_y_near: 0.0,
@@ -641,7 +889,7 @@ impl GameCamera {
             self.unk_14a |= 0x20;
             return -1;
         }
-        if (d.normal0_valid_modes & 0x3FFF_FFFF) & (1u32 << mode) == 0 {
+        if (d.setting_flags(self.setting) & 0x3FFF_FFFF) & (1u32 << mode) == 0 {
             if self.mode != CAM_MODE_NORMAL {
                 self.mode = CAM_MODE_NORMAL;
                 self.copy_data_to_regs();
@@ -716,6 +964,182 @@ impl GameCamera {
         self.unk_14c &= !(0x1000 | 0x8);
     }
 
+    /// `Camera_CheckValidMode`: 0 if the setting has no such mode, -1 if it's the current one.
+    pub fn check_valid_mode(&self, d: &CameraData, mode: i16) -> i32 {
+        if d.setting_flags(self.setting) & (1u32 << mode) == 0 {
+            0
+        } else if mode == self.mode {
+            -1
+        } else {
+            (0x8000_0000u32 | mode as u32) as i32
+        }
+    }
+
+    /// `Play_Init`'s part of the main camera's start: `func_8005AC48(&mainCamera, 0xFF)` (which
+    /// among other bits enables the floor's bg cameras, bit 1), then `Camera_InitPlayerSettings`'
+    /// `unk_14C |= 4` and `func_80057FC4` for the first room.
+    pub fn play_init_settings(&mut self, room: CamRoom) {
+        self.unk_14c = 0xFF;
+        self.unk_14c |= 4;
+        self.func_80057fc4(room);
+        self.copy_data_to_regs();
+    }
+
+    /// `func_80057FC4`: the main camera's setting for the room: `FREE0` in a prerendered room
+    /// (the bg camera from the spawn or the viewpoint follows), else `DUNGEON0` for
+    /// `ROOM_BEHAVIOR_TYPE1_1` and `NORMAL0` for the rest (keeping the door parameters of
+    /// `Camera_ChangeDoorCam(camera, NULL, -99, 0, 0, 18, 10)`).
+    pub fn func_80057fc4(&mut self, room: CamRoom) {
+        if room.image {
+            self.setting = CAM_SET_FREE0;
+            self.prev_setting = CAM_SET_FREE0;
+            self.unk_14c &= !0x4;
+            return;
+        }
+        self.door_params = DoorParams { door_actor: None, bg_cam_index: -99, timer1: 0, timer2: 18, timer3: 10 };
+        self.copy_data_to_regs();
+        match room.behavior_type1 {
+            1 => {
+                self.setting = CAM_SET_DUNGEON0;
+                self.prev_setting = CAM_SET_DUNGEON0;
+            }
+            0 => {
+                self.setting = CAM_SET_NORMAL0;
+                self.prev_setting = CAM_SET_NORMAL0;
+            }
+            _ => {
+                self.setting = CAM_SET_NORMAL0;
+                self.prev_setting = CAM_SET_NORMAL0;
+                self.unk_14c |= 4;
+            }
+        }
+    }
+
+    /// `Camera_ChangeSettingFlags`. Returns the setting, or -1 (already it), -2 (a change of
+    /// higher priority happened this frame), -99 (not a setting).
+    ///
+    /// Not modelled: `-5` for `CAM_SET_MEADOW_BIRDS_EYE` / `_UNUSED` for adult Link in
+    /// `SCENE_SPOT05` (the Sacred Forest Meadow isn't played yet).
+    pub fn change_setting_flags(&mut self, d: &CameraData, setting: i16, flags: i16) -> i16 {
+        let priority = |s: i16| (d.setting_flags(s) & 0x0F00_0000) >> 24;
+        if self.unk_14a & 1 != 0 && priority(self.setting) >= priority(setting) {
+            self.unk_14a |= 0x10;
+            return -2;
+        }
+        if setting == CAM_SET_NONE || setting >= CAM_SET_MAX {
+            return -99;
+        }
+        if setting == self.setting && flags & 1 == 0 {
+            self.unk_14a |= 0x10;
+            if flags & 2 == 0 {
+                self.unk_14a |= 1;
+            }
+            return -1;
+        }
+        self.unk_14a |= 0x10;
+        if flags & 2 == 0 {
+            self.unk_14a |= 1;
+        }
+        self.unk_14c |= 0xC;
+        self.unk_14c &= !0x1008;
+        if d.setting_flags(self.setting) & 0x4000_0000 == 0 {
+            self.prev_setting = self.setting;
+        }
+        if flags & 8 != 0 {
+            self.bg_cam_index = self.prev_bg_cam_index;
+            self.prev_bg_cam_index = -1;
+        } else if flags & 4 == 0 {
+            if d.setting_flags(self.setting) & 0x4000_0000 == 0 {
+                self.prev_bg_cam_index = self.bg_cam_index;
+            }
+            self.bg_cam_index = -1;
+        }
+        self.setting = setting;
+        // (0x80000000 | mode) is negative: only the "no such mode, already NORMAL" 0 copies.
+        if self.change_mode_flags(d, self.mode, 1) >= 0 {
+            self.copy_data_to_regs();
+        }
+        setting
+    }
+
+    /// `Camera_ChangeSetting`.
+    pub fn change_setting(&mut self, d: &CameraData, setting: i16) -> i16 {
+        self.change_setting_flags(d, setting, 0)
+    }
+
+    /// `Camera_ChangeBgCamIndex`: the bg camera's setting, keeping the index. At most once a
+    /// frame (`unk_14A & 0x40`).
+    pub fn change_bg_cam_index(&mut self, d: &CameraData, col: &CollisionContext, bg_cam_index: i32) -> i32 {
+        if bg_cam_index == -1 || bg_cam_index == self.bg_cam_index as i32 {
+            self.unk_14a |= 0x40;
+            return -1;
+        }
+        if self.unk_14a & 0x40 == 0 {
+            let new_setting = bg_cam_setting(col, bg_cam_index);
+            self.unk_14a |= 0x40;
+            let ok = self.change_setting_flags(d, new_setting, 5) >= 0;
+            if ok || d.setting_flags(self.setting) & 0x8000_0000 != 0 {
+                self.bg_cam_index = bg_cam_index as i16;
+                self.unk_14a |= 4;
+                self.copy_data_to_regs();
+            }
+            return (0x8000_0000u32 | bg_cam_index as u32) as i32;
+        }
+        // @bug (game): the C falls off the end without a return value; no caller reads it.
+        0
+    }
+
+    /// `Camera_ChangeDoorCam`: `bg_cam_index` -99 only stores the door's parameters, -1 uses
+    /// `CAM_SET_DOORC`, anything else that bg camera's setting.
+    #[allow(clippy::too_many_arguments)]
+    pub fn change_door_cam(&mut self, d: &CameraData, col: &CollisionContext, door: Option<ActorHandle>, bg_cam_index: i16, timer1: i16, timer2: i16, timer3: i16) -> i32 {
+        if self.setting == CAM_SET_CS_ATTENTION || self.setting == CAM_SET_DOORC {
+            return 0;
+        }
+        self.door_params = DoorParams { door_actor: door, bg_cam_index, timer1, timer2, timer3 };
+        if bg_cam_index == -99 {
+            self.copy_data_to_regs();
+            return -99;
+        }
+        if bg_cam_index == -1 {
+            self.change_setting(d, CAM_SET_DOORC);
+        } else {
+            let setting = bg_cam_setting(col, bg_cam_index as i32);
+            self.unk_14a |= 0x40;
+            if self.change_setting(d, setting) >= 0 {
+                self.bg_cam_index = bg_cam_index;
+                self.unk_14a |= 4;
+            }
+        }
+        self.copy_data_to_regs();
+        -1
+    }
+
+    /// `func_8005B1A4`: tells a door or exit camera that Player is through (`unk_14C |= 8`).
+    pub fn func_8005b1a4(&mut self) {
+        self.unk_14c |= 0x8;
+    }
+
+    /// `Camera_SetCameraData(camera, 4 | 8, ...)`: `data2` and `data3`.
+    pub fn set_camera_data(&mut self, flags: i16, data2: i16, data3: i16) {
+        if flags & 4 != 0 {
+            self.data2 = data2;
+        }
+        if flags & 8 != 0 {
+            self.data3 = data3;
+        }
+    }
+
+    /// `Camera_GetBgCamFuncData`: the current bg camera's data.
+    fn bg_cam_data(&self, col: &CollisionContext) -> BgCamFuncData {
+        bg_cam_func_data(col, self.bg_cam_index as i32).unwrap_or_default()
+    }
+
+    /// `(setting, mode)`: the key of the current mode's data.
+    fn cur(&self) -> (i16, i16) {
+        (self.setting, self.mode)
+    }
+
     /// `Camera_Update` for the main camera following Player, with `Camera_UpdateInterface`'s
     /// letterbox target at the end.
     pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox) {
@@ -741,16 +1165,57 @@ impl GameCamera {
         self.player_pos = cur;
         self.player_rot_y = p.shape_yaw;
 
+        if self.oob_timer < 200 {
+            // (Camera_UpdateWater and Camera_UpdateHotRoom aren't ported.)
+            if self.unk_14c & 4 == 0 {
+                self.next_bg_cam_index = -1;
+            }
+            // The floor's bg camera (bit 0x200, underwater, is never set here; the iron boots
+            // exception with it doesn't arise).
+            if self.unk_14c & 1 != 0 && self.unk_14c & 4 != 0 && self.unk_14c & 0x400 == 0 && self.unk_14c & 0x200 == 0 && self.unk_14c as u16 & 0x8000 == 0 && ground != bgcheck::BGCHECK_Y_MIN
+                && let Some(id) = poly
+            {
+                // Camera_GetBgCamIndex: -1 when the index's setting is CAM_SET_NONE. Only a
+                // scene floor's index is taken (a DynaPoly's names its own actor's list).
+                use crate::surface::SurfaceType;
+                let idx = col.bg_cam_index(id) as i32;
+                if id.is_scene() && bg_cam_setting(col, idx) != CAM_SET_NONE {
+                    self.next_bg_cam_index = idx as i16;
+                }
+            }
+            if self.next_bg_cam_index != -1 && (cur.y - ground).abs() < 2.0 && self.unk_14c & 0x200 == 0 {
+                let next = self.next_bg_cam_index as i32;
+                self.change_bg_cam_index(d, col, next);
+                self.next_bg_cam_index = -1;
+            }
+        }
+
         self.unk_14a = 0;
         self.unk_14c &= !(0x400 | 0x20);
         self.unk_14c |= 0x10;
         if self.oob_timer < 200 {
-            // sCameraFunctions[sCameraSettings[setting].cameraModes[mode].funcIdx].
-            match d.mode(self.mode).map(|m| m.func.as_str()) {
-                Some("CAM_FUNC_NORM1") => self.normal1(d, col, p, self.mode, frames),
+            // sCameraFunctions[sCameraSettings[setting].cameraModes[mode].funcIdx]. A function
+            // that isn't ported runs the setting's NORMAL function if that one is, else Normal1
+            // on NORMAL0's NORMAL data.
+            let func = |m: i16| d.mode(self.setting, m).map(|m| m.func.as_str()).filter(|f| PORTED.contains(f));
+            match func(self.mode).or_else(|| func(CAM_MODE_NORMAL)) {
+                Some("CAM_FUNC_NORM1") => {
+                    let key = if d.mode(self.setting, self.mode).is_some_and(|m| m.func == "CAM_FUNC_NORM1") { self.cur() } else { (self.setting, CAM_MODE_NORMAL) };
+                    self.normal1(d, col, p, key, frames)
+                }
                 Some("CAM_FUNC_PARA1") => self.parallel1(d, col, p, frames),
                 Some("CAM_FUNC_KEEP1") => self.keep_on1(d, col, p, f.target_focus),
-                _ => self.normal1(d, col, p, CAM_MODE_NORMAL, frames),
+                Some("CAM_FUNC_FIXD2") => self.fixed2(d, col, p),
+                Some("CAM_FUNC_FIXD3") => self.fixed3(d, col),
+                Some("CAM_FUNC_FIXD4") => self.fixed4(d, col, p),
+                Some("CAM_FUNC_DATA4") => self.data4(d, col, p),
+                Some("CAM_FUNC_UNIQ0") => self.unique0(d, col, p, &f.input),
+                Some("CAM_FUNC_UNIQ2") => self.unique2(d, col, p),
+                Some("CAM_FUNC_UNIQ3") => self.unique3(d, col, p, &f.input),
+                Some("CAM_FUNC_UNIQ6") => self.unique6(d, p),
+                Some("CAM_FUNC_UNIQ7") => self.unique7(d, col),
+                Some("CAM_FUNC_SPEC9") => self.special9(d, col, p, f.door, frames, &f.input),
+                _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else {
             let e = diff_to_sph_geo(self.at, self.eye);
@@ -1111,8 +1576,8 @@ impl GameCamera {
         self.rw.swing = anim;
     }
 
-    /// `Camera_Normal1`, reading `data_mode`'s values.
-    fn normal1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, data_mode: i16, frames: u32) {
+    /// `Camera_Normal1`, reading the values of `data_mode` (a setting and a mode).
+    fn normal1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, data_mode: (i16, i16), frames: u32) {
         let rate = 0.1f32;
         let player_height = p.height();
         // RELOAD_PARAMS: animState 0, 10 or 20.
@@ -1382,7 +1847,7 @@ impl GameCamera {
     fn parallel1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32) {
         let player_height = p.height();
         if matches!(self.anim_state, 0 | 10 | 20) {
-            let v = |i: usize| d.value(self.mode, i) as f32;
+            let v = |i: usize| d.value(self.cur(), i) as f32;
             let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
             self.para1_ro = Para1Ro {
                 y_offset: v(0) * 0.01 * player_height * y_normal,
@@ -1393,7 +1858,7 @@ impl GameCamera {
                 unk_0c: v(5),
                 fov_target: v(6),
                 unk_14: v(7) * 0.01,
-                interface_flags: d.value(self.mode, 8),
+                interface_flags: d.value(self.cur(), 8),
                 unk_18: v(9) * 0.01 * player_height * y_normal,
                 unk_1c: v(10) * 0.01,
             };
@@ -1557,7 +2022,7 @@ impl GameCamera {
         };
         let reload = matches!(self.anim_state, 0 | 10 | 20);
         if reload {
-            let v = |i: usize| d.value(self.mode, i) as f32;
+            let v = |i: usize| d.value(self.cur(), i) as f32;
             let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
             self.keep1_ro = Keep1Ro {
                 unk_00: v(0) * 0.01 * player_height * y_normal,
@@ -1570,7 +2035,7 @@ impl GameCamera {
                 unk_1c: v(7) * 0.01,
                 unk_20: v(8),
                 unk_24: v(9) * 0.01,
-                interface_flags: d.value(self.mode, 10),
+                interface_flags: d.value(self.cur(), 10),
                 unk_28: v(11) * 0.01 * player_height * y_normal,
                 unk_2c: v(12) * 0.01,
             };
@@ -1709,6 +2174,634 @@ impl GameCamera {
         self.fov = lerp_ceil_f(ro.unk_20, self.fov, self.fov_update_rate, 1.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
         self.at_lerp_step_scale = self.clamp_lerp_scale(d, if sp80 { ro.unk_2c } else { ro.unk_24 });
+    }
+
+    // ---- The fixed, data, unique and special cameras ----------------------------------------
+
+    /// `func_80043ABC`.
+    fn func_80043abc(&mut self, d: &CameraData) {
+        self.yaw_update_rate_inv = 100.0;
+        self.pitch_update_rate_inv = d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32;
+        self.r_update_rate_inv = d.oreg(6) as f32;
+        self.xz_offset_update_rate = d.oreg_s(2);
+        self.y_offset_update_rate = d.oreg_s(3);
+        self.fov_update_rate = d.oreg_s(4);
+    }
+
+    /// `func_80043B60`.
+    fn func_80043b60(&mut self, d: &CameraData) {
+        self.r_update_rate_inv = d.oreg(27) as f32;
+        self.yaw_update_rate_inv = d.oreg(27) as f32;
+        self.pitch_update_rate_inv = d.oreg(27) as f32;
+        self.xz_offset_update_rate = 0.001;
+        self.y_offset_update_rate = 0.001;
+        self.fov_update_rate = 0.001;
+    }
+
+    /// `1 + R_CAM_YOFFSET_NORM - R_CAM_YOFFSET_NORM * (68 / playerHeight)`, the modes'
+    /// `yNormal`.
+    fn y_normal(d: &CameraData, player_height: f32) -> f32 {
+        1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height)
+    }
+
+    /// The pressed buttons the button-ended modes check (A, B, the C buttons, R, Z).
+    fn any_button_pressed(input: &Input) -> bool {
+        use eng_input::pad::{BTN_A, BTN_B, BTN_CDOWN, BTN_CUP, BTN_R, BTN_Z};
+        [BTN_A, BTN_B, BTN_CLEFT, BTN_CDOWN, BTN_CUP, BTN_CRIGHT, BTN_R, BTN_Z].iter().any(|&b| input.press.held(b))
+    }
+
+    /// `Camera_CheckOOB`: whether a poly is between `from` and `to` with `from` behind it.
+    fn check_oob(col: &CollisionContext, from: Vec3, to: Vec3) -> bool {
+        // BgCheck_CameraLineTest1(.., chkWall 1, chkFloor 1, chkCeil 1, chkOneFace 0, ..).
+        let bcc = bgcheck::CHECK_WALL | bgcheck::CHECK_FLOOR | bgcheck::CHECK_CEILING | bgcheck::CHECK_DYNA;
+        match col.check_line(bgcheck::IGNORE_CAMERA, bgcheck::IGNORE_NONE, from, to, 1.0, bcc) {
+            // CollisionPoly_GetPointDistanceFromPlane.
+            Some((_, poly)) => bgcheck::dist_plane_to_pos(col.poly_normal(poly), col.poly(poly).dist as f32, from) < 0.0,
+            None => false,
+        }
+    }
+
+    /// `Camera_Fixed2`: the eye eases to the bg camera's position, `at` follows Player
+    /// (`PIVOT_CRAWLSPACE`).
+    fn fixed2(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let y_normal = Self::y_normal(d, player_height);
+            let f = &mut self.fixd;
+            f.fixd2_y_offset = (v(0) as f32 * 0.01 * player_height) * y_normal;
+            f.fixd2_eye_step_scale = v(1) as f32 * 0.01;
+            f.fixd2_pos_step_scale = v(2) as f32 * 0.01;
+            f.fixd2_fov = v(3) as f32;
+            f.fixd2_interface_flags = v(4);
+            f.fixd2_rw_fov = (f.fixd2_fov * 100.0) as i16;
+            match bg_cam_func_data(col, self.bg_cam_index as i32) {
+                Some(b) => {
+                    f.fixd2_eye = b.pos_f();
+                    if b.fov != -1 {
+                        f.fixd2_rw_fov = b.fov;
+                    }
+                }
+                None => f.fixd2_eye = self.eye,
+            }
+            if f.fixd2_rw_fov <= 360 {
+                f.fixd2_rw_fov = f.fixd2_rw_fov.wrapping_mul(100);
+            }
+        }
+        let f = self.fixd;
+        self.interface_flags = f.fixd2_interface_flags;
+        let pos_offset_target = Vec3::new(0.0, f.fixd2_y_offset + player_height, 0.0);
+        let mut off = self.pos_offset;
+        lerp_ceil_vec3(pos_offset_target, &mut off, f.fixd2_pos_step_scale, f.fixd2_pos_step_scale, 0.1);
+        self.pos_offset = off;
+        let at_target = self.player_pos + self.pos_offset;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.func_80043b60(d);
+            if f.fixd2_interface_flags & 1 == 0 {
+                self.eye = f.fixd2_eye;
+                self.eye_next = f.fixd2_eye;
+                self.at = at_target;
+            }
+        }
+        let mut at = self.at;
+        lerp_ceil_vec3(at_target, &mut at, f.fixd2_pos_step_scale, f.fixd2_pos_step_scale, 10.0);
+        self.at = at;
+        let mut eye_next = self.eye_next;
+        lerp_ceil_vec3(f.fixd2_eye, &mut eye_next, f.fixd2_eye_step_scale, f.fixd2_eye_step_scale, 0.1);
+        self.eye_next = eye_next;
+        self.eye = self.eye_next;
+        self.dist = self.at.distance(self.eye);
+        self.roll = 0;
+        self.xz_speed = 0.0;
+        self.fov = f.fixd2_rw_fov as f32 * 0.01;
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, 1.0);
+        self.pos_offset = self.at - self.player_pos;
+    }
+
+    /// `Camera_Fixed3` (`PREREND_FIXED`): the eye at the bg camera's position, looking along its
+    /// rotation; nothing moves. `R_CAM_DATA(CAM_DATA_FOV)` is only a copy of the fov (the debug
+    /// register editor aside).
+    fn fixed3(&mut self, d: &CameraData, col: &CollisionContext) {
+        let b = self.bg_cam_data(col);
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let flags = d.value(self.cur(), 0);
+            let f = &mut self.fixd;
+            f.fixd3_interface_flags = flags;
+            self.eye_next = b.pos_f();
+            self.eye = self.eye_next;
+            f.fixd3_rot = b.rot;
+            f.fixd3_fov = b.fov;
+            f.fixd3_room_image_override_bg_cam_index = b.flags;
+            if f.fixd3_fov == -1 {
+                f.fixd3_fov = 6000;
+            }
+            if f.fixd3_fov <= 360 {
+                f.fixd3_fov = f.fixd3_fov.wrapping_mul(100);
+            }
+        }
+        if self.anim_state == 0 {
+            self.fixd.fixd3_upd_dir_timer = 5;
+            self.anim_state += 1;
+        }
+        let f = &mut self.fixd;
+        if b.flags != f.fixd3_room_image_override_bg_cam_index {
+            // "camera: position change".
+            f.fixd3_room_image_override_bg_cam_index = b.flags;
+            f.fixd3_upd_dir_timer = 5;
+        }
+        if f.fixd3_upd_dir_timer > 0 {
+            f.fixd3_upd_dir_timer -= 1;
+            self.update_direction = true;
+        } else {
+            self.update_direction = false;
+        }
+        let at_sph = VecSph { r: 150.0, yaw: f.fixd3_rot[1], pitch: f.fixd3_rot[0].wrapping_neg() };
+        self.at = sph_geo_add(self.eye, at_sph);
+        self.interface_flags = f.fixd3_interface_flags;
+        self.roll = 0;
+        self.fov = f.fixd3_fov as f32 * 0.01;
+        self.at_lerp_step_scale = 0.0;
+    }
+
+    /// `Camera_Fixed4` (`PIVOT_IN_FRONT`): the eye eases to the bg camera's position and `at`
+    /// turns to follow Player.
+    fn fixed4(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let y_normal = Self::y_normal(d, player_height);
+            let f = &mut self.fixd;
+            f.fixd4_y_offset = v(0) as f32 * 0.01 * player_height * y_normal;
+            f.fixd4_speed_to_eye_pos = v(1) as f32 * 0.01;
+            f.fixd4_follow_speed = v(2) as f32 * 0.01;
+            f.fixd4_fov = v(3) as f32;
+            f.fixd4_interface_flags = v(4);
+            f.fixd4_eye_target = bg_cam_func_data(col, self.bg_cam_index as i32).map(|b| b.pos_f()).unwrap_or(self.eye);
+        }
+        self.interface_flags = self.fixd.fixd4_interface_flags;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            if self.fixd.fixd4_interface_flags & 4 == 0 {
+                self.func_80043b60(d);
+            }
+            self.fixd.fixd4_rw_follow_speed = self.fixd.fixd4_follow_speed;
+        }
+        let f = self.fixd;
+        self.eye_next += (f.fixd4_eye_target - self.eye_next) * f.fixd4_speed_to_eye_pos;
+        self.eye = self.eye_next;
+        let pos_offset_target = Vec3::new(0.0, f.fixd4_y_offset + player_height, 0.0);
+        let mut off = self.pos_offset;
+        lerp_ceil_vec3(pos_offset_target, &mut off, 0.1, 0.1, 0.1);
+        self.pos_offset = off;
+        let player_with_offset = self.player_pos + self.pos_offset;
+        let at_target = self.at + (player_with_offset - self.at) * 0.5;
+        let mut at_eye_next = diff_to_sph_geo(self.eye_next, self.at);
+        let at_target_eye_next = diff_to_sph_geo(self.eye_next, at_target);
+        at_eye_next.r += (at_target_eye_next.r - at_eye_next.r) * f.fixd4_rw_follow_speed;
+        at_eye_next.pitch = lerp_ceil_s(at_target_eye_next.pitch, at_eye_next.pitch, f.fixd4_rw_follow_speed * self.speed_ratio, 0xA);
+        at_eye_next.yaw = lerp_ceil_s(at_target_eye_next.yaw, at_eye_next.yaw, f.fixd4_rw_follow_speed * self.speed_ratio, 0xA);
+        self.at = sph_geo_add(self.eye_next, at_eye_next);
+        self.dist = self.at.distance(self.eye);
+        self.roll = 0;
+        self.fov = f.fixd4_fov;
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, 1.0);
+    }
+
+    /// `Camera_Data4` (`PIVOT_SHOP_BROWSING`): the eye at the bg camera, `at` along the eye's
+    /// rotation plus `data2` / `data3` degrees when its flags say so.
+    fn data4(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let y_normal = Self::y_normal(d, player_height);
+            let b = self.bg_cam_data(col);
+            let f = &mut self.fixd;
+            f.data4_y_offset = v(0) as f32 * 0.01 * player_height * y_normal;
+            f.data4_fov = v(1) as f32;
+            f.data4_interface_flags = v(2);
+            f.data4_eye_pos = b.pos_f();
+            f.data4_eye_rot = b.rot;
+            f.data4_rw_fov = b.fov;
+            if b.fov != -1 {
+                f.data4_fov = if f.data4_rw_fov <= 360 { f.data4_rw_fov as f32 } else { f.data4_rw_fov as f32 * 0.01 };
+            }
+            f.data4_flags = b.flags;
+            self.eye = f.data4_eye_pos;
+        }
+        let f = self.fixd;
+        self.interface_flags = f.data4_interface_flags;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.func_80043b60(d);
+        }
+        let eye_next_at = diff_to_sph_geo(self.at, self.eye_next);
+        self.calc_at_default(d, &eye_next_at, f.data4_y_offset, false, p);
+        let eye_at = diff_to_sph_geo(self.eye, self.at);
+        let at_offset = VecSph {
+            r: eye_at.r,
+            yaw: if f.data4_flags & 1 != 0 { cam_deg_to_binang(self.data2 as f32).wrapping_add(f.data4_eye_rot[1]) } else { eye_at.yaw },
+            pitch: if f.data4_flags & 2 != 0 { cam_deg_to_binang(self.data3 as f32).wrapping_add(f.data4_eye_rot[0]) } else { eye_at.pitch },
+        };
+        self.at = sph_geo_add(self.eye, at_offset);
+        let look_at = self.player_pos + Vec3::Y * player_height;
+        self.dist = look_at.distance(self.eye);
+        self.roll = 0;
+        self.xz_speed = 0.0;
+        self.fov = f.data4_fov;
+        self.at_lerp_step_scale = 0.0;
+    }
+
+    /// `Camera_Unique0` (`START1`): the eye at the bg camera, `at` where its line of sight
+    /// passes Player, until Player moves (or a button is pressed) after its timer; then back
+    /// to the previous setting.
+    fn unique0(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, input: &Input) {
+        let y_offset = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.uniq.uniq0_interface_flags = d.value(self.cur(), 0);
+        }
+        let player_with_offset = self.player_pos + Vec3::Y * y_offset;
+        self.interface_flags = self.uniq.uniq0_interface_flags;
+        if self.anim_state == 0 {
+            self.func_80043b60(d);
+            self.unk_14c &= !4;
+            let b = self.bg_cam_data(col);
+            self.uniq.uniq0_eye_point = b.pos_f();
+            self.eye = self.uniq.uniq0_eye_point;
+            self.eye_next = self.eye;
+            if b.fov != -1 {
+                self.fov = if b.fov <= 360 { b.fov as f32 } else { b.fov as f32 * 0.01 };
+            }
+            // bgCamFuncData->timer, else the door parameters' timers.
+            self.uniq.uniq0_anim_timer = if b.flags == -1 { self.door_params.timer1.wrapping_add(self.door_params.timer2) } else { b.flags };
+            let at_player = VecSph { r: player_with_offset.distance(self.eye), yaw: b.rot[1], pitch: b.rot[0].wrapping_neg() };
+            self.uniq.uniq0_eye_dir = sph_geo_to_vec3(at_player);
+            self.at = eng_collision::math3d::line_closest_to_point(self.uniq.uniq0_eye_point, self.uniq.uniq0_eye_dir, self.player_pos);
+            self.uniq.uniq0_inital_pos = self.player_pos;
+            self.anim_state += 1;
+        }
+        let cutscene = p.state1 & PLAYER_STATE1_29 != 0;
+        if cutscene {
+            self.uniq.uniq0_inital_pos = self.player_pos;
+        }
+        let leave = |s: &mut Self| {
+            s.dist = s.at.distance(s.eye);
+            s.pos_offset = s.at - s.player_pos;
+            s.at_lerp_step_scale = 0.0;
+        };
+        if self.uniq.uniq0_interface_flags & 1 != 0 {
+            if self.uniq.uniq0_anim_timer > 0 {
+                self.uniq.uniq0_anim_timer -= 1;
+                self.uniq.uniq0_inital_pos = self.player_pos;
+            } else if !cutscene && (dist_xz(self.player_pos, self.uniq.uniq0_inital_pos) >= 10.0 || Self::any_button_pressed(input)) {
+                leave(self);
+                self.unk_14c |= 4;
+                let prev = self.prev_setting;
+                self.change_setting_flags(d, prev, 2);
+            }
+        } else {
+            if self.uniq.uniq0_anim_timer > 0 {
+                self.uniq.uniq0_anim_timer -= 1;
+                if self.uniq.uniq0_anim_timer == 0 {
+                    self.interface_flags = 0;
+                }
+            } else {
+                self.uniq.uniq0_inital_pos = self.player_pos;
+            }
+            if !cutscene && (0.001 < self.xz_speed || Self::any_button_pressed(input)) {
+                leave(self);
+                let prev = self.prev_setting;
+                self.change_setting_flags(d, prev, 2);
+                self.unk_14c |= 4;
+            }
+        }
+    }
+
+    /// `Camera_Unique2` (`SCENE_TRANSITION`, and hanging): `at` follows Player, the eye keeps
+    /// `distTarget` away.
+    fn unique2(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        let eye_at = diff_to_sph_geo(self.at, self.eye);
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let y_normal = Self::y_normal(d, player_height);
+            let u = &mut self.uniq;
+            u.uniq2_y_offset = v(0) as f32 * 0.01 * player_height * y_normal;
+            u.uniq2_dist_target = v(1) as f32;
+            u.uniq2_fov_target = v(2) as f32;
+            u.uniq2_interface_flags = v(3);
+        }
+        let u = self.uniq;
+        self.interface_flags = u.uniq2_interface_flags;
+        if self.anim_state == 0 || self.uniq.uniq2_unk_04 != u.uniq2_interface_flags {
+            self.uniq.uniq2_unk_04 = u.uniq2_interface_flags;
+        }
+        if self.anim_state == 0 {
+            self.anim_state = 1;
+            self.func_80043b60(d);
+            self.uniq.uniq2_unk_00 = 200.0;
+            if u.uniq2_interface_flags & 0x10 != 0 {
+                self.unk_14c &= !4;
+            }
+        }
+        let player_pos = self.player_pos;
+        let rate = if u.uniq2_interface_flags & 1 != 0 { 1.0 } else { self.speed_ratio };
+        self.at.x += (player_pos.x - self.at.x) * (rate * 0.6);
+        self.at.y += ((player_pos.y + player_height + u.uniq2_y_offset) - self.at.y) * 0.4;
+        self.at.z += (player_pos.z - self.at.z) * (rate * 0.6);
+        // unk_00: unused.
+        self.uniq.uniq2_unk_00 += (2.0 - self.uniq.uniq2_unk_00) * 0.05;
+        if u.uniq2_interface_flags & 1 != 0 {
+            let mut eye_offset = diff_to_sph_geo(self.at, self.eye_next);
+            eye_offset.r = u.uniq2_dist_target;
+            let target = sph_geo_add(self.at, eye_offset);
+            let mut eye = self.eye;
+            lerp_ceil_vec3(target, &mut eye, 0.25, 0.25, 0.2);
+            self.eye = eye;
+        } else if u.uniq2_interface_flags & 2 != 0 {
+            if dist_xz(self.at, self.eye_next) < u.uniq2_dist_target {
+                let mut eye_offset = diff_to_sph_geo(self.at, self.eye_next);
+                eye_offset.yaw = lerp_ceil_s(eye_offset.yaw, eye_at.yaw, 0.1, 0xA);
+                eye_offset.r = u.uniq2_dist_target;
+                eye_offset.pitch = 0;
+                self.eye = sph_geo_add(self.at, eye_offset);
+                self.eye.y = self.eye_next.y;
+            } else {
+                let mut eye = self.eye;
+                lerp_ceil_vec3(self.eye_next, &mut eye, 0.25, 0.25, 0.2);
+                self.eye = eye;
+            }
+        }
+        let mut eye = self.eye;
+        Self::bg_check(col, self.at, &mut eye);
+        self.eye = eye;
+        self.dist = self.at.distance(self.eye);
+        self.roll = 0;
+        self.fov = lerp_ceil_f(u.uniq2_fov_target, self.fov, 0.2, 0.1);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, 1.0);
+    }
+
+    /// `Camera_Unique3` (`DOOR0`): the bg camera's view while the door parameters' timers run,
+    /// then back to the previous setting once Player is through (`unk_14C & 8`) and moves.
+    fn unique3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, input: &Input) {
+        let player_height = p.height();
+        self.unk_14c &= !0x10;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let y_normal = Self::y_normal(d, player_height);
+            let u = &mut self.uniq;
+            u.uniq3_y_offset = v(0) as f32 * 0.01 * player_height * y_normal;
+            u.uniq3_fov = v(1) as f32;
+            u.uniq3_interface_flags = v(2);
+        }
+        let u = self.uniq;
+        self.interface_flags = u.uniq3_interface_flags;
+        let mut state = self.anim_state;
+        // The C's switch falls through from each case into the next.
+        if state == 0 {
+            self.func_80043b60(d);
+            self.unk_14c &= !(0x8 | 0x4);
+            self.uniq.uniq3_initial_fov = self.fov;
+            self.uniq.uniq3_initial_dist = self.at.distance(self.eye);
+            self.anim_state += 1;
+            state = 1;
+        }
+        if state == 1 {
+            let t = self.door_params.timer1;
+            self.door_params.timer1 = t.wrapping_sub(1);
+            if t > 0 {
+                return;
+            }
+            let b = self.bg_cam_data(col);
+            self.eye_next = b.pos_f();
+            self.eye = self.eye_next;
+            self.at = sph_geo_add(self.eye, VecSph { r: 100.0, yaw: b.rot[1], pitch: b.rot[0].wrapping_neg() });
+            self.anim_state += 1;
+            state = 2;
+        }
+        if state == 2 {
+            if u.uniq3_interface_flags & 4 != 0 {
+                self.at = self.player_pos + Vec3::Y * (player_height + u.uniq3_y_offset);
+            }
+            let t = self.door_params.timer2;
+            self.door_params.timer2 = t.wrapping_sub(1);
+            if t > 0 {
+                return;
+            }
+            self.anim_state += 1;
+            state = 3;
+        }
+        if state == 3 {
+            self.unk_14c |= 0x400 | 0x10;
+            if self.unk_14c & 8 == 0 {
+                return;
+            }
+            self.anim_state += 1;
+            state = 4;
+        }
+        if state == 4 {
+            if u.uniq3_interface_flags & 2 != 0 {
+                self.unk_14c |= 4;
+                self.unk_14c &= !8;
+                self.change_setting_flags(d, CAM_SET_PIVOT_IN_FRONT, 2);
+                return;
+            }
+            self.door_params.timer3 = 5;
+            if !(self.xz_speed > 0.001 || Self::any_button_pressed(input)) {
+                return;
+            }
+            self.anim_state += 1;
+            state = 5;
+        }
+        if state == 5 {
+            self.fov = lerp_ceil_f(self.uniq.uniq3_initial_fov, self.fov, 0.4, 0.1);
+            let mut sp60 = diff_to_sph_geo(self.at, self.eye);
+            sp60.r = lerp_ceil_f(100.0, sp60.r, 0.4, 0.1);
+            self.eye_next = sph_geo_add(self.at, sp60);
+            self.eye = self.eye_next;
+            let t = self.door_params.timer3;
+            self.door_params.timer3 = t.wrapping_sub(1);
+            if t > 0 {
+                return;
+            }
+            self.anim_state += 1;
+        }
+        // default:
+        self.unk_14c |= 4;
+        self.unk_14c &= !8;
+        self.fov = u.uniq3_fov;
+        let prev = self.prev_setting;
+        self.change_setting_flags(d, prev, 2);
+        self.at_lerp_step_scale = 0.0;
+        self.pos_offset = self.at - self.player_pos;
+    }
+
+    /// `Camera_Unique6` (`FREE0`): nothing moves the eye or `at` (actors set them with
+    /// `Camera_SetParam`); only the distance and offset follow Player.
+    fn unique6(&mut self, d: &CameraData, p: &PlayerView) {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.uniq.uniq6_interface_flags = d.value(self.cur(), 0);
+        }
+        self.interface_flags = self.uniq.uniq6_interface_flags;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.func_80043abc(d);
+        }
+        let head = self.player_pos + Vec3::Y * p.height();
+        self.dist = head.distance(self.eye);
+        self.pos_offset = self.at - self.player_pos;
+        if self.uniq.uniq6_interface_flags & 1 != 0 && self.timer > 0 {
+            self.timer -= 1;
+        }
+    }
+
+    /// `Camera_Unique7` (`PREREND_PIVOT`): the eye at the bg camera's position, turning to
+    /// look at Player.
+    fn unique7(&mut self, d: &CameraData, col: &CollisionContext) {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.uniq.uniq7_fov = d.value(self.cur(), 0) as f32;
+            self.uniq.uniq7_interface_flags = d.value(self.cur(), 1);
+        }
+        let b = self.bg_cam_data(col);
+        self.eye_next = b.pos_f();
+        self.eye = self.eye_next;
+        let mut player_pos_eye_offset = diff_to_sph_geo(self.eye, self.player_pos);
+        // The fov is set to 60 below whatever this gives.
+        let mut fov = b.fov;
+        if fov == -1 {
+            fov = (self.uniq.uniq7_fov * 100.0) as i16;
+        }
+        if fov <= 360 {
+            fov = fov.wrapping_mul(100);
+        }
+        self.interface_flags = self.uniq.uniq7_interface_flags;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.fov = fov as f32 * 0.01;
+            self.at_lerp_step_scale = 0.0;
+            self.roll = 0;
+            self.uniq.uniq7_unk_00_x = player_pos_eye_offset.yaw;
+        }
+        self.fov = 60.0;
+        // 0x7D0 ~ 10.98 degrees; rwData->unk_00.x is never read.
+        self.uniq.uniq7_unk_00_x = lerp_floor_s(player_pos_eye_offset.yaw, self.uniq.uniq7_unk_00_x, 0.4, 0x7D0);
+        player_pos_eye_offset.pitch = (b.rot[0].wrapping_neg() as f32 * cos_s(player_pos_eye_offset.yaw.wrapping_sub(b.rot[1]))) as i16;
+        self.at = sph_geo_add(self.eye, player_pos_eye_offset);
+        self.unk_14c |= 0x400;
+    }
+
+    /// `Camera_Special9` (`DOORC`): through a door. The eye jumps to one side of the door (or
+    /// the bg camera) after `timer1`, follows Player through for `timer2` and `timer3`, then
+    /// returns to the previous setting once Player moves or a button is pressed.
+    fn special9(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, door: Option<(Vec3, [i16; 3])>, frames: u32, input: &Input) {
+        let player_y_offset = p.height();
+        self.unk_14c &= !0x10;
+        let y_normal = Self::y_normal(d, player_y_offset);
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let u = &mut self.uniq;
+            u.spec9_y_offset = v(0) as f32 * 0.01 * player_y_offset * y_normal;
+            u.spec9_unk_04 = v(1) as f32;
+            u.spec9_interface_flags = v(2);
+        }
+        let u = self.uniq;
+        // The door's position and shape rotation, else Player's raised by the offset, pitch 0.
+        let (_adj_pos, adj_rot) = match door.filter(|_| self.door_params.door_actor.is_some()) {
+            Some((pos, rot)) => (pos, rot),
+            None => (self.player_pos + Vec3::Y * (player_y_offset + u.spec9_y_offset), [0, self.player_rot_y, 0]),
+        };
+        let at_eye_offset_geo = diff_to_sph_geo(self.at, self.eye);
+        self.interface_flags = u.spec9_interface_flags;
+        let mut state = self.anim_state;
+        if state == 0 {
+            self.unk_14c &= !(0x4 | 0x2);
+            self.anim_state += 1;
+            // ABS on the int difference of the two s16 yaws.
+            self.uniq.spec9_target_yaw = if (self.player_rot_y as i32 - adj_rot[1] as i32).abs() >= 0x4000 { adj_rot[1].wrapping_sub(0x7FFF) } else { adj_rot[1] };
+            state = 1;
+        }
+        if state == 1 {
+            self.door_params.timer1 = self.door_params.timer1.wrapping_sub(1);
+            if self.door_params.timer1 > 0 {
+                return self.special9_end(player_y_offset);
+            }
+            self.anim_state += 1;
+            if u.spec9_interface_flags & 1 != 0 {
+                let b = self.bg_cam_data(col);
+                self.eye_next = b.pos_f();
+                self.eye = self.eye_next;
+            } else {
+                // 0xE38 ~ 20 degrees, 0xAAA ~ 15 degrees.
+                let mut yaw: i16 = if frames & 1 != 0 { 0xAAA } else { -0xAAA };
+                let mut eye_adjustment = VecSph { pitch: 0xE38, yaw: self.uniq.spec9_target_yaw.wrapping_add(yaw), r: 200.0 * y_normal };
+                self.eye_next = sph_geo_add(self.at, eye_adjustment);
+                self.eye = self.eye_next;
+                if Self::check_oob(col, self.eye, self.player_pos) {
+                    yaw = yaw.wrapping_neg();
+                    eye_adjustment.yaw = self.uniq.spec9_target_yaw.wrapping_add(yaw);
+                    self.eye_next = sph_geo_add(self.at, eye_adjustment);
+                    self.eye = self.eye_next;
+                }
+            }
+            state = 2;
+        }
+        if state == 2 {
+            let sp_ac = self.player_pos + Vec3::Y * (player_y_offset + u.spec9_y_offset);
+            let mut at = self.at;
+            lerp_ceil_vec3(sp_ac, &mut at, 0.25, 0.25, 0.1);
+            self.at = at;
+            self.door_params.timer2 = self.door_params.timer2.wrapping_sub(1);
+            if self.door_params.timer2 > 0 {
+                return self.special9_end(player_y_offset);
+            }
+            self.anim_state += 1;
+            self.uniq.spec9_target_yaw = self.uniq.spec9_target_yaw.wrapping_sub(0x7FFF);
+            state = 3;
+        }
+        if state == 3 {
+            let sp_ac = self.player_pos + Vec3::Y * (player_y_offset + u.spec9_y_offset);
+            let mut at = self.at;
+            lerp_ceil_vec3(sp_ac, &mut at, 0.5, 0.5, 0.1);
+            self.at = at;
+            let eye_adjustment = VecSph {
+                pitch: lerp_ceil_s(0xAAA, at_eye_offset_geo.pitch, 0.3, 0xA),
+                yaw: lerp_ceil_s(self.uniq.spec9_target_yaw, at_eye_offset_geo.yaw, 0.3, 0xA),
+                r: lerp_ceil_f(60.0, at_eye_offset_geo.r, 0.3, 1.0),
+            };
+            self.eye_next = sph_geo_add(self.at, eye_adjustment);
+            self.eye = self.eye_next;
+            self.door_params.timer3 = self.door_params.timer3.wrapping_sub(1);
+            if self.door_params.timer3 > 0 {
+                return self.special9_end(player_y_offset);
+            }
+            self.anim_state += 1;
+            state = 4;
+        }
+        if state == 4 {
+            self.anim_state += 1;
+        }
+        // default:
+        self.unk_14c |= 0x400 | 0x10;
+        self.interface_flags = 0;
+        if self.xz_speed > 0.001 || Self::any_button_pressed(input) || u.spec9_interface_flags & 0x8 != 0 {
+            let prev = self.prev_setting;
+            self.change_setting_flags(d, prev, 2);
+            self.unk_14c |= 0x4 | 0x2;
+        }
+        self.special9_end(player_y_offset);
+    }
+
+    /// The end of `Camera_Special9`, after its switch.
+    fn special9_end(&mut self, player_y_offset: f32) {
+        let head = self.player_pos + Vec3::Y * player_y_offset;
+        self.dist = head.distance(self.eye);
+        self.pos_offset = self.at - self.player_pos;
     }
 
     /// Normal1's distance limits for this Player (read-only data after a reload).

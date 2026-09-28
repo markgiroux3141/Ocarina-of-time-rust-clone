@@ -33,6 +33,10 @@ pub struct DrawParams {
     /// This frame's dynamic segment values (tile scroll, env and prim colours), for the mesh's
     /// materials that read them. `None` keeps the mesh's own values.
     pub segments: Option<SegmentValues>,
+    /// Drawn in the interface's orthographic projection (`DrawLists::overlay_2d`'s) where it
+    /// stands in its list: the prerendered backgrounds, which `gSPBgRectCopy` copies to the
+    /// screen in the middle of `POLY_OPA_DISP`.
+    pub screen: bool,
 }
 
 /// One draw: a mesh, its model matrix, its bone matrices (empty for unskinned meshes), and its

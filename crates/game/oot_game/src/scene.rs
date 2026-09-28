@@ -108,7 +108,7 @@ pub struct SkyboxSettings {
 pub enum ShapeKind {
     /// `ROOM_SHAPE_TYPE_NORMAL`: OPA/XLU display-list pairs.
     Normal,
-    /// `ROOM_SHAPE_TYPE_IMAGE`: one pair plus prerendered backgrounds (not drawn yet).
+    /// `ROOM_SHAPE_TYPE_IMAGE`: one pair plus prerendered backgrounds (`RoomData::backgrounds`).
     Image,
     /// `ROOM_SHAPE_TYPE_CULLABLE`: pairs with a bounding sphere, z-sorted and culled every
     /// frame (`Room_DrawCullable`, `crate::room::cullable_order`).
@@ -136,6 +136,8 @@ pub struct SceneTable {
     pub objects: Vec<String>,
     /// `gEntranceTable`: entrance index → scene and spawn.
     pub entrances: Vec<EntranceInfo>,
+    /// `Skybox_Setup`'s room skyboxes (`unk_140 != 0`), baked as `skybox::bake_name`.
+    pub room_skyboxes: Vec<crate::skybox::RoomSkybox>,
 }
 
 impl SceneTable {
@@ -146,6 +148,11 @@ impl SceneTable {
     /// The `OBJECT_*` id of an object file.
     pub fn object_id(&self, file: &str) -> Option<i16> {
         self.objects.iter().position(|o| o == file).map(|i| i as i16)
+    }
+
+    /// The room skybox with this `SKYBOX_*` id.
+    pub fn room_skybox(&self, id: u8) -> Option<&crate::skybox::RoomSkybox> {
+        self.room_skyboxes.iter().find(|s| s.id == id)
     }
 
     /// An entrance by its `ENTR_*` name.
@@ -187,6 +194,8 @@ pub struct LayerData {
     pub exits: Vec<u16>,
     /// `SCENE_CMD_ID_TRANSITION_ACTOR_LIST`.
     pub transition_actors: Vec<TransitionActorEntry>,
+    /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType`: `R_SCENE_CAM_TYPE` (`SCENE_CAM_TYPE_*`).
+    pub scene_cam_type: u8,
     /// Record names of the rooms (`RoomData`), in room-list order.
     pub rooms: Vec<String>,
     /// The day time the meshes were built for (`gSaveContext.dayTime`, see `oot_import`'s
@@ -212,7 +221,27 @@ pub struct RoomData {
     pub objects: Vec<i16>,
     pub shape: Option<ShapeKind>,
     pub entries: Vec<EntryMesh>,
+    /// `ROOM_SHAPE_TYPE_IMAGE`: the prerendered backgrounds, decoded at import
+    /// (docs/adr/0014-prerendered-backgrounds.md).
+    pub backgrounds: Vec<RoomBackground>,
 }
+
+/// A prerendered background of an image room: `RoomShapeImageSingle`'s image, or one
+/// `RoomShapeImageMultiBgEntry`. The mesh is a screen quad drawn in the orthographic overlay
+/// space (`eng_gfx::DrawParams::screen`), in copy mode.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RoomBackground {
+    /// `ROOM_SHAPE_IMAGE_AMOUNT_MULTI`: the bg camera this one is for (`bgEntry->bgCamIndex`).
+    pub bg_cam_index: Option<u8>,
+    pub mesh: DrawList,
+}
+
+/// `R_SCENE_CAM_TYPE` values (`SCENE_CAM_TYPE_*`, `z64scene.h`).
+pub const SCENE_CAM_TYPE_DEFAULT: u8 = 0x00;
+pub const SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT: u8 = 0x10;
+pub const SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT: u8 = 0x20;
+pub const SCENE_CAM_TYPE_FIXED: u8 = 0x30;
+pub const SCENE_CAM_TYPE_FIXED_MARKET: u8 = 0x40;
 
 /// One entry of a room shape, interpreted: the OPA and XLU meshes, and for cullable shapes the
 /// bounding sphere.

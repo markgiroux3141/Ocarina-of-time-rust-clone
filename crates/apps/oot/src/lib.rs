@@ -372,7 +372,7 @@ impl MeshSource for Meshes<'_> {
             return self.a.link.mesh(n, t(8), t(9));
         }
         if let Some(rest) = n.strip_prefix("room/") {
-            return rooms::entry_mesh(self.scene?, rest);
+            return rooms::entry_mesh(self.scene?, rest).or_else(|| rooms::background_mesh(self.scene?, rest));
         }
         match n {
             COURSE_MESH => Some(gfx::collision_draw_list(&self.col.header)),
@@ -420,7 +420,10 @@ pub fn draw_frame(
     let mut lists = DrawLists::default();
     match play.scene.as_ref().filter(|_| !assets.show_collision) {
         // Room_Draw, with the draw config's segment values for this frame.
-        Some(s) => scene.drawn_entries = rooms::submit_rooms(play, s, cam.view(), &mut lists),
+        Some(s) => {
+            scene.drawn_entries = rooms::submit_rooms(play, s, cam.view(), &mut lists);
+            rooms::submit_room_skybox(play, s, cam.eye(), &mut lists);
+        }
         None => lists.opa.push(DrawCmd::new(MeshKey::named(COURSE_MESH), Mat4::IDENTITY)),
     }
     // Actor_DrawAll.

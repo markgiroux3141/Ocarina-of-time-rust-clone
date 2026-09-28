@@ -276,6 +276,15 @@ impl SceneFlags {
         }
     }
 
+    /// `Flags_SetSwitch`.
+    pub fn set_switch(&mut self, flag: i32) {
+        match flag {
+            0..=0x1F => self.swch |= 1 << flag,
+            0x20..=0x3F => self.temp_swch |= 1 << (flag - 0x20),
+            _ => {}
+        }
+    }
+
     /// `Flags_GetClear`.
     pub fn get_clear(&self, room: i8) -> bool {
         match room {

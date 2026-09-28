@@ -77,6 +77,12 @@ use crate::transition::TRANS_MODE_OFF;
 /// `PLAYER_STATE1_21`: climbing (a ladder or a vine wall).
 pub const PLAYER_STATE1_21: u32 = 1 << 21;
 
+/// `VIEWPOINT_*` (`z64camera.h`): none, the locked bg camera (`BGCAM_INDEX_TOGGLE_LOCKED` + 1)
+/// and the pivot one (`BGCAM_INDEX_TOGGLE_PIVOT` + 1).
+pub const VIEWPOINT_NONE: u8 = 0;
+pub const VIEWPOINT_LOCKED: u8 = 1;
+pub const VIEWPOINT_PIVOT: u8 = 2;
+
 /// The draw lists actors submit into.
 pub type DrawOut = DrawLists;
 
@@ -282,6 +288,11 @@ pub struct PlayState {
     /// `transitionTrigger`, `transitionMode`, `transitionType`, `nextEntranceIndex` and the
     /// running transition.
     pub transition: TransitionState,
+    /// `R_SCENE_CAM_TYPE` (`SCENE_CAM_TYPE_*`, from the scene's `SCENE_CMD_ID_MISC_SETTINGS`).
+    pub scene_cam_type: u8,
+    /// `viewpoint` (`VIEWPOINT_*`): which of a fixed-camera scene's first two bg cameras is
+    /// in use.
+    pub viewpoint: u8,
     /// `unk_11E18`: the vertical room-change planes' screen dimming.
     pub unk_11e18: i16,
     /// How many scene changes led here (the renderer reloads its meshes when it changes).
@@ -299,7 +310,7 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0 };
         let game_camera = GameCamera::new(&data.camera, &pv);
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
@@ -333,6 +344,8 @@ impl PlayState {
             setup_actors: Vec::new(),
             flags: SceneFlags::default(),
             transition: TransitionState::default(),
+            scene_cam_type: crate::scene::SCENE_CAM_TYPE_DEFAULT,
+            viewpoint: VIEWPOINT_NONE,
             unk_11e18: 0,
             scene_changes: 0,
             rand: Rand::default(),
@@ -367,14 +380,21 @@ impl PlayState {
             run_speed_limit: self.data.regs[if adult { 0 } else { 1 }].reg(45),
             gravity: a.gravity,
             climbing: pi.state_flags1() & PLAYER_STATE1_21 != 0,
+            state1: pi.state_flags1(),
         })
     }
 
-    /// Puts both cameras behind Player (`Camera_Init` and the follow camera's start).
+    /// Puts both cameras behind Player (`Camera_Init` and the follow camera's start). In a
+    /// scene entered by `Play_Init`, the main camera also gets `Play_Init`'s flags and the
+    /// room's setting (`GameCamera::play_init_settings`).
     pub fn reset_cameras(&mut self) {
         if let Some(pv) = self.player_view() {
             self.follow_camera = FollowCamera::behind(pv.pos, pv.shape_yaw, pv.adult);
             self.game_camera = GameCamera::new(&self.data.camera, &pv);
+            if self.scene.is_some() && self.assets.is_some() {
+                let room = self.cam_room();
+                self.game_camera.play_init_settings(room);
+            }
         }
         self.view_proj = self.camera_view_proj();
     }
@@ -508,6 +528,8 @@ impl PlayState {
         self.col_chk.check(&mut self.actors);
         self.col_chk.clear();
         self.update_all_actors();
+        // (func_80095AA0 for both rooms: no room behaviour is ported.) The viewpoint.
+        self.update_viewpoint();
         // AnimationContext_Update: every actor's queued animation requests.
         for h in self.actors.all() {
             if let Some(a) = self.actors.get_mut(h) {
@@ -522,7 +544,8 @@ impl PlayState {
             if let Some(pv) = self.player_view() {
                 // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
                 let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
-                let f = CamFrame { col: &self.col, player: pv, target_focus, transitioning: self.transition.mode != TRANS_MODE_OFF, frames: self.gameplay_frames };
+                let door = self.game_camera.door_params.door_actor.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
+                let f = CamFrame { col: &self.col, player: pv, target_focus, door, transitioning: self.transition.mode != TRANS_MODE_OFF, frames: self.gameplay_frames, input };
                 self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
             }
         }
@@ -556,6 +579,64 @@ impl PlayState {
         if self.next_play_init {
             self.reinit();
         }
+    }
+
+    /// `Player_InCsMode`.
+    pub fn player_in_cs_mode(&self) -> bool {
+        let p = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player());
+        self.transition.trigger == crate::transition::TRANS_TRIGGER_START || p.is_some_and(|p| p.in_cs_mode())
+    }
+
+    /// `Play_ChangeViewpointBgCamIndex`: the viewpoint's bg camera for the active camera.
+    pub fn change_viewpoint_bg_cam_index(&mut self) {
+        let idx = self.viewpoint as i32 - 1;
+        self.game_camera.change_bg_cam_index(&self.data.camera, &self.col, idx);
+    }
+
+    /// `Play_SetViewpoint` (the toggle sounds aren't modelled).
+    pub fn set_viewpoint(&mut self, viewpoint: u8) {
+        assert!(viewpoint == VIEWPOINT_LOCKED || viewpoint == VIEWPOINT_PIVOT, "point == 1 || point == 2");
+        self.viewpoint = viewpoint;
+        self.change_viewpoint_bg_cam_index();
+    }
+
+    /// `Play_Update`'s viewpoint part: C-Up toggles a house's fixed and pivot cameras (not in a
+    /// shop, where it's an error sound, nor in a cutscene), and every frame the viewpoint's bg
+    /// camera is asked for.
+    fn update_viewpoint(&mut self) {
+        if self.viewpoint == VIEWPOINT_NONE {
+            return;
+        }
+        if self.input.press.held(eng_input::pad::BTN_CUP) {
+            if self.player_in_cs_mode() {
+                // "Changing viewpoint is prohibited during the cutscene".
+            } else if self.scene_cam_type == crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT {
+                // NA_SE_SY_ERROR.
+            } else {
+                self.set_viewpoint(self.viewpoint ^ (VIEWPOINT_LOCKED ^ VIEWPOINT_PIVOT));
+            }
+        }
+        self.change_viewpoint_bg_cam_index();
+    }
+
+    /// `Play_CamIsNotFixed`: not a prerendered room, not a fixed-camera scene (the toggle, the
+    /// fixed and the market kinds; the shop kind is covered by its rooms), and not the castle
+    /// courtyard.
+    pub fn cam_is_not_fixed(&self) -> bool {
+        use crate::scene::*;
+        /// `SCENE_HAIRAL_NIWA`.
+        const SCENE_HAIRAL_NIWA: u16 = 0x45;
+        !self.cam_room().image
+            && self.scene_cam_type != SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT
+            && self.scene_cam_type != SCENE_CAM_TYPE_FIXED
+            && self.scene_cam_type != SCENE_CAM_TYPE_FIXED_MARKET
+            && self.scene_id != SCENE_HAIRAL_NIWA
+    }
+
+    /// What `func_80057FC4` reads of the current room.
+    pub fn cam_room(&self) -> crate::camera::CamRoom {
+        let room = self.scene.as_ref().and_then(|s| s.room(self.room_ctx.cur.num));
+        crate::camera::CamRoom { image: room.is_some_and(|r| r.shape == Some(crate::scene::ShapeKind::Image)), behavior_type1: self.room_ctx.cur.behavior_type1 }
     }
 
     /// `Actor_UpdateAll`.

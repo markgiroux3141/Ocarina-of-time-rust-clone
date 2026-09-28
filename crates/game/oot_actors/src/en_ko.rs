@@ -958,7 +958,7 @@ impl ActorImpl for EnKo {
         sv.env[SEG_BOOTS as usize] = Some([m.boots[0], m.boots[1], m.boots[2], a8]);
         sv.env[SEG_ALPHA as usize] = Some([0, 0, 0, alpha.clamp(0, 255) as u8]);
         let key = MeshKey::named(keys::bake(&bake_name(m.head, rs.switches[rs::EYE] as usize, xlu)));
-        let cmd = DrawCmd { mesh: key, transform: oot_game::play::actor_draw_matrix(rs), bones, params: eng_gfx::DrawParams { segments: Some(sv) } };
+        let cmd = DrawCmd { mesh: key, transform: oot_game::play::actor_draw_matrix(rs), bones, params: eng_gfx::DrawParams { segments: Some(sv), ..Default::default() } };
         if xlu {
             out.xlu.push(cmd);
         } else {

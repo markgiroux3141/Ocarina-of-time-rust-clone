@@ -75,11 +75,17 @@ fn child_link_climbs_the_ladder_to_his_house() {
 #[test]
 fn child_link_climbs_down_from_his_porch() {
     let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
-    // On the porch behind the ladder's top, facing the drop (-z).
+    // On the porch behind the ladder's top, facing the drop (-z). The porch's floor has bg
+    // camera 4 (CAM_SET_PIVOT_IN_FRONT), whose eye is in front of the house, so the stick is
+    // steered at the ladder's top (-29, 100, 990) rather than held up.
     w.place_player(Vec3::new(-29.0, 100.0, 1040.0), i16::MIN);
     let mut run = Vec::new();
+    let mut prev = PadState::default();
     for _ in 0..60 {
-        run.extend(hold(&mut w, 60, 1));
+        let pad = oot_actors::script::stick_towards(&w, Vec3::new(-29.0, 100.0, 990.0), 60.0);
+        w.tick_with(scripted_input(prev, pad));
+        prev = pad;
+        run.push((w.player().action, w.player().actor.world_pos));
         if matches!(run.last().unwrap().0, Action::Climb | Action::ItemPutAway) {
             break;
         }

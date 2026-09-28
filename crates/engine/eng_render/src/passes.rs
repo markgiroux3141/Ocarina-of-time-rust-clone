@@ -34,6 +34,10 @@ pub struct Screen<'a> {
     pub overlay_models: &'a [&'a GpuModel],
     /// The letterbox bars' height in rows of 240.
     pub letterbox_rows: f32,
+    /// Per model of the 3D lists, whether it's drawn in the orthographic projection (a
+    /// screen-space draw in the middle of the list, `eng_gfx::DrawParams::screen`). Shorter
+    /// than the models (or empty): the rest are 3D.
+    pub ortho_models: &'a [bool],
 }
 
 impl Renderer {
@@ -156,7 +160,13 @@ impl Renderer {
             multiview_mask: None,
         });
         pass.set_bind_group(0, &self.globals_bg, &[]);
-        for m in models {
+        let mut in_ortho = false;
+        for (i, m) in models.iter().enumerate() {
+            let ortho = screen.ortho_models.get(i).copied().unwrap_or(false);
+            if ortho != in_ortho {
+                pass.set_bind_group(0, if ortho { &self.overlay_globals_bg } else { &self.globals_bg }, &[]);
+                in_ortho = ortho;
+            }
             pass.set_vertex_buffer(0, m.vertex_buf.slice(..));
             for &(start, count, mat, tbg, key) in &m.draws {
                 pass.set_pipeline(&self.pipelines[&key]);

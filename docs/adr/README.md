@@ -17,3 +17,6 @@ One file per decision: the context, what was decided, and what follows from it. 
 | [0011](0011-collision-check.md) | The collision check: colliders stay in their actors; the context holds references, and the checks take them out and put them back | Accepted, built |
 | [0012](0012-actor-bakes.md) | Actor bakes: actors declare their meshes (lists or a skeleton, segments, a prelude), the importer bakes them | Accepted, built |
 | [0013](0013-camera-modes-and-screen.md) | Camera modes by the imported `CAM_FUNC`, unported modes on Normal1; the letterbox and an orthographic overlay list in the engine; the reticle at 20 Hz | Accepted, built |
+| [0014](0014-prerendered-backgrounds.md) | Prerendered rooms: JPEG backgrounds decoded at import into screen quads drawn in the OPA list with the fixed camera; the room skyboxes baked from `Skybox_Init`'s display lists | Accepted, built |
+| [0015](0015-camera-settings-and-bg-cameras.md) | Camera settings from `sCameraSettings`, the scene's bg cameras in the collision header, the setting changes ported, unported functions on the setting's NORMAL one | Accepted, built |
+| [0016](0016-player-requests.md) | Player queues what it does to the camera, the rooms and other actors (`PlayRequest`), applied right after its update; actors write each other through the arena | Accepted, built |

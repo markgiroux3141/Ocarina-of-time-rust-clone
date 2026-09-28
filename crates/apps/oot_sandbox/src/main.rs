@@ -64,8 +64,9 @@ struct Cli {
     trace: Option<PathBuf>,
     /// Script for --sheet / --trace: run-roll, ledge, pit, stairs, walls, turn, idle, still,
     /// forward, tour, climb50, climb70, climb100, hang, ramp-stand, target, parallel, sword,
-    /// swim, tread, platform; with --entrance ENTR_SPOT04_3 also `house` (steers Link into his
-    /// house and back out through the exits).
+    /// swim, tread, platform, cup (C-Up: a house's viewpoint toggle), door (walk to a door and
+    /// press A), open (press A where Link stands); with --entrance ENTR_SPOT04_3 also `house` (steers Link into his house and back
+    /// out through the exits).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -254,6 +255,28 @@ fn script(name: &str) -> Result<(Vec<PadState>, Option<(Vec3, i16)>)> {
             s.extend(rep(stick(0, 0), 8));
             start = None;
         }
+        // Stand, press C-Up (a house's fixed / pivot camera toggle), stand.
+        "cup" => {
+            s.extend(rep(stick(0, 0), 30));
+            s.push(PadState { button: eng_input::pad::BTN_CUP, stick_x: 0, stick_y: 0 });
+            s.extend(rep(stick(0, 0), 20));
+            start = None;
+        }
+        // Stand (facing a door), press A, and wait for the door and its camera.
+        "open" => {
+            s.extend(rep(stick(0, 0), 30));
+            s.push(PadState { button: BTN_A, stick_x: 0, stick_y: 0 });
+            s.extend(rep(stick(0, 0), 100));
+            start = None;
+        }
+        // Walk forward (to a door), press A, and wait for the door and its camera.
+        "door" => {
+            s.extend(rep(stick(0, 60), 12));
+            s.extend(rep(stick(0, 0), 2));
+            s.push(PadState { button: BTN_A, stick_x: 0, stick_y: 0 });
+            s.extend(rep(stick(0, 0), 90));
+            start = None;
+        }
         // Run, curve left, curve right, then stop and let the camera recentre.
         "tour" => {
             s.extend(rep(stick(0, 80), 20));
@@ -419,6 +442,11 @@ fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, 
             t["transition"] = serde_json::json!({ "trigger": w.transition.trigger, "mode": w.transition.mode, "type": w.transition.ty, "next_entrance": w.transition.next_entrance_index, "fill": w.screen_fill() });
             t["entrance"] = serde_json::json!(w.save.entrance_index);
             t["actors"] = serde_json::json!(w.actors.total());
+            let c = &w.game_camera;
+            t["camera"]["setting"] = serde_json::json!(c.setting);
+            t["camera"]["mode"] = serde_json::json!(c.mode);
+            t["camera"]["bg_cam"] = serde_json::json!(c.bg_cam_index);
+            t["viewpoint"] = serde_json::json!(w.viewpoint);
         }
         let snap = w.current_frame();
         on_frame(&w, i + 1, &snap)?;

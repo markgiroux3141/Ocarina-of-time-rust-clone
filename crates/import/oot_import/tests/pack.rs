@@ -392,3 +392,50 @@ fn scene_lists_cover_what_the_game_indexes() {
     assert!(problems.is_empty(), "{}", problems.join("
 "));
 }
+
+#[test]
+fn bg_camera_lists_cover_what_the_game_indexes() {
+    // The bg camera list has no count (the importer reads at least what's named, then on while
+    // the entries look like entries). Everything a scene names must be in it with a setting:
+    // the floors' and water boxes' indices (SurfaceType_GetBgCamIndex, WATERBOX_BGCAM_INDEX),
+    // the spawns' start cameras (Play_Init: params & 0xFF), the transition actors' sides, the
+    // two viewpoints of a fixed-camera scene, and each multi-image room's backgrounds.
+    let Some(c) = ctx() else { return };
+    let st = c.pack.scene_table().unwrap();
+    let mut problems = Vec::new();
+    let (mut named, mut prerendered) = (0, 0);
+    for d in &st.scenes {
+        let Ok(sd) = c.pack.scene(&d.file) else { continue };
+        for (layer, ld) in sd.layers.iter().enumerate() {
+            let col = c.pack.collision(&ld.collision).unwrap();
+            let mut want: BTreeSet<usize> = col.surface_types.iter().map(|s| (s.data[0] & 0xFF) as usize).collect();
+            if col.bg_cams.is_empty() {
+                // bgCamList NULL: the floors' indices then name nothing.
+                continue;
+            }
+            want.extend(col.water_boxes.iter().map(|w| (w.properties & 0xFF) as usize).filter(|&i| i != 0xFF));
+            want.extend(ld.spawns.iter().map(|s| (s.params as u16 & 0xFF) as usize).filter(|&i| i != 0xFF));
+            want.extend(ld.transition_actors.iter().flat_map(|t| t.sides).filter(|s| s.1 >= 0).map(|s| s.1 as usize));
+            if matches!(ld.scene_cam_type, 0x10 | 0x20) {
+                want.extend([0, 1]);
+            }
+            for key in &ld.rooms {
+                let r = c.pack.room(key).unwrap();
+                want.extend(r.backgrounds.iter().filter_map(|b| b.bg_cam_index).map(usize::from));
+                if !r.backgrounds.is_empty() {
+                    prerendered += 1;
+                }
+            }
+            for &i in &want {
+                named += 1;
+                if i >= col.bg_cams.len() {
+                    problems.push(format!("{} layer {layer}: bg camera {i} of {}", sd.name, col.bg_cams.len()));
+                } else if col.bg_cams[i].setting >= 0x42 {
+                    problems.push(format!("{} layer {layer}: bg camera {i} setting {:#x}", sd.name, col.bg_cams[i].setting));
+                }
+            }
+        }
+    }
+    assert!(named > 1000 && prerendered > 50, "{named} indices, {prerendered} prerendered rooms");
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}

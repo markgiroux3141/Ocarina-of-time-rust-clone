@@ -2181,6 +2181,8 @@ dependencies = [
  "sha1_smol",
  "thiserror 2.0.21",
  "toml",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

@@ -1,6 +1,31 @@
 //! Room drawing logic that runs every frame (`z_room.c`).
 
+use eng_collision::bgcheck::CollisionContext;
 use glam::Vec3;
+
+use crate::camera::{CAM_SET_PREREND_FIXED, GameCamera, bg_cam_func_data};
+use crate::scene::RoomData;
+
+/// `Room_DrawImageSingle` / `Room_DrawImageMulti`'s background: drawn only while the active
+/// camera is `CAM_SET_PREREND_FIXED`; a multi-background room's is the one for the camera's
+/// bg camera, or for its `roomImageOverrideBgCamIndex` (`Room_GetImageMultiBgEntry`, which
+/// hangs when there's none: nothing is drawn here). Not modelled: that function's write of the
+/// index into Player's params, and the quake offset (no quakes).
+pub fn image_background(cam: &GameCamera, col: &CollisionContext, room: &RoomData) -> Option<usize> {
+    if cam.setting != CAM_SET_PREREND_FIXED || room.backgrounds.is_empty() {
+        return None;
+    }
+    if room.backgrounds[0].bg_cam_index.is_none() {
+        return Some(0);
+    }
+    let mut idx = cam.bg_cam_index as i32;
+    if let Some(d) = bg_cam_func_data(col, idx)
+        && d.flags >= 0
+    {
+        idx = d.flags as i32;
+    }
+    room.backgrounds.iter().position(|b| b.bg_cam_index.map(i32::from) == Some(idx))
+}
 
 /// `Room_DrawCullable`'s entry selection and order: project each bounding-sphere centre with
 /// the view-projection matrix; keep entries with `-radius < z` and `z - radius < fogFar`;

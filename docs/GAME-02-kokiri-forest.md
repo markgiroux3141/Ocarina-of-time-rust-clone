@@ -5,8 +5,8 @@
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The collision check; Kokiri's props with their real models; `En_Ko`; ladder and vine climbing; Z-targeting polish | done |
-| 2 | `En_Door`, the prerendered backgrounds and the fixed cameras | next |
-| 3 | The message box, and items | |
+| 2 | `En_Door`, the prerendered backgrounds and the fixed cameras | done |
+| 3 | The message box, Player talking, items and a minimal HUD | next |
 
 The working rules are the same as for GAME-01:
 - no game data in the repo;
@@ -15,7 +15,7 @@ The working rules are the same as for GAME-01:
 - ports go function by function with the decomp's names, every constant is cited, and faithful bugs are marked `@bug (game)`;
 - test expectations come from the C.
 
-Decisions are in [docs/adr/](adr/README.md) (0011 to 0013 so far).
+Decisions are in [docs/adr/](adr/README.md) (0011 to 0016 so far).
 
 ## Milestone 1: collisions, props, the first NPC, climbing, Z-targeting
 
@@ -107,10 +107,113 @@ The tests: 157 pass, 1 ignored (151 before the Z-targeting work). The goldens ar
 - **Placeholders** can't be targeted, even where the real actor can (Mido, Saria). Each one becomes targetable when it's ported.
 - **Carried over from GAME-01:** prerendered rooms, doors, time passing, culling (see GAME-01's known gaps).
 
+## Milestone 2: doors, prerendered rooms, fixed cameras
+
+**Answer:** done. Kokiri Forest's interiors look as in the game:
+- Link's house and the other houses open on their pivot camera with the room's 360° picture around it, and C-Up switches to the fixed camera over the room's JPEG;
+- the shop opens on its fixed camera;
+- Link's porch, some Kokiri entrances and every exit have their scene cameras.
+
+`En_Door` opens: Link lines up, plays his side's animation and walks through. A scene-exit door starts its exit; a room door loads the room behind it, with the door camera and its bars.
+
+The tests: 171 pass, 1 ignored (157 before). The goldens are unchanged: 78 of 78.
+
+### What was built
+
+1. **Camera settings and the scene's bg cameras** ([ADR 0015](adr/0015-camera-settings-and-bg-cameras.md)).
+   - **The import:**
+     - all of `sCameraSettings`: 65 settings with their valid modes, priorities and flags, and every `sCamSet*Modes` array (`CameraData::settings`);
+     - each scene's `BgCamInfo` list, in its collision header (`CollisionHeader::bg_cams`), read as far as the scene names it;
+     - `SCENE_CMD_MISC_SETTINGS`' camera type (`LayerData::scene_cam_type`).
+   - **The setting changes:** `Camera_ChangeSettingFlags` (with the priority rule), `Camera_ChangeBgCamIndex` (once a frame), `Camera_ChangeDoorCam`, `func_80057FC4` (a room's first setting: `FREE0` when prerendered, `DUNGEON0` for `ROOM_BEHAVIOR_TYPE1_1`, else `NORMAL0`) and `func_8005B1A4`.
+   - **`Camera_Update`'s floor check:** the bg camera under Player, once Player is within 2 of the floor.
+   - **`Play_Init`:** `func_8005AC48(0xFF)`, the start camera from Player's params, and the viewpoint (`VIEWPOINT_PIVOT` in the houses, `VIEWPOINT_LOCKED` in the shops).
+   - **`Play_Update`:** `Play_ChangeViewpointBgCamIndex` every frame, and C-Up's toggle, refused in shops and while `Player_InCsMode`.
+   - **The mode functions:**
+     - `Camera_Fixed3` (`PREREND_FIXED`), `Camera_Unique7` (`PREREND_PIVOT`), `Camera_Unique6` (`FREE0`) and `Camera_Data4` (`PIVOT_SHOP_BROWSING`), for the interiors;
+     - `Camera_Fixed4` (`PIVOT_IN_FRONT`, Link's porch), `Camera_Unique0` (`START1`, some Kokiri entrances) and `Camera_Fixed2` (`PIVOT_CRAWLSPACE`), for Kokiri Forest;
+     - `Camera_Unique2` (`SCENE_TRANSITION`), for exits;
+     - `Camera_Special9` (`DOORC`) and `Camera_Unique3` (`DOOR0`), for doors;
+     - `Camera_CheckOOB`.
+   - **The fallback:** an unported function runs its setting's NORMAL function, so TALK in a house keeps the house camera.
+2. **Prerendered rooms** ([ADR 0014](adr/0014-prerendered-backgrounds.md)).
+   - **The backgrounds:**
+     - the importer decodes each background (`oot_import::background`: JPEG to RGBA5551, as `Jpeg_Decode` leaves it) into a screen quad in the room's record, single and multi-image rooms alike;
+     - `Room_DrawImage`'s choice (`oot_game::room::image_background`): drawn only with `CAM_SET_PREREND_FIXED`, a multi-image room's by the camera's bg camera or its override;
+     - the engine draws it in the orthographic space in the middle of the OPA list (`DrawParams::screen`), after the room's geometry and without depth, so the geometry keeps only its depth under it.
+   - **The room skyboxes:**
+     - `oot_game::skybox` writes out `Skybox_Init`'s display lists (`func_800AEFC8`, `func_800ADBB0`) and `SkyboxDraw_Draw`'s palette loads after `SETUPDL_40`;
+     - the importer reads `Skybox_Setup` for the 22 room skyboxes and bakes each;
+     - they're drawn at the eye after the rooms, with any camera but `PREREND_FIXED`.
+3. **Doors** ([ADR 0016](adr/0016-player-requests.md)).
+   - **`En_Door`, the whole overlay** except text, keys and sounds:
+     - `sDoorInfo`'s object and door lists by scene;
+     - `EnDoor_SetupType` (locked, ajar, checkable, evening doors, Talon's);
+     - the double door's other half;
+     - `EnDoor_Idle` offering the door to Player (20 across, 50 through, facing within 0x3000);
+     - the opening animation for Player's side and age;
+     - the ajar doors' swing;
+     - `EnDoor_Draw` with `EnDoor_OverrideLimbDraw`'s side choice, from 12 bakes (5 door lists × 2 sides, and the two ajar faces).
+   - **Player's side:**
+     - `func_80839800` in the interrupt lists (index 1): A opens the door; Link lines up 22 from it and plays `PLAYER_ANIMGROUP_9`..`_12`, moved by the animation (0x28F);
+     - a scene-exit door runs `func_80839034` on the floor beyond it (entrance speed 2);
+     - any other door gets the door camera (`Camera_ChangeDoorCam` with the side's bg camera, timers 38/26/10) and loads the room behind it;
+     - `func_80845EF8`: after the animation Link stands, the old room goes (`func_80097534`), the camera is told (`func_8005B1A4`) and the void-out point moves.
+   - **Also on Player:**
+     - `func_80835E44(CAM_SET_SCENE_TRANSITION)` on exits (unless `Play_CamIsNotFixed` says the scene's camera is fixed);
+     - `CAM_SET_FREE0` on void-outs;
+     - `func_80845CA4`'s camera check (`unk_14C & 0x10`).
+   - **`PlayRequest`:** Player queues what it does to the camera, the rooms and the door, applied right after its update. `En_Door` writes Player's door fields through the arena.
+4. **Tools:**
+   - `ootx scene-info` shows the camera type, the skybox, each room's backgrounds and the bg camera list;
+   - the sandbox has the `cup`, `open` and `door` scripts, and its traces of entrance runs show the camera setting, mode, bg camera and viewpoint.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 171 passed, 1 ignored |
+| Interiors (`oot_actors --test prerendered`, 6) | Link's house: its bg cameras, its single 320x240 background (RGBA5551), its skybox (`SKYBOX_HOUSE_LINK`, four faces, 256 triangles, no z). Entering: `FREE0`, then the pivot on the first frame (the eye at (0, 34, 0), fov 60). C-Up is refused while Link walks in; after it, the fixed camera (eye (-118, 345, 47), `at` 150 along the rotation, fov 46.83) with the background, and back. The shop starts fixed (eye (-100, 100, 260), fov 50) and refuses C-Up; its skybox has two faces. The porch's floor gives `PIVOT_IN_FRONT`, whose eye reaches (-97, 170, 906). `START1` from spawn 1's params holds its eye at (3778, 288, -608), fov 45, until Link has moved 10. Exits use `SCENE_TRANSITION` in Kokiri Forest and keep the pivot in the house |
+| Doors (`--test door`, 2) | A Kakariko house's scene-exit door: `DOOR_DL_DEFAULT_FIELD_KEEP`; Player gets `PLAYER_DOORTYPE_HANDLE` and direction -1; A gives `clink_demo_doorA_link` at z 188, the exit to `ENTR_SPOT01_6` at entrance speed 2, and the door's `gDoorChildOpeningLeftAnim` at speed 1.5. Souko's room door: `clink_demo_doorB_link` at x 1198, `CAM_SET_DOORC` with the door and its timers, room 2 loading behind room 1, the door moving to room 2, the bars at 32, then room 1 dropped, Link through, the respawn point moved, and the door idle again |
+| Camera (`--test camera`, 7) | Every setting's data against `z_camera_data.c` (NORMAL0, PREREND_FIXED and _PIVOT with their holes, DOORC, SCENE_TRANSITION, FREE0, PIVOT_SHOP_BROWSING, PIVOT_IN_FRONT); `Camera_ChangeSettingFlags`' priority (-2 before -1), -99, prevSetting and the bg camera index flags; `Camera_ChangeBgCamIndex` once a frame; `Camera_ChangeDoorCam` refused while `DOORC` runs |
+| Import (`oot_import --test pack`) | Every scene's bg camera list covers what its floors, water boxes, spawns, doors, viewpoints and multi-image rooms name |
+| Unit tests | The collision codec round-trips a bg camera list; a background is a copy-mode screen quad; a raw RGBA16 background decodes; the skybox generator's vertex counts (4, 2 and 3 faces) and its tile rows (the second half starts at t 124) |
+| Golden traces and renders | 78 of 78 identical (the golden cases don't enter by `Play_Init`) |
+| Import | 10.0 s; 47.2 MB; format version 5 (camera settings, bg cameras, backgrounds, 22 skybox bakes, 41 actor bakes) |
+| Headless screenshots | Link's house (pivot with its skybox, and fixed with its JPEG), the shop, the four other Kokiri houses both ways, Link's porch, `START1`, the market alley's three backgrounds, a Kakariko house's door and souko's room door (the door swinging, the door camera and its bars) |
+
+### Decisions
+
+- **[ADR 0014](adr/0014-prerendered-backgrounds.md):** backgrounds are decoded by the importer (a standard JPEG decoder, then RGBA5551) into screen quads, drawn in the OPA list with the fixed camera. The room skyboxes are bakes of `Skybox_Init`'s generated display lists.
+- **[ADR 0015](adr/0015-camera-settings-and-bg-cameras.md):** all camera settings are data from the C, the bg cameras are part of the collision header, the setting changes are ported as they are, and an unported function runs its setting's NORMAL one. The floor's bg cameras need `Play_Init`'s flags, so the spikes' view is unchanged.
+- **[ADR 0016](adr/0016-player-requests.md):** Player queues what it does to the camera, the rooms and other actors, applied right after its update; actors write each other through the arena.
+- **The house skyboxes came with the milestone**, beyond what it asked for (the JPEG backgrounds). The houses' default view is the pivot camera, which shows the skybox, not the JPEG: without it, entering a house would show only its depth-only geometry.
+
+### Known gaps
+
+- **Doors:**
+  - checkable doors' text and ajar doors' 0xD0 text (the message box, milestone 3);
+  - small keys (locked doors never open);
+  - the lock's chains (`Actor_DrawDoorLock`), the sounds, the bubbles of a door opened underwater;
+  - sliding doors (`Door_Shutter`: the Deku Tree's), `Door_Killer`.
+- **The exit's circle wipe** is still GAME-01's 20-frame fade, so a scene-exit door's opening is mostly under black.
+- **Camera:**
+  - `Camera_KeepOn0` (TALK in a house) and the other unported functions run their setting's NORMAL function;
+  - `TOWER_CLIMB`'s Normal2 and `CRAWLSPACE`'s Subj4 run Normal1 on NORMAL0's data;
+  - the underwater and hot-room settings;
+  - DynaPoly floors' own bg cameras;
+  - the Sacred Forest Meadow's adult exception;
+  - the door parameters aren't aliased with the other functions' data (ADR 0015).
+- **Shops:** browsing (`PIVOT_SHOP_BROWSING`) needs `En_Ossan` to switch the viewpoint. The shopkeeper is a placeholder.
+- **Backgrounds:** a pixel may be one 5-bit step off the console's JPEG decode. The quake offset and `Room_GetImageMultiBgEntry`'s write into Player's params aren't modelled.
+- **Carried over:** talking, items, the HUD (milestone 3); time passing, culling.
+
 ## Recommended next step
 
-**Milestone 2: `En_Door` with the prerendered backgrounds and the fixed cameras,** as planned. It opens Link's house and the shop from the inside, and brings the bg camera list (`Camera_ChangeBgCamIndex`), which the camera's mode dispatch now has room for.
+**Milestone 3: the message box, Player talking (A), items (`En_Item00`) and a minimal HUD,** drawn through `DrawLists::overlay_2d`, as planned. It unlocks the signs, the Kokiri's talk states, checkable doors, and the shopkeeper's browsing camera (`En_Ossan` switches the viewpoint).
 
-Two cheap checks first:
-- compare the Z-target camera and the bars on a Kokiri child with Project64, side by side at the same spot (the bar height, the swing's length, KeepOn1's framing);
-- in the windowed sandbox, lock on to a Kokiri and a sign, check the reticle's colours and spin, and walk away until the lock breaks, to see the fade.
+Checks first (interactive, in the windowed game or against Project64):
+- Link's house: the pivot view and its panorama as Link walks round, and C-Up to the fixed view, side by side with Project64 at the same spot (where the picture's furniture hides Link, and the fov);
+- the porch's front camera and a `START1` entrance, compared with Project64;
+- a door in Kakariko or the market: the opening's timing, the door camera's side, and the bars;
+- still pending from milestone 1: the Z-target camera and bars on a Kokiri child against Project64.

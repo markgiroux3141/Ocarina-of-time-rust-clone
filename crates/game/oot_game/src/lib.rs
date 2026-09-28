@@ -34,6 +34,7 @@ pub mod scene;
 pub mod scene_table;
 pub mod skelanime;
 pub mod skelanime_std;
+pub mod skybox;
 pub mod spawn;
 pub mod surface;
 pub mod target;

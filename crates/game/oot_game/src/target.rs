@@ -374,7 +374,7 @@ pub fn draw(ctx: &TargetCtx, actors: &ActorContext, gameplay_frames: u32, out: &
     let prim = |c: [u8; 3], a: u8| {
         let mut sv = SegmentValues::default();
         sv.prim[SEG_PRIM as usize] = Some([c[0], c[1], c[2], a]);
-        DrawParams { segments: Some(sv) }
+        DrawParams { segments: Some(sv), ..Default::default() }
     };
     if let Some(r) = ctx.reticle {
         let mut alpha = r.alpha;

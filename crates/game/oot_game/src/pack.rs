@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 4;
+pub const FORMAT_VERSION: u32 = 5;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -131,6 +131,10 @@ pub enum BakeSegment {
     DynamicColor { env: bool, prim: bool },
     /// Fixed commands (`gsDPSetRenderMode`, ...).
     Commands(Vec<(u32, u32)>),
+    /// A whole ROM file (a skybox's `vr_*_static` textures and palettes).
+    File(String),
+    /// Data the draw code builds (a skybox's `roomVtx`).
+    Bytes(Vec<u8>),
 }
 
 /// What a bake draws.

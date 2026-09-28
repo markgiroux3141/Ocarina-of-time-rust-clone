@@ -239,6 +239,7 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
             .collect(),
         objects: st.objects.clone(),
         entrances: st.entrances.clone(),
+        room_skyboxes: st.room_skyboxes.clone(),
     };
     w.put(keys::SCENES, &table)?;
     w.put(keys::ACTORS, &ActorTable::load(decomp).context("the actor table")?)?;
@@ -418,6 +419,19 @@ fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWrite
         w.put(&keys::bake(&b.name), &d)?;
         tally.ok("ActorBake");
     }
+    // The room skyboxes (oot_game::skybox), drawn around the eye in houses and shops.
+    for s in crate::room::load_room_skyboxes(&p.config.decomp)? {
+        let b = oot_game::skybox::bake(&s);
+        let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
+        if !d.stats.unresolved_addresses.is_empty() {
+            // @bug (game): SKYBOX_HAPPY_MASK_SHOP gets four faces (func_800AEFC8) from files
+            // that hold two; the last two read past them.
+            tally.notes.push(format!("bake {}: {} addresses past its files (the game reads past them too)", b.name, d.stats.unresolved_addresses.len()));
+        }
+        anyhow::ensure!(d.stats.unknown_opcodes.is_empty(), "bake {}: unknown opcodes {:?}", b.name, d.stats.unknown_opcodes);
+        w.put(&keys::bake(&b.name), &d)?;
+        tally.ok("SkyboxBake");
+    }
     Ok(())
 }
 
@@ -535,6 +549,10 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
             entries: mesh
                 .map(|m| m.entries.iter().map(|e| EntryMesh { bounds: e.bounds, opa: e.opa.clone(), xlu: e.xlu.clone() }).collect())
                 .unwrap_or_default(),
+            backgrounds: match &r.shape {
+                Some(s) => s.background_meshes(&sd.scene.file, &r.data).with_context(|| format!("{} room {ri}", file))?,
+                None => Vec::new(),
+            },
         });
     }
     let layer_data = LayerData {
@@ -548,6 +566,7 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
         entrances: sd.scene.entrances.clone(),
         exits: sd.scene.exits.clone(),
         transition_actors: sd.scene.transition_actors.clone(),
+        scene_cam_type: sd.scene.scene_cam_type,
         rooms: (0..rooms.len()).map(|ri| keys::room(file, layer, ri)).collect(),
         bake_day_time: state.day_time,
         notes: notes.iter().cloned().collect(),

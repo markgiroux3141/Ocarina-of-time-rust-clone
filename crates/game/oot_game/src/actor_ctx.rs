@@ -92,6 +92,9 @@ pub trait PlayerIface {
     fn talk_target(&self) -> (Option<ActorHandle>, f32);
     /// `func_8002F1C4`'s write: `targetActor`, `targetActorDistance`, `exchangeItemId`.
     fn set_talk_target(&mut self, actor: ActorHandle, distance: f32, exchange_item: u8);
+    /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
+    /// trigger, or `unk_6AD == 4`).
+    fn in_cs_mode(&self) -> bool;
 }
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.

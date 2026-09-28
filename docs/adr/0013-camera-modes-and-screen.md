@@ -1,6 +1,6 @@
 # 0013: Camera modes by the imported function, the letterbox and the screen overlay
 
-- **Status:** accepted, built in GAME-02 milestone 1
+- **Status:** accepted, built in GAME-02 milestone 1; the settings and the fallback for unported functions are extended by [ADR 0015](0015-camera-settings-and-bg-cameras.md)
 - **Date:** 2026-09-28
 
 ## Context
