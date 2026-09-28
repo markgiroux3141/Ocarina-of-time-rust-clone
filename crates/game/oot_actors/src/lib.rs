@@ -1,7 +1,7 @@
 //! Actors ported from the decomp's overlays (`src/overlays/actors`), one module per overlay:
-//! Player (`ovl_player_actor`, `z_player.c`), `En_Holl` and `Bg_Ydan_Hasi`, plus the
-//! sandbox's dummy Z-target. Each implements `oot_game::actor_ctx::ActorImpl` and lives in
-//! `PlayState`'s actor context.
+//! Player (`ovl_player_actor`, `z_player.c`), `En_Holl`, `Bg_Ydan_Hasi`, `Bg_Treemouth` and
+//! Kokiri Forest's props and NPCs, plus the sandbox's dummy Z-target. Each implements
+//! `oot_game::actor_ctx::ActorImpl` and lives in `PlayState`'s actor context.
 //!
 //! - `overlays()` gives `Actor_Spawn` the constructors of the actors spawned by id (Player and
 //!   `En_Holl`; every other id spawns a placeholder), and `play_entrance` enters a scene from
@@ -25,6 +25,7 @@ use oot_game::player_lib::PlayerRules;
 use oot_game::save::SaveContext;
 use oot_game::spawn::Overlays;
 
+pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
 pub mod dummy_target;
 pub mod en_door;
@@ -37,6 +38,7 @@ pub mod en_kusa;
 pub mod en_wonder_talk2;
 pub mod obj_hana;
 pub mod player;
+pub mod playthrough;
 pub mod script;
 
 use bg_ydan_hasi::BgYdanHasi;
@@ -45,7 +47,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -61,6 +63,7 @@ pub fn overlays() -> Overlays {
     o.register(en_door::ACTOR_EN_DOOR, en_door::EnDoor::init);
     o.register(en_wonder_talk2::ACTOR_EN_WONDER_TALK2, en_wonder_talk2::EnWonderTalk2::init);
     o.register(en_item00::ACTOR_EN_ITEM00, en_item00::EnItem00::init);
+    o.register(bg_treemouth::ACTOR_BG_TREEMOUTH, bg_treemouth::BgTreemouth::init);
     o
 }
 
@@ -70,6 +73,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_ko::bakes());
     v.extend(en_door::bakes());
     v.extend(en_item00::bakes());
+    v.extend(bg_treemouth::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).

@@ -66,7 +66,8 @@ struct Cli {
     /// forward, tour, climb50, climb70, climb100, hang, ramp-stand, target, parallel, sword,
     /// swim, tread, platform, cup (C-Up: a house's viewpoint toggle), door (walk to a door and
     /// press A), open (press A where Link stands); with --entrance ENTR_SPOT04_3 also `house` (steers Link into his house and back
-    /// out through the exits).
+    /// out through the exits); with --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open
+    /// also `playthrough` (GAME-02's scripted run from Link's bed into the Deku Tree).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -87,6 +88,10 @@ struct Cli {
     /// Draw markers where unported actors (placeholders) are (P toggles in the window).
     #[arg(long)]
     placeholders: bool,
+    /// A debug save preset for --entrance: deku-tree-open (the Deku Tree met and his mouth
+    /// open), or deku-tree-dead (also the tree dead, with the Kokiri Emerald).
+    #[arg(long)]
+    preset: Option<String>,
     /// Headless: also a screenshot after each of these frames, next to --screenshot
     /// (`<name>_<frame>.png`).
     #[arg(long, value_delimiter = ',')]
@@ -113,6 +118,7 @@ fn options(cli: &Cli) -> Options {
         pack: cli.pack.clone(),
         entrance: cli.entrance.clone(),
         placeholders: cli.placeholders,
+        preset: cli.preset.clone(),
     }
 }
 
@@ -360,7 +366,10 @@ impl HouseWalk {
 
 /// The script's play state: the script's start, or `--at`, or the spawn or entrance.
 fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
-    let start = if cli.script == "house" { None } else { script(&cli.script)?.1 };
+    if cli.script == "playthrough" && (a.entrance.is_none() || cli.preset.as_deref() != Some(oot_actors::playthrough::Playthrough::PRESET) || !cli.child) {
+        anyhow::bail!("the playthrough needs --entrance {} --child --preset {}", oot_actors::playthrough::Playthrough::ENTRANCE, oot_actors::playthrough::Playthrough::PRESET);
+    }
+    let start = if matches!(cli.script.as_str(), "house" | "playthrough") { None } else { script(&cli.script)?.1 };
     let mut w = new_play(a, cli.child);
     if let (Some((p, y)), None) = (start, &cli.scene) {
         w = new_play_at(a, cli.child, p, y, true);
@@ -379,17 +388,32 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
 
 fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, usize, &RenderFrame) -> Result<()>) -> Result<(PlayState, Vec<RenderFrame>, Vec<serde_json::Value>)> {
     let house = cli.script == "house";
-    let mut s = if house { Vec::new() } else { script(&cli.script)?.0 };
-    if cli.frames > 0 && !house {
+    // The playthrough steers itself (oot_actors::playthrough) and marks each step in the trace.
+    let mut playthrough = (cli.script == "playthrough").then(oot_actors::playthrough::Playthrough::new);
+    let mut s = if house || playthrough.is_some() { Vec::new() } else { script(&cli.script)?.0 };
+    if cli.frames > 0 && !house && playthrough.is_none() {
         s.resize(cli.frames, stick(0, 0));
     }
     let mut snaps = Vec::new();
-    let mut trace = Vec::new();
+    let mut trace: Vec<serde_json::Value> = Vec::new();
     let mut prev = PadState::default();
     let mut walk = HouseWalk { phase: 0, wait: 0 };
     // Scene changes by frame, for the trace; the house walk and its phases ends the run.
     for i in 0.. {
-        let cur = if house {
+        let cur = if let Some(run) = &mut playthrough {
+            if cli.frames > 0 && i >= cli.frames {
+                break;
+            }
+            let pad = run.next(&w);
+            // A step is done on the state after the last frame.
+            if let (Some(step), Some(t)) = (run.take_done(), trace.last_mut()) {
+                t["step"] = serde_json::json!(step.name());
+            }
+            match pad {
+                Some(p) => p,
+                None => break,
+            }
+        } else if house {
             if i >= 2000 {
                 anyhow::bail!("the house walk didn't finish (phase {})", walk.phase);
             }
@@ -451,6 +475,13 @@ fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, 
         let snap = w.current_frame();
         on_frame(&w, i + 1, &snap)?;
         snaps.push(snap);
+    }
+    if let Some(run) = &playthrough {
+        if let Some(f) = &run.failure {
+            anyhow::bail!("the playthrough stopped: {f}");
+        }
+        let steps: Vec<String> = run.steps.iter().map(|(s, f)| format!("{} at frame {f}", s.name())).collect();
+        println!("playthrough: {}; texts {:x?}; drop {:?}", steps.join(", "), run.texts, run.drop);
     }
     Ok((w, snaps, trace))
 }

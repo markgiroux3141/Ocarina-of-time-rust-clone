@@ -18,6 +18,7 @@ pub mod actor_table;
 pub mod camera;
 pub mod collision_check;
 pub mod course;
+pub mod cutscene;
 pub mod data;
 pub mod env;
 pub mod footik;

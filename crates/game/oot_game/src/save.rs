@@ -96,11 +96,59 @@ pub const ITEM_NONE: u8 = 0xFF;
 /// `LANGUAGE_ENG`.
 pub const LANGUAGE_ENG: u8 = 0;
 
+/// `EVENTCHKINF_05` (`z64save.h`: 0x05): the Deku Tree has opened his mouth. Set by
+/// `func_808BC9EC` (`z_bg_treemouth.c`) when Link answers the tree's question with the first
+/// choice; from then on `func_808BC8B8` holds the mouth open (`unk_168` 1).
+pub const EVENTCHKINF_05: u16 = 0x05;
+/// `EVENTCHKINF_07` (0x07): the Deku Tree is dead. Set with `EVENTCHKINF_09` and the Kokiri
+/// Emerald by `Door_Warp1`'s blue warp out of Gohma's room (`z_door_warp1.c`, `SCENE_YDAN_BOSS`).
+/// The tree and his mouth are drawn with env alpha 2150 instead of 500
+/// (`Scene_DrawConfigSpot04`, `BgTreemouth_Draw`).
+pub const EVENTCHKINF_07: u16 = 0x07;
+/// `EVENTCHKINF_09` (0x09): set with `EVENTCHKINF_07` by the same blue warp.
+pub const EVENTCHKINF_09: u16 = 0x09;
+/// `EVENTCHKINF_0C` (0x0C): Link has met the Deku Tree. Set by `func_808BC8B8` as it starts the
+/// first talk's cutscene (`D_808BCE20`).
+pub const EVENTCHKINF_0C: u16 = 0x0C;
 /// `EVENTCHKINF_40`: Zelda's letter obtained (`(4 << 4) | 0`).
 pub const EVENTCHKINF_40: u16 = 0x40;
 /// `QUEST_MEDALLION_FOREST`, `QUEST_KOKIRI_EMERALD` (`z64item.h`).
 pub const QUEST_MEDALLION_FOREST: u32 = 0x00;
 pub const QUEST_KOKIRI_EMERALD: u32 = 0x12;
+
+/// A debug save preset: story flags set on a new save, standing in for events that aren't
+/// playable yet (the Deku Tree's talk is a cutscene, and there are no cutscenes until Phase 4).
+/// Not in the game.
+pub struct SavePreset {
+    pub name: &'static str,
+    pub about: &'static str,
+    pub apply: fn(&mut SaveContext),
+}
+
+/// The debug save presets (`--preset` in the game and the sandbox).
+pub const SAVE_PRESETS: &[SavePreset] = &[
+    SavePreset {
+        name: "deku-tree-open",
+        about: "the Deku Tree met and his mouth open (EVENTCHKINF_0C, EVENTCHKINF_05), as after his first talk's cutscenes",
+        apply: |s| {
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+        },
+    },
+    SavePreset {
+        name: "deku-tree-dead",
+        about: "deku-tree-open, and the Deku Tree dead with the Kokiri Emerald (EVENTCHKINF_07, EVENTCHKINF_09, QUEST_KOKIRI_EMERALD), as after Gohma's blue warp",
+        apply: |s| {
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            // Door_Warp1 (SCENE_YDAN_BOSS): Flags_SetEventChkInf(EVENTCHKINF_07) and (_09),
+            // Item_Give(play, ITEM_KOKIRI_EMERALD).
+            s.set_event_chk_inf(EVENTCHKINF_07);
+            s.set_event_chk_inf(EVENTCHKINF_09);
+            s.quest_items |= 1 << QUEST_KOKIRI_EMERALD;
+        },
+    },
+];
 
 impl Default for SaveContext {
     fn default() -> SaveContext {
@@ -158,9 +206,24 @@ impl SaveContext {
         [99, 200, 500, 500][self.wallet_upgrade.min(3) as usize]
     }
 
-    /// `GET_EVENTCHKINF`.
+    /// `GET_EVENTCHKINF` (`Flags_GetEventChkInf`).
     pub fn get_event_chk_inf(&self, flag: u16) -> bool {
         self.event_chk_inf[(flag >> 4) as usize] & (1 << (flag & 0xF)) != 0
+    }
+
+    /// `SET_EVENTCHKINF` (`Flags_SetEventChkInf`).
+    pub fn set_event_chk_inf(&mut self, flag: u16) {
+        self.event_chk_inf[(flag >> 4) as usize] |= 1 << (flag & 0xF);
+    }
+
+    /// Applies the debug save preset `name` (see `SAVE_PRESETS`).
+    pub fn apply_preset(&mut self, name: &str) -> Result<(), String> {
+        let p = SAVE_PRESETS.iter().find(|p| p.name == name).ok_or_else(|| {
+            let names: Vec<_> = SAVE_PRESETS.iter().map(|p| p.name).collect();
+            format!("no save preset {name} (there are: {})", names.join(", "))
+        })?;
+        (p.apply)(self);
+        Ok(())
     }
 
     /// `GET_INFTABLE`, `SET_INFTABLE`.

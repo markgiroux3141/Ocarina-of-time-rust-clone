@@ -325,6 +325,8 @@ pub struct PlayState {
     pub messages: Option<Arc<MessageTable>>,
     /// `interfaceCtx`.
     pub interface_ctx: InterfaceContext,
+    /// `csCtx`: always idle until the cutscene system is ported (`crate::cutscene`).
+    pub cs_ctx: crate::cutscene::CutsceneContext,
     pub(crate) next_play_init: bool,
     /// Whether a game frame has run since this state was made. `Play_Main` always runs
     /// `Play_Update` before its first `Play_Draw`, but the frontends draw at the display rate
@@ -382,6 +384,7 @@ impl PlayState {
             scene_changes: 0,
             rand: Rand::default(),
             msg_ctx: MessageContext::new(),
+            cs_ctx: Default::default(),
             messages: None,
             interface_ctx: InterfaceContext::default(),
             next_play_init: false,
@@ -594,7 +597,9 @@ impl PlayState {
             }
         }
         let frames = self.gameplay_frames;
+        let tree_dead = self.save.get_event_chk_inf(crate::save::EVENTCHKINF_07);
         if let Some(s) = &mut self.scene {
+            s.draw.event_chk_inf_07 = tree_dead;
             s.run_draw_config(frames);
         }
         // The end of Play_Draw: a camera that asked for it (view.unk_124) updates again.

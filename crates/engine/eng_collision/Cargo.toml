@@ -7,5 +7,6 @@ description = "Triangle-mesh collision (z_bgcheck.c): the static mesh, actor-own
 
 [dependencies]
 eng_math.workspace = true
+log.workspace = true
 glam.workspace = true
 serde.workspace = true

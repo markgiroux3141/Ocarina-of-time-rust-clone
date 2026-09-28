@@ -7,7 +7,7 @@
 | 1 | The collision check; Kokiri's props with their real models; `En_Ko`; ladder and vine climbing; Z-targeting polish | done |
 | 2 | `En_Door`, the prerendered backgrounds and the fixed cameras | done |
 | 3 | The message box, Player talking, items and a minimal HUD | done |
-| 4 | `Bg_Treemouth` and a headless scripted playthrough | next |
+| 4 | `Bg_Treemouth` and a headless scripted playthrough | done |
 
 The working rules are the same as for GAME-01:
 - no game data in the repo;
@@ -16,7 +16,9 @@ The working rules are the same as for GAME-01:
 - ports go function by function with the decomp's names, every constant is cited, and faithful bugs are marked `@bug (game)`;
 - test expectations come from the C.
 
-Decisions are in [docs/adr/](adr/README.md) (0011 to 0017 so far).
+Decisions are in [docs/adr/](adr/README.md) (0011 to 0018).
+
+**GAME-02 is complete:** Phase 3's exit, a headless scripted playthrough, passes (milestone 4).
 
 ## Milestone 1: collisions, props, the first NPC, climbing, Z-targeting
 
@@ -345,14 +347,186 @@ The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78
   - `func_80083108`'s riding, minigame, fishing and water cases, and the restrictions by item type (nothing is on the C buttons).
 - **Carried over:** time passing, culling, the exit's circle wipe, small keys.
 
+## Milestone 4: the Deku Tree's mouth and the playthrough
+
+**Answer:** done. A headless scripted run goes from Link's bed into the Deku Tree:
+1. out of Link's house and down the ladder;
+2. it reads the sign by the house;
+3. it talks to the Kokiri child by the bushes;
+4. it cuts bushes until one drops something, and picks the drop up;
+5. it wades the stream, walks past Mido, and follows the path through the `En_Holl` into the
+   meadow;
+6. it crosses the Deku Tree's open jaw into the mouth, and the exit takes it to the Deku
+   Tree's scene.
+
+It checks the play state at each step, as a test and as a sandbox script whose trace is a
+golden case.
+
+`Bg_Treemouth` is ported, apart from its cutscenes. They set the story flags, so here a debug
+save preset stands in for them. The preset is `EVENTCHKINF_05`, not `EVENTCHKINF_07` as the
+roadmap had it: `EVENTCHKINF_07` means the tree is dead, and only changes his colour.
+
+The tests: 195 pass, 1 ignored (190 before). The goldens: 78 of 78 unchanged, and two new
+cases recorded (80 hashes).
+
+The user played the route in the windowed game: from Link's house into the Deku Tree, with a
+bush cut and its drop picked up. The cut bush's flying leaves don't show (`EnKusa_SpawnFragments`
+needs the effect system; see the known gaps).
+
+### What was built
+
+1. **`Bg_Treemouth`, the whole overlay except the cutscenes** (`oot_actors::bg_treemouth`,
+   [ADR 0018](adr/0018-bg-treemouth.md)).
+   - `BgTreemouth_Init`:
+     - the init chain (target mode 5, scale 1);
+     - DynaPoly with `gDekuTreeMouthCol` (`DPM_UNK`);
+     - the focus 50 up, and text 0x905;
+     - the layer and age cases: `func_808BC8B8` for a child outside the cutscene layers;
+       `BgTreemouth_DoNothing`, closed, for an adult or on layer 7; `func_808BC6F8`, open, on
+       the other cutscene layers.
+   - `BgTreemouth_Update`: the action, then the mouth at `(4029, 136, -1255) + unk_168 ×
+     (-160, -399, 92)`, which DynaPoly reads after the BG category.
+   - **The states:**
+     - `func_808BC8B8`: held open with `EVENTCHKINF_05`. Without it:
+       - near and facing the tree the first time (1658, 0x4E20), `EVENTCHKINF_0C` is set;
+       - after that (0x7530), the tree becomes targetable, and Z-targeting it asks again.
+       - Both start a cutscene (`D_808BCE20`, `D_808BD2A0`), logged as not ported.
+     - `func_808BC9EC`: when the cutscene starts, it moves Player to the tree if he's within
+       350, then reads the answer: yes sets `EVENTCHKINF_05`, no waits again.
+     - `func_808BCAF0` and `func_808BC65C`: the mouth's cutscene cues (2 talks, 3 opens).
+     - `func_808BC80C` and `func_808BC864`: open to 0.8 and close, as the tree talks.
+     - `func_808BC6F8`: open by 0.01 a frame (layer 6's falling bark: the `Rand` calls only).
+   - `BgTreemouth_Draw`: a bake of `gDekuTreeMouthDL` with the env colour on dynamic segment
+     0x0B. The alpha is 500, or 2150 with `EVENTCHKINF_07`, or layer 6's `unk_74[0] + 500`,
+     times 0.1. The combiner blends the living bark into the dead by it.
+   - `BgTreemouth_Destroy`: `DynaPoly_DeleteBgActor`.
+2. **`csCtx`** (`oot_game::cutscene`, `PlayState::cs_ctx`): the fields actors read (the state,
+   the frames, the actors' cues). It's always idle until the cutscene system.
+3. **DynaPoly deletion** (`eng_collision::dyna`): the C's `bgActorFlags`.
+   - `DynaPoly_DeleteBgActor` marks a slot, and `DynaPoly_UpdateContext` frees it.
+   - `DynaPoly_SetBgActor` takes the first free slot of 50.
+   - The bgcheck loops skip free slots.
+4. **Debug save presets** (`oot_game::save::SAVE_PRESETS`; `--preset` in the game and the
+   sandbox, with an entrance). The flag values are from `z64save.h`: `EVENTCHKINF_05` 0x05,
+   `EVENTCHKINF_07` 0x07, `EVENTCHKINF_09` 0x09, `EVENTCHKINF_0C` 0x0C.
+   - `deku-tree-open`: `EVENTCHKINF_0C` and `EVENTCHKINF_05`, as after the tree's talk.
+   - `deku-tree-dead`: also `EVENTCHKINF_07`, `EVENTCHKINF_09` and the Kokiri Emerald, as after
+     Gohma's blue warp (`Door_Warp1`).
+
+   `Flags_SetEventChkInf` is on the save, and the scene draw config reads `EVENTCHKINF_07` from
+   it each frame (the tree's own 2150).
+5. **The playthrough** (`oot_actors::playthrough`), a steering script:
+   - **Its tasks:** settle, take an exit, walk waypoints, climb down the ladder, talk (to the
+     offer, A, then A through each box and choice), and cut bushes until one drops.
+   - **Its steps:** house, out the door, the ladder, the sign, the Kokiri child, the bush, the
+     tree, the mouth, the Deku Tree. Each is reported on the state it finished on.
+   - **The sandbox's `playthrough` script** runs it (`--entrance ENTR_LINK_HOME_0 --child
+     --preset deku-tree-open`). Its trace marks the steps, and it prints them with the texts
+     and the drop.
+6. **Golden cases:** `playthrough` (the trace) and `spot04_treemouth_open` (the open mouth from
+   Kokiri Forest's spawn 1).
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 195 passed, 1 ignored |
+| The playthrough (`oot_actors --test playthrough`: `kokiri_forest_to_the_deku_tree`) | 1971 frames, every step in order. **House:** `SCENE_LINK_HOME`, `ENTR_LINK_HOME_0`, at spawn 0 (1, 0, 95), `VIEWPOINT_PIVOT` with `CAM_SET_PREREND_PIVOT`, the preset's flags, 3 hearts and no rupees. **Out the door:** `ENTR_SPOT04_3`, at spawn 3 (-31, 100, 1073). **The ladder:** at its foot, on the ground at -80. **The sign:** text 0x031F only. **The child:** `En_Ko` child 4, texts 0x100A and 0x100B. **The bush:** the third bush's green rupee (the first two dropped nothing); the cut bushes are gone; 1 rupee. **The tree:** room 1 (through the `En_Holl`), the mouth held open (`func_808BC8B8`, `unk_168` 1), Link standing on its DynaPoly floor. **The mouth:** the floor's exit 2, `ENTR_YDAN_0`. **The Deku Tree:** `SCENE_YDAN`, standing. **Mido and Saria:** placeholders, and Link passed within 60 of each |
+| The mouth (`--test playthrough`, 3 more) | The presets' bits in `eventChkInf[0]`. A new save at spawn 1: `EVENTCHKINF_0C` set, `func_808BC9EC`, closed at (4029, 136, -1255), alpha 500; with the preset: open at (3869, -263, -1163) with its collision there; the tree dead: 2150. By hand: the cutscene starting with yes answered sets `EVENTCHKINF_05` and `CS_STATE_SKIPPABLE_EXEC`; cue 3 opens 0.01 a frame |
+| DynaPoly (`eng_collision` unit test) | A deleted bg actor collides until the next update, then its slot is free and reused; 50 slots, then `BG_ACTOR_MAX` |
+| Golden traces and renders | 78 of 78 identical (the draw config's `EVENTCHKINF_07` only comes from `Play_Init` saves). Recorded, 80 hashes: `playthrough/trace.json` (2.8 MB, the same hash over two runs) and `spot04_treemouth_open/shot.png` (see `golden/README.md`) |
+| The windows | The route played by hand (`scripts\run\game-links-house.bat`): Link's house into the Deku Tree; a bush cut, its drop picked up. No leaves fly from the cut bush |
+| Import | 10.7 s; 47.35 MB; format version 7 (the mouth's bake: 262 actor bakes), into `out/data04` |
+| Headless screenshots | The mouth from spawn 1: closed on a new save, open, and dead grey with the tree. The playthrough at child 4's text ("That meanie, Mido, made me cut the grass at Saria's house."), the stream, on the jaw, inside the mouth, and the Deku Tree's first room |
+
+### Decisions
+
+- **[ADR 0018](adr/0018-bg-treemouth.md):**
+  - the mouth's alpha is a dynamic colour on segment 0x0B;
+  - the flag logic is ported, and the cutscene triggers are logged against an idle `csCtx`;
+  - debug save presets stand in for the cutscenes' flags;
+  - DynaPoly deletion follows the C's slot flags;
+  - the playthrough is a steering script shared by the test and the sandbox.
+- **The preset is `EVENTCHKINF_05`.** The milestone asked for `EVENTCHKINF_07`, after the
+  roadmap. In the C, `EVENTCHKINF_07` is set by the blue warp out of Gohma's room (the tree
+  dead) and only picks the colour. `EVENTCHKINF_05` is what holds the mouth open, and it's set
+  by `func_808BC9EC` on yes. A second preset, `deku-tree-dead`, sets `EVENTCHKINF_07`.
+- **Slow approaches tilt the stick 40, not 30.** `func_80836FAC` takes 20 off the dead-zoned
+  stick magnitude, so a tilt of about 30 leaves Link turning in place. That's the C, not a bug.
+- **Checks come before the next frame's input.** A step finishes inside `Playthrough::next`,
+  which already returns the next task's first input. So callers check the step on the state
+  before running that frame.
+
+### Known gaps
+
+- **The cutscenes** (`D_808BCE20`, `D_808BD2A0`, `D_808BD520`, `D_808BD790`) aren't played.
+  On a new save the mouth stays shut: Link's first approach sets `EVENTCHKINF_0C`, and then it
+  waits for a cutscene. GAME-03 milestone 4 plays them.
+- **`Bg_Treemouth`:** no sounds, no falling bark on layer 6 (effects), no cull zone.
+- **Bushes:** a cut bush's leaves don't fly (`EnKusa_SpawnFragments`: `EffectSsKakera`, the
+  effect system isn't ported). Seen in the windowed game.
+- **The playthrough:**
+  - it depends on the preset, and on this build's debug save (the Kokiri Sword on B, a shield
+    on Link's back);
+  - Mido and Saria are placeholders: the real Mido blocks the path without the sword and
+    shield (GAME-03 milestone 3);
+  - no Navi;
+  - the bush drop depends on `Rand` (see `oot_actors::playthrough`): a change in who draws
+    random numbers can leave all four bushes empty, and then the run stops;
+  - the route is hand-picked waypoints, not pathfinding.
+- **The Deku Tree's scene** is the debug ROM's Master Quest one (ADR 0003). The run only checks
+  that Link enters it.
+- **Carried over:**
+  - time passing, culling, the exit's circle wipe, small keys;
+  - the inventory, the get-item flow and the chests (GAME-03 milestone 1);
+  - audio.
+
+## GAME-02 is complete
+
+Phase 3's exit, "a short scripted playthrough (house → sign → cut grass → Deku Tree entrance)
+runs headless as a regression test", is met: `oot_actors --test playthrough`, and the
+`playthrough` golden trace.
+
+## Side-by-side checks still open
+
+The route and the bush's drop were played before recording the goldens. These comparisons
+against Project64 on the same ROM are still open, carried over from milestones 1 to 4:
+
+1. **The message box** on the sign by Link's house (0x031F) and on the Kokiri child by the
+   bushes (0x100A):
+   - the typing speed;
+   - the box's position against the talker;
+   - the glyphs' edges (ADR 0017's half texel);
+   - the end icon's flashing.
+2. **The talk camera:** the swing on the sign and on the child (KEEP3, ten frames, the bars),
+   and the turn in Link's house (KEEP0) on the spot by the window.
+3. **The HUD:**
+   - the layout of the hearts, the rupees and the buttons;
+   - the fades: entering, talking, climbing the ladder;
+   - the A button's flip.
+4. **Z-targeting a Kokiri child:** the camera and the bars. Pending since milestone 1.
+5. **Link's house:** the pivot view with its skybox, and C-Up's fixed view with its picture.
+   Pending since milestone 2.
+6. **The Deku Tree's mouth:** its open place, and the bark's colour against the tree, living
+   and dead. Use a save past the tree's talk, and one past Gohma, with `--preset
+   deku-tree-open` and `--preset deku-tree-dead`.
+7. **The stream** at the ford (x ≈ 1250–1400): wading, and the climb out.
+
 ## Recommended next step
 
-**Milestone 4: `Bg_Treemouth` and a headless scripted playthrough,** as planned:
-- the Deku Tree's mouth opens after the talk;
-- a scripted run goes from Link's house to the Deku Tree, with checks along the way (the signs, a Kokiri child, the drops).
+**GAME-03 milestone 1: the inventory and getting items,** scoped in
+[ROADMAP.md](ROADMAP.md) (Phase 4). It's the first step towards playing Kokiri Forest from a
+new save, the game's way:
+- `SaveContext`'s inventory, and a new save as `Sram_InitNewSave` makes it (no sword or
+  shield);
+- `Item_Give` for what Kokiri Forest gives;
+- Player's get-item flow (`func_8002F434` / `func_8002F554`, the animation, `GetItem_Draw`,
+  the text);
+- `En_Box`;
+- Link's equipment on his model, and the B and C items on the HUD.
 
-Checks first (interactive, in the windowed game or against Project64):
-- the message box side by side with Project64: the typing speed, the box's position against the talker, and the glyphs' edges (ADR 0017's half texel);
-- the talk camera's swing on a sign and on a Kokiri child, and the house's KEEP0 turn;
-- the HUD's layout and fades (entering, talking, climbing a ladder), and the A button's flip;
-- still pending from milestones 1 and 2: the Z-target camera and bars on a Kokiri child, and Link's house's pivot and fixed views.
+**Exit:** open the Kokiri Sword chest on a new save. Link holds up the sword, the text shows,
+and B gets the sword.
+
+The playthrough keeps its preset and debug save until Phase 4's exit, a run from a new save the
+game's way, replaces them.

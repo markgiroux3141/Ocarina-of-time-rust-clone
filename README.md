@@ -52,6 +52,8 @@ The pack goes to `%LOCALAPPDATA%\oot-clone\packs\<rom-sha1>.pak` (about 40 MB). 
 
 ## Commands
 
+On Windows, [scripts/run/](scripts/run/README.md) has batch files for the common ones, with the current build and pack folders set in one place. `scripts\run\menu.bat` lists them.
+
 ```sh
 cargo build --release
 
@@ -83,6 +85,8 @@ target/release/oot_viewer --subject tock --sheet out/tock_sheet.png
 target/release/oot
 target/release/oot --entrance ENTR_SPOT04_3                # outside Link's house: walk in through the door
 target/release/oot --scene spot00 --adult --time 18:00     # any scene's entrance to spawn --spawn N, age and time
+target/release/oot --entrance ENTR_SPOT04_1 --preset deku-tree-open   # at the Deku Tree, his mouth open (a debug save preset;
+                                                           # deku-tree-dead: the tree dead too)
 
 # Sandbox: the test course and the debug views
 target/release/oot_sandbox                                 # test course, adult Link
@@ -90,6 +94,8 @@ target/release/oot_sandbox --scene spot04 --child          # Kokiri Forest, the 
 target/release/oot_sandbox --scene spot04 --child --entrance --placeholders   # the game's way in, with markers on unported actors
 target/release/oot_sandbox --entrance ENTR_SPOT04_3 --child --script house --trace out/house.json --screenshot out/house.png --shots-at 12,60,120
                                                            # headless: into Link's house and back out
+target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open --script playthrough --trace out/playthrough.json
+                                                           # headless: GAME-02's run from Link's bed into the Deku Tree
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_1 --child --script cup --screenshot out/home.png --shots-at 29
                                                            # the house's pivot camera and skybox, then C-Up: the fixed camera and its picture
 target/release/oot_sandbox --entrance ENTR_SOUKO_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png
@@ -105,6 +111,7 @@ cargo test --workspace
 cargo test -p oot_actors                                   # movement, camera, foot IK, ledges, targeting, sword, water, platform, scenes
 cargo test -p oot_actors --test scenes                     # Kokiri's placements, the En_Holl room change, Link's house and back, every scene entering
 cargo test -p oot_actors --test prerendered --test door    # the interiors' cameras, backgrounds and skyboxes; En_Door
+cargo test -p oot_actors --test playthrough                # Bg_Treemouth, and the scripted run from Link's bed into the Deku Tree
 cargo test -p oot_game                                     # Kokiri Forest's rooms, draw configs and environment
 cargo test -p oot_import --test pack                       # the pack against the ROM path: tables vs the C, draw configs vs the interpreter, meshes, counts, the scene lists
 cargo test -p layering                                     # the crate layering rules

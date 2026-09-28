@@ -60,6 +60,12 @@ CASES = [
     ("spot04_view", S, ["--scene", "spot04", "--view", "400,300,1200,0,0,0", "--script", "still", "--screenshot", "{shot}"]),
     ("spot00_adult", S, ["--scene", "spot00", "--script", "still", "--screenshot", "{shot}"]),
     ("ydan_adult", S, ["--scene", "ydan", "--script", "still", "--screenshot", "{shot}"]),
+    # GAME-02 milestone 4: the Deku Tree's mouth held open (EVENTCHKINF_05), and the Kokiri Forest
+    # playthrough from Link's bed into the Deku Tree (entered by Play_Init: the HUD, the texts).
+    ("spot04_treemouth_open", S, ["--scene", "spot04", "--spawn", "1", "--entrance", "--child", "--preset", "deku-tree-open",
+                                  "--script", "idle", "--frames", "40", "--width", "640", "--height", "360", "--screenshot", "{shot}"]),
+    ("playthrough", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--preset", "deku-tree-open", "--script", "playthrough",
+                        "--trace", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),

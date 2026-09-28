@@ -234,8 +234,34 @@ Each phase has exit criteria and ends with its doc section. The spikes stay repr
 - A minimal HUD.
 - Save context and flags.
 - **Exit:** a short scripted playthrough (house → sign → cut grass → Deku Tree entrance) runs headless as a regression test.
+- **(As built, [GAME-02](GAME-02-kokiri-forest.md), done:)**
+  - Milestone 1:
+    - the collision check (ADR 0011);
+    - the props with their real models, and `En_Ko`, from actor bakes (ADR 0012);
+    - ladder climbing;
+    - the targeting camera modes, the letterbox and the reticle (ADR 0013).
+  - Milestone 2:
+    - `En_Door`;
+    - the prerendered rooms (ADR 0014);
+    - the camera settings and the scene's bg cameras (ADR 0015);
+    - Player's requests to the play state (ADR 0016).
+  - Milestone 3:
+    - the message box and the HUD as baked sprites (ADR 0017);
+    - Player talking;
+    - `En_Item00` and the drops;
+    - the save's health, rupees and flags.
+  - Milestone 4:
+    - `Bg_Treemouth`, driven by the save flags, since its talk is a cutscene (ADR 0018);
+    - debug save presets.
+  - **Phase 3's exit is met.** `oot_actors --test playthrough` runs from Link's bed into the
+    Deku Tree: the house, the sign, a Kokiri child, a bush's drop, the open mouth. Its trace is
+    a golden case.
+    - The run starts on the `deku-tree-open` preset: the talk that opens the mouth is a
+      cutscene, and there are no cutscenes until Phase 4.
+    - The preset sets `EVENTCHKINF_05`. `EVENTCHKINF_07`, which the roadmap had, is the tree
+      dead.
 
-**Later, roughly in order:**
+**Later, roughly in order** ([ROADMAP.md](ROADMAP.md) breaks the next phases into milestones)**:**
 - The audio engine, built from the extractor's sequence player and VADPCM decoder.
 - Enemies and damage: Deku Baba, Skulltula.
 - Items and C buttons.

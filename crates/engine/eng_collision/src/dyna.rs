@@ -24,6 +24,11 @@ pub const BGCHECK_SCENE: u16 = BG_ACTOR_MAX;
 pub const DPM_PLAYER: u32 = 1;
 pub const DPM_ROTATE: u32 = 2;
 
+/// `bgActorFlags` (`z64bgcheck.h`): the slot holds a bg actor; it's to be freed at the next
+/// `DynaPoly_UpdateContext` (`DynaPoly_DeleteBgActor`).
+pub const BGACTOR_IN_USE: u8 = 1 << 0;
+pub const BGACTOR_1: u8 = 1 << 1;
+
 /// `ScaleRotPos`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScaleRotPos {
@@ -83,8 +88,11 @@ pub struct BgActorSource {
     pub shape_y_offset: f32,
 }
 
-/// `BgActor` (plus the owner's `DynaPolyActor.unk_15C`).
+/// `BgActor` (plus the owner's `DynaPolyActor.unk_15C`, and the slot's `bgActorFlags`).
 pub struct BgActor {
+    /// `dyna->bgActorFlags[bgId]`'s `BGACTOR_IN_USE` and `BGACTOR_1` (collision disabling is
+    /// kept in `collision_disabled` and `ceiling_disabled`).
+    pub flags: u8,
     pub header: Arc<CollisionHeader>,
     pub source: BgActorSource,
     pub move_flags: u32,
@@ -117,6 +125,12 @@ pub struct Dyna {
 }
 
 impl BgActor {
+    /// `bgActorFlags & BGACTOR_IN_USE`: the slot is in the lookup (a deleted one stays in it
+    /// until the next `DynaPoly_UpdateContext`).
+    pub fn in_use(&self) -> bool {
+        self.flags & BGACTOR_IN_USE != 0
+    }
+
     pub fn sphere_center(&self) -> Vec3 {
         Vec3::new(self.sphere_center[0] as f32, self.sphere_center[1] as f32, self.sphere_center[2] as f32)
     }
@@ -131,14 +145,20 @@ impl BgActor {
 }
 
 impl Dyna {
-    /// `DynaPoly_SetBgActor` + `BgActor_SetActor`: registers `header` for an actor and returns
-    /// its bg id. The previous transform's x rotation is offset by one so the first update
-    /// always expands it.
+    /// `DynaPoly_SetBgActor` + `BgActor_SetActor`: registers `header` for an actor in the first
+    /// free slot and returns its bg id, or `BG_ACTOR_MAX` when all 50 are taken. The previous
+    /// transform's x rotation is offset by one so the first update always expands it.
     pub fn set_bg_actor(&mut self, header: Arc<CollisionHeader>, source: BgActorSource, move_flags: u32) -> u16 {
+        let slot = self.actors.iter().position(|a| !a.in_use()).unwrap_or(self.actors.len());
+        if slot >= BG_ACTOR_MAX as usize {
+            log::warn!("DynaPolyInfo_setActor(): no free dynamic polygon index");
+            return BG_ACTOR_MAX;
+        }
         let cur = ScaleRotPos { scale: source.scale, rot: source.shape_rot, pos: source.pos };
         let mut prev = cur;
         prev.rot[0] = prev.rot[0].wrapping_sub(1);
-        self.actors.push(BgActor {
+        let a = BgActor {
+            flags: BGACTOR_IN_USE,
             header,
             source,
             move_flags,
@@ -155,32 +175,72 @@ impl Dyna {
             sphere_radius: 0,
             min_y: 0.0,
             max_y: 0.0,
-        });
+        };
+        if slot == self.actors.len() {
+            self.actors.push(a);
+        } else {
+            self.actors[slot] = a;
+        }
         self.invalidate = true;
-        (self.actors.len() - 1) as u16
+        slot as u16
+    }
+
+    /// `DynaPoly_DeleteBgActor`: marks bg actor `bg` for deletion (`BGACTOR_1`). It keeps
+    /// colliding until the next `DynaPoly_UpdateContext` frees the slot. An id that isn't a
+    /// bg actor in use (`BGACTOR_NEG_ONE`, a failed `set_bg_actor`) is ignored, as the C only
+    /// logs it.
+    pub fn delete_bg_actor(&mut self, bg: u16) {
+        match self.actors.get_mut(bg as usize) {
+            // DynaPoly_GetActor: NULL for a slot not in use or already marked.
+            Some(a) if a.in_use() && a.flags & BGACTOR_1 == 0 => a.flags |= BGACTOR_1,
+            _ => log::debug!("DynaPolyInfo_delReserve(): index {bg} isn't a bg actor in use"),
+        }
+    }
+
+    /// `DynaPoly_GetActor`'s test: `bg` is a bg actor in use and not marked for deletion.
+    pub fn is_bg_actor(&self, bg: u16) -> bool {
+        self.actors.get(bg as usize).is_some_and(|a| a.in_use() && a.flags & BGACTOR_1 == 0)
     }
 
     /// The owning actor's per-frame state (what its `update` changed).
     pub fn set_source(&mut self, bg: u16, source: BgActorSource) {
-        self.actors[bg as usize].source = source;
+        if let Some(a) = self.actors.get_mut(bg as usize) {
+            a.source = source;
+        }
     }
 
     pub fn is_empty(&self) -> bool {
         self.actors.is_empty()
     }
 
-    /// `DynaPoly_UpdateContext` (after the BG category's actors update).
+    /// `DynaPoly_UpdateContext` (after the BG category's actors update): frees the slots
+    /// marked by `delete_bg_actor` (`BgActor_Initialize`), then adds every slot in use to the
+    /// lookup. (Its second case, an actor killed without deleting its bg actor, can't happen
+    /// here: the actor's destroy deletes it.)
     pub fn update_context(&mut self) {
+        for a in &mut self.actors {
+            a.floor.clear();
+            a.wall.clear();
+            a.ceiling.clear();
+            if a.flags & BGACTOR_1 != 0 {
+                a.flags = 0;
+                a.collision_disabled = false;
+                a.ceiling_disabled = false;
+                self.invalidate = true;
+            }
+        }
         let (mut vtx_start, mut poly_start) = (0usize, 0usize);
         for i in 0..self.actors.len() {
-            self.add_to_lookup(i, &mut vtx_start, &mut poly_start);
+            if self.actors[i].in_use() {
+                self.add_to_lookup(i, &mut vtx_start, &mut poly_start);
+            }
         }
         self.invalidate = false;
     }
 
     /// `DynaPoly_UpdateBgActorTransforms` (end of `Actor_UpdateAll`).
     pub fn update_prev_transforms(&mut self) {
-        for a in &mut self.actors {
+        for a in self.actors.iter_mut().filter(|a| a.in_use()) {
             a.prev = a.cur;
         }
     }

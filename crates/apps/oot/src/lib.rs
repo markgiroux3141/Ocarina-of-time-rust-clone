@@ -71,6 +71,9 @@ pub struct Options {
     pub entrance: Option<String>,
     /// Draw markers where unported actors (placeholders) are.
     pub placeholders: bool,
+    /// A debug save preset (`oot_game::save::SAVE_PRESETS`) for the new save `Play_Init`
+    /// enters with.
+    pub preset: Option<String>,
 }
 
 /// The pack to play from: `path` if given, else `$OOT_PACK`, else the default one
@@ -116,6 +119,8 @@ pub struct Assets {
     pub game: Option<Arc<GameAssets>>,
     pub entrance: Option<u16>,
     pub placeholders: bool,
+    /// The debug save preset, if any.
+    pub preset: Option<String>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
     pub day_time: u16,
@@ -181,6 +186,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         game: None,
         entrance: None,
         placeholders: o.placeholders,
+        preset: o.preset.clone(),
         scene_name: o.scene.clone(),
         spawn_index: o.spawn,
         day_time: parse_time(&o.time)?,
@@ -192,6 +198,11 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         view: (o.view.len() == 6).then(|| (Vec3::new(o.view[0], o.view[1], o.view[2]), Vec3::new(o.view[3], o.view[4], o.view[5]))),
         pack,
     };
+    if let Some(p) = &o.preset {
+        // Checked up front: a preset only applies to a save, so it needs an entrance.
+        anyhow::ensure!(o.entrance.is_some(), "--preset needs --entrance (it sets the save Play_Init enters with)");
+        SaveContext::default().apply_preset(p).map_err(anyhow::Error::msg)?;
+    }
     if let Some(spec) = &o.entrance {
         // Play_Init reads the pack's tables through its own handle.
         let g = oot_actors::game_assets(open_pack(o.pack.as_deref())?)?;
@@ -265,7 +276,12 @@ pub fn load_scene(a: &mut Assets, child: bool) -> Result<()> {
 /// course's platform and the dummy targets.
 pub fn new_play(a: &Assets, child: bool) -> PlayState {
     if let (Some(g), Some(e)) = (&a.game, a.entrance) {
-        let save = SaveContext::new(e, !child, a.day_time);
+        let mut save = SaveContext::new(e, !child, a.day_time);
+        if let Some(p) = &a.preset
+            && let Err(e) = save.apply_preset(p)
+        {
+            log::error!("{e}");
+        }
         match oot_actors::play_entrance(g.clone(), a.data.clone(), a.rules.clone(), save) {
             Ok(mut w) => {
                 if a.follow_camera {

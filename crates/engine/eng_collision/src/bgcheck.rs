@@ -311,7 +311,7 @@ impl CollisionContext {
         let mut result = BGCHECK_Y_MIN;
         let mut best = y_static;
         for (i, a) in self.dyna.actors.iter().enumerate() {
-            if a.collision_disabled || pos.y < a.min_y || !a.xz_in_sphere(pos.x, pos.z) {
+            if !a.in_use() || a.collision_disabled || pos.y < a.min_y || !a.xz_in_sphere(pos.x, pos.z) {
                 continue;
             }
             let bg = i as u16;
@@ -488,7 +488,7 @@ impl CollisionContext {
         let mut result = false;
         let mut rp = center;
         for (i, a) in self.dyna.actors.iter().enumerate() {
-            if a.collision_disabled || a.min_y > rp.y || a.max_y < rp.y {
+            if !a.in_use() || a.collision_disabled || a.min_y > rp.y || a.max_y < rp.y {
                 continue;
             }
             let r = a.sphere_radius.wrapping_add(radius as i16) as f32;
@@ -630,7 +630,7 @@ impl CollisionContext {
         let mut result_y = check_height + test.y;
         let mut dyna_found = None;
         for (i, a) in self.dyna.actors.iter().enumerate() {
-            if a.collision_disabled || !a.xz_in_sphere(test.x, test.z) {
+            if !a.in_use() || a.collision_disabled || !a.xz_in_sphere(test.x, test.z) {
                 continue;
             }
             if let Some((y, id)) = self.dyna_ceiling_list(i as u16, &a.ceiling, xp, test, check_height) {
@@ -707,7 +707,7 @@ impl CollisionContext {
         let d = &self.dyna;
         let mut result = false;
         for (i, act) in d.actors.iter().enumerate() {
-            if act.collision_disabled {
+            if !act.in_use() || act.collision_disabled {
                 continue;
             }
             let (ay, by) = (a.y, b.y);
@@ -928,5 +928,43 @@ mod tests {
         assert!(hit);
         assert!(poly.is_some());
         assert!((p.z - (-182.0)).abs() < 0.01, "{p}");
+    }
+
+    /// `DynaPoly_DeleteBgActor` marks the slot; it still collides until the next
+    /// `DynaPoly_UpdateContext` frees it, and `DynaPoly_SetBgActor` takes the first free slot.
+    #[test]
+    fn a_deleted_bg_actor_collides_until_the_next_update_and_its_slot_is_reused() {
+        use crate::dyna::{BG_ACTOR_MAX, BgActorSource};
+        let mut c = box_room();
+        let mut b = CollisionBuilder::new();
+        let s = b.surface(0, 0);
+        b.quad(Vec3::new(-50.0, 0.0, 50.0), Vec3::new(50.0, 0.0, 50.0), Vec3::new(50.0, 0.0, -50.0), Vec3::new(-50.0, 0.0, -50.0), s);
+        let plat = std::sync::Arc::new(b.finish());
+        let at = |y: f32| BgActorSource { pos: Vec3::new(0.0, y, 0.0), shape_rot: [0; 3], scale: Vec3::ONE, shape_y_offset: 0.0 };
+        let first = c.dyna.set_bg_actor(plat.clone(), at(10.0), 0);
+        let second = c.dyna.set_bg_actor(plat.clone(), at(20.0), 0);
+        assert_eq!((first, second), (0, 1));
+        c.dyna.update_context();
+        let top = |c: &CollisionContext| c.entity_raycast_down(Vec3::new(0.0, 100.0, 0.0));
+        assert_eq!((top(&c).0, top(&c).1.map(|p| p.bg)), (20.0, Some(1)));
+
+        c.dyna.delete_bg_actor(second);
+        assert!(!c.dyna.is_bg_actor(second));
+        assert_eq!(top(&c).0, 20.0, "still in the lookup until the update");
+        c.dyna.update_context();
+        assert_eq!((top(&c).0, top(&c).1.map(|p| p.bg)), (10.0, Some(0)));
+        // Deleting it again, or an id that was never set, does nothing.
+        c.dyna.delete_bg_actor(second);
+        c.dyna.delete_bg_actor(7);
+
+        // The freed slot is the first free one.
+        assert_eq!(c.dyna.set_bg_actor(plat.clone(), at(30.0), 0), 1);
+        c.dyna.update_context();
+        assert_eq!((top(&c).0, top(&c).1.map(|p| p.bg)), (30.0, Some(1)));
+        // BG_ACTOR_MAX slots, then no more.
+        for _ in 2..BG_ACTOR_MAX {
+            c.dyna.set_bg_actor(plat.clone(), at(0.0), 0);
+        }
+        assert_eq!(c.dyna.set_bg_actor(plat, at(0.0), 0), BG_ACTOR_MAX);
     }
 }

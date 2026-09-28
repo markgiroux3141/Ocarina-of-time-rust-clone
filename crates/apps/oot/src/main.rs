@@ -37,6 +37,10 @@ struct Cli {
     /// Start as adult Link.
     #[arg(long)]
     adult: bool,
+    /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open), or
+    /// deku-tree-dead (also the tree dead, with the Kokiri Emerald).
+    #[arg(long)]
+    preset: Option<String>,
     /// A pack file or loose folder to use instead of the default pack.
     #[arg(long)]
     pack: Option<PathBuf>,
@@ -91,6 +95,7 @@ fn main() -> Result<()> {
         pack: cli.pack,
         entrance: Some(cli.entrance.unwrap_or_default()),
         placeholders: cli.placeholders,
+        preset: cli.preset,
         ..Default::default()
     };
     oot::run_window(&opts, "OoT clone", cli.width, cli.height)
