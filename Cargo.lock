@@ -2083,6 +2083,7 @@ dependencies = [
  "clap",
  "env_logger",
  "glam",
+ "image",
  "log",
  "oot_core",
  "oot_extract",

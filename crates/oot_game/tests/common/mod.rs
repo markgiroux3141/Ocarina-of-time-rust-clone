@@ -52,6 +52,8 @@ pub struct Frame {
     pub grounded: bool,
     pub anim: String,
     pub anim_frame: f32,
+    /// `shape.yOffset`.
+    pub y_offset: f32,
 }
 
 /// A stick in N64 units (the pad reports ±80 at full tilt on an original controller).
@@ -84,6 +86,7 @@ pub fn run(w: &mut World, script: &[PadState]) -> Vec<Frame> {
             grounded: p.grounded(),
             anim: w.data.anim_name(p.skel.animation).to_string(),
             anim_frame: p.skel.cur_frame,
+            y_offset: p.actor.shape_y_offset,
         });
     }
     out

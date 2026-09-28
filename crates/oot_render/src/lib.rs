@@ -2,12 +2,13 @@
 //! per-material colour-combiner uniforms, pipeline variants for the RDP render modes, and an
 //! offscreen target that can be shown in a UI or read back to an image.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use glam::{Mat3, Mat4, Vec3};
-use oot_core::gbi::{BlendMode, CullMode, DrawList, Material, NO_BONE, TextureSlot};
+use oot_core::gbi::{BlendMode, CullMode, DrawList, Material, NO_BONE, SegmentValues, TextureSlot};
 use oot_core::texture::WrapMode;
 
 pub const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -22,7 +23,12 @@ struct Globals {
     view: [[f32; 4]; 4],
     light_dir: [f32; 4],
     light_color: [f32; 4],
+    light2_dir: [f32; 4],
+    light2_color: [f32; 4],
     ambient: [f32; 4],
+    fog_color: [f32; 4],
+    /// x: multiplier, y: offset (the RSP's fm/fo), z: near, w: far of the fog projection.
+    fog: [f32; 4],
 }
 
 #[repr(C)]
@@ -33,6 +39,8 @@ struct MaterialUniform {
     env: [f32; 4],
     params: [f32; 4],
     flags: [u32; 4],
+    /// Texture coordinate offsets from dynamic segments: slot 0 in xy, slot 1 in zw.
+    uv_off: [f32; 4],
 }
 
 #[repr(C)]
@@ -67,6 +75,8 @@ pub struct Camera {
     pub pitch: f32,
     pub distance: f32,
     pub fov_y: f32,
+    /// Near and far planes; `None` scales them with the orbit distance (viewer default).
+    pub clip: Option<(f32, f32)>,
 }
 
 impl Camera {
@@ -77,20 +87,50 @@ impl Camera {
     pub fn view(&self) -> Mat4 {
         glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Y)
     }
+    pub fn clip_planes(&self) -> (f32, f32) {
+        self.clip.unwrap_or((self.distance * 0.02, self.distance * 20.0))
+    }
     pub fn proj(&self, aspect: f32) -> Mat4 {
-        glam::camera::rh::proj::directx::perspective(self.fov_y, aspect, self.distance * 0.02, self.distance * 20.0)
+        let (n, f) = self.clip_planes();
+        glam::camera::rh::proj::directx::perspective(self.fov_y, aspect, n, f)
     }
 }
 
+/// N64 vertex fog (F3DEX2): each vertex's fog factor is `z_ndc * fm + fo` (in 1/256ths,
+/// clamped), with `z_ndc` the OpenGL-style depth of the game's projection (`near`..`far`).
+/// The blender then mixes the fog colour in by that factor (`G_RM_FOG_SHADE_A`).
+#[derive(Debug, Clone, Copy)]
+pub struct Fog {
+    pub color: Vec3,
+    /// `gSPFogFactor` multiplier and offset.
+    pub multiplier: f32,
+    pub offset: f32,
+    /// The projection the factor is computed against (the game's `zNear` and `fogFar`).
+    pub near: f32,
+    pub far: f32,
+}
+
+/// Directional lights and ambient in world space, as `Lights_Draw` loads them for F3DEX2:
+/// shade = ambient + sum of colour * max(0, n . dir), `dir` pointing towards the light.
 pub struct Lighting {
     pub dir: Vec3,
     pub color: Vec3,
+    pub dir2: Vec3,
+    pub color2: Vec3,
     pub ambient: Vec3,
+    pub fog: Option<Fog>,
 }
 
 impl Default for Lighting {
     fn default() -> Self {
-        Lighting { dir: Vec3::new(0.45, 0.8, 0.6).normalize(), color: Vec3::splat(0.7), ambient: Vec3::splat(0.38) }
+        Lighting {
+            dir: Vec3::new(0.45, 0.8, 0.6).normalize(),
+            color: Vec3::splat(0.7),
+            dir2: Vec3::Y,
+            color2: Vec3::ZERO,
+            ambient: Vec3::splat(0.38),
+            fog: None,
+        }
     }
 }
 
@@ -110,6 +150,11 @@ pub struct Renderer {
 
 pub struct GpuModel {
     vertex_buf: wgpu::Buffer,
+    /// The skinned vertices changed since the last upload.
+    dirty: Cell<bool>,
+    materials: Vec<Material>,
+    /// Materials whose uniforms depend on dynamic segments.
+    dynamic: Vec<usize>,
     material_buf: wgpu::Buffer,
     material_bg: wgpu::BindGroup,
     texture_bgs: Vec<wgpu::BindGroup>,
@@ -546,7 +591,20 @@ impl Renderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        GpuModel { vertex_buf, material_buf, material_bg, texture_bgs, draws, skinned: base.clone(), base, bones }
+        let dynamic = draw.materials.iter().enumerate().filter(|(_, m)| m.is_dynamic()).map(|(i, _)| i).collect();
+        GpuModel {
+            vertex_buf,
+            dirty: Cell::new(true),
+            materials: draw.materials.clone(),
+            dynamic,
+            material_buf,
+            material_bg,
+            texture_bgs,
+            draws,
+            skinned: base.clone(),
+            base,
+            bones,
+        }
     }
 
     /// Records the scene: the posed models (each in submission order, like the RDP) and debug
@@ -567,12 +625,17 @@ impl Renderer {
     ) {
         let aspect = target.size.0 as f32 / target.size.1 as f32;
         let view = camera.view();
+        let fog = light.fog.unwrap_or(Fog { color: Vec3::ZERO, multiplier: 0.0, offset: 0.0, near: 1.0, far: 2.0 });
         let globals = Globals {
             view_proj: (camera.proj(aspect) * view).to_cols_array_2d(),
             view: view.to_cols_array_2d(),
-            light_dir: light.dir.extend(0.0).to_array(),
+            light_dir: light.dir.normalize_or_zero().extend(0.0).to_array(),
             light_color: light.color.extend(1.0).to_array(),
+            light2_dir: light.dir2.normalize_or_zero().extend(0.0).to_array(),
+            light2_color: light.color2.extend(1.0).to_array(),
             ambient: light.ambient.extend(1.0).to_array(),
+            fog_color: fog.color.extend(1.0).to_array(),
+            fog: [fog.multiplier, fog.offset, fog.near, fog.far],
         };
         queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
         let line_buf = |lines: &[LineVertex]| {
@@ -590,7 +653,9 @@ impl Renderer {
         let world_buf = line_buf(world_lines);
         let overlay_buf = line_buf(overlay_lines);
         for m in models {
-            queue.write_buffer(&m.vertex_buf, 0, bytemuck::cast_slice(&m.skinned));
+            if m.dirty.replace(false) {
+                queue.write_buffer(&m.vertex_buf, 0, bytemuck::cast_slice(&m.skinned));
+            }
         }
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -649,6 +714,20 @@ impl GpuModel {
             out.pos = m.transform_point3(Vec3::from(v.pos)).to_array();
             out.normal = n.normalize_or_zero().to_array();
         }
+        self.dirty.set(true);
+    }
+
+    /// Rewrites the uniforms of materials that read dynamic segments (scrolling tile sizes,
+    /// draw-config colours) for this frame's values.
+    pub fn set_segment_values(&self, queue: &wgpu::Queue, v: &SegmentValues) {
+        for &i in &self.dynamic {
+            let u = material_uniform_with(&self.materials[i], Some(v));
+            queue.write_buffer(&self.material_buf, i as u64 * MATERIAL_STRIDE, bytemuck::bytes_of(&u));
+        }
+    }
+
+    pub fn has_dynamic_materials(&self) -> bool {
+        !self.dynamic.is_empty()
     }
 
     pub fn draw_count(&self) -> usize {
@@ -672,7 +751,13 @@ fn write_texture(queue: &wgpu::Queue, tex: &wgpu::Texture, w: u32, h: u32, rgba:
 }
 
 fn material_uniform(m: &Material) -> MaterialUniform {
+    material_uniform_with(m, None)
+}
+
+fn material_uniform_with(m: &Material, dynamic: Option<&SegmentValues>) -> MaterialUniform {
     let s = m.combiner.selectors();
+    let (env, prim) = dynamic.map(|v| m.colors(v)).unwrap_or((m.env, m.prim));
+    let uv = dynamic.map(|v| m.uv_offsets(v)).unwrap_or_default();
     let c = |c: [u8; 4]| c.map(|x| x as f32 / 255.0);
     let threshold = match m.blend {
         BlendMode::Cutout(t) => t as f32 / 255.0,
@@ -688,11 +773,18 @@ fn material_uniform(m: &Material) -> MaterialUniform {
     if m.blend != BlendMode::Translucent {
         flags |= 4;
     }
+    if m.fog_blend {
+        flags |= 8;
+    }
+    if m.geometry_mode & oot_core::gbi::G_FOG != 0 {
+        flags |= 16;
+    }
     MaterialUniform {
         sel: [[s[0], s[1], s[2], s[3]], [s[4], s[5], s[6], s[7]], [s[8], s[9], s[10], s[11]], [s[12], s[13], s[14], s[15]]],
-        prim: c(m.prim),
-        env: c(m.env),
+        prim: c(prim),
+        env: c(env),
         params: [m.prim_lod_frac as f32 / 255.0, threshold, 0.0, 0.0],
         flags: [flags, m.two_cycle as u32, 0, 0],
+        uv_off: [uv[0].x, uv[0].y, uv[1].x, uv[1].y],
     }
 }

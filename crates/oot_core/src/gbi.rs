@@ -95,6 +95,78 @@ pub struct Material {
     pub lit: bool,
     pub texgen: bool,
     pub bilinear: bool,
+    /// Per texture slot: the tile size came from a display list in a dynamic segment (a
+    /// scene draw config's `Gfx_TexScroll` / `Gfx_TwoTexScroll`), so the UVs move every frame.
+    pub uv_dyn: [Option<DynTile>; 2],
+    /// The env / prim colour was last set by a display list in this dynamic segment.
+    pub env_dyn: Option<u8>,
+    pub prim_dyn: Option<u8>,
+    /// Fog is blended in: `G_FOG` is on and the first blender cycle is `G_RM_FOG_SHADE_A`
+    /// (fog colour weighted by the shade alpha, which `G_FOG` replaces with the fog factor).
+    pub fog_blend: bool,
+}
+
+/// A tile whose size (origin) is rewritten every frame by a dynamic segment. The UVs were
+/// baked with `uls`/`ult`; a new origin shifts them by `-(new - old) / 4 / size`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+pub struct DynTile {
+    pub segment: u8,
+    pub tile: u8,
+    pub uls: u16,
+    pub ult: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+/// What the dynamic segments contain this frame: per segment, the tile sizes and colours
+/// their display lists set. Built from the draw config's output with [`SegmentValues::read`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SegmentValues {
+    pub tiles: [[Option<(u16, u16)>; 8]; 16],
+    pub env: [Option<[u8; 4]>; 16],
+    pub prim: [Option<[u8; 4]>; 16],
+}
+
+impl SegmentValues {
+    /// Records the `G_SETTILESIZE`, `G_SETENVCOLOR` and `G_SETPRIMCOLOR` commands of the
+    /// display list bound to `segment`.
+    pub fn read(&mut self, segment: u8, cmds: &[(u32, u32)]) {
+        let s = segment as usize & 0xF;
+        for &(w0, w1) in cmds {
+            match (w0 >> 24) as u8 {
+                0xF2 => self.tiles[s][((w1 >> 24) & 7) as usize] = Some((((w0 >> 12) & 0xFFF) as u16, (w0 & 0xFFF) as u16)),
+                0xFB => self.env[s] = Some(w1.to_be_bytes()),
+                0xFA => self.prim[s] = Some(w1.to_be_bytes()),
+                0xDF => break,
+                _ => {}
+            }
+        }
+    }
+}
+
+impl Material {
+    /// UV offsets for texture slots 0 and 1 under this frame's segment values.
+    pub fn uv_offsets(&self, v: &SegmentValues) -> [Vec2; 2] {
+        self.uv_dyn.map(|d| match d {
+            Some(d) => match v.tiles[d.segment as usize & 0xF][d.tile as usize & 7] {
+                Some((uls, ult)) => Vec2::new(
+                    -((uls as f32 - d.uls as f32) / 4.0) / d.width.max(1) as f32,
+                    -((ult as f32 - d.ult as f32) / 4.0) / d.height.max(1) as f32,
+                ),
+                None => Vec2::ZERO,
+            },
+            None => Vec2::ZERO,
+        })
+    }
+    /// The env and prim colours under this frame's segment values.
+    pub fn colors(&self, v: &SegmentValues) -> ([u8; 4], [u8; 4]) {
+        let env = self.env_dyn.and_then(|s| v.env[s as usize & 0xF]).unwrap_or(self.env);
+        let prim = self.prim_dyn.and_then(|s| v.prim[s as usize & 0xF]).unwrap_or(self.prim);
+        (env, prim)
+    }
+    pub fn is_dynamic(&self) -> bool {
+        self.uv_dyn.iter().any(|d| d.is_some()) || self.env_dyn.is_some() || self.prim_dyn.is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -190,6 +262,13 @@ pub struct Interpreter {
     current_textures: Option<[Option<(TextureSlot, TileDescriptor)>; 2]>,
     current_material: Option<usize>,
     pub max_commands: usize,
+    /// Segments whose display lists change every frame (bit per segment). Tile sizes and
+    /// colours set while running one are tagged on the materials that use them.
+    pub dynamic_segments: u16,
+    cur_dyn: Option<u8>,
+    tile_dyn: [Option<u8>; 8],
+    env_dyn: Option<u8>,
+    prim_dyn: Option<u8>,
 }
 
 
@@ -220,6 +299,11 @@ impl Interpreter {
             current_textures: None,
             current_material: None,
             max_commands: 200_000,
+            dynamic_segments: 0,
+            cur_dyn: None,
+            tile_dyn: [None; 8],
+            env_dyn: None,
+            prim_dyn: None,
         }
     }
 
@@ -242,6 +326,7 @@ impl Interpreter {
 
     pub fn set_env_color(&mut self, rgba: [u8; 4]) {
         self.env = rgba;
+        self.env_dyn = None;
         self.current_material = None;
     }
 
@@ -269,8 +354,20 @@ impl Interpreter {
         res
     }
 
+    fn dyn_of(&self, addr: u32, current: Option<u8>) -> Option<u8> {
+        let seg = ((addr >> 24) & 0xF) as u8;
+        if self.dynamic_segments & (1 << seg) != 0 { Some(seg) } else { current }
+    }
+
     pub fn run(&mut self, addr: u32) {
-        let mut stack: Vec<(Arc<[u8]>, usize)> = Vec::new();
+        let saved = self.cur_dyn;
+        self.cur_dyn = self.dyn_of(addr, saved);
+        self.run_inner(addr);
+        self.cur_dyn = saved;
+    }
+
+    fn run_inner(&mut self, addr: u32) {
+        let mut stack: Vec<(Arc<[u8]>, usize, Option<u8>)> = Vec::new();
         let (mut buf, mut pc) = match self.fetch_dl(addr) {
             Some(x) => x,
             None => return,
@@ -301,7 +398,7 @@ impl Interpreter {
                         self.run_builtin(&cmds);
                         if branch {
                             match stack.pop() {
-                                Some((b, p)) => (buf, pc) = (b, p),
+                                Some((b, p, d)) => (buf, pc, self.cur_dyn) = (b, p, d),
                                 None => return,
                             }
                         }
@@ -314,16 +411,17 @@ impl Interpreter {
                                     log::warn!("display list stack overflow");
                                     return;
                                 }
-                                stack.push((buf, pc));
+                                stack.push((buf, pc, self.cur_dyn));
                             }
                             (buf, pc) = (b, p);
+                            self.cur_dyn = self.dyn_of(w1, self.cur_dyn);
                         }
                         None => {}
                     }
                 }
                 0xDF => match stack.pop() {
                     // G_ENDDL
-                    Some((b, p)) => (buf, pc) = (b, p),
+                    Some((b, p, d)) => (buf, pc, self.cur_dyn) = (b, p, d),
                     None => return,
                 },
                 0x04 => {
@@ -405,6 +503,7 @@ impl Interpreter {
             0xF6 => self.ignore("G_FILLRECT"),
             0xF0 => self.op_loadtlut(w1),
             0xF2 => {
+                self.tile_dyn[((w1 >> 24) & 7) as usize] = self.cur_dyn;
                 let t = &mut self.tiles[((w1 >> 24) & 7) as usize];
                 t.uls = ((w0 >> 12) & 0xFFF) as u16;
                 t.ult = (w0 & 0xFFF) as u16;
@@ -432,10 +531,14 @@ impl Interpreter {
             0xF8 => self.set_color(|s| &mut s.fog, w1),
             0xF9 => self.set_color(|s| &mut s.blend_color, w1),
             0xFA => {
+                self.prim_dyn = self.cur_dyn;
                 self.prim_lod_frac = (w0 & 0xFF) as u8;
                 self.set_color(|s| &mut s.prim, w1);
             }
-            0xFB => self.set_color(|s| &mut s.env, w1),
+            0xFB => {
+                self.env_dyn = self.cur_dyn;
+                self.set_color(|s| &mut s.env, w1)
+            }
             0xFC => {
                 self.combine = ((w0 as u64 & 0x00FF_FFFF) << 32) | w1 as u64;
                 self.current_material = None;
@@ -674,6 +777,22 @@ impl Interpreter {
             lit: gm & G_LIGHTING != 0,
             texgen: gm & G_TEXTURE_GEN != 0,
             bilinear: (self.othermode_h >> 12) & 3 != 0,
+            uv_dyn: [0usize, 1].map(|i| {
+                let (_, tile) = tex[i]?;
+                let ti = ((self.tex_tile + i as u8) & 7) as usize;
+                self.tile_dyn[ti].map(|segment| DynTile {
+                    segment,
+                    tile: ti as u8,
+                    uls: tile.uls,
+                    ult: tile.ult,
+                    width: tile.image_width() as u16,
+                    height: tile.image_height() as u16,
+                })
+            }),
+            env_dyn: self.env_dyn,
+            prim_dyn: self.prim_dyn,
+            // gbi.h: G_RM_FOG_SHADE_A = GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, G_BL_CLR_IN, G_BL_1MA).
+            fog_blend: two_cycle && gm & G_FOG != 0 && (l >> 30) & 3 == 3 && (l >> 26) & 3 == 2,
         };
         let id = *self.draw.material_lookup.entry(mat.clone()).or_insert_with(|| {
             self.draw.materials.push(mat);

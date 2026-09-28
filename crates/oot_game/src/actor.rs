@@ -48,9 +48,18 @@ pub struct Actor {
     pub bg_check_flags: u16,
     pub floor_height: f32,
     pub floor_poly: Option<PolyId>,
+    /// `floorBgId`: `BGCHECK_SCENE` or the bg actor Player stands on.
+    pub floor_bg_id: u16,
     pub wall_poly: Option<PolyId>,
+    /// Yaw added by a rotating platform this frame (`func_800432A0`; Player adds it to
+    /// `currentYaw`).
+    pub carried_yaw: i16,
     pub wall_yaw: i16,
     pub y_dist_to_water: f32,
+    /// `shape.yOffset`: model offset along y, in model units (× `scale.y` when drawn).
+    pub shape_y_offset: f32,
+    /// `play->roomCtx.curRoom.num`, for room-bound water boxes.
+    pub room: u32,
     /// `colChkInfo.displacement` (pushes from other actors' colliders; always zero here).
     pub displacement: Vec3,
 }
@@ -73,9 +82,13 @@ impl Actor {
             bg_check_flags: 0,
             floor_height: 0.0,
             floor_poly: None,
+            floor_bg_id: crate::bgcheck::BGCHECK_SCENE,
             wall_poly: None,
+            carried_yaw: 0,
             wall_yaw: 0,
             y_dist_to_water: BGCHECK_Y_MIN,
+            shape_y_offset: 0.0,
+            room: 0,
             displacement: Vec3::ZERO,
         }
     }
@@ -115,7 +128,7 @@ impl Actor {
     }
 
     /// `func_8002E2AC`: floor raycast from 50 above `pos`, snapping to the floor.
-    fn update_floor(&mut self, col: &StaticCollision, mut pos: Vec3, flags: u32, ceiling_poly_hit: bool) -> bool {
+    fn update_floor(&mut self, col: &StaticCollision, mut pos: Vec3, flags: u32, ceiling_bg: Option<u16>) -> bool {
         pos.y += 50.0;
         let (floor, poly) = col.entity_raycast_down(pos);
         self.floor_height = floor;
@@ -125,12 +138,24 @@ impl Actor {
             return self.check_leave_ground(BGCHECK_Y_MIN, flags);
         }
         let diff = self.floor_height - self.world_pos.y;
+        if let Some(p) = poly {
+            self.floor_bg_id = p.bg;
+        }
         if diff >= 0.0 {
             self.bg_check_flags |= BGCHECKFLAG_GROUND_STRICT;
-            if self.bg_check_flags & BGCHECKFLAG_CEILING != 0 && ceiling_poly_hit {
-                // Floor and ceiling from the same (scene) bg: undo the x/z move.
-                self.world_pos.x = self.prev_pos.x;
-                self.world_pos.z = self.prev_pos.z;
+            if self.bg_check_flags & BGCHECKFLAG_CEILING != 0
+                && let Some(cb) = ceiling_bg
+            {
+                if self.floor_bg_id != cb {
+                    // Floor and ceiling from different meshes closing in: crushed.
+                    if diff > 15.0 {
+                        self.bg_check_flags |= BGCHECKFLAG_CRUSHED;
+                    }
+                } else {
+                    // Floor and ceiling from the same mesh: undo the x/z move.
+                    self.world_pos.x = self.prev_pos.x;
+                    self.world_pos.z = self.prev_pos.z;
+                }
             }
             self.world_pos.y = self.floor_height;
             if self.velocity.y <= 0.0 {
@@ -149,9 +174,20 @@ impl Actor {
         true
     }
 
-    /// `Actor_UpdateBgCheckInfo` (static collision, no water boxes).
+    /// `Actor_UpdateBgCheckInfo`.
     pub fn update_bg_check_info(&mut self, col: &StaticCollision, wall_check_height: f32, wall_check_radius: f32, ceiling_check_height: f32, flags: u32) {
         let dy = self.world_pos.y - self.prev_pos.y;
+        // func_800433A4: ride the platform we're standing on.
+        self.carried_yaw = 0;
+        if self.floor_bg_id != crate::bgcheck::BGCHECK_SCENE
+            && self.bg_check_flags & BGCHECKFLAG_GROUND != 0
+            && let Some((pos, dyaw)) = col.dyna.carry(self.floor_bg_id, self.world_pos)
+        {
+            self.world_pos = pos;
+            self.shape_rot.y = self.shape_rot.y.wrapping_add(dyaw);
+            self.world_rot.y = self.world_rot.y.wrapping_add(dyaw);
+            self.carried_yaw = dyaw;
+        }
         if flags & UPDBGCHECKINFO_FLAG_0 != 0 {
             let arg_a = if flags & UPDBGCHECKINFO_FLAG_7 != 0 { 1 } else { 0 };
             let (hit, pos, poly) = col.check_wall(IGNORE_ENTITY, self.world_pos, self.prev_pos, wall_check_radius, wall_check_height, arg_a);
@@ -167,23 +203,38 @@ impl Actor {
                 self.bg_check_flags &= !BGCHECKFLAG_WALL;
             }
         }
-        let mut ceiling_hit = false;
+        let mut ceiling_bg = None;
         if flags & UPDBGCHECKINFO_FLAG_1 != 0 {
             let p = Vec3::new(self.world_pos.x, self.prev_pos.y + 10.0, self.world_pos.z);
-            if let Some((y, _)) = col.check_ceiling(IGNORE_ENTITY, p, (ceiling_check_height + dy) - 10.0) {
+            if let Some((y, poly)) = col.check_ceiling(IGNORE_ENTITY, p, (ceiling_check_height + dy) - 10.0) {
                 self.bg_check_flags |= BGCHECKFLAG_CEILING;
                 self.world_pos.y = (y + dy) - 10.0;
-                ceiling_hit = true;
+                ceiling_bg = Some(poly.bg);
             } else {
                 self.bg_check_flags &= !BGCHECKFLAG_CEILING;
             }
         }
         if flags & UPDBGCHECKINFO_FLAG_2 != 0 {
             let p = Vec3::new(self.world_pos.x, self.prev_pos.y, self.world_pos.z);
-            self.update_floor(col, p, flags, ceiling_hit);
-            // No water boxes in the test course.
-            self.bg_check_flags &= !(BGCHECKFLAG_WATER | BGCHECKFLAG_WATER_TOUCH);
-            self.y_dist_to_water = BGCHECK_Y_MIN;
+            self.update_floor(col, p, flags, ceiling_bg);
+            // WaterBox_GetSurface1 (ripples not modelled).
+            match col.water_surface(self.world_pos.x, self.world_pos.z, self.room) {
+                Some(y) => {
+                    self.y_dist_to_water = y - self.world_pos.y;
+                    if self.y_dist_to_water < 0.0 {
+                        self.bg_check_flags &= !(BGCHECKFLAG_WATER | BGCHECKFLAG_WATER_TOUCH);
+                    } else {
+                        if self.bg_check_flags & BGCHECKFLAG_WATER == 0 {
+                            self.bg_check_flags |= BGCHECKFLAG_WATER_TOUCH;
+                        }
+                        self.bg_check_flags |= BGCHECKFLAG_WATER;
+                    }
+                }
+                None => {
+                    self.bg_check_flags &= !(BGCHECKFLAG_WATER | BGCHECKFLAG_WATER_TOUCH);
+                    self.y_dist_to_water = BGCHECK_Y_MIN;
+                }
+            }
         }
     }
 }

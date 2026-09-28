@@ -17,3 +17,5 @@ pub mod player;
 pub mod synth;
 pub mod collision;
 pub mod scene;
+pub mod drawcfg;
+pub mod room;

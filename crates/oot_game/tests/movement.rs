@@ -167,15 +167,13 @@ fn running_off_a_ledge_auto_jumps() {
 }
 
 #[test]
-fn walking_off_a_ledge_falls_without_jumping() {
+fn walking_off_a_ledge_does_not_jump() {
     let Some(mut w) = world_at(Vec3::new(-540.0, 150.0, -700.0), 0x4000) else { return };
     let f = run(&mut w, &repeat(stick(0, 30), 80));
-    let j = find(&f, "Midair").expect("walked off");
-    // Speed ≤ 3 → no auto-jump; the drop (150) exceeds unk_34 (70), so the game checks for a
-    // ledge grab (not ported) and otherwise falls with link_normal_landing_wait.
-    assert!(f[j].vy <= 0.0);
-    assert_eq!(f[j].anim, "link_normal_landing_wait");
-    assert!(f.iter().any(|x| x.grounded && x.pos.y == 0.0), "landed on the ground");
+    // Speed ≤ 3 → no auto-jump. The drop (150) exceeds unk_34 (70), so func_8083A6AC grabs the
+    // ledge (spike 04; spike 03 fell here because the grab wasn't ported). See tests/ledge.rs.
+    assert!(f.iter().all(|x| !x.anim.contains("jump")));
+    assert!(find(&f, "Hang").is_some(), "grabbed the ledge");
 }
 
 #[test]
@@ -204,10 +202,12 @@ fn a_long_fall_staggers_on_landing() {
 
 #[test]
 fn walls_stop_at_the_player_radius() {
-    let Some(mut w) = world_at(Vec3::new(500.0, 0.0, 600.0), -0x8000) else { return };
+    // The course's +z boundary wall at z = 1000 (300 high: no climb class). Spike 03 used the
+    // 40-high block, which Link now hops onto (func_80838A14, class 1; see tests/ledge.rs).
+    let Some(mut w) = world_at(Vec3::new(0.0, 0.0, 900.0), 0) else { return };
     let f = run(&mut w, &repeat(stick(0, 80), 40));
-    // Tall block face at z = 350; Player's wall radius is sAgeProperties.unk_38 = 18.
-    assert_eq!(f[39].pos.z, 350.0 + 18.0);
+    // Player's wall radius is sAgeProperties.unk_38 = 18.
+    assert_eq!(f[39].pos.z, 1000.0 - 18.0);
     assert!(f[39].speed <= 0.1 + 1e-6, "unk_880 drops to 0.1 running straight into a wall");
 }
 
@@ -254,26 +254,43 @@ fn step_up_limit() {
     use oot_game::bgcheck::StaticCollision;
     use oot_game::world::World;
     let Some(d) = data() else { return };
-    let climbs = |h: f32| -> bool {
+    let climbs = |h: f32| -> (bool, &'static str) {
         let mut b = CollisionBuilder::new();
         let s = b.surface(0, 0);
         b.quad(Vec3::new(-300.0, 0.0, 300.0), Vec3::new(300.0, 0.0, 300.0), Vec3::new(300.0, 0.0, 0.0), Vec3::new(-300.0, 0.0, 0.0), s);
         b.quad(Vec3::new(-300.0, h, 0.0), Vec3::new(300.0, h, 0.0), Vec3::new(300.0, h, -300.0), Vec3::new(-300.0, h, -300.0), s);
         b.quad(Vec3::new(-300.0, 0.0, 0.0), Vec3::new(300.0, 0.0, 0.0), Vec3::new(300.0, h, 0.0), Vec3::new(-300.0, h, 0.0), s);
         let mut w = World::new(d.clone(), StaticCollision::new(b.finish()), true, Vec3::new(0.0, 0.0, 150.0), -0x8000);
+        // 40 frames: long enough to reach and climb the step, short of running off the far end.
         let f = run(&mut w, &repeat(stick(0, 80), 40));
-        f.last().unwrap().pos.y == h
-    };
-    let mut ok = 0;
-    for h in 1..40 {
-        if climbs(h as f32) {
-            ok = h;
+        let how = if f.iter().any(|x| x.action == "ClimbLedge") {
+            "climb"
+        } else if f.iter().any(|x| x.action == "Midair") {
+            "hop"
         } else {
-            break;
+            "walk"
+        };
+        (f.last().unwrap().pos.y == h, how)
+    };
+    let mut walk = 0;
+    let mut hop = 0;
+    for h in 1..=45 {
+        match climbs(h as f32) {
+            (true, "walk") => walk = h,
+            (true, "hop") => hop = h,
+            (true, "climb") => {
+                // func_80838A14's class 2 starts at sAgeProperties.unk_1C = 41 for adult Link.
+                assert_eq!(h, 41, "first climbed step");
+                break;
+            }
+            other => panic!("step {h}: {other:?}"),
         }
     }
-    println!("highest step walked up at full speed: {ok}");
-    assert!((15..20).contains(&ok), "step limit {ok}");
+    println!("walked up to {walk}, hopped up to {hop}");
+    // Walking: the wall line test ~18.5 above the feet stops taller risers (spike 03).
+    assert!((15..20).contains(&walk), "walk limit {walk}");
+    // Hopping (unk_88C == 1): from the 18 of the wall-height check up to unk_1C.
+    assert_eq!(hop, 40);
 }
 
 #[test]

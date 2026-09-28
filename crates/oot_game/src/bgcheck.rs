@@ -1,17 +1,19 @@
-//! Static background collision, ported from `z_bgcheck.c` and the `Math3D_*` helpers in
-//! `sys_math3d.c` that it uses.
+//! Background collision, ported from `z_bgcheck.c` and the `Math3D_*` helpers in
+//! `sys_math3d.c` that it uses: the static scene mesh, plus the actor-owned `DynaPoly`
+//! meshes in `dyna` (tested after the static mesh, as `BgCheck_*Impl` do).
 //!
 //! The game splits a scene into a grid of `StaticLookup` subdivisions, each holding three
 //! linked lists (floor / wall / ceiling) sorted by the polys' lowest vertex. This port uses a
 //! single subdivision covering the whole mesh, built with the same insertion routine
 //! (`StaticLookup_AddPolyToSSList`), so polys are visited in the same relative order. The
 //! game's subdivisions overlap by `BGCHECK_SUBDIV_OVERLAP` (50) units, more than any radius
-//! the entity checks use, so a single cell sees the same candidate polys. Dynamic
-//! (`DynaPoly`) collision is not modelled.
+//! the entity checks use, so a single cell sees the same candidate polys.
 
 use glam::Vec3;
 use oot_core::collision::{CollisionHeader, CollisionPoly};
 
+pub use crate::dyna::BGCHECK_SCENE;
+use crate::dyna::{Dyna, line_vs_sph};
 use crate::math::is_zero;
 
 pub const BGCHECK_Y_MIN: f32 = -32000.0;
@@ -46,16 +48,34 @@ pub const WALL_FLAG_1: u32 = 2;
 pub const WALL_FLAG_3: u32 = 8;
 pub const WALL_FLAG_6: u32 = 64;
 
-pub type PolyId = u16;
+/// A collision poly and the mesh it belongs to: the game's (`CollisionPoly*`, `bgId`) pair.
+/// `bg` is `BGCHECK_SCENE` for the static mesh, else the `DynaPoly` bg actor, and `idx`
+/// indexes that mesh's poly list (the shared dyna list for bg actors).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PolyId {
+    pub bg: u16,
+    pub idx: u16,
+}
+
+impl PolyId {
+    pub fn scene(idx: u16) -> PolyId {
+        PolyId { bg: BGCHECK_SCENE, idx }
+    }
+    pub fn is_scene(&self) -> bool {
+        self.bg == BGCHECK_SCENE
+    }
+}
 
 pub struct StaticCollision {
     pub header: CollisionHeader,
-    floor: Vec<PolyId>,
-    wall: Vec<PolyId>,
-    ceiling: Vec<PolyId>,
+    floor: Vec<u16>,
+    wall: Vec<u16>,
+    ceiling: Vec<u16>,
     min: Vec3,
     max: Vec3,
     verts: Vec<Vec3>,
+    /// `colCtx->dyna`.
+    pub dyna: Dyna,
 }
 
 /// `COLPOLY_VIA_FLAG_TEST`.
@@ -65,6 +85,66 @@ fn xp_test(poly: &CollisionPoly, flags: u16) -> bool {
 
 fn normal(p: &CollisionPoly) -> Vec3 {
     Vec3::new(p.normal[0] as f32, p.normal[1] as f32, p.normal[2] as f32) * NORMAL_FRAC
+}
+
+fn tri(p: &CollisionPoly, v: &[Vec3]) -> [Vec3; 3] {
+    [v[p.a()], v[p.b()], v[p.c()]]
+}
+
+fn vy(p: &CollisionPoly, v: &[Vec3]) -> [f32; 3] {
+    [v[p.a()].y, v[p.b()].y, v[p.c()].y]
+}
+
+/// `CollisionPoly_CheckYIntersect` (detMax 0) / `..Approx1` (detMax 300).
+fn check_y_intersect(p: &CollisionPoly, verts: &[Vec3], x: f32, z: f32, chk_dist: f32, det_max: f32) -> Option<f32> {
+    let n = normal(p);
+    if is_zero(n.y) {
+        return None;
+    }
+    let [v0, v1, v2] = tri(p, verts);
+    if tri_chk_point_para_y(v0, v1, v2, z, x, det_max, chk_dist, n.y) {
+        Some(((-n.x * x) - (n.z * z) - p.dist as f32) / n.y)
+    } else {
+        None
+    }
+}
+
+/// `CollisionPoly_CheckXIntersectApprox`.
+fn check_x_intersect(p: &CollisionPoly, verts: &[Vec3], y: f32, z: f32) -> Option<f32> {
+    let n = normal(p);
+    if is_zero(n.x) {
+        return None;
+    }
+    let [v0, v1, v2] = tri(p, verts);
+    tri_chk_point_para_x(v0, v1, v2, y, z, 300.0, 1.0, n.x).then(|| ((-n.y * y) - (n.z * z) - p.dist as f32) / n.x)
+}
+
+/// `CollisionPoly_CheckZIntersectApprox`.
+fn check_z_intersect(p: &CollisionPoly, verts: &[Vec3], x: f32, y: f32) -> Option<f32> {
+    let n = normal(p);
+    if is_zero(n.z) {
+        return None;
+    }
+    let [v0, v1, v2] = tri(p, verts);
+    tri_chk_point_para_z(v0, v1, v2, x, y, 300.0, 1.0, n.z).then(|| ((-n.x * x) - (n.y * y) - p.dist as f32) / n.z)
+}
+
+/// `CollisionPoly_LineVsPoly`.
+fn line_vs_poly(p: &CollisionPoly, verts: &[Vec3], a: Vec3, b: Vec3, one_face: bool, chk_dist: f32) -> Option<Vec3> {
+    let n = normal(p);
+    let raw = Vec3::new(p.normal[0] as f32, p.normal[1] as f32, p.normal[2] as f32);
+    let da = raw.dot(a) * NORMAL_FRAC + p.dist as f32;
+    let db = raw.dot(b) * NORMAL_FRAC + p.dist as f32;
+    let delta = da - db;
+    if (da >= 0.0 && db >= 0.0) || (da < 0.0 && db < 0.0) || (one_face && da < 0.0 && db > 0.0) || is_zero(delta) {
+        return None;
+    }
+    let [v0, v1, v2] = tri(p, verts);
+    let hit = a + (b - a) * (da / delta);
+    let ok = (n.x.abs() > 0.5 && !is_zero(n.x) && tri_chk_point_para_x(v0, v1, v2, hit.y, hit.z, 0.0, chk_dist, n.x))
+        || (n.y.abs() > 0.5 && !is_zero(n.y) && tri_chk_point_para_y(v0, v1, v2, hit.z, hit.x, 0.0, chk_dist, n.y))
+        || (n.z.abs() > 0.5 && !is_zero(n.z) && tri_chk_point_para_z(v0, v1, v2, hit.x, hit.y, 0.0, chk_dist, n.z));
+    ok.then_some(hit)
 }
 
 impl StaticCollision {
@@ -79,6 +159,7 @@ impl StaticCollision {
             ceiling: Vec::new(),
             verts,
             header,
+            dyna: Dyna::default(),
         };
         // `StaticLookup_AddPoly`: floor if ny > 0.5, ceiling if ny < -0.8, else wall.
         let snormal = |x: f32| (x * 32767.0) as i16;
@@ -91,25 +172,27 @@ impl StaticCollision {
             } else {
                 1
             };
-            c.add_to_list(list, i as PolyId);
+            c.add_to_list(list, i as u16);
         }
         c
     }
 
+    /// The poly, from the static mesh or the dyna list.
     pub fn poly(&self, id: PolyId) -> &CollisionPoly {
-        &self.header.polys[id as usize]
+        if id.is_scene() { &self.header.polys[id.idx as usize] } else { &self.dyna.polys[id.idx as usize] }
+    }
+
+    /// `CollisionPoly_GetVerticesByBgId`.
+    pub fn poly_vertices(&self, id: PolyId) -> [Vec3; 3] {
+        if id.is_scene() { tri(self.poly(id), &self.verts) } else { tri(self.poly(id), &self.dyna.verts) }
+    }
+
+    fn spoly(&self, i: u16) -> &CollisionPoly {
+        &self.header.polys[i as usize]
     }
 
     pub fn list_sizes(&self) -> (usize, usize, usize) {
         (self.floor.len(), self.wall.len(), self.ceiling.len())
-    }
-
-    fn vy(&self, p: &CollisionPoly) -> [f32; 3] {
-        [self.verts[p.a()].y, self.verts[p.b()].y, self.verts[p.c()].y]
-    }
-
-    fn tri(&self, p: &CollisionPoly) -> [Vec3; 3] {
-        [self.verts[p.a()], self.verts[p.b()], self.verts[p.c()]]
     }
 
     /// `CollisionPoly_GetMinY`, including its optimisation for flat polys.
@@ -124,11 +207,11 @@ impl StaticCollision {
     }
 
     /// `StaticLookup_AddPolyToSSList`.
-    fn add_to_list(&mut self, which: usize, id: PolyId) {
-        let p = *self.poly(id);
+    fn add_to_list(&mut self, which: usize, id: u16) {
+        let p = *self.spoly(id);
         let y_min = self.min_y(&p) as f32;
-        let above = |s: &StaticCollision, other: PolyId| {
-            let [a, b, c] = s.vy(s.poly(other));
+        let above = |s: &StaticCollision, other: u16| {
+            let [a, b, c] = vy(s.spoly(other), &s.verts);
             y_min < a && y_min < b && y_min < c
         };
         let list = match which {
@@ -163,8 +246,10 @@ impl StaticCollision {
 
     // ---- surface types (SurfaceType_Get*) ---------------------------------------------
 
+    /// `SurfaceType_GetData`: the surface type list of the poly's own mesh (`bgId`).
     fn surface(&self, id: PolyId, idx: usize) -> u32 {
-        self.header.surface_types.get(self.poly(id).ty as usize).map(|s| s.data[idx]).unwrap_or(0)
+        let header = if id.is_scene() { &self.header } else { &*self.dyna.actors[id.bg as usize].header };
+        header.surface_types.get(self.poly(id).ty as usize).map(|s| s.data[idx]).unwrap_or(0)
     }
     pub fn floor_type(&self, id: PolyId) -> u32 {
         self.surface(id, 0) >> 13 & 0x1F
@@ -199,29 +284,88 @@ impl StaticCollision {
 
     /// `BgCheck_RaycastDownStaticList`.
     #[allow(clippy::too_many_arguments)]
-    fn raycast_down_list(&self, list: &[PolyId], xp: u16, out: &mut Option<PolyId>, pos: Vec3, y_min: f32, chk_dist: f32, ground_chk: bool) -> f32 {
+    fn raycast_down_list(&self, list: &[u16], xp: u16, out: &mut Option<PolyId>, pos: Vec3, y_min: f32, chk_dist: f32, ground_chk: bool) -> f32 {
         let mut result = y_min;
         for &id in list {
-            let p = self.poly(id);
+            let p = self.spoly(id);
             if xp_test(p, xp) || (ground_chk && p.normal[1] < 0) {
                 continue;
             }
-            let [a, b, c] = self.vy(p);
+            let [a, b, c] = vy(p, &self.verts);
             if pos.y < a && pos.y < b && pos.y < c {
                 break;
             }
-            if let Some(y) = self.check_y_intersect(p, pos.x, pos.z, chk_dist, 0.0) {
+            if let Some(y) = check_y_intersect(p, &self.verts, pos.x, pos.z, chk_dist, 0.0) {
                 if y < pos.y && result < y {
                     result = y;
-                    *out = Some(id);
+                    *out = Some(PolyId::scene(id));
                 }
             }
         }
         result
     }
 
-    /// `BgCheck_RaycastDownImpl` (static part). Returns the floor height under `pos` and the
-    /// poly, or `BGCHECK_Y_MIN`.
+    /// `BgCheck_RaycastDownDynaList`.
+    #[allow(clippy::too_many_arguments)]
+    fn raycast_down_dyna_list(&self, bg: u16, list: &[u16], walls_or_ceilings: bool, xp: u16, down_flags: u32, out: &mut Option<PolyId>, pos: Vec3, y_start: f32, chk_dist: f32) -> f32 {
+        let d = &self.dyna;
+        let mut result = y_start;
+        for &id in list {
+            let p = &d.polys[id as usize];
+            if xp_test(p, xp) {
+                continue;
+            }
+            if walls_or_ceilings && down_flags & DOWN_CHECK_GROUND_ONLY != 0 && (p.normal[1] as f32 * NORMAL_FRAC) < 0.0 {
+                continue;
+            }
+            if let Some(y) = check_y_intersect(p, &d.verts, pos.x, pos.z, chk_dist, 300.0) {
+                if y < pos.y && result < y {
+                    result = y;
+                    *out = Some(PolyId { bg, idx: id });
+                }
+            }
+        }
+        result
+    }
+
+    /// `BgCheck_RaycastDownDyna`: returns the best dyna floor above `y_static`, or
+    /// `BGCHECK_Y_MIN`. (Its re-check for bg actors being deleted, `BGACTOR_1`, never runs
+    /// here.)
+    fn raycast_down_dyna(&self, pos: Vec3, xp: u16, down_flags: u32, chk_dist: f32, y_static: f32, out: &mut Option<PolyId>) -> f32 {
+        let mut result = BGCHECK_Y_MIN;
+        let mut best = y_static;
+        for (i, a) in self.dyna.actors.iter().enumerate() {
+            if a.collision_disabled || pos.y < a.min_y || !a.xz_in_sphere(pos.x, pos.z) {
+                continue;
+            }
+            let bg = i as u16;
+            if down_flags & DOWN_CHECK_FLOORS != 0 {
+                let y = self.raycast_down_dyna_list(bg, &a.floor, false, xp, down_flags, out, pos, best, chk_dist);
+                if best < y {
+                    best = y;
+                    result = y;
+                }
+            }
+            if down_flags & DOWN_CHECK_WALLS != 0 || (out.is_none() && down_flags & DOWN_CHECK_WALLS_SIMPLE != 0) {
+                let y = self.raycast_down_dyna_list(bg, &a.wall, true, xp, down_flags, out, pos, best, chk_dist);
+                if best < y {
+                    best = y;
+                    result = y;
+                }
+            }
+            if down_flags & DOWN_CHECK_CEILINGS != 0 {
+                let y = self.raycast_down_dyna_list(bg, &a.ceiling, true, xp, down_flags, out, pos, best, chk_dist);
+                if best < y {
+                    best = y;
+                    result = y;
+                }
+            }
+        }
+        result
+    }
+
+    /// `BgCheck_RaycastDownImpl`. Returns the floor height under `pos` and the poly, or
+    /// `BGCHECK_Y_MIN`.
     pub fn raycast_down(&self, pos: Vec3, xp: u16, down_flags: u32, chk_dist: f32) -> (f32, Option<PolyId>) {
         let mut out = None;
         let mut y = BGCHECK_Y_MIN;
@@ -240,6 +384,12 @@ impl StaticCollision {
                 y = self.raycast_down_list(&self.ceiling, xp, &mut out, pos, y, chk_dist, ground);
             }
         }
+        if !self.dyna.is_empty() {
+            let yd = self.raycast_down_dyna(pos, xp, down_flags, chk_dist, y, &mut out);
+            if y < yd {
+                y = yd;
+            }
+        }
         if y != BGCHECK_Y_MIN && out.is_some_and(|p| self.is_soft(p)) {
             y -= 1.0;
         }
@@ -251,45 +401,10 @@ impl StaticCollision {
         self.raycast_down(pos, IGNORE_ENTITY, DOWN_CHECK_WALLS_SIMPLE | DOWN_CHECK_FLOORS | DOWN_CHECK_GROUND_ONLY, 1.0)
     }
 
-    // ---- point-in-triangle tests (Math3D_TriChkPointPara*) -----------------------------
-
-    /// `CollisionPoly_CheckYIntersect` (detMax 0) / `..Approx1` (detMax 300).
-    fn check_y_intersect(&self, p: &CollisionPoly, x: f32, z: f32, chk_dist: f32, det_max: f32) -> Option<f32> {
-        let n = normal(p);
-        if is_zero(n.y) {
-            return None;
-        }
-        let [v0, v1, v2] = self.tri(p);
-        if tri_chk_point_para_y(v0, v1, v2, z, x, det_max, chk_dist, n.y) {
-            Some(((-n.x * x) - (n.z * z) - p.dist as f32) / n.y)
-        } else {
-            None
-        }
-    }
-
-    /// `CollisionPoly_CheckXIntersectApprox`.
-    fn check_x_intersect(&self, p: &CollisionPoly, y: f32, z: f32) -> Option<f32> {
-        let n = normal(p);
-        if is_zero(n.x) {
-            return None;
-        }
-        let [v0, v1, v2] = self.tri(p);
-        tri_chk_point_para_x(v0, v1, v2, y, z, 300.0, 1.0, n.x).then(|| ((-n.y * y) - (n.z * z) - p.dist as f32) / n.x)
-    }
-
-    /// `CollisionPoly_CheckZIntersectApprox`.
-    fn check_z_intersect(&self, p: &CollisionPoly, x: f32, y: f32) -> Option<f32> {
-        let n = normal(p);
-        if is_zero(n.z) {
-            return None;
-        }
-        let [v0, v1, v2] = self.tri(p);
-        tri_chk_point_para_z(v0, v1, v2, x, y, 300.0, 1.0, n.z).then(|| ((-n.x * x) - (n.y * y) - p.dist as f32) / n.z)
-    }
-
     // ---- walls ------------------------------------------------------------------------
 
-    /// `BgCheck_ComputeWallDisplacement`.
+    /// `BgCheck_ComputeWallDisplacement`. @bug (game): the previous wall's flag 27 is read
+    /// from the scene's surface types even when it's a dyna poly.
     #[allow(clippy::too_many_arguments)]
     fn wall_displacement(&self, id: PolyId, x: &mut f32, z: &mut f32, n: Vec3, inv_xz: f32, plane_dist: f32, radius: f32, wall: &mut Option<PolyId>) -> bool {
         let d = (radius - plane_dist) * inv_xz;
@@ -300,69 +415,124 @@ impl StaticCollision {
                 *wall = Some(id);
                 true
             }
-            Some(w) if !self.flag27(w) => {
-                *wall = Some(id);
-                true
+            Some(w) => {
+                let ty = self.poly(w).ty as usize;
+                let data1 = self.header.surface_types.get(ty).map(|s| s.data[1]).unwrap_or(0);
+                if data1 & 0x0800_0000 == 0 {
+                    *wall = Some(id);
+                    true
+                } else {
+                    false
+                }
             }
-            _ => false,
         }
+    }
+
+    /// One pass of `BgCheck_SphVsStaticWall` / `BgCheck_SphVsDynaWallInBgActor` over `list`:
+    /// pass 0 tests walls facing mostly ±z, pass 1 walls facing mostly ±x. `early_out` is the
+    /// static list's "all remaining polys are above the sphere" break.
+    #[allow(clippy::too_many_arguments)]
+    fn sph_wall_pass(&self, pass: u32, bg: u16, list: &[u16], verts: &[Vec3], xp: u16, rp: &mut Vec3, center_y: f32, radius: f32, wall: &mut Option<PolyId>, out_bg: Option<&mut u16>, early_out: bool) -> bool {
+        let mut result = false;
+        let mut out_bg = out_bg;
+        for &idx in list {
+            let id = PolyId { bg, idx };
+            let p = self.poly(id);
+            if early_out {
+                let [ya, yb, yc] = vy(p, verts);
+                if center_y < ya && center_y < yb && center_y < yc {
+                    break;
+                }
+            }
+            let n = normal(p);
+            let nxz = (n.x * n.x + n.z * n.z).sqrt();
+            let plane_dist = dist_plane_to_pos(n, p.dist as f32, *rp);
+            if radius < plane_dist.abs() || xp_test(p, xp) {
+                continue;
+            }
+            let inv = 1.0 / nxz;
+            let [v0, v1, v2] = tri(p, verts);
+            let hit = if pass == 0 {
+                let t = n.z.abs() * inv;
+                if t < 0.4 {
+                    continue;
+                }
+                let (mut lo, mut hi) = (v0.z, v0.z);
+                if v1.z < lo { lo = v1.z } else if hi < v1.z { hi = v1.z }
+                if v2.z < lo { lo = v2.z } else if v2.z > hi { hi = v2.z }
+                if rp.z < lo - radius || rp.z > hi + radius {
+                    continue;
+                }
+                check_z_intersect(p, verts, rp.x, center_y).is_some_and(|i| (i - rp.z).abs() <= radius / t && (i - rp.z) * n.z <= 4.0)
+            } else {
+                let t = n.x.abs() * inv;
+                if t < 0.4 {
+                    continue;
+                }
+                let (mut lo, mut hi) = (v0.x, v0.x);
+                if v1.x < lo { lo = v1.x } else if hi < v1.x { hi = v1.x }
+                if v2.x < lo { lo = v2.x } else if hi < v2.x { hi = v2.x }
+                if rp.x < lo - radius || hi + radius < rp.x {
+                    continue;
+                }
+                check_x_intersect(p, verts, center_y, rp.z).is_some_and(|i| (i - rp.x).abs() <= radius / t && (i - rp.x) * n.x <= 4.0)
+            };
+            if hit {
+                let (mut x, mut z) = (rp.x, rp.z);
+                if self.wall_displacement(id, &mut x, &mut z, n, inv, plane_dist, radius, wall)
+                    && let Some(b) = out_bg.as_deref_mut()
+                {
+                    *b = bg;
+                }
+                rp.x = x;
+                rp.z = z;
+                result = true;
+            }
+        }
+        result
     }
 
     /// `BgCheck_SphVsStaticWall`: pushes (`x`, `z`) out of every wall within `radius` of
     /// `center`. Two passes: walls facing mostly ±z, then walls facing mostly ±x.
     pub fn sph_vs_static_wall(&self, xp: u16, x: &mut f32, z: &mut f32, center: Vec3, radius: f32, wall: &mut Option<PolyId>) -> bool {
+        let mut rp = center;
+        let mut result = false;
+        for pass in 0..2 {
+            result |= self.sph_wall_pass(pass, BGCHECK_SCENE, &self.wall, &self.verts, xp, &mut rp, center.y, radius, wall, None, true);
+        }
+        *x = rp.x;
+        *z = rp.z;
+        result
+    }
+
+    /// `BgCheck_SphVsDynaWall`: the same against every bg actor whose bounding sphere (grown
+    /// by the radius) reaches the sphere.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sph_vs_dyna_wall(&self, xp: u16, x: &mut f32, z: &mut f32, center: Vec3, radius: f32, wall: &mut Option<PolyId>, out_bg: &mut u16) -> bool {
         let mut result = false;
         let mut rp = center;
-        for pass in 0..2 {
-            for &id in &self.wall {
-                let p = self.poly(id);
-                let [ya, yb, yc] = self.vy(p);
-                if center.y < ya && center.y < yb && center.y < yc {
-                    break;
-                }
-                let n = normal(p);
-                let nxz = (n.x * n.x + n.z * n.z).sqrt();
-                let plane_dist = dist_plane_to_pos(n, p.dist as f32, rp);
-                if radius < plane_dist.abs() || xp_test(p, xp) {
-                    continue;
-                }
-                let inv = 1.0 / nxz;
-                let [v0, v1, v2] = self.tri(p);
-                if pass == 0 {
-                    let t = n.z.abs() * inv;
-                    if t < 0.4 {
-                        continue;
-                    }
-                    let (mut lo, mut hi) = (v0.z, v0.z);
-                    if v1.z < lo { lo = v1.z } else if hi < v1.z { hi = v1.z }
-                    if v2.z < lo { lo = v2.z } else if v2.z > hi { hi = v2.z }
-                    if rp.z < lo - radius || rp.z > hi + radius {
-                        continue;
-                    }
-                    if let Some(i) = self.check_z_intersect(p, rp.x, center.y) {
-                        if (i - rp.z).abs() <= radius / t && (i - rp.z) * n.z <= 4.0 {
-                            self.wall_displacement(id, &mut rp.x, &mut rp.z, n, inv, plane_dist, radius, wall);
-                            result = true;
-                        }
-                    }
-                } else {
-                    let t = n.x.abs() * inv;
-                    if t < 0.4 {
-                        continue;
-                    }
-                    let (mut lo, mut hi) = (v0.x, v0.x);
-                    if v1.x < lo { lo = v1.x } else if hi < v1.x { hi = v1.x }
-                    if v2.x < lo { lo = v2.x } else if hi < v2.x { hi = v2.x }
-                    if rp.x < lo - radius || hi + radius < rp.x {
-                        continue;
-                    }
-                    if let Some(i) = self.check_x_intersect(p, center.y, rp.z) {
-                        if (i - rp.x).abs() <= radius / t && (i - rp.x) * n.x <= 4.0 {
-                            self.wall_displacement(id, &mut rp.x, &mut rp.z, n, inv, plane_dist, radius, wall);
-                            result = true;
-                        }
-                    }
-                }
+        for (i, a) in self.dyna.actors.iter().enumerate() {
+            if a.collision_disabled || a.min_y > rp.y || a.max_y < rp.y {
+                continue;
+            }
+            let r = a.sphere_radius.wrapping_add(radius as i16) as f32;
+            let c = a.sphere_center();
+            let (dx, dz) = (c.x - rp.x, c.z - rp.z);
+            let xy_in = (c.x - rp.x).powi(2) + (c.y - rp.y).powi(2) <= r * r;
+            let yz_in = (c.y - rp.y).powi(2) + (c.z - rp.z).powi(2) <= r * r;
+            if r * r < dx * dx + dz * dz || (!xy_in && !yz_in) {
+                continue;
+            }
+            // BgCheck_SphVsDynaWallInBgActor: both passes from the same starting point.
+            let mut local = rp;
+            let mut hit = false;
+            for pass in 0..2 {
+                hit |= self.sph_wall_pass(pass, i as u16, &a.wall, &self.dyna.verts, xp, &mut local, center.y, radius, wall, Some(out_bg), false);
+            }
+            if hit {
+                rp.x = local.x;
+                rp.z = local.z;
+                result = true;
             }
         }
         *x = rp.x;
@@ -370,19 +540,19 @@ impl StaticCollision {
         result
     }
 
-    /// `BgCheck_CheckWallImpl` (static part), used by `BgCheck_EntitySphVsWall3/4`.
+    /// `BgCheck_CheckWallImpl`, used by `BgCheck_EntitySphVsWall3/4`.
     /// Returns (hit, resolved position, wall poly).
     pub fn check_wall(&self, xp: u16, pos_next: Vec3, pos_prev: Vec3, radius: f32, check_height: f32, arg_a: u8) -> (bool, Vec3, Option<PolyId>) {
         let mut result = false;
         let mut out_poly = None;
+        let mut out_bg = BGCHECK_SCENE;
         let mut res = pos_next;
         let d = pos_next - pos_prev;
         if (d.x != 0.0 || d.z != 0.0) && (arg_a & 1) == 0 {
             if check_height + d.y < 5.0 {
                 // @bug (game): checkHeight is not applied to posPrev/posNext here.
                 if let Some((hit, poly)) = self.check_line(xp, IGNORE_NONE, pos_prev, pos_next, 1.0, CHECK_ALL & !CHECK_CEILING) {
-                    let p = self.poly(poly);
-                    let n = normal(p);
+                    let n = normal(self.poly(poly));
                     if n.y > 0.5 {
                         res.x = hit.x;
                         res.y = if check_height > 1.0 { hit.y - 1.0 } else { hit.y - check_height };
@@ -391,6 +561,7 @@ impl StaticCollision {
                         res = Vec3::new(radius * n.x + hit.x, radius * n.y + hit.y, radius * n.z + hit.z);
                     }
                     out_poly = Some(poly);
+                    out_bg = poly.bg;
                     result = true;
                 }
             } else {
@@ -409,76 +580,130 @@ impl StaticCollision {
                         res.x = k * n.x + hit.x;
                         res.z = k * n.z + hit.z;
                         out_poly = Some(poly);
+                        out_bg = poly.bg;
                         result = true;
                     }
                 }
             }
         }
-        let center = Vec3::new(res.x, res.y + check_height, res.z);
+        let mut center = Vec3::new(res.x, res.y + check_height, res.z);
+        let mut dyna_hit = false;
+        if !self.dyna.is_empty() {
+            let (mut x, mut z) = (res.x, res.z);
+            if self.sph_vs_dyna_wall(xp, &mut x, &mut z, center, radius, &mut out_poly, &mut out_bg) {
+                res.x = x;
+                res.z = z;
+                result = true;
+                dyna_hit = true;
+                center = Vec3::new(res.x, res.y + check_height, res.z);
+            }
+        }
         if self.in_bounds(pos_next) {
             let (mut x, mut z) = (res.x, res.z);
             if self.sph_vs_static_wall(xp, &mut x, &mut z, center, radius, &mut out_poly) {
+                out_bg = BGCHECK_SCENE;
                 result = true;
             }
             res.x = x;
             res.z = z;
+        }
+        // After a dyna wall: make sure the push didn't go through a static wall (no dyna).
+        if dyna_hit || out_bg != BGCHECK_SCENE {
+            if let Some((hit, poly)) = self.check_line(xp, IGNORE_NONE, pos_prev, res, 1.0, CHECK_ONE_FACE | CHECK_WALL) {
+                let n = normal(self.poly(poly));
+                let nxz = (n.x * n.x + n.z * n.z).sqrt();
+                if !is_zero(nxz) {
+                    let k = radius * (1.0 / nxz);
+                    res.x = k * n.x + hit.x;
+                    res.z = k * n.z + hit.z;
+                    out_poly = Some(poly);
+                    result = true;
+                }
+            }
         }
         (result, res, out_poly)
     }
 
     // ---- ceilings ---------------------------------------------------------------------
 
-    /// `BgCheck_CheckStaticCeiling` via `BgCheck_CheckCeilingImpl`: returns the y `pos` must
-    /// be lowered to so that `check_height` above it clears the ceiling.
+    /// `BgCheck_CheckCeilingImpl`: returns the y `pos` must be lowered to so that
+    /// `check_height` above it clears the ceiling.
     pub fn check_ceiling(&self, xp: u16, pos: Vec3, check_height: f32) -> Option<(f32, PolyId)> {
         if !self.in_bounds(pos) {
             return None;
         }
+        // BgCheck_CheckStaticCeiling.
         let mut out_y = pos.y;
         let mut found = None;
-        for &id in &self.ceiling {
-            let p = self.poly(id);
+        for &idx in &self.ceiling {
+            let p = self.spoly(idx);
             if xp_test(p, xp) {
                 continue;
             }
-            if let Some(cy) = self.check_y_intersect(p, pos.x, pos.z, 1.0, 300.0) {
+            if let Some(cy) = check_y_intersect(p, &self.verts, pos.x, pos.z, 1.0, 300.0) {
                 let d = cy - out_y;
                 let ny = normal(p).y;
                 if d > 0.0 && d < check_height && d * ny <= 0.0 {
                     out_y = cy - check_height;
-                    found = Some(id);
+                    found = Some(PolyId::scene(idx));
                 }
             }
+        }
+        // BgCheck_CheckDynaCeiling from the static result.
+        let test = Vec3::new(pos.x, out_y, pos.z);
+        let mut result_y = check_height + test.y;
+        let mut dyna_found = None;
+        for (i, a) in self.dyna.actors.iter().enumerate() {
+            if a.collision_disabled || !a.xz_in_sphere(test.x, test.z) {
+                continue;
+            }
+            if let Some((y, id)) = self.dyna_ceiling_list(i as u16, &a.ceiling, xp, test, check_height) {
+                if y < result_y {
+                    result_y = y;
+                    dyna_found = Some(id);
+                }
+            }
+        }
+        if let Some(id) = dyna_found {
+            return Some((result_y, id));
         }
         found.map(|id| (out_y, id))
     }
 
-    // ---- line tests -------------------------------------------------------------------
-
-    /// `CollisionPoly_LineVsPoly`.
-    fn line_vs_poly(&self, p: &CollisionPoly, a: Vec3, b: Vec3, one_face: bool, chk_dist: f32) -> Option<Vec3> {
-        let n = normal(p);
-        let raw = Vec3::new(p.normal[0] as f32, p.normal[1] as f32, p.normal[2] as f32);
-        let da = raw.dot(a) * NORMAL_FRAC + p.dist as f32;
-        let db = raw.dot(b) * NORMAL_FRAC + p.dist as f32;
-        let delta = da - db;
-        if (da >= 0.0 && db >= 0.0) || (da < 0.0 && db < 0.0) || (one_face && da < 0.0 && db > 0.0) || is_zero(delta) {
-            return None;
+    /// `BgCheck_CheckDynaCeilingList`.
+    fn dyna_ceiling_list(&self, bg: u16, list: &[u16], xp: u16, pos: Vec3, check_height: f32) -> Option<(f32, PolyId)> {
+        let d = &self.dyna;
+        let mut t = pos;
+        let mut found = None;
+        for &idx in list {
+            let p = &d.polys[idx as usize];
+            if xp_test(p, xp) {
+                continue;
+            }
+            let n = normal(p);
+            if check_height < udist_plane_to_pos(n, p.dist as f32, t) {
+                continue;
+            }
+            if let Some(cy) = check_y_intersect(p, &d.verts, t.x, t.z, 1.0, 300.0) {
+                let dist = cy - t.y;
+                if t.y < cy && dist < check_height && dist * n.y <= 0.0 {
+                    let sign = if 0.0 <= n.y { 1.0 } else { -1.0 };
+                    t.y = sign * check_height + cy;
+                    found = Some(PolyId { bg, idx });
+                }
+            }
         }
-        let [v0, v1, v2] = self.tri(p);
-        let hit = a + (b - a) * (da / delta);
-        let ok = (n.x.abs() > 0.5 && !is_zero(n.x) && tri_chk_point_para_x(v0, v1, v2, hit.y, hit.z, 0.0, chk_dist, n.x))
-            || (n.y.abs() > 0.5 && !is_zero(n.y) && tri_chk_point_para_y(v0, v1, v2, hit.z, hit.x, 0.0, chk_dist, n.y))
-            || (n.z.abs() > 0.5 && !is_zero(n.z) && tri_chk_point_para_z(v0, v1, v2, hit.x, hit.y, 0.0, chk_dist, n.z));
-        ok.then_some(hit)
+        found.map(|id| (t.y, id))
     }
+
+    // ---- line tests -------------------------------------------------------------------
 
     /// `BgCheck_CheckLineAgainstSSList`.
     #[allow(clippy::too_many_arguments)]
-    fn line_list(&self, list: &[PolyId], xp1: u16, xp2: u16, a: Vec3, b: &mut Vec3, out: &mut Option<(Vec3, PolyId)>, dist_sq: &mut f32, chk_dist: f32, bcc: u32) -> bool {
+    fn line_list(&self, list: &[u16], xp1: u16, xp2: u16, a: Vec3, b: &mut Vec3, out: &mut Option<(Vec3, PolyId)>, dist_sq: &mut f32, chk_dist: f32, bcc: u32) -> bool {
         let mut result = false;
-        for &id in list {
-            let p = self.poly(id);
+        for &idx in list {
+            let p = self.spoly(idx);
             if xp_test(p, xp1) || !(xp2 == 0 || xp_test(p, xp2)) {
                 continue;
             }
@@ -486,12 +711,12 @@ impl StaticCollision {
             if a.y < min_y && b.y < min_y {
                 break;
             }
-            if let Some(hit) = self.line_vs_poly(p, a, *b, bcc & CHECK_ONE_FACE != 0, chk_dist) {
+            if let Some(hit) = line_vs_poly(p, &self.verts, a, *b, bcc & CHECK_ONE_FACE != 0, chk_dist) {
                 let d = (hit - a).length_squared();
                 if d < *dist_sq {
                     *dist_sq = d;
                     *b = hit;
-                    *out = Some((hit, id));
+                    *out = Some((hit, PolyId::scene(idx)));
                     result = true;
                 }
             }
@@ -499,7 +724,49 @@ impl StaticCollision {
         result
     }
 
-    /// `BgCheck_CheckLineImpl` (static part): the closest poly the segment `a`→`b` crosses.
+    /// `BgCheck_CheckLineAgainstDyna` (with `BgCheck_CheckLineAgainstBgActor`: walls, floors,
+    /// then ceilings of each bg actor the segment's bounding sphere test passes).
+    #[allow(clippy::too_many_arguments)]
+    fn line_dyna(&self, xp: u16, a: Vec3, b: &mut Vec3, out: &mut Option<(Vec3, PolyId)>, dist_sq: &mut f32, chk_dist: f32, bcc: u32) -> bool {
+        let d = &self.dyna;
+        let mut result = false;
+        for (i, act) in d.actors.iter().enumerate() {
+            if act.collision_disabled {
+                continue;
+            }
+            let (ay, by) = (a.y, b.y);
+            if (ay < act.min_y && by < act.min_y) || (act.max_y < ay && act.max_y < by) {
+                continue;
+            }
+            if !line_vs_sph(act.sphere_center(), act.sphere_radius, a, *b) {
+                continue;
+            }
+            for (flag, list) in [(CHECK_WALL, &act.wall), (CHECK_FLOOR, &act.floor), (CHECK_CEILING, &act.ceiling)] {
+                if bcc & flag == 0 {
+                    continue;
+                }
+                for &idx in list.iter() {
+                    let p = &d.polys[idx as usize];
+                    if xp_test(p, xp) {
+                        continue;
+                    }
+                    if let Some(hit) = line_vs_poly(p, &d.verts, a, *b, bcc & CHECK_ONE_FACE != 0, chk_dist) {
+                        let ds = (hit - a).length_squared();
+                        if ds < *dist_sq {
+                            *dist_sq = ds;
+                            *b = hit;
+                            *out = Some((hit, PolyId { bg: i as u16, idx }));
+                            result = true;
+                        }
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    /// `BgCheck_CheckLineImpl`: the closest poly the segment `a`→`b` crosses (bg actors too
+    /// with `CHECK_DYNA`).
     pub fn check_line(&self, xp1: u16, xp2: u16, a: Vec3, b: Vec3, chk_dist: f32, bcc: u32) -> Option<(Vec3, PolyId)> {
         if !self.in_bounds(a) {
             return None;
@@ -515,6 +782,12 @@ impl StaticCollision {
         }
         if bcc & CHECK_CEILING != 0 {
             self.line_list(&self.ceiling, xp1, xp2, a, &mut bt, &mut out, &mut dist_sq, chk_dist, bcc);
+        }
+        if let Some((hit, _)) = out {
+            dist_sq = (hit - a).length_squared();
+        }
+        if bcc & CHECK_DYNA != 0 && !self.dyna.is_empty() {
+            self.line_dyna(xp1, a, &mut bt, &mut out, &mut dist_sq, chk_dist, bcc);
         }
         out
     }
@@ -536,6 +809,21 @@ impl StaticCollision {
             bcc |= CHECK_ONE_FACE;
         }
         self.check_line(IGNORE_ENTITY, IGNORE_NONE, a, b, 1.0, bcc)
+    }
+
+    /// `WaterBox_GetSurfaceImpl`: the surface height of the first water box (for `room`, or one
+    /// marked for all rooms, `WATERBOX_ROOM_ALL`) whose x/z extent contains the point.
+    pub fn water_surface(&self, x: f32, z: f32, room: u32) -> Option<f32> {
+        for w in &self.header.water_boxes {
+            let r = (w.properties >> 13) & 0x3F;
+            if (r == room || r == 0x3F) && w.properties & (1 << 19) == 0 {
+                let (x0, z0) = (w.x_min as f32, w.z_min as f32);
+                if x0 < x && x < x0 + w.x_length as f32 && z0 < z && z < z0 + w.z_length as f32 {
+                    return Some(w.y_surface as f32);
+                }
+            }
+        }
+        None
     }
 
     pub fn poly_normal(&self, id: PolyId) -> Vec3 {

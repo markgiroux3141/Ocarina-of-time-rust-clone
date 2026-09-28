@@ -154,7 +154,7 @@ impl Subject for Tock {
     }
 
     fn default_camera(&self) -> Camera {
-        Camera { target: Vec3::new(0.0, 2050.0, 0.0), yaw: 0.5, pitch: 0.15, distance: 7600.0, fov_y: 45f32.to_radians() }
+        Camera { target: Vec3::new(0.0, 2050.0, 0.0), yaw: 0.5, pitch: 0.15, distance: 7600.0, fov_y: 45f32.to_radians(), clip: None }
     }
 
     fn prepare_sheet_cell(&mut self, anim: usize, col: u32) {

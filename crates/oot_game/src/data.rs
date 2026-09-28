@@ -113,6 +113,52 @@ impl AgeProperties {
 
 pub type AnimId = usize;
 
+/// One entry of `D_80854190`: a melee attack's animation, its end animations (normal / locked
+/// on), and the frames the weapon is active between (`unk_0C`, `unk_0D`).
+#[derive(Debug, Clone, Copy)]
+pub struct AttackAnim {
+    pub anim: AnimId,
+    pub end: AnimId,
+    pub end_locked: AnimId,
+    pub active_start: f32,
+    pub active_end: f32,
+}
+
+/// The item / model tables Player's item system reads (`z_player_lib.c`, `z_player.c`,
+/// `z64player.h`).
+#[derive(Debug, Clone)]
+pub struct ItemTables {
+    /// `PLAYER_MODELGROUP_*` names (no prefix) and each group's `PLAYER_ANIMTYPE`
+    /// (`gPlayerModelTypes[group][PLAYER_MODELGROUPENTRY_ANIM]`).
+    pub model_group_names: Vec<String>,
+    pub model_group_anim_type: Vec<usize>,
+    /// `PLAYER_AP_*` names (no prefix), and `sActionModelGroups` (action → model group).
+    pub ap_names: Vec<String>,
+    pub action_model_group: Vec<usize>,
+    /// `D_808540F4`: item change animations and the frame the item swaps on.
+    pub change_anims: Vec<(AnimId, f32)>,
+    /// `D_80854164[from anim type][to anim type]`: ± index into `change_anims` (negative plays it backwards).
+    pub change_matrix: Vec<Vec<i32>>,
+    /// `D_80854190` by `PLAYER_MWA_*`, and `D_80854480` (stick direction → attack).
+    pub attacks: Vec<AttackAnim>,
+    pub attack_by_dir: Vec<usize>,
+    pub mwa_names: Vec<String>,
+    /// `D_80853410`: joints copied from the upper-body animation (`skelAnime2`).
+    pub upper_body: [u8; 22],
+}
+
+impl ItemTables {
+    pub fn model_group(&self, name: &str) -> usize {
+        self.model_group_names.iter().position(|n| n == name).unwrap_or_else(|| panic!("no model group {name}"))
+    }
+    pub fn ap(&self, name: &str) -> i32 {
+        self.ap_names.iter().position(|n| n == name).unwrap_or_else(|| panic!("no action param {name}")) as i32
+    }
+    pub fn mwa(&self, name: &str) -> usize {
+        self.mwa_names.iter().position(|n| n == name).unwrap_or_else(|| panic!("no attack {name}"))
+    }
+}
+
 /// One of Link's animations, frames decoded to joint tables (22 Vec3s + face).
 #[derive(Debug, Clone)]
 pub struct Anim {
@@ -147,6 +193,26 @@ pub struct GameData {
     pub limb_names: Vec<String>,
     pub tables_from_decomp: bool,
     pub table_mismatches: (usize, usize, i64),
+    /// `z_camera_data.c`: OREG values and the NORMAL0 camera data.
+    pub camera: crate::camera::CameraData,
+    /// `func_8008F87C`'s constants (`z_player_lib.c`).
+    pub foot_ik: crate::footik::FootIkData,
+    /// Link's limb hierarchy, [adult, child], from the ROM skeletons.
+    pub rigs: [crate::footik::Rig; 2],
+    /// `D_80853D4C`: side hop / backflip animations per stick direction [jump, landing, landing locked on].
+    pub side_hop_anims: Vec<[AnimId; 3]>,
+    /// `D_80115FF8` (`z_actor.c`): per `targetMode`, (rangeSq, leashScale) = (SQ(range), range / leash).
+    pub target_ranges: Vec<(f32, f32)>,
+    pub items: ItemTables,
+}
+
+/// Link's skeleton for `age` (`gLinkAdultSkel` / `gLinkChildSkel`): parents and joint positions.
+fn load_rig(p: &Project, age: oot_core::player::Age) -> Result<crate::footik::Rig> {
+    let symbols = p.symbols.file(age.object()).with_context(|| format!("{}.xml", age.object()))?;
+    let skel = symbols.of_kind("Skeleton").next().context("no skeleton in Link object")?;
+    let object = p.rom.file_by_name(age.object())?;
+    let s = oot_core::skeleton::Skeleton::parse(&object, 6, skel.offset as usize, oot_core::skeleton::LimbType::Lod, true)?;
+    Ok(crate::footik::Rig { parents: s.parents.clone(), joint_pos: s.limbs.iter().map(|l| l.joint_pos).collect() })
 }
 
 fn read(decomp: &Path, rel: &str) -> Result<String> {
@@ -278,6 +344,100 @@ impl GameData {
                 Ok([resolve(&f[0])?, resolve(&f[1])?])
             })
             .collect::<Result<_>>()?;
+        let side_hop_anims = find_initializer(&player, "D_80853D4C")?
+            .list()
+            .iter()
+            .map(|row| {
+                let f = row.flatten();
+                let a = |k: usize| resolve(f.get(k).map(|s| s.trim_start_matches('&')).unwrap_or(""));
+                Ok([a(0)?, a(1)?, a(2)?])
+            })
+            .collect::<Result<_>>()?;
+        let actor_c = read(decomp, "src/code/z_actor.c")?;
+        let target_ranges = find_initializer(&actor_c, "D_80115FF8")?
+            .flatten()
+            .iter()
+            .map(|a| {
+                // TARGET_RANGE(range, leash) = { SQ(range), (f32)range / leash }.
+                let args = a.trim().strip_prefix("TARGET_RANGE(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("D_80115FF8 entry {a}"))?;
+                let (r, l) = args.split_once(',').context("TARGET_RANGE args")?;
+                let r = oot_core::csrc::eval_expr(r).context("range")?;
+                let l = oot_core::csrc::eval_expr(l).context("leash")?;
+                Ok((r * r, r / l))
+            })
+            .collect::<Result<_>>()?;
+        let items = {
+            let strip_max = |v: Vec<String>, p: &str| -> Vec<String> {
+                v.into_iter().filter(|m| !m.ends_with("_MAX")).map(|m| m[p.len()..].to_string()).collect()
+            };
+            let model_group_names = strip_max(enum_members(&header, "PLAYER_MODELGROUP_"), "PLAYER_MODELGROUP_");
+            let ap_names = strip_max(enum_members(&header, "PLAYER_AP_"), "PLAYER_AP_");
+            // The PLAYER_MWA_* enum is commented with decimal indices, so read it by value.
+            let mwa_names = {
+                let e = oot_core::csrc::parse_enum(&header, "PLAYER_MWA_FORWARD_SLASH_1H");
+                let mut v: Vec<(i64, String)> = e.into_iter().filter(|(_, n)| !n.ends_with("_MAX")).collect();
+                v.sort();
+                v.into_iter().map(|(_, n)| n["PLAYER_MWA_".len()..].to_string()).collect::<Vec<_>>()
+            };
+            let num_suffix = |s: &str| -> Result<i32> {
+                let t = s.trim();
+                let (neg, t) = match t.strip_prefix('-') {
+                    Some(r) => (true, r.trim()),
+                    None => (false, t),
+                };
+                let n: i32 = t.rsplit('_').next().and_then(|d| d.parse().ok()).with_context(|| format!("no index in {s}"))?;
+                Ok(if neg { -n } else { n })
+            };
+            let model_group_anim_type = find_initializer(&lib, "gPlayerModelTypes")?
+                .list()
+                .iter()
+                .map(|row| num_suffix(&row.flatten()[0]).map(|v| v as usize))
+                .collect::<Result<Vec<_>>>()?;
+            let action_model_group = find_initializer(&lib, "sActionModelGroups")?
+                .flatten()
+                .iter()
+                .map(|n| {
+                    let n = n.trim().trim_start_matches("PLAYER_MODELGROUP_");
+                    model_group_names.iter().position(|m| m == n).with_context(|| format!("model group {n}"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let change_anims = find_initializer(&player, "D_808540F4")?
+                .list()
+                .iter()
+                .map(|row| {
+                    let f = row.flatten();
+                    Ok((resolve(&f[0])?, f[1].trim().parse::<f32>().context("D_808540F4 frame")?))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let change_matrix = find_initializer(&player, "D_80854164")?
+                .list()
+                .iter()
+                .map(|row| row.flatten().iter().map(|a| num_suffix(a)).collect::<Result<Vec<_>>>())
+                .collect::<Result<Vec<_>>>()?;
+            let attacks = find_initializer(&player, "D_80854190")?
+                .list()
+                .iter()
+                .map(|row| {
+                    let f = row.flatten();
+                    let n = |k: usize| f[k].trim().parse::<f32>().context("D_80854190 frame");
+                    Ok(AttackAnim { anim: resolve(&f[0])?, end: resolve(&f[1])?, end_locked: resolve(&f[2])?, active_start: n(3)?, active_end: n(4)? })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let attack_by_dir = find_initializer(&player, "D_80854480")?
+                .flatten()
+                .iter()
+                .map(|n| {
+                    let n = n.trim().trim_start_matches("PLAYER_MWA_");
+                    mwa_names.iter().position(|m| m == n).with_context(|| format!("attack {n}"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let mask: Vec<u8> = find_initializer(&player, "D_80853410")?.flatten().iter().map(|a| a.trim().parse().unwrap_or(0)).collect();
+            let mut upper_body = [0u8; 22];
+            for (i, v) in mask.iter().take(22).enumerate() {
+                upper_body[i] = *v;
+            }
+            ItemTables { model_group_names, model_group_anim_type, ap_names, action_model_group, change_anims, change_matrix, attacks, attack_by_dir, mwa_names, upper_body }
+        };
         let limb_names = enum_members(&header, "PLAYER_LIMB_").into_iter().map(|m| m["PLAYER_LIMB_".len()..].to_string()).collect();
 
         Ok(GameData {
@@ -292,6 +452,12 @@ impl GameData {
             limb_names,
             tables_from_decomp: true,
             table_mismatches: mismatches,
+            camera: crate::camera::CameraData::load(decomp)?,
+            foot_ik: crate::footik::FootIkData::load(decomp)?,
+            rigs: [load_rig(p, oot_core::player::Age::Adult)?, load_rig(p, oot_core::player::Age::Child)?],
+            side_hop_anims,
+            target_ranges,
+            items,
         })
     }
 

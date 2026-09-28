@@ -11,6 +11,9 @@
 //!          |        steep ramp B (30°, to y=120) ->     tall block (40)  |
 //!          |                         spawn (0,0,0)                        |
 //!          |             diagonal wall                                    |
+//!          | pool (water y=-20, floor -150, ramp out along +x)            |
+//!          | channel at x 350..950, z -300..-100 (water y=-20, floor -150), |
+//!          | for the moving platform                                      |
 //!  z=+1000 +-------------------------------------------------------------+
 //!        x=-1000                                                     x=+1000
 //! ```
@@ -24,6 +27,12 @@ use oot_core::collision::{CollisionBuilder, CollisionHeader};
 /// Word 1: sfx type 0..3, floor effect 4..5, light setting 6..10, echo 11..16.
 pub const SURFACE_GROUND: (u32, u32) = (0, 0x0000_0000);
 pub const SURFACE_STONE: (u32, u32) = (0, 0x0000_0002);
+
+/// Where the moving platform (`Bg_Ydan_Hasi`) is spawned on the course: the middle of the
+/// channel, sliding along x (yaw 0x4000), floating on the channel's water (y -20).
+pub const PLATFORM_HOME: Vec3 = Vec3::new(650.0, 0.0, -200.0);
+pub const PLATFORM_YAW: i16 = 0x4000;
+pub const CHANNEL_WATER: f32 = -20.0;
 
 pub struct Course {
     pub collision: CollisionHeader,
@@ -132,8 +141,15 @@ pub fn build() -> Course {
     let stone = b.surface(SURFACE_STONE.0, SURFACE_STONE.1);
     let mut c = B { b, ground, stone };
 
-    // Ground, with a pit cut out at x∈[400,800], z∈[-800,-400].
-    c.floor(-1000.0, 1000.0, -400.0, 1000.0, 0.0, 100.0);
+    // Ground, with a pit cut out at x∈[400,800], z∈[-800,-400] and a pool at x∈[-950,-500],
+    // z∈[650,950].
+    c.floor(-1000.0, 1000.0, -400.0, -300.0, 0.0, 100.0);
+    c.floor(-1000.0, 350.0, -300.0, -100.0, 0.0, 100.0);
+    c.floor(950.0, 1000.0, -300.0, -100.0, 0.0, 100.0);
+    c.floor(-1000.0, 1000.0, -100.0, 650.0, 0.0, 100.0);
+    c.floor(-1000.0, 1000.0, 950.0, 1000.0, 0.0, 100.0);
+    c.floor(-1000.0, -950.0, 650.0, 950.0, 0.0, 100.0);
+    c.floor(-500.0, 1000.0, 650.0, 950.0, 0.0, 100.0);
     c.floor(-1000.0, 400.0, -1000.0, -400.0, 0.0, 100.0);
     c.floor(800.0, 1000.0, -1000.0, -400.0, 0.0, 100.0);
     c.floor(400.0, 800.0, -1000.0, -800.0, 0.0, 100.0);
@@ -143,6 +159,24 @@ pub fn build() -> Course {
     c.wall((400.0, -400.0), (800.0, -400.0), -450.0, 0.0, (0.0, -1.0));
     c.wall((400.0, -800.0), (400.0, -400.0), -450.0, 0.0, (1.0, 0.0));
     c.wall((800.0, -800.0), (800.0, -400.0), -450.0, 0.0, (-1.0, 0.0));
+
+    // Pool: deep (floor -150) over x∈[-950,-800], then a 26.6° ramp up to the ground at
+    // x=-500. Water surface at y=-20, for all rooms. Adult swims where the water is deeper than
+    // ageProperties->unk_2C (56) and wades out once it's shallower than unk_24 (36).
+    c.floor(-950.0, -800.0, 650.0, 950.0, -150.0, 100.0);
+    c.ramp_x(-800.0, -500.0, 650.0, 950.0, -150.0, 0.0, 50.0);
+    c.wall((-950.0, 650.0), (-500.0, 650.0), -150.0, 0.0, (0.0, 1.0));
+    c.wall((-950.0, 950.0), (-500.0, 950.0), -150.0, 0.0, (0.0, -1.0));
+    c.wall((-950.0, 650.0), (-950.0, 950.0), -150.0, 0.0, (1.0, 0.0));
+    c.b.water_box(-950, 650, 450, 300, -20, 0x3F);
+
+    // Channel for the moving platform (Bg_Ydan_Hasi slides ±165 along x from x=650).
+    c.floor(350.0, 950.0, -300.0, -100.0, -150.0, 100.0);
+    c.wall((350.0, -300.0), (950.0, -300.0), -150.0, 0.0, (0.0, 1.0));
+    c.wall((350.0, -100.0), (950.0, -100.0), -150.0, 0.0, (0.0, -1.0));
+    c.wall((350.0, -300.0), (350.0, -100.0), -150.0, 0.0, (1.0, 0.0));
+    c.wall((950.0, -300.0), (950.0, -100.0), -150.0, 0.0, (-1.0, 0.0));
+    c.b.water_box(350, -300, 600, 200, -20, 0x3F);
 
     // Plateau (y=150) with ramp A (≈20.6°) up its +z side.
     c.block(-900.0, -500.0, -900.0, -500.0, 0.0, 150.0);
@@ -186,8 +220,12 @@ pub fn build() -> Course {
     c.ramp_x(-100.0 - run, -100.0, -250.0, -100.0, 0.0, 120.0, 50.0);
     c.wall((-100.0, -250.0), (-100.0, -100.0), 0.0, 120.0, (1.0, 0.0));
 
-    // Tall block: 40 high, too tall to step onto.
+    // Tall block: 40 high, too tall to walk onto; Link hops onto it (climb class 1, spike 04).
     c.block(400.0, 600.0, 150.0, 350.0, 0.0, 40.0);
+    // Ledges for climb classes 2, 3 and 4 (adult: 41..59, 59..79.4, >= 79.4), approached along +x.
+    c.block(700.0, 950.0, 500.0, 600.0, 0.0, 50.0);
+    c.block(700.0, 950.0, 650.0, 750.0, 0.0, 70.0);
+    c.block(700.0, 950.0, 800.0, 900.0, 0.0, 100.0);
 
     // Diagonal wall at 30° to the x axis: a slab 20 thick with end caps.
     let (dx, dz) = ((30.0f32).to_radians().cos(), (30.0f32).to_radians().sin());
@@ -227,6 +265,11 @@ pub fn build() -> Course {
             ("ramp B foot", Vec3::new(-100.0 - run - 50.0, 0.0, -175.0)),
             ("pit", Vec3::new(600.0, -450.0, -600.0)),
             ("tall block", Vec3::new(500.0, 40.0, 250.0)),
+            ("ledge 50", Vec3::new(700.0, 0.0, 550.0)),
+            ("ledge 70", Vec3::new(700.0, 0.0, 700.0)),
+            ("ledge 100", Vec3::new(700.0, 0.0, 850.0)),
+            ("pool", Vec3::new(-875.0, -150.0, 800.0)),
+            ("platform home", PLATFORM_HOME),
         ],
     }
 }

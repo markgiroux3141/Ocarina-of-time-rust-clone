@@ -5,7 +5,12 @@ struct Globals {
     view: mat4x4<f32>,
     light_dir: vec4<f32>,
     light_color: vec4<f32>,
+    light2_dir: vec4<f32>,
+    light2_color: vec4<f32>,
     ambient: vec4<f32>,
+    fog_color: vec4<f32>,
+    // x: fog multiplier (fm), y: fog offset (fo), z/w: near/far of the game's projection
+    fog: vec4<f32>,
 };
 
 struct Material {
@@ -15,8 +20,10 @@ struct Material {
     env: vec4<f32>,
     // x: prim LOD fraction, y: alpha-test threshold (0 = off)
     params: vec4<f32>,
-    // x: flag bits (1 lit, 2 texgen, 4 opaque-output), y: two-cycle
+    // x: flag bits (1 lit, 2 texgen, 4 opaque-output, 8 fog), y: two-cycle
     flags: vec4<u32>,
+    // Dynamic-segment texture scroll: slot 0 in xy, slot 1 in zw.
+    uv_off: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -39,6 +46,7 @@ struct VOut {
     @location(0) shade: vec4<f32>,
     @location(1) uv0: vec2<f32>,
     @location(2) uv1: vec2<f32>,
+    @location(3) fog: f32,
 };
 
 @vertex
@@ -48,9 +56,12 @@ fn vs_main(v: VIn) -> VOut {
     let flags = m.flags.x;
     if ((flags & 1u) != 0u) {
         // With G_LIGHTING the vertex colour bytes hold the normal; only alpha is a colour.
+        // F3DEX2: ambient + sum over directional lights of colour * max(0, n . l).
         let n = normalize(v.normal);
-        let d = max(dot(n, normalize(g.light_dir.xyz)), 0.0);
-        o.shade = vec4<f32>(clamp(g.ambient.rgb + g.light_color.rgb * d, vec3<f32>(0.0), vec3<f32>(1.0)), v.color.a);
+        let d1 = max(dot(n, g.light_dir.xyz), 0.0);
+        let d2 = max(dot(n, g.light2_dir.xyz), 0.0);
+        let lit = g.ambient.rgb + g.light_color.rgb * d1 + g.light2_color.rgb * d2;
+        o.shade = vec4<f32>(clamp(lit, vec3<f32>(0.0), vec3<f32>(1.0)), v.color.a);
     } else {
         o.shade = v.color;
     }
@@ -61,8 +72,18 @@ fn vs_main(v: VIn) -> VOut {
         o.uv0 = uv;
         o.uv1 = uv;
     } else {
-        o.uv0 = v.uv0;
-        o.uv1 = v.uv1;
+        o.uv0 = v.uv0 + m.uv_off.xy;
+        o.uv1 = v.uv1 + m.uv_off.zw;
+    }
+    // Vertex fog: OpenGL-style NDC depth of the game's projection, times fm plus fo, in
+    // 1/256ths (gSPFogPosition maps fogNear..1000 onto 0..256).
+    let depth = max(-(g.view * vec4<f32>(v.pos, 1.0)).z, 0.001);
+    let nf = g.fog.zw;
+    let z_ndc = (nf.y + nf.x) / (nf.y - nf.x) - 2.0 * nf.x * nf.y / ((nf.y - nf.x) * depth);
+    o.fog = clamp((z_ndc * g.fog.x + g.fog.y) / 256.0, 0.0, 1.0);
+    if ((flags & 16u) != 0u && (g.fog.x != 0.0 || g.fog.y != 0.0)) {
+        // With G_FOG the RSP writes the fog factor into the vertex alpha.
+        o.shade.a = o.fog;
     }
     return o;
 }
@@ -120,6 +141,10 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     }
     if (m.params.y > 0.0 && c.a < m.params.y) {
         discard;
+    }
+    if ((m.flags.x & 8u) != 0u) {
+        // G_RM_FOG_SHADE_A: fog colour weighted by the (fog-replaced) shade alpha.
+        c = vec4<f32>(mix(c.rgb, g.fog_color.rgb, i.fog), c.a);
     }
     if ((m.flags.x & 4u) != 0u) {
         c.a = 1.0;

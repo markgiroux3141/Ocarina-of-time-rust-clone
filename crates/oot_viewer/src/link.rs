@@ -231,6 +231,7 @@ impl Subject for Link {
             pitch: 0.15,
             distance: h * 1.9,
             fov_y: 45f32.to_radians(),
+            clip: None,
         }
     }
 }

@@ -252,6 +252,11 @@ impl CollisionBuilder {
         self.header.polys.push(CollisionPoly { ty, vtx: [ia, ib, ic], normal, dist });
     }
 
+    /// Adds a water box (`WaterBox`); `room` 0x3F is `WATERBOX_ROOM_ALL`.
+    pub fn water_box(&mut self, x_min: i16, z_min: i16, x_length: i16, z_length: i16, y_surface: i16, room: u32) {
+        self.header.water_boxes.push(WaterBox { x_min, y_surface, z_min, x_length, z_length, properties: (room & 0x3F) << 13 });
+    }
+
     /// Adds a quad as two triangles; corners counter-clockwise from the facing side.
     pub fn quad(&mut self, a: Vec3, b: Vec3, c: Vec3, d: Vec3, ty: u16) {
         self.tri(a, b, c, ty);

@@ -37,6 +37,10 @@ fn shade_material(blend: BlendMode) -> Material {
         lit: false,
         texgen: false,
         bilinear: false,
+        uv_dyn: [None, None],
+        env_dyn: None,
+        prim_dyn: None,
+        fog_blend: false,
     }
 }
 
@@ -102,6 +106,93 @@ pub fn collision_lines(h: &CollisionHeader, lift: f32) -> Vec<LineVertex> {
     out
 }
 
+/// A dummy target actor: a 30×60×30 box (origin at its base centre), lit by a fixed light.
+pub fn target_draw_list() -> DrawList {
+    let (h, r) = (60.0, 15.0);
+    let light = Vec3::new(0.35, 0.85, 0.4).normalize();
+    let mut verts = Vec::new();
+    let c = |x: f32, y: f32, z: f32| Vec3::new(x * r, y * h, z * r);
+    let faces = [
+        ([c(-1.0, 0.0, 1.0), c(1.0, 0.0, 1.0), c(1.0, 1.0, 1.0), c(-1.0, 1.0, 1.0)], Vec3::Z),
+        ([c(1.0, 0.0, -1.0), c(-1.0, 0.0, -1.0), c(-1.0, 1.0, -1.0), c(1.0, 1.0, -1.0)], -Vec3::Z),
+        ([c(1.0, 0.0, 1.0), c(1.0, 0.0, -1.0), c(1.0, 1.0, -1.0), c(1.0, 1.0, 1.0)], Vec3::X),
+        ([c(-1.0, 0.0, -1.0), c(-1.0, 0.0, 1.0), c(-1.0, 1.0, 1.0), c(-1.0, 1.0, -1.0)], -Vec3::X),
+        ([c(-1.0, 1.0, 1.0), c(1.0, 1.0, 1.0), c(1.0, 1.0, -1.0), c(-1.0, 1.0, -1.0)], Vec3::Y),
+    ];
+    for (q, n) in faces {
+        let s = 0.45 + 0.55 * n.dot(light).abs();
+        let col = [(200.0 * s) as u8, (70.0 * s) as u8, (60.0 * s) as u8, 255];
+        for i in [0, 1, 2, 0, 2, 3] {
+            verts.push(vtx(q[i], col));
+        }
+    }
+    let mut d = DrawList::default();
+    let mut m = shade_material(BlendMode::Opaque);
+    m.cull = CullMode::Back;
+    d.materials.push(m);
+    d.batches.push(Batch { material: 0, vertices: verts });
+    d
+}
+
+/// The Z-target reticle: three triangles pointing at the focus, `size` units out (the game's
+/// `unk_44`, 500 → 80 while locking), in the camera's plane.
+pub fn reticle_lines(focus: Vec3, size: f32, eye: Vec3, spin: f32) -> Vec<LineVertex> {
+    let fwd = (focus - eye).normalize_or_zero();
+    let right = fwd.cross(Vec3::Y).normalize_or_zero();
+    let up = right.cross(fwd);
+    let col = [1.0, 0.25, 0.2, 1.0];
+    let mut out = Vec::new();
+    let r = size * 0.15;
+    for k in 0..3 {
+        let a = spin + k as f32 * std::f32::consts::TAU / 3.0;
+        let dir = right * a.cos() + up * a.sin();
+        let side = right * (-a.sin()) + up * a.cos();
+        let tip = focus + dir * r;
+        let (b0, b1) = (focus + dir * (r + 8.0) + side * 5.0, focus + dir * (r + 8.0) - side * 5.0);
+        for (p, q) in [(tip, b0), (b0, b1), (b1, tip)] {
+            out.push(LineVertex { pos: p.to_array(), color: col });
+            out.push(LineVertex { pos: q.to_array(), color: col });
+        }
+    }
+    out
+}
+
+/// `BgYdanHasi_Draw` for the floating block: `Gfx_DrawDListOpa(gDTSlidingPlatformDL)` with
+/// `object_ydan_objects` on segment 6 (`Gfx_SetupDL_25Opa` first). Pose it with the bg
+/// actor's transform (`Actor_Draw`'s matrix is the same translate/rotate/scale).
+pub fn platform_draw_list(p: &oot_core::project::Project) -> anyhow::Result<DrawList> {
+    use anyhow::Context;
+    use oot_game::bg_ydan_hasi::{DISPLAY_LIST, OBJECT};
+    let sym = p.symbols.file(OBJECT).context("object_ydan_objects.xml")?.find(DISPLAY_LIST).context(DISPLAY_LIST)?;
+    let mut segments: [Option<oot_core::gbi::Segment>; 16] = Default::default();
+    segments[6] = Some(oot_core::gbi::Segment::Data { buf: p.rom.file_by_name(OBJECT)?, base: 0 });
+    segments[4] = Some(oot_core::gbi::Segment::Data { buf: p.rom.file_by_name("gameplay_keep")?, base: 0 });
+    if let Some(code) = oot_core::room::code_ram_image(p) {
+        segments[0] = Some(oot_core::gbi::Segment::Data { buf: code, base: 0 });
+    }
+    let segs = oot_core::room::BufferSegments { segments, pre: Vec::new(), dynamic: 0 };
+    Ok(oot_core::room::run_dls(&segs, &[0x0600_0000 | sym.offset]))
+}
+
+/// The course's water boxes as translucent blue planes at their surface height (scenes draw
+/// their own water in the room meshes).
+pub fn water_draw_list(h: &CollisionHeader) -> DrawList {
+    let mut verts = Vec::new();
+    let col = [40, 90, 170, 130];
+    for w in &h.water_boxes {
+        let (x0, z0, y) = (w.x_min as f32, w.z_min as f32, w.y_surface as f32);
+        let (x1, z1) = (x0 + w.x_length as f32, z0 + w.z_length as f32);
+        let q = [Vec3::new(x0, y, z1), Vec3::new(x1, y, z1), Vec3::new(x1, y, z0), Vec3::new(x0, y, z0)];
+        for i in [0, 1, 2, 0, 2, 3] {
+            verts.push(vtx(q[i], col));
+        }
+    }
+    let mut d = DrawList::default();
+    d.materials.push(shade_material(BlendMode::Translucent));
+    d.batches.push(Batch { material: 0, vertices: verts });
+    d
+}
+
 /// A soft dark disc (radius 1, at the origin) for the blob shadow; place it with the root
 /// matrix.
 pub fn shadow_draw_list() -> DrawList {
@@ -143,6 +234,14 @@ pub fn pose_player(skel: &Skeleton, joints: &JointTable, look: &LookRotations, h
         } else if l == upper {
             pre = Mat4::from_rotation_y(r(look.upper_y)) * Mat4::from_rotation_x(r(look.upper_x)) * Mat4::from_rotation_z(r(look.upper_z));
         }
+        if l == 0 && look.root_pitch != 0 {
+            // Player_OverrideLimbDrawGameplayCommon: the dive pitch about a point 200 above
+            // the root, T(pos.x, (cos(unk_6C2) - 1) * 200 + pos.y, pos.z) * RotX(unk_6C2).
+            let p = look.root_pitch;
+            let t = Vec3::new(pos.x, (oot_game::math::cos_s(p) - 1.0) * 200.0 + pos.y, pos.z);
+            out[l] = parent * Mat4::from_translation(t) * Mat4::from_rotation_x(r(p)) * local_transform(Vec3::ZERO, rot);
+            continue;
+        }
         out[l] = parent * pre * local_transform(pos, rot);
     }
     out
@@ -157,7 +256,7 @@ pub fn actor_matrix(pos: Vec3, yaw: i16, scale: f32) -> Mat4 {
 pub struct LinkGfx {
     pub rules: PlayerRules,
     pub models: [PlayerModel; 2],
-    cache: HashMap<(u8, usize, usize, bool), GpuModel>,
+    cache: HashMap<(u8, usize, usize, bool, usize), GpuModel>,
 }
 
 impl LinkGfx {
@@ -169,12 +268,17 @@ impl LinkGfx {
         &self.models[age as usize]
     }
 
-    /// The GPU model for this frame's face (animation face field and blink state) and hands.
-    pub fn get(&mut self, renderer: &mut Renderer, device: &wgpu::Device, queue: &wgpu::Queue, age: Age, anim_face: u16, blink_face: usize, fists: bool) -> &mut GpuModel {
+    /// The GPU model for this frame's face (animation face field and blink state), hands and
+    /// model group (`PLAYER_MODELGROUP_*` name, e.g. `SWORD` with the sword in hand).
+    #[allow(clippy::too_many_arguments)]
+    pub fn get(&mut self, renderer: &mut Renderer, device: &wgpu::Device, queue: &wgpu::Queue, age: Age, anim_face: u16, blink_face: usize, fists: bool, model_group: &str) -> &mut GpuModel {
         let (eye, mouth) = self.rules.face_indices(anim_face, blink_face);
-        let key = (age as u8, eye, mouth, fists);
+        let mut lo = Loadout::default_for(&self.rules, age);
+        if let Some(g) = self.rules.model_group(model_group) {
+            lo.model_group = g;
+        }
+        let key = (age as u8, eye, mouth, fists, lo.model_group);
         if !self.cache.contains_key(&key) {
-            let mut lo = Loadout::default_for(&self.rules, age);
             lo.moving_fast = fists;
             let draw = match self.models[age as usize].draw_list(&self.rules, &lo, eye, mouth, 0) {
                 Ok((d, _)) => d,

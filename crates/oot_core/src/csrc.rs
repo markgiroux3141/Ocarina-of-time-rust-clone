@@ -5,6 +5,8 @@
 //! comments. Preprocessor conditionals are not evaluated: the first definition wins, which
 //! for the decomp is the non-`AVOID_UB` (as-shipped) variant.
 
+use std::collections::HashMap;
+
 use anyhow::{Result, bail};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,8 +225,19 @@ fn parse_list(src: &str, start: usize) -> Result<(Init, usize)> {
         }
         atom.clear();
     };
+    // Commas inside parentheses (macro arguments such as `CLOCK_TIME(4, 0)`) don't split atoms.
+    let mut depth = 0usize;
     while i < b.len() {
         match b[i] {
+            b'(' => {
+                depth += 1;
+                atom.push('(');
+            }
+            b')' => {
+                depth = depth.saturating_sub(1);
+                atom.push(')');
+            }
+            b',' if depth > 0 => atom.push(','),
             b'{' => {
                 flush(&mut atom, &mut items);
                 let (sub, next) = parse_list(src, i)?;
@@ -257,6 +270,94 @@ pub fn enum_members(src: &str, prefix: &str) -> Vec<String> {
     out
 }
 
+
+// Table helpers (moved from oot_extract in spike 04 so the runtime scene loader can use them).
+
+/// `DEFINE_X(a, b, ...)` rows in table order.
+pub fn define_rows(text: &str) -> Vec<(String, Vec<String>)> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let mut l = line.trim();
+        if l.starts_with("/*") {
+            match l.find("*/") {
+                Some(e) => l = l[e + 2..].trim(),
+                None => continue,
+            }
+        }
+        if !l.starts_with("DEFINE_") {
+            continue;
+        }
+        let (Some(a), Some(b)) = (l.find('('), l.rfind(')')) else { continue };
+        if b < a {
+            continue;
+        }
+        let args = l[a + 1..b].split(',').map(|s| s.trim().trim_matches('"').to_string()).collect();
+        out.push((l[..a].trim().to_string(), args));
+    }
+    out
+}
+
+pub fn parse_int(s: &str) -> Option<i64> {
+    let s = s.trim().trim_end_matches(['u', 'U', 'l', 'L']);
+    if let Some(h) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        i64::from_str_radix(h, 16).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
+/// Values of the `typedef enum` that contains `member`.
+pub fn parse_enum(text: &str, member: &str) -> HashMap<i64, String> {
+    let clean = strip_comments(text);
+    let mut out = HashMap::new();
+    let mut search = 0;
+    while let Some(rel) = clean[search..].find(member) {
+        let pos = search + rel;
+        search = pos + member.len();
+        let before_ok = pos == 0 || !clean.as_bytes()[pos - 1].is_ascii_alphanumeric() && clean.as_bytes()[pos - 1] != b'_';
+        let after = clean.as_bytes().get(pos + member.len()).copied().unwrap_or(b' ');
+        if !before_ok || after.is_ascii_alphanumeric() || after == b'_' {
+            continue;
+        }
+        let Some(open) = clean[..pos].rfind('{') else { continue };
+        if !clean[open.saturating_sub(40)..open].contains("enum") {
+            continue;
+        }
+        let Some(close_rel) = clean[pos..].find('}') else { continue };
+        let body = &clean[open + 1..pos + close_rel];
+        let mut next = 0i64;
+        for item in body.split(',') {
+            let item = item.trim();
+            if item.is_empty() {
+                continue;
+            }
+            let (name, val) = match item.split_once('=') {
+                Some((n, e)) => (n.trim(), parse_int(e).unwrap_or(next)),
+                None => (item, next),
+            };
+            out.insert(val, name.to_string());
+            next = val + 1;
+        }
+        break;
+    }
+    out
+}
+
+pub fn parse_defines(text: &str, prefix: &str) -> HashMap<i64, String> {
+    let mut out = HashMap::new();
+    for line in text.lines() {
+        let Some(rest) = line.trim().strip_prefix("#define ") else { continue };
+        let mut it = rest.split_whitespace();
+        let (Some(name), Some(val)) = (it.next(), it.next()) else { continue };
+        if name.starts_with(prefix)
+            && let Some(v) = parse_int(val)
+        {
+            out.entry(v).or_insert_with(|| name.to_string());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +373,8 @@ mod tests {
         let t = find_initializer(&src, "sT").unwrap();
         assert_eq!(t.list().len(), 2);
         assert_eq!(t.list()[0].list()[1].as_int(), Some(2));
+        let m = find_initializer("x sM[] = { { F(1, 2) + 1, 3 } };", "sM").unwrap();
+        assert_eq!(m.list()[0].flatten(), vec!["F(1, 2) + 1", "3"]);
     }
 
     #[test]

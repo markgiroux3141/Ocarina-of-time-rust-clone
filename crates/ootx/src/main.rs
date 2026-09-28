@@ -48,6 +48,29 @@ enum Cmd {
     /// Build Link's draw list for every age, model group and shield using Player's draw
     /// rules read from z_player_lib.c, and report missing or unresolved references.
     PlayerDraw,
+    /// Load every scene through the runtime loader (`oot_core::room`) and interpret every room
+    /// display list: unknown opcodes, unresolved segment references, dynamic materials.
+    ScanScenes {
+        /// Only scenes whose file name contains this string.
+        #[arg(long)]
+        filter: Option<String>,
+        /// Also scan the child-night, adult-day and adult-night headers when they differ.
+        #[arg(long)]
+        all_layers: bool,
+    },
+    /// Materials of every entry of one room, as the runtime loader builds them, with the
+    /// world-space bounds of each batch (for tracking down rendering differences).
+    DumpRoom {
+        #[arg(long)]
+        scene: String,
+        #[arg(long)]
+        room: usize,
+        #[arg(long, default_value_t = 0)]
+        layer: usize,
+        /// Also write every decoded texture to this directory as PNG.
+        #[arg(long)]
+        png: Option<PathBuf>,
+    },
     /// Extract assets into editable formats (PNG, glTF, WAV, JSON) in a git-ignored folder.
     /// Local development only: the output is derived from the ROM and must not be shared.
     Extract {
@@ -71,7 +94,124 @@ fn main() -> Result<()> {
         Cmd::PlayerAnims { object, root_scale } => player_anims(&project, &object, root_scale, &cli.out),
         Cmd::PlayerDraw => player_draw(&project, &cli.out),
         Cmd::Extract { dir, only } => extract(&project, &dir, &only),
+        Cmd::ScanScenes { filter, all_layers } => scan_scenes(&project, filter.as_deref(), all_layers, &cli.out),
+        Cmd::DumpRoom { scene, room, layer, png } => dump_room(&project, &scene, room, layer, png.as_deref()),
     }
+}
+
+fn dump_room(p: &Project, name: &str, room: usize, layer: usize, png: Option<&std::path::Path>) -> Result<()> {
+    use oot_core::room::{SceneDraw, SceneTables};
+    let tables = SceneTables::load(&p.config.decomp)?;
+    let s = SceneDraw::load(p, &tables, name, layer)?;
+    let mut notes = std::collections::BTreeSet::new();
+    let meshes = s.build(p, &tables, &oot_core::drawcfg::State::default(), &mut notes);
+    let r = meshes.iter().find(|m| m.index == room).context("no such room")?;
+    println!("{} room {room}: {:?}, {} entries", s.scene.name, r.kind, r.entries.len());
+    for (ei, e) in r.entries.iter().enumerate() {
+        println!("entry {ei}: bounds {:?}", e.bounds);
+        for (kind, d) in [("opa", &e.opa), ("xlu", &e.xlu)] {
+            let Some(d) = d else { continue };
+            if let Some(dir) = png {
+                std::fs::create_dir_all(dir)?;
+                for (ti, t) in d.textures.iter().enumerate() {
+                    let f = dir.join(format!("room{room}_e{ei}_{kind}_t{ti}.png"));
+                    image::save_buffer(&f, &t.image.rgba, t.image.width, t.image.height, image::ColorType::Rgba8)?;
+                }
+            }
+            for b in &d.batches {
+                let m = &d.materials[b.material];
+                let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+                for v in &b.vertices {
+                    lo = lo.min(v.pos);
+                    hi = hi.max(v.pos);
+                }
+                let tex: Vec<String> = m.textures.iter().flatten().map(|t| {
+                    let im = &d.textures[t.image];
+                    format!("{}x{} f{}s{}", im.image.width, im.image.height, im.fmt, im.siz)
+                }).collect();
+                println!(
+                    "  {kind} mat {:>2} tris {:>4} {:?} cc {:014X} 2cyc {} gm {:06X} omL {:08X} env {:?} prim {:?} tex {:?} dyn {:?}/{:?} fog {} bounds {:.0?}..{:.0?}",
+                    b.material, b.vertices.len() / 3, m.blend, m.combiner.raw, m.two_cycle, m.geometry_mode, m.othermode_l, m.env, m.prim, tex,
+                    m.uv_dyn.map(|x| x.map(|d| d.segment)), m.env_dyn, m.fog_blend, lo, hi
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn scan_scenes(p: &Project, filter: Option<&str>, all_layers: bool, out: &std::path::Path) -> Result<()> {
+    use oot_core::room::{SceneDraw, SceneTables};
+    let tables = SceneTables::load(&p.config.decomp)?;
+    let state = oot_core::drawcfg::State::default();
+    let mut rows = Vec::new();
+    let (mut n_scenes, mut n_layers, mut n_rooms, mut n_entries, mut tris, mut dyn_mats, mut errors) = (0, 0, 0, 0, 0usize, 0usize, 0);
+    let mut unknown: BTreeMap<String, usize> = BTreeMap::new();
+    let mut unresolved: BTreeMap<String, usize> = BTreeMap::new();
+    for sd in &tables.scenes {
+        if filter.is_some_and(|f| !sd.file.contains(f)) || p.rom.index_of(&sd.file).is_none() {
+            continue;
+        }
+        n_scenes += 1;
+        let mut seen = Vec::new();
+        for layer in 0..if all_layers { 4 } else { 1 } {
+            let s = match SceneDraw::load(p, &tables, &sd.file, layer) {
+                Ok(s) => s,
+                Err(e) => {
+                    errors += 1;
+                    rows.push(serde_json::json!({ "scene": sd.file, "layer": layer, "error": format!("{e:#}") }));
+                    continue;
+                }
+            };
+            if seen.contains(&s.scene.header_offset) {
+                continue;
+            }
+            seen.push(s.scene.header_offset);
+            n_layers += 1;
+            let mut notes = std::collections::BTreeSet::new();
+            let meshes = s.build(p, &tables, &state, &mut notes);
+            let (mut t, mut m, mut unk, mut unres) = (0usize, 0usize, BTreeMap::<String, usize>::new(), BTreeMap::<String, usize>::new());
+            for r in &meshes {
+                n_rooms += 1;
+                for e in &r.entries {
+                    n_entries += 1;
+                    for d in [&e.opa, &e.xlu].into_iter().flatten() {
+                        t += d.triangle_count();
+                        m += d.materials.iter().filter(|x| x.is_dynamic()).count();
+                        for (k, v) in &d.stats.unknown_opcodes {
+                            *unk.entry(k.clone()).or_default() += v;
+                        }
+                        for (k, v) in &d.stats.unresolved_addresses {
+                            *unres.entry(k.clone()).or_default() += v;
+                        }
+                    }
+                }
+            }
+            tris += t;
+            dyn_mats += m;
+            for (k, v) in &unk {
+                *unknown.entry(k.clone()).or_default() += v;
+            }
+            for (k, v) in &unres {
+                *unresolved.entry(format!("{} {k}", sd.file)).or_default() += v;
+            }
+            rows.push(serde_json::json!({
+                "scene": sd.file, "layer": layer, "draw_config": s.draw_fn, "keep": s.keep_file,
+                "rooms": meshes.len(), "triangles": t, "dynamic_materials": m,
+                "light_settings": s.scene.light_settings.len(), "skybox": s.scene.skybox.skybox_id, "light_mode": s.scene.skybox.light_mode,
+                "unknown_opcodes": unk, "unresolved": unres, "notes": notes,
+            }));
+        }
+    }
+    let summary = serde_json::json!({
+        "scenes": n_scenes, "layers_scanned": n_layers, "rooms": n_rooms, "shape_entries": n_entries, "triangles": tris,
+        "dynamic_materials": dyn_mats, "unknown_opcodes": unknown, "unresolved_references": unresolved, "load_errors": errors,
+    });
+    let path = out.join("scene_scan.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&serde_json::json!({ "summary": summary, "scenes": rows }))?)?;
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    println!("{}", path.display());
+    Ok(())
 }
 
 fn info(p: &Project) -> Result<()> {

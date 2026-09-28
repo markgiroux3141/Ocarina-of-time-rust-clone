@@ -49,6 +49,10 @@ pub enum Request {
     CopyTrue { dst: Table, src: Table, flags: &'static [u8; LIMB_COUNT] },
     CopyFalse { dst: Table, src: Table, flags: &'static [u8; LIMB_COUNT] },
     MoveActor { y_scale: f32 },
+    /// A copy from another SkelAnime's joint table (Player's `skelAnime2`) into this one's:
+    /// `AnimationContext_SetCopyTrue` with a mask, or `SetCopyAll` without. The source is
+    /// captured when queued; nothing writes it between then and the queue running.
+    CopyExternal { src: FrameTable, mask: Option<[u8; LIMB_COUNT]> },
 }
 
 #[derive(Debug, Clone)]
@@ -182,6 +186,13 @@ impl SkelAnime {
                     for i in 0..LIMB_COUNT {
                         if flags[i] == 0 {
                             d[i] = s[i];
+                        }
+                    }
+                }
+                Request::CopyExternal { src, mask } if !disabled => {
+                    for i in 0..LIMB_COUNT {
+                        if mask.is_none_or(|m| m[i] != 0) {
+                            self.joint[i] = src[i];
                         }
                     }
                 }
@@ -349,6 +360,11 @@ impl SkelAnime {
         self.load(data, a2, f2 as i32, Table::Blend);
         self.push(Request::Interp { base: Table::Morph, other: Table::Blend, weight });
     }
+    /// `AnimationContext_SetCopyTrue` / `SetCopyAll` from another skeleton's joint table.
+    pub fn request_copy_external(&mut self, src: &FrameTable, mask: Option<[u8; LIMB_COUNT]>) {
+        self.push(Request::CopyExternal { src: *src, mask });
+    }
+
     /// `AnimationContext_SetMoveActor`.
     pub fn request_move_actor(&mut self, y_scale: f32) {
         self.push(Request::MoveActor { y_scale });
