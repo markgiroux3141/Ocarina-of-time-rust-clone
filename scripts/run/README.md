@@ -23,17 +23,20 @@ Most scripts pass extra arguments on to the program they run.
 | `build.bat` | Builds the workspace (release) |
 | `test.bat` | All the tests; with arguments, `cargo test --release <args>` (e.g. `test.bat -p oot_actors --test talk`) |
 | `test-playthrough.bat` | GAME-02's exit test: `Bg_Treemouth` and the playthrough |
+| `test-sword-chest.bat` | GAME-03 milestone 1's exit test: the Kokiri Sword's chest on a new save, and a piece of heart |
 | `golden-check.bat` | The golden renders and traces (e.g. `golden-check.bat --only spot04`). Recording new hashes stays a deliberate step: `python scripts\golden.py record`, logged in `golden\README.md` |
 | `import.bat` | Imports the asset pack into the data folder (after a pack format change) |
 | `game.bat` | The game: Kokiri Forest, or any flags (e.g. `game.bat --entrance ENTR_SPOT04_3`) |
 | `game-links-house.bat` | The game from Link's bed, with the Deku Tree's mouth open (the playthrough's route by hand) |
 | `game-deku-tree-open.bat` | The game at the Deku Tree, his mouth open (`--preset deku-tree-open`) |
 | `game-deku-tree-dead.bat` | The game at the Deku Tree after Gohma (`--preset deku-tree-dead`) |
+| `game-sword-chest.bat` | A new save (no sword, no shield) in front of the Kokiri Sword's chest (`--room 2 --at ...`: the crawl isn't ported yet): A opens it, Enter equips the sword |
 | `sandbox.bat` | The dev sandbox, with any flags |
 | `sandbox-playthrough.bat` | Headless: the playthrough's trace and screenshots, into `out\run\` |
 
 Game keys: WASD to move, Space = A, E = B, Q = Z, I/J/K/L = C, P shows the placeholders,
-F1 the collision, Backspace respawns.
+F1 the collision, Backspace respawns. Enter (Start) stands in for the pause menu's equipping:
+it equips every owned piece of a type with nothing worn (the sword also goes on B).
 
 ## Adding a script
 

@@ -339,7 +339,16 @@ impl LoadGameData for GameData {
             for (i, v) in mask.iter().take(22).enumerate() {
                 upper_body[i] = *v;
             }
-            ItemTables { model_group_names, model_group_anim_type, ap_names, action_model_group, change_anims, change_matrix, attacks, attack_by_dir, mwa_names, upper_body }
+            // sItemActionParams: each item's action param (Player_ItemToActionParam).
+            let item_action_params = find_initializer(&player, "sItemActionParams")?
+                .flatten()
+                .iter()
+                .map(|n| {
+                    let n = n.trim().trim_start_matches("PLAYER_AP_");
+                    ap_names.iter().position(|m| m == n).map(|i| i as i32).with_context(|| format!("sItemActionParams: {n}"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            ItemTables { model_group_names, model_group_anim_type, ap_names, action_model_group, change_anims, change_matrix, attacks, attack_by_dir, mwa_names, upper_body, item_action_params }
         };
         let limb_names = enum_members(&header, "PLAYER_LIMB_").into_iter().map(|m| m["PLAYER_LIMB_".len()..].to_string()).collect();
 
@@ -632,6 +641,61 @@ pub fn load_item_drops(decomp: &Path) -> Result<oot_game::item::ItemDropTables> 
     // 15 tables of 16 ids; sDropQuantities has 4 more (unread) entries.
     anyhow::ensure!(ids.len() % 16 == 0 && quantities.len() >= ids.len(), "the drop tables have {} ids and {} quantities", ids.len(), quantities.len());
     Ok(oot_game::item::ItemDropTables { ids, quantities })
+}
+
+/// `sGetItemTable` (`z_player.c`, its `GET_ITEM(itemId, objectId, drawId, textId, field,
+/// chestAnim)` rows as the macro packs them: `gi = (chestAnim != CHEST_ANIM_SHORT ? 1 : -1) *
+/// (drawId + 1)`) and `sDrawItemTable` (`z_draw.c`: each draw id's `GetItem_Draw*` function
+/// and display lists), the names through `z64item.h`'s enums and `object_table.h`.
+pub fn load_items(decomp: &Path) -> Result<oot_game::item::ItemTables> {
+    let player = read(decomp, "src/overlays/actors/ovl_player_actor/z_player.c")?;
+    let draw = read(decomp, "src/code/z_draw.c")?;
+    let header = read(decomp, "include/z64item.h")?;
+    let by_name = |e: HashMap<i64, String>| -> HashMap<String, i64> { e.into_iter().map(|(v, n)| (n, v)).collect() };
+    let items = by_name(crate::csrc::parse_enum(&header, "ITEM_STICK"));
+    let gids = by_name(crate::csrc::parse_enum(&header, "GID_BOTTLE"));
+    let objects: HashMap<String, i64> = crate::csrc::define_rows(&read(decomp, "include/tables/object_table.h")?)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, (mac, a))| {
+            let name = if mac == "DEFINE_OBJECT" { a.get(1) } else { a.first() };
+            name.map(|n| (n.clone(), i as i64))
+        })
+        .collect();
+    let mut get_items = Vec::new();
+    for atom in find_initializer(&player, "sGetItemTable")?.flatten() {
+        let atom = atom.trim();
+        if atom == "GET_ITEM_NONE" {
+            // { ITEM_NONE, 0, 0, 0, OBJECT_INVALID }.
+            get_items.push(oot_game::item::GetItemEntry { item_id: 0xFF, field: 0, gi: 0, text_id: 0, object_id: 0 });
+            continue;
+        }
+        let args = atom.strip_prefix("GET_ITEM(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("sGetItemTable: {atom}"))?;
+        let a: Vec<&str> = args.split(',').map(str::trim).collect();
+        anyhow::ensure!(a.len() == 6, "sGetItemTable: {atom}");
+        let look = |m: &HashMap<String, i64>, n: &str| m.get(n).copied().with_context(|| format!("sGetItemTable: unknown {n}"));
+        let int = |n: &str| crate::csrc::parse_int(n).with_context(|| format!("sGetItemTable: {n}"));
+        let draw_id = look(&gids, a[2])?;
+        let gi = if a[5] != "CHEST_ANIM_SHORT" { 1 } else { -1 } * (draw_id + 1);
+        get_items.push(oot_game::item::GetItemEntry {
+            item_id: look(&items, a[0])? as u8,
+            object_id: look(&objects, a[1])? as i16,
+            gi: gi as i8,
+            text_id: int(a[3])? as u8,
+            field: int(a[4])? as u8,
+        });
+    }
+    let mut draw_items = Vec::new();
+    for row in find_initializer(&draw, "sDrawItemTable")?.list() {
+        let l = row.list();
+        anyhow::ensure!(l.len() == 2, "sDrawItemTable: {row:?}");
+        let func = l[0].atom().context("sDrawItemTable: no draw function")?.trim().to_string();
+        let dlists = l[1].flatten().iter().map(|s| s.trim().to_string()).collect();
+        draw_items.push(oot_game::item::DrawItemEntry { func, dlists });
+    }
+    // One draw function per GID_* (up to GID_MAXIMUM).
+    anyhow::ensure!(draw_items.len() == gids.len() - gids.contains_key("GID_MAX") as usize, "sDrawItemTable has {} entries for {} draw ids", draw_items.len(), gids.len());
+    Ok(oot_game::item::ItemTables { get_items, draw_items })
 }
 
 /// `sRestrictionFlags` (`z_parameter.c`): `{ sceneId, flags1, flags2, flags3 }`, the scene ids

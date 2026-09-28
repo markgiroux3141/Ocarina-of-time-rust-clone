@@ -19,12 +19,16 @@ Reorder freely. The dependencies are noted, and nothing here is a commitment.
 - talking, the message box, drops and a minimal HUD;
 - the Deku Tree's mouth, opened by a save flag.
 
+GAME-03 milestone 1 is done too: the inventory, `Item_Give`, the get-item flow, the chests, and
+Link's equipment from the save.
+
 A headless scripted run goes from Link's bed into the Deku Tree (`oot_actors --test playthrough`).
 
 **Shortcuts the next phases have to undo:**
-- A new save gives child Link the Kokiri Sword and a shield on B. The real game starts with nothing (`Sram_InitNewSave`).
-- The inventory isn't kept: `Item_Give` handles only rupees and hearts.
-- Unported actors are placeholders. Among them: Navi, Mido, Saria, the shopkeeper and the chests.
+- ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
+- ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
+- The pause menu isn't ported: Start stands in for its equipping (ADR 0019).
+- Unported actors are placeholders. Among them: Navi, Mido, Saria and the shopkeeper.
 - There are no cutscenes: the importer skips all 73. The Deku Tree's mouth opens only with the `deku-tree-open` save preset, which the playthrough starts on.
 - No audio at all.
 
@@ -69,7 +73,7 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
 - Mido steps aside;
 - the Deku Tree's cutscene opens his mouth.
 
-1. **The inventory and getting items.**
+1. **The inventory and getting items** (done: see [GAME-03](GAME-03-road-to-deku-tree.md) milestone 1 and ADR 0019).
    - `SaveContext`'s inventory: items, equipment, upgrades, quest items, ammo. A new save as `Sram_InitNewSave` makes it.
    - `Item_Give` in full for what Kokiri Forest gives.
    - Player's get-item flow:

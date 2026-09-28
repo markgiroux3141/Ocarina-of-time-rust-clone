@@ -120,6 +120,8 @@ pub const CAM_SET_PREREND_PIVOT: i16 = 0x1A;
 pub const CAM_SET_DOOR0: i16 = 0x1C;
 pub const CAM_SET_DOORC: i16 = 0x1D;
 pub const CAM_SET_FREE0: i16 = 0x21;
+/// `CAM_SET_SLOW_CHEST_CS` ("ITEM0"): a big chest opening on a major item.
+pub const CAM_SET_SLOW_CHEST_CS: i16 = 0x28;
 pub const CAM_SET_CS_ATTENTION: i16 = 0x2B;
 pub const CAM_SET_SCENE_TRANSITION: i16 = 0x2F;
 pub const CAM_SET_MEADOW_BIRDS_EYE: i16 = 0x35;
@@ -144,6 +146,8 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_UNIQ6",
     "CAM_FUNC_UNIQ7",
     "CAM_FUNC_SPEC9",
+    "CAM_FUNC_KEEP4",
+    "CAM_FUNC_DEMO3",
 ];
 
 // CAM_MODE_* (z64camera.h).
@@ -570,6 +574,55 @@ struct Keep0 {
 const D_8011D3B0: [u16; 14] = [0x0AAA, 0xF556, 0x1555, 0xEAAB, 0x2AAA, 0xD556, 0x3FFF, 0xC001, 0x5555, 0xAAAB, 0x6AAA, 0x9556, 0x7FFF, 0x0000];
 const D_8011D3CC: [u16; 14] = [0x0000, 0x02C6, 0x058C, 0x0000, 0x0000, 0xFD3A, 0x0000, 0x0852, 0x0000, 0x0000, 0x0B18, 0x02C6, 0xFA74, 0x0000];
 
+/// `KeepOn4ReadOnlyData` (`unk_00` .. `unk_1E`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Keep4Ro {
+    unk_00: f32,
+    unk_04: f32,
+    unk_08: f32,
+    unk_0c: f32,
+    unk_10: f32,
+    unk_14: f32,
+    unk_18: f32,
+    unk_1c: i16,
+    unk_1e: i16,
+}
+
+/// `KeepOn4ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Keep4Rw {
+    unk_00: f32,
+    unk_04: f32,
+    unk_08: f32,
+    unk_0c: i16,
+    unk_0e: i16,
+    unk_10: i16,
+    unk_12: i16,
+    unk_14: i16,
+}
+
+/// `Demo3ReadOnlyData`, `Demo3ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Demo3 {
+    fov: f32,
+    interface_flags: i16,
+    initial_at: Vec3,
+    unk_0c: f32,
+    anim_frame: i16,
+    yaw_dir: i16,
+}
+
+/// `D_8011D658` (`z_camera_data.c`): `Camera_Demo3`'s eye offsets (r, pitch, yaw) at its four
+/// key frames.
+const D_8011D658: [VecSph; 4] = [
+    VecSph { r: 50.0, pitch: 0xEE3Au16 as i16, yaw: 0xD558u16 as i16 },
+    VecSph { r: 75.0, pitch: 0x0000, yaw: 0x8008u16 as i16 },
+    VecSph { r: 80.0, pitch: 0xEE3Au16 as i16, yaw: 0x8008u16 as i16 },
+    VecSph { r: 15.0, pitch: 0xEE3Au16 as i16, yaw: 0x8008u16 as i16 },
+];
+/// `D_8011D678`: its `at` offsets from where the chest opening started.
+const D_8011D678: [Vec3; 4] = [Vec3::new(0.0, 40.0, 20.0), Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.0, 3.0, -3.0), Vec3::new(0.0, 3.0, -3.0)];
+
 /// `KeepOn1ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default)]
 struct Keep1Rw {
@@ -674,6 +727,9 @@ pub struct CamFrame<'a> {
     /// `CollisionCheck_LineOCCheck`.
     pub player_actor: Option<ActorHandle>,
     pub oc_lines: &'a crate::collision_check::OcLines,
+    /// `camera->target`'s world position and shape rotation (`Actor_GetWorldPosShapeRot`), for
+    /// `Camera_KeepOn4`'s target-relative item cameras.
+    pub target_pos_rot: Option<(Vec3, [i16; 3])>,
 }
 
 /// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
@@ -771,6 +827,8 @@ pub struct GameCamera {
     pub dist: f32,
     /// `inputDir` (pitch, yaw, roll): what `Camera_GetInputDirYaw` returns (`.1`).
     pub input_dir: [i16; 3],
+    /// `camDir`: the eye-to-at direction the last `Camera_Update` ended on.
+    pub cam_dir: [i16; 3],
     pub up: Vec3,
     player_pos: Vec3,
     player_rot_y: i16,
@@ -836,6 +894,9 @@ pub struct GameCamera {
     keep3_ro: Keep3Ro,
     keep3_rw: Keep3Rw,
     keep0: Keep0,
+    keep4_ro: Keep4Ro,
+    keep4_rw: Keep4Rw,
+    demo3: Demo3,
     fixd: FixedData,
     uniq: UniqueData,
     update_direction: bool,
@@ -866,6 +927,7 @@ impl GameCamera {
             roll: 0,
             dist: 180.0,
             input_dir: [0x71C, p.shape_yaw, 0],
+            cam_dir: [0x71C, p.shape_yaw, 0],
             up: Vec3::Y,
             player_pos: p.pos,
             player_rot_y: p.shape_yaw,
@@ -917,6 +979,9 @@ impl GameCamera {
             keep3_ro: Keep3Ro::default(),
             keep3_rw: Keep3Rw::default(),
             keep0: Keep0::default(),
+            keep4_ro: Keep4Ro::default(),
+            keep4_rw: Keep4Rw::default(),
+            demo3: Demo3::default(),
             fixd: FixedData::default(),
             uniq: UniqueData::default(),
             update_direction: false,
@@ -1282,6 +1347,8 @@ impl GameCamera {
                 Some("CAM_FUNC_UNIQ6") => self.unique6(d, p),
                 Some("CAM_FUNC_UNIQ7") => self.unique7(d, col),
                 Some("CAM_FUNC_SPEC9") => self.special9(d, col, p, f.door, frames, &f.input),
+                Some("CAM_FUNC_KEEP4") => self.keep_on4(d, col, p, f),
+                Some("CAM_FUNC_DEMO3") => self.demo3(d, col, p, frames, &f.input),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else {
@@ -1297,6 +1364,7 @@ impl GameCamera {
 
         let angle = diff_to_sph_geo(self.eye, self.at);
         self.up = calc_up(angle.pitch, angle.yaw, self.roll);
+        self.cam_dir = [angle.pitch, angle.yaw, 0];
         if !self.update_direction {
             self.input_dir = [angle.pitch, angle.yaw, 0];
         }
@@ -2437,6 +2505,409 @@ impl GameCamera {
             self.unk_14c |= 0x400 | 0x10;
         }
         self.fov = lerp_ceil_f(self.keep0.fov_target, self.fov, 0.5, 10.0);
+    }
+
+    /// `Camera_KeepOn4` (`CAM_SET_TURN_AROUND`, "ITEM2"): the camera turns in front of Player to
+    /// look at him holding an item up. `data2` (`Camera_SetCameraData`) is the kind of item and
+    /// adjusts the data (9 for `func_8084E6D4`'s get-item). Over `unk_1E` frames the eye swings
+    /// from where it was to the chosen pitch and yaw around Player's head (retrying other angles
+    /// when a collider or a wall is in the way), then holds until Player is done (`unk_14C & 8`,
+    /// `func_8005B1A4`) and the previous setting or bg camera comes back.
+    fn keep_on4(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, f: &CamFrame) {
+        let reload = matches!(self.anim_state, 0 | 10 | 20);
+        if reload {
+            if self.view_unk_124 == 0 {
+                self.unk_14c |= 0x20;
+                self.unk_14c &= !(0x4 | 0x2);
+                self.view_unk_124 = 0x50;
+                return;
+            }
+            self.keep4_rw.unk_14 = self.data2;
+            self.unk_14c &= !0x20;
+        }
+        if self.keep4_rw.unk_14 != self.data2 {
+            // "camera: item: item type changed".
+            self.anim_state = 20;
+            self.unk_14c |= 0x20;
+            self.unk_14c &= !(0x4 | 0x2);
+            self.view_unk_124 = 0x50;
+            return;
+        }
+        let player_height = p.height();
+        self.unk_14c &= !0x10;
+        if reload {
+            let t = -0.5f32;
+            let y_normal = 1.0 + t - (68.0 / player_height * t);
+            let cur = self.cur();
+            let v = |i: usize| d.value(cur, i) as f32;
+            let mut ro = Keep4Ro {
+                unk_00: v(0) * 0.01 * player_height * y_normal,
+                unk_04: v(1) * 0.01 * player_height * y_normal,
+                unk_08: v(2),
+                unk_0c: v(3),
+                unk_10: v(4),
+                unk_18: v(5),
+                unk_1c: d.value(cur, 6),
+                unk_14: v(7) * 0.01,
+                unk_1e: d.value(cur, 8),
+            };
+            match self.data2 {
+                1 => {
+                    ro.unk_00 = player_height * -0.6 * y_normal;
+                    ro.unk_04 = player_height * 2.0 * y_normal;
+                    ro.unk_08 = 10.0;
+                }
+                2 | 3 => {
+                    ro.unk_08 = -20.0;
+                    ro.unk_18 = 80.0;
+                }
+                4 => {
+                    ro.unk_00 = player_height * -0.2 * y_normal;
+                    ro.unk_08 = 25.0;
+                }
+                8 => {
+                    ro.unk_00 = player_height * -0.2 * y_normal;
+                    ro.unk_04 = player_height * 0.8 * y_normal;
+                    ro.unk_08 = 50.0;
+                    ro.unk_18 = 70.0;
+                }
+                9 => {
+                    ro.unk_00 = player_height * 0.1 * y_normal;
+                    ro.unk_04 = player_height * 0.5 * y_normal;
+                    ro.unk_08 = -20.0;
+                    ro.unk_0c = 0.0;
+                    ro.unk_1c = 0x2540;
+                }
+                5 => {
+                    ro.unk_00 = player_height * -0.4 * y_normal;
+                    ro.unk_08 = -10.0;
+                    ro.unk_0c = 45.0;
+                    ro.unk_1c = 0x2002;
+                }
+                10 => {
+                    ro.unk_00 = player_height * -0.5 * y_normal;
+                    ro.unk_04 = player_height * 1.5 * y_normal;
+                    ro.unk_08 = -15.0;
+                    ro.unk_0c = 175.0;
+                    ro.unk_18 = 70.0;
+                    ro.unk_1c = 0x2202;
+                    ro.unk_1e = 0x3C;
+                }
+                12 => {
+                    ro.unk_00 = player_height * -0.6 * y_normal;
+                    ro.unk_04 = player_height * 1.6 * y_normal;
+                    ro.unk_08 = -2.0;
+                    ro.unk_0c = 120.0;
+                    // PLAYER_STATE1_27: swimming.
+                    ro.unk_10 = if p.state1 & (1 << 27) != 0 { 0.0 } else { 20.0 };
+                    ro.unk_1c = 0x3212;
+                    ro.unk_1e = 0x1E;
+                    ro.unk_18 = 50.0;
+                }
+                0x5A => {
+                    ro.unk_00 = player_height * -0.3 * y_normal;
+                    ro.unk_18 = 45.0;
+                    ro.unk_1c = 0x2F02;
+                }
+                0x5B => {
+                    ro.unk_00 = player_height * -0.1 * y_normal;
+                    ro.unk_04 = player_height * 1.5 * y_normal;
+                    ro.unk_08 = -3.0;
+                    ro.unk_0c = 10.0;
+                    ro.unk_18 = 55.0;
+                    ro.unk_1c = 0x2F08;
+                }
+                0x51 => {
+                    ro.unk_00 = player_height * -0.3 * y_normal;
+                    ro.unk_04 = player_height * 1.5 * y_normal;
+                    ro.unk_08 = 2.0;
+                    ro.unk_0c = 20.0;
+                    ro.unk_10 = 20.0;
+                    ro.unk_1c = 0x2280;
+                    ro.unk_1e = 0x1E;
+                    ro.unk_18 = 45.0;
+                }
+                11 => {
+                    ro.unk_00 = player_height * -0.19 * y_normal;
+                    ro.unk_04 = player_height * 0.7 * y_normal;
+                    ro.unk_0c = 130.0;
+                    ro.unk_10 = 10.0;
+                    ro.unk_1c = 0x2522;
+                }
+                _ => {}
+            }
+            self.keep4_ro = ro;
+        }
+        let ro = self.keep4_ro;
+        self.update_direction = true;
+        self.interface_flags = ro.unk_1c;
+        let spa8 = diff_to_sph_geo(self.at, self.eye_next);
+        let mut d_8015bd50 = self.player_pos + Vec3::Y * player_height;
+        // BgCheck_CameraRaycastDown2.
+        let (ground, _) = col.raycast_down(d_8015bd50, bgcheck::IGNORE_CAMERA, bgcheck::DOWN_CHECK_WALLS | bgcheck::DOWN_CHECK_FLOORS, 1.0);
+        if ground > ro.unk_00 + d_8015bd50.y {
+            d_8015bd50.y = ground + 10.0;
+        } else {
+            d_8015bd50.y += ro.unk_00;
+        }
+        let mut spb8 = VecSph::default();
+        match self.anim_state {
+            0 | 20 => {
+                let mut exclusions = vec![f.player_actor];
+                self.func_80043abc(d);
+                self.unk_14c &= !(0x4 | 0x2);
+                self.keep4_rw.unk_10 = ro.unk_1e;
+                self.keep4_rw.unk_08 = self.player_pos.y - self.player_pos_delta.y;
+                let behind = self.player_rot_y.wrapping_sub(0x7FFF);
+                let (spa2, spa0);
+                if ro.unk_1c & 2 != 0 {
+                    spa2 = cam_deg_to_binang(ro.unk_08);
+                    let turn = cam_deg_to_binang(ro.unk_0c);
+                    spa0 = if behind.wrapping_sub(spa8.yaw) > 0 { behind.wrapping_add(turn) } else { behind.wrapping_sub(turn) };
+                } else if ro.unk_1c & 4 != 0 {
+                    spa2 = cam_deg_to_binang(ro.unk_08);
+                    spa0 = cam_deg_to_binang(ro.unk_0c);
+                } else if ro.unk_1c & 8 != 0
+                    && let Some((_, rot)) = f.target_pos_rot.filter(|_| self.target.is_some())
+                {
+                    spa2 = cam_deg_to_binang(ro.unk_08).wrapping_sub(rot[0]);
+                    let tb = rot[1].wrapping_sub(0x7FFF);
+                    let turn = cam_deg_to_binang(ro.unk_0c);
+                    spa0 = if tb.wrapping_sub(spa8.yaw) > 0 { tb.wrapping_add(turn) } else { tb.wrapping_sub(turn) };
+                    exclusions.push(self.target);
+                } else if ro.unk_1c & 0x80 != 0
+                    && let Some((pos, _)) = f.target_pos_rot.filter(|_| self.target.is_some())
+                {
+                    spa2 = cam_deg_to_binang(ro.unk_08);
+                    // Camera_XZAngle(&target, &playerPos).
+                    let sp9e = cam_deg_to_binang(rad_to_deg(f_atan2f(self.player_pos.x - pos.x, self.player_pos.z - pos.z)));
+                    let turn = cam_deg_to_binang(ro.unk_0c);
+                    spa0 = if sp9e.wrapping_sub(spa8.yaw) > 0 { sp9e.wrapping_add(turn) } else { sp9e.wrapping_sub(turn) };
+                    exclusions.push(self.target);
+                } else if ro.unk_1c & 0x40 != 0 {
+                    spa2 = cam_deg_to_binang(ro.unk_08);
+                    spa0 = spa8.yaw;
+                } else {
+                    spa2 = spa8.pitch;
+                    spa0 = spa8.yaw;
+                }
+                spb8 = VecSph { r: ro.unk_04, pitch: spa2, yaw: spa0 };
+                let mut d_8015bd70 = sph_geo_add(d_8015bd50, spb8);
+                if ro.unk_1c & 1 == 0 {
+                    for i in 0..D_8011D3B0.len() {
+                        if !f.oc_lines.line_oc_check(d_8015bd50, d_8015bd70, &exclusions) && !Self::bg_check(col, d_8015bd50, &mut d_8015bd70) {
+                            break;
+                        }
+                        spb8.yaw = (D_8011D3B0[i] as i16).wrapping_add(spa0);
+                        spb8.pitch = (D_8011D3CC[i] as i16).wrapping_add(spa2);
+                        d_8015bd70 = sph_geo_add(d_8015bd50, spb8);
+                    }
+                }
+                let rw = &mut self.keep4_rw;
+                rw.unk_04 = spb8.pitch.wrapping_sub(spa8.pitch) as f32 / rw.unk_10 as f32;
+                rw.unk_00 = spb8.yaw.wrapping_sub(spa8.yaw) as f32 / rw.unk_10 as f32;
+                rw.unk_0c = spa8.yaw;
+                rw.unk_0e = spa8.pitch;
+                self.anim_state += 1;
+                rw.unk_12 = 1;
+            }
+            10 => self.keep4_rw.unk_08 = self.player_pos.y - self.player_pos_delta.y,
+            _ => {}
+        }
+        self.xz_offset_update_rate = 0.25;
+        self.y_offset_update_rate = 0.25;
+        self.at_lerp_step_scale = 0.75;
+        let mut at = self.at;
+        lerp_ceil_vec3(d_8015bd50, &mut at, 0.5, 0.5, 0.2);
+        self.at = at;
+        if ro.unk_10 != 0.0 {
+            spb8 = VecSph { r: ro.unk_10, pitch: 0, yaw: self.player_rot_y };
+            self.at = sph_geo_add(self.at, spb8);
+        }
+        self.at_lerp_step_scale = 0.0;
+        self.dist = lerp_ceil_f(ro.unk_04, self.dist, 0.25, 2.0);
+        spb8.r = self.dist;
+        if self.keep4_rw.unk_10 != 0 {
+            self.unk_14c |= 0x20;
+            let rw = &mut self.keep4_rw;
+            rw.unk_0c = rw.unk_0c.wrapping_add(rw.unk_00 as i32 as i16);
+            rw.unk_0e = rw.unk_0e.wrapping_add(rw.unk_04 as i32 as i16);
+            rw.unk_10 -= 1;
+        } else if ro.unk_1c & 0x10 != 0 {
+            self.unk_14c |= 0x400 | 0x10;
+            self.unk_14c |= 0x4 | 0x2;
+            self.unk_14c &= !8;
+            if self.timer > 0 {
+                self.timer -= 1;
+            }
+        } else {
+            self.unk_14c |= 0x400 | 0x10;
+            if self.unk_14c & 8 != 0 || ro.unk_1c & 0x80 != 0 {
+                self.interface_flags = 0;
+                self.unk_14c |= 0x4 | 0x2;
+                self.unk_14c &= !8;
+                self.restore_setting(d, col);
+            }
+        }
+        spb8.yaw = lerp_ceil_s(self.keep4_rw.unk_0c, spa8.yaw, ro.unk_14, 4);
+        spb8.pitch = lerp_ceil_s(self.keep4_rw.unk_0e, spa8.pitch, ro.unk_14, 4);
+        self.eye_next = sph_geo_add(self.at, spb8);
+        self.eye = self.eye_next;
+        let mut eye = self.eye;
+        Self::bg_check(col, self.at, &mut eye);
+        self.eye = eye;
+        self.fov = lerp_ceil_f(ro.unk_18, self.fov, self.fov_update_rate, 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+    }
+
+    /// The end of an item or chest camera: back to the setting before
+    /// (`Camera_ChangeSettingFlags(prevSetting, 2)`), or to the bg camera before.
+    fn restore_setting(&mut self, d: &CameraData, col: &CollisionContext) {
+        if self.prev_bg_cam_index < 0 {
+            let prev = self.prev_setting;
+            self.change_setting_flags(d, prev, 2);
+        } else {
+            let prev = self.prev_bg_cam_index as i32;
+            self.change_bg_cam_index(d, col, prev);
+            self.prev_bg_cam_index = -1;
+        }
+    }
+
+    /// `Camera_Demo3` (`CAM_SET_SLOW_CHEST_CS`, "ITEM0"): a big chest opening on a major item.
+    /// From where Player stands, the camera circles in from one side (the side picked by the
+    /// frame's parity, the other if a wall is there) through `D_8011D658` / `D_8011D678`'s
+    /// four key frames (frames 2, 148, 159, 168), holds, and 60 frames after the last (or on a
+    /// press, once Player is done) pulls back 80 and gives the setting back.
+    fn demo3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32, input: &Input) {
+        let y_offset = p.height();
+        self.unk_14c &= !0x10;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let cur = self.cur();
+            self.demo3.fov = d.value(cur, 0) as f32;
+            // unk_04 (unused), then the interface flags.
+            self.demo3.interface_flags = d.value(cur, 2);
+        }
+        let eye_at_offset = diff_to_sph_geo(self.at, self.eye);
+        self.interface_flags = self.demo3.interface_flags;
+        let rot_y = self.player_rot_y;
+        let mut eye_offset = VecSph::default();
+        let mut skip_update_eye = false;
+        let lerp_f = |a: f32, b: f32, t: f32| a + (b - a) * t;
+        let lerp_s = |a: i16, b: i16, t: f32| a.wrapping_add((b.wrapping_sub(a) as f32 * t) as i32 as i16);
+        match self.anim_state {
+            0 => {
+                self.unk_14c &= !(0x8 | 0x4);
+                self.func_80043b60(d);
+                self.fov = self.demo3.fov;
+                self.roll = 0;
+                self.demo3.anim_frame = 0;
+                let mut initial_at = self.player_pos;
+                if self.player_ground_y != bgcheck::BGCHECK_Y_MIN {
+                    initial_at.y = self.player_ground_y;
+                }
+                self.demo3.initial_at = initial_at;
+                let mut angle = rot_y;
+                let sp68 = Vec3::new(initial_at.x + sin_s(angle) * 40.0, initial_at.y + 40.0, initial_at.z + cos_s(angle) * 40.0);
+                if frames & 1 != 0 {
+                    angle = angle.wrapping_sub(0x3FFF);
+                    self.demo3.yaw_dir = 1;
+                } else {
+                    angle = angle.wrapping_add(0x3FFF);
+                    self.demo3.yaw_dir = -1;
+                }
+                let mut sp74 = Vec3::new(sp68.x + D_8011D658[1].r * sin_s(angle), initial_at.y + 5.0, sp68.z + D_8011D658[1].r * cos_s(angle));
+                if Self::bg_check(col, sp68, &mut sp74) {
+                    self.demo3.yaw_dir = -self.demo3.yaw_dir;
+                }
+                let mut at_offset = vec3_to_sph_geo(D_8011D678[0]);
+                at_offset.yaw = at_offset.yaw.wrapping_add(rot_y);
+                self.at = sph_geo_add(initial_at, at_offset);
+                eye_offset = VecSph { r: D_8011D658[0].r, pitch: D_8011D658[0].pitch, yaw: D_8011D658[0].yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y) };
+                self.demo3.unk_0c = 1.0;
+            }
+            1 | 2 | 3 => {
+                let (k, t) = match self.anim_state {
+                    1 => (0, (self.demo3.anim_frame - 2) as f32 * (1.0 / 146.0)),
+                    2 => (1, (self.demo3.anim_frame - 0x94) as f32 * 0.1),
+                    _ => (2, (self.demo3.anim_frame - 0x9F) as f32 * (1.0 / 9.0)),
+                };
+                let (a, bb) = (D_8011D678[k], D_8011D678[k + 1]);
+                let mut sp5c = Vec3::new(lerp_f(a.x, bb.x, t), 0.0, lerp_f(a.z, bb.z, t));
+                sp5c.y = match self.anim_state {
+                    1 => lerp_f(a.y, bb.y, t),
+                    2 => lerp_f(a.y - y_offset, bb.y, t) + y_offset,
+                    _ => lerp_f(a.y, bb.y, t) + y_offset,
+                };
+                let mut at_offset = vec3_to_sph_geo(sp5c);
+                at_offset.yaw = at_offset.yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y);
+                self.at = sph_geo_add(self.demo3.initial_at, at_offset);
+                let (e0, e1) = (D_8011D658[k], D_8011D658[k + 1]);
+                let r = lerp_f(e0.r, e1.r, t);
+                let pitch = lerp_s(e0.pitch, e1.pitch, t);
+                let yaw = lerp_s(e0.yaw, e1.yaw, t);
+                eye_offset = VecSph { r, pitch, yaw: yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y) };
+                self.demo3.unk_0c += match self.anim_state {
+                    1 => -(1.0 / 365.0),
+                    2 => -0.04,
+                    _ => 4.0 / 45.0,
+                };
+            }
+            30 | 10 | 20 => {
+                if self.anim_state == 30 {
+                    self.unk_14c |= 0x400;
+                    if self.unk_14c & 8 != 0 {
+                        self.anim_state = 4;
+                    }
+                }
+                skip_update_eye = true;
+            }
+            4 => {
+                eye_offset = VecSph { r: 80.0, pitch: 0, yaw: eye_at_offset.yaw };
+                self.demo3.unk_0c = 0.1;
+                self.interface_flags = 0x3400;
+                let pressed = Self::any_button_pressed(input);
+                if !((self.demo3.anim_frame < 0 || self.xz_speed > 0.001 || pressed) && self.unk_14c & 8 != 0) {
+                    skip_update_eye = true;
+                } else {
+                    self.demo3_end(d, col);
+                    skip_update_eye = true;
+                }
+            }
+            _ => {
+                self.demo3_end(d, col);
+                skip_update_eye = true;
+            }
+        }
+        self.demo3.anim_frame = self.demo3.anim_frame.wrapping_add(1);
+        self.anim_state = match self.demo3.anim_frame {
+            1 => 10,
+            2 => 1,
+            148 => 2,
+            158 => 20,
+            159 => 3,
+            168 => 30,
+            228 => 4,
+            _ => self.anim_state,
+        };
+        if !skip_update_eye {
+            let t = self.demo3.unk_0c;
+            eye_offset.r = lerp_ceil_f(eye_offset.r, eye_at_offset.r, t, 2.0);
+            eye_offset.pitch = lerp_ceil_s(eye_offset.pitch, eye_at_offset.pitch, t, 0xA);
+            eye_offset.yaw = lerp_ceil_s(eye_offset.yaw, eye_at_offset.yaw, t, 0xA);
+            self.eye_next = sph_geo_add(self.at, eye_offset);
+            self.eye = self.eye_next;
+        }
+        self.dist = self.at.distance(self.eye);
+        self.at_lerp_step_scale = 0.1;
+        self.pos_offset = self.at - self.player_pos;
+    }
+
+    /// `Camera_Demo3`'s default case: done; the setting before comes back.
+    fn demo3_end(&mut self, d: &CameraData, col: &CollisionContext) {
+        self.unk_14c |= 0x14;
+        self.unk_14c &= !8;
+        self.restore_setting(d, col);
+        self.interface_flags = 0;
     }
 
     // ---- The fixed, data, unique and special cameras ----------------------------------------

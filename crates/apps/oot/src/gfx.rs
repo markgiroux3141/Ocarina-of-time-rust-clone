@@ -9,7 +9,7 @@ use eng_gfx::combiner::{Combiner, encode};
 use eng_render::LineVertex;
 use glam::{Vec2, Vec3};
 use oot_game::pack::GamePack;
-use oot_game::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
+use oot_game::player_lib::{Age, LinkFaces, LinkVariant};
 
 /// A material whose colour is the vertex colour (`G_CC_SHADE`), unlit.
 fn shade_material(blend: BlendMode) -> Material {
@@ -187,21 +187,18 @@ pub struct LinkGfx {
 
 impl LinkGfx {
     pub fn load(pack: &GamePack) -> anyhow::Result<LinkGfx> {
-        let rules: PlayerRules = pack.player_rules()?;
         let mut variants = HashMap::new();
         for age in [Age::Adult, Age::Child] {
-            for g in &rules.model_groups {
-                for fists in [false, true] {
-                    let key = oot_game::pack::keys::link_variant(age, &g.name, fists);
-                    variants.insert(key, (age, pack.link_variant(age, &g.name, fists)?));
-                }
+            for key in pack.link_variant_names(age) {
+                let v: LinkVariant = pack.assets.get(&key)?;
+                variants.insert(key, (age, v));
             }
         }
         Ok(LinkGfx { variants, faces: [pack.link_faces(Age::Adult)?, pack.link_faces(Age::Child)?] })
     }
 
-    /// The mesh `name` (a `player/<age>/<group>/<hands>` record) with `eye` and `mouth` bound
-    /// to segments 8 and 9.
+    /// The mesh `name` (a `player/<age>/<limb lists>` record) with `eye` and `mouth` bound to
+    /// segments 8 and 9.
     pub fn mesh(&self, name: &str, eye: usize, mouth: usize) -> Option<DrawList> {
         let (age, v) = self.variants.get(name)?;
         Some(v.with_face(&self.faces[*age as usize], eye, mouth))

@@ -28,6 +28,7 @@ use oot_game::spawn::Overlays;
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
 pub mod dummy_target;
+pub mod en_box;
 pub mod en_door;
 pub mod en_holl;
 pub mod en_item00;
@@ -64,6 +65,7 @@ pub fn overlays() -> Overlays {
     o.register(en_wonder_talk2::ACTOR_EN_WONDER_TALK2, en_wonder_talk2::EnWonderTalk2::init);
     o.register(en_item00::ACTOR_EN_ITEM00, en_item00::EnItem00::init);
     o.register(bg_treemouth::ACTOR_BG_TREEMOUTH, bg_treemouth::BgTreemouth::init);
+    o.register(en_box::ACTOR_EN_BOX, en_box::EnBox::init);
     o
 }
 
@@ -74,6 +76,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_door::bakes());
     v.extend(en_item00::bakes());
     v.extend(bg_treemouth::bakes());
+    v.extend(en_box::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).
@@ -136,6 +139,10 @@ pub trait PlayExt {
     /// Moves Player to `pos` facing `yaw`, standing, with the cameras behind it (a test or
     /// sandbox start somewhere other than the entrance's spawn).
     fn place_player(&mut self, pos: Vec3, yaw: i16);
+    /// The pause menu's equipping, as a stand-in (the pause menu isn't ported):
+    /// [`oot_game::save::SaveContext::equip_owned_unworn`], then `Player_SetEquipmentData` as the menu's
+    /// closing runs it. Returns whether anything was equipped.
+    fn equip_owned_unworn(&mut self) -> bool;
     /// Adds a dummy Z-target standing at `pos`.
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle;
     /// Adds a `Bg_Ydan_Hasi` floating block with `header` (`gDTSlidingPlatformCol`) at `home`,
@@ -186,6 +193,14 @@ impl PlayExt for PlayState {
         p.stand_still(&data);
         self.reset_cameras();
         self.reset_blending();
+    }
+    fn equip_owned_unworn(&mut self) -> bool {
+        if !self.save.equip_owned_unworn() {
+            return false;
+        }
+        let (data, save) = (self.data.clone(), self.save.clone());
+        self.player_mut().set_equipment_data(&data, &save);
+        true
     }
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle {
         let h = self.spawn(Box::new(DummyTarget::new(pos))).expect("spawn");

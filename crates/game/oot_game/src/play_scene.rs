@@ -71,6 +71,8 @@ pub struct GameAssets {
     pub item_drops: crate::item::ItemDropTables,
     /// `sRestrictionFlags`.
     pub interface: crate::interface::InterfaceTables,
+    /// `sGetItemTable`, `sDrawItemTable`.
+    pub items: crate::item::ItemTables,
     /// Skeletons and standard animations read so far (actors load theirs at init).
     skeletons: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::skeleton::Skeleton>>>,
     animations: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::anim::StandardAnimation>>>,
@@ -85,6 +87,7 @@ impl GameAssets {
             messages: Arc::new(pack.messages()?),
             item_drops: pack.item_drops()?,
             interface: pack.interface()?,
+            items: pack.items()?,
             overlays,
             pack,
             skeletons: Default::default(),
@@ -353,7 +356,9 @@ impl PlayState {
         // the restrictions between).
         play.interface_ctx = crate::interface::InterfaceContext::init(&mut play.save, &assets.interface, scene_id);
 
-        // func_800304DC: Player.
+        // func_800304DC (Actor_InitContext): the scene's saved flags, then Player.
+        let saved = play.save.scene_flags(scene_id);
+        play.flags = crate::spawn::SceneFlags { chest: saved.chest, swch: saved.swch, clear: saved.clear, collect: saved.collect, ..Default::default() };
         let p = play.actor_spawn_entry(&link_entry).map_err(|e| anyhow::anyhow!("spawning Player: {e:?}"))?;
         play.player = Some(p);
         play.spawn = (Vec3::new(link_entry.pos[0] as f32, link_entry.pos[1] as f32, link_entry.pos[2] as f32), link_entry.rot[1]);
@@ -386,6 +391,8 @@ impl PlayState {
     /// the save, the pad, the camera choice and the debug switches.
     pub(crate) fn reinit(&mut self) {
         let Some(assets) = self.assets.clone() else { return };
+        // Play_Destroy → Actor_CleanupContext → Play_SaveSceneFlags.
+        self.save_scene_flags();
         match PlayState::play_init(assets, self.data.clone(), self.rules.clone(), self.save.clone()) {
             Ok(mut next) => {
                 // Until the new state's first frame runs, the screen keeps the fade-out this
@@ -404,6 +411,18 @@ impl PlayState {
                 log::error!("Play_Init for entrance {:#x}: {e:#}", self.save.entrance_index);
                 self.transition = TransitionState::default();
             }
+        }
+    }
+
+    /// `Play_SaveSceneFlags`: the scene's chest, switch, clear and collectible flags into the
+    /// save, for the next visit.
+    pub fn save_scene_flags(&mut self) {
+        let f = self.flags;
+        if let Some(s) = self.save.scene_flags.get_mut(self.scene_id as usize) {
+            s.chest = f.chest;
+            s.swch = f.swch;
+            s.clear = f.clear;
+            s.collect = f.collect;
         }
     }
 

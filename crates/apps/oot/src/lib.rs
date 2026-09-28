@@ -60,8 +60,12 @@ pub struct Options {
     pub no_foot_ik: bool,
     /// A dummy Z-target this many units in front of the spawn (0 = none).
     pub target: f32,
-    /// Link at `x,y,z,yaw` instead of the spawn.
+    /// Link at `x,y,z,yaw` instead of the spawn (with an entrance: after `Play_Init`, and
+    /// after `room`).
     pub at: Vec<f32>,
+    /// With an entrance: after `Play_Init`, this room loaded as walking into it would load it
+    /// (a debug start somewhere the spawns don't reach, e.g. room 2's sword chest).
+    pub room: Option<i8>,
     /// Child Link.
     pub child: bool,
     /// A pack file or loose folder to use instead of the default pack.
@@ -121,6 +125,10 @@ pub struct Assets {
     pub placeholders: bool,
     /// The debug save preset, if any.
     pub preset: Option<String>,
+    /// With an entrance: the room to change to after `Play_Init`, and where to put Link then
+    /// (`--room`, `--at`).
+    pub start_room: Option<i8>,
+    pub start_at: Option<(Vec3, i16)>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
     pub day_time: u16,
@@ -187,6 +195,8 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         entrance: None,
         placeholders: o.placeholders,
         preset: o.preset.clone(),
+        start_room: o.room,
+        start_at: None,
         scene_name: o.scene.clone(),
         spawn_index: o.spawn,
         day_time: parse_time(&o.time)?,
@@ -219,7 +229,9 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
     }
     if let [x, y, z, yaw] = o.at[..] {
         a.spawn = (Vec3::new(x, y, z), yaw as i32 as i16);
+        a.start_at = Some(a.spawn);
     }
+    anyhow::ensure!(o.room.is_none() || o.entrance.is_some(), "--room needs --entrance (it changes rooms after Play_Init)");
     let dist = o.target;
     if dist > 0.0 {
         let (pos, yaw) = a.spawn;
@@ -284,6 +296,16 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
         }
         match oot_actors::play_entrance(g.clone(), a.data.clone(), a.rules.clone(), save) {
             Ok(mut w) => {
+                if let Some(r) = a.start_room {
+                    // Room_RequestNewRoom, a frame for it to load, then func_80097534.
+                    if w.room_request(r) {
+                        w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
+                        w.room_change_done();
+                    }
+                }
+                if let Some((pos, yaw)) = a.start_at {
+                    w.place_player(pos, yaw);
+                }
                 if a.follow_camera {
                     w.toggle_camera();
                 }
@@ -504,6 +526,19 @@ impl App {
     }
 }
 
+/// Start (Enter): the pause menu's equipping as a stand-in ([`PlayExt::equip_owned_unworn`]),
+/// when `KaleidoSetup_Update` would open the menu: no transition, not in a cutscene
+/// (`Play_InCsMode`), and (the port's own condition) no message box up.
+fn pause_menu_equip(w: &mut PlayState) {
+    use oot_game::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
+    if w.transition.trigger != TRANS_TRIGGER_OFF || w.transition.mode != TRANS_MODE_OFF || w.player_in_cs_mode() || w.msg_ctx.msg_mode != oot_game::message::MSGMODE_NONE {
+        return;
+    }
+    if w.equip_owned_unworn() {
+        log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}", w.save.equips.equipment, w.save.equips.button_items[0]);
+    }
+}
+
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -521,8 +556,12 @@ impl eframe::App for App {
         }
         let kb = eng_app::keyboard(&ctx);
         let pad = merge(self.pads.as_ref().and_then(|p| p.state()), &kb);
+        let start = pad.button & eng_input::pad::BTN_START != 0 && self.last_pad.button & eng_input::pad::BTN_START == 0;
         self.last_pad = pad;
         self.world.poll(pad);
+        if start {
+            pause_menu_equip(&mut self.world);
+        }
         ctx.input(|i| {
             if i.key_pressed(egui::Key::F1) {
                 self.show_wire = !self.show_wire;

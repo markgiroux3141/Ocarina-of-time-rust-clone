@@ -9,6 +9,7 @@ echo   Build and test
 echo     1  build                Build everything (release)
 echo     2  test                 All the tests
 echo     3  test-playthrough     GAME-02's playthrough test
+echo    11  test-sword-chest     GAME-03's Kokiri Sword chest test
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo.
@@ -17,6 +18,7 @@ echo     6  game                 Kokiri Forest
 echo     7  game-links-house     From Link's bed, the Deku Tree's mouth open
 echo     8  game-deku-tree-open  At the Deku Tree, his mouth open
 echo     9  game-deku-tree-dead  At the Deku Tree after Gohma
+echo    12  game-sword-chest     A new save at the Kokiri Sword's chest
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -39,6 +41,8 @@ if "%pick%"=="7" set "script=game-links-house"
 if "%pick%"=="8" set "script=game-deku-tree-open"
 if "%pick%"=="9" set "script=game-deku-tree-dead"
 if "%pick%"=="10" set "script=sandbox-playthrough"
+if "%pick%"=="11" set "script=test-sword-chest"
+if "%pick%"=="12" set "script=game-sword-chest"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

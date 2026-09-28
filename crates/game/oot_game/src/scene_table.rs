@@ -107,7 +107,7 @@ fn gfx_tex_scroll(x: u32, y: u32, width: i32, height: i32) -> Dl {
 
 /// `Gfx_TwoTexScroll` (`z_rcp.c`).
 #[allow(clippy::too_many_arguments)]
-fn gfx_two_tex_scroll(tile1: u32, x1: u32, y1: u32, width1: i32, height1: i32, tile2: u32, x2: u32, y2: u32, width2: i32, height2: i32) -> Dl {
+pub fn gfx_two_tex_scroll(tile1: u32, x1: u32, y1: u32, width1: i32, height1: i32, tile2: u32, x2: u32, y2: u32, width2: i32, height2: i32) -> Dl {
     let (x1, y1, x2, y2) = (x1 % (512 << 2), y1 % (512 << 2), x2 % (512 << 2), y2 % (512 << 2));
     vec![
         g_dp_tile_sync(),

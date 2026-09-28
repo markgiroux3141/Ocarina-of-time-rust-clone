@@ -433,6 +433,24 @@ pub fn glyph_sprite(glyph: u8) -> String {
 pub fn icon_sprite(icon: u8) -> String {
     format!("message/icon{icon}")
 }
+pub fn item_icon_sprite(item: u8) -> String {
+    format!("message/item{item:02X}")
+}
+
+/// Where `Message_LoadItemIcon` loads an item's icon from: `(file, offset, size)`. Items below
+/// `ITEM_MEDALLION_FOREST` are `icon_item_static`'s 32x32 icons (`item * 0x1000`, up to the
+/// fishing rod); the medallions, stones and dungeon items `icon_item_24_static`'s 24x24 ones
+/// (`(item - ITEM_MEDALLION_FOREST) * 0x900`, up to the large magic jar).
+pub fn item_icon_texture(item: u8) -> Option<(&'static str, u32, u32)> {
+    use crate::item::{ITEM_MAGIC_LARGE, ITEM_MEDALLION_FOREST};
+    if item <= crate::interface::LAST_ICON_ITEM {
+        Some(("icon_item_static", item as u32 * 0x1000, 32))
+    } else if (ITEM_MEDALLION_FOREST..=ITEM_MAGIC_LARGE).contains(&item) {
+        Some(("icon_item_24_static", (item - ITEM_MEDALLION_FOREST) as u32 * 0x900, 24))
+    } else {
+        None
+    }
+}
 
 impl MessageContext {
     /// `Message_Init`: nothing open (`Font_LoadOrderedFont`, the name entry's font, isn't
@@ -674,9 +692,18 @@ impl MessageContext {
         self.state_timer = self.state_timer.wrapping_add(1);
     }
 
-    /// `Message_DrawItemIcon`: not drawn (the icon's texture isn't loaded), but the text moves
-    /// past it as in the game.
-    fn draw_item_icon(&mut self, i: u16) -> u16 {
+    /// `Message_DrawItemIcon`: the item's icon (`Message_LoadItemIcon`'s: 32x32 from
+    /// `icon_item_static` below `ITEM_MEDALLION_FOREST`, else 24x24 from `icon_item_24_static`)
+    /// at the icon registers, `G_CC_MODULATEIA_PRIM` with white at the text's alpha; the text
+    /// moves 32 past it. (The typing sound isn't played.) An item without an icon in either file
+    /// (the songs read past `icon_item_static`'s icons) draws nothing.
+    fn draw_item_icon(&mut self, i: u16, out: &mut Vec<Sprite>) -> u16 {
+        let item = self.decoded(i as usize + 1);
+        if item_icon_texture(item).is_some() {
+            let r = &self.regs;
+            let (x, y, s) = ((self.text_pos_x + r.textbox_icon_xpos) as f32, r.textbox_icon_ypos as f32, r.textbox_icon_size as f32);
+            out.push(Sprite::rect(item_icon_sprite(item), x, y, x + s, y + s, Some([255, 255, 255, self.text_color[3] as u8]), None));
+        }
         self.text_pos_x += 32;
         i + 1
     }
@@ -790,7 +817,7 @@ impl MessageContext {
                     }
                     i += 2;
                 }
-                MESSAGE_ITEM_ICON => i = self.draw_item_icon(i),
+                MESSAGE_ITEM_ICON => i = self.draw_item_icon(i, out),
                 MESSAGE_BACKGROUND => {
                     // The background images aren't drawn; the text still moves past them.
                     self.text_pos_x += 32;
@@ -1077,7 +1104,7 @@ impl MessageContext {
         self.regs.text_init_xpos = 65;
         if text_id == 0xC2 || text_id == 0xFA {
             // The piece of heart texts follow each other: one per piece already held.
-            text_id += ((f.save.quest_items & 0xF000_0000) >> QUEST_HEART_PIECE_COUNT) as u16;
+            text_id += ((f.save.inventory.quest_items & 0xF000_0000) >> QUEST_HEART_PIECE_COUNT) as u16;
         }
         // (The Biggoron's Sword and gold Skulltula variants of 0xC and 0xB4 need equipment
         // and flags this save doesn't keep.)
@@ -1416,8 +1443,8 @@ impl MessageContext {
                 } else {
                     self.textbox_end_type = TEXTBOX_ENDTYPE_DEFAULT;
                 }
-                if f.save.quest_items & 0xF000_0000 == 4 << QUEST_HEART_PIECE_COUNT {
-                    f.save.quest_items ^= 4 << QUEST_HEART_PIECE_COUNT;
+                if f.save.inventory.quest_items & 0xF000_0000 == 4 << QUEST_HEART_PIECE_COUNT {
+                    f.save.inventory.quest_items ^= 4 << QUEST_HEART_PIECE_COUNT;
                     f.save.health_capacity += 0x10;
                     f.save.health += 0x10;
                 }
@@ -1483,6 +1510,22 @@ pub fn bakes() -> Vec<SpriteBake> {
     // Message_DrawTextboxIcon: gDPSetCombineLERP(PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT,
     // TEXEL0, 0, PRIMITIVE, 0, x2) after the text's setup; the icons follow the four box
     // images in message_static (Font_LoadMessageBoxIcon).
+    // Message_DrawItemIcon: gDPSetCombineMode(G_CC_MODULATEIA_PRIM) after the text's setup,
+    // gDPLoadTextureBlock(RGBA32, 32x32 or 24x24, G_TX_NOMIRROR | G_TX_WRAP).
+    for item in 0..=0xFFu8 {
+        let Some((file, offset, size)) = item_icon_texture(item) else { continue };
+        let mut setup = text_setup();
+        setup.combine_lerp(setup_dl::MODULATEIA_PRIM, setup_dl::MODULATEIA_PRIM);
+        out.push(SpriteBake {
+            name: item_icon_sprite(item),
+            tex: TexSrc::File { file: file.into(), offset },
+            load: Load::new(crate::gbi::G_IM_FMT_RGBA, crate::gbi::G_IM_SIZ_32B, size, size, crate::gbi::G_TX_WRAP),
+            setup,
+            prim: true,
+            env: false,
+            quad: Quad::Rect { s: size, t: size },
+        });
+    }
     for icon in [TEXTBOX_ICON_TRIANGLE, TEXTBOX_ICON_SQUARE, TEXTBOX_ICON_ARROW] {
         let mut setup = text_setup();
         let cc = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::TEXEL0, cc_d::ENVIRONMENT, ac::TEXEL0, ac::ZERO, ac::PRIMITIVE, ac::ZERO];

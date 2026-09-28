@@ -307,11 +307,12 @@ impl CollisionContext {
     /// `BgCheck_RaycastDownDyna`: returns the best dyna floor above `y_static`, or
     /// `BGCHECK_Y_MIN`. (Its re-check for bg actors being deleted, `BGACTOR_1`, never runs
     /// here.)
-    fn raycast_down_dyna(&self, pos: Vec3, xp: u16, down_flags: u32, chk_dist: f32, y_static: f32, out: &mut Option<PolyId>) -> f32 {
+    fn raycast_down_dyna(&self, pos: Vec3, xp: u16, down_flags: u32, chk_dist: f32, y_static: f32, out: &mut Option<PolyId>, skip: Option<u16>) -> f32 {
         let mut result = BGCHECK_Y_MIN;
         let mut best = y_static;
         for (i, a) in self.dyna.actors.iter().enumerate() {
-            if !a.in_use() || a.collision_disabled || pos.y < a.min_y || !a.xz_in_sphere(pos.x, pos.z) {
+            // The asking actor's own bg actor (dynaRaycastDown->actor == bgActors[i].actor).
+            if !a.in_use() || a.collision_disabled || pos.y < a.min_y || !a.xz_in_sphere(pos.x, pos.z) || skip == Some(i as u16) {
                 continue;
             }
             let bg = i as u16;
@@ -343,6 +344,11 @@ impl CollisionContext {
     /// `BgCheck_RaycastDownImpl`. Returns the floor height under `pos` and the poly, or
     /// `BGCHECK_Y_MIN`.
     pub fn raycast_down(&self, pos: Vec3, xp: u16, down_flags: u32, chk_dist: f32) -> (f32, Option<PolyId>) {
+        self.raycast_down_skip(pos, xp, down_flags, chk_dist, None)
+    }
+
+    /// `BgCheck_RaycastDownImpl` for an actor with its own bg actor `skip`, which it ignores.
+    pub fn raycast_down_skip(&self, pos: Vec3, xp: u16, down_flags: u32, chk_dist: f32, skip: Option<u16>) -> (f32, Option<PolyId>) {
         let mut out = None;
         let mut y = BGCHECK_Y_MIN;
         let o = BGCHECK_SUBDIV_OVERLAP;
@@ -361,7 +367,7 @@ impl CollisionContext {
             }
         }
         if !self.dyna.is_empty() {
-            let yd = self.raycast_down_dyna(pos, xp, down_flags, chk_dist, y, &mut out);
+            let yd = self.raycast_down_dyna(pos, xp, down_flags, chk_dist, y, &mut out, skip);
             if y < yd {
                 y = yd;
             }
@@ -375,6 +381,11 @@ impl CollisionContext {
     /// `BgCheck_EntityRaycastDown1/3/5` (entity ground check, chkDist 1).
     pub fn entity_raycast_down(&self, pos: Vec3) -> (f32, Option<PolyId>) {
         self.raycast_down(pos, IGNORE_ENTITY, DOWN_CHECK_WALLS_SIMPLE | DOWN_CHECK_FLOORS | DOWN_CHECK_GROUND_ONLY, 1.0)
+    }
+
+    /// `BgCheck_EntityRaycastDown4`: the same, for an actor ignoring its own bg actor `own_bg`.
+    pub fn entity_raycast_down_actor(&self, pos: Vec3, own_bg: u16) -> (f32, Option<PolyId>) {
+        self.raycast_down_skip(pos, IGNORE_ENTITY, DOWN_CHECK_WALLS_SIMPLE | DOWN_CHECK_FLOORS | DOWN_CHECK_GROUND_ONLY, 1.0, Some(own_bg))
     }
 
     // ---- walls ------------------------------------------------------------------------

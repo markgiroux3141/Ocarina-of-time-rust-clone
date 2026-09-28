@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 7;
+pub const FORMAT_VERSION: u32 = 8;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -61,6 +61,8 @@ pub mod keys {
     pub const ITEM_DROPS: &str = "table/item_drops";
     /// `interface::InterfaceTables`.
     pub const INTERFACE: &str = "table/interface";
+    /// `item::ItemTables`: `sGetItemTable` and `sDrawItemTable`.
+    pub const ITEMS: &str = "table/items";
 
     /// A texture from the decomp's XMLs (`pack::Texture`).
     pub fn texture(file: &str, symbol: &str) -> String {
@@ -94,9 +96,11 @@ pub mod keys {
     pub fn room(file: &str, layer: usize, room: usize) -> String {
         format!("room/{file}/{layer}/{room}")
     }
-    /// `player_lib::LinkVariant`.
-    pub fn link_variant(age: Age, model_group: &str, fists: bool) -> String {
-        format!("player/{}/{model_group}/{}", age.name(), if fists { "fists" } else { "open" })
+    /// `player_lib::LinkVariant`: Link for `age` with these hand, sheath and waist lists
+    /// (`PlayerRules::limb_dlists`, the lists a loadout draws; `-` for none).
+    pub fn link_variant(age: Age, limbs: &[(u8, Option<String>)]) -> String {
+        let names: Vec<&str> = limbs.iter().map(|(_, n)| n.as_deref().unwrap_or("-")).collect();
+        format!("player/{}/{}", age.name(), names.join("+"))
     }
     /// `player_lib::LinkFaces`.
     pub fn link_faces(age: Age) -> String {
@@ -137,6 +141,10 @@ pub enum BakeSegment {
     DynamicColor { env: bool, prim: bool },
     /// Fixed commands (`gsDPSetRenderMode`, ...).
     Commands(Vec<(u32, u32)>),
+    /// Commands the draw builds every frame (`Gfx_TwoTexScroll`'s tile sizes), baked with these
+    /// (the first frame's) and marked dynamic: the materials whose tile sizes or colours they
+    /// set read the draw's `SegmentValues` instead.
+    Dynamic(Vec<(u32, u32)>),
     /// A whole ROM file (a skybox's `vr_*_static` textures and palettes).
     File(String),
     /// Data the draw code builds (a skybox's `roomVtx`).
@@ -340,6 +348,10 @@ impl GamePack {
         self.assets.get(keys::ITEM_DROPS)
     }
 
+    pub fn items(&self) -> Result<crate::item::ItemTables> {
+        self.assets.get(keys::ITEMS)
+    }
+
     pub fn interface(&self) -> Result<crate::interface::InterfaceTables> {
         self.assets.get(keys::INTERFACE)
     }
@@ -383,8 +395,13 @@ impl GamePack {
         self.skeleton(age.object(), sym)
     }
 
-    pub fn link_variant(&self, age: Age, model_group: &str, fists: bool) -> Result<LinkVariant> {
-        self.assets.get(&keys::link_variant(age, model_group, fists))
+    pub fn link_variant(&self, age: Age, limbs: &[(u8, Option<String>)]) -> Result<LinkVariant> {
+        self.assets.get(&keys::link_variant(age, limbs))
+    }
+
+    /// Every Link variant's record name for `age`.
+    pub fn link_variant_names(&self, age: Age) -> Vec<String> {
+        self.assets.names(&format!("player/{}/", age.name())).into_iter().filter(|n| n != &keys::link_faces(age)).collect()
     }
 
     pub fn link_faces(&self, age: Age) -> Result<LinkFaces> {

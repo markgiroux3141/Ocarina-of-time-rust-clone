@@ -303,6 +303,30 @@ impl SceneFlags {
         }
     }
 
+    /// `Flags_GetTreasure`.
+    pub fn get_treasure(&self, flag: i32) -> bool {
+        self.chest & (1u32 << (flag & 0x1F)) != 0
+    }
+
+    /// `Flags_SetTreasure`.
+    pub fn set_treasure(&mut self, flag: i32) {
+        self.chest |= 1u32 << (flag & 0x1F);
+    }
+
+    /// `Flags_SetClear`.
+    pub fn set_clear(&mut self, room: i8) {
+        match room {
+            0..=0x1F => self.clear |= 1 << room,
+            0x20..=0x3F => self.temp_clear |= 1 << (room - 0x20),
+            _ => {}
+        }
+    }
+
+    /// `Flags_GetTempClear`.
+    pub fn get_temp_clear(&self, room: i8) -> bool {
+        (0..=0x1F).contains(&room) && self.temp_clear & (1 << room) != 0
+    }
+
     /// `Flags_GetClear`.
     pub fn get_clear(&self, room: i8) -> bool {
         match room {

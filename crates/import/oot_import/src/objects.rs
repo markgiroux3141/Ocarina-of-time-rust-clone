@@ -261,6 +261,11 @@ impl ObjectSegments {
                     builtin.retain(|b| b.0 != *seg);
                     bindings.push(Binding { segment: *seg, buf: display_list_bytes(cmds), base: 0 });
                 }
+                BakeSegment::Dynamic(cmds) => {
+                    builtin.retain(|b| b.0 != *seg);
+                    bindings.push(Binding { segment: *seg, buf: display_list_bytes(cmds), base: 0 });
+                    dynamic |= 1 << (seg & 0xF);
+                }
                 BakeSegment::File(name) => {
                     let buf = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
                     bindings.push(Binding { segment: *seg, buf, base: 0 });

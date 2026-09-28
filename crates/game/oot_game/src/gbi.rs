@@ -262,6 +262,43 @@ pub mod setup_dl {
 
     /// `G_CC_MODULATEIA_PRIM`: `TEXEL0, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0`.
     pub const MODULATEIA_PRIM: [u32; 8] = [cc_ab::TEXEL0, cc_ab::ZERO, cc_c::PRIMITIVE, cc_d::ZERO, ac::TEXEL0, ac::ZERO, ac::PRIMITIVE, ac::ZERO];
+    /// `G_CC_MODULATEI_PRIM`: `TEXEL0, 0, PRIMITIVE, 0, 0, 0, 0, PRIMITIVE`.
+    pub const MODULATEI_PRIM: [u32; 8] = [cc_ab::TEXEL0, cc_ab::ZERO, cc_c::PRIMITIVE, cc_d::ZERO, ac::ZERO, ac::ZERO, ac::ZERO, ac::PRIMITIVE];
+
+    /// `G_AD_NOTPATTERN | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE |
+    /// G_TL_TILE | G_TD_CLAMP | G_TP_PERSP | G_CYC_1CYCLE | G_PM_NPRIMITIVE`.
+    const OTHERMODE_H_1CYCLE_PERSP: u32 = 0x10 | (6 << 9) | (2 << 12) | (1 << 19);
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_CULL_BACK | G_LIGHTING | G_SHADING_SMOOTH)`.
+    const GEOMETRY_LIT: (u32, u32) = (0xD900_0000, 0x0000_0001 | 0x0000_0004 | 0x0000_0400 | 0x0002_0000 | 0x0020_0000);
+
+    /// `SETUPDL_26` (`z_rcp.c`): `gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON)`,
+    /// `gsDPSetCombineMode(G_CC_MODULATEI_PRIM, G_CC_MODULATEI_PRIM)`, `gsDPSetOtherMode(..
+    /// G_CYC_1CYCLE .., G_AC_NONE | G_ZS_PIXEL | G_RM_AA_ZB_OPA_SURF | G_RM_AA_ZB_OPA_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_CULL_BACK | G_LIGHTING | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_26() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.0.push((0xD700_0002, 0xFFFF_FFFF));
+        d.combine_lerp(MODULATEI_PRIM, MODULATEI_PRIM);
+        // G_RM_AA_ZB_OPA_SURF: AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_CLAMP | ZMODE_OPA |
+        // ALPHA_CVG_SEL | GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_A_MEM), and _SURF2.
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0055_2078));
+        d.0.push(GEOMETRY_LIT);
+        d
+    }
+
+    /// `SETUPDL_5`: as `SETUPDL_26` with `G_RM_AA_ZB_XLU_SURF | G_RM_AA_ZB_XLU_SURF2`.
+    pub fn setup_dl_5() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.0.push((0xD700_0002, 0xFFFF_FFFF));
+        d.combine_lerp(MODULATEI_PRIM, MODULATEI_PRIM);
+        // G_RM_AA_ZB_XLU_SURF: AA_EN | Z_CMP | IM_RD | CVG_DST_WRAP | CLR_ON_CVG | FORCE_BL |
+        // ZMODE_XLU | GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA), and _SURF2.
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0050_49D8));
+        d.0.push(GEOMETRY_LIT);
+        d
+    }
 }
 
 #[cfg(test)]

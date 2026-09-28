@@ -164,6 +164,8 @@ pub struct ItemTables {
     pub mwa_names: Vec<String>,
     /// `D_80853410`: joints copied from the upper-body animation (`skelAnime2`).
     pub upper_body: [u8; 22],
+    /// `sItemActionParams` (`z_player.c`): each item's action param, by `ItemID`.
+    pub item_action_params: Vec<i32>,
 }
 
 impl ItemTables {
@@ -172,6 +174,23 @@ impl ItemTables {
     }
     pub fn ap(&self, name: &str) -> i32 {
         self.ap_names.iter().position(|n| n == name).unwrap_or_else(|| panic!("no action param {name}")) as i32
+    }
+    /// `Player_ItemToActionParam`: `PLAYER_AP_NONE` for `ITEM_NONE_FE` and up,
+    /// `PLAYER_AP_LAST_USED` for `ITEM_LAST_USED`, `PLAYER_AP_FISHING_POLE` for the fishing rod.
+    pub fn item_to_action_param(&self, item: u8) -> i32 {
+        /// `ITEM_LAST_USED`, `ITEM_NONE_FE`, `ITEM_FISHING_POLE` (z64item.h).
+        const ITEM_LAST_USED: u8 = 0xFC;
+        const ITEM_NONE_FE: u8 = 0xFE;
+        const ITEM_FISHING_POLE: u8 = 0x59;
+        if item >= ITEM_NONE_FE {
+            self.ap("NONE")
+        } else if item == ITEM_LAST_USED {
+            self.ap("LAST_USED")
+        } else if item == ITEM_FISHING_POLE {
+            self.ap("FISHING_POLE")
+        } else {
+            self.item_action_params.get(item as usize).copied().unwrap_or(0)
+        }
     }
     pub fn mwa(&self, name: &str) -> usize {
         self.mwa_names.iter().position(|n| n == name).unwrap_or_else(|| panic!("no attack {name}"))

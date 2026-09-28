@@ -34,6 +34,8 @@ pub const ACTOR_FLAG_4: u32 = 1 << 4;
 pub const ACTOR_FLAG_5: u32 = 1 << 5;
 /// In view this frame (set by `func_800314D4`'s culling).
 pub const ACTOR_FLAG_6: u32 = 1 << 6;
+/// Seen only with the Lens of Truth (drawn in `Actor_DrawAll`'s lens pass: not ported).
+pub const ACTOR_FLAG_7: u32 = 1 << 7;
 /// A talk request was made (`Actor_ProcessTalkRequest` answers it).
 pub const ACTOR_FLAG_8: u32 = 1 << 8;
 /// Talking starts without A (`func_8083B644`: the actor's offer is taken at once).
@@ -193,6 +195,20 @@ impl Actor {
     }
 
     /// `Actor_Kill`.
+    /// `func_8002DBD0` (`Actor_WorldToActorCoords`): `pos` in the actor's frame (its shape yaw,
+    /// from its position).
+    pub fn world_to_actor_coords(&self, pos: Vec3) -> Vec3 {
+        let (c, s) = (cos_s(self.shape_rot.y), sin_s(self.shape_rot.y));
+        let (dx, dz) = (pos.x - self.world_pos.x, pos.z - self.world_pos.z);
+        Vec3::new(dx * c - dz * s, pos.y - self.world_pos.y, dx * s + dz * c)
+    }
+
+    /// `Player_IsFacingActor`: Player (facing `player_yaw`) faces this actor within `max_angle`.
+    pub fn player_is_facing(&self, player_yaw: i16, max_angle: i16) -> bool {
+        let d = self.yaw_towards_player.wrapping_add(i16::MIN).wrapping_sub(player_yaw);
+        (d as i32).abs() < max_angle as i32
+    }
+
     pub fn kill(&mut self) {
         self.killed = true;
         self.flags &= !ACTOR_FLAG_0;

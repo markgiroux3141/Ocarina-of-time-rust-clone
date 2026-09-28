@@ -6,8 +6,9 @@
 //! The tables (`PlayerRules`) come from the asset pack; `oot_import` reads them from the
 //! decomp's C at import time. The rules that use them are Rust.
 //!
-//! Link's meshes are baked at import time, one per age, model group and hand state
-//! (`LinkVariant`), with the default eyes and mouth. The face is a texture swap: segments 8
+//! Link's meshes are baked at import time, one per age and set of hand, sheath and waist lists
+//! (`LinkVariant`, keyed by `PlayerRules::limb_dlists`: every model group, hand state, shield and
+//! the child's sword on B or not give one of them), with the default eyes and mouth. The face is a texture swap: segments 8
 //! and 9 only ever provide the eye and mouth textures, so `LinkVariant::with_face` replaces
 //! the textures that came from them with the ones for this frame's face (`LinkFaces`). The
 //! importer checks the result equals interpreting the display lists with that face bound.
@@ -161,13 +162,19 @@ pub struct Loadout {
     /// Index into `PlayerRules::shields` (`currentShield`).
     pub shield: usize,
     pub tunic: usize,
-    /// Child only: Kokiri Sword on the B button (otherwise the sheath is drawn without it).
+    /// Child only: `gSaveContext.equips.buttonItems[0] == ITEM_SWORD_KOKIRI` (otherwise the
+    /// sheath is drawn without the sword).
     pub child_has_kokiri_sword: bool,
     /// `actor.speedXZ > 2`: open hands are drawn as fists while running.
     pub moving_fast: bool,
 }
 
 impl Loadout {
+    /// The mesh record this loadout is drawn with.
+    pub fn variant_key(&self, rules: &PlayerRules) -> String {
+        crate::pack::keys::link_variant(self.age, &rules.limb_dlists(self, 0))
+    }
+
     /// Standing with nothing in hand, sword and shield on the back.
     pub fn default_for(rules: &PlayerRules, age: Age) -> Loadout {
         Loadout {
@@ -222,6 +229,9 @@ pub struct LinkVariant {
     /// in order.
     pub eye_slots: Vec<usize>,
     pub mouth_slots: Vec<usize>,
+    /// This variant's own face textures, when a slot also holds texels its hand or sheath
+    /// lists left in TMEM (the shared `LinkFaces` are the default loadout's).
+    pub faces: Option<LinkFaces>,
 }
 
 /// The textures segments 8 and 9 give for each eye and mouth index (`sEyeTextures`,
@@ -237,6 +247,7 @@ impl LinkVariant {
     /// The mesh with `eye` and `mouth` bound (`Player_DrawImpl`'s `gSPSegment(0x08, ..)` and
     /// `gSPSegment(0x09, ..)`).
     pub fn with_face(&self, faces: &LinkFaces, eye: usize, mouth: usize) -> DrawList {
+        let faces = self.faces.as_ref().unwrap_or(faces);
         let mut d = self.draw.clone();
         let pick = |set: &[Vec<TextureImage>], i: usize| set.get(i.min(set.len().saturating_sub(1))).cloned().unwrap_or_default();
         for (k, &slot) in self.eye_slots.iter().enumerate() {

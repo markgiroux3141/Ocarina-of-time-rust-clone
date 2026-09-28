@@ -366,7 +366,9 @@ impl PlayState {
             spawn,
             respawn_player: None,
             view_proj: Mat4::IDENTITY,
-            save: SaveContext::new(0, adult, crate::env::clock_time(10, 0) as u16),
+            // The spikes' view of a scene (no Play_Init) plays on the map select's file, whose
+            // Link has the sword and shield (docs/adr/0019-inventory-and-saves.md).
+            save: SaveContext::debug(0, adult, crate::env::clock_time(10, 0) as u16),
             assets: None,
             scene: None,
             scene_id: 0,
@@ -437,6 +439,14 @@ impl PlayState {
             }
         }
         self.view_proj = self.camera_view_proj();
+    }
+
+    /// `Camera_GetCamDirYaw` of the active camera: where it looks.
+    pub fn cam_dir_yaw(&self) -> i16 {
+        match self.camera_kind {
+            CameraKind::Game => self.game_camera.cam_dir[1],
+            CameraKind::Follow => self.follow_camera.input_dir_yaw(),
+        }
     }
 
     /// `Camera_GetInputDirYaw` of the active camera.
@@ -634,6 +644,7 @@ impl PlayState {
         // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
         let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
         let door = self.game_camera.door_params.door_actor.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
+        let target_pos_rot = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
         let oc_lines = self.col_chk.oc_lines(&mut self.actors);
         let f = CamFrame {
             col: &self.col,
@@ -645,6 +656,7 @@ impl PlayState {
             input,
             player_actor: self.player,
             oc_lines: &oc_lines,
+            target_pos_rot,
         };
         self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
         // Camera_UpdateInterface's Interface_ChangeAlpha.

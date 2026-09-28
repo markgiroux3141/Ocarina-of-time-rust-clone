@@ -133,6 +133,18 @@ pub enum PlayRequest {
     StartTextbox { text_id: u16, actor: Option<ActorHandle> },
     /// `Interface_SetDoAction(play, action)`.
     DoAction(u16),
+    /// `interactedActor->parent = &this->actor` (`func_8083E5A8`): Player took the actor's
+    /// item (its `Actor_HasParent` is true from now).
+    SetParent(ActorHandle),
+    /// `chest->unk_1F4 = v`: Player opens the chest, with the long (1) or short (-1) animation.
+    ChestOpen { chest: ActorHandle, unk_1f4: i16 },
+    /// `Camera_SetCameraData(Play_GetCamera(play, CAM_ID_MAIN), 4, NULL, NULL, data2, 0, 0)`.
+    SetCameraData { data2: i16 },
+    /// `Item_DropCollectible(play, &pos, params)` (`func_8083E4C4`).
+    DropCollectible { pos: Vec3, params: i16 },
+    /// `Item_Give(play, item)`, in its place among the requests (after `Message_StartTextbox`,
+    /// whose heart piece text counts the pieces before this one).
+    ItemGive(u8),
 }
 
 // floor properties (FLOOR_PROPERTY_*)
@@ -253,6 +265,9 @@ pub enum Action {
     DoorOpen,
     /// `func_8084B530`: talking, until the message box closes.
     Talk,
+    /// `func_8084E6D4`: getting an item: a chest's opening, then the item held up over Link's
+    /// head with its text.
+    GetItem,
 }
 
 /// `func_A74`: what `func_808458D0` runs once the item is away.
@@ -262,6 +277,8 @@ pub enum A74 {
     ClimbStart,
     /// `func_8083A2F8`: start talking.
     Talk,
+    /// `func_8083A434`: the get-item action.
+    GetItem,
 }
 
 /// Player's upper-body action (`this->func_82C`), run from `func_80836670`.
@@ -309,6 +326,7 @@ impl Action {
             Action::ClimbEnd => "func_8084C5F8",
             Action::DoorOpen => "func_80845EF8",
             Action::Talk => "func_8084B530",
+            Action::GetItem => "func_8084E6D4",
         }
     }
 }
@@ -371,6 +389,12 @@ pub struct Env<'a> {
     pub msg_state: u8,
     /// `play->roomCtx.curRoom.behaviorType1`.
     pub room_behavior_type1: u8,
+    /// Player's own handle (`&this->actor`; Player is out of `actors` while it updates).
+    pub me: Option<ActorHandle>,
+    /// `Camera_GetCamDirYaw(GET_ACTIVE_CAM(play))`, as the last camera update left it.
+    pub cam_dir_yaw: i16,
+    /// `sGetItemTable` (`table/items`; empty without the pack).
+    pub items: &'a oot_game::item::ItemTables,
 }
 
 impl Env<'_> {
@@ -471,10 +495,27 @@ pub struct Player {
     /// `modelGroup`, `nextModelGroup` (PLAYER_MODELGROUP_*).
     pub model_group: usize,
     pub next_model_group: usize,
-    /// `currentShield` (PLAYER_SHIELD_*: 1 Deku, 2 Hylian).
+    /// `currentShield` (`PLAYER_SHIELD_*`: 0 none, 1 Deku, 2 Hylian, 3 Mirror), `currentTunic`,
+    /// `currentBoots`, `currentSwordItemId` (`B_BTN_ITEM`): from the save's equipment
+    /// (`Player_SetEquipmentData`).
     pub current_shield: u8,
-    /// The item on the B button, as its action param (the equipped sword).
-    pub b_item: i32,
+    pub current_tunic: u8,
+    pub current_boots: u8,
+    pub current_sword_item_id: u8,
+    /// `getItemId`: what `interactRangeActor` offers this frame (`func_8002F434`): positive to
+    /// take at once, negative a chest's (opened on A), `GI_NONE` something to pick up. While
+    /// getting an item, what's being got.
+    pub get_item_id: i16,
+    /// `interactRangeActor`, `getItemDirection`: the actor offering, and how squarely (reset to
+    /// 0x6000 each update).
+    pub interact_range_actor: Option<ActorHandle>,
+    pub get_item_direction: i16,
+    /// `unk_862`: the draw id plus one of the item held up (0: none; `Player_DrawGetItem`).
+    pub unk_862: i16,
+    /// `leftHandPos`: the left hand limb's origin in the last draw.
+    pub left_hand_pos: Vec3,
+    /// `play->gameplayFrames` at the last update (the held-up item's spin when drawn).
+    pub gameplay_frames: u32,
     pub unk_15A: usize,
     pub unk_830: f32,
     pub unk_844: i8,
@@ -623,8 +664,19 @@ impl Player {
             held_item: None,
             model_group: data.items.model_group("DEFAULT"),
             next_model_group: data.items.model_group("DEFAULT"),
+            // A plain start is the map select's file's (SaveContext::debug): the Kokiri Sword and
+            // the Deku Shield for the child, the Master Sword and the Hylian Shield for the adult,
+            // the Kokiri tunic and boots. Player_Init takes the save's (set_equipment_data).
             current_shield: if adult { 2 } else { 1 },
-            b_item: data.items.ap(if adult { "SWORD_MASTER" } else { "SWORD_KOKIRI" }),
+            current_tunic: 0,
+            current_boots: 0,
+            current_sword_item_id: if adult { oot_game::item::ITEM_SWORD_MASTER } else { oot_game::item::ITEM_SWORD_KOKIRI },
+            get_item_id: 0,
+            interact_range_actor: None,
+            get_item_direction: 0x6000,
+            unk_862: 0,
+            left_hand_pos: pos,
+            gameplay_frames: 0,
             unk_15A: 0,
             unk_830: 0.0,
             unk_844: 0,
@@ -671,6 +723,7 @@ impl Player {
         let adult = play.save.adult;
         let data = play.data.clone();
         let mut p = Player::new(&data, adult, base.world_pos, base.shape_rot.y);
+        p.set_equipment_data(&data, &play.save);
         let flags = p.actor.flags;
         p.actor = Actor { flags, gravity: p.actor.gravity, ..base };
         // thisx->room = -1: Player belongs to no room.
@@ -719,6 +772,21 @@ impl Player {
             }
         }
         Box::new(p)
+    }
+
+    /// `Player_SetEquipmentData`: the shield, tunic and boots worn, and B's item, from the save;
+    /// then the model group again for the item in hand (`Player_SetModelGroup`, which takes the
+    /// shield into account). (`Player_SetBootData`: the Kokiri boots' registers are Player's
+    /// already.)
+    pub fn set_equipment_data(&mut self, data: &GameData, save: &oot_game::save::SaveContext) {
+        use oot_game::item::{EQUIP_TYPE_BOOTS, EQUIP_TYPE_SHIELD, EQUIP_TYPE_TUNIC};
+        // csMode 0x56 (a cutscene's equipment) never comes up.
+        self.current_shield = save.cur_equip_value(EQUIP_TYPE_SHIELD) as u8;
+        self.current_tunic = (save.cur_equip_value(EQUIP_TYPE_TUNIC) as u8).wrapping_sub(1);
+        self.current_boots = (save.cur_equip_value(EQUIP_TYPE_BOOTS) as u8).wrapping_sub(1);
+        self.current_sword_item_id = save.b_btn_item();
+        let g = data.items.action_model_group.get(self.held_item_ap as usize).copied().unwrap_or(self.model_group);
+        self.player_set_model_group(data, g);
     }
 
     /// `D_80854738[initMode]`.
@@ -820,10 +888,15 @@ impl Player {
     /// with the frame's input; then `finish_frame` (the AnimationContext update).
     pub fn update(&mut self, env: &Env, input: Input) {
         self.frame += 1;
+        self.gameplay_frames = env.gameplay_frames;
         self.input = input;
         let data = env.data;
         self.actor.prev_pos = self.actor.home_pos;
 
+        // An offering actor that went (update == NULL) offers nothing.
+        if self.interact_range_actor.is_some_and(|h| Some(h) != env.me && env.target(h).is_none_or(|a| a.killed)) {
+            self.interact_range_actor = None;
+        }
         // unk_A73/A87 timers, invincibility: not modelled.
         if self.unk_88E != 0 {
             self.unk_88E -= 1;
@@ -1008,6 +1081,7 @@ impl Player {
             Action::ClimbEnd => self.func_8084C5F8(env),
             Action::DoorOpen => self.func_80845EF8(env),
             Action::Talk => self.func_8084B530(env),
+            Action::GetItem => self.func_8084E6D4(env),
         }
     }
 
@@ -1526,6 +1600,7 @@ impl Player {
             match self.func_a74 {
                 Some(A74::ClimbStart) => self.func_8083A3B0(env.data),
                 Some(A74::Talk) => self.func_8083A2F8(env.data),
+                Some(A74::GetItem) => self.func_8083A434(env.data),
                 None => {}
             }
         }
@@ -2042,6 +2117,9 @@ impl Player {
             let e = list[i];
             let idx = e.unsigned_abs() as usize;
             if idx == 1 && self.func_80839800(env) {
+                return true;
+            }
+            if idx == 2 && self.func_8083E5A8(env) {
                 return true;
             }
             if idx == 4 && self.func_8083B644(env) {
@@ -3615,15 +3693,35 @@ impl Player {
         }
     }
 
-    /// `func_80833DF8`: the item buttons (only B carries an item here).
+    /// `func_80833DF8`: the item buttons. B's item is the save's (`B_BTN_ITEM`, through
+    /// `func_80833CDC`): nothing happens on a B with no item. The C buttons' items (in the save,
+    /// on the HUD) aren't used here: their actions (the slingshot, bombs, the ocarina, ...)
+    /// aren't ported. A held item no button has any more is put away.
     fn func_80833DF8(&mut self, env: &Env) {
+        use oot_game::item::ITEM_NONE_FE;
+        // (currentMask: masks aren't ported.)
         if self.state1 & (STATE1_11 | STATE1_29) != 0 {
             return;
         }
+        // (func_8008F128: the hookshot's and boomerang's flight: not held.)
+        let items = &env.data.items;
+        let (b_item, c_items) = {
+            let io = env.io.borrow();
+            (io.save.b_btn_item(), [io.save.c_btn_item(0), io.save.c_btn_item(1), io.save.c_btn_item(2)])
+        };
+        // func_80833C50: the button's item is the one in hand.
+        let holds = |item: u8| item < ITEM_NONE_FE && items.item_to_action_param(item) == self.item_ap;
+        if self.item_ap >= items.ap("FISHING_POLE") && !holds(b_item) && !c_items.iter().any(|&c| holds(c)) {
+            self.func_80835F44(env.data, 0);
+            return;
+        }
+        // D_80854388: B, C-left, C-down, C-right; only B's item is used (func_80833CDC(0)).
         if self.input.press.held(eng_input::pad::BTN_B) {
-            let b = self.b_item;
-            self.func_80835F44(env.data, b);
-        } else if self.input.cur.held(eng_input::pad::BTN_B) && self.b_item == self.held_item_ap {
+            if b_item < ITEM_NONE_FE {
+                let ap = items.item_to_action_param(b_item);
+                self.func_80835F44(env.data, ap);
+            }
+        } else if self.input.cur.held(eng_input::pad::BTN_B) && b_item < ITEM_NONE_FE && items.item_to_action_param(b_item) == self.held_item_ap {
             self.s.d_80853618 = true;
         }
     }
@@ -4853,9 +4951,238 @@ impl Player {
         }
     }
 
+    // ================================================================================
+    // Getting items (func_8083E5A8 and the get-item action func_8084E6D4)
+
+    /// `func_8083E5A8` (interrupt 2): take what `interactRangeActor` offers.
+    /// - A positive get-item id (a collectible, an NPC's gift): if it would give something new
+    ///   (`Item_CheckObtainability`), Link holds it up (`func_8083A434` after the item is put
+    ///   away, `link_demo_get_itemB`, the turn-around camera); else it's given at once
+    ///   (`func_8083E4C4`).
+    /// - A negative one, on A: a chest. Link stands 29.4343 in front of it facing its way. A new
+    ///   major item gets the long opening (`ageProperties->unk_98`, the chest's long animation
+    ///   and `CAM_SET_SLOW_CHEST_CS`); anything else the kick open (`link_normal_box_kick`).
+    ///   Items the table marks (0x40: a blue rupee if not obtainable, 0x20: if had) become a blue
+    ///   rupee.
+    /// - `GI_NONE` on A: picking up (bushes, rocks, the Master Sword): not ported.
+    ///
+    /// Title cards (`TitleCard_Clear`) aren't ported: there's always none to clear. `iREG(67)`'s
+    /// debug item is 0.
+    fn func_8083E5A8(&mut self, env: &Env) -> bool {
+        use oot_game::item::*;
+        let Some(ih) = self.interact_range_actor else { return false };
+        if self.get_item_id > GI_NONE {
+            if self.get_item_id < GI_MAX {
+                let Some(gi) = env.items.get_item(self.get_item_id).copied() else { return false };
+                if Some(ih) != env.me {
+                    self.play_requests.push(PlayRequest::SetParent(ih));
+                }
+                /// `SCENE_BOWLING`.
+                const SCENE_BOWLING: u16 = 0x4B;
+                let (obtainable, scene) = {
+                    let io = env.io.borrow();
+                    (item_check_obtainability(&io.save, gi.item_id), io.scene_id)
+                };
+                if obtainable == ITEM_NONE || scene == SCENE_BOWLING {
+                    // func_808323B4 (no held actor or explosive), func_8083AE40 (the item's
+                    // object: every get-item model is baked).
+                    // PLAYER_STATE2_10 is underwater (Kokiri boots, not iron).
+                    if self.state2 & STATE2_10 == 0 {
+                        self.func_80836898(env.data, env, A74::GetItem);
+                        self.skel.play_once_set_speed(env.data, env.data.anim("link_demo_get_itemB"), 2.0 / 3.0);
+                        self.func_80835EA4(9);
+                    }
+                    self.state1 |= STATE1_10 | STATE1_11 | STATE1_29;
+                    self.func_80832224();
+                    return true;
+                }
+                self.func_8083E4C4(gi);
+                self.get_item_id = GI_NONE;
+            }
+        } else if self.input.press.held(BTN_A) && self.state1 & STATE1_11 == 0 && self.state2 & STATE2_10 == 0 {
+            if self.get_item_id != GI_NONE {
+                let Some(mut gi) = env.items.get_item(-self.get_item_id).copied() else { return false };
+                let Some(chest) = env.target(ih) else { return false };
+                let (chest_pos, chest_yaw) = (chest.world_pos, chest.shape_rot.y);
+                let obtainable = |id: u8| item_check_obtainability(&env.io.borrow().save, id);
+                if gi.item_id != ITEM_NONE && ((obtainable(gi.item_id) == ITEM_NONE && gi.field & 0x40 != 0) || (obtainable(gi.item_id) != ITEM_NONE && gi.field & 0x20 != 0)) {
+                    self.get_item_id = -GI_RUPEE_BLUE;
+                    gi = env.items.get_item(GI_RUPEE_BLUE).copied().unwrap_or(gi);
+                }
+                self.func_80836898(env.data, env, A74::GetItem);
+                self.state1 |= STATE1_10 | STATE1_11 | STATE1_29;
+                self.actor.world_pos.x = chest_pos.x - sin_s(chest_yaw) * 29.4343;
+                self.actor.world_pos.z = chest_pos.z - cos_s(chest_yaw) * 29.4343;
+                self.current_yaw = chest_yaw;
+                self.actor.shape_rot.y = chest_yaw;
+                self.func_80832224();
+                if gi.item_id != ITEM_NONE && gi.gi >= 0 && obtainable(gi.item_id) == ITEM_NONE {
+                    let a = self.age.climb.unk_98;
+                    self.skel.play_once_set_speed(env.data, a, 2.0 / 3.0);
+                    self.func_80832F54(0x28F);
+                    self.play_requests.push(PlayRequest::ChestOpen { chest: ih, unk_1f4: 1 });
+                    self.play_requests.push(PlayRequest::ChangeSetting(oot_game::camera::CAM_SET_SLOW_CHEST_CS));
+                } else {
+                    self.skel.play_once(env.data, env.data.anim("link_normal_box_kick"));
+                    self.play_requests.push(PlayRequest::ChestOpen { chest: ih, unk_1f4: -1 });
+                }
+                return true;
+            }
+            // Picking up (lifting, Bg_Toki_Swd): not ported.
+            self.note("picking up (func_8083E5A8 with GI_NONE) isn't ported");
+        }
+        false
+    }
+
+    /// `func_8083E4C4`: an item already had is given without holding it up: a drop over Link's
+    /// head (unless the table says 0x80), and `Item_Give` unless the drop gives it itself.
+    fn func_8083E4C4(&mut self, gi: oot_game::item::GetItemEntry) {
+        use crate::en_item00::*;
+        let drop_type = (gi.field & 0x1F) as i16;
+        if gi.field & 0x80 == 0 {
+            self.play_requests.push(PlayRequest::DropCollectible { pos: self.actor.world_pos, params: drop_type | i16::MIN });
+            if !matches!(drop_type, ITEM00_BOMBS_A | ITEM00_ARROWS_SMALL | ITEM00_ARROWS_MEDIUM | ITEM00_ARROWS_LARGE | ITEM00_RUPEE_GREEN | ITEM00_RUPEE_BLUE | ITEM00_RUPEE_RED | ITEM00_RUPEE_PURPLE | ITEM00_RUPEE_ORANGE) {
+                self.play_requests.push(PlayRequest::ItemGive(gi.item_id));
+            }
+        } else {
+            self.play_requests.push(PlayRequest::ItemGive(gi.item_id));
+        }
+        // func_80078884(NA_SE_SY_GET_BOXITEM / NA_SE_SY_GET_ITEM): no sound.
+    }
+
+    /// `func_80835EA4`: the turn-around camera (`func_80835E44(CAM_SET_TURN_AROUND)`), told what
+    /// kind of item it's for (`Camera_SetCameraData(4, arg1)`: 9 for a held-up item, 8 when
+    /// surfacing with one).
+    fn func_80835EA4(&mut self, arg1: i16) {
+        self.play_requests.push(PlayRequest::CamSetting(oot_game::camera::CAM_SET_TURN_AROUND));
+        self.play_requests.push(PlayRequest::SetCameraData { data2: arg1 });
+    }
+
+    /// `func_8083A434`: the get-item action, once the item in hand is away. A heart container
+    /// holds 20 frames longer; a chest's item (negative) first waits for the opening animation.
+    fn func_8083A434(&mut self, data: &GameData) {
+        self.func_80835DAC(data, Action::GetItem, 0);
+        self.state1 |= STATE1_10 | STATE1_29;
+        if self.get_item_id == oot_game::item::GI_HEART_CONTAINER_2 {
+            self.unk_850 = 20;
+        } else if self.get_item_id >= 0 {
+            self.unk_850 = 1;
+        } else {
+            self.get_item_id = -self.get_item_id;
+        }
+    }
+
+    /// `func_808332F4`: the item appears over Link's head (`unk_862`, its draw id plus one).
+    fn func_808332F4(&mut self, env: &Env) {
+        if let Some(gi) = env.items.get_item(self.get_item_id) {
+            self.unk_862 = (gi.gi as i16).abs();
+        }
+    }
+
+    /// `func_8084DF6C`: the item is put away; the camera is told the get-item is over.
+    fn func_8084DF6C(&mut self) {
+        self.unk_862 = 0;
+        self.state1 &= !(STATE1_10 | STATE1_11);
+        self.get_item_id = oot_game::item::GI_NONE;
+        self.play_requests.push(PlayRequest::CamDone);
+    }
+
+    /// `func_8084DFAC`: and Link stands again.
+    fn func_8084DFAC(&mut self, data: &GameData) {
+        self.func_8084DF6C();
+        self.func_808322FC();
+        self.func_8083C0E8(data);
+        self.current_yaw = self.actor.shape_rot.y;
+    }
+
+    /// `func_8084DFF4`: the first time, the item's text (`Message_StartTextbox` with Player as
+    /// the talker) and `Item_Give`; then waiting for the text to close. True once it has (the
+    /// fanfares and sounds aren't played).
+    fn func_8084DFF4(&mut self, env: &Env) -> bool {
+        use oot_game::item::*;
+        if self.get_item_id == GI_NONE {
+            return true;
+        }
+        if self.unk_84F == 0 {
+            let Some(gi) = env.items.get_item(self.get_item_id).copied() else { return true };
+            self.unk_84F = 1;
+            self.play_requests.push(PlayRequest::StartTextbox { text_id: gi.text_id as u16, actor: env.me });
+            self.play_requests.push(PlayRequest::ItemGive(gi.item_id));
+        } else if env.msg_state == oot_game::message::TEXT_STATE_CLOSING {
+            if self.get_item_id == GI_GAUNTLETS_SILVER {
+                // The Silver Gauntlets' exit to the Desert Colossus (ENTR_SPOT11_0 with the
+                // sandstorm and cutscene 0xFFF1): not ported.
+                self.note("the Silver Gauntlets' exit to the Desert Colossus isn't ported");
+            }
+            self.get_item_id = GI_NONE;
+        }
+        false
+    }
+
+    /// `func_8084E6D4`: getting an item.
+    /// - From a chest (`unk_850` 0): the opening animation plays (the child's sounds aren't);
+    ///   at its end Link turns to hold the item up (`link_demo_get_itemA`, or `_itemB` after
+    ///   the kick) with the turn-around camera.
+    /// - Holding up (`get_itemB` turns Link to face the camera): on frame 21 the item appears
+    ///   over his head; each time the animation ends the text runs (`func_8084DFF4`), and when
+    ///   it's closed and the hearts have counted in, Link stands (`func_8084DFAC`), or talks to
+    ///   whoever gave the item.
+    ///
+    /// An ice trap (`GI_ICE_TRAP`: `En_Clear_Tag`, the freeze damage) isn't ported.
+    fn func_8084E6D4(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            if self.unk_850 != 0 {
+                if self.unk_850 >= 2 {
+                    self.unk_850 -= 1;
+                }
+                if self.func_8084DFF4(env) && self.unk_850 == 1 {
+                    // (PLAYER_STATE3_5 never comes up.)
+                    let cond = self.target_actor.is_some() && (self.exchange_item_id as i8) < 0;
+                    let health_accumulator = env.io.borrow().save.health_accumulator;
+                    if cond || health_accumulator == 0 {
+                        if cond {
+                            self.func_8084DF6C();
+                            self.exchange_item_id = 0;
+                            // func_8084B4D4 (an ocarina after the talk) is 0.
+                            if let Some(t) = self.target_actor
+                                && let Some(text) = env.actors.actor(t).map(|a| a.text_id)
+                            {
+                                self.func_80853148(env, t, text);
+                            }
+                        } else {
+                            self.func_8084DFAC(data);
+                        }
+                    }
+                }
+            } else {
+                self.func_80832DBC();
+                if self.get_item_id == oot_game::item::GI_ICE_TRAP {
+                    self.note("an ice trap (GI_ICE_TRAP) isn't ported");
+                }
+                let a = if self.skel.animation == data.anim("link_normal_box_kick") { "link_demo_get_itemB" } else { "link_demo_get_itemA" };
+                self.skel.play_once_set_speed(data, data.anim(a), 2.0 / 3.0);
+                self.unk_850 = 2;
+                self.func_80835EA4(9);
+            }
+        } else {
+            if self.unk_850 == 0 {
+                // The child's opening sounds (D_808549E0) aren't played.
+                return;
+            }
+            if self.skel.animation == data.anim("link_demo_get_itemB") {
+                scaled_step_to_s(&mut self.actor.shape_rot.y, env.cam_dir_yaw.wrapping_add(i16::MIN), 4000);
+            }
+            if self.skel.on_frame(21.0) {
+                self.func_808332F4(env);
+            }
+        }
+    }
+
     /// `func_808473D4`: what the A button would do (`Interface_SetDoAction`), when no message
-    /// is open. Riding, the fishing pole, the ocarina, held and grabbable actors, and the
-    /// crawlspace's "Enter" aren't ported, so those actions never show.
+    /// is open. Riding, the fishing pole, the ocarina, held actors and the crawlspace's "Enter"
+    /// aren't ported, so those actions never show. The ocarina's action (`func_8084E3C4`)
+    /// never runs, so its exception doesn't apply.
     fn func_808473D4(&mut self, env: &Env) {
         use oot_game::interface::*;
         if env.msg_state != oot_game::message::TEXT_STATE_NONE {
@@ -4871,6 +5198,13 @@ impl Player {
                 let target_category = self.target_actor.and_then(|h| env.actors.actor(h)).map(|a| a.category);
                 if self.door_type != PLAYER_DOORTYPE_NONE && self.state1 & STATE1_11 == 0 {
                     do_action = DO_ACTION_OPEN;
+                } else if self.state1 & STATE1_11 == 0
+                    && self.interact_range_actor.is_some()
+                    && ((!sp1c && self.get_item_id == oot_game::item::GI_NONE) || (self.get_item_id < 0 && self.state1 & STATE1_27 == 0))
+                {
+                    // A chest (a negative get-item id), or something to pick up (Bg_Toki_Swd's
+                    // DO_ACTION_DROP for the adult isn't ported).
+                    do_action = if self.get_item_id < 0 { DO_ACTION_OPEN } else { DO_ACTION_GRAB };
                 } else if !sp1c && self.state2 & STATE2_0 != 0 {
                     do_action = DO_ACTION_GRAB;
                 } else if self.state2 & STATE2_2 != 0 {
@@ -4930,6 +5264,11 @@ impl Player {
             self.target_actor_distance = f32::MAX;
             self.exchange_item_id = 0;
         }
+        // The get-item offers too (made again next frame), unless Player holds what offered.
+        if self.state1 & STATE1_11 == 0 {
+            self.interact_range_actor = None;
+            self.get_item_direction = 0x6000;
+        }
         let mut temp_f0 = self.actor.world_pos.y - self.actor.prev_pos.y;
         let bp = &self.body_parts_pos;
         let mut phi_f12 = (bp[BODYPART_L_FOOT].y + bp[BODYPART_R_FOOT].y) * 0.5 + temp_f0;
@@ -4979,6 +5318,17 @@ impl Player {
             self.body_parts_pos[i] = world[data.limb(name)].transform_point3(Vec3::ZERO);
         }
         world
+    }
+
+    /// `Player_PostLimbDrawGameplay`, `PLAYER_LIMB_R_HAND`: `sGetItemRefPos`, where the held-up
+    /// item floats: the left hand while an exchange item is shown outside the get-item action,
+    /// else between the hands.
+    fn get_item_ref_pos(&self) -> Vec3 {
+        if self.state1 & STATE1_10 == 0 && self.unk_862 != 0 && self.exchange_item_id != 0 {
+            self.left_hand_pos
+        } else {
+            (self.body_parts_pos[BODYPART_R_HAND] + self.left_hand_pos) * 0.5
+        }
     }
 
     /// `Player_PostLimbDrawGameplay` for `PLAYER_LIMB_L_HAND`, the sword part: with the weapon
@@ -5084,6 +5434,7 @@ pub const BODYPART_R_FOOT: usize = 3;
 pub const BODYPART_L_FOOT: usize = 6;
 pub const BODYPART_HEAD: usize = 7;
 pub const BODYPART_L_HAND: usize = 12;
+pub const BODYPART_R_HAND: usize = 15;
 
 /// `WeaponInfo`: a weapon edge's tip and base as last drawn.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -5200,12 +5551,19 @@ mod rs {
     pub const UPPER_X: usize = 4;
     pub const UPPER_Z: usize = 5;
     pub const ROOT_PITCH: usize = 6;
-    /// `values`: `speedXZ`, `shape.yOffset`.
+    /// `angles`: the held-up item's spin (`gameplayFrames * 1000`).
+    pub const GET_ITEM_SPIN: usize = 7;
+    /// `values`: `speedXZ`, `shape.yOffset`, `sGetItemRefPos` (x, y, z).
     pub const SPEED_XZ: usize = 0;
     pub const Y_OFFSET: usize = 1;
-    /// `switches`: the blink face, `modelGroup`.
+    pub const GET_ITEM_POS: usize = 2;
+    /// `switches`: the blink face, `modelGroup`, `currentShield`, `unk_862`, and whether
+    /// `exchangeItemId` is set.
     pub const FACE: usize = 0;
     pub const MODEL_GROUP: usize = 1;
+    pub const SHIELD: usize = 2;
+    pub const UNK_862: usize = 3;
+    pub const EXCHANGE: usize = 4;
 }
 
 impl LookRotations {
@@ -5298,6 +5656,9 @@ impl ActorImpl for Player {
             cam_unk_14c: play.game_camera.unk_14c,
             msg_state: play.message_state(),
             room_behavior_type1: play.room_ctx.cur.behavior_type1,
+            me: play.player,
+            cam_dir_yaw: play.cam_dir_yaw(),
+            items: assets.as_ref().map(|a| &a.items).unwrap_or(&NO_ITEMS),
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for unk_88E frames after a talk.
@@ -5340,8 +5701,11 @@ impl ActorImpl for Player {
         }
         let data = play.data.clone();
         let world = self.update_body_parts(&data);
+        // Player_PostLimbDrawGameplay, PLAYER_LIMB_L_HAND: leftHandPos.
+        self.left_hand_pos = world[data.limb("L_HAND")].transform_point3(Vec3::ZERO);
         self.post_limb_draw_l_hand(play, world[data.limb("L_HAND")]);
     }
+
 
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         match id {
@@ -5355,18 +5719,25 @@ impl ActorImpl for Player {
 
     fn render_state(&self) -> RenderState {
         let look = self.look_rotations();
-        let mut angles = vec![0i16; 7];
+        let mut angles = vec![0i16; 8];
         angles[rs::HEAD..rs::HEAD + 3].copy_from_slice(&look.head);
         angles[rs::UPPER_Y] = look.upper_y;
         angles[rs::UPPER_X] = look.upper_x;
         angles[rs::UPPER_Z] = look.upper_z;
         angles[rs::ROOT_PITCH] = look.root_pitch;
-        let mut values = vec![0.0f32; 2];
+        // Matrix_RotateZYX(0, play->gameplayFrames * 1000, 0) (Player_DrawGetItemImpl).
+        angles[rs::GET_ITEM_SPIN] = (self.gameplay_frames as i32).wrapping_mul(1000) as i16;
+        let mut values = vec![0.0f32; 5];
         values[rs::SPEED_XZ] = self.actor.speed_xz;
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
-        let mut switches = vec![0u32; 2];
+        let r = self.get_item_ref_pos();
+        values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
+        let mut switches = vec![0u32; 5];
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
+        switches[rs::SHIELD] = self.current_shield as u32;
+        switches[rs::UNK_862] = self.unk_862 as u16 as u32;
+        switches[rs::EXCHANGE] = (self.exchange_item_id != 0) as u32;
         RenderState {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
@@ -5380,9 +5751,11 @@ impl ActorImpl for Player {
         }
     }
 
-    /// `Player_Draw`: Link (`SkelAnime_DrawFlexLod` with the model group's hands and sheath, the
-    /// face on segments 8 and 9, running fists) and the circle shadow.
-    fn draw(&self, st: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// `Player_Draw`: Link (`SkelAnime_DrawFlexLod` with the model group's hands and sheath for
+    /// the shield worn and, for the child, whether the Kokiri Sword is on B; the face on
+    /// segments 8 and 9, running fists), the item held up (`Player_DrawGetItem`), and the circle
+    /// shadow.
+    fn draw(&self, st: &RenderState, play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
         use eng_gfx::{DrawCmd, MeshKey};
         use glam::Mat4;
         if self.inert {
@@ -5399,9 +5772,31 @@ impl ActorImpl for Player {
         let (eye, mouth) = rules.face_indices(joints.face, st.switches[rs::FACE] as usize);
         let group_name = play.data.items.model_group_names.get(st.switches[rs::MODEL_GROUP] as usize).cloned().unwrap_or_default();
         let default = rules.model_group("DEFAULT").unwrap_or(0);
-        let group = &rules.model_groups[rules.model_group(&group_name).unwrap_or(default)].name;
-        let mesh = MeshKey { name: oot_game::pack::keys::link_variant(age, group, fists), segment_textures: vec![(8, eye as u16), (9, mouth as u16)] };
+        let loadout = oot_game::player_lib::Loadout {
+            age,
+            model_group: rules.model_group(&group_name).unwrap_or(default),
+            shield: st.switches[rs::SHIELD] as usize,
+            tunic: 0,
+            // Player_OverrideLimbDrawGameplayDefault reads the save's B item as it draws.
+            child_has_kokiri_sword: play.save.equips.button_items[0] == oot_game::item::ITEM_SWORD_KOKIRI,
+            moving_fast: fists,
+        };
+        let mesh = MeshKey { name: loadout.variant_key(rules), segment_textures: vec![(8, eye as u16), (9, mouth as u16)] };
         out.opa.push(DrawCmd { mesh, transform: root, bones, params: Default::default() });
+        // Player_DrawGetItem (unk_862 > 0): GetItem_Draw at sGetItemRefPos, 3.3 in front and 14
+        // up (6 for an exchange item; IREG(90) is 0), spinning, at 0.2.
+        let unk_862 = st.switches[rs::UNK_862] as u16 as i16;
+        if unk_862 > 0
+            && let Some(a) = &play.assets
+        {
+            let yaw = st.rot[1];
+            let height = if st.switches[rs::EXCHANGE] != 0 { 6.0 } else { 14.0 };
+            let v = &st.values;
+            let r = Vec3::new(v[rs::GET_ITEM_POS], v[rs::GET_ITEM_POS + 1], v[rs::GET_ITEM_POS + 2]);
+            let t = Vec3::new(r.x + 3.3 * sin_s(yaw), r.y + height, r.z + 3.3 * cos_s(yaw));
+            let m = Mat4::from_translation(t) * Mat4::from_rotation_y(eng_math::binang_to_rad(st.angles[rs::GET_ITEM_SPIN])) * Mat4::from_scale(Vec3::splat(0.2));
+            oot_game::draw::get_item_draw(&a.items, unk_862.abs() - 1, m, play.gameplay_frames, view, out);
+        }
         // ActorShadow_DrawCircle's stand-in: a soft disc on the floor below, shrinking with height.
         let (floor, _) = play.col.entity_raycast_down(st.pos + Vec3::Y * 20.0);
         let drop = (st.pos.y - floor).max(0.0);
@@ -5462,6 +5857,18 @@ impl PlayerIface for Player {
     fn in_cs_mode(&self) -> bool {
         self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0 || self.unk_6AD == 4
     }
+    /// Player holds no actors here (lifting isn't ported).
+    fn holds_actor(&self) -> bool {
+        false
+    }
+    fn get_item_direction(&self) -> i16 {
+        self.get_item_direction
+    }
+    fn set_get_item(&mut self, actor: ActorHandle, get_item_id: i16, direction: i16) {
+        self.get_item_id = get_item_id;
+        self.interact_range_actor = Some(actor);
+        self.get_item_direction = direction;
+    }
 }
 
 /// Applies a `PlayRequest` (see there), after Player's update.
@@ -5513,6 +5920,24 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         }
         PlayRequest::StartTextbox { text_id, actor } => play.start_textbox(text_id, actor),
         PlayRequest::DoAction(action) => play.interface_ctx.set_do_action(action),
+        PlayRequest::SetParent(h) => {
+            let me = play.player;
+            if let Some(a) = play.actors.actor_mut(h) {
+                a.parent = me;
+            }
+        }
+        PlayRequest::ChestOpen { chest, unk_1f4 } => {
+            if let Some(c) = play.actors.downcast_mut::<crate::en_box::EnBox>(chest) {
+                c.unk_1f4 = unk_1f4;
+            }
+        }
+        PlayRequest::SetCameraData { data2 } => play.game_camera.set_camera_data(4, data2, 0),
+        PlayRequest::DropCollectible { pos, params } => {
+            crate::en_item00::item_drop_collectible(play, pos, params);
+        }
+        PlayRequest::ItemGive(item) => {
+            oot_game::item::item_give(&mut play.save, item);
+        }
     }
 }
 
@@ -5520,6 +5945,9 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
 fn func_8083816C(floor_type: u32) -> bool {
     floor_type == FLOOR_TYPE_4 || floor_type == FLOOR_TYPE_7 || floor_type == FLOOR_TYPE_12
 }
+
+/// No item tables (play without the pack).
+static NO_ITEMS: oot_game::item::ItemTables = oot_game::item::ItemTables { get_items: Vec::new(), draw_items: Vec::new() };
 
 /// `ACTOR_EN_ELF` (`actor_table.h`): Navi.
 const ACTOR_EN_ELF: i16 = 0x0018;

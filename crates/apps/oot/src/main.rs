@@ -37,6 +37,13 @@ struct Cli {
     /// Start as adult Link.
     #[arg(long)]
     adult: bool,
+    /// After entering, change to this room as walking into it would (a debug start, e.g.
+    /// --room 2 for Kokiri Forest's sword chest).
+    #[arg(long)]
+    room: Option<i8>,
+    /// Then put Link at `x,y,z,yaw` (yaw in binary angle units).
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+    at: Vec<f32>,
     /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open), or
     /// deku-tree-dead (also the tree dead, with the Kokiri Emerald).
     #[arg(long)]
@@ -96,6 +103,8 @@ fn main() -> Result<()> {
         entrance: Some(cli.entrance.unwrap_or_default()),
         placeholders: cli.placeholders,
         preset: cli.preset,
+        room: cli.room,
+        at: cli.at,
         ..Default::default()
     };
     oot::run_window(&opts, "OoT clone", cli.width, cli.height)

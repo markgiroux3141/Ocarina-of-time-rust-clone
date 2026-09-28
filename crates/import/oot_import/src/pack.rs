@@ -247,6 +247,7 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
     w.put(keys::MESSAGES, &crate::text::load_messages(p).context("the message table")?)?;
     w.put(keys::ITEM_DROPS, &crate::tables::load_item_drops(decomp).context("the item drop tables")?)?;
     w.put(keys::INTERFACE, &crate::tables::load_interface(decomp, &st).context("the interface tables")?)?;
+    w.put(keys::ITEMS, &crate::tables::load_items(decomp).context("the item tables")?)?;
     Ok(rules)
 }
 
@@ -423,6 +424,24 @@ fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWrite
         w.put(&keys::bake(&b.name), &d)?;
         tally.ok("ActorBake");
     }
+    // GetItem_Draw's models (oot_game::draw), from sDrawItemTable: each display list is in the
+    // object whose XML names it.
+    let items = crate::tables::load_items(&p.config.decomp)?;
+    let file_of = |sym: &str| -> Option<String> {
+        p.symbols
+            .files
+            .iter()
+            .filter(|f| !f.name.starts_with("ovl_") && !matches!(f.segment, Some(2) | Some(3)))
+            .find(|f| f.symbols.iter().any(|s| s.kind == "DList" && s.name == sym))
+            .map(|f| f.name.clone())
+    };
+    for b in oot_game::draw::bakes(&items, &file_of)? {
+        let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
+        anyhow::ensure!(d.stats.unresolved_addresses.is_empty(), "bake {}: unresolved {:?}", b.name, d.stats.unresolved_addresses.keys().collect::<Vec<_>>());
+        anyhow::ensure!(d.stats.unknown_opcodes.is_empty(), "bake {}: unknown opcodes {:?}", b.name, d.stats.unknown_opcodes);
+        w.put(&keys::bake(&b.name), &d)?;
+        tally.ok("GetItemBake");
+    }
     // The room skyboxes (oot_game::skybox), drawn around the eye in houses and shops.
     for s in crate::room::load_room_skyboxes(&p.config.decomp)? {
         let b = oot_game::skybox::bake(&s);
@@ -452,31 +471,56 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
             }
             Ok(d)
         };
-        // The textures each face index puts in the eye and mouth slots.
+        // The textures each face index puts in the eye and mouth slots, for a loadout.
         let base = build(&default, 0, 0)?;
         let (eye_slots, mouth_slots) = (LinkVariant::slots_from(&base, 8), LinkVariant::slots_from(&base, 9));
         anyhow::ensure!(!eye_slots.is_empty() && !mouth_slots.is_empty(), "{}: no textures from segments 8/9 in Link's mesh", age.name());
-        let mut faces = LinkFaces { eyes: Vec::new(), mouths: Vec::new() };
-        for e in 0..rules.eye_textures.len() {
-            let d = build(&default, e, 0)?;
-            faces.eyes.push(LinkVariant::slots_from(&d, 8).into_iter().map(|i| d.textures[i].clone()).collect());
-        }
-        for mo in 0..rules.mouth_textures.len() {
-            let d = build(&default, 0, mo)?;
-            faces.mouths.push(LinkVariant::slots_from(&d, 9).into_iter().map(|i| d.textures[i].clone()).collect());
-        }
+        let faces_of = |lo: &Loadout| -> Result<LinkFaces> {
+            let mut faces = LinkFaces { eyes: Vec::new(), mouths: Vec::new() };
+            for e in 0..rules.eye_textures.len() {
+                let d = build(lo, e, 0)?;
+                faces.eyes.push(LinkVariant::slots_from(&d, 8).into_iter().map(|i| d.textures[i].clone()).collect());
+            }
+            for mo in 0..rules.mouth_textures.len() {
+                let d = build(lo, 0, mo)?;
+                faces.mouths.push(LinkVariant::slots_from(&d, 9).into_iter().map(|i| d.textures[i].clone()).collect());
+            }
+            Ok(faces)
+        };
+        let faces = faces_of(&default)?;
         w.put(&keys::link_faces(age), &faces)?;
         let (last_eye, last_mouth) = (rules.eye_textures.len() - 1, rules.mouth_textures.len() - 1);
+        // Every model group, hand state, shield and (the child's) sword on B or not, each set of
+        // hand, sheath and waist lists once.
+        let mut loadouts = Vec::new();
         for (gi, g) in rules.model_groups.iter().enumerate() {
             for fists in [false, true] {
-                let mut lo = default.clone();
-                lo.model_group = gi;
-                lo.moving_fast = fists;
+                for shield in 0..rules.shields.len() {
+                    for sword in [true, false] {
+                        let lo = Loadout { model_group: gi, moving_fast: fists, shield, child_has_kokiri_sword: sword, ..default.clone() };
+                        loadouts.push((g, fists, lo));
+                    }
+                }
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for (g, fists, lo) in loadouts {
+            let key = lo.variant_key(rules);
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            {
                 let draw = build(&lo, 0, 0)?;
-                let v = LinkVariant { eye_slots: LinkVariant::slots_from(&draw, 8), mouth_slots: LinkVariant::slots_from(&draw, 9), draw };
+                let mut v = LinkVariant { eye_slots: LinkVariant::slots_from(&draw, 8), mouth_slots: LinkVariant::slots_from(&draw, 9), draw, faces: None };
+                // The shared faces fit most variants. Where a face slot also holds texels this
+                // loadout's hand or sheath lists left in TMEM, the variant keeps its own.
+                if v.with_face(&faces, last_eye, last_mouth) != build(&lo, last_eye, last_mouth)? {
+                    v.faces = Some(faces_of(&lo)?);
+                    tally.ok("LinkVariantOwnFaces");
+                }
                 // The face swap must give exactly what interpreting with the face bound gives:
                 // every face for the default group, the last eye and mouth for the others.
-                let checks: Vec<(usize, usize)> = if g.name == "DEFAULT" {
+                let checks: Vec<(usize, usize)> = if g.name == "DEFAULT" && lo.shield == default.shield && lo.child_has_kokiri_sword {
                     (0..=last_eye).flat_map(|e| (0..=last_mouth).map(move |m| (e, m))).collect()
                 } else {
                     vec![(last_eye, last_mouth)]
@@ -504,7 +548,7 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
                         );
                     }
                 }
-                w.put(&keys::link_variant(age, &g.name, fists), &v)?;
+                w.put(&key, &v)?;
                 tally.ok("LinkVariant");
             }
         }

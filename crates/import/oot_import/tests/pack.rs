@@ -204,13 +204,14 @@ fn link_meshes_match_interpreting_the_rom() {
         assert_eq!(c.pack.link_skeleton(age).unwrap().limbs.len(), model.skeleton.limbs.len());
         for (gi, g) in rules.model_groups.iter().enumerate() {
             for fists in [false, true] {
-                let v = c.pack.link_variant(age, &g.name, fists).unwrap();
-                let mut lo = Loadout::default_for(&rules, age);
-                lo.model_group = gi;
-                lo.moving_fast = fists;
-                for (eye, mouth) in [(0, 0), (1, 0), (2, 3), (5, 1)] {
-                    let (want, _) = model.draw_list(&rules, &lo, eye, mouth, 0).unwrap();
-                    assert!(v.with_face(&faces, eye, mouth) == want, "{} {} fists={fists} eye {eye} mouth {mouth}", age.name(), g.name);
+                // The default loadout, no shield, and (for the child) no sword on B.
+                for (shield, sword) in [(Loadout::default_for(&rules, age).shield, true), (0, true), (1, false)] {
+                    let lo = Loadout { model_group: gi, moving_fast: fists, shield, child_has_kokiri_sword: sword, ..Loadout::default_for(&rules, age) };
+                    let v = c.pack.link_variant(age, &rules.limb_dlists(&lo, 0)).unwrap();
+                    for (eye, mouth) in [(0, 0), (1, 0), (2, 3), (5, 1)] {
+                        let (want, _) = model.draw_list(&rules, &lo, eye, mouth, 0).unwrap();
+                        assert!(v.with_face(&faces, eye, mouth) == want, "{} {} fists={fists} shield {shield} sword {sword} eye {eye} mouth {mouth}", age.name(), g.name);
+                    }
                 }
             }
         }

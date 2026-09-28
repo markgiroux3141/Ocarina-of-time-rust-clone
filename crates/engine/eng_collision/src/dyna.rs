@@ -202,6 +202,25 @@ impl Dyna {
         self.actors.get(bg as usize).is_some_and(|a| a.in_use() && a.flags & BGACTOR_1 == 0)
     }
 
+    /// `DynaPoly_DisableCollision` / `DynaPoly_EnableCollision` (`BGACTOR_COLLISION_DISABLED`):
+    /// the bg actor stops or starts colliding from the next `DynaPoly_UpdateContext`.
+    pub fn set_collision_disabled(&mut self, bg: u16, disabled: bool) {
+        // DynaPoly_IsBgIdBgActor: any id below BG_ACTOR_MAX.
+        if let Some(a) = self.actors.get_mut(bg as usize) {
+            a.collision_disabled = disabled;
+            self.invalidate = true;
+        }
+    }
+
+    /// `DynaPoly_DisableCeilingCollision` (`BGACTOR_CEILING_COLLISION_DISABLED`): its
+    /// ceilings aren't in the lookup.
+    pub fn disable_ceiling_collision(&mut self, bg: u16) {
+        if let Some(a) = self.actors.get_mut(bg as usize) {
+            a.ceiling_disabled = true;
+            self.invalidate = true;
+        }
+    }
+
     /// The owning actor's per-frame state (what its `update` changed).
     pub fn set_source(&mut self, bg: u16, source: BgActorSource) {
         if let Some(a) = self.actors.get_mut(bg as usize) {

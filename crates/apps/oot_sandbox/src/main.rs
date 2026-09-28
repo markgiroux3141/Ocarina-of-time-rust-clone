@@ -44,7 +44,7 @@ struct Cli {
     target: f32,
     /// Place Link at `x,y,z,yaw` (yaw in binary angle units) instead of the spawn or the
     /// script's start; works in scenes too.
-    #[arg(long, value_delimiter = ',', allow_negative_numbers = true)]
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
     at: Vec<f32>,
     /// Headless: contact sheet frame stride.
     #[arg(long, default_value_t = 2)]
@@ -119,6 +119,7 @@ fn options(cli: &Cli) -> Options {
         entrance: cli.entrance.clone(),
         placeholders: cli.placeholders,
         preset: cli.preset.clone(),
+        room: None,
     }
 }
 

@@ -8,14 +8,17 @@
 //! the last 40). Touched, it's given (`Item_Give`) and bounces over Link's head for 15 frames
 //! (`EnItem00_Collected`).
 //!
+//! The items Player holds up (sticks, nuts, seeds, magic, keys, heart pieces and containers,
+//! shields and tunics) are offered to Player instead (`func_8002F554`, docs/adr/0019); Player's
+//! get-item interrupt takes one by becoming its `parent`, and the item goes (`Actor_HasParent`).
+//!
 //! Drawn as `EnItem00_Draw` does: `gRupeeDL` with the rupee's colour on segment 8, or
 //! `gItemDropDL` with the item's picture after `Gfx_SetupDL_66` (docs/adr/0012-actor-bakes.md),
-//! and the heart piece's and container's lists.
+//! the heart piece's and container's lists, and `GetItem_Draw` (`oot_game::draw`) for the placed
+//! recovery hearts (once `OBJECT_GI_HEART` is loaded), the shields and the tunics.
 //!
-//! Not ported: items given through Player's get-item (`func_8002F554`: sticks, nuts, seeds,
-//! magic, keys, heart pieces and containers, shields and tunics; they wait and aren't taken),
-//! `GetItem_Draw` (placed recovery hearts, shields and tunics aren't drawn), the circle shadow,
-//! the sparkles (`EffectSsKiraKira`, whose random numbers are still drawn) and the sounds.
+//! Not ported: the circle shadow, the sparkles (`EffectSsKiraKira`, whose random numbers are
+//! still drawn) and the sounds.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s};
@@ -23,6 +26,7 @@ use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_MISC, ActorHandle, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
+use oot_game::get_item::{actor_has_parent, offer_get_item, offer_get_item_range};
 use oot_game::item::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -64,20 +68,18 @@ pub const ITEM00_TUNIC_GORON: i16 = 0x18;
 pub const ITEM00_BOMBS_SPECIAL: i16 = 0x19;
 pub const ITEM00_NONE: i16 = 0xFF;
 
-/// `GI_NONE`; the get-item ids the collectibles would give (`GetItemID`, z64item.h).
-const GI_NONE: i16 = 0x00;
-const GI_NUTS_5: i16 = 0x02;
-const GI_STICKS_1: i16 = 0x07;
-const GI_SHIELD_DEKU: i16 = 0x29;
-const GI_SHIELD_HYLIAN: i16 = 0x2A;
-const GI_TUNIC_GORON: i16 = 0x2C;
-const GI_TUNIC_ZORA: i16 = 0x2D;
-const GI_SEEDS_5: i16 = 0x3C;
-const GI_HEART_CONTAINER: i16 = 0x3D;
-const GI_HEART_PIECE: i16 = 0x3E;
-const GI_KEY_SMALL: i16 = 0x42;
-const GI_MAGIC_SMALL: i16 = 0x43;
-const GI_MAGIC_LARGE: i16 = 0x44;
+/// The objects `GetItem_Draw` needs loaded (`object_table.h`'s `OBJECT_GI_HEART`,
+/// `OBJECT_GI_SHIELD_1`, `OBJECT_GI_SHIELD_2`, `OBJECT_GI_CLOTHES`), by file.
+const OBJECT_GI_HEART: &str = "object_gi_heart";
+const OBJECT_GI_SHIELD_1: &str = "object_gi_shield_1";
+const OBJECT_GI_SHIELD_2: &str = "object_gi_shield_2";
+const OBJECT_GI_CLOTHES: &str = "object_gi_clothes";
+
+/// `Object_GetIndex(&play->objectCtx, object)` for an object file.
+fn object_bank(play: &PlayState, file: &str) -> Option<usize> {
+    let id = play.assets.as_ref()?.scenes.objects.iter().position(|o| o == file)?;
+    play.object_ctx.get_index(id as i16)
+}
 
 /// `sRupeeTex`.
 const RUPEE_TEX: [&str; 5] = ["gRupeeGreenTex", "gRupeeBlueTex", "gRupeeRedTex", "gRupeePinkTex", "gRupeeOrangeTex"];
@@ -289,7 +291,21 @@ impl EnItem00 {
                 set_scale(&mut e, 0.01);
             }
             ITEM00_SHIELD_DEKU | ITEM00_SHIELD_HYLIAN | ITEM00_TUNIC_ZORA | ITEM00_TUNIC_GORON => {
-                // (Their get-item objects aren't loaded here: GetItem_Draw isn't ported.)
+                // objBankIndex = Object_GetIndex(OBJECT_GI_SHIELD_1 / _2 / OBJECT_GI_CLOTHES),
+                // Actor_SetObjectDependency. Without the object the index is -1 and
+                // Actor_UpdateAll kills the item (here at once).
+                let file = match e.actor.params {
+                    ITEM00_SHIELD_DEKU => OBJECT_GI_SHIELD_1,
+                    ITEM00_SHIELD_HYLIAN => OBJECT_GI_SHIELD_2,
+                    _ => OBJECT_GI_CLOTHES,
+                };
+                match object_bank(play, file) {
+                    Some(bank) => e.actor.obj_bank_index = Some(bank),
+                    None => {
+                        log::debug!("En_Item00: {file} isn't loaded");
+                        e.actor.kill();
+                    }
+                }
                 set_scale(&mut e, 0.5);
                 y_offset = 0.0;
                 e.actor.world_rot.x = 0x4000;
@@ -311,6 +327,7 @@ impl EnItem00 {
         e.actor.speed_xz = 0.0;
         e.actor.velocity.y = 0.0;
         e.actor.gravity = 0.0;
+        let mut get_item_id = GI_NONE;
         match e.actor.params {
             ITEM00_RUPEE_GREEN => {
                 item_give(&mut play.save, ITEM_RUPEE_GREEN);
@@ -352,9 +369,22 @@ impl EnItem00 {
                 item_give(&mut play.save, ITEM_KEY_SMALL);
             }
             // @bug (game): the large magic jar's get-item is the small one's, and the other
-            // way round. (func_8002F554 isn't ported.)
-            ITEM00_MAGIC_LARGE | ITEM00_MAGIC_SMALL | ITEM00_SEEDS | ITEM00_NUTS | ITEM00_STICK => {}
+            // way round.
+            ITEM00_MAGIC_LARGE => get_item_id = GI_MAGIC_SMALL,
+            ITEM00_MAGIC_SMALL => get_item_id = GI_MAGIC_LARGE,
+            ITEM00_SEEDS => get_item_id = GI_SEEDS_5,
+            ITEM00_NUTS => get_item_id = GI_NUTS_5,
+            ITEM00_STICK => get_item_id = GI_STICKS_1,
             _ => {}
+        }
+        if get_item_id != GI_NONE && !actor_has_parent(&e.actor) {
+            // func_8002F554(&this->actor, play, getItemId), from inside whoever dropped it. The
+            // item isn't in the actor context yet, so it can't be the offering actor here; when
+            // Player dropped it (func_8083E4C4) the offer is wiped at the end of Player's update
+            // anyway, so skipping it changes nothing.
+            if play.cur_actor != play.player {
+                log::debug!("En_Item00: an offer from a collected-at-once drop ({get_item_id:#x}) isn't made");
+            }
         }
         e.action = Action::Collected;
         e.collected(play);
@@ -459,7 +489,15 @@ impl EnItem00 {
 
     /// `EnItem00_Collected`: bouncing over Link's head until the timer runs out.
     fn collected(&mut self, play: &mut PlayState) {
-        // (A get-item's func_8002F434 isn't ported: getItemId stays GI_NONE.)
+        if self.get_item_id != GI_NONE {
+            if !actor_has_parent(&self.actor) {
+                let actor = self.actor.clone();
+                offer_get_item_range(play, &actor, self.get_item_id, 50.0, 80.0);
+                self.despawn_timer += 1;
+            } else {
+                self.get_item_id = GI_NONE;
+            }
+        }
         if self.despawn_timer == 0 {
             self.actor.kill();
             return;
@@ -540,8 +578,7 @@ impl ActorImpl for EnItem00 {
         if self.unk_154 > 0 {
             return;
         }
-        // Actor_HasParent: nothing takes an item as its parent here.
-        if !(self.actor.xz_dist_to_player <= 30.0 && self.actor.y_dist_to_player >= -50.0 && self.actor.y_dist_to_player <= 50.0) {
+        if !(self.actor.xz_dist_to_player <= 30.0 && self.actor.y_dist_to_player >= -50.0 && self.actor.y_dist_to_player <= 50.0) && !actor_has_parent(&self.actor) {
             return;
         }
         // (No game over.)
@@ -609,12 +646,23 @@ impl ActorImpl for EnItem00 {
             ITEM00_TUNIC_GORON => GI_TUNIC_GORON,
             _ => GI_NONE,
         };
-        // func_8002F554 (Player gets the item) isn't ported, so Actor_HasParent stays false and
-        // these wait where they are.
+        if get_item_id != GI_NONE && !actor_has_parent(&self.actor) {
+            let actor = self.actor.clone();
+            offer_get_item(play, &actor, get_item_id);
+        }
+        // What Player holds up goes once Player has it (its parent).
         if matches!(p, ITEM00_HEART_PIECE | ITEM00_HEART_CONTAINER | ITEM00_SMALL_KEY | ITEM00_SHIELD_DEKU | ITEM00_SHIELD_HYLIAN | ITEM00_TUNIC_ZORA | ITEM00_TUNIC_GORON) {
+            if actor_has_parent(&self.actor) {
+                play.flags.set_collectible(self.collectible_flag as i32);
+                self.actor.kill();
+            }
             return;
         }
         if !(p <= ITEM00_RUPEE_RED || p == ITEM00_RUPEE_ORANGE) && get_item_id != GI_NONE {
+            if actor_has_parent(&self.actor) {
+                play.flags.set_collectible(self.collectible_flag as i32);
+                self.actor.kill();
+            }
             return;
         }
         // (NA_SE_SY_GET_RUPY / NA_SE_SY_GET_ITEM.)
@@ -634,21 +682,41 @@ impl ActorImpl for EnItem00 {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))
     }
 
-    /// The blink (`unk_156 & unk_158`) and whether a recovery heart is a placed one.
+    /// `EnItem00_Draw`'s state change: a placed recovery heart waits for `OBJECT_GI_HEART`
+    /// (`despawnTimer` -1), then depends on it (-2) and is drawn with `GetItem_Draw`.
+    fn draw_update(&mut self, play: &mut PlayState) {
+        if self.actor.params == ITEM00_RECOVERY_HEART && self.despawn_timer == -1 && self.unk_156 & self.unk_158 == 0 {
+            if let Some(bank) = object_bank(play, OBJECT_GI_HEART)
+                && play.object_ctx.is_loaded(bank)
+            {
+                self.actor.obj_bank_index = Some(bank);
+                self.despawn_timer = -2;
+            }
+        }
+    }
+
+    /// The blink (`unk_156 & unk_158`), whether a recovery heart is a placed one (and one ready
+    /// for `GetItem_Draw`), and the game frame (the get-item models' scroll).
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
-        rs.switches = vec![(self.unk_156 & self.unk_158 != 0) as u32, (self.despawn_timer < 0) as u32];
+        rs.switches = vec![(self.unk_156 & self.unk_158 != 0) as u32, (self.despawn_timer < 0) as u32, (self.despawn_timer == -2) as u32];
         rs
     }
 
     /// `EnItem00_Draw`.
-    fn draw(&self, rs: &RenderState, _play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
         if rs.switches.first().copied().unwrap_or(0) != 0 {
             return;
         }
         let m = actor_draw_matrix(rs);
         let p = self.actor.params;
         let placed = rs.switches.get(1).copied().unwrap_or(0) != 0;
+        let heart_ready = rs.switches.get(2).copied().unwrap_or(0) != 0;
+        let get_item_draw = |out: &mut DrawOut, draw_id: i16, m: glam::Mat4| {
+            if let Some(a) = &play.assets {
+                oot_game::draw::get_item_draw(&a.items, draw_id, m, play.gameplay_frames, view, out);
+            }
+        };
         match p {
             ITEM00_RUPEE_GREEN | ITEM00_RUPEE_BLUE | ITEM00_RUPEE_RED | ITEM00_RUPEE_ORANGE | ITEM00_RUPEE_PURPLE => {
                 // EnItem00_DrawRupee (func_8002EBCC's highlight is the mesh's texgen).
@@ -660,8 +728,13 @@ impl ActorImpl for EnItem00 {
                 out.opa.push(DrawCmd::new(MeshKey::named(keys::mesh("gameplay_keep", "gHeartPieceExteriorDL")), m));
                 out.xlu.push(DrawCmd::new(MeshKey::named(keys::mesh("gameplay_keep", "gHeartContainerInteriorDL")), m));
             }
-            // A placed recovery heart is GetItem_Draw(GID_RECOVERY_HEART): not ported.
-            ITEM00_RECOVERY_HEART if placed => {}
+            // A placed recovery heart: GetItem_Draw(GID_RECOVERY_HEART) at 16 times the scale,
+            // once its object is loaded.
+            ITEM00_RECOVERY_HEART if placed => {
+                if heart_ready {
+                    get_item_draw(out, GID_RECOVERY_HEART, m * glam::Mat4::from_scale(Vec3::splat(16.0)));
+                }
+            }
             ITEM00_RECOVERY_HEART
             | ITEM00_BOMBS_A
             | ITEM00_BOMBS_B
@@ -685,7 +758,11 @@ impl ActorImpl for EnItem00 {
                 }
                 out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&drop_bake(i as usize))), m * view.billboard));
             }
-            // Shields and tunics: GetItem_Draw, not ported. ITEM00_FLEXIBLE: nothing.
+            ITEM00_SHIELD_DEKU => get_item_draw(out, GID_SHIELD_DEKU, m),
+            ITEM00_SHIELD_HYLIAN => get_item_draw(out, GID_SHIELD_HYLIAN, m),
+            ITEM00_TUNIC_ZORA => get_item_draw(out, GID_TUNIC_ZORA, m),
+            ITEM00_TUNIC_GORON => get_item_draw(out, GID_TUNIC_GORON, m),
+            // ITEM00_FLEXIBLE: nothing.
             _ => {}
         }
     }
@@ -699,8 +776,8 @@ impl ActorImpl for EnItem00 {
 }
 
 /// `func_8001F404`: what a drop becomes for Link's age, health and items, or -1 for nothing
-/// (bombs, arrows, seeds and magic need their bag, bow, slingshot and meter, which the save
-/// doesn't have; a recovery heart at full health is a green rupee).
+/// (bombs, arrows, seeds and magic need the bombs, the bow, the slingshot and the meter; a
+/// recovery heart at full health is a green rupee).
 pub fn func_8001f404(play: &PlayState, mut drop_id: i16) -> i16 {
     if play.save.adult {
         if drop_id == ITEM00_SEEDS {
@@ -711,11 +788,11 @@ pub fn func_8001f404(play: &PlayState, mut drop_id: i16) -> i16 {
     } else if matches!(drop_id, ITEM00_ARROWS_SMALL | ITEM00_ARROWS_MEDIUM | ITEM00_ARROWS_LARGE) {
         drop_id = ITEM00_SEEDS;
     }
-    // INV_CONTENT(ITEM_BOMB), (ITEM_BOW), (ITEM_SLINGSHOT) are ITEM_NONE and magicLevel is 0.
-    if matches!(drop_id, ITEM00_BOMBS_A | ITEM00_BOMBS_SPECIAL | ITEM00_BOMBS_B)
-        || matches!(drop_id, ITEM00_ARROWS_SMALL | ITEM00_ARROWS_MEDIUM | ITEM00_ARROWS_LARGE)
-        || matches!(drop_id, ITEM00_MAGIC_LARGE | ITEM00_MAGIC_SMALL)
-        || drop_id == ITEM00_SEEDS
+    let s = &play.save;
+    if (matches!(drop_id, ITEM00_BOMBS_A | ITEM00_BOMBS_SPECIAL | ITEM00_BOMBS_B) && s.inv_content(ITEM_BOMB) == ITEM_NONE)
+        || (matches!(drop_id, ITEM00_ARROWS_SMALL | ITEM00_ARROWS_MEDIUM | ITEM00_ARROWS_LARGE) && s.inv_content(ITEM_BOW) == ITEM_NONE)
+        || (matches!(drop_id, ITEM00_MAGIC_LARGE | ITEM00_MAGIC_SMALL) && s.magic_level == 0)
+        || (drop_id == ITEM00_SEEDS && s.inv_content(ITEM_SLINGSHOT) == ITEM_NONE)
     {
         return -1;
     }
@@ -794,8 +871,27 @@ pub fn item_drop_collectible_random(play: &mut PlayState, from_actor: Option<&Ac
             params = 0xA * 0x10;
             drop_table_index = 0;
             drop_id = ITEM00_RECOVERY_HEART;
+        } else if s.magic_level != 0 && s.magic == 0 {
+            params = 0xA * 0x10;
+            drop_table_index = 0;
+            drop_id = ITEM00_MAGIC_LARGE;
+        } else if s.magic_level != 0 && s.magic <= (s.magic_level >> 1) {
+            params = 0xA * 0x10;
+            drop_table_index = 0;
+            drop_id = ITEM00_MAGIC_SMALL;
+        } else if !s.adult && s.ammo(ITEM_SLINGSHOT) < 6 {
+            params = 0xA * 0x10;
+            drop_table_index = 0;
+            drop_id = ITEM00_SEEDS;
+        } else if s.adult && s.ammo(ITEM_BOW) < 6 {
+            params = 0xA * 0x10;
+            drop_table_index = 0;
+            drop_id = ITEM00_ARROWS_MEDIUM;
+        } else if s.ammo(ITEM_BOMB) < 6 {
+            params = 0xD * 0x10;
+            drop_table_index = 0;
+            drop_id = ITEM00_BOMBS_A;
         } else if s.rupees < 11 {
-            // (No magic meter, and no slingshot, bow or bombs to fill.)
             params = 0xA * 0x10;
             drop_table_index = 0;
             drop_id = ITEM00_RUPEE_RED;

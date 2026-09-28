@@ -97,6 +97,12 @@ pub trait PlayerIface {
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;
+    /// `heldActor != NULL`.
+    fn holds_actor(&self) -> bool;
+    /// `getItemDirection`: how squarely the last `GI_NONE` offer this frame faced Link.
+    fn get_item_direction(&self) -> i16;
+    /// `func_8002F434`'s write: `getItemId`, `interactRangeActor`, `getItemDirection`.
+    fn set_get_item(&mut self, actor: ActorHandle, get_item_id: i16, direction: i16);
 }
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.

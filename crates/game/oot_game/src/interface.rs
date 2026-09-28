@@ -13,9 +13,13 @@
 //!   label are quads turning about X in their own 45x45 viewport with a 60° perspective
 //!   (`func_8008A8B8`): that projection, placed on the viewport's part of the screen, is part
 //!   of their transform.
+//! - **The B and C items:** each button's item icon (`icon_item_static`, every item up to the
+//!   fishing rod baked) and the C items' ammo counts (`Interface_DrawAmmoCount`), from the
+//!   save's buttons. `Interface_LoadItemIcon1/2` load nothing: the icon drawn is the button's
+//!   item as it draws.
 //! - **Not ported:** the magic meter (no magic), the minimap, the timers, the C-Up Navi prompt,
-//!   the B button's label (only the ocarina loads one), the C items (none are kept), the
-//!   ammo counts, double defence's hearts, the sounds, and the pause menu. `func_80083108`'s
+//!   the B button's label (only the ocarina loads one), the B button's ammo count (only while
+//!   riding or in a minigame), double defence's hearts, the sounds, and the pause menu. `func_80083108`'s
 //!   riding, minigame, fishing, water and horse-race cases, and its item-type restrictions, are
 //!   left out: with nothing on the C buttons they don't change a button's status.
 //!
@@ -67,9 +71,13 @@ const A_BUTTON_Y: i16 = 9;
 /// `R_ITEM_BTN_X(i)`, `R_ITEM_BTN_Y(i)`: B, C-left, C-down, C-right.
 const ITEM_BTN_X: [i16; 4] = [160, 227, 249, 271];
 const ITEM_BTN_Y: [i16; 4] = [17, 18, 34, 18];
-/// `R_ITEM_BTN_WIDTH(i)`, `R_ITEM_ICON_WIDTH(i)`.
+/// `R_ITEM_BTN_WIDTH(i)`, `R_ITEM_ICON_WIDTH(i)` (the icons are at `R_ITEM_ICON_X(i)`,
+/// `R_ITEM_ICON_Y(i)`: the buttons' places).
 const ITEM_BTN_WIDTH: [i16; 4] = [29, 27, 27, 27];
 const ITEM_ICON_WIDTH: [i16; 4] = [30, 24, 24, 24];
+/// `R_ITEM_AMMO_X(i)`, `R_ITEM_AMMO_Y(i)`: the ammo count's first digit.
+const ITEM_AMMO_X: [i16; 4] = [160 + 2, 227 + 1, 249 + 1, 271 + 1];
+const ITEM_AMMO_Y: [i16; 4] = [17 + 18, 18 + 17, 34 + 17, 18 + 17];
 /// `R_B_BTN_COLOR`, `R_C_BTN_COLOR`, `R_A_BTN_COLOR`.
 const B_BTN_COLOR: [u8; 3] = [255, 30, 30];
 const C_BTN_COLOR: [u8; 3] = [255, 160, 0];
@@ -415,11 +423,18 @@ impl InterfaceContext {
     }
 
     /// `func_80083108`'s cases that apply here: while climbing (or `PLAYER_STATE2_18`) the B and
-    /// C buttons are disabled; otherwise the scene's B restriction and, as the C buttons hold
-    /// nothing, `restrictions.all` (the restrictions by item type change nothing). A status
-    /// change fades the interface back in (alpha type 50). B always holds a sword here, so
-    /// giving back what a minigame put on it (`INFTABLE_1DX`) isn't ported.
+    /// C buttons are disabled; otherwise the scene's restrictions: B's, then each C item's by
+    /// its kind (bottles, trade items, the hookshots, the ocarinas, Farore's Wind, Din's Fire
+    /// and Nayru's Love), then `restrictions.all` for the rest. A status change fades the
+    /// interface back in (alpha type 50).
+    ///
+    /// B with nothing, or a bow, slingshot or bombchu a minigame put there, gets back what
+    /// `buttonStatus[0]` kept, unless B has had no sword since the file began
+    /// (`infTable[INFTABLE_1DX_INDEX]`). Riding, the minigames, the fishing pond, the Chamber
+    /// of Sages and `func_8008F2F8`'s water and heat hazards aren't ported.
     fn func_80083108(&mut self, save: &mut SaveContext, f: &IfaceFrame) {
+        use crate::item::*;
+        use crate::save::INFTABLE_1DX_INDEX;
         // cutsceneIndex < 0xFFF0; no riding, shooting gallery, fishing pond or Chamber of Sages.
         save.unk_13e7 = 0;
         if !f.msg_none {
@@ -435,37 +450,72 @@ impl InterfaceContext {
             }
             return;
         }
-        use crate::save::ITEM_NONE;
-        /// `ITEM_SLINGSHOT`, `ITEM_BOW`, `ITEM_BOMBCHU` (z64item.h).
-        const B_AMMO_ITEMS: [u8; 3] = [0x06, 0x03, 0x09];
-        let b = save.button_items[0];
-        let b_is_ammo = B_AMMO_ITEMS.contains(&b) || b == ITEM_NONE;
+        let b = save.equips.button_items[0];
+        let b_is_ammo = b == ITEM_SLINGSHOT || b == ITEM_BOW || b == ITEM_BOMBCHU || b == ITEM_NONE;
         if self.restrictions.b_button == 0 {
             if b_is_ammo {
-                // (Giving back what a minigame put on B: INFTABLE_1DX isn't kept.)
+                if b != ITEM_NONE || save.inf_table[INFTABLE_1DX_INDEX] == 0 {
+                    save.equips.button_items[0] = save.button_status[0];
+                    sp28 = true;
+                    // (Interface_LoadItemIcon1: the icons are baked.)
+                }
             } else if save.button_status[0] == BTN_DISABLED {
                 sp28 = true;
+                // (buttonStatus[0] & 0xFF) is BTN_DISABLED here, so the C's inner test always
+                // takes its first branch.
                 save.button_status[0] = BTN_ENABLED;
             }
-        } else if self.restrictions.b_button == 1 && !b_is_ammo {
-            if save.button_status[0] == BTN_ENABLED {
-                sp28 = true;
-            }
-            save.button_status[0] = BTN_DISABLED;
-        }
-        // The C buttons hold nothing (no ocarina, bottle, trade item or Lens of Truth): `all`
-        // alone decides them.
-        for i in 1..4 {
-            if self.restrictions.all != 0 {
-                if save.button_status[i] == BTN_ENABLED {
+        } else if self.restrictions.b_button == 1 {
+            if b_is_ammo {
+                if b != ITEM_NONE || save.inf_table[INFTABLE_1DX_INDEX] == 0 {
+                    save.equips.button_items[0] = save.button_status[0];
                     sp28 = true;
                 }
-                save.button_status[i] = BTN_DISABLED;
             } else {
-                if save.button_status[i] == BTN_DISABLED {
+                if save.button_status[0] == BTN_ENABLED {
                     sp28 = true;
                 }
-                save.button_status[i] = BTN_ENABLED;
+                save.button_status[0] = BTN_DISABLED;
+            }
+        }
+        // Each C item by its kind: disabled with its restriction, enabled without.
+        let bottle = |i: u8| (ITEM_BOTTLE..=ITEM_POE).contains(&i);
+        let trade = |i: u8| (ITEM_WEIRD_EGG..=ITEM_CLAIM_CHECK).contains(&i);
+        let r = self.restrictions;
+        let kinds: [(u8, &dyn Fn(u8) -> bool); 6] = [
+            (r.bottles, &bottle),
+            (r.trade_items, &trade),
+            (r.hookshot, &|i| i == ITEM_HOOKSHOT || i == ITEM_LONGSHOT),
+            (r.ocarina, &|i| i == ITEM_OCARINA_FAIRY || i == ITEM_OCARINA_TIME),
+            (r.farores, &|i| i == ITEM_FARORES_WIND),
+            (r.dins_nayrus, &|i| i == ITEM_DINS_FIRE || i == ITEM_NAYRUS_LOVE),
+        ];
+        let set = |save: &mut SaveContext, i: usize, disabled: bool, sp28: &mut bool| {
+            let (from, to) = if disabled { (BTN_ENABLED, BTN_DISABLED) } else { (BTN_DISABLED, BTN_ENABLED) };
+            if save.button_status[i] == from {
+                *sp28 = true;
+            }
+            save.button_status[i] = to;
+        };
+        for (restricted, is_kind) in kinds {
+            for i in 1..4 {
+                if is_kind(save.equips.button_items[i]) {
+                    set(save, i, restricted != 0, &mut sp28);
+                }
+            }
+        }
+        /// `SCENE_TAKARAYA` (the treasure chest shop, where the Lens of Truth stays usable).
+        const SCENE_TAKARAYA: u16 = 0x10;
+        for i in 1..4 {
+            let it = save.equips.button_items[i];
+            let ocarina = it == ITEM_OCARINA_FAIRY || it == ITEM_OCARINA_TIME;
+            if r.all != 0 {
+                if !ocarina && !bottle(it) && !trade(it) {
+                    let lens_in_shop = f.scene_id == SCENE_TAKARAYA && it == ITEM_LENS;
+                    set(save, i, !lens_in_shop, &mut sp28);
+                }
+            } else if it != ITEM_DINS_FIRE && it != ITEM_HOOKSHOT && it != ITEM_LONGSHOT && it != ITEM_FARORES_WIND && it != ITEM_NAYRUS_LOVE && !ocarina && !bottle(it) && !trade(it) {
+                set(save, i, false, &mut sp28);
             }
         }
         if sp28 {
@@ -650,7 +700,7 @@ impl InterfaceContext {
         /// `rupeeDigitsFirst`, `rupeeDigitsCount` by wallet.
         const FIRST: [usize; 3] = [1, 0, 0];
         const COUNT: [usize; 3] = [2, 3, 3];
-        let w = (save.wallet_upgrade as usize).min(2);
+        let w = (save.cur_upg_value(crate::item::UPG_WALLET) as usize).min(2);
         for k in 0..COUNT[w] {
             let x = 42.0 + 8.0 * k as f32;
             out.push(Sprite::rect(digit_sprite(digits[FIRST[w] + k] as usize), x, 206.0, x + 8.0, 222.0, prim, None));
@@ -674,16 +724,23 @@ impl InterfaceContext {
         // (The START button only with the pause menu; the C-Up prompt with Navi calling.)
         // Empty C button arrows.
         for i in 1..4 {
-            if save.button_items[i] > 0xF0 {
+            if save.equips.button_items[i] > 0xF0 {
                 btn(i, EMPTY_C[i - 1], C_BTN_COLOR, c_alphas[i - 1], out);
             }
         }
-        // The B item (the B label only follows Interface_LoadActionLabelB).
-        if !self.unk_1fa && save.button_items[0] != crate::save::ITEM_NONE {
-            let (x, y, w) = (ITEM_BTN_X[0] as f32, ITEM_BTN_Y[0] as f32, ITEM_ICON_WIDTH[0] as f32);
-            out.push(Sprite::rect(item_icon_sprite(save.button_items[0]), x, y, x + w, y + w, Some([255, 255, 255, self.b_alpha as u8]), None));
+        // The B item (the B label only follows Interface_LoadActionLabelB; B's ammo count only
+        // while riding or in a minigame).
+        if !self.unk_1fa && save.equips.button_items[0] != crate::save::ITEM_NONE {
+            item_icon(0, save.equips.button_items[0], self.b_alpha, out);
         }
-        // (C items: none are kept.)
+        // The C items, each with its ammo count.
+        for i in 1..4 {
+            let item = save.equips.button_items[i];
+            if item < 0xF0 {
+                item_icon(i, item, c_alphas[i - 1], out);
+                draw_ammo_count(save, i, c_alphas[i - 1], out);
+            }
+        }
         // The A button, and its label, in the A button's viewport (func_8008A8B8).
         let view = a_button_view(A_BUTTON_Y as f32, A_BUTTON_Y as f32 + 45.0, A_BUTTON_X as f32, A_BUTTON_X as f32 + 45.0);
         let turn = Mat4::from_rotation_x(self.unk_1f4 / 10000.0);
@@ -749,6 +806,61 @@ impl InterfaceContext {
     }
 }
 
+/// `Interface_DrawItemIconTexture`: button `i`'s item icon, `G_CC_MODULATERGBA_PRIM` with white
+/// at the button's alpha. Items past the fishing rod have no icon in `icon_item_static`.
+fn item_icon(i: usize, item: u8, alpha: i16, out: &mut Vec<Sprite>) {
+    if item > LAST_ICON_ITEM {
+        log::debug!("the HUD has no icon for item {item:#04x}");
+        return;
+    }
+    let (x, y, w) = (ITEM_BTN_X[i] as f32, ITEM_BTN_Y[i] as f32, ITEM_ICON_WIDTH[i] as f32);
+    out.push(Sprite::rect(item_icon_sprite(item), x, y, x + w, y + w, Some([255, 255, 255, alpha as u8]), None));
+}
+
+/// `Interface_DrawAmmoCount`: the ammo of a C button's stick, nut, bomb, bow (or magic arrow),
+/// slingshot, bombchu or bean, in green when full and grey at 0 (white otherwise), the tens only
+/// when there are any. (B's minigame counts aren't ported.)
+fn draw_ammo_count(save: &SaveContext, button: usize, alpha: i16, out: &mut Vec<Sprite>) {
+    use crate::item::*;
+    let mut i = save.equips.button_items[button];
+    if !(i == ITEM_STICK || i == ITEM_NUT || i == ITEM_BOMB || i == ITEM_BOW || (ITEM_BOW_ARROW_FIRE..=ITEM_BOW_ARROW_LIGHT).contains(&i) || i == ITEM_SLINGSHOT || i == ITEM_BOMBCHU || i == ITEM_BEAN) {
+        return;
+    }
+    if (ITEM_BOW_ARROW_FIRE..=ITEM_BOW_ARROW_LIGHT).contains(&i) {
+        i = ITEM_BOW;
+    }
+    let mut ammo = save.ammo(i) as i16;
+    let a = alpha as u8;
+    let mut prim = [255, 255, 255, a];
+    let full = |upg: usize| ammo == save.cur_capacity(upg) as i16;
+    if (i == ITEM_BOW && full(UPG_QUIVER))
+        || (i == ITEM_BOMB && full(UPG_BOMB_BAG))
+        || (i == ITEM_SLINGSHOT && full(UPG_BULLET_BAG))
+        || (i == ITEM_STICK && full(UPG_STICKS))
+        || (i == ITEM_NUT && full(UPG_NUTS))
+        || (i == ITEM_BOMBCHU && ammo == 50)
+        || (i == ITEM_BEAN && ammo == 15)
+    {
+        prim = [120, 255, 0, a];
+    }
+    if ammo == 0 {
+        prim = [100, 100, 100, a];
+    }
+    let mut tens = 0;
+    while ammo >= 10 {
+        ammo -= 10;
+        tens += 1;
+    }
+    let (x, y) = (ITEM_AMMO_X[button] as f32, ITEM_AMMO_Y[button] as f32);
+    // Gfx_TextureIA8(gAmmoDigit0Tex + 64 * n, 8, 8, x, y, 8, 8, 1 << 10, 1 << 10); env (0, 0,
+    // 0, 255) from Interface_DrawItemButtons.
+    let env = Some([0, 0, 0, 255]);
+    if tens != 0 {
+        out.push(Sprite::rect(ammo_digit_sprite(tens as usize), x, y, x + 8.0, y + 8.0, Some(prim), env));
+    }
+    out.push(Sprite::rect(ammo_digit_sprite(ammo.clamp(0, 9) as usize), x + 6.0, y, x + 14.0, y + 8.0, Some(prim), env));
+}
+
 /// `x` down to `max` unless it's 0 (`if ((x != 0) && (x > max)) x = max`).
 fn clamp_down(x: &mut i16, max: i16) {
     if *x != 0 && *x > max {
@@ -779,8 +891,9 @@ const HEART_FULL: usize = 4;
 /// `gHeartEmptyTex`, `gHeartQuarterTex`, `gHeartHalfTex`, `gHeartThreeQuarterTex`,
 /// `gHeartFullTex` (parameter_static).
 const HEART_TEX: [&str; 5] = ["gHeartEmptyTex", "gHeartQuarterTex", "gHeartHalfTex", "gHeartThreeQuarterTex", "gHeartFullTex"];
-/// The B button's items that are baked: the swords Player carries.
-const B_ITEMS: [u8; 2] = [crate::save::ITEM_SWORD_KOKIRI, crate::save::ITEM_SWORD_MASTER];
+/// The last item with a 32x32 icon at `item * 0x1000` in `icon_item_static` (`gItemIcons`):
+/// `ITEM_FISHING_POLE`.
+pub const LAST_ICON_ITEM: u8 = 0x59;
 
 fn heart_sprite(i: usize) -> String {
     format!("hud/heart{i}")
@@ -793,6 +906,9 @@ fn digit_sprite(d: usize) -> String {
 }
 fn item_icon_sprite(item: u8) -> String {
     format!("hud/item{item:02X}")
+}
+fn ammo_digit_sprite(d: usize) -> String {
+    format!("hud/ammo_digit{d}")
 }
 pub fn do_action_sprite(action: u16) -> String {
     format!("hud/do_action{action:02X}")
@@ -869,8 +985,8 @@ pub fn bakes() -> Vec<SpriteBake> {
         v.push(button(name, sym));
     }
     // Interface_DrawItemIconTexture: icon_item_static's 32x32 RGBA32 icon (G_CC_MODULATERGBA_PRIM,
-    // the same combiner as MODULATEIA_PRIM).
-    for item in B_ITEMS {
+    // the same combiner as MODULATEIA_PRIM), for every item up to the fishing rod.
+    for item in 0..=LAST_ICON_ITEM {
         v.push(SpriteBake {
             name: item_icon_sprite(item),
             tex: TexSrc::File { file: "icon_item_static".into(), offset: item as u32 * 0x1000 },
@@ -879,6 +995,21 @@ pub fn bakes() -> Vec<SpriteBake> {
             prim: true,
             env: false,
             quad: Quad::Rect { s: 32, t: 32 },
+        });
+    }
+    // Interface_DrawAmmoCount: the digits after the prim-and-env combiner (PRIMITIVE,
+    // ENVIRONMENT, TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0), gAmmoDigit0Tex + 64 * n.
+    for d in 0..10 {
+        let mut setup = setup_dl::setup_dl_39();
+        setup.combine_lerp(PRIM_ENV_BY_TEXEL, PRIM_ENV_BY_TEXEL);
+        v.push(SpriteBake {
+            name: ammo_digit_sprite(d),
+            tex: param(&format!("gAmmoDigit{d}Tex")),
+            load: ia8(8, 8),
+            setup,
+            prim: true,
+            env: true,
+            quad: Quad::Rect { s: 8, t: 8 },
         });
     }
     // Interface_DrawActionButton after Gfx_SetupDL_42Overlay, G_CULL_BOTH cleared and
@@ -985,7 +1116,8 @@ mod tests {
     fn a_house_disables_the_b_button() {
         // sRestrictionFlags' SCENE_LINK_HOME (0x34): flags1 0x10, bButton 1.
         let tables = InterfaceTables { restrictions: vec![[0x34, 0x10, 0x10, 0x15], [0xFF, 0, 0, 0]] };
-        let mut s = new_save();
+        // The map select's file: the Kokiri Sword on B.
+        let mut s = SaveContext::debug(0, false, 0);
         let mut c = InterfaceContext::init(&mut s, &tables, 0x34);
         assert_eq!(c.restrictions.b_button, 1);
         let f = IfaceFrame { scene_id: 0x34, ..frame() };
@@ -994,5 +1126,12 @@ mod tests {
         }
         // func_80083108 disables B (the sword isn't ammo) and fades back in: B at 70.
         assert_eq!((s.button_status[0], c.b_alpha, c.a_alpha), (BTN_DISABLED, 70, 255));
+        // A new file has nothing on B and infTable[INFTABLE_1DX_INDEX] set: B is left as it is.
+        let mut s = new_save();
+        let mut c = InterfaceContext::init(&mut s, &tables, 0x34);
+        for _ in 0..10 {
+            c.update(&mut s, &f);
+        }
+        assert_eq!((s.button_status[0], s.equips.button_items[0]), (BTN_ENABLED, crate::item::ITEM_NONE));
     }
 }
