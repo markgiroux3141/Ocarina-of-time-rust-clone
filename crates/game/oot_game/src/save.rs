@@ -115,8 +115,19 @@ pub struct SaveContext {
     /// `retainWeatherMode`, `showTitleCard`.
     pub retain_weather_mode: bool,
     pub show_title_card: bool,
-    /// `cutsceneIndex`: never a cutscene here (0).
+    /// `cutsceneIndex`: 0 for none, 0xFFF0 and up for a scene's cutscene layer
+    /// (`SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF)`), 0xFFFD while a script plays. (The
+    /// file select's new file enters with 0xFFF1, Navi's wake-up on Link's house's cutscene
+    /// layer: GAME-03 milestone 5. Here a new file enters with 0.)
     pub cutscene_index: u16,
+    /// `nextCutsceneIndex` (0xFFEF: none), `cutsceneTrigger` (1 an actor's script, 2 an
+    /// entrance's), `cutsceneTransitionControl`.
+    pub next_cutscene_index: u16,
+    pub cutscene_trigger: u8,
+    pub cutscene_transition_control: u8,
+    /// `gameMode` (`GAMEMODE_NORMAL` 0), `fileNum` (0xFF for the map select's file).
+    pub game_mode: u8,
+    pub file_num: i32,
     /// `eventChkInf`, `itemGetInf`, `infTable`: the story and conversation flags.
     pub event_chk_inf: [u16; 14],
     pub item_get_inf: [u16; 4],
@@ -167,6 +178,9 @@ pub struct SaveContext {
     /// `language`: English.
     pub language: u8,
 }
+
+/// `GAMEMODE_NORMAL` (`z64save.h`).
+pub const GAMEMODE_NORMAL: u8 = 0;
 
 /// `LANGUAGE_ENG`.
 pub const LANGUAGE_ENG: u8 = 0;
@@ -301,6 +315,12 @@ impl SaveContext {
             retain_weather_mode: false,
             show_title_card: true,
             cutscene_index: 0,
+            // SaveContext_Init (z_common_data.c).
+            next_cutscene_index: 0xFFEF,
+            cutscene_trigger: 0,
+            cutscene_transition_control: 0,
+            game_mode: GAMEMODE_NORMAL,
+            file_num: 0,
             event_chk_inf: [0; 14],
             item_get_inf: [0; 4],
             inf_table: [0; 30],
@@ -385,6 +405,8 @@ impl SaveContext {
     pub fn debug(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
         let mut s = SaveContext::blank(entrance_index, adult, day_time);
         s.player_name = [0x15, 0x12, 0x17, 0x14, 0x3E, 0x3E, 0x3E, 0x3E];
+        // Sram_InitDebugSave is the map select's (fileNum 0xFF, z_sram.c:290).
+        s.file_num = 0xFF;
         s.health_capacity = 0xE0;
         s.health = 0xE0;
         s.magic = MAGIC_NORMAL_METER;

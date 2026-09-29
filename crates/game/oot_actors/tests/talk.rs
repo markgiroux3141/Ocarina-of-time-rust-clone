@@ -48,7 +48,9 @@ const A: PadState = PadState { button: BTN_A, stick_x: 0, stick_y: 0 };
 fn at(pos: Vec3, yaw: i16) -> Option<(PlayState, PadState)> {
     let mut w = enter("ENTR_SPOT04_0")?;
     let mut prev = PadState::default();
-    frames(&mut w, &mut prev, NONE, 30);
+    // Play_Init's fade-in, and the HUD's fade back after it: Camera_Init's D_8011D3F0 set alpha
+    // type 2 for the first three frames, which the transition's 0xF200 then kept.
+    frames(&mut w, &mut prev, NONE, 60);
     w.place_player(pos, yaw);
     frames(&mut w, &mut prev, NONE, 2);
     Some((w, prev))

@@ -72,6 +72,10 @@ CASES = [
     # GAME-03 milestone 3: a new save from Link's bed to the sword, 42 rupees, the Deku Shield
     # bought in the Kokiri shop, both worn, Mido's talk, and past him.
     ("mido_shop", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "mido-shop", "--trace", "{trace}"]),
+    # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
+    # (cutscenes D_808BCE20, D_808BD520) answered yes, and into his mouth and the Deku Tree's
+    # intro (gDekuTreeIntroCs). No preset.
+    ("new_save_deku_tree", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "new-save-deku-tree", "--trace", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),

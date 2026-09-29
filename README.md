@@ -71,6 +71,7 @@ target/release/ootx player-draw               # Link's draw list for every age x
 target/release/ootx scan-scenes [--all-layers]   # every scene's rooms through the interpreter (out/scene_scan.json)
 target/release/ootx dump-room --scene spot04 --room 0 --png out/s04_tex   # one room's draw lists and textures
 target/release/ootx scene-info --scene spot04 [--layer 1]              # spawns, entrances, exits, transition actors, placements (from the pack)
+target/release/ootx cutscene [D_808BCE20]                             # the pack's cutscene scripts and sEntranceCutsceneTable, or one script's commands
 
 # Viewer: Link from your ROM (default) or the synthetic test character "Tock"
 target/release/oot_viewer                                   # interactive, starts on adult Link
@@ -104,6 +105,8 @@ target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script sword-ch
                                                            # headless: GAME-03's run from Link's bed to the Kokiri Sword
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script mido-shop --trace out/mido_shop.json
                                                            # headless: on to the Deku Shield from the shop, both worn, past Mido
+target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script new-save-deku-tree --trace out/new_save_deku_tree.json
+                                                           # headless: on past Mido, the Deku Tree's talk (cutscenes) and into him
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_1 --child --script cup --screenshot out/home.png --shots-at 29
                                                            # the house's pivot camera and skybox, then C-Up: the fixed camera and its picture
 target/release/oot_sandbox --entrance ENTR_SOUKO_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png

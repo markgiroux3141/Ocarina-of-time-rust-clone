@@ -67,7 +67,7 @@ use glam::{Mat4, Vec3};
 
 use crate::actor::{ACTOR_FLAG_4, ACTOR_FLAG_6, Actor};
 use crate::actor_ctx::{ACTORCAT_BG, ACTORCAT_MAX, ActorContext, ActorHandle, ActorImpl};
-use crate::camera::{CamFrame, CamView, CameraKind, FollowCamera, GameCamera, PlayerView};
+use crate::camera::{CAM_ID_MAIN, CAM_ID_NONE, CAM_ID_SUB_FIRST, CAM_STAT_ACTIVE, CAM_STAT_UNK100, CamFrame, CamView, CameraGlobals, CameraKind, FollowCamera, GameCamera, NUM_CAMS, PlayerView};
 use crate::collision_check::{ColliderShape, CollisionCheckContext};
 use crate::data::GameData;
 use crate::interface::InterfaceContext;
@@ -258,8 +258,15 @@ pub struct PlayState {
     pub actors: ActorContext,
     /// `actorCtx.actorLists[ACTORCAT_PLAYER].head`.
     pub player: Option<ActorHandle>,
-    /// `mainCamera`.
+    /// `mainCamera` (`cameraPtrs[CAM_ID_MAIN]`).
     pub game_camera: GameCamera,
+    /// `cameraPtrs[1..]`: the sub cameras (`subCameras`), made by `Play_CreateSubCamera`.
+    pub sub_cameras: [Option<GameCamera>; NUM_CAMS - 1],
+    /// `activeCamId`, `nextCamId`.
+    pub active_cam_id: i16,
+    pub next_cam_id: i16,
+    /// `z_camera.c`'s state every camera shares.
+    pub cam_globals: CameraGlobals,
     /// `shrink_window.c`'s letterbox.
     pub letterbox: Letterbox,
     /// The spikes' follow camera, and which camera drives Player and the view.
@@ -325,8 +332,11 @@ pub struct PlayState {
     pub messages: Option<Arc<MessageTable>>,
     /// `interfaceCtx`.
     pub interface_ctx: InterfaceContext,
-    /// `csCtx`: always idle until the cutscene system is ported (`crate::cutscene`).
+    /// `csCtx` (`crate::cutscene`), and `z_demo.c`'s statics.
     pub cs_ctx: crate::cutscene::CutsceneContext,
+    pub demo: crate::cutscene::DemoStatics,
+    /// `envFlags` (`Flags_SetEnv`): flags cutscenes set for actors.
+    pub env_flags: [u16; 20],
     /// The ported overlays' file-scope statics that instances share (their `.bss`), by
     /// `ACTOR_*` id (`overlay_static`). A play state starts without any, as `Play_Init`'s
     /// fresh overlay loads zero theirs. (An overlay unloads, and its statics reset, when its
@@ -349,11 +359,15 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0 };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0 };
         let game_camera = GameCamera::new(&data.camera, &pv);
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
             game_camera,
+            sub_cameras: [None, None, None],
+            active_cam_id: CAM_ID_MAIN,
+            next_cam_id: CAM_ID_MAIN,
+            cam_globals: CameraGlobals::main_init(),
             letterbox: Letterbox::new(),
             camera_kind: CameraKind::Game,
             data,
@@ -392,6 +406,8 @@ impl PlayState {
             rand: Rand::default(),
             msg_ctx: MessageContext::new(),
             cs_ctx: Default::default(),
+            demo: Default::default(),
+            env_flags: [0; 20],
             overlay_statics: Default::default(),
             messages: None,
             interface_ctx: InterfaceContext::default(),
@@ -430,6 +446,7 @@ impl PlayState {
             pos: a.world_pos,
             shape_yaw: a.shape_rot.y,
             shape_pitch: a.shape_rot.x,
+            world_yaw: a.world_rot.y,
             adult,
             run_speed_limit: self.data.regs[if adult { 0 } else { 1 }].reg(45),
             gravity: a.gravity,
@@ -456,7 +473,7 @@ impl PlayState {
     /// `Camera_GetCamDirYaw` of the active camera: where it looks.
     pub fn cam_dir_yaw(&self) -> i16 {
         match self.camera_kind {
-            CameraKind::Game => self.game_camera.cam_dir[1],
+            CameraKind::Game => self.active_camera().cam_dir[1],
             CameraKind::Follow => self.follow_camera.input_dir_yaw(),
         }
     }
@@ -464,7 +481,7 @@ impl PlayState {
     /// `Camera_GetInputDirYaw` of the active camera.
     pub fn input_dir_yaw(&self) -> i16 {
         match self.camera_kind {
-            CameraKind::Game => self.game_camera.input_dir_yaw(),
+            CameraKind::Game => self.active_camera().input_dir_yaw(),
             CameraKind::Follow => self.follow_camera.input_dir_yaw(),
         }
     }
@@ -595,6 +612,9 @@ impl PlayState {
         self.col_chk.check(&mut self.actors);
         self.col_chk.clear();
         self.update_all_actors();
+        // The cutscene system (z_demo.c): func_80064558, then func_800645A0.
+        self.func_80064558();
+        self.func_800645a0();
         // (func_80095AA0 for both rooms: no room behaviour is ported.) The viewpoint.
         self.update_viewpoint();
         // Message_Update (no pause menu or game over), then Interface_Update.
@@ -631,7 +651,8 @@ impl PlayState {
         }
         // The end of Play_Draw: a camera that asked for it (view.unk_124) updates again.
         if self.game_camera.view_unk_124 != 0 {
-            self.camera_update(input);
+            // Camera_Update(GET_ACTIVE_CAM(this)).
+            self.update_camera(self.active_cam_id, input);
             self.game_camera.view_unk_124 = 0;
         }
         self.view_proj = self.camera_view_proj();
@@ -664,7 +685,7 @@ impl PlayState {
     fn kaleido_setup_update(&mut self) {
         use crate::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
         use eng_input::pad::{BTN_CUP, BTN_L, BTN_START};
-        if self.transition.trigger != TRANS_TRIGGER_OFF || self.transition.mode != TRANS_MODE_OFF || self.player_in_cs_mode() {
+        if self.transition.trigger != TRANS_TRIGGER_OFF || self.transition.mode != TRANS_MODE_OFF || self.play_in_cs_mode() {
             return;
         }
         if self.input.cur.held(BTN_L) && self.input.press.held(BTN_CUP) {
@@ -689,8 +710,21 @@ impl PlayState {
         true
     }
 
-    /// `Camera_Update` for the main camera, following Player.
+    /// `Play_Update`'s cameras: every camera but the active one (`nextCamId`), then that one,
+    /// each through `Camera_Update` (a waiting or cut camera does little).
     fn camera_update(&mut self, input: Input) {
+        self.next_cam_id = self.active_cam_id;
+        let next = self.next_cam_id;
+        for i in 0..NUM_CAMS as i16 {
+            if i != next && self.camera(i).is_some() {
+                self.update_camera(i, input);
+            }
+        }
+        self.update_camera(next, input);
+    }
+
+    /// `Camera_Update` for camera `id`, following Player.
+    fn update_camera(&mut self, id: i16, input: Input) {
         let Some(pv) = self.player_view() else { return };
         // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
         let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
@@ -708,18 +742,118 @@ impl PlayState {
             player_actor: self.player,
             oc_lines: &oc_lines,
             target_pos_rot,
+            cs_active: self.cs_ctx.state != crate::cutscene::CS_STATE_IDLE,
         };
-        self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
+        let cam = if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut((id - CAM_ID_SUB_FIRST) as usize).and_then(|c| c.as_mut()) };
+        let Some(cam) = cam else { return };
+        cam.update(&self.data.camera, &f, &mut self.letterbox, &mut self.cam_globals);
         // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y).
-        if let Some((pos, yaw)) = self.game_camera.player_write.take()
+        let write = cam.player_write.take();
+        // Camera_UpdateInterface's Interface_ChangeAlpha.
+        let alpha = cam.interface_alpha_change.take();
+        if let Some((pos, yaw)) = write
             && let Some(a) = self.player.and_then(|h| self.actors.actor_mut(h))
         {
             a.world_pos = pos;
             a.shape_rot.y = yaw;
         }
-        // Camera_UpdateInterface's Interface_ChangeAlpha.
-        if let Some(alpha_type) = self.game_camera.interface_alpha_change.take() {
+        if let Some(alpha_type) = alpha {
             crate::interface::change_alpha(&mut self.save, alpha_type);
+        }
+    }
+
+    /// `cameraPtrs[id]` (`CAM_ID_NONE`: the active one).
+    pub fn camera(&self, id: i16) -> Option<&GameCamera> {
+        let id = if id == CAM_ID_NONE { self.active_cam_id } else { id };
+        if id == CAM_ID_MAIN { Some(&self.game_camera) } else { self.sub_cameras.get(usize::try_from(id - CAM_ID_SUB_FIRST).ok()?)?.as_ref() }
+    }
+
+    pub fn camera_mut(&mut self, id: i16) -> Option<&mut GameCamera> {
+        let id = if id == CAM_ID_NONE { self.active_cam_id } else { id };
+        if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut(usize::try_from(id - CAM_ID_SUB_FIRST).ok()?)?.as_mut() }
+    }
+
+    /// `GET_ACTIVE_CAM(play)`.
+    pub fn active_camera(&self) -> &GameCamera {
+        self.camera(self.active_cam_id).unwrap_or(&self.game_camera)
+    }
+
+    /// `Play_CreateSubCamera`: the first free sub camera, through `Camera_Init`; `CAM_ID_NONE`
+    /// when all three are taken.
+    pub fn create_sub_camera(&mut self) -> i16 {
+        let Some(i) = self.sub_cameras.iter().position(|c| c.is_none()) else {
+            log::error!("camera control: error: fulled sub camera system area");
+            return CAM_ID_NONE;
+        };
+        let id = i as i16 + CAM_ID_SUB_FIRST;
+        self.sub_cameras[i] = Some(GameCamera::init_sub(&self.data.camera, &mut self.cam_globals, id));
+        id
+    }
+
+    /// `Play_ChangeCameraStatus`: `CAM_STAT_ACTIVE` also makes it the active camera.
+    pub fn change_camera_status(&mut self, id: i16, status: i16) -> i16 {
+        let id = if id == CAM_ID_NONE { self.active_cam_id } else { id };
+        if status == CAM_STAT_ACTIVE {
+            self.active_cam_id = id;
+        }
+        self.camera_mut(id).map(|c| c.change_status(status)).unwrap_or(0)
+    }
+
+    /// `Play_ClearCamera`.
+    pub fn clear_camera(&mut self, id: i16) {
+        let id = if id == CAM_ID_NONE { self.active_cam_id } else { id };
+        if id == CAM_ID_MAIN {
+            log::error!("camera control: error: never clear camera !!");
+            return;
+        }
+        match self.sub_cameras.get_mut((id - CAM_ID_SUB_FIRST) as usize) {
+            Some(c @ Some(_)) => {
+                if let Some(cam) = c.as_mut() {
+                    cam.change_status(CAM_STAT_UNK100);
+                }
+                *c = None;
+            }
+            _ => log::error!("camera control: error: camera No.{id} already cleared"),
+        }
+    }
+
+    /// `Play_ClearAllSubCameras`.
+    pub fn clear_all_sub_cameras(&mut self) {
+        for id in CAM_ID_SUB_FIRST..NUM_CAMS as i16 {
+            if self.camera(id).is_some() {
+                self.clear_camera(id);
+            }
+        }
+        self.active_cam_id = CAM_ID_MAIN;
+    }
+
+    /// `Play_CameraChangeSetting`.
+    pub fn camera_change_setting(&mut self, id: i16, setting: i16) -> i16 {
+        let d = self.data.clone();
+        self.camera_mut(id).map(|c| c.change_setting(&d.camera, setting)).unwrap_or(-99)
+    }
+
+    /// `Play_CameraSetAtEye`.
+    pub fn camera_set_at_eye(&mut self, id: i16, at: Vec3, eye: Vec3) {
+        let player_pos = self.player.and_then(|h| self.actors.actor(h)).map(|a| a.world_pos).unwrap_or(Vec3::ZERO);
+        if let Some(c) = self.camera_mut(id) {
+            c.set_at_eye(at, eye, player_pos);
+        }
+    }
+
+    /// `Play_CameraSetFov`.
+    pub fn camera_set_fov(&mut self, id: i16, fov: f32) {
+        if let Some(c) = self.camera_mut(id) {
+            c.set_fov(fov);
+        }
+    }
+
+    /// `Play_CopyCamera`.
+    pub fn copy_camera(&mut self, dest: i16, src: i16) {
+        let Some(src) = self.camera(src).cloned() else { return };
+        let (d, player_pos) = (self.data.clone(), self.player.and_then(|h| self.actors.actor(h)).map(|a| a.world_pos).unwrap_or(Vec3::ZERO));
+        if let Some(c) = self.camera_mut(dest) {
+            c.copy_from(&d.camera, &src, player_pos);
         }
     }
 
@@ -755,6 +889,8 @@ impl PlayState {
             scene_id: self.scene_id,
             player_screen_y,
             talk_actor_screen_y,
+            cs_idle: self.cs_ctx.state == crate::cutscene::CS_STATE_IDLE,
+            active_cam_main: self.active_cam_id == CAM_ID_MAIN,
         };
         f(&mut self.msg_ctx, &mut frame);
     }
@@ -872,7 +1008,7 @@ impl PlayState {
     /// `play->view.eye` for the active camera.
     fn view_eye(&self) -> Vec3 {
         match self.camera_kind {
-            CameraKind::Game => self.game_camera.eye,
+            CameraKind::Game => self.active_camera().eye,
             CameraKind::Follow => self.follow_camera.eye(),
         }
     }
@@ -880,7 +1016,10 @@ impl PlayState {
     /// `play->viewProjectionMtxF` for the active camera: the game's 320x240 view, `zNear` 10.
     fn camera_view_proj(&self) -> Mat4 {
         let (eye, at, fov) = match self.camera_kind {
-            CameraKind::Game => (self.game_camera.eye, self.game_camera.at, self.game_camera.fov),
+            CameraKind::Game => {
+                let c = self.active_camera();
+                (c.eye, c.at, c.fov)
+            }
             CameraKind::Follow => (self.follow_camera.eye(), self.follow_camera.at, 50.0),
         };
         eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, 12800.0) * glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y)
@@ -896,7 +1035,10 @@ impl PlayState {
             }
         }
         let view = match self.camera_kind {
-            CameraKind::Game => CamView { eye: self.game_camera.eye, at: self.game_camera.at, fov: self.game_camera.fov },
+            CameraKind::Game => {
+                let c = self.active_camera();
+                CamView { eye: c.eye, at: c.at, fov: c.fov }
+            }
             CameraKind::Follow => CamView { eye: self.follow_camera.eye(), at: self.follow_camera.at, fov: 50.0 },
         };
         RenderFrame { actors, view, follow: self.follow_camera, letterbox: self.letterbox.rows() as f32 }

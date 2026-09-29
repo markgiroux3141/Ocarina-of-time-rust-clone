@@ -34,9 +34,14 @@ fn assets() -> Option<Arc<GameAssets>> {
 }
 
 fn enter(entrance: &str) -> Option<PlayState> {
+    enter_with(entrance, |_| {})
+}
+
+fn enter_with(entrance: &str, f: impl FnOnce(&mut SaveContext)) -> Option<PlayState> {
     let a = assets()?;
     let e = a.scenes.entrance_index(entrance).expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    f(&mut save);
     Some(oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init"))
 }
 
@@ -191,7 +196,9 @@ fn porch_floor_gives_the_pivot_in_front_camera() {
 
 #[test]
 fn start1_camera_until_link_moves() {
-    let Some(mut w) = enter("ENTR_SPOT04_1") else { return };
+    // ENTR_SPOT04_1 is the Deku Tree's meadow: with EVENTCHKINF_0C unset, his first talk
+    // (Bg_Treemouth's D_808BCE20) would start at once and hold Link. Met already.
+    let Some(mut w) = enter_with("ENTR_SPOT04_1", |s| s.set_event_chk_inf(oot_game::save::EVENTCHKINF_0C)) else { return };
     // Spawn 1's params 0x0F05: Camera_ChangeBgCamIndex(5) in Play_Init, CAM_SET_START1.
     assert_eq!((w.game_camera.setting, w.game_camera.bg_cam_index), (0x20, 5));
     let mut prev = PadState::default();

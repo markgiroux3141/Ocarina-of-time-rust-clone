@@ -12,31 +12,36 @@ The working rules don't change:
 
 Reorder freely. The dependencies are noted, and nothing here is a commitment.
 
-## Where things stand (2026-09-28)
+## Where things stand (2026-09-29)
 
 **Done:** Phases 0 to 3 (GAME-01 and GAME-02). Kokiri Forest plays with:
 - collisions, props, climbing, Z-targeting, doors and the prerendered interiors;
 - talking, the message box, drops and a minimal HUD;
 - the Deku Tree's mouth, opened by a save flag.
 
-GAME-03 milestones 1 to 3 are done too:
+GAME-03 milestones 1 to 4 are done too:
 - the inventory, `Item_Give`, the get-item flow, the chests, and Link's equipment from the save;
 - the crawl and the crawlspace's camera, the scene paths, the training area's boulder and wonder
   items, and Link's knockdown;
 - Mido (`En_Md`), the Kokiri shop (`En_Ossan`, `En_GirlA`, `En_Tana`), and the pause menu's
-  equipping stand-in in the play frame (`KaleidoSetup_Update`).
+  equipping stand-in in the play frame (`KaleidoSetup_Update`);
+- the cutscene system (`z_demo.c`): the scripts from the pack, sub cameras and `Camera_Demo1`,
+  the entrance triggers, Player's cutscene modes; the Deku Tree's talk opens his mouth, and his
+  scene's intro plays.
 
-Three headless scripted runs start in Link's bed (`oot_actors --test playthrough`):
+Four headless scripted runs start in Link's bed (`oot_actors --test playthrough`):
 - into the Deku Tree, on a flag preset;
 - on a new save to the Kokiri Sword's chest, opened;
-- on a new save to the Deku Shield bought, both worn, and past Mido.
+- on a new save to the Deku Shield bought, both worn, and past Mido;
+- on a new save past Mido, through the Deku Tree's talk and into the Deku Tree, with no preset.
 
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
 - ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
 - The pause menu isn't ported: Start stands in for its equipping (ADR 0019), read in the play frame where `KaleidoSetup_Update` reads it (ADR 0021).
 - Unported actors are placeholders. Among them: Navi and the other fairies, Saria, and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3.)
-- There are no cutscenes: the importer skips all 73. The Deku Tree's mouth opens only with the `deku-tree-open` save preset, which the playthrough starts on.
+- ~~There are no cutscenes: the importer skips all 73.~~ Undone in GAME-03 milestone 4 (ADR 0022): the 73 scene scripts and the 27 overlay ones are in the pack, and the Deku Tree's talk opens his mouth on a new save. The `deku-tree-open` preset stays for the shortcuts and GAME-02's run.
+- The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up (GAME-03 milestone 5).
 - No audio at all.
 
 ## Phase 3, the end: GAME-02 milestone 4 (done)
@@ -103,16 +108,17 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
      - choosing, buying, and the rupee check;
      - the shelf items (`En_GirlA`).
    - **Exit:** buy the Deku Shield with the rupees from the bushes; Mido lets Link through. *(Done with the C's placed rupees instead of the bushes' random drops: 42 of them can be reached on foot.)*
-4. **Cutscenes, first part** (`z_demo.c`; an ADR).
+4. **Cutscenes, first part** (done: see [GAME-03](GAME-03-road-to-deku-tree.md) milestone 4 and ADR 0022).
    - Import the cutscene scripts.
    - `csCtx`: the camera commands, Player's and the actors' cues (`npcActions`), text commands through the message box, transitions and terminators.
    - `Cutscene_HandleEntranceTriggers` and `cutsceneTrigger`.
    - Player's cutscene modes (`func_8002DF54`), which also completes `En_Wonder_Talk2`'s forced texts.
-   - **Exit:** talking to the Deku Tree plays `D_808BCE20` to the end, yes plays `D_808BD520`, and his mouth opens (`EVENTCHKINF_05`); the scripted run from GAME-02 milestone 4 opens it the game's way, without the preset.
+   - **Exit:** talking to the Deku Tree plays `D_808BCE20` to the end, yes plays `D_808BD520`, and his mouth opens (`EVENTCHKINF_05`); the scripted run from GAME-02 milestone 4 opens it the game's way, without the preset. *(Done with a new route, `NewSaveDekuTree`, from a new save through the shop and Mido; GAME-02's run keeps its preset.)*
 5. **Navi.**
    - `En_Elf` as Link's fairy: following, the target reticle's `naviRefPos`, C-Up and her text.
    - The Kokiri children's fairies.
-   - The game's opening, if the cutscene system covers it: Navi waking Link (`ENTR_LINK_HOME` with its cutscene layer).
+   - The game's opening: Navi waking Link (`ENTR_LINK_HOME` with its cutscene layer). The cutscene system covers it now; the pack needs the scene layers 4 and up, and Player the cutscene modes the wake-up's script cues.
+   - Navi's cues in the Deku Tree's talk (`npcActions[8]`).
    - **Exit:** a new save starts as the game does, and C-Up talks to Navi.
 
 **Phase exit:** a headless run from a new save to the Deku Tree scene, the game's way, replacing GAME-02 milestone 4's flag preset.

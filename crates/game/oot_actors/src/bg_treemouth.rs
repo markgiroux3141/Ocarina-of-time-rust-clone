@@ -12,11 +12,12 @@
 //!   (`func_808BC9EC`, then `D_808BD520`); no replays `D_808BD790`;
 //! - with `EVENTCHKINF_05` the mouth is held open.
 //!
-//! **Not ported: the cutscenes.** There's no cutscene system until GAME-03 milestone 4. Where
-//! the C starts one (`play->csCtx.segment = ...; gSaveContext.cutsceneTrigger = 1`), this port
-//! logs it and does the rest: the flags and the state change. The states that follow read
-//! `play.cs_ctx`, which stays idle, so the actor then waits in `func_808BC9EC`. A save with
-//! `EVENTCHKINF_05` (the `deku-tree-open` preset) has the mouth open.
+//! The scripts are the overlay's four `CutsceneData` arrays (`z_bg_treemouth_cutscene_data.c`),
+//! read from the pack (docs/adr/0022-cutscenes.md) and played by `oot_game::cutscene`. The first
+//! talk (`D_808BCE20`) walks Link in, says 0x107D, asks 0x1015 and ends (`CS_MISC` 12 at frame
+//! 180, `CS_STATE_UNSKIPPABLE_INIT`); `func_808BC9EC` then goes straight on with the answer's
+//! script: yes (`D_808BD520`) says 0x1017 and cues the mouth open (cue 3 from frame 20), no
+//! (`D_808BD790`) says 0x1018.
 //!
 //! Also not ported: the sounds (`NA_SE_EV_WOODDOOR_OPEN`), the scene layer 6 cutscene's falling
 //! bark (`EffectSsHahen_SpawnBurst`; its `Rand_ZeroOne` calls are made), and the cull zone.
@@ -250,15 +251,15 @@ impl BgTreemouth {
                         self.actor.flags |= ACTOR_FLAG_0;
                         if self.actor.is_targeted {
                             self.actor.flags &= !ACTOR_FLAG_0;
-                            // play->csCtx.segment = D_808BD2A0; gSaveContext.cutsceneTrigger = 1.
-                            log::warn!("Bg_Treemouth: the Deku Tree's cutscene D_808BD2A0 (Z-targeted, asking again) is not ported");
+                            play.cs_ctx.segment = play.cutscene_script("D_808BD2A0");
+                            play.save.cutscene_trigger = 1;
                             self.action = Action::WaitCsStart;
                         }
                     }
                 } else if actor_is_facing_and_near_player(&self.actor, NEAR_RANGE, FACING_FIRST) {
                     play.save.set_event_chk_inf(EVENTCHKINF_0C);
-                    // play->csCtx.segment = D_808BCE20; gSaveContext.cutsceneTrigger = 1.
-                    log::warn!("Bg_Treemouth: the Deku Tree's first cutscene D_808BCE20 is not ported (EVENTCHKINF_0C set)");
+                    play.cs_ctx.segment = play.cutscene_script("D_808BCE20");
+                    play.save.cutscene_trigger = 1;
                     self.action = Action::WaitCsStart;
                 }
             }
@@ -283,18 +284,18 @@ impl BgTreemouth {
         let cs = &mut play.cs_ctx;
         cs.frames = 0;
         cs.unk_18 = 0xFFFF;
-        // D_8015FCC0, D_8015FCC2, D_8015FCC4 = 0xFFFF: the cutscene system's globals.
         cs.unk_1a = 0;
         cs.unk_1b = 0;
         cs.state = CS_STATE_SKIPPABLE_EXEC;
+        play.demo.d_8015fcc0 = 0xFFFF;
+        play.demo.d_8015fcc2 = 0xFFFF;
+        play.demo.d_8015fcc4 = 0xFFFF;
         if play.msg_ctx.choice_index == 0 {
-            // play->csCtx.segment = D_808BD520.
-            log::warn!("Bg_Treemouth: the Deku Tree's cutscene D_808BD520 (opening) is not ported (EVENTCHKINF_05 set)");
+            play.cs_ctx.segment = play.cutscene_script("D_808BD520");
             play.save.set_event_chk_inf(EVENTCHKINF_05);
             self.action = Action::WaitCsCue;
         } else {
-            // play->csCtx.segment = D_808BD790.
-            log::warn!("Bg_Treemouth: the Deku Tree's cutscene D_808BD790 (declined) is not ported");
+            play.cs_ctx.segment = play.cutscene_script("D_808BD790");
             play.cs_ctx.frames = 0;
             self.action = Action::Wait;
         }

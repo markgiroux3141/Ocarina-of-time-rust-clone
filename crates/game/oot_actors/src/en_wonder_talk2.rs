@@ -11,8 +11,8 @@
 //!
 //! `rot.z` gives the range: `rot.z % 10` times 40, and `rot.z / 10` the `targetMode`.
 //!
-//! Not ported: Player's cutscene modes (`func_8002DF54` 7 and 8), so a forced text doesn't
-//! hold Link.
+//! A forced text holds Link in Player's cutscene mode 8 (`func_8002DF54`) until it's read, then
+//! mode 7 lets him go.
 
 use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_27, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
@@ -155,7 +155,7 @@ impl EnWonderTalk2 {
                 self.unk_15a = true;
             }
             self.actor.flags &= !(ACTOR_FLAG_0 | ACTOR_FLAG_4);
-            // func_8002DF54(play, NULL, 7): Player's cutscene modes aren't ported.
+            play.func_8002df54(None, 7);
             self.unk_156 = true;
             self.action = Action::WaitForced;
         }
@@ -175,7 +175,7 @@ impl EnWonderTalk2 {
                 self.unk_158 = 0;
                 if !self.unk_156 {
                     play.start_textbox(self.actor.text_id, None);
-                    // func_8002DF54(play, NULL, 8): Player's cutscene modes aren't ported.
+                    play.func_8002df54(None, 8);
                     self.actor.flags |= ACTOR_FLAG_0 | ACTOR_FLAG_4;
                     self.action = Action::Forced;
                 }

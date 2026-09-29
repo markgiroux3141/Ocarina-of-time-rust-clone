@@ -92,6 +92,11 @@ enum Cmd {
     PackLs {
         prefix: String,
     },
+    /// The asset pack's cutscene scripts: with no name, every script and
+    /// `sEntranceCutsceneTable`; with a symbol (`gDekuTreeIntroCs`, `D_808BCE20`), its commands.
+    Cutscene {
+        name: Option<String>,
+    },
     /// The raw commands of a display list symbol (`file symbol`), up to its end, following
     /// calls into the same file.
     DlDump {
@@ -119,6 +124,7 @@ fn main() -> Result<()> {
         Cmd::Info => info(&project),
         Cmd::SceneInfo { scene, layer } => scene_info(&scene, layer),
         Cmd::PackLs { prefix } => pack_ls(&prefix),
+        Cmd::Cutscene { name } => cutscene(name.as_deref()),
         Cmd::DlDump { file, symbol } => dl_dump(&project, &file, &symbol),
         Cmd::Import { loose } => {
             let (r, path) = oot_import::pack::import_to_default(&project, loose.as_deref())?;
@@ -727,6 +733,29 @@ fn extract(p: &Project, dir: &std::path::Path, only: &[String]) -> Result<()> {
 }
 
 /// `ootx scene-info`: reads the default asset pack (no ROM access).
+fn cutscene(name: Option<&str>) -> Result<()> {
+    let pack = oot_game::pack::GamePack::open_default()?;
+    let t = pack.cutscene_tables()?;
+    let Some(name) = name else {
+        for (n, k) in &t.scripts {
+            let s = pack.cutscene(k)?;
+            println!("{n}: {k}, {} bytes", s.data.len());
+        }
+        println!("sEntranceCutsceneTable:");
+        for e in &t.entrance_cutscenes {
+            println!("  {} ({:#06x}) age {} EVENTCHKINF_{:02X} {}", e.entrance_name, e.entrance, e.age_restriction, e.flag, e.script_name);
+        }
+        return Ok(());
+    };
+    let key = t.key(name).ok_or_else(|| anyhow::anyhow!("no script {name}"))?;
+    let s = pack.cutscene(key)?;
+    println!("{key}: {} bytes", s.data.len());
+    for l in oot_game::cutscene::describe(&s.data).map_err(|e| anyhow::anyhow!("{e}"))? {
+        println!("{l}");
+    }
+    Ok(())
+}
+
 fn pack_ls(prefix: &str) -> Result<()> {
     let pack = oot_game::pack::GamePack::open_default()?;
     for name in pack.assets.names(prefix) {

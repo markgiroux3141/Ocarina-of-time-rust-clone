@@ -73,6 +73,10 @@ pub struct GameAssets {
     pub interface: crate::interface::InterfaceTables,
     /// `sGetItemTable`, `sDrawItemTable`.
     pub items: crate::item::ItemTables,
+    /// `sEntranceCutsceneTable` and the scripts' keys (docs/adr/0022-cutscenes.md).
+    pub cutscenes: crate::cutscene::CutsceneTables,
+    /// Cutscene scripts read so far, by symbol.
+    scripts: std::sync::Mutex<std::collections::HashMap<String, Arc<crate::cutscene::CutsceneScript>>>,
     /// Skeletons and standard animations read so far (actors load theirs at init).
     skeletons: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::skeleton::Skeleton>>>,
     animations: std::sync::Mutex<std::collections::HashMap<String, Arc<eng_anim::anim::StandardAnimation>>>,
@@ -88,11 +92,30 @@ impl GameAssets {
             item_drops: pack.item_drops()?,
             interface: pack.interface()?,
             items: pack.items()?,
+            cutscenes: pack.cutscene_tables()?,
+            scripts: Default::default(),
             overlays,
             pack,
             skeletons: Default::default(),
             animations: Default::default(),
         })
+    }
+
+    /// The cutscene script named `name` (`D_808BCE20`, `gDekuTreeIntroCs`), read once.
+    pub fn cutscene(&self, name: &str) -> Result<Arc<crate::cutscene::CutsceneScript>> {
+        if let Some(s) = self.scripts.lock().unwrap().get(name) {
+            return Ok(s.clone());
+        }
+        let key = self.cutscenes.key(name).with_context(|| format!("no cutscene script {name}"))?;
+        let s = Arc::new(self.pack.cutscene(key)?);
+        self.scripts.lock().unwrap().insert(name.to_string(), s.clone());
+        Ok(s)
+    }
+
+    /// The script under pack key `key` (a scene layer's `cutscene`).
+    pub fn cutscene_by_key(&self, key: &str) -> Result<Arc<crate::cutscene::CutsceneScript>> {
+        let name = self.cutscenes.scripts.iter().find(|(_, k)| k == key).map(|(n, _)| n.clone()).with_context(|| format!("no cutscene script {key}"))?;
+        self.cutscene(&name)
     }
 
     /// `file`'s skeleton `symbol`, read once.
@@ -303,11 +326,30 @@ impl PlayState {
     /// actor table (`assets.overlays` for the ported ones, placeholders for the rest).
     pub fn play_init(assets: Arc<GameAssets>, data: Arc<crate::data::GameData>, rules: Arc<crate::player_lib::PlayerRules>, mut save: SaveContext) -> Result<PlayState> {
         let t = &assets.scenes;
+        // (func_8006450C comes with the new play state's idle csCtx.)
+        if save.next_cutscene_index != 0xFFEF {
+            save.cutscene_index = save.next_cutscene_index;
+            save.next_cutscene_index = 0xFFEF;
+        }
+        if save.cutscene_index == 0xFFFD {
+            save.cutscene_index = 0;
+        }
         save.night_flag = save.day_time > env::clock_time(18, 0) as u16 || save.day_time < env::clock_time(6, 30) as u16;
-        save.scene_layer = layer_for(!save.adult, save.night_flag);
+        crate::cutscene::handle_conditional_triggers(&assets, &mut save);
+        if save.game_mode != crate::save::GAMEMODE_NORMAL || save.cutscene_index >= 0xFFF0 {
+            // SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF): the pack doesn't hold the
+            // cutscene layers (GAME-03 milestone 4's known gap), so the normal layer is loaded.
+            let cs_layer = 4 + (save.cutscene_index as usize & 0xF);
+            log::error!("Play_Init: cutscene layer {cs_layer} (cutsceneIndex {:#x}) isn't in the pack: loading the normal layer", save.cutscene_index);
+            save.scene_layer = layer_for(!save.adult, save.night_flag);
+            save.cutscene_index = 0;
+        } else {
+            save.scene_layer = layer_for(!save.adult, save.night_flag);
+        }
         let base_layer = save.scene_layer;
         let base = t.entrances.get(save.entrance_index as usize).with_context(|| format!("no entrance {:#x}", save.entrance_index))?;
-        // Play_Init's special cases (no Spiritual Stones, EVENTCHKINF_48 unset).
+        // Play_Init's special cases (no Spiritual Stones, EVENTCHKINF_48 unset), outside the
+        // cutscene layers.
         if base.scene == SCENE_SPOT00 && !save.adult {
             save.scene_layer = 0;
         } else if base.scene == SCENE_SPOT04 && save.adult {
@@ -337,6 +379,13 @@ impl PlayState {
         play.link_object_id = if save.adult { OBJECT_LINK_BOY } else { OBJECT_LINK_CHILD };
         play.object_ctx.spawn(play.link_object_id);
         play.transi_actors = ld.transition_actors.clone();
+        // SCENE_CMD_ID_CUTSCENE_DATA: Scene_CommandCutsceneData.
+        if let Some(k) = &ld.cutscene {
+            match assets.cutscene_by_key(k) {
+                Ok(s) => play.cs_ctx.segment = Some(s),
+                Err(e) => log::error!("{e:#}"),
+            }
+        }
         play.scene = Some(scene);
 
         // func_80096FE8: the first room.
@@ -352,6 +401,11 @@ impl PlayState {
             ty
         };
         play.save = save;
+        // Environment_Init: D_8015FCC8 = 1 (z_kankyo.c:419), and no cues.
+        play.demo.d_8015fcc8 = 1;
+        play.cs_ctx.npc_actions = [None; 10];
+        // Cutscene_HandleEntranceTriggers, after Play_SpawnScene.
+        play.cutscene_handle_entrance_triggers();
         // Interface_Init (Interface_SetSceneRestrictions comes later in Play_Init; nothing reads
         // the restrictions between).
         play.interface_ctx = crate::interface::InterfaceContext::init(&mut play.save, &assets.interface, scene_id);
@@ -366,6 +420,8 @@ impl PlayState {
         // Camera_InitPlayerSettings (with func_8005AC48's 0xFF from earlier in Play_Init), then
         // Camera_ChangeMode(NORMAL), and Player's start bg camera (params & 0xFF).
         play.reset_cameras();
+        // Camera_Init's and Camera_InitPlayerSettings' shared state (sNextUID carries over).
+        play.cam_globals = crate::camera::CameraGlobals { next_uid: play.cam_globals.next_uid, ..crate::camera::CameraGlobals::main_init() };
         play.game_camera.change_mode(&play.data.camera, crate::camera::CAM_MODE_NORMAL);
         let start_bg_cam = play.actors.actor(p).map(|a| a.params as u16 & 0xFF).unwrap_or(0xFF);
         if start_bg_cam != 0xFF {
@@ -405,6 +461,9 @@ impl PlayState {
                     next.toggle_camera();
                 }
                 next.respawn_player = self.respawn_player;
+                // z_demo.c's statics and sNextUID are the code segment's: they carry over.
+                next.demo = crate::cutscene::DemoStatics { d_8015fcc8: next.demo.d_8015fcc8, ..self.demo };
+                next.cam_globals.next_uid = self.cam_globals.next_uid;
                 *self = next;
             }
             Err(e) => {

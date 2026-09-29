@@ -9,6 +9,7 @@
 
 pub mod background;
 pub mod csrc;
+pub mod cutscene;
 pub mod drawcfg;
 pub mod objects;
 pub mod pack;

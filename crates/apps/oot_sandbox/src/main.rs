@@ -69,8 +69,10 @@ struct Cli {
     /// out through the exits); with --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open
     /// also `playthrough` (GAME-02's scripted run from Link's bed into the Deku Tree), and with
     /// --entrance ENTR_LINK_HOME_0 --child (a new save) `sword-chest` (GAME-03's run through the
-    /// crawlspace and past the boulder to the Kokiri Sword's chest) and `mido-shop` (on to 40
-    /// rupees, the Deku Shield from the Kokiri shop, both worn, and past Mido).
+    /// crawlspace and past the boulder to the Kokiri Sword's chest), `mido-shop` (on to 40
+    /// rupees, the Deku Shield from the Kokiri shop, both worn, and past Mido) and
+    /// `new-save-deku-tree` (on into the meadow, the Deku Tree's talk answered yes, and into
+    /// his mouth).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -480,6 +482,21 @@ fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, 
             t["camera"]["mode"] = serde_json::json!(c.mode);
             t["camera"]["bg_cam"] = serde_json::json!(c.bg_cam_index);
             t["viewpoint"] = serde_json::json!(w.viewpoint);
+            // While a script runs or Link is in a cutscene mode (GAME-03 milestone 4): the
+            // script, its state and frame, the active camera and Player's csMode.
+            if w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE || p.cs_mode != 0 {
+                let cam = w.active_camera();
+                t["cutscene"] = serde_json::json!({
+                    "script": w.cs_ctx.segment.as_ref().map(|s| s.name.clone()),
+                    "state": w.cs_ctx.state,
+                    "frames": w.cs_ctx.frames,
+                    "cs_mode": p.cs_mode,
+                    "cam": w.active_cam_id,
+                    "eye": cam.eye.to_array(),
+                    "at": cam.at.to_array(),
+                    "fov": cam.fov,
+                });
+            }
         }
         let snap = w.current_frame();
         on_frame(&w, i + 1, &snap)?;

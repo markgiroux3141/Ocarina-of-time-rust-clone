@@ -20,7 +20,8 @@ use eng_math::*;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PlayerIface};
-use oot_game::play_scene::{PlayIo, SCENE_GANON_FINAL, SCENE_HAKADAN};
+use oot_game::cutscene::CsCmdActorAction;
+use oot_game::play_scene::{PlayIo, SCENE_GANON_FINAL, SCENE_HAKADAN, SCENE_SPOT04};
 use oot_game::save::{RESPAWN_MODE_DOWN, RESPAWN_MODE_RETURN};
 use oot_game::scene::EntranceInfo;
 use oot_game::transition::{TRANS_TRIGGER_OFF, TRANS_TRIGGER_START, TRANS_TYPE_FADE_BLACK, TRANS_TYPE_FADE_BLACK_FAST, TRANS_TYPE_FADE_WHITE};
@@ -289,6 +290,8 @@ pub enum Action {
     Down,
     /// `func_80843A38`: getting up.
     GetUp,
+    /// `func_80852E14`: in a cutscene mode (`csMode`).
+    Cutscene,
 }
 
 /// `func_A74`: what `func_808458D0` runs once the item is away.
@@ -356,6 +359,7 @@ impl Action {
             Action::KnockedDown => "func_8084377C",
             Action::Down => "func_80843954",
             Action::GetUp => "func_80843A38",
+            Action::Cutscene => "func_80852E14",
         }
     }
 }
@@ -390,6 +394,8 @@ pub struct PlayerStatics {
     /// `D_80853614` / `D_80853618`: B pressed / held with the weapon already in hand this frame.
     pub d_80853614: bool,
     pub d_80853618: bool,
+    /// `D_80858AA0`: the animation's `moveFlags` when a cutscene mode starts.
+    pub d_80858aa0: i32,
 }
 
 /// Per-frame environment the update needs.
@@ -424,6 +430,11 @@ pub struct Env<'a> {
     pub cam_dir_yaw: i16,
     /// `sGetItemTable` (`table/items`; empty without the pack).
     pub items: &'a oot_game::item::ItemTables,
+    /// `play->csCtx`'s `state`, `frames` and `linkAction`, and `play->sceneId`.
+    pub cs_state: u8,
+    pub cs_frames: u16,
+    pub cs_link_action: Option<CsCmdActorAction>,
+    pub scene_id: u16,
 }
 
 impl Env<'_> {
@@ -591,8 +602,14 @@ pub struct Player {
     pub play_requests: Vec<PlayRequest>,
     /// `unk_A84`: the height the void check measures falls from.
     pub unk_A84: i16,
-    /// `csMode` (no cutscenes: 0).
+    /// `csMode`, `prevCsMode`: the cutscene mode (`func_8002DF54`) and the one whose start ran.
     pub cs_mode: u8,
+    pub prev_cs_mode: u8,
+    /// `unk_446`: the `linkAction` cue being followed; `unk_448`: the actor a mode is about;
+    /// `doorBgCamIndex`: 1 when `func_8002DF54` set the mode (Link is then held).
+    pub unk_446: u16,
+    pub unk_448: Option<ActorHandle>,
+    pub door_bg_cam_index: i16,
     /// `func_A74`.
     pub func_a74: Option<A74>,
     /// Start mode 0 (`func_80846648`): `update` is a no-op and `draw` is NULL.
@@ -626,6 +643,19 @@ pub struct Player {
 const BASE_TRANSL: [i16; 3] = [-57, 3377, 0];
 /// `D_8085456C`: head-look floor probe offset.
 const HEAD_PROBE: Vec3 = Vec3::new(0.0, 100.0, 40.0);
+
+/// `D_808547C4`: each `linkAction` cue's cutscene mode (negative: without moving Link to the
+/// cue's start). A cue past the table reads as 0 (the C reads past it).
+#[rustfmt::skip]
+const D_808547C4: [i8; 78] = [
+    0,  3,  3,  5,   4,   8,   9,   13, 14, 15, 16, 17, 18, -22, 23, 24, 25,  26, 27,  28,  29, 31, 32, 33, 34, -35,
+    30, 36, 38, -39, -40, -41, 42,  43, 45, 46, 0,  0,  0,  67,  48, 47, -50, 51, -52, -53, 54, 55, 56, 57, 58, 59,
+    60, 61, 62, 63,  64,  -65, -66, 68, 11, 69, 70, 71, 8,  8,   72, 73, 78,  79, 80,  89,  90, 91, 92, 77, 19, 94,
+];
+
+fn d_808547c4(action: u16) -> i8 {
+    D_808547C4.get(action as usize).copied().unwrap_or(0)
+}
 
 fn abs16(v: i16) -> i32 {
     (v as i32).abs()
@@ -752,6 +782,10 @@ impl Player {
             play_requests: Vec::new(),
             unk_A84: pos.y as i16,
             cs_mode: 0,
+            prev_cs_mode: 0,
+            unk_446: 0,
+            unk_448: None,
+            door_bg_cam_index: 0,
             func_a74: None,
             inert: false,
             navi_text_id: 0,
@@ -1006,6 +1040,27 @@ impl Player {
             // (func_80848EF8: the rumble.)
         }
 
+        // A script running: its cue's mode (6) or held still (0x31), unless riding, grabbed or
+        // under water.
+        if env.cs_state != oot_game::cutscene::CS_STATE_IDLE && self.cs_mode != 6 && self.state1 & STATE1_23 == 0 && self.state2 & STATE2_7 == 0 {
+            if env.cs_link_action.is_some_and(|l| d_808547c4(l.action) != 0) {
+                self.func_8002DF54(6);
+                self.func_80832210();
+            } else if self.cs_mode == 0 && self.state2 & STATE2_10 == 0 && env.cs_state != oot_game::cutscene::CS_STATE_UNSKIPPABLE_INIT {
+                self.func_8002DF54(0x31);
+                self.func_80832210();
+            }
+        }
+        if self.cs_mode != 0 {
+            if self.cs_mode != 7 || self.state1 & (STATE1_13 | STATE1_14 | STATE1_21 | STATE1_26) == 0 {
+                self.unk_6AD = 3;
+            } else if self.action != Action::Cutscene {
+                self.func_80852944(env);
+            }
+        } else {
+            self.prev_cs_mode = 0;
+        }
+
         self.func_8083D6EC();
 
         if self.unk_664.is_none() && self.navi_text_id == 0 {
@@ -1128,6 +1183,7 @@ impl Player {
     fn run_action(&mut self, env: &Env) {
         match self.action {
             Action::StandingStill => self.func_80840BC8(env),
+            Action::Cutscene => self.func_80852E14(env),
             Action::Run => self.func_80842180(env),
             Action::Turn => self.func_80841BA8(env),
             Action::Roll => self.func_80844708(env),
@@ -2674,6 +2730,9 @@ impl Player {
         loop {
             let e = list[i];
             let idx = e.unsigned_abs() as usize;
+            if idx == 0 && self.func_8083B998(env) {
+                return true;
+            }
             if idx == 1 && self.func_80839800(env) {
                 return true;
             }
@@ -2696,6 +2755,9 @@ impl Player {
                 return true;
             }
             if idx == 7 && self.func_80850224(env) {
+                return true;
+            }
+            if idx == 13 && self.func_8083B040(env) {
                 return true;
             }
             if e < 0 {
@@ -5106,7 +5168,7 @@ impl Player {
     /// in from an entrance (`unk_850` < 0 counts it down), then standing or running on.
     fn func_80845CA4(&mut self, env: &Env) {
         let data = env.data;
-        if !self.func_8083B040() {
+        if !self.func_8083B040(env) {
             if self.unk_850 == 0 {
                 self.skel.update(data);
                 self.door_timer -= 1;
@@ -5326,12 +5388,335 @@ impl Player {
         }
     }
 
-    /// `func_8083B040`: an item or spell taking over (`unk_6AD` is never set here).
-    fn func_8083B040(&mut self) -> bool {
-        if self.unk_6AD != 0 {
-            self.note("func_8083B040 with unk_6AD set: items aren't ported");
+    /// `func_8083ADD4`: with a cutscene mode pending (`unk_6AD` 3), Player's action becomes the
+    /// cutscene's (`func_80852E14`), held (`PLAYER_STATE1_29`) when `func_8002DF54` set it.
+    fn func_8083ADD4(&mut self, data: &GameData) -> bool {
+        if self.unk_6AD == 3 {
+            self.setup_action(data, Action::Cutscene, 0);
+            if self.door_bg_cam_index != 0 {
+                self.state1 |= STATE1_29;
+            }
+            self.func_80832318();
+            return true;
         }
         false
+    }
+
+    /// `func_8083B040` (interrupt 13, and the actions that check it first): with `unk_6AD` set
+    /// and Link on the ground, swimming or riding, a cutscene mode takes over
+    /// (`func_8083ADD4`). The items and spells (`unk_6AD` 2 and 4) aren't ported.
+    fn func_8083B040(&mut self, env: &Env) -> bool {
+        if self.unk_6AD != 0 && (self.func_808332B8() || self.grounded() || self.state1 & STATE1_23 != 0) {
+            if !self.func_8083ADD4(env.data) {
+                self.note(format!("func_8083B040 with unk_6AD {}: items and first person aren't ported", self.unk_6AD));
+                return false;
+            }
+            self.func_80832224();
+            return true;
+        }
+        false
+    }
+
+    /// `func_8083B998` (interrupt 0): a cutscene mode (or an item) waiting (`unk_6AD`) takes
+    /// over through `func_8083B040`; a target Navi would talk about sets `PLAYER_STATE2_21`. C-Up
+    /// into first person (`func_8083B8F4`) isn't ported.
+    fn func_8083B998(&mut self, env: &Env) -> bool {
+        if self.unk_6AD != 0 {
+            self.func_8083B040(env);
+            return true;
+        }
+        // (naviEnemyId is NAVI_ENEMY_NONE for every ported actor.)
+        if self.unk_664.and_then(|h| env.target(h)).is_some_and(|t| t.flags & (ACTOR_FLAG_0 | ACTOR_FLAG_18) == (ACTOR_FLAG_0 | ACTOR_FLAG_18)) {
+            self.state2 |= STATE2_21;
+        } else if self.navi_text_id == 0 && self.state1 & STATE1_4 == 0 && self.input.press.held(eng_input::pad::BTN_CUP) {
+            self.note("C-Up into first person (func_8083B8F4) not ported");
+        }
+        false
+    }
+
+    /// `func_8002DF54` on Player itself (`z_actor.c`): `csMode`, no actor, `doorBgCamIndex` 1.
+    fn func_8002DF54(&mut self, cs_mode: u8) {
+        self.cs_mode = cs_mode;
+        self.unk_448 = None;
+        self.door_bg_cam_index = 1;
+    }
+
+    /// `func_80852E14`: the cutscene action. A new `csMode` runs its start (`D_80854B18`), and
+    /// every frame its update (`D_80854E50`).
+    fn func_80852E14(&mut self, env: &Env) {
+        if self.cs_mode != self.prev_cs_mode {
+            self.s.d_80858aa0 = self.skel.move_flags as i32;
+            self.func_80832DBC();
+            self.prev_cs_mode = self.cs_mode;
+            log::debug!("DEMO MODE={}", self.cs_mode);
+            self.func_80852C0C(self.cs_mode);
+            let m = self.cs_mode;
+            self.func_80852B4C(env, None, m, true);
+        }
+        let m = self.cs_mode;
+        self.func_80852B4C(env, None, m, false);
+    }
+
+    /// `func_80852B4C` with `D_80854B18[mode]` (`start`) or `D_80854E50[mode]`: the entry's
+    /// function or its animation. The modes the ported scripts and actors use are ported: 1
+    /// (talking to a no-text actor), 3 and 4 (a cue's walk), 6 (following `linkAction`), 7 (the
+    /// end), 8 and 0x31 (held still). The others are logged.
+    fn func_80852B4C(&mut self, env: &Env, cue: Option<CsCmdActorAction>, mode: u8, start: bool) {
+        match (start, mode) {
+            (true, 1 | 8 | 0x31) => self.func_808515A4(env),
+            // { 0, NULL }.
+            (true, 0 | 3 | 4 | 6 | 7) => {}
+            (false, 1) => self.func_808514C0(env),
+            (false, 3) => self.func_80851998(env, cue),
+            (false, 4) => self.func_808519C0(env, cue),
+            (false, 6) => self.func_80852C50(env),
+            (false, 7) => self.func_80852944(env),
+            (false, 8 | 0x31) => self.func_80851688(env),
+            (false, 0) => {}
+            (s, m) => self.note(format!("cutscene mode {m}'s {} ({}) not ported", if s { "start" } else { "update" }, if s { "D_80854B18" } else { "D_80854E50" })),
+        }
+        if self.s.d_80858aa0 & 4 != 0 && self.skel.move_flags & 4 == 0 {
+            self.skel.morph[0][1] = (self.skel.morph[0][1] as f32 / self.age.translation_scale) as i16;
+            self.s.d_80858aa0 = 0;
+        }
+    }
+
+    /// `func_80852C0C`: modes other than 1, 8, 0x31 and 7 drop what Link holds
+    /// (`func_808323B4`: nothing is ever held here).
+    fn func_80852C0C(&mut self, _cs_mode: u8) {}
+
+    /// `func_80852C50` (mode 6): Link follows the script's cues (`linkAction`), each mapped to
+    /// a mode by `D_808547C4`. A cue's start puts him at its start (`func_808529D0`) or, for the
+    /// walks (3, 4), only if he's far from it (`func_80852A54`). When the script ends
+    /// (`CS_STATE_UNSKIPPABLE_INIT`), mode 7.
+    fn func_80852C50(&mut self, env: &Env) {
+        let link = env.cs_link_action;
+        if env.cs_state == oot_game::cutscene::CS_STATE_UNSKIPPABLE_INIT {
+            self.func_8002DF54(7);
+            self.unk_446 = 0;
+            self.func_80832210();
+            return;
+        }
+        let Some(link) = link else {
+            self.actor.flags &= !ACTOR_FLAG_6;
+            return;
+        };
+        if self.unk_446 != link.action {
+            let sp24 = d_808547c4(link.action);
+            if sp24 >= 0 {
+                if sp24 == 3 || sp24 == 4 {
+                    self.func_80852A54(env, &link);
+                } else {
+                    self.func_808529D0(env, &link);
+                }
+            }
+            self.s.d_80858aa0 = self.skel.move_flags as i32;
+            self.func_80832DBC();
+            log::debug!("TOOL MODE={sp24}");
+            let m = sp24.unsigned_abs();
+            self.func_80852C0C(m);
+            self.func_80852B4C(env, Some(link), m, true);
+            self.unk_850 = 0;
+            self.unk_84F = 0;
+            self.unk_446 = link.action;
+        }
+        let m = d_808547c4(self.unk_446).unsigned_abs();
+        self.func_80852B4C(env, Some(link), m, false);
+    }
+
+    /// `func_808529D0`: Link at the cue's start (a child in Kokiri Forest 1 lower), facing its
+    /// rotation.
+    fn func_808529D0(&mut self, env: &Env, cue: &CsCmdActorAction) {
+        self.actor.world_pos.x = cue.start_pos.x as f32;
+        self.actor.world_pos.y = cue.start_pos.y as f32;
+        if env.scene_id == SCENE_SPOT04 && !self.adult {
+            self.actor.world_pos.y -= 1.0;
+        }
+        self.actor.world_pos.z = cue.start_pos.z as f32;
+        self.actor.shape_rot.y = cue.rot[1];
+        self.current_yaw = cue.rot[1];
+    }
+
+    /// `func_80852A54`: a walk cue moves Link to its start only if he stands more than 50 from
+    /// it or facing more than a quarter turn away.
+    fn func_80852A54(&mut self, env: &Env, cue: &CsCmdActorAction) {
+        let dx = cue.start_pos.x as f32 - self.actor.world_pos.x as i32 as f32;
+        let dy = cue.start_pos.y as f32 - self.actor.world_pos.y as i32 as f32;
+        let dz = cue.start_pos.z as f32 - self.actor.world_pos.z as i32 as f32;
+        let dist = (dx * dx + dy * dy + dz * dz).sqrt();
+        let yaw_diff = cue.rot[1].wrapping_sub(self.actor.shape_rot.y);
+        if self.linear_velocity == 0.0 && (dist > 50.0 || abs16(yaw_diff) > 0x4000) {
+            self.func_808529D0(env, cue);
+        }
+        self.skel.move_flags = 0;
+        self.func_80832DB0();
+    }
+
+    /// `func_80832DB0`.
+    fn func_80832DB0(&mut self) {
+        self.skel.joint[1][1] = 0;
+    }
+
+    /// `func_808515A4` (the start of modes 1, 8 and 0x31): Link stands in the cutscene's wait
+    /// (`PLAYER_ANIMGROUP_44`), looping. (Swimming, `func_80851368`, isn't ported.)
+    fn func_808515A4(&mut self, env: &Env) {
+        let data = env.data;
+        if self.func_808332B8() {
+            self.note("cutscene hold while swimming (func_80851368) not ported");
+            return;
+        }
+        let anim = self.anim(data, 44);
+        if self.unk_446 == 6 || self.unk_446 == 0x2E {
+            // func_80832264: LinkAnimation_PlayOnceSetSpeed(D_808535E8).
+            self.skel.play_once_set_speed(data, anim, self.s.speed_scale);
+        } else {
+            self.func_80832DB0();
+            let last = data.anims[anim].last_frame();
+            self.skel.change(data, anim, 2.0 / 3.0, 0.0, last, ANIMMODE_LOOP, -4.0);
+        }
+        self.func_80832210();
+    }
+
+    /// `func_80851314`: Link faces the actor the mode is about (`unk_448`), if it's still there.
+    fn func_80851314(&mut self, env: &Env) {
+        if self.unk_448.is_some_and(|h| env.target(h).is_none_or(|a| a.killed)) {
+            self.unk_448 = None;
+        }
+        self.unk_664 = self.unk_448;
+        if self.unk_664.is_some() {
+            self.actor.shape_rot.y = self.func_8083DB98(env, false);
+        }
+    }
+
+    /// `func_808514C0` (mode 1, talking to an actor with no text): facing it, the animation,
+    /// and a picked-up item offer (`textId` 0xFFFF).
+    fn func_808514C0(&mut self, env: &Env) {
+        self.func_80851314(env);
+        if self.func_808332B8() {
+            self.note("cutscene mode 1 while swimming (func_808513BC) not ported");
+            return;
+        }
+        self.skel.update(env.data);
+        // func_8008F128 (the hookshot or boomerang out) and PLAYER_STATE1_11: nothing held.
+        if self.state1 & STATE1_11 != 0 {
+            self.func_80836670(env);
+            return;
+        }
+        if self.interact_range_actor.and_then(|h| env.target(h)).is_some_and(|a| a.text_id == 0xFFFF) {
+            self.func_8083E5A8(env);
+        }
+    }
+
+    /// `func_80851688` (modes 8 and 0x31): held still, the wait playing; mode 0x31 ends by
+    /// itself once no script runs (mode 7). (`func_8084B3CC`, the shooting gallery, never
+    /// applies.)
+    fn func_80851688(&mut self, env: &Env) {
+        if self.cs_mode == 0x31 && env.cs_state == oot_game::cutscene::CS_STATE_IDLE {
+            self.func_8002DF54(7);
+            return;
+        }
+        if self.func_808332B8() {
+            self.note("cutscene hold while swimming (func_808513BC) not ported");
+            return;
+        }
+        self.skel.update(env.data);
+        if self.state1 & STATE1_11 != 0 {
+            self.func_80836670(env);
+        }
+    }
+
+    /// `func_80851998` (mode 3): `func_80845964(play, this, arg2, 0.0f, 0, 0)`.
+    fn func_80851998(&mut self, env: &Env, cue: Option<CsCmdActorAction>) {
+        self.func_80845964_cs(env, cue, 0.0, 0, 0);
+    }
+
+    /// `func_808519C0` (mode 4): `func_80845964(play, this, arg2, 0.0f, 0, 1)`.
+    fn func_808519C0(&mut self, env: &Env, cue: Option<CsCmdActorAction>) {
+        self.func_80845964_cs(env, cue, 0.0, 0, 1);
+    }
+
+    /// `func_80845964` with a cue (`arg5` 0 or 1): the walk towards the cue's end, at the speed
+    /// that gets there by its end frame (`R_UPDATE_RATE` × 0.5 a unit); with `arg5` 1 it stops
+    /// short, leaving four times the cue's own pace for the slow-down, and stands once still.
+    fn func_80845964_cs(&mut self, env: &Env, cue: Option<CsCmdActorAction>, mut speed: f32, mut yaw: i16, arg5: i32) -> bool {
+        let data = env.data;
+        if arg5 != 0 && self.linear_velocity == 0.0 {
+            return self.skel.update(data);
+        }
+        if arg5 != 2
+            && let Some(c) = cue
+        {
+            let sp34 = 3.0 * 0.5;
+            let self_dist_x = c.end_pos.x as f32 - self.actor.world_pos.x;
+            let self_dist_z = c.end_pos.z as f32 - self.actor.world_pos.z;
+            let sp28 = (self_dist_x * self_dist_x + self_dist_z * self_dist_z).sqrt() / sp34;
+            let sp24 = (c.end_frame as i32 - env.cs_frames as i32) + 1;
+            yaw = atan2_s(self_dist_z, self_dist_x);
+            if arg5 == 1 {
+                let dist_x = (c.end_pos.x - c.start_pos.x) as f32;
+                let dist_z = (c.end_pos.z - c.start_pos.z) as f32;
+                let temp = ((((dist_x * dist_x + dist_z * dist_z).sqrt() / sp34) / (c.end_frame as i32 - c.start_frame as i32) as f32) / 1.5 * 4.0) as i32;
+                if temp >= sp24 {
+                    yaw = self.actor.shape_rot.y;
+                    speed = 0.0;
+                } else {
+                    speed = sp28 / ((sp24 - temp) + 1) as f32;
+                }
+            } else {
+                speed = sp28 / sp24 as f32;
+            }
+        }
+        self.state2 |= STATE2_5;
+        self.func_80841EE4(data);
+        self.func_8083DF68(speed, yaw);
+        if speed == 0.0 && self.linear_velocity == 0.0 {
+            self.func_8083BF50(data);
+        }
+        false
+    }
+
+    /// `func_80852944` (mode 7): the cutscene is over: standing (or treading water), then the
+    /// talk and pick-up interrupts, and `csMode` 0.
+    fn func_80852944(&mut self, env: &Env) {
+        let data = env.data;
+        if self.func_808332B8() {
+            self.func_80838F18(data);
+            self.func_80832340();
+        } else {
+            self.func_8083C148(data);
+            if !self.func_8083B644(env) {
+                self.func_8083E5A8(env);
+            }
+        }
+        self.cs_mode = 0;
+        self.unk_6AD = 0;
+    }
+
+    /// `func_8083C148`.
+    fn func_8083C148(&mut self, data: &GameData) {
+        if self.state3 & STATE3_7 == 0 {
+            self.func_8083B010();
+            if self.state1 & STATE1_27 != 0 {
+                self.func_80838F18(data);
+            } else {
+                self.func_80839F90(data);
+            }
+            if self.unk_6AD < 4 {
+                self.unk_6AD = 0;
+            }
+        }
+        self.state1 &= !(STATE1_13 | STATE1_14 | STATE1_20);
+    }
+
+    /// `func_8083B010`: the head and upper body straight, the focus facing Link's way.
+    fn func_8083B010(&mut self) {
+        self.actor.focus_rot = Rot { x: 0, y: self.actor.shape_rot.y, z: 0 };
+        self.unk_6B6 = 0;
+        self.unk_6B8 = 0;
+        self.unk_6BA = 0;
+        self.unk_6BC = 0;
+        self.unk_6BE = 0;
+        self.unk_6C0 = 0;
     }
 
     /// `func_8083B644` (interrupt 4): A talks to the actor that offered this frame
@@ -5486,8 +5871,13 @@ impl Player {
                 self.state2 &= !STATE2_13;
             }
             self.play_requests.push(PlayRequest::CamDone);
-            // func_8084B4D4 (the ocarina after a talk), func_8084B3CC (the shooting gallery),
-            // func_8083ADD4 (first person) and func_8083E5A8 (an item to pick up) don't apply.
+            // func_8084B4D4 (the ocarina after a talk) and func_8084B3CC (the shooting gallery)
+            // don't apply; func_8083ADD4 (a cutscene mode waiting) does; func_8083E5A8 (an item
+            // to pick up) doesn't apply.
+            if self.func_8083ADD4(data) {
+                self.unk_88E = 10;
+                return;
+            }
             if self.func_808332B8() {
                 self.func_80838F18(data);
             } else {
@@ -6231,6 +6621,10 @@ impl ActorImpl for Player {
             me: play.player,
             cam_dir_yaw: play.cam_dir_yaw(),
             items: assets.as_ref().map(|a| &a.items).unwrap_or(&NO_ITEMS),
+            cs_state: play.cs_ctx.state,
+            cs_frames: play.cs_ctx.frames,
+            cs_link_action: play.cs_ctx.link_action,
+            scene_id: play.scene_id,
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for unk_88E frames after a talk.
@@ -6403,6 +6797,14 @@ impl ActorImpl for Player {
 impl PlayerIface for Player {
     fn adult(&self) -> bool {
         self.adult
+    }
+    fn set_cs_mode(&mut self, cs_mode: u8, actor: Option<ActorHandle>, door_bg_cam_index: i16) {
+        self.cs_mode = cs_mode;
+        self.unk_448 = actor;
+        self.door_bg_cam_index = door_bg_cam_index;
+    }
+    fn cs_mode(&self) -> u8 {
+        self.cs_mode
     }
     fn state_flags1(&self) -> u32 {
         self.state1

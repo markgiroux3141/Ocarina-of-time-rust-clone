@@ -37,10 +37,18 @@ fn cam_yaw(w: &PlayState) -> i16 {
 fn z_with_nothing_to_target_swings_the_camera_behind_and_letterboxes() {
     let Some(mut w) = world() else { return };
     let t = w.data.camera.oreg(23);
+    // Camera_Init's D_8011D3F0: the main camera's first three updates hold the interface at
+    // 0x3200 (the letterbox's target 32); then Normal1's flags (0x0003) take it back to 0.
+    let mut prev = PadState::default();
+    for _ in 0..3 {
+        frame(&mut w, &mut prev, stick(0, 0));
+        assert_eq!(w.letterbox.size_target, 32);
+    }
+    frame(&mut w, &mut prev, stick(0, 0));
+    assert_eq!((w.cam_globals.d_8011d3f0, w.letterbox.size_target), (0, 0));
     // R_CAM_DEFAULT_ANIM_TIME (sOREGInit).
     assert!(t > 1);
     // Link turned to face +x with the camera still looking down -z.
-    let mut prev = PadState::default();
     frame(&mut w, &mut prev, stick(0, 0));
     let p = w.player_mut();
     p.actor.shape_rot.y = 0x4000;

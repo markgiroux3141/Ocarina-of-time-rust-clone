@@ -218,6 +218,9 @@ pub struct LayerData {
     pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType`: `R_SCENE_CAM_TYPE` (`SCENE_CAM_TYPE_*`).
     pub scene_cam_type: u8,
+    /// `SCENE_CMD_ID_CUTSCENE_DATA`: the pack key of the script `Scene_CommandCutsceneData` puts
+    /// in `play->csCtx.segment` (`keys::cutscene`), if the header has one.
+    pub cutscene: Option<String>,
     /// Record names of the rooms (`RoomData`), in room-list order.
     pub rooms: Vec<String>,
     /// The day time the meshes were built for (`gSaveContext.dayTime`, see `oot_import`'s

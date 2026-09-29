@@ -114,6 +114,11 @@ pub trait PlayerIface {
     fn change_state_flags2(&mut self, set: u32, clear: u32);
     /// `Player_SetEquipmentData` from `save` (the pause menu's closing runs it).
     fn set_equipment_data(&mut self, data: &crate::data::GameData, save: &crate::save::SaveContext);
+    /// `func_8002DF38` / `func_8002DF54`'s writes: `csMode`, `unk_448` (the actor the mode is
+    /// about) and `doorBgCamIndex`.
+    fn set_cs_mode(&mut self, cs_mode: u8, actor: Option<ActorHandle>, door_bg_cam_index: i16);
+    /// `csMode`.
+    fn cs_mode(&self) -> u8;
 }
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.

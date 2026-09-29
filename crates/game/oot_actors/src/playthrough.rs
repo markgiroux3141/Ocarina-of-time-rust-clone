@@ -4,8 +4,8 @@
 //!
 //! **The Deku Tree** (GAME-02 milestone 4, `Route::DekuTree`, the `playthrough` test and
 //! script) goes into the Deku Tree's scene. It needs the Deku Tree's mouth open, so it runs on
-//! a save with the `deku-tree-open` preset (`oot_game::save::SAVE_PRESETS`): the talk that
-//! opens it in the game is a cutscene, which isn't ported yet. The route follows Kokiri
+//! a save with the `deku-tree-open` preset (`oot_game::save::SAVE_PRESETS`), which skips the
+//! tree's talk (`Route::NewSaveDekuTree` plays it). The route follows Kokiri
 //! Forest's collision: out of Link's house, down the ladder, to the sign, to the Kokiri child
 //! by the bushes (child 4), the bushes, then east through the stream, round Mido where he
 //! stands aside (the preset sets `EVENTCHKINF_04`), along the path through the `En_Holl` into
@@ -26,7 +26,17 @@
 //! four chests, two more green rupees and the free multitag's tag points; into the shop, its own
 //! rupee, and the Deku Shield bought; Start (the pause menu's stand-in) to wear the sword and the
 //! shield; out, east over the ford to Mido, his talk, and past him once he has stepped aside.
-//! Every rupee on the way is one the C places (no `Rand` drops): 42, for the shield's 40.
+//! Every rupee on the way is one the C places (no `Rand` drops): 42, for the shield's 40. The
+//! forced text by the shop (`En_Wonder_Talk2`, 0x218) holds Link (Player's cutscene mode 8)
+//! until the walk reads it.
+//!
+//! **The new save into the Deku Tree** (GAME-03 milestone 4, `Route::NewSaveDekuTree`, the
+//! `new_save_deku_tree` test and the `new-save-deku-tree` script) is the Mido and shop run, then
+//! east along the path through the `En_Holl` into room 1 and into the meadow. There the Deku
+//! Tree's first talk (`Bg_Treemouth`'s `D_808BCE20`) starts by itself and walks Link in; the run
+//! reads it and answers yes, which plays `D_808BD520` and opens the mouth (`EVENTCHKINF_05`).
+//! Then over the open jaw into the mouth, to `ENTR_YDAN_0`, whose intro (`gDekuTreeIntroCs`)
+//! plays the first time in. No preset.
 //!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
@@ -110,6 +120,9 @@ pub enum Step {
     MidoAside,
     /// Past where Mido stood, on the path to the Deku Tree.
     PastMido,
+    /// The Deku Tree's talk (`D_808BCE20`) answered yes and its script (`D_808BD520`) over:
+    /// `EVENTCHKINF_05`, Link free.
+    TreeTalk,
 }
 
 impl Step {
@@ -140,6 +153,7 @@ impl Step {
             Step::Mido => "mido",
             Step::MidoAside => "mido_aside",
             Step::PastMido => "past_mido",
+            Step::TreeTalk => "tree_talk",
         }
     }
 }
@@ -154,6 +168,9 @@ pub enum Route {
     /// Link's bed to the sword, 40 rupees, the Deku Shield from the shop, both worn, and past
     /// Mido, on a new save (GAME-03 milestone 3).
     MidoShop,
+    /// The Mido and shop run, then into room 1, the Deku Tree's talk answered yes, and into
+    /// his mouth (GAME-03 milestone 4): no preset.
+    NewSaveDekuTree,
 }
 
 impl Route {
@@ -166,7 +183,7 @@ impl Route {
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
-            Route::SwordChest | Route::MidoShop => None,
+            Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree => None,
         }
     }
 
@@ -176,6 +193,7 @@ impl Route {
             Route::DekuTree => "playthrough",
             Route::SwordChest => "sword-chest",
             Route::MidoShop => "mido-shop",
+            Route::NewSaveDekuTree => "new-save-deku-tree",
         }
     }
 
@@ -183,13 +201,14 @@ impl Route {
     pub fn max_frames(self) -> usize {
         match self {
             Route::MidoShop => 12000,
+            Route::NewSaveDekuTree => 16000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -236,6 +255,9 @@ enum Task {
     Equip(Step),
     /// Idle until Mido has walked to his path's end.
     WaitMido,
+    /// Towards the point until the Deku Tree's talk starts (`Bg_Treemouth`'s trigger), then A
+    /// through its texts, yes at its question, until the scripts are over and Link is free.
+    TreeTalk(Vec3),
 }
 
 /// An actor the run talks to.
@@ -315,6 +337,7 @@ impl Playthrough {
             Route::DekuTree => Self::deku_tree(),
             Route::SwordChest => Self::sword_chest(false),
             Route::MidoShop => Self::mido_shop(),
+            Route::NewSaveDekuTree => Self::new_save_deku_tree(),
         };
         Playthrough {
             route,
@@ -456,6 +479,26 @@ impl Playthrough {
             // Past where he stood, east along the path.
             Task::Walk(vec![Vec3::new(1470.0, 0.0, 120.0), Vec3::new(1650.0, 0.0, 140.0)]),
             Task::Settle(Some(Step::PastMido)),
+        ]);
+        v
+    }
+
+    /// The new save's run into the Deku Tree: the Mido and shop run, then along the path to the
+    /// `En_Holl` into room 1 and into the meadow, where the tree's first talk starts; yes, and
+    /// on to his open mouth.
+    fn new_save_deku_tree() -> Vec<Task> {
+        let mut v = Self::mido_shop();
+        v.extend([
+            Task::Walk(vec![Vec3::new(1900.0, 0.0, 140.0), Vec3::new(2175.0, 0.0, 100.0), Vec3::new(2175.0, 0.0, -148.0), Vec3::new(2175.0, 0.0, -480.0)]),
+            // func_808BC8B8's trigger: within 1658 of the mouth and facing it within 0x4E20.
+            Task::TreeTalk(Vec3::new(2600.0, 0.0, -520.0)),
+            // From where the talk's cues left Link (short of (2857, 0, -594)), over the gap the
+            // open jaw covers.
+            Task::Walk(vec![Vec3::new(3000.0, 0.0, -600.0), Vec3::new(3350.0, 0.0, -950.0), Vec3::new(3650.0, 0.0, -1180.0), Vec3::new(3950.0, 0.0, -1200.0)]),
+            Task::Settle(Some(Step::Tree)),
+            Task::Exit("ENTR_YDAN_0", Some(Step::Mouth)),
+            // The Deku Tree's intro (gDekuTreeIntroCs) holds Link until it ends.
+            Task::Settle(Some(Step::DekuTree)),
         ]);
         v
     }
@@ -755,6 +798,40 @@ impl Playthrough {
                 }
             }
             Task::CutBushes(bushes) => self.cut_bushes(w, &bushes),
+            Task::TreeTalk(towards) => {
+                use oot_game::cutscene::CS_STATE_IDLE;
+                match self.sub {
+                    0 => {
+                        if w.cs_ctx.state != CS_STATE_IDLE {
+                            self.sub = 1;
+                            return Some(idle);
+                        }
+                        if Self::xz_dist(link, towards) < WAYPOINT_RADIUS {
+                            self.failure = Some(format!("the Deku Tree's talk didn't start on the way to {towards}"));
+                            return None;
+                        }
+                        Some(stick_towards(w, towards, RUN))
+                    }
+                    // A through the texts; A at the question takes its first answer, yes.
+                    _ => {
+                        self.wait += 1;
+                        if self.wait > 3000 {
+                            self.failure = Some(format!("the Deku Tree's talk didn't end: cs state {}, frames {}, text {:#x}", w.cs_ctx.state, w.cs_ctx.frames, w.msg_ctx.text_id));
+                            return None;
+                        }
+                        let over = w.cs_ctx.state == CS_STATE_IDLE && w.player().cs_mode == 0 && w.message_state() == TEXT_STATE_NONE;
+                        if over && w.save.get_event_chk_inf(oot_game::save::EVENTCHKINF_05) {
+                            self.finish(Some(Step::TreeTalk));
+                            return None;
+                        }
+                        if over {
+                            self.failure = Some("the Deku Tree's talk ended without EVENTCHKINF_05".into());
+                            return None;
+                        }
+                        Some(if Self::text_waits(w) && (w.message_state() != TEXT_STATE_CHOICE || w.msg_ctx.choice_index == 0) { self.press(BTN_A) } else { idle })
+                    }
+                }
+            }
         }
     }
 
@@ -767,12 +844,6 @@ impl Playthrough {
 
     /// Steers through `points`, each passed within `WAYPOINT_RADIUS`, at stick magnitude `mag`.
     fn walk(&mut self, w: &PlayState, points: &[Vec3], mag: f32) -> Option<PadState> {
-        // A text that opened by itself (a forced En_Wonder_Talk2, like the one by the shop):
-        // stop and read it, as a player would. (In the C, Player's cutscene mode 8 holds Link
-        // meanwhile: not ported.)
-        if w.message_state() != TEXT_STATE_NONE {
-            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { PadState::default() });
-        }
         let link = w.player().actor.world_pos;
         while self.sub < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
             self.sub += 1;
@@ -781,7 +852,13 @@ impl Playthrough {
             self.finish(None);
             return None;
         }
-        Some(stick_towards(w, points[self.sub], mag))
+        let mut pad = stick_towards(w, points[self.sub], mag);
+        // A text that opens by itself (a forced En_Wonder_Talk2, like the one by the shop) holds
+        // Link (Player's cutscene mode 8) until it's read: A through it, as a player would.
+        if w.message_state() != TEXT_STATE_NONE && Self::text_waits(w) {
+            pad.button = self.press(BTN_A).button;
+        }
+        Some(pad)
     }
 
     /// `Task::Crawl`'s phases in `sub`: 0 to the approach, 1 at the mouth until "Enter", 2 A

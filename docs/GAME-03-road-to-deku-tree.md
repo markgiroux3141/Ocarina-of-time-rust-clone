@@ -12,7 +12,7 @@ to entering the Deku Tree:
 | 1 | The inventory and getting items: `SaveContext`'s inventory, `Item_Give`, Player's get-item flow, `GetItem_Draw`, `En_Box`, Link's equipment on his model, the B and C items on the HUD | done |
 | 2 | Crawlspaces and the training area: Player's crawl, the `CRAWLSPACE` camera, what stands between the start and the sword | done |
 | 3 | Mido and the shop: `En_Md`, `En_Ossan` (the Kokiri shop), `En_GirlA`, the pause menu's stand-in in the play frame | done |
-| 4 | Cutscenes, first part (`z_demo.c`): the scripts, `csCtx`, the entrance triggers, Player's cutscene modes | to do |
+| 4 | Cutscenes, first part (`z_demo.c`): the scripts, `csCtx`, the entrance triggers, Player's cutscene modes | done |
 | 5 | Navi: `En_Elf` as Link's fairy, the Kokiri's fairies, the game's opening | to do |
 
 **Phase exit:** a headless run from a new save to the Deku Tree scene, the game's way,
@@ -525,40 +525,184 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
   - the ocarina in the Lost Woods;
   - the goodbye's cutscene;
   - the circle shadow's alpha.
-- **Forced texts** don't hold Link (Player's cutscene modes: milestone 4).
-- **Carried over:** the cutscenes, Navi, audio, the effects.
+- **Forced texts** don't hold Link (Player's cutscene modes: milestone 4). *(Done in milestone 4.)*
+- **Carried over:** the cutscenes, Navi, audio, the effects. *(The cutscenes: done in milestone 4.)*
+
+## Milestone 4: cutscenes, first part
+
+**Answer:** done. Talking to the Deku Tree plays his cutscenes as the C does: in his meadow his
+first talk starts by itself (`D_808BCE20`), the camera takes the script's shots, Link is walked
+in, the tree speaks and asks; yes plays `D_808BD520`, which opens his mouth (`EVENTCHKINF_05`).
+Entering the Deku Tree the first time plays its intro (`gDekuTreeIntroCs`). A scripted run from
+Link's bed on a new save now goes past Mido, through the talk and into the Deku Tree, with no
+save preset.
+
+The tests: 244 pass, 1 ignored (238 before). The goldens:
+- 21 sheets: the letterbox in their first frames (`D_8011D3F0`, below);
+- the Mido and shop run's trace: the forced text by the shop now holds Link;
+- the Deku Tree run's trace: the Deku Tree's intro;
+- the new run's trace is a new case;
+- 83 of 83.
+
+### What was built
+
+1. **The scripts in the pack** ([ADR 0022](adr/0022-cutscenes.md)), pack format 11:
+   - every script is the ROM's bytes, big-endian, keyed `cutscene/<file>/<symbol>`
+     (`oot_game::cutscene::CutsceneScript`);
+   - the 73 scene scripts the XMLs name, each walked from its offset to `CS_END`;
+   - the 27 `CutsceneData` arrays of the actors' C: `oot_import::cutscene` builds each array's
+     words with `z64cutscene_commands.h`'s own macros, finds them in the overlay's file in the
+     ROM, and stores the ROM's bytes. All 27 are found;
+   - `sEntranceCutsceneTable` (34 rows) and every script's key (`table/cutscenes`);
+   - a scene layer's `SCENE_CMD_ID_CUTSCENE_DATA` (`LayerData.cutscene`);
+   - `ootx cutscene [name]` lists the scripts and the table, or prints a script's commands.
+2. **`z_demo.c`** (`oot_game::cutscene`), onto the play state, with the C's names:
+   - the state machine: `func_80064558` and `func_800645A0` after `Actor_UpdateAll`, their state
+     tables, `func_8006472C`'s fade (`unk_0C`), `func_80068ECC`'s start (with the cutscene
+     camera, `D_8015FCC8`), `func_80068C3C`, `func_80068D84`, `func_80068DC0`'s end;
+   - `Cutscene_ProcessCommands`, command by command: the cues (`linkAction`, `npcActions`, by
+     the C's type lists), the camera lists (1, 2, 5, 6) and single points (7, 8), the text
+     command (the frame held at its end while a box is up, a choice's branches), the misc
+     actions, the lighting, the time, the music, the rumble, the transition fill and the
+     terminator (every destination);
+   - `Cutscene_HandleEntranceTriggers`, `Cutscene_HandleConditionalTriggers`,
+     `Cutscene_SetSegment`, `gSaveContext.cutsceneTrigger`, `nextCutsceneIndex`;
+   - `Play_Init`: `Environment_Init`'s `D_8015FCC8 = 1` (`z_kankyo.c:419`, found by scanning the
+     ROM for stores to it: the decomp only names the debug D-pad's), the scene layer's script,
+     the entrance triggers;
+   - `Play_InCsMode`; `KaleidoSetup_Update` now checks it; `func_8002DF54` and `func_8002DF38`;
+     `Flags_SetEnv` and its kin (`play->envFlags`);
+   - the file's statics (`DemoStatics`) carry over from one play state to the next.
+3. **Cameras:**
+   - three sub camera slots, `activeCamId`, and `Play_CreateSubCamera`,
+     `Play_ChangeCameraStatus`, `Play_ClearCamera`, `Play_ClearAllSubCameras`,
+     `Play_CameraChangeSetting`, `Play_CameraSetAtEye`, `Play_CameraSetFov`, `Play_CopyCamera`;
+   - every camera updates each frame, the active one last; the view, the input direction and
+     the render state follow the active camera;
+   - `Camera_Update`'s statuses (cut, waiting, active) and its interface branches;
+   - `z_camera.c`'s shared state as `CameraGlobals` (`sCameraInterfaceFlags`,
+     `sCameraInterfaceAlpha`, `D_8011D3F0`, `sOOBTimer`, `sNextUID`);
+   - `Camera_Demo1` (`CAM_SET_CS_0`), the spline (`func_800BB0A0`, `func_800BB2B4`),
+     `Camera_SetCSParams`, `Camera_ResetAnim`, `Camera_SetParam`, `Camera_Copy`.
+4. **Player's cutscene modes** (`oot_actors::player`):
+   - `Player_UpdateCommon`'s cutscene block: a script puts Link in mode 6 (a cue with a mode in
+     `D_808547C4`) or 0x31 (held);
+   - the action `func_80852E14` (`Action::Cutscene`), reached through `func_8083B998`
+     (interrupt 0, new) and `func_8083B040` (interrupt 13, and the actions that check it) into
+     `func_8083ADD4`; also at a talk's end (`func_8084B530`);
+   - `func_80852B4C`'s dispatch of `D_80854B18` and `D_80854E50` for modes 1, 3, 4, 6, 7, 8 and
+     0x31: `func_808515A4`, `func_808514C0`, `func_80851688`, `func_80851998`, `func_808519C0`
+     (`func_80845964` with a cue), `func_80852C50`, `func_808529D0`, `func_80852A54`,
+     `func_80852944`, `func_8083C148`, `func_8083B010`;
+   - `PlayerIface::set_cs_mode`, so other actors' `func_8002DF54` reach Player.
+5. **The actors:**
+   - `Bg_Treemouth` starts its scripts where the C does: `D_808BCE20` on the first approach,
+     `D_808BD2A0` when Z-targeted afterwards, `D_808BD520` or `D_808BD790` by the answer (with
+     `D_8015FCC0` to `C4` reset);
+   - `En_Wonder_Talk2`'s forced texts hold Link (mode 8) until they're read (mode 7).
+6. **The message box:** its cutscene checks (`csCtx.state == 0` for the do-action's "Return",
+   and for the interface's return at a box's close with the main camera active).
+7. **The runs:**
+   - `Route::NewSaveDekuTree` (the sandbox's `--script new-save-deku-tree`): the Mido and shop
+     run, then east through the passage into the meadow, the talk (`Task::TreeTalk`: A through
+     the texts, yes), over the open jaw and in;
+   - the walks no longer stop for a forced text: Link is held, and the walk presses A;
+   - the sandbox's trace records the cutscene (script, state, frame, Player's mode, the active
+     camera) on the frames one runs.
+8. **Run scripts:** `game-deku-tree-talk.bat`, `test-cutscenes.bat`,
+   `sandbox-new-save-deku-tree.bat`; `game-new-save.bat`'s notes go on to the Deku Tree.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 244 passed, 1 ignored |
+| The scripts (`cutscene` test `the_deku_trees_scripts_are_the_c_s`) | `D_808BCE20` from `ovl_Bg_Treemouth`: `CS_BEGIN_CUTSCENE(12, 3000)`; its commands in order (0x15, the player cues, two eye lists, two at lists, the texts, the misc, 46, 62, the BGM and its fade), the walk ending at the script's end; list 46 fills `npcActions[0]`, 62 (`CS_CMD_SET_ACTOR_ACTION_9`) `npcActions[8]`. Cue 2: frames 0..33, (2614, 0, -451) to (2808, 0, -559), `rot` (0x54B2, 0, 0) (the macro's fourth argument is `rot.x`), `normal` the float bits of 5.878788. The first eye list: five points, the last `CS_CMD_STOP`; the at list's third point waits 1000. The other three scripts walk to their ends. `sEntranceCutsceneTable`: 34 rows; `ENTR_YDAN_0`, either age, `EVENTCHKINF_A8`, `gDekuTreeIntroCs` from `ydan_scene` (`CS_BEGIN_CUTSCENE(4, 1270)`) |
+| The spline (`the_b_spline_through_four_points`) | At u 0, (p0 + 4 p1 + p2) / 6; 1/30 of a key a frame with both next points at 30; the next key after 30 steps (31 for the `f32` sum); done when three points are left |
+| The first talk (`the_deku_trees_first_talk_and_yes_open_his_mouth`) | From `ENTR_SPOT04_1`: `EVENTCHKINF_0C`, `D_808BCE20`, `cutsceneIndex` 0xFFFD, `CS_STATE_SKIPPABLE_INIT`; sub camera 1 active on `CAM_SET_CS_0` at the script's eye (2753, 46, -354), the main camera waiting. Link in mode 6, moved to cue 2's start (2614, -1, -451: more than 50 away, a child in Kokiri Forest 1 lower), then cue 4. Text 0x107D at frame 41; 0x1015, then 0x1016's question with the script held at 169. Yes: `D_808BD520`, `EVENTCHKINF_05`, the same sub camera at (3740, -141, -530); the mouth's cue 3 read at frame 22, opening by 0.01 a frame; 0x1017; the end at frame 100, then 10 frames of `unk_0C` to idle, the main camera active, the sub camera cleared, Link standing (mode 7, then 0); the mouth open to 1 |
+| No (`no_says_0x1018_and_the_tree_waits_to_be_targeted`) | `D_808BD790`, no `EVENTCHKINF_05`, the mouth back to `func_808BC8B8`, 0x1018; afterwards no script until he's Z-targeted |
+| The Deku Tree's intro (`entering_the_deku_tree_the_first_time_plays_its_intro`) | `Play_Init` at `ENTR_YDAN_0`: `EVENTCHKINF_A8`, `gDekuTreeIntroCs`, `cutsceneTrigger` 2, no title card; the first frame starts it; Link held (mode 0x31, `PLAYER_STATE1_29`) instead of walking in; the end at frame 165; mode 0x31 ends by itself. With `EVENTCHKINF_A8` set, no intro |
+| A forced text (`a_forced_text_holds_link_until_it_is_read`) | By the shop's door: text 0x218 opens, Link in mode 8 (`Action::Cutscene`, `PLAYER_STATE1_29`); the stick moves him less than 1 in 5 frames; read, mode 7 and free |
+| The exit run (`playthrough` test `a_new_save_into_the_deku_tree`) | 7576 frames, no preset. As the Mido and shop run to past Mido (5731), then the talk over at 7056 (texts 0x107D, 0x1015, 0x1016, 0x1017), at the open jaw 7328 (`unk_168` 1, the mouth at (3869, -263, -1163)), into the mouth 7367, the Deku Tree settled 7576 after its intro. The scripts in order: `D_808BCE20`, `D_808BD520`, `gDekuTreeIntroCs`, the sub camera active during them |
+| The other runs | The Deku Tree run (on its preset): the intro holds Link in the Deku Tree, 2028 frames (1873). The Mido and shop run: the forced text holds Link for 83 frames, and the run ends on the same frame, 5731. The Kokiri Sword run: unchanged |
+| `D_8011D3F0` (`zcamera`, `talk`) | The main camera's first three updates after `Camera_Init` hold the interface at 0x3200 (the letterbox's target 32, alpha type 2); a transition's 0xF200 keeps alpha type 2 through the fade-in, so the HUD comes back after it. The tests that started in those frames now wait them out |
+| Golden traces and renders | 21 sheets, `mido_shop` and `playthrough` re-recorded (golden/README.md: the letterbox in the sheets' first frames; the hold at the shop; the Deku Tree's intro), new case `new_save_deku_tree` (the same bytes over two runs): 83 of 83 |
+| Import | 19.1 s; 52.0 MB; format version 11 (73 scene scripts, 27 overlay scripts), into `out/data08` |
+| The windows | Not yet played by hand: `scripts\run\game-deku-tree-talk.bat`, and the whole way from `game-new-save.bat`. Headless screenshots checked: the script's shots letterboxed, the tree's text as his mouth opens, the Deku Tree's intro looking up the trunk |
+
+### Decisions
+
+- **[ADR 0022](adr/0022-cutscenes.md):**
+  - the scripts are the ROM's bytes, walked as `Cutscene_ProcessCommands` walks them, with
+    offsets for its pointers;
+  - the overlays' scripts are built from their C's macros only to find them in the ROM;
+  - `z_demo.c` is ported onto the play state, its statics carried across `Play_Init`;
+  - sub cameras, and `z_camera.c`'s shared state as `CameraGlobals`;
+  - Player's cutscene modes as one action, the modes Kokiri Forest uses ported.
+- **`D_8015FCC8` is 1 in play.** The decomp at this commit names it only where the debug D-pad
+  replays set or clear it; a scan of the ROM's code for every store to its address found
+  `Environment_Init`'s, which sets it on every `Play_Init`. Without it, no script would move the
+  camera.
+- **`D_8011D3F0` is ported,** though it changes every scene's first frames: `Camera_Init` sets it,
+  and the letterbox and the HUD's fade at a scene's start are the C's.
+- **A cue's facing is `rot.y`, which the Deku Tree's cues leave 0.** `CS_PLAYER_ACTION`'s fourth
+  argument lands in `rot.x`; `func_808529D0` reads `rot.y`. Link is put at cue 2's start facing
+  0 and turns towards its end as he walks, as in the C.
+- **The run answers yes with A on the first choice,** as a player keeps the cursor. The test of
+  no picks the second with the stick.
+- **The Deku Tree run keeps its preset.** It's GAME-02's exit test; the new run is the one without.
+
+### Known gaps
+
+- **Cutscene layers:** the pack holds scene layers 0 to 3, so a `cutsceneIndex` of 0xFFF0 and up
+  (a new file's 0xFFF1 in Link's house, Navi's wake-up; the layers terminators ask for) loads the
+  normal layer, logged. A new file here enters with 0 (GAME-03 milestone 5).
+- **Player's cutscene modes:** only 1, 3, 4, 6, 7, 8 and 0x31; the other modes' starts and
+  updates are logged. Swimming in a cutscene (`func_80851368`, `func_808513BC`) isn't ported.
+- **Not ported, logged:** the scripts' lights, weather, fog, skybox changes, quakes, the title
+  card (the Deku Tree's intro has one), the screen tint, the Sun's Song, the ocarina texts
+  (`func_8010BD58`), `linkAgeOnLoad`, the music and the rumble.
+- **Navi's cues** (`npcActions[8]` in the first talk) have no actor to read them (milestone 5).
+- **The one-point cutscenes** (the crawl's 9601 and 9602, `OnePointCutscene_Init`, the camera's
+  parent and child chain, `Camera_Finish`'s timer): not ported; BACKLOG #3 stays.
+- **`func_8083B998`'s C-Up** into first person isn't ported (noted when pressed).
+- **The debug D-pad replays** (D-Left, D-Up) only work in a cutscene layer, which never loads.
+- **Carried over:** Navi, audio, the effects, the pause menu.
 
 ## Visual polish, deferred
 
 Side-by-side comparisons against Project64 on the same ROM, for when the look is polished. They
 don't block milestones: behaviour is checked against the C by the tests.
 
-1. **The Kokiri shop and Mido** (`scripts\run\game-shop.bat`):
+1. **The Deku Tree's talk** (`scripts\run\game-deku-tree-talk.bat`): the script's shots and the
+   spline's pace, Link's walk in and where he stops, the letterbox's size, the mouth's opening,
+   the Deku Tree's intro (its title card isn't drawn), and the letterbox at every scene's start.
+2. **The Kokiri shop and Mido** (`scripts\run\game-shop.bat`):
    - the shopkeeper behind his counter, his blinks and his idle animation;
    - the browsing camera's turn to each shelf, the cursor's size and pulse, the stick prompts'
      places and pulses (their bottom rows are known to differ);
    - an item's spin, and its move off the shelf towards Link;
    - Mido's gestures through his texts, his walk aside, and his fade by distance.
-2. **The crawlspace and the training area** (`scripts\run\game-new-save.bat`):
+3. **The crawlspace and the training area** (`scripts\run\game-new-save.bat`):
    - the crawlspace's view (`Camera_Subj4`): the ease-in, the bob and sway, Link hidden;
    - `tunnel_start` and `tunnel_end`, and the camera handing over on the way out (the one-point
      cutscenes aren't ported);
    - the boulder's roll and size; Link's stagger, knockdown and getting up; the hit's red flash
      (known: not drawn).
-3. **The sword chest** (`scripts\run\game-sword-chest.bat`, against a new file):
+4. **The sword chest** (`scripts\run\game-sword-chest.bat`, against a new file):
    - the slow opening: Link's animation, the lid, the camera's move (`CAM_SET_SLOW_CHEST_CS`);
    - the turn to face the camera (`CAM_SET_TURN_AROUND`) and the sword held up: its size, its
      place over his head, when it appears;
    - text 0xA4: the icon's place and size, the quick text of the first line, the two boxes;
    - Link's stance as the text closes, and the push-back from the chest;
    - the missing light over the chest (known: `Demo_Tre_Lgt`).
-4. **The HUD's B button:** empty on a new file, then the sword's icon once it's equipped. (The
+5. **The HUD's B button:** empty on a new file, then the sword's icon once it's equipped. (The
    C buttons' icons can't be seen yet: the HUD only runs after `Play_Init`, whose new file has
    nothing on C.)
-5. **The placed recovery hearts** in Kokiri Forest: their model, size and the texture's
+6. **The placed recovery hearts** in Kokiri Forest: their model, size and the texture's
    scroll.
-6. **Link's model:** the empty sheath on a new file, the sword in it after equipping.
-7. **From GAME-02, still open:**
+7. **Link's model:** the empty sheath on a new file, the sword in it after equipping.
+8. **From GAME-02, still open:**
    - the message box on the sign (0x031F) and on the Kokiri child (0x100A): the typing speed,
      the box's position, the glyphs' edges, the end icon's flashing;
    - the talk camera on the sign and the child (KEEP3), and in Link's house (KEEP0);
@@ -571,13 +715,12 @@ don't block milestones: behaviour is checked against the C by the tests.
 
 ## Recommended next step
 
-**GAME-03 milestone 4: cutscenes, first part** (`z_demo.c`), scoped in [ROADMAP.md](ROADMAP.md)
-(Phase 4):
-- import the cutscene scripts; `csCtx`'s commands, cues and text;
-- `Cutscene_HandleEntranceTriggers`;
-- Player's cutscene modes (`func_8002DF54`), which also hold Link for the forced texts (the one
-  by the shop included).
+**GAME-03 milestone 5: Navi** ([ROADMAP.md](ROADMAP.md), Phase 4):
+- `En_Elf` as Link's fairy (following, the target reticle's `naviRefPos`, C-Up and her text),
+  and the Kokiri children's fairies;
+- the game's opening: the pack's cutscene layers (4 and up) and the new file's entrance on
+  `cutsceneIndex` 0xFFF1, Navi waking Link in his house;
+- Navi's cues in the Deku Tree's talk (`npcActions[8]`).
 
-**Exit:** talking to the Deku Tree plays his cutscenes and opens his mouth
-(`EVENTCHKINF_05`). The run from a new save then goes on from past Mido into the Deku Tree, the
-game's way, without the preset.
+**Exit:** a new save starts as the game does, and C-Up talks to Navi. With it, the phase's exit:
+the headless run from a new save into the Deku Tree, the game's way from its very start.

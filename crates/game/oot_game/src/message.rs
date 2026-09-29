@@ -320,6 +320,9 @@ pub struct MsgFrame<'a> {
     /// `Actor_GetScreenPos`'s y of Player and of `talkActor` (when there is one).
     pub player_screen_y: i16,
     pub talk_actor_screen_y: Option<i16>,
+    /// `play->csCtx.state == 0`, `play->activeCamId == CAM_ID_MAIN`.
+    pub cs_idle: bool,
+    pub active_cam_main: bool,
 }
 
 /// `MessageContext`, with the file's statics.
@@ -847,8 +850,9 @@ impl MessageContext {
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         if self.textbox_end_type == TEXTBOX_ENDTYPE_DEFAULT {
                             self.font.load_message_box_icon(TEXTBOX_ICON_SQUARE);
-                            // csCtx.state == 0.
-                            f.iface.set_do_action(DO_ACTION_RETURN);
+                            if f.cs_idle {
+                                f.iface.set_do_action(DO_ACTION_RETURN);
+                            }
                         }
                     }
                     return;
@@ -866,7 +870,9 @@ impl MessageContext {
                         i += 1;
                         self.state_timer = self.decoded(i as usize);
                         self.font.load_message_box_icon(TEXTBOX_ICON_SQUARE);
-                        f.iface.set_do_action(DO_ACTION_RETURN);
+                        if f.cs_idle {
+                            f.iface.set_do_action(DO_ACTION_RETURN);
+                        }
                     }
                     return;
                 }
@@ -1429,9 +1435,9 @@ impl MessageContext {
                 if matches!(self.text_id, 0x301F | 0xA | 0xC | 0xCF | 0x21C | 9 | 0x4078 | 0x2015 | 0x3040) {
                     f.save.unk_13ee = 0x32;
                 }
-                // csCtx.state == 0, activeCamId == CAM_ID_MAIN, cutsceneIndex < 0xFFF0.
+                // Outside a script, with the main camera active: the interface comes back.
                 let song_choice = (0x88D..0x893).contains(&self.text_id) && self.choice_index == 0;
-                if !matches!(self.text_id, 0x2061 | 0x2025 | 0x208C | 0x3055) && !song_choice {
+                if f.cs_idle && !matches!(self.text_id, 0x2061 | 0x2025 | 0x208C | 0x3055) && !song_choice && f.save.cutscene_index < 0xFFF0 && f.active_cam_main {
                     if matches!(f.save.unk_13ee, 0 | 1 | 2) {
                         f.save.unk_13ee = 0x32;
                     }

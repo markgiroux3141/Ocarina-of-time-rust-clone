@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 10;
+pub const FORMAT_VERSION: u32 = 11;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -63,6 +63,8 @@ pub mod keys {
     pub const INTERFACE: &str = "table/interface";
     /// `item::ItemTables`: `sGetItemTable` and `sDrawItemTable`.
     pub const ITEMS: &str = "table/items";
+    /// `cutscene::CutsceneTables`: `sEntranceCutsceneTable` and every script's key.
+    pub const CUTSCENES: &str = "table/cutscenes";
 
     /// A texture from the decomp's XMLs (`pack::Texture`).
     pub fn texture(file: &str, symbol: &str) -> String {
@@ -105,6 +107,11 @@ pub mod keys {
     /// `player_lib::LinkFaces`.
     pub fn link_faces(age: Age) -> String {
         format!("player/{}/faces", age.name())
+    }
+    /// `cutscene::CutsceneScript`: a scene's or an overlay's script, e.g.
+    /// `cutscene/ovl_Bg_Treemouth/D_808BCE20` (docs/adr/0022-cutscenes.md).
+    pub fn cutscene(file: &str, symbol: &str) -> String {
+        format!("cutscene/{file}/{symbol}")
     }
     /// An actor's baked mesh (`MeshBake`), e.g. `bake/En_Ko/km1_opa`.
     pub fn bake(name: &str) -> String {
@@ -406,5 +413,14 @@ impl GamePack {
 
     pub fn link_faces(&self, age: Age) -> Result<LinkFaces> {
         self.assets.get(&keys::link_faces(age))
+    }
+
+    pub fn cutscene_tables(&self) -> Result<crate::cutscene::CutsceneTables> {
+        self.assets.get(keys::CUTSCENES)
+    }
+
+    /// A cutscene script by its pack key.
+    pub fn cutscene(&self, key: &str) -> Result<crate::cutscene::CutsceneScript> {
+        self.assets.get(key)
     }
 }

@@ -133,41 +133,6 @@ fn the_mouth_is_closed_on_a_new_save_and_open_with_eventchkinf_05() {
 }
 
 #[test]
-fn func_808bc9ec_sets_eventchkinf_05_when_the_cutscene_starts_on_yes() {
-    use oot_game::cutscene::{CS_STATE_SKIPPABLE_EXEC, CS_STATE_UNSKIPPABLE_INIT, CsCmdActorAction};
-    let Some(a) = assets() else { return };
-    let Some(mut w) = enter(&a, "ENTR_SPOT04_1", None) else {
-        return;
-    };
-    let tick = |w: &mut PlayState| w.tick_with(scripted_input(PadState::default(), PadState::default()));
-    for _ in 0..10 {
-        tick(&mut w);
-    }
-    assert_eq!(treemouth(&w).unwrap().action, bg_treemouth::Action::WaitCsStart);
-    // Nothing runs cutscenes: it waits.
-    for _ in 0..10 {
-        tick(&mut w);
-    }
-    assert_eq!(treemouth(&w).unwrap().action, bg_treemouth::Action::WaitCsStart);
-    // By hand, as z_demo.c would: the cutscene starting, with the first choice answered.
-    w.cs_ctx.state = CS_STATE_UNSKIPPABLE_INIT;
-    w.msg_ctx.choice_index = 0;
-    tick(&mut w);
-    assert!(w.save.get_event_chk_inf(EVENTCHKINF_05));
-    assert_eq!((w.cs_ctx.state, w.cs_ctx.frames, w.cs_ctx.unk_18), (CS_STATE_SKIPPABLE_EXEC, 0, 0xFFFF));
-    assert_eq!(treemouth(&w).unwrap().action, bg_treemouth::Action::WaitCsCue);
-    // The script's cue 3 for the mouth: func_808BC6F8 opens it by 0.01 a frame.
-    w.cs_ctx.npc_actions[0] = Some(CsCmdActorAction { action: 3, ..Default::default() });
-    tick(&mut w);
-    assert_eq!(treemouth(&w).unwrap().action, bg_treemouth::Action::Open);
-    for _ in 0..10 {
-        tick(&mut w);
-    }
-    let m = treemouth(&w).unwrap();
-    assert!((m.unk_168 - 0.10).abs() < 1e-5, "{}", m.unk_168);
-}
-
-#[test]
 fn kokiri_forest_to_the_deku_tree() {
     let Some(a) = assets() else { return };
     let Some(mut w) = enter(&a, Playthrough::ENTRANCE, Some(Playthrough::PRESET)) else {
@@ -458,6 +423,73 @@ fn a_new_save_to_mido_and_the_shop() {
     for (home, pos) in &mido_block {
         assert_eq!(*home, Vec3::new(1522.0, 0.0, 105.0));
         assert!((Vec3::new(pos.x - home.x, 0.0, pos.z - home.z).length() - 60.0).abs() < 0.01, "{pos}");
+    }
+}
+
+/// GAME-03 milestone 4's exit test: the Mido and shop run, then on into the meadow, where the
+/// Deku Tree's first talk (`D_808BCE20`) starts by itself; yes (`D_808BD520`) opens his mouth
+/// (`EVENTCHKINF_05`), and Link walks in to `ENTR_YDAN_0`, whose intro (`gDekuTreeIntroCs`)
+/// plays the first time. No preset.
+#[test]
+fn a_new_save_into_the_deku_tree() {
+    use oot_actors::playthrough::Route;
+    use oot_game::cutscene::CS_STATE_IDLE;
+    let Some(a) = assets() else { return };
+    let route = Route::NewSaveDekuTree;
+    assert_eq!(route.preset(), None);
+    let Some(mut w) = enter(&a, route.entrance(), route.preset()) else {
+        return;
+    };
+    let mut run = Playthrough::for_route(route);
+    let mut prev = PadState::default();
+    let mut seen = Vec::new();
+    // The scripts played, in order, and the cameras they were seen from.
+    let mut scripts: Vec<String> = Vec::new();
+    let mut sub_camera = false;
+    loop {
+        let pad = run.next(&w);
+        if let Some(step) = run.take_done() {
+            seen.push(step);
+            match step {
+                Step::TreeTalk => {
+                    assert!(w.save.get_event_chk_inf(EVENTCHKINF_0C) && w.save.get_event_chk_inf(EVENTCHKINF_05));
+                    assert_eq!((w.cs_ctx.state, w.active_cam_id, w.player().cs_mode), (CS_STATE_IDLE, 0, 0));
+                    assert_eq!(treemouth(&w).unwrap().action, bg_treemouth::Action::Open);
+                }
+                Step::Tree => {
+                    // The jaw all the way open by then, held by EVENTCHKINF_05.
+                    let m = treemouth(&w).unwrap();
+                    assert_eq!(m.unk_168, 1.0);
+                    assert_eq!(m.actor.world_pos, Vec3::new(4029.0 - 160.0, 136.0 - 399.0, -1255.0 + 92.0));
+                }
+                Step::Mouth => assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_YDAN_0").unwrap()),
+                Step::DekuTree => {
+                    assert_eq!(w.scene_id, SCENE_YDAN);
+                    // Cutscene_HandleEntranceTriggers set EVENTCHKINF_A8; the intro is over.
+                    assert!(w.save.get_event_chk_inf(0xA8));
+                    assert_eq!((w.cs_ctx.state, w.player().action), (CS_STATE_IDLE, Action::StandingStill));
+                }
+                _ => {}
+            }
+        }
+        let Some(pad) = pad else { break };
+        w.tick_with(scripted_input(prev, pad));
+        prev = pad;
+        if let Some(s) = &w.cs_ctx.segment
+            && w.cs_ctx.state != CS_STATE_IDLE
+            && scripts.last() != Some(&s.name)
+        {
+            scripts.push(s.name.clone());
+        }
+        sub_camera |= w.cs_ctx.state != CS_STATE_IDLE && w.active_cam_id != 0;
+    }
+    assert_eq!(run.failure, None, "the run stopped at {}", run.at());
+    let tail = [Step::MidoAside, Step::PastMido, Step::TreeTalk, Step::Tree, Step::Mouth, Step::DekuTree];
+    assert_eq!(&seen[seen.len() - tail.len()..], tail);
+    assert_eq!(scripts, ["D_808BCE20", "D_808BD520", "gDekuTreeIntroCs"]);
+    assert!(sub_camera);
+    for t in [0x107D, 0x1015, 0x1016, 0x1017] {
+        assert!(run.texts.contains(&t), "text {t:#x}: {:x?}", run.texts);
     }
 }
 

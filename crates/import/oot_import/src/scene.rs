@@ -30,6 +30,7 @@ pub const CMD_SKYBOX_DISABLES: u8 = 0x12;
 pub const CMD_EXIT_LIST: u8 = 0x13;
 pub const CMD_END: u8 = 0x14;
 pub const CMD_ECHO_SETTINGS: u8 = 0x16;
+pub const CMD_CUTSCENE_DATA: u8 = 0x17;
 pub const CMD_ALTERNATE_HEADER_LIST: u8 = 0x18;
 pub const CMD_MISC_SETTINGS: u8 = 0x19;
 /// Scene files are mapped to segment 2 while loaded.
@@ -154,6 +155,9 @@ pub struct Scene {
     pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType` (`R_SCENE_CAM_TYPE`, `SCENE_CAM_TYPE_*`).
     pub scene_cam_type: u8,
+    /// `SCENE_CMD_ID_CUTSCENE_DATA`: the offset of the script `Scene_CommandCutsceneData` puts in
+    /// `play->csCtx.segment`.
+    pub cutscene: Option<usize>,
 }
 
 /// Every offset in a scene file that a header command points at, across all its headers (the
@@ -336,7 +340,9 @@ impl Scene {
             }
         }
         let collision = CollisionHeader::parse_with_cams(&file, SCENE_SEGMENT, local(col.data2), min_cams)?;
+        let cutscene = find(CMD_CUTSCENE_DATA).filter(|c| c.data2 >> 24 == SCENE_SEGMENT as u32).map(|c| local(c.data2));
         Ok(Scene {
+            cutscene,
             entrances,
             exits,
             transition_actors,

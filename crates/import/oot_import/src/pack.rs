@@ -248,7 +248,31 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
     w.put(keys::ITEM_DROPS, &crate::tables::load_item_drops(decomp).context("the item drop tables")?)?;
     w.put(keys::INTERFACE, &crate::tables::load_interface(decomp, &st).context("the interface tables")?)?;
     w.put(keys::ITEMS, &crate::tables::load_items(decomp).context("the item tables")?)?;
+    import_cutscenes(p, &st, w, tally).context("the cutscenes")?;
     Ok(rules)
+}
+
+/// The overlays' cutscene scripts, and `CutsceneTables`: every script's key (the scene ones
+/// are written with their files' other symbols) and `sEntranceCutsceneTable`.
+fn import_cutscenes(p: &Project, st: &SceneTables, w: &PackWriter, tally: &mut Tally) -> Result<()> {
+    let mut scripts = Vec::new();
+    for f in &p.symbols.files {
+        if matches!(f.segment, Some(2)) && p.rom.index_of(&f.name).is_some() {
+            for s in f.of_kind("Cutscene") {
+                scripts.push((s.name.clone(), keys::cutscene(&f.name, &s.name)));
+            }
+        }
+    }
+    for s in crate::cutscene::overlay_scripts(&p.config.decomp, &p.rom)? {
+        let key = keys::cutscene(&s.file, &s.name);
+        anyhow::ensure!(!scripts.iter().any(|(n, _)| *n == s.name), "two scripts named {}", s.name);
+        scripts.push((s.name.clone(), key.clone()));
+        w.put(&key, &s)?;
+        tally.ok("OverlayCutscene");
+    }
+    let entrance_cutscenes = crate::cutscene::entrance_cutscenes(&p.config.decomp, &st.entrances, |n| scripts.iter().find(|(s, _)| s == n).map(|(_, k)| k.clone()))?;
+    w.put(keys::CUTSCENES, &oot_game::cutscene::CutsceneTables { entrance_cutscenes, scripts })?;
+    Ok(())
 }
 
 /// Every texture, collision header, skeleton, animation and standalone display list of one
@@ -377,6 +401,21 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         }
     }
 
+    // A scene's cutscene scripts, each through its CS_END (docs/adr/0022-cutscenes.md).
+    for s in f.of_kind("Cutscene") {
+        if !is_scene {
+            t.skip("Cutscene", "not in a scene file");
+            continue;
+        }
+        match crate::cutscene::scene_script(&data, s.offset as usize) {
+            Ok(bytes) => {
+                w.put(&keys::cutscene(&f.name, &s.name), &oot_game::cutscene::CutsceneScript { file: f.name.clone(), name: s.name.clone(), data: bytes })?;
+                t.ok("Cutscene");
+            }
+            Err(e) => anyhow::bail!("{} / {}: {e:#}", f.name, s.name),
+        }
+    }
+
     for d in f.of_kind("DList") {
         if is_scene {
             t.skip("DList", "scene or room display list (in the room meshes)");
@@ -403,10 +442,10 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
     // Kinds the pack doesn't hold (yet), and the ones that live inside other records.
     for s in &f.symbols {
         let why = match s.kind.as_str() {
-            "Texture" | "Collision" | "Skeleton" | "Animation" | "DList" | "PlayerAnimation" | "Scene" | "Room" => continue,
+            "Texture" | "Collision" | "Skeleton" | "Animation" | "DList" | "PlayerAnimation" | "Scene" | "Room" | "Cutscene" => continue,
             "Limb" | "LimbTable" => "stored in its skeleton",
             "PlayerAnimationData" => "stored in its PlayerAnimation",
-            "Cutscene" | "Path" => "not used by the game yet (milestone 4+)",
+            "Path" => "in the scene's layers (LayerData.paths)",
             _ => "not used by the game",
         };
         t.skip(&s.kind, why);
@@ -616,6 +655,14 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
         transition_actors: sd.scene.transition_actors.clone(),
         paths: sd.scene.paths.clone(),
         scene_cam_type: sd.scene.scene_cam_type,
+        // The script at the command's offset is the XML's Cutscene symbol there.
+        cutscene: match sd.scene.cutscene {
+            Some(off) => {
+                let sym = p.symbols.file(file).and_then(|f| f.of_kind("Cutscene").find(|s| s.offset as usize == off).map(|s| s.name.clone()));
+                Some(keys::cutscene(file, &sym.with_context(|| format!("{file} layer {layer}: no Cutscene symbol at {off:#x}"))?))
+            }
+            None => None,
+        },
         rooms: (0..rooms.len()).map(|ri| keys::room(file, layer, ri)).collect(),
         bake_day_time: state.day_time,
         notes: notes.iter().cloned().collect(),

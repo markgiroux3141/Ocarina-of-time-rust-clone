@@ -122,6 +122,8 @@ pub const CAM_SET_DOOR0: i16 = 0x1C;
 pub const CAM_SET_DOORC: i16 = 0x1D;
 pub const CAM_SET_CRAWLSPACE: i16 = 0x1E;
 pub const CAM_SET_FREE0: i16 = 0x21;
+/// `CAM_SET_CS_0` ("DEMO0"): a cutscene script's camera (`Camera_Demo1`).
+pub const CAM_SET_CS_0: i16 = 0x25;
 /// `CAM_SET_SLOW_CHEST_CS` ("ITEM0"): a big chest opening on a major item.
 pub const CAM_SET_SLOW_CHEST_CS: i16 = 0x28;
 pub const CAM_SET_CS_ATTENTION: i16 = 0x2B;
@@ -151,7 +153,136 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_KEEP4",
     "CAM_FUNC_DEMO3",
     "CAM_FUNC_SUBJ4",
+    "CAM_FUNC_DEMO1",
 ];
+
+// CAM_STAT_* (z64camera.h).
+pub const CAM_STAT_CUT: i16 = 0;
+pub const CAM_STAT_WAIT: i16 = 1;
+pub const CAM_STAT_UNK3: i16 = 3;
+pub const CAM_STAT_ACTIVE: i16 = 7;
+pub const CAM_STAT_UNK100: i16 = 0x100;
+
+// Camera ids (z64camera.h).
+pub const NUM_CAMS: usize = 4;
+pub const CAM_ID_MAIN: i16 = 0;
+pub const CAM_ID_SUB_FIRST: i16 = 1;
+pub const CAM_ID_NONE: i16 = -1;
+
+/// `z_camera.c`'s file-scope state that every camera shares: what `Camera_Init` resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CameraGlobals {
+    /// `sCameraInterfaceFlags`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits the
+    /// last mode function asked for.
+    pub interface_flags: i16,
+    /// `sCameraInterfaceAlpha`: the alpha type last asked for.
+    pub interface_alpha: u16,
+    /// `D_8011D3F0`: after a `Camera_Init`, the main camera's first three active updates hold the
+    /// interface at 0x3200 (the letterbox's target 32, alpha type 2).
+    pub d_8011d3f0: i16,
+    /// `Camera_Update`'s `sOOBTimer`: frames the camera's player has been over no floor.
+    pub oob_timer: u32,
+    /// `sNextUID`.
+    pub next_uid: i16,
+}
+
+impl CameraGlobals {
+    /// As `Camera_Init` then `Camera_InitPlayerSettings` leave them for the main camera.
+    pub fn main_init() -> CameraGlobals {
+        let mut g = CameraGlobals { interface_flags: 0, interface_alpha: 0, d_8011d3f0: 0, oob_timer: 0, next_uid: 0 };
+        g.camera_init();
+        // Camera_InitPlayerSettings, for the main camera.
+        g.interface_flags = 0xB200u16 as i16;
+        g
+    }
+
+    /// `Camera_Init`'s writes to the shared state (`sCameraLetterboxSize` 32 isn't kept: only
+    /// `Camera_UpdateInterface` sets it before reading it). Returns the new camera's uid
+    /// (`sNextUID`, skipping 0).
+    pub fn camera_init(&mut self) -> i16 {
+        let mut uid = self.next_uid;
+        self.next_uid = self.next_uid.wrapping_add(1);
+        if uid == 0 {
+            uid = self.next_uid;
+            self.next_uid = self.next_uid.wrapping_add(1);
+        }
+        self.interface_alpha = 0;
+        self.interface_flags = 0xFF00u16 as i16;
+        self.d_8011d3f0 = 3;
+        uid
+    }
+}
+
+/// `func_800BB0A0` (`code_800BB0A0.c`): the cubic B-spline through four points at `u`: position,
+/// roll and view angle.
+fn func_800bb0a0(u: f32, p: [[f32; 5]; 4]) -> (Vec3, f32, f32) {
+    let u = u.min(1.0);
+    let coeff = [(1.0 - u) * (1.0 - u) * (1.0 - u) / 6.0, u * u * u / 2.0 - u * u + 2.0 / 3.0, -u * u * u / 2.0 + u * u / 2.0 + u / 2.0 + 1.0 / 6.0, u * u * u / 6.0];
+    let c = |k: usize| coeff[0] * p[0][k] + coeff[1] * p[1][k] + coeff[2] * p[2][k] + coeff[3] * p[3][k];
+    (Vec3::new(c(0), c(1), c(2)), c(3), c(4))
+}
+
+/// `func_800BB2B4` (`code_800BB0A0.c`): the point on the spline of `points` at `keyframe` +
+/// `cur_frame`, then the step to the next frame, by the next two points' `nextPointFrame`s.
+/// Returns the position, roll and fov (`None` for each left as it was, when the spline is over
+/// before it starts), and true when the spline is over.
+///
+/// The fov isn't written when the spline returns early (a point `CS_CMD_STOP` within the next
+/// three), as in the C.
+pub fn func_800bb2b4(points: &[crate::cutscene::CutsceneCameraPoint], keyframe: &mut i16, cur_frame: &mut f32, fov: &mut f32) -> (bool, Option<(Vec3, f32)>) {
+    use crate::cutscene::CS_CMD_STOP;
+    let mut progress = *cur_frame;
+    let key = *keyframe as i32;
+    if key < 0 {
+        progress = 0.0;
+    }
+    let pt = |i: i32| points.get(usize::try_from(i).unwrap_or(usize::MAX)).copied().unwrap_or_default();
+    if pt(key).continue_flag == CS_CMD_STOP || pt(key + 1).continue_flag == CS_CMD_STOP || pt(key + 2).continue_flag == CS_CMD_STOP {
+        return (true, None);
+    }
+    let mut data = [[0.0f32; 5]; 4];
+    for (i, d) in data.iter_mut().enumerate() {
+        let p = pt(key + i as i32);
+        *d = [p.pos[0] as f32, p.pos[1] as f32, p.pos[2] as f32, p.camera_roll as f32, p.view_angle];
+    }
+    let (pos, roll, view_angle) = func_800bb0a0(progress, data);
+    *fov = view_angle;
+    let mut speed1 = 0.0;
+    let mut speed2 = 0.0;
+    if pt(*keyframe as i32 + 1).next_point_frame != 0 {
+        speed1 = 1.0 / pt(*keyframe as i32 + 1).next_point_frame as f32;
+    }
+    if pt(*keyframe as i32 + 2).next_point_frame != 0 {
+        speed2 = 1.0 / pt(*keyframe as i32 + 2).next_point_frame as f32;
+    }
+    let mut advance = (*cur_frame * (speed2 - speed1)) + speed1;
+    if advance < 0.0 {
+        advance = 0.0;
+    }
+    *cur_frame += advance;
+    let mut ret = false;
+    if *cur_frame >= 1.0 {
+        *keyframe += 1;
+        if pt(*keyframe as i32 + 3).continue_flag == CS_CMD_STOP {
+            *keyframe = 0;
+            ret = true;
+        }
+        *cur_frame -= 1.0;
+    }
+    (ret, Some((pos, roll)))
+}
+
+/// `Demo1ReadOnlyData`, `Demo1ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Demo1 {
+    interface_flags: i16,
+    cur_frame: f32,
+    keyframe: i16,
+    /// `Camera_Demo1`'s `csEyeUpdate`, `csAtUpdate` and `newRoll`, as last written.
+    eye_update: Vec3,
+    at_update: Vec3,
+    roll: f32,
+}
 
 // CAM_MODE_* (z64camera.h).
 pub const CAM_MODE_NORMAL: i16 = 0;
@@ -756,6 +887,8 @@ pub struct CamFrame<'a> {
     /// `CollisionCheck_LineOCCheck`.
     pub player_actor: Option<ActorHandle>,
     pub oc_lines: &'a crate::collision_check::OcLines,
+    /// `play->csCtx.state != CS_STATE_IDLE`.
+    pub cs_active: bool,
     /// `camera->target`'s world position and shape rotation (`Actor_GetWorldPosShapeRot`), for
     /// `Camera_KeepOn4`'s target-relative item cameras.
     pub target_pos_rot: Option<(Vec3, [i16; 3])>,
@@ -826,6 +959,8 @@ pub struct PlayerView {
     /// `actor.shape.rot.y`, `actor.shape.rot.x`.
     pub shape_yaw: i16,
     pub shape_pitch: i16,
+    /// `actor.world.rot.y` (`Actor_GetWorld`).
+    pub world_yaw: i16,
     pub adult: bool,
     /// `R_RUN_SPEED_LIMIT` (for `func_8002DCE4`).
     pub run_speed_limit: i16,
@@ -918,6 +1053,17 @@ pub struct GameCamera {
     /// What `Camera_Subj4` wrote to `camera->player` this update: its `world.pos` and
     /// `shape.rot.y` (PlayState applies them to Player right after the update).
     pub player_write: Option<(Vec3, i16)>,
+    /// `status` (`CAM_STAT_*`), `camId`, `uid`.
+    pub status: i16,
+    pub cam_id: i16,
+    pub uid: i16,
+    /// `camera->player != NULL`: the main camera follows Player; a sub camera only once a
+    /// cutscene's points are relative to him (`Camera_SetCSParams`).
+    pub has_player: bool,
+    /// `data0`, `data1` (`Camera_SetCSParams`): a cutscene's at and eye points.
+    pub cs_at_points: Vec<crate::cutscene::CutsceneCameraPoint>,
+    pub cs_eye_points: Vec<crate::cutscene::CutsceneCameraPoint>,
+    demo1: Demo1,
     ro: Norm1Ro,
     rw: Norm1Rw,
     para1_ro: Para1Ro,
@@ -1005,6 +1151,14 @@ impl GameCamera {
             interface_alpha: 0,
             interface_alpha_change: None,
             player_write: None,
+            // Play_Init: Camera_ChangeStatus(&mainCamera, CAM_STAT_ACTIVE).
+            status: CAM_STAT_ACTIVE,
+            cam_id: CAM_ID_MAIN,
+            uid: 0,
+            has_player: true,
+            cs_at_points: Vec::new(),
+            cs_eye_points: Vec::new(),
+            demo1: Demo1::default(),
             ro: Norm1Ro::default(),
             rw: Norm1Rw::default(),
             para1_ro: Para1Ro::default(),
@@ -1028,6 +1182,176 @@ impl GameCamera {
             at_eye_col_chk: ColChk::default(),
             eye_at_col_chk: ColChk::default(),
             new_eye_col_chk: ColChk::default(),
+        }
+    }
+
+    /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
+    /// origin, `CAM_SET_FREE0`, `CAM_STAT_CUT` until made active.
+    pub fn init_sub(d: &CameraData, g: &mut CameraGlobals, cam_id: i16) -> GameCamera {
+        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0 };
+        let mut c = GameCamera::new(d, &origin);
+        let uid = g.camera_init();
+        c.eye = Vec3::ZERO;
+        c.at = Vec3::ZERO;
+        c.eye_next = Vec3::ZERO;
+        c.dist = 0.0;
+        c.input_dir = [0, 0x3FFF, 0];
+        c.cam_dir = c.input_dir;
+        c.player_pos = Vec3::ZERO;
+        c.player_rot_y = 0;
+        c.pos_offset = Vec3::ZERO;
+        c.mode = 0;
+        c.setting = CAM_SET_FREE0;
+        c.prev_setting = CAM_SET_FREE0;
+        c.door_params = DoorParams::default();
+        c.unk_14c = 0x4000;
+        c.status = CAM_STAT_CUT;
+        c.cam_id = cam_id;
+        c.uid = uid;
+        c.has_player = false;
+        c
+    }
+
+    /// `Camera_ChangeStatus` (the `R_CAM_DATA` copy only feeds the debug register editor).
+    pub fn change_status(&mut self, status: i16) -> i16 {
+        self.status = status;
+        self.status
+    }
+
+    /// `Camera_ResetAnim`.
+    pub fn reset_anim(&mut self) {
+        self.anim_state = 0;
+    }
+
+    /// `Camera_SetCSParams`: the cutscene's at and eye points (`data0`, `data1`), and whether
+    /// they're relative to Player (`data2`), who then becomes the camera's player.
+    pub fn set_cs_params(&mut self, at: Vec<crate::cutscene::CutsceneCameraPoint>, eye: Vec<crate::cutscene::CutsceneCameraPoint>, player: &PlayerView, relative_to_player: i16) {
+        self.cs_at_points = at;
+        self.cs_eye_points = eye;
+        self.data2 = relative_to_player;
+        if self.data2 != 0 {
+            self.has_player = true;
+            self.player_pos = player.pos;
+            self.player_rot_y = player.shape_yaw;
+            self.next_bg_cam_index = -1;
+            self.xz_speed = 0.0;
+            self.speed_ratio = 0.0;
+        }
+    }
+
+    /// `Play_CameraSetAtEye`: `Camera_SetParam` 1 (at) and 2 (eye and eyeNext), the distance,
+    /// the offset from Player (`camera->player`'s position, if any), and `atLERPStepScale` 0.01.
+    pub fn set_at_eye(&mut self, at: Vec3, eye: Vec3, player_pos: Vec3) {
+        self.param_flags &= !(0x10 | 0x8 | 0x1);
+        self.at = at;
+        self.param_flags |= 1;
+        self.eye = eye;
+        self.eye_next = eye;
+        self.param_flags |= 2;
+        self.dist = at.distance(eye);
+        self.pos_offset = if self.has_player { at - player_pos } else { Vec3::ZERO };
+        self.at_lerp_step_scale = 0.01;
+    }
+
+    /// `Camera_SetParam(camera, 0x20, &fov)`.
+    pub fn set_fov(&mut self, fov: f32) {
+        self.fov = fov;
+        self.param_flags |= 0x20;
+    }
+
+    /// `Camera_SetParam(camera, 0x40, &roll)`: the roll in degrees.
+    pub fn set_roll_deg(&mut self, roll: f32) {
+        self.roll = cam_deg_to_binang(roll);
+        self.param_flags |= 0x40;
+    }
+
+    /// `Camera_Copy(this, src)`: `src`'s at, eye, fov and roll, with the distance and offset
+    /// from this camera's player.
+    pub fn copy_from(&mut self, d: &CameraData, src: &GameCamera, player_pos: Vec3) {
+        self.pos_offset = Vec3::ZERO;
+        self.at_lerp_step_scale = 0.1;
+        self.at = src.at;
+        self.eye = src.eye;
+        self.eye_next = src.eye;
+        self.dist = self.at.distance(self.eye);
+        self.fov = src.fov;
+        self.roll = src.roll;
+        self.func_80043b60(d);
+        if self.has_player {
+            // Actor_GetWorld(&playerPosRot, &player->actor).
+            self.player_pos = player_pos;
+            self.pos_offset = self.at - self.player_pos;
+            self.dist = self.player_pos.distance(self.eye);
+            self.xz_offset_update_rate = 1.0;
+            self.y_offset_update_rate = 1.0;
+        }
+    }
+
+    /// `Camera_Demo1` (`CAM_SET_CS_0`): the eye and at along a cutscene's splines
+    /// (`func_800BB2B4`), relative to Player when `data2` says so (`Camera_RotateAroundPoint`
+    /// by his world yaw).
+    ///
+    /// The eye's and at's splines share one keyframe and frame counter (`rwData`), each call
+    /// stepping it: the scripts give the eye's points `nextPointFrame` 0, so only the at's
+    /// points pace it.
+    fn demo1(&mut self, d: &CameraData, p: &PlayerView) {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.demo1.interface_flags = d.value(self.cur(), 0);
+        }
+        self.interface_flags = self.demo1.interface_flags;
+        if self.anim_state == 0 {
+            self.demo1.keyframe = 0;
+            self.demo1.cur_frame = 0.0;
+            self.anim_state += 1;
+        }
+        if self.anim_state == 1 {
+            let (mut keyframe, mut cur_frame, mut fov) = (self.demo1.keyframe, self.demo1.cur_frame, self.fov);
+            let eye_points = std::mem::take(&mut self.cs_eye_points);
+            let at_points = std::mem::take(&mut self.cs_at_points);
+            // @bug (game): with `||`, when the eye's spline ends the at's isn't evaluated, and
+            // `csAtUpdate` is whatever the stack held. The port keeps the last one; no script of
+            // the ported scenes ends that way (the eye's points never advance the spline).
+            let (eye_done, eye_upd) = func_800bb2b4(&eye_points, &mut keyframe, &mut cur_frame, &mut fov);
+            let (done, at_upd) = if eye_done { (true, None) } else { func_800bb2b4(&at_points, &mut keyframe, &mut cur_frame, &mut fov) };
+            self.cs_eye_points = eye_points;
+            self.cs_at_points = at_points;
+            self.demo1.keyframe = keyframe;
+            self.demo1.cur_frame = cur_frame;
+            self.fov = fov;
+            if done {
+                self.anim_state += 1;
+            }
+            // Each call that doesn't return early writes its position and the roll; what isn't
+            // written keeps the last value (the stack slot's).
+            if let Some((v, r)) = eye_upd {
+                self.demo1.eye_update = v;
+                self.demo1.roll = r;
+            }
+            if let Some((v, r)) = at_upd {
+                self.demo1.at_update = v;
+                self.demo1.roll = r;
+            }
+            let (eye_update, at_update, new_roll) = (self.demo1.eye_update, self.demo1.at_update, self.demo1.roll);
+            if self.data2 != 0 {
+                if self.has_player {
+                    // Actor_GetWorld: the position and the world rotation.
+                    let rotate = |pos: Vec3| {
+                        let mut s = vec3_to_sph_geo(pos);
+                        s.yaw = s.yaw.wrapping_add(p.world_yaw);
+                        sph_geo_add(p.pos, s)
+                    };
+                    self.eye_next = rotate(eye_update);
+                    self.at = rotate(at_update);
+                } else {
+                    log::warn!("camera: spline demo: owner dead");
+                }
+            } else {
+                self.eye_next = eye_update;
+                self.at = at_update;
+            }
+            self.eye = self.eye_next;
+            self.roll = (new_roll * 256.0) as i16;
+            self.dist = self.at.distance(self.eye);
         }
     }
 
@@ -1306,11 +1630,100 @@ impl GameCamera {
         (self.setting, self.mode)
     }
 
-    /// `Camera_Update` for the main camera following Player, with `Camera_UpdateInterface`'s
-    /// letterbox target at the end.
-    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox) {
+    /// `Camera_Update`, with `Camera_UpdateInterface`'s letterbox target at the end: `g` is the
+    /// state every camera shares (`CameraGlobals`).
+    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals) {
+        self.interface_flags = g.interface_flags;
+        self.interface_alpha = g.interface_alpha;
+        self.oob_timer = g.oob_timer;
+        self.update_inner(d, f, letterbox, g);
+        g.interface_flags = self.interface_flags;
+        g.interface_alpha = self.interface_alpha;
+        g.oob_timer = self.oob_timer;
+    }
+
+    fn update_inner(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals) {
         let (col, p, frames) = (f.col, &f.player, f.frames);
+        if self.status == CAM_STAT_CUT {
+            return;
+        }
         self.update_direction = false;
+        if self.has_player {
+            self.update_player(d, f);
+        }
+        if self.status == CAM_STAT_WAIT {
+            return;
+        }
+        self.unk_14a = 0;
+        self.unk_14c &= !(0x400 | 0x20);
+        self.unk_14c |= 0x10;
+        if self.oob_timer < 200 {
+            // sCameraFunctions[sCameraSettings[setting].cameraModes[mode].funcIdx]. A function
+            // that isn't ported runs the setting's NORMAL function if that one is, else Normal1
+            // on NORMAL0's NORMAL data.
+            let func = |m: i16| d.mode(self.setting, m).map(|m| m.func.as_str()).filter(|f| PORTED.contains(f));
+            match func(self.mode).or_else(|| func(CAM_MODE_NORMAL)) {
+                Some("CAM_FUNC_NORM1") => {
+                    let key = if d.mode(self.setting, self.mode).is_some_and(|m| m.func == "CAM_FUNC_NORM1") { self.cur() } else { (self.setting, CAM_MODE_NORMAL) };
+                    self.normal1(d, col, p, key, frames)
+                }
+                Some("CAM_FUNC_PARA1") => self.parallel1(d, col, p, frames),
+                Some("CAM_FUNC_KEEP1") => self.keep_on1(d, col, p, f.target_focus),
+                Some("CAM_FUNC_KEEP3") => self.keep_on3(d, col, p, f),
+                Some("CAM_FUNC_KEEP0") => self.keep_on0(d, col, f.target_focus),
+                Some("CAM_FUNC_FIXD2") => self.fixed2(d, col, p),
+                Some("CAM_FUNC_FIXD3") => self.fixed3(d, col),
+                Some("CAM_FUNC_FIXD4") => self.fixed4(d, col, p),
+                Some("CAM_FUNC_DATA4") => self.data4(d, col, p),
+                Some("CAM_FUNC_UNIQ0") => self.unique0(d, col, p, &f.input),
+                Some("CAM_FUNC_UNIQ2") => self.unique2(d, col, p),
+                Some("CAM_FUNC_UNIQ3") => self.unique3(d, col, p, &f.input),
+                Some("CAM_FUNC_UNIQ6") => self.unique6(d, p),
+                Some("CAM_FUNC_UNIQ7") => self.unique7(d, col),
+                Some("CAM_FUNC_SPEC9") => self.special9(d, col, p, f.door, frames, &f.input),
+                Some("CAM_FUNC_KEEP4") => self.keep_on4(d, col, p, f),
+                Some("CAM_FUNC_DEMO3") => self.demo3(d, col, p, frames, &f.input),
+                Some("CAM_FUNC_SUBJ4") => {
+                    self.subj4(d, col, p);
+                }
+                Some("CAM_FUNC_DEMO1") => self.demo1(d, p),
+                _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
+            }
+        } else if self.has_player {
+            let e = diff_to_sph_geo(self.at, self.eye);
+            self.calc_at_default(d, &e, 0.0, false, p);
+        }
+
+        if self.status == CAM_STAT_ACTIVE {
+            // (gameMode is GAMEMODE_NORMAL.) After a Camera_Init, the main camera's first three
+            // updates hold the interface at 0x3200; a running transition holds it at 0xF200 and
+            // a cutscene at 0x3200.
+            if g.d_8011d3f0 != 0 && self.cam_id == CAM_ID_MAIN {
+                g.d_8011d3f0 -= 1;
+                self.interface_flags = 0x3200;
+            } else if f.transitioning {
+                self.interface_flags = 0xF200u16 as i16;
+            } else if f.cs_active {
+                self.interface_flags = 0x3200;
+            }
+            self.update_interface(letterbox);
+        }
+        if self.status == CAM_STAT_UNK3 {
+            return;
+        }
+
+        let angle = diff_to_sph_geo(self.eye, self.at);
+        self.up = calc_up(angle.pitch, angle.yaw, self.roll);
+        self.cam_dir = [angle.pitch, angle.yaw, 0];
+        if !self.update_direction {
+            self.input_dir = [angle.pitch, angle.yaw, 0];
+        }
+    }
+
+    /// `Camera_Update`'s part for a camera with a player (`camera->player != NULL`): his speed
+    /// and floor, and the floor's bg camera.
+    fn update_player(&mut self, d: &CameraData, f: &CamFrame) {
+        let (col, p) = (f.col, &f.player);
         let cur = p.pos;
         self.xz_speed = dist_xz(cur, self.player_pos);
         // func_8002DCE4: R_RUN_SPEED_LIMIT / 100 when not riding or swimming.
@@ -1354,58 +1767,6 @@ impl GameCamera {
                 self.change_bg_cam_index(d, col, next);
                 self.next_bg_cam_index = -1;
             }
-        }
-
-        self.unk_14a = 0;
-        self.unk_14c &= !(0x400 | 0x20);
-        self.unk_14c |= 0x10;
-        if self.oob_timer < 200 {
-            // sCameraFunctions[sCameraSettings[setting].cameraModes[mode].funcIdx]. A function
-            // that isn't ported runs the setting's NORMAL function if that one is, else Normal1
-            // on NORMAL0's NORMAL data.
-            let func = |m: i16| d.mode(self.setting, m).map(|m| m.func.as_str()).filter(|f| PORTED.contains(f));
-            match func(self.mode).or_else(|| func(CAM_MODE_NORMAL)) {
-                Some("CAM_FUNC_NORM1") => {
-                    let key = if d.mode(self.setting, self.mode).is_some_and(|m| m.func == "CAM_FUNC_NORM1") { self.cur() } else { (self.setting, CAM_MODE_NORMAL) };
-                    self.normal1(d, col, p, key, frames)
-                }
-                Some("CAM_FUNC_PARA1") => self.parallel1(d, col, p, frames),
-                Some("CAM_FUNC_KEEP1") => self.keep_on1(d, col, p, f.target_focus),
-                Some("CAM_FUNC_KEEP3") => self.keep_on3(d, col, p, f),
-                Some("CAM_FUNC_KEEP0") => self.keep_on0(d, col, f.target_focus),
-                Some("CAM_FUNC_FIXD2") => self.fixed2(d, col, p),
-                Some("CAM_FUNC_FIXD3") => self.fixed3(d, col),
-                Some("CAM_FUNC_FIXD4") => self.fixed4(d, col, p),
-                Some("CAM_FUNC_DATA4") => self.data4(d, col, p),
-                Some("CAM_FUNC_UNIQ0") => self.unique0(d, col, p, &f.input),
-                Some("CAM_FUNC_UNIQ2") => self.unique2(d, col, p),
-                Some("CAM_FUNC_UNIQ3") => self.unique3(d, col, p, &f.input),
-                Some("CAM_FUNC_UNIQ6") => self.unique6(d, p),
-                Some("CAM_FUNC_UNIQ7") => self.unique7(d, col),
-                Some("CAM_FUNC_SPEC9") => self.special9(d, col, p, f.door, frames, &f.input),
-                Some("CAM_FUNC_KEEP4") => self.keep_on4(d, col, p, f),
-                Some("CAM_FUNC_DEMO3") => self.demo3(d, col, p, frames, &f.input),
-                Some("CAM_FUNC_SUBJ4") => {
-                    self.subj4(d, col, p);
-                }
-                _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
-            }
-        } else {
-            let e = diff_to_sph_geo(self.at, self.eye);
-            self.calc_at_default(d, &e, 0.0, false, p);
-        }
-
-        // CAM_STAT_ACTIVE: a running transition holds the interface (0xF200).
-        if f.transitioning {
-            self.interface_flags = 0xF200u16 as i16;
-        }
-        self.update_interface(letterbox);
-
-        let angle = diff_to_sph_geo(self.eye, self.at);
-        self.up = calc_up(angle.pitch, angle.yaw, self.roll);
-        self.cam_dir = [angle.pitch, angle.yaw, 0];
-        if !self.update_direction {
-            self.input_dir = [angle.pitch, angle.yaw, 0];
         }
     }
 
