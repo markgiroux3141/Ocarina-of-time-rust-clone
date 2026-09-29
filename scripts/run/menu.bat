@@ -11,6 +11,7 @@ echo     2  test                 All the tests
 echo     3  test-playthrough     GAME-02's playthrough test
 echo    11  test-sword-chest     GAME-03's Kokiri Sword chest test
 echo    13  test-sword-route     GAME-03's crawlspace, boulder and sword route tests
+echo    16  test-mido-shop       GAME-03's Mido, shop and Deku Shield route tests
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo.
@@ -20,11 +21,13 @@ echo     7  game-links-house     From Link's bed, the Deku Tree's mouth open
 echo     8  game-deku-tree-open  At the Deku Tree, his mouth open
 echo     9  game-deku-tree-dead  At the Deku Tree after Gohma
 echo    12  game-sword-chest     A new save at the Kokiri Sword's chest
-echo    14  game-new-save        A new save from Link's bed (the crawlspace, the sword)
+echo    14  game-new-save        A new save from Link's bed (the sword, the shop, Mido)
+echo    17  game-shop            Outside the Kokiri shop, the sword worn, 40 rupees
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
 echo    15  sandbox-sword-chest  The sword route's trace and screenshots, into out\run
+echo    18  sandbox-mido-shop    The shop and Mido route's trace and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -49,6 +52,9 @@ if "%pick%"=="12" set "script=game-sword-chest"
 if "%pick%"=="13" set "script=test-sword-route"
 if "%pick%"=="14" set "script=game-new-save"
 if "%pick%"=="15" set "script=sandbox-sword-chest"
+if "%pick%"=="16" set "script=test-mido-shop"
+if "%pick%"=="17" set "script=game-shop"
+if "%pick%"=="18" set "script=sandbox-mido-shop"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

@@ -4,7 +4,9 @@
 //!   on a save with the `deku-tree-open` preset (`EVENTCHKINF_0C` and `EVENTCHKINF_05`): the
 //!   talk that opens the mouth is a cutscene;
 //! - GAME-03 milestone 2's exit test: from Link's bed on a new save, through the crawlspace and
-//!   past the boulder, to the Kokiri Sword's chest, opened.
+//!   past the boulder, to the Kokiri Sword's chest, opened;
+//! - GAME-03 milestone 3's: from Link's bed on a new save to the sword, 40 rupees, the Deku
+//!   Shield bought in the Kokiri shop, both worn, and past Mido once he has stepped aside.
 //!
 //! Expected values come from the scene data and the C:
 //! - `ENTR_LINK_HOME_0` is Link's house's spawn 0, (1, 0, 95), params 0x0D00 (standing); the
@@ -73,13 +75,14 @@ fn treemouth(w: &PlayState) -> Option<&BgTreemouth> {
 fn the_presets_set_the_flags_the_c_reads() {
     let mut s = SaveContext::default();
     s.apply_preset("deku-tree-open").unwrap();
-    // z64save.h: EVENTCHKINF_05 0x05, EVENTCHKINF_0C 0x0C: eventChkInf[0] bits 5 and 12.
-    assert_eq!(s.event_chk_inf[0], (1 << 0x05) | (1 << 0x0C));
+    // z64save.h: EVENTCHKINF_04 0x04 (Mido stepped aside), EVENTCHKINF_05 0x05, EVENTCHKINF_0C
+    // 0x0C: eventChkInf[0] bits 4, 5 and 12.
+    assert_eq!(s.event_chk_inf[0], (1 << 0x04) | (1 << 0x05) | (1 << 0x0C));
     assert!(!s.get_event_chk_inf(EVENTCHKINF_07));
     let mut s = SaveContext::default();
     s.apply_preset("deku-tree-dead").unwrap();
     // Door_Warp1's EVENTCHKINF_07 and _09 too, and Item_Give(ITEM_KOKIRI_EMERALD).
-    assert_eq!(s.event_chk_inf[0], (1 << 0x05) | (1 << 0x07) | (1 << 0x09) | (1 << 0x0C));
+    assert_eq!(s.event_chk_inf[0], (1 << 0x04) | (1 << 0x05) | (1 << 0x07) | (1 << 0x09) | (1 << 0x0C));
     assert!(s.check_quest_item(oot_game::save::QUEST_KOKIRI_EMERALD));
     assert!(SaveContext::default().apply_preset("nothing").is_err());
 }
@@ -174,9 +177,8 @@ fn kokiri_forest_to_the_deku_tree() {
     let mut run = Playthrough::new();
     let mut prev = PadState::default();
     let mut talked_to = Vec::new();
-    // How near Link came to Mido's and Saria's placeholders.
+    // How near Link came to Mido (En_Md) and to Saria's placeholder.
     let (mut near_mido, mut near_saria) = (f32::MAX, f32::MAX);
-    let md = a.actors.id("ACTOR_EN_MD").unwrap();
     let sa = a.actors.id("ACTOR_EN_SA").unwrap();
     let mut seen = Vec::new();
     loop {
@@ -196,18 +198,24 @@ fn kokiri_forest_to_the_deku_tree() {
         }
         let link = w.player().actor.world_pos;
         if w.scene_id == SCENE_SPOT04 {
-            for (id, near) in [(md, &mut near_mido), (sa, &mut near_saria)] {
-                if let Some(h) = placeholder_of(&w, id) {
-                    let p = w.actors.actor(h).unwrap().world_pos;
-                    *near = near.min(Vec3::new(link.x - p.x, 0.0, link.z - p.z).length());
-                }
+            if let Some(h) = placeholder_of(&w, sa) {
+                let p = w.actors.actor(h).unwrap().world_pos;
+                near_saria = near_saria.min(Vec3::new(link.x - p.x, 0.0, link.z - p.z).length());
+            }
+            if let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<oot_actors::en_md::EnMd>(h)) {
+                // EVENTCHKINF_04 (the preset): EnMd_SetMovedPos, standing at path 1's last point
+                // (func_80AAB874).
+                assert_eq!((m.action, m.actor.world_pos), (oot_actors::en_md::Action::Moved, Vec3::new(1412.0, 0.0, 211.0)));
+                let p = m.actor.world_pos;
+                near_mido = near_mido.min(Vec3::new(link.x - p.x, 0.0, link.z - p.z).length());
             }
         }
     }
     assert_eq!(run.failure, None, "the run stopped at {}", run.at());
     assert_eq!(seen, [Step::House, Step::OutDoor, Step::Ladder, Step::Sign, Step::Kokiri, Step::Bush, Step::Tree, Step::Mouth, Step::DekuTree]);
-    // Mido and Saria are placeholders with no colliders: Link walked right past them.
-    assert!(near_mido < 60.0, "Mido: {near_mido}");
+    // Link passed Mido where he stands aside (his collider, 36, and Link's kept them apart), and
+    // Saria's placeholder, which has no collider.
+    assert!(near_mido < 80.0, "Mido: {near_mido}");
     assert!(near_saria < 60.0, "Saria: {near_saria}");
 }
 
@@ -272,7 +280,7 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
             assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_YDAN, entr("ENTR_YDAN_0")));
             assert_eq!(p.action, Action::StandingStill);
         }
-        Step::Crawlspace | Step::TrainingArea | Step::Boulder | Step::Chest => panic!("{step:?} isn't on the Deku Tree's route"),
+        _ => panic!("{step:?} isn't on the Deku Tree's route"),
     }
 }
 
@@ -377,5 +385,172 @@ fn check_sword(step: Step, w: &PlayState, run: &Playthrough, saw_enter: bool, sa
             assert_eq!(p.action, Action::StandingStill);
         }
         _ => panic!("{step:?} isn't on the Kokiri Sword's route"),
+    }
+}
+
+#[test]
+fn a_new_save_to_mido_and_the_shop() {
+    use oot_actors::en_md::{self, EnMd};
+    use oot_actors::playthrough::Route;
+    let Some(a) = assets() else { return };
+    let route = Route::MidoShop;
+    let Some(mut w) = enter(&a, route.entrance(), route.preset()) else {
+        return;
+    };
+    let entr = |name: &str| a.scenes.entrance_index(name).unwrap();
+    let mut run = Playthrough::for_route(route);
+    let mut prev = PadState::default();
+    let mut seen = Vec::new();
+    // Mido's positions while he blocks (his home is room 0's placement), and whether Link was
+    // hidden while he browsed.
+    let mut mido_block = Vec::new();
+    let mut hidden_while_browsing = false;
+    loop {
+        let pad = run.next(&w);
+        if let Some(step) = run.take_done() {
+            seen.push(step);
+            check_mido_shop(step, &w, &run, hidden_while_browsing, &entr);
+        }
+        let Some(pad) = pad else { break };
+        w.tick_with(scripted_input(prev, pad));
+        prev = pad;
+        // (On its init frame Mido hasn't updated yet: still at home.)
+        if let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnMd>(h))
+            && m.action == en_md::Action::Blocking
+            && m.unk_1e0.talk_state == 0
+            && m.actor.world_pos != m.actor.home_pos
+        {
+            mido_block.push((m.actor.home_pos, m.actor.world_pos));
+        }
+        if let Some(o) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<oot_actors::en_ossan::EnOssan>(h))
+            && o.state_flag == oot_actors::en_ossan::OSSAN_STATE_BROWSE_RIGHT_SHELF
+        {
+            hidden_while_browsing |= w.player().state2 & oot_actors::player::STATE2_29 != 0;
+        }
+    }
+    assert_eq!(run.failure, None, "the run stopped at {}", run.at());
+    assert_eq!(
+        seen,
+        [
+            Step::House,
+            Step::OutDoor,
+            Step::Ladder,
+            Step::Crawlspace,
+            Step::TrainingArea,
+            Step::Boulder,
+            Step::Chest,
+            Step::SwordOn,
+            Step::Plateau,
+            Step::Switch,
+            Step::MidoHouse,
+            Step::MidoChests,
+            Step::Shop,
+            Step::Shield,
+            Step::Equipped,
+            Step::ShopOut,
+            Step::Mido,
+            Step::MidoAside,
+            Step::PastMido,
+        ]
+    );
+    // func_80AAB948: while blocking, 60 from his home (1522, 0, 105) towards Link.
+    assert!(!mido_block.is_empty());
+    for (home, pos) in &mido_block {
+        assert_eq!(*home, Vec3::new(1522.0, 0.0, 105.0));
+        assert!((Vec3::new(pos.x - home.x, 0.0, pos.z - home.z).length() - 60.0).abs() < 0.01, "{pos}");
+    }
+}
+
+/// The checks when a step of the Mido and shop run is done.
+fn check_mido_shop(step: Step, w: &PlayState, run: &Playthrough, hidden_while_browsing: bool, entr: &dyn Fn(&str) -> u16) {
+    use oot_actors::en_md::{self, EnMd};
+    use oot_game::item::*;
+    let p = w.player();
+    let rupees = w.save.rupees + w.save.rupee_accumulator;
+    let mido = || w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnMd>(h));
+    match step {
+        Step::House => assert_eq!((w.save.rupees, w.save.inventory.equipment), (0, 0x1100)),
+        Step::OutDoor | Step::Ladder | Step::Crawlspace | Step::TrainingArea => {}
+        Step::Boulder => {
+            // Room 2's two proximity drops (green rupees), and its two blue ones (En_Item00
+            // 0x0F01 and 0x0E01, collectible flags 0x0F and 0x0E): 2 + 5 + 5.
+            assert_eq!(rupees, 12);
+            assert!(w.flags.get_collectible(0x0F) && w.flags.get_collectible(0x0E));
+        }
+        Step::Chest => assert_eq!(w.save.inventory.equipment, 0x1101),
+        Step::SwordOn => {
+            // The stand-in equips it as the pause menu does: Inventory_ChangeEquipment, and B the
+            // sword.
+            assert_eq!(w.save.cur_equip_value(EQUIP_TYPE_SWORD), EQUIP_VALUE_SWORD_KOKIRI);
+            assert_eq!(w.save.equips.button_items[0], ITEM_SWORD_KOKIRI);
+        }
+        Step::Plateau => {
+            assert_eq!((w.scene_id, w.room_ctx.cur.num), (SCENE_SPOT04, 0));
+            assert_eq!(p.action, Action::StandingStill);
+        }
+        Step::Switch => {
+            // EnWonderItem_InteractSwitch: switch 0x13 set, and its blue rupee (not collected by
+            // itself) picked up.
+            assert!(w.flags.get_switch(0x13));
+            assert_eq!(rupees, 17);
+        }
+        Step::MidoHouse => {
+            assert_eq!(w.save.entrance_index, entr("ENTR_KOKIRI_HOME4_0"));
+            // The two greens at the foot of the ramp.
+            assert_eq!(rupees, 19);
+        }
+        Step::MidoChests => {
+            // Two blue rupees, a green one and a recovery heart (En_Box 0x59A0, 0x59A1, 0x5982,
+            // 0x5903), their treasure flags 0 to 3 saved with his house's scene flags.
+            assert_eq!(w.save.entrance_index, entr("ENTR_SPOT04_9"));
+            assert_eq!(rupees, 30);
+            const SCENE_KOKIRI_HOME4: u16 = 0x28;
+            assert_eq!(w.save.scene_flags(SCENE_KOKIRI_HOME4).chest & 0xF, 0xF);
+        }
+        Step::Shop => {
+            // Two more greens and the free multitag's blue rupee.
+            assert_eq!(w.save.entrance_index, entr("ENTR_KOKIRI_SHOP_0"));
+            assert_eq!(rupees, 37);
+            assert!(run.texts.contains(&0x218), "the forced text by the shop, read");
+        }
+        Step::Shield => {
+            // The shop's own blue rupee (42), then the Deku Shield's 40, charged after its text
+            // (EnGirlA_BuyEvent_ShieldDiscount): 2 left. Owned, not worn (Item_Give).
+            assert_eq!(rupees, 2);
+            assert!(w.save.check_owned_equip(EQUIP_TYPE_SHIELD, EQUIP_INV_SHIELD_DEKU));
+            assert_eq!(w.save.cur_equip_value(EQUIP_TYPE_SHIELD), EQUIP_VALUE_SHIELD_NONE);
+            let texts: Vec<u16> = run.texts.iter().copied().skip_while(|&t| t != 0x9E).collect();
+            assert_eq!(texts, [0x9E, 0x83, 0x9F, 0x89, 0x4C, 0x6B]);
+            // EnOssan_EndInteraction: YREG(31) 0, the fixed view, Link shown.
+            assert_eq!((w.msg_ctx.yreg_31, w.viewpoint), (0, oot_game::play::VIEWPOINT_LOCKED));
+            assert!(hidden_while_browsing, "PLAYER_STATE2_29 while browsing");
+            assert_eq!(p.state2 & oot_actors::player::STATE2_29, 0);
+        }
+        Step::Equipped => {
+            assert_eq!(w.save.cur_equip_value(EQUIP_TYPE_SHIELD), EQUIP_VALUE_SHIELD_DEKU);
+            assert_eq!(p.current_shield, 1, "PLAYER_SHIELD_DEKU (Player_SetEquipmentData)");
+        }
+        Step::ShopOut => assert_eq!(w.save.entrance_index, entr("ENTR_SPOT04_4")),
+        Step::Mido => {
+            // With both worn, 0x1033 (EnMd_GetTextKokiriForest), then its next texts; as it
+            // closes, func_80AAAF04's 2: EVENTCHKINF_04, and on his way along path 1.
+            let texts: Vec<u16> = run.texts.iter().copied().skip_while(|&t| t != 0x1033).collect();
+            assert_eq!(texts, [0x1033, 0x10D2, 0x10D3, 0x1034]);
+            assert!(w.save.get_event_chk_inf(oot_game::save::EVENTCHKINF_04));
+            let m = mido().expect("Mido");
+            assert_eq!((m.action, m.actor.speed_xz, m.waypoint), (en_md::Action::Walking, 1.5, 1));
+        }
+        Step::MidoAside => {
+            // func_80AABD0C: path 1's last point reached (within 10), standing (func_80AAB8F8).
+            let m = mido().expect("Mido");
+            assert_eq!(m.action, en_md::Action::Arrived);
+            assert!(Vec3::new(m.actor.world_pos.x - 1412.0, 0.0, m.actor.world_pos.z - 211.0).length() < 10.0, "{}", m.actor.world_pos);
+            assert_eq!(m.actor.speed_xz, 0.0);
+        }
+        Step::PastMido => {
+            assert!(p.actor.world_pos.x > 1600.0, "past him: {}", p.actor.world_pos);
+            assert_eq!(w.save.health, 0x30, "never hurt");
+        }
+        _ => panic!("{step:?} isn't on the Mido and shop route"),
     }
 }

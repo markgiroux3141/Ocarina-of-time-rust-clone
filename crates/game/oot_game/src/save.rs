@@ -171,6 +171,10 @@ pub struct SaveContext {
 /// `LANGUAGE_ENG`.
 pub const LANGUAGE_ENG: u8 = 0;
 
+/// `EVENTCHKINF_04` (`z64save.h`: 0x04): Mido has let Link through to the Deku Tree. Set by
+/// `func_80AAB948` (`z_en_md.c:743`) when his text 0x1033 (Link wearing the Kokiri Sword and the
+/// Deku Shield) closes; from then on he stands at his path's last point (`EnMd_SetMovedPos`).
+pub const EVENTCHKINF_04: u16 = 0x04;
 /// `EVENTCHKINF_05` (`z64save.h`: 0x05): the Deku Tree has opened his mouth. Set by
 /// `func_808BC9EC` (`z_bg_treemouth.c`) when Link answers the tree's question with the first
 /// choice; from then on `func_808BC8B8` holds the mouth open (`unk_168` 1).
@@ -239,9 +243,10 @@ pub fn kokiri_sword_and_deku_shield(s: &mut SaveContext) {
 pub const SAVE_PRESETS: &[SavePreset] = &[
     SavePreset {
         name: "deku-tree-open",
-        about: "the Kokiri Sword and the Deku Shield owned and equipped, the Deku Tree met and his mouth open (EVENTCHKINF_0C, EVENTCHKINF_05), as after his first talk's cutscenes",
+        about: "the Kokiri Sword and the Deku Shield owned and equipped, Mido stepped aside (EVENTCHKINF_04), the Deku Tree met and his mouth open (EVENTCHKINF_0C, EVENTCHKINF_05), as after his first talk's cutscenes",
         apply: |s| {
             kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
             s.set_event_chk_inf(EVENTCHKINF_0C);
             s.set_event_chk_inf(EVENTCHKINF_05);
         },
@@ -251,6 +256,7 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         about: "deku-tree-open, and the Deku Tree dead with the Kokiri Emerald (EVENTCHKINF_07, EVENTCHKINF_09, QUEST_KOKIRI_EMERALD), as after Gohma's blue warp",
         apply: |s| {
             kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
             s.set_event_chk_inf(EVENTCHKINF_0C);
             s.set_event_chk_inf(EVENTCHKINF_05);
             // Door_Warp1 (SCENE_YDAN_BOSS): Flags_SetEventChkInf(EVENTCHKINF_07) and (_09),
@@ -258,6 +264,15 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
             s.set_event_chk_inf(EVENTCHKINF_07);
             s.set_event_chk_inf(EVENTCHKINF_09);
             item_give(s, ITEM_KOKIRI_EMERALD);
+        },
+    },
+    SavePreset {
+        name: "sword-and-40-rupees",
+        about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
+        apply: |s| {
+            item_give(s, ITEM_SWORD_KOKIRI);
+            s.equip_from_pause_menu(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
+            s.rupees = 40;
         },
     },
 ];

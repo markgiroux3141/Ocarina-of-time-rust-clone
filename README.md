@@ -88,7 +88,9 @@ target/release/oot --scene spot00 --adult --time 18:00     # any scene's entranc
 target/release/oot --entrance ENTR_SPOT04_1 --preset deku-tree-open   # at the Deku Tree, his mouth open (a debug save preset;
                                                            # deku-tree-dead: the tree dead too)
 target/release/oot --entrance ENTR_LINK_HOME_0             # a new save in Link's bed: the ramp, the crawlspace, the boulder, the
-                                                           # Kokiri Sword's chest
+                                                           # Kokiri Sword's chest, then 40 rupees, the shop and Mido
+target/release/oot --entrance ENTR_SPOT04_4 --preset sword-and-40-rupees   # outside the Kokiri shop with the sword worn and 40
+                                                           # rupees: buy the Deku Shield, Enter (Start) to wear it
 
 # Sandbox: the test course and the debug views
 target/release/oot_sandbox                                 # test course, adult Link
@@ -100,6 +102,8 @@ target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --preset deku-tre
                                                            # headless: GAME-02's run from Link's bed into the Deku Tree
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script sword-chest --trace out/sword_chest.json
                                                            # headless: GAME-03's run from Link's bed to the Kokiri Sword
+target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script mido-shop --trace out/mido_shop.json
+                                                           # headless: on to the Deku Shield from the shop, both worn, past Mido
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_1 --child --script cup --screenshot out/home.png --shots-at 29
                                                            # the house's pivot camera and skybox, then C-Up: the fixed camera and its picture
 target/release/oot_sandbox --entrance ENTR_SOUKO_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png

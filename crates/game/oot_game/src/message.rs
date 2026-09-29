@@ -15,7 +15,8 @@
 //! Ported: the plain textbox modes (start, grow, decode, type, await input, box breaks, next
 //! text ids, choices, fading, persistent and event ends, closing), the colours, the player's
 //! name. Not ported: the ocarina modes, item icons and textbox backgrounds (decoded, not
-//! drawn), the credits, sounds, `YREG(31)` (0), and the debug message viewer (`BREG(0)` 0).
+//! drawn), the credits, sounds, and the debug message viewer (`BREG(0)` 0). `YREG(31)` is the
+//! shop's (`yreg_31`).
 
 #![allow(non_snake_case)] // D_8014B2F4 and the unk_ fields keep the decomp's names
 
@@ -358,6 +359,10 @@ pub struct MessageContext {
     pub textbox_background_fore_color_idx: u8,
     pub textbox_background_back_color_idx: u8,
     pub textbox_background_y_offset_idx: u8,
+    /// `YREG(31)`: set by `En_Ossan` while Link shops (`EnOssan_SetStateStartShopping`), when
+    /// the shopkeeper drives the box: no do-action changes, no B to skip, no A at a box break
+    /// or at the end. `Message_Init` (`z_construct.c`) zeroes it.
+    pub yreg_31: i16,
     pub textbox_background_unk_arg: u8,
     /// `textboxColorRed` .. `Blue`, `AlphaTarget`, `AlphaCurrent`.
     pub textbox_color: [i16; 3],
@@ -487,6 +492,7 @@ impl MessageContext {
             textbox_background_fore_color_idx: 0,
             textbox_background_back_color_idx: 0,
             textbox_background_y_offset_idx: 0,
+            yreg_31: 0,
             textbox_background_unk_arg: 0,
             textbox_color: [0; 3],
             textbox_color_alpha_target: 0,
@@ -1168,8 +1174,7 @@ impl MessageContext {
         self.text_draw_pos = 0;
         self.text_delay_timer = 0;
         self.text_color[3] = 255;
-        // YREG(31) == 0.
-        if !f.iface.unk_1fa {
+        if self.yreg_31 == 0 && !f.iface.unk_1fa {
             f.iface.set_do_action(DO_ACTION_NEXT);
         }
         self.textbox_color_alpha_current = self.textbox_color_alpha_target;
@@ -1298,8 +1303,9 @@ impl MessageContext {
                 let mut average_y: i16 = 0;
                 match f.talk_actor_screen_y.filter(|_| self.talk_actor.is_some()) {
                     Some(actor_y) => {
-                        let player_y = f.player_screen_y;
-                        average_y = if player_y >= actor_y { (player_y - actor_y) / 2 + actor_y } else { (actor_y - player_y) / 2 + player_y };
+                        // s16s promoted to int, the sum truncated back to the s16 averageY.
+                        let (player_y, actor_y) = (f.player_screen_y as i32, actor_y as i32);
+                        average_y = if player_y >= actor_y { (player_y - actor_y) / 2 + actor_y } else { (actor_y - player_y) / 2 + player_y } as i16;
                     }
                     None => {
                         self.regs.textbox_x = self.regs.textbox_x_target;
@@ -1344,7 +1350,9 @@ impl MessageContext {
             MSGMODE_TEXT_BOX_GROWING => self.grow_textbox(),
             MSGMODE_TEXT_STARTING => {
                 self.msg_mode = MSGMODE_TEXT_NEXT_MSG;
-                f.iface.set_do_action(DO_ACTION_NEXT);
+                if self.yreg_31 == 0 {
+                    f.iface.set_do_action(DO_ACTION_NEXT);
+                }
             }
             MSGMODE_TEXT_NEXT_MSG => {
                 self.decode(f.save);
@@ -1363,13 +1371,13 @@ impl MessageContext {
                 }
             }
             MSGMODE_TEXT_DISPLAYING => {
-                if self.text_box_type != TEXTBOX_TYPE_NONE_BOTTOM && f.input.press.held(BTN_B) && self.text_unskippable == 0 {
+                if self.text_box_type != TEXTBOX_TYPE_NONE_BOTTOM && self.yreg_31 == 0 && f.input.press.held(BTN_B) && self.text_unskippable == 0 {
                     self.s.textbox_skipped = true;
                     self.text_draw_pos = self.decoded_text_len;
                 }
             }
             MSGMODE_TEXT_AWAIT_INPUT => {
-                if should_advance(f.input) {
+                if self.yreg_31 == 0 && should_advance(f.input) {
                     self.msg_mode = MSGMODE_TEXT_DISPLAYING;
                     self.text_draw_pos += 1;
                 }
@@ -1393,7 +1401,7 @@ impl MessageContext {
                     if self.state_timer == 0 {
                         self.close_textbox();
                     }
-                } else if self.textbox_end_type != TEXTBOX_ENDTYPE_PERSISTENT && self.textbox_end_type != TEXTBOX_ENDTYPE_EVENT {
+                } else if self.textbox_end_type != TEXTBOX_ENDTYPE_PERSISTENT && self.textbox_end_type != TEXTBOX_ENDTYPE_EVENT && self.yreg_31 == 0 {
                     if self.textbox_end_type == TEXTBOX_ENDTYPE_2_CHOICE && self.ocarina_mode == 1 {
                         if should_advance(f.input) {
                             self.ocarina_mode = if self.choice_index == 0 { 2 } else { 4 };

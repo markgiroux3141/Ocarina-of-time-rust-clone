@@ -30,6 +30,7 @@ pub mod bg_ydan_hasi;
 pub mod dummy_target;
 pub mod en_box;
 pub mod en_door;
+pub mod en_girla;
 pub mod en_goroiwa;
 pub mod en_holl;
 pub mod en_item00;
@@ -37,6 +38,9 @@ pub mod en_ishi;
 pub mod en_kanban;
 pub mod en_ko;
 pub mod en_kusa;
+pub mod en_md;
+pub mod en_ossan;
+pub mod en_tana;
 pub mod en_wonder_item;
 pub mod en_wonder_talk2;
 pub mod obj_hana;
@@ -50,7 +54,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -70,6 +74,10 @@ pub fn overlays() -> Overlays {
     o.register(en_box::ACTOR_EN_BOX, en_box::EnBox::init);
     o.register(en_wonder_item::ACTOR_EN_WONDER_ITEM, en_wonder_item::EnWonderItem::init);
     o.register(en_goroiwa::ACTOR_EN_GOROIWA, en_goroiwa::EnGoroiwa::init);
+    o.register(en_md::ACTOR_EN_MD, en_md::EnMd::init);
+    o.register(en_ossan::ACTOR_EN_OSSAN, en_ossan::EnOssan::init);
+    o.register(en_girla::ACTOR_EN_GIRLA, en_girla::EnGirlA::init);
+    o.register(en_tana::ACTOR_EN_TANA, en_tana::EnTana::init);
     o
 }
 
@@ -81,6 +89,9 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_item00::bakes());
     v.extend(bg_treemouth::bakes());
     v.extend(en_box::bakes());
+    v.extend(en_md::bakes());
+    v.extend(en_ossan::bakes());
+    v.extend(en_tana::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).
@@ -199,12 +210,7 @@ impl PlayExt for PlayState {
         self.reset_blending();
     }
     fn equip_owned_unworn(&mut self) -> bool {
-        if !self.save.equip_owned_unworn() {
-            return false;
-        }
-        let (data, save) = (self.data.clone(), self.save.clone());
-        self.player_mut().set_equipment_data(&data, &save);
-        true
+        self.pause_menu_equip()
     }
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle {
         let h = self.spawn(Box::new(DummyTarget::new(pos))).expect("spawn");

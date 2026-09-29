@@ -586,6 +586,11 @@ impl PlayState {
         self.object_ctx.update_bank();
         self.gameplay_frames += 1;
         self.input = input;
+        // Play_Update: KaleidoSetup_Update, only with no message box (gameMode GAMEMODE_NORMAL,
+        // no game over), before the actors.
+        if self.msg_ctx.msg_mode == crate::message::MSGMODE_NONE {
+            self.kaleido_setup_update();
+        }
         self.room_finish_load();
         self.col_chk.check(&mut self.actors);
         self.col_chk.clear();
@@ -648,6 +653,40 @@ impl PlayState {
         if self.next_play_init {
             self.reinit();
         }
+    }
+
+    /// `KaleidoSetup_Update` (`z_kaleido_setup.c`): Start opens the pause menu when nothing
+    /// stops it (no menu open, no transition, no cutscene: `Play_InCsMode`; the shooting
+    /// gallery, magic filling and the bowling alley's switch don't come up). The pause menu
+    /// isn't ported: its equipping's stand-in (`pause_menu_equip`) runs in its place, at once
+    /// (docs/adr/0021-mido-the-shop-and-the-pause-stand-in.md). L with C-Up is the debug menu,
+    /// which needs `BREG(0)`: nothing.
+    fn kaleido_setup_update(&mut self) {
+        use crate::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
+        use eng_input::pad::{BTN_CUP, BTN_L, BTN_START};
+        if self.transition.trigger != TRANS_TRIGGER_OFF || self.transition.mode != TRANS_MODE_OFF || self.player_in_cs_mode() {
+            return;
+        }
+        if self.input.cur.held(BTN_L) && self.input.press.held(BTN_CUP) {
+            return;
+        }
+        if self.input.press.held(BTN_START) && self.pause_menu_equip() {
+            log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}", self.save.equips.equipment, self.save.equips.button_items[0]);
+        }
+    }
+
+    /// The pause menu's equipping, as a stand-in (docs/adr/0019-inventory-and-saves.md):
+    /// `SaveContext::equip_owned_unworn`, then `Player_SetEquipmentData` as the menu's closing
+    /// runs it. Returns whether anything was equipped.
+    pub fn pause_menu_equip(&mut self) -> bool {
+        if !self.save.equip_owned_unworn() {
+            return false;
+        }
+        let (data, save) = (self.data.clone(), self.save.clone());
+        if let Some(p) = self.player.and_then(|h| self.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
+            p.set_equipment_data(&data, &save);
+        }
+        true
     }
 
     /// `Camera_Update` for the main camera, following Player.

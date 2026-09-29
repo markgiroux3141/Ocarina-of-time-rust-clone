@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 9;
+pub const FORMAT_VERSION: u32 = 10;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;

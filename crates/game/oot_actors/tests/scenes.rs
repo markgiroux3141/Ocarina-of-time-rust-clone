@@ -94,9 +94,10 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
     }
     let (waiting, placeholders, ported) = count(&w);
     assert_eq!(waiting, 0, "every object is loaded two frames after the room");
-    // Navi's placeholder, and the fairy each Kokiri child spawns as its child (En_Elf params 3).
-    let fairies = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_ko::EnKo>(h).is_some()).count();
-    assert_eq!(fairies, 8);
+    // Navi's placeholder, and the fairy each Kokiri child and Mido spawn as their child (En_Elf
+    // params 3, FAIRY_KOKIRI: EnKo's func_80A99048, EnMd_Init).
+    let fairies = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_ko::EnKo>(h).is_some() || w.actors.downcast::<oot_actors::en_md::EnMd>(h).is_some()).count();
+    assert_eq!(fairies, 9);
     assert_eq!(placeholders, room0.actors.len() - tag_points - ported_placed + 1 + fairies);
     // (None of the other ported placements kills itself for child Link at 10:00 on a new save.)
     assert_eq!(ported, ported_placed + 3);

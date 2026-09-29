@@ -2,7 +2,7 @@
 //! answering a talk request (`Actor_ProcessTalkRequest`), the per-frame talk handler
 //! (`func_800343CC`), the head and torso turning towards a point (`func_80034A14`,
 //! `func_800344BC`, `func_80034810` with the `D_80116130` presets), and the idle limb sway
-//! (`func_80034F54`).
+//! (`func_80034F54`), and the fade by distance (`func_80034DD4`).
 //!
 //! Player takes an offer on A (`func_8083B644`, in `oot_actors::player`): the actor gets
 //! `ACTOR_FLAG_8` and the message box opens with its `textId` (`crate::message`).
@@ -257,6 +257,28 @@ pub fn func_80034a14(play: &mut PlayState, actor: &mut Actor, t: &mut NpcTrack, 
         sp38.unk_0C = 0;
     }
     func_800344bc(actor, t, sp38.unk_00, sp38.unk_04, sp38.unk_02, sp38.unk_06, sp38.unk_0A, sp38.unk_08, sp38.unk_0C);
+}
+
+/// `func_800347E8`: preset `preset`'s yaw range (`D_80116130[preset].unk_14`).
+pub fn func_800347e8(preset: usize) -> i16 {
+    D_80116130[preset].2
+}
+
+/// `func_80034DD4`: an NPC fading in within `dist` of Link and out beyond it (targetable only
+/// while near: `ACTOR_FLAG_0`); returns the new alpha. (In a cutscene the distance would be a
+/// quarter of the camera's: no cutscenes.)
+pub fn func_80034dd4(actor: &mut Actor, player_pos: Vec3, alpha: i16, dist: f32) -> i16 {
+    use crate::actor::ACTOR_FLAG_0;
+    let mut alpha = alpha;
+    let var = actor.world_pos.distance(player_pos);
+    if dist < var {
+        actor.flags &= !ACTOR_FLAG_0;
+        eng_math::smooth_step_to_s(&mut alpha, 0, 6, 0x14, 1);
+    } else {
+        actor.flags |= ACTOR_FLAG_0;
+        eng_math::smooth_step_to_s(&mut alpha, 0xFF, 6, 0x14, 1);
+    }
+    alpha
 }
 
 /// `func_80034F54`: the idle sway angles of `n` limbs from `gameplayFrames`.

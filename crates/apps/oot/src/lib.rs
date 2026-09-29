@@ -526,19 +526,6 @@ impl App {
     }
 }
 
-/// Start (Enter): the pause menu's equipping as a stand-in ([`PlayExt::equip_owned_unworn`]),
-/// when `KaleidoSetup_Update` would open the menu: no transition, not in a cutscene
-/// (`Play_InCsMode`), and (the port's own condition) no message box up.
-fn pause_menu_equip(w: &mut PlayState) {
-    use oot_game::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
-    if w.transition.trigger != TRANS_TRIGGER_OFF || w.transition.mode != TRANS_MODE_OFF || w.player_in_cs_mode() || w.msg_ctx.msg_mode != oot_game::message::MSGMODE_NONE {
-        return;
-    }
-    if w.equip_owned_unworn() {
-        log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}", w.save.equips.equipment, w.save.equips.button_items[0]);
-    }
-}
-
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -556,12 +543,10 @@ impl eframe::App for App {
         }
         let kb = eng_app::keyboard(&ctx);
         let pad = merge(self.pads.as_ref().and_then(|p| p.state()), &kb);
-        let start = pad.button & eng_input::pad::BTN_START != 0 && self.last_pad.button & eng_input::pad::BTN_START == 0;
+        // Start (Enter) is read by the play frame: KaleidoSetup_Update runs the pause menu's
+        // equipping stand-in (PlayState::pause_menu_equip).
         self.last_pad = pad;
         self.world.poll(pad);
-        if start {
-            pause_menu_equip(&mut self.world);
-        }
         ctx.input(|i| {
             if i.key_pressed(egui::Key::F1) {
                 self.show_wire = !self.show_wire;

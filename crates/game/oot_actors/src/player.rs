@@ -90,6 +90,9 @@ pub const STATE2_17: u32 = 1 << 17; // spin attack
 pub const STATE2_30: u32 = 1 << 30; // stab lunge
 pub const STATE2_7: u32 = 1 << 7;
 pub const STATE2_31: u32 = 1 << 31;
+/// `PLAYER_STATE2_29`: not drawn (`Player_Draw`), while Link browses a shop's shelves
+/// (`En_Ossan`).
+pub const STATE2_29: u32 = 1 << 29;
 // stateFlags3
 pub const STATE3_1: u32 = 1 << 1;
 pub const STATE3_3: u32 = 1 << 3;
@@ -6131,6 +6134,8 @@ mod rs {
     pub const EXCHANGE: usize = 4;
     /// `switches`: `PLAYER_STATE2_18` (in a crawlspace).
     pub const CRAWLING: usize = 5;
+    /// `switches`: `PLAYER_STATE2_29` (not drawn).
+    pub const HIDDEN: usize = 6;
 }
 
 impl LookRotations {
@@ -6299,13 +6304,14 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 6];
+        let mut switches = vec![0u32; 7];
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
         switches[rs::UNK_862] = self.unk_862 as u16 as u32;
         switches[rs::EXCHANGE] = (self.exchange_item_id != 0) as u32;
         switches[rs::CRAWLING] = (self.state2 & STATE2_18 != 0) as u32;
+        switches[rs::HIDDEN] = (self.state2 & STATE2_29 != 0) as u32;
         RenderState {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
@@ -6326,7 +6332,8 @@ impl ActorImpl for Player {
     fn draw(&self, st: &RenderState, play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
         use eng_gfx::{DrawCmd, MeshKey};
         use glam::Mat4;
-        if self.inert {
+        // Player_Draw draws nothing under PLAYER_STATE2_29.
+        if self.inert || st.switches.get(rs::HIDDEN).copied().unwrap_or(0) != 0 {
             return;
         }
         let age = oot_game::player_lib::Age::from_adult(self.adult);
@@ -6452,6 +6459,12 @@ impl PlayerIface for Player {
     }
     fn invincibility_timer(&self) -> i8 {
         self.invincibility_timer
+    }
+    fn change_state_flags2(&mut self, set: u32, clear: u32) {
+        self.state2 = (self.state2 | set) & !clear;
+    }
+    fn set_equipment_data(&mut self, data: &GameData, save: &oot_game::save::SaveContext) {
+        Player::set_equipment_data(self, data, save);
     }
 }
 

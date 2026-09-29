@@ -820,6 +820,20 @@ pub fn item_check_obtainability(save: &SaveContext, item: u8) -> u8 {
 }
 
 /// `OWNED_EQUIP_FLAG(equip, value)`: `gBitFlags[value] << gEquipShifts[equip]`.
+/// `Inventory_HasEmptyBottle` (`z_parameter.c`): an empty bottle in one of the four bottle slots.
+pub fn inventory_has_empty_bottle(save: &SaveContext) -> bool {
+    (0..4).any(|i| save.inventory.items.get(SLOT_BOTTLE_1 + i).copied() == Some(ITEM_BOTTLE))
+}
+
+/// `func_800849EC` (`z_parameter.c`): the Giant's Knife bought (`EnGirlA_ItemGive_Longsword`):
+/// owned, the broken knife's bit toggled, and B gets whichever the bits say. (The B icon's
+/// reload, `Interface_LoadItemIcon1`, is the HUD's own each frame.)
+pub fn func_800849ec(save: &mut SaveContext) {
+    save.inventory.equipment |= owned_equip_flag(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_BGS);
+    save.inventory.equipment ^= (1 << EQUIP_INV_SWORD_BROKENGIANTKNIFE) << EQUIP_SHIFTS[EQUIP_TYPE_SWORD];
+    save.equips.button_items[0] = if save.check_owned_equip(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_BROKENGIANTKNIFE) { ITEM_SWORD_KNIFE } else { ITEM_SWORD_BGS };
+}
+
 pub fn owned_equip_flag(equip: usize, value: u16) -> u16 {
     (1u16 << value) << EQUIP_SHIFTS[equip]
 }

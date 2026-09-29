@@ -69,7 +69,8 @@ struct Cli {
     /// out through the exits); with --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open
     /// also `playthrough` (GAME-02's scripted run from Link's bed into the Deku Tree), and with
     /// --entrance ENTR_LINK_HOME_0 --child (a new save) `sword-chest` (GAME-03's run through the
-    /// crawlspace and past the boulder to the Kokiri Sword's chest).
+    /// crawlspace and past the boulder to the Kokiri Sword's chest) and `mido-shop` (on to 40
+    /// rupees, the Deku Shield from the Kokiri shop, both worn, and past Mido).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -91,7 +92,8 @@ struct Cli {
     #[arg(long)]
     placeholders: bool,
     /// A debug save preset for --entrance: deku-tree-open (the Deku Tree met and his mouth
-    /// open), or deku-tree-dead (also the tree dead, with the Kokiri Emerald).
+    /// open), deku-tree-dead (also the tree dead, with the Kokiri Emerald), or
+    /// sword-and-40-rupees (the Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,
     /// Headless: also a screenshot after each of these frames, next to --screenshot

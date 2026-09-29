@@ -69,6 +69,9 @@ CASES = [
     # GAME-03 milestone 2: a new save from Link's bed through the crawlspace, past the boulder,
     # to the Kokiri Sword's chest, opened.
     ("sword_chest", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "sword-chest", "--trace", "{trace}"]),
+    # GAME-03 milestone 3: a new save from Link's bed to the sword, 42 rupees, the Deku Shield
+    # bought in the Kokiri shop, both worn, Mido's talk, and past him.
+    ("mido_shop", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "mido-shop", "--trace", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),

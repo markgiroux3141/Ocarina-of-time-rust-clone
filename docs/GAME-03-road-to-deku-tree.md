@@ -11,7 +11,7 @@ to entering the Deku Tree:
 |---|---|---|
 | 1 | The inventory and getting items: `SaveContext`'s inventory, `Item_Give`, Player's get-item flow, `GetItem_Draw`, `En_Box`, Link's equipment on his model, the B and C items on the HUD | done |
 | 2 | Crawlspaces and the training area: Player's crawl, the `CRAWLSPACE` camera, what stands between the start and the sword | done |
-| 3 | Mido and the shop: `En_Md`, `En_Ossan` (the Kokiri shop), `En_GirlA` | to do |
+| 3 | Mido and the shop: `En_Md`, `En_Ossan` (the Kokiri shop), `En_GirlA`, the pause menu's stand-in in the play frame | done |
 | 4 | Cutscenes, first part (`z_demo.c`): the scripts, `csCtx`, the entrance triggers, Player's cutscene modes | to do |
 | 5 | Navi: `En_Elf` as Link's fairy, the Kokiri's fairies, the game's opening | to do |
 
@@ -324,33 +324,241 @@ The tests: 222 pass, 1 ignored (205 before). The goldens:
   sounds, the circle shadow.
 - **`En_Wonder_Item`:** the bomb soldier is a placeholder; the debug arrows aren't drawn.
 - **Carried over:** the pause menu (Start's stand-in), the shop, Mido, the cutscenes, Navi,
-  audio.
+  audio. *(The shop and Mido: done in milestone 3.)*
+
+## Milestone 3: Mido and the shop
+
+**Answer:** done. On a new save, a scripted run goes from Link's bed to past Mido, the game's way:
+- the Kokiri Sword (milestone 2's run), with room 2's two blue rupees picked up on the way;
+- Start (the pause menu's stand-in, now in the play frame) puts the sword on B;
+- back past the boulder and through the crawlspace, then 42 rupees, all of them the C's placed
+  ones;
+- in the Kokiri shop, the Deku Shield bought through the shopkeeper's browsing, the get-item
+  flow and the price;
+- Start again to wear the shield;
+- east over the ford to Mido: he says 0x1033, sets `EVENTCHKINF_04`, walks aside along path 1,
+  and Link walks past him.
+
+The tests: 238 pass, 1 ignored (222 before). The goldens:
+- the Deku Tree playthrough's and the sword run's traces are re-recorded (Mido's `Rand` calls
+  and his fairy);
+- the new run's trace is a new case;
+- 82 of 82.
+
+### What was built
+
+1. **`En_Md`** (`oot_actors::en_md`), Mido, the whole overlay.
+   - `EnMd_Init`:
+     - `EnMd_ShouldSpawn`: Kokiri Forest before Zelda's letter and the goodbye
+       (`EVENTCHKINF_40`, `_1C`); his house after them, for child Link; the Lost Woods always;
+     - his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder);
+     - blocking, or at path 1's last point with `EVENTCHKINF_04` (`EnMd_SetMovedPos`).
+   - Blocking (`func_80AAB948`): 60 from his home towards Link, facing him, his animation's speed
+     by how far Link has gone round him. His collider is immovable, so Link can't pass.
+   - Talking (`func_800343CC` through `oot_game::npc::talk_update`):
+     - his text (`EnMd_GetText`: Kokiri Forest, his house, the Lost Woods);
+     - the conversation's state (`func_80AAAF04`): 0x102F sets `EVENTCHKINF_02` and
+       `INFTABLE_0C` as it closes; 0x1033 (and 0x1067) returns 2;
+     - the box count (`func_80AAAC78`), which picks his gestures for each box
+       (`func_80AAAA24`: eleven animation sequences, `func_80AAA274` to `func_80AAA890`, some
+       played backwards by `func_80AAA250`).
+   - Stepping aside: `EVENTCHKINF_04`, then along path 1 at 1.5 (`func_80AABD0C`,
+     `EnMd_FollowPath` with `Math_FAtan2F`'s double product). Within 10 of its last point he
+     stops and stays (`func_80AAB8F8`). With the Kokiri Emerald, the goodbye instead:
+     `MSGMODE_PAUSED`, then `Message_CloseTextbox`, `EVENTCHKINF_1C` and he goes.
+   - The head and torso tracking (`func_80AAB158`: `func_80034A14` preset 2,
+     `func_800347E8`), the idle sway, the blinks, and the fade beyond 400 of Link
+     (`func_80AAB5A4`; `func_80034DD4` is new in `oot_game::npc`).
+   - The draw (`EnMd_Draw`): six bakes, an eye and a pass each:
+     - opaque at full alpha (`func_80034BA0`), translucent while fading (`func_80034CC4`);
+     - `EnMd_OverrideLimbDraw`'s head and torso turns and sway, and `EnMd_PostLimbDraw`'s
+       focus.
+   - The Lost Woods (`SCENE_SPOT10`), ported against `msgCtx.ocarinaMode`:
+     - his texts;
+     - `PLAYER_STATE2_23` near him;
+     - waiting for Saria's Song (`func_80AABC10`).
+
+     Nothing there plays the ocarina: the check (`func_8010BD58`) is logged if it would start.
+   - His house (`SCENE_KOKIRI_HOME4`): his texts (0x1028, 0x1046, `EVENTCHKINF_0F`), always
+     opaque. Its layer 0 has no `En_Md`.
+2. **`En_Ossan`** (`oot_actors::en_ossan`), the shopkeepers.
+   - **All 27 states** (`sStateFunc`) and their helpers:
+     - talking and the choice (`EnOssan_State_Idle`, `_StartConversation`,
+       `_FacingShopkeeper`);
+     - the camera's turn to a shelf and back (`EnOssan_UpdateCameraDirection`:
+       `Camera_SetCameraData`'s `data2`, which `Camera_Data4` adds to bg camera 1's yaw);
+     - browsing (the stick's accumulation, `EnOssan_CursorRight`, `_CursorLeft`,
+       `_CursorUpDown`);
+     - choosing (the item off the shelf and back: `EnOssan_TakeItemOffShelf`,
+       `_ReturnItemToShelf`);
+     - buying: `EnOssan_HandleCanBuyItem`'s answers (0x84, 0x85, 0x86, 0x96, the get-item flow
+       through `func_8002F434` within 120);
+     - the price after the item's text (`buyEventFunc`), 0x6B, continuing or ending
+       (`EnOssan_EndInteraction`);
+     - the other shops' states: the milk, the egg, the Goron bombs, the masks and their
+       payback, the Hylian Shield's discount.
+   - Talking hides Link (`PLAYER_STATE2_29`), turns the viewpoint to the shop's browsing camera
+     (`Play_SetShopBrowsingViewpoint`), and sets `YREG(31)`.
+   - `EnOssan_Init`'s checks for every type. **Only the Kokiri shopkeeper** goes on
+     (`EnOssan_InitKokiriShopkeeper`: `object_km1`'s skeleton playing
+     `object_masterkokiri_Anim_0004A8`, his fairy). The other ten types log that they aren't
+     ported and stand as placeholders.
+   - The Kokiri shopkeeper's draw: three bakes, one per eye (`object_masterkokirihead`'s head on
+     limb 15, fixed colours on segments 8 and 9). The cursor (`EnOssan_DrawCursor`) and the
+     stick prompts (`EnOssan_DrawStickDirectionPrompts`), with their pulses, as three sprites
+     in the overlay.
+3. **`En_GirlA`** (`oot_actors::en_girla`), the shop items, the whole overlay:
+   - `shopItemEntries`' 50 rows, with every `EnGirlA_CanBuy_*`, `_ItemGive_*` and
+     `_BuyEvent_*` function;
+   - the stock changes (`EnGirlA_TryChangeShopItem`, `_SetItemOutOfStock`,
+     `_UpdateStockedItem`);
+   - the mask texts;
+   - the spin while selected (`EnGirlA_Update2`);
+   - the draw, `GetItem_Draw` turned by `yRotation`.
+
+   New in `oot_game::item`: `Inventory_HasEmptyBottle`, `func_800849EC` (the Giant's Knife).
+4. **`En_Tana`** (`oot_actors::en_tana`), the shelves: the wooden ones' list, and the stone ones
+   with their textures (two bakes).
+5. **The pause menu's stand-in in the play frame** ([ADR 0021](adr/0021-mido-the-shop-and-the-pause-stand-in.md)).
+   `PlayState::kaleido_setup_update` runs where `Play_Update` calls `KaleidoSetup_Update`:
+   - before the actors;
+   - only with no message box (`msgMode == MSGMODE_NONE`);
+   - not during a transition or `Play_InCsMode`.
+
+   Start then runs `pause_menu_equip`. The game passes Start on as input; the scripted runs press
+   it.
+6. **The message box:**
+   - `YREG(31)` is `MessageContext::yreg_31`, read in the five places `z_message_PAL.c` reads
+     it;
+   - `Message_Update`'s `averageY` is computed as the C computes it (the `s16` screen positions
+     promoted to `int`). The port's `i16` sum overflowed with an actor far off screen.
+7. **Player:**
+   - not drawn under `PLAYER_STATE2_29` (`Player_Draw`);
+   - `PlayerIface::change_state_flags2` and `set_equipment_data`.
+8. **Saves:**
+   - the `deku-tree-open` and `deku-tree-dead` presets set `EVENTCHKINF_04` (Mido has stepped
+     aside);
+   - a new preset, `sword-and-40-rupees` (the Kokiri Sword worn and 40 rupees), for trying the
+     shop by hand.
+9. **The run** (`oot_actors::playthrough::Route::MidoShop`, the sandbox's `--script mido-shop`):
+   - new tasks:
+     - `Pick`: onto a placed item until it's collected;
+     - `SlashSwitch`: B beside an interact switch until it's gone, then its drop;
+     - `BuyShield`: the shop's phases, each keyed on the shopkeeper's state and the box;
+     - `Equip`: Start until nothing more would be equipped;
+     - `WaitMido`;
+   - the walks stop to read a text that opens by itself (the forced `En_Wonder_Talk2` by the
+     shop);
+   - `Talk` can talk to Mido;
+   - `OpenChest`, `Exit` and `Crawl` take their step.
+
+   The Deku Tree run now goes round Mido where he stands aside.
+10. **Pack format 10:** the new bakes (Mido 6, the shopkeeper 3, the stone shelves 2, the shop's
+    sprites 3), into `out/data07`.
+11. **Run scripts:**
+    - `game-shop.bat`: the shortcut to the shop's door on the new preset;
+    - `test-mido-shop.bat`;
+    - `sandbox-mido-shop.bat`;
+    - `game-new-save.bat`'s notes cover the whole way now.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 238 passed, 1 ignored |
+| The run (`playthrough` test `a_new_save_to_mido_and_the_shop`) | 5731 frames, Link never hurt. The steps, with the frame each ends on: the chest 2064 (12 rupees: room 2's two green and two blue); the sword on B 2065; back on the plateau 2571; the sign's switch 2856 (switch 0x13, 17); into Mido's house 3356 (19); his chests 3824 (30, treasure flags 0 to 3); into the shop 4236 (37, the forced text 0x218 read on the way); the shield 4779 (42 with the shop's own, then 2); both worn 4780 (`PLAYER_SHIELD_DEKU`); out 4838; Mido 5626 (0x1033, 0x10D2, 0x10D3, 0x1034; `EVENTCHKINF_04`, walking at 1.5); aside 5665 (within 10 of (1412, 0, 211)); past him 5731. The shop's texts 0x9E, 0x83, 0x9F, 0x89, 0x4C, 0x6B; Link hidden while browsing; after it `YREG(31)` 0 and the fixed view. While he blocks, Mido is 60 from his home towards Link on every frame. Four boulder waits: 33, 100, 0 and 33 frames |
+| The Deku Tree run (`kokiri_forest_to_the_deku_tree`) | 1873 frames (1971). Mido stands at path 1's end (`func_80AAB874`); Link passes within 80 of him, round him by the bank west of him. The first bush now drops (Mido's `Rand` calls) |
+| The Kokiri Sword run (`a_new_save_to_the_kokiri_sword`) | Passes; only its actor counts differ (Mido's fairy) |
+| Mido (`mido`: 7 tests) | Blocking: 60 from (1522, 0, 105) towards Link, facing him, target mode 6. The first talk: 0x102F, 0x10D0, 0x10D1, 0x1030; `EVENTCHKINF_02` and `INFTABLE_0C` set; still blocking; then 0x1030 alone. Gestures: at 0x102F's first box sequence 1, `gMidoRaiseHand1Anim` then `gMidoHaltAnim`. With both worn: 0x1033's four texts, `EVENTCHKINF_04`, waypoint 1, 2.25 a frame (speed 1.5 times `R_UPDATE_RATE` × 0.5), stopped within 10 of path 1's end with play speed 0, then 0x1034. With `EVENTCHKINF_04`: at (1412, 0, 211) from the start. The fade: 0x14 a step at first, targetability off, down to 0, back near Link. No Mido with `EVENTCHKINF_40` or `_1C`. His six bakes |
+| The shop (`shop`: 8 tests) | The shopkeeper at (0, 0, -26), scale 0.01, text 0x9E, not targetable; the eight items at `sShopkeeperStores[0]`'s offsets from the shelves (0, 0, -20), turned 0xEAAC or 0x1554, scale 0.25, 24 up, with their prices and texts. Talking: `PLAYER_STATE2_29`, viewpoint 2 (bg camera 1, `PIVOT_SHOP_BROWSING`), `YREG(31)` 1, 0x83. The stick right: the camera at -10, -20, -25, -27.5 ... to -30 (`data2` -30), the cursor on slot 0, 0x9F, the shield spinning. A: 0x89, the shield to (17, 58, 10). Buy: `GI_SHIELD_DEKU` offered, the fixed view, Link shown, the shield off the shelf; Player's get-item; 0x4C with the shield owned, not worn, nothing charged; at its end 40 charged and 0x6B; B: idle, `YREG(31)` 0. 39 rupees: 0x85, back to 0x9F. A shield owned: 0x86. Nuts owned: a quick buy (0x84, 5 more nuts, 15 charged). The left shelf: slot 4 at +30, the seeds 0x86 without a slingshot, back to the shopkeeper past the inner end, 0x10BA on "Talk to the owner". Start does nothing while talking and equips both after |
+| Golden traces and renders | `playthrough` and `sword_chest` re-recorded (their changes above); new case `mido_shop` (the same bytes over two runs); every render unchanged: 82 of 82 |
+| Import | 12.7 s; 51.9 MB; format version 10, into `out/data07` |
+| The windows | Not yet played by hand: `scripts\run\game-shop.bat`, and the whole way from `game-new-save.bat`. Headless screenshots checked: Mido in Kokiri Forest, the shopkeeper behind his counter, the browsing view with both prompts and the cursor, the buy prompt with the shield off the shelf, and the shield held up over 0x4C |
+
+### Decisions
+
+- **[ADR 0021](adr/0021-mido-the-shop-and-the-pause-stand-in.md):**
+  - the pause menu's stand-in in the play frame, as `KaleidoSetup_Update`;
+  - `YREG(31)` in the message box;
+  - `En_Ossan`'s states whole, only the Kokiri shopkeeper's body;
+  - `En_GirlA`'s items as a table of functions, the items taken out while called;
+  - Player's state flags through its interface;
+  - `EVENTCHKINF_04` in the presets;
+  - the route on placed rupees only.
+- **The rupees are the C's placed ones.** 42 can be reached on foot:
+  - room 2's two blue rupees (En_Item00 0x0F01 and 0x0E01): 10, beside the two green ones the
+    sword run already got (2);
+  - the switch by the plateau's sign (En_Wonder_Item 0x1A53): 5;
+  - four green rupees below the ramp and south of the village: 4;
+  - Mido's house's chests (two blue, one green, a heart): 11;
+  - the free multitag's two tag points: 5;
+  - the shop's own proximity drop right of the counter: 5.
+
+  Left out:
+  - the three proximity drops on the plateau (0x1214, 0x1215, 0x1256): they hang 45 above its
+    floor, beyond their reach of 30, and need a jump;
+  - the high blue rupee on Fado's platform (y 180);
+  - the one behind Mido's house (y 53, a step of 60 up);
+  - the ordered multitag by the ford: its two points are 486 apart, with 80 frames between
+    them.
+- **Start right after the chest**, as text 0xA4 says: the switch needs the sword on B.
+- **The Deku Tree run goes round Mido.** Its path went through where he stands aside. The bank
+  west of him leaves about 50 between the stream and his collider.
+- **The walks read a text that opens by itself.** In the C, the forced `En_Wonder_Talk2` by the
+  shop holds Link (Player's cutscene mode 8, not ported) until it's read. The run stops and
+  reads it, as a player would; before, a walk left it open and walked on.
+
+### Known gaps
+
+- **The pause menu** is still Start's stand-in. It never swaps a worn piece.
+- **`En_Ossan`:**
+  - the other ten shopkeepers are placeholders (their inits, objects, skeletons and draws);
+  - the sounds and prints;
+  - the unused collider.
+- **`En_GirlA`:** the items' highlight (`hiliteFunc`) isn't drawn.
+- **The stick prompt's rectangle** reads 24 rows of a 16-row texture, and the C's bottom rows are
+  whatever TMEM holds. The sprite repeats the texture instead.
+- **Link's shadow** isn't drawn while he's hidden in the shop. The C's `Actor_Draw` still draws
+  it; the port draws it inside Player's draw.
+- **Mido:**
+  - his fairy is a placeholder (Navi, milestone 5);
+  - the ocarina in the Lost Woods;
+  - the goodbye's cutscene;
+  - the circle shadow's alpha.
+- **Forced texts** don't hold Link (Player's cutscene modes: milestone 4).
+- **Carried over:** the cutscenes, Navi, audio, the effects.
 
 ## Visual polish, deferred
 
 Side-by-side comparisons against Project64 on the same ROM, for when the look is polished. They
 don't block milestones: behaviour is checked against the C by the tests.
 
-1. **The crawlspace and the training area** (`scripts\run\game-new-save.bat`):
+1. **The Kokiri shop and Mido** (`scripts\run\game-shop.bat`):
+   - the shopkeeper behind his counter, his blinks and his idle animation;
+   - the browsing camera's turn to each shelf, the cursor's size and pulse, the stick prompts'
+     places and pulses (their bottom rows are known to differ);
+   - an item's spin, and its move off the shelf towards Link;
+   - Mido's gestures through his texts, his walk aside, and his fade by distance.
+2. **The crawlspace and the training area** (`scripts\run\game-new-save.bat`):
    - the crawlspace's view (`Camera_Subj4`): the ease-in, the bob and sway, Link hidden;
    - `tunnel_start` and `tunnel_end`, and the camera handing over on the way out (the one-point
      cutscenes aren't ported);
    - the boulder's roll and size; Link's stagger, knockdown and getting up; the hit's red flash
      (known: not drawn).
-2. **The sword chest** (`scripts\run\game-sword-chest.bat`, against a new file):
+3. **The sword chest** (`scripts\run\game-sword-chest.bat`, against a new file):
    - the slow opening: Link's animation, the lid, the camera's move (`CAM_SET_SLOW_CHEST_CS`);
    - the turn to face the camera (`CAM_SET_TURN_AROUND`) and the sword held up: its size, its
      place over his head, when it appears;
    - text 0xA4: the icon's place and size, the quick text of the first line, the two boxes;
    - Link's stance as the text closes, and the push-back from the chest;
    - the missing light over the chest (known: `Demo_Tre_Lgt`).
-3. **The HUD's B button:** empty on a new file, then the sword's icon once it's equipped. (The
+4. **The HUD's B button:** empty on a new file, then the sword's icon once it's equipped. (The
    C buttons' icons can't be seen yet: the HUD only runs after `Play_Init`, whose new file has
    nothing on C.)
-4. **The placed recovery hearts** in Kokiri Forest: their model, size and the texture's
+5. **The placed recovery hearts** in Kokiri Forest: their model, size and the texture's
    scroll.
-5. **Link's model:** the empty sheath on a new file, the sword in it after equipping.
-6. **From GAME-02, still open:**
+6. **Link's model:** the empty sheath on a new file, the sword in it after equipping.
+7. **From GAME-02, still open:**
    - the message box on the sign (0x031F) and on the Kokiri child (0x100A): the typing speed,
      the box's position, the glyphs' edges, the end icon's flashing;
    - the talk camera on the sign and the child (KEEP3), and in Link's house (KEEP0);
@@ -363,9 +571,13 @@ don't block milestones: behaviour is checked against the C by the tests.
 
 ## Recommended next step
 
-**GAME-03 milestone 3: Mido and the shop,** scoped in [ROADMAP.md](ROADMAP.md) (Phase 4):
-- `En_Md`, blocking the path until Link has the sword and a shield (`EVENTCHKINF` flags);
-- `En_Ossan` (the Kokiri shop only), with its browsing camera, and the shelf items (`En_GirlA`).
+**GAME-03 milestone 4: cutscenes, first part** (`z_demo.c`), scoped in [ROADMAP.md](ROADMAP.md)
+(Phase 4):
+- import the cutscene scripts; `csCtx`'s commands, cues and text;
+- `Cutscene_HandleEntranceTriggers`;
+- Player's cutscene modes (`func_8002DF54`), which also hold Link for the forced texts (the one
+  by the shop included).
 
-**Exit:** buy the Deku Shield with the rupees from the bushes, and Mido lets Link through. The
-sword run's waits and routes (`oot_actors::playthrough`) are the pieces to extend it with.
+**Exit:** talking to the Deku Tree plays his cutscenes and opens his mouth
+(`EVENTCHKINF_05`). The run from a new save then goes on from past Mido into the Deku Tree, the
+game's way, without the preset.

@@ -109,6 +109,11 @@ pub trait PlayerIface {
     fn set_knockback(&mut self, damage: u8, kind: u8, yaw: i16, speed: f32, vy: f32);
     /// `invincibilityTimer`.
     fn invincibility_timer(&self) -> i8;
+    /// An actor's write of `stateFlags2`: `set` bits on, then `clear` bits off (`En_Ossan`'s
+    /// `PLAYER_STATE2_29`, Link hidden while he browses the shelves).
+    fn change_state_flags2(&mut self, set: u32, clear: u32);
+    /// `Player_SetEquipmentData` from `save` (the pause menu's closing runs it).
+    fn set_equipment_data(&mut self, data: &crate::data::GameData, save: &crate::save::SaveContext);
 }
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.

@@ -19,19 +19,23 @@ Reorder freely. The dependencies are noted, and nothing here is a commitment.
 - talking, the message box, drops and a minimal HUD;
 - the Deku Tree's mouth, opened by a save flag.
 
-GAME-03 milestones 1 and 2 are done too:
+GAME-03 milestones 1 to 3 are done too:
 - the inventory, `Item_Give`, the get-item flow, the chests, and Link's equipment from the save;
 - the crawl and the crawlspace's camera, the scene paths, the training area's boulder and wonder
-  items, and Link's knockdown.
+  items, and Link's knockdown;
+- Mido (`En_Md`), the Kokiri shop (`En_Ossan`, `En_GirlA`, `En_Tana`), and the pause menu's
+  equipping stand-in in the play frame (`KaleidoSetup_Update`).
 
-Two headless scripted runs start in Link's bed (`oot_actors --test playthrough`): into the Deku
-Tree (on a flag preset), and on a new save to the Kokiri Sword's chest, opened.
+Three headless scripted runs start in Link's bed (`oot_actors --test playthrough`):
+- into the Deku Tree, on a flag preset;
+- on a new save to the Kokiri Sword's chest, opened;
+- on a new save to the Deku Shield bought, both worn, and past Mido.
 
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
 - ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
-- The pause menu isn't ported: Start stands in for its equipping (ADR 0019).
-- Unported actors are placeholders. Among them: Navi, Mido, Saria and the shopkeeper.
+- The pause menu isn't ported: Start stands in for its equipping (ADR 0019), read in the play frame where `KaleidoSetup_Update` reads it (ADR 0021).
+- Unported actors are placeholders. Among them: Navi and the other fairies, Saria, and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3.)
 - There are no cutscenes: the importer skips all 73. The Deku Tree's mouth opens only with the `deku-tree-open` save preset, which the playthrough starts on.
 - No audio at all.
 
@@ -92,13 +96,13 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
    - `PIVOT_CRAWLSPACE` is ported, but `CRAWLSPACE`'s Subj4 camera isn't.
    - The training area's boulder and whatever else stands between the start and the sword.
    - **Exit:** a scripted run from Link's house to the sword chest.
-3. **Mido and the shop.**
+3. **Mido and the shop** (done: see [GAME-03](GAME-03-road-to-deku-tree.md) milestone 3 and ADR 0021).
    - `En_Md`: blocking the path, his talk states, stepping aside with the sword and shield (`EVENTCHKINF` flags).
    - `En_Ossan`, the Kokiri shop only:
      - the browsing camera (`PIVOT_SHOP_BROWSING` is ported; the shopkeeper switches the viewpoint);
      - choosing, buying, and the rupee check;
      - the shelf items (`En_GirlA`).
-   - **Exit:** buy the Deku Shield with the rupees from the bushes; Mido lets Link through.
+   - **Exit:** buy the Deku Shield with the rupees from the bushes; Mido lets Link through. *(Done with the C's placed rupees instead of the bushes' random drops: 42 of them can be reached on foot.)*
 4. **Cutscenes, first part** (`z_demo.c`; an ADR).
    - Import the cutscene scripts.
    - `csCtx`: the camera commands, Player's and the actors' cues (`npcActions`), text commands through the message box, transitions and terminators.

@@ -44,8 +44,9 @@ struct Cli {
     /// Then put Link at `x,y,z,yaw` (yaw in binary angle units).
     #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
     at: Vec<f32>,
-    /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open), or
-    /// deku-tree-dead (also the tree dead, with the Kokiri Emerald).
+    /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open),
+    /// deku-tree-dead (also the tree dead, with the Kokiri Emerald), or sword-and-40-rupees (the
+    /// Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,
     /// A pack file or loose folder to use instead of the default pack.
