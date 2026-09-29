@@ -1,15 +1,22 @@
-//! The Kokiri Forest playthrough (GAME-02 milestone 4): a scripted run from Link's bed to the
-//! Deku Tree's scene, steering each frame as a player would. The `playthrough` test runs it
-//! with checks at each step, and the sandbox's `playthrough` script writes its trace.
+//! The Kokiri Forest playthroughs: scripted runs from Link's bed, steering each frame as a
+//! player would (`Route`). The tests run them with checks at each step, and the sandbox's
+//! scripts write their traces.
 //!
-//! It needs the Deku Tree's mouth open, so it runs on a save with the `deku-tree-open` preset
-//! (`oot_game::save::SAVE_PRESETS`): the talk that opens it in the game is a cutscene, which
-//! isn't ported yet.
+//! **The Deku Tree** (GAME-02 milestone 4, `Route::DekuTree`, the `playthrough` test and
+//! script) goes into the Deku Tree's scene. It needs the Deku Tree's mouth open, so it runs on
+//! a save with the `deku-tree-open` preset (`oot_game::save::SAVE_PRESETS`): the talk that
+//! opens it in the game is a cutscene, which isn't ported yet. The route follows Kokiri
+//! Forest's collision: out of Link's house, down the ladder, to the sign, to the Kokiri child
+//! by the bushes (child 4), the bushes, then east through the stream, past Mido, along the
+//! path through the `En_Holl` into room 1, across the meadow and into the mouth. Mido and
+//! Saria are placeholders, so neither stands in the way.
 //!
-//! The route follows Kokiri Forest's collision: out of Link's house, down the ladder, to the
-//! sign, to the Kokiri child by the bushes (child 4), the bushes, then east through the
-//! stream, past Mido, along the path through the `En_Holl` into room 1, across the meadow
-//! and into the mouth. Mido and Saria are placeholders, so neither stands in the way.
+//! **The Kokiri Sword** (GAME-03 milestone 2, `Route::SwordChest`, the `sword_chest` test and
+//! the `sword-chest` script) runs on a new save: out of the house and down the ladder, west
+//! through the village and up the ramp onto the plateau, into the crawlspace by its sign, out
+//! into the training area (room 2), round the boulder's corridors while it rolls elsewhere
+//! (waiting where its path doesn't reach), up to the chest, and the chest opened and its text
+//! read.
 //!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
@@ -21,16 +28,18 @@
 use eng_input::pad::{BTN_A, BTN_B, PadState};
 use glam::Vec3;
 use oot_game::actor_ctx::ActorHandle;
-use oot_game::message::{TEXT_STATE_AWAITING_NEXT, TEXT_STATE_CHOICE, TEXT_STATE_DONE, TEXT_STATE_DONE_HAS_NEXT, TEXT_STATE_NONE};
+use oot_game::message::{MSGMODE_TEXT_AWAIT_INPUT, TEXT_STATE_AWAITING_NEXT, TEXT_STATE_CHOICE, TEXT_STATE_DONE, TEXT_STATE_DONE_HAS_NEXT, TEXT_STATE_NONE};
 use oot_game::play::PlayState;
 use oot_game::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
 
 use crate::PlayExt;
+use crate::en_box::EnBox;
+use crate::en_goroiwa::EnGoroiwa;
 use crate::en_item00::{Action as ItemAction, EnItem00};
 use crate::en_kanban::EnKanban;
 use crate::en_ko::EnKo;
 use crate::en_kusa::{Action as BushAction, EnKusa};
-use crate::player::Action as PA;
+use crate::player::{Action as PA, STATE2_16};
 use crate::script::{exit_to, stick_towards};
 
 /// The steps, in order. Each is reported by `Playthrough::take_done` after the `next` call
@@ -56,6 +65,14 @@ pub enum Step {
     Mouth,
     /// The Deku Tree's scene, faded in and settled.
     DekuTree,
+    /// Into the crawlspace: the crawl began (`func_8084C760`).
+    Crawlspace,
+    /// Out of the crawlspace into the training area (room 2), standing.
+    TrainingArea,
+    /// Past the boulder's corridors, at the foot of the slope up to the chest.
+    Boulder,
+    /// The chest opened, its item's text read and closed, Link standing.
+    Chest,
 }
 
 impl Step {
@@ -70,7 +87,48 @@ impl Step {
             Step::Tree => "tree",
             Step::Mouth => "mouth",
             Step::DekuTree => "deku_tree",
+            Step::Crawlspace => "crawlspace",
+            Step::TrainingArea => "training_area",
+            Step::Boulder => "boulder",
+            Step::Chest => "chest",
         }
+    }
+}
+
+/// The scripted runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Route {
+    /// Link's bed into the Deku Tree, on the `deku-tree-open` preset (GAME-02 milestone 4).
+    DekuTree,
+    /// Link's bed to the Kokiri Sword's chest, opened, on a new save (GAME-03 milestone 2).
+    SwordChest,
+}
+
+impl Route {
+    /// The entrance a route starts at.
+    pub fn entrance(self) -> &'static str {
+        "ENTR_LINK_HOME_0"
+    }
+
+    /// The save preset it needs, if any.
+    pub fn preset(self) -> Option<&'static str> {
+        match self {
+            Route::DekuTree => Some("deku-tree-open"),
+            Route::SwordChest => None,
+        }
+    }
+
+    /// The sandbox script that runs it.
+    pub fn script(self) -> &'static str {
+        match self {
+            Route::DekuTree => "playthrough",
+            Route::SwordChest => "sword-chest",
+        }
+    }
+
+    /// The route a sandbox script names.
+    pub fn from_script(name: &str) -> Option<Route> {
+        [Route::DekuTree, Route::SwordChest].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -91,6 +149,18 @@ enum Task {
     Talk(Who, Vec3, Step),
     /// Cut the first of these bushes (home positions) that drops something, and collect it.
     CutBushes(Vec<Vec3>),
+    /// Steer through the points at full tilt.
+    Hurry(Vec<Vec3>),
+    /// Into a crawlspace and through it: walk to the first point, lined up with the mouth;
+    /// towards the mouth (the second point) until A says "Enter" (`PLAYER_STATE2_16`); A; the
+    /// stick forward until Link is out and standing.
+    Crawl(Vec3, Vec3),
+    /// Idle until the boulder rolls on its path from point `.0` to point `.1` and has covered
+    /// at least `.2` of that segment.
+    WaitBoulder(i16, i16, f32),
+    /// Open the chest whose home is here: walk in front of it, at it until it offers its
+    /// item, A, then A through the item's text until the box closes and Link stands.
+    OpenChest(Vec3),
 }
 
 /// An actor the run talks to.
@@ -108,8 +178,11 @@ const WAYPOINT_RADIUS: f32 = 30.0;
 /// (`func_80836FAC` takes 20 off the dead-zoned magnitude, so much under 30 only turns Link.)
 const RUN: f32 = 60.0;
 const SLOW: f32 = 40.0;
+/// Full tilt (the stick's relative position clamps at 60 past the dead zone).
+const FULL: f32 = 80.0;
 
 pub struct Playthrough {
+    pub route: Route,
     tasks: Vec<Task>,
     task: usize,
     /// The current task's progress, and a frame counter it uses.
@@ -132,6 +205,8 @@ pub struct Playthrough {
     dropped: Option<ActorHandle>,
     /// Why the run stopped short, if it did.
     pub failure: Option<String>,
+    /// The frames spent waiting for the boulder, each wait.
+    pub boulder_waits: Vec<usize>,
 }
 
 impl Default for Playthrough {
@@ -141,14 +216,77 @@ impl Default for Playthrough {
 }
 
 impl Playthrough {
-    /// The entrance the run starts at, and the save preset it needs.
+    /// The entrance the Deku Tree run starts at, and the save preset it needs.
     pub const ENTRANCE: &'static str = "ENTR_LINK_HOME_0";
     pub const PRESET: &'static str = "deku-tree-open";
-    /// A cap on the run's length.
+    /// A cap on a run's length.
     pub const MAX_FRAMES: usize = 6000;
 
+    /// The Deku Tree run.
     pub fn new() -> Playthrough {
-        let tasks = vec![
+        Self::for_route(Route::DekuTree)
+    }
+
+    pub fn for_route(route: Route) -> Playthrough {
+        let tasks = match route {
+            Route::DekuTree => Self::deku_tree(),
+            Route::SwordChest => Self::sword_chest(),
+        };
+        Playthrough {
+            route,
+            tasks,
+            task: 0,
+            sub: 0,
+            wait: 0,
+            frame: 0,
+            prev: PadState::default(),
+            done: None,
+            steps: Vec::new(),
+            texts: Vec::new(),
+            bushes_cut: Vec::new(),
+            drop: None,
+            scene_changes: 0,
+            items: Vec::new(),
+            dropped: None,
+            failure: None,
+            boulder_waits: Vec::new(),
+        }
+    }
+
+    /// The Kokiri Sword run's tasks.
+    fn sword_chest() -> Vec<Task> {
+        vec![
+            Task::Settle(Some(Step::House)),
+            Task::Exit("ENTR_SPOT04_3", Step::OutDoor),
+            Task::LadderDown,
+            // Out of the house's hollow, west through the village to the foot of the ramp, and
+            // up it onto the plateau (y 120).
+            Task::Walk(vec![Vec3::new(0.0, -80.0, 800.0), Vec3::new(0.0, 0.0, 480.0), Vec3::new(-300.0, 0.0, 300.0), Vec3::new(-450.0, 0.0, -150.0), Vec3::new(-650.0, 0.0, -170.0), Vec3::new(-650.0, 120.0, 250.0)]),
+            // North across the plateau to the crawlspace by its sign (0x0337): its mouth is the
+            // wall at z 1059, x -801..-769 (WALL_FLAG_4).
+            Task::Walk(vec![Vec3::new(-650.0, 120.0, 500.0), Vec3::new(-785.0, 120.0, 850.0)]),
+            Task::Crawl(Vec3::new(-785.0, 120.0, 1000.0), Vec3::new(-785.0, 120.0, 1059.0)),
+            // The bottom corridor west of the boulder's path (its corner at (-575, 1538)).
+            Task::Walk(vec![Vec3::new(-760.0, 120.0, 1470.0), Vec3::new(-700.0, 120.0, 1515.0)]),
+            // Once it has turned north up the middle corridor (path 2's points 2 to 3), after it
+            // to the corridors' top-left corner and into the alcove west of it.
+            Task::WaitBoulder(2, 3, 0.35),
+            Task::Hurry(vec![Vec3::new(-555.0, 120.0, 1545.0), Vec3::new(-555.0, 120.0, 1850.0), Vec3::new(-690.0, 120.0, 1880.0)]),
+            // Once it has passed along the top corridor (points 3 to 4), after it east to the
+            // top-right corner, and north out of its way.
+            Task::WaitBoulder(3, 4, 0.35),
+            Task::Hurry(vec![Vec3::new(-560.0, 120.0, 1885.0), Vec3::new(-250.0, 120.0, 1895.0), Vec3::new(-250.0, 120.0, 1960.0)]),
+            Task::Settle(Some(Step::Boulder)),
+            // Up the slope to the chest's dais.
+            Task::Walk(vec![Vec3::new(-250.0, 140.0, 2080.0), Vec3::new(-232.0, 160.0, 2170.0)]),
+            // room 2's En_Box (params 0x04E0): the Kokiri Sword.
+            Task::OpenChest(Vec3::new(-232.0, 178.0, 2245.0)),
+        ]
+    }
+
+    /// The Deku Tree run's tasks.
+    fn deku_tree() -> Vec<Task> {
+        vec![
             Task::Settle(Some(Step::House)),
             Task::Exit("ENTR_SPOT04_3", Step::OutDoor),
             Task::LadderDown,
@@ -181,24 +319,7 @@ impl Playthrough {
             Task::Settle(Some(Step::Tree)),
             Task::Exit("ENTR_YDAN_0", Step::Mouth),
             Task::Settle(Some(Step::DekuTree)),
-        ];
-        Playthrough {
-            tasks,
-            task: 0,
-            sub: 0,
-            wait: 0,
-            frame: 0,
-            prev: PadState::default(),
-            done: None,
-            steps: Vec::new(),
-            texts: Vec::new(),
-            bushes_cut: Vec::new(),
-            drop: None,
-            scene_changes: 0,
-            items: Vec::new(),
-            dropped: None,
-            failure: None,
-        }
+        ]
     }
 
     /// The step done on the last frame, once.
@@ -324,16 +445,27 @@ impl Playthrough {
                 }
                 _ => self.settle(w, Some(step)),
             },
-            Task::Walk(points) => {
-                while self.sub < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
-                    self.sub += 1;
-                }
-                if self.sub >= points.len() {
+            Task::Walk(points) => self.walk(w, &points, RUN),
+            Task::Hurry(points) => self.walk(w, &points, FULL),
+            Task::Crawl(approach, mouth) => self.crawl(w, approach, mouth),
+            Task::WaitBoulder(from, to, frac) => {
+                let Some(b) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnGoroiwa>(h)) else {
+                    self.failure = Some("no boulder to wait for".into());
+                    return None;
+                };
+                let path = &w.setup_path_list()[(b.actor.params & 0xFF) as usize];
+                let (p0, p1) = (path.point(from as usize), path.point(to as usize));
+                let seg = p1 - p0;
+                let progress = (b.actor.world_pos - p0).dot(seg) / seg.length_squared();
+                if b.current_waypoint == from && b.next_waypoint == to && progress >= frac {
+                    self.boulder_waits.push(self.wait);
                     self.finish(None);
                     return None;
                 }
-                Some(stick_towards(w, points[self.sub], RUN))
+                self.wait += 1;
+                Some(idle)
             }
+            Task::OpenChest(home) => self.open_chest(w, home),
             Task::LadderDown => {
                 let a = w.player().action;
                 match self.sub {
@@ -397,19 +529,138 @@ impl Playthrough {
                         }
                         Some(self.press(BTN_A))
                     }
-                    // A whenever a box waits (the end of one with a next text, a choice's
-                    // first answer), until it's closed and Link stands.
+                    // A whenever a box waits, until it's closed and Link stands.
                     _ => {
                         if w.message_state() == TEXT_STATE_NONE && !matches!(p.action, PA::Talk | PA::ItemPutAway) {
                             self.finish(Some(step));
                             return None;
                         }
-                        let waiting = matches!(w.message_state(), TEXT_STATE_AWAITING_NEXT | TEXT_STATE_DONE | TEXT_STATE_DONE_HAS_NEXT | TEXT_STATE_CHOICE);
-                        Some(if waiting { self.press(BTN_A) } else { idle })
+                        Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
                     }
                 }
             }
             Task::CutBushes(bushes) => self.cut_bushes(w, &bushes),
+        }
+    }
+
+    /// Whether the message box waits for A: the end of a box with a next text, a choice's first
+    /// answer, the end, or a box break (`MSGMODE_TEXT_AWAIT_INPUT`, which `Message_GetState`
+    /// reports as `TEXT_STATE_DONE_FADING`, its fallback).
+    fn text_waits(w: &PlayState) -> bool {
+        matches!(w.message_state(), TEXT_STATE_AWAITING_NEXT | TEXT_STATE_DONE | TEXT_STATE_DONE_HAS_NEXT | TEXT_STATE_CHOICE) || w.msg_ctx.msg_mode == MSGMODE_TEXT_AWAIT_INPUT
+    }
+
+    /// Steers through `points`, each passed within `WAYPOINT_RADIUS`, at stick magnitude `mag`.
+    fn walk(&mut self, w: &PlayState, points: &[Vec3], mag: f32) -> Option<PadState> {
+        let link = w.player().actor.world_pos;
+        while self.sub < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
+            self.sub += 1;
+        }
+        if self.sub >= points.len() {
+            self.finish(None);
+            return None;
+        }
+        Some(stick_towards(w, points[self.sub], mag))
+    }
+
+    /// `Task::Crawl`'s phases in `sub`: 0 to the approach, 1 at the mouth until "Enter", 2 A
+    /// (with the stick still at the mouth, so Link stays in `func_80842180`, whose interrupts
+    /// include the wall's, `func_8083F7BC`), 3 crawling, 4 out and settling.
+    fn crawl(&mut self, w: &PlayState, approach: Vec3, mouth: Vec3) -> Option<PadState> {
+        let idle = PadState::default();
+        let p = w.player();
+        let link = p.actor.world_pos;
+        match self.sub {
+            0 => {
+                if Self::xz_dist(link, approach) < 10.0 {
+                    self.sub = 1;
+                }
+                Some(stick_towards(w, approach, SLOW))
+            }
+            1 => {
+                if p.state2 & STATE2_16 != 0 {
+                    self.sub = 2;
+                }
+                Some(stick_towards(w, mouth, SLOW))
+            }
+            2 => {
+                if matches!(p.action, PA::Crawl | PA::ItemPutAway) {
+                    self.sub = 3;
+                    return Some(idle);
+                }
+                if p.state2 & STATE2_16 == 0 {
+                    self.sub = 1;
+                    return Some(stick_towards(w, mouth, SLOW));
+                }
+                let mut pad = stick_towards(w, mouth, SLOW);
+                pad.button = self.press(BTN_A).button;
+                Some(pad)
+            }
+            // func_8084C760 reads the stick's tilt straight (rel.stick_y), not the camera's way.
+            3 => {
+                if p.action == PA::Crawl && !self.steps.iter().any(|s| s.0 == Step::Crawlspace) {
+                    self.steps.push((Step::Crawlspace, self.frame));
+                    self.done = Some(Step::Crawlspace);
+                }
+                if p.action == PA::CrawlExit {
+                    self.sub = 4;
+                    return Some(idle);
+                }
+                Some(PadState { stick_y: RUN as i8, ..Default::default() })
+            }
+            _ => self.settle(w, Some(Step::TrainingArea)),
+        }
+    }
+
+    /// `Task::OpenChest`'s phases: 0 in front (35 before it, on its axis: its collision holds
+    /// Link at 34), running (a slow walk stalls at the foot of the Kokiri Sword chest's
+    /// mound), 1 at it until it offers (a chest's negative get-item id), 2 A, 3 the opening and
+    /// the text.
+    fn open_chest(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        let idle = PadState::default();
+        let Some((h, chest)) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnBox>(h).filter(|b| b.actor.home_pos.distance(home) < 1.0).map(|b| (h, b))) else {
+            self.failure = Some(format!("no chest at {home}"));
+            return None;
+        };
+        let yaw = chest.actor.shape_rot.y;
+        let front = home - Vec3::new(eng_math::sin_s(yaw), 0.0, eng_math::cos_s(yaw)) * 35.0;
+        let p = w.player();
+        let link = p.actor.world_pos;
+        match self.sub {
+            0 => {
+                if Self::xz_dist(link, front) < 10.0 {
+                    self.sub = 1;
+                }
+                Some(stick_towards(w, front, RUN))
+            }
+            1 => {
+                if p.interact_range_actor == Some(h) && p.get_item_id < 0 {
+                    self.sub = 2;
+                    return Some(idle);
+                }
+                Some(stick_towards(w, home, SLOW))
+            }
+            2 => {
+                if p.action == PA::GetItem {
+                    self.sub = 3;
+                    return Some(idle);
+                }
+                if p.interact_range_actor != Some(h) {
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                Some(self.press(BTN_A))
+            }
+            _ => {
+                if w.message_state() == TEXT_STATE_NONE && p.action == PA::StandingStill && self.wait > 0 {
+                    self.finish(Some(Step::Chest));
+                    return None;
+                }
+                if w.message_state() != TEXT_STATE_NONE {
+                    self.wait += 1;
+                }
+                Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
+            }
         }
     }
 

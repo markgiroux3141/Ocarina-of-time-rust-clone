@@ -29,7 +29,7 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::data::{AgeProperties, AnimId, GameData, Regs};
 use oot_game::player_lib::Blinker;
 use oot_game::skelanime::{ANIMMODE_LOOP, ANIMMODE_ONCE, SkelAnime};
-use oot_game::surface::{SurfaceType, WALL_FLAG_0, WALL_FLAG_1, WALL_FLAG_2, WALL_FLAG_3};
+use oot_game::surface::{SurfaceType, WALL_FLAG_0, WALL_FLAG_1, WALL_FLAG_2, WALL_FLAG_3, WALL_FLAG_4, WALL_FLAG_5, WALL_FLAG_6};
 use oot_game::target::{ACTOR_FLAG_27, TargetView};
 use oot_game::collision_check::{self as cc, ColliderCylinder, ColliderCylinderInit, ColliderInfoInit, ColliderInit, ColliderMut, ColliderQuad, ColliderQuadInit, ColliderTouch, ColliderBumpInit};
 use eng_collision::math3d::Cylinder16;
@@ -88,6 +88,8 @@ pub const STATE2_27: u32 = 1 << 27;
 pub const STATE2_28: u32 = 1 << 28; // idle fidget
 pub const STATE2_17: u32 = 1 << 17; // spin attack
 pub const STATE2_30: u32 = 1 << 30; // stab lunge
+pub const STATE2_7: u32 = 1 << 7;
+pub const STATE2_31: u32 = 1 << 31;
 // stateFlags3
 pub const STATE3_1: u32 = 1 << 1;
 pub const STATE3_3: u32 = 1 << 3;
@@ -165,6 +167,10 @@ const FLOOR_PROPERTY_9: u32 = 9;
 const FLOOR_TYPE_6: u32 = 6;
 const FLOOR_TYPE_7: u32 = 7;
 const FLOOR_TYPE_9: u32 = 9;
+const FLOOR_TYPE_2: u32 = 2;
+const FLOOR_TYPE_3: u32 = 3;
+/// `SCENE_BMORI1` (`scene_table.h`): the Forest Temple.
+const SCENE_BMORI1: u16 = 0x03;
 
 /// `PLAYER_ANIMGROUP_*` indices used here (group 0 = wait, 1 = walk, 2 = run, ...).
 pub mod group {
@@ -268,6 +274,18 @@ pub enum Action {
     /// `func_8084E6D4`: getting an item: a chest's opening, then the item held up over Link's
     /// head with its text.
     GetItem,
+    /// `func_8084C760`: in a crawlspace, crawling.
+    Crawl,
+    /// `func_8084C81C`: climbing out of a crawlspace.
+    CrawlExit,
+    /// `func_8084370C`: staggering from a hit.
+    Damaged,
+    /// `func_8084377C`: knocked down, in the air until the landing.
+    KnockedDown,
+    /// `func_80843954`: lying on the ground after a knockdown.
+    Down,
+    /// `func_80843A38`: getting up.
+    GetUp,
 }
 
 /// `func_A74`: what `func_808458D0` runs once the item is away.
@@ -279,6 +297,8 @@ pub enum A74 {
     Talk,
     /// `func_8083A434`: the get-item action.
     GetItem,
+    /// `func_8083A40C`: the crawl.
+    Crawl,
 }
 
 /// Player's upper-body action (`this->func_82C`), run from `func_80836670`.
@@ -327,6 +347,12 @@ impl Action {
             Action::DoorOpen => "func_80845EF8",
             Action::Talk => "func_8084B530",
             Action::GetItem => "func_8084E6D4",
+            Action::Crawl => "func_8084C760",
+            Action::CrawlExit => "func_8084C81C",
+            Action::Damaged => "func_8084370C",
+            Action::KnockedDown => "func_8084377C",
+            Action::Down => "func_80843954",
+            Action::GetUp => "func_80843A38",
         }
     }
 }
@@ -574,6 +600,23 @@ pub struct Player {
     pub unk_88E: u8,
     /// `unk_837`: frames before "Put Away" shows on the A button.
     pub unk_837: u8,
+    /// `invincibilityTimer`: no damage while non-zero; positive counts down after a hit (and
+    /// is visible), negative counts up (the roll's, when Link's cylinder is also AT).
+    pub invincibility_timer: i8,
+    /// `unk_88F`: `func_80837AE0`'s reset of the hit flash's phase (the flash isn't drawn).
+    pub unk_88F: u8,
+    /// `unk_8A0` .. `unk_8A8`: the knockback an actor asked for this frame (`func_8002F698`):
+    /// the extra damage, the kind (1 a push, 2 a knockdown, 3 a shock), the yaw, the speed and
+    /// the upward speed. `unk_8A1` is cleared at the end of every update.
+    pub unk_8A0: u8,
+    pub unk_8A1: u8,
+    pub unk_8A2: i16,
+    pub unk_8A4: f32,
+    pub unk_8A8: f32,
+    /// `unk_A86` (the Ganon fight's delayed damage; never set here), `unk_A87` (frames without
+    /// damage).
+    pub unk_A86: i8,
+    pub unk_A87: u8,
 }
 
 /// `D_80854730`: the root translation Link's animations are authored around.
@@ -711,6 +754,15 @@ impl Player {
             navi_text_id: 0,
             unk_88E: 0,
             unk_837: 0,
+            invincibility_timer: 0,
+            unk_88F: 0,
+            unk_8A0: 0,
+            unk_8A1: 0,
+            unk_8A2: 0,
+            unk_8A4: 0.0,
+            unk_8A8: 0.0,
+            unk_A86: 0,
+            unk_A87: 0,
         };
         // A plain start (the tests' and the sandbox's): standing still (`func_80853080`).
         p.func_80853080(data);
@@ -901,6 +953,17 @@ impl Player {
         if self.unk_88E != 0 {
             self.unk_88E -= 1;
         }
+        if self.unk_A87 != 0 {
+            self.unk_A87 -= 1;
+        }
+        if self.invincibility_timer < 0 {
+            self.invincibility_timer += 1;
+        } else if self.invincibility_timer > 0 {
+            self.invincibility_timer -= 1;
+        }
+        if self.unk_890 != 0 {
+            self.unk_890 -= 1;
+        }
         self.func_808473D4(env);
         self.func_80836BEC(env);
 
@@ -925,9 +988,20 @@ impl Player {
             step_to_f(&mut self.pushed_speed, 0.0, 1.0);
         }
 
-        // Damage (func_808382DC): not modelled.
-        self.func_8083D53C(env);
-        self.func_8083AA10(env);
+        if !self.in_blocking_cs_mode(env) && self.state2 & STATE2_18 == 0 {
+            self.func_8083D53C(env);
+            if env.io.borrow().save.health == 0 {
+                // Dying (func_80836448, func_80837B9C) isn't ported: Link carries on.
+                self.note("out of health: dying (func_80836448) not ported");
+            }
+            let trigger_start = env.io.borrow().transition.trigger == TRANS_TRIGGER_START;
+            if self.actor.parent.is_none() && (trigger_start || self.unk_A87 != 0 || !self.func_808382DC(env)) {
+                self.func_8083AA10(env);
+            } else {
+                self.fall_start_height = self.actor.world_pos.y as i16;
+            }
+            // (func_80848EF8: the rumble.)
+        }
 
         self.func_8083D6EC();
 
@@ -1082,6 +1156,12 @@ impl Player {
             Action::DoorOpen => self.func_80845EF8(env),
             Action::Talk => self.func_8084B530(env),
             Action::GetItem => self.func_8084E6D4(env),
+            Action::Crawl => self.func_8084C760(env),
+            Action::CrawlExit => self.func_8084C81C(env),
+            Action::Damaged => self.func_8084370C(env),
+            Action::KnockedDown => self.func_8084377C(env),
+            Action::Down => self.func_80843954(env),
+            Action::GetUp => self.func_80843A38(env),
         }
     }
 
@@ -1601,6 +1681,7 @@ impl Player {
                 Some(A74::ClimbStart) => self.func_8083A3B0(env.data),
                 Some(A74::Talk) => self.func_8083A2F8(env.data),
                 Some(A74::GetItem) => self.func_8083A434(env.data),
+                Some(A74::Crawl) => self.func_8083A40C(env.data),
                 None => {}
             }
         }
@@ -1615,16 +1696,490 @@ impl Player {
         self.unk_84F = sp18;
     }
 
-    /// `func_8083F7BC` (interrupt 5): walking into a wall to climb it. (Crawlspaces,
-    /// `func_8083F0C8`, and pushing blocks aren't ported.)
+    /// `func_8083F7BC` (interrupt 5): at a wall Link faces: climbing it (`func_8083EC18`),
+    /// entering a crawlspace (`func_8083F0C8`), or pushing it. Pushing and pulling
+    /// (`func_8083F72C`, `Bg_Heavy_Block`) aren't ported: A at a pushable wall only shows
+    /// "Grab" (`PLAYER_STATE2_0`).
     fn func_8083F7BC(&mut self, env: &Env) -> bool {
         if self.state1 & STATE1_11 == 0 && self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0 && self.s.wall_facing_diff < 0x3000 {
             let flags = self.s.wall_flags;
-            if self.linear_velocity > 0.0 && self.func_8083EC18(env, flags) {
+            if (self.linear_velocity > 0.0 && self.func_8083EC18(env, flags)) || self.func_8083F0C8(env, flags) {
+                return true;
+            }
+            if !self.func_808332B8() && (self.linear_velocity == 0.0 || self.state2 & STATE2_2 == 0) && flags & WALL_FLAG_6 != 0 && self.grounded() && self.wall_height >= 39.0 {
+                self.state2 |= STATE2_0;
+                if self.input.cur.held(BTN_A) {
+                    self.note("pushing a wall (func_8083F72C) not ported");
+                }
+            }
+        }
+        false
+    }
+
+    /// `func_8083F0C8`: a child at a crawlspace's wall (`WALL_FLAG_4`, `_5`), within 8 of the
+    /// line through the middle of its triangle: A says "Enter" (`PLAYER_STATE2_16`). On A,
+    /// into the crawlspace (`PLAYER_STATE2_18`): Link lined up with the triangle's middle at
+    /// his distance from the wall, facing it, `gPlayerAnim_link_child_tunnel_start` moving him
+    /// in (`moveFlags` 0x9D), and the crawl once the item is away (`func_8083A40C`).
+    fn func_8083F0C8(&mut self, env: &Env, arg2: u32) -> bool {
+        if self.adult || self.state1 & STATE1_27 != 0 || arg2 & (WALL_FLAG_4 | WALL_FLAG_5) == 0 {
+            return false;
+        }
+        let Some(wall) = self.actor.wall_poly else { return false };
+        let col = env.col;
+        let v = col.poly_vertices(wall);
+        let (mut sp4c, mut phi_f2, mut sp44, mut phi_f12) = (v[0].x, v[0].x, v[0].z, v[0].z);
+        for p in &v[1..] {
+            if sp4c > p.x {
+                sp4c = p.x;
+            } else if phi_f2 < p.x {
+                phi_f2 = p.x;
+            }
+            if sp44 > p.z {
+                sp44 = p.z;
+            } else if phi_f12 < p.z {
+                phi_f12 = p.z;
+            }
+        }
+        let sp4c = (sp4c + phi_f2) * 0.5;
+        let sp44 = (sp44 + phi_f12) * 0.5;
+        let n = col.poly_normal(wall);
+        let d = ((self.actor.world_pos.x - sp4c) * n.z) - ((self.actor.world_pos.z - sp44) * n.x);
+        if d.abs() < 8.0 {
+            self.state2 |= STATE2_16;
+            if self.input.press.held(BTN_A) {
+                let data = env.data;
+                let sp30 = self.wall_distance;
+                self.func_80836898(data, env, A74::Crawl);
+                self.state2 |= STATE2_18;
+                self.current_yaw = self.actor.wall_yaw.wrapping_add(i16::MIN);
+                self.actor.shape_rot.y = self.current_yaw;
+                self.actor.world_pos.x = sp4c + sp30 * n.x;
+                self.actor.world_pos.z = sp44 + sp30 * n.z;
+                self.func_80832224();
+                self.actor.prev_pos = self.actor.world_pos;
+                self.skel.play_once(data, data.anim("link_child_tunnel_start"));
+                self.func_80832F54(0x9D);
                 return true;
             }
         }
         false
+    }
+
+    /// `func_8083A40C`: the crawl (`func_8084C760`).
+    fn func_8083A40C(&mut self, data: &GameData) {
+        self.func_80835DAC(data, Action::Crawl, 0);
+    }
+
+    /// `func_8084C760`: in a crawlspace. `tunnel_start` plays out first, its root motion moving
+    /// Link in; then the stick's forward tilt is the speed (`rel.stick_y` × 0.03, backwards
+    /// too) along `currentYaw`, and `Camera_Subj4` keeps Link on the crawlspace's line. At
+    /// either end's wall, the way out (`func_8083F570`). The crawl's sounds (`func_80832924`
+    /// with `D_808548B4`) aren't ported.
+    fn func_8084C760(&mut self, env: &Env) {
+        self.state2 |= STATE2_6;
+        if self.skel.update(env.data) {
+            if self.state1 & STATE1_0 == 0 {
+                if self.skel.move_flags != 0 {
+                    self.skel.move_flags = 0;
+                    return;
+                }
+                if !self.func_8083F570(env) {
+                    self.linear_velocity = self.input.rel.stick_y as f32 * 0.03;
+                }
+            }
+        }
+    }
+
+    /// `func_8083F570`: crawling into a crawlspace's wall (`WALL_FLAG_4`, `_5`) head first
+    /// (backwards, feet first): out, with `tunnel_end` facing away from the wall, or
+    /// `tunnel_start` played backwards. The one-point cutscenes that go with them
+    /// (`OnePointCutscene_Init` 9601 and 9602) aren't ported: the floor's bg camera takes over.
+    fn func_8083F570(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.linear_velocity != 0.0 && self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 && self.s.wall_flags & (WALL_FLAG_4 | WALL_FLAG_5) != 0 {
+            let mut temp = self.actor.shape_rot.y.wrapping_sub(self.actor.wall_yaw);
+            if self.linear_velocity < 0.0 {
+                temp = temp.wrapping_add(i16::MIN);
+            }
+            if abs16(temp) > 0x4000 {
+                self.setup_action(data, Action::CrawlExit, 0);
+                if self.linear_velocity > 0.0 {
+                    self.actor.shape_rot.y = self.actor.wall_yaw.wrapping_add(i16::MIN);
+                    self.skel.play_once(data, data.anim("link_child_tunnel_end"));
+                    self.func_80832F54(0x9D);
+                } else {
+                    self.actor.shape_rot.y = self.actor.wall_yaw;
+                    self.play_backwards(data, data.anim("link_child_tunnel_start"));
+                    self.func_80832F54(0x9D);
+                }
+                self.current_yaw = self.actor.shape_rot.y;
+                self.func_80832210();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `func_8084C81C`: out of the crawlspace; standing once the animation ends
+    /// (`func_8083C0E8`). Its sounds (`D_808548D8`) aren't ported.
+    fn func_8084C81C(&mut self, env: &Env) {
+        self.state2 |= STATE2_6;
+        if self.skel.update(env.data) {
+            self.func_8083C0E8(env.data);
+            self.state2 &= !STATE2_18;
+        }
+    }
+
+    // ================================================================================
+    // Damage (func_808382DC) and the knockdown
+
+    /// `Player_InBlockingCsMode` (magic isn't ported).
+    fn in_blocking_cs_mode(&self, env: &Env) -> bool {
+        self.state1 & (STATE1_7 | STATE1_29) != 0
+            || self.cs_mode != 0
+            || env.io.borrow().transition.trigger == TRANS_TRIGGER_START
+            || self.state1 & STATE1_0 != 0
+            || self.state3 & STATE3_7 != 0
+    }
+
+    /// `func_80837AE0`: `timer` frames of invincibility, unless the roll's is running.
+    fn func_80837AE0(&mut self, timer: i8) {
+        if self.invincibility_timer >= 0 {
+            self.invincibility_timer = timer;
+            self.unk_88F = 0;
+        }
+    }
+
+    /// `func_80837AFC`: at most `timer`.
+    fn func_80837AFC(&mut self, timer: i8) {
+        if self.invincibility_timer > timer {
+            self.invincibility_timer = timer;
+        }
+        self.unk_88F = 0;
+    }
+
+    /// `func_80837B18`: `Health_ChangeBy(damage)` unless invincible; false once Link is out of
+    /// health.
+    fn func_80837B18(&mut self, env: &Env, damage: i32) -> bool {
+        if self.invincibility_timer != 0 || self.actor.category != ACTORCAT_PLAYER {
+            return true;
+        }
+        oot_game::item::health_change_by(&mut env.io.borrow_mut().save, damage as i16)
+    }
+
+    /// `Player_InflictDamage`: true when it took the last of Link's health.
+    fn player_inflict_damage(&mut self, env: &Env, damage: i32) -> bool {
+        if !self.in_blocking_cs_mode(env) && !self.func_80837B18(env, damage) {
+            self.state2 &= !STATE2_7;
+            return true;
+        }
+        false
+    }
+
+    /// `func_808382BC`: at least 20 frames of invincibility.
+    fn func_808382BC(&mut self) {
+        if self.invincibility_timer >= 0 && self.invincibility_timer < 20 {
+            self.invincibility_timer = 20;
+        }
+    }
+
+    /// `func_808382DC`: what hurts Link this frame; true when something did (then there's no
+    /// ledge check, `func_8083AA10`):
+    /// - being crushed, a void floor (`FLOOR_TYPE_9`) or `PLAYER_STATE2_31`: the respawn or
+    ///   the void-out;
+    /// - the knockback an actor asked for (`unk_8A1`, `func_8002F698`), even while invincible
+    ///   for kind 2 and up;
+    /// - a hit on the body cylinder (`AC_HIT`);
+    /// - a hurting wall or floor (`func_80042108`, the hot floors `FLOOR_TYPE_2`, `_3`).
+    ///
+    /// `unk_A86`'s damage is never set, and the shield's bounce needs shielding, which isn't
+    /// ported (the shield's quad is never registered, so `AC_BOUNCED` is never set). The
+    /// burning (`func_8083821C`), the shock timer, the rumble and the sounds aren't ported.
+    fn func_808382DC(&mut self, env: &Env) -> bool {
+        use oot_game::actor::BGCHECKFLAG_CRUSHED;
+        if self.unk_A86 != 0 {
+            if !self.in_blocking_cs_mode(env) {
+                self.player_inflict_damage(env, -16);
+                self.unk_A86 = 0;
+            }
+            return true;
+        }
+        // Player_GetHeight (not riding).
+        let height = if self.adult { 68.0 } else { 44.0 };
+        let sp68 = (height - 8.0) < self.unk_6C4 * self.actor.scale.y;
+        if sp68 || self.actor.bg_check_flags & BGCHECKFLAG_CRUSHED != 0 || self.s.floor_type == FLOOR_TYPE_9 || self.state2 & STATE2_31 != 0 {
+            let mut io = env.io.borrow_mut();
+            if sp68 {
+                let (pos, yaw) = (self.actor.world_pos, self.actor.shape_rot.y);
+                io.trigger_respawn(pos, yaw);
+                io.set_transition_for_next_entrance(env.entrances);
+            } else {
+                // The Forest Temple's checkerboard ceiling room and the Shadow Temple's falling
+                // spikes respawn Link at a set place.
+                let special = match (io.scene_id, io.room) {
+                    (SCENE_BMORI1, 15) => Some(Vec3::new(1992.0, 403.0, -3432.0)),
+                    (SCENE_HAKADAN, 10) => Some(Vec3::new(1200.0, -1343.0, 3850.0)),
+                    _ => None,
+                };
+                if let Some(pos) = special {
+                    let (p, yaw) = (self.actor.world_pos, self.actor.shape_rot.y);
+                    io.setup_respawn_point(RESPAWN_MODE_DOWN, 0xDFF, p, yaw);
+                    io.save.respawn[RESPAWN_MODE_DOWN].pos = pos;
+                    io.save.respawn[RESPAWN_MODE_DOWN].yaw = 0;
+                }
+                io.trigger_void_out();
+            }
+            // (play->unk_11DE9 = true, and the sounds.)
+            return true;
+        }
+        if self.unk_8A1 != 0 && (self.unk_8A1 >= 2 || self.invincibility_timer == 0) {
+            const SP5C: [i32; 3] = [2, 1, 1];
+            // func_80838280: acHitEffect 1 sets Link burning (func_8083821C, not ported).
+            if self.unk_8A1 == 3 {
+                // this->shockTimer = 40 (func_80848B44, not ported).
+                self.note("shock (shockTimer) not ported");
+            }
+            self.actor.col_chk_info.damage = self.actor.col_chk_info.damage.wrapping_add(self.unk_8A0);
+            let (kind, speed, vy, yaw) = (SP5C[self.unk_8A1 as usize - 1], self.unk_8A4, self.unk_8A8, self.unk_8A2);
+            self.func_80837C0C(env, kind, speed, vy, yaw, 20);
+            return true;
+        }
+        // sp64: the shield's AC_BOUNCED (never set), or the roll's block. @bug (game): that one
+        // tests the attacking collider's u8 atFlags against 0x20000000, so it never holds.
+        if self.unk_A87 != 0
+            || self.invincibility_timer > 0
+            || self.state1 & STATE1_26 != 0
+            || self.cs_mode != 0
+            || self.melee_weapon_quads[0].base.at_flags & cc::AT_HIT != 0
+            || self.melee_weapon_quads[1].base.at_flags & cc::AT_HIT != 0
+        {
+            return false;
+        }
+        if self.cylinder.base.ac_flags & cc::AC_HIT != 0 {
+            let ac_pos = self.cylinder.base.ac.and_then(|h| env.target(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
+            let effect = self.actor.col_chk_info.ac_hit_effect;
+            let sp4c = if self.state1 & STATE1_27 != 0 {
+                0
+            } else {
+                match effect {
+                    2 => 3,
+                    3 => 4,
+                    4 => 1,
+                    // func_80838280.
+                    _ => 0,
+                }
+            };
+            // Actor_WorldYawTowardActor(ac, &this->actor).
+            let yaw = vec3f_yaw(ac_pos, self.actor.world_pos);
+            self.func_80837C0C(env, sp4c, 4.0, 5.0, yaw, 20);
+            return true;
+        }
+        if self.invincibility_timer != 0 {
+            return false;
+        }
+        // D_808544F4: in the Goron tunic, the frames on a hot floor (FLOOR_TYPE_2, _3) before it
+        // hurts; without it, it hurts at once.
+        const D_808544F4: [u8; 2] = [120, 60];
+        let sp48 = self.s.floor_type.wrapping_sub(FLOOR_TYPE_2);
+        let sp48 = (sp48 <= FLOOR_TYPE_3 - FLOOR_TYPE_2).then_some(sp48 as usize);
+        let col = env.col;
+        let wall_hurts = self.actor.wall_poly.is_some_and(|w| col.flag27(w));
+        let floor_hurts = self.actor.floor_poly.is_some_and(|f| col.flag27(f));
+        // PLAYER_TUNIC_GORON is 1.
+        if wall_hurts
+            || sp48.is_some_and(|i| floor_hurts && self.unk_A79 >= D_808544F4[i])
+            || sp48.is_some_and(|i| self.current_tunic != 1 || self.unk_A79 >= D_808544F4[i])
+        {
+            self.unk_A79 = 0;
+            self.actor.col_chk_info.damage = 4;
+            let yaw = self.actor.shape_rot.y;
+            self.func_80837C0C(env, 0, 4.0, 5.0, yaw, 20);
+            return true;
+        }
+        false
+    }
+
+    /// `D_808544B0`: the staggers, by (strong hit) × 4 + (from behind) × 2 + (locked on).
+    const D_808544B0: [&'static str; 8] = [
+        "link_normal_front_shit",
+        "link_normal_front_shitR",
+        "link_normal_back_shit",
+        "link_normal_back_shitR",
+        "link_normal_front_hit",
+        "link_anchor_front_hitR",
+        "link_normal_back_hit",
+        "link_anchor_back_hitR",
+    ];
+
+    /// `func_80837C0C`: hurt by `colChkInfo.damage`, `arg6` frames of invincibility, and the
+    /// reaction: knocked down (`func_8084377C`) for kinds 1 and 2, in the air, hanging or
+    /// climbing, at `arg3` and `arg4` from `arg5` (kind 2 with its own); otherwise a stagger
+    /// (`func_8084370C`), or only a flinch when running fast (`unk_890`). Not ported: kind 3
+    /// (frozen, `func_8084FB10`), kind 4 (the electric shock, `func_8084FBF4`) and the hit
+    /// while swimming (`func_8084E30C`), which only take the damage here; the rumble; the
+    /// sounds.
+    fn func_80837C0C(&mut self, env: &Env, arg2: i32, arg3: f32, arg4: f32, mut arg5: i16, arg6: i8) {
+        let data = env.data;
+        let mut sp2c = None;
+        if self.state1 & STATE1_13 != 0 {
+            self.func_80837B60();
+        }
+        self.unk_890 = 0;
+        let damage = self.actor.col_chk_info.damage as i32;
+        if !self.func_80837B18(env, -damage) {
+            self.state2 &= !STATE2_7;
+            if !self.grounded() && self.state1 & STATE1_27 == 0 {
+                self.func_80837B9C(data);
+            }
+            return;
+        }
+        self.func_80837AE0(arg6);
+        if arg2 == 3 || arg2 == 4 {
+            self.note(format!("func_80837C0C kind {arg2} (frozen, shocked) not ported"));
+            return;
+        }
+        arg5 = arg5.wrapping_sub(self.actor.shape_rot.y);
+        if self.state1 & STATE1_27 != 0 {
+            self.note("hit while swimming (func_8084E30C) not ported");
+            return;
+        } else if arg2 == 1 || arg2 == 2 || !self.grounded() || self.state1 & (STATE1_13 | STATE1_14 | STATE1_21) != 0 {
+            self.setup_action(data, Action::KnockedDown, 0);
+            self.state3 |= STATE3_1;
+            self.func_80832224();
+            if arg2 == 2 {
+                self.unk_850 = 4;
+                self.actor.speed_xz = 3.0;
+                self.linear_velocity = 3.0;
+                self.actor.velocity.y = 6.0;
+                // func_80832C2C.
+                let a = self.anim(data, group::DAMAGE_RUN);
+                self.skel.change(data, a, 1.0, 0.0, 0.0, ANIMMODE_ONCE, 0.0);
+            } else {
+                self.actor.speed_xz = arg3;
+                self.linear_velocity = arg3;
+                self.actor.velocity.y = arg4;
+                sp2c = Some(if abs16(arg5) > 0x4000 { data.anim("link_normal_front_downA") } else { data.anim("link_normal_back_downA") });
+            }
+            self.hover_boots_timer = 0;
+            self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND;
+        } else {
+            if self.linear_velocity > 4.0 && self.state1 & STATE1_4 == 0 {
+                self.unk_890 = 20;
+                return;
+            }
+            self.setup_action(data, Action::Damaged, 0);
+            self.func_80833C3C();
+            let mut i = 0;
+            if self.actor.col_chk_info.damage >= 5 {
+                self.linear_velocity = 23.0;
+                i += 4;
+            }
+            if abs16(arg5) <= 0x4000 {
+                i += 2;
+            }
+            if self.state1 & STATE1_4 != 0 {
+                i += 1;
+            }
+            sp2c = Some(data.anim(Self::D_808544B0[i]));
+        }
+        self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(arg5);
+        self.current_yaw = self.actor.shape_rot.y;
+        self.actor.world_rot.y = self.actor.shape_rot.y;
+        if abs16(arg5) > 0x4000 {
+            self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(i16::MIN);
+        }
+        // func_80832564: func_80832440, and func_808323B4 (Link holds nothing here).
+        self.func_80832440();
+        self.state1 |= STATE1_26;
+        if let Some(a) = sp2c {
+            // func_808322D0.
+            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+        }
+    }
+
+    /// `func_8084370C`: staggering; standing again at the end (`func_80839F90`).
+    fn func_8084370C(&mut self, env: &Env) {
+        self.func_8083721C();
+        let sp1c = self.func_808374A0(env, 16.0);
+        if sp1c != 0 && (self.skel.update(env.data) || sp1c > 0) {
+            self.func_80839F90(env.data);
+        }
+    }
+
+    /// `func_8084377C`: knocked down. While another knockback comes in the air (`unk_8A1`),
+    /// it takes its yaw and speed. On the ground at the animation's end: after kind 2's
+    /// four frames, standing (`func_80853080`); else, once nothing hits any more, lying down
+    /// (`func_80843954`) with `front_downB` or `back_downB`. The bounce's sound isn't ported.
+    fn func_8084377C(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5 | STATE2_6;
+        self.func_808382BC();
+        if self.state1 & STATE1_29 == 0 && self.unk_850 == 0 && self.unk_8A1 != 0 {
+            let temp = self.actor.shape_rot.y.wrapping_sub(self.unk_8A2);
+            self.actor.shape_rot.y = self.unk_8A2;
+            self.current_yaw = self.unk_8A2;
+            self.linear_velocity = self.unk_8A4;
+            if abs16(temp) > 0x4000 {
+                self.actor.shape_rot.y = self.unk_8A2.wrapping_add(i16::MIN);
+            }
+            if self.actor.velocity.y < 0.0 {
+                self.actor.gravity = 0.0;
+                self.actor.velocity.y = 0.0;
+            }
+        }
+        if self.skel.update(data) && self.grounded() {
+            if self.unk_850 != 0 {
+                self.unk_850 -= 1;
+                if self.unk_850 == 0 {
+                    self.func_80853080(data);
+                }
+            } else if self.state1 & STATE1_29 != 0 || (self.cylinder.base.ac_flags & cc::AC_HIT == 0 && self.unk_8A1 == 0) {
+                if self.state1 & STATE1_29 != 0 {
+                    self.unk_850 += 1;
+                } else {
+                    self.setup_action(data, Action::Down, 0);
+                    self.state1 |= STATE1_26;
+                }
+                let a = if self.current_yaw != self.actor.shape_rot.y { data.anim("link_normal_front_downB") } else { data.anim("link_normal_back_downB") };
+                self.skel.play_once(data, a);
+            }
+        }
+    }
+
+    /// `func_80843954`: lying down until the slide stops, then getting up (`func_80843A38`)
+    /// with `front_down_wake` or `back_down_wake`.
+    fn func_80843954(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5 | STATE2_6;
+        self.func_808382BC();
+        self.func_8083721C();
+        if self.skel.update(data) && self.linear_velocity == 0.0 {
+            if self.state1 & STATE1_29 != 0 {
+                self.unk_850 += 1;
+            } else {
+                self.setup_action(data, Action::GetUp, 0);
+                self.state1 |= STATE1_26;
+            }
+            let a = if self.current_yaw != self.actor.shape_rot.y { data.anim("link_normal_front_down_wake") } else { data.anim("link_normal_back_down_wake") };
+            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+            self.current_yaw = self.actor.shape_rot.y;
+        }
+    }
+
+    /// `func_80843A38`: getting up; standing at the end (`func_80839F90`). Its sounds
+    /// (`D_808545DC`) aren't ported.
+    fn func_80843A38(&mut self, env: &Env) {
+        self.state2 |= STATE2_5;
+        self.func_808382BC();
+        if self.state1 & STATE1_29 != 0 {
+            self.skel.update(env.data);
+        } else {
+            let sp24 = self.func_808374A0(env, 16.0);
+            if sp24 != 0 && (self.skel.update(env.data) || sp24 > 0) {
+                self.func_80839F90(env.data);
+            }
+        }
     }
 
     /// `func_8083EC18`: onto the wall in front if it's 79 tall and climbable: vines and
@@ -2737,7 +3292,9 @@ impl Player {
         let data = env.data;
         self.state2 |= STATE2_5;
         let done = self.skel.update(data);
-        // Frame 8: brief invincibility (func_80837AFC) — no damage system here.
+        if self.skel.on_frame(8.0) {
+            self.func_80837AFC(-10);
+        }
         // func_80842964 (first person, items, grabbing): not taken.
         if self.unk_850 != 0 {
             step_to_f(&mut self.linear_velocity, 0.0, 2.0);
@@ -2787,14 +3344,21 @@ impl Player {
         -1
     }
 
-    /// `func_80843E64`: landing. Returns 1/2 for a damaging fall (≥ 400 / 800), 0 otherwise.
-    fn func_80843E64(&mut self) -> i32 {
+    /// `func_80843E64`: landing. Returns 1/2 for a damaging fall (≥ 400 / 800: `D_80854600`'s
+    /// half heart and heart, then 40 frames of invincibility), -1 when that was the last of
+    /// Link's health, 0 otherwise. (The quake, the rumble and the sounds aren't ported.)
+    fn func_80843E64(&mut self, env: &Env) -> i32 {
         let sp34 = if self.s.floor_type == FLOOR_TYPE_6 || self.s.floor_type == FLOOR_TYPE_9 { 0 } else { self.fall_distance as i32 };
         step_to_f(&mut self.linear_velocity, 0.0, 1.0);
         self.state1 &= !(STATE1_18 | STATE1_19);
         if sp34 >= 400 {
             let idx = if self.fall_distance < 800 { 0 } else { 1 };
-            self.note(format!("fall damage {}", if idx == 0 { "-8 (half heart)" } else { "-16 (1 heart)" }));
+            // D_80854600[impactIndex].damage.
+            let damage = if idx == 0 { -8 } else { -16 };
+            if self.player_inflict_damage(env, damage) {
+                return -1;
+            }
+            self.func_80837AE0(40);
             return idx + 1;
         }
         0
@@ -2868,7 +3432,7 @@ impl Player {
                 self.func_8083BC04(data);
                 return;
             }
-            let sp3c = self.func_80843E64();
+            let sp3c = self.func_80843E64(env);
             if sp3c > 0 {
                 let a = self.anim(data, group::LANDING);
                 self.func_8083A098(data, a);
@@ -5180,8 +5744,9 @@ impl Player {
     }
 
     /// `func_808473D4`: what the A button would do (`Interface_SetDoAction`), when no message
-    /// is open. Riding, the fishing pole, the ocarina, held actors and the crawlspace's "Enter"
-    /// aren't ported, so those actions never show. The ocarina's action (`func_8084E3C4`)
+    /// is open (the crawlspace's "Enter" when `func_8083F0C8` lines Link up with one). Riding,
+    /// the fishing pole, the ocarina and held actors aren't ported, so those actions never
+    /// show. The ocarina's action (`func_8084E3C4`)
     /// never runs, so its exception doesn't apply.
     fn func_808473D4(&mut self, env: &Env) {
         use oot_game::interface::*;
@@ -5255,6 +5820,7 @@ impl Player {
     fn update_colliders(&mut self, play: &mut PlayState) {
         use cc::ColliderShape;
         self.door_type = PLAYER_DOORTYPE_NONE;
+        self.unk_8A1 = 0;
         // The talk offers of this frame end here (they're made again next frame), unless one
         // was accepted (ACTOR_FLAG_8).
         if self.actor.flags & ACTOR_FLAG_8 == ACTOR_FLAG_8 {
@@ -5283,8 +5849,7 @@ impl Player {
             self.cylinder.dim.height = (self.cylinder.dim.height as f32 * 0.8) as i16;
         }
         self.cylinder.update(&self.actor);
-        // invincibilityTimer: always 0 here (nothing damages Player yet).
-        let invincibility_timer = 0;
+        let invincibility_timer = self.invincibility_timer;
         if self.state2 & STATE2_14 == 0 {
             if self.state1 & (STATE1_7 | STATE1_13 | STATE1_14 | STATE1_23) == 0 {
                 play.collision_check_set_oc(&self.actor, COLLIDER_CYLINDER, &mut self.cylinder);
@@ -5564,6 +6129,8 @@ mod rs {
     pub const SHIELD: usize = 2;
     pub const UNK_862: usize = 3;
     pub const EXCHANGE: usize = 4;
+    /// `switches`: `PLAYER_STATE2_18` (in a crawlspace).
+    pub const CRAWLING: usize = 5;
 }
 
 impl LookRotations {
@@ -5732,12 +6299,13 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 5];
+        let mut switches = vec![0u32; 6];
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
         switches[rs::UNK_862] = self.unk_862 as u16 as u32;
         switches[rs::EXCHANGE] = (self.exchange_item_id != 0) as u32;
+        switches[rs::CRAWLING] = (self.state2 & STATE2_18 != 0) as u32;
         RenderState {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
@@ -5782,7 +6350,13 @@ impl ActorImpl for Player {
             moving_fast: fists,
         };
         let mesh = MeshKey { name: loadout.variant_key(rules), segment_textures: vec![(8, eye as u16), (9, mouth as u16)] };
-        out.opa.push(DrawCmd { mesh, transform: root, bones, params: Default::default() });
+        // In a crawlspace, with Link behind the near plane (actor.projectedPos.z < 0, from
+        // viewProjectionMtxF), Player_OverrideLimbDrawGameplay_80090440 draws no limb: the
+        // crawl's camera is inside him.
+        let projected_z = (play.view_proj * st.pos.extend(1.0)).z;
+        if !(st.switches[rs::CRAWLING] != 0 && projected_z < 0.0) {
+            out.opa.push(DrawCmd { mesh, transform: root, bones, params: Default::default() });
+        }
         // Player_DrawGetItem (unk_862 > 0): GetItem_Draw at sGetItemRefPos, 3.3 in front and 14
         // up (6 for an exchange item; IREG(90) is 0), spinning, at 0.2.
         let unk_862 = st.switches[rs::UNK_862] as u16 as i16;
@@ -5868,6 +6442,16 @@ impl PlayerIface for Player {
         self.get_item_id = get_item_id;
         self.interact_range_actor = Some(actor);
         self.get_item_direction = direction;
+    }
+    fn set_knockback(&mut self, damage: u8, kind: u8, yaw: i16, speed: f32, vy: f32) {
+        self.unk_8A0 = damage;
+        self.unk_8A1 = kind;
+        self.unk_8A2 = yaw;
+        self.unk_8A4 = speed;
+        self.unk_8A8 = vy;
+    }
+    fn invincibility_timer(&self) -> i8 {
+        self.invincibility_timer
     }
 }
 

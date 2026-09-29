@@ -440,3 +440,62 @@ fn bg_camera_lists_cover_what_the_game_indexes() {
     assert!(named > 1000 && prerendered > 50, "{named} indices, {prerendered} prerendered rooms");
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
+
+/// `SCENE_CMD_ID_PATH_LIST` has no count, like the exit list: the importer reads entries while
+/// they point at points in the scene file (`oot_import::scene::path_list`). Each header's list
+/// must have the decomp XML's `NumPaths` where the XML names it, and the pack must hold the
+/// points the ROM has. Kokiri Forest's path 2 is `En_Goroiwa`'s (params 0x0C02).
+#[test]
+fn path_lists_match_the_xmls() {
+    let Some(c) = ctx() else { return };
+    // <Path Offset="0x.." NumPaths="n"/> under each <File Name="..._scene">.
+    let mut xml: BTreeMap<String, BTreeMap<usize, usize>> = BTreeMap::new();
+    let attr = |line: &str, name: &str| -> Option<String> {
+        let at = line.find(&format!("{name}=\""))? + name.len() + 2;
+        Some(line[at..].split('"').next()?.to_string())
+    };
+    let mut stack = vec![c.p.config.decomp.join("assets/xml/scenes")];
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).unwrap().flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let mut file = String::new();
+            for line in std::fs::read_to_string(&path).unwrap().lines() {
+                if line.contains("<File ") {
+                    file = attr(line, "Name").unwrap_or_default();
+                } else if line.contains("<Path ") {
+                    let off = usize::from_str_radix(attr(line, "Offset").unwrap().trim_start_matches("0x"), 16).unwrap();
+                    let n: usize = attr(line, "NumPaths").unwrap().parse().unwrap();
+                    xml.entry(file.clone()).or_default().insert(off, n);
+                }
+            }
+        }
+    }
+    let st = c.pack.scene_table().unwrap();
+    let (mut problems, mut matched, mut unnamed) = (Vec::new(), 0, 0);
+    for d in &st.scenes {
+        let Ok(sd) = c.pack.scene(&d.file) else { continue };
+        for (layer, ld) in sd.layers.iter().enumerate() {
+            let scene = oot_import::scene::Scene::load_layer(&c.p.rom, &d.file, layer).unwrap();
+            assert_eq!(ld.paths, scene.paths, "{} layer {layer}", d.file);
+            let Some(cmd) = scene.header.iter().find(|c| c.code == oot_import::scene::CMD_PATH_LIST) else {
+                assert!(ld.paths.is_empty());
+                continue;
+            };
+            let off = (cmd.data2 & 0xFF_FFFF) as usize;
+            match xml.get(&d.file).and_then(|m| m.get(&off)) {
+                Some(&n) if n == ld.paths.len() => matched += 1,
+                Some(&n) => problems.push(format!("{} layer {layer}: {} paths at {off:#x}, the XML says {n}", d.file, ld.paths.len())),
+                None => unnamed += 1,
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+    assert!(matched >= 26, "{matched} path lists matched the XMLs ({unnamed} not named there)");
+    let spot04 = c.pack.scene("spot04_scene").unwrap();
+    let boulder = &spot04.layers[0].paths[2];
+    assert_eq!(boulder.points, [[-247, 120, 1869], [-247, 120, 1538], [-575, 120, 1538], [-575, 120, 1869], [-247, 120, 1869]]);
+}

@@ -103,6 +103,12 @@ pub trait PlayerIface {
     fn get_item_direction(&self) -> i16;
     /// `func_8002F434`'s write: `getItemId`, `interactRangeActor`, `getItemDirection`.
     fn set_get_item(&mut self, actor: ActorHandle, get_item_id: i16, direction: i16);
+    /// `func_8002F698`'s write: `unk_8A0` (the extra damage), `unk_8A1` (the kind: 1 a push,
+    /// 2 a knockdown, 3 a shock), `unk_8A2` (the yaw), `unk_8A4` (the speed), `unk_8A8` (the
+    /// upward speed).
+    fn set_knockback(&mut self, damage: u8, kind: u8, yaw: i16, speed: f32, vy: f32);
+    /// `invincibilityTimer`.
+    fn invincibility_timer(&self) -> i8;
 }
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.
@@ -275,4 +281,33 @@ impl ActorContext {
     pub fn find(&self, id: i16, cat: usize) -> Option<ActorHandle> {
         self.lists[cat].iter().copied().find(|&h| self.actor(h).is_some_and(|a| a.id == id))
     }
+}
+
+/// `func_8002F698`: an actor knocks Player back. Player takes it in its next update
+/// (`func_808382DC`): `kind` 1 a push, 2 a knockdown, 3 a shock, at `speed` along `yaw` with
+/// `vy` upwards, `damage` added to what the frame's collisions did.
+pub fn func_8002f698(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, kind: u8, damage: u8) {
+    if let Some(pi) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
+        pi.set_knockback(damage, kind, yaw, speed, vy);
+    }
+}
+
+/// `func_8002F6D4`: a knockdown (kind 2).
+pub fn func_8002f6d4(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage: u8) {
+    func_8002f698(play, speed, yaw, vy, 2, damage);
+}
+
+/// `func_8002F71C`: a knockdown with no damage of its own.
+pub fn func_8002f71c(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
+    func_8002f6d4(play, speed, yaw, vy, 0);
+}
+
+/// `func_8002F758`: a push (kind 1).
+pub fn func_8002f758(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage: u8) {
+    func_8002f698(play, speed, yaw, vy, 1, damage);
+}
+
+/// `func_8002F7A0`: a push with no damage of its own.
+pub fn func_8002f7a0(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
+    func_8002f758(play, speed, yaw, vy, 0);
 }

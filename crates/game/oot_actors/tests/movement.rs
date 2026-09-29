@@ -192,10 +192,15 @@ fn a_long_fall_staggers_on_landing() {
     let Some(mut w) = world_at(Vec3::new(600.0, 0.0, -300.0), -0x8000) else { return };
     let mut s = repeat(stick(0, 80), 14);
     s.extend(repeat(stick(0, 0), 60));
+    let health = w.save.health;
     let f = run(&mut w, &s);
     let land = f.iter().position(|x| x.grounded && x.pos.y == -450.0).expect("reached the pit floor");
-    // fallDistance ≥ 400 → func_80843E64 returns 1 → endFrame 8, unk_850 = 10 stagger.
-    assert!(w.player().notes.iter().any(|n| n.starts_with("fall damage -8")), "{:?}", w.player().notes);
+    // fallDistance ≥ 400 → func_80843E64: Player_InflictDamage(D_80854600[0].damage, -8, half a
+    // heart), func_80837AE0(40), and 1 → endFrame 8, unk_850 = 10 stagger.
+    assert_eq!(w.save.health, health - 8, "half a heart");
+    // Set in the landing frame, then one less each update after it.
+    let frames_since = (f.len() - 1 - land) as i8;
+    assert_eq!(w.player().invincibility_timer, 40 - frames_since);
     assert_eq!(f[land].action, "StandingStill");
     // Velocity is capped at minVelocityY = -20 (func_8083D6EC).
     assert!(f.iter().all(|x| x.vy >= -20.0));

@@ -67,7 +67,9 @@ struct Cli {
     /// swim, tread, platform, cup (C-Up: a house's viewpoint toggle), door (walk to a door and
     /// press A), open (press A where Link stands); with --entrance ENTR_SPOT04_3 also `house` (steers Link into his house and back
     /// out through the exits); with --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open
-    /// also `playthrough` (GAME-02's scripted run from Link's bed into the Deku Tree).
+    /// also `playthrough` (GAME-02's scripted run from Link's bed into the Deku Tree), and with
+    /// --entrance ENTR_LINK_HOME_0 --child (a new save) `sword-chest` (GAME-03's run through the
+    /// crawlspace and past the boulder to the Kokiri Sword's chest).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -367,10 +369,14 @@ impl HouseWalk {
 
 /// The script's play state: the script's start, or `--at`, or the spawn or entrance.
 fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
-    if cli.script == "playthrough" && (a.entrance.is_none() || cli.preset.as_deref() != Some(oot_actors::playthrough::Playthrough::PRESET) || !cli.child) {
-        anyhow::bail!("the playthrough needs --entrance {} --child --preset {}", oot_actors::playthrough::Playthrough::ENTRANCE, oot_actors::playthrough::Playthrough::PRESET);
+    let route = oot_actors::playthrough::Route::from_script(&cli.script);
+    if let Some(r) = route
+        && (a.entrance.is_none() || cli.preset.as_deref() != r.preset() || !cli.child)
+    {
+        let preset = r.preset().map(|p| format!(" --preset {p}")).unwrap_or_default();
+        anyhow::bail!("the {} script needs --entrance {} --child{preset}", r.script(), r.entrance());
     }
-    let start = if matches!(cli.script.as_str(), "house" | "playthrough") { None } else { script(&cli.script)?.1 };
+    let start = if cli.script == "house" || route.is_some() { None } else { script(&cli.script)?.1 };
     let mut w = new_play(a, cli.child);
     if let (Some((p, y)), None) = (start, &cli.scene) {
         w = new_play_at(a, cli.child, p, y, true);
@@ -389,8 +395,8 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
 
 fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, usize, &RenderFrame) -> Result<()>) -> Result<(PlayState, Vec<RenderFrame>, Vec<serde_json::Value>)> {
     let house = cli.script == "house";
-    // The playthrough steers itself (oot_actors::playthrough) and marks each step in the trace.
-    let mut playthrough = (cli.script == "playthrough").then(oot_actors::playthrough::Playthrough::new);
+    // The playthroughs steer themselves (oot_actors::playthrough) and mark each step in the trace.
+    let mut playthrough = oot_actors::playthrough::Route::from_script(&cli.script).map(oot_actors::playthrough::Playthrough::for_route);
     let mut s = if house || playthrough.is_some() { Vec::new() } else { script(&cli.script)?.0 };
     if cli.frames > 0 && !house && playthrough.is_none() {
         s.resize(cli.frames, stick(0, 0));
@@ -482,7 +488,7 @@ fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, 
             anyhow::bail!("the playthrough stopped: {f}");
         }
         let steps: Vec<String> = run.steps.iter().map(|(s, f)| format!("{} at frame {f}", s.name())).collect();
-        println!("playthrough: {}; texts {:x?}; drop {:?}", steps.join(", "), run.texts, run.drop);
+        println!("{}: {}; texts {:x?}; drop {:?}; boulder waits {:?}", run.route.script(), steps.join(", "), run.texts, run.drop, run.boulder_waits);
     }
     Ok((w, snaps, trace))
 }

@@ -9,7 +9,7 @@ use anyhow::{Result, bail};
 use eng_collision::collision::CollisionHeader;
 
 use crate::rom::Rom;
-pub use oot_game::scene::{ActorEntry, EntranceEntry, EnvLightSettings, SkyboxSettings, TransitionActorEntry};
+pub use oot_game::scene::{ActorEntry, EntranceEntry, EnvLightSettings, Path, SkyboxSettings, TransitionActorEntry};
 use crate::z64::CollisionCodec;
 
 pub const CMD_SPAWN_LIST: u8 = 0x00;
@@ -21,6 +21,7 @@ pub const CMD_SPECIAL_FILES: u8 = 0x07;
 pub const CMD_ROOM_BEHAVIOR: u8 = 0x08;
 pub const CMD_ROOM_SHAPE: u8 = 0x0A;
 pub const CMD_OBJECT_LIST: u8 = 0x0B;
+pub const CMD_PATH_LIST: u8 = 0x0D;
 pub const CMD_TRANSITION_ACTOR_LIST: u8 = 0x0E;
 pub const CMD_LIGHT_SETTINGS_LIST: u8 = 0x0F;
 pub const CMD_TIME_SETTINGS: u8 = 0x10;
@@ -148,6 +149,9 @@ pub struct Scene {
     pub entrances: Vec<EntranceEntry>,
     pub exits: Vec<u16>,
     pub transition_actors: Vec<TransitionActorEntry>,
+    /// `SCENE_CMD_ID_PATH_LIST` (`play->setupPathList`), which carries no length either: see
+    /// [`path_list`].
+    pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType` (`R_SCENE_CAM_TYPE`, `SCENE_CAM_TYPE_*`).
     pub scene_cam_type: u8,
 }
@@ -201,6 +205,26 @@ pub fn list_extent(data: &[u8], offset: usize, size: usize, targets: &[usize], v
         n += 1;
     }
     n
+}
+
+/// The `Path` list at `offset` (`SCENE_CMD_ID_PATH_LIST`): 8-byte `{ u8 count, pad, Vec3s*
+/// points }` entries, as many as [`list_extent`] allows while each has points in this file
+/// (segment `segment`, zero padding, the points within the file). The game only indexes it
+/// with numbers from actor params.
+pub fn path_list(data: &[u8], segment: u8, offset: usize, targets: &[usize]) -> Vec<Path> {
+    let points_in_file = |b: &[u8]| {
+        let (count, ptr) = (b[0] as usize, be32(b, 4));
+        count > 0 && b[1..4] == [0, 0, 0] && ptr >> 24 == segment as u32 && (ptr & 0xFF_FFFF) as usize + count * 6 <= data.len()
+    };
+    let n = list_extent(data, offset, 8, targets, points_in_file);
+    (0..n)
+        .map(|i| {
+            let b = &data[offset + i * 8..offset + i * 8 + 8];
+            let at = (be32(b, 4) & 0xFF_FFFF) as usize;
+            let points = (0..b[0] as usize).map(|k| [be16(data, at + k * 6) as i16, be16(data, at + k * 6 + 2) as i16, be16(data, at + k * 6 + 4) as i16]).collect();
+            Path { points }
+        })
+        .collect()
 }
 
 impl Scene {
@@ -293,6 +317,7 @@ impl Scene {
                     .collect()
             })
             .unwrap_or_default();
+        let paths = find(CMD_PATH_LIST).map(|c| path_list(&file, SCENE_SEGMENT, local(c.data2), &targets)).unwrap_or_default();
         // The bg cameras something outside the collision names: a spawn's start camera
         // (`params & 0xFF`, 0xFF for none), a transition actor's sides, and the two a fixed
         // viewpoint scene toggles between (BGCAM_INDEX_TOGGLE_LOCKED / _PIVOT).
@@ -315,6 +340,7 @@ impl Scene {
             entrances,
             exits,
             transition_actors,
+            paths,
             scene_cam_type,
             name: name.to_string(),
             layer,

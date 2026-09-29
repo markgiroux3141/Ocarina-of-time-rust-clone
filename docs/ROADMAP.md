@@ -19,10 +19,13 @@ Reorder freely. The dependencies are noted, and nothing here is a commitment.
 - talking, the message box, drops and a minimal HUD;
 - the Deku Tree's mouth, opened by a save flag.
 
-GAME-03 milestone 1 is done too: the inventory, `Item_Give`, the get-item flow, the chests, and
-Link's equipment from the save.
+GAME-03 milestones 1 and 2 are done too:
+- the inventory, `Item_Give`, the get-item flow, the chests, and Link's equipment from the save;
+- the crawl and the crawlspace's camera, the scene paths, the training area's boulder and wonder
+  items, and Link's knockdown.
 
-A headless scripted run goes from Link's bed into the Deku Tree (`oot_actors --test playthrough`).
+Two headless scripted runs start in Link's bed (`oot_actors --test playthrough`): into the Deku
+Tree (on a flag preset), and on a new save to the Kokiri Sword's chest, opened.
 
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
@@ -84,7 +87,7 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
    - `En_Box`, the chests.
    - Link's equipment on his model (no sword or shield until they're got). The B and C items on the HUD, with their icon bakes.
    - **Exit:** open the Kokiri Sword chest on a new save. Link holds it up, the text shows, and B gets the sword.
-2. **Crawlspaces and the training area.**
+2. **Crawlspaces and the training area** (done: see [GAME-03](GAME-03-road-to-deku-tree.md) milestone 2 and ADR 0020).
    - Player's crawl.
    - `PIVOT_CRAWLSPACE` is ported, but `CRAWLSPACE`'s Subj4 camera isn't.
    - The training area's boulder and whatever else stands between the start and the sword.
@@ -138,7 +141,7 @@ This phase doesn't depend on Phase 4, so it can go earlier, or run in between as
 Both should be settled at the start of the phase, before any dungeon work.
 
 1. **Damage and health:**
-   - Player taking damage: knockback, invincibility frames, `Health_ChangeBy`;
+   - Player taking damage: knockback, invincibility frames, `Health_ChangeBy`. *(Mostly done in GAME-03 milestone 2 for the boulder, ADR 0020: the body hit, the stagger, the knockdown, the invincibility timer, the fall damage. Left: kinds 3 and 4 (frozen, shocked), the hit while swimming, burning, the red flash.)*
    - death and game over (`Play_TriggerVoidOut` exists);
    - enemy damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`).
    - **Exit:** the dummy and a Deku Baba hit Link.

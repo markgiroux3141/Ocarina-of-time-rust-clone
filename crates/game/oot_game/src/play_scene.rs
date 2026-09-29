@@ -495,6 +495,11 @@ impl PlayState {
         self.scene.as_ref().map(|s| s.layer_data().exits.as_slice()).unwrap_or(&[])
     }
 
+    /// `play->setupPathList` (`Scene_CommandPathList`); empty without a scene from the pack.
+    pub fn setup_path_list(&self) -> &[crate::scene::Path] {
+        self.scene.as_ref().map(|s| s.layer_data().paths.as_slice()).unwrap_or(&[])
+    }
+
     /// `Play_SetupTransition`: which mode the type starts in.
     fn setup_transition(&mut self, ty: u8) {
         let tr = &mut self.transition;

@@ -327,6 +327,11 @@ pub struct PlayState {
     pub interface_ctx: InterfaceContext,
     /// `csCtx`: always idle until the cutscene system is ported (`crate::cutscene`).
     pub cs_ctx: crate::cutscene::CutsceneContext,
+    /// The ported overlays' file-scope statics that instances share (their `.bss`), by
+    /// `ACTOR_*` id (`overlay_static`). A play state starts without any, as `Play_Init`'s
+    /// fresh overlay loads zero theirs. (An overlay unloads, and its statics reset, when its
+    /// last actor goes mid-scene: that isn't modelled.)
+    pub overlay_statics: std::collections::HashMap<i16, Box<dyn std::any::Any>>,
     pub(crate) next_play_init: bool,
     /// Whether a game frame has run since this state was made. `Play_Main` always runs
     /// `Play_Update` before its first `Play_Draw`, but the frontends draw at the display rate
@@ -344,7 +349,7 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0 };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0 };
         let game_camera = GameCamera::new(&data.camera, &pv);
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
@@ -387,6 +392,7 @@ impl PlayState {
             rand: Rand::default(),
             msg_ctx: MessageContext::new(),
             cs_ctx: Default::default(),
+            overlay_statics: Default::default(),
             messages: None,
             interface_ctx: InterfaceContext::default(),
             next_play_init: false,
@@ -396,6 +402,11 @@ impl PlayState {
             prev: None,
             cur: None,
         }
+    }
+
+    /// The statics of overlay `id` (see `overlay_statics`), zeroed (`Default`) on first use.
+    pub fn overlay_static<T: Default + 'static>(&mut self, id: i16) -> &mut T {
+        self.overlay_statics.entry(id).or_insert_with(|| Box::new(T::default())).downcast_mut::<T>().expect("one statics type per overlay")
     }
 
     /// Adds an actor (constructed and initialised) to the actor context.
@@ -418,6 +429,7 @@ impl PlayState {
         Some(PlayerView {
             pos: a.world_pos,
             shape_yaw: a.shape_rot.y,
+            shape_pitch: a.shape_rot.x,
             adult,
             run_speed_limit: self.data.regs[if adult { 0 } else { 1 }].reg(45),
             gravity: a.gravity,
@@ -659,6 +671,13 @@ impl PlayState {
             target_pos_rot,
         };
         self.game_camera.update(&self.data.camera, &f, &mut self.letterbox);
+        // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y).
+        if let Some((pos, yaw)) = self.game_camera.player_write.take()
+            && let Some(a) = self.player.and_then(|h| self.actors.actor_mut(h))
+        {
+            a.world_pos = pos;
+            a.shape_rot.y = yaw;
+        }
         // Camera_UpdateInterface's Interface_ChangeAlpha.
         if let Some(alpha_type) = self.game_camera.interface_alpha_change.take() {
             crate::interface::change_alpha(&mut self.save, alpha_type);

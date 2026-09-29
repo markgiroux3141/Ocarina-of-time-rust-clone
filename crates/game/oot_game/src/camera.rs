@@ -113,12 +113,14 @@ impl CameraData {
 pub const CAM_SET_NONE: i16 = 0x00;
 pub const CAM_SET_NORMAL0: i16 = 0x01;
 pub const CAM_SET_DUNGEON0: i16 = 0x03;
+pub const CAM_SET_PIVOT_CRAWLSPACE: i16 = 0x16;
 pub const CAM_SET_PIVOT_SHOP_BROWSING: i16 = 0x17;
 pub const CAM_SET_PIVOT_IN_FRONT: i16 = 0x18;
 pub const CAM_SET_PREREND_FIXED: i16 = 0x19;
 pub const CAM_SET_PREREND_PIVOT: i16 = 0x1A;
 pub const CAM_SET_DOOR0: i16 = 0x1C;
 pub const CAM_SET_DOORC: i16 = 0x1D;
+pub const CAM_SET_CRAWLSPACE: i16 = 0x1E;
 pub const CAM_SET_FREE0: i16 = 0x21;
 /// `CAM_SET_SLOW_CHEST_CS` ("ITEM0"): a big chest opening on a major item.
 pub const CAM_SET_SLOW_CHEST_CS: i16 = 0x28;
@@ -148,6 +150,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_SPEC9",
     "CAM_FUNC_KEEP4",
     "CAM_FUNC_DEMO3",
+    "CAM_FUNC_SUBJ4",
 ];
 
 // CAM_MODE_* (z64camera.h).
@@ -623,6 +626,32 @@ const D_8011D658: [VecSph; 4] = [
 /// `D_8011D678`: its `at` offsets from where the chest opening started.
 const D_8011D678: [Vec3; 4] = [Vec3::new(0.0, 40.0, 20.0), Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.0, 3.0, -3.0), Vec3::new(0.0, 3.0, -3.0)];
 
+/// `Subj4ReadOnlyData` (`interfaceFlags`, the only value it reads) and `Subj4ReadWriteData`
+/// (`unk_00` is an `InfiniteLine`: the crawlspace's line through `line_point` along
+/// `line_dir`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Subj4 {
+    interface_flags: i16,
+    line_point: Vec3,
+    line_dir: Vec3,
+    unk_24: f32,
+    unk_28: f32,
+    unk_2c: i16,
+    unk_2e: bool,
+    unk_30: i16,
+    unk_32: i16,
+}
+
+/// `BINANG_LERPIMPINV(v0, v1, t)`: `v0 + (s16)(v1 - v0) / t`, an integer division.
+fn binang_lerpimpinv(v0: i16, v1: i16, t: i16) -> i16 {
+    (v0 as i32 + v1.wrapping_sub(v0) as i32 / t as i32) as i16
+}
+
+/// `Camera_XZAngle(to, from)`.
+fn camera_xz_angle(to: Vec3, from: Vec3) -> i16 {
+    cam_deg_to_binang(rad_to_deg(f_atan2f(from.x - to.x, from.z - to.z)))
+}
+
 /// `KeepOn1ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default)]
 struct Keep1Rw {
@@ -794,8 +823,9 @@ pub fn bg_cam_func_data(col: &CollisionContext, bg_cam_index: i32) -> Option<BgC
 pub struct PlayerView {
     /// `actor.world.pos`.
     pub pos: Vec3,
-    /// `actor.shape.rot.y`.
+    /// `actor.shape.rot.y`, `actor.shape.rot.x`.
     pub shape_yaw: i16,
+    pub shape_pitch: i16,
     pub adult: bool,
     /// `R_RUN_SPEED_LIMIT` (for `func_8002DCE4`).
     pub run_speed_limit: i16,
@@ -885,6 +915,9 @@ pub struct GameCamera {
     /// The `Interface_ChangeAlpha` this frame's `Camera_UpdateInterface` asked for (PlayState
     /// applies it to the save).
     pub interface_alpha_change: Option<u16>,
+    /// What `Camera_Subj4` wrote to `camera->player` this update: its `world.pos` and
+    /// `shape.rot.y` (PlayState applies them to Player right after the update).
+    pub player_write: Option<(Vec3, i16)>,
     ro: Norm1Ro,
     rw: Norm1Rw,
     para1_ro: Para1Ro,
@@ -897,6 +930,7 @@ pub struct GameCamera {
     keep4_ro: Keep4Ro,
     keep4_rw: Keep4Rw,
     demo3: Demo3,
+    subj4: Subj4,
     fixd: FixedData,
     uniq: UniqueData,
     update_direction: bool,
@@ -970,6 +1004,7 @@ impl GameCamera {
             view_unk_124: 0,
             interface_alpha: 0,
             interface_alpha_change: None,
+            player_write: None,
             ro: Norm1Ro::default(),
             rw: Norm1Rw::default(),
             para1_ro: Para1Ro::default(),
@@ -982,6 +1017,7 @@ impl GameCamera {
             keep4_ro: Keep4Ro::default(),
             keep4_rw: Keep4Rw::default(),
             demo3: Demo3::default(),
+            subj4: Subj4::default(),
             fixd: FixedData::default(),
             uniq: UniqueData::default(),
             update_direction: false,
@@ -1349,6 +1385,9 @@ impl GameCamera {
                 Some("CAM_FUNC_SPEC9") => self.special9(d, col, p, f.door, frames, &f.input),
                 Some("CAM_FUNC_KEEP4") => self.keep_on4(d, col, p, f),
                 Some("CAM_FUNC_DEMO3") => self.demo3(d, col, p, frames, &f.input),
+                Some("CAM_FUNC_SUBJ4") => {
+                    self.subj4(d, col, p);
+                }
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else {
@@ -2953,6 +2992,111 @@ impl GameCamera {
             Some((_, poly)) => bgcheck::dist_plane_to_pos(col.poly_normal(poly), col.poly(poly).dist as f32, from) < 0.0,
             None => false,
         }
+    }
+
+    /// `Camera_GetBgCamFuncDataUnderPlayer`: the Vec3s data of the bg camera the floor below
+    /// Player names (`BgCheck_EntityRaycastDown3` from Player's height), with its count; `None`
+    /// for no floor, or a floor with no data. Only the scene's floors: a DynaPoly's floor names
+    /// its own actor's list, which no ported actor has.
+    fn bg_cam_func_data_under_player(col: &CollisionContext, p: &PlayerView) -> Option<Vec<[i16; 3]>> {
+        use crate::surface::SurfaceType;
+        let (y, poly) = col.entity_raycast_down(p.pos + Vec3::Y * p.height());
+        let poly = poly.filter(|id| y != bgcheck::BGCHECK_Y_MIN && id.is_scene())?;
+        let cam = col.header.bg_cams.get(col.bg_cam_index(poly) as usize)?;
+        (!cam.data.is_empty()).then(|| cam.data.clone())
+    }
+
+    /// `Camera_Subj4` (`CAM_SET_CRAWLSPACE`): the crawlspace's subjective camera. Its first
+    /// call each frame only asks for the second one at the end of `Play_Draw` (`view.unk_124`)
+    /// and keeps the frame's `xzSpeed`. The second eases in over 10 frames, then, while Player
+    /// moves (`unk_24` ≥ 0.5), puts the eye on the crawlspace's line at Player, bobbing and
+    /// swaying with the crawl, and moves Player: onto the line, to the ground, facing along it
+    /// (`player_write`). The bg camera's points: the second is one end, the second to last the
+    /// other. Returns the C's value. The crawl's sound (`func_800F4010`) isn't ported.
+    fn subj4(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) -> bool {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.subj4.interface_flags = d.value(self.cur(), 0);
+        }
+        if self.view_unk_124 == 0 {
+            // camera->camId | 0x50: the main camera.
+            self.view_unk_124 = 0x50;
+            self.subj4.unk_24 = self.xz_speed;
+            return true;
+        }
+        // Actor_GetWorldPosShapeRot(&sp6C, &camera->player->actor).
+        let (sp6c_pos, sp6c_rot_x, sp6c_rot_y) = (p.pos, p.shape_pitch, p.shape_yaw);
+        let mut sp5c = diff_to_sph_geo(self.at, self.eye);
+        self.interface_flags = self.subj4.interface_flags;
+        if self.anim_state == 0 {
+            let Some(points) = Self::bg_cam_func_data_under_player(col, p).filter(|v| v.len() >= 3) else {
+                // The C reads through a NULL pointer here.
+                log::warn!("Camera_Subj4: no crawlspace points under Player");
+                return false;
+            };
+            let v = |i: usize| Vec3::new(points[i][0] as f32, points[i][1] as f32, points[i][2] as f32);
+            let s = &mut self.subj4;
+            s.line_point = v(1);
+            let sp98 = v(points.len() - 2);
+            // 0x238C ~ 50 degrees.
+            let mut sp64 = VecSph { r: 10.0, pitch: 0x238C, yaw: camera_xz_angle(sp98, s.line_point) };
+            let sp88 = self.player_pos.distance(s.line_point);
+            if self.player_pos.distance(sp98) < sp88 {
+                s.line_dir = s.line_point - sp98;
+                s.line_point = sp98;
+            } else {
+                s.line_dir = sp98 - s.line_point;
+                sp64.yaw = sp64.yaw.wrapping_sub(0x7FFF);
+            }
+            s.unk_30 = sp64.yaw;
+            s.unk_32 = 0xA;
+            s.unk_2c = 0;
+            s.unk_2e = false;
+            s.unk_28 = 0.0;
+            self.anim_state += 1;
+        }
+        let s = self.subj4;
+        if s.unk_32 != 0 {
+            let sp64 = VecSph { r: 10.0, pitch: 0x238C, yaw: s.unk_30 };
+            let sp8c = sph_geo_add(sp6c_pos, sp64);
+            let sp88 = s.unk_32 as f32 + 1.0;
+            self.at.x += (sp8c.x - self.at.x) / sp88;
+            self.at.y += (sp8c.y - self.at.y) / sp88;
+            self.at.z += (sp8c.z - self.at.z) / sp88;
+            sp5c.r -= sp5c.r / sp88;
+            sp5c.yaw = binang_lerpimpinv(sp5c.yaw, sp6c_rot_y.wrapping_sub(0x7FFF), s.unk_32);
+            sp5c.pitch = binang_lerpimpinv(sp5c.pitch, sp6c_rot_x, s.unk_32);
+            self.eye_next = sph_geo_add(self.at, sp5c);
+            self.eye = self.eye_next;
+            self.subj4.unk_32 -= 1;
+            return false;
+        } else if s.unk_24 < 0.5 {
+            return false;
+        }
+        self.eye_next = eng_collision::math3d::line_closest_to_point(s.line_point, s.line_dir, sp6c_pos);
+        self.at = self.eye_next + s.line_dir;
+        self.eye = self.eye_next;
+        let sp64 = VecSph { r: 5.0, pitch: 0x238C, yaw: s.unk_30 };
+        let sp98 = sph_geo_add(self.eye_next, sp64);
+        let s = &mut self.subj4;
+        s.unk_2c = s.unk_2c.wrapping_add(0xBB8);
+        let t = cos_s(s.unk_2c);
+        self.eye.x += (sp98.x - self.eye.x) * t.abs();
+        self.eye.y += (sp98.y - self.eye.y) * t.abs();
+        self.eye.z += (sp98.z - self.eye.z) * t.abs();
+        if s.unk_28 < t && !s.unk_2e {
+            // func_800F4010(&player->actor.projectedPos, player->unk_89E + 0x8B0, 4.0f): the
+            // crawl's sound, not ported.
+            s.unk_2e = true;
+        } else if s.unk_28 > t {
+            s.unk_2e = false;
+        }
+        s.unk_28 = t;
+        self.player_write = Some((Vec3::new(self.eye_next.x, self.player_ground_y, self.eye_next.z), sp64.yaw));
+        let temp_f16 = (240.0 * t) * (s.unk_24 * 0.416667);
+        let temp_a0 = (temp_f16 + s.unk_30 as f32) as i32 as i16;
+        self.at = Vec3::new(self.eye.x + sin_s(temp_a0) * 10.0, self.eye.y, self.eye.z + cos_s(temp_a0) * 10.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        true
     }
 
     /// `Camera_Fixed2`: the eye eases to the bg camera's position, `at` follows Player

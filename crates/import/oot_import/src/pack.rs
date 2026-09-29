@@ -614,6 +614,7 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
         entrances: sd.scene.entrances.clone(),
         exits: sd.scene.exits.clone(),
         transition_actors: sd.scene.transition_actors.clone(),
+        paths: sd.scene.paths.clone(),
         scene_cam_type: sd.scene.scene_cam_type,
         rooms: (0..rooms.len()).map(|ri| keys::room(file, layer, ri)).collect(),
         bake_day_time: state.day_time,

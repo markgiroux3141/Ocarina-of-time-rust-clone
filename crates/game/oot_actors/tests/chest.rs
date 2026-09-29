@@ -4,8 +4,9 @@
 //!
 //! The chest is room 2's `En_Box` at (-232, 178, 2245), params 0x04E0:
 //! `ENBOX_TYPE_BIG_DEFAULT` (`params >> 12 & 0xF`), `GI_SWORD_KOKIRI` 0x27 (`params >> 5 &
-//! 0x7F`), treasure flag 0 (`params & 0x1F`). Room 2 is behind a crawlspace (milestone 2), so
-//! the test loads it and places Link in front of the chest.
+//! 0x7F`), treasure flag 0 (`params & 0x1F`). Room 2 is behind a crawlspace; the test loads it
+//! and places Link in front of the chest (the way there is the `playthrough` test's
+//! `a_new_save_to_the_kokiri_sword`).
 //!
 //! Also a piece of heart, which `En_Item00` offers with `func_8002F554` (`func_8002F434` with
 //! 50 and 10) when Link touches it (`z_en_item00.c`: `EnItem00_Update`).

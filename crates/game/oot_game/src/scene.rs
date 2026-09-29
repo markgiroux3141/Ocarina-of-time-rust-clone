@@ -26,6 +26,25 @@ pub fn layer_for(child: bool, night: bool) -> usize {
     }
 }
 
+/// `Path` (`z64scene.h`): a scene path, `{ u8 count; Vec3s* points; }`, with its points read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Path {
+    pub points: Vec<[i16; 3]>,
+}
+
+impl Path {
+    /// `path->count`.
+    pub fn count(&self) -> usize {
+        self.points.len()
+    }
+
+    /// `((Vec3s*)SEGMENTED_TO_VIRTUAL(path->points))[i]` as a `Vec3f`.
+    pub fn point(&self, i: usize) -> Vec3 {
+        let p = self.points[i];
+        Vec3::new(p[0] as f32, p[1] as f32, p[2] as f32)
+    }
+}
+
 /// `ActorEntry` from the spawn/actor lists (0x10 bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ActorEntry {
@@ -194,6 +213,9 @@ pub struct LayerData {
     pub exits: Vec<u16>,
     /// `SCENE_CMD_ID_TRANSITION_ACTOR_LIST`.
     pub transition_actors: Vec<TransitionActorEntry>,
+    /// `SCENE_CMD_ID_PATH_LIST`: `play->setupPathList`, indexed by the number an actor's
+    /// params carry (`En_Goroiwa`'s `params & 0xFF`).
+    pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType`: `R_SCENE_CAM_TYPE` (`SCENE_CAM_TYPE_*`).
     pub scene_cam_type: u8,
     /// Record names of the rooms (`RoomData`), in room-list order.

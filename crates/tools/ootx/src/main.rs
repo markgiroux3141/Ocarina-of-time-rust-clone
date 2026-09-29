@@ -802,6 +802,9 @@ fn scene_info(scene: &str, layer: usize) -> Result<()> {
     for (i, t) in ld.transition_actors.iter().enumerate() {
         println!("  transition {i}: {} sides {:?} pos {:?} rotY {:#06x} params {:#06x}", at.name(t.id), t.sides, t.pos, t.rot_y as u16, t.params as u16);
     }
+    for (i, p) in ld.paths.iter().enumerate() {
+        println!("  path {i}: {} points {:?}", p.count(), p.points);
+    }
     for key in &ld.rooms {
         let r = pack.room(key)?;
         let objs: Vec<String> = r.objects.iter().map(|&o| obj(o)).collect();

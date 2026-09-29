@@ -45,5 +45,6 @@ pub mod skybox;
 pub mod spawn;
 pub mod sprite;
 pub mod surface;
+pub mod sys_matrix;
 pub mod target;
 pub mod transition;

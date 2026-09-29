@@ -1,7 +1,10 @@
-//! GAME-02's exit test (ARCHITECTURE-PLAN.md §5, Phase 3): a headless scripted playthrough of
-//! Kokiri Forest, from Link's bed into the Deku Tree, with checks at each step
-//! (`oot_actors::playthrough`). It runs on a save with the `deku-tree-open` preset
-//! (`EVENTCHKINF_0C` and `EVENTCHKINF_05`): the talk that opens the mouth is a cutscene.
+//! The headless scripted playthroughs of Kokiri Forest (`oot_actors::playthrough`), with checks
+//! at each step:
+//! - GAME-02's exit test (ARCHITECTURE-PLAN.md §5, Phase 3): from Link's bed into the Deku Tree,
+//!   on a save with the `deku-tree-open` preset (`EVENTCHKINF_0C` and `EVENTCHKINF_05`): the
+//!   talk that opens the mouth is a cutscene;
+//! - GAME-03 milestone 2's exit test: from Link's bed on a new save, through the crawlspace and
+//!   past the boulder, to the Kokiri Sword's chest, opened.
 //!
 //! Expected values come from the scene data and the C:
 //! - `ENTR_LINK_HOME_0` is Link's house's spawn 0, (1, 0, 95), params 0x0D00 (standing); the
@@ -11,7 +14,14 @@
 //! - the sign by the house (params 0x031F) has text `params | 0x300`;
 //! - `BgTreemouth_Update` puts the open mouth (`unk_168` 1) at (4029 - 160, 136 - 399,
 //!   -1255 + 92);
-//! - Kokiri Forest's exit 2 is `ENTR_YDAN_0` (0x0000), the Deku Tree's scene (`SCENE_YDAN`, 0).
+//! - Kokiri Forest's exit 2 is `ENTR_YDAN_0` (0x0000), the Deku Tree's scene (`SCENE_YDAN`, 0);
+//! - the crawlspace's mouth is the wall at z 1059 (x -801..-769, `WALL_FLAG_4`) whose triangles'
+//!   middle is x -785, facing -z (`wallYaw` 0x8000); its floor names bg camera 9
+//!   (`CAM_SET_CRAWLSPACE`); `En_Holl` 0 joins rooms 0 and 2 across it; room 2's floor beyond it
+//!   names bg camera 14 (`CAM_SET_DUNGEON0`);
+//! - room 2's `En_Goroiwa` (params 0x0C02) rolls path 2; its two `En_Wonder_Item`s (0x123F) each
+//!   drop a green rupee that collects itself; its `En_Box` (0x04E0) holds `GI_SWORD_KOKIRI`,
+//!   treasure flag 0.
 
 mod common;
 
@@ -262,5 +272,110 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
             assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_YDAN, entr("ENTR_YDAN_0")));
             assert_eq!(p.action, Action::StandingStill);
         }
+        Step::Crawlspace | Step::TrainingArea | Step::Boulder | Step::Chest => panic!("{step:?} isn't on the Deku Tree's route"),
+    }
+}
+
+#[test]
+fn a_new_save_to_the_kokiri_sword() {
+    use oot_actors::en_goroiwa::EnGoroiwa;
+    use oot_actors::playthrough::Route;
+    use oot_game::camera::CAM_SET_CRAWLSPACE;
+    use oot_game::interface::DO_ACTION_ENTER;
+    let Some(a) = assets() else { return };
+    let route = Route::SwordChest;
+    let Some(mut w) = enter(&a, route.entrance(), route.preset()) else {
+        return;
+    };
+    let entr = |name: &str| a.scenes.entrance_index(name).unwrap();
+    let mut run = Playthrough::for_route(route);
+    let mut prev = PadState::default();
+    let mut seen = Vec::new();
+    // What the frames between the steps showed: "Enter" on A before the crawl, the crawlspace's
+    // camera while crawling, and the nearest the boulder came to Link.
+    let (mut saw_enter, mut saw_crawl_camera, mut nearest_boulder) = (false, false, f32::MAX);
+    loop {
+        let pad = run.next(&w);
+        if let Some(step) = run.take_done() {
+            seen.push(step);
+            check_sword(step, &w, &run, saw_enter, saw_crawl_camera, &entr);
+        }
+        let Some(pad) = pad else { break };
+        w.tick_with(scripted_input(prev, pad));
+        prev = pad;
+        let p = w.player();
+        saw_enter |= w.interface_ctx.unk_1f0 == DO_ACTION_ENTER;
+        saw_crawl_camera |= p.action == Action::Crawl && w.game_camera.setting == CAM_SET_CRAWLSPACE;
+        if let Some(b) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnGoroiwa>(h)) {
+            nearest_boulder = nearest_boulder.min(b.actor.world_pos.distance(p.actor.world_pos));
+        }
+    }
+    assert_eq!(run.failure, None, "the run stopped at {}", run.at());
+    assert_eq!(seen, [Step::House, Step::OutDoor, Step::Ladder, Step::Crawlspace, Step::TrainingArea, Step::Boulder, Step::Chest]);
+    // The boulder's sphere (58) never reached Link.
+    assert!(nearest_boulder > 58.0 + 12.0, "the boulder came within {nearest_boulder}");
+}
+
+/// The checks when a step of the Kokiri Sword run is done.
+fn check_sword(step: Step, w: &PlayState, run: &Playthrough, saw_enter: bool, saw_crawl_camera: bool, entr: &dyn Fn(&str) -> u16) {
+    use oot_actors::player::STATE2_18;
+    use oot_game::camera::CAM_SET_DUNGEON0;
+    let p = w.player();
+    match step {
+        Step::House => {
+            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_LINK_HOME, entr("ENTR_LINK_HOME_0"), 0));
+            // Sram_InitNewSave: three hearts, no rupees, the Kokiri tunic and boots only, no flags.
+            assert_eq!((w.save.health, w.save.rupees, w.save.inventory.equipment), (0x30, 0, 0x1100));
+            assert!(!w.save.get_event_chk_inf(EVENTCHKINF_05));
+        }
+        Step::OutDoor => {
+            assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_SPOT04, entr("ENTR_SPOT04_3")));
+        }
+        Step::Ladder => {
+            assert!((p.actor.world_pos.y + 80.0).abs() < 1.0, "on the ground: {}", p.actor.world_pos);
+        }
+        Step::Crawlspace => {
+            // func_8083F0C8: A said "Enter" (PLAYER_STATE2_16) at the mouth; Link lined up with
+            // its triangles' middle (x -785), facing wallYaw + 0x8000 (+z), crawling
+            // (PLAYER_STATE2_18, func_8084C760 after tunnel_start).
+            assert!(saw_enter, "DO_ACTION_ENTER before the crawl");
+            assert_eq!(p.action, Action::Crawl);
+            assert!(p.state2 & STATE2_18 != 0);
+            assert!((p.actor.world_pos.x + 785.0).abs() < 0.01, "lined up with the mouth: {}", p.actor.world_pos);
+            assert_eq!(p.actor.shape_rot.y, 0);
+            assert_eq!(w.data.anim_name(p.skel.animation), "link_child_tunnel_start");
+            assert_eq!(w.room_ctx.cur.num, 0);
+        }
+        Step::TrainingArea => {
+            // Camera_Subj4 on the tunnel's floor (bg camera 9, CAM_SET_CRAWLSPACE) kept Link on
+            // the crawlspace's line while he crawled; En_Holl 0 loaded room 2; func_8083F570 at
+            // the far wall (z 1359), then func_8084C81C's tunnel_end and standing
+            // (func_8083C0E8), the crawl over. Room 2's floor names bg camera 14.
+            assert!(saw_crawl_camera, "the crawlspace's camera while crawling");
+            assert_eq!(w.room_ctx.cur.num, 2);
+            assert_eq!(p.action, Action::StandingStill);
+            assert_eq!(p.state2 & STATE2_18, 0);
+            assert!(p.actor.world_pos.z > 1379.0 && (p.actor.world_pos.x + 785.0).abs() < 5.0, "out of the tunnel: {}", p.actor.world_pos);
+            assert_eq!((w.game_camera.setting, w.game_camera.bg_cam_index), (CAM_SET_DUNGEON0, 14));
+        }
+        Step::Boulder => {
+            // Past the corridors unhurt, with both wonder items' green rupees
+            // (EnWonderItem_ProximityDrop: ITEM00_RUPEE_GREEN | 0x8000, collected at once).
+            assert_eq!(w.save.health, 0x30, "never hit");
+            assert!(p.actor.world_pos.z > 1930.0, "north of the corridors: {}", p.actor.world_pos);
+            assert_eq!(w.save.rupees + w.save.rupee_accumulator, 2);
+            assert_eq!(run.boulder_waits.len(), 2);
+        }
+        Step::Chest => {
+            // func_8084DFF4: text 0xA4 and Item_Give(ITEM_SWORD_KOKIRI), which only owns it
+            // (equipment bit 0): B stays empty until the pause menu (its stand-in). The chest's
+            // treasure flag 0.
+            assert_eq!(run.texts, [0xA4]);
+            assert_eq!(w.save.inventory.equipment, 0x1101);
+            assert_eq!(w.save.equips.button_items[0], oot_game::save::ITEM_NONE);
+            assert!(w.flags.get_treasure(0));
+            assert_eq!(p.action, Action::StandingStill);
+        }
+        _ => panic!("{step:?} isn't on the Kokiri Sword's route"),
     }
 }

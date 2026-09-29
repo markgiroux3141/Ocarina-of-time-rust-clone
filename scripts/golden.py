@@ -66,6 +66,9 @@ CASES = [
                                   "--script", "idle", "--frames", "40", "--width", "640", "--height", "360", "--screenshot", "{shot}"]),
     ("playthrough", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--preset", "deku-tree-open", "--script", "playthrough",
                         "--trace", "{trace}"]),
+    # GAME-03 milestone 2: a new save from Link's bed through the crawlspace, past the boulder,
+    # to the Kokiri Sword's chest, opened.
+    ("sword_chest", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "sword-chest", "--trace", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),

@@ -30,12 +30,14 @@ pub mod bg_ydan_hasi;
 pub mod dummy_target;
 pub mod en_box;
 pub mod en_door;
+pub mod en_goroiwa;
 pub mod en_holl;
 pub mod en_item00;
 pub mod en_ishi;
 pub mod en_kanban;
 pub mod en_ko;
 pub mod en_kusa;
+pub mod en_wonder_item;
 pub mod en_wonder_talk2;
 pub mod obj_hana;
 pub mod player;
@@ -48,7 +50,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -66,6 +68,8 @@ pub fn overlays() -> Overlays {
     o.register(en_item00::ACTOR_EN_ITEM00, en_item00::EnItem00::init);
     o.register(bg_treemouth::ACTOR_BG_TREEMOUTH, bg_treemouth::BgTreemouth::init);
     o.register(en_box::ACTOR_EN_BOX, en_box::EnBox::init);
+    o.register(en_wonder_item::ACTOR_EN_WONDER_ITEM, en_wonder_item::EnWonderItem::init);
+    o.register(en_goroiwa::ACTOR_EN_GOROIWA, en_goroiwa::EnGoroiwa::init);
     o
 }
 

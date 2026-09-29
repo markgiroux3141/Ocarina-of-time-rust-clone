@@ -87,6 +87,8 @@ target/release/oot --entrance ENTR_SPOT04_3                # outside Link's hous
 target/release/oot --scene spot00 --adult --time 18:00     # any scene's entrance to spawn --spawn N, age and time
 target/release/oot --entrance ENTR_SPOT04_1 --preset deku-tree-open   # at the Deku Tree, his mouth open (a debug save preset;
                                                            # deku-tree-dead: the tree dead too)
+target/release/oot --entrance ENTR_LINK_HOME_0             # a new save in Link's bed: the ramp, the crawlspace, the boulder, the
+                                                           # Kokiri Sword's chest
 
 # Sandbox: the test course and the debug views
 target/release/oot_sandbox                                 # test course, adult Link
@@ -96,6 +98,8 @@ target/release/oot_sandbox --entrance ENTR_SPOT04_3 --child --script house --tra
                                                            # headless: into Link's house and back out
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open --script playthrough --trace out/playthrough.json
                                                            # headless: GAME-02's run from Link's bed into the Deku Tree
+target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script sword-chest --trace out/sword_chest.json
+                                                           # headless: GAME-03's run from Link's bed to the Kokiri Sword
 target/release/oot_sandbox --entrance ENTR_LINK_HOME_1 --child --script cup --screenshot out/home.png --shots-at 29
                                                            # the house's pivot camera and skybox, then C-Up: the fixed camera and its picture
 target/release/oot_sandbox --entrance ENTR_SOUKO_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png
@@ -111,7 +115,8 @@ cargo test --workspace
 cargo test -p oot_actors                                   # movement, camera, foot IK, ledges, targeting, sword, water, platform, scenes
 cargo test -p oot_actors --test scenes                     # Kokiri's placements, the En_Holl room change, Link's house and back, every scene entering
 cargo test -p oot_actors --test prerendered --test door    # the interiors' cameras, backgrounds and skyboxes; En_Door
-cargo test -p oot_actors --test playthrough                # Bg_Treemouth, and the scripted run from Link's bed into the Deku Tree
+cargo test -p oot_actors --test playthrough                # Bg_Treemouth, and the scripted runs from Link's bed (the Deku Tree, the Kokiri Sword)
+cargo test -p oot_actors --test crawl --test boulder       # the crawlspace and its camera; the rolling boulder and Link's knockdown
 cargo test -p oot_game                                     # Kokiri Forest's rooms, draw configs and environment
 cargo test -p oot_import --test pack                       # the pack against the ROM path: tables vs the C, draw configs vs the interpreter, meshes, counts, the scene lists
 cargo test -p layering                                     # the crate layering rules
@@ -122,7 +127,7 @@ python scripts/golden.py check --bin-dir target/release
 
 Concurrent sessions build into their own folder: `CARGO_TARGET_DIR=target/<name> cargo build --release`.
 
-Play controls: N64 stick to move, A to roll / jump / dive, B for the sword, Z to target, C-left/C-right to turn the follow camera. On keyboard: WASD/arrows, Shift to walk, Space for A, E for B, Q for Z, J/L for C-left/right. F1 toggles the collision wireframe, F2 the HUD, F3 switches between the game camera and spike 03's follow camera, F4 toggles foot IK, P the placeholder markers, Tab switches age (entering again), Backspace respawns (in a scene entered by an entrance: `Play_TriggerVoidOut`, back to where Link came in). Enter (Start) stands in for the pause menu's equipping: it equips every owned piece of a type with nothing worn, the sword also on B (the pause menu isn't ported; ADR 0019).
+Play controls: N64 stick to move, A to roll / jump / dive, B for the sword, Z to target, C-left/C-right to turn the follow camera. On keyboard: WASD/arrows, Shift to walk, Space for A, E for B, Q for Z, J/L for C-left/right. F1 toggles the collision wireframe, F2 the HUD, F3 switches between the game camera and spike 03's follow camera, F4 toggles foot IK, P the placeholder markers, Tab switches age (entering again), Backspace respawns (in a scene entered by an entrance: `Play_TriggerVoidOut`, back to where Link came in). Enter (Start) stands in for the pause menu's equipping: it equips every owned piece of a type with nothing worn, the sword also on B (the pause menu isn't ported; ADR 0019). At a crawlspace's mouth A says Enter: the stick forward crawls, back backs out.
 
 Viewer controls: left-drag to orbit, right-drag to pan, scroll to zoom. The sidebar switches between Link and Tock and has the animation list (with a filter for Link's 573), playback, frame scrub and interpolation. For Link it adds age, model group, shield, tunic, running fists, LOD, and eye/mouth overrides; for Tock, face and emblem colour. Both have a skeleton overlay and per-material combiner/texture details. Rendered images go to `out/`, which is git-ignored.
 
