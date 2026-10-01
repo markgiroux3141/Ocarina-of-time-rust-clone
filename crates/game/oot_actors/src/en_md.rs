@@ -24,8 +24,7 @@
 //! head and torso turns and sway, from meshes baked per eye and pass
 //! (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported: his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder), the circle shadow's alpha,
-//! the sounds.
+//! Not ported: his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder), the circle shadow's alpha.
 
 use std::sync::Arc;
 
@@ -653,7 +652,7 @@ impl EnMd {
             self.action = Action::Blocking;
             play.msg_ctx.ocarina_mode = OCARINA_MODE_04;
         } else if play.msg_ctx.ocarina_mode == OCARINA_MODE_03 {
-            // NA_SE_SY_CORRECT_CHIME.
+            play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME);
             self.actor.text_id = 0x1067;
             let range = self.collider.dim.radius as f32 + 30.0;
             let a = self.actor.clone();

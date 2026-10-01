@@ -19,7 +19,7 @@
 //!   item as it draws.
 //! - **Not ported:** the magic meter (no magic), the minimap, the timers, the C-Up Navi prompt,
 //!   the B button's label (only the ocarina loads one), the B button's ammo count (only while
-//!   riding or in a minigame), double defence's hearts, the sounds, and the pause menu. `func_80083108`'s
+//!   riding or in a minigame), double defence's hearts, and the pause menu. `func_80083108`'s
 //!   riding, minigame, fishing, water and horse-race cases, and its item-type restrictions, are
 //!   left out: with nothing on the C buttons they don't change a button's status.
 //!
@@ -28,6 +28,8 @@
 
 use glam::{Mat4, Vec3, Vec4};
 
+use crate::audio::GameAudio;
+use crate::audio::sfx::{NA_SE_SY_HITPOINT_ALARM, NA_SE_SY_HP_RECOVER, NA_SE_SY_RUPY_COUNT, NA_SE_VO_NA_HELLO_2, NA_SE_VO_NAVY_CALL, SfxPos};
 use crate::gbi::{Dl, G_IM_FMT_I, G_IM_FMT_IA, G_IM_FMT_RGBA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_IM_SIZ_32B, G_TX_WRAP, ac, cc_ab, cc_c, cc_d, setup_dl};
 use crate::save::SaveContext;
 use crate::sprite::{Load, Quad, Sprite, SpriteBake, TexSrc};
@@ -233,6 +235,23 @@ pub struct IfaceFrame {
     pub no_transition: bool,
     /// `roomCtx.curRoom.behaviorType1 == ROOM_BEHAVIOR_TYPE1_1`.
     pub dungeon_room: bool,
+    /// `Player_InCsMode(play) || Play_InCsMode(play)`.
+    pub in_cs_mode: bool,
+}
+
+/// `Health_IsCritical` (`z_lifemeter.c`): at or under a heart (two, three, or 2.75 with more
+/// capacity), and alive.
+pub fn health_is_critical(save: &SaveContext) -> bool {
+    let critical_health = if save.health_capacity <= 0x50 {
+        0x10
+    } else if save.health_capacity <= 0xA0 {
+        0x18
+    } else if save.health_capacity <= 0xF0 {
+        0x20
+    } else {
+        0x2C
+    };
+    critical_health >= save.health && save.health > 0
 }
 
 /// The overworld scenes of the minimap's switch: `SCENE_SPOT00` (0x51) to `SCENE_SPOT13`,
@@ -291,10 +310,16 @@ impl InterfaceContext {
         self.do_action_segment[load_offset] = (action != DO_ACTION_NONE).then_some(action);
     }
 
-    /// `Interface_SetNaviCall`: 0x1D or 0x1E (Navi's hello or call, sounds not played) start the
+    /// `Interface_SetNaviCall`: 0x1D or 0x1E (Navi's hello or call, with her voice) start the
     /// C-Up prompt outside cutscenes; 0x1F stops it.
-    pub fn set_navi_call(&mut self, navi_call_state: u16, cs_idle: bool) {
+    pub fn set_navi_call(&mut self, navi_call_state: u16, cs_idle: bool, audio: &mut GameAudio) {
         if (navi_call_state == 0x1D || navi_call_state == 0x1E) && !self.navi_calling && cs_idle {
+            if navi_call_state == 0x1E {
+                audio.func_80078884(NA_SE_VO_NAVY_CALL);
+            }
+            if navi_call_state == 0x1D {
+                audio.func_800f4524(SfxPos::Default, NA_SE_VO_NA_HELLO_2, 32);
+            }
             self.navi_calling = true;
             self.c_up_invisible = 0;
             self.c_up_timer = 10;
@@ -546,14 +571,17 @@ impl InterfaceContext {
         }
     }
 
-    /// `Health_UpdateBeatingHeart`: the oscillator 0..10 and back (the low-health alarm isn't
-    /// played).
-    fn health_update_beating_heart(&mut self) {
+    /// `Health_UpdateBeatingHeart`: the oscillator 0..10 and back; at each beat's end, the
+    /// low-health alarm while health is critical (not in a cutscene; no pause menu).
+    fn health_update_beating_heart(&mut self, save: &SaveContext, audio: &mut GameAudio, in_cs_mode: bool) {
         if self.beating_heart_oscillator_direction != 0 {
             self.beating_heart_oscillator -= 1;
             if self.beating_heart_oscillator <= 0 {
                 self.beating_heart_oscillator = 0;
                 self.beating_heart_oscillator_direction = 0;
+                if !in_cs_mode && health_is_critical(save) {
+                    audio.func_80078884(NA_SE_SY_HITPOINT_ALARM);
+                }
             }
         } else {
             self.beating_heart_oscillator += 1;
@@ -589,7 +617,7 @@ impl InterfaceContext {
     }
 
     /// `Interface_Update`.
-    pub fn update(&mut self, save: &mut SaveContext, f: &IfaceFrame) {
+    pub fn update(&mut self, save: &mut SaveContext, audio: &mut GameAudio, f: &IfaceFrame) {
         if !self.initialised {
             return;
         }
@@ -635,18 +663,22 @@ impl InterfaceContext {
         if save.health_accumulator != 0 {
             save.health_accumulator -= 4;
             save.health += 4;
+            if (save.health & 0xF) < 4 {
+                audio.func_80078884(NA_SE_SY_HP_RECOVER);
+            }
             if save.health >= save.health_capacity {
                 save.health = save.health_capacity;
                 save.health_accumulator = 0;
             }
         }
-        self.health_update_beating_heart();
+        self.health_update_beating_heart(save, audio, f.in_cs_mode);
         self.health_update_meter();
         if save.rupee_accumulator != 0 {
             if save.rupee_accumulator > 0 {
                 if save.rupees < save.wallet_capacity() {
                     save.rupee_accumulator -= 1;
                     save.rupees += 1;
+                    audio.func_80078884(NA_SE_SY_RUPY_COUNT);
                 } else {
                     save.rupees = save.wallet_capacity();
                     save.rupee_accumulator = 0;
@@ -655,9 +687,11 @@ impl InterfaceContext {
                 if save.rupee_accumulator <= -50 {
                     save.rupee_accumulator += 10;
                     save.rupees = (save.rupees - 10).max(0);
+                    audio.func_80078884(NA_SE_SY_RUPY_COUNT);
                 } else {
                     save.rupee_accumulator += 1;
                     save.rupees -= 1;
+                    audio.func_80078884(NA_SE_SY_RUPY_COUNT);
                 }
             } else {
                 save.rupee_accumulator = 0;
@@ -1075,7 +1109,7 @@ mod tests {
 
     fn frame() -> IfaceFrame {
         // SCENE_SPOT04.
-        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false }
+        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false }
     }
 
     #[test]
@@ -1085,7 +1119,7 @@ mod tests {
         change_alpha(&mut s, 50);
         let mut seen = Vec::new();
         for _ in 0..9 {
-            c.update(&mut s, &frame());
+            c.update(&mut s, &mut GameAudio::default(), &frame());
             seen.push(c.b_alpha);
         }
         // alpha1 = 255 - (255 - (unk_13EC << 5)): 32 a frame, 255 from the eighth.
@@ -1103,7 +1137,7 @@ mod tests {
         assert_eq!((c.unk_1ec, c.do_action_segment[1]), (1, Some(DO_ACTION_CHECK)));
         let mut angles = Vec::new();
         for _ in 0..4 {
-            c.update(&mut s, &frame());
+            c.update(&mut s, &mut GameAudio::default(), &frame());
             angles.push((c.unk_1ec, c.unk_1f4 as i32));
         }
         // 31400 / WREG(5) (3) a frame: 10466 → past 15700, so -15700 → -5233 → 0.
@@ -1142,7 +1176,7 @@ mod tests {
         assert_eq!(c.restrictions.b_button, 1);
         let f = IfaceFrame { scene_id: 0x34, ..frame() };
         for _ in 0..10 {
-            c.update(&mut s, &f);
+            c.update(&mut s, &mut GameAudio::default(), &f);
         }
         // func_80083108 disables B (the sword isn't ammo) and fades back in: B at 70.
         assert_eq!((s.button_status[0], c.b_alpha, c.a_alpha), (BTN_DISABLED, 70, 255));
@@ -1150,7 +1184,7 @@ mod tests {
         let mut s = new_save();
         let mut c = InterfaceContext::init(&mut s, &tables, 0x34);
         for _ in 0..10 {
-            c.update(&mut s, &f);
+            c.update(&mut s, &mut GameAudio::default(), &f);
         }
         assert_eq!((s.button_status[0], s.equips.button_items[0]), (BTN_ENABLED, crate::item::ITEM_NONE));
     }

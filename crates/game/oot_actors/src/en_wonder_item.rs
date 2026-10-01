@@ -8,7 +8,7 @@
 //! 0x123F with `rot.z` 1: `WONDERITEM_PROXIMITY_DROP`, a green rupee, no switch flag, one drop.
 //!
 //! The whole overlay is ported. `EnWonderItem_BombSoldier`'s soldier (`En_Heishi2`) spawns as
-//! a placeholder; the debug arrows (`BREG(0)`) and the sound aren't ported.
+//! a placeholder; the debug arrows (`BREG(0)`) aren't ported.
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
@@ -220,8 +220,9 @@ impl EnWonderItem {
     /// `EnWonderItem_DropCollectible`: `dropCount` drops (at least one) of `itemDrop` at its
     /// position (collected at once with `autoCollect`, the 0x8000 flag, except the flexible
     /// drop), or random ones from drop table `itemDrop - 0xC`; then the switch flag, and it
-    /// goes. (`func_80078884(NA_SE_SY_GET_ITEM)`: the sound isn't ported.)
+    /// goes; first, the item sound.
     fn drop_collectible(&mut self, play: &mut PlayState, auto_collect: bool) {
+        play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_ITEM);
         if self.drop_count == 0 {
             self.drop_count += 1;
         }

@@ -127,6 +127,11 @@ pub trait PlayerIface {
     fn set_navi_text_id(&mut self, id: i16);
     /// `naviActor`: the fairy `Player_Init` spawned.
     fn navi_actor(&self) -> Option<ActorHandle>;
+    /// `unk_89E`: the floor's footstep (`SurfaceType_GetSfxId`'s offset), which the crawl's
+    /// camera plays.
+    fn unk_89e(&self) -> u16 {
+        0
+    }
 }
 
 /// `PLAYER_BODYPART_*` (`z64player.h`) the other actors read.
@@ -147,6 +152,9 @@ pub trait ActorImpl: Any {
     /// The part of `ActorInit.draw` that changes the actor (Player's foot IK writes into its
     /// joint table), run once per game frame.
     fn draw_update(&mut self, _play: &mut PlayState) {}
+    /// The audio calls of `ActorInit.draw` (`EnRiverSound_Draw`'s), where `Actor_DrawAll` makes
+    /// them: right after the actor's `projectedPos` and its `sfx`.
+    fn draw_sfx(&mut self, _play: &mut PlayState) {}
     /// What the renderer blends between game frames.
     fn render_state(&self) -> RenderState {
         RenderState::of(self.base())
@@ -333,4 +341,39 @@ pub fn func_8002f758(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage
 /// `func_8002F7A0`: a push with no damage of its own.
 pub fn func_8002f7a0(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
     func_8002f758(play, speed, yaw, vy, 0);
+}
+
+/// Where the updating actor's sounds are: `&this->actor.projectedPos` (`play.cur_actor`;
+/// `gSfxDefaultPos` outside an actor's turn).
+pub fn cur_sfx_pos(play: &PlayState) -> crate::audio::sfx::SfxPos {
+    play.cur_actor.map(crate::audio::sfx::SfxPos::Actor).unwrap_or(crate::audio::sfx::SfxPos::Default)
+}
+
+/// `func_8002F7DC`: `Audio_PlaySfxGeneral` at the actor's `projectedPos`, with the defaults.
+pub fn func_8002f7dc(play: &mut PlayState, actor: ActorHandle, sfx_id: u16) {
+    use crate::audio::sfx::{SfxF32, SfxPos, SfxS8};
+    play.audio.play_sfx_general(sfx_id, SfxPos::Actor(actor), 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
+}
+
+/// `Audio_PlayActorSfx2`: `func_80078914` at the updating actor's `projectedPos`.
+pub fn audio_play_actor_sfx2(play: &mut PlayState, sfx_id: u16) {
+    let pos = cur_sfx_pos(play);
+    play.audio.func_80078914(pos, sfx_id);
+}
+
+/// `func_8002F850`: a bounce: `NA_SE_EV_BOMB_BOUND`, then the floor's footstep (the water's
+/// when the actor is in water: shallow under 20) at the updating actor.
+pub fn func_8002f850(play: &mut PlayState, actor: &Actor) {
+    use crate::actor::BGCHECKFLAG_WATER;
+    use crate::audio::sfx::{NA_SE_EV_BOMB_BOUND, NA_SE_PL_WALK_WATER0, NA_SE_PL_WALK_WATER1, SFX_FLAG};
+    use crate::surface::SurfaceType;
+    let sfx_id = if actor.bg_check_flags & BGCHECKFLAG_WATER != 0 {
+        if actor.y_dist_to_water < 20.0 { NA_SE_PL_WALK_WATER0 - SFX_FLAG } else { NA_SE_PL_WALK_WATER1 - SFX_FLAG }
+    } else {
+        // SurfaceType_GetSfxId (the C reads through a NULL floor: type 0 here).
+        play.audio.tables.surface_sfx_id(actor.floor_poly.map(|p| play.col.sfx_type(p)).unwrap_or(0))
+    };
+    let pos = cur_sfx_pos(play);
+    play.audio.func_80078914(pos, NA_SE_EV_BOMB_BOUND);
+    play.audio.func_80078914(pos, sfx_id.wrapping_add(SFX_FLAG));
 }

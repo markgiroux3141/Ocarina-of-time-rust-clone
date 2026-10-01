@@ -3,8 +3,8 @@ rem Headless: the new file's run (the opening, Navi, the sword, the shop, Mido, 
 rem with the audio library running offline alongside: the sequence commands and the library's
 rem commands by frame, and what each player played, into out\run\new_file_deku_tree_audio.json,
 rem and the run's sound as out\run\new_file_deku_tree.wav (about 10 minutes); then opens it.
-rem The log lists the sound effects asked for. The cutscenes have no music of their own yet
-rem (BACKLOG #10), and most actors have no sounds yet.
+rem The log lists the sound effects asked for, and where. The cutscenes have no music or
+rem sounds of their own yet (BACKLOG #10).
 setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot_sandbox || exit /b 1

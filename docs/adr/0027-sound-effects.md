@@ -1,6 +1,6 @@
 # 0027: Sound effects: the C's pointers as named sources, read when the C reads them; actors' positions through `projectedPos`; the tables in the pack
 
-- **Status:** accepted, built in GAME-04 milestone 3 (started); builds on ADR 0026 (the boundary)
+- **Status:** accepted, built in GAME-04 milestone 3; builds on ADR 0026 (the boundary)
 - **Date:** 2026-10-01
 
 ## Context
@@ -65,5 +65,7 @@ both threads advance.
   they sound (the sound effects' sequence strikes their notes).
 - The view is a frame old when `Audio_PlayActiveSfx` reads a channel's IO port, as with the
   music's reads (ADR 0026).
-- Calls with other pointers (an actor's own floats) need a new `SfxF32` source when they're
-  ported.
+- Calls with other pointers need new names when they're ported: the play state's sound sources
+  are `SfxPos::Source(i)` (`z_sfx_source.c`), `sSariaBgmPtr` is `SariaPos` (an actor's
+  `projectedPos` or `home.pos`, read through the actor at the call); an actor's own floats
+  would be a new `SfxF32` source.

@@ -909,7 +909,7 @@ impl PlayState {
                 go(self, "ENTR_TOKINOMA_4", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK));
             }
             22 => {
-                crate::item::item_give(&mut self.save, ITEM_SONG_REQUIEM);
+                crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_SONG_REQUIEM);
                 go(self, "ENTR_SPOT11_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
             }
             25 => {
@@ -920,7 +920,7 @@ impl PlayState {
                 // gSaveContext.chamberCutsceneNum = 0, 1, 2: the Chamber of Sages isn't ported.
                 go(self, "ENTR_KENJYANOMA_0", None, TRANS_TYPE_FADE_WHITE, None);
                 if base == 30 {
-                    crate::item::item_give(&mut self.save, ITEM_MEDALLION_FIRE);
+                    crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_MEDALLION_FIRE);
                 }
             }
             32 => {
@@ -936,7 +936,7 @@ impl PlayState {
                 go(self, "ENTR_TOKINOMA_4", None, TRANS_TYPE_FADE_BLACK_FAST, None);
             }
             47 => {
-                crate::item::item_give(&mut self.save, ITEM_SONG_NOCTURNE);
+                crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_SONG_NOCTURNE);
                 self.save.set_event_chk_inf(EVENTCHKINF_54);
                 go(self, "ENTR_SPOT01_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK_FAST, None);
             }
@@ -1534,7 +1534,7 @@ pub fn handle_conditional_triggers(assets: &crate::play_scene::GameAssets, save:
         save.cutscene_index = 0xFFF0;
     } else if is(save, "ENTR_SPOT10_9") && !save.get_event_chk_inf(EVENTCHKINF_C1) {
         save.set_event_chk_inf(EVENTCHKINF_C1);
-        crate::item::item_give(save, crate::item::ITEM_OCARINA_FAIRY);
+        crate::item::item_give(save, None, crate::item::ITEM_OCARINA_FAIRY);
         save.entrance_index = entr("ENTR_SPOT10_0").unwrap_or(save.entrance_index);
         save.cutscene_index = 0xFFF0;
     } else if save.check_quest_item(QUEST_MEDALLION_SPIRIT) && save.check_quest_item(QUEST_MEDALLION_SHADOW) && save.adult && !save.get_event_chk_inf(EVENTCHKINF_C4) && scene_of(save).is_some() && scene_of(save) == scene_id("SCENE_TOKINOMA") {

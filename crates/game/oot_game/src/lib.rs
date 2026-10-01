@@ -42,6 +42,7 @@ pub mod room;
 pub mod save;
 pub mod scene;
 pub mod scene_table;
+pub mod sfx_source;
 pub mod skelanime;
 pub mod skelanime_std;
 pub mod skybox;

@@ -32,10 +32,12 @@
 //! `CollisionCheck_LineOCCheck` (a segment against the OC colliders, for the talk camera) runs
 //! over a copy of the registered OC colliders' shapes (`OcLines`), taken when it's needed.
 //!
-//! Not ported: hit marks, blood, sparks and sounds (`CollisionCheck_HitEffects` keeps only its
-//! flag bookkeeping), the SAC list mode (unused), OC lines (unused), and colliders without an
-//! actor.
+//! `CollisionCheck_HitEffects` makes its sounds (the sword's strikes, the shield's bounce, the
+//! wood's); `check` hands them back in the C's order, for the play state to play. Not ported:
+//! its hit marks, blood and sparks (effects), the SAC list mode (unused), OC lines (unused), and
+//! colliders without an actor.
 
+use crate::audio::sfx::SfxPos;
 use eng_collision::math3d::{self, Cylinder16, Sphere16, TriNorm};
 use eng_math::is_zero;
 use glam::{Mat4, Vec3};
@@ -937,12 +939,16 @@ impl CollisionCheckContext {
     /// `CollisionCheck_AT`, `CollisionCheck_OC` and `CollisionCheck_Damage` over the registered
     /// colliders, as `Play_Update` runs them. The colliders are taken out of their actors
     /// for the checks (`ActorImpl::collider_mut`) and put back after.
-    pub fn check(&self, actors: &mut ActorContext) {
+    /// Returns the hit effects' sounds (`Audio_PlaySfxGeneral(id, pos, 4, ...)` with the
+    /// defaults), in order.
+    pub fn check(&self, actors: &mut ActorContext) -> Vec<(u16, SfxPos)> {
         let mut set = ColliderSet::take(self, actors);
         set.at(actors);
         set.oc(actors);
         set.damage(actors);
+        let hit_sfx = std::mem::take(&mut set.hit_sfx);
         set.put_back(actors);
+        hit_sfx
     }
 }
 
@@ -999,11 +1005,13 @@ struct ColliderSet {
     at: Vec<usize>,
     ac: Vec<usize>,
     oc: Vec<usize>,
+    /// The hit effects' sounds, in order.
+    hit_sfx: Vec<(u16, SfxPos)>,
 }
 
 impl ColliderSet {
     fn take(ctx: &CollisionCheckContext, actors: &mut ActorContext) -> ColliderSet {
-        let mut s = ColliderSet { refs: Vec::new(), cols: Vec::new(), at: Vec::new(), ac: Vec::new(), oc: Vec::new() };
+        let mut s = ColliderSet { refs: Vec::new(), cols: Vec::new(), at: Vec::new(), ac: Vec::new(), oc: Vec::new(), hit_sfx: Vec::new() };
         let index = |s: &mut ColliderSet, r: ColliderRef, actors: &mut ActorContext| -> usize {
             if let Some(i) = s.refs.iter().position(|x| *x == r) {
                 return i;
@@ -1110,8 +1118,8 @@ impl ColliderSet {
         self.cols[j] = Some(ac);
     }
 
-    /// `CollisionCheck_SetHitEffects`: the hit marks, blood and sounds aren't ported; the flag
-    /// that stops an AT element drawing its mark twice is kept.
+    /// `CollisionCheck_SetHitEffects`: each AC collider's first element hit this frame whose
+    /// mark wasn't drawn yet has its hit effects (`CollisionCheck_SetJntSphHitFX` and the rest).
     fn set_hit_effects(&mut self, actors: &ActorContext) {
         for k in 0..self.ac.len() {
             let j = self.ac[k];
@@ -1126,13 +1134,18 @@ impl ColliderSet {
                 if info.bumper_flags & BUMP_DRAW_HITMARK == 0 {
                     continue;
                 }
+                let (bumper_flags, elem_type) = (info.bumper_flags, info.elem_type);
                 let Some(ai) = self.index_of(hit.elem.col) else { continue };
-                let Some(at_info) = self.cols[ai].as_mut().and_then(|c| c.info_mut(hit.elem.elem as usize)) else { continue };
+                let Some(at_info) = self.cols[ai].as_ref().and_then(|c| c.info(hit.elem.elem as usize)) else { continue };
                 if at_info.toucher_flags & TOUCH_DREW_HITMARK != 0 {
                     continue;
                 }
-                // CollisionCheck_HitEffects (not ported).
-                at_info.toucher_flags |= TOUCH_DREW_HITMARK;
+                let toucher_flags = at_info.toucher_flags;
+                let (Some(at), Some(ac)) = (self.cols[ai].as_ref(), self.cols[j].as_ref()) else { continue };
+                hit_effects(&mut self.hit_sfx, actors, at.base(), toucher_flags, ac.base(), bumper_flags, elem_type);
+                if let Some(at_info) = self.cols[ai].as_mut().and_then(|c| c.info_mut(hit.elem.elem as usize)) {
+                    at_info.toucher_flags |= TOUCH_DREW_HITMARK;
+                }
                 break;
             }
         }
@@ -1260,6 +1273,86 @@ struct PairCtx<'a> {
     reset_ac_of_j: Option<AcReset>,
 }
 
+/// `sHitInfo`'s effects by `colType` (`HIT_*`: 0 white, 1 dust, 2 red, 3 solid, 4 wood, 5
+/// none). (Its blood isn't ported.)
+const HIT_INFO_EFFECT: [u8; 14] = [0, 1, 1, 0, 5, 2, 0, 0, 2, 3, 5, 3, 3, 4];
+const HIT_SOLID: u8 = 3;
+const HIT_WOOD: u8 = 4;
+const HIT_NONE: u8 = 5;
+const TOUCH_SFX_MASK: u8 = 3 << 3;
+
+/// Where `&collider->actor->projectedPos` (or `gSfxDefaultPos` with no actor) is.
+fn actor_sfx_pos(actor: Option<ActorHandle>) -> SfxPos {
+    actor.map(SfxPos::Actor).unwrap_or(SfxPos::Default)
+}
+
+/// `CollisionCheck_HitEffects`' sounds, by the AC collider's `colType` (the hit marks, blood
+/// and sparks are effects, not ported): `at`'s element's `toucher_flags`, `ac`'s element's
+/// `bumper_flags` and `elem_type`.
+fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, toucher_flags: u8, ac: &ColliderBase, bumper_flags: u8, elem_type: u8) {
+    use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND};
+    if bumper_flags & BUMP_NO_HITMARK != 0 {
+        return;
+    }
+    if toucher_flags & TOUCH_AT_HITMARK == 0 && toucher_flags & TOUCH_DREW_HITMARK != 0 {
+        return;
+    }
+    if ac.actor.is_some() {
+        // sBloodFuncs[sHitInfo[ac->colType].blood]: effects.
+        match HIT_INFO_EFFECT.get(ac.col_type as usize).copied().unwrap_or(HIT_NONE) {
+            HIT_SOLID => hit_solid(out, toucher_flags, ac),
+            HIT_WOOD => {
+                // CollisionCheck_SpawnShieldParticles(Wood): the particles aren't ported.
+                out.push((NA_SE_IT_REFLECTION_WOOD, actor_sfx_pos(at.actor)));
+            }
+            HIT_NONE => {}
+            _ => {
+                // EffectSsHitMark_SpawnFixedScale: not ported.
+                if bumper_flags & BUMP_NO_SWORD_SFX == 0 {
+                    sword_hit_audio(out, actors, at, elem_type);
+                }
+            }
+        }
+    } else {
+        // The white hit mark: not ported.
+        out.push((NA_SE_IT_SHIELD_BOUND, actor_sfx_pos(ac.actor)));
+    }
+}
+
+/// `CollisionCheck_HitSolid`'s sounds (METAL, WOOD, HARD and TREE AC colliders), by the AT
+/// element's `TOUCH_SFX_*`: the shield's bounce, metal's (`CollisionCheck_SpawnShieldParticles
+/// Metal(Sfx)`: `NA_SE_IT_SHIELD_REFLECT_SW`), wood's.
+fn hit_solid(out: &mut Vec<(u16, SfxPos)>, toucher_flags: u8, collider: &ColliderBase) {
+    use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND, NA_SE_IT_SHIELD_REFLECT_SW};
+    let flags = toucher_flags & TOUCH_SFX_MASK;
+    let pos = actor_sfx_pos(collider.actor);
+    if flags == TOUCH_SFX_NORMAL && collider.col_type != COLTYPE_METAL {
+        out.push((NA_SE_IT_SHIELD_BOUND, pos));
+    } else if flags == TOUCH_SFX_NORMAL {
+        out.push((NA_SE_IT_SHIELD_REFLECT_SW, pos));
+    } else if flags == TOUCH_SFX_HARD {
+        out.push((NA_SE_IT_SHIELD_BOUND, pos));
+    } else if flags == TOUCH_SFX_WOOD {
+        out.push((NA_SE_IT_REFLECTION_WOOD, pos));
+    }
+}
+
+/// `CollisionCheck_SwordHitAudio`: a Player-attached AT collider's strike, by the AC element's
+/// `elemType`.
+fn sword_hit_audio(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, elem_type: u8) {
+    use crate::audio::sfx::{NA_SE_IT_SWORD_STRIKE, NA_SE_IT_SWORD_STRIKE_HARD, NA_SE_PL_WALK_GROUND, SFX_FLAG};
+    let Some(h) = at.actor else { return };
+    if actors.actor(h).is_some_and(|a| a.category == crate::actor_ctx::ACTORCAT_PLAYER) {
+        let id = match elem_type {
+            ELEMTYPE_UNK0 => NA_SE_IT_SWORD_STRIKE,
+            ELEMTYPE_UNK1 => NA_SE_IT_SWORD_STRIKE_HARD,
+            ELEMTYPE_UNK2 | ELEMTYPE_UNK3 => NA_SE_PL_WALK_GROUND - SFX_FLAG,
+            _ => return,
+        };
+        out.push((id, SfxPos::Actor(h)));
+    }
+}
+
 /// `Math_Vec3s_ToVec3f`.
 fn v3s(v: [i16; 3]) -> Vec3 {
     Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32)
@@ -1324,7 +1417,7 @@ impl PairCtx<'_> {
         if at_info.toucher_flags & TOUCH_AT_HITMARK == 0 && ac.col_type != COLTYPE_METAL && ac.col_type != COLTYPE_WOOD && ac.col_type != COLTYPE_HARD {
             ac_info.bumper_flags |= BUMP_DRAW_HITMARK;
         } else {
-            // CollisionCheck_HitEffects (not ported).
+            hit_effects(&mut self.set.hit_sfx, self.actors, at, at_info.toucher_flags, ac, ac_info.bumper_flags, ac_info.elem_type);
             at_info.toucher_flags |= TOUCH_DREW_HITMARK;
         }
     }

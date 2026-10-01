@@ -6,8 +6,8 @@ One file per decision: the context, what was decided, and what follows from it. 
 |---|---|---|
 | [0001](0001-spike-baseline.md) | The spikes are committed and tagged `spikes-complete`, and their renders are hashed | Accepted |
 | [0002](0002-crate-layout.md) | Crate layout: engine, import, game, content, apps, tools; a test enforces the layering | Accepted |
-| [0003](0003-rom-version.md) | Target ROM: gc-eu-mq-dbg for development | Accepted |
-| [0004](0004-decomp-commit.md) | Decomp commit: stay on `2f4c25d` through the asset pack | Accepted |
+| [0003](0003-rom-version.md) | Target ROM: gc-eu-mq-dbg for development | Accepted; dungeons: Master Quest (ADR 0028) |
+| [0004](0004-decomp-commit.md) | Decomp commit: stay on `2f4c25d` through the asset pack | Accepted; the upgrade is Phase 6's first milestone (ADR 0028) |
 | [0005](0005-engine-name.md) | Engine name: the `eng_` placeholder prefix | Accepted |
 | [0006](0006-rendering-model.md) | Rendering model: hybrid (baked meshes plus a draw API, runtime display lists where needed) | Accepted; draw submission built |
 | [0007](0007-actor-ownership.md) | Actor ownership: a generational arena, with actors taken out of their slot during their update | Accepted, built |
@@ -30,4 +30,5 @@ One file per decision: the context, what was decided, and what follows from it. 
 | [0024](0024-audio-data.md) | Audio in the pack: the ROM's three audio files as they are, with the tables the game reads; fonts relocated, sequences interpreted and samples decoded at runtime, as the console does (the loops' stored predictor states, a sample that can't be decoded ahead of time) | Accepted, built |
 | [0025](0025-audio-mixer.md) | The mixer's faithfulness: the audio library ported whole, the microcode by its HLE (rsp-hle's OoT audio lists, two points after the decomp), 32006 Hz at 60 retraces a second, offline as on the console; the device resampled at the end | Accepted, built |
 | [0026](0026-the-games-audio.md) | The game's audio: the game's thread and the audio thread meet once per game frame (the frame's `GameOp`s in, an `AudioView` back); the game's side (`code_800F9280.c`, `code_800EC960.c`'s sequences, `z_kankyo.c`'s) ported whole in `oot_game::audio`; its tables and the scenes' sound settings in the pack | Accepted, built |
-| [0027](0027-sound-effects.md) | Sound effects: the C's pointers as named sources (`SfxPos`, `SfxF32`, `SfxS8`), compared and read as the C does; actors' positions through `projectedPos`, once per `Audio_Update`; the engine whole; Player's sounds as requests; the tables in the pack | Accepted, built (milestone 3 started) |
+| [0027](0027-sound-effects.md) | Sound effects: the C's pointers as named sources (`SfxPos`, `SfxF32`, `SfxS8`), compared and read as the C does; actors' positions through `projectedPos`, once per `Audio_Update`; the engine whole; Player's sounds as requests; the tables in the pack | Accepted, built |
+| [0028](0028-phase-6-master-quest-and-the-decomp-upgrade.md) | Phase 6: Master Quest's Deku Tree (the debug ROM's, no second ROM); the decomp upgraded first, as Phase 6's first milestone, with an address-based name map for the existing citations and the importer migrated | Accepted; the upgrade not started |

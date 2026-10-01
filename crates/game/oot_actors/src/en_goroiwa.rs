@@ -14,14 +14,15 @@
 //!
 //! The whole overlay is ported, with what Kokiri Forest's boulder never reaches: the climbs and
 //! drops between points of different heights (bit 10 clear: `EnGoroiwa_MoveUp`,
-//! `EnGoroiwa_MoveDown`), the round trip and the breaking loop. Not ported: the sounds, the
+//! `EnGoroiwa_MoveDown`), the round trip and the breaking loop. Not ported: the
 //! quake of a drop (`Quake_Add`), the dust, splashes, ripples and fragments (the effects; their
 //! `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
 //! (`ActorShadow_DrawCircle`).
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_4, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
-use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_8002f6d4};
+use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_8002f6d4, func_8002f7dc};
+use oot_game::audio::sfx::{NA_SE_EV_BIGBALL_ROLL, NA_SE_PL_BODY_HIT, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::sys_matrix::{MtxF, binang_to_rad};
@@ -455,15 +456,21 @@ impl EnGoroiwa {
     }
 
     /// `func_8002F6D4(play, &this->actor, 2.0f, this->actor.yawTowardsPlayer, 0.0f, damage)`.
-    /// (`func_8002F7DC`'s `NA_SE_PL_BODY_HIT` isn't ported.)
     fn knock_down_player(&mut self, play: &mut PlayState, damage: u8) {
         func_8002f6d4(play, 2.0, self.actor.yaw_towards_player, 0.0, damage);
+    }
+
+    /// `func_8002F7DC(&GET_PLAYER(play)->actor, NA_SE_PL_BODY_HIT)`: at Link.
+    fn body_hit_sfx(play: &mut PlayState) {
+        if let Some(ph) = play.player {
+            func_8002f7dc(play, ph, NA_SE_PL_BODY_HIT);
+        }
     }
 
     /// `EnGoroiwa_Roll`. On a hit on Link: if he's ahead (within a quarter turn of its way),
     /// back the way it came (always with gravity, else without `home.rot.z` bit 0); Link
     /// knocked down; then a fall to the ground (gravity) or a wait. Otherwise on along the
-    /// path, and at each point on to the next. (The rolling sound isn't ported.)
+    /// path, and at each point on to the next; rolling all the while.
     fn roll(&mut self, play: &mut PlayState) {
         if self.collider.base.at_flags & AT_HIT != 0 {
             self.collider.base.at_flags &= !AT_HIT;
@@ -483,6 +490,7 @@ impl EnGoroiwa {
             } else {
                 self.setup_wait();
             }
+            Self::body_hit_sfx(play);
             if self.rot_z_bit() {
                 self.collision_disabled_timer = 50;
             }
@@ -507,6 +515,7 @@ impl EnGoroiwa {
                 self.setup_roll();
             }
         }
+        audio_play_actor_sfx2(play, NA_SE_EV_BIGBALL_ROLL - SFX_FLAG);
     }
 
     /// `EnGoroiwa_SetupMoveAndFallToGround`: a hop back, at 0.15 of the speed.
@@ -565,6 +574,7 @@ impl EnGoroiwa {
         if self.collider.base.at_flags & AT_HIT != 0 {
             self.collider.base.at_flags &= !AT_HIT;
             self.knock_down_player(play, 4);
+            Self::body_hit_sfx(play);
             if self.rot_z_bit() {
                 self.collision_disabled_timer = 50;
             }
@@ -591,6 +601,7 @@ impl EnGoroiwa {
         if self.collider.base.at_flags & AT_HIT != 0 {
             self.collider.base.at_flags &= !AT_HIT;
             self.knock_down_player(play, 4);
+            Self::body_hit_sfx(play);
             if self.rot_z_bit() {
                 self.collision_disabled_timer = 50;
             }

@@ -85,7 +85,7 @@ fn walking_plays_footsteps_where_the_c_does() {
         floor_ids.insert(w.audio.frames, [id0, id_of(&w)]);
     }
     let log = w.audio.log.as_ref().unwrap();
-    let steps: Vec<(u32, u16)> = log.sfx.iter().filter(|(f, id)| *f >= first && sfx_bank(*id) == BANK_PLAYER && (*id & 0x7F0) < 0x10).copied().collect();
+    let steps: Vec<(u32, u16)> = log.sfx.iter().filter(|(f, id, _)| *f >= first && sfx_bank(*id) == BANK_PLAYER && (*id & 0x7F0) < 0x10).map(|&(f, id, _)| (f, id)).collect();
     assert!(steps.len() >= 4, "footsteps: {steps:x?}");
     // The id: NA_SE_PL_WALK_GROUND + D_80119E10[the floor's sfx type] + ageProperties->unk_94.
     for &(f, id) in &steps {
@@ -163,7 +163,7 @@ fn the_message_box_sounds_its_end_and_its_close() {
         }
     }
     let done_frame = done_frame.expect("the text finishes");
-    let sfx = |w: &PlayState| -> Vec<(u32, u16)> { w.audio.log.as_ref().unwrap().sfx.iter().filter(|(f, id)| *f >= first && *id != 0).copied().collect() };
+    let sfx = |w: &PlayState| -> Vec<(u32, u16)> { w.audio.log.as_ref().unwrap().sfx.iter().filter(|(f, id, _)| *f >= first && *id != 0).map(|&(f, id, _)| (f, id)).collect() };
     let s = sfx(&w);
     // Each A at a box break: Message_ShouldAdvance's NA_SE_SY_MESSAGE_PASS.
     assert!(breaks >= 1);

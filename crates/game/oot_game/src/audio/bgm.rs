@@ -7,8 +7,20 @@
 //! Left out here: the ocarina (`AudioOcarina_*`) and the debug screen (`AudioDebug_*`). The
 //! sound effects' side is `sfx`.
 
+use glam::Vec3;
+
 use super::sfx::SfxPos;
 use super::*;
+use crate::actor_ctx::ActorHandle;
+
+/// Where `sSariaBgmPtr` points (a `Vec3f*` into an actor): `&actor->projectedPos`
+/// (`func_800F4E30`'s) or `&actor->home.pos` (`Audio_PlaySariaBgm`'s, which `En_River_Sound`
+/// keeps as Player's position relative to it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SariaPos {
+    Projected(ActorHandle),
+    Home(ActorHandle),
+}
 
 /// `SfxPlayerState` (`code_800EC960.c`): a sound effect channel's state.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -82,16 +94,6 @@ impl GameAudio {
     /// `Audio_Update`, the sound effects' positions read through `pos_of` (an actor's
     /// `projectedPos`; `None` keeps the last read, as a dangling pointer would read on).
     pub fn audio_update_with(&mut self, pos_of: &dyn Fn(SfxPos) -> Option<glam::Vec3>) {
-        // What the entries point at, as func_800F8F88 will read it.
-        for bank in self.sfx.banks.iter_mut() {
-            for e in bank.iter_mut() {
-                if let Some(p) = e.pos {
-                    if let Some(v) = pos_of(p) {
-                        e.pos_now = v;
-                    }
-                }
-            }
-        }
         if self.func_800fad34() == 0 {
             // (sAudioUpdateTaskStart, sAudioUpdateStartTime: timing for the debug screen.)
             // AudioOcarina_Update: the ocarina isn't ported.
@@ -105,6 +107,17 @@ impl GameAudio {
             }
             self.process_sfx_requests();
             self.process_seq_cmds();
+            // What the entries point at, as func_800F8F88 reads it (the requests just taken
+            // in included).
+            for bank in self.sfx.banks.iter_mut() {
+                for e in bank.iter_mut() {
+                    if let Some(p) = e.pos {
+                        if let Some(v) = pos_of(p) {
+                            e.pos_now = v;
+                        }
+                    }
+                }
+            }
             self.func_800f8f88();
             self.func_800fa3dc();
             // AudioDebug_SetInput, AudioDebug_ProcessInput: the debug screen.
@@ -227,10 +240,107 @@ impl GameAudio {
         }
     }
 
-    /// `Audio_ClearSariaBgm`. (`Audio_PlaySariaBgm`, the music an actor plays nearby, isn't
-    /// ported: no caller is.)
+    /// `Audio_ClearSariaBgm`.
     pub fn clear_saria_bgm(&mut self) {
-        self.saria_bgm_set = false;
+        if self.saria_bgm_ptr.is_some() {
+            self.saria_bgm_ptr = None;
+        }
+    }
+
+    /// `Audio_ClearSariaBgmAtPos`.
+    pub fn clear_saria_bgm_at_pos(&mut self, pos: SariaPos) {
+        if self.saria_bgm_ptr == Some(pos) {
+            self.saria_bgm_ptr = None;
+        }
+    }
+
+    /// `Audio_ClearSariaBgm2`.
+    pub fn clear_saria_bgm2(&mut self) {
+        self.saria_bgm_ptr = None;
+    }
+
+    /// `func_800F4E30`: the main bgm's channels (but 9) turned down with the distance `arg1`
+    /// (full under 120, a tenth past 400) and panned by `sSariaBgmPtr`'s x, the nearest of the
+    /// positions asked for (Lost Woods' Saria's Song, at an actor's `projectedPos`). `read` is
+    /// what a position holds now.
+    pub fn func_800f4e30(&mut self, pos: SariaPos, arg1: f32, read: &dyn Fn(SariaPos) -> Vec3) {
+        match self.saria_bgm_ptr {
+            None => {
+                self.saria_bgm_ptr = Some(pos);
+                self.d_80130650 = arg1;
+            }
+            Some(p) if p != pos => {
+                if arg1 < self.d_80130650 {
+                    self.saria_bgm_ptr = Some(pos);
+                    self.d_80130650 = arg1;
+                }
+            }
+            Some(_) => self.d_80130650 = arg1,
+        }
+        let x = self.saria_bgm_ptr.map(read).unwrap_or_default().x;
+        let phi_s4: i8 = if x > 100.0 {
+            0x7F
+        } else if x < -100.0 {
+            0
+        } else {
+            (((x / 100.0) * 64.0) + 64.0) as i32 as i8
+        };
+        let d = self.d_80130650;
+        let phi_f22 = if d > 400.0 {
+            0.1
+        } else if d < 120.0 {
+            1.0
+        } else {
+            ((1.0 - ((d - 120.0) / 280.0)) * 0.9) + 0.1
+        };
+        for i in 0u8..0x10 {
+            if i != 9 {
+                self.queue_seq_cmd(seq_cmd6(SEQ_PLAYER_BGM_MAIN, 2, i, (127.0 * phi_f22) as i32 as u8));
+                self.queue_cmd_s8((0x3 << 24) | ((SEQ_PLAYER_BGM_MAIN as u32) << 16) | ((i as u32) << 8), phi_s4);
+            }
+        }
+    }
+
+    /// `Audio_PlaySariaBgm`: `seq_id` on the sub bgm player (started by the first position asked
+    /// for), louder the nearer the nearest position (`pos`, Player's relative position as the
+    /// actor keeps it in `home.pos`) is, out to `dist_max` and up or down to a fifteenth of it;
+    /// the main bgm the other way round (and, but for the Great Fairy's, the channels split).
+    /// Waits out `D_8016B9F3`'s frames first.
+    pub fn play_saria_bgm(&mut self, pos: SariaPos, seq_id: u16, dist_max: u16, read: &dyn Fn(SariaPos) -> Vec3) {
+        if self.d_8016b9f3 != 0 {
+            self.d_8016b9f3 -= 1;
+            return;
+        }
+        let p = read(pos);
+        let mut dist = (p.z * p.z + p.x * p.x).sqrt();
+        match self.saria_bgm_ptr {
+            None => {
+                self.saria_bgm_ptr = Some(pos);
+                self.func_800f5e18(SEQ_PLAYER_BGM_SUB, seq_id, 0, 7, 2);
+            }
+            Some(prev) => {
+                let q = read(prev);
+                let prev_dist = (q.z * q.z + q.x * q.x).sqrt();
+                if dist < prev_dist {
+                    self.saria_bgm_ptr = Some(pos);
+                } else {
+                    dist = prev_dist;
+                }
+            }
+        }
+        let abs_y = p.y.abs();
+        let vol: u8 = if (dist_max as f32 / 15.0) < abs_y {
+            0
+        } else if dist < dist_max as f32 {
+            ((1.0 - (dist / dist_max as f32)) * 127.0) as i32 as u8
+        } else {
+            0
+        };
+        if seq_id != NA_BGM_GREAT_FAIRY {
+            self.split_bgm_channels(vol as i8);
+        }
+        self.set_vol_scale(SEQ_PLAYER_BGM_SUB, 3, vol, 0);
+        self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 3, 0x7F - vol, 0);
     }
 
     /// `Audio_SplitBgmChannels`: turns the two bgm players' channels on and off by their notes'
@@ -540,17 +650,31 @@ impl GameAudio {
         self.audio_enemy_dist = dist;
     }
 
-    /// `func_800F64E0`: a message box opens (`arg0` 1) or closes; the players are muted
-    /// meanwhile. (Its window sound effects come with milestone 3.)
+    /// `func_800F64E0`: the pause menu opens (`arg0` 1, with its window's sound) or closes; the
+    /// players are paused meanwhile.
     pub fn func_800f64e0(&mut self, arg0: u8) {
         self.d_80130608 = arg0 as i8;
         if arg0 != 0 {
-            // Audio_PlaySfxGeneral(NA_SE_SY_WIN_OPEN): milestone 3.
+            self.func_80078884(super::sfx::NA_SE_SY_WIN_OPEN);
             self.queue_cmd_s32(0xF100_0000, 0);
         } else {
-            // Audio_PlaySfxGeneral(NA_SE_SY_WIN_CLOSE): milestone 3.
+            self.func_80078884(super::sfx::NA_SE_SY_WIN_CLOSE);
             self.queue_cmd_s32(0xF200_0000, 0);
         }
+    }
+
+    /// `Audio_SetBaseFilter`: Link's underwater filter on the player, item and voice banks'
+    /// sounds; going under starts the bubbling (`NA_SE_PL_IN_BUBBLE`), coming up stops it.
+    pub fn set_base_filter(&mut self, filter: u8) {
+        if self.audio_base_filter != filter {
+            if filter == 0 {
+                self.stop_sfx_by_id(super::sfx::NA_SE_PL_IN_BUBBLE);
+            } else if self.audio_base_filter == 0 {
+                self.func_80078884(super::sfx::NA_SE_PL_IN_BUBBLE);
+            }
+        }
+        self.audio_base_filter = filter;
+        self.audio_base_filter2 = filter;
     }
 
     /// `Audio_SetEnvReverb`.
@@ -678,7 +802,7 @@ impl GameAudio {
         self.d_80130608 = 0;
         self.prev_main_bgm_seq_id = NA_BGM_DISABLED;
         self.queue_cmd_s8((0x46 << 24) | ((SEQ_PLAYER_BGM_MAIN as u32) << 16), -1);
-        self.saria_bgm_set = false;
+        self.saria_bgm_ptr = None;
         self.d_8016b9f4 = 0;
         self.d_8016b9f3 = 1;
         self.d_8016b9f2 = 0;

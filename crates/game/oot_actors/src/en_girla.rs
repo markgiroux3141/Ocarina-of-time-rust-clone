@@ -768,16 +768,16 @@ fn item_give_arrows(play: &mut PlayState, g: &EnGirlA) {
 fn item_give_bombs(play: &mut PlayState, g: &EnGirlA) {
     match g.item_count {
         5 => {
-            item_give(&mut play.save, ITEM_BOMBS_5);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_BOMBS_5);
         }
         10 => {
-            item_give(&mut play.save, ITEM_BOMBS_10);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_BOMBS_10);
         }
         20 => {
-            item_give(&mut play.save, ITEM_BOMBS_20);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_BOMBS_20);
         }
         30 => {
-            item_give(&mut play.save, ITEM_BOMBS_30);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_BOMBS_30);
         }
         _ => {}
     }
@@ -787,10 +787,10 @@ fn item_give_bombs(play: &mut PlayState, g: &EnGirlA) {
 fn item_give_deku_nuts(play: &mut PlayState, g: &EnGirlA) {
     match g.item_count {
         5 => {
-            item_give(&mut play.save, ITEM_NUTS_5);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_NUTS_5);
         }
         10 => {
-            item_give(&mut play.save, ITEM_NUTS_10);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_NUTS_10);
         }
         _ => {}
     }
@@ -798,7 +798,7 @@ fn item_give_deku_nuts(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_deku_sticks(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_STICK);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_STICK);
     pay(play, g);
 }
 
@@ -809,38 +809,38 @@ fn item_give_longsword(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_hylian_shield(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_SHIELD_HYLIAN);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_SHIELD_HYLIAN);
     pay(play, g);
 }
 
 /// `EnGirlA_ItemGive_DekuShield`: owned (not worn), and paid for.
 fn item_give_deku_shield(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_SHIELD_DEKU);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_SHIELD_DEKU);
     pay(play, g);
 }
 
 fn item_give_goron_tunic(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_TUNIC_GORON);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_TUNIC_GORON);
     pay(play, g);
 }
 
 fn item_give_zora_tunic(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_TUNIC_ZORA);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_TUNIC_ZORA);
     pay(play, g);
 }
 
 fn item_give_health(play: &mut PlayState, g: &EnGirlA) {
-    health_change_by(&mut play.save, g.item_count);
+    health_change_by(&mut play.save, Some(&mut play.audio), g.item_count);
     pay(play, g);
 }
 
 fn item_give_milk_bottle(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_MILK_BOTTLE);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_MILK_BOTTLE);
     pay(play, g);
 }
 
 fn item_give_weird_egg(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_WEIRD_EGG);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_WEIRD_EGG);
     pay(play, g);
 }
 
@@ -853,7 +853,7 @@ fn item_give_unk20(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_deku_seeds(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, ITEM_SEEDS_30);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_SEEDS_30);
     pay(play, g);
 }
 
@@ -871,7 +871,7 @@ fn item_give_bottled_item(play: &mut PlayState, g: &EnGirlA) {
         _ => None,
     };
     if let Some(i) = item {
-        item_give(&mut play.save, i);
+        item_give(&mut play.save, Some(&mut play.audio), i);
     }
     pay(play, g);
 }

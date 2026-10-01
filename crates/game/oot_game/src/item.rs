@@ -8,9 +8,12 @@
 //! `Item_Give` is ported whole. What it can't do here: `Interface_LoadItemIcon1/2` load
 //! nothing (every button icon is a bake, picked by the item when the HUD draws), the water
 //! medallion's `func_8006D0AC` (the Water Temple's water level) and the magic jars'
-//! `Magic_Fill`/`Magic_RequestChange` (no magic meter) are logged, and `Health_ChangeBy`
-//! plays no sound.
+//! `Magic_Fill`/`Magic_RequestChange` (no magic meter) are logged.
+//!
+//! The audio both take is the play state's (`None` where there's none to play on: the debug
+//! save presets, `Play_Init`'s triggers, tests).
 
+use crate::audio::GameAudio;
 use crate::save::SaveContext;
 
 // `ItemID` (z64item.h).
@@ -208,6 +211,8 @@ pub const UPG_NUTS: usize = 7;
 /// `QUEST_*` (z64item.h).
 pub const QUEST_MEDALLION_FOREST: u32 = 0x00;
 pub const QUEST_SONG_MINUET: u32 = 0x06;
+pub const QUEST_SONG_LULLABY: u32 = 0x0C;
+pub const QUEST_SONG_SARIA: u32 = 0x0E;
 pub const QUEST_KOKIRI_EMERALD: u32 = 0x12;
 pub const QUEST_STONE_OF_AGONY: u32 = 0x15;
 pub const QUEST_SKULL_TOKEN: u32 = 0x17;
@@ -325,10 +330,14 @@ impl ItemTables {
     }
 }
 
-/// `Health_ChangeBy`: false once Link is out of health. Damage is halved with double defence
-/// (`isDoubleDefenseAcquired`); the recovery sound isn't played.
-pub fn health_change_by(save: &mut SaveContext, mut amount: i16) -> bool {
-    if amount < 0 && save.is_double_defense_acquired {
+/// `Health_ChangeBy`: false once Link is out of health. A gain plays the recovery sound;
+/// damage is halved with double defence (`isDoubleDefenseAcquired`).
+pub fn health_change_by(save: &mut SaveContext, audio: Option<&mut GameAudio>, mut amount: i16) -> bool {
+    if amount > 0 {
+        if let Some(a) = audio {
+            a.func_80078884(crate::audio::sfx::NA_SE_SY_HP_RECOVER);
+        }
+    } else if save.is_double_defense_acquired && amount < 0 {
         amount >>= 1;
     }
     save.health += amount;
@@ -387,7 +396,7 @@ pub fn inventory_change_ammo(save: &mut SaveContext, item: u8, ammo_change: i16)
 
 /// `Item_Give`: returns what the C returns (`ITEM_NONE` when the item was taken in full, the
 /// item or what its slot held otherwise).
-pub fn item_give(save: &mut SaveContext, mut item: u8) -> u8 {
+pub fn item_give(save: &mut SaveContext, audio: Option<&mut GameAudio>, mut item: u8) -> u8 {
     /// `sAmmoRefillCounts` (sticks, nuts, bombs), `sArrowRefillCounts`,
     /// `sBombchuRefillCounts`, `sRupeeRefillCounts`.
     const AMMO_REFILL_COUNTS: [i16; 4] = [5, 10, 20, 30];
@@ -681,7 +690,7 @@ pub fn item_give(save: &mut SaveContext, mut item: u8) -> u8 {
         save.health += 0x10;
         return ITEM_NONE;
     } else if item == ITEM_RECOVERY_HEART {
-        health_change_by(save, 0x10);
+        health_change_by(save, audio, 0x10);
         return item;
     } else if item == ITEM_MAGIC_SMALL || item == ITEM_MAGIC_LARGE {
         // Magic_Fill / Magic_RequestChange(12 or 24, MAGIC_ADD): no magic meter.
@@ -858,16 +867,16 @@ mod tests {
     fn rupees_and_hearts() {
         let mut s = SaveContext::new(0, false, 0);
         // A red rupee is 20 (sRupeeRefillCounts[2]), counted in later.
-        assert_eq!(item_give(&mut s, ITEM_RUPEE_RED), ITEM_NONE);
+        assert_eq!(item_give(&mut s, None, ITEM_RUPEE_RED), ITEM_NONE);
         assert_eq!((s.rupees, s.rupee_accumulator), (0, 20));
         // A recovery heart at full health changes nothing but is still "given" (returns it).
-        assert_eq!(item_give(&mut s, ITEM_RECOVERY_HEART), ITEM_RECOVERY_HEART);
+        assert_eq!(item_give(&mut s, None, ITEM_RECOVERY_HEART), ITEM_RECOVERY_HEART);
         assert_eq!(s.health, 0x30);
         s.health = 0x18;
-        item_give(&mut s, ITEM_RECOVERY_HEART);
+        item_give(&mut s, None, ITEM_RECOVERY_HEART);
         assert_eq!(s.health, 0x28);
         // Four pieces count in questItems' top bits.
-        item_give(&mut s, ITEM_HEART_PIECE);
+        item_give(&mut s, None, ITEM_HEART_PIECE);
         assert_eq!(s.inventory.quest_items >> QUEST_HEART_PIECE_COUNT, 1);
     }
 
@@ -876,13 +885,13 @@ mod tests {
         let mut s = SaveContext::new(0, false, 0);
         // A new save owns the Kokiri tunic and boots only (sNewSaveInventory).
         assert_eq!(item_check_obtainability(&s, ITEM_SWORD_KOKIRI), ITEM_NONE);
-        assert_eq!(item_give(&mut s, ITEM_SWORD_KOKIRI), ITEM_NONE);
+        assert_eq!(item_give(&mut s, None, ITEM_SWORD_KOKIRI), ITEM_NONE);
         // OWNED_EQUIP_FLAG(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_KOKIRI): bit 0. Not put on B.
         assert_eq!(s.inventory.equipment & 0xF, 1);
         assert_eq!(s.equips.button_items[0], ITEM_NONE);
         assert_eq!(item_check_obtainability(&s, ITEM_SWORD_KOKIRI), ITEM_SWORD_KOKIRI);
         // The Deku Shield: OWNED_EQUIP_FLAG(EQUIP_TYPE_SHIELD, 0), bit 4.
-        item_give(&mut s, ITEM_SHIELD_DEKU);
+        item_give(&mut s, None, ITEM_SHIELD_DEKU);
         assert_eq!(s.inventory.equipment & 0xF0, 0x10);
         assert_eq!(item_check_obtainability(&s, ITEM_SHIELD_DEKU), ITEM_SHIELD_DEKU);
     }
@@ -891,14 +900,14 @@ mod tests {
     fn sticks_and_nuts() {
         let mut s = SaveContext::new(0, false, 0);
         // The first stick: the stick upgrade 1 (10), one stick, and the slot takes it.
-        assert_eq!(item_give(&mut s, ITEM_STICK), ITEM_NONE);
+        assert_eq!(item_give(&mut s, None, ITEM_STICK), ITEM_NONE);
         assert_eq!((s.cur_upg_value(UPG_STICKS), s.ammo(ITEM_STICK), s.inv_content(ITEM_STICK)), (1, 1, ITEM_STICK));
         // Five more (sAmmoRefillCounts[0]), capped at 10.
-        item_give(&mut s, ITEM_STICKS_5);
-        item_give(&mut s, ITEM_STICKS_5);
+        item_give(&mut s, None, ITEM_STICKS_5);
+        item_give(&mut s, None, ITEM_STICKS_5);
         assert_eq!(s.ammo(ITEM_STICK), 10);
         // Nuts: ITEM_NUTS_5 without nuts adds 5 to nothing.
-        assert_eq!(item_give(&mut s, ITEM_NUTS_5), ITEM_NONE);
+        assert_eq!(item_give(&mut s, None, ITEM_NUTS_5), ITEM_NONE);
         assert_eq!((s.cur_upg_value(UPG_NUTS), s.ammo(ITEM_NUT), s.inv_content(ITEM_NUT)), (1, 5, ITEM_NUT));
         assert_eq!(item_check_obtainability(&s, ITEM_NUTS_5), ITEM_NUT);
     }

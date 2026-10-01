@@ -661,14 +661,24 @@ fn write_audio(cli: &Cli, w: &PlayState, run: &RunAudio) -> Result<()> {
             eng_audio::GameOp::ResetSpec(s) => format!("reset spec {s}"),
             eng_audio::GameOp::SetAudRand(v) => format!("audRand {v:08X}"),
         };
+        let mut actor_numbers = std::collections::HashMap::new();
+        let sfx_pos = |n: &mut std::collections::HashMap<oot_game::audio::sfx::SfxPos, usize>, p: oot_game::audio::sfx::SfxPos| match p {
+            oot_game::audio::sfx::SfxPos::Default => "default".to_string(),
+            oot_game::audio::sfx::SfxPos::Source(i) => format!("source {i}"),
+            oot_game::audio::sfx::SfxPos::Actor(_) => {
+                let k = n.len();
+                format!("actor {}", n.entry(p).or_insert(k))
+            }
+        };
         let json = serde_json::json!({
             "script": cli.script,
             "seq_cmds": log.seq_cmds.iter().map(|(f, c)| serde_json::json!([f, format!("{c:08X}")])).collect::<Vec<_>>(),
             "ops": log.ops.iter().map(|(f, o)| serde_json::json!([f, op(o)])).collect::<Vec<_>>(),
             "players": run.players.iter().map(|(f, p)| serde_json::json!([f, p])).collect::<Vec<_>>(),
             // Audio_PlaySfxGeneral's requests: the frame, the id, its name (the 0x800 bit is
-            // the id's own: a name without it is the same row).
-            "sfx": log.sfx.iter().map(|(f, id)| serde_json::json!([f, format!("{id:04X}"), w.audio.tables.sfx_name(*id).unwrap_or("")])).collect::<Vec<_>>(),
+            // the id's own: a name without it is the same row), and where: no position, a sound
+            // source, or an actor's projectedPos (actors numbered as they first appear here).
+            "sfx": log.sfx.iter().map(|(f, id, pos)| serde_json::json!([f, format!("{id:04X}"), w.audio.tables.sfx_name(*id).unwrap_or(""), sfx_pos(&mut actor_numbers, *pos)])).collect::<Vec<_>>(),
         });
         std::fs::write(p, serde_json::to_string_pretty(&json)?)?;
         println!("{} ({} sequence commands, {} sound effects, {} library commands)", p.display(), log.seq_cmds.len(), log.sfx.len(), log.ops.len());

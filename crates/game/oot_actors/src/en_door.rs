@@ -21,13 +21,14 @@
 //! (`EnDoor_WaitForCheck` offers to talk within 40; `EnDoor_Check` waits for the box to close).
 //!
 //! Not ported: small keys (a locked door's lock never opens: there's no key count),
-//! the lock's chains (`Actor_DrawDoorLock`), the sounds, and the bubbles of a door opened
-//! underwater.
+//! the lock's chains (`Actor_DrawDoorLock`), and the bubbles of a door opened underwater
+//! (`EffectSsBubble`, with their count's `Rand_ZeroOne`).
 
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_27, Actor};
-use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile};
+use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::audio::sfx::{NA_SE_EV_CHAIN_KEY_UNLOCK, NA_SE_EV_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_OPEN, NA_SE_OC_DOOR_OPEN};
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT;
@@ -296,9 +297,9 @@ impl EnDoor {
             let last = anim.last_frame();
             self.skel.change(anim, if swimming { 0.75 } else { 1.5 }, 0.0, last, oot_game::skelanime_std::ANIMMODE_ONCE, 0.0);
             if self.lock_timer != 0 {
-                // dungeonKeys[mapIndex]--, Flags_SetSwitch, NA_SE_EV_CHAIN_KEY_UNLOCK: no keys
-                // yet (Player never opens a locked door here).
+                // dungeonKeys[mapIndex]--: no keys yet (Player never opens a locked door here).
                 play.flags.set_switch((self.actor.params & 0x3F) as i32);
+                audio_play_actor_sfx2(play, NA_SE_EV_CHAIN_KEY_UNLOCK);
             }
         } else if !play.player_in_cs_mode() {
             if rel.y.abs() < 20.0 && rel.x.abs() < 20.0 && rel.z.abs() < 50.0 {
@@ -325,7 +326,8 @@ impl EnDoor {
     }
 
     /// `EnDoor_Open`.
-    fn open(&mut self) {
+    fn open(&mut self, play: &mut PlayState) {
+        let iron = play.scene_id == SCENE_HAKADAN || play.scene_id == SCENE_HAKADANCH || play.scene_id == SCENE_HIDAN;
         // DECR(lockTimer) == 0.
         if self.lock_timer != 0 {
             self.lock_timer -= 1;
@@ -335,10 +337,10 @@ impl EnDoor {
                 self.action = Action::Idle;
                 self.player_is_opening = false;
             } else if self.skel.on_frame(DOOR_ANIM_OPEN_FRAMES[self.open_anim as usize & 3]) {
-                // NA_SE_OC_DOOR_OPEN (NA_SE_EV_IRON_DOOR_OPEN in the Fire and Shadow Temples),
-                // and bubbles when opened underwater (playSpeed < 1.5): not ported.
+                audio_play_actor_sfx2(play, if iron { NA_SE_EV_IRON_DOOR_OPEN } else { NA_SE_OC_DOOR_OPEN });
+                // The bubbles when opened underwater (playSpeed < 1.5): not ported.
             } else if self.skel.on_frame(DOOR_ANIM_CLOSE_FRAMES[self.open_anim as usize & 3]) {
-                // NA_SE_EV_DOOR_CLOSE (NA_SE_EV_IRON_DOOR_CLOSE): no sound.
+                audio_play_actor_sfx2(play, if iron { NA_SE_EV_IRON_DOOR_CLOSE } else { NA_SE_EV_DOOR_CLOSE });
             }
         }
     }
@@ -407,7 +409,7 @@ impl ActorImpl for EnDoor {
                     self.action = Action::Idle;
                 }
             }
-            Action::Open => self.open(),
+            Action::Open => self.open(play),
         }
     }
     /// `EnDoor_Destroy`: the transition-actor entry can spawn again.

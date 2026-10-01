@@ -19,8 +19,8 @@
 //! script: yes (`D_808BD520`) says 0x1017 and cues the mouth open (cue 3 from frame 20), no
 //! (`D_808BD790`) says 0x1018.
 //!
-//! Also not ported: the sounds (`NA_SE_EV_WOODDOOR_OPEN`), the scene layer 6 cutscene's falling
-//! bark (`EffectSsHahen_SpawnBurst`; its `Rand_ZeroOne` calls are made), and the cull zone.
+//! Also not ported: the scene layer 6 cutscene's falling bark (`EffectSsHahen_SpawnBurst`; its
+//! `Rand_ZeroOne` calls are made), and the cull zone.
 //!
 //! The draw is `gDekuTreeMouthDL` with an env alpha of 500 or, with `EVENTCHKINF_07` (the tree
 //! dead), 2150, times 0.1. The list's combiner blends its two textures by that alpha
@@ -204,7 +204,7 @@ impl BgTreemouth {
             if cue.action == 2 {
                 self.action = Action::TalkOpen;
             } else if cue.action == 3 {
-                // Audio_PlaySfxGeneral(NA_SE_EV_WOODDOOR_OPEN): no audio yet.
+                play.audio.func_80078884(oot_game::audio::sfx::NA_SE_EV_WOODDOOR_OPEN);
                 self.action = Action::Open;
             }
         }

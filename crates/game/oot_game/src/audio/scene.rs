@@ -131,7 +131,7 @@ impl PlayState {
             }
             TIMESEQ_NIGHT_BEGIN_SFX => {
                 if day_time > clock_time(18, 0) {
-                    // func_800788CC(NA_SE_EV_DOG_CRY_EVENING): the sound effects are milestone 3.
+                    self.audio.func_800788cc(super::sfx::NA_SE_EV_DOG_CRY_EVENING);
                     self.time_seq_state += 1;
                 }
             }
@@ -156,9 +156,9 @@ impl PlayState {
             }
             TIMESEQ_DAY_BEGIN_SFX => {
                 if day_time <= clock_time(19, 0) && day_time > clock_time(6, 30) {
-                    // The day's count (totalDays, bgsDayCount, dogIsLost), the cucco's crow
-                    // (func_80078884(NA_SE_EV_CHICKEN_CRY_M)) and the egg hatching
+                    // The day's count (totalDays, bgsDayCount, dogIsLost) and the egg hatching
                     // (Inventory_ReplaceItem, text 0x3066) come with time passing.
+                    self.audio.func_80078884(super::sfx::NA_SE_EV_CHICKEN_CRY_M);
                     self.time_seq_state += 1;
                 }
             }

@@ -257,7 +257,7 @@ fn without_the_rupees_you_dont_have_enough() {
 #[test]
 fn a_second_deku_shield_cant_be_got_now() {
     let Some(mut s) = Shop::enter(99, |sv| {
-        item_give(sv, ITEM_SHIELD_DEKU);
+        item_give(sv, None, ITEM_SHIELD_DEKU);
     }) else {
         return;
     };
@@ -273,7 +273,7 @@ fn a_quick_buy_of_deku_nuts_once_owned() {
     // With nuts owned (the first give sets the upgrade: 20), SI_DEKU_NUTS_5 is a quick buy:
     // itemGiveFunc (Item_Give(ITEM_NUTS_5), 15 rupees), "Thanks a lot!" (0x84).
     let Some(mut s) = Shop::enter(20, |sv| {
-        item_give(sv, ITEM_NUTS_5);
+        item_give(sv, None, ITEM_NUTS_5);
     }) else {
         return;
     };
@@ -325,8 +325,8 @@ fn the_left_shelf_and_back() {
 fn start_equips_in_the_play_frame_but_not_with_a_message_up() {
     // KaleidoSetup_Update, only with msgMode MSGMODE_NONE (z_play.c): the stand-in.
     let Some(mut s) = Shop::enter(0, |sv| {
-        item_give(sv, ITEM_SHIELD_DEKU);
-        item_give(sv, ITEM_SWORD_KOKIRI);
+        item_give(sv, None, ITEM_SHIELD_DEKU);
+        item_give(sv, None, ITEM_SWORD_KOKIRI);
     }) else {
         return;
     };
@@ -372,6 +372,6 @@ fn en_girla_can_buy_the_deku_shield() {
     assert_eq!(g(40).can_buy(&s), CANBUY_RESULT_NEED_RUPEES);
     s.rupees = 40;
     assert_eq!(g(40).can_buy(&s), CANBUY_RESULT_SUCCESS_FANFARE);
-    item_give(&mut s, ITEM_SHIELD_DEKU);
+    item_give(&mut s, None, ITEM_SHIELD_DEKU);
     assert_eq!(g(40).can_buy(&s), CANBUY_RESULT_CANT_GET_NOW);
 }

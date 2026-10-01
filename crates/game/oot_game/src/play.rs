@@ -330,6 +330,8 @@ pub struct PlayState {
     pub viewpoint: u8,
     /// `unk_11E18`: the vertical room-change planes' screen dimming.
     pub unk_11e18: i16,
+    /// `sfxSources` (`z_sfx_source.c`).
+    pub sfx_sources: [crate::sfx_source::SfxSource; crate::sfx_source::NUM_SFX_SOURCES],
     /// How many scene changes led here (the renderer reloads its meshes when it changes).
     pub scene_changes: u32,
     /// `sRandInt` (`code_800FD970.c`): the game's random numbers, shared by the actors.
@@ -433,6 +435,7 @@ impl PlayState {
             scene_cam_type: crate::scene::SCENE_CAM_TYPE_DEFAULT,
             viewpoint: VIEWPOINT_NONE,
             unk_11e18: 0,
+            sfx_sources: Default::default(),
             scene_changes: 0,
             rand: Rand::default(),
             msg_ctx: MessageContext::new(),
@@ -651,7 +654,9 @@ impl PlayState {
             self.kaleido_setup_update();
         }
         self.room_finish_load();
-        self.col_chk.check(&mut self.actors);
+        for (sfx_id, pos) in self.col_chk.check(&mut self.actors) {
+            self.audio.play_sfx_general(sfx_id, pos, 4, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxS8::Zero);
+        }
         self.col_chk.clear();
         self.update_all_actors();
         // The cutscene system (z_demo.c): func_80064558, then func_800645A0.
@@ -668,7 +673,9 @@ impl PlayState {
                 a.animation_update();
             }
         }
-        // Play_Update: Letterbox_Update(R_UPDATE_RATE), then the cameras (they follow Player).
+        // SfxSource_UpdateAll, then Letterbox_Update(R_UPDATE_RATE), then the cameras (they
+        // follow Player).
+        self.sfx_source_update_all();
         self.letterbox.update(3);
         if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
             let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
@@ -738,10 +745,11 @@ impl PlayState {
     /// `Audio_Update` with the sound effects' positions: an actor's `projectedPos`.
     fn audio_update(&mut self) {
         use crate::audio::sfx::SfxPos;
-        let actors = &self.actors;
+        let (actors, sources) = (&self.actors, &self.sfx_sources);
         self.audio.audio_update_with(&|p| match p {
             SfxPos::Default => Some(Vec3::ZERO),
             SfxPos::Actor(h) => actors.actor(h).map(|a| a.projected_pos),
+            SfxPos::Source(i) => sources.get(i as usize).map(|s| s.projected_pos),
         });
     }
 
@@ -772,6 +780,13 @@ impl PlayState {
                 } else {
                     au.func_80078914(SfxPos::Actor(h), sfx);
                 }
+            }
+            // The actor's draw (an actor in the arena is drawn: init done, culling not ported).
+            if let Some(mut a) = self.actors.take(h) {
+                self.cur_actor = Some(h);
+                a.draw_sfx(self);
+                self.cur_actor = None;
+                self.actors.put_back(h, a);
             }
         }
     }
@@ -859,6 +874,34 @@ impl PlayState {
         }
         if let Some(alpha_type) = alpha {
             crate::interface::change_alpha(&mut self.save, alpha_type);
+        }
+        self.camera_sfx();
+    }
+
+    /// The sounds the cameras asked for (`crate::camera::CamSfx`), played in order as the C
+    /// plays them from inside the camera code.
+    pub fn camera_sfx(&mut self) {
+        use crate::audio::sfx::{NA_SE_SY_ATTENTION_ON, NA_SE_SY_ATTENTION_URGENCY, NA_SE_SY_ERROR, SfxPos};
+        use crate::camera::CamSfx;
+        let mut all = std::mem::take(&mut self.game_camera.sfx);
+        for c in self.sub_cameras.iter_mut().flatten() {
+            all.append(&mut c.sfx);
+        }
+        for s in all {
+            match s {
+                CamSfx::ModeChange(1) => self.audio.func_80078884(0),
+                // ROOM_BEHAVIOR_TYPE1_1: a dungeon room.
+                CamSfx::ModeChange(2) => self.audio.func_80078884(if self.room_ctx.cur.behavior_type1 == 1 { NA_SE_SY_ATTENTION_URGENCY } else { NA_SE_SY_ATTENTION_ON }),
+                CamSfx::ModeChange(4) => self.audio.func_80078884(NA_SE_SY_ATTENTION_URGENCY),
+                CamSfx::ModeChange(8) => self.audio.func_80078884(NA_SE_SY_ATTENTION_ON),
+                CamSfx::ModeChange(_) => {}
+                CamSfx::Error => self.audio.func_80078884(NA_SE_SY_ERROR),
+                CamSfx::Crawl => {
+                    let Some(ph) = self.player else { continue };
+                    let unk_89e = self.actors.get(ph).and_then(|p| p.as_player()).map(|p| p.unk_89e()).unwrap_or(0);
+                    self.audio.func_800f4010(SfxPos::Actor(ph), unk_89e.wrapping_add(0x8B0), 4.0);
+                }
+            }
         }
     }
 
@@ -968,8 +1011,9 @@ impl PlayState {
             no_transition: self.transition.trigger == crate::transition::TRANS_TRIGGER_OFF && self.transition.mode == TRANS_MODE_OFF,
             // ROOM_BEHAVIOR_TYPE1_1.
             dungeon_room: self.room_ctx.cur.behavior_type1 == 1,
+            in_cs_mode: self.play_in_cs_mode(),
         };
-        self.interface_ctx.update(&mut self.save, &f);
+        self.interface_ctx.update(&mut self.save, &mut self.audio, &f);
     }
 
     /// Runs `f` on the message context with this frame's view of play (nothing without the
@@ -1028,10 +1072,15 @@ impl PlayState {
         self.game_camera.change_bg_cam_index(&self.data.camera, &self.col, idx);
     }
 
-    /// `Play_SetViewpoint` (the toggle sounds aren't modelled).
+    /// `Play_SetViewpoint`, with the toggle's sound (not in a shop, nor in a cutscene entered
+    /// as one).
     pub fn set_viewpoint(&mut self, viewpoint: u8) {
+        use crate::audio::sfx::{NA_SE_SY_CAMERA_ZOOM_DOWN, NA_SE_SY_CAMERA_ZOOM_UP};
         assert!(viewpoint == VIEWPOINT_LOCKED || viewpoint == VIEWPOINT_PIVOT, "point == 1 || point == 2");
         self.viewpoint = viewpoint;
+        if self.scene_cam_type != crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT && self.save.cutscene_index < 0xFFF0 {
+            self.audio.func_80078884(if viewpoint == VIEWPOINT_LOCKED { NA_SE_SY_CAMERA_ZOOM_DOWN } else { NA_SE_SY_CAMERA_ZOOM_UP });
+        }
         self.change_viewpoint_bg_cam_index();
     }
 
@@ -1046,7 +1095,7 @@ impl PlayState {
             if self.player_in_cs_mode() {
                 // "Changing viewpoint is prohibited during the cutscene".
             } else if self.scene_cam_type == crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT {
-                // NA_SE_SY_ERROR.
+                self.audio.func_80078884(crate::audio::sfx::NA_SE_SY_ERROR);
             } else {
                 self.set_viewpoint(self.viewpoint ^ (VIEWPOINT_LOCKED ^ VIEWPOINT_PIVOT));
             }
@@ -1106,7 +1155,7 @@ impl PlayState {
                 view_proj: self.view_proj,
                 view_eye: self.view_eye(),
             };
-            crate::target::update(&mut self.target_ctx, &self.actors, &frame);
+            crate::target::update(&mut self.target_ctx, &self.actors, &frame, &mut self.audio);
         }
         self.col.dyna.update_prev_transforms();
     }

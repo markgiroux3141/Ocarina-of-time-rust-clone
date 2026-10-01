@@ -80,6 +80,10 @@ CASES = [
     # opening's four scripts (Link's house's layer 5, the nightmare, Navi sent, the wake-up),
     # then the new save's run with C-Up to Navi, into the Deku Tree.
     ("new_file_deku_tree", S, ["--new-file", "--child", "--script", "new-file-deku-tree", "--trace", "{trace}"]),
+    # GAME-04 milestone 3, Phase 5's exit: the Mido and shop run's audio log (the game's sound
+    # effect requests with where they are, its sequence commands and the library commands),
+    # the audio offline beside it.
+    ("mido_shop_audio", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "mido-shop", "--audio-log", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),

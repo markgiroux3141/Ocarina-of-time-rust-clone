@@ -234,6 +234,22 @@ impl Actor {
         self.sfx = sfx_id;
     }
 
+    /// `func_8002F994`: the timer's tick (`Actor_DrawAll` plays `NA_SE_SY_TIMER` through
+    /// `func_800F4C58` with `sfx - 1`): the C uses the ids as numbers, `NA_SE_PL_WALK_DIRT -
+    /// SFX_FLAG` (3) under 40, `_CONCRETE`'s (2) under 100, else `_SAND`'s (1).
+    pub fn func_8002f994(&mut self, arg1: i32) {
+        use crate::audio::sfx::{NA_SE_PL_WALK_CONCRETE, NA_SE_PL_WALK_DIRT, NA_SE_PL_WALK_SAND, SFX_FLAG};
+        self.flags |= ACTOR_FLAG_28;
+        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_20 | ACTOR_FLAG_21);
+        self.sfx = if arg1 < 40 {
+            NA_SE_PL_WALK_DIRT - SFX_FLAG
+        } else if arg1 < 100 {
+            NA_SE_PL_WALK_CONCRETE - SFX_FLAG
+        } else {
+            NA_SE_PL_WALK_SAND - SFX_FLAG
+        };
+    }
+
     /// Targetable and hostile: Z-targeting locks on (`ACTOR_FLAG_0 | ACTOR_FLAG_2`).
     pub fn is_hostile(&self) -> bool {
         self.flags & (ACTOR_FLAG_0 | ACTOR_FLAG_2) == ACTOR_FLAG_0 | ACTOR_FLAG_2

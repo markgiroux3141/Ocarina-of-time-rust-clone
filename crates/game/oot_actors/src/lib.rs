@@ -27,6 +27,7 @@ use oot_game::spawn::Overlays;
 
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
+pub mod demo_tre_lgt;
 pub mod dummy_target;
 pub mod en_box;
 pub mod en_door;
@@ -41,6 +42,7 @@ pub mod en_ko;
 pub mod en_kusa;
 pub mod en_md;
 pub mod en_ossan;
+pub mod en_river_sound;
 pub mod en_tana;
 pub mod en_wonder_item;
 pub mod en_wonder_talk2;
@@ -55,7 +57,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -80,6 +82,8 @@ pub fn overlays() -> Overlays {
     o.register(en_girla::ACTOR_EN_GIRLA, en_girla::EnGirlA::init);
     o.register(en_tana::ACTOR_EN_TANA, en_tana::EnTana::init);
     o.register(en_elf::ACTOR_EN_ELF, en_elf::EnElf::init);
+    o.register(en_river_sound::ACTOR_EN_RIVER_SOUND, en_river_sound::EnRiverSound::init);
+    o.register(demo_tre_lgt::ACTOR_DEMO_TRE_LGT, demo_tre_lgt::DemoTreLgt::init);
     o
 }
 

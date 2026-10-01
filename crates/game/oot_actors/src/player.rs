@@ -19,7 +19,7 @@ use eng_input::pad::{BTN_A, BTN_Z, Input, stick_to_mag_angle};
 use eng_math::*;
 use glam::Vec3;
 use oot_game::actor::*;
-use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PlayerIface};
+use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PLAYER_BODYPART_WAIST, PlayerIface};
 use oot_game::cutscene::CsCmdActorAction;
 use oot_game::play_scene::{PlayIo, SCENE_GANON_FINAL, SCENE_HAKADAN, SCENE_SPOT04};
 use oot_game::save::{RESPAWN_MODE_DOWN, RESPAWN_MODE_RETURN};
@@ -180,6 +180,8 @@ pub enum PlayerSfx {
     CodeReverb(i8),
     /// `Audio_StopSfxById`.
     StopById(u16),
+    /// `Audio_SetBaseFilter`: the underwater filter (and the bubbling).
+    BaseFilter(u8),
 }
 
 /// `SurfaceSfxType` (`z64bgcheck.h`): the ones Player names.
@@ -500,6 +502,8 @@ pub struct Player {
     pub current_yaw: i16,
     pub target_yaw: i16,
     pub unk_84F: i8,
+    /// `unk_840`: the frames spent under water (to 300).
+    pub unk_840: i16,
     /// Multipurpose timer.
     pub unk_850: i16,
     /// Rolling index into the stick history below.
@@ -736,6 +740,7 @@ impl Player {
             current_yaw: yaw,
             target_yaw: 0,
             unk_84F: 0,
+            unk_840: 0,
             unk_850: 0,
             unk_846: 0,
             unk_847: [-1; 4],
@@ -2024,7 +2029,11 @@ impl Player {
         if self.invincibility_timer != 0 || self.actor.category != ACTORCAT_PLAYER {
             return true;
         }
-        oot_game::item::health_change_by(&mut env.io.borrow_mut().save, damage as i16)
+        // Health_ChangeBy's recovery sound (for a gain), through Player's requests.
+        if damage > 0 {
+            self.sfx(PlayerSfx::NoPos(NA_SE_SY_HP_RECOVER));
+        }
+        oot_game::item::health_change_by(&mut env.io.borrow_mut().save, None, damage as i16)
     }
 
     /// `Player_InflictDamage`: true when it took the last of Link's health.
@@ -2678,7 +2687,9 @@ impl Player {
             }
             let a = self.skel.animation;
             let temp3 = if a == data.anim("link_swimer_swim_15step_up") {
-                // Frame 30: func_8083D0A8 (water surfacing) — no water yet.
+                if self.skel.on_frame(30.0) {
+                    self.func_8083D0A8(env, 10.0);
+                }
                 50.0
             } else if a == data.anim("link_normal_150step_up") {
                 30.0
@@ -3698,6 +3709,12 @@ impl Player {
         0
     }
 
+    /// `func_80843E14`: a fall's voice (Ruto, held, would cry too: `En_Ru1` isn't ported, nor is
+    /// holding).
+    fn func_80843E14(&mut self, sfx_id: u16) {
+        self.func_80832698(sfx_id);
+    }
+
     /// `func_8084411C`: in the air.
     fn func_8084411C(&mut self, env: &Env) {
         let data = env.data;
@@ -3716,6 +3733,10 @@ impl Player {
             if self.actor.velocity.y < 0.0 {
                 if self.unk_850 >= 0 {
                     if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 || self.unk_850 == 0 || self.fall_distance > 0 {
+                        if self.s.floor_dist > 800.0 || self.state1 & STATE1_2 != 0 {
+                            self.func_80843E14(NA_SE_VO_LI_FALL_S);
+                            self.state1 &= !STATE1_2;
+                        }
                         let a = data.anim("link_normal_landing");
                         self.skel.change(data, a, 1.0, 0.0, 0.0, ANIMMODE_ONCE, 8.0);
                         self.unk_850 = -1;
@@ -3723,6 +3744,7 @@ impl Player {
                 } else {
                     if self.unk_850 == -1 && self.fall_distance > 120 && self.s.floor_dist > 280.0 {
                         self.unk_850 = -2;
+                        self.func_80843E14(NA_SE_VO_LI_FALL_L);
                     }
                     if self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0
                         && self.state2 & STATE2_19 == 0
@@ -4975,8 +4997,17 @@ impl Player {
     // ================================================================================
     // Water (func_8083D53C) and swimming
 
-    /// `func_8083D53C`: entering and leaving water.
+    /// `func_8083D53C`: the underwater filter, then entering and leaving water.
     fn func_8083D53C(&mut self, env: &Env) {
+        if self.actor.y_dist_to_water < self.age.unk_2C {
+            self.sfx(PlayerSfx::BaseFilter(0));
+            self.unk_840 = 0;
+        } else {
+            self.sfx(PlayerSfx::BaseFilter(0x20));
+            if self.unk_840 < 300 {
+                self.unk_840 += 1;
+            }
+        }
         let a = self.action;
         if a == Action::ClimbLedge || a == Action::ClimbUp {
             return;
@@ -4993,8 +5024,25 @@ impl Player {
                 self.func_8083CD54(env.data, y);
             }
             let vy = self.actor.velocity.y;
-            self.func_8083D0A8(vy);
+            self.func_8083D0A8(env, vy);
         }
+    }
+
+    /// `func_8083CFA8`: at more than 2 of vertical speed `arg2`, a splash at the waist where it
+    /// meets a water surface less than 100 above Link (`WaterBox_GetSurface1`): true if there
+    /// is one. (The splash, `EffectSsGSplash`, of kind 0 up to 10 of speed and 1 above, at
+    /// `splash_scale`, isn't drawn: the effects aren't ported.)
+    fn func_8083CFA8(&mut self, env: &Env, arg2: f32, _splash_scale: i32) -> bool {
+        let sp3c = arg2.abs();
+        if sp3c > 2.0 {
+            let waist = self.body_parts_pos[PLAYER_BODYPART_WAIST];
+            if let Some(sp34) = env.col.water_surface(waist.x, waist.z, env.col.water_room)
+                && (sp34 - self.actor.world_pos.y) < 100.0
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// `func_8083D36C`: start swimming.
@@ -5012,18 +5060,29 @@ impl Player {
             let a = if self.grounded() { data.anim("link_swimer_wait2swim_wait") } else { data.anim("link_swimer_land2swim_wait") };
             self.func_80832B0C(data, a);
         }
-        // func_8083CFA8: the splash (effects not modelled).
+        if self.state1 & STATE1_27 == 0 || self.actor.y_dist_to_water < self.age.unk_2C {
+            let vy = self.actor.velocity.y;
+            if self.func_8083CFA8(env, vy, 500) {
+                self.func_8002F7DC(NA_SE_EV_DIVE_INTO_WATER);
+                if self.fall_distance > 800 {
+                    self.func_80832698(NA_SE_VO_LI_CLIMB_END);
+                }
+            }
+        }
         self.state1 |= STATE1_27;
         self.state2 |= STATE2_10;
         self.state1 &= !(STATE1_18 | STATE1_19);
         // Player_SetBootData: Kokiri boots keep their data in water.
     }
 
-    /// `func_8083D0A8`: out of the water.
-    fn func_8083D0A8(&mut self, _vy: f32) {
+    /// `func_8083D0A8`: out of the water, with a splash's sound if there's one.
+    fn func_8083D0A8(&mut self, env: &Env, vy: f32) {
         self.state1 |= STATE1_18;
         self.state1 &= !STATE1_27;
         self.func_80832340();
+        if self.func_8083CFA8(env, vy, 500) {
+            self.func_8002F7DC(NA_SE_EV_JUMP_OUT_WATER);
+        }
     }
 
     /// `func_80832340`.
@@ -5043,6 +5102,7 @@ impl Player {
             self.actor.velocity.y = 0.0;
             if input {
                 self.state2 |= STATE2_11;
+                self.func_8002F7DC(NA_SE_PL_DIVE_BUBBLE);
             }
             return true;
         }
@@ -5055,6 +5115,10 @@ impl Player {
             self.func_80832340();
             let a = data.anim("link_swimer_swim_deep_end");
             self.func_80832B0C(data, a);
+            let vy = self.actor.velocity.y;
+            if self.func_8083CFA8(env, vy, 500) {
+                self.func_8002F7DC(NA_SE_PL_FACE_UP);
+            }
             return true;
         }
         false
@@ -5104,6 +5168,13 @@ impl Player {
         let dec = v.abs() * 0.02 + 0.05;
         asym_step_to_f(&mut v, arg2 * 0.8, t, dec);
         scaled_step_to_s(&mut self.current_yaw, arg3, 1600);
+        v
+    }
+
+    /// `func_8084D530`: `func_8084AEEC`, and the strokes' sound (`D_808549D0`).
+    fn func_8084D530(&mut self, env: &Env, v: f32, arg2: f32, arg3: i16) -> f32 {
+        let v = self.func_8084AEEC(v, arg2, arg3);
+        self.func_80832924(env.audio.player_anim_sfx("D_808549D0"));
         v
     }
 
@@ -5183,9 +5254,8 @@ impl Player {
             } else if self.func_80833C04(env) {
                 self.func_8084D5CC(data);
             }
-            // func_8084D530: func_8084AEEC plus the stroke sounds (D_808549D0).
             let v = self.linear_velocity;
-            self.linear_velocity = self.func_8084AEEC(v, sp34, sp32);
+            self.linear_velocity = self.func_8084D530(env, v, sp34, sp32);
         }
     }
 
@@ -5205,7 +5275,7 @@ impl Player {
                 self.func_8084D980(env, &mut sp2c, &mut sp2a);
             }
             let v = self.linear_velocity;
-            self.linear_velocity = self.func_8084AEEC(v, sp2c, sp2a);
+            self.linear_velocity = self.func_8084D530(env, v, sp2c, sp2a);
         }
     }
 
@@ -5313,6 +5383,9 @@ impl Player {
             // Not holding an item from the bottom (PLAYER_STATE1_10).
             self.func_80838F18(data);
             self.func_80832340();
+        } else if self.skel.on_frame(5.0) {
+            // (PLAYER_STATE1_10's frame 10, the item from the bottom: not ported.)
+            self.func_80832698(NA_SE_VO_LI_BREATH_DRINK);
         }
         self.func_8084B000();
         let y = self.actor.shape_rot.y;
@@ -5616,8 +5689,8 @@ impl Player {
             // BgCheck_EntityRaycastDown1. @bug (game): the poly's bgId is taken as BGCHECK_SCENE.
             let (_, ground_poly) = env.col.entity_raycast_down(check);
             if self.func_80839034(env, ground_poly) {
-                // gSaveContext.entranceSound = NA_SE_OC_DOOR_OPEN: no sound.
                 env.io.borrow_mut().save.entrance_speed = 2.0;
+                env.io.borrow_mut().save.entrance_sound = NA_SE_OC_DOOR_OPEN;
             }
         } else if let Some(t) = entry {
             // 38, 26 and 10 frames times D_808535EC (1).
@@ -7068,6 +7141,7 @@ impl ActorImpl for Player {
                 play.game_camera.set_target(t);
             }
             play.game_camera.change_mode(&play.data.camera, mode);
+            play.camera_sfx();
         }
         // Then its sequence mode (targetCtx.bgmEnemy is never set: no enemies yet), outside
         // the fishing pond.
@@ -7296,6 +7370,9 @@ impl PlayerIface for Player {
     fn change_state_flags2(&mut self, set: u32, clear: u32) {
         self.state2 = (self.state2 | set) & !clear;
     }
+    fn unk_89e(&self) -> u16 {
+        self.unk_89E
+    }
     fn set_equipment_data(&mut self, data: &GameData, save: &oot_game::save::SaveContext) {
         Player::set_equipment_data(self, data, save);
     }
@@ -7378,11 +7455,11 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             crate::en_item00::item_drop_collectible(play, pos, params);
         }
         PlayRequest::ItemGive(item) => {
-            oot_game::item::item_give(&mut play.save, item);
+            oot_game::item::item_give(&mut play.save, Some(&mut play.audio), item);
         }
         PlayRequest::NaviCall(state) => {
             let cs_idle = play.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE;
-            play.interface_ctx.set_navi_call(state, cs_idle);
+            play.interface_ctx.set_navi_call(state, cs_idle, &mut play.audio);
         }
         PlayRequest::GetItemFanfare(gi) => {
             use oot_game::audio::*;
@@ -7415,6 +7492,7 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
                 PlayerSfx::F4190(id) => a.func_800f4190(pos, id),
                 PlayerSfx::CodeReverb(r) => a.set_code_reverb(r),
                 PlayerSfx::StopById(id) => a.stop_sfx_by_id(id),
+                PlayerSfx::BaseFilter(f) => a.set_base_filter(f),
             }
         }
     }

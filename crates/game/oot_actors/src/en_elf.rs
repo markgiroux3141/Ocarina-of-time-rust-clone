@@ -16,7 +16,7 @@
 //! parent's origin, unrotated, at its pulsing scale.
 //!
 //! Not ported: the sparkles (`EffectSsKiraKira`: their spawn's `Rand` calls are made), the
-//! sounds, the lights' effect on the draw (`crate::lights` keeps them, the renderer can't draw
+//! lights' effect on the draw (`crate::lights` keeps them, the renderer can't draw
 //! them), `Environment_AdjustLights` while Navi talks, and `Elf_Msg` (no ported scene has one).
 
 use std::sync::Arc;
@@ -26,7 +26,8 @@ use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use eng_math::{atan2_s, cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_4, ACTOR_FLAG_5, ACTOR_FLAG_16, ACTOR_FLAG_25, Actor};
-use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_ITEMACTION, ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, PLAYER_BODYPART_HAT, PLAYER_BODYPART_HEAD, PLAYER_BODYPART_WAIST};
+use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_ITEMACTION, ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, PLAYER_BODYPART_HAT, PLAYER_BODYPART_HEAD, PLAYER_BODYPART_WAIST, audio_play_actor_sfx2};
+use oot_game::audio::sfx::*;
 use oot_game::cutscene::CS_STATE_IDLE;
 use oot_game::lights::{LightInfo, LightNode};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -690,7 +691,7 @@ impl EnElf {
         }
         let height_diff = self.actor.world_pos.y - pl.pos.y;
         if height_diff > 0.0 && height_diff < 60.0 && !func_80a01f90(self.actor.world_pos, pl.pos, 10.0) {
-            oot_game::item::health_change_by(&mut play.save, 128);
+            oot_game::item::health_change_by(&mut play.save, Some(&mut play.audio), 128);
             if self.fairy_flags & FAIRY_FLAG_BIG != 0 {
                 log::warn!("En_Elf: Magic_Fill not ported (no magic meter)");
             }
@@ -772,7 +773,7 @@ impl EnElf {
         }
         self.unk_2bc = atan2_s(self.actor.velocity.z, self.actor.velocity.x);
         self.spawn_sparkles(play, 32);
-        // NA_SE_EV_FIATY_HEAL - SFX_FLAG: no audio.
+        audio_play_actor_sfx2(play, NA_SE_EV_FIATY_HEAL - SFX_FLAG);
     }
 
     /// `func_80A03814`: a revival fairy circling Link's waist, then up and away.
@@ -802,6 +803,7 @@ impl EnElf {
         self.func_80a02e30(pl.waist);
         self.unk_2bc = atan2_s(self.actor.velocity.z, self.actor.velocity.x);
         self.spawn_sparkles(play, 32);
+        audio_play_actor_sfx2(play, NA_SE_EV_FIATY_HEAL - SFX_FLAG);
     }
 
     /// `func_80A03990`: a revival fairy popping up out of Link, growing.
@@ -823,6 +825,7 @@ impl EnElf {
         self.actor.scale = Vec3::splat((1.0 - (self.unk_2b4 * self.unk_2b4 * ((1.0 / 9.0) * (1.0 / 9.0)))) * 0.008);
         self.unk_2bc = atan2_s(self.actor.velocity.z, self.actor.velocity.x);
         self.spawn_sparkles(play, 32);
+        audio_play_actor_sfx2(play, NA_SE_EV_FIATY_HEAL - SFX_FLAG);
     }
 
     /// `func_80A03AB0`: Navi's colours (`func_80A04414`), the animation, and the drift.
@@ -878,8 +881,11 @@ impl EnElf {
                 self.func_80a02c98(next, 0.2);
             }
             if play.scene_id == SCENE_LINK_HOME && play.save.scene_layer == 4 {
-                // NA_SE_EV_FAIRY_DASH as she comes in (frame 55), and each time she swoops on
-                // Link: no audio, but the swoop's flag is kept.
+                // The dash as she comes into Link's house in the opening, and each time she
+                // swoops on him.
+                if play.cs_ctx.frames == 55 {
+                    audio_play_actor_sfx2(play, NA_SE_EV_FAIRY_DASH);
+                }
                 if self.unk_2a8 == 6 {
                     if self.fairy_flags & 0x40 != 0 {
                         if prev.y < self.actor.world_pos.y {
@@ -887,6 +893,7 @@ impl EnElf {
                         }
                     } else if self.actor.world_pos.y < prev.y {
                         self.fairy_flags |= 0x40;
+                        audio_play_actor_sfx2(play, NA_SE_EV_FAIRY_DASH);
                     }
                 }
             }
@@ -956,7 +963,9 @@ impl EnElf {
                         } else {
                             if dist_hat > 100.0 {
                                 self.fairy_flags |= 2;
-                                // (NA_SE_EV_FAIRY_DASH unless unk_2C7: no audio.)
+                                if self.unk_2c7 == 0 {
+                                    audio_play_actor_sfx2(play, NA_SE_EV_FAIRY_DASH);
+                                }
                                 self.unk_2c0 = 0x64;
                             }
                             self.func_80a03148(next, 0.0, self.unk_2a0, 0.2);
@@ -990,7 +999,9 @@ impl EnElf {
         if play.target_ctx.unk_40 != 0.0 {
             self.unk_2c6 = 0;
             self.unk_29c = 1.0;
-            // (NA_SE_EV_FAIRY_DASH unless unk_2C7: no audio.)
+            if self.unk_2c7 == 0 {
+                audio_play_actor_sfx2(play, NA_SE_EV_FAIRY_DASH);
+            }
         } else if self.unk_2c6 == 0 {
             if arrow.is_none() || self.actor.world_pos.distance(navi_ref) < 50.0 {
                 self.unk_2c6 = 1;
@@ -1013,8 +1024,16 @@ impl EnElf {
         } else if let Some(a) = arrow.and_then(|h| play.actors.actor(h))
             && target.is_some()
         {
-            // NA_SE_VO_NAVY_HELLO (an NPC), _ENEMY or _HEAR: no audio.
-            let _ = a.category == ACTORCAT_NPC || a.category == ACTORCAT_ENEMY;
+            let sfx_id = if a.category == ACTORCAT_NPC {
+                NA_SE_VO_NAVY_HELLO
+            } else if a.category == ACTORCAT_ENEMY {
+                NA_SE_VO_NAVY_ENEMY
+            } else {
+                NA_SE_VO_NAVY_HEAR
+            };
+            if self.unk_2c7 == 0 {
+                audio_play_actor_sfx2(play, sfx_id);
+            }
             self.fairy_flags |= 1;
         }
     }
@@ -1058,7 +1077,9 @@ impl EnElf {
                                 self.unk_2c0 -= 1;
                                 0
                             } else {
-                                // (NA_SE_EV_NAVY_VANISH unless unk_2C7: no audio.)
+                                if self.unk_2c7 == 0 {
+                                    audio_play_actor_sfx2(play, NA_SE_EV_NAVY_VANISH);
+                                }
                                 7
                             }
                         }
@@ -1096,14 +1117,18 @@ impl EnElf {
                 0 => {
                     if state2 & PLAYER_STATE2_20 == 0 {
                         temp = 7;
-                        // (NA_SE_EV_NAVY_VANISH unless unk_2C7: no audio.)
+                        if self.unk_2c7 == 0 {
+                            audio_play_actor_sfx2(play, NA_SE_EV_NAVY_VANISH);
+                        }
                     }
                 }
                 8 => {
                     if state2 & PLAYER_STATE2_20 != 0 {
                         self.unk_2c0 = 42;
                         temp = 11;
-                        // (NA_SE_EV_FAIRY_DASH unless unk_2C7: no audio.)
+                        if self.unk_2c7 == 0 {
+                            audio_play_actor_sfx2(play, NA_SE_EV_FAIRY_DASH);
+                        }
                     }
                 }
                 7 => change_player_state2(play, 0, PLAYER_STATE2_20),
@@ -1273,7 +1298,7 @@ impl EnElf {
             self.actor.flags |= ACTOR_FLAG_16;
         }
         if oot_game::npc::process_talk_request(&mut self.actor) {
-            // NA_SE_VO_SK_LAUGH: no audio.
+            play.audio.func_800f4524(SfxPos::Default, NA_SE_VO_SK_LAUGH, 0x20);
             self.actor.focus_pos = self.actor.world_pos;
             if self.actor.text_id == play.elf_message_get_c_up_text() {
                 self.fairy_flags |= 0x80;

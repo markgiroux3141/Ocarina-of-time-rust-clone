@@ -30,8 +30,8 @@
 //! `Camera_KeepOn0`, JUMP, CLIMB, HANG...) runs its setting's NORMAL function if that one is
 //! ported, else `Camera_Normal1` on NORMAL0's NORMAL data; `camera->mode` still changes as in
 //! the game. Not modelled: water and hot-room checks, quakes, the low-health wiggle, the debug
-//! camera, the mode-change sounds, `func_80043F94` (scenes with the skybox disabled) and the
-//! interface alpha.
+//! camera, `func_80043F94` (scenes with the skybox disabled) and the interface alpha. The
+//! camera's sounds (`CamSfx`) are played by the play state.
 
 use eng_collision::bgcheck::{self, CollisionContext, PolyId};
 use eng_input::pad::{BTN_CLEFT, BTN_CRIGHT, Input};
@@ -155,6 +155,18 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_SUBJ4",
     "CAM_FUNC_DEMO1",
 ];
+
+/// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CamSfx {
+    /// `Camera_ChangeModeFlags`' `modeChangeFlags` (1, 2, 4 or 8): `func_80078884(0)`,
+    /// `NA_SE_SY_ATTENTION_ON` (`_URGENCY` in a dungeon room), `_URGENCY`, `_ON`.
+    ModeChange(u8),
+    /// First person refused: `NA_SE_SY_ERROR`.
+    Error,
+    /// `Camera_Subj4`'s `func_800F4010(&player->actor.projectedPos, player->unk_89E + 0x8B0, 4.0f)`.
+    Crawl,
+}
 
 // CAM_STAT_* (z64camera.h).
 pub const CAM_STAT_CUT: i16 = 0;
@@ -1053,6 +1065,9 @@ pub struct GameCamera {
     /// What `Camera_Subj4` wrote to `camera->player` this update: its `world.pos` and
     /// `shape.rot.y` (PlayState applies them to Player right after the update).
     pub player_write: Option<(Vec3, i16)>,
+    /// The sounds the camera asked for since the play state last took them, in order
+    /// (`PlayState::camera_sfx` plays them).
+    pub sfx: Vec<CamSfx>,
     /// `status` (`CAM_STAT_*`), `camId`, `uid`.
     pub status: i16,
     pub cam_id: i16,
@@ -1155,6 +1170,7 @@ impl GameCamera {
             interface_alpha: 0,
             interface_alpha_change: None,
             player_write: None,
+            sfx: Vec::new(),
             // Play_Init: Camera_ChangeStatus(&mainCamera, CAM_STAT_ACTIVE).
             status: CAM_STAT_ACTIVE,
             cam_id: CAM_ID_MAIN,
@@ -1382,13 +1398,18 @@ impl GameCamera {
     }
 
     /// `Camera_ChangeModeFlags`. Returns -1 when the request is refused or changes nothing,
-    /// `0x80000000 | mode` for a change. The sound effects aren't modelled.
+    /// `0x80000000 | mode` for a change; the active camera's change has its sound
+    /// (`CamSfx::ModeChange`), and first person refused the error's.
     pub fn change_mode_flags(&mut self, d: &CameraData, mode: i16, flags: u8) -> i32 {
         if self.unk_14c & 0x20 != 0 && flags == 0 {
             self.unk_14a |= 0x20;
             return -1;
         }
         if (d.setting_flags(self.setting) & 0x3FFF_FFFF) & (1u32 << mode) == 0 {
+            if mode == CAM_MODE_FIRSTPERSON {
+                // "camera: error sound".
+                self.sfx.push(CamSfx::Error);
+            }
             if self.mode != CAM_MODE_NORMAL {
                 self.mode = CAM_MODE_NORMAL;
                 self.copy_data_to_regs();
@@ -1445,8 +1466,10 @@ impl GameCamera {
             }
             _ => {}
         }
-        // With CAM_STAT_ACTIVE, modeChangeFlags (1, 2, 4 or 8) picks a sound: not modelled.
-        let _ = mode_change_flags;
+        mode_change_flags &= !0x10;
+        if self.status == CAM_STAT_ACTIVE && matches!(mode_change_flags, 1 | 2 | 4 | 8) {
+            self.sfx.push(CamSfx::ModeChange(mode_change_flags as u8));
+        }
         self.func_8005a02c();
         self.mode = mode;
         (0x8000_0000u32 | mode as u32) as i32
@@ -3382,7 +3405,7 @@ impl GameCamera {
     /// moves (`unk_24` ≥ 0.5), puts the eye on the crawlspace's line at Player, bobbing and
     /// swaying with the crawl, and moves Player: onto the line, to the ground, facing along it
     /// (`player_write`). The bg camera's points: the second is one end, the second to last the
-    /// other. Returns the C's value. The crawl's sound (`func_800F4010`) isn't ported.
+    /// other. Returns the C's value. Each sway's turn is a crawl's step (`CamSfx::Crawl`).
     fn subj4(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) -> bool {
         if matches!(self.anim_state, 0 | 10 | 20) {
             self.subj4.interface_flags = d.value(self.cur(), 0);
@@ -3454,9 +3477,8 @@ impl GameCamera {
         self.eye.y += (sp98.y - self.eye.y) * t.abs();
         self.eye.z += (sp98.z - self.eye.z) * t.abs();
         if s.unk_28 < t && !s.unk_2e {
-            // func_800F4010(&player->actor.projectedPos, player->unk_89E + 0x8B0, 4.0f): the
-            // crawl's sound, not ported.
             s.unk_2e = true;
+            self.sfx.push(CamSfx::Crawl);
         } else if s.unk_28 > t {
             s.unk_2e = false;
         }

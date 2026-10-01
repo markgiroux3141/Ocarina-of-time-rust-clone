@@ -53,6 +53,7 @@ pub const NA_BGM_GANON_TOWER: u16 = 0x2E;
 pub const NA_BGM_LONLON: u16 = 0x2F;
 pub const NA_BGM_KOKIRI: u16 = 0x3C;
 pub const NA_BGM_GREAT_FAIRY: u16 = 0x28;
+pub const NA_BGM_SARIA_THEME: u16 = 0x3E;
 pub const NA_BGM_WINDMILL: u16 = 0x4C;
 pub const NA_BGM_ESCAPE: u16 = 0x62;
 pub const NA_BGM_TIMED_MINI_GAME: u16 = 0x6C;
@@ -235,8 +236,9 @@ pub struct AudioLog {
     pub seq_cmds: Vec<(u32, u32)>,
     /// Every `GameOp`, with the game frame.
     pub ops: Vec<(u32, GameOp)>,
-    /// `Audio_PlaySfxGeneral`'s ids as asked for (muted banks included), with the game frame.
-    pub sfx: Vec<(u32, u16)>,
+    /// `Audio_PlaySfxGeneral`'s requests as asked for (muted banks included): the game frame,
+    /// the id and where (`pos`).
+    pub sfx: Vec<(u32, u16, sfx::SfxPos)>,
 }
 
 /// The statics of `code_800F9280.c`, `code_800EC960.c` (its sequence parts) and
@@ -295,8 +297,10 @@ pub struct GameAudio {
     pub audio_extra_filter: u8,
     pub audio_base_filter2: u8,
     pub audio_extra_filter2: u8,
-    /// `sSariaBgmPtr`: whether it's set (the C keeps the actor's position's address).
-    pub saria_bgm_set: bool,
+    /// `sSariaBgmPtr`: the position the nearby music follows (an actor's field's address in
+    /// the C), and `D_80130650`, the distance `func_800F4E30` last took (2000 at boot).
+    pub saria_bgm_ptr: Option<bgm::SariaPos>,
+    pub d_80130650: f32,
     pub seq_mode_input: u8,
     pub enter_ganons_tower_timer: u8,
     pub d_8016b7a8: f32,
@@ -370,7 +374,8 @@ impl GameAudio {
             audio_extra_filter: 0,
             audio_base_filter2: 0,
             audio_extra_filter2: 0,
-            saria_bgm_set: false,
+            saria_bgm_ptr: None,
+            d_80130650: 2000.0,
             seq_mode_input: 0,
             enter_ganons_tower_timer: 0,
             d_8016b7a8: 0.0,

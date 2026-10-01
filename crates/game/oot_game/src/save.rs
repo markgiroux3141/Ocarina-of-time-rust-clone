@@ -107,6 +107,8 @@ pub struct SaveContext {
     pub respawn_flag: i32,
     /// `entranceSpeed`: Player's speed through the exit, for the walk-in on the other side.
     pub entrance_speed: f32,
+    /// `entranceSound`: what Player plays at its init on the other side (a door's).
+    pub entrance_sound: u16,
     /// `nextTransitionType` (`TRANS_NEXT_TYPE_DEFAULT` for the entrance table's).
     pub next_transition_type: u8,
     /// `transFadeDuration`, `transWipeSpeed`.
@@ -263,8 +265,8 @@ pub const LINK_AGE_ADULT: u8 = 0;
 pub const LINK_AGE_CHILD: u8 = 1;
 
 pub fn kokiri_sword_and_deku_shield(s: &mut SaveContext) {
-    item_give(s, ITEM_SWORD_KOKIRI);
-    item_give(s, ITEM_SHIELD_DEKU);
+    item_give(s, None, ITEM_SWORD_KOKIRI);
+    item_give(s, None, ITEM_SHIELD_DEKU);
     s.equip_from_pause_menu(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
     s.equip_from_pause_menu(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_DEKU);
 }
@@ -293,14 +295,14 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
             // Item_Give(play, ITEM_KOKIRI_EMERALD).
             s.set_event_chk_inf(EVENTCHKINF_07);
             s.set_event_chk_inf(EVENTCHKINF_09);
-            item_give(s, ITEM_KOKIRI_EMERALD);
+            item_give(s, None, ITEM_KOKIRI_EMERALD);
         },
     },
     SavePreset {
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {
-            item_give(s, ITEM_SWORD_KOKIRI);
+            item_give(s, None, ITEM_SWORD_KOKIRI);
             s.equip_from_pause_menu(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
             s.rupees = 40;
         },
@@ -325,6 +327,7 @@ impl SaveContext {
             respawn: [RespawnData::default(); 3],
             respawn_flag: 0,
             entrance_speed: 0.0,
+            entrance_sound: 0,
             next_transition_type: TRANS_NEXT_TYPE_DEFAULT,
             trans_fade_duration: 0,
             trans_wipe_speed: 0,

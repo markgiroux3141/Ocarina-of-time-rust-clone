@@ -7,10 +7,10 @@ pack.
 |---|---|---|
 | 1 | The import and the synth: the audio data in the pack, `eng_audio` (the audio library and its microcode, offline and through an output device), the mixer's ADR | done |
 | 2 | The game's music: the scenes' sound settings in the pack, the sequence commands (`code_800F9280.c`), the scene's music and the ambience (`code_800EC960.c`, `Environment_PlaySceneSequence`), the boundary between the game's thread and the audio thread | done |
-| 3 | Sound effects: `Audio_PlaySfxGeneral` and the sfx channels, the calls the ported code marks as left out | started: the engine whole, positions through `projectedPos`, the message box, most of Player's ported actions |
+| 3 | Sound effects: `Audio_PlaySfxGeneral` and the sfx channels, the calls the ported code marks as left out | done: the engine whole, Player, the actors, the HUD, the camera, the collision check, the phase's exit test |
 
 **Phase exit:** Kokiri Forest's music plays and loops like the game, and a scripted run's sound
-effects log matches the calls in the C.
+effects log matches the calls in the C. **Met: Phase 5 is done** (milestone 3).
 
 The working rules are the same as for the earlier phases:
 - no game data in the repo;
@@ -264,18 +264,28 @@ The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84
 - **By hand:** the window's music hasn't been heard by ear yet (`game.bat`, `game-night.bat`,
   `sandbox-audio-log.bat`'s WAV).
 
-## Milestone 3: sound effects (started)
+## Milestone 3: sound effects
 
-**Answer:** started. The sound effects' engine is ported whole and sounds: a request goes into
-its bank, the banks' entries are chosen by priority every frame and started on the sound
+**Answer:** done, and with it Phase 5. The sound effects' engine is ported whole and the game's
+calls are wired: Link's actions, his water, the message box, the HUD, the targeting, the
+camera, the collision check's strikes, and every ported actor (the chests and the chest's light,
+doors, Navi, bushes, rocks, signs, rupees and the other drops, the wonder items, the boulder,
+the shopkeeper, Mido, the Kokiri, the Deku Tree's mouth, the forest's waterfall). A request goes
+into its bank, the banks' entries are chosen by priority every frame and started on the sound
 effects' sequence's channels, refreshed while they're asked for, and let go when the channel
-says they ended. Link's footsteps (by floor), jumps, landings, voice, the roll, the sword's
-swing, ladders, ledges and the crawl sound in the game; so do the message box's sounds and the
-item sounds. Many of the game's calls aren't wired yet (below).
+says they ended.
 
-The tests: 279 pass, 1 ignored (276 at milestone 2's end). The goldens are unchanged: 84 of 84.
+**Phase exit, met:** the scripted runs' sound effect requests match the C's calls, frame by
+frame, with where each sound is (`oot_actors --test sfx_route`), and the Mido and shop run's
+audio log is a golden (`mido_shop_audio`). Kokiri Forest's music plays and loops like the game
+(milestone 2).
+
+The tests: 282 pass, 1 ignored (279 at the milestone's start). The goldens: 85 hashes, 61
+cases; 4 traces re-recorded (an actor count only) and 1 new (golden/README.md).
 
 ### What was built
+
+The first part (the milestone's start, committed in f82e932):
 
 1. **The tables in the pack** (`table/audio`, still format 14): `gSfxParams` from the seven
    bank tables (`include/tables/sfx/*.h`, 1259 rows with their names), the banks' sizes
@@ -292,74 +302,165 @@ The tests: 279 pass, 1 ignored (276 at milestone 2's end). The goldens are uncha
    `_FreqScale`, `func_800F37B8`, `func_800F3990`, `Audio_SetSfxProperties`, `func_800F3F84`,
    `func_800F4010` and the other helpers, the river and the waterfall, the transposed ones);
    `z_lib.c`'s `func_80078884`, `func_800788CC`, `func_80078914`; `AudioMgr_StopAllSfx`.
-   `Audio_Update` now runs the requests and `func_800F8F88`.
 3. **Positions:** `projectedPos` and `projectedW` on every actor, from `Actor_DrawAll`'s spot in
-   the frame; `actor->sfx` and its four setters (`func_8002F8F0`...), played there
+   the frame; `actor->sfx` and its setters (`func_8002F8F0`...), played there
    (`func_80030ED8`); cleared by `Actor_UpdateAll`; `Actor_Delete` stops the actor's sounds.
 4. **The boundary** (ADR 0026): the view carries `audioRandom`, `audRand` and the count
    register's value; `GameOp::SetAudRand` sends the game's `Audio_NextRandom` back.
-5. **The message box:** `Message_ShouldAdvance`'s `NA_SE_SY_MESSAGE_PASS` (and the silent
-   variant, as the C uses each, in the message code, the cutscene's texts and the actors),
-   `Message_HandleChoiceSelection`'s cursor, `Message_DrawText`'s `NA_SE_SY_MESSAGE_END` and the
-   text's own sound codes (`MESSAGE_SFX`), `Message_Update`'s `NA_SE_SY_DECIDE` and pass, and
+5. **The message box:** `Message_ShouldAdvance`'s `NA_SE_SY_MESSAGE_PASS`, the choice cursor,
+   `NA_SE_SY_MESSAGE_END`, the text's own sound codes, `Message_Update`'s `NA_SE_SY_DECIDE`, and
    the C's silent (id 0) calls.
-6. **Player** (`PlayRequest::Sfx`): the helpers (`func_80832698` the voice, `func_808327F8` the
-   footsteps, `func_80832854` the jump, `func_808328A0` the landing, `func_80832770`,
-   `func_808327C4`, `func_808328EC`, `func_80832924` the animations' tables, `func_808326F0`,
-   `func_8084BEE4` the ladder), `unk_89E` (the floor's footstep, `func_80847BA0`) and the
-   floor's echo (`Audio_SetCodeReverb`, with `SurfaceType_GetEcho`); and the sounds of the
-   actions ported: walking and running, the side step, jumps and their voice, the automatic
-   jump, landings and a fall's damage, the roll with its dust and its bonk, being hurt (the
-   damage, the voices, the body hit), being knocked down and getting up, slipping off a
-   ledge, hanging, climbing up ledges and walls, the ladder, the crawl, the sword's swing
-   (`func_80833A20`), the child's chest opening, the item sounds (`func_8083E4C4`, the
-   rupees' and hearts' `NA_SE_SY_GET_BOXITEM`), the voids and the secret hole.
-7. **The sandbox's `--audio-log`** lists the sound effects asked for, by frame, with their names.
-8. **Run scripts:** `test-sfx.bat` (menu 31).
+6. **Player's helpers and most of its actions** (`PlayRequest::Sfx`): the voice, footsteps,
+   jumps, landings, the animations' tables, the ladder, the floor's echo; walking, jumping,
+   landing, the roll, being hurt and knocked down, ledges, climbing, the crawl, the sword's
+   swing, the chest, the item sounds, the voids.
+
+The rest (this session):
+
+7. **Sound sources** (`z_sfx_source.c`, `oot_game::sfx_source`): the play state's sixteen
+   fixed-position sources (`SfxSource_PlaySfxAtFixedWorldPos`, `_UpdateAll` in `Play_Update`'s
+   order, `_InitAll`), positioned through `SfxPos::Source` (ADR 0027's pointer naming).
+8. **`z_actor.c`'s helpers:** `Audio_PlayActorSfx2`, `func_8002F7DC`, `func_8002F850` (a
+   bounce: the bomb's and the floor's), `func_8002F994` (the timer's tick); the lock-on and
+   lock-off (`func_8002C7BC`, `Actor_UpdateAll`: `NA_SE_SY_LOCK_ON` or `_HUMAN`, `_LOCK_OFF`).
+9. **The actors:**
+   - `En_Box`: the lid's bounce when a chest falls, the appearing chest, the unlock and the lid
+     on the opening's frames 30 and 90, the mimic's breath;
+   - `Demo_Tre_Lgt` (`oot_actors::demo_tre_lgt`, new): the big chest's light, its logic whole
+     (the curve animation's frames, its alphas, the flash `NA_SE_EV_TRE_BOX_FLASH` past frame
+     30, its end); its draw (a curve skeleton) isn't;
+   - `En_Door`: the open and close on `sDoorAnimOpenFrames` and `sDoorAnimCloseFrames` (the
+     iron ones in the Fire and Shadow Temples), the chain lock's unlock; Player's scene-exit
+     door leaves `gSaveContext.entranceSound`, which the next scene's `Player_Init` plays;
+   - `En_Elf`: Navi's dash, vanish, hello, enemy and hear calls (silenced by `unk_2C7` as the C
+     does), the opening's dashes, the healing fairies' sound, the talk's laugh
+     (`func_800F4524`);
+   - `En_Kusa`, `En_Ishi`: the cut bush and the broken rock through sound sources at them;
+   - `En_Item00`: `NA_SE_SY_GET_RUPY` or `_GET_ITEM` as Link takes one; `En_Wonder_Item`'s
+     drops' `NA_SE_SY_GET_ITEM`;
+   - `En_Goroiwa`: the rolling loop and Link's body hit (`func_8002F7DC` at Player);
+   - `En_Kanban`: the sword's strike, the pieces' bounces, the splash;
+   - `En_Ossan`: every one of its 23 calls (the cursor, the passes, decide, the errors);
+     `En_Md`'s correct chime, `En_Ko`'s chest-appear chime, `Bg_Treemouth`'s wooden door;
+   - `En_River_Sound` (`oot_actors::en_river_sound`, new, whole): the rivers along their paths
+     (`EnRiverSound_GetSfxPos`, the current's frequency from the floor's conveyor speed,
+     `Audio_PlaySfxRiver`), the waterfalls, lava, torches and the others where they stand, the
+     sandstorm and the rumbling at no position, the bgm lowered at the market, Saria's Song in
+     the Lost Woods and Goron City and the Great Fairy's music (`func_800F4E30`,
+     `Audio_PlaySariaBgm`, `Audio_ClearSariaBgm*`, with `sSariaBgmPtr` as a named pointer),
+     the nature ambience and Ganon's Tower's levels at init. Its sounds are its draw's, made
+     where `Actor_DrawAll` makes them (`ActorImpl::draw_sfx`, after the actor's
+     `projectedPos`). Kokiri Forest has its small waterfall and the Kokiri houses a torch.
+10. **The game's other calls:**
+    - the HUD (`z_parameter.c`, `z_lifemeter.c`): the rupees counting in and out
+      (`NA_SE_SY_RUPY_COUNT`), the hearts filling (`NA_SE_SY_HP_RECOVER`), the low-health alarm
+      (`Health_UpdateBeatingHeart`, `Health_IsCritical`), Navi's call and hello
+      (`Interface_SetNaviCall`); `Health_ChangeBy`'s recovery sound, which `Item_Give` and the
+      actors now reach through the play state's audio (`Option<&mut GameAudio>`: none for the
+      debug presets and `Play_Init`'s triggers);
+    - `z_play.c`: the viewpoint's zoom (`Play_SetViewpoint`) and the shop's error on C-Up;
+    - `z_camera.c`: the mode changes' sounds (`Camera_ChangeModeFlags`: the attention sounds,
+      first person's error) and the crawl's steps (`Camera_Subj4`), queued by the camera
+      (`CamSfx`) and played by the play state where the C plays them;
+    - `z_collision_check.c`: `CollisionCheck_HitEffects`' sounds (the sword's strikes by the
+      element's type, the shield's bounce, metal's and wood's), returned by the check in order;
+    - `code_800EC960.c`: `Audio_SetBaseFilter` (the underwater filter and its bubbling),
+      `func_800F64E0`'s window sounds;
+    - `z_kankyo.c`: the evening's dog and the morning's cucco (time doesn't pass yet).
+11. **Player's water** (`func_8083CFA8`'s splash check on the scene's water boxes,
+    `func_8083D0A8`, `func_8083D12C`, `func_8083D36C`, `func_8083D53C`): diving in and jumping
+    out, the dive's bubbles, surfacing, the underwater filter (`unk_840`); the swim strokes
+    (`func_8084D530`, `D_808549D0`); and in the ported functions left: the falls' voices
+    (`func_8084411C`, `func_80843E14`), the surfacing breath (`func_8084E1EC`), the 15-step
+    climb out of water (`func_80845668`), the recovery sound for a gain.
+12. **A fix to the first part:** a new bank entry took its position at the next `Audio_Update`
+    (the entry's slot kept its last occupant's); the positions are now read just before
+    `func_800F8F88`, after the requests are taken in, as the C reads the new pointer.
+13. **The log** (`GameAudio::log`, not in the C) keeps each request's position; the sandbox's
+    `--audio-log` writes it (`default`, `source <i>`, `actor <n>` numbered as they appear).
+14. **`ootx sfx <id|name|part>`**: a sound effect's row in the pack's tables, and the constant
+    to paste. The `NA_SE_*` constants (127) are generated from the names the code uses, each
+    checked against its table row by the pack's test (`NAMED_SFX`).
+15. **The exit test** (`oot_actors --test sfx_route`), every expectation from the C's arithmetic:
+    the Mido and shop run (the sword's chest, Mido's chests, the rupees taken and counted, the
+    wonder items' drops, Navi), two doors (a Kakariko house's exit, a room door), and the Deku
+    Tree run's bushes; and the golden `mido_shop_audio`.
+16. **Run scripts:** `test-sfx-route.bat`, `game-door.bat`, `sandbox-mido-shop-audio.bat`,
+    `ootx-sfx.bat` (menu 32 to 35); `_env.bat` on `game12`.
 
 ### Results
 
 | Check | Result |
 |---|---|
-| `cargo test --workspace` | 279 passed, 1 ignored |
-| Walking in Kokiri Forest (`oot_actors --test sfx`) | 10 footsteps in 60 frames from the walk's start, on exactly the frames where the walk phase crosses 10 or 24 of its 29 (`func_8084021C`, while running), each `NA_SE_PL_WALK_GROUND` + `D_80119E10`[the floor] + the age's `unk_94` (0x800 on the path, 0x808 on the grass); each started on a channel of the sound effects' sequence (port 0 to 1, port 4 the index); walking strikes 65 notes where standing still strikes the music's 36 |
-| The message box | Text 0x1005: an A at each box break plays `NA_SE_SY_MESSAGE_PASS`, its end `NA_SE_SY_MESSAGE_END` once, the A that closes it `NA_SE_SY_DECIDE` |
-| The tables (`oot_import --test pack`) | The banks' rows (224, 80, 248, 499, 72, 8, 128); `DEFINE_SFX(NA_SE_PL_WALK_GROUND, 0x20, 0, 2, SFX_FLAG_10)` packed as the C packs it; every id the code names is its table's row; the banks' sizes 9, 12, 22, 20, 8, 3, 5; the channel layouts; `sBehindScreenZ`, `D_801305E4` |
-| The new file's run (`sandbox-audio-log.bat`) | The same route, frame for frame; 4052 requests: 1083 sounds (356 grass footsteps, 166 ground, 66 ladder, 34 water, 25 concrete, 299 metal jingles with them as `func_800F4010` adds at a run, jumps, landings, voices, 40 passes, 18 ends, 17 decides, the chest's item sound, Navi's and Zelda's text sounds) and the C's 2969 silent ones; 33166 library commands (18488 without the sound effects) |
-| The window | The device plays as before (the queue never ran dry). Not yet heard by hand |
-| Golden traces and renders | 84 of 84 identical |
+| `cargo test --workspace` | 282 passed, 1 ignored |
+| The sword's chest (`sfx_route`, the Mido and shop run) | It starts opening on frame 1676 (Player's A sets `unk_1F4` 1): the chest fanfare's start (`start_seq(SEQ_PLAYER_FANFARE, 1, NA_BGM_OPEN_TRE_BOX \| 0x900)`) on that frame; `NA_SE_EV_TBOX_UNLOCK` on 1696 and `NA_SE_EV_TBOX_OPEN` on 1736 (frames 30 and 90 at 1.5 a frame: 20 and 60 on), at the chest; the light's `NA_SE_EV_TRE_BOX_FLASH` on 1698 (it reads the chest's frame 10 eight frames on, starts at 12 and passes 30 fourteen frames later: 22 on), at the light; the item's fanfare once, with its text |
+| Mido's four chests | Kicked open: the lid's sounds as far as each animation goes, at each chest; their rupees' `NA_SE_SY_GET_BOXITEM`, at no position, in place of a fanfare |
+| Rupees and drops | Every frame of 5732: `NA_SE_SY_GET_RUPY` exactly when Link takes a rupee (7 by hand; the switch's drop is taken by its first update, in the frame it's spawned), `NA_SE_SY_GET_ITEM` exactly when a wonder item drops (the ordered multitag touched out of order goes without), `NA_SE_SY_RUPY_COUNT` on exactly the frames the wallet counts (in, and the shield's 40 out) |
+| Navi | `NA_SE_EV_NAVY_VANISH` at her on exactly the frames she goes from following into Link's hat: 9 on the run |
+| Doors (`doors_sound_as_the_c`) | The Kakariko house's exit: `NA_SE_OC_DOOR_OPEN` at the door 17 frames after it starts opening (frame 25 at 1.5), then in Kakariko Village once, at the new Player (`entranceSound`), and `entranceSound` cleared. The souko's room door: open at 17 frames, `NA_SE_EV_DOOR_CLOSE` at 47 (frame 70 for `DOOR_OPEN_ANIM_CHILD_R`), both at the door, nothing else |
+| Bushes (the Deku Tree run) | 4 bushes cut, each `NA_SE_EV_PLANT_BROKEN` on its frame through a sound source at the bush's position, its countdown 19 at the frame's end (20, less `SfxSource_UpdateAll`'s) |
+| Kokiri Forest's music test | The first update after the reset now also starts the small waterfall's sound (`En_River_Sound`, the only request so far): the music's commands are unchanged |
+| The Mido and shop run's audio log (`sandbox-mido-shop-audio.bat`) | 6420 requests (the C's silent ones included), 1339 sequence commands, 32200 library commands; the same bytes over two runs: the golden `mido_shop_audio` |
+| Golden traces and renders | `sword_chest`, `mido_shop`, `new_save_deku_tree`, `new_file_deku_tree`: their `actors` count only, one fewer from 238 frames after the sword's chest starts opening until room 2 unloads (the light goes at its animation's end; its placeholder stayed). Every other field and every render the same bytes |
+| The window | Heard by hand at the milestone's start (Link, the message box). The rest: to try (below) |
 
 ### Decisions
 
-- **[ADR 0027](adr/0027-sound-effects.md):** the C's pointers as named sources (`SfxPos`,
-  `SfxF32`, `SfxS8`), compared as the pointers are and read when the C reads them; positions
-  through `projectedPos`, resolved once per `Audio_Update`; the engine whole; Player's sounds
-  as requests in their order; the tables in the pack, the named ids checked against them.
-- **The C's silent calls stay** (`Audio_PlaySfxGeneral(0, ...)`: the typing, the box breaks):
-  they fill the request ring as on the console and play nothing.
+- **[ADR 0027](adr/0027-sound-effects.md)** carries this half: new pointers get new names. The
+  sound sources are `SfxPos::Source(i)`; `sSariaBgmPtr` (a `Vec3f*` into an actor read
+  immediately) is `SariaPos` (`Projected`, `Home`) with a reader for what it points at.
+- **An actor's draw-time sounds run where `Actor_DrawAll` makes them**
+  (`ActorImpl::draw_sfx`, right after the actor's `projectedPos` and `sfx`): `En_River_Sound`'s.
+- **Code with no audio of its own queues the C's sounds in order** and the play state plays
+  them right after: the camera (`CamSfx`), the collision check (its return value), Player
+  (`PlayRequest::Sfx`, now with `BaseFilter`). Everything else calls `play.audio`.
+- **`Item_Give` and `Health_ChangeBy` take the audio** as `Option<&mut GameAudio>`: the C's
+  `play`; `None` where there's no play state (the presets, `Play_Init`'s triggers, tests).
+- **`Player_Init`'s entrance sound** plays where the port spawns Player in `Play_Init`, at
+  Player, since the port's init doesn't know Player's handle.
+- **`Demo_Tre_Lgt` is ported for its logic**, since its flash is the chest's sound and its end
+  an actor count; its curve skeleton's draw waits.
 
 ### Known gaps
 
-- **Not wired yet:** the other actors' sounds (`En_Box`'s lid, `En_Door`, `Bg_Treemouth`,
-  `En_Elf`'s, `En_Kusa` and `En_Ishi`, `En_Item00` and the rupees, `En_Wonder_Item`,
-  `En_Goroiwa`'s hit), the HUD's (`z_parameter.c`: the hearts, the low-health alarm, the
-  rupees counting), `z_play.c`'s (the viewpoint's zoom, the error sound), the collision check's
-  (`z_collision_check.c`: the shield, the sword's strikes), `Audio_SetBaseFilter`'s bubble.
-- **Player:** 104 sites in its 71 functions not ported (the items, the shield, bottles, the
-  ocarina, the boomerang and the hookshot, swimming's strokes, Epona, the cutscene modes'
-  voices) and, in ported ones, the water's (`func_8083CFA8`'s splash check isn't ported), the
-  masks', the lens', the hover boots'.
-- **Not exercised:** the surround mode's stereo bits and filter (the sound mode is stereo, as a
-  fresh SRAM's), the headset, the swap table (the debug screen's), the river and waterfall
-  helpers (no `En_River_Sound` yet).
-- **By hand:** not yet heard (`game.bat`, `sandbox-audio-log.bat`'s WAV).
+- **Cutscenes** (deferred, BACKLOG #10): their scripts' music commands, the Deku Tree's death
+  sound, the piece of heart's, the white-outs', and Player's cutscene voices
+  (`func_80851E90`'s groan, `func_80851FB0`'s table).
+- **Player:** 95 sound sites in 65 functions not ported (items, the shield, bottles, the
+  ocarina, the boomerang and hookshot, Epona, swimming under water, the dives' and the deep
+  water's...); in ported functions, the branches for what isn't ported: the items' use
+  (`func_80835F44`: the errors, the lens, the masks' `NA_SE_PL_CHANGE_ARMS`), first person
+  (`func_8083B040`, `func_8083B998`'s C-Up error), the hookshot's lash (`func_80836670`),
+  being frozen or shocked (`func_80837C0C` kinds 3 and 4), the hover and iron boots
+  (`func_8084029C`, `func_8084D610`), Ruto's cry when held (`func_80843E14`).
+- **Actors:** lifting bushes and rocks (their pull-up sounds and the throws' landings); the
+  healing fairy's sound (`EffectSsDeadSound`, an effect); the sign's ocarina repair; the
+  chests that need the ocarina; a locked door's unlock is wired but no door locks here.
+- **The pause menu:** `func_800F64E0` plays its window sounds now, but its caller is the pause
+  menu's opening (`KaleidoSetup_Update`'s state 1), which the equipping stand-in doesn't open.
+- **Effects** (`EffectSs`): the hit marks', sparks' and splashes' own sounds where they have any.
+- **Not exercised:** the surround mode's stereo bits and filter, the headset, the swap table;
+  rivers (none in the scenes the routes visit; the waterfall and the torches are).
+- **By hand:** the actors' sounds in the window (below).
+
+## Phase 5: done
+
+Phase 5 (GAME-04) is complete: the audio library ported whole (milestone 1), the game's music
+(milestone 2), and the sound effects (milestone 3), with the phase's exit met by the scripted
+runs' requests checked against the C and an audio golden. The next phase is the Deku Tree
+(Phase 6, [ROADMAP.md](ROADMAP.md)), on Master Quest, starting with the decomp upgrade
+([ADR 0028](adr/0028-phase-6-master-quest-and-the-decomp-upgrade.md)).
 
 ## Recommended next step
 
-Listen first: `scripts\run\game.bat` (Kokiri Forest's music, Link's sounds; walk into a house
-and out, talk to a Kokiri), `scripts\run\game-night.bat` (the night's ambience),
-`scripts\run\sandbox-audio-log.bat` (the whole new-file run as a WAV). Then milestone 3 on:
-the actors' sounds the ported code marks as left out (`En_Box`, `En_Door`, `Bg_Treemouth`,
-`En_Elf`, the bushes and rocks, `En_Item00`), the HUD's (`z_parameter.c`, the low-health
-alarm), `z_play.c`'s and the collision check's; Player's water sounds with `func_8083CFA8`;
-and for the phase's exit, a scripted run's sound effect log checked against the C's calls.
+Listen first:
+- `scripts\run\game-sword-chest.bat`: the chest (the unlock, the light's flash, the lid, the
+  fanfare), then Enter and E for the sword, and a sign or a bush nearby;
+- `scripts\run\game.bat`: Kokiri Forest's small waterfall (`En_River_Sound` at (398, -29, -483)), the
+  bushes (E cuts them), the rocks, Navi into Link's cap and out, Z on a Kokiri (the lock-on, her
+  hello), rupees and their counting, the shop's cursor (`game-shop.bat`), the boulder in the
+  training area, the ford's water (in and out);
+- `scripts\run\game-door.bat`: a door, and its sound again on the far side;
+- `scripts\run\sandbox-mido-shop-audio.bat`: the exit run as a WAV.
+
+Then Phase 6's first milestone: the decomp upgrade (ADR 0028).

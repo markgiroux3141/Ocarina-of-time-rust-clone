@@ -18,7 +18,7 @@
 //! recovery hearts (once `OBJECT_GI_HEART` is loaded), the shields and the tunics.
 //!
 //! Not ported: the circle shadow, the sparkles (`EffectSsKiraKira`, whose random numbers are
-//! still drawn) and the sounds.
+//! still drawn), and the healing fairy's sound (`EffectSsDeadSound`, an effect).
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s};
@@ -330,43 +330,43 @@ impl EnItem00 {
         let mut get_item_id = GI_NONE;
         match e.actor.params {
             ITEM00_RUPEE_GREEN => {
-                item_give(&mut play.save, ITEM_RUPEE_GREEN);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_RUPEE_GREEN);
             }
             ITEM00_RUPEE_BLUE => {
-                item_give(&mut play.save, ITEM_RUPEE_BLUE);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_RUPEE_BLUE);
             }
             ITEM00_RUPEE_RED => {
-                item_give(&mut play.save, ITEM_RUPEE_RED);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_RUPEE_RED);
             }
             ITEM00_RUPEE_PURPLE => {
-                item_give(&mut play.save, ITEM_RUPEE_PURPLE);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_RUPEE_PURPLE);
             }
             ITEM00_RUPEE_ORANGE => {
-                item_give(&mut play.save, ITEM_RUPEE_GOLD);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_RUPEE_GOLD);
             }
             ITEM00_RECOVERY_HEART => {
-                item_give(&mut play.save, ITEM_RECOVERY_HEART);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_RECOVERY_HEART);
             }
             ITEM00_FLEXIBLE => {
-                health_change_by(&mut play.save, 0x70);
+                health_change_by(&mut play.save, Some(&mut play.audio), 0x70);
             }
             ITEM00_BOMBS_A | ITEM00_BOMBS_B => {
-                item_give(&mut play.save, ITEM_BOMBS_5);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_BOMBS_5);
             }
             ITEM00_ARROWS_SINGLE => {
-                item_give(&mut play.save, ITEM_BOW);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_BOW);
             }
             ITEM00_ARROWS_SMALL => {
-                item_give(&mut play.save, ITEM_ARROWS_SMALL);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_SMALL);
             }
             ITEM00_ARROWS_MEDIUM => {
-                item_give(&mut play.save, ITEM_ARROWS_MEDIUM);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_MEDIUM);
             }
             ITEM00_ARROWS_LARGE => {
-                item_give(&mut play.save, ITEM_ARROWS_LARGE);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_LARGE);
             }
             ITEM00_SMALL_KEY => {
-                item_give(&mut play.save, ITEM_KEY_SMALL);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_KEY_SMALL);
             }
             // @bug (game): the large magic jar's get-item is the small one's, and the other
             // way round.
@@ -582,56 +582,56 @@ impl ActorImpl for EnItem00 {
             return;
         }
         // (No game over.)
-        let save = &mut play.save;
+        let (save, audio) = (&mut play.save, &mut play.audio);
         let get_item_id = match p {
             ITEM00_RUPEE_GREEN => {
-                item_give(save, ITEM_RUPEE_GREEN);
+                item_give(save, Some(&mut *audio), ITEM_RUPEE_GREEN);
                 GI_NONE
             }
             ITEM00_RUPEE_BLUE => {
-                item_give(save, ITEM_RUPEE_BLUE);
+                item_give(save, Some(&mut *audio), ITEM_RUPEE_BLUE);
                 GI_NONE
             }
             ITEM00_RUPEE_RED => {
-                item_give(save, ITEM_RUPEE_RED);
+                item_give(save, Some(&mut *audio), ITEM_RUPEE_RED);
                 GI_NONE
             }
             ITEM00_RUPEE_PURPLE => {
-                item_give(save, ITEM_RUPEE_PURPLE);
+                item_give(save, Some(&mut *audio), ITEM_RUPEE_PURPLE);
                 GI_NONE
             }
             ITEM00_RUPEE_ORANGE => {
-                item_give(save, ITEM_RUPEE_GOLD);
+                item_give(save, Some(&mut *audio), ITEM_RUPEE_GOLD);
                 GI_NONE
             }
             ITEM00_STICK => GI_STICKS_1,
             ITEM00_NUTS => GI_NUTS_5,
             ITEM00_RECOVERY_HEART => {
-                item_give(save, ITEM_RECOVERY_HEART);
+                item_give(save, Some(&mut *audio), ITEM_RECOVERY_HEART);
                 GI_NONE
             }
             ITEM00_FLEXIBLE => {
-                health_change_by(save, 0x70);
+                health_change_by(save, Some(&mut *audio), 0x70);
                 GI_NONE
             }
             ITEM00_BOMBS_A | ITEM00_BOMBS_B => {
-                item_give(save, ITEM_BOMBS_5);
+                item_give(save, Some(&mut *audio), ITEM_BOMBS_5);
                 GI_NONE
             }
             ITEM00_ARROWS_SINGLE => {
-                item_give(save, ITEM_BOW);
+                item_give(save, Some(&mut *audio), ITEM_BOW);
                 GI_NONE
             }
             ITEM00_ARROWS_SMALL => {
-                item_give(save, ITEM_ARROWS_SMALL);
+                item_give(save, Some(&mut *audio), ITEM_ARROWS_SMALL);
                 GI_NONE
             }
             ITEM00_ARROWS_MEDIUM => {
-                item_give(save, ITEM_ARROWS_MEDIUM);
+                item_give(save, Some(&mut *audio), ITEM_ARROWS_MEDIUM);
                 GI_NONE
             }
             ITEM00_ARROWS_LARGE => {
-                item_give(save, ITEM_ARROWS_LARGE);
+                item_give(save, Some(&mut *audio), ITEM_ARROWS_LARGE);
                 GI_NONE
             }
             ITEM00_SEEDS => GI_SEEDS_5,
@@ -665,7 +665,11 @@ impl ActorImpl for EnItem00 {
             }
             return;
         }
-        // (NA_SE_SY_GET_RUPY / NA_SE_SY_GET_ITEM.)
+        if p <= ITEM00_RUPEE_RED || p == ITEM00_RUPEE_ORANGE {
+            play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_RUPY);
+        } else {
+            play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_ITEM);
+        }
         play.flags.set_collectible(self.collectible_flag as i32);
         self.despawn_timer = 15;
         self.unk_154 = 35;
@@ -828,7 +832,7 @@ pub fn item_drop_collectible(play: &mut PlayState, spawn_pos: Vec3, params: i16)
     let param3f00 = params & 0x3F00;
     let mut params = params & 0x3FFF;
     if params & 0xFF == ITEM00_FLEXIBLE && !param4000 {
-        // A healing fairy (En_Elf, a placeholder) and its sound.
+        // A healing fairy (En_Elf), and its sound (EffectSsDeadSound: not ported).
         return play.actor_spawn(ACTOR_EN_ELF, spawn_pos + Vec3::Y * 40.0, [0; 3], FAIRY_HEAL_TIMED).ok();
     }
     if !param8000 {

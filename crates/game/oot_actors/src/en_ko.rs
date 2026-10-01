@@ -1015,7 +1015,7 @@ fn func_80a97738(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> 
         }
         TEXT_STATE_DONE_FADING => {
             if matches!(actor.text_id, 0x10B7 | 0x10B8) && *unk_210 == 0 {
-                // NA_SE_SY_TRE_BOX_APPEAR.
+                play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
                 *unk_210 = 1;
             }
             1

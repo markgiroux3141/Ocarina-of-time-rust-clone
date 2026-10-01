@@ -15,7 +15,7 @@
 //! Ported: the plain textbox modes (start, grow, decode, type, await input, box breaks, next
 //! text ids, choices, fading, persistent and event ends, closing), the colours, the player's
 //! name. Not ported: the ocarina modes, item icons and textbox backgrounds (decoded, not
-//! drawn), the credits, sounds, and the debug message viewer (`BREG(0)` 0). `YREG(31)` is the
+//! drawn), the credits, the ocarina's sounds, and the debug message viewer (`BREG(0)` 0). `YREG(31)` is the
 //! shop's (`yreg_31`).
 
 #![allow(non_snake_case)] // D_8014B2F4 and the unk_ fields keep the decomp's names

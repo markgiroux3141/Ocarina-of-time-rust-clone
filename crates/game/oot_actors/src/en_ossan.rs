@@ -27,7 +27,7 @@
 //! Kokiri shopkeeper's init, objects and draw: the other types log that they aren't ported and
 //! stand as placeholders (`EnOssan_InitPotionShopkeeper`, `_BombchuShopkeeper`,
 //! `_BazaarShopkeeper`, `_ZoraShopkeeper`, `_GoronShopkeeper`, `_HappyMaskShopkeeper` and their
-//! draws). Left out: the sounds (`func_80078884`), the prints, and the unused collider.
+//! draws). Left out: the prints, and the unused collider.
 
 use std::sync::Arc;
 
@@ -37,6 +37,7 @@ use eng_math::{approach_f, step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::audio::sfx::{NA_SE_SY_CURSOR, NA_SE_SY_DECIDE, NA_SE_SY_ERROR, NA_SE_SY_MESSAGE_PASS};
 use oot_game::collision_check::MASS_IMMOVABLE;
 use oot_game::gbi::{G_IM_FMT_IA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_TX_MIRROR, G_TX_NOMASK, G_TX_WRAP, setup_dl};
 use oot_game::interface::{DO_ACTION_DECIDE, DO_ACTION_NEXT, change_alpha};
@@ -940,8 +941,8 @@ impl EnOssan {
     }
 
     /// `EnOssan_SetLookToShopkeeperFromShelf`.
-    fn set_look_to_shopkeeper_from_shelf(&mut self) {
-        // NA_SE_SY_CURSOR.
+    fn set_look_to_shopkeeper_from_shelf(&mut self, play: &mut PlayState) {
+        play.audio.func_80078884(NA_SE_SY_CURSOR);
         self.draw_cursor = 0;
         self.state_flag = OSSAN_STATE_LOOK_SHOPKEEPER;
     }
@@ -1059,7 +1060,7 @@ impl EnOssan {
                 }
             }
         } else if dialog_state == TEXT_STATE_EVENT && play.message_should_advance() {
-            // NA_SE_SY_MESSAGE_PASS.
+            play.audio.func_80078884(NA_SE_SY_MESSAGE_PASS);
             match self.happy_mask_shop_state {
                 OSSAN_HAPPY_STATE_ALL_MASKS_SOLD => {
                     play.continue_textbox(0x70AA);
@@ -1108,7 +1109,7 @@ impl EnOssan {
     fn state_facing_shopkeeper(&mut self, play: &mut PlayState) {
         if play.message_state() == TEXT_STATE_CHOICE && !self.test_end_interaction(play) {
             if play.message_should_advance() && self.facing_shopkeeper_dialog_result(play) {
-                // NA_SE_SY_DECIDE.
+                play.audio.func_80078884(NA_SE_SY_DECIDE);
                 return;
             }
             if self.stick_accum_x < 0 {
@@ -1118,6 +1119,7 @@ impl EnOssan {
                     self.state_flag = OSSAN_STATE_LOOK_SHELF_LEFT;
                     play.interface_ctx.set_do_action(DO_ACTION_DECIDE);
                     self.stick_left_prompt.is_enabled = false;
+                    play.audio.func_80078884(NA_SE_SY_CURSOR);
                 }
             } else if self.stick_accum_x > 0 {
                 let next = self.set_cursor_index_from_neutral(0);
@@ -1126,6 +1128,7 @@ impl EnOssan {
                     self.state_flag = OSSAN_STATE_LOOK_SHELF_RIGHT;
                     play.interface_ctx.set_do_action(DO_ACTION_DECIDE);
                     self.stick_right_prompt.is_enabled = false;
+                    play.audio.func_80078884(NA_SE_SY_CURSOR);
                 }
             }
         }
@@ -1211,7 +1214,7 @@ impl EnOssan {
                 play.continue_textbox(prompt);
                 self.stick_left_prompt.is_enabled = false;
                 self.stick_right_prompt.is_enabled = false;
-                // NA_SE_SY_DECIDE (NA_SE_SY_ERROR for SI_19 and SI_20).
+                play.audio.func_80078884(if matches!(params, SI_19 | SI_20) { NA_SE_SY_ERROR } else { NA_SE_SY_DECIDE });
                 self.draw_cursor = 0;
                 self.state_flag = match params {
                     SI_KEATON_MASK | SI_SPOOKY_MASK | SI_SKULL_MASK | SI_BUNNY_HOOD | SI_MASK_OF_TRUTH | SI_ZORA_MASK | SI_GORON_MASK | SI_GERUDO_MASK => OSSAN_STATE_SELECT_ITEM_MASK,
@@ -1223,7 +1226,7 @@ impl EnOssan {
                 };
                 return true;
             }
-            // NA_SE_SY_ERROR.
+            play.audio.func_80078884(NA_SE_SY_ERROR);
             return true;
         }
         false
@@ -1261,7 +1264,7 @@ impl EnOssan {
                 if a != CURSOR_INVALID {
                     self.cursor_index = a;
                 } else {
-                    self.set_look_to_shopkeeper_from_shelf();
+                    self.set_look_to_shopkeeper_from_shelf(play);
                     return;
                 }
             } else if away && (self.move_horizontal || far) {
@@ -1274,7 +1277,7 @@ impl EnOssan {
             if self.cursor_index != prev_index {
                 let t = self.selected_text(play);
                 play.continue_textbox(t);
-                // NA_SE_SY_CURSOR.
+                play.audio.func_80078884(NA_SE_SY_CURSOR);
             }
         }
     }
@@ -1380,14 +1383,23 @@ impl EnOssan {
                 self.shop_item_selected_tween = 0.0;
                 self.selected_out_of_stock(play);
             }
-            CANBUY_RESULT_CANT_GET_NOW | CANBUY_RESULT_CANT_GET_NOW_5 => self.set_state_cant_get_item(play, 0x86),
-            CANBUY_RESULT_NEED_BOTTLE => self.set_state_cant_get_item(play, 0x96),
-            CANBUY_RESULT_NEED_RUPEES => self.set_state_cant_get_item(play, 0x85),
+            CANBUY_RESULT_CANT_GET_NOW | CANBUY_RESULT_CANT_GET_NOW_5 => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x86);
+            }
+            CANBUY_RESULT_NEED_BOTTLE => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x96);
+            }
+            CANBUY_RESULT_NEED_RUPEES => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x85);
+            }
             _ => {}
         }
     }
 
-    /// `EnOssan_HandleCanBuyLonLonMilk`.
+    /// `EnOssan_HandleCanBuyLonLonMilk` (no error sounds: the C's).
     fn handle_can_buy_lon_lon_milk(&mut self, play: &mut PlayState) {
         let Some((result, _)) = self.selected_can_buy(play) else { return };
         match result {
@@ -1426,8 +1438,14 @@ impl EnOssan {
                 self.shop_item_selected_tween = 0.0;
                 self.selected_out_of_stock(play);
             }
-            CANBUY_RESULT_CANT_GET_NOW => self.set_state_cant_get_item(play, 0x9D),
-            CANBUY_RESULT_NEED_RUPEES => self.set_state_cant_get_item(play, 0x85),
+            CANBUY_RESULT_CANT_GET_NOW => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x9D);
+            }
+            CANBUY_RESULT_NEED_RUPEES => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x85);
+            }
             _ => {}
         }
     }
@@ -1443,8 +1461,14 @@ impl EnOssan {
                 self.shop_item_selected_tween = 0.0;
                 self.selected_out_of_stock(play);
             }
-            CANBUY_RESULT_CANT_GET_NOW => self.set_state_cant_get_item(play, 0x86),
-            CANBUY_RESULT_NEED_RUPEES => self.set_state_cant_get_item(play, 0x85),
+            CANBUY_RESULT_CANT_GET_NOW => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x86);
+            }
+            CANBUY_RESULT_NEED_RUPEES => {
+                play.audio.func_80078884(NA_SE_SY_ERROR);
+                self.set_state_cant_get_item(play, 0x85);
+            }
             _ => {}
         }
     }

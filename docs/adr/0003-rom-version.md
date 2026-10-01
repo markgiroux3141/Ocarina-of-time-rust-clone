@@ -1,6 +1,6 @@
 # 0003: Target ROM: gc-eu-mq-dbg for development
 
-- **Status:** accepted
+- **Status:** accepted; the vanilla-dungeon question settled by ADR 0028 (Master Quest, this ROM only)
 - **Date:** 2026-09-27
 
 ## Context

@@ -17,9 +17,10 @@
 //! and 10: `func_809C9700` waits on the ocarina, which isn't ported, so they stay hidden), the
 //! lens-hidden chests' drawing (types 4 and 6 with `ACTOR_FLAG_7`: the Lens of Truth isn't
 //! ported, so they aren't drawn until opened), the one-point cutscene cameras
-//! (`OnePointCutscene_Init`, `_Attention`), the fanfare and the sounds, and the effects (the
+//! (`OnePointCutscene_Init`, `_Attention`), and the effects (the
 //! falling chests' dust, the ice trap's smoke: their `Rand_ZeroOne` calls are made). The light
-//! (`Demo_Tre_Lgt`) and the sparkles (`Demo_Kankyo`) spawn as placeholders.
+//! (`Demo_Tre_Lgt`, `crate::demo_tre_lgt`) is ported but its draw; the sparkles (`Demo_Kankyo`)
+//! spawn as a placeholder.
 
 use std::sync::Arc;
 
@@ -28,7 +29,8 @@ use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::Vec3;
 use oot_game::actor::*;
-use oot_game::actor_ctx::{ACTORCAT_CHEST, ActorImpl, ActorProfile};
+use oot_game::actor_ctx::{ACTORCAT_CHEST, ActorImpl, ActorProfile, cur_sfx_pos};
+use oot_game::audio::sfx::*;
 use oot_game::get_item::offer_get_item;
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -356,7 +358,8 @@ impl EnBox {
                 self.action = Action::WaitOpen;
                 // OnePointCutscene_EndCutscene: no one-point cutscenes.
             }
-            // NA_SE_EV_COFFIN_CAP_BOUND: no sound.
+            let pos = cur_sfx_pos(play);
+            play.audio.play_sfx_general(NA_SE_EV_COFFIN_CAP_BOUND, pos, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
             self.spawn_dust(play);
         }
         let y_diff = self.actor.world_pos.y - self.actor.floor_height;
@@ -429,7 +432,8 @@ impl EnBox {
             if let Err(e) = play.actor_spawn(ACTOR_DEMO_KANKYO, h, [0; 3], DEMOKANKYO_SPARKLES) {
                 log::debug!("En_Box: Demo_Kankyo: {e:?}");
             }
-            // NA_SE_EV_TRE_BOX_APPEAR: no sound.
+            let pos = cur_sfx_pos(play);
+            play.audio.play_sfx_general(NA_SE_EV_TRE_BOX_APPEAR, pos, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
         }
     }
 
@@ -490,9 +494,9 @@ impl EnBox {
         }
     }
 
-    /// `EnBox_Open`: the opening plays out (the unlock and open sounds on frames 30 and 90
-    /// aren't played), then `unk_1F4` counts the frames open up to ±120.
-    fn open(&mut self) {
+    /// `EnBox_Open`: the opening plays out (the unlock on frame 30, the lid on 90), then
+    /// `unk_1F4` counts the frames open up to ±120.
+    fn open(&mut self, play: &mut PlayState) {
         self.actor.flags &= !ACTOR_FLAG_7;
         let Some(sk) = self.skel.as_mut() else { return };
         if sk.update() {
@@ -507,15 +511,29 @@ impl EnBox {
             } else {
                 eng_math::step_to_f(&mut self.unk_1b0, 0.0, 0.05);
             }
-        } else if sk.joint_table.get(3).is_some_and(|j| j[2] > 0) {
-            let z = sk.joint_table[3][2] as i32;
-            self.unk_1b0 = ((0x7D00 - z) as f32 * 0.00006).clamp(0.0, 1.0);
+        } else {
+            let sfx_id = if sk.on_frame(30.0) {
+                NA_SE_EV_TBOX_UNLOCK
+            } else if sk.on_frame(90.0) {
+                NA_SE_EV_TBOX_OPEN
+            } else {
+                0
+            };
+            if sfx_id != 0 {
+                let pos = cur_sfx_pos(play);
+                play.audio.play_sfx_general(sfx_id, pos, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
+            }
+            if sk.joint_table.get(3).is_some_and(|j| j[2] > 0) {
+                let z = sk.joint_table[3][2] as i32;
+                self.unk_1b0 = ((0x7D00 - z) as f32 * 0.00006).clamp(0.0, 1.0);
+            }
         }
     }
 
     /// `EnBox_SpawnIceSmoke`: an ice trap's smoke (not drawn: its random numbers are).
     fn spawn_ice_smoke(&mut self, play: &mut PlayState) {
         self.ice_smoke_timer += 1;
+        self.actor.func_8002f974(NA_SE_EN_MIMICK_BREATH - SFX_FLAG);
         if play.rand.zero_one() < 0.3 {
             play.rand.zero_one();
             play.rand.zero_one();
@@ -554,7 +572,7 @@ impl ActorImpl for EnBox {
             Action::AppearInit => self.appear_init(play),
             Action::AppearAnimation => self.appear_animation(play),
             Action::WaitOpen => self.wait_open(play),
-            Action::Open => self.open(),
+            Action::Open => self.open(play),
         }
         if self.movement_flags & ENBOX_MOVE_IMMOBILE == 0 {
             self.actor.move_forward();

@@ -103,13 +103,18 @@ fn kokiri_forest_starts_its_music_and_loops_it() {
         assert!(frame < 20, "the reset to spec 1 never finished");
     }
     // func_800FAD34 (gSfxChannelLayout 0), func_800F7170 (fade 1: (1 * updatesPerFrame) / 4),
-    // then the rest of the update: the volume commands change nothing (already 1.0).
+    // then the rest of the update: the volume commands change nothing (already 1.0). The sound
+    // effects' channel commands of that update (player 2, ops 0x01..0x0F) are the forest's
+    // small waterfall starting (En_River_Sound, RS_SMALL_WATERFALL: NA_SE_EV_WATER_WALL -
+    // SFX_FLAG asked for by every draw but its first), the only sound asked for so far.
     let upf = audio.renderer.ctx.audio_buffer_parameters.updates_per_frame;
     assert_eq!(audio.renderer.ctx.audio_reset_spec_id_to_load, 1);
-    assert_eq!(
-        ops(&w, frame),
-        [GameOp::Cmd(0x4602_0000, 0), GameOp::Cmd(0x8202_0000, (upf as u32) / 4), GameOp::Cmd(0xF200_0000, 1), GameOp::Schedule, GameOp::Cmd(0xF800_0000, 0), GameOp::Schedule,]
-    );
+    let (sfx_ops, music_ops): (Vec<GameOp>, Vec<GameOp>) = ops(&w, frame).into_iter().partition(|o| matches!(o, GameOp::Cmd(c, _) if (c >> 16) & 0xFF == 2 && (0x01..=0x0F).contains(&(c >> 24))));
+    assert_eq!(music_ops, [GameOp::Cmd(0x4602_0000, 0), GameOp::Cmd(0x8202_0000, (upf as u32) / 4), GameOp::Cmd(0xF200_0000, 1), GameOp::Schedule, GameOp::Cmd(0xF800_0000, 0), GameOp::Schedule,]);
+    assert!(!sfx_ops.is_empty());
+    let asked: Vec<u16> = w.audio.log.as_ref().unwrap().sfx.iter().filter(|(_, id, _)| *id != 0).map(|(_, id, _)| *id).collect();
+    let waterfall = oot_game::audio::sfx::NA_SE_EV_WATER_WALL - oot_game::audio::sfx::SFX_FLAG;
+    assert!(!asked.is_empty() && asked.iter().all(|&id| id == waterfall), "{asked:04X?}");
     assert_eq!(w.audio.d_80133418, 0);
     audio.frame(&mut w);
     eprintln!("the reset to spec 1 took {} game frames; spec 1: {upf} updates a frame", frame - 1);

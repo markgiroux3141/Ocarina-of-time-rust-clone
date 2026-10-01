@@ -31,6 +31,7 @@ Most scripts pass extra arguments on to the program they run.
 | `test-audio.bat` | GAME-04 milestone 1's tests: the microcode on made-up data; every sample decoded bit for bit; a Kokiri Forest instrument's note (its volume each update against the C's ADSR, its pitch, its decay), a drum, the reverb's decay; the audio heap as the C lays it; Kokiri Forest's sequence against the extractor's reading; the pack's audio data against the ROM and the C |
 | `test-music.bat` | GAME-04 milestone 2's tests, headless with the audio library offline: Kokiri Forest from a new game (its sound settings, the spec change and the music's start as the C queues them, the first `Audio_Update`'s commands, the wait for the reset, the forest's sequence playing and looping); from Link's house into the forest (the exit's fade, the music resumed where the forest left it); the forest at night (its nature ambience and critters); the audio boundary's boot view and spec changes; the pack's game audio tables and sound settings against the C and the ROM |
 | `test-sfx.bat` | GAME-04 milestone 3's tests, headless with the audio library offline: walking in Kokiri Forest plays a footstep on the C's frames for the floor underfoot, and each sounds on the sound effects' sequence; the message box's passes, end and close; the pack's sound effect tables against the C |
+| `test-sfx-route.bat` | GAME-04's exit test (Phase 5): the scripted runs' sound effect requests against the C's calls, frame by frame, with where each is: the Kokiri Sword's chest (the lid on its frames 30 and 90, the light's flash, the chest's and the item's fanfares), Mido's four chests, every rupee taken and counted, the wonder items' drops, Navi into Link's hat, the bushes cut (through sound sources), and doors (open, close, and the entrance's sound on the far side) |
 | `golden-check.bat` | The golden renders and traces (e.g. `golden-check.bat --only spot04`). Recording new hashes stays a deliberate step: `python scripts\golden.py record`, logged in `golden\README.md` |
 | `import.bat` | Imports the asset pack into the data folder (after a pack format change) |
 | `game.bat` | The game: Kokiri Forest, or any flags (e.g. `game.bat --entrance ENTR_SPOT04_3`) |
@@ -42,15 +43,18 @@ Most scripts pass extra arguments on to the program they run.
 | `game-sword-chest.bat` | A shortcut: a new save (no sword, no shield) in front of the Kokiri Sword's chest (the `--room 2 --at ...` debug start): A opens it, Enter equips the sword |
 | `game-deku-tree-talk.bat` | A shortcut: a new save entering the Deku Tree's meadow (`ENTR_SPOT04_1`): his talk starts at once (the cutscenes `D_808BCE20`, then `D_808BD520` on yes, `D_808BD790` on no); walk into the open mouth for the Deku Tree's intro |
 | `game-shop.bat` | A shortcut: outside the Kokiri shop's door (`ENTR_SPOT04_4`) with the Kokiri Sword worn and 40 rupees (`--preset sword-and-40-rupees`): buy the Deku Shield, Enter to wear it, then east over the ford to Mido |
-| `game-music.bat` | The game in Kokiri Forest with another sequence forced in place of its own (`--music 30`, the title theme: `Environment_ForcePlaySequence`); with arguments, e.g. `game-music.bat --music 62` (the Lost Woods) or `--music 85` (the shop). Every scene plays its own music by itself now (`game.bat`). No sound effects yet |
+| `game-music.bat` | The game in Kokiri Forest with another sequence forced in place of its own (`--music 30`, the title theme: `Environment_ForcePlaySequence`); with arguments, e.g. `game-music.bat --music 62` (the Lost Woods) or `--music 85` (the shop). Every scene plays its own music by itself now (`game.bat`) |
 | `game-night.bat` | The game in Kokiri Forest at 20:00 (`--time 20:00`): by night the forest plays its nature ambience (the stream, the crickets and the other critters) instead of its music. Time doesn't pass yet |
+| `game-door.bat` | A shortcut: a child in a Kakariko house in front of its door (`--entrance ENTR_KAKARIKO_0 --at ...`): Space opens it; the door's sound as it swings, then in Kakariko Village again as Link walks in (Player_Init's `entranceSound`) |
 | `sandbox.bat` | The dev sandbox, with any flags |
 | `sandbox-playthrough.bat` | Headless: the playthrough's trace and screenshots, into `out\run\` |
 | `sandbox-sword-chest.bat` | Headless: the Kokiri Sword run's trace and screenshots, into `out\run\` |
 | `sandbox-mido-shop.bat` | Headless: the shop and Mido run's trace and screenshots, into `out\run\` |
 | `sandbox-new-save-deku-tree.bat` | Headless: the new save's run into the Deku Tree (the talk's cutscenes, the mouth, the intro): its trace and screenshots, into `out\run\` |
 | `sandbox-new-file-deku-tree.bat` | Headless: Phase 4's exit run, the new file's opening, C-Up to Navi and on into the Deku Tree: its trace and screenshots, into `out\run\` |
-| `sandbox-audio-log.bat` | Headless: the new file's run (Phase 4's exit run) with the audio library offline alongside: the sequence commands and the library's commands by frame, and what each player played, into `out\run\new_file_deku_tree_audio.json`; the run's sound (about 10 minutes) as `out\run\new_file_deku_tree.wav`, then opens it. The log lists the sound effects asked for, with their names. The cutscenes have no music of their own yet, and most actors have no sounds |
+| `sandbox-audio-log.bat` | Headless: the new file's run (Phase 4's exit run) with the audio library offline alongside: the sequence commands and the library's commands by frame, and what each player played, into `out\run\new_file_deku_tree_audio.json`; the run's sound (about 10 minutes) as `out\run\new_file_deku_tree.wav`, then opens it. The log lists the sound effects asked for, with their names and where they are. The cutscenes have no music or sounds of their own yet |
+| `sandbox-mido-shop-audio.bat` | Headless: the Mido and shop run (Phase 5's exit run) with the audio offline: its audio log into `out\run\mido_shop_audio.json` (the `mido_shop_audio` golden) and its sound as `out\run\mido_shop.wav` (about 5 minutes), then opens it |
+| `ootx-sfx.bat` | Looks a sound effect up in the pack's tables (`ootx sfx`): by id (`0x2800`), name (`NA_SE_EV_DOOR_OPEN`) or part of one (`DOOR`), with its importance, parameters and the constant to paste; asks when given nothing |
 | `audio-wav.bat` | Offline WAVs from the audio library (`ootx audio-wav`), into `out\audio\`: Kokiri Forest's music (75 s, past its loop), an instrument's note at C4 and C3, a drum, and the instrument's sample as stored; then opens the music. With arguments, `ootx audio-wav <args>` (`--seq`, `--font --inst --note`, `--font --drum`, `--raw`, `--seconds`, `--wav`) |
 
 Game keys: WASD to move, Space = A, E = B, Q = Z, I/J/K/L = C, P shows the placeholders,
@@ -64,8 +68,10 @@ In the opening, Enter (Start) skips to the next scene (its terminator). I (C-Up)
 when she calls (after about 30 s in one scene); otherwise it's the viewpoint in houses.
 Sound: the window opens your default output device (`--no-audio` doesn't), and each scene plays
 its own music, or by night its nature ambience (`--time 20:00`); `--music <n>` forces sequence n
-in place of the first scene's. Link's footsteps, jumps, landings, voice and sword, and the
-message box, have their sounds; most actors don't yet, and cutscenes have no music.
+in place of the first scene's. Link, the message box, the HUD (rupees counting, the low-health
+alarm), the targeting, the chests, doors, Navi, bushes, rocks, signs, rupees and the other
+ported actors have their sounds (GAME-04 milestone 3); cutscenes have no music or sounds of
+their own yet.
 
 ## Adding a script
 

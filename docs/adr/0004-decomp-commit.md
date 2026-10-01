@@ -1,6 +1,6 @@
 # 0004: Decomp commit: stay on `2f4c25d` through the asset pack
 
-- **Status:** accepted
+- **Status:** accepted; to be superseded by Phase 6's first milestone, the upgrade (ADR 0028)
 - **Date:** 2026-09-27
 
 ## Context

@@ -92,6 +92,12 @@ enum Cmd {
     PackLs {
         prefix: String,
     },
+    /// Sound effects in the pack's tables (`gSfxParams`): by id (`0x2800`), by name
+    /// (`NA_SE_EV_DOOR_OPEN`) or by part of a name (`DOOR`); each with its importance and
+    /// parameters, and the constant to paste.
+    Sfx {
+        query: String,
+    },
     /// The asset pack's cutscene scripts: with no name, every script and
     /// `sEntranceCutsceneTable`; with a symbol (`gDekuTreeIntroCs`, `D_808BCE20`), its commands.
     Cutscene {
@@ -153,6 +159,7 @@ fn main() -> Result<()> {
         Cmd::Info => info(&project),
         Cmd::SceneInfo { scene, layer } => scene_info(&scene, layer),
         Cmd::PackLs { prefix } => pack_ls(&prefix),
+        Cmd::Sfx { query } => sfx(&query),
         Cmd::Cutscene { name } => cutscene(name.as_deref()),
         Cmd::DlDump { file, symbol } => dl_dump(&project, &file, &symbol),
         Cmd::Import { loose } => {
@@ -843,6 +850,42 @@ fn pack_ls(prefix: &str) -> Result<()> {
         } else {
             println!("{name}");
         }
+    }
+    Ok(())
+}
+
+fn sfx(query: &str) -> Result<()> {
+    let pack = oot_game::pack::GamePack::open_default()?;
+    let t = pack.audio_game_tables()?;
+    let q = query.trim();
+    let by_id = q.strip_prefix("0x").or_else(|| q.strip_prefix("0X")).and_then(|h| u16::from_str_radix(h, 16).ok());
+    // A whole name matches only itself.
+    let exact = t.sfx_params.iter().flatten().any(|p| p.name == q);
+    let mut found = 0;
+    for (b, bank) in t.sfx_params.iter().enumerate() {
+        for (i, p) in bank.iter().enumerate() {
+            let id = ((b as u16) << 12) + 0x800 + i as u16;
+            let hit = match by_id {
+                Some(x) => x | 0x800 == id,
+                None if exact => p.name == q,
+                None => p.name.contains(&q.to_ascii_uppercase()),
+            };
+            if hit {
+                found += 1;
+                println!(
+                    "{id:#06X} {}: importance {:#04X}, distance {}, random {}, flags {:#06X}\n    pub const {}: u16 = {id:#06X};",
+                    p.name,
+                    p.importance,
+                    p.params & 3,
+                    (p.params >> 6) & 3,
+                    p.params & !0xC3,
+                    p.name
+                );
+            }
+        }
+    }
+    if found == 0 {
+        anyhow::bail!("no sound effect matches {q}");
     }
     Ok(())
 }

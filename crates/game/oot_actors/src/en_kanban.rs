@@ -8,14 +8,15 @@
 //!
 //! Not ported: the ocarina repair (Zelda's Lullaby: no
 //! ocarina), the hammer's quake (`actorCtx.unk_02` is never set), the shadow (a texture the
-//! draw builds from the parts every frame), the dust and water effects, and the sounds.
+//! draw builds from the parts every frame), and the dust and water effects.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use eng_math::{approach_f, approach_s, approach_zero_f, binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_25, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER_TOUCH};
-use oot_game::actor_ctx::{ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_ctx::{ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::audio::sfx::{NA_SE_EV_BOMB_DROP_WATER, NA_SE_EV_WOODPLATE_BOUND, NA_SE_IT_SWORD_STRIKE};
 use oot_game::camera::f_atan2f;
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -468,6 +469,7 @@ impl EnKanban {
         piece.actor.flags &= !ACTOR_FLAG_0;
         piece.actor.flags |= ACTOR_FLAG_25;
         self.cut_mark_timer = 5;
+        audio_play_actor_sfx2(play, NA_SE_IT_SWORD_STRIKE);
         false
     }
 
@@ -507,9 +509,11 @@ impl EnKanban {
         }
         if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 {
             self.actor.speed_xz *= -0.5;
+            audio_play_actor_sfx2(play, NA_SE_EV_WOODPLATE_BOUND);
         }
         if self.actor.bg_check_flags & BGCHECKFLAG_WATER_TOUCH != 0 {
             self.action_state = ENKANBAN_WATER;
+            audio_play_actor_sfx2(play, NA_SE_EV_BOMB_DROP_WATER);
             self.bounce_x = 0;
             self.bounce_z = 0;
             self.actor.world_pos.y += self.actor.y_dist_to_water;
@@ -546,8 +550,9 @@ impl EnKanban {
             self.actor.shape_rot.x = self.actor.shape_rot.x.wrapping_add(self.direction.wrapping_mul(0x7D0));
         }
         if bounced {
-            // The sound and the dust (func_800286CC): not ported. The dust's random positions
-            // are drawn from the game's sequence all the same.
+            audio_play_actor_sfx2(play, NA_SE_EV_WOODPLATE_BOUND);
+            // The dust (func_800286CC): not ported. Its random positions are drawn from the
+            // game's sequence all the same.
             let n = (self.part_count as f32 * 0.5) as i16 + 3;
             for _ in 0..n {
                 play.rand.centered_float((self.part_count as f32 * 0.5) + 20.0);

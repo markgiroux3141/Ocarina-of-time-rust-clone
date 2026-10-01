@@ -295,13 +295,17 @@ fn on_screen(view_proj: Mat4, a: &Actor) -> bool {
     sx > -20 && sx < 340 && sy > -160 && sy < 400
 }
 
-/// `func_8002C7BC` (without the sounds), called with the actor Player keeps targeted.
-pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame) {
-    // Actor_UpdateAll: only a locked target with unk_66C >= 5 counts.
+/// `func_8002C7BC`, called with the actor Player keeps targeted; the lock's sounds.
+pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio: &mut crate::audio::GameAudio) {
+    use crate::audio::sfx::{NA_SE_SY_LOCK_OFF, NA_SE_SY_LOCK_ON, NA_SE_SY_LOCK_ON_HUMAN};
+    // Actor_UpdateAll: only a locked target with unk_66C >= 5 counts; losing the lock sounds.
     let mut locked = f.player_target.filter(|&h| actors.actor(h).is_some_and(|a| !a.killed));
     if locked.is_none() || f.player_timer < 5 {
         locked = None;
-        ctx.unk_4B = 0;
+        if ctx.unk_4B != 0 {
+            ctx.unk_4B = 0;
+            audio.func_80078884(NA_SE_SY_LOCK_OFF);
+        }
     }
     let mut candidate = None;
     if !(f.player_target.is_some() && f.player_stick_dir == 2) {
@@ -375,7 +379,8 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame) {
         if ctx.targeted != Some(h) {
             ctx.func_8002be98(a.category, f.view_eye);
             ctx.targeted = Some(h);
-            // ACTOR_EN_BOOM (unk_48 0) and the lock-on sounds: not ported.
+            // ACTOR_EN_BOOM (unk_48 0): the boomerang isn't ported.
+            audio.func_80078884(if a.is_hostile() { NA_SE_SY_LOCK_ON } else { NA_SE_SY_LOCK_ON_HUMAN });
         }
         ctx.target_center_pos = Vec3::new(a.world_pos.x, a.world_pos.y - (a.shape_y_offset * a.scale.y), a.world_pos.z);
         if ctx.unk_4B == 0 {

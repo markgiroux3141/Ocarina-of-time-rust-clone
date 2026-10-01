@@ -9,8 +9,8 @@
 //!
 //! Not ported: lifting and throwing (Player can't lift yet: `Actor_HasParent` is never true, so
 //! `EnKusa_LiftedUp`, `EnKusa_Fall` and `EnKusa_UprootedWaitRegrow` aren't reached), the
-//! leaves (`EffectSsKakera`, so the random numbers they'd draw before the drop aren't drawn)
-//! and the sounds. The bugs spawn as `En_Insect` (a placeholder).
+//! leaves (`EffectSsKakera`, so the random numbers they'd draw before the drop aren't drawn).
+//! The bugs spawn as `En_Insect` (a placeholder).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
@@ -178,8 +178,9 @@ impl EnKusa {
         // Actor_HasParent (lifted): Player doesn't lift things yet.
         if self.collider.base.ac_flags & AC_HIT != 0 {
             self.collider.base.ac_flags &= !AC_HIT;
-            // EnKusa_SpawnFragments and the sound: not ported.
+            // EnKusa_SpawnFragments: not ported.
             self.drop_collectible(play);
+            play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, oot_game::audio::sfx::NA_SE_EV_PLANT_BROKEN);
             if (self.actor.params >> 4) & 1 != 0 {
                 self.spawn_bugs(play);
             }

@@ -12,7 +12,7 @@ The working rules don't change:
 
 Reorder freely. The dependencies are noted, and nothing here is a commitment.
 
-## Where things stand (2026-09-30)
+## Where things stand (2026-10-01)
 
 **Done:** Phases 0 to 4 (GAME-01, GAME-02 and GAME-03). Kokiri Forest plays with:
 - collisions, props, climbing, Z-targeting, doors and the prerendered interiors;
@@ -41,11 +41,19 @@ Five headless scripted runs (`oot_actors --test playthrough`). Four start in Lin
 The fifth is Phase 4's exit: from the file select's new file, its first frame, through the
 opening, C-Up to Navi, and the same way into the Deku Tree.
 
-Phase 5, GAME-04, has begun: milestone 1 is done (see [GAME-04](GAME-04-audio.md)). The audio
-library is ported whole (`eng_audio`): the heap and loads, the sequence player, the notes and
-envelopes, the synthesis, and the RSP's audio microcode; it renders offline as the console does
-and plays through the output device in the window (`--music 60` for Kokiri Forest's music).
-The game's side, which plays what when, is milestone 2's.
+Phase 5, GAME-04, is done too (see [GAME-04](GAME-04-audio.md)):
+- the audio library ported whole (`eng_audio`): the heap and loads, the sequence player, the
+  notes and envelopes, the synthesis, and the RSP's audio microcode, offline as the console
+  renders and through the output device in the window;
+- the game's music: each scene's sound settings, the sequence commands, the scene's music, the
+  nature ambience, the fanfares, the fades between scenes;
+- the sound effects: the engine whole, positioned by the actors' `projectedPos` and the sound
+  sources, and the calls of Player, the message box, the HUD, the targeting, the camera, the
+  collision check and every ported actor;
+- the phase's exit: scripted runs' sound effect requests checked against the C's calls frame by
+  frame, and an audio golden.
+
+Next is Phase 6, the Deku Tree, on Master Quest, starting with the decomp upgrade (ADR 0028).
 
 **Priorities (2026-09-30):** gameplay first. Cutscene polish is deferred (BACKLOG #3, #5, #7, #10),
 and scripted runs may skip cutscenes where playing them gets in the way.
@@ -58,9 +66,8 @@ and scripted runs may skip cutscenes where playing them gets in the way.
 - ~~There are no cutscenes: the importer skips all 73.~~ Undone in GAME-03 milestone 4 (ADR 0022): the 73 scene scripts and the 27 overlay ones are in the pack, and the Deku Tree's talk opens his mouth on a new save. The `deku-tree-open` preset stays for the shortcuts and GAME-02's run.
 - ~~The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up.~~ Undone in GAME-03 milestone 5 (ADR 0023): every scene's cutscene layers are in the pack, and a new file plays the opening. The routes from Link's bed keep their start (`cutsceneIndex` 0).
 - No effects (`EffectSs`): Navi's sparkles, and the effects' own `Rand` calls, are missing.
-- ~~No audio at all.~~ The audio library is ported in GAME-04 milestone 1 (ADRs 0024, 0025). Still
-  missing: the game's side (`code_800EC960.c` and the others), so nothing plays by itself yet;
-  `--music` starts a sequence by hand.
+- ~~No audio at all.~~ Undone in GAME-04 (ADRs 0024 to 0027): the library, the game's music and the
+  sound effects. Cutscenes still have no music or sounds of their own (BACKLOG #10).
 
 ## Phase 3, the end: GAME-02 milestone 4 (done)
 
@@ -141,11 +148,11 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
 
 **Phase exit:** a headless run from a new save to the Deku Tree scene, the game's way, replacing GAME-02 milestone 4's flag preset. *(Done in milestone 5: `Route::NewFileDekuTree`, 11748 frames from the file select's new file into the Deku Tree. GAME-02's run keeps its preset as a shortcut. Phase 4 is complete.)*
 
-## Phase 5: audio (GAME-04, in progress)
+## Phase 5: audio (GAME-04, done)
 
 **Goal:** music and sound effects, from the ROM through the pack.
 
-**Recommended next**, before Phase 6: every dungeon system from here calls sounds, and each port so far has logged its calls as left out. This phase doesn't depend on Phase 4, so it could have gone earlier. `oot_extract::audio` already decodes the soundfonts, the VADPCM samples (checked bit for bit) and the sequences (a tick-accurate sequence player, to MIDI). The decomp's audio is about 18,000 lines (`audio_*.c`).
+**Why before Phase 6** (as planned): every dungeon system from here calls sounds, and each port had logged its calls as left out. This phase doesn't depend on Phase 4, so it could have gone earlier. `oot_extract::audio` already decodes the soundfonts, the VADPCM samples (checked bit for bit) and the sequences (a tick-accurate sequence player, to MIDI). The decomp's audio is about 18,000 lines (`audio_*.c`).
 
 1. **The import and the synth** (done: see [GAME-04](GAME-04-audio.md) milestone 1, ADRs 0024 and 0025):
    - soundfonts, samples and sequences into the pack;
@@ -160,41 +167,54 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
      command for command against the C, and in the window with no `--music`: the scenes'
      sound settings from the pack, the spec changes, the fades between scenes, the forest's
      music resumed from a house, the night's ambience, the chests' and items' fanfares.)*
-3. **Sound effects** (started: see [GAME-04](GAME-04-audio.md) milestone 3, ADR 0027: the engine
-   whole, positions through `projectedPos`, the message box, most of Player's ported actions):
+3. **Sound effects** (done: see [GAME-04](GAME-04-audio.md) milestone 3, ADR 0027):
    - `Audio_PlaySfxGeneral` and the sfx channels;
    - the calls the ported code already marks as left out: Player's footsteps, sword, text blips, doors, rupees, the HUD, the low-health alarm.
-   - **Exit:** a scripted run's sfx log matches the calls in the C.
+   - **Exit:** a scripted run's sfx log matches the calls in the C. *(Done: the Mido and shop
+     run, two doors and the Deku Tree run's bushes, their requests and positions checked frame
+     by frame against the C's arithmetic (`oot_actors --test sfx_route`), and the run's audio
+     log as the golden `mido_shop_audio`. Phase 5 is complete.)*
 
 ## Phase 6: the Deku Tree (GAME-05)
 
-**Decisions needed first (ADR 0003, ADR 0004):**
-- **Master Quest or vanilla?** The debug ROM's Deku Tree is Master Quest. Vanilla needs a second ROM version and a decomp commit that supports it.
-- **Upgrade the decomp?** The upgrade brings named functions such as `Player_Action_*`, and needs a name map for the existing citations.
+**Decisions (2026-10-01, [ADR 0028](adr/0028-phase-6-master-quest-and-the-decomp-upgrade.md)):**
+- **Master Quest.** The user chose the debug ROM's Deku Tree: gc-eu-mq-dbg stays the only ROM
+  (ADR 0003), no second ROM version.
+- **The decomp is upgraded first,** as the phase's first milestone, before any dungeon work:
+  the upgrade brings named functions such as `Player_Action_*`, and the existing citations move
+  to the new names through an address-based map.
 
-Both should be settled at the start of the phase, before any dungeon work.
-
-1. **Damage and health:**
+1. **The decomp upgrade** (ADR 0028, superseding ADR 0004's pin):
+   - an address-based map from `2f4c25d`'s names to the new commit's: both build gc-eu-mq-dbg,
+     so functions and statics pair by address in the two builds' symbol files (per overlay),
+     fields by offset in the two commits' headers; generated by a tool, kept as a file, the
+     unpaired ones listed for review;
+   - the citations migrated by the map with a script: the code's identifiers named after the C,
+     comments, tests, docs;
+   - the importer migrated to the new decomp's layout (paths, the C and headers it parses, the
+     asset XMLs and extraction), the pack's record names that change renamed (a format bump);
+   - **Exit:** every test passes and the goldens are the same bytes, on the new commit.
+2. **Damage and health:**
    - Player taking damage: knockback, invincibility frames, `Health_ChangeBy`. *(Mostly done in GAME-03 milestone 2 for the boulder, ADR 0020: the body hit, the stagger, the knockdown, the invincibility timer, the fall damage. Left: kinds 3 and 4 (frozen, shocked), the hit while swimming, burning, the red flash.)*
    - death and game over (`Play_TriggerVoidOut` exists);
    - enemy damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`).
    - **Exit:** the dummy and a Deku Baba hit Link.
-2. **The first enemies:**
+3. **The first enemies:**
    - `En_Dekubaba`, `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs);
    - enemy targeting and `Camera_Battle1`;
    - drops on death;
    - the effects they need (`EffectSs`: dust, hit sparks, the death flame).
-3. **Dungeon mechanics:**
+4. **Dungeon mechanics:**
    - `Door_Shutter` and small keys;
    - switches, torches (lighting Deku sticks), webs to burn or fall through;
    - the map and compass in the pause data;
    - `Bg_Ydan_*` (`Bg_Ydan_Hasi` is ported from the spikes).
-4. **Items in use:**
+5. **Items in use:**
    - Deku sticks and nuts, the Fairy Slingshot (`EnArrow` for seeds);
    - the C buttons in full;
    - a minimal pause menu for equipping (`z_kaleido_scope` is about 7,700 lines, so only the item screen at first);
    - saving (`z_sram.c`).
-5. **Gohma:**
+6. **Gohma:**
    - `Boss_Goma` (about 2,100 lines) and her larvae;
    - the boss room's camera and cutscenes (Phase 4's cutscene system);
    - the heart container, the blue warp out.

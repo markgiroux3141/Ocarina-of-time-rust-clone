@@ -454,6 +454,12 @@ impl PlayState {
         play.flags = crate::spawn::SceneFlags { chest: saved.chest, swch: saved.swch, clear: saved.clear, collect: saved.collect, ..Default::default() };
         let p = play.actor_spawn_entry(&link_entry).map_err(|e| anyhow::anyhow!("spawning Player: {e:?}"))?;
         play.player = Some(p);
+        // The end of Player_Init: the sound the entrance left (a door's), at Player.
+        if play.save.entrance_sound != 0 {
+            let id = play.save.entrance_sound;
+            play.audio.func_80078914(crate::audio::sfx::SfxPos::Actor(p), id);
+            play.save.entrance_sound = 0;
+        }
         // func_8002C0C0 (Actor_InitContext's, once Player is in): Navi's point at Player.
         if let Some(a) = play.actors.actor(p).cloned() {
             let eye = play.game_camera.eye;
@@ -467,6 +473,7 @@ impl PlayState {
         // Camera_Init's and Camera_InitPlayerSettings' shared state (sNextUID carries over).
         play.cam_globals = crate::camera::CameraGlobals { next_uid: play.cam_globals.next_uid, ..crate::camera::CameraGlobals::main_init() };
         play.game_camera.change_mode(&play.data.camera, crate::camera::CAM_MODE_NORMAL);
+        play.camera_sfx();
         let start_bg_cam = play.actors.actor(p).map(|a| a.params as u16 & 0xFF).unwrap_or(0xFF);
         if start_bg_cam != 0xFF {
             play.game_camera.change_bg_cam_index(&play.data.camera, &play.col, start_bg_cam as i32);

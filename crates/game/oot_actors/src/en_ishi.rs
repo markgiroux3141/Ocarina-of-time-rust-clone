@@ -5,8 +5,8 @@
 //! A broken small rock drops from its table (`EnIshi_DropCollectible`).
 //!
 //! Not ported: lifting and throwing (Player can't lift yet, so `Actor_HasParent` is never
-//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached), the fragments and
-//! dust (effects) and the sounds.
+//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached), and the fragments
+//! and dust (effects).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
@@ -116,12 +116,14 @@ impl EnIshi {
         // Actor_HasParent: Player doesn't lift things yet.
         let hit = self.collider.base.ac_flags & AC_HIT != 0;
         if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_info.is_some_and(|h| h.toucher.dmg_flags & DMG_BREAKS_ROCK != 0) {
-            // EnIshi_DropCollectible (the sound, the fragments and dust: not ported).
+            // EnIshi_DropCollectible.
             let mut drop_params = (self.actor.params >> 8) & 0xF;
             if drop_params >= 0xD {
                 drop_params = 0;
             }
             crate::en_item00::item_drop_collectible_random(play, None, self.actor.world_pos, drop_params << 4);
+            play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, BREAK_SFX_DURATIONS[ty], BREAK_SFX_IDS[ty]);
+            // sFragmentSpawnFuncs, sDustSpawnFuncs: the effects aren't ported.
             self.actor.kill();
         } else if self.actor.xz_dist_to_player < 600.0 {
             self.collider.update(&self.actor);
@@ -134,6 +136,10 @@ impl EnIshi {
         }
     }
 }
+
+/// `sBreakSfxIds`, `sBreakSfxDurations` (the C sizes both 0x2852, `NA_SE_EV_ROCK_BROKEN`'s id).
+const BREAK_SFX_IDS: [u16; 2] = [oot_game::audio::sfx::NA_SE_EV_ROCK_BROKEN, oot_game::audio::sfx::NA_SE_EV_WALL_BROKEN];
+const BREAK_SFX_DURATIONS: [u16; 2] = [20, 40];
 
 /// `EnIshi_SnapToFloor` / `EnKusa_SnapToFloor`: the floor below (from 30 above), plus `y`; the
 /// home position follows. False if there's no floor.
