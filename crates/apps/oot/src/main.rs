@@ -49,9 +49,20 @@ struct Cli {
     /// Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,
+    /// Start a new file as the file select does: Link's house with the opening (the Deku
+    /// Tree's narration, the nightmare, Navi sent, and her waking Link). Start skips a scene.
+    #[arg(long)]
+    new_file: bool,
     /// A pack file or loose folder to use instead of the default pack.
     #[arg(long)]
     pack: Option<PathBuf>,
+    /// A sequence to play (`gSequenceTable`'s index: 60 = Kokiri Forest, 30 = the title theme),
+    /// until the scenes' music is ported.
+    #[arg(long)]
+    music: Option<u8>,
+    /// No sound.
+    #[arg(long)]
+    no_audio: bool,
     #[arg(long, default_value_t = 1280)]
     width: u32,
     #[arg(long, default_value_t = 720)]
@@ -104,8 +115,11 @@ fn main() -> Result<()> {
         entrance: Some(cli.entrance.unwrap_or_default()),
         placeholders: cli.placeholders,
         preset: cli.preset,
+        new_file: cli.new_file,
         room: cli.room,
         at: cli.at,
+        audio: !cli.no_audio,
+        music: cli.music,
         ..Default::default()
     };
     oot::run_window(&opts, "OoT clone", cli.width, cli.height)

@@ -42,6 +42,8 @@ pub const ACTOR_FLAG_8: u32 = 1 << 8;
 pub const ACTOR_FLAG_16: u32 = 1 << 16;
 /// With `ACTOR_FLAG_0`: Navi can be asked about it with C-Up (`func_8083B644`).
 pub const ACTOR_FLAG_18: u32 = 1 << 18;
+/// `Actor_Draw` binds no point lights for it (`Lights_BindAll` with no position).
+pub const ACTOR_FLAG_22: u32 = 1 << 22;
 pub const ACTOR_FLAG_23: u32 = 1 << 23;
 pub const ACTOR_FLAG_24: u32 = 1 << 24;
 pub const ACTOR_FLAG_25: u32 = 1 << 25;

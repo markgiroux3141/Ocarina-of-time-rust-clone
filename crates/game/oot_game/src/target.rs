@@ -12,8 +12,12 @@
 //!   the colour of the actor's category (`sNaviColorList`).
 //!
 //! Targets are ordinary actors: `ACTOR_FLAG_0` makes them targetable, with `ACTOR_FLAG_2`
-//! they're hostile, and their `targetMode` and focus decide the rest. Navi (and its
-//! `naviRefPos`), the lock-on sounds and the BGM-enemy tracking are not modelled.
+//! they're hostile, and their `targetMode` and focus decide the rest.
+//!
+//! Navi's part (`En_Elf` reads it): `naviRefPos`, where she flies (the pointed actor's focus,
+//! or Player's), eased over four frames when the pointed actor changes (`unk_40`), and her
+//! colours for its category (`naviInner`, `naviOuter`, `Actor_SetNaviToActor`). The lock-on
+//! sounds and the BGM-enemy tracking are not modelled.
 
 #![allow(non_snake_case)] // unk_4B keeps the decomp's name
 
@@ -49,6 +53,17 @@ pub struct TargetCtx {
     pub target_center_pos: Vec3,
     /// `arr_50`: the reticle's last three screen positions.
     pub arr_50: [TargetEntry; 3],
+    /// `naviRefPos`, `naviInner`, `naviOuter` (`Color_RGBAf`): where Navi flies and her colours.
+    pub navi_ref_pos: Vec3,
+    pub navi_inner: [f32; 4],
+    pub navi_outer: [f32; 4],
+    /// `unk_40`: 1 when the pointed actor (or its category) changes, stepping to 0 by 0.25 as
+    /// `naviRefPos` eases over.
+    pub unk_40: f32,
+    /// `activeCategory`: the pointed actor's category (Player's without one).
+    pub active_category: usize,
+    /// `unk_8C`: an actor Navi is sent to for one frame (none of the ported actors sets it).
+    pub unk_8c: Option<ActorHandle>,
     /// What `func_8002C124` draws this frame (`None`: nothing).
     pub reticle: Option<ReticleDraw>,
 }
@@ -69,6 +84,23 @@ pub struct ReticleDraw {
     pub alpha: i16,
     pub count: usize,
 }
+
+/// `sNaviColorList[category].outer` (`z_actor.c`), with `inner`'s alpha 255 and this alpha 0.
+pub const NAVI_OUTER: [[u8; 3]; 13] = [
+    [0, 255, 0],
+    [0, 255, 0],
+    [0, 0, 255],
+    [0, 255, 0],
+    [150, 150, 255],
+    [200, 155, 0],
+    [0, 255, 0],
+    [0, 255, 0],
+    [0, 255, 0],
+    [200, 155, 0],
+    [0, 255, 0],
+    [0, 255, 0],
+    [0, 255, 0],
+];
 
 /// `sNaviColorList[category].inner`.
 pub const NAVI_INNER: [[u8; 3]; 13] = [
@@ -134,11 +166,34 @@ pub struct TargetView {
 }
 
 impl TargetCtx {
-    /// `func_8002C0C0` for Player (`Actor_InitContext`): `func_8002BE98` with its category.
+    /// A context before `Actor_InitContext`'s `func_8002C0C0`: `func_8002BE98` with Player's
+    /// category.
     pub fn new() -> TargetCtx {
         let mut ctx = TargetCtx::default();
         ctx.func_8002be98(crate::actor_ctx::ACTORCAT_PLAYER, Vec3::ZERO);
         ctx
+    }
+
+    /// `func_8002C0C0` (`Actor_InitContext`, with Player, once it's spawned): nothing pointed or
+    /// targeted, Navi to `actor`, and `func_8002BE98`.
+    pub fn func_8002c0c0(&mut self, actor: &Actor, view_eye: Vec3) {
+        self.arrow_pointed = None;
+        self.targeted = None;
+        self.unk_40 = 0.0;
+        self.unk_8c = None;
+        self.unk_4B = 0;
+        self.unk_4C = 0;
+        self.set_navi_to_actor(actor, actor.category);
+        self.func_8002be98(actor.category, view_eye);
+    }
+
+    /// `Actor_SetNaviToActor`: Navi's point at `actor`'s focus (raised by its target arrow's
+    /// offset), and the category's colours.
+    pub fn set_navi_to_actor(&mut self, actor: &Actor, category: usize) {
+        self.navi_ref_pos = Vec3::new(actor.focus_pos.x, actor.focus_pos.y + (actor.target_arrow_offset * actor.scale.y), actor.focus_pos.z);
+        let (i, o) = (navi_inner(category), NAVI_OUTER.get(category).copied().unwrap_or([0, 255, 0]));
+        self.navi_inner = [i[0] as f32, i[1] as f32, i[2] as f32, 255.0];
+        self.navi_outer = [o[0] as f32, o[1] as f32, o[2] as f32, 0.0];
     }
 
     /// `func_8002BE98`: a new target. The reticle starts at the eye, at full size (500), and
@@ -240,7 +295,7 @@ fn on_screen(view_proj: Mat4, a: &Actor) -> bool {
     sx > -20 && sx < 340 && sy > -160 && sy < 400
 }
 
-/// `func_8002C7BC` (without Navi and sounds), called with the actor Player keeps targeted.
+/// `func_8002C7BC` (without the sounds), called with the actor Player keeps targeted.
 pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame) {
     // Actor_UpdateAll: only a locked target with unk_66C >= 5 counts.
     let mut locked = f.player_target.filter(|&h| actors.actor(h).is_some_and(|a| !a.killed));
@@ -279,9 +334,26 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame) {
         }
     }
     ctx.unk_94 = candidate;
-    let pointed = locked.or(candidate);
-    if pointed != ctx.arrow_pointed {
+    let pointed = match ctx.unk_8c.take() {
+        Some(h) => Some(h),
+        None => locked.or(candidate),
+    };
+    let player_category = actors.actor(f.player).map(|a| a.category).unwrap_or(crate::actor_ctx::ACTORCAT_PLAYER);
+    let category = pointed.and_then(|h| actors.actor(h)).map(|a| a.category).unwrap_or(player_category);
+    if pointed != ctx.arrow_pointed || category != ctx.active_category {
         ctx.arrow_pointed = pointed;
+        ctx.active_category = category;
+        ctx.unk_40 = 1.0;
+    }
+    // Navi's point: eased towards the pointed actor (or Player) while unk_40 falls, then on it.
+    if let Some(a) = pointed.or(Some(f.player)).and_then(|h| actors.actor(h)) {
+        if !eng_math::step_to_f(&mut ctx.unk_40, 0.0, 0.25) {
+            let temp1 = 0.25 / ctx.unk_40;
+            let d = Vec3::new(a.world_pos.x, a.world_pos.y + (a.target_arrow_offset * a.scale.y), a.world_pos.z) - ctx.navi_ref_pos;
+            ctx.navi_ref_pos += d * temp1;
+        } else {
+            ctx.set_navi_to_actor(a, category);
+        }
     }
     // Reticle: drop the lock if the target's focus is behind the eye or off the view before
     // locking.

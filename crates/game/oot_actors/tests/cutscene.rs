@@ -211,6 +211,98 @@ fn the_deku_trees_first_talk_and_yes_open_his_mouth() {
     d.until(&mut w, 100, "the mouth open", |w| treemouth(w).unwrap().unk_168 >= 1.0);
 }
 
+/// The opening, from the file select's new file (`Sram_InitSave`: `ENTR_LINK_HOME_0`,
+/// `cutsceneIndex` 0xFFF1), through the chain its terminators make:
+/// - Link's house's cutscene layer 5 (0xFFF1 & 0xF + 4), its script at 0x15D0: Link asleep (cue
+///   0x1C, `D_808547C4` mode 38: `clink_op3_wait1`, no shadow), `TRANS_TYPE_CS_BLACK_FILL`
+///   (`ENTR_LINK_HOME_0_5`) held black until `TRANSITION_FX` 12 (55..81) lowers
+///   `cutsceneTransitionControl` from 255 to 100; texts 0x109D (40), 0x109E, 0x109F; the
+///   terminator at 280 to destination 35: `ENTR_SPOT00_0`, 0xFFF0, `TRANS_TYPE_FADE_BLACK_FAST`;
+/// - Hyrule Field's layer 4, the nightmare: Link held (cue 5, mode 8) at (-1, 0, 1348), walked
+///   (cue 1, mode 3), turning (cue 6, mode 9: `link_demo_furimuki`); the terminator at 540 to 11:
+///   `ENTR_SPOT04_0`, 0xFFF3, `TRANS_TYPE_FADE_WHITE`;
+/// - Kokiri Forest's layer 7: `ENTR_SPOT04_0_7`'s `TRANS_TYPE_FADE_WHITE_CS_DELAYED` waits white
+///   (`TRANS_MODE_INSTANCE_WAIT`) until `TRANSITION_FX` 9 (from 70) sets
+///   `cutsceneTransitionControl`; Link held (no cues: mode 0x31); Navi on her cue 1 (mode 10);
+///   the terminator at 940 to 10: `ENTR_LINK_HOME_0`, 0xFFF0, `TRANS_TYPE_FADE_BLACK`;
+/// - the house's layer 4, the wake-up: Navi's cues, Link's 0x1C, 0x1D (mode 39: tossing), 0x1E
+///   (40: sitting up, the shadow back at its frame 240), 0x1F (41: out of bed) and 5 (8: held at
+///   (0, 0, 60)); `CS_MISC` 14 at 645 (`VIEWPOINT_LOCKED`) and 12 at 647, the end: Link free,
+///   `cutsceneIndex` 0.
+#[test]
+fn the_opening_plays_from_the_file_selects_new_file() {
+    use oot_game::transition::*;
+    let Some(a) = assets() else { return };
+    let save = SaveContext::file_select_new();
+    assert_eq!((save.entrance_index, save.cutscene_index, save.adult, save.day_time), (a.scenes.entrance_index("ENTR_LINK_HOME_0").unwrap(), 0xFFF1, false, 0x6AAB));
+    let mut w = oot_actors::play_entrance(a.clone(), common::data().unwrap(), common::rules().unwrap(), save).expect("Play_Init");
+    const SCENE_LINK_HOME: u16 = 0x34;
+    const SCENE_SPOT00: u16 = 0x51;
+    const SCENE_SPOT04: u16 = 0x55;
+    // Play_Init: SCENE_LAYER_CUTSCENE_FIRST + 1, the layer's script (no XML names it: keyed by
+    // its offset), the entrance's CS black fill.
+    assert_eq!((w.scene_id, w.save.scene_layer), (SCENE_LINK_HOME, 5));
+    assert_eq!(w.cs_ctx.segment.as_ref().map(|s| (s.file.as_str(), s.name.as_str())), Some(("link_home_scene", "0x15D0")));
+    assert_eq!((w.transition.ty, w.save.cutscene_transition_control), (TRANS_TYPE_CS_BLACK_FILL, 0));
+    let mut d = Driver { prev: PadState::default(), no: false };
+    d.tick(&mut w);
+    // func_800645A0 → func_80068ECC: no trigger, so the letterbox at once and the script's
+    // frame 1 already run (CS_STATE_SKIPPABLE_EXEC); the fill's black.
+    assert_eq!((w.cs_ctx.state, w.cs_ctx.frames, w.transition.mode), (CS_STATE_SKIPPABLE_EXEC, 1, TRANS_MODE_CS_BLACK_FILL));
+    assert_eq!(w.screen_fill(), Some([0, 0, 0, 255]));
+    // Cue 0x1C (mode 38), once the spawn's walk-in (start mode 0xF) hands over to the cutscene
+    // (func_8083B998): at its start (0, 2, 116) facing 0x8000, asleep.
+    d.until(&mut w, 30, "mode 38", |w| w.player().unk_446 == 0x1C);
+    let p = w.player();
+    assert_eq!((p.cs_mode, p.actor.world_pos, p.actor.shape_rot.y, w.data.anim_name(p.skel.animation), p.shadow_feet), (6, Vec3::new(0.0, 2.0, 116.0), -0x8000, "clink_op3_wait1", false));
+    // The first text at 41; the fill stays black until the FX lowers it.
+    d.until(&mut w, 60, "0x109D", |w| w.msg_ctx.text_id == 0x109D);
+    assert_eq!((w.cs_ctx.frames, w.screen_fill()), (41, Some([0, 0, 0, 255])));
+    // TRANSITION_FX 12: 255 - 155 × Environment_LerpWeight(81, 55, frame); the fill follows it
+    // a frame later, and the transition ends at 100.
+    d.until(&mut w, 2000, "the fill's end", |w| w.transition.mode == TRANS_MODE_OFF);
+    assert_eq!((w.cs_ctx.frames, w.save.cutscene_transition_control, w.screen_fill()), (82, 100, Some([0, 0, 0, 100])));
+    // The terminator: destination 35.
+    d.until(&mut w, 3000, "the nightmare", |w| w.scene_id == SCENE_SPOT00);
+    assert_eq!((w.save.scene_layer, w.save.entrance_index), (4, a.scenes.entrance_index("ENTR_SPOT00_0").unwrap()));
+    // Cue 5 (mode 8): held at its start.
+    d.until(&mut w, 30, "cue 5", |w| w.player().unk_446 == 5);
+    assert_eq!((w.player().cs_mode, w.player().actor.world_pos), (6, Vec3::new(-1.0, 0.0, 1348.0)));
+    d.until(&mut w, 400, "cue 6", |w| w.player().unk_446 == 6);
+    assert_eq!(w.data.anim_name(w.player().skel.animation), "link_demo_furimuki");
+    // Destination 11.
+    d.until(&mut w, 600, "Kokiri Forest's layer 7", |w| w.scene_id == SCENE_SPOT04);
+    assert_eq!(w.save.scene_layer, 7);
+    assert_eq!(w.transition.ty, TRANS_TYPE_FADE_WHITE_CS_DELAYED);
+    d.tick(&mut w);
+    assert_eq!((w.transition.mode, w.screen_fill()), (TRANS_MODE_INSTANCE_WAIT, Some([160, 160, 160, 255])));
+    // TRANSITION_FX 9 from 70: the fade runs.
+    d.until(&mut w, 200, "the delayed fade", |w| w.transition.mode == TRANS_MODE_INSTANCE_RUNNING);
+    assert_eq!((w.cs_ctx.frames, w.save.cutscene_transition_control), (71, 1));
+    // Link held (no cues: mode 0x31); Navi on her cue 1 (func_80A0461C: mode 10).
+    assert_eq!(w.player().cs_mode, 0x31);
+    let navi = w.player().navi_actor.and_then(|h| w.actors.downcast::<oot_actors::en_elf::EnElf>(h)).unwrap();
+    assert_eq!((navi.unk_2a8, w.cs_ctx.npc_actions[8].map(|c| c.action)), (10, Some(1)));
+    // Destination 10: the house's layer 4.
+    d.until(&mut w, 3000, "the wake-up", |w| w.scene_id == SCENE_LINK_HOME);
+    assert_eq!((w.save.scene_layer, w.transition.ty), (4, TRANS_TYPE_FADE_BLACK_FAST));
+    for (cue, mode, anim) in [(0x1D, 39, "clink_op3_negaeri"), (0x1E, 40, "clink_op3_okiagari"), (0x1F, 41, "clink_op3_tatiagari")] {
+        d.until(&mut w, 2000, "the next cue", |w| w.player().unk_446 == cue);
+        // A negative D_808547C4 mode: no move to the cue's start.
+        assert_eq!(w.data.anim_name(w.player().skel.animation), anim, "cue {cue:#x}, mode {mode}");
+        if cue == 0x1F {
+            assert!(w.player().shadow_feet, "func_80851FB0 put the shadow back");
+        }
+    }
+    // Cue 5 at 645: held at (0, 0, 60); CS_MISC 14 (645) and 12 (647): the end.
+    d.until(&mut w, 400, "cue 5", |w| w.player().unk_446 == 5);
+    assert_eq!(w.player().actor.world_pos, Vec3::new(0.0, 0.0, 60.0));
+    d.until(&mut w, 100, "the end", |w| w.cs_ctx.state == CS_STATE_IDLE && w.player().cs_mode == 0);
+    let p = w.player();
+    assert_eq!((w.save.cutscene_index, w.viewpoint, p.action), (0, oot_game::play::VIEWPOINT_LOCKED, Action::StandingStill));
+    assert_eq!(p.actor.shape_rot.y, -0x8000);
+}
+
 #[test]
 fn no_says_0x1018_and_the_tree_waits_to_be_targeted() {
     let Some(a) = assets() else { return };

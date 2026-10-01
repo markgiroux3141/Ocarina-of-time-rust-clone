@@ -12,8 +12,13 @@ pub const LAYER_CHILD_DAY: usize = 0;
 pub const LAYER_CHILD_NIGHT: usize = 1;
 pub const LAYER_ADULT_DAY: usize = 2;
 pub const LAYER_ADULT_NIGHT: usize = 3;
-/// Layers the pack stores (cutscene layers 4+ are loaded only by cutscenes).
+/// The non-cutscene layers, which every scene has (a missing header falls back as
+/// `Scene_CommandAlternateHeaderList` does). Cutscene layers (4 and up) are in the pack for the
+/// scenes whose alternate header lists name them (docs/adr/0023-navi-and-the-opening.md).
 pub const GAME_LAYERS: usize = 4;
+/// `SCENE_LAYER_CUTSCENE_FIRST` (`z64save.h`): `Play_Init` picks `4 + (cutsceneIndex & 0xF)`
+/// for a `cutsceneIndex` of 0xFFF0 and up.
+pub const SCENE_LAYER_CUTSCENE_FIRST: usize = 4;
 
 /// The scene layer the game picks for a non-cutscene entrance (`Play_Init`: `sceneLayer` from
 /// `linkAge` and `nightFlag`).
@@ -186,10 +191,26 @@ pub struct SceneData {
     pub name: String,
     pub id: u16,
     pub draw_config: String,
-    /// `layers[l]` for `gSaveContext.sceneLayer` l in 0..`GAME_LAYERS`. A layer the scene has no
-    /// header for falls back the way `Scene_CommandAlternateHeaderList` does (adult night to
+    /// `layers[l]` for `gSaveContext.sceneLayer` l: the four game layers, then each cutscene
+    /// layer up to the last one the scene's alternate header list names. A layer the scene has
+    /// no header for falls back the way `Scene_CommandAlternateHeaderList` does (adult night to
     /// adult day, anything else to the main header), so every entry is filled.
     pub layers: Vec<LayerData>,
+}
+
+impl SceneData {
+    /// The header `Play_SpawnScene` executes for `gSaveContext.sceneLayer` `layer`, and the
+    /// layer it's stored as. Past the scene's alternate header list the C reads whatever follows
+    /// the list; the main header stands in (logged).
+    pub fn layer(&self, layer: usize) -> (usize, &LayerData) {
+        match self.layers.get(layer) {
+            Some(l) => (layer, l),
+            None => {
+                log::error!("{}: no scene layer {layer} (the alternate header list has {}): the main header", self.name, self.layers.len().saturating_sub(1));
+                (0, &self.layers[0])
+            }
+        }
+    }
 }
 
 /// A scene header as loaded for one layer.
@@ -207,6 +228,9 @@ pub struct LayerData {
     pub keep_object: Option<String>,
     /// Its `OBJECT_*` id (`objectCtx.subKeepIndex`'s object).
     pub keep_object_id: Option<i16>,
+    /// `SCENE_CMD_ID_SPECIAL_FILES`' `cUpElfMsgNum`: 0 for none, else 1 + the index into
+    /// `sNaviMsgFiles` of Navi's C-Up texts (`play->cUpElfMsgs`, `elf_message::ElfMessageTables`).
+    pub c_up_elf_msg_num: u8,
     /// `SCENE_CMD_ID_ENTRANCE_LIST`: indexed by spawn number (`play->curSpawn`).
     pub entrances: Vec<EntranceEntry>,
     /// `SCENE_CMD_ID_EXIT_LIST`: exit index − 1 → entrance index (`play->setupExitList`).

@@ -38,6 +38,15 @@
 //! Then over the open jaw into the mouth, to `ENTR_YDAN_0`, whose intro (`gDekuTreeIntroCs`)
 //! plays the first time in. No preset.
 //!
+//! **A new file into the Deku Tree** (GAME-03 milestone 5, `Route::NewFileDekuTree`, the
+//! `new_file_deku_tree` test and the `new-file-deku-tree` script) starts as the file select
+//! starts a new file (`SaveContext::file_select_new`): the opening plays, A read at each box that
+//! waits for it as a player would (Link's house's layer 5, the nightmare on Hyrule Field's layer
+//! 4, Kokiri Forest's layer 7 where the Deku Tree sends Navi, and her waking Link on the house's
+//! layer 4); then the new save's run from where the wake-up leaves Link, with C-Up to Navi on
+//! the plateau once she has her text (`naviTimer` 600 on: 0x140, "the Great Deku Tree wants to
+//! talk to you").
+//!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
 //! green rupees). The run cuts the four bushes by child 4 in turn until one drops. A change to
@@ -123,6 +132,14 @@ pub enum Step {
     /// The Deku Tree's talk (`D_808BCE20`) answered yes and its script (`D_808BD520`) over:
     /// `EVENTCHKINF_05`, Link free.
     TreeTalk,
+    /// The opening: Hyrule Field's cutscene layer 4 (the nightmare) entered.
+    Nightmare,
+    /// Kokiri Forest's cutscene layer 7 (the Deku Tree sends Navi) entered.
+    NaviSent,
+    /// Link's house's cutscene layer 4 over: Navi has woken Link, and he stands.
+    WakeUp,
+    /// C-Up to Navi, and her text read to the end.
+    Navi,
 }
 
 impl Step {
@@ -154,6 +171,10 @@ impl Step {
             Step::MidoAside => "mido_aside",
             Step::PastMido => "past_mido",
             Step::TreeTalk => "tree_talk",
+            Step::Nightmare => "nightmare",
+            Step::NaviSent => "navi_sent",
+            Step::WakeUp => "wake_up",
+            Step::Navi => "navi",
         }
     }
 }
@@ -171,6 +192,9 @@ pub enum Route {
     /// The Mido and shop run, then into room 1, the Deku Tree's talk answered yes, and into
     /// his mouth (GAME-03 milestone 4): no preset.
     NewSaveDekuTree,
+    /// The file select's new file: the opening, then the new save's run from where the wake-up
+    /// leaves Link, with C-Up to Navi on the way (GAME-03 milestone 5).
+    NewFileDekuTree,
 }
 
 impl Route {
@@ -183,8 +207,27 @@ impl Route {
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
-            Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree => None,
+            Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
+    }
+
+    /// Whether it starts on the file select's new file (`SaveContext::file_select_new`, the
+    /// opening) instead of `SaveContext::new` at the entrance.
+    pub fn new_file(self) -> bool {
+        self == Route::NewFileDekuTree
+    }
+
+    /// The save it starts with, entering by `entrance_index` (its entrance's).
+    pub fn save(self, entrance_index: u16) -> oot_game::save::SaveContext {
+        use oot_game::save::SaveContext;
+        if self.new_file() {
+            return SaveContext::file_select_new();
+        }
+        let mut s = SaveContext::new(entrance_index, false, oot_game::env::clock_time(10, 0) as u16);
+        if let Some(p) = self.preset() {
+            s.apply_preset(p).expect("the route's preset");
+        }
+        s
     }
 
     /// The sandbox script that runs it.
@@ -194,6 +237,7 @@ impl Route {
             Route::SwordChest => "sword-chest",
             Route::MidoShop => "mido-shop",
             Route::NewSaveDekuTree => "new-save-deku-tree",
+            Route::NewFileDekuTree => "new-file-deku-tree",
         }
     }
 
@@ -202,13 +246,14 @@ impl Route {
         match self {
             Route::MidoShop => 12000,
             Route::NewSaveDekuTree => 16000,
+            Route::NewFileDekuTree => 24000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -258,6 +303,13 @@ enum Task {
     /// Towards the point until the Deku Tree's talk starts (`Bg_Treemouth`'s trigger), then A
     /// through its texts, yes at its question, until the scripts are over and Link is free.
     TreeTalk(Vec3),
+    /// The opening's scripts (`sub`: 0 Link's house's layer 5, 1 the nightmare, 2 Kokiri Forest's
+    /// layer 7, 3 the wake-up): A at each box that waits, until the last one is over and Link
+    /// stands in his house.
+    Opening,
+    /// Idle until Navi has her text (Player's `naviTextId`, set by her update), then C-Up, and
+    /// A through her text until the box closes and Link stands.
+    TalkNavi,
 }
 
 /// An actor the run talks to.
@@ -338,6 +390,7 @@ impl Playthrough {
             Route::SwordChest => Self::sword_chest(false),
             Route::MidoShop => Self::mido_shop(),
             Route::NewSaveDekuTree => Self::new_save_deku_tree(),
+            Route::NewFileDekuTree => Self::new_file_deku_tree(),
         };
         Playthrough {
             route,
@@ -500,6 +553,22 @@ impl Playthrough {
             // The Deku Tree's intro (gDekuTreeIntroCs) holds Link until it ends.
             Task::Settle(Some(Step::DekuTree)),
         ]);
+        v
+    }
+
+    /// The new file's run: the opening, then the new save's run into the Deku Tree from where it
+    /// leaves Link, with C-Up to Navi on the plateau before the crawlspace (by then her timer
+    /// is past 600).
+    fn new_file_deku_tree() -> Vec<Task> {
+        let mut v = vec![Task::Opening];
+        let rest = Self::new_save_deku_tree();
+        let crawl = rest.iter().position(|t| matches!(t, Task::Crawl(..))).expect("the crawlspace");
+        for (i, t) in rest.into_iter().enumerate() {
+            if i == crawl {
+                v.push(Task::TalkNavi);
+            }
+            v.push(t);
+        }
         v
     }
 
@@ -798,6 +867,8 @@ impl Playthrough {
                 }
             }
             Task::CutBushes(bushes) => self.cut_bushes(w, &bushes),
+            Task::Opening => self.opening(w),
+            Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
                 use oot_game::cutscene::CS_STATE_IDLE;
                 match self.sub {
@@ -831,6 +902,75 @@ impl Playthrough {
                         Some(if Self::text_waits(w) && (w.message_state() != TEXT_STATE_CHOICE || w.msg_ctx.choice_index == 0) { self.press(BTN_A) } else { idle })
                     }
                 }
+            }
+        }
+    }
+
+    /// `Task::Opening`: A at each box that waits (every other frame), marking each scene the
+    /// chain enters, until the wake-up's script is over and Link stands in his house.
+    fn opening(&mut self, w: &PlayState) -> Option<PadState> {
+        use oot_game::cutscene::CS_STATE_IDLE;
+        const SCENE_SPOT00: u16 = 0x51;
+        const SCENE_SPOT04: u16 = 0x55;
+        const SCENE_LINK_HOME: u16 = 0x34;
+        let at = (w.scene_id, w.save.scene_layer);
+        let next = match self.sub {
+            0 => (at == (SCENE_SPOT00, 4)).then_some(Step::Nightmare),
+            1 => (at == (SCENE_SPOT04, 7)).then_some(Step::NaviSent),
+            2 => (at == (SCENE_LINK_HOME, 4)).then_some(Step::WakeUp),
+            _ => None,
+        };
+        if let Some(s) = next {
+            self.sub += 1;
+            if s != Step::WakeUp {
+                self.steps.push((s, self.frame));
+                self.done = Some(s);
+                self.rupees.push((s, self.last_rupees));
+            }
+        }
+        if self.sub == 3 {
+            let over = w.cs_ctx.state == CS_STATE_IDLE && w.save.cutscene_index == 0 && w.player().cs_mode == 0 && w.message_state() == TEXT_STATE_NONE;
+            if over && Self::settled(w) {
+                self.wait += 1;
+                if self.wait > SETTLE_FRAMES {
+                    self.finish(Some(Step::WakeUp));
+                    return None;
+                }
+            }
+        }
+        Some(if w.message_state() != TEXT_STATE_NONE && Self::text_waits(w) { self.press(BTN_A) } else { PadState::default() })
+    }
+
+    /// `Task::TalkNavi`'s phases in `sub`: 0 idle until Navi has her text; 1 C-Up until the talk
+    /// starts; 2 A through her text until the box closes and Link stands.
+    fn talk_navi(&mut self, w: &PlayState) -> Option<PadState> {
+        let idle = PadState::default();
+        let p = w.player();
+        self.wait += 1;
+        if self.wait > 3000 {
+            self.failure = Some(format!("the talk to Navi stalled: sub {}, naviTimer {}, naviTextId {:#x}", self.sub, w.save.navi_timer, p.navi_text_id));
+            return None;
+        }
+        match self.sub {
+            0 => {
+                if p.navi_text_id != 0 {
+                    self.sub = 1;
+                }
+                Some(idle)
+            }
+            1 => {
+                if w.message_state() != TEXT_STATE_NONE {
+                    self.sub = 2;
+                    return Some(idle);
+                }
+                Some(self.press(eng_input::pad::BTN_CUP))
+            }
+            _ => {
+                if w.message_state() == TEXT_STATE_NONE && Self::settled(w) {
+                    self.finish(Some(Step::Navi));
+                    return None;
+                }
+                Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
             }
         }
     }

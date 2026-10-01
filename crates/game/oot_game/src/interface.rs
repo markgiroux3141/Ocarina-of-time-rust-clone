@@ -163,6 +163,11 @@ pub struct InterfaceContext {
     pub beating_heart_prim: [u8; 3],
     pub beating_heart_env: [u8; 3],
     pub restrictions: Restrictions,
+    /// `naviCalling` (`Interface_SetNaviCall`), and `z_parameter.c`'s `sCUpInvisible` and
+    /// `sCUpTimer` it resets: the C-Up button's "Navi" prompt (not drawn).
+    pub navi_calling: bool,
+    pub c_up_invisible: i16,
+    pub c_up_timer: i16,
 }
 
 impl Default for InterfaceContext {
@@ -198,6 +203,9 @@ impl Default for InterfaceContext {
             beating_heart_prim: [0; 3],
             beating_heart_env: [0; 3],
             restrictions: Restrictions::default(),
+            navi_calling: false,
+            c_up_invisible: 0,
+            c_up_timer: 0,
         }
     }
 }
@@ -281,6 +289,18 @@ impl InterfaceContext {
             action = DO_ACTION_NONE;
         }
         self.do_action_segment[load_offset] = (action != DO_ACTION_NONE).then_some(action);
+    }
+
+    /// `Interface_SetNaviCall`: 0x1D or 0x1E (Navi's hello or call, sounds not played) start the
+    /// C-Up prompt outside cutscenes; 0x1F stops it.
+    pub fn set_navi_call(&mut self, navi_call_state: u16, cs_idle: bool) {
+        if (navi_call_state == 0x1D || navi_call_state == 0x1E) && !self.navi_calling && cs_idle {
+            self.navi_calling = true;
+            self.c_up_invisible = 0;
+            self.c_up_timer = 10;
+        } else if navi_call_state == 0x1F && self.navi_calling {
+            self.navi_calling = false;
+        }
     }
 
     /// `Interface_SetDoAction`: the A button flips to `action` (the pause menu isn't ported).

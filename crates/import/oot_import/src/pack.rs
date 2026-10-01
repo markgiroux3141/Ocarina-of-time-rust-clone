@@ -197,6 +197,10 @@ pub fn import(p: &Project, out: &Output) -> Result<ImportReport> {
     m.scenes = import_scenes(p, &w, &mut tally)?;
     m.timings.push(("scenes".into(), t.elapsed().as_secs_f64()));
 
+    let t = Instant::now();
+    import_audio(p, &w, &mut tally)?;
+    m.timings.push(("audio".into(), t.elapsed().as_secs_f64()));
+
     for (k, n) in &tally.listed {
         m.counts.insert(k.clone(), (*n, tally.imported.get(k).copied().unwrap_or(0)));
     }
@@ -249,7 +253,25 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
     w.put(keys::INTERFACE, &crate::tables::load_interface(decomp, &st).context("the interface tables")?)?;
     w.put(keys::ITEMS, &crate::tables::load_items(decomp).context("the item tables")?)?;
     import_cutscenes(p, &st, w, tally).context("the cutscenes")?;
+    w.put(keys::ELF_MESSAGES, &crate::elf_message::load(decomp, &p.rom).context("the C-Up texts")?)?;
     Ok(rules)
+}
+
+/// The audio library's data (docs/adr/0024-audio-data.md): its tables, and the ROM's three
+/// audio files as they are.
+fn import_audio(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<()> {
+    use crate::audio::LoadAudioData;
+    let a = eng_audio::AudioData::load(p).context("the audio data")?;
+    w.put(keys::AUDIO_TABLES, &a.tables)?;
+    for f in [&a.audiobank, &a.audioseq, &a.audiotable] {
+        w.put(&keys::audio_rom(&f.name), f)?;
+        tally.ok("AudioRomFile");
+    }
+    let fonts = eng_audio::context::AudioTable::parse(&a.tables.sound_font_table).entries.len();
+    let seqs = eng_audio::context::AudioTable::parse(&a.tables.sequence_table).entries.len();
+    let banks = eng_audio::context::AudioTable::parse(&a.tables.sample_bank_table).entries.len();
+    tally.notes.push(format!("audio: {fonts} fonts, {seqs} sequences, {banks} sample banks, {} audio specs", a.tables.specs.len()));
+    Ok(())
 }
 
 /// The overlays' cutscene scripts, and `CutsceneTables`: every script's key (the scene ones
@@ -270,9 +292,42 @@ fn import_cutscenes(p: &Project, st: &SceneTables, w: &PackWriter, tally: &mut T
         w.put(&key, &s)?;
         tally.ok("OverlayCutscene");
     }
+    // The scene layers' scripts no XML names (the cutscene layers': docs/adr/0023), by offset.
+    for def in &st.scenes {
+        let Ok(data) = p.rom.file_by_name(&def.file) else { continue };
+        let mut seen = BTreeSet::new();
+        for layer in 0..crate::scene::layer_count(&data) {
+            let Ok((_, cmds)) = crate::scene::layer_commands(&data, crate::scene::SCENE_SEGMENT, layer) else { continue };
+            let Some(c) = cmds.iter().find(|c| c.code == crate::scene::CMD_CUTSCENE_DATA && c.data2 >> 24 == crate::scene::SCENE_SEGMENT as u32) else { continue };
+            let off = (c.data2 & 0xFF_FFFF) as usize;
+            if xml_cutscene_at(p, &def.file, off).is_some() || !seen.insert(off) {
+                continue;
+            }
+            let bytes = crate::cutscene::scene_script(&data, off).with_context(|| format!("{} layer {layer}: the script at {off:#x}", def.file))?;
+            let key = keys::cutscene_at(&def.file, off);
+            let name = keys::cutscene_offset_name(off);
+            w.put(&key, &oot_game::cutscene::CutsceneScript { file: def.file.clone(), name: name.clone(), data: bytes })?;
+            scripts.push((format!("{}/{name}", def.file), key));
+            tally.ok("LayerCutscene");
+        }
+    }
     let entrance_cutscenes = crate::cutscene::entrance_cutscenes(&p.config.decomp, &st.entrances, |n| scripts.iter().find(|(s, _)| s == n).map(|(_, k)| k.clone()))?;
     w.put(keys::CUTSCENES, &oot_game::cutscene::CutsceneTables { entrance_cutscenes, scripts })?;
     Ok(())
+}
+
+/// The XML's `<Cutscene>` symbol at `offset` in scene file `file`.
+fn xml_cutscene_at(p: &Project, file: &str, offset: usize) -> Option<String> {
+    p.symbols.file(file).and_then(|f| f.of_kind("Cutscene").find(|s| s.offset as usize == offset).map(|s| s.name.clone()))
+}
+
+/// The pack key of the script at `offset` in scene file `file`: the XML symbol's, or, for the
+/// scripts no XML names, the offset's (`keys::cutscene_at`).
+pub fn scene_cutscene_key(p: &Project, file: &str, offset: usize) -> String {
+    match xml_cutscene_at(p, file, offset) {
+        Some(sym) => keys::cutscene(file, &sym),
+        None => keys::cutscene_at(file, offset),
+    }
 }
 
 /// Every texture, collision header, skeleton, animation and standalone display list of one
@@ -596,19 +651,21 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
     Ok(())
 }
 
-/// The time the rooms of a layer are baked at: 10:00 (a new save's start) for day layers,
-/// midnight for night layers. Draw configs that depend on the time within a layer (none of the
-/// ported ones for their geometry) are baked at that time.
+/// The time the rooms of a layer are baked at: 10:00 (a new save's start) for day layers and the
+/// cutscene layers, midnight for night layers. Draw configs that depend on the time within a
+/// layer (none of the ported ones for their geometry) are baked at that time.
 pub fn bake_time(layer: usize) -> u16 {
     let night = layer == oot_game::scene::LAYER_CHILD_NIGHT || layer == oot_game::scene::LAYER_ADULT_NIGHT;
     clock_time(if night { 0 } else { 10 }, 0) as u16
 }
 
 /// The draw config state a layer's rooms are built with, as the game's scene load sets it
-/// (`gameplayFrames` 0, `Scene_CommandTimeSettings` applied to the bake time).
+/// (`gameplayFrames` 0, `Scene_CommandTimeSettings` applied to the bake time). A cutscene layer
+/// (4 and up) says nothing of Link's age or the time: it's baked for a child by day, the new
+/// file's opening (docs/adr/0023-navi-and-the-opening.md).
 pub fn bake_state(layer: usize, room0_time: Option<[u8; 3]>) -> drawcfg::State {
     let night = layer == oot_game::scene::LAYER_CHILD_NIGHT || layer == oot_game::scene::LAYER_ADULT_NIGHT;
-    let child = layer == oot_game::scene::LAYER_CHILD_DAY || layer == oot_game::scene::LAYER_CHILD_NIGHT;
+    let child = layer == oot_game::scene::LAYER_CHILD_DAY || layer == oot_game::scene::LAYER_CHILD_NIGHT || layer >= oot_game::scene::SCENE_LAYER_CUTSCENE_FIRST;
     let (day, _, _) = scene_times(bake_time(layer), room0_time);
     drawcfg::State { gameplay_frames: 0, child, night, scene_layer: layer as i64, day_time: day }
 }
@@ -650,19 +707,14 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
         skybox: sd.scene.skybox,
         keep_object: sd.keep_file.clone(),
         keep_object_id: sd.scene.keep_object.map(|k| k as i16),
+        c_up_elf_msg_num: sd.scene.c_up_elf_msg_num,
         entrances: sd.scene.entrances.clone(),
         exits: sd.scene.exits.clone(),
         transition_actors: sd.scene.transition_actors.clone(),
         paths: sd.scene.paths.clone(),
         scene_cam_type: sd.scene.scene_cam_type,
-        // The script at the command's offset is the XML's Cutscene symbol there.
-        cutscene: match sd.scene.cutscene {
-            Some(off) => {
-                let sym = p.symbols.file(file).and_then(|f| f.of_kind("Cutscene").find(|s| s.offset as usize == off).map(|s| s.name.clone()));
-                Some(keys::cutscene(file, &sym.with_context(|| format!("{file} layer {layer}: no Cutscene symbol at {off:#x}"))?))
-            }
-            None => None,
-        },
+        // The script at the command's offset: the XML's Cutscene symbol there, or the offset's.
+        cutscene: sd.scene.cutscene.map(|off| scene_cutscene_key(p, file, off)),
         rooms: (0..rooms.len()).map(|ri| keys::room(file, layer, ri)).collect(),
         bake_day_time: state.day_time,
         notes: notes.iter().cloned().collect(),
@@ -687,7 +739,9 @@ fn import_scenes(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Scene
         let mut layers = Vec::new();
         let mut seen_headers = Vec::new();
         let mut room_files = BTreeSet::new();
-        for layer in 0..GAME_LAYERS {
+        // The game layers, then the cutscene layers the alternate header list names.
+        let n_layers = crate::scene::layer_count(&p.rom.file_by_name(&def.file)?).max(GAME_LAYERS);
+        for layer in 0..n_layers {
             let (ld, rooms, collision) = layer_records(p, &tables, &def.file, layer).with_context(|| format!("{} layer {layer}", def.file))?;
             // Identical headers of other layers are stored once.
             w.put(&ld.collision, &collision)?;

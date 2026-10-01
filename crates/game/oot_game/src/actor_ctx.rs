@@ -119,7 +119,20 @@ pub trait PlayerIface {
     fn set_cs_mode(&mut self, cs_mode: u8, actor: Option<ActorHandle>, door_bg_cam_index: i16);
     /// `csMode`.
     fn cs_mode(&self) -> u8;
+    /// `bodyPartsPos[i]` (`PLAYER_BODYPART_*`), from the last draw.
+    fn body_part(&self, i: usize) -> Vec3;
+    /// `naviTextId`: what Navi says when C-Up talks to her (negative: at once), set by her
+    /// update and cleared at the end of every Player update.
+    fn navi_text_id(&self) -> i16;
+    fn set_navi_text_id(&mut self, id: i16);
+    /// `naviActor`: the fairy `Player_Init` spawned.
+    fn navi_actor(&self) -> Option<ActorHandle>;
 }
+
+/// `PLAYER_BODYPART_*` (`z64player.h`) the other actors read.
+pub const PLAYER_BODYPART_WAIST: usize = 0;
+pub const PLAYER_BODYPART_HEAD: usize = 7;
+pub const PLAYER_BODYPART_HAT: usize = 8;
 
 /// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.
 pub trait ActorImpl: Any {

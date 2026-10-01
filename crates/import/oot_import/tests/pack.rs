@@ -159,17 +159,23 @@ fn ported_draw_configs_match_the_c_interpreter() {
 #[test]
 fn room_meshes_match_the_rom_path() {
     let Some(c) = ctx() else { return };
-    // The scenes the golden renders use, in every game layer: the pack's rooms and collision
-    // equal what the spikes built from the ROM for that layer at the bake time.
-    for file in ["spot04_scene", "spot00_scene", "ydan_scene"] {
+    // The scenes the golden renders use and the opening's, in every layer (the game layers,
+    // then the cutscene layers their alternate header lists name: spot04 to 13, spot00 to 12,
+    // link_home to 5, ydan none): the pack's rooms and collision equal what the spikes built from
+    // the ROM for that layer at the bake time.
+    for (file, layers) in [("spot04_scene", 14), ("spot00_scene", 13), ("ydan_scene", GAME_LAYERS), ("link_home_scene", 6)] {
         let scene = c.pack.scene(file).unwrap();
-        assert_eq!(scene.layers.len(), GAME_LAYERS);
-        for layer in 0..GAME_LAYERS {
+        assert_eq!(scene.layers.len(), layers, "{file}");
+        assert_eq!(oot_import::scene::layer_count(&c.p.rom.file_by_name(file).unwrap()), layers, "{file}");
+        for layer in 0..layers {
             let (ld, rooms, collision) = layer_records(&c.p, &c.tables, file, layer).unwrap();
             assert_eq!(scene.layers[layer], ld, "{file} layer {layer}");
             assert_eq!(c.pack.collision(&ld.collision).unwrap(), collision, "{file} layer {layer} collision");
             for (ri, r) in rooms.iter().enumerate() {
                 assert_eq!(&c.pack.room(&keys::room(file, layer, ri)).unwrap(), r, "{file} layer {layer} room {ri}");
+            }
+            if layer >= GAME_LAYERS {
+                continue;
             }
             // The spike loaded a scene with the state from the requested time: for the day
             // layers at 10:00 that is the bake state itself; at night the bake time is
@@ -283,10 +289,12 @@ fn the_import_covers_the_xmls_and_the_scans() {
         assert_eq!(i, l, "{kind}");
     }
     assert_eq!(m.counts["Skeleton"], (194, 184));
-    // `ootx scan-scenes --all-layers`: 141 distinct headers, 456 rooms, 2533 entries, 168,566
-    // triangles in the main headers, 0 unknown opcodes, the 4 unresolved references.
+    // `ootx scan-scenes --all-layers`: 141 distinct headers, 456 rooms, 2533 entries in the game
+    // layers; the 106 cutscene layers of 30 scenes add 106 headers, 199 rooms and 1489 entries
+    // (docs/adr/0023); 168,566 triangles in the main headers, 0 unknown opcodes, the 4 unresolved
+    // references.
     let s = &m.scenes;
-    assert_eq!((s.scenes, s.headers, s.rooms, s.entries), (110, 141, 456, 2533));
+    assert_eq!((s.scenes, s.headers, s.rooms, s.entries), (110, 141 + 106, 456 + 199, 2533 + 1489));
     assert_eq!(s.main_triangles, 168_566);
     assert_eq!(s.unknown_opcodes, 0);
     assert_eq!(s.unresolved.len(), 4, "{:?}", s.unresolved);
@@ -341,7 +349,9 @@ fn scene_lists_cover_what_the_game_indexes() {
     let mut problems = Vec::new();
     let mut checked = 0;
     for (&id, sd) in &scenes {
-        for (layer, ld) in sd.layers.iter().enumerate() {
+        // The game layers: an exit from a cutscene layer leads to the layer the next
+        // cutsceneIndex picks, not to the same one.
+        for (layer, ld) in sd.layers.iter().enumerate().take(GAME_LAYERS) {
             let col = c.pack.collision(&ld.collision).unwrap();
             let used: BTreeSet<usize> = col.polys.iter().map(|p| (col.surface_types[p.ty as usize].data[0] >> 8 & 0x1F) as usize).filter(|&e| e != 0).collect();
             for &exit in &used {
@@ -498,4 +508,97 @@ fn path_lists_match_the_xmls() {
     let spot04 = c.pack.scene("spot04_scene").unwrap();
     let boulder = &spot04.layers[0].paths[2];
     assert_eq!(boulder.points, [[-247, 120, 1869], [-247, 120, 1538], [-575, 120, 1538], [-575, 120, 1869], [-247, 120, 1869]]);
+}
+
+/// Navi's C-Up texts (`table/elf_messages`): the ROM's `elf_message_field` and
+/// `elf_message_ydan` (the import checks them against `ElfMessage` arrays built from the C's
+/// macros), and `code`'s Saria tables; `SCENE_CMD_ID_SPECIAL_FILES`' `cUpElfMsgNum` per scene.
+#[test]
+fn the_c_up_texts_are_the_c_s() {
+    let Some(c) = ctx() else { return };
+    let t = c.pack.elf_messages().unwrap();
+    assert_eq!(t.files.len(), 2);
+    // gOverworldNaviMsgs: 28 commands; ELF_MSG_FLAG(CHECK, 0x40, false, EVENTCHKINF_05) first
+    // (B0: CHECK 0 << 5 | FLAG 0 << 1 | false), ELF_MSG_END(0x5F) last (END 7 << 5).
+    assert_eq!(t.files[0].len(), 28 * 4);
+    assert_eq!(&t.files[0][..4], &[0x00, 0x05, 0x40, 0x00]);
+    assert_eq!(&t.files[0][27 * 4..], &[0xE0, 0x00, 0x5F, 0x00]);
+    // gDungeonNaviMsgs: ELF_MSG_END(0x5F) alone.
+    assert_eq!(t.files[1], [0xE0, 0x00, 0x5F, 0x00]);
+    // sChildSariaMsgs: ELF_MSG_STRENGTH_UPG(SKIP, 3, false, 0) (SKIP 3 << 5 | OTHER 3 << 1,
+    // STRENGTH_UPG 0 << 4 | 0) first; 13 commands. sAdultSariaMsgs: 6.
+    assert_eq!(&t.child_saria[..4], &[0x66, 0x00, 0x03, 0x00]);
+    assert_eq!((t.child_saria.len(), t.adult_saria.len()), (13 * 4, 6 * 4));
+    for (file, num) in [("spot04_scene", 1), ("spot00_scene", 1), ("link_home_scene", 0), ("ydan_scene", 2)] {
+        assert_eq!(c.pack.scene(file).unwrap().layers[0].c_up_elf_msg_num, num, "{file}");
+    }
+}
+
+/// The cutscene layers' scripts (docs/adr/0023): no XML names them, so each is keyed by its
+/// scene file and offset, and walked to its `CS_END` like the named ones.
+#[test]
+fn the_cutscene_layers_scripts_are_keyed_by_offset() {
+    let Some(c) = ctx() else { return };
+    for (file, layer, key) in [
+        ("link_home_scene", 4, "cutscene/link_home_scene/0x1040"),
+        ("link_home_scene", 5, "cutscene/link_home_scene/0x15D0"),
+        ("spot00_scene", 4, "cutscene/spot00_scene/0x12400"),
+        ("spot04_scene", 7, "cutscene/spot04_scene/0xA6D0"),
+    ] {
+        let ld = &c.pack.scene(file).unwrap().layers[layer];
+        assert_eq!(ld.cutscene.as_deref(), Some(key), "{file} layer {layer}");
+        let s = c.pack.cutscene(key).unwrap();
+        let data = c.p.rom.file_by_name(file).unwrap();
+        let off = usize::from_str_radix(key.rsplit("0x").next().unwrap(), 16).unwrap();
+        assert_eq!(&data[off..off + s.data.len()], &s.data[..], "{key}: the ROM's bytes");
+        assert_eq!(oot_game::cutscene::walk(&s.data).unwrap().1, Some(s.data.len()), "{key}: through CS_END");
+    }
+    // A script the XML names keeps its symbol's key: Kokiri Forest's Deku Sprout, the last of
+    // its cutscene layers' ten (the other nine have none).
+    let keys: Vec<String> = c.pack.scene("spot04_scene").unwrap().layers.iter().filter_map(|l| l.cutscene.clone()).collect();
+    assert_eq!(keys.len(), 10);
+    assert_eq!(keys.iter().filter(|k| !k.contains("/0x")).collect::<Vec<_>>(), ["cutscene/spot04_scene/gKokiriForestDekuSproutCs"]);
+}
+
+#[test]
+fn the_audio_data_is_the_roms_and_the_cs() {
+    use oot_import::audio::LoadAudioData;
+    let Some(c) = ctx() else { return };
+    let pack = c.pack.audio_data().expect("the pack's audio data");
+    let fresh = eng_audio::AudioData::load(&c.p).expect("loading the audio data");
+    assert!(pack == fresh, "the pack's audio data is what the importer reads");
+    // The ROM's files, as they are.
+    for f in [&pack.audiobank, &pack.audioseq, &pack.audiotable] {
+        assert_eq!(&f.bytes[..], &c.p.rom.file_by_name(&f.name).unwrap()[..], "{}", f.name);
+    }
+    let t = &pack.tables;
+    let count = |b: &[u8]| eng_audio::context::AudioTable::parse(b).entries.len();
+    assert_eq!((count(&t.sound_font_table), count(&t.sequence_table), count(&t.sample_bank_table)), (38, 110, 7), "fonts, sequences, sample banks");
+    assert_eq!(t.heap_sizes.num_soundfonts as usize, count(&t.sound_font_table), "NUM_SOUNDFONTS");
+    assert_eq!(t.heap_sizes.audio_heap, 0x38000, "sizeof(gAudioHeap)");
+    assert_eq!(t.tatums_per_beat, 48, "gTatumsPerBeat");
+    // audio_data.c: gPitchFrequencies' C4 (0x27) and its wrap at 0x75 (PITCH_BFLATNEG1).
+    assert_eq!((t.pitch_frequencies[0x27], t.pitch_frequencies[0x75]), (1.0, 0.055681));
+    assert_eq!(t.default_envelope, [(1, 32000), (1000, 32000), (-1, 0), (0, 0)], "gDefaultEnvelope with ADSR_HANG, ADSR_DISABLE");
+    assert_eq!((t.haas_effect_delay_sizes[0], t.haas_effect_delay_sizes[29], t.haas_effect_delay_sizes[30]), (60, 2, 0), "30 * SAMPLE_SIZE down to 0");
+    assert_eq!(t.wave_sample_index, [0, 1, 2, 3, 4, 5, 6, 7, 7], "gWaveSamples: the quarter pulse twice");
+    // audio_init_params.c: 18 specs; the first plays 24 notes on 4 players with 2 reverbs,
+    // DEFAULT_REVERB_SETTINGS first.
+    assert_eq!(t.specs.len(), 18);
+    let s0 = &t.specs[0];
+    assert_eq!((s0.sampling_frequency, s0.num_notes, s0.num_sequence_players, s0.num_reverbs), (32000, 24, 4, 2));
+    assert_eq!((s0.reverb_settings[0].window_size, s0.reverb_settings[0].decay_ratio, s0.reverb_settings[0].unk_10), (0x30, 0x3000, -1));
+    assert_eq!(s0.reverb_settings[1].window_size, 0x20);
+    assert_eq!((s0.temporary_seq_cache_size, s0.temporary_font_cache_size), (0x4000, 0x2880));
+    // The microcode's resampler filters: 64 phases of 4 taps, each summing to about 1.0, the
+    // phases mirroring each other (phase i is phase 63 - i reversed).
+    assert_eq!(t.resample_lut.len(), 256);
+    for i in 0..64 {
+        let row = &t.resample_lut[i * 4..i * 4 + 4];
+        let mirror = &t.resample_lut[(63 - i) * 4..(63 - i) * 4 + 4];
+        assert_eq!([row[0], row[1], row[2], row[3]], [mirror[3], mirror[2], mirror[1], mirror[0]], "phase {i}");
+    }
+    // The noise starts at func_800E4FE0's first instruction (`addiu sp, sp, -n`).
+    assert_eq!(t.noise_code_vram, 0x800E_4FE0);
+    assert_eq!(&t.noise_code[..2], &[0x27, 0xBD], "func_800E4FE0 starts its stack frame");
 }

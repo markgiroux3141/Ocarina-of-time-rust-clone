@@ -16,6 +16,7 @@ eng_app.workspace = true
 oot_import.workspace = true
 oot_game.workspace = true
 oot_actors.workspace = true
+eng_audio = { workspace = true, features = ["device"] }
 eframe.workspace = true
 egui-wgpu.workspace = true
 wgpu.workspace = true

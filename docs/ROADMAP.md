@@ -12,14 +12,14 @@ The working rules don't change:
 
 Reorder freely. The dependencies are noted, and nothing here is a commitment.
 
-## Where things stand (2026-09-29)
+## Where things stand (2026-09-30)
 
-**Done:** Phases 0 to 3 (GAME-01 and GAME-02). Kokiri Forest plays with:
+**Done:** Phases 0 to 4 (GAME-01, GAME-02 and GAME-03). Kokiri Forest plays with:
 - collisions, props, climbing, Z-targeting, doors and the prerendered interiors;
 - talking, the message box, drops and a minimal HUD;
 - the Deku Tree's mouth, opened by a save flag.
 
-GAME-03 milestones 1 to 4 are done too:
+GAME-03, Phase 4, is done too:
 - the inventory, `Item_Give`, the get-item flow, the chests, and Link's equipment from the save;
 - the crawl and the crawlspace's camera, the scene paths, the training area's boulder and wonder
   items, and Link's knockdown;
@@ -27,22 +27,40 @@ GAME-03 milestones 1 to 4 are done too:
   equipping stand-in in the play frame (`KaleidoSetup_Update`);
 - the cutscene system (`z_demo.c`): the scripts from the pack, sub cameras and `Camera_Demo1`,
   the entrance triggers, Player's cutscene modes; the Deku Tree's talk opens his mouth, and his
-  scene's intro plays.
+  scene's intro plays;
+- Navi (`En_Elf`) and the Kokiri children's fairies, the target context's `naviRefPos`, C-Up and
+  her texts (`z_elf_message.c`), the actors' point lights; every scene's cutscene layers, and a
+  new file that starts, as the file select starts it, with the game's opening.
 
-Four headless scripted runs start in Link's bed (`oot_actors --test playthrough`):
+Five headless scripted runs (`oot_actors --test playthrough`). Four start in Link's bed:
 - into the Deku Tree, on a flag preset;
 - on a new save to the Kokiri Sword's chest, opened;
 - on a new save to the Deku Shield bought, both worn, and past Mido;
 - on a new save past Mido, through the Deku Tree's talk and into the Deku Tree, with no preset.
 
+The fifth is Phase 4's exit: from the file select's new file, its first frame, through the
+opening, C-Up to Navi, and the same way into the Deku Tree.
+
+Phase 5, GAME-04, has begun: milestone 1 is done (see [GAME-04](GAME-04-audio.md)). The audio
+library is ported whole (`eng_audio`): the heap and loads, the sequence player, the notes and
+envelopes, the synthesis, and the RSP's audio microcode; it renders offline as the console does
+and plays through the output device in the window (`--music 60` for Kokiri Forest's music).
+The game's side, which plays what when, is milestone 2's.
+
+**Priorities (2026-09-30):** gameplay first. Cutscene polish is deferred (BACKLOG #3, #5, #7, #10),
+and scripted runs may skip cutscenes where playing them gets in the way.
+
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
 - ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
 - The pause menu isn't ported: Start stands in for its equipping (ADR 0019), read in the play frame where `KaleidoSetup_Update` reads it (ADR 0021).
-- Unported actors are placeholders. Among them: Navi and the other fairies, Saria, and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3.)
+- Unported actors are placeholders. Among them: Saria, the opening's nightmare (`En_Viewer`, the drawbridge), and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3. Navi and the other fairies: GAME-03 milestone 5.)
 - ~~There are no cutscenes: the importer skips all 73.~~ Undone in GAME-03 milestone 4 (ADR 0022): the 73 scene scripts and the 27 overlay ones are in the pack, and the Deku Tree's talk opens his mouth on a new save. The `deku-tree-open` preset stays for the shortcuts and GAME-02's run.
-- The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up (GAME-03 milestone 5).
-- No audio at all.
+- ~~The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up.~~ Undone in GAME-03 milestone 5 (ADR 0023): every scene's cutscene layers are in the pack, and a new file plays the opening. The routes from Link's bed keep their start (`cutsceneIndex` 0).
+- No effects (`EffectSs`): Navi's sparkles, and the effects' own `Rand` calls, are missing.
+- ~~No audio at all.~~ The audio library is ported in GAME-04 milestone 1 (ADRs 0024, 0025). Still
+  missing: the game's side (`code_800EC960.c` and the others), so nothing plays by itself yet;
+  `--music` starts a sequence by hand.
 
 ## Phase 3, the end: GAME-02 milestone 4 (done)
 
@@ -77,7 +95,7 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
 
 **Exit:** the playthrough passes headless; GAME-02 is marked complete; the architecture plan's Phase 3 is marked done.
 
-## Phase 4: the road to the Deku Tree (GAME-03)
+## Phase 4: the road to the Deku Tree (GAME-03, done)
 
 **Goal:** a new save plays Kokiri Forest the game's way, up to entering the Deku Tree:
 - wake up;
@@ -114,26 +132,29 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
    - `Cutscene_HandleEntranceTriggers` and `cutsceneTrigger`.
    - Player's cutscene modes (`func_8002DF54`), which also completes `En_Wonder_Talk2`'s forced texts.
    - **Exit:** talking to the Deku Tree plays `D_808BCE20` to the end, yes plays `D_808BD520`, and his mouth opens (`EVENTCHKINF_05`); the scripted run from GAME-02 milestone 4 opens it the game's way, without the preset. *(Done with a new route, `NewSaveDekuTree`, from a new save through the shop and Mido; GAME-02's run keeps its preset.)*
-5. **Navi.**
+5. **Navi** (done: see [GAME-03](GAME-03-road-to-deku-tree.md) milestone 5 and ADR 0023).
    - `En_Elf` as Link's fairy: following, the target reticle's `naviRefPos`, C-Up and her text.
    - The Kokiri children's fairies.
    - The game's opening: Navi waking Link (`ENTR_LINK_HOME` with its cutscene layer). The cutscene system covers it now; the pack needs the scene layers 4 and up, and Player the cutscene modes the wake-up's script cues.
    - Navi's cues in the Deku Tree's talk (`npcActions[8]`).
-   - **Exit:** a new save starts as the game does, and C-Up talks to Navi.
+   - **Exit:** a new save starts as the game does, and C-Up talks to Navi. *(Done: a new file plays the opening, four cutscene layers traced from their terminators; the Deku Tree's narration comes before the nightmare, so the wake-up is Link's house's layer 4, not the new file's 5.)*
 
-**Phase exit:** a headless run from a new save to the Deku Tree scene, the game's way, replacing GAME-02 milestone 4's flag preset.
+**Phase exit:** a headless run from a new save to the Deku Tree scene, the game's way, replacing GAME-02 milestone 4's flag preset. *(Done in milestone 5: `Route::NewFileDekuTree`, 11748 frames from the file select's new file into the Deku Tree. GAME-02's run keeps its preset as a shortcut. Phase 4 is complete.)*
 
-## Phase 5: audio (GAME-04)
+## Phase 5: audio (GAME-04, in progress)
 
 **Goal:** music and sound effects, from the ROM through the pack.
 
-This phase doesn't depend on Phase 4, so it can go earlier, or run in between as a change of pace. `oot_extract::audio` already decodes the soundfonts, the VADPCM samples (checked bit for bit) and the sequences (a tick-accurate sequence player, to MIDI). The decomp's audio is about 18,000 lines (`audio_*.c`).
+**Recommended next**, before Phase 6: every dungeon system from here calls sounds, and each port so far has logged its calls as left out. This phase doesn't depend on Phase 4, so it could have gone earlier. `oot_extract::audio` already decodes the soundfonts, the VADPCM samples (checked bit for bit) and the sequences (a tick-accurate sequence player, to MIDI). The decomp's audio is about 18,000 lines (`audio_*.c`).
 
-1. **The import and the synth:**
+1. **The import and the synth** (done: see [GAME-04](GAME-04-audio.md) milestone 1, ADRs 0024 and 0025):
    - soundfonts, samples and sequences into the pack;
    - an `eng_audio` crate: an output device (for example `cpal`), and a synthesiser that follows `audio_synthesis.c` (ADPCM playback, envelopes, pan, reverb);
    - an ADR on how faithful the mixer is.
-2. **The sequence player at runtime:**
+   - *(Done whole: the pack holds the ROM's audio files as they are; the library, the sequence
+     player included, and the microcode are ported, offline and through the device.)*
+2. **The sequence player at runtime** (started in milestone 1: `audio_seqplayer.c` is ported and
+   plays Kokiri Forest's sequence offline, 597 notes before its loop as the extractor reads it):
    - `audio_seqplayer.c` driving the synth, including the game's IO ports;
    - the scene's music (`Environment_PlaySceneSequence`, `func_800F5550` and the rest of `code_800EC960.c`), the ambience (`Audio_PlayNatureAmbienceSequence`).
    - **Exit:** Kokiri Forest's music plays and loops like the game.

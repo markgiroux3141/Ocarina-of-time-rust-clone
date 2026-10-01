@@ -105,7 +105,7 @@ const SEG_TEX: u8 = 0x08;
 /// identity (an N64 `Mtx`), and the draw applies the billboard (`ViewInfo::billboard`).
 const SEG_BILLBOARD: u8 = 0x01;
 
-fn identity_mtx() -> Vec<u8> {
+pub(crate) fn identity_mtx() -> Vec<u8> {
     let mut b = vec![0u8; 64];
     for i in [0, 5, 10, 15] {
         b[i * 2 + 1] = 1;

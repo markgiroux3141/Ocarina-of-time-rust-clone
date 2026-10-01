@@ -13,7 +13,7 @@
 //!
 //! On top of that, the GPU, windowing and device crates stay out of the game: only
 //! `eng_render`, `eng_app`, apps and tools may use wgpu/eframe/egui, only `eng_input` (and
-//! apps/tools) may use gilrs.
+//! apps/tools) may use gilrs, only `eng_audio` (and apps/tools) may use cpal.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -39,6 +39,8 @@ const GPU_CRATES: &[&str] = &["wgpu", "eframe", "egui", "egui-wgpu", "egui_wgpu"
 const GPU_ALLOWED: &[&str] = &["eng_render", "eng_app"];
 const DEVICE_CRATES: &[&str] = &["gilrs"];
 const DEVICE_ALLOWED: &[&str] = &["eng_input"];
+const AUDIO_DEVICE_CRATES: &[&str] = &["cpal"];
+const AUDIO_DEVICE_ALLOWED: &[&str] = &["eng_audio"];
 
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap().to_path_buf()
@@ -128,6 +130,9 @@ fn crates_respect_the_layers() {
             }
             if in_game && DEVICE_CRATES.contains(&dep.as_str()) && !DEVICE_ALLOWED.contains(&p.name.as_str()) {
                 violations.push(format!("{} uses {dep} (input devices stay in eng_input)", p.name));
+            }
+            if in_game && AUDIO_DEVICE_CRATES.contains(&dep.as_str()) && !AUDIO_DEVICE_ALLOWED.contains(&p.name.as_str()) {
+                violations.push(format!("{} uses {dep} (the audio device stays in eng_audio)", p.name));
             }
         }
     }

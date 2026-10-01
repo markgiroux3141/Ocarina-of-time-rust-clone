@@ -151,6 +151,8 @@ pub enum PlayRequest {
     /// `Item_Give(play, item)`, in its place among the requests (after `Message_StartTextbox`,
     /// whose heart piece text counts the pieces before this one).
     ItemGive(u8),
+    /// `Interface_SetNaviCall(play, naviCallState)`.
+    NaviCall(u16),
 }
 
 // floor properties (FLOOR_PROPERTY_*)
@@ -614,8 +616,14 @@ pub struct Player {
     pub func_a74: Option<A74>,
     /// Start mode 0 (`func_80846648`): `update` is a no-op and `draw` is NULL.
     pub inert: bool,
-    /// `naviTextId`: what Navi would say (no Navi here: 0).
+    /// `naviTextId`: what Navi says when C-Up talks to her (her update sets it; negative: she
+    /// speaks at once), cleared at the end of every update.
     pub navi_text_id: i16,
+    /// `naviActor`: Navi (`Player_SpawnFairy`).
+    pub navi_actor: Option<ActorHandle>,
+    /// `actor.shape.shadowDraw` is `ActorShadow_DrawFeet` (`Player_Init`), not `NULL` (Link
+    /// asleep in the opening).
+    pub shadow_feet: bool,
     /// `unk_88E`: frames after a talk that A, B and C-Up are ignored.
     pub unk_88E: u8,
     /// `unk_837`: frames before "Put Away" shows on the A button.
@@ -789,6 +797,8 @@ impl Player {
             func_a74: None,
             inert: false,
             navi_text_id: 0,
+            navi_actor: None,
+            shadow_feet: true,
             unk_88E: 0,
             unk_837: 0,
             invincibility_timer: 0,
@@ -851,13 +861,19 @@ impl Player {
         }
         play.save.respawn[RESPAWN_MODE_DOWN].data = 1;
         p.unk_A84 = p.actor.world_pos.y as i16;
-        let init_mode = ((p.actor.params as u16 & 0xF00) >> 8) as u8;
+        let mut init_mode = ((p.actor.params as u16 & 0xF00) >> 8) as u8;
+        // The warp songs' and blue warps' starts are mode 13 in a cutscene layer.
+        if (init_mode == 5 || init_mode == 6) && play.save.cutscene_index >= 0xFFF0 {
+            init_mode = 13;
+        }
         p.start_mode(play, init_mode);
-        if init_mode != 0 {
+        // GAMEMODE_NORMAL or GAMEMODE_END_CREDITS (3).
+        if init_mode != 0 && (play.save.game_mode == oot_game::save::GAMEMODE_NORMAL || play.save.game_mode == 3) {
             // Player_SpawnFairy(play, this, &world.pos, &D_80854778, FAIRY_NAVI): Navi.
             let pos = p.func_808395DC(p.actor.world_pos, Vec3::new(0.0, 50.0, 0.0));
-            if let Err(e) = play.actor_spawn(ACTOR_EN_ELF, pos, [0; 3], 0) {
-                log::debug!("Navi: {e:?}");
+            match play.actor_spawn(crate::en_elf::ACTOR_EN_ELF, pos, [0; 3], crate::en_elf::FAIRY_NAVI) {
+                Ok(h) => p.navi_actor = Some(h),
+                Err(e) => log::debug!("Navi: {e:?}"),
             }
         }
         Box::new(p)
@@ -1177,6 +1193,9 @@ impl Player {
         // look rotations of the upper body are left out here).
         let head = oot_game::footik::limb_matrix(rig, actor, root, &self.skel.joint, data.limb("HEAD"));
         self.head_pos = head.transform_point3(Vec3::ZERO);
+        // actor.focus.pos (Player_PostLimbDrawGameplay's head), which the others read (Navi's
+        // point, Actor_SetNaviToActor).
+        self.actor.focus_pos = self.head_pos;
         legs
     }
 
@@ -5458,26 +5477,96 @@ impl Player {
     }
 
     /// `func_80852B4C` with `D_80854B18[mode]` (`start`) or `D_80854E50[mode]`: the entry's
-    /// function or its animation. The modes the ported scripts and actors use are ported: 1
-    /// (talking to a no-text actor), 3 and 4 (a cue's walk), 6 (following `linkAction`), 7 (the
-    /// end), 8 and 0x31 (held still). The others are logged.
+    /// function, or its type's (`D_80854AA4`) with its animation. The modes the ported scripts
+    /// and actors use are ported: 1 (talking to a no-text actor), 3 and 4 (a cue's walk), 6
+    /// (following `linkAction`), 7 (the end), 8 and 0x31 (held still), and the opening's: 9
+    /// (turning round, the nightmare), 38 to 41 (asleep, tossing, sitting up and getting out of
+    /// bed). The others are logged.
     fn func_80852B4C(&mut self, env: &Env, cue: Option<CsCmdActorAction>, mode: u8, start: bool) {
+        let data = env.data;
         match (start, mode) {
             (true, 1 | 8 | 0x31) => self.func_808515A4(env),
             // { 0, NULL }.
             (true, 0 | 3 | 4 | 6 | 7) => {}
+            // { 2, &gPlayerAnim_link_demo_furimuki }: func_80851030 (func_80850ED8).
+            (true, 9) => self.func_80850ED8(data, data.anim("link_demo_furimuki")),
+            (true, 38) => self.func_80851F84(data),
+            (true, 39) => self.func_80851E90(data),
+            // { 6, &gPlayerAnim_clink_op3_okiagari }, { 6, &gPlayerAnim_clink_op3_tatiagari }:
+            // func_808510F4 (func_8083303C(play, this, anim, 0x9C)).
+            (true, 40) => self.func_8083303C(data, data.anim("clink_op3_okiagari"), 0x9C),
+            (true, 41) => self.func_8083303C(data, data.anim("clink_op3_tatiagari"), 0x9C),
             (false, 1) => self.func_808514C0(env),
             (false, 3) => self.func_80851998(env, cue),
             (false, 4) => self.func_808519C0(env, cue),
             (false, 6) => self.func_80852C50(env),
             (false, 7) => self.func_80852944(env),
             (false, 8 | 0x31) => self.func_80851688(env),
+            // func_80851750, func_80852048: the animation (their sounds aren't played).
+            (false, 9 | 41) => {
+                self.skel.update(data);
+            }
+            // { 11, NULL }: func_808511D4.
+            (false, 38) => {
+                self.skel.update(data);
+            }
+            (false, 39) => self.func_80851ECC(data),
+            (false, 40) => self.func_80851FB0(data),
             (false, 0) => {}
             (s, m) => self.note(format!("cutscene mode {m}'s {} ({}) not ported", if s { "start" } else { "update" }, if s { "D_80854B18" } else { "D_80854E50" })),
         }
         if self.s.d_80858aa0 & 4 != 0 && self.skel.move_flags & 4 == 0 {
             self.skel.morph[0][1] = (self.skel.morph[0][1] as f32 / self.age.translation_scale) as i16;
             self.s.d_80858aa0 = 0;
+        }
+    }
+
+    /// `func_80850ED8` (type 2): the animation once (`func_80832B0C`), standing.
+    fn func_80850ED8(&mut self, data: &GameData, anim: AnimId) {
+        self.func_80832DB0();
+        self.func_80832B0C(data, anim);
+        self.func_80832210();
+    }
+
+    /// `func_8083303C`: `func_80832FFC` at speed 1: the animation once with `moveFlags`.
+    fn func_8083303C(&mut self, data: &GameData, anim: AnimId, flags: u16) {
+        self.skel.play_once_set_speed(data, anim, 1.0);
+        self.func_80832F54(flags);
+    }
+
+    /// `func_808330EC`: `func_808330AC` at speed 1: the animation looped with `moveFlags`.
+    fn func_808330EC(&mut self, data: &GameData, anim: AnimId, flags: u16) {
+        self.skel.play_loop_set_speed(data, anim, 1.0);
+        self.func_80832F54(flags);
+    }
+
+    /// `func_80851F84` (mode 38's start): asleep in bed, no shadow, `clink_op3_wait1` looped
+    /// (`func_80851134`: `func_808330EC(play, this, anim, 0x9C)`).
+    fn func_80851F84(&mut self, data: &GameData) {
+        self.shadow_feet = false;
+        self.func_808330EC(data, data.anim("clink_op3_wait1"), 0x9C);
+    }
+
+    /// `func_80851E90` (mode 39's start): tossing (`clink_op3_negaeri`), the groan unplayed.
+    fn func_80851E90(&mut self, data: &GameData) {
+        self.func_8083303C(data, data.anim("clink_op3_negaeri"), 0x9C);
+    }
+
+    /// `func_80851ECC` (mode 39): after the toss, `clink_op3_wait2` looped.
+    fn func_80851ECC(&mut self, data: &GameData) {
+        if self.skel.update(data) {
+            self.func_808330EC(data, data.anim("clink_op3_wait2"), 0x9C);
+        }
+    }
+
+    /// `func_80851FB0` (mode 40): sitting up; then `clink_op3_wait3` looped. The shadow comes
+    /// back on frame 240 (`ActorShadow_DrawFeet`); the sounds of `D_808551BC` aren't played.
+    fn func_80851FB0(&mut self, data: &GameData) {
+        if self.skel.update(data) {
+            self.func_808330EC(data, data.anim("clink_op3_wait3"), 0x9C);
+            self.unk_850 = 1;
+        } else if self.unk_850 == 0 && self.skel.on_frame(240.0) {
+            self.shadow_feet = true;
         }
     }
 
@@ -5720,17 +5809,18 @@ impl Player {
     }
 
     /// `func_8083B644` (interrupt 4): A talks to the actor that offered this frame
-    /// (`targetActor`, from `func_8002F1C4`), or C-Up has Navi speak about the target. On the
-    /// ground (or swimming at the surface), when nothing else is targeted.
+    /// (`targetActor`, from `func_8002F1C4`), or C-Up talks to Navi: about the target, or her
+    /// own text (`naviTextId`, at once when negative). On the ground (or swimming at the
+    /// surface), when nothing else is targeted.
     ///
-    /// No Navi: `naviTextId` stays 0 and `naviActor` is absent, and no actor has a
-    /// `naviEnemyId`, so the C-Up branch only runs for `ACTOR_FLAG_0 | ACTOR_FLAG_18` targets,
-    /// and then has no text. Holding actors isn't ported (`PLAYER_STATE1_11` is never set).
+    /// No ported actor has a `naviEnemyId`, so a target Navi speaks about is an
+    /// `ACTOR_FLAG_0 | ACTOR_FLAG_18` one. Holding actors isn't ported (`PLAYER_STATE1_11` is
+    /// never set).
     fn func_8083B644(&mut self, env: &Env) -> bool {
         let mut sp34 = self.target_actor;
         let mut sp30 = self.unk_664;
         let mut sp2c: Option<ActorHandle> = None;
-        let navi_actor: Option<ActorHandle> = None;
+        let navi_actor: Option<ActorHandle> = self.navi_actor;
         let checkable = |h: Option<ActorHandle>| h.and_then(|h| env.actors.actor(h)).is_some_and(|a| a.flags & (ACTOR_FLAG_0 | ACTOR_FLAG_18) == (ACTOR_FLAG_0 | ACTOR_FLAG_18));
         let sp24 = checkable(sp30);
         let mut sp28 = false;
@@ -5801,7 +5891,8 @@ impl Player {
         let data = env.data;
         let Some(actor) = env.actors.actor(h) else { return };
         let (category, xz_dist, flags) = (actor.category, actor.xz_dist_to_player, actor.flags);
-        if self.target_actor.is_some() || flags & (ACTOR_FLAG_0 | ACTOR_FLAG_18) == (ACTOR_FLAG_0 | ACTOR_FLAG_18) {
+        let is_navi = self.navi_actor == Some(h);
+        if self.target_actor.is_some() || is_navi || flags & (ACTOR_FLAG_0 | ACTOR_FLAG_18) == (ACTOR_FLAG_0 | ACTOR_FLAG_18) {
             self.play_requests.push(PlayRequest::TalkRequest(h));
         }
         self.target_actor = Some(h);
@@ -5828,7 +5919,7 @@ impl Player {
             // (Or the fishing pole in hand, which isn't ported.)
             self.func_8083A2F8(data);
             if self.state1 & STATE1_4 == 0 {
-                if xz_dist < 40.0 {
+                if !is_navi && xz_dist < 40.0 {
                     self.skel.play_once_set_speed(data, backspace, 2.0 / 3.0);
                 } else {
                     let a = self.anim(data, group::WAIT);
@@ -5845,7 +5936,12 @@ impl Player {
         }
         self.func_80832224();
         self.state1 |= STATE1_6 | STATE1_29;
-        // (Navi's own text, func_80835EA4(play, 0xB): no Navi.)
+        // Navi's own text (not a 0x2xx one): her talk request, and the camera turns round to
+        // her (func_80835EA4(play, 0xB)).
+        if is_navi && self.target_actor == Some(h) && (text_id & 0xFF00) != 0x200 {
+            self.play_requests.push(PlayRequest::TalkRequest(h));
+            self.func_80835EA4(0xB);
+        }
     }
 
     /// `func_8083A2F8`: the talking action, and the message box for Player's `textId`.
@@ -6201,7 +6297,17 @@ impl Player {
             self.unk_837 -= 1;
         }
         self.play_requests.push(PlayRequest::DoAction(do_action));
-        // (Interface_SetNaviCall: no Navi.)
+        // Interface_SetNaviCall: Navi calls while she has something to say.
+        if self.state2 & STATE2_21 != 0 {
+            if self.unk_664.is_some() {
+                self.play_requests.push(PlayRequest::NaviCall(0x1E));
+            } else {
+                self.play_requests.push(PlayRequest::NaviCall(0x1D));
+            }
+            self.play_requests.push(PlayRequest::NaviCall(0x1E));
+        } else {
+            self.play_requests.push(PlayRequest::NaviCall(0x1F));
+        }
     }
 
     // ================================================================================
@@ -6228,6 +6334,8 @@ impl Player {
             self.interact_range_actor = None;
             self.get_item_direction = 0x6000;
         }
+        // (rideActor: no riding.) Navi's text is set again by her next update.
+        self.navi_text_id = 0;
         let mut temp_f0 = self.actor.world_pos.y - self.actor.prev_pos.y;
         let bp = &self.body_parts_pos;
         let mut phi_f12 = (bp[BODYPART_L_FOOT].y + bp[BODYPART_R_FOOT].y) * 0.5 + temp_f0;
@@ -6526,6 +6634,8 @@ mod rs {
     pub const CRAWLING: usize = 5;
     /// `switches`: `PLAYER_STATE2_29` (not drawn).
     pub const HIDDEN: usize = 6;
+    /// `switches`: `shape.shadowDraw` set.
+    pub const SHADOW: usize = 7;
 }
 
 impl LookRotations {
@@ -6698,7 +6808,7 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 7];
+        let mut switches = vec![0u32; 8];
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
@@ -6706,6 +6816,7 @@ impl ActorImpl for Player {
         switches[rs::EXCHANGE] = (self.exchange_item_id != 0) as u32;
         switches[rs::CRAWLING] = (self.state2 & STATE2_18 != 0) as u32;
         switches[rs::HIDDEN] = (self.state2 & STATE2_29 != 0) as u32;
+        switches[rs::SHADOW] = self.shadow_feet as u32;
         RenderState {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
@@ -6772,7 +6883,11 @@ impl ActorImpl for Player {
             let m = Mat4::from_translation(t) * Mat4::from_rotation_y(eng_math::binang_to_rad(st.angles[rs::GET_ITEM_SPIN])) * Mat4::from_scale(Vec3::splat(0.2));
             oot_game::draw::get_item_draw(&a.items, unk_862.abs() - 1, m, play.gameplay_frames, view, out);
         }
-        // ActorShadow_DrawCircle's stand-in: a soft disc on the floor below, shrinking with height.
+        // ActorShadow_DrawFeet's stand-in: a soft disc on the floor below, shrinking with height
+        // (none while shape.shadowDraw is NULL).
+        if st.switches.get(rs::SHADOW).copied().unwrap_or(1) == 0 {
+            return;
+        }
         let (floor, _) = play.col.entity_raycast_down(st.pos + Vec3::Y * 20.0);
         let drop = (st.pos.y - floor).max(0.0);
         let size = if self.adult { 22.0 } else { 16.0 } * (1.0 - (drop / 400.0).min(0.7));
@@ -6868,6 +6983,18 @@ impl PlayerIface for Player {
     fn set_equipment_data(&mut self, data: &GameData, save: &oot_game::save::SaveContext) {
         Player::set_equipment_data(self, data, save);
     }
+    fn body_part(&self, i: usize) -> Vec3 {
+        self.body_parts_pos.get(i).copied().unwrap_or(self.actor.world_pos)
+    }
+    fn navi_text_id(&self) -> i16 {
+        self.navi_text_id
+    }
+    fn set_navi_text_id(&mut self, id: i16) {
+        self.navi_text_id = id;
+    }
+    fn navi_actor(&self) -> Option<ActorHandle> {
+        self.navi_actor
+    }
 }
 
 /// Applies a `PlayRequest` (see there), after Player's update.
@@ -6937,6 +7064,10 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::ItemGive(item) => {
             oot_game::item::item_give(&mut play.save, item);
         }
+        PlayRequest::NaviCall(state) => {
+            let cs_idle = play.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE;
+            play.interface_ctx.set_navi_call(state, cs_idle);
+        }
     }
 }
 
@@ -6948,5 +7079,3 @@ fn func_8083816C(floor_type: u32) -> bool {
 /// No item tables (play without the pack).
 static NO_ITEMS: oot_game::item::ItemTables = oot_game::item::ItemTables { get_items: Vec::new(), draw_items: Vec::new() };
 
-/// `ACTOR_EN_ELF` (`actor_table.h`): Navi.
-const ACTOR_EN_ELF: i16 = 0x0018;

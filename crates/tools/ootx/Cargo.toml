@@ -12,6 +12,7 @@ eng_gfx.workspace = true
 eng_gbi.workspace = true
 eng_anim.workspace = true
 eng_collision.workspace = true
+eng_audio.workspace = true
 oot_extract.workspace = true
 anyhow.workspace = true
 clap.workspace = true

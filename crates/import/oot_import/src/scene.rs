@@ -140,8 +140,10 @@ pub struct Scene {
     pub collision: CollisionHeader,
     pub spawns: Vec<ActorEntry>,
     pub rooms: Vec<RoomRef>,
-    /// `SCENE_CMD_ID_SPECIAL_FILES`: the keep object loaded into segment 5.
+    /// `SCENE_CMD_ID_SPECIAL_FILES`: the keep object loaded into segment 5, and `cUpElfMsgNum`
+    /// (`SCENE_CMD_SPECIAL_FILES(elfMessage, keepObjectId)`: `data1`).
     pub keep_object: Option<u16>,
+    pub c_up_elf_msg_num: u8,
     pub light_settings: Vec<EnvLightSettings>,
     pub skybox: SkyboxSettings,
     /// `SCENE_CMD_ID_ENTRANCE_LIST`, `SCENE_CMD_ID_EXIT_LIST` and
@@ -195,6 +197,40 @@ pub fn pointer_targets(data: &[u8], segment: u8) -> Vec<usize> {
     out.sort();
     out.dedup();
     out
+}
+
+/// The alternate header list (`SCENE_CMD_ID_ALTERNATE_HEADER_LIST`) of a scene or room file:
+/// entry `i` is the header of layer `i + 1`, `None` where the list holds `NULL`. The list has no
+/// length: it runs up to the next place something points at (`pointer_targets`), while each
+/// entry is `NULL` or a header in this file. Trailing `NULL`s are dropped.
+pub fn alternate_headers(data: &[u8], segment: u8) -> Vec<Option<usize>> {
+    let Ok(main) = commands_at(data, 0) else { return Vec::new() };
+    let Some(alt) = main.iter().find(|c| c.code == CMD_ALTERNATE_HEADER_LIST) else { return Vec::new() };
+    if alt.data2 >> 24 != segment as u32 {
+        return Vec::new();
+    }
+    let targets = pointer_targets(data, segment);
+    let list = (alt.data2 & 0xFF_FFFF) as usize;
+    let n = list_extent(data, list, 4, &targets, |b| {
+        let v = be32(b, 0);
+        v == 0 || (v >> 24 == segment as u32 && commands_at(data, (v & 0xFF_FFFF) as usize).is_ok())
+    });
+    let mut out: Vec<Option<usize>> = (0..n)
+        .map(|i| {
+            let v = be32(data, list + i * 4);
+            (v != 0).then_some((v & 0xFF_FFFF) as usize)
+        })
+        .collect();
+    while out.last() == Some(&None) {
+        out.pop();
+    }
+    out
+}
+
+/// The scene layers a scene file has: the four game layers, and each cutscene layer up to the
+/// last its alternate header list names (`gSaveContext.sceneLayer` - 1 indexes the list).
+pub fn layer_count(data: &[u8]) -> usize {
+    (alternate_headers(data, SCENE_SEGMENT).len() + 1).max(LAYER_ADULT_NIGHT + 1)
 }
 
 /// How many `size`-byte elements a length-less list at `offset` can have: up to the next
@@ -256,6 +292,7 @@ impl Scene {
             .unwrap_or_default();
         // OBJECT_INVALID is 0 (object_table.h: the first entry is DEFINE_OBJECT_UNSET).
         let keep_object = find(CMD_SPECIAL_FILES).map(|c| (c.data2 & 0xFFFF) as u16).filter(|&k| k != 0);
+        let c_up_elf_msg_num = find(CMD_SPECIAL_FILES).map(|c| c.data1).unwrap_or(0);
         let light_settings = find(CMD_LIGHT_SETTINGS_LIST)
             .map(|c| {
                 (0..c.data1 as usize)
@@ -356,6 +393,7 @@ impl Scene {
             spawns,
             rooms,
             keep_object,
+            c_up_elf_msg_num,
             light_settings,
             skybox,
             file,

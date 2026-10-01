@@ -116,9 +116,9 @@ pub struct SaveContext {
     pub retain_weather_mode: bool,
     pub show_title_card: bool,
     /// `cutsceneIndex`: 0 for none, 0xFFF0 and up for a scene's cutscene layer
-    /// (`SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF)`), 0xFFFD while a script plays. (The
-    /// file select's new file enters with 0xFFF1, Navi's wake-up on Link's house's cutscene
-    /// layer: GAME-03 milestone 5. Here a new file enters with 0.)
+    /// (`SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF)`), 0xFFFD while a script plays. The
+    /// file select's new file enters with 0xFFF1, the opening on Link's house's layer 5
+    /// ([`SaveContext::file_select_new`]); `SaveContext::new` enters with 0.
     pub cutscene_index: u16,
     /// `nextCutsceneIndex` (0xFFEF: none), `cutsceneTrigger` (1 an actor's script, 2 an
     /// entrance's), `cutsceneTransitionControl`.
@@ -136,6 +136,10 @@ pub struct SaveContext {
     pub player_name: [u8; 8],
     /// `deaths`.
     pub deaths: u16,
+    /// `naviTimer`: counts play frames outside cutscenes (`func_80A053F0`, to 25800); between 600
+    /// and 3000 Navi has her C-Up text (`ElfMessage_GetCUpText`), and talking to her with it sets
+    /// 3001.
+    pub navi_timer: u16,
     /// `healthCapacity`, `health` (16 a heart), `healthAccumulator` (health still to add).
     pub health_capacity: i16,
     pub health: i16,
@@ -213,6 +217,10 @@ pub const EVENTCHKINF_C4: u16 = 0xC4;
 /// menu's equipment screen clears it when it equips a sword. `func_80083108` only gives B
 /// back its stored item while it's 0.
 pub const INFTABLE_1DX_INDEX: usize = 29;
+/// `ENTR_LINK_HOME_0` (`entrance_table.h`, row 0x0BB): Link's house, by his bed.
+pub const ENTR_LINK_HOME_0: u16 = 0x0BB;
+/// `ENTR_LOAD_OPENING` (`z64scene.h`: -1): `Play_Init` goes to the title screen instead.
+pub const ENTR_LOAD_OPENING: u16 = 0xFFFF;
 /// `SCENE_LINK_HOME` (`scene_table.h`).
 pub const SCENE_LINK_HOME: u16 = 0x34;
 /// `MAGIC_NORMAL_METER`.
@@ -326,6 +334,7 @@ impl SaveContext {
             inf_table: [0; 30],
             player_name: [0x3E; 8],
             deaths: 0,
+            navi_timer: 0,
             health_capacity: 0,
             health: 0,
             health_accumulator: 0,
@@ -388,6 +397,49 @@ impl SaveContext {
         s.inventory.dungeon_keys = [-1; 19];
         s.inf_table[INFTABLE_1DX_INDEX] = 1;
         s.scene_flags[5].swch = 0x4000_0000;
+        s
+    }
+
+    /// A new file as the file select starts it: file 2's `Sram_InitSave` (`z_sram.c:696`: the
+    /// first file is the map select's in this debug ROM, `FS_BTN_SELECT_FILE_1`), then
+    /// `FileSelect_LoadGame` (`z_file_choose.c:1438`).
+    /// - `Sram_InitSave`: `Sram_InitNewSave` ([`SaveContext::new`]), then `ENTR_LINK_HOME_0`,
+    ///   child, 10:00 and `cutsceneIndex` 0xFFF1, the opening on Link's house's layer 5;
+    /// - `FileSelect_LoadGame`: `fileNum` 1, `GAMEMODE_NORMAL`, `respawn[RESPAWN_MODE_DOWN]`'s
+    ///   entrance `ENTR_LOAD_OPENING` (-1), `respawnFlag` 0, `showTitleCard`, the next transition,
+    ///   cutscene and trigger cleared, every button enabled, the interface's alpha types, `magic`
+    ///   and `magicLevel` 0 (the meter grows back), `naviTimer` 0.
+    /// - With no sword on B it clears the sword's equip nibble and XORs
+    ///   `OWNED_EQUIP_FLAG(EQUIP_TYPE_SWORD, swordEquipValue - 1)` into the owned equipment.
+    ///   @bug (game): on a new file the value is 0, so that reads `gBitFlags[-1]`, the word before
+    ///   the table in `code`; in this ROM it's 0 (`gBitFlags` at ROM 0xB9E2C0), and nothing
+    ///   changes.
+    pub fn file_select_new() -> SaveContext {
+        let mut s = SaveContext::new(ENTR_LINK_HOME_0, false, crate::env::clock_time(10, 0) as u16);
+        s.cutscene_index = 0xFFF1;
+        s.file_num = 1;
+        s.game_mode = GAMEMODE_NORMAL;
+        s.respawn[RESPAWN_MODE_DOWN].entrance_index = ENTR_LOAD_OPENING;
+        s.respawn_flag = 0;
+        s.show_title_card = true;
+        s.next_transition_type = TRANS_NEXT_TYPE_DEFAULT;
+        s.next_cutscene_index = 0xFFEF;
+        s.cutscene_trigger = 0;
+        s.retain_weather_mode = false;
+        s.button_status = [crate::interface::BTN_ENABLED; 5];
+        s.unk_13e7 = 0;
+        s.unk_13e8 = 0;
+        s.unk_13ea = 0;
+        s.unk_13ec = 0;
+        s.unk_13ee = 0x32;
+        s.health_accumulator = 0;
+        s.magic_level = 0;
+        s.magic = 0;
+        s.navi_timer = 0;
+        if !matches!(s.equips.button_items[0], ITEM_SWORD_KOKIRI | ITEM_SWORD_MASTER | ITEM_SWORD_BGS | ITEM_SWORD_KNIFE) {
+            s.equips.button_items[0] = ITEM_NONE;
+            s.equips.equipment &= !EQUIP_MASKS[EQUIP_TYPE_SWORD];
+        }
         s
     }
 
@@ -656,6 +708,19 @@ mod tests {
         // sNewSaveInventory: the Kokiri tunic and boots owned (bits 8 and 12).
         assert_eq!(s.inventory.equipment, 0x1100);
         assert_eq!((s.health, s.rupees, s.inf_table[INFTABLE_1DX_INDEX]), (0x30, 0, 1));
+    }
+
+    #[test]
+    fn the_file_selects_new_file_starts_the_opening() {
+        let s = SaveContext::file_select_new();
+        // Sram_InitSave (file 2): ENTR_LINK_HOME_0, child, CLOCK_TIME(10, 0), 0xFFF1.
+        assert_eq!((s.entrance_index, s.adult, s.day_time, s.cutscene_index), (ENTR_LINK_HOME_0, false, 0x6AAB, 0xFFF1));
+        // Sram_InitNewSave's file, then FileSelect_LoadGame's resets.
+        let n = SaveContext::new(ENTR_LINK_HOME_0, false, 0x6AAB);
+        assert_eq!((s.equips, s.inventory.clone(), s.health), (n.equips, n.inventory.clone(), n.health));
+        assert_eq!((s.file_num, s.game_mode, s.respawn[RESPAWN_MODE_DOWN].entrance_index, s.respawn_flag), (1, GAMEMODE_NORMAL, ENTR_LOAD_OPENING, 0));
+        assert_eq!((s.next_cutscene_index, s.cutscene_trigger, s.navi_timer, s.magic, s.unk_13ee), (0xFFEF, 0, 0, 0, 0x32));
+        assert_eq!(s.button_status, [crate::interface::BTN_ENABLED; 5]);
     }
 
     #[test]

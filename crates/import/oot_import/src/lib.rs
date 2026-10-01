@@ -7,10 +7,12 @@
 //! the asset pack exists (milestone 2), the game still calls into it at startup; after that
 //! the runtime never does, and `csrc` / `drawcfg` remain as import tools and test oracles.
 
+pub mod audio;
 pub mod background;
 pub mod csrc;
 pub mod cutscene;
 pub mod drawcfg;
+pub mod elf_message;
 pub mod objects;
 pub mod pack;
 pub mod player;

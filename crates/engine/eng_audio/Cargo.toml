@@ -1,0 +1,16 @@
+[package]
+name = "eng_audio"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "The N64 audio library as the game ships it (audio_*.c, the audio thread) and its RSP microcode, rendering offline into buffers and, with the `device` feature, through an output device"
+
+[features]
+# The output device (cpal). Only apps enable it; headless tests and tools render offline.
+device = ["dep:cpal"]
+
+[dependencies]
+serde.workspace = true
+anyhow.workspace = true
+log.workspace = true
+cpal = { workspace = true, optional = true }

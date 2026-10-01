@@ -4,9 +4,11 @@
 //!
 //! ## Entering a scene
 //!
-//! `PlayState::play_init` does what `Play_Init` does for a normal (non-cutscene) entrance:
-//! - `nightFlag` from the day time; the scene layer from Link's age and the time (and the
-//!   Hyrule Field / Kokiri Forest special cases, with no quest items or event flags set);
+//! `PlayState::play_init` does what `Play_Init` does:
+//! - `nightFlag` from the day time; the scene layer: a cutscene layer for a `cutsceneIndex` of
+//!   0xFFF0 and up (`SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF)`), else from Link's age
+//!   and the time (and the Hyrule Field / Kokiri Forest special cases, with no quest items or
+//!   event flags set);
 //! - `Play_SpawnScene` with the entrance table's scene and spawn for that layer: the scene's
 //!   header (collision, the entrance, exit and transition-actor lists, the keep object, Link's
 //!   object, the light settings) and the first room's load (`func_80096FE8`: the entrance's
@@ -75,6 +77,8 @@ pub struct GameAssets {
     pub items: crate::item::ItemTables,
     /// `sEntranceCutsceneTable` and the scripts' keys (docs/adr/0022-cutscenes.md).
     pub cutscenes: crate::cutscene::CutsceneTables,
+    /// Navi's C-Up texts and Saria's (`z_elf_message.c`).
+    pub elf_messages: crate::elf_message::ElfMessageTables,
     /// Cutscene scripts read so far, by symbol.
     scripts: std::sync::Mutex<std::collections::HashMap<String, Arc<crate::cutscene::CutsceneScript>>>,
     /// Skeletons and standard animations read so far (actors load theirs at init).
@@ -93,6 +97,7 @@ impl GameAssets {
             interface: pack.interface()?,
             items: pack.items()?,
             cutscenes: pack.cutscene_tables()?,
+            elf_messages: pack.elf_messages()?,
             scripts: Default::default(),
             overlays,
             pack,
@@ -169,7 +174,7 @@ impl SceneState {
     /// apply, as `Scene_CommandTimeSettings` runs from the room header).
     pub fn load(pack: &GamePack, env_tables: &EnvTables, name: &str, layer: usize, child: bool, night: bool, day_time: u16) -> Result<SceneState> {
         let data = pack.scene(name)?;
-        let ld = &data.layers[layer];
+        let (stored, ld) = data.layer(layer);
         let rooms = ld.rooms.iter().map(|k| pack.room(k).map(Arc::new)).collect::<Result<Vec<_>>>()?;
         let (day, sky, _speed) = env::scene_times(day_time, rooms.first().and_then(|r| r.time));
         let lights = env::update(
@@ -178,7 +183,7 @@ impl SceneState {
             &EnvState { light_mode: ld.skybox.light_mode, light_config: 0, light_setting: 0, day_time: day, skybox_time: sky },
         );
         let draw = DrawConfigState { gameplay_frames: 0, child, night, scene_layer: layer, day_time: day, ..Default::default() };
-        Ok(SceneState { data, layer, rooms, lights, draw, segments: None, all_rooms: false })
+        Ok(SceneState { data, layer: stored, rooms, lights, draw, segments: None, all_rooms: false })
     }
 
     pub fn layer_data(&self) -> &LayerData {
@@ -337,22 +342,19 @@ impl PlayState {
         save.night_flag = save.day_time > env::clock_time(18, 0) as u16 || save.day_time < env::clock_time(6, 30) as u16;
         crate::cutscene::handle_conditional_triggers(&assets, &mut save);
         if save.game_mode != crate::save::GAMEMODE_NORMAL || save.cutscene_index >= 0xFFF0 {
-            // SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF): the pack doesn't hold the
-            // cutscene layers (GAME-03 milestone 4's known gap), so the normal layer is loaded.
-            let cs_layer = 4 + (save.cutscene_index as usize & 0xF);
-            log::error!("Play_Init: cutscene layer {cs_layer} (cutsceneIndex {:#x}) isn't in the pack: loading the normal layer", save.cutscene_index);
-            save.scene_layer = layer_for(!save.adult, save.night_flag);
-            save.cutscene_index = 0;
+            // (nayrusLoveTimer = 0, Magic_Reset: neither is ported.)
+            save.scene_layer = crate::scene::SCENE_LAYER_CUTSCENE_FIRST + (save.cutscene_index as usize & 0xF);
         } else {
             save.scene_layer = layer_for(!save.adult, save.night_flag);
         }
         let base_layer = save.scene_layer;
         let base = t.entrances.get(save.entrance_index as usize).with_context(|| format!("no entrance {:#x}", save.entrance_index))?;
         // Play_Init's special cases (no Spiritual Stones, EVENTCHKINF_48 unset), outside the
-        // cutscene layers.
-        if base.scene == SCENE_SPOT00 && !save.adult {
+        // cutscene layers (!IS_CUTSCENE_LAYER).
+        let cutscene_layer = save.scene_layer > 3;
+        if base.scene == SCENE_SPOT00 && !save.adult && !cutscene_layer {
             save.scene_layer = 0;
-        } else if base.scene == SCENE_SPOT04 && save.adult {
+        } else if base.scene == SCENE_SPOT04 && save.adult && !cutscene_layer {
             save.scene_layer = 2;
         }
         let entr = t.entrances.get(save.entrance_index as usize + save.scene_layer).with_context(|| format!("entrance {:#x} has no layer {}", save.entrance_index, save.scene_layer))?;
@@ -370,9 +372,13 @@ impl PlayState {
         play.cur_spawn = spawn;
         play.object_ctx = ObjectContext::init_bank();
         play.room_ctx = RoomContext::default();
-        // SCENE_CMD_ID_SPECIAL_FILES, then SCENE_CMD_ID_SPAWN_LIST (Link's object).
+        // SCENE_CMD_ID_SPECIAL_FILES (the keep object, Navi's C-Up texts), then
+        // SCENE_CMD_ID_SPAWN_LIST (Link's object).
         if let Some(k) = ld.keep_object_id {
             play.object_ctx.sub_keep_index = play.object_ctx.spawn(k);
+        }
+        if ld.c_up_elf_msg_num != 0 {
+            play.c_up_elf_msgs = Some(ld.c_up_elf_msg_num as usize - 1);
         }
         let entrance = ld.entrances.get(spawn).copied().with_context(|| format!("{scene_file}: no entrance-list entry {spawn}"))?;
         let link_entry: ActorEntry = *ld.spawns.get(entrance.spawn as usize).with_context(|| format!("{scene_file}: no spawn {}", entrance.spawn))?;
@@ -401,7 +407,10 @@ impl PlayState {
             ty
         };
         play.save = save;
-        // Environment_Init: D_8015FCC8 = 1 (z_kankyo.c:419), and no cues.
+        // Environment_Init (SCENE_CMD_ID_SKYBOX_SETTINGS' Play_InitEnvironment):
+        // cutsceneTransitionControl = 0 (z_kankyo.c:318), D_8015FCC8 = 1 (z_kankyo.c:419), and no
+        // cues.
+        play.save.cutscene_transition_control = 0;
         play.demo.d_8015fcc8 = 1;
         play.cs_ctx.npc_actions = [None; 10];
         // Cutscene_HandleEntranceTriggers, after Play_SpawnScene.
@@ -415,6 +424,11 @@ impl PlayState {
         play.flags = crate::spawn::SceneFlags { chest: saved.chest, swch: saved.swch, clear: saved.clear, collect: saved.collect, ..Default::default() };
         let p = play.actor_spawn_entry(&link_entry).map_err(|e| anyhow::anyhow!("spawning Player: {e:?}"))?;
         play.player = Some(p);
+        // func_8002C0C0 (Actor_InitContext's, once Player is in): Navi's point at Player.
+        if let Some(a) = play.actors.actor(p).cloned() {
+            let eye = play.game_camera.eye;
+            play.target_ctx.func_8002c0c0(&a, eye);
+        }
         play.spawn = (Vec3::new(link_entry.pos[0] as f32, link_entry.pos[1] as f32, link_entry.pos[2] as f32), link_entry.rot[1]);
         while !play.room_finish_load() {}
         // Camera_InitPlayerSettings (with func_8005AC48's 0xFF from earlier in Play_Init), then
@@ -618,8 +632,14 @@ impl PlayState {
                 });
                 tr.fade.set_type(if tr.trigger == TRANS_TRIGGER_END { 1 } else { 2 });
                 tr.fade.start();
-                // TRANS_TYPE_FADE_WHITE_CS_DELAYED waits for a cutscene; there are none.
-                tr.mode = TRANS_MODE_INSTANCE_RUNNING;
+                // TRANS_TYPE_FADE_WHITE_CS_DELAYED waits, covering the screen, until a script's
+                // cutsceneTransitionControl lets it run (its TRANSITION_FX 9).
+                tr.mode = if ty == TRANS_TYPE_FADE_WHITE_CS_DELAYED { TRANS_MODE_INSTANCE_WAIT } else { TRANS_MODE_INSTANCE_RUNNING };
+            }
+            TRANS_MODE_INSTANCE_WAIT => {
+                if self.save.cutscene_transition_control != 0 {
+                    self.transition.mode = TRANS_MODE_INSTANCE_RUNNING;
+                }
             }
             TRANS_MODE_INSTANCE_RUNNING => {
                 if self.transition.fade.is_done {
@@ -674,8 +694,27 @@ impl PlayState {
                     tr.fill_timer += 1;
                 }
             }
-            TRANS_MODE_INSTANT | TRANS_MODE_SANDSTORM_INIT | TRANS_MODE_SANDSTORM_END_INIT | TRANS_MODE_CS_BLACK_FILL_INIT => {
-                // Instant; the sandstorm and cutscene fills aren't ported and end at once too.
+            TRANS_MODE_CS_BLACK_FILL_INIT => {
+                tr.fill_timer = 0;
+                tr.screen_fill = Some([0, 0, 0, 255]);
+                tr.mode = TRANS_MODE_CS_BLACK_FILL;
+            }
+            TRANS_MODE_CS_BLACK_FILL => {
+                // The script's TRANSITION_FX 12 lowers cutsceneTransitionControl from 255; the
+                // fill follows it, and the transition ends at 100 or less, the fill left as it is.
+                let c = self.save.cutscene_transition_control;
+                if c != 0 {
+                    if let Some(f) = &mut tr.screen_fill {
+                        f[3] = c;
+                    }
+                    if c <= 100 {
+                        tr.trigger = TRANS_TRIGGER_OFF;
+                        tr.mode = TRANS_MODE_OFF;
+                    }
+                }
+            }
+            TRANS_MODE_INSTANT | TRANS_MODE_SANDSTORM_INIT | TRANS_MODE_SANDSTORM_END_INIT => {
+                // Instant; the sandstorm isn't ported and ends at once too.
                 let leaving = tr.trigger != TRANS_TRIGGER_END;
                 tr.trigger = TRANS_TRIGGER_OFF;
                 tr.mode = TRANS_MODE_OFF;
@@ -687,7 +726,9 @@ impl PlayState {
         }
     }
 
-    /// What covers the screen this frame: the transition's fade, else the environment's fill.
+    /// What covers the screen this frame: `Play_Draw` draws the environment's fill
+    /// (`envCtx.fillScreen`, a cutscene's `TRANSITION_FX`) and the transition's fade over it, as
+    /// one fill (two full-screen blends compose into one).
     pub fn screen_fill(&self) -> Option<[u8; 4]> {
         let tr = &self.transition;
         // A state from Play_Init that hasn't run a frame yet: its fade starts in its first
@@ -695,11 +736,40 @@ impl PlayState {
         if !self.updated && tr.trigger != TRANS_TRIGGER_OFF {
             return self.pre_update_fill;
         }
-        if (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT)
-            && let Some(f) = tr.fade.fill()
-        {
-            return Some(f);
+        let env = tr.screen_fill.filter(|f| f[3] > 0);
+        let fade = (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT || tr.mode == TRANS_MODE_INSTANCE_WAIT).then(|| tr.fade.fill()).flatten();
+        match (env, fade) {
+            (Some(e), Some(f)) => Some(compose_fill(e, f)),
+            (e, f) => f.or(e),
         }
-        tr.screen_fill.filter(|f| f[3] > 0)
+    }
+}
+
+/// `top` blended over `bottom`, both full-screen fills, as one fill: the same pixels as drawing
+/// `bottom` then `top`.
+fn compose_fill(bottom: [u8; 4], top: [u8; 4]) -> [u8; 4] {
+    let (ab, at) = (bottom[3] as f32 / 255.0, top[3] as f32 / 255.0);
+    let a = at + ab * (1.0 - at);
+    if a <= 0.0 {
+        return [0, 0, 0, 0];
+    }
+    let c = |k: usize| ((top[k] as f32 * at + bottom[k] as f32 * ab * (1.0 - at)) / a).round() as u8;
+    [c(0), c(1), c(2), (a * 255.0).round() as u8]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compose_fill;
+
+    #[test]
+    fn a_fade_over_the_cutscenes_fill_covers_as_both_drawn() {
+        // A full fill stays full whatever fades over it (the nightmare's black under the
+        // entrance's FADE_BLACK_FAST).
+        assert_eq!(compose_fill([0, 0, 0, 255], [0, 0, 0, 26]), [0, 0, 0, 255]);
+        // Half over half: 1 - 0.5 * 0.5 of the scene covered.
+        assert_eq!(compose_fill([0, 0, 0, 128], [0, 0, 0, 128]), [0, 0, 0, 192]);
+        // White over black, both opaque: the white.
+        assert_eq!(compose_fill([0, 0, 0, 255], [160, 160, 160, 255]), [160, 160, 160, 255]);
+        assert_eq!(compose_fill([0, 0, 0, 0], [0, 0, 0, 0]), [0, 0, 0, 0]);
     }
 }

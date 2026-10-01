@@ -103,6 +103,35 @@ enum Cmd {
         file: String,
         symbol: String,
     },
+    /// A WAV from the pack's audio, played offline through the audio library (eng_audio) as
+    /// the game plays it: a note of an instrument (`--font --inst`) or a drum (`--font --drum`),
+    /// or a sequence (`--seq`); with `--raw`, the note's sample decoded as it's stored.
+    AudioWav {
+        /// The soundfont (`gSoundFontTable`'s index).
+        #[arg(long)]
+        font: Option<u32>,
+        /// An instrument of the font.
+        #[arg(long)]
+        inst: Option<u8>,
+        /// A drum of the font.
+        #[arg(long)]
+        drum: Option<u8>,
+        /// The note, as `gPitchFrequencies`' index (39 is C4).
+        #[arg(long, default_value_t = 39)]
+        note: u8,
+        /// How long the note is held, or how much of the sequence to render (seconds).
+        #[arg(long, default_value_t = 1.0)]
+        seconds: f32,
+        /// A sequence (`gSequenceTable`'s index; 60 is Kokiri Forest).
+        #[arg(long)]
+        seq: Option<u8>,
+        /// The sample, decoded, instead of the note played.
+        #[arg(long)]
+        raw: bool,
+        /// The WAV to write.
+        #[arg(long)]
+        wav: PathBuf,
+    },
     /// Extract assets into editable formats (PNG, glTF, WAV, JSON) in a git-ignored folder.
     /// Local development only: the output is derived from the ROM and must not be shared.
     Extract {
@@ -138,9 +167,57 @@ fn main() -> Result<()> {
         Cmd::PlayerAnims { object, root_scale } => player_anims(&project, &object, root_scale, &cli.out),
         Cmd::PlayerDraw => player_draw(&project, &cli.out),
         Cmd::Extract { dir, only } => extract(&project, &dir, &only),
+        Cmd::AudioWav { font, inst, drum, note, seconds, seq, raw, wav } => audio_wav(font, inst, drum, note, seconds, seq, raw, &wav),
         Cmd::ScanScenes { filter, all_layers } => scan_scenes(&project, filter.as_deref(), all_layers, &cli.out),
         Cmd::DumpRoom { scene, room, layer, png } => dump_room(&project, &scene, room, layer, png.as_deref()),
     }
+}
+
+/// `ootx audio-wav`.
+#[allow(clippy::too_many_arguments)]
+fn audio_wav(font: Option<u32>, inst: Option<u8>, drum: Option<u8>, note: u8, seconds: f32, seq: Option<u8>, raw: bool, wav: &std::path::Path) -> Result<()> {
+    use eng_audio::font::FontReader;
+    use eng_audio::renderer::{Renderer, note_script};
+    let pack = oot_game::pack::GamePack::open_default()?;
+    let data = pack.audio_data()?;
+    if raw {
+        let f = font.context("--raw needs --font")?;
+        let reader = FontReader::new(&data);
+        let fv = reader.font(f as usize)?;
+        let tuned = match (inst, drum) {
+            (Some(i), _) => fv.instruments.get(i as usize).cloned().flatten().with_context(|| format!("font {f} has no instrument {i}"))?.tuned_sample(note as i32).cloned(),
+            (None, Some(d)) => fv.drums.get(d as usize).cloned().flatten().with_context(|| format!("font {f} has no drum {d}"))?.sound,
+            _ => anyhow::bail!("--raw needs --inst or --drum"),
+        }
+        .context("no sample for that note")?;
+        let pcm = reader.decode(&tuned.sample)?;
+        let rate = (tuned.tuning * 32000.0).round() as u32;
+        std::fs::write(wav, eng_audio::wav::wav_bytes(&pcm, 1, rate))?;
+        println!("{}: {} samples at {rate} Hz (tuning {}), codec {}, loop {:?}", wav.display(), pcm.len(), tuned.tuning, tuned.sample.codec, (tuned.sample.lp.start, tuned.sample.lp.end, tuned.sample.lp.count));
+        return Ok(());
+    }
+    let mut r = Renderer::new(&data);
+    let tail = 2.0;
+    if let Some(s) = seq {
+        r.start_sequence(0, s);
+    } else {
+        let f = font.context("give --seq, or --font with --inst or --drum")?;
+        let (instrument, semitone) = match (inst, drum) {
+            (Some(i), _) => (i, note),
+            (None, Some(d)) => (0x7F, d),
+            _ => anyhow::bail!("give --inst or --drum"),
+        };
+        // 120 bpm: TATUMS_PER_BEAT (48) * 2 tatums a second.
+        let ticks = (seconds * 96.0).round() as u16;
+        let hold = ((seconds + tail) * 96.0).round() as u16;
+        r.play_script(0, f, &note_script(instrument, semitone, 127, ticks.max(1), hold, 120));
+    }
+    let total = if seq.is_some() { seconds } else { seconds + tail };
+    r.run((total * r.ctx.refresh_rate as f32).ceil() as u64);
+    std::fs::write(wav, eng_audio::wav::wav_bytes(&r.out, 2, r.output_rate()))?;
+    let peak = r.out.iter().map(|v| (*v as i32).abs()).max().unwrap_or(0);
+    println!("{}: {:.2} s at {} Hz stereo, peak {peak}, {} retraces", wav.display(), r.out.len() as f32 / 2.0 / r.output_rate() as f32, r.output_rate(), r.retraces);
+    Ok(())
 }
 
 fn dump_room(p: &Project, name: &str, room: usize, layer: usize, png: Option<&std::path::Path>) -> Result<()> {

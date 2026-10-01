@@ -98,10 +98,20 @@ struct Cli {
     /// sword-and-40-rupees (the Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,
+    /// Enter as the file select starts a new file: `ENTR_LINK_HOME_0`, child, with the opening
+    /// (`SaveContext::file_select_new`).
+    #[arg(long)]
+    new_file: bool,
     /// Headless: also a screenshot after each of these frames, next to --screenshot
     /// (`<name>_<frame>.png`).
     #[arg(long, value_delimiter = ',')]
     shots_at: Vec<usize>,
+    /// In the window: a sequence to play (`gSequenceTable`'s index, 60 = Kokiri Forest).
+    #[arg(long)]
+    music: Option<u8>,
+    /// In the window: no sound.
+    #[arg(long)]
+    no_audio: bool,
     #[arg(long, default_value_t = 1280)]
     width: u32,
     #[arg(long, default_value_t = 720)]
@@ -125,7 +135,10 @@ fn options(cli: &Cli) -> Options {
         entrance: cli.entrance.clone(),
         placeholders: cli.placeholders,
         preset: cli.preset.clone(),
+        new_file: cli.new_file,
         room: None,
+        audio: !cli.no_audio,
+        music: cli.music,
     }
 }
 
@@ -375,8 +388,11 @@ impl HouseWalk {
 fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
     let route = oot_actors::playthrough::Route::from_script(&cli.script);
     if let Some(r) = route
-        && (a.entrance.is_none() || cli.preset.as_deref() != r.preset() || !cli.child)
+        && (a.entrance.is_none() || cli.preset.as_deref() != r.preset() || !cli.child || cli.new_file != r.new_file())
     {
+        if r.new_file() {
+            anyhow::bail!("the {} script needs --new-file --child", r.script());
+        }
         let preset = r.preset().map(|p| format!(" --preset {p}")).unwrap_or_default();
         anyhow::bail!("the {} script needs --entrance {} --child{preset}", r.script(), r.entrance());
     }

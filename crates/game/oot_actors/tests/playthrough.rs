@@ -219,13 +219,15 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
         }
         Step::Bush => {
             // The bushes Link cut are gone (EnKusa_Main kills a cut ENKUSA_TYPE_0 bush), and
-            // the drop was a green rupee: Item_Give(ITEM_RUPEE_GREEN) adds 1.
+            // the drop was green rupees: Item_Give(ITEM_RUPEE_GREEN) adds 1 for each of the
+            // drop's quantity (Item_DropCollectibleRandom's sDropQuantities: 1 to 3), all
+            // collected.
             assert!(!run.bushes_cut.is_empty());
             for home in &run.bushes_cut {
                 assert!(!w.actors.all().into_iter().any(|h| w.actors.downcast::<oot_actors::en_kusa::EnKusa>(h).is_some_and(|k| k.actor.home_pos == *home)), "the bush at {home} is gone");
             }
             assert_eq!(run.drop, Some(ITEM00_RUPEE_GREEN));
-            assert_eq!(w.save.rupees + w.save.rupee_accumulator, 1);
+            assert!((1..=3).contains(&(w.save.rupees + w.save.rupee_accumulator)), "rupees {}", w.save.rupees + w.save.rupee_accumulator);
         }
         Step::Tree => {
             assert_eq!(w.room_ctx.cur.num, 1, "the En_Holl took Link into room 1");
@@ -585,4 +587,67 @@ fn check_mido_shop(step: Step, w: &PlayState, run: &Playthrough, hidden_while_br
         }
         _ => panic!("{step:?} isn't on the Mido and shop route"),
     }
+}
+
+/// Phase 4's exit: the file select's new file (`SaveContext::file_select_new`) from its first
+/// frame, the game's way, into the Deku Tree: the opening's four scripts in the order their
+/// terminators chain them, then the new save's run from where the wake-up leaves Link, with C-Up
+/// to Navi on the way.
+#[test]
+fn a_new_file_into_the_deku_tree() {
+    use oot_actors::playthrough::Route;
+    use oot_game::cutscene::CS_STATE_IDLE;
+    let Some(a) = assets() else { return };
+    let route = Route::NewFileDekuTree;
+    assert!(route.new_file() && route.preset().is_none());
+    let e = a.scenes.entrance_index(route.entrance()).unwrap();
+    let Some(mut w) = oot_actors::play_entrance(a.clone(), common::data().unwrap(), common::rules().unwrap(), route.save(e)).ok() else {
+        return;
+    };
+    let mut run = Playthrough::for_route(route);
+    let mut prev = PadState::default();
+    let mut seen = Vec::new();
+    let mut scripts: Vec<String> = Vec::new();
+    loop {
+        let pad = run.next(&w);
+        if let Some(step) = run.take_done() {
+            seen.push(step);
+            match step {
+                Step::Nightmare => assert_eq!((w.scene_id, w.save.scene_layer), (0x51, 4)),
+                Step::NaviSent => assert_eq!((w.scene_id, w.save.scene_layer), (SCENE_SPOT04, 7)),
+                Step::WakeUp => {
+                    // The wake-up's end: in his house's layer 4, at cue 5's point, free.
+                    assert_eq!((w.scene_id, w.save.scene_layer, w.save.cutscene_index), (SCENE_LINK_HOME, 4, 0));
+                    assert_eq!(w.player().actor.world_pos, Vec3::new(0.0, 0.0, 60.0));
+                    assert_eq!(run.texts, [0x109D, 0x109E, 0x109F, 0x1099, 0x109A, 0x1095, 0x1096, 0x1000, 0x1098]);
+                }
+                Step::Navi => {
+                    // Her C-Up text in Kokiri Forest: 0x140, and naviTimer 3001 on.
+                    assert_eq!(run.texts.last(), Some(&0x140));
+                    assert!(w.save.navi_timer >= 3001);
+                }
+                Step::DekuTree => {
+                    assert_eq!(w.scene_id, SCENE_YDAN);
+                    assert_eq!((w.cs_ctx.state, w.player().action), (CS_STATE_IDLE, Action::StandingStill));
+                }
+                _ => {}
+            }
+        }
+        let Some(pad) = pad else { break };
+        w.tick_with(scripted_input(prev, pad));
+        prev = pad;
+        if let Some(s) = &w.cs_ctx.segment
+            && w.cs_ctx.state != CS_STATE_IDLE
+            && scripts.last() != Some(&format!("{}/{}", s.file, s.name))
+        {
+            scripts.push(format!("{}/{}", s.file, s.name));
+        }
+    }
+    assert_eq!(run.failure, None, "the run stopped at {}", run.at());
+    assert_eq!(&seen[..6], [Step::Nightmare, Step::NaviSent, Step::WakeUp, Step::House, Step::OutDoor, Step::Ladder]);
+    let navi = seen.iter().position(|&s| s == Step::Navi).expect("the talk to Navi");
+    assert_eq!(seen[navi + 1], Step::Crawlspace);
+    assert_eq!(seen.last(), Some(&Step::DekuTree));
+    // The opening's scripts (by their offsets: no XML names them), then the Deku Tree's.
+    assert_eq!(scripts, ["link_home_scene/0x15D0", "spot00_scene/0x12400", "spot04_scene/0xA6D0", "link_home_scene/0x1040", "ovl_Bg_Treemouth/D_808BCE20", "ovl_Bg_Treemouth/D_808BD520", "ydan_scene/gDekuTreeIntroCs"]);
 }

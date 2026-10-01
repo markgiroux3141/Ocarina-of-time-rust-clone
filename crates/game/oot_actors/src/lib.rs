@@ -30,6 +30,7 @@ pub mod bg_ydan_hasi;
 pub mod dummy_target;
 pub mod en_box;
 pub mod en_door;
+pub mod en_elf;
 pub mod en_girla;
 pub mod en_goroiwa;
 pub mod en_holl;
@@ -54,7 +55,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -78,6 +79,7 @@ pub fn overlays() -> Overlays {
     o.register(en_ossan::ACTOR_EN_OSSAN, en_ossan::EnOssan::init);
     o.register(en_girla::ACTOR_EN_GIRLA, en_girla::EnGirlA::init);
     o.register(en_tana::ACTOR_EN_TANA, en_tana::EnTana::init);
+    o.register(en_elf::ACTOR_EN_ELF, en_elf::EnElf::init);
     o
 }
 
@@ -92,6 +94,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_md::bakes());
     v.extend(en_ossan::bakes());
     v.extend(en_tana::bakes());
+    v.extend(en_elf::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).

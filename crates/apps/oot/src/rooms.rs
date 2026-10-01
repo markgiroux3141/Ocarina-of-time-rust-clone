@@ -107,7 +107,7 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
             && !s.all_rooms
             // The image only fits the game camera's view (not the sandbox's follow camera).
             && play.camera_kind == oot_game::camera::CameraKind::Game
-            && let Some(b) = oot_game::room::image_background(&play.game_camera, &play.col, room)
+            && let Some(b) = oot_game::room::image_background(play.active_camera(), &play.col, room)
         {
             let mut cmd = DrawCmd::new(MeshKey::named(format!("room/{}/{}/{}/bg{b}", s.data.name, s.layer, room.index)), Mat4::IDENTITY);
             cmd.params.screen = true;
@@ -120,7 +120,7 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
 /// `Play_Draw`'s room skybox (`skyboxCtx.unk_140 != 0`: the houses' and shops' 360° images),
 /// after the rooms, when the active camera isn't `CAM_SET_PREREND_FIXED`: centred on the eye.
 pub fn submit_room_skybox(play: &PlayState, s: &SceneState, eye: Vec3, out: &mut DrawLists) -> bool {
-    if s.all_rooms || play.game_camera.setting == CAM_SET_PREREND_FIXED {
+    if s.all_rooms || play.active_camera().setting == CAM_SET_PREREND_FIXED {
         return false;
     }
     let Some(sky) = play.assets.as_ref().and_then(|a| a.scenes.room_skybox(s.layer_data().skybox.skybox_id)) else { return false };

@@ -76,6 +76,10 @@ CASES = [
     # (cutscenes D_808BCE20, D_808BD520) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.
     ("new_save_deku_tree", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "new-save-deku-tree", "--trace", "{trace}"]),
+    # GAME-03 milestone 5, Phase 4's exit: the file select's new file from its first frame, the
+    # opening's four scripts (Link's house's layer 5, the nightmare, Navi sent, the wake-up),
+    # then the new save's run with C-Up to Navi, into the Deku Tree.
+    ("new_file_deku_tree", S, ["--new-file", "--child", "--script", "new-file-deku-tree", "--trace", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),

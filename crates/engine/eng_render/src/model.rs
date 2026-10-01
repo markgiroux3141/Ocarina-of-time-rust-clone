@@ -175,10 +175,15 @@ impl GpuModel {
     }
 
     /// Rewrites the uniforms of materials that read dynamic segments (scrolling tile sizes,
-    /// draw-config colours) for this frame's values.
-    pub fn set_segment_values(&self, queue: &wgpu::Queue, v: &SegmentValues) {
-        for &i in &self.dynamic {
-            let u = material_uniform_with(&self.materials[i], Some(v));
+    /// draw-config colours) for this frame's values, and of the lit ones for the draw's point
+    /// lights.
+    pub fn set_draw_values(&self, queue: &wgpu::Queue, v: Option<&SegmentValues>, lights: &[eng_gfx::PointLight]) {
+        for (i, m) in self.materials.iter().enumerate() {
+            let dynamic = self.dynamic.contains(&i);
+            if !(dynamic && v.is_some()) && !m.lit {
+                continue;
+            }
+            let u = material_uniform_with(m, v.filter(|_| dynamic), lights);
             queue.write_buffer(&self.material_buf, i as u64 * MATERIAL_STRIDE, bytemuck::bytes_of(&u));
         }
     }

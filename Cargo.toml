@@ -26,6 +26,7 @@ eng_collision = { path = "crates/engine/eng_collision" }
 eng_input = { path = "crates/engine/eng_input" }
 eng_app = { path = "crates/engine/eng_app" }
 eng_asset = { path = "crates/engine/eng_asset" }
+eng_audio = { path = "crates/engine/eng_audio" }
 # import
 oot_import = { path = "crates/import/oot_import" }
 # game and content
@@ -58,6 +59,8 @@ egui-wgpu = "0.36"
 # The importer decodes the prerendered room backgrounds (docs/adr/0014).
 zune-jpeg = { version = "0.5", default-features = false, features = ["std"] }
 zune-core = { version = "0.5", default-features = false, features = ["std"] }
+# The audio output device, behind eng_audio's `device` feature (docs/adr/0024-audio-mixer.md).
+cpal = "0.18"
 
 [profile.dev]
 opt-level = 1

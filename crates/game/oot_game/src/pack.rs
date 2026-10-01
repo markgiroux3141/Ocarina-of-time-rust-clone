@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 11;
+pub const FORMAT_VERSION: u32 = 13;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -65,6 +65,18 @@ pub mod keys {
     pub const ITEMS: &str = "table/items";
     /// `cutscene::CutsceneTables`: `sEntranceCutsceneTable` and every script's key.
     pub const CUTSCENES: &str = "table/cutscenes";
+    /// `elf_message::ElfMessageTables`: Navi's C-Up texts (`sNaviMsgFiles`) and Saria's.
+    pub const ELF_MESSAGES: &str = "table/elf_messages";
+    /// `eng_audio::AudioTables`: the audio tables, `audio_data.c`'s, the audio specs, the
+    /// microcode's resampler filters (docs/adr/0024-audio-data.md).
+    pub const AUDIO_TABLES: &str = "audio/tables";
+    /// The ROM files the audio library loads from (`Audiobank`, `Audioseq`, `Audiotable`).
+    pub const AUDIO_ROM_FILES: [&str; 3] = ["Audiobank", "Audioseq", "Audiotable"];
+
+    /// `eng_audio::RomFile`: one of `AUDIO_ROM_FILES`.
+    pub fn audio_rom(name: &str) -> String {
+        format!("audio/rom/{name}")
+    }
 
     /// A texture from the decomp's XMLs (`pack::Texture`).
     pub fn texture(file: &str, symbol: &str) -> String {
@@ -112,6 +124,15 @@ pub mod keys {
     /// `cutscene/ovl_Bg_Treemouth/D_808BCE20` (docs/adr/0022-cutscenes.md).
     pub fn cutscene(file: &str, symbol: &str) -> String {
         format!("cutscene/{file}/{symbol}")
+    }
+    /// A scene layer's script that no XML names, by its offset in the scene file, e.g.
+    /// `cutscene/spot04_scene/0xA6D0` (docs/adr/0023-navi-and-the-opening.md).
+    pub fn cutscene_at(file: &str, offset: usize) -> String {
+        format!("cutscene/{file}/{}", cutscene_offset_name(offset))
+    }
+    /// The name a script found by its offset goes by (`0xA6D0`).
+    pub fn cutscene_offset_name(offset: usize) -> String {
+        format!("0x{offset:X}")
     }
     /// An actor's baked mesh (`MeshBake`), e.g. `bake/En_Ko/km1_opa`.
     pub fn bake(name: &str) -> String {
@@ -419,8 +440,19 @@ impl GamePack {
         self.assets.get(keys::CUTSCENES)
     }
 
+    /// `elf_message::ElfMessageTables`.
+    pub fn elf_messages(&self) -> Result<crate::elf_message::ElfMessageTables> {
+        self.assets.get(keys::ELF_MESSAGES)
+    }
+
     /// A cutscene script by its pack key.
     pub fn cutscene(&self, key: &str) -> Result<crate::cutscene::CutsceneScript> {
         self.assets.get(key)
+    }
+
+    /// The audio library's data: its tables and the three ROM files.
+    pub fn audio_data(&self) -> Result<eng_audio::AudioData> {
+        let rom = |n: &str| -> Result<eng_audio::RomFile> { self.assets.get(&keys::audio_rom(n)) };
+        Ok(eng_audio::AudioData { tables: self.assets.get(keys::AUDIO_TABLES)?, audiobank: rom("Audiobank")?, audioseq: rom("Audioseq")?, audiotable: rom("Audiotable")? })
     }
 }

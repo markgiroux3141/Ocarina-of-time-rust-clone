@@ -24,6 +24,8 @@ struct Instance {
     model: GpuModel,
     /// The pose it was last skinned with.
     posed: Option<(Mat4, Vec<Mat4>)>,
+    /// The point lights its lit materials were last written with.
+    lights: Vec<eng_gfx::PointLight>,
 }
 
 /// Uploaded meshes by key, with their per-frame instances.
@@ -65,17 +67,17 @@ impl MeshCache {
                 self.missing.insert(cmd.mesh.clone(), ());
                 return false;
             };
-            list.push(Instance { model: r.upload(device, queue, &d), posed: None });
+            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new() });
         }
         let inst = &mut list[n];
         if inst.posed.as_ref().is_none_or(|(t, b)| *t != cmd.transform || *b != cmd.bones) {
             inst.model.pose(&cmd.bones, cmd.transform);
             inst.posed = Some((cmd.transform, cmd.bones.clone()));
         }
-        if let Some(v) = &cmd.params.segments
-            && inst.model.has_dynamic_materials()
-        {
-            inst.model.set_segment_values(queue, v);
+        let lights_changed = inst.lights != cmd.params.lights;
+        if (cmd.params.segments.is_some() && inst.model.has_dynamic_materials()) || lights_changed {
+            inst.model.set_draw_values(queue, cmd.params.segments.as_ref(), &cmd.params.lights);
+            inst.lights = cmd.params.lights.clone();
         }
         true
     }

@@ -37,7 +37,22 @@ pub struct DrawParams {
     /// stands in its list: the prerendered backgrounds, which `gSPBgRectCopy` copies to the
     /// screen in the middle of `POLY_OPA_DISP`.
     pub screen: bool,
+    /// Point lights bound for this draw, as directional lights the lit materials add to the
+    /// frame's (the game binds an actor's near its position, `Lights_BindAll`). At most
+    /// `MAX_POINT_LIGHTS` are used.
+    pub lights: Vec<PointLight>,
 }
+
+/// A point light bound for one draw: the RSP's directional light it becomes, a direction (not
+/// normalised) towards the light and a colour already scaled by the distance.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PointLight {
+    pub dir: [i8; 3],
+    pub color: [u8; 3],
+}
+
+/// The point lights a draw's materials take.
+pub const MAX_POINT_LIGHTS: usize = 3;
 
 /// One draw: a mesh, its model matrix, its bone matrices (empty for unskinned meshes), and its
 /// parameters.

@@ -9,4 +9,4 @@ pub mod submit;
 pub mod texture;
 
 pub use draw::*;
-pub use submit::{DrawCmd, DrawLists, DrawParams, LinePoint, MeshKey};
+pub use submit::{DrawCmd, DrawLists, DrawParams, LinePoint, MAX_POINT_LIGHTS, MeshKey, PointLight};

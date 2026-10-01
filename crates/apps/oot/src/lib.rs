@@ -78,6 +78,14 @@ pub struct Options {
     /// A debug save preset (`oot_game::save::SAVE_PRESETS`) for the new save `Play_Init`
     /// enters with.
     pub preset: Option<String>,
+    /// A new file as the file select starts it (`SaveContext::file_select_new`): Link's house
+    /// with the opening (`cutsceneIndex` 0xFFF1). Implies `ENTR_LINK_HOME_0` and child Link.
+    pub new_file: bool,
+    /// Play sound through the output device (the window only).
+    pub audio: bool,
+    /// A sequence to start on player 0 (`gSequenceTable`'s index, e.g. 60 = Kokiri Forest):
+    /// until the scenes' music is ported (GAME-04 milestone 2), the way to hear music.
+    pub music: Option<u8>,
 }
 
 /// The pack to play from: `path` if given, else `$OOT_PACK`, else the default one
@@ -125,12 +133,17 @@ pub struct Assets {
     pub placeholders: bool,
     /// The debug save preset, if any.
     pub preset: Option<String>,
+    /// Enter with the file select's new file (`Options::new_file`).
+    pub new_file: bool,
     /// With an entrance: the room to change to after `Play_Init`, and where to put Link then
     /// (`--room`, `--at`).
     pub start_room: Option<i8>,
     pub start_at: Option<(Vec3, i16)>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
+    /// Open the output device (`Options::audio`), and the sequence to start (`Options::music`).
+    pub audio: bool,
+    pub music: Option<u8>,
     pub day_time: u16,
     pub show_collision: bool,
     pub view: Option<(Vec3, Vec3)>,
@@ -195,10 +208,13 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         entrance: None,
         placeholders: o.placeholders,
         preset: o.preset.clone(),
+        new_file: o.new_file,
         start_room: o.room,
         start_at: None,
         scene_name: o.scene.clone(),
         spawn_index: o.spawn,
+        audio: o.audio,
+        music: o.music,
         day_time: parse_time(&o.time)?,
         show_collision: o.collision,
         follow_camera: o.follow_camera,
@@ -213,7 +229,9 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         anyhow::ensure!(o.entrance.is_some(), "--preset needs --entrance (it sets the save Play_Init enters with)");
         SaveContext::default().apply_preset(p).map_err(anyhow::Error::msg)?;
     }
-    if let Some(spec) = &o.entrance {
+    anyhow::ensure!(!(o.new_file && o.preset.is_some()), "--new-file is the file select's new save: no --preset");
+    let new_file_entrance = o.new_file.then(|| "ENTR_LINK_HOME_0".to_string());
+    if let Some(spec) = new_file_entrance.as_ref().or(o.entrance.as_ref().filter(|_| !o.new_file)) {
         // Play_Init reads the pack's tables through its own handle.
         let g = oot_actors::game_assets(open_pack(o.pack.as_deref())?)?;
         let e = find_entrance(&g, spec, o.scene.as_deref(), o.spawn)?;
@@ -288,7 +306,7 @@ pub fn load_scene(a: &mut Assets, child: bool) -> Result<()> {
 /// course's platform and the dummy targets.
 pub fn new_play(a: &Assets, child: bool) -> PlayState {
     if let (Some(g), Some(e)) = (&a.game, a.entrance) {
-        let mut save = SaveContext::new(e, !child, a.day_time);
+        let mut save = if a.new_file { SaveContext::file_select_new() } else { SaveContext::new(e, !child, a.day_time) };
         if let Some(p) = &a.preset
             && let Err(e) = save.apply_preset(p)
         {
@@ -494,6 +512,11 @@ struct App {
     show_hud: bool,
     fps: f32,
     last_pad: PadState,
+    /// The audio library through the output device, and what the HUD says about it. Held:
+    /// dropping it stops the sound. (GAME-04 milestone 2 sends the game's commands through it.)
+    #[allow(dead_code)]
+    audio: Option<eng_audio::output::AudioOutput>,
+    audio_status: String,
 }
 
 impl App {
@@ -505,6 +528,26 @@ impl App {
         let (pads, pad_error) = match Pads::new(PadConfig::find(&std::env::current_dir()?, "oot.toml")) {
             Ok(p) => (Some(p), None),
             Err(e) => (None, Some(format!("{e:#}"))),
+        };
+        let (audio, audio_status) = if assets.audio {
+            match assets.pack.audio_data().and_then(eng_audio::output::AudioOutput::start) {
+                Ok(out) => {
+                    let status = match assets.music {
+                        Some(m) => {
+                            out.start_sequence(0, m);
+                            format!("audio: {} (sequence {m})", out.description)
+                        }
+                        None => format!("audio: {} (no music until the scenes' music is ported; --music 60 for Kokiri Forest's)", out.description),
+                    };
+                    (Some(out), status)
+                }
+                Err(e) => {
+                    log::warn!("no audio: {e:#}");
+                    (None, format!("no audio: {e:#}"))
+                }
+            }
+        } else {
+            (None, "audio off".to_string())
         };
         Ok(App {
             device,
@@ -522,6 +565,8 @@ impl App {
             show_hud: true,
             fps: 0.0,
             last_pad: PadState::default(),
+            audio,
+            audio_status,
         })
     }
 }
@@ -628,7 +673,7 @@ impl eframe::App for App {
                     "{place} | {age} Link | {fps:.0} fps, logic {hz} Hz | camera {cam:?} (F3)\n{rooms_line}\
                      action {act:?} ({dec})  anim {anim} @{frame:.1}\n\
                      pos ({x:.1}, {y:.1}, {z:.1})  speed {spd:.2}  vy {vy:.2}  {ground}\n\
-                     input: {dev}\n  stick ({sx:+}, {sy:+}) [{btns}]  raw buttons held {raw:?}\n\
+                     input: {dev}\n  stick ({sx:+}, {sy:+}) [{btns}]  raw buttons held {raw:?}\n{audio}\n\
                      WASD/arrows stick, Shift walk, Space A, E B (sword), Q Z-target, J/L C-left/right, F1 collision, F3 camera, F4 foot IK, P placeholders, Tab age, Backspace respawn/void out",
                     place = self.world.scene.as_ref().map(|s| s.short_name().to_string()).unwrap_or_else(|| self.assets.place.clone()),
                     cam = self.world.camera_kind,
@@ -649,6 +694,7 @@ impl eframe::App for App {
                     sy = self.last_pad.stick_y,
                     btns = self.last_pad.names(),
                     raw = self.pads.as_ref().map(|p| p.raw_held()).unwrap_or_default(),
+                    audio = self.audio_status,
                 );
                 let painter = ui.painter_at(rect);
                 let galley = painter.layout_no_wrap(text, egui::FontId::monospace(13.0), egui::Color32::WHITE);

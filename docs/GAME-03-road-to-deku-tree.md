@@ -13,10 +13,11 @@ to entering the Deku Tree:
 | 2 | Crawlspaces and the training area: Player's crawl, the `CRAWLSPACE` camera, what stands between the start and the sword | done |
 | 3 | Mido and the shop: `En_Md`, `En_Ossan` (the Kokiri shop), `En_GirlA`, the pause menu's stand-in in the play frame | done |
 | 4 | Cutscenes, first part (`z_demo.c`): the scripts, `csCtx`, the entrance triggers, Player's cutscene modes | done |
-| 5 | Navi: `En_Elf` as Link's fairy, the Kokiri's fairies, the game's opening | to do |
+| 5 | Navi: `En_Elf` as Link's fairy, the Kokiri's fairies, the game's opening | done |
 
 **Phase exit:** a headless run from a new save to the Deku Tree scene, the game's way,
-replacing GAME-02 milestone 4's flag preset.
+replacing GAME-02 milestone 4's flag preset. *(Done in milestone 5: `Route::NewFileDekuTree`, from
+the file select's new file through the opening into the Deku Tree. Phase 4 is complete.)*
 
 The working rules are the same as for GAME-01 and GAME-02:
 - no game data in the repo;
@@ -656,23 +657,203 @@ The tests: 244 pass, 1 ignored (238 before). The goldens:
 
 - **Cutscene layers:** the pack holds scene layers 0 to 3, so a `cutsceneIndex` of 0xFFF0 and up
   (a new file's 0xFFF1 in Link's house, Navi's wake-up; the layers terminators ask for) loads the
-  normal layer, logged. A new file here enters with 0 (GAME-03 milestone 5).
+  normal layer, logged. A new file here enters with 0 (GAME-03 milestone 5). *(Done in milestone
+  5.)*
 - **Player's cutscene modes:** only 1, 3, 4, 6, 7, 8 and 0x31; the other modes' starts and
   updates are logged. Swimming in a cutscene (`func_80851368`, `func_808513BC`) isn't ported.
 - **Not ported, logged:** the scripts' lights, weather, fog, skybox changes, quakes, the title
   card (the Deku Tree's intro has one), the screen tint, the Sun's Song, the ocarina texts
   (`func_8010BD58`), `linkAgeOnLoad`, the music and the rumble.
 - **Navi's cues** (`npcActions[8]` in the first talk) have no actor to read them (milestone 5).
+  *(Done in milestone 5.)*
 - **The one-point cutscenes** (the crawl's 9601 and 9602, `OnePointCutscene_Init`, the camera's
   parent and child chain, `Camera_Finish`'s timer): not ported; BACKLOG #3 stays.
 - **`func_8083B998`'s C-Up** into first person isn't ported (noted when pressed).
 - **The debug D-pad replays** (D-Left, D-Up) only work in a cutscene layer, which never loads.
+  *(The layers load since milestone 5.)*
 - **Carried over:** Navi, audio, the effects, the pause menu.
+
+## Milestone 5: Navi and the game's opening
+
+**Answer:** done, and with it Phase 4. A new file starts as the file select starts it
+(`SaveContext::file_select_new`, `cutsceneIndex` 0xFFF1), and the opening plays: the Deku Tree's
+narration over Link asleep, his nightmare on Hyrule Field, the Deku Tree sending Navi and her
+flight through the village, and Navi waking Link. Then she's Link's fairy: she follows him, flies
+to what Z would lock on to in its colours, hides in his cap, and calls once she has her text; C-Up
+talks to her. The Kokiri children's fairies bob above them. The phase's exit run goes from the new
+file's first frame through the opening into the Deku Tree, the game's way.
+
+The tests: 256 pass, 1 ignored (244 before). The goldens:
+- the four routes' traces are re-recorded: Navi now stays across room changes, and in the Deku
+  Tree run the fairies' `Rand` calls change the bushes' drops;
+- the new run's trace is a new case;
+- every render unchanged: 84 of 84.
+
+### What was built
+
+1. **The opening's chain, traced** from the headers and the terminators
+   ([ADR 0023](adr/0023-navi-and-the-opening.md)): the new file's layer is Link's house's 5
+   (the narration), not the wake-up; its terminator (35) goes to Hyrule Field's layer 4 (the
+   nightmare), whose terminator (11) goes to Kokiri Forest's layer 7 (Navi sent), whose terminator
+   (10) goes to Link's house's layer 4 (the wake-up), which ends with `CS_MISC` 12.
+2. **The pack's cutscene layers**, pack format 12:
+   - every scene's cutscene layers, up to the last one its alternate header list names: 106
+     layers in 30 scenes (`oot_import::scene::alternate_headers`, `layer_count`);
+     `SceneData::layer` falls back as `Scene_CommandAlternateHeaderList` does;
+   - their rooms baked as a child's by day at 10:00;
+   - the scripts no XML names keyed by file and offset (`keys::cutscene_at`,
+     `cutscene/spot04_scene/0xA6D0`): 83;
+   - `LayerData.c_up_elf_msg_num` (`SCENE_CMD_ID_SPECIAL_FILES`' number);
+   - Navi's C-Up texts (`table/elf_messages`, below) and the fairies' two bakes.
+3. **`Play_Init` on a cutscene layer** (`play_scene.rs`): `SCENE_LAYER_CUTSCENE_FIRST +
+   (cutsceneIndex & 0xF)`, the Hyrule Field and Kokiri Forest special cases only outside the
+   cutscene layers, `Environment_Init`'s `cutsceneTransitionControl = 0`, `play->cUpElfMsgs`.
+   Milestone 4's fallback to the normal layer is gone.
+4. **The cutscene transitions:** `TRANS_TYPE_CS_BLACK_FILL` (`TRANS_MODE_CS_BLACK_FILL`: black
+   at `cutsceneTransitionControl`'s value, over at 100 or less) and
+   `TRANS_TYPE_FADE_WHITE_CS_DELAYED` (`TRANS_MODE_INSTANCE_WAIT`: the white fade held, drawn,
+   until the control is set).
+5. **`En_Elf`** (`oot_actors::en_elf`), the whole overlay but its effects:
+   - Navi (`FAIRY_NAVI`): `func_80A0461C`'s modes (out after the pointed actor, into Link's hat
+     when nothing's around and `PLAYER_STATE2_20` is clear, back out, at the camera in first
+     person and shops, her cue's in a cutscene: 4 → 9, 3 → 6, 1 → 10), `func_80A03CF8`'s moves
+     (`func_80A02C98`, `func_80A03148`, `func_80A02E30`, `func_80A02EC0`), the drifts
+     (`func_80A01C38`), her colours after the target context's (`func_80A04414`), the lights
+     (`EnElf_UpdateLights`), `naviTimer` and her C-Up text (`func_80A053F0`), and her talk
+     (`func_80A052F4`, `func_80A05208`, and Saria's `func_80A05188`, `func_80A05114`,
+     `func_80A05040`);
+   - the Kokiri fairies (`FAIRY_KOKIRI`, `func_80A0353C`), in `sColorFlags`' colours;
+   - the healing fairies, the revival ones and the spawner (`func_80A0329C`, `func_80A03610`,
+     `func_80A03990`, `func_80A03814`), all but `Magic_Fill`;
+   - the draw (`EnElf_Draw`): two bakes of `gFairySkel`, SETUPDL_27 written out, segment 8's prim
+     colour and render mode (Navi's without the z-buffer), the env colour's pulse, the fade
+     (`disappearTimer`), and `EnElf_OverrideLimbDraw`'s limb 8 at its parent's origin, unrotated,
+     at its pulsing scale, billboarded (`gGlowCircleSmallDL`'s segment 1); a big fairy's wings off.
+6. **`z_elf_message.c`** (`oot_game::elf_message`): `ElfMessage_GetTextFromMsgs` and its
+   conditions, `ElfMessage_GetCUpText`, `ElfMessage_GetSariaText`. The importer builds each
+   `ElfMessage` array from its `ELF_MSG_*` macros (`oot_import::elf_message`), checks
+   `gOverworldNaviMsgs` and `gDungeonNaviMsgs` against the ROM's `elf_message_field` and
+   `elf_message_ydan`, and finds `sChildSariaMsgs` and `sAdultSariaMsgs` in `code`.
+7. **The target context's Navi half** (`target.rs`): `naviRefPos`, `naviInner`, `naviOuter`,
+   `unk_40`'s four-frame ease, `activeCategory`, `unk_8C`, `Actor_SetNaviToActor`,
+   `func_8002C0C0` once Player is in.
+8. **Player:**
+   - `Player_SpawnFairy` (`naviActor`, in `GAMEMODE_NORMAL` and the credits only), init modes 5
+     and 6 as 13 in a cutscene layer;
+   - `naviTextId`, cleared at the end of each update; `func_8083B644`'s Navi branch (C-Up with her
+     text, at once when negative) and `func_80853148`'s (her talk request, no step back,
+     `func_80835EA4(play, 0xB)`); `Interface_SetNaviCall` (`InterfaceContext::navi_calling`);
+   - the opening's cutscene modes: 9 (`link_demo_furimuki`, type 2: `func_80850ED8`), 38
+     (`func_80851F84`: asleep, no shadow), 39 (`func_80851E90`, `func_80851ECC`: tossing), 40
+     (type 6, `func_80851FB0`: sitting up, the shadow back at frame 240), 41 (type 6, getting up);
+   - `actor.focus.pos` from the head, as its draw sets it (Navi's point reads it).
+9. **The actors' point lights** (`oot_game::lights`): `LightContext`'s list, `Lights_BindPoint`,
+   bound at each actor's position in `PlayState::draw` (`Actor_Draw`'s `Lights_BindAll`, none with
+   `ACTOR_FLAG_22`); `eng_gfx::DrawParams::lights`, and up to three added to the lit materials'
+   lighting in the renderer.
+10. **`Actor_SpawnAsChild` from an init** links the child to its parent once the parent is in the
+    actor context (`PlayState::init_children`): Mido's fairy had been linked to nothing.
+11. **A new file as the file select starts it:** `SaveContext::file_select_new` (`Sram_InitSave`
+    for file 2: this debug ROM's file 1 is the map select's; then `FileSelect_LoadGame`), with its
+    `gBitFlags[-1]` read noted as `@bug (game)`; `SaveContext::navi_timer`; `--new-file` in the
+    game and the sandbox.
+12. **The runs:** `Route::NewFileDekuTree` (the sandbox's `--new-file --child --script
+    new-file-deku-tree`): `Task::Opening` (A at each box that waits, the steps `Nightmare`,
+    `NaviSent`, `WakeUp`), then the new save's run from where the wake-up leaves Link, with
+    `Task::TalkNavi` (C-Up once Navi has her text) on the plateau before the crawlspace. The
+    existing routes keep their start.
+13. **Run scripts:** `game-new-file.bat`, `test-opening.bat`, `sandbox-new-file-deku-tree.bat`.
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 256 passed, 1 ignored |
+| The opening (`cutscene` test `the_opening_plays_from_the_file_selects_new_file`) | `file_select_new`: `ENTR_LINK_HOME_0`, 0xFFF1, child, 0x6AAB. `Play_Init`: Link's house's layer 5, its script `link_home_scene/0x15D0`, `TRANS_TYPE_CS_BLACK_FILL`. The first frame: `CS_STATE_SKIPPABLE_EXEC` at frame 1 (no trigger), `TRANS_MODE_CS_BLACK_FILL`, black. Cue 0x1C (mode 38): (0, 2, 116), facing 0x8000, `clink_op3_wait1`, no shadow. 0x109D at frame 41, still black; the fill ends on frame 82 at 100 (`TRANSITION_FX` 12's 255 − 155 × the weight, a frame late). Destination 35: Hyrule Field's layer 4; cue 5 (mode 8) at (−1, 0, 1348); cue 6, `link_demo_furimuki`. Destination 11: Kokiri Forest's layer 7, `TRANS_TYPE_FADE_WHITE_CS_DELAYED` waiting white until frame 71 (`TRANSITION_FX` 9 from 70); Link in mode 0x31; Navi in mode 10 on her cue 1. Destination 10: the house's layer 4 (`FADE_BLACK_FAST`, `ENTR_LINK_HOME_0_4`'s); cues 0x1D (`clink_op3_negaeri`), 0x1E (`okiagari`), 0x1F (`tatiagari`, the shadow back), 5 at (0, 0, 60); the end with `cutsceneIndex` 0, `VIEWPOINT_LOCKED`, Link standing facing 0x8000 |
+| Navi (`navi`: 5 tests) | Spawned 50 above Link, room −1, scale 0.008, `fairyFlags` 4, `unk_2C7` 0x14. `PLAYER_STATE2_20` clear: into the hat from the first frame (mode 7), there within 30 frames (mode 8): at the hat, scale 0, undrawn. `naviTimer` counts outside `Play_InCsMode`; at 600 `naviTextId` 0x140; `STATE2_21`, then the Navi call a frame later (`func_808473D4` runs before the action); C-Up: her text 0x140, `func_80A052F4`, `fairyFlags` 0x80, `naviTimer` 3001, Link talking, `CAM_SET_TURN_AROUND`; closed: back to `func_80A053F0`, mode 0, no more text. The 9 Kokiri fairies within 30 of their children's point (1500 × 0.008 + 40 above), inner white, outer alpha 0 with a channel of 200 or more. The Deku Tree's talk: her mode by the cue the last frame left, and on cue 1 exactly at its point plus the drift. Both bakes in the pack |
+| The exit run (`playthrough` test `a_new_file_into_the_deku_tree`) | 11748 frames from the new file's first frame. The nightmare at 842, Navi sent 1404, the wake-up over 4134 (Link at (0, 0, 60); texts 0x109D, 0x109E, 0x109F, 0x1099, 0x109A, 0x1095, 0x1096, 0x1000, 0x1098), out of the door 4242, down the ladder 4345, C-Up to Navi on the plateau 5009 (0x140), the crawlspace 5153; then the new save's run: the chest 6236, the shop 8408, the shield 8951, Mido 9798, the Deku Tree's talk 11228, into his mouth 11539, the Deku Tree 11748. The scripts in order: `link_home_scene/0x15D0`, `spot00_scene/0x12400`, `spot04_scene/0xA6D0`, `link_home_scene/0x1040`, `D_808BCE20`, `D_808BD520`, `gDekuTreeIntroCs` |
+| The other runs | Pass unchanged in their steps. The Deku Tree run's bushes draw other drops (the fourth drops three green rupees: `sDropQuantities`); its check takes 1 to 3 |
+| The pack (`oot_import --test pack`) | The cutscene layers of Kokiri Forest (14), Hyrule Field (13) and Link's house (6) equal the ROM path's; their scripts keyed by offset are the ROM's bytes through `CS_END`; the C-Up texts' bytes (`gOverworldNaviMsgs`' 28, the dungeon's `END(0x5F)`, the Saria tables' 13 and 6); `cUpElfMsgNum` 1 in Kokiri Forest and Hyrule Field, 0 in Link's house, 2 in the Deku Tree. 247 headers, 655 rooms |
+| Unit tests | `ElfMessage_GetTextFromMsgs` over the field script's first flags; a point light's binding; `file_select_new`'s fields |
+| Golden traces and renders | `sword_chest`, `mido_shop`, `new_save_deku_tree`: only their `actors` counts, one more from frame 1108 (Navi in no room, where her placeholder was room 0's) until the next scene change. `playthrough`: from frame 886, the bushes' drops (the fairies' `Rand` calls); 2269 frames, not 2028. New case `new_file_deku_tree` (11748 frames, the same bytes over two runs). Every render unchanged: 84 of 84 |
+| Import | 12.9 s; 59.6 MB; format version 12 (106 cutscene layers, 83 scripts by offset, 2 fairy bakes), into `out/data09` |
+| The windows | Played by hand (`scripts\run\game-new-file.bat`): three fixes followed (below). Headless screenshots checked: the narration over Link asleep in bed, seen from the side, the nightmare's castle, the delayed white fade, the flight, the wake-up in the house, Navi around Link in bed, her text as he stands, her C-Up talk in Kokiri Forest; in the Deku Tree, her light on Link's cap and shield |
+
+### Fixes after playing it by hand
+
+1. **The narration and the wake-up showed Link's house from above.** The house is a prerendered
+   room, and the app chose its background (and the room skybox) from the main camera's setting,
+   `CAM_SET_PREREND_FIXED`, where `Room_DrawImage` and `Play_Draw` read the active camera's
+   (`GET_ACTIVE_CAM`): the cutscene's sub camera, `CAM_SET_CS_0`. The overhead picture covered
+   the room's 3D view; Link was drawn from the right camera on top of it. Now the house's
+   geometry draws, seen from the script's camera.
+2. **The fades flickered at the scene changes.** `screen_fill` returned the transition's fade
+   instead of the cutscene's fill (`TRANSITION_FX`), where `Play_Draw` draws the fill and then the
+   fade over it. Entering the nightmare, the scene showed for 7 frames under the entrance's
+   `FADE_BLACK_FAST`, then went black again until the script's own fade-in at its frame 20; the
+   house's fade-out dropped from the script's fill (alpha 219) to 38 and back; leaving the
+   nightmare, its white dipped likewise. Now the two are composed (two full-screen blends make one).
+3. **The camera cuts were smeared.** The window renders at 60 Hz, blending each frame between
+   the last two 20 Hz game frames, and blended the view across cuts too: two in-between frames
+   swept from one shot to the next. `GameCamera::view_cut` (not in the C) marks where a camera is
+   put somewhere new at once (`Camera_Demo1`'s splines starting again, `Play_CameraSetAtEye`,
+   `Camera_Copy`, `Camera_Fixed3` at its bg camera), and with a change of active camera the
+   render shows the new view unblended. Everything else still blends.
+
+The tests: 257 pass, 1 ignored (a unit test for the fills' composition). The goldens: only
+`new_file_deku_tree`'s trace changed (its `transition.fill`, 31 frames).
+
+Left as they are, and faithful: the nightmare's one-frame black flashes on its cuts (frames 318,
+378 and 408: a fade-out and a fade-in starting on the same frame, the later command winning), and
+each scene's first frame on the main camera, under a full fill.
+
+### Decisions
+
+- **[ADR 0023](adr/0023-navi-and-the-opening.md):**
+  - every scene's cutscene layers in the pack, not only the opening's four;
+  - the unnamed scripts keyed by file and offset;
+  - `En_Elf` whole but its effects; the C-Up texts as the ROM's bytes, built from the C;
+  - the point lights drawn;
+  - the new route beside the old ones.
+- **The wake-up is layer 4.** The new file's 0xFFF1 is layer 5, the Deku Tree's narration; the
+  chain reaches layer 4 last, through Hyrule Field and Kokiri Forest.
+- **Navi shows in the nightmare.** Player_Init spawns her in every normal game mode, and Hyrule
+  Field's layer 4 gives her no cue, so she follows Link there as she does anywhere.
+- **The existing routes keep their start** at `ENTR_LINK_HOME_0` with `cutsceneIndex` 0, as
+  asked: the new file's run is a route of its own.
+- **The run reads the opening's texts with A** at each box that waits, as a player would, and
+  never skips with Start.
+- **C-Up to Navi on the plateau.** Her init resets `naviTimer` to 0 below 3000 on every scene
+  change, so her text comes after 600 frames in one scene; the plateau before the crawlspace is
+  the first place the run spends that long.
+
+### Known gaps
+
+- **The opening's other actors:** the nightmare's `En_Viewer`s (Zelda and Impa, Ganondorf, their
+  horses) and the drawbridge (`Bg_Spot00_Hanebasi`) are placeholders; the rain and lightning
+  (`CS_MISC` 1 and 2) aren't ported.
+- **`En_Elf`:** the sparkles (`EffectSsKiraKira`) and the effect's `Rand` calls each frame; the
+  sounds; `Environment_AdjustLights` while Navi talks; `Magic_Fill`; `Elf_Msg` and `Elf_Msg2` (the
+  Deku Tree has them: Phase 6).
+- **The lights:** the glow halo (`Lights_GlowCheck`, `Lights_DrawGlow`) isn't drawn.
+- **The HUD:** Navi's call on C-Up (`naviCalling`) isn't drawn.
+- **C-Up into first person** (`func_8083B8F4`, `Camera_Subj3`) isn't ported: without Navi's
+  text, C-Up outside houses only notes it.
+- **`linkAgeOnLoad`:** still logged; the opening doesn't use it.
+- **Carried over:** the one-point cutscenes (BACKLOG #3: the crawl's 9601 and 9602, and Navi's
+  `OnePointCutscene_Attention`), the title cards (BACKLOG #5), audio, the effects, the pause menu.
+- **Cutscenes are deferred** (decided after playing it, 2026-09-30): gameplay comes first. The
+  cutscene gaps wait in [BACKLOG.md](BACKLOG.md) (#3, #5, #7, #10), and later scripted runs may skip
+  cutscenes (Start, or a preset past them) where playing them gets in the way.
 
 ## Visual polish, deferred
 
 Side-by-side comparisons against Project64 on the same ROM, for when the look is polished. They
 don't block milestones: behaviour is checked against the C by the tests.
+
+0. **The opening and Navi** (`scripts\run\game-new-file.bat`): the narration's placement over
+   the dimmed house, the nightmare's shots, the white fade's hold, the flight's path, Navi's size,
+   glow pulse and wings, her swoops at Link in bed, her light on Link, the Kokiri fairies' colours.
 
 1. **The Deku Tree's talk** (`scripts\run\game-deku-tree-talk.bat`): the script's shots and the
    spline's pace, Link's walk in and where he stops, the letterbox's size, the mouth's opening,
@@ -715,12 +896,9 @@ don't block milestones: behaviour is checked against the C by the tests.
 
 ## Recommended next step
 
-**GAME-03 milestone 5: Navi** ([ROADMAP.md](ROADMAP.md), Phase 4):
-- `En_Elf` as Link's fairy (following, the target reticle's `naviRefPos`, C-Up and her text),
-  and the Kokiri children's fairies;
-- the game's opening: the pack's cutscene layers (4 and up) and the new file's entrance on
-  `cutsceneIndex` 0xFFF1, Navi waking Link in his house;
-- Navi's cues in the Deku Tree's talk (`npcActions[8]`).
-
-**Exit:** a new save starts as the game does, and C-Up talks to Navi. With it, the phase's exit:
-the headless run from a new save into the Deku Tree, the game's way from its very start.
+GAME-03 is complete, and Phase 4 with it. **Next: Phase 5, audio (GAME-04,
+[ROADMAP.md](ROADMAP.md)), before Phase 6's Deku Tree.** Every dungeon system after this calls
+sounds (the enemies, the doors, the switches, the items, Gohma), and each port so far has logged
+its sound calls as left out; with the sequence player and the sfx channels in, Phase 6 ports them
+as it goes instead of leaving a second pass. Its first milestone: the soundfonts, samples and
+sequences into the pack, and an `eng_audio` synthesiser after `audio_synthesis.c`.

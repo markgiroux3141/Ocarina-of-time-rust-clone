@@ -158,9 +158,34 @@ impl PlayState {
         a.xyz_dist_to_player_sq = f32::MAX;
         a.teleported = true;
         let ctor = assets.overlays.get(id).unwrap_or(Placeholder::init);
-        let actor: Box<dyn ActorImpl> =
-            if self.object_ctx.is_loaded(bank.unwrap()) { ctor(a, self) } else { Box::new(Uninit { actor: a, ctor }) };
-        self.spawn(actor).ok_or(SpawnFailure::TooMany)
+        if !self.object_ctx.is_loaded(bank.unwrap()) {
+            return self.spawn(Box::new(Uninit { actor: a, ctor })).ok_or(SpawnFailure::TooMany);
+        }
+        self.init_children.push(Vec::new());
+        let actor = ctor(a, self);
+        let children = self.init_children.pop().unwrap_or_default();
+        let h = self.spawn(actor).ok_or(SpawnFailure::TooMany)?;
+        self.link_init_children(h, children);
+        Ok(h)
+    }
+
+    /// An actor's init (`ctor`) whose handle is `h` already (an `Uninit` whose object came in):
+    /// the children it spawns get it as their parent.
+    pub(crate) fn run_init(&mut self, h: ActorHandle, actor: Actor, ctor: crate::spawn::ActorCtor) -> Box<dyn ActorImpl> {
+        self.init_children.push(Vec::new());
+        let init = ctor(actor, self);
+        let children = self.init_children.pop().unwrap_or_default();
+        self.link_init_children(h, children);
+        init
+    }
+
+    /// `spawnedActor->parent = parent` for the children an init spawned as its own.
+    fn link_init_children(&mut self, parent: ActorHandle, children: Vec<ActorHandle>) {
+        for c in children {
+            if let Some(a) = self.actors.actor_mut(c) {
+                a.parent = Some(parent);
+            }
+        }
     }
 
     /// `Actor_SpawnAsChild`: spawned by the updating actor (`parent` is its base, taken out of
@@ -169,8 +194,18 @@ impl PlayState {
     pub fn actor_spawn_as_child(&mut self, parent: &mut Actor, id: i16, pos: Vec3, rot: [i16; 3], params: i16) -> Result<ActorHandle, SpawnFailure> {
         let h = self.actor_spawn(id, pos, rot, params)?;
         parent.child = Some(h);
+        // From the parent's init the parent isn't in the actor context yet: linked once it is.
+        let in_init = match self.init_children.last_mut() {
+            Some(v) => {
+                v.push(h);
+                true
+            }
+            None => false,
+        };
         if let Some(a) = self.actors.actor_mut(h) {
-            a.parent = self.cur_actor;
+            if !in_init {
+                a.parent = self.cur_actor;
+            }
             if a.room >= 0 {
                 a.room = parent.room;
             }

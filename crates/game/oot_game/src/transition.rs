@@ -28,6 +28,7 @@ pub const TRANS_MODE_INSTANCE_WAIT: u8 = 11;
 pub const TRANS_MODE_SANDSTORM_INIT: u8 = 12;
 pub const TRANS_MODE_SANDSTORM_END_INIT: u8 = 14;
 pub const TRANS_MODE_CS_BLACK_FILL_INIT: u8 = 16;
+pub const TRANS_MODE_CS_BLACK_FILL: u8 = 17;
 
 /// `TransitionType`.
 pub const TRANS_TYPE_WIPE: u8 = 0;

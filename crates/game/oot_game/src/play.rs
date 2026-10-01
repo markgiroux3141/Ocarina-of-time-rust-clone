@@ -202,6 +202,9 @@ pub struct RenderFrame {
     pub follow: FollowCamera,
     /// The letterbox bars' height in rows of the 240-row frame (`Letterbox_GetSize`, blended).
     pub letterbox: f32,
+    /// The view cut to this frame's (another camera became active, or the active one was put
+    /// somewhere new at once: `GameCamera::view_cut`): it isn't blended from the last frame's.
+    pub view_cut: bool,
 }
 
 impl RenderFrame {
@@ -224,13 +227,18 @@ impl RenderFrame {
                     None => (*h, b.clone()),
                 })
                 .collect(),
-            view: CamView {
-                eye: self.view.eye.lerp(next.view.eye, t),
-                at: self.view.at.lerp(next.view.at, t),
-                fov: self.view.fov + (next.view.fov - self.view.fov) * t,
+            view: if next.view_cut {
+                next.view
+            } else {
+                CamView {
+                    eye: self.view.eye.lerp(next.view.eye, t),
+                    at: self.view.at.lerp(next.view.at, t),
+                    fov: self.view.fov + (next.view.fov - self.view.fov) * t,
+                }
             },
             follow,
             letterbox: self.letterbox + (next.letterbox - self.letterbox) * t,
+            view_cut: next.view_cut,
         }
     }
 
@@ -337,6 +345,14 @@ pub struct PlayState {
     pub demo: crate::cutscene::DemoStatics,
     /// `envFlags` (`Flags_SetEnv`): flags cutscenes set for actors.
     pub env_flags: [u16; 20],
+    /// `cUpElfMsgs`: which of `sNaviMsgFiles` Navi's C-Up texts come from (the scene header's
+    /// `SCENE_CMD_ID_SPECIAL_FILES`), `None` for none (`Play_InitScene`).
+    pub c_up_elf_msgs: Option<usize>,
+    /// `lightCtx`: the actors' point lights (`crate::lights`).
+    pub light_ctx: crate::lights::LightContext,
+    /// The children each running init spawned (`Actor_SpawnAsChild`), innermost last: they get
+    /// the parent's handle once it's in the actor context.
+    pub(crate) init_children: Vec<Vec<ActorHandle>>,
     /// The ported overlays' file-scope statics that instances share (their `.bss`), by
     /// `ACTOR_*` id (`overlay_static`). A play state starts without any, as `Play_Init`'s
     /// fresh overlay loads zero theirs. (An overlay unloads, and its statics reset, when its
@@ -353,6 +369,8 @@ pub struct PlayState {
     acc: f32,
     prev: Option<RenderFrame>,
     cur: Option<RenderFrame>,
+    /// The camera `cur` was captured from.
+    captured_cam_id: i16,
 }
 
 impl PlayState {
@@ -408,6 +426,9 @@ impl PlayState {
             cs_ctx: Default::default(),
             demo: Default::default(),
             env_flags: [0; 20],
+            c_up_elf_msgs: None,
+            light_ctx: Default::default(),
+            init_children: Vec::new(),
             overlay_statics: Default::default(),
             messages: None,
             interface_ctx: InterfaceContext::default(),
@@ -417,6 +438,7 @@ impl PlayState {
             acc: 0.0,
             prev: None,
             cur: None,
+            captured_cam_id: CAM_ID_MAIN,
         }
     }
 
@@ -527,8 +549,7 @@ impl PlayState {
             // actor->init != NULL: initialise once the object is loaded, and skip this frame.
             if u.actor.obj_bank_index.is_some_and(|b| self.object_ctx.is_loaded(b)) {
                 let Ok(u) = a.into_any().downcast::<Uninit>() else { unreachable!() };
-                let ctor = u.ctor;
-                let init = ctor(u.actor, self);
+                let init = self.run_init(h, u.actor, u.ctor);
                 self.actors.put_back(h, init);
             } else {
                 self.actors.put_back(h, a);
@@ -1041,7 +1062,17 @@ impl PlayState {
             }
             CameraKind::Follow => CamView { eye: self.follow_camera.eye(), at: self.follow_camera.at, fov: 50.0 },
         };
-        RenderFrame { actors, view, follow: self.follow_camera, letterbox: self.letterbox.rows() as f32 }
+        let active = self.active_cam_id;
+        let mut view_cut = self.captured_cam_id != active;
+        self.captured_cam_id = active;
+        for id in CAM_ID_MAIN..NUM_CAMS as i16 {
+            if let Some(c) = self.camera_mut(id) {
+                view_cut |= c.view_cut && id == active;
+                c.view_cut = false;
+            }
+        }
+        let view_cut = view_cut && self.camera_kind == CameraKind::Game;
+        RenderFrame { actors, view, follow: self.follow_camera, letterbox: self.letterbox.rows() as f32, view_cut }
     }
 
     /// Starts blending afresh from now (after spawning, respawning or switching cameras).
@@ -1071,7 +1102,7 @@ impl PlayState {
         match (&self.prev, &self.cur) {
             (Some(p), Some(c)) => p.lerp(c, t),
             (_, Some(c)) => c.clone(),
-            _ => RenderFrame { actors: Vec::new(), view: CamView { eye: Vec3::ZERO, at: Vec3::Z, fov: 60.0 }, follow: self.follow_camera, letterbox: 0.0 },
+            _ => RenderFrame { actors: Vec::new(), view: CamView { eye: Vec3::ZERO, at: Vec3::Z, fov: 60.0 }, follow: self.follow_camera, letterbox: 0.0, view_cut: false },
         }
     }
 
@@ -1081,12 +1112,22 @@ impl PlayState {
     }
 
     /// `Actor_DrawAll` (every actor from its render state `frame`), then the target reticle.
+    /// `Actor_Draw` binds the light list's point lights at the actor's position
+    /// (`Lights_BindAll`; none with `ACTOR_FLAG_22`) for everything the actor draws.
     pub fn draw(&self, frame: &RenderFrame, view: &ViewInfo, out: &mut DrawOut) {
         for (h, rs) in &frame.actors {
             if let Some(a) = self.actors.get(*h)
                 && !a.base().killed
             {
+                let (opa, xlu) = (out.opa.len(), out.xlu.len());
                 a.draw(rs, self, view, out);
+                let at = (a.base().flags & crate::actor::ACTOR_FLAG_22 == 0).then_some(rs.pos);
+                let lights: Vec<eng_gfx::PointLight> = self.light_ctx.bind_all(at).into_iter().map(|l| eng_gfx::PointLight { dir: l.dir, color: l.color }).collect();
+                if !lights.is_empty() {
+                    for c in out.opa[opa..].iter_mut().chain(out.xlu[xlu..].iter_mut()) {
+                        c.params.lights = lights.clone();
+                    }
+                }
             }
         }
         let _ = view;

@@ -1088,6 +1088,10 @@ pub struct GameCamera {
     at_eye_col_chk: ColChk,
     eye_at_col_chk: ColChk,
     new_eye_col_chk: ColChk,
+    /// Not in the C: the camera was put somewhere new at once this frame (a cut), so the
+    /// renderer's 60 Hz blending between game frames shows the new view without easing into
+    /// it. `PlayState`'s render capture reads and clears it.
+    pub view_cut: bool,
 }
 
 impl GameCamera {
@@ -1182,6 +1186,7 @@ impl GameCamera {
             at_eye_col_chk: ColChk::default(),
             eye_at_col_chk: ColChk::default(),
             new_eye_col_chk: ColChk::default(),
+            view_cut: false,
         }
     }
 
@@ -1251,6 +1256,7 @@ impl GameCamera {
         self.dist = at.distance(eye);
         self.pos_offset = if self.has_player { at - player_pos } else { Vec3::ZERO };
         self.at_lerp_step_scale = 0.01;
+        self.view_cut = true;
     }
 
     /// `Camera_SetParam(camera, 0x20, &fov)`.
@@ -1273,6 +1279,7 @@ impl GameCamera {
         self.at = src.at;
         self.eye = src.eye;
         self.eye_next = src.eye;
+        self.view_cut = true;
         self.dist = self.at.distance(self.eye);
         self.fov = src.fov;
         self.roll = src.roll;
@@ -1303,6 +1310,8 @@ impl GameCamera {
             self.demo1.keyframe = 0;
             self.demo1.cur_frame = 0.0;
             self.anim_state += 1;
+            // The splines start again: the view cuts to their first points.
+            self.view_cut = true;
         }
         if self.anim_state == 1 {
             let (mut keyframe, mut cur_frame, mut fov) = (self.demo1.keyframe, self.demo1.cur_frame, self.fov);
@@ -3530,6 +3539,7 @@ impl GameCamera {
             f.fixd3_interface_flags = flags;
             self.eye_next = b.pos_f();
             self.eye = self.eye_next;
+            self.view_cut = true;
             f.fixd3_rot = b.rot;
             f.fixd3_fov = b.fov;
             f.fixd3_room_image_override_bg_cam_index = b.flags;

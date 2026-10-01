@@ -79,7 +79,7 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
         n
     };
     let (waiting, placeholders, ported) = count(&w);
-    // Player and the 2 En_Holl, plus the ported placements; Navi and every other placement a
+    // Player, Navi and the 2 En_Holl, plus the ported placements; every other placement a
     // placeholder, or still waiting for its object. En_Wonder_Item's tag points (modes 1 and 6)
     // note their positions in the overlay's statics and go in EnWonderItem_Init.
     let ov = oot_actors::overlays();
@@ -94,13 +94,15 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
     }
     let (waiting, placeholders, ported) = count(&w);
     assert_eq!(waiting, 0, "every object is loaded two frames after the room");
-    // Navi's placeholder, and the fairy each Kokiri child and Mido spawn as their child (En_Elf
-    // params 3, FAIRY_KOKIRI: EnKo's func_80A99048, EnMd_Init).
+    // Navi (Player_SpawnFairy), and the fairy each Kokiri child and Mido spawn as their child
+    // (En_Elf params 3, FAIRY_KOKIRI: EnKo's func_80A99048, EnMd_Init): all ported.
     let fairies = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_ko::EnKo>(h).is_some() || w.actors.downcast::<oot_actors::en_md::EnMd>(h).is_some()).count();
     assert_eq!(fairies, 9);
-    assert_eq!(placeholders, room0.actors.len() - tag_points - ported_placed + 1 + fairies);
+    let elves: Vec<i16> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<oot_actors::en_elf::EnElf>(h)).map(|e| e.actor.params).collect();
+    assert_eq!((elves.iter().filter(|&&p| p == oot_actors::en_elf::FAIRY_NAVI).count(), elves.iter().filter(|&&p| p == oot_actors::en_elf::FAIRY_KOKIRI).count()), (1, fairies));
+    assert_eq!(placeholders, room0.actors.len() - tag_points - ported_placed);
     // (None of the other ported placements kills itself for child Link at 10:00 on a new save.)
-    assert_eq!(ported, ported_placed + 3);
+    assert_eq!(ported, ported_placed + 3 + 1 + fairies);
     // Each placement is where the room's actor list puts it, in its category and room. Ported
     // props may have moved in their init (snapped to the floor, `En_Kanban` lowered for child
     // Link), so only their x and z are checked; EnItem00_Init keeps only `params & 0xFF` (the

@@ -24,6 +24,8 @@ struct Material {
     flags: vec4<u32>,
     // Dynamic-segment texture scroll: slot 0 in xy, slot 1 in zw.
     uv_off: vec4<f32>,
+    // params.z point lights bound for the draw: a direction, then a colour, each.
+    lights: array<vec4<f32>, 6>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -60,7 +62,15 @@ fn vs_main(v: VIn) -> VOut {
         let n = normalize(v.normal);
         let d1 = max(dot(n, g.light_dir.xyz), 0.0);
         let d2 = max(dot(n, g.light2_dir.xyz), 0.0);
-        let lit = g.ambient.rgb + g.light_color.rgb * d1 + g.light2_color.rgb * d2;
+        var lit = g.ambient.rgb + g.light_color.rgb * d1 + g.light2_color.rgb * d2;
+        // The draw's point lights, bound as directional lights (Lights_BindPoint).
+        let nl = u32(m.params.z);
+        for (var i = 0u; i < nl; i++) {
+            let dir = m.lights[2u * i].xyz;
+            if (dot(dir, dir) > 0.0) {
+                lit += m.lights[2u * i + 1u].rgb * max(dot(n, normalize(dir)), 0.0);
+            }
+        }
         o.shade = vec4<f32>(clamp(lit, vec3<f32>(0.0), vec3<f32>(1.0)), v.color.a);
     } else {
         o.shade = v.color;
