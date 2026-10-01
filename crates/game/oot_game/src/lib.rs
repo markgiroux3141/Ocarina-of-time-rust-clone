@@ -15,6 +15,7 @@
 pub mod actor;
 pub mod actor_ctx;
 pub mod actor_table;
+pub mod audio;
 pub mod camera;
 pub mod collision_check;
 pub mod course;

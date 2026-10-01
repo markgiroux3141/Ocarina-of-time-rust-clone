@@ -15,6 +15,8 @@ echo    16  test-mido-shop       GAME-03's Mido, shop and Deku Shield route test
 echo    19  test-cutscenes       GAME-03's cutscene tests and the new save's run into the Deku Tree
 echo    22  test-opening         GAME-03's Navi and opening tests, and the new file's run into the Deku Tree
 echo    25  test-audio           GAME-04's audio tests: the microcode, a note, the reverb, Kokiri Forest's sequence
+echo    28  test-music           GAME-04's music tests: Kokiri Forest's music and ambience as the game starts them
+echo    31  test-sfx             GAME-04's sound effect tests: footsteps, the message box
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo.
@@ -28,7 +30,8 @@ echo    14  game-new-save        A new save from Link's bed (the sword, the shop
 echo    17  game-shop            Outside the Kokiri shop, the sword worn, 40 rupees
 echo    20  game-deku-tree-talk  A new save at the Deku Tree: his talk (cutscenes), yes or no
 echo    23  game-new-file        A new file as the file select starts it: the opening, then Navi
-echo    26  game-music           Kokiri Forest with its music (sound through your output device)
+echo    26  game-music           Kokiri Forest with another sequence forced (the title theme)
+echo    29  game-night           Kokiri Forest at night: its nature ambience
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -37,6 +40,7 @@ echo    18  sandbox-mido-shop    The shop and Mido route's trace and screenshots
 echo    21  sandbox-new-save-deku-tree  The new save's run into the Deku Tree, into out\run
 echo    24  sandbox-new-file-deku-tree  The new file's run: the opening, Navi, the Deku Tree, into out\run
 echo    27  audio-wav            WAVs of Kokiri Forest's music, a note and a drum, into out\audio (opens the music)
+echo    30  sandbox-audio-log    The new file's run with its audio log and WAV, into out\run (opens the WAV)
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -73,6 +77,10 @@ if "%pick%"=="24" set "script=sandbox-new-file-deku-tree"
 if "%pick%"=="25" set "script=test-audio"
 if "%pick%"=="26" set "script=game-music"
 if "%pick%"=="27" set "script=audio-wav"
+if "%pick%"=="28" set "script=test-music"
+if "%pick%"=="29" set "script=game-night"
+if "%pick%"=="30" set "script=sandbox-audio-log"
+if "%pick%"=="31" set "script=test-sfx"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

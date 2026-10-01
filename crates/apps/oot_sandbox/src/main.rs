@@ -106,9 +106,18 @@ struct Cli {
     /// (`<name>_<frame>.png`).
     #[arg(long, value_delimiter = ',')]
     shots_at: Vec<usize>,
-    /// In the window: a sequence to play (`gSequenceTable`'s index, 60 = Kokiri Forest).
+    /// A sequence to play instead of the first scene's own (`gSequenceTable`'s index, 30 = the
+    /// title theme): `Environment_ForcePlaySequence`.
     #[arg(long)]
     music: Option<u8>,
+    /// Headless: run the audio library offline alongside (3 retraces a game frame) and write
+    /// what the game's side did to it: the sequence commands (`Audio_QueueSeqCmd`) and the
+    /// library's commands, by frame, with what each player plays.
+    #[arg(long)]
+    audio_log: Option<PathBuf>,
+    /// Headless: run the audio library offline alongside and write the run's sound as a WAV.
+    #[arg(long)]
+    wav: Option<PathBuf>,
     /// In the window: no sound.
     #[arg(long)]
     no_audio: bool,
@@ -139,6 +148,7 @@ fn options(cli: &Cli) -> Options {
         room: None,
         audio: !cli.no_audio,
         music: cli.music,
+        audio_log: cli.audio_log.is_some(),
     }
 }
 
@@ -413,7 +423,29 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
     Ok(w)
 }
 
-fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, usize, &RenderFrame) -> Result<()>) -> Result<(PlayState, Vec<RenderFrame>, Vec<serde_json::Value>)> {
+/// The audio side of a headless run, with what each player played by frame.
+struct RunAudio {
+    offline: oot_game::audio::offline::OfflineAudio,
+    /// (frame, the four players' `seqId`s, `None` off) whenever they change.
+    players: Vec<(usize, [Option<u8>; 4])>,
+}
+
+impl RunAudio {
+    fn frame(&mut self, w: &mut PlayState, frame: usize) {
+        self.offline.frame(w);
+        let now = [0, 1, 2, 3].map(|p| self.offline.playing(p));
+        if self.players.last().is_none_or(|(_, p)| *p != now) {
+            self.players.push((frame, now));
+        }
+    }
+}
+
+fn run_script(
+    mut w: PlayState,
+    cli: &Cli,
+    mut audio: Option<&mut RunAudio>,
+    on_frame: &mut dyn FnMut(&PlayState, usize, &RenderFrame) -> Result<()>,
+) -> Result<(PlayState, Vec<RenderFrame>, Vec<serde_json::Value>)> {
     let house = cli.script == "house";
     // The playthroughs steer themselves (oot_actors::playthrough) and mark each step in the trace.
     let mut playthrough = oot_actors::playthrough::Route::from_script(&cli.script).map(oot_actors::playthrough::Playthrough::for_route);
@@ -459,6 +491,9 @@ fn run_script(mut w: PlayState, cli: &Cli, on_frame: &mut dyn FnMut(&PlayState, 
         };
         let cur = &cur;
         w.tick_with(scripted_input(prev, *cur));
+        if let Some(a) = audio.as_deref_mut() {
+            a.frame(&mut w, i + 1);
+        }
         prev = *cur;
         let targets = w.targets();
         let p = w.player();
@@ -540,9 +575,15 @@ fn headless(cli: &Cli) -> Result<()> {
         Some(p.with_file_name(format!("{stem}_{frame}.png")))
     };
     let mut shots: Vec<(usize, PathBuf)> = cli.shots_at.iter().filter_map(|&f| shot_path(f).map(|p| (f, p))).collect();
+    let mut audio = if cli.audio_log.is_some() || cli.wav.is_some() {
+        let data = a.pack.audio_data()?;
+        Some(RunAudio { offline: oot_game::audio::offline::OfflineAudio::new(&data, cli.wav.is_some()), players: Vec::new() })
+    } else {
+        None
+    };
     let (w, snaps, trace) = {
         let w = script_play(&a, cli)?;
-        run_script(w, cli, &mut |w, frame, snap| {
+        run_script(w, cli, audio.as_mut(), &mut |w, frame, snap| {
             if let Some(k) = shots.iter().position(|(f, _)| *f == frame) {
                 let (_, p) = shots.remove(k);
                 let t = Target::new(&device, cli.width, cli.height);
@@ -557,6 +598,9 @@ fn headless(cli: &Cli) -> Result<()> {
             Ok(())
         })?
     };
+    if let Some(run) = &audio {
+        write_audio(cli, &w, run)?;
+    }
     if let Some(p) = &cli.trace {
         if let Some(d) = p.parent() {
             std::fs::create_dir_all(d)?;
@@ -599,10 +643,49 @@ fn headless(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
+/// `--audio-log` and `--wav`.
+fn write_audio(cli: &Cli, w: &PlayState, run: &RunAudio) -> Result<()> {
+    let mkdir = |p: &PathBuf| -> Result<()> {
+        if let Some(d) = p.parent() {
+            std::fs::create_dir_all(d)?;
+        }
+        Ok(())
+    };
+    if let Some(p) = &cli.audio_log {
+        mkdir(p)?;
+        let log = w.audio.log.clone().unwrap_or_default();
+        let op = |o: &eng_audio::GameOp| match *o {
+            eng_audio::GameOp::Cmd(a, d) => format!("cmd {a:08X} {d:08X}"),
+            eng_audio::GameOp::Schedule => "schedule".to_string(),
+            eng_audio::GameOp::ResetCmdQueue => "reset cmd queue".to_string(),
+            eng_audio::GameOp::ResetSpec(s) => format!("reset spec {s}"),
+            eng_audio::GameOp::SetAudRand(v) => format!("audRand {v:08X}"),
+        };
+        let json = serde_json::json!({
+            "script": cli.script,
+            "seq_cmds": log.seq_cmds.iter().map(|(f, c)| serde_json::json!([f, format!("{c:08X}")])).collect::<Vec<_>>(),
+            "ops": log.ops.iter().map(|(f, o)| serde_json::json!([f, op(o)])).collect::<Vec<_>>(),
+            "players": run.players.iter().map(|(f, p)| serde_json::json!([f, p])).collect::<Vec<_>>(),
+            // Audio_PlaySfxGeneral's requests: the frame, the id, its name (the 0x800 bit is
+            // the id's own: a name without it is the same row).
+            "sfx": log.sfx.iter().map(|(f, id)| serde_json::json!([f, format!("{id:04X}"), w.audio.tables.sfx_name(*id).unwrap_or("")])).collect::<Vec<_>>(),
+        });
+        std::fs::write(p, serde_json::to_string_pretty(&json)?)?;
+        println!("{} ({} sequence commands, {} sound effects, {} library commands)", p.display(), log.seq_cmds.len(), log.sfx.len(), log.ops.len());
+    }
+    if let Some(p) = &cli.wav {
+        mkdir(p)?;
+        let r = &run.offline.renderer;
+        std::fs::write(p, eng_audio::wav::wav_bytes(&r.out, 2, r.output_rate()))?;
+        println!("{} ({:.1} s)", p.display(), r.out.len() as f64 / 2.0 / r.output_rate() as f64);
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli = Cli::parse();
-    if cli.sheet.is_some() || cli.trace.is_some() || cli.screenshot.is_some() {
+    if cli.sheet.is_some() || cli.trace.is_some() || cli.screenshot.is_some() || cli.audio_log.is_some() || cli.wav.is_some() {
         return headless(&cli);
     }
     oot::run_window(&options(&cli), "OoT clone: sandbox", cli.width, cli.height)

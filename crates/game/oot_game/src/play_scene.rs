@@ -55,6 +55,8 @@ pub const SCENE_KAKUSIANA: u16 = 0x3E;
 /// `SCENE_HAKADAN`, `SCENE_GANON_FINAL`: special cases of Player's void check.
 pub const SCENE_HAKADAN: u16 = 0x07;
 pub const SCENE_GANON_FINAL: u16 = 0x1A;
+/// `SCENE_TURIBORI`, the fishing pond: Player leaves the sequence mode alone there.
+pub const SCENE_TURIBORI: u16 = 0x49;
 /// `R_UPDATE_RATE`.
 pub const R_UPDATE_RATE: u16 = 3;
 
@@ -79,6 +81,9 @@ pub struct GameAssets {
     pub cutscenes: crate::cutscene::CutsceneTables,
     /// Navi's C-Up texts and Saria's (`z_elf_message.c`).
     pub elf_messages: crate::elf_message::ElfMessageTables,
+    /// The game's audio tables and the audio library's (docs/adr/0026-the-games-audio.md).
+    pub audio: Arc<crate::audio::AudioGameTables>,
+    pub audio_tables: Arc<eng_audio::AudioTables>,
     /// Cutscene scripts read so far, by symbol.
     scripts: std::sync::Mutex<std::collections::HashMap<String, Arc<crate::cutscene::CutsceneScript>>>,
     /// Skeletons and standard animations read so far (actors load theirs at init).
@@ -98,6 +103,8 @@ impl GameAssets {
             items: pack.items()?,
             cutscenes: pack.cutscene_tables()?,
             elf_messages: pack.elf_messages()?,
+            audio: Arc::new(pack.audio_game_tables()?),
+            audio_tables: Arc::new(pack.audio_tables()?),
             scripts: Default::default(),
             overlays,
             pack,
@@ -328,8 +335,21 @@ impl PlayState {
     }
 
     /// `Play_Init` for `save.entrance_index`, with Player and every actor from the pack's
-    /// actor table (`assets.overlays` for the ported ones, placeholders for the rest).
-    pub fn play_init(assets: Arc<GameAssets>, data: Arc<crate::data::GameData>, rules: Arc<crate::player_lib::PlayerRules>, mut save: SaveContext) -> Result<PlayState> {
+    /// actor table (`assets.overlays` for the ported ones, placeholders for the rest), as the
+    /// game's first: the audio's game side just booted (`GameAudio::boot`).
+    pub fn play_init(assets: Arc<GameAssets>, data: Arc<crate::data::GameData>, rules: Arc<crate::player_lib::PlayerRules>, save: SaveContext) -> Result<PlayState> {
+        let audio = crate::audio::GameAudio::boot(assets.audio.clone(), assets.audio_tables.clone());
+        Self::play_init_with(assets, data, rules, save, audio)
+    }
+
+    /// `Play_Init` with the audio's game side as the last game state left it.
+    pub fn play_init_with(
+        assets: Arc<GameAssets>,
+        data: Arc<crate::data::GameData>,
+        rules: Arc<crate::player_lib::PlayerRules>,
+        mut save: SaveContext,
+        audio: crate::audio::GameAudio,
+    ) -> Result<PlayState> {
         let t = &assets.scenes;
         // (func_8006450C comes with the new play state's idle csCtx.)
         if save.next_cutscene_index != 0xFFEF {
@@ -366,6 +386,9 @@ impl PlayState {
         let ld = scene.layer_data().clone();
         let col = CollisionContext::new(assets.pack.collision(&ld.collision)?);
         let mut play = PlayState::new(data, rules, col, (Vec3::ZERO, 0), save.adult);
+        play.audio = audio;
+        // Audio_SetExtraFilter(0), before the scene.
+        play.audio.set_extra_filter(0);
         play.assets = Some(assets.clone());
         play.messages = Some(assets.messages.clone());
         play.scene_id = scene_id;
@@ -407,11 +430,18 @@ impl PlayState {
             ty
         };
         play.save = save;
+        // SCENE_CMD_ID_SOUND_SETTINGS: Scene_CommandSoundSettings, one of the scene header's
+        // commands (nothing between them and here talks to the audio).
+        if let Some(snd) = ld.sound {
+            play.scene_command_sound_settings(snd);
+        }
         // Environment_Init (SCENE_CMD_ID_SKYBOX_SETTINGS' Play_InitEnvironment):
         // cutsceneTransitionControl = 0 (z_kankyo.c:318), D_8015FCC8 = 1 (z_kankyo.c:419), and no
         // cues.
         play.save.cutscene_transition_control = 0;
         play.demo.d_8015fcc8 = 1;
+        // envCtx->timeSeqState = TIMESEQ_DAY_BGM (z_kankyo.c:292).
+        play.time_seq_state = crate::audio::scene::TIMESEQ_DAY_BGM;
         play.cs_ctx.npc_actions = [None; 10];
         // Cutscene_HandleEntranceTriggers, after Play_SpawnScene.
         play.cutscene_handle_entrance_triggers();
@@ -447,6 +477,11 @@ impl PlayState {
             crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT => crate::play::VIEWPOINT_LOCKED,
             _ => crate::play::VIEWPOINT_NONE,
         };
+        // Environment_PlaySceneSequence, after Interface_SetSceneRestrictions (Interface_Init
+        // above), then the save's record of what plays.
+        play.environment_play_scene_sequence();
+        play.save.seq_id = play.sequence_ctx.seq_id;
+        play.save.nature_ambience_id = play.sequence_ctx.nature_ambience_id;
         for h in play.actors.all() {
             if let Some(a) = play.actors.get_mut(h) {
                 a.animation_update();
@@ -463,7 +498,10 @@ impl PlayState {
         let Some(assets) = self.assets.clone() else { return };
         // Play_Destroy → Actor_CleanupContext → Play_SaveSceneFlags.
         self.save_scene_flags();
-        match PlayState::play_init(assets, self.data.clone(), self.rules.clone(), self.save.clone()) {
+        let audio = std::mem::take(&mut self.audio);
+        let fallback = audio.clone();
+        let side = self.audio_side.take();
+        match PlayState::play_init_with(assets, self.data.clone(), self.rules.clone(), self.save.clone(), audio) {
             Ok(mut next) => {
                 // Until the new state's first frame runs, the screen keeps the fade-out this
                 // one finished on.
@@ -475,6 +513,7 @@ impl PlayState {
                     next.toggle_camera();
                 }
                 next.respawn_player = self.respawn_player;
+                next.audio_side = side;
                 // z_demo.c's statics and sNextUID are the code segment's: they carry over.
                 next.demo = crate::cutscene::DemoStatics { d_8015fcc8: next.demo.d_8015fcc8, ..self.demo };
                 next.cam_globals.next_uid = self.cam_globals.next_uid;
@@ -482,6 +521,8 @@ impl PlayState {
             }
             Err(e) => {
                 log::error!("Play_Init for entrance {:#x}: {e:#}", self.save.entrance_index);
+                self.audio = fallback;
+                self.audio_side = side;
                 self.transition = TransitionState::default();
             }
         }
@@ -542,6 +583,9 @@ impl PlayState {
         self.kill_actors_outside_rooms();
         self.spawn_transition_actors();
         self.col.water_room = self.room_ctx.cur.num.max(0) as u32;
+        // (Map_InitRoomData, Map_SavePlayerInitialInfo: no map yet.) Audio_SetEnvReverb.
+        let echo = self.room_ctx.cur.echo as i8;
+        self.audio.set_env_reverb(echo);
     }
 
     /// `Play_SetupRespawnPoint`.
@@ -607,7 +651,29 @@ impl PlayState {
             return;
         }
         if self.transition.mode == TRANS_MODE_SETUP {
-            // (Fading out the BGM when the entrance doesn't continue it: no audio.)
+            if self.transition.trigger != TRANS_TRIGGER_END {
+                // SCENE_LAYER_CHILD_DAY. (Interface_ChangeAlpha(1) here, the HUD fading out as
+                // the scene ends, isn't ported.)
+                let mut scene_layer = 0;
+                if self.save.cutscene_index >= 0xFFF0 {
+                    scene_layer = crate::scene::SCENE_LAYER_CUTSCENE_FIRST + (self.save.cutscene_index as usize & 0xF);
+                }
+                // fade out bgm if "continue bgm" flag is not set
+                let continue_bgm = self
+                    .assets
+                    .as_ref()
+                    .and_then(|a| a.scenes.entrances.get(self.transition.next_entrance_index as usize + scene_layer))
+                    .is_some_and(|e| e.continue_bgm);
+                if !continue_bgm {
+                    log::debug!("Sound initialized. 111");
+                    if self.transition.ty < TRANS_TYPE_MAX && !self.environment_is_forced_sequence_disabled() {
+                        log::debug!("Sound initialized. 222");
+                        self.audio.func_800f6964(0x14);
+                        self.save.seq_id = crate::audio::NA_BGM_DISABLED as u8;
+                        self.save.nature_ambience_id = crate::audio::NATURE_ID_DISABLED;
+                    }
+                }
+            }
             self.setup_transition(self.transition.ty);
         }
         match self.transition.mode {

@@ -242,6 +242,8 @@ pub struct LayerData {
     pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType`: `R_SCENE_CAM_TYPE` (`SCENE_CAM_TYPE_*`).
     pub scene_cam_type: u8,
+    /// `SCENE_CMD_ID_SOUND_SETTINGS` (`Scene_CommandSoundSettings`), if the header has it.
+    pub sound: Option<SoundSettings>,
     /// `SCENE_CMD_ID_CUTSCENE_DATA`: the pack key of the script `Scene_CommandCutsceneData` puts
     /// in `play->csCtx.segment` (`keys::cutscene`), if the header has one.
     pub cutscene: Option<String>,
@@ -251,6 +253,15 @@ pub struct LayerData {
     /// scene import), and anything the build reported.
     pub bake_day_time: u16,
     pub notes: Vec<String>,
+}
+
+/// `SCmdSoundSettings` (`SCENE_CMD_SOUND_SETTINGS(specId, natureAmbienceId, seqId)`): the audio
+/// spec, the nature ambience (`NatureAmbienceId`) and the music (`NA_BGM_*`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SoundSettings {
+    pub spec_id: u8,
+    pub nature_ambience_id: u8,
+    pub seq_id: u8,
 }
 
 /// One room as loaded for a scene layer: its header and its shape's meshes.

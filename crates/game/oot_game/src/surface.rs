@@ -41,6 +41,8 @@ pub trait SurfaceType {
     fn conveyor_speed(&self, id: PolyId) -> u32;
     /// `func_80042108`: surface data[1] bit 27.
     fn flag27(&self, id: PolyId) -> bool;
+    /// `SurfaceType_GetEcho`: the floor's reverb (`Audio_SetCodeReverb`).
+    fn echo(&self, id: PolyId) -> u32;
 }
 
 impl SurfaceType for CollisionContext {
@@ -76,5 +78,8 @@ impl SurfaceType for CollisionContext {
     }
     fn flag27(&self, id: PolyId) -> bool {
         self.surface_word(id, 1) & 0x0800_0000 != 0
+    }
+    fn echo(&self, id: PolyId) -> u32 {
+        self.surface_word(id, 1) >> 11 & 0x3F
     }
 }

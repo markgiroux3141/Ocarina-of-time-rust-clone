@@ -284,3 +284,315 @@ impl LoadAudioData for AudioData {
         Ok(AudioData { tables: t, audiobank: file("Audiobank")?, audioseq: file("Audioseq")?, audiotable: file("Audiotable")? })
     }
 }
+
+/// The game's audio tables (`oot_game::audio::AudioGameTables`), read from the C:
+/// `code_800EC960.c`'s `sSeqFlags` (with its `SEQ_FLAG_*` defines), `sSpecReverbs` and
+/// `sNatureAmbienceDataIO` (its `NATURE_IO_*` macros and enums from `sequence.h`), and
+/// `audio_external_data.c`'s `gSoundModeList` (`SoundMode`, `z64audio.h`).
+pub fn audio_game_tables(decomp: &Path) -> Result<oot_game::audio::AudioGameTables> {
+    let src = read_c(decomp, "src/code/code_800EC960.c")?;
+    let seq_h = read_c(decomp, "include/sequence.h")?;
+    let audio_h = read_c(decomp, "include/z64audio.h")?;
+    let ext = read_c(decomp, "src/code/audio_external_data.c")?;
+
+    // Names to values: the enums, and the object-like #defines with a number or a shift.
+    let mut names: HashMap<String, i64> = HashMap::new();
+    for member in ["NATURE_CHANNEL_STREAM_0", "CHANNEL_IO_PORT_0", "NATURE_STREAM_RUSHING_WATER", "NATURE_CRITTER_BIRD_CHIRP_1", "NATURE_ID_GENERAL_NIGHT"] {
+        let e = crate::csrc::parse_enum(&seq_h, member);
+        if e.is_empty() {
+            bail!("include/sequence.h: no enum with {member}");
+        }
+        names.extend(e.into_iter().map(|(v, n)| (n, v)));
+    }
+    let modes = crate::csrc::parse_enum(&audio_h, "SOUNDMODE_STEREO");
+    if modes.is_empty() {
+        bail!("include/z64audio.h: no SoundMode enum");
+    }
+    names.extend(modes.into_iter().map(|(v, n)| (n, v)));
+    for text in [&src, &seq_h] {
+        for l in text.lines() {
+            let mut it = l.split_whitespace();
+            if it.next() != Some("#define") {
+                continue;
+            }
+            let Some(name) = it.next() else { continue };
+            if name.contains('(') {
+                continue;
+            }
+            let body: String = it.collect::<Vec<_>>().join(" ");
+            if let Some(v) = shift_or_int(&body) {
+                names.insert(name.to_string(), v);
+            }
+        }
+    }
+    let value = |a: &str| -> Result<i64> {
+        a.split('|')
+            .map(|t| {
+                let t = t.trim();
+                crate::csrc::parse_int(t).or_else(|| names.get(t).copied()).or_else(|| shift_or_int(t)).with_context(|| format!("can't evaluate {t}"))
+            })
+            .try_fold(0i64, |acc, v| v.map(|v| acc | v))
+    };
+
+    // The function-like NATURE_IO_* macros: `#define NAME(arg) a, b, arg`.
+    let mut macros: HashMap<String, (String, Vec<String>)> = HashMap::new();
+    for l in seq_h.lines() {
+        let Some(rest) = l.trim().strip_prefix("#define ") else { continue };
+        let Some(open) = rest.find('(') else { continue };
+        let name = &rest[..open];
+        if name.contains(char::is_whitespace) || !name.starts_with("NATURE_IO_") {
+            continue;
+        }
+        let Some(close) = rest.find(')') else { continue };
+        let param = rest[open + 1..close].trim().to_string();
+        let body = rest[close + 1..].split(',').map(|s| s.trim().to_string()).collect();
+        macros.insert(name.to_string(), (param, body));
+    }
+    let expand = |atom: &str| -> Result<Vec<u8>> {
+        if let Some(open) = atom.find('(') {
+            let name = atom[..open].trim();
+            let arg = atom[open + 1..].strip_suffix(')').with_context(|| format!("{atom}"))?.trim();
+            let (param, body) = macros.get(name).with_context(|| format!("include/sequence.h: no macro {name}"))?;
+            body.iter().map(|b| value(if b == param { arg } else { b }).map(|v| v as u8)).collect()
+        } else {
+            Ok(vec![value(atom)? as u8])
+        }
+    };
+
+    let seq_flags: Vec<u8> = find_initializer(&src, "sSeqFlags")?.flatten().iter().map(|a| value(a).map(|v| v as u8)).collect::<Result<_>>()?;
+    let spec_reverbs: Vec<i8> = find_initializer(&src, "sSpecReverbs")?.flatten().iter().map(|a| value(a).map(|v| v as i8)).collect::<Result<_>>()?;
+    let mut nature_ambience = Vec::new();
+    for e in find_initializer(&src, "sNatureAmbienceDataIO")?.list() {
+        let f = e.list();
+        if f.len() != 3 {
+            bail!("sNatureAmbienceDataIO: an entry with {} fields", f.len());
+        }
+        let num = |i: &Init| -> Result<u16> { value(i.atom().with_context(|| format!("{i:?}"))?).map(|v| v as u16) };
+        let mut channel_io = Vec::new();
+        for a in f[2].flatten() {
+            channel_io.extend(expand(&a)?);
+        }
+        // channelIO[3 * 33 + 1], the rest zero.
+        if channel_io.len() > 100 {
+            bail!("sNatureAmbienceDataIO: {} channel IO bytes, more than 100", channel_io.len());
+        }
+        channel_io.resize(100, 0);
+        nature_ambience.push(oot_game::audio::NatureAmbienceDataIO { player_io: num(&f[0])?, channel_mask: num(&f[1])?, channel_io });
+    }
+    let sound_mode_list: Vec<u8> = find_initializer(&ext, "gSoundModeList")?.flatten().iter().map(|a| value(a).map(|v| v as u8)).collect::<Result<_>>()?;
+
+    let bytes = |name: &str| -> Result<Vec<u8>> { find_initializer(&src, name)?.flatten().iter().map(|a| value(a).map(|v| v as u8)).collect() };
+    let rows = |name: &str| -> Result<Vec<Vec<u8>>> {
+        find_initializer(&src, name)?.list().iter().map(|r| r.flatten().iter().map(|a| value(a).map(|v| v as u8)).collect()).collect()
+    };
+    let float_list = |name: &str| -> Result<Vec<f32>> { floats(&src, name) };
+    let ganons_tower_levels_vol = bytes("sGanonsTowerLevelsVol")?;
+    let is_large_sfx_bank = bytes("gIsLargeSfxBank")?;
+    let channels_per_bank = rows("gChannelsPerBank")?;
+    let used_channels_per_bank = rows("gUsedChannelsPerBank")?;
+    let behind_screen_z = float_list("sBehindScreenZ")?;
+    let charge_freq_scales = float_list("D_801305E4")?;
+
+    // gSfxBanks' arrays (audio_external_data.c), sized where code_800F7260.c declares them.
+    let banks_c = read_c(decomp, "src/code/code_800F7260.c")?;
+    let mut sfx_bank_sizes = Vec::new();
+    for name in find_initializer(&ext, "gSfxBanks")?.flatten() {
+        let decl = format!("SfxBankEntry {name}[");
+        let at = banks_c.find(&decl).with_context(|| format!("code_800F7260.c: no {decl}"))?;
+        let rest = &banks_c[at + decl.len()..];
+        let n = rest.split(']').next().and_then(crate::csrc::parse_int).with_context(|| format!("{name}'s size"))?;
+        sfx_bank_sizes.push(n as u8);
+    }
+
+    // gSfxParams (audio_sfx_params.c): DEFINE_SFX(enum, importance, distParam, randParam, flags)
+    // as { importance, ((distParam << SFX_PARAM_01_SHIFT) & SFX_PARAM_01_MASK) |
+    // ((randParam << SFX_PARAM_67_SHIFT) & SFX_PARAM_67_MASK) | flags }, the banks in its order.
+    let sfx_h = read_c(decomp, "include/sfx.h")?;
+    let mut sfx_names: HashMap<String, i64> = HashMap::new();
+    for l in sfx_h.lines() {
+        let mut it = l.split_whitespace();
+        if it.next() != Some("#define") {
+            continue;
+        }
+        let Some(name) = it.next() else { continue };
+        if name.contains('(') || !name.starts_with("SFX_") {
+            continue;
+        }
+        let body: String = it.collect::<Vec<_>>().join(" ");
+        if let Some(v) = eval_int(&body, &sfx_names) {
+            sfx_names.insert(name.to_string(), v);
+        }
+    }
+    let params_c = read_c(decomp, "src/code/audio_sfx_params.c")?;
+    let order = find_initializer(&params_c, "gSfxParams")?.flatten();
+    // Each sXBankParams' #include.
+    let mut sfx_params = Vec::new();
+    for bank in &order {
+        let at = params_c.find(&format!("SfxParams {bank}[]")).with_context(|| format!("audio_sfx_params.c: no {bank}"))?;
+        let inc = params_c[at..].split("#include \"").nth(1).and_then(|r| r.split('"').next()).with_context(|| format!("{bank}'s table"))?;
+        let table = std::fs::read_to_string(decomp.join("include").join(inc)).with_context(|| inc.to_string())?;
+        let mut rows = Vec::new();
+        for (m, args) in crate::csrc::define_rows_nested(&table) {
+            if m != "DEFINE_SFX" {
+                continue;
+            }
+            if args.len() != 5 {
+                bail!("{inc}: DEFINE_SFX with {} arguments", args.len());
+            }
+            let num = |a: &str| eval_int(a, &sfx_names).with_context(|| format!("{inc}: {a}"));
+            let (importance, dist, rand, flags) = (num(&args[1])?, num(&args[2])?, num(&args[3])?, num(&args[4])?);
+            let m01 = sfx_names["SFX_PARAM_01_MASK"];
+            let m67 = sfx_names["SFX_PARAM_67_MASK"];
+            let params = ((dist << sfx_names["SFX_PARAM_01_SHIFT"]) & m01) | ((rand << sfx_names["SFX_PARAM_67_SHIFT"]) & m67) | flags;
+            rows.push(oot_game::audio::SfxParams { name: args[0].clone(), importance: importance as u8, params: params as u16 });
+        }
+        sfx_params.push(rows);
+    }
+
+    // z_bgcheck.c's D_80119E10: NA_SE_PL_WALK_* - SFX_FLAG.
+    let bgcheck = read_c(decomp, "src/code/z_bgcheck.c")?;
+    let sfx_id_of = |name: &str| -> Option<i64> {
+        sfx_params.iter().enumerate().find_map(|(b, bank)| bank.iter().position(|p| p.name == name).map(|i| ((b as i64) << 12) + 0x800 + i as i64))
+    };
+    let floor_sfx: Vec<u16> = find_initializer(&bgcheck, "D_80119E10")?
+        .flatten()
+        .iter()
+        .map(|a| {
+            let (name, minus) = match a.split_once('-') {
+                Some((n, m)) => (n.trim(), m.trim()),
+                None => (a.trim(), ""),
+            };
+            let id = sfx_id_of(name).with_context(|| format!("z_bgcheck.c: D_80119E10: {name}"))?;
+            let sub = if minus.is_empty() { 0 } else { eval_int(minus, &sfx_names).with_context(|| format!("z_bgcheck.c: {minus}"))? };
+            Ok((id - sub) as u16)
+        })
+        .collect::<Result<_>>()?;
+
+    // z_player.c's struct_80832924 tables: { sfxId, field } rows.
+    let player_c = read_c(decomp, "src/overlays/actors/ovl_player_actor/z_player.c")?;
+    let mut player_anim_sfx = Vec::new();
+    let sfx_value = |a: &str| -> Result<u16> {
+        let (name, minus) = match a.split_once('-') {
+            Some((n, m)) => (n.trim(), m.trim()),
+            None => (a.trim(), ""),
+        };
+        let base = match crate::csrc::parse_int(name) {
+            Some(v) => v,
+            None => sfx_id_of(name).with_context(|| format!("z_player.c: no sound {name}"))?,
+        };
+        let sub = if minus.is_empty() { 0 } else { eval_int(minus, &sfx_names).with_context(|| format!("z_player.c: {minus}"))? };
+        Ok((base - sub) as u16)
+    };
+    let pair = |r: &Init| -> Result<(u16, i16)> {
+        let f = r.flatten();
+        if f.len() != 2 {
+            bail!("z_player.c: a struct_80832924 with {} fields", f.len());
+        }
+        Ok((sfx_value(&f[0])?, eval_int(&f[1], &sfx_names).with_context(|| format!("z_player.c: {}", f[1]))? as i16))
+    };
+    let mut from = 0;
+    while let Some(rel) = player_c[from..].find("static struct_80832924 ") {
+        let at = from + rel + "static struct_80832924 ".len();
+        from = at;
+        let name: String = player_c[at..].chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+        let rest = &player_c[at + name.len()..];
+        if rest.starts_with("[][2]") {
+            for (i, row) in find_initializer(&player_c, &name)?.list().iter().enumerate() {
+                player_anim_sfx.push((format!("{name}[{i}]"), row.list().iter().map(pair).collect::<Result<Vec<_>>>()?));
+            }
+        } else if rest.starts_with("[]") {
+            player_anim_sfx.push((name.clone(), find_initializer(&player_c, &name)?.list().iter().map(pair).collect::<Result<Vec<_>>>()?));
+        }
+    }
+
+    for (name, n, want) in [
+        ("D_80119E10", floor_sfx.len(), 14),
+        ("sSeqFlags", seq_flags.len(), 0x6E),
+        ("sSpecReverbs", spec_reverbs.len(), 20),
+        ("sNatureAmbienceDataIO", nature_ambience.len(), 20),
+        ("gSoundModeList", sound_mode_list.len(), 4),
+        ("sGanonsTowerLevelsVol", ganons_tower_levels_vol.len(), 8),
+        ("gSfxParams", sfx_params.len(), 7),
+        ("gSfxBanks", sfx_bank_sizes.len(), 7),
+        ("gIsLargeSfxBank", is_large_sfx_bank.len(), 7),
+        ("gChannelsPerBank", channels_per_bank.len(), 4),
+        ("gUsedChannelsPerBank", used_channels_per_bank.len(), 4),
+        ("sBehindScreenZ", behind_screen_z.len(), 2),
+        ("D_801305E4", charge_freq_scales.len(), 4),
+    ] {
+        if n != want {
+            bail!("{name}: {n} entries, not {want}");
+        }
+    }
+    Ok(oot_game::audio::AudioGameTables {
+        seq_flags,
+        spec_reverbs,
+        nature_ambience,
+        sound_mode_list,
+        ganons_tower_levels_vol,
+        sfx_params,
+        sfx_bank_sizes,
+        is_large_sfx_bank,
+        channels_per_bank,
+        used_channels_per_bank,
+        behind_screen_z,
+        charge_freq_scales,
+        floor_sfx,
+        player_anim_sfx,
+    })
+}
+
+/// An integer expression of numbers and `names`, with `|`, `<<` and parentheses (a
+/// `#define`'s body, a table's flags).
+fn eval_int(s: &str, names: &HashMap<String, i64>) -> Option<i64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Some(rest) = s.strip_prefix('-') {
+        return eval_int(rest, names).map(|v| -v);
+    }
+    // Strip parentheses around the whole.
+    if s.starts_with('(') && s.ends_with(')') {
+        let mut depth = 0;
+        let whole = s.char_indices().all(|(i, c)| {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            depth > 0 || i == s.len() - 1
+        });
+        if whole {
+            return eval_int(&s[1..s.len() - 1], names);
+        }
+    }
+    // The loosest operator at the top level: `|`, then `<<`.
+    for op in ["|", "<<"] {
+        let mut depth = 0;
+        let b = s.as_bytes();
+        let mut i = b.len();
+        while i > 0 {
+            i -= 1;
+            match b[i] {
+                b')' => depth += 1,
+                b'(' => depth -= 1,
+                _ => {}
+            }
+            if depth == 0 && s[i..].starts_with(op) && !(op == "|" && s[..i].ends_with('|')) {
+                let (l, r) = (eval_int(&s[..i], names)?, eval_int(&s[i + op.len()..], names)?);
+                return Some(if op == "|" { l | r } else { l << r });
+            }
+        }
+    }
+    crate::csrc::parse_int(s).or_else(|| names.get(s).copied())
+}
+
+/// `(1 << n)`, `1 << n`, or a number.
+fn shift_or_int(s: &str) -> Option<i64> {
+    let t = s.trim().trim_start_matches('(').trim_end_matches(')').trim();
+    if let Some((a, b)) = t.split_once("<<") {
+        return Some(crate::csrc::parse_int(a.trim())? << crate::csrc::parse_int(b.trim())?);
+    }
+    crate::csrc::parse_int(t)
+}

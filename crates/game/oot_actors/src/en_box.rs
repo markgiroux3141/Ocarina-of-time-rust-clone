@@ -472,7 +472,7 @@ impl EnBox {
                     log::debug!("En_Box: Demo_Tre_Lgt: {e:?}");
                 }
                 self.actor.child = me.child;
-                // Audio_PlayFanfare(NA_BGM_OPEN_TRE_BOX | 0x900): no audio.
+                play.audio.play_fanfare(oot_game::audio::NA_BGM_OPEN_TRE_BOX | 0x900);
             }
             play.flags.set_treasure(self.treasure_flag());
         } else {

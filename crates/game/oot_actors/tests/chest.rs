@@ -55,7 +55,10 @@ fn chest(w: &PlayState) -> Option<ActorHandle> {
 fn room2(a: Arc<GameAssets>) -> Option<(PlayState, PadState)> {
     let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let sound = a.pack.audio_data().expect("the pack's audio data");
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
+    // The audio library offline beside it, for the fanfares.
+    w.audio_side = Some(Box::new(oot_game::audio::offline::OfflineAudio::new(&sound, false)));
     let mut prev = NONE;
     frames(&mut w, &mut prev, NONE, 20);
     // What the crawlspace's room change would do: room 2 in, room 0 kept as the previous room.
@@ -113,6 +116,7 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     // Link out to his wall radius.
     w.place_player(CHEST_POS - Vec3::Z * 30.0, 0);
     frames(&mut w, &mut prev, NONE, 2);
+    w.audio.log = Some(Default::default());
     // EnBox_WaitOpen: func_8002F554(&this->dyna.actor, play, -(params >> 5 & 0x7F)) while
     // Link is in front (func_8002DBD0: within 20 of its axis, -50 < z < 0 in its space) and
     // facing it.
@@ -168,6 +172,13 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     let names: Vec<&str> = out.overlay_2d.iter().map(|c| c.mesh.name.as_str()).collect();
     assert!(names.iter().any(|n| n.ends_with("message/item3B")), "the sword's icon in the box: {names:?}");
 
+    // The fanfares (Audio_PlayFanfare, then func_800F5CF8 a frame later: with the fanfare
+    // player off, the bgm players fade out under it, the setup commands bring them back after,
+    // and the fanfare starts with a fade of 1): the chest's as it opens (En_Box,
+    // NA_BGM_OPEN_TRE_BOX | 0x900), then the item's (func_8084DFF4, NA_BGM_ITEM_GET | 0x900).
+    let starts: Vec<u32> = w.audio.log.as_ref().unwrap().seq_cmds.iter().map(|(_, c)| *c).filter(|c| c >> 24 == 0x01).collect();
+    assert_eq!(starts, [0x0101_092B, 0x0101_0922]);
+
     // Through both boxes (A at the box break), to TEXT_STATE_CLOSING, then func_8084DFAC:
     // Link stands, GI_NONE.
     until(&mut w, &mut prev, 600, true, |w| w.message_state() == TEXT_STATE_CLOSING);
@@ -210,6 +221,8 @@ fn a_piece_of_heart() {
     save.inventory.quest_items |= 1 << QUEST_HEART_PIECE_COUNT;
     let Some((data, rules)) = common::data().zip(common::rules()) else { return };
     let mut w = oot_actors::play_entrance(a.clone(), data, rules, save).expect("Play_Init");
+    w.audio.log = Some(Default::default());
+    w.audio_side = Some(Box::new(oot_game::audio::offline::OfflineAudio::new(&a.pack.audio_data().unwrap(), false)));
     let mut prev = NONE;
     frames(&mut w, &mut prev, NONE, 20);
     let pos = w.player().actor.world_pos;
@@ -230,4 +243,7 @@ fn a_piece_of_heart() {
     until(&mut w, &mut prev, 600, true, |w| w.msg_ctx.msg_mode == MSGMODE_NONE && w.player().action == Action::StandingStill);
     assert!(w.actors.get(h).is_none_or(|a| a.base().killed), "the piece is taken");
     assert_eq!(w.save.health_capacity, 0x30, "two pieces make no container");
+    // The second of four: NA_BGM_SMALL_ITEM_GET (the fourth would be NA_BGM_HEART_GET).
+    let starts: Vec<u32> = w.audio.log.as_ref().unwrap().seq_cmds.iter().map(|(_, c)| *c).filter(|c| c >> 24 == 0x01).collect();
+    assert_eq!(starts, [0x0101_0039]);
 }

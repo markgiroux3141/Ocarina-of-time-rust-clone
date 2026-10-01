@@ -6,8 +6,8 @@ pack.
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The import and the synth: the audio data in the pack, `eng_audio` (the audio library and its microcode, offline and through an output device), the mixer's ADR | done |
-| 2 | The sequence player at runtime: `audio_seqplayer.c` with the game's IO ports, the scenes' music (`Environment_PlaySceneSequence`, `code_800EC960.c`), the ambience | started: the sequence player is ported whole (milestone 1) and plays Kokiri Forest's sequence offline |
-| 3 | Sound effects: `Audio_PlaySfxGeneral` and the sfx channels, the calls the ported code marks as left out | |
+| 2 | The game's music: the scenes' sound settings in the pack, the sequence commands (`code_800F9280.c`), the scene's music and the ambience (`code_800EC960.c`, `Environment_PlaySceneSequence`), the boundary between the game's thread and the audio thread | done |
+| 3 | Sound effects: `Audio_PlaySfxGeneral` and the sfx channels, the calls the ported code marks as left out | started: the engine whole, positions through `projectedPos`, the message box, most of Player's ported actions |
 
 **Phase exit:** Kokiri Forest's music plays and loops like the game, and a scripted run's sound
 effects log matches the calls in the C.
@@ -148,23 +148,218 @@ The tests: 270 pass, 1 ignored (257 before). The goldens are unchanged: 84 of 84
 - **Cutscene audio** stays deferred (BACKLOG #10).
 - **By hand:** the music hasn't been heard by ear yet (`game-music.bat`, `audio-wav.bat`).
 
-## Milestone 2: the sequence player at runtime (started)
+## Milestone 2: the game's music
 
-Started in milestone 1: `audio_seqplayer.c` is ported whole, with the game's IO ports
-(`soundScriptIO`) and the player and channel commands (`func_800E6128`, `func_800E6300`), and
-plays Kokiri Forest's sequence offline and in the window.
+**Answer:** done. The game starts and changes its own music: each scene's sound settings come
+from the pack, `Play_Init` queues the spec change and `Environment_PlaySceneSequence` the music
+(or, by night, the nature ambience), and every frame's `Audio_Update` turns the game's sequence
+commands into the library's, as `code_800F9280.c` and `code_800EC960.c` do. Kokiri Forest
+starts and loops its music headless and in the window with no `--music`. Leaving a scene fades
+every player out, the next scene changes the spec and starts its own; back in the forest from a
+house or the shop, the music resumes where it left off, as the game's does. Chests and items
+play their fanfares, the music fading under them and back.
 
-Left for the milestone:
-- `code_800EC960.c`'s sequence commands (`Audio_QueueSeqCmd`, `func_800F9280.c`'s processing:
-  fades, `seqCmd`s) and the game's per-frame `Audio_Update` sending them to the audio thread;
-- `Environment_PlaySceneSequence` and the scenes' sound settings in the pack (the spec, the
-  nature ambience, the sequence), with the time of day's music;
-- the nature ambience (`Audio_PlayNatureAmbienceSequence` on its player, its IO ports);
-- **exit:** Kokiri Forest's music plays and loops in the game like the game, headless (an audio
-  trace) and in the window.
+The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84 identical.
+
+### What was built
+
+1. **The scenes' sound settings in the pack** (pack format 14, `out/data11`):
+   `SCENE_CMD_SOUND_SETTINGS` of every layer (`LayerData.sound`: spec, nature ambience,
+   sequence); and the game's audio tables, read from the C (`table/audio`,
+   `oot_game::audio::AudioGameTables`): `sSeqFlags` with its `SEQ_FLAG_*` defines,
+   `sSpecReverbs`, `sNatureAmbienceDataIO` with `sequence.h`'s `NATURE_IO_*` macros and enums
+   expanded, `gSoundModeList`. `ootx scene-info` prints a layer's sound settings.
+2. **The boundary** ([ADR 0026](adr/0026-the-games-audio.md), `eng_audio::link`): what the
+   game's thread does to the library (`GameOp`: commands, schedules, the ring's rewind, the spec
+   change) is applied in order by the audio side (`AudioContext::apply`) before its next
+   retrace; what the game reads of it (`AudioView`: the players' `enabled`, `tempo` and IO
+   ports, the channels' IO ports and note priorities, `updatesPerFrame`, the reset and load
+   queues' messages, the notes sounding) comes back after. `func_800E5F88`'s audio side;
+   `AudioTables::fonts_for_sequence` (`AudioLoad_GetFontsForSequence`); `AudioView::boot`.
+   Offline: `Renderer::game_frame`; the window: `AudioOutput::send_ops` and `take_view`.
+3. **The game's side, ported whole** (`oot_game::audio`, the game layer):
+   - `seqcmd` (`code_800F9280.c`): `Audio_QueueSeqCmd`, `Audio_ProcessSeqCmd(s)` (every op:
+     the starts and stops, the players' queues, the volume, frequency and tempo fades, the IO
+     ports, the channel masks, the setup commands, the sound mode, the spec change),
+     `func_800F9280`, `func_800F9474`, `func_800FA0B4`, `func_800FA11C`, `Audio_SetVolScale`,
+     `func_800FA3DC`, `func_800FAD34`, the resets;
+   - `bgm` (`code_800EC960.c`'s sequences): `Audio_Update` (`func_800F3054`),
+     `func_800F5550` (the scene's music, resumed through `D_8013062C` and port 7),
+     `func_800F56A8`, `Audio_SetSequenceMode` and the enemy music, `Audio_SplitBgmChannels`,
+     `Audio_PlayFanfare` and `func_800F5CF8`, the mini-boss and ambience swaps and their
+     restores, the river and Ganon's Tower volumes, `func_800F6964` (the fade on leaving),
+     `Audio_PlayNatureAmbienceSequence`, `Audio_StartNatureAmbienceSequence`,
+     `Audio_SetNatureAmbienceChannelIO`, `Audio_InitSound`, `func_800F6C34`, `func_800F7170`,
+     `func_800F71BC`, the reverbs and filters' setters;
+   - `scene` (`z_scene.c`, `z_kankyo.c`): `Scene_CommandSoundSettings`,
+     `Environment_PlaySceneSequence` (the Lost Woods' bridge, the forced sequence, no music,
+     no ambience, by day, by night), `Environment_PlayTimeBasedSequence` (every state),
+     `Environment_ForcePlaySequence`;
+   - `offline`: `OfflineAudio`, the headless audio side.
+4. **Wired into play:** the boot (`Audio_InitSound`, then the title screen's `func_800F6700` with a fresh SRAM's sound setting, stereo: the title and the file select aren't ported, so their own music isn't either); `Play_Init` (`Audio_SetExtraFilter(0)`, the sound settings,
+   `Environment_Init`'s `TIMESEQ_DAY_BGM`, `Environment_PlaySceneSequence` and the save's
+   `seqId`/`natureAmbienceId`), `GameAudio` carried over a scene change
+   (`PlayState::play_init_with`), the transition's fade-out unless the next entrance continues
+   the music, `Environment_Update`'s time of day, `Audio_Update` at each frame's end and as a
+   game state ends, the room change's reverb (`func_80097534`), `Audio_SetCutsceneFlag` in
+   `z_demo.c`'s six places; Player's `Audio_SetSequenceMode` every frame and its item-get
+   fanfare (`func_8084DFF4`, after `Item_Give`) and the secret hole's fade; `En_Box`'s chest
+   fanfare. The save holds `seqId`, `natureAmbienceId`, `forcedSeqId` (`SaveContext_Init`'s).
+5. **The window:** each game frame's ops to the device's thread and the latest view back
+   (`PlayState::advance_with`); `--music <n>` forces sequence n
+   (`Environment_ForcePlaySequence`); the audio thread's log names what each player plays.
+6. **The sandbox:** `--audio-log <json>` (every sequence command and library command by frame,
+   and what each player played) and `--wav <file>` for any scripted run.
+7. **Run scripts:** `test-music.bat`, `game-night.bat`, `sandbox-audio-log.bat`;
+   `game-music.bat` now forces the title theme (menu 28 to 30).
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 276 passed, 1 ignored |
+| Kokiri Forest from a new game (`oot_actors --test music`) | `Play_Init` queues, as the C does, `F0000001` (spec 1, `seqId` disabled), `700700FF` and `0000003C` (`func_800F5550`: port 7 to 0xFF, `sSeqFlags[NA_BGM_GENERAL_SFX]` lacking `SEQ_FLAG_5`); `Audio_InitSound`'s `46000000 FF000000` and `82020000 7` come first, and the title's sound mode (`E0000000`: `func_800F6700(0)`, stereo). The first `Audio_Update` gives `F0000000 0` (stereo), the reset to spec 1, `46000000`, `F8`, `46000007`, `82003C00 0`, a schedule, and `func_800FA3DC`'s four `4p01007F`. Then nothing for the 6 game frames of the reset (18 audio frames), then `func_800FAD34`'s `46020000` and `func_800F7170`. The forest's sequence plays on player 0, the sound effects' 0 on player 2; after 1212 game frames, 7014 ticks (past the loop at 5952), 735 notes, still sounding in the last 5 s |
+| From Link's house into the forest | The exit: `func_800F6964(0x14)`'s `101E00FF`, `111E00FF`, 15 sfx channel fades (all but the ocarina's), `131E00FF`; the forest: `F0000001`, `70070000`, `0000003C` (from `NA_BGM_LINK_HOUSE`'s `SEQ_FLAG_5` to the forest's `SEQ_FLAG_4`: port 7 from `D_8013062C`) |
+| Kokiri Forest at 20:00 | `Audio_PlayNatureAmbienceSequence(NATURE_ID_KOKIRI_REGION)`'s commands from `sNatureAmbienceDataIO[4]`, then the night's critters (`TIMESEQ_NIGHT_CRITTERS`: critter 0 off, 1 to 3 on, while the start is still queued); `NA_BGM_NATURE_AMBIENCE` plays, its channels hold their critters' types; 91 notes in 20 s |
+| The chests (`oot_actors --test chest`) | The Kokiri Sword's chest: `0101092B` (`NA_BGM_OPEN_TRE_BOX \| 0x900`), then `01010922` (`NA_BGM_ITEM_GET \| 0x900`); a second heart piece: `01010039` (`NA_BGM_SMALL_ITEM_GET`) |
+| The boundary (`oot_game --test audio`) | `AudioView::boot`'s `updatesPerFrame` 3 is `AudioLoad_Init`'s; `func_800E5F88`'s paths: the reset runs over 18 audio frames and posts its spec; the same spec again: -2; another early: -3, switched; another late: the reset finishes first |
+| The pack (`oot_import --test pack`) | The game's audio tables are the importer's reading of the C (`sSeqFlags` by the rows' `NA_BGM_*`, `sSpecReverbs` 40 and 15, the general night's ambience, `gSoundModeList`); five scenes' sound settings per layer are the ROM headers'; Kokiri Forest by day: spec 1, `NATURE_ID_KOKIRI_REGION`, `NA_BGM_KOKIRI` |
+| The new file's run with sound (`sandbox-audio-log.bat`) | The same route, frame for frame (11748 frames), with 587 s of sound: the opening's layers start what their headers name, Link's house 0x1F, the forest 0x3C, Mido's house 0x1F and back (resumed: `001E003C`), the shop 0x55 and back (resumed), the Deku Tree 0x1C with spec 3; the chest's fanfare and the sword's and shield's item fanfares on player 1, the music fading under them and back. 4945 sequence commands, 18488 library commands; 7.5 s with the audio offline |
+| The window | No `--music`: the device plays the forest's sequence on player 0 and the sound effects' on player 2; the queue held 1961 to 2021 frames over 20 s and never ran dry. Not yet heard by hand |
+| Import | 12.5 s; 63.7 MB; format 14, into `out/data11` |
+| Golden traces and renders | 84 of 84 identical |
+
+### Decisions
+
+- **[ADR 0026](adr/0026-the-games-audio.md):** the game's thread and the audio thread meet at
+  the end of each game frame: the frame's `GameOp`s in, applied in order before the next
+  retrace; an `AudioView` back, read the whole next frame; the queues' messages kept until
+  received. `func_800E5F88` split between the two; its blocking wait finishes the reset at
+  once. The game's side's statics as one struct carried over a scene change. The tables and
+  the sound settings in the pack.
+- **`--music` is the C's forced sequence** (`Environment_ForcePlaySequence`), not a side door.
+- **A play state can carry its audio side** (`PlayState::audio_side`) for headless runs and
+  tests; the window drives its device through `advance_with`.
+- **`oot_actors` depends on `eng_audio`** (for the ops in tests; milestone 3's sound effects
+  need it there).
+
+### Known gaps
+
+- **Sound effects** (milestone 3): `Audio_ProcessSfxRequests`, `func_800F8F88` and the sfx
+  banks; the calls marked as left out (Player's, the actors', the message box's, the HUD's).
+  The reverbs the floor and the room set (`Audio_SetCodeReverb`, `Audio_SetEnvReverb`) are
+  stored for them. (Milestone 3 has started on all of this.)
+- **Cutscene audio** stays deferred (BACKLOG #10): the opening's layers start what their
+  headers name (the sound effects' sequence, the nature ambience), and their scripts'
+  `CS_CMD_PLAYBGM`, `_STOPBGM`, `_FADEBGM` do nothing.
+- **Time doesn't pass**, so the time of day's music stays in the state a scene starts in; no
+  weather, so the rain's checks always pass. The day's count, the cucco's crow and the egg's
+  hatching at dawn wait for the clock.
+- **Not ported here:** the ocarina (`AudioOcarina_*`), the debug screen (`AudioDebug_*`),
+  `Audio_PlaySariaBgm` (no caller yet), the pause menu's mute (`func_800F64E0` is ported, its
+  caller isn't), the enemy music (`targetCtx.bgmEnemy` is never set: no enemies), game over's
+  music, the bottle catch's fanfare; `Interface_ChangeAlpha(1)` in the transition's setup.
+- **The approximations** (ADR 0026): the spec change's wait, the game's reads at frame
+  boundaries.
+- **By hand:** the window's music hasn't been heard by ear yet (`game.bat`, `game-night.bat`,
+  `sandbox-audio-log.bat`'s WAV).
+
+## Milestone 3: sound effects (started)
+
+**Answer:** started. The sound effects' engine is ported whole and sounds: a request goes into
+its bank, the banks' entries are chosen by priority every frame and started on the sound
+effects' sequence's channels, refreshed while they're asked for, and let go when the channel
+says they ended. Link's footsteps (by floor), jumps, landings, voice, the roll, the sword's
+swing, ladders, ledges and the crawl sound in the game; so do the message box's sounds and the
+item sounds. Many of the game's calls aren't wired yet (below).
+
+The tests: 279 pass, 1 ignored (276 at milestone 2's end). The goldens are unchanged: 84 of 84.
+
+### What was built
+
+1. **The tables in the pack** (`table/audio`, still format 14): `gSfxParams` from the seven
+   bank tables (`include/tables/sfx/*.h`, 1259 rows with their names), the banks' sizes
+   (`gSfxBanks`' arrays), `gChannelsPerBank`, `gUsedChannelsPerBank`, `gIsLargeSfxBank`,
+   `sBehindScreenZ`, `D_801305E4`, `D_80119E10` (the floors' footsteps, `z_bgcheck.c`), and
+   `z_player.c`'s 40 `struct_80832924` tables (the animations' sounds); `sGanonsTowerLevelsVol`
+   moved here from the code.
+2. **The engine** ([ADR 0027](adr/0027-sound-effects.md), `oot_game::audio::sfx`):
+   `code_800F7260.c` whole (`Audio_PlaySfxGeneral` and its swap table,
+   `Audio_ProcessSfxRequest(s)`, the banks' lists, `Audio_ChooseActiveSfx`,
+   `Audio_PlayActiveSfx`, `Audio_RemoveSfxBankEntry`, every `Audio_StopSfx*`,
+   `Audio_IsSfxPlaying`, `Audio_ResetSfx`, the bgm mutes, the unused bank lerps);
+   `code_800EC960.c`'s sound effect parts (`Audio_ComputeSfxVolume`, `_Reverb`, `_PanSigned`,
+   `_FreqScale`, `func_800F37B8`, `func_800F3990`, `Audio_SetSfxProperties`, `func_800F3F84`,
+   `func_800F4010` and the other helpers, the river and the waterfall, the transposed ones);
+   `z_lib.c`'s `func_80078884`, `func_800788CC`, `func_80078914`; `AudioMgr_StopAllSfx`.
+   `Audio_Update` now runs the requests and `func_800F8F88`.
+3. **Positions:** `projectedPos` and `projectedW` on every actor, from `Actor_DrawAll`'s spot in
+   the frame; `actor->sfx` and its four setters (`func_8002F8F0`...), played there
+   (`func_80030ED8`); cleared by `Actor_UpdateAll`; `Actor_Delete` stops the actor's sounds.
+4. **The boundary** (ADR 0026): the view carries `audioRandom`, `audRand` and the count
+   register's value; `GameOp::SetAudRand` sends the game's `Audio_NextRandom` back.
+5. **The message box:** `Message_ShouldAdvance`'s `NA_SE_SY_MESSAGE_PASS` (and the silent
+   variant, as the C uses each, in the message code, the cutscene's texts and the actors),
+   `Message_HandleChoiceSelection`'s cursor, `Message_DrawText`'s `NA_SE_SY_MESSAGE_END` and the
+   text's own sound codes (`MESSAGE_SFX`), `Message_Update`'s `NA_SE_SY_DECIDE` and pass, and
+   the C's silent (id 0) calls.
+6. **Player** (`PlayRequest::Sfx`): the helpers (`func_80832698` the voice, `func_808327F8` the
+   footsteps, `func_80832854` the jump, `func_808328A0` the landing, `func_80832770`,
+   `func_808327C4`, `func_808328EC`, `func_80832924` the animations' tables, `func_808326F0`,
+   `func_8084BEE4` the ladder), `unk_89E` (the floor's footstep, `func_80847BA0`) and the
+   floor's echo (`Audio_SetCodeReverb`, with `SurfaceType_GetEcho`); and the sounds of the
+   actions ported: walking and running, the side step, jumps and their voice, the automatic
+   jump, landings and a fall's damage, the roll with its dust and its bonk, being hurt (the
+   damage, the voices, the body hit), being knocked down and getting up, slipping off a
+   ledge, hanging, climbing up ledges and walls, the ladder, the crawl, the sword's swing
+   (`func_80833A20`), the child's chest opening, the item sounds (`func_8083E4C4`, the
+   rupees' and hearts' `NA_SE_SY_GET_BOXITEM`), the voids and the secret hole.
+7. **The sandbox's `--audio-log`** lists the sound effects asked for, by frame, with their names.
+8. **Run scripts:** `test-sfx.bat` (menu 31).
+
+### Results
+
+| Check | Result |
+|---|---|
+| `cargo test --workspace` | 279 passed, 1 ignored |
+| Walking in Kokiri Forest (`oot_actors --test sfx`) | 10 footsteps in 60 frames from the walk's start, on exactly the frames where the walk phase crosses 10 or 24 of its 29 (`func_8084021C`, while running), each `NA_SE_PL_WALK_GROUND` + `D_80119E10`[the floor] + the age's `unk_94` (0x800 on the path, 0x808 on the grass); each started on a channel of the sound effects' sequence (port 0 to 1, port 4 the index); walking strikes 65 notes where standing still strikes the music's 36 |
+| The message box | Text 0x1005: an A at each box break plays `NA_SE_SY_MESSAGE_PASS`, its end `NA_SE_SY_MESSAGE_END` once, the A that closes it `NA_SE_SY_DECIDE` |
+| The tables (`oot_import --test pack`) | The banks' rows (224, 80, 248, 499, 72, 8, 128); `DEFINE_SFX(NA_SE_PL_WALK_GROUND, 0x20, 0, 2, SFX_FLAG_10)` packed as the C packs it; every id the code names is its table's row; the banks' sizes 9, 12, 22, 20, 8, 3, 5; the channel layouts; `sBehindScreenZ`, `D_801305E4` |
+| The new file's run (`sandbox-audio-log.bat`) | The same route, frame for frame; 4052 requests: 1083 sounds (356 grass footsteps, 166 ground, 66 ladder, 34 water, 25 concrete, 299 metal jingles with them as `func_800F4010` adds at a run, jumps, landings, voices, 40 passes, 18 ends, 17 decides, the chest's item sound, Navi's and Zelda's text sounds) and the C's 2969 silent ones; 33166 library commands (18488 without the sound effects) |
+| The window | The device plays as before (the queue never ran dry). Not yet heard by hand |
+| Golden traces and renders | 84 of 84 identical |
+
+### Decisions
+
+- **[ADR 0027](adr/0027-sound-effects.md):** the C's pointers as named sources (`SfxPos`,
+  `SfxF32`, `SfxS8`), compared as the pointers are and read when the C reads them; positions
+  through `projectedPos`, resolved once per `Audio_Update`; the engine whole; Player's sounds
+  as requests in their order; the tables in the pack, the named ids checked against them.
+- **The C's silent calls stay** (`Audio_PlaySfxGeneral(0, ...)`: the typing, the box breaks):
+  they fill the request ring as on the console and play nothing.
+
+### Known gaps
+
+- **Not wired yet:** the other actors' sounds (`En_Box`'s lid, `En_Door`, `Bg_Treemouth`,
+  `En_Elf`'s, `En_Kusa` and `En_Ishi`, `En_Item00` and the rupees, `En_Wonder_Item`,
+  `En_Goroiwa`'s hit), the HUD's (`z_parameter.c`: the hearts, the low-health alarm, the
+  rupees counting), `z_play.c`'s (the viewpoint's zoom, the error sound), the collision check's
+  (`z_collision_check.c`: the shield, the sword's strikes), `Audio_SetBaseFilter`'s bubble.
+- **Player:** 104 sites in its 71 functions not ported (the items, the shield, bottles, the
+  ocarina, the boomerang and the hookshot, swimming's strokes, Epona, the cutscene modes'
+  voices) and, in ported ones, the water's (`func_8083CFA8`'s splash check isn't ported), the
+  masks', the lens', the hover boots'.
+- **Not exercised:** the surround mode's stereo bits and filter (the sound mode is stereo, as a
+  fresh SRAM's), the headset, the swap table (the debug screen's), the river and waterfall
+  helpers (no `En_River_Sound` yet).
+- **By hand:** not yet heard (`game.bat`, `sandbox-audio-log.bat`'s WAV).
 
 ## Recommended next step
 
-Milestone 2's game side: the sequence commands and `Environment_PlaySceneSequence`, so Kokiri
-Forest starts its own music; then the ambience. Ask the user to listen first
-(`scripts\run\game-music.bat`, `scripts\run\audio-wav.bat`): the music is audible now.
+Listen first: `scripts\run\game.bat` (Kokiri Forest's music, Link's sounds; walk into a house
+and out, talk to a Kokiri), `scripts\run\game-night.bat` (the night's ambience),
+`scripts\run\sandbox-audio-log.bat` (the whole new-file run as a WAV). Then milestone 3 on:
+the actors' sounds the ported code marks as left out (`En_Box`, `En_Door`, `Bg_Treemouth`,
+`En_Elf`, the bushes and rocks, `En_Item00`), the HUD's (`z_parameter.c`, the low-health
+alarm), `z_play.c`'s and the collision check's; Player's water sounds with `func_8083CFA8`;
+and for the phase's exit, a scripted run's sound effect log checked against the C's calls.

@@ -22,7 +22,7 @@ use eng_input::pad::{BTN_A, BTN_B, BTN_DLEFT, BTN_DRIGHT, BTN_DUP, BTN_START};
 use glam::{IVec3, Vec3};
 
 use crate::camera::{CAM_ID_MAIN, CAM_SET_CS_0, CAM_SET_FREE0, CAM_STAT_ACTIVE, CAM_STAT_WAIT};
-use crate::message::{TEXT_STATE_8, TEXT_STATE_9, TEXT_STATE_CHOICE, TEXT_STATE_CLOSING, TEXT_STATE_EVENT, TEXT_STATE_NONE, TEXT_STATE_SONG_DEMO_DONE, should_advance};
+use crate::message::{TEXT_STATE_8, TEXT_STATE_9, TEXT_STATE_CHOICE, TEXT_STATE_CLOSING, TEXT_STATE_EVENT, TEXT_STATE_NONE, TEXT_STATE_SONG_DEMO_DONE};
 use crate::play::PlayState;
 use crate::save::GAMEMODE_NORMAL;
 use crate::transition::*;
@@ -710,7 +710,7 @@ impl PlayState {
         crate::interface::change_alpha(&mut self.save, 1);
         self.letterbox.set_size_target(32);
         if self.func_8006472c(1.0) {
-            // Audio_SetCutsceneFlag(1): no audio.
+            self.audio.set_cutscene_flag(1);
             self.cs_ctx.state += 1;
         }
     }
@@ -721,7 +721,7 @@ impl PlayState {
         crate::interface::change_alpha(&mut self.save, 1);
         self.letterbox.set_size_target(32);
         if self.func_8006472c(1.0) {
-            // Audio_SetCutsceneFlag(1): no audio.
+            self.audio.set_cutscene_flag(1);
             self.cs_ctx.state += 1;
         }
     }
@@ -864,7 +864,7 @@ impl PlayState {
             return;
         }
         self.cs_ctx.state = CS_STATE_UNSKIPPABLE_EXEC;
-        // Audio_SetCutsceneFlag(0): no audio.
+        self.audio.set_cutscene_flag(0);
         self.save.cutscene_transition_control = 1;
         log::debug!("cutscene terminator: destination {base}");
         if self.save.game_mode != GAMEMODE_NORMAL && frames != start {
@@ -1226,8 +1226,7 @@ impl PlayState {
             let st = self.message_state();
             if st != TEXT_STATE_CLOSING && st != TEXT_STATE_NONE && st != TEXT_STATE_SONG_DEMO_DONE && st != TEXT_STATE_8 {
                 self.cs_ctx.frames = self.cs_ctx.frames.wrapping_sub(1);
-                let advance = should_advance(&self.input);
-                if st == TEXT_STATE_CHOICE && advance {
+                if st == TEXT_STATE_CHOICE && self.message_should_advance() {
                     let branch = if self.msg_ctx.choice_index == 0 { text_id1 } else { text_id2 };
                     if branch != 0xFFFF {
                         self.continue_textbox(branch);
@@ -1242,7 +1241,7 @@ impl PlayState {
                         self.cs_ctx.frames = self.cs_ctx.frames.wrapping_add(1);
                     }
                 }
-                if st == TEXT_STATE_EVENT && advance {
+                if st == TEXT_STATE_EVENT && self.message_should_advance() {
                     log::warn!("cutscene text {base:#x}: the event's func_8010BD58 not ported");
                 }
             }
@@ -1285,7 +1284,8 @@ impl PlayState {
                         match cmd_type {
                             CS_CMD_MISC => self.func_80064824(d, p),
                             CS_CMD_SET_LIGHTING => self.cutscene_command_set_lighting(d, p),
-                            // Cutscene_Command_PlayBGM, _StopBGM, _FadeBGM: no audio.
+                            // Cutscene_Command_PlayBGM, _StopBGM, _FadeBGM: the cutscenes' audio waits for their
+                            // polish pass (BACKLOG #10).
                             _ => {}
                         }
                         p += 0x30;
@@ -1379,7 +1379,7 @@ impl PlayState {
     /// `func_80068D84`: an actor's cutscene ends as `unk_0C` falls to 0.
     fn func_80068d84(&mut self) {
         if self.func_8006472c(0.0) {
-            // Audio_SetCutsceneFlag(0): no audio.
+            self.audio.set_cutscene_flag(0);
             self.cs_ctx.state = CS_STATE_IDLE;
         }
     }
@@ -1407,7 +1407,7 @@ impl PlayState {
                 c.func_8005b1a4();
             }
         }
-        // Audio_SetCutsceneFlag(0): no audio.
+        self.audio.set_cutscene_flag(0);
         self.cs_ctx.state = CS_STATE_IDLE;
     }
 
@@ -1427,7 +1427,7 @@ impl PlayState {
             self.cs_ctx.npc_actions = [None; 10];
             self.cs_ctx.state += 1;
             if self.cs_ctx.state == CS_STATE_SKIPPABLE_INIT {
-                // Audio_SetCutsceneFlag(1): no audio.
+                self.audio.set_cutscene_flag(1);
                 self.cs_ctx.frames = 0xFFFF;
                 self.cs_ctx.unk_18 = 0xFFFF;
                 self.demo.d_8015fcc0 = 0xFFFF;

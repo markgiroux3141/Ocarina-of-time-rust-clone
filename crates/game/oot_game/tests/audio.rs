@@ -398,3 +398,62 @@ fn a_note_with_reverb_rings_on_decaying_by_the_decay_ratio() {
         assert!((ratio - 0.375).abs() < 0.01, "window {k} to {}: {ratio}", k + 1);
     }
 }
+
+/// What the game reads before the audio side's first frame (`AudioView::boot`, from the spec
+/// table) is what `AudioLoad_Init` leaves, as far as the game reads it then: no player on, and
+/// `updatesPerFrame` (the players' other fields matter once one plays, and by then the audio
+/// side's views have come; docs/adr/0026-the-games-audio.md).
+#[test]
+fn the_boot_view_is_audio_load_inits() {
+    let Some(d) = data() else { return };
+    let mut r = Renderer::new(&d);
+    let booted = r.ctx.view();
+    let v = eng_audio::AudioView::boot(&d.tables);
+    assert_eq!((v.updates_per_frame, booted.updates_per_frame), (3, 3));
+    for p in 0..4 {
+        assert!(!v.players[p].enabled && !booted.players[p].enabled);
+    }
+    assert_eq!((booted.reset_status, booted.audio_reset_spec_id_to_load), (0, 0));
+}
+
+/// `func_800E5F88` (the spec change): with no reset under way it queues `0xF9` and the reset
+/// runs over the next audio frames, then posts the spec on `audioResetQueue`; asked again for
+/// the spec being loaded it does nothing (-2); for another while the reset is early (status
+/// above 2) it switches the spec (-3); late (2 or 1), it finishes the reset first (the C
+/// blocks on the queue), then starts the new one.
+#[test]
+fn the_spec_change_and_its_reset() {
+    use eng_audio::GameOp;
+    let Some(d) = data() else { return };
+    let mut r = Renderer::new(&d);
+    r.run(4);
+    let v = r.game_frame(&[GameOp::ResetSpec(1)], 1);
+    assert_eq!((v.reset_status, v.audio_reset_spec_id_to_load), (5, 1), "0xF9 ran (after the frame's reset check: the steps start next frame)");
+    assert_eq!(r.ctx.func_800e5f88(1), -2);
+    assert_eq!(r.ctx.func_800e5f88(5), -3);
+    assert_eq!(r.ctx.audio_reset_spec_id_to_load, 5);
+    let mut frames = 1;
+    let msgs = loop {
+        let v = r.game_frame(&[], 1);
+        frames += 1;
+        if !v.reset_msgs.is_empty() {
+            break v.reset_msgs;
+        }
+        assert!(frames < 40);
+    };
+    assert_eq!(msgs, [5]);
+    // Spec 5's buffers: the heap was set up for it.
+    assert_eq!(r.ctx.audio_buffer_parameters.sampling_frequency as u32, d.tables.specs[5].sampling_frequency);
+    eprintln!("the reset took {frames} audio frames");
+
+    // Late in a reset: finished at once, then the next one starts.
+    r.game_frame(&[GameOp::ResetSpec(1)], 1);
+    while r.ctx.reset_status > 2 {
+        r.game_frame(&[], 1);
+    }
+    assert!(r.ctx.reset_status != 0);
+    r.ctx.func_800e5f88(3);
+    assert_eq!(r.ctx.audio_buffer_parameters.sampling_frequency as u32, d.tables.specs[1].sampling_frequency, "spec 1's reset finished");
+    let v = r.game_frame(&[], 1);
+    assert_eq!((v.reset_status, v.audio_reset_spec_id_to_load), (5, 3));
+}

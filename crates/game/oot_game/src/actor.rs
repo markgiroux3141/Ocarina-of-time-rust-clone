@@ -42,6 +42,12 @@ pub const ACTOR_FLAG_8: u32 = 1 << 8;
 pub const ACTOR_FLAG_16: u32 = 1 << 16;
 /// With `ACTOR_FLAG_0`: Navi can be asked about it with C-Up (`func_8083B644`).
 pub const ACTOR_FLAG_18: u32 = 1 << 18;
+/// `ACTOR_FLAG_19`, `_20`, `_21`, `_28`: how `Actor_DrawAll` plays `actor->sfx`
+/// (`func_80030ED8`).
+pub const ACTOR_FLAG_19: u32 = 1 << 19;
+pub const ACTOR_FLAG_20: u32 = 1 << 20;
+pub const ACTOR_FLAG_21: u32 = 1 << 21;
+pub const ACTOR_FLAG_28: u32 = 1 << 28;
 /// `Actor_Draw` binds no point lights for it (`Lights_BindAll` with no position).
 pub const ACTOR_FLAG_22: u32 = 1 << 22;
 pub const ACTOR_FLAG_23: u32 = 1 << 23;
@@ -135,6 +141,13 @@ pub struct Actor {
     /// Moved without passing in between (spawned, respawned, a scene change): the renderer
     /// doesn't blend from the last frame.
     pub teleported: bool,
+    /// `projectedPos`, `projectedW`: the position through `play->viewProjectionMtxF`, as
+    /// `Actor_DrawAll` sets it every frame (the sound effects are positioned by it).
+    pub projected_pos: Vec3,
+    pub projected_w: f32,
+    /// `sfx`: a sound the actor asks `Actor_DrawAll` to play this frame (`func_8002F8F0` and
+    /// the rest, `func_80030ED8`); `Actor_UpdateAll` clears it first.
+    pub sfx: u16,
 }
 
 impl Actor {
@@ -188,7 +201,37 @@ impl Actor {
             child: None,
             text_id: 0,
             teleported: true,
+            projected_pos: Vec3::ZERO,
+            projected_w: 0.0,
+            sfx: 0,
         }
+    }
+
+    /// `func_8002F8F0`: `sfx` played at the actor (`Audio_PlaySfxGeneral` at `projectedPos`).
+    pub fn func_8002f8f0(&mut self, sfx_id: u16) {
+        self.sfx = sfx_id;
+        self.flags |= ACTOR_FLAG_19;
+        self.flags &= !(ACTOR_FLAG_20 | ACTOR_FLAG_21 | ACTOR_FLAG_28);
+    }
+
+    /// `func_8002F91C`: `sfx` with no position (`func_80078884`).
+    pub fn func_8002f91c(&mut self, sfx_id: u16) {
+        self.sfx = sfx_id;
+        self.flags |= ACTOR_FLAG_20;
+        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_21 | ACTOR_FLAG_28);
+    }
+
+    /// `func_8002F948`: `sfx` with no position (`func_800788CC`).
+    pub fn func_8002f948(&mut self, sfx_id: u16) {
+        self.sfx = sfx_id;
+        self.flags |= ACTOR_FLAG_21;
+        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_20 | ACTOR_FLAG_28);
+    }
+
+    /// `func_8002F974`: `sfx` at the actor (`func_80078914`).
+    pub fn func_8002f974(&mut self, sfx_id: u16) {
+        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_20 | ACTOR_FLAG_21 | ACTOR_FLAG_28);
+        self.sfx = sfx_id;
     }
 
     /// Targetable and hostile: Z-targeting locks on (`ACTOR_FLAG_0 | ACTOR_FLAG_2`).

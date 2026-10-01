@@ -118,6 +118,19 @@ pub struct AudioTables {
     pub noise_code_vram: u32,
 }
 
+impl AudioTables {
+    /// `AudioLoad_GetFontsForSequence`'s list: the fonts sequence `seq_id` uses, as
+    /// `gSequenceFontTable` lists them (a big-endian offset per sequence, then a count and the
+    /// font ids). Empty for a sequence outside the table.
+    pub fn fonts_for_sequence(&self, seq_id: u32) -> &[u8] {
+        let t = &self.sequence_font_table;
+        let at = 2 * seq_id as usize;
+        let Some(o) = t.get(at..at + 2).map(|b| u16::from_be_bytes([b[0], b[1]]) as usize) else { return &[] };
+        let n = t.get(o).copied().unwrap_or(0) as usize;
+        t.get(o + 1..o + 1 + n).unwrap_or(&[])
+    }
+}
+
 /// The whole of it: the tables and the three ROM files.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AudioData {

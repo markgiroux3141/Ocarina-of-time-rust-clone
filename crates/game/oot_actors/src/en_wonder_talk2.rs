@@ -16,7 +16,7 @@
 
 use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_27, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
-use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT, TEXT_STATE_NONE, should_advance};
+use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT, TEXT_STATE_NONE};
 use oot_game::npc::{EXCH_ITEM_NONE, offer_talk_range, process_talk_request};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
@@ -135,9 +135,9 @@ impl EnWonderTalk2 {
         let state = play.message_state();
         let done = match state {
             TEXT_STATE_EVENT | TEXT_STATE_DONE => {
-                if should_advance(&play.input) {
+                if play.message_should_advance() {
                     if state == TEXT_STATE_EVENT {
-                        play.msg_ctx.close_textbox();
+                        play.msg_ctx.close_textbox(&mut play.audio);
                     }
                     true
                 } else {

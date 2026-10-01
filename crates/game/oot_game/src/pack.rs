@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 13;
+pub const FORMAT_VERSION: u32 = 14;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -70,6 +70,9 @@ pub mod keys {
     /// `eng_audio::AudioTables`: the audio tables, `audio_data.c`'s, the audio specs, the
     /// microcode's resampler filters (docs/adr/0024-audio-data.md).
     pub const AUDIO_TABLES: &str = "audio/tables";
+    /// `audio::AudioGameTables`: the game's audio tables (`sSeqFlags`, `sSpecReverbs`,
+    /// `sNatureAmbienceDataIO`, `gSoundModeList`; docs/adr/0026-the-games-audio.md).
+    pub const AUDIO_GAME: &str = "table/audio";
     /// The ROM files the audio library loads from (`Audiobank`, `Audioseq`, `Audiotable`).
     pub const AUDIO_ROM_FILES: [&str; 3] = ["Audiobank", "Audioseq", "Audiotable"];
 
@@ -448,6 +451,16 @@ impl GamePack {
     /// A cutscene script by its pack key.
     pub fn cutscene(&self, key: &str) -> Result<crate::cutscene::CutsceneScript> {
         self.assets.get(key)
+    }
+
+    /// The audio library's tables, without the ROM files.
+    pub fn audio_tables(&self) -> Result<eng_audio::AudioTables> {
+        self.assets.get(keys::AUDIO_TABLES)
+    }
+
+    /// The game's audio tables.
+    pub fn audio_game_tables(&self) -> Result<crate::audio::AudioGameTables> {
+        self.assets.get(keys::AUDIO_GAME)
     }
 
     /// The audio library's data: its tables and the three ROM files.

@@ -1021,7 +1021,7 @@ fn func_80a97738(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> 
             1
         }
         TEXT_STATE_CHOICE => {
-            if should_advance(&play.input) {
+            if play.message_should_advance() {
                 let ci = play.msg_ctx.choice_index;
                 let next = match actor.text_id {
                     0x1035 => Some(if ci == 0 { 0x1036 } else { 0x1037 }),
@@ -1044,7 +1044,7 @@ fn func_80a97738(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> 
             1
         }
         TEXT_STATE_DONE => {
-            if should_advance(&play.input) {
+            if play.message_should_advance() {
                 3
             } else {
                 1

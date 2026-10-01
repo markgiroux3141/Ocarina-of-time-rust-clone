@@ -83,9 +83,12 @@ pub struct Options {
     pub new_file: bool,
     /// Play sound through the output device (the window only).
     pub audio: bool,
-    /// A sequence to start on player 0 (`gSequenceTable`'s index, e.g. 60 = Kokiri Forest):
-    /// until the scenes' music is ported (GAME-04 milestone 2), the way to hear music.
+    /// A sequence to play instead of the first scene's own (`gSequenceTable`'s index, e.g. 30
+    /// = the title theme): `Environment_ForcePlaySequence` before the first `Play_Init`. In the
+    /// spikes' view (no `Play_Init`), started on player 0 directly.
     pub music: Option<u8>,
+    /// Log what the game's side does to the audio from the start (`GameAudio::log`).
+    pub audio_log: bool,
 }
 
 /// The pack to play from: `path` if given, else `$OOT_PACK`, else the default one
@@ -141,9 +144,11 @@ pub struct Assets {
     pub start_at: Option<(Vec3, i16)>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
-    /// Open the output device (`Options::audio`), and the sequence to start (`Options::music`).
+    /// Open the output device (`Options::audio`), the sequence to force (`Options::music`), the
+    /// audio log (`Options::audio_log`).
     pub audio: bool,
     pub music: Option<u8>,
+    pub audio_log: bool,
     pub day_time: u16,
     pub show_collision: bool,
     pub view: Option<(Vec3, Vec3)>,
@@ -215,6 +220,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         spawn_index: o.spawn,
         audio: o.audio,
         music: o.music,
+        audio_log: o.audio_log,
         day_time: parse_time(&o.time)?,
         show_collision: o.collision,
         follow_camera: o.follow_camera,
@@ -312,7 +318,12 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
         {
             log::error!("{e}");
         }
-        match oot_actors::play_entrance(g.clone(), a.data.clone(), a.rules.clone(), save) {
+        if let Some(m) = a.music {
+            // Environment_ForcePlaySequence: the first scene plays it instead of its own.
+            save.forced_seq_id = m as u16;
+        }
+        let audio = oot_game::audio::GameAudio::boot_logged(g.audio.clone(), g.audio_tables.clone(), a.audio_log);
+        match PlayState::play_init_with(g.clone(), a.data.clone(), a.rules.clone(), save, audio) {
             Ok(mut w) => {
                 if let Some(r) = a.start_room {
                     // Room_RequestNewRoom, a frame for it to load, then func_80097534.
@@ -513,8 +524,8 @@ struct App {
     fps: f32,
     last_pad: PadState,
     /// The audio library through the output device, and what the HUD says about it. Held:
-    /// dropping it stops the sound. (GAME-04 milestone 2 sends the game's commands through it.)
-    #[allow(dead_code)]
+    /// dropping it stops the sound. After each game frame the play state's `GameOp`s go to it,
+    /// and it gives back what the game reads (docs/adr/0026-the-games-audio.md).
     audio: Option<eng_audio::output::AudioOutput>,
     audio_status: String,
 }
@@ -533,11 +544,13 @@ impl App {
             match assets.pack.audio_data().and_then(eng_audio::output::AudioOutput::start) {
                 Ok(out) => {
                     let status = match assets.music {
-                        Some(m) => {
+                        Some(m) if world.assets.is_none() => {
+                            // The spikes' view: no Play_Init to play anything.
                             out.start_sequence(0, m);
                             format!("audio: {} (sequence {m})", out.description)
                         }
-                        None => format!("audio: {} (no music until the scenes' music is ported; --music 60 for Kokiri Forest's)", out.description),
+                        Some(m) => format!("audio: {} (sequence {m} forced)", out.description),
+                        None => format!("audio: {}", out.description),
                     };
                     (Some(out), status)
                 }
@@ -630,7 +643,17 @@ impl eframe::App for App {
             }
             self.world = new_play(&self.assets, child);
         }
-        self.world.advance(dt);
+        // Each game frame's hand-over to the audio side: its ops, and the view back.
+        let audio = &self.audio;
+        self.world.advance_with(dt, |a| match audio {
+            Some(out) => {
+                out.send_ops(a.take_ops());
+                a.set_view(out.take_view());
+            }
+            None => {
+                a.take_ops();
+            }
+        });
 
         let frame = self.world.render_frame();
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {

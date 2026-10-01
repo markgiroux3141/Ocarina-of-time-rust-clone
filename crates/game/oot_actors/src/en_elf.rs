@@ -1179,10 +1179,10 @@ impl EnElf {
     /// `func_80A052F4`: her text; a choice to talk to Saria (0xE2 on yes, 0xE1 on no), or the
     /// text's end.
     fn func_80a052f4(&mut self, play: &mut PlayState) {
-        use oot_game::message::{TEXT_STATE_CHOICE, should_advance};
+        use oot_game::message::{TEXT_STATE_CHOICE};
         self.func_80a04de4(play);
         if play.message_state() == TEXT_STATE_CHOICE {
-            if should_advance(&play.input) {
+            if play.message_should_advance() {
                 // (msgCtx.unk_E3F2 = 0xFF: the ocarina's, not ported.)
                 if play.msg_ctx.choice_index == 0 {
                     self.update_fn = Update::SariaText;
@@ -1200,15 +1200,15 @@ impl EnElf {
 
     /// `func_80A05208`: "talk to Navi?": yes, her C-Up text (0x15F without one); no, the end.
     fn func_80a05208(&mut self, play: &mut PlayState) {
-        use oot_game::message::{TEXT_STATE_CHOICE, should_advance};
+        use oot_game::message::{TEXT_STATE_CHOICE};
         self.func_80a04de4(play);
-        if play.message_state() == TEXT_STATE_CHOICE && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_CHOICE && play.message_should_advance() {
             if play.msg_ctx.choice_index == 0 {
                 let t = play.elf_message_get_c_up_text();
                 play.continue_textbox(if t != 0 { t } else { 0x15F });
                 self.update_fn = Update::Talk;
             } else {
-                play.with_msg(|m, _| m.close_textbox());
+                play.with_msg(|m, f| m.close_textbox(f.audio));
                 self.end_talk();
             }
         }
@@ -1217,9 +1217,9 @@ impl EnElf {
 
     /// `func_80A05188`: after 0xE2, Saria's text.
     fn func_80a05188(&mut self, play: &mut PlayState) {
-        use oot_game::message::{TEXT_STATE_EVENT, should_advance};
+        use oot_game::message::{TEXT_STATE_EVENT};
         self.func_80a04de4(play);
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             let t = play.elf_message_get_saria_text();
             play.continue_textbox(t);
             self.update_fn = Update::SariaMore;
@@ -1229,9 +1229,9 @@ impl EnElf {
 
     /// `func_80A05114`: after Saria's text, 0xE3 ("talk to her again?").
     fn func_80a05114(&mut self, play: &mut PlayState) {
-        use oot_game::message::{TEXT_STATE_EVENT, should_advance};
+        use oot_game::message::{TEXT_STATE_EVENT};
         self.func_80a04de4(play);
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             play.continue_textbox(0xE3);
             self.update_fn = Update::SariaAgain;
         }
@@ -1240,15 +1240,15 @@ impl EnElf {
 
     /// `func_80A05040`: talk to Saria again: yes, her text again; no, the end.
     fn func_80a05040(&mut self, play: &mut PlayState) {
-        use oot_game::message::{TEXT_STATE_CHOICE, should_advance};
+        use oot_game::message::{TEXT_STATE_CHOICE};
         self.func_80a04de4(play);
-        if play.message_state() == TEXT_STATE_CHOICE && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_CHOICE && play.message_should_advance() {
             if play.msg_ctx.choice_index == 0 {
                 let t = play.elf_message_get_saria_text();
                 play.continue_textbox(t);
                 self.update_fn = Update::SariaMore;
             } else {
-                play.with_msg(|m, _| m.close_textbox());
+                play.with_msg(|m, f| m.close_textbox(f.audio));
                 self.end_talk();
             }
         }

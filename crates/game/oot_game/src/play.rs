@@ -350,6 +350,19 @@ pub struct PlayState {
     pub c_up_elf_msgs: Option<usize>,
     /// `lightCtx`: the actors' point lights (`crate::lights`).
     pub light_ctx: crate::lights::LightContext,
+    /// The game's side of the audio (`crate::audio`): its statics are the code segment's, so a
+    /// scene change carries them over. A driver hands its `GameOp`s to the audio side after
+    /// each frame and gives it the audio side's `AudioView` before the next
+    /// (docs/adr/0026-the-games-audio.md).
+    pub audio: crate::audio::GameAudio,
+    /// Not in the C: an audio side this play state hands each frame to itself, after
+    /// `Audio_Update` (headless runs and tests; the window drives its device through
+    /// `advance_with`). A scene change carries it over.
+    pub audio_side: Option<Box<dyn crate::audio::AudioSide>>,
+    /// `sequenceCtx`: the scene's music and ambience (`Scene_CommandSoundSettings`).
+    pub sequence_ctx: crate::audio::scene::SequenceContext,
+    /// `envCtx.timeSeqState` (`Environment_PlayTimeBasedSequence`).
+    pub time_seq_state: u8,
     /// The children each running init spawned (`Actor_SpawnAsChild`), innermost last: they get
     /// the parent's handle once it's in the actor context.
     pub(crate) init_children: Vec<Vec<ActorHandle>>,
@@ -428,6 +441,10 @@ impl PlayState {
             env_flags: [0; 20],
             c_up_elf_msgs: None,
             light_ctx: Default::default(),
+            audio: Default::default(),
+            audio_side: None,
+            sequence_ctx: Default::default(),
+            time_seq_state: crate::audio::scene::TIMESEQ_DISABLED,
             init_children: Vec::new(),
             overlay_statics: Default::default(),
             messages: None,
@@ -545,6 +562,7 @@ impl PlayState {
         if base.world_pos.y < -25000.0 {
             base.world_pos.y = -25000.0;
         }
+        base.sfx = 0;
         if let Some(u) = a.as_any_mut().downcast_mut::<Uninit>() {
             // actor->init != NULL: initialise once the object is loaded, and skip this frame.
             if u.actor.obj_bank_index.is_some_and(|b| self.object_ctx.is_loaded(b)) {
@@ -561,7 +579,9 @@ impl PlayState {
         }
         let base = a.base_mut();
         if base.killed {
-            // update == NULL: Actor_Delete (isDrawn isn't tracked, so it goes at once).
+            // update == NULL: Actor_Delete (isDrawn isn't tracked, so it goes at once): its
+            // sounds stop (Audio_StopSfxByPos(&actor->projectedPos)), then Actor_Destroy.
+            self.audio.stop_sfx_by_pos(crate::audio::sfx::SfxPos::Actor(h));
             a.destroy(self);
             self.actors.put_back(h, a);
             self.actors.remove(h);
@@ -620,6 +640,7 @@ impl PlayState {
 
     /// One game frame with an explicit input (scripted runs and tests).
     pub fn tick_with(&mut self, input: Input) {
+        self.audio.frames += 1;
         self.update_transition();
         self.object_ctx.update_bank();
         self.gameplay_frames += 1;
@@ -654,6 +675,11 @@ impl PlayState {
             self.follow_camera.update(&input, pos, facing, speed);
         }
         self.camera_update(input);
+        // Environment_Update (pauseCtx.state 0: no pause menu): of it, only the time of day's
+        // music (the clock, the lights' update and the weather aren't ported here).
+        if self.assets.is_some() {
+            self.environment_play_time_based_sequence();
+        }
         // Play_Draw: the actors' draw-time state (Player's foot IK), and the view it sets up
         // (play->viewProjectionMtxF), which the next frame's target context reads.
         for h in self.actors.all() {
@@ -677,6 +703,9 @@ impl PlayState {
             self.game_camera.view_unk_124 = 0;
         }
         self.view_proj = self.camera_view_proj();
+        // Actor_DrawAll (func_800315AC): each actor's projectedPos through the frame's
+        // viewProjectionMtxF, then the sound it asked for (func_80030ED8).
+        self.actor_draw_all_sfx();
         // Interface_Draw: the Z-target reticle (func_8002C124) with this frame's view.
         let reticle_player = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| crate::target::ReticlePlayer { state1_6: pi.state_flags1() & (1 << 6) != 0, target: pi.target() });
         if let Some(rp) = reticle_player {
@@ -692,8 +721,58 @@ impl PlayState {
         self.prev = self.cur.take();
         self.cur = Some(self.capture());
         self.updated = true;
+        // Graph_Update: Audio_Update (func_800F3054) once the game state's frame is done.
+        self.audio_update();
         if self.next_play_init {
+            // GameState_Destroy: AudioMgr_StopAllSfx, Audio_Update again, then the next
+            // Play_Init.
+            self.audio.audio_mgr_stop_all_sfx();
+            self.audio_update();
             self.reinit();
+        }
+        if let Some(side) = &mut self.audio_side {
+            side.hand_over(&mut self.audio);
+        }
+    }
+
+    /// `Audio_Update` with the sound effects' positions: an actor's `projectedPos`.
+    fn audio_update(&mut self) {
+        use crate::audio::sfx::SfxPos;
+        let actors = &self.actors;
+        self.audio.audio_update_with(&|p| match p {
+            SfxPos::Default => Some(Vec3::ZERO),
+            SfxPos::Actor(h) => actors.actor(h).map(|a| a.projected_pos),
+        });
+    }
+
+    /// `Actor_DrawAll`'s sound part (`func_800315AC`): every actor's `projectedPos` and
+    /// `projectedW` (`SkinMatrix_Vec3fMtxFMultXYZW` on `viewProjectionMtxF`), and the sound in
+    /// its `sfx` (`func_80030ED8`).
+    fn actor_draw_all_sfx(&mut self) {
+        use crate::actor::{ACTOR_FLAG_19, ACTOR_FLAG_20, ACTOR_FLAG_21, ACTOR_FLAG_28};
+        use crate::audio::sfx::{SfxF32, SfxPos, SfxS8, SFX_FLAG};
+        let vp = self.view_proj;
+        for h in self.actors.all() {
+            let Some(a) = self.actors.actor_mut(h) else { continue };
+            let c = vp * a.world_pos.extend(1.0);
+            a.projected_pos = c.truncate();
+            a.projected_w = c.w;
+            let (sfx, flags) = (a.sfx, a.flags);
+            if sfx != 0 {
+                // func_80030ED8.
+                let au = &mut self.audio;
+                if flags & ACTOR_FLAG_19 != 0 {
+                    au.play_sfx_general(sfx, SfxPos::Actor(h), 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
+                } else if flags & ACTOR_FLAG_20 != 0 {
+                    au.func_80078884(sfx);
+                } else if flags & ACTOR_FLAG_21 != 0 {
+                    au.func_800788cc(sfx);
+                } else if flags & ACTOR_FLAG_28 != 0 {
+                    au.func_800f4c58(SfxPos::Default, crate::audio::sfx::NA_SE_SY_TIMER - SFX_FLAG, sfx.wrapping_sub(1) as i8 as u8);
+                } else {
+                    au.func_80078914(SfxPos::Actor(h), sfx);
+                }
+            }
         }
     }
 
@@ -904,6 +983,7 @@ impl PlayState {
         let mut frame = MsgFrame {
             table: &table,
             input: &input,
+            audio: &mut self.audio,
             save: &mut self.save,
             iface: &mut self.interface_ctx,
             scene_cam_type: self.scene_cam_type,
@@ -914,6 +994,11 @@ impl PlayState {
             active_cam_main: self.active_cam_id == CAM_ID_MAIN,
         };
         f(&mut self.msg_ctx, &mut frame);
+    }
+
+    /// `Message_ShouldAdvance`: A, B or C-Up this frame, with the message box's sound.
+    pub fn message_should_advance(&mut self) -> bool {
+        crate::message::should_advance(&self.input, &mut self.audio)
     }
 
     /// `Message_StartTextbox`.
@@ -1085,12 +1170,19 @@ impl PlayState {
     /// Advances real time by `dt` seconds, running as many 20 Hz frames as are due (at most
     /// 5 per call). Returns the number of frames run.
     pub fn advance(&mut self, dt: f32) -> u32 {
+        self.advance_with(dt, |_| {})
+    }
+
+    /// `advance`, with `after` run after each frame: the audio side's hand-over
+    /// (`GameAudio::take_ops`, `GameAudio::set_view`).
+    pub fn advance_with(&mut self, dt: f32, mut after: impl FnMut(&mut crate::audio::GameAudio)) -> u32 {
         self.acc += dt.min(0.25);
         let step = 1.0 / GAME_HZ;
         let mut n = 0;
         while self.acc >= step && n < 5 {
             self.acc -= step;
             self.tick();
+            after(&mut self.audio);
             n += 1;
         }
         n

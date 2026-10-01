@@ -4,6 +4,7 @@
 
 use crate::context::AudioContext;
 use crate::data::AudioData;
+use crate::link::{AudioView, GameOp};
 use crate::thread::Ai;
 
 pub struct Renderer {
@@ -50,6 +51,20 @@ impl Renderer {
     pub fn command(&mut self, op_args: u32, data: u32) {
         self.ctx.queue_cmd(op_args, data);
         self.ctx.schedule_process_cmds();
+    }
+
+    /// One game frame's hand-over (docs/adr/0026-the-games-audio.md): what the game's thread did
+    /// (`ops`), then `retraces` VI retraces (3 per 20 Hz game frame), then what the game reads
+    /// next.
+    pub fn game_frame(&mut self, ops: &[GameOp], retraces: u64) -> AudioView {
+        self.ctx.apply(ops);
+        self.run(retraces);
+        self.ctx.view()
+    }
+
+    /// Takes what the AI has played so far.
+    pub fn take_output(&mut self) -> Vec<i16> {
+        std::mem::take(&mut self.out)
     }
 
     /// `Audio_QueueSeqCmd`'s simplest: start `seq_id` on `player` (`0x82` with a fade-in of 0).

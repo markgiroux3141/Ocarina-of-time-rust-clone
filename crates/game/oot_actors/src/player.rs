@@ -153,7 +153,42 @@ pub enum PlayRequest {
     ItemGive(u8),
     /// `Interface_SetNaviCall(play, naviCallState)`.
     NaviCall(u16),
+    /// `func_8084DFF4`'s sound for item `get_item_id`, after its `Item_Give` (a heart piece's
+    /// fanfare counts the pieces with this one): `Audio_PlayFanfare`, or a sound effect for a
+    /// rupee or a heart.
+    GetItemFanfare(i16),
+    /// `func_800F6964(arg)`: every player fades out (the secret hole's exit).
+    FadeOutAllSeq(u16),
+    /// A sound, in its order among Player's calls.
+    Sfx(PlayerSfx),
 }
+
+/// Player's sounds: what its `func_8002F7DC`-style calls ask the audio for, at Player
+/// (`&this->actor.projectedPos`) unless said.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlayerSfx {
+    /// `func_80078884`: no position.
+    NoPos(u16),
+    /// `func_8002F7DC`: `Audio_PlaySfxGeneral` at Player, the default scales.
+    Actor(u16),
+    /// `func_800F4010`: a footstep at speed `f32`.
+    Footstep(u16, f32),
+    /// `func_800F4138`, `func_800F4190`.
+    F4138(u16, f32),
+    F4190(u16),
+    /// `Audio_SetCodeReverb`: the floor's echo.
+    CodeReverb(i8),
+    /// `Audio_StopSfxById`.
+    StopById(u16),
+}
+
+/// `SurfaceSfxType` (`z64bgcheck.h`): the ones Player names.
+const SURFACE_SFX_TYPE_1: u16 = 1;
+const SURFACE_SFX_TYPE_4: u16 = 4;
+const SURFACE_SFX_TYPE_5: u16 = 5;
+/// `PLAYER_BOOTS_IRON` (`z64player.h`).
+const PLAYER_BOOTS_IRON: u8 = 1;
+use oot_game::audio::sfx::*;
 
 // floor properties (FLOOR_PROPERTY_*)
 const FLOOR_PROPERTY_5: u32 = 5;
@@ -432,6 +467,8 @@ pub struct Env<'a> {
     pub cam_dir_yaw: i16,
     /// `sGetItemTable` (`table/items`; empty without the pack).
     pub items: &'a oot_game::item::ItemTables,
+    /// The game's audio tables (`D_80119E10` for the floor's footsteps).
+    pub audio: &'a oot_game::audio::AudioGameTables,
     /// `play->csCtx`'s `state`, `frames` and `linkAction`, and `play->sceneId`.
     pub cs_state: u8,
     pub cs_frames: u16,
@@ -543,6 +580,10 @@ pub struct Player {
     pub current_shield: u8,
     pub current_tunic: u8,
     pub current_boots: u8,
+    /// `unk_89E`: the floor's footstep sound (`SurfaceType_GetSfxId`, an offset from
+    /// `NA_SE_PL_WALK_GROUND`), and `unk_A82`, the last frame's.
+    pub unk_89E: u16,
+    pub unk_A82: u16,
     pub current_sword_item_id: u8,
     /// `getItemId`: what `interactRangeActor` offers this frame (`func_8002F434`): positive to
     /// take at once, negative a chest's (opened on A), `GI_NONE` something to pick up. While
@@ -754,6 +795,8 @@ impl Player {
             current_shield: if adult { 2 } else { 1 },
             current_tunic: 0,
             current_boots: 0,
+            unk_89E: 0,
+            unk_A82: 0,
             current_sword_item_id: if adult { oot_game::item::ITEM_SWORD_MASTER } else { oot_game::item::ITEM_SWORD_KOKIRI },
             get_item_id: 0,
             interact_range_actor: None,
@@ -1111,7 +1154,7 @@ impl Player {
 
     /// `Player_UpdateCamAndSeqModes`'s camera half: the mode Player asks the main camera for
     /// (`Camera_ChangeMode`), with the actor it passes to `Camera_SetParam(camera, 8, ...)`,
-    /// or `None` in first person (`PLAYER_STATE1_20`). The sequence mode isn't modelled.
+    /// or `None` in first person (`PLAYER_STATE1_20`); `seq_mode` is its sequence half.
     /// Hookshot, `func_8084377C`, and the bow, slingshot and boomerang aren't ported, so
     /// their modes never come up.
     pub fn update_cam_and_seq_modes(&self) -> Option<(i16, Option<ActorHandle>)> {
@@ -1157,6 +1200,22 @@ impl Player {
             CAM_MODE_NORMAL
         };
         Some((mode, target))
+    }
+
+    /// `Player_UpdateCamAndSeqModes`' sequence half: `SEQ_MODE_STILL` standing still in the
+    /// normal camera mode or in first person, else `SEQ_MODE_DEFAULT` (`SEQ_MODE_ENEMY` with an
+    /// enemy near, `targetCtx.bgmEnemy`, which nothing sets yet). Player isn't riding
+    /// (`PLAYER_STATE1_23`; Epona isn't ported).
+    pub fn seq_mode(&self) -> u8 {
+        use oot_game::audio::{SEQ_MODE_DEFAULT, SEQ_MODE_STILL};
+        if self.cs_mode != 0 {
+            return SEQ_MODE_DEFAULT;
+        }
+        match self.update_cam_and_seq_modes() {
+            None => SEQ_MODE_STILL,
+            Some((oot_game::camera::CAM_MODE_NORMAL, _)) if self.linear_velocity == 0.0 && self.state1 & STATE1_23 == 0 => SEQ_MODE_STILL,
+            Some(_) => SEQ_MODE_DEFAULT,
+        }
     }
 
     /// `AnimationContext_Update`, run after all actors (only Player here) have updated.
@@ -1311,6 +1370,20 @@ impl Player {
         self.s.floor_dist = self.actor.world_pos.y - self.actor.floor_height;
         if let Some(fp) = self.actor.floor_poly {
             self.unk_A7A = col.floor_property(fp);
+            self.unk_A82 = self.unk_89E;
+            if self.actor.bg_check_flags & BGCHECKFLAG_WATER != 0 {
+                self.unk_89E = if self.actor.y_dist_to_water < 20.0 { SURFACE_SFX_TYPE_4 } else { SURFACE_SFX_TYPE_5 };
+            } else if self.state2 & STATE2_9 != 0 {
+                self.unk_89E = SURFACE_SFX_TYPE_1;
+            } else {
+                // unk_89E is a sfxType, but SurfaceType_GetSfxId returns a sfxId (the decomp's
+                // note): NA_SE_PL_WALK_* - SFX_FLAG, the offset from NA_SE_PL_WALK_GROUND.
+                self.unk_89E = env.audio.surface_sfx_id(col.sfx_type(fp));
+            }
+            if self.actor.category == ACTORCAT_PLAYER {
+                self.sfx(PlayerSfx::CodeReverb(col.echo(fp) as i8));
+                // (Environment_ChangeLightSetting, DynaPoly_SetPlayerAbove: not ported here.)
+            }
         }
         let floor = self.actor.floor_poly;
         self.func_80839034(env, floor);
@@ -1535,6 +1608,8 @@ impl Player {
                     self.state1 |= STATE1_13;
                     self.state1 &= !STATE1_17;
                 }
+                self.func_8002F7DC(NA_SE_PL_SLIPDOWN);
+                self.func_80832698(NA_SE_VO_LI_HANG);
                 return true;
             }
         }
@@ -1613,7 +1688,7 @@ impl Player {
         } else if self.unk_84F == 0 {
             let f = if self.skel.animation == fall { 11.0 } else { 1.0 };
             if self.skel.on_frame(f) {
-                // func_80832770: grab sound.
+                self.func_80832770(NA_SE_PL_WALK_GROUND);
                 self.unk_84F = if self.skel.animation == fall { 1 } else { -1 };
             }
         }
@@ -1652,9 +1727,11 @@ impl Player {
             return;
         }
         if self.skel.on_frame(self.skel.end_frame - 6.0) {
-            // func_808328A0: landing sound.
+            self.func_808328A0();
         } else if self.skel.on_frame(self.skel.end_frame - 34.0) {
             self.state1 &= !(STATE1_13 | STATE1_14);
+            self.func_8002F7DC(NA_SE_PL_CLIMB_CLIFF);
+            self.func_80832698(NA_SE_VO_LI_CLIMB_END);
         }
     }
 
@@ -1719,7 +1796,7 @@ impl Player {
             // func_808389E8: hop up a low step.
             let vy = self.wall_height * 0.08 + 5.5;
             let a = data.anim("link_normal_jump");
-            self.func_80838940(data, Some(a), vy);
+            self.func_80838940(data, Some(a), vy, NA_SE_VO_LI_SWORD_N);
             self.linear_velocity = 2.5;
             return true;
         }
@@ -1852,8 +1929,8 @@ impl Player {
     /// `func_8084C760`: in a crawlspace. `tunnel_start` plays out first, its root motion moving
     /// Link in; then the stick's forward tilt is the speed (`rel.stick_y` × 0.03, backwards
     /// too) along `currentYaw`, and `Camera_Subj4` keeps Link on the crawlspace's line. At
-    /// either end's wall, the way out (`func_8083F570`). The crawl's sounds (`func_80832924`
-    /// with `D_808548B4`) aren't ported.
+    /// either end's wall, the way out (`func_8083F570`). The crawl's sounds: `D_808548B4`
+    /// (`func_80832924`).
     fn func_8084C760(&mut self, env: &Env) {
         self.state2 |= STATE2_6;
         if self.skel.update(env.data) {
@@ -1866,7 +1943,9 @@ impl Player {
                     self.linear_velocity = self.input.rel.stick_y as f32 * 0.03;
                 }
             }
+            return;
         }
+        self.func_80832924(env.audio.player_anim_sfx("D_808548B4"));
     }
 
     /// `func_8083F570`: crawling into a crawlspace's wall (`WALL_FLAG_4`, `_5`) head first
@@ -1900,13 +1979,15 @@ impl Player {
     }
 
     /// `func_8084C81C`: out of the crawlspace; standing once the animation ends
-    /// (`func_8083C0E8`). Its sounds (`D_808548D8`) aren't ported.
+    /// (`func_8083C0E8`). Its sounds: `D_808548D8`.
     fn func_8084C81C(&mut self, env: &Env) {
         self.state2 |= STATE2_6;
         if self.skel.update(env.data) {
             self.func_8083C0E8(env.data);
             self.state2 &= !STATE2_18;
+            return;
         }
+        self.func_80832924(env.audio.player_anim_sfx("D_808548D8"));
     }
 
     // ================================================================================
@@ -1987,6 +2068,7 @@ impl Player {
         let height = if self.adult { 68.0 } else { 44.0 };
         let sp68 = (height - 8.0) < self.unk_6C4 * self.actor.scale.y;
         if sp68 || self.actor.bg_check_flags & BGCHECKFLAG_CRUSHED != 0 || self.s.floor_type == FLOOR_TYPE_9 || self.state2 & STATE2_31 != 0 {
+            self.func_80832698(NA_SE_VO_LI_DAMAGE_S);
             let mut io = env.io.borrow_mut();
             if sp68 {
                 let (pos, yaw) = (self.actor.world_pos, self.actor.shape_rot.y);
@@ -2008,7 +2090,10 @@ impl Player {
                 }
                 io.trigger_void_out();
             }
-            // (play->unk_11DE9 = true, and the sounds.)
+            drop(io);
+            self.func_80832698(NA_SE_VO_LI_TAKEN_AWAY);
+            // (play->unk_11DE9 = true: not modelled.)
+            self.sfx(PlayerSfx::NoPos(NA_SE_OC_ABYSS));
             return true;
         }
         if self.unk_8A1 != 0 && (self.unk_8A1 >= 2 || self.invincibility_timer == 0) {
@@ -2035,6 +2120,9 @@ impl Player {
             return false;
         }
         if self.cylinder.base.ac_flags & cc::AC_HIT != 0 {
+            if self.cylinder.base.ac.and_then(|h| env.target(h)).is_some_and(|a| a.flags & ACTOR_FLAG_24 != 0) {
+                self.func_8002F7DC(NA_SE_PL_BODY_HIT);
+            }
             let ac_pos = self.cylinder.base.ac.and_then(|h| env.target(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
             let effect = self.actor.col_chk_info.ac_hit_effect;
             let sp4c = if self.state1 & STATE1_27 != 0 {
@@ -2104,6 +2192,7 @@ impl Player {
             self.func_80837B60();
         }
         self.unk_890 = 0;
+        self.func_8002F7DC(NA_SE_PL_DAMAGE);
         let damage = self.actor.col_chk_info.damage as i32;
         if !self.func_80837B18(env, -damage) {
             self.state2 &= !STATE2_7;
@@ -2133,17 +2222,21 @@ impl Player {
                 // func_80832C2C.
                 let a = self.anim(data, group::DAMAGE_RUN);
                 self.skel.change(data, a, 1.0, 0.0, 0.0, ANIMMODE_ONCE, 0.0);
+                self.func_80832698(NA_SE_VO_LI_DAMAGE_S);
             } else {
                 self.actor.speed_xz = arg3;
                 self.linear_velocity = arg3;
                 self.actor.velocity.y = arg4;
                 sp2c = Some(if abs16(arg5) > 0x4000 { data.anim("link_normal_front_downA") } else { data.anim("link_normal_back_downA") });
+                // (NA_SE_VO_BL_DOWN for a dead non-Player: Link is the Player.)
+                self.func_80832698(NA_SE_VO_LI_FALL_L);
             }
             self.hover_boots_timer = 0;
             self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND;
         } else {
             if self.linear_velocity > 4.0 && self.state1 & STATE1_4 == 0 {
                 self.unk_890 = 20;
+                self.func_80832698(NA_SE_VO_LI_DAMAGE_S);
                 return;
             }
             self.setup_action(data, Action::Damaged, 0);
@@ -2160,6 +2253,7 @@ impl Player {
                 i += 1;
             }
             sp2c = Some(data.anim(Self::D_808544B0[i]));
+            self.func_80832698(NA_SE_VO_LI_DAMAGE_S);
         }
         self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(arg5);
         self.current_yaw = self.actor.shape_rot.y;
@@ -2188,7 +2282,7 @@ impl Player {
     /// `func_8084377C`: knocked down. While another knockback comes in the air (`unk_8A1`),
     /// it takes its yaw and speed. On the ground at the animation's end: after kind 2's
     /// four frames, standing (`func_80853080`); else, once nothing hits any more, lying down
-    /// (`func_80843954`) with `front_downB` or `back_downB`. The bounce's sound isn't ported.
+    /// (`func_80843954`) with `front_downB` or `back_downB`; the bounce's sound on touching down.
     fn func_8084377C(&mut self, env: &Env) {
         let data = env.data;
         self.state2 |= STATE2_5 | STATE2_6;
@@ -2221,7 +2315,11 @@ impl Player {
                 }
                 let a = if self.current_yaw != self.actor.shape_rot.y { data.anim("link_normal_front_downB") } else { data.anim("link_normal_back_downB") };
                 self.skel.play_once(data, a);
+                self.func_80832698(NA_SE_VO_LI_FREEZE);
             }
+        }
+        if self.actor.bg_check_flags & BGCHECKFLAG_GROUND_TOUCH != 0 {
+            self.func_80832770(NA_SE_PL_BOUND);
         }
     }
 
@@ -2245,8 +2343,8 @@ impl Player {
         }
     }
 
-    /// `func_80843A38`: getting up; standing at the end (`func_80839F90`). Its sounds
-    /// (`D_808545DC`) aren't ported.
+    /// `func_80843A38`: getting up; standing at the end (`func_80839F90`), with
+    /// `D_808545DC`'s sounds.
     fn func_80843A38(&mut self, env: &Env) {
         self.state2 |= STATE2_5;
         self.func_808382BC();
@@ -2258,6 +2356,7 @@ impl Player {
                 self.func_80839F90(env.data);
             }
         }
+        self.func_80832924(env.audio.player_anim_sfx("D_808545DC"));
     }
 
     /// `func_8083EC18`: onto the wall in front if it's 79 tall and climbable: vines and
@@ -2382,6 +2481,7 @@ impl Player {
             return false;
         }
         self.func_8083FB7C(env.data);
+        self.func_80832698(NA_SE_VO_LI_AUTO_JUMP);
         true
     }
 
@@ -2500,7 +2600,21 @@ impl Player {
             }
             return;
         }
-        // func_8084BEE4 on the footfall frames: the climbing sound (not ported).
+        if self.unk_850 < 0 {
+            let f = |p: &Self, frames: &[f32]| frames.iter().any(|&fr| p.skel.on_frame(fr));
+            if (self.unk_850 == -2 && f(self, &[14.0, 29.0])) || (self.unk_850 == -4 && f(self, &[22.0, 35.0, 49.0, 55.0])) {
+                self.func_8084BEE4();
+            }
+            return;
+        }
+        if self.skel.on_frame(if self.skel.play_speed > 0.0 { 20.0 } else { 0.0 }) {
+            self.func_8084BEE4();
+        }
+    }
+
+    /// `func_8084BEE4`: a hand or foot on the ladder, or on the wall.
+    fn func_8084BEE4(&mut self) {
+        self.func_8002F7DC(if self.unk_84F != 0 { NA_SE_PL_WALK_WALL } else { NA_SE_PL_WALK_LADDER });
     }
 
     /// `func_8084C5F8`: the step off a ladder, standing at its end.
@@ -2515,8 +2629,23 @@ impl Player {
         if temp > 0 || self.skel.update(data) {
             self.func_8083C0E8(data);
             self.state1 &= !STATE1_21;
+            return;
         }
-        // The footstep sounds on frames D_80854898 / D_808548A0: not ported.
+        // D_80854898, D_808548A0: the steps' frames.
+        let mut sp38 = [10.0, 20.0];
+        if self.unk_850 != 0 {
+            self.func_80832924(env.audio.player_anim_sfx("D_808548A8"));
+            sp38 = [40.0, 50.0];
+        }
+        if self.skel.on_frame(sp38[0]) || self.skel.on_frame(sp38[1]) {
+            let p = self.actor.world_pos + Vec3::new(0.0, 20.0, 0.0);
+            let (h, poly) = env.col.entity_raycast_down(p);
+            if h != 0.0 {
+                // SurfaceType_GetSfxType: the floor's type, not its sound's id.
+                self.unk_89E = poly.map(|g| env.col.sfx_type(g) as u16).unwrap_or(0);
+                self.func_808328A0();
+            }
+        }
     }
 
     /// `func_80845668`: stepping up onto a ledge (100/150 step-up animations, the model
@@ -2533,7 +2662,7 @@ impl Player {
                 if !self.adult {
                     t += 1.0;
                 }
-                self.func_80838940(data, None, t);
+                self.func_80838940(data, None, t, NA_SE_VO_LI_AUTO_JUMP);
                 self.unk_850 = -1;
             }
         } else {
@@ -2558,10 +2687,13 @@ impl Player {
             } else {
                 0.0
             };
-            let _landing_sound = self.skel.on_frame(temp3);
+            if self.skel.on_frame(temp3) {
+                self.func_808328A0();
+                self.func_80832698(NA_SE_VO_LI_CLIMB_END);
+            }
             if a == data.anim("link_normal_100step_up") || self.skel.cur_frame > 5.0 {
                 if self.unk_850 == 0 {
-                    // func_80832854: jump sound.
+                    self.func_80832854();
                     self.unk_850 = 1;
                 }
                 step_to_f(&mut self.actor.shape_y_offset, 0.0, 150.0);
@@ -2583,12 +2715,13 @@ impl Player {
         } else {
             (r.ireg(68) as f32 / 100.0) + ((r.ireg(69) as f32 * self.linear_velocity) / 1000.0)
         };
-        self.func_80838940(data, Some(anim), vy);
+        self.func_80838940(data, Some(anim), vy, NA_SE_VO_LI_AUTO_JUMP);
         self.unk_850 = 1;
     }
 
-    /// `func_80838940`: start a jump with vertical speed `vy`.
-    fn func_80838940(&mut self, data: &GameData, anim: Option<AnimId>, vy: f32) {
+    /// `func_80838940`: start a jump with vertical speed `vy`: the jump's sound and Link's
+    /// voice `sfx_id`.
+    fn func_80838940(&mut self, data: &GameData, anim: Option<AnimId>, vy: f32, sfx_id: u16) {
         self.setup_action(data, Action::Midair, 1);
         if let Some(a) = anim {
             self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
@@ -2596,6 +2729,8 @@ impl Player {
         self.actor.velocity.y = vy * self.s.speed_scale;
         self.hover_boots_timer = 0;
         self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND;
+        self.func_80832854();
+        self.func_80832698(sfx_id);
         self.state1 |= STATE1_18;
     }
 
@@ -3185,6 +3320,101 @@ impl Player {
     // ================================================================================
     // Walk / run animation
 
+    /// A sound request (`PlayRequest::Sfx`).
+    fn sfx(&mut self, s: PlayerSfx) {
+        self.play_requests.push(PlayRequest::Sfx(s));
+    }
+
+    /// `func_8002F7DC(&this->actor, sfxId)`.
+    fn func_8002F7DC(&mut self, sfx_id: u16) {
+        self.sfx(PlayerSfx::Actor(sfx_id));
+    }
+
+    /// `func_80832698`: Link's voice (the age's voice bank, `ageProperties->unk_92`).
+    fn func_80832698(&mut self, sfx_id: u16) {
+        if self.actor.category == ACTORCAT_PLAYER {
+            self.func_8002F7DC(sfx_id.wrapping_add(self.age.climb.unk_92));
+        } else {
+            self.sfx(PlayerSfx::F4190(sfx_id));
+        }
+    }
+
+    /// `func_8083275C`: a sound for the floor (`unk_89E`).
+    fn func_8083275C(&self, sfx_id: u16) -> u16 {
+        sfx_id.wrapping_add(self.unk_89E)
+    }
+
+    /// `func_80832770`.
+    fn func_80832770(&mut self, sfx_id: u16) {
+        let id = self.func_8083275C(sfx_id);
+        self.func_8002F7DC(id);
+    }
+
+    /// `func_808327A4`: a sound for the floor and the age (`ageProperties->unk_94`).
+    fn func_808327A4(&self, sfx_id: u16) -> u16 {
+        sfx_id.wrapping_add(self.unk_89E).wrapping_add(self.age.climb.unk_94)
+    }
+
+    /// `func_808327C4`.
+    fn func_808327C4(&mut self, sfx_id: u16) {
+        let id = self.func_808327A4(sfx_id);
+        self.func_8002F7DC(id);
+    }
+
+    /// `func_808327F8`: a footstep at speed `arg1`.
+    fn func_808327F8(&mut self, arg1: f32) {
+        let sfx_id = if self.current_boots == PLAYER_BOOTS_IRON { NA_SE_PL_WALK_HEAVYBOOTS } else { self.func_808327A4(NA_SE_PL_WALK_GROUND) };
+        self.sfx(PlayerSfx::Footstep(sfx_id, arg1));
+    }
+
+    /// `func_80832854`: the jump.
+    fn func_80832854(&mut self) {
+        let sfx_id = if self.current_boots == PLAYER_BOOTS_IRON { NA_SE_PL_JUMP_HEAVYBOOTS } else { self.func_808327A4(NA_SE_PL_JUMP) };
+        self.func_8002F7DC(sfx_id);
+    }
+
+    /// `func_808328A0`: the landing.
+    fn func_808328A0(&mut self) {
+        let sfx_id = if self.current_boots == PLAYER_BOOTS_IRON { NA_SE_PL_LAND_HEAVYBOOTS } else { self.func_808327A4(NA_SE_PL_LAND) };
+        self.func_8002F7DC(sfx_id);
+    }
+
+    /// `func_80832924`: the sounds of a `struct_80832924` table on this frame of the animation:
+    /// each row's frame is `field`'s low 11 bits, its kind the next four (0x800 at Player,
+    /// 0x1000 for the floor, 0x1800 for the floor and the age, 0x2000 the voice, 0x2800 the
+    /// landing, 0x3000 a running step, 0x3800 the jump, 0x4000 a step, 0x4800 the ladder); the
+    /// last row's `field` is negative.
+    fn func_80832924(&mut self, entries: &[(u16, i16)]) {
+        use oot_game::audio::sfx::NA_SE_PL_WALK_LADDER;
+        for &(sfx_id, field) in entries {
+            let data = (field as i32).abs();
+            let flags = data & 0x7800;
+            if self.skel.on_frame((data & 0x7FF) as f32) {
+                match flags {
+                    0x800 => self.func_8002F7DC(sfx_id),
+                    0x1000 => self.func_80832770(sfx_id),
+                    0x1800 => self.func_808327C4(sfx_id),
+                    0x2000 => self.func_80832698(sfx_id),
+                    0x2800 => self.func_808328A0(),
+                    0x3000 => self.func_808327F8(6.0),
+                    0x3800 => self.func_80832854(),
+                    0x4000 => self.func_808327F8(0.0),
+                    0x4800 => self.sfx(PlayerSfx::Footstep(self.age.climb.unk_94.wrapping_add(NA_SE_PL_WALK_LADDER), 0.0)),
+                    _ => {}
+                }
+            }
+            if field < 0 {
+                break;
+            }
+        }
+    }
+
+    /// `func_808328EC`: a sound that marks the frame (`PLAYER_STATE2_3`).
+    fn func_808328EC(&mut self, sfx_id: u16) {
+        self.func_8002F7DC(sfx_id);
+        self.state2 |= STATE2_3;
+    }
+
     /// `func_8084021C`: did the phase cross `arg2`/`arg3` this step (footstep timing)?
     fn func_8084021C(arg0: f32, arg1: f32, arg2: f32, mut arg3: f32) -> bool {
         if arg3 == 0.0 && arg1 > 0.0 {
@@ -3197,8 +3427,10 @@ impl Player {
     /// `func_8084029C`: advance the walk phase `unk_868` (29-frame cycle).
     fn func_8084029C(&mut self, arg1: f32) {
         let arg1 = (arg1 * UPDATE_SCALE).clamp(-7.25, 7.25);
+        // (The hover boots' NA_SE_PL_HOBBERBOOTS_LV: they aren't ported.)
         if Self::func_8084021C(self.unk_868, arg1, 29.0, 10.0) || Self::func_8084021C(self.unk_868, arg1, 29.0, 24.0) {
-            // Footstep sound; running steps set PLAYER_STATE2_3.
+            let v = self.linear_velocity;
+            self.func_808327F8(v);
             if self.linear_velocity > 4.0 {
                 self.state2 |= STATE2_3;
             }
@@ -3395,6 +3627,9 @@ impl Player {
                 let a = self.anim(data, group::ROLL_BONK);
                 self.skel.play_once(data, a);
                 self.linear_velocity = -self.linear_velocity;
+                // (func_808429B4's quake and the rumble aren't ported.)
+                self.func_8002F7DC(NA_SE_PL_BODY_HIT);
+                self.func_80832698(NA_SE_VO_LI_CLIMB_END);
                 self.unk_850 = 1;
                 self.note("roll bonk");
                 return;
@@ -3411,6 +3646,12 @@ impl Player {
             }
             let yaw = self.actor.shape_rot.y;
             self.func_8083DF68(speed, yaw);
+            // func_8084269C: on a ground or sand floor the roll raises dust (its effect,
+            // func_800286CC, isn't ported) and its sound.
+            if self.unk_89E == 0 || self.unk_89E == SURFACE_SFX_TYPE_1 {
+                self.actor.func_8002f8f0(NA_SE_PL_ROLL_DUST - SFX_FLAG);
+            }
+            self.func_80832924(env.audio.player_anim_sfx("D_8085460C"));
         }
     }
 
@@ -3429,8 +3670,9 @@ impl Player {
     }
 
     /// `func_80843E64`: landing. Returns 1/2 for a damaging fall (≥ 400 / 800: `D_80854600`'s
-    /// half heart and heart, then 40 frames of invincibility), -1 when that was the last of
-    /// Link's health, 0 otherwise. (The quake, the rumble and the sounds aren't ported.)
+    /// half heart and heart, then 40 frames of invincibility, the body's and the voice's
+    /// sounds), -1 when that was the last of Link's health, 0 otherwise with the landing's sound.
+    /// (The quake and the rumble aren't ported.)
     fn func_80843E64(&mut self, env: &Env) -> i32 {
         let sp34 = if self.s.floor_type == FLOOR_TYPE_6 || self.s.floor_type == FLOOR_TYPE_9 { 0 } else { self.fall_distance as i32 };
         step_to_f(&mut self.linear_velocity, 0.0, 1.0);
@@ -3443,8 +3685,16 @@ impl Player {
                 return -1;
             }
             self.func_80837AE0(40);
+            self.func_8002F7DC(NA_SE_PL_BODY_HIT);
+            // D_80854600[impactIndex].sfxId (both rows).
+            self.func_80832698(NA_SE_VO_LI_LAND_DAMAGE_S);
             return idx + 1;
         }
+        if sp34 > 200 && self.s.floor_type == FLOOR_TYPE_6 {
+            // (The rumble, sp34 doubled, isn't ported.)
+            self.func_80832698(NA_SE_VO_LI_CLIMB_END);
+        }
+        self.func_808328A0();
         0
     }
 
@@ -3488,6 +3738,7 @@ impl Player {
                             && let Some(wp) = self.actor.wall_poly
                         {
                             self.skel.disable_queue();
+                            self.func_80832698(if self.state1 & STATE1_2 != 0 { NA_SE_VO_LI_HOOKSHOT_HANG } else { NA_SE_VO_LI_HANG });
                             self.actor.world_pos.y += self.wall_height;
                             let a = self.anim(data, group::HANG_GRAB);
                             let dist = self.wall_distance;
@@ -4069,6 +4320,10 @@ impl Player {
         let dir = if self.current_yaw.wrapping_sub(self.actor.shape_rot.y) >= 0 { 1.0 } else { -1.0 };
         self.skel.play_speed = dir * (self.linear_velocity * coeff);
         self.skel.update(data);
+        if self.skel.on_frame(0.0) || self.skel.on_frame(frames * 0.5) {
+            let v = self.linear_velocity;
+            self.func_808327F8(v);
+        }
         if !self.func_80837348(env, Self::D_808543F4, true) {
             if self.func_80833B54_env(env) {
                 self.func_8083CEAC(data);
@@ -4250,12 +4505,13 @@ impl Player {
     fn func_8083BCD0(&mut self, data: &GameData, arg2: i8) {
         let side = arg2 & 1 != 0;
         let a = data.side_hop_anims[arg2 as usize][0];
-        self.func_80838940(data, Some(a), if !side { 5.8 } else { 3.5 });
+        self.func_80838940(data, Some(a), if !side { 5.8 } else { 3.5 }, NA_SE_VO_LI_SWORD_N);
         self.unk_850 = 1;
         self.unk_84F = arg2;
         self.current_yaw = self.actor.shape_rot.y.wrapping_add(((arg2 as i32) << 14) as i16);
         self.linear_velocity = if !side { 6.0 } else { 8.5 };
         self.state2 |= STATE2_19;
+        self.func_8002F7DC(if ((arg2 as i32) << 0xE) == 0x8000 { NA_SE_PL_ROLL } else { NA_SE_PL_SKIP });
     }
 
     // ================================================================================
@@ -4329,6 +4585,14 @@ impl Player {
     fn func_80833638(&mut self, f: UpperAction) {
         self.upper = f;
         self.unk_830 = 0.0;
+        self.func_808326F0();
+    }
+
+    /// `func_808326F0`: the idle fidgets' voices stop (`D_8085361C`, the age's bank).
+    fn func_808326F0(&mut self) {
+        for id in [NA_SE_VO_LI_SWEAT, NA_SE_VO_LI_SNEEZE, NA_SE_VO_LI_RELAX, NA_SE_VO_LI_FALL_L] {
+            self.sfx(PlayerSfx::StopById(id.wrapping_add(self.age.climb.unk_92)));
+        }
     }
 
     /// `func_80834298`: B / C buttons, then a pending change.
@@ -4634,14 +4898,45 @@ impl Player {
     }
 
     /// `func_8084285C`: the weapon is active from `arg1` to `arg3` (`func_80833A20`).
-    fn func_8084285C(&mut self, arg1: f32, arg2: f32, arg3: f32) -> bool {
+    fn func_8084285C(&mut self, env: &Env, arg1: f32, arg2: f32, arg3: f32) -> bool {
         let f = self.skel.cur_frame;
         if arg1 <= f && f <= arg3 {
-            self.melee_weapon_state = if arg2 <= f { 1 } else { -1 };
+            self.func_80833A20(env, if arg2 <= f { 1 } else { -1 });
             return true;
         }
         self.func_80832318();
         false
+    }
+
+    /// `func_80833A20`: the weapon's state; as a swing starts, its sound (the swing, the hard
+    /// swing from the fourth chained, the hammer, none for a spin) and Link's voice (not for
+    /// the flip and jump slashes).
+    fn func_80833A20(&mut self, env: &Env, new_melee_weapon_state: i8) {
+        if self.melee_weapon_state == 0 {
+            let items = &env.data.items;
+            let ap = self.held_item_ap;
+            let sword_health = env.io.borrow().save.sword_health;
+            let mut item_sfx = if ap == items.ap("SWORD_BGS") && sword_health > 0 { NA_SE_IT_HAMMER_SWING } else { NA_SE_IT_SWORD_SWING };
+            let mut voice_sfx = NA_SE_VO_LI_SWORD_N;
+            // PLAYER_MWA_SPIN_ATTACK_1H (24), PLAYER_MWA_FLIPSLASH_START (16) to
+            // PLAYER_MWA_JUMPSLASH_FINISH (19) (z64player.h).
+            if ap == items.ap("HAMMER") {
+                item_sfx = NA_SE_IT_HAMMER_SWING;
+            } else if self.melee_weapon_animation >= 24 {
+                item_sfx = 0;
+                voice_sfx = NA_SE_VO_LI_SWORD_L;
+            } else if self.unk_845 >= 3 {
+                item_sfx = NA_SE_IT_SWORD_SWING_HARD;
+                voice_sfx = NA_SE_VO_LI_SWORD_L;
+            }
+            if item_sfx != 0 {
+                self.func_808328EC(item_sfx);
+            }
+            if !(16..=19).contains(&self.melee_weapon_animation) {
+                self.func_80832698(voice_sfx);
+            }
+        }
+        self.melee_weapon_state = new_melee_weapon_state;
     }
 
     /// `func_8083C50C`: B released during the attack.
@@ -4658,7 +4953,7 @@ impl Player {
         let a = data.items.attacks[self.melee_weapon_animation];
         self.state2 |= STATE2_5;
         // func_80842DF4 (weapon hits and recoil off walls): no actor/weapon collision.
-        self.func_8084285C(0.0, a.active_start, a.active_end);
+        self.func_8084285C(env, 0.0, a.active_start, a.active_end);
         if self.state2 & STATE2_30 != 0 && self.skel.on_frame(0.0) {
             self.linear_velocity = 15.0;
             self.state2 &= !STATE2_30;
@@ -5097,8 +5392,13 @@ impl Player {
                     let yaw = self.actor.world_rot.y;
                     drop(io);
                     self.func_80838E70(env.data, 400.0, yaw);
+                } else {
+                    // FLOOR_TYPE_11 (a secret hole): its sound, and the music fades.
+                    self.sfx(PlayerSfx::NoPos(NA_SE_OC_SECRET_HOLE_OUT));
+                    self.play_requests.push(PlayRequest::FadeOutAllSeq(5));
+                    io.save.seq_id = oot_game::audio::NA_BGM_DISABLED as u8;
+                    io.save.nature_ambience_id = oot_game::audio::NATURE_ID_DISABLED;
                 }
-                // FLOOR_TYPE_11 (a secret hole): only sound.
             } else if !self.grounded() {
                 self.func_80832210();
             }
@@ -5122,6 +5422,7 @@ impl Player {
                         io.trigger_void_out();
                     }
                     io.transition.ty = TRANS_TYPE_FADE_BLACK_FAST;
+                    self.sfx(PlayerSfx::NoPos(NA_SE_OC_ABYSS));
                 } else {
                     drop(io);
                     self.func_80838F5C(env.data);
@@ -5155,6 +5456,8 @@ impl Player {
             // func_80832284: LinkAnimation_PlayLoop.
             let a = env.data.anim("link_normal_landing_wait");
             self.skel.play_loop(env.data, a);
+            self.func_80832698(NA_SE_VO_LI_FALL_S);
+            self.sfx(PlayerSfx::NoPos(NA_SE_OC_SECRET_WARP_IN));
             return true;
         }
         false
@@ -5175,6 +5478,7 @@ impl Player {
                     io.trigger_void_out();
                 }
                 io.transition.ty = TRANS_TYPE_FADE_BLACK_FAST;
+                self.sfx(PlayerSfx::NoPos(NA_SE_OC_ABYSS));
             } else {
                 io.transition.ty = TRANS_TYPE_FADE_BLACK;
                 io.save.next_transition_type = TRANS_TYPE_FADE_BLACK;
@@ -6100,7 +6404,8 @@ impl Player {
         } else {
             self.play_requests.push(PlayRequest::ItemGive(gi.item_id));
         }
-        // func_80078884(NA_SE_SY_GET_BOXITEM / NA_SE_SY_GET_ITEM): no sound.
+        let id = if self.get_item_id < 0 { oot_game::audio::sfx::NA_SE_SY_GET_BOXITEM } else { oot_game::audio::sfx::NA_SE_SY_GET_ITEM };
+        self.sfx(PlayerSfx::NoPos(id));
     }
 
     /// `func_80835EA4`: the turn-around camera (`func_80835E44(CAM_SET_TURN_AROUND)`), told what
@@ -6149,8 +6454,8 @@ impl Player {
     }
 
     /// `func_8084DFF4`: the first time, the item's text (`Message_StartTextbox` with Player as
-    /// the talker) and `Item_Give`; then waiting for the text to close. True once it has (the
-    /// fanfares and sounds aren't played).
+    /// the talker), `Item_Give` and the item's fanfare; then waiting for the text to close.
+    /// True once it has.
     fn func_8084DFF4(&mut self, env: &Env) -> bool {
         use oot_game::item::*;
         if self.get_item_id == GI_NONE {
@@ -6161,6 +6466,7 @@ impl Player {
             self.unk_84F = 1;
             self.play_requests.push(PlayRequest::StartTextbox { text_id: gi.text_id as u16, actor: env.me });
             self.play_requests.push(PlayRequest::ItemGive(gi.item_id));
+            self.play_requests.push(PlayRequest::GetItemFanfare(self.get_item_id));
         } else if env.msg_state == oot_game::message::TEXT_STATE_CLOSING {
             if self.get_item_id == GI_GAUNTLETS_SILVER {
                 // The Silver Gauntlets' exit to the Desert Colossus (ENTR_SPOT11_0 with the
@@ -6173,7 +6479,7 @@ impl Player {
     }
 
     /// `func_8084E6D4`: getting an item.
-    /// - From a chest (`unk_850` 0): the opening animation plays (the child's sounds aren't);
+    /// - From a chest (`unk_850` 0): the opening animation plays (with the child's sounds);
     ///   at its end Link turns to hold the item up (`link_demo_get_itemA`, or `_itemB` after
     ///   the kick) with the turn-around camera.
     /// - Holding up (`get_itemB` turns Link to face the camera): on frame 21 the item appears
@@ -6220,7 +6526,9 @@ impl Player {
             }
         } else {
             if self.unk_850 == 0 {
-                // The child's opening sounds (D_808549E0) aren't played.
+                if !self.adult {
+                    self.func_80832924(env.audio.player_anim_sfx("D_808549E0"));
+                }
                 return;
             }
             if self.skel.animation == data.anim("link_demo_get_itemB") {
@@ -6713,6 +7021,7 @@ impl ActorImpl for Player {
         }
         let io = RefCell::new(play.take_io());
         let assets = play.assets.clone();
+        let audio_tables = play.audio.tables.clone();
         let env = Env {
             data: &play.data,
             col: &play.col,
@@ -6731,6 +7040,7 @@ impl ActorImpl for Player {
             me: play.player,
             cam_dir_yaw: play.cam_dir_yaw(),
             items: assets.as_ref().map(|a| &a.items).unwrap_or(&NO_ITEMS),
+            audio: &audio_tables,
             cs_state: play.cs_ctx.state,
             cs_frames: play.cs_ctx.frames,
             cs_link_action: play.cs_ctx.link_action,
@@ -6758,6 +7068,12 @@ impl ActorImpl for Player {
                 play.game_camera.set_target(t);
             }
             play.game_camera.change_mode(&play.data.camera, mode);
+        }
+        // Then its sequence mode (targetCtx.bgmEnemy is never set: no enemies yet), outside
+        // the fishing pond.
+        if self.actor.category == ACTORCAT_PLAYER && play.scene_id != oot_game::play_scene::SCENE_TURIBORI {
+            let m = self.seq_mode();
+            play.audio.set_sequence_mode(m);
         }
         self.update_colliders(play);
     }
@@ -7067,6 +7383,39 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::NaviCall(state) => {
             let cs_idle = play.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE;
             play.interface_ctx.set_navi_call(state, cs_idle);
+        }
+        PlayRequest::GetItemFanfare(gi) => {
+            use oot_game::audio::*;
+            use oot_game::item::*;
+            if (GI_RUPEE_GREEN..=GI_RUPEE_RED).contains(&gi) || (GI_RUPEE_PURPLE..=GI_RUPEE_GOLD).contains(&gi) || (GI_RUPEE_GREEN_LOSE..=GI_RUPEE_PURPLE_LOSE).contains(&gi) || gi == GI_RECOVERY_HEART {
+                play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_BOXITEM);
+            } else {
+                let pieces = play.save.inventory.quest_items & 0xF000_0000;
+                let temp1 = if gi == GI_HEART_CONTAINER_2 || gi == GI_HEART_CONTAINER || (gi == GI_HEART_PIECE && pieces == 4 << QUEST_HEART_PIECE_COUNT) {
+                    NA_BGM_HEART_GET | 0x900
+                } else if gi == GI_HEART_PIECE {
+                    NA_BGM_SMALL_ITEM_GET
+                } else {
+                    NA_BGM_ITEM_GET | 0x900
+                };
+                play.audio.play_fanfare(temp1);
+            }
+        }
+        PlayRequest::FadeOutAllSeq(n) => play.audio.func_800f6964(n),
+        PlayRequest::Sfx(s) => {
+            use oot_game::audio::sfx::SfxPos;
+            let Some(me) = play.player else { return };
+            let pos = SfxPos::Actor(me);
+            let a = &mut play.audio;
+            match s {
+                PlayerSfx::NoPos(id) => a.func_80078884(id),
+                PlayerSfx::Actor(id) => a.func_80078914(pos, id),
+                PlayerSfx::Footstep(id, v) => a.func_800f4010(pos, id, v),
+                PlayerSfx::F4138(id, v) => a.func_800f4138(pos, id, v),
+                PlayerSfx::F4190(id) => a.func_800f4190(pos, id),
+                PlayerSfx::CodeReverb(r) => a.set_code_reverb(r),
+                PlayerSfx::StopById(id) => a.stop_sfx_by_id(id),
+            }
         }
     }
 }

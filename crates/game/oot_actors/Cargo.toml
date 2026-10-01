@@ -11,6 +11,7 @@ eng_anim.workspace = true
 eng_collision.workspace = true
 eng_input.workspace = true
 eng_gfx.workspace = true
+eng_audio.workspace = true
 oot_game.workspace = true
 glam.workspace = true
 anyhow.workspace = true

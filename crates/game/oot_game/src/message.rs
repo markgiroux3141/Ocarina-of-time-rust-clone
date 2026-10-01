@@ -312,6 +312,8 @@ impl Default for TextRegs {
 pub struct MsgFrame<'a> {
     pub table: &'a MessageTable,
     pub input: &'a Input,
+    /// The game's side of the audio: the message box's sounds.
+    pub audio: &'a mut crate::audio::GameAudio,
     pub save: &'a mut SaveContext,
     pub iface: &'a mut InterfaceContext,
     /// `R_SCENE_CAM_TYPE`, `play->sceneId`.
@@ -426,9 +428,24 @@ impl Default for MessageContext {
     }
 }
 
-/// `Message_ShouldAdvance` (without its sound) and `Message_ShouldAdvanceSilent`: A, B or C-Up.
-pub fn should_advance(input: &Input) -> bool {
+/// `Message_ShouldAdvanceSilent`: A, B or C-Up pressed.
+pub fn should_advance_silent(input: &Input) -> bool {
     input.press.held(BTN_A) || input.press.held(BTN_B) || input.press.held(BTN_CUP)
+}
+
+/// `Message_ShouldAdvance`: the same, with `NA_SE_SY_MESSAGE_PASS` when it is.
+pub fn should_advance(input: &Input, audio: &mut crate::audio::GameAudio) -> bool {
+    let pressed = should_advance_silent(input);
+    if pressed {
+        audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_PASS);
+    }
+    pressed
+}
+
+/// `Audio_PlaySfxGeneral(0, &gSfxDefaultPos, ...)`: the message box's silent sound (id 0: the
+/// request is queued, and `Audio_ProcessSfxRequest` drops it).
+fn sfx_none(audio: &mut crate::audio::GameAudio) {
+    audio.func_80078884(0);
 }
 
 /// The textboxes' sprite names.
@@ -546,28 +563,34 @@ impl MessageContext {
     }
 
     /// `Message_CloseTextbox`.
-    pub fn close_textbox(&mut self) {
+    pub fn close_textbox(&mut self, audio: &mut crate::audio::GameAudio) {
         if self.msg_length != 0 {
             self.state_timer = 2;
             self.msg_mode = MSGMODE_TEXT_CLOSING;
             self.textbox_end_type = TEXTBOX_ENDTYPE_DEFAULT;
+            sfx_none(audio);
         }
     }
 
-    /// `Message_HandleChoiceSelection` (the cursor sounds aren't played).
-    fn handle_choice_selection(&mut self, input: &Input, num_choices: u8) {
+    /// `Message_HandleChoiceSelection`.
+    fn handle_choice_selection(&mut self, input: &Input, audio: &mut crate::audio::GameAudio, num_choices: u8) {
+        use crate::audio::sfx::NA_SE_SY_CURSOR;
         let stick_y = input.rel.stick_y as i32;
         if stick_y >= 30 && !self.s.analog_stick_held {
             self.s.analog_stick_held = true;
             self.choice_index = self.choice_index.wrapping_sub(1);
             if self.choice_index > 128 {
                 self.choice_index = 0;
+            } else {
+                audio.func_80078884(NA_SE_SY_CURSOR);
             }
         } else if stick_y <= -30 && !self.s.analog_stick_held {
             self.s.analog_stick_held = true;
             self.choice_index += 1;
             if self.choice_index > num_choices {
                 self.choice_index = num_choices;
+            } else {
+                audio.func_80078884(NA_SE_SY_CURSOR);
             }
         } else if stick_y.abs() < 30 {
             self.s.analog_stick_held = false;
@@ -704,9 +727,12 @@ impl MessageContext {
     /// `Message_DrawItemIcon`: the item's icon (`Message_LoadItemIcon`'s: 32x32 from
     /// `icon_item_static` below `ITEM_MEDALLION_FOREST`, else 24x24 from `icon_item_24_static`)
     /// at the icon registers, `G_CC_MODULATEIA_PRIM` with white at the text's alpha; the text
-    /// moves 32 past it. (The typing sound isn't played.) An item without an icon in either file
-    /// (the songs read past `icon_item_static`'s icons) draws nothing.
-    fn draw_item_icon(&mut self, i: u16, out: &mut Vec<Sprite>) -> u16 {
+    /// moves 32 past it, with the silent sound while it types. An item without an icon in
+    /// either file (the songs read past `icon_item_static`'s icons) draws nothing.
+    fn draw_item_icon(&mut self, i: u16, audio: &mut crate::audio::GameAudio, out: &mut Vec<Sprite>) -> u16 {
+        if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
+            sfx_none(audio);
+        }
         let item = self.decoded(i as usize + 1);
         if item_icon_texture(item).is_some() {
             let r = &self.regs;
@@ -750,6 +776,7 @@ impl MessageContext {
                 MESSAGE_BOX_BREAK => {
                     if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
                         if !self.s.textbox_skipped {
+                            sfx_none(f.audio);
                             self.msg_mode = MSGMODE_TEXT_AWAIT_NEXT;
                             self.font.load_message_box_icon(TEXTBOX_ICON_TRIANGLE);
                         } else {
@@ -767,6 +794,7 @@ impl MessageContext {
                 MESSAGE_TEXTID => {
                     self.textbox_end_type = TEXTBOX_ENDTYPE_HAS_NEXT;
                     if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
+                        sfx_none(f.audio);
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         self.font.load_message_box_icon(TEXTBOX_ICON_TRIANGLE);
                     }
@@ -823,11 +851,17 @@ impl MessageContext {
                 MESSAGE_SFX => {
                     if self.msg_mode == MSGMODE_TEXT_DISPLAYING && !self.s.message_has_set_sfx {
                         self.s.message_has_set_sfx = true;
+                        log::debug!("サウンド（ＳＥ）");
+                        let sfx_hi = (self.decoded(i as usize + 1) as u16) << 8;
+                        f.audio.func_80078884(sfx_hi | self.decoded(i as usize + 2) as u16);
                     }
                     i += 2;
                 }
-                MESSAGE_ITEM_ICON => i = self.draw_item_icon(i, out),
+                MESSAGE_ITEM_ICON => i = self.draw_item_icon(i, f.audio, out),
                 MESSAGE_BACKGROUND => {
+                    if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
+                        sfx_none(f.audio);
+                    }
                     // The background images aren't drawn; the text still moves past them.
                     self.text_pos_x += 32;
                 }
@@ -849,6 +883,7 @@ impl MessageContext {
                     if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         if self.textbox_end_type == TEXTBOX_ENDTYPE_DEFAULT {
+                            f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_END);
                             self.font.load_message_box_icon(TEXTBOX_ICON_SQUARE);
                             if f.cs_idle {
                                 f.iface.set_do_action(DO_ACTION_RETURN);
@@ -878,6 +913,7 @@ impl MessageContext {
                 }
                 MESSAGE_PERSISTENT => {
                     if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
+                        sfx_none(f.audio);
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         self.textbox_end_type = TEXTBOX_ENDTYPE_PERSISTENT;
                     }
@@ -888,10 +924,14 @@ impl MessageContext {
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         self.textbox_end_type = TEXTBOX_ENDTYPE_EVENT;
                         self.font.load_message_box_icon(TEXTBOX_ICON_TRIANGLE);
+                        f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_END);
                     }
                     return;
                 }
                 _ => {
+                    if self.msg_mode == MSGMODE_TEXT_DISPLAYING && i + 1 == self.text_draw_pos && self.text_delay_timer == self.text_delay {
+                        sfx_none(f.audio);
+                    }
                     let glyph = self.font.char_tex_buf.get(char_tex_idx).copied().unwrap_or(0);
                     self.draw_text_char(glyph, out);
                     char_tex_idx += 1;
@@ -1228,12 +1268,12 @@ impl MessageContext {
                 self.draw_text(f, out);
                 match self.textbox_end_type {
                     TEXTBOX_ENDTYPE_2_CHOICE => {
-                        self.handle_choice_selection(f.input, 1);
+                        self.handle_choice_selection(f.input, f.audio, 1);
                         let (x, y) = (self.text_pos_x, self.text_pos_y);
                         self.draw_textbox_icon(x, y, out);
                     }
                     TEXTBOX_ENDTYPE_3_CHOICE => {
-                        self.handle_choice_selection(f.input, 2);
+                        self.handle_choice_selection(f.input, f.audio, 2);
                         let (x, y) = (self.text_pos_x, self.text_pos_y);
                         self.draw_textbox_icon(x, y, out);
                     }
@@ -1349,6 +1389,8 @@ impl MessageContext {
                     r.textbox_texheight = 512;
                 } else {
                     self.grow_textbox();
+                    // TODO (the decomp's): this may be NA_SE_PL_WALK_GROUND - SFX_FLAG, or not.
+                    f.audio.play_sfx_if_not_in_cutscene(0);
                     self.state_timer = 0;
                     self.msg_mode = MSGMODE_TEXT_BOX_GROWING;
                 }
@@ -1383,7 +1425,7 @@ impl MessageContext {
                 }
             }
             MSGMODE_TEXT_AWAIT_INPUT => {
-                if self.yreg_31 == 0 && should_advance(f.input) {
+                if self.yreg_31 == 0 && should_advance(f.input, f.audio) {
                     self.msg_mode = MSGMODE_TEXT_DISPLAYING;
                     self.text_draw_pos += 1;
                 }
@@ -1395,7 +1437,7 @@ impl MessageContext {
                 }
             }
             MSGMODE_TEXT_AWAIT_NEXT => {
-                if should_advance(f.input) {
+                if should_advance(f.input, f.audio) {
                     self.msg_mode = MSGMODE_TEXT_NEXT_MSG;
                     self.text_unskippable = 0;
                     self.msg_buf_pos += 1;
@@ -1405,20 +1447,22 @@ impl MessageContext {
                 if self.textbox_end_type == TEXTBOX_ENDTYPE_FADING {
                     self.state_timer = self.state_timer.wrapping_sub(1);
                     if self.state_timer == 0 {
-                        self.close_textbox();
+                        self.close_textbox(f.audio);
                     }
                 } else if self.textbox_end_type != TEXTBOX_ENDTYPE_PERSISTENT && self.textbox_end_type != TEXTBOX_ENDTYPE_EVENT && self.yreg_31 == 0 {
                     if self.textbox_end_type == TEXTBOX_ENDTYPE_2_CHOICE && self.ocarina_mode == 1 {
-                        if should_advance(f.input) {
+                        if should_advance(f.input, f.audio) {
                             self.ocarina_mode = if self.choice_index == 0 { 2 } else { 4 };
-                            self.close_textbox();
+                            self.close_textbox(f.audio);
                         }
-                    } else if should_advance(f.input) {
+                    } else if should_advance_silent(f.input) {
                         if self.textbox_end_type == TEXTBOX_ENDTYPE_HAS_NEXT {
+                            f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_PASS);
                             let next = self.s.next_text_id;
                             self.continue_textbox(f, next);
                         } else {
-                            self.close_textbox();
+                            f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_DECIDE);
+                            self.close_textbox(f.audio);
                         }
                     }
                 }

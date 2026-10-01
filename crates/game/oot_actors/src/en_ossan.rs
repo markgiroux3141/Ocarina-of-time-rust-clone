@@ -1051,14 +1051,14 @@ impl EnOssan {
     fn state_start_conversation(&mut self, play: &mut PlayState) {
         let dialog_state = play.message_state();
         if self.actor.params == OSSAN_TYPE_MASK && dialog_state == TEXT_STATE_CHOICE {
-            if !self.test_end_interaction(play) && should_advance(&play.input) {
+            if !self.test_end_interaction(play) && play.message_should_advance() {
                 match play.msg_ctx.choice_index {
                     0 => self.start_shopping(play),
                     1 => self.end_interaction(play),
                     _ => {}
                 }
             }
-        } else if dialog_state == TEXT_STATE_EVENT && should_advance(&play.input) {
+        } else if dialog_state == TEXT_STATE_EVENT && play.message_should_advance() {
             // NA_SE_SY_MESSAGE_PASS.
             match self.happy_mask_shop_state {
                 OSSAN_HAPPY_STATE_ALL_MASKS_SOLD => {
@@ -1107,7 +1107,7 @@ impl EnOssan {
     /// `EnOssan_State_FacingShopkeeper`: 0x83's choice, or the stick to a shelf.
     fn state_facing_shopkeeper(&mut self, play: &mut PlayState) {
         if play.message_state() == TEXT_STATE_CHOICE && !self.test_end_interaction(play) {
-            if should_advance(&play.input) && self.facing_shopkeeper_dialog_result(play) {
+            if play.message_should_advance() && self.facing_shopkeeper_dialog_result(play) {
                 // NA_SE_SY_DECIDE.
                 return;
             }
@@ -1133,7 +1133,7 @@ impl EnOssan {
 
     /// `EnOssan_State_TalkingToShopkeeper`.
     fn state_talking_to_shopkeeper(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             self.start_shopping(play);
         }
     }
@@ -1202,7 +1202,7 @@ impl EnOssan {
         if self.test_end_interaction(play) {
             return true;
         }
-        if should_advance(&play.input) {
+        if play.message_should_advance() {
             let Some((params, invisible, prompt)) = self.slot_item(play, self.cursor_index).map(|g| (g.actor.params, g.is_invisible, g.item_buy_prompt_text_id)) else {
                 return true;
             };
@@ -1473,7 +1473,7 @@ impl EnOssan {
             // "Zooming!!"
             return;
         }
-        if play.message_state() == TEXT_STATE_CHOICE && !self.test_cancel_option(play) && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_CHOICE && !self.test_cancel_option(play) && play.message_should_advance() {
             match play.msg_ctx.choice_index {
                 0 => buy(self, play),
                 1 => {
@@ -1491,7 +1491,7 @@ impl EnOssan {
         if !self.take_item_off_shelf(play) {
             return;
         }
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             self.state_flag = self.temp_state_flag;
             let t = self.selected_text(play);
             play.continue_textbox(t);
@@ -1517,12 +1517,12 @@ impl EnOssan {
             return;
         }
         if talk_state == TEXT_STATE_EVENT {
-            if should_advance(&play.input) {
+            if play.message_should_advance() {
                 self.state_flag = self.temp_state_flag;
                 let t = self.selected_text(play);
                 play.continue_textbox(t);
             }
-        } else if talk_state == TEXT_STATE_CHOICE && !self.test_cancel_option(play) && should_advance(&play.input) {
+        } else if talk_state == TEXT_STATE_CHOICE && !self.test_cancel_option(play) && play.message_should_advance() {
             match play.msg_ctx.choice_index {
                 0 => {
                     let flag = match self.slot_item(play, self.cursor_index).map(|g| g.actor.params) {
@@ -1552,7 +1552,7 @@ impl EnOssan {
 
     /// `EnOssan_State_CantGetItem`.
     fn state_cant_get_item(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             self.state_flag = self.temp_state_flag;
             let t = self.selected_text(play);
             play.continue_textbox(t);
@@ -1561,7 +1561,7 @@ impl EnOssan {
 
     /// `EnOssan_State_QuickBuyDialog`: after "Thanks a lot!", the item back on the shelf.
     fn state_quick_buy_dialog(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             self.shop_item_selected_tween = 0.0;
             self.reset_item_position(play);
             self.selected_restock(play);
@@ -1588,7 +1588,7 @@ impl EnOssan {
     /// `EnOssan_State_ItemPurchased`: at the item text's end, the price (`buyEventFunc`) and
     /// 0x6B, "anything else?".
     fn state_item_purchased(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_DONE && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_DONE && play.message_should_advance() {
             if self.actor.params == OSSAN_TYPE_MASK {
                 let temp_params = self.slot_item(play, self.cursor_index).map(|g| g.actor.params);
                 self.reset_item_position(play);
@@ -1636,7 +1636,7 @@ impl EnOssan {
     fn state_continue_shopping_prompt(&mut self, play: &mut PlayState) {
         let talk_state = play.message_state();
         if talk_state == TEXT_STATE_CHOICE {
-            if should_advance(&play.input) {
+            if play.message_should_advance() {
                 self.reset_item_position(play);
                 self.selected_restock(play);
                 if !self.test_end_interaction(play) {
@@ -1647,7 +1647,7 @@ impl EnOssan {
                     }
                 }
             }
-        } else if talk_state == TEXT_STATE_EVENT && should_advance(&play.input) {
+        } else if talk_state == TEXT_STATE_EVENT && play.message_should_advance() {
             self.reset_item_position(play);
             self.selected_restock(play);
             self.continue_shopping(play);
@@ -1656,7 +1656,7 @@ impl EnOssan {
 
     /// `EnOssan_State_WaitForDisplayOnlyBombDialog`.
     fn state_wait_for_display_only_bomb_dialog(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             play.save.set_inf_table(INFTABLE_FC);
             self.start_shopping(play);
         }
@@ -1664,7 +1664,7 @@ impl EnOssan {
 
     /// `EnOssan_State_21` (unreachable).
     fn state_21(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_DONE_HAS_NEXT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_DONE_HAS_NEXT && play.message_should_advance() {
             self.state_flag = OSSAN_STATE_22;
             play.continue_textbox(0x3012);
             play.save.set_inf_table(INFTABLE_FC);
@@ -1673,21 +1673,21 @@ impl EnOssan {
 
     /// `EnOssan_State_22` (unreachable).
     fn state_22(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             self.start_shopping(play);
         }
     }
 
     /// `EnOssan_State_GiveLonLonMilk`.
     fn state_give_lon_lon_milk(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             self.give_item_with_fanfare(play);
         }
     }
 
     /// `EnOssan_State_LendMaskOfTruth`.
     fn state_lend_mask_of_truth(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_EVENT && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
             play.save.set_item_get_inf(ITEMGETINF_2A);
             self.cursor_index = 2;
             self.give_item_with_fanfare(play);
@@ -1702,7 +1702,7 @@ impl EnOssan {
 
     /// `EnOssan_State_GiveDiscountDialog`.
     fn state_give_discount_dialog(&mut self, play: &mut PlayState) {
-        if play.message_state() == TEXT_STATE_DONE && should_advance(&play.input) {
+        if play.message_state() == TEXT_STATE_DONE && play.message_should_advance() {
             self.give_item_with_fanfare(play);
             self.draw_cursor = 0;
             self.shop_item_selected_tween = 0.0;

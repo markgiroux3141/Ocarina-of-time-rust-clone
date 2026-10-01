@@ -115,6 +115,14 @@ pub struct SaveContext {
     /// `retainWeatherMode`, `showTitleCard`.
     pub retain_weather_mode: bool,
     pub show_title_card: bool,
+    /// `seqId`, `natureAmbienceId`: the music and the nature ambience the last scene started
+    /// (`Play_Init`), `NA_BGM_DISABLED` and `NATURE_ID_DISABLED` once they've faded out (a
+    /// scene left without `ENTRANCE_INFO_CONTINUE_BGM_FLAG`, a new game). `forcedSeqId`: what
+    /// the next scene plays instead of its own (`Environment_ForcePlaySequence`),
+    /// `NA_BGM_GENERAL_SFX` for none.
+    pub seq_id: u8,
+    pub nature_ambience_id: u8,
+    pub forced_seq_id: u16,
     /// `cutsceneIndex`: 0 for none, 0xFFF0 and up for a scene's cutscene layer
     /// (`SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF)`), 0xFFFD while a script plays. The
     /// file select's new file enters with 0xFFF1, the opening on Link's house's layer 5
@@ -322,6 +330,11 @@ impl SaveContext {
             trans_wipe_speed: 0,
             retain_weather_mode: false,
             show_title_card: true,
+            // SaveContext_Init (z_common_data.c); the file select (z_file_choose.c) and the map
+            // select (z_select.c) set the same.
+            seq_id: crate::audio::NA_BGM_DISABLED as u8,
+            nature_ambience_id: crate::audio::NATURE_ID_DISABLED,
+            forced_seq_id: crate::audio::NA_BGM_GENERAL_SFX,
             cutscene_index: 0,
             // SaveContext_Init (z_common_data.c).
             next_cutscene_index: 0xFFEF,

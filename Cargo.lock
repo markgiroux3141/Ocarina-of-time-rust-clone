@@ -2267,6 +2267,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "eng_anim",
+ "eng_audio",
  "eng_collision",
  "eng_gfx",
  "eng_input",
@@ -2348,6 +2349,7 @@ dependencies = [
  "anyhow",
  "clap",
  "eng_app",
+ "eng_audio",
  "eng_collision",
  "eng_input",
  "eng_math",

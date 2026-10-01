@@ -602,3 +602,87 @@ fn the_audio_data_is_the_roms_and_the_cs() {
     assert_eq!(t.noise_code_vram, 0x800E_4FE0);
     assert_eq!(&t.noise_code[..2], &[0x27, 0xBD], "func_800E4FE0 starts its stack frame");
 }
+
+#[test]
+fn the_games_audio_tables_and_the_scenes_sound_settings_are_the_cs() {
+    let Some(c) = ctx() else { return };
+    let t = c.pack.audio_game_tables().expect("the pack's game audio tables");
+    let fresh = oot_import::audio::audio_game_tables(&c.p.config.decomp).expect("reading them");
+    assert!(t == fresh, "the pack's game audio tables are what the importer reads");
+    use oot_game::audio::*;
+    // code_800EC960.c's sSeqFlags, by the NA_BGM_* each row's comment names.
+    assert_eq!(t.seq_flags.len(), 0x6E);
+    assert_eq!(t.seq_flags[0x00], SEQ_FLAG_FANFARE, "NA_BGM_GENERAL_SFX");
+    assert_eq!(t.seq_flags[0x01], SEQ_FLAG_ENEMY, "NA_BGM_NATURE_AMBIENCE");
+    assert_eq!(t.seq_flags[0x18], SEQ_FLAG_5 | SEQ_FLAG_ENEMY, "NA_BGM_DUNGEON");
+    assert_eq!(t.seq_flags[0x1B], SEQ_FLAG_NO_AMBIENCE | SEQ_FLAG_RESTORE, "NA_BGM_BOSS");
+    assert_eq!(t.seq_flags[0x1F], SEQ_FLAG_5, "NA_BGM_LINK_HOUSE");
+    assert_eq!(t.seq_flags[NA_BGM_KOKIRI as usize], SEQ_FLAG_4 | SEQ_FLAG_ENEMY, "NA_BGM_KOKIRI");
+    assert_eq!(t.seq_flags[0x6D], 0, "NA_BGM_CUTSCENE_EFFECTS");
+    // sSpecReverbs: 40 for spec 7, 15 for spec 9.
+    assert_eq!(t.spec_reverbs, [0, 0, 0, 0, 0, 0, 0, 40, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    // sNatureAmbienceDataIO[NATURE_ID_GENERAL_NIGHT]: 0xC0FF, 0xC0FE; the stream's two triples
+    // (NATURE_CHANNEL_STREAM_0, CHANNEL_IO_PORT_2, NATURE_STREAM_RUSHING_WATER; ..._PORT3(0)),
+    // then the crows (NATURE_CHANNEL_CRITTER_0: type NATURE_CRITTER_CROWS_CAWS 9, bend 64,
+    // 0 layers, port 5 32), ... 30 triples and NATURE_IO_ENTRIES_END, zero to 100.
+    assert_eq!(t.nature_ambience.len(), 20);
+    let n0 = &t.nature_ambience[0];
+    assert_eq!((n0.player_io, n0.channel_mask), (0xC0FF, 0xC0FE));
+    assert_eq!(&n0.channel_io[..18], &[0, 2, 0, 0, 3, 0, 1, 2, 9, 1, 3, 64, 1, 4, 0, 1, 5, 32]);
+    assert_eq!(n0.channel_io[90], 0xFF);
+    assert_eq!(n0.channel_io.len(), 100);
+    assert!(n0.channel_io[91..].iter().all(|&b| b == 0));
+    for (i, n) in t.nature_ambience.iter().enumerate() {
+        let end = n.channel_io.iter().position(|&b| b == 0xFF).unwrap_or_else(|| panic!("ambience {i}: no NATURE_IO_ENTRIES_END"));
+        assert_eq!(end % 3, 0, "ambience {i}: whole triples");
+    }
+    // audio_external_data.c's gSoundModeList.
+    assert_eq!(t.sound_mode_list, [SOUNDMODE_STEREO as u8, SOUNDMODE_HEADSET as u8, SOUNDMODE_SURROUND as u8, SOUNDMODE_MONO as u8]);
+
+    // SCENE_CMD_SOUND_SETTINGS: what the pack holds for each layer is the ROM's header command.
+    let mut with = 0;
+    for name in ["spot04_scene", "link_home_scene", "kokiri_shop_scene", "ydan_scene", "spot00_scene"] {
+        let sd = c.pack.scene(name).expect("scene");
+        let file: std::sync::Arc<[u8]> = c.p.rom.file_by_name(name).expect("scene file").into();
+        for (layer, ld) in sd.layers.iter().enumerate() {
+            let rom = oot_import::scene::Scene::parse_layer(name, file.clone(), layer).expect("the header");
+            assert_eq!(ld.sound, rom.sound, "{name} layer {layer}");
+            with += ld.sound.is_some() as usize;
+        }
+    }
+    assert!(with > 0);
+    // Kokiri Forest by day: spec 1, its region's ambience, its music ("Kokiri Forest",
+    // sequence.h).
+    let k = c.pack.scene("spot04").unwrap().layers[0].sound.unwrap();
+    assert_eq!((k.spec_id, k.nature_ambience_id, k.seq_id as u16), (1, NATURE_ID_KOKIRI_REGION, NA_BGM_KOKIRI));
+}
+
+#[test]
+fn the_sound_effects_tables_are_the_cs() {
+    let Some(c) = ctx() else { return };
+    let t = c.pack.audio_game_tables().expect("the pack's game audio tables");
+    use oot_game::audio::sfx::*;
+    // gSfxParams' seven banks, as long as their tables (include/tables/sfx/*.h).
+    let lens: Vec<usize> = t.sfx_params.iter().map(|b| b.len()).collect();
+    assert_eq!(lens, [224, 80, 248, 499, 72, 8, 128]);
+    // DEFINE_SFX(NA_SE_PL_WALK_GROUND, 0x20, 0, 2, SFX_FLAG_10): randParam 2 << 6 | SFX_FLAG_10.
+    assert_eq!(t.sfx_params(0x800), (0x20, (2 << SFX_PARAM_67_SHIFT) | SFX_FLAG_10));
+    assert_eq!(t.sfx_params[0][0].name, "NA_SE_PL_WALK_GROUND");
+    // DEFINE_SFX(NA_SE_SY_WIN_OPEN, 0xC0, 0, 0, 0), (NA_SE_SY_CORRECT_CHIME, 0xB0, 0, 0, SFX_FLAG_5).
+    assert_eq!(t.sfx_params(NA_SE_SY_WIN_OPEN), (0xC0, 0));
+    assert_eq!(t.sfx_params(0x4802), (0xB0, SFX_FLAG_5));
+    assert_eq!(t.sfx_params(NA_SE_SY_WIN_OPEN - SFX_FLAG), t.sfx_params(NA_SE_SY_WIN_OPEN), "the id's 0x800 bit isn't its index");
+    // The ids the code names are the tables' rows.
+    for &(name, id) in NAMED_SFX {
+        assert_eq!(t.sfx_id(name), Some(id), "{name}");
+    }
+    // gSfxBanks' arrays (D_8016BAD0[9] ...), gIsLargeSfxBank, the channel layouts' first row.
+    assert_eq!(t.sfx_bank_sizes, [9, 12, 22, 20, 8, 3, 5]);
+    assert_eq!(t.is_large_sfx_bank, [0, 0, 0, 1, 0, 0, 0]);
+    assert_eq!(t.channels_per_bank[0], [3, 2, 3, 3, 2, 1, 2]);
+    assert_eq!(t.used_channels_per_bank[0], [3, 2, 3, 2, 2, 1, 1]);
+    assert_eq!(t.channels_per_bank.len(), 4);
+    assert_eq!(t.behind_screen_z, [-15.0, -65.0]);
+    assert_eq!(t.charge_freq_scales, [1.0, 1.12246, 1.33484, 1.33484]);
+    assert_eq!(t.ganons_tower_levels_vol, [127, 80, 75, 73, 70, 68, 65, 60]);
+}

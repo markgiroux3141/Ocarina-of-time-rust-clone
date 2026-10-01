@@ -10,6 +10,8 @@
 //! - `synthesis`: `audio_synthesis.c`, the RSP command lists;
 //! - `rsp`: the microcode, run on DMEM and RDRAM;
 //! - `thread`: `func_800E5000` (one audio frame per VI retrace), the command queue, the AI;
+//! - `link`: what the game's thread does to the library and reads of it (`GameOp`,
+//!   `AudioView`), handed over at the end of each game frame;
 //! - `ram`, `layout`: the memory it all runs in, and the structs that live there;
 //! - `font`, `adpcm`, `wav`: reading a font's instruments and samples directly, the reference
 //!   VADPCM decoder, and WAV files (for tools and tests).
@@ -25,6 +27,7 @@ pub mod effects;
 pub mod font;
 pub mod heap;
 pub mod layout;
+pub mod link;
 pub mod load;
 #[cfg(feature = "device")]
 pub mod output;
@@ -39,4 +42,5 @@ pub mod wav;
 
 pub use context::AudioContext;
 pub use data::{AudioData, AudioTables, RomFile};
+pub use link::{AudioView, GameOp};
 pub use renderer::Renderer;

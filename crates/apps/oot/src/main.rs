@@ -56,8 +56,8 @@ struct Cli {
     /// A pack file or loose folder to use instead of the default pack.
     #[arg(long)]
     pack: Option<PathBuf>,
-    /// A sequence to play (`gSequenceTable`'s index: 60 = Kokiri Forest, 30 = the title theme),
-    /// until the scenes' music is ported.
+    /// A sequence to play instead of the first scene's own (`gSequenceTable`'s index: 60 =
+    /// Kokiri Forest, 30 = the title theme): `Environment_ForcePlaySequence`.
     #[arg(long)]
     music: Option<u8>,
     /// No sound.
@@ -120,6 +120,7 @@ fn main() -> Result<()> {
         at: cli.at,
         audio: !cli.no_audio,
         music: cli.music,
+        audio_log: false,
         ..Default::default()
     };
     oot::run_window(&opts, "OoT clone", cli.width, cli.height)

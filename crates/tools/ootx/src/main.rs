@@ -895,6 +895,10 @@ fn scene_info(scene: &str, layer: usize) -> Result<()> {
     println!("{} (id {}, layer {layer}, header {:#x}): keep {:?} ({:?})", sd.name, sd.id, ld.header_offset, ld.keep_object, ld.keep_object_id);
     let sky = st.room_skybox(ld.skybox.skybox_id).map(|s| s.name.as_str()).unwrap_or("-");
     println!("  scene cam type {:#04x}, skybox {} (room skybox {sky})", ld.scene_cam_type, ld.skybox.skybox_id);
+    match ld.sound {
+        Some(s) => println!("  sound settings: spec {}, nature ambience {:#04x}, sequence {:#04x}", s.spec_id, s.nature_ambience_id, s.seq_id),
+        None => println!("  no sound settings"),
+    }
     for (i, e) in ld.spawns.iter().enumerate() {
         println!("  spawn {i}: {} pos {:?} rot {:?} params {:#06x}", at.name(e.id), e.pos, e.rot, e.params as u16);
     }

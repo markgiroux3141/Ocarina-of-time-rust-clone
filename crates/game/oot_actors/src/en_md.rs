@@ -676,7 +676,7 @@ impl EnMd {
         }
         let s = &play.save;
         if s.check_quest_item(QUEST_KOKIRI_EMERALD) && !s.get_event_chk_inf(EVENTCHKINF_1C) && play.scene_id == SCENE_SPOT04 {
-            play.with_msg(|m, _| m.close_textbox());
+            play.with_msg(|m, f| m.close_textbox(f.audio));
             play.save.set_event_chk_inf(EVENTCHKINF_1C);
             self.actor.kill();
             return;
@@ -797,7 +797,7 @@ fn func_80aaaf04(play: &mut PlayState, actor: &mut Actor, unk_208: &mut u8, unk_
             0
         }
         TEXT_STATE_EVENT => {
-            if should_advance(&play.input) {
+            if play.message_should_advance() {
                 2
             } else {
                 1

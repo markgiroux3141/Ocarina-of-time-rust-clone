@@ -263,6 +263,15 @@ fn import_audio(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<()> {
     use crate::audio::LoadAudioData;
     let a = eng_audio::AudioData::load(p).context("the audio data")?;
     w.put(keys::AUDIO_TABLES, &a.tables)?;
+    let game = crate::audio::audio_game_tables(&p.config.decomp).context("the game's audio tables")?;
+    w.put(keys::AUDIO_GAME, &game)?;
+    tally.notes.push(format!(
+        "audio: {} sequence flags, {} spec reverbs, {} nature ambiences, {} sound modes",
+        game.seq_flags.len(),
+        game.spec_reverbs.len(),
+        game.nature_ambience.len(),
+        game.sound_mode_list.len()
+    ));
     for f in [&a.audiobank, &a.audioseq, &a.audiotable] {
         w.put(&keys::audio_rom(&f.name), f)?;
         tally.ok("AudioRomFile");
@@ -713,6 +722,7 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
         transition_actors: sd.scene.transition_actors.clone(),
         paths: sd.scene.paths.clone(),
         scene_cam_type: sd.scene.scene_cam_type,
+        sound: sd.scene.sound,
         // The script at the command's offset: the XML's Cutscene symbol there, or the offset's.
         cutscene: sd.scene.cutscene.map(|off| scene_cutscene_key(p, file, off)),
         rooms: (0..rooms.len()).map(|ri| keys::room(file, layer, ri)).collect(),

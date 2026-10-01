@@ -153,12 +153,15 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
    - an ADR on how faithful the mixer is.
    - *(Done whole: the pack holds the ROM's audio files as they are; the library, the sequence
      player included, and the microcode are ported, offline and through the device.)*
-2. **The sequence player at runtime** (started in milestone 1: `audio_seqplayer.c` is ported and
-   plays Kokiri Forest's sequence offline, 597 notes before its loop as the extractor reads it):
+2. **The game's music** (done: see [GAME-04](GAME-04-audio.md) milestone 2, ADR 0026):
    - `audio_seqplayer.c` driving the synth, including the game's IO ports;
    - the scene's music (`Environment_PlaySceneSequence`, `func_800F5550` and the rest of `code_800EC960.c`), the ambience (`Audio_PlayNatureAmbienceSequence`).
-   - **Exit:** Kokiri Forest's music plays and loops like the game.
-3. **Sound effects:**
+   - **Exit:** Kokiri Forest's music plays and loops like the game. *(Done headless, checked
+     command for command against the C, and in the window with no `--music`: the scenes'
+     sound settings from the pack, the spec changes, the fades between scenes, the forest's
+     music resumed from a house, the night's ambience, the chests' and items' fanfares.)*
+3. **Sound effects** (started: see [GAME-04](GAME-04-audio.md) milestone 3, ADR 0027: the engine
+   whole, positions through `projectedPos`, the message box, most of Player's ported actions):
    - `Audio_PlaySfxGeneral` and the sfx channels;
    - the calls the ported code already marks as left out: Player's footsteps, sword, text blips, doors, rupees, the HUD, the low-health alarm.
    - **Exit:** a scripted run's sfx log matches the calls in the C.

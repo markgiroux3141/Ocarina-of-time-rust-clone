@@ -6,9 +6,10 @@
 //! device's callback drains the queue at the device's rate, resampling linearly, and nudges its
 //! rate by up to half a percent to keep the queue near its target: the device's clock and the
 //! system's drift apart. It starts once the queue holds its target, and if the queue ever runs
-//! dry it waits for the target again. Commands from the game arrive as `AudioCmd`s and are queued and
-//! scheduled at the next retrace, as the game's frame ends with `Audio_ScheduleProcessCmds`
-//! (docs/adr/0025-audio-mixer.md).
+//! dry it waits for the target again. What the game's frames do arrive as `GameOp`s and are applied
+//! before the next retrace; after each retrace the thread publishes what the game reads
+//! (`AudioView`), with the queues' messages kept until the game takes them
+//! (docs/adr/0025-audio-mixer.md, docs/adr/0026-the-games-audio.md).
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -20,12 +21,13 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::context::AudioContext;
 use crate::data::AudioData;
+use crate::link::{AudioView, GameOp};
 use crate::thread::Ai;
 
 /// What the game sends the audio thread.
 enum Msg {
-    /// `Audio_QueueCmd`s, then `Audio_ScheduleProcessCmds`.
-    Cmds(Vec<(u32, u32)>),
+    /// A game frame's `GameOp`s.
+    Ops(Vec<GameOp>),
     Stop,
 }
 
@@ -46,6 +48,8 @@ struct Shared {
 /// The device's side: plays until dropped.
 pub struct AudioOutput {
     tx: Sender<Msg>,
+    /// What the game reads, as of the last retrace.
+    view: Arc<Mutex<AudioView>>,
     thread: Option<std::thread::JoinHandle<()>>,
     /// The device's name and rate, for the HUD.
     pub description: String,
@@ -56,24 +60,45 @@ impl AudioOutput {
     pub fn start(data: AudioData) -> Result<AudioOutput> {
         let (tx, rx) = channel();
         let (ready_tx, ready_rx) = channel::<Result<String>>();
+        let view = Arc::new(Mutex::new(AudioView::default()));
+        let thread_view = view.clone();
         let thread = std::thread::Builder::new()
             .name("audio".into())
             .spawn(move || {
-                if let Err(e) = audio_thread(data, rx, &ready_tx) {
+                if let Err(e) = audio_thread(data, rx, &ready_tx, thread_view) {
                     let _ = ready_tx.send(Err(e));
                 }
             })
             .context("starting the audio thread")?;
         let description = ready_rx.recv().context("the audio thread stopped")??;
-        Ok(AudioOutput { tx, thread: Some(thread), description })
+        Ok(AudioOutput { tx, view, thread: Some(thread), description })
+    }
+
+    /// A game frame's `GameOp`s, applied before the next retrace.
+    pub fn send_ops(&self, ops: Vec<GameOp>) {
+        if !ops.is_empty() {
+            let _ = self.tx.send(Msg::Ops(ops));
+        }
     }
 
     /// Queues commands for the next retrace (`Audio_QueueCmd*`, then
     /// `Audio_ScheduleProcessCmds`).
     pub fn send(&self, cmds: Vec<(u32, u32)>) {
         if !cmds.is_empty() {
-            let _ = self.tx.send(Msg::Cmds(cmds));
+            let mut ops: Vec<GameOp> = cmds.into_iter().map(|(a, d)| GameOp::Cmd(a, d)).collect();
+            ops.push(GameOp::Schedule);
+            self.send_ops(ops);
         }
+    }
+
+    /// What the game reads now: the state as of the last retrace, and the messages posted since
+    /// the last call.
+    pub fn take_view(&self) -> AudioView {
+        let mut v = self.view.lock().unwrap();
+        let out = v.clone();
+        v.reset_msgs.clear();
+        v.external_load_msgs.clear();
+        out
     }
 
     /// Starts `seq_id` on `player` (`0x82`, no fade).
@@ -91,9 +116,11 @@ impl Drop for AudioOutput {
     }
 }
 
-fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String>>) -> Result<()> {
+fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String>>, view: Arc<Mutex<AudioView>>) -> Result<()> {
     let mut ctx = AudioContext::new(&data);
     drop(data);
+    // What the game reads before the first retrace: AudioLoad_Init's spec 0.
+    view.lock().unwrap().update(ctx.view());
     let mut ai = Ai::new();
     let ai_rate = ctx.audio_buffer_parameters.ai_sampling_frequency as f64;
     let refresh = ctx.refresh_rate.max(1) as f64;
@@ -127,12 +154,7 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
         // Commands from the game, as its frames end.
         loop {
             match rx.try_recv() {
-                Ok(Msg::Cmds(cmds)) => {
-                    for (op_args, data) in cmds {
-                        ctx.queue_cmd(op_args, data);
-                    }
-                    ctx.schedule_process_cmds();
-                }
+                Ok(Msg::Ops(ops)) => ctx.apply(&ops),
                 Ok(Msg::Stop) | Err(std::sync::mpsc::TryRecvError::Disconnected) => return Ok(()),
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
             }
@@ -144,6 +166,8 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
         if let Some(buf) = ctx.audio_thread_update(remaining) {
             ai.set_next_buffer(buf);
         }
+        let v = ctx.view();
+        view.lock().unwrap().update(v);
         {
             let mut s = shared.lock().unwrap();
             for f in out.chunks(2) {
@@ -156,7 +180,8 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
         retraces += 1;
         if retraces % 300 == 0 {
             let s = shared.lock().unwrap();
-            log::info!("audio output: {retraces} retraces, {} frames queued, ran dry {} times", s.frames.len(), s.underruns);
+            let playing: Vec<String> = ctx.seq_players.iter().map(|p| if p.enabled { format!("{:02X}", p.seq_id) } else { "--".into() }).collect();
+            log::info!("audio output: {retraces} retraces, {} frames queued, ran dry {} times; players {}", s.frames.len(), s.underruns, playing.join(" "));
         }
         let next = start + period.mul_f64(retraces as f64);
         let now = Instant::now();
