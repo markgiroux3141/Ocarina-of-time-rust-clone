@@ -255,7 +255,7 @@ impl CsCmdActorAction {
 }
 
 /// `CutsceneCameraPoint` (`z64cutscene.h`).
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CutsceneCameraPoint {
     pub continue_flag: i8,
     pub camera_roll: i8,
@@ -726,9 +726,9 @@ impl PlayState {
         }
     }
 
-    /// `func_80064824`: command 3, the misc actions. Those that need what isn't ported (the
-    /// weather, the lights and fog, the skybox, quakes, title cards, the sandstorm, the
-    /// Sun's Song, sound) are logged on their first frame.
+    /// `func_80064824`: command 3, the misc actions, on `envCtx` and the rest of play. Those that
+    /// need what isn't ported (the skybox's change, quakes, title cards, the sandstorm, the Sun's
+    /// Song, the scarecrow's song) are logged on their first frame; their sounds play.
     fn func_80064824(&mut self, d: &[u8], o: usize) {
         let (base, start, end) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4));
         let frames = self.cs_ctx.frames;
@@ -742,9 +742,23 @@ impl PlayState {
                 log::warn!("cutscene misc {base} ({what}) at frame {frames}: not ported");
             }
         };
+        use crate::audio::{NATURE_CHANNEL_LIGHTNING, NATURE_CHANNEL_RAIN};
         match base {
-            1 => not_ported("rain"),
-            2 => not_ported("lightning"),
+            1 => {
+                if first {
+                    // The nature ambience's rain (CHANNEL_IO_PORT_4 0x3F, _PORT_1 1), and 20 drops.
+                    self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_RAIN, 4, 0x3F);
+                    self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_RAIN, 1, 1);
+                    self.env_ctx.precipitation[crate::env::PRECIP_RAIN_MAX] = 20;
+                }
+            }
+            2 => {
+                if first {
+                    self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_LIGHTNING, 0, 0);
+                    self.env_statics.add_lightning_bolts(3);
+                    self.env_statics.lightning_strike.state = crate::env::LIGHTNING_STRIKE_START;
+                }
+            }
             3 => {
                 if first {
                     self.flags_set_env(0);
@@ -753,8 +767,27 @@ impl PlayState {
                     }
                 }
             }
-            6 => not_ported("envCtx.adjFogFar"),
-            7 => not_ported("the skybox and light config change"),
+            6 => {
+                if self.env_ctx.adj_fog_far < 12800 {
+                    self.env_ctx.adj_fog_far += 35;
+                }
+            }
+            7 => {
+                if first {
+                    // The skybox's config changes (not drawn: no skyboxes in the outdoor scenes
+                    // yet) and the lights' with it, over 60 frames.
+                    let e = &mut self.env_ctx;
+                    e.change_skybox_state = crate::env::CHANGE_SKYBOX_REQUESTED;
+                    e.skybox_config = 1;
+                    e.change_skybox_next_config = 0;
+                    e.change_skybox_timer = 60;
+                    e.change_light_enabled = true;
+                    e.light_config = 0;
+                    e.change_light_next_config = 1;
+                    e.change_light_timer = 60;
+                    e.change_duration = 60;
+                }
+            }
             8 => {
                 if let Some(s) = self.scene.as_mut()
                     && s.draw.room_unk_74[0] < 0x80
@@ -762,15 +795,16 @@ impl PlayState {
                     s.draw.room_unk_74[0] += 4;
                 }
             }
-            9 => not_ported("snow"),
+            9 => self.env_ctx.precipitation[crate::env::PRECIP_SNOW_MAX] = 16,
             10 => self.flags_set_env(1),
             11 => {
                 if let Some(s) = self.scene.as_mut() {
                     if s.draw.room_unk_74[0] < 0x672 {
                         s.draw.room_unk_74[0] += 0x14;
                     }
-                    // func_80078884(NA_SE_EV_DEKU_DEATH) at 0x30F: no audio.
-                    if frames == 0x2CD {
+                    if frames == 0x30F {
+                        self.audio.func_80078884(crate::audio::sfx::NA_SE_EV_DEKU_DEATH);
+                    } else if frames == 0x2CD {
                         s.draw.room_unk_74[0] = 0;
                     }
                 }
@@ -781,10 +815,13 @@ impl PlayState {
                 }
             }
             13 => {
-                if let Some(s) = self.scene.as_mut()
-                    && s.draw.room_unk_74[1] < 0xFF
-                {
-                    s.draw.room_unk_74[1] += 5;
+                if let Some(s) = self.scene.as_mut() {
+                    if s.draw.room_unk_74[1] == 0 {
+                        self.audio.func_80078884(crate::audio::sfx::NA_SE_EV_TRIFORCE_FLASH);
+                    }
+                    if s.draw.room_unk_74[1] < 0xFF {
+                        s.draw.room_unk_74[1] += 5;
+                    }
                 }
             }
             14 => {
@@ -792,16 +829,37 @@ impl PlayState {
                     self.set_viewpoint(crate::play::VIEWPOINT_LOCKED);
                 }
             }
-            15 => not_ported("TitleCard_InitPlaceName"),
+            15 => {
+                if first {
+                    let title = self.title_file();
+                    self.title_ctx.init_place_name(&title, 160, 120, 144, 24, 20);
+                }
+            }
             16 => not_ported("Quake_Add"),
             17 => not_ported("Quake_RemoveFromIdx"),
-            18 => not_ported("the storm's end"),
+            18 => {
+                use crate::env::{PRECIP_RAIN_CUR, PRECIP_RAIN_MAX, STORM_REQUEST_STOP};
+                self.env_ctx.precipitation[PRECIP_RAIN_MAX] = 0;
+                self.env_ctx.storm_request = STORM_REQUEST_STOP;
+                if self.save.day_time < crate::env::clock_time(7, 0) as u16 {
+                    self.save.day_time = self.save.day_time.wrapping_add(30);
+                }
+                if self.env_ctx.precipitation[PRECIP_RAIN_CUR] == 0 {
+                    // gWeatherMode = WEATHER_MODE_CLEAR.
+                    self.env_statics.weather_mode = 0;
+                    self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_RAIN, 1, 0);
+                }
+            }
             19 => self.save.set_event_chk_inf(EVENTCHKINF_65),
             20 => self.save.set_event_chk_inf(EVENTCHKINF_67),
             21 => self.save.set_event_chk_inf(EVENTCHKINF_69),
-            22 | 23 => {
-                let _ = temp;
-                not_ported("D_801614B0, the screen tint")
+            22 => {
+                self.vis_mono_color = [255, 255, 255, 255];
+                not_ported("the screen's monochrome tint (VisMono) drawn");
+            }
+            23 => {
+                self.vis_mono_color = [255, 180, 100, (255.0 * temp) as u8];
+                not_ported("the screen's monochrome tint (VisMono) drawn");
             }
             24 => not_ported("roomCtx.curRoom.segment = NULL"),
             25 => {
@@ -810,23 +868,89 @@ impl PlayState {
                     self.save.day_time = crate::env::clock_time(19, 0) as u16 - 1;
                 }
             }
-            26 => not_ported("envCtx.lightSettingOverride by the time"),
-            27 => not_ported("envCtx.adjAmbientColor"),
-            28 | 29 => not_ported("play->unk_11DE9 (actors frozen)"),
+            26 => {
+                // The light setting by the time of day: 1 by day, 2 in the evening, 3 by night
+                // (none before dawn).
+                let t = self.save.day_time;
+                let c = |h, m| crate::env::clock_time(h, m) as u16;
+                if t < c(4, 30) || t >= c(6, 30) {
+                    self.env_ctx.light_setting_override = if t >= c(6, 30) && t < c(16, 0) {
+                        1
+                    } else if t >= c(16, 0) && t <= c(18, 30) {
+                        2
+                    } else {
+                        3
+                    };
+                }
+            }
+            27 => {
+                // The ambient light flickering up and down every 8 frames.
+                let e = &mut self.env_ctx;
+                if self.gameplay_frames & 8 != 0 {
+                    if e.adj_ambient_color[0] < 40 {
+                        e.adj_ambient_color[0] += 2;
+                        e.adj_light1_color[1] -= 3;
+                        e.adj_light1_color[2] -= 3;
+                    }
+                } else if e.adj_ambient_color[0] > 2 {
+                    e.adj_ambient_color[0] -= 2;
+                    e.adj_light1_color[1] += 3;
+                    e.adj_light1_color[2] += 3;
+                }
+            }
+            28 => self.unk_11de9 = true,
+            29 => self.unk_11de9 = false,
             30 => self.flags_set_env(3),
             31 => self.flags_set_env(4),
-            32 => not_ported("the sandstorm"),
+            32 => {
+                if first {
+                    self.env_ctx.sandstorm_state = crate::env::SANDSTORM_FILL;
+                }
+                not_ported("the sandstorm drawn");
+                self.audio.func_800788cc(crate::audio::sfx::NA_SE_EV_SAND_STORM - crate::audio::sfx::SFX_FLAG);
+            }
             33 => not_ported("the Sun's Song"),
-            34 => not_ported("time running backwards (gTimeSpeed)"),
+            // gSaveContext.dayTime -= gTimeSpeed (twice by night): time is stopped, gTimeSpeed 0.
+            34 => {}
             35 => not_ported("the scarecrow's song after the credits"),
             _ => {}
         }
     }
 
-    /// Command 4, `Cutscene_Command_SetLighting`: `envCtx.lightSettingOverride` isn't ported.
+    /// Command 4, `Cutscene_Command_SetLighting` (`CsCmdEnvLighting`: the setting, plus one, at
+    /// byte 1): the light setting override, blended in from now (`Environment_Update`).
     fn cutscene_command_set_lighting(&mut self, d: &[u8], o: usize) {
         if self.cs_ctx.frames == be_u16(d, o + 2) {
-            log::warn!("cutscene lighting {} at frame {}: envCtx.lightSettingOverride not ported", d[o + 1], self.cs_ctx.frames);
+            self.env_ctx.light_setting_override = d[o + 1].wrapping_sub(1);
+            self.env_ctx.light_blend = 1.0;
+        }
+    }
+
+    /// Command 0x56, `Cutscene_Command_PlayBGM` (`CsCmdMusicChange`: the sequence at byte 1, plus
+    /// one): `func_800F595C`, a fanfare or the main bgm.
+    fn cutscene_command_play_bgm(&mut self, d: &[u8], o: usize) {
+        if self.cs_ctx.frames == be_u16(d, o + 2) {
+            self.audio.func_800f595c((d[o + 1] as u16).wrapping_sub(1));
+        }
+    }
+
+    /// Command 0x57, `Cutscene_Command_StopBGM`: `func_800F59E8`.
+    fn cutscene_command_stop_bgm(&mut self, d: &[u8], o: usize) {
+        if self.cs_ctx.frames == be_u16(d, o + 2) {
+            self.audio.func_800f59e8((d[o + 1] as u16).wrapping_sub(1));
+        }
+    }
+
+    /// Command 0x7C, `Cutscene_Command_FadeBGM` (`CsCmdMusicFade`): the fanfare player (type 3)
+    /// or the main bgm faded out over the command's frames (`SEQCMD_STOP_SEQUENCE` with them).
+    fn cutscene_command_fade_bgm(&mut self, d: &[u8], o: usize) {
+        use crate::audio::{SEQ_PLAYER_BGM_MAIN, SEQ_PLAYER_FANFARE};
+        let (ty, start, end) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4));
+        let frames = self.cs_ctx.frames;
+        if frames == start && frames < end {
+            let var1 = end.wrapping_sub(start) as u8 as u32;
+            let player = if ty == 3 { SEQ_PLAYER_FANFARE } else { SEQ_PLAYER_BGM_MAIN } as u32;
+            self.audio.queue_seq_cmd(var1 << 16 | (1 << 28 | player << 24 | 0xFF));
         }
     }
 
@@ -857,7 +981,14 @@ impl PlayState {
             && self.save.file_num != 0xFEDC
             && self.transition.trigger == TRANS_TRIGGER_OFF
         {
-            // NA_SE_SY_PIECE_OF_HEART: no audio.
+            self.audio.play_sfx_general(
+                crate::audio::sfx::NA_SE_SY_PIECE_OF_HEART,
+                crate::audio::sfx::SfxPos::Default,
+                4,
+                crate::audio::sfx::SfxF32::One,
+                crate::audio::sfx::SfxF32::One,
+                crate::audio::sfx::SfxS8::Zero,
+            );
             temp = true;
         }
         if !(frames == start || temp || (frames > 20 && press.held(BTN_START) && self.save.file_num != 0xFEDC)) {
@@ -1072,7 +1203,20 @@ impl PlayState {
         let fill = |rgb: [u8; 3], a: f32| Some([rgb[0], rgb[1], rgb[2], a as u8]);
         let (rise, fall) = (255.0 * temp, (1.0 - temp) * 255.0);
         let prev = self.transition.screen_fill;
-        // (The white-out sounds aren't played.)
+        if base == 1 && temp == 0.0 {
+            // The white-out's sound, in the Chamber of Sages, the Temple of Time, the Great
+            // Fairies' fountains and Ganon's castle's collapse.
+            use crate::audio::sfx::{NA_SE_EV_WHITE_OUT, NA_SE_SY_WHITE_OUT_S, SfxF32, SfxPos, SfxS8};
+            let entr = |n: &str| self.entrance_by_name(n) == Some(self.save.entrance_index);
+            let ganontika = self.assets.as_ref().and_then(|a| a.scenes.scenes.iter().position(|s| s.enum_name == "SCENE_GANONTIKA")).map(|i| i as u16) == Some(self.scene_id);
+            if entr("ENTR_KENJYANOMA_0") {
+                self.audio.play_sfx_general(NA_SE_SY_WHITE_OUT_S, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
+            } else if entr("ENTR_TOKINOMA_0") || entr("ENTR_SPOT15_0") || entr("ENTR_YOUSEI_IZUMI_YOKO_0") {
+                self.audio.play_sfx_general(NA_SE_EV_WHITE_OUT, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
+            } else if ganontika {
+                self.audio.func_800788cc(NA_SE_EV_WHITE_OUT);
+            }
+        }
         self.transition.screen_fill = match base {
             1 => fill([160, 160, 160], rise),
             5 => fill([160, 160, 160], fall),
@@ -1284,9 +1428,9 @@ impl PlayState {
                         match cmd_type {
                             CS_CMD_MISC => self.func_80064824(d, p),
                             CS_CMD_SET_LIGHTING => self.cutscene_command_set_lighting(d, p),
-                            // Cutscene_Command_PlayBGM, _StopBGM, _FadeBGM: the cutscenes' audio waits for their
-                            // polish pass (BACKLOG #10).
-                            _ => {}
+                            CS_CMD_PLAYBGM => self.cutscene_command_play_bgm(d, p),
+                            CS_CMD_STOPBGM => self.cutscene_command_stop_bgm(d, p),
+                            _ => self.cutscene_command_fade_bgm(d, p),
                         }
                         p += 0x30;
                     }

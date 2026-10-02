@@ -145,12 +145,13 @@ fn into_the_crawlspace_through_it_and_out() {
     assert!((1219.0..1300.0).contains(&z), "room 2 at z {z}");
     // func_8083F570 at the far wall (z 1359, head first): out with tunnel_end, facing
     // wallYaw + 0x8000 (the wall faces -z, wallYaw 0x8000: Link faces 0, +z).
-    // (Link moved this frame before the exit, so Camera_Subj4, still the camera's, writes its
-    // yaw over shape.rot.y again at the end of Play_Draw.)
+    // (The exit's one-point cutscene, 9601, puts the main camera back on its previous setting
+    // in Player's update, so Camera_Subj4 doesn't run this frame to write its yaw over
+    // shape.rot.y.)
     let p = w.player();
     assert_eq!(p.action, Action::CrawlExit);
     assert_eq!(w.data.anim_name(p.skel.animation), "link_child_tunnel_end");
-    assert_eq!((p.current_yaw, p.linear_velocity, p.actor.shape_rot.y), (0, 0.0, 1));
+    assert_eq!((p.current_yaw, p.linear_velocity, p.actor.shape_rot.y), (0, 0.0, 0));
     assert!(p.actor.world_pos.z > 1340.0 && p.actor.world_pos.z < 1359.0, "at the far wall: {}", p.actor.world_pos);
     // func_8084C81C: standing at the animation's end (func_8083C0E8), the crawl over; room 2's
     // floor takes the camera (bg camera 14).
@@ -167,6 +168,81 @@ fn into_the_crawlspace_through_it_and_out() {
     assert_eq!(w.room_ctx.cur.num, 2);
     assert_eq!((w.game_camera.setting, w.game_camera.bg_cam_index), (CAM_SET_DUNGEON0, 14));
     assert!(link_drawn(&w));
+}
+
+#[test]
+fn the_way_out_is_a_one_point_cutscene() {
+    // func_8083F570's OnePointCutscene_Init(play, 9601, 999, NULL, CAM_ID_MAIN), and
+    // OnePointCutscene_SetInfo's 9601: CAM_SET_CS_3 (Camera_Demo9) on the sub camera, the main
+    // camera back on its prevSetting, the splines D_80120308 (at) and D_80120398 (eye) around
+    // the main camera's Player (actionParameters D_80120430 = 1, | 0x1000: copied to the main
+    // camera at the end) for D_8012042C = 90 frames.
+    use oot_game::camera::{CAM_ID_MAIN, CAM_STAT_ACTIVE, CAM_STAT_UNK3, VecSph, sph_geo_add, vec3_to_sph_geo};
+    use oot_game::onepoint::CAM_SET_CS_3;
+    let Some(a) = assets() else { return };
+    let Some((mut w, mut prev)) = at_the_mouth(&a, false, Vec3::new(-785.0, 120.0, 1000.0)) else { return };
+    enter(&mut w, &mut prev);
+    let mut frames = 0;
+    while w.player().action != Action::CrawlExit {
+        tick(&mut w, &mut prev, FORWARD);
+        frames += 1;
+        assert!(frames < 400);
+    }
+    assert_eq!(w.active_cam_id, 1, "the one-point cutscene's sub camera is active");
+    let sub = w.camera(1).expect("sub camera 1").clone();
+    assert_eq!((sub.cs_id, sub.setting, sub.parent_cam_id, sub.child_cam_id), (9601, CAM_SET_CS_3, CAM_ID_MAIN, CAM_ID_MAIN));
+    assert_eq!(w.game_camera.child_cam_id, 1);
+    assert_eq!(w.game_camera.status, CAM_STAT_UNK3);
+    assert_eq!(w.game_camera.setting, CAM_SET_NORMAL0, "the main camera's prevSetting: the field's");
+    let op = &w.onepoint;
+    assert_eq!(sub.one_point_cam_data.at_points, op.point_list("D_80120308"));
+    assert_eq!(sub.one_point_cam_data.eye_points, op.point_list("D_80120398"));
+    // The finishing action is taken off actionParameters by Camera_Demo9's first frame.
+    assert_eq!((sub.one_point_cam_data.action_parameters, sub.one_point_cam_data.init_timer), (1, 90));
+    // Its first frame: the splines at keyframe 0, u 0, ((p0 + 4 p1 + p2) / 6, from the
+    // tables' first points: the eye (0, 9, 45), (0, 8, 50), (0, 17, 58), the at (0, 4, 0) twice
+    // then (0, 9, 0)), turned by the main camera's Player's yaw round his position.
+    let link = w.player().actor.world_pos;
+    let yaw = w.player().actor.shape_rot.y;
+    let turn = |v: Vec3| {
+        let mut s: VecSph = vec3_to_sph_geo(v);
+        s.yaw = s.yaw.wrapping_add(yaw);
+        sph_geo_add(link, s)
+    };
+    let eye = turn(Vec3::new(0.0, (9.0 + 4.0 * 8.0 + 17.0) / 6.0, (45.0 + 4.0 * 50.0 + 58.0) / 6.0));
+    let at = turn(Vec3::new(0.0, (4.0 + 4.0 * 4.0 + 9.0) / 6.0, 0.0));
+    assert!(sub.eye.distance(eye) < 0.01 && sub.at.distance(at) < 0.01, "eye {} at {} want {eye} {at}", sub.eye, sub.at);
+    // The fov from the at points' (the second call's): (40 + 4 x 40.000004 + 50) / 6.
+    assert!((sub.fov - (40.0 + 4.0 * 40.000004 + 50.0) / 6.0).abs() < 1e-4, "{}", sub.fov);
+    // 92 updates of the sub camera: the splines' and then the wait, each counting animTimer
+    // down from 90 to -1, and the one that finishes (timer 0, Camera_Copy to the main camera);
+    // Camera_Finish then gives the main camera back. While Link is still on the crawlspace's
+    // floor, the main camera (CAM_STAT_UNK3, still updated) takes its bg camera again the frame
+    // after 9601 left it (Camera_ChangeBgCamIndex: refused in the frame of the change by the
+    // setting's priority, unk_14A & 1), and its Camera_Subj4 asks for view.unk_124: Play_Draw
+    // then updates the active camera, the sub camera, a second time.
+    let mut frames = 1;
+    let mut doubled = 0;
+    let mut last = sub;
+    while w.active_cam_id == 1 {
+        last = w.camera(1).unwrap().clone();
+        tick(&mut w, &mut prev, PadState::default());
+        frames += 1;
+        if w.game_camera.setting == CAM_SET_CRAWLSPACE {
+            doubled += 1;
+        }
+        assert!(frames < 200);
+    }
+    assert!(doubled > 0, "the crawlspace's camera doubles some frames");
+    // (The frame 9601 starts in has one: the main camera's floor change is refused then.)
+    assert_eq!(frames + doubled, 92, "{frames} frames, {doubled} of them with two updates");
+    assert!(w.camera(1).is_none(), "the sub camera cleared");
+    assert_eq!((w.game_camera.status, w.game_camera.child_cam_id, w.game_camera.parent_cam_id), (CAM_STAT_ACTIVE, CAM_ID_MAIN, CAM_ID_MAIN));
+    // No jump: the main camera starts from where the cutscene ended (Camera_Copy), then follows
+    // room 2's floor (bg camera 14).
+    let (e, t) = (w.game_camera.eye, w.game_camera.at);
+    assert!(e.distance(last.eye) < 40.0 && t.distance(last.at) < 40.0, "main eye {e} at {t}, the cutscene's last {} {}", last.eye, last.at);
+    assert_eq!((w.game_camera.setting, w.game_camera.bg_cam_index), (CAM_SET_DUNGEON0, 14));
 }
 
 #[test]
@@ -232,8 +308,9 @@ fn backwards_out_of_the_mouth() {
     assert_eq!(p.action, Action::CrawlExit);
     assert_eq!(w.data.anim_name(p.skel.animation), "link_child_tunnel_start");
     assert_eq!(p.skel.play_speed, -1.0);
-    // (shape.rot.y is Camera_Subj4's again, 1, as on the way out at the far end.)
-    assert_eq!((p.current_yaw, p.actor.shape_rot.y), (0, 1));
+    // (9602 takes the main camera off CRAWLSPACE in Player's update, as 9601 at the far end:
+    // Camera_Subj4 doesn't write shape.rot.y this frame.)
+    assert_eq!((p.current_yaw, p.actor.shape_rot.y), (0, 0));
     while w.player().action == Action::CrawlExit {
         tick(&mut w, &mut prev, PadState::default());
     }

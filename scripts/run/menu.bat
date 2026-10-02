@@ -18,6 +18,13 @@ echo    25  test-audio           GAME-04's audio tests: the microcode, a note, t
 echo    28  test-music           GAME-04's music tests: Kokiri Forest's music and ambience as the game starts them
 echo    31  test-sfx             GAME-04's sound effect tests: footsteps, the message box
 echo    32  test-sfx-route       GAME-04's exit test: the runs' sound effects against the C
+echo    36  test-onepoint        GAME-04b's one-point cutscene tests: the crawlspace's exits, attention, a chest's fall
+echo    38  test-camera-modes    GAME-04b's jump, climb and hang camera tests
+echo    39  test-cutscene-audio  GAME-04b's cutscene music, Link's cutscene voices and modes
+echo    40  test-environment     GAME-04b's rain, lightning and light override tests
+echo    41  test-title-cards     GAME-04b's title card tests: Kokiri Forest's place name, the Deku Tree's intro
+echo    42  test-nightmare       GAME-04b's nightmare tests: the drawbridge, the riders, the horses, the rain
+echo    43  test-polish          GAME-04b's polish tests: the cutscene splines, letterbox, narration box, Link's poses
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo.
@@ -34,6 +41,7 @@ echo    23  game-new-file        A new file as the file select starts it: the op
 echo    26  game-music           Kokiri Forest with another sequence forced (the title theme)
 echo    29  game-night           Kokiri Forest at night: its nature ambience
 echo    33  game-door            A Kakariko house's door: its sounds, and Kakariko Village
+echo    37  game-crawlspace      At the crawlspace's mouth: through it and out (its one-point cutscene)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -89,6 +97,14 @@ if "%pick%"=="32" set "script=test-sfx-route"
 if "%pick%"=="33" set "script=game-door"
 if "%pick%"=="34" set "script=sandbox-mido-shop-audio"
 if "%pick%"=="35" set "script=ootx-sfx"
+if "%pick%"=="36" set "script=test-onepoint"
+if "%pick%"=="37" set "script=game-crawlspace"
+if "%pick%"=="38" set "script=test-camera-modes"
+if "%pick%"=="39" set "script=test-cutscene-audio"
+if "%pick%"=="40" set "script=test-environment"
+if "%pick%"=="41" set "script=test-title-cards"
+if "%pick%"=="42" set "script=test-nightmare"
+if "%pick%"=="43" set "script=test-polish"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

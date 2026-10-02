@@ -132,7 +132,17 @@ pub trait PlayerIface {
     fn unk_89e(&self) -> u16 {
         0
     }
+    /// `currentBoots` (`PLAYER_BOOTS_*`).
+    fn current_boots(&self) -> u8 {
+        0
+    }
+    /// An outside write of `stateFlags1`: `set` bits on, then `clear` bits off (`Camera_Finish`
+    /// and `Camera_Demo5`'s `PLAYER_STATE1_29`).
+    fn change_state_flags1(&mut self, _set: u32, _clear: u32) {}
 }
+
+/// `PLAYER_BOOTS_IRON` (`z64player.h`).
+pub const PLAYER_BOOTS_IRON: u8 = 1;
 
 /// `PLAYER_BODYPART_*` (`z64player.h`) the other actors read.
 pub const PLAYER_BODYPART_WAIST: usize = 0;

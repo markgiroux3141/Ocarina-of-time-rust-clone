@@ -10,12 +10,37 @@ pub struct JointTable {
     pub face: u16,
 }
 
+/// A joint whose angles move more than this between two frames is blended as a rotation
+/// (`slerp_zyx`): animations can write the same orientation as two Euler triples far apart (x
+/// and z half a turn on, y mirrored), which a per-angle blend would swing through a wrong pose.
+const SLERP_ABOVE: i32 = 0x2000;
+
+fn rad(a: i16) -> f32 {
+    a as f32 * (std::f32::consts::PI / 32768.0)
+}
+
+fn binang(r: f32) -> i16 {
+    (r * (32768.0 / std::f32::consts::PI)).round() as i32 as i16
+}
+
+/// `a` to `b` by `t` as rotations (`Matrix_RotateZYX`'s order: Z, then Y, then X), the short
+/// way, back as a ZYX triple.
+fn slerp_zyx(a: [i16; 3], b: [i16; 3], t: f32) -> [i16; 3] {
+    use glam::{EulerRot, Quat};
+    let qa = Quat::from_euler(EulerRot::ZYX, rad(a[2]), rad(a[1]), rad(a[0]));
+    let qb = Quat::from_euler(EulerRot::ZYX, rad(b[2]), rad(b[1]), rad(b[0]));
+    let (z, y, x) = qa.slerp(qb, t).to_euler(EulerRot::ZYX);
+    [binang(x), binang(y), binang(z)]
+}
+
 impl JointTable {
     pub fn zeroed(n: usize) -> JointTable {
         JointTable { rot: vec![[0; 3]; n], face: 0 }
     }
 
-    /// Per-component interpolation with wrap-around, like `SkelAnime_InterpFrameTable`.
+    /// Per-component interpolation with wrap-around, like `SkelAnime_InterpFrameTable`; a
+    /// joint whose angles are far apart is blended as a rotation instead (`slerp_zyx`). The game
+    /// draws only its own frames; this is the renderer's in-between.
     pub fn lerp(&self, other: &JointTable, t: f32) -> JointTable {
         let rot = self
             .rot
@@ -32,6 +57,9 @@ impl JointTable {
                         let diff = b[k].wrapping_sub(a[k]);
                         o[k] = a[k].wrapping_add((diff as f32 * t) as i16);
                     }
+                }
+                if i > 0 && (0..3).any(|k| (b[k].wrapping_sub(a[k]) as i32).abs() > SLERP_ABOVE) {
+                    o = slerp_zyx(*a, *b, t);
                 }
                 o
             })
@@ -96,5 +124,32 @@ impl Animation for LinkAnimation {
     }
     fn sample(&self, frame: usize) -> JointTable {
         self.frames[frame.min(self.frames.len() - 1)].clone()
+    }
+}
+
+#[cfg(test)]
+mod blend_tests {
+    use super::*;
+    use glam::{EulerRot, Quat};
+
+    fn quat(r: [i16; 3]) -> Quat {
+        Quat::from_euler(EulerRot::ZYX, rad(r[2]), rad(r[1]), rad(r[0]))
+    }
+
+    #[test]
+    fn a_flipped_joint_stays_on_its_orientation() {
+        // Link's limb 10 in link_demo_furimuki from frame 12 to 13.5: one orientation as two
+        // triples (x and z half a turn on, y mirrored) about 7 degrees apart.
+        let (a, b) = ([30271i16, -2343, 16501], [-1275i16, -30433, -16288]);
+        assert!(quat(a).angle_between(quat(b)) < 0.2);
+        let ja = JointTable { rot: vec![[0; 3], a], face: 0 };
+        let jb = JointTable { rot: vec![[0; 3], b], face: 0 };
+        for k in 0..=4 {
+            let m = ja.lerp(&jb, k as f32 / 4.0).rot[1];
+            assert!(quat(m).angle_between(quat(a)) < 0.2, "t {}: {m:?}", k as f32 / 4.0);
+        }
+        // A small move keeps the per-angle blend.
+        let jc = JointTable { rot: vec![[0; 3], [a[0] + 100, a[1], a[2]]], face: 0 };
+        assert_eq!(ja.lerp(&jc, 0.5).rot[1], [a[0] + 50, a[1], a[2]]);
     }
 }

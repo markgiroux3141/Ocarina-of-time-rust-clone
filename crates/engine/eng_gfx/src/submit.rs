@@ -93,6 +93,12 @@ pub struct DrawLists {
     /// The letterbox bars' height in rows of the 240-row frame (`Letterbox_GetSize`): black
     /// over the 3D lists, under `overlay_2d`.
     pub letterbox_rows: f32,
+    /// Full-screen fills (RGBA, blended by alpha), drawn where the game's lists put them: at the
+    /// end of the OPA list, at the end of the XLU list, and at the start of the overlay (over the
+    /// letterbox, under `overlay_2d`).
+    pub opa_fill: Option<[u8; 4]>,
+    pub xlu_fill: Option<[u8; 4]>,
+    pub overlay_fill: Option<[u8; 4]>,
 }
 
 impl DrawLists {

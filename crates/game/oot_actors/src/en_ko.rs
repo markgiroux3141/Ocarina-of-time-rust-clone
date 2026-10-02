@@ -788,14 +788,25 @@ impl EnKo {
         if play.save.adult { self.adult_text(play) } else { self.child_text(play) }
     }
 
-    /// `func_80A9877C`: track Link, and talk.
+    /// `func_80A9877C`: track Link (in a cutscene, the view's eye), and talk.
     fn func_80a9877c(&mut self, play: &mut PlayState) {
-        // No cutscenes and no debug camera.
-        self.unk_1e8.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
-        let fqs = Self::forest_quest_state(play);
-        self.unk_1e8.eye_height = if play.save.adult && self.ty() == ENKO_TYPE_CHILD_FADO { -20.0 } else { EYE_HEIGHTS[self.ty() as usize][fqs] };
-        if !self.func_80a98ecc(play) && self.unk_1e8.talk_state == 0 {
-            return;
+        if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            // The view's eye, 40 up; all but type 0 turn their whole head to it (the debug
+            // camera isn't ported).
+            self.unk_1e8.target = play.view.eye;
+            self.unk_1e8.eye_height = 40.0;
+            if self.ty() != ENKO_TYPE_CHILD_0 {
+                let mut t = self.unk_1e8;
+                oot_game::npc::func_80034a14(play, &mut self.actor, &mut t, 2, 2);
+                self.unk_1e8 = t;
+            }
+        } else {
+            self.unk_1e8.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
+            let fqs = Self::forest_quest_state(play);
+            self.unk_1e8.eye_height = if play.save.adult && self.ty() == ENKO_TYPE_CHILD_FADO { -20.0 } else { EYE_HEIGHTS[self.ty() as usize][fqs] };
+            if !self.func_80a98ecc(play) && self.unk_1e8.talk_state == 0 {
+                return;
+            }
         }
         let text = self.text(play);
         let mut talk_state = self.unk_1e8.talk_state;
@@ -805,13 +816,20 @@ impl EnKo {
         // Fado's trade in the Lost Woods (SCENE_SPOT10): not ported.
     }
 
-    /// `func_80A98DB4`: fading in and out by Link's distance in Kokiri Forest and the Lost Woods.
+    /// `func_80A98DB4`: fading in and out by Link's distance in Kokiri Forest and the Lost Woods,
+    /// or in a cutscene by a quarter of the distance to the view's eye (the debug camera isn't
+    /// ported).
     fn func_80a98db4(&mut self, play: &PlayState) {
         if play.scene_id != SCENE_SPOT10 && play.scene_id != SCENE_SPOT04 {
             self.model_alpha = 255.0;
             return;
         }
-        let dist = self.actor.xz_dist_to_player;
+        let dist = if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            // Math_Vec3f_DistXYZ(&this->actor.world.pos, &play->view.eye) * 0.25f.
+            self.actor.world_pos.distance(play.view.eye) * 0.25
+        } else {
+            self.actor.xz_dist_to_player
+        };
         let target = if self.appear_dist < dist { 0.0 } else { 255.0 };
         eng_math::smooth_step_to_f(&mut self.model_alpha, target, 0.3, 40.0, 1.0);
         if self.model_alpha < 10.0 {

@@ -38,6 +38,13 @@ pub struct Screen<'a> {
     /// screen-space draw in the middle of the list, `eng_gfx::DrawParams::screen`). Shorter
     /// than the models (or empty): the rest are 3D.
     pub ortho_models: &'a [bool],
+    /// How many of the models are the OPA list's (the OPA fill goes after them).
+    pub opa_models: usize,
+    /// `eng_gfx::DrawLists`' fills: after the OPA models, after all the models, and before the
+    /// overlay models.
+    pub opa_fill: Option<[u8; 4]>,
+    pub xlu_fill: Option<[u8; 4]>,
+    pub overlay_fill: Option<[u8; 4]>,
 }
 
 impl Renderer {
@@ -133,6 +140,14 @@ impl Renderer {
             Vec::new()
         };
         let bars_buf = line_buf(&bars);
+        // The fills: a clip-space quad each.
+        let fill_quad = |c: Option<[u8; 4]>| {
+            c.filter(|c| c[3] > 0).map(|c| {
+                let color = c.map(|v| v as f32 / 255.0);
+                [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]].map(|[x, y]| LineVertex { pos: [x, y, 0.0], color })
+            })
+        };
+        let fill_bufs = [screen.opa_fill, screen.xlu_fill, screen.overlay_fill].map(|f| fill_quad(f).and_then(|q| line_buf(&q)));
         for m in models.iter().chain(screen.overlay_models) {
             if m.dirty.replace(false) {
                 queue.write_buffer(&m.vertex_buf, 0, bytemuck::cast_slice(&m.skinned));
@@ -161,7 +176,19 @@ impl Renderer {
         });
         pass.set_bind_group(0, &self.globals_bg, &[]);
         let mut in_ortho = false;
+        let draw_fill = |pass: &mut wgpu::RenderPass, k: usize| {
+            if let Some(b) = &fill_bufs[k] {
+                pass.set_pipeline(&self.fill_pipeline);
+                pass.set_bind_group(0, &self.globals_bg, &[]);
+                pass.set_vertex_buffer(0, b.slice(..));
+                pass.draw(0..6, 0..1);
+            }
+        };
         for (i, m) in models.iter().enumerate() {
+            if i == screen.opa_models && fill_bufs[0].is_some() {
+                draw_fill(&mut pass, 0);
+                pass.set_bind_group(0, if in_ortho { &self.overlay_globals_bg } else { &self.globals_bg }, &[]);
+            }
             let ortho = screen.ortho_models.get(i).copied().unwrap_or(false);
             if ortho != in_ortho {
                 pass.set_bind_group(0, if ortho { &self.overlay_globals_bg } else { &self.globals_bg }, &[]);
@@ -175,6 +202,10 @@ impl Renderer {
                 pass.draw(start..start + count, 0..1);
             }
         }
+        if screen.opa_models >= models.len() {
+            draw_fill(&mut pass, 0);
+        }
+        draw_fill(&mut pass, 1);
         // World lines after the models: they are depth-tested but don't write depth, so the
         // models would otherwise paint over them.
         if let Some(b) = &world_buf {
@@ -189,6 +220,7 @@ impl Renderer {
             pass.set_vertex_buffer(0, b.slice(..));
             pass.draw(0..bars.len() as u32, 0..1);
         }
+        draw_fill(&mut pass, 2);
         if !screen.overlay_models.is_empty() {
             pass.set_bind_group(0, &self.overlay_globals_bg, &[]);
             for m in screen.overlay_models {

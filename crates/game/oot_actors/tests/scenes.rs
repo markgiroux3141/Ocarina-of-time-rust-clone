@@ -114,7 +114,9 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
         let found = w.actors.all().into_iter().filter_map(|h| w.actors.actor(h)).any(|a| {
             let at_pos = if ported { a.home_pos.x == pos.x && a.home_pos.z == pos.z } else { a.home_pos == pos };
             let params = if e.id == oot_actors::en_item00::ACTOR_EN_ITEM00 { e.params & 0xFF } else { e.params };
-            a.id == e.id && a.params == params && at_pos && a.room == 0 && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
+            // ObjectKankyo_Init: thisx->room = -1 (the dust stays through room changes).
+            let room = if e.id == oot_actors::object_kankyo::ACTOR_OBJECT_KANKYO { -1 } else { 0 };
+            a.id == e.id && a.params == params && at_pos && a.room == room && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
         });
         assert!(found, "{} at {:?}", at.name(e.id), e.pos);
     }
@@ -178,7 +180,9 @@ fn en_holl_changes_rooms_and_deletes_the_old_rooms_actors() {
         frame(&mut w, &mut prev, PadState::default());
     }
     let room1 = w.scene.as_ref().unwrap().rooms[1].clone();
-    assert_eq!(w.actors.all().into_iter().filter(|&h| w.actors.actor(h).unwrap().room == 1).count(), room1.actors.len() + 1);
+    // Room 1's Object_Kankyo kills itself: room 0's (room -1) lives on, and sIsSpawned is set.
+    let kankyo = room1.actors.iter().filter(|e| e.id == oot_actors::object_kankyo::ACTOR_OBJECT_KANKYO).count();
+    assert_eq!(w.actors.all().into_iter().filter(|&h| w.actors.actor(h).unwrap().room == 1).count(), room1.actors.len() + 1 - kankyo);
     // The En_Holl Link went through stays (it belongs to room 1 now); the one between rooms 0
     // and 2 was deleted with room 0, and its entry can spawn again.
     let holls: Vec<_> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnHoll>(h)).map(|h| h.actor.params >> 10).collect();

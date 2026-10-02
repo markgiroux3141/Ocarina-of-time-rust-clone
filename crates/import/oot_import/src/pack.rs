@@ -240,7 +240,7 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
         scenes: st
             .scenes
             .iter()
-            .map(|s| SceneEntry { id: s.id as u16, file: s.file.clone(), enum_name: s.enum_name.clone(), draw_config: s.draw_config.clone() })
+            .map(|s| SceneEntry { id: s.id as u16, file: s.file.clone(), enum_name: s.enum_name.clone(), draw_config: s.draw_config.clone(), title_file: s.title_file.clone() })
             .collect(),
         objects: st.objects.clone(),
         entrances: st.entrances.clone(),
@@ -398,9 +398,27 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
     let mut limb_dls: BTreeSet<u32> = BTreeSet::new();
     let skeletons: Vec<_> = f.of_kind("Skeleton").collect();
     let mut parsed = Vec::new();
+    // The skin skeletons' limb counts, for their animations' joint counts.
+    let mut skin_limbs: Vec<usize> = Vec::new();
     for s in &skeletons {
         if is_overlay {
             t.skip("Skeleton", "in an overlay (relocated code pointers)");
+            continue;
+        }
+        if s.attr("LimbType") == Some("Skin") {
+            // A skin skeleton (oot_game::skin): the runtime's record; actors bake its mesh.
+            match crate::skin::parse(&data, seg, s.offset as usize) {
+                Ok(raw) => {
+                    limb_dls.extend(raw.dlists.iter().copied().filter(|&d| d != 0));
+                    skin_limbs.push(raw.skeleton.limbs.len());
+                    w.put(&keys::skin(&f.name, &s.name), &raw.skeleton)?;
+                    t.ok("Skeleton");
+                }
+                Err(e) => {
+                    t.skip("Skeleton", "decode error");
+                    t.notes.push(format!("{} / {}: {e:#}", f.name, s.name));
+                }
+            }
             continue;
         }
         if let Some(why) = objects::unsupported_limb_type(s) {
@@ -435,7 +453,7 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         // a bigger skeleton gives a superset: a smaller one uses the first joints.
         let mut counts: Vec<usize> = match objects::anim_joint_count(&data, seg, a.offset as usize) {
             Some(j) => vec![j],
-            None => parsed.iter().map(|s| s.limbs.len() + 1).collect(),
+            None => parsed.iter().map(|s| s.limbs.len() + 1).chain(skin_limbs.iter().map(|n| n + 1)).collect(),
         };
         counts.sort_unstable_by(|x, y| y.cmp(x));
         counts.dedup();
@@ -520,12 +538,32 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
 /// The meshes the ported actors need baked (`oot_actors::bakes()`, docs/adr/0012-actor-bakes.md).
 /// A bake whose lists leave segments unresolved is an error: it would draw with holes.
 fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWriter, tally: &mut Tally) -> Result<()> {
-    for b in oot_actors::bakes() {
+    // The scenes' place names (oot_game::title_card), from scene_table.h's title files.
+    let st = SceneTables::load(&p.config.decomp).context("scene tables")?;
+    let titles = oot_game::title_card::bakes(st.scenes.iter().map(|s| s.title_file.as_str()));
+    for b in oot_actors::bakes().into_iter().chain(titles.iter().map(|t| t.mesh_bake())) {
         let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
         anyhow::ensure!(d.stats.unresolved_addresses.is_empty(), "bake {}: unresolved {:?}", b.name, d.stats.unresolved_addresses.keys().collect::<Vec<_>>());
         anyhow::ensure!(d.stats.unknown_opcodes.is_empty(), "bake {}: unknown opcodes {:?}", b.name, d.stats.unknown_opcodes);
         w.put(&keys::bake(&b.name), &d)?;
         tally.ok("ActorBake");
+    }
+    // The animations of animation-only objects, decoded for the skeleton their actor plays them
+    // on (a standard or a skin one).
+    for fa in oot_actors::foreign_anims() {
+        let (sf, ss) = objects::symbol_in(p, &fa.skel_file, &fa.skel)?;
+        let sdata = files.get(&sf.name).with_context(|| format!("{} not in the ROM", fa.skel_file))?;
+        let sseg = sf.segment.unwrap_or(6);
+        let limbs = if ss.attr("LimbType") == Some("Skin") {
+            crate::skin::parse(&sdata, sseg, ss.offset as usize)?.skeleton.limbs.len()
+        } else {
+            objects::parse_skeleton(&sdata, sseg, ss)?.limbs.len()
+        };
+        let (af, a) = objects::symbol_in(p, &fa.anim_file, &fa.anim)?;
+        let adata = files.get(&af.name).with_context(|| format!("{} not in the ROM", fa.anim_file))?;
+        let anim = objects::parse_animation(&adata, af.segment.unwrap_or(6), a, limbs).with_context(|| format!("{} for {}", fa.anim, fa.skel))?;
+        w.put(&keys::anim(&fa.anim_file, &fa.anim), &anim)?;
+        tally.ok("ForeignAnimation");
     }
     // GetItem_Draw's models (oot_game::draw), from sDrawItemTable: each display list is in the
     // object whose XML names it.

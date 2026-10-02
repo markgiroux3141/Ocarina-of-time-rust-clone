@@ -20,6 +20,7 @@ use eng_math::*;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PLAYER_BODYPART_WAIST, PlayerIface};
+use oot_game::camera::CAM_ID_MAIN;
 use oot_game::cutscene::CsCmdActorAction;
 use oot_game::play_scene::{PlayIo, SCENE_GANON_FINAL, SCENE_HAKADAN, SCENE_SPOT04};
 use oot_game::save::{RESPAWN_MODE_DOWN, RESPAWN_MODE_RETURN};
@@ -161,6 +162,9 @@ pub enum PlayRequest {
     FadeOutAllSeq(u16),
     /// A sound, in its order among Player's calls.
     Sfx(PlayerSfx),
+    /// `OnePointCutscene_Init(play, cs_id, timer, actor, parent)`, the actor Player himself
+    /// (`player`) or NULL.
+    OnePointCutscene { cs_id: i16, timer: i16, player: bool, parent: i16 },
 }
 
 /// Player's sounds: what its `func_8002F7DC`-style calls ask the audio for, at Player
@@ -706,7 +710,7 @@ const D_808547C4: [i8; 78] = [
     60, 61, 62, 63,  64,  -65, -66, 68, 11, 69, 70, 71, 8,  8,   72, 73, 78,  79, 80,  89,  90, 91, 92, 77, 19, 94,
 ];
 
-fn d_808547c4(action: u16) -> i8 {
+pub fn d_808547c4(action: u16) -> i8 {
     D_808547C4.get(action as usize).copied().unwrap_or(0)
 }
 
@@ -1955,8 +1959,8 @@ impl Player {
 
     /// `func_8083F570`: crawling into a crawlspace's wall (`WALL_FLAG_4`, `_5`) head first
     /// (backwards, feet first): out, with `tunnel_end` facing away from the wall, or
-    /// `tunnel_start` played backwards. The one-point cutscenes that go with them
-    /// (`OnePointCutscene_Init` 9601 and 9602) aren't ported: the floor's bg camera takes over.
+    /// `tunnel_start` played backwards, each with its one-point cutscene (9601, 9602: the
+    /// camera's spline up and out of the crawlspace).
     fn func_8083F570(&mut self, env: &Env) -> bool {
         let data = env.data;
         if self.linear_velocity != 0.0 && self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 && self.s.wall_flags & (WALL_FLAG_4 | WALL_FLAG_5) != 0 {
@@ -1970,10 +1974,12 @@ impl Player {
                     self.actor.shape_rot.y = self.actor.wall_yaw.wrapping_add(i16::MIN);
                     self.skel.play_once(data, data.anim("link_child_tunnel_end"));
                     self.func_80832F54(0x9D);
+                    self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 9601, timer: 999, player: false, parent: CAM_ID_MAIN });
                 } else {
                     self.actor.shape_rot.y = self.actor.wall_yaw;
                     self.play_backwards(data, data.anim("link_child_tunnel_start"));
                     self.func_80832F54(0x9D);
+                    self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 9602, timer: 999, player: false, parent: CAM_ID_MAIN });
                 }
                 self.current_yaw = self.actor.shape_rot.y;
                 self.func_80832210();
@@ -5853,48 +5859,330 @@ impl Player {
         self.func_80852B4C(env, None, m, false);
     }
 
-    /// `func_80852B4C` with `D_80854B18[mode]` (`start`) or `D_80854E50[mode]`: the entry's
-    /// function, or its type's (`D_80854AA4`) with its animation. The modes the ported scripts
-    /// and actors use are ported: 1 (talking to a no-text actor), 3 and 4 (a cue's walk), 6
-    /// (following `linkAction`), 7 (the end), 8 and 0x31 (held still), and the opening's: 9
-    /// (turning round, the nightmare), 38 to 41 (asleep, tossing, sitting up and getting out of
-    /// bed). The others are logged.
+    /// `func_80852B4C` with `D_80854B18[mode]` (`start`) or `D_80854E50[mode]` (the pack's
+    /// `GameData::cs_mode_starts`, `cs_mode_updates`): a type's handler (`D_80854AA4`) with the
+    /// entry's animation or sound table, or the entry's function. The functions that need what
+    /// isn't ported (swimming, the ocarina, the items in hand, the effects) are logged.
     fn func_80852B4C(&mut self, env: &Env, cue: Option<CsCmdActorAction>, mode: u8, start: bool) {
-        let data = env.data;
-        match (start, mode) {
-            (true, 1 | 8 | 0x31) => self.func_808515A4(env),
-            // { 0, NULL }.
-            (true, 0 | 3 | 4 | 6 | 7) => {}
-            // { 2, &gPlayerAnim_link_demo_furimuki }: func_80851030 (func_80850ED8).
-            (true, 9) => self.func_80850ED8(data, data.anim("link_demo_furimuki")),
-            (true, 38) => self.func_80851F84(data),
-            (true, 39) => self.func_80851E90(data),
-            // { 6, &gPlayerAnim_clink_op3_okiagari }, { 6, &gPlayerAnim_clink_op3_tatiagari }:
-            // func_808510F4 (func_8083303C(play, this, anim, 0x9C)).
-            (true, 40) => self.func_8083303C(data, data.anim("clink_op3_okiagari"), 0x9C),
-            (true, 41) => self.func_8083303C(data, data.anim("clink_op3_tatiagari"), 0x9C),
-            (false, 1) => self.func_808514C0(env),
-            (false, 3) => self.func_80851998(env, cue),
-            (false, 4) => self.func_808519C0(env, cue),
-            (false, 6) => self.func_80852C50(env),
-            (false, 7) => self.func_80852944(env),
-            (false, 8 | 0x31) => self.func_80851688(env),
-            // func_80851750, func_80852048: the animation (their sounds aren't played).
-            (false, 9 | 41) => {
-                self.skel.update(data);
-            }
-            // { 11, NULL }: func_808511D4.
-            (false, 38) => {
-                self.skel.update(data);
-            }
-            (false, 39) => self.func_80851ECC(data),
-            (false, 40) => self.func_80851FB0(data),
-            (false, 0) => {}
-            (s, m) => self.note(format!("cutscene mode {m}'s {} ({}) not ported", if s { "start" } else { "update" }, if s { "D_80854B18" } else { "D_80854E50" })),
+        let tab = if start { &env.data.cs_mode_starts } else { &env.data.cs_mode_updates };
+        match tab.get(mode as usize).cloned() {
+            Some(e) if e.ty > 0 => self.cs_mode_type(env, &e),
+            Some(e) if e.ty < 0 => self.cs_mode_func(env, cue, &e.name),
+            Some(_) => {}
+            None => self.note(format!("cutscene mode {mode} past the tables")),
         }
         if self.s.d_80858aa0 & 4 != 0 && self.skel.move_flags & 4 == 0 {
             self.skel.morph[0][1] = (self.skel.morph[0][1] as f32 / self.age.translation_scale) as i16;
             self.s.d_80858aa0 = 0;
+        }
+    }
+
+    /// `D_80854AA4[type](play, this, ptr)`: the cutscene modes' typed handlers.
+    fn cs_mode_type(&mut self, env: &Env, e: &oot_game::data::CsModeEntry) {
+        let data = env.data;
+        let a = match e.anim {
+            Some(a) => a,
+            // Types 1, 11 and 18 take no animation.
+            None if matches!(e.ty, 1 | 11 | 18) => 0,
+            None => {
+                self.note(format!("cutscene mode type {} without an animation", e.ty));
+                return;
+            }
+        };
+        match e.ty {
+            // func_80851008.
+            1 => self.func_80832210(),
+            // func_80851030: func_80850ED8.
+            2 => self.func_80850ED8(data, a),
+            // func_80851094: func_80850F1C.
+            3 => self.func_80850F1C(data, a),
+            // func_808510B4: func_80850F9C.
+            4 => self.func_80850F9C(data, a),
+            // func_808510D4: func_8083308C (func_80833064(play, this, anim, 0x1C)).
+            5 => self.func_80833064(data, a, 0x1C),
+            // func_808510F4: func_8083303C(play, this, anim, 0x9C).
+            6 => self.func_8083303C(data, a, 0x9C),
+            // func_80851114: func_8083313C (func_80833114(play, this, anim, 0x1C)).
+            7 => self.func_80833114(data, a, 0x1C),
+            // func_80851134: func_808330EC(play, this, anim, 0x9C).
+            8 => self.func_808330EC(data, a, 0x9C),
+            // func_80851154: func_80832264 (LinkAnimation_PlayOnce).
+            9 => self.skel.play_once(data, a),
+            // func_80851174: func_80832284 (LinkAnimation_PlayLoop).
+            10 => self.skel.play_loop(data, a),
+            // func_808511D4: LinkAnimation_Update.
+            11 => {
+                self.skel.update(data);
+            }
+            // func_808511FC: at the animation's end, func_80850F9C, unk_850 1.
+            12 => {
+                if self.skel.update(data) {
+                    self.func_80850F9C(data, a);
+                    self.unk_850 = 1;
+                }
+            }
+            // func_80851294: at the end, func_8083313C, unk_850 1.
+            13 => self.func_80851294(data, a),
+            // func_80851050: func_80832DB0, func_80832C2C, func_80832210.
+            14 => {
+                self.func_80832DB0();
+                self.skel.change(data, a, 1.0, 0.0, 0.0, ANIMMODE_ONCE, 0.0);
+                self.func_80832210();
+            }
+            // func_80851194: func_808322D0 (LinkAnimation_PlayOnceSetSpeed 2/3).
+            15 => self.skel.play_once_set_speed(data, a, 2.0 / 3.0),
+            // func_808511B4: func_808322A4 (LinkAnimation_PlayLoopSetSpeed 2/3).
+            16 => self.skel.play_loop_set_speed(data, a, 2.0 / 3.0),
+            // func_80851248: at the end, func_80832DBC and func_808322A4.
+            17 => {
+                if self.skel.update(data) {
+                    self.func_80832DBC();
+                    self.skel.play_loop_set_speed(data, a, 2.0 / 3.0);
+                }
+            }
+            // func_808512E0: LinkAnimation_Update and the sound table.
+            18 => {
+                self.skel.update(data);
+                let t = env.audio.player_anim_sfx(&e.name).to_vec();
+                self.func_80832924(&t);
+            }
+            t => self.note(format!("cutscene mode type {t}")),
+        }
+    }
+
+    /// `func_80850F1C`: the animation once at 2/3, from its last frame's morph, standing.
+    fn func_80850F1C(&mut self, data: &GameData, anim: AnimId) {
+        self.func_80832DB0();
+        let last = data.anims[anim].last_frame();
+        self.skel.change(data, anim, 2.0 / 3.0, 0.0, last, ANIMMODE_ONCE, -8.0);
+        self.func_80832210();
+    }
+
+    /// `func_80850F9C`: the animation looped at 2/3, standing.
+    fn func_80850F9C(&mut self, data: &GameData, anim: AnimId) {
+        self.func_80832DB0();
+        self.skel.change(data, anim, 2.0 / 3.0, 0.0, 0.0, ANIMMODE_LOOP, -8.0);
+        self.func_80832210();
+    }
+
+    /// `func_80833064`: `func_80832FFC` at 2/3: the animation once with `moveFlags`.
+    fn func_80833064(&mut self, data: &GameData, anim: AnimId, flags: u16) {
+        self.skel.play_once_set_speed(data, anim, 2.0 / 3.0);
+        self.func_80832F54(flags);
+    }
+
+    /// `func_80833114`: `func_808330AC` at 2/3: the animation looped with `moveFlags`.
+    fn func_80833114(&mut self, data: &GameData, anim: AnimId, flags: u16) {
+        self.skel.play_loop_set_speed(data, anim, 2.0 / 3.0);
+        self.func_80832F54(flags);
+    }
+
+    /// `func_80851294`: at the animation's end, `func_8083313C`, `unk_850` 1.
+    fn func_80851294(&mut self, data: &GameData, anim: AnimId) {
+        if self.skel.update(data) {
+            self.func_80833114(data, anim, 0x1C);
+            self.unk_850 = 1;
+        }
+    }
+
+    /// `func_80851F14`: at the animation's end the next one looped at 2/3; before it, its
+    /// sounds.
+    fn func_80851F14(&mut self, env: &Env, anim: AnimId, table: &str) {
+        let data = env.data;
+        if self.skel.update(data) {
+            self.skel.play_loop_set_speed(data, anim, 2.0 / 3.0);
+            self.unk_850 = 1;
+        } else if self.unk_850 == 0 {
+            let t = env.audio.player_anim_sfx(table).to_vec();
+            self.func_80832924(&t);
+        }
+    }
+
+    /// `func_80852414`: `func_80851294`, and until its end, the sounds.
+    fn func_80852414(&mut self, env: &Env, anim: AnimId, table: &str) {
+        self.func_80851294(env.data, anim);
+        if self.unk_850 == 0 {
+            let t = env.audio.player_anim_sfx(table).to_vec();
+            self.func_80832924(&t);
+        }
+    }
+
+    /// `func_808520BC`: Link along the cue, from its start to its end by the script's frame.
+    fn func_808520BC(&mut self, env: &Env, cue: &CsCmdActorAction) {
+        let start = Vec3::new(cue.start_pos.x as f32, cue.start_pos.y as f32, cue.start_pos.z as f32);
+        let dist = Vec3::new(cue.end_pos.x as f32, cue.end_pos.y as f32, cue.end_pos.z as f32) - start;
+        let sp4 = (env.cs_frames as i32 - cue.start_frame as i32) as f32 / (cue.end_frame as i32 - cue.start_frame as i32) as f32;
+        self.actor.world_pos = dist * sp4 + start;
+    }
+
+    /// The cutscene modes' functions (`struct_80854B18`'s `func`), by name.
+    fn cs_mode_func(&mut self, env: &Env, cue: Option<CsCmdActorAction>, name: &str) {
+        let data = env.data;
+        match name {
+            "func_808515A4" => self.func_808515A4(env),
+            "func_808514C0" => self.func_808514C0(env),
+            "func_8085157C" | "func_80852234" => {
+                self.skel.update(data);
+            }
+            "func_80851998" => self.func_80851998(env, cue),
+            "func_808519C0" => self.func_808519C0(env, cue),
+            "func_80852C50" => self.func_80852C50(env),
+            "func_80852944" => self.func_80852944(env),
+            "func_80851688" => self.func_80851688(env),
+            "func_80851750" => {
+                self.skel.update(data);
+                let t = env.audio.player_anim_sfx("D_80855188").to_vec();
+                self.func_80832924(&t);
+            }
+            "func_80851788" => {
+                // Walking to unk_450 (func_80851828 after it).
+                self.state1 &= !STATE1_25;
+                // Math_Vec3f_Yaw.
+                let yaw = vec3f_yaw(self.actor.world_pos, self.unk_450);
+                self.current_yaw = yaw;
+                self.actor.shape_rot.y = yaw;
+                self.actor.world_rot.y = yaw;
+                if self.linear_velocity <= 0.0 {
+                    self.linear_velocity = 0.1;
+                } else if self.linear_velocity > 2.5 {
+                    self.linear_velocity = 2.5;
+                }
+            }
+            "func_80851828" => {
+                let mut sp1c = 2.5;
+                self.func_80845BA0(env, &mut sp1c, 10);
+                // SCENE_BDAN_BOSS (Jabu-Jabu's boss room): wait on the message box.
+                if env.scene_id == 0x12 {
+                    let none = env.msg_state == oot_game::message::TEXT_STATE_NONE;
+                    if (self.unk_850 == 0 && none) || (self.unk_850 != 0 && !none) {
+                        return;
+                    }
+                }
+                self.unk_850 += 1;
+                if self.unk_850 > 20 {
+                    self.cs_mode = 0xB;
+                }
+            }
+            "func_808518DC" => self.func_8083CEAC(data),
+            "func_8085190C" => {
+                self.func_80851314(env);
+                if self.unk_850 != 0 {
+                    if self.skel.update(data) {
+                        let a = self.func_808334E4(data);
+                        self.skel.play_loop(data, a);
+                        self.unk_850 = 0;
+                    }
+                    self.func_80833C3C();
+                } else {
+                    self.func_808401B0(data);
+                }
+            }
+            "func_808519EC" => {
+                // D_80855198, facing -z, the age's unk_9C at 2/3, moveFlags 0x28F.
+                self.actor.world_pos = Vec3::new(-1.0, 70.0, 20.0);
+                self.actor.shape_rot.y = i16::MIN;
+                let a = self.age.climb.unk_9C;
+                self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+                self.func_80832F54(0x28F);
+            }
+            "func_80851B90" => {
+                let a = data.anim("link_demo_warp");
+                self.skel.change(data, a, -(2.0 / 3.0), 12.0, 12.0, ANIMMODE_ONCE, 0.0);
+            }
+            "func_80851BE8" => {
+                self.skel.update(data);
+                self.unk_850 += 1;
+                if self.unk_850 >= 180 {
+                    if self.unk_850 == 180 {
+                        let a = data.anim("link_okarina_warp_goal");
+                        let last = data.anims[a].last_frame();
+                        self.skel.change(data, a, 2.0 / 3.0, 10.0, last, ANIMMODE_ONCE, -8.0);
+                    }
+                    let t = env.audio.player_anim_sfx("D_808551B4").to_vec();
+                    self.func_80832924(&t);
+                }
+            }
+            "func_80851CA4" => {
+                if self.skel.update(data) && self.unk_850 == 0 && self.actor.bg_check_flags & BGCHECKFLAG_GROUND != 0 {
+                    self.skel.play_once(data, data.anim("link_normal_back_downB"));
+                    self.unk_850 = 1;
+                }
+                if self.unk_850 != 0 {
+                    self.func_8083721C();
+                }
+            }
+            "func_80851DEC" | "func_80851E28" => {
+                // Math_StepToS(&this->actor.shape.face, 0 or 2, 1).
+                self.skel.update(data);
+                let target = if name == "func_80851DEC" { 0 } else { 2 };
+                if self.face < target {
+                    self.face += 1;
+                } else if self.face > target {
+                    self.face -= 1;
+                }
+            }
+            "func_80851E64" => self.func_80833064(data, data.anim("link_swimer_swim_get"), 0x98),
+            "func_80851E90" => self.func_80851E90(data),
+            "func_80851ECC" => self.func_80851ECC(data),
+            "func_80851F84" => self.func_80851F84(data),
+            "func_80851FB0" => self.func_80851FB0(env),
+            "func_80852048" => {
+                self.skel.update(data);
+                let t = env.audio.player_anim_sfx("D_808551C8").to_vec();
+                self.func_80832924(&t);
+            }
+            "func_80852080" => {
+                self.func_80833064(data, data.anim("clink_demo_futtobi"), 0x9D);
+                self.func_80832698(NA_SE_VO_LI_FALL_L);
+            }
+            "func_80852174" => {
+                if let Some(c) = cue {
+                    self.func_808520BC(env, &c);
+                }
+                self.skel.update(data);
+                let t = env.audio.player_anim_sfx("D_808551D8").to_vec();
+                self.func_80832924(&t);
+            }
+            "func_808521B8" => {
+                if let Some(c) = cue {
+                    self.func_808520BC(env, &c);
+                }
+                self.skel.update(data);
+            }
+            "func_808521F4" => {
+                let a = self.anim(data, 44);
+                self.func_80832B0C(data, a);
+                self.func_80832210();
+            }
+            "func_8085225C" => self.func_80832F54(0x98),
+            // func_80852280: actor.draw = Player_Draw (Player is always drawn here).
+            "func_80852280" | "func_80852544" | "func_80852554" => {}
+            "func_80852328" => self.func_80851F14(env, data.anim("link_demo_furimuki2_wait"), "D_808551E0"),
+            "func_80852358" => self.func_80851F14(env, data.anim("link_demo_nozokikomi_wait"), "D_808551E8"),
+            "func_80852388" => {
+                if self.skel.update(data) {
+                    self.skel.play_loop_set_speed(data, data.anim("demo_link_twait"), 2.0 / 3.0);
+                    self.unk_850 = 1;
+                }
+                // (rightHandType: the hand's model, PLAYER_MODELTYPE_LH_OPEN at 900 or RH_FF.)
+            }
+            "func_80852450" => self.func_80852414(env, data.anim("clink_demo_koutai_wait"), "D_808551F0"),
+            "func_80852480" => self.func_80852414(env, data.anim("link_demo_kakeyori_wait"), "D_808551F8"),
+            "func_80852564" => {
+                self.state3 |= STATE3_1;
+                self.linear_velocity = 2.0;
+                self.actor.velocity.y = -1.0;
+                self.skel.play_once(data, data.anim("link_normal_back_downA"));
+                self.func_80832698(NA_SE_VO_LI_FALL_L);
+            }
+            "func_808525C0" => match self.unk_850 {
+                // D_808551FC: the knockdown's three stages.
+                0 => self.func_8084377C(env),
+                1 => self.func_80843954(env),
+                2 => self.func_80843A38(env),
+                _ => {}
+            },
+            n => self.note(format!("cutscene mode function {n} not ported (swimming, the ocarina, the items in hand or the effects)")),
         }
     }
 
@@ -5924,9 +6212,10 @@ impl Player {
         self.func_808330EC(data, data.anim("clink_op3_wait1"), 0x9C);
     }
 
-    /// `func_80851E90` (mode 39's start): tossing (`clink_op3_negaeri`), the groan unplayed.
+    /// `func_80851E90` (mode 39's start): tossing (`clink_op3_negaeri`), groaning.
     fn func_80851E90(&mut self, data: &GameData) {
         self.func_8083303C(data, data.anim("clink_op3_negaeri"), 0x9C);
+        self.func_80832698(NA_SE_VO_LI_GROAN);
     }
 
     /// `func_80851ECC` (mode 39): after the toss, `clink_op3_wait2` looped.
@@ -5936,14 +6225,20 @@ impl Player {
         }
     }
 
-    /// `func_80851FB0` (mode 40): sitting up; then `clink_op3_wait3` looped. The shadow comes
-    /// back on frame 240 (`ActorShadow_DrawFeet`); the sounds of `D_808551BC` aren't played.
-    fn func_80851FB0(&mut self, data: &GameData) {
+    /// `func_80851FB0` (mode 40): sitting up, with `D_808551BC`'s sounds (the sigh, the slips
+    /// off the bed); then `clink_op3_wait3` looped. The shadow comes back on frame 240
+    /// (`ActorShadow_DrawFeet`).
+    fn func_80851FB0(&mut self, env: &Env) {
+        let data = env.data;
         if self.skel.update(data) {
             self.func_808330EC(data, data.anim("clink_op3_wait3"), 0x9C);
             self.unk_850 = 1;
-        } else if self.unk_850 == 0 && self.skel.on_frame(240.0) {
-            self.shadow_feet = true;
+        } else if self.unk_850 == 0 {
+            let t = env.audio.player_anim_sfx("D_808551BC").to_vec();
+            self.func_80832924(&t);
+            if self.skel.on_frame(240.0) {
+                self.shadow_feet = true;
+            }
         }
     }
 
@@ -6001,6 +6296,8 @@ impl Player {
         self.actor.world_pos.z = cue.start_pos.z as f32;
         self.actor.shape_rot.y = cue.rot[1];
         self.current_yaw = cue.rot[1];
+        // Put there at once: the renderer doesn't blend Link across the jump.
+        self.actor.teleported = true;
     }
 
     /// `func_80852A54`: a walk cue moves Link to its start only if he stands more than 50 from
@@ -6033,8 +6330,8 @@ impl Player {
         }
         let anim = self.anim(data, 44);
         if self.unk_446 == 6 || self.unk_446 == 0x2E {
-            // func_80832264: LinkAnimation_PlayOnceSetSpeed(D_808535E8).
-            self.skel.play_once_set_speed(data, anim, self.s.speed_scale);
+            // func_80832264: LinkAnimation_PlayOnce.
+            self.skel.play_once(data, anim);
         } else {
             self.func_80832DB0();
             let last = data.anims[anim].last_frame();
@@ -7373,6 +7670,12 @@ impl PlayerIface for Player {
     fn unk_89e(&self) -> u16 {
         self.unk_89E
     }
+    fn current_boots(&self) -> u8 {
+        self.current_boots
+    }
+    fn change_state_flags1(&mut self, set: u32, clear: u32) {
+        self.state1 = (self.state1 | set) & !clear;
+    }
     fn set_equipment_data(&mut self, data: &GameData, save: &oot_game::save::SaveContext) {
         Player::set_equipment_data(self, data, save);
     }
@@ -7451,6 +7754,10 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             }
         }
         PlayRequest::SetCameraData { data2 } => play.game_camera.set_camera_data(4, data2, 0),
+        PlayRequest::OnePointCutscene { cs_id, timer, player, parent } => {
+            let actor = if player { play.player.and_then(|h| play.cam_actor(h)) } else { None };
+            play.onepoint_cutscene_init(cs_id, timer, actor, parent);
+        }
         PlayRequest::DropCollectible { pos, params } => {
             crate::en_item00::item_drop_collectible(play, pos, params);
         }

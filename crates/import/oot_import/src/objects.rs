@@ -303,6 +303,11 @@ impl ObjectSegments {
                 let mut limb_dlists = Vec::new();
                 let mut limb_segments = Vec::new();
                 for l in limbs {
+                    if l.symbol.is_empty() {
+                        // *dList = NULL.
+                        limb_dlists.push((l.limb, 0));
+                        continue;
+                    }
                     let (lf, ls) = symbol_in(p, &l.file, &l.symbol)?;
                     let buf = files.get(&lf.name).with_context(|| format!("{} not in the ROM", l.file))?;
                     limb_dlists.push((l.limb, (6u32 << 24) | ls.offset));
@@ -310,6 +315,24 @@ impl ObjectSegments {
                 }
                 let opts = BuildOptions { bindings, builtin_segments: builtin, limb_dlists, limb_segments, dynamic_segments: dynamic, prelude, ..Default::default() };
                 build_draw_list(&skel, &opts)
+            }
+            BakeBody::Skin { file: sf, symbol } => {
+                let (skel_file, s) = symbol_in(p, sf, symbol)?;
+                let skel_data = files.get(&skel_file.name).with_context(|| format!("{sf} not in the ROM"))?;
+                let raw = crate::skin::parse(&skel_data, skel_file.segment.unwrap_or(6), s.offset as usize)?;
+                let mut it = Interpreter::new();
+                for b in &bindings {
+                    it.segments[b.segment as usize & 0xF] = Some(Segment::Data { buf: b.buf.clone(), base: b.base });
+                }
+                for (seg, s) in &builtin {
+                    it.segments[*seg as usize & 0xF] = Some(s.clone());
+                }
+                it.apply_setup_dl_25();
+                it.dynamic_segments = dynamic;
+                for &dl in &prelude {
+                    it.run(dl);
+                }
+                Ok(crate::skin::draw(it, &raw))
             }
         }
     }

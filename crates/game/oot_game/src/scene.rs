@@ -150,6 +150,8 @@ pub struct SceneEntry {
     pub enum_name: String,
     /// `SDC_SPOT04`: the scene draw config (`crate::scene_table`).
     pub draw_config: String,
+    /// The title card's file (`g_pn_31`), empty for none (`crate::title_card`).
+    pub title_file: String,
 }
 
 /// `scene_table.h` and `object_table.h`.

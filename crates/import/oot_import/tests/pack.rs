@@ -83,7 +83,11 @@ fn tables_match_the_c() {
     let st = c.pack.scene_table().unwrap();
     assert_eq!(st.scenes.len(), c.tables.scenes.len());
     for (a, b) in st.scenes.iter().zip(&c.tables.scenes) {
-        assert_eq!((a.id as usize, &a.file, &a.enum_name, &a.draw_config), (b.id, &b.file, &b.enum_name, &b.draw_config));
+        assert_eq!((a.id as usize, &a.file, &a.enum_name, &a.draw_config, &a.title_file), (b.id, &b.file, &b.enum_name, &b.draw_config, &b.title_file));
+        // Each place name's bake (oot_game::title_card).
+        if !a.title_file.is_empty() {
+            assert!(c.pack.assets.contains(&keys::bake(&oot_game::title_card::sprite_name(&a.title_file))), "{}", a.title_file);
+        }
     }
     assert_eq!(st.objects, c.tables.objects);
     // entrance_table.h, actor_table.h with every overlay's ActorInit.
@@ -288,7 +292,9 @@ fn the_import_covers_the_xmls_and_the_scans() {
         let (l, i) = m.counts[kind];
         assert_eq!(i, l, "{kind}");
     }
-    assert_eq!(m.counts["Skeleton"], (194, 184));
+    // The skin skeletons (the horses', GAME-04b milestone 6) are read too; the 3 left out are
+    // Curve limbs and an overlay's.
+    assert_eq!(m.counts["Skeleton"], (194, 191));
     // `ootx scan-scenes --all-layers`: 141 distinct headers, 456 rooms, 2533 entries in the game
     // layers; the 106 cutscene layers of 30 scenes add 106 headers, 199 rooms and 1489 entries
     // (docs/adr/0023); 168,566 triangles in the main headers, 0 unknown opcodes, the 4 unresolved
@@ -301,6 +307,40 @@ fn the_import_covers_the_xmls_and_the_scans() {
     // Every record the manifest counts is in the pack.
     assert_eq!(c.pack.assets.names("tex/").len(), m.counts["Texture"].1);
     assert_eq!(c.pack.assets.names("scene/").len(), 110);
+}
+
+/// The horses' skin skeletons (`z64skin.h`): the record is the ROM's `SkinLimb`s as the header
+/// counts them, and `En_Viewer`'s bake gives every vertex a bone: a normal limb's, or its
+/// animated limb's vertex group's (`oot_game::skin`).
+#[test]
+fn the_horses_skins_are_the_roms() {
+    let Some(c) = ctx() else { return };
+    for (file, skel, limbs) in [("object_horse_zelda", "gHorseZeldaSkel", 46usize), ("object_horse_ganon", "gHorseGanonSkel", 53)] {
+        let f = c.p.symbols.file(file).unwrap();
+        let sym = f.find(skel).unwrap();
+        let data = c.p.rom.file_by_name(file).unwrap();
+        // SkeletonHeader.limbCount, the byte after the limb table's pointer.
+        assert_eq!(data[sym.offset as usize + 4] as usize, limbs, "{skel}");
+        let raw = oot_import::skin::parse(&data, 6, sym.offset as usize).unwrap();
+        let record = c.pack.skin_skeleton(file, skel).unwrap();
+        assert_eq!(record, raw.skeleton);
+        assert_eq!(record.limbs.len(), limbs);
+        // One animated limb (the body), the rest normal limbs or joints without a list.
+        let animated: Vec<usize> = (0..limbs).filter(|&i| record.limbs[i].segment_type == oot_game::skin::SKIN_LIMB_TYPE_ANIMATED).collect();
+        assert_eq!(animated.len(), 1, "{skel}");
+        let l = animated[0];
+        // Every group's vertices together are the limb's totalVtxCount, each index once.
+        let mut seen = vec![false; raw.total_vtx[l] as usize];
+        for g in &raw.vertices[l] {
+            for v in g {
+                assert!(!std::mem::replace(&mut seen[v.index as usize], true), "{skel}: vertex {} twice", v.index);
+            }
+        }
+        assert!(seen.iter().all(|&b| b), "{skel}: a vertex in no group");
+        let d: eng_gfx::DrawList = c.pack.assets.get(&oot_game::pack::keys::bake(&format!("En_Viewer/{skel}"))).unwrap();
+        let bones = record.bone_count() as u16;
+        assert!(d.batches.iter().flat_map(|b| &b.vertices).all(|v| v.bone < bones), "{skel}: a vertex without a bone");
+    }
 }
 
 /// `gEntranceTable` and the actor table as the decomp defines them, spot-checked.
@@ -685,4 +725,80 @@ fn the_sound_effects_tables_are_the_cs() {
     assert_eq!(t.behind_screen_z, [-15.0, -65.0]);
     assert_eq!(t.charge_freq_scales, [1.0, 1.12246, 1.33484, 1.33484]);
     assert_eq!(t.ganons_tower_levels_vol, [127, 80, 75, 73, 70, 68, 65, 60]);
+}
+
+#[test]
+fn the_one_point_tables_are_the_roms() {
+    // z_onepointdemo_data.c's tables and Camera_Demo5's (z_camera_data.c), as the importer read
+    // them from the C, against the bytes of the ROM's code file: each D_ symbol is named after
+    // its address, so with one table found by its bytes, every other is at its address's
+    // offset from that one.
+    let Some(c) = ctx() else { return };
+    let d = c.pack.game_data().unwrap().camera.onepoint;
+    let code = c.p.rom.file_by_name("code").unwrap();
+    let point_bytes = |p: &oot_game::cutscene::CutsceneCameraPoint| {
+        let mut b = vec![p.continue_flag as u8, p.camera_roll as u8];
+        b.extend(p.next_point_frame.to_be_bytes());
+        b.extend(p.view_angle.to_bits().to_be_bytes());
+        for v in p.pos {
+            b.extend(v.to_be_bytes());
+        }
+        b.extend([0, 0]);
+        b
+    };
+    let kf_bytes = |k: &oot_game::camera::OnePointCsFull| {
+        let mut b = vec![k.action_flags, k.unk_01];
+        for v in [k.init_flags, k.timer_init, k.roll_target_init] {
+            b.extend(v.to_be_bytes());
+        }
+        for v in [k.fov_target_init, k.lerp_step_scale, k.at_target_init.x, k.at_target_init.y, k.at_target_init.z, k.eye_target_init.x, k.eye_target_init.y, k.eye_target_init.z] {
+            b.extend(v.to_bits().to_be_bytes());
+        }
+        b
+    };
+    let addr = |name: &str| u32::from_str_radix(name.strip_prefix("D_").unwrap(), 16).unwrap();
+    // The anchor: D_8012013C (3050's at points), found by its bytes.
+    let (anchor_name, anchor) = &d.points[0];
+    let want: Vec<u8> = anchor.iter().flat_map(point_bytes).collect();
+    let at = code.windows(want.len()).position(|w| w == want.as_slice()).expect("the first point list in code");
+    let base = addr(anchor_name) as usize - at;
+    let mut checked = 0;
+    for (name, pts) in &d.points {
+        let o = addr(name) as usize - base;
+        let want: Vec<u8> = pts.iter().flat_map(point_bytes).collect();
+        assert_eq!(&code[o..o + want.len()], want.as_slice(), "{name}");
+        checked += 1;
+    }
+    for (name, kfs) in &d.keyframes {
+        let o = addr(name) as usize - base;
+        let want: Vec<u8> = kfs.iter().flat_map(kf_bytes).collect();
+        assert_eq!(&code[o..o + want.len()], want.as_slice(), "{name}");
+        checked += 1;
+    }
+    for (name, v) in &d.shorts {
+        let o = addr(name) as usize - base;
+        assert_eq!(&code[o..o + 2], v.to_be_bytes().as_slice(), "{name}");
+        checked += 1;
+    }
+    // 10 point lists, 83 keyframe tables (75 and Camera_Demo5's 8), 12 shorts.
+    assert_eq!((d.points.len(), d.keyframes.len(), d.shorts.len(), checked), (10, 83, 12, 105));
+    // The crawlspace's: D_80120308 (at) with D_80120398 (9601's eye) and D_80120434 (9602's),
+    // D_8012042C frames, action D_80120430 1 (around the main camera's Player).
+    assert_eq!(d.short("D_8012042C"), Some(90));
+    assert_eq!(d.short("D_80120430"), Some(1));
+    assert_eq!(d.points("D_80120398").unwrap()[0].pos, [0, 9, 45]);
+    assert_eq!(d.points("D_80120308").unwrap()[1].view_angle, 40.000004);
+    // The settings the one-point cutscenes name, against z64camera.h's enum.
+    let cam = c.pack.game_data().unwrap().camera;
+    for (id, name) in [
+        (oot_game::onepoint::CAM_SET_FREE2, "CAM_SET_FREE2"),
+        (oot_game::onepoint::CAM_SET_CS_3, "CAM_SET_CS_3"),
+        (oot_game::onepoint::CAM_SET_CS_C, "CAM_SET_CS_C"),
+        (oot_game::camera::CAM_SET_CS_ATTENTION, "CAM_SET_CS_ATTENTION"),
+        (oot_game::camera::CAM_SET_TURN_AROUND, "CAM_SET_TURN_AROUND"),
+    ] {
+        assert_eq!(cam.setting_id(name), Some(id), "{name}");
+    }
+    let k = &d.keyframes[d.keyframe_table("D_8011D9F4").unwrap()].1;
+    assert_eq!((k[0].action_flags, k[0].init_flags as u16, k[0].timer_init, k[0].eye_target_init.z), (0x8F, 0x0504, 0x14, 300.0));
 }

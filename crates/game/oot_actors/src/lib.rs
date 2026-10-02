@@ -25,6 +25,7 @@ use oot_game::player_lib::PlayerRules;
 use oot_game::save::SaveContext;
 use oot_game::spawn::Overlays;
 
+pub mod bg_spot00_hanebasi;
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
 pub mod demo_tre_lgt;
@@ -44,9 +45,11 @@ pub mod en_md;
 pub mod en_ossan;
 pub mod en_river_sound;
 pub mod en_tana;
+pub mod en_viewer;
 pub mod en_wonder_item;
 pub mod en_wonder_talk2;
 pub mod obj_hana;
+pub mod object_kankyo;
 pub mod player;
 pub mod playthrough;
 pub mod script;
@@ -57,7 +60,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -84,6 +87,9 @@ pub fn overlays() -> Overlays {
     o.register(en_elf::ACTOR_EN_ELF, en_elf::EnElf::init);
     o.register(en_river_sound::ACTOR_EN_RIVER_SOUND, en_river_sound::EnRiverSound::init);
     o.register(demo_tre_lgt::ACTOR_DEMO_TRE_LGT, demo_tre_lgt::DemoTreLgt::init);
+    o.register(bg_spot00_hanebasi::ACTOR_BG_SPOT00_HANEBASI, bg_spot00_hanebasi::BgSpot00Hanebasi::init);
+    o.register(en_viewer::ACTOR_EN_VIEWER, en_viewer::EnViewer::init);
+    o.register(object_kankyo::ACTOR_OBJECT_KANKYO, object_kankyo::ObjectKankyo::init);
     o
 }
 
@@ -99,6 +105,11 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_ossan::bakes());
     v.extend(en_tana::bakes());
     v.extend(en_elf::bakes());
+    v.extend(bg_spot00_hanebasi::bakes());
+    v.extend(en_viewer::bakes());
+    v.extend(object_kankyo::bakes());
+    // z_kankyo.c's rain and lightning bolts.
+    v.extend(oot_game::weather::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).
@@ -134,6 +145,12 @@ pub fn new_play(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionCont
     play.reset_cameras();
     play.reset_blending();
     play
+}
+
+/// The animations in objects without a skeleton, with the skeleton their actor plays them on,
+/// for the importer.
+pub fn foreign_anims() -> Vec<oot_game::pack::ForeignAnim> {
+    en_viewer::foreign_anims()
 }
 
 /// Rebuilds Player at the play state's spawn, keeping its age (the sandbox's void-out).

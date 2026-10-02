@@ -1,6 +1,6 @@
 # 0013: Camera modes by the imported function, the letterbox and the screen overlay
 
-- **Status:** accepted, built in GAME-02 milestone 1; the settings and the fallback for unported functions are extended by [ADR 0015](0015-camera-settings-and-bg-cameras.md)
+- **Status:** accepted, built in GAME-02 milestone 1; the settings and the fallback for unported functions are extended by [ADR 0015](0015-camera-settings-and-bg-cameras.md); JUMP, FREEFALL, CLIMB, CLIMBZ, HANG and HANGZ have their functions since GAME-04b milestone 2
 - **Date:** 2026-09-28
 
 ## Context

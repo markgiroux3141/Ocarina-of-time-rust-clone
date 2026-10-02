@@ -16,8 +16,7 @@
 //! switch flag. Not ported: the chests the Zelda's Lullaby and Sun's Song make appear (types 9
 //! and 10: `func_809C9700` waits on the ocarina, which isn't ported, so they stay hidden), the
 //! lens-hidden chests' drawing (types 4 and 6 with `ACTOR_FLAG_7`: the Lens of Truth isn't
-//! ported, so they aren't drawn until opened), the one-point cutscene cameras
-//! (`OnePointCutscene_Init`, `_Attention`), and the effects (the
+//! ported, so they aren't drawn until opened), and the effects (the
 //! falling chests' dust, the ice trap's smoke: their `Rand_ZeroOne` calls are made). The light
 //! (`Demo_Tre_Lgt`, `crate::demo_tre_lgt`) is ported but its draw; the sparkles (`Demo_Kankyo`)
 //! spawn as a placeholder.
@@ -31,6 +30,7 @@ use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_CHEST, ActorImpl, ActorProfile, cur_sfx_pos};
 use oot_game::audio::sfx::*;
+use oot_game::camera::CAM_ID_MAIN;
 use oot_game::get_item::offer_get_item;
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -191,6 +191,8 @@ pub struct EnBox {
     pub ice_smoke_timer: u8,
     /// `unk_1FB`: the song chests' state.
     pub unk_1fb: u8,
+    /// `subCamId`: the falling chest's one-point cutscene (4500).
+    pub sub_cam_id: i16,
 }
 
 impl EnBox {
@@ -201,6 +203,11 @@ impl EnBox {
     /// The get-item id the chest holds (`params >> 5 & 0x7F`).
     pub fn get_item_id(&self) -> i16 {
         (self.actor.params >> 5) & 0x7F
+    }
+
+    /// The chest as the one-point cutscenes read it (it's out of the arena in its update).
+    fn cam_actor(&self, play: &PlayState) -> Option<oot_game::camera::CamActor> {
+        play.cur_actor.map(|h| play.cam_actor_of(h, &self.actor))
     }
 
     fn is_small(&self) -> bool {
@@ -246,6 +253,7 @@ impl EnBox {
             alpha: 0,
             ice_smoke_timer: 0,
             unk_1fb: 0,
+            sub_cam_id: 0,
         };
         b.actor.gravity = -5.5;
         b.actor.min_velocity_y = -50.0;
@@ -356,7 +364,7 @@ impl EnBox {
                 self.actor.shape_rot.z = 0;
                 self.actor.world_pos.y = self.actor.floor_height;
                 self.action = Action::WaitOpen;
-                // OnePointCutscene_EndCutscene: no one-point cutscenes.
+                play.onepoint_end_cutscene(self.sub_cam_id);
             }
             let pos = cur_sfx_pos(play);
             play.audio.play_sfx_general(NA_SE_EV_COFFIN_CAP_BOUND, pos, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
@@ -378,9 +386,8 @@ impl EnBox {
         self.nearest_chest_check();
         if self.unk_1a8 >= 0 {
             self.action = Action::Fall;
-            // OnePointCutscene_Init(play, 4500, 9999, &this->dyna.actor, CAM_ID_MAIN): no
-            // one-point cutscenes.
-            log::debug!("En_Box: OnePointCutscene_Init(4500) isn't ported");
+            let me = self.cam_actor(play);
+            self.sub_cam_id = play.onepoint_cutscene_init(4500, 9999, me, CAM_ID_MAIN);
             play.col.dyna.set_collision_disabled(self.bg, false);
         } else if self.unk_1a8 >= -11 {
             self.unk_1a8 += 1;
@@ -404,7 +411,9 @@ impl EnBox {
     fn appear_on_switch_flag(&mut self, play: &mut PlayState) {
         self.nearest_chest_check();
         if play.flags.get_switch(self.switch_flag as i32) {
-            // OnePointCutscene_Attention: not ported.
+            if let Some(me) = self.cam_actor(play) {
+                play.onepoint_attention(me);
+            }
             self.action = Action::AppearInit;
             self.unk_1a8 = -30;
         }
@@ -416,16 +425,17 @@ impl EnBox {
         if play.flags.get_temp_clear(self.actor.room) && !play.player_in_cs_mode() {
             play.flags.set_clear(self.actor.room);
             self.action = Action::AppearInit;
-            // OnePointCutscene_Attention; OnePointCutscene_CheckForCategory is false without
-            // one-point cutscenes.
-            self.unk_1a8 = -30;
+            if let Some(me) = self.cam_actor(play) {
+                play.onepoint_attention(me);
+            }
+            self.unk_1a8 = if play.onepoint_check_for_category(self.actor.category) { 0 } else { -30 };
         }
     }
 
-    /// `EnBox_AppearInit`: `func_8005B198` (the category the one-point camera attends) is never
-    /// the chest's here, so the delay decides (`unk_1A8` is -30).
+    /// `EnBox_AppearInit`: the chest appears once the attention camera attends a chest
+    /// (`func_8005B198`), or at once when its delay is set.
     fn appear_init(&mut self, play: &mut PlayState) {
-        if self.unk_1a8 != 0 {
+        if play.func_8005b198() == self.actor.category as i32 || self.unk_1a8 != 0 {
             self.action = Action::AppearAnimation;
             self.unk_1a8 = 0;
             let h = self.actor.home_pos;

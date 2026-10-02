@@ -14,8 +14,8 @@ use eng_anim::skeleton::{LimbType, Skeleton};
 use eng_math::Tables;
 use glam::Vec3;
 use oot_game::actor_table::{ACTOROVL_ALLOC_ABSOLUTE, ACTOROVL_ALLOC_NORMAL, ACTOROVL_ALLOC_PERSISTENT, ActorInfo, ActorInitInfo, ActorTable};
-use oot_game::camera::{CamModeData, CamSettingData, CameraData};
-use oot_game::data::{AgeProperties, Anim, AnimId, AttackAnim, BOOTS_KOKIRI, BOOTS_KOKIRI_CHILD, GameData, ItemTables, Regs};
+use oot_game::camera::{CamModeData, CamSettingData, CameraData, OnePointCsFull, OnePointData};
+use oot_game::data::{AgeProperties, Anim, AnimId, AttackAnim, BOOTS_KOKIRI, BOOTS_KOKIRI_CHILD, CsModeEntry, GameData, ItemTables, Regs};
 use oot_game::env::{EnvTables, TimeBasedLightEntry, clock_time};
 use oot_game::footik::{FootIkData, Rig};
 use oot_game::player_lib::Age;
@@ -350,6 +350,30 @@ impl LoadGameData for GameData {
                 .collect::<Result<Vec<_>>>()?;
             ItemTables { model_group_names, model_group_anim_type, ap_names, action_model_group, change_anims, change_matrix, attacks, attack_by_dir, mwa_names, upper_body, item_action_params }
         };
+        // D_80854B18 and D_80854E50: { type, ptr }, ptr NULL, &gPlayerAnim_*, a function or a
+        // struct_80832924 table.
+        let cs_modes = |name: &str| -> Result<Vec<CsModeEntry>> {
+            find_initializer(&player, name)?
+                .list()
+                .iter()
+                .map(|e| {
+                    let a = e.flatten();
+                    let [ty, ptr] = &a[..] else { bail!("{name}: {a:?}") };
+                    let ty = Init::Atom(ty.clone()).as_int().with_context(|| format!("{name}: {ty}"))? as i8;
+                    let ptr = ptr.trim();
+                    Ok(if ptr == "NULL" {
+                        CsModeEntry { ty, anim: None, name: String::new() }
+                    } else if let Some(an) = ptr.strip_prefix("&gPlayerAnim_") {
+                        let id = *by_name.get(an).with_context(|| format!("{name}: no animation {an}"))?;
+                        CsModeEntry { ty, anim: Some(id), name: an.to_string() }
+                    } else {
+                        CsModeEntry { ty, anim: None, name: ptr.to_string() }
+                    })
+                })
+                .collect()
+        };
+        let (cs_mode_starts, cs_mode_updates) = (cs_modes("D_80854B18")?, cs_modes("D_80854E50")?);
+        anyhow::ensure!(cs_mode_starts.len() == cs_mode_updates.len(), "the cutscene mode tables differ in length");
         let limb_names = enum_members(&header, "PLAYER_LIMB_").into_iter().map(|m| m["PLAYER_LIMB_".len()..].to_string()).collect();
 
         let mut gd = GameData {
@@ -371,6 +395,8 @@ impl LoadGameData for GameData {
             side_hop_anims,
             target_ranges,
             items,
+            cs_mode_starts,
+            cs_mode_updates,
         };
         gd.set_anims(anims);
         Ok(gd)
@@ -438,8 +464,104 @@ impl LoadCameraData for CameraData {
             settings.push(CamSettingData { name, flags, modes });
         }
         anyhow::ensure!(names.get(&(settings.len() as i64)).map(String::as_str) == Some("CAM_SET_MAX"), "sCameraSettings has {} entries, not CAM_SET_MAX", settings.len());
-        Ok(CameraData { oreg, settings })
+        let onepoint = load_onepoint_data(decomp, &src)?;
+        Ok(CameraData { oreg, settings, onepoint })
     }
+}
+
+/// `Camera_Demo5`'s keyframe tables in `z_camera_data.c` (`D_8011D6AC`...).
+const DEMO5_KEYFRAMES: [&str; 8] = ["D_8011D6AC", "D_8011D724", "D_8011D79C", "D_8011D83C", "D_8011D88C", "D_8011D8DC", "D_8011D954", "D_8011D9F4"];
+
+/// An `OnePointCsFull` initializer: `{ actionFlags, unk_01, initFlags, timerInit,
+/// rollTargetInit, fovTargetInit, lerpStepScale, { atTargetInit }, { eyeTargetInit } }`.
+fn onepoint_cs_full(name: &str, i: &Init) -> Result<OnePointCsFull> {
+    let a = i.flatten();
+    anyhow::ensure!(a.len() == 13, "{name}: an OnePointCsFull with {} values", a.len());
+    let int = |k: usize| Init::Atom(a[k].clone()).as_int().with_context(|| format!("{name}: {}", a[k]));
+    let flt = |k: usize| Init::Atom(a[k].clone()).as_f32().with_context(|| format!("{name}: {}", a[k]));
+    Ok(OnePointCsFull {
+        action_flags: int(0)? as u8,
+        unk_01: int(1)? as u8,
+        init_flags: int(2)? as i16,
+        timer_init: int(3)? as i16,
+        roll_target_init: int(4)? as i16,
+        fov_target_init: flt(5)?,
+        lerp_step_scale: flt(6)?,
+        at_target_init: Vec3::new(flt(7)?, flt(8)?, flt(9)?),
+        eye_target_init: Vec3::new(flt(10)?, flt(11)?, flt(12)?),
+    })
+}
+
+/// An `OnePointCsFull[]` or `[][]` initializer, rows flattened in order.
+fn onepoint_keyframes(src: &str, name: &str) -> Result<Vec<OnePointCsFull>> {
+    let init = find_initializer(src, name)?;
+    let mut out = Vec::new();
+    for item in init.list() {
+        // A row of a two-dimensional array is a list of lists.
+        if item.list().first().is_some_and(|f| matches!(f, Init::List(_))) && item.list().len() > 0 && item.flatten().len() % 13 == 0 && item.list().iter().all(|r| matches!(r, Init::List(_)) && r.flatten().len() == 13) {
+            for row in item.list() {
+                out.push(onepoint_cs_full(name, row)?);
+            }
+        } else {
+            out.push(onepoint_cs_full(name, item)?);
+        }
+    }
+    Ok(out)
+}
+
+/// A `CutsceneCameraPoint[]` initializer: `{ continueFlag, cameraRoll, nextPointFrame,
+/// viewAngle, { pos } }`, with `CS_CMD_CONTINUE` 0 and `CS_CMD_STOP` -1 (`z64cutscene.h`).
+fn cutscene_camera_points(src: &str, name: &str) -> Result<Vec<oot_game::cutscene::CutsceneCameraPoint>> {
+    find_initializer(src, name)?
+        .list()
+        .iter()
+        .map(|p| {
+            let a = p.flatten();
+            anyhow::ensure!(a.len() == 7, "{name}: a CutsceneCameraPoint with {} values", a.len());
+            let flag = match a[0].trim() {
+                "CS_CMD_CONTINUE" => 0,
+                "CS_CMD_STOP" => -1,
+                f => Init::Atom(f.to_string()).as_int().with_context(|| format!("{name}: {f}"))? as i8,
+            };
+            let int = |k: usize| Init::Atom(a[k].clone()).as_int().with_context(|| format!("{name}: {}", a[k]));
+            Ok(oot_game::cutscene::CutsceneCameraPoint {
+                continue_flag: flag,
+                camera_roll: int(1)? as i8,
+                next_point_frame: int(2)? as u16,
+                view_angle: Init::Atom(a[3].clone()).as_f32().with_context(|| format!("{name}: {}", a[3]))?,
+                pos: [int(4)? as i16, int(5)? as i16, int(6)? as i16],
+            })
+        })
+        .collect()
+}
+
+/// Every table of `z_onepointdemo_data.c` (its `static OnePointCsFull`, `CutsceneCameraPoint`
+/// and `s16` definitions, by their declarations) and `Camera_Demo5`'s of `z_camera_data.c`.
+fn load_onepoint_data(decomp: &Path, camera_data_src: &str) -> Result<OnePointData> {
+    let p = decomp.join("src/code/z_onepointdemo_data.c");
+    let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
+    let mut out = OnePointData::default();
+    for line in src.lines() {
+        let line = line.trim();
+        let Some(rest) = line.strip_prefix("static ") else { continue };
+        let mut words = rest.split_whitespace();
+        let (Some(ty), Some(name)) = (words.next(), words.next()) else { continue };
+        let name = name.split(['[', '=', ';']).next().unwrap_or(name).to_string();
+        match ty {
+            "OnePointCsFull" => out.keyframes.push((name.clone(), onepoint_keyframes(&src, &name)?)),
+            "CutsceneCameraPoint" => out.points.push((name.clone(), cutscene_camera_points(&src, &name)?)),
+            "s16" => {
+                let v = rest.split_once('=').and_then(|(_, v)| v.trim().strip_suffix(';')).with_context(|| format!("{name}: {line}"))?;
+                let v = Init::Atom(v.trim().to_string()).as_int().with_context(|| format!("{name}: {v}"))?;
+                out.shorts.push((name, v as i16));
+            }
+            _ => bail!("z_onepointdemo_data.c: unexpected definition {line}"),
+        }
+    }
+    for name in DEMO5_KEYFRAMES {
+        out.keyframes.push((name.to_string(), onepoint_keyframes(camera_data_src, name)?));
+    }
+    Ok(out)
 }
 
 fn atom_f32(i: &Init) -> Option<f32> {

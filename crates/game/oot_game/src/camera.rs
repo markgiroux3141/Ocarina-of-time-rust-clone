@@ -52,6 +52,54 @@ pub struct CameraData {
     pub oreg: Vec<i16>,
     /// `sCameraSettings`, indexed by `CAM_SET_*` (entry 0, `CAM_SET_NONE`, has no modes).
     pub settings: Vec<CamSettingData>,
+    /// The one-point cutscenes' tables (`z_onepointdemo_data.c`, and `Camera_Demo5`'s in
+    /// `z_camera_data.c`), as the ROM starts them: the game writes into them as it runs, so
+    /// the play state keeps a copy (`crate::onepoint::OnePointStatics`).
+    pub onepoint: OnePointData,
+}
+
+/// `OnePointCsFull` (`z64camera.h`): one keyframe of a `Camera_Unique9` cutscene.
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OnePointCsFull {
+    /// `actionFlags`: the action in bits 0..4, 0x40 to hold Player where he was, 0x80 to
+    /// bgcheck the eye.
+    pub action_flags: u8,
+    /// `unk_01`: 0xFF none, `0x8X` sets `D_8011D3AC`, `0xCX` the interface, else Player's
+    /// cutscene mode.
+    pub unk_01: u8,
+    /// `initFlags`: the at's (bits 0..7) and the eye's (8..15) target kinds.
+    pub init_flags: i16,
+    pub timer_init: i16,
+    /// `rollTargetInit` (degrees), `fovTargetInit`, `lerpStepScale`.
+    pub roll_target_init: i16,
+    pub fov_target_init: f32,
+    pub lerp_step_scale: f32,
+    pub at_target_init: Vec3,
+    pub eye_target_init: Vec3,
+}
+
+/// The one-point cutscenes' static tables, by symbol (`D_801208EC`), as the ROM has them.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OnePointData {
+    /// Every `OnePointCsFull` array (a two-dimensional one flattened row by row).
+    pub keyframes: Vec<(String, Vec<OnePointCsFull>)>,
+    /// Every `CutsceneCameraPoint` array (`Camera_Demo9`'s splines).
+    pub points: Vec<(String, Vec<crate::cutscene::CutsceneCameraPoint>)>,
+    /// The `s16`s beside them (`D_8012042C`: a spline's timer...).
+    pub shorts: Vec<(String, i16)>,
+}
+
+impl OnePointData {
+    /// The index of the keyframe table `name` in `keyframes`.
+    pub fn keyframe_table(&self, name: &str) -> Option<usize> {
+        self.keyframes.iter().position(|(n, _)| n == name)
+    }
+    pub fn points(&self, name: &str) -> Option<&[crate::cutscene::CutsceneCameraPoint]> {
+        self.points.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_slice())
+    }
+    pub fn short(&self, name: &str) -> Option<i16> {
+        self.shorts.iter().find(|(n, _)| n == name).map(|(_, v)| *v)
+    }
 }
 
 /// A `CameraSetting` (`sCameraSettings[setting]`).
@@ -154,6 +202,12 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_DEMO3",
     "CAM_FUNC_SUBJ4",
     "CAM_FUNC_DEMO1",
+    "CAM_FUNC_UNIQ9",
+    "CAM_FUNC_DEMO9",
+    "CAM_FUNC_DEMO5",
+    "CAM_FUNC_JUMP1",
+    "CAM_FUNC_JUMP2",
+    "CAM_FUNC_UNIQ1",
 ];
 
 /// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
@@ -166,6 +220,8 @@ pub enum CamSfx {
     Error,
     /// `Camera_Subj4`'s `func_800F4010(&player->actor.projectedPos, player->unk_89E + 0x8B0, 4.0f)`.
     Crawl,
+    /// `Camera_Demo5`'s `func_80078884(camera->data1)`.
+    Sfx(u16),
 }
 
 // CAM_STAT_* (z64camera.h).
@@ -323,6 +379,7 @@ pub const CAM_MODE_FOLLOWBOOMERANG: i16 = 20;
 const R_CAM_MAX_PITCH: usize = 5;
 const R_CAM_DEFAULT_ANIM_TIME: usize = 23;
 const R_CAM_MIN_PITCH_1: usize = 34;
+const R_CAM_MIN_PITCH_2: usize = 35;
 const R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV: usize = 7;
 const R_CAM_PITCH_FLOOR_CHECK_NEAR_DIST_FAC: usize = 17;
 const R_CAM_PITCH_FLOOR_CHECK_FAR_DIST_FAC: usize = 18;
@@ -413,7 +470,7 @@ pub fn cam_deg_to_binang(d: f32) -> i16 {
 
 /// `CAM_BINANG_TO_DEG` (the C's constants as written).
 #[allow(clippy::excessive_precision)]
-fn cam_binang_to_deg(b: i16) -> f32 {
+pub fn cam_binang_to_deg(b: i16) -> f32 {
     b as f32 * (360.0001525 / 65535.0)
 }
 
@@ -506,6 +563,12 @@ pub fn lerp_floor_s(target: i16, cur: i16, step_scale: f32, min_diff: i16) -> i1
     } else {
         cur
     }
+}
+
+/// `Camera_LERPFloorF`: like `Camera_LERPCeilF`, but within `minDiff` it stays at `cur`.
+pub fn lerp_floor_f(target: f32, cur: f32, step_scale: f32, min_diff: f32) -> f32 {
+    let diff = target - cur;
+    if diff.abs() >= min_diff { cur + diff * step_scale } else { cur }
 }
 
 /// `Camera_LERPCeilVec3f`.
@@ -630,6 +693,69 @@ struct Norm1Rw {
     swing_yaw_target: i16,
     unk_28: i16,
     start_swing_timer: i16,
+}
+
+/// `Jump1ReadOnlyData`, `Jump1ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Jump1Ro {
+    at_y_offset: f32,
+    dist_min: f32,
+    dist_max: f32,
+    yaw_update_rate_target: f32,
+    max_yaw_update: f32,
+    // (unk_14, value 5, is never used.)
+    at_lerp_scale_max: f32,
+    interface_flags: i16,
+}
+#[derive(Debug, Clone, Copy, Default)]
+struct Jump1Rw {
+    swing: Swing,
+    unk_1c: f32,
+    unk_20: VecSph,
+}
+
+/// `Jump2ReadOnlyData`, `Jump2ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Jump2Ro {
+    at_y_offset: f32,
+    min_dist: f32,
+    max_dist: f32,
+    min_max_dist_factor: f32,
+    yaw_upd_rate_target: f32,
+    xz_upd_rate_target: f32,
+    fov_target: f32,
+    at_lerp_step_scale: f32,
+    interface_flags: i16,
+}
+#[derive(Debug, Clone, Copy, Default)]
+struct Jump2Rw {
+    floor_y: f32,
+    yaw_target: i16,
+    /// `initYawDiff`, `onFloor`: set but not read.
+    init_yaw_diff: i16,
+    yaw_adj: i16,
+    on_floor: i16,
+    anim_timer: i16,
+}
+
+/// `Unique1ReadOnlyData`, `Unique1ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Uniq1Ro {
+    y_offset: f32,
+    dist_min: f32,
+    dist_max: f32,
+    fov_target: f32,
+    at_lerp_scale_max: f32,
+    pitch_target: i16,
+    interface_flags: i16,
+}
+#[derive(Debug, Clone, Copy, Default)]
+struct Uniq1Rw {
+    /// `unk_00`: unused.
+    unk_00: f32,
+    yaw_target: i16,
+    yaw_target_adj: i16,
+    timer: i16,
 }
 
 /// `Parallel1ReadOnlyData`.
@@ -879,6 +1005,105 @@ struct UniqueData {
     spec9_target_yaw: i16,
 }
 
+/// An `OnePointCsFull*` into the one-point tables (`crate::onepoint::OnePointStatics`): the
+/// table and the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyFramesRef {
+    pub table: usize,
+    pub start: usize,
+}
+
+/// `OnePointCsInfo` (`paramData.uniq9.csInfo`, `ONEPOINT_CS_INFO`): the keyframes
+/// `Camera_Unique9` plays.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct OnePointCsInfo {
+    pub key_frame_cnt: i32,
+    /// `keyFrames` (`None`: NULL).
+    pub key_frames: Option<KeyFramesRef>,
+}
+
+/// `OnePointCamData` (`paramData.demo9.onePointCamData`, `OnePointCutscene_SetCsCamPoints`):
+/// `Camera_Demo9`'s splines, by their index in the one-point tables' point lists.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct OnePointCamData {
+    pub at_points: Option<usize>,
+    pub eye_points: Option<usize>,
+    /// `actionParameters`: what the points are relative to (bits 0..11), and what happens at
+    /// the end (0x1000 copies the camera to the main one, 0x2000 starts 1020).
+    pub action_parameters: i16,
+    pub init_timer: i16,
+}
+
+/// `Unique9ReadOnlyData`, `Unique9ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Uniq9 {
+    interface_flags: i16,
+    /// `curKeyFrame`: the row last advanced to.
+    cur_key_frame: Option<KeyFramesRef>,
+    at_target: Vec3,
+    eye_target: Vec3,
+    player_pos: Vec3,
+    fov_target: f32,
+    at_eye_offset_target: VecSph,
+    roll_target: i16,
+    cur_key_frame_idx: i16,
+    unk_38: i16,
+    is_new_key_frame: bool,
+    key_frame_timer: i16,
+}
+
+/// `Demo9ReadOnlyData`, `Demo9ReadWriteData`, and the spline's outputs as last written (the
+/// stack slots a call that returns early leaves as they were).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Demo9 {
+    interface_flags: i16,
+    keyframe: i16,
+    finish_action: i32,
+    cur_frame: f32,
+    anim_timer: i16,
+    do_lerp_at: bool,
+    eye_update: Vec3,
+    at_update: Vec3,
+    roll: f32,
+}
+
+/// What the camera functions read of an actor (`camera->target`, `camera->player`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CamActor {
+    pub handle: ActorHandle,
+    pub category: usize,
+    /// `update != NULL`: not killed.
+    pub alive: bool,
+    /// `Actor_GetFocus`, `Actor_GetWorld`, and `Actor_GetWorldPosShapeRot`'s rotation.
+    pub focus_pos: Vec3,
+    pub focus_rot: [i16; 3],
+    pub world_pos: Vec3,
+    pub world_rot: [i16; 3],
+    pub shape_rot: [i16; 3],
+    /// `Actor_GetScreenPos` with the last frame's `viewProjectionMtxF`.
+    pub screen_pos: (i16, i16),
+    /// `func_800C0D34`: a door's front yaw, when it's a transition actor between two rooms.
+    pub door_yaw: Option<i16>,
+}
+
+/// What a camera function does to the rest of play from inside the C's `Camera_Update`,
+/// applied by the play state right after the update, in order.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CamRequest {
+    /// `func_8002DF38(play, actor, mode)` (`door` false) or `func_8002DF54` (true).
+    PlayerCsMode { actor: Option<ActorHandle>, mode: u8, door: bool },
+    /// `Camera_Unique9`'s action flag 0x40: Player held where he was (`y` only swimming).
+    PlayerPos { x: f32, z: f32, y: Option<f32> },
+    /// `Camera_Demo5` while swimming: `PLAYER_STATE1_29` and `freezeTimer`.
+    PlayerFreeze { timer: i16 },
+    /// `Camera_Copy(play->cameraPtrs[dest], camera)` with the camera's at, eye, fov and roll then.
+    CopyTo { dest: i16, at: Vec3, eye: Vec3, fov: f32, roll: i16 },
+    /// `Camera_ChangeModeFlags(play->cameraPtrs[cam], mode, flags)`.
+    ChangeModeFlags { cam: i16, mode: i16, flags: u8 },
+    /// `OnePointCutscene_Init(play, cs_id, timer, NULL, parent)`.
+    OnePointInit { cs_id: i16, timer: i16, parent: i16 },
+}
+
 /// What `Camera_Update` is given each frame besides the camera data.
 pub struct CamFrame<'a> {
     pub col: &'a CollisionContext,
@@ -904,6 +1129,17 @@ pub struct CamFrame<'a> {
     /// `camera->target`'s world position and shape rotation (`Actor_GetWorldPosShapeRot`), for
     /// `Camera_KeepOn4`'s target-relative item cameras.
     pub target_pos_rot: Option<(Vec3, [i16; 3])>,
+    /// `camera->target` as the one-point cameras read it (`None`: NULL).
+    pub target: Option<CamActor>,
+    /// Player as `camera->player` (`None`: no Player).
+    pub player_actor_info: Option<CamActor>,
+    /// `play->view`'s eye, at and fovy: the view the last active camera set (`View_LookAt`).
+    pub view: CamView,
+    /// The main camera's `playerPosRot` (its position and shape yaw), which `Camera_Demo9`
+    /// turns its points around.
+    pub main_player_pos_rot: (Vec3, i16),
+    /// `player->bodyPartsPos[PLAYER_BODYPART_WAIST]` (`Camera_Unique1`).
+    pub player_waist: Vec3,
 }
 
 /// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
@@ -982,10 +1218,15 @@ pub struct PlayerView {
     pub climbing: bool,
     /// `stateFlags1` (`Camera_Unique0` reads `PLAYER_STATE1_29`).
     pub state1: u32,
+    /// `currentBoots == PLAYER_BOOTS_IRON`.
+    pub iron_boots: bool,
 }
 
 /// `PLAYER_STATE1_29`: Player in a cutscene-like state (walking through an exit or a door).
 const PLAYER_STATE1_29: u32 = 1 << 29;
+/// `PLAYER_STATE1_11` (holding something over his head), `PLAYER_STATE1_27` (swimming).
+const PLAYER_STATE1_11: u32 = 1 << 11;
+const PLAYER_STATE1_27: u32 = 1 << 27;
 
 impl PlayerView {
     /// `Player_GetHeight` (not riding Epona).
@@ -1078,7 +1319,27 @@ pub struct GameCamera {
     /// `data0`, `data1` (`Camera_SetCSParams`): a cutscene's at and eye points.
     pub cs_at_points: Vec<crate::cutscene::CutsceneCameraPoint>,
     pub cs_eye_points: Vec<crate::cutscene::CutsceneCameraPoint>,
+    /// `parentCamId`, `childCamId`: the one-point cutscenes' queue (`z_onepointdemo.c`).
+    pub parent_cam_id: i16,
+    pub child_cam_id: i16,
+    /// `csId`: the one-point cutscene this camera plays (0x7FFF from `Camera_Init`).
+    pub cs_id: i16,
+    /// `data1` as the attention cutscenes use it: the sound `Camera_Demo5` plays.
+    pub data1: u16,
+    /// `paramData.uniq9.csInfo` and `paramData.demo9.onePointCamData`.
+    pub cs_info: OnePointCsInfo,
+    pub one_point_cam_data: OnePointCamData,
+    /// What the update did to the rest of play (`CamRequest`), for the play state to apply.
+    pub requests: Vec<CamRequest>,
     demo1: Demo1,
+    uniq9: Uniq9,
+    demo9: Demo9,
+    jump1_ro: Jump1Ro,
+    jump1_rw: Jump1Rw,
+    jump2_ro: Jump2Ro,
+    jump2_rw: Jump2Rw,
+    uniq1_ro: Uniq1Ro,
+    uniq1_rw: Uniq1Rw,
     ro: Norm1Ro,
     rw: Norm1Rw,
     para1_ro: Para1Ro,
@@ -1178,7 +1439,22 @@ impl GameCamera {
             has_player: true,
             cs_at_points: Vec::new(),
             cs_eye_points: Vec::new(),
+            parent_cam_id: CAM_ID_MAIN,
+            child_cam_id: CAM_ID_MAIN,
+            cs_id: 0x7FFF,
+            data1: 0,
+            cs_info: OnePointCsInfo::default(),
+            one_point_cam_data: OnePointCamData::default(),
+            requests: Vec::new(),
             demo1: Demo1::default(),
+            uniq9: Uniq9::default(),
+            demo9: Demo9::default(),
+            jump1_ro: Jump1Ro::default(),
+            jump1_rw: Jump1Rw::default(),
+            jump2_ro: Jump2Ro::default(),
+            jump2_rw: Jump2Rw::default(),
+            uniq1_ro: Uniq1Ro::default(),
+            uniq1_rw: Uniq1Rw::default(),
             ro: Norm1Ro::default(),
             rw: Norm1Rw::default(),
             para1_ro: Para1Ro::default(),
@@ -1209,7 +1485,7 @@ impl GameCamera {
     /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
     /// origin, `CAM_SET_FREE0`, `CAM_STAT_CUT` until made active.
     pub fn init_sub(d: &CameraData, g: &mut CameraGlobals, cam_id: i16) -> GameCamera {
-        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0 };
+        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, iron_boots: false };
         let mut c = GameCamera::new(d, &origin);
         let uid = g.camera_init();
         c.eye = Vec3::ZERO;
@@ -1237,6 +1513,11 @@ impl GameCamera {
     pub fn change_status(&mut self, status: i16) -> i16 {
         self.status = status;
         self.status
+    }
+
+    /// `playerPosRot`: the position and shape yaw of Player as this camera last saw him.
+    pub fn main_player_pos_rot(&self) -> (Vec3, i16) {
+        (self.player_pos, self.player_rot_y)
     }
 
     /// `Camera_ResetAnim`.
@@ -1310,6 +1591,74 @@ impl GameCamera {
         }
     }
 
+    /// `Camera_Copy(this, src)` from `src`'s at, eye, fov and roll as they were (a camera function
+    /// copying itself to another camera mid-update: `CamRequest::CopyTo`).
+    pub fn copy_from_values(&mut self, d: &CameraData, at: Vec3, eye: Vec3, fov: f32, roll: i16, player_pos: Vec3) {
+        self.pos_offset = Vec3::ZERO;
+        self.at_lerp_step_scale = 0.1;
+        self.at = at;
+        self.eye = eye;
+        self.eye_next = eye;
+        self.view_cut = true;
+        self.dist = self.at.distance(self.eye);
+        self.fov = fov;
+        self.roll = roll;
+        self.func_80043b60(d);
+        if self.has_player {
+            self.player_pos = player_pos;
+            self.pos_offset = self.at - self.player_pos;
+            self.dist = self.player_pos.distance(self.eye);
+            self.xz_offset_update_rate = 1.0;
+            self.y_offset_update_rate = 1.0;
+        }
+    }
+
+    /// `Camera_InitPlayerSettings` for a camera given Player (`func_800C0808`): behind him at 180,
+    /// following him from now on. Returns what it sets `sCameraInterfaceFlags` to (0xB200 for the
+    /// main camera, 0 for a sub camera). (`camera->bgId`, the water's settings and
+    /// `Camera_QRegInit` aren't modelled.)
+    pub fn init_player_settings(&mut self, d: &CameraData, p: &PlayerView, is_main: bool, room: CamRoom) -> i16 {
+        let h = p.height();
+        self.has_player = true;
+        self.player_pos = p.pos;
+        self.player_rot_y = p.shape_yaw;
+        self.dist = 180.0;
+        self.input_dir = [0x71C, p.shape_yaw, 0];
+        let off = VecSph { r: 180.0, pitch: 0x71C, yaw: p.shape_yaw.wrapping_sub(0x7FFF) };
+        self.cam_dir = self.input_dir;
+        self.xz_speed = 0.0;
+        self.player_pos_delta.y = 0.0;
+        self.at = p.pos + Vec3::Y * h;
+        self.pos_offset = Vec3::new(0.0, h, 0.0);
+        self.eye_next = sph_geo_add(self.at, off);
+        self.eye = self.eye_next;
+        self.view_cut = true;
+        self.roll = 0;
+        self.up = Vec3::Y;
+        self.unk_14c |= 4;
+        if is_main {
+            self.func_80057fc4(room);
+        } else {
+            // func_80057FC4 for a camera that isn't the main one.
+            self.setting = CAM_SET_FREE0;
+            self.prev_setting = CAM_SET_FREE0;
+            self.unk_14c &= !0x4;
+        }
+        self.unk_14a = 0;
+        self.param_flags = 0;
+        self.next_bg_cam_index = -1;
+        self.at_lerp_step_scale = 1.0;
+        self.copy_data_to_regs();
+        let _ = d;
+        if is_main { 0xB200u16 as i16 } else { 0 }
+    }
+
+    /// `OnePointCutscene_SetCsCamPoints`: `Camera_Demo9`'s splines, what they're relative to and
+    /// how long they run.
+    pub fn set_cs_cam_points(&mut self, action_parameters: i16, init_timer: i16, at_points: Option<usize>, eye_points: Option<usize>) {
+        self.one_point_cam_data = OnePointCamData { at_points, eye_points, action_parameters, init_timer };
+    }
+
     /// `Camera_Demo1` (`CAM_SET_CS_0`): the eye and at along a cutscene's splines
     /// (`func_800BB2B4`), relative to Player when `data2` says so (`Camera_RotateAroundPoint`
     /// by his world yaw).
@@ -1378,6 +1727,1003 @@ impl GameCamera {
             self.roll = (new_roll * 256.0) as i16;
             self.dist = self.at.distance(self.eye);
         }
+    }
+
+    /// `Camera_Unique9` (`CAM_SET_CS_C`): a one-point cutscene's keyframes
+    /// (`ONEPOINT_CS_INFO(camera)`), each with its targets for the at and the eye (fixed, from
+    /// the view, from the camera, around the target or an actor's focus), its fov and roll, and
+    /// how the camera moves to them over the keyframe's timer (`actionFlags & 0x1F`). Past the
+    /// last keyframe a sub camera's timer goes to 0, and `Camera_Finish` ends it.
+    fn unique9(&mut self, d: &CameraData, f: &CamFrame, op: &mut crate::onepoint::OnePointStatics, letterbox: &mut Letterbox) {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.uniq9.interface_flags = d.value(self.cur(), 0);
+        }
+        self.interface_flags = self.uniq9.interface_flags;
+        // Actor_GetWorld(&playerPosRot, &camera->player->actor).
+        let Some(pl) = f.player_actor_info else { return };
+        let player_pos_rot = (pl.world_pos, pl.world_rot);
+        let swimming = f.player.state1 & PLAYER_STATE1_27 != 0 && !f.player.iron_boots;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.uniq9.cur_key_frame_idx = -1;
+            self.uniq9.key_frame_timer = 1;
+            self.uniq9.unk_38 = 0;
+            self.uniq9.player_pos = player_pos_rot.0;
+            self.at_lerp_step_scale = 0.0;
+            self.func_80043b60(d);
+        }
+        if self.uniq9.unk_38 == 0 && self.uniq9.key_frame_timer > 0 {
+            self.uniq9.key_frame_timer -= 1;
+        }
+        if self.uniq9.key_frame_timer == 0 {
+            self.uniq9.is_new_key_frame = true;
+            self.uniq9.cur_key_frame_idx += 1;
+            if (self.uniq9.cur_key_frame_idx as i32) < self.cs_info.key_frame_cnt {
+                let Some(kfs) = self.cs_info.key_frames else { return };
+                let r = KeyFramesRef { table: kfs.table, start: kfs.start + self.uniq9.cur_key_frame_idx as usize };
+                self.uniq9.cur_key_frame = Some(r);
+                let kf = op.key_frame(r);
+                self.uniq9.key_frame_timer = kf.timer_init;
+                if kf.unk_01 != 0xFF {
+                    if kf.unk_01 & 0xF0 == 0x80 {
+                        op.d_8011d3ac = (kf.unk_01 & 0xF) as i32;
+                    } else if kf.unk_01 & 0xF0 == 0xC0 {
+                        self.update_interface_flags(0xF000 | ((kf.unk_01 as u16 & 0xF) << 8), letterbox);
+                    } else if swimming {
+                        log::debug!("camera: demo: player demo set WAIT");
+                        self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode: 8, door: false });
+                    } else {
+                        log::debug!("camera: demo: player demo set {}", kf.unk_01);
+                        self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode: kf.unk_01, door: false });
+                    }
+                }
+            } else {
+                // Through all the keyframes.
+                if self.cam_id != CAM_ID_MAIN {
+                    self.timer = 0;
+                }
+                return;
+            }
+        } else {
+            self.uniq9.is_new_key_frame = false;
+        }
+        let Some(cur) = self.uniq9.cur_key_frame else { return };
+        let kf = op.key_frame(cur);
+        let new_kf = self.uniq9.is_new_key_frame;
+        let target = f.target.filter(|t| t.alive);
+        // A keyframe's init as a VecSph: pitch and yaw in degrees and the radius (0x80), or a
+        // vector.
+        let init_sph = |flag: bool, v: Vec3| if flag { VecSph { pitch: cam_deg_to_binang(v.x), yaw: cam_deg_to_binang(v.y), r: v.z } } else { vec3_to_sph_geo(v) };
+
+        let at_init_flags = kf.init_flags & 0xFF;
+        if at_init_flags == 1 {
+            self.uniq9.at_target = kf.at_target_init;
+        } else if at_init_flags == 2 {
+            if new_kf {
+                self.uniq9.at_target = f.view.at + kf.at_target_init;
+            }
+        } else if at_init_flags == 3 {
+            if new_kf {
+                self.uniq9.at_target = self.at + kf.at_target_init;
+            }
+        } else if at_init_flags == 4 || at_init_flags == 0x84 {
+            if let Some(t) = target {
+                let player_head = Vec3::new(player_pos_rot.0.x, pl.focus_pos.y, player_pos_rot.0.z);
+                let player_target_offset = diff_to_sph_geo(t.focus_pos, player_head);
+                let mut sph = init_sph(at_init_flags & 0x80 != 0, kf.at_target_init);
+                sph.yaw = sph.yaw.wrapping_add(player_target_offset.yaw);
+                sph.pitch = sph.pitch.wrapping_add(player_target_offset.pitch);
+                self.uniq9.at_target = sph_geo_add(t.focus_pos, sph);
+            } else {
+                if self.target.is_none() {
+                    log::warn!("camera: warning: demo C: actor is not valid");
+                }
+                self.target = None;
+                self.uniq9.at_target = self.at;
+            }
+        } else if at_init_flags & 0x6060 != 0 {
+            if at_init_flags & 4 == 0 || new_kf {
+                let focus = if at_init_flags & 0x2020 != 0 {
+                    Some(pl)
+                } else if target.is_some() {
+                    target
+                } else {
+                    self.target = None;
+                    None
+                };
+                if let Some(a) = focus {
+                    let (pos, rot) = match at_init_flags & 0xF {
+                        1 => (a.focus_pos, a.focus_rot),
+                        2 => (a.world_pos, a.world_rot),
+                        _ => (a.world_pos, a.shape_rot),
+                    };
+                    let mut sph = init_sph(at_init_flags & 0x80 != 0, kf.at_target_init);
+                    sph.yaw = sph.yaw.wrapping_add(rot[1]);
+                    sph.pitch = sph.pitch.wrapping_sub(rot[0]);
+                    self.uniq9.at_target = sph_geo_add(pos, sph);
+                } else {
+                    if self.target.is_none() {
+                        log::warn!("camera: warning: demo C: actor is not valid");
+                    }
+                    self.uniq9.at_target = self.at;
+                }
+            }
+        } else {
+            self.uniq9.at_target = self.at;
+        }
+
+        let eye_init_flags = kf.init_flags & 0xFF00u16 as i16;
+        let s = |v: u16| v as i16;
+        if eye_init_flags == 0x100 {
+            self.uniq9.eye_target = kf.eye_target_init;
+        } else if eye_init_flags == 0x200 {
+            if new_kf {
+                self.uniq9.eye_target = f.view.eye + kf.eye_target_init;
+            }
+        } else if eye_init_flags == 0x300 {
+            if new_kf {
+                self.uniq9.eye_target = self.eye_next + kf.eye_target_init;
+            }
+        } else if eye_init_flags == 0x400 || eye_init_flags == s(0x8400) || eye_init_flags == 0x500 || eye_init_flags == s(0x8500) {
+            if let Some(t) = target {
+                let player_head = Vec3::new(player_pos_rot.0.x, pl.focus_pos.y, player_pos_rot.0.z);
+                let player_target_offset = diff_to_sph_geo(t.focus_pos, player_head);
+                let eye_look_at_pos = if eye_init_flags == 0x400 || eye_init_flags == s(0x8400) { t.focus_pos } else { self.uniq9.at_target };
+                let mut sph = init_sph(eye_init_flags & s(0x8080) != 0, kf.eye_target_init);
+                sph.yaw = sph.yaw.wrapping_add(player_target_offset.yaw);
+                sph.pitch = sph.pitch.wrapping_add(player_target_offset.pitch);
+                self.uniq9.eye_target = sph_geo_add(eye_look_at_pos, sph);
+            } else {
+                if self.target.is_none() {
+                    log::warn!("camera: warning: demo C: actor is not valid");
+                }
+                self.target = None;
+                self.uniq9.eye_target = self.eye_next;
+            }
+        } else if eye_init_flags & 0x6060 != 0 {
+            if eye_init_flags & 0x400 == 0 || new_kf {
+                let focus = if eye_init_flags & 0x2020 != 0 {
+                    Some(pl)
+                } else if target.is_some() {
+                    target
+                } else {
+                    self.target = None;
+                    None
+                };
+                if let Some(a) = focus {
+                    let (pos, rot) = match eye_init_flags & 0xF00 {
+                        0x100 => (a.focus_pos, a.focus_rot),
+                        0x200 => (a.world_pos, a.world_rot),
+                        _ => (a.world_pos, a.shape_rot),
+                    };
+                    let mut sph = init_sph(eye_init_flags & s(0x8080) != 0, kf.eye_target_init);
+                    sph.yaw = sph.yaw.wrapping_add(rot[1]);
+                    sph.pitch = sph.pitch.wrapping_sub(rot[0]);
+                    self.uniq9.eye_target = sph_geo_add(pos, sph);
+                } else {
+                    if self.target.is_none() {
+                        log::warn!("camera: warning: demo C: actor is not valid");
+                    }
+                    self.target = None;
+                    self.uniq9.eye_target = self.eye_next;
+                }
+            }
+        } else {
+            self.uniq9.eye_target = self.eye_next;
+        }
+
+        if kf.init_flags == 2 {
+            self.uniq9.fov_target = f.view.fov;
+            self.uniq9.roll_target = 0;
+        } else if kf.init_flags == 0 {
+            self.uniq9.fov_target = self.fov;
+            self.uniq9.roll_target = self.roll;
+        } else {
+            self.uniq9.fov_target = kf.fov_target_init;
+            self.uniq9.roll_target = cam_deg_to_binang(kf.roll_target_init as f32);
+        }
+
+        let step = kf.lerp_step_scale;
+        let lerpimp = |v0: f32, v1: f32, t: f32| v0 + (v1 - v0) * t;
+        let u = self.uniq9;
+        // case 1 and 2 set the eye, then fall into 9 and 10 (the at, fov and roll by the
+        // keyframe's timer); 4 and 3 into 11 and 12 (by the step scale).
+        let mut lerp_at_by_timer = false;
+        let mut lerp_at_by_step = false;
+        match kf.action_flags & 0x1F {
+            15 => {
+                // A static copy to the at, eye, fov and roll.
+                self.at = u.at_target;
+                self.eye_next = u.eye_target;
+                self.fov = u.fov_target;
+                self.roll = u.roll_target;
+                self.unk_14c |= 0x400;
+            }
+            21 => {
+                if self.uniq9.unk_38 == 0 {
+                    self.uniq9.unk_38 = 1;
+                } else if self.unk_14c & 8 != 0 {
+                    self.uniq9.unk_38 = 0;
+                    self.unk_14c &= !8;
+                }
+                self.at = u.at_target;
+                self.eye_next = u.eye_target;
+                self.fov = u.fov_target;
+                self.roll = u.roll_target;
+            }
+            16 => {
+                if self.uniq9.unk_38 == 0 {
+                    self.uniq9.unk_38 = 1;
+                } else if self.unk_14c & 8 != 0 {
+                    self.uniq9.unk_38 = 0;
+                }
+                self.at = u.at_target;
+                self.eye_next = u.eye_target;
+                self.fov = u.fov_target;
+                self.roll = u.roll_target;
+            }
+            a @ (1 | 2) => {
+                let inv = 1.0 / u.key_frame_timer as f32;
+                let eye_target = if a == 1 {
+                    // The eye along the spherical coordinates.
+                    let cur = diff_to_sph_geo(self.at, self.eye_next);
+                    let tgt = diff_to_sph_geo(u.at_target, u.eye_target);
+                    self.uniq9.at_eye_offset_target = tgt;
+                    let sph = VecSph {
+                        r: lerpimp(cur.r, tgt.r, inv),
+                        pitch: (cur.pitch as f32 + tgt.pitch.wrapping_sub(cur.pitch) as f32 * inv) as i32 as i16,
+                        yaw: (cur.yaw as f32 + tgt.yaw.wrapping_sub(cur.yaw) as f32 * inv) as i32 as i16,
+                    };
+                    sph_geo_add(self.at, sph)
+                } else {
+                    Vec3::new(lerpimp(self.eye_next.x, u.eye_target.x, inv), lerpimp(self.eye_next.y, u.eye_target.y, inv), lerpimp(self.eye_next.z, u.eye_target.z, inv))
+                };
+                self.eye_next.x = lerp_floor_f(eye_target.x, self.eye_next.x, step, 1.0);
+                self.eye_next.y = lerp_floor_f(eye_target.y, self.eye_next.y, step, 1.0);
+                self.eye_next.z = lerp_floor_f(eye_target.z, self.eye_next.z, step, 1.0);
+                lerp_at_by_timer = true;
+            }
+            9 | 10 => lerp_at_by_timer = true,
+            4 => {
+                // The eye by the step scale, along the spherical coordinates.
+                let cur = diff_to_sph_geo(self.at, self.eye_next);
+                let tgt = diff_to_sph_geo(u.at_target, u.eye_target);
+                self.uniq9.at_eye_offset_target = tgt;
+                let sph = VecSph { r: lerp_ceil_f(tgt.r, cur.r, step, 0.1), pitch: lerp_ceil_s(tgt.pitch, cur.pitch, step, 1), yaw: lerp_ceil_s(tgt.yaw, cur.yaw, step, 1) };
+                self.eye_next = sph_geo_add(self.at, sph);
+                lerp_at_by_step = true;
+            }
+            3 => {
+                self.eye_next.x = lerp_ceil_f(u.eye_target.x, self.eye_next.x, step, 1.0);
+                self.eye_next.y = lerp_ceil_f(u.eye_target.y, self.eye_next.y, step, 1.0);
+                self.eye_next.z = lerp_ceil_f(u.eye_target.z, self.eye_next.z, step, 1.0);
+                lerp_at_by_step = true;
+            }
+            11 | 12 => lerp_at_by_step = true,
+            13 => {
+                // The at, turning round the eye's yaw (eyeTargetInit.y degrees a frame).
+                self.at.x = lerp_ceil_f(u.at_target.x, self.at.x, step, 1.0);
+                self.at.y += self.player_pos_delta.y * step;
+                self.at.z = lerp_ceil_f(u.at_target.z, self.at.z, step, 1.0);
+                let mut sph = diff_to_sph_geo(self.at, self.eye_next);
+                sph.yaw = sph.yaw.wrapping_add(cam_deg_to_binang(kf.eye_target_init.y));
+                // 0x3A98: about 82.4 degrees.
+                if sph.pitch >= 0x3A99 {
+                    sph.pitch = 0x3A98;
+                }
+                if sph.pitch < -0x3A98 {
+                    sph.pitch = -0x3A98;
+                }
+                let sp_b4 = sph.r;
+                if !(sp_b4 < kf.eye_target_init.z) {
+                    sph.r = lerp_ceil_f(kf.eye_target_init.z, sp_b4, step, 1.0);
+                }
+                self.eye_next = sph_geo_add(self.at, sph);
+                // F32_LERPIMPINV(fov, fovTargetInit, keyFrameTimer).
+                self.fov = lerp_ceil_f(self.fov + (kf.fov_target_init - self.fov) / u.key_frame_timer as f32, self.fov, step, 1.0);
+                self.roll = lerp_ceil_s(u.roll_target, self.roll, step, 1);
+            }
+            24 => {
+                // The keyframe index from the roll's target.
+                self.uniq9.cur_key_frame_idx = u.roll_target;
+            }
+            a => {
+                let cam_idx = if self.parent_cam_id <= CAM_ID_NONE { CAM_ID_MAIN } else { self.parent_cam_id };
+                if a == 19 {
+                    // The parent camera (or the main one) back to its NORMAL mode, then 18.
+                    self.requests.push(CamRequest::ChangeModeFlags { cam: cam_idx, mode: CAM_MODE_NORMAL, flags: 1 });
+                }
+                if a == 19 || a == 18 {
+                    // This camera copied to the parent (or the main one).
+                    self.eye = self.eye_next;
+                    self.requests.push(CamRequest::CopyTo { dest: cam_idx, at: self.at, eye: self.eye, fov: self.fov, roll: self.roll });
+                }
+                if self.cam_id != CAM_ID_MAIN {
+                    self.timer = 0;
+                }
+            }
+        }
+        if lerp_at_by_timer {
+            let inv = 1.0 / u.key_frame_timer as f32;
+            let at_target = Vec3::new(lerpimp(self.at.x, u.at_target.x, inv), lerpimp(self.at.y, u.at_target.y, inv), lerpimp(self.at.z, u.at_target.z, inv));
+            self.at.x = lerp_floor_f(at_target.x, self.at.x, step, 1.0);
+            self.at.y = lerp_floor_f(at_target.y, self.at.y, step, 1.0);
+            self.at.z = lerp_floor_f(at_target.z, self.at.z, step, 1.0);
+            self.fov = lerp_floor_f(lerpimp(self.fov, u.fov_target, inv), self.fov, step, 0.01);
+            // BINANG_LERPIMPINV(roll, rollTarget, keyFrameTimer) (the C divides by the timer,
+            // which is at least 1 here).
+            let roll_target = if u.key_frame_timer != 0 { binang_lerpimpinv(self.roll, u.roll_target, u.key_frame_timer) } else { self.roll };
+            self.roll = lerp_floor_s(roll_target, self.roll, step, 0xA);
+        }
+        if lerp_at_by_step {
+            self.at.x = lerp_ceil_f(u.at_target.x, self.at.x, step, 1.0);
+            self.at.y = lerp_ceil_f(u.at_target.y, self.at.y, step, 1.0);
+            self.at.z = lerp_ceil_f(u.at_target.z, self.at.z, step, 1.0);
+            self.fov = lerp_ceil_f(u.fov_target, self.fov, step, 1.0);
+            self.roll = lerp_ceil_s(u.roll_target, self.roll, step, 1);
+        }
+
+        self.eye = self.eye_next;
+        if kf.action_flags & 0x80 != 0 {
+            let at = self.at;
+            Self::bg_check(f.col, at, &mut self.eye);
+        }
+        if kf.action_flags & 0x40 != 0 {
+            // Player held where he was.
+            let pp = self.uniq9.player_pos;
+            self.requests.push(CamRequest::PlayerPos { x: pp.x, z: pp.z, y: swimming.then_some(pp.y) });
+        } else {
+            self.uniq9.player_pos = player_pos_rot.0;
+        }
+        if self.uniq9.unk_38 == 0 && self.timer > 0 {
+            self.timer -= 1;
+        }
+        if self.has_player {
+            self.pos_offset = self.at - self.player_pos;
+        }
+        self.dist = self.at.distance(self.eye);
+    }
+
+    /// `Camera_Demo9` (`CAM_SET_CS_3`): a one-point cutscene's splines
+    /// (`onePointCamData`), relative to the main camera's Player (1), this camera's player (4)
+    /// or its target (8), for `initTimer` frames; then the timer goes to 0 and the finishing
+    /// action runs (0x1000 copies the camera to the main one, 0x2000 starts 1020).
+    fn demo9(&mut self, d: &CameraData, f: &CamFrame, op: &crate::onepoint::OnePointStatics) {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.demo9.interface_flags = d.value(self.cur(), 0);
+        }
+        self.interface_flags = self.demo9.interface_flags;
+        let mut state = self.anim_state;
+        if state == 0 {
+            self.demo9.keyframe = 0;
+            self.demo9.finish_action = 0;
+            self.demo9.cur_frame = 0.0;
+            self.anim_state += 1;
+            self.demo9.do_lerp_at = false;
+            let finish_action = self.one_point_cam_data.action_parameters as i32 & 0xF000;
+            if finish_action != 0 {
+                self.demo9.finish_action = finish_action;
+                // The finishing action's bits cleared.
+                self.one_point_cam_data.action_parameters &= 0xFFF;
+            }
+            self.demo9.anim_timer = self.one_point_cam_data.init_timer;
+            state = 1;
+        }
+        if state == 1 {
+            if self.demo9.anim_timer > 0 {
+                let eye_points = op.points_of(self.one_point_cam_data.eye_points);
+                let at_points = op.points_of(self.one_point_cam_data.at_points);
+                let (mut keyframe, mut cur_frame, mut fov) = (self.demo9.keyframe, self.demo9.cur_frame, self.fov);
+                let (eye_done, eye_upd) = func_800bb2b4(eye_points, &mut keyframe, &mut cur_frame, &mut fov);
+                let (done, at_upd) = if eye_done { (true, None) } else { func_800bb2b4(at_points, &mut keyframe, &mut cur_frame, &mut fov) };
+                self.demo9.keyframe = keyframe;
+                self.demo9.cur_frame = cur_frame;
+                self.fov = fov;
+                if done {
+                    self.anim_state = 2;
+                }
+                // What a call that doesn't return early writes; the rest keeps its last value.
+                if let Some((v, r)) = eye_upd {
+                    self.demo9.eye_update = v;
+                    self.demo9.roll = r;
+                }
+                if let Some((v, r)) = at_upd {
+                    self.demo9.at_update = v;
+                    self.demo9.roll = r;
+                }
+                let (eye_update, at_update) = (self.demo9.eye_update, self.demo9.at_update);
+                // Camera_RotateAroundPoint: the point turned by the yaw and moved to the position.
+                let rotate = |pos: Vec3, yaw: i16, v: Vec3| {
+                    let mut s = vec3_to_sph_geo(v);
+                    s.yaw = s.yaw.wrapping_add(yaw);
+                    sph_geo_add(pos, s)
+                };
+                let (new_eye, new_at) = match self.one_point_cam_data.action_parameters {
+                    1 => {
+                        // Around the main camera's Player.
+                        let (pos, yaw) = f.main_player_pos_rot;
+                        (rotate(pos, yaw, eye_update), rotate(pos, yaw, at_update))
+                    }
+                    4 => match f.player_actor_info.filter(|_| self.has_player) {
+                        // Around this camera's player (Actor_GetWorld).
+                        Some(p) => (rotate(p.world_pos, p.world_rot[1], eye_update), rotate(p.world_pos, p.world_rot[1], at_update)),
+                        None => (self.eye, self.at),
+                    },
+                    8 => match f.target.filter(|t| t.alive) {
+                        // Around this camera's target.
+                        Some(t) => (rotate(t.world_pos, t.world_rot[1], eye_update), rotate(t.world_pos, t.world_rot[1], at_update)),
+                        None => {
+                            self.target = None;
+                            (self.eye, self.at)
+                        }
+                    },
+                    _ => (eye_update, at_update),
+                };
+                self.eye_next = new_eye;
+                self.eye = self.eye_next;
+                if self.demo9.do_lerp_at {
+                    lerp_ceil_vec3(new_at, &mut self.at, 0.5, 0.5, 0.1);
+                } else {
+                    self.at = new_at;
+                    self.demo9.do_lerp_at = true;
+                }
+                self.roll = (self.demo9.roll * 256.0) as i32 as i16;
+                self.demo9.anim_timer -= 1;
+                return;
+            }
+            state = 3;
+        }
+        match state {
+            3 => {
+                // The cutscene is over: what comes next.
+                self.timer = 0;
+                match self.demo9.finish_action {
+                    0x1000 => {
+                        // This camera copied to the main one.
+                        self.requests.push(CamRequest::CopyTo { dest: CAM_ID_MAIN, at: self.at, eye: self.eye, fov: self.fov, roll: self.roll });
+                    }
+                    0x2000 => {
+                        // 1020, the dramatic return to Link.
+                        let init_timer = self.one_point_cam_data.init_timer;
+                        let timer = if init_timer < 50 { 5 } else { init_timer / 5 };
+                        self.requests.push(CamRequest::OnePointInit { cs_id: 1020, timer, parent: self.parent_cam_id });
+                    }
+                    _ => {}
+                }
+            }
+            2 => {
+                // Waiting for the timer once the splines are over.
+                self.demo9.anim_timer -= 1;
+                if self.demo9.anim_timer < 0 {
+                    self.anim_state += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `Camera_Demo5` (`CAM_SET_CS_ATTENTION`): an attention cutscene picks its keyframes by
+    /// where the target is (Player himself, close to Player, near the eye, on screen, a door, or
+    /// anything else), lengthens the timer by the return's keyframes when it's the main camera's
+    /// child, plays its sound (`data1`) unless one played within 50 frames, holds Player (a
+    /// cutscene mode about the target), then becomes `CAM_SET_CS_C` and runs `Camera_Unique9`.
+    fn demo5(&mut self, d: &CameraData, f: &CamFrame, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand, letterbox: &mut Letterbox) {
+        use crate::actor_ctx::{ACTORCAT_DOOR, ACTORCAT_PLAYER};
+        let Some(pl) = f.player_actor_info else { return };
+        // Actor_GetFocus(&playerhead, &camera->player->actor).
+        let (player_head, player_head_rot) = (pl.focus_pos, pl.focus_rot);
+        self.interface_flags = 0x3200;
+        let Some(t) = f.target.filter(|t| t.alive) else {
+            if self.target.is_none() {
+                log::warn!("camera: warning: attention: target is not valid, stop!");
+            }
+            self.target = None;
+            return;
+        };
+        // Actor_GetFocus(&camera->targetPosRot, camera->target).
+        self.target_pos = t.focus_pos;
+        let player_target_geo = diff_to_sph_geo(self.target_pos, self.player_pos);
+        op.d_8011d3ac = t.category as i32;
+        let (sx, sy) = t.screen_pos;
+        let eye_target_dist = self.target_pos.distance(self.eye);
+        let eye_player_geo = diff_to_sph_geo(player_head, self.eye_next);
+        let mut sp4a = eye_player_geo.yaw.wrapping_sub(player_target_geo.yaw);
+        let child = self.parent_cam_id != CAM_ID_MAIN;
+        let on_screen = (0x15..0x12C).contains(&sx) && (0x29..0xC8).contains(&sy);
+        let set = |c: &mut GameCamera, op: &crate::onepoint::OnePointStatics, table: usize| {
+            c.cs_info.key_frames = Some(KeyFramesRef { table, start: 0 });
+            c.cs_info.key_frame_cnt = op.len(table);
+        };
+        if t.category == ACTORCAT_PLAYER {
+            // The target is Player.
+            if eye_player_geo.r > 30.0 {
+                let k = op.table("D_8011D6AC");
+                op.kf(k, 1).timer_init = self.timer - 1;
+                op.kf(k, 1).at_target_init.z = rand.zero_one() * 10.0;
+                op.kf(k, 1).eye_target_init.x = rand.zero_one() * 10.0;
+                set(self, op, k);
+                if child {
+                    self.cs_info.key_frame_cnt -= 1;
+                } else {
+                    self.timer += op.kf(k, 2).timer_init;
+                }
+            } else {
+                let k = op.table("D_8011D724");
+                op.kf(k, 1).eye_target_init.x = rand.zero_one() * 10.0;
+                op.kf(k, 1).timer_init = self.timer - 1;
+                set(self, op, k);
+                if child {
+                    self.cs_info.key_frame_cnt -= 1;
+                } else {
+                    self.timer += op.kf(k, 2).timer_init;
+                }
+            }
+        } else if player_target_geo.r < 30.0 {
+            // The target is within 30 of Player.
+            let k = op.table("D_8011D79C");
+            set(self, op, k);
+            if !(sx >= 0x15 && sx < 0x12C && sy >= 0x29 && sy < 0xC8) {
+                let r = op.kf(k, 0);
+                r.action_flags = 0x41;
+                r.at_target_init.y = -30.0;
+                r.at_target_init.x = 0.0;
+                r.at_target_init.z = 0.0;
+                r.eye_target_init.y = 0.0;
+                r.eye_target_init.x = 10.0;
+                r.eye_target_init.z = -50.0;
+            }
+            op.kf(k, 1).timer_init = self.timer - 1;
+            if child {
+                self.cs_info.key_frame_cnt -= 2;
+            } else {
+                self.timer += op.kf(k, 2).timer_init + op.kf(k, 3).timer_init;
+            }
+        } else if eye_target_dist < 300.0 && eye_player_geo.r < 30.0 {
+            // The target within 300 of the eye, and Player within 30 of it.
+            let k = op.table("D_8011D83C");
+            op.kf(k, 0).timer_init = self.timer;
+            set(self, op, k);
+            if child {
+                self.cs_info.key_frame_cnt -= 1;
+            } else {
+                self.timer += op.kf(k, 1).timer_init;
+            }
+        } else if eye_target_dist < 700.0 && (sp4a as i32).abs() < 0x36B0 {
+            // The target within 700 of the eye, and less than about 76.9 degrees from Player.
+            if on_screen && eye_player_geo.r > 30.0 {
+                let k = op.table("D_8011D88C");
+                op.kf(k, 0).timer_init = self.timer;
+                set(self, op, k);
+                if child {
+                    self.cs_info.key_frame_cnt -= 1;
+                } else {
+                    self.timer += op.kf(k, 1).timer_init;
+                }
+            } else {
+                let k = op.table("D_8011D8DC");
+                op.kf(k, 0).at_target_init.z = eye_target_dist * 0.6;
+                op.kf(k, 0).eye_target_init.z = eye_target_dist + 50.0;
+                op.kf(k, 0).eye_target_init.x = rand.zero_one() * 10.0;
+                if eye_player_geo.yaw.wrapping_sub(player_target_geo.yaw) > 0 {
+                    let r = op.kf(k, 0);
+                    r.at_target_init.x = -r.at_target_init.x;
+                    r.eye_target_init.x = -r.eye_target_init.x;
+                    r.roll_target_init = r.roll_target_init.wrapping_neg();
+                }
+                op.kf(k, 0).timer_init = self.timer;
+                op.kf(k, 1).timer_init = (eye_target_dist * 0.005) as i32 as i16 + 8;
+                set(self, op, k);
+                if child {
+                    self.cs_info.key_frame_cnt -= 2;
+                } else {
+                    self.timer += op.kf(k, 1).timer_init + op.kf(k, 2).timer_init;
+                }
+            }
+        } else if t.category == ACTORCAT_DOOR {
+            // The target is a door.
+            let k = op.table("D_8011D954");
+            op.kf(k, 0).timer_init = self.timer - 5;
+            // sp4A = 0, then func_800C0D34's yaw.
+            sp4a = match t.door_yaw {
+                Some(y) => y,
+                None => {
+                    log::debug!("camera: attention demo: this door is dummy door!");
+                    if (player_target_geo.yaw as i32 - t.shape_rot[1] as i32).abs() >= 0x4000 { t.shape_rot[1] } else { t.shape_rot[1].wrapping_sub(0x7FFF) }
+                }
+            };
+            let y = if t.shape_rot[1] == sp4a { 180.0 } else { 0.0 };
+            op.kf(k, 0).at_target_init.y = y;
+            op.kf(k, 0).eye_target_init.y = y;
+            op.kf(k, 1).at_target_init.y = y;
+            let sp90 = (if player_target_geo.yaw.wrapping_sub(sp4a) < 0 { 20.0 } else { -20.0 }) * rand.zero_one();
+            op.kf(k, 0).eye_target_init.y += sp90;
+            let temp_v0 = (rand.zero_one() * (sp90 * -0.2)) as i32;
+            op.kf(k, 1).roll_target_init = temp_v0 as i16;
+            op.kf(k, 0).roll_target_init = temp_v0 as i16;
+            let mut target_head = t.focus_pos;
+            target_head.x += 50.0 * sin_s(sp4a.wrapping_sub(0x7FFF));
+            target_head.z += 50.0 * cos_s(sp4a.wrapping_sub(0x7FFF));
+            if Self::bg_check(f.col, player_head, &mut target_head) {
+                op.kf(k, 1).action_flags = 0xC1;
+                op.kf(k, 2).action_flags = 0x8F;
+            } else {
+                op.kf(k, 2).timer_init = (eye_target_dist * 0.004) as i32 as i16 + 6;
+            }
+            set(self, op, k);
+            if child {
+                self.cs_info.key_frame_cnt -= 2;
+            } else {
+                self.timer += op.kf(k, 2).timer_init + op.kf(k, 3).timer_init;
+            }
+        } else {
+            let k = op.table("D_8011D9F4");
+            if player_target_geo.r < 200.0 {
+                op.kf(k, 0).eye_target_init.z = player_target_geo.r;
+                op.kf(k, 0).at_target_init.z = player_target_geo.r * 0.25;
+            }
+            if player_target_geo.r < 400.0 {
+                op.kf(k, 0).eye_target_init.x = rand.zero_one() * 25.0;
+            }
+            op.kf(k, 0).timer_init = self.timer;
+            let mut target_head = t.focus_pos;
+            if Self::bg_check(f.col, player_head, &mut target_head) {
+                op.kf(k, 1).timer_init = 4;
+                op.kf(k, 1).action_flags = 0x8F;
+            } else {
+                let tt = (eye_target_dist * 0.005) as i32 as i16;
+                op.kf(k, 1).timer_init = tt + 8;
+            }
+            set(self, op, k);
+            if child {
+                if f.frames & 1 != 0 {
+                    for i in 0..2 {
+                        let r = op.kf(k, i);
+                        r.roll_target_init = r.roll_target_init.wrapping_neg();
+                    }
+                }
+                self.cs_info.key_frame_cnt -= 2;
+            } else {
+                self.timer += op.kf(k, 1).timer_init + op.kf(k, 2).timer_init;
+                op.kf(k, 0).roll_target_init = 0;
+                op.kf(k, 1).roll_target_init = 0;
+            }
+        }
+
+        let frames = f.frames as i32;
+        let frames_diff = op.demo5_prev_sfx_frame.wrapping_sub(frames);
+        if !(-50..=50).contains(&frames_diff) {
+            self.sfx.push(CamSfx::Sfx(self.data1));
+        }
+        op.demo5_prev_sfx_frame = frames;
+
+        if f.player.state1 & PLAYER_STATE1_27 != 0 && !f.player.iron_boots {
+            // Swimming: the environment frozen around Player.
+            self.requests.push(CamRequest::PlayerFreeze { timer: self.timer });
+        } else {
+            let _ = player_head_rot[1].wrapping_sub(player_target_geo.yaw);
+            if t.category == ACTORCAT_PLAYER {
+                let frames_diff = frames.wrapping_sub(op.demo5_prev_action12_frame);
+                let mode = if f.player.state1 & PLAYER_STATE1_11 != 0 {
+                    // Holding something over his head.
+                    8
+                } else if frames_diff.abs() > 3000 {
+                    12
+                } else {
+                    69
+                };
+                self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode, door: true });
+            } else {
+                self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode: 1, door: true });
+            }
+        }
+        op.demo5_prev_action12_frame = frames;
+        self.change_setting_flags(d, crate::onepoint::CAM_SET_CS_C, 4 | 1);
+        self.unique9(d, f, op, letterbox);
+    }
+
+    /// `Camera_LERPClampDist`: the distance eased into `[min, max]`, `rUpdateRateInv` eased
+    /// towards `OREG(6)` outside it and 1 inside.
+    fn lerp_clamp_dist(&mut self, d: &CameraData, dist: f32, min: f32, max: f32) -> f32 {
+        let (dist_target, r_target) = if dist < min {
+            (min, d.oreg(6) as f32)
+        } else if dist > max {
+            (max, d.oreg(6) as f32)
+        } else {
+            (dist, 1.0)
+        };
+        self.r_update_rate_inv = lerp_ceil_f(r_target, self.r_update_rate_inv, d.oreg_s(25), 0.1);
+        lerp_ceil_f(dist_target, self.dist, 1.0 / self.r_update_rate_inv, 0.2)
+    }
+
+    /// `Camera_Jump1` (JUMP, FREEFALL): the at follows Player in the air (`func_800458D4`, against
+    /// the height he left the ground at), the eye keeps its distance within `[distMin, distMax]`
+    /// and swings behind him (`Camera_CalcDefaultYaw`), its height eased; round walls
+    /// (`func_80046E20`) while active.
+    fn jump1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let y_normal = Self::y_normal(d, player_height);
+            let v = |i: usize| d.value(self.cur(), i) as f32;
+            self.jump1_ro = Jump1Ro {
+                at_y_offset: v(0) * 0.01 * player_height * y_normal,
+                dist_min: v(1) * 0.01 * player_height * y_normal,
+                dist_max: v(2) * 0.01 * player_height * y_normal,
+                yaw_update_rate_target: v(3),
+                max_yaw_update: v(4) * 0.01,
+                at_lerp_scale_max: v(6) * 0.01,
+                interface_flags: d.value(self.cur(), 7),
+            };
+        }
+        let ro = self.jump1_ro;
+        // (Actor_GetFocus(&playerhead): never used.)
+        let eye_at_offset = diff_to_sph_geo(self.at, self.eye);
+        let eye_next_at_offset = diff_to_sph_geo(self.at, self.eye_next);
+        self.interface_flags = ro.interface_flags;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let rw = &mut self.jump1_rw;
+            rw.swing.unk_16 = 0;
+            rw.swing.unk_18 = 0;
+            rw.swing.at_eye_poly = None;
+            rw.unk_20.pitch = 0;
+            rw.unk_20.yaw = 0xC8;
+            rw.swing.swing_update_rate_timer = 0;
+            rw.swing.swing_update_rate = ro.yaw_update_rate_target;
+            rw.unk_1c = self.player_pos.y - self.player_pos_delta.y;
+            rw.unk_20.r = eye_at_offset.r;
+            self.pos_offset.y -= self.player_pos_delta.y;
+            self.xz_offset_update_rate = 1.0 / 10000.0;
+            self.anim_state += 1;
+        }
+        let timer = self.jump1_rw.swing.swing_update_rate_timer;
+        if timer != 0 {
+            self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_update_rate_target + timer as f32, self.yaw_update_rate_inv, d.oreg_s(26), 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32 + timer as f32, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
+            self.jump1_rw.swing.swing_update_rate_timer -= 1;
+        } else {
+            self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_update_rate_target, self.yaw_update_rate_inv, d.oreg_s(26), 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
+        }
+        self.xz_offset_update_rate = lerp_ceil_f(d.oreg_s(2), self.xz_offset_update_rate, d.oreg_s(25), 0.1);
+        self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, d.oreg_s(26), 0.1);
+        // @bug (game): eased from yOffsetUpdateRate, not fovUpdateRate.
+        self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.y_offset_update_rate, 0.05, 0.1);
+        let unk_1c = self.jump1_rw.unk_1c;
+        self.func_800458d4(d, p, &eye_next_at_offset, ro.at_y_offset, unk_1c, false);
+
+        let mut eye_diff_sph = eye_at_offset;
+        let eye_diff_target = diff_to_sph_geo(self.at, self.eye);
+        eye_diff_sph.r = lerp_ceil_f(eye_diff_target.r, eye_at_offset.r, d.oreg_s(29), 1.0);
+        eye_diff_sph.pitch = lerp_ceil_s(eye_diff_target.pitch, eye_at_offset.pitch, d.oreg_s(29), 0xA);
+        let swing = self.jump1_rw.swing;
+        if swing.unk_18 != 0 {
+            eye_diff_sph.yaw = lerp_ceil_s(swing.unk_16, eye_next_at_offset.yaw, 1.0 / self.yaw_update_rate_inv, 0xA);
+            eye_diff_sph.pitch = lerp_ceil_s(swing.unk_14, eye_next_at_offset.pitch, 1.0 / self.yaw_update_rate_inv, 0xA);
+        } else {
+            eye_diff_sph.yaw = self.calc_default_yaw(d, eye_next_at_offset.yaw, self.player_rot_y, ro.max_yaw_update, 0.0);
+        }
+        // The distance clamped to [distMin, distMax], the pitch to [R_CAM_MIN_PITCH_2,
+        // R_CAM_MAX_PITCH].
+        if eye_diff_sph.r < ro.dist_min {
+            eye_diff_sph.r = ro.dist_min;
+        } else if eye_diff_sph.r > ro.dist_max {
+            eye_diff_sph.r = ro.dist_max;
+        }
+        if eye_diff_sph.pitch > d.oreg(R_CAM_MAX_PITCH) {
+            eye_diff_sph.pitch = d.oreg(R_CAM_MAX_PITCH);
+        } else if eye_diff_sph.pitch < d.oreg(R_CAM_MIN_PITCH_2) {
+            eye_diff_sph.pitch = d.oreg(R_CAM_MIN_PITCH_2);
+        }
+        let new_eye = sph_geo_add(self.at, eye_diff_sph);
+        self.eye_next.x = new_eye.x;
+        self.eye_next.z = new_eye.z;
+        self.eye_next.y += (new_eye.y - self.eye_next.y) * d.oreg_s(31);
+        if self.status == CAM_STAT_ACTIVE && ro.interface_flags & 0x10 == 0 {
+            let mut spa4 = 0.0;
+            let mut swing = self.jump1_rw.swing;
+            self.swing_anim(d, col, &eye_diff_sph, ro.dist_min, ro.yaw_update_rate_target, &mut spa4, &mut swing);
+            self.jump1_rw.swing = swing;
+            if ro.interface_flags & 4 != 0 {
+                self.input_dir = [eye_at_offset.pitch.wrapping_neg(), eye_at_offset.yaw.wrapping_sub(0x7FFF), 0];
+            } else {
+                let s = diff_to_sph_geo(self.eye, self.at);
+                self.input_dir = [s.pitch, s.yaw, 0];
+            }
+            if swing.unk_18 != 0 {
+                let y = self.input_dir[1];
+                let target = (y as i32 + swing.unk_16.wrapping_sub(0x7FFF).wrapping_sub(y) as i32) as i16;
+                self.input_dir[1] = lerp_ceil_s(target, y, 1.0 - 0.99 * spa4, 0xA);
+            }
+        } else {
+            self.jump1_rw.swing.swing_update_rate = ro.yaw_update_rate_target;
+            self.jump1_rw.swing.unk_18 = 0;
+            self.update_direction = false;
+            self.eye = self.eye_next;
+        }
+        self.dist = self.at.distance(self.eye);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.at_lerp_scale_max);
+    }
+
+    /// `Camera_Jump2` (CLIMB, CLIMBZ: ladders and vines): the at above Player
+    /// (`Camera_CalcAtDefault`), the eye turning behind him over `R_CAM_DEFAULT_ANIM_TIME`, then
+    /// kept within `yawAdj` of behind him; level near the ground or the top of the climb, pitch
+    /// within about 60 degrees; out of walls by a level check.
+    fn jump2(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let y_normal = Self::y_normal(d, player_height);
+            let v = |i: usize| d.value(self.cur(), i) as f32;
+            let at_y = (if self.player_pos_delta.y > 0.0 { -10.0 } else { 10.0 }) + v(0);
+            self.jump2_ro = Jump2Ro {
+                at_y_offset: at_y * 0.01 * player_height * y_normal,
+                min_dist: v(1) * 0.01 * player_height * y_normal,
+                max_dist: v(2) * 0.01 * player_height * y_normal,
+                min_max_dist_factor: v(3) * 0.01,
+                yaw_upd_rate_target: v(4),
+                xz_upd_rate_target: v(5) * 0.01,
+                fov_target: v(6),
+                at_lerp_step_scale: v(7) * 0.01,
+                interface_flags: d.value(self.cur(), 8),
+            };
+        }
+        let ro = self.jump2_ro;
+        let at_to_eye_next_dir = diff_to_sph_geo(self.at, self.eye_next);
+        self.interface_flags = ro.interface_flags;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            // Camera_GetFloorY: 80 above Player.
+            let floor = col.entity_raycast_down(self.player_pos + Vec3::Y * 80.0).0;
+            let rw = &mut self.jump2_rw;
+            rw.floor_y = floor;
+            rw.yaw_target = at_to_eye_next_dir.yaw;
+            rw.init_yaw_diff = 0;
+            if rw.floor_y == bgcheck::BGCHECK_Y_MIN {
+                log::debug!("camera: climb: no floor");
+                rw.on_floor = -1;
+                rw.floor_y = self.player_pos.y - 1000.0;
+            } else if self.player_pos.y - rw.floor_y < player_height {
+                // Player within his height of the floor.
+                rw.on_floor = 1;
+            } else {
+                rw.on_floor = -1;
+            }
+            let yaw_diff = self.player_rot_y.wrapping_sub(0x7FFF).wrapping_sub(at_to_eye_next_dir.yaw);
+            rw.init_yaw_diff = (((yaw_diff as i32 / d.oreg(R_CAM_DEFAULT_ANIM_TIME) as i32) / 4) * 3) as i16;
+            rw.yaw_adj = if ro.interface_flags & 2 != 0 { 0xA } else { 0x2710 };
+            self.player_pos -= self.player_pos_delta;
+            self.jump2_rw.anim_timer = d.oreg(R_CAM_DEFAULT_ANIM_TIME);
+            self.anim_state += 1;
+            self.at_lerp_step_scale = ro.at_lerp_step_scale;
+        }
+        let sp90 = d.oreg_s(25) * self.speed_ratio;
+        let sp8c = d.oreg_s(26) * self.speed_ratio;
+        self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_upd_rate_target, self.yaw_update_rate_inv, sp90, 0.1);
+        self.xz_offset_update_rate = lerp_ceil_f(ro.xz_upd_rate_target, self.xz_offset_update_rate, sp90, 0.1);
+        self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, sp8c, 0.1);
+        // @bug (game): eased from yOffsetUpdateRate, not fovUpdateRate.
+        self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.y_offset_update_rate, self.speed_ratio * 0.05, 0.1);
+        self.r_update_rate_inv = d.oreg(27) as f32;
+        self.calc_at_default(d, &at_to_eye_next_dir, ro.at_y_offset, false, p);
+        let mut adj = diff_to_sph_geo(self.at, self.eye);
+        let max = ro.max_dist + ro.max_dist * ro.min_max_dist_factor;
+        let min = ro.min_dist - ro.min_dist * ro.min_max_dist_factor;
+        if adj.r > max {
+            adj.r = max;
+        } else if adj.r < min {
+            adj.r = min;
+        }
+        let behind = self.player_rot_y.wrapping_sub(0x7FFF);
+        let yaw_diff = behind.wrapping_sub(adj.yaw);
+        if self.jump2_rw.anim_timer != 0 {
+            self.jump2_rw.yaw_target = behind;
+            self.jump2_rw.anim_timer -= 1;
+            adj.yaw = lerp_ceil_s(self.jump2_rw.yaw_target, at_to_eye_next_dir.yaw, 0.5, 0xA);
+        } else if (self.jump2_rw.yaw_adj as i32) < (yaw_diff as i32).abs() {
+            let yaw_adj = self.jump2_rw.yaw_adj;
+            let target = if yaw_diff < 0 { behind.wrapping_add(yaw_adj) } else { behind.wrapping_sub(yaw_adj) };
+            adj.yaw = lerp_floor_s(target, at_to_eye_next_dir.yaw, 0.1, 0xA);
+        } else {
+            adj.yaw = lerp_ceil_s(adj.yaw, at_to_eye_next_dir.yaw, 0.25, 0xA);
+        }
+        // The floor at the top of the climb: 25 ahead of Player, 2.2 times his height up
+        // (Camera_GetFloorYNorm).
+        let top = Vec3::new(self.player_pos.x + sin_s(self.player_rot_y) * 25.0, self.player_pos.y + player_height * 2.2, self.player_pos.z + cos_s(self.player_rot_y) * 25.0);
+        let top_y = col.entity_raycast_down(top).0;
+        if (top_y != bgcheck::BGCHECK_Y_MIN && self.player_pos.y < top_y) || self.player_pos.y - self.jump2_rw.floor_y < player_height {
+            // The top of the climb within 2.2 heights, or Player within his height of the ground.
+            self.pitch_update_rate_inv = lerp_ceil_f(20.0, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
+            self.r_update_rate_inv = lerp_ceil_f(20.0, self.r_update_rate_inv, d.oreg_s(26), 0.1);
+            adj.pitch = lerp_ceil_s(0x1F4, at_to_eye_next_dir.pitch, 1.0 / self.pitch_update_rate_inv, 0xA);
+        } else {
+            self.pitch_update_rate_inv = 100.0;
+            self.r_update_rate_inv = 100.0;
+        }
+        // The pitch within about 60 degrees.
+        adj.pitch = adj.pitch.clamp(-0x2AF8, 0x2AF8);
+        self.eye_next = sph_geo_add(self.at, adj);
+        let mut chk = ColChk { pos: self.eye_next, ..Default::default() };
+        if Self::bg_check_info(col, self.at, &mut chk) != 0 {
+            // A wall between the at and the eye: level, is there one too?
+            let first = chk.pos;
+            chk.pos = sph_geo_add(self.at, VecSph { r: adj.r, pitch: 0, yaw: adj.yaw });
+            if Self::bg_check_info(col, self.at, &mut chk) != 0 {
+                self.eye = first;
+            } else {
+                adj.pitch = lerp_ceil_s(0, adj.pitch, 0.2, 0xA);
+                self.eye = sph_geo_add(self.at, adj);
+                let at = self.at;
+                Self::bg_check(col, at, &mut self.eye);
+            }
+        } else {
+            self.eye = self.eye_next;
+        }
+        self.dist = adj.r;
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+    }
+
+    /// `Camera_Unique1` (HANG, HANGZ: hanging from a ledge): the at above Player
+    /// (`Camera_CalcAtDefault` with the slope), the eye at `pitchTarget`, turning over
+    /// `R_CAM_DEFAULT_ANIM_TIME` towards his waist's side when it's far off (`yawTargetAdj`).
+    fn unique1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, waist: Vec3) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let y_normal = Self::y_normal(d, player_height);
+            let v = |i: usize| d.value(self.cur(), i) as f32;
+            self.uniq1_ro = Uniq1Ro {
+                y_offset: v(0) * 0.01 * player_height * y_normal,
+                dist_min: v(1) * 0.01 * player_height * y_normal,
+                dist_max: v(2) * 0.01 * player_height * y_normal,
+                pitch_target: cam_deg_to_binang(v(3)),
+                fov_target: v(4),
+                at_lerp_scale_max: v(5) * 0.01,
+                interface_flags: d.value(self.cur(), 6),
+            };
+        }
+        let ro = self.uniq1_ro;
+        self.update_direction = true;
+        let eye_at_offset = diff_to_sph_geo(self.at, self.eye);
+        let eye_next_at_offset = diff_to_sph_geo(self.at, self.eye_next);
+        self.interface_flags = ro.interface_flags;
+        if self.anim_state == 0 {
+            self.pos_offset.y -= self.player_pos_delta.y;
+            self.uniq1_rw.yaw_target = eye_next_at_offset.yaw;
+            self.uniq1_rw.unk_00 = 0.0;
+            let waist_offset = diff_to_sph_geo(self.player_pos, waist);
+            self.uniq1_rw.timer = d.oreg(R_CAM_DEFAULT_ANIM_TIME);
+            let diff = waist_offset.yaw.wrapping_sub(eye_at_offset.yaw);
+            self.uniq1_rw.yaw_target_adj = if (diff as i32).abs() < 0x3A98 { 0 } else { (((diff as i32 / self.uniq1_rw.timer as i32) / 4) * 3) as i16 };
+            self.anim_state += 1;
+        }
+        // (Actor_GetFocus(&playerhead): never used.)
+        self.yaw_update_rate_inv = lerp_ceil_f(100.0, self.yaw_update_rate_inv, d.oreg(25) as f32 * 0.01, 0.1);
+        self.pitch_update_rate_inv = lerp_ceil_f(100.0, self.pitch_update_rate_inv, d.oreg(25) as f32 * 0.01, 0.1);
+        self.xz_offset_update_rate = lerp_ceil_f(0.005, self.xz_offset_update_rate, d.oreg(25) as f32 * 0.01, 0.01);
+        self.y_offset_update_rate = lerp_ceil_f(0.01, self.y_offset_update_rate, d.oreg(26) as f32 * 0.01, 0.01);
+        self.fov_update_rate = lerp_ceil_f(d.oreg(4) as f32 * 0.01, self.fov_update_rate, 0.05, 0.1);
+        self.calc_at_default(d, &eye_next_at_offset, ro.y_offset, true, p);
+        let mut sp8c = diff_to_sph_geo(self.at, self.eye_next);
+        // The distance eased into [distMin, distMax] is the camera's; the eye stays at sp8C's.
+        self.dist = self.lerp_clamp_dist(d, sp8c.r, ro.dist_min, ro.dist_max);
+        sp8c.pitch = lerp_ceil_s(ro.pitch_target, eye_next_at_offset.pitch, 1.0 / self.pitch_update_rate_inv, 0xA);
+        let max_pitch = d.oreg(R_CAM_MAX_PITCH);
+        if sp8c.pitch > max_pitch {
+            sp8c.pitch = max_pitch;
+        }
+        if sp8c.pitch < max_pitch.wrapping_neg() {
+            sp8c.pitch = max_pitch.wrapping_neg();
+        }
+        if self.uniq1_rw.timer != 0 {
+            self.uniq1_rw.yaw_target = self.uniq1_rw.yaw_target.wrapping_add(self.uniq1_rw.yaw_target_adj);
+            self.uniq1_rw.timer -= 1;
+        }
+        sp8c.yaw = lerp_floor_s(self.uniq1_rw.yaw_target, eye_next_at_offset.yaw, 0.5, 0x2710);
+        self.eye_next = sph_geo_add(self.at, sp8c);
+        self.eye = self.eye_next;
+        let at = self.at;
+        Self::bg_check(col, at, &mut self.eye);
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
+        self.roll = 0;
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.at_lerp_scale_max);
     }
 
     /// `Camera_GetInputDirYaw`.
@@ -1664,17 +3010,17 @@ impl GameCamera {
 
     /// `Camera_Update`, with `Camera_UpdateInterface`'s letterbox target at the end: `g` is the
     /// state every camera shares (`CameraGlobals`).
-    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals) {
+    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand) {
         self.interface_flags = g.interface_flags;
         self.interface_alpha = g.interface_alpha;
         self.oob_timer = g.oob_timer;
-        self.update_inner(d, f, letterbox, g);
+        self.update_inner(d, f, letterbox, g, op, rand);
         g.interface_flags = self.interface_flags;
         g.interface_alpha = self.interface_alpha;
         g.oob_timer = self.oob_timer;
     }
 
-    fn update_inner(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals) {
+    fn update_inner(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand) {
         let (col, p, frames) = (f.col, &f.player, f.frames);
         if self.status == CAM_STAT_CUT {
             return;
@@ -1719,6 +3065,12 @@ impl GameCamera {
                     self.subj4(d, col, p);
                 }
                 Some("CAM_FUNC_DEMO1") => self.demo1(d, p),
+                Some("CAM_FUNC_UNIQ9") => self.unique9(d, f, op, letterbox),
+                Some("CAM_FUNC_DEMO9") => self.demo9(d, f, op),
+                Some("CAM_FUNC_DEMO5") => self.demo5(d, f, op, rand, letterbox),
+                Some("CAM_FUNC_JUMP1") => self.jump1(d, col, p),
+                Some("CAM_FUNC_JUMP2") => self.jump2(d, col, p),
+                Some("CAM_FUNC_UNIQ1") => self.unique1(d, col, p, f.player_waist),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else if self.has_player {
@@ -1749,6 +3101,10 @@ impl GameCamera {
         self.cam_dir = [angle.pitch, angle.yaw, 0];
         if !self.update_direction {
             self.input_dir = [angle.pitch, angle.yaw, 0];
+        }
+        // The debug ROM's D-Right ends a camera with a timer (a one-point cutscene's).
+        if self.timer != -1 && f.input.press.held(eng_input::pad::BTN_DRIGHT) {
+            self.timer = 0;
         }
     }
 
@@ -1807,7 +3163,12 @@ impl GameCamera {
     /// alone; `flags & 0x0F00` is the interface's alpha type (0 is 50), all set leaves it alone,
     /// and a new one is `Interface_ChangeAlpha`'s (`interface_alpha_change`).
     fn update_interface(&mut self, letterbox: &mut Letterbox) {
-        let flags = self.interface_flags as u16;
+        self.update_interface_flags(self.interface_flags as u16, letterbox);
+    }
+
+    /// `Camera_UpdateInterface(flags)` with flags other than `sCameraInterfaceFlags`
+    /// (`Camera_Unique9`'s keyframes' `0xCX`).
+    fn update_interface_flags(&mut self, flags: u16, letterbox: &mut Letterbox) {
         if flags & 0xF000 != 0xF000 {
             let size = match flags & 0x7000 {
                 0x1000 => 26,
@@ -1870,7 +3231,7 @@ impl GameCamera {
     }
 
     /// `Camera_BGCheck`.
-    fn bg_check(col: &CollisionContext, from: Vec3, to: &mut Vec3) -> bool {
+    pub fn bg_check(col: &CollisionContext, from: Vec3, to: &mut Vec3) -> bool {
         let mut c = ColChk { pos: *to, ..Default::default() };
         let r = Self::bg_check_info(col, from, &mut c);
         *to = c.pos;
@@ -2075,9 +3436,17 @@ impl GameCamera {
         ret
     }
 
-    /// `func_80046E20`: slide the eye round walls between it and `at`.
+    /// `func_80046E20` with `Camera_Normal1`'s `SwingAnimation`.
     fn swing(&mut self, d: &CameraData, col: &CollisionContext, adj: &VecSph, min_dist: f32, arg3: f32, arg4: &mut f32) {
         let mut anim = self.rw.swing;
+        self.swing_anim(d, col, adj, min_dist, arg3, arg4, &mut anim);
+        self.rw.swing = anim;
+    }
+
+    /// `func_80046E20`: slide the eye round walls between it and `at`, with a mode function's
+    /// `SwingAnimation`.
+    #[allow(clippy::too_many_arguments)]
+    fn swing_anim(&mut self, d: &CameraData, col: &CollisionContext, adj: &VecSph, min_dist: f32, arg3: f32, arg4: &mut f32, anim: &mut Swing) {
         let kind = self.col_between(col, adj, anim.unk_18 == 0);
         let mut fallthrough = false;
         match kind {
@@ -2151,7 +3520,6 @@ impl GameCamera {
                 self.eye = sph_geo_add(self.eye, s);
             }
         }
-        self.rw.swing = anim;
     }
 
     /// `Camera_Normal1`, reading the values of `data_mode` (a setting and a mode).
@@ -4182,3 +5550,6 @@ pub struct CamView {
     /// Vertical field of view, degrees.
     pub fov: f32,
 }
+
+#[cfg(test)]
+mod tests;

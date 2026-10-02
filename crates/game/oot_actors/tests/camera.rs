@@ -76,7 +76,7 @@ fn camera_data_read_from_decomp() {
 fn setting_changes_follow_camera_change_setting_flags() {
     let Some(d) = data() else { return };
     let c = &d.camera;
-    let pv = camera::PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0 };
+    let pv = camera::PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, iron_boots: false };
     // A collision with two bg cameras: 0 PREREND_FIXED, 1 PREREND_PIVOT.
     let mut h = eng_collision::collision::CollisionHeader::default();
     h.bg_cams.push(eng_collision::collision::BgCamInfo { setting: camera::CAM_SET_PREREND_FIXED as u16, count: 3, data: vec![[0, 300, 0], [0x3000, 0, 0], [5000, -1, -1]] });

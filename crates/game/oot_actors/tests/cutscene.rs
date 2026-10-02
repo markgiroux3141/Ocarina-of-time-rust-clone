@@ -327,12 +327,19 @@ fn entering_the_deku_tree_the_first_time_plays_its_intro() {
     let Some(a) = assets() else { return };
     let Some(mut w) = enter(&a, "ENTR_YDAN_0", |_| {}) else { return };
     // Cutscene_HandleEntranceTriggers: EVENTCHKINF_A8 set and gDekuTreeIntroCs with
-    // cutsceneTrigger 2, no title card.
+    // cutsceneTrigger 2, showTitleCard false, so Player_Init shows no title card (and sets it
+    // back to true).
     assert_eq!(w.scene_id, SCENE_YDAN);
     assert!(w.save.get_event_chk_inf(EVENTCHKINF_A8));
-    assert_eq!((w.cs_ctx.segment.as_ref().unwrap().name.as_str(), w.save.cutscene_trigger, w.save.show_title_card), ("gDekuTreeIntroCs", 2, false));
+    assert_eq!((w.cs_ctx.segment.as_ref().unwrap().name.as_str(), w.save.cutscene_trigger, w.save.show_title_card), ("gDekuTreeIntroCs", 2, true));
+    assert_eq!((w.title_ctx.texture.as_deref(), w.title_ctx.duration_timer), (None, 0));
     let mut d = Driver { prev: PadState::default(), no: false };
     d.tick(&mut w);
+    // CS_MISC 15 at frame 0 (run with frame 1 on the first tick): TitleCard_InitPlaceName with
+    // the Deku Tree's place name (g_pn_06) at (160, 120), 144 by 24, after a delay of 20 (then one
+    // TitleCard_Update in the next frame's Actor_UpdateAll).
+    assert_eq!((w.title_ctx.texture.as_deref(), w.title_ctx.x, w.title_ctx.y, w.title_ctx.width, w.title_ctx.height), (Some("title/g_pn_06"), 160, 120, 144, 24));
+    assert_eq!((w.title_ctx.delay_timer, w.title_ctx.duration_timer, w.title_ctx.alpha), (20, 80, 0));
     assert_eq!((w.save.cutscene_index, w.cs_ctx.state, w.save.cutscene_trigger), (0xFFFD, CS_STATE_SKIPPABLE_INIT, 0));
     // No cue for Link: held still (mode 0x31) once his walk in is over.
     d.until(&mut w, 60, "Link held", |w| w.player().cs_mode == 0x31 && w.player().action == Action::Cutscene);
@@ -384,4 +391,103 @@ fn a_forced_text_holds_link_until_it_is_read() {
     // Read: func_80B3A3D4's func_8002DF54(7), then func_80852944 lets him go.
     d.until(&mut w, 400, "Link free", |w| w.message_state() == TEXT_STATE_NONE && w.player().cs_mode == 0);
     assert_eq!(w.player().state1 & STATE1_29, 0);
+}
+
+/// A script's entries of command type `ty`: their offsets.
+fn entries_of(s: &CutsceneScript, ty: i32) -> Vec<usize> {
+    let (cmds, _) = walk(&s.data).unwrap();
+    cmds.iter().filter(|c| c.cmd_type == ty).flat_map(|c| (0..c.entries).map(move |i| c.entries_offset + i * c.entry_size)).collect()
+}
+
+#[test]
+fn the_deku_trees_talk_plays_its_music() {
+    // Cutscene_Command_FadeBGM (CsCmdMusicFade: the type, start and end frames),
+    // Cutscene_Command_PlayBGM and _StopBGM (CsCmdMusicChange: the sequence, plus one, at byte
+    // 1), each on its start frame: Audio_QueueSeqCmd(SEQCMD_STOP_SEQUENCE over the fade's
+    // frames), func_800F595C and func_800F59E8.
+    let Some(a) = assets() else { return };
+    let Some(mut w) = enter(&a, "ENTR_SPOT04_1", |_| {}) else { return };
+    w.audio.log = Some(Default::default());
+    let mut d = Driver { prev: PadState::default(), no: false };
+    // Each game frame, the script and its frame after it.
+    let mut seen: Vec<(u32, String, u16)> = Vec::new();
+    for _ in 0..2000 {
+        d.tick(&mut w);
+        if w.cs_ctx.state != CS_STATE_IDLE
+            && let Some(s) = &w.cs_ctx.segment
+        {
+            seen.push((w.audio.frames, s.name.clone(), w.cs_ctx.frames));
+        }
+        if seen.last().is_some_and(|(_, n, f)| n == "D_808BD520" && *f > 110) {
+            break;
+        }
+    }
+    // The game frame on which `script` first reached `frame`.
+    let at = |script: &str, frame: u16| seen.iter().find(|(_, n, f)| n == script && *f >= frame).map(|s| s.0).unwrap_or_else(|| panic!("{script} never reached {frame}"));
+    let cmds = |frame: u32| -> Vec<u32> { w.audio.log.as_ref().unwrap().seq_cmds.iter().filter(|c| c.0 == frame).map(|c| c.1).collect() };
+    let talk = a.cutscene("D_808BCE20").unwrap();
+    let yes = a.cutscene("D_808BD520").unwrap();
+    // The talk's fade (type 4, frames 0..20): the main bgm stopped over 20 frames, on the
+    // script's first frame (func_80068ECC runs frames 0 and 1 together).
+    let o = entries_of(&talk, CS_CMD_FADEBGM)[0];
+    let (ty, start, end) = (be_u16(&talk.data, o), be_u16(&talk.data, o + 2), be_u16(&talk.data, o + 4));
+    assert_eq!((ty, start, end), (4, 0, 20));
+    let player = if ty == 3 { 1 } else { 0 };
+    let want = ((end - start) as u8 as u32) << 16 | (1 << 28 | player << 24 | 0xFF);
+    assert!(cmds(at("D_808BCE20", 1)).contains(&want), "{:#x?}", cmds(at("D_808BCE20", 1)));
+    // Its music at frame 140: SEQCMD_PLAY_SEQUENCE (op 0) of sequence 0x4C - 1.
+    let o = entries_of(&talk, CS_CMD_PLAYBGM)[0];
+    let (seq, frame) = (talk.data[o + 1] as u32 - 1, be_u16(&talk.data, o + 2));
+    assert_eq!((seq, frame), (0x4B, 140));
+    let c = cmds(at("D_808BCE20", frame));
+    assert!(c.iter().any(|&c| c >> 28 == 0 && c & 0xFF == seq), "{c:#x?}");
+    // Yes: at 90 it stops that sequence (SEQCMD_STOP_SEQUENCE, op 1, no fade), at 99 plays 0x3D - 1.
+    let o = entries_of(&yes, CS_CMD_STOPBGM)[0];
+    let frame = be_u16(&yes.data, o + 2);
+    assert_eq!((yes.data[o + 1], frame), (0x4C, 90));
+    let c = cmds(at("D_808BD520", frame));
+    assert!(c.iter().any(|&c| c >> 28 == 1 && (c >> 16) & 0xFF == 0), "{c:#x?}");
+    let o = entries_of(&yes, CS_CMD_PLAYBGM)[0];
+    let (seq, frame) = (yes.data[o + 1] as u32 - 1, be_u16(&yes.data, o + 2));
+    assert_eq!((seq, frame), (0x3C, 99));
+    let c = cmds(at("D_808BD520", frame));
+    assert!(c.iter().any(|&c| c >> 28 == 0 && c & 0xFF == seq), "{c:#x?}");
+}
+
+#[test]
+fn link_groans_and_sighs_as_navi_wakes_him() {
+    // The wake-up (Link's house's layer 4): mode 39's start, func_80851E90, groans
+    // (func_80832698(NA_SE_VO_LI_GROAN): his voice, plus the age's voice offset unk_92); mode
+    // 40's update, func_80851FB0, plays D_808551BC on its animation's frames: the sigh
+    // (NA_SE_VO_LI_RELAX, a voice) on 35, the slips off the bed (NA_SE_PL_SLIPDOWN) on 236 and
+    // 256.
+    use oot_game::audio::sfx::{NA_SE_PL_SLIPDOWN, NA_SE_VO_LI_GROAN, NA_SE_VO_LI_RELAX, SfxPos};
+    let Some(a) = assets() else { return };
+    let save = SaveContext::file_select_new();
+    let mut w = oot_actors::play_entrance(a.clone(), common::data().unwrap(), common::rules().unwrap(), save).expect("Play_Init");
+    w.audio.log = Some(Default::default());
+    let mut d = Driver { prev: PadState::default(), no: false };
+    // Past the narration, the nightmare and Navi's flight, to the wake-up's cue 0x1D (mode 39).
+    d.until(&mut w, 5000, "the wake-up's toss", |w| w.save.scene_layer == 4 && w.scene_id == 0x34 && w.player().unk_446 == 0x1D);
+    let toss = w.audio.frames;
+    let voice = w.player().age.climb.unk_92;
+    let me = w.player;
+    let sfx = |w: &PlayState, id: u16| -> Vec<u32> {
+        w.audio.log.as_ref().unwrap().sfx.iter().filter(|s| s.1 == id && s.2 == SfxPos::Actor(me.unwrap())).map(|s| s.0).collect()
+    };
+    // (The narration, Link's house's layer 5, tosses him once too: cue 0x1D.)
+    let groans = sfx(&w, NA_SE_VO_LI_GROAN + voice);
+    assert_eq!((groans.len(), groans.last()), (2, Some(&toss)), "{groans:?}");
+    d.until(&mut w, 2000, "mode 40", |w| w.player().unk_446 == 0x1E);
+    let sit = w.audio.frames;
+    d.until(&mut w, 400, "the sit-up's end", |w| w.player().unk_446 != 0x1E || w.player().unk_850 != 0);
+    // On frames 35, 236 and 256 of the animation: LinkAnimation_Update advances it by playSpeed
+    // (1) x R_UPDATE_RATE (3) x 0.5 a game frame, from the mode's start, which updates it once,
+    // and LinkAnimation_OnFrame(n) is the frame it passes n: ceil(n / 1.5) frames on.
+    let relax = sfx(&w, NA_SE_VO_LI_RELAX + voice);
+    let slips = sfx(&w, NA_SE_PL_SLIPDOWN);
+    assert_eq!(relax.len(), 1, "{relax:?}");
+    assert_eq!(slips.len(), 2, "{slips:?}");
+    let on = |n: f32| sit + (n / 1.5).ceil() as u32 - 1;
+    assert_eq!((relax[0], slips[0], slips[1]), (on(35.0), on(236.0), on(256.0)));
 }

@@ -588,10 +588,7 @@ fn headless(cli: &Cli) -> Result<()> {
                 let (_, p) = shots.remove(k);
                 let t = Target::new(&device, cli.width, cli.height);
                 draw_frame(&mut r, &device, &queue, &t, &mut a, &mut scene, w, snap, cli.wire);
-                let mut px = t.read_rgba(&device, &queue)?;
-                if let Some(f) = w.screen_fill() {
-                    oot::rooms::apply_fill(&mut px, f);
-                }
+                let px = t.read_rgba(&device, &queue)?;
                 eng_app::save_png(&p, cli.width, cli.height, &px)?;
                 println!("{}", p.display());
             }
@@ -611,10 +608,7 @@ fn headless(cli: &Cli) -> Result<()> {
     if let Some(p) = &cli.screenshot {
         let t = Target::new(&device, cli.width, cli.height);
         draw_frame(&mut r, &device, &queue, &t, &mut a, &mut scene, &w, snaps.last().unwrap(), cli.wire);
-        let mut px = t.read_rgba(&device, &queue)?;
-        if let Some(f) = w.screen_fill() {
-            oot::rooms::apply_fill(&mut px, f);
-        }
+        let px = t.read_rgba(&device, &queue)?;
         eng_app::save_png(p, cli.width, cli.height, &px)?;
         println!("{}", p.display());
     }

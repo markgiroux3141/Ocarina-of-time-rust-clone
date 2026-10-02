@@ -440,6 +440,12 @@ impl PlayState {
         // cues.
         play.save.cutscene_transition_control = 0;
         play.demo.d_8015fcc8 = 1;
+        // The rest of Environment_Init: envCtx (the lights at the scene's time, as
+        // SceneState::load computed them), the lightning reset, D_801614B0's alpha (Play_Init).
+        let (day, sky, _) = env::scene_times(play.save.day_time, play.scene.as_ref().and_then(|s| s.rooms.first()).and_then(|r| r.time));
+        play.env_ctx = env::EnvCtx::init(ld.skybox.light_mode, day, sky, play.save.day_time);
+        play.env_statics.init();
+        play.vis_mono_color[3] = 0;
         // envCtx->timeSeqState = TIMESEQ_DAY_BGM (z_kankyo.c:292).
         play.time_seq_state = crate::audio::scene::TIMESEQ_DAY_BGM;
         play.cs_ctx.npc_actions = [None; 10];
@@ -454,6 +460,28 @@ impl PlayState {
         play.flags = crate::spawn::SceneFlags { chest: saved.chest, swch: saved.swch, clear: saved.clear, collect: saved.collect, ..Default::default() };
         let p = play.actor_spawn_entry(&link_entry).map_err(|e| anyhow::anyhow!("spawning Player: {e:?}"))?;
         play.player = Some(p);
+        // Player_Init's title card: on a fresh entry (no respawn), the scene's place name if it
+        // has one and the entrance shows it (not in a cutscene layer; the Dodongo's Cavern and the
+        // night shop only once seen).
+        play.title_ctx.init();
+        if play.save.respawn_flag == 0 || play.save.respawn_flag < -1 {
+            let title = play.title_file();
+            if !title.is_empty() && play.save.show_title_card {
+                const SCENE_DDAN: u16 = 0x01;
+                const SCENE_NIGHT_SHOP: u16 = 0x32;
+                const EVENTCHKINF_B0: u16 = 0xB0;
+                const EVENTCHKINF_25: u16 = 0x25;
+                let shows = t.entrances.get(play.save.entrance_index as usize + play.save.scene_layer).is_some_and(|e| e.title_card);
+                if !cutscene_layer
+                    && shows
+                    && (scene_id != SCENE_DDAN || play.save.get_event_chk_inf(EVENTCHKINF_B0))
+                    && (scene_id != SCENE_NIGHT_SHOP || play.save.get_event_chk_inf(EVENTCHKINF_25))
+                {
+                    play.title_ctx.init_place_name(&title, 160, 120, 144, 24, 20);
+                }
+            }
+            play.save.show_title_card = true;
+        }
         // The end of Player_Init: the sound the entrance left (a door's), at Player.
         if play.save.entrance_sound != 0 {
             let id = play.save.entrance_sound;
@@ -473,6 +501,7 @@ impl PlayState {
         // Camera_Init's and Camera_InitPlayerSettings' shared state (sNextUID carries over).
         play.cam_globals = crate::camera::CameraGlobals { next_uid: play.cam_globals.next_uid, ..crate::camera::CameraGlobals::main_init() };
         play.game_camera.change_mode(&play.data.camera, crate::camera::CAM_MODE_NORMAL);
+        play.view = crate::camera::CamView { eye: play.game_camera.eye, at: play.game_camera.at, fov: play.game_camera.fov };
         play.camera_sfx();
         let start_bg_cam = play.actors.actor(p).map(|a| a.params as u16 & 0xFF).unwrap_or(0xFF);
         if start_bg_cam != 0xFF {
@@ -524,6 +553,10 @@ impl PlayState {
                 // z_demo.c's statics and sNextUID are the code segment's: they carry over.
                 next.demo = crate::cutscene::DemoStatics { d_8015fcc8: next.demo.d_8015fcc8, ..self.demo };
                 next.cam_globals.next_uid = self.cam_globals.next_uid;
+                next.onepoint = std::mem::replace(&mut self.onepoint, crate::onepoint::OnePointStatics::new(&Default::default()));
+                // gWeatherMode and the lightning bolts are z_kankyo.c's (Environment_Init resets the
+                // strike and the bolts, which play_init_with did on next's defaults).
+                next.env_statics.weather_mode = self.env_statics.weather_mode;
                 *self = next;
             }
             Err(e) => {
@@ -815,6 +848,22 @@ impl PlayState {
             (Some(e), Some(f)) => Some(compose_fill(e, f)),
             (e, f) => f.or(e),
         }
+    }
+}
+
+impl PlayState {
+    /// The fills as `Play_Draw` draws them: the cutscene's (`envCtx.fillScreen`,
+    /// `Environment_FillScreen(.., FILL_SCREEN_OPA | FILL_SCREEN_XLU)`: at the end of both the OPA
+    /// and the XLU lists, so the opaque scene takes it twice) and the transition's (at the start
+    /// of `OVERLAY_DISP`, under the HUD and the message box). `(cutscene, transition)`.
+    pub fn draw_fills(&self) -> (Option<[u8; 4]>, Option<[u8; 4]>) {
+        let tr = &self.transition;
+        if !self.updated && tr.trigger != TRANS_TRIGGER_OFF {
+            return (None, self.pre_update_fill);
+        }
+        let env = tr.screen_fill.filter(|f| f[3] > 0);
+        let fade = (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT || tr.mode == TRANS_MODE_INSTANCE_WAIT).then(|| tr.fade.fill()).flatten();
+        (env, fade)
     }
 }
 

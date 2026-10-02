@@ -157,13 +157,3 @@ pub fn triangles(s: &SceneState) -> usize {
     s.rooms.iter().filter(|r| r.shape.is_some()).map(|r| r.triangles()).sum()
 }
 
-/// Blends a screen fill (a transition's fade) over RGBA8 pixels, as `TransitionFade_Draw`'s
-/// `G_RM_CLD_SURF` rectangle does.
-pub fn apply_fill(px: &mut [u8], fill: [u8; 4]) {
-    let a = fill[3] as u32;
-    for p in px.chunks_exact_mut(4) {
-        for c in 0..3 {
-            p[c] = ((p[c] as u32 * (255 - a) + fill[c] as u32 * a) / 255) as u8;
-        }
-    }
-}

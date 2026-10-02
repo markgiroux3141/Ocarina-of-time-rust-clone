@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 14;
+pub const FORMAT_VERSION: u32 = 15;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -92,6 +92,10 @@ pub mod keys {
     /// `eng_anim::skeleton::Skeleton`.
     pub fn skeleton(file: &str, symbol: &str) -> String {
         format!("skel/{file}/{symbol}")
+    }
+    /// `skin::SkinSkeleton`: a skeleton of skin limbs (the horses').
+    pub fn skin(file: &str, symbol: &str) -> String {
+        format!("skin/{file}/{symbol}")
     }
     /// `StandardAnimation`, or `LinkAnimation` for `gameplay_keep`'s `gPlayerAnim_*`.
     pub fn anim(file: &str, symbol: &str) -> String {
@@ -161,6 +165,18 @@ pub struct MeshBake {
     pub body: BakeBody,
 }
 
+/// An animation in an object without a skeleton (an animation-only object such as
+/// `object_opening_demo1`), with the skeleton the actor plays it on: its joint count comes from
+/// that skeleton. The content crate lists them (`oot_actors::foreign_anims()`); the importer
+/// decodes each into `keys::anim(anim_file, anim)`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ForeignAnim {
+    pub anim_file: String,
+    pub anim: String,
+    pub skel_file: String,
+    pub skel: String,
+}
+
 /// What a segment holds for a bake.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BakeSegment {
@@ -190,9 +206,13 @@ pub enum BakeBody {
     /// A skeleton's mesh as `SkelAnime_DrawFlex*` draws it, with limbs' lists replaced
     /// (`OverrideLimbDraw` setting `*dList`).
     Skeleton { file: String, symbol: String, limbs: Vec<LimbOverride> },
+    /// A skin skeleton's mesh as `Skin_DrawImpl` draws it: normal limb `i` under bone `i`, and
+    /// each animated limb's vertex groups under bones of their own (`crate::skin`).
+    Skin { file: String, symbol: String },
 }
 
-/// A limb whose list is replaced by `file`'s `symbol`, drawn with `file` on segment 6.
+/// A limb whose list is replaced by `file`'s `symbol`, drawn with `file` on segment 6; an empty
+/// `symbol` draws nothing (`*dList = NULL`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct LimbOverride {
     /// The limb's index in the skeleton (0-based: `OverrideLimbDraw`'s `limbIndex - 1`).
@@ -403,6 +423,10 @@ impl GamePack {
 
     pub fn mesh(&self, file: &str, symbol: &str) -> Result<DrawList> {
         self.assets.get(&keys::mesh(file, symbol))
+    }
+
+    pub fn skin_skeleton(&self, file: &str, symbol: &str) -> Result<crate::skin::SkinSkeleton> {
+        self.assets.get(&keys::skin(file, symbol))
     }
 
     pub fn skeleton(&self, file: &str, symbol: &str) -> Result<Skeleton> {

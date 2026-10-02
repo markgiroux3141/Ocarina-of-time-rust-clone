@@ -214,6 +214,8 @@ pub const QUEST_SONG_MINUET: u32 = 0x06;
 pub const QUEST_SONG_LULLABY: u32 = 0x0C;
 pub const QUEST_SONG_SARIA: u32 = 0x0E;
 pub const QUEST_KOKIRI_EMERALD: u32 = 0x12;
+pub const QUEST_GORON_RUBY: u32 = 0x13;
+pub const QUEST_ZORA_SAPPHIRE: u32 = 0x14;
 pub const QUEST_STONE_OF_AGONY: u32 = 0x15;
 pub const QUEST_SKULL_TOKEN: u32 = 0x17;
 /// `QUEST_HEART_PIECE_COUNT`: the pieces are counted in `questItems`' top four bits.

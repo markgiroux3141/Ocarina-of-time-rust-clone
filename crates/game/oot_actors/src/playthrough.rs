@@ -49,7 +49,8 @@
 //!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
-//! green rupees). The run cuts the four bushes by child 4 in turn until one drops. A change to
+//! green rupees). The run cuts the four bushes by child 4 in turn until one drops (in the order
+//! that gives a drop with `Object_Kankyo`'s draws in the forest). A change to
 //! who calls `Rand` and when changes the draws; if all four then come up empty (about one
 //! time in five), the run stops with "none of the 4 bushes dropped anything", and the list or
 //! its order needs changing.
@@ -584,7 +585,7 @@ impl Playthrough {
             Task::Walk(vec![Vec3::new(0.0, -80.0, 800.0), Vec3::new(0.0, 0.0, 480.0), Vec3::new(400.0, 0.0, 470.0)]),
             // Child 4 at (669, 0, 521) faces about -z.
             Task::Talk(Who::Kokiri(4), Vec3::new(660.0, 0.0, 465.0), Step::Kokiri),
-            Task::CutBushes(vec![Vec3::new(594.0, 0.0, 542.0), Vec3::new(572.0, 0.0, 603.0), Vec3::new(678.0, 0.0, 596.0), Vec3::new(385.0, 0.0, 643.0)]),
+            Task::CutBushes(vec![Vec3::new(594.0, 0.0, 542.0), Vec3::new(385.0, 0.0, 643.0), Vec3::new(572.0, 0.0, 603.0), Vec3::new(678.0, 0.0, 596.0)]),
             // Through the stream's ford and along its east side, round Mido where he stands
             // aside (path 1's end, (1412, 0, 211): the preset's EVENTCHKINF_04) by the narrow
             // bank west of him, along the path to the En_Holl and down into the meadow, to the

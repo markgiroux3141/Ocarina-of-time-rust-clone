@@ -75,6 +75,11 @@ pub struct Interpreter {
     tile_dyn: [Option<u8>; 8],
     env_dyn: Option<u8>,
     prim_dyn: Option<u8>,
+    /// Vertex buffers whose vertices carry their own bone, by segment: a vertex loaded from
+    /// entry `i` of the segment's buffer follows bone `vertex_bones[seg][i]` instead of the
+    /// current matrix's (OoT's skin limbs, whose vertices the game rewrites every frame, each
+    /// group to its own point: `z_skin.c`).
+    pub vertex_bones: [Option<Arc<[BoneId]>>; 16],
 }
 
 
@@ -111,6 +116,7 @@ impl Interpreter {
             tile_dyn: [None; 8],
             env_dyn: None,
             prim_dyn: None,
+            vertex_bones: Default::default(),
         }
     }
 
@@ -374,6 +380,8 @@ impl Interpreter {
         let Some(v0) = end.checked_sub(n) else { return };
         let Some((buf, off)) = self.resolve(w1, n * 16) else { return };
         let normal_mat = self.mv.local;
+        let own_bones = self.vertex_bones[((w1 >> 24) & 0xF) as usize].clone();
+        let first = (w1 & 0x00FF_FFFF) as usize / 16;
         for i in 0..n {
             let o = off + i * 16;
             let rd = |k: usize| i16::from_be_bytes([buf[o + k], buf[o + k + 1]]);
@@ -384,7 +392,7 @@ impl Interpreter {
                 break;
             }
             self.vtx[slot] = RawVertex {
-                bone: self.mv.bone,
+                bone: own_bones.as_ref().map_or(self.mv.bone, |b| b.get(first + i).copied().unwrap_or(NO_BONE)),
                 pos: self.mv.local.transform_point3(p),
                 normal: normal_mat.transform_vector3(nrm).normalize_or_zero(),
                 color: [buf[o + 12], buf[o + 13], buf[o + 14], buf[o + 15]],

@@ -275,6 +275,12 @@ pub struct PlayState {
     pub next_cam_id: i16,
     /// `z_camera.c`'s state every camera shares.
     pub cam_globals: CameraGlobals,
+    /// The one-point cutscenes' statics (`crate::onepoint`): code segment statics, carried over
+    /// scene changes.
+    pub onepoint: crate::onepoint::OnePointStatics,
+    /// `play->view`'s eye, at and fovy: what the active camera's last `Camera_Update` set
+    /// (`View_LookAt`), which one-point cutscenes start from.
+    pub view: crate::camera::CamView,
     /// `shrink_window.c`'s letterbox.
     pub letterbox: Letterbox,
     /// The spikes' follow camera, and which camera drives Player and the view.
@@ -352,6 +358,22 @@ pub struct PlayState {
     pub c_up_elf_msgs: Option<usize>,
     /// `lightCtx`: the actors' point lights (`crate::lights`).
     pub light_ctx: crate::lights::LightContext,
+    /// `envCtx` (`crate::env::EnvCtx`) and `z_kankyo.c`'s statics that outlive a scene
+    /// (`gWeatherMode`, the lightning).
+    pub env_ctx: crate::env::EnvCtx,
+    pub env_statics: crate::env::EnvStatics,
+    /// The lightning bolts `Environment_DrawLightning` draws this frame, and the lightning's
+    /// flash (`Environment_DrawLightningFlash`: its colour and alpha), for the renderer.
+    pub lightning_bolts: Vec<crate::env::LightningBolt>,
+    pub lightning_flash: Option<[u8; 4]>,
+    /// `Environment_DrawRain`'s drops and rings this frame (`crate::weather`).
+    pub rain: crate::weather::RainDraw,
+    /// `D_801614B0` (`z_play.c`): the screen's monochrome tint (`VisMono`) a cutscene sets.
+    pub vis_mono_color: [u8; 4],
+    /// `unk_11DE9`: the actors frozen (`Actor_UpdateAll` skipped).
+    pub unk_11de9: bool,
+    /// `actorCtx.titleCtx`: the place name's title card.
+    pub title_ctx: crate::title_card::TitleCardContext,
     /// The game's side of the audio (`crate::audio`): its statics are the code segment's, so a
     /// scene change carries them over. A driver hands its `GameOp`s to the audio side after
     /// each frame and gives it the audio side's `AudioView` before the next
@@ -392,8 +414,9 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0 };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, iron_boots: false };
         let game_camera = GameCamera::new(&data.camera, &pv);
+        let view = crate::camera::CamView { eye: game_camera.eye, at: game_camera.at, fov: game_camera.fov };
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
             game_camera,
@@ -401,6 +424,8 @@ impl PlayState {
             active_cam_id: CAM_ID_MAIN,
             next_cam_id: CAM_ID_MAIN,
             cam_globals: CameraGlobals::main_init(),
+            onepoint: crate::onepoint::OnePointStatics::new(&data.camera.onepoint),
+            view,
             letterbox: Letterbox::new(),
             camera_kind: CameraKind::Game,
             data,
@@ -444,6 +469,14 @@ impl PlayState {
             env_flags: [0; 20],
             c_up_elf_msgs: None,
             light_ctx: Default::default(),
+            env_ctx: crate::env::EnvCtx::init(crate::env::LIGHT_MODE_TIME, 0, 0, 0),
+            env_statics: Default::default(),
+            lightning_bolts: Vec::new(),
+            lightning_flash: None,
+            rain: Default::default(),
+            vis_mono_color: [0; 4],
+            unk_11de9: false,
+            title_ctx: Default::default(),
             audio: Default::default(),
             audio_side: None,
             sequence_ctx: Default::default(),
@@ -494,6 +527,7 @@ impl PlayState {
             gravity: a.gravity,
             climbing: pi.state_flags1() & PLAYER_STATE1_21 != 0,
             state1: pi.state_flags1(),
+            iron_boots: pi.current_boots() == crate::actor_ctx::PLAYER_BOOTS_IRON,
         })
     }
 
@@ -658,7 +692,9 @@ impl PlayState {
             self.audio.play_sfx_general(sfx_id, pos, 4, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxS8::Zero);
         }
         self.col_chk.clear();
-        self.update_all_actors();
+        if !self.unk_11de9 {
+            self.update_all_actors();
+        }
         // The cutscene system (z_demo.c): func_80064558, then func_800645A0.
         self.func_80064558();
         self.func_800645a0();
@@ -682,10 +718,21 @@ impl PlayState {
             self.follow_camera.update(&input, pos, facing, speed);
         }
         self.camera_update(input);
-        // Environment_Update (pauseCtx.state 0: no pause menu): of it, only the time of day's
-        // music (the clock, the lights' update and the weather aren't ported here).
+        // Environment_Update (pauseCtx.state 0: no pause menu): the rain, the time of day's
+        // music, the lights (time doesn't pass).
         if self.assets.is_some() {
+            self.env_ctx.update_rain(self.gameplay_frames);
             self.environment_play_time_based_sequence();
+            self.environment_update_lights();
+        }
+        // Play_Draw's environment, before the rooms and the actors: the lightning's strike and
+        // its bolts (Environment_UpdateLightningStrike, Environment_DrawLightning).
+        if self.assets.is_some() {
+            self.environment_update_lightning_strike();
+            let (eye, at) = (self.view.eye, self.view.at);
+            self.lightning_bolts = self.env_statics.update_lightning_bolts(eye, at, &mut self.rand);
+            // After the rooms and the skybox: Environment_DrawRain.
+            self.rain = self.environment_draw_rain();
         }
         // Play_Draw: the actors' draw-time state (Player's foot IK), and the view it sets up
         // (play->viewProjectionMtxF), which the next frame's target context reads.
@@ -709,6 +756,8 @@ impl PlayState {
             self.update_camera(self.active_cam_id, input);
             self.game_camera.view_unk_124 = 0;
         }
+        // Camera_Finish(GET_ACTIVE_CAM(this)): a one-point cutscene's camera whose timer ran out.
+        self.camera_finish(self.active_cam_id);
         self.view_proj = self.camera_view_proj();
         // Actor_DrawAll (func_800315AC): each actor's projectedPos through the frame's
         // viewProjectionMtxF, then the sound it asked for (func_80030ED8).
@@ -841,10 +890,16 @@ impl PlayState {
     /// `Camera_Update` for camera `id`, following Player.
     fn update_camera(&mut self, id: i16, input: Input) {
         let Some(pv) = self.player_view() else { return };
+        let Some(cam) = self.camera(id) else { return };
+        let (target, door_actor) = (cam.target, cam.door_params.door_actor);
         // Actor_GetFocus(camera->target), unless it was killed (update == NULL).
-        let target_focus = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
-        let door = self.game_camera.door_params.door_actor.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
-        let target_pos_rot = self.game_camera.target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
+        let target_focus = target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| a.focus_pos);
+        let door = door_actor.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
+        let target_pos_rot = target.and_then(|h| self.actors.actor(h)).filter(|a| !a.killed).map(|a| (a.world_pos, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]));
+        let target_info = target.and_then(|h| self.cam_actor(h));
+        let player_actor_info = self.player.and_then(|h| self.cam_actor(h));
+        let main_player_pos_rot = self.game_camera.main_player_pos_rot();
+        let player_waist = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.body_part(crate::actor_ctx::PLAYER_BODYPART_WAIST)).unwrap_or(pv.pos);
         let oc_lines = self.col_chk.oc_lines(&mut self.actors);
         let f = CamFrame {
             col: &self.col,
@@ -858,10 +913,19 @@ impl PlayState {
             oc_lines: &oc_lines,
             target_pos_rot,
             cs_active: self.cs_ctx.state != crate::cutscene::CS_STATE_IDLE,
+            target: target_info,
+            player_actor_info,
+            view: self.view,
+            main_player_pos_rot,
+            player_waist,
         };
         let cam = if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut((id - CAM_ID_SUB_FIRST) as usize).and_then(|c| c.as_mut()) };
         let Some(cam) = cam else { return };
-        cam.update(&self.data.camera, &f, &mut self.letterbox, &mut self.cam_globals);
+        cam.update(&self.data.camera, &f, &mut self.letterbox, &mut self.cam_globals, &mut self.onepoint, &mut self.rand);
+        // View_LookAt: an active camera's update sets play->view.
+        if cam.status == crate::camera::CAM_STAT_ACTIVE {
+            self.view = crate::camera::CamView { eye: cam.eye, at: cam.at, fov: cam.fov };
+        }
         // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y).
         let write = cam.player_write.take();
         // Camera_UpdateInterface's Interface_ChangeAlpha.
@@ -876,6 +940,7 @@ impl PlayState {
             crate::interface::change_alpha(&mut self.save, alpha_type);
         }
         self.camera_sfx();
+        self.apply_cam_requests(id);
     }
 
     /// The sounds the cameras asked for (`crate::camera::CamSfx`), played in order as the C
@@ -896,6 +961,7 @@ impl PlayState {
                 CamSfx::ModeChange(8) => self.audio.func_80078884(NA_SE_SY_ATTENTION_ON),
                 CamSfx::ModeChange(_) => {}
                 CamSfx::Error => self.audio.func_80078884(NA_SE_SY_ERROR),
+                CamSfx::Sfx(id) => self.audio.func_80078884(id),
                 CamSfx::Crawl => {
                     let Some(ph) = self.player else { continue };
                     let unk_89e = self.actors.get(ph).and_then(|p| p.as_player()).map(|p| p.unk_89e()).unwrap_or(0);
@@ -1106,6 +1172,11 @@ impl PlayState {
     /// `Play_CamIsNotFixed`: not a prerendered room, not a fixed-camera scene (the toggle, the
     /// fixed and the market kinds; the shop kind is covered by its rooms), and not the castle
     /// courtyard.
+    /// The loaded scene's title file (`play->loadedScene->titleFile`), empty for none.
+    pub fn title_file(&self) -> String {
+        self.assets.as_ref().and_then(|a| a.scenes.scenes.get(self.scene_id as usize)).map(|s| s.title_file.clone()).unwrap_or_default()
+    }
+
     pub fn cam_is_not_fixed(&self) -> bool {
         use crate::scene::*;
         /// `SCENE_HAIRAL_NIWA`.
@@ -1157,6 +1228,8 @@ impl PlayState {
             };
             crate::target::update(&mut self.target_ctx, &self.actors, &frame, &mut self.audio);
         }
+        // TitleCard_Update, then DynaPoly_UpdateBgActorTransforms.
+        self.title_ctx.update();
         self.col.dyna.update_prev_transforms();
     }
 
@@ -1256,6 +1329,9 @@ impl PlayState {
     /// `Actor_Draw` binds the light list's point lights at the actor's position
     /// (`Lights_BindAll`; none with `ACTOR_FLAG_22`) for everything the actor draws.
     pub fn draw(&self, frame: &RenderFrame, view: &ViewInfo, out: &mut DrawOut) {
+        // Play_Draw's weather before Actor_DrawAll: the bolts (before the rooms in the C) and
+        // the rain.
+        crate::weather::draw(&self.rain, &self.lightning_bolts, view, out);
         for (h, rs) in &frame.actors {
             if let Some(a) = self.actors.get(*h)
                 && !a.base().killed
@@ -1272,6 +1348,10 @@ impl PlayState {
             }
         }
         let _ = view;
+        // The end of Actor_DrawAll: TitleCard_Draw.
+        let mut title = Vec::new();
+        self.title_ctx.draw(&mut title);
+        out.overlay_2d.extend(title.iter().map(|s| s.draw_cmd()));
         // Play_DrawOverlayElements → Interface_Draw: the HUD either side of the reticle, then
         // the message box.
         let hud = |f: fn(&InterfaceContext, &SaveContext, &mut Vec<crate::sprite::Sprite>), out: &mut DrawOut| {
@@ -1286,6 +1366,12 @@ impl PlayState {
         hud(InterfaceContext::draw_hud_2, out);
         self.msg_ctx.draw(out);
         out.letterbox_rows = frame.letterbox;
+        // The fills, where Play_Draw draws them (the transition's under the overlay's HUD and
+        // message box).
+        let (env, fade) = self.draw_fills();
+        out.opa_fill = env;
+        out.xlu_fill = env;
+        out.overlay_fill = fade;
     }
 }
 

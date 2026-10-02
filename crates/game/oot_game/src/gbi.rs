@@ -287,6 +287,37 @@ pub mod setup_dl {
         d
     }
 
+    /// `SETUPDL_20`: `G_CC_MODULATEIA_PRIM`, `gsDPSetOtherMode(.. G_CYC_1CYCLE .., G_AC_THRESHOLD |
+    /// G_ZS_PIXEL | G_RM_ZB_CLD_SURF | G_RM_ZB_CLD_SURF2)`, `gsSPLoadGeometryMode(G_ZBUFFER |
+    /// G_SHADE | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_20() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.0.push((0xD700_0002, 0xFFFF_FFFF));
+        d.combine_lerp(MODULATEIA_PRIM, MODULATEIA_PRIM);
+        // G_RM_ZB_CLD_SURF: Z_CMP | IM_RD | CVG_DST_SAVE | FORCE_BL | ZMODE_XLU |
+        // GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA), and _SURF2; G_AC_THRESHOLD.
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0050_4B51));
+        d.0.push((0xD900_0000, 0x0000_0001 | 0x0000_0004 | 0x0020_0000));
+        d
+    }
+
+    /// `SETUPDL_61`: `gsDPSetCombineLERP(PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, PRIMITIVE,
+    /// 0, TEXEL0, 0, ..)` in both cycles, `gsDPSetOtherMode(G_AD_NOISE | G_CD_NOISE | .. |
+    /// G_CYC_1CYCLE .., G_AC_NONE | G_ZS_PIXEL | G_RM_ZB_CLD_SURF | G_RM_ZB_CLD_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_CULL_BACK | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_61() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.0.push((0xD700_0002, 0xFFFF_FFFF));
+        let c = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::TEXEL0, cc_d::ENVIRONMENT, ac::PRIMITIVE, ac::ZERO, ac::TEXEL0, ac::ZERO];
+        d.combine_lerp(c, c);
+        // G_AD_NOISE (2 << 4), G_CD_NOISE (2 << 6), G_TC_FILT, G_TF_BILERP, G_TP_PERSP.
+        d.0.push((0xEF00_0000 | 0x20 | 0x80 | (6 << 9) | (2 << 12) | (1 << 19), 0x0050_4B50));
+        d.0.push((0xD900_0000, 0x0000_0001 | 0x0000_0004 | 0x0000_0400 | 0x0020_0000));
+        d
+    }
+
     /// `SETUPDL_5`: as `SETUPDL_26` with `G_RM_AA_ZB_XLU_SURF | G_RM_AA_ZB_XLU_SURF2`.
     pub fn setup_dl_5() -> Dl {
         let mut d = Dl::default();

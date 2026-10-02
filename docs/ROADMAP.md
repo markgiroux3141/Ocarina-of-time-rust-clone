@@ -53,10 +53,19 @@ Phase 5, GAME-04, is done too (see [GAME-04](GAME-04-audio.md)):
 - the phase's exit: scripted runs' sound effect requests checked against the C's calls frame by
   frame, and an audio golden.
 
-Next is Phase 6, the Deku Tree, on Master Quest, starting with the decomp upgrade (ADR 0028).
+Now the cutscene phase (GAME-04b, [GAME-04b-cutscenes.md](GAME-04b-cutscenes.md)), between
+Phase 5 and Phase 6: all seven milestones are done (the one-point cutscenes: the crawlspace's
+exit, the attention cameras, the falling chest's shot; the jump, climb and hang cameras; the
+cutscenes' music and sounds, and Player's cutscene modes from the C's tables; the environment
+across frames: the lights' override and blend, the rain, the lightning; the title cards; the
+opening's nightmare with its riders on their horses (skin skeletons, ADR 0030) and the
+drawbridge; the cutscenes checked against the C frame by frame). Left: the user's look at the
+opening and the Deku Tree's talk by hand. Then Phase 6, the Deku Tree, on Master Quest,
+starting with the decomp upgrade (ADR 0028).
 
-**Priorities (2026-09-30):** gameplay first. Cutscene polish is deferred (BACKLOG #3, #5, #7, #10),
-and scripted runs may skip cutscenes where playing them gets in the way.
+**Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
+work doesn't have to think about them (the user decided against skipping them). This replaces
+the 2026-09-30 deferral: the scripted runs play the cutscenes.
 
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
@@ -67,7 +76,7 @@ and scripted runs may skip cutscenes where playing them gets in the way.
 - ~~The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up.~~ Undone in GAME-03 milestone 5 (ADR 0023): every scene's cutscene layers are in the pack, and a new file plays the opening. The routes from Link's bed keep their start (`cutsceneIndex` 0).
 - No effects (`EffectSs`): Navi's sparkles, and the effects' own `Rand` calls, are missing.
 - ~~No audio at all.~~ Undone in GAME-04 (ADRs 0024 to 0027): the library, the game's music and the
-  sound effects. Cutscenes still have no music or sounds of their own (BACKLOG #10).
+  sound effects; the cutscenes' music and sounds in GAME-04b milestone 3.
 
 ## Phase 3, the end: GAME-02 milestone 4 (done)
 
@@ -174,6 +183,33 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
      run, two doors and the Deku Tree run's bushes, their requests and positions checked frame
      by frame against the C's arithmetic (`oot_actors --test sfx_route`), and the run's audio
      log as the golden `mido_shop_audio`. Phase 5 is complete.)*
+
+## The cutscene phase (GAME-04b)
+
+**Goal:** finish the cutscenes between Phase 5 and Phase 6 (decided 2026-10-01): what GAME-03's
+cutscene system left out, the one-point cutscenes, and the camera modes still on the fallback.
+On decomp `2f4c25d`'s names; Phase 6's upgrade migrates them. See
+[GAME-04b-cutscenes.md](GAME-04b-cutscenes.md).
+
+1. **One-point cutscenes** (done, ADR 0029): `z_onepointdemo.c`, the cameras' queue and
+   `Camera_Finish`, `Camera_Unique9`, `Camera_Demo9`, `Camera_Demo5`; the crawlspace's exits
+   (9601, 9602: BACKLOG #3), `En_Box`'s fall (4500) and attention calls; the system the Deku
+   Tree's actors call.
+2. **The camera modes on the fallback** (done): `Camera_Jump1`, `Camera_Jump2` (the ladder:
+   BACKLOG #2), `Camera_Unique1`; the cutscenes' settings were already ported. `Camera_Battle1`
+   waits for Phase 6's enemies.
+3. **Cutscene audio** (done, BACKLOG #10): the scripts' music commands, `z_demo.c`'s own sounds,
+   Player's cutscene modes (from `D_80854B18` and `D_80854E50` in the pack) with their voices and
+   sounds.
+4. **The rest of `z_demo.c`'s commands** (done): the misc actions on `envCtx` (rain,
+   lightning...), the lighting override, the environment's lights every frame.
+5. **Title cards** (done, BACKLOG #5): `TitleCard_InitPlaceName` and the scene-entry title
+   cards, the place names' textures in the pack.
+6. **The opening's nightmare** (done, BACKLOG #7): `En_Viewer` with the horses' skin
+   skeletons (ADR 0030), `Bg_Spot00_Hanebasi`, the rain's and the bolts' draw.
+7. **Cutscene polish** (done for the tests, BACKLOG #10): the splines, the letterbox, the
+   narration's placement and Link's poses checked against the C by tests (no port bugs found);
+   the look by hand is the user's.
 
 ## Phase 6: the Deku Tree (GAME-05)
 

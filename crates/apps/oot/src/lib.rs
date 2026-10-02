@@ -663,11 +663,8 @@ impl eframe::App for App {
             let id = self.target.ensure(&self.device, &self.render_state, w, h);
             let target = self.target.target();
             draw_frame(&mut self.renderer, &self.device, &self.queue, target, &mut self.assets, &mut self.scene, &self.world, &frame, self.show_wire);
+            // The fills are in the frame (PlayState::draw_fills), under the HUD and messages.
             let rect = ui.add(egui::Image::new((id, avail))).rect;
-            // The transition's fade over the frame (TransitionFade_Draw).
-            if let Some(f) = self.world.screen_fill() {
-                ui.painter_at(rect).rect_filled(rect, 0.0, egui::Color32::from_rgba_unmultiplied(f[0], f[1], f[2], f[3]));
-            }
 
             if self.show_hud {
                 let p = self.world.player();

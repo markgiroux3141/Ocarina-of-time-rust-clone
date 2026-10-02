@@ -42,6 +42,8 @@ pub struct SceneDef {
     pub file: String,
     pub enum_name: String,
     pub draw_config: String,
+    /// The title card's file (`g_pn_06`), empty for `none`.
+    pub title_file: String,
 }
 
 /// The tables a scene load needs, read from the decomp.
@@ -151,7 +153,9 @@ impl SceneTables {
         for (i, (_, a)) in define_rows(&read(&tables.join("scene_table.h"))?).into_iter().enumerate() {
             let g = |k: usize| a.get(k).cloned().unwrap_or_default();
             scene_ids.insert(g(2), i as i64);
-            scenes.push(SceneDef { id: i, file: g(0), enum_name: g(2), draw_config: g(3) });
+            let title = g(1);
+            let title_file = if title == "none" { String::new() } else { title };
+            scenes.push(SceneDef { id: i, file: g(0), enum_name: g(2), draw_config: g(3), title_file });
         }
         let objects = define_rows(&read(&tables.join("object_table.h"))?)
             .into_iter()

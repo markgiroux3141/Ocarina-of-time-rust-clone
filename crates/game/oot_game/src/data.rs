@@ -249,6 +249,22 @@ pub struct GameData {
     /// `D_80115FF8` (`z_actor.c`): per `targetMode`, (rangeSq, leashScale) = (SQ(range), range / leash).
     pub target_ranges: Vec<(f32, f32)>,
     pub items: ItemTables,
+    /// Player's cutscene modes: `D_80854B18` (each `csMode`'s start) and `D_80854E50` (its
+    /// update), in mode order.
+    pub cs_mode_starts: Vec<CsModeEntry>,
+    pub cs_mode_updates: Vec<CsModeEntry>,
+}
+
+/// A `struct_80854B18` (`z_player.c`): a cutscene mode's start or update. `ty` > 0 is a handler
+/// of `D_80854AA4` with `anim` (or, for 18, the sound table `name`); `ty` < 0 calls the function
+/// `name`; 0 does nothing.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CsModeEntry {
+    pub ty: i8,
+    pub anim: Option<AnimId>,
+    /// The function (`func_808515A4`), the sound table (`D_80854AF0`), or the animation's short
+    /// name; empty for NULL.
+    pub name: String,
 }
 
 impl GameData {

@@ -489,9 +489,17 @@ impl EnMd {
             temp = 4;
             temp2 = true;
         }
-        // No cutscenes or debug camera: Link's position, and a child's eyes.
-        self.unk_1e0.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
-        self.unk_1e0.eye_height = if !play.save.adult { 0.0 } else { -18.0 };
+        if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            // In a cutscene: the view's eye, 40 up, the whole head (the debug camera isn't
+            // ported).
+            self.unk_1e0.target = play.view.eye;
+            self.unk_1e0.eye_height = 40.0;
+            temp = 2;
+        } else {
+            // Link's position, and a child's eyes.
+            self.unk_1e0.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
+            self.unk_1e0.eye_height = if !play.save.adult { 0.0 } else { -18.0 };
+        }
         let mut t = self.unk_1e0;
         func_80034a14(play, &mut self.actor, &mut t, 2, temp);
         self.unk_1e0 = t;

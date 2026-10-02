@@ -20,6 +20,7 @@ pub mod project;
 pub mod rom;
 pub mod room;
 pub mod scene;
+pub mod skin;
 pub mod symbols;
 pub mod synth;
 pub mod tables;

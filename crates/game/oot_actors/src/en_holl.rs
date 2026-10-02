@@ -146,9 +146,11 @@ impl EnHoll {
         }
     }
 
-    /// `func_80A59014` (no debug camera and no cutscenes: Player's position is used).
+    /// `func_80A59014`: Player's position, or in a cutscene the view's eye (`useViewEye`: the
+    /// camera flying through loads the rooms it sees; the debug camera isn't ported).
     fn horizontal_simple(&mut self, play: &mut PlayState) {
-        let Some(pp) = Self::player_pos(play) else { return };
+        let use_view_eye = play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE;
+        let Some(pp) = (if use_view_eye { Some(play.view.eye) } else { Self::player_pos(play) }) else { return };
         let v = self.local(pp);
         let half = if self.kind() == 6 { PLANE_HALFWIDTH } else { PLANE_HALFWIDTH_2 };
         let kokiri8 = Self::is_kokiri_layer8(play);
