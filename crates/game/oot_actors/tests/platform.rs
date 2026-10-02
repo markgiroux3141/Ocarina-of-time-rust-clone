@@ -1,7 +1,7 @@
 //! Milestone 7 checks: DynaPoly collision with one moving platform, `Bg_Ydan_Hasi`'s floating
 //! block (`gDTSlidingPlatformCol` of `object_ydan_objects`, from the asset pack). Expected values follow
 //! from `z_bgcheck.c` (`DynaPoly_AddBgActorToLookup`, the `BgCheck_*Dyna*` checks),
-//! `code_800430A0.c` (carrying) and `z_bg_ydan_hasi.c`, not from the port.
+//! `z_bg_collect.c` (carrying) and `z_bg_ydan_hasi.c`, not from the port.
 //! The course's channel: water y -20 over x∈[350,950], z∈[-300,-100]; the platform's home is
 //! (650, 0, -200) facing +x (0x4000).
 
@@ -82,7 +82,7 @@ fn the_platform_slides_and_bobs() {
 
 #[test]
 fn standing_on_it_carries_link() {
-    // Dropped onto the platform: floorBgId becomes its bg id, and each frame func_800430A0
+    // Dropped onto the platform: floorBgId becomes its bg id, and each frame DynaPolyActor_UpdateCarriedActorPos
     // moves Link by cur · prev⁻¹, so his offset from the platform stays fixed. His height is
     // the top face from the s16 vertex list, i.e. the platform y truncated.
     let Some(mut w) = world_with_platform(Vec3::new(650.0, 10.0, -200.0), 0) else { return };

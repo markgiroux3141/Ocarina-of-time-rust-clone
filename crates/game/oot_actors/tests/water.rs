@@ -1,6 +1,6 @@
-//! Milestone 6 checks: water boxes (`WaterBox_GetSurfaceImpl`), `yDistToWater`, entering and
+//! Milestone 6 checks: water boxes (`BgCheck_GetWaterSurface`), `yDistToWater`, entering and
 //! leaving water (`func_8083D53C`), buoyancy (`func_8084B000`), swim strokes (`func_8084AEEC`),
-//! diving (`func_8084DC48`) and surfacing (`func_8083D12C`, `func_8084E1EC`).
+//! diving (`Player_Action_8084DC48`) and surfacing (`func_8083D12C`, `Player_Action_8084E1EC`).
 //! Expected values come from `z_player.c` / `z_bgcheck.c` and `sAgeProperties`, not the port.
 //! The course's pool: water surface y=-20 over x∈[-950,-500], z∈[650,950]; floor -150 over
 //! x∈[-950,-800], then a ramp up to the ground at x=-500.
@@ -41,7 +41,7 @@ fn run_wet(w: &mut PlayState, script: &[eng_input::pad::PadState]) -> Vec<(Frame
 
 #[test]
 fn water_box_surface_query() {
-    // WaterBox_GetSurfaceImpl: room ((properties >> 13) & 0x3F) must match, or be 0x3F; boxes
+    // BgCheck_GetWaterSurface: room ((properties >> 13) & 0x3F) must match, or be 0x3F; boxes
     // with bit 19 set are skipped; the x/z test is strict.
     let mut b = CollisionBuilder::new();
     let s = b.surface(0, 0);
@@ -73,7 +73,7 @@ fn age_thresholds_come_from_age_properties() {
 fn wading_in_starts_swimming_past_unk_2c() {
     // Down the ramp towards -x. func_8083D53C runs after the move and bgcheck, so the frame's
     // recorded position is the one it tested: swimming starts on the first frame with
-    // yDistToWater > unk_2C (56), and Player_UpdateCommon then scales speeds by 0.5 (D_808535E8).
+    // yDistToWater > unk_2C (56), and Player_UpdateCommon then scales speeds by 0.5 (sWaterSpeedFactor).
     let Some(mut w) = world_at(Vec3::new(-450.0, 0.0, 800.0), -0x4000) else { return };
     let f = run_wet(&mut w, &repeat(stick(0, 80), 40));
     let k = f.iter().position(|(_, wet)| *wet).expect("entered the water");
@@ -141,7 +141,7 @@ fn dive_holds_then_rises_and_surfaces() {
     run(&mut w, &repeat(stick(0, 0), 120));
     assert_eq!(w.player().action, Action::Swim);
     assert!(w.player().state2 & STATE2_10 == 0, "func_80832340 cleared it after surfacing");
-    // func_8083D12C: A with |unk_6C2| < 12000 → func_8084DC48, velocity.y = 0, STATE2_10|11.
+    // func_8083D12C: A with |unk_6C2| < 12000 → Player_Action_8084DC48, velocity.y = 0, STATE2_10|11.
     let mut s = vec![with(stick(0, 0), BTN_A)];
     s.extend(repeat(with(stick(0, 0), BTN_A), 20));
     let f = run(&mut w, &s);
@@ -206,7 +206,7 @@ fn child_swims_in_shallower_water() {
 
 #[test]
 fn z_in_water_strafes() {
-    // Z with nothing to target → parallel mode; func_8084DAB4 → func_8084D980 picks the stroke
+    // Z with nothing to target → parallel mode; Player_Action_8084DAB4 → func_8084D980 picks the stroke
     // by direction via func_8083FD78: sideways is link_swimer_Rside_swim / Lside_swim.
     let Some(mut w) = world_at(Vec3::new(-880.0, 0.0, 800.0), 0x4000) else { return };
     run(&mut w, &repeat(stick(0, 0), 120));

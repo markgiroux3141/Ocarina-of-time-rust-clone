@@ -19,8 +19,8 @@ camera's setting:
 - **Any other setting.** Every house's default view is `CAM_SET_PREREND_PIVOT`: the viewpoint
   starts at `VIEWPOINT_PIVOT` in `SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT` scenes. With it
   `Play_Draw` draws the scene's *room skybox* after the rooms: a 360° picture of the room on
-  two to four faces around the eye (`skyboxCtx.unk_140 != 0`, `Skybox_Setup`). Its display
-  lists are built once by `Skybox_Init` (`func_800AEFC8` → `func_800ADBB0`) and drawn after
+  two to four faces around the eye (`skyboxCtx.drawType != 0`, `Skybox_Setup`). Its display
+  lists are built once by `Skybox_Init` (`Skybox_Calculate256` → `Skybox_CalculateFace256`) and drawn after
   `SETUPDL_40`, which has no z-buffer either.
 
 So a house needs both a background and a skybox before it looks like itself. Three questions:
@@ -51,10 +51,10 @@ So a house needs both a background and a skybox before it looks like itself. Thr
     the game's view, since the 3D view keeps the vertical fov (ADR 0013). Outside it is the
     clear colour.
 - **The room skyboxes are bakes** (ADR 0012).
-  - `oot_game::skybox` ports `func_800AEFC8`, `func_800ADBB0` and `SkyboxDraw_Draw` as
+  - `oot_game::skybox` ports `Skybox_Calculate256`, `Skybox_CalculateFace256` and `Skybox_Draw` as
     display-list generators. They produce the vertex buffer (`roomVtx`), the eight
     `dListBuf` lists, `SETUPDL_40` written out, and the draw's TLUT loads and calls.
-  - The importer reads `Skybox_Setup` from the C: each case that sets `unk_140`, its
+  - The importer reads `Skybox_Setup` from the C: each case that sets `drawType`, its
     `SKYBOX_*` value, and its `vr_*_static` and `vr_*_pal_static` files (`RoomSkybox`, kept
     in `SceneTable`). It bakes each as `bake/skybox/<name>`.
   - Two new `BakeSegment` kinds carry the data: `File` (a whole ROM file on a segment) and
@@ -71,7 +71,7 @@ So a house needs both a background and a skybox before it looks like itself. Thr
   bounds the difference.
 - **The skyboxes are exact to the display lists.** They go through the same interpreter as
   every other mesh, textures and palettes included.
-- **@bug (game): `SKYBOX_HAPPY_MASK_SHOP` gets four faces** (`func_800AEFC8` only gives two to
+- **@bug (game): `SKYBOX_HAPPY_MASK_SHOP` gets four faces** (`Skybox_Calculate256` only gives two to
   the shops after `SKYBOX_HOUSE_KAKARIKO`), but its files hold two. The last two read past
   them. The bake keeps those draws with unresolved textures, and the import notes it.
 - **Not modelled:**

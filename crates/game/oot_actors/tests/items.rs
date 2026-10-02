@@ -23,7 +23,7 @@ fn assets() -> Option<Arc<GameAssets>> {
 
 fn enter() -> Option<PlayState> {
     let a = assets()?;
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
     frames(&mut w, 30);
@@ -49,7 +49,8 @@ fn items(w: &PlayState) -> Vec<ActorHandle> {
 fn the_drop_tables_are_the_cs() {
     let Some(a) = assets() else { return };
     let t = &a.item_drops;
-    assert_eq!((t.ids.len(), t.quantities.len()), (240, 244));
+    // 15 tables of 16 each (the decomp before 52a510f had 4 zeros of padding after the quantities).
+    assert_eq!((t.ids.len(), t.quantities.len()), (240, 240));
     // Table 2 (Kokiri Forest's bushes: params 0x0200), entries 0x20..0x2F.
     let row: Vec<i16> = t.ids[0x20..0x30].iter().map(|&v| v as i16).collect();
     assert_eq!(

@@ -1,37 +1,37 @@
-//! The helpers `z_actor.c` gives NPCs: offering to talk (`func_8002F1C4` and its short forms),
-//! answering a talk request (`Actor_ProcessTalkRequest`), the per-frame talk handler
-//! (`func_800343CC`), the head and torso turning towards a point (`func_80034A14`,
-//! `func_800344BC`, `func_80034810` with the `D_80116130` presets), and the idle limb sway
-//! (`func_80034F54`), and the fade by distance (`func_80034DD4`).
+//! The helpers `z_actor.c` gives NPCs: offering to talk (`Actor_OfferTalkExchange` and its short forms),
+//! answering a talk request (`Actor_TalkOfferAccepted`), the per-frame talk handler
+//! (`Npc_UpdateTalking`), the head and torso turning towards a point (`Npc_TrackPoint`,
+//! `Npc_TrackPointWithLimits`, `Npc_UpdateAutoTurn` with the `sNpcTrackingPresets` presets), and the idle limb sway
+//! (`Actor_UpdateFidgetTables`), and the fade by distance (`Actor_UpdateAlphaByDistance`).
 //!
-//! Player takes an offer on A (`func_8083B644`, in `oot_actors::player`): the actor gets
-//! `ACTOR_FLAG_8` and the message box opens with its `textId` (`crate::message`).
+//! Player takes an offer on A (`Player_ActionHandler_Talk`, in `oot_actors::player`): the actor gets
+//! `ACTOR_FLAG_TALK` and the message box opens with its `textId` (`crate::message`).
 
 use glam::Vec3;
 
-use crate::actor::{ACTOR_FLAG_8, Actor};
+use crate::actor::{ACTOR_FLAG_TALK, Actor};
 use crate::play::PlayState;
 use crate::target::{pitch_to, yaw_to};
 
 /// `EXCH_ITEM_NONE`.
 pub const EXCH_ITEM_NONE: u8 = 0;
 
-/// `Actor_ProcessTalkRequest`: did Player accept this actor's talk offer (`ACTOR_FLAG_8`)?
+/// `Actor_TalkOfferAccepted`: did Player accept this actor's talk offer (`ACTOR_FLAG_TALK`)?
 pub fn process_talk_request(actor: &mut Actor) -> bool {
-    if actor.flags & ACTOR_FLAG_8 != 0 {
-        actor.flags &= !ACTOR_FLAG_8;
+    if actor.flags & ACTOR_FLAG_TALK != 0 {
+        actor.flags &= !ACTOR_FLAG_TALK;
         return true;
     }
     false
 }
 
-/// `func_8002F1C4`: the updating actor (`play.cur_actor`) offers to talk if it's the nearest
+/// `Actor_OfferTalkExchange`: the updating actor (`play.cur_actor`) offers to talk if it's the nearest
 /// offer within `xz_range` and `y_range` this frame (or Player targets it), recording itself in
 /// Player's `targetActor`.
 pub fn offer_talk_range(play: &mut PlayState, actor: &Actor, xz_range: f32, y_range: f32, exchange_item: u8) -> bool {
     let (Some(ph), Some(me)) = (play.player, play.cur_actor) else { return false };
     let Some(p) = play.actors.get_mut(ph) else { return false };
-    let player_flag8 = p.base().flags & ACTOR_FLAG_8 != 0;
+    let player_flag8 = p.base().flags & ACTOR_FLAG_TALK != 0;
     // Player_InCsMode: never (no cutscenes).
     let Some(pi) = p.as_player_mut() else { return false };
     let (_, target_dist) = pi.talk_target();
@@ -42,17 +42,17 @@ pub fn offer_talk_range(play: &mut PlayState, actor: &Actor, xz_range: f32, y_ra
     true
 }
 
-/// `func_8002F298`.
+/// `Actor_OfferTalkExchangeEquiCylinder`.
 pub fn offer_talk_exchange(play: &mut PlayState, actor: &Actor, range: f32, exchange_item: u8) -> bool {
     offer_talk_range(play, actor, range, range, exchange_item)
 }
 
-/// `func_8002F2CC`.
+/// `Actor_OfferTalk`.
 pub fn offer_talk(play: &mut PlayState, actor: &Actor, range: f32) -> bool {
     offer_talk_exchange(play, actor, range, EXCH_ITEM_NONE)
 }
 
-/// `func_8002F2F4`: within 50 plus the actor's `cylRadius`.
+/// `Actor_OfferTalkNearColChkInfoCylinder`: within 50 plus the actor's `cylRadius`.
 pub fn offer_talk_default(play: &mut PlayState, actor: &Actor) -> bool {
     let r = 50.0 + actor.col_chk_info.cyl_radius as f32;
     offer_talk(play, actor, r)
@@ -63,8 +63,8 @@ pub fn textbox_is_closing(play: &PlayState) -> bool {
     play.message_state() == crate::message::TEXT_STATE_CLOSING
 }
 
-/// `func_800343CC`: an NPC's talk handling for one frame. `talk_state` is the NPC's
-/// `unk_1E8.unk_00` (0: not talking). When a request was accepted it becomes 1; while talking,
+/// `Npc_UpdateTalking`: an NPC's talk handling for one frame. `talk_state` is the NPC's
+/// `interactInfo.talkState` (0: not talking). When a request was accepted it becomes 1; while talking,
 /// `update` advances it (`unkFunc2`); otherwise, on screen and in range, the NPC offers to talk
 /// and picks its text (`text`, `unkFunc1`). True when a talk starts.
 pub fn talk_update(play: &mut PlayState, actor: &mut Actor, talk_state: &mut i16, interact_range: f32, text: impl FnOnce(&PlayState, &Actor) -> u16, update: impl FnOnce(&mut PlayState, &mut Actor) -> i16) -> bool {
@@ -87,44 +87,44 @@ pub fn talk_update(play: &mut PlayState, actor: &mut Actor, talk_state: &mut i16
     false
 }
 
-/// `struct_80034A14_arg1`: an NPC's talk state and head / torso tracking.
+/// `NpcInteractInfo`: an NPC's talk state and head / torso tracking.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct NpcTrack {
-    /// `unk_00`: the talk state (`func_800343CC`).
+    /// `talkState`: the talk state (`Npc_UpdateTalking`).
     pub talk_state: i16,
-    /// `unk_02`: this frame's tracking mode (1 none, 2 head, 3 head and torso partly, 4 full).
+    /// `trackingMode`: this frame's tracking mode (1 none, 2 head, 3 head and torso partly, 4 full).
     pub mode: i16,
-    /// `unk_04`: frames until the idle mode changes; `unk_06`: the idle mode's step.
+    /// `autoTurnTimer`: frames until the idle mode changes; `autoTurnState`: the idle mode's step.
     pub timer: i16,
     pub idle_step: i16,
-    /// `unk_08`: the head's (x pitch, y yaw, z) turn; `unk_0E`: the torso's.
+    /// `headRot`: the head's (x pitch, y yaw, z) turn; `torsoRot`: the torso's.
     pub head: [i16; 3],
     pub torso: [i16; 3],
-    /// `unk_14`: the height the tracking looks from, above the actor's position.
+    /// `yOffset`: the height the tracking looks from, above the actor's position.
     pub eye_height: f32,
-    /// `unk_18`: the point to look at (Player, or the camera in a cutscene).
+    /// `trackPos`: the point to look at (Player, or the camera in a cutscene).
     pub target: Vec3,
 }
 
-/// `struct_80116130_0`: a tracking preset. `func_80034A14` passes it to `func_800344BC` as
-/// (`unk_00` head yaw, `unk_04` head pitch max, `unk_02` head pitch min, `unk_06` torso yaw,
-/// `unk_0A` torso pitch max, `unk_08` torso pitch min, `unk_0C` turn the body).
+/// `NpcTrackingRotLimits`: a tracking preset. `Npc_TrackPoint` passes it to `Npc_TrackPointWithLimits` as
+/// (`maxHeadYaw` head yaw, `maxHeadPitch` head pitch max, `minHeadPitch` head pitch min, `maxTorsoYaw` torso yaw,
+/// `maxTorsoPitch` torso pitch max, `minTorsoPitch` torso pitch min, `rotateYaw` turn the body).
 #[derive(Debug, Clone, Copy)]
 #[allow(non_snake_case)]
 struct Limits {
-    unk_00: i16,
-    unk_02: i16,
-    unk_04: i16,
-    unk_06: i16,
-    unk_08: i16,
-    unk_0A: i16,
-    unk_0C: u8,
+    max_head_yaw: i16,
+    min_head_pitch: i16,
+    max_head_pitch: i16,
+    max_torso_yaw: i16,
+    min_torso_pitch: i16,
+    max_torso_pitch: i16,
+    rotate_yaw: u8,
 }
 
-/// `D_80116130`: the presets (`sub_00`, `unk_10` the distance, `unk_14` the yaw range).
-const D_80116130: [(Limits, f32, i16); 13] = {
+/// `sNpcTrackingPresets`: the presets (`sub_00`, `autoTurnDistanceRange` the distance, `maxYawForPlayerTracking` the yaw range).
+const S_NPC_TRACKING_PRESETS: [(Limits, f32, i16); 13] = {
     const fn l(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u8) -> Limits {
-        Limits { unk_00: a as i16, unk_02: b as i16, unk_04: c as i16, unk_06: d as i16, unk_08: e as i16, unk_0A: f as i16, unk_0C: g }
+        Limits { max_head_yaw: a as i16, min_head_pitch: b as i16, max_head_pitch: c as i16, max_torso_yaw: d as i16, min_torso_pitch: e as i16, max_torso_pitch: f as i16, rotate_yaw: g }
     }
     [
         (l(0x2AA8, 0xF1C8, 0x18E2, 0x1554, 0x0000, 0x0000, 1), 170.0, 0x3FFC),
@@ -160,10 +160,10 @@ fn abs_or_zero(v: i16) -> i32 {
     if a >= 0x8000 { 0 } else { a }
 }
 
-/// `func_800344BC`: the head turns towards the target within its limits, the torso takes what
+/// `Npc_TrackPointWithLimits`: the head turns towards the target within its limits, the torso takes what
 /// the head can't cover, and the whole body turns too if `arg8`.
 #[allow(clippy::too_many_arguments)]
-fn func_800344bc(actor: &mut Actor, t: &mut NpcTrack, arg2: i16, arg3: i16, arg4: i16, arg5: i16, arg6: i16, arg7: i16, arg8: u8) {
+fn track_point_with_limits(actor: &mut Actor, t: &mut NpcTrack, arg2: i16, arg3: i16, arg4: i16, arg5: i16, arg6: i16, arg7: i16, arg8: u8) {
     use eng_math::smooth_step_to_s;
     let sp30 = Vec3::new(actor.world_pos.x, actor.world_pos.y + t.eye_height, actor.world_pos.z);
     let sp46 = pitch_to(sp30, t.target);
@@ -192,10 +192,10 @@ fn func_800344bc(actor: &mut Actor, t: &mut NpcTrack, arg2: i16, arg3: i16, arg4
     smooth_step_to_s(&mut t.torso[0], temp1, 6, 2000, 1);
 }
 
-/// `func_80034810`: which tracking mode this frame. `forced` (`arg4`) wins; talking tracks
+/// `Npc_UpdateAutoTurn`: which tracking mode this frame. `forced` (`arg4`) wins; talking tracks
 /// fully; beyond `dist` nothing; within `yaw_range` of facing the head only; otherwise the
 /// idle glances (`Rand_S16Offset` timers).
-fn func_80034810(play: &mut PlayState, actor: &Actor, t: &mut NpcTrack, dist: f32, yaw_range: i16, forced: i16) -> i16 {
+fn update_auto_turn(play: &mut PlayState, actor: &Actor, t: &mut NpcTrack, dist: f32, yaw_range: i16, forced: i16) -> i16 {
     if forced != 0 {
         return forced;
     }
@@ -214,7 +214,7 @@ fn func_80034810(play: &mut PlayState, actor: &Actor, t: &mut NpcTrack, dist: f3
         t.idle_step = 0;
         return 2;
     }
-    // DECR(unk_04).
+    // DECR(maxHeadPitch).
     if t.timer != 0 {
         t.timer -= 1;
         if t.timer != 0 {
@@ -236,53 +236,53 @@ fn func_80034810(play: &mut PlayState, actor: &Actor, t: &mut NpcTrack, dist: f3
     }
 }
 
-/// `func_80034A14`: the head and torso tracking for preset `preset`, with `forced` as the mode
+/// `Npc_TrackPoint`: the head and torso tracking for preset `preset`, with `forced` as the mode
 /// if non-zero.
-pub fn func_80034a14(play: &mut PlayState, actor: &mut Actor, t: &mut NpcTrack, preset: usize, forced: i16) {
-    let (mut sp38, dist, yaw_range) = D_80116130[preset];
-    t.mode = func_80034810(play, actor, t, dist, yaw_range, forced);
+pub fn track_point(play: &mut PlayState, actor: &mut Actor, t: &mut NpcTrack, preset: usize, forced: i16) {
+    let (mut sp38, dist, yaw_range) = S_NPC_TRACKING_PRESETS[preset];
+    t.mode = update_auto_turn(play, actor, t, dist, yaw_range, forced);
     // The C's switch falls through: 1 clears the head's limits, 1 and 3 the torso's, 1, 2 and 3
     // the body turn.
     if t.mode == 1 {
-        sp38.unk_00 = 0;
-        sp38.unk_04 = 0;
-        sp38.unk_02 = 0;
+        sp38.max_head_yaw = 0;
+        sp38.max_head_pitch = 0;
+        sp38.min_head_pitch = 0;
     }
     if t.mode == 1 || t.mode == 3 {
-        sp38.unk_06 = 0;
-        sp38.unk_0A = 0;
-        sp38.unk_08 = 0;
+        sp38.max_torso_yaw = 0;
+        sp38.max_torso_pitch = 0;
+        sp38.min_torso_pitch = 0;
     }
     if matches!(t.mode, 1..=3) {
-        sp38.unk_0C = 0;
+        sp38.rotate_yaw = 0;
     }
-    func_800344bc(actor, t, sp38.unk_00, sp38.unk_04, sp38.unk_02, sp38.unk_06, sp38.unk_0A, sp38.unk_08, sp38.unk_0C);
+    track_point_with_limits(actor, t, sp38.max_head_yaw, sp38.max_head_pitch, sp38.min_head_pitch, sp38.max_torso_yaw, sp38.max_torso_pitch, sp38.min_torso_pitch, sp38.rotate_yaw);
 }
 
-/// `func_800347E8`: preset `preset`'s yaw range (`D_80116130[preset].unk_14`).
-pub fn func_800347e8(preset: usize) -> i16 {
-    D_80116130[preset].2
+/// `Npc_GetTrackingPresetMaxPlayerYaw`: preset `preset`'s yaw range (`sNpcTrackingPresets[preset].maxYawForPlayerTracking`).
+pub fn get_tracking_preset_max_player_yaw(preset: usize) -> i16 {
+    S_NPC_TRACKING_PRESETS[preset].2
 }
 
-/// `func_80034DD4`: an NPC fading in within `dist` of Link and out beyond it (targetable only
-/// while near: `ACTOR_FLAG_0`); returns the new alpha. (In a cutscene the distance would be a
+/// `Actor_UpdateAlphaByDistance`: an NPC fading in within `dist` of Link and out beyond it (targetable only
+/// while near: `ACTOR_FLAG_ATTENTION_ENABLED`); returns the new alpha. (In a cutscene the distance would be a
 /// quarter of the camera's: no cutscenes.)
-pub fn func_80034dd4(actor: &mut Actor, player_pos: Vec3, alpha: i16, dist: f32) -> i16 {
-    use crate::actor::ACTOR_FLAG_0;
+pub fn actor_update_alpha_by_distance(actor: &mut Actor, player_pos: Vec3, alpha: i16, dist: f32) -> i16 {
+    use crate::actor::ACTOR_FLAG_ATTENTION_ENABLED;
     let mut alpha = alpha;
     let var = actor.world_pos.distance(player_pos);
     if dist < var {
-        actor.flags &= !ACTOR_FLAG_0;
+        actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         eng_math::smooth_step_to_s(&mut alpha, 0, 6, 0x14, 1);
     } else {
-        actor.flags |= ACTOR_FLAG_0;
+        actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         eng_math::smooth_step_to_s(&mut alpha, 0xFF, 6, 0x14, 1);
     }
     alpha
 }
 
-/// `func_80034F54`: the idle sway angles of `n` limbs from `gameplayFrames`.
-pub fn func_80034f54(play: &PlayState, a: &mut [i16], b: &mut [i16], n: usize) {
+/// `Actor_UpdateFidgetTables`: the idle sway angles of `n` limbs from `gameplayFrames`.
+pub fn actor_update_fidget_tables(play: &PlayState, a: &mut [i16], b: &mut [i16], n: usize) {
     let frames = play.gameplay_frames;
     for i in 0..n {
         a[i] = ((0x814 + 50 * i as u32).wrapping_mul(frames)) as i16;

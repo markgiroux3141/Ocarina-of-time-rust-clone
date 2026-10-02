@@ -34,7 +34,7 @@ per model group, all with the sword and the shield.
 **The C doesn't equip what it gives.** `Item_Give(ITEM_SWORD_KOKIRI)` only sets the owned bit
 (`OWNED_EQUIP_FLAG`). The sword goes on B only in the pause menu's equipment screen
 (`KaleidoScope_UpdateEquipment`, `z_kaleido_equipment.c`: `Inventory_ChangeEquipment`,
-`infTable[INFTABLE_1DX_INDEX] = 0`, `buttonItems[0] = cursorItem`), and text 0xA4 tells the
+`infTable[INFTABLE_INDEX_1DX] = 0`, `buttonItems[0] = cursorItem`), and text 0xA4 tells the
 player to do that. The pause menu isn't ported.
 
 ## Decision
@@ -60,7 +60,7 @@ player to do that. The pause menu isn't ported.
   `Item_Give` and `Item_CheckObtainability` are ported whole, with the helpers they use
   (`Health_ChangeBy`, `Rupees_ChangeBy`, `Inventory_ChangeAmmo`, the upgrades).
 - **The item tables are data from the C.** The importer parses `sGetItemTable`'s `GET_ITEM`
-  rows and `sDrawItemTable` into `table/items`, and `sItemActionParams` into Player's data. The
+  rows and `sDrawItemTable` into `table/items`, and `sItemActions` into Player's data. The
   runtime never reads the C.
 - **`GetItem_Draw` is baked as pieces** (`oot_game::draw`). Each `GetItem_Draw*` function is
   ported as the pieces it draws: the display lists it draws under one matrix into one buffer,
@@ -96,7 +96,7 @@ player to do that. The pause menu isn't ported.
   the menu: no transition, not `Play_InCsMode`, and (the port's own condition) no message box.
 - **A debug start reaches rooms the port can't walk to yet.** The game's `--room N --at
   x,y,z,yaw`, with `--entrance`, change room after `Play_Init` (`Room_RequestNewRoom`, a frame,
-  `func_80097534`) and put Link there. `game-sword-chest.bat` uses it for room 2's chest, which
+  `Room_FinishRoomChange`) and put Link there. `game-sword-chest.bat` uses it for room 2's chest, which
   is behind the crawlspace (GAME-03 milestone 2).
 
 ## Consequences

@@ -11,19 +11,19 @@
 //!   event flags set);
 //! - `Play_SpawnScene` with the entrance table's scene and spawn for that layer: the scene's
 //!   header (collision, the entrance, exit and transition-actor lists, the keep object, Link's
-//!   object, the light settings) and the first room's load (`func_80096FE8`: the entrance's
+//!   object, the light settings) and the first room's load (`Room_SetupFirstRoom`: the entrance's
 //!   room, or the respawn point's);
-//! - `func_800304DC`: the actor context, and Player spawned from the spawn list's entry;
-//! - the first room's load finished (`func_800973FC`): its header (actor list, object list,
+//! - `Actor_InitContext`: the actor context, and Player spawned from the spawn list's entry;
+//! - the first room's load finished (`Room_ProcessRoomRequest`): its header (actor list, object list,
 //!   behaviour) and the transition actors;
-//! - the cameras on Player, `AnimationContext_Update`, `respawnFlag` cleared;
+//! - the cameras on Player, `AnimTaskQueue_Update`, `respawnFlag` cleared;
 //! - `transitionTrigger = TRANS_TRIGGER_END`, so the first frame starts the fade in.
 //!
 //! ## Leaving
 //!
 //! Player sets `nextEntranceIndex` and `transitionTrigger = TRANS_TRIGGER_START` on an exit
 //! (or `Play_TriggerVoidOut`). The transition runs while play goes on, and when it covers the
-//! screen `Play_Update` ends the game state: `gSaveContext.entranceIndex` becomes the next
+//! screen `Play_Update` ends the game state: `gSaveContext.save.entranceIndex` becomes the next
 //! entrance and a new `Play_Init` runs. Here that's `reinit` at the end of the frame: a new
 //! play state from the same save, pad and assets.
 
@@ -47,16 +47,16 @@ use crate::spawn::Overlays;
 use crate::transition::*;
 
 /// `SCENE_*` ids with special cases in `Play_Init` (`include/tables/scene_table.h`).
-pub const SCENE_SPOT00: u16 = 0x51;
-pub const SCENE_SPOT04: u16 = 0x55;
-/// `SCENE_YOUSEI_IZUMI_TATE`, `SCENE_KAKUSIANA`: `Play_SetupRespawnPoint` does nothing there.
-pub const SCENE_YOUSEI_IZUMI_TATE: u16 = 0x3C;
-pub const SCENE_KAKUSIANA: u16 = 0x3E;
-/// `SCENE_HAKADAN`, `SCENE_GANON_FINAL`: special cases of Player's void check.
-pub const SCENE_HAKADAN: u16 = 0x07;
-pub const SCENE_GANON_FINAL: u16 = 0x1A;
-/// `SCENE_TURIBORI`, the fishing pond: Player leaves the sequence mode alone there.
-pub const SCENE_TURIBORI: u16 = 0x49;
+pub const SCENE_HYRULE_FIELD: u16 = 0x51;
+pub const SCENE_KOKIRI_FOREST: u16 = 0x55;
+/// `SCENE_FAIRYS_FOUNTAIN`, `SCENE_GROTTOS`: `Play_SetupRespawnPoint` does nothing there.
+pub const SCENE_FAIRYS_FOUNTAIN: u16 = 0x3C;
+pub const SCENE_GROTTOS: u16 = 0x3E;
+/// `SCENE_SHADOW_TEMPLE`, `SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR`: special cases of Player's void check.
+pub const SCENE_SHADOW_TEMPLE: u16 = 0x07;
+pub const SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR: u16 = 0x1A;
+/// `SCENE_FISHING_POND`, the fishing pond: Player leaves the sequence mode alone there.
+pub const SCENE_FISHING_POND: u16 = 0x49;
 /// `R_UPDATE_RATE`.
 pub const R_UPDATE_RATE: u16 = 3;
 
@@ -113,7 +113,7 @@ impl GameAssets {
         })
     }
 
-    /// The cutscene script named `name` (`D_808BCE20`, `gDekuTreeIntroCs`), read once.
+    /// The cutscene script named `name` (`gDekuTreeMeetingCs`, `gDekuTreeIntroCs`), read once.
     pub fn cutscene(&self, name: &str) -> Result<Arc<crate::cutscene::CutsceneScript>> {
         if let Some(s) = self.scripts.lock().unwrap().get(name) {
             return Ok(s.clone());
@@ -261,7 +261,7 @@ impl PlayIo {
 
     /// `Play_SetupRespawnPoint` with Player at `pos` facing `yaw`.
     pub fn setup_respawn_point(&mut self, mode: usize, params: i16, pos: Vec3, yaw: i16) {
-        if self.scene_id != SCENE_YOUSEI_IZUMI_TATE && self.scene_id != SCENE_KAKUSIANA {
+        if self.scene_id != SCENE_FAIRYS_FOUNTAIN && self.scene_id != SCENE_GROTTOS {
             let (entr, room) = (self.save.entrance_index, self.room as u8);
             self.set_respawn_data(mode, entr, room, params, pos, yaw);
         }
@@ -351,7 +351,7 @@ impl PlayState {
         audio: crate::audio::GameAudio,
     ) -> Result<PlayState> {
         let t = &assets.scenes;
-        // (func_8006450C comes with the new play state's idle csCtx.)
+        // (Cutscene_InitContext comes with the new play state's idle csCtx.)
         if save.next_cutscene_index != 0xFFEF {
             save.cutscene_index = save.next_cutscene_index;
             save.next_cutscene_index = 0xFFEF;
@@ -372,9 +372,9 @@ impl PlayState {
         // Play_Init's special cases (no Spiritual Stones, EVENTCHKINF_48 unset), outside the
         // cutscene layers (!IS_CUTSCENE_LAYER).
         let cutscene_layer = save.scene_layer > 3;
-        if base.scene == SCENE_SPOT00 && !save.adult && !cutscene_layer {
+        if base.scene == SCENE_HYRULE_FIELD && !save.adult && !cutscene_layer {
             save.scene_layer = 0;
-        } else if base.scene == SCENE_SPOT04 && save.adult && !cutscene_layer {
+        } else if base.scene == SCENE_KOKIRI_FOREST && save.adult && !cutscene_layer {
             save.scene_layer = 2;
         }
         let entr = t.entrances.get(save.entrance_index as usize + save.scene_layer).with_context(|| format!("entrance {:#x} has no layer {}", save.entrance_index, save.scene_layer))?;
@@ -396,7 +396,7 @@ impl PlayState {
         play.object_ctx = ObjectContext::init_bank();
         play.room_ctx = RoomContext::default();
         // SCENE_CMD_ID_SPECIAL_FILES (the keep object, Navi's C-Up texts), then
-        // SCENE_CMD_ID_SPAWN_LIST (Link's object).
+        // SCENE_CMD_ID_PLAYER_ENTRY_LIST (Link's object).
         if let Some(k) = ld.keep_object_id {
             play.object_ctx.sub_keep_index = play.object_ctx.spawn(k);
         }
@@ -417,7 +417,7 @@ impl PlayState {
         }
         play.scene = Some(scene);
 
-        // func_80096FE8: the first room.
+        // Room_SetupFirstRoom: the first room.
         let front = if save.respawn_flag > 0 { save.respawn[save.respawn_flag as usize - 1].room_index } else { entrance.room };
         play.room_ctx.request(front as i8);
 
@@ -436,12 +436,12 @@ impl PlayState {
             play.scene_command_sound_settings(snd);
         }
         // Environment_Init (SCENE_CMD_ID_SKYBOX_SETTINGS' Play_InitEnvironment):
-        // cutsceneTransitionControl = 0 (z_kankyo.c:318), D_8015FCC8 = 1 (z_kankyo.c:419), and no
+        // cutsceneTransitionControl = 0 (z_kankyo.c:318), gUseCutsceneCam = 1 (z_kankyo.c:419), and no
         // cues.
         play.save.cutscene_transition_control = 0;
-        play.demo.d_8015fcc8 = 1;
+        play.demo.use_cutscene_cam = 1;
         // The rest of Environment_Init: envCtx (the lights at the scene's time, as
-        // SceneState::load computed them), the lightning reset, D_801614B0's alpha (Play_Init).
+        // SceneState::load computed them), the lightning reset, gVisMonoColor's alpha (Play_Init).
         let (day, sky, _) = env::scene_times(play.save.day_time, play.scene.as_ref().and_then(|s| s.rooms.first()).and_then(|r| r.time));
         play.env_ctx = env::EnvCtx::init(ld.skybox.light_mode, day, sky, play.save.day_time);
         play.env_statics.init();
@@ -455,7 +455,7 @@ impl PlayState {
         // the restrictions between).
         play.interface_ctx = crate::interface::InterfaceContext::init(&mut play.save, &assets.interface, scene_id);
 
-        // func_800304DC (Actor_InitContext): the scene's saved flags, then Player.
+        // Actor_InitContext: the scene's saved flags, then Player.
         let saved = play.save.scene_flags(scene_id);
         play.flags = crate::spawn::SceneFlags { chest: saved.chest, swch: saved.swch, clear: saved.clear, collect: saved.collect, ..Default::default() };
         let p = play.actor_spawn_entry(&link_entry).map_err(|e| anyhow::anyhow!("spawning Player: {e:?}"))?;
@@ -467,15 +467,15 @@ impl PlayState {
         if play.save.respawn_flag == 0 || play.save.respawn_flag < -1 {
             let title = play.title_file();
             if !title.is_empty() && play.save.show_title_card {
-                const SCENE_DDAN: u16 = 0x01;
-                const SCENE_NIGHT_SHOP: u16 = 0x32;
+                const SCENE_DODONGOS_CAVERN: u16 = 0x01;
+                const SCENE_BOMBCHU_SHOP: u16 = 0x32;
                 const EVENTCHKINF_B0: u16 = 0xB0;
                 const EVENTCHKINF_25: u16 = 0x25;
                 let shows = t.entrances.get(play.save.entrance_index as usize + play.save.scene_layer).is_some_and(|e| e.title_card);
                 if !cutscene_layer
                     && shows
-                    && (scene_id != SCENE_DDAN || play.save.get_event_chk_inf(EVENTCHKINF_B0))
-                    && (scene_id != SCENE_NIGHT_SHOP || play.save.get_event_chk_inf(EVENTCHKINF_25))
+                    && (scene_id != SCENE_DODONGOS_CAVERN || play.save.get_event_chk_inf(EVENTCHKINF_B0))
+                    && (scene_id != SCENE_BOMBCHU_SHOP || play.save.get_event_chk_inf(EVENTCHKINF_25))
                 {
                     play.title_ctx.init_place_name(&title, 160, 120, 144, 24, 20);
                 }
@@ -485,20 +485,20 @@ impl PlayState {
         // The end of Player_Init: the sound the entrance left (a door's), at Player.
         if play.save.entrance_sound != 0 {
             let id = play.save.entrance_sound;
-            play.audio.func_80078914(crate::audio::sfx::SfxPos::Actor(p), id);
+            play.audio.play_sfx_at_pos(crate::audio::sfx::SfxPos::Actor(p), id);
             play.save.entrance_sound = 0;
         }
-        // func_8002C0C0 (Actor_InitContext's, once Player is in): Navi's point at Player.
+        // Attention_Init (Actor_InitContext's, once Player is in): Navi's point at Player.
         if let Some(a) = play.actors.actor(p).cloned() {
             let eye = play.game_camera.eye;
-            play.target_ctx.func_8002c0c0(&a, eye);
+            play.target_ctx.attention_init(&a, eye);
         }
         play.spawn = (Vec3::new(link_entry.pos[0] as f32, link_entry.pos[1] as f32, link_entry.pos[2] as f32), link_entry.rot[1]);
         while !play.room_finish_load() {}
-        // Camera_InitPlayerSettings (with func_8005AC48's 0xFF from earlier in Play_Init), then
-        // Camera_ChangeMode(NORMAL), and Player's start bg camera (params & 0xFF).
+        // Camera_InitDataUsingPlayer (with Camera_OverwriteStateFlags's 0xFF from earlier in Play_Init), then
+        // Camera_RequestMode(NORMAL), and Player's start bg camera (params & 0xFF).
         play.reset_cameras();
-        // Camera_Init's and Camera_InitPlayerSettings' shared state (sNextUID carries over).
+        // Camera_Init's and Camera_InitDataUsingPlayer' shared state (sNextUID carries over).
         play.cam_globals = crate::camera::CameraGlobals { next_uid: play.cam_globals.next_uid, ..crate::camera::CameraGlobals::main_init() };
         play.game_camera.change_mode(&play.data.camera, crate::camera::CAM_MODE_NORMAL);
         play.view = crate::camera::CamView { eye: play.game_camera.eye, at: play.game_camera.at, fov: play.game_camera.fov };
@@ -551,7 +551,7 @@ impl PlayState {
                 next.respawn_player = self.respawn_player;
                 next.audio_side = side;
                 // z_demo.c's statics and sNextUID are the code segment's: they carry over.
-                next.demo = crate::cutscene::DemoStatics { d_8015fcc8: next.demo.d_8015fcc8, ..self.demo };
+                next.demo = crate::cutscene::DemoStatics { use_cutscene_cam: next.demo.use_cutscene_cam, ..self.demo };
                 next.cam_globals.next_uid = self.cam_globals.next_uid;
                 next.onepoint = std::mem::replace(&mut self.onepoint, crate::onepoint::OnePointStatics::new(&Default::default()));
                 // gWeatherMode and the lightning bolts are z_kankyo.c's (Environment_Init resets the
@@ -580,12 +580,12 @@ impl PlayState {
         }
     }
 
-    /// `func_8009728C`.
+    /// `Room_RequestNewRoom`.
     pub fn room_request(&mut self, num: i8) -> bool {
         self.room_ctx.request(num)
     }
 
-    /// `func_800973FC`: finishes a room load: the room's header, then the transition actors.
+    /// `Room_ProcessRoomRequest`: finishes a room load: the room's header, then the transition actors.
     /// True when no load is in flight.
     pub fn room_finish_load(&mut self) -> bool {
         if self.room_ctx.status != 1 {
@@ -612,11 +612,11 @@ impl PlayState {
         if self.object_ctx.command_object_list(&room.objects) {
             self.kill_actors_without_objects();
         }
-        // WaterBox_GetSurfaceImpl reads roomCtx.curRoom.num.
+        // BgCheck_GetWaterSurface reads roomCtx.curRoom.num.
         self.col.water_room = self.room_ctx.cur.num.max(0) as u32;
     }
 
-    /// `func_80097534`: Player is through: the previous room goes, and with it the actors
+    /// `Room_FinishRoomChange`: Player is through: the previous room goes, and with it the actors
     /// that were only in it; the transition actors of the new pair spawn.
     pub fn room_change_done(&mut self) {
         self.room_ctx.prev = Room::EMPTY;
@@ -647,12 +647,12 @@ impl PlayState {
         }
     }
 
-    /// `play->setupExitList`.
+    /// `play->exitList`.
     pub fn exit_list(&self) -> &[u16] {
         self.scene.as_ref().map(|s| s.layer_data().exits.as_slice()).unwrap_or(&[])
     }
 
-    /// `play->setupPathList` (`Scene_CommandPathList`); empty without a scene from the pack.
+    /// `play->pathList` (`Scene_CommandPathList`); empty without a scene from the pack.
     pub fn setup_path_list(&self) -> &[crate::scene::Path] {
         self.scene.as_ref().map(|s| s.layer_data().paths.as_slice()).unwrap_or(&[])
     }
@@ -692,7 +692,7 @@ impl PlayState {
         }
         if self.transition.mode == TRANS_MODE_SETUP {
             if self.transition.trigger != TRANS_TRIGGER_END {
-                // SCENE_LAYER_CHILD_DAY. (Interface_ChangeAlpha(1) here, the HUD fading out as
+                // SCENE_LAYER_CHILD_DAY. (Interface_ChangeHudVisibilityMode(1) here, the HUD fading out as
                 // the scene ends, isn't ported.)
                 let mut scene_layer = 0;
                 if self.save.cutscene_index >= 0xFFF0 {

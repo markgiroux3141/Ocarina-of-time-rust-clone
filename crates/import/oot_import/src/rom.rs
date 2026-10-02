@@ -158,44 +158,12 @@ fn parse_dmadata(data: &[u8], offset: usize) -> Vec<DmaEntry> {
     out
 }
 
-/// File names in dmadata order. Prefers `extract_baserom.py`'s FILE_NAMES (the list the
-/// decomp uses to split this exact ROM); falls back to `spec` minus segments that hold only
-/// runtime memory and therefore have no dmadata entry.
+/// File names in dmadata order: `baseroms/<version>/segments.csv`'s `Name` column, the list
+/// the decomp splits this exact ROM by.
 pub fn decomp_file_names(decomp: &Path) -> Result<Vec<String>> {
-    if let Ok(src) = std::fs::read_to_string(decomp.join("extract_baserom.py"))
-        && let Some(start) = src.find("FILE_NAMES")
-        && let Some(open) = src[start..].find('[')
-        && let Some(close) = src[start + open..].find(']')
-    {
-        let body = &src[start + open + 1..start + open + close];
-        let names: Vec<String> = body
-            .split(',')
-            .map(|s| s.trim().trim_matches(|c| c == '\'' || c == '"').to_string())
-            .filter(|s| !s.is_empty() && !s.starts_with('#'))
-            .collect();
-        if !names.is_empty() {
-            return Ok(names);
-        }
-    }
-    let mut names = spec_segment_names(&decomp.join("spec"))?;
-    names.retain(|n| n != "buffers");
-    Ok(names)
-}
-
-/// Segment names in ROM order from the decomp `spec` file.
-pub fn spec_segment_names(spec_path: &Path) -> Result<Vec<String>> {
-    let text = std::fs::read_to_string(spec_path).with_context(|| format!("reading {}", spec_path.display()))?;
-    let mut names = Vec::new();
-    let mut in_seg = false;
-    for line in text.lines() {
-        let l = line.trim();
-        if l == "beginseg" {
-            in_seg = true;
-        } else if l == "endseg" {
-            in_seg = false;
-        } else if in_seg && let Some(rest) = l.strip_prefix("name ") {
-            names.push(rest.trim().trim_matches('"').to_string());
-        }
-    }
-    Ok(names)
+    let p = decomp.join("baseroms").join(crate::symbols::VERSION).join("segments.csv");
+    let text = std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
+    let mut lines = text.lines();
+    anyhow::ensure!(lines.next().is_some_and(|h| h.starts_with("Name")), "{}: no Name column", p.display());
+    Ok(lines.filter_map(|l| l.split(',').next()).map(|n| n.trim().to_string()).filter(|n| !n.is_empty()).collect())
 }

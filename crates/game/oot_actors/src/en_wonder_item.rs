@@ -12,7 +12,7 @@
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_0, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
 use oot_game::play::PlayState;
@@ -26,7 +26,7 @@ pub const ACTOR_EN_WONDER_ITEM: i16 = 0x0112;
 /// `ACTOR_EN_HEISHI2` (`actor_table.h`): the bomb soldier.
 const ACTOR_EN_HEISHI2: i16 = 0x00B3;
 
-/// `En_Wonder_Item_InitVars`: `FLAGS` 0, no draw.
+/// `En_Wonder_Item_Profile`: `FLAGS` 0, no draw.
 pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_ITEM, name: "En_Wonder_Item", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep" };
 
 /// `EnWonderItemMode`.
@@ -70,13 +70,13 @@ const DAMAGE_FLAGS: [u32; 7] = [DMG_SLASH | DMG_DEKU_STICK, DMG_ARROW, DMG_HAMME
 
 /// `sCylinderInit` (the radius and height are set by the mode).
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
-    base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_NONE, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderBumpInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_NONE,
-        bumper_flags: BUMP_ON,
+    base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_NONE, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_NONE,
+        bumper_flags: ACELEM_ON,
         oc_elem_flags: OCELEM_NONE,
     },
     dim: Cylinder16 { radius: 20, height: 30, y_shift: 0, pos: [0; 3] },
@@ -134,7 +134,7 @@ pub struct EnWonderItem {
 impl EnWonderItem {
     /// `EnWonderItem_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        actor.flags &= !ACTOR_FLAG_0;
+        actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         let params = actor.params as u16;
         let mut this = EnWonderItem {
             wonder_mode: ((params >> 0xB) & 0x1F) as i16,
@@ -222,7 +222,7 @@ impl EnWonderItem {
     /// drop), or random ones from drop table `itemDrop - 0xC`; then the switch flag, and it
     /// goes; first, the item sound.
     fn drop_collectible(&mut self, play: &mut PlayState, auto_collect: bool) {
-        play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_ITEM);
+        play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_SY_GET_ITEM);
         if self.drop_count == 0 {
             self.drop_count += 1;
         }

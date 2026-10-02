@@ -47,11 +47,11 @@ impl Regs {
     }
 }
 
-/// `PlayerAgeProperties` float fields `unk_00` .. `unk_40` (the struct has no names yet in
+/// `PlayerAgeProperties` float fields `ceilingCheckHeight` .. `unk_40` (the struct has no names yet in
 /// this decomp; the uses noted are from `z_player.c`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgeProperties {
-    /// unk_00: ceiling check height in `func_80847BA0`.
+    /// ceilingCheckHeight: ceiling check height in `Player_ProcessSceneCollision`.
     pub ceiling_check_height: f32,
     /// unk_04: shadow scale (`ActorShape_Init`).
     pub shadow_scale: f32,
@@ -70,7 +70,7 @@ pub struct AgeProperties {
     pub unk_30: f32,
     /// unk_34: minimum drop for a ledge grab when walking off an edge (`func_8083AA10`).
     pub ledge_grab_min_drop: f32,
-    /// unk_38: wall check radius.
+    /// wallCheckRadius: wall check radius.
     pub wall_radius: f32,
     pub unk_3C: f32,
     pub unk_40: f32,
@@ -79,7 +79,7 @@ pub struct AgeProperties {
 }
 
 /// `PlayerAgeProperties` from `unk_44`: root translations the climbing animations start from
-/// (`skelAnime.prevTransl`), and the animations (`func_8084BF1C` and friends).
+/// (`skelAnime.prevTransl`), and the animations (`Player_Action_8084BF1C` and friends).
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgeClimb {
     pub unk_44: [i16; 3],
@@ -91,8 +91,8 @@ pub struct AgeClimb {
     pub unk_94: u16,
     /// Chest opening, the pedestal warps (unused here).
     pub unk_98: AnimId,
-    pub unk_9C: AnimId,
-    pub unk_A0: AnimId,
+    pub time_travel_start_anim: AnimId,
+    pub time_travel_end_anim: AnimId,
     /// `climb_startA` (onto a ladder from below), `climb_startB` (onto it from its top).
     pub unk_A4: AnimId,
     pub unk_A8: AnimId,
@@ -144,7 +144,7 @@ pub struct AttackAnim {
 }
 
 /// The item / model tables Player's item system reads (`z_player_lib.c`, `z_player.c`,
-/// `z64player.h`).
+/// `player.h`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ItemTables {
     /// `PLAYER_MODELGROUP_*` names (no prefix) and each group's `PLAYER_ANIMTYPE`
@@ -154,17 +154,17 @@ pub struct ItemTables {
     /// `PLAYER_AP_*` names (no prefix), and `sActionModelGroups` (action → model group).
     pub ap_names: Vec<String>,
     pub action_model_group: Vec<usize>,
-    /// `D_808540F4`: item change animations and the frame the item swaps on.
+    /// `sItemChangeInfo`: item change animations and the frame the item swaps on.
     pub change_anims: Vec<(AnimId, f32)>,
-    /// `D_80854164[from anim type][to anim type]`: ± index into `change_anims` (negative plays it backwards).
+    /// `sItemChangeTypes[from anim type][to anim type]`: ± index into `change_anims` (negative plays it backwards).
     pub change_matrix: Vec<Vec<i32>>,
     /// `D_80854190` by `PLAYER_MWA_*`, and `D_80854480` (stick direction → attack).
     pub attacks: Vec<AttackAnim>,
     pub attack_by_dir: Vec<usize>,
     pub mwa_names: Vec<String>,
-    /// `D_80853410`: joints copied from the upper-body animation (`skelAnime2`).
+    /// `sUpperBodyLimbCopyMap`: joints copied from the upper-body animation (`skelAnime2`).
     pub upper_body: [u8; 22],
-    /// `sItemActionParams` (`z_player.c`): each item's action param, by `ItemID`.
+    /// `sItemActions` (`z_player.c`): each item's action param, by `ItemID`.
     pub item_action_params: Vec<i32>,
 }
 
@@ -175,17 +175,17 @@ impl ItemTables {
     pub fn ap(&self, name: &str) -> i32 {
         self.ap_names.iter().position(|n| n == name).unwrap_or_else(|| panic!("no action param {name}")) as i32
     }
-    /// `Player_ItemToActionParam`: `PLAYER_AP_NONE` for `ITEM_NONE_FE` and up,
-    /// `PLAYER_AP_LAST_USED` for `ITEM_LAST_USED`, `PLAYER_AP_FISHING_POLE` for the fishing rod.
+    /// `Player_ItemToItemAction`: `PLAYER_IA_NONE` for `ITEM_NONE_FE` and up,
+    /// `PLAYER_IA_SWORD_CS` for `ITEM_SWORD_CS`, `PLAYER_IA_FISHING_POLE` for the fishing rod.
     pub fn item_to_action_param(&self, item: u8) -> i32 {
-        /// `ITEM_LAST_USED`, `ITEM_NONE_FE`, `ITEM_FISHING_POLE` (z64item.h).
-        const ITEM_LAST_USED: u8 = 0xFC;
+        /// `ITEM_SWORD_CS`, `ITEM_NONE_FE`, `ITEM_FISHING_POLE` (item.h).
+        const ITEM_SWORD_CS: u8 = 0xFC;
         const ITEM_NONE_FE: u8 = 0xFE;
         const ITEM_FISHING_POLE: u8 = 0x59;
         if item >= ITEM_NONE_FE {
             self.ap("NONE")
-        } else if item == ITEM_LAST_USED {
-            self.ap("LAST_USED")
+        } else if item == ITEM_SWORD_CS {
+            self.ap("SWORD_CS")
         } else if item == ITEM_FISHING_POLE {
             self.ap("FISHING_POLE")
         } else {
@@ -232,13 +232,13 @@ pub struct GameData {
     pub anim_table: Vec<AnimId>,
     pub anim_types: usize,
     pub anim_group_names: Vec<String>,
-    /// `D_80853D7C`: idle fidget animations, [normal, alternate] per room behaviour/variant.
+    /// `sFidgetAnimations`: idle fidget animations, [normal, alternate] per room behaviour/variant.
     pub idle_variants: Vec<[AnimId; 2]>,
     /// `PLAYER_LIMB_*` without prefix; index i is limb i (NONE at 0).
     pub limb_names: Vec<String>,
     pub tables_from_decomp: bool,
     pub table_mismatches: (usize, usize, i64),
-    /// `z_camera_data.c`: OREG values and the NORMAL0 camera data.
+    /// `z_camera_data.inc.c`: OREG values and the NORMAL0 camera data.
     pub camera: crate::camera::CameraData,
     /// `func_8008F87C`'s constants (`z_player_lib.c`).
     pub foot_ik: crate::footik::FootIkData,
@@ -246,7 +246,7 @@ pub struct GameData {
     pub rigs: [crate::footik::Rig; 2],
     /// `D_80853D4C`: side hop / backflip animations per stick direction [jump, landing, landing locked on].
     pub side_hop_anims: Vec<[AnimId; 3]>,
-    /// `D_80115FF8` (`z_actor.c`): per `targetMode`, (rangeSq, leashScale) = (SQ(range), range / leash).
+    /// `sAttentionRanges` (`z_actor.c`): per `targetMode`, (rangeSq, leashScale) = (SQ(range), range / leash).
     pub target_ranges: Vec<(f32, f32)>,
     pub items: ItemTables,
     /// Player's cutscene modes: `D_80854B18` (each `csMode`'s start) and `D_80854E50` (its

@@ -28,11 +28,11 @@ use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, DrawParams, MeshKey};
 use eng_math::{smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_4, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos};
 use oot_game::audio::SEQ_PLAYER_FANFARE;
 use oot_game::audio::sfx::*;
-use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorAction};
+use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
 use oot_game::env::lerp_weight;
 use oot_game::pack::{BakeBody, BakeSegment, ForeignAnim, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -46,8 +46,8 @@ const ACTOR_EN_GANON_MANT: i16 = 0x016F;
 const ACTOR_ITEM_OCARINA: i16 = 0x00F1;
 const ACTOR_DEMO_6K: i16 = 0x00F5;
 
-/// `En_Viewer_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_VIEWER, name: "En_Viewer", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_4, object: "gameplay_keep" };
+/// `En_Viewer_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_VIEWER, name: "En_Viewer", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
 
 /// `EnViewerType`.
 pub const ENVIEWER_TYPE_0_HORSE_ZELDA: u8 = 0;
@@ -67,8 +67,8 @@ const ENVIEWER_DRAW_HORSE: u8 = 1;
 const ENVIEWER_DRAW_ZELDA: u8 = 2;
 const ENVIEWER_DRAW_IMPA: u8 = 3;
 
-/// `SCENE_SPOT00` (Hyrule Field), `SCENE_TOKINOMA` (the Temple of Time's inside).
-const SCENE_SPOT00: u16 = 0x51;
+/// `SCENE_HYRULE_FIELD` (Hyrule Field), `SCENE_TEMPLE_OF_TIME` (the Temple of Time's inside).
+const SCENE_HYRULE_FIELD: u16 = 0x51;
 
 /// `NA_BGM_OPENING_GANON` (`sequence.h`).
 const NA_BGM_OPENING_GANON: u16 = 0x23;
@@ -312,7 +312,7 @@ pub fn bakes() -> Vec<MeshBake> {
             (SEG_EYE_L, tex(IM.1, "gImpaEyeOpenTex")),
             (SEG_EYE_R, tex(IM.1, "gImpaEyeOpenTex")),
             (SEG_ENV, BakeSegment::Commands(vec![(0xFB00_0000, 0x0000_00FF)])),
-            // &D_80116280[2]: its gsSPEndDisplayList.
+            // &gActorSetupXluDL[2]: its gsSPEndDisplayList.
             (0x0C, BakeSegment::Commands(Vec::new())),
         ],
         prelude: vec![SEG_ENV],
@@ -521,7 +521,7 @@ impl EnViewer {
         if self.ty <= ENVIEWER_TYPE_2_ZELDA { 0 } else { 1 }
     }
 
-    fn cue(play: &PlayState, slot: usize) -> Option<CsCmdActorAction> {
+    fn cue(play: &PlayState, slot: usize) -> Option<CsCmdActorCue> {
         if play.cs_ctx.state != CS_STATE_IDLE { play.cs_ctx.npc_actions[slot] } else { None }
     }
 
@@ -596,7 +596,7 @@ impl EnViewer {
         }
 
         self.update_position(play);
-        // Actor_MoveForward: no effect (speed, velocity and gravity are 0).
+        // Actor_MoveXZGravity: no effect (speed, velocity and gravity are 0).
 
         let animation_ended = self.skel.as_mut().is_some_and(|s| s.update());
         let timer = play.overlay_static::<Statics>(ACTOR_EN_VIEWER).timer;
@@ -696,7 +696,7 @@ impl EnViewer {
                 _ => {}
             }
         } else if ty == ENVIEWER_TYPE_2_ZELDA {
-            if play.scene_id == SCENE_SPOT00 {
+            if play.scene_id == SCENE_HYRULE_FIELD {
                 let cue = Self::cue(play, 0);
                 match self.state {
                     0 => {
@@ -876,7 +876,7 @@ impl EnViewer {
 
     /// `EnViewer_DrawZelda`'s eyes (index into `ZELDA_EYES`) and mouth by the frame.
     fn zelda_face(play: &PlayState) -> (bool, usize, usize) {
-        if play.scene_id != SCENE_SPOT00 {
+        if play.scene_id != SCENE_HYRULE_FIELD {
             return (false, 4, 0);
         }
         let f = play.cs_ctx.frames;

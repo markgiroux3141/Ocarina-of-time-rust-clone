@@ -1,7 +1,7 @@
-//! `code_800EC960.c`'s sequence parts: the scene's music (`func_800F5550`), the sequence modes
+//! `general.c`'s sequence parts: the scene's music (`Audio_PlaySceneSequence`), the sequence modes
 //! and the enemy music (`Audio_SetSequenceMode`), fanfares and the music they interrupt, the
 //! music some actors play nearby (Malon's), the nature ambience and its channels' IO ports, the
-//! resets, and `Audio_Update` (`func_800F3054`), which the graph thread runs at the end of every
+//! resets, and `Audio_Update`, which the graph thread runs at the end of every
 //! frame.
 //!
 //! Left out here: the ocarina (`AudioOcarina_*`) and the debug screen (`AudioDebug_*`). The
@@ -22,7 +22,7 @@ pub enum SariaPos {
     Home(ActorHandle),
 }
 
-/// `SfxPlayerState` (`code_800EC960.c`): a sound effect channel's state.
+/// `SfxPlayerState` (`general.c`): a sound effect channel's state.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct SfxPlayerState {
     pub vol: f32,
@@ -31,61 +31,61 @@ pub struct SfxPlayerState {
     pub pan_signed: i8,
     pub stereo_bits: i8,
     pub filter: u8,
-    pub unk_0c: u8,
+    pub comb_filter_gain: u8,
 }
 
-/// `Audio_StartSeq` (`code_800EC960.c`'s, with its casts).
+/// `SEQCMD_PLAY_SEQUENCE` (`general.c`'s, with its casts).
 pub fn start_seq(player_idx: u8, fade_timer: u8, seq_id: u16) -> u32 {
     ((player_idx as u32) << 24) | ((fade_timer as u32) << 0x10) | seq_id as u32
 }
-/// `Audio_SeqCmd7`.
+/// `SEQCMD_SET_SEQPLAYER_IO`.
 pub fn seq_cmd7(player_idx: u8, a: u8, b: u8) -> u32 {
     0x7000_0000 | ((player_idx as u32) << 0x18) | ((a as u32) << 0x10) | b as u32
 }
-/// `Audio_SeqCmdC`.
+/// `SEQCMD_OP_SETUP_CMD` (`SEQCMD_SETUP_*`).
 pub fn seq_cmd_c(player_idx: u8, a: u8, b: u8, c: u8) -> u32 {
     0xC000_0000 | ((player_idx as u32) << 24) | ((a as u32) << 16) | ((b as u32) << 8) | c as u32
 }
-/// `Audio_SeqCmdA`.
+/// `SEQCMD_SET_CHANNEL_DISABLE_MASK`.
 pub fn seq_cmd_a(player_idx: u8, a: u16) -> u32 {
     0xA000_0000 | ((player_idx as u32) << 24) | a as u32
 }
-/// `Audio_SeqCmd1`.
+/// `SEQCMD_STOP_SEQUENCE`.
 pub fn seq_cmd1(player_idx: u8, a: u8) -> u32 {
     0x1000_00FF | ((player_idx as u32) << 24) | ((a as u32) << 16)
 }
-/// `Audio_SeqCmdB`.
+/// `SEQCMD_OP_TEMPO_CMD` (`SEQCMD_SET_TEMPO` and the other tempo macros).
 pub fn seq_cmd_b(player_idx: u8, a: u8, b: u8, c: u8) -> u32 {
     0xB000_0000 | ((player_idx as u32) << 24) | ((a as u32) << 16) | ((b as u32) << 8) | c as u32
 }
-/// `Audio_SeqCmdB40`.
+/// `SEQCMD_RESET_TEMPO`.
 pub fn seq_cmd_b40(player_idx: u8, a: u8, b: u8) -> u32 {
     0xB000_4000 | ((player_idx as u32) << 24) | ((a as u32) << 16) | b as u32
 }
-/// `Audio_SeqCmd6`.
+/// `SEQCMD_SET_CHANNEL_VOLUME`.
 pub fn seq_cmd6(player_idx: u8, a: u8, b: u8, c: u8) -> u32 {
     0x6000_0000 | ((player_idx as u32) << 24) | ((a as u32) << 16) | ((b as u32) << 8) | c as u32
 }
-/// `Audio_SeqCmdE0`.
+/// `SEQCMD_SET_SOUND_OUTPUT_MODE`.
 pub fn seq_cmd_e0(player_idx: u8, a: u8) -> u32 {
     0xE000_0000 | ((player_idx as u32) << 24) | a as u32
 }
-/// `Audio_SeqCmdE01`.
+/// `SEQCMD_DISABLE_PLAY_SEQUENCES`.
 pub fn seq_cmd_e01(player_idx: u8, a: u16) -> u32 {
     0xE000_0100 | ((player_idx as u32) << 24) | a as u32
 }
-/// `Audio_SeqCmd8`.
+/// `SEQCMD_SET_CHANNEL_IO`.
 pub fn seq_cmd8(player_idx: u8, a: u8, b: u8, c: u8) -> u32 {
     0x8000_0000 | ((player_idx as u32) << 24) | ((a as u32) << 16) | ((b as u32) << 8) | c as u32
 }
 
 impl GameAudio {
-    /// `Audio_DisableSeq`.
+    /// `AUDIOCMD_GLOBAL_DISABLE_SEQPLAYER`.
     fn disable_seq(&mut self, player_idx: u8, fade_out: i32) {
         self.queue_cmd_s32(0x8300_0000 | ((player_idx as u32) << 16), fade_out);
     }
 
-    /// `func_800F3054`: `Audio_Update`, at the end of every graph frame (and as a game state
+    /// `Audio_Update`: `Audio_Update`, at the end of every graph frame (and as a game state
     /// ends, `GameState_Destroy`), with no positioned sound effects (`audio_update_with`).
     pub fn audio_update(&mut self) {
         self.audio_update_with(&|p| (p == SfxPos::Default).then_some(glam::Vec3::ZERO));
@@ -100,8 +100,8 @@ impl GameAudio {
             Self::step_freq_lerp(&mut self.river_freq_scale_lerp);
             Self::step_freq_lerp(&mut self.waterfall_freq_scale_lerp);
             self.update_river_sound_volumes();
-            self.func_800f56a8();
-            self.func_800f5cf8();
+            self.audio_update_scene_sequence_resume_point();
+            self.audio_update_fanfare();
             if self.audio_spec_id == 7 {
                 self.clear_saria_bgm();
             }
@@ -119,7 +119,7 @@ impl GameAudio {
                 }
             }
             self.func_800f8f88();
-            self.func_800fa3dc();
+            self.audio_update_active_sequences();
             // AudioDebug_SetInput, AudioDebug_ProcessInput: the debug screen.
             self.schedule_process_cmds();
         }
@@ -142,20 +142,20 @@ impl GameAudio {
         }
     }
 
-    /// `func_800F47BC`.
-    pub fn func_800f47bc(&mut self) {
+    /// `Audio_SetBgmVolumeOffDuringFanfare`.
+    pub fn audio_set_bgm_volume_off_during_fanfare(&mut self) {
         self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 1, 0, 10);
         self.set_vol_scale(SEQ_PLAYER_BGM_SUB, 1, 0, 10);
     }
 
-    /// `func_800F47FC`.
-    pub fn func_800f47fc(&mut self) {
+    /// `Audio_SetBgmVolumeOnDuringFanfare`.
+    pub fn audio_set_bgm_volume_on_during_fanfare(&mut self) {
         self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 1, 0x7F, 3);
         self.set_vol_scale(SEQ_PLAYER_BGM_SUB, 1, 0x7F, 3);
     }
 
-    /// `func_800F483C`.
-    pub fn func_800f483c(&mut self, target_vol: u8, vol_fade_timer: u8) {
+    /// `Audio_SetMainBgmVolume`.
+    pub fn audio_set_main_bgm_volume(&mut self, target_vol: u8, vol_fade_timer: u8) {
         self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 0, target_vol, vol_fade_timer);
     }
 
@@ -164,7 +164,7 @@ impl GameAudio {
         // Ganondorf's Lair
         let pan: i8 = if ganons_tower_level == 0 { 0x7F } else { 0 };
         for channel_idx in 0..16u32 {
-            // CHAN_UPD_PAN_UNSIGNED
+            // AUDIOCMD_OP_CHANNEL_SET_PAN_WEIGHT
             self.queue_cmd_s8((0x7 << 24) | ((SEQ_PLAYER_BGM_MAIN as u32) << 16) | (channel_idx << 8), pan);
         }
         // Lowest room in Ganon's Tower (Entrance Room)
@@ -197,7 +197,7 @@ impl GameAudio {
                     if reverb > 0x7F {
                         reverb = 0x7F;
                     }
-                    // CHAN_UPD_REVERB
+                    // AUDIOCMD_OP_CHANNEL_SET_REVERB_VOLUME
                     self.queue_cmd_s8((0x5 << 24) | ((SEQ_PLAYER_BGM_MAIN as u32) << 16) | (channel_idx << 8), reverb as u8 as i8);
                 }
             }
@@ -316,7 +316,7 @@ impl GameAudio {
         match self.saria_bgm_ptr {
             None => {
                 self.saria_bgm_ptr = Some(pos);
-                self.func_800f5e18(SEQ_PLAYER_BGM_SUB, seq_id, 0, 7, 2);
+                self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_SUB, seq_id, 0, 7, 2);
             }
             Some(prev) => {
                 let q = read(prev);
@@ -347,7 +347,7 @@ impl GameAudio {
     /// priority, splitting them by `vol_split`.
     pub fn split_bgm_channels(&mut self, vol_split: i8) {
         let bgm_players = [SEQ_PLAYER_BGM_MAIN, SEQ_PLAYER_BGM_SUB];
-        if self.func_800fa0b4(SEQ_PLAYER_FANFARE) == NA_BGM_DISABLED && self.func_800fa0b4(SEQ_PLAYER_BGM_SUB) != NA_BGM_LONLON {
+        if self.audio_get_active_seq_id(SEQ_PLAYER_FANFARE) == NA_BGM_DISABLED && self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB) != NA_BGM_LONLON {
             for (i, &pl) in bgm_players.iter().enumerate() {
                 let volume: u8 = if i == 0 { vol_split as u8 } else { (0x7F - vol_split as i32) as u8 };
                 let note_priority: u8 = if volume > 100 {
@@ -369,62 +369,62 @@ impl GameAudio {
         }
     }
 
-    /// `func_800F5510`.
-    pub fn func_800f5510(&mut self, seq_id: u16) {
-        self.func_800f5550(seq_id);
-        self.func_800f5e18(SEQ_PLAYER_BGM_MAIN, seq_id, 0, 0, 1);
+    /// `Audio_PlayMorningSceneSequence`.
+    pub fn audio_play_morning_scene_sequence(&mut self, seq_id: u16) {
+        self.audio_play_scene_sequence(seq_id);
+        self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_MAIN, seq_id, 0, 0, 1);
     }
 
-    /// `func_800F5550`: the scene's music on the main bgm player.
-    pub fn func_800f5550(&mut self, seq_id: u16) {
+    /// `Audio_PlaySceneSequence`: the scene's music on the main bgm player.
+    pub fn audio_play_scene_sequence(&mut self, seq_id: u16) {
         let mut sp27: u8 = 0;
-        if self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN) != NA_BGM_WINDMILL {
-            if self.func_800fa0b4(SEQ_PLAYER_BGM_SUB) == NA_BGM_LONLON {
-                self.func_800f9474(SEQ_PLAYER_BGM_SUB, 0);
+        if self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) != NA_BGM_WINDMILL {
+            if self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB) == NA_BGM_LONLON {
+                self.audio_stop_sequence(SEQ_PLAYER_BGM_SUB, 0);
                 self.queue_cmd_s32(0xF800_0000, 0);
             }
             let t = self.tables.clone();
-            if t.seq_flags(self.d_80130630) & SEQ_FLAG_5 != 0 && t.seq_flags(seq_id as u8) & SEQ_FLAG_4 != 0 {
-                if self.d_8013062c & 0x3F != 0 {
+            if t.seq_flags(self.prev_scene_seq_id) & SEQ_FLAG_RESUME_PREV != 0 && t.seq_flags(seq_id as u8) & SEQ_FLAG_RESUME != 0 {
+                if self.seq_resume_point & 0x3F != 0 {
                     sp27 = 0x1E;
                 }
-                let d = self.d_8013062c;
-                self.func_800f5e18(SEQ_PLAYER_BGM_MAIN, seq_id, sp27, 7, d as i8);
-                self.d_8013062c = 0;
+                let d = self.seq_resume_point;
+                self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_MAIN, seq_id, sp27, 7, d as i8);
+                self.seq_resume_point = 0;
             } else {
-                let nv: u8 = if t.seq_flags(seq_id as u8) & SEQ_FLAG_6 != 0 { 1 } else { 0xFF };
-                self.func_800f5e18(SEQ_PLAYER_BGM_MAIN, seq_id, 0, 7, nv as i8);
-                if t.seq_flags(seq_id as u8) & SEQ_FLAG_5 == 0 {
-                    self.d_8013062c = 0xC0;
+                let nv: u8 = if t.seq_flags(seq_id as u8) & SEQ_FLAG_SKIP_HARP_INTRO != 0 { 1 } else { 0xFF };
+                self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_MAIN, seq_id, 0, 7, nv as i8);
+                if t.seq_flags(seq_id as u8) & SEQ_FLAG_RESUME_PREV == 0 {
+                    self.seq_resume_point = 0xC0;
                 }
             }
-            self.d_80130630 = seq_id as u8;
+            self.prev_scene_seq_id = seq_id as u8;
         }
     }
 
-    /// `func_800F56A8`: where the music with `SEQ_FLAG_4` has got to (its player's IO port 3),
-    /// for the next scene's music to start from (`func_800F5550`).
-    pub fn func_800f56a8(&mut self) {
-        let temp_v0 = self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN);
+    /// `Audio_UpdateSceneSequenceResumePoint`: where the music with `SEQ_FLAG_RESUME` has got to (its player's IO port 3),
+    /// for the next scene's music to start from (`Audio_PlaySceneSequence`).
+    pub fn audio_update_scene_sequence_resume_point(&mut self) {
+        let temp_v0 = self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN);
         let bvar = temp_v0 as u8;
-        if temp_v0 != NA_BGM_DISABLED && self.tables.seq_flags(bvar) & SEQ_FLAG_4 != 0 {
-            if self.d_8013062c != 0xC0 {
-                self.d_8013062c = self.view.players[SEQ_PLAYER_BGM_MAIN as usize].sound_script_io[3] as u8;
+        if temp_v0 != NA_BGM_DISABLED && self.tables.seq_flags(bvar) & SEQ_FLAG_RESUME != 0 {
+            if self.seq_resume_point != 0xC0 {
+                self.seq_resume_point = self.view.players[SEQ_PLAYER_BGM_MAIN as usize].sound_script_io[3] as u8;
             } else {
-                self.d_8013062c = 0;
+                self.seq_resume_point = 0;
             }
         }
     }
 
-    /// `func_800F5718`.
-    pub fn func_800f5718(&mut self) {
-        if self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN) != NA_BGM_WINDMILL {
+    /// `Audio_PlayWindmillBgm`.
+    pub fn audio_play_windmill_bgm(&mut self) {
+        if self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) != NA_BGM_WINDMILL {
             self.queue_seq_cmd(start_seq(SEQ_PLAYER_BGM_MAIN, 0, NA_BGM_WINDMILL));
         }
     }
 
-    /// `func_800F574C`.
-    pub fn func_800f574c(&mut self, arg0: f32, arg2: u8) {
+    /// `Audio_SetMainBgmTempoFreqAfterFanfare`.
+    pub fn audio_set_main_bgm_tempo_freq_after_fanfare(&mut self, arg0: f32, arg2: u8) {
         if arg0 == 1.0 {
             self.queue_seq_cmd(seq_cmd_b40(SEQ_PLAYER_BGM_MAIN, arg2, 0));
         } else {
@@ -433,28 +433,28 @@ impl GameAudio {
         self.queue_seq_cmd(seq_cmd_c(SEQ_PLAYER_FANFARE, 0xA0, arg2, (arg0 * 100.0) as u8));
     }
 
-    /// `func_800F5918`.
-    pub fn func_800f5918(&mut self) {
-        if self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN) == NA_BGM_TIMED_MINI_GAME && self.func_800fa11c(0, 0xF000_0000) {
+    /// `Audio_SetFastTempoForTimedMinigame`.
+    pub fn audio_set_fast_tempo_for_timed_minigame(&mut self) {
+        if self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) == NA_BGM_TIMED_MINI_GAME && self.audio_is_seq_cmd_not_queued(0, 0xF000_0000) {
             self.queue_seq_cmd(seq_cmd_b(SEQ_PLAYER_BGM_MAIN, 5, 0, 0xD2));
         }
     }
 
-    /// `func_800F595C`: a fanfare, or the main bgm.
-    pub fn func_800f595c(&mut self, arg0: u16) {
+    /// `Audio_PlaySequenceInCutscene`: a fanfare, or the main bgm.
+    pub fn audio_play_sequence_in_cutscene(&mut self, arg0: u16) {
         let flags = self.tables.seq_flags(arg0 as u8);
         if flags & SEQ_FLAG_FANFARE != 0 {
             self.play_fanfare(arg0);
         } else if flags & SEQ_FLAG_FANFARE_GANON != 0 {
             self.queue_seq_cmd(start_seq(SEQ_PLAYER_FANFARE, 0, arg0));
         } else {
-            self.func_800f5e18(SEQ_PLAYER_BGM_MAIN, arg0, 0, 7, -1);
+            self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_MAIN, arg0, 0, 7, -1);
             self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_FANFARE, 0));
         }
     }
 
-    /// `func_800F59E8`.
-    pub fn func_800f59e8(&mut self, arg0: u16) {
+    /// `Audio_StopSequenceInCutscene`.
+    pub fn audio_stop_sequence_in_cutscene(&mut self, arg0: u16) {
         let flags = self.tables.seq_flags(arg0 as u8);
         if flags & (SEQ_FLAG_FANFARE | SEQ_FLAG_FANFARE_GANON) != 0 {
             self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_FANFARE, 0));
@@ -463,16 +463,16 @@ impl GameAudio {
         }
     }
 
-    /// `func_800F5A58`: whether `arg0` plays (on the fanfare player for a fanfare).
-    pub fn func_800f5a58(&self, arg0: u8) -> bool {
+    /// `Audio_IsSequencePlaying`: whether `arg0` plays (on the fanfare player for a fanfare).
+    pub fn audio_is_sequence_playing(&self, arg0: u8) -> bool {
         let flags = self.tables.seq_flags(arg0);
         let phi_a1 = if flags & (SEQ_FLAG_FANFARE | SEQ_FLAG_FANFARE_GANON) != 0 { 1 } else { 0 };
-        arg0 == self.func_800fa0b4(phi_a1) as u8
+        arg0 == self.audio_get_active_seq_id(phi_a1) as u8
     }
 
     /// `func_800F5ACC`: the mini-boss music on the main bgm player, keeping what played.
     pub fn func_800f5acc(&mut self, seq_id: u16) {
-        let cur = self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN);
+        let cur = self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN);
         if (cur & 0xFF) != NA_BGM_GANON_TOWER && (cur & 0xFF) != NA_BGM_ESCAPE && cur != seq_id {
             self.set_sequence_mode(SEQ_MODE_IGNORE);
             if cur != NA_BGM_DISABLED {
@@ -486,9 +486,9 @@ impl GameAudio {
 
     /// `func_800F5B58`: restores what `func_800F5ACC` replaced.
     pub fn func_800f5b58(&mut self) {
-        if self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN) != NA_BGM_DISABLED
+        if self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) != NA_BGM_DISABLED
             && self.prev_main_bgm_seq_id != NA_BGM_DISABLED
-            && self.tables.seq_flags(self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN) as u8) & SEQ_FLAG_RESTORE != 0
+            && self.tables.seq_flags(self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) as u8) & SEQ_FLAG_RESTORE != 0
         {
             if self.prev_main_bgm_seq_id == NA_BGM_DISABLED {
                 self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_BGM_MAIN, 0));
@@ -502,7 +502,7 @@ impl GameAudio {
 
     /// `func_800F5BF0`: the nature ambience on the main bgm player, keeping what played.
     pub fn func_800f5bf0(&mut self, nature_ambience_id: u8) {
-        let cur = self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN);
+        let cur = self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN);
         if cur != NA_BGM_NATURE_AMBIENCE {
             self.prev_main_bgm_seq_id = cur;
         }
@@ -518,31 +518,31 @@ impl GameAudio {
         self.prev_main_bgm_seq_id = NA_BGM_DISABLED;
     }
 
-    /// `Audio_PlayFanfare`: starts in a frame (`func_800F5CF8`), or in five once the fanfare
+    /// `Audio_PlayFanfare`: starts in a frame (`Audio_UpdateFanfare`), or in five once the fanfare
     /// playing with another font stops.
     pub fn play_fanfare(&mut self, seq_id: u16) {
-        let sp26 = self.func_800fa0b4(SEQ_PLAYER_FANFARE);
-        let sp1c = self.func_800e5e84(sp26 as u8).first().copied();
-        let sp18 = self.func_800e5e84(seq_id as u8).first().copied();
+        let sp26 = self.audio_get_active_seq_id(SEQ_PLAYER_FANFARE);
+        let sp1c = self.audio_thread_get_fonts_for_sequence(sp26 as u8).first().copied();
+        let sp18 = self.audio_thread_get_fonts_for_sequence(seq_id as u8).first().copied();
         if sp26 == NA_BGM_DISABLED || sp1c == sp18 {
-            self.d_8016b9f4 = 1;
+            self.fanfare_start_timer = 1;
         } else {
-            self.d_8016b9f4 = 5;
+            self.fanfare_start_timer = 5;
             self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_FANFARE, 0));
         }
-        self.d_8016b9f6 = seq_id;
+        self.fanfare_seq_id = seq_id;
     }
 
-    /// `func_800F5CF8`: the fanfare's start, the bgm players turned down under it.
-    pub fn func_800f5cf8(&mut self) {
-        if self.d_8016b9f4 != 0 {
-            self.d_8016b9f4 -= 1;
-            if self.d_8016b9f4 == 0 {
+    /// `Audio_UpdateFanfare`: the fanfare's start, the bgm players turned down under it.
+    pub fn audio_update_fanfare(&mut self) {
+        if self.fanfare_start_timer != 0 {
+            self.fanfare_start_timer -= 1;
+            if self.fanfare_start_timer == 0 {
                 self.queue_cmd_s32(0xE300_0000, SEQUENCE_TABLE);
                 self.queue_cmd_s32(0xE300_0000, FONT_TABLE);
-                self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN);
-                let sp26 = self.func_800fa0b4(SEQ_PLAYER_FANFARE);
-                let sp22 = self.func_800fa0b4(SEQ_PLAYER_BGM_SUB);
+                self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN);
+                let sp26 = self.audio_get_active_seq_id(SEQ_PLAYER_FANFARE);
+                let sp22 = self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB);
                 if sp26 == NA_BGM_DISABLED {
                     self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 1, 0, 5);
                     self.set_vol_scale(SEQ_PLAYER_BGM_SUB, 1, 0, 5);
@@ -553,7 +553,7 @@ impl GameAudio {
                         self.queue_seq_cmd(seq_cmd_c(SEQ_PLAYER_FANFARE, 0x93, 0, 0));
                     }
                 }
-                let s = self.d_8016b9f6;
+                let s = self.fanfare_seq_id;
                 self.queue_seq_cmd(start_seq(SEQ_PLAYER_FANFARE, 1, s));
                 self.queue_seq_cmd(seq_cmd_a(0, 0xFFFF));
                 if sp22 != NA_BGM_LONLON {
@@ -563,8 +563,8 @@ impl GameAudio {
         }
     }
 
-    /// `func_800F5E18`: sets the player's IO port `arg3` to `arg4`, then starts `seq_id`.
-    pub fn func_800f5e18(&mut self, player_idx: u8, seq_id: u16, fade_timer: u8, arg3: i8, arg4: i8) {
+    /// `Audio_PlaySequenceWithSeqPlayerIO`: sets the player's IO port `arg3` to `arg4`, then starts `seq_id`.
+    pub fn audio_play_sequence_with_seq_player_io(&mut self, player_idx: u8, seq_id: u16, fade_timer: u8, arg3: i8, arg4: i8) {
         self.queue_seq_cmd(seq_cmd7(player_idx, arg3 as u8, arg4 as u8));
         self.queue_seq_cmd(start_seq(player_idx, fade_timer, seq_id));
     }
@@ -577,8 +577,8 @@ impl GameAudio {
             if self.audio_cutscene_flag != 0 {
                 seq_mode = SEQ_MODE_IGNORE;
             }
-            let seq_id = self.active[SEQ_PLAYER_BGM_MAIN as usize].unk_254;
-            if seq_id == NA_BGM_FIELD_LOGIC && self.func_800fa0b4(SEQ_PLAYER_BGM_SUB) == (NA_BGM_ENEMY | 0x800) {
+            let seq_id = self.active[SEQ_PLAYER_BGM_MAIN as usize].seq_id;
+            if seq_id == NA_BGM_FIELD_LOGIC && self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB) == (NA_BGM_ENEMY | 0x800) {
                 seq_mode = SEQ_MODE_IGNORE;
             }
             if seq_id == NA_BGM_DISABLED || self.tables.seq_flags(seq_id as u8) & SEQ_FLAG_ENEMY != 0 || (self.prev_seq_mode & 0x7F) == SEQ_MODE_ENEMY {
@@ -638,11 +638,11 @@ impl GameAudio {
                 self.audio_enemy_vol = (((350.0 - adj_dist) * 127.0) / 350.0) as i32 as i8;
                 let ev = self.audio_enemy_vol as u8;
                 self.set_vol_scale(SEQ_PLAYER_BGM_SUB, 3, ev, 10);
-                if self.active[SEQ_PLAYER_BGM_MAIN as usize].unk_254 != NA_BGM_NATURE_AMBIENCE {
+                if self.active[SEQ_PLAYER_BGM_MAIN as usize].seq_id != NA_BGM_NATURE_AMBIENCE {
                     self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 3, (0x7F - self.audio_enemy_vol as i32) as u8, 10);
                 }
             }
-            if self.active[SEQ_PLAYER_BGM_MAIN as usize].unk_254 != NA_BGM_NATURE_AMBIENCE {
+            if self.active[SEQ_PLAYER_BGM_MAIN as usize].seq_id != NA_BGM_NATURE_AMBIENCE {
                 let ev = self.audio_enemy_vol;
                 self.split_bgm_channels(ev);
             }
@@ -655,10 +655,10 @@ impl GameAudio {
     pub fn func_800f64e0(&mut self, arg0: u8) {
         self.d_80130608 = arg0 as i8;
         if arg0 != 0 {
-            self.func_80078884(super::sfx::NA_SE_SY_WIN_OPEN);
+            self.play_sfx_centered(super::sfx::NA_SE_SY_WIN_OPEN);
             self.queue_cmd_s32(0xF100_0000, 0);
         } else {
-            self.func_80078884(super::sfx::NA_SE_SY_WIN_CLOSE);
+            self.play_sfx_centered(super::sfx::NA_SE_SY_WIN_CLOSE);
             self.queue_cmd_s32(0xF200_0000, 0);
         }
     }
@@ -670,7 +670,7 @@ impl GameAudio {
             if filter == 0 {
                 self.stop_sfx_by_id(super::sfx::NA_SE_PL_IN_BUBBLE);
             } else if self.audio_base_filter == 0 {
-                self.func_80078884(super::sfx::NA_SE_PL_IN_BUBBLE);
+                self.play_sfx_centered(super::sfx::NA_SE_PL_IN_BUBBLE);
             }
         }
         self.audio_base_filter = filter;
@@ -689,23 +689,23 @@ impl GameAudio {
         }
     }
 
-    /// `func_800F6700`: the options' sound setting.
-    pub fn func_800f6700(&mut self, audio_setting: i8) {
+    /// `Audio_SetSoundOutputMode`: the options' sound setting.
+    pub fn audio_set_sound_output_mode(&mut self, audio_setting: i8) {
         let sound_mode_index = match audio_setting {
             1 => {
-                self.sound_mode = SOUNDMODE_MONO;
+                self.sound_mode = SOUND_OUTPUT_MONO;
                 3
             }
             2 => {
-                self.sound_mode = SOUNDMODE_HEADSET;
+                self.sound_mode = SOUND_OUTPUT_HEADSET;
                 1
             }
             3 => {
-                self.sound_mode = SOUNDMODE_SURROUND;
+                self.sound_mode = SOUND_OUTPUT_SURROUND;
                 0
             }
             _ => {
-                self.sound_mode = SOUNDMODE_STEREO;
+                self.sound_mode = SOUND_OUTPUT_STEREO;
                 0
             }
         };
@@ -716,9 +716,9 @@ impl GameAudio {
     pub fn set_extra_filter(&mut self, filter: u8) {
         self.audio_extra_filter2 = filter;
         self.audio_extra_filter = filter;
-        if self.active[SEQ_PLAYER_BGM_MAIN as usize].unk_254 == NA_BGM_NATURE_AMBIENCE {
+        if self.active[SEQ_PLAYER_BGM_MAIN as usize].seq_id == NA_BGM_NATURE_AMBIENCE {
             for t in 0..16u32 {
-                // CHAN_UPD_SCRIPT_IO (seq player 0, all channels, slot 6)
+                // AUDIOCMD_OP_CHANNEL_SET_IO (seq player 0, all channels, slot 6)
                 self.queue_cmd_s8((0x6 << 24) | ((SEQ_PLAYER_BGM_MAIN as u32) << 16) | ((t & 0xFF) << 8) | 6, filter as i8);
             }
         }
@@ -747,8 +747,8 @@ impl GameAudio {
         self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_BGM_SUB, ((arg0 as u32 * 3) / 2) as u8));
     }
 
-    /// `func_800F6AB0`.
-    pub fn func_800f6ab0(&mut self, arg0: u16) {
+    /// `Audio_StopBgmAndFanfare`.
+    pub fn audio_stop_bgm_and_fanfare(&mut self, arg0: u16) {
         self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_BGM_MAIN, arg0 as u8));
         self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_FANFARE, arg0 as u8));
         self.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_BGM_SUB, arg0 as u8));
@@ -758,7 +758,7 @@ impl GameAudio {
 
     /// `func_800F6B3C`: the sound effects' sequence, again.
     pub fn func_800f6b3c(&mut self) {
-        self.func_800f9280(SEQ_PLAYER_SFX, 0, 0xFF, 5);
+        self.audio_start_sequence(SEQ_PLAYER_SFX, 0, 0xFF, 5);
     }
 
     /// `Audio_DisableAllSeq`.
@@ -796,24 +796,24 @@ impl GameAudio {
         self.river_sound_main_bgm_lower = false;
         self.river_sound_main_bgm_restore = false;
         self.ganons_tower_vol = 0xFF;
-        self.d_8016b9d8 = 0;
+        self.malon_singing_timer = 0;
         // sSpecReverbs[gAudioSpecId] (20 of them, for the 18 specs).
         self.spec_reverb = self.tables.spec_reverbs.get(self.audio_spec_id as usize).copied().unwrap_or(0);
         self.d_80130608 = 0;
         self.prev_main_bgm_seq_id = NA_BGM_DISABLED;
         self.queue_cmd_s8((0x46 << 24) | ((SEQ_PLAYER_BGM_MAIN as u32) << 16), -1);
         self.saria_bgm_ptr = None;
-        self.d_8016b9f4 = 0;
+        self.fanfare_start_timer = 0;
         self.d_8016b9f3 = 1;
-        self.d_8016b9f2 = 0;
+        self.malon_singing_disabled = 0;
     }
 
     /// `Audio_ResetSfxChannelState`.
     pub fn reset_sfx_channel_state(&mut self) {
         for s in self.sfx_channel_state.iter_mut() {
-            *s = SfxPlayerState { vol: 1.0, freq_scale: 1.0, reverb: 0, pan_signed: 0x40, stereo_bits: 0, filter: 0xFF, unk_0c: 0xFF };
+            *s = SfxPlayerState { vol: 1.0, freq_scale: 1.0, reverb: 0, pan_signed: 0x40, stereo_bits: 0, filter: 0xFF, comb_filter_gain: 0xFF };
         }
-        self.sfx_channel_state[SFX_CHANNEL_OCARINA as usize].unk_0c = 0;
+        self.sfx_channel_state[SFX_CHANNEL_OCARINA as usize].comb_filter_gain = 0;
         self.prev_seq_mode = 0;
         self.audio_code_reverb = 0;
     }
@@ -829,13 +829,13 @@ impl GameAudio {
     /// `Audio_SetNatureAmbienceChannelIO`: IO port `port` of the ambience's channels in
     /// `channel_idx_range` (first << 4 | last) to `val`.
     pub fn set_nature_ambience_channel_io(&mut self, channel_idx_range: u8, port: u8, val: u8) {
-        if self.active[SEQ_PLAYER_BGM_MAIN as usize].unk_254 != NA_BGM_NATURE_AMBIENCE && self.func_800fa11c(1, 0xF000_00FF) {
+        if self.active[SEQ_PLAYER_BGM_MAIN as usize].seq_id != NA_BGM_NATURE_AMBIENCE && self.audio_is_seq_cmd_not_queued(1, 0xF000_00FF) {
             // (sAudioNatureFailed = true: only the debug screen reads it.)
             return;
         }
         // channelIdxRange = 01 on port 1
-        if ((channel_idx_range as u32) << 8) + port as u32 == ((NATURE_CHANNEL_CRITTER_0 as u32) << 8) + CHANNEL_IO_PORT_1 as u32 && self.func_800fa0b4(SEQ_PLAYER_BGM_SUB) != NA_BGM_LONLON {
-            self.d_8016b9d8 = 0;
+        if ((channel_idx_range as u32) << 8) + port as u32 == ((NATURE_CHANNEL_CRITTER_0 as u32) << 8) + CHANNEL_IO_PORT_1 as u32 && self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB) != NA_BGM_LONLON {
+            self.malon_singing_timer = 0;
         }
         let mut first = channel_idx_range >> 4;
         let last = channel_idx_range & 0xF;
@@ -849,7 +849,7 @@ impl GameAudio {
 
     /// `Audio_StartNatureAmbienceSequence`.
     pub fn start_nature_ambience_sequence(&mut self, player_io: u16, channel_mask: u16) {
-        if self.func_800fa0b4(SEQ_PLAYER_BGM_MAIN) == NA_BGM_WINDMILL {
+        if self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) == NA_BGM_WINDMILL {
             self.play_cutscene_effects_sequence(0xF); // SEQ_CS_EFFECTS_RAINFALL
             return;
         }
@@ -859,7 +859,7 @@ impl GameAudio {
         self.set_vol_scale(SEQ_PLAYER_BGM_MAIN, 0, 0x7F, 1);
 
         let mut start_disabled = false;
-        if self.d_80133408 != 0 {
+        if self.start_seq_disabled != 0 {
             start_disabled = true;
             self.queue_seq_cmd(seq_cmd_e01(SEQ_PLAYER_BGM_MAIN, 0));
         }
@@ -878,7 +878,7 @@ impl GameAudio {
     /// (`sNatureAmbienceDataIO`) on the main bgm player, unless its music has
     /// `SEQ_FLAG_NO_AMBIENCE`.
     pub fn play_nature_ambience_sequence(&mut self, nature_ambience_id: u8) {
-        let cur = self.active[SEQ_PLAYER_BGM_MAIN as usize].unk_254;
+        let cur = self.active[SEQ_PLAYER_BGM_MAIN as usize].seq_id;
         if !(cur != NA_BGM_DISABLED && self.tables.seq_flags(cur as u8) & SEQ_FLAG_NO_AMBIENCE != 0) {
             let t = self.tables.clone();
             let Some(data) = t.nature_ambience.get(nature_ambience_id as usize) else {
@@ -905,14 +905,14 @@ impl GameAudio {
         self.func_800f6c34();
         // AudioOcarina_ResetStaffs: the ocarina isn't ported.
         self.reset_sfx_channel_state();
-        self.func_800faeb4();
+        self.audio_reset_active_sequences_and_volume();
         self.reset_sfx();
-        self.func_800f9280(SEQ_PLAYER_SFX, 0, 0x70, 10);
+        self.audio_start_sequence(SEQ_PLAYER_SFX, 0, 0x70, 10);
     }
 
     /// `func_800F7170`: the sound effects' sequence again after a reset.
     pub fn func_800f7170(&mut self) {
-        self.func_800f9280(SEQ_PLAYER_SFX, 0, 0x70, 1);
+        self.audio_start_sequence(SEQ_PLAYER_SFX, 0, 0x70, 1);
         self.queue_cmd_s32(0xF200_0000, 1);
         self.schedule_process_cmds();
         self.queue_cmd_s32(0xF800_0000, 0);
@@ -925,16 +925,16 @@ impl GameAudio {
         self.func_800f6c34();
         // AudioOcarina_ResetStaffs: the ocarina isn't ported.
         self.reset_sfx_channel_state();
-        self.func_800fadf8();
+        self.audio_reset_active_sequences();
         self.reset_sfx();
     }
 
     /// `func_800F7208`.
     pub fn func_800f7208(&mut self) {
-        self.func_800fadf8();
+        self.audio_reset_active_sequences();
         self.queue_cmd_s32(0xF200_0000, 1);
         self.func_800f6c34();
         self.reset_sfx_channel_state();
-        self.func_800f9280(SEQ_PLAYER_SFX, 0, 0x70, 1);
+        self.audio_start_sequence(SEQ_PLAYER_SFX, 0, 0x70, 1);
     }
 }

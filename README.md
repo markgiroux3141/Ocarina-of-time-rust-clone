@@ -32,7 +32,7 @@ Crates live in one folder per layer. The engine knows nothing about Zelda, and `
 
 ## Setup
 
-1. Copy `oot.example.toml` to `oot.toml` and point it at your ROM and decomp checkout (already done on this machine; `oot.toml` is git-ignored).
+1. Copy `oot.example.toml` to `oot.toml` and point it at your ROM and decomp checkout: zeldaret/oot at commit `52a510f` ([ADR 0031](docs/adr/0031-decomp-main.md)), the ROM gc-eu-mq-dbg (already done on this machine; `oot.toml` is git-ignored).
 2. `rust-toolchain.toml` pins Rust 1.95 for this directory only (egui 0.36 needs it). Your global default is untouched.
 3. Build the asset pack once: `target/release/oot import` (about 9 s). The game launches it by itself if there's no pack.
 
@@ -42,7 +42,7 @@ The game never reads the ROM or the decomp at runtime: `oot import` decodes the 
 - every texture, skeleton, animation, display list and collision header the decomp's XMLs name;
 - every scene and room, for each of the four game layers;
 - Link's meshes;
-- the game tables the C defines, including the entrance table and the actor table with every actor's `ActorInit`.
+- the game tables the C defines, including the entrance table and the actor table with every actor's `ActorProfile`.
 
 The pack goes to `%LOCALAPPDATA%\oot-clone\packs\<rom-sha1>.pak` (about 40 MB). Like `extracted/`, it's Nintendo's data and stays on your machine.
 
@@ -72,7 +72,7 @@ target/release/ootx player-draw               # Link's draw list for every age x
 target/release/ootx scan-scenes [--all-layers]   # every scene's rooms through the interpreter (out/scene_scan.json)
 target/release/ootx dump-room --scene spot04 --room 0 --png out/s04_tex   # one room's draw lists and textures
 target/release/ootx scene-info --scene spot04 [--layer 1]              # spawns, entrances, exits, transition actors, placements (from the pack)
-target/release/ootx cutscene [D_808BCE20]                             # the pack's cutscene scripts and sEntranceCutsceneTable, or one script's commands
+target/release/ootx cutscene [gDekuTreeMeetingCs]                             # the pack's cutscene scripts and sEntranceCutsceneTable, or one script's commands
 
 # Viewer: Link from your ROM (default) or the synthetic test character "Tock"
 target/release/oot_viewer                                   # interactive, starts on adult Link
@@ -82,35 +82,35 @@ target/release/oot_viewer --sheet out/link_sheet.png        # rows: wait, walk, 
 target/release/oot_viewer --sheet out/sword.png --group SWORD --shield HYLIAN --anims link_fighter_normal_kiru,link_fighter_defense_wait
 target/release/oot_viewer --subject tock --sheet out/tock_sheet.png
 
-# The game: enters Kokiri Forest by Play_Init (ENTR_SPOT04_0), child Link (N64 pad or keyboard).
+# The game: enters Kokiri Forest by Play_Init (ENTR_KOKIRI_FOREST_0), child Link (N64 pad or keyboard).
 # Every placement spawns (ported, or a placeholder: P shows them), rooms change, exits work.
 target/release/oot
-target/release/oot --entrance ENTR_SPOT04_3                # outside Link's house: walk in through the door
+target/release/oot --entrance ENTR_KOKIRI_FOREST_3                # outside Link's house: walk in through the door
 target/release/oot --scene spot00 --adult --time 18:00     # any scene's entrance to spawn --spawn N, age and time
-target/release/oot --entrance ENTR_SPOT04_1 --preset deku-tree-open   # at the Deku Tree, his mouth open (a debug save preset;
+target/release/oot --entrance ENTR_KOKIRI_FOREST_1 --preset deku-tree-open   # at the Deku Tree, his mouth open (a debug save preset;
                                                            # deku-tree-dead: the tree dead too)
-target/release/oot --entrance ENTR_LINK_HOME_0             # a new save in Link's bed: the ramp, the crawlspace, the boulder, the
+target/release/oot --entrance ENTR_LINKS_HOUSE_0             # a new save in Link's bed: the ramp, the crawlspace, the boulder, the
                                                            # Kokiri Sword's chest, then 40 rupees, the shop and Mido
-target/release/oot --entrance ENTR_SPOT04_4 --preset sword-and-40-rupees   # outside the Kokiri shop with the sword worn and 40
+target/release/oot --entrance ENTR_KOKIRI_FOREST_4 --preset sword-and-40-rupees   # outside the Kokiri shop with the sword worn and 40
                                                            # rupees: buy the Deku Shield, Enter (Start) to wear it
 
 # Sandbox: the test course and the debug views
 target/release/oot_sandbox                                 # test course, adult Link
 target/release/oot_sandbox --scene spot04 --child          # Kokiri Forest, the spikes' view (every room, Player alone)
 target/release/oot_sandbox --scene spot04 --child --entrance --placeholders   # the game's way in, with markers on unported actors
-target/release/oot_sandbox --entrance ENTR_SPOT04_3 --child --script house --trace out/house.json --screenshot out/house.png --shots-at 12,60,120
+target/release/oot_sandbox --entrance ENTR_KOKIRI_FOREST_3 --child --script house --trace out/house.json --screenshot out/house.png --shots-at 12,60,120
                                                            # headless: into Link's house and back out
-target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open --script playthrough --trace out/playthrough.json
+target/release/oot_sandbox --entrance ENTR_LINKS_HOUSE_0 --child --preset deku-tree-open --script playthrough --trace out/playthrough.json
                                                            # headless: GAME-02's run from Link's bed into the Deku Tree
-target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script sword-chest --trace out/sword_chest.json
+target/release/oot_sandbox --entrance ENTR_LINKS_HOUSE_0 --child --script sword-chest --trace out/sword_chest.json
                                                            # headless: GAME-03's run from Link's bed to the Kokiri Sword
-target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script mido-shop --trace out/mido_shop.json
+target/release/oot_sandbox --entrance ENTR_LINKS_HOUSE_0 --child --script mido-shop --trace out/mido_shop.json
                                                            # headless: on to the Deku Shield from the shop, both worn, past Mido
-target/release/oot_sandbox --entrance ENTR_LINK_HOME_0 --child --script new-save-deku-tree --trace out/new_save_deku_tree.json
+target/release/oot_sandbox --entrance ENTR_LINKS_HOUSE_0 --child --script new-save-deku-tree --trace out/new_save_deku_tree.json
                                                            # headless: on past Mido, the Deku Tree's talk (cutscenes) and into him
-target/release/oot_sandbox --entrance ENTR_LINK_HOME_1 --child --script cup --screenshot out/home.png --shots-at 29
+target/release/oot_sandbox --entrance ENTR_LINKS_HOUSE_1 --child --script cup --screenshot out/home.png --shots-at 29
                                                            # the house's pivot camera and skybox, then C-Up: the fixed camera and its picture
-target/release/oot_sandbox --entrance ENTR_SOUKO_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png
+target/release/oot_sandbox --entrance ENTR_LON_LON_BUILDINGS_2 --child --at=1190,140,150,16384 --script open --sheet out/door.png
                                                            # A at a door: En_Door, the door camera, the room behind it
 target/release/oot_sandbox --scene spot04 --time 19:00 --target 200   # evening, with a dummy Z-target
 target/release/oot_sandbox --script swim --step 8 --sheet out/swim.png   # also: platform, target, parallel, sword, hang, climb50/70/100, tour

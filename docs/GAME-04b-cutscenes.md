@@ -13,7 +13,7 @@ rest.
 |---|---|---|
 | 1 | One-point cutscenes (`z_onepointdemo.c`): `OnePointCutscene_Init`, `_SetInfo`, `_Attention`, `_EndCutscene`, the cameras' parent and child chain, `Camera_Finish`'s timer, `Camera_Unique9`, `Camera_Demo9`, `Camera_Demo5`; the crawlspace's exit (9601, 9602), `En_Box`'s fall (4500) and its attention calls; the tables in the pack | done |
 | 2 | The camera modes still on the Normal1 fallback (ADR 0013): `Camera_Jump1` (JUMP, FREEFALL), `Camera_Jump2` (CLIMB, CLIMBZ), `Camera_Uniq1` (HANG, HANGZ), and what the cutscenes need | done |
-| 3 | Cutscene audio: the scripts' `CS_CMD_PLAYBGM`, `_STOPBGM`, `_FADEBGM`; `z_demo.c`'s own sounds; Player's cutscene-mode voices and sounds | done |
+| 3 | Cutscene audio: the scripts' `CS_CMD_START_SEQ`, `_STOPBGM`, `_FADEBGM`; `z_demo.c`'s own sounds; Player's cutscene-mode voices and sounds | done |
 | 4 | The rest of `z_demo.c`'s commands: the misc actions (rain, lightning, ...), the lighting override (`envCtx.lightSettingOverride`), what the opening's and the Deku Tree's scripts need | done (the drawing of rain, bolts and flash: milestone 6) |
 | 5 | Title cards: `TitleCard_InitPlaceName` (`CS_MISC` 15) and the scene-entry title cards (`showTitleCard`), the place names' textures in the pack | done |
 | 6 | The opening's nightmare: `En_Viewer` (Zelda and Impa on the horse, Ganondorf), `Bg_Spot00_Hanebasi` (the drawbridge), the rain and lightning | done (Ganondorf's cape and the lightning's flash: known gaps) |
@@ -50,8 +50,8 @@ five runs through the crawlspace re-recorded (golden/README.md).
 ### What was built
 
 1. **The tables in the pack** (pack format 15, `CameraData::onepoint`): every `OnePointCsFull`,
-   `CutsceneCameraPoint` and `s16` definition of `z_onepointdemo_data.c` (75 keyframe tables, 10
-   point lists, 12 shorts) and `Camera_Demo5`'s eight keyframe tables from `z_camera_data.c`,
+   `CutsceneCameraPoint` and `s16` definition of `z_onepointdemo.c` (75 keyframe tables, 10
+   point lists, 12 shorts) and `Camera_Demo5`'s eight keyframe tables from `z_camera_data.inc.c`,
    read from the C (`oot_import::tables::load_onepoint_data`).
 2. **`z_onepointdemo.c`** (`oot_game::onepoint`, [ADR 0029](adr/0029-one-point-cutscenes.md)):
    `OnePointCutscene_Init` (the queue in front of the parent, the statuses, the lower priority
@@ -59,7 +59,7 @@ five runs through the crawlspace re-recorded (golden/README.md).
    `_RemoveCamera`, `_EndCutscene`, `_Attention` (the category order, the timers by category),
    `_AttentionSetSfx`, `_CheckForCategory`; `func_8005B198`; the statics
    (`OnePointStatics`), carried over scene changes.
-3. **`z_play.c`:** `func_800C0808`, `func_800C08AC`, `Play_SetCameraRoll`, `func_800C0D34`;
+3. **`z_play.c`:** `Play_InitCameraDataUsingPlayer`, `Play_ReturnToMainCam`, `Play_SetCameraRoll`, `func_800C0D34`;
    `play->view` (`PlayState::view`).
 4. **`z_camera.c`:**
    - `Camera_Unique9` (`CAM_SET_CS_C`), whole: the keyframes' advance and their `unk_01` (the
@@ -72,10 +72,10 @@ five runs through the crawlspace re-recorded (golden/README.md).
      camera's player or its target, the wait, the finishing actions;
    - `Camera_Demo5` (`CAM_SET_CS_ATTENTION`), whole: its eight branches and their tables, the
      timer lengthened by the return's keyframes, the chime, Player held, then `CAM_SET_CS_C`;
-   - `Camera_InitPlayerSettings` for a sub camera; `Camera_Finish`; `Camera_LERPFloorF`; the
+   - `Camera_InitDataUsingPlayer` for a sub camera; `Camera_Finish`; `Camera_LERPFloorF`; the
      debug ROM's D-Right ending a timed camera; the camera's own target read each frame (the
      update had read the main camera's for every camera).
-5. **Player:** `func_8083F570` starts 9601 and 9602 (`PlayRequest::OnePointCutscene`);
+5. **Player:** `Player_TryLeavingCrawlspace` starts 9601 and 9602 (`PlayRequest::OnePointCutscene`);
    `currentBoots` and outside writes of `stateFlags1` through `PlayerIface`.
 6. **`En_Box`:** `EnBox_FallOnSwitchFlag`'s 4500 and `EnBox_Fall`'s end of it,
    `EnBox_AppearOnSwitchFlag`'s and `EnBox_AppearOnRoomClear`'s attention cutscenes (with
@@ -91,8 +91,8 @@ five runs through the crawlspace re-recorded (golden/README.md).
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 286 passed, 1 ignored |
-| The tables (`the_one_point_tables_are_the_roms`) | All 105 the ROM's bytes in `code`, each at its `D_` address's offset; the settings they name are `z64camera.h`'s (`CAM_SET_CS_C` 0x3C, `CAM_SET_CS_3` 0x2A, `CAM_SET_FREE2` 0x22) |
-| The crawlspace's exit (`the_way_out_is_a_one_point_cutscene`) | On `func_8083F570`'s frame: sub camera 1 active, 9601, `CAM_SET_CS_3`, the main camera its parent, `CAM_STAT_UNK3`, back on its `prevSetting` (NORMAL0); `D_80120308` and `D_80120398`, action 1 (the 0x1000 taken off by the first frame), 90 frames. Its first view: the splines at u 0, `(p0 + 4 p1 + p2) / 6` of the tables' first points, turned round Link by his yaw, within 0.01; the fov `(40 + 4 x 40.000004 + 50) / 6`. 92 updates of the sub camera (`animTimer` 90 to -1, then the finish), in 67 frames: on 25 of them the main camera, back on the crawlspace's bg camera, asks for `view.unk_124` and `Play_Draw` updates the active camera again (as the C does). Then the sub camera cleared, the main camera active and alone in the queue, starting within 40 of the cutscene's last eye and at, on room 2's bg camera 14 (`CAM_SET_DUNGEON0`) |
+| The tables (`the_one_point_tables_are_the_roms`) | All 105 the ROM's bytes in `code`, each at its `D_` address's offset; the settings they name are `camera.h`'s (`CAM_SET_CS_C` 0x3C, `CAM_SET_CS_3` 0x2A, `CAM_SET_FREE2` 0x22) |
+| The crawlspace's exit (`the_way_out_is_a_one_point_cutscene`) | On `Player_TryLeavingCrawlspace`'s frame: sub camera 1 active, 9601, `CAM_SET_CS_3`, the main camera its parent, `CAM_STAT_UNK3`, back on its `prevSetting` (NORMAL0); `sCrawlspaceAtPoints` and `sCrawlspaceForwardsEyePoints`, action 1 (the 0x1000 taken off by the first frame), 90 frames. Its first view: the splines at u 0, `(p0 + 4 p1 + p2) / 6` of the tables' first points, turned round Link by his yaw, within 0.01; the fov `(40 + 4 x 40.000004 + 50) / 6`. 92 updates of the sub camera (`animTimer` 90 to -1, then the finish), in 67 frames: on 25 of them the main camera, back on the crawlspace's bg camera, asks for `view.unk_124` and `Play_Draw` updates the active camera again (as the C does). Then the sub camera cleared, the main camera active and alone in the queue, starting within 40 of the cutscene's last eye and at, on room 2's bg camera 14 (`CAM_SET_DUNGEON0`) |
 | Link's yaw at the exits (`crawl`'s other tests) | 0 where it was 1: 9601's and 9602's `SetInfo` take the main camera off CRAWLSPACE in Player's update, so `Camera_Subj4` doesn't write his yaw that frame |
 | An attention cutscene (`an_attention_cutscene_on_a_far_npc`) | On a Kokiri child 900 from Link: sub camera 1, 5010, `CAM_SET_CS_ATTENTION`, timer 100 (an NPC), at the main camera's at and eye, `data1` `NA_SE_SY_CORRECT_CHIME`. Its first frame: `D_8011D9F4` (the last branch), `[1].timerInit` 13 (`eyeTargetDist * 0.005 + 8`, no bgcheck hit from Link's head), the timer 100 + 13 + 1, `CAM_SET_CS_C`; keyframe 0's at round the child's focus from Link's side, its eye 300 behind it then bgchecked into the hillside (1 off the wall), fov 60; the chime once at no position; Link's mode 1, the cutscene action the next frame. It lasts 101 + 13 frames (keyframe 0's 100, keyframe 1's 13, keyframe 2's copy); then the main camera active and Link's mode 7 (`Camera_Finish`) |
 | The falling chest's shot (`the_falling_chests_shot`) | 4500: `CAM_SET_FREE2`, the at 40 above the floor under the actor's focus, the eye 150 at pitch 0x3E8 along its yaw, fov 50, roll 0, timer 9999; Link held (mode 8); `OnePointCutscene_EndCutscene` ends it at the end of the frame, mode 7 |
@@ -105,7 +105,7 @@ five runs through the crawlspace re-recorded (golden/README.md).
 - **[ADR 0029](adr/0029-one-point-cutscenes.md)**: the tables in the pack and their statics on
   the play state; the queue on the cameras; `CamRequest`; `CamActor`; the cases ported.
 - **Navi starts no one-point cutscene.** BACKLOG #3 named "Navi's attention cutscenes
-  (`OnePointCutscene_Attention`, which `Actor_SetNaviToActor`'s callers start)": in this decomp
+  (`OnePointCutscene_Attention`, which `Attention_SetNaviState`'s callers start)": in this decomp
   neither `En_Elf` nor `z_actor.c` calls `OnePointCutscene_*`; the attention calls are the
   dungeon actors' (`En_Box`, `Door_Shutter`, `Obj_Switch`, `Obj_Syokudai` and others).
 - **The double update while on the crawlspace's floor is kept**: it's the C's arithmetic (the
@@ -117,8 +117,8 @@ five runs through the crawlspace re-recorded (golden/README.md).
   and 3050's (5): logged (`Door_Shutter` on Player, Phase 6). Milestone 3 ports the generic
   modes.
 - **`SetInfo`'s other cases** (other scenes' actors, most with quakes): logged; quakes
-  (`Quake_Add`) aren't ported.
-- **`En_Box`'s song chests** (`func_809C9700`'s attention) wait for the ocarina.
+  (`Quake_Request`) aren't ported.
+- **`En_Box`'s song chests** (`EnBox_AppearOnCorrectSong`'s attention) wait for the ocarina.
 
 ## Milestone 2: the camera modes on the fallback
 
@@ -194,23 +194,23 @@ The tests: 292 pass, 1 ignored. The goldens: 85 of 85 unchanged (sounds don't re
 
 ### What was built
 
-1. **`Cutscene_Command_PlayBGM`, `_StopBGM`, `_FadeBGM`** (`CsCmdMusicChange`: the sequence, plus
-   one, at byte 1; `CsCmdMusicFade`: the type, the start and end frames): `func_800F595C`,
-   `func_800F59E8`, and `SEQCMD_STOP_SEQUENCE` of the main bgm (the fanfare's for type 3) over the
+1. **`CutsceneCmd_StartSequence`, `_StopBGM`, `_FadeBGM`** (`CsCmdStartSeq`: the sequence, plus
+   one, at byte 1; `CsCmdFadeOutSeq`: the type, the start and end frames): `Audio_PlaySequenceInCutscene`,
+   `Audio_StopSequenceInCutscene`, and `SEQCMD_STOP_SEQUENCE` of the main bgm (the fanfare's for type 3) over the
    fade's frames.
-2. **`func_80064824`'s sounds:** `NA_SE_EV_DEKU_DEATH` (misc 11 at 0x30F), `NA_SE_EV_TRIFORCE_FLASH`
+2. **`CutsceneCmd_Misc`'s sounds:** `NA_SE_EV_DEKU_DEATH` (misc 11 at 0x30F), `NA_SE_EV_TRIFORCE_FLASH`
    (misc 13 as its fade starts), `NA_SE_EV_SAND_STORM` (misc 32, every frame); the rain's
    (`NATURE_CHANNEL_RAIN`, ports 4 and 1) and lightning's (`NATURE_CHANNEL_LIGHTNING`, port 0)
    nature ambience channels on misc 1 and 2.
-3. **`Cutscene_Command_Terminator`'s** `NA_SE_SY_PIECE_OF_HEART` when A, B or Start skips a scene
-   outside normal play; **`Cutscene_Command_TransitionFX`'s** white-outs (`NA_SE_SY_WHITE_OUT_S`
+3. **`CutsceneCmd_Destination`'s** `NA_SE_SY_PIECE_OF_HEART` when A, B or Start skips a scene
+   outside normal play; **`CutsceneCmd_Transition`'s** white-outs (`NA_SE_SY_WHITE_OUT_S`
    in the Chamber of Sages, `NA_SE_EV_WHITE_OUT` in the Temple of Time and the Great Fairies'
-   fountains, and through `func_800788CC` in Ganon's castle's collapse).
+   fountains, and through `Sfx_PlaySfxCentered2` in Ganon's castle's collapse).
 4. **Player's cutscene modes from the C's tables:** the pack holds `D_80854B18` and `D_80854E50`
    (`GameData::cs_mode_starts`, `cs_mode_updates`: each entry's type and its animation, sound
    table or function, read from `z_player.c`); `func_80852B4C` dispatches on them: the 18 typed
-   handlers of `D_80854AA4` (`func_80851008` to `func_808512E0`, with `func_80850F1C`,
-   `func_80850F9C`, `func_80833064`, `func_80833114`, `func_80851294`), and the named functions:
+   handlers of `D_80854AA4` (`func_80851008` to `func_808512E0`, with `Player_AnimChangeOnceMorphAdjustedZeroRootYawSpeed`,
+   `Player_AnimChangeLoopMorphAdjustedZeroRootYawSpeed`, `Player_AnimReplacePlayOnceAdjusted`, `Player_AnimReplacePlayLoopAdjusted`, `func_80851294`), and the named functions:
    `func_80851750`, `func_80851788`, `func_80851828`, `func_808518DC` and `func_8085190C` (mode
    12, the attention camera's on Link), `func_808519EC`, `func_80851B90`, `func_80851BE8`,
    `func_80851CA4`, `func_80851DEC`, `func_80851E28`, `func_80851E64`, `func_80852048`,
@@ -220,8 +220,8 @@ The tests: 292 pass, 1 ignored. The goldens: 85 of 85 unchanged (sounds don't re
    sound tables (`D_80855188`, `D_808551B4`, `D_808551C8`, `D_808551D8`, `D_808551E0`,
    `D_808551E8`, `D_808551F0`, `D_808551F8`, `D_80854AF0`, `D_80854B00`, `D_80854B14`).
    `func_80851E90` groans (`NA_SE_VO_LI_GROAN`), `func_80851FB0` plays `D_808551BC`.
-5. **A fix:** `func_808515A4` played its wait with `LinkAnimation_PlayOnceSetSpeed(D_808535E8)`
-   where the C's `func_80832264` is `LinkAnimation_PlayOnce` (the same unless `D_808535E8` is 0.5).
+5. **A fix:** `func_808515A4` played its wait with `LinkAnimation_PlayOnceSetSpeed(sWaterSpeedFactor)`
+   where the C's `Player_AnimPlayOnce` is `LinkAnimation_PlayOnce` (the same unless `sWaterSpeedFactor` is 0.5).
 6. **Tests:** `oot_actors --test cutscene` (`the_deku_trees_talk_plays_its_music`,
    `link_groans_and_sighs_as_navi_wakes_him`), `oot_actors --test onepoint`
    (`an_attention_cutscene_on_link_himself`: mode 69 through the table).
@@ -231,7 +231,7 @@ The tests: 292 pass, 1 ignored. The goldens: 85 of 85 unchanged (sounds don't re
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 292 passed, 1 ignored |
-| The Deku Tree's talk (`the_deku_trees_talk_plays_its_music`) | From the scripts' entries: `D_808BCE20`'s fade (type 4, frames 0 to 20) queues `0x101400FF` (the main bgm stopped over 20 frames) on the script's first frame; its PLAY_BGM (0x4C) plays sequence 0x4B on frame 140; `D_808BD520`'s STOP_BGM stops it on 90 (op 1, no fade), its PLAY_BGM plays 0x3C on 99 |
+| The Deku Tree's talk (`the_deku_trees_talk_plays_its_music`) | From the scripts' entries: `gDekuTreeMeetingCs`'s fade (type 4, frames 0 to 20) queues `0x101400FF` (the main bgm stopped over 20 frames) on the script's first frame; its PLAY_BGM (0x4C) plays sequence 0x4B on frame 140; `gDekuTreeMouthOpeningCs`'s STOP_BGM stops it on 90 (op 1, no fade), its PLAY_BGM plays 0x3C on 99 |
 | The wake-up (`link_groans_and_sighs_as_navi_wakes_him`) | The groan (`NA_SE_VO_LI_GROAN` plus the child's voice offset) at Link on the frame mode 39 starts, in the narration and in the wake-up; mode 40's sigh and two slips on its animation's frames 35, 236 and 256, which at 1.5 animation frames a game frame fall `ceil(n / 1.5)` game frames from the mode's start, exactly |
 | Mode 69 (`an_attention_cutscene_on_link_himself`) | The attention camera on Link: `D_8011D6AC`, keyframe 1's timer 29, the timer 30; Link's mode 69, whose start (type 3) plays `link_hatto_demo` once at 2/3 with a morph; mode 7 at the end |
 | Golden traces and renders | 85 of 85 unchanged |
@@ -240,7 +240,7 @@ The tests: 292 pass, 1 ignored. The goldens: 85 of 85 unchanged (sounds don't re
 ### Decisions
 
 - **Player's cutscene modes are data**: the two tables come from the C through the pack, and the
-  port matches function names; a new mode's function is one arm. (`D_808547C4`, the cue-to-mode
+  port matches function names; a new mode's function is one arm. (`sCueToCsActionMap`, the cue-to-mode
   table, stays as GAME-03 wrote it.)
 
 ### Known gaps
@@ -248,8 +248,8 @@ The tests: 292 pass, 1 ignored. The goldens: 85 of 85 unchanged (sounds don't re
 - **Mode functions not ported**, logged: the swimming ones (`func_80851368`, `func_808513BC`), the
   ocarina's (`func_80851D2C`), the sword and items in hand (`func_80851A50`, `func_80851D80`,
   `func_80852298`, `func_80852608`, `func_80852648`, `func_8085283C`, `func_808528C8`: they need
-  `func_80846720`), `func_808524B0` (`func_80837704`), `func_808524D0` and `func_80852514`
-  (`func_80844E68`), `func_808526EC` (the ocarina's sparkles, an effect). None is in a played
+  `Player_PutSwordInHand`), `func_808524B0` (`func_80837704`), `func_808524D0` and `func_80852514`
+  (`Player_Action_80844E68`), `func_808526EC` (the ocarina's sparkles, an effect). None is in a played
   scene.
 - **`func_80852388`'s hand model** (`rightHandType`) isn't modelled.
 - **The weather's own state** (the rain's precipitation, lightning, the storm's end: misc 18) is
@@ -266,9 +266,9 @@ with their `Rand_ZeroOne` calls where `Play_Draw` makes them). The scripts' misc
 lighting command drive them: in the nightmare it rains (misc 1) and bolts strike (misc 2).
 
 Which commands the played scripts use: the nightmare misc 1 (rain), 2 (lightning, six), 3 (env
-flag 0), the transition fills and `CS_CMD_09` (the rumble: no rumble pak); Link's house misc 12
+flag 0), the transition fills and `CS_CMD_RUMBLE_CONTROLLER` (the rumble: no rumble pak); Link's house misc 12
 (the end) and 14 (the viewpoint); the Deku Tree's intro misc 12 and 15 (the title card,
-milestone 5); the Deku Tree's talk misc 12. None uses `CS_CMD_SET_LIGHTING`.
+milestone 5); the Deku Tree's talk misc 12. None uses `CS_CMD_LIGHT_SETTING`.
 
 The tests: 295 pass, 1 ignored. The goldens: 85 of 85 unchanged.
 
@@ -288,13 +288,13 @@ The tests: 295 pass, 1 ignored. The goldens: 85 of 85 unchanged.
    ambient light's flash and the thunder (`NATURE_CHANNEL_LIGHTNING`) when `lightningState` is
    on; the bolts' states (placed 9500 ahead of the view's eye, waiting 3 frames per slot, eight
    textures), giving `PlayState::lightning_bolts` and `lightning_flash` for the renderer.
-3. **`func_80064824`'s actions:** 1 (rain), 2 (lightning), 6 (`adjFogFar`), 7 (the light config's
+3. **`CutsceneCmd_Misc`'s actions:** 1 (rain), 2 (lightning), 6 (`adjFogFar`), 7 (the light config's
    change over 60 frames; the skybox's change kept, not drawn), 9 (snow's maximum), 18 (the
    storm's end: no more rain, `STORM_REQUEST_STOP`, the time, the weather cleared with the rain's
-   channel), 22 and 23 (`D_801614B0`, the screen's tint, kept), 26 (the light setting by the time
-   of day), 27 (the ambient light's flicker), 28 and 29 (`unk_11DE9`: `Actor_UpdateAll`
+   channel), 22 and 23 (`gVisMonoColor`, the screen's tint, kept), 26 (the light setting by the time
+   of day), 27 (the ambient light's flicker), 28 and 29 (`haltAllActors`: `Actor_UpdateAll`
    skipped), 32 (the sandstorm's state), 34 (time backwards by `gTimeSpeed`: 0).
-4. **`Cutscene_Command_SetLighting`:** `lightSettingOverride` (the setting, minus one) and
+4. **`CutsceneCmd_SetLightSetting`:** `lightSettingOverride` (the setting, minus one) and
    `lightBlend` 1.
 5. **Tests:** `oot_actors --test environment`: `the_nightmares_rain_and_lightning`,
    `a_light_setting_override_blends_in`, `a_lightning_strike_flashes_the_ambient_light`.
@@ -322,7 +322,7 @@ The tests: 295 pass, 1 ignored. The goldens: 85 of 85 unchanged.
 - **Not drawn yet:** the rain, the bolts, the lightning's flash (milestone 6), the screen's tint
   (`VisMono`), the sandstorm, the snow, the skybox's change.
 - **Logged:** quakes (misc 16, 17), the title card (misc 15, milestone 5), the room's segment
-  (misc 24), the Sun's Song (33), the scarecrow's song (35); `CS_CMD_09`'s rumble.
+  (misc 24), the Sun's Song (33), the scarecrow's song (35); `CS_CMD_RUMBLE_CONTROLLER`'s rumble.
 - **The weather at `Play_Init`** (`retainWeatherMode`, `Environment_UpdateStorm`) isn't ported.
 
 ## Milestone 5: title cards
@@ -348,7 +348,7 @@ The tests: 296 pass, 1 ignored. The goldens: one render re-recorded, `spot04_tre
    `showTitleCard` set, a title file, the entrance's `ENTRANCE_INFO_DISPLAY_TITLE_CARD_FLAG`, no
    cutscene layer, and (Dodongo's Cavern) `EVENTCHKINF_B0` or (the night shop) `EVENTCHKINF_25`;
    then `showTitleCard` back on.
-3. **`CS_MISC` 15** (`func_80064824`): `TitleCard_InitPlaceName` with the loaded scene's title.
+3. **`CS_MISC` 15** (`CutsceneCmd_Misc`): `TitleCard_InitPlaceName` with the loaded scene's title.
 4. **The pack:** `SceneEntry::title_file` (from `scene_table.h`, empty for `none`), and the place
    names' sprite bakes (`title_card::bakes`, `Gfx_SetupDL_52NoCD`'s modes).
 5. **Tests:** `oot_actors --test environment`'s `entering_kokiri_forest_shows_its_place_name`
@@ -401,13 +401,13 @@ more actors during the nightmare); every render unchanged.
 1. **`Bg_Spot00_Hanebasi`** (`oot_actors::bg_spot00_hanebasi`), whole:
    - the drawbridge and its two chains as DynaPoly actors, each spawning the next;
    - raised in the opening's layers, by night for a child, and with the three stones before
-     `EVENTCHKINF_80`;
+     `EVENTCHKINF_ZELDA_FLED_CASTLE`;
    - `DrawbridgeWait` and `DrawbridgeRiseAndFall` (80, the chains 0.4 of it past -0x27D8), with
      their sounds;
    - the chains placed by the bridge's draw matrix (at draw time);
    - the torches' point lights flickering by `Rand_ZeroOne` and their flames (`gEffFire1DL` turned
      to the camera, scrolled);
-   - the child's entry into Zelda's escape (`ENTR_SPOT00_0`, cutscene 0xFFF1) and the storm
+   - the child's entry into Zelda's escape (`ENTR_HYRULE_FIELD_0`, cutscene 0xFFF1) and the storm
      request.
 2. **`En_Viewer`** (`oot_actors::en_viewer`): all ten types' logic:
    - waiting for their objects;
@@ -494,7 +494,7 @@ The tests: 310 pass, 1 ignored. The goldens: 85 of 85 unchanged.
      The rules come from `z_demo.c` and `z_camera.c`:
      - a pair takes over on the first frame after its start, once both lists have been seen;
      - the script's first pair is applied on two frames running (the at command completes it,
-       then the eye command's `unk_18` is set a frame later), and each application resets
+       then the eye command's `camEyeSplinePointsAppliedFrame` is set a frame later), and each application resets
        `Camera_Demo1`;
      - the eye's and the at's splines share one keyframe and frame counter, so the at's call
        sees the counter the eye's moved;
@@ -503,18 +503,18 @@ The tests: 310 pass, 1 ignored. The goldens: 85 of 85 unchanged.
 
      About 250 frames of the narration and over 100 of the talk, to 0.01.
    - `the_letterbox_grows_and_shrinks_by_ten_rows`: the talk's start (`cutsceneTrigger`, so
-     `func_80064760` sets the target each frame) grows 0, 10, 20, 30, 32; its end, when Link's
+     `CutsceneHandler_StartManual` sets the target each frame) grows 0, 10, 20, 30, 32; its end, when Link's
      camera takes the view back, shrinks 32, 22, 12, 2, 0.
    - `the_narrations_text_sits_where_the_c_puts_it`: text 0x109D's box (type 4,
      `TEXTBOX_TYPE_NONE_BOTTOM`) at `sTextboxXPositions`' and `sTextboxLowerYPositions`' 34 and
      174, the end icon 34 below, put straight there at full size.
    - `links_poses_follow_the_cutscene_mode_tables`: through the whole opening, each new cue's
-     mode (`D_808547C4`) starts the animation its `D_80854B18` entry names. Covered:
+     mode (`sCueToCsActionMap`) starts the animation its `D_80854B18` entry names. Covered:
      - the type-2 and type-6 entries: 9 `link_demo_furimuki`, 40 `clink_op3_okiagari`,
        41 `clink_op3_tatiagari`;
      - the function starts: 38 `func_80851F84` (`clink_op3_wait1`, the shadow off) and
        39 `func_80851E90` (`clink_op3_negaeri`).
-2. `oot_actors::player::d_808547c4` is public, for the tests.
+2. `oot_actors::player::sCueToCsActionMap` is public, for the tests.
 
 ### Results
 
@@ -535,7 +535,7 @@ The tests: 310 pass, 1 ignored. The goldens: 85 of 85 unchanged.
 
 ### Known gaps
 
-- The relative-to-Link lists (`CS_CMD_CAM_EYE_REL_TO_PLAYER`) aren't in these two scripts; the
+- The relative-to-Link lists (`CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER`) aren't in these two scripts; the
   Deku Tree's intro and the nightmare's lists aren't checked frame by frame.
 - **By hand, still to do** (no side-by-side checklists): the opening (the narration, the nightmare
   with its riders, rain and drawbridge, Navi sent, the wake-up) and the Deku Tree's talk and
@@ -559,7 +559,7 @@ The user played the opening and reported three things. All three are fixed:
      script's fill stays inside them, as the C's scissored view does.
 2. **Navi's flight through Kokiri Forest showed the meadow alone, in yellow fog.** Link stands
    in room 1 (the Deku Tree's meadow) the whole time, and the camera flies to the village
-   (room 0). In a cutscene, `En_Holl`'s `func_80A59014` tests its plane against the view's eye,
+   (room 0). In a cutscene, `En_Holl`'s `EnHoll_HorizontalInvisible` tests its plane against the view's eye,
    not Player (`useViewEye`), and the port had left that case out. The village now loads as the
    camera crosses the plane.
 3. **Link's pose glitched for a split second**, most of all as he turns to Ganondorf
@@ -585,7 +585,7 @@ The user's second look at the opening found two more, both fixed:
    `En_Ko` fades a child by its distance to Link (`func_80A98DB4`), but in a cutscene by a
    quarter of its distance to the view's eye; Link stays in the meadow, so they were faded out.
    The port now takes the cutscene case. It does the same for the children's head tracking
-   (`func_80A9877C`: the view's eye, 40 up) and Mido's (`EnMd`'s `func_80AAB158`).
+   (`func_80A9877C`: the view's eye, 40 up) and Mido's (`EnMd`'s `EnMd_UpdateTalking`).
 5. **No sound as Navi hits the fence.** The opening's Navi sounds belong to `Object_Kankyo`
    (params 0), the placed actor for Kokiri Forest's fairy dust, which was a placeholder. It is
    ported (`oot_actors::object_kankyo`):

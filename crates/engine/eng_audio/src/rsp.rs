@@ -127,7 +127,7 @@ pub mod abi {
         Acmd { w0: shiftl(A_S8DEC, 24, 8) | shiftl(a1, 16, 8), w1: a2 }
     }
 
-    // The ones `audio_synthesis.c` writes by hand.
+    // The ones `synthesis.c` writes by hand.
 
     /// `AudioSynth_DMemMove`.
     pub fn audio_synth_dmem_move(dmem_in: u32, dmem_out: u32, size: u32) -> Acmd {

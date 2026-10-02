@@ -1,4 +1,4 @@
-//! `audio_seqplayer.c`: the sequence player. A sequence is three kinds of script, each with
+//! `seqplayer.c`: the sequence player. A sequence is three kinds of script, each with
 //! its own interpreter and the shared flow control (0xF2 and up): the player's (which channels
 //! play), each channel's (instrument, volume, pan, its layers) and each layer's (the notes).
 //! Every update runs the player's script when its tempo says a tick has passed.
@@ -226,8 +226,8 @@ impl AudioContext {
         ch.vibrato_extent_change_delay = 0;
         ch.vibrato_delay = 0;
         ch.filter = 0;
-        ch.unk_20 = 0;
-        ch.unk_0f = 0;
+        ch.comb_filter_gain = 0;
+        ch.comb_filter_size = 0;
         ch.volume = 1.0;
         ch.volume_scale = 1.0;
         ch.freq_scale = 1.0;
@@ -1210,8 +1210,8 @@ impl AudioContext {
                             ch.adsr.sustain = 0;
                             ch.velocity_random_variance = 0;
                             ch.gate_time_random_variance = 0;
-                            ch.unk_0f = 0;
-                            ch.unk_20 = 0;
+                            ch.comb_filter_size = 0;
+                            ch.comb_filter_gain = 0;
                             ch.book_offset = 0;
                             ch.freq_scale = 1.0;
                         }
@@ -1261,8 +1261,8 @@ impl AudioContext {
                         0xB9 => self.channels[c].velocity_random_variance = cmd_args[0] as u8,
                         0xBA => self.channels[c].gate_time_random_variance = cmd_args[0] as u8,
                         0xBB => {
-                            self.channels[c].unk_0f = cmd_args[0] as u8;
-                            self.channels[c].unk_20 = cmd_args[1] as u16;
+                            self.channels[c].comb_filter_size = cmd_args[0] as u8;
+                            self.channels[c].comb_filter_gain = cmd_args[1] as u16;
                         }
                         0xBC => self.channels[c].unk_22 = self.channels[c].unk_22.wrapping_add(cmd_args[0] as u16),
                         _ => {}
@@ -1399,7 +1399,7 @@ impl AudioContext {
         }
         sp.script_counter = sp.script_counter.wrapping_add(1);
         sp.tempo_acc = sp.tempo_acc.wrapping_add(sp.tempo);
-        sp.tempo_acc = sp.tempo_acc.wrapping_add(sp.unk_0c as i16 as u16);
+        sp.tempo_acc = sp.tempo_acc.wrapping_add(sp.tempo_change as i16 as u16);
         if (sp.tempo_acc as i32) < tie as i32 {
             return;
         }
@@ -1453,7 +1453,7 @@ impl AudioContext {
                             *t = t.wrapping_add(v);
                         }
                         0xDD => {
-                            let v = self.script_read_u8(s) as u16 * TATUMS_PER_BEAT as u16;
+                            let v = self.script_read_u8(s) as u16 * SEQTICKS_PER_BEAT as u16;
                             let sp = &mut self.seq_players[p];
                             sp.tempo = v;
                             if sp.tempo as i32 > tie as i32 {
@@ -1464,8 +1464,8 @@ impl AudioContext {
                             }
                         }
                         0xDC => {
-                            let v = self.script_read_u8(s) as i8 as i16 * TATUMS_PER_BEAT as i16;
-                            self.seq_players[p].unk_0c = v as u16;
+                            let v = self.script_read_u8(s) as i8 as i16 * SEQTICKS_PER_BEAT as i16;
+                            self.seq_players[p].tempo_change = v as u16;
                         }
                         0xDA => {
                             let c = self.script_read_u8(s);
@@ -1700,8 +1700,8 @@ impl AudioContext {
         sp.fade_timer = 0;
         sp.fade_timer_unk_eu = 0;
         sp.tempo_acc = 0;
-        sp.tempo = 120 * TATUMS_PER_BEAT as u16; // 120 BPM
-        sp.unk_0c = 0;
+        sp.tempo = 120 * SEQTICKS_PER_BEAT as u16; // 120 BPM
+        sp.tempo_change = 0;
         sp.transposition = 0;
         sp.note_alloc_policy = 0;
         sp.short_note_velocity_table = vel;

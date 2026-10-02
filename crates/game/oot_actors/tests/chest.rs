@@ -1,5 +1,5 @@
 //! The Kokiri Sword's chest on a new save (GAME-03 milestone 1's exit): `En_Box` offering its
-//! item, Player's get-item flow (`func_8083E5A8`, `func_8083A434`, `func_8084E6D4`,
+//! item, Player's get-item flow (`Player_ActionHandler_2`, `func_8083A434`, `Player_Action_8084E6D4`,
 //! `func_8084DFF4` in `z_player.c`), the item's text, and the sword put on B.
 //!
 //! The chest is room 2's `En_Box` at (-232, 178, 2245), params 0x04E0:
@@ -8,7 +8,7 @@
 //! and places Link in front of the chest (the way there is the `playthrough` test's
 //! `a_new_save_to_the_kokiri_sword`).
 //!
-//! Also a piece of heart, which `En_Item00` offers with `func_8002F554` (`func_8002F434` with
+//! Also a piece of heart, which `En_Item00` offers with `Actor_OfferGetItemNearby` (`Actor_OfferGetItem` with
 //! 50 and 10) when Link touches it (`z_en_item00.c`: `EnItem00_Update`).
 
 mod common;
@@ -53,7 +53,7 @@ fn chest(w: &PlayState) -> Option<ActorHandle> {
 
 /// Kokiri Forest on a new save, room 2 loaded with its chest initialised.
 fn room2(a: Arc<GameAssets>) -> Option<(PlayState, PadState)> {
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     let sound = a.pack.audio_data().expect("the pack's audio data");
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
@@ -117,8 +117,8 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     w.place_player(CHEST_POS - Vec3::Z * 30.0, 0);
     frames(&mut w, &mut prev, NONE, 2);
     w.audio.log = Some(Default::default());
-    // EnBox_WaitOpen: func_8002F554(&this->dyna.actor, play, -(params >> 5 & 0x7F)) while
-    // Link is in front (func_8002DBD0: within 20 of its axis, -50 < z < 0 in its space) and
+    // EnBox_WaitOpen: Actor_OfferGetItemNearby(&this->dyna.actor, play, -(params >> 5 & 0x7F)) while
+    // Link is in front (Actor_WorldToActorCoords: within 20 of its axis, -50 < z < 0 in its space) and
     // facing it.
     // No sword on B, no shield: Player_OverrideLimbDrawGameplayDefault's child sheath entry
     // past the shields (buttonItems[0] != ITEM_SWORD_KOKIRI) is empty.
@@ -128,7 +128,7 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     assert_eq!(p.get_item_id, -GI_SWORD_KOKIRI);
     assert_eq!(w.interface_ctx.unk_1f0, DO_ACTION_OPEN, "A says Open");
 
-    // A: func_8083E5A8's chest branch. Link steps to 29.4343 in front of it, facing it; the
+    // A: Player_ActionHandler_2's chest branch. Link steps to 29.4343 in front of it, facing it; the
     // item is obtainable and gi > 0, so the slow open (gPlayerAnim_clink_demo_Tbox_open,
     // ageProperties->unk_98), chest->unk_1F4 = 1 and CAM_SET_SLOW_CHEST_CS.
     frames(&mut w, &mut prev, A, 1);
@@ -141,10 +141,10 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     assert_eq!(w.actors.downcast::<EnBox>(c).unwrap().unk_1f4, 1, "the chest opens slowly");
     assert_eq!(w.game_camera.setting, CAM_SET_SLOW_CHEST_CS);
 
-    // func_8084E6D4: at the animation's end, gPlayerAnim_link_demo_get_itemA with unk_850 = 2
-    // and func_80835EA4(play, 9) (CAM_SET_TURN_AROUND).
+    // Player_Action_8084E6D4: at the animation's end, gPlayerAnim_link_demo_get_itemA with av2.actionVar2 = 2
+    // and Player_SetTurnAroundCamera(play, 9) (CAM_SET_TURN_AROUND).
     until(&mut w, &mut prev, 200, false, |w| w.data.anim_name(w.player().skel.animation) == "link_demo_get_itemA");
-    assert_eq!(w.player().unk_850, 2);
+    assert_eq!(w.player().action_var2, 2);
     assert_eq!(w.game_camera.setting, CAM_SET_TURN_AROUND);
     assert_eq!(w.player().unk_862, 0, "nothing held up yet");
 
@@ -156,11 +156,11 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     let names = drawn(&w);
     assert!(names.iter().any(|n| n.starts_with(&format!("bake/GetItem/{gid:02X}/"))), "the sword held up: {names:?}");
 
-    // func_8084DFF4 (unk_850 1 once get_itemA ends): the text and Item_Give. Item_Give
+    // func_8084DFF4 (av2.actionVar2 1 once get_itemA ends): the text and Item_Give. Item_Give
     // (ITEM_SWORD_KOKIRI) only sets the owned bit (OWNED_EQUIP_FLAG(EQUIP_TYPE_SWORD,
     // EQUIP_VALUE_SWORD_KOKIRI - 1)): the sword isn't equipped.
     until(&mut w, &mut prev, 60, false, |w| w.msg_ctx.text_id == 0xA4);
-    assert_eq!(w.player().unk_84F, 1);
+    assert_eq!(w.player().action_var1, 1);
     assert_eq!(w.save.inventory.equipment, 0x1101, "the sword owned");
     assert_eq!(w.save.cur_equip_value(EQUIP_TYPE_SWORD), 0, "not equipped");
     assert_eq!(w.save.equips.button_items[0], ITEM_NONE, "B still empty");
@@ -172,7 +172,7 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     let names: Vec<&str> = out.overlay_2d.iter().map(|c| c.mesh.name.as_str()).collect();
     assert!(names.iter().any(|n| n.ends_with("message/item3B")), "the sword's icon in the box: {names:?}");
 
-    // The fanfares (Audio_PlayFanfare, then func_800F5CF8 a frame later: with the fanfare
+    // The fanfares (Audio_PlayFanfare, then Audio_UpdateFanfare a frame later: with the fanfare
     // player off, the bgm players fade out under it, the setup commands bring them back after,
     // and the fanfare starts with a fade of 1): the chest's as it opens (En_Box,
     // NA_BGM_OPEN_TRE_BOX | 0x900), then the item's (func_8084DFF4, NA_BGM_ITEM_GET | 0x900).
@@ -203,7 +203,7 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     frames(&mut w, &mut prev, NONE, 1);
     assert_eq!(link_mesh(&w), "player/child/gLinkChildLeftHandNearDL+gLinkChildRightHandNearDL+gLinkChildSwordAndSheathNearDL+gLinkChildWaistNearDL");
 
-    // B now draws it (func_80835F44: the upper body's change) and slashes on the swap frame.
+    // B now draws it (Player_UseItem: the upper body's change) and slashes on the swap frame.
     frames(&mut w, &mut prev, B, 1);
     assert_eq!(w.player().upper, UpperAction::Change, "B draws the sword");
     until(&mut w, &mut prev, 30, false, |w| w.player().action == Action::Attack);
@@ -215,7 +215,7 @@ fn a_piece_of_heart() {
     use oot_actors::en_item00::{ACTOR_EN_ITEM00, ITEM00_HEART_PIECE};
     use oot_game::item::QUEST_HEART_PIECE_COUNT;
     let Some(a) = assets() else { return };
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     // One piece already (questItems' top four bits).
     save.inventory.quest_items |= 1 << QUEST_HEART_PIECE_COUNT;
@@ -231,7 +231,7 @@ fn a_piece_of_heart() {
     // CHEST_ANIM_LONG).
     let gi = a.items.get_item(oot_game::item::GI_HEART_PIECE).expect("GI_HEART_PIECE").clone();
     assert_eq!(gi.text_id, 0xC2);
-    // Touching it: func_8002F554, then Player's get-item interrupt, held up (unk_862).
+    // Touching it: Actor_OfferGetItemNearby, then Player's get-item interrupt, held up (unk_862).
     until(&mut w, &mut prev, 60, false, |w| w.player().unk_862 != 0);
     assert_eq!(w.player().unk_862, gi.gi.abs() as i16);
     // func_8084DFF4: Message_StartTextbox before Item_Give, so Message_StartTextbox's 0xC2 +

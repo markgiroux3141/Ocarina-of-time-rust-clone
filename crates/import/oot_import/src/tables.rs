@@ -20,7 +20,7 @@ use oot_game::env::{EnvTables, TimeBasedLightEntry, clock_time};
 use oot_game::footik::{FootIkData, Rig};
 use oot_game::player_lib::Age;
 
-use crate::csrc::{Init, enum_members, find_initializer, strip_comments};
+use crate::csrc::{Init, Macros, enum_members, find_initializer};
 use crate::project::Project;
 use crate::z64::ParseSkeleton;
 
@@ -48,12 +48,12 @@ pub trait LoadMathTables: Sized {
 }
 
 impl LoadMathTables for Tables {
-    /// `sintable[0x400]` from `src/libultra/gu/sintable.c` and `sATan2Tbl` from
+    /// `sintable[0x400]` from `src/libultra/gu/sintable.inc.c` and `sAtan2Tbl` from
     /// `src/code/sys_math_atan.c`.
     fn load(decomp: &Path) -> Result<Tables> {
         let read = |rel: &str| -> Result<String> {
             let p = decomp.join(rel);
-            Ok(strip_comments(&std::fs::read_to_string(&p).with_context(|| p.display().to_string())?))
+            Ok(crate::csrc::prepare(&std::fs::read_to_string(&p).with_context(|| p.display().to_string())?))
         };
         let ints = |src: &str, name: &str| -> Result<Vec<i64>> {
             find_initializer(src, name)?
@@ -62,10 +62,10 @@ impl LoadMathTables for Tables {
                 .map(|s| Init::Atom(s.clone()).as_int().with_context(|| format!("{name}: {s}")))
                 .collect()
         };
-        let sin: Vec<i16> = ints(&read("src/libultra/gu/sintable.c")?, "sintable")?.into_iter().map(|v| v as i16).collect();
-        let atan: Vec<u16> = ints(&read("src/code/sys_math_atan.c")?, "sATan2Tbl")?.into_iter().map(|v| v as u16).collect();
+        let sin: Vec<i16> = ints(&read("src/libultra/gu/sintable.inc.c")?, "sintable")?.into_iter().map(|v| v as i16).collect();
+        let atan: Vec<u16> = ints(&read("src/code/sys_math_atan.c")?, "sAtan2Tbl")?.into_iter().map(|v| v as u16).collect();
         if sin.len() != 0x400 || atan.len() != 0x401 {
-            bail!("unexpected table sizes: sintable {} sATan2Tbl {}", sin.len(), atan.len());
+            bail!("unexpected table sizes: sintable {} sAtan2Tbl {}", sin.len(), atan.len());
         }
         Ok(Tables { sin, atan, from_decomp: true })
     }
@@ -82,7 +82,7 @@ fn load_rig(p: &Project, age: Age) -> Result<Rig> {
 
 fn read(decomp: &Path, rel: &str) -> Result<String> {
     let p = decomp.join(rel);
-    Ok(strip_comments(&std::fs::read_to_string(&p).with_context(|| p.display().to_string())?))
+    Ok(crate::csrc::prepare(&std::fs::read_to_string(&p).with_context(|| p.display().to_string())?))
 }
 
 /// Extracts the body of `name(...) { ... }` from comment-stripped source.
@@ -116,15 +116,30 @@ fn function_body<'a>(src: &'a str, name: &str) -> Result<&'a str> {
     bail!("no definition of {name}")
 }
 
+/// `include/regs.h`'s names for registers: `#define R_RUN_SPEED_LIMIT REG(45)`.
+fn reg_names(decomp: &Path) -> Result<HashMap<String, String>> {
+    let h = crate::csrc::read_c(decomp, "include/regs.h")?;
+    Ok(h.lines()
+        .filter_map(|l| {
+            let mut it = l.trim().strip_prefix("#define ")?.split_whitespace();
+            let (name, val) = (it.next()?, it.next()?);
+            let ok = it.next().is_none() && val.ends_with(')') && val.split_once("REG(").is_some_and(|(p, _)| p.len() <= 1);
+            ok.then(|| (name.to_string(), val.to_string()))
+        })
+        .collect())
+}
+
 /// Reads `XREG(n) = <int or bootRegs[k]>;` assignments (first occurrence wins) from
-/// `Player_SetBootData` and resolves them against a `sBootData` row.
-fn boot_regs(lib: &str, boot_data: &[Vec<i16>], row: usize) -> Result<Regs> {
+/// `Player_SetBootData`, a register named by `regs.h` as its `XREG(n)`, and resolves them
+/// against a `sBootData` row.
+fn boot_regs(lib: &str, names: &HashMap<String, String>, boot_data: &[Vec<i16>], row: usize) -> Result<Regs> {
     let body = function_body(lib, "Player_SetBootData")?;
     let mut values = std::collections::BTreeMap::new();
     for stmt in body.split(';') {
         let s = stmt.trim();
         let Some((lhs, rhs)) = s.split_once('=') else { continue };
         let (lhs, rhs) = (lhs.trim(), rhs.trim());
+        let lhs = names.get(lhs).map(String::as_str).unwrap_or(lhs);
         if !lhs.ends_with(')') || !lhs.contains("REG(") || lhs.contains(' ') {
             continue;
         }
@@ -150,14 +165,15 @@ impl LoadGameData for GameData {
 
         let lib = read(decomp, "src/code/z_player_lib.c")?;
         let player = read(decomp, "src/overlays/actors/ovl_player_actor/z_player.c")?;
-        let header = std::fs::read_to_string(decomp.join("include/z64player.h")).context("z64player.h")?;
+        let header = std::fs::read_to_string(decomp.join("include/player.h")).context("player.h")?;
 
         let boot_data: Vec<Vec<i16>> = find_initializer(&lib, "sBootData")?
             .list()
             .iter()
             .map(|row| row.flatten().iter().map(|s| Init::Atom(s.clone()).as_int().map(|v| v as i16).context("sBootData")).collect())
             .collect::<Result<_>>()?;
-        let regs = [boot_regs(&lib, &boot_data, BOOTS_KOKIRI)?, boot_regs(&lib, &boot_data, BOOTS_KOKIRI_CHILD)?];
+        let names = reg_names(decomp)?;
+        let regs = [boot_regs(&lib, &names, &boot_data, BOOTS_KOKIRI)?, boot_regs(&lib, &names, &boot_data, BOOTS_KOKIRI_CHILD)?];
 
         let mut anims = Vec::new();
         let mut anim_symbols = Vec::new();
@@ -207,8 +223,8 @@ impl LoadGameData for GameData {
                 c.unk_92 = items[22].as_int().context("unk_92")? as u16;
                 c.unk_94 = items[23].as_int().context("unk_94")? as u16;
                 c.unk_98 = anim_ref(&items[24])?;
-                c.unk_9C = anim_ref(&items[25])?;
-                c.unk_A0 = anim_ref(&items[26])?;
+                c.time_travel_start_anim = anim_ref(&items[25])?;
+                c.time_travel_end_anim = anim_ref(&items[26])?;
                 c.unk_A4 = anim_ref(&items[27])?;
                 c.unk_A8 = anim_ref(&items[28])?;
                 c.unk_AC = anims_n(&items[29], 4)?.try_into().unwrap();
@@ -239,7 +255,7 @@ impl LoadGameData for GameData {
             let n = e.trim_start_matches('&').trim_start_matches("gPlayerAnim_");
             by_name.get(n).copied().with_context(|| format!("animation {n} not in gameplay_keep"))
         };
-        let idle_variants = find_initializer(&player, "D_80853D7C")?
+        let idle_variants = find_initializer(&player, "sFidgetAnimations")?
             .list()
             .iter()
             .map(|pair| {
@@ -257,13 +273,13 @@ impl LoadGameData for GameData {
             })
             .collect::<Result<_>>()?;
         let actor_c = read(decomp, "src/code/z_actor.c")?;
-        let target_ranges = find_initializer(&actor_c, "D_80115FF8")?
+        let target_ranges = find_initializer(&actor_c, "sAttentionRanges")?
             .flatten()
             .iter()
             .map(|a| {
-                // TARGET_RANGE(range, leash) = { SQ(range), (f32)range / leash }.
-                let args = a.trim().strip_prefix("TARGET_RANGE(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("D_80115FF8 entry {a}"))?;
-                let (r, l) = args.split_once(',').context("TARGET_RANGE args")?;
+                // ATTENTION_RANGES(range, leash) = { SQ(range), (f32)range / leash }.
+                let args = a.trim().strip_prefix("ATTENTION_RANGES(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("sAttentionRanges entry {a}"))?;
+                let (r, l) = args.split_once(',').context("ATTENTION_RANGES args")?;
                 let r = crate::csrc::eval_expr(r).context("range")?;
                 let l = crate::csrc::eval_expr(l).context("leash")?;
                 Ok((r * r, r / l))
@@ -274,7 +290,7 @@ impl LoadGameData for GameData {
                 v.into_iter().filter(|m| !m.ends_with("_MAX")).map(|m| m[p.len()..].to_string()).collect()
             };
             let model_group_names = strip_max(enum_members(&header, "PLAYER_MODELGROUP_"), "PLAYER_MODELGROUP_");
-            let ap_names = strip_max(enum_members(&header, "PLAYER_AP_"), "PLAYER_AP_");
+            let ap_names = strip_max(enum_members(&header, "PLAYER_IA_"), "PLAYER_IA_");
             // The PLAYER_MWA_* enum is commented with decimal indices, so read it by value.
             let mwa_names = {
                 let e = crate::csrc::parse_enum(&header, "PLAYER_MWA_FORWARD_SLASH_1H");
@@ -304,15 +320,15 @@ impl LoadGameData for GameData {
                     model_group_names.iter().position(|m| m == n).with_context(|| format!("model group {n}"))
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let change_anims = find_initializer(&player, "D_808540F4")?
+            let change_anims = find_initializer(&player, "sItemChangeInfo")?
                 .list()
                 .iter()
                 .map(|row| {
                     let f = row.flatten();
-                    Ok((resolve(&f[0])?, f[1].trim().parse::<f32>().context("D_808540F4 frame")?))
+                    Ok((resolve(&f[0])?, f[1].trim().parse::<f32>().context("sItemChangeInfo frame")?))
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let change_matrix = find_initializer(&player, "D_80854164")?
+            let change_matrix = find_initializer(&player, "sItemChangeTypes")?
                 .list()
                 .iter()
                 .map(|row| row.flatten().iter().map(|a| num_suffix(a)).collect::<Result<Vec<_>>>())
@@ -334,24 +350,29 @@ impl LoadGameData for GameData {
                     mwa_names.iter().position(|m| m == n).with_context(|| format!("attack {n}"))
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let mask: Vec<u8> = find_initializer(&player, "D_80853410")?.flatten().iter().map(|a| a.trim().parse().unwrap_or(0)).collect();
+            // `true` / `false` per limb (numbers in older decomps).
+            let mask: Vec<u8> = find_initializer(&player, "sUpperBodyLimbCopyMap")?
+                .flatten()
+                .iter()
+                .map(|a| Init::Atom(a.clone()).as_int().map(|v| v as u8).with_context(|| format!("sUpperBodyLimbCopyMap: {a}")))
+                .collect::<Result<_>>()?;
             let mut upper_body = [0u8; 22];
             for (i, v) in mask.iter().take(22).enumerate() {
                 upper_body[i] = *v;
             }
-            // sItemActionParams: each item's action param (Player_ItemToActionParam).
-            let item_action_params = find_initializer(&player, "sItemActionParams")?
+            // sItemActions: each item's action param (Player_ItemToItemAction).
+            let item_action_params = find_initializer(&player, "sItemActions")?
                 .flatten()
                 .iter()
                 .map(|n| {
-                    let n = n.trim().trim_start_matches("PLAYER_AP_");
-                    ap_names.iter().position(|m| m == n).map(|i| i as i32).with_context(|| format!("sItemActionParams: {n}"))
+                    let n = n.trim().trim_start_matches("PLAYER_IA_");
+                    ap_names.iter().position(|m| m == n).map(|i| i as i32).with_context(|| format!("sItemActions: {n}"))
                 })
                 .collect::<Result<Vec<_>>>()?;
             ItemTables { model_group_names, model_group_anim_type, ap_names, action_model_group, change_anims, change_matrix, attacks, attack_by_dir, mwa_names, upper_body, item_action_params }
         };
         // D_80854B18 and D_80854E50: { type, ptr }, ptr NULL, &gPlayerAnim_*, a function or a
-        // struct_80832924 table.
+        // AnimSfxEntry table.
         let cs_modes = |name: &str| -> Result<Vec<CsModeEntry>> {
             find_initializer(&player, name)?
                 .list()
@@ -403,20 +424,17 @@ impl LoadGameData for GameData {
     }
 }
 
-/// A `CameraModeValue[]` initializer: the arguments of its `CAM_FUNCDATA_*(...)` call.
-fn cam_mode_values(src: &str, data: &str) -> Result<Vec<i16>> {
+/// A `CameraModeValue[]` initializer: the arguments of its `CAM_FUNCDATA_*(...)` call, each
+/// evaluated (`CAM_INTERFACE_FIELD(CAM_LETTERBOX_NONE, ..., NORMAL1_FLAG_1 | NORMAL1_FLAG_0)`).
+fn cam_mode_values(src: &str, data: &str, m: &Macros) -> Result<Vec<i16>> {
     let call = find_initializer(src, data)?.flatten().join(",");
-    let open = call.find('(').with_context(|| format!("{data} is not a CAM_FUNCDATA_* call"))?;
-    let args = call[open + 1..].strip_suffix(')').with_context(|| format!("{data}: unterminated"))?;
-    args.split(',')
-        .map(|a| Init::Atom(a.trim().to_string()).as_int().map(|v| v as i16))
-        .collect::<Option<Vec<i16>>>()
-        .with_context(|| format!("{data}: non-integer argument"))
+    let (_, args) = crate::csrc::call_args(&call).with_context(|| format!("{data} is not a CAM_FUNCDATA_* call"))?;
+    args.iter().map(|a| m.eval(a).map(|v| v as i16).with_context(|| format!("{data}: can't evaluate {a}"))).collect()
 }
 
 /// A `CameraMode[]` initializer (`sCamSet*Modes`): `CAM_SETTING_MODE_ENTRY(func, data)`
 /// entries (one atom each) and `{ CAM_FUNC_NONE, 0, NULL }`.
-fn cam_setting_modes(src: &str, name: &str) -> Result<Vec<Option<CamModeData>>> {
+fn cam_setting_modes(src: &str, name: &str, m: &Macros) -> Result<Vec<Option<CamModeData>>> {
     let mut modes = Vec::new();
     for item in find_initializer(src, name)?.list() {
         match item {
@@ -429,7 +447,7 @@ fn cam_setting_modes(src: &str, name: &str) -> Result<Vec<Option<CamModeData>>> 
                 let args = a.trim().strip_prefix("CAM_SETTING_MODE_ENTRY(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("{name}: {a}"))?;
                 let (func, data) = args.split_once(',').with_context(|| format!("{name}: {a}"))?;
                 let (func, data) = (func.trim().to_string(), data.trim().to_string());
-                let values = cam_mode_values(src, &data)?;
+                let values = cam_mode_values(src, &data, m)?;
                 modes.push(Some(CamModeData { func, data, values }));
             }
         }
@@ -439,49 +457,51 @@ fn cam_setting_modes(src: &str, name: &str) -> Result<Vec<Option<CamModeData>>> 
 
 impl LoadCameraData for CameraData {
     /// `sOREGInit`, and `sCameraSettings` with every setting's `sCamSet*Modes` (each mode's
-    /// function and `CAM_FUNCDATA_*` values), from `z_camera_data.c`; the setting names from
-    /// `z64camera.h`'s `CAM_SET_*` enum.
+    /// function and `CAM_FUNCDATA_*` values), from `z_camera_data.inc.c`; the setting names from
+    /// `camera.h`'s `CAM_SET_*` enum.
     fn load(decomp: &Path) -> Result<CameraData> {
-        let p = decomp.join("src/code/z_camera_data.c");
-        let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
+        let p = decomp.join("src/code/z_camera_data.inc.c");
+        let src = crate::csrc::prepare(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
         let oreg = find_initializer(&src, "sOREGInit")?
             .list()
             .iter()
             .map(|i| i.as_int().map(|v| v as i16))
             .collect::<Option<Vec<_>>>()
             .context("sOREGInit: non-integer entry")?;
-        let h = decomp.join("include/z64camera.h");
+        let h = decomp.join("include/camera.h");
         let header = std::fs::read_to_string(&h).with_context(|| format!("reading {}", h.display()))?;
         let names = crate::csrc::parse_enum(&header, "CAM_SET_NONE");
+        let macros = Macros::read(decomp, &["include/camera.h", "include/interface.h", "include/save.h", "include/actor.h", "include/actor_profile.h", "include/player.h", "include/cutscene.h"])?;
         // sCameraSettings[] = { { { unk_00 } }, sCamSet*Modes or NULL }, one per CAM_SET_*.
         let mut settings = Vec::new();
         for (i, entry) in find_initializer(&src, "sCameraSettings")?.list().iter().enumerate() {
             let atoms = entry.flatten();
             let [flags, modes] = &atoms[..] else { bail!("sCameraSettings[{i}]: {atoms:?}") };
             let flags = Init::Atom(flags.clone()).as_int().with_context(|| format!("sCameraSettings[{i}]: {flags}"))? as u32;
-            let modes = if modes.trim() == "NULL" { Vec::new() } else { cam_setting_modes(&src, modes.trim())? };
+            let modes = if modes.trim() == "NULL" { Vec::new() } else { cam_setting_modes(&src, modes.trim(), &macros)? };
             let name = names.get(&(i as i64)).cloned().with_context(|| format!("no CAM_SET_* {i}"))?;
             settings.push(CamSettingData { name, flags, modes });
         }
         anyhow::ensure!(names.get(&(settings.len() as i64)).map(String::as_str) == Some("CAM_SET_MAX"), "sCameraSettings has {} entries, not CAM_SET_MAX", settings.len());
-        let onepoint = load_onepoint_data(decomp, &src)?;
+        let onepoint = load_onepoint_data(decomp, &src, &macros)?;
         Ok(CameraData { oreg, settings, onepoint })
     }
 }
 
-/// `Camera_Demo5`'s keyframe tables in `z_camera_data.c` (`D_8011D6AC`...).
+/// `Camera_Demo5`'s keyframe tables in `z_camera_data.inc.c` (`D_8011D6AC`...).
 const DEMO5_KEYFRAMES: [&str; 8] = ["D_8011D6AC", "D_8011D724", "D_8011D79C", "D_8011D83C", "D_8011D88C", "D_8011D8DC", "D_8011D954", "D_8011D9F4"];
 
 /// An `OnePointCsFull` initializer: `{ actionFlags, unk_01, initFlags, timerInit,
 /// rollTargetInit, fovTargetInit, lerpStepScale, { atTargetInit }, { eyeTargetInit } }`.
-fn onepoint_cs_full(name: &str, i: &Init) -> Result<OnePointCsFull> {
+fn onepoint_cs_full(name: &str, i: &Init, m: &Macros) -> Result<OnePointCsFull> {
     let a = i.flatten();
     anyhow::ensure!(a.len() == 13, "{name}: an OnePointCsFull with {} values", a.len());
-    let int = |k: usize| Init::Atom(a[k].clone()).as_int().with_context(|| format!("{name}: {}", a[k]));
+    // `ONEPOINT_CS_ACTION(ONEPOINT_CS_ACTION_ID_15, false, true)`, `ONEPOINT_CS_INIT_FIELD_NONE`...
+    let int = |k: usize| m.eval(&a[k]).with_context(|| format!("{name}: {}", a[k]));
     let flt = |k: usize| Init::Atom(a[k].clone()).as_f32().with_context(|| format!("{name}: {}", a[k]));
     Ok(OnePointCsFull {
         action_flags: int(0)? as u8,
-        unk_01: int(1)? as u8,
+        init_field: int(1)? as u8,
         init_flags: int(2)? as i16,
         timer_init: int(3)? as i16,
         roll_target_init: int(4)? as i16,
@@ -493,25 +513,25 @@ fn onepoint_cs_full(name: &str, i: &Init) -> Result<OnePointCsFull> {
 }
 
 /// An `OnePointCsFull[]` or `[][]` initializer, rows flattened in order.
-fn onepoint_keyframes(src: &str, name: &str) -> Result<Vec<OnePointCsFull>> {
+fn onepoint_keyframes(src: &str, name: &str, m: &Macros) -> Result<Vec<OnePointCsFull>> {
     let init = find_initializer(src, name)?;
     let mut out = Vec::new();
     for item in init.list() {
         // A row of a two-dimensional array is a list of lists.
         if item.list().first().is_some_and(|f| matches!(f, Init::List(_))) && item.list().len() > 0 && item.flatten().len() % 13 == 0 && item.list().iter().all(|r| matches!(r, Init::List(_)) && r.flatten().len() == 13) {
             for row in item.list() {
-                out.push(onepoint_cs_full(name, row)?);
+                out.push(onepoint_cs_full(name, row, m)?);
             }
         } else {
-            out.push(onepoint_cs_full(name, item)?);
+            out.push(onepoint_cs_full(name, item, m)?);
         }
     }
     Ok(out)
 }
 
 /// A `CutsceneCameraPoint[]` initializer: `{ continueFlag, cameraRoll, nextPointFrame,
-/// viewAngle, { pos } }`, with `CS_CMD_CONTINUE` 0 and `CS_CMD_STOP` -1 (`z64cutscene.h`).
-fn cutscene_camera_points(src: &str, name: &str) -> Result<Vec<oot_game::cutscene::CutsceneCameraPoint>> {
+/// viewAngle, { pos } }`, with `CS_CAM_CONTINUE` 0 and `CS_CAM_STOP` -1 (`cutscene.h`).
+fn cutscene_camera_points(src: &str, name: &str, m: &Macros) -> Result<Vec<oot_game::cutscene::CutsceneCameraPoint>> {
     find_initializer(src, name)?
         .list()
         .iter()
@@ -519,11 +539,11 @@ fn cutscene_camera_points(src: &str, name: &str) -> Result<Vec<oot_game::cutscen
             let a = p.flatten();
             anyhow::ensure!(a.len() == 7, "{name}: a CutsceneCameraPoint with {} values", a.len());
             let flag = match a[0].trim() {
-                "CS_CMD_CONTINUE" => 0,
-                "CS_CMD_STOP" => -1,
-                f => Init::Atom(f.to_string()).as_int().with_context(|| format!("{name}: {f}"))? as i8,
+                "CS_CAM_CONTINUE" => 0,
+                "CS_CAM_STOP" => -1,
+                f => m.eval(f).with_context(|| format!("{name}: {f}"))? as i8,
             };
-            let int = |k: usize| Init::Atom(a[k].clone()).as_int().with_context(|| format!("{name}: {}", a[k]));
+            let int = |k: usize| m.eval(&a[k]).with_context(|| format!("{name}: {}", a[k]));
             Ok(oot_game::cutscene::CutsceneCameraPoint {
                 continue_flag: flag,
                 camera_roll: int(1)? as i8,
@@ -535,31 +555,43 @@ fn cutscene_camera_points(src: &str, name: &str) -> Result<Vec<oot_game::cutscen
         .collect()
 }
 
-/// Every table of `z_onepointdemo_data.c` (its `static OnePointCsFull`, `CutsceneCameraPoint`
-/// and `s16` definitions, by their declarations) and `Camera_Demo5`'s of `z_camera_data.c`.
-fn load_onepoint_data(decomp: &Path, camera_data_src: &str) -> Result<OnePointData> {
-    let p = decomp.join("src/code/z_onepointdemo_data.c");
-    let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
+/// Every table of `z_onepointdemo.c` (its `static OnePointCsFull`, `CutsceneCameraPoint`
+/// and `s16` definitions, by their declarations) and `Camera_Demo5`'s of `z_camera_data.inc.c`.
+fn load_onepoint_data(decomp: &Path, camera_data_src: &str, m: &Macros) -> Result<OnePointData> {
+    let p = decomp.join("src/code/z_onepointdemo.c");
+    let src = crate::csrc::prepare(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
+    // The tables are the file's statics from its first table on (what was `z_onepointdemo_data.c`,
+    // after the code's own statics): the point lists and shorts at the top, the keyframe tables
+    // in the functions that use them, each list in the order of their addresses.
     let mut out = OnePointData::default();
+    let mut tables = false;
     for line in src.lines() {
-        let line = line.trim();
-        let Some(rest) = line.strip_prefix("static ") else { continue };
+        let l = line.trim_start();
+        let l = l.strip_prefix("UNUSED ").unwrap_or(l);
+        let Some(rest) = l.strip_prefix("static ") else { continue };
         let mut words = rest.split_whitespace();
         let (Some(ty), Some(name)) = (words.next(), words.next()) else { continue };
         let name = name.split(['[', '=', ';']).next().unwrap_or(name).to_string();
+        tables |= matches!(ty, "OnePointCsFull" | "CutsceneCameraPoint");
+        if !tables {
+            continue;
+        }
         match ty {
-            "OnePointCsFull" => out.keyframes.push((name.clone(), onepoint_keyframes(&src, &name)?)),
-            "CutsceneCameraPoint" => out.points.push((name.clone(), cutscene_camera_points(&src, &name)?)),
+            "OnePointCsFull" => out.keyframes.push((name.clone(), onepoint_keyframes(&src, &name, m)?)),
+            "CutsceneCameraPoint" => out.points.push((name.clone(), cutscene_camera_points(&src, &name, m)?)),
             "s16" => {
                 let v = rest.split_once('=').and_then(|(_, v)| v.trim().strip_suffix(';')).with_context(|| format!("{name}: {line}"))?;
                 let v = Init::Atom(v.trim().to_string()).as_int().with_context(|| format!("{name}: {v}"))?;
                 out.shorts.push((name, v as i16));
             }
-            _ => bail!("z_onepointdemo_data.c: unexpected definition {line}"),
+            _ => {}
         }
     }
+    // Camera_Demo5's are function-level statics of `z_camera.c`.
+    let camera_c = crate::csrc::read_c(decomp, "src/code/z_camera.c")?;
     for name in DEMO5_KEYFRAMES {
-        out.keyframes.push((name.to_string(), onepoint_keyframes(camera_data_src, name)?));
+        let k = onepoint_keyframes(camera_data_src, name, m).or_else(|_| onepoint_keyframes(&camera_c, name, m))?;
+        out.keyframes.push((name.to_string(), k));
     }
     Ok(out)
 }
@@ -578,7 +610,7 @@ impl LoadFootIkData for FootIkData {
     /// `D_80126038`..`D_80126070` from `z_player_lib.c`.
     fn load(decomp: &Path) -> Result<FootIkData> {
         let p = decomp.join("src/code/z_player_lib.c");
-        let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
+        let src = crate::csrc::prepare(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
         let pair = |name: &str| -> Result<[f32; 2]> {
             let v: Vec<f32> = find_initializer(&src, name)?.list().iter().map(atom_f32).collect::<Option<_>>().with_context(|| name.to_string())?;
             v.try_into().map_err(|_| anyhow::anyhow!("{name}: want 2 values"))
@@ -615,7 +647,7 @@ fn eval_time(expr: &str) -> Option<i32> {
 impl LoadEnvTables for EnvTables {
     fn load(decomp: &Path) -> Result<EnvTables> {
         let p = decomp.join("src/code/z_kankyo.c");
-        let src = strip_comments(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
+        let src = crate::csrc::prepare(&std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?);
         let init = find_initializer(&src, "sTimeBasedLightConfigs")?;
         let entry = |e: &Init| -> Option<TimeBasedLightEntry> {
             let f = e.list();
@@ -641,29 +673,20 @@ pub trait LoadActorTable: Sized {
     fn load(decomp: &Path) -> Result<Self>;
 }
 
-/// `FLAGS` as the overlays define it: `0`, `ACTOR_FLAG_n`, or `(ACTOR_FLAG_a | ACTOR_FLAG_b ...)`
-/// (`ACTOR_FLAG_n` is `(1 << n)` in `z64actor.h`).
-fn eval_actor_flags(expr: &str) -> Option<u32> {
-    let e = expr.trim().trim_start_matches('(').trim_end_matches(')');
-    let mut v = 0u32;
-    for part in e.split('|') {
-        let part = part.trim();
-        if let Some(n) = part.strip_prefix("ACTOR_FLAG_") {
-            v |= 1 << n.parse::<u32>().ok()?;
-        } else {
-            v |= crate::csrc::parse_int(part)? as u32;
-        }
-    }
-    Some(v)
+/// `FLAGS` as the overlays define it: `0`, or the `ACTOR_FLAG_*` they or together
+/// (`actor.h`), evaluated with the file's own macros added.
+fn eval_actor_flags(expr: &str, macros: &Macros) -> Option<u32> {
+    macros.eval(expr).map(|v| v as u32)
 }
 
 impl LoadActorTable for ActorTable {
-    /// `include/tables/actor_table.h`, and every `ActorInit <Name>_InitVars` in `src/` (the
+    /// `include/tables/actor_table.h`, and every `ActorProfile <Name>_Profile` in `src/` (the
     /// overlays and the three actors in `code`) with its file's `#define FLAGS`.
     fn load(decomp: &Path) -> Result<ActorTable> {
         let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
-        let z64actor = read(&decomp.join("include/z64actor.h"))?;
-        let cats: HashMap<String, i64> = crate::csrc::parse_enum(&z64actor, "ACTORCAT_SWITCH").into_iter().map(|(v, n)| (n, v)).collect();
+        let profile_h = read(&decomp.join("include/actor_profile.h"))?;
+        let cats: HashMap<String, i64> = crate::csrc::parse_enum(&profile_h, "ACTORCAT_SWITCH").into_iter().map(|(v, n)| (n, v)).collect();
+        let actor_macros = Macros::read(decomp, &["include/actor.h"])?;
         let objects: HashMap<String, i16> = crate::csrc::define_rows(&read(&decomp.join("include/tables/object_table.h"))?)
             .into_iter()
             .enumerate()
@@ -674,7 +697,7 @@ impl LoadActorTable for ActorTable {
             let e = if mac == "DEFINE_ACTOR_UNSET" { a.first() } else { a.get(1) };
             e.map(|e| (e.clone(), i as i16))
         }).collect();
-        // ActorInit definitions, by their symbol (`<Name>_InitVars`).
+        // ActorProfile definitions, by their symbol (`<Name>_Profile`).
         let mut inits: HashMap<String, ActorInitInfo> = HashMap::new();
         let mut stack = vec![decomp.join("src")];
         while let Some(dir) = stack.pop() {
@@ -688,20 +711,24 @@ impl LoadActorTable for ActorTable {
                     continue;
                 }
                 let text = read(&path)?;
-                if !text.contains("ActorInit ") {
+                if !text.contains("ActorProfile ") {
                     continue;
                 }
-                let src = strip_comments(&text);
+                let src = crate::csrc::prepare(&text);
                 let flags_define = src.lines().find_map(|l| l.trim().strip_prefix("#define FLAGS ").map(|r| r.trim().to_string()));
+                let mut macros = actor_macros.clone();
+                macros.add(&src);
                 for line in src.lines() {
-                    let Some(rest) = line.trim().strip_prefix("const ActorInit ").or_else(|| line.trim().strip_prefix("ActorInit ")) else { continue };
+                    let Some(rest) = line.trim().strip_prefix("const ActorProfile ").or_else(|| line.trim().strip_prefix("ActorProfile ")) else { continue };
                     let Some(name) = rest.split_whitespace().next() else { continue };
                     let init = find_initializer(&src, name)?;
                     let f: Vec<String> = init.list().iter().map(|i| i.atom().unwrap_or("").trim().to_string()).collect();
                     if f.len() < 9 {
                         bail!("{}: {name} has {} fields", path.display(), f.len());
                     }
-                    let flags_expr = if f[2] == "FLAGS" { flags_define.clone().with_context(|| format!("{}: no #define FLAGS", path.display()))? } else { f[2].clone() };
+                    // `FLAGS`, the file's #define (continued lines joined), or the flags themselves.
+                    anyhow::ensure!(f[2] != "FLAGS" || flags_define.is_some(), "{}: no #define FLAGS", path.display());
+                    let flags_expr = f[2].clone();
                     let func = |s: &str| {
                         let s = s.trim().trim_start_matches("(ActorFunc)").trim();
                         (s != "NULL" && !s.is_empty()).then(|| s.to_string())
@@ -711,7 +738,7 @@ impl LoadActorTable for ActorTable {
                         ActorInitInfo {
                             id: ids.get(&f[0]).copied().or_else(|| crate::csrc::parse_int(&f[0]).map(|v| v as i16)).with_context(|| format!("{name}: id {}", f[0]))?,
                             category: *cats.get(&f[1]).with_context(|| format!("{name}: category {}", f[1]))? as u8,
-                            flags: eval_actor_flags(&flags_expr).with_context(|| format!("{name}: flags {flags_expr}"))?,
+                            flags: eval_actor_flags(&flags_expr, &macros).with_context(|| format!("{name}: flags {flags_expr}"))?,
                             object_id: *objects.get(&f[3]).with_context(|| format!("{name}: object {}", f[3]))?,
                             init: func(&f[5]),
                             destroy: func(&f[6]),
@@ -735,7 +762,7 @@ impl LoadActorTable for ActorTable {
                     name: a[0].clone(),
                     alloc: alloc(&a[2]),
                     internal: mac == "DEFINE_ACTOR_INTERNAL",
-                    init: inits.remove(&format!("{}_InitVars", a[0])),
+                    init: inits.remove(&format!("{}_Profile", a[0])),
                 },
                 _ => ActorInfo { enum_name: a.first().cloned().unwrap_or_default(), name: String::new(), alloc: 0, internal: false, init: None },
             });
@@ -745,10 +772,10 @@ impl LoadActorTable for ActorTable {
 }
 
 /// `sItemDropIds` and `sDropQuantities` from `src/code/z_en_item00.c`, the drop ids through
-/// `Item00Type` (`include/z64actor.h`).
+/// `Item00Type` (`include/z_en_item00.h`).
 pub fn load_item_drops(decomp: &Path) -> Result<oot_game::item::ItemDropTables> {
     let src = read(decomp, "src/code/z_en_item00.c")?;
-    let header = read(decomp, "include/z64actor.h")?;
+    let header = read(decomp, "include/z_en_item00.h")?;
     let names: HashMap<String, i64> = crate::csrc::parse_enum(&header, "ITEM00_RUPEE_GREEN").into_iter().map(|(v, n)| (n, v)).collect();
     let ids = find_initializer(&src, "sItemDropIds")?
         .flatten()
@@ -768,14 +795,14 @@ pub fn load_item_drops(decomp: &Path) -> Result<oot_game::item::ItemDropTables> 
 /// `sGetItemTable` (`z_player.c`, its `GET_ITEM(itemId, objectId, drawId, textId, field,
 /// chestAnim)` rows as the macro packs them: `gi = (chestAnim != CHEST_ANIM_SHORT ? 1 : -1) *
 /// (drawId + 1)`) and `sDrawItemTable` (`z_draw.c`: each draw id's `GetItem_Draw*` function
-/// and display lists), the names through `z64item.h`'s enums and `object_table.h`.
+/// and display lists), the names through `item.h`'s enums and `object_table.h`.
 pub fn load_items(decomp: &Path) -> Result<oot_game::item::ItemTables> {
     let player = read(decomp, "src/overlays/actors/ovl_player_actor/z_player.c")?;
     let draw = read(decomp, "src/code/z_draw.c")?;
-    let header = read(decomp, "include/z64item.h")?;
+    let header = read(decomp, "include/item.h")?;
     let by_name = |e: HashMap<i64, String>| -> HashMap<String, i64> { e.into_iter().map(|(v, n)| (n, v)).collect() };
-    let items = by_name(crate::csrc::parse_enum(&header, "ITEM_STICK"));
-    let gids = by_name(crate::csrc::parse_enum(&header, "GID_BOTTLE"));
+    let items = by_name(crate::csrc::parse_enum(&header, "ITEM_DEKU_STICK"));
+    let gids = by_name(crate::csrc::parse_enum(&header, "GID_BOTTLE_EMPTY"));
     let objects: HashMap<String, i64> = crate::csrc::define_rows(&read(decomp, "include/tables/object_table.h")?)
         .into_iter()
         .enumerate()

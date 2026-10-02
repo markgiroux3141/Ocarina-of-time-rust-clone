@@ -1,21 +1,21 @@
-//! The scenes' music, headless, against the C (`z_scene.c`, `z_kankyo.c`, `code_800EC960.c`,
-//! `code_800F9280.c`), through the audio library offline (`oot_game::audio::offline`):
+//! The scenes' music, headless, against the C (`z_scene.c`, `z_kankyo.c`, `general.c`,
+//! `sequence.c`), through the audio library offline (`oot_game::audio::offline`):
 //! - entering Kokiri Forest from a new game (`gSaveContext.seqId` disabled, 10:00): its sound
 //!   settings (spec 1, `NATURE_ID_KOKIRI_REGION`, `NA_BGM_KOKIRI`) queue the spec change
 //!   (`0xF0000001`), and `Environment_PlaySceneSequence`, by day with an ambience, the music
-//!   (`func_800F5550`: port 7 to 0xFF, `sSeqFlags[NA_BGM_GENERAL_SFX]` lacking `SEQ_FLAG_5`,
+//!   (`Audio_PlaySceneSequence`: port 7 to 0xFF, `sSeqFlags[NA_BGM_GENERAL_SFX]` lacking `SEQ_FLAG_RESUME_PREV`,
 //!   then the start); `Audio_InitSound`'s commands come before (`0x46` port 0 to -1, the sound
 //!   effects' sequence 0 on player 2 with a fade of `(10 * 3) / 4`), and the title's sound mode
-//!   (`func_800F6700(0)`: `0xE0000000`, stereo);
+//!   (`Audio_SetSoundOutputMode(0)`: `0xE0000000`, stereo);
 //! - the first `Audio_Update` turns those into the library's commands (the sound mode, the
 //!   reset to spec 1 and its `0xF8`, port 7, `0x82` for sequence 0x3C on player 0), and
-//!   `func_800FA3DC` the four players' full volume (`func_800FADF8` asked for it);
+//!   `Audio_UpdateActiveSequences` the four players' full volume (`Audio_ResetActiveSequences` asked for it);
 //! - `Audio_Update` waits while the audio side resets (`D_80133418`), then restarts the sound
 //!   effects' sequence (`func_800FAD34`, `func_800F7170`) and lets the volume commands through;
 //! - Kokiri Forest's sequence then plays on player 0, sounds, and plays on past its loop;
-//! - from Link's house (`NA_BGM_LINK_HOUSE`, `SEQ_FLAG_5`) into Kokiri Forest (`SEQ_FLAG_4`),
+//! - from Link's house (`NA_BGM_LINK_HOUSE`, `SEQ_FLAG_RESUME_PREV`) into Kokiri Forest (`SEQ_FLAG_RESUME`),
 //!   the exit fades every player out (`func_800F6964(0x14)`) and the forest's music starts
-//!   from the position the house kept (`D_8013062C`, port 7).
+//!   from the position the house kept (`sSeqResumePoint`, port 7).
 
 mod common;
 
@@ -58,7 +58,7 @@ fn hex(v: &[u32]) -> Vec<String> {
 #[test]
 fn kokiri_forest_starts_its_music_and_loops_it() {
     let Some((a, data)) = assets() else { return };
-    let Some(mut w) = enter(&a, "ENTR_SPOT04_0", |_| {}) else { return };
+    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_0", |_| {}) else { return };
     let mut audio = OfflineAudio::new(&data, true);
 
     // Play_Init: the scene's settings, then the music.
@@ -76,7 +76,7 @@ fn kokiri_forest_starts_its_music_and_loops_it() {
     assert_eq!(
         ops(&w, 1),
         [
-            GameOp::Cmd(0xF000_0000, SOUNDMODE_STEREO as u32),
+            GameOp::Cmd(0xF000_0000, SOUND_OUTPUT_STEREO as u32),
             GameOp::ResetSpec(1),
             GameOp::Cmd(0x4600_0000, 0xFF00_0000),
             GameOp::Cmd(0xF800_0000, 0),
@@ -123,7 +123,7 @@ fn kokiri_forest_starts_its_music_and_loops_it() {
     audio.run_idle(&mut w, 5);
     assert_eq!(audio.playing(0), Some(NA_BGM_KOKIRI as u8));
     assert_eq!(audio.playing(2), Some(0));
-    assert_eq!(w.audio.func_800fa0b4(SEQ_PLAYER_BGM_MAIN), NA_BGM_KOKIRI);
+    assert_eq!(w.audio.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN), NA_BGM_KOKIRI);
 
     // It sounds, and plays on past its loop (5952 ticks, about 51 s at its tempo).
     let notes_before = audio.renderer.ctx.stats.notes_struck;
@@ -146,11 +146,11 @@ fn kokiri_forest_starts_its_music_and_loops_it() {
 #[test]
 fn from_links_house_the_forest_resumes_its_music() {
     let Some((a, data)) = assets() else { return };
-    let Some(mut w) = enter(&a, "ENTR_LINK_HOME_0", |_| {}) else { return };
+    let Some(mut w) = enter(&a, "ENTR_LINKS_HOUSE_0", |_| {}) else { return };
     let mut audio = OfflineAudio::new(&data, false);
-    // Link's house: spec 5, no ambience, NA_BGM_LINK_HOUSE: func_800F5550 straight.
+    // Link's house: spec 5, no ambience, NA_BGM_LINK_HOUSE: Audio_PlaySceneSequence straight.
     assert_eq!(hex(&seq_cmds(&w, 0)), ["E0000000", "F0000005", "700700FF", "0000001F"]);
-    assert_eq!(w.audio.d_8013062c, 0, "SEQ_FLAG_5: D_8013062C is left alone");
+    assert_eq!(w.audio.seq_resume_point, 0, "SEQ_FLAG_RESUME_PREV: sSeqResumePoint is left alone");
     audio.run_idle(&mut w, 30);
     assert_eq!(audio.playing(0), Some(0x1F));
 
@@ -183,10 +183,10 @@ fn from_links_house_the_forest_resumes_its_music() {
     }
     fade.push(0x131E_00FF);
     assert_eq!(hex(&log[..fade.len()]), hex(&fade));
-    // The forest: seqId was disabled by the exit, so the spec change; then func_800F5550 from
-    // NA_BGM_LINK_HOUSE (SEQ_FLAG_5) to NA_BGM_KOKIRI (SEQ_FLAG_4): port 7 to D_8013062C (0:
-    // the house never set it), fade 0 since D_8013062C & 0x3F is 0.
-    assert_eq!(w.scene_id, oot_game::play_scene::SCENE_SPOT04);
+    // The forest: seqId was disabled by the exit, so the spec change; then Audio_PlaySceneSequence from
+    // NA_BGM_LINK_HOUSE (SEQ_FLAG_RESUME_PREV) to NA_BGM_KOKIRI (SEQ_FLAG_RESUME): port 7 to sSeqResumePoint (0:
+    // the house never set it), fade 0 since sSeqResumePoint & 0x3F is 0.
+    assert_eq!(w.scene_id, oot_game::play_scene::SCENE_KOKIRI_FOREST);
     let after: Vec<u32> = log[fade.len()..].to_vec();
     let i = after.iter().position(|&c| c == 0xF000_0001).expect("the spec change");
     assert_eq!(hex(&after[i..i + 3]), ["F0000001", "70070000", "0000003C"]);
@@ -200,7 +200,7 @@ fn from_links_house_the_forest_resumes_its_music() {
 #[test]
 fn kokiri_forest_at_night_plays_its_ambience() {
     let Some((a, data)) = assets() else { return };
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").unwrap();
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").unwrap();
     let save = SaveContext::new(e, false, oot_game::env::clock_time(20, 0) as u16);
     let audio = GameAudio::boot_logged(a.audio.clone(), a.audio_tables.clone(), true);
     let Some((d, r)) = common::data().zip(common::rules()) else { return };
@@ -220,11 +220,11 @@ fn kokiri_forest_at_night_plays_its_ambience() {
     for t in n.channel_io.chunks(3).take_while(|t| t[0] != 0xFF) {
         want.push(0x8000_0000 | ((t[1] as u32) << 16) | ((t[0] as u32) << 8) | t[2] as u32);
     }
-    want.push(0x8007_0D00 | SOUNDMODE_STEREO as u32);
+    want.push(0x8007_0D00 | SOUND_OUTPUT_STEREO as u32);
     assert_eq!(hex(&seq_cmds(&w, 0)), hex(&want));
 
     // Frame 1, TIMESEQ_NIGHT_CRITTERS: critter 0 off, critters 1 to 3 on. The ambience's start
-    // is still queued (func_800FA11C finds 0x00000001), so the IO commands go ahead.
+    // is still queued (Audio_IsSeqCmdNotQueued finds 0x00000001), so the IO commands go ahead.
     w.tick_with(scripted_input(Default::default(), Default::default()));
     let f1 = seq_cmds(&w, 1);
     assert_eq!(hex(&f1[..4]), ["80010100", "80010201", "80010301", "80010401"]);
@@ -233,9 +233,9 @@ fn kokiri_forest_at_night_plays_its_ambience() {
 
     audio.run_idle(&mut w, 20 * 20);
     assert_eq!(audio.playing(0), Some(NA_BGM_NATURE_AMBIENCE as u8));
-    assert_eq!(w.audio.func_800fa0b4(SEQ_PLAYER_BGM_MAIN), NA_BGM_NATURE_AMBIENCE);
+    assert_eq!(w.audio.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN), NA_BGM_NATURE_AMBIENCE);
     // The critters' channels hold the types they were given (port 2); port 1, their on and
-    // off, the script has read, which resets it (audio_seqplayer.c:1680, ports 0 and 1).
+    // off, the script has read, which resets it (seqplayer.c:1680, ports 0 and 1).
     let ch = |c: usize, port: usize| audio.renderer.ctx.channels[audio.renderer.ctx.seq_players[0].channels[c]].sound_script_io[port];
     for t in n.channel_io.chunks(3).take_while(|t| t[0] != 0xFF).filter(|t| t[1] == 2) {
         assert_eq!(ch(t[0] as usize, 2), t[2] as i8, "channel {}'s type", t[0]);

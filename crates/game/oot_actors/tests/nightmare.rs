@@ -25,7 +25,7 @@ fn assets() -> Option<Arc<GameAssets>> {
 fn nightmare() -> Option<PlayState> {
     let a = assets()?;
     let mut save = SaveContext::file_select_new();
-    save.entrance_index = a.scenes.entrance_index("ENTR_SPOT00_0").unwrap();
+    save.entrance_index = a.scenes.entrance_index("ENTR_HYRULE_FIELD_0").unwrap();
     save.cutscene_index = 0xFFF0;
     let w = oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init");
     assert_eq!(w.save.scene_layer, 4);

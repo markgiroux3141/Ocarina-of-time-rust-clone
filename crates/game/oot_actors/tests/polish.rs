@@ -80,15 +80,15 @@ fn demo1(eye: &[CutsceneCameraPoint], at: &[CutsceneCameraPoint], n: usize) -> (
 }
 
 /// Checks the active camera against the script's absolute lists, frame by frame:
-/// `Cutscene_Command_CameraEyePoints` and `_LookAtPoints` put a pair on the camera on the first
+/// `CutsceneCmd_UpdateCamEyeSpline` and `_LookAtPoints` put a pair on the camera on the first
 /// frame after its start (`startFrame < csCtx->frames`), once both have been seen, and reset
 /// `Camera_Demo1`. The script's first pair is applied on two frames running: on the first by the
-/// at command (the eye list was seen first, with no at list yet: `unk_1A` 0), on the next by the
-/// eye command, whose `unk_18` was only set then; a later pair is applied once. After that the
+/// at command (the eye list was seen first, with no at list yet: `camAtReady` 0), on the next by the
+/// eye command, whose `camEyeSplinePointsAppliedFrame` was only set then; a later pair is applied once. After that the
 /// camera updates once a frame, also while a text holds the script's frame.
 fn check_demo1(w: &mut PlayState, d: &mut Driver, script: &CutsceneScript, frames: u16) -> usize {
-    let eyes = lists(script, CS_CMD_CAM_EYE);
-    let ats = lists(script, CS_CMD_CAM_AT);
+    let eyes = lists(script, CS_CMD_CAM_EYE_SPLINE);
+    let ats = lists(script, CS_CMD_CAM_AT_SPLINE);
     assert_eq!(eyes.len(), ats.len());
     let mut checked = 0;
     // The pair in charge and the camera's updates since its last reset.
@@ -132,9 +132,9 @@ fn the_narrations_camera_follows_its_splines() {
     let mut w = oot_actors::play_entrance(a.clone(), common::data().unwrap(), common::rules().unwrap(), save).expect("Play_Init");
     let mut d = Driver { prev: PadState::default() };
     d.tick(&mut w);
-    // Link's house, layer 5: the script at 0x15D0 (three pairs from 0, 130 and 180).
+    // Link's house, layer 5: `gLinkHouseIntroSleepCs`, at 0x15D0 (three pairs from 0, 130 and 180).
     let s = w.cs_ctx.segment.clone().unwrap();
-    assert_eq!(s.name, "0x15D0");
+    assert_eq!(s.name, "gLinkHouseIntroSleepCs");
     let n = check_demo1(&mut w, &mut d, &s, 280);
     assert!(n > 250, "{n} frames checked");
 }
@@ -142,18 +142,18 @@ fn the_narrations_camera_follows_its_splines() {
 #[test]
 fn the_deku_trees_talk_camera_follows_its_splines() {
     let Some(a) = assets() else { return };
-    let mut save = SaveContext::new(a.scenes.entrance_index("ENTR_SPOT04_1").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(a.scenes.entrance_index("ENTR_KOKIRI_FOREST_1").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
     save.cutscene_index = 0;
     let mut w = oot_actors::play_entrance(a.clone(), common::data().unwrap(), common::rules().unwrap(), save).expect("Play_Init");
     let mut d = Driver { prev: PadState::default() };
     for _ in 0..60 {
-        if w.cs_ctx.segment.as_ref().is_some_and(|s| s.name == "D_808BCE20") && w.cs_ctx.frames > 0 {
+        if w.cs_ctx.segment.as_ref().is_some_and(|s| s.name == "gDekuTreeMeetingCs") && w.cs_ctx.frames > 0 {
             break;
         }
         d.tick(&mut w);
     }
     let s = w.cs_ctx.segment.clone().unwrap();
-    assert_eq!(s.name, "D_808BCE20");
+    assert_eq!(s.name, "gDekuTreeMeetingCs");
     // Two pairs (from 0 and 60), through the texts to the script's end.
     let n = check_demo1(&mut w, &mut d, &s, 180);
     assert!(n > 100, "{n} frames checked");
@@ -162,11 +162,11 @@ fn the_deku_trees_talk_camera_follows_its_splines() {
 #[test]
 fn the_letterbox_grows_and_shrinks_by_ten_rows() {
     let Some(a) = assets() else { return };
-    let save = SaveContext::new(a.scenes.entrance_index("ENTR_SPOT04_1").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
+    let save = SaveContext::new(a.scenes.entrance_index("ENTR_KOKIRI_FOREST_1").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
     let mut w = oot_actors::play_entrance(a.clone(), common::data().unwrap(), common::rules().unwrap(), save).expect("Play_Init");
     let mut d = Driver { prev: PadState::default() };
     // The Deku Tree's talk starts with cutsceneTrigger 1 (func_808BC8B8): no Letterbox_SetSize,
-    // so func_80064760 sets the target 32 each frame of CS_STATE_SKIPPABLE_INIT and
+    // so CutsceneHandler_StartManual sets the target 32 each frame of CS_STATE_START and
     // Letterbox_Update(R_UPDATE_RATE 3) steps 10 rows a frame: 10, 20, 30, 32.
     let mut rows = vec![w.letterbox.rows()];
     for _ in 0..120 {
@@ -246,13 +246,13 @@ fn links_poses_follow_the_cutscene_mode_tables() {
     for _ in 0..12000 {
         d.tick(&mut w);
         let Some(p) = w.player.and_then(|h| w.actors.downcast::<oot_actors::player::Player>(h)) else { continue };
-        let now = (w.scene_id, p.unk_446);
-        if now != last && p.cs_mode == 6 && p.unk_446 != 0 {
-            // func_80852C50: the cue's mode by D_808547C4.
-            let mode = oot_actors::player::d_808547c4(p.unk_446).unsigned_abs();
+        let now = (w.scene_id, p.cue_id);
+        if now != last && p.cs_mode == 6 && p.cue_id != 0 {
+            // func_80852C50: the cue's mode by sCueToCsActionMap.
+            let mode = oot_actors::player::s_cue_to_cs_action_map(p.cue_id).unsigned_abs();
             // The starts that are functions, by what the C's function plays: func_80851F84
             // (mode 38: func_80851134 with clink_op3_wait1, the shadow off), func_80851E90 (39:
-            // func_8083303C with clink_op3_negaeri), func_808515A4 (8: PLAYER_ANIMGROUP_44 of
+            // Player_AnimReplacePlayOnce with clink_op3_negaeri), func_808515A4 (8: PLAYER_ANIMGROUP_nwait of
             // the model's type, Link's standing wait).
             let by_function = match mode {
                 38 => Some("clink_op3_wait1"),
@@ -260,7 +260,7 @@ fn links_poses_follow_the_cutscene_mode_tables() {
                 _ => None,
             };
             if let Some(name) = by_function {
-                assert_eq!(data.anim_name(p.skel.animation), name, "scene {:#x}, cue {:#x}, mode {mode}", w.scene_id, p.unk_446);
+                assert_eq!(data.anim_name(p.skel.animation), name, "scene {:#x}, cue {:#x}, mode {mode}", w.scene_id, p.cue_id);
                 if mode == 38 {
                     assert!(!p.shadow_feet);
                 }
@@ -270,14 +270,14 @@ fn links_poses_follow_the_cutscene_mode_tables() {
                 && (matches!(e.ty, 2..=10) || e.ty == 14)
                 && let Some(anim) = e.anim
             {
-                assert_eq!(data.anim_name(p.skel.animation), data.anim_name(anim), "scene {:#x}, cue {:#x}, mode {mode} (type {})", w.scene_id, p.unk_446, e.ty);
+                assert_eq!(data.anim_name(p.skel.animation), data.anim_name(anim), "scene {:#x}, cue {:#x}, mode {mode} (type {})", w.scene_id, p.cue_id, e.ty);
                 checked.push(mode);
             }
         }
         last = now;
         // The wake-up (Link's house, layer 4) over: its cues seen, the script done.
         let home = w.scene_id == 0x34 && w.save.scene_layer == 4;
-        woke |= home && p.unk_446 != 0;
+        woke |= home && p.cue_id != 0;
         if woke && w.cs_ctx.state == CS_STATE_IDLE && p.cs_mode == 0 {
             break;
         }
@@ -335,7 +335,7 @@ fn the_camera_loads_the_village_as_it_flies_in() {
     let mut d = Driver { prev: PadState::default() };
     to_navi_sent(&mut w, &mut d);
     // Link stands in room 1 (the Deku Tree's meadow) the whole time; Navi's flight takes the
-    // camera through the plane to the village. In a cutscene En_Holl's func_80A59014 tests the
+    // camera through the plane to the village. In a cutscene En_Holl's EnHoll_HorizontalInvisible tests the
     // view's eye, not Player (useViewEye), so room 0 loads.
     assert_eq!(w.room_ctx.cur.num, 1);
     let mut village = false;
@@ -363,8 +363,8 @@ fn navis_flight_has_its_sounds() {
     let mut d = Driver { prev: PadState::default() };
     to_navi_sent(&mut w, &mut d);
     // Object_Kankyo (params 0) in Kokiri Forest's layer 7, on the script's frames: Navi's calls
-    // (473: func_800788CC, 583: func_800F4524 with 32), her crash into the fence (763) and her
-    // cry (771: NA_SE_VO_RT_THROW, func_80078884); the wing hum every frame (func_800F436C).
+    // (473: Sfx_PlaySfxCentered2, 583: func_800F4524 with 32), her crash into the fence (763) and her
+    // cry (771: NA_SE_VO_RT_THROW, Sfx_PlaySfxCentered); the wing hum every frame (func_800F436C).
     let mut heard: Vec<(u16, u16)> = Vec::new();
     let mut hum = 0;
     let mut seen = w.audio.log.as_ref().unwrap().sfx.len();

@@ -8,7 +8,7 @@
 //! `gTreasureChestCurveSkel`): the frame count the draw would read is kept (`SkelCurve_Update`'s
 //! `curFrame`), the curves' joints aren't evaluated.
 
-use oot_game::actor::{ACTOR_FLAG_4, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, cur_sfx_pos};
 use oot_game::audio::sfx::{NA_SE_EV_TRE_BOX_FLASH, SfxF32, SfxS8};
 use oot_game::play::PlayState;
@@ -19,8 +19,8 @@ use crate::en_box::EnBox;
 /// `ACTOR_DEMO_TRE_LGT` (`actor_table.h`: 0x00AA).
 pub const ACTOR_DEMO_TRE_LGT: i16 = 0x00AA;
 
-/// `Demo_Tre_Lgt_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_TRE_LGT, name: "Demo_Tre_Lgt", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_4, object: "object_box" };
+/// `Demo_Tre_Lgt_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_TRE_LGT, name: "Demo_Tre_Lgt", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "object_box" };
 
 /// `DemoTreLgtInfo` (`sDemoTreLgtInfo`, by `linkAge`): `startFrame`, `endFrame`, `unk_08`,
 /// `unk_0C`.

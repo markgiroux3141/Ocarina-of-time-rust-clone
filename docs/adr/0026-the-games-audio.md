@@ -6,13 +6,13 @@
 ## Context
 
 The audio library (`eng_audio`, ADR 0025) runs on the audio thread, a frame per VI retrace.
-What plays when is the game's: `code_800F9280.c` (the sequence commands), `code_800EC960.c`
+What plays when is the game's: `sequence.c` (the sequence commands), `general.c`
 (the scene's music, the sequence modes, fanfares, the nature ambience, `Audio_Update`),
 `z_kankyo.c` and `z_scene.c` (the scene's sound settings, the time of day's music). That code
-runs on the game's thread, and on the console both threads share `gAudioContext`:
-- the game **writes** commands into the library's command ring (`Audio_QueueCmd*`) and hands
-  them over (`Audio_ScheduleProcessCmds`); for a spec change, `func_800E5F88` reads and writes
-  `resetStatus` and `audioResetSpecIdToLoad` and may rewind the ring (`Audio_ResetCmdQueue`) or
+runs on the game's thread, and on the console both threads share `gAudioCtx`:
+- the game **writes** commands into the library's command ring (`AudioThread_QueueCmd*`) and hands
+  them over (`AudioThread_ScheduleProcessCmds`); for a spec change, `AudioThread_ResetAudioHeap` reads and writes
+  `resetStatus` and `audioResetSpecIdToLoad` and may rewind the ring (`AudioThread_ResetCmdQueue`) or
   block on `audioResetQueue` until a reset under way is done;
 - the game **reads** a few fields directly: a player's `enabled` and `tempo`, the players' and
   channels' IO ports (`soundScriptIO`), the channels' `notePriority`, `updatesPerFrame`, the
@@ -36,7 +36,7 @@ timing, and the offline runs need an order.
   latest at each frame.
   - The queues' messages travel in the view and stay until the game receives them
     (`func_800E5EDC`, `func_800E5E20`), so a reset's message is never lost between views.
-  - `func_800E5F88`'s game-thread part (emptying its copy of `audioResetQueue`) runs in the
+  - `AudioThread_ResetAudioHeap`'s game-thread part (emptying its copy of `audioResetQueue`) runs in the
     game; the rest runs as the audio side applies `GameOp::ResetSpec`. Where the C blocks
     until a reset under way finishes (its status 1 or 2, at most two more audio frames), the
     reset's remaining steps run at once, without those frames' output.
@@ -44,7 +44,7 @@ timing, and the offline runs need an order.
     spec 0: `updatesPerFrame` from `AudioHeap_Init`'s arithmetic, no player on), which is all
     the game reads at boot.
 - **The game's side is ported whole, in `oot_game::audio`** (game layer; `eng_audio` stays
-  game-agnostic): `seqcmd` (`code_800F9280.c`), `bgm` (`code_800EC960.c`'s sequence parts and
+  game-agnostic): `seqcmd` (`sequence.c`), `bgm` (`general.c`'s sequence parts and
   `Audio_Update`), `scene` (`Environment_PlaySceneSequence`, `Environment_PlayTimeBasedSequence`,
   `Scene_CommandSoundSettings`). Their statics are one struct, `GameAudio`, on the play state;
   they're the code segment's, so `Play_Init` on a scene change carries them over
@@ -54,7 +54,7 @@ timing, and the offline runs need an order.
   (`GameState_Destroy`) before the next `Play_Init`.
 - **The tables and the sound settings are in the pack**, read from the C by the importer
   (`table/audio`: `sSeqFlags`, `sSpecReverbs`, `sNatureAmbienceDataIO` with `sequence.h`'s
-  `NATURE_IO_*` macros expanded, `gSoundModeList`), and each scene layer's
+  `NATURE_IO_*` macros expanded, `gSoundOutputModes`), and each scene layer's
   `SCENE_CMD_SOUND_SETTINGS` (`LayerData.sound`). Pack format 14.
 - **The drivers:**
   - headless: `oot_game::audio::offline::OfflineAudio`, either called after each frame or

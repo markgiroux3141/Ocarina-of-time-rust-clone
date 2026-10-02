@@ -32,36 +32,36 @@ The tests: 157 pass, 1 ignored (151 before the Z-targeting work). The goldens ar
    - `oot_game::collision_check` ports `z_collision_check.c`: the collider types (cylinder, joint spheres, triangles, quads), their init and update, `CollisionCheck_SetAT/AC/OC`, the 16 AT-against-AC shape pairs, the quad's nearest-AC rule, OC pushes by mass, and `CollisionCheck_Damage` with damage tables.
    - `eng_collision::math3d` has the `sys_math3d.c` primitives the checks use.
    - The checks run where `Play_Update` runs them: after the room load, before `Actor_UpdateAll`.
-   - Player registers its body cylinder, both sword quads (placed from the left hand's draw, `func_80090480`) and the shield quad, with the C's damage flags per attack (`D_80854488`).
+   - Player registers its body cylinder, both sword quads (placed from the left hand's draw, `Player_UpdateWeaponInfo`) and the shield quad, with the C's damage flags per attack (`D_80854488`).
 2. **Kokiri's props, with their real models.**
    - `Obj_Hana` (a flower, rock or bush), `En_Ishi` (rocks: the sword bounces off, `AC_HARD`), `En_Kusa` (bushes: cut, stumps, regrowth) and `En_Kanban` (signs: cut along the slash into flying pieces, with the cut mark).
    - Their display lists come from the pack, the multi-list ones as actor bakes ([ADR 0012](adr/0012-actor-bakes.md)).
    - Placeholders for them are gone from room 0.
 3. **`En_Ko`, the first NPC with a skeleton.**
-   - The whole overlay, apart from talking. It picks the children that spawn for the story's progress (`EnKo_CanSpawn`) and waits for its objects. Each child's animation comes from `sOsAnimeLookup` / `sAnimationInfo`. It fades by Link's distance (`func_80A98DB4`, untargetable when faint), and turns its head and torso (`func_80034A14` and the `D_80116130` presets). Child 3 guards the Lost Woods until Link has the Kokiri Emerald.
+   - The whole overlay, apart from talking. It picks the children that spawn for the story's progress (`EnKo_CanSpawn`) and waits for its objects. Each child's animation comes from `sOsAnimeLookup` / `sAnimationInfo`. It fades by Link's distance (`func_80A98DB4`, untargetable when faint), and turns its head and torso (`Npc_TrackPoint` and the `sNpcTrackingPresets` presets). Child 3 guards the Lost Woods until Link has the Kokiri Emerald.
    - It's drawn as `EnKo_Draw` draws it: tunic and boots colours per draw, and 14 baked variants (head, eyes, opaque or translucent).
    - New framework under it:
      - `oot_game::skelanime_std` (`SkelAnime` for standard animations);
-     - `oot_game::npc` (the talk offers and `func_800343CC`, the head tracking, the limb sway);
+     - `oot_game::npc` (the talk offers and `Npc_UpdateTalking`, the head tracking, the limb sway);
      - the save's event, item and info tables;
      - `Rand` on `PlayState`;
      - `Actor_SpawnAsChild` (each child's fairy);
      - cached skeletons and animations in `GameAssets`.
 4. **Ladder and vine climbing.**
-   - `func_8083F7BC` (walking into a climbable wall) and `func_8083EC18` (onto it: lined up to a ladder's rungs, or turning round at a ladder's top).
-   - `func_808458D0` (the item put away first), `func_8084BF1C` (climbing: a rung per animation, sideways on vines) and `func_8084C5F8` (stepping off at the top or bottom).
+   - `Player_ActionHandler_5` (walking into a climbable wall) and `func_8083EC18` (onto it: lined up to a ladder's rungs, or turning round at a ladder's top).
+   - `Player_Action_WaitForPutAway` (the item put away first), `Player_Action_8084BF1C` (climbing: a rung per animation, sideways on vines) and `Player_Action_8084C5F8` (stepping off at the top or bottom).
    - The climbable-edge branch of `func_8083A6AC`, so walking off the porch hangs from the ladder's top and climbs down.
    - `sAgeProperties` is now read whole (33 fields), with the climbing animations.
 5. **Z-targeting polish** ([ADR 0013](adr/0013-camera-modes-and-screen.md)).
-   - **Camera modes.** `Player_UpdateCamAndSeqModes` asks for a mode each frame, and `Camera_ChangeModeFlags` accepts, refuses or resets it. The pack now holds all 21 NORMAL0 modes' functions and data.
+   - **Camera modes.** `Player_UpdateCamAndSeqModes` asks for a mode each frame, and `Camera_RequestModeImpl` accepts, refuses or resets it. The pack now holds all 21 NORMAL0 modes' functions and data.
    - **`Camera_Parallel1`** (Z with nothing targeted): the swing behind Link over `R_CAM_DEFAULT_ANIM_TIME` frames with mode changes refused meanwhile, then the target distance and pitch. With it come `Camera_CalcAtForParallel` and `func_800458D4`.
    - **`Camera_KeepOn1`** (locked on to a non-enemy, such as the Kokiri or a sign), with `Camera_CalcAtForLockOn`.
    - **The letterbox:** `shrink_window.c` and `Camera_UpdateInterface`, 10 rows a frame towards 26, 27 or 32. It's drawn as black bars under the overlay.
-   - **The real reticle** (`func_8002C124`): `gZTargetLockOnTriangleDL` after `SETUPDL_57`, four spinning triangles per trail entry in the orthographic overlay. It flies in from the screen's centre as it locks and fades when the target is lost, in the category's colour (`sNaviColorList`).
-   - **The target arrow:** `gZTargetArrowDL` over the next candidate.
-   - **Placeholders stop counting as targets:** they spawn with their profile's flags minus `ACTOR_FLAG_0`, and a test checks that neither the candidate search nor Z picks one.
-   - **Two fixes to the target context against `func_8002C7BC`:**
-     - a new target now calls `func_8002BE98` (the reticle restarts at 500);
+   - **The real reticle** (`Attention_Draw`): `gLockOnReticleTriangleDL` after `SETUPDL_57`, four spinning triangles per trail entry in the orthographic overlay. It flies in from the screen's centre as it locks and fades when the target is lost, in the category's colour (`sAttentionColors`).
+   - **The target arrow:** `gLockOnArrowDL` over the next candidate.
+   - **Placeholders stop counting as targets:** they spawn with their profile's flags minus `ACTOR_FLAG_ATTENTION_ENABLED`, and a test checks that neither the candidate search nor Z picks one.
+   - **Two fixes to the target context against `Attention_Update`:**
+     - a new target now calls `Attention_InitReticle` (the reticle restarts at 500);
      - the before-lock drop uses `Actor_ProjectPos`'s test, not the candidate search's screen box.
    - **Engine:** `DrawLists::overlay_2d` (the orthographic `OVERLAY_DISP`) and `DrawLists::letterbox_rows`, drawn by `Renderer::render_screen`.
 6. **Tools:**
@@ -79,7 +79,7 @@ The tests: 157 pass, 1 ignored (151 before the Z-targeting work). The goldens ar
 | `En_Ko` (`--test kokiri`, 3) | The children that spawn and their start animations; the fade (40 a frame, targetable from alpha 10); child 3's guard position, 80 from home facing Link |
 | Climbing (`--test climb`, 2) | Up the ladder to the porch (lined up within 8 of the rungs, off the top onto y 100); off the porch onto the ladder's top, facing it, and down to the ground |
 | Z-targeting (`--test zcamera`, 5; `letterbox` unit test) | Parallel1's swing lands behind Link and refuses mode changes while animating; the bars reach 27 in 10-row steps after the swing; a request during the swing goes through the frame after it ends; a Kokiri lock uses FOLLOWTARGET / KeepOn1 with bars and the NPC colour; the reticle flies in, locks at 120, and fades 0x100 → 136 → 16 → 0; placeholders are never candidates or locked |
-| Camera data (`--test camera`) | 21 NORMAL0 modes, with the NORM1, PARA1 and KEEP1 values checked against `z_camera_data.c` |
+| Camera data (`--test camera`) | 21 NORMAL0 modes, with the NORM1, PARA1 and KEEP1 values checked against `z_camera_data.inc.c` |
 | Golden traces and renders | Re-recorded: 28 of 78 changed (see `golden/README.md`), 50 unchanged |
 | Import | 9.0 s; format version 4 (camera modes; the reticle's two bakes, 29 actor bakes in all) |
 | The windows | Bushes, rocks, the sign and its cutting, the Kokiri, and the ladder checked in the windowed sandbox. The Z-target bars and the reticle on a Kokiri checked in a headless screenshot (27-row bars, light-blue triangles) |
@@ -102,10 +102,10 @@ The tests: 157 pass, 1 ignored (151 before the Z-targeting work). The goldens ar
   - The same Normal1 fallback covers TALK (`Camera_KeepOn3`), jumps and falls (`Jump1`), climbing (`Jump2`), hanging (`Uniq1`) and first person (`Subj3`), with a restart at each mode change.
   - `func_80043F94` (scenes with the skybox disabled), the interface alpha, the mode-change sounds, and KeepOn1's `interactRangeActor` case are left out.
 - **Reticle:** no Navi (`naviRefPos`), no lock-on sounds. The reticle moves at 20 Hz while the world is blended at the display rate, so it can trail a moving target by up to one game frame.
-- **Talking:** actors offer to talk (`func_8002F1C4`), but Player doesn't accept on A and there's no message box, so `En_Ko`'s and `En_Kanban`'s talk states stay 0. That's milestone 3.
+- **Talking:** actors offer to talk (`Actor_OfferTalkExchange`), but Player doesn't accept on A and there's no message box, so `En_Ko`'s and `En_Kanban`'s talk states stay 0. That's milestone 3.
 - **Props:** no lifting or throwing (Player can't lift), no drops (`En_Item00`), no leaves, fragments, dust or sounds. The bugs in bushes are `En_Insect` placeholders. `En_Kanban`'s shadow, ocarina repair and hammer quake aren't ported.
 - **`En_Ko`:** no paths (child 3 with the emerald), no Fado trade, and each child's fairy is an `En_Elf` placeholder.
-- **Climbing:** grabbing a climbable wall from the air (`func_8083EC18` from `func_8084411C`) and crawlspaces aren't ported, and there's no climbing sound. The vine code is shared with the ladder, but only the ladder has a test.
+- **Climbing:** grabbing a climbable wall from the air (`func_8083EC18` from `Player_Action_8084411C`) and crawlspaces aren't ported, and there's no climbing sound. The vine code is shared with the ladder, but only the ladder has a test.
 - **Collision check:** hit effects and sounds, `CollisionCheck_LineOC`, colliders without an actor.
 - **Placeholders** can't be targeted, even where the real actor can (Mido, Saria). Each one becomes targetable when it's ported.
 - **Carried over from GAME-01:** prerendered rooms, doors, time passing, culling (see GAME-01's known gaps).
@@ -128,10 +128,10 @@ The tests: 171 pass, 1 ignored (157 before). The goldens are unchanged: 78 of 78
      - all of `sCameraSettings`: 65 settings with their valid modes, priorities and flags, and every `sCamSet*Modes` array (`CameraData::settings`);
      - each scene's `BgCamInfo` list, in its collision header (`CollisionHeader::bg_cams`), read as far as the scene names it;
      - `SCENE_CMD_MISC_SETTINGS`' camera type (`LayerData::scene_cam_type`).
-   - **The setting changes:** `Camera_ChangeSettingFlags` (with the priority rule), `Camera_ChangeBgCamIndex` (once a frame), `Camera_ChangeDoorCam`, `func_80057FC4` (a room's first setting: `FREE0` when prerendered, `DUNGEON0` for `ROOM_BEHAVIOR_TYPE1_1`, else `NORMAL0`) and `func_8005B1A4`.
+   - **The setting changes:** `Camera_RequestSettingImpl` (with the priority rule), `Camera_RequestBgCam` (once a frame), `Camera_ChangeDoorCam`, `func_80057FC4` (a room's first setting: `FREE0` when prerendered, `DUNGEON0` for `ROOM_TYPE_DUNGEON`, else `NORMAL0`) and `Camera_SetFinishedFlag`.
    - **`Camera_Update`'s floor check:** the bg camera under Player, once Player is within 2 of the floor.
-   - **`Play_Init`:** `func_8005AC48(0xFF)`, the start camera from Player's params, and the viewpoint (`VIEWPOINT_PIVOT` in the houses, `VIEWPOINT_LOCKED` in the shops).
-   - **`Play_Update`:** `Play_ChangeViewpointBgCamIndex` every frame, and C-Up's toggle, refused in shops and while `Player_InCsMode`.
+   - **`Play_Init`:** `Camera_OverwriteStateFlags(0xFF)`, the start camera from Player's params, and the viewpoint (`VIEWPOINT_PIVOT` in the houses, `VIEWPOINT_LOCKED` in the shops).
+   - **`Play_Update`:** `Play_RequestViewpointBgCam` every frame, and C-Up's toggle, refused in shops and while `Player_InCsMode`.
    - **The mode functions:**
      - `Camera_Fixed3` (`PREREND_FIXED`), `Camera_Unique7` (`PREREND_PIVOT`), `Camera_Unique6` (`FREE0`) and `Camera_Data4` (`PIVOT_SHOP_BROWSING`), for the interiors;
      - `Camera_Fixed4` (`PIVOT_IN_FRONT`, Link's porch), `Camera_Unique0` (`START1`, some Kokiri entrances) and `Camera_Fixed2` (`PIVOT_CRAWLSPACE`), for Kokiri Forest;
@@ -145,7 +145,7 @@ The tests: 171 pass, 1 ignored (157 before). The goldens are unchanged: 78 of 78
      - `Room_DrawImage`'s choice (`oot_game::room::image_background`): drawn only with `CAM_SET_PREREND_FIXED`, a multi-image room's by the camera's bg camera or its override;
      - the engine draws it in the orthographic space in the middle of the OPA list (`DrawParams::screen`), after the room's geometry and without depth, so the geometry keeps only its depth under it.
    - **The room skyboxes:**
-     - `oot_game::skybox` writes out `Skybox_Init`'s display lists (`func_800AEFC8`, `func_800ADBB0`) and `SkyboxDraw_Draw`'s palette loads after `SETUPDL_40`;
+     - `oot_game::skybox` writes out `Skybox_Init`'s display lists (`Skybox_Calculate256`, `Skybox_CalculateFace256`) and `Skybox_Draw`'s palette loads after `SETUPDL_40`;
      - the importer reads `Skybox_Setup` for the 22 room skyboxes and bakes each;
      - they're drawn at the eye after the rooms, with any camera but `PREREND_FIXED`.
 3. **Doors** ([ADR 0016](adr/0016-player-requests.md)).
@@ -158,14 +158,14 @@ The tests: 171 pass, 1 ignored (157 before). The goldens are unchanged: 78 of 78
      - the ajar doors' swing;
      - `EnDoor_Draw` with `EnDoor_OverrideLimbDraw`'s side choice, from 12 bakes (5 door lists × 2 sides, and the two ajar faces).
    - **Player's side:**
-     - `func_80839800` in the interrupt lists (index 1): A opens the door; Link lines up 22 from it and plays `PLAYER_ANIMGROUP_9`..`_12`, moved by the animation (0x28F);
-     - a scene-exit door runs `func_80839034` on the floor beyond it (entrance speed 2);
+     - `Player_ActionHandler_1` in the interrupt lists (index 1): A opens the door; Link lines up 22 from it and plays `PLAYER_ANIMGROUP_doorA_free`..`_12`, moved by the animation (0x28F);
+     - a scene-exit door runs `Player_HandleExitsAndVoids` on the floor beyond it (entrance speed 2);
      - any other door gets the door camera (`Camera_ChangeDoorCam` with the side's bg camera, timers 38/26/10) and loads the room behind it;
-     - `func_80845EF8`: after the animation Link stands, the old room goes (`func_80097534`), the camera is told (`func_8005B1A4`) and the void-out point moves.
+     - `Player_Action_80845EF8`: after the animation Link stands, the old room goes (`Room_FinishRoomChange`), the camera is told (`Camera_SetFinishedFlag`) and the void-out point moves.
    - **Also on Player:**
-     - `func_80835E44(CAM_SET_SCENE_TRANSITION)` on exits (unless `Play_CamIsNotFixed` says the scene's camera is fixed);
+     - `Player_RequestCameraSetting(CAM_SET_SCENE_TRANSITION)` on exits (unless `Play_CamIsNotFixed` says the scene's camera is fixed);
      - `CAM_SET_FREE0` on void-outs;
-     - `func_80845CA4`'s camera check (`unk_14C & 0x10`).
+     - `Player_Action_80845CA4`'s camera check (`stateFlags & 0x10`).
    - **`PlayRequest`:** Player queues what it does to the camera, the rooms and the door, applied right after its update. `En_Door` writes Player's door fields through the arena.
 4. **Tools:**
    - `ootx scene-info` shows the camera type, the skybox, each room's backgrounds and the bg camera list;
@@ -177,8 +177,8 @@ The tests: 171 pass, 1 ignored (157 before). The goldens are unchanged: 78 of 78
 |---|---|
 | `cargo test --workspace` | 171 passed, 1 ignored |
 | Interiors (`oot_actors --test prerendered`, 6) | Link's house: its bg cameras, its single 320x240 background (RGBA5551), its skybox (`SKYBOX_HOUSE_LINK`, four faces, 256 triangles, no z). Entering: `FREE0`, then the pivot on the first frame (the eye at (0, 34, 0), fov 60). C-Up is refused while Link walks in; after it, the fixed camera (eye (-118, 345, 47), `at` 150 along the rotation, fov 46.83) with the background, and back. The shop starts fixed (eye (-100, 100, 260), fov 50) and refuses C-Up; its skybox has two faces. The porch's floor gives `PIVOT_IN_FRONT`, whose eye reaches (-97, 170, 906). `START1` from spawn 1's params holds its eye at (3778, 288, -608), fov 45, until Link has moved 10. Exits use `SCENE_TRANSITION` in Kokiri Forest and keep the pivot in the house |
-| Doors (`--test door`, 2) | A Kakariko house's scene-exit door: `DOOR_DL_DEFAULT_FIELD_KEEP`; Player gets `PLAYER_DOORTYPE_HANDLE` and direction -1; A gives `clink_demo_doorA_link` at z 188, the exit to `ENTR_SPOT01_6` at entrance speed 2, and the door's `gDoorChildOpeningLeftAnim` at speed 1.5. Souko's room door: `clink_demo_doorB_link` at x 1198, `CAM_SET_DOORC` with the door and its timers, room 2 loading behind room 1, the door moving to room 2, the bars at 32, then room 1 dropped, Link through, the respawn point moved, and the door idle again |
-| Camera (`--test camera`, 7) | Every setting's data against `z_camera_data.c` (NORMAL0, PREREND_FIXED and _PIVOT with their holes, DOORC, SCENE_TRANSITION, FREE0, PIVOT_SHOP_BROWSING, PIVOT_IN_FRONT); `Camera_ChangeSettingFlags`' priority (-2 before -1), -99, prevSetting and the bg camera index flags; `Camera_ChangeBgCamIndex` once a frame; `Camera_ChangeDoorCam` refused while `DOORC` runs |
+| Doors (`--test door`, 2) | A Kakariko house's scene-exit door: `DOOR_DL_DEFAULT_FIELD_KEEP`; Player gets `PLAYER_DOORTYPE_HANDLE` and direction -1; A gives `clink_demo_doorA_link` at z 188, the exit to `ENTR_KAKARIKO_VILLAGE_6` at entrance speed 2, and the door's `gDoorChildOpeningLeftAnim` at speed 1.5. Souko's room door: `clink_demo_doorB_link` at x 1198, `CAM_SET_DOORC` with the door and its timers, room 2 loading behind room 1, the door moving to room 2, the bars at 32, then room 1 dropped, Link through, the respawn point moved, and the door idle again |
+| Camera (`--test camera`, 7) | Every setting's data against `z_camera_data.inc.c` (NORMAL0, PREREND_FIXED and _PIVOT with their holes, DOORC, SCENE_TRANSITION, FREE0, PIVOT_SHOP_BROWSING, PIVOT_IN_FRONT); `Camera_RequestSettingImpl`' priority (-2 before -1), -99, prevSetting and the bg camera index flags; `Camera_RequestBgCam` once a frame; `Camera_ChangeDoorCam` refused while `DOORC` runs |
 | Import (`oot_import --test pack`) | Every scene's bg camera list covers what its floors, water boxes, spawns, doors, viewpoints and multi-image rooms name |
 | Unit tests | The collision codec round-trips a bg camera list; a background is a copy-mode screen quad; a raw RGBA16 background decodes; the skybox generator's vertex counts (4, 2 and 3 faces) and its tile rows (the second half starts at t 124) |
 | Golden traces and renders | 78 of 78 identical (the golden cases don't enter by `Play_Init`) |
@@ -228,9 +228,9 @@ The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78
 
 ### What was built
 
-1. **The message box** (`oot_game::message`, `z_message_PAL.c`; [ADR 0017](adr/0017-interface-sprites.md)).
+1. **The message box** (`oot_game::message`, `z_message.c`; [ADR 0017](adr/0017-interface-sprites.md)).
    - **The import:** the English message table and text (`oot_import::text`, with the table addresses as `tools/msgdis.py` finds them) into `table/messages`.
-   - **Opening a box:** `Message_StartTextbox`, `Message_ContinueTextbox`, and `Message_OpenText` (English only): the box type and position from `typePos`, the colours, `Interface_ChangeAlpha`.
+   - **Opening a box:** `Message_StartTextbox`, `Message_ContinueTextbox`, and `Message_OpenText` (English only): the box type and position from `typePos`, the colours, `Interface_ChangeHudVisibilityMode`.
    - **`Message_Update`'s modes for plain boxes:**
      - the start delay;
      - the growth (`Message_GrowTextbox`) and the position: `XREG(94)` against the midpoint of Player's and the talker's screen heights;
@@ -249,21 +249,21 @@ The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78
    - **The text registers** are `z_construct.c`'s defaults (`TextRegs`).
 2. **Talking** (Player, `z_actor.c`, `z_camera.c`).
    - **Player:**
-     - `func_8083B644` in the interrupt list (index 4): A talks to the target or `targetActor`;
-     - `func_80853148` and `func_8083A2F8`: an NPC after putting the item away, anything else at once;
-     - the talk action `func_8084B530`, until `Actor_TextboxIsClosing`;
-     - Player's `ACTOR_FLAG_8` keeps the target (`func_8083224C` in `func_80836BEC`);
-     - `func_808473D4`'s do-action (Check, Speak, Open, Next, Return and the rest);
+     - `Player_ActionHandler_Talk` in the interrupt list (index 4): A talks to the target or `targetActor`;
+     - `Player_StartTalking` and `Player_SetupTalk`: an NPC after putting the item away, anything else at once;
+     - the talk action `Player_Action_Talk`, until `Actor_TextboxIsClosing`;
+     - Player's `ACTOR_FLAG_TALK` keeps the target (`Player_IsTalking` in `Player_UpdateZTargeting`);
+     - `Player_UpdateInterface`'s do-action (Check, Speak, Open, Next, Return and the rest);
      - the ajar door's text 0xD0.
-   - **Player's writes** go through `PlayRequest` (ADR 0016): the talk request (`Actor_ProcessTalkRequest`), the text, `Message_StartTextbox`, the do-action.
+   - **Player's writes** go through `PlayRequest` (ADR 0016): the talk request (`Actor_TalkOfferAccepted`), the text, `Message_StartTextbox`, the do-action.
    - **The talk camera:**
-     - `Camera_KeepOn3` (TALK on NORMAL0) swings over `initTimer` frames, retries the line of sight against the collision and `CollisionCheck_LineOCCheck`, and holds until `unk_14C & 8`;
+     - `Camera_KeepOn3` (TALK on NORMAL0) swings over `initTimer` frames, retries the line of sight against the collision and `CollisionCheck_LineOCCheck`, and holds until `stateFlags & 8`;
      - its first call asks for another `Camera_Update` at the end of `Play_Draw` (`view.unk_124`), which `PlayState` now runs;
      - `Camera_KeepOn0` (TALK in the prerendered rooms): the eye from the bg camera, the yaw turn and the fov scale.
-   - **`Camera_UpdateInterface`'s alpha half:** `sCameraInterfaceAlpha`, and `Interface_ChangeAlpha` from the setting's interface flags.
+   - **`Camera_UpdateInterface`'s alpha half:** `sCameraHudVisibilityMode`, and `Interface_ChangeHudVisibilityMode` from the setting's interface flags.
 3. **The talkers:**
-   - `En_Kanban` and `En_Ko` show their texts. `En_Ko`'s `func_80A97738` sets its `infTable` flags on closing and answers choices;
-   - `En_Wonder_Talk2`: the whole overlay except Player's cutscene modes (`func_8002DF54`);
+   - `En_Kanban` and `En_Ko` show their texts. `En_Ko`'s `EnKo_UpdateTalkState` sets its `infTable` flags on closing and answers choices;
+   - `En_Wonder_Talk2`: the whole overlay except Player's cutscene modes (`Player_SetCsActionWithHaltedActors`);
    - `En_Door`'s checkable doors (`EnDoor_WaitForCheck`, `EnDoor_Check`).
 4. **Items** (`oot_game::item`, `oot_actors::en_item00`).
    - **The import:** `sItemDropIds` and `sDropQuantities` into `table/item_drops`.
@@ -283,7 +283,7 @@ The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78
    - **`Interface_Init`** in `Play_Init`, with `Health_InitMeter` and `Interface_SetSceneRestrictions`.
    - **`Interface_Update`**, after `Message_Update`:
      - `func_80083108` for the cases that apply: climbing, the scene's B restriction, `restrictions.all`;
-     - the alpha types (`func_80082850`'s 1 to 13, then 50 and 52; `func_8008277C`, `func_80082644`);
+     - the alpha types (`Interface_UpdateHudAlphas`'s 1 to 13, then 50 and 52; `Interface_DimButtonAlphas`, `Interface_RaiseButtonAlphas`);
      - the health and rupee accumulators;
      - the beating heart and the heart colours (`Health_UpdateBeatingHeart`, `Health_UpdateMeter`);
      - the A button's flip.
@@ -305,7 +305,7 @@ The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 190 passed, 1 ignored |
-| The sign (`oot_actors --test talk`) | Params 0x031F. "Check" shows a frame after the sign offers. A starts the talk action, sets Player's `ACTOR_FLAG_8`, and opens text 0x031F in a wooden box at the bottom (34, 142). The box grows over eight frames to 256x64, the text types out, and A closes it, with `Actor_TextboxIsClosing` for one frame |
+| The sign (`oot_actors --test talk`) | Params 0x031F. "Check" shows a frame after the sign offers. A starts the talk action, sets Player's `ACTOR_FLAG_TALK`, and opens text 0x031F in a wooden box at the bottom (34, 142). The box grows over eight frames to 256x64, the text types out, and A closes it, with `Actor_TextboxIsClosing` for one frame |
 | The talk camera (`--test talk`) | Ten frames of swing, `at` closing 1/animTimer of the gap each frame; fov 45; the bars at 32; then it holds |
 | A Kokiri child (`--test talk`) | "Speak"; the item is put away first; 0x1005 read through; `INFTABLE_1E` set on closing; then 0x1006 |
 | Link's window, and the HUD while talking (`--test talk`) | The spot by the window: 0x22A with "Check" (not an NPC). While talking: alpha type 5 from KEEP3's flags 0x3500; B and C fade out by 32 a frame, A dips to 32 and comes back, the hearts stay |
@@ -334,10 +334,10 @@ The tests: 190 pass, 1 ignored (171 before). The goldens are unchanged: 78 of 78
   - the item icons in text (`MESSAGE_ITEM_ICON`) and the backgrounds (`MESSAGE_BACKGROUND`);
   - the ocarina modes, the credits, German and French;
   - the text sounds.
-- **Talking:** Player's cutscene modes (`func_8002DF54`) aren't ported, so `En_Wonder_Talk2`'s forced texts don't hold Link. There's no Navi, so no C-Up.
+- **Talking:** Player's cutscene modes (`Player_SetCsActionWithHaltedActors`) aren't ported, so `En_Wonder_Talk2`'s forced texts don't hold Link. There's no Navi, so no C-Up.
 - **Items:**
   - placed recovery hearts aren't drawn: `GetItem_DrawRecoveryHeart` needs `Gfx_TwoTexScroll`'s dynamic tiles;
-  - the inventory isn't kept, so the get-item items aren't given: sticks, nuts, seeds, magic, keys, shields, and heart pieces given by `func_8002F554`;
+  - the inventory isn't kept, so the get-item items aren't given: sticks, nuts, seeds, magic, keys, shields, and heart pieces given by `Actor_OfferGetItemNearby`;
   - the shadows, the sparkles and the sounds;
   - the effects' random numbers aren't drawn in the C's order.
 - **HUD:**
@@ -379,7 +379,7 @@ needs the effect system; see the known gaps).
    [ADR 0018](adr/0018-bg-treemouth.md)).
    - `BgTreemouth_Init`:
      - the init chain (target mode 5, scale 1);
-     - DynaPoly with `gDekuTreeMouthCol` (`DPM_UNK`);
+     - DynaPoly with `gDekuTreeMouthCol` (flags 0);
      - the focus 50 up, and text 0x905;
      - the layer and age cases: `func_808BC8B8` for a child outside the cutscene layers;
        `BgTreemouth_DoNothing`, closed, for an adult or on layer 7; `func_808BC6F8`, open, on
@@ -390,14 +390,14 @@ needs the effect system; see the known gaps).
      - `func_808BC8B8`: held open with `EVENTCHKINF_05`. Without it:
        - near and facing the tree the first time (1658, 0x4E20), `EVENTCHKINF_0C` is set;
        - after that (0x7530), the tree becomes targetable, and Z-targeting it asks again.
-       - Both start a cutscene (`D_808BCE20`, `D_808BD2A0`), logged as not ported.
+       - Both start a cutscene (`gDekuTreeMeetingCs`, `gDekuTreeChoiceCs`), logged as not ported.
      - `func_808BC9EC`: when the cutscene starts, it moves Player to the tree if he's within
        350, then reads the answer: yes sets `EVENTCHKINF_05`, no waits again.
      - `func_808BCAF0` and `func_808BC65C`: the mouth's cutscene cues (2 talks, 3 opens).
      - `func_808BC80C` and `func_808BC864`: open to 0.8 and close, as the tree talks.
      - `func_808BC6F8`: open by 0.01 a frame (layer 6's falling bark: the `Rand` calls only).
    - `BgTreemouth_Draw`: a bake of `gDekuTreeMouthDL` with the env colour on dynamic segment
-     0x0B. The alpha is 500, or 2150 with `EVENTCHKINF_07`, or layer 6's `unk_74[0] + 500`,
+     0x0B. The alpha is 500, or 2150 with `EVENTCHKINF_07`, or layer 6's `drawParams[0] + 500`,
      times 0.1. The combiner blends the living bark into the dead by it.
    - `BgTreemouth_Destroy`: `DynaPoly_DeleteBgActor`.
 2. **`csCtx`** (`oot_game::cutscene`, `PlayState::cs_ctx`): the fields actors read (the state,
@@ -407,7 +407,7 @@ needs the effect system; see the known gaps).
    - `DynaPoly_SetBgActor` takes the first free slot of 50.
    - The bgcheck loops skip free slots.
 4. **Debug save presets** (`oot_game::save::SAVE_PRESETS`; `--preset` in the game and the
-   sandbox, with an entrance). The flag values are from `z64save.h`: `EVENTCHKINF_05` 0x05,
+   sandbox, with an entrance). The flag values are from `save.h`: `EVENTCHKINF_05` 0x05,
    `EVENTCHKINF_07` 0x07, `EVENTCHKINF_09` 0x09, `EVENTCHKINF_0C` 0x0C.
    - `deku-tree-open`: `EVENTCHKINF_0C` and `EVENTCHKINF_05`, as after the tree's talk.
    - `deku-tree-dead`: also `EVENTCHKINF_07`, `EVENTCHKINF_09` and the Kokiri Emerald, as after
@@ -420,7 +420,7 @@ needs the effect system; see the known gaps).
      offer, A, then A through each box and choice), and cut bushes until one drops.
    - **Its steps:** house, out the door, the ladder, the sign, the Kokiri child, the bush, the
      tree, the mouth, the Deku Tree. Each is reported on the state it finished on.
-   - **The sandbox's `playthrough` script** runs it (`--entrance ENTR_LINK_HOME_0 --child
+   - **The sandbox's `playthrough` script** runs it (`--entrance ENTR_LINKS_HOUSE_0 --child
      --preset deku-tree-open`). Its trace marks the steps, and it prints them with the texts
      and the drop.
 6. **Golden cases:** `playthrough` (the trace) and `spot04_treemouth_open` (the open mouth from
@@ -431,8 +431,8 @@ needs the effect system; see the known gaps).
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 195 passed, 1 ignored |
-| The playthrough (`oot_actors --test playthrough`: `kokiri_forest_to_the_deku_tree`) | 1971 frames, every step in order. **House:** `SCENE_LINK_HOME`, `ENTR_LINK_HOME_0`, at spawn 0 (1, 0, 95), `VIEWPOINT_PIVOT` with `CAM_SET_PREREND_PIVOT`, the preset's flags, 3 hearts and no rupees. **Out the door:** `ENTR_SPOT04_3`, at spawn 3 (-31, 100, 1073). **The ladder:** at its foot, on the ground at -80. **The sign:** text 0x031F only. **The child:** `En_Ko` child 4, texts 0x100A and 0x100B. **The bush:** the third bush's green rupee (the first two dropped nothing); the cut bushes are gone; 1 rupee. **The tree:** room 1 (through the `En_Holl`), the mouth held open (`func_808BC8B8`, `unk_168` 1), Link standing on its DynaPoly floor. **The mouth:** the floor's exit 2, `ENTR_YDAN_0`. **The Deku Tree:** `SCENE_YDAN`, standing. **Mido and Saria:** placeholders, and Link passed within 60 of each |
-| The mouth (`--test playthrough`, 3 more) | The presets' bits in `eventChkInf[0]`. A new save at spawn 1: `EVENTCHKINF_0C` set, `func_808BC9EC`, closed at (4029, 136, -1255), alpha 500; with the preset: open at (3869, -263, -1163) with its collision there; the tree dead: 2150. By hand: the cutscene starting with yes answered sets `EVENTCHKINF_05` and `CS_STATE_SKIPPABLE_EXEC`; cue 3 opens 0.01 a frame |
+| The playthrough (`oot_actors --test playthrough`: `kokiri_forest_to_the_deku_tree`) | 1971 frames, every step in order. **House:** `SCENE_LINKS_HOUSE`, `ENTR_LINKS_HOUSE_0`, at spawn 0 (1, 0, 95), `VIEWPOINT_PIVOT` with `CAM_SET_PREREND_PIVOT`, the preset's flags, 3 hearts and no rupees. **Out the door:** `ENTR_KOKIRI_FOREST_3`, at spawn 3 (-31, 100, 1073). **The ladder:** at its foot, on the ground at -80. **The sign:** text 0x031F only. **The child:** `En_Ko` child 4, texts 0x100A and 0x100B. **The bush:** the third bush's green rupee (the first two dropped nothing); the cut bushes are gone; 1 rupee. **The tree:** room 1 (through the `En_Holl`), the mouth held open (`func_808BC8B8`, `unk_168` 1), Link standing on its DynaPoly floor. **The mouth:** the floor's exit 2, `ENTR_DEKU_TREE_0`. **The Deku Tree:** `SCENE_DEKU_TREE`, standing. **Mido and Saria:** placeholders, and Link passed within 60 of each |
+| The mouth (`--test playthrough`, 3 more) | The presets' bits in `eventChkInf[0]`. A new save at spawn 1: `EVENTCHKINF_0C` set, `func_808BC9EC`, closed at (4029, 136, -1255), alpha 500; with the preset: open at (3869, -263, -1163) with its collision there; the tree dead: 2150. By hand: the cutscene starting with yes answered sets `EVENTCHKINF_05` and `CS_STATE_RUN`; cue 3 opens 0.01 a frame |
 | DynaPoly (`eng_collision` unit test) | A deleted bg actor collides until the next update, then its slot is free and reused; 50 slots, then `BG_ACTOR_MAX` |
 | Golden traces and renders | 78 of 78 identical (the draw config's `EVENTCHKINF_07` only comes from `Play_Init` saves). Recorded, 80 hashes: `playthrough/trace.json` (2.8 MB, the same hash over two runs) and `spot04_treemouth_open/shot.png` (see `golden/README.md`) |
 | The windows | The route played by hand (`scripts\run\game-links-house.bat`): Link's house into the Deku Tree; a bush cut, its drop picked up. No leaves fly from the cut bush |
@@ -451,7 +451,7 @@ needs the effect system; see the known gaps).
   roadmap. In the C, `EVENTCHKINF_07` is set by the blue warp out of Gohma's room (the tree
   dead) and only picks the colour. `EVENTCHKINF_05` is what holds the mouth open, and it's set
   by `func_808BC9EC` on yes. A second preset, `deku-tree-dead`, sets `EVENTCHKINF_07`.
-- **Slow approaches tilt the stick 40, not 30.** `func_80836FAC` takes 20 off the dead-zoned
+- **Slow approaches tilt the stick 40, not 30.** `Player_CalcSpeedAndYawFromControlStick` takes 20 off the dead-zoned
   stick magnitude, so a tilt of about 30 leaves Link turning in place. That's the C, not a bug.
 - **Checks come before the next frame's input.** A step finishes inside `Playthrough::next`,
   which already returns the next task's first input. So callers check the step on the state
@@ -459,7 +459,7 @@ needs the effect system; see the known gaps).
 
 ### Known gaps
 
-- **The cutscenes** (`D_808BCE20`, `D_808BD2A0`, `D_808BD520`, `D_808BD790`) aren't played.
+- **The cutscenes** (`gDekuTreeMeetingCs`, `gDekuTreeChoiceCs`, `gDekuTreeMouthOpeningCs`, `gDekuTreeAskAgainCs`) aren't played.
   On a new save the mouth stays shut: Link's first approach sets `EVENTCHKINF_0C`, and then it
   waits for a cutscene. GAME-03 milestone 4 plays them.
 - **`Bg_Treemouth`:** no sounds, no falling bark on layer 6 (effects), no cull zone.
@@ -520,7 +520,7 @@ new save, the game's way:
 - `SaveContext`'s inventory, and a new save as `Sram_InitNewSave` makes it (no sword or
   shield);
 - `Item_Give` for what Kokiri Forest gives;
-- Player's get-item flow (`func_8002F434` / `func_8002F554`, the animation, `GetItem_Draw`,
+- Player's get-item flow (`Actor_OfferGetItem` / `Actor_OfferGetItemNearby`, the animation, `GetItem_Draw`,
   the text);
 - `En_Box`;
 - Link's equipment on his model, and the B and C items on the HUD.

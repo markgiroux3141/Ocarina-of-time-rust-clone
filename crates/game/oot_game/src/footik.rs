@@ -16,7 +16,7 @@ use glam::{Mat4, Vec3};
 
 use crate::camera::f_atan2f;
 
-/// The per-age constants of `func_8008F87C` (index 0 adult, 1 child, as `gSaveContext.linkAge`
+/// The per-age constants of `func_8008F87C` (index 0 adult, 1 child, as `gSaveContext.save.linkAge`
 /// indexes them: `LINK_AGE_ADULT` = 0).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FootIkData {

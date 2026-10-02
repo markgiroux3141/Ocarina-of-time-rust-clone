@@ -60,15 +60,15 @@ pub struct Room {
 }
 
 impl Room {
-    /// `func_80096FD4`.
+    /// `Room_Init`.
     pub const EMPTY: Room = Room { num: -1, loaded: false, behavior_type1: 0, behavior_type2: 0, lens_mode: 0, echo: 0 };
 }
 
 /// `RoomContext`: the current room, the previous one (still loaded and drawn while Player is
 /// between them), and the load in flight.
 ///
-/// Rooms are in the asset pack, so a load is instant; its timing is kept. `func_8009728C`
-/// starts one (`status` 1), and the next `func_800973FC` finishes it: the room's header runs
+/// Rooms are in the asset pack, so a load is instant; its timing is kept. `Room_RequestNewRoom`
+/// starts one (`status` 1), and the next `Room_ProcessRoomRequest` finishes it: the room's header runs
 /// (its actors are spawned in the next `Actor_UpdateAll`) and the transition actors spawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RoomContext {
@@ -76,18 +76,18 @@ pub struct RoomContext {
     pub prev: Room,
     /// 0: idle, 1: a load in flight.
     pub status: u8,
-    /// `unk_30`: which of the two room buffers the next load uses.
-    pub unk_30: u8,
+    /// `activeBufPage`: which of the two room buffers the next load uses.
+    pub active_buf_page: u8,
 }
 
 impl Default for RoomContext {
     fn default() -> RoomContext {
-        RoomContext { cur: Room::EMPTY, prev: Room::EMPTY, status: 0, unk_30: 0 }
+        RoomContext { cur: Room::EMPTY, prev: Room::EMPTY, status: 0, active_buf_page: 0 }
     }
 }
 
 impl RoomContext {
-    /// `func_8009728C`: starts loading `num` into the current slot (the old current room becomes
+    /// `Room_RequestNewRoom`: starts loading `num` into the current slot (the old current room becomes
     /// the previous one). False if a load is already in flight.
     pub fn request(&mut self, num: i8) -> bool {
         if self.status != 0 {
@@ -96,14 +96,14 @@ impl RoomContext {
         self.prev = self.cur;
         self.cur = Room { num, ..Room::EMPTY };
         self.status = 1;
-        self.unk_30 ^= 1;
+        self.active_buf_page ^= 1;
         true
     }
 
     /// `EnHoll_SwapRooms`.
     pub fn swap(&mut self) {
         std::mem::swap(&mut self.cur, &mut self.prev);
-        self.unk_30 ^= 1;
+        self.active_buf_page ^= 1;
     }
 
     /// The loaded rooms `Play_Draw` draws: the current one, then the previous one.

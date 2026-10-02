@@ -12,11 +12,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use eng_collision::collision::CollisionHeader;
-use eng_collision::dyna::{BgActorSource, DPM_PLAYER, Dyna, ScaleRotPos, srt_matrix};
+use eng_collision::dyna::{BgActorSource, DYNA_TRANSFORM_POS, Dyna, ScaleRotPos, srt_matrix};
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{cos_s, sin_s};
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_4, ACTOR_FLAG_5, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTOR_BG_YDAN_HASI, ACTORCAT_BG, ActorImpl, ActorProfile};
 use oot_game::pack::{GamePack, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -30,12 +30,12 @@ pub fn load_collision(pack: &GamePack) -> Result<Arc<CollisionHeader>> {
     Ok(Arc::new(pack.collision(&keys::collision(OBJECT, COLLISION))?))
 }
 
-/// `Bg_Ydan_Hasi_InitVars`.
+/// `Bg_Ydan_Hasi_Profile`.
 pub const PROFILE: ActorProfile = ActorProfile {
     id: ACTOR_BG_YDAN_HASI,
     name: "Bg_Ydan_Hasi",
     category: ACTORCAT_BG,
-    flags: ACTOR_FLAG_4 | ACTOR_FLAG_5,
+    flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED,
     object: OBJECT,
 };
 
@@ -51,14 +51,14 @@ pub struct BgYdanHasi {
 
 impl BgYdanHasi {
     /// `BgYdanHasi_Init`: `ICHAIN_VEC3F_DIV1000(scale, 100)`, then x/z scale 0.15, the
-    /// position 20 above the water, `DynaPolyActor_Init(DPM_PLAYER)`, `DynaPoly_SetBgActor`.
+    /// position 20 above the water, `DynaPolyActor_Init(DYNA_TRANSFORM_POS)`, `DynaPoly_SetBgActor`.
     pub fn new(dyna: &mut Dyna, header: Arc<CollisionHeader>, home: Vec3, yaw: i16, water_surface: f32) -> BgYdanHasi {
         let mut actor = Actor::new(home, yaw);
         PROFILE.apply(&mut actor);
         actor.world_pos = Vec3::new(home.x, water_surface + 20.0, home.z);
         actor.scale = Vec3::new(0.15, 0.1, 0.15);
         let mut p = BgYdanHasi { actor, timer: 0, water_surface, bg: 0 };
-        p.bg = dyna.set_bg_actor(header, p.source(), DPM_PLAYER);
+        p.bg = dyna.set_bg_actor(header, p.source(), DYNA_TRANSFORM_POS);
         p
     }
 

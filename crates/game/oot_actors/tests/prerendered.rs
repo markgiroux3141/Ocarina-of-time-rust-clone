@@ -57,7 +57,7 @@ fn press(w: &mut PlayState, prev: &mut PadState, button: u16) {
     frames(w, prev, PadState::default(), 1);
 }
 
-/// `Camera_Vec3fVecSphGeoAdd(dst, eye, {r, yaw, pitch})` in plain trigonometry: pitch up from the
+/// `Camera_AddVecGeoToVec3f(dst, eye, {r, yaw, pitch})` in plain trigonometry: pitch up from the
 /// horizon, yaw 0 along +z.
 fn geo_add(eye: Vec3, r: f32, yaw: i16, pitch: i16) -> Vec3 {
     let (y, p) = (yaw as f32 * std::f32::consts::PI / 32768.0, pitch as f32 * std::f32::consts::PI / 32768.0);
@@ -66,7 +66,7 @@ fn geo_add(eye: Vec3, r: f32, yaw: i16, pitch: i16) -> Vec3 {
 
 #[test]
 fn link_home_has_its_bg_cameras_background_and_skybox() {
-    let Some(w) = enter("ENTR_LINK_HOME_1") else { return };
+    let Some(w) = enter("ENTR_LINKS_HOUSE_1") else { return };
     let cams = &w.col.header.bg_cams;
     assert_eq!(cams.iter().map(|c| c.setting as i16).collect::<Vec<_>>(), [CAM_SET_PREREND_FIXED, CAM_SET_PREREND_PIVOT, CAM_SET_NONE]);
     let fixed = bg_cam_func_data(&w.col, 0).unwrap();
@@ -92,13 +92,13 @@ fn link_home_has_its_bg_cameras_background_and_skybox() {
         assert!(levels.len() <= 32, "channel {ch}: {} levels", levels.len());
     }
     assert!(img.rgba.chunks_exact(4).any(|p| p[..3] != img.rgba[..3]), "an image, not a fill");
-    // SCENE_CMD_MISC_SETTINGS and the skybox (Skybox_Setup: SKYBOX_HOUSE_LINK sets unk_140 1,
+    // SCENE_CMD_MISC_SETTINGS and the skybox (Skybox_Setup: SKYBOX_HOUSE_LINK sets drawType 1,
     // from vr_LHVR_static and vr_LHVR_pal_static).
     assert_eq!(w.scene_cam_type, SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT);
     let a = w.assets.as_ref().unwrap();
     let sky = a.scenes.room_skybox(s.layer_data().skybox.skybox_id).expect("a room skybox");
-    assert_eq!((sky.name.as_str(), sky.unk_140, sky.static_file.as_str(), sky.pal_file.as_str()), ("SKYBOX_HOUSE_LINK", 1, "vr_LHVR_static", "vr_LHVR_pal_static"));
-    // func_800AEFC8: four faces, each two halves of 4x4 quads (gSP1Quadrangle: 2 triangles).
+    assert_eq!((sky.name.as_str(), sky.draw_type, sky.static_file.as_str(), sky.pal_file.as_str()), ("SKYBOX_HOUSE_LINK", 1, "vr_LHVR_static", "vr_LHVR_pal_static"));
+    // Skybox_Calculate256: four faces, each two halves of 4x4 quads (gSP1Quadrangle: 2 triangles).
     let mesh: eng_gfx::DrawList = a.pack.assets.get(&oot_game::pack::keys::bake(&oot_game::skybox::bake_name(&sky.name))).unwrap();
     assert_eq!(mesh.triangle_count(), 4 * 2 * 16 * 2);
     // SETUPDL_40: G_RM_OPA_SURF without G_ZBUFFER: no depth test or write.
@@ -107,7 +107,7 @@ fn link_home_has_its_bg_cameras_background_and_skybox() {
 
 #[test]
 fn house_pivot_camera_and_the_c_up_toggle() {
-    let Some(mut w) = enter("ENTR_LINK_HOME_1") else { return };
+    let Some(mut w) = enter("ENTR_LINKS_HOUSE_1") else { return };
     // Play_Init: func_80057FC4 gives a prerendered room CAM_SET_FREE0; spawn 1's params
     // 0x0EFF name no start camera; SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT starts at
     // VIEWPOINT_PIVOT.
@@ -115,7 +115,7 @@ fn house_pivot_camera_and_the_c_up_toggle() {
     assert_eq!(w.viewpoint, VIEWPOINT_PIVOT);
     let mut prev = PadState::default();
     frames(&mut w, &mut prev, PadState::default(), 1);
-    // Play_ChangeViewpointBgCamIndex every frame: bg camera viewpoint - 1 = 1, PREREND_PIVOT;
+    // Play_RequestViewpointBgCam every frame: bg camera viewpoint - 1 = 1, PREREND_PIVOT;
     // Camera_Unique7: the eye at its position, the fov 60 whatever the data says.
     let c = &w.game_camera;
     assert_eq!((c.setting, c.bg_cam_index), (CAM_SET_PREREND_PIVOT, 1));
@@ -179,9 +179,9 @@ fn shop_starts_on_its_fixed_camera_and_refuses_c_up() {
 
 #[test]
 fn porch_floor_gives_the_pivot_in_front_camera() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
-    // Play_Init's func_8005AC48(0xFF) enables the floor's bg cameras (unk_14C bit 1).
-    assert_eq!(w.game_camera.unk_14c & 0xFF, 0xFF);
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
+    // Play_Init's Camera_OverwriteStateFlags(0xFF) enables the floor's bg cameras (stateFlags bit 1).
+    assert_eq!(w.game_camera.state_flags & 0xFF, 0xFF);
     let mut prev = PadState::default();
     frames(&mut w, &mut prev, PadState::default(), 1);
     // Standing on the porch (within 2 of the floor): its bg camera 4, PIVOT_IN_FRONT, whose
@@ -196,10 +196,10 @@ fn porch_floor_gives_the_pivot_in_front_camera() {
 
 #[test]
 fn start1_camera_until_link_moves() {
-    // ENTR_SPOT04_1 is the Deku Tree's meadow: with EVENTCHKINF_0C unset, his first talk
-    // (Bg_Treemouth's D_808BCE20) would start at once and hold Link. Met already.
-    let Some(mut w) = enter_with("ENTR_SPOT04_1", |s| s.set_event_chk_inf(oot_game::save::EVENTCHKINF_0C)) else { return };
-    // Spawn 1's params 0x0F05: Camera_ChangeBgCamIndex(5) in Play_Init, CAM_SET_START1.
+    // ENTR_KOKIRI_FOREST_1 is the Deku Tree's meadow: with EVENTCHKINF_0C unset, his first talk
+    // (Bg_Treemouth's gDekuTreeMeetingCs) would start at once and hold Link. Met already.
+    let Some(mut w) = enter_with("ENTR_KOKIRI_FOREST_1", |s| s.set_event_chk_inf(oot_game::save::EVENTCHKINF_0C)) else { return };
+    // Spawn 1's params 0x0F05: Camera_RequestBgCam(5) in Play_Init, CAM_SET_START1.
     assert_eq!((w.game_camera.setting, w.game_camera.bg_cam_index), (0x20, 5));
     let mut prev = PadState::default();
     frames(&mut w, &mut prev, PadState::default(), 1);
@@ -224,12 +224,12 @@ fn start1_camera_until_link_moves() {
 
 #[test]
 fn exits_use_the_scene_transition_camera_outside_only() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     let mut prev = PadState::default();
     frames(&mut w, &mut prev, PadState::default(), 30);
-    // Into the house: func_80839034 → func_80835E44(play, CAM_SET_SCENE_TRANSITION), which
+    // Into the house: Player_HandleExitsAndVoids → Player_RequestCameraSetting(play, CAM_SET_SCENE_TRANSITION), which
     // Play_CamIsNotFixed lets through in Kokiri Forest.
-    let (_, door) = oot_actors::script::exit_to(&w, "ENTR_LINK_HOME_1").unwrap();
+    let (_, door) = oot_actors::script::exit_to(&w, "ENTR_LINKS_HOUSE_1").unwrap();
     let mut setting = None;
     for _ in 0..60 {
         let pad = oot_actors::script::stick_towards(&w, door, 60.0);
@@ -240,15 +240,15 @@ fn exits_use_the_scene_transition_camera_outside_only() {
         }
     }
     assert_eq!(setting, Some(CAM_SET_SCENE_TRANSITION));
-    // Camera_Unique2 (CAM_FUNCDATA_UNIQ2(-20, 150, 60, 0x0210)): flags 0x10 clear unk_14C bit 4
+    // Camera_Unique2 (CAM_FUNCDATA_UNIQ2(-20, 150, 60, 0x0210)): flags 0x10 clear stateFlags bit 4
     // (no floor cameras while it runs).
     frames(&mut w, &mut prev, PadState::default(), 1);
-    assert_eq!(w.game_camera.unk_14c & 4, 0);
-    // Out of the house: the room is prerendered, so the setting stays (Interface_ChangeAlpha
+    assert_eq!(w.game_camera.state_flags & 4, 0);
+    // Out of the house: the room is prerendered, so the setting stays (Interface_ChangeHudVisibilityMode
     // only).
-    let mut w = enter("ENTR_LINK_HOME_1").unwrap();
+    let mut w = enter("ENTR_LINKS_HOUSE_1").unwrap();
     frames(&mut w, &mut prev, PadState::default(), 40);
-    let (_, out) = oot_actors::script::exit_to(&w, "ENTR_SPOT04_3").unwrap();
+    let (_, out) = oot_actors::script::exit_to(&w, "ENTR_KOKIRI_FOREST_3").unwrap();
     for _ in 0..80 {
         let pad = oot_actors::script::stick_towards(&w, out, 60.0);
         frames(&mut w, &mut prev, pad, 1);

@@ -64,18 +64,18 @@ CASES = [
     # playthrough from Link's bed into the Deku Tree (entered by Play_Init: the HUD, the texts).
     ("spot04_treemouth_open", S, ["--scene", "spot04", "--spawn", "1", "--entrance", "--child", "--preset", "deku-tree-open",
                                   "--script", "idle", "--frames", "40", "--width", "640", "--height", "360", "--screenshot", "{shot}"]),
-    ("playthrough", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--preset", "deku-tree-open", "--script", "playthrough",
+    ("playthrough", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--preset", "deku-tree-open", "--script", "playthrough",
                         "--trace", "{trace}"]),
     # GAME-03 milestone 2: a new save from Link's bed through the crawlspace, past the boulder,
     # to the Kokiri Sword's chest, opened.
-    ("sword_chest", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "sword-chest", "--trace", "{trace}"]),
+    ("sword_chest", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--script", "sword-chest", "--trace", "{trace}"]),
     # GAME-03 milestone 3: a new save from Link's bed to the sword, 42 rupees, the Deku Shield
     # bought in the Kokiri shop, both worn, Mido's talk, and past him.
-    ("mido_shop", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "mido-shop", "--trace", "{trace}"]),
+    ("mido_shop", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--script", "mido-shop", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
-    # (cutscenes D_808BCE20, D_808BD520) answered yes, and into his mouth and the Deku Tree's
+    # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.
-    ("new_save_deku_tree", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "new-save-deku-tree", "--trace", "{trace}"]),
+    ("new_save_deku_tree", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--script", "new-save-deku-tree", "--trace", "{trace}"]),
     # GAME-03 milestone 5, Phase 4's exit: the file select's new file from its first frame, the
     # opening's four scripts (Link's house's layer 5, the nightmare, Navi sent, the wake-up),
     # then the new save's run with C-Up to Navi, into the Deku Tree.
@@ -83,11 +83,11 @@ CASES = [
     # GAME-04 milestone 3, Phase 5's exit: the Mido and shop run's audio log (the game's sound
     # effect requests with where they are, its sequence commands and the library commands),
     # the audio offline beside it.
-    ("mido_shop_audio", S, ["--entrance", "ENTR_LINK_HOME_0", "--child", "--script", "mido-shop", "--audio-log", "{trace}"]),
+    ("mido_shop_audio", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--script", "mido-shop", "--audio-log", "{trace}"]),
     # Spike 02 viewer.
     ("viewer_link_sheet", V, ["--sheet", "{shot}"]),
     ("viewer_link_sheet_child", V, ["--age", "child", "--sheet", "{shot}"]),
-    ("viewer_link_sword", V, ["--sheet", "{shot}", "--group", "SWORD", "--shield", "HYLIAN",
+    ("viewer_link_sword", V, ["--sheet", "{shot}", "--group", "SWORD_AND_SHIELD", "--shield", "HYLIAN",
                               "--anims", "link_fighter_normal_kiru,link_fighter_defense_wait"]),
     ("viewer_link_walk6", V, ["--screenshot", "{shot}", "--anim", "link_normal_walk", "--frame", "6"]),
     ("viewer_tock_sheet", V, ["--subject", "tock", "--sheet", "{shot}"]),

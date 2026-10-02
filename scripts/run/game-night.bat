@@ -5,5 +5,5 @@ rem (Environment_PlaySceneSequence). Time doesn't pass yet, so it stays night.
 setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot || exit /b 1
-"%BIN%\oot.exe" --entrance ENTR_SPOT04_0 --time 20:00 %*
+"%BIN%\oot.exe" --entrance ENTR_KOKIRI_FOREST_0 --time 20:00 %*
 exit /b %errorlevel%

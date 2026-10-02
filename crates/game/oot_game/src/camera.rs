@@ -1,6 +1,6 @@
-//! The game camera from `z_camera.c`: `Camera_Init`, `Camera_InitPlayerSettings`, the
+//! The game camera from `z_camera.c`: `Camera_Init`, `Camera_InitDataUsingPlayer`, the
 //! player-following part of `Camera_Update` (with the floor's bg camera), the mode and setting
-//! changes (`Camera_ChangeModeFlags`, `Camera_ChangeSettingFlags`, `Camera_ChangeBgCamIndex`,
+//! changes (`Camera_RequestModeImpl`, `Camera_RequestSettingImpl`, `Camera_RequestBgCam`,
 //! `Camera_ChangeDoorCam`, `func_80057FC4`) and these mode functions
 //! (docs/adr/0013-camera-modes-and-screen.md, docs/adr/0015-camera-settings-and-bg-cameras.md):
 //!
@@ -20,8 +20,8 @@
 //! - `Camera_UpdateInterface`, driving `crate::letterbox` and the interface's alpha type.
 //!
 //! Vector-sphere maths is `z_olib.c`; `Math_FAtan2F` is the Taylor-series version from
-//! `code_800FCE80.c`. `OREG` values (`sOREGInit`) and every setting's modes, functions and
-//! data (`sCameraSettings`) come from `z_camera_data.c`, through the asset pack
+//! `math64.c`. `OREG` values (`sOREGInit`) and every setting's modes, functions and
+//! data (`sCameraSettings`) come from `z_camera_data.inc.c`, through the asset pack
 //! (`CameraData`); the scene's bg cameras from its collision header (`BgCamInfo`).
 //! `PREG(75)` and `PREG(76)` are 0 (only the debug register editor sets them), so the
 //! at-calculations skip their slope adjustment and take the fov-based off-ground branch.
@@ -45,28 +45,28 @@ use crate::surface::SurfaceType;
 /// `BGCHECK_SCENE`: the bgId of static collision.
 const BGCHECK_SCENE: i32 = 50;
 
-/// Values from `z_camera_data.c` (read by `oot_import::tables`).
+/// Values from `z_camera_data.inc.c` (read by `oot_import::tables`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CameraData {
     /// `sOREGInit`: `OREG(0)`..
     pub oreg: Vec<i16>,
     /// `sCameraSettings`, indexed by `CAM_SET_*` (entry 0, `CAM_SET_NONE`, has no modes).
     pub settings: Vec<CamSettingData>,
-    /// The one-point cutscenes' tables (`z_onepointdemo_data.c`, and `Camera_Demo5`'s in
-    /// `z_camera_data.c`), as the ROM starts them: the game writes into them as it runs, so
+    /// The one-point cutscenes' tables (`z_onepointdemo.c`, and `Camera_Demo5`'s in
+    /// `z_camera_data.inc.c`), as the ROM starts them: the game writes into them as it runs, so
     /// the play state keeps a copy (`crate::onepoint::OnePointStatics`).
     pub onepoint: OnePointData,
 }
 
-/// `OnePointCsFull` (`z64camera.h`): one keyframe of a `Camera_Unique9` cutscene.
+/// `OnePointCsFull` (`camera.h`): one keyframe of a `Camera_Unique9` cutscene.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct OnePointCsFull {
     /// `actionFlags`: the action in bits 0..4, 0x40 to hold Player where he was, 0x80 to
     /// bgcheck the eye.
     pub action_flags: u8,
-    /// `unk_01`: 0xFF none, `0x8X` sets `D_8011D3AC`, `0xCX` the interface, else Player's
+    /// `initField`: 0xFF none, `0x8X` sets `D_8011D3AC`, `0xCX` the interface, else Player's
     /// cutscene mode.
-    pub unk_01: u8,
+    pub init_field: u8,
     /// `initFlags`: the at's (bits 0..7) and the eye's (8..15) target kinds.
     pub init_flags: i16,
     pub timer_init: i16,
@@ -85,7 +85,7 @@ pub struct OnePointData {
     pub keyframes: Vec<(String, Vec<OnePointCsFull>)>,
     /// Every `CutsceneCameraPoint` array (`Camera_Demo9`'s splines).
     pub points: Vec<(String, Vec<crate::cutscene::CutsceneCameraPoint>)>,
-    /// The `s16`s beside them (`D_8012042C`: a spline's timer...).
+    /// The `s16`s beside them (`sCrawlspaceTimer`: a spline's timer...).
     pub shorts: Vec<(String, i16)>,
 }
 
@@ -108,8 +108,8 @@ pub struct CamSettingData {
     /// `CAM_SET_NORMAL0`.
     pub name: String,
     /// `unk_00`: the valid modes in bits 0..29 (`validModes`), the priority in bits 24..27
-    /// (`Camera_ChangeSettingFlags`), 0x40000000 (don't become `prevSetting`) and 0x80000000
-    /// (`Camera_ChangeBgCamIndex` keeps the index even when the setting change is refused).
+    /// (`Camera_RequestSettingImpl`), 0x40000000 (don't become `prevSetting`) and 0x80000000
+    /// (`Camera_RequestBgCam` keeps the index even when the setting change is refused).
     pub flags: u32,
     /// The `sCamSet*Modes` array, indexed by `CAM_MODE_*`; `{ CAM_FUNC_NONE, 0, NULL }`
     /// entries are `None`, and the array can be shorter than `CAM_MODE_MAX`.
@@ -121,7 +121,7 @@ pub struct CamSettingData {
 pub struct CamModeData {
     /// `CAM_FUNC_*`, e.g. `CAM_FUNC_PARA1`.
     pub func: String,
-    /// The data's symbol, e.g. `sSetNormal0ModeTargetData`.
+    /// The data's symbol, e.g. `sSetNormal0ModeZParallelData`.
     pub data: String,
     /// The `CAM_FUNCDATA_*` arguments in order (`values[i].val`).
     pub values: Vec<i16>,
@@ -157,7 +157,7 @@ impl CameraData {
     }
 }
 
-// CAM_SET_* (z64camera.h) the camera and the ported actors name.
+// CAM_SET_* (camera.h) the camera and the ported actors name.
 pub const CAM_SET_NONE: i16 = 0x00;
 pub const CAM_SET_NORMAL0: i16 = 0x01;
 pub const CAM_SET_DUNGEON0: i16 = 0x03;
@@ -213,25 +213,25 @@ const PORTED: &[&str] = &[
 /// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CamSfx {
-    /// `Camera_ChangeModeFlags`' `modeChangeFlags` (1, 2, 4 or 8): `func_80078884(0)`,
+    /// `Camera_RequestModeImpl`' `sModeRequestFlags` (1, 2, 4 or 8): `Sfx_PlaySfxCentered(0)`,
     /// `NA_SE_SY_ATTENTION_ON` (`_URGENCY` in a dungeon room), `_URGENCY`, `_ON`.
     ModeChange(u8),
     /// First person refused: `NA_SE_SY_ERROR`.
     Error,
-    /// `Camera_Subj4`'s `func_800F4010(&player->actor.projectedPos, player->unk_89E + 0x8B0, 4.0f)`.
+    /// `Camera_Subj4`'s `func_800F4010(&player->actor.projectedPos, player->floorSfxOffset + 0x8B0, 4.0f)`.
     Crawl,
-    /// `Camera_Demo5`'s `func_80078884(camera->data1)`.
+    /// `Camera_Demo5`'s `Sfx_PlaySfxCentered(camera->data1)`.
     Sfx(u16),
 }
 
-// CAM_STAT_* (z64camera.h).
+// CAM_STAT_* (camera.h).
 pub const CAM_STAT_CUT: i16 = 0;
 pub const CAM_STAT_WAIT: i16 = 1;
 pub const CAM_STAT_UNK3: i16 = 3;
 pub const CAM_STAT_ACTIVE: i16 = 7;
 pub const CAM_STAT_UNK100: i16 = 0x100;
 
-// Camera ids (z64camera.h).
+// Camera ids (camera.h).
 pub const NUM_CAMS: usize = 4;
 pub const CAM_ID_MAIN: i16 = 0;
 pub const CAM_ID_SUB_FIRST: i16 = 1;
@@ -240,14 +240,14 @@ pub const CAM_ID_NONE: i16 = -1;
 /// `z_camera.c`'s file-scope state that every camera shares: what `Camera_Init` resets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CameraGlobals {
-    /// `sCameraInterfaceFlags`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits the
+    /// `sCameraInterfaceField`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits the
     /// last mode function asked for.
     pub interface_flags: i16,
-    /// `sCameraInterfaceAlpha`: the alpha type last asked for.
+    /// `sCameraHudVisibilityMode`: the alpha type last asked for.
     pub interface_alpha: u16,
-    /// `D_8011D3F0`: after a `Camera_Init`, the main camera's first three active updates hold the
+    /// `sSceneInitLetterboxTimer`: after a `Camera_Init`, the main camera's first three active updates hold the
     /// interface at 0x3200 (the letterbox's target 32, alpha type 2).
-    pub d_8011d3f0: i16,
+    pub scene_init_letterbox_timer: i16,
     /// `Camera_Update`'s `sOOBTimer`: frames the camera's player has been over no floor.
     pub oob_timer: u32,
     /// `sNextUID`.
@@ -255,11 +255,11 @@ pub struct CameraGlobals {
 }
 
 impl CameraGlobals {
-    /// As `Camera_Init` then `Camera_InitPlayerSettings` leave them for the main camera.
+    /// As `Camera_Init` then `Camera_InitDataUsingPlayer` leave them for the main camera.
     pub fn main_init() -> CameraGlobals {
-        let mut g = CameraGlobals { interface_flags: 0, interface_alpha: 0, d_8011d3f0: 0, oob_timer: 0, next_uid: 0 };
+        let mut g = CameraGlobals { interface_flags: 0, interface_alpha: 0, scene_init_letterbox_timer: 0, oob_timer: 0, next_uid: 0 };
         g.camera_init();
-        // Camera_InitPlayerSettings, for the main camera.
+        // Camera_InitDataUsingPlayer, for the main camera.
         g.interface_flags = 0xB200u16 as i16;
         g
     }
@@ -276,12 +276,12 @@ impl CameraGlobals {
         }
         self.interface_alpha = 0;
         self.interface_flags = 0xFF00u16 as i16;
-        self.d_8011d3f0 = 3;
+        self.scene_init_letterbox_timer = 3;
         uid
     }
 }
 
-/// `func_800BB0A0` (`code_800BB0A0.c`): the cubic B-spline through four points at `u`: position,
+/// `func_800BB0A0` (`z_cutscene_spline.c`): the cubic B-spline through four points at `u`: position,
 /// roll and view angle.
 fn func_800bb0a0(u: f32, p: [[f32; 5]; 4]) -> (Vec3, f32, f32) {
     let u = u.min(1.0);
@@ -290,22 +290,22 @@ fn func_800bb0a0(u: f32, p: [[f32; 5]; 4]) -> (Vec3, f32, f32) {
     (Vec3::new(c(0), c(1), c(2)), c(3), c(4))
 }
 
-/// `func_800BB2B4` (`code_800BB0A0.c`): the point on the spline of `points` at `keyframe` +
+/// `func_800BB2B4` (`z_cutscene_spline.c`): the point on the spline of `points` at `keyframe` +
 /// `cur_frame`, then the step to the next frame, by the next two points' `nextPointFrame`s.
 /// Returns the position, roll and fov (`None` for each left as it was, when the spline is over
 /// before it starts), and true when the spline is over.
 ///
-/// The fov isn't written when the spline returns early (a point `CS_CMD_STOP` within the next
+/// The fov isn't written when the spline returns early (a point `CS_CAM_STOP` within the next
 /// three), as in the C.
 pub fn func_800bb2b4(points: &[crate::cutscene::CutsceneCameraPoint], keyframe: &mut i16, cur_frame: &mut f32, fov: &mut f32) -> (bool, Option<(Vec3, f32)>) {
-    use crate::cutscene::CS_CMD_STOP;
+    use crate::cutscene::CS_CAM_STOP;
     let mut progress = *cur_frame;
     let key = *keyframe as i32;
     if key < 0 {
         progress = 0.0;
     }
     let pt = |i: i32| points.get(usize::try_from(i).unwrap_or(usize::MAX)).copied().unwrap_or_default();
-    if pt(key).continue_flag == CS_CMD_STOP || pt(key + 1).continue_flag == CS_CMD_STOP || pt(key + 2).continue_flag == CS_CMD_STOP {
+    if pt(key).continue_flag == CS_CAM_STOP || pt(key + 1).continue_flag == CS_CAM_STOP || pt(key + 2).continue_flag == CS_CAM_STOP {
         return (true, None);
     }
     let mut data = [[0.0f32; 5]; 4];
@@ -331,7 +331,7 @@ pub fn func_800bb2b4(points: &[crate::cutscene::CutsceneCameraPoint], keyframe: 
     let mut ret = false;
     if *cur_frame >= 1.0 {
         *keyframe += 1;
-        if pt(*keyframe as i32 + 3).continue_flag == CS_CMD_STOP {
+        if pt(*keyframe as i32 + 3).continue_flag == CS_CAM_STOP {
             *keyframe = 0;
             ret = true;
         }
@@ -352,35 +352,35 @@ struct Demo1 {
     roll: f32,
 }
 
-// CAM_MODE_* (z64camera.h).
+// CAM_MODE_* (camera.h).
 pub const CAM_MODE_NORMAL: i16 = 0;
-pub const CAM_MODE_TARGET: i16 = 1;
-pub const CAM_MODE_FOLLOWTARGET: i16 = 2;
+pub const CAM_MODE_Z_PARALLEL: i16 = 1;
+pub const CAM_MODE_Z_TARGET_FRIENDLY: i16 = 2;
 pub const CAM_MODE_TALK: i16 = 3;
-pub const CAM_MODE_BATTLE: i16 = 4;
-pub const CAM_MODE_CLIMB: i16 = 5;
-pub const CAM_MODE_FIRSTPERSON: i16 = 6;
-pub const CAM_MODE_BOWARROW: i16 = 7;
-pub const CAM_MODE_BOWARROWZ: i16 = 8;
-pub const CAM_MODE_HOOKSHOT: i16 = 9;
-pub const CAM_MODE_BOOMERANG: i16 = 10;
-pub const CAM_MODE_SLINGSHOT: i16 = 11;
-pub const CAM_MODE_CLIMBZ: i16 = 12;
+pub const CAM_MODE_Z_TARGET_UNFRIENDLY: i16 = 4;
+pub const CAM_MODE_WALL_CLIMB: i16 = 5;
+pub const CAM_MODE_FIRST_PERSON: i16 = 6;
+pub const CAM_MODE_AIM_ADULT: i16 = 7;
+pub const CAM_MODE_Z_AIM: i16 = 8;
+pub const CAM_MODE_HOOKSHOT_FLY: i16 = 9;
+pub const CAM_MODE_AIM_BOOMERANG: i16 = 10;
+pub const CAM_MODE_AIM_CHILD: i16 = 11;
+pub const CAM_MODE_Z_WALL_CLIMB: i16 = 12;
 pub const CAM_MODE_JUMP: i16 = 13;
-pub const CAM_MODE_HANG: i16 = 14;
-pub const CAM_MODE_HANGZ: i16 = 15;
-pub const CAM_MODE_FREEFALL: i16 = 16;
+pub const CAM_MODE_LEDGE_HANG: i16 = 14;
+pub const CAM_MODE_Z_LEDGE_HANG: i16 = 15;
+pub const CAM_MODE_FREE_FALL: i16 = 16;
 pub const CAM_MODE_CHARGE: i16 = 17;
 pub const CAM_MODE_STILL: i16 = 18;
-pub const CAM_MODE_PUSHPULL: i16 = 19;
-pub const CAM_MODE_FOLLOWBOOMERANG: i16 = 20;
+pub const CAM_MODE_PUSH_PULL: i16 = 19;
+pub const CAM_MODE_FOLLOW_BOOMERANG: i16 = 20;
 
 // Named OREGs (regs.h).
 const R_CAM_MAX_PITCH: usize = 5;
 const R_CAM_DEFAULT_ANIM_TIME: usize = 23;
 const R_CAM_MIN_PITCH_1: usize = 34;
 const R_CAM_MIN_PITCH_2: usize = 35;
-const R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV: usize = 7;
+const R_CAM_PITCH_UPDATE_RATE_INV: usize = 7;
 const R_CAM_PITCH_FLOOR_CHECK_NEAR_DIST_FAC: usize = 17;
 const R_CAM_PITCH_FLOOR_CHECK_FAR_DIST_FAC: usize = 18;
 const R_CAM_PITCH_FLOOR_CHECK_OFFSET_Y_FAC: usize = 19;
@@ -390,12 +390,12 @@ const R_CAM_AT_LERP_STEP_SCALE_FAC: usize = 42;
 const R_CAM_YOFFSET_NORM: usize = 46;
 
 // ---------------------------------------------------------------------------------------------
-// Maths (z_olib.c, code_800FCE80.c, z_camera.c helpers)
+// Maths (z_olib.c, math64.c, z_camera.c helpers)
 // ---------------------------------------------------------------------------------------------
 
-/// `VecSph`: radius, pitch, yaw. "Geo" variants measure pitch from the horizon.
+/// `VecSphGeo`: radius, pitch, yaw. "Geo" variants measure pitch from the horizon.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct VecSph {
+pub struct VecSphGeo {
     pub r: f32,
     pub pitch: i16,
     pub yaw: i16,
@@ -480,40 +480,40 @@ fn deg_to_rad(d: f32) -> f32 {
 }
 
 /// `OLib_Vec3fToVecSph`.
-pub fn vec3_to_sph(v: Vec3) -> VecSph {
+pub fn vec3_to_sph(v: Vec3) -> VecSphGeo {
     let dist_sq = v.x * v.x + v.z * v.z;
     let dist = dist_sq.sqrt();
     let pitch = if dist == 0.0 && v.y == 0.0 { 0 } else { cam_deg_to_binang(rad_to_deg(f_atan2f(dist, v.y))) };
     let r = (v.y * v.y + dist_sq).sqrt();
     let yaw = if v.x == 0.0 && v.z == 0.0 { 0 } else { cam_deg_to_binang(rad_to_deg(f_atan2f(v.x, v.z))) };
-    VecSph { r, pitch, yaw }
+    VecSphGeo { r, pitch, yaw }
 }
 
-/// `OLib_Vec3fToVecSphGeo`.
-pub fn vec3_to_sph_geo(v: Vec3) -> VecSph {
+/// `OLib_Vec3fToVecGeo`.
+pub fn vec3_to_sph_geo(v: Vec3) -> VecSphGeo {
     let mut s = vec3_to_sph(v);
     s.pitch = 0x3FFFi16.wrapping_sub(s.pitch);
     s
 }
 
-/// `OLib_Vec3fDiffToVecSphGeo(a, b)`: geographic coordinates of `b - a`.
-pub fn diff_to_sph_geo(a: Vec3, b: Vec3) -> VecSph {
+/// `OLib_Vec3fDiffToVecGeo(a, b)`: geographic coordinates of `b - a`.
+pub fn diff_to_sph_geo(a: Vec3, b: Vec3) -> VecSphGeo {
     vec3_to_sph_geo(b - a)
 }
 
 /// `OLib_VecSphToVec3f`.
-pub fn sph_to_vec3(s: VecSph) -> Vec3 {
+pub fn sph_to_vec3(s: VecSphGeo) -> Vec3 {
     let (sp, cp, sy, cy) = (sin_s(s.pitch), cos_s(s.pitch), sin_s(s.yaw), cos_s(s.yaw));
     Vec3::new(s.r * sp * sy, s.r * cp, s.r * sp * cy)
 }
 
-/// `OLib_VecSphGeoToVec3f`.
-pub fn sph_geo_to_vec3(s: VecSph) -> Vec3 {
-    sph_to_vec3(VecSph { r: s.r, pitch: 0x3FFFi16.wrapping_sub(s.pitch), yaw: s.yaw })
+/// `OLib_VecGeoToVec3f`.
+pub fn sph_geo_to_vec3(s: VecSphGeo) -> Vec3 {
+    sph_to_vec3(VecSphGeo { r: s.r, pitch: 0x3FFFi16.wrapping_sub(s.pitch), yaw: s.yaw })
 }
 
-/// `Camera_Vec3fVecSphGeoAdd`.
-pub fn sph_geo_add(a: Vec3, s: VecSph) -> Vec3 {
+/// `Camera_AddVecGeoToVec3f`.
+pub fn sph_geo_add(a: Vec3, s: VecSphGeo) -> Vec3 {
     a + sph_geo_to_vec3(s)
 }
 
@@ -653,7 +653,7 @@ struct ColChk {
     pos: Vec3,
     norm: Vec3,
     poly: Option<PolyId>,
-    sph_norm: VecSph,
+    sph_norm: VecSphGeo,
 }
 
 /// `SwingAnimation`.
@@ -703,7 +703,7 @@ struct Jump1Ro {
     dist_max: f32,
     yaw_update_rate_target: f32,
     max_yaw_update: f32,
-    // (unk_14, value 5, is never used.)
+    // (itemType, value 5, is never used.)
     at_lerp_scale_max: f32,
     interface_flags: i16,
 }
@@ -711,7 +711,7 @@ struct Jump1Ro {
 struct Jump1Rw {
     swing: Swing,
     unk_1c: f32,
-    unk_20: VecSph,
+    unk_20: VecSphGeo,
 }
 
 /// `Jump2ReadOnlyData`, `Jump2ReadWriteData`.
@@ -841,36 +841,36 @@ struct Keep0 {
     anim_timer: i16,
 }
 
-/// `D_8011D3B0`, `D_8011D3CC` (`z_camera_data.c`): the yaw and pitch offsets `Camera_KeepOn3`
+/// `sCamCheckAroundOffsetsYaw`, `sCamCheckAroundOffsetsPitch` (`z_camera_data.inc.c`): the yaw and pitch offsets `Camera_KeepOn3`
 /// tries in turn when the line to its eye is blocked.
-const D_8011D3B0: [u16; 14] = [0x0AAA, 0xF556, 0x1555, 0xEAAB, 0x2AAA, 0xD556, 0x3FFF, 0xC001, 0x5555, 0xAAAB, 0x6AAA, 0x9556, 0x7FFF, 0x0000];
-const D_8011D3CC: [u16; 14] = [0x0000, 0x02C6, 0x058C, 0x0000, 0x0000, 0xFD3A, 0x0000, 0x0852, 0x0000, 0x0000, 0x0B18, 0x02C6, 0xFA74, 0x0000];
+const S_CAM_CHECK_AROUND_OFFSETS_YAW: [u16; 14] = [0x0AAA, 0xF556, 0x1555, 0xEAAB, 0x2AAA, 0xD556, 0x3FFF, 0xC001, 0x5555, 0xAAAB, 0x6AAA, 0x9556, 0x7FFF, 0x0000];
+const S_CAM_CHECK_AROUND_OFFSETS_PITCH: [u16; 14] = [0x0000, 0x02C6, 0x058C, 0x0000, 0x0000, 0xFD3A, 0x0000, 0x0852, 0x0000, 0x0000, 0x0B18, 0x02C6, 0xFA74, 0x0000];
 
-/// `KeepOn4ReadOnlyData` (`unk_00` .. `unk_1E`).
+/// `KeepOn4ReadOnlyData` (`yOffset` .. `initTimer`).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct Keep4Ro {
-    unk_00: f32,
-    unk_04: f32,
-    unk_08: f32,
-    unk_0c: f32,
-    unk_10: f32,
+    y_offset: f32,
+    eye_dist: f32,
+    pitch_target: f32,
+    yaw_target: f32,
+    at_offset_player_forwards: f32,
     unk_14: f32,
-    unk_18: f32,
-    unk_1c: i16,
-    unk_1e: i16,
+    fov_target: f32,
+    interface_field: i16,
+    init_timer: i16,
 }
 
 /// `KeepOn4ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct Keep4Rw {
-    unk_00: f32,
-    unk_04: f32,
+    at_to_eye_target_step_yaw: f32,
+    at_to_eye_target_step_pitch: f32,
     unk_08: f32,
-    unk_0c: i16,
-    unk_0e: i16,
-    unk_10: i16,
+    at_to_eye_target_yaw: i16,
+    at_to_eye_target_pitch: i16,
+    anim_timer: i16,
     unk_12: i16,
-    unk_14: i16,
+    item_type: i16,
 }
 
 /// `Demo3ReadOnlyData`, `Demo3ReadWriteData`.
@@ -884,31 +884,31 @@ struct Demo3 {
     yaw_dir: i16,
 }
 
-/// `D_8011D658` (`z_camera_data.c`): `Camera_Demo3`'s eye offsets (r, pitch, yaw) at its four
+/// `D_8011D658` (`z_camera_data.inc.c`): `Camera_Demo3`'s eye offsets (r, pitch, yaw) at its four
 /// key frames.
-const D_8011D658: [VecSph; 4] = [
-    VecSph { r: 50.0, pitch: 0xEE3Au16 as i16, yaw: 0xD558u16 as i16 },
-    VecSph { r: 75.0, pitch: 0x0000, yaw: 0x8008u16 as i16 },
-    VecSph { r: 80.0, pitch: 0xEE3Au16 as i16, yaw: 0x8008u16 as i16 },
-    VecSph { r: 15.0, pitch: 0xEE3Au16 as i16, yaw: 0x8008u16 as i16 },
+const D_8011D658: [VecSphGeo; 4] = [
+    VecSphGeo { r: 50.0, pitch: 0xEE3Au16 as i16, yaw: 0xD558u16 as i16 },
+    VecSphGeo { r: 75.0, pitch: 0x0000, yaw: 0x8008u16 as i16 },
+    VecSphGeo { r: 80.0, pitch: 0xEE3Au16 as i16, yaw: 0x8008u16 as i16 },
+    VecSphGeo { r: 15.0, pitch: 0xEE3Au16 as i16, yaw: 0x8008u16 as i16 },
 ];
 /// `D_8011D678`: its `at` offsets from where the chest opening started.
 const D_8011D678: [Vec3; 4] = [Vec3::new(0.0, 40.0, 20.0), Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.0, 3.0, -3.0), Vec3::new(0.0, 3.0, -3.0)];
 
 /// `Subj4ReadOnlyData` (`interfaceFlags`, the only value it reads) and `Subj4ReadWriteData`
-/// (`unk_00` is an `InfiniteLine`: the crawlspace's line through `line_point` along
+/// (`crawlspaceLine` is an `InfiniteLine`: the crawlspace's line through `line_point` along
 /// `line_dir`).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct Subj4 {
     interface_flags: i16,
     line_point: Vec3,
     line_dir: Vec3,
-    unk_24: f32,
-    unk_28: f32,
-    unk_2c: i16,
-    unk_2e: bool,
-    unk_30: i16,
-    unk_32: i16,
+    xz_speed: f32,
+    eye_lerp: f32,
+    eye_lerp_phase: i16,
+    is_sfx_off: bool,
+    forward_yaw: i16,
+    zoom_timer: i16,
 }
 
 /// `BINANG_LERPIMPINV(v0, v1, t)`: `v0 + (s16)(v1 - v0) / t`, an integer division.
@@ -934,7 +934,7 @@ struct Keep1Rw {
     unk_16: i16,
 }
 
-/// The fixed and data cameras' `paramData` (`Fixed2`..`Fixed4`, `Data4`; `z64camera.h`).
+/// The fixed and data cameras' `paramData` (`Fixed2`..`Fixed4`, `Data4`; `camera.h`).
 #[derive(Debug, Clone, Copy, Default)]
 struct FixedData {
     // Fixed2ReadOnlyData / Fixed2ReadWriteData.
@@ -1044,7 +1044,7 @@ struct Uniq9 {
     eye_target: Vec3,
     player_pos: Vec3,
     fov_target: f32,
-    at_eye_offset_target: VecSph,
+    at_eye_offset_target: VecSphGeo,
     roll_target: i16,
     cur_key_frame_idx: i16,
     unk_38: i16,
@@ -1090,7 +1090,7 @@ pub struct CamActor {
 /// applied by the play state right after the update, in order.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CamRequest {
-    /// `func_8002DF38(play, actor, mode)` (`door` false) or `func_8002DF54` (true).
+    /// `Player_SetCsAction(play, actor, mode)` (`door` false) or `Player_SetCsActionWithHaltedActors` (true).
     PlayerCsMode { actor: Option<ActorHandle>, mode: u8, door: bool },
     /// `Camera_Unique9`'s action flag 0x40: Player held where he was (`y` only swimming).
     PlayerPos { x: f32, z: f32, y: Option<f32> },
@@ -1098,7 +1098,7 @@ pub enum CamRequest {
     PlayerFreeze { timer: i16 },
     /// `Camera_Copy(play->cameraPtrs[dest], camera)` with the camera's at, eye, fov and roll then.
     CopyTo { dest: i16, at: Vec3, eye: Vec3, fov: f32, roll: i16 },
-    /// `Camera_ChangeModeFlags(play->cameraPtrs[cam], mode, flags)`.
+    /// `Camera_RequestModeImpl(play->cameraPtrs[cam], mode, flags)`.
     ChangeModeFlags { cam: i16, mode: i16, flags: u8 },
     /// `OnePointCutscene_Init(play, cs_id, timer, NULL, parent)`.
     OnePointInit { cs_id: i16, timer: i16, parent: i16 },
@@ -1164,7 +1164,7 @@ pub struct CamRoom {
     pub behavior_type1: u8,
 }
 
-/// `BgCamFuncData` (`z64bgcheck.h`): a bg camera's `Vec3s` data as position, rotation, fov and
+/// `BgCamFuncData` (`bgcheck.h`): a bg camera's `Vec3s` data as position, rotation, fov and
 /// the field that's `roomImageOverrideBgCamIndex`, `timer` or `flags` by setting.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BgCamFuncData {
@@ -1224,8 +1224,8 @@ pub struct PlayerView {
 
 /// `PLAYER_STATE1_29`: Player in a cutscene-like state (walking through an exit or a door).
 const PLAYER_STATE1_29: u32 = 1 << 29;
-/// `PLAYER_STATE1_11` (holding something over his head), `PLAYER_STATE1_27` (swimming).
-const PLAYER_STATE1_11: u32 = 1 << 11;
+/// `PLAYER_STATE1_CARRYING_ACTOR` (holding something over his head), `PLAYER_STATE1_27` (swimming).
+const PLAYER_STATE1_CARRYING_ACTOR: u32 = 1 << 11;
 const PLAYER_STATE1_27: u32 = 1 << 27;
 
 impl PlayerView {
@@ -1281,26 +1281,26 @@ pub struct GameCamera {
     /// `data2`, `data3` (`Camera_SetCameraData`).
     pub data2: i16,
     pub data3: i16,
-    /// `unk_14A`: bits 0x20 and 2 mark a mode request this frame.
-    pub unk_14a: i16,
-    /// `unk_14C`: 0x20 while `Camera_Parallel1` animates (mode requests are then refused).
-    pub unk_14c: i16,
-    /// `paramFlags` (`Camera_SetParam`): 8 once `target` is set.
+    /// `behaviorFlags`: bits 0x20 and 2 mark a mode request this frame.
+    pub behavior_flags: i16,
+    /// `stateFlags`: 0x20 while `Camera_Parallel1` animates (mode requests are then refused).
+    pub state_flags: i16,
+    /// `paramFlags` (`Camera_SetViewParam`): 8 once `target` is set.
     pub param_flags: i16,
-    /// `target` (`Camera_SetParam(camera, 8, actor)`): what KEEPON looks at.
+    /// `target` (`Camera_SetViewParam(camera, 8, actor)`): what KEEPON looks at.
     pub target: Option<ActorHandle>,
     /// `targetPosRot.pos`.
     target_pos: Vec3,
     /// `playerPosDelta`.
     player_pos_delta: Vec3,
-    /// `sCameraInterfaceFlags`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits.
+    /// `sCameraInterfaceField`: the letterbox (`0xF000`) and interface alpha (`0x0F00`) bits.
     pub interface_flags: i16,
     /// `play->view.unk_124`: non-zero when a mode function asks for another `Camera_Update`
     /// at the end of `Play_Draw` (`camId | 0x50`).
     pub view_unk_124: u16,
-    /// `sCameraInterfaceAlpha` (0 from `Camera_Init`): the alpha type last asked for.
+    /// `sCameraHudVisibilityMode` (0 from `Camera_Init`): the alpha type last asked for.
     interface_alpha: u16,
-    /// The `Interface_ChangeAlpha` this frame's `Camera_UpdateInterface` asked for (PlayState
+    /// The `Interface_ChangeHudVisibilityMode` this frame's `Camera_UpdateInterface` asked for (PlayState
     /// applies it to the save).
     pub interface_alpha_change: Option<u16>,
     /// What `Camera_Subj4` wrote to `camera->player` this update: its `world.pos` and
@@ -1371,13 +1371,13 @@ pub struct GameCamera {
 }
 
 impl GameCamera {
-    /// `Camera_Init` + `Camera_InitPlayerSettings` (+ `func_80057FC4` picking NORMAL0 for a
+    /// `Camera_Init` + `Camera_InitDataUsingPlayer` (+ `func_80057FC4` picking NORMAL0 for a
     /// room with `behaviorType1` 0, and `Camera_CopyDataToRegs` setting `animState` 0).
     pub fn new(d: &CameraData, p: &PlayerView) -> GameCamera {
         let h = p.height();
         let yaw = p.shape_yaw.wrapping_sub(0x7FFF);
         let at = p.pos + Vec3::Y * h;
-        let off = VecSph { r: 180.0, pitch: 0x71C, yaw };
+        let off = VecSphGeo { r: 180.0, pitch: 0x71C, yaw };
         let eye_next = sph_geo_add(at, off);
         GameCamera {
             eye: eye_next,
@@ -1399,7 +1399,7 @@ impl GameCamera {
             pos_offset: Vec3::new(0.0, h, 0.0),
             at_lerp_step_scale: 1.0,
             yaw_update_rate_inv: 10.0,
-            pitch_update_rate_inv: d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32,
+            pitch_update_rate_inv: d.oreg(R_CAM_PITCH_UPDATE_RATE_INV) as f32,
             r_update_rate_inv: 10.0,
             xz_offset_update_rate: d.oreg_s(2),
             y_offset_update_rate: d.oreg_s(3),
@@ -1417,15 +1417,15 @@ impl GameCamera {
             timer: -1,
             data2: 0,
             data3: 0,
-            unk_14a: 0,
-            // Camera_Init: 0x4000; Camera_InitPlayerSettings: |= 4. (Play_Init's func_8005AC48
+            behavior_flags: 0,
+            // Camera_Init: 0x4000; Camera_InitDataUsingPlayer: |= 4. (Play_Init's Camera_OverwriteStateFlags
             // is `play_init_settings`.)
-            unk_14c: 0x4000 | 4,
+            state_flags: 0x4000 | 4,
             param_flags: 0,
             target: None,
             target_pos: Vec3::ZERO,
             player_pos_delta: Vec3::ZERO,
-            // Camera_InitPlayerSettings, for the main camera.
+            // Camera_InitDataUsingPlayer, for the main camera.
             interface_flags: 0xB200u16 as i16,
             view_unk_124: 0,
             interface_alpha: 0,
@@ -1501,7 +1501,7 @@ impl GameCamera {
         c.setting = CAM_SET_FREE0;
         c.prev_setting = CAM_SET_FREE0;
         c.door_params = DoorParams::default();
-        c.unk_14c = 0x4000;
+        c.state_flags = 0x4000;
         c.status = CAM_STAT_CUT;
         c.cam_id = cam_id;
         c.uid = uid;
@@ -1541,7 +1541,7 @@ impl GameCamera {
         }
     }
 
-    /// `Play_CameraSetAtEye`: `Camera_SetParam` 1 (at) and 2 (eye and eyeNext), the distance,
+    /// `Play_SetCameraAtEye`: `Camera_SetViewParam` 1 (at) and 2 (eye and eyeNext), the distance,
     /// the offset from Player (`camera->player`'s position, if any), and `atLERPStepScale` 0.01.
     pub fn set_at_eye(&mut self, at: Vec3, eye: Vec3, player_pos: Vec3) {
         self.param_flags &= !(0x10 | 0x8 | 0x1);
@@ -1556,13 +1556,13 @@ impl GameCamera {
         self.view_cut = true;
     }
 
-    /// `Camera_SetParam(camera, 0x20, &fov)`.
+    /// `Camera_SetViewParam(camera, 0x20, &fov)`.
     pub fn set_fov(&mut self, fov: f32) {
         self.fov = fov;
         self.param_flags |= 0x20;
     }
 
-    /// `Camera_SetParam(camera, 0x40, &roll)`: the roll in degrees.
+    /// `Camera_SetViewParam(camera, 0x40, &roll)`: the roll in degrees.
     pub fn set_roll_deg(&mut self, roll: f32) {
         self.roll = cam_deg_to_binang(roll);
         self.param_flags |= 0x40;
@@ -1613,8 +1613,8 @@ impl GameCamera {
         }
     }
 
-    /// `Camera_InitPlayerSettings` for a camera given Player (`func_800C0808`): behind him at 180,
-    /// following him from now on. Returns what it sets `sCameraInterfaceFlags` to (0xB200 for the
+    /// `Camera_InitDataUsingPlayer` for a camera given Player (`Play_InitCameraDataUsingPlayer`): behind him at 180,
+    /// following him from now on. Returns what it sets `sCameraInterfaceField` to (0xB200 for the
     /// main camera, 0 for a sub camera). (`camera->bgId`, the water's settings and
     /// `Camera_QRegInit` aren't modelled.)
     pub fn init_player_settings(&mut self, d: &CameraData, p: &PlayerView, is_main: bool, room: CamRoom) -> i16 {
@@ -1624,7 +1624,7 @@ impl GameCamera {
         self.player_rot_y = p.shape_yaw;
         self.dist = 180.0;
         self.input_dir = [0x71C, p.shape_yaw, 0];
-        let off = VecSph { r: 180.0, pitch: 0x71C, yaw: p.shape_yaw.wrapping_sub(0x7FFF) };
+        let off = VecSphGeo { r: 180.0, pitch: 0x71C, yaw: p.shape_yaw.wrapping_sub(0x7FFF) };
         self.cam_dir = self.input_dir;
         self.xz_speed = 0.0;
         self.player_pos_delta.y = 0.0;
@@ -1635,16 +1635,16 @@ impl GameCamera {
         self.view_cut = true;
         self.roll = 0;
         self.up = Vec3::Y;
-        self.unk_14c |= 4;
+        self.state_flags |= 4;
         if is_main {
             self.func_80057fc4(room);
         } else {
             // func_80057FC4 for a camera that isn't the main one.
             self.setting = CAM_SET_FREE0;
             self.prev_setting = CAM_SET_FREE0;
-            self.unk_14c &= !0x4;
+            self.state_flags &= !0x4;
         }
-        self.unk_14a = 0;
+        self.behavior_flags = 0;
         self.param_flags = 0;
         self.next_bg_cam_index = -1;
         self.at_lerp_step_scale = 1.0;
@@ -1764,17 +1764,17 @@ impl GameCamera {
                 self.uniq9.cur_key_frame = Some(r);
                 let kf = op.key_frame(r);
                 self.uniq9.key_frame_timer = kf.timer_init;
-                if kf.unk_01 != 0xFF {
-                    if kf.unk_01 & 0xF0 == 0x80 {
-                        op.d_8011d3ac = (kf.unk_01 & 0xF) as i32;
-                    } else if kf.unk_01 & 0xF0 == 0xC0 {
-                        self.update_interface_flags(0xF000 | ((kf.unk_01 as u16 & 0xF) << 8), letterbox);
+                if kf.init_field != 0xFF {
+                    if kf.init_field & 0xF0 == 0x80 {
+                        op.d_8011d3ac = (kf.init_field & 0xF) as i32;
+                    } else if kf.init_field & 0xF0 == 0xC0 {
+                        self.update_interface_flags(0xF000 | ((kf.init_field as u16 & 0xF) << 8), letterbox);
                     } else if swimming {
                         log::debug!("camera: demo: player demo set WAIT");
                         self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode: 8, door: false });
                     } else {
-                        log::debug!("camera: demo: player demo set {}", kf.unk_01);
-                        self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode: kf.unk_01, door: false });
+                        log::debug!("camera: demo: player demo set {}", kf.init_field);
+                        self.requests.push(CamRequest::PlayerCsMode { actor: self.target, mode: kf.init_field, door: false });
                     }
                 }
             } else {
@@ -1791,9 +1791,9 @@ impl GameCamera {
         let kf = op.key_frame(cur);
         let new_kf = self.uniq9.is_new_key_frame;
         let target = f.target.filter(|t| t.alive);
-        // A keyframe's init as a VecSph: pitch and yaw in degrees and the radius (0x80), or a
+        // A keyframe's init as a VecSphGeo: pitch and yaw in degrees and the radius (0x80), or a
         // vector.
-        let init_sph = |flag: bool, v: Vec3| if flag { VecSph { pitch: cam_deg_to_binang(v.x), yaw: cam_deg_to_binang(v.y), r: v.z } } else { vec3_to_sph_geo(v) };
+        let init_sph = |flag: bool, v: Vec3| if flag { VecSphGeo { pitch: cam_deg_to_binang(v.x), yaw: cam_deg_to_binang(v.y), r: v.z } } else { vec3_to_sph_geo(v) };
 
         let at_init_flags = kf.init_flags & 0xFF;
         if at_init_flags == 1 {
@@ -1937,14 +1937,14 @@ impl GameCamera {
                 self.eye_next = u.eye_target;
                 self.fov = u.fov_target;
                 self.roll = u.roll_target;
-                self.unk_14c |= 0x400;
+                self.state_flags |= 0x400;
             }
             21 => {
                 if self.uniq9.unk_38 == 0 {
                     self.uniq9.unk_38 = 1;
-                } else if self.unk_14c & 8 != 0 {
+                } else if self.state_flags & 8 != 0 {
                     self.uniq9.unk_38 = 0;
-                    self.unk_14c &= !8;
+                    self.state_flags &= !8;
                 }
                 self.at = u.at_target;
                 self.eye_next = u.eye_target;
@@ -1954,7 +1954,7 @@ impl GameCamera {
             16 => {
                 if self.uniq9.unk_38 == 0 {
                     self.uniq9.unk_38 = 1;
-                } else if self.unk_14c & 8 != 0 {
+                } else if self.state_flags & 8 != 0 {
                     self.uniq9.unk_38 = 0;
                 }
                 self.at = u.at_target;
@@ -1969,7 +1969,7 @@ impl GameCamera {
                     let cur = diff_to_sph_geo(self.at, self.eye_next);
                     let tgt = diff_to_sph_geo(u.at_target, u.eye_target);
                     self.uniq9.at_eye_offset_target = tgt;
-                    let sph = VecSph {
+                    let sph = VecSphGeo {
                         r: lerpimp(cur.r, tgt.r, inv),
                         pitch: (cur.pitch as f32 + tgt.pitch.wrapping_sub(cur.pitch) as f32 * inv) as i32 as i16,
                         yaw: (cur.yaw as f32 + tgt.yaw.wrapping_sub(cur.yaw) as f32 * inv) as i32 as i16,
@@ -1989,7 +1989,7 @@ impl GameCamera {
                 let cur = diff_to_sph_geo(self.at, self.eye_next);
                 let tgt = diff_to_sph_geo(u.at_target, u.eye_target);
                 self.uniq9.at_eye_offset_target = tgt;
-                let sph = VecSph { r: lerp_ceil_f(tgt.r, cur.r, step, 0.1), pitch: lerp_ceil_s(tgt.pitch, cur.pitch, step, 1), yaw: lerp_ceil_s(tgt.yaw, cur.yaw, step, 1) };
+                let sph = VecSphGeo { r: lerp_ceil_f(tgt.r, cur.r, step, 0.1), pitch: lerp_ceil_s(tgt.pitch, cur.pitch, step, 1), yaw: lerp_ceil_s(tgt.yaw, cur.yaw, step, 1) };
                 self.eye_next = sph_geo_add(self.at, sph);
                 lerp_at_by_step = true;
             }
@@ -2403,7 +2403,7 @@ impl GameCamera {
             let _ = player_head_rot[1].wrapping_sub(player_target_geo.yaw);
             if t.category == ACTORCAT_PLAYER {
                 let frames_diff = frames.wrapping_sub(op.demo5_prev_action12_frame);
-                let mode = if f.player.state1 & PLAYER_STATE1_11 != 0 {
+                let mode = if f.player.state1 & PLAYER_STATE1_CARRYING_ACTOR != 0 {
                     // Holding something over his head.
                     8
                 } else if frames_diff.abs() > 3000 {
@@ -2477,11 +2477,11 @@ impl GameCamera {
         let timer = self.jump1_rw.swing.swing_update_rate_timer;
         if timer != 0 {
             self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_update_rate_target + timer as f32, self.yaw_update_rate_inv, d.oreg_s(26), 0.1);
-            self.pitch_update_rate_inv = lerp_ceil_f(d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32 + timer as f32, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(d.oreg(R_CAM_PITCH_UPDATE_RATE_INV) as f32 + timer as f32, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
             self.jump1_rw.swing.swing_update_rate_timer -= 1;
         } else {
             self.yaw_update_rate_inv = lerp_ceil_f(ro.yaw_update_rate_target, self.yaw_update_rate_inv, d.oreg_s(26), 0.1);
-            self.pitch_update_rate_inv = lerp_ceil_f(d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(d.oreg(R_CAM_PITCH_UPDATE_RATE_INV) as f32, self.pitch_update_rate_inv, d.oreg_s(26), 0.1);
         }
         self.xz_offset_update_rate = lerp_ceil_f(d.oreg_s(2), self.xz_offset_update_rate, d.oreg_s(25), 0.1);
         self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, d.oreg_s(26), 0.1);
@@ -2644,7 +2644,7 @@ impl GameCamera {
         if Self::bg_check_info(col, self.at, &mut chk) != 0 {
             // A wall between the at and the eye: level, is there one too?
             let first = chk.pos;
-            chk.pos = sph_geo_add(self.at, VecSph { r: adj.r, pitch: 0, yaw: adj.yaw });
+            chk.pos = sph_geo_add(self.at, VecSphGeo { r: adj.r, pitch: 0, yaw: adj.yaw });
             if Self::bg_check_info(col, self.at, &mut chk) != 0 {
                 self.eye = first;
             } else {
@@ -2731,80 +2731,80 @@ impl GameCamera {
         self.input_dir[1]
     }
 
-    /// `Camera_SetParam(camera, 8, actor)`: the actor KEEPON and BATTLE look at.
+    /// `Camera_SetViewParam(camera, 8, actor)`: the actor KEEPON and BATTLE look at.
     pub fn set_target(&mut self, actor: ActorHandle) {
         self.target = Some(actor);
         self.param_flags &= !(0x10 | 0x8 | 0x1);
         self.param_flags |= 8;
     }
 
-    /// `Camera_ChangeMode`: `Camera_ChangeModeFlags(camera, mode, 0)`.
+    /// `Camera_RequestMode`: `Camera_RequestModeImpl(camera, mode, 0)`.
     pub fn change_mode(&mut self, d: &CameraData, mode: i16) -> i32 {
         self.change_mode_flags(d, mode, 0)
     }
 
-    /// `Camera_ChangeModeFlags`. Returns -1 when the request is refused or changes nothing,
+    /// `Camera_RequestModeImpl`. Returns -1 when the request is refused or changes nothing,
     /// `0x80000000 | mode` for a change; the active camera's change has its sound
     /// (`CamSfx::ModeChange`), and first person refused the error's.
     pub fn change_mode_flags(&mut self, d: &CameraData, mode: i16, flags: u8) -> i32 {
-        if self.unk_14c & 0x20 != 0 && flags == 0 {
-            self.unk_14a |= 0x20;
+        if self.state_flags & 0x20 != 0 && flags == 0 {
+            self.behavior_flags |= 0x20;
             return -1;
         }
         if (d.setting_flags(self.setting) & 0x3FFF_FFFF) & (1u32 << mode) == 0 {
-            if mode == CAM_MODE_FIRSTPERSON {
+            if mode == CAM_MODE_FIRST_PERSON {
                 // "camera: error sound".
                 self.sfx.push(CamSfx::Error);
             }
             if self.mode != CAM_MODE_NORMAL {
                 self.mode = CAM_MODE_NORMAL;
                 self.copy_data_to_regs();
-                self.func_8005a02c();
+                self.set_new_mode_state_flags();
                 return (0xC000_0000u32 | mode as u32) as i32;
             }
-            self.unk_14a |= 0x20 | 2;
+            self.behavior_flags |= 0x20 | 2;
             return 0;
         }
         if mode == self.mode && flags == 0 {
-            self.unk_14a |= 0x20 | 2;
+            self.behavior_flags |= 0x20 | 2;
             return -1;
         }
-        self.unk_14a |= 0x20 | 2;
+        self.behavior_flags |= 0x20 | 2;
         self.copy_data_to_regs();
         let mut mode_change_flags = match mode {
-            CAM_MODE_FIRSTPERSON => 0x20,
-            CAM_MODE_BATTLE => 4,
+            CAM_MODE_FIRST_PERSON => 0x20,
+            CAM_MODE_Z_TARGET_UNFRIENDLY => 4,
             // The boomerang (ACTOR_EN_BOOM) isn't ported.
-            CAM_MODE_FOLLOWTARGET if self.target.is_some() => 8,
-            CAM_MODE_TARGET | CAM_MODE_TALK | CAM_MODE_BOWARROWZ | CAM_MODE_HANGZ | CAM_MODE_PUSHPULL => 2,
+            CAM_MODE_Z_TARGET_FRIENDLY if self.target.is_some() => 8,
+            CAM_MODE_Z_PARALLEL | CAM_MODE_TALK | CAM_MODE_Z_AIM | CAM_MODE_Z_LEDGE_HANG | CAM_MODE_PUSH_PULL => 2,
             _ => 0,
         };
         match self.mode {
-            CAM_MODE_FIRSTPERSON => {
+            CAM_MODE_FIRST_PERSON => {
                 if mode_change_flags & 0x20 != 0 {
                     self.anim_state = 10;
                 }
             }
-            CAM_MODE_TARGET => {
+            CAM_MODE_Z_PARALLEL => {
                 if mode_change_flags & 0x10 != 0 {
                     self.anim_state = 10;
                 }
                 mode_change_flags |= 1;
             }
             CAM_MODE_CHARGE => mode_change_flags |= 1,
-            CAM_MODE_FOLLOWTARGET => {
+            CAM_MODE_Z_TARGET_FRIENDLY => {
                 if mode_change_flags & 8 != 0 {
                     self.anim_state = 10;
                 }
                 mode_change_flags |= 1;
             }
-            CAM_MODE_BATTLE => {
+            CAM_MODE_Z_TARGET_UNFRIENDLY => {
                 if mode_change_flags & 4 != 0 {
                     self.anim_state = 10;
                 }
                 mode_change_flags |= 1;
             }
-            CAM_MODE_BOWARROWZ | CAM_MODE_HANGZ | CAM_MODE_PUSHPULL => mode_change_flags |= 1,
+            CAM_MODE_Z_AIM | CAM_MODE_Z_LEDGE_HANG | CAM_MODE_PUSH_PULL => mode_change_flags |= 1,
             CAM_MODE_NORMAL => {
                 if mode_change_flags & 0x10 != 0 {
                     self.anim_state = 10;
@@ -2816,7 +2816,7 @@ impl GameCamera {
         if self.status == CAM_STAT_ACTIVE && matches!(mode_change_flags, 1 | 2 | 4 | 8) {
             self.sfx.push(CamSfx::ModeChange(mode_change_flags as u8));
         }
-        self.func_8005a02c();
+        self.set_new_mode_state_flags();
         self.mode = mode;
         (0x8000_0000u32 | mode as u32) as i32
     }
@@ -2826,10 +2826,10 @@ impl GameCamera {
         self.anim_state = 0;
     }
 
-    /// `func_8005A02C`.
-    fn func_8005a02c(&mut self) {
-        self.unk_14c |= 0xC;
-        self.unk_14c &= !(0x1000 | 0x8);
+    /// `Camera_SetNewModeStateFlags`.
+    fn set_new_mode_state_flags(&mut self) {
+        self.state_flags |= 0xC;
+        self.state_flags &= !(0x1000 | 0x8);
     }
 
     /// `Camera_CheckValidMode`: 0 if the setting has no such mode, -1 if it's the current one.
@@ -2843,25 +2843,25 @@ impl GameCamera {
         }
     }
 
-    /// `Play_Init`'s part of the main camera's start: `func_8005AC48(&mainCamera, 0xFF)` (which
-    /// among other bits enables the floor's bg cameras, bit 1), then `Camera_InitPlayerSettings`'
-    /// `unk_14C |= 4` and `func_80057FC4` for the first room.
+    /// `Play_Init`'s part of the main camera's start: `Camera_OverwriteStateFlags(&mainCamera, 0xFF)` (which
+    /// among other bits enables the floor's bg cameras, bit 1), then `Camera_InitDataUsingPlayer`'
+    /// `stateFlags |= 4` and `func_80057FC4` for the first room.
     pub fn play_init_settings(&mut self, room: CamRoom) {
-        self.unk_14c = 0xFF;
-        self.unk_14c |= 4;
+        self.state_flags = 0xFF;
+        self.state_flags |= 4;
         self.func_80057fc4(room);
         self.copy_data_to_regs();
     }
 
     /// `func_80057FC4`: the main camera's setting for the room: `FREE0` in a prerendered room
     /// (the bg camera from the spawn or the viewpoint follows), else `DUNGEON0` for
-    /// `ROOM_BEHAVIOR_TYPE1_1` and `NORMAL0` for the rest (keeping the door parameters of
+    /// `ROOM_TYPE_DUNGEON` and `NORMAL0` for the rest (keeping the door parameters of
     /// `Camera_ChangeDoorCam(camera, NULL, -99, 0, 0, 18, 10)`).
     pub fn func_80057fc4(&mut self, room: CamRoom) {
         if room.image {
             self.setting = CAM_SET_FREE0;
             self.prev_setting = CAM_SET_FREE0;
-            self.unk_14c &= !0x4;
+            self.state_flags &= !0x4;
             return;
         }
         self.door_params = DoorParams { door_actor: None, bg_cam_index: -99, timer1: 0, timer2: 18, timer3: 10 };
@@ -2878,38 +2878,38 @@ impl GameCamera {
             _ => {
                 self.setting = CAM_SET_NORMAL0;
                 self.prev_setting = CAM_SET_NORMAL0;
-                self.unk_14c |= 4;
+                self.state_flags |= 4;
             }
         }
     }
 
-    /// `Camera_ChangeSettingFlags`. Returns the setting, or -1 (already it), -2 (a change of
+    /// `Camera_RequestSettingImpl`. Returns the setting, or -1 (already it), -2 (a change of
     /// higher priority happened this frame), -99 (not a setting).
     ///
     /// Not modelled: `-5` for `CAM_SET_MEADOW_BIRDS_EYE` / `_UNUSED` for adult Link in
-    /// `SCENE_SPOT05` (the Sacred Forest Meadow isn't played yet).
+    /// `SCENE_SACRED_FOREST_MEADOW` (the Sacred Forest Meadow isn't played yet).
     pub fn change_setting_flags(&mut self, d: &CameraData, setting: i16, flags: i16) -> i16 {
         let priority = |s: i16| (d.setting_flags(s) & 0x0F00_0000) >> 24;
-        if self.unk_14a & 1 != 0 && priority(self.setting) >= priority(setting) {
-            self.unk_14a |= 0x10;
+        if self.behavior_flags & 1 != 0 && priority(self.setting) >= priority(setting) {
+            self.behavior_flags |= 0x10;
             return -2;
         }
         if setting == CAM_SET_NONE || setting >= CAM_SET_MAX {
             return -99;
         }
         if setting == self.setting && flags & 1 == 0 {
-            self.unk_14a |= 0x10;
+            self.behavior_flags |= 0x10;
             if flags & 2 == 0 {
-                self.unk_14a |= 1;
+                self.behavior_flags |= 1;
             }
             return -1;
         }
-        self.unk_14a |= 0x10;
+        self.behavior_flags |= 0x10;
         if flags & 2 == 0 {
-            self.unk_14a |= 1;
+            self.behavior_flags |= 1;
         }
-        self.unk_14c |= 0xC;
-        self.unk_14c &= !0x1008;
+        self.state_flags |= 0xC;
+        self.state_flags &= !0x1008;
         if d.setting_flags(self.setting) & 0x4000_0000 == 0 {
             self.prev_setting = self.setting;
         }
@@ -2930,25 +2930,25 @@ impl GameCamera {
         setting
     }
 
-    /// `Camera_ChangeSetting`.
+    /// `Camera_RequestSetting`.
     pub fn change_setting(&mut self, d: &CameraData, setting: i16) -> i16 {
         self.change_setting_flags(d, setting, 0)
     }
 
-    /// `Camera_ChangeBgCamIndex`: the bg camera's setting, keeping the index. At most once a
-    /// frame (`unk_14A & 0x40`).
+    /// `Camera_RequestBgCam`: the bg camera's setting, keeping the index. At most once a
+    /// frame (`behaviorFlags & 0x40`).
     pub fn change_bg_cam_index(&mut self, d: &CameraData, col: &CollisionContext, bg_cam_index: i32) -> i32 {
         if bg_cam_index == -1 || bg_cam_index == self.bg_cam_index as i32 {
-            self.unk_14a |= 0x40;
+            self.behavior_flags |= 0x40;
             return -1;
         }
-        if self.unk_14a & 0x40 == 0 {
+        if self.behavior_flags & 0x40 == 0 {
             let new_setting = bg_cam_setting(col, bg_cam_index);
-            self.unk_14a |= 0x40;
+            self.behavior_flags |= 0x40;
             let ok = self.change_setting_flags(d, new_setting, 5) >= 0;
             if ok || d.setting_flags(self.setting) & 0x8000_0000 != 0 {
                 self.bg_cam_index = bg_cam_index as i16;
-                self.unk_14a |= 4;
+                self.behavior_flags |= 4;
                 self.copy_data_to_regs();
             }
             return (0x8000_0000u32 | bg_cam_index as u32) as i32;
@@ -2973,19 +2973,19 @@ impl GameCamera {
             self.change_setting(d, CAM_SET_DOORC);
         } else {
             let setting = bg_cam_setting(col, bg_cam_index as i32);
-            self.unk_14a |= 0x40;
+            self.behavior_flags |= 0x40;
             if self.change_setting(d, setting) >= 0 {
                 self.bg_cam_index = bg_cam_index;
-                self.unk_14a |= 4;
+                self.behavior_flags |= 4;
             }
         }
         self.copy_data_to_regs();
         -1
     }
 
-    /// `func_8005B1A4`: tells a door or exit camera that Player is through (`unk_14C |= 8`).
-    pub fn func_8005b1a4(&mut self) {
-        self.unk_14c |= 0x8;
+    /// `Camera_SetFinishedFlag`: tells a door or exit camera that Player is through (`stateFlags |= 8`).
+    pub fn set_finished_flag(&mut self) {
+        self.state_flags |= 0x8;
     }
 
     /// `Camera_SetCameraData(camera, 4 | 8, ...)`: `data2` and `data3`.
@@ -3032,9 +3032,9 @@ impl GameCamera {
         if self.status == CAM_STAT_WAIT {
             return;
         }
-        self.unk_14a = 0;
-        self.unk_14c &= !(0x400 | 0x20);
-        self.unk_14c |= 0x10;
+        self.behavior_flags = 0;
+        self.state_flags &= !(0x400 | 0x20);
+        self.state_flags |= 0x10;
         if self.oob_timer < 200 {
             // sCameraFunctions[sCameraSettings[setting].cameraModes[mode].funcIdx]. A function
             // that isn't ported runs the setting's NORMAL function if that one is, else Normal1
@@ -3082,8 +3082,8 @@ impl GameCamera {
             // (gameMode is GAMEMODE_NORMAL.) After a Camera_Init, the main camera's first three
             // updates hold the interface at 0x3200; a running transition holds it at 0xF200 and
             // a cutscene at 0x3200.
-            if g.d_8011d3f0 != 0 && self.cam_id == CAM_ID_MAIN {
-                g.d_8011d3f0 -= 1;
+            if g.scene_init_letterbox_timer != 0 && self.cam_id == CAM_ID_MAIN {
+                g.scene_init_letterbox_timer -= 1;
                 self.interface_flags = 0x3200;
             } else if f.transitioning {
                 self.interface_flags = 0xF200u16 as i16;
@@ -3134,12 +3134,12 @@ impl GameCamera {
 
         if self.oob_timer < 200 {
             // (Camera_UpdateWater and Camera_UpdateHotRoom aren't ported.)
-            if self.unk_14c & 4 == 0 {
+            if self.state_flags & 4 == 0 {
                 self.next_bg_cam_index = -1;
             }
             // The floor's bg camera (bit 0x200, underwater, is never set here; the iron boots
             // exception with it doesn't arise).
-            if self.unk_14c & 1 != 0 && self.unk_14c & 4 != 0 && self.unk_14c & 0x400 == 0 && self.unk_14c & 0x200 == 0 && self.unk_14c as u16 & 0x8000 == 0 && ground != bgcheck::BGCHECK_Y_MIN
+            if self.state_flags & 1 != 0 && self.state_flags & 4 != 0 && self.state_flags & 0x400 == 0 && self.state_flags & 0x200 == 0 && self.state_flags as u16 & 0x8000 == 0 && ground != bgcheck::BGCHECK_Y_MIN
                 && let Some(id) = poly
             {
                 // Camera_GetBgCamIndex: -1 when the index's setting is CAM_SET_NONE. Only a
@@ -3150,7 +3150,7 @@ impl GameCamera {
                     self.next_bg_cam_index = idx as i16;
                 }
             }
-            if self.next_bg_cam_index != -1 && (cur.y - ground).abs() < 2.0 && self.unk_14c & 0x200 == 0 {
+            if self.next_bg_cam_index != -1 && (cur.y - ground).abs() < 2.0 && self.state_flags & 0x200 == 0 {
                 let next = self.next_bg_cam_index as i32;
                 self.change_bg_cam_index(d, col, next);
                 self.next_bg_cam_index = -1;
@@ -3158,15 +3158,15 @@ impl GameCamera {
         }
     }
 
-    /// `Camera_UpdateInterface(sCameraInterfaceFlags)`: `flags & 0x7000` picks the letterbox's
+    /// `Camera_UpdateInterface(sCameraInterfaceField)`: `flags & 0x7000` picks the letterbox's
     /// size (`sCameraLetterboxSize`), `0x8000` sets it at once, all of `0xF000` set leaves it
     /// alone; `flags & 0x0F00` is the interface's alpha type (0 is 50), all set leaves it alone,
-    /// and a new one is `Interface_ChangeAlpha`'s (`interface_alpha_change`).
+    /// and a new one is `Interface_ChangeHudVisibilityMode`'s (`interface_alpha_change`).
     fn update_interface(&mut self, letterbox: &mut Letterbox) {
         self.update_interface_flags(self.interface_flags as u16, letterbox);
     }
 
-    /// `Camera_UpdateInterface(flags)` with flags other than `sCameraInterfaceFlags`
+    /// `Camera_UpdateInterface(flags)` with flags other than `sCameraInterfaceField`
     /// (`Camera_Unique9`'s keyframes' `0xCX`).
     fn update_interface_flags(&mut self, flags: u16, letterbox: &mut Letterbox) {
         if flags & 0xF000 != 0xF000 {
@@ -3322,7 +3322,7 @@ impl GameCamera {
     }
 
     /// `Camera_CalcAtDefault`.
-    fn calc_at_default(&mut self, d: &CameraData, eye_at_dir: &VecSph, extra_y: f32, calc_slope: bool, p: &PlayerView) {
+    fn calc_at_default(&mut self, d: &CameraData, eye_at_dir: &VecSphGeo, extra_y: f32, calc_slope: bool, p: &PlayerView) {
         let h = p.height();
         let mut target = Vec3::new(0.0, h + extra_y, 0.0);
         if calc_slope {
@@ -3382,7 +3382,7 @@ impl GameCamera {
     }
 
     /// `func_80045508`: what lies between `at` and `eyeNext`.
-    fn col_between(&mut self, col: &CollisionContext, diff: &VecSph, check_eye: bool) -> i32 {
+    fn col_between(&mut self, col: &CollisionContext, diff: &VecSphGeo, check_eye: bool) -> i32 {
         // The C passes the static CamColChks, so fields a check doesn't write carry over.
         let mut eye_chk = self.at_eye_col_chk;
         eye_chk.pos = self.eye_next;
@@ -3437,7 +3437,7 @@ impl GameCamera {
     }
 
     /// `func_80046E20` with `Camera_Normal1`'s `SwingAnimation`.
-    fn swing(&mut self, d: &CameraData, col: &CollisionContext, adj: &VecSph, min_dist: f32, arg3: f32, arg4: &mut f32) {
+    fn swing(&mut self, d: &CameraData, col: &CollisionContext, adj: &VecSphGeo, min_dist: f32, arg3: f32, arg4: &mut f32) {
         let mut anim = self.rw.swing;
         self.swing_anim(d, col, adj, min_dist, arg3, arg4, &mut anim);
         self.rw.swing = anim;
@@ -3446,7 +3446,7 @@ impl GameCamera {
     /// `func_80046E20`: slide the eye round walls between it and `at`, with a mode function's
     /// `SwingAnimation`.
     #[allow(clippy::too_many_arguments)]
-    fn swing_anim(&mut self, d: &CameraData, col: &CollisionContext, adj: &VecSph, min_dist: f32, arg3: f32, arg4: &mut f32, anim: &mut Swing) {
+    fn swing_anim(&mut self, d: &CameraData, col: &CollisionContext, adj: &VecSphGeo, min_dist: f32, arg3: f32, arg4: &mut f32, anim: &mut Swing) {
         let kind = self.col_between(col, adj, anim.unk_18 == 0);
         let mut fallthrough = false;
         match kind {
@@ -3512,7 +3512,7 @@ impl GameCamera {
             self.eye = ae.pos + ae.norm * 1.0;
             anim.at_eye_poly = None;
             if t < d.oreg(21) as f32 {
-                let s = VecSph {
+                let s = VecSphGeo {
                     yaw: adj.yaw,
                     pitch: (sin_s(ae.sph_norm.pitch.wrapping_add(0x3FFF)) * 16380.0) as i16,
                     r: (d.oreg(21) as f32 - t) * d.oreg_s(22),
@@ -3597,7 +3597,7 @@ impl GameCamera {
         }
         self.rw.unk_20 = self.xz_speed;
 
-        let pitch_default = d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32;
+        let pitch_default = d.oreg(R_CAM_PITCH_UPDATE_RATE_INV) as f32;
         if self.rw.swing.swing_update_rate_timer != 0 {
             let t = self.rw.swing.swing_update_rate_timer as f32 * 2.0;
             self.yaw_update_rate_inv = lerp_ceil_f(self.rw.swing.swing_update_rate + t, self.yaw_update_rate_inv, sp98, rate);
@@ -3715,7 +3715,7 @@ impl GameCamera {
     }
 
     /// The off-ground branch shared by `Camera_CalcAtForParallel` and `Camera_CalcAtForLockOn`
-    /// with `PREG(75)` 0 (or without `FLG_OFFGROUND`): keep Player within `fov * 0.4` of the view
+    /// with `PREG(75)` 0 (or without `CAM_LOCKON_AT_FLAG_OFF_GROUND`): keep Player within `fov * 0.4` of the view
     /// axis, moving `y_target` by what's left over. Returns the height to take off the offset.
     fn off_ground_fov_adj(&self, y_target: &mut f32) -> f32 {
         let mut dy = self.player_pos.y - *y_target;
@@ -3732,7 +3732,7 @@ impl GameCamera {
         dy
     }
 
-    /// The other off-ground branch (`func_800458D4`, `PREG(75)`, `FLG_OFFGROUND`): the height
+    /// The other off-ground branch (`func_800458D4`, `PREG(75)`, `CAM_LOCKON_AT_FLAG_OFF_GROUND`): the height
     /// difference scaled down outside `OREG(32)`..`OREG(33)` degrees of pitch.
     fn off_ground_pitch_adj(&self, d: &CameraData, y_target: f32) -> f32 {
         let dy = self.player_pos.y - y_target;
@@ -3772,7 +3772,7 @@ impl GameCamera {
     }
 
     /// `func_800458D4`: the at for Parallel1 in the air.
-    fn func_800458d4(&mut self, d: &CameraData, p: &PlayerView, eye_at_dir: &VecSph, y_offset: f32, y_target: f32, slope: bool) {
+    fn func_800458d4(&mut self, d: &CameraData, p: &PlayerView, eye_at_dir: &VecSphGeo, y_offset: f32, y_target: f32, slope: bool) {
         let mut target = Vec3::new(0.0, p.height() + y_offset, 0.0);
         if slope {
             target.y -= calc_slope_y_adj(self.floor_norm, self.player_rot_y, eye_at_dir.yaw, d.oreg(9) as f32);
@@ -3789,7 +3789,7 @@ impl GameCamera {
 
     /// `Camera_Parallel1`: the camera swings behind Player over `R_CAM_DEFAULT_ANIM_TIME`
     /// frames (`animTimer`, refusing mode changes meanwhile), then holds `distTarget` and
-    /// `pitchTarget` there. Only then does it set `sCameraInterfaceFlags` (the letterbox).
+    /// `pitchTarget` there. Only then does it set `sCameraInterfaceField` (the letterbox).
     fn parallel1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32) {
         let player_height = p.height();
         if matches!(self.anim_state, 0 | 10 | 20) {
@@ -3880,10 +3880,10 @@ impl GameCamera {
         let mut spa8;
         let rw = &mut self.para1_rw;
         if rw.anim_timer != 0 {
-            self.unk_14c |= 0x20;
+            self.state_flags |= 0x20;
             let tangle = (((rw.anim_timer as i32 + 1) * rw.anim_timer as i32) >> 1) as i16;
             let step = (rw.yaw_target.wrapping_sub(at_to_eye.yaw) / tangle) as i32 * rw.anim_timer as i32;
-            spa8 = VecSph { yaw: (at_to_eye.yaw as i32 + step) as i16, pitch: at_to_eye.pitch, r: at_to_eye.r };
+            spa8 = VecSphGeo { yaw: (at_to_eye.yaw as i32 + step) as i16, pitch: at_to_eye.pitch, r: at_to_eye.r };
             rw.anim_timer -= 1;
         } else {
             rw.unk_16 = 0;
@@ -3914,7 +3914,7 @@ impl GameCamera {
     /// `Camera_CalcAtForLockOn`: `at` between Player's head and the target. Returns
     /// `outPlayerToTargetDir`.
     #[allow(clippy::too_many_arguments)]
-    fn calc_at_for_lock_on(&mut self, d: &CameraData, p: &PlayerView, target_pos: Vec3, y_offset: f32, distance: f32, y_pos_offset: &mut f32, flags: i16) -> VecSph {
+    fn calc_at_for_lock_on(&mut self, d: &CameraData, p: &PlayerView, target_pos: Vec3, y_offset: f32, distance: f32, y_pos_offset: &mut f32, flags: i16) -> VecSphGeo {
         let h = p.height();
         let mut tmp0 = Vec3::new(0.0, h + y_offset, 0.0);
         // Player's head.
@@ -3963,7 +3963,7 @@ impl GameCamera {
         let Some(focus) = target_focus.filter(|_| self.target.is_some()) else {
             // "keepon: target is not valid, change parallel".
             self.target = None;
-            self.change_mode(d, CAM_MODE_TARGET);
+            self.change_mode(d, CAM_MODE_Z_PARALLEL);
             return;
         };
         let reload = matches!(self.anim_state, 0 | 10 | 20);
@@ -4012,7 +4012,7 @@ impl GameCamera {
         // Uninitialised in the C on the default path, which Player never takes (it sets the
         // target, and paramFlags 8, whenever it asks for KEEPON).
         let mut sp80 = false;
-        let mut spc8 = VecSph::default();
+        let mut spc8 = VecSphGeo::default();
         match self.param_flags & 0x18 {
             flags @ (8 | 0x10) => {
                 if flags == 8 {
@@ -4125,7 +4125,7 @@ impl GameCamera {
     /// `Camera_KeepOn3` (TALK in the normal settings): over `initTimer` frames the camera
     /// swings to frame Player and the one talking, from the side the eye already is on, trying
     /// other angles while the line to the new eye is blocked (by the scene or another actor's
-    /// OC collider). It holds there until Player is through (`func_8005B1A4`) and moves or
+    /// OC collider). It holds there until Player is through (`Camera_SetFinishedFlag`) and moves or
     /// presses a button.
     ///
     /// Its first frame asks for another `Camera_Update` after `Play_Draw` (`view.unk_124`),
@@ -4135,20 +4135,20 @@ impl GameCamera {
         let Some(focus) = f.target_focus.filter(|_| self.target.is_some()) else {
             // "talk: target is not valid, change parallel".
             self.target = None;
-            self.change_mode(d, CAM_MODE_TARGET);
+            self.change_mode(d, CAM_MODE_Z_PARALLEL);
             return;
         };
         let reload = matches!(self.anim_state, 0 | 10 | 20);
         if reload {
             if self.view_unk_124 == 0 {
-                self.unk_14c |= 0x20;
+                self.state_flags |= 0x20;
                 // camera->camId | 0x50: the main camera.
                 self.view_unk_124 = 0x50;
                 return;
             }
-            self.unk_14c &= !0x20;
+            self.state_flags &= !0x20;
         }
-        self.unk_14c &= !0x10;
+        self.state_flags &= !0x10;
         if reload {
             let v = |i: usize| d.value(self.cur(), i) as f32;
             let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
@@ -4182,7 +4182,7 @@ impl GameCamera {
             rw.anim_timer = ro.init_timer;
             let sp_bc = ((1.0 - temp_f0) * target_to_player_dir.r) / rw.anim_timer as f32;
             let lerp = |a: f32, b: f32| a + (b - a) * temp_f0;
-            let mut adj = VecSph::default();
+            let mut adj = VecSphGeo::default();
             let swing = lerp(ro.swing_pitch_initial, ro.swing_pitch_final);
             adj.pitch = cam_deg_to_binang(swing).wrapping_add((-(target_to_player_dir.pitch as f32 * ro.swing_pitch_adj)) as i32 as i16);
             let swing = cam_deg_to_binang(lerp(ro.swing_yaw_initial, ro.swing_yaw_final));
@@ -4209,16 +4209,16 @@ impl GameCamera {
             let mut line_b = sph_geo_add(at_target, adj);
             if ro.flags & 0x80 == 0 {
                 let exclusions = [self.target, f.player_actor];
-                for i in 0..D_8011D3B0.len() {
+                for i in 0..S_CAM_CHECK_AROUND_OFFSETS_YAW.len() {
                     if !f.oc_lines.line_oc_check(at_target, line_b, &exclusions) && !Self::bg_check(col, at_target, &mut line_b) {
                         break;
                     }
-                    adj.yaw = sp80.wrapping_add(D_8011D3B0[i] as i16);
-                    adj.pitch = sp82.wrapping_add(D_8011D3CC[i] as i16);
+                    adj.yaw = sp80.wrapping_add(S_CAM_CHECK_AROUND_OFFSETS_YAW[i] as i16);
+                    adj.pitch = sp82.wrapping_add(S_CAM_CHECK_AROUND_OFFSETS_PITCH[i] as i16);
                     line_b = sph_geo_add(at_target, adj);
                 }
             }
-            self.unk_14c &= !0xC;
+            self.state_flags &= !0xC;
             let rw = &mut self.keep3_rw;
             let pad = (((rw.anim_timer as i32 + 1) * rw.anim_timer as i32) >> 1) as f32;
             rw.eye_to_at_target.y = adj.yaw.wrapping_sub(at_to_eye_next_dir.yaw) as f32 / pad;
@@ -4230,7 +4230,7 @@ impl GameCamera {
             let rw = self.keep3_rw;
             let t = rw.anim_timer as f32;
             self.at += (rw.at_target - self.at) / t;
-            let adj = VecSph {
+            let adj = VecSphGeo {
                 r: ((rw.eye_to_at_target.x * t) + at_to_eye_next_dir.r) + 1.0,
                 yaw: at_to_eye_next_dir.yaw.wrapping_add((rw.eye_to_at_target.y * t) as i32 as i16),
                 pitch: at_to_eye_next_dir.pitch.wrapping_add((rw.eye_to_at_target.z * t) as i32 as i16),
@@ -4245,17 +4245,17 @@ impl GameCamera {
             self.eye = eye;
             self.keep3_rw.anim_timer -= 1;
         } else {
-            self.unk_14c |= 0x410;
+            self.state_flags |= 0x410;
         }
-        if self.unk_14c & 8 != 0 {
+        if self.state_flags & 8 != 0 {
             self.interface_flags = 0;
             self.func_80043b60(d);
             self.at_lerp_step_scale = 0.0;
             use eng_input::pad::*;
             let pressed = [BTN_A, BTN_B, BTN_CLEFT, BTN_CDOWN, BTN_CUP, BTN_CRIGHT, BTN_R, BTN_Z].iter().any(|&b| f.input.press.held(b));
             if self.xz_speed > 0.001 || pressed {
-                self.unk_14c |= 4;
-                self.unk_14c &= !8;
+                self.state_flags |= 4;
+                self.state_flags &= !8;
             }
         }
     }
@@ -4264,7 +4264,7 @@ impl GameCamera {
     /// over `timerInit` frames `at` turns towards the one talking while the view narrows by
     /// `fovScale`.
     fn keep_on0(&mut self, d: &CameraData, col: &CollisionContext, target_focus: Option<Vec3>) {
-        self.unk_14c &= !0x10;
+        self.state_flags &= !0x10;
         if matches!(self.anim_state, 0 | 10 | 20) {
             let cur = self.cur();
             let v = |i: usize| d.value(cur, i);
@@ -4302,137 +4302,137 @@ impl GameCamera {
             self.at = sph_geo_add(self.eye, eye_at_offset);
             self.keep0.anim_timer -= 1;
         } else {
-            self.unk_14c |= 0x400 | 0x10;
+            self.state_flags |= 0x400 | 0x10;
         }
         self.fov = lerp_ceil_f(self.keep0.fov_target, self.fov, 0.5, 10.0);
     }
 
     /// `Camera_KeepOn4` (`CAM_SET_TURN_AROUND`, "ITEM2"): the camera turns in front of Player to
     /// look at him holding an item up. `data2` (`Camera_SetCameraData`) is the kind of item and
-    /// adjusts the data (9 for `func_8084E6D4`'s get-item). Over `unk_1E` frames the eye swings
+    /// adjusts the data (9 for `Player_Action_8084E6D4`'s get-item). Over `initTimer` frames the eye swings
     /// from where it was to the chosen pitch and yaw around Player's head (retrying other angles
-    /// when a collider or a wall is in the way), then holds until Player is done (`unk_14C & 8`,
-    /// `func_8005B1A4`) and the previous setting or bg camera comes back.
+    /// when a collider or a wall is in the way), then holds until Player is done (`stateFlags & 8`,
+    /// `Camera_SetFinishedFlag`) and the previous setting or bg camera comes back.
     fn keep_on4(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, f: &CamFrame) {
         let reload = matches!(self.anim_state, 0 | 10 | 20);
         if reload {
             if self.view_unk_124 == 0 {
-                self.unk_14c |= 0x20;
-                self.unk_14c &= !(0x4 | 0x2);
+                self.state_flags |= 0x20;
+                self.state_flags &= !(0x4 | 0x2);
                 self.view_unk_124 = 0x50;
                 return;
             }
-            self.keep4_rw.unk_14 = self.data2;
-            self.unk_14c &= !0x20;
+            self.keep4_rw.item_type = self.data2;
+            self.state_flags &= !0x20;
         }
-        if self.keep4_rw.unk_14 != self.data2 {
+        if self.keep4_rw.item_type != self.data2 {
             // "camera: item: item type changed".
             self.anim_state = 20;
-            self.unk_14c |= 0x20;
-            self.unk_14c &= !(0x4 | 0x2);
+            self.state_flags |= 0x20;
+            self.state_flags &= !(0x4 | 0x2);
             self.view_unk_124 = 0x50;
             return;
         }
         let player_height = p.height();
-        self.unk_14c &= !0x10;
+        self.state_flags &= !0x10;
         if reload {
             let t = -0.5f32;
             let y_normal = 1.0 + t - (68.0 / player_height * t);
             let cur = self.cur();
             let v = |i: usize| d.value(cur, i) as f32;
             let mut ro = Keep4Ro {
-                unk_00: v(0) * 0.01 * player_height * y_normal,
-                unk_04: v(1) * 0.01 * player_height * y_normal,
-                unk_08: v(2),
-                unk_0c: v(3),
-                unk_10: v(4),
-                unk_18: v(5),
-                unk_1c: d.value(cur, 6),
+                y_offset: v(0) * 0.01 * player_height * y_normal,
+                eye_dist: v(1) * 0.01 * player_height * y_normal,
+                pitch_target: v(2),
+                yaw_target: v(3),
+                at_offset_player_forwards: v(4),
+                fov_target: v(5),
+                interface_field: d.value(cur, 6),
                 unk_14: v(7) * 0.01,
-                unk_1e: d.value(cur, 8),
+                init_timer: d.value(cur, 8),
             };
             match self.data2 {
                 1 => {
-                    ro.unk_00 = player_height * -0.6 * y_normal;
-                    ro.unk_04 = player_height * 2.0 * y_normal;
-                    ro.unk_08 = 10.0;
+                    ro.y_offset = player_height * -0.6 * y_normal;
+                    ro.eye_dist = player_height * 2.0 * y_normal;
+                    ro.pitch_target = 10.0;
                 }
                 2 | 3 => {
-                    ro.unk_08 = -20.0;
-                    ro.unk_18 = 80.0;
+                    ro.pitch_target = -20.0;
+                    ro.fov_target = 80.0;
                 }
                 4 => {
-                    ro.unk_00 = player_height * -0.2 * y_normal;
-                    ro.unk_08 = 25.0;
+                    ro.y_offset = player_height * -0.2 * y_normal;
+                    ro.pitch_target = 25.0;
                 }
                 8 => {
-                    ro.unk_00 = player_height * -0.2 * y_normal;
-                    ro.unk_04 = player_height * 0.8 * y_normal;
-                    ro.unk_08 = 50.0;
-                    ro.unk_18 = 70.0;
+                    ro.y_offset = player_height * -0.2 * y_normal;
+                    ro.eye_dist = player_height * 0.8 * y_normal;
+                    ro.pitch_target = 50.0;
+                    ro.fov_target = 70.0;
                 }
                 9 => {
-                    ro.unk_00 = player_height * 0.1 * y_normal;
-                    ro.unk_04 = player_height * 0.5 * y_normal;
-                    ro.unk_08 = -20.0;
-                    ro.unk_0c = 0.0;
-                    ro.unk_1c = 0x2540;
+                    ro.y_offset = player_height * 0.1 * y_normal;
+                    ro.eye_dist = player_height * 0.5 * y_normal;
+                    ro.pitch_target = -20.0;
+                    ro.yaw_target = 0.0;
+                    ro.interface_field = 0x2540;
                 }
                 5 => {
-                    ro.unk_00 = player_height * -0.4 * y_normal;
-                    ro.unk_08 = -10.0;
-                    ro.unk_0c = 45.0;
-                    ro.unk_1c = 0x2002;
+                    ro.y_offset = player_height * -0.4 * y_normal;
+                    ro.pitch_target = -10.0;
+                    ro.yaw_target = 45.0;
+                    ro.interface_field = 0x2002;
                 }
                 10 => {
-                    ro.unk_00 = player_height * -0.5 * y_normal;
-                    ro.unk_04 = player_height * 1.5 * y_normal;
-                    ro.unk_08 = -15.0;
-                    ro.unk_0c = 175.0;
-                    ro.unk_18 = 70.0;
-                    ro.unk_1c = 0x2202;
-                    ro.unk_1e = 0x3C;
+                    ro.y_offset = player_height * -0.5 * y_normal;
+                    ro.eye_dist = player_height * 1.5 * y_normal;
+                    ro.pitch_target = -15.0;
+                    ro.yaw_target = 175.0;
+                    ro.fov_target = 70.0;
+                    ro.interface_field = 0x2202;
+                    ro.init_timer = 0x3C;
                 }
                 12 => {
-                    ro.unk_00 = player_height * -0.6 * y_normal;
-                    ro.unk_04 = player_height * 1.6 * y_normal;
-                    ro.unk_08 = -2.0;
-                    ro.unk_0c = 120.0;
+                    ro.y_offset = player_height * -0.6 * y_normal;
+                    ro.eye_dist = player_height * 1.6 * y_normal;
+                    ro.pitch_target = -2.0;
+                    ro.yaw_target = 120.0;
                     // PLAYER_STATE1_27: swimming.
-                    ro.unk_10 = if p.state1 & (1 << 27) != 0 { 0.0 } else { 20.0 };
-                    ro.unk_1c = 0x3212;
-                    ro.unk_1e = 0x1E;
-                    ro.unk_18 = 50.0;
+                    ro.at_offset_player_forwards = if p.state1 & (1 << 27) != 0 { 0.0 } else { 20.0 };
+                    ro.interface_field = 0x3212;
+                    ro.init_timer = 0x1E;
+                    ro.fov_target = 50.0;
                 }
                 0x5A => {
-                    ro.unk_00 = player_height * -0.3 * y_normal;
-                    ro.unk_18 = 45.0;
-                    ro.unk_1c = 0x2F02;
+                    ro.y_offset = player_height * -0.3 * y_normal;
+                    ro.fov_target = 45.0;
+                    ro.interface_field = 0x2F02;
                 }
                 0x5B => {
-                    ro.unk_00 = player_height * -0.1 * y_normal;
-                    ro.unk_04 = player_height * 1.5 * y_normal;
-                    ro.unk_08 = -3.0;
-                    ro.unk_0c = 10.0;
-                    ro.unk_18 = 55.0;
-                    ro.unk_1c = 0x2F08;
+                    ro.y_offset = player_height * -0.1 * y_normal;
+                    ro.eye_dist = player_height * 1.5 * y_normal;
+                    ro.pitch_target = -3.0;
+                    ro.yaw_target = 10.0;
+                    ro.fov_target = 55.0;
+                    ro.interface_field = 0x2F08;
                 }
                 0x51 => {
-                    ro.unk_00 = player_height * -0.3 * y_normal;
-                    ro.unk_04 = player_height * 1.5 * y_normal;
-                    ro.unk_08 = 2.0;
-                    ro.unk_0c = 20.0;
-                    ro.unk_10 = 20.0;
-                    ro.unk_1c = 0x2280;
-                    ro.unk_1e = 0x1E;
-                    ro.unk_18 = 45.0;
+                    ro.y_offset = player_height * -0.3 * y_normal;
+                    ro.eye_dist = player_height * 1.5 * y_normal;
+                    ro.pitch_target = 2.0;
+                    ro.yaw_target = 20.0;
+                    ro.at_offset_player_forwards = 20.0;
+                    ro.interface_field = 0x2280;
+                    ro.init_timer = 0x1E;
+                    ro.fov_target = 45.0;
                 }
                 11 => {
-                    ro.unk_00 = player_height * -0.19 * y_normal;
-                    ro.unk_04 = player_height * 0.7 * y_normal;
-                    ro.unk_0c = 130.0;
-                    ro.unk_10 = 10.0;
-                    ro.unk_1c = 0x2522;
+                    ro.y_offset = player_height * -0.19 * y_normal;
+                    ro.eye_dist = player_height * 0.7 * y_normal;
+                    ro.yaw_target = 130.0;
+                    ro.at_offset_player_forwards = 10.0;
+                    ro.interface_field = 0x2522;
                 }
                 _ => {}
             }
@@ -4440,74 +4440,74 @@ impl GameCamera {
         }
         let ro = self.keep4_ro;
         self.update_direction = true;
-        self.interface_flags = ro.unk_1c;
+        self.interface_flags = ro.interface_field;
         let spa8 = diff_to_sph_geo(self.at, self.eye_next);
-        let mut d_8015bd50 = self.player_pos + Vec3::Y * player_height;
+        let mut at_target = self.player_pos + Vec3::Y * player_height;
         // BgCheck_CameraRaycastDown2.
-        let (ground, _) = col.raycast_down(d_8015bd50, bgcheck::IGNORE_CAMERA, bgcheck::DOWN_CHECK_WALLS | bgcheck::DOWN_CHECK_FLOORS, 1.0);
-        if ground > ro.unk_00 + d_8015bd50.y {
-            d_8015bd50.y = ground + 10.0;
+        let (ground, _) = col.raycast_down(at_target, bgcheck::IGNORE_CAMERA, bgcheck::DOWN_CHECK_WALLS | bgcheck::DOWN_CHECK_FLOORS, 1.0);
+        if ground > ro.y_offset + at_target.y {
+            at_target.y = ground + 10.0;
         } else {
-            d_8015bd50.y += ro.unk_00;
+            at_target.y += ro.y_offset;
         }
-        let mut spb8 = VecSph::default();
+        let mut spb8 = VecSphGeo::default();
         match self.anim_state {
             0 | 20 => {
                 let mut exclusions = vec![f.player_actor];
                 self.func_80043abc(d);
-                self.unk_14c &= !(0x4 | 0x2);
-                self.keep4_rw.unk_10 = ro.unk_1e;
+                self.state_flags &= !(0x4 | 0x2);
+                self.keep4_rw.anim_timer = ro.init_timer;
                 self.keep4_rw.unk_08 = self.player_pos.y - self.player_pos_delta.y;
                 let behind = self.player_rot_y.wrapping_sub(0x7FFF);
                 let (spa2, spa0);
-                if ro.unk_1c & 2 != 0 {
-                    spa2 = cam_deg_to_binang(ro.unk_08);
-                    let turn = cam_deg_to_binang(ro.unk_0c);
+                if ro.interface_field & 2 != 0 {
+                    spa2 = cam_deg_to_binang(ro.pitch_target);
+                    let turn = cam_deg_to_binang(ro.yaw_target);
                     spa0 = if behind.wrapping_sub(spa8.yaw) > 0 { behind.wrapping_add(turn) } else { behind.wrapping_sub(turn) };
-                } else if ro.unk_1c & 4 != 0 {
-                    spa2 = cam_deg_to_binang(ro.unk_08);
-                    spa0 = cam_deg_to_binang(ro.unk_0c);
-                } else if ro.unk_1c & 8 != 0
+                } else if ro.interface_field & 4 != 0 {
+                    spa2 = cam_deg_to_binang(ro.pitch_target);
+                    spa0 = cam_deg_to_binang(ro.yaw_target);
+                } else if ro.interface_field & 8 != 0
                     && let Some((_, rot)) = f.target_pos_rot.filter(|_| self.target.is_some())
                 {
-                    spa2 = cam_deg_to_binang(ro.unk_08).wrapping_sub(rot[0]);
+                    spa2 = cam_deg_to_binang(ro.pitch_target).wrapping_sub(rot[0]);
                     let tb = rot[1].wrapping_sub(0x7FFF);
-                    let turn = cam_deg_to_binang(ro.unk_0c);
+                    let turn = cam_deg_to_binang(ro.yaw_target);
                     spa0 = if tb.wrapping_sub(spa8.yaw) > 0 { tb.wrapping_add(turn) } else { tb.wrapping_sub(turn) };
                     exclusions.push(self.target);
-                } else if ro.unk_1c & 0x80 != 0
+                } else if ro.interface_field & 0x80 != 0
                     && let Some((pos, _)) = f.target_pos_rot.filter(|_| self.target.is_some())
                 {
-                    spa2 = cam_deg_to_binang(ro.unk_08);
+                    spa2 = cam_deg_to_binang(ro.pitch_target);
                     // Camera_XZAngle(&target, &playerPos).
                     let sp9e = cam_deg_to_binang(rad_to_deg(f_atan2f(self.player_pos.x - pos.x, self.player_pos.z - pos.z)));
-                    let turn = cam_deg_to_binang(ro.unk_0c);
+                    let turn = cam_deg_to_binang(ro.yaw_target);
                     spa0 = if sp9e.wrapping_sub(spa8.yaw) > 0 { sp9e.wrapping_add(turn) } else { sp9e.wrapping_sub(turn) };
                     exclusions.push(self.target);
-                } else if ro.unk_1c & 0x40 != 0 {
-                    spa2 = cam_deg_to_binang(ro.unk_08);
+                } else if ro.interface_field & 0x40 != 0 {
+                    spa2 = cam_deg_to_binang(ro.pitch_target);
                     spa0 = spa8.yaw;
                 } else {
                     spa2 = spa8.pitch;
                     spa0 = spa8.yaw;
                 }
-                spb8 = VecSph { r: ro.unk_04, pitch: spa2, yaw: spa0 };
-                let mut d_8015bd70 = sph_geo_add(d_8015bd50, spb8);
-                if ro.unk_1c & 1 == 0 {
-                    for i in 0..D_8011D3B0.len() {
-                        if !f.oc_lines.line_oc_check(d_8015bd50, d_8015bd70, &exclusions) && !Self::bg_check(col, d_8015bd50, &mut d_8015bd70) {
+                spb8 = VecSphGeo { r: ro.eye_dist, pitch: spa2, yaw: spa0 };
+                let mut eye_candidate = sph_geo_add(at_target, spb8);
+                if ro.interface_field & 1 == 0 {
+                    for i in 0..S_CAM_CHECK_AROUND_OFFSETS_YAW.len() {
+                        if !f.oc_lines.line_oc_check(at_target, eye_candidate, &exclusions) && !Self::bg_check(col, at_target, &mut eye_candidate) {
                             break;
                         }
-                        spb8.yaw = (D_8011D3B0[i] as i16).wrapping_add(spa0);
-                        spb8.pitch = (D_8011D3CC[i] as i16).wrapping_add(spa2);
-                        d_8015bd70 = sph_geo_add(d_8015bd50, spb8);
+                        spb8.yaw = (S_CAM_CHECK_AROUND_OFFSETS_YAW[i] as i16).wrapping_add(spa0);
+                        spb8.pitch = (S_CAM_CHECK_AROUND_OFFSETS_PITCH[i] as i16).wrapping_add(spa2);
+                        eye_candidate = sph_geo_add(at_target, spb8);
                     }
                 }
                 let rw = &mut self.keep4_rw;
-                rw.unk_04 = spb8.pitch.wrapping_sub(spa8.pitch) as f32 / rw.unk_10 as f32;
-                rw.unk_00 = spb8.yaw.wrapping_sub(spa8.yaw) as f32 / rw.unk_10 as f32;
-                rw.unk_0c = spa8.yaw;
-                rw.unk_0e = spa8.pitch;
+                rw.at_to_eye_target_step_pitch = spb8.pitch.wrapping_sub(spa8.pitch) as f32 / rw.anim_timer as f32;
+                rw.at_to_eye_target_step_yaw = spb8.yaw.wrapping_sub(spa8.yaw) as f32 / rw.anim_timer as f32;
+                rw.at_to_eye_target_yaw = spa8.yaw;
+                rw.at_to_eye_target_pitch = spa8.pitch;
                 self.anim_state += 1;
                 rw.unk_12 = 1;
             }
@@ -4518,50 +4518,50 @@ impl GameCamera {
         self.y_offset_update_rate = 0.25;
         self.at_lerp_step_scale = 0.75;
         let mut at = self.at;
-        lerp_ceil_vec3(d_8015bd50, &mut at, 0.5, 0.5, 0.2);
+        lerp_ceil_vec3(at_target, &mut at, 0.5, 0.5, 0.2);
         self.at = at;
-        if ro.unk_10 != 0.0 {
-            spb8 = VecSph { r: ro.unk_10, pitch: 0, yaw: self.player_rot_y };
+        if ro.at_offset_player_forwards != 0.0 {
+            spb8 = VecSphGeo { r: ro.at_offset_player_forwards, pitch: 0, yaw: self.player_rot_y };
             self.at = sph_geo_add(self.at, spb8);
         }
         self.at_lerp_step_scale = 0.0;
-        self.dist = lerp_ceil_f(ro.unk_04, self.dist, 0.25, 2.0);
+        self.dist = lerp_ceil_f(ro.eye_dist, self.dist, 0.25, 2.0);
         spb8.r = self.dist;
-        if self.keep4_rw.unk_10 != 0 {
-            self.unk_14c |= 0x20;
+        if self.keep4_rw.anim_timer != 0 {
+            self.state_flags |= 0x20;
             let rw = &mut self.keep4_rw;
-            rw.unk_0c = rw.unk_0c.wrapping_add(rw.unk_00 as i32 as i16);
-            rw.unk_0e = rw.unk_0e.wrapping_add(rw.unk_04 as i32 as i16);
-            rw.unk_10 -= 1;
-        } else if ro.unk_1c & 0x10 != 0 {
-            self.unk_14c |= 0x400 | 0x10;
-            self.unk_14c |= 0x4 | 0x2;
-            self.unk_14c &= !8;
+            rw.at_to_eye_target_yaw = rw.at_to_eye_target_yaw.wrapping_add(rw.at_to_eye_target_step_yaw as i32 as i16);
+            rw.at_to_eye_target_pitch = rw.at_to_eye_target_pitch.wrapping_add(rw.at_to_eye_target_step_pitch as i32 as i16);
+            rw.anim_timer -= 1;
+        } else if ro.interface_field & 0x10 != 0 {
+            self.state_flags |= 0x400 | 0x10;
+            self.state_flags |= 0x4 | 0x2;
+            self.state_flags &= !8;
             if self.timer > 0 {
                 self.timer -= 1;
             }
         } else {
-            self.unk_14c |= 0x400 | 0x10;
-            if self.unk_14c & 8 != 0 || ro.unk_1c & 0x80 != 0 {
+            self.state_flags |= 0x400 | 0x10;
+            if self.state_flags & 8 != 0 || ro.interface_field & 0x80 != 0 {
                 self.interface_flags = 0;
-                self.unk_14c |= 0x4 | 0x2;
-                self.unk_14c &= !8;
+                self.state_flags |= 0x4 | 0x2;
+                self.state_flags &= !8;
                 self.restore_setting(d, col);
             }
         }
-        spb8.yaw = lerp_ceil_s(self.keep4_rw.unk_0c, spa8.yaw, ro.unk_14, 4);
-        spb8.pitch = lerp_ceil_s(self.keep4_rw.unk_0e, spa8.pitch, ro.unk_14, 4);
+        spb8.yaw = lerp_ceil_s(self.keep4_rw.at_to_eye_target_yaw, spa8.yaw, ro.unk_14, 4);
+        spb8.pitch = lerp_ceil_s(self.keep4_rw.at_to_eye_target_pitch, spa8.pitch, ro.unk_14, 4);
         self.eye_next = sph_geo_add(self.at, spb8);
         self.eye = self.eye_next;
         let mut eye = self.eye;
         Self::bg_check(col, self.at, &mut eye);
         self.eye = eye;
-        self.fov = lerp_ceil_f(ro.unk_18, self.fov, self.fov_update_rate, 1.0);
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
     }
 
     /// The end of an item or chest camera: back to the setting before
-    /// (`Camera_ChangeSettingFlags(prevSetting, 2)`), or to the bg camera before.
+    /// (`Camera_RequestSettingImpl(prevSetting, 2)`), or to the bg camera before.
     fn restore_setting(&mut self, d: &CameraData, col: &CollisionContext) {
         if self.prev_bg_cam_index < 0 {
             let prev = self.prev_setting;
@@ -4580,7 +4580,7 @@ impl GameCamera {
     /// press, once Player is done) pulls back 80 and gives the setting back.
     fn demo3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, frames: u32, input: &Input) {
         let y_offset = p.height();
-        self.unk_14c &= !0x10;
+        self.state_flags &= !0x10;
         if matches!(self.anim_state, 0 | 10 | 20) {
             let cur = self.cur();
             self.demo3.fov = d.value(cur, 0) as f32;
@@ -4590,13 +4590,13 @@ impl GameCamera {
         let eye_at_offset = diff_to_sph_geo(self.at, self.eye);
         self.interface_flags = self.demo3.interface_flags;
         let rot_y = self.player_rot_y;
-        let mut eye_offset = VecSph::default();
+        let mut eye_offset = VecSphGeo::default();
         let mut skip_update_eye = false;
         let lerp_f = |a: f32, b: f32, t: f32| a + (b - a) * t;
         let lerp_s = |a: i16, b: i16, t: f32| a.wrapping_add((b.wrapping_sub(a) as f32 * t) as i32 as i16);
         match self.anim_state {
             0 => {
-                self.unk_14c &= !(0x8 | 0x4);
+                self.state_flags &= !(0x8 | 0x4);
                 self.func_80043b60(d);
                 self.fov = self.demo3.fov;
                 self.roll = 0;
@@ -4622,7 +4622,7 @@ impl GameCamera {
                 let mut at_offset = vec3_to_sph_geo(D_8011D678[0]);
                 at_offset.yaw = at_offset.yaw.wrapping_add(rot_y);
                 self.at = sph_geo_add(initial_at, at_offset);
-                eye_offset = VecSph { r: D_8011D658[0].r, pitch: D_8011D658[0].pitch, yaw: D_8011D658[0].yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y) };
+                eye_offset = VecSphGeo { r: D_8011D658[0].r, pitch: D_8011D658[0].pitch, yaw: D_8011D658[0].yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y) };
                 self.demo3.unk_0c = 1.0;
             }
             1 | 2 | 3 => {
@@ -4645,7 +4645,7 @@ impl GameCamera {
                 let r = lerp_f(e0.r, e1.r, t);
                 let pitch = lerp_s(e0.pitch, e1.pitch, t);
                 let yaw = lerp_s(e0.yaw, e1.yaw, t);
-                eye_offset = VecSph { r, pitch, yaw: yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y) };
+                eye_offset = VecSphGeo { r, pitch, yaw: yaw.wrapping_mul(self.demo3.yaw_dir).wrapping_add(rot_y) };
                 self.demo3.unk_0c += match self.anim_state {
                     1 => -(1.0 / 365.0),
                     2 => -0.04,
@@ -4654,19 +4654,19 @@ impl GameCamera {
             }
             30 | 10 | 20 => {
                 if self.anim_state == 30 {
-                    self.unk_14c |= 0x400;
-                    if self.unk_14c & 8 != 0 {
+                    self.state_flags |= 0x400;
+                    if self.state_flags & 8 != 0 {
                         self.anim_state = 4;
                     }
                 }
                 skip_update_eye = true;
             }
             4 => {
-                eye_offset = VecSph { r: 80.0, pitch: 0, yaw: eye_at_offset.yaw };
+                eye_offset = VecSphGeo { r: 80.0, pitch: 0, yaw: eye_at_offset.yaw };
                 self.demo3.unk_0c = 0.1;
                 self.interface_flags = 0x3400;
                 let pressed = Self::any_button_pressed(input);
-                if !((self.demo3.anim_frame < 0 || self.xz_speed > 0.001 || pressed) && self.unk_14c & 8 != 0) {
+                if !((self.demo3.anim_frame < 0 || self.xz_speed > 0.001 || pressed) && self.state_flags & 8 != 0) {
                     skip_update_eye = true;
                 } else {
                     self.demo3_end(d, col);
@@ -4704,8 +4704,8 @@ impl GameCamera {
 
     /// `Camera_Demo3`'s default case: done; the setting before comes back.
     fn demo3_end(&mut self, d: &CameraData, col: &CollisionContext) {
-        self.unk_14c |= 0x14;
-        self.unk_14c &= !8;
+        self.state_flags |= 0x14;
+        self.state_flags &= !8;
         self.restore_setting(d, col);
         self.interface_flags = 0;
     }
@@ -4715,7 +4715,7 @@ impl GameCamera {
     /// `func_80043ABC`.
     fn func_80043abc(&mut self, d: &CameraData) {
         self.yaw_update_rate_inv = 100.0;
-        self.pitch_update_rate_inv = d.oreg(R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV) as f32;
+        self.pitch_update_rate_inv = d.oreg(R_CAM_PITCH_UPDATE_RATE_INV) as f32;
         self.r_update_rate_inv = d.oreg(6) as f32;
         self.xz_offset_update_rate = d.oreg_s(2);
         self.y_offset_update_rate = d.oreg_s(3);
@@ -4770,7 +4770,7 @@ impl GameCamera {
     /// `Camera_Subj4` (`CAM_SET_CRAWLSPACE`): the crawlspace's subjective camera. Its first
     /// call each frame only asks for the second one at the end of `Play_Draw` (`view.unk_124`)
     /// and keeps the frame's `xzSpeed`. The second eases in over 10 frames, then, while Player
-    /// moves (`unk_24` ≥ 0.5), puts the eye on the crawlspace's line at Player, bobbing and
+    /// moves (`xzSpeed` ≥ 0.5), puts the eye on the crawlspace's line at Player, bobbing and
     /// swaying with the crawl, and moves Player: onto the line, to the ground, facing along it
     /// (`player_write`). The bg camera's points: the second is one end, the second to last the
     /// other. Returns the C's value. Each sway's turn is a crawl's step (`CamSfx::Crawl`).
@@ -4781,7 +4781,7 @@ impl GameCamera {
         if self.view_unk_124 == 0 {
             // camera->camId | 0x50: the main camera.
             self.view_unk_124 = 0x50;
-            self.subj4.unk_24 = self.xz_speed;
+            self.subj4.xz_speed = self.xz_speed;
             return true;
         }
         // Actor_GetWorldPosShapeRot(&sp6C, &camera->player->actor).
@@ -4799,7 +4799,7 @@ impl GameCamera {
             s.line_point = v(1);
             let sp98 = v(points.len() - 2);
             // 0x238C ~ 50 degrees.
-            let mut sp64 = VecSph { r: 10.0, pitch: 0x238C, yaw: camera_xz_angle(sp98, s.line_point) };
+            let mut sp64 = VecSphGeo { r: 10.0, pitch: 0x238C, yaw: camera_xz_angle(sp98, s.line_point) };
             let sp88 = self.player_pos.distance(s.line_point);
             if self.player_pos.distance(sp98) < sp88 {
                 s.line_dir = s.line_point - sp98;
@@ -4808,52 +4808,52 @@ impl GameCamera {
                 s.line_dir = sp98 - s.line_point;
                 sp64.yaw = sp64.yaw.wrapping_sub(0x7FFF);
             }
-            s.unk_30 = sp64.yaw;
-            s.unk_32 = 0xA;
-            s.unk_2c = 0;
-            s.unk_2e = false;
-            s.unk_28 = 0.0;
+            s.forward_yaw = sp64.yaw;
+            s.zoom_timer = 0xA;
+            s.eye_lerp_phase = 0;
+            s.is_sfx_off = false;
+            s.eye_lerp = 0.0;
             self.anim_state += 1;
         }
         let s = self.subj4;
-        if s.unk_32 != 0 {
-            let sp64 = VecSph { r: 10.0, pitch: 0x238C, yaw: s.unk_30 };
+        if s.zoom_timer != 0 {
+            let sp64 = VecSphGeo { r: 10.0, pitch: 0x238C, yaw: s.forward_yaw };
             let sp8c = sph_geo_add(sp6c_pos, sp64);
-            let sp88 = s.unk_32 as f32 + 1.0;
+            let sp88 = s.zoom_timer as f32 + 1.0;
             self.at.x += (sp8c.x - self.at.x) / sp88;
             self.at.y += (sp8c.y - self.at.y) / sp88;
             self.at.z += (sp8c.z - self.at.z) / sp88;
             sp5c.r -= sp5c.r / sp88;
-            sp5c.yaw = binang_lerpimpinv(sp5c.yaw, sp6c_rot_y.wrapping_sub(0x7FFF), s.unk_32);
-            sp5c.pitch = binang_lerpimpinv(sp5c.pitch, sp6c_rot_x, s.unk_32);
+            sp5c.yaw = binang_lerpimpinv(sp5c.yaw, sp6c_rot_y.wrapping_sub(0x7FFF), s.zoom_timer);
+            sp5c.pitch = binang_lerpimpinv(sp5c.pitch, sp6c_rot_x, s.zoom_timer);
             self.eye_next = sph_geo_add(self.at, sp5c);
             self.eye = self.eye_next;
-            self.subj4.unk_32 -= 1;
+            self.subj4.zoom_timer -= 1;
             return false;
-        } else if s.unk_24 < 0.5 {
+        } else if s.xz_speed < 0.5 {
             return false;
         }
         self.eye_next = eng_collision::math3d::line_closest_to_point(s.line_point, s.line_dir, sp6c_pos);
         self.at = self.eye_next + s.line_dir;
         self.eye = self.eye_next;
-        let sp64 = VecSph { r: 5.0, pitch: 0x238C, yaw: s.unk_30 };
+        let sp64 = VecSphGeo { r: 5.0, pitch: 0x238C, yaw: s.forward_yaw };
         let sp98 = sph_geo_add(self.eye_next, sp64);
         let s = &mut self.subj4;
-        s.unk_2c = s.unk_2c.wrapping_add(0xBB8);
-        let t = cos_s(s.unk_2c);
+        s.eye_lerp_phase = s.eye_lerp_phase.wrapping_add(0xBB8);
+        let t = cos_s(s.eye_lerp_phase);
         self.eye.x += (sp98.x - self.eye.x) * t.abs();
         self.eye.y += (sp98.y - self.eye.y) * t.abs();
         self.eye.z += (sp98.z - self.eye.z) * t.abs();
-        if s.unk_28 < t && !s.unk_2e {
-            s.unk_2e = true;
+        if s.eye_lerp < t && !s.is_sfx_off {
+            s.is_sfx_off = true;
             self.sfx.push(CamSfx::Crawl);
-        } else if s.unk_28 > t {
-            s.unk_2e = false;
+        } else if s.eye_lerp > t {
+            s.is_sfx_off = false;
         }
-        s.unk_28 = t;
+        s.eye_lerp = t;
         self.player_write = Some((Vec3::new(self.eye_next.x, self.player_ground_y, self.eye_next.z), sp64.yaw));
-        let temp_f16 = (240.0 * t) * (s.unk_24 * 0.416667);
-        let temp_a0 = (temp_f16 + s.unk_30 as f32) as i32 as i16;
+        let temp_f16 = (240.0 * t) * (s.xz_speed * 0.416667);
+        let temp_a0 = (temp_f16 + s.forward_yaw as f32) as i32 as i16;
         self.at = Vec3::new(self.eye.x + sin_s(temp_a0) * 10.0, self.eye.y, self.eye.z + cos_s(temp_a0) * 10.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
         true
@@ -4956,7 +4956,7 @@ impl GameCamera {
         } else {
             self.update_direction = false;
         }
-        let at_sph = VecSph { r: 150.0, yaw: f.fixd3_rot[1], pitch: f.fixd3_rot[0].wrapping_neg() };
+        let at_sph = VecSphGeo { r: 150.0, yaw: f.fixd3_rot[1], pitch: f.fixd3_rot[0].wrapping_neg() };
         self.at = sph_geo_add(self.eye, at_sph);
         self.interface_flags = f.fixd3_interface_flags;
         self.roll = 0;
@@ -5040,7 +5040,7 @@ impl GameCamera {
         let eye_next_at = diff_to_sph_geo(self.at, self.eye_next);
         self.calc_at_default(d, &eye_next_at, f.data4_y_offset, false, p);
         let eye_at = diff_to_sph_geo(self.eye, self.at);
-        let at_offset = VecSph {
+        let at_offset = VecSphGeo {
             r: eye_at.r,
             yaw: if f.data4_flags & 1 != 0 { cam_deg_to_binang(self.data2 as f32).wrapping_add(f.data4_eye_rot[1]) } else { eye_at.yaw },
             pitch: if f.data4_flags & 2 != 0 { cam_deg_to_binang(self.data3 as f32).wrapping_add(f.data4_eye_rot[0]) } else { eye_at.pitch },
@@ -5066,7 +5066,7 @@ impl GameCamera {
         self.interface_flags = self.uniq.uniq0_interface_flags;
         if self.anim_state == 0 {
             self.func_80043b60(d);
-            self.unk_14c &= !4;
+            self.state_flags &= !4;
             let b = self.bg_cam_data(col);
             self.uniq.uniq0_eye_point = b.pos_f();
             self.eye = self.uniq.uniq0_eye_point;
@@ -5076,7 +5076,7 @@ impl GameCamera {
             }
             // bgCamFuncData->timer, else the door parameters' timers.
             self.uniq.uniq0_anim_timer = if b.flags == -1 { self.door_params.timer1.wrapping_add(self.door_params.timer2) } else { b.flags };
-            let at_player = VecSph { r: player_with_offset.distance(self.eye), yaw: b.rot[1], pitch: b.rot[0].wrapping_neg() };
+            let at_player = VecSphGeo { r: player_with_offset.distance(self.eye), yaw: b.rot[1], pitch: b.rot[0].wrapping_neg() };
             self.uniq.uniq0_eye_dir = sph_geo_to_vec3(at_player);
             self.at = eng_collision::math3d::line_closest_to_point(self.uniq.uniq0_eye_point, self.uniq.uniq0_eye_dir, self.player_pos);
             self.uniq.uniq0_inital_pos = self.player_pos;
@@ -5097,7 +5097,7 @@ impl GameCamera {
                 self.uniq.uniq0_inital_pos = self.player_pos;
             } else if !cutscene && (dist_xz(self.player_pos, self.uniq.uniq0_inital_pos) >= 10.0 || Self::any_button_pressed(input)) {
                 leave(self);
-                self.unk_14c |= 4;
+                self.state_flags |= 4;
                 let prev = self.prev_setting;
                 self.change_setting_flags(d, prev, 2);
             }
@@ -5114,7 +5114,7 @@ impl GameCamera {
                 leave(self);
                 let prev = self.prev_setting;
                 self.change_setting_flags(d, prev, 2);
-                self.unk_14c |= 4;
+                self.state_flags |= 4;
             }
         }
     }
@@ -5144,7 +5144,7 @@ impl GameCamera {
             self.func_80043b60(d);
             self.uniq.uniq2_unk_00 = 200.0;
             if u.uniq2_interface_flags & 0x10 != 0 {
-                self.unk_14c &= !4;
+                self.state_flags &= !4;
             }
         }
         let player_pos = self.player_pos;
@@ -5185,10 +5185,10 @@ impl GameCamera {
     }
 
     /// `Camera_Unique3` (`DOOR0`): the bg camera's view while the door parameters' timers run,
-    /// then back to the previous setting once Player is through (`unk_14C & 8`) and moves.
+    /// then back to the previous setting once Player is through (`stateFlags & 8`) and moves.
     fn unique3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, input: &Input) {
         let player_height = p.height();
-        self.unk_14c &= !0x10;
+        self.state_flags &= !0x10;
         if matches!(self.anim_state, 0 | 10 | 20) {
             let key = self.cur();
             let v = |i: usize| d.value(key, i);
@@ -5204,7 +5204,7 @@ impl GameCamera {
         // The C's switch falls through from each case into the next.
         if state == 0 {
             self.func_80043b60(d);
-            self.unk_14c &= !(0x8 | 0x4);
+            self.state_flags &= !(0x8 | 0x4);
             self.uniq.uniq3_initial_fov = self.fov;
             self.uniq.uniq3_initial_dist = self.at.distance(self.eye);
             self.anim_state += 1;
@@ -5219,7 +5219,7 @@ impl GameCamera {
             let b = self.bg_cam_data(col);
             self.eye_next = b.pos_f();
             self.eye = self.eye_next;
-            self.at = sph_geo_add(self.eye, VecSph { r: 100.0, yaw: b.rot[1], pitch: b.rot[0].wrapping_neg() });
+            self.at = sph_geo_add(self.eye, VecSphGeo { r: 100.0, yaw: b.rot[1], pitch: b.rot[0].wrapping_neg() });
             self.anim_state += 1;
             state = 2;
         }
@@ -5236,8 +5236,8 @@ impl GameCamera {
             state = 3;
         }
         if state == 3 {
-            self.unk_14c |= 0x400 | 0x10;
-            if self.unk_14c & 8 == 0 {
+            self.state_flags |= 0x400 | 0x10;
+            if self.state_flags & 8 == 0 {
                 return;
             }
             self.anim_state += 1;
@@ -5245,8 +5245,8 @@ impl GameCamera {
         }
         if state == 4 {
             if u.uniq3_interface_flags & 2 != 0 {
-                self.unk_14c |= 4;
-                self.unk_14c &= !8;
+                self.state_flags |= 4;
+                self.state_flags &= !8;
                 self.change_setting_flags(d, CAM_SET_PIVOT_IN_FRONT, 2);
                 return;
             }
@@ -5271,8 +5271,8 @@ impl GameCamera {
             self.anim_state += 1;
         }
         // default:
-        self.unk_14c |= 4;
-        self.unk_14c &= !8;
+        self.state_flags |= 4;
+        self.state_flags &= !8;
         self.fov = u.uniq3_fov;
         let prev = self.prev_setting;
         self.change_setting_flags(d, prev, 2);
@@ -5281,7 +5281,7 @@ impl GameCamera {
     }
 
     /// `Camera_Unique6` (`FREE0`): nothing moves the eye or `at` (actors set them with
-    /// `Camera_SetParam`); only the distance and offset follow Player.
+    /// `Camera_SetViewParam`); only the distance and offset follow Player.
     fn unique6(&mut self, d: &CameraData, p: &PlayerView) {
         if matches!(self.anim_state, 0 | 10 | 20) {
             self.uniq.uniq6_interface_flags = d.value(self.cur(), 0);
@@ -5331,7 +5331,7 @@ impl GameCamera {
         self.uniq.uniq7_unk_00_x = lerp_floor_s(player_pos_eye_offset.yaw, self.uniq.uniq7_unk_00_x, 0.4, 0x7D0);
         player_pos_eye_offset.pitch = (b.rot[0].wrapping_neg() as f32 * cos_s(player_pos_eye_offset.yaw.wrapping_sub(b.rot[1]))) as i16;
         self.at = sph_geo_add(self.eye, player_pos_eye_offset);
-        self.unk_14c |= 0x400;
+        self.state_flags |= 0x400;
     }
 
     /// `Camera_Special9` (`DOORC`): through a door. The eye jumps to one side of the door (or
@@ -5339,7 +5339,7 @@ impl GameCamera {
     /// returns to the previous setting once Player moves or a button is pressed.
     fn special9(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, door: Option<(Vec3, [i16; 3])>, frames: u32, input: &Input) {
         let player_y_offset = p.height();
-        self.unk_14c &= !0x10;
+        self.state_flags &= !0x10;
         let y_normal = Self::y_normal(d, player_y_offset);
         if matches!(self.anim_state, 0 | 10 | 20) {
             let key = self.cur();
@@ -5359,7 +5359,7 @@ impl GameCamera {
         self.interface_flags = u.spec9_interface_flags;
         let mut state = self.anim_state;
         if state == 0 {
-            self.unk_14c &= !(0x4 | 0x2);
+            self.state_flags &= !(0x4 | 0x2);
             self.anim_state += 1;
             // ABS on the int difference of the two s16 yaws.
             self.uniq.spec9_target_yaw = if (self.player_rot_y as i32 - adj_rot[1] as i32).abs() >= 0x4000 { adj_rot[1].wrapping_sub(0x7FFF) } else { adj_rot[1] };
@@ -5378,7 +5378,7 @@ impl GameCamera {
             } else {
                 // 0xE38 ~ 20 degrees, 0xAAA ~ 15 degrees.
                 let mut yaw: i16 = if frames & 1 != 0 { 0xAAA } else { -0xAAA };
-                let mut eye_adjustment = VecSph { pitch: 0xE38, yaw: self.uniq.spec9_target_yaw.wrapping_add(yaw), r: 200.0 * y_normal };
+                let mut eye_adjustment = VecSphGeo { pitch: 0xE38, yaw: self.uniq.spec9_target_yaw.wrapping_add(yaw), r: 200.0 * y_normal };
                 self.eye_next = sph_geo_add(self.at, eye_adjustment);
                 self.eye = self.eye_next;
                 if Self::check_oob(col, self.eye, self.player_pos) {
@@ -5408,7 +5408,7 @@ impl GameCamera {
             let mut at = self.at;
             lerp_ceil_vec3(sp_ac, &mut at, 0.5, 0.5, 0.1);
             self.at = at;
-            let eye_adjustment = VecSph {
+            let eye_adjustment = VecSphGeo {
                 pitch: lerp_ceil_s(0xAAA, at_eye_offset_geo.pitch, 0.3, 0xA),
                 yaw: lerp_ceil_s(self.uniq.spec9_target_yaw, at_eye_offset_geo.yaw, 0.3, 0xA),
                 r: lerp_ceil_f(60.0, at_eye_offset_geo.r, 0.3, 1.0),
@@ -5426,12 +5426,12 @@ impl GameCamera {
             self.anim_state += 1;
         }
         // default:
-        self.unk_14c |= 0x400 | 0x10;
+        self.state_flags |= 0x400 | 0x10;
         self.interface_flags = 0;
         if self.xz_speed > 0.001 || Self::any_button_pressed(input) || u.spec9_interface_flags & 0x8 != 0 {
             let prev = self.prev_setting;
             self.change_setting_flags(d, prev, 2);
-            self.unk_14c |= 0x4 | 0x2;
+            self.state_flags |= 0x4 | 0x2;
         }
         self.special9_end(player_y_offset);
     }

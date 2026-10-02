@@ -6,7 +6,7 @@
 //! - a note of a Kokiri Forest instrument (font 15, instrument 4, tuning 1.0) played by a
 //!   sequence: its volume each update is the C's ADSR (`Audio_AdsrUpdate` on the instrument's
 //!   envelope, `updatesPerFrameScaled` 0.75) times `gDefaultPanVolume` at pan 64, as
-//!   `Audio_InitNoteSub` makes it; at C4 (`gPitchFrequencies[39]` = 1.0) the output follows the
+//!   `Audio_InitSampleState` makes it; at C4 (`gPitchFrequencies[39]` = 1.0) the output follows the
 //!   sample one for one, at C3 (0.5) at half speed; it decays with `adsrDecayTable[239]` once
 //!   the layer ends;
 //! - a drum plays its sample at its tuning;
@@ -416,7 +416,7 @@ fn the_boot_view_is_audio_load_inits() {
     assert_eq!((booted.reset_status, booted.audio_reset_spec_id_to_load), (0, 0));
 }
 
-/// `func_800E5F88` (the spec change): with no reset under way it queues `0xF9` and the reset
+/// `AudioThread_ResetAudioHeap` (the spec change): with no reset under way it queues `0xF9` and the reset
 /// runs over the next audio frames, then posts the spec on `audioResetQueue`; asked again for
 /// the spec being loaded it does nothing (-2); for another while the reset is early (status
 /// above 2) it switches the spec (-3); late (2 or 1), it finishes the reset first (the C
@@ -429,8 +429,8 @@ fn the_spec_change_and_its_reset() {
     r.run(4);
     let v = r.game_frame(&[GameOp::ResetSpec(1)], 1);
     assert_eq!((v.reset_status, v.audio_reset_spec_id_to_load), (5, 1), "0xF9 ran (after the frame's reset check: the steps start next frame)");
-    assert_eq!(r.ctx.func_800e5f88(1), -2);
-    assert_eq!(r.ctx.func_800e5f88(5), -3);
+    assert_eq!(r.ctx.audio_thread_reset_audio_heap(1), -2);
+    assert_eq!(r.ctx.audio_thread_reset_audio_heap(5), -3);
     assert_eq!(r.ctx.audio_reset_spec_id_to_load, 5);
     let mut frames = 1;
     let msgs = loop {
@@ -452,7 +452,7 @@ fn the_spec_change_and_its_reset() {
         r.game_frame(&[], 1);
     }
     assert!(r.ctx.reset_status != 0);
-    r.ctx.func_800e5f88(3);
+    r.ctx.audio_thread_reset_audio_heap(3);
     assert_eq!(r.ctx.audio_buffer_parameters.sampling_frequency as u32, d.tables.specs[1].sampling_frequency, "spec 1's reset finished");
     let v = r.game_frame(&[], 1);
     assert_eq!((v.reset_status, v.audio_reset_spec_id_to_load), (5, 3));

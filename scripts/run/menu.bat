@@ -27,6 +27,7 @@ echo    42  test-nightmare       GAME-04b's nightmare tests: the drawbridge, the
 echo    43  test-polish          GAME-04b's polish tests: the cutscene splines, letterbox, narration box, Link's poses
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
+echo    44  decomp-check         GAME-05's decomp upgrade check: a loose import against the old decomp's
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -105,6 +106,7 @@ if "%pick%"=="40" set "script=test-environment"
 if "%pick%"=="41" set "script=test-title-cards"
 if "%pick%"=="42" set "script=test-nightmare"
 if "%pick%"=="43" set "script=test-polish"
+if "%pick%"=="44" set "script=decomp-check"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

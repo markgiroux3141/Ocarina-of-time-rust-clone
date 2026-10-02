@@ -1,10 +1,10 @@
 //! The sandbox's dummy Z-target: not a game actor, a stand-in enemy to lock on to. It's
-//! targetable and hostile (`ACTOR_FLAG_0 | ACTOR_FLAG_2`), `targetMode` 3 (a 350 range), with
+//! targetable and hostile (`ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE`), `targetMode` 3 (a 350 range), with
 //! its focus 40 above its feet, and it doesn't move. It draws as a box.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_2, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_HOSTILE, Actor};
 use oot_game::actor_ctx::{ACTOR_SANDBOX_DUMMY_TARGET, ACTORCAT_ENEMY, ActorImpl, ActorProfile};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
@@ -12,7 +12,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
     id: ACTOR_SANDBOX_DUMMY_TARGET,
     name: "Sandbox_Dummy_Target",
     category: ACTORCAT_ENEMY,
-    flags: ACTOR_FLAG_0 | ACTOR_FLAG_2,
+    flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE,
     object: "gameplay_keep",
 };
 

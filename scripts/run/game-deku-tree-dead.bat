@@ -4,5 +4,5 @@ rem (EVENTCHKINF_07 and _09, the Kokiri Emerald). The tree and his mouth in the 
 setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot || exit /b 1
-"%BIN%\oot.exe" --entrance ENTR_SPOT04_1 --preset deku-tree-dead %*
+"%BIN%\oot.exe" --entrance ENTR_KOKIRI_FOREST_1 --preset deku-tree-dead %*
 exit /b %errorlevel%

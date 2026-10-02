@@ -25,7 +25,7 @@ struct Cli {
     /// Spawn point (index into the scene's spawn list).
     #[arg(long, default_value_t = 0)]
     spawn: usize,
-    /// An entrance instead (`ENTR_*` name or index, e.g. ENTR_SPOT04_3: outside Link's house).
+    /// An entrance instead (`ENTR_*` name or index, e.g. ENTR_KOKIRI_FOREST_3: outside Link's house).
     #[arg(long)]
     entrance: Option<String>,
     /// Draw markers where unported actors are.

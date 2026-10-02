@@ -1,4 +1,4 @@
-//! Player's draw rules from `z_player_lib.c` and `z64player.h`: which display lists replace
+//! Player's draw rules from `z_player_lib.c` and `player.h`: which display lists replace
 //! the hand, sheath and waist limbs for each model group and shield
 //! (`Player_OverrideLimbDrawGameplayDefault`), the eye/mouth textures bound to segments
 //! 0x08/0x09, the tunic colours, and the blink timer.
@@ -81,7 +81,7 @@ pub struct PlayerRules {
     /// `sEyeTextures` / `sMouthTextures` as shipped: adult symbols, used for both ages.
     pub eye_textures: Vec<String>,
     pub mouth_textures: Vec<String>,
-    /// `sEyeMouthIndices`: default eye and mouth per `actor.shape.face`.
+    /// `sPlayerFaces`: default eye and mouth per `actor.shape.face`.
     pub eye_mouth_indices: Vec<[u8; 2]>,
 }
 
@@ -165,7 +165,7 @@ pub struct Loadout {
     /// Child only: `gSaveContext.equips.buttonItems[0] == ITEM_SWORD_KOKIRI` (otherwise the
     /// sheath is drawn without the sword).
     pub child_has_kokiri_sword: bool,
-    /// `actor.speedXZ > 2`: open hands are drawn as fists while running.
+    /// `actor.speed > 2`: open hands are drawn as fists while running.
     pub moving_fast: bool,
 }
 
@@ -188,7 +188,7 @@ impl Loadout {
     }
 }
 
-/// Link's blink timer (`func_80032CB4(unk_3A8, 20, 80, 6)`), stepped once per game frame.
+/// Link's blink timer (`FaceChange_UpdateBlinking(faceChange, 20, 80, 6)`), stepped once per game frame.
 #[derive(Debug, Clone)]
 pub struct Blinker {
     timer: i16,

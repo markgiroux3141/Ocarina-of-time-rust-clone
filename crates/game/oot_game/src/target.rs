@@ -1,54 +1,54 @@
-//! Z-targeting's actor side: the target context (`TargetContext` in `z_actor.c`).
+//! Z-targeting's actor side: the target context (`Attention` in `z_actor.c`).
 //!
 //! - Every frame `Actor_UpdateAll` refreshes each actor's distance and yaw to Player
 //!   (`Actor::update_distances`).
-//! - `func_8002C7BC` then picks what the Z button would lock on to next (`arrowPointedActor`,
-//!   via `func_80032AF0` / `func_800328D4` / `func_8002EFC0`), and steps the lock-on reticle
-//!   (`unk_44` → 80, then `unk_4B` counts). Player turns to face a target only once `unk_4B != 0`.
-//! - `func_8002C124` (called from `Interface_Draw`) moves the reticle on the screen once per
-//!   game frame (`draw_update`: three trail entries, `unk_48` fading it out after a target is
-//!   lost) and draws it (`draw`): four `gZTargetLockOnTriangleDL` triangles per entry in the
-//!   orthographic overlay, and `gZTargetArrowDL` over the next candidate (`unk_94`), both in
-//!   the colour of the actor's category (`sNaviColorList`).
+//! - `Attention_Update` then picks what the Z button would lock on to next (`arrowPointedActor`,
+//!   via `Attention_FindActor` / `Attention_FindActorInCategory` / `Attention_WeightedDistToPlayerSq`), and steps the lock-on reticle
+//!   (`reticleRadius` → 80, then `reticleSpinCounter` counts). Player turns to face a target only once `reticleSpinCounter != 0`.
+//! - `Attention_Draw` (called from `Interface_Draw`) moves the reticle on the screen once per
+//!   game frame (`draw_update`: three trail entries, `reticleFadeAlphaControl` fading it out after a target is
+//!   lost) and draws it (`draw`): four `gLockOnReticleTriangleDL` triangles per entry in the
+//!   orthographic overlay, and `gLockOnArrowDL` over the next candidate (`arrowHoverActor`), both in
+//!   the colour of the actor's category (`sAttentionColors`).
 //!
-//! Targets are ordinary actors: `ACTOR_FLAG_0` makes them targetable, with `ACTOR_FLAG_2`
+//! Targets are ordinary actors: `ACTOR_FLAG_ATTENTION_ENABLED` makes them targetable, with `ACTOR_FLAG_HOSTILE`
 //! they're hostile, and their `targetMode` and focus decide the rest.
 //!
 //! Navi's part (`En_Elf` reads it): `naviRefPos`, where she flies (the pointed actor's focus,
-//! or Player's), eased over four frames when the pointed actor changes (`unk_40`), and her
-//! colours for its category (`naviInner`, `naviOuter`, `Actor_SetNaviToActor`). The lock-on
+//! or Player's), eased over four frames when the pointed actor changes (`naviMoveProgressFactor`), and her
+//! colours for its category (`naviInner`, `naviOuter`, `Attention_SetNaviState`). The lock-on
 //! sounds and the BGM-enemy tracking are not modelled.
 
-#![allow(non_snake_case)] // unk_4B keeps the decomp's name
+#![allow(non_snake_case)] // reticleSpinCounter keeps the decomp's name
 
 use eng_collision::bgcheck::{self, CollisionContext};
 use eng_math::atan2_s;
 use glam::{Mat4, Vec3};
 
-pub use crate::actor::{ACTOR_FLAG_0, ACTOR_FLAG_2, ACTOR_FLAG_27};
+pub use crate::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_HOSTILE, ACTOR_FLAG_LOCK_ON_DISABLED};
 use eng_gfx::{DrawCmd, DrawLists, DrawParams, MeshKey, SegmentValues};
 
 use crate::actor::Actor;
 use crate::actor_ctx::{ActorContext, ActorHandle};
 use crate::pack::{BakeBody, BakeSegment, MeshBake, keys};
 
-/// `TargetContext` fields Player reads.
+/// `Attention` fields Player reads.
 #[derive(Debug, Clone, Default)]
 pub struct TargetCtx {
     /// `arrowPointedActor`: what a Z press locks on to.
     pub arrow_pointed: Option<ActorHandle>,
-    /// `unk_94`: the next candidate while one is locked (Z again switches to it).
-    pub unk_94: Option<ActorHandle>,
+    /// `arrowHoverActor`: the next candidate while one is locked (Z again switches to it).
+    pub arrow_hover_actor: Option<ActorHandle>,
     /// `targetedActor`.
     pub targeted: Option<ActorHandle>,
-    /// `unk_44`: reticle size, stepping from 500 to 80.
-    pub unk_44: f32,
-    /// `unk_4B`: non-zero once the reticle has locked.
-    pub unk_4B: u8,
-    /// `unk_48`: the reticle's alpha after its target is lost (0x100 on a new target).
-    pub unk_48: i16,
-    /// `unk_4C`: the trail entry written this frame (counts down 2, 1, 0).
-    pub unk_4C: i8,
+    /// `reticleRadius`: reticle size, stepping from 500 to 80.
+    pub reticle_radius: f32,
+    /// `reticleSpinCounter`: non-zero once the reticle has locked.
+    pub reticle_spin_counter: u8,
+    /// `reticleFadeAlphaControl`: the reticle's alpha after its target is lost (0x100 on a new target).
+    pub reticle_fade_alpha_control: i16,
+    /// `curReticle`: the trail entry written this frame (counts down 2, 1, 0).
+    pub cur_reticle: i8,
     /// `targetCenterPos`.
     pub target_center_pos: Vec3,
     /// `arr_50`: the reticle's last three screen positions.
@@ -57,35 +57,35 @@ pub struct TargetCtx {
     pub navi_ref_pos: Vec3,
     pub navi_inner: [f32; 4],
     pub navi_outer: [f32; 4],
-    /// `unk_40`: 1 when the pointed actor (or its category) changes, stepping to 0 by 0.25 as
+    /// `naviMoveProgressFactor`: 1 when the pointed actor (or its category) changes, stepping to 0 by 0.25 as
     /// `naviRefPos` eases over.
-    pub unk_40: f32,
+    pub navi_move_progress_factor: f32,
     /// `activeCategory`: the pointed actor's category (Player's without one).
     pub active_category: usize,
-    /// `unk_8C`: an actor Navi is sent to for one frame (none of the ported actors sets it).
-    pub unk_8c: Option<ActorHandle>,
-    /// What `func_8002C124` draws this frame (`None`: nothing).
+    /// `forcedLockOnActor`: an actor Navi is sent to for one frame (none of the ported actors sets it).
+    pub forced_lock_on_actor: Option<ActorHandle>,
+    /// What `Attention_Draw` draws this frame (`None`: nothing).
     pub reticle: Option<ReticleDraw>,
 }
 
-/// `TargetContextEntry`: a reticle position on the screen (the overlay's coordinates, centred,
-/// y up), its size (`unk_0C`, `unk_44` when written) and colour.
+/// `LockOnReticle`: a reticle position on the screen (the overlay's coordinates, centred,
+/// y up), its size (`radius`, `reticleRadius` when written) and colour.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct TargetEntry {
     pub pos: Vec3,
-    pub unk_0c: f32,
+    pub radius: f32,
     pub color: [u8; 3],
 }
 
-/// `func_8002C124`'s triangles this frame: the first entry's alpha (`spCE`) and how many
-/// entries it draws from `unk_4C` (`spB8`: 3 while locking, 1 once locked).
+/// `Attention_Draw`'s triangles this frame: the first entry's alpha (`spCE`) and how many
+/// entries it draws from `curReticle` (`spB8`: 3 while locking, 1 once locked).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReticleDraw {
     pub alpha: i16,
     pub count: usize,
 }
 
-/// `sNaviColorList[category].outer` (`z_actor.c`), with `inner`'s alpha 255 and this alpha 0.
+/// `sAttentionColors[category].outer` (`z_actor.c`), with `inner`'s alpha 255 and this alpha 0.
 pub const NAVI_OUTER: [[u8; 3]; 13] = [
     [0, 255, 0],
     [0, 255, 0],
@@ -102,7 +102,7 @@ pub const NAVI_OUTER: [[u8; 3]; 13] = [
     [0, 255, 0],
 ];
 
-/// `sNaviColorList[category].inner`.
+/// `sAttentionColors[category].inner`.
 pub const NAVI_INNER: [[u8; 3]; 13] = [
     [0, 255, 0],
     [0, 255, 0],
@@ -123,9 +123,9 @@ fn navi_inner(category: usize) -> [u8; 3] {
     NAVI_INNER.get(category).copied().unwrap_or([0, 255, 0])
 }
 
-/// The baked `gZTargetLockOnTriangleDL`, after `Gfx_SetupDL(OVERLAY_DISP, SETUPDL_57)`.
+/// The baked `gLockOnReticleTriangleDL`, after `Gfx_SetupDL(OVERLAY_DISP, SETUPDL_57)`.
 pub const LOCK_ON_TRIANGLE: &str = "z_actor/lock_on_triangle";
-/// The baked `gZTargetArrowDL`, after `Gfx_SetupDL(POLY_XLU_DISP, SETUPDL_7)`.
+/// The baked `gLockOnArrowDL`, after `Gfx_SetupDL(POLY_XLU_DISP, SETUPDL_7)`.
 pub const TARGET_ARROW: &str = "z_actor/target_arrow";
 /// The segment holding each bake's `sSetupDL` entry, and the one for `gDPSetPrimColor`.
 const SEG_SETUP_DL: u8 = 0x0D;
@@ -154,40 +154,40 @@ pub fn bakes() -> Vec<MeshBake> {
         prelude: vec![SEG_SETUP_DL, SEG_PRIM],
         body: BakeBody::DLists(vec![("gameplay_keep".into(), dl.into())]),
     };
-    vec![bake(LOCK_ON_TRIANGLE, setup_dl_57, "gZTargetLockOnTriangleDL"), bake(TARGET_ARROW, setup_dl_7, "gZTargetArrowDL")]
+    vec![bake(LOCK_ON_TRIANGLE, setup_dl_57, "gLockOnReticleTriangleDL"), bake(TARGET_ARROW, setup_dl_7, "gLockOnArrowDL")]
 }
 
 /// What Player needs from the targeting system when it updates.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TargetView {
     pub arrow_pointed: Option<ActorHandle>,
-    pub unk_94: Option<ActorHandle>,
+    pub arrow_hover_actor: Option<ActorHandle>,
     pub reticle_locked: bool,
 }
 
 impl TargetCtx {
-    /// A context before `Actor_InitContext`'s `func_8002C0C0`: `func_8002BE98` with Player's
+    /// A context before `Actor_InitContext`'s `Attention_Init`: `Attention_InitReticle` with Player's
     /// category.
     pub fn new() -> TargetCtx {
         let mut ctx = TargetCtx::default();
-        ctx.func_8002be98(crate::actor_ctx::ACTORCAT_PLAYER, Vec3::ZERO);
+        ctx.attention_init_reticle(crate::actor_ctx::ACTORCAT_PLAYER, Vec3::ZERO);
         ctx
     }
 
-    /// `func_8002C0C0` (`Actor_InitContext`, with Player, once it's spawned): nothing pointed or
-    /// targeted, Navi to `actor`, and `func_8002BE98`.
-    pub fn func_8002c0c0(&mut self, actor: &Actor, view_eye: Vec3) {
+    /// `Attention_Init` (`Actor_InitContext`, with Player, once it's spawned): nothing pointed or
+    /// targeted, Navi to `actor`, and `Attention_InitReticle`.
+    pub fn attention_init(&mut self, actor: &Actor, view_eye: Vec3) {
         self.arrow_pointed = None;
         self.targeted = None;
-        self.unk_40 = 0.0;
-        self.unk_8c = None;
-        self.unk_4B = 0;
-        self.unk_4C = 0;
+        self.navi_move_progress_factor = 0.0;
+        self.forced_lock_on_actor = None;
+        self.reticle_spin_counter = 0;
+        self.cur_reticle = 0;
         self.set_navi_to_actor(actor, actor.category);
-        self.func_8002be98(actor.category, view_eye);
+        self.attention_init_reticle(actor.category, view_eye);
     }
 
-    /// `Actor_SetNaviToActor`: Navi's point at `actor`'s focus (raised by its target arrow's
+    /// `Attention_SetNaviState`: Navi's point at `actor`'s focus (raised by its target arrow's
     /// offset), and the category's colours.
     pub fn set_navi_to_actor(&mut self, actor: &Actor, category: usize) {
         self.navi_ref_pos = Vec3::new(actor.focus_pos.x, actor.focus_pos.y + (actor.target_arrow_offset * actor.scale.y), actor.focus_pos.z);
@@ -196,27 +196,27 @@ impl TargetCtx {
         self.navi_outer = [o[0] as f32, o[1] as f32, o[2] as f32, 0.0];
     }
 
-    /// `func_8002BE98`: a new target. The reticle starts at the eye, at full size (500), and
+    /// `Attention_InitReticle`: a new target. The reticle starts at the eye, at full size (500), and
     /// takes the category's colour.
-    pub fn func_8002be98(&mut self, category: usize, view_eye: Vec3) {
+    pub fn attention_init_reticle(&mut self, category: usize, view_eye: Vec3) {
         self.target_center_pos = view_eye;
-        self.unk_44 = 500.0;
-        self.unk_48 = 0x100;
+        self.reticle_radius = 500.0;
+        self.reticle_fade_alpha_control = 0x100;
         let color = navi_inner(category);
         for i in 0..self.arr_50.len() {
-            self.func_8002be64(i, Vec3::ZERO);
+            self.attention_set_reticle_pos(i, Vec3::ZERO);
             self.arr_50[i].color = color;
         }
     }
 
-    /// `func_8002BE64`.
-    fn func_8002be64(&mut self, index: usize, pos: Vec3) {
+    /// `Attention_SetReticlePos`.
+    fn attention_set_reticle_pos(&mut self, index: usize, pos: Vec3) {
         self.arr_50[index].pos = pos;
-        self.arr_50[index].unk_0c = self.unk_44;
+        self.arr_50[index].radius = self.reticle_radius;
     }
 
     pub fn view(&self) -> TargetView {
-        TargetView { arrow_pointed: self.arrow_pointed, unk_94: self.unk_94, reticle_locked: self.unk_4B != 0 }
+        TargetView { arrow_pointed: self.arrow_pointed, arrow_hover_actor: self.arrow_hover_actor, reticle_locked: self.reticle_spin_counter != 0 }
     }
 }
 
@@ -226,7 +226,7 @@ pub struct TargetFrame<'a> {
     pub ranges: &'a [(f32, f32)],
     /// Player itself (not a target).
     pub player: ActorHandle,
-    /// Player's `unk_664` (locked target), `unk_66C` (target timer), `unk_84B[unk_846]`.
+    /// Player's `focusActor` (locked target), `zTargetActiveTimer` (target timer), `controlStickDirections[controlStickDataIndex]`.
     pub player_target: Option<ActorHandle>,
     pub player_timer: i16,
     pub player_stick_dir: i8,
@@ -239,17 +239,17 @@ pub struct TargetFrame<'a> {
     pub view_eye: Vec3,
 }
 
-/// `func_8002F090`.
+/// `Attention_ActorIsInRange`.
 pub fn in_range(ranges: &[(f32, f32)], a: &Actor, dist: f32) -> bool {
     dist < ranges.get(a.target_mode as usize).map(|r| r.0).unwrap_or(0.0)
 }
 
-/// `func_8002EFC0`: distance weighted by how far off Player's facing the actor is.
+/// `Attention_WeightedDistToPlayerSq`: distance weighted by how far off Player's facing the actor is.
 pub fn weighted_dist(a: &Actor, has_target: bool, player_yaw: i16) -> f32 {
     let yaw = a.yaw_towards_player.wrapping_sub(i16::MIN).wrapping_sub(player_yaw);
     let abs = (yaw as i32).abs();
     if has_target {
-        if abs > 0x4000 || a.flags & ACTOR_FLAG_27 != 0 {
+        if abs > 0x4000 || a.flags & ACTOR_FLAG_LOCK_ON_DISABLED != 0 {
             f32::MAX
         } else {
             a.xyz_dist_to_player_sq - a.xyz_dist_to_player_sq * 0.8 * ((0x4000 - abs) as f32 * (1.0 / 32768.0))
@@ -261,9 +261,9 @@ pub fn weighted_dist(a: &Actor, has_target: bool, player_yaw: i16) -> f32 {
     }
 }
 
-/// `func_8002F0C8`: should Player lose `a` (out of range, or behind and not locked with `flag`)?
+/// `Attention_ShouldReleaseLockOn`: should Player lose `a` (out of range, or behind and not locked with `flag`)?
 pub fn lost(ranges: &[(f32, f32)], a: &Actor, player_has_target: bool, player_yaw: i16, flag: bool) -> bool {
-    if a.flags & ACTOR_FLAG_0 == 0 {
+    if a.flags & ACTOR_FLAG_ATTENTION_ENABLED == 0 {
         return true;
     }
     if !flag {
@@ -289,32 +289,32 @@ pub fn project_pos(view_proj: Mat4, pos: Vec3) -> (Vec3, f32) {
     (p.truncate(), if p.w < 1.0 { 1.0 } else { 1.0 / p.w })
 }
 
-/// `func_80032880`: `Actor_GetScreenPos` inside (-20..340, -160..400) on the 320x240 screen.
+/// `Attention_ActorOnScreen`: `Actor_GetScreenPos` inside (-20..340, -160..400) on the 320x240 screen.
 fn on_screen(view_proj: Mat4, a: &Actor) -> bool {
     let (sx, sy) = actor_screen_pos(view_proj, a);
     sx > -20 && sx < 340 && sy > -160 && sy < 400
 }
 
-/// `func_8002C7BC`, called with the actor Player keeps targeted; the lock's sounds.
+/// `Attention_Update`, called with the actor Player keeps targeted; the lock's sounds.
 pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio: &mut crate::audio::GameAudio) {
     use crate::audio::sfx::{NA_SE_SY_LOCK_OFF, NA_SE_SY_LOCK_ON, NA_SE_SY_LOCK_ON_HUMAN};
-    // Actor_UpdateAll: only a locked target with unk_66C >= 5 counts; losing the lock sounds.
+    // Actor_UpdateAll: only a locked target with zTargetActiveTimer >= 5 counts; losing the lock sounds.
     let mut locked = f.player_target.filter(|&h| actors.actor(h).is_some_and(|a| !a.killed));
     if locked.is_none() || f.player_timer < 5 {
         locked = None;
-        if ctx.unk_4B != 0 {
-            ctx.unk_4B = 0;
-            audio.func_80078884(NA_SE_SY_LOCK_OFF);
+        if ctx.reticle_spin_counter != 0 {
+            ctx.reticle_spin_counter = 0;
+            audio.play_sfx_centered(NA_SE_SY_LOCK_OFF);
         }
     }
     let mut candidate = None;
     if !(f.player_target.is_some() && f.player_stick_dir == 2) {
-        // func_80032AF0 → func_800328D4 over the actors, in list order.
+        // Attention_FindActor → Attention_FindActorInCategory over the actors, in list order.
         let mut best = f32::MAX;
         let mut best_prio: Option<(u8, ActorHandle)> = None;
         for h in actors.all() {
             let Some(a) = actors.actor(h) else { continue };
-            if h == f.player || a.killed || a.flags & ACTOR_FLAG_0 == 0 || Some(h) == f.player_target {
+            if h == f.player || a.killed || a.flags & ACTOR_FLAG_ATTENTION_ENABLED == 0 || Some(h) == f.player_target {
                 continue;
             }
             let var = weighted_dist(a, f.player_target.is_some(), f.player_shape_yaw);
@@ -337,8 +337,8 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
             candidate = best_prio.map(|(_, h)| h);
         }
     }
-    ctx.unk_94 = candidate;
-    let pointed = match ctx.unk_8c.take() {
+    ctx.arrow_hover_actor = candidate;
+    let pointed = match ctx.forced_lock_on_actor.take() {
         Some(h) => Some(h),
         None => locked.or(candidate),
     };
@@ -347,12 +347,12 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
     if pointed != ctx.arrow_pointed || category != ctx.active_category {
         ctx.arrow_pointed = pointed;
         ctx.active_category = category;
-        ctx.unk_40 = 1.0;
+        ctx.navi_move_progress_factor = 1.0;
     }
-    // Navi's point: eased towards the pointed actor (or Player) while unk_40 falls, then on it.
+    // Navi's point: eased towards the pointed actor (or Player) while naviMoveProgressFactor falls, then on it.
     if let Some(a) = pointed.or(Some(f.player)).and_then(|h| actors.actor(h)) {
-        if !eng_math::step_to_f(&mut ctx.unk_40, 0.0, 0.25) {
-            let temp1 = 0.25 / ctx.unk_40;
+        if !eng_math::step_to_f(&mut ctx.navi_move_progress_factor, 0.0, 0.25) {
+            let temp1 = 0.25 / ctx.navi_move_progress_factor;
             let d = Vec3::new(a.world_pos.x, a.world_pos.y + (a.target_arrow_offset * a.scale.y), a.world_pos.z) - ctx.navi_ref_pos;
             ctx.navi_ref_pos += d * temp1;
         } else {
@@ -363,7 +363,7 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
     // locking.
     let mut arg = locked;
     if let Some(h) = arg
-        && ctx.unk_4B == 0
+        && ctx.reticle_spin_counter == 0
     {
         let visible = actors.actor(h).is_some_and(|a| {
             let (p, inv_w) = project_pos(f.view_proj, a.focus_pos);
@@ -377,75 +377,75 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
         && let Some(a) = actors.actor(h)
     {
         if ctx.targeted != Some(h) {
-            ctx.func_8002be98(a.category, f.view_eye);
+            ctx.attention_init_reticle(a.category, f.view_eye);
             ctx.targeted = Some(h);
-            // ACTOR_EN_BOOM (unk_48 0): the boomerang isn't ported.
-            audio.func_80078884(if a.is_hostile() { NA_SE_SY_LOCK_ON } else { NA_SE_SY_LOCK_ON_HUMAN });
+            // ACTOR_EN_BOOM (reticleFadeAlphaControl 0): the boomerang isn't ported.
+            audio.play_sfx_centered(if a.is_hostile() { NA_SE_SY_LOCK_ON } else { NA_SE_SY_LOCK_ON_HUMAN });
         }
         ctx.target_center_pos = Vec3::new(a.world_pos.x, a.world_pos.y - (a.shape_y_offset * a.scale.y), a.world_pos.z);
-        if ctx.unk_4B == 0 {
-            let t5 = (500.0 - ctx.unk_44) * 3.0;
+        if ctx.reticle_spin_counter == 0 {
+            let t5 = (500.0 - ctx.reticle_radius) * 3.0;
             let t6 = t5.clamp(30.0, 100.0);
-            if eng_math::step_to_f(&mut ctx.unk_44, 80.0, t6) {
-                ctx.unk_4B += 1;
+            if eng_math::step_to_f(&mut ctx.reticle_radius, 80.0, t6) {
+                ctx.reticle_spin_counter += 1;
             }
         } else {
-            ctx.unk_4B = (ctx.unk_4B.wrapping_add(3)) | 0x80;
-            ctx.unk_44 = 120.0;
+            ctx.reticle_spin_counter = (ctx.reticle_spin_counter.wrapping_add(3)) | 0x80;
+            ctx.reticle_radius = 120.0;
         }
     } else {
         ctx.targeted = None;
-        eng_math::step_to_f(&mut ctx.unk_44, 500.0, 80.0);
+        eng_math::step_to_f(&mut ctx.reticle_radius, 500.0, 80.0);
     }
 }
 
-/// What `func_8002C124` reads from Player.
+/// What `Attention_Draw` reads from Player.
 #[derive(Debug, Clone, Copy)]
 pub struct ReticlePlayer {
-    /// `stateFlags1 & PLAYER_STATE1_6`.
+    /// `stateFlags1 & PLAYER_STATE1_TALKING`.
     pub state1_6: bool,
-    /// `unk_664`.
+    /// `focusActor`.
     pub target: Option<ActorHandle>,
 }
 
-/// `func_8002C124`'s state changes, once per game frame after the view is set up: the
-/// reticle follows the target's focus, flying in from the screen's centre as `unk_44` shrinks
-/// (`var1`), or fades out (`unk_48` −120 a frame) where it was when the target was lost.
+/// `Attention_Draw`'s state changes, once per game frame after the view is set up: the
+/// reticle follows the target's focus, flying in from the screen's centre as `reticleRadius` shrinks
+/// (`var1`), or fades out (`reticleFadeAlphaControl` −120 a frame) where it was when the target was lost.
 pub fn draw_update(ctx: &mut TargetCtx, actors: &ActorContext, view_proj: Mat4, player: ReticlePlayer) {
     ctx.reticle = None;
-    if ctx.unk_48 == 0 {
+    if ctx.reticle_fade_alpha_control == 0 {
         return;
     }
     let actor = ctx.targeted.and_then(|h| actors.actor(h));
     let mut alpha = 0xFF;
     let mut var1 = 1.0;
-    let count = if ctx.unk_4B != 0 { 1 } else { 3 };
+    let count = if ctx.reticle_spin_counter != 0 { 1 } else { 3 };
     if let Some(a) = actor {
         ctx.target_center_pos = a.focus_pos;
-        var1 = (500.0 - ctx.unk_44) / 420.0;
+        var1 = (500.0 - ctx.reticle_radius) / 420.0;
     } else {
-        ctx.unk_48 -= 120;
-        if ctx.unk_48 < 0 {
-            ctx.unk_48 = 0;
+        ctx.reticle_fade_alpha_control -= 120;
+        if ctx.reticle_fade_alpha_control < 0 {
+            ctx.reticle_fade_alpha_control = 0;
         }
-        alpha = ctx.unk_48;
+        alpha = ctx.reticle_fade_alpha_control;
     }
     let (mut p, inv_w) = project_pos(view_proj, ctx.target_center_pos);
     p.x = ((160.0 * (p.x * inv_w)) * var1).clamp(-320.0, 320.0);
     p.y = ((120.0 * (p.y * inv_w)) * var1).clamp(-240.0, 240.0);
     p.z *= var1;
-    ctx.unk_4C -= 1;
-    if ctx.unk_4C < 0 {
-        ctx.unk_4C = 2;
+    ctx.cur_reticle -= 1;
+    if ctx.cur_reticle < 0 {
+        ctx.cur_reticle = 2;
     }
-    ctx.func_8002be64(ctx.unk_4C as usize, p);
+    ctx.attention_set_reticle_pos(ctx.cur_reticle as usize, p);
     if !player.state1_6 || ctx.targeted != player.target {
         ctx.reticle = Some(ReticleDraw { alpha, count });
     }
 }
 
-/// `func_8002C124`'s draws: the lock-on triangles into the overlay list (`OVERLAY_DISP`) and
-/// the arrow over `unk_94` into the XLU list.
+/// `Attention_Draw`'s draws: the lock-on triangles into the overlay list (`OVERLAY_DISP`) and
+/// the arrow over `arrowHoverActor` into the XLU list.
 pub fn draw(ctx: &TargetCtx, actors: &ActorContext, gameplay_frames: u32, out: &mut DrawLists) {
     use std::f32::consts::PI;
     let prim = |c: [u8; 3], a: u8| {
@@ -455,17 +455,17 @@ pub fn draw(ctx: &TargetCtx, actors: &ActorContext, gameplay_frames: u32, out: &
     };
     if let Some(r) = ctx.reticle {
         let mut alpha = r.alpha;
-        let mut idx = ctx.unk_4C as usize;
+        let mut idx = ctx.cur_reticle as usize;
         for _ in 0..r.count {
             let e = ctx.arr_50[idx];
-            if e.unk_0c < 500.0 {
-                let var2 = if e.unk_0c <= 120.0 { 0.15 } else { ((e.unk_0c - 120.0) * 0.001) + 0.15 };
+            if e.radius < 500.0 {
+                let var2 = if e.radius <= 120.0 { 0.15 } else { ((e.radius - 120.0) * 0.001) + 0.15 };
                 let mut m = Mat4::from_translation(Vec3::new(e.pos.x, e.pos.y, 0.0))
                     * Mat4::from_scale(Vec3::new(var2, 0.15, 1.0))
-                    * Mat4::from_rotation_z((ctx.unk_4B & 0x7F) as f32 * (PI / 64.0));
+                    * Mat4::from_rotation_z((ctx.reticle_spin_counter & 0x7F) as f32 * (PI / 64.0));
                 for _ in 0..4 {
                     m *= Mat4::from_rotation_z(PI / 2.0);
-                    let t = m * Mat4::from_translation(Vec3::new(e.unk_0c, e.unk_0c, 0.0));
+                    let t = m * Mat4::from_translation(Vec3::new(e.radius, e.radius, 0.0));
                     out.overlay_2d.push(DrawCmd { mesh: MeshKey::named(keys::bake(LOCK_ON_TRIANGLE)), transform: t, bones: Vec::new(), params: prim(e.color, alpha as u8) });
                 }
             }
@@ -476,8 +476,8 @@ pub fn draw(ctx: &TargetCtx, actors: &ActorContext, gameplay_frames: u32, out: &
             idx = (idx + 1) % 3;
         }
     }
-    if let Some(a) = ctx.unk_94.and_then(|h| actors.actor(h))
-        && a.flags & ACTOR_FLAG_27 == 0
+    if let Some(a) = ctx.arrow_hover_actor.and_then(|h| actors.actor(h))
+        && a.flags & ACTOR_FLAG_LOCK_ON_DISABLED == 0
     {
         // iREG(27..29) are 0.
         let m = Mat4::from_translation(Vec3::new(a.focus_pos.x, a.focus_pos.y + (a.target_arrow_offset * a.scale.y) + 17.0, a.focus_pos.z))

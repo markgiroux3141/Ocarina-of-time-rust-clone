@@ -18,6 +18,7 @@ oot_actors.workspace = true
 glam.workspace = true
 bytemuck.workspace = true
 quick-xml.workspace = true
+regex.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 serde.workspace = true

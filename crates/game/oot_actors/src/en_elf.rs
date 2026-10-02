@@ -2,7 +2,7 @@
 //! - `FAIRY_NAVI` (0), Link's fairy, spawned by `Player_Init` (`Player_SpawnFairy`). She
 //!   follows Link's hat, flies to what Z would lock on to (the target context's `naviRefPos`,
 //!   in its category's colours), fades into Link's hat when nothing is around, and dashes out
-//!   when something is. She says her C-Up text (`naviTextId`, from `ElfMessage_GetCUpText`
+//!   when something is. She says her C-Up text (`naviTextId`, from `QuestHint_GetNaviTextId`
 //!   while `naviTimer` is between 600 and 3000) when Player talks to her. In a cutscene she
 //!   follows her cue in `npcActions[8]` (the opening, the Deku Tree's talk);
 //! - `FAIRY_KOKIRI` (3), a Kokiri child's fairy, in a colour of `sColorFlags`, bobbing above
@@ -25,7 +25,7 @@ use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use eng_math::{atan2_s, cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, step_to_f};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_4, ACTOR_FLAG_5, ACTOR_FLAG_16, ACTOR_FLAG_25, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_ITEMACTION, ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, PLAYER_BODYPART_HAT, PLAYER_BODYPART_HEAD, PLAYER_BODYPART_WAIST, audio_play_actor_sfx2};
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::CS_STATE_IDLE;
@@ -36,8 +36,8 @@ use oot_game::skelanime_std::SkelAnimeStd;
 
 pub const ACTOR_EN_ELF: i16 = 0x0018;
 
-/// `En_Elf_InitVars`: `ACTOR_FLAG_4 | ACTOR_FLAG_5 | ACTOR_FLAG_25`, `ACTORCAT_ITEMACTION`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ELF, name: "En_Elf", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_4 | ACTOR_FLAG_5 | ACTOR_FLAG_25, object: "gameplay_keep" };
+/// `En_Elf_Profile`: `ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA`, `ACTORCAT_ITEMACTION`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ELF, name: "En_Elf", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
 
 // `FairyType`.
 pub const FAIRY_NAVI: i16 = 0;
@@ -54,13 +54,13 @@ pub const FAIRY_FLAG_TIMED: u16 = 1 << 8;
 pub const FAIRY_FLAG_BIG: u16 = 1 << 9;
 
 /// `PLAYER_STATE1_10` (holding an item up, a first-person item), `PLAYER_STATE1_20` (first
-/// person), `PLAYER_STATE2_20` (Navi out of Link's hat) (`z64player.h`).
+/// person), `PLAYER_STATE2_NAVI_ACTIVE` (Navi out of Link's hat) (`player.h`).
 const PLAYER_STATE1_10: u32 = 1 << 10;
 const PLAYER_STATE1_20: u32 = 1 << 20;
-pub const PLAYER_STATE2_20: u32 = 1 << 20;
+pub const PLAYER_STATE2_NAVI_ACTIVE: u32 = 1 << 20;
 
-/// `SCENE_LINK_HOME`.
-const SCENE_LINK_HOME: u16 = 0x34;
+/// `SCENE_LINKS_HOUSE`.
+const SCENE_LINKS_HOUSE: u16 = 0x34;
 /// `GI_MAX`: a healing fairy's offer, which only a bottle takes.
 const GI_MAX: i16 = 0x7E;
 
@@ -855,7 +855,7 @@ impl EnElf {
         self.actor.scale = Vec3::splat(self.actor.scale.x);
     }
 
-    /// `EnElf_GetCutsceneNextPos`: the cue in `npcActions[action]` at this frame.
+    /// `EnElf_GetCuePos`: the cue in `npcActions[action]` at this frame.
     fn cutscene_next_pos(play: &PlayState, slot: usize) -> Option<Vec3> {
         let a = play.cs_ctx.npc_actions[slot]?;
         let (s, e) = (a.start_pos.as_vec3(), a.end_pos.as_vec3());
@@ -880,7 +880,7 @@ impl EnElf {
             } else {
                 self.func_80a02c98(next, 0.2);
             }
-            if play.scene_id == SCENE_LINK_HOME && play.save.scene_layer == 4 {
+            if play.scene_id == SCENE_LINKS_HOUSE && play.save.scene_layer == 4 {
                 // The dash as she comes into Link's house in the opening, and each time she
                 // swoops on him.
                 if play.cs_ctx.frames == 55 {
@@ -992,11 +992,11 @@ impl EnElf {
     }
 
     /// `func_80A04414`: Navi's colours: at once to white when the pointed actor changes
-    /// (`unk_40`), then over four frames to the target context's once she's there.
+    /// (`naviMoveProgressFactor`), then over four frames to the target context's once she's there.
     fn func_80a04414(&mut self, play: &mut PlayState) {
         let arrow = play.target_ctx.arrow_pointed;
         let (inner, outer, navi_ref) = (play.target_ctx.navi_inner, play.target_ctx.navi_outer, play.target_ctx.navi_ref_pos);
-        if play.target_ctx.unk_40 != 0.0 {
+        if play.target_ctx.navi_move_progress_factor != 0.0 {
             self.unk_2c6 = 0;
             self.unk_29c = 1.0;
             if self.unk_2c7 == 0 {
@@ -1068,7 +1068,7 @@ impl EnElf {
             } else if arrow.is_none() || arrow == Some(ACTORCAT_NPC) {
                 if arrow.is_some() {
                     self.unk_2c0 = 100;
-                    change_player_state2(play, PLAYER_STATE2_20, 0);
+                    change_player_state2(play, PLAYER_STATE2_NAVI_ACTIVE, 0);
                     temp = 0;
                 } else {
                     temp = match self.unk_2a8 {
@@ -1089,7 +1089,7 @@ impl EnElf {
                                     self.unk_2ae -= 1;
                                     7
                                 } else {
-                                    change_player_state2(play, PLAYER_STATE2_20, 0);
+                                    change_player_state2(play, PLAYER_STATE2_NAVI_ACTIVE, 0);
                                     0
                                 }
                             } else {
@@ -1115,7 +1115,7 @@ impl EnElf {
             let state2 = player(play).map(|p| p.state2).unwrap_or(0);
             match temp {
                 0 => {
-                    if state2 & PLAYER_STATE2_20 == 0 {
+                    if state2 & PLAYER_STATE2_NAVI_ACTIVE == 0 {
                         temp = 7;
                         if self.unk_2c7 == 0 {
                             audio_play_actor_sfx2(play, NA_SE_EV_NAVY_VANISH);
@@ -1123,7 +1123,7 @@ impl EnElf {
                     }
                 }
                 8 => {
-                    if state2 & PLAYER_STATE2_20 != 0 {
+                    if state2 & PLAYER_STATE2_NAVI_ACTIVE != 0 {
                         self.unk_2c0 = 42;
                         temp = 11;
                         if self.unk_2c7 == 0 {
@@ -1131,8 +1131,8 @@ impl EnElf {
                         }
                     }
                 }
-                7 => change_player_state2(play, 0, PLAYER_STATE2_20),
-                _ => change_player_state2(play, PLAYER_STATE2_20, 0),
+                7 => change_player_state2(play, 0, PLAYER_STATE2_NAVI_ACTIVE),
+                _ => change_player_state2(play, PLAYER_STATE2_NAVI_ACTIVE, 0),
             }
         }
         if temp != self.unk_2a8 {
@@ -1295,7 +1295,7 @@ impl EnElf {
             }
         } else if pl.navi_text_id < 0 {
             // A negative id: the talk starts at once.
-            self.actor.flags |= ACTOR_FLAG_16;
+            self.actor.flags |= ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         }
         if oot_game::npc::process_talk_request(&mut self.actor) {
             play.audio.func_800f4524(SfxPos::Default, NA_SE_VO_SK_LAUGH, 0x20);
@@ -1308,8 +1308,8 @@ impl EnElf {
             self.fairy_flags |= 0x20;
             self.update_fn = Update::Talk;
             self.func_80a01c38(3);
-            // (elfMsg->actor.flags |= ACTOR_FLAG_8: no Elf_Msg.)
-            self.actor.flags &= !ACTOR_FLAG_16;
+            // (elfMsg->actor.flags |= ACTOR_FLAG_TALK: no Elf_Msg.)
+            self.actor.flags &= !ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         } else {
             self.run_action(play);
             self.actor.shape_rot.y = self.unk_2bc;

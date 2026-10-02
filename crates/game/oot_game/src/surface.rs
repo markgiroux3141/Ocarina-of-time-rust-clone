@@ -13,8 +13,8 @@ pub const WALL_FLAG_0: u32 = 1;
 pub const WALL_FLAG_1: u32 = 2;
 pub const WALL_FLAG_2: u32 = 4;
 pub const WALL_FLAG_3: u32 = 8;
-pub const WALL_FLAG_4: u32 = 16;
-pub const WALL_FLAG_5: u32 = 32;
+pub const WALL_FLAG_CRAWLSPACE_1: u32 = 16;
+pub const WALL_FLAG_CRAWLSPACE_2: u32 = 32;
 pub const WALL_FLAG_6: u32 = 64;
 
 /// The `SurfaceType_Get*` accessors, on the collision context that owns the poly.
@@ -33,7 +33,7 @@ pub trait SurfaceType {
     fn floor_property(&self, id: PolyId) -> u32;
     /// `SurfaceType_IsSoft`.
     fn is_soft(&self, id: PolyId) -> bool;
-    /// `SurfaceType_GetSfxType`.
+    /// `SurfaceType_GetMaterial`.
     fn sfx_type(&self, id: PolyId) -> u32;
     /// `SurfaceType_GetFloorEffect`.
     fn floor_effect(&self, id: PolyId) -> u32;

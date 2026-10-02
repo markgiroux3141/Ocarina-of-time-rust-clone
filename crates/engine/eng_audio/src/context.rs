@@ -1,4 +1,4 @@
-//! `gAudioContext` (`AudioContext`, `z64audio.h`) and the structs it holds.
+//! `gAudioCtx` (`AudioContext`, `audio.h`) and the structs it holds.
 //!
 //! The port keeps the C's layout of ownership: the notes, layers, channels and players are
 //! arrays, and what points at them points by index (`NoteId`, `LayerId`, `ChanId`); the lists
@@ -21,11 +21,11 @@ pub type ChanId = usize;
 pub type PoolId = usize;
 pub type NodeId = usize;
 
-/// `&gAudioContext.sequenceChannelNone`.
+/// `&gAudioCtx.sequenceChannelNone`.
 pub const CHANNEL_NONE: ChanId = 0;
 
-// `z64audio.h`.
-pub const TATUMS_PER_BEAT: i32 = 48;
+// `audio.h`.
+pub const SEQTICKS_PER_BEAT: i32 = 48;
 pub const SEQ_NUM_CHANNELS: usize = 16;
 pub const MUTE_BEHAVIOR_3: u8 = 1 << 3;
 pub const MUTE_BEHAVIOR_4: u8 = 1 << 4;
@@ -44,10 +44,10 @@ pub const AIBUF_LEN: i32 = 88 * SAMPLES_PER_FRAME;
 pub const AIBUF_SIZE: i32 = AIBUF_LEN * SAMPLE_SIZE;
 pub const WAVE_SAMPLE_COUNT: i32 = 64;
 
-pub const SOUNDMODE_STEREO: i8 = 0;
-pub const SOUNDMODE_HEADSET: i8 = 1;
-pub const SOUNDMODE_SURROUND: i8 = 2;
-pub const SOUNDMODE_MONO: i8 = 3;
+pub const SOUND_OUTPUT_STEREO: i8 = 0;
+pub const SOUND_OUTPUT_HEADSET: i8 = 1;
+pub const SOUND_OUTPUT_SURROUND: i8 = 2;
+pub const SOUND_OUTPUT_MONO: i8 = 3;
 
 pub const ADSR_STATE_DISABLED: u8 = 0;
 pub const ADSR_STATE_INITIAL: u8 = 1;
@@ -87,7 +87,7 @@ pub const LOAD_STATUS_DISCARDABLE: u8 = 3;
 pub const LOAD_STATUS_MAYBE_DISCARDABLE: u8 = 4;
 pub const LOAD_STATUS_PERMANENTLY_LOADED: u8 = 5;
 
-/// The `sizeof`s the heap's allocations take (`z64audio.h`'s size comments, `abi.h`).
+/// The `sizeof`s the heap's allocations take (`audio.h`'s size comments, `abi.h`).
 pub const SIZEOF_NOTE: u32 = 0xE0;
 pub const SIZEOF_SEQUENCE_CHANNEL: u32 = 0xD4;
 pub const SIZEOF_NOTE_SUB_EU: u32 = 0x20;
@@ -193,7 +193,7 @@ pub struct AdsrSettings {
     pub envelope: u32,
 }
 
-/// `AdsrState`. `action` is the byte of its bitfield union: `unk_0b80` (0x80), `hang` (0x40),
+/// `AdsrState`. `action` is the byte of its bitfield union: `unused` (0x80), `hang` (0x40),
 /// `decay` (0x20), `release` (0x10) and `state` (the low four bits).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AdsrState {
@@ -280,7 +280,7 @@ pub struct SequencePlayer {
     pub player_idx: i8,
     pub tempo: u16,
     pub tempo_acc: u16,
-    pub unk_0c: u16,
+    pub tempo_change: u16,
     pub transposition: i16,
     pub delay: u16,
     pub fade_timer: u16,
@@ -329,7 +329,7 @@ pub struct SequenceChannel {
     pub gain: u8,
     pub velocity_random_variance: u8,
     pub gate_time_random_variance: u8,
-    pub unk_0f: u8,
+    pub comb_filter_size: u8,
     pub vibrato_rate_start: u16,
     pub vibrato_extent_start: u16,
     pub vibrato_rate_target: u16,
@@ -338,7 +338,7 @@ pub struct SequenceChannel {
     pub vibrato_extent_change_delay: u16,
     pub vibrato_delay: u16,
     pub delay: u16,
-    pub unk_20: u16,
+    pub comb_filter_gain: u16,
     pub unk_22: u16,
     pub inst_or_wave: i16,
     pub transposition: i16,
@@ -427,7 +427,7 @@ pub struct NoteSynthesisState {
     pub synthesis_buffers: u32,
     pub cur_vol_left: u16,
     pub cur_vol_right: u16,
-    pub unk_1a: u8,
+    pub comb_filter_needs_init: u8,
 }
 
 /// `VibratoState`.
@@ -452,8 +452,8 @@ pub struct NoteAttributes {
     pub gain: u8,
     pub pan: u8,
     pub stereo: u8,
-    pub unk_4: u8,
-    pub unk_6: u16,
+    pub comb_filter_size: u8,
+    pub comb_filter_gain: u16,
     pub freq_scale: f32,
     pub velocity: f32,
     pub filter: u32,
@@ -480,9 +480,9 @@ pub struct NotePlaybackState {
     pub vibrato_state: VibratoState,
 }
 
-/// `NoteSubEu`: what one update hands the synthesis for a note.
+/// `NoteSampleState`: what one update hands the synthesis for a note.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct NoteSubEu {
+pub struct NoteSampleState {
     pub enabled: bool,
     pub needs_init: bool,
     pub finished: bool,
@@ -503,20 +503,20 @@ pub struct NoteSubEu {
     pub haas_effect_right_delay_size: u8,
     pub reverb_vol: u8,
     pub harmonic_index_cur_and_prev: u8,
-    pub unk_07: u8,
+    pub comb_filter_size: u8,
     pub target_vol_left: u16,
     pub target_vol_right: u16,
     pub resampling_rate_fixed_point: u16,
-    pub unk_0e: u16,
+    pub comb_filter_gain: u16,
     /// The union of `TunedSample* tunedSample` and `s16* waveSampleAddr`.
     pub tuned_sample: u32,
     /// `s16* filter`.
     pub filter: u32,
 }
 
-impl NoteSubEu {
-    /// `bitField0` and `bitField1` (`sub->bitField0 = note->noteSubEu.bitField0`).
-    pub fn copy_bitfields_from(&mut self, o: &NoteSubEu) {
+impl NoteSampleState {
+    /// `bitField0` and `bitField1` (`sub->bitField0 = note->sampleState.bitField0`).
+    pub fn copy_bitfields_from(&mut self, o: &NoteSampleState) {
         self.enabled = o.enabled;
         self.needs_init = o.needs_init;
         self.finished = o.finished;
@@ -539,12 +539,12 @@ pub struct Note {
     pub synthesis_state: NoteSynthesisState,
     pub playback_state: NotePlaybackState,
     pub start_sample_pos: u32,
-    pub note_sub_eu: NoteSubEu,
+    pub note_sub_eu: NoteSampleState,
 }
 
-/// `NoteSubAttributes`.
+/// `NoteSampleStateAttributes`.
 #[derive(Debug, Clone, Copy, Default)]
-pub struct NoteSubAttributes {
+pub struct NoteSampleStateAttributes {
     pub reverb_vol: u8,
     pub gain: u8,
     pub pan: u8,
@@ -552,8 +552,8 @@ pub struct NoteSubAttributes {
     pub frequency: f32,
     pub velocity: f32,
     pub filter: u32,
-    pub unk_14: u8,
-    pub unk_16: u16,
+    pub comb_filter_size: u8,
+    pub comb_filter_gain: u16,
 }
 
 /// `ReverbRingBufferItem`.
@@ -917,18 +917,18 @@ pub struct Statics {
     pub sequence_font_table: u32,
     /// Each reverb's `tunedSample`, `sample` and `loop`.
     pub reverb_tuned_samples: [u32; 4],
-    /// `func_800E4FE0`'s address: where `gWaveSamples[8]` starts each frame.
+    /// `AudioThread_Update`'s address: where `gWaveSamples[8]` starts each frame.
     pub noise_base: u32,
 }
 
-/// The audio thread's output: what one call of `func_800E5000` produced.
+/// The audio thread's output: what one call of `AudioThread_UpdateImpl` produced.
 #[derive(Debug, Clone, Default)]
 pub struct AudioFrame {
     /// Interleaved stereo samples (L, R), `ai_buf_lengths[index]` frames of them.
     pub samples: Vec<i16>,
 }
 
-/// `gAudioContext`, and the statics of the audio files that belong to it.
+/// `gAudioCtx`, and the statics of the audio files that belong to it.
 pub struct AudioContext {
     pub ram: Ram,
     pub cart: Cart,
@@ -942,7 +942,7 @@ pub struct AudioContext {
     pub unk_2: u16,
     pub unk_4: u16,
     pub cur_loaded_book: u32,
-    pub note_subs_eu: Vec<NoteSubEu>,
+    pub note_subs_eu: Vec<NoteSampleState>,
     pub synthesis_reverbs: [SynthesisReverb; 4],
     pub used_samples: Vec<u32>,
     pub preload_sample_stack: Vec<AudioPreloadReq>,
@@ -987,7 +987,7 @@ pub struct AudioContext {
     pub abi_cmd_bufs: [u32; 2],
     /// The command list being built (`curAbiCmdBuf`).
     pub cmds: Vec<Acmd>,
-    pub unk_2960: f32,
+    pub max_tempo_tv_type_factors: f32,
     pub refresh_rate: i32,
     pub ai_buffers: [u32; 3],
     pub ai_buf_lengths: [i16; 3],
@@ -1036,7 +1036,7 @@ pub struct AudioContext {
     pub cmd_wr_pos: u8,
     pub cmd_rd_pos: u8,
     pub cmd_queue_finished: u8,
-    pub unk_5bdc: [u16; 4],
+    pub thread_cmd_channel_mask: [u16; 4],
     pub cmd_buf: [AudioCmd; 0x100],
     /// `cmdProcQueue` (4 messages), `audioResetQueue` (1), `taskStartQueue` (1).
     pub cmd_proc_queue: VecDeque<u32>,
@@ -1048,13 +1048,13 @@ pub struct AudioContext {
     pub wave8: u32,
     /// `gAudioContextInitialized`.
     pub audio_context_initialized: bool,
-    /// `func_800E5000`'s `sMaxAbiCmdCnt` and `sWaitingAudioTask` (whether one waits).
+    /// `AudioThread_UpdateImpl`'s `sMaxAbiCmdCnt` and `sWaitingAudioTask` (whether one waits).
     pub max_abi_cmd_cnt: i32,
-    /// `Audio_ProcessCmds`' `curCmdRdPos`.
+    /// `AudioThread_ProcessCmds`' `sCurCmdRdPos`.
     pub cur_cmd_rd_pos: u8,
-    /// `Audio_ScheduleProcessCmds`' `D_801304E8`.
+    /// `AudioThread_ScheduleProcessCmds`' `D_801304E8`.
     pub d_801304e8: i32,
-    /// `Audio_NextRandom`'s `audRand`.
+    /// `AudioThread_NextRandom`'s `sAudioRandom`.
     pub aud_rand: u32,
     /// `Audio_GetVibratoFreqScale`'s `D_80130510` and `D_80130514`.
     pub d_80130510: f32,
@@ -1062,7 +1062,7 @@ pub struct AudioContext {
     /// `osGetCount()`: the CPU's cycle counter, which the random numbers mix in. This port
     /// advances it by a fixed amount per audio frame, so runs repeat (ADR 0025).
     pub os_count: u32,
-    /// `D_801755D0`: never set by this port.
+    /// `gAudioCustomUpdateFunction`: never set by this port.
     pub osc_frames: u64,
     /// Not in the C: counts for tests and tools.
     pub stats: Stats,

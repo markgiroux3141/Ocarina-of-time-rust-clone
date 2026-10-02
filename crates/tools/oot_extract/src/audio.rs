@@ -1,7 +1,7 @@
 //! Audio: soundfonts -> JSON, samples (VADPCM) -> WAV, sequences -> raw `.seq` + JSON + MIDI.
 //!
-//! Layouts follow the decomp (`include/z64audio.h`, `src/code/audio_load.c`,
-//! `audio_synthesis.c`, `audio_seqplayer.c`):
+//! Layouts follow the decomp (`include/audio.h`, `src/audio/internal/load.c`,
+//! `synthesis.c`, `seqplayer.c`):
 //!
 //! * `AudioTable`: `s16 numEntries, s16 unkMediumParam, u32 romAddr, pad[8]`, then 16-byte
 //!   `AudioTableEntry {u32 romAddr, u32 size, s8 medium, s8 cachePolicy, s16 shortData1..3}`.
@@ -42,8 +42,8 @@ const SAMPLE_BANK_TABLE: (usize, usize) = (0xBCCD90, 0x80);
 
 /// The synthesis output rate; a tuning of 1.0 plays a sample at this rate.
 const OUTPUT_RATE: f64 = 32000.0;
-/// Sequence ticks per beat (TATUMS_PER_BEAT); used as the MIDI division.
-const TATUMS_PER_BEAT: u32 = 48;
+/// Sequence ticks per beat (SEQTICKS_PER_BEAT); used as the MIDI division.
+const SEQTICKS_PER_BEAT: u32 = 48;
 /// Hard cap for one MIDI conversion (seconds of music).
 const MIDI_MAX_SECONDS: f64 = 15.0 * 60.0;
 
@@ -639,22 +639,32 @@ fn envelope_json(env: &[(i16, i16)]) -> Value {
 // ---------------------------------------------------------------------------------------------
 // Decomp name tables
 
-/// `NA_BGM_*` names (and their trailing comments) from include/sequence.h, by value.
-fn sequence_names(decomp: &Path) -> BTreeMap<u32, (String, String)> {
+/// `NA_BGM_*` names (without the prefix) by value: the `NA_BGM` enum, its members the rows of
+/// include/tables/sequence_table.h (argument 1) and then sequence.h's valued ones. The second
+/// field is a title; the decomp has none since 52a510f, so it's empty.
+pub(crate) fn sequence_names(decomp: &Path) -> BTreeMap<u32, (String, String)> {
     let mut m = BTreeMap::new();
-    let Ok(text) = std::fs::read_to_string(decomp.join("include").join("sequence.h")) else { return m };
-    for line in text.lines() {
-        let Some(rest) = line.trim().strip_prefix("#define NA_BGM_") else { continue };
-        let mut it = rest.split_whitespace();
-        let (Some(name), Some(val)) = (it.next(), it.next()) else { continue };
-        let Ok(v) = u32::from_str_radix(val.trim_start_matches("0x").trim_start_matches("0X"), 16) else { continue };
-        let comment = line.split_once("//").map(|(_, c)| c.split_whitespace().collect::<Vec<_>>().join(" ")).unwrap_or_default();
-        m.entry(v).or_insert((name.to_string(), comment));
+    let Ok(table) = oot_import::csrc::read_c(decomp, "include/tables/sequence_table.h") else { return m };
+    for (i, (_, args)) in oot_import::csrc::define_rows_nested(&table).into_iter().enumerate() {
+        if let Some(name) = args.get(1) {
+            m.entry(i as u32).or_insert((name.trim_start_matches("NA_BGM_").to_string(), String::new()));
+        }
+    }
+    let seq_h = std::fs::read_to_string(decomp.join("include").join("sequence.h")).unwrap_or_default();
+    for line in seq_h.lines() {
+        let Some((name, val)) = line.trim().trim_end_matches(',').split_once('=') else { continue };
+        let name = name.trim();
+        if !name.starts_with("NA_BGM_") {
+            continue;
+        }
+        if let Some(v) = oot_import::csrc::parse_int(val.trim()) {
+            m.entry(v as u32).or_insert((name.trim_start_matches("NA_BGM_").to_string(), String::new()));
+        }
     }
     m
 }
 
-/// Sound effect ids from include/tables/sfx/*.h (`/* 0x800 */ DEFINE_SFX(NA_SE_..., ...)`).
+/// Sound effect ids from include/tables/sfx/*.h (`/* 0x800 */ DEFINE_SFX(CHAN_..., NA_SE_..., ...)`).
 fn sfx_names(decomp: &Path) -> Vec<(u32, String, String)> {
     let mut v = Vec::new();
     let dir = decomp.join("include").join("tables").join("sfx");
@@ -670,11 +680,14 @@ fn sfx_names(decomp: &Path) -> Vec<(u32, String, String)> {
             let Some((id, rest)) = rest.split_once("*/") else { continue };
             let Ok(id) = u32::from_str_radix(id.trim(), 16) else { continue };
             let Some(args) = rest.trim().strip_prefix("DEFINE_SFX(") else { continue };
-            let name = args.split(',').next().unwrap_or("").trim().to_string();
+            // DEFINE_SFX(channel, enum, importance, distParam, randParam, flags).
+            let name = args.split(',').nth(1).unwrap_or("").trim().to_string();
             v.push((id, name, bank.clone()));
         }
     }
+    // The rows in `#if` pairs (another importance on other versions) name the same sound.
     v.sort();
+    v.dedup();
     v
 }
 
@@ -1081,7 +1094,7 @@ impl<'a> Sim<'a> {
             default_font,
             tick: 0,
             seconds: 0.0,
-            tempo: 120 * TATUMS_PER_BEAT as u16,
+            tempo: 120 * SEQTICKS_PER_BEAT as u16,
             tempo_add: 0,
             transposition: 0,
             delay: 0,
@@ -1141,7 +1154,7 @@ impl<'a> Sim<'a> {
     }
 
     fn emit_tempo(&mut self) {
-        let us = (60_000_000.0 * TATUMS_PER_BEAT as f64 / self.eff_tempo()).round() as u32;
+        let us = (60_000_000.0 * SEQTICKS_PER_BEAT as f64 / self.eff_tempo()).round() as u32;
         self.push(0, Logical::Conductor, EvKind::Tempo(us.min(0xFF_FFFF)));
     }
 
@@ -1302,12 +1315,12 @@ impl<'a> Sim<'a> {
                             self.transposition += rd8(d, s) as i8 as i16;
                         }
                         0xDD => {
-                            let t = (rd8(d, s) as u16 * TATUMS_PER_BEAT as u16).max(1);
+                            let t = (rd8(d, s) as u16 * SEQTICKS_PER_BEAT as u16).max(1);
                             self.tempo = t;
                             self.emit_tempo();
                         }
                         0xDC => {
-                            self.tempo_add = rd8(d, s) as i8 as i16 * TATUMS_PER_BEAT as i16;
+                            self.tempo_add = rd8(d, s) as i8 as i16 * SEQTICKS_PER_BEAT as i16;
                             self.emit_tempo();
                         }
                         0xDA => {
@@ -2245,7 +2258,7 @@ fn write_midi(events: &mut [Ev], end_tick: u64, title: &str) -> MidiOut {
     bytes.extend_from_slice(&6u32.to_be_bytes());
     bytes.extend_from_slice(&1u16.to_be_bytes());
     bytes.extend_from_slice(&(tracks.len() as u16).to_be_bytes());
-    bytes.extend_from_slice(&(TATUMS_PER_BEAT as u16).to_be_bytes());
+    bytes.extend_from_slice(&(SEQTICKS_PER_BEAT as u16).to_be_bytes());
     for t in &tracks {
         bytes.extend_from_slice(b"MTrk");
         bytes.extend_from_slice(&(t.data.len() as u32).to_be_bytes());
@@ -2255,11 +2268,11 @@ fn write_midi(events: &mut [Ev], end_tick: u64, title: &str) -> MidiOut {
     let mut seconds = 0.0;
     let (mut t0, mut us) = (0u64, 500_000u32);
     for &(t, u) in &tempo_map {
-        seconds += (t - t0) as f64 * us as f64 / 1e6 / TATUMS_PER_BEAT as f64;
+        seconds += (t - t0) as f64 * us as f64 / 1e6 / SEQTICKS_PER_BEAT as f64;
         t0 = t;
         us = u;
     }
-    seconds += end_tick.saturating_sub(t0) as f64 * us as f64 / 1e6 / TATUMS_PER_BEAT as f64;
+    seconds += end_tick.saturating_sub(t0) as f64 * us as f64 / 1e6 / SEQTICKS_PER_BEAT as f64;
     MidiOut { bytes, tracks: tracks.len(), channels_used: phys_of.len() + has_drums as usize, phys_of, overflow_channels: overflow, seconds }
 }
 
@@ -2665,7 +2678,7 @@ pub fn extract(p: &Project, out: &Path) -> Result<serde_json::Value> {
     write_json(
         &out.join("sequences.json"),
         &json!({
-            "notes": "fonts: gSequenceFontTable entry (the last font is the default). MIDI: division 48 (TATUMS_PER_BEAT); one track per sequence channel; drums on MIDI channel 10; program = instrument id in the channel's font (126 = font sfx, 80-87 = synthetic waves; see midi.channels for the sources); velocity = the script's velocity; CC7/CC11 = 127 * sqrt(volume / 127) because the game scales amplitude linearly and GM players square these; pan = channel/layer pan mix; pitch bend range +-12. Loops are played once: conversion stops when the sequence script and every enabled channel have jumped back to code they already ran (or at 15 minutes). Game IO ports are left at -1, so sequences that wait for the game stay silent in those branches.",
+            "notes": "fonts: gSequenceFontTable entry (the last font is the default). MIDI: division 48 (SEQTICKS_PER_BEAT); one track per sequence channel; drums on MIDI channel 10; program = instrument id in the channel's font (126 = font sfx, 80-87 = synthetic waves; see midi.channels for the sources); velocity = the script's velocity; CC7/CC11 = 127 * sqrt(volume / 127) because the game scales amplitude linearly and GM players square these; pan = channel/layer pan mix; pitch bend range +-12. Loops are played once: conversion stops when the sequence script and every enabled channel have jumped back to code they already ran (or at 15 minutes). Game IO ports are left at -1, so sequences that wait for the game stay silent in those branches.",
             "sequences": seqs_json,
         }),
     )?;

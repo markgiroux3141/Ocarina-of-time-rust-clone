@@ -3,8 +3,8 @@
 //! a scripted walk into Link's house and back out through the exits.
 //!
 //! The walks steer the stick towards a point each frame, as a player would. Everything they
-//! check comes from the decomp: the exit lists and entrance table (`ENTR_LINK_HOME_1` from
-//! Kokiri Forest's exit 4, `ENTR_SPOT04_3` from the house's exit 2), the spawns the entrances
+//! check comes from the decomp: the exit lists and entrance table (`ENTR_LINKS_HOUSE_1` from
+//! Kokiri Forest's exit 4, `ENTR_KOKIRI_FOREST_3` from the house's exit 2), the spawns the entrances
 //! name, the start modes in their params (`0x0EFF`: walk in 120 units, `0x0DFF`: stand), and
 //! the transitions' timing (`TRANS_TYPE_FADE_BLACK_FAST`: `transFadeDuration` 20, in steps of
 //! `R_UPDATE_RATE` 3).
@@ -25,8 +25,8 @@ use oot_game::save::SaveContext;
 use oot_game::spawn::{Placeholder, Uninit};
 use oot_game::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
 
-const SCENE_SPOT04: u16 = 0x55;
-const SCENE_LINK_HOME: u16 = 0x34;
+const SCENE_KOKIRI_FOREST: u16 = 0x55;
+const SCENE_LINKS_HOUSE: u16 = 0x34;
 
 fn assets() -> Option<Arc<GameAssets>> {
     let pack = oot_game::pack::GamePack::open_default().ok()?;
@@ -49,8 +49,8 @@ fn frame(w: &mut PlayState, prev: &mut PadState, pad: PadState) {
 
 #[test]
 fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
-    let Some(mut w) = enter("ENTR_SPOT04_0") else { return };
-    assert_eq!(w.scene_id, SCENE_SPOT04);
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_0") else { return };
+    assert_eq!(w.scene_id, SCENE_KOKIRI_FOREST);
     assert_eq!(w.room_ctx.cur.num, 0);
     assert!(w.room_ctx.cur.loaded);
     let room0 = w.scene.as_ref().unwrap().rooms[0].clone();
@@ -63,7 +63,7 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
     frame(&mut w, &mut prev, PadState::default());
     assert!(w.setup_actors.is_empty());
     // Everything placed spawned: room 0's objects are swapped in on load, so the actors whose
-    // object is one of them wait (`Uninit`) until Object_UpdateBank finishes it a frame later.
+    // object is one of them wait (`Uninit`) until Object_UpdateEntries finishes it a frame later.
     let count = |w: &PlayState| {
         let mut n = (0, 0, 0);
         for h in w.actors.all() {
@@ -125,7 +125,7 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
 
 #[test]
 fn en_holl_changes_rooms_and_deletes_the_old_rooms_actors() {
-    let Some(mut w) = enter("ENTR_SPOT04_0") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_0") else { return };
     let mut prev = PadState::default();
     // Spawn 0's entrance walk (start mode 0xF) first.
     while format!("{:?}", w.player().action) == "ExitWalk" {
@@ -158,12 +158,12 @@ fn en_holl_changes_rooms_and_deletes_the_old_rooms_actors() {
             println!("{i} {:?} {:?} room {:?}/{:?} st {} holl {:?}", p.actor.world_pos, p.action, w.room_ctx.cur, w.room_ctx.prev.num, w.room_ctx.status, s);
         }
         if loaded_at.is_none() && w.room_ctx.status == 1 {
-            // func_8009728C: the load is requested from En_Holl's update...
+            // Room_RequestNewRoom: the load is requested from En_Holl's update...
             assert_eq!((w.room_ctx.cur.num, w.room_ctx.prev.num), (1, 0));
         }
         if loaded_at.is_none() && w.room_ctx.cur.num == 1 && w.room_ctx.cur.loaded {
-            // ...and done by the next frame's func_800973FC; En_Holl lets room 0 go once the
-            // load is in (EnHoll_NextAction), the same frame.
+            // ...and done by the next frame's Room_ProcessRoomRequest; En_Holl lets room 0 go once the
+            // load is in (EnHoll_WaitRoomLoaded), the same frame.
             loaded_at = Some(i);
         }
         if loaded_at.is_some() && w.room_ctx.prev.num < 0 {
@@ -217,10 +217,10 @@ fn until_scene_change(w: &mut PlayState, prev: &mut PadState, max: usize) -> usi
 #[test]
 fn link_walks_into_his_house_and_back_out() {
     let Some(a) = assets() else { return };
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     let mut prev = PadState::default();
     // Arriving on the porch (spawn 3, start mode 0xD: standing), the fade in runs.
-    assert_eq!(w.scene_id, SCENE_SPOT04);
+    assert_eq!(w.scene_id, SCENE_KOKIRI_FOREST);
     let spawn3 = Vec3::new(-31.0, 100.0, 1073.0);
     assert_eq!(w.player().actor.world_pos, spawn3);
     assert!(w.transition.trigger != TRANS_TRIGGER_OFF);
@@ -236,22 +236,22 @@ fn link_walks_into_his_house_and_back_out() {
         assert!(fade_frames < 30);
     }
     assert_eq!(fade_frames, 9);
-    // The door is behind Link: Kokiri Forest's exit to ENTR_LINK_HOME_1.
-    let (exit, door) = exit_to(&w, "ENTR_LINK_HOME_1").unwrap();
+    // The door is behind Link: Kokiri Forest's exit to ENTR_LINKS_HOUSE_1.
+    let (exit, door) = exit_to(&w, "ENTR_LINKS_HOUSE_1").unwrap();
     assert_eq!(exit, 4);
     let n = walk_into_exit(&mut w, &mut prev, door, 200);
     assert!(n < 100, "walked to the door in {n} frames");
-    assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_LINK_HOME_1").unwrap());
+    assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_LINKS_HOUSE_1").unwrap());
     assert_eq!(format!("{:?}", w.player().action), "ExitWalk");
     // The fade out, then Play_Init for the house.
     let n = until_scene_change(&mut w, &mut prev, 30);
     assert_eq!(n, 9);
-    assert_eq!(w.scene_id, SCENE_LINK_HOME);
+    assert_eq!(w.scene_id, SCENE_LINKS_HOUSE);
     // Between Play_Init and the house's first frame the screen keeps the finished fade-out
     // (not the house from its initial camera); the first frame starts the fade in, covered.
     assert_eq!(w.screen_fill(), BLACK);
     assert_eq!(w.player().actor.id, ACTOR_PLAYER);
-    // Spawn 1 (-4, 0, -114), params 0x0EFF: func_8083CA54 walks in at speed 2 for 15 frames.
+    // Spawn 1 (-4, 0, -114), params 0x0EFF: Player_StartMode_MoveForwardSlow walks in at speed 2 for 15 frames.
     let spawn1 = Vec3::new(-4.0, 0.0, -114.0);
     assert_eq!(w.player().actor.world_pos, spawn1);
     assert_eq!(w.player().linear_velocity, 2.0);
@@ -264,21 +264,21 @@ fn link_walks_into_his_house_and_back_out() {
     let inside = w.player().actor.world_pos;
     assert!(inside.z > spawn1.z + 20.0, "walked in: {inside:?}");
     assert_ne!(format!("{:?}", w.player().action), "ExitWalk");
-    // And back out: the house's exit 2 leads to ENTR_SPOT04_3.
+    // And back out: the house's exit 2 leads to ENTR_KOKIRI_FOREST_3.
     // (Exit 1 leads there too, but no floor uses it.)
-    let (exit, door) = exit_to(&w, "ENTR_SPOT04_3").unwrap();
+    let (exit, door) = exit_to(&w, "ENTR_KOKIRI_FOREST_3").unwrap();
     assert_eq!(exit, 2);
     walk_into_exit(&mut w, &mut prev, door, 200);
-    assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_SPOT04_3").unwrap());
+    assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_KOKIRI_FOREST_3").unwrap());
     until_scene_change(&mut w, &mut prev, 30);
-    assert_eq!(w.scene_id, SCENE_SPOT04);
+    assert_eq!(w.scene_id, SCENE_KOKIRI_FOREST);
     assert_eq!(w.player().actor.world_pos, spawn3);
     assert_eq!(w.scene_changes, 2);
     // The void-out point is the entrance Link came in by.
-    assert_eq!(w.save.respawn[0].entrance_index, a.scenes.entrance_index("ENTR_SPOT04_3").unwrap());
+    assert_eq!(w.save.respawn[0].entrance_index, a.scenes.entrance_index("ENTR_KOKIRI_FOREST_3").unwrap());
 }
 
-/// The ported actors' profiles are their `ActorInit`s (from the pack's actor table, read from
+/// The ported actors' profiles are their `ActorProfile`s (from the pack's actor table, read from
 /// the overlays' C by the importer).
 #[test]
 fn ported_profiles_match_the_actor_table() {
@@ -331,7 +331,7 @@ fn every_scene_enters_and_plays() {
 /// where Link came in, with params `0xDFF`), through `Play_Init` with `respawnFlag` 1.
 #[test]
 fn a_void_out_returns_to_where_link_came_in() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     let mut prev = PadState::default();
     let start = w.player().actor.world_pos;
     assert_eq!(w.save.respawn[0].pos, start);
@@ -348,7 +348,7 @@ fn a_void_out_returns_to_where_link_came_in() {
     assert!(w.player().actor.world_pos.distance(start) > 100.0);
     w.trigger_void_out();
     until_scene_change(&mut w, &mut prev, 60);
-    assert_eq!(w.scene_id, SCENE_SPOT04);
+    assert_eq!(w.scene_id, SCENE_KOKIRI_FOREST);
     assert_eq!(w.player().actor.world_pos, start);
     assert_eq!(w.save.respawn_flag, 0, "Play_Init clears it");
 }

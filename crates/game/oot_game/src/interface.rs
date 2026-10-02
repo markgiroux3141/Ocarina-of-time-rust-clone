@@ -3,7 +3,7 @@
 //! label and its flip, and the interface's alpha types.
 //!
 //! - **The frame:** `Interface_Update` runs in `Play_Update` after `Message_Update` (`update`):
-//!   the buttons' status (`func_80083108`), the alpha type's fade (`Interface_ChangeAlpha`, from
+//!   the buttons' status (`func_80083108`), the alpha type's fade (`Interface_ChangeHudVisibilityMode`, from
 //!   the camera's interface flags and the message box), the health and rupee accumulators, the
 //!   beating heart, and the A button's flip to a new do-action. `Interface_Draw` (in
 //!   `Play_DrawOverlayElements`, before the message box) reads that state (`draw_hud_1`,
@@ -66,7 +66,7 @@ const DO_ACTION_TEX_SIZE: u32 = 48 * 16 / 2;
 pub const BTN_ENABLED: u8 = 0x00;
 pub const BTN_DISABLED: u8 = 0xFF;
 
-// A_BUTTON_X .. C_RIGHT_BUTTON_Y (z64interface.h), and the registers placed at them
+// A_BUTTON_X .. C_RIGHT_BUTTON_Y (interface.h), and the registers placed at them
 // (R_ITEM_BTN_X, R_ITEM_ICON_X, R_A_BTN_X, ... in z_construct.c).
 const A_BUTTON_X: i16 = 186;
 const A_BUTTON_Y: i16 = 9;
@@ -93,7 +93,7 @@ const XREG_21: i32 = 48;
 const XREG_28: i32 = 16;
 const WREG_5: f32 = 3.0;
 
-/// `HEARTS_PRIM_*`, `HEARTS_ENV_*` (z64interface.h).
+/// `HEARTS_PRIM_*`, `HEARTS_ENV_*` (interface.h).
 const HEARTS_PRIM: [i16; 3] = [255, 70, 50];
 const HEARTS_ENV: [i16; 3] = [50, 40, 60];
 
@@ -212,13 +212,13 @@ impl Default for InterfaceContext {
     }
 }
 
-/// `Interface_ChangeAlpha`: the interface fades to `alpha_type`'s buttons (`unk_13E8` steps it
+/// `Interface_ChangeHudVisibilityMode`: the interface fades to `alpha_type`'s buttons (`nextHudVisibilityMode` steps it
 /// in `Interface_Update`).
 pub fn change_alpha(save: &mut SaveContext, alpha_type: u16) {
-    if alpha_type != save.unk_13ea {
-        save.unk_13ea = alpha_type;
-        save.unk_13e8 = alpha_type;
-        save.unk_13ec = 1;
+    if alpha_type != save.hud_visibility_mode {
+        save.hud_visibility_mode = alpha_type;
+        save.next_hud_visibility_mode = alpha_type;
+        save.hud_visibility_mode_timer = 1;
     }
 }
 
@@ -228,12 +228,12 @@ pub struct IfaceFrame {
     pub scene_id: u16,
     /// `msgCtx->msgMode == MSGMODE_NONE`.
     pub msg_none: bool,
-    /// Player's `stateFlags1 & PLAYER_STATE1_21` (climbing) and `stateFlags2 & PLAYER_STATE2_18`.
+    /// Player's `stateFlags1 & PLAYER_STATE1_21` (climbing) and `stateFlags2 & PLAYER_STATE2_CRAWLING`.
     pub climbing: bool,
     pub state2_18: bool,
     /// `transitionTrigger == TRANS_TRIGGER_OFF && transitionMode == TRANS_MODE_OFF`.
     pub no_transition: bool,
-    /// `roomCtx.curRoom.behaviorType1 == ROOM_BEHAVIOR_TYPE1_1`.
+    /// `roomCtx.curRoom.behaviorType1 == ROOM_TYPE_DUNGEON`.
     pub dungeon_room: bool,
     /// `Player_InCsMode(play) || Play_InCsMode(play)`.
     pub in_cs_mode: bool,
@@ -254,8 +254,8 @@ pub fn health_is_critical(save: &SaveContext) -> bool {
     critical_health >= save.health && save.health > 0
 }
 
-/// The overworld scenes of the minimap's switch: `SCENE_SPOT00` (0x51) to `SCENE_SPOT13`,
-/// `SCENE_SPOT15` to `SCENE_SPOT18`, `SCENE_SPOT20` and `SCENE_GANON_TOU` (0x64), which are
+/// The overworld scenes of the minimap's switch: `SCENE_HYRULE_FIELD` (0x51) to `SCENE_HAUNTED_WASTELAND`,
+/// `SCENE_HYRULE_CASTLE` to `SCENE_GORON_CITY`, `SCENE_LON_LON_RANCH` and `SCENE_OUTSIDE_GANONS_CASTLE` (0x64), which are
 /// 0x51..=0x64 (`scene_table.h`).
 fn is_overworld(scene_id: u16) -> bool {
     (0x51..=0x64).contains(&scene_id)
@@ -264,8 +264,8 @@ fn is_overworld(scene_id: u16) -> bool {
 impl InterfaceContext {
     /// `Interface_Init` (and `Health_InitMeter`, `Interface_SetSceneRestrictions`).
     pub fn init(save: &mut SaveContext, tables: &InterfaceTables, scene_id: u16) -> InterfaceContext {
-        save.unk_13e8 = 0;
-        save.unk_13ea = 0;
+        save.next_hud_visibility_mode = 0;
+        save.hud_visibility_mode = 0;
         let mut c = InterfaceContext { initialised: true, ..Default::default() };
         // Health_InitMeter.
         c.unk_228 = 0x140;
@@ -315,7 +315,7 @@ impl InterfaceContext {
     pub fn set_navi_call(&mut self, navi_call_state: u16, cs_idle: bool, audio: &mut GameAudio) {
         if (navi_call_state == 0x1D || navi_call_state == 0x1E) && !self.navi_calling && cs_idle {
             if navi_call_state == 0x1E {
-                audio.func_80078884(NA_SE_VO_NAVY_CALL);
+                audio.play_sfx_centered(NA_SE_VO_NAVY_CALL);
             }
             if navi_call_state == 0x1D {
                 audio.func_800f4524(SfxPos::Default, NA_SE_VO_NA_HELLO_2, 32);
@@ -345,8 +345,8 @@ impl InterfaceContext {
         self.unk_1fa = true;
     }
 
-    /// `func_80082644`: the buttons fade to `alpha`, a disabled one only to 70.
-    fn func_80082644(&mut self, save: &SaveContext, alpha: i16) {
+    /// `Interface_RaiseButtonAlphas`: the buttons fade to `alpha`, a disabled one only to 70.
+    fn raise_button_alphas(&mut self, save: &SaveContext, alpha: i16) {
         let s = save.button_status;
         for (a, st) in [(&mut self.b_alpha, s[0]), (&mut self.c_left_alpha, s[1]), (&mut self.c_down_alpha, s[2]), (&mut self.c_right_alpha, s[3]), (&mut self.a_alpha, s[4])] {
             if st == BTN_DISABLED {
@@ -359,10 +359,10 @@ impl InterfaceContext {
         }
     }
 
-    /// `func_8008277C`.
-    fn func_8008277c(&mut self, save: &SaveContext, max_alpha: i16, alpha: i16) {
-        if save.unk_13e7 != 0 {
-            self.func_80082644(save, alpha);
+    /// `Interface_DimButtonAlphas`.
+    fn dim_button_alphas(&mut self, save: &SaveContext, max_alpha: i16, alpha: i16) {
+        if save.force_rising_button_alphas != 0 {
+            self.raise_button_alphas(save, alpha);
             return;
         }
         for a in [&mut self.b_alpha, &mut self.a_alpha, &mut self.c_left_alpha, &mut self.c_down_alpha, &mut self.c_right_alpha] {
@@ -370,17 +370,17 @@ impl InterfaceContext {
         }
     }
 
-    /// `func_80082850`: alpha type `unk_13E8`'s fade, `max_alpha` falling as `alpha` rises.
-    fn func_80082850(&mut self, save: &SaveContext, max_alpha: i16, scene_id: u16, dungeon_room: bool) {
+    /// `Interface_UpdateHudAlphas`: alpha type `nextHudVisibilityMode`'s fade, `max_alpha` falling as `alpha` rises.
+    fn update_hud_alphas(&mut self, save: &SaveContext, max_alpha: i16, scene_id: u16, dungeon_room: bool) {
         let alpha = 255 - max_alpha;
         let rise = |a: &mut i16| {
             if *a != 255 {
                 *a = alpha;
             }
         };
-        match save.unk_13e8 {
+        match save.next_hud_visibility_mode {
             1 | 2 | 8 => {
-                if save.unk_13e8 == 8 {
+                if save.next_hud_visibility_mode == 8 {
                     rise(&mut self.b_alpha);
                 } else {
                     clamp_down(&mut self.b_alpha, max_alpha);
@@ -391,7 +391,7 @@ impl InterfaceContext {
             }
             3 => {
                 clamp_down(&mut self.a_alpha, max_alpha);
-                self.func_8008277c(save, max_alpha, alpha);
+                self.dim_button_alphas(save, max_alpha, alpha);
                 clamp_down(&mut self.magic_alpha, max_alpha);
                 clamp_down(&mut self.minimap_alpha, max_alpha);
                 rise(&mut self.health_alpha);
@@ -403,14 +403,14 @@ impl InterfaceContext {
                 rise(&mut self.a_alpha);
             }
             5 => {
-                self.func_8008277c(save, max_alpha, alpha);
+                self.dim_button_alphas(save, max_alpha, alpha);
                 clamp_down(&mut self.minimap_alpha, max_alpha);
                 rise(&mut self.a_alpha);
                 rise(&mut self.health_alpha);
                 rise(&mut self.magic_alpha);
             }
             6 => {
-                self.func_8008277c(save, max_alpha, alpha);
+                self.dim_button_alphas(save, max_alpha, alpha);
                 rise(&mut self.a_alpha);
                 rise(&mut self.health_alpha);
                 rise(&mut self.magic_alpha);
@@ -422,7 +422,7 @@ impl InterfaceContext {
             }
             7 => {
                 clamp_down(&mut self.minimap_alpha, max_alpha);
-                self.func_80082644(save, alpha);
+                self.raise_button_alphas(save, alpha);
                 rise(&mut self.health_alpha);
                 rise(&mut self.magic_alpha);
             }
@@ -454,7 +454,7 @@ impl InterfaceContext {
                 }
             }
             13 => {
-                self.func_8008277c(save, max_alpha, alpha);
+                self.dim_button_alphas(save, max_alpha, alpha);
                 clamp_down(&mut self.minimap_alpha, max_alpha);
                 clamp_down(&mut self.a_alpha, max_alpha);
                 rise(&mut self.health_alpha);
@@ -467,7 +467,7 @@ impl InterfaceContext {
         }
     }
 
-    /// `func_80083108`'s cases that apply here: while climbing (or `PLAYER_STATE2_18`) the B and
+    /// `func_80083108`'s cases that apply here: while climbing (or `PLAYER_STATE2_CRAWLING`) the B and
     /// C buttons are disabled; otherwise the scene's restrictions: B's, then each C item's by
     /// its kind (bottles, trade items, the hookshots, the ocarinas, Farore's Wind, Din's Fire
     /// and Nayru's Love), then `restrictions.all` for the rest. A status change fades the
@@ -475,22 +475,22 @@ impl InterfaceContext {
     ///
     /// B with nothing, or a bow, slingshot or bombchu a minigame put there, gets back what
     /// `buttonStatus[0]` kept, unless B has had no sword since the file began
-    /// (`infTable[INFTABLE_1DX_INDEX]`). Riding, the minigames, the fishing pond, the Chamber
-    /// of Sages and `func_8008F2F8`'s water and heat hazards aren't ported.
+    /// (`infTable[INFTABLE_INDEX_1DX]`). Riding, the minigames, the fishing pond, the Chamber
+    /// of Sages and `Player_GetEnvironmentalHazard`'s water and heat hazards aren't ported.
     fn func_80083108(&mut self, save: &mut SaveContext, f: &IfaceFrame) {
         use crate::item::*;
-        use crate::save::INFTABLE_1DX_INDEX;
+        use crate::save::INFTABLE_INDEX_1DX;
         // cutsceneIndex < 0xFFF0; no riding, shooting gallery, fishing pond or Chamber of Sages.
-        save.unk_13e7 = 0;
+        save.force_rising_button_alphas = 0;
         if !f.msg_none {
             return;
         }
         let mut sp28 = false;
-        // (func_8008F2F8: no water or heat hazard is detected here.)
+        // (Player_GetEnvironmentalHazard: no water or heat hazard is detected here.)
         if f.climbing || f.state2_18 {
             if save.button_status[0] != BTN_DISABLED {
                 save.button_status[..4].fill(BTN_DISABLED);
-                save.unk_13ea = 0;
+                save.hud_visibility_mode = 0;
                 change_alpha(save, 50);
             }
             return;
@@ -499,7 +499,7 @@ impl InterfaceContext {
         let b_is_ammo = b == ITEM_SLINGSHOT || b == ITEM_BOW || b == ITEM_BOMBCHU || b == ITEM_NONE;
         if self.restrictions.b_button == 0 {
             if b_is_ammo {
-                if b != ITEM_NONE || save.inf_table[INFTABLE_1DX_INDEX] == 0 {
+                if b != ITEM_NONE || save.inf_table[INFTABLE_INDEX_1DX] == 0 {
                     save.equips.button_items[0] = save.button_status[0];
                     sp28 = true;
                     // (Interface_LoadItemIcon1: the icons are baked.)
@@ -512,7 +512,7 @@ impl InterfaceContext {
             }
         } else if self.restrictions.b_button == 1 {
             if b_is_ammo {
-                if b != ITEM_NONE || save.inf_table[INFTABLE_1DX_INDEX] == 0 {
+                if b != ITEM_NONE || save.inf_table[INFTABLE_INDEX_1DX] == 0 {
                     save.equips.button_items[0] = save.button_status[0];
                     sp28 = true;
                 }
@@ -524,14 +524,14 @@ impl InterfaceContext {
             }
         }
         // Each C item by its kind: disabled with its restriction, enabled without.
-        let bottle = |i: u8| (ITEM_BOTTLE..=ITEM_POE).contains(&i);
+        let bottle = |i: u8| (ITEM_BOTTLE_EMPTY..=ITEM_BOTTLE_POE).contains(&i);
         let trade = |i: u8| (ITEM_WEIRD_EGG..=ITEM_CLAIM_CHECK).contains(&i);
         let r = self.restrictions;
         let kinds: [(u8, &dyn Fn(u8) -> bool); 6] = [
             (r.bottles, &bottle),
             (r.trade_items, &trade),
             (r.hookshot, &|i| i == ITEM_HOOKSHOT || i == ITEM_LONGSHOT),
-            (r.ocarina, &|i| i == ITEM_OCARINA_FAIRY || i == ITEM_OCARINA_TIME),
+            (r.ocarina, &|i| i == ITEM_OCARINA_FAIRY || i == ITEM_OCARINA_OF_TIME),
             (r.farores, &|i| i == ITEM_FARORES_WIND),
             (r.dins_nayrus, &|i| i == ITEM_DINS_FIRE || i == ITEM_NAYRUS_LOVE),
         ];
@@ -549,14 +549,14 @@ impl InterfaceContext {
                 }
             }
         }
-        /// `SCENE_TAKARAYA` (the treasure chest shop, where the Lens of Truth stays usable).
-        const SCENE_TAKARAYA: u16 = 0x10;
+        /// `SCENE_TREASURE_BOX_SHOP` (the treasure chest shop, where the Lens of Truth stays usable).
+        const SCENE_TREASURE_BOX_SHOP: u16 = 0x10;
         for i in 1..4 {
             let it = save.equips.button_items[i];
-            let ocarina = it == ITEM_OCARINA_FAIRY || it == ITEM_OCARINA_TIME;
+            let ocarina = it == ITEM_OCARINA_FAIRY || it == ITEM_OCARINA_OF_TIME;
             if r.all != 0 {
                 if !ocarina && !bottle(it) && !trade(it) {
-                    let lens_in_shop = f.scene_id == SCENE_TAKARAYA && it == ITEM_LENS;
+                    let lens_in_shop = f.scene_id == SCENE_TREASURE_BOX_SHOP && it == ITEM_LENS_OF_TRUTH;
                     set(save, i, !lens_in_shop, &mut sp28);
                 }
             } else if it != ITEM_DINS_FIRE && it != ITEM_HOOKSHOT && it != ITEM_LONGSHOT && it != ITEM_FARORES_WIND && it != ITEM_NAYRUS_LOVE && !ocarina && !bottle(it) && !trade(it) {
@@ -564,7 +564,7 @@ impl InterfaceContext {
             }
         }
         if sp28 {
-            save.unk_13ea = 0;
+            save.hud_visibility_mode = 0;
             if f.no_transition {
                 change_alpha(save, 50);
             }
@@ -580,7 +580,7 @@ impl InterfaceContext {
                 self.beating_heart_oscillator = 0;
                 self.beating_heart_oscillator_direction = 0;
                 if !in_cs_mode && health_is_critical(save) {
-                    audio.func_80078884(NA_SE_SY_HITPOINT_ALARM);
+                    audio.play_sfx_centered(NA_SE_SY_HITPOINT_ALARM);
                 }
             }
         } else {
@@ -623,19 +623,19 @@ impl InterfaceContext {
         }
         // (No pause menu, minigame or cutscene layer; no game over.)
         self.func_80083108(save, f);
-        match save.unk_13e8 {
+        match save.next_hud_visibility_mode {
             1..=13 => {
-                let alpha = (255 - ((save.unk_13ec as i16) << 5)).max(0);
-                self.func_80082850(save, alpha, f.scene_id, f.dungeon_room);
-                save.unk_13ec += 1;
+                let alpha = (255 - ((save.hud_visibility_mode_timer as i16) << 5)).max(0);
+                self.update_hud_alphas(save, alpha, f.scene_id, f.dungeon_room);
+                save.hud_visibility_mode_timer += 1;
                 if alpha == 0 {
-                    save.unk_13e8 = 0;
+                    save.next_hud_visibility_mode = 0;
                 }
             }
             50 => {
-                let alpha = (255 - ((save.unk_13ec as i16) << 5)).max(0);
+                let alpha = (255 - ((save.hud_visibility_mode_timer as i16) << 5)).max(0);
                 let alpha1 = (255 - alpha).min(255);
-                self.func_80082644(save, alpha1);
+                self.raise_button_alphas(save, alpha1);
                 if self.health_alpha != 255 {
                     self.health_alpha = alpha1;
                 }
@@ -647,15 +647,15 @@ impl InterfaceContext {
                 } else if self.minimap_alpha != 255 {
                     self.minimap_alpha = alpha1;
                 }
-                save.unk_13ec += 1;
+                save.hud_visibility_mode_timer += 1;
                 if alpha1 == 255 {
-                    save.unk_13e8 = 0;
+                    save.next_hud_visibility_mode = 0;
                 }
             }
             52 => {
-                save.unk_13e8 = 1;
-                self.func_80082850(save, 0, f.scene_id, f.dungeon_room);
-                save.unk_13e8 = 0;
+                save.next_hud_visibility_mode = 1;
+                self.update_hud_alphas(save, 0, f.scene_id, f.dungeon_room);
+                save.next_hud_visibility_mode = 0;
             }
             _ => {}
         }
@@ -664,7 +664,7 @@ impl InterfaceContext {
             save.health_accumulator -= 4;
             save.health += 4;
             if (save.health & 0xF) < 4 {
-                audio.func_80078884(NA_SE_SY_HP_RECOVER);
+                audio.play_sfx_centered(NA_SE_SY_HP_RECOVER);
             }
             if save.health >= save.health_capacity {
                 save.health = save.health_capacity;
@@ -678,7 +678,7 @@ impl InterfaceContext {
                 if save.rupees < save.wallet_capacity() {
                     save.rupee_accumulator -= 1;
                     save.rupees += 1;
-                    audio.func_80078884(NA_SE_SY_RUPY_COUNT);
+                    audio.play_sfx_centered(NA_SE_SY_RUPY_COUNT);
                 } else {
                     save.rupees = save.wallet_capacity();
                     save.rupee_accumulator = 0;
@@ -687,11 +687,11 @@ impl InterfaceContext {
                 if save.rupee_accumulator <= -50 {
                     save.rupee_accumulator += 10;
                     save.rupees = (save.rupees - 10).max(0);
-                    audio.func_80078884(NA_SE_SY_RUPY_COUNT);
+                    audio.play_sfx_centered(NA_SE_SY_RUPY_COUNT);
                 } else {
                     save.rupee_accumulator += 1;
                     save.rupees -= 1;
-                    audio.func_80078884(NA_SE_SY_RUPY_COUNT);
+                    audio.play_sfx_centered(NA_SE_SY_RUPY_COUNT);
                 }
             } else {
                 save.rupee_accumulator = 0;
@@ -724,7 +724,7 @@ impl InterfaceContext {
         // (Magic, timers, the minigame score and the Sun's Song aren't ported.)
     }
 
-    /// `Interface_Draw` up to the Z-target reticle (`func_8002C124` is drawn between the two
+    /// `Interface_Draw` up to the Z-target reticle (`Attention_Draw` is drawn between the two
     /// halves): the heart meter, the rupee icon and counter.
     pub fn draw_hud_1(&self, save: &SaveContext, out: &mut Vec<Sprite>) {
         self.health_draw_meter(save, out);
@@ -877,10 +877,10 @@ fn item_icon(i: usize, item: u8, alpha: i16, out: &mut Vec<Sprite>) {
 fn draw_ammo_count(save: &SaveContext, button: usize, alpha: i16, out: &mut Vec<Sprite>) {
     use crate::item::*;
     let mut i = save.equips.button_items[button];
-    if !(i == ITEM_STICK || i == ITEM_NUT || i == ITEM_BOMB || i == ITEM_BOW || (ITEM_BOW_ARROW_FIRE..=ITEM_BOW_ARROW_LIGHT).contains(&i) || i == ITEM_SLINGSHOT || i == ITEM_BOMBCHU || i == ITEM_BEAN) {
+    if !(i == ITEM_DEKU_STICK || i == ITEM_DEKU_NUT || i == ITEM_BOMB || i == ITEM_BOW || (ITEM_BOW_FIRE..=ITEM_BOW_LIGHT).contains(&i) || i == ITEM_SLINGSHOT || i == ITEM_BOMBCHU || i == ITEM_MAGIC_BEAN) {
         return;
     }
-    if (ITEM_BOW_ARROW_FIRE..=ITEM_BOW_ARROW_LIGHT).contains(&i) {
+    if (ITEM_BOW_FIRE..=ITEM_BOW_LIGHT).contains(&i) {
         i = ITEM_BOW;
     }
     let mut ammo = save.ammo(i) as i16;
@@ -890,10 +890,10 @@ fn draw_ammo_count(save: &SaveContext, button: usize, alpha: i16, out: &mut Vec<
     if (i == ITEM_BOW && full(UPG_QUIVER))
         || (i == ITEM_BOMB && full(UPG_BOMB_BAG))
         || (i == ITEM_SLINGSHOT && full(UPG_BULLET_BAG))
-        || (i == ITEM_STICK && full(UPG_STICKS))
-        || (i == ITEM_NUT && full(UPG_NUTS))
+        || (i == ITEM_DEKU_STICK && full(UPG_DEKU_STICKS))
+        || (i == ITEM_DEKU_NUT && full(UPG_DEKU_NUTS))
         || (i == ITEM_BOMBCHU && ammo == 50)
-        || (i == ITEM_BEAN && ammo == 15)
+        || (i == ITEM_MAGIC_BEAN && ammo == 15)
     {
         prim = [120, 255, 0, a];
     }
@@ -1108,7 +1108,7 @@ mod tests {
     }
 
     fn frame() -> IfaceFrame {
-        // SCENE_SPOT04.
+        // SCENE_KOKIRI_FOREST.
         IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false }
     }
 
@@ -1122,9 +1122,9 @@ mod tests {
             c.update(&mut s, &mut GameAudio::default(), &frame());
             seen.push(c.b_alpha);
         }
-        // alpha1 = 255 - (255 - (unk_13EC << 5)): 32 a frame, 255 from the eighth.
+        // alpha1 = 255 - (255 - (hudVisibilityModeTimer << 5)): 32 a frame, 255 from the eighth.
         assert_eq!(seen, [32, 64, 96, 128, 160, 192, 224, 255, 255]);
-        assert_eq!((c.health_alpha, s.unk_13e8), (255, 0));
+        assert_eq!((c.health_alpha, s.next_hud_visibility_mode), (255, 0));
         // An overworld scene: the minimap stops at 170.
         assert_eq!(c.minimap_alpha, 170);
     }
@@ -1168,7 +1168,7 @@ mod tests {
 
     #[test]
     fn a_house_disables_the_b_button() {
-        // sRestrictionFlags' SCENE_LINK_HOME (0x34): flags1 0x10, bButton 1.
+        // sRestrictionFlags' SCENE_LINKS_HOUSE (0x34): flags1 0x10, bButton 1.
         let tables = InterfaceTables { restrictions: vec![[0x34, 0x10, 0x10, 0x15], [0xFF, 0, 0, 0]] };
         // The map select's file: the Kokiri Sword on B.
         let mut s = SaveContext::debug(0, false, 0);
@@ -1180,7 +1180,7 @@ mod tests {
         }
         // func_80083108 disables B (the sword isn't ammo) and fades back in: B at 70.
         assert_eq!((s.button_status[0], c.b_alpha, c.a_alpha), (BTN_DISABLED, 70, 255));
-        // A new file has nothing on B and infTable[INFTABLE_1DX_INDEX] set: B is left as it is.
+        // A new file has nothing on B and infTable[INFTABLE_INDEX_1DX] set: B is left as it is.
         let mut s = new_save();
         let mut c = InterfaceContext::init(&mut s, &tables, 0x34);
         for _ in 0..10 {

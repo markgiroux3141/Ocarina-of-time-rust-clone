@@ -1,4 +1,4 @@
-//! Scene header commands (`z64scene.h`): 8-byte `{ u8 code, u8 data1, u16 pad, u32 data2 }`
+//! Scene header commands (`scene.h`): 8-byte `{ u8 code, u8 data1, u16 pad, u32 data2 }`
 //! entries ending at `SCENE_CMD_ID_END`. Decodes what the game needs to play and draw a scene:
 //! collision, spawns, the room list, the keep object, light settings and skybox settings,
 //! for the header layer the game would pick (`Scene_CommandAlternateHeaderList`).
@@ -9,7 +9,7 @@ use anyhow::{Result, bail};
 use eng_collision::collision::CollisionHeader;
 
 use crate::rom::Rom;
-pub use oot_game::scene::{ActorEntry, EntranceEntry, EnvLightSettings, Path, SkyboxSettings, TransitionActorEntry};
+pub use oot_game::scene::{ActorEntry, Spawn, EnvLightSettings, Path, SkyboxSettings, TransitionActorEntry};
 use crate::z64::CollisionCodec;
 
 pub const CMD_SPAWN_LIST: u8 = 0x00;
@@ -147,13 +147,13 @@ pub struct Scene {
     pub c_up_elf_msg_num: u8,
     pub light_settings: Vec<EnvLightSettings>,
     pub skybox: SkyboxSettings,
-    /// `SCENE_CMD_ID_ENTRANCE_LIST`, `SCENE_CMD_ID_EXIT_LIST` and
+    /// `SCENE_CMD_ID_SPAWN_LIST`, `SCENE_CMD_ID_EXIT_LIST` and
     /// `SCENE_CMD_ID_TRANSITION_ACTOR_LIST`. The first two carry no length: see
     /// [`list_extent`].
-    pub entrances: Vec<EntranceEntry>,
+    pub entrances: Vec<Spawn>,
     pub exits: Vec<u16>,
     pub transition_actors: Vec<TransitionActorEntry>,
-    /// `SCENE_CMD_ID_PATH_LIST` (`play->setupPathList`), which carries no length either: see
+    /// `SCENE_CMD_ID_PATH_LIST` (`play->pathList`), which carries no length either: see
     /// [`path_list`].
     pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType` (`R_SCENE_CAM_TYPE`, `SCENE_CAM_TYPE_*`).
@@ -330,7 +330,7 @@ impl Scene {
             .map(|c| {
                 let o = local(c.data2);
                 let n = list_extent(&file, o, 2, &targets, |b| (b[0] as usize) < n_spawns && (b[1] as usize) < n_rooms);
-                (0..n).map(|i| EntranceEntry { spawn: file[o + i * 2], room: file[o + i * 2 + 1] }).collect()
+                (0..n).map(|i| Spawn { spawn: file[o + i * 2], room: file[o + i * 2 + 1] }).collect()
             })
             .unwrap_or_default();
         // Entrance indices: gEntranceTable rows, or the ENTR_RETURN_* values (0x7FF9..).

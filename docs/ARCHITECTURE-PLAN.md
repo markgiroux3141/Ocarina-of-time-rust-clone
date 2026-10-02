@@ -34,9 +34,9 @@ About 28,000 lines of Rust in 8 crates, with 87 tests. The verdicts in the table
 | wgpu renderer (RDP combiner in WGSL, render-mode pipelines, fog, lights, headless readback) | `oot_render` (one 790-line file) | refactor | engine gfx: split into device/pipelines/materials/passes. **(As built:** its own crate, `eng_render` (device, view, pipelines, materials, model, passes), so `eng_gfx` stays free of wgpu**)** |
 | Math (binary angles, `Math_SinS` tables, `Math_*StepTo*`, SkinMatrix) | `oot_game::math`, `dyna::srt_matrix`, `skeleton::local_transform` | keep | engine math |
 | bgcheck: static + DynaPoly + water boxes | `oot_game::{bgcheck, dyna}` | keep; rename `StaticCollision` → `CollisionContext`; surface-type *meaning* moves to the game | engine collision |
-| SkelAnime + AnimationContext queue | `oot_game::skelanime` | keep | engine anim. **(As built:** `oot_game::skelanime`. `z_skelanime.c`'s Link functions read Player's animation data and move the actor, so it's game framework**)** |
+| SkelAnime + AnimTaskQueue queue | `oot_game::skelanime` | keep | engine anim. **(As built:** `oot_game::skelanime`. `z_skelanime.c`'s Link functions read Player's animation data and move the actor, so it's game framework**)** |
 | Input: `PadMgr`/`padutils`, device mapping, Retro-Bit profile | `oot_game::input`, `oot_pad` | keep; fix the inverted dependency (`oot_pad` → `oot_game`) | engine input (`eng_input::{pad, device}`) |
-| Actor base physics (`Actor_MoveForward`, `Actor_UpdateBgCheckInfo`) | `oot_game::actor` | refactor | game framework: the base `Actor` of the actor system |
+| Actor base physics (`Actor_MoveXZGravity`, `Actor_UpdateBgCheckInfo`) | `oot_game::actor` | refactor | game framework: the base `Actor` of the actor system |
 | Player (`z_player.c` port: movement, ledges, targeting, sword, swimming) | `oot_game::player` (3.6k lines) | keep the logic; refactor into an actor, split into modules by action group | game content |
 | Camera (`Camera_Normal1`), target context, environment lights, foot IK | `oot_game::{camera, target, env, footik}` | keep | game framework |
 | Game data tables loaded from decomp C at startup | `oot_game::data` | replace | pack data, typed, loaded from the pack |
@@ -108,7 +108,7 @@ custom levels (glTF + JSON) ─── oot_import ──► mod pack ──┘ (l
   - Textures: decoded RGBA8, plus the original format for effects that need it.
   - Skeletons, standard and Player animations, collision headers.
   - Scenes and rooms as typed structs: headers, lights, room shapes, actor/spawn/exit lists, paths, water boxes.
-  - Game tables (sAgeProperties, D_808540F4, camera settings, light configs, …) as typed records, each with its source symbol.
+  - Game tables (sAgeProperties, sItemChangeInfo, camera settings, light configs, …) as typed records, each with its source symbol.
   - Text, and audio (later).
 - **How:**
   - One file: header, index, then compressed blobs (e.g. zstd). The types are serialized with serde into a compact binary format (postcard or bincode).
@@ -135,7 +135,7 @@ custom levels (glTF + JSON) ─── oot_import ──► mod pack ──┘ (l
 - **Actor system** (`z_actor.c`):
   - The `ActorContext` holds category lists (`ACTORCAT_*`).
   - The base `Actor` holds what `z_actor` needs: world/home/shape/focus, velocity, bgcheck info, flags, params, room, scale.
-  - Each actor type has a profile (the `ActorInit` equivalent: id, category, object dependency, init/update/draw/destroy).
+  - Each actor type has a profile (the `ActorProfile` equivalent: id, category, object dependency, init/update/draw/destroy).
   - Actors are spawned from room and scene actor lists and by other actors. Kill and delete follow `Actor_UpdateAll`'s rules.
   - Ownership: actors live in a generational arena. During its update, an actor is taken out of its slot, so it can have `&mut PlayState` including access to the other actors; then it's put back.
   - Unported actor ids get a placeholder that draws a marker and logs, so every scene loads.
@@ -208,7 +208,7 @@ Each phase has exit criteria and ends with its doc section. The spikes stay repr
 - The scene and room manager: room changes, exits, spawning from actor lists with placeholders.
 - Port Kokiri Forest's draw config as Rust, tested against `drawcfg`.
 - **(As built, [GAME-01](GAME-01-foundation.md) milestone 3, the first half:)**
-  - `PlayState` in `oot_game::play` runs the decomp's frame order (`Actor_UpdateAll`, `AnimationContext_Update`, the cameras, then `Play_Draw`'s state changes). Switching from the spikes' order changed no trace.
+  - `PlayState` in `oot_game::play` runs the decomp's frame order (`Actor_UpdateAll`, `AnimTaskQueue_Update`, the cameras, then `Play_Draw`'s state changes). Switching from the spikes' order changed no trace.
   - The actor system is a generational arena with the actor taken out of its slot during its update (ADR 0007).
   - Interpolation is generic: each actor captures a `RenderState`, and the renderer blends two frames.
   - Draw submission is `eng_gfx::DrawCmd`s into OPA/XLU lists, drawn through a mesh cache keyed by pack record (ADR 0006). Moving the shadow into the XLU list changed a few pixels of the course goldens.
@@ -216,7 +216,7 @@ Each phase has exit criteria and ends with its doc section. The spikes stay repr
 - **(As built, [GAME-01](GAME-01-foundation.md) milestone 4, the second half:)**
   - Scenes are entered by `Play_Init` from an entrance (`oot_game::play_scene`). A scene change rebuilds the play state from the save context, as the game starts a new game state (ADR 0010).
   - The room and object contexts keep the game's frame timing: a room load finishes the next frame; room objects load a frame after the swap.
-  - Every id spawns through `Actor_Spawn` with its `ActorInit` from the pack: ported actors by their constructor, the rest as placeholders with their real category, flags, object and room.
+  - Every id spawns through `Actor_Spawn` with its `ActorProfile` from the pack: ported actors by their constructor, the rest as placeholders with their real category, flags, object and room.
   - `En_Holl` changes rooms; Player's exit and void checks and start modes are ported; the fade transitions are ported frame for frame, and the others are approximated.
   - The sandbox keeps the spikes' view of a scene unless `--entrance` is given, so the goldens are unchanged.
   - Link walks into his house from the porch, since ladder climbing isn't ported. Interiors are prerendered rooms, and their backgrounds and fixed cameras are Phase 3 work.

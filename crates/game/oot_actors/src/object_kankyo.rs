@@ -11,7 +11,7 @@
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{cos_s, sin_s, smooth_step_to_f};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_4, ACTOR_FLAG_5, ACTOR_FLAG_25, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
 use oot_game::audio::sfx::{NA_SE_EV_NAVY_CRASH, NA_SE_EV_NAVY_FLY, NA_SE_VO_NA_HELLO_2, NA_SE_VO_NA_HELLO_3, NA_SE_VO_RT_THROW, SFX_FLAG, SfxPos};
 use oot_game::env::PRECIP_SNOW_MAX;
@@ -22,13 +22,13 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 /// `ACTOR_OBJECT_KANKYO` (`actor_table.h`: 0x0097).
 pub const ACTOR_OBJECT_KANKYO: i16 = 0x0097;
 
-/// `Object_Kankyo_InitVars`.
+/// `Object_Kankyo_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OBJECT_KANKYO, name: "Object_Kankyo", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_4 | ACTOR_FLAG_5 | ACTOR_FLAG_25, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OBJECT_KANKYO, name: "Object_Kankyo", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
 
-/// `SCENE_SPOT04` (Kokiri Forest), `ENTR_SPOT04_0`.
-const SCENE_SPOT04: u16 = 0x55;
-const ENTR_SPOT04_0: u16 = 0x00EE;
+/// `SCENE_KOKIRI_FOREST` (Kokiri Forest), `ENTR_KOKIRI_FOREST_0`.
+const SCENE_KOKIRI_FOREST: u16 = 0x55;
+const ENTR_KOKIRI_FOREST_0: u16 = 0x00EE;
 
 const BAKE: &str = "Object_Kankyo/dust_mote";
 const SEG_SETUP: u8 = 0x0D;
@@ -130,7 +130,7 @@ impl ObjectKankyo {
 
     /// `ObjectKankyo_Fairies`.
     fn fairies(&mut self, play: &mut PlayState) {
-        if play.scene_id == SCENE_SPOT04 && play.save.scene_layer == 7 {
+        if play.scene_id == SCENE_KOKIRI_FOREST && play.save.scene_layer == 7 {
             // Navi's wing hum, higher the faster the camera flies; her calls and the crash.
             let mut dist = self.prev_eye_pos.distance(play.view.eye);
             self.prev_eye_pos = play.view.eye;
@@ -140,16 +140,16 @@ impl ObjectKankyo {
             }
             play.audio.func_800f436c(SfxPos::Default, NA_SE_EV_NAVY_FLY - SFX_FLAG, (0.4 * dist) + 0.6);
             match play.cs_ctx.frames {
-                473 => play.audio.func_800788cc(NA_SE_VO_NA_HELLO_3),
+                473 => play.audio.play_sfx_centered2(NA_SE_VO_NA_HELLO_3),
                 583 => play.audio.func_800f4524(SfxPos::Default, NA_SE_VO_NA_HELLO_2, 32),
-                763 => play.audio.func_80078884(NA_SE_EV_NAVY_CRASH - SFX_FLAG),
-                771 => play.audio.func_80078884(NA_SE_VO_RT_THROW),
+                763 => play.audio.play_sfx_centered(NA_SE_EV_NAVY_CRASH - SFX_FLAG),
+                771 => play.audio.play_sfx_centered(NA_SE_VO_RT_THROW),
                 _ => {}
             }
         }
         let env = &mut play.env_ctx;
         let snow_max = env.precipitation[PRECIP_SNOW_MAX];
-        if snow_max < 64 && (play.save.entrance_index != ENTR_SPOT04_0 || play.save.scene_layer != 4 || snow_max != 0) {
+        if snow_max < 64 && (play.save.entrance_index != ENTR_KOKIRI_FOREST_0 || play.save.scene_layer != 4 || snow_max != 0) {
             env.precipitation[PRECIP_SNOW_MAX] += 16;
         }
         let Some(player) = play.player.and_then(|h| play.actors.actor(h)).map(|a| (a.world_pos, a.velocity)) else { return };
@@ -340,10 +340,10 @@ impl ActorImpl for ObjectKankyo {
 
     /// `ObjectKankyo_DrawFairies`' changes: each mote's scale by its alpha (before this frame's
     /// change), then the alpha fading (the first 32 in while circling, out otherwise; the rest
-    /// blinking by `alphaTimer`). Skipped with the main camera's `unk_14C & 0x100`.
+    /// blinking by `alphaTimer`). Skipped with the main camera's `stateFlags & 0x100`.
     fn draw_update(&mut self, play: &mut PlayState) {
         self.drawn.clear();
-        if self.action != Action::Fairies || play.game_camera.unk_14c & 0x100 != 0 {
+        if self.action != Action::Fairies || play.game_camera.state_flags & 0x100 != 0 {
             return;
         }
         let n = (play.env_ctx.precipitation[PRECIP_SNOW_MAX] as usize).min(64);

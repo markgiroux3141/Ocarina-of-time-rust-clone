@@ -25,7 +25,7 @@ ADR 0007 put actors in a generational arena, each taken out of its slot while it
 - **Cross-collider pointers become handles, and the data read through them is copied.**
   - `atHit`, `acHit` and `ocHit` are actor handles.
   - The hit element an actor reads later (`acHitInfo->toucher.dmgFlags`, the bumper) is copied into a `HitElem` when the hit is recorded. In the game it's read through the pointer, and it only changes if the other actor re-initialises its collider, which none of the ported actors do between a hit and its reading.
-- **The frame is the game's.** `PlayState::tick_with` runs the checks after `func_800973FC` and before `Actor_UpdateAll`, then clears the lists (`CollisionCheck_ClearContext`). After each actor's update, `CollisionCheck_ResetDamage` and the `targetPriority` reset run, as in `Actor_UpdateAll`.
+- **The frame is the game's.** `PlayState::tick_with` runs the checks after `Room_ProcessRoomRequest` and before `Actor_UpdateAll`, then clears the lists (`CollisionCheck_ClearContext`). After each actor's update, `CollisionCheck_ResetDamage` and the `targetPriority` reset run, as in `Actor_UpdateAll`.
 - **The geometry is engine code.** The `sys_math3d.c` primitives the checks use (spheres, cylinders, triangles, segments) are `eng_collision::math3d`, which knows nothing about actors.
 
 ## Consequences

@@ -11,7 +11,7 @@ use eng_input::pad::PadState;
 use glam::Vec3;
 use oot_actors::PlayExt;
 use oot_actors::en_ko::{self, EnKo};
-use oot_game::actor::ACTOR_FLAG_0;
+use oot_game::actor::ACTOR_FLAG_ATTENTION_ENABLED;
 use oot_game::play::{PlayState, scripted_input};
 use oot_game::play_scene::GameAssets;
 use oot_game::save::SaveContext;
@@ -44,7 +44,7 @@ fn find(w: &PlayState, ty: u8) -> oot_game::actor_ctx::ActorHandle {
 
 #[test]
 fn the_village_children_spawn_and_play_their_animations() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     frames(&mut w, 4);
     // Room 0 places children 0..6 and Fado (12); EnKo_CanSpawn keeps types below 7 and Fado in
     // Kokiri Forest for child Link.
@@ -53,7 +53,7 @@ fn the_village_children_spawn_and_play_their_animations() {
     types.sort();
     assert_eq!(types, vec![0, 1, 2, 3, 4, 5, 6, 12]);
     // ENKO_FQS_CHILD_START: sOsAnimeLookup[type][0], through sAnimationInfo.
-    let expected = [(0, "gObjOsAnim_7830"), (1, "gObjOsAnim_9B64"), (2, "gObjOsAnim_879C"), (3, "gObjOsAnim_8F6C"), (4, "gObjOsAnim_7D94"), (5, "gObjOsAnim_9B64"), (6, "gObjOsAnim_9B64"), (12, "gObjOsAnim_62DC")];
+    let expected = [(0, "gKokiriLiftingRockAnim"), (1, "gKokiriStandUpAnim"), (2, "gKokiriPunchingAnim"), (3, "gKokiriBlockingAnim"), (4, "gKokiriCuttingGrassAnim"), (5, "gKokiriStandUpAnim"), (6, "gKokiriStandUpAnim"), (12, "gKokiriIdleAnim")];
     for k in &ks {
         let ty = (k.actor.params & 0xFF) as u8;
         let want = expected.iter().find(|e| e.0 == ty).unwrap().1;
@@ -75,18 +75,18 @@ fn the_village_children_spawn_and_play_their_animations() {
 
 #[test]
 fn a_child_fades_in_near_link_and_out_away_from_him() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     frames(&mut w, 4);
     // Child 1 at (45, 0, -272).
     let h = find(&w, en_ko::ENKO_TYPE_CHILD_1);
     let home = w.actors.actor(h).unwrap().home_pos;
     // Far (more than appearDist 180): Math_SmoothStepToF towards 0, and below 10 it can't be
-    // targeted (ACTOR_FLAG_0 cleared).
+    // targeted (ACTOR_FLAG_ATTENTION_ENABLED cleared).
     w.place_player(home + Vec3::new(0.0, 0.0, 400.0), i16::MIN);
     frames(&mut w, 20);
     let k = w.actors.downcast::<EnKo>(h).unwrap();
     assert_eq!(k.model_alpha, 0.0);
-    assert_eq!(k.actor.flags & ACTOR_FLAG_0, 0);
+    assert_eq!(k.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED, 0);
     // Near: towards 255 by at most 40 a frame (fraction 0.3), targetable from alpha 10.
     w.place_player(home + Vec3::new(0.0, 0.0, 100.0), i16::MIN);
     frames(&mut w, 1);
@@ -95,15 +95,15 @@ fn a_child_fades_in_near_link_and_out_away_from_him() {
     frames(&mut w, 20);
     let k = w.actors.downcast::<EnKo>(h).unwrap();
     assert_eq!(k.model_alpha, 255.0);
-    assert_eq!(k.actor.flags & ACTOR_FLAG_0, ACTOR_FLAG_0);
-    // Facing Link within the preset's yaw range, it turns its head to him (func_80034A14
+    assert_eq!(k.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_ATTENTION_ENABLED);
+    // Facing Link within the preset's yaw range, it turns its head to him (Npc_TrackPoint
     // mode 2): Link is straight ahead (+z of a child facing +z), so the head's yaw is small.
-    assert!((k.unk_1e8.head[1] as i32).abs() < 0x800, "head yaw {:#x}", k.unk_1e8.head[1]);
+    assert!((k.interact_info.head[1] as i32).abs() < 0x800, "head yaw {:#x}", k.interact_info.head[1]);
 }
 
 #[test]
 fn child_3_guards_the_way_to_the_lost_woods() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     frames(&mut w, 4);
     // No Kokiri Emerald: func_80A995CC, with the body 200 taller (46 + 200).
     let h = find(&w, en_ko::ENKO_TYPE_CHILD_3);

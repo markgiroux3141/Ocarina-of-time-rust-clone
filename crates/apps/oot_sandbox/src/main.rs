@@ -24,7 +24,7 @@ struct Cli {
     /// Spawn point (index into the scene's spawn list).
     #[arg(long, default_value_t = 0)]
     spawn: usize,
-    /// Time of day as HH:MM (`gSaveContext.dayTime`; a new save starts at 10:00).
+    /// Time of day as HH:MM (`gSaveContext.save.dayTime`; a new save starts at 10:00).
     #[arg(long, default_value = "10:00")]
     time: String,
     /// Draw the scene's collision (coloured by surface class) instead of its rooms.
@@ -65,10 +65,10 @@ struct Cli {
     /// Script for --sheet / --trace: run-roll, ledge, pit, stairs, walls, turn, idle, still,
     /// forward, tour, climb50, climb70, climb100, hang, ramp-stand, target, parallel, sword,
     /// swim, tread, platform, cup (C-Up: a house's viewpoint toggle), door (walk to a door and
-    /// press A), open (press A where Link stands); with --entrance ENTR_SPOT04_3 also `house` (steers Link into his house and back
-    /// out through the exits); with --entrance ENTR_LINK_HOME_0 --child --preset deku-tree-open
+    /// press A), open (press A where Link stands); with --entrance ENTR_KOKIRI_FOREST_3 also `house` (steers Link into his house and back
+    /// out through the exits); with --entrance ENTR_LINKS_HOUSE_0 --child --preset deku-tree-open
     /// also `playthrough` (GAME-02's scripted run from Link's bed into the Deku Tree), and with
-    /// --entrance ENTR_LINK_HOME_0 --child (a new save) `sword-chest` (GAME-03's run through the
+    /// --entrance ENTR_LINKS_HOUSE_0 --child (a new save) `sword-chest` (GAME-03's run through the
     /// crawlspace and past the boulder to the Kokiri Sword's chest), `mido-shop` (on to 40
     /// rupees, the Deku Shield from the Kokiri shop, both worn, and past Mido) and
     /// `new-save-deku-tree` (on into the meadow, the Deku Tree's talk answered yes, and into
@@ -98,7 +98,7 @@ struct Cli {
     /// sword-and-40-rupees (the Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,
-    /// Enter as the file select starts a new file: `ENTR_LINK_HOME_0`, child, with the opening
+    /// Enter as the file select starts a new file: `ENTR_LINKS_HOUSE_0`, child, with the opening
     /// (`SaveContext::file_select_new`).
     #[arg(long)]
     new_file: bool,
@@ -332,7 +332,7 @@ fn script(name: &str) -> Result<(Vec<PadState>, Option<(Vec3, i16)>)> {
     Ok((s, start))
 }
 
-/// The `house` script: from Link's porch (`ENTR_SPOT04_3`), in through the door and back out,
+/// The `house` script: from Link's porch (`ENTR_KOKIRI_FOREST_3`), in through the door and back out,
 /// steering at each frame like a player would.
 struct HouseWalk {
     phase: usize,
@@ -367,7 +367,7 @@ impl HouseWalk {
                         self.wait = w.scene_changes as usize;
                         continue;
                     }
-                    let name = if self.phase == 1 { "ENTR_LINK_HOME_1" } else { "ENTR_SPOT04_3" };
+                    let name = if self.phase == 1 { "ENTR_LINKS_HOUSE_1" } else { "ENTR_KOKIRI_FOREST_3" };
                     return Some(target(name).unwrap_or(idle));
                 }
                 // Wait for the scene change, then settle.
@@ -512,7 +512,7 @@ fn run_script(
             "anim_frame": p.skel.cur_frame,
             "walk_phase": p.unk_868,
             // The index of the locked-on target among the dummy targets, as the spikes wrote it.
-            "target": p.unk_664.and_then(|h| targets.iter().position(|&t| t == h)),
+            "target": p.focus_actor.and_then(|h| targets.iter().position(|&t| t == h)),
             "parallel": p.state1 & oot_actors::player::STATE1_17 != 0,
             "locked_on": p.state1 & oot_actors::player::STATE1_4 != 0,
             "root_joint": p.skel.joint[0],
@@ -653,7 +653,7 @@ fn write_audio(cli: &Cli, w: &PlayState, run: &RunAudio) -> Result<()> {
             eng_audio::GameOp::Schedule => "schedule".to_string(),
             eng_audio::GameOp::ResetCmdQueue => "reset cmd queue".to_string(),
             eng_audio::GameOp::ResetSpec(s) => format!("reset spec {s}"),
-            eng_audio::GameOp::SetAudRand(v) => format!("audRand {v:08X}"),
+            eng_audio::GameOp::SetAudRand(v) => format!("sAudioRandom {v:08X}"),
         };
         let mut actor_numbers = std::collections::HashMap::new();
         let sfx_pos = |n: &mut std::collections::HashMap<oot_game::audio::sfx::SfxPos, usize>, p: oot_game::audio::sfx::SfxPos| match p {

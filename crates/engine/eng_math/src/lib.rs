@@ -1,7 +1,7 @@
 //! Fixed-point angle maths and the step helpers the game logic is built on.
 //!
 //! - `sins`/`coss` (libultra `gu/sins.c`, `gu/coss.c`) with the 1024-entry `sintable`
-//! - `Math_Atan2S` (`sys_math_atan.c`) with the 1025-entry `sATan2Tbl`
+//! - `Math_Atan2S` (`sys_math_atan.c`) with the 1025-entry `sAtan2Tbl`
 //! - `Math_StepToF`, `Math_AsymStepToF`, `Math_ScaledStepToS`, ... (`z_lib.c`)
 //! - `guPerspective` (libultra `gu/perspective.c`)
 //!
@@ -288,7 +288,7 @@ pub fn rad_to_binang(r: f32) -> i16 {
     (r * (32768.0 / std::f32::consts::PI)).round() as i32 as i16
 }
 
-/// `IS_ZERO` (`z64math.h`).
+/// `IS_ZERO` (`z_math.h`).
 pub fn is_zero(f: f32) -> bool {
     f.abs() < 0.008
 }

@@ -1,7 +1,7 @@
 //! The audio library through an output device (cpal), for the window app.
 //!
 //! A thread of its own plays the console: every 1/60 s of the clock it plays the AI for a VI
-//! period and runs the retrace (`AudioMgr_HandleRetrace`, `func_800E5000`), exactly as the
+//! period and runs the retrace (`AudioMgr_HandleRetrace`, `AudioThread_UpdateImpl`), exactly as the
 //! offline renderer does, and pushes what the AI plays (32006 Hz stereo) into a queue. The
 //! device's callback drains the queue at the device's rate, resampling linearly, and nudges its
 //! rate by up to half a percent to keep the queue near its target: the device's clock and the
@@ -81,8 +81,8 @@ impl AudioOutput {
         }
     }
 
-    /// Queues commands for the next retrace (`Audio_QueueCmd*`, then
-    /// `Audio_ScheduleProcessCmds`).
+    /// Queues commands for the next retrace (`AudioThread_QueueCmd*`, then
+    /// `AudioThread_ScheduleProcessCmds`).
     pub fn send(&self, cmds: Vec<(u32, u32)>) {
         if !cmds.is_empty() {
             let mut ops: Vec<GameOp> = cmds.into_iter().map(|(a, d)| GameOp::Cmd(a, d)).collect();

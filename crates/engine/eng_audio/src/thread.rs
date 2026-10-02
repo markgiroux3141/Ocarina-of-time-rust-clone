@@ -1,6 +1,6 @@
-//! The audio thread (`code_800E4FE0.c`): `func_800E5000`, what runs on every VI retrace
+//! The audio thread (`audio/internal/thread.c`): `AudioThread_UpdateImpl`, what runs on every VI retrace
 //! (`AudioMgr_HandleRetrace`), the command queue the game talks to it through
-//! (`Audio_QueueCmd*`, `Audio_ProcessCmds`), and the commands themselves.
+//! (`AudioThread_QueueCmd*`, `AudioThread_ProcessCmds`), and the commands themselves.
 //!
 //! Also the audio interface the retrace hands buffers to: `Ai` models its queue and its DAC
 //! rate, so `osAiGetLength` is what the hardware would say and the buffer lengths the thread
@@ -10,21 +10,21 @@ use std::collections::VecDeque;
 
 use crate::context::*;
 
-/// `ChannelUpdateType`.
-const CHAN_UPD_VOL_SCALE: u8 = 1;
-const CHAN_UPD_VOL: u8 = 2;
-const CHAN_UPD_PAN_SIGNED: u8 = 3;
-const CHAN_UPD_FREQ_SCALE: u8 = 4;
-const CHAN_UPD_REVERB: u8 = 5;
-const CHAN_UPD_SCRIPT_IO: u8 = 6;
-const CHAN_UPD_PAN_UNSIGNED: u8 = 7;
-const CHAN_UPD_STOP_SOMETHING2: u8 = 8;
-const CHAN_UPD_MUTE_BEHAVE: u8 = 9;
-const CHAN_UPD_VIBE_X8: u8 = 10;
-const CHAN_UPD_VIBE_X32: u8 = 11;
-const CHAN_UPD_UNK_0F: u8 = 12;
-const CHAN_UPD_UNK_20: u8 = 13;
-const CHAN_UPD_STEREO: u8 = 14;
+/// `AudioThreadCmdOp`.
+const AUDIOCMD_OP_CHANNEL_SET_VOL_SCALE: u8 = 1;
+const AUDIOCMD_OP_CHANNEL_SET_VOL: u8 = 2;
+const AUDIOCMD_OP_CHANNEL_SET_PAN: u8 = 3;
+const AUDIOCMD_OP_CHANNEL_SET_FREQ_SCALE: u8 = 4;
+const AUDIOCMD_OP_CHANNEL_SET_REVERB_VOLUME: u8 = 5;
+const AUDIOCMD_OP_CHANNEL_SET_IO: u8 = 6;
+const AUDIOCMD_OP_CHANNEL_SET_PAN_WEIGHT: u8 = 7;
+const AUDIOCMD_OP_CHANNEL_SET_MUTE: u8 = 8;
+const AUDIOCMD_OP_CHANNEL_SET_MUTE_BEHAVIOR: u8 = 9;
+const AUDIOCMD_OP_CHANNEL_SET_VIBRATO_DEPTH: u8 = 10;
+const AUDIOCMD_OP_CHANNEL_SET_VIBRATO_RATE: u8 = 11;
+const AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_SIZE: u8 = 12;
+const AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_GAIN: u8 = 13;
+const AUDIOCMD_OP_CHANNEL_SET_STEREO: u8 = 14;
 
 /// `SAMPLES_TO_OVERPRODUCE` and `EXTRA_BUFFERED_AI_SAMPLES_TARGET`.
 const SAMPLES_TO_OVERPRODUCE: i32 = 0x10;
@@ -34,7 +34,7 @@ const EXTRA_BUFFERED_AI_SAMPLES_TARGET: i32 = 0x80;
 pub const OS_COUNT_HZ: u32 = 46_875_000;
 
 impl AudioContext {
-    /// `func_800E5000`: one audio frame. `samples_remaining_in_ai` is `osAiGetLength() / 4`.
+    /// `AudioThread_UpdateImpl`: one audio frame. `samples_remaining_in_ai` is `osAiGetLength() / 4`.
     /// Returns the buffer `osAiSetNextBuffer` gets this frame (interleaved stereo), if any.
     pub fn audio_thread_update(&mut self, samples_remaining_in_ai: u32) -> Option<Vec<i16>> {
         self.total_task_count = self.total_task_count.wrapping_add(1);
@@ -111,7 +111,7 @@ impl AudioContext {
         self.audio_random = self.audio_random.wrapping_add(self.ram.s16(ai + 2 * k) as i32 as u32);
 
         // gWaveSamples[8] interprets compiled assembly code as s16 samples as a way to generate
-        // sound with noise. Start with the address of func_800E4FE0, and offset it by a random
+        // sound with noise. Start with the address of AudioThread_Update, and offset it by a random
         // number between 0 - 0xFFF0.
         self.wave8 = self.statics.noise_base.wrapping_add(self.audio_random & 0xFFF0);
 
@@ -125,13 +125,13 @@ impl AudioContext {
         out
     }
 
-    /// `func_800E5584`: the commands to the whole library.
-    pub fn func_800e5584(&mut self, cmd: AudioCmd) {
+    /// `AudioThread_ProcessGlobalCmd`: the commands to the whole library.
+    pub fn audio_thread_process_global_cmd(&mut self, cmd: AudioCmd) {
         match cmd.op {
             0x81 => self.sync_load_seq_parts(cmd.arg1 as i32, cmd.arg2 as i32),
             0x82 => {
                 self.sync_init_seq_player(cmd.arg0 as i32, cmd.arg1 as i32, cmd.arg2 as i32);
-                self.func_800e59ac(cmd.arg0 as i32, cmd.as_int());
+                self.audio_thread_set_fade_in_timer(cmd.arg0 as i32, cmd.as_int());
             }
             0x85 => {
                 self.sync_init_seq_player_skip_ticks(cmd.arg0 as i32, cmd.arg1 as i32, cmd.as_int());
@@ -141,7 +141,7 @@ impl AudioContext {
                     if cmd.as_int() == 0 {
                         self.sequence_player_disable_as_finished(cmd.arg0 as usize & 3);
                     } else {
-                        self.func_800e5958(cmd.arg0 as i32, cmd.as_int());
+                        self.audio_thread_set_fade_out_timer(cmd.arg0 as i32, cmd.as_int());
                     }
                 }
             }
@@ -178,13 +178,13 @@ impl AudioContext {
             0xF5 => self.async_load(FONT_TABLE, cmd.arg0 as i32, 0, cmd.arg2 as i32, RetQueue::External),
             0xFC => self.async_load(SEQUENCE_TABLE, cmd.arg0 as i32, 0, cmd.arg2 as i32, RetQueue::External),
             0xF6 => self.discard_seq_fonts(cmd.arg1 as i32),
-            0x90 => self.unk_5bdc[cmd.arg0 as usize & 3] = cmd.as_ushort(),
+            0x90 => self.thread_cmd_channel_mask[cmd.arg0 as usize & 3] = cmd.as_ushort(),
             0xF9 => {
                 self.reset_status = 5;
                 self.audio_reset_spec_id_to_load = cmd.data as u8;
             }
             0xFB => {
-                // D_801755D0: a callback the game never sets.
+                // gAudioCustomUpdateFunction: a callback the game never sets.
             }
             0xE0..=0xE2 => {
                 self.set_font_instrument((cmd.op - 0xE0) as i32, cmd.arg0 as i32, cmd.arg1 as i32, cmd.data);
@@ -204,8 +204,8 @@ impl AudioContext {
         }
     }
 
-    /// `func_800E5958` (SetFadeOutTimer).
-    pub fn func_800e5958(&mut self, player_idx: i32, mut fade_timer: i32) {
+    /// `AudioThread_SetFadeOutTimer`.
+    pub fn audio_thread_set_fade_out_timer(&mut self, player_idx: i32, mut fade_timer: i32) {
         let sp = &mut self.seq_players[player_idx as usize & 3];
         if fade_timer == 0 {
             fade_timer = 1;
@@ -215,8 +215,8 @@ impl AudioContext {
         sp.fade_timer = fade_timer as u16;
     }
 
-    /// `func_800E59AC` (SetFadeInTimer).
-    pub fn func_800e59ac(&mut self, player_idx: i32, fade_timer: i32) {
+    /// `AudioThread_SetFadeInTimer`.
+    pub fn audio_thread_set_fade_in_timer(&mut self, player_idx: i32, fade_timer: i32) {
         if fade_timer != 0 {
             let sp = &mut self.seq_players[player_idx as usize & 3];
             sp.state = 1;
@@ -227,7 +227,7 @@ impl AudioContext {
         }
     }
 
-    /// `Audio_QueueCmd`.
+    /// `AudioThread_QueueCmd`.
     pub fn queue_cmd(&mut self, op_args: u32, data: u32) {
         let c = &mut self.cmd_buf[self.cmd_wr_pos as usize];
         c.op = (op_args >> 24) as u8;
@@ -240,24 +240,24 @@ impl AudioContext {
             self.cmd_wr_pos = self.cmd_wr_pos.wrapping_sub(1);
         }
     }
-    /// `Audio_QueueCmdF32`.
+    /// `AudioThread_QueueCmdF32`.
     pub fn queue_cmd_f32(&mut self, op_args: u32, data: f32) {
         self.queue_cmd(op_args, data.to_bits());
     }
-    /// `Audio_QueueCmdS32`.
+    /// `AudioThread_QueueCmdS32`.
     pub fn queue_cmd_s32(&mut self, op_args: u32, data: i32) {
         self.queue_cmd(op_args, data as u32);
     }
-    /// `Audio_QueueCmdS8`.
+    /// `AudioThread_QueueCmdS8`.
     pub fn queue_cmd_s8(&mut self, op_args: u32, data: i8) {
         self.queue_cmd(op_args, ((data as i32) << 0x18) as u32);
     }
-    /// `Audio_QueueCmdU16`.
+    /// `AudioThread_QueueCmdU16`.
     pub fn queue_cmd_u16(&mut self, op_args: u32, data: u16) {
         self.queue_cmd(op_args, (data as u32) << 0x10);
     }
 
-    /// `Audio_ScheduleProcessCmds`.
+    /// `AudioThread_ScheduleProcessCmds`.
     pub fn schedule_process_cmds(&mut self) -> i32 {
         let pending = (self.cmd_wr_pos.wrapping_sub(self.cmd_rd_pos) as i32 + 0x100) as u8 as i32;
         if self.d_801304e8 < pending {
@@ -271,39 +271,39 @@ impl AudioContext {
         0
     }
 
-    /// `Audio_ResetCmdQueue`.
+    /// `AudioThread_ResetCmdQueue`.
     pub fn reset_cmd_queue(&mut self) {
         self.cmd_queue_finished = 0;
         self.cmd_rd_pos = self.cmd_wr_pos;
     }
 
-    /// `Audio_ProcessCmd`.
+    /// `AudioThread_ProcessCmd`.
     pub fn process_cmd(&mut self, cmd: AudioCmd) {
         if cmd.op & 0xF0 == 0xF0 {
-            self.func_800e5584(cmd);
+            self.audio_thread_process_global_cmd(cmd);
             return;
         }
         if (cmd.arg0 as i16) < self.audio_buffer_parameters.num_sequence_players {
             let p = cmd.arg0 as usize;
             if cmd.op & 0x80 != 0 {
-                self.func_800e5584(cmd);
+                self.audio_thread_process_global_cmd(cmd);
                 return;
             }
             if cmd.op & 0x40 != 0 {
-                self.func_800e6128(p, cmd);
+                self.audio_thread_process_seq_player_cmd(p, cmd);
                 return;
             }
             if cmd.arg1 < 0x10 {
                 let c = self.seq_players[p].channels[cmd.arg1 as usize];
-                self.func_800e6300(c, cmd);
+                self.audio_thread_process_channel_cmd(c, cmd);
                 return;
             }
             if cmd.arg1 == 0xFF {
-                let mut bits = self.unk_5bdc[p & 3];
+                let mut bits = self.thread_cmd_channel_mask[p & 3];
                 for i in 0..16 {
                     if bits & 1 != 0 {
                         let c = self.seq_players[p].channels[i];
-                        self.func_800e6300(c, cmd);
+                        self.audio_thread_process_channel_cmd(c, cmd);
                     }
                     bits >>= 1;
                 }
@@ -311,7 +311,7 @@ impl AudioContext {
         }
     }
 
-    /// `Audio_ProcessCmds`.
+    /// `AudioThread_ProcessCmds`.
     pub fn process_cmds(&mut self, msg: u32) {
         if self.cmd_queue_finished == 0 {
             self.cur_cmd_rd_pos = (msg >> 8) as u8;
@@ -334,8 +334,8 @@ impl AudioContext {
         }
     }
 
-    /// `func_800E6128`: a player's commands.
-    pub fn func_800e6128(&mut self, p: usize, cmd: AudioCmd) {
+    /// `AudioThread_ProcessSeqPlayerCmd`: a player's commands.
+    pub fn audio_thread_process_seq_player_cmd(&mut self, p: usize, cmd: AudioCmd) {
         let sp = &mut self.seq_players[p];
         match cmd.op {
             0x41 => {
@@ -345,8 +345,8 @@ impl AudioContext {
                 }
             }
             0x47 => sp.tempo = (cmd.as_int() * 0x30) as u16,
-            0x49 => sp.unk_0c = (cmd.as_int() * 0x30) as u16,
-            0x4E => sp.unk_0c = cmd.as_int() as u16,
+            0x49 => sp.tempo_change = (cmd.as_int() * 0x30) as u16,
+            0x4E => sp.tempo_change = cmd.as_int() as u16,
             0x48 => sp.transposition = cmd.as_sbyte() as i16,
             0x46 => sp.sound_script_io[cmd.arg2 as usize & 7] = cmd.as_sbyte(),
             0x4A | 0x4B => {
@@ -383,75 +383,75 @@ impl AudioContext {
         }
     }
 
-    /// `func_800E6300`: a channel's commands.
-    pub fn func_800e6300(&mut self, c: ChanId, cmd: AudioCmd) {
+    /// `AudioThread_ProcessChannelCmd`: a channel's commands.
+    pub fn audio_thread_process_channel_cmd(&mut self, c: ChanId, cmd: AudioCmd) {
         let ch = &mut self.channels[c];
         match cmd.op {
-            CHAN_UPD_VOL_SCALE => {
+            AUDIOCMD_OP_CHANNEL_SET_VOL_SCALE => {
                 if ch.volume_scale != cmd.as_float() {
                     ch.volume_scale = cmd.as_float();
                     ch.changes |= CHANGES_VOLUME;
                 }
             }
-            CHAN_UPD_VOL => {
+            AUDIOCMD_OP_CHANNEL_SET_VOL => {
                 if ch.volume != cmd.as_float() {
                     ch.volume = cmd.as_float();
                     ch.changes |= CHANGES_VOLUME;
                 }
             }
-            CHAN_UPD_PAN_SIGNED => {
+            AUDIOCMD_OP_CHANNEL_SET_PAN => {
                 if ch.new_pan as i8 != cmd.as_sbyte() {
                     ch.new_pan = cmd.as_sbyte() as u8;
                     ch.changes |= CHANGES_PAN;
                 }
             }
-            CHAN_UPD_PAN_UNSIGNED => {
+            AUDIOCMD_OP_CHANNEL_SET_PAN_WEIGHT => {
                 if ch.new_pan as i8 != cmd.as_sbyte() {
                     ch.pan_channel_weight = cmd.as_sbyte() as u8;
                     ch.changes |= CHANGES_PAN;
                 }
             }
-            CHAN_UPD_FREQ_SCALE => {
+            AUDIOCMD_OP_CHANNEL_SET_FREQ_SCALE => {
                 if ch.freq_scale != cmd.as_float() {
                     ch.freq_scale = cmd.as_float();
                     ch.changes |= CHANGES_FREQ_SCALE;
                 }
             }
-            CHAN_UPD_REVERB => {
+            AUDIOCMD_OP_CHANNEL_SET_REVERB_VOLUME => {
                 if ch.reverb as i8 != cmd.as_sbyte() {
                     ch.reverb = cmd.as_sbyte() as u8;
                 }
             }
-            CHAN_UPD_SCRIPT_IO => {
+            AUDIOCMD_OP_CHANNEL_SET_IO => {
                 if cmd.arg2 < 8 {
                     ch.sound_script_io[cmd.arg2 as usize] = cmd.as_sbyte();
                 }
             }
-            CHAN_UPD_STOP_SOMETHING2 => ch.stop_something2 = cmd.as_sbyte() != 0,
-            CHAN_UPD_MUTE_BEHAVE => ch.mute_behavior = cmd.as_sbyte() as u8,
-            CHAN_UPD_VIBE_X8 => {
+            AUDIOCMD_OP_CHANNEL_SET_MUTE => ch.stop_something2 = cmd.as_sbyte() != 0,
+            AUDIOCMD_OP_CHANNEL_SET_MUTE_BEHAVIOR => ch.mute_behavior = cmd.as_sbyte() as u8,
+            AUDIOCMD_OP_CHANNEL_SET_VIBRATO_DEPTH => {
                 ch.vibrato_extent_target = cmd.as_ubyte() as u16 * 8;
                 ch.vibrato_extent_change_delay = 1;
             }
-            CHAN_UPD_VIBE_X32 => {
+            AUDIOCMD_OP_CHANNEL_SET_VIBRATO_RATE => {
                 ch.vibrato_rate_target = cmd.as_ubyte() as u16 * 32;
                 ch.vibrato_rate_change_delay = 1;
             }
-            CHAN_UPD_UNK_0F => ch.unk_0f = cmd.as_ubyte(),
-            CHAN_UPD_UNK_20 => ch.unk_20 = cmd.as_ushort(),
-            CHAN_UPD_STEREO => ch.stereo = cmd.as_ubyte(),
+            AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_SIZE => ch.comb_filter_size = cmd.as_ubyte(),
+            AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_GAIN => ch.comb_filter_gain = cmd.as_ushort(),
+            AUDIOCMD_OP_CHANNEL_SET_STEREO => ch.stereo = cmd.as_ubyte(),
             _ => {}
         }
     }
 
-    /// `func_800E6070`: a channel's IO port, -1 if its player is off.
-    pub fn func_800e6070(&self, player_idx: usize, channel_idx: usize, script_idx: usize) -> i8 {
+    /// `AudioThread_GetChannelIO`: a channel's IO port, -1 if its player is off.
+    pub fn audio_thread_get_channel_io(&self, player_idx: usize, channel_idx: usize, script_idx: usize) -> i8 {
         let sp = &self.seq_players[player_idx];
         if sp.enabled { self.channels[sp.channels[channel_idx]].sound_script_io[script_idx] } else { -1 }
     }
 
-    /// `func_800E60C4`: a player's IO port.
-    pub fn func_800e60c4(&self, player_idx: usize, port: usize) -> i8 {
+    /// `AudioThread_GetSeqPlayerIO`: a player's IO port.
+    pub fn audio_thread_get_seq_player_io(&self, player_idx: usize, port: usize) -> i8 {
         self.seq_players[player_idx].sound_script_io[port]
     }
 
@@ -482,7 +482,7 @@ impl AudioContext {
         phi_v1
     }
 
-    /// `Audio_NextRandom`.
+    /// `AudioThread_NextRandom`.
     pub fn next_random(&mut self) -> u32 {
         self.aud_rand = self.os_count.wrapping_add(0x123_4567).wrapping_mul(self.aud_rand.wrapping_add(self.total_task_count as u32));
         self.aud_rand = self.aud_rand.wrapping_add(self.audio_random);

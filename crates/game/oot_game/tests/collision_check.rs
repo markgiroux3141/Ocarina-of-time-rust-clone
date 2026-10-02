@@ -1,7 +1,7 @@
 //! The collision check (`oot_game::collision_check`) against `z_collision_check.c`: OC push-out
 //! by mass (`CollisionCheck_SetOCvsOC`), AT vs AC hits and what they record on both sides
 //! (`CollisionCheck_SetATvsAC`), damage with and without a damage table
-//! (`CollisionCheck_ApplyDamage`), `TOUCH_NEAREST` quads (`Collider_QuadSetNearestAC`), and the
+//! (`CollisionCheck_ApplyDamage`), `ATELEM_NEAREST` quads (`Collider_QuadSetNearestAC`), and the
 //! rules that skip a pair. Expected values are worked out from the C in the comments. No asset
 //! pack needed: the checks run on an `ActorContext`.
 
@@ -104,13 +104,13 @@ fn register(ctx: &mut CollisionCheckContext, actors: &mut ActorContext, h: Actor
 /// En_Ko's body (`sCylinderInit` in `z_en_ko.c`): OC only, `OC1_TYPE_ALL`, `OC2_TYPE_2`.
 fn en_ko_cylinder(pos: [i16; 3]) -> Collider {
     let init = ColliderCylinderInit {
-        base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
-        info: ColliderInfoInit {
-            elem_type: ELEMTYPE_UNK0,
-            toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderBumpInit { dmg_flags: 0, effect: 0, defense: 0 },
-            toucher_flags: TOUCH_NONE,
-            bumper_flags: BUMP_NONE,
+        base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
+        info: ColliderElementInit {
+            elem_type: ELEM_MATERIAL_UNK0,
+            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0, effect: 0, defense: 0 },
+            toucher_flags: ATELEM_NONE,
+            bumper_flags: ACELEM_NONE,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 20, height: 46, y_shift: 0, pos },
@@ -122,13 +122,13 @@ fn en_ko_cylinder(pos: [i16; 3]) -> Collider {
 /// `OC2_TYPE_PLAYER`.
 fn player_cylinder(pos: [i16; 3]) -> Collider {
     let init = ColliderCylinderInit {
-        base: ColliderInit { col_type: COLTYPE_HIT5, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_ENEMY, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_PLAYER, shape: COLSHAPE_CYLINDER },
-        info: ColliderInfoInit {
-            elem_type: ELEMTYPE_UNK1,
-            toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderBumpInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-            toucher_flags: TOUCH_NONE,
-            bumper_flags: BUMP_ON,
+        base: ColliderInit { col_type: COL_MATERIAL_HIT5, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_ENEMY, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_PLAYER, shape: COLSHAPE_CYLINDER },
+        info: ColliderElementInit {
+            elem_type: ELEM_MATERIAL_UNK1,
+            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
+            toucher_flags: ATELEM_NONE,
+            bumper_flags: ACELEM_ON,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 12, height: 60, y_shift: 0, pos },
@@ -140,19 +140,19 @@ fn player_cylinder(pos: [i16; 3]) -> Collider {
 fn bush_cylinder(pos: [i16; 3]) -> Collider {
     let init = ColliderCylinderInit {
         base: ColliderInit {
-            col_type: COLTYPE_NONE,
+            col_type: COL_MATERIAL_NONE,
             at_flags: AT_NONE,
             ac_flags: AC_ON | AC_TYPE_PLAYER,
             oc_flags1: OC1_ON | OC1_TYPE_PLAYER | OC1_TYPE_2,
             oc_flags2: OC2_TYPE_2,
             shape: COLSHAPE_CYLINDER,
         },
-        info: ColliderInfoInit {
-            elem_type: ELEMTYPE_UNK0,
-            toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderBumpInit { dmg_flags: 0x4FC0_0758, effect: 0, defense: 0 },
-            toucher_flags: TOUCH_NONE,
-            bumper_flags: BUMP_ON,
+        info: ColliderElementInit {
+            elem_type: ELEM_MATERIAL_UNK0,
+            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC0_0758, effect: 0, defense: 0 },
+            toucher_flags: ATELEM_NONE,
+            bumper_flags: ACELEM_ON,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 12, height: 44, y_shift: 0, pos },
@@ -161,16 +161,16 @@ fn bush_cylinder(pos: [i16; 3]) -> Collider {
 }
 
 /// Player's sword quad (`D_80854650`), with the Kokiri Sword's flags as `func_80837918` sets
-/// them for a slash: `DMG_SLASH_KOKIRI`, damage 1, `TOUCH_ON | TOUCH_NEAREST`.
+/// them for a slash: `DMG_SLASH_KOKIRI`, damage 1, `ATELEM_ON | ATELEM_NEAREST`.
 fn sword_quad(q: [Vec3; 4]) -> Collider {
     let init = ColliderQuadInit {
-        base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_ON | AT_TYPE_PLAYER, ac_flags: AC_NONE, oc_flags1: OC1_NONE, oc_flags2: OC2_TYPE_PLAYER, shape: COLSHAPE_QUAD },
-        info: ColliderInfoInit {
-            elem_type: ELEMTYPE_UNK2,
-            toucher: ColliderTouch { dmg_flags: DMG_SLASH_KOKIRI, effect: 0, damage: 1 },
-            bumper: ColliderBumpInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-            toucher_flags: TOUCH_ON | TOUCH_NEAREST,
-            bumper_flags: BUMP_NONE,
+        base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_ON | AT_TYPE_PLAYER, ac_flags: AC_NONE, oc_flags1: OC1_NONE, oc_flags2: OC2_TYPE_PLAYER, shape: COLSHAPE_QUAD },
+        info: ColliderElementInit {
+            elem_type: ELEM_MATERIAL_UNK2,
+            toucher: ColliderElementDamageInfoAT { dmg_flags: DMG_SLASH_KOKIRI, effect: 0, damage: 1 },
+            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
+            toucher_flags: ATELEM_ON | ATELEM_NEAREST,
+            bumper_flags: ACELEM_NONE,
             oc_elem_flags: OCELEM_NONE,
         },
         quad: q,
@@ -179,7 +179,7 @@ fn sword_quad(q: [Vec3; 4]) -> Collider {
 }
 
 /// A blade 100 long along x at height y, 20 tall, in the plane z = 0: quad[0], [1] the base
-/// edge (y), [2], [3] the top edge (y + 20), as `func_80090480` passes new base / tip and old
+/// edge (y), [2], [3] the top edge (y + 20), as `Player_UpdateWeaponInfo` passes new base / tip and old
 /// base / tip.
 fn blade(x0: f32, x1: f32, y: f32) -> [Vec3; 4] {
     [Vec3::new(x0, y, 0.0), Vec3::new(x1, y, 0.0), Vec3::new(x0, y + 20.0, 0.0), Vec3::new(x1, y + 20.0, 0.0)]
@@ -189,7 +189,7 @@ fn blade(x0: f32, x1: f32, y: f32) -> [Vec3; 4] {
 fn oc_pushes_equal_masses_apart_by_half_the_overlap_each() {
     let mut actors = ActorContext::default();
     let mut ctx = CollisionCheckContext::default();
-    // Two mass-50 bodies 30 apart with radii 20 and 12: Math3D_CylOutsideCylDist gives deadSpace
+    // Two mass-50 bodies 30 apart with radii 20 and 12: Math3D_CylVsCylOverlapCenterDist gives deadSpace
     // 20 + 12 - 30 = 2. Both MASSTYPE_NORMAL: leftDispRatio = rightMass / total = 0.5, and the
     // same for the right. xDelta = 30 * (2 / 30) = 2, so left moves -1 and right +1 in x.
     let a = holder(&mut actors, ACTORCAT_NPC, Vec3::ZERO, 50, en_ko_cylinder([0, 0, 0]));
@@ -241,7 +241,7 @@ fn oc_skips_incompatible_types_and_bodies_apart_in_height() {
     let mut actors = ActorContext::default();
     let mut ctx = CollisionCheckContext::default();
     // A bush's OC1 has TYPE_PLAYER | TYPE_2, and En_Ko's OC2 is TYPE_2: compatible. But a bush
-    // 100 above: En_Ko's top is 46, below the bush's bottom, so Math3D_CylOutsideCylDist fails.
+    // 100 above: En_Ko's top is 46, below the bush's bottom, so Math3D_CylVsCylOverlapCenterDist fails.
     let a = holder(&mut actors, ACTORCAT_NPC, Vec3::ZERO, 50, en_ko_cylinder([0, 0, 0]));
     let b = holder(&mut actors, ACTORCAT_PROP, Vec3::new(0.0, 100.0, 0.0), 50, bush_cylinder([0, 100, 0]));
     register(&mut ctx, &mut actors, a, false, false, true);
@@ -277,19 +277,19 @@ fn a_sword_quad_hits_a_bush_and_both_sides_record_it() {
     let b = cyl(col(&actors, bush));
     assert_eq!(b.base.ac_flags & AC_HIT, AC_HIT);
     assert_eq!(b.base.ac, Some(link));
-    assert_eq!(b.info.bumper_flags & BUMP_HIT, BUMP_HIT);
+    assert_eq!(b.info.bumper_flags & ACELEM_HIT, ACELEM_HIT);
     let hp = b.info.bumper.hit_pos;
     assert!(hp[1] == 30 && hp[0].abs() == 12 && hp[2] == 0, "hit at {hp:?}");
     let hit = b.info.ac_hit_info.expect("acHitInfo");
     assert_eq!(hit.toucher.dmg_flags, DMG_SLASH_KOKIRI);
     assert_eq!(hit.elem.col.actor, link);
-    // COLTYPE_NONE isn't METAL, WOOD or HARD, and the sword has no TOUCH_AT_HITMARK: the hit
-    // mark is left to CollisionCheck_SetHitEffects (BUMP_DRAW_HITMARK), which then marks the
-    // sword's element TOUCH_DREW_HITMARK.
-    assert_eq!(b.info.bumper_flags & BUMP_DRAW_HITMARK, BUMP_DRAW_HITMARK);
+    // COL_MATERIAL_NONE isn't METAL, WOOD or HARD, and the sword has no ATELEM_AT_HITMARK: the hit
+    // mark is left to CollisionCheck_SetHitEffects (ACELEM_DRAW_HITMARK), which then marks the
+    // sword's element ATELEM_DREW_HITMARK.
+    assert_eq!(b.info.bumper_flags & ACELEM_DRAW_HITMARK, ACELEM_DRAW_HITMARK);
     let q = quad(col(&actors, link));
     assert_eq!((q.base.at_flags & AT_HIT, q.base.at), (AT_HIT, Some(bush)));
-    assert_eq!(q.info.toucher_flags & (TOUCH_HIT | TOUCH_DREW_HITMARK), TOUCH_HIT | TOUCH_DREW_HITMARK);
+    assert_eq!(q.info.toucher_flags & (ATELEM_HIT | ATELEM_DREW_HITMARK), ATELEM_HIT | ATELEM_DREW_HITMARK);
     assert_eq!(q.info.at_hit.map(|r| r.actor), Some(bush));
     // No damage table: damage = toucher.damage 1 - defense 0.
     assert_eq!(actors.actor(bush).unwrap().col_chk_info.damage, 1);

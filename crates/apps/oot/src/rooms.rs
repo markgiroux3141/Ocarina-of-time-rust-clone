@@ -117,7 +117,7 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
     drawn
 }
 
-/// `Play_Draw`'s room skybox (`skyboxCtx.unk_140 != 0`: the houses' and shops' 360° images),
+/// `Play_Draw`'s room skybox (`skyboxCtx.drawType != 0`: the houses' and shops' 360° images),
 /// after the rooms, when the active camera isn't `CAM_SET_PREREND_FIXED`: centred on the eye.
 pub fn submit_room_skybox(play: &PlayState, s: &SceneState, eye: Vec3, out: &mut DrawLists) -> bool {
     if s.all_rooms || play.active_camera().setting == CAM_SET_PREREND_FIXED {

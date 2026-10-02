@@ -1,6 +1,6 @@
 //! Milestone 4 checks: ledge grabs, hanging, climbing up and climbing onto ledges
-//! (`func_8083A6AC`, `func_8083A5C4`, `func_8084BBE4`, `func_8084BDFC`, `func_80838A14`,
-//! `func_80845668` and the mid-air grab in `func_8084411C`). Expected values come from the C
+//! (`func_8083A6AC`, `func_8083A5C4`, `Player_Action_8084BBE4`, `Player_Action_8084BDFC`, `Player_ActionHandler_12`,
+//! `Player_Action_80845668` and the mid-air grab in `Player_Action_8084411C`). Expected values come from the C
 //! and `sAgeProperties` (adult: unk_1C 41, unk_18 59, unk_14 79.4, unk_0C 111, unk_34 70).
 
 mod common;
@@ -33,7 +33,7 @@ fn first(f: &[Frame], action: &str) -> Option<usize> {
 fn class_1_steps_are_hopped() {
     let Some(mut w) = block_world(30.0) else { return };
     let f = run(&mut w, &repeat(stick(0, 80), 60));
-    // func_80838A14: unk_88C == 1 (18 <= h < unk_1C = 41) for 3 frames → func_808389E8(link_normal_jump,
+    // Player_ActionHandler_12: ledgeClimbType == 1 (18 <= h < unk_1C = 41) for 3 frames → func_808389E8(link_normal_jump,
     // wallHeight * 0.08 + 5.5), linearVelocity 2.5.
     let j = first(&f, "Midair").expect("hopped");
     assert_eq!(f[j].anim, "link_normal_jump");
@@ -48,7 +48,7 @@ fn class_2_ledges_step_up_100() {
     let c = first(&f, "ClimbLedge").expect("climbed");
     assert_eq!(f[c].anim, "link_normal_100step_up");
     // Position jumps to the top at once; the model is pulled down by (h - 41·unk_08)·100 and eased
-    // back at 150 per frame (func_80845668 starts easing on the next frame for the 100 step).
+    // back at 150 per frame (Player_Action_80845668 starts easing on the next frame for the 100 step).
     assert_eq!(f[c].pos.y, 50.0);
     assert!((f[c].y_offset - (-(50.0 - 41.0) * 100.0)).abs() < 1e-3, "y offset {}", f[c].y_offset);
     assert!((f[c + 1].y_offset - (-(50.0 - 41.0) * 100.0 + 150.0)).abs() < 1e-3, "y offset {}", f[c + 1].y_offset);
@@ -83,7 +83,7 @@ fn class_4_ledges_jump_grab_and_climb() {
     assert!((f[j].vy - 100.0 * 0.072).abs() < 1e-3, "vy {}", f[j].vy);
     let h = first(&f[j..], "Hang").map(|k| k + j).expect("grabbed the ledge in the air");
     assert_eq!(f[h].anim, "link_normal_jump_climb_hold_free");
-    // func_8084411C: pos.y += wallHeight → on the ledge top; facing the wall.
+    // Player_Action_8084411C: pos.y += wallHeight → on the ledge top; facing the wall.
     assert_eq!(f[h].pos.y, 100.0, "{:?}", f[h].pos);
     assert_eq!(f[h].facing, -0x8000);
     // The stick is held, so the hang climbs straight up (group 41 after a mid-air grab).
@@ -106,7 +106,7 @@ fn walking_slowly_off_a_high_ledge_grabs_it() {
     assert!((f[h].pos.x - -501.0).abs() < 1e-3, "{:?}", f[h].pos);
     assert_eq!(f[h].facing, 0x4000);
     assert_eq!(f[h + 1].pos.y, 150.0);
-    // A stick of 30 is below the 55 of unk_847, so Link keeps hanging.
+    // A stick of 30 is below the 55 of controlStickSpinAngles, so Link keeps hanging.
     assert!(f[h..].iter().all(|x| x.action == "Hang"));
     // A full stick climbs up (group 38 after a walk-off grab) and ends on the plateau.
     f = run(&mut w, &repeat(stick(0, 80), 80));

@@ -1,7 +1,7 @@
-//! The sound effects (`code_800F7260.c`, `code_800EC960.c`'s sound effect parts), headless with
+//! The sound effects (`sfx.c`, `general.c`'s sound effect parts), headless with
 //! the audio library offline, against the C:
-//! - walking: `func_8084029C` plays a footstep (`func_808327F8`: `NA_SE_PL_WALK_GROUND` + the
-//!   floor's `D_80119E10` offset + the age's `unk_94`, through `func_800F4010` at Player's
+//! - walking: `func_8084029C` plays a footstep (`Player_PlaySteppingSfx`: `NA_SE_PL_WALK_GROUND` + the
+//!   floor's `sSurfaceMaterialToSfxOffset` offset + the age's `unk_94`, through `func_800F4010` at Player's
 //!   `projectedPos`) each time the walk phase `unk_868` crosses 10 or 24 of its 29
 //!   (`func_8084021C`), and each one sounds: the request goes into the player bank, a channel
 //!   of the sound effects' sequence is started on it (port 0 to 1, port 4 the sound's index),
@@ -30,7 +30,7 @@ fn assets() -> Option<(Arc<GameAssets>, eng_audio::AudioData)> {
 
 /// Kokiri Forest at 10:00 with the audio offline beside it and the log on.
 fn forest(a: &Arc<GameAssets>, data: &eng_audio::AudioData) -> Option<PlayState> {
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     let audio = oot_game::audio::GameAudio::boot_logged(a.audio.clone(), a.audio_tables.clone(), true);
     let mut w = PlayState::play_init_with(a.clone(), common::data()?, common::rules()?, save, audio).expect("Play_Init");
@@ -65,7 +65,7 @@ fn walking_plays_footsteps_where_the_c_does() {
     let fwd = PadState { button: 0, stick_x: 0, stick_y: 80 };
     let mut prev = PadState::default();
     // The walk phase before and after each frame, and the footstep's id for the floors Link
-    // stood on at either end of it (unk_89E comes from the last bg check, func_80847BA0).
+    // stood on at either end of it (floorSfxOffset comes from the last bg check, Player_ProcessSceneCollision).
     let mut phases = Vec::new();
     let mut actions = Vec::new();
     let mut floor_ids = std::collections::HashMap::new();
@@ -87,7 +87,7 @@ fn walking_plays_footsteps_where_the_c_does() {
     let log = w.audio.log.as_ref().unwrap();
     let steps: Vec<(u32, u16)> = log.sfx.iter().filter(|(f, id, _)| *f >= first && sfx_bank(*id) == BANK_PLAYER && (*id & 0x7F0) < 0x10).map(|&(f, id, _)| (f, id)).collect();
     assert!(steps.len() >= 4, "footsteps: {steps:x?}");
-    // The id: NA_SE_PL_WALK_GROUND + D_80119E10[the floor's sfx type] + ageProperties->unk_94.
+    // The id: NA_SE_PL_WALK_GROUND + sSurfaceMaterialToSfxOffset[the floor's sfx type] + ageProperties->unk_94.
     for &(f, id) in &steps {
         assert!(floor_ids[&f].contains(&id), "the footstep on frame {f}: {id:#x}, the floors {:x?}", floor_ids[&f]);
     }
@@ -105,7 +105,7 @@ fn walking_plays_footsteps_where_the_c_does() {
         .map(|&(f, _, _)| f)
         .collect();
     // (Only while Link runs: past the forest's ledge he catches it, and the grab plays
-    // func_8084BBE4's func_80832770(NA_SE_PL_WALK_GROUND) too.)
+    // Player_Action_8084BBE4's Player_PlayFloorSfx(NA_SE_PL_WALK_GROUND) too.)
     let running: std::collections::HashSet<u32> = actions.iter().filter(|(_, a)| a == "Run").map(|(f, _)| *f).collect();
     let step_frames: Vec<u32> = steps.iter().map(|&(f, _)| f).filter(|f| running.contains(f)).collect();
     let crossings: Vec<u32> = crossings.into_iter().filter(|f| running.contains(f)).collect();

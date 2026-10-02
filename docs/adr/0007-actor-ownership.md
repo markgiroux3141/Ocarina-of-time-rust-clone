@@ -17,8 +17,8 @@ In Rust, an actor's update needs `&mut self` and access to the rest of the play 
 - **A generational arena** (`oot_game::actor_ctx::ActorContext`): an `ActorHandle` is a slot index plus the slot's generation. A handle to a deleted actor never reaches the slot's next occupant.
 - **Categories:** each `ACTORCAT_*` is a list of handles, newest first, as `Actor_AddToCategory` inserts at the head. `Actor_UpdateAll` visits the categories in order, each newest first.
 - **Actors embed the base `Actor`**, as the decomp's actor structs start with one.
-  - An actor type implements `ActorImpl`: `base` / `base_mut`, the `ActorInit` functions (`update`, `draw`, `destroy`), its share of `AnimationContext_Update`, its draw-time state changes, and its render state.
-  - `ActorProfile` holds the `ActorInit` data: id, category, flags and object.
+  - An actor type implements `ActorImpl`: `base` / `base_mut`, the `ActorProfile` functions (`update`, `draw`, `destroy`), its share of `AnimTaskQueue_Update`, its draw-time state changes, and its render state.
+  - `ActorProfile` holds the `ActorProfile` data: id, category, flags and object.
   - Player's 3,600 lines use `self.actor` as before.
 - **Updating:** an actor's box is taken out of its slot (`take`) for its update. It gets `&mut PlayState` and reaches any other actor by handle (`actors.actor_mut(h)`, `downcast_mut::<T>(h)`), then goes back (`put_back`).
   - Looking itself up meanwhile finds nothing, though its handle stays valid (`exists`). That matches the decomp: an actor never reaches itself through the lists.
@@ -31,10 +31,10 @@ In Rust, an actor's update needs `&mut self` and access to the rest of the play 
 
 ## Consequences
 
-- **Cross-actor access** is a lookup by handle, not a reference held across the update: Player's target, `unk_664`, is an `Option<ActorHandle>`.
-- **Frame order.** Framework code runs in the decomp's frame order around the actor updates (`oot_game::play`): the target context, DynaPoly, `AnimationContext_Update`, the cameras, the draw-time state.
+- **Cross-actor access** is a lookup by handle, not a reference held across the update: Player's target, `focusActor`, is an `Option<ActorHandle>`.
+- **Frame order.** Framework code runs in the decomp's frame order around the actor updates (`oot_game::play`): the target context, DynaPoly, `AnimTaskQueue_Update`, the cameras, the draw-time state.
 - **What isn't modelled yet:**
-  - culling: `ACTOR_FLAG_6` is set for every actor, so every actor counts as in view;
+  - culling: `ACTOR_FLAG_INSIDE_CULLING_VOLUME` is set for every actor, so every actor counts as in view;
   - `isDrawn`;
   - the `ACTOR_NUMBER_MAX` overlay-memory rules beyond the count;
   - object loading (`Object_IsLoaded`), since every object is in the pack.

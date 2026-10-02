@@ -1,5 +1,5 @@
 //! `En_GirlA` (`ovl_En_GirlA/z_en_girla.c`): an item on a shop's shelf. `params` is the item
-//! (`EnGirlAShopItem`, `SI_*`), an index into `shopItemEntries`: its object, its get-item model
+//! (`EnGirlAShopItem`, `SI_*`), an index into `sShopItemEntries`: its object, its get-item model
 //! (`GetItem_Draw`), its price and count, its two texts (the description while browsing and the
 //! buy prompt), what Link gets, and the three functions the shopkeeper calls (`canBuyFunc`,
 //! `itemGiveFunc`, `buyEventFunc`).
@@ -17,7 +17,7 @@
 //! `En_Item00`'s rupees; the prints.
 
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::item::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -26,8 +26,8 @@ use oot_game::save::SaveContext;
 /// `ACTOR_EN_GIRLA` (`actor_table.h`).
 pub const ACTOR_EN_GIRLA: i16 = 0x0004;
 
-/// `En_GirlA_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GIRLA, name: "En_GirlA", category: ACTORCAT_PROP, flags: ACTOR_FLAG_0 | ACTOR_FLAG_3 | ACTOR_FLAG_4, object: "gameplay_keep" };
+/// `En_GirlA_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GIRLA, name: "En_GirlA", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
 
 // `EnGirlAShopItem` (`z_en_girla.h`).
 pub const SI_DEKU_NUTS_5: i16 = 0x00;
@@ -120,31 +120,31 @@ const OBJECT_GI_INSECT: i16 = 0x0174;
 const OBJECT_GI_GHOST: i16 = 0x0176;
 const OBJECT_GI_SOUL: i16 = 0x0177;
 
-// `GetItemDrawID` (`z64item.h`).
+// `GetItemDrawID` (`item.h`).
 const GID_RECOVERY_HEART: i16 = 0x08;
-const GID_NUTS: i16 = 0x11;
-const GID_STICK: i16 = 0x1A;
+const GID_DEKU_NUTS: i16 = 0x11;
+const GID_DEKU_STICK: i16 = 0x1A;
 const GID_SHIELD_DEKU: i16 = 0x1C;
 const GID_BOMB: i16 = 0x1F;
-const GID_ARROWS_SMALL: i16 = 0x24;
-const GID_ARROWS_MEDIUM: i16 = 0x25;
-const GID_ARROWS_LARGE: i16 = 0x26;
+const GID_ARROWS_5: i16 = 0x24;
+const GID_ARROWS_10: i16 = 0x25;
+const GID_ARROWS_30: i16 = 0x26;
 const GID_BOMBCHU: i16 = 0x27;
 const GID_EGG: i16 = 0x28;
 const GID_SHIELD_HYLIAN: i16 = 0x2B;
-const GID_MILK: i16 = 0x2F;
+const GID_BOTTLE_MILK_FULL: i16 = 0x2F;
 const GID_MASK_KEATON: i16 = 0x30;
 const GID_MASK_SPOOKY: i16 = 0x31;
-const GID_POTION_GREEN: i16 = 0x36;
-const GID_POTION_RED: i16 = 0x37;
-const GID_POTION_BLUE: i16 = 0x38;
+const GID_BOTTLE_POTION_GREEN: i16 = 0x36;
+const GID_BOTTLE_POTION_RED: i16 = 0x37;
+const GID_BOTTLE_POTION_BLUE: i16 = 0x38;
 const GID_TUNIC_GORON: i16 = 0x3B;
 const GID_TUNIC_ZORA: i16 = 0x3C;
 const GID_FISH: i16 = 0x3E;
-const GID_SWORD_BGS: i16 = 0x42;
-const GID_SEEDS: i16 = 0x47;
+const GID_SWORD_BIGGORON: i16 = 0x42;
+const GID_DEKU_SEEDS: i16 = 0x47;
 const GID_MASK_SKULL: i16 = 0x4E;
-const GID_MASK_BUNNY: i16 = 0x4F;
+const GID_MASK_BUNNY_HOOD: i16 = 0x4F;
 const GID_MASK_TRUTH: i16 = 0x50;
 const GID_SOLDOUT: i16 = 0x58;
 const GID_MASK_GORON: i16 = 0x5A;
@@ -156,57 +156,57 @@ const GID_POE: i16 = 0x69;
 const GID_FAIRY: i16 = 0x6A;
 const GID_BIG_POE: i16 = 0x6F;
 
-// `GetItemID` (`z64item.h`).
+// `GetItemID` (`item.h`).
 const GI_BOMBS_5: i16 = 0x01;
 const GI_BOMBCHUS_10: i16 = 0x03;
-const GI_POTION_RED: i16 = 0x10;
-const GI_POTION_GREEN: i16 = 0x11;
-const GI_POTION_BLUE: i16 = 0x12;
-const GI_FAIRY: i16 = 0x13;
-const GI_MILK_BOTTLE: i16 = 0x14;
+const GI_BOTTLE_POTION_RED: i16 = 0x10;
+const GI_BOTTLE_POTION_GREEN: i16 = 0x11;
+const GI_BOTTLE_POTION_BLUE: i16 = 0x12;
+const GI_BOTTLE_FAIRY: i16 = 0x13;
+const GI_BOTTLE_MILK_FULL: i16 = 0x14;
 const GI_MASK_SKULL: i16 = 0x17;
 const GI_MASK_SPOOKY: i16 = 0x18;
 const GI_MASK_KEATON: i16 = 0x1A;
-const GI_MASK_BUNNY: i16 = 0x1B;
+const GI_MASK_BUNNY_HOOD: i16 = 0x1B;
 const GI_MASK_TRUTH: i16 = 0x1C;
 const GI_SWORD_KNIFE: i16 = 0x28;
 const GI_SHIELD_HYLIAN: i16 = 0x2A;
 const GI_TUNIC_GORON: i16 = 0x2C;
 const GI_TUNIC_ZORA: i16 = 0x2D;
 const GI_WEIRD_EGG: i16 = 0x47;
-const GI_ARROWS_SMALL: i16 = 0x49;
-const GI_ARROWS_MEDIUM: i16 = 0x4A;
-const GI_ARROWS_LARGE: i16 = 0x4B;
+const GI_ARROWS_5: i16 = 0x49;
+const GI_ARROWS_10: i16 = 0x4A;
+const GI_ARROWS_30: i16 = 0x4B;
 const GI_MASK_GORON: i16 = 0x51;
 const GI_MASK_ZORA: i16 = 0x52;
 const GI_MASK_GERUDO: i16 = 0x53;
-const GI_NUTS_5_2: i16 = 0x63;
-const GI_NUTS_10: i16 = 0x64;
+const GI_DEKU_NUTS_5_2: i16 = 0x63;
+const GI_DEKU_NUTS_10: i16 = 0x64;
 const GI_BOMBS_10: i16 = 0x66;
 const GI_BOMBS_20: i16 = 0x67;
 const GI_BOMBS_30: i16 = 0x68;
-const GI_SEEDS_30: i16 = 0x69;
+const GI_DEKU_SEEDS_30: i16 = 0x69;
 const GI_BOMBCHUS_20: i16 = 0x6B;
-const GI_FISH: i16 = 0x6C;
-const GI_BUGS: i16 = 0x6D;
-const GI_BLUE_FIRE: i16 = 0x6E;
-const GI_POE: i16 = 0x6F;
-const GI_BIG_POE: i16 = 0x70;
+const GI_BOTTLE_FISH: i16 = 0x6C;
+const GI_BOTTLE_BUGS: i16 = 0x6D;
+const GI_BOTTLE_BLUE_FIRE: i16 = 0x6E;
+const GI_BOTTLE_POE: i16 = 0x6F;
+const GI_BOTTLE_BIG_POE: i16 = 0x70;
 
-// `ITEM_*` (`z64item.h`) the port's item module doesn't name.
+// `ITEM_*` (`item.h`) the port's item module doesn't name.
 const ITEM_BOMBS_10: u8 = 0x8F;
 const ITEM_BOMBS_20: u8 = 0x90;
 const ITEM_TUNIC_GORON: u8 = 0x42;
 const ITEM_MASK_SPOOKY: u8 = 0x25;
 const ITEM_MASK_SKULL: u8 = 0x26;
-const ITEM_MASK_BUNNY: u8 = 0x27;
+const ITEM_MASK_BUNNY_HOOD: u8 = 0x27;
 const ITEM_MASK_TRUTH: u8 = 0x28;
 const ITEM_MASK_GORON: u8 = 0x29;
 const ITEM_MASK_ZORA: u8 = 0x2A;
 const ITEM_MASK_GERUDO: u8 = 0x2B;
 
-// `ITEMGETINF_*` (`z64save.h`): the bit numbers.
-const ITEMGETINF_02: u16 = 0x02;
+// `ITEMGETINF_*` (`save.h`): the bit numbers.
+const ITEMGETINF_TALON_BOTTLE: u16 = 0x02;
 const ITEMGETINF_03: u16 = 0x03;
 const ITEMGETINF_04: u16 = 0x04;
 const ITEMGETINF_05: u16 = 0x05;
@@ -275,28 +275,28 @@ const fn e(
 use Hilite::{Both as C498, None as NOHL, Opa as EBCC, Xlu as ED80};
 const SHIELD_DISCOUNT: Option<GiveFunc> = Some(buy_event_shield_discount);
 
-/// `shopItemEntries`, by `SI_*`.
+/// `sShopItemEntries`, by `SI_*`.
 pub const SHOP_ITEM_ENTRIES: [ShopItemEntry; SI_MAX as usize] = [
-    e(OBJECT_GI_NUTS, GID_NUTS, ED80, 15, 5, 0x00B2, 0x007F, GI_NUTS_5_2, can_buy_deku_nuts, Some(item_give_deku_nuts), SHIELD_DISCOUNT),
-    e(OBJECT_GI_ARROW, GID_ARROWS_MEDIUM, EBCC, 60, 30, 0x00C1, 0x009B, GI_ARROWS_MEDIUM, can_buy_arrows, Some(item_give_arrows), SHIELD_DISCOUNT),
-    e(OBJECT_GI_ARROW, GID_ARROWS_LARGE, EBCC, 90, 50, 0x00B0, 0x007D, GI_ARROWS_LARGE, can_buy_arrows, Some(item_give_arrows), SHIELD_DISCOUNT),
+    e(OBJECT_GI_NUTS, GID_DEKU_NUTS, ED80, 15, 5, 0x00B2, 0x007F, GI_DEKU_NUTS_5_2, can_buy_deku_nuts, Some(item_give_deku_nuts), SHIELD_DISCOUNT),
+    e(OBJECT_GI_ARROW, GID_ARROWS_10, EBCC, 60, 30, 0x00C1, 0x009B, GI_ARROWS_10, can_buy_arrows, Some(item_give_arrows), SHIELD_DISCOUNT),
+    e(OBJECT_GI_ARROW, GID_ARROWS_30, EBCC, 90, 50, 0x00B0, 0x007D, GI_ARROWS_30, can_buy_arrows, Some(item_give_arrows), SHIELD_DISCOUNT),
     e(OBJECT_GI_BOMB_1, GID_BOMB, EBCC, 25, 5, 0x00A3, 0x008B, GI_BOMBS_5, can_buy_bombs, Some(item_give_bombs), SHIELD_DISCOUNT),
-    e(OBJECT_GI_NUTS, GID_NUTS, ED80, 30, 10, 0x00A2, 0x0087, GI_NUTS_10, can_buy_deku_nuts, Some(item_give_deku_nuts), SHIELD_DISCOUNT),
-    e(OBJECT_GI_STICK, GID_STICK, NOHL, 10, 1, 0x00A1, 0x0088, GI_STICKS_1, can_buy_deku_sticks, Some(item_give_deku_sticks), SHIELD_DISCOUNT),
+    e(OBJECT_GI_NUTS, GID_DEKU_NUTS, ED80, 30, 10, 0x00A2, 0x0087, GI_DEKU_NUTS_10, can_buy_deku_nuts, Some(item_give_deku_nuts), SHIELD_DISCOUNT),
+    e(OBJECT_GI_STICK, GID_DEKU_STICK, NOHL, 10, 1, 0x00A1, 0x0088, GI_DEKU_STICKS_1, can_buy_deku_sticks, Some(item_give_deku_sticks), SHIELD_DISCOUNT),
     e(OBJECT_GI_BOMB_1, GID_BOMB, EBCC, 50, 10, 0x00B1, 0x007C, GI_BOMBS_10, can_buy_bombs, Some(item_give_bombs), SHIELD_DISCOUNT),
-    e(OBJECT_GI_FISH, GID_FISH, ED80, 200, 1, 0x00B3, 0x007E, GI_FISH, can_buy_fish, None, SHIELD_DISCOUNT),
-    e(OBJECT_GI_LIQUID, GID_POTION_RED, EBCC, 30, 1, 0x00A5, 0x008E, GI_POTION_RED, can_buy_red_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_LIQUID, GID_POTION_GREEN, EBCC, 30, 1, 0x00A6, 0x008F, GI_POTION_GREEN, can_buy_green_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_LIQUID, GID_POTION_BLUE, EBCC, 60, 1, 0x00A7, 0x0090, GI_POTION_BLUE, can_buy_blue_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_LONGSWORD, GID_SWORD_BGS, EBCC, 1000, 1, 0x00A8, 0x0091, GI_SWORD_KNIFE, can_buy_longsword, Some(item_give_longsword), SHIELD_DISCOUNT),
+    e(OBJECT_GI_FISH, GID_FISH, ED80, 200, 1, 0x00B3, 0x007E, GI_BOTTLE_FISH, can_buy_fish, None, SHIELD_DISCOUNT),
+    e(OBJECT_GI_LIQUID, GID_BOTTLE_POTION_RED, EBCC, 30, 1, 0x00A5, 0x008E, GI_BOTTLE_POTION_RED, can_buy_red_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_LIQUID, GID_BOTTLE_POTION_GREEN, EBCC, 30, 1, 0x00A6, 0x008F, GI_BOTTLE_POTION_GREEN, can_buy_green_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_LIQUID, GID_BOTTLE_POTION_BLUE, EBCC, 60, 1, 0x00A7, 0x0090, GI_BOTTLE_POTION_BLUE, can_buy_blue_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_LONGSWORD, GID_SWORD_BIGGORON, EBCC, 1000, 1, 0x00A8, 0x0091, GI_SWORD_KNIFE, can_buy_longsword, Some(item_give_longsword), SHIELD_DISCOUNT),
     e(OBJECT_GI_SHIELD_2, GID_SHIELD_HYLIAN, EBCC, 80, 1, 0x00A9, 0x0092, GI_SHIELD_HYLIAN, can_buy_hylian_shield, Some(item_give_hylian_shield), SHIELD_DISCOUNT),
     e(OBJECT_GI_SHIELD_1, GID_SHIELD_DEKU, EBCC, 40, 1, 0x009F, 0x0089, GI_SHIELD_DEKU, can_buy_deku_shield, Some(item_give_deku_shield), SHIELD_DISCOUNT),
     e(OBJECT_GI_CLOTHES, GID_TUNIC_GORON, NOHL, 200, 1, 0x00AA, 0x0093, GI_TUNIC_GORON, can_buy_goron_tunic, Some(item_give_goron_tunic), Some(buy_event_goron_tunic)),
     e(OBJECT_GI_CLOTHES, GID_TUNIC_ZORA, NOHL, 300, 1, 0x00AB, 0x0094, GI_TUNIC_ZORA, can_buy_zora_tunic, Some(item_give_zora_tunic), Some(buy_event_zora_tunic)),
     e(OBJECT_GI_HEART, GID_RECOVERY_HEART, NOHL, 10, 16, 0x00AC, 0x0095, GI_RECOVERY_HEART, can_buy_recovery_heart, Some(item_give_health), SHIELD_DISCOUNT),
-    e(OBJECT_GI_MILK, GID_MILK, C498, 100, 1, 0x00AD, 0x0097, GI_MILK_BOTTLE, can_buy_milk_bottle, Some(item_give_milk_bottle), SHIELD_DISCOUNT),
+    e(OBJECT_GI_MILK, GID_BOTTLE_MILK_FULL, C498, 100, 1, 0x00AD, 0x0097, GI_BOTTLE_MILK_FULL, can_buy_milk_bottle, Some(item_give_milk_bottle), SHIELD_DISCOUNT),
     e(OBJECT_GI_EGG, GID_EGG, EBCC, 100, 1, 0x00AE, 0x0099, GI_WEIRD_EGG, can_buy_weird_egg, Some(item_give_weird_egg), SHIELD_DISCOUNT),
-    e(OBJECT_GI_MILK, GID_MILK, C498, 10000, 1, 0x00B4, 0x0085, GI_NONE, can_buy_unk19, Some(item_give_unk19), SHIELD_DISCOUNT),
+    e(OBJECT_GI_MILK, GID_BOTTLE_MILK_FULL, C498, 10000, 1, 0x00B4, 0x0085, GI_NONE, can_buy_unk19, Some(item_give_unk19), SHIELD_DISCOUNT),
     e(OBJECT_GI_EGG, GID_EGG, EBCC, 10000, 1, 0x00B5, 0x0085, GI_NONE, can_buy_unk20, Some(item_give_unk20), SHIELD_DISCOUNT),
     e(OBJECT_GI_BOMB_2, GID_BOMBCHU, EBCC, 100, 10, 0x00BC, 0x008C, GI_BOMBCHUS_10, can_buy_bombchus, None, Some(buy_event_obtain_bombchu_pack)),
     e(OBJECT_GI_BOMB_2, GID_BOMBCHU, EBCC, 180, 20, 0x0061, 0x002A, GI_BOMBCHUS_20, can_buy_bombchus, None, Some(buy_event_obtain_bombchu_pack)),
@@ -306,42 +306,42 @@ pub const SHOP_ITEM_ENTRIES: [ShopItemEntry; SI_MAX as usize] = [
     e(OBJECT_GI_BOMB_2, GID_BOMBCHU, EBCC, 180, 20, 0x0061, 0x002A, GI_BOMBCHUS_20, can_buy_bombchus, None, Some(buy_event_obtain_bombchu_pack)),
     e(OBJECT_GI_BOMB_2, GID_BOMBCHU, EBCC, 180, 20, 0x0061, 0x002A, GI_BOMBCHUS_20, can_buy_bombchus, None, Some(buy_event_obtain_bombchu_pack)),
     e(OBJECT_GI_BOMB_2, GID_BOMBCHU, EBCC, 100, 10, 0x00BC, 0x008C, GI_BOMBCHUS_10, can_buy_bombchus, None, Some(buy_event_obtain_bombchu_pack)),
-    e(OBJECT_GI_SEED, GID_SEEDS, EBCC, 30, 30, 0x00DF, 0x00DE, GI_SEEDS_30, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
+    e(OBJECT_GI_SEED, GID_DEKU_SEEDS, EBCC, 30, 30, 0x00DF, 0x00DE, GI_DEKU_SEEDS_30, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     // The masks: the Deku seeds' functions (the Happy Mask Shop's own states sell them).
     e(OBJECT_GI_KI_TAN_MASK, GID_MASK_KEATON, EBCC, 0, 1, 0x70B2, 0x70BE, GI_MASK_KEATON, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     e(OBJECT_GI_REDEAD_MASK, GID_MASK_SPOOKY, EBCC, 0, 1, 0x70B1, 0x70BD, GI_MASK_SPOOKY, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     e(OBJECT_GI_SKJ_MASK, GID_MASK_SKULL, EBCC, 0, 1, 0x70B0, 0x70BC, GI_MASK_SKULL, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
-    e(OBJECT_GI_RABIT_MASK, GID_MASK_BUNNY, EBCC, 0, 1, 0x70B3, 0x70BF, GI_MASK_BUNNY, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
+    e(OBJECT_GI_RABIT_MASK, GID_MASK_BUNNY_HOOD, EBCC, 0, 1, 0x70B3, 0x70BF, GI_MASK_BUNNY_HOOD, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     e(OBJECT_GI_TRUTH_MASK, GID_MASK_TRUTH, C498, 0, 1, 0x70AF, 0x70C3, GI_MASK_TRUTH, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     e(OBJECT_GI_ZORAMASK, GID_MASK_ZORA, NOHL, 0, 1, 0x70B9, 0x70C1, GI_MASK_ZORA, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     e(OBJECT_GI_GOLONMASK, GID_MASK_GORON, NOHL, 0, 1, 0x70B8, 0x70C0, GI_MASK_GORON, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     e(OBJECT_GI_GERUDOMASK, GID_MASK_GERUDO, NOHL, 0, 1, 0x70BA, 0x70C2, GI_MASK_GERUDO, can_buy_deku_seeds, Some(item_give_deku_seeds), SHIELD_DISCOUNT),
     // SI_SOLD_OUT: GI_MASK_GERUDO and the Gerudo Mask's prompt, as in the C.
     e(OBJECT_GI_SOLDOUT, GID_SOLDOUT, EBCC, 0, 0, 0x00BD, 0x70C2, GI_MASK_GERUDO, can_buy_sold_out, None, None),
-    e(OBJECT_GI_FIRE, GID_BLUE_FIRE, EBCC, 300, 1, 0x00B9, 0x00B8, GI_BLUE_FIRE, can_buy_blue_fire, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_INSECT, GID_BUG, C498, 50, 1, 0x00BB, 0x00BA, GI_BUGS, can_buy_bugs, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_GHOST, GID_BIG_POE, C498, 50, 1, 0x506F, 0x5070, GI_BIG_POE, can_buy_poe, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_GHOST, GID_POE, C498, 30, 1, 0x506D, 0x506E, GI_POE, can_buy_poe, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_SOUL, GID_FAIRY, C498, 50, 1, 0x00B7, 0x00B6, GI_FAIRY, can_buy_fairy, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_ARROW, GID_ARROWS_SMALL, EBCC, 20, 10, 0x00A0, 0x008A, GI_ARROWS_SMALL, can_buy_arrows, Some(item_give_arrows), SHIELD_DISCOUNT),
+    e(OBJECT_GI_FIRE, GID_BLUE_FIRE, EBCC, 300, 1, 0x00B9, 0x00B8, GI_BOTTLE_BLUE_FIRE, can_buy_blue_fire, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_INSECT, GID_BUG, C498, 50, 1, 0x00BB, 0x00BA, GI_BOTTLE_BUGS, can_buy_bugs, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_GHOST, GID_BIG_POE, C498, 50, 1, 0x506F, 0x5070, GI_BOTTLE_BIG_POE, can_buy_poe, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_GHOST, GID_POE, C498, 30, 1, 0x506D, 0x506E, GI_BOTTLE_POE, can_buy_poe, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_SOUL, GID_FAIRY, C498, 50, 1, 0x00B7, 0x00B6, GI_BOTTLE_FAIRY, can_buy_fairy, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_ARROW, GID_ARROWS_5, EBCC, 20, 10, 0x00A0, 0x008A, GI_ARROWS_5, can_buy_arrows, Some(item_give_arrows), SHIELD_DISCOUNT),
     e(OBJECT_GI_BOMB_1, GID_BOMB, EBCC, 80, 20, 0x001C, 0x0006, GI_BOMBS_20, can_buy_bombs, Some(item_give_bombs), SHIELD_DISCOUNT),
     e(OBJECT_GI_BOMB_1, GID_BOMB, EBCC, 120, 30, 0x001D, 0x001E, GI_BOMBS_30, can_buy_bombs, Some(item_give_bombs), SHIELD_DISCOUNT),
     e(OBJECT_GI_BOMB_1, GID_BOMB, EBCC, 35, 5, 0x00CB, 0x00CA, GI_BOMBS_5, can_buy_bombs, Some(item_give_bombs), SHIELD_DISCOUNT),
-    e(OBJECT_GI_LIQUID, GID_POTION_RED, EBCC, 40, 1, 0x0064, 0x0062, GI_POTION_RED, can_buy_red_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
-    e(OBJECT_GI_LIQUID, GID_POTION_RED, EBCC, 50, 1, 0x0065, 0x0063, GI_POTION_RED, can_buy_red_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_LIQUID, GID_BOTTLE_POTION_RED, EBCC, 40, 1, 0x0064, 0x0062, GI_BOTTLE_POTION_RED, can_buy_red_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
+    e(OBJECT_GI_LIQUID, GID_BOTTLE_POTION_RED, EBCC, 50, 1, 0x0065, 0x0063, GI_BOTTLE_POTION_RED, can_buy_red_potion, Some(item_give_bottled_item), SHIELD_DISCOUNT),
 ];
 
 /// `sShieldDiscounts`: what the Hylian Shield's discount takes off.
 const SHIELD_DISCOUNTS: [i16; 8] = [5, 10, 15, 20, 25, 30, 35, 40];
 /// `sMaskShopItems`.
-const MASK_SHOP_ITEMS: [u8; 8] = [ITEM_MASK_KEATON, ITEM_MASK_SPOOKY, ITEM_MASK_SKULL, ITEM_MASK_BUNNY, ITEM_MASK_TRUTH, ITEM_MASK_ZORA, ITEM_MASK_GORON, ITEM_MASK_GERUDO];
+const MASK_SHOP_ITEMS: [u8; 8] = [ITEM_MASK_KEATON, ITEM_MASK_SPOOKY, ITEM_MASK_SKULL, ITEM_MASK_BUNNY_HOOD, ITEM_MASK_TRUTH, ITEM_MASK_ZORA, ITEM_MASK_GORON, ITEM_MASK_GERUDO];
 /// `sMaskShopFreeToBorrowTextIds`.
 const MASK_SHOP_FREE_TO_BORROW_TEXT_IDS: [u16; 5] = [0x70B6, 0x70B5, 0x70B4, 0x70B7, 0x70BB];
 
 /// `actionFunc2`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    /// `EnGirlA_InitializeItemAction`: waiting for the item's object.
+    /// `EnGirlA_WaitForObject`: waiting for the item's object.
     Initialize,
     /// `EnGirlA_Update2`.
     Update2,
@@ -397,7 +397,7 @@ impl EnGirlA {
         Box::new(g)
     }
 
-    /// The item's `shopItemEntries` row.
+    /// The item's `sShopItemEntries` row.
     pub fn entry(&self) -> Option<&'static ShopItemEntry> {
         usize::try_from(self.actor.params).ok().and_then(|i| SHOP_ITEM_ENTRIES.get(i))
     }
@@ -406,7 +406,7 @@ impl EnGirlA {
     /// pack bought is sold out.
     fn try_change_shop_item(&mut self, s: &SaveContext) -> bool {
         let (flag, to) = match self.actor.params {
-            SI_MILK_BOTTLE => (ITEMGETINF_02, SI_RECOVERY_HEART),
+            SI_MILK_BOTTLE => (ITEMGETINF_TALON_BOTTLE, SI_RECOVERY_HEART),
             SI_BOMBCHU_10_2 => (ITEMGETINF_06, SI_SOLD_OUT),
             SI_BOMBCHU_10_3 => (ITEMGETINF_07, SI_SOLD_OUT),
             SI_BOMBCHU_20_3 => (ITEMGETINF_08, SI_SOLD_OUT),
@@ -424,13 +424,13 @@ impl EnGirlA {
         false
     }
 
-    /// `EnGirlA_InitItem`: the item's object, then `EnGirlA_InitializeItemAction`.
+    /// `EnGirlA_InitItem`: the item's object, then `EnGirlA_WaitForObject`.
     fn init_item(&mut self, play: &PlayState) {
         let params = self.actor.params;
         // @bug (game): `(params >= SI_MAX) && (params < 0)` is never true; an item past the
         // table reads past it. The port kills it.
         let Some(entry) = self.entry() else {
-            log::error!("En_GirlA: params {params} is past shopItemEntries");
+            log::error!("En_GirlA: params {params} is past sShopItemEntries");
             self.actor.kill();
             return;
         };
@@ -504,7 +504,7 @@ impl EnGirlA {
         false
     }
 
-    /// `EnGirlA_InitializeItemAction`: once the item's object is loaded, its texts, functions,
+    /// `EnGirlA_WaitForObject`: once the item's object is loaded, its texts, functions,
     /// price and model, its size and height (0.25, 24 up), and `EnGirlA_Update2`.
     fn initialize_item_action(&mut self, play: &PlayState) {
         let Some(bank) = self.obj_bank_index else { return };
@@ -513,7 +513,7 @@ impl EnGirlA {
         }
         let Some(entry) = self.entry() else { return };
         let s = &play.save;
-        self.actor.flags &= !ACTOR_FLAG_4;
+        self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         self.actor.obj_bank_index = Some(bank);
         let (text, prompt) = match self.actor.params {
             SI_KEATON_MASK => (if s.get_item_get_inf(ITEMGETINF_38) { 0x70B6 } else { entry.item_desc_text_id }, entry.item_buy_prompt_text_id),
@@ -542,7 +542,7 @@ impl EnGirlA {
         self.item_count = entry.count;
         self.hilite = entry.hilite;
         self.gi_draw_id = entry.gi_draw_id;
-        self.actor.flags &= !ACTOR_FLAG_0;
+        self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         self.actor.scale = Vec3::splat(0.25);
         self.actor.shape_y_offset = 24.0;
         // shape.shadowScale = 4.
@@ -620,17 +620,17 @@ fn fanfare_if_new(s: &SaveContext, g: &EnGirlA, item: u8) -> i32 {
 }
 
 fn can_buy_deku_nuts(s: &SaveContext, g: &EnGirlA) -> i32 {
-    if s.cur_capacity(UPG_NUTS) != 0 && s.ammo(ITEM_NUT) as i32 >= s.cur_capacity(UPG_NUTS) as i32 {
+    if s.cur_capacity(UPG_DEKU_NUTS) != 0 && s.ammo(ITEM_DEKU_NUT) as i32 >= s.cur_capacity(UPG_DEKU_NUTS) as i32 {
         return CANBUY_RESULT_CANT_GET_NOW;
     }
-    fanfare_if_new(s, g, ITEM_NUT)
+    fanfare_if_new(s, g, ITEM_DEKU_NUT)
 }
 
 fn can_buy_deku_sticks(s: &SaveContext, g: &EnGirlA) -> i32 {
-    if s.cur_capacity(UPG_STICKS) != 0 && s.ammo(ITEM_STICK) as i32 >= s.cur_capacity(UPG_STICKS) as i32 {
+    if s.cur_capacity(UPG_DEKU_STICKS) != 0 && s.ammo(ITEM_DEKU_STICK) as i32 >= s.cur_capacity(UPG_DEKU_STICKS) as i32 {
         return CANBUY_RESULT_CANT_GET_NOW;
     }
-    fanfare_if_new(s, g, ITEM_STICK)
+    fanfare_if_new(s, g, ITEM_DEKU_STICK)
 }
 
 fn bottled(s: &SaveContext, g: &EnGirlA, item: u8) -> i32 {
@@ -641,26 +641,26 @@ fn bottled(s: &SaveContext, g: &EnGirlA, item: u8) -> i32 {
 }
 
 fn can_buy_fish(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_FISH)
+    bottled(s, g, ITEM_BOTTLE_FISH)
 }
 
 fn can_buy_red_potion(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_POTION_RED)
+    bottled(s, g, ITEM_BOTTLE_POTION_RED)
 }
 
 fn can_buy_green_potion(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_POTION_GREEN)
+    bottled(s, g, ITEM_BOTTLE_POTION_GREEN)
 }
 
 fn can_buy_blue_potion(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_POTION_BLUE)
+    bottled(s, g, ITEM_BOTTLE_POTION_BLUE)
 }
 
 fn can_buy_longsword(s: &SaveContext, g: &EnGirlA) -> i32 {
-    if s.check_owned_equip(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_BGS) && !s.check_owned_equip(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_BROKENGIANTKNIFE) {
+    if s.check_owned_equip(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_BIGGORON) && !s.check_owned_equip(EQUIP_TYPE_SWORD, EQUIP_INV_SWORD_BROKENGIANTKNIFE) {
         return CANBUY_RESULT_CANT_GET_NOW;
     }
-    fanfare_if_new(s, g, ITEM_SWORD_BGS)
+    fanfare_if_new(s, g, ITEM_SWORD_BIGGORON)
 }
 
 fn can_buy_hylian_shield(s: &SaveContext, g: &EnGirlA) -> i32 {
@@ -703,13 +703,13 @@ fn can_buy_recovery_heart(s: &SaveContext, g: &EnGirlA) -> i32 {
 }
 
 fn can_buy_milk_bottle(s: &SaveContext, g: &EnGirlA) -> i32 {
-    fanfare_if_new(s, g, ITEM_MILK_BOTTLE)
+    fanfare_if_new(s, g, ITEM_BOTTLE_MILK_FULL)
 }
 
 /// `EnGirlA_CanBuy_WeirdEgg`: it asks about Zelda's letter, which shares the child trade slot
-/// with the egg (`Item_CheckObtainability(ITEM_LETTER_ZELDA)`).
+/// with the egg (`Item_CheckObtainability(ITEM_ZELDAS_LETTER)`).
 fn can_buy_weird_egg(s: &SaveContext, g: &EnGirlA) -> i32 {
-    fanfare_if_new(s, g, ITEM_LETTER_ZELDA)
+    fanfare_if_new(s, g, ITEM_ZELDAS_LETTER)
 }
 
 fn can_buy_unk19(_s: &SaveContext, _g: &EnGirlA) -> i32 {
@@ -731,7 +731,7 @@ fn can_buy_deku_seeds(s: &SaveContext, g: &EnGirlA) -> i32 {
     if s.ammo(ITEM_SLINGSHOT) as i32 >= s.cur_capacity(UPG_BULLET_BAG) as i32 {
         return CANBUY_RESULT_CANT_GET_NOW;
     }
-    fanfare_if_new(s, g, ITEM_SEEDS)
+    fanfare_if_new(s, g, ITEM_DEKU_SEEDS)
 }
 
 fn can_buy_sold_out(_s: &SaveContext, _g: &EnGirlA) -> i32 {
@@ -739,19 +739,19 @@ fn can_buy_sold_out(_s: &SaveContext, _g: &EnGirlA) -> i32 {
 }
 
 fn can_buy_blue_fire(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_BLUE_FIRE)
+    bottled(s, g, ITEM_BOTTLE_BLUE_FIRE)
 }
 
 fn can_buy_bugs(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_BUG)
+    bottled(s, g, ITEM_BOTTLE_BUG)
 }
 
 fn can_buy_poe(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_POE)
+    bottled(s, g, ITEM_BOTTLE_POE)
 }
 
 fn can_buy_fairy(s: &SaveContext, g: &EnGirlA) -> i32 {
-    bottled(s, g, ITEM_FAIRY)
+    bottled(s, g, ITEM_BOTTLE_FAIRY)
 }
 
 // The `EnGirlA_ItemGive_*` functions: the item, then the price.
@@ -787,10 +787,10 @@ fn item_give_bombs(play: &mut PlayState, g: &EnGirlA) {
 fn item_give_deku_nuts(play: &mut PlayState, g: &EnGirlA) {
     match g.item_count {
         5 => {
-            item_give(&mut play.save, Some(&mut play.audio), ITEM_NUTS_5);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_DEKU_NUTS_5);
         }
         10 => {
-            item_give(&mut play.save, Some(&mut play.audio), ITEM_NUTS_10);
+            item_give(&mut play.save, Some(&mut play.audio), ITEM_DEKU_NUTS_10);
         }
         _ => {}
     }
@@ -798,7 +798,7 @@ fn item_give_deku_nuts(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_deku_sticks(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, Some(&mut play.audio), ITEM_STICK);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_DEKU_STICK);
     pay(play, g);
 }
 
@@ -835,7 +835,7 @@ fn item_give_health(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_milk_bottle(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, Some(&mut play.audio), ITEM_MILK_BOTTLE);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_BOTTLE_MILK_FULL);
     pay(play, g);
 }
 
@@ -853,21 +853,21 @@ fn item_give_unk20(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_deku_seeds(play: &mut PlayState, g: &EnGirlA) {
-    item_give(&mut play.save, Some(&mut play.audio), ITEM_SEEDS_30);
+    item_give(&mut play.save, Some(&mut play.audio), ITEM_DEKU_SEEDS_30);
     pay(play, g);
 }
 
 fn item_give_bottled_item(play: &mut PlayState, g: &EnGirlA) {
     let item = match g.actor.params {
-        SI_FISH => Some(ITEM_FISH),
-        SI_RED_POTION_R30 => Some(ITEM_POTION_RED),
-        SI_GREEN_POTION => Some(ITEM_POTION_GREEN),
-        SI_BLUE_POTION => Some(ITEM_POTION_BLUE),
-        SI_BLUE_FIRE => Some(ITEM_BLUE_FIRE),
-        SI_BUGS => Some(ITEM_BUG),
-        SI_BIG_POE => Some(ITEM_BIG_POE),
-        SI_POE => Some(ITEM_POE),
-        SI_FAIRY => Some(ITEM_FAIRY),
+        SI_FISH => Some(ITEM_BOTTLE_FISH),
+        SI_RED_POTION_R30 => Some(ITEM_BOTTLE_POTION_RED),
+        SI_GREEN_POTION => Some(ITEM_BOTTLE_POTION_GREEN),
+        SI_BLUE_POTION => Some(ITEM_BOTTLE_POTION_BLUE),
+        SI_BLUE_FIRE => Some(ITEM_BOTTLE_BLUE_FIRE),
+        SI_BUGS => Some(ITEM_BOTTLE_BUG),
+        SI_BIG_POE => Some(ITEM_BOTTLE_BIG_POE),
+        SI_POE => Some(ITEM_BOTTLE_POE),
+        SI_FAIRY => Some(ITEM_BOTTLE_FAIRY),
         _ => None,
     };
     if let Some(i) = item {

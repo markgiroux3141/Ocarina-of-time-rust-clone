@@ -47,11 +47,11 @@ fn kokiri_rooms_interpret_cleanly() {
     let Some(c) = ctx() else { return };
     let l = &c.scene.layers[0];
     // spot04_scene: SCENE_CMD_ROOM_LIST(3, ...), SCENE_CMD_SPECIAL_FILES(.., OBJECT_GAMEPLAY_FIELD_KEEP),
-    // DEFINE_SCENE(spot04_scene, .., SDC_SPOT04, ..).
+    // DEFINE_SCENE(spot04_scene, .., SDC_KOKIRI_FOREST, ..).
     assert_eq!(c.rooms.len(), 3);
     assert_eq!(l.keep_object.as_deref(), Some("gameplay_field_keep"));
-    assert_eq!(c.scene.draw_config, "SDC_SPOT04");
-    assert!(scene_table::is_ported("SDC_SPOT04"));
+    assert_eq!(c.scene.draw_config, "SDC_KOKIRI_FOREST");
+    assert!(scene_table::is_ported("SDC_KOKIRI_FOREST"));
     assert!(l.notes.is_empty(), "{:?}", l.notes);
     let mut tris = 0;
     for r in &c.rooms {
@@ -71,8 +71,8 @@ fn kokiri_rooms_interpret_cleanly() {
 #[test]
 fn kokiri_water_scrolls_like_gfx_two_tex_scroll() {
     for f in [0u32, 1, 5, 127, 128, 200, 1000] {
-        let [opa, xlu] = scene_table::segment_values("SDC_SPOT04", &mut state(f)).expect("SDC_SPOT04 is ported");
-        // Scene_DrawConfigSpot04: segment 9 = Gfx_TwoTexScroll(tile 0: 127 - f % 128, (f * 1) % 128;
+        let [opa, xlu] = scene_table::segment_values("SDC_KOKIRI_FOREST", &mut state(f)).expect("SDC_KOKIRI_FOREST is ported");
+        // Scene_DrawConfigKokiriForest: segment 9 = Gfx_TwoTexScroll(tile 0: 127 - f % 128, (f * 1) % 128;
         // tile 1: f % 128, (f * 1) % 128), segment 8 the same with f * 10 on t. Gfx_TwoTexScroll
         // reduces each coordinate mod 512 << 2.
         let m = |v: u32| (v % 2048) as u16;
@@ -87,7 +87,7 @@ fn kokiri_water_scrolls_like_gfx_two_tex_scroll() {
         assert_eq!(xlu.env[0xB], Some([128, 128, 128, 50]));
     }
     // With EVENTCHKINF_07 set outside the cutscene layers, spA0 = 2150: alpha 215.
-    let [opa, _] = scene_table::segment_values("SDC_SPOT04", &mut DrawConfigState { event_chk_inf_07: true, ..state(0) }).unwrap();
+    let [opa, _] = scene_table::segment_values("SDC_KOKIRI_FOREST", &mut DrawConfigState { event_chk_inf_07: true, ..state(0) }).unwrap();
     assert_eq!(opa.env[0xB], Some([128, 128, 128, 215]));
 }
 
@@ -102,7 +102,7 @@ fn kokiri_scrolling_materials_shift_uvs() {
         .find(|m| m.uv_dyn[0].is_some_and(|t| t.segment == 9))
         .expect("a room 0 XLU material scrolled by segment 9");
     let f = 40u32;
-    let [_, xlu] = scene_table::segment_values("SDC_SPOT04", &mut state(f)).unwrap();
+    let [_, xlu] = scene_table::segment_values("SDC_KOKIRI_FOREST", &mut state(f)).unwrap();
     let off = stream.uv_offsets(&xlu);
     // Tile 0 origin moves from (127, 0) to (127 - 40, 40) in 10.2 fixed point over a 32x32
     // texture: the UVs shift by -(delta / 4) / 32.
@@ -114,18 +114,18 @@ fn kokiri_scrolling_materials_shift_uvs() {
 
 #[test]
 fn hyrule_field_fades_the_night_overlay_in() {
-    // Scene_DrawConfigSpot00 after 18:30: Math_StepToS(&roomCtx.unk_74[0], 255, 5) every
+    // Scene_DrawConfigHyruleField after 18:30: Math_StepToS(&roomCtx.drawParams[0], 255, 5) every
     // frame, and the prim alpha of segment 0xA's display list is the result.
     let mut st = DrawConfigState { child: false, night: true, scene_layer: 3, day_time: env::clock_time(19, 0) as u16, ..Default::default() };
     for f in 1..=60u32 {
         st.gameplay_frames = f;
-        let [_, xlu] = scene_table::segment_values("SDC_SPOT00", &mut st).unwrap();
+        let [_, xlu] = scene_table::segment_values("SDC_HYRULE_FIELD", &mut st).unwrap();
         let alpha = (5 * f).min(255) as u8;
         assert_eq!(xlu.prim[0xA], Some([255, 255, 255, alpha]), "frame {f}");
     }
     // By day (7:00 < t <= 18:30) segment 0xA is an empty list.
     let mut day = DrawConfigState { day_time: env::clock_time(12, 0) as u16, ..Default::default() };
-    let [_, xlu] = scene_table::segment_values("SDC_SPOT00", &mut day).unwrap();
+    let [_, xlu] = scene_table::segment_values("SDC_HYRULE_FIELD", &mut day).unwrap();
     assert_eq!(xlu.prim[0xA], None);
 }
 

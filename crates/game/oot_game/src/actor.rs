@@ -1,4 +1,4 @@
-//! The base `Actor` (`z64actor.h`) every actor embeds, and the parts of `z_actor.c` that act on
+//! The base `Actor` (`actor.h`) every actor embeds, and the parts of `z_actor.c` that act on
 //! it: velocity from speed and yaw, gravity, position integration, and
 //! `Actor_UpdateBgCheckInfo`. The actor system (`crate::actor_ctx`) owns the actors and fills in
 //! the fields it manages (id, category, distances to Player).
@@ -20,42 +20,42 @@ pub const BGCHECKFLAG_GROUND_STRICT: u16 = 1 << 7;
 pub const BGCHECKFLAG_CRUSHED: u16 = 1 << 8;
 pub const BGCHECKFLAG_PLAYER_WALL_INTERACT: u16 = 1 << 9;
 
-// `ACTOR_FLAG_*` (`z64actor.h`), with what they mean where the decomp knows.
+// `ACTOR_FLAG_*` (`actor.h`), with what they mean where the decomp knows.
 /// Targetable.
-pub const ACTOR_FLAG_0: u32 = 1 << 0;
-/// Hostile (with `ACTOR_FLAG_0`: Z-targeting locks on).
-pub const ACTOR_FLAG_2: u32 = 1 << 2;
-/// Talked to (`func_800343CC`'s NPCs; with `ACTOR_FLAG_0` Z-targeting treats the actor as
+pub const ACTOR_FLAG_ATTENTION_ENABLED: u32 = 1 << 0;
+/// Hostile (with `ACTOR_FLAG_ATTENTION_ENABLED`: Z-targeting locks on).
+pub const ACTOR_FLAG_HOSTILE: u32 = 1 << 2;
+/// Talked to (`Npc_UpdateTalking`'s NPCs; with `ACTOR_FLAG_ATTENTION_ENABLED` Z-targeting treats the actor as
 /// friendly).
-pub const ACTOR_FLAG_3: u32 = 1 << 3;
+pub const ACTOR_FLAG_FRIENDLY: u32 = 1 << 3;
 /// Updates even when not in view (`Actor_UpdateAll` updates actors with flag 4 or 6).
-pub const ACTOR_FLAG_4: u32 = 1 << 4;
+pub const ACTOR_FLAG_UPDATE_CULLING_DISABLED: u32 = 1 << 4;
 /// Drawn even when not in view.
-pub const ACTOR_FLAG_5: u32 = 1 << 5;
-/// In view this frame (set by `func_800314D4`'s culling).
-pub const ACTOR_FLAG_6: u32 = 1 << 6;
+pub const ACTOR_FLAG_DRAW_CULLING_DISABLED: u32 = 1 << 5;
+/// In view this frame (set by `Actor_CullingVolumeTest`'s culling).
+pub const ACTOR_FLAG_INSIDE_CULLING_VOLUME: u32 = 1 << 6;
 /// Seen only with the Lens of Truth (drawn in `Actor_DrawAll`'s lens pass: not ported).
-pub const ACTOR_FLAG_7: u32 = 1 << 7;
-/// A talk request was made (`Actor_ProcessTalkRequest` answers it).
-pub const ACTOR_FLAG_8: u32 = 1 << 8;
-/// Talking starts without A (`func_8083B644`: the actor's offer is taken at once).
-pub const ACTOR_FLAG_16: u32 = 1 << 16;
-/// With `ACTOR_FLAG_0`: Navi can be asked about it with C-Up (`func_8083B644`).
-pub const ACTOR_FLAG_18: u32 = 1 << 18;
-/// `ACTOR_FLAG_19`, `_20`, `_21`, `_28`: how `Actor_DrawAll` plays `actor->sfx`
-/// (`func_80030ED8`).
-pub const ACTOR_FLAG_19: u32 = 1 << 19;
-pub const ACTOR_FLAG_20: u32 = 1 << 20;
-pub const ACTOR_FLAG_21: u32 = 1 << 21;
-pub const ACTOR_FLAG_28: u32 = 1 << 28;
+pub const ACTOR_FLAG_REACT_TO_LENS: u32 = 1 << 7;
+/// A talk request was made (`Actor_TalkOfferAccepted` answers it).
+pub const ACTOR_FLAG_TALK: u32 = 1 << 8;
+/// Talking starts without A (`Player_ActionHandler_Talk`: the actor's offer is taken at once).
+pub const ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED: u32 = 1 << 16;
+/// With `ACTOR_FLAG_ATTENTION_ENABLED`: Navi can be asked about it with C-Up (`Player_ActionHandler_Talk`).
+pub const ACTOR_FLAG_TALK_WITH_C_UP: u32 = 1 << 18;
+/// `ACTOR_FLAG_SFX_ACTOR_POS_2`, `_20`, `_21`, `_28`: how `Actor_DrawAll` plays `actor->sfx`
+/// (`Actor_UpdateFlaggedAudio`).
+pub const ACTOR_FLAG_SFX_ACTOR_POS_2: u32 = 1 << 19;
+pub const ACTOR_AUDIO_FLAG_SFX_CENTERED_1: u32 = 1 << 20;
+pub const ACTOR_AUDIO_FLAG_SFX_CENTERED_2: u32 = 1 << 21;
+pub const ACTOR_FLAG_SFX_TIMER: u32 = 1 << 28;
 /// `Actor_Draw` binds no point lights for it (`Lights_BindAll` with no position).
-pub const ACTOR_FLAG_22: u32 = 1 << 22;
-pub const ACTOR_FLAG_23: u32 = 1 << 23;
-pub const ACTOR_FLAG_24: u32 = 1 << 24;
-pub const ACTOR_FLAG_25: u32 = 1 << 25;
-pub const ACTOR_FLAG_26: u32 = 1 << 26;
-/// Can't be targeted by the arrow-pointed search (`func_8002EFC0`).
-pub const ACTOR_FLAG_27: u32 = 1 << 27;
+pub const ACTOR_FLAG_IGNORE_POINT_LIGHTS: u32 = 1 << 22;
+pub const ACTOR_FLAG_THROW_ONLY: u32 = 1 << 23;
+pub const ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT: u32 = 1 << 24;
+pub const ACTOR_FLAG_UPDATE_DURING_OCARINA: u32 = 1 << 25;
+pub const ACTOR_FLAG_CAN_PRESS_SWITCHES: u32 = 1 << 26;
+/// Can't be targeted by the arrow-pointed search (`Attention_WeightedDistToPlayerSq`).
+pub const ACTOR_FLAG_LOCK_ON_DISABLED: u32 = 1 << 27;
 
 pub const UPDBGCHECKINFO_FLAG_0: u32 = 1 << 0; // walls
 pub const UPDBGCHECKINFO_FLAG_1: u32 = 1 << 1; // ceiling
@@ -96,7 +96,7 @@ pub struct Actor {
     /// `floorBgId`: `BGCHECK_SCENE` or the bg actor Player stands on.
     pub floor_bg_id: u16,
     pub wall_poly: Option<PolyId>,
-    /// Yaw added by a rotating platform this frame (`func_800432A0`; Player adds it to
+    /// Yaw added by a rotating platform this frame (`DynaPolyActor_UpdateCarriedActorRotY`; Player adds it to
     /// `currentYaw`).
     pub carried_yaw: i16,
     pub wall_yaw: i16,
@@ -118,7 +118,7 @@ pub struct Actor {
     /// `targetArrowOffset`: how far (times `scale.y`) above the focus the target arrow floats.
     /// No ported actor sets it, so it stays at the zeroed actor memory's 0.
     pub target_arrow_offset: f32,
-    /// `targetMode`: the targeting range class (`D_80115FF8`).
+    /// `targetMode`: the targeting range class (`sAttentionRanges`).
     pub target_mode: u8,
     /// `targetPriority` (0 = normal).
     pub target_priority: u8,
@@ -145,15 +145,15 @@ pub struct Actor {
     /// `Actor_DrawAll` sets it every frame (the sound effects are positioned by it).
     pub projected_pos: Vec3,
     pub projected_w: f32,
-    /// `sfx`: a sound the actor asks `Actor_DrawAll` to play this frame (`func_8002F8F0` and
-    /// the rest, `func_80030ED8`); `Actor_UpdateAll` clears it first.
+    /// `sfx`: a sound the actor asks `Actor_DrawAll` to play this frame (`Actor_PlaySfx_Flagged2` and
+    /// the rest, `Actor_UpdateFlaggedAudio`); `Actor_UpdateAll` clears it first.
     pub sfx: u16,
 }
 
 impl Actor {
     /// A spawned actor as `Actor_Spawn` + `Actor_Init` set it up before the actor's own init:
     /// home = world = `pos`, shape rotation = world rotation, focus at the position, scale 0.01,
-    /// `targetMode` 3, `minVelocityY` -20, `xyzDistToPlayerSq` `FLT_MAX`, and
+    /// `targetMode` 3, `minVelocityY` -20, `xyzDistToPlayerSq` `MAXFLOAT`, and
     /// `CollisionCheck_InitInfo`.
     pub fn new(pos: Vec3, yaw: i16) -> Actor {
         let rot = Rot { x: 0, y: yaw, z: 0 };
@@ -207,40 +207,40 @@ impl Actor {
         }
     }
 
-    /// `func_8002F8F0`: `sfx` played at the actor (`Audio_PlaySfxGeneral` at `projectedPos`).
-    pub fn func_8002f8f0(&mut self, sfx_id: u16) {
+    /// `Actor_PlaySfx_Flagged2`: `sfx` played at the actor (`Audio_PlaySfxGeneral` at `projectedPos`).
+    pub fn play_sfx_flagged2(&mut self, sfx_id: u16) {
         self.sfx = sfx_id;
-        self.flags |= ACTOR_FLAG_19;
-        self.flags &= !(ACTOR_FLAG_20 | ACTOR_FLAG_21 | ACTOR_FLAG_28);
+        self.flags |= ACTOR_FLAG_SFX_ACTOR_POS_2;
+        self.flags &= !(ACTOR_AUDIO_FLAG_SFX_CENTERED_1 | ACTOR_AUDIO_FLAG_SFX_CENTERED_2 | ACTOR_FLAG_SFX_TIMER);
     }
 
-    /// `func_8002F91C`: `sfx` with no position (`func_80078884`).
-    pub fn func_8002f91c(&mut self, sfx_id: u16) {
+    /// `Actor_PlaySfx_FlaggedCentered1`: `sfx` with no position (`Sfx_PlaySfxCentered`).
+    pub fn play_sfx_flagged_centered1(&mut self, sfx_id: u16) {
         self.sfx = sfx_id;
-        self.flags |= ACTOR_FLAG_20;
-        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_21 | ACTOR_FLAG_28);
+        self.flags |= ACTOR_AUDIO_FLAG_SFX_CENTERED_1;
+        self.flags &= !(ACTOR_FLAG_SFX_ACTOR_POS_2 | ACTOR_AUDIO_FLAG_SFX_CENTERED_2 | ACTOR_FLAG_SFX_TIMER);
     }
 
-    /// `func_8002F948`: `sfx` with no position (`func_800788CC`).
-    pub fn func_8002f948(&mut self, sfx_id: u16) {
+    /// `Actor_PlaySfx_FlaggedCentered2`: `sfx` with no position (`Sfx_PlaySfxCentered2`).
+    pub fn play_sfx_flagged_centered2(&mut self, sfx_id: u16) {
         self.sfx = sfx_id;
-        self.flags |= ACTOR_FLAG_21;
-        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_20 | ACTOR_FLAG_28);
+        self.flags |= ACTOR_AUDIO_FLAG_SFX_CENTERED_2;
+        self.flags &= !(ACTOR_FLAG_SFX_ACTOR_POS_2 | ACTOR_AUDIO_FLAG_SFX_CENTERED_1 | ACTOR_FLAG_SFX_TIMER);
     }
 
-    /// `func_8002F974`: `sfx` at the actor (`func_80078914`).
-    pub fn func_8002f974(&mut self, sfx_id: u16) {
-        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_20 | ACTOR_FLAG_21 | ACTOR_FLAG_28);
+    /// `Actor_PlaySfx_Flagged`: `sfx` at the actor (`Sfx_PlaySfxAtPos`).
+    pub fn play_sfx_flagged(&mut self, sfx_id: u16) {
+        self.flags &= !(ACTOR_FLAG_SFX_ACTOR_POS_2 | ACTOR_AUDIO_FLAG_SFX_CENTERED_1 | ACTOR_AUDIO_FLAG_SFX_CENTERED_2 | ACTOR_FLAG_SFX_TIMER);
         self.sfx = sfx_id;
     }
 
-    /// `func_8002F994`: the timer's tick (`Actor_DrawAll` plays `NA_SE_SY_TIMER` through
+    /// `Actor_PlaySfx_FlaggedTimer`: the timer's tick (`Actor_DrawAll` plays `NA_SE_SY_TIMER` through
     /// `func_800F4C58` with `sfx - 1`): the C uses the ids as numbers, `NA_SE_PL_WALK_DIRT -
     /// SFX_FLAG` (3) under 40, `_CONCRETE`'s (2) under 100, else `_SAND`'s (1).
-    pub fn func_8002f994(&mut self, arg1: i32) {
+    pub fn play_sfx_flagged_timer(&mut self, arg1: i32) {
         use crate::audio::sfx::{NA_SE_PL_WALK_CONCRETE, NA_SE_PL_WALK_DIRT, NA_SE_PL_WALK_SAND, SFX_FLAG};
-        self.flags |= ACTOR_FLAG_28;
-        self.flags &= !(ACTOR_FLAG_19 | ACTOR_FLAG_20 | ACTOR_FLAG_21);
+        self.flags |= ACTOR_FLAG_SFX_TIMER;
+        self.flags &= !(ACTOR_FLAG_SFX_ACTOR_POS_2 | ACTOR_AUDIO_FLAG_SFX_CENTERED_1 | ACTOR_AUDIO_FLAG_SFX_CENTERED_2);
         self.sfx = if arg1 < 40 {
             NA_SE_PL_WALK_DIRT - SFX_FLAG
         } else if arg1 < 100 {
@@ -250,13 +250,13 @@ impl Actor {
         };
     }
 
-    /// Targetable and hostile: Z-targeting locks on (`ACTOR_FLAG_0 | ACTOR_FLAG_2`).
+    /// Targetable and hostile: Z-targeting locks on (`ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE`).
     pub fn is_hostile(&self) -> bool {
-        self.flags & (ACTOR_FLAG_0 | ACTOR_FLAG_2) == ACTOR_FLAG_0 | ACTOR_FLAG_2
+        self.flags & (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE) == ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE
     }
 
     /// `Actor_Kill`.
-    /// `func_8002DBD0` (`Actor_WorldToActorCoords`): `pos` in the actor's frame (its shape yaw,
+    /// `Actor_WorldToActorCoords`: `pos` in the actor's frame (its shape yaw,
     /// from its position).
     pub fn world_to_actor_coords(&self, pos: Vec3) -> Vec3 {
         let (c, s) = (cos_s(self.shape_rot.y), sin_s(self.shape_rot.y));
@@ -272,7 +272,7 @@ impl Actor {
 
     pub fn kill(&mut self) {
         self.killed = true;
-        self.flags &= !ACTOR_FLAG_0;
+        self.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
     }
 
     /// `Actor_SetFocus`: the focus `y_offset` above the position, facing as the actor moves.
@@ -291,7 +291,7 @@ impl Actor {
         self.yaw_towards_player = atan2_s(d.z, d.x);
     }
 
-    /// `func_8002D868` (`Actor_UpdateVelocityXZGravity`).
+    /// `Actor_UpdateVelocityXZGravity`.
     pub fn update_velocity(&mut self) {
         self.velocity.x = sin_s(self.world_rot.y) * self.speed_xz;
         self.velocity.z = cos_s(self.world_rot.y) * self.speed_xz;
@@ -301,12 +301,12 @@ impl Actor {
         }
     }
 
-    /// `func_8002D7EC` (`Actor_UpdatePos`).
+    /// `Actor_UpdatePos`.
     pub fn update_pos(&mut self) {
         self.world_pos += self.velocity * UPDATE_SCALE + self.col_chk_info.displacement;
     }
 
-    /// `Actor_MoveForward`.
+    /// `Actor_MoveXZGravity`.
     pub fn move_forward(&mut self) {
         self.update_velocity();
         self.update_pos();
@@ -375,7 +375,7 @@ impl Actor {
     /// `Actor_UpdateBgCheckInfo`.
     pub fn update_bg_check_info(&mut self, col: &CollisionContext, wall_check_height: f32, wall_check_radius: f32, ceiling_check_height: f32, flags: u32) {
         let dy = self.world_pos.y - self.prev_pos.y;
-        // func_800433A4: ride the platform we're standing on.
+        // DynaPolyActor_TransformCarriedActor: ride the platform we're standing on.
         self.carried_yaw = 0;
         if self.floor_bg_id != eng_collision::bgcheck::BGCHECK_SCENE
             && self.bg_check_flags & BGCHECKFLAG_GROUND != 0
@@ -415,7 +415,7 @@ impl Actor {
         if flags & UPDBGCHECKINFO_FLAG_2 != 0 {
             let p = Vec3::new(self.world_pos.x, self.prev_pos.y, self.world_pos.z);
             self.update_floor(col, p, flags, ceiling_bg);
-            // WaterBox_GetSurface1 (ripples not modelled).
+            // BgCheck_GetWaterSurfaceAllHack (ripples not modelled).
             match col.water_surface(self.world_pos.x, self.world_pos.z, col.water_room) {
                 Some(y) => {
                     self.y_dist_to_water = y - self.world_pos.y;

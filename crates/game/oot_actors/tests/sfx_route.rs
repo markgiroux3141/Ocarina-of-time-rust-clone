@@ -7,7 +7,7 @@
 //!   `unk_1F4` 1). On the frame Player's A sets it, `EnBox_WaitOpen` starts the long opening
 //!   (`SkelAnime` at 1.5, a frame step of `R_UPDATE_RATE / 3`: 1.5 frames a game frame), spawns
 //!   the light (`Demo_Tre_Lgt`) and plays the chest fanfare (`Audio_PlayFanfare(NA_BGM_OPEN_TRE_BOX
-//!   | 0x900)`, started by the same frame's `func_800F5CF8`: `start_seq(SEQ_PLAYER_FANFARE, 1,
+//!   | 0x900)`, started by the same frame's `Audio_UpdateFanfare`: `start_seq(SEQ_PLAYER_FANFARE, 1,
 //!   ...)`). `EnBox_Open` plays `NA_SE_EV_TBOX_UNLOCK` on the animation's frame 30 and
 //!   `NA_SE_EV_TBOX_OPEN` on 90, at the chest: 20 and 60 frames on. The light waits for the
 //!   chest's frame 10 (reading it before the chest's own update: 8 frames on, the chest at 10.5),
@@ -35,7 +35,7 @@
 //! On the Deku Tree run (`Route::DekuTree`), **the bushes**: `EnKusa_Main` on the sword's hit
 //! plays `NA_SE_EV_PLANT_BROKEN` through a fixed-position sound source
 //! (`SfxSource_PlaySfxAtFixedWorldPos`, 20 frames) at the bush (the bush's collider is
-//! `COLTYPE_NONE`: `CollisionCheck_HitEffects` plays nothing for it).
+//! `COL_MATERIAL_NONE`: `CollisionCheck_HitEffects` plays nothing for it).
 
 mod common;
 
@@ -402,9 +402,9 @@ fn open_door(w: &mut PlayState, mut prev: PadState, frames: usize) -> (u32, Acto
 fn doors_sound_as_the_c() {
     let Some((a, data)) = assets() else { return };
     // A Kakariko house's scene exit (DOOR_SCENEEXIT, behind it: DOOR_OPEN_ANIM_CHILD_L): the
-    // door opens and the exit to ENTR_SPOT01_6 runs; the door's sound on its frame 25, then
+    // door opens and the exit to ENTR_KAKARIKO_VILLAGE_6 runs; the door's sound on its frame 25, then
     // the new scene's Player_Init plays the entrance's at Player.
-    let Some((mut w, prev)) = at_door(&a, &data, "ENTR_KAKARIKO_0", glam::Vec3::new(100.0, 0.0, 180.0), 0) else { return };
+    let Some((mut w, prev)) = at_door(&a, &data, "ENTR_KAKARIKO_CENTER_GUEST_HOUSE_0", glam::Vec3::new(100.0, 0.0, 180.0), 0) else { return };
     let changes = w.scene_changes;
     let (f0, door, open_anim) = open_door(&mut w, prev, 200);
     assert_eq!(open_anim, en_door::DOOR_OPEN_ANIM_CHILD_L);
@@ -421,7 +421,7 @@ fn doors_sound_as_the_c() {
 
     // The souko's room door (DOOR_ROOMLOAD, in front: DOOR_OPEN_ANIM_CHILD_R): the door's open
     // and close sounds on its frames 25 and 70, nothing on entering.
-    let Some((mut w, prev)) = at_door(&a, &data, "ENTR_SOUKO_2", glam::Vec3::new(1190.0, 140.0, 150.0), 0x4000) else { return };
+    let Some((mut w, prev)) = at_door(&a, &data, "ENTR_LON_LON_BUILDINGS_2", glam::Vec3::new(1190.0, 140.0, 150.0), 0x4000) else { return };
     let (f0, door, open_anim) = open_door(&mut w, prev, 120);
     assert_eq!(open_anim, en_door::DOOR_OPEN_ANIM_CHILD_R);
     let r = requests(&w);

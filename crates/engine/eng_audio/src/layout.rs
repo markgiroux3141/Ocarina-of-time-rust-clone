@@ -1,4 +1,4 @@
-//! The structs the C keeps in RAM, read and written where they are (`z64audio.h`): a font's
+//! The structs the C keeps in RAM, read and written where they are (`audio.h`): a font's
 //! `Instrument`s, `Drum`s, `SoundEffect`s, `TunedSample`s, `Sample`s, `AdpcmLoop`s,
 //! `AdpcmBook`s and `EnvelopePoint`s, which `AudioLoad_RelocateFont` turns from offsets into
 //! addresses in place.

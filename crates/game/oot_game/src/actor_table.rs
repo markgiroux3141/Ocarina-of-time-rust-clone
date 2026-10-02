@@ -1,5 +1,5 @@
 //! The actor table (`include/tables/actor_table.h`, `gActorOverlayTable`) with each actor's
-//! `ActorInit` (`<Name>_InitVars`): its category, initial flags, object and functions. An
+//! `ActorProfile` (`<Name>_Profile`): its category, initial flags, object and functions. An
 //! asset-pack record (`pack::keys::ACTORS`), read by the importer from the decomp's C.
 //!
 //! `Actor_Spawn` reads an actor's profile from here, so an actor that isn't ported yet still
@@ -11,7 +11,7 @@ pub const ACTOROVL_ALLOC_NORMAL: u8 = 0;
 pub const ACTOROVL_ALLOC_ABSOLUTE: u8 = 1 << 0;
 pub const ACTOROVL_ALLOC_PERSISTENT: u8 = 1 << 1;
 
-/// An `ActorInit`, as the overlay defines it.
+/// An `ActorProfile`, as the overlay defines it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ActorInitInfo {
     /// `id`: the `ACTOR_*` id the actor gets (`Actor_Spawn` copies it). The row's own id,
@@ -43,7 +43,7 @@ pub struct ActorInfo {
     pub alloc: u8,
     /// `DEFINE_ACTOR_INTERNAL`: in `code`, not an overlay.
     pub internal: bool,
-    /// `None` for unset rows, and for actors whose `ActorInit` the importer couldn't read.
+    /// `None` for unset rows, and for actors whose `ActorProfile` the importer couldn't read.
     pub init: Option<ActorInitInfo>,
 }
 

@@ -1,4 +1,4 @@
-//! `audio_load.c`: the sample DMAs, loading sequences, fonts and sample banks into the heap's
+//! `audio/internal/load.c`: the sample DMAs, loading sequences, fonts and sample banks into the heap's
 //! caches, relocating fonts, the slow, async and script loads, and `AudioLoad_Init`.
 //!
 //! The PI's DMAs complete at once (`Cart::dma`); a load's completion message is there the next
@@ -83,7 +83,7 @@ impl AudioContext {
             *r = at;
             at += 0x50;
         }
-        // func_800E4FE0's code, read as noise by gWaveSamples[8].
+        // AudioThread_Update's code, read as noise by gWaveSamples[8].
         statics.noise_base = tables.noise_code_vram;
         ram.write(tables.noise_code_vram, &tables.noise_code);
 
@@ -143,7 +143,7 @@ impl AudioContext {
             cur_ai_buf_index: 0,
             abi_cmd_bufs: [0; 2],
             cmds: Vec::new(),
-            unk_2960: 0.0,
+            max_tempo_tv_type_factors: 0.0,
             refresh_rate: 0,
             ai_buffers: [0; 3],
             ai_buf_lengths: [0; 3],
@@ -191,7 +191,7 @@ impl AudioContext {
             cmd_wr_pos: 0,
             cmd_rd_pos: 0,
             cmd_queue_finished: 0,
-            unk_5bdc: [0; 4],
+            thread_cmd_channel_mask: [0; 4],
             cmd_buf: [AudioCmd::default(); 0x100],
             cmd_proc_queue: VecDeque::new(),
             audio_reset_queue: VecDeque::new(),
@@ -469,12 +469,12 @@ impl AudioContext {
         }
     }
 
-    /// `((u16*)gAudioContext.sequenceFontTable)[seqId]`.
+    /// `((u16*)gAudioCtx.sequenceFontTable)[seqId]`.
     pub fn seq_font_table_index(&self, seq_id: i32) -> u32 {
         self.ram.u16(self.statics.sequence_font_table + 2 * seq_id as u32) as u32
     }
 
-    /// `gAudioContext.sequenceFontTable[index]`.
+    /// `gAudioCtx.sequenceFontTable[index]`.
     pub fn seq_font_table_byte(&self, index: u32) -> u8 {
         self.ram.u8(self.statics.sequence_font_table + index)
     }
@@ -1024,8 +1024,8 @@ impl AudioContext {
     /// `AudioLoad_Init(NULL, 0)`, on NTSC (`osTvType`).
     pub fn load_init(&mut self) {
         self.reset_timer = 0;
-        // OS_TV_NTSC (audio_load.c)
-        self.unk_2960 = 16.713f32;
+        // OS_TV_NTSC (audio/internal/load.c)
+        self.max_tempo_tv_type_factors = 16.713f32;
         self.refresh_rate = 60;
 
         self.cmd_wr_pos = 0;
@@ -1035,11 +1035,11 @@ impl AudioContext {
         self.total_task_count = 0;
         self.rsp_task_index = 0;
         self.cur_ai_buf_index = 0;
-        self.sound_mode = SOUNDMODE_STEREO;
+        self.sound_mode = SOUND_OUTPUT_STEREO;
         self.cur_audio_frame_dma_count = 0;
         self.sample_dma_count = 0;
 
-        // gAudioHeap and gAudioHeapInitSizes (audio_init_params.c)
+        // gAudioHeap and gAudioHeapInitSizes (session_config.c)
         let hs = self.tables.heap_sizes;
         self.audio_heap = place::AUDIO_HEAP;
         self.audio_heap_size = align16(hs.audio_heap - 0x100);

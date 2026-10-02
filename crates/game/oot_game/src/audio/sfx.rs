@@ -1,6 +1,6 @@
-//! The sound effects: `code_800F7260.c` (the requests, the seven banks of entries, choosing
+//! The sound effects: `sfx.c` (the requests, the seven banks of entries, choosing
 //! which play on the sound effects player's channels, starting and refreshing them, the stops),
-//! `code_800EC960.c`'s sound effect parts (each channel's volume, reverb, pan, frequency, stereo
+//! `general.c`'s sound effect parts (each channel's volume, reverb, pan, frequency, stereo
 //! and filter, `Audio_SetSfxProperties`; the helpers that play one with a scale of their own:
 //! footsteps, the sword's charge, the river) and `z_lib.c`'s three shorthands.
 //!
@@ -53,7 +53,7 @@ pub const SFX_FLAG_12: u16 = 1 << 12;
 pub const SFX_FLAG_13: u16 = 1 << 13;
 pub const SFX_FLAG_14: u16 = 1 << 14;
 pub const SFX_FLAG_15: u16 = 1 << 15;
-/// `MAX_CHANNELS_PER_BANK` (`z64audio.h`).
+/// `MAX_CHANNELS_PER_BANK` (`audio.h`).
 pub const MAX_CHANNELS_PER_BANK: usize = 3;
 
 /// `SFX_BANK_SHIFT`, `SFX_BANK_MASK`, `SFX_INDEX`, `SFX_BANK` (`sfx.h`).
@@ -109,7 +109,7 @@ pub enum SfxS8 {
     D8016B7DC,
 }
 
-/// `SfxRequest` (`code_800F7260.c`).
+/// `SfxRequest` (`sfx.c`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SfxRequest {
     pub sfx_id: u16,
@@ -181,7 +181,7 @@ pub struct ActiveSfx {
     pub entry_index: u8,
 }
 
-/// `UnusedBankLerp` (`code_800F7260.c`).
+/// `UnusedBankLerp` (`sfx.c`).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct UnusedBankLerp {
     pub value: f32,
@@ -190,8 +190,8 @@ pub struct UnusedBankLerp {
     pub remaining_frames: u16,
 }
 
-/// The statics of `code_800F7260.c` and the sound effect parts of `audio_external_data.c` and
-/// `code_800EC960.c`.
+/// The statics of `sfx.c` and the sound effect parts of `audio/game/data.c` and
+/// `general.c`.
 #[derive(Debug, Clone)]
 pub struct SfxStatics {
     /// `gSfxBanks`: `D_8016BAD0[9]` and the six others, sized by `gSfxBankSizes`.
@@ -207,7 +207,7 @@ pub struct SfxStatics {
     pub unused: [u8; NUM_SFX_BANKS],
     /// `gActiveSfx`.
     pub active: [[ActiveSfx; MAX_CHANNELS_PER_BANK]; NUM_SFX_BANKS],
-    /// `sCurSfxPlayerChannelIdx`.
+    /// `sCurSfxPlayerChannelIndex`.
     pub cur_channel_idx: u8,
     pub unused_bank_lerp: [UnusedBankLerp; NUM_SFX_BANKS],
     /// `gAudioSfxSwapSource`, `gAudioSfxSwapTarget`, `gAudioSfxSwapMode` (the debug screen's).
@@ -218,7 +218,7 @@ pub struct SfxStatics {
     pub swap_off: u8,
     pub d_801333f0: u8,
     pub d_801333f8: u8,
-    // code_800EC960.c
+    // general.c
     pub d_801305b0: f32,
     pub d_801305b4: i8,
     pub d_801305b8: i8,
@@ -226,7 +226,7 @@ pub struct SfxStatics {
     pub d_801305c0: i8,
     pub increasing_transpose: u8,
     pub prev_charge_level: u8,
-    pub d_801305f4: f32,
+    pub sfx_sword_charge_freq: f32,
     pub d_8016b7ac: f32,
     pub d_8016b7dc: i8,
     pub d_8016b7e0: f32,
@@ -234,7 +234,7 @@ pub struct SfxStatics {
 }
 
 impl SfxStatics {
-    /// The BSS and the initialisers, the banks sized as `code_800F7260.c` declares them.
+    /// The BSS and the initialisers, the banks sized as `sfx.c` declares them.
     pub fn new(bank_sizes: &[u8]) -> SfxStatics {
         SfxStatics {
             banks: bank_sizes.iter().map(|&n| vec![SfxBankEntry::default(); n as usize]).collect(),
@@ -254,7 +254,7 @@ impl SfxStatics {
             swap_off: 0,
             d_801333f0: 0,
             d_801333f8: 0,
-            // code_800EC960.c's initialisers.
+            // general.c's initialisers.
             d_801305b0: 0.7950898,
             d_801305b4: 35,
             d_801305b8: 20,
@@ -262,7 +262,7 @@ impl SfxStatics {
             d_801305c0: 20,
             increasing_transpose: 0,
             prev_charge_level: 0,
-            d_801305f4: 1.0,
+            sfx_sword_charge_freq: 1.0,
             d_8016b7ac: 0.0,
             d_8016b7dc: 0,
             d_8016b7e0: 0.0,
@@ -302,7 +302,7 @@ impl GameAudio {
             SfxF32::D8016B7D8 => self.d_8016b7d8,
             SfxF32::D8016B7E0 => self.sfx.d_8016b7e0,
             SfxF32::D801305B0 => self.sfx.d_801305b0,
-            SfxF32::D801305F4 => self.sfx.d_801305f4,
+            SfxF32::D801305F4 => self.sfx.sfx_sword_charge_freq,
             SfxF32::RiverFreq => self.river_freq_scale_lerp.value,
             SfxF32::WaterfallFreq => self.waterfall_freq_scale_lerp.value,
             SfxF32::Pitch(i) => self.audio_tables.pitch_frequencies.get(i as usize).copied().unwrap_or(1.0),
@@ -318,8 +318,8 @@ impl GameAudio {
         }
     }
 
-    /// `Audio_NextRandom` from the game's thread: `audRand` as the audio side left it, the
-    /// count register at the view's time; the new `audRand` goes back to the audio side.
+    /// `AudioThread_NextRandom` from the game's thread: `sAudioRandom` as the audio side left it, the
+    /// count register at the view's time; the new `sAudioRandom` goes back to the audio side.
     pub fn next_random(&mut self) -> u32 {
         let v = &self.view;
         let r = v.os_count.wrapping_add(0x123_4567).wrapping_mul(v.aud_rand.wrapping_add(v.total_task_count as u32)).wrapping_add(v.audio_random);
@@ -329,7 +329,7 @@ impl GameAudio {
     }
 
     // ---------------------------------------------------------------------------------------
-    // code_800F7260.c
+    // sfx.c
 
     /// `Audio_SetSfxBanksMute`.
     pub fn set_sfx_banks_mute(&mut self, mut mute_mask: u16) {
@@ -744,8 +744,8 @@ impl GameAudio {
         self.remove_matching_sfx_requests(0, Cmp { sfx_id: (bank as u16) << 12, ..Default::default() });
     }
 
-    /// `func_800F8884`: stops the bank's entries at `pos`.
-    pub fn func_800f8884(&mut self, bank: u8, pos: SfxPos) {
+    /// `Audio_RemoveSfxFromBankByPos`: stops the bank's entries at `pos`.
+    pub fn audio_remove_sfx_from_bank_by_pos(&mut self, bank: u8, pos: SfxPos) {
         let b = bank as usize;
         if b >= self.bank_count() {
             return;
@@ -764,14 +764,14 @@ impl GameAudio {
 
     /// `Audio_StopSfxByPosAndBank`.
     pub fn stop_sfx_by_pos_and_bank(&mut self, bank: u8, pos: SfxPos) {
-        self.func_800f8884(bank, pos);
+        self.audio_remove_sfx_from_bank_by_pos(bank, pos);
         self.remove_matching_sfx_requests(1, Cmp { sfx_id: (bank as u16) << 12, pos: Some(pos), token: 0 });
     }
 
     /// `Audio_StopSfxByPos`: every sound at `pos` (an actor going).
     pub fn stop_sfx_by_pos(&mut self, pos: SfxPos) {
         for b in 0..self.bank_count() as u8 {
-            self.func_800f8884(b, pos);
+            self.audio_remove_sfx_from_bank_by_pos(b, pos);
         }
         self.remove_matching_sfx_requests(2, Cmp { pos: Some(pos), ..Default::default() });
     }
@@ -949,7 +949,7 @@ impl GameAudio {
     }
 
     // ---------------------------------------------------------------------------------------
-    // code_800EC960.c: a channel's properties.
+    // general.c: a channel's properties.
 
     /// `Audio_ComputeSfxVolume`: by distance, slower with `SFX_PARAM_01` (none with
     /// `SFX_FLAG_13`).
@@ -1085,7 +1085,7 @@ impl GameAudio {
         let ci = channel_idx as usize & 0xF;
         match bank {
             BANK_PLAYER | BANK_ITEM | BANK_ENV | BANK_ENEMY | BANK_VOICE | BANK_OCARINA => {
-                if bank != BANK_OCARINA && self.sound_mode == SOUNDMODE_SURROUND {
+                if bank != BANK_OCARINA && self.sound_mode == SOUND_OUTPUT_SURROUND {
                     let e = &self.sfx.banks[b][entry_idx as usize];
                     sp38 = func_800f3990(e.pos_now.y, e.sfx_params);
                 }
@@ -1097,7 +1097,7 @@ impl GameAudio {
                 pan_signed = compute_sfx_pan_signed(e.pos_now.x, e.pos_now.z, e.token);
                 freq_scale = self.compute_sfx_freq_scale(bank, entry_idx) * self.sfx_f32(e.freq_scale);
                 let mut behind_screen_z = 0.0;
-                if self.sound_mode == SOUNDMODE_SURROUND {
+                if self.sound_mode == SOUND_OUTPUT_SURROUND {
                     behind_screen_z = self.tables.behind_screen_z.get(((e.sfx_params & SFX_FLAG_10) >> SFX_FLAG_10_SHIFT) as usize).copied().unwrap_or(0.0);
                     if e.sfx_params & SFX_FLAG_11 == 0 {
                         if e.pos_now.z < behind_screen_z {
@@ -1112,7 +1112,7 @@ impl GameAudio {
                 }
                 if (base_filter | self.audio_extra_filter) != 0 {
                     filter = base_filter | self.audio_extra_filter;
-                } else if self.sound_mode == SOUNDMODE_SURROUND && e.sfx_params & SFX_FLAG_13 == 0 {
+                } else if self.sound_mode == SOUND_OUTPUT_SURROUND && e.sfx_params & SFX_FLAG_13 == 0 {
                     filter = self.func_800f37b8(behind_screen_z, &e, pan_signed);
                 }
             }
@@ -1127,7 +1127,7 @@ impl GameAudio {
             -1
         };
         let c = ((SEQ_PLAYER_SFX as u32) << 16) | ((channel_idx as u32) << 8);
-        // CHAN_UPD_SCRIPT_IO (slot 2, sets volume)
+        // AUDIOCMD_OP_CHANNEL_SET_IO (slot 2, sets volume)
         self.queue_cmd_s8((0x6 << 24) | c | 2, vol_s8);
         if reverb != st.reverb {
             self.queue_cmd_s8((0x5 << 24) | c, reverb);
@@ -1142,16 +1142,16 @@ impl GameAudio {
             self.sfx_channel_state[ci].stereo_bits = stereo_bits as i8;
         }
         if filter != st.filter {
-            // CHAN_UPD_SCRIPT_IO (slot 3, sets filter)
+            // AUDIOCMD_OP_CHANNEL_SET_IO (slot 3, sets filter)
             self.queue_cmd_s8((0x6 << 24) | c | 3, filter as i8);
             self.sfx_channel_state[ci].filter = filter;
         }
-        if sp38 as u8 != st.unk_0c {
-            // CHAN_UPD_UNK_0F
+        if sp38 as u8 != st.comb_filter_gain {
+            // AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_SIZE
             self.queue_cmd_s8((0xC << 24) | c, 0x10);
-            // CHAN_UPD_UNK_20
+            // AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_GAIN
             self.queue_cmd_u16((0xD << 24) | c, ((sp38 as i16 as u16) << 8).wrapping_add(0xFF));
-            self.sfx_channel_state[ci].unk_0c = sp38 as u8;
+            self.sfx_channel_state[ci].comb_filter_gain = sp38 as u8;
         }
         if pan_signed != st.pan_signed {
             self.queue_cmd_s8((0x3 << 24) | c, pan_signed);
@@ -1160,7 +1160,7 @@ impl GameAudio {
     }
 
     // ---------------------------------------------------------------------------------------
-    // code_800EC960.c: playing with a scale of one's own.
+    // general.c: playing with a scale of one's own.
 
     /// `func_800F3F84`: the footsteps' volume and frequency by speed.
     pub fn func_800f3f84(&mut self, arg0: f32) -> f32 {
@@ -1211,11 +1211,11 @@ impl GameAudio {
         self.play_sfx_general(base_sfx_id.wrapping_add(offset as u16), pos, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
     }
 
-    /// `func_800F4254`: the sword's charge, by level.
-    pub fn func_800f4254(&mut self, pos: SfxPos, level: u8) {
+    /// `Audio_PlaySwordChargeSfx`: the sword's charge, by level.
+    pub fn audio_play_sword_charge_sfx(&mut self, pos: SfxPos, level: u8) {
         let level = level & 3;
         if level != self.sfx.prev_charge_level {
-            self.sfx.d_801305f4 = self.tables.charge_freq_scales.get(level as usize).copied().unwrap_or(1.0);
+            self.sfx.sfx_sword_charge_freq = self.tables.charge_freq_scales.get(level as usize).copied().unwrap_or(1.0);
             if level == 1 || level == 2 {
                 self.play_sfx_general(NA_SE_PL_SWORD_CHARGE, pos, 4, SfxF32::D801305F4, SfxF32::One, SfxS8::Zero);
             }
@@ -1341,7 +1341,7 @@ impl GameAudio {
         self.play_sfx_general_if_not_in_cutscene(sfx_id, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
     }
 
-    /// `AudioMgr_StopAllSfx` (`code_800C3C20.c`): every bank, in `sSfxBankIds`' order (the
+    /// `AudioMgr_StopAllSfx` (`audio_stop_all_sfx.c`): every bank, in `sSfxBankIds`' order (the
     /// banks' own).
     pub fn audio_mgr_stop_all_sfx(&mut self) {
         for bank in [BANK_PLAYER, BANK_ITEM, BANK_ENV, BANK_ENEMY, BANK_SYSTEM, BANK_OCARINA, BANK_VOICE] {
@@ -1352,18 +1352,18 @@ impl GameAudio {
     // ---------------------------------------------------------------------------------------
     // z_lib.c
 
-    /// `func_80078884`: a sound with no position.
-    pub fn func_80078884(&mut self, sfx_id: u16) {
+    /// `Sfx_PlaySfxCentered`: a sound with no position.
+    pub fn play_sfx_centered(&mut self, sfx_id: u16) {
         self.play_sfx_general(sfx_id, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
     }
 
-    /// `func_800788CC`: the same.
-    pub fn func_800788cc(&mut self, sfx_id: u16) {
+    /// `Sfx_PlaySfxCentered2`: the same.
+    pub fn play_sfx_centered2(&mut self, sfx_id: u16) {
         self.play_sfx_general(sfx_id, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
     }
 
-    /// `func_80078914`: a sound at `pos`.
-    pub fn func_80078914(&mut self, pos: SfxPos, sfx_id: u16) {
+    /// `Sfx_PlaySfxAtPos`: a sound at `pos`.
+    pub fn play_sfx_at_pos(&mut self, pos: SfxPos, sfx_id: u16) {
         self.play_sfx_general(sfx_id, pos, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
     }
 }

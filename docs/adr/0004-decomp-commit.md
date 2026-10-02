@@ -1,6 +1,6 @@
 # 0004: Decomp commit: stay on `2f4c25d` through the asset pack
 
-- **Status:** accepted; to be superseded by Phase 6's first milestone, the upgrade (ADR 0028)
+- **Status:** superseded by [ADR 0031](0031-decomp-main.md) (2026-10-02): the decomp is zeldaret/oot main at `52a510f`
 - **Date:** 2026-09-27
 
 ## Context

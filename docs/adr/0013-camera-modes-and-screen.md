@@ -6,7 +6,7 @@
 ## Context
 
 Until now the camera ran `Camera_Normal1` for the NORMAL mode of `CAM_SET_NORMAL0`, and nothing else. Z-targeting polish needs three things from the game:
-- **The mode switch.** Player asks for a mode every frame (`Player_UpdateCamAndSeqModes`), and `Camera_ChangeModeFlags` accepts it, refuses it, or resets the mode function.
+- **The mode switch.** Player asks for a mode every frame (`Player_UpdateCamAndSeqModes`), and `Camera_RequestModeImpl` accepts it, refuses it, or resets the mode function.
 - **The mode functions:** `Camera_Parallel1` for Z with nothing targeted, `Camera_KeepOn1` for a friendly target.
 - **The screen state they drive:** the letterbox bars and the reticle.
 
@@ -27,14 +27,14 @@ Four things had to be decided:
   - The modes affected are BATTLE (`Camera_Battle1`), TALK (`Camera_KeepOn3`), JUMP / FREEFALL / CLIMB / CLIMBZ (`Jump1`, `Jump2`), HANG (`Uniq1`) and first person (`Subj3`).
 - **`PREG` registers are 0.** `Camera_CopyDataToRegs` fills `PREG`s only for the debug register editor. `PREG(75)` and `PREG(76)` are 0 in the retail flow, so the at-calculations take those branches.
 - **The letterbox is game state, drawn by the engine.**
-  - `oot_game::letterbox::Letterbox` is `shrink_window.c`. `Letterbox_Update` runs in `PlayState::tick_with` before the camera, and `Camera_UpdateInterface` sets its target from `sCameraInterfaceFlags`.
+  - `oot_game::letterbox::Letterbox` is `shrink_window.c`. `Letterbox_Update` runs in `PlayState::tick_with` before the camera, and `Camera_UpdateInterface` sets its target from `sCameraInterfaceField`.
   - The render frame carries the size, blended between game frames like the view.
   - `eng_gfx::DrawLists::letterbox_rows` asks the renderer for black bars over the 3D lists and under the overlay. That looks the same as `View_ApplyLetterbox`'s scissor over a black-filled frame.
 - **2D overlay draws are an engine list with an orthographic projection.**
   - `DrawLists::overlay_2d` is `OVERLAY_DISP` after `View_ApplyOrthoToOverlay`: the 320x240 screen centred on 0, y up. The meshes are ordinary baked meshes (ADR 0012).
   - On a target wider than 4:3, x extends by the aspect ratio. So a point computed with the game's 4:3 view projection stays over the same spot of the 3D view, which is drawn at the target's aspect.
 - **The reticle updates at the game's rate.**
-  - `func_8002C124` both moves the reticle (the trail entries, the fade) and draws it. The moving half (`target::draw_update`) runs once per game frame, after the frame's view is set up, as `Interface_Draw` does. The drawing half (`target::draw`) only reads that state.
+  - `Attention_Draw` both moves the reticle (the trail entries, the fade) and draws it. The moving half (`target::draw_update`) runs once per game frame, after the frame's view is set up, as `Interface_Draw` does. The drawing half (`target::draw`) only reads that state.
   - So the reticle moves at 20 Hz as on the N64, while the world around it is blended at the display rate.
 
 ## Consequences

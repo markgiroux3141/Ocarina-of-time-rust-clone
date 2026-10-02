@@ -6,7 +6,7 @@
 //!   (`PadMgr_UpdateInputs` / `PadMgr_RequestPadData(.., gameRequest = true)`), so a tap
 //!   shorter than a game frame still registers as a press.
 //! - `Input::update_rel`: `PadUtils_UpdateRelXY` (dead zone ±7, range 60).
-//! - `stick_to_mag_angle`: `func_80077D10` in `z_lib.c` (magnitude clamped to 60).
+//! - `stick_to_mag_angle`: `Lib_GetControlStickData` in `z_lib.c` (magnitude clamped to 60).
 
 use eng_math::atan2_s;
 
@@ -118,7 +118,7 @@ impl PadMgr {
     }
 }
 
-/// `func_80077D10`: stick magnitude (0..=60) and angle relative to "up".
+/// `Lib_GetControlStickData`: stick magnitude (0..=60) and angle relative to "up".
 /// Up is 0, right is -0x4000 (the game adds the camera yaw to get a world direction).
 pub fn stick_to_mag_angle(input: &Input) -> (f32, i16) {
     let rx = input.rel.stick_x as f32;

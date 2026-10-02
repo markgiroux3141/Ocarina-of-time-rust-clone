@@ -8,6 +8,6 @@ setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot_sandbox || exit /b 1
 if not exist "%REPO%\out\run" mkdir "%REPO%\out\run"
-"%BIN%\oot_sandbox.exe" --entrance ENTR_LINK_HOME_0 --child --script mido-shop --audio-log "%REPO%\out\run\mido_shop_audio.json" --wav "%REPO%\out\run\mido_shop.wav" %* || exit /b 1
+"%BIN%\oot_sandbox.exe" --entrance ENTR_LINKS_HOUSE_0 --child --script mido-shop --audio-log "%REPO%\out\run\mido_shop_audio.json" --wav "%REPO%\out\run\mido_shop.wav" %* || exit /b 1
 start "" "%REPO%\out\run\mido_shop.wav"
 exit /b 0

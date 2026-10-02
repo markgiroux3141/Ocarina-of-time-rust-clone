@@ -20,7 +20,7 @@ pub const LIGHTS_BUFFER_SIZE: usize = 32;
 /// `Lights_FindSlot`: a `Lights` holds 7 lights.
 pub const MAX_BOUND_LIGHTS: usize = 7;
 
-/// `LightInfo` with `LightPoint` params (`z64light.h`).
+/// `LightInfo` with `LightPoint` params (`light.h`).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct LightInfo {
     pub ty: u8,

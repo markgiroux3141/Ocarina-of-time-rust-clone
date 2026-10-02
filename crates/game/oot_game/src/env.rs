@@ -14,7 +14,7 @@ use eng_math::{cos_s, sin_s};
 
 use crate::scene::EnvLightSettings;
 
-/// `LIGHT_MODE_TIME` / `LIGHT_MODE_SETTINGS` (`z64environment.h`).
+/// `LIGHT_MODE_TIME` / `LIGHT_MODE_SETTINGS` (`environment.h`).
 pub const LIGHT_MODE_TIME: u8 = 0;
 pub const LIGHT_MODE_SETTINGS: u8 = 1;
 
@@ -180,7 +180,7 @@ pub fn fog_factor(near: i32, far: i32) -> (i16, i16) {
 // ---------------------------------------------------------------------------------------------
 
 /// `LIGHT_SETTING_MAX`, `LIGHT_SETTING_OVERRIDE_NONE`, `LIGHT_SETTING_OVERRIDE_FULL_CONTROL`
-/// (`z64environment.h`).
+/// (`environment.h`).
 pub const LIGHT_SETTING_MAX: u8 = 31;
 pub const LIGHT_SETTING_OVERRIDE_NONE: u8 = 0xFF;
 pub const LIGHT_SETTING_OVERRIDE_FULL_CONTROL: u8 = 0xFE;
@@ -252,7 +252,7 @@ pub struct EnvCtx {
     pub wind_direction: [i16; 3],
     pub lightning_state: u8,
     pub sandstorm_state: u8,
-    /// `gSaveContext.dayTime` and `skyboxTime` as the lights read them (the scene's time settings
+    /// `gSaveContext.save.dayTime` and `skyboxTime` as the lights read them (the scene's time settings
     /// applied at `Play_Init`, then the save's when a cutscene changes it).
     pub day_time: u16,
     pub skybox_time: u16,

@@ -36,7 +36,7 @@ fn tick(w: &mut PlayState) {
 
 /// Kokiri Forest on a new save, 20 frames in (room 0 loaded), room 2 too if `room2`.
 fn kokiri(a: &Arc<GameAssets>, room2: bool) -> Option<PlayState> {
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     let mut w = oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init");
     for _ in 0..20 {

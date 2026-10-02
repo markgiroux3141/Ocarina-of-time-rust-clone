@@ -41,7 +41,7 @@ impl Project {
         let mut rom = Rom::open(&config.rom)?;
         let names = decomp_file_names(&config.decomp)?;
         let names_applied = rom.set_names(names);
-        let symbols = SymbolIndex::load_dir(&config.decomp.join("assets").join("xml"))?;
+        let symbols = SymbolIndex::load(&config.decomp)?;
         Ok(Project { config, rom, symbols, names_applied })
     }
 

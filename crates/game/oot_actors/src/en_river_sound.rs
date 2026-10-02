@@ -12,7 +12,7 @@
 //! `Actor_DrawAll` makes them (`ActorImpl::draw_sfx`), and not on the first frame.
 
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_4, ACTOR_FLAG_5, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorContext, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::audio::bgm::SariaPos;
 use oot_game::audio::sfx::*;
@@ -24,8 +24,8 @@ use oot_game::surface::SurfaceType;
 /// `ACTOR_EN_RIVER_SOUND` (`actor_table.h`: 0x003B).
 pub const ACTOR_EN_RIVER_SOUND: i16 = 0x003B;
 
-/// `En_River_Sound_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_RIVER_SOUND, name: "En_River_Sound", category: ACTORCAT_BG, flags: ACTOR_FLAG_4 | ACTOR_FLAG_5, object: "gameplay_keep" };
+/// `En_River_Sound_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_RIVER_SOUND, name: "En_River_Sound", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep" };
 
 /// `RiverSoundType` (`z_en_river_sound.h`).
 pub const RS_RIVER_DEFAULT_LOW_FREQ: i16 = 0x00;
@@ -42,12 +42,12 @@ pub const RS_GREAT_FAIRY: i16 = 0x13;
 pub const RS_NATURE_AMBIENCE: i16 = 0xF7;
 pub const RS_GANON_TOWER_0: i16 = 0xF8;
 
-/// `CONVEYOR_SPEED_DISABLED`, `CONVEYOR_SPEED_MAX` (`z64bgcheck.h`).
+/// `CONVEYOR_SPEED_DISABLED`, `CONVEYOR_SPEED_MAX` (`bgcheck.h`).
 const CONVEYOR_SPEED_DISABLED: u8 = 0;
 const CONVEYOR_SPEED_MAX: u8 = 4;
 
-/// `SCENE_DDAN_BOSS` (`scene_table.h`: 0x12).
-const SCENE_DDAN_BOSS: u16 = 0x12;
+/// `SCENE_DODONGOS_CAVERN_BOSS` (`scene_table.h`: 0x12).
+const SCENE_DODONGOS_CAVERN_BOSS: u16 = 0x12;
 
 /// `EnRiverSound_Draw`'s `soundEffects`, by kind (0 for the kinds that play something else).
 const SOUND_EFFECTS: [u16; 22] = [
@@ -183,7 +183,7 @@ impl ActorImpl for EnRiverSound {
 
     /// `EnRiverSound_Update`: a river finds where on its path it sounds, and the current there;
     /// the music makers keep Link's position relative to them in `home.pos`
-    /// (`func_8002DBD0`); in Gohma's room, a cleared room ends it.
+    /// (`Actor_WorldToActorCoords`); in Gohma's room, a cleared room ends it.
     fn update(&mut self, play: &mut PlayState) {
         self.me = play.cur_actor;
         let Some(player) = play.player.and_then(|h| play.actors.actor(h)) else { return };
@@ -215,7 +215,7 @@ impl ActorImpl for EnRiverSound {
             }
         } else if self.actor.params == RS_GORON_CITY_SARIAS_SONG || self.actor.params == RS_GREAT_FAIRY {
             self.actor.home_pos = player.world_to_actor_coords(self.actor.world_pos);
-        } else if play.scene_id == SCENE_DDAN_BOSS && play.flags.get_clear(self.actor.room) {
+        } else if play.scene_id == SCENE_DODONGOS_CAVERN_BOSS && play.flags.get_clear(self.actor.room) {
             self.actor.kill();
         }
     }
@@ -252,7 +252,7 @@ impl ActorImpl for EnRiverSound {
                 play.audio.play_saria_bgm(SariaPos::Home(h), seq_id, dist_max, &read);
             }
             RS_SANDSTORM | RS_CHAMBER_OF_SAGES_1 | RS_CHAMBER_OF_SAGES_2 | RS_RUMBLING => {
-                play.audio.func_800788cc(SOUND_EFFECTS.get(self.actor.params as usize).copied().unwrap_or(0));
+                play.audio.play_sfx_centered2(SOUND_EFFECTS.get(self.actor.params as usize).copied().unwrap_or(0));
             }
             p => audio_play_actor_sfx2(play, SOUND_EFFECTS.get(p as usize).copied().unwrap_or(0)),
         }

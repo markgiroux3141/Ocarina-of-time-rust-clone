@@ -5,7 +5,7 @@
 
 ## Context
 
-`Message_Draw` (`z_message_PAL.c`) and `Interface_Draw` (`z_parameter.c`) build their display
+`Message_Draw` (`z_message.c`) and `Interface_Draw` (`z_parameter.c`) build their display
 lists every frame. They mostly use two kinds of draw:
 
 - **`gSPTextureRectangle`** with a texture just loaded:

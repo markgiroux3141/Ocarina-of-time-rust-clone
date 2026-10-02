@@ -6,7 +6,7 @@
 //! (`gHyruleFieldCastleDrawbridgeCol`, `gHyruleFieldCastleDrawbridgeChainsCol` in
 //! `object_spot00_objects`). The bridge is raised (`shape.rot.x` -0x4000) in the opening's
 //! cutscene layers (4, 5), by night for a child, and with the three spiritual stones before
-//! `EVENTCHKINF_80`; it lowers (and raises) by 80 a frame, the chains following at 0.4 of that
+//! `EVENTCHKINF_ZELDA_FLED_CASTLE`; it lowers (and raises) by 80 a frame, the chains following at 0.4 of that
 //! once it's past -0x27D8. Each chain holds a point light at its torch, flickering by
 //! `Rand_ZeroOne`, sized by the torches' flame (`sTorchFlameScale`, which the bridge's draw
 //! sets).
@@ -22,11 +22,11 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use eng_collision::collision::CollisionHeader;
-use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DPM_PLAYER};
+use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_TRANSFORM_POS};
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{binang_to_rad, cos_s, scaled_step_to_s, sin_s};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_4, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::audio::sfx::{NA_SE_EV_BRIDGE_CLOSE, NA_SE_EV_BRIDGE_CLOSE_STOP, NA_SE_EV_BRIDGE_OPEN, NA_SE_EV_BRIDGE_OPEN_STOP, SFX_FLAG};
 use oot_game::env::STORM_REQUEST_START;
@@ -34,7 +34,7 @@ use oot_game::item::{QUEST_GORON_RUBY, QUEST_KOKIRI_EMERALD, QUEST_ZORA_SAPPHIRE
 use oot_game::lights::{LightInfo, LightNode};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
-use oot_game::save::EVENTCHKINF_80;
+use oot_game::save::EVENTCHKINF_ZELDA_FLED_CASTLE;
 use oot_game::scene_table::gfx_two_tex_scroll;
 use oot_game::transition::TRANS_TRIGGER_START;
 
@@ -49,21 +49,21 @@ const CHAINS_COL: &str = "gHyruleFieldCastleDrawbridgeChainsCol";
 const DRAWBRIDGE_DL: &str = "gHyruleFieldCastleDrawbridgeDL";
 const CHAINS_DL: &str = "gHyruleFieldCastleDrawbridgeChainsDL";
 
-/// `Bg_Spot00_Hanebasi_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT00_HANEBASI, name: "Bg_Spot00_Hanebasi", category: ACTORCAT_BG, flags: ACTOR_FLAG_4, object: OBJECT };
+/// `Bg_Spot00_Hanebasi_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT00_HANEBASI, name: "Bg_Spot00_Hanebasi", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
 
 /// `DrawbridgeType`.
 pub const DT_DRAWBRIDGE: i16 = -1;
 pub const DT_CHAIN_1: i16 = 0;
 pub const DT_CHAIN_2: i16 = 1;
 
-/// `SCENE_SPOT00` (`scene_table.h`: Hyrule Field).
-const SCENE_SPOT00: u16 = 0x51;
-/// `EVENTCHKINF_82` (`z64save.h`).
+/// `SCENE_HYRULE_FIELD` (`scene_table.h`: Hyrule Field).
+const SCENE_HYRULE_FIELD: u16 = 0x51;
+/// `EVENTCHKINF_82` (`save.h`).
 const EVENTCHKINF_82: u16 = 0x82;
-/// `ENTR_SPOT00_0` (`entrance_table.h`: 0x00CD).
-const ENTR_SPOT00_0: u16 = 0x00CD;
-/// `TRANS_TYPE_FADE_BLACK_FAST` (`z64transition.h`).
+/// `ENTR_HYRULE_FIELD_0` (`entrance_table.h`: 0x00CD).
+const ENTR_HYRULE_FIELD_0: u16 = 0x00CD;
+/// `TRANS_TYPE_FADE_BLACK_FAST` (`transition.h`).
 const TRANS_TYPE_FADE_BLACK_FAST: u8 = 42;
 
 /// The torches' flame: `Gfx_SetupDL_25Xlu`, the colours, `gEffFire1DL` under the scroll.
@@ -121,7 +121,7 @@ pub struct BgSpot00Hanebasi {
     pub light_node: Option<LightNode>,
 }
 
-/// `IS_CUTSCENE_LAYER` (`z64save.h`: `sceneLayer >= SCENE_LAYER_CUTSCENE_FIRST`, 4).
+/// `IS_CUTSCENE_LAYER` (`save.h`: `sceneLayer >= SCENE_LAYER_CUTSCENE_FIRST`, 4).
 fn is_cutscene_layer(play: &PlayState) -> bool {
     play.save.scene_layer >= 4
 }
@@ -136,10 +136,10 @@ fn load_collision(play: &PlayState, symbol: &str) -> Result<Arc<CollisionHeader>
     Ok(Arc::new(assets.pack.collision(&keys::collision(OBJECT, symbol))?))
 }
 
-/// The three spiritual stones and not yet `EVENTCHKINF_80` (Zelda's escape not seen).
+/// The three spiritual stones and not yet `EVENTCHKINF_ZELDA_FLED_CASTLE` (Zelda's escape not seen).
 fn stones_before_escape(play: &PlayState) -> bool {
     let s = &play.save;
-    s.check_quest_item(QUEST_KOKIRI_EMERALD) && s.check_quest_item(QUEST_GORON_RUBY) && s.check_quest_item(QUEST_ZORA_SAPPHIRE) && !s.get_event_chk_inf(EVENTCHKINF_80)
+    s.check_quest_item(QUEST_KOKIRI_EMERALD) && s.check_quest_item(QUEST_GORON_RUBY) && s.check_quest_item(QUEST_ZORA_SAPPHIRE) && !s.get_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE)
 }
 
 impl BgSpot00Hanebasi {
@@ -148,12 +148,12 @@ impl BgSpot00Hanebasi {
         // sInitChain: the cull zone (not ported) and ICHAIN_VEC3F_DIV1000(scale, 1000).
         actor.scale = Vec3::ONE;
         let params = actor.params;
-        // DynaPolyActor_Init(DPM_PLAYER), the collision by type, DynaPoly_SetBgActor.
+        // DynaPolyActor_Init(DYNA_TRANSFORM_POS), the collision by type, DynaPoly_SetBgActor.
         let symbol = if params == DT_DRAWBRIDGE { DRAWBRIDGE_COL } else { CHAINS_COL };
         let mut bg = BG_ACTOR_MAX;
         let mut this = BgSpot00Hanebasi { actor, bg, action: Action::DoNothing, dest_angle: 0, light_node: None };
         match load_collision(play, symbol) {
-            Ok(h) => bg = play.col.dyna.set_bg_actor(h, source(&this.actor), DPM_PLAYER),
+            Ok(h) => bg = play.col.dyna.set_bg_actor(h, source(&this.actor), DYNA_TRANSFORM_POS),
             Err(e) => log::error!("Bg_Spot00_Hanebasi: {e:#}"),
         }
         this.bg = bg;
@@ -262,12 +262,12 @@ impl BgSpot00Hanebasi {
             if stopped {
                 audio_play_actor_sfx2(play, NA_SE_EV_BRIDGE_CLOSE_STOP);
             } else {
-                self.actor.func_8002f974(NA_SE_EV_BRIDGE_CLOSE - SFX_FLAG);
+                self.actor.play_sfx_flagged(NA_SE_EV_BRIDGE_CLOSE - SFX_FLAG);
             }
         } else if stopped {
             audio_play_actor_sfx2(play, NA_SE_EV_BRIDGE_OPEN_STOP);
         } else {
-            self.actor.func_8002f974(NA_SE_EV_BRIDGE_OPEN - SFX_FLAG);
+            self.actor.play_sfx_flagged(NA_SE_EV_BRIDGE_OPEN - SFX_FLAG);
         }
     }
 
@@ -282,20 +282,20 @@ impl BgSpot00Hanebasi {
     }
 
     /// The child-only part of the drawbridge's update in Hyrule Field: with the three stones
-    /// before `EVENTCHKINF_80`, Link on the bridge's way (x within 450, z 1080 to 1700, not in a
-    /// cutscene) starts Zelda's escape (`ENTR_SPOT00_0` with cutscene 0xFFF1); facing it within
+    /// before `EVENTCHKINF_ZELDA_FLED_CASTLE`, Link on the bridge's way (x within 450, z 1080 to 1700, not in a
+    /// cutscene) starts Zelda's escape (`ENTR_HYRULE_FIELD_0` with cutscene 0xFFF1); facing it within
     /// 3000, the storm.
     fn drawbridge_field(&mut self, play: &mut PlayState) {
-        if play.scene_id != SCENE_SPOT00 || !(stones_before_escape(play) && !play.save.adult) {
+        if play.scene_id != SCENE_HYRULE_FIELD || !(stones_before_escape(play) && !play.save.adult) {
             return;
         }
         let Some(pos) = play.player.and_then(|h| play.actors.actor(h)).map(|p| p.world_pos) else { return };
         if pos.x > -450.0 && pos.x < 450.0 && pos.z > 1080.0 && pos.z < 1700.0 && !play.play_in_cs_mode() {
-            play.save.set_event_chk_inf(EVENTCHKINF_80);
+            play.save.set_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE);
             play.save.set_event_chk_inf(EVENTCHKINF_82);
             self.action = Action::DoNothing;
-            play.func_8002df54(None, 8);
-            play.transition.next_entrance_index = ENTR_SPOT00_0;
+            play.player_set_cs_action_with_halted_actors(None, 8);
+            play.transition.next_entrance_index = ENTR_HYRULE_FIELD_0;
             play.save.next_cutscene_index = 0xFFF1;
             play.transition.trigger = TRANS_TRIGGER_START;
             play.transition.ty = TRANS_TYPE_FADE_BLACK_FAST;

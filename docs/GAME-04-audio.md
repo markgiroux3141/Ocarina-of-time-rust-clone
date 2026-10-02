@@ -6,7 +6,7 @@ pack.
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The import and the synth: the audio data in the pack, `eng_audio` (the audio library and its microcode, offline and through an output device), the mixer's ADR | done |
-| 2 | The game's music: the scenes' sound settings in the pack, the sequence commands (`code_800F9280.c`), the scene's music and the ambience (`code_800EC960.c`, `Environment_PlaySceneSequence`), the boundary between the game's thread and the audio thread | done |
+| 2 | The game's music: the scenes' sound settings in the pack, the sequence commands (`sequence.c`), the scene's music and the ambience (`general.c`, `Environment_PlaySceneSequence`), the boundary between the game's thread and the audio thread | done |
 | 3 | Sound effects: `Audio_PlaySfxGeneral` and the sfx channels, the calls the ported code marks as left out | done: the engine whole, Player, the actors, the HUD, the camera, the collision check, the phase's exit test |
 
 **Phase exit:** Kokiri Forest's music plays and loops like the game, and a scripted run's sound
@@ -47,38 +47,38 @@ The tests: 270 pass, 1 ignored (257 before). The goldens are unchanged: 84 of 84
    - the ROM's `Audiobank`, `Audioseq` and `Audiotable` as they are, with their ROM addresses
      (`audio/rom/<file>`, `eng_audio::RomFile`);
    - `audio/tables` (`eng_audio::AudioTables`): the four audio tables from the ROM where
-     `data/audio_tables.rodata.s` puts them; `audio_data.c`'s tables (the wave samples,
+     `data/audio_tables.rodata.s` puts them; `audio/internal/data.c`'s tables (the wave samples,
      `gPitchFrequencies`, the bend tables, the pan volumes, the Haas delays, the default envelope
-     and short-note tables, the filters, `D_8012FBA8`) and `audio_init_params.c`'s 18 audio specs
+     and short-note tables, the filters, `D_8012FBA8`) and `session_config.c`'s 18 audio specs
      with their reverbs, read from the C (`oot_import::audio`); `gAudioHeap`'s size and the init
-     sizes' `#define`s; `gTatumsPerBeat`;
+     sizes' `#define`s; `gTempoData.seqTicksPerBeat`;
    - the microcode's resampler filters, from the ROM's `aspMainData` at 0xE0 (`data/rsp.rodata.s`);
-   - the 0x11000 bytes of `code` from `func_800E4FE0` that `gWaveSamples[8]` reads as noise.
+   - the 0x11000 bytes of `code` from `AudioThread_Update` that `gWaveSamples[8]` reads as noise.
 2. **`eng_audio`, the audio library** (engine layer; `cargo test -p layering` knows it, and only
    it may use `cpal`), ported function by function ([ADR 0025](adr/0025-audio-mixer.md)):
-   - `context`: `gAudioContext` and every struct of `z64audio.h`; notes, layers, channels and
+   - `context`: `gAudioCtx` and every struct of `audio.h`; notes, layers, channels and
      players as arrays linked by index; the C's `AudioListItem` lists as an arena of nodes, in
      the C's order; `SeqScriptState` as its 0x1C bytes, so the unchecked call depth lands where
      the C's does;
    - `ram`, `layout`: a simulated RDRAM with KSEG0 addresses and a cartridge of the three files;
      `Sample`, `Instrument`, `Drum`, `AdpcmLoop`, `AdpcmBook` and `EnvelopePoint` read and
      written where they are;
-   - `heap` (`audio_heap.c`): the pools, the persistent and temporary caches, the sample caches,
+   - `heap` (`heap.c`): the pools, the persistent and temporary caches, the sample caches,
      the ADSR decay table, the filters, the reset steps, `AudioHeap_Init`;
-   - `load` (`audio_load.c`): the sample DMAs (`AudioLoad_DmaSampleData` and its two reuse
+   - `load` (`audio/internal/load.c`): the sample DMAs (`AudioLoad_DmaSampleData` and its two reuse
      queues), the sync, async, slow and script loads, the preloads, font relocation,
      `AudioLoad_Init`;
-   - `seqplayer` (`audio_seqplayer.c`): the flow control, the layers' five steps, the channels'
+   - `seqplayer` (`seqplayer.c`): the flow control, the layers' five steps, the channels'
      and players' interpreters, player init and reset;
-   - `effects` (`audio_effects.c`): the channels' and players' volume, pan and bend, portamento,
+   - `effects` (`effects.c`): the channels' and players' volume, pan and bend, portamento,
      vibrato, `Audio_AdsrUpdate`;
-   - `playback` (`audio_playback.c`): `Audio_ProcessNotes`, `Audio_InitNoteSub`, note allocation
+   - `playback` (`playback.c`): `Audio_ProcessNotes`, `Audio_InitSampleState`, note allocation
      and its policies, the synthetic waves;
-   - `synthesis` (`audio_synthesis.c`): the command list of a frame: each note's decode,
+   - `synthesis` (`synthesis.c`): the command list of a frame: each note's decode,
      resample, gain, filter, envelope mixer and Haas effect, the reverbs' ring buffers, the
      interleave;
-   - `thread` (`code_800E4FE0.c`): `func_800E5000` (one audio frame per retrace), the command
-     queue (`Audio_QueueCmd*`, `Audio_ScheduleProcessCmds`, `Audio_ProcessCmds`), the library's,
+   - `thread` (`audio/internal/thread.c`): `AudioThread_UpdateImpl` (one audio frame per retrace), the command
+     queue (`AudioThread_QueueCmd*`, `AudioThread_ScheduleProcessCmds`, `AudioThread_ProcessCmds`), the library's,
      players' and channels' commands; and the AI's queue (`Ai`), which answers `osAiGetLength`.
 3. **The microcode** (`rsp`): the commands built word for word as `abi.h`'s macros build them,
    run on a 4 KB DMEM after mupen64plus-rsp-hle's `alist_process_nead_oot`, with `aClearBuffer`
@@ -136,7 +136,7 @@ The tests: 270 pass, 1 ignored (257 before). The goldens are unchanged: 84 of 84
 
 ### Known gaps
 
-- **The game's side** (`code_800EC960.c`, `code_800F7260.c`, `code_800F9280.c`,
+- **The game's side** (`general.c`, `sfx.c`, `sequence.c`,
   `z_sfx_source.c`): which sequence plays where and when, the ambience, the sound effects. The
   scenes' sound settings (`SCENE_CMD_SOUND_SETTINGS`) aren't in the pack yet. Milestones 2 and 3.
 - **Not exercised on the game's data:** the Haas effect and headset mode (the sound mode is
@@ -153,7 +153,7 @@ The tests: 270 pass, 1 ignored (257 before). The goldens are unchanged: 84 of 84
 **Answer:** done. The game starts and changes its own music: each scene's sound settings come
 from the pack, `Play_Init` queues the spec change and `Environment_PlaySceneSequence` the music
 (or, by night, the nature ambience), and every frame's `Audio_Update` turns the game's sequence
-commands into the library's, as `code_800F9280.c` and `code_800EC960.c` do. Kokiri Forest
+commands into the library's, as `sequence.c` and `general.c` do. Kokiri Forest
 starts and loops its music headless and in the window with no `--music`. Leaving a scene fades
 every player out, the next scene changes the spec and starts its own; back in the forest from a
 house or the shop, the music resumes where it left off, as the game's does. Chests and items
@@ -168,25 +168,25 @@ The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84
    sequence); and the game's audio tables, read from the C (`table/audio`,
    `oot_game::audio::AudioGameTables`): `sSeqFlags` with its `SEQ_FLAG_*` defines,
    `sSpecReverbs`, `sNatureAmbienceDataIO` with `sequence.h`'s `NATURE_IO_*` macros and enums
-   expanded, `gSoundModeList`. `ootx scene-info` prints a layer's sound settings.
+   expanded, `gSoundOutputModes`. `ootx scene-info` prints a layer's sound settings.
 2. **The boundary** ([ADR 0026](adr/0026-the-games-audio.md), `eng_audio::link`): what the
    game's thread does to the library (`GameOp`: commands, schedules, the ring's rewind, the spec
    change) is applied in order by the audio side (`AudioContext::apply`) before its next
    retrace; what the game reads of it (`AudioView`: the players' `enabled`, `tempo` and IO
    ports, the channels' IO ports and note priorities, `updatesPerFrame`, the reset and load
-   queues' messages, the notes sounding) comes back after. `func_800E5F88`'s audio side;
+   queues' messages, the notes sounding) comes back after. `AudioThread_ResetAudioHeap`'s audio side;
    `AudioTables::fonts_for_sequence` (`AudioLoad_GetFontsForSequence`); `AudioView::boot`.
    Offline: `Renderer::game_frame`; the window: `AudioOutput::send_ops` and `take_view`.
 3. **The game's side, ported whole** (`oot_game::audio`, the game layer):
-   - `seqcmd` (`code_800F9280.c`): `Audio_QueueSeqCmd`, `Audio_ProcessSeqCmd(s)` (every op:
+   - `seqcmd` (`sequence.c`): `Audio_QueueSeqCmd`, `Audio_ProcessSeqCmd(s)` (every op:
      the starts and stops, the players' queues, the volume, frequency and tempo fades, the IO
      ports, the channel masks, the setup commands, the sound mode, the spec change),
-     `func_800F9280`, `func_800F9474`, `func_800FA0B4`, `func_800FA11C`, `Audio_SetVolScale`,
-     `func_800FA3DC`, `func_800FAD34`, the resets;
-   - `bgm` (`code_800EC960.c`'s sequences): `Audio_Update` (`func_800F3054`),
-     `func_800F5550` (the scene's music, resumed through `D_8013062C` and port 7),
-     `func_800F56A8`, `Audio_SetSequenceMode` and the enemy music, `Audio_SplitBgmChannels`,
-     `Audio_PlayFanfare` and `func_800F5CF8`, the mini-boss and ambience swaps and their
+     `Audio_StartSequence`, `Audio_StopSequence`, `Audio_GetActiveSeqId`, `Audio_IsSeqCmdNotQueued`, `Audio_SetVolumeScale`,
+     `Audio_UpdateActiveSequences`, `func_800FAD34`, the resets;
+   - `bgm` (`general.c`'s sequences): `Audio_Update`,
+     `Audio_PlaySceneSequence` (the scene's music, resumed through `sSeqResumePoint` and port 7),
+     `Audio_UpdateSceneSequenceResumePoint`, `Audio_SetSequenceMode` and the enemy music, `Audio_SplitBgmChannels`,
+     `Audio_PlayFanfare` and `Audio_UpdateFanfare`, the mini-boss and ambience swaps and their
      restores, the river and Ganon's Tower volumes, `func_800F6964` (the fade on leaving),
      `Audio_PlayNatureAmbienceSequence`, `Audio_StartNatureAmbienceSequence`,
      `Audio_SetNatureAmbienceChannelIO`, `Audio_InitSound`, `func_800F6C34`, `func_800F7170`,
@@ -196,12 +196,12 @@ The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84
      no ambience, by day, by night), `Environment_PlayTimeBasedSequence` (every state),
      `Environment_ForcePlaySequence`;
    - `offline`: `OfflineAudio`, the headless audio side.
-4. **Wired into play:** the boot (`Audio_InitSound`, then the title screen's `func_800F6700` with a fresh SRAM's sound setting, stereo: the title and the file select aren't ported, so their own music isn't either); `Play_Init` (`Audio_SetExtraFilter(0)`, the sound settings,
+4. **Wired into play:** the boot (`Audio_InitSound`, then the title screen's `Audio_SetSoundOutputMode` with a fresh SRAM's sound setting, stereo: the title and the file select aren't ported, so their own music isn't either); `Play_Init` (`Audio_SetExtraFilter(0)`, the sound settings,
    `Environment_Init`'s `TIMESEQ_DAY_BGM`, `Environment_PlaySceneSequence` and the save's
    `seqId`/`natureAmbienceId`), `GameAudio` carried over a scene change
    (`PlayState::play_init_with`), the transition's fade-out unless the next entrance continues
    the music, `Environment_Update`'s time of day, `Audio_Update` at each frame's end and as a
-   game state ends, the room change's reverb (`func_80097534`), `Audio_SetCutsceneFlag` in
+   game state ends, the room change's reverb (`Room_FinishRoomChange`), `Audio_SetCutsceneFlag` in
    `z_demo.c`'s six places; Player's `Audio_SetSequenceMode` every frame and its item-get
    fanfare (`func_8084DFF4`, after `Item_Give`) and the secret hole's fade; `En_Box`'s chest
    fanfare. The save holds `seqId`, `natureAmbienceId`, `forcedSeqId` (`SaveContext_Init`'s).
@@ -218,12 +218,12 @@ The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 276 passed, 1 ignored |
-| Kokiri Forest from a new game (`oot_actors --test music`) | `Play_Init` queues, as the C does, `F0000001` (spec 1, `seqId` disabled), `700700FF` and `0000003C` (`func_800F5550`: port 7 to 0xFF, `sSeqFlags[NA_BGM_GENERAL_SFX]` lacking `SEQ_FLAG_5`); `Audio_InitSound`'s `46000000 FF000000` and `82020000 7` come first, and the title's sound mode (`E0000000`: `func_800F6700(0)`, stereo). The first `Audio_Update` gives `F0000000 0` (stereo), the reset to spec 1, `46000000`, `F8`, `46000007`, `82003C00 0`, a schedule, and `func_800FA3DC`'s four `4p01007F`. Then nothing for the 6 game frames of the reset (18 audio frames), then `func_800FAD34`'s `46020000` and `func_800F7170`. The forest's sequence plays on player 0, the sound effects' 0 on player 2; after 1212 game frames, 7014 ticks (past the loop at 5952), 735 notes, still sounding in the last 5 s |
-| From Link's house into the forest | The exit: `func_800F6964(0x14)`'s `101E00FF`, `111E00FF`, 15 sfx channel fades (all but the ocarina's), `131E00FF`; the forest: `F0000001`, `70070000`, `0000003C` (from `NA_BGM_LINK_HOUSE`'s `SEQ_FLAG_5` to the forest's `SEQ_FLAG_4`: port 7 from `D_8013062C`) |
+| Kokiri Forest from a new game (`oot_actors --test music`) | `Play_Init` queues, as the C does, `F0000001` (spec 1, `seqId` disabled), `700700FF` and `0000003C` (`Audio_PlaySceneSequence`: port 7 to 0xFF, `sSeqFlags[NA_BGM_GENERAL_SFX]` lacking `SEQ_FLAG_RESUME_PREV`); `Audio_InitSound`'s `46000000 FF000000` and `82020000 7` come first, and the title's sound mode (`E0000000`: `Audio_SetSoundOutputMode(0)`, stereo). The first `Audio_Update` gives `F0000000 0` (stereo), the reset to spec 1, `46000000`, `F8`, `46000007`, `82003C00 0`, a schedule, and `Audio_UpdateActiveSequences`'s four `4p01007F`. Then nothing for the 6 game frames of the reset (18 audio frames), then `func_800FAD34`'s `46020000` and `func_800F7170`. The forest's sequence plays on player 0, the sound effects' 0 on player 2; after 1212 game frames, 7014 ticks (past the loop at 5952), 735 notes, still sounding in the last 5 s |
+| From Link's house into the forest | The exit: `func_800F6964(0x14)`'s `101E00FF`, `111E00FF`, 15 sfx channel fades (all but the ocarina's), `131E00FF`; the forest: `F0000001`, `70070000`, `0000003C` (from `NA_BGM_LINK_HOUSE`'s `SEQ_FLAG_RESUME_PREV` to the forest's `SEQ_FLAG_RESUME`: port 7 from `sSeqResumePoint`) |
 | Kokiri Forest at 20:00 | `Audio_PlayNatureAmbienceSequence(NATURE_ID_KOKIRI_REGION)`'s commands from `sNatureAmbienceDataIO[4]`, then the night's critters (`TIMESEQ_NIGHT_CRITTERS`: critter 0 off, 1 to 3 on, while the start is still queued); `NA_BGM_NATURE_AMBIENCE` plays, its channels hold their critters' types; 91 notes in 20 s |
 | The chests (`oot_actors --test chest`) | The Kokiri Sword's chest: `0101092B` (`NA_BGM_OPEN_TRE_BOX \| 0x900`), then `01010922` (`NA_BGM_ITEM_GET \| 0x900`); a second heart piece: `01010039` (`NA_BGM_SMALL_ITEM_GET`) |
-| The boundary (`oot_game --test audio`) | `AudioView::boot`'s `updatesPerFrame` 3 is `AudioLoad_Init`'s; `func_800E5F88`'s paths: the reset runs over 18 audio frames and posts its spec; the same spec again: -2; another early: -3, switched; another late: the reset finishes first |
-| The pack (`oot_import --test pack`) | The game's audio tables are the importer's reading of the C (`sSeqFlags` by the rows' `NA_BGM_*`, `sSpecReverbs` 40 and 15, the general night's ambience, `gSoundModeList`); five scenes' sound settings per layer are the ROM headers'; Kokiri Forest by day: spec 1, `NATURE_ID_KOKIRI_REGION`, `NA_BGM_KOKIRI` |
+| The boundary (`oot_game --test audio`) | `AudioView::boot`'s `updatesPerFrame` 3 is `AudioLoad_Init`'s; `AudioThread_ResetAudioHeap`'s paths: the reset runs over 18 audio frames and posts its spec; the same spec again: -2; another early: -3, switched; another late: the reset finishes first |
+| The pack (`oot_import --test pack`) | The game's audio tables are the importer's reading of the C (`sSeqFlags` by the rows' `NA_BGM_*`, `sSpecReverbs` 40 and 15, the general night's ambience, `gSoundOutputModes`); five scenes' sound settings per layer are the ROM headers'; Kokiri Forest by day: spec 1, `NATURE_ID_KOKIRI_REGION`, `NA_BGM_KOKIRI` |
 | The new file's run with sound (`sandbox-audio-log.bat`) | The same route, frame for frame (11748 frames), with 587 s of sound: the opening's layers start what their headers name, Link's house 0x1F, the forest 0x3C, Mido's house 0x1F and back (resumed: `001E003C`), the shop 0x55 and back (resumed), the Deku Tree 0x1C with spec 3; the chest's fanfare and the sword's and shield's item fanfares on player 1, the music fading under them and back. 4945 sequence commands, 18488 library commands; 7.5 s with the audio offline |
 | The window | No `--music`: the device plays the forest's sequence on player 0 and the sound effects' on player 2; the queue held 1961 to 2021 frames over 20 s and never ran dry. Not yet heard by hand |
 | Import | 12.5 s; 63.7 MB; format 14, into `out/data11` |
@@ -234,7 +234,7 @@ The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84
 - **[ADR 0026](adr/0026-the-games-audio.md):** the game's thread and the audio thread meet at
   the end of each game frame: the frame's `GameOp`s in, applied in order before the next
   retrace; an `AudioView` back, read the whole next frame; the queues' messages kept until
-  received. `func_800E5F88` split between the two; its blocking wait finishes the reset at
+  received. `AudioThread_ResetAudioHeap` split between the two; its blocking wait finishes the reset at
   once. The game's side's statics as one struct carried over a scene change. The tables and
   the sound settings in the pack.
 - **`--music` is the C's forced sequence** (`Environment_ForcePlaySequence`), not a side door.
@@ -251,14 +251,14 @@ The tests: 276 pass, 1 ignored (270 before). The goldens are unchanged: 84 of 84
   stored for them. (Milestone 3 has started on all of this.)
 - **Cutscene audio** stays deferred (BACKLOG #10): the opening's layers start what their
   headers name (the sound effects' sequence, the nature ambience), and their scripts'
-  `CS_CMD_PLAYBGM`, `_STOPBGM`, `_FADEBGM` do nothing.
+  `CS_CMD_START_SEQ`, `_STOPBGM`, `_FADEBGM` do nothing.
 - **Time doesn't pass**, so the time of day's music stays in the state a scene starts in; no
   weather, so the rain's checks always pass. The day's count, the cucco's crow and the egg's
   hatching at dawn wait for the clock.
 - **Not ported here:** the ocarina (`AudioOcarina_*`), the debug screen (`AudioDebug_*`),
   `Audio_PlaySariaBgm` (no caller yet), the pause menu's mute (`func_800F64E0` is ported, its
   caller isn't), the enemy music (`targetCtx.bgmEnemy` is never set: no enemies), game over's
-  music, the bottle catch's fanfare; `Interface_ChangeAlpha(1)` in the transition's setup.
+  music, the bottle catch's fanfare; `Interface_ChangeHudVisibilityMode(1)` in the transition's setup.
 - **The approximations** (ADR 0026): the spec change's wait, the game's reads at frame
   boundaries.
 - **By hand:** the window's music hasn't been heard by ear yet (`game.bat`, `game-night.bat`,
@@ -290,23 +290,23 @@ The first part (the milestone's start, committed in f82e932):
 1. **The tables in the pack** (`table/audio`, still format 14): `gSfxParams` from the seven
    bank tables (`include/tables/sfx/*.h`, 1259 rows with their names), the banks' sizes
    (`gSfxBanks`' arrays), `gChannelsPerBank`, `gUsedChannelsPerBank`, `gIsLargeSfxBank`,
-   `sBehindScreenZ`, `D_801305E4`, `D_80119E10` (the floors' footsteps, `z_bgcheck.c`), and
-   `z_player.c`'s 40 `struct_80832924` tables (the animations' sounds); `sGanonsTowerLevelsVol`
+   `sBehindScreenZ`, `sSfxSwordChargeFreqLevels`, `sSurfaceMaterialToSfxOffset` (the floors' footsteps, `z_bgcheck.c`), and
+   `z_player.c`'s 40 `AnimSfxEntry` tables (the animations' sounds); `sGanonsTowerLevelsVol`
    moved here from the code.
 2. **The engine** ([ADR 0027](adr/0027-sound-effects.md), `oot_game::audio::sfx`):
-   `code_800F7260.c` whole (`Audio_PlaySfxGeneral` and its swap table,
+   `sfx.c` whole (`Audio_PlaySfxGeneral` and its swap table,
    `Audio_ProcessSfxRequest(s)`, the banks' lists, `Audio_ChooseActiveSfx`,
    `Audio_PlayActiveSfx`, `Audio_RemoveSfxBankEntry`, every `Audio_StopSfx*`,
    `Audio_IsSfxPlaying`, `Audio_ResetSfx`, the bgm mutes, the unused bank lerps);
-   `code_800EC960.c`'s sound effect parts (`Audio_ComputeSfxVolume`, `_Reverb`, `_PanSigned`,
+   `general.c`'s sound effect parts (`Audio_ComputeSfxVolume`, `_Reverb`, `_PanSigned`,
    `_FreqScale`, `func_800F37B8`, `func_800F3990`, `Audio_SetSfxProperties`, `func_800F3F84`,
    `func_800F4010` and the other helpers, the river and the waterfall, the transposed ones);
-   `z_lib.c`'s `func_80078884`, `func_800788CC`, `func_80078914`; `AudioMgr_StopAllSfx`.
+   `z_lib.c`'s `Sfx_PlaySfxCentered`, `Sfx_PlaySfxCentered2`, `Sfx_PlaySfxAtPos`; `AudioMgr_StopAllSfx`.
 3. **Positions:** `projectedPos` and `projectedW` on every actor, from `Actor_DrawAll`'s spot in
-   the frame; `actor->sfx` and its setters (`func_8002F8F0`...), played there
-   (`func_80030ED8`); cleared by `Actor_UpdateAll`; `Actor_Delete` stops the actor's sounds.
-4. **The boundary** (ADR 0026): the view carries `audioRandom`, `audRand` and the count
-   register's value; `GameOp::SetAudRand` sends the game's `Audio_NextRandom` back.
+   the frame; `actor->sfx` and its setters (`Actor_PlaySfx_Flagged2`...), played there
+   (`Actor_UpdateFlaggedAudio`); cleared by `Actor_UpdateAll`; `Actor_Delete` stops the actor's sounds.
+4. **The boundary** (ADR 0026): the view carries `audioRandom`, `sAudioRandom` and the count
+   register's value; `GameOp::SetAudRand` sends the game's `AudioThread_NextRandom` back.
 5. **The message box:** `Message_ShouldAdvance`'s `NA_SE_SY_MESSAGE_PASS`, the choice cursor,
    `NA_SE_SY_MESSAGE_END`, the text's own sound codes, `Message_Update`'s `NA_SE_SY_DECIDE`, and
    the C's silent (id 0) calls.
@@ -320,9 +320,9 @@ The rest (this session):
 7. **Sound sources** (`z_sfx_source.c`, `oot_game::sfx_source`): the play state's sixteen
    fixed-position sources (`SfxSource_PlaySfxAtFixedWorldPos`, `_UpdateAll` in `Play_Update`'s
    order, `_InitAll`), positioned through `SfxPos::Source` (ADR 0027's pointer naming).
-8. **`z_actor.c`'s helpers:** `Audio_PlayActorSfx2`, `func_8002F7DC`, `func_8002F850` (a
-   bounce: the bomb's and the floor's), `func_8002F994` (the timer's tick); the lock-on and
-   lock-off (`func_8002C7BC`, `Actor_UpdateAll`: `NA_SE_SY_LOCK_ON` or `_HUMAN`, `_LOCK_OFF`).
+8. **`z_actor.c`'s helpers:** `Actor_PlaySfx`, `Player_PlaySfx`, `Actor_PlaySfx_SurfaceBomb` (a
+   bounce: the bomb's and the floor's), `Actor_PlaySfx_FlaggedTimer` (the timer's tick); the lock-on and
+   lock-off (`Attention_Update`, `Actor_UpdateAll`: `NA_SE_SY_LOCK_ON` or `_HUMAN`, `_LOCK_OFF`).
 9. **The actors:**
    - `En_Box`: the lid's bounce when a chest falls, the appearing chest, the unlock and the lid
      on the opening's frames 30 and 90, the mimic's breath;
@@ -338,7 +338,7 @@ The rest (this session):
    - `En_Kusa`, `En_Ishi`: the cut bush and the broken rock through sound sources at them;
    - `En_Item00`: `NA_SE_SY_GET_RUPY` or `_GET_ITEM` as Link takes one; `En_Wonder_Item`'s
      drops' `NA_SE_SY_GET_ITEM`;
-   - `En_Goroiwa`: the rolling loop and Link's body hit (`func_8002F7DC` at Player);
+   - `En_Goroiwa`: the rolling loop and Link's body hit (`Player_PlaySfx` at Player);
    - `En_Kanban`: the sword's strike, the pieces' bounces, the splash;
    - `En_Ossan`: every one of its 23 calls (the cursor, the passes, decide, the errors);
      `En_Md`'s correct chime, `En_Ko`'s chest-appear chime, `Bg_Treemouth`'s wooden door;
@@ -359,20 +359,20 @@ The rest (this session):
       actors now reach through the play state's audio (`Option<&mut GameAudio>`: none for the
       debug presets and `Play_Init`'s triggers);
     - `z_play.c`: the viewpoint's zoom (`Play_SetViewpoint`) and the shop's error on C-Up;
-    - `z_camera.c`: the mode changes' sounds (`Camera_ChangeModeFlags`: the attention sounds,
+    - `z_camera.c`: the mode changes' sounds (`Camera_RequestModeImpl`: the attention sounds,
       first person's error) and the crawl's steps (`Camera_Subj4`), queued by the camera
       (`CamSfx`) and played by the play state where the C plays them;
     - `z_collision_check.c`: `CollisionCheck_HitEffects`' sounds (the sword's strikes by the
       element's type, the shield's bounce, metal's and wood's), returned by the check in order;
-    - `code_800EC960.c`: `Audio_SetBaseFilter` (the underwater filter and its bubbling),
+    - `general.c`: `Audio_SetBaseFilter` (the underwater filter and its bubbling),
       `func_800F64E0`'s window sounds;
     - `z_kankyo.c`: the evening's dog and the morning's cucco (time doesn't pass yet).
 11. **Player's water** (`func_8083CFA8`'s splash check on the scene's water boxes,
     `func_8083D0A8`, `func_8083D12C`, `func_8083D36C`, `func_8083D53C`): diving in and jumping
-    out, the dive's bubbles, surfacing, the underwater filter (`unk_840`); the swim strokes
+    out, the dive's bubbles, surfacing, the underwater filter (`underwaterTimer`); the swim strokes
     (`func_8084D530`, `D_808549D0`); and in the ported functions left: the falls' voices
-    (`func_8084411C`, `func_80843E14`), the surfacing breath (`func_8084E1EC`), the 15-step
-    climb out of water (`func_80845668`), the recovery sound for a gain.
+    (`Player_Action_8084411C`, `func_80843E14`), the surfacing breath (`Player_Action_8084E1EC`), the 15-step
+    climb out of water (`Player_Action_80845668`), the recovery sound for a gain.
 12. **A fix to the first part:** a new bank entry took its position at the next `Audio_Update`
     (the entry's slot kept its last occupant's); the positions are now read just before
     `func_800F8F88`, after the requests are taken in, as the C reads the new pointer.
@@ -429,10 +429,10 @@ The rest (this session):
 - **Player:** 95 sound sites in 65 functions not ported (items, the shield, bottles, the
   ocarina, the boomerang and hookshot, Epona, swimming under water, the dives' and the deep
   water's...); in ported functions, the branches for what isn't ported: the items' use
-  (`func_80835F44`: the errors, the lens, the masks' `NA_SE_PL_CHANGE_ARMS`), first person
-  (`func_8083B040`, `func_8083B998`'s C-Up error), the hookshot's lash (`func_80836670`),
+  (`Player_UseItem`: the errors, the lens, the masks' `NA_SE_PL_CHANGE_ARMS`), first person
+  (`Player_ActionHandler_13`, `Player_ActionHandler_0`'s C-Up error), the hookshot's lash (`Player_UpdateUpperBody`),
   being frozen or shocked (`func_80837C0C` kinds 3 and 4), the hover and iron boots
-  (`func_8084029C`, `func_8084D610`), Ruto's cry when held (`func_80843E14`).
+  (`func_8084029C`, `Player_Action_8084D610`), Ruto's cry when held (`func_80843E14`).
 - **Actors:** lifting bushes and rocks (their pull-up sounds and the throws' landings); the
   healing fairy's sound (`EffectSsDeadSound`, an effect); the sign's ocarina repair; the
   chests that need the ocarina; a locked door's unlock is wired but no door locks here.

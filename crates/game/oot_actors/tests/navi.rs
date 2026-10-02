@@ -1,15 +1,15 @@
 //! `En_Elf` (`z_en_elf.c`): Navi and the Kokiri children's fairies, against the C:
 //! - `Player_Init` spawns Navi (`Player_SpawnFairy`, `FAIRY_NAVI`) 50 above Link
-//!   (`D_80854778`), in no room, at scale 0.008 (`ICHAIN_VEC3F_DIV1000(scale, 8)`), with
+//!   (`sNaviSpawnPosOffset`), in no room, at scale 0.008 (`ICHAIN_VEC3F_DIV1000(scale, 8)`), with
 //!   `fairyFlags` 4 and `unk_2C7` 0x14; her update is `func_80A053F0`;
-//! - with nothing to point at and `PLAYER_STATE2_20` clear (a new scene's Player), mode 0 turns
+//! - with nothing to point at and `PLAYER_STATE2_NAVI_ACTIVE` clear (a new scene's Player), mode 0 turns
 //!   at once into 7 (`func_80A0461C`: `NA_SE_EV_NAVY_VANISH`): into Link's hat, which she
 //!   reaches within the 30 frames of `unk_2AE` and stays in (8), undrawn (`EnElf_Draw`) at
 //!   scale 0;
 //! - `naviTimer` counts outside cutscenes; from 600 to 3000 her update sets Player's
-//!   `naviTextId` from `ElfMessage_GetCUpText`: in Kokiri Forest (`elf_message_field`),
-//!   `ELF_MSG_FLAG(CHECK, 0x40, false, EVENTCHKINF_05)` gives 0x140 on a new save;
-//! - C-Up then talks to her (`func_8083B644`, `func_80853148`): her text, `naviTimer` 3001
+//!   `naviTextId` from `QuestHint_GetNaviTextId`: in Kokiri Forest (`elf_message_field`),
+//!   `QUEST_HINT_FLAG(CHECK, 0x40, false, EVENTCHKINF_05)` gives 0x140 on a new save;
+//! - C-Up then talks to her (`Player_ActionHandler_Talk`, `Player_StartTalking`): her text, `naviTimer` 3001
 //!   (`func_80A053F0`: the text is her C-Up text), her talk (`func_80A052F4`) until it closes;
 //! - a Kokiri's fairy (`FAIRY_KOKIRI`) bobs 1500 × 0.008 + 40 above its parent
 //!   (`func_80A0353C`), in a colour of `sColorFlags` with alpha 0.
@@ -21,7 +21,7 @@ use std::sync::Arc;
 use eng_input::pad::{BTN_A, BTN_CUP, PadState};
 use glam::Vec3;
 use oot_actors::PlayExt;
-use oot_actors::en_elf::{self, EnElf, FAIRY_KOKIRI, FAIRY_NAVI, PLAYER_STATE2_20};
+use oot_actors::en_elf::{self, EnElf, FAIRY_KOKIRI, FAIRY_NAVI, PLAYER_STATE2_NAVI_ACTIVE};
 use oot_actors::player::Action;
 use oot_game::actor_ctx::{ActorImpl, PLAYER_BODYPART_HAT};
 use oot_game::message::*;
@@ -55,16 +55,16 @@ fn idle(w: &mut PlayState, n: usize) {
 fn player_init_spawns_navi_and_she_goes_into_links_hat() {
     let Some(a) = assets() else { return };
     // Kokiri Forest's spawn 3, Link's porch: nothing targetable in range.
-    let Some(mut w) = enter(&a, "ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_3") else { return };
     let p = w.player().actor.world_pos;
     let n = navi(&w);
     assert_eq!(n.actor.params, FAIRY_NAVI);
     assert_eq!((n.actor.room, n.actor.scale, n.fairy_flags, n.unk_2c7, n.update_fn, n.action), (-1, Vec3::splat(0.008), 4, 0x14, en_elf::Update::Navi, en_elf::Action::Navi));
-    // Player_SpawnFairy: world.pos + D_80854778 (0, 50, 0) turned by the shape's yaw.
+    // Player_SpawnFairy: world.pos + sNaviSpawnPosOffset (0, 50, 0) turned by the shape's yaw.
     assert_eq!(n.actor.world_pos, p + Vec3::new(0.0, 50.0, 0.0));
     // Mode 0 (func_80A01C38(0)): unk_2C0 100.
     assert_eq!((n.unk_2a8, n.unk_2c0), (0, 100));
-    // PLAYER_STATE2_20 clear: into the hat on the first frame, there within unk_2AE's 30.
+    // PLAYER_STATE2_NAVI_ACTIVE clear: into the hat on the first frame, there within unk_2AE's 30.
     let mut into_hat = None;
     for f in 1..60 {
         // Navi's update reads bodyPartsPos from the last frame's draw.
@@ -74,7 +74,7 @@ fn player_init_spawns_navi_and_she_goes_into_links_hat() {
         assert!(w.target_ctx.arrow_pointed.is_none());
         if n.unk_2a8 == 7 && into_hat.is_none() {
             into_hat = Some(f);
-            assert_eq!(w.player().state2 & PLAYER_STATE2_20, 0, "PLAYER_STATE2_20 off as she vanishes");
+            assert_eq!(w.player().state2 & PLAYER_STATE2_NAVI_ACTIVE, 0, "PLAYER_STATE2_NAVI_ACTIVE off as she vanishes");
         }
         if n.unk_2a8 == 8 {
             let started = into_hat.expect("mode 7 before 8");
@@ -93,7 +93,7 @@ fn player_init_spawns_navi_and_she_goes_into_links_hat() {
 #[test]
 fn c_up_talks_to_navi_once_she_has_her_text() {
     let Some(a) = assets() else { return };
-    let Some(mut w) = enter(&a, "ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_3") else { return };
     // EnElf_Init: naviTimer below 3000 starts again at 0; func_80A053F0 counts it outside
     // cutscenes.
     assert_eq!(w.save.navi_timer, 0);
@@ -107,8 +107,8 @@ fn c_up_talks_to_navi_once_she_has_her_text() {
     }
     idle(&mut w, 1);
     assert_eq!(w.player().navi_text_id, 0x140);
-    // Player: STATE2_21 (func_8083B644 found her), then on the next update Navi's call on the
-    // HUD (func_808473D4's Interface_SetNaviCall 0x1D, early in Player_UpdateCommon).
+    // Player: STATE2_21 (Player_ActionHandler_Talk found her), then on the next update Navi's call on the
+    // HUD (Player_UpdateInterface's Interface_SetNaviCall 0x1D, early in Player_UpdateCommon).
     idle(&mut w, 1);
     assert_ne!(w.player().state2 & oot_actors::player::STATE2_21, 0);
     assert!(!w.interface_ctx.navi_calling);
@@ -133,7 +133,7 @@ fn c_up_talks_to_navi_once_she_has_her_text() {
     assert_eq!(n.fairy_flags & 0x80, 0x80, "her C-Up text: fairyFlags 0x80");
     assert_eq!(w.save.navi_timer, 3001);
     assert_eq!(w.player().action, Action::Talk);
-    // func_80835EA4(play, 0xB): the camera turns round.
+    // Player_SetTurnAroundCamera(play, 0xB): the camera turns round.
     assert_eq!(w.game_camera.setting, oot_game::camera::CAM_SET_TURN_AROUND);
     // A through it to its end.
     for _ in 0..600 {
@@ -157,7 +157,7 @@ fn c_up_talks_to_navi_once_she_has_her_text() {
 #[test]
 fn the_kokiri_fairies_bob_above_their_children() {
     let Some(a) = assets() else { return };
-    let Some(mut w) = enter(&a, "ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_3") else { return };
     idle(&mut w, 80);
     let fairies: Vec<&EnElf> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnElf>(h)).filter(|e| e.actor.params == FAIRY_KOKIRI).collect();
     assert_eq!(fairies.len(), 9, "the 8 children's and Mido's");
@@ -179,11 +179,11 @@ fn the_kokiri_fairies_bob_above_their_children() {
 fn navi_follows_her_cue_in_the_deku_trees_talk() {
     use oot_game::cutscene::CS_STATE_IDLE;
     let Some(a) = assets() else { return };
-    // In front of the tree: his first talk (D_808BCE20) starts by itself.
-    let Some(mut w) = enter(&a, "ENTR_SPOT04_1") else { return };
+    // In front of the tree: his first talk (gDekuTreeMeetingCs) starts by itself.
+    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_1") else { return };
     let mut checked = 0;
     for _ in 0..200 {
-        // Navi updates before the frame's script commands (func_800645A0 after Actor_UpdateAll):
+        // Navi updates before the frame's script commands (Cutscene_UpdateScripted after Actor_UpdateAll):
         // she follows the cue the last frame left.
         let (state, cue, frames) = (w.cs_ctx.state, w.cs_ctx.npc_actions[8], w.cs_ctx.frames);
         idle(&mut w, 1);
@@ -201,7 +201,7 @@ fn navi_follows_her_cue_in_the_deku_trees_talk() {
         };
         assert_eq!(n.unk_2a8, mode, "cue {}", cue.action);
         if mode == 10 {
-            // func_80A02EC0: x and z on the cue's point (EnElf_GetCutsceneNextPos) plus the drift.
+            // func_80A02EC0: x and z on the cue's point (EnElf_GetCuePos) plus the drift.
             let (s, e) = (cue.start_pos.as_vec3(), cue.end_pos.as_vec3());
             let t = oot_game::env::lerp_weight(cue.end_frame, cue.start_frame, frames);
             let at = Vec3::new((e.x - s.x) * t + s.x, 0.0, (e.z - s.z) * t + s.z);

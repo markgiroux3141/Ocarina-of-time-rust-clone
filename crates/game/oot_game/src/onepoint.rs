@@ -21,26 +21,26 @@ use glam::Vec3;
 
 use crate::actor_ctx::{ACTORCAT_DOOR, ActorHandle};
 use crate::camera::{
-    CAM_ID_MAIN, CAM_ID_NONE, CAM_ID_SUB_FIRST, CAM_MODE_FOLLOWBOOMERANG, CAM_MODE_NORMAL, CAM_SET_CS_ATTENTION, CAM_STAT_ACTIVE, CAM_STAT_UNK3, CAM_STAT_WAIT, CamActor, CamRequest, KeyFramesRef,
-    OnePointCsFull, OnePointData, VecSph, cam_binang_to_deg, diff_to_sph_geo, sph_geo_add, sph_geo_to_vec3,
+    CAM_ID_MAIN, CAM_ID_NONE, CAM_ID_SUB_FIRST, CAM_MODE_FOLLOW_BOOMERANG, CAM_MODE_NORMAL, CAM_SET_CS_ATTENTION, CAM_STAT_ACTIVE, CAM_STAT_UNK3, CAM_STAT_WAIT, CamActor, CamRequest, KeyFramesRef,
+    OnePointCsFull, OnePointData, VecSphGeo, cam_binang_to_deg, diff_to_sph_geo, sph_geo_add, sph_geo_to_vec3,
 };
 use crate::cutscene::CutsceneCameraPoint;
 use crate::play::PlayState;
 
-// CAM_SET_* (z64camera.h) the one-point cutscenes use (the pack's test checks them against
+// CAM_SET_* (camera.h) the one-point cutscenes use (the pack's test checks them against
 // the enum).
 pub const CAM_SET_FREE2: i16 = 0x22;
 pub const CAM_SET_CS_3: i16 = 0x2A;
 pub const CAM_SET_CS_C: i16 = 0x3C;
 pub const CAM_SET_TURN_AROUND: i16 = crate::camera::CAM_SET_TURN_AROUND;
 
-/// `PLAYER_STATE1_29`, `PLAYER_STATE1_27` (`z64player.h`).
+/// `PLAYER_STATE1_29`, `PLAYER_STATE1_27` (`player.h`).
 const PLAYER_STATE1_27: u32 = 1 << 27;
 const PLAYER_STATE1_29: u32 = 1 << 29;
 
 /// The one-point cutscenes' statics: `z_onepointdemo.c`'s (its data file's tables,
 /// `sDisableAttention`, `sUnused`, `sPrevFrameCs1100`) and the ones `Camera_Unique9` and
-/// `Camera_Demo5` keep in `z_camera_data.c` (`D_8011D3AC`, `sDemo5PrevAction12Frame`,
+/// `Camera_Demo5` keep in `z_camera_data.inc.c` (`D_8011D3AC`, `sDemo5PrevAction12Frame`,
 /// `sDemo5PrevSfxFrame`, `Camera_Demo5`'s keyframe tables).
 #[derive(Debug, Clone, PartialEq)]
 pub struct OnePointStatics {
@@ -88,12 +88,12 @@ impl OnePointStatics {
         self.keyframe_names.iter().position(|n| n == name).unwrap_or(usize::MAX)
     }
 
-    /// The point list `name` (`D_80120308`).
+    /// The point list `name` (`sCrawlspaceAtPoints`).
     pub fn point_list(&self, name: &str) -> Option<usize> {
         self.point_names.iter().position(|n| n == name)
     }
 
-    /// The `s16` `name` (`D_8012042C`).
+    /// The `s16` `name` (`sCrawlspaceTimer`).
     pub fn short(&self, name: &str) -> i16 {
         self.shorts.iter().find(|(n, _)| n == name).map(|(_, v)| *v).unwrap_or(0)
     }
@@ -169,9 +169,9 @@ impl PlayState {
         Some(if front_room == a.room { a.shape_rot.y } else { a.shape_rot.y.wrapping_add(i16::MIN) })
     }
 
-    /// `func_800C0808` (`z_play.c`): `Camera_InitPlayerSettings` with Player (or the actor given
-    /// for him), then `Camera_ChangeSetting`.
-    pub fn func_800c0808(&mut self, cam_id: i16, player: Option<ActorHandle>, setting: i16) -> i16 {
+    /// `Play_InitCameraDataUsingPlayer` (`z_play.c`): `Camera_InitDataUsingPlayer` with Player (or the actor given
+    /// for him), then `Camera_RequestSetting`.
+    pub fn play_init_camera_data_using_player(&mut self, cam_id: i16, player: Option<ActorHandle>, setting: i16) -> i16 {
         let id = if cam_id == CAM_ID_NONE { self.active_cam_id } else { cam_id };
         let pv = player.and_then(|h| self.player_view_of(h));
         let d = self.data.clone();
@@ -192,9 +192,9 @@ impl PlayState {
         }
     }
 
-    /// `func_800C08AC` (`z_play.c`): back to the main camera, clearing `cam_id` and any other sub
+    /// `Play_ReturnToMainCam` (`z_play.c`): back to the main camera, clearing `cam_id` and any other sub
     /// camera; with a time, through the 1020 cutscene's return.
-    pub fn func_800c08ac(&mut self, cam_id: i16, arg2: i16) {
+    pub fn play_return_to_main_cam(&mut self, cam_id: i16, arg2: i16) {
         let id = if cam_id == CAM_ID_NONE { self.active_cam_id } else { cam_id };
         self.clear_camera(id);
         for i in CAM_ID_SUB_FIRST..crate::camera::NUM_CAMS as i16 {
@@ -335,7 +335,7 @@ impl PlayState {
             return CAM_ID_NONE;
         }
         self.onepoint.unused = -1;
-        if self.game_camera.mode == CAM_MODE_FOLLOWBOOMERANG {
+        if self.game_camera.mode == CAM_MODE_FOLLOW_BOOMERANG {
             let d = self.data.clone();
             self.game_camera.change_mode(&d.camera, CAM_MODE_NORMAL);
             self.camera_sfx();
@@ -447,11 +447,11 @@ impl PlayState {
                     p.change_state_flags1(0, PLAYER_STATE1_29);
                 }
                 if cs_mode != 0 {
-                    self.func_8002df54(Some(ph), 7);
+                    self.player_set_cs_action_with_halted_actors(Some(ph), 7);
                     log::debug!("camera: player demo end!!");
                 }
             }
-            self.game_camera.unk_14c |= 8;
+            self.game_camera.state_flags |= 8;
         }
         if self.cam_parent(child) == cam_id
             && let Some(c) = self.camera_mut(child)
@@ -483,9 +483,9 @@ impl PlayState {
             match r {
                 CamRequest::PlayerCsMode { actor, mode, door } => {
                     if door {
-                        self.func_8002df54(actor, mode);
+                        self.player_set_cs_action_with_halted_actors(actor, mode);
                     } else {
-                        self.func_8002df38(actor, mode);
+                        self.player_set_cs_action(actor, mode);
                     }
                 }
                 CamRequest::PlayerPos { x, z, y } => {
@@ -567,7 +567,7 @@ impl PlayState {
                     c.timer = timer + 1;
                 }
                 set_cs_info(self, "D_801208EC", 3);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             1030 => {
                 let t = self.onepoint.table("D_80120964");
@@ -582,7 +582,7 @@ impl PlayState {
                 k.eye_target_init.y = cam_binang_to_deg(sp_d0.yaw);
                 k.timer_init = timer - 1;
                 set_cs_info(self, "D_80120964", 2);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             5000 => {
                 let Some(a) = actor.map(|a| a.focus_pos) else { return 0 };
@@ -601,10 +601,10 @@ impl PlayState {
                 k.eye_target_init = sph_geo_add(at1, sp_d0);
                 k.at_target_init.y += 20.0;
                 set_cs_info(self, "D_801209B4", 4);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             5010 => {
-                self.func_800c0808(sub, player, CAM_SET_CS_ATTENTION);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_ATTENTION);
                 self.camera_set_at_eye(sub, main.at, main.eye);
                 if let Some(c) = self.camera_mut(sub) {
                     c.roll = 0;
@@ -612,7 +612,7 @@ impl PlayState {
             }
             9500 => {
                 set_cs_info(self, "D_80120A54", 3);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             4510 => {
                 let Some(a) = actor.map(|a| a.world_pos) else { return 0 };
@@ -621,20 +621,20 @@ impl PlayState {
                 let k = self.onepoint.kf(t, 0);
                 k.eye_target_init = a;
                 k.eye_target_init.y = py + 40.0;
-                self.func_8002df54(None, 8);
+                self.player_set_cs_action_with_halted_actors(None, 8);
                 set_cs_info(self, "D_8012133C", 3);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             4500 => {
                 let Some((focus, focus_rot)) = actor.map(|a| (a.focus_pos, a.focus_rot)) else { return 0 };
                 let mut sp_c0 = focus;
                 // OnePointCutscene_RaycastDown: BgCheck_EntityRaycastDown3.
                 sp_c0.y = self.col.entity_raycast_down(sp_c0).0 + 40.0;
-                let sp_d0 = VecSph { r: 150.0, yaw: focus_rot[1], pitch: 0x3E8 };
+                let sp_d0 = VecSphGeo { r: 150.0, yaw: focus_rot[1], pitch: 0x3E8 };
                 let sp_b4 = sph_geo_add(sp_c0, sp_d0);
                 self.camera_change_setting(sub, CAM_SET_FREE2);
                 self.camera_set_at_eye(sub, sp_c0, sp_b4);
-                self.func_8002df54(None, 8);
+                self.player_set_cs_action_with_halted_actors(None, 8);
                 let sub_child = if let Some(c) = self.camera_mut(sub) {
                     c.roll = 0;
                     c.fov = 50.0;
@@ -657,20 +657,20 @@ impl PlayState {
                 self.camera_change_setting(sub, CAM_SET_CS_3);
                 let prev = main.prev_setting;
                 self.camera_change_setting(CAM_ID_MAIN, prev);
-                let (at, eye) = if cs_id == 9601 { ("D_80120308", "D_80120398") } else { ("D_80120308", "D_80120434") };
-                let action = self.onepoint.short("D_80120430") | 0x1000;
-                let init_timer = self.onepoint.short("D_8012042C");
+                let (at, eye) = if cs_id == 9601 { ("sCrawlspaceAtPoints", "sCrawlspaceForwardsEyePoints") } else { ("sCrawlspaceAtPoints", "sCrawlspaceBackwardsEyePoints") };
+                let action = self.onepoint.short("sCrawlspaceActionParam") | 0x1000;
+                let init_timer = self.onepoint.short("sCrawlspaceTimer");
                 let (at, eye) = (self.onepoint.point_list(at), self.onepoint.point_list(eye));
                 if let Some(c) = self.camera_mut(sub) {
                     c.set_cs_cam_points(action, init_timer, at, eye);
                 }
             }
             3040 => {
-                self.func_8002df54(None, 8);
+                self.player_set_cs_action_with_halted_actors(None, 8);
                 let t = self.onepoint.table("D_8012151C");
                 self.onepoint.kf(t, 0).timer_init = timer - 1;
                 set_cs_info(self, "D_8012151C", 2);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             3020 => {
                 let t = self.onepoint.table("D_8012156C");
@@ -686,14 +686,14 @@ impl PlayState {
                 self.onepoint.kf(t, 0).eye_target_init.x += temp_rand;
                 self.onepoint.kf(t, 1).eye_target_init.x += temp_rand;
                 set_cs_info(self, "D_8012156C", 2);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
-                self.func_8002df54(None, 8);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                self.player_set_cs_action_with_halted_actors(None, 8);
             }
             3010 => {
                 let t = self.onepoint.table("D_801215BC");
                 self.onepoint.kf(t, 0).timer_init = timer;
                 set_cs_info(self, "D_801215BC", 1);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             3140 => {
                 let t = self.onepoint.table("D_80121C24");
@@ -702,7 +702,7 @@ impl PlayState {
                 k.eye_target_init = view.eye;
                 k.fov_target_init = view.fov;
                 set_cs_info(self, "D_80121C24", 7);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             1100 => {
                 let temp_diff = frames as i32 - self.onepoint.prev_frame_cs1100;
@@ -720,7 +720,7 @@ impl PlayState {
                     }
                     set_cs_info(self, "D_8012313C", 3);
                 }
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
                 self.onepoint.prev_frame_cs1100 = frames as i32;
             }
             9806 => {
@@ -728,7 +728,7 @@ impl PlayState {
                     c.timer = -99;
                 }
                 if self.cam_is_not_fixed() {
-                    self.func_800c0808(sub, player, CAM_SET_TURN_AROUND);
+                    self.play_init_camera_data_using_player(sub, player, CAM_SET_TURN_AROUND);
                     if let Some(c) = self.camera_mut(sub) {
                         c.data2 = 0xC;
                     }
@@ -769,33 +769,33 @@ impl PlayState {
                     }
                     set_cs_info(self, "D_80123254", 2);
                 }
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             1000 => {
                 let t = self.onepoint.table("D_801232A4");
                 let k = self.onepoint.kf(t, 0);
                 k.at_target_init = view.at;
                 k.eye_target_init = view.eye;
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             5110 => {
                 let t = self.onepoint.table("D_801239D4");
                 self.onepoint.kf(t, 1).timer_init = 10;
                 set_cs_info(self, "D_801239D4", 3);
-                // func_800C0808 with the actor as Player.
-                self.func_800c0808(sub, actor.map(|a| a.handle), CAM_SET_CS_C);
+                // Play_InitCameraDataUsingPlayer with the actor as Player.
+                self.play_init_camera_data_using_player(sub, actor.map(|a| a.handle), CAM_SET_CS_C);
             }
             5120 => {
-                self.func_8002df54(None, 8);
+                self.player_set_cs_action_with_halted_actors(None, 8);
                 set_cs_info(self, "D_80121314", 1);
-                self.func_800c0808(sub, player, CAM_SET_CS_C);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             _ => log::warn!("onepointdemo camera: demo number not found !! ({cs_id}): not ported"),
         }
         0
     }
 
-    /// Player's `PlayerView`, or the actor's given for him (`func_800C0808`'s `Player*`).
+    /// Player's `PlayerView`, or the actor's given for him (`Play_InitCameraDataUsingPlayer`'s `Player*`).
     fn player_view_of(&self, h: ActorHandle) -> Option<crate::camera::PlayerView> {
         if Some(h) == self.player {
             return self.player_view();

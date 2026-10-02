@@ -19,7 +19,7 @@ fn find(frames: &[Frame], action: &str) -> Option<usize> {
     frames.iter().position(|f| f.action == action)
 }
 
-/// `func_80836FAC` start curve (arg4 = 0.018) for a stick magnitude, before the run limit.
+/// `Player_CalcSpeedAndYawFromControlStick` start curve (arg4 = 0.018) for a stick magnitude, before the run limit.
 fn start_curve(mag: f32) -> f32 {
     let m = mag - 20.0;
     if m < 0.0 {
@@ -58,7 +58,7 @@ fn full_stick_accelerates_to_the_run_limit() {
     assert_eq!(speeds, vec![0.0, RUN_ACCEL, 2.0 * RUN_ACCEL, RUN_LIMIT, RUN_LIMIT, RUN_LIMIT]);
     // The stick curve (47 × 0.14 = 6.58) is above the limit, so the limit wins.
     assert!(start_curve(60.0) > RUN_LIMIT);
-    // Position integrates velocity × R_UPDATE_RATE / 2 (func_8002D7EC), one frame behind.
+    // Position integrates velocity × R_UPDATE_RATE / 2 (Actor_UpdatePos), one frame behind.
     for k in 6..40 {
         let d = f[k - 1].pos.z - f[k].pos.z;
         assert!((d - RUN_LIMIT * UPDATE_SCALE).abs() < 1e-3, "frame {k}: moved {d}");
@@ -72,7 +72,7 @@ fn full_stick_accelerates_to_the_run_limit() {
 #[test]
 fn partial_stick_walks_at_the_curve_speed() {
     let Some(mut w) = world_at(Vec3::new(-300.0, 0.0, 900.0), -0x8000) else { return };
-    // Raw 30 → rel 23 (dead zone 7) → func_80836FAC's start curve.
+    // Raw 30 → rel 23 (dead zone 7) → Player_CalcSpeedAndYawFromControlStick's start curve.
     let f = run(&mut w, &repeat(stick(0, 30), 20));
     let target = start_curve(23.0);
     assert!((f[19].speed - target).abs() < 1e-5, "walk speed {} vs {target}", f[19].speed);
@@ -102,11 +102,11 @@ fn a_while_running_rolls_for_the_decomp_duration() {
     let start = find(&f, "Roll").expect("rolled");
     assert_eq!(start, 10, "roll starts on the A frame");
     let len = f[start..].iter().take_while(|x| x.action == "Roll").count();
-    // The roll ends once curFrame ≥ 20 (func_80844708); it plays at 1.25 × 1.5 frames per
-    // game frame (func_8083BC04, LinkAnimation_Once).
+    // The roll ends once curFrame ≥ 20 (Player_Action_Roll); it plays at 1.25 × 1.5 frames per
+    // game frame (Player_SetupRoll, LinkAnimation_Once).
     let expected = (20.0f32 / (1.25 * UPDATE_SCALE)).ceil() as usize;
     assert_eq!(len, expected, "roll lasted {len} frames");
-    // Speed target is 1.5 × the run limit (func_80844708), reached at REG(19)/100 per frame.
+    // Speed target is 1.5 × the run limit (Player_Action_Roll), reached at REG(19)/100 per frame.
     let top = f[start..start + len].iter().map(|x| x.speed).fold(0.0, f32::max);
     assert_eq!(top, RUN_LIMIT * 1.5);
     assert_eq!(f[start + 1].speed, RUN_LIMIT + RUN_ACCEL);
@@ -118,7 +118,7 @@ fn a_while_running_rolls_for_the_decomp_duration() {
 #[test]
 fn a_rolls_only_with_the_stick_forward() {
     let Some(mut w) = world_at(Vec3::new(-300.0, 0.0, 900.0), -0x8000) else { return };
-    // Idle + A: func_8083BC7C needs unk_84B == 0 (stick ≥ 55, pointing forward).
+    // Idle + A: Player_TryRoll needs controlStickDirections == 0 (stick ≥ 55, pointing forward).
     let mut s = repeat(stick(0, 0), 3);
     s.push(with(stick(0, 0), BTN_A));
     s.extend(repeat(stick(0, 0), 3));
@@ -133,7 +133,7 @@ fn a_rolls_only_with_the_stick_forward() {
 fn small_stick_turns_in_place() {
     let Some(mut w) = world_at(Vec3::new(-300.0, 0.0, 900.0), -0x8000) else { return };
     // Raw -26 → rel -19: magnitude < 20 gives no speed on the start curve, so Player turns
-    // in place (func_8083CD54) at unk_87E = 1200 × 1.5 per frame.
+    // in place (Player_SetupTurnInPlace) at turnRate = 1200 × 1.5 per frame.
     let f = run(&mut w, &repeat(stick(-26, 0), 20));
     assert_eq!(f[0].action, "Turn");
     assert!(f.iter().all(|x| x.speed == 0.0 && x.pos == f[0].pos));
@@ -183,7 +183,7 @@ fn landing_with_the_stick_forward_rolls() {
     let f = run(&mut w, &repeat(stick(0, 80), 60));
     let j = find(&f, "Midair").unwrap();
     let land = f[j..].iter().position(|x| x.action != "Midair").map(|k| k + j).unwrap();
-    // func_8084411C: 80 < fallDistance (150) < 800 with the stick forward → func_8083BC04.
+    // Player_Action_8084411C: 80 < fallDistance (150) < 800 with the stick forward → Player_SetupRoll.
     assert_eq!(f[land].action, "Roll");
 }
 
@@ -196,7 +196,7 @@ fn a_long_fall_staggers_on_landing() {
     let f = run(&mut w, &s);
     let land = f.iter().position(|x| x.grounded && x.pos.y == -450.0).expect("reached the pit floor");
     // fallDistance ≥ 400 → func_80843E64: Player_InflictDamage(D_80854600[0].damage, -8, half a
-    // heart), func_80837AE0(40), and 1 → endFrame 8, unk_850 = 10 stagger.
+    // heart), Player_SetIntangibility(40), and 1 → endFrame 8, av2.actionVar2 = 10 stagger.
     assert_eq!(w.save.health, health - 8, "half a heart");
     // Set in the landing frame, then one less each update after it.
     let frames_since = (f.len() - 1 - land) as i8;
@@ -209,10 +209,10 @@ fn a_long_fall_staggers_on_landing() {
 #[test]
 fn walls_stop_at_the_player_radius() {
     // The course's +z boundary wall at z = 1000 (300 high: no climb class). Spike 03 used the
-    // 40-high block, which Link now hops onto (func_80838A14, class 1; see tests/ledge.rs).
+    // 40-high block, which Link now hops onto (Player_ActionHandler_12, class 1; see tests/ledge.rs).
     let Some(mut w) = world_at(Vec3::new(0.0, 0.0, 900.0), 0) else { return };
     let f = run(&mut w, &repeat(stick(0, 80), 40));
-    // Player's wall radius is sAgeProperties.unk_38 = 18.
+    // Player's wall radius is sAgeProperties.wallCheckRadius = 18.
     assert_eq!(f[39].pos.z, 1000.0 - 18.0);
     assert!(f[39].speed <= 0.1 + 1e-6, "unk_880 drops to 0.1 running straight into a wall");
 }
@@ -224,7 +224,7 @@ fn walls_at_an_angle_slide() {
     let last = f[59].clone();
     let first_contact = f.iter().position(|x| x.pos.x != -300.0).unwrap();
     assert!(last.pos.x < -340.0, "slid along the wall: {:?}", last.pos);
-    // unk_880 = R_RUN_SPEED_LIMIT/100 × |yaw − wall normal| × 0.00008 (func_80847BA0).
+    // unk_880 = R_RUN_SPEED_LIMIT/100 × |yaw − wall normal| × 0.00008 (Player_ProcessSceneCollision).
     // Running along -z into a wall whose normal is 30° off gives ≈ 30° = 5461.
     let k = 5461.0 * 0.00008;
     assert!((last.speed - RUN_LIMIT * k).abs() < 0.06, "speed {} vs {}", last.speed, RUN_LIMIT * k);
@@ -237,7 +237,7 @@ fn ramps_slow_the_run() {
     let f = run(&mut w, &repeat(stick(0, 80), 60));
     let on: Vec<_> = f.iter().filter(|x| x.pos.y > 20.0 && x.pos.y < 100.0).collect();
     assert!(!on.is_empty());
-    // func_80836FAC: start curve − 8·sin²(slope), slope = atan(150/400) along the move.
+    // Player_CalcSpeedAndYawFromControlStick: start curve − 8·sin²(slope), slope = atan(150/400) along the move.
     let slope = (150.0f32 / 400.0).atan();
     let target = start_curve(60.0) - 8.0 * slope.sin().min(0.6).powi(2);
     for x in on {
@@ -284,7 +284,7 @@ fn step_up_limit() {
             (true, "walk") => walk = h,
             (true, "hop") => hop = h,
             (true, "climb") => {
-                // func_80838A14's class 2 starts at sAgeProperties.unk_1C = 41 for adult Link.
+                // Player_ActionHandler_12's class 2 starts at sAgeProperties.unk_1C = 41 for adult Link.
                 assert_eq!(h, 41, "first climbed step");
                 break;
             }
@@ -294,7 +294,7 @@ fn step_up_limit() {
     println!("walked up to {walk}, hopped up to {hop}");
     // Walking: the wall line test ~18.5 above the feet stops taller risers (spike 03).
     assert!((15..20).contains(&walk), "walk limit {walk}");
-    // Hopping (unk_88C == 1): from the 18 of the wall-height check up to unk_1C.
+    // Hopping (ledgeClimbType == 1): from the 18 of the wall-height check up to unk_1C.
     assert_eq!(hop, 40);
 }
 
@@ -317,13 +317,13 @@ fn spec_script_forward_40_then_a() {
 
 #[test]
 fn root_motion_moves_the_actor() {
-    use oot_game::skelanime::{ANIM_FLAG_UPDATEXZ, ANIM_FLAG_UPDATEY};
-    // SkelAnime_UpdateTranslation + AnimationContext_MoveActor: the root's movement since the
+    use oot_game::skelanime::{ANIM_FLAG_UPDATEXZ, ANIM_FLAG_UPDATE_Y};
+    // SkelAnime_UpdateTranslation + AnimTask_ActorMovement: the root's movement since the
     // last frame, rotated by the facing yaw and scaled by the actor scale (0.01).
     let Some(mut w) = world_at(Vec3::new(0.0, 0.0, 0.0), 0x4000) else { return };
     let p = w.player_mut();
     let base = p.skel.base_transl;
-    p.skel.move_flags = ANIM_FLAG_UPDATEXZ | ANIM_FLAG_UPDATEY | 8;
+    p.skel.move_flags = ANIM_FLAG_UPDATEXZ | ANIM_FLAG_UPDATE_Y | 8;
     p.skel.prev_transl = base;
     p.skel.prev_rot = p.actor.shape_rot.y;
     // Root moved +1000 along the model's z (forward) and +500 up this frame.

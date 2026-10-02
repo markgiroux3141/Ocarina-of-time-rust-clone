@@ -1,6 +1,6 @@
 # 0028: Phase 6: Master Quest's Deku Tree, and the decomp upgraded first
 
-- **Status:** accepted (2026-10-01); the upgrade is Phase 6's first milestone, not started
+- **Status:** accepted (2026-10-01); the upgrade done in GAME-05 milestone 1 (2026-10-02), its pin in [ADR 0031](0031-decomp-main.md)
 - **Date:** 2026-10-01
 - **Settles:** the two questions ADR 0003 and ADR 0004 left for the first dungeon. Supersedes
   ADR 0004's pin once the upgrade lands.

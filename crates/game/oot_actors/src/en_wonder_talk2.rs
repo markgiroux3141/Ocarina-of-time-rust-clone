@@ -2,19 +2,19 @@
 //! (`0x200 | baseMsgId`), such as the one by the window in Link's house.
 //!
 //! `params`: bits 0..5 a switch flag (0x3F: none), 6..13 the text, 14..15 the talk mode:
-//! - 0 (normal) and 2 (check only): it offers to talk (`func_8002F1C4`, within
+//! - 0 (normal) and 2 (check only): it offers to talk (`Actor_OfferTalkExchange`, within
 //!   `triggerRange` + 50) when Link is within 40 + `triggerRange` in front of it; talking sets
 //!   the switch flag (not in mode 2);
 //! - 1 (forced) and 4 (the Gerudo Training Ground's forced check): the text opens by itself
-//!   when Link comes within range, holding Link (`func_8002DF54` mode 8) until it's read;
+//!   when Link comes within range, holding Link (`Player_SetCsActionWithHaltedActors` mode 8) until it's read;
 //! - 3 (lock only): nothing, but it can be targeted.
 //!
 //! `rot.z` gives the range: `rot.z % 10` times 40, and `rot.z / 10` the `targetMode`.
 //!
-//! A forced text holds Link in Player's cutscene mode 8 (`func_8002DF54`) until it's read, then
+//! A forced text holds Link in Player's cutscene mode 8 (`Player_SetCsActionWithHaltedActors`) until it's read, then
 //! mode 7 lets him go.
 
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_27, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
 use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT, TEXT_STATE_NONE};
 use oot_game::npc::{EXCH_ITEM_NONE, offer_talk_range, process_talk_request};
@@ -22,11 +22,11 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 pub const ACTOR_EN_WONDER_TALK2: i16 = 0x0185;
 
-/// `En_Wonder_Talk2_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_TALK2, name: "En_Wonder_Talk2", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_0 | ACTOR_FLAG_3 | ACTOR_FLAG_27, object: "gameplay_keep" };
+/// `En_Wonder_Talk2_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_TALK2, name: "En_Wonder_Talk2", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_LOCK_ON_DISABLED, object: "gameplay_keep" };
 
-/// `SCENE_MEN` (the Gerudo Training Ground).
-const SCENE_MEN: u16 = 0x0B;
+/// `SCENE_GERUDO_TRAINING_GROUND` (the Gerudo Training Ground).
+const SCENE_GERUDO_TRAINING_GROUND: u16 = 0x0B;
 
 /// `D_80B3A8E0`: `targetMode` by `rot.z / 10`.
 const D_80B3A8E0: [u8; 7] = [6, 0, 1, 2, 3, 4, 5];
@@ -88,13 +88,13 @@ impl EnWonderTalk2 {
             w.actor.kill();
             return Box::new(w);
         }
-        if talk_mode == 1 && play.scene_id == SCENE_MEN && !matches!(switch_flag, 0x08 | 0x16 | 0x2F) {
+        if talk_mode == 1 && play.scene_id == SCENE_GERUDO_TRAINING_GROUND && !matches!(switch_flag, 0x08 | 0x16 | 0x2F) {
             w.unk_15a = false;
             talk_mode = 4;
             w.talk_mode = talk_mode;
         }
         if talk_mode == 3 {
-            w.actor.flags &= !ACTOR_FLAG_27;
+            w.actor.flags &= !ACTOR_FLAG_LOCK_ON_DISABLED;
             w.action = Action::DoNothing;
         }
         Box::new(w)
@@ -111,7 +111,7 @@ impl EnWonderTalk2 {
         self.unk_158 += 1;
         if self.switch_flag >= 0 && play.flags.get_switch(self.switch_flag as i32) {
             if !self.unk_15a {
-                self.actor.flags &= !ACTOR_FLAG_0;
+                self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 self.unk_15a = true;
             }
         } else if process_talk_request(&mut self.actor) {
@@ -154,8 +154,8 @@ impl EnWonderTalk2 {
             if self.talk_mode == 4 {
                 self.unk_15a = true;
             }
-            self.actor.flags &= !(ACTOR_FLAG_0 | ACTOR_FLAG_4);
-            play.func_8002df54(None, 7);
+            self.actor.flags &= !(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED);
+            play.player_set_cs_action_with_halted_actors(None, 7);
             self.unk_156 = true;
             self.action = Action::WaitForced;
         }
@@ -166,7 +166,7 @@ impl EnWonderTalk2 {
         self.unk_158 += 1;
         if self.switch_flag >= 0 && play.flags.get_switch(self.switch_flag as i32) {
             if !self.unk_15a {
-                self.actor.flags &= !ACTOR_FLAG_0;
+                self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 self.unk_15a = true;
             }
         } else if self.talk_mode != 4 || !self.unk_15a {
@@ -175,8 +175,8 @@ impl EnWonderTalk2 {
                 self.unk_158 = 0;
                 if !self.unk_156 {
                     play.start_textbox(self.actor.text_id, None);
-                    play.func_8002df54(None, 8);
-                    self.actor.flags |= ACTOR_FLAG_0 | ACTOR_FLAG_4;
+                    play.player_set_cs_action_with_halted_actors(None, 8);
+                    self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED;
                     self.action = Action::Forced;
                 }
             } else {

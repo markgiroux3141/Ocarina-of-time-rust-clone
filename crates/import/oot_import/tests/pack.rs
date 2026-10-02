@@ -65,7 +65,7 @@ fn pack_is_for_this_rom() {
 fn tables_match_the_c() {
     let Some(c) = ctx() else { return };
     let decomp = &c.p.config.decomp;
-    // sintable / sATan2Tbl.
+    // sintable / sAtan2Tbl.
     let math: Tables = c.pack.assets.get(keys::MATH).unwrap();
     assert_eq!(math, Tables::load(decomp).unwrap());
     // Player: REGs, sAgeProperties, the animation tables, items, the camera data, foot IK, the
@@ -90,13 +90,13 @@ fn tables_match_the_c() {
         }
     }
     assert_eq!(st.objects, c.tables.objects);
-    // entrance_table.h, actor_table.h with every overlay's ActorInit.
+    // entrance_table.h, actor_table.h with every overlay's ActorProfile.
     assert_eq!(st.entrances, c.tables.entrances);
     assert_eq!(c.pack.actor_table().unwrap(), oot_game::actor_table::ActorTable::load(decomp).unwrap());
 }
 
 /// Every state a ported draw config is compared in: both ages, day and night, the four game
-/// layers and two cutscene layers, several times of day, and the event flag. `roomCtx.unk_74`
+/// layers and two cutscene layers, several times of day, and the event flag. `roomCtx.drawParams`
 /// starts at 0 each frame, because the interpreter keeps no state between runs.
 fn draw_config_states() -> Vec<DrawConfigState> {
     let mut out = Vec::new();
@@ -109,7 +109,7 @@ fn draw_config_states() -> Vec<DrawConfigState> {
                     night: layer == 1 || layer == 3,
                     scene_layer: layer,
                     day_time: time as u16,
-                    room_unk_74: [0, 0],
+                    room_draw_params: [0, 0],
                     event_chk_inf_07: event,
                 });
             }
@@ -122,7 +122,7 @@ fn draw_config_states() -> Vec<DrawConfigState> {
 fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
-    let scenes: BTreeMap<&str, &str> = [("SDC_SPOT04", "spot04_scene"), ("SDC_SPOT00", "spot00_scene"), ("SDC_YDAN", "ydan_scene"), ("SDC_DEFAULT", "ganon_scene")].into_iter().collect();
+    let scenes: BTreeMap<&str, &str> = [("SDC_KOKIRI_FOREST", "spot04_scene"), ("SDC_HYRULE_FIELD", "spot00_scene"), ("SDC_DEKU_TREE", "ydan_scene"), ("SDC_DEFAULT", "ganon_scene")].into_iter().collect();
     for sdc in scene_table::ported() {
         let file = scenes[sdc];
         let def = c.tables.scene(file).unwrap();
@@ -143,11 +143,11 @@ fn ported_draw_configs_match_the_c_interpreter() {
                     &c.tables,
                     &State { gameplay_frames: f, child: st.child, night: st.night, scene_layer: st.scene_layer as i64, day_time: st.day_time },
                 );
-                // Scene_DrawConfigSpot00 after 18:30 runs Math_StepToS(&roomCtx.unk_74[0], 255, 5)
+                // Scene_DrawConfigHyruleField after 18:30 runs Math_StepToS(&roomCtx.drawParams[0], 255, 5)
                 // before using it as the prim alpha. The interpreter doesn't run function calls
-                // on game state (unk_74 reads 0 throughout), so it gives alpha 0 where the C,
+                // on game state (drawParams reads 0 throughout), so it gives alpha 0 where the C,
                 // and the port, give 5 on the first frame.
-                if sdc == "SDC_SPOT00" && st.day_time as i32 > clock_time(18, 30) {
+                if sdc == "SDC_HYRULE_FIELD" && st.day_time as i32 > clock_time(18, 30) {
                     assert_eq!(want[1].prim[0xA], Some([255, 255, 255, 0]));
                     assert_eq!(got[1].prim[0xA], Some([255, 255, 255, 5]), "frame {f}");
                     want[1].prim[0xA] = got[1].prim[0xA];
@@ -288,10 +288,14 @@ fn the_import_covers_the_xmls_and_the_scans() {
     // Every texture, Player animation, scene and room is in; the skeletons and animations
     // left out are the ones `ootx scan-skeletons` can't read either (Skin/Curve limbs,
     // overlays) or can't size.
-    for kind in ["Texture", "PlayerAnimation", "Scene", "Room"] {
+    for kind in ["Texture", "PlayerAnimation", "Room"] {
         let (l, i) = m.counts[kind];
         assert_eq!(i, l, "{kind}");
     }
+    // The XMLs' 121 Scene elements: the 110 scenes, and 11 headers no layer uses (the decomp's
+    // `*_scene_unused`).
+    assert_eq!(m.counts["Scene"], (121, 110));
+    assert_eq!(m.skipped["Scene"]["a header no layer uses"], 11);
     // The skin skeletons (the horses', GAME-04b milestone 6) are read too; the 3 left out are
     // Curve limbs and an overlay's.
     assert_eq!(m.counts["Skeleton"], (194, 191));
@@ -309,7 +313,7 @@ fn the_import_covers_the_xmls_and_the_scans() {
     assert_eq!(c.pack.assets.names("scene/").len(), 110);
 }
 
-/// The horses' skin skeletons (`z64skin.h`): the record is the ROM's `SkinLimb`s as the header
+/// The horses' skin skeletons (`skin.h`): the record is the ROM's `SkinLimb`s as the header
 /// counts them, and `En_Viewer`'s bake gives every vertex a bone: a normal limb's, or its
 /// animated limb's vertex group's (`oot_game::skin`).
 #[test]
@@ -350,10 +354,10 @@ fn entrance_and_actor_tables() {
     let st = c.pack.scene_table().unwrap();
     let rows = std::fs::read_to_string(c.p.config.decomp.join("include/tables/entrance_table.h")).unwrap().matches("DEFINE_ENTRANCE(").count();
     assert_eq!(st.entrances.len(), rows);
-    let e = &st.entrances[st.entrance_index("ENTR_LINK_HOME_0").unwrap() as usize];
-    // DEFINE_ENTRANCE(ENTR_LINK_HOME_0, SCENE_LINK_HOME, 0, false, true, TRANS_TYPE_FADE_BLACK_FAST, TRANS_TYPE_FADE_BLACK_FAST)
+    let e = &st.entrances[st.entrance_index("ENTR_LINKS_HOUSE_0").unwrap() as usize];
+    // DEFINE_ENTRANCE(ENTR_LINKS_HOUSE_0, SCENE_LINKS_HOUSE, 0, false, true, TRANS_TYPE_FADE_BLACK_FAST, TRANS_TYPE_FADE_BLACK_FAST)
     assert_eq!((e.scene, e.spawn, e.continue_bgm, e.title_card, e.end_trans_type, e.start_trans_type), (0x34, 0, false, true, 4, 4));
-    assert_eq!(st.entrance_index("ENTR_LINK_HOME_0"), Some(0xBB));
+    assert_eq!(st.entrance_index("ENTR_LINKS_HOUSE_0"), Some(0xBB));
     // TRANS_TYPE_CIRCLE(appearance, color, speed) = (1 << 5) | (color << 3) | (appearance << 1) | speed.
     let circles: Vec<u8> = st.entrances.iter().flat_map(|e| [e.end_trans_type, e.start_trans_type]).filter(|&t| t >= 32).collect();
     assert!(!circles.is_empty() && circles.iter().all(|&t| t < 56));
@@ -362,14 +366,14 @@ fn entrance_and_actor_tables() {
     let defined = rows.lines().filter(|l| l.contains("DEFINE_ACTOR(") || l.contains("DEFINE_ACTOR_INTERNAL(")).count();
     let unset = rows.lines().filter(|l| l.contains("DEFINE_ACTOR_UNSET(")).count();
     assert_eq!(at.actors.len(), defined + unset);
-    // Every actor has its ActorInit.
+    // Every actor has its ActorProfile.
     let missing: Vec<&str> = at.actors.iter().filter(|a| !a.name.is_empty() && a.init.is_none()).map(|a| a.name.as_str()).collect();
-    assert!(missing.is_empty(), "no ActorInit for {missing:?}");
-    // En_Holl_InitVars: ACTORCAT_DOOR, ACTOR_FLAG_4, OBJECT_GAMEPLAY_KEEP.
+    assert!(missing.is_empty(), "no ActorProfile for {missing:?}");
+    // En_Holl_Profile: ACTORCAT_DOOR, ACTOR_FLAG_UPDATE_CULLING_DISABLED, OBJECT_GAMEPLAY_KEEP.
     let holl = at.get(at.id("ACTOR_EN_HOLL").unwrap()).unwrap().init.clone().unwrap();
     assert_eq!((holl.category, holl.flags, holl.object_id), (10, 1 << 4, 1));
     assert_eq!(holl.update.as_deref(), Some("EnHoll_Update"));
-    // Boss_Dodongo_InitVars says ACTOR_EN_DODONGO.
+    // Boss_Dodongo_Profile says ACTOR_EN_DODONGO.
     let king = at.get(at.id("ACTOR_BOSS_DODONGO").unwrap()).unwrap().init.clone().unwrap();
     assert_eq!(king.id, at.id("ACTOR_EN_DODONGO").unwrap());
 }
@@ -415,10 +419,10 @@ fn scene_lists_cover_what_the_game_indexes() {
                 let Some(dest) = scenes.get(&row.scene) else { continue };
                 checked += 1;
                 let n = dest.layers[dest_layer].entrances.len();
-                // @bug (game): Bongo Bongo's room's exit 1 is ENTR_HAKADAN_2, whose spawn 2 is
+                // @bug (game): Bongo Bongo's room's exit 1 is ENTR_SHADOW_TEMPLE_2, whose spawn 2 is
                 // past the Shadow Temple's two-entry entrance list (the exit list follows it, and
                 // the game would read its first entry, 0x0205, as {spawn 2, room 5}).
-                if row.spawn as usize >= n && !(sd.name == "HAKAdan_bs_scene" && row.name.starts_with("ENTR_HAKADAN_2")) {
+                if row.spawn as usize >= n && !(sd.name == "HAKAdan_bs_scene" && row.name.starts_with("ENTR_SHADOW_TEMPLE_2")) {
                     problems.push(format!("{} layer {layer} exit {exit} -> {}: spawn {} but {} layer {dest_layer} has {n}", sd.name, row.name, row.spawn, dest.name));
                 }
             }
@@ -448,7 +452,7 @@ fn scene_lists_cover_what_the_game_indexes() {
 fn bg_camera_lists_cover_what_the_game_indexes() {
     // The bg camera list has no count (the importer reads at least what's named, then on while
     // the entries look like entries). Everything a scene names must be in it with a setting:
-    // the floors' and water boxes' indices (SurfaceType_GetBgCamIndex, WATERBOX_BGCAM_INDEX),
+    // the floors' and water boxes' indices (SurfaceType_GetBgCamIndex, WaterBox_GetBgCamIndex),
     // the spawns' start cameras (Play_Init: params & 0xFF), the transition actors' sides, the
     // two viewpoints of a fixed-camera scene, and each multi-image room's backgrounds.
     let Some(c) = ctx() else { return };
@@ -551,22 +555,22 @@ fn path_lists_match_the_xmls() {
 }
 
 /// Navi's C-Up texts (`table/elf_messages`): the ROM's `elf_message_field` and
-/// `elf_message_ydan` (the import checks them against `ElfMessage` arrays built from the C's
+/// `elf_message_ydan` (the import checks them against `QuestHintCmd` arrays built from the C's
 /// macros), and `code`'s Saria tables; `SCENE_CMD_ID_SPECIAL_FILES`' `cUpElfMsgNum` per scene.
 #[test]
 fn the_c_up_texts_are_the_c_s() {
     let Some(c) = ctx() else { return };
     let t = c.pack.elf_messages().unwrap();
     assert_eq!(t.files.len(), 2);
-    // gOverworldNaviMsgs: 28 commands; ELF_MSG_FLAG(CHECK, 0x40, false, EVENTCHKINF_05) first
-    // (B0: CHECK 0 << 5 | FLAG 0 << 1 | false), ELF_MSG_END(0x5F) last (END 7 << 5).
+    // gOverworldNaviQuestHints: 28 commands; QUEST_HINT_FLAG(CHECK, 0x40, false, EVENTCHKINF_05) first
+    // (B0: CHECK 0 << 5 | FLAG 0 << 1 | false), QUEST_HINT_END(0x5F) last (END 7 << 5).
     assert_eq!(t.files[0].len(), 28 * 4);
     assert_eq!(&t.files[0][..4], &[0x00, 0x05, 0x40, 0x00]);
     assert_eq!(&t.files[0][27 * 4..], &[0xE0, 0x00, 0x5F, 0x00]);
-    // gDungeonNaviMsgs: ELF_MSG_END(0x5F) alone.
+    // gDungeonNaviQuestHints: QUEST_HINT_END(0x5F) alone.
     assert_eq!(t.files[1], [0xE0, 0x00, 0x5F, 0x00]);
-    // sChildSariaMsgs: ELF_MSG_STRENGTH_UPG(SKIP, 3, false, 0) (SKIP 3 << 5 | OTHER 3 << 1,
-    // STRENGTH_UPG 0 << 4 | 0) first; 13 commands. sAdultSariaMsgs: 6.
+    // sChildSariaQuestHints: QUEST_HINT_STRENGTH_UPG(SKIP, 3, false, 0) (SKIP 3 << 5 | OTHER 3 << 1,
+    // STRENGTH_UPG 0 << 4 | 0) first; 13 commands. sAdultSariaQuestHints: 6.
     assert_eq!(&t.child_saria[..4], &[0x66, 0x00, 0x03, 0x00]);
     assert_eq!((t.child_saria.len(), t.adult_saria.len()), (13 * 4, 6 * 4));
     for (file, num) in [("spot04_scene", 1), ("spot00_scene", 1), ("link_home_scene", 0), ("ydan_scene", 2)] {
@@ -574,30 +578,32 @@ fn the_c_up_texts_are_the_c_s() {
     }
 }
 
-/// The cutscene layers' scripts (docs/adr/0023): no XML names them, so each is keyed by its
-/// scene file and offset, and walked to its `CS_END` like the named ones.
+/// The cutscene layers' scripts (docs/adr/0023): keyed by the XMLs' names (2f4c25d's XMLs
+/// named none of them, so they went by their scene file and offset, `cutscene/spot04_scene/0xA6D0`),
+/// and walked to their `CS_END_OF_SCRIPT` like the others.
 #[test]
-fn the_cutscene_layers_scripts_are_keyed_by_offset() {
+fn the_cutscene_layers_scripts_have_the_xmls_names() {
     let Some(c) = ctx() else { return };
     for (file, layer, key) in [
-        ("link_home_scene", 4, "cutscene/link_home_scene/0x1040"),
-        ("link_home_scene", 5, "cutscene/link_home_scene/0x15D0"),
-        ("spot00_scene", 4, "cutscene/spot00_scene/0x12400"),
-        ("spot04_scene", 7, "cutscene/spot04_scene/0xA6D0"),
+        ("link_home_scene", 4, "cutscene/link_home_scene/gLinkHouseIntroWakeUpCs"),
+        ("link_home_scene", 5, "cutscene/link_home_scene/gLinkHouseIntroSleepCs"),
+        ("spot00_scene", 4, "cutscene/spot00_scene/gHyruleFieldIntroNightmareCs"),
+        ("spot04_scene", 7, "cutscene/spot04_scene/gKokiriForestIntroNaviFlyingCs"),
     ] {
         let ld = &c.pack.scene(file).unwrap().layers[layer];
         assert_eq!(ld.cutscene.as_deref(), Some(key), "{file} layer {layer}");
         let s = c.pack.cutscene(key).unwrap();
         let data = c.p.rom.file_by_name(file).unwrap();
-        let off = usize::from_str_radix(key.rsplit("0x").next().unwrap(), 16).unwrap();
+        let off = c.p.symbols.file(file).unwrap().find(key.rsplit('/').next().unwrap()).unwrap().offset as usize;
         assert_eq!(&data[off..off + s.data.len()], &s.data[..], "{key}: the ROM's bytes");
-        assert_eq!(oot_game::cutscene::walk(&s.data).unwrap().1, Some(s.data.len()), "{key}: through CS_END");
+        assert_eq!(oot_game::cutscene::walk(&s.data).unwrap().1, Some(s.data.len()), "{key}: through CS_END_OF_SCRIPT");
     }
-    // A script the XML names keeps its symbol's key: Kokiri Forest's Deku Sprout, the last of
-    // its cutscene layers' ten (the other nine have none).
+    // Kokiri Forest's ten cutscene layers: main's XML names every script (2f4c25d's named only
+    // the last, the Deku Sprout's).
     let keys: Vec<String> = c.pack.scene("spot04_scene").unwrap().layers.iter().filter_map(|l| l.cutscene.clone()).collect();
     assert_eq!(keys.len(), 10);
-    assert_eq!(keys.iter().filter(|k| !k.contains("/0x")).collect::<Vec<_>>(), ["cutscene/spot04_scene/gKokiriForestDekuSproutCs"]);
+    assert!(keys.iter().all(|k| !k.contains("/0x")), "{keys:?}");
+    assert_eq!(keys.last().map(String::as_str), Some("cutscene/spot04_scene/gKokiriForestDekuSproutPart3Cs"));
 }
 
 #[test]
@@ -616,13 +622,13 @@ fn the_audio_data_is_the_roms_and_the_cs() {
     assert_eq!((count(&t.sound_font_table), count(&t.sequence_table), count(&t.sample_bank_table)), (38, 110, 7), "fonts, sequences, sample banks");
     assert_eq!(t.heap_sizes.num_soundfonts as usize, count(&t.sound_font_table), "NUM_SOUNDFONTS");
     assert_eq!(t.heap_sizes.audio_heap, 0x38000, "sizeof(gAudioHeap)");
-    assert_eq!(t.tatums_per_beat, 48, "gTatumsPerBeat");
-    // audio_data.c: gPitchFrequencies' C4 (0x27) and its wrap at 0x75 (PITCH_BFLATNEG1).
+    assert_eq!(t.tatums_per_beat, 48, "gTempoData.seqTicksPerBeat");
+    // audio/internal/data.c: gPitchFrequencies' C4 (0x27) and its wrap at 0x75 (PITCH_BFLATNEG1).
     assert_eq!((t.pitch_frequencies[0x27], t.pitch_frequencies[0x75]), (1.0, 0.055681));
     assert_eq!(t.default_envelope, [(1, 32000), (1000, 32000), (-1, 0), (0, 0)], "gDefaultEnvelope with ADSR_HANG, ADSR_DISABLE");
     assert_eq!((t.haas_effect_delay_sizes[0], t.haas_effect_delay_sizes[29], t.haas_effect_delay_sizes[30]), (60, 2, 0), "30 * SAMPLE_SIZE down to 0");
     assert_eq!(t.wave_sample_index, [0, 1, 2, 3, 4, 5, 6, 7, 7], "gWaveSamples: the quarter pulse twice");
-    // audio_init_params.c: 18 specs; the first plays 24 notes on 4 players with 2 reverbs,
+    // session_config.c: 18 specs; the first plays 24 notes on 4 players with 2 reverbs,
     // DEFAULT_REVERB_SETTINGS first.
     assert_eq!(t.specs.len(), 18);
     let s0 = &t.specs[0];
@@ -638,9 +644,9 @@ fn the_audio_data_is_the_roms_and_the_cs() {
         let mirror = &t.resample_lut[(63 - i) * 4..(63 - i) * 4 + 4];
         assert_eq!([row[0], row[1], row[2], row[3]], [mirror[3], mirror[2], mirror[1], mirror[0]], "phase {i}");
     }
-    // The noise starts at func_800E4FE0's first instruction (`addiu sp, sp, -n`).
+    // The noise starts at AudioThread_Update's first instruction (`addiu sp, sp, -n`).
     assert_eq!(t.noise_code_vram, 0x800E_4FE0);
-    assert_eq!(&t.noise_code[..2], &[0x27, 0xBD], "func_800E4FE0 starts its stack frame");
+    assert_eq!(&t.noise_code[..2], &[0x27, 0xBD], "AudioThread_Update starts its stack frame");
 }
 
 #[test]
@@ -650,14 +656,14 @@ fn the_games_audio_tables_and_the_scenes_sound_settings_are_the_cs() {
     let fresh = oot_import::audio::audio_game_tables(&c.p.config.decomp).expect("reading them");
     assert!(t == fresh, "the pack's game audio tables are what the importer reads");
     use oot_game::audio::*;
-    // code_800EC960.c's sSeqFlags, by the NA_BGM_* each row's comment names.
+    // general.c's sSeqFlags, by the NA_BGM_* each row's comment names.
     assert_eq!(t.seq_flags.len(), 0x6E);
     assert_eq!(t.seq_flags[0x00], SEQ_FLAG_FANFARE, "NA_BGM_GENERAL_SFX");
     assert_eq!(t.seq_flags[0x01], SEQ_FLAG_ENEMY, "NA_BGM_NATURE_AMBIENCE");
-    assert_eq!(t.seq_flags[0x18], SEQ_FLAG_5 | SEQ_FLAG_ENEMY, "NA_BGM_DUNGEON");
+    assert_eq!(t.seq_flags[0x18], SEQ_FLAG_RESUME_PREV | SEQ_FLAG_ENEMY, "NA_BGM_DUNGEON");
     assert_eq!(t.seq_flags[0x1B], SEQ_FLAG_NO_AMBIENCE | SEQ_FLAG_RESTORE, "NA_BGM_BOSS");
-    assert_eq!(t.seq_flags[0x1F], SEQ_FLAG_5, "NA_BGM_LINK_HOUSE");
-    assert_eq!(t.seq_flags[NA_BGM_KOKIRI as usize], SEQ_FLAG_4 | SEQ_FLAG_ENEMY, "NA_BGM_KOKIRI");
+    assert_eq!(t.seq_flags[0x1F], SEQ_FLAG_RESUME_PREV, "NA_BGM_LINK_HOUSE");
+    assert_eq!(t.seq_flags[NA_BGM_KOKIRI as usize], SEQ_FLAG_RESUME | SEQ_FLAG_ENEMY, "NA_BGM_KOKIRI");
     assert_eq!(t.seq_flags[0x6D], 0, "NA_BGM_CUTSCENE_EFFECTS");
     // sSpecReverbs: 40 for spec 7, 15 for spec 9.
     assert_eq!(t.spec_reverbs, [0, 0, 0, 0, 0, 0, 0, 40, 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -676,8 +682,8 @@ fn the_games_audio_tables_and_the_scenes_sound_settings_are_the_cs() {
         let end = n.channel_io.iter().position(|&b| b == 0xFF).unwrap_or_else(|| panic!("ambience {i}: no NATURE_IO_ENTRIES_END"));
         assert_eq!(end % 3, 0, "ambience {i}: whole triples");
     }
-    // audio_external_data.c's gSoundModeList.
-    assert_eq!(t.sound_mode_list, [SOUNDMODE_STEREO as u8, SOUNDMODE_HEADSET as u8, SOUNDMODE_SURROUND as u8, SOUNDMODE_MONO as u8]);
+    // audio/game/data.c's gSoundOutputModes.
+    assert_eq!(t.sound_mode_list, [SOUND_OUTPUT_STEREO as u8, SOUND_OUTPUT_HEADSET as u8, SOUND_OUTPUT_SURROUND as u8, SOUND_OUTPUT_MONO as u8]);
 
     // SCENE_CMD_SOUND_SETTINGS: what the pack holds for each layer is the ROM's header command.
     let mut with = 0;
@@ -729,7 +735,7 @@ fn the_sound_effects_tables_are_the_cs() {
 
 #[test]
 fn the_one_point_tables_are_the_roms() {
-    // z_onepointdemo_data.c's tables and Camera_Demo5's (z_camera_data.c), as the importer read
+    // z_onepointdemo.c's tables and Camera_Demo5's (z_camera_data.inc.c), as the importer read
     // them from the C, against the bytes of the ROM's code file: each D_ symbol is named after
     // its address, so with one table found by its bytes, every other is at its address's
     // offset from that one.
@@ -747,7 +753,7 @@ fn the_one_point_tables_are_the_roms() {
         b
     };
     let kf_bytes = |k: &oot_game::camera::OnePointCsFull| {
-        let mut b = vec![k.action_flags, k.unk_01];
+        let mut b = vec![k.action_flags, k.init_field];
         for v in [k.init_flags, k.timer_init, k.roll_target_init] {
             b.extend(v.to_be_bytes());
         }
@@ -756,7 +762,15 @@ fn the_one_point_tables_are_the_roms() {
         }
         b
     };
-    let addr = |name: &str| u32::from_str_radix(name.strip_prefix("D_").unwrap(), 16).unwrap();
+    // The names main gave the D_ symbols, back to their addresses through the name map.
+    let map = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../docs/name-map/name_map.tsv")).unwrap();
+    let named: BTreeMap<&str, u32> = map
+        .lines()
+        .map(|l| l.split('\t').collect::<Vec<_>>())
+        .filter(|r| r.len() == 5 && r[0] == "data" && r[1] == "code" && r[2].starts_with("D_"))
+        .map(|r| (r[3], u32::from_str_radix(&r[2][2..], 16).unwrap()))
+        .collect();
+    let addr = |name: &str| name.strip_prefix("D_").map(|h| u32::from_str_radix(h, 16).unwrap()).or_else(|| named.get(name).copied()).unwrap_or_else(|| panic!("{name}: no address"));
     // The anchor: D_8012013C (3050's at points), found by its bytes.
     let (anchor_name, anchor) = &d.points[0];
     let want: Vec<u8> = anchor.iter().flat_map(point_bytes).collect();
@@ -782,13 +796,13 @@ fn the_one_point_tables_are_the_roms() {
     }
     // 10 point lists, 83 keyframe tables (75 and Camera_Demo5's 8), 12 shorts.
     assert_eq!((d.points.len(), d.keyframes.len(), d.shorts.len(), checked), (10, 83, 12, 105));
-    // The crawlspace's: D_80120308 (at) with D_80120398 (9601's eye) and D_80120434 (9602's),
-    // D_8012042C frames, action D_80120430 1 (around the main camera's Player).
-    assert_eq!(d.short("D_8012042C"), Some(90));
-    assert_eq!(d.short("D_80120430"), Some(1));
-    assert_eq!(d.points("D_80120398").unwrap()[0].pos, [0, 9, 45]);
-    assert_eq!(d.points("D_80120308").unwrap()[1].view_angle, 40.000004);
-    // The settings the one-point cutscenes name, against z64camera.h's enum.
+    // The crawlspace's: sCrawlspaceAtPoints (at) with sCrawlspaceForwardsEyePoints (9601's eye) and sCrawlspaceBackwardsEyePoints (9602's),
+    // sCrawlspaceTimer frames, action sCrawlspaceActionParam 1 (around the main camera's Player).
+    assert_eq!(d.short("sCrawlspaceTimer"), Some(90));
+    assert_eq!(d.short("sCrawlspaceActionParam"), Some(1));
+    assert_eq!(d.points("sCrawlspaceForwardsEyePoints").unwrap()[0].pos, [0, 9, 45]);
+    assert_eq!(d.points("sCrawlspaceAtPoints").unwrap()[1].view_angle, 40.000004);
+    // The settings the one-point cutscenes name, against camera.h's enum.
     let cam = c.pack.game_data().unwrap().camera;
     for (id, name) in [
         (oot_game::onepoint::CAM_SET_FREE2, "CAM_SET_FREE2"),

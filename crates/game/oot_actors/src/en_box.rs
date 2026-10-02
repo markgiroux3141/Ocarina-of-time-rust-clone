@@ -6,16 +6,16 @@
 //! front (limb 1) and side-and-lid (limb 3) lists `EnBox_PostLimbDraw` adds.
 //!
 //! Waiting (`EnBox_WaitOpen`), it offers its item to a Link standing in front of it and facing
-//! it (`func_8002F554` with the get-item id negated: a chest's). Player's get-item interrupt
-//! opens it on A (`func_8083E5A8`): it sets `unk_1F4` to 1 for a new major item (the long
+//! it (`Actor_OfferGetItemNearby` with the get-item id negated: a chest's). Player's get-item interrupt
+//! opens it on A (`Player_ActionHandler_2`): it sets `unk_1F4` to 1 for a new major item (the long
 //! opening, with the light `Demo_Tre_Lgt` for a big chest) or -1 for the kick, and the chest
 //! plays the opening for Link's age and sets its treasure flag. An opened chest (its flag set)
 //! starts open.
 //!
 //! Also ported: the chests that appear on a switch flag, on the room's clear flag, or fall on a
 //! switch flag. Not ported: the chests the Zelda's Lullaby and Sun's Song make appear (types 9
-//! and 10: `func_809C9700` waits on the ocarina, which isn't ported, so they stay hidden), the
-//! lens-hidden chests' drawing (types 4 and 6 with `ACTOR_FLAG_7`: the Lens of Truth isn't
+//! and 10: `EnBox_AppearOnCorrectSong` waits on the ocarina, which isn't ported, so they stay hidden), the
+//! lens-hidden chests' drawing (types 4 and 6 with `ACTOR_FLAG_REACT_TO_LENS`: the Lens of Truth isn't
 //! ported, so they aren't drawn until opened), and the effects (the
 //! falling chests' dust, the ice trap's smoke: their `Rand_ZeroOne` calls are made). The light
 //! (`Demo_Tre_Lgt`, `crate::demo_tre_lgt`) is ported but its draw; the sparkles (`Demo_Kankyo`)
@@ -47,7 +47,7 @@ pub const OBJECT: &str = "object_box";
 const COLLISION: &str = "gTreasureChestCol";
 const SKELETON: &str = "gTreasureChestSkel";
 
-/// `En_Box_InitVars`.
+/// `En_Box_Profile`.
 pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_BOX, name: "En_Box", category: ACTORCAT_CHEST, flags: 0, object: OBJECT };
 
 /// `EnBoxType`.
@@ -60,8 +60,8 @@ pub const ENBOX_TYPE_SMALL: u8 = 5;
 pub const ENBOX_TYPE_6: u8 = 6;
 pub const ENBOX_TYPE_ROOM_CLEAR_SMALL: u8 = 7;
 pub const ENBOX_TYPE_SWITCH_FLAG_FALL_SMALL: u8 = 8;
-pub const ENBOX_TYPE_9: u8 = 9;
-pub const ENBOX_TYPE_10: u8 = 10;
+pub const ENBOX_TYPE_LULLABY_BIG: u8 = 9;
+pub const ENBOX_TYPE_SUNS_BIG: u8 = 10;
 pub const ENBOX_TYPE_SWITCH_FLAG_BIG: u8 = 11;
 
 /// `movementFlags` (`z_en_box.c`).
@@ -70,7 +70,7 @@ const ENBOX_MOVE_UNUSED: u8 = 1 << 1;
 const ENBOX_MOVE_FALL_ANGLE_SIDE: u8 = 1 << 2;
 const ENBOX_MOVE_STICK_TO_GROUND: u8 = 1 << 4;
 
-/// `ENBOX_TREASURE_FLAG_UNK_MIN`, `_MAX`: the treasure chest shop's chests (`func_8002F5F0`,
+/// `ENBOX_TREASURE_FLAG_UNK_MIN`, `_MAX`: the treasure chest shop's chests (`Actor_SetClosestSecretDistance`,
 /// which tells Player the nearest: the chest game isn't ported).
 const ENBOX_TREASURE_FLAG_UNK_MIN: i16 = 20;
 const ENBOX_TREASURE_FLAG_UNK_MAX: i16 = 32;
@@ -82,14 +82,14 @@ const GI_ICE_TRAP: i16 = 0x7C;
 /// `linkAge` (`LINK_AGE_ADULT` 0, `LINK_AGE_CHILD` 1).
 const ANIMATIONS: [&str; 4] = ["gTreasureChestAnim_00024C", "gTreasureChestAnim_000128", "gTreasureChestAnim_00043C", "gTreasureChestAnim_00043C"];
 
-/// The segment the lists call for a render mode (an empty list, or `func_809CA4A0` /
-/// `func_809CA518`'s), and the one the bakes take the env colour from.
+/// The segment the lists call for a render mode (an empty list, or `EnBox_XluRenderModeDList` /
+/// `EnBox_OpaRenderModeDList`'s), and the one the bakes take the env colour from.
 const SEG_RENDER_MODE: u8 = 0x08;
 const SEG_ENV: u8 = 0x0B;
 
 /// The chest's bakes: opaque (`EnBox_EmptyDList` on segment 8, env (0, 0, 0, 255)), the boss
-/// key chest's opaque one, and the translucent ones (`func_809CA4A0` for the fading types,
-/// `func_809CA518` for types 4 and 6) with the env alpha a dynamic colour.
+/// key chest's opaque one, and the translucent ones (`EnBox_XluRenderModeDList` for the fading types,
+/// `EnBox_OpaRenderModeDList` for types 4 and 6) with the env alpha a dynamic colour.
 const BAKE_OPA: &str = "En_Box/opa";
 const BAKE_OPA_BOSS_KEY: &str = "En_Box/opa_boss_key";
 const BAKE_XLU: &str = "En_Box/xlu";
@@ -101,12 +101,12 @@ pub fn bakes() -> Vec<MeshBake> {
     let end = (0xDF00_0000u32, 0u32);
     // gDPSetEnvColor(0, 0, 0, 255).
     let env_opaque = BakeSegment::Commands(vec![(0xFB00_0000, 0x0000_00FF), end]);
-    // func_809CA4A0: gDPSetRenderMode(AA_EN | Z_CMP | Z_UPD | IM_RD | CLR_ON_CVG | CVG_DST_WRAP |
+    // EnBox_XluRenderModeDList: gDPSetRenderMode(AA_EN | Z_CMP | Z_UPD | IM_RD | CLR_ON_CVG | CVG_DST_WRAP |
     // ZMODE_XLU | FORCE_BL | GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, G_BL_CLR_IN, G_BL_1MA), the same
     // with GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA)): G_SETOTHERMODE_L, shift 3, 29 bits
     // (w0 0xE2 << 24 | (32 - 3 - 29) << 8 | (29 - 1)).
     let rm_xlu = (0xE200_001Cu32, 0xC810_49F8u32);
-    // func_809CA518: AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_CLAMP | ZMODE_OPA | ALPHA_CVG_SEL |
+    // EnBox_OpaRenderModeDList: AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_CLAMP | ZMODE_OPA | ALPHA_CVG_SEL |
     // GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, G_BL_CLR_IN, G_BL_1MA), G_RM_AA_ZB_OPA_SURF2.
     let rm_46 = (0xE200_001Cu32, 0xC811_2078u32);
     let opa = |name: &str, front: &str, side: &str| MeshBake {
@@ -138,7 +138,7 @@ pub enum Action {
     FallOnSwitchFlag,
     /// `EnBox_Fall`.
     Fall,
-    /// `func_809C9700`: waiting for a song (types 9 and 10).
+    /// `EnBox_AppearOnCorrectSong`: waiting for a song (types 9 and 10).
     WaitSong,
     /// `EnBox_AppearOnSwitchFlag`.
     AppearOnSwitchFlag,
@@ -159,7 +159,7 @@ impl Action {
         match self {
             Action::FallOnSwitchFlag => "EnBox_FallOnSwitchFlag",
             Action::Fall => "EnBox_Fall",
-            Action::WaitSong => "func_809C9700",
+            Action::WaitSong => "EnBox_AppearOnCorrectSong",
             Action::AppearOnSwitchFlag => "EnBox_AppearOnSwitchFlag",
             Action::AppearOnRoomClear => "EnBox_AppearOnRoomClear",
             Action::AppearInit => "EnBox_AppearInit",
@@ -176,8 +176,8 @@ pub struct EnBox {
     pub bg: u16,
     pub skel: Option<SkelAnimeStd>,
     skeleton: Option<Arc<Skeleton>>,
-    /// `unk_1A8`: the appearing and falling delays.
-    pub unk_1a8: i32,
+    /// `appearTimer`: the appearing and falling delays.
+    pub appear_timer: i32,
     /// `unk_1B0`: the lid's opening, 0 to 1 (read by nothing ported).
     pub unk_1b0: f32,
     pub action: Action,
@@ -189,8 +189,8 @@ pub struct EnBox {
     /// `type`.
     pub ty: u8,
     pub ice_smoke_timer: u8,
-    /// `unk_1FB`: the song chests' state.
-    pub unk_1fb: u8,
+    /// `ocarinaState`: the song chests' state.
+    pub ocarina_state: u8,
     /// `subCamId`: the falling chest's one-point cutscene (4500).
     pub sub_cam_id: i16,
 }
@@ -226,7 +226,7 @@ impl EnBox {
         let end_frame = anim.as_ref().map(|a| a.last_frame()).unwrap_or(0.0);
         // sInitChain: targetMode 0.
         actor.target_mode = 0;
-        // DynaPolyActor_Init(DPM_UNK), gTreasureChestCol, DynaPoly_SetBgActor,
+        // DynaPolyActor_Init(0), gTreasureChestCol, DynaPoly_SetBgActor,
         // DynaPoly_DisableCeilingCollision.
         let bg = match play.assets.as_ref().map(|a| a.pack.collision(&keys::collision(OBJECT, COLLISION))) {
             Some(Ok(h)) => play.col.dyna.set_bg_actor(Arc::new(h), source(&actor), 0),
@@ -245,14 +245,14 @@ impl EnBox {
             bg,
             skel: None,
             skeleton: None,
-            unk_1a8: 0,
+            appear_timer: 0,
             unk_1b0: 0.0,
             action: Action::WaitOpen,
             unk_1f4: 0,
             movement_flags: 0,
             alpha: 0,
             ice_smoke_timer: 0,
-            unk_1fb: 0,
+            ocarina_state: 0,
             sub_cam_id: 0,
         };
         b.actor.gravity = -5.5;
@@ -269,18 +269,18 @@ impl EnBox {
             if play.rand.zero_one() < 0.5 {
                 b.movement_flags |= ENBOX_MOVE_FALL_ANGLE_SIDE;
             }
-            b.unk_1a8 = -12;
+            b.appear_timer = -12;
             b.action = Action::FallOnSwitchFlag;
             b.alpha = 0;
             b.movement_flags |= ENBOX_MOVE_IMMOBILE;
-            b.actor.flags |= ACTOR_FLAG_4;
+            b.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         } else if (ty == ENBOX_TYPE_ROOM_CLEAR_BIG || ty == ENBOX_TYPE_ROOM_CLEAR_SMALL) && !play.flags.get_clear(b.actor.room) {
             b.action = Action::AppearOnRoomClear;
             play.col.dyna.set_collision_disabled(bg, true);
             b.hide();
-        } else if ty == ENBOX_TYPE_9 || ty == ENBOX_TYPE_10 {
+        } else if ty == ENBOX_TYPE_LULLABY_BIG || ty == ENBOX_TYPE_SUNS_BIG {
             b.action = Action::WaitSong;
-            b.actor.flags |= ACTOR_FLAG_25;
+            b.actor.flags |= ACTOR_FLAG_UPDATE_DURING_OCARINA;
             play.col.dyna.set_collision_disabled(bg, true);
             b.hide();
         } else if ty == ENBOX_TYPE_SWITCH_FLAG_BIG && !play.flags.get_switch(b.switch_flag as i32) {
@@ -289,7 +289,7 @@ impl EnBox {
             b.hide();
         } else {
             if ty == ENBOX_TYPE_4 || ty == ENBOX_TYPE_6 {
-                b.actor.flags |= ACTOR_FLAG_7;
+                b.actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
             }
             b.action = Action::WaitOpen;
             b.movement_flags |= ENBOX_MOVE_IMMOBILE | ENBOX_MOVE_STICK_TO_GROUND;
@@ -329,7 +329,7 @@ impl EnBox {
         self.movement_flags |= ENBOX_MOVE_IMMOBILE;
         self.actor.world_pos.y = self.actor.home_pos.y - 50.0;
         self.alpha = 0;
-        self.actor.flags |= ACTOR_FLAG_4;
+        self.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     }
 
     /// `EnBox_ClipToGround`: onto the floor just under it (its own collision aside).
@@ -374,7 +374,7 @@ impl EnBox {
         self.actor.shape_rot.z = if self.movement_flags & ENBOX_MOVE_FALL_ANGLE_SIDE != 0 { (y_diff * 50.0) as i32 as i16 } else { (-y_diff * 50.0) as i32 as i16 };
     }
 
-    /// The treasure chest shop's chests tell Player which is nearest (`func_8002F5F0`: not
+    /// The treasure chest shop's chests tell Player which is nearest (`Actor_SetClosestSecretDistance`: not
     /// ported, the chest game isn't).
     fn nearest_chest_check(&self) {
         let f = self.actor.params & 0x1F;
@@ -384,26 +384,26 @@ impl EnBox {
     /// `EnBox_FallOnSwitchFlag`.
     fn fall_on_switch_flag(&mut self, play: &mut PlayState) {
         self.nearest_chest_check();
-        if self.unk_1a8 >= 0 {
+        if self.appear_timer >= 0 {
             self.action = Action::Fall;
             let me = self.cam_actor(play);
             self.sub_cam_id = play.onepoint_cutscene_init(4500, 9999, me, CAM_ID_MAIN);
             play.col.dyna.set_collision_disabled(self.bg, false);
-        } else if self.unk_1a8 >= -11 {
-            self.unk_1a8 += 1;
+        } else if self.appear_timer >= -11 {
+            self.appear_timer += 1;
         } else if play.flags.get_switch(self.switch_flag as i32) {
-            self.unk_1a8 += 1;
+            self.appear_timer += 1;
         }
     }
 
-    /// `func_809C9700`: a song chest waits for Link to play its song near it. The ocarina isn't
+    /// `EnBox_AppearOnCorrectSong`: a song chest waits for Link to play its song near it. The ocarina isn't
     /// ported, so it never appears: within 150 it asks Player for the ocarina
     /// (`PLAYER_STATE2_23`), which nothing answers.
     fn wait_song(&mut self, play: &mut PlayState) {
         self.nearest_chest_check();
         let Some(p) = play.player.and_then(|h| play.actors.actor(h)) else { return };
         if self.actor.world_pos.distance_squared(p.world_pos) > 150.0 * 150.0 {
-            self.unk_1fb = 0;
+            self.ocarina_state = 0;
         }
     }
 
@@ -415,7 +415,7 @@ impl EnBox {
                 play.onepoint_attention(me);
             }
             self.action = Action::AppearInit;
-            self.unk_1a8 = -30;
+            self.appear_timer = -30;
         }
     }
 
@@ -428,16 +428,16 @@ impl EnBox {
             if let Some(me) = self.cam_actor(play) {
                 play.onepoint_attention(me);
             }
-            self.unk_1a8 = if play.onepoint_check_for_category(self.actor.category) { 0 } else { -30 };
+            self.appear_timer = if play.onepoint_check_for_category(self.actor.category) { 0 } else { -30 };
         }
     }
 
     /// `EnBox_AppearInit`: the chest appears once the attention camera attends a chest
     /// (`func_8005B198`), or at once when its delay is set.
     fn appear_init(&mut self, play: &mut PlayState) {
-        if play.func_8005b198() == self.actor.category as i32 || self.unk_1a8 != 0 {
+        if play.func_8005b198() == self.actor.category as i32 || self.appear_timer != 0 {
             self.action = Action::AppearAnimation;
-            self.unk_1a8 = 0;
+            self.appear_timer = 0;
             let h = self.actor.home_pos;
             if let Err(e) = play.actor_spawn(ACTOR_DEMO_KANKYO, h, [0; 3], DEMOKANKYO_SPARKLES) {
                 log::debug!("En_Box: Demo_Kankyo: {e:?}");
@@ -450,14 +450,14 @@ impl EnBox {
     /// `EnBox_AppearAnimation`: rise 50 over 40 frames, fade in over 20.
     fn appear_animation(&mut self, play: &mut PlayState) {
         play.col.dyna.set_collision_disabled(self.bg, false);
-        if self.unk_1a8 < 0 {
-            self.unk_1a8 += 1;
-        } else if self.unk_1a8 < 40 {
-            self.unk_1a8 += 1;
+        if self.appear_timer < 0 {
+            self.appear_timer += 1;
+        } else if self.appear_timer < 40 {
+            self.appear_timer += 1;
             self.actor.world_pos.y += 1.25;
-        } else if self.unk_1a8 < 60 {
+        } else if self.appear_timer < 60 {
             self.alpha = self.alpha.wrapping_add(12);
-            self.unk_1a8 += 1;
+            self.appear_timer += 1;
             self.actor.world_pos.y = self.actor.home_pos.y;
         } else {
             self.action = Action::WaitOpen;
@@ -507,7 +507,7 @@ impl EnBox {
     /// `EnBox_Open`: the opening plays out (the unlock on frame 30, the lid on 90), then
     /// `unk_1F4` counts the frames open up to ±120.
     fn open(&mut self, play: &mut PlayState) {
-        self.actor.flags &= !ACTOR_FLAG_7;
+        self.actor.flags &= !ACTOR_FLAG_REACT_TO_LENS;
         let Some(sk) = self.skel.as_mut() else { return };
         if sk.update() {
             if self.unk_1f4 > 0 {
@@ -543,7 +543,7 @@ impl EnBox {
     /// `EnBox_SpawnIceSmoke`: an ice trap's smoke (not drawn: its random numbers are).
     fn spawn_ice_smoke(&mut self, play: &mut PlayState) {
         self.ice_smoke_timer += 1;
-        self.actor.func_8002f974(NA_SE_EN_MIMICK_BREATH - SFX_FLAG);
+        self.actor.play_sfx_flagged(NA_SE_EN_MIMICK_BREATH - SFX_FLAG);
         if play.rand.zero_one() < 0.3 {
             play.rand.zero_one();
             play.rand.zero_one();
@@ -606,7 +606,7 @@ impl ActorImpl for EnBox {
             rs.joints = Some(eng_anim::anim::JointTable { rot: s.joint_table.clone(), face: 0 });
         }
         rs.values = vec![self.alpha as f32];
-        rs.switches = vec![(self.actor.flags & ACTOR_FLAG_7 != 0) as u32];
+        rs.switches = vec![(self.actor.flags & ACTOR_FLAG_REACT_TO_LENS != 0) as u32];
         rs
     }
 
@@ -628,7 +628,7 @@ impl ActorImpl for EnBox {
             sv.env[SEG_ENV as usize] = Some([0, 0, 0, alpha]);
             out.xlu.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE_XLU)), transform: m, bones, params: DrawParams { segments: Some(sv), ..Default::default() } });
         }
-        // (Types 4 and 6 with ACTOR_FLAG_7, BAKE_XLU_46's render mode: drawn by the lens only.)
+        // (Types 4 and 6 with ACTOR_FLAG_REACT_TO_LENS, BAKE_XLU_46's render mode: drawn by the lens only.)
         let _ = BAKE_XLU_46;
     }
 

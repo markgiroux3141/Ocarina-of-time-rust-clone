@@ -1,4 +1,4 @@
-//! The message box (`z_message_PAL.c`, with the font loads of `z_kanfont.c`): the text of signs
+//! The message box (`z_message.c`, with the font loads of `z_kanfont.c`): the text of signs
 //! and NPCs, typed one character a frame into the box, A to go on or close.
 //!
 //! - **The text** comes from the pack's `table/messages` (`MessageTable`): the ROM's English
@@ -18,7 +18,7 @@
 //! drawn), the credits, the ocarina's sounds, and the debug message viewer (`BREG(0)` 0). `YREG(31)` is the
 //! shop's (`yreg_31`).
 
-#![allow(non_snake_case)] // D_8014B2F4 and the unk_ fields keep the decomp's names
+#![allow(non_snake_case)] // sMessageStartFrameCount and the unk_ fields keep the decomp's names
 
 use eng_gfx::DrawLists;
 use eng_input::pad::{BTN_A, BTN_B, BTN_CUP, Input};
@@ -121,14 +121,14 @@ pub const MESSAGE_HIGHSCORE: u8 = 0x1E;
 pub const MESSAGE_TIME: u8 = 0x1F;
 
 // MSGCOL_* (message_data_fmt.h).
-pub const MSGCOL_DEFAULT: u8 = 0;
-pub const MSGCOL_RED: u8 = 1;
-pub const MSGCOL_ADJUSTABLE: u8 = 2;
-pub const MSGCOL_BLUE: u8 = 3;
-pub const MSGCOL_LIGHTBLUE: u8 = 4;
-pub const MSGCOL_PURPLE: u8 = 5;
-pub const MSGCOL_YELLOW: u8 = 6;
-pub const MSGCOL_BLACK: u8 = 7;
+pub const TEXT_COLOR_DEFAULT: u8 = 0;
+pub const TEXT_COLOR_RED: u8 = 1;
+pub const TEXT_COLOR_ADJUSTABLE: u8 = 2;
+pub const TEXT_COLOR_BLUE: u8 = 3;
+pub const TEXT_COLOR_LIGHTBLUE: u8 = 4;
+pub const TEXT_COLOR_PURPLE: u8 = 5;
+pub const TEXT_COLOR_YELLOW: u8 = 6;
+pub const TEXT_COLOR_BLACK: u8 = 7;
 
 /// `FONT_CHAR_TEX_SIZE`: a glyph is a 16x16 I4 texture. `MESSAGE_STATIC_TEX_SIZE`.
 pub const FONT_CHAR_TEX_SIZE: u32 = 16 * 16 / 2;
@@ -176,7 +176,7 @@ impl MessageTable {
         self.entries.iter().take_while(|e| e.text_id != 0xFFFF).find(|e| e.text_id == text_id)
     }
 
-    /// A message's raw bytes as `Message_FindMessage` measures them (to the next entry).
+    /// A message's raw bytes as `Message_FindMessagePAL` measures them (to the next entry).
     pub fn raw(&self, text_id: u16) -> Option<&[u8]> {
         let seg = self.entries.first()?.segment;
         let i = self.entries.iter().position(|e| e.text_id == text_id && e.text_id != 0xFFFF)?;
@@ -196,7 +196,7 @@ pub struct Font {
     /// `charTexBuf`: the glyphs `Font_LoadChar` loaded (`character - ' '`), one per
     /// `FONT_CHAR_TEX_SIZE`.
     pub char_tex_buf: Vec<u8>,
-    /// `charTexBuf[0]` as `Message_FindMessage` sets it: the message's `typePos`.
+    /// `charTexBuf[0]` as `Message_FindMessagePAL` sets it: the message's `typePos`.
     pub type_pos: u8,
     /// `iconBuf`: the `TEXTBOX_ICON_*` `Font_LoadMessageBoxIcon` loaded.
     pub icon: u8,
@@ -223,7 +223,7 @@ impl Font {
 }
 
 /// The debug registers the message box reads and writes (`regs.h`), with their start values
-/// from `Regs_InitDataImpl` and `func_80111070` (`z_construct.c`).
+/// from `Regs_InitDataImpl` and `Regs_InitDataImpl` (`z_construct.c`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextRegs {
     /// `R_TEXT_INIT_XPOS` (`XREG(54)`), `R_TEXT_INIT_YPOS`, `R_TEXT_LINE_SPACING`,
@@ -294,7 +294,7 @@ impl Default for TextRegs {
             xreg_94: 160,
             textbox_x: 0,
             textbox_y: 0,
-            // func_80111070.
+            // Regs_InitDataImpl.
             textbox_width: 50,
             textbox_height: 0,
             textbox_texwidth: 0,
@@ -380,12 +380,12 @@ pub struct MessageContext {
     pub sprites: Vec<Sprite>,
 }
 
-/// `z_message_PAL.c`'s file statics.
+/// `z_message.c`'s file statics.
 #[derive(Debug, Clone, PartialEq)]
 struct Statics {
-    /// `sTextFade`, `D_8014B2F4`, `sTextboxSkipped`, `sNextTextId`, `sMessageHasSetSfx`.
+    /// `sTextFade`, `sMessageStartFrameCount`, `sTextboxSkipped`, `sNextTextId`, `sMessageHasSetSfx`.
     text_fade: bool,
-    d_8014b2f4: u8,
+    message_start_frame_count: u8,
     textbox_skipped: bool,
     next_text_id: u16,
     message_has_set_sfx: bool,
@@ -407,7 +407,7 @@ impl Default for Statics {
     fn default() -> Statics {
         Statics {
             text_fade: false,
-            d_8014b2f4: 0,
+            message_start_frame_count: 0,
             textbox_skipped: false,
             next_text_id: 0,
             message_has_set_sfx: false,
@@ -437,7 +437,7 @@ pub fn should_advance_silent(input: &Input) -> bool {
 pub fn should_advance(input: &Input, audio: &mut crate::audio::GameAudio) -> bool {
     let pressed = should_advance_silent(input);
     if pressed {
-        audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_PASS);
+        audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_MESSAGE_PASS);
     }
     pressed
 }
@@ -445,7 +445,7 @@ pub fn should_advance(input: &Input, audio: &mut crate::audio::GameAudio) -> boo
 /// `Audio_PlaySfxGeneral(0, &gSfxDefaultPos, ...)`: the message box's silent sound (id 0: the
 /// request is queued, and `Audio_ProcessSfxRequest` drops it).
 fn sfx_none(audio: &mut crate::audio::GameAudio) {
-    audio.func_80078884(0);
+    audio.play_sfx_centered(0);
 }
 
 /// The textboxes' sprite names.
@@ -467,10 +467,10 @@ pub fn item_icon_sprite(item: u8) -> String {
 /// fishing rod); the medallions, stones and dungeon items `icon_item_24_static`'s 24x24 ones
 /// (`(item - ITEM_MEDALLION_FOREST) * 0x900`, up to the large magic jar).
 pub fn item_icon_texture(item: u8) -> Option<(&'static str, u32, u32)> {
-    use crate::item::{ITEM_MAGIC_LARGE, ITEM_MEDALLION_FOREST};
+    use crate::item::{ITEM_MAGIC_JAR_BIG, ITEM_MEDALLION_FOREST};
     if item <= crate::interface::LAST_ICON_ITEM {
         Some(("icon_item_static", item as u32 * 0x1000, 32))
-    } else if (ITEM_MEDALLION_FOREST..=ITEM_MAGIC_LARGE).contains(&item) {
+    } else if (ITEM_MEDALLION_FOREST..=ITEM_MAGIC_JAR_BIG).contains(&item) {
         Some(("icon_item_24_static", (item - ITEM_MEDALLION_FOREST) as u32 * 0x900, 24))
     } else {
         None
@@ -582,7 +582,7 @@ impl MessageContext {
             if self.choice_index > 128 {
                 self.choice_index = 0;
             } else {
-                audio.func_80078884(NA_SE_SY_CURSOR);
+                audio.play_sfx_centered(NA_SE_SY_CURSOR);
             }
         } else if stick_y <= -30 && !self.s.analog_stick_held {
             self.s.analog_stick_held = true;
@@ -590,7 +590,7 @@ impl MessageContext {
             if self.choice_index > num_choices {
                 self.choice_index = num_choices;
             } else {
-                audio.func_80078884(NA_SE_SY_CURSOR);
+                audio.play_sfx_centered(NA_SE_SY_CURSOR);
             }
         } else if stick_y.abs() < 30 {
             self.s.analog_stick_held = false;
@@ -640,7 +640,7 @@ impl MessageContext {
         r.textbox_x = (r.textbox_x_target + r.textbox_width_target) - (r.textbox_width / 2);
     }
 
-    /// `Message_FindMessage` for `LANGUAGE_ENG`: the message's offset and length (to the next
+    /// `Message_FindMessagePAL` for `LANGUAGE_ENG`: the message's offset and length (to the next
     /// entry), and its `typePos`. A missing id gives the table's first message.
     fn find_message(&mut self, table: &MessageTable, text_id: u16) {
         let Some(first) = table.entries.first() else { return };
@@ -667,10 +667,10 @@ impl MessageContext {
     fn set_text_color(&mut self, color: u8) {
         let wooden = self.text_box_type == TEXTBOX_TYPE_WOODEN;
         let rgb = match color {
-            MSGCOL_RED => if wooden { [255, 120, 0] } else { [255, 60, 60] },
-            MSGCOL_ADJUSTABLE => if wooden { self.regs.text_adjust_color_1 } else { self.regs.text_adjust_color_2 },
-            MSGCOL_BLUE => if wooden { [80, 110, 255] } else { [80, 90, 255] },
-            MSGCOL_LIGHTBLUE => {
+            TEXT_COLOR_RED => if wooden { [255, 120, 0] } else { [255, 60, 60] },
+            TEXT_COLOR_ADJUSTABLE => if wooden { self.regs.text_adjust_color_1 } else { self.regs.text_adjust_color_2 },
+            TEXT_COLOR_BLUE => if wooden { [80, 110, 255] } else { [80, 90, 255] },
+            TEXT_COLOR_LIGHTBLUE => {
                 if wooden {
                     [90, 180, 255]
                 } else if self.text_box_type == TEXTBOX_TYPE_NONE_NO_SHADOW {
@@ -679,9 +679,9 @@ impl MessageContext {
                     [100, 180, 255]
                 }
             }
-            MSGCOL_PURPLE => if wooden { [210, 100, 255] } else { [255, 150, 180] },
-            MSGCOL_YELLOW => if wooden { [255, 255, 30] } else { [225, 255, 50] },
-            MSGCOL_BLACK => [0, 0, 0],
+            TEXT_COLOR_PURPLE => if wooden { [210, 100, 255] } else { [255, 150, 180] },
+            TEXT_COLOR_YELLOW => if wooden { [255, 255, 30] } else { [225, 255, 50] },
+            TEXT_COLOR_BLACK => [0, 0, 0],
             _ => if self.text_box_type == TEXTBOX_TYPE_NONE_NO_SHADOW { [0, 0, 0] } else { [255, 255, 255] },
         };
         self.text_color[..3].copy_from_slice(&rgb);
@@ -853,7 +853,7 @@ impl MessageContext {
                         self.s.message_has_set_sfx = true;
                         log::debug!("サウンド（ＳＥ）");
                         let sfx_hi = (self.decoded(i as usize + 1) as u16) << 8;
-                        f.audio.func_80078884(sfx_hi | self.decoded(i as usize + 2) as u16);
+                        f.audio.play_sfx_centered(sfx_hi | self.decoded(i as usize + 2) as u16);
                     }
                     i += 2;
                 }
@@ -883,7 +883,7 @@ impl MessageContext {
                     if self.msg_mode == MSGMODE_TEXT_DISPLAYING {
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         if self.textbox_end_type == TEXTBOX_ENDTYPE_DEFAULT {
-                            f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_END);
+                            f.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_MESSAGE_END);
                             self.font.load_message_box_icon(TEXTBOX_ICON_SQUARE);
                             if f.cs_idle {
                                 f.iface.set_do_action(DO_ACTION_RETURN);
@@ -924,7 +924,7 @@ impl MessageContext {
                         self.msg_mode = MSGMODE_TEXT_DONE;
                         self.textbox_end_type = TEXTBOX_ENDTYPE_EVENT;
                         self.font.load_message_box_icon(TEXTBOX_ICON_TRIANGLE);
-                        f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_END);
+                        f.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_MESSAGE_END);
                     }
                     return;
                 }
@@ -1142,13 +1142,13 @@ impl MessageContext {
     /// `Message_OpenText` for the English table.
     fn open_text(&mut self, f: &mut MsgFrame, mut text_id: u16) {
         if self.msg_mode == MSGMODE_NONE {
-            f.save.unk_13ee = f.save.unk_13ea;
+            f.save.prev_hud_visibility_mode = f.save.hud_visibility_mode;
         }
         if f.scene_cam_type == crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT {
             change_alpha(f.save, 5);
         }
         self.s.message_has_set_sfx = false;
-        self.s.d_8014b2f4 = 0;
+        self.s.message_start_frame_count = 0;
         self.s.textbox_skipped = false;
         // Text ids 0x500..0x5FF are the credits (sTextIsCredits): not imported.
         self.regs.text_char_scale = 75;
@@ -1322,8 +1322,8 @@ impl MessageContext {
         const MID_Y: [i16; 6] = [90, 90, 90, 90, 174, 90];
         const END_ICON_Y_OFFSET: [i16; 6] = [59, 59, 59, 59, 34, 59];
         use crate::scene::{SCENE_CAM_TYPE_DEFAULT, SCENE_CAM_TYPE_FIXED_MARKET};
-        /// `SCENE_HAIRAL_NIWA`, `SCENE_MARKET_DAY`, `_NIGHT`, `_RUINS`.
-        const SCENE_HAIRAL_NIWA: u16 = 0x45;
+        /// `SCENE_CASTLE_COURTYARD_GUARDS_DAY`, `SCENE_MARKET_DAY`, `_NIGHT`, `_RUINS`.
+        const SCENE_CASTLE_COURTYARD_GUARDS_DAY: u16 = 0x45;
         const SCENE_MARKET_DAY: u16 = 0x20;
         const SCENE_MARKET_NIGHT: u16 = 0x21;
         const SCENE_MARKET_RUINS: u16 = 0x22;
@@ -1333,13 +1333,13 @@ impl MessageContext {
         }
         match self.msg_mode {
             MSGMODE_TEXT_START => {
-                self.s.d_8014b2f4 = self.s.d_8014b2f4.wrapping_add(1);
+                self.s.message_start_frame_count = self.s.message_start_frame_count.wrapping_add(1);
                 let var = if f.scene_cam_type == SCENE_CAM_TYPE_FIXED_MARKET {
-                    self.s.d_8014b2f4 >= 4
-                } else if f.scene_cam_type != SCENE_CAM_TYPE_DEFAULT || f.scene_id == SCENE_HAIRAL_NIWA {
+                    self.s.message_start_frame_count >= 4
+                } else if f.scene_cam_type != SCENE_CAM_TYPE_DEFAULT || f.scene_id == SCENE_CASTLE_COURTYARD_GUARDS_DAY {
                     true
                 } else {
-                    self.s.d_8014b2f4 >= 4 || self.talk_actor.is_none()
+                    self.s.message_start_frame_count >= 4 || self.talk_actor.is_none()
                 };
                 if !var {
                     return;
@@ -1361,7 +1361,7 @@ impl MessageContext {
                 let v = (self.text_box_type as usize).min(5);
                 let r = &mut self.regs;
                 if self.text_box_pos == 0 {
-                    let limit = if f.scene_cam_type != SCENE_CAM_TYPE_DEFAULT || f.scene_id == SCENE_HAIRAL_NIWA {
+                    let limit = if f.scene_cam_type != SCENE_CAM_TYPE_DEFAULT || f.scene_id == SCENE_CASTLE_COURTYARD_GUARDS_DAY {
                         r.xreg_92
                     } else if matches!(f.scene_id, SCENE_MARKET_DAY | SCENE_MARKET_NIGHT | SCENE_MARKET_RUINS) {
                         r.xreg_93
@@ -1457,11 +1457,11 @@ impl MessageContext {
                         }
                     } else if should_advance_silent(f.input) {
                         if self.textbox_end_type == TEXTBOX_ENDTYPE_HAS_NEXT {
-                            f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_MESSAGE_PASS);
+                            f.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_MESSAGE_PASS);
                             let next = self.s.next_text_id;
                             self.continue_textbox(f, next);
                         } else {
-                            f.audio.func_80078884(crate::audio::sfx::NA_SE_SY_DECIDE);
+                            f.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_DECIDE);
                             self.close_textbox(f.audio);
                         }
                     }
@@ -1477,16 +1477,16 @@ impl MessageContext {
                     f.save.health_accumulator = 0x140;
                 }
                 if matches!(self.text_id, 0x301F | 0xA | 0xC | 0xCF | 0x21C | 9 | 0x4078 | 0x2015 | 0x3040) {
-                    f.save.unk_13ee = 0x32;
+                    f.save.prev_hud_visibility_mode = 0x32;
                 }
                 // Outside a script, with the main camera active: the interface comes back.
                 let song_choice = (0x88D..0x893).contains(&self.text_id) && self.choice_index == 0;
                 if f.cs_idle && !matches!(self.text_id, 0x2061 | 0x2025 | 0x208C | 0x3055) && !song_choice && f.save.cutscene_index < 0xFFF0 && f.active_cam_main {
-                    if matches!(f.save.unk_13ee, 0 | 1 | 2) {
-                        f.save.unk_13ee = 0x32;
+                    if matches!(f.save.prev_hud_visibility_mode, 0 | 1 | 2) {
+                        f.save.prev_hud_visibility_mode = 0x32;
                     }
-                    f.save.unk_13ea = 0;
-                    let t = f.save.unk_13ee;
+                    f.save.hud_visibility_mode = 0;
+                    let t = f.save.prev_hud_visibility_mode;
                     change_alpha(f.save, t);
                 }
                 self.msg_length = 0;

@@ -99,7 +99,7 @@ enum Cmd {
         query: String,
     },
     /// The asset pack's cutscene scripts: with no name, every script and
-    /// `sEntranceCutsceneTable`; with a symbol (`gDekuTreeIntroCs`, `D_808BCE20`), its commands.
+    /// `sEntranceCutsceneTable`; with a symbol (`gDekuTreeIntroCs`, `gDekuTreeMeetingCs`), its commands.
     Cutscene {
         name: Option<String>,
     },
@@ -214,7 +214,7 @@ fn audio_wav(font: Option<u32>, inst: Option<u8>, drum: Option<u8>, note: u8, se
             (None, Some(d)) => (0x7F, d),
             _ => anyhow::bail!("give --inst or --drum"),
         };
-        // 120 bpm: TATUMS_PER_BEAT (48) * 2 tatums a second.
+        // 120 bpm: SEQTICKS_PER_BEAT (48) * 2 tatums a second.
         let ticks = (seconds * 96.0).round() as u16;
         let hold = ((seconds + tail) * 96.0).round() as u16;
         r.play_script(0, f, &note_script(instrument, semitone, 127, ticks.max(1), hold, 120));

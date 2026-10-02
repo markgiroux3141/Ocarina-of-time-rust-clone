@@ -1,6 +1,6 @@
 //! `En_Door` (`ovl_En_Door/z_en_door.c`): doors with handles. A transition actor (it spawns
 //! from the scene's transition-actor list, with its index in the params' top bits); Player
-//! opens it (`func_80839800`), which loads the room behind it or, for a scene-exit door, starts
+//! opens it (`Player_ActionHandler_1`), which loads the room behind it or, for a scene-exit door, starts
 //! the exit under it.
 //!
 //! Params: the type in bits 7..9 (`EnDoorType`), a double door in bit 6, a switch flag (locked
@@ -26,7 +26,7 @@
 
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_27, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::audio::sfx::{NA_SE_EV_CHAIN_KEY_UNLOCK, NA_SE_EV_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_OPEN, NA_SE_OC_DOOR_OPEN};
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
@@ -38,8 +38,8 @@ use crate::player::{PLAYER_DOORTYPE_AJAR, PLAYER_DOORTYPE_HANDLE, Player, STATE1
 
 pub const ACTOR_EN_DOOR: i16 = 0x0009;
 
-/// `En_Door_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOOR, name: "En_Door", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_4, object: "gameplay_keep" };
+/// `En_Door_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOOR, name: "En_Door", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
 
 /// `DOOR_AJAR_SLAM_RANGE`, `DOOR_AJAR_OPEN_RANGE`.
 const DOOR_AJAR_SLAM_RANGE: f32 = 120.0;
@@ -54,7 +54,7 @@ pub const DOOR_AJAR: u16 = 4;
 pub const DOOR_CHECKABLE: u16 = 5;
 pub const DOOR_EVENING: u16 = 6;
 
-/// `ENDOOR_PARAMS_TYPE_SHIFT`, `ENDOOR_PARAMS_TYPE_MASK`, `ENDOOR_PARAMS_DOUBLE_DOOR_FLAG`.
+/// `ENDOOR_PARAMS_TYPE_SHIFT`, `ENDOOR_PARAMS_TYPE_MASK`, `ENDOOR_PARAMS_IS_DOUBLE_DOOR_MASK`.
 const TYPE_SHIFT: u32 = 7;
 const TYPE_MASK: i16 = 7 << TYPE_SHIFT;
 const DOUBLE_DOOR_FLAG: i16 = 0x40;
@@ -66,17 +66,17 @@ pub const DOOR_OPEN_ANIM_ADULT_R: u8 = 2;
 pub const DOOR_OPEN_ANIM_CHILD_R: u8 = 3;
 
 // `SCENE_*` and `OBJECT_*`.
-const SCENE_HIDAN: u16 = 0x04;
-const SCENE_MIZUSIN: u16 = 0x05;
-const SCENE_HAKADAN: u16 = 0x07;
-const SCENE_HAKADANCH: u16 = 0x08;
+const SCENE_FIRE_TEMPLE: u16 = 0x04;
+const SCENE_WATER_TEMPLE: u16 = 0x05;
+const SCENE_SHADOW_TEMPLE: u16 = 0x07;
+const SCENE_BOTTOM_OF_THE_WELL: u16 = 0x08;
 const OBJECT_GAMEPLAY_KEEP: i16 = 0x0001;
 const OBJECT_GAMEPLAY_FIELD_KEEP: i16 = 0x0002;
 const OBJECT_HIDAN_OBJECTS: i16 = 0x002C;
 const OBJECT_MIZU_OBJECTS: i16 = 0x0059;
 const OBJECT_HAKA_DOOR: i16 = 0x0187;
-/// `EVENTCHKINF_14`: Talon woken at Hyrule Castle.
-const EVENTCHKINF_14: u16 = 0x14;
+/// `EVENTCHKINF_TALON_RETURNED_FROM_CASTLE`: Talon woken at Hyrule Castle.
+const EVENTCHKINF_TALON_RETURNED_FROM_CASTLE: u16 = 0x14;
 
 /// `EnDoorDListIndex`.
 const DOOR_DL_DEFAULT: usize = 0;
@@ -87,10 +87,10 @@ const DOOR_DL_DEFAULT_FIELD_KEEP: usize = 4;
 
 /// `sDoorInfo`: scene, list index, object. The two keep entries stay last.
 const DOOR_INFO: [(i32, usize, i16); 6] = [
-    (SCENE_HIDAN as i32, DOOR_DL_FIRE_TEMPLE, OBJECT_HIDAN_OBJECTS),
-    (SCENE_MIZUSIN as i32, DOOR_DL_WATER_TEMPLE, OBJECT_MIZU_OBJECTS),
-    (SCENE_HAKADAN as i32, DOOR_DL_SHADOW, OBJECT_HAKA_DOOR),
-    (SCENE_HAKADANCH as i32, DOOR_DL_SHADOW, OBJECT_HAKA_DOOR),
+    (SCENE_FIRE_TEMPLE as i32, DOOR_DL_FIRE_TEMPLE, OBJECT_HIDAN_OBJECTS),
+    (SCENE_WATER_TEMPLE as i32, DOOR_DL_WATER_TEMPLE, OBJECT_MIZU_OBJECTS),
+    (SCENE_SHADOW_TEMPLE as i32, DOOR_DL_SHADOW, OBJECT_HAKA_DOOR),
+    (SCENE_BOTTOM_OF_THE_WELL as i32, DOOR_DL_SHADOW, OBJECT_HAKA_DOOR),
     (-1, DOOR_DL_DEFAULT, OBJECT_GAMEPLAY_KEEP),
     (-1, DOOR_DL_DEFAULT_FIELD_KEEP, OBJECT_GAMEPLAY_FIELD_KEEP),
 ];
@@ -245,7 +245,7 @@ impl EnDoor {
     fn setup_type(&mut self, play: &mut PlayState) {
         let Some(bank) = self.required_obj_bank_index.filter(|&b| play.object_ctx.is_loaded(b)) else { return };
         let mut door_type = self.door_type();
-        self.actor.flags &= !ACTOR_FLAG_4;
+        self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         self.actor.obj_bank_index = Some(bank);
         self.action = Action::Idle;
         if door_type == DOOR_EVENING {
@@ -265,19 +265,19 @@ impl EnDoor {
             }
         } else if door_type == DOOR_CHECKABLE {
             self.actor.text_id = (self.actor.params & 0x3F) as u16 + 0x0200;
-            if self.actor.text_id == 0x0229 && !play.save.get_event_chk_inf(EVENTCHKINF_14) {
+            if self.actor.text_id == 0x0229 && !play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) {
                 // Talon's house door: openable at any time until Talon's woken at the castle.
                 door_type = DOOR_SCENEEXIT;
             } else {
                 self.action = Action::WaitForCheck;
-                self.actor.flags |= ACTOR_FLAG_0 | ACTOR_FLAG_3 | ACTOR_FLAG_27;
+                self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_LOCK_ON_DISABLED;
             }
         }
         // The type it was loaded with gives way to the new one.
         self.actor.params = (self.actor.params & !TYPE_MASK) | ((door_type as i16) << TYPE_SHIFT);
     }
 
-    /// `func_8002DBD0`: `pos` in the door's frame (x across, z through it).
+    /// `Actor_WorldToActorCoords`: `pos` in the door's frame (x across, z through it).
     fn local(&self, pos: Vec3) -> Vec3 {
         let (c, s) = (eng_math::cos_s(self.actor.shape_rot.y), eng_math::sin_s(self.actor.shape_rot.y));
         let d = pos - self.actor.world_pos;
@@ -327,7 +327,7 @@ impl EnDoor {
 
     /// `EnDoor_Open`.
     fn open(&mut self, play: &mut PlayState) {
-        let iron = play.scene_id == SCENE_HAKADAN || play.scene_id == SCENE_HAKADANCH || play.scene_id == SCENE_HIDAN;
+        let iron = play.scene_id == SCENE_SHADOW_TEMPLE || play.scene_id == SCENE_BOTTOM_OF_THE_WELL || play.scene_id == SCENE_FIRE_TEMPLE;
         // DECR(lockTimer) == 0.
         if self.lock_timer != 0 {
             self.lock_timer -= 1;

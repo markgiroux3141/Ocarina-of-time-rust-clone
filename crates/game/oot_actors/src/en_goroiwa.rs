@@ -1,5 +1,5 @@
 //! `En_Goroiwa` (`ovl_En_Goroiwa/z_en_goroiwa.c`): a rolling boulder that follows one of the
-//! scene's paths (`play->setupPathList[params & 0xFF]`), knocking Link down when it runs into
+//! scene's paths (`play->pathList[params & 0xFF]`), knocking Link down when it runs into
 //! him.
 //!
 //! Params: bits 0..7 the path, bits 8..9 the loop mode (`ENGOROIWA_LOOPMODE_*`: 0 round the
@@ -15,13 +15,13 @@
 //! The whole overlay is ported, with what Kokiri Forest's boulder never reaches: the climbs and
 //! drops between points of different heights (bit 10 clear: `EnGoroiwa_MoveUp`,
 //! `EnGoroiwa_MoveDown`), the round trip and the breaking loop. Not ported: the
-//! quake of a drop (`Quake_Add`), the dust, splashes, ripples and fragments (the effects; their
+//! quake of a drop (`Quake_Request`), the dust, splashes, ripples and fragments (the effects; their
 //! `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
 //! (`ActorShadow_DrawCircle`).
 
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_4, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
-use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_8002f6d4, func_8002f7dc};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
+use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2, actor_set_player_knockback_large, player_play_sfx};
 use oot_game::audio::sfx::{NA_SE_EV_BIGBALL_ROLL, NA_SE_PL_BODY_HIT, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -30,8 +30,8 @@ use oot_game::sys_matrix::{MtxF, binang_to_rad};
 pub const ACTOR_EN_GOROIWA: i16 = 0x0130;
 const OBJECT: &str = "object_goroiwa";
 
-/// `En_Goroiwa_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GOROIWA, name: "En_Goroiwa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_4, object: OBJECT };
+/// `En_Goroiwa_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GOROIWA, name: "En_Goroiwa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
 
 /// `stateFlags`.
 pub const ENGOROIWA_ENABLE_AT: u8 = 1 << 0;
@@ -45,17 +45,17 @@ pub const ENGOROIWA_LOOPMODE_ONEWAY: i16 = 0;
 pub const ENGOROIWA_LOOPMODE_ONEWAY_BREAK: i16 = 1;
 pub const ENGOROIWA_LOOPMODE_ROUNDTRIP: i16 = 3;
 
-/// `SCENE_SPOT04`: Kokiri Forest's boulders are slower.
-const SCENE_SPOT04: u16 = 0x55;
+/// `SCENE_KOKIRI_FOREST`: Kokiri Forest's boulders are slower.
+const SCENE_KOKIRI_FOREST: u16 = 0x55;
 
 /// `sJntSphElementsInit`: one sphere of 58, AT `0x20000000` with 4 damage.
 const JNT_SPH_ELEMENTS: [ColliderJntSphElementInit; 1] = [ColliderJntSphElementInit {
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0x2000_0000, effect: 0x00, damage: 0x04 },
-        bumper: ColliderBumpInit { dmg_flags: 0, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_ON | TOUCH_SFX_NORMAL,
-        bumper_flags: BUMP_NONE,
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0x2000_0000, effect: 0x00, damage: 0x04 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_ON | ATELEM_SFX_NORMAL,
+        bumper_flags: ACELEM_NONE,
         oc_elem_flags: OCELEM_ON,
     },
     limb: 0,
@@ -65,7 +65,7 @@ const JNT_SPH_ELEMENTS: [ColliderJntSphElementInit; 1] = [ColliderJntSphElementI
 
 /// `sJntSphInit`.
 const JNT_SPH_INIT: ColliderInit =
-    ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_ON | AT_TYPE_ENEMY, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_JNTSPH };
+    ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_ON | AT_TYPE_ENEMY, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_JNTSPH };
 
 /// `sColChkInfoInit`.
 const COL_CHK_INFO_INIT: CollisionCheckInfoInit = CollisionCheckInfoInit { health: 0, cyl_radius: 12, cyl_height: 60, mass: MASS_HEAVY };
@@ -128,7 +128,7 @@ impl EnGoroiwa {
         self.actor.home_rot.z & 1 == 1
     }
 
-    /// `play->setupPathList[params & 0xFF]`'s point `i`.
+    /// `play->pathList[params & 0xFF]`'s point `i`.
     fn point(&self, play: &PlayState, i: i16) -> Vec3 {
         play.setup_path_list()[(self.actor.params & 0xFF) as usize].point(i as usize)
     }
@@ -199,7 +199,7 @@ impl EnGoroiwa {
 
     /// `EnGoroiwa_SetSpeed`.
     fn set_speed(&mut self, play: &PlayState) {
-        if play.scene_id == SCENE_SPOT04 {
+        if play.scene_id == SCENE_KOKIRI_FOREST {
             self.is_in_kokiri = true;
             self.speed_reg = 920;
         } else {
@@ -308,7 +308,7 @@ impl EnGoroiwa {
     fn move_and_fall(&mut self, play: &PlayState) -> bool {
         let target = self.speed();
         eng_math::step_to_f(&mut self.actor.speed_xz, target, 0.3);
-        // func_8002D868.
+        // Actor_UpdateVelocityXZGravity.
         self.actor.update_velocity();
         let next = self.point(play, self.next_waypoint);
         let mut result = true;
@@ -362,7 +362,7 @@ impl EnGoroiwa {
         self.actor.world_pos.y += self.actor.velocity.y;
         if self.actor.velocity.y < 0.0 && self.actor.world_pos.y <= next_y {
             if self.bounce_count == 0 {
-                // Quake_Add(GET_ACTIVE_CAM(play), 3) within 600 of Link: not ported.
+                // Quake_Request(GET_ACTIVE_CAM(play), 3) within 600 of Link: not ported.
                 self.roll_rot_speed = 0.0;
                 if self.state_flags & ENGOROIWA_IN_WATER == 0 {
                     // BgCheck_EntityRaycastDown5 from 50 up.
@@ -455,15 +455,15 @@ impl EnGoroiwa {
         self.roll_rot_speed = 1.0;
     }
 
-    /// `func_8002F6D4(play, &this->actor, 2.0f, this->actor.yawTowardsPlayer, 0.0f, damage)`.
+    /// `Actor_SetPlayerKnockbackLarge(play, &this->actor, 2.0f, this->actor.yawTowardsPlayer, 0.0f, damage)`.
     fn knock_down_player(&mut self, play: &mut PlayState, damage: u8) {
-        func_8002f6d4(play, 2.0, self.actor.yaw_towards_player, 0.0, damage);
+        actor_set_player_knockback_large(play, 2.0, self.actor.yaw_towards_player, 0.0, damage);
     }
 
-    /// `func_8002F7DC(&GET_PLAYER(play)->actor, NA_SE_PL_BODY_HIT)`: at Link.
+    /// `Player_PlaySfx(&GET_PLAYER(play)->actor, NA_SE_PL_BODY_HIT)`: at Link.
     fn body_hit_sfx(play: &mut PlayState) {
         if let Some(ph) = play.player {
-            func_8002f7dc(play, ph, NA_SE_PL_BODY_HIT);
+            player_play_sfx(play, ph, NA_SE_PL_BODY_HIT);
         }
     }
 
@@ -614,7 +614,7 @@ impl EnGoroiwa {
     }
 }
 
-/// `PLAYER_STATE1_6`, `_7`, `_28`, `_29`: while Player talks, dies, or is held by a cutscene or
+/// `PLAYER_STATE1_TALKING`, `_7`, `_28`, `_29`: while Player talks, dies, or is held by a cutscene or
 /// a transition, the boulder stops.
 const PLAYER_STATE1_HOLD: u32 = (1 << 6) | (1 << 7) | (1 << 28) | (1 << 29);
 

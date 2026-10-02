@@ -25,5 +25,6 @@ pub mod symbols;
 pub mod synth;
 pub mod tables;
 pub mod text;
+pub mod version;
 pub mod yaz0;
 pub mod z64;

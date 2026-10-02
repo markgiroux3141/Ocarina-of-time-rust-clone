@@ -149,6 +149,12 @@ pub fn unsupported_limb_type(s: &Symbol) -> Option<String> {
     }
 }
 
+/// Skeletons whose header is a flex one (the XML says `Flex`: it has a `dListCount`) but whose
+/// actor reads it as a normal one, so the game draws it that way: En_Box's
+/// `SkelAnime_Init(play, &this->skelanime, (SkeletonHeader*)&gTreasureChestSkel, ...)` and
+/// `SkelAnime_Draw` (z_en_box.c).
+const DRAWN_AS_NORMAL: [&str; 1] = ["gTreasureChestSkel"];
+
 /// Parses a `Skeleton` symbol (standard or LOD limbs). Some XMLs label flex skeletons as
 /// normal; the header's `dListCount` gives it away.
 pub fn parse_skeleton(data: &[u8], seg: u8, s: &Symbol) -> Result<Skeleton> {
@@ -157,6 +163,9 @@ pub fn parse_skeleton(data: &[u8], seg: u8, s: &Symbol) -> Result<Skeleton> {
         Some("LOD") => LimbType::Lod,
         other => bail!("limb type {other:?} not supported"),
     };
+    if DRAWN_AS_NORMAL.contains(&s.name.as_str()) {
+        return Skeleton::parse(data, seg, s.offset as usize, lt, false);
+    }
     let flex = s.attr("Type") == Some("Flex");
     let sk = Skeleton::parse(data, seg, s.offset as usize, lt, flex)?;
     let o = s.offset as usize + 8;

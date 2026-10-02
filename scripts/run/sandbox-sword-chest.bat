@@ -7,6 +7,6 @@ setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot_sandbox || exit /b 1
 if not exist out\run mkdir out\run
-"%BIN%\oot_sandbox.exe" --entrance ENTR_LINK_HOME_0 --child --script sword-chest ^
+"%BIN%\oot_sandbox.exe" --entrance ENTR_LINKS_HOUSE_0 --child --script sword-chest ^
     --trace out\run\sword_chest.json --screenshot out\run\sword_chest.png --shots-at 975,1080,1205,1330,1700 %*
 exit /b %errorlevel%

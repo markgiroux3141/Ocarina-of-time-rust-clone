@@ -1,15 +1,15 @@
 //! The N64 audio library as the game ships it, ported function by function, and its RSP
-//! microcode: what `audio_*.c` and the audio thread (`code_800E4FE0.c`) do on the console,
+//! microcode: what `audio_*.c` and the audio thread (`audio/internal/thread.c`) do on the console,
 //! rendering into buffers offline (`Renderer`) and, with the `device` feature, through an
 //! output device (`output`).
 //!
-//! - `context`: `gAudioContext` and the structs of `z64audio.h`;
-//! - `heap`, `load`: `audio_heap.c` and `audio_load.c` (pools, caches, DMAs, font relocation);
-//! - `seqplayer`, `effects`, `playback`: `audio_seqplayer.c`, `audio_effects.c`,
-//!   `audio_playback.c` (the sequences, envelopes, vibrato, the notes);
-//! - `synthesis`: `audio_synthesis.c`, the RSP command lists;
+//! - `context`: `gAudioCtx` and the structs of `audio.h`;
+//! - `heap`, `load`: `heap.c` and `audio/internal/load.c` (pools, caches, DMAs, font relocation);
+//! - `seqplayer`, `effects`, `playback`: `seqplayer.c`, `effects.c`,
+//!   `playback.c` (the sequences, envelopes, vibrato, the notes);
+//! - `synthesis`: `synthesis.c`, the RSP command lists;
 //! - `rsp`: the microcode, run on DMEM and RDRAM;
-//! - `thread`: `func_800E5000` (one audio frame per VI retrace), the command queue, the AI;
+//! - `thread`: `AudioThread_UpdateImpl` (one audio frame per VI retrace), the command queue, the AI;
 //! - `link`: what the game's thread does to the library and reads of it (`GameOp`,
 //!   `AudioView`), handed over at the end of each game frame;
 //! - `ram`, `layout`: the memory it all runs in, and the structs that live there;

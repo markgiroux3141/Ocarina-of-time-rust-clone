@@ -8,6 +8,6 @@ setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot_sandbox || exit /b 1
 if not exist out\run mkdir out\run
-"%BIN%\oot_sandbox.exe" --entrance ENTR_LINK_HOME_0 --child --script new-save-deku-tree ^
+"%BIN%\oot_sandbox.exe" --entrance ENTR_LINKS_HOUSE_0 --child --script new-save-deku-tree ^
     --trace out\run\new_save_deku_tree.json --screenshot out\run\new_save_deku_tree.png --shots-at 6030,6060,6790,6900,7056,7328,7420,7576 %*
 exit /b %errorlevel%

@@ -48,7 +48,7 @@ pub struct Options {
     pub scene: Option<String>,
     /// Spawn point (index into the scene's spawn list).
     pub spawn: usize,
-    /// Time of day as HH:MM (`gSaveContext.dayTime`).
+    /// Time of day as HH:MM (`gSaveContext.save.dayTime`).
     pub time: String,
     /// Draw the scene's collision (coloured by surface class) instead of its rooms.
     pub collision: bool,
@@ -79,7 +79,7 @@ pub struct Options {
     /// enters with.
     pub preset: Option<String>,
     /// A new file as the file select starts it (`SaveContext::file_select_new`): Link's house
-    /// with the opening (`cutsceneIndex` 0xFFF1). Implies `ENTR_LINK_HOME_0` and child Link.
+    /// with the opening (`cutsceneIndex` 0xFFF1). Implies `ENTR_LINKS_HOUSE_0` and child Link.
     pub new_file: bool,
     /// Play sound through the output device (the window only).
     pub audio: bool,
@@ -236,7 +236,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         SaveContext::default().apply_preset(p).map_err(anyhow::Error::msg)?;
     }
     anyhow::ensure!(!(o.new_file && o.preset.is_some()), "--new-file is the file select's new save: no --preset");
-    let new_file_entrance = o.new_file.then(|| "ENTR_LINK_HOME_0".to_string());
+    let new_file_entrance = o.new_file.then(|| "ENTR_LINKS_HOUSE_0".to_string());
     if let Some(spec) = new_file_entrance.as_ref().or(o.entrance.as_ref().filter(|_| !o.new_file)) {
         // Play_Init reads the pack's tables through its own handle.
         let g = oot_actors::game_assets(open_pack(o.pack.as_deref())?)?;
@@ -326,7 +326,7 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
         match PlayState::play_init_with(g.clone(), a.data.clone(), a.rules.clone(), save, audio) {
             Ok(mut w) => {
                 if let Some(r) = a.start_room {
-                    // Room_RequestNewRoom, a frame for it to load, then func_80097534.
+                    // Room_RequestNewRoom, a frame for it to load, then Room_FinishRoomChange.
                     if w.room_request(r) {
                         w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
                         w.room_change_done();

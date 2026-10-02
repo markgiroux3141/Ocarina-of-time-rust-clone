@@ -6,7 +6,7 @@
 use eng_gfx::DrawList;
 use glam::Vec3;
 
-/// `gSaveContext.sceneLayer` values for the four non-cutscene layers (`z64save.h`): the scene's
+/// `gSaveContext.sceneLayer` values for the four non-cutscene layers (`save.h`): the scene's
 /// alternate headers 0..3.
 pub const LAYER_CHILD_DAY: usize = 0;
 pub const LAYER_CHILD_NIGHT: usize = 1;
@@ -16,7 +16,7 @@ pub const LAYER_ADULT_NIGHT: usize = 3;
 /// `Scene_CommandAlternateHeaderList` does). Cutscene layers (4 and up) are in the pack for the
 /// scenes whose alternate header lists name them (docs/adr/0023-navi-and-the-opening.md).
 pub const GAME_LAYERS: usize = 4;
-/// `SCENE_LAYER_CUTSCENE_FIRST` (`z64save.h`): `Play_Init` picks `4 + (cutsceneIndex & 0xF)`
+/// `SCENE_LAYER_CUTSCENE_FIRST` (`save.h`): `Play_Init` picks `4 + (cutsceneIndex & 0xF)`
 /// for a `cutsceneIndex` of 0xFFF0 and up.
 pub const SCENE_LAYER_CUTSCENE_FIRST: usize = 4;
 
@@ -31,7 +31,7 @@ pub fn layer_for(child: bool, night: bool) -> usize {
     }
 }
 
-/// `Path` (`z64scene.h`): a scene path, `{ u8 count; Vec3s* points; }`, with its points read.
+/// `Path` (`scene.h`): a scene path, `{ u8 count; Vec3s* points; }`, with its points read.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Path {
     pub points: Vec<[i16; 3]>,
@@ -59,7 +59,7 @@ pub struct ActorEntry {
     pub params: i16,
 }
 
-/// `EnvLightSettings` (`z64environment.h`, 0x16 bytes).
+/// `EnvLightSettings` (`environment.h`, 0x16 bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EnvLightSettings {
     pub ambient: [u8; 3],
@@ -79,10 +79,10 @@ impl EnvLightSettings {
     }
 }
 
-/// `Spawn` from `SCENE_CMD_ID_ENTRANCE_LIST` (`play->setupEntranceList`): for spawn number n
-/// (`play->curSpawn`), which player entry of the spawn list to use and the room it starts in.
+/// `Spawn` from `SCENE_CMD_ID_SPAWN_LIST` (`play->spawnList`): for spawn number n
+/// (`play->spawn`), which player entry of the spawn list to use and the room it starts in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct EntranceEntry {
+pub struct Spawn {
     pub spawn: u8,
     pub room: u8,
 }
@@ -106,7 +106,7 @@ pub const TRANSITION_ACTOR_PARAMS_INDEX_SHIFT: u32 = 10;
 /// A `DEFINE_ENTRANCE` row of `include/tables/entrance_table.h` (`EntranceInfo`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntranceInfo {
-    /// `ENTR_LINK_HOME_0`.
+    /// `ENTR_LINKS_HOUSE_0`.
     pub name: String,
     /// `SCENE_*` value.
     pub scene: u16,
@@ -146,9 +146,9 @@ pub struct SceneEntry {
     pub id: u16,
     /// The scene file, e.g. `spot04_scene`.
     pub file: String,
-    /// `SCENE_SPOT04`.
+    /// `SCENE_KOKIRI_FOREST`.
     pub enum_name: String,
-    /// `SDC_SPOT04`: the scene draw config (`crate::scene_table`).
+    /// `SDC_KOKIRI_FOREST`: the scene draw config (`crate::scene_table`).
     pub draw_config: String,
     /// The title card's file (`g_pn_31`), empty for none (`crate::title_card`).
     pub title_file: String,
@@ -162,7 +162,7 @@ pub struct SceneTable {
     pub objects: Vec<String>,
     /// `gEntranceTable`: entrance index → scene and spawn.
     pub entrances: Vec<EntranceInfo>,
-    /// `Skybox_Setup`'s room skyboxes (`unk_140 != 0`), baked as `skybox::bake_name`.
+    /// `Skybox_Setup`'s room skyboxes (`drawType != 0`), baked as `skybox::bake_name`.
     pub room_skyboxes: Vec<crate::skybox::RoomSkybox>,
 }
 
@@ -228,18 +228,18 @@ pub struct LayerData {
     pub skybox: SkyboxSettings,
     /// `SCENE_CMD_ID_SPECIAL_FILES`: the keep object's file.
     pub keep_object: Option<String>,
-    /// Its `OBJECT_*` id (`objectCtx.subKeepIndex`'s object).
+    /// Its `OBJECT_*` id (`objectCtx.subKeepSlot`'s object).
     pub keep_object_id: Option<i16>,
     /// `SCENE_CMD_ID_SPECIAL_FILES`' `cUpElfMsgNum`: 0 for none, else 1 + the index into
-    /// `sNaviMsgFiles` of Navi's C-Up texts (`play->cUpElfMsgs`, `elf_message::ElfMessageTables`).
+    /// `sNaviQuestHintFiles` of Navi's C-Up texts (`play->naviQuestHints`, `elf_message::ElfMessageTables`).
     pub c_up_elf_msg_num: u8,
-    /// `SCENE_CMD_ID_ENTRANCE_LIST`: indexed by spawn number (`play->curSpawn`).
-    pub entrances: Vec<EntranceEntry>,
-    /// `SCENE_CMD_ID_EXIT_LIST`: exit index − 1 → entrance index (`play->setupExitList`).
+    /// `SCENE_CMD_ID_SPAWN_LIST`: indexed by spawn number (`play->spawn`).
+    pub entrances: Vec<Spawn>,
+    /// `SCENE_CMD_ID_EXIT_LIST`: exit index − 1 → entrance index (`play->exitList`).
     pub exits: Vec<u16>,
     /// `SCENE_CMD_ID_TRANSITION_ACTOR_LIST`.
     pub transition_actors: Vec<TransitionActorEntry>,
-    /// `SCENE_CMD_ID_PATH_LIST`: `play->setupPathList`, indexed by the number an actor's
+    /// `SCENE_CMD_ID_PATH_LIST`: `play->pathList`, indexed by the number an actor's
     /// params carry (`En_Goroiwa`'s `params & 0xFF`).
     pub paths: Vec<Path>,
     /// `SCENE_CMD_ID_MISC_SETTINGS`' `sceneCamType`: `R_SCENE_CAM_TYPE` (`SCENE_CAM_TYPE_*`).
@@ -251,7 +251,7 @@ pub struct LayerData {
     pub cutscene: Option<String>,
     /// Record names of the rooms (`RoomData`), in room-list order.
     pub rooms: Vec<String>,
-    /// The day time the meshes were built for (`gSaveContext.dayTime`, see `oot_import`'s
+    /// The day time the meshes were built for (`gSaveContext.save.dayTime`, see `oot_import`'s
     /// scene import), and anything the build reported.
     pub bake_day_time: u16,
     pub notes: Vec<String>,
@@ -298,7 +298,7 @@ pub struct RoomBackground {
     pub mesh: DrawList,
 }
 
-/// `R_SCENE_CAM_TYPE` values (`SCENE_CAM_TYPE_*`, `z64scene.h`).
+/// `R_SCENE_CAM_TYPE` values (`SCENE_CAM_TYPE_*`, `scene.h`).
 pub const SCENE_CAM_TYPE_DEFAULT: u8 = 0x00;
 pub const SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT: u8 = 0x10;
 pub const SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT: u8 = 0x20;

@@ -43,7 +43,7 @@ The tests: 205 pass, 1 ignored (195 before). The goldens are unchanged: 80 of 80
 1. **The save's inventory** (`oot_game::save`, [ADR 0019](adr/0019-inventory-and-saves.md)).
    - `Inventory` (the items, the ammo, the equipment owned, the upgrades, the quest items, the
      dungeon items and keys) and `ItemEquips` (the buttons, their slots and the equipment worn,
-     one for each age), as `z64save.h` lays them out.
+     one for each age), as `save.h` lays them out.
    - **`SaveContext::new` is `Sram_InitNewSave`** (`z_sram.c:162`): three hearts, no rupees, the
      Kokiri tunic and boots, no sword, no shield, nothing on the buttons.
    - **`SaveContext::debug` is the map select's `Sram_InitDebugSave`** (`z_sram.c:265`,
@@ -58,7 +58,7 @@ The tests: 205 pass, 1 ignored (195 before). The goldens are unchanged: 80 of 80
      Shield owned and worn, as the pause menu equips them:
      - `Item_Give` sets `inventory.equipment` bits 0 and 4 (owned);
      - `Inventory_ChangeEquipment` sets `equips.equipment` nibbles 0 and 1 to 1 (worn);
-     - B gets `ITEM_SWORD_KOKIRI`, and `infTable[INFTABLE_1DX_INDEX]` is cleared.
+     - B gets `ITEM_SWORD_KOKIRI`, and `infTable[INFTABLE_INDEX_1DX]` is cleared.
 
      That's what Mido checks (`z_en_md.c`).
 2. **`Item_Give` and `Item_CheckObtainability`** (`oot_game::item`), ported whole with
@@ -68,18 +68,18 @@ The tests: 205 pass, 1 ignored (195 before). The goldens are unchanged: 80 of 80
    pieces of heart (`questItems`' top bits).
 3. **The item tables from the C** (`table/items`): the importer parses `sGetItemTable`'s
    `GET_ITEM` rows (the item, the draw id with its chest animation's sign, the text, the
-   object) and `sDrawItemTable` (each draw id's function and lists), and `sItemActionParams`
+   object) and `sDrawItemTable` (each draw id's function and lists), and `sItemActions`
    into Player's data.
 4. **Getting items.**
-   - `func_8002F434` (later decomps' `Actor_OfferGetItem`) and `func_8002F554` (it with 50 and
-     10), `Actor_HasParent`, `func_8002DBD0` (world to actor coordinates), in
+   - `Actor_OfferGetItem` and `Actor_OfferGetItemNearby` (it with 50 and
+     10), `Actor_HasParent`, `Actor_WorldToActorCoords` (world to actor coordinates), in
      `oot_game::get_item`.
    - Player:
-     - the get-item interrupt `func_8083E5A8`: a chest's branch (the slow open with
+     - the get-item interrupt `Player_ActionHandler_2`: a chest's branch (the slow open with
        `gPlayerAnim_clink_demo_Tbox_open` and `CAM_SET_SLOW_CHEST_CS`, or the kick), and a
        touched item's;
-     - `func_8083A434`, `func_8084E6D4` (the get-item action: `get_itemA`/`get_itemB`,
-       `func_80835EA4`'s `CAM_SET_TURN_AROUND`, frame 21's `func_808332F4`),
+     - `func_8083A434`, `Player_Action_8084E6D4` (the get-item action: `get_itemA`/`get_itemB`,
+       `Player_SetTurnAroundCamera`'s `CAM_SET_TURN_AROUND`, frame 21's `func_808332F4`),
        `func_8084DFF4` (the text, then `Item_Give`), `func_8084DFAC` and `func_8084DF6C`;
      - the do-action's Open and Grab;
      - the item held up (`Player_DrawGetItem`).
@@ -104,7 +104,7 @@ The tests: 205 pass, 1 ignored (195 before). The goldens are unchanged: 80 of 80
    sparkles (`Demo_Kankyo`) spawn as placeholders.
 8. **Link's equipment on his model.**
    - Player reads the save: `Player_SetEquipmentData` (the shield, the tunic, the boots, B's
-     sword). `func_80833DF8` uses B's item from the save.
+     sword). `Player_ProcessItemButtons` uses B's item from the save.
    - Link's variants are keyed by the lists they draw (`player/<age>/<L>+<R>+<sheath>+<waist>`):
      134 variants, 16 with their own faces.
    - The child's empty sheath without a sword on B follows
@@ -132,9 +132,9 @@ The tests: 205 pass, 1 ignored (195 before). The goldens are unchanged: 80 of 80
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 205 passed, 1 ignored |
-| The sword chest (`oot_actors --test chest`: `the_kokiri_sword_chest_on_a_new_save`) | A new save: equipment 0x1100, B `ITEM_NONE`, Link's sheath empty. In front of room 2's chest (params 0x04E0), pushed out to 34 by its collision: the chest offers `-GI_SWORD_KOKIRI`, the do-action is Open. A: `clink_demo_Tbox_open`, Link at 29.43 in front of it facing it, `unk_1F4` 1, `CAM_SET_SLOW_CHEST_CS`. At its end: `link_demo_get_itemA`, `unk_850` 2, `CAM_SET_TURN_AROUND`. Frame 21: `unk_862` 0x74, `GetItem/73/0` drawn. Then text 0xA4 with `message/item3B`; equipment 0x1101 (owned), not worn, B still empty. A through both boxes to `TEXT_STATE_CLOSING`: Link stands, `GI_NONE`, treasure flag 0 set. B does nothing. Start's stand-in: sword value 1, B `ITEM_SWORD_KOKIRI`, `gLinkChildSwordAndSheathNearDL` in the sheath. B draws it and slashes |
+| The sword chest (`oot_actors --test chest`: `the_kokiri_sword_chest_on_a_new_save`) | A new save: equipment 0x1100, B `ITEM_NONE`, Link's sheath empty. In front of room 2's chest (params 0x04E0), pushed out to 34 by its collision: the chest offers `-GI_SWORD_KOKIRI`, the do-action is Open. A: `clink_demo_Tbox_open`, Link at 29.43 in front of it facing it, `unk_1F4` 1, `CAM_SET_SLOW_CHEST_CS`. At its end: `link_demo_get_itemA`, `av2.actionVar2` 2, `CAM_SET_TURN_AROUND`. Frame 21: `unk_862` 0x74, `GetItem/73/0` drawn. Then text 0xA4 with `message/item3B`; equipment 0x1101 (owned), not worn, B still empty. A through both boxes to `TEXT_STATE_CLOSING`: Link stands, `GI_NONE`, treasure flag 0 set. B does nothing. Start's stand-in: sword value 1, B `ITEM_SWORD_KOKIRI`, `gLinkChildSwordAndSheathNearDL` in the sheath. B draws it and slashes |
 | A piece of heart (`--test chest`: `a_piece_of_heart`) | A spawned `En_Item00` heart piece at Link's feet, one piece owned: held up (`unk_862` = the table's gi), text 0xC3 (0xC2 plus the one owned, before `Item_Give`), then two pieces; taken; no container |
-| The debug start (`oot --test start`) | `--entrance ENTR_SPOT04_0 --room 2 --at -232,178,2211,0`: room 2, Link there, a new save, the chest offering the sword |
+| The debug start (`oot --test start`) | `--entrance ENTR_KOKIRI_FOREST_0 --room 2 --at -232,178,2211,0`: room 2, Link there, a new save, the chest offering the sword |
 | `Item_Give` and the saves (unit tests) | Rupees, hearts, a piece; the sword's and shield's owned bits; sticks and nuts with their upgrades; a new file has nothing to fight with; the map select's child has the Kokiri Sword and Deku Shield; the presets own and wear both |
 | `GetItem_Draw` (unit tests) | The recovery heart's scroll; `Matrix_ReplaceRotation` keeps the scale and the place |
 | Golden traces and renders | 80 of 80 identical. The spike cases use `SaveContext::debug` (the old defaults); the playthrough and the Deku Tree render enter with the preset, which now owns and wears the same sword and shield. Nothing recorded (see `golden/README.md`) |
@@ -171,7 +171,7 @@ The tests: 205 pass, 1 ignored (195 before). The goldens are unchanged: 80 of 80
   - no one-point cutscene cameras for the chests that appear or fall;
   - the song chests never appear (no ocarina);
   - the lens-hidden chests aren't drawn until opened.
-- **The C items** aren't used (`func_80833DF8` only reads B), and nothing puts one on C yet, so
+- **The C items** aren't used (`Player_ProcessItemButtons` only reads B), and nothing puts one on C yet, so
   their icons and ammo counts only draw for a save that has them.
 - **Not in scope:** the effects (`EffectSs`), the magic meter, the B button's ammo count
   (minigames), the file select's name.
@@ -202,25 +202,25 @@ The tests: 222 pass, 1 ignored (205 before). The goldens:
    - `oot_import::scene::path_list` reads them like the exit list: up to the next pointer
      target, while each entry points at points in the scene file.
    - They go into the pack as `LayerData.paths` (`oot_game::scene::Path`, format 9), and play
-     reads them as `PlayState::setup_path_list` (`play->setupPathList`).
+     reads them as `PlayState::setup_path_list` (`play->pathList`).
    - `ootx scene-info` prints them. Kokiri Forest has three; path 2 is the boulder's loop.
 2. **Player's crawl** (`oot_actors::player`).
-   - `func_8083F0C8`, the crawlspace's branch of `func_8083F7BC` (interrupt 5):
-     - at a crawlspace's wall (`WALL_FLAG_4`, `_5`), for a child, within 8 of its triangles'
-       middle, A says "Enter" (`PLAYER_STATE2_16`, the do-action `DO_ACTION_ENTER`);
-     - on A: `PLAYER_STATE2_18`, Link lined up and facing the wall,
+   - `Player_TryEnteringCrawlspace`, the crawlspace's branch of `Player_ActionHandler_5` (interrupt 5):
+     - at a crawlspace's wall (`WALL_FLAG_CRAWLSPACE_1`, `_5`), for a child, within 8 of its triangles'
+       middle, A says "Enter" (`PLAYER_STATE2_DO_ACTION_ENTER`, the do-action `DO_ACTION_ENTER`);
+     - on A: `PLAYER_STATE2_CRAWLING`, Link lined up and facing the wall,
        `gPlayerAnim_link_child_tunnel_start` with `moveFlags` 0x9D, and `func_8083A40C` once
        the item is away.
-   - `func_8084C760`, the crawl: the speed is the stick's `rel.stick_y` × 0.03, backwards too.
-   - `func_8083F570`: head first into the far wall, out with `tunnel_end`; feet first into the
+   - `Player_Action_8084C760`, the crawl: the speed is the stick's `rel.stick_y` × 0.03, backwards too.
+   - `Player_TryLeavingCrawlspace`: head first into the far wall, out with `tunnel_end`; feet first into the
      mouth's inner wall, out with `tunnel_start` played backwards.
-   - `func_8084C81C`: standing at the end, the crawl over.
+   - `Player_Action_8084C81C`: standing at the end, the crawl over.
    - What the crawl flag changes elsewhere was ported already: the smaller bgcheck, no wall
      interaction, no exits, no do-action, the disabled buttons. What was missing:
      - no water check or damage while crawling (`Player_UpdateCommon`);
-     - no limbs drawn with the camera inside Link (`Player_OverrideLimbDrawGameplay_80090440`,
+     - no limbs drawn with the camera inside Link (`Player_OverrideLimbDrawGameplayCrawling`,
        from `projectedPos.z`).
-   - The rest of `func_8083F7BC`: A at a pushable wall (`WALL_FLAG_6`) shows "Grab"; pushing
+   - The rest of `Player_ActionHandler_5`: A at a pushable wall (`WALL_FLAG_6`) shows "Grab"; pushing
      itself (`func_8083F72C`) isn't ported.
 3. **`Camera_Subj4`** (`CAM_SET_CRAWLSPACE`), the function `sCameraSettings` gives the setting.
    - Its first call each frame asks for the second at the end of `Play_Draw` and keeps the
@@ -245,16 +245,16 @@ The tests: 222 pass, 1 ignored (205 before). The goldens:
      `Rand_ZeroOne` calls are made), the circle shadow.
 5. **Player's knockdown**, pulled forward from Phase 6 as far as the boulder needs it:
    - `func_808382DC`: the crush and void-floor respawns, the knockback an actor asks for
-     (`unk_8A0` to `unk_8A8`, cleared each update), the body hit, the hurting walls and
+     (`knockbackDamage` to `knockbackYVelocity`, cleared each update), the body hit, the hurting walls and
      floors;
    - `func_80837C0C` for kinds 0 to 2, with `Health_ChangeBy` and the invincibility timer;
-   - the stagger (`func_8084370C`), the knockdown (`func_8084377C`), lying down
-     (`func_80843954`), getting up (`func_80843A38`);
+   - the stagger (`Player_Action_8084370C`), the knockdown (`Player_Action_8084377C`), lying down
+     (`Player_Action_80843954`), getting up (`Player_Action_80843A38`);
    - `Player_InflictDamage`, `Player_InBlockingCsMode`;
-   - the invincibility timer's other users: the roll (`func_80837AFC(-10)` at frame 8), and the
+   - the invincibility timer's other users: the roll (`Player_SetInvulnerability(-10)` at frame 8), and the
      fall damage, which now takes its half heart or heart (`func_80843E64`).
 
-   Actors ask through `oot_game::actor_ctx::func_8002f698` and its short forms
+   Actors ask through `oot_game::actor_ctx::Actor_SetPlayerKnockback` and its short forms
    (`PlayerIface::set_knockback`).
 6. **`En_Wonder_Item`** (`oot_actors::en_wonder_item`), the whole overlay.
    - Room 2's two (0x123F): mode 2, a proximity drop of a green rupee that collects itself.
@@ -278,7 +278,7 @@ The tests: 222 pass, 1 ignored (205 before). The goldens:
 | `cargo test --workspace` | 222 passed, 1 ignored |
 | The Kokiri Sword run (`playthrough` test `a_new_save_to_the_kokiri_sword`) | 1916 frames. House at frame 30, out of the door 154, down the ladder 257, into the crawlspace 981, out in room 2 1199, past the boulder 1463, the chest done 1916. Two waits for the boulder: 0 and 94 frames. At the crawl: "Enter" shown before A; Link at x -785 facing +z, `tunnel_start`. Out: room 2, the crawlspace's camera seen while crawling, bg camera 14 (`DUNGEON0`) after. Past the corridors: still 3 hearts, both wonder items' green rupees. The chest: text 0xA4 only, equipment 0x1101 (the sword owned), B still empty, treasure flag 0 set, Link standing. The boulder never within reach |
 | The Deku Tree run (`kokiri_forest_to_the_deku_tree`) | Passes unchanged |
-| The crawl (`crawl`: 5 tests) | "Enter" at the mouth; A: `func_8083F0C8`'s place (x -785, 1059 less the wall distance), yaw 0, `tunnel_start`, `moveFlags` 0x8D after the first frame (0x9D less 0x10); the crawl after the put-away; the speed 53 × 0.03; on the line (x -784, y 120, yaw 1) and not drawn while crawling; room 2 loaded by z 1219..1300; out at the far wall with `tunnel_end` and standing past z 1379 on bg camera 14. `Camera_Subj4`'s ease-in and its eye on the line. Backwards out of the mouth (`tunnel_start` at speed -1) into room 0 on `NORMAL0`. No "Enter" 12 off the middle; none for adult Link |
+| The crawl (`crawl`: 5 tests) | "Enter" at the mouth; A: `Player_TryEnteringCrawlspace`'s place (x -785, 1059 less the wall distance), yaw 0, `tunnel_start`, `moveFlags` 0x8D after the first frame (0x9D less 0x10); the crawl after the put-away; the speed 53 × 0.03; on the line (x -784, y 120, yaw 1) and not drawn while crawling; room 2 loaded by z 1219..1300; out at the far wall with `tunnel_end` and standing past z 1379 on bg camera 14. `Camera_Subj4`'s ease-in and its eye on the line. Backwards out of the mouth (`tunnel_start` at speed -1) into room 0 on `NORMAL0`. No "Enter" 12 off the middle; none for adult Link |
 | The boulder (`boulder`: 4 tests) | Placed at path 2's point 0, facing point 1; steps of 0.3 to 9.2; 36 frames a side, snapping onto each point; turned by the distance over 59.5 each frame; no path (0xFF), no boulder. The hit on Link standing in its way: a quarter heart, 20 frames of invincibility, `front_shit`; next frame knocked down backwards at 2 (`front_downA`), then `front_downB`, `front_down_wake`, standing, then the timer counting down. The boulder reversed, hopping (5 up, 0.15 of its speed), 50 frames without colliding, back on its way after a 6-frame wait |
 | The wonder items (`wonder_item`: 3 tests) | Room 2's proximity drop: nothing at 60, a green rupee at 40 that collects itself. Room 0's free multitag: its tag points gone at spawn, a blue rupee and switch 0x20 after both points. The ordered one: gone with nothing on the wrong point first, the rupee and switch 0x23 in order, gone when its 81 frames run out |
 | The path lists (`oot_import --test pack`: `path_lists_match_the_xmls`) | 82 layer headers match the XMLs' `NumPaths` (42 headers have lists the XMLs don't name); the pack's points are the ROM's; Kokiri Forest's path 2 as listed |
@@ -315,7 +315,7 @@ The tests: 222 pass, 1 ignored (205 before). The goldens:
 
 - **The crawl:**
   - the one-point cutscenes on the way out (9601, 9602): the next floor's bg camera takes over;
-  - the crawl's sounds (`func_80832924`'s tables, `Camera_Subj4`'s `func_800F4010`);
+  - the crawl's sounds (`Player_ProcessAnimSfxList`'s tables, `Camera_Subj4`'s `func_800F4010`);
   - pushing and pulling walls and blocks (`func_8083F72C`).
 - **Damage:**
   - no dying: at 0 health Link carries on (logged);
@@ -351,36 +351,36 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
 1. **`En_Md`** (`oot_actors::en_md`), Mido, the whole overlay.
    - `EnMd_Init`:
      - `EnMd_ShouldSpawn`: Kokiri Forest before Zelda's letter and the goodbye
-       (`EVENTCHKINF_40`, `_1C`); his house after them, for child Link; the Lost Woods always;
+       (`EVENTCHKINF_OBTAINED_ZELDAS_LETTER`, `_1C`); his house after them, for child Link; the Lost Woods always;
      - his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder);
      - blocking, or at path 1's last point with `EVENTCHKINF_04` (`EnMd_SetMovedPos`).
-   - Blocking (`func_80AAB948`): 60 from his home towards Link, facing him, his animation's speed
+   - Blocking (`EnMd_BlockPath`): 60 from his home towards Link, facing him, his animation's speed
      by how far Link has gone round him. His collider is immovable, so Link can't pass.
-   - Talking (`func_800343CC` through `oot_game::npc::talk_update`):
-     - his text (`EnMd_GetText`: Kokiri Forest, his house, the Lost Woods);
-     - the conversation's state (`func_80AAAF04`): 0x102F sets `EVENTCHKINF_02` and
+   - Talking (`Npc_UpdateTalking` through `oot_game::npc::talk_update`):
+     - his text (`EnMd_GetTextId`: Kokiri Forest, his house, the Lost Woods);
+     - the conversation's state (`EnMd_UpdateTalkState`): 0x102F sets `EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS` and
        `INFTABLE_0C` as it closes; 0x1033 (and 0x1067) returns 2;
-     - the box count (`func_80AAAC78`), which picks his gestures for each box
-       (`func_80AAAA24`: eleven animation sequences, `func_80AAA274` to `func_80AAA890`, some
-       played backwards by `func_80AAA250`).
-   - Stepping aside: `EVENTCHKINF_04`, then along path 1 at 1.5 (`func_80AABD0C`,
+     - the box count (`EnMd_TrackMessageState`), which picks his gestures for each box
+       (`EnMd_UpdateAnimSequence_WithTalking`: eleven animation sequences, `EnMd_UpdateAnimSequence_IdleToHalt` to `EnMd_UpdateAnimSequence_StopWalking`, some
+       played backwards by `EnMd_ReverseAnimation`).
+   - Stepping aside: `EVENTCHKINF_04`, then along path 1 at 1.5 (`EnMd_Walk`,
      `EnMd_FollowPath` with `Math_FAtan2F`'s double product). Within 10 of its last point he
-     stops and stays (`func_80AAB8F8`). With the Kokiri Emerald, the goodbye instead:
+     stops and stays (`EnMd_Watch`). With the Kokiri Emerald, the goodbye instead:
      `MSGMODE_PAUSED`, then `Message_CloseTextbox`, `EVENTCHKINF_1C` and he goes.
-   - The head and torso tracking (`func_80AAB158`: `func_80034A14` preset 2,
-     `func_800347E8`), the idle sway, the blinks, and the fade beyond 400 of Link
-     (`func_80AAB5A4`; `func_80034DD4` is new in `oot_game::npc`).
+   - The head and torso tracking (`EnMd_UpdateTalking`: `Npc_TrackPoint` preset 2,
+     `Npc_GetTrackingPresetMaxPlayerYaw`), the idle sway, the blinks, and the fade beyond 400 of Link
+     (`EnMd_UpdateAlphaByDistance`; `Actor_UpdateAlphaByDistance` is new in `oot_game::npc`).
    - The draw (`EnMd_Draw`): six bakes, an eye and a pass each:
      - opaque at full alpha (`func_80034BA0`), translucent while fading (`func_80034CC4`);
      - `EnMd_OverrideLimbDraw`'s head and torso turns and sway, and `EnMd_PostLimbDraw`'s
        focus.
-   - The Lost Woods (`SCENE_SPOT10`), ported against `msgCtx.ocarinaMode`:
+   - The Lost Woods (`SCENE_LOST_WOODS`), ported against `msgCtx.ocarinaMode`:
      - his texts;
      - `PLAYER_STATE2_23` near him;
-     - waiting for Saria's Song (`func_80AABC10`).
+     - waiting for Saria's Song (`EnMd_ListenToOcarina`).
 
-     Nothing there plays the ocarina: the check (`func_8010BD58`) is logged if it would start.
-   - His house (`SCENE_KOKIRI_HOME4`): his texts (0x1028, 0x1046, `EVENTCHKINF_0F`), always
+     Nothing there plays the ocarina: the check (`Message_StartOcarina`) is logged if it would start.
+   - His house (`SCENE_MIDOS_HOUSE`): his texts (0x1028, 0x1046, `EVENTCHKINF_0F`), always
      opaque. Its layer 0 has no `En_Md`.
 2. **`En_Ossan`** (`oot_actors::en_ossan`), the shopkeepers.
    - **All 27 states** (`sStateFunc`) and their helpers:
@@ -393,7 +393,7 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
      - choosing (the item off the shelf and back: `EnOssan_TakeItemOffShelf`,
        `_ReturnItemToShelf`);
      - buying: `EnOssan_HandleCanBuyItem`'s answers (0x84, 0x85, 0x86, 0x96, the get-item flow
-       through `func_8002F434` within 120);
+       through `Actor_OfferGetItem` within 120);
      - the price after the item's text (`buyEventFunc`), 0x6B, continuing or ending
        (`EnOssan_EndInteraction`);
      - the other shops' states: the milk, the egg, the Goron bombs, the masks and their
@@ -409,7 +409,7 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
      stick prompts (`EnOssan_DrawStickDirectionPrompts`), with their pulses, as three sprites
      in the overlay.
 3. **`En_GirlA`** (`oot_actors::en_girla`), the shop items, the whole overlay:
-   - `shopItemEntries`' 50 rows, with every `EnGirlA_CanBuy_*`, `_ItemGive_*` and
+   - `sShopItemEntries`' 50 rows, with every `EnGirlA_CanBuy_*`, `_ItemGive_*` and
      `_BuyEvent_*` function;
    - the stock changes (`EnGirlA_TryChangeShopItem`, `_SetItemOutOfStock`,
      `_UpdateStockedItem`);
@@ -429,7 +429,7 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
    Start then runs `pause_menu_equip`. The game passes Start on as input; the scripted runs press
    it.
 6. **The message box:**
-   - `YREG(31)` is `MessageContext::yreg_31`, read in the five places `z_message_PAL.c` reads
+   - `YREG(31)` is `MessageContext::yreg_31`, read in the five places `z_message.c` reads
      it;
    - `Message_Update`'s `averageY` is computed as the C computes it (the `s16` screen positions
      promoted to `int`). The port's `i16` sum overflowed with an actor far off screen.
@@ -468,9 +468,9 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
 |---|---|
 | `cargo test --workspace` | 238 passed, 1 ignored |
 | The run (`playthrough` test `a_new_save_to_mido_and_the_shop`) | 5731 frames, Link never hurt. The steps, with the frame each ends on: the chest 2064 (12 rupees: room 2's two green and two blue); the sword on B 2065; back on the plateau 2571; the sign's switch 2856 (switch 0x13, 17); into Mido's house 3356 (19); his chests 3824 (30, treasure flags 0 to 3); into the shop 4236 (37, the forced text 0x218 read on the way); the shield 4779 (42 with the shop's own, then 2); both worn 4780 (`PLAYER_SHIELD_DEKU`); out 4838; Mido 5626 (0x1033, 0x10D2, 0x10D3, 0x1034; `EVENTCHKINF_04`, walking at 1.5); aside 5665 (within 10 of (1412, 0, 211)); past him 5731. The shop's texts 0x9E, 0x83, 0x9F, 0x89, 0x4C, 0x6B; Link hidden while browsing; after it `YREG(31)` 0 and the fixed view. While he blocks, Mido is 60 from his home towards Link on every frame. Four boulder waits: 33, 100, 0 and 33 frames |
-| The Deku Tree run (`kokiri_forest_to_the_deku_tree`) | 1873 frames (1971). Mido stands at path 1's end (`func_80AAB874`); Link passes within 80 of him, round him by the bank west of him. The first bush now drops (Mido's `Rand` calls) |
+| The Deku Tree run (`kokiri_forest_to_the_deku_tree`) | 1873 frames (1971). Mido stands at path 1's end (`EnMd_Idle`); Link passes within 80 of him, round him by the bank west of him. The first bush now drops (Mido's `Rand` calls) |
 | The Kokiri Sword run (`a_new_save_to_the_kokiri_sword`) | Passes; only its actor counts differ (Mido's fairy) |
-| Mido (`mido`: 7 tests) | Blocking: 60 from (1522, 0, 105) towards Link, facing him, target mode 6. The first talk: 0x102F, 0x10D0, 0x10D1, 0x1030; `EVENTCHKINF_02` and `INFTABLE_0C` set; still blocking; then 0x1030 alone. Gestures: at 0x102F's first box sequence 1, `gMidoRaiseHand1Anim` then `gMidoHaltAnim`. With both worn: 0x1033's four texts, `EVENTCHKINF_04`, waypoint 1, 2.25 a frame (speed 1.5 times `R_UPDATE_RATE` × 0.5), stopped within 10 of path 1's end with play speed 0, then 0x1034. With `EVENTCHKINF_04`: at (1412, 0, 211) from the start. The fade: 0x14 a step at first, targetability off, down to 0, back near Link. No Mido with `EVENTCHKINF_40` or `_1C`. His six bakes |
+| Mido (`mido`: 7 tests) | Blocking: 60 from (1522, 0, 105) towards Link, facing him, target mode 6. The first talk: 0x102F, 0x10D0, 0x10D1, 0x1030; `EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS` and `INFTABLE_0C` set; still blocking; then 0x1030 alone. Gestures: at 0x102F's first box sequence 1, `gMidoIdleToHaltAnim` then `gMidoHaltAnim`. With both worn: 0x1033's four texts, `EVENTCHKINF_04`, waypoint 1, 2.25 a frame (speed 1.5 times `R_UPDATE_RATE` × 0.5), stopped within 10 of path 1's end with play speed 0, then 0x1034. With `EVENTCHKINF_04`: at (1412, 0, 211) from the start. The fade: 0x14 a step at first, targetability off, down to 0, back near Link. No Mido with `EVENTCHKINF_OBTAINED_ZELDAS_LETTER` or `_1C`. His six bakes |
 | The shop (`shop`: 8 tests) | The shopkeeper at (0, 0, -26), scale 0.01, text 0x9E, not targetable; the eight items at `sShopkeeperStores[0]`'s offsets from the shelves (0, 0, -20), turned 0xEAAC or 0x1554, scale 0.25, 24 up, with their prices and texts. Talking: `PLAYER_STATE2_29`, viewpoint 2 (bg camera 1, `PIVOT_SHOP_BROWSING`), `YREG(31)` 1, 0x83. The stick right: the camera at -10, -20, -25, -27.5 ... to -30 (`data2` -30), the cursor on slot 0, 0x9F, the shield spinning. A: 0x89, the shield to (17, 58, 10). Buy: `GI_SHIELD_DEKU` offered, the fixed view, Link shown, the shield off the shelf; Player's get-item; 0x4C with the shield owned, not worn, nothing charged; at its end 40 charged and 0x6B; B: idle, `YREG(31)` 0. 39 rupees: 0x85, back to 0x9F. A shield owned: 0x86. Nuts owned: a quick buy (0x84, 5 more nuts, 15 charged). The left shelf: slot 4 at +30, the seeds 0x86 without a slingshot, back to the shopkeeper past the inner end, 0x10BA on "Talk to the owner". Start does nothing while talking and equips both after |
 | Golden traces and renders | `playthrough` and `sword_chest` re-recorded (their changes above); new case `mido_shop` (the same bytes over two runs); every render unchanged: 82 of 82 |
 | Import | 12.7 s; 51.9 MB; format version 10, into `out/data07` |
@@ -532,14 +532,14 @@ The tests: 238 pass, 1 ignored (222 before). The goldens:
 ## Milestone 4: cutscenes, first part
 
 **Answer:** done. Talking to the Deku Tree plays his cutscenes as the C does: in his meadow his
-first talk starts by itself (`D_808BCE20`), the camera takes the script's shots, Link is walked
-in, the tree speaks and asks; yes plays `D_808BD520`, which opens his mouth (`EVENTCHKINF_05`).
+first talk starts by itself (`gDekuTreeMeetingCs`), the camera takes the script's shots, Link is walked
+in, the tree speaks and asks; yes plays `gDekuTreeMouthOpeningCs`, which opens his mouth (`EVENTCHKINF_05`).
 Entering the Deku Tree the first time plays its intro (`gDekuTreeIntroCs`). A scripted run from
 Link's bed on a new save now goes past Mido, through the talk and into the Deku Tree, with no
 save preset.
 
 The tests: 244 pass, 1 ignored (238 before). The goldens:
-- 21 sheets: the letterbox in their first frames (`D_8011D3F0`, below);
+- 21 sheets: the letterbox in their first frames (`sSceneInitLetterboxTimer`, below);
 - the Mido and shop run's trace: the forced text by the shop now holds Link;
 - the Deku Tree run's trace: the Deku Tree's intro;
 - the new run's trace is a new case;
@@ -550,56 +550,56 @@ The tests: 244 pass, 1 ignored (238 before). The goldens:
 1. **The scripts in the pack** ([ADR 0022](adr/0022-cutscenes.md)), pack format 11:
    - every script is the ROM's bytes, big-endian, keyed `cutscene/<file>/<symbol>`
      (`oot_game::cutscene::CutsceneScript`);
-   - the 73 scene scripts the XMLs name, each walked from its offset to `CS_END`;
+   - the 73 scene scripts the XMLs name, each walked from its offset to `CS_END_OF_SCRIPT`;
    - the 27 `CutsceneData` arrays of the actors' C: `oot_import::cutscene` builds each array's
-     words with `z64cutscene_commands.h`'s own macros, finds them in the overlay's file in the
+     words with `cutscene_commands.h`'s own macros, finds them in the overlay's file in the
      ROM, and stores the ROM's bytes. All 27 are found;
    - `sEntranceCutsceneTable` (34 rows) and every script's key (`table/cutscenes`);
    - a scene layer's `SCENE_CMD_ID_CUTSCENE_DATA` (`LayerData.cutscene`);
    - `ootx cutscene [name]` lists the scripts and the table, or prints a script's commands.
 2. **`z_demo.c`** (`oot_game::cutscene`), onto the play state, with the C's names:
-   - the state machine: `func_80064558` and `func_800645A0` after `Actor_UpdateAll`, their state
-     tables, `func_8006472C`'s fade (`unk_0C`), `func_80068ECC`'s start (with the cutscene
-     camera, `D_8015FCC8`), `func_80068C3C`, `func_80068D84`, `func_80068DC0`'s end;
-   - `Cutscene_ProcessCommands`, command by command: the cues (`linkAction`, `npcActions`, by
+   - the state machine: `Cutscene_UpdateManual` and `Cutscene_UpdateScripted` after `Actor_UpdateAll`, their state
+     tables, `Cutscene_StepTimer`'s fade (`timer`), `Cutscene_SetupScripted`'s start (with the cutscene
+     camera, `gUseCutsceneCam`), `CutsceneHandler_RunScript`, `CutsceneHandler_StopManual`, `CutsceneHandler_StopScript`'s end;
+   - `Cutscene_ProcessScript`, command by command: the cues (`linkAction`, `npcActions`, by
      the C's type lists), the camera lists (1, 2, 5, 6) and single points (7, 8), the text
      command (the frame held at its end while a box is up, a choice's branches), the misc
      actions, the lighting, the time, the music, the rumble, the transition fill and the
      terminator (every destination);
    - `Cutscene_HandleEntranceTriggers`, `Cutscene_HandleConditionalTriggers`,
-     `Cutscene_SetSegment`, `gSaveContext.cutsceneTrigger`, `nextCutsceneIndex`;
-   - `Play_Init`: `Environment_Init`'s `D_8015FCC8 = 1` (`z_kankyo.c:419`, found by scanning the
+     `Cutscene_SetScript`, `gSaveContext.cutsceneTrigger`, `nextCutsceneIndex`;
+   - `Play_Init`: `Environment_Init`'s `gUseCutsceneCam = 1` (`z_kankyo.c:419`, found by scanning the
      ROM for stores to it: the decomp only names the debug D-pad's), the scene layer's script,
      the entrance triggers;
-   - `Play_InCsMode`; `KaleidoSetup_Update` now checks it; `func_8002DF54` and `func_8002DF38`;
-     `Flags_SetEnv` and its kin (`play->envFlags`);
+   - `Play_InCsMode`; `KaleidoSetup_Update` now checks it; `Player_SetCsActionWithHaltedActors` and `Player_SetCsAction`;
+     `CutsceneFlags_Set` and its kin (`play->cutsceneFlags`);
    - the file's statics (`DemoStatics`) carry over from one play state to the next.
 3. **Cameras:**
    - three sub camera slots, `activeCamId`, and `Play_CreateSubCamera`,
      `Play_ChangeCameraStatus`, `Play_ClearCamera`, `Play_ClearAllSubCameras`,
-     `Play_CameraChangeSetting`, `Play_CameraSetAtEye`, `Play_CameraSetFov`, `Play_CopyCamera`;
+     `Play_RequestCameraSetting`, `Play_SetCameraAtEye`, `Play_SetCameraFov`, `Play_CopyCamera`;
    - every camera updates each frame, the active one last; the view, the input direction and
      the render state follow the active camera;
    - `Camera_Update`'s statuses (cut, waiting, active) and its interface branches;
-   - `z_camera.c`'s shared state as `CameraGlobals` (`sCameraInterfaceFlags`,
-     `sCameraInterfaceAlpha`, `D_8011D3F0`, `sOOBTimer`, `sNextUID`);
+   - `z_camera.c`'s shared state as `CameraGlobals` (`sCameraInterfaceField`,
+     `sCameraHudVisibilityMode`, `sSceneInitLetterboxTimer`, `sOOBTimer`, `sNextUID`);
    - `Camera_Demo1` (`CAM_SET_CS_0`), the spline (`func_800BB0A0`, `func_800BB2B4`),
-     `Camera_SetCSParams`, `Camera_ResetAnim`, `Camera_SetParam`, `Camera_Copy`.
+     `Camera_SetCSParams`, `Camera_ResetAnim`, `Camera_SetViewParam`, `Camera_Copy`.
 4. **Player's cutscene modes** (`oot_actors::player`):
    - `Player_UpdateCommon`'s cutscene block: a script puts Link in mode 6 (a cue with a mode in
-     `D_808547C4`) or 0x31 (held);
-   - the action `func_80852E14` (`Action::Cutscene`), reached through `func_8083B998`
-     (interrupt 0, new) and `func_8083B040` (interrupt 13, and the actions that check it) into
-     `func_8083ADD4`; also at a talk's end (`func_8084B530`);
+     `sCueToCsActionMap`) or 0x31 (held);
+   - the action `Player_Action_CsAction` (`Action::Cutscene`), reached through `Player_ActionHandler_0`
+     (interrupt 0, new) and `Player_ActionHandler_13` (interrupt 13, and the actions that check it) into
+     `Player_StartCsAction`; also at a talk's end (`Player_Action_Talk`);
    - `func_80852B4C`'s dispatch of `D_80854B18` and `D_80854E50` for modes 1, 3, 4, 6, 7, 8 and
      0x31: `func_808515A4`, `func_808514C0`, `func_80851688`, `func_80851998`, `func_808519C0`
      (`func_80845964` with a cue), `func_80852C50`, `func_808529D0`, `func_80852A54`,
      `func_80852944`, `func_8083C148`, `func_8083B010`;
-   - `PlayerIface::set_cs_mode`, so other actors' `func_8002DF54` reach Player.
+   - `PlayerIface::set_cs_mode`, so other actors' `Player_SetCsActionWithHaltedActors` reach Player.
 5. **The actors:**
-   - `Bg_Treemouth` starts its scripts where the C does: `D_808BCE20` on the first approach,
-     `D_808BD2A0` when Z-targeted afterwards, `D_808BD520` or `D_808BD790` by the answer (with
-     `D_8015FCC0` to `C4` reset);
+   - `Bg_Treemouth` starts its scripts where the C does: `gDekuTreeMeetingCs` on the first approach,
+     `gDekuTreeChoiceCs` when Z-targeted afterwards, `gDekuTreeMouthOpeningCs` or `gDekuTreeAskAgainCs` by the answer (with
+     `gCamAtSplinePointsAppliedFrame` to `C4` reset);
    - `En_Wonder_Talk2`'s forced texts hold Link (mode 8) until they're read (mode 7).
 6. **The message box:** its cutscene checks (`csCtx.state == 0` for the do-action's "Return",
    and for the interface's return at a box's close with the main camera active).
@@ -618,15 +618,15 @@ The tests: 244 pass, 1 ignored (238 before). The goldens:
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 244 passed, 1 ignored |
-| The scripts (`cutscene` test `the_deku_trees_scripts_are_the_c_s`) | `D_808BCE20` from `ovl_Bg_Treemouth`: `CS_BEGIN_CUTSCENE(12, 3000)`; its commands in order (0x15, the player cues, two eye lists, two at lists, the texts, the misc, 46, 62, the BGM and its fade), the walk ending at the script's end; list 46 fills `npcActions[0]`, 62 (`CS_CMD_SET_ACTOR_ACTION_9`) `npcActions[8]`. Cue 2: frames 0..33, (2614, 0, -451) to (2808, 0, -559), `rot` (0x54B2, 0, 0) (the macro's fourth argument is `rot.x`), `normal` the float bits of 5.878788. The first eye list: five points, the last `CS_CMD_STOP`; the at list's third point waits 1000. The other three scripts walk to their ends. `sEntranceCutsceneTable`: 34 rows; `ENTR_YDAN_0`, either age, `EVENTCHKINF_A8`, `gDekuTreeIntroCs` from `ydan_scene` (`CS_BEGIN_CUTSCENE(4, 1270)`) |
+| The scripts (`cutscene` test `the_deku_trees_scripts_are_the_c_s`) | `gDekuTreeMeetingCs` from `ovl_Bg_Treemouth`: `CS_HEADER(12, 3000)`; its commands in order (0x15, the player cues, two eye lists, two at lists, the texts, the misc, 46, 62, the BGM and its fade), the walk ending at the script's end; list 46 fills `npcActions[0]`, 62 (`CS_CMD_ACTOR_CUE_8_0`) `npcActions[8]`. Cue 2: frames 0..33, (2614, 0, -451) to (2808, 0, -559), `rot` (0x54B2, 0, 0) (the macro's fourth argument is `rot.x`), `normal` the float bits of 5.878788. The first eye list: five points, the last `CS_CAM_STOP`; the at list's third point waits 1000. The other three scripts walk to their ends. `sEntranceCutsceneTable`: 34 rows; `ENTR_DEKU_TREE_0`, either age, `EVENTCHKINF_A8`, `gDekuTreeIntroCs` from `ydan_scene` (`CS_HEADER(4, 1270)`) |
 | The spline (`the_b_spline_through_four_points`) | At u 0, (p0 + 4 p1 + p2) / 6; 1/30 of a key a frame with both next points at 30; the next key after 30 steps (31 for the `f32` sum); done when three points are left |
-| The first talk (`the_deku_trees_first_talk_and_yes_open_his_mouth`) | From `ENTR_SPOT04_1`: `EVENTCHKINF_0C`, `D_808BCE20`, `cutsceneIndex` 0xFFFD, `CS_STATE_SKIPPABLE_INIT`; sub camera 1 active on `CAM_SET_CS_0` at the script's eye (2753, 46, -354), the main camera waiting. Link in mode 6, moved to cue 2's start (2614, -1, -451: more than 50 away, a child in Kokiri Forest 1 lower), then cue 4. Text 0x107D at frame 41; 0x1015, then 0x1016's question with the script held at 169. Yes: `D_808BD520`, `EVENTCHKINF_05`, the same sub camera at (3740, -141, -530); the mouth's cue 3 read at frame 22, opening by 0.01 a frame; 0x1017; the end at frame 100, then 10 frames of `unk_0C` to idle, the main camera active, the sub camera cleared, Link standing (mode 7, then 0); the mouth open to 1 |
-| No (`no_says_0x1018_and_the_tree_waits_to_be_targeted`) | `D_808BD790`, no `EVENTCHKINF_05`, the mouth back to `func_808BC8B8`, 0x1018; afterwards no script until he's Z-targeted |
-| The Deku Tree's intro (`entering_the_deku_tree_the_first_time_plays_its_intro`) | `Play_Init` at `ENTR_YDAN_0`: `EVENTCHKINF_A8`, `gDekuTreeIntroCs`, `cutsceneTrigger` 2, no title card; the first frame starts it; Link held (mode 0x31, `PLAYER_STATE1_29`) instead of walking in; the end at frame 165; mode 0x31 ends by itself. With `EVENTCHKINF_A8` set, no intro |
+| The first talk (`the_deku_trees_first_talk_and_yes_open_his_mouth`) | From `ENTR_KOKIRI_FOREST_1`: `EVENTCHKINF_0C`, `gDekuTreeMeetingCs`, `cutsceneIndex` 0xFFFD, `CS_STATE_START`; sub camera 1 active on `CAM_SET_CS_0` at the script's eye (2753, 46, -354), the main camera waiting. Link in mode 6, moved to cue 2's start (2614, -1, -451: more than 50 away, a child in Kokiri Forest 1 lower), then cue 4. Text 0x107D at frame 41; 0x1015, then 0x1016's question with the script held at 169. Yes: `gDekuTreeMouthOpeningCs`, `EVENTCHKINF_05`, the same sub camera at (3740, -141, -530); the mouth's cue 3 read at frame 22, opening by 0.01 a frame; 0x1017; the end at frame 100, then 10 frames of `unk_0C` to idle, the main camera active, the sub camera cleared, Link standing (mode 7, then 0); the mouth open to 1 |
+| No (`no_says_0x1018_and_the_tree_waits_to_be_targeted`) | `gDekuTreeAskAgainCs`, no `EVENTCHKINF_05`, the mouth back to `func_808BC8B8`, 0x1018; afterwards no script until he's Z-targeted |
+| The Deku Tree's intro (`entering_the_deku_tree_the_first_time_plays_its_intro`) | `Play_Init` at `ENTR_DEKU_TREE_0`: `EVENTCHKINF_A8`, `gDekuTreeIntroCs`, `cutsceneTrigger` 2, no title card; the first frame starts it; Link held (mode 0x31, `PLAYER_STATE1_29`) instead of walking in; the end at frame 165; mode 0x31 ends by itself. With `EVENTCHKINF_A8` set, no intro |
 | A forced text (`a_forced_text_holds_link_until_it_is_read`) | By the shop's door: text 0x218 opens, Link in mode 8 (`Action::Cutscene`, `PLAYER_STATE1_29`); the stick moves him less than 1 in 5 frames; read, mode 7 and free |
-| The exit run (`playthrough` test `a_new_save_into_the_deku_tree`) | 7576 frames, no preset. As the Mido and shop run to past Mido (5731), then the talk over at 7056 (texts 0x107D, 0x1015, 0x1016, 0x1017), at the open jaw 7328 (`unk_168` 1, the mouth at (3869, -263, -1163)), into the mouth 7367, the Deku Tree settled 7576 after its intro. The scripts in order: `D_808BCE20`, `D_808BD520`, `gDekuTreeIntroCs`, the sub camera active during them |
+| The exit run (`playthrough` test `a_new_save_into_the_deku_tree`) | 7576 frames, no preset. As the Mido and shop run to past Mido (5731), then the talk over at 7056 (texts 0x107D, 0x1015, 0x1016, 0x1017), at the open jaw 7328 (`unk_168` 1, the mouth at (3869, -263, -1163)), into the mouth 7367, the Deku Tree settled 7576 after its intro. The scripts in order: `gDekuTreeMeetingCs`, `gDekuTreeMouthOpeningCs`, `gDekuTreeIntroCs`, the sub camera active during them |
 | The other runs | The Deku Tree run (on its preset): the intro holds Link in the Deku Tree, 2028 frames (1873). The Mido and shop run: the forced text holds Link for 83 frames, and the run ends on the same frame, 5731. The Kokiri Sword run: unchanged |
-| `D_8011D3F0` (`zcamera`, `talk`) | The main camera's first three updates after `Camera_Init` hold the interface at 0x3200 (the letterbox's target 32, alpha type 2); a transition's 0xF200 keeps alpha type 2 through the fade-in, so the HUD comes back after it. The tests that started in those frames now wait them out |
+| `sSceneInitLetterboxTimer` (`zcamera`, `talk`) | The main camera's first three updates after `Camera_Init` hold the interface at 0x3200 (the letterbox's target 32, alpha type 2); a transition's 0xF200 keeps alpha type 2 through the fade-in, so the HUD comes back after it. The tests that started in those frames now wait them out |
 | Golden traces and renders | 21 sheets, `mido_shop` and `playthrough` re-recorded (golden/README.md: the letterbox in the sheets' first frames; the hold at the shop; the Deku Tree's intro), new case `new_save_deku_tree` (the same bytes over two runs): 83 of 83 |
 | Import | 19.1 s; 52.0 MB; format version 11 (73 scene scripts, 27 overlay scripts), into `out/data08` |
 | The windows | Not yet played by hand: `scripts\run\game-deku-tree-talk.bat`, and the whole way from `game-new-save.bat`. Headless screenshots checked: the script's shots letterboxed, the tree's text as his mouth opens, the Deku Tree's intro looking up the trunk |
@@ -634,19 +634,19 @@ The tests: 244 pass, 1 ignored (238 before). The goldens:
 ### Decisions
 
 - **[ADR 0022](adr/0022-cutscenes.md):**
-  - the scripts are the ROM's bytes, walked as `Cutscene_ProcessCommands` walks them, with
+  - the scripts are the ROM's bytes, walked as `Cutscene_ProcessScript` walks them, with
     offsets for its pointers;
   - the overlays' scripts are built from their C's macros only to find them in the ROM;
   - `z_demo.c` is ported onto the play state, its statics carried across `Play_Init`;
   - sub cameras, and `z_camera.c`'s shared state as `CameraGlobals`;
   - Player's cutscene modes as one action, the modes Kokiri Forest uses ported.
-- **`D_8015FCC8` is 1 in play.** The decomp at this commit names it only where the debug D-pad
+- **`gUseCutsceneCam` is 1 in play.** The decomp at this commit names it only where the debug D-pad
   replays set or clear it; a scan of the ROM's code for every store to its address found
   `Environment_Init`'s, which sets it on every `Play_Init`. Without it, no script would move the
   camera.
-- **`D_8011D3F0` is ported,** though it changes every scene's first frames: `Camera_Init` sets it,
+- **`sSceneInitLetterboxTimer` is ported,** though it changes every scene's first frames: `Camera_Init` sets it,
   and the letterbox and the HUD's fade at a scene's start are the C's.
-- **A cue's facing is `rot.y`, which the Deku Tree's cues leave 0.** `CS_PLAYER_ACTION`'s fourth
+- **A cue's facing is `rot.y`, which the Deku Tree's cues leave 0.** `CS_PLAYER_CUE`'s fourth
   argument lands in `rot.x`; `func_808529D0` reads `rot.y`. Link is put at cue 2's start facing
   0 and turns towards its end as he walks, as in the C.
 - **The run answers yes with A on the first choice,** as a player keeps the cursor. The test of
@@ -663,12 +663,12 @@ The tests: 244 pass, 1 ignored (238 before). The goldens:
   updates are logged. Swimming in a cutscene (`func_80851368`, `func_808513BC`) isn't ported.
 - **Not ported, logged:** the scripts' lights, weather, fog, skybox changes, quakes, the title
   card (the Deku Tree's intro has one), the screen tint, the Sun's Song, the ocarina texts
-  (`func_8010BD58`), `linkAgeOnLoad`, the music and the rumble.
+  (`Message_StartOcarina`), `linkAgeOnLoad`, the music and the rumble.
 - **Navi's cues** (`npcActions[8]` in the first talk) have no actor to read them (milestone 5).
   *(Done in milestone 5.)*
 - **The one-point cutscenes** (the crawl's 9601 and 9602, `OnePointCutscene_Init`, the camera's
   parent and child chain, `Camera_Finish`'s timer): not ported; BACKLOG #3 stays.
-- **`func_8083B998`'s C-Up** into first person isn't ported (noted when pressed).
+- **`Player_ActionHandler_0`'s C-Up** into first person isn't ported (noted when pressed).
 - **The debug D-pad replays** (D-Left, D-Up) only work in a cutscene layer, which never loads.
   *(The layers load since milestone 5.)*
 - **Carried over:** Navi, audio, the effects, the pause menu.
@@ -702,12 +702,13 @@ The tests: 256 pass, 1 ignored (244 before). The goldens:
      `SceneData::layer` falls back as `Scene_CommandAlternateHeaderList` does;
    - their rooms baked as a child's by day at 10:00;
    - the scripts no XML names keyed by file and offset (`keys::cutscene_at`,
-     `cutscene/spot04_scene/0xA6D0`): 83;
+     `cutscene/spot04_scene/0xA6D0`): 83 (the decomp upgrade's XMLs name them all,
+     docs/adr/0031-decomp-main.md: that one is `gKokiriForestIntroNaviFlyingCs`);
    - `LayerData.c_up_elf_msg_num` (`SCENE_CMD_ID_SPECIAL_FILES`' number);
    - Navi's C-Up texts (`table/elf_messages`, below) and the fairies' two bakes.
 3. **`Play_Init` on a cutscene layer** (`play_scene.rs`): `SCENE_LAYER_CUTSCENE_FIRST +
    (cutsceneIndex & 0xF)`, the Hyrule Field and Kokiri Forest special cases only outside the
-   cutscene layers, `Environment_Init`'s `cutsceneTransitionControl = 0`, `play->cUpElfMsgs`.
+   cutscene layers, `Environment_Init`'s `cutsceneTransitionControl = 0`, `play->naviQuestHints`.
    Milestone 4's fallback to the normal layer is gone.
 4. **The cutscene transitions:** `TRANS_TYPE_CS_BLACK_FILL` (`TRANS_MODE_CS_BLACK_FILL`: black
    at `cutsceneTransitionControl`'s value, over at 100 or less) and
@@ -715,7 +716,7 @@ The tests: 256 pass, 1 ignored (244 before). The goldens:
    until the control is set).
 5. **`En_Elf`** (`oot_actors::en_elf`), the whole overlay but its effects:
    - Navi (`FAIRY_NAVI`): `func_80A0461C`'s modes (out after the pointed actor, into Link's hat
-     when nothing's around and `PLAYER_STATE2_20` is clear, back out, at the camera in first
+     when nothing's around and `PLAYER_STATE2_NAVI_ACTIVE` is clear, back out, at the camera in first
      person and shops, her cue's in a cutscene: 4 → 9, 3 → 6, 1 → 10), `func_80A03CF8`'s moves
      (`func_80A02C98`, `func_80A03148`, `func_80A02E30`, `func_80A02EC0`), the drifts
      (`func_80A01C38`), her colours after the target context's (`func_80A04414`), the lights
@@ -729,27 +730,27 @@ The tests: 256 pass, 1 ignored (244 before). The goldens:
      colour and render mode (Navi's without the z-buffer), the env colour's pulse, the fade
      (`disappearTimer`), and `EnElf_OverrideLimbDraw`'s limb 8 at its parent's origin, unrotated,
      at its pulsing scale, billboarded (`gGlowCircleSmallDL`'s segment 1); a big fairy's wings off.
-6. **`z_elf_message.c`** (`oot_game::elf_message`): `ElfMessage_GetTextFromMsgs` and its
-   conditions, `ElfMessage_GetCUpText`, `ElfMessage_GetSariaText`. The importer builds each
-   `ElfMessage` array from its `ELF_MSG_*` macros (`oot_import::elf_message`), checks
-   `gOverworldNaviMsgs` and `gDungeonNaviMsgs` against the ROM's `elf_message_field` and
-   `elf_message_ydan`, and finds `sChildSariaMsgs` and `sAdultSariaMsgs` in `code`.
+6. **`z_elf_message.c`** (`oot_game::elf_message`): `QuestHint_GetTextIdFromScript` and its
+   conditions, `QuestHint_GetNaviTextId`, `QuestHint_GetSariaTextId`. The importer builds each
+   `QuestHintCmd` array from its `ELF_MSG_*` macros (`oot_import::elf_message`), checks
+   `gOverworldNaviQuestHints` and `gDungeonNaviQuestHints` against the ROM's `elf_message_field` and
+   `elf_message_ydan`, and finds `sChildSariaQuestHints` and `sAdultSariaQuestHints` in `code`.
 7. **The target context's Navi half** (`target.rs`): `naviRefPos`, `naviInner`, `naviOuter`,
-   `unk_40`'s four-frame ease, `activeCategory`, `unk_8C`, `Actor_SetNaviToActor`,
-   `func_8002C0C0` once Player is in.
+   `naviMoveProgressFactor`'s four-frame ease, `activeCategory`, `forcedLockOnActor`, `Attention_SetNaviState`,
+   `Attention_Init` once Player is in.
 8. **Player:**
    - `Player_SpawnFairy` (`naviActor`, in `GAMEMODE_NORMAL` and the credits only), init modes 5
      and 6 as 13 in a cutscene layer;
-   - `naviTextId`, cleared at the end of each update; `func_8083B644`'s Navi branch (C-Up with her
-     text, at once when negative) and `func_80853148`'s (her talk request, no step back,
-     `func_80835EA4(play, 0xB)`); `Interface_SetNaviCall` (`InterfaceContext::navi_calling`);
-   - the opening's cutscene modes: 9 (`link_demo_furimuki`, type 2: `func_80850ED8`), 38
+   - `naviTextId`, cleared at the end of each update; `Player_ActionHandler_Talk`'s Navi branch (C-Up with her
+     text, at once when negative) and `Player_StartTalking`'s (her talk request, no step back,
+     `Player_SetTurnAroundCamera(play, 0xB)`); `Interface_SetNaviCall` (`InterfaceContext::navi_calling`);
+   - the opening's cutscene modes: 9 (`link_demo_furimuki`, type 2: `Player_AnimChangeOnceMorphZeroRootYawSpeed`), 38
      (`func_80851F84`: asleep, no shadow), 39 (`func_80851E90`, `func_80851ECC`: tossing), 40
      (type 6, `func_80851FB0`: sitting up, the shadow back at frame 240), 41 (type 6, getting up);
    - `actor.focus.pos` from the head, as its draw sets it (Navi's point reads it).
 9. **The actors' point lights** (`oot_game::lights`): `LightContext`'s list, `Lights_BindPoint`,
    bound at each actor's position in `PlayState::draw` (`Actor_Draw`'s `Lights_BindAll`, none with
-   `ACTOR_FLAG_22`); `eng_gfx::DrawParams::lights`, and up to three added to the lit materials'
+   `ACTOR_FLAG_IGNORE_POINT_LIGHTS`); `eng_gfx::DrawParams::lights`, and up to three added to the lit materials'
    lighting in the renderer.
 10. **`Actor_SpawnAsChild` from an init** links the child to its parent once the parent is in the
     actor context (`PlayState::init_children`): Mido's fairy had been linked to nothing.
@@ -769,12 +770,12 @@ The tests: 256 pass, 1 ignored (244 before). The goldens:
 | Check | Result |
 |---|---|
 | `cargo test --workspace` | 256 passed, 1 ignored |
-| The opening (`cutscene` test `the_opening_plays_from_the_file_selects_new_file`) | `file_select_new`: `ENTR_LINK_HOME_0`, 0xFFF1, child, 0x6AAB. `Play_Init`: Link's house's layer 5, its script `link_home_scene/0x15D0`, `TRANS_TYPE_CS_BLACK_FILL`. The first frame: `CS_STATE_SKIPPABLE_EXEC` at frame 1 (no trigger), `TRANS_MODE_CS_BLACK_FILL`, black. Cue 0x1C (mode 38): (0, 2, 116), facing 0x8000, `clink_op3_wait1`, no shadow. 0x109D at frame 41, still black; the fill ends on frame 82 at 100 (`TRANSITION_FX` 12's 255 − 155 × the weight, a frame late). Destination 35: Hyrule Field's layer 4; cue 5 (mode 8) at (−1, 0, 1348); cue 6, `link_demo_furimuki`. Destination 11: Kokiri Forest's layer 7, `TRANS_TYPE_FADE_WHITE_CS_DELAYED` waiting white until frame 71 (`TRANSITION_FX` 9 from 70); Link in mode 0x31; Navi in mode 10 on her cue 1. Destination 10: the house's layer 4 (`FADE_BLACK_FAST`, `ENTR_LINK_HOME_0_4`'s); cues 0x1D (`clink_op3_negaeri`), 0x1E (`okiagari`), 0x1F (`tatiagari`, the shadow back), 5 at (0, 0, 60); the end with `cutsceneIndex` 0, `VIEWPOINT_LOCKED`, Link standing facing 0x8000 |
-| Navi (`navi`: 5 tests) | Spawned 50 above Link, room −1, scale 0.008, `fairyFlags` 4, `unk_2C7` 0x14. `PLAYER_STATE2_20` clear: into the hat from the first frame (mode 7), there within 30 frames (mode 8): at the hat, scale 0, undrawn. `naviTimer` counts outside `Play_InCsMode`; at 600 `naviTextId` 0x140; `STATE2_21`, then the Navi call a frame later (`func_808473D4` runs before the action); C-Up: her text 0x140, `func_80A052F4`, `fairyFlags` 0x80, `naviTimer` 3001, Link talking, `CAM_SET_TURN_AROUND`; closed: back to `func_80A053F0`, mode 0, no more text. The 9 Kokiri fairies within 30 of their children's point (1500 × 0.008 + 40 above), inner white, outer alpha 0 with a channel of 200 or more. The Deku Tree's talk: her mode by the cue the last frame left, and on cue 1 exactly at its point plus the drift. Both bakes in the pack |
-| The exit run (`playthrough` test `a_new_file_into_the_deku_tree`) | 11748 frames from the new file's first frame. The nightmare at 842, Navi sent 1404, the wake-up over 4134 (Link at (0, 0, 60); texts 0x109D, 0x109E, 0x109F, 0x1099, 0x109A, 0x1095, 0x1096, 0x1000, 0x1098), out of the door 4242, down the ladder 4345, C-Up to Navi on the plateau 5009 (0x140), the crawlspace 5153; then the new save's run: the chest 6236, the shop 8408, the shield 8951, Mido 9798, the Deku Tree's talk 11228, into his mouth 11539, the Deku Tree 11748. The scripts in order: `link_home_scene/0x15D0`, `spot00_scene/0x12400`, `spot04_scene/0xA6D0`, `link_home_scene/0x1040`, `D_808BCE20`, `D_808BD520`, `gDekuTreeIntroCs` |
+| The opening (`cutscene` test `the_opening_plays_from_the_file_selects_new_file`) | `file_select_new`: `ENTR_LINKS_HOUSE_0`, 0xFFF1, child, 0x6AAB. `Play_Init`: Link's house's layer 5, its script `link_home_scene/0x15D0`, `TRANS_TYPE_CS_BLACK_FILL`. The first frame: `CS_STATE_RUN` at frame 1 (no trigger), `TRANS_MODE_CS_BLACK_FILL`, black. Cue 0x1C (mode 38): (0, 2, 116), facing 0x8000, `clink_op3_wait1`, no shadow. 0x109D at frame 41, still black; the fill ends on frame 82 at 100 (`TRANSITION_FX` 12's 255 − 155 × the weight, a frame late). Destination 35: Hyrule Field's layer 4; cue 5 (mode 8) at (−1, 0, 1348); cue 6, `link_demo_furimuki`. Destination 11: Kokiri Forest's layer 7, `TRANS_TYPE_FADE_WHITE_CS_DELAYED` waiting white until frame 71 (`TRANSITION_FX` 9 from 70); Link in mode 0x31; Navi in mode 10 on her cue 1. Destination 10: the house's layer 4 (`FADE_BLACK_FAST`, `ENTR_LINKS_HOUSE_0_4`'s); cues 0x1D (`clink_op3_negaeri`), 0x1E (`okiagari`), 0x1F (`tatiagari`, the shadow back), 5 at (0, 0, 60); the end with `cutsceneIndex` 0, `VIEWPOINT_LOCKED`, Link standing facing 0x8000 |
+| Navi (`navi`: 5 tests) | Spawned 50 above Link, room −1, scale 0.008, `fairyFlags` 4, `unk_2C7` 0x14. `PLAYER_STATE2_NAVI_ACTIVE` clear: into the hat from the first frame (mode 7), there within 30 frames (mode 8): at the hat, scale 0, undrawn. `naviTimer` counts outside `Play_InCsMode`; at 600 `naviTextId` 0x140; `STATE2_21`, then the Navi call a frame later (`Player_UpdateInterface` runs before the action); C-Up: her text 0x140, `func_80A052F4`, `fairyFlags` 0x80, `naviTimer` 3001, Link talking, `CAM_SET_TURN_AROUND`; closed: back to `func_80A053F0`, mode 0, no more text. The 9 Kokiri fairies within 30 of their children's point (1500 × 0.008 + 40 above), inner white, outer alpha 0 with a channel of 200 or more. The Deku Tree's talk: her mode by the cue the last frame left, and on cue 1 exactly at its point plus the drift. Both bakes in the pack |
+| The exit run (`playthrough` test `a_new_file_into_the_deku_tree`) | 11748 frames from the new file's first frame. The nightmare at 842, Navi sent 1404, the wake-up over 4134 (Link at (0, 0, 60); texts 0x109D, 0x109E, 0x109F, 0x1099, 0x109A, 0x1095, 0x1096, 0x1000, 0x1098), out of the door 4242, down the ladder 4345, C-Up to Navi on the plateau 5009 (0x140), the crawlspace 5153; then the new save's run: the chest 6236, the shop 8408, the shield 8951, Mido 9798, the Deku Tree's talk 11228, into his mouth 11539, the Deku Tree 11748. The scripts in order: `link_home_scene/0x15D0`, `spot00_scene/0x12400`, `spot04_scene/0xA6D0`, `link_home_scene/0x1040`, `gDekuTreeMeetingCs`, `gDekuTreeMouthOpeningCs`, `gDekuTreeIntroCs` |
 | The other runs | Pass unchanged in their steps. The Deku Tree run's bushes draw other drops (the fourth drops three green rupees: `sDropQuantities`); its check takes 1 to 3 |
-| The pack (`oot_import --test pack`) | The cutscene layers of Kokiri Forest (14), Hyrule Field (13) and Link's house (6) equal the ROM path's; their scripts keyed by offset are the ROM's bytes through `CS_END`; the C-Up texts' bytes (`gOverworldNaviMsgs`' 28, the dungeon's `END(0x5F)`, the Saria tables' 13 and 6); `cUpElfMsgNum` 1 in Kokiri Forest and Hyrule Field, 0 in Link's house, 2 in the Deku Tree. 247 headers, 655 rooms |
-| Unit tests | `ElfMessage_GetTextFromMsgs` over the field script's first flags; a point light's binding; `file_select_new`'s fields |
+| The pack (`oot_import --test pack`) | The cutscene layers of Kokiri Forest (14), Hyrule Field (13) and Link's house (6) equal the ROM path's; their scripts keyed by offset are the ROM's bytes through `CS_END_OF_SCRIPT`; the C-Up texts' bytes (`gOverworldNaviQuestHints`' 28, the dungeon's `END(0x5F)`, the Saria tables' 13 and 6); `cUpElfMsgNum` 1 in Kokiri Forest and Hyrule Field, 0 in Link's house, 2 in the Deku Tree. 247 headers, 655 rooms |
+| Unit tests | `QuestHint_GetTextIdFromScript` over the field script's first flags; a point light's binding; `file_select_new`'s fields |
 | Golden traces and renders | `sword_chest`, `mido_shop`, `new_save_deku_tree`: only their `actors` counts, one more from frame 1108 (Navi in no room, where her placeholder was room 0's) until the next scene change. `playthrough`: from frame 886, the bushes' drops (the fairies' `Rand` calls); 2269 frames, not 2028. New case `new_file_deku_tree` (11748 frames, the same bytes over two runs). Every render unchanged: 84 of 84 |
 | Import | 12.9 s; 59.6 MB; format version 12 (106 cutscene layers, 83 scripts by offset, 2 fairy bakes), into `out/data09` |
 | The windows | Played by hand (`scripts\run\game-new-file.bat`): three fixes followed (below). Headless screenshots checked: the narration over Link asleep in bed, seen from the side, the nightmare's castle, the delayed white fade, the flight, the wake-up in the house, Navi around Link in bed, her text as he stands, her C-Up talk in Kokiri Forest; in the Deku Tree, her light on Link's cap and shield |
@@ -796,7 +797,7 @@ The tests: 256 pass, 1 ignored (244 before). The goldens:
 3. **The camera cuts were smeared.** The window renders at 60 Hz, blending each frame between
    the last two 20 Hz game frames, and blended the view across cuts too: two in-between frames
    swept from one shot to the next. `GameCamera::view_cut` (not in the C) marks where a camera is
-   put somewhere new at once (`Camera_Demo1`'s splines starting again, `Play_CameraSetAtEye`,
+   put somewhere new at once (`Camera_Demo1`'s splines starting again, `Play_SetCameraAtEye`,
    `Camera_Copy`, `Camera_Fixed3` at its bg camera), and with a change of active camera the
    render shows the new view unblended. Everything else still blends.
 
@@ -819,7 +820,7 @@ each scene's first frame on the main camera, under a full fill.
   chain reaches layer 4 last, through Hyrule Field and Kokiri Forest.
 - **Navi shows in the nightmare.** Player_Init spawns her in every normal game mode, and Hyrule
   Field's layer 4 gives her no cue, so she follows Link there as she does anywhere.
-- **The existing routes keep their start** at `ENTR_LINK_HOME_0` with `cutsceneIndex` 0, as
+- **The existing routes keep their start** at `ENTR_LINKS_HOUSE_0` with `cutsceneIndex` 0, as
   asked: the new file's run is a route of its own.
 - **The run reads the opening's texts with A** at each box that waits, as a player would, and
   never skips with Start.
@@ -901,4 +902,4 @@ GAME-03 is complete, and Phase 4 with it. **Next: Phase 5, audio (GAME-04,
 sounds (the enemies, the doors, the switches, the items, Gohma), and each port so far has logged
 its sound calls as left out; with the sequence player and the sfx channels in, Phase 6 ports them
 as it goes instead of leaving a second pass. Its first milestone: the soundfonts, samples and
-sequences into the pack, and an `eng_audio` synthesiser after `audio_synthesis.c`.
+sequences into the pack, and an `eng_audio` synthesiser after `synthesis.c`.

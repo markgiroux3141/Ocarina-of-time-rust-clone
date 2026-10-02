@@ -483,7 +483,7 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         }
     }
 
-    // A scene's cutscene scripts, each through its CS_END (docs/adr/0022-cutscenes.md).
+    // A scene's cutscene scripts, each through its CS_END_OF_SCRIPT (docs/adr/0022-cutscenes.md).
     for s in f.of_kind("Cutscene") {
         if !is_scene {
             t.skip("Cutscene", "not in a scene file");
@@ -588,7 +588,7 @@ fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWrite
         let b = oot_game::skybox::bake(&s);
         let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
         if !d.stats.unresolved_addresses.is_empty() {
-            // @bug (game): SKYBOX_HAPPY_MASK_SHOP gets four faces (func_800AEFC8) from files
+            // @bug (game): SKYBOX_HAPPY_MASK_SHOP gets four faces (Skybox_Calculate256) from files
             // that hold two; the last two read past them.
             tally.notes.push(format!("bake {}: {} addresses past its files (the game reads past them too)", b.name, d.stats.unresolved_addresses.len()));
         }
@@ -828,6 +828,14 @@ fn import_scenes(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Scene
         }
         for _ in &room_files {
             t.ok("Room");
+        }
+        // The XML's other Scene elements: headers the alternate header list doesn't name (the
+        // decomp's `*_scene_unused`), which no layer reads.
+        if let Some(f) = p.symbols.file(&def.file) {
+            for s in f.of_kind("Scene").filter(|s| s.offset != 0) {
+                anyhow::ensure!(!seen_headers.contains(&s.offset), "{}: {} is a layer's header", def.file, s.name);
+                t.skip("Scene", "a header no layer uses");
+            }
         }
         let data = SceneData { name: def.file.clone(), id: def.id as u16, draw_config: def.draw_config.clone(), layers };
         w.put(&keys::scene(&def.file), &data)?;

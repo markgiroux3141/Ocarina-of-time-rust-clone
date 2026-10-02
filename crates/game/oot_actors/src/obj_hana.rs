@@ -7,22 +7,22 @@ use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
-use oot_game::save::EVENTCHKINF_40;
+use oot_game::save::EVENTCHKINF_OBTAINED_ZELDAS_LETTER;
 
 pub const ACTOR_OBJ_HANA: i16 = 0x014F;
 
-/// `Obj_Hana_InitVars`.
+/// `Obj_Hana_Profile`.
 pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_HANA, name: "Obj_Hana", category: ACTORCAT_PROP, flags: 0, object: "gameplay_field_keep" };
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
-    base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderBumpInit { dmg_flags: 0, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_NONE,
-        bumper_flags: BUMP_NONE,
+    base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_NONE,
+        bumper_flags: ACELEM_NONE,
         oc_elem_flags: OCELEM_ON,
     },
     dim: Cylinder16 { radius: 8, height: 10, y_shift: 0, pos: [0; 3] },
@@ -74,7 +74,7 @@ impl ObjHana {
             collider.dim.height = p.height;
             actor.col_chk_info.set_info(None, &COL_CHK_INFO_INIT);
         }
-        if ty == 2 && play.save.get_event_chk_inf(EVENTCHKINF_40) {
+        if ty == 2 && play.save.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER) {
             actor.kill();
         }
         Box::new(ObjHana { actor, collider })

@@ -44,15 +44,15 @@ fn all<T: 'static + oot_game::actor_ctx::ActorImpl>(w: &PlayState) -> Vec<&T> {
 
 #[test]
 fn kokiri_forest_props_initialise_as_their_c_does() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
-    // Frame 1 spawns room 0's list; the room objects load by frame 2 (Object_UpdateBank twice),
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
+    // Frame 1 spawns room 0's list; the room objects load by frame 2 (Object_UpdateEntries twice),
     // so the props on object_kanban wait; the ones on the keeps initialise at once.
     frames(&mut w, 4);
     let room0 = w.scene.as_ref().unwrap().rooms[0].clone();
     let placed = |id: i16| room0.actors.iter().filter(|e| e.id == id).count();
 
     // Obj_Hana: 4 small rocks (params 1: gFieldKakeraDL, scale 0.1, yOffset 58, a 10 x 18 body)
-    // and a bush (params 2: gFieldBushDL, scale 0.4, 12 x 44). EVENTCHKINF_40 isn't set, so the
+    // and a bush (params 2: gFieldBushDL, scale 0.4, 12 x 44). EVENTCHKINF_OBTAINED_ZELDAS_LETTER isn't set, so the
     // bush stays.
     let hana = all::<ObjHana>(&w);
     assert_eq!(hana.len(), placed(oot_actors::obj_hana::ACTOR_OBJ_HANA));
@@ -75,19 +75,19 @@ fn kokiri_forest_props_initialise_as_their_c_does() {
     }
 
     // En_Kusa: the 12 village bushes (0x0200: type 0 on gameplay_field_keep, already loaded) are
-    // past EnKusa_WaitObject and waiting to be cut.
+    // past EnKusa_WaitForObject and waiting to be cut.
     let kusa = all::<EnKusa>(&w);
     assert_eq!(kusa.len(), placed(en_kusa::ACTOR_EN_KUSA));
     for k in &kusa {
         assert_eq!(k.action, en_kusa::Action::Main);
         assert_eq!(k.actor.scale, Vec3::splat(0.4));
-        assert_eq!(k.actor.flags & en_kusa::ACTOR_FLAG_ENKUSA_CUT, 0);
+        assert_eq!(k.actor.flags & en_kusa::ACTOR_FLAG_GRASS_DESTROYED, 0);
     }
 }
 
 #[test]
 fn the_sword_cuts_a_village_bush() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     frames(&mut w, 4);
     // The bush at (385, 0, 643): stand 30 in front of it, facing it, sword out, and slash.
     let bush = w.actors.all().into_iter().find(|&h| w.actors.downcast::<EnKusa>(h).is_some_and(|k| k.actor.home_pos.x == 385.0)).expect("the bush");
@@ -113,7 +113,7 @@ fn the_sword_cuts_a_village_bush() {
 #[test]
 fn a_slash_cuts_a_piece_off_a_sign() {
     use oot_actors::en_kanban::{self, EnKanban};
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     frames(&mut w, 4);
     // The sign at (49, -80, 967), facing -z (rotation 0x8000): stand 35 in front, facing it.
     let sign = w.actors.all().into_iter().find(|&h| w.actors.downcast::<EnKanban>(h).is_some_and(|k| k.actor.home_pos.x == 49.0 && k.actor.home_pos.z == 967.0)).expect("the sign");

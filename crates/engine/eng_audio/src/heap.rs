@@ -1,4 +1,4 @@
-//! `audio_heap.c`: the audio heap's pools and caches, the ADSR decay table, the filters, the
+//! `heap.c`: the audio heap's pools and caches, the ADSR decay table, the filters, the
 //! reset steps and `AudioHeap_Init`.
 
 use crate::context::*;
@@ -595,7 +595,7 @@ impl AudioContext {
         self.audio_buffer_parameters.num_sequence_players = (spec.num_sequence_players as i16).min(4);
         self.unk_2 = spec.unk_14;
         let tatums = self.tables.tatums_per_beat as f32;
-        self.tempo_internal_to_external = (self.audio_buffer_parameters.updates_per_frame as f32 * 2880000.0f32 / tatums / self.unk_2960) as u32 as i16;
+        self.tempo_internal_to_external = (self.audio_buffer_parameters.updates_per_frame as f32 * 2880000.0f32 / tatums / self.max_tempo_tv_type_factors) as u32 as i16;
 
         let mut unk_2870 = self.refresh_rate as f32;
         unk_2870 *= self.audio_buffer_parameters.updates_per_frame as f32;
@@ -654,7 +654,7 @@ impl AudioContext {
         self.init_note_free_list();
         let n = self.audio_buffer_parameters.updates_per_frame as usize * self.num_notes as usize;
         alloc_zeroed(&mut self.ram, &mut self.misc_pool, n as u32 * SIZEOF_NOTE_SUB_EU);
-        self.note_subs_eu = vec![NoteSubEu::default(); n];
+        self.note_subs_eu = vec![NoteSampleState::default(); n];
         // Initialize audio binary interface command list buffers
         for i in 0..2 {
             self.abi_cmd_bufs[i] = alloc_zeroed(&mut self.ram, &mut self.misc_pool, self.max_audio_cmds as u32 * SIZEOF_ACMD);

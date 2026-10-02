@@ -1,4 +1,4 @@
-//! `gSaveContext` (`z64save.h`): the save file's contents that play reads and writes (the
+//! `gSaveContext` (`save.h`): the save file's contents that play reads and writes (the
 //! inventory, the equipment, the story flags, each scene's flags), and what one `Play_Init`
 //! passes to the next (where it enters, Link's age, the time of day, the respawn points, the
 //! entrance speed, the transition type). It outlives each `PlayState`: a scene change builds a
@@ -147,7 +147,7 @@ pub struct SaveContext {
     /// `deaths`.
     pub deaths: u16,
     /// `naviTimer`: counts play frames outside cutscenes (`func_80A053F0`, to 25800); between 600
-    /// and 3000 Navi has her C-Up text (`ElfMessage_GetCUpText`), and talking to her with it sets
+    /// and 3000 Navi has her C-Up text (`QuestHint_GetNaviTextId`), and talking to her with it sets
     /// 3001.
     pub navi_timer: u16,
     /// `healthCapacity`, `health` (16 a heart), `healthAccumulator` (health still to add).
@@ -182,57 +182,57 @@ pub struct SaveContext {
     pub map_index: u16,
     /// `buttonStatus` (B, the C buttons, A; `BTN_ENABLED` 0, `BTN_DISABLED` 0xFF).
     pub button_status: [u8; 5],
-    /// `unk_13E7`, `unk_13E8`, `unk_13EA`, `unk_13EC`, `unk_13EE`: the interface's alpha
-    /// type (`Interface_ChangeAlpha`), its fade step and the type to go back to.
-    pub unk_13e7: u8,
-    pub unk_13e8: u16,
-    pub unk_13ea: u16,
-    pub unk_13ec: u16,
-    pub unk_13ee: u16,
+    /// `forceRisingButtonAlphas`, `nextHudVisibilityMode`, `hudVisibilityMode`, `hudVisibilityModeTimer`, `prevHudVisibilityMode`: the interface's alpha
+    /// type (`Interface_ChangeHudVisibilityMode`), its fade step and the type to go back to.
+    pub force_rising_button_alphas: u8,
+    pub next_hud_visibility_mode: u16,
+    pub hud_visibility_mode: u16,
+    pub hud_visibility_mode_timer: u16,
+    pub prev_hud_visibility_mode: u16,
     /// `language`: English.
     pub language: u8,
 }
 
-/// `GAMEMODE_NORMAL` (`z64save.h`).
+/// `GAMEMODE_NORMAL` (`save.h`).
 pub const GAMEMODE_NORMAL: u8 = 0;
 
 /// `LANGUAGE_ENG`.
 pub const LANGUAGE_ENG: u8 = 0;
 
-/// `EVENTCHKINF_04` (`z64save.h`: 0x04): Mido has let Link through to the Deku Tree. Set by
-/// `func_80AAB948` (`z_en_md.c:743`) when his text 0x1033 (Link wearing the Kokiri Sword and the
+/// `EVENTCHKINF_04` (`save.h`: 0x04): Mido has let Link through to the Deku Tree. Set by
+/// `EnMd_BlockPath` (`z_en_md.c:743`) when his text 0x1033 (Link wearing the Kokiri Sword and the
 /// Deku Shield) closes; from then on he stands at his path's last point (`EnMd_SetMovedPos`).
 pub const EVENTCHKINF_04: u16 = 0x04;
-/// `EVENTCHKINF_05` (`z64save.h`: 0x05): the Deku Tree has opened his mouth. Set by
+/// `EVENTCHKINF_05` (`save.h`: 0x05): the Deku Tree has opened his mouth. Set by
 /// `func_808BC9EC` (`z_bg_treemouth.c`) when Link answers the tree's question with the first
 /// choice; from then on `func_808BC8B8` holds the mouth open (`unk_168` 1).
 pub const EVENTCHKINF_05: u16 = 0x05;
 /// `EVENTCHKINF_07` (0x07): the Deku Tree is dead. Set with `EVENTCHKINF_09` and the Kokiri
-/// Emerald by `Door_Warp1`'s blue warp out of Gohma's room (`z_door_warp1.c`, `SCENE_YDAN_BOSS`).
+/// Emerald by `Door_Warp1`'s blue warp out of Gohma's room (`z_door_warp1.c`, `SCENE_DEKU_TREE_BOSS`).
 /// The tree and his mouth are drawn with env alpha 2150 instead of 500
-/// (`Scene_DrawConfigSpot04`, `BgTreemouth_Draw`).
+/// (`Scene_DrawConfigKokiriForest`, `BgTreemouth_Draw`).
 pub const EVENTCHKINF_07: u16 = 0x07;
 /// `EVENTCHKINF_09` (0x09): set with `EVENTCHKINF_07` by the same blue warp.
 pub const EVENTCHKINF_09: u16 = 0x09;
 /// `EVENTCHKINF_0C` (0x0C): Link has met the Deku Tree. Set by `func_808BC8B8` as it starts the
-/// first talk's cutscene (`D_808BCE20`).
+/// first talk's cutscene (`gDekuTreeMeetingCs`).
 pub const EVENTCHKINF_0C: u16 = 0x0C;
-/// `EVENTCHKINF_40`: Zelda's letter obtained (`(4 << 4) | 0`).
-pub const EVENTCHKINF_40: u16 = 0x40;
-/// `EVENTCHKINF_80`, `EVENTCHKINF_C4` (`z64save.h`), set by `Sram_InitDebugSave`.
-pub const EVENTCHKINF_80: u16 = 0x80;
+/// `EVENTCHKINF_OBTAINED_ZELDAS_LETTER`: Zelda's letter obtained (`(4 << 4) | 0`).
+pub const EVENTCHKINF_OBTAINED_ZELDAS_LETTER: u16 = 0x40;
+/// `EVENTCHKINF_ZELDA_FLED_CASTLE`, `EVENTCHKINF_C4` (`save.h`), set by `Sram_InitDebugSave`.
+pub const EVENTCHKINF_ZELDA_FLED_CASTLE: u16 = 0x80;
 pub const EVENTCHKINF_C4: u16 = 0xC4;
-/// `INFTABLE_1DX_INDEX` (29): `infTable[29]` is 1 while the B button has had no sword since
+/// `INFTABLE_INDEX_1DX` (29): `infTable[29]` is 1 while the B button has had no sword since
 /// the file began or lost it (`Sram_InitNewSave`, `Inventory_DeleteEquipment`); the pause
 /// menu's equipment screen clears it when it equips a sword. `func_80083108` only gives B
 /// back its stored item while it's 0.
-pub const INFTABLE_1DX_INDEX: usize = 29;
-/// `ENTR_LINK_HOME_0` (`entrance_table.h`, row 0x0BB): Link's house, by his bed.
-pub const ENTR_LINK_HOME_0: u16 = 0x0BB;
-/// `ENTR_LOAD_OPENING` (`z64scene.h`: -1): `Play_Init` goes to the title screen instead.
+pub const INFTABLE_INDEX_1DX: usize = 29;
+/// `ENTR_LINKS_HOUSE_0` (`entrance_table.h`, row 0x0BB): Link's house, by his bed.
+pub const ENTR_LINKS_HOUSE_0: u16 = 0x0BB;
+/// `ENTR_LOAD_OPENING` (`scene.h`: -1): `Play_Init` goes to the title screen instead.
 pub const ENTR_LOAD_OPENING: u16 = 0xFFFF;
-/// `SCENE_LINK_HOME` (`scene_table.h`).
-pub const SCENE_LINK_HOME: u16 = 0x34;
+/// `SCENE_LINKS_HOUSE` (`scene_table.h`).
+pub const SCENE_LINKS_HOUSE: u16 = 0x34;
 /// `MAGIC_NORMAL_METER`.
 pub const MAGIC_NORMAL_METER: i8 = 0x30;
 
@@ -252,12 +252,12 @@ pub struct SavePreset {
 /// `Item_Give(ITEM_SHIELD_DEKU)`), both owned (`OWNED_EQUIP_FLAG`: `inventory.equipment` bits
 /// 0 and 4) and equipped as the pause menu's equipment screen equips them
 /// (`z_kaleido_equipment.c`: `Inventory_ChangeEquipment(EQUIP_TYPE_SWORD,
-/// EQUIP_VALUE_SWORD_KOKIRI)`, `infTable[INFTABLE_1DX_INDEX] = 0`, `buttonItems[0] =
+/// EQUIP_VALUE_SWORD_KOKIRI)`, `infTable[INFTABLE_INDEX_1DX] = 0`, `buttonItems[0] =
 /// ITEM_SWORD_KOKIRI`; and `Inventory_ChangeEquipment(EQUIP_TYPE_SHIELD,
 /// EQUIP_VALUE_SHIELD_DEKU)`): `equips.equipment` nibbles 0 and 1 are 1. Mido lets Link past
 /// with both worn (`z_en_md.c`: `CUR_EQUIP_VALUE(EQUIP_TYPE_SHIELD) == EQUIP_VALUE_SHIELD_DEKU &&
 /// CUR_EQUIP_VALUE(EQUIP_TYPE_SWORD) == EQUIP_VALUE_SWORD_KOKIRI`).
-/// `gEquipAgeReqs` (`z_kaleido_scope_PAL.c`): who can wear each equipment type's pieces
+/// `gEquipAgeReqs` (`z_kaleido_scope.c`): who can wear each equipment type's pieces
 /// (column 0 is the upgrades'), 9 either age, else `LINK_AGE_ADULT` 0 or `LINK_AGE_CHILD` 1.
 pub const EQUIP_AGE_REQS: [[u8; 4]; 4] = [[0, 1, 0, 0], [9, 1, 9, 0], [0, 9, 0, 0], [9, 9, 0, 0]];
 /// `LINK_AGE_ADULT`, `LINK_AGE_CHILD`.
@@ -291,7 +291,7 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
             s.set_event_chk_inf(EVENTCHKINF_04);
             s.set_event_chk_inf(EVENTCHKINF_0C);
             s.set_event_chk_inf(EVENTCHKINF_05);
-            // Door_Warp1 (SCENE_YDAN_BOSS): Flags_SetEventChkInf(EVENTCHKINF_07) and (_09),
+            // Door_Warp1 (SCENE_DEKU_TREE_BOSS): Flags_SetEventChkInf(EVENTCHKINF_07) and (_09),
             // Item_Give(play, ITEM_KOKIRI_EMERALD).
             s.set_event_chk_inf(EVENTCHKINF_07);
             s.set_event_chk_inf(EVENTCHKINF_09);
@@ -381,11 +381,11 @@ impl SaveContext {
             saved_scene_id: 0,
             map_index: 0,
             button_status: [0; 5],
-            unk_13e7: 0,
-            unk_13e8: 0,
-            unk_13ea: 0,
-            unk_13ec: 0,
-            unk_13ee: 0,
+            force_rising_button_alphas: 0,
+            next_hud_visibility_mode: 0,
+            hud_visibility_mode: 0,
+            hud_visibility_mode_timer: 0,
+            prev_hud_visibility_mode: 0,
             language: LANGUAGE_ENG,
         }
     }
@@ -393,12 +393,12 @@ impl SaveContext {
     /// A new file entering by `entrance_index`, Link `adult` or not, at `day_time`:
     /// `Sram_InitNewSave` (`z_sram.c`).
     /// - `sNewSavePlayerData`: three hearts, no rupees, the normal magic meter (level 0), both
-    ///   ages' equips empty, `savedSceneId` `SCENE_LINK_HOME`;
+    ///   ages' equips empty, `savedSceneId` `SCENE_LINKS_HOUSE`;
     /// - `sNewSaveEquips`: nothing on the buttons, equipment 0x1100 (the Kokiri tunic and boots
     ///   worn, no sword, no shield);
     /// - `sNewSaveInventory`: no items or ammo, the Kokiri tunic and boots owned, the dungeon
     ///   keys at -1;
-    /// - `infTable[INFTABLE_1DX_INDEX] = 1`, `sceneFlags[5].swch = 0x40000000`.
+    /// - `infTable[INFTABLE_INDEX_1DX] = 1`, `sceneFlags[5].swch = 0x40000000`.
     ///
     /// The name is "LINK": the file select's name entry (which would write it) isn't ported.
     pub fn new(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
@@ -407,11 +407,11 @@ impl SaveContext {
         s.health_capacity = 0x30;
         s.health = 0x30;
         s.magic = MAGIC_NORMAL_METER;
-        s.saved_scene_id = SCENE_LINK_HOME;
+        s.saved_scene_id = SCENE_LINKS_HOUSE;
         s.equips = ItemEquips { button_items: [ITEM_NONE; 4], c_button_slots: [SLOT_NONE; 3], equipment: 0x1100 };
         s.inventory.equipment = owned_equip_flag(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_KOKIRI) | owned_equip_flag(EQUIP_TYPE_BOOTS, EQUIP_INV_BOOTS_KOKIRI);
         s.inventory.dungeon_keys = [-1; 19];
-        s.inf_table[INFTABLE_1DX_INDEX] = 1;
+        s.inf_table[INFTABLE_INDEX_1DX] = 1;
         s.scene_flags[5].swch = 0x4000_0000;
         s
     }
@@ -419,7 +419,7 @@ impl SaveContext {
     /// A new file as the file select starts it: file 2's `Sram_InitSave` (`z_sram.c:696`: the
     /// first file is the map select's in this debug ROM, `FS_BTN_SELECT_FILE_1`), then
     /// `FileSelect_LoadGame` (`z_file_choose.c:1438`).
-    /// - `Sram_InitSave`: `Sram_InitNewSave` ([`SaveContext::new`]), then `ENTR_LINK_HOME_0`,
+    /// - `Sram_InitSave`: `Sram_InitNewSave` ([`SaveContext::new`]), then `ENTR_LINKS_HOUSE_0`,
     ///   child, 10:00 and `cutsceneIndex` 0xFFF1, the opening on Link's house's layer 5;
     /// - `FileSelect_LoadGame`: `fileNum` 1, `GAMEMODE_NORMAL`, `respawn[RESPAWN_MODE_DOWN]`'s
     ///   entrance `ENTR_LOAD_OPENING` (-1), `respawnFlag` 0, `showTitleCard`, the next transition,
@@ -431,7 +431,7 @@ impl SaveContext {
     ///   the table in `code`; in this ROM it's 0 (`gBitFlags` at ROM 0xB9E2C0), and nothing
     ///   changes.
     pub fn file_select_new() -> SaveContext {
-        let mut s = SaveContext::new(ENTR_LINK_HOME_0, false, crate::env::clock_time(10, 0) as u16);
+        let mut s = SaveContext::new(ENTR_LINKS_HOUSE_0, false, crate::env::clock_time(10, 0) as u16);
         s.cutscene_index = 0xFFF1;
         s.file_num = 1;
         s.game_mode = GAMEMODE_NORMAL;
@@ -443,16 +443,16 @@ impl SaveContext {
         s.cutscene_trigger = 0;
         s.retain_weather_mode = false;
         s.button_status = [crate::interface::BTN_ENABLED; 5];
-        s.unk_13e7 = 0;
-        s.unk_13e8 = 0;
-        s.unk_13ea = 0;
-        s.unk_13ec = 0;
-        s.unk_13ee = 0x32;
+        s.force_rising_button_alphas = 0;
+        s.next_hud_visibility_mode = 0;
+        s.hud_visibility_mode = 0;
+        s.hud_visibility_mode_timer = 0;
+        s.prev_hud_visibility_mode = 0x32;
         s.health_accumulator = 0;
         s.magic_level = 0;
         s.magic = 0;
         s.navi_timer = 0;
-        if !matches!(s.equips.button_items[0], ITEM_SWORD_KOKIRI | ITEM_SWORD_MASTER | ITEM_SWORD_BGS | ITEM_SWORD_KNIFE) {
+        if !matches!(s.equips.button_items[0], ITEM_SWORD_KOKIRI | ITEM_SWORD_MASTER | ITEM_SWORD_BIGGORON | ITEM_GIANTS_KNIFE) {
             s.equips.button_items[0] = ITEM_NONE;
             s.equips.equipment &= !EQUIP_MASKS[EQUIP_TYPE_SWORD];
         }
@@ -467,7 +467,7 @@ impl SaveContext {
     ///   items with ammo, every sword, shield, tunic and boots, upgrades 0x125249, quest items
     ///   0x1E3FFFF, the first ten dungeons' items and 8 keys everywhere;
     /// - `infTable[0] |= 0x5009`, `eventChkInf[0] |= 0x123F` (among them `EVENTCHKINF_05` and
-    ///   `EVENTCHKINF_0C`), `EVENTCHKINF_80`, `EVENTCHKINF_C4`, `sceneFlags[5].swch = 0x40000000`;
+    ///   `EVENTCHKINF_0C`), `EVENTCHKINF_ZELDA_FLED_CASTLE`, `EVENTCHKINF_C4`, `sceneFlags[5].swch = 0x40000000`;
     /// - a child gets the Kokiri Sword on B and, from the map select (`fileNum` 0xFF), the
     ///   slingshot on C-left and the Deku Shield.
     pub fn debug(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
@@ -489,8 +489,8 @@ impl SaveContext {
         };
         s.inventory = Inventory {
             items: [
-                ITEM_STICK,
-                ITEM_NUT,
+                ITEM_DEKU_STICK,
+                ITEM_DEKU_NUT,
                 ITEM_BOMB,
                 ITEM_BOW,
                 ITEM_ARROW_FIRE,
@@ -502,15 +502,15 @@ impl SaveContext {
                 ITEM_ARROW_ICE,
                 ITEM_FARORES_WIND,
                 ITEM_BOOMERANG,
-                ITEM_LENS,
-                ITEM_BEAN,
+                ITEM_LENS_OF_TRUTH,
+                ITEM_MAGIC_BEAN,
                 ITEM_HAMMER,
                 ITEM_ARROW_LIGHT,
                 ITEM_NAYRUS_LOVE,
-                ITEM_BOTTLE,
-                ITEM_POTION_RED,
-                ITEM_POTION_GREEN,
-                ITEM_POTION_BLUE,
+                ITEM_BOTTLE_EMPTY,
+                ITEM_BOTTLE_POTION_RED,
+                ITEM_BOTTLE_POTION_GREEN,
+                ITEM_BOTTLE_POTION_BLUE,
                 ITEM_POCKET_EGG,
                 ITEM_WEIRD_EGG,
             ],
@@ -526,7 +526,7 @@ impl SaveContext {
         };
         s.inf_table[0] |= 0x5009;
         s.event_chk_inf[0] |= 0x123F;
-        s.set_event_chk_inf(EVENTCHKINF_80);
+        s.set_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE);
         s.set_event_chk_inf(EVENTCHKINF_C4);
         if !adult {
             s.equips.button_items[0] = ITEM_SWORD_KOKIRI;
@@ -589,14 +589,14 @@ impl SaveContext {
 
     /// What the pause menu's equipment screen does when A equips an owned piece
     /// (`KaleidoScope_UpdateEquipment`, `z_kaleido_equipment.c`): `Inventory_ChangeEquipment`,
-    /// and for a sword `infTable[INFTABLE_1DX_INDEX] = 0` and the sword on B
+    /// and for a sword `infTable[INFTABLE_INDEX_1DX] = 0` and the sword on B
     /// (`gEquipAgeReqs`' age check, Biggoron's Sword and the broken knife's cases aside).
     /// The pause menu isn't ported: this is its effect, for the presets and the game's equip
     /// key. `Player_SetEquipmentData` runs when the menu closes (Player reads the save).
     pub fn equip_from_pause_menu(&mut self, equip: usize, value: u16) {
         self.inventory_change_equipment(equip, value);
         if equip == EQUIP_TYPE_SWORD {
-            self.inf_table[INFTABLE_1DX_INDEX] = 0;
+            self.inf_table[INFTABLE_INDEX_1DX] = 0;
             // pauseCtx->cursorItem[PAUSE_EQUIP]: ITEM_SWORD_KOKIRI + value - 1.
             self.equips.button_items[0] = ITEM_SWORD_KOKIRI + value as u8 - 1;
         }
@@ -646,8 +646,8 @@ impl SaveContext {
     pub fn b_btn_item(&self) -> u8 {
         if self.button_status[0] == ITEM_NONE {
             ITEM_NONE
-        } else if self.equips.button_items[0] == ITEM_SWORD_KNIFE {
-            ITEM_SWORD_BGS
+        } else if self.equips.button_items[0] == ITEM_GIANTS_KNIFE {
+            ITEM_SWORD_BIGGORON
         } else {
             self.equips.button_items[0]
         }
@@ -723,19 +723,19 @@ mod tests {
         assert_eq!((s.cur_equip_value(EQUIP_TYPE_TUNIC), s.cur_equip_value(EQUIP_TYPE_BOOTS)), (1, 1));
         // sNewSaveInventory: the Kokiri tunic and boots owned (bits 8 and 12).
         assert_eq!(s.inventory.equipment, 0x1100);
-        assert_eq!((s.health, s.rupees, s.inf_table[INFTABLE_1DX_INDEX]), (0x30, 0, 1));
+        assert_eq!((s.health, s.rupees, s.inf_table[INFTABLE_INDEX_1DX]), (0x30, 0, 1));
     }
 
     #[test]
     fn the_file_selects_new_file_starts_the_opening() {
         let s = SaveContext::file_select_new();
-        // Sram_InitSave (file 2): ENTR_LINK_HOME_0, child, CLOCK_TIME(10, 0), 0xFFF1.
-        assert_eq!((s.entrance_index, s.adult, s.day_time, s.cutscene_index), (ENTR_LINK_HOME_0, false, 0x6AAB, 0xFFF1));
+        // Sram_InitSave (file 2): ENTR_LINKS_HOUSE_0, child, CLOCK_TIME(10, 0), 0xFFF1.
+        assert_eq!((s.entrance_index, s.adult, s.day_time, s.cutscene_index), (ENTR_LINKS_HOUSE_0, false, 0x6AAB, 0xFFF1));
         // Sram_InitNewSave's file, then FileSelect_LoadGame's resets.
-        let n = SaveContext::new(ENTR_LINK_HOME_0, false, 0x6AAB);
+        let n = SaveContext::new(ENTR_LINKS_HOUSE_0, false, 0x6AAB);
         assert_eq!((s.equips, s.inventory.clone(), s.health), (n.equips, n.inventory.clone(), n.health));
         assert_eq!((s.file_num, s.game_mode, s.respawn[RESPAWN_MODE_DOWN].entrance_index, s.respawn_flag), (1, GAMEMODE_NORMAL, ENTR_LOAD_OPENING, 0));
-        assert_eq!((s.next_cutscene_index, s.cutscene_trigger, s.navi_timer, s.magic, s.unk_13ee), (0xFFEF, 0, 0, 0, 0x32));
+        assert_eq!((s.next_cutscene_index, s.cutscene_trigger, s.navi_timer, s.magic, s.prev_hud_visibility_mode), (0xFFEF, 0, 0, 0, 0x32));
         assert_eq!(s.button_status, [crate::interface::BTN_ENABLED; 5]);
     }
 
@@ -757,6 +757,6 @@ mod tests {
         s.apply_preset("deku-tree-open").unwrap();
         assert_eq!(s.inventory.equipment & 0xFF, 0x11);
         assert_eq!(s.equips.equipment, 0x1111);
-        assert_eq!((s.equips.button_items[0], s.inf_table[INFTABLE_1DX_INDEX]), (ITEM_SWORD_KOKIRI, 0));
+        assert_eq!((s.equips.button_items[0], s.inf_table[INFTABLE_INDEX_1DX]), (ITEM_SWORD_KOKIRI, 0));
     }
 }

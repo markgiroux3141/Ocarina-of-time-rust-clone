@@ -9,15 +9,15 @@
 //!   Shield bought in the Kokiri shop, both worn, and past Mido once he has stepped aside.
 //!
 //! Expected values come from the scene data and the C:
-//! - `ENTR_LINK_HOME_0` is Link's house's spawn 0, (1, 0, 95), params 0x0D00 (standing); the
+//! - `ENTR_LINKS_HOUSE_0` is Link's house's spawn 0, (1, 0, 95), params 0x0D00 (standing); the
 //!   house is `SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT`, so `Play_Init` starts on
 //!   `VIEWPOINT_PIVOT`, whose bg camera 1 is `CAM_SET_PREREND_PIVOT`;
-//! - the house's exit 2 leads to `ENTR_SPOT04_3`, Kokiri Forest's spawn 3 at (-31, 100, 1073);
+//! - the house's exit 2 leads to `ENTR_KOKIRI_FOREST_3`, Kokiri Forest's spawn 3 at (-31, 100, 1073);
 //! - the sign by the house (params 0x031F) has text `params | 0x300`;
 //! - `BgTreemouth_Update` puts the open mouth (`unk_168` 1) at (4029 - 160, 136 - 399,
 //!   -1255 + 92);
-//! - Kokiri Forest's exit 2 is `ENTR_YDAN_0` (0x0000), the Deku Tree's scene (`SCENE_YDAN`, 0);
-//! - the crawlspace's mouth is the wall at z 1059 (x -801..-769, `WALL_FLAG_4`) whose triangles'
+//! - Kokiri Forest's exit 2 is `ENTR_DEKU_TREE_0` (0x0000), the Deku Tree's scene (`SCENE_DEKU_TREE`, 0);
+//! - the crawlspace's mouth is the wall at z 1059 (x -801..-769, `WALL_FLAG_CRAWLSPACE_1`) whose triangles'
 //!   middle is x -785, facing -z (`wallYaw` 0x8000); its floor names bg camera 9
 //!   (`CAM_SET_CRAWLSPACE`); `En_Holl` 0 joins rooms 0 and 2 across it; room 2's floor beyond it
 //!   names bg camera 14 (`CAM_SET_DUNGEON0`);
@@ -44,9 +44,9 @@ use oot_game::save::{EVENTCHKINF_0C, EVENTCHKINF_05, EVENTCHKINF_07, SaveContext
 use oot_game::spawn::Placeholder;
 use oot_game::surface::SurfaceType;
 
-const SCENE_YDAN: u16 = 0x00;
-const SCENE_LINK_HOME: u16 = 0x34;
-const SCENE_SPOT04: u16 = 0x55;
+const SCENE_DEKU_TREE: u16 = 0x00;
+const SCENE_LINKS_HOUSE: u16 = 0x34;
+const SCENE_KOKIRI_FOREST: u16 = 0x55;
 
 fn assets() -> Option<Arc<GameAssets>> {
     let pack = oot_game::pack::GamePack::open_default().ok()?;
@@ -75,7 +75,7 @@ fn treemouth(w: &PlayState) -> Option<&BgTreemouth> {
 fn the_presets_set_the_flags_the_c_reads() {
     let mut s = SaveContext::default();
     s.apply_preset("deku-tree-open").unwrap();
-    // z64save.h: EVENTCHKINF_04 0x04 (Mido stepped aside), EVENTCHKINF_05 0x05, EVENTCHKINF_0C
+    // save.h: EVENTCHKINF_04 0x04 (Mido stepped aside), EVENTCHKINF_05 0x05, EVENTCHKINF_0C
     // 0x0C: eventChkInf[0] bits 4, 5 and 12.
     assert_eq!(s.event_chk_inf[0], (1 << 0x04) | (1 << 0x05) | (1 << 0x0C));
     assert!(!s.get_event_chk_inf(EVENTCHKINF_07));
@@ -92,7 +92,7 @@ fn the_mouth_is_closed_on_a_new_save_and_open_with_eventchkinf_05() {
     let Some(a) = assets() else { return };
     // Kokiri Forest's spawn 1, in front of the tree (the way out of the Deku Tree).
     let at_tree = |preset: Option<&str>, frames: usize| {
-        let mut w = enter(&a, "ENTR_SPOT04_1", preset)?;
+        let mut w = enter(&a, "ENTR_KOKIRI_FOREST_1", preset)?;
         for _ in 0..frames {
             w.tick_with(scripted_input(PadState::default(), PadState::default()));
         }
@@ -124,7 +124,7 @@ fn the_mouth_is_closed_on_a_new_save_and_open_with_eventchkinf_05() {
     assert_eq!(w.col.dyna.actors[m.bg as usize].cur.pos, m.actor.world_pos);
     assert_eq!(BgTreemouth::draw_alpha(&w), 500);
 
-    // The tree dead (EVENTCHKINF_07): 2150, as Scene_DrawConfigSpot04 has it for the tree.
+    // The tree dead (EVENTCHKINF_07): 2150, as Scene_DrawConfigKokiriForest has it for the tree.
     let Some(w) = at_tree(Some("deku-tree-dead"), 10) else {
         return;
     };
@@ -162,14 +162,14 @@ fn kokiri_forest_to_the_deku_tree() {
             talked_to.push(t);
         }
         let link = w.player().actor.world_pos;
-        if w.scene_id == SCENE_SPOT04 {
+        if w.scene_id == SCENE_KOKIRI_FOREST {
             if let Some(h) = placeholder_of(&w, sa) {
                 let p = w.actors.actor(h).unwrap().world_pos;
                 near_saria = near_saria.min(Vec3::new(link.x - p.x, 0.0, link.z - p.z).length());
             }
             if let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<oot_actors::en_md::EnMd>(h)) {
                 // EVENTCHKINF_04 (the preset): EnMd_SetMovedPos, standing at path 1's last point
-                // (func_80AAB874).
+                // (EnMd_Idle).
                 assert_eq!((m.action, m.actor.world_pos), (oot_actors::en_md::Action::Moved, Vec3::new(1412.0, 0.0, 211.0)));
                 let p = m.actor.world_pos;
                 near_mido = near_mido.min(Vec3::new(link.x - p.x, 0.0, link.z - p.z).length());
@@ -189,7 +189,7 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
     let p = w.player();
     match step {
         Step::House => {
-            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_LINK_HOME, entr("ENTR_LINK_HOME_0"), 0));
+            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_LINKS_HOUSE, entr("ENTR_LINKS_HOUSE_0"), 0));
             assert!(p.actor.world_pos.distance(Vec3::new(1.0, 0.0, 95.0)) < 1.0, "at spawn 0: {}", p.actor.world_pos);
             assert_eq!((w.viewpoint, w.game_camera.setting), (oot_game::play::VIEWPOINT_PIVOT, oot_game::camera::CAM_SET_PREREND_PIVOT));
             // The preset's flags, and a new save's hearts and rupees.
@@ -197,7 +197,7 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
             assert_eq!((w.save.health, w.save.rupees), (0x30, 0));
         }
         Step::OutDoor => {
-            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_SPOT04, entr("ENTR_SPOT04_3"), 0));
+            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_KOKIRI_FOREST, entr("ENTR_KOKIRI_FOREST_3"), 0));
             assert!(p.actor.world_pos.distance(Vec3::new(-31.0, 100.0, 1073.0)) < 1.0, "at spawn 3: {}", p.actor.world_pos);
         }
         Step::Ladder => {
@@ -214,7 +214,7 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
             let child = talked_to.last().copied().unwrap();
             let k = w.actors.downcast::<EnKo>(child).expect("an En_Ko");
             assert_eq!(k.actor.params & 0xFF, 4);
-            // Child 4's texts (func_80A97610) after the sign's.
+            // Child 4's texts (EnKo_GetTextId) after the sign's.
             assert!(run.texts.len() > 1 && run.texts[1..].iter().all(|t| t & 0xFF00 == 0x1000), "{:x?}", run.texts);
         }
         Step::Bush => {
@@ -238,13 +238,13 @@ fn check(step: Step, w: &PlayState, run: &Playthrough, talked_to: &[ActorHandle]
             assert_eq!(p.actor.floor_bg_id, m.bg, "on the mouth's collision");
         }
         Step::Mouth => {
-            // The floor's exit 2: ENTR_YDAN_0.
+            // The floor's exit 2: ENTR_DEKU_TREE_0.
             let floor = p.actor.floor_poly.expect("a floor");
             assert_eq!(w.col.exit_index(floor), 2);
-            assert_eq!(w.transition.next_entrance_index, entr("ENTR_YDAN_0"));
+            assert_eq!(w.transition.next_entrance_index, entr("ENTR_DEKU_TREE_0"));
         }
         Step::DekuTree => {
-            assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_YDAN, entr("ENTR_YDAN_0")));
+            assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_DEKU_TREE, entr("ENTR_DEKU_TREE_0")));
             assert_eq!(p.action, Action::StandingStill);
         }
         _ => panic!("{step:?} isn't on the Deku Tree's route"),
@@ -298,21 +298,21 @@ fn check_sword(step: Step, w: &PlayState, run: &Playthrough, saw_enter: bool, sa
     let p = w.player();
     match step {
         Step::House => {
-            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_LINK_HOME, entr("ENTR_LINK_HOME_0"), 0));
+            assert_eq!((w.scene_id, w.save.entrance_index, w.room_ctx.cur.num), (SCENE_LINKS_HOUSE, entr("ENTR_LINKS_HOUSE_0"), 0));
             // Sram_InitNewSave: three hearts, no rupees, the Kokiri tunic and boots only, no flags.
             assert_eq!((w.save.health, w.save.rupees, w.save.inventory.equipment), (0x30, 0, 0x1100));
             assert!(!w.save.get_event_chk_inf(EVENTCHKINF_05));
         }
         Step::OutDoor => {
-            assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_SPOT04, entr("ENTR_SPOT04_3")));
+            assert_eq!((w.scene_id, w.save.entrance_index), (SCENE_KOKIRI_FOREST, entr("ENTR_KOKIRI_FOREST_3")));
         }
         Step::Ladder => {
             assert!((p.actor.world_pos.y + 80.0).abs() < 1.0, "on the ground: {}", p.actor.world_pos);
         }
         Step::Crawlspace => {
-            // func_8083F0C8: A said "Enter" (PLAYER_STATE2_16) at the mouth; Link lined up with
+            // Player_TryEnteringCrawlspace: A said "Enter" (PLAYER_STATE2_DO_ACTION_ENTER) at the mouth; Link lined up with
             // its triangles' middle (x -785), facing wallYaw + 0x8000 (+z), crawling
-            // (PLAYER_STATE2_18, func_8084C760 after tunnel_start).
+            // (PLAYER_STATE2_CRAWLING, Player_Action_8084C760 after tunnel_start).
             assert!(saw_enter, "DO_ACTION_ENTER before the crawl");
             assert_eq!(p.action, Action::Crawl);
             assert!(p.state2 & STATE2_18 != 0);
@@ -323,8 +323,8 @@ fn check_sword(step: Step, w: &PlayState, run: &Playthrough, saw_enter: bool, sa
         }
         Step::TrainingArea => {
             // Camera_Subj4 on the tunnel's floor (bg camera 9, CAM_SET_CRAWLSPACE) kept Link on
-            // the crawlspace's line while he crawled; En_Holl 0 loaded room 2; func_8083F570 at
-            // the far wall (z 1359), then func_8084C81C's tunnel_end and standing
+            // the crawlspace's line while he crawled; En_Holl 0 loaded room 2; Player_TryLeavingCrawlspace at
+            // the far wall (z 1359), then Player_Action_8084C81C's tunnel_end and standing
             // (func_8083C0E8), the crawl over. Room 2's floor names bg camera 14.
             assert!(saw_crawl_camera, "the crawlspace's camera while crawling");
             assert_eq!(w.room_ctx.cur.num, 2);
@@ -384,7 +384,7 @@ fn a_new_save_to_mido_and_the_shop() {
         // (On its init frame Mido hasn't updated yet: still at home.)
         if let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnMd>(h))
             && m.action == en_md::Action::Blocking
-            && m.unk_1e0.talk_state == 0
+            && m.interact_info.talk_state == 0
             && m.actor.world_pos != m.actor.home_pos
         {
             mido_block.push((m.actor.home_pos, m.actor.world_pos));
@@ -420,7 +420,7 @@ fn a_new_save_to_mido_and_the_shop() {
             Step::PastMido,
         ]
     );
-    // func_80AAB948: while blocking, 60 from his home (1522, 0, 105) towards Link.
+    // EnMd_BlockPath: while blocking, 60 from his home (1522, 0, 105) towards Link.
     assert!(!mido_block.is_empty());
     for (home, pos) in &mido_block {
         assert_eq!(*home, Vec3::new(1522.0, 0.0, 105.0));
@@ -429,8 +429,8 @@ fn a_new_save_to_mido_and_the_shop() {
 }
 
 /// GAME-03 milestone 4's exit test: the Mido and shop run, then on into the meadow, where the
-/// Deku Tree's first talk (`D_808BCE20`) starts by itself; yes (`D_808BD520`) opens his mouth
-/// (`EVENTCHKINF_05`), and Link walks in to `ENTR_YDAN_0`, whose intro (`gDekuTreeIntroCs`)
+/// Deku Tree's first talk (`gDekuTreeMeetingCs`) starts by itself; yes (`gDekuTreeMouthOpeningCs`) opens his mouth
+/// (`EVENTCHKINF_05`), and Link walks in to `ENTR_DEKU_TREE_0`, whose intro (`gDekuTreeIntroCs`)
 /// plays the first time. No preset.
 #[test]
 fn a_new_save_into_the_deku_tree() {
@@ -464,9 +464,9 @@ fn a_new_save_into_the_deku_tree() {
                     assert_eq!(m.unk_168, 1.0);
                     assert_eq!(m.actor.world_pos, Vec3::new(4029.0 - 160.0, 136.0 - 399.0, -1255.0 + 92.0));
                 }
-                Step::Mouth => assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_YDAN_0").unwrap()),
+                Step::Mouth => assert_eq!(w.transition.next_entrance_index, a.scenes.entrance_index("ENTR_DEKU_TREE_0").unwrap()),
                 Step::DekuTree => {
-                    assert_eq!(w.scene_id, SCENE_YDAN);
+                    assert_eq!(w.scene_id, SCENE_DEKU_TREE);
                     // Cutscene_HandleEntranceTriggers set EVENTCHKINF_A8; the intro is over.
                     assert!(w.save.get_event_chk_inf(0xA8));
                     assert_eq!((w.cs_ctx.state, w.player().action), (CS_STATE_IDLE, Action::StandingStill));
@@ -488,7 +488,7 @@ fn a_new_save_into_the_deku_tree() {
     assert_eq!(run.failure, None, "the run stopped at {}", run.at());
     let tail = [Step::MidoAside, Step::PastMido, Step::TreeTalk, Step::Tree, Step::Mouth, Step::DekuTree];
     assert_eq!(&seen[seen.len() - tail.len()..], tail);
-    assert_eq!(scripts, ["D_808BCE20", "D_808BD520", "gDekuTreeIntroCs"]);
+    assert_eq!(scripts, ["gDekuTreeMeetingCs", "gDekuTreeMouthOpeningCs", "gDekuTreeIntroCs"]);
     assert!(sub_camera);
     for t in [0x107D, 0x1015, 0x1016, 0x1017] {
         assert!(run.texts.contains(&t), "text {t:#x}: {:x?}", run.texts);
@@ -519,7 +519,7 @@ fn check_mido_shop(step: Step, w: &PlayState, run: &Playthrough, hidden_while_br
             assert_eq!(w.save.equips.button_items[0], ITEM_SWORD_KOKIRI);
         }
         Step::Plateau => {
-            assert_eq!((w.scene_id, w.room_ctx.cur.num), (SCENE_SPOT04, 0));
+            assert_eq!((w.scene_id, w.room_ctx.cur.num), (SCENE_KOKIRI_FOREST, 0));
             assert_eq!(p.action, Action::StandingStill);
         }
         Step::Switch => {
@@ -529,17 +529,17 @@ fn check_mido_shop(step: Step, w: &PlayState, run: &Playthrough, hidden_while_br
             assert_eq!(rupees, 17);
         }
         Step::MidoHouse => {
-            assert_eq!(w.save.entrance_index, entr("ENTR_KOKIRI_HOME4_0"));
+            assert_eq!(w.save.entrance_index, entr("ENTR_MIDOS_HOUSE_0"));
             // The two greens at the foot of the ramp.
             assert_eq!(rupees, 19);
         }
         Step::MidoChests => {
             // Two blue rupees, a green one and a recovery heart (En_Box 0x59A0, 0x59A1, 0x5982,
             // 0x5903), their treasure flags 0 to 3 saved with his house's scene flags.
-            assert_eq!(w.save.entrance_index, entr("ENTR_SPOT04_9"));
+            assert_eq!(w.save.entrance_index, entr("ENTR_KOKIRI_FOREST_9"));
             assert_eq!(rupees, 30);
-            const SCENE_KOKIRI_HOME4: u16 = 0x28;
-            assert_eq!(w.save.scene_flags(SCENE_KOKIRI_HOME4).chest & 0xF, 0xF);
+            const SCENE_MIDOS_HOUSE: u16 = 0x28;
+            assert_eq!(w.save.scene_flags(SCENE_MIDOS_HOUSE).chest & 0xF, 0xF);
         }
         Step::Shop => {
             // Two more greens and the free multitag's blue rupee.
@@ -564,10 +564,10 @@ fn check_mido_shop(step: Step, w: &PlayState, run: &Playthrough, hidden_while_br
             assert_eq!(w.save.cur_equip_value(EQUIP_TYPE_SHIELD), EQUIP_VALUE_SHIELD_DEKU);
             assert_eq!(p.current_shield, 1, "PLAYER_SHIELD_DEKU (Player_SetEquipmentData)");
         }
-        Step::ShopOut => assert_eq!(w.save.entrance_index, entr("ENTR_SPOT04_4")),
+        Step::ShopOut => assert_eq!(w.save.entrance_index, entr("ENTR_KOKIRI_FOREST_4")),
         Step::Mido => {
-            // With both worn, 0x1033 (EnMd_GetTextKokiriForest), then its next texts; as it
-            // closes, func_80AAAF04's 2: EVENTCHKINF_04, and on his way along path 1.
+            // With both worn, 0x1033 (EnMd_GetTextIdKokiriForest), then its next texts; as it
+            // closes, EnMd_UpdateTalkState's 2: EVENTCHKINF_04, and on his way along path 1.
             let texts: Vec<u16> = run.texts.iter().copied().skip_while(|&t| t != 0x1033).collect();
             assert_eq!(texts, [0x1033, 0x10D2, 0x10D3, 0x1034]);
             assert!(w.save.get_event_chk_inf(oot_game::save::EVENTCHKINF_04));
@@ -575,7 +575,7 @@ fn check_mido_shop(step: Step, w: &PlayState, run: &Playthrough, hidden_while_br
             assert_eq!((m.action, m.actor.speed_xz, m.waypoint), (en_md::Action::Walking, 1.5, 1));
         }
         Step::MidoAside => {
-            // func_80AABD0C: path 1's last point reached (within 10), standing (func_80AAB8F8).
+            // EnMd_Walk: path 1's last point reached (within 10), standing (EnMd_Watch).
             let m = mido().expect("Mido");
             assert_eq!(m.action, en_md::Action::Arrived);
             assert!(Vec3::new(m.actor.world_pos.x - 1412.0, 0.0, m.actor.world_pos.z - 211.0).length() < 10.0, "{}", m.actor.world_pos);
@@ -614,10 +614,10 @@ fn a_new_file_into_the_deku_tree() {
             seen.push(step);
             match step {
                 Step::Nightmare => assert_eq!((w.scene_id, w.save.scene_layer), (0x51, 4)),
-                Step::NaviSent => assert_eq!((w.scene_id, w.save.scene_layer), (SCENE_SPOT04, 7)),
+                Step::NaviSent => assert_eq!((w.scene_id, w.save.scene_layer), (SCENE_KOKIRI_FOREST, 7)),
                 Step::WakeUp => {
                     // The wake-up's end: in his house's layer 4, at cue 5's point, free.
-                    assert_eq!((w.scene_id, w.save.scene_layer, w.save.cutscene_index), (SCENE_LINK_HOME, 4, 0));
+                    assert_eq!((w.scene_id, w.save.scene_layer, w.save.cutscene_index), (SCENE_LINKS_HOUSE, 4, 0));
                     assert_eq!(w.player().actor.world_pos, Vec3::new(0.0, 0.0, 60.0));
                     assert_eq!(run.texts, [0x109D, 0x109E, 0x109F, 0x1099, 0x109A, 0x1095, 0x1096, 0x1000, 0x1098]);
                 }
@@ -627,7 +627,7 @@ fn a_new_file_into_the_deku_tree() {
                     assert!(w.save.navi_timer >= 3001);
                 }
                 Step::DekuTree => {
-                    assert_eq!(w.scene_id, SCENE_YDAN);
+                    assert_eq!(w.scene_id, SCENE_DEKU_TREE);
                     assert_eq!((w.cs_ctx.state, w.player().action), (CS_STATE_IDLE, Action::StandingStill));
                 }
                 _ => {}
@@ -649,5 +649,5 @@ fn a_new_file_into_the_deku_tree() {
     assert_eq!(seen[navi + 1], Step::Crawlspace);
     assert_eq!(seen.last(), Some(&Step::DekuTree));
     // The opening's scripts (by their offsets: no XML names them), then the Deku Tree's.
-    assert_eq!(scripts, ["link_home_scene/0x15D0", "spot00_scene/0x12400", "spot04_scene/0xA6D0", "link_home_scene/0x1040", "ovl_Bg_Treemouth/D_808BCE20", "ovl_Bg_Treemouth/D_808BD520", "ydan_scene/gDekuTreeIntroCs"]);
+    assert_eq!(scripts, ["link_home_scene/gLinkHouseIntroSleepCs", "spot00_scene/gHyruleFieldIntroNightmareCs", "spot04_scene/gKokiriForestIntroNaviFlyingCs", "link_home_scene/gLinkHouseIntroWakeUpCs", "ovl_Bg_Treemouth/gDekuTreeMeetingCs", "ovl_Bg_Treemouth/gDekuTreeMouthOpeningCs", "ydan_scene/gDekuTreeIntroCs"]);
 }

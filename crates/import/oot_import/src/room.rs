@@ -62,7 +62,7 @@ pub struct SceneTables {
 }
 
 /// A `TRANS_TYPE_*` of the entrance table: an enum member, or `TRANS_TYPE_CIRCLE(appearance,
-/// color, speed)` (`z64.h`: `(1 << 5) | ((color & 3) << 3) | ((appearance & 3) << 1) | (speed & 1)`).
+/// color, speed)` (`transition.h`: `(1 << 5) | ((color & 3) << 3) | ((appearance & 3) << 1) | (speed & 1)`).
 fn trans_type(arg: &str, names: &HashMap<String, i64>) -> Result<u8> {
     let arg = arg.trim();
     if let Some(inner) = arg.strip_prefix("TRANS_TYPE_CIRCLE(").and_then(|r| r.strip_suffix(')')) {
@@ -75,26 +75,27 @@ fn trans_type(arg: &str, names: &HashMap<String, i64>) -> Result<u8> {
 
 /// `entrance_table.h` rows, with the scene ids from `scene_ids`.
 fn load_entrances(decomp: &Path, scene_ids: &HashMap<String, i64>) -> Result<Vec<EntranceInfo>> {
-    let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
-    let z64 = read(&decomp.join("include/z64.h"))?;
+    let transitions = crate::csrc::read_c(decomp, "include/transition.h")? + &crate::csrc::read_c(decomp, "include/transition_circle.h")?;
     let mut names: HashMap<String, i64> = HashMap::new();
     for m in ["TRANS_TYPE_WIPE", "TCA_NORMAL", "TCC_BLACK", "TCS_FAST"] {
-        names.extend(parse_enum(&z64, m).into_iter().map(|(v, n)| (n, v)));
+        names.extend(parse_enum(&transitions, m).into_iter().map(|(v, n)| (n, v)));
     }
-    // Scene ids defined in z64scene.h as SCENE_ID_MAX (SCENE_UNUSED_6E: the unused scene's
-    // entrances point one past the table).
-    let z64scene = read(&decomp.join("include/z64scene.h"))?;
+    // Scene ids `scene.h` defines past the table: `SCENE_UNUSED_6E 0x6E` (the unused scene's
+    // entrances point one past it), or as `SCENE_ID_MAX`.
+    let scene_h = crate::csrc::read_c(decomp, "include/scene.h")?;
     let mut scene_ids = scene_ids.clone();
-    for l in z64scene.lines() {
+    let max = scene_ids.values().filter(|&&v| v >= 0).count() as i64;
+    for l in scene_h.lines() {
         if let Some(rest) = l.trim().strip_prefix("#define ")
-            && let [name, "SCENE_ID_MAX"] = rest.split_whitespace().collect::<Vec<_>>()[..]
+            && let [name, value] = rest.split_whitespace().collect::<Vec<_>>()[..]
+            && name.starts_with("SCENE_")
+            && let Some(v) = if value == "SCENE_ID_MAX" { Some(max) } else { parse_int(value) }
         {
-            let max = scene_ids.values().filter(|&&v| v >= 0).count() as i64;
-            scene_ids.insert(name.to_string(), max);
+            scene_ids.insert(name.to_string(), v);
         }
     }
     let mut out = Vec::new();
-    for (mac, a) in define_rows_nested(&read(&decomp.join("include/tables/entrance_table.h"))?) {
+    for (mac, a) in define_rows_nested(&crate::csrc::read_c(decomp, "include/tables/entrance_table.h")?) {
         if mac != "DEFINE_ENTRANCE" {
             continue;
         }
@@ -112,13 +113,14 @@ fn load_entrances(decomp: &Path, scene_ids: &HashMap<String, i64>) -> Result<Vec
     Ok(out)
 }
 
-/// `Skybox_Setup`'s cases that set `skyboxCtx->unk_140` (the room skyboxes): each case's
-/// `SKYBOX_*` (its value from `z64.h`), `unk_140`, and the first `_vr_*_staticSegmentRomStart`
-/// and `_vr_*_pal_staticSegmentRomStart` it loads.
+/// `Skybox_Setup`'s cases that set `skyboxCtx->drawType` (the room skyboxes): each case's
+/// `SKYBOX_*` (its value from `skybox.h`), `drawType` (a `SKYBOX_DRAW_*`), and the first
+/// `_vr_*_staticSegmentRomStart` and `_vr_*_pal_staticSegmentRomStart` it loads.
 pub fn load_room_skyboxes(decomp: &Path) -> Result<Vec<RoomSkybox>> {
     let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
-    let ids = parse_enum(&read(&decomp.join("include/z64.h"))?, "SKYBOX_NONE");
-    let src = crate::csrc::strip_comments(&read(&decomp.join("src/code/z_vr_box.c"))?);
+    let ids = parse_enum(&read(&decomp.join("include/skybox.h"))?, "SKYBOX_NONE");
+    let macros = crate::csrc::Macros::read(decomp, &["include/skybox.h"])?;
+    let src = crate::csrc::prepare(&read(&decomp.join("src/code/z_vr_box.c"))?);
     let body = src.split("void Skybox_Setup(").nth(1).context("z_vr_box.c: no Skybox_Setup")?;
     let body = body.split("
 void ").next().unwrap_or(body);
@@ -126,7 +128,7 @@ void ").next().unwrap_or(body);
     for case in body.split("case ").skip(1) {
         let Some((name, rest)) = case.split_once(':') else { continue };
         let name = name.trim();
-        let Some(unk) = rest.split("unk_140 = ").nth(1).and_then(|r| r.split(';').next()).and_then(parse_int) else { continue };
+        let Some(unk) = rest.split("drawType = ").nth(1).and_then(|r| r.split(';').next()).and_then(|v| macros.eval(v)) else { continue };
         let file = |suffix: &str| -> Option<String> {
             let marker = format!("_{suffix}SegmentRomStart");
             rest.split("_vr_").skip(1).find_map(|s| {
@@ -137,8 +139,8 @@ void ").next().unwrap_or(body);
         let (Some(st), Some(pal)) = (file("static"), file("pal_static")) else { anyhow::bail!("Skybox_Setup {name}: no files") };
         // `file("static")` also matches the palette's `_pal_static`: take the texture's name.
         let st = st.strip_suffix("_pal").unwrap_or(&st).to_string();
-        let id = ids.iter().find(|(_, n)| n.as_str() == name).map(|(v, _)| *v).with_context(|| format!("no {name} in z64.h"))?;
-        out.push(RoomSkybox { id: id as u8, name: name.to_string(), unk_140: unk as u8, static_file: format!("vr_{st}_static"), pal_file: format!("vr_{pal}_pal_static") });
+        let id = ids.iter().find(|(_, n)| n.as_str() == name).map(|(v, _)| *v).with_context(|| format!("no {name} in skybox.h"))?;
+        out.push(RoomSkybox { id: id as u8, name: name.to_string(), draw_type: unk as u8, static_file: format!("vr_{st}_static"), pal_file: format!("vr_{pal}_pal_static") });
     }
     anyhow::ensure!(!out.is_empty(), "Skybox_Setup: no room skyboxes");
     Ok(out)
@@ -147,22 +149,22 @@ void ").next().unwrap_or(body);
 impl SceneTables {
     pub fn load(decomp: &Path) -> Result<SceneTables> {
         let read = |p: &Path| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()));
-        let tables = decomp.join("include/tables");
         let mut scenes = Vec::new();
         let mut scene_ids = HashMap::new();
-        for (i, (_, a)) in define_rows(&read(&tables.join("scene_table.h"))?).into_iter().enumerate() {
+        for (i, (_, a)) in define_rows(&crate::csrc::read_c(decomp, "include/tables/scene_table.h")?).into_iter().enumerate() {
             let g = |k: usize| a.get(k).cloned().unwrap_or_default();
             scene_ids.insert(g(2), i as i64);
             let title = g(1);
             let title_file = if title == "none" { String::new() } else { title };
             scenes.push(SceneDef { id: i, file: g(0), enum_name: g(2), draw_config: g(3), title_file });
         }
-        let objects = define_rows(&read(&tables.join("object_table.h"))?)
+        let objects = define_rows(&crate::csrc::read_c(decomp, "include/tables/object_table.h")?)
             .into_iter()
             .map(|(mac, a)| if mac == "DEFINE_OBJECT_UNSET" { String::new() } else { a.first().cloned().unwrap_or_default() })
             .collect();
-        let sdc_enum = parse_enum(&read(&decomp.join("include/z64scene.h"))?, "SDC_DEFAULT");
-        let program = drawcfg::Program::parse(&read(&decomp.join("src/code/z_scene_table.c"))?);
+        let sdc_enum = parse_enum(&read(&decomp.join("include/scene.h"))?, "SDC_DEFAULT");
+        // As gc-eu-mq-dbg compiles it (`#if !OOT_MQ` picks some scenes' textures).
+        let program = drawcfg::Program::parse(&crate::csrc::read_c(decomp, "src/code/z_scene_table.c")?);
         let mut sdc_funcs = HashMap::new();
         if let Some(list) = program.arrays.get("sSceneDrawConfigs") {
             for (i, f) in list.names.iter().enumerate() {
@@ -241,7 +243,7 @@ fn resolve<'a>(scene: &'a [u8], room: &'a [u8], addr: u32) -> Option<(&'a [u8], 
 }
 
 impl RoomShape {
-    /// `RoomShape*` structs (`z64scene.h`): `{ u8 type, u8 numEntries, pad, entries*, entriesEnd* }`
+    /// `RoomShape*` structs (`scene.h`): `{ u8 type, u8 numEntries, pad, entries*, entriesEnd* }`
     /// for types 0 and 2 (entries of 8 / 16 bytes), `{ u8 type, u8 amountType, pad, entry* , ... }`
     /// for type 1.
     pub fn parse(scene: &[u8], room: &[u8], ptr: u32) -> Option<RoomShape> {
@@ -363,13 +365,13 @@ impl Room {
 // ---------------------------------------------------------------------------------------------
 
 /// VRAM start of `code` in gc-eu-mq-dbg. Room DLs sometimes hold raw KSEG0 pointers into
-/// `code` (Jabu-Jabu loads `gMtxClear` at 0x8012DB20); the interpreter maps 0x80xxxxxx to
+/// `code` (Jabu-Jabu loads `gIdentityMtx` at 0x8012DB20); the interpreter maps 0x80xxxxxx to
 /// segment 0, so segment 0 gets a RAM image of `code`.
 const CODE_VRAM: u32 = 0x8001_CE60;
 const GMTXCLEAR_VRAM: u32 = 0x8012_DB20;
 
 /// RAM image of `code` from 0x80000000, with ENDDL bytes below it so stray segment-0
-/// references stop immediately. None unless gMtxClear is where this ROM layout expects it.
+/// references stop immediately. None unless gIdentityMtx is where this ROM layout expects it.
 pub fn code_ram_image(p: &Project) -> Option<Arc<[u8]>> {
     let code = p.rom.file_by_name("code").ok()?;
     let at = (GMTXCLEAR_VRAM - CODE_VRAM) as usize;

@@ -6,18 +6,18 @@
 //!
 //! What opens it is the story (`func_808BC8B8`):
 //! - Link comes near and faces the tree the first time: `EVENTCHKINF_0C` is set and the talk's
-//!   cutscene starts (`D_808BCE20`);
-//! - with `EVENTCHKINF_0C`, Z-targeting the tree asks again (`D_808BD2A0`);
+//!   cutscene starts (`gDekuTreeMeetingCs`);
+//! - with `EVENTCHKINF_0C`, Z-targeting the tree asks again (`gDekuTreeChoiceCs`);
 //! - in either cutscene, answering yes sets `EVENTCHKINF_05` and cues the mouth open
-//!   (`func_808BC9EC`, then `D_808BD520`); no replays `D_808BD790`;
+//!   (`func_808BC9EC`, then `gDekuTreeMouthOpeningCs`); no replays `gDekuTreeAskAgainCs`;
 //! - with `EVENTCHKINF_05` the mouth is held open.
 //!
 //! The scripts are the overlay's four `CutsceneData` arrays (`z_bg_treemouth_cutscene_data.c`),
 //! read from the pack (docs/adr/0022-cutscenes.md) and played by `oot_game::cutscene`. The first
-//! talk (`D_808BCE20`) walks Link in, says 0x107D, asks 0x1015 and ends (`CS_MISC` 12 at frame
-//! 180, `CS_STATE_UNSKIPPABLE_INIT`); `func_808BC9EC` then goes straight on with the answer's
-//! script: yes (`D_808BD520`) says 0x1017 and cues the mouth open (cue 3 from frame 20), no
-//! (`D_808BD790`) says 0x1018.
+//! talk (`gDekuTreeMeetingCs`) walks Link in, says 0x107D, asks 0x1015 and ends (`CS_MISC` 12 at frame
+//! 180, `CS_STATE_STOP`); `func_808BC9EC` then goes straight on with the answer's
+//! script: yes (`gDekuTreeMouthOpeningCs`) says 0x1017 and cues the mouth open (cue 3 from frame 20), no
+//! (`gDekuTreeAskAgainCs`) says 0x1018.
 //!
 //! Also not ported: the scene layer 6 cutscene's falling bark (`EffectSsHahen_SpawnBurst`; its
 //! `Rand_ZeroOne` calls are made), and the cull zone.
@@ -35,9 +35,9 @@ use eng_collision::collision::CollisionHeader;
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_4, ACTOR_FLAG_5, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
-use oot_game::cutscene::{CS_STATE_IDLE, CS_STATE_SKIPPABLE_EXEC, CS_STATE_UNSKIPPABLE_INIT};
+use oot_game::cutscene::{CS_STATE_IDLE, CS_STATE_RUN, CS_STATE_STOP};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::save::{EVENTCHKINF_0C, EVENTCHKINF_05, EVENTCHKINF_07};
@@ -49,11 +49,11 @@ pub const OBJECT: &str = "object_spot04_objects";
 pub const COLLISION: &str = "gDekuTreeMouthCol";
 pub const DISPLAY_LIST: &str = "gDekuTreeMouthDL";
 
-/// `Bg_Treemouth_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TREEMOUTH, name: "Bg_Treemouth", category: ACTORCAT_BG, flags: ACTOR_FLAG_4 | ACTOR_FLAG_5, object: OBJECT };
+/// `Bg_Treemouth_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TREEMOUTH, name: "Bg_Treemouth", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT };
 
-/// `DPM_UNK`: the mouth carries nothing standing on it.
-const DPM_UNK: u32 = 0;
+/// `DynaPolyActor_Init`'s flags: 0, no `DYNA_TRANSFORM_*` (the mouth carries nothing standing on it).
+const TRANSFORM_FLAGS: u32 = 0;
 
 /// `sInitChain`: `ICHAIN_U8(targetMode, 5)`, `ICHAIN_VEC3F(scale, 1)` (the cull zone isn't
 /// ported).
@@ -145,7 +145,7 @@ pub struct BgTreemouth {
     pub action: Action,
 }
 
-/// `IS_CUTSCENE_LAYER` (`z64save.h`: `sceneLayer >= SCENE_LAYER_CUTSCENE_FIRST`, 4).
+/// `IS_CUTSCENE_LAYER` (`save.h`: `sceneLayer >= SCENE_LAYER_CUTSCENE_FIRST`, 4).
 fn is_cutscene_layer(play: &PlayState) -> bool {
     play.save.scene_layer >= 4
 }
@@ -168,10 +168,10 @@ impl BgTreemouth {
         // Actor_ProcessInitChain(sInitChain).
         actor.target_mode = TARGET_MODE;
         actor.scale = Vec3::ONE;
-        // DynaPolyActor_Init(DPM_UNK), CollisionHeader_GetVirtual(&gDekuTreeMouthCol),
+        // DynaPolyActor_Init(0), CollisionHeader_GetVirtual(&gDekuTreeMouthCol),
         // DynaPoly_SetBgActor.
         let bg = match load_collision(play) {
-            Ok(h) => play.col.dyna.set_bg_actor(h, source(&actor), DPM_UNK),
+            Ok(h) => play.col.dyna.set_bg_actor(h, source(&actor), TRANSFORM_FLAGS),
             Err(e) => {
                 log::error!("Bg_Treemouth: {e:#}");
                 BG_ACTOR_MAX
@@ -204,7 +204,7 @@ impl BgTreemouth {
             if cue.action == 2 {
                 self.action = Action::TalkOpen;
             } else if cue.action == 3 {
-                play.audio.func_80078884(oot_game::audio::sfx::NA_SE_EV_WOODDOOR_OPEN);
+                play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_EV_WOODDOOR_OPEN);
                 self.action = Action::Open;
             }
         }
@@ -248,17 +248,17 @@ impl BgTreemouth {
             if !adult {
                 if play.save.get_event_chk_inf(EVENTCHKINF_0C) {
                     if actor_is_facing_and_near_player(&self.actor, NEAR_RANGE, FACING_AGAIN) {
-                        self.actor.flags |= ACTOR_FLAG_0;
+                        self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
                         if self.actor.is_targeted {
-                            self.actor.flags &= !ACTOR_FLAG_0;
-                            play.cs_ctx.segment = play.cutscene_script("D_808BD2A0");
+                            self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
+                            play.cs_ctx.segment = play.cutscene_script("gDekuTreeChoiceCs");
                             play.save.cutscene_trigger = 1;
                             self.action = Action::WaitCsStart;
                         }
                     }
                 } else if actor_is_facing_and_near_player(&self.actor, NEAR_RANGE, FACING_FIRST) {
                     play.save.set_event_chk_inf(EVENTCHKINF_0C);
-                    play.cs_ctx.segment = play.cutscene_script("D_808BCE20");
+                    play.cs_ctx.segment = play.cutscene_script("gDekuTreeMeetingCs");
                     play.save.cutscene_trigger = 1;
                     self.action = Action::WaitCsStart;
                 }
@@ -268,12 +268,12 @@ impl BgTreemouth {
         }
     }
 
-    /// `func_808BC9EC`: when the talk's cutscene starts (`CS_STATE_UNSKIPPABLE_INIT`), Player
+    /// `func_808BC9EC`: when the talk's cutscene starts (`CS_STATE_STOP`), Player
     /// is moved to the tree if he's near, and the answer to the tree's question picks the next
     /// script: yes (`choiceIndex` 0) sets `EVENTCHKINF_05` and plays the opening
-    /// (`D_808BD520`), no replays `D_808BD790` and waits again.
+    /// (`gDekuTreeMouthOpeningCs`), no replays `gDekuTreeAskAgainCs` and waits again.
     fn wait_cs_start(&mut self, play: &mut PlayState) {
-        if play.cs_ctx.state != CS_STATE_UNSKIPPABLE_INIT {
+        if play.cs_ctx.state != CS_STATE_STOP {
             return;
         }
         if actor_is_facing_and_near_player(&self.actor, CS_START_RANGE, FACING_AGAIN)
@@ -283,19 +283,19 @@ impl BgTreemouth {
         }
         let cs = &mut play.cs_ctx;
         cs.frames = 0;
-        cs.unk_18 = 0xFFFF;
-        cs.unk_1a = 0;
-        cs.unk_1b = 0;
-        cs.state = CS_STATE_SKIPPABLE_EXEC;
-        play.demo.d_8015fcc0 = 0xFFFF;
-        play.demo.d_8015fcc2 = 0xFFFF;
-        play.demo.d_8015fcc4 = 0xFFFF;
+        cs.cam_eye_spline_points_applied_frame = 0xFFFF;
+        cs.cam_at_ready = 0;
+        cs.cam_eye_ready = 0;
+        cs.state = CS_STATE_RUN;
+        play.demo.cam_at_spline_points_applied_frame = 0xFFFF;
+        play.demo.cam_eye_point_applied_frame = 0xFFFF;
+        play.demo.cam_at_point_applied_frame = 0xFFFF;
         if play.msg_ctx.choice_index == 0 {
-            play.cs_ctx.segment = play.cutscene_script("D_808BD520");
+            play.cs_ctx.segment = play.cutscene_script("gDekuTreeMouthOpeningCs");
             play.save.set_event_chk_inf(EVENTCHKINF_05);
             self.action = Action::WaitCsCue;
         } else {
-            play.cs_ctx.segment = play.cutscene_script("D_808BD790");
+            play.cs_ctx.segment = play.cutscene_script("gDekuTreeAskAgainCs");
             play.cs_ctx.frames = 0;
             self.action = Action::Wait;
         }
@@ -313,7 +313,7 @@ impl BgTreemouth {
             alpha = ALPHA_DEAD;
         }
         if play.save.scene_layer == 6 {
-            let unk_74 = play.scene.as_ref().map(|s| s.draw.room_unk_74[0]).unwrap_or(0);
+            let unk_74 = play.scene.as_ref().map(|s| s.draw.room_draw_params[0]).unwrap_or(0);
             alpha = (unk_74 as i32 + 0x1F4) as u16;
         }
         alpha

@@ -33,9 +33,9 @@
 //! **The new save into the Deku Tree** (GAME-03 milestone 4, `Route::NewSaveDekuTree`, the
 //! `new_save_deku_tree` test and the `new-save-deku-tree` script) is the Mido and shop run, then
 //! east along the path through the `En_Holl` into room 1 and into the meadow. There the Deku
-//! Tree's first talk (`Bg_Treemouth`'s `D_808BCE20`) starts by itself and walks Link in; the run
-//! reads it and answers yes, which plays `D_808BD520` and opens the mouth (`EVENTCHKINF_05`).
-//! Then over the open jaw into the mouth, to `ENTR_YDAN_0`, whose intro (`gDekuTreeIntroCs`)
+//! Tree's first talk (`Bg_Treemouth`'s `gDekuTreeMeetingCs`) starts by itself and walks Link in; the run
+//! reads it and answers yes, which plays `gDekuTreeMouthOpeningCs` and opens the mouth (`EVENTCHKINF_05`).
+//! Then over the open jaw into the mouth, to `ENTR_DEKU_TREE_0`, whose intro (`gDekuTreeIntroCs`)
 //! plays the first time in. No preset.
 //!
 //! **A new file into the Deku Tree** (GAME-03 milestone 5, `Route::NewFileDekuTree`, the
@@ -80,9 +80,9 @@ use crate::script::{exit_to, stick_towards};
 /// next frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
-    /// Link's house (`ENTR_LINK_HOME_0`), faded in and standing.
+    /// Link's house (`ENTR_LINKS_HOUSE_0`), faded in and standing.
     House,
-    /// Out through the door onto the porch (`ENTR_SPOT04_3`), settled.
+    /// Out through the door onto the porch (`ENTR_KOKIRI_FOREST_3`), settled.
     OutDoor,
     /// Down the ladder to the ground.
     Ladder,
@@ -98,7 +98,7 @@ pub enum Step {
     Mouth,
     /// The Deku Tree's scene, faded in and settled.
     DekuTree,
-    /// Into the crawlspace: the crawl began (`func_8084C760`).
+    /// Into the crawlspace: the crawl began (`Player_Action_8084C760`).
     Crawlspace,
     /// Out of the crawlspace into the training area (room 2), standing.
     TrainingArea,
@@ -112,9 +112,9 @@ pub enum Step {
     Plateau,
     /// The plateau sign's hidden switch (`En_Wonder_Item` mode 3) slashed and its rupee got.
     Switch,
-    /// Into Mido's house (`ENTR_KOKIRI_HOME4_0`), settled.
+    /// Into Mido's house (`ENTR_MIDOS_HOUSE_0`), settled.
     MidoHouse,
-    /// Mido's house's four chests opened, and back out in Kokiri Forest (`ENTR_SPOT04_9`).
+    /// Mido's house's four chests opened, and back out in Kokiri Forest (`ENTR_KOKIRI_FOREST_9`).
     MidoChests,
     /// Into the Kokiri shop (`ENTR_KOKIRI_SHOP_0`), settled.
     Shop,
@@ -122,15 +122,15 @@ pub enum Step {
     Shield,
     /// The Kokiri Sword and the Deku Shield worn (Start: the pause menu's stand-in).
     Equipped,
-    /// Out of the shop (`ENTR_SPOT04_4`), settled.
+    /// Out of the shop (`ENTR_KOKIRI_FOREST_4`), settled.
     ShopOut,
     /// Mido's text read to the end.
     Mido,
-    /// Mido at his path's end (`func_80AAB8F8`), out of the way.
+    /// Mido at his path's end (`EnMd_Watch`), out of the way.
     MidoAside,
     /// Past where Mido stood, on the path to the Deku Tree.
     PastMido,
-    /// The Deku Tree's talk (`D_808BCE20`) answered yes and its script (`D_808BD520`) over:
+    /// The Deku Tree's talk (`gDekuTreeMeetingCs`) answered yes and its script (`gDekuTreeMouthOpeningCs`) over:
     /// `EVENTCHKINF_05`, Link free.
     TreeTalk,
     /// The opening: Hyrule Field's cutscene layer 4 (the nightmare) entered.
@@ -201,7 +201,7 @@ pub enum Route {
 impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
-        "ENTR_LINK_HOME_0"
+        "ENTR_LINKS_HOUSE_0"
     }
 
     /// The save preset it needs, if any.
@@ -278,7 +278,7 @@ enum Task {
     /// Steer through the points at full tilt.
     Hurry(Vec<Vec3>),
     /// Into a crawlspace and through it: walk to the first point, lined up with the mouth;
-    /// towards the mouth (the second point) until A says "Enter" (`PLAYER_STATE2_16`); A; the
+    /// towards the mouth (the second point) until A says "Enter" (`PLAYER_STATE2_DO_ACTION_ENTER`); A; the
     /// stick forward until Link is out and standing.
     Crawl(Vec3, Vec3, Step),
     /// Idle until the boulder rolls on its path from point `.0` to point `.1` and has covered
@@ -327,7 +327,7 @@ enum Who {
 const SETTLE_FRAMES: usize = 10;
 const WAYPOINT_RADIUS: f32 = 30.0;
 /// The stick's tilt for a run (of the pad's ±80), and for the slow approaches: a walk.
-/// (`func_80836FAC` takes 20 off the dead-zoned magnitude, so much under 30 only turns Link.)
+/// (`Player_CalcSpeedAndYawFromControlStick` takes 20 off the dead-zoned magnitude, so much under 30 only turns Link.)
 const RUN: f32 = 60.0;
 const SLOW: f32 = 40.0;
 /// Full tilt (the stick's relative position clamps at 60 past the dead zone).
@@ -375,7 +375,7 @@ impl Default for Playthrough {
 
 impl Playthrough {
     /// The entrance the Deku Tree run starts at, and the save preset it needs.
-    pub const ENTRANCE: &'static str = "ENTR_LINK_HOME_0";
+    pub const ENTRANCE: &'static str = "ENTR_LINKS_HOUSE_0";
     pub const PRESET: &'static str = "deku-tree-open";
     /// A cap on a run's length.
     pub const MAX_FRAMES: usize = 6000;
@@ -435,13 +435,13 @@ impl Playthrough {
         let alcove_rupee = if rupees { vec![Task::Pick(Vec3::new(-712.0, 120.0, 1857.0))] } else { Vec::new() };
         let mut v = vec![
             Task::Settle(Some(Step::House)),
-            Task::Exit("ENTR_SPOT04_3", Some(Step::OutDoor)),
+            Task::Exit("ENTR_KOKIRI_FOREST_3", Some(Step::OutDoor)),
             Task::LadderDown,
             // Out of the house's hollow, west through the village to the foot of the ramp, and
             // up it onto the plateau (y 120).
             Task::Walk(vec![Vec3::new(0.0, -80.0, 800.0), Vec3::new(0.0, 0.0, 480.0), Vec3::new(-300.0, 0.0, 300.0), Vec3::new(-450.0, 0.0, -150.0), Vec3::new(-650.0, 0.0, -170.0), Vec3::new(-650.0, 120.0, 250.0)]),
             // North across the plateau to the crawlspace by its sign (0x0337): its mouth is the
-            // wall at z 1059, x -801..-769 (WALL_FLAG_4).
+            // wall at z 1059, x -801..-769 (WALL_FLAG_CRAWLSPACE_1).
             Task::Walk(vec![Vec3::new(-650.0, 120.0, 500.0), Vec3::new(-785.0, 120.0, 850.0)]),
             Task::Crawl(Vec3::new(-785.0, 120.0, 1000.0), Vec3::new(-785.0, 120.0, 1059.0), Step::TrainingArea),
         ];
@@ -501,14 +501,14 @@ impl Playthrough {
             Task::Pick(Vec3::new(-537.0, 1.0, 194.0)),
             // South to Mido's house.
             Task::Walk(vec![Vec3::new(-450.0, 0.0, -150.0), Vec3::new(-445.0, 0.0, -486.0)]),
-            Task::Exit("ENTR_KOKIRI_HOME4_0", Some(Step::MidoHouse)),
+            Task::Exit("ENTR_MIDOS_HOUSE_0", Some(Step::MidoHouse)),
             // His four chests (En_Box 0x59A0, 0x59A1: blue rupees; 0x5982: a green one; 0x5903: a
             // recovery heart).
             Task::OpenChest(Vec3::new(58.0, 0.0, -55.0), None),
             Task::OpenChest(Vec3::new(58.0, 0.0, 35.0), None),
             Task::OpenChest(Vec3::new(-60.0, 0.0, 35.0), None),
             Task::OpenChest(Vec3::new(-60.0, 0.0, -55.0), None),
-            Task::Exit("ENTR_SPOT04_9", Some(Step::MidoChests)),
+            Task::Exit("ENTR_KOKIRI_FOREST_9", Some(Step::MidoChests)),
             // East to two green rupees (En_Item00 0x2500, 0x2600).
             Task::Walk(vec![Vec3::new(-445.0, 0.0, -400.0), Vec3::new(-150.0, 0.0, -350.0)]),
             Task::Pick(Vec3::new(35.0, 1.0, -418.0)),
@@ -525,7 +525,7 @@ impl Playthrough {
             Task::Walk(vec![Vec3::new(150.0, 0.0, 40.0), Vec3::new(158.0, 0.0, -85.0)]),
             Task::BuyShield,
             Task::Equip(Step::Equipped),
-            Task::Exit("ENTR_SPOT04_4", Some(Step::ShopOut)),
+            Task::Exit("ENTR_KOKIRI_FOREST_4", Some(Step::ShopOut)),
             // North to the ford and over it, to Mido by the path to the Deku Tree.
             Task::Walk(vec![Vec3::new(850.0, 0.0, 200.0), Vec3::new(900.0, 0.0, 430.0), Vec3::new(1250.0, 0.0, 410.0), Vec3::new(1375.0, 0.0, 380.0), Vec3::new(1400.0, 0.0, 250.0)]),
             Task::Talk(Who::Mido, Vec3::new(1420.0, 0.0, 150.0), Step::Mido),
@@ -550,7 +550,7 @@ impl Playthrough {
             // open jaw covers.
             Task::Walk(vec![Vec3::new(3000.0, 0.0, -600.0), Vec3::new(3350.0, 0.0, -950.0), Vec3::new(3650.0, 0.0, -1180.0), Vec3::new(3950.0, 0.0, -1200.0)]),
             Task::Settle(Some(Step::Tree)),
-            Task::Exit("ENTR_YDAN_0", Some(Step::Mouth)),
+            Task::Exit("ENTR_DEKU_TREE_0", Some(Step::Mouth)),
             // The Deku Tree's intro (gDekuTreeIntroCs) holds Link until it ends.
             Task::Settle(Some(Step::DekuTree)),
         ]);
@@ -577,7 +577,7 @@ impl Playthrough {
     fn deku_tree() -> Vec<Task> {
         vec![
             Task::Settle(Some(Step::House)),
-            Task::Exit("ENTR_SPOT04_3", Some(Step::OutDoor)),
+            Task::Exit("ENTR_KOKIRI_FOREST_3", Some(Step::OutDoor)),
             Task::LadderDown,
             // The sign by Link's house (params 0x031F) faces -z: read from in front of it.
             Task::Talk(Who::Sign(Vec3::new(49.0, -80.0, 967.0)), Vec3::new(49.0, -80.0, 900.0), Step::Sign),
@@ -610,7 +610,7 @@ impl Playthrough {
                 Vec3::new(3950.0, 0.0, -1200.0),
             ]),
             Task::Settle(Some(Step::Tree)),
-            Task::Exit("ENTR_YDAN_0", Some(Step::Mouth)),
+            Task::Exit("ENTR_DEKU_TREE_0", Some(Step::Mouth)),
             Task::Settle(Some(Step::DekuTree)),
         ]
     }
@@ -911,14 +911,14 @@ impl Playthrough {
     /// chain enters, until the wake-up's script is over and Link stands in his house.
     fn opening(&mut self, w: &PlayState) -> Option<PadState> {
         use oot_game::cutscene::CS_STATE_IDLE;
-        const SCENE_SPOT00: u16 = 0x51;
-        const SCENE_SPOT04: u16 = 0x55;
-        const SCENE_LINK_HOME: u16 = 0x34;
+        const SCENE_HYRULE_FIELD: u16 = 0x51;
+        const SCENE_KOKIRI_FOREST: u16 = 0x55;
+        const SCENE_LINKS_HOUSE: u16 = 0x34;
         let at = (w.scene_id, w.save.scene_layer);
         let next = match self.sub {
-            0 => (at == (SCENE_SPOT00, 4)).then_some(Step::Nightmare),
-            1 => (at == (SCENE_SPOT04, 7)).then_some(Step::NaviSent),
-            2 => (at == (SCENE_LINK_HOME, 4)).then_some(Step::WakeUp),
+            0 => (at == (SCENE_HYRULE_FIELD, 4)).then_some(Step::Nightmare),
+            1 => (at == (SCENE_KOKIRI_FOREST, 7)).then_some(Step::NaviSent),
+            2 => (at == (SCENE_LINKS_HOUSE, 4)).then_some(Step::WakeUp),
             _ => None,
         };
         if let Some(s) = next {
@@ -1003,8 +1003,8 @@ impl Playthrough {
     }
 
     /// `Task::Crawl`'s phases in `sub`: 0 to the approach, 1 at the mouth until "Enter", 2 A
-    /// (with the stick still at the mouth, so Link stays in `func_80842180`, whose interrupts
-    /// include the wall's, `func_8083F7BC`), 3 crawling, 4 out and settling.
+    /// (with the stick still at the mouth, so Link stays in `Player_Action_80842180`, whose interrupts
+    /// include the wall's, `Player_ActionHandler_5`), 3 crawling, 4 out and settling.
     fn crawl(&mut self, w: &PlayState, approach: Vec3, mouth: Vec3, step: Step) -> Option<PadState> {
         let idle = PadState::default();
         let p = w.player();
@@ -1035,7 +1035,7 @@ impl Playthrough {
                 pad.button = self.press(BTN_A).button;
                 Some(pad)
             }
-            // func_8084C760 reads the stick's tilt straight (rel.stick_y), not the camera's way.
+            // Player_Action_8084C760 reads the stick's tilt straight (rel.stick_y), not the camera's way.
             3 => {
                 if p.action == PA::Crawl && !self.steps.iter().any(|s| s.0 == Step::Crawlspace) {
                     self.steps.push((Step::Crawlspace, self.frame));

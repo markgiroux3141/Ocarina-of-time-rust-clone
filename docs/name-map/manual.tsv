@@ -1,0 +1,165 @@
+# Hand-checked successors of the old names the generated map cannot pair (macros, anonymous enums,
+# renamed types whose fields changed too), looked up in the new decomp by value or expansion.
+# old	new	new definition	evidence. An empty new: removed (see the evidence); a new that is not a name: no rename.
+CS_END	CS_END_OF_SCRIPT	include/cutscene_commands.h	same words: CS_CMD_END_OF_SCRIPT (-1 = 0xFFFFFFFF), CMD_W(0); still takes ()
+INFTABLE_1DX_INDEX	INFTABLE_INDEX_1DX	include/save.h	same value: INFTABLE_INDEX(INFTABLE_1D0) = 0x1D0 >> 4 = 29
+DPM_PLAYER	DYNA_TRANSFORM_POS	include/actor.h	same value 1 (1 << 0); DynaPolyMoveFlag enum became DYNA_TRANSFORM_* bit defines (Bg_Bdan_Objects: DPM_PLAYER -> DYNA_TRANSFORM_POS)
+DPM_UNK		include/actor.h	removed: value 0 (no transform flags) is now a literal 0 (Bg_Bombwall: DynaPolyActor_Init(&this->dyna, 0))
+DPM_ENEMY	DYNA_TRANSFORM_ROT_Y	include/actor.h	same value 2 (1 << 1); not in the requested list, added for completeness
+DPM_UNK3	DYNA_TRANSFORM_POS | DYNA_TRANSFORM_ROT_Y	include/actor.h	removed as a name: value 3 is now the OR of both flags (Bg_Haka_MeganeBG)
+DynaPolyMoveFlag		include/actor.h	removed: the enum type is gone; DYNA_TRANSFORM_POS/DYNA_TRANSFORM_ROT_Y are plain #defines
+ENMD_LIMB_NONE	MIDO_LIMB_NONE	assets/xml/objects/object_md.xml	same position 0; enum now generated from the object XML (LimbNone=) into the object_md.h header made at build time
+ENMD_LIMB_ROOT	MIDO_LIMB_ROOT	assets/xml/objects/object_md.xml	same position 1; generated enum
+ENMD_LIMB_WAIST	MIDO_LIMB_WAIST	assets/xml/objects/object_md.xml	same position 2; generated enum
+ENMD_LIMB_LEFT_THIGH	MIDO_LIMB_LEFT_THIGH	assets/xml/objects/object_md.xml	same position 3; generated enum
+ENMD_LIMB_LEFT_LEG	MIDO_LIMB_LEFT_LEG	assets/xml/objects/object_md.xml	same position 4; generated enum
+ENMD_LIMB_LEFT_FOOT	MIDO_LIMB_LEFT_FOOT	assets/xml/objects/object_md.xml	same position 5; generated enum
+ENMD_LIMB_RIGHT_THIGH	MIDO_LIMB_RIGHT_THIGH	assets/xml/objects/object_md.xml	same position 6; generated enum
+ENMD_LIMB_RIGHT_LEG	MIDO_LIMB_RIGHT_LEG	assets/xml/objects/object_md.xml	same position 7; generated enum
+ENMD_LIMB_RIGHT_FOOT	MIDO_LIMB_RIGHT_FOOT	assets/xml/objects/object_md.xml	same position 8; generated enum
+ENMD_LIMB_TORSO	MIDO_LIMB_TORSO	assets/xml/objects/object_md.xml	same position 9; z_en_md.c OverrideLimbDraw checks MIDO_LIMB_TORSO
+ENMD_LIMB_LEFT_UPPER_ARM	MIDO_LIMB_LEFT_UPPER_ARM	assets/xml/objects/object_md.xml	same position 10; used in z_en_md.c
+ENMD_LIMB_LEFT_FOREARM	MIDO_LIMB_LEFT_FOREARM	assets/xml/objects/object_md.xml	same position 11; generated enum
+ENMD_LIMB_LEFT_HAND	MIDO_LIMB_LEFT_HAND	assets/xml/objects/object_md.xml	same position 12; generated enum
+ENMD_LIMB_RIGHT_UPPER_ARM	MIDO_LIMB_RIGHT_UPPER_ARM	assets/xml/objects/object_md.xml	same position 13; used in z_en_md.c
+ENMD_LIMB_RIGHT_FOREARM	MIDO_LIMB_RIGHT_FOREARM	assets/xml/objects/object_md.xml	same position 14; generated enum
+ENMD_LIMB_RIGHT_HAND	MIDO_LIMB_RIGHT_HAND	assets/xml/objects/object_md.xml	same position 15; generated enum
+ENMD_LIMB_HEAD	MIDO_LIMB_HEAD	assets/xml/objects/object_md.xml	same position 16; used in z_en_md.c
+ENMD_LIMB_MAX	MIDO_LIMB_MAX	assets/xml/objects/object_md.xml	same position 17 (LimbMax=); sizes jointTable/morphTable in z_en_md.h
+EnMdLimb	MidoLimb	assets/xml/objects/object_md.xml	enum type moved out of z_en_md.h into the generated object header (Skeleton EnumName="MidoLimb")
+SOUNDMODE_STEREO	SOUND_OUTPUT_STEREO	include/audio.h	same value 0, same position
+SOUNDMODE_HEADSET	SOUND_OUTPUT_HEADSET	include/audio.h	same value 1, same position
+SOUNDMODE_SURROUND	SOUND_OUTPUT_SURROUND	include/audio.h	same value 2, same position
+SOUNDMODE_MONO	SOUND_OUTPUT_MONO	include/audio.h	same value 3, same position
+SoundMode	SoundOutputMode	include/audio.h	same 4-member enum
+TOUCH_DREW_HITMARK	ATELEM_DREW_HITMARK	include/collision_check.h	same value (1 << 6), same position among ATELEM_* flags
+ACTOR_FLAG_ENKUSA_CUT	ACTOR_FLAG_GRASS_DESTROYED	include/actor.h	same value (1 << 11)
+ACTOR_FLAG_20	ACTOR_AUDIO_FLAG_SFX_CENTERED_1	include/actor.h	same value (1 << 20); note the ACTOR_AUDIO_FLAG_ prefix, not ACTOR_FLAG_ (see Actor_PlaySfx_FlaggedCentered1)
+ACTOR_FLAG_21	ACTOR_AUDIO_FLAG_SFX_CENTERED_2	include/actor.h	same value (1 << 21); note the ACTOR_AUDIO_FLAG_ prefix (see Actor_PlaySfx_FlaggedCentered2)
+CS_BEGIN_CUTSCENE	CS_HEADER	include/cutscene_commands.h	same expansion CMD_W(totalEntries), CMD_W(frameCount)
+R_CAM_DEFAULT_PITCH_UPDATE_RATE_INV	R_CAM_PITCH_UPDATE_RATE_INV	include/regs.h	same register OREG(7)
+ROOM_BEHAVIOR_TYPE1_0	ROOM_TYPE_NORMAL	include/room.h	same value 0; RoomBehaviorType1 became RoomType (Room.behaviorType1 at 0x03 is now Room.type)
+ROOM_BEHAVIOR_TYPE1_1	ROOM_TYPE_DUNGEON	include/room.h	same value 1, same position
+ROOM_BEHAVIOR_TYPE1_2	ROOM_TYPE_INDOORS	include/room.h	same value 2, same position
+ROOM_BEHAVIOR_TYPE1_3	ROOM_TYPE_3	include/room.h	same value 3 (unused)
+ROOM_BEHAVIOR_TYPE1_4	ROOM_TYPE_4	include/room.h	same value 4 (unused)
+ROOM_BEHAVIOR_TYPE1_5	ROOM_TYPE_BOSS	include/room.h	same value 5
+RoomBehaviorType1	RoomType	include/room.h	same 6-member enum
+ROOM_BEHAVIOR_TYPE2_0	ROOM_ENV_DEFAULT	include/room.h	same value 0; RoomBehaviorType2 became RoomEnvironmentType (Room.behaviorType2 at 0x02 is now Room.environmentType)
+ROOM_BEHAVIOR_TYPE2_1	ROOM_ENV_COLD	include/room.h	same value 1
+ROOM_BEHAVIOR_TYPE2_2	ROOM_ENV_WARM	include/room.h	same value 2
+ROOM_BEHAVIOR_TYPE2_3	ROOM_ENV_HOT	include/room.h	same value 3 (hot room timer)
+ROOM_BEHAVIOR_TYPE2_4	ROOM_ENV_UNK_STRETCH_1	include/room.h	same value 4
+ROOM_BEHAVIOR_TYPE2_5	ROOM_ENV_UNK_STRETCH_2	include/room.h	same value 5
+ROOM_BEHAVIOR_TYPE2_6	ROOM_ENV_UNK_STRETCH_3	include/room.h	same value 6
+RoomBehaviorType2	RoomEnvironmentType	include/room.h	same 7-member enum
+PLANE_Y_MIN	ENHOLL_H_Y_MIN	src/overlays/actors/ovl_En_Holl/z_en_holl.c	same value -50.0f
+PLANE_Y_MAX	ENHOLL_H_Y_MAX	src/overlays/actors/ovl_En_Holl/z_en_holl.c	same value 200.0f
+PLANE_HALFWIDTH	ENHOLL_H_HALFWIDTH_NARROW	src/overlays/actors/ovl_En_Holl/z_en_holl.c	same value 100.0f. Watch out: the new ENHOLL_H_HALFWIDTH is the OTHER constant (200.0f)
+PLANE_HALFWIDTH_2	ENHOLL_H_HALFWIDTH	src/overlays/actors/ovl_En_Holl/z_en_holl.c	same value 200.0f (the name without _2 now means 200, not 100)
+AnimationContext	AnimTaskQueue	include/animation.h	same layout: s16 count + 50 entries, size 0xC84 (AnimationEntry -> AnimTask, ANIMATION_ENTRY_MAX -> ANIM_TASK_QUEUE_MAX)
+TARGET_RANGE	ATTENTION_RANGES	src/code/z_actor.c	same expansion { SQ(range), (f32)range / leash }; table D_80115FF8 -> sAttentionRanges, TargetRangeParams -> AttentionRangeParams
+ELF_MSG_TYPE_CHECK	QUEST_HINT_TYPE_CHECK	include/quest_hint_commands.h	same value 0
+ELF_MSG_TYPE_UNK_1	QUEST_HINT_TYPE_CHAIN	include/quest_hint_commands.h	same value 1 (now documented: chain of conditions)
+ELF_MSG_TYPE_UNK_2	QUEST_HINT_TYPE_RANDOM	include/quest_hint_commands.h	same value 2 (now documented: random pick among true conditions)
+ELF_MSG_TYPE_SKIP	QUEST_HINT_TYPE_SKIP	include/quest_hint_commands.h	same value 3
+ELF_MSG_TYPE_END	QUEST_HINT_TYPE_END	include/quest_hint_commands.h	same value 7
+ELF_MSG_CONDITION_FLAG	QUEST_HINT_CONDITION_FLAG	include/quest_hint_commands.h	same value 0
+ELF_MSG_CONDITION_DUNGEON_ITEM	QUEST_HINT_CONDITION_DUNGEON_ITEM	include/quest_hint_commands.h	same value 1
+ELF_MSG_CONDITION_ITEM	QUEST_HINT_CONDITION_ITEM	include/quest_hint_commands.h	same value 2
+ELF_MSG_CONDITION_OTHER	QUEST_HINT_CONDITION_OTHER	include/quest_hint_commands.h	same value 3
+ELF_MSG_CONDITION_STRENGTH_UPG	QUEST_HINT_CONDITION_STRENGTH_UPG	include/quest_hint_commands.h	same value 0 ("other" sub-condition)
+ELF_MSG_CONDITION_BOOTS	QUEST_HINT_CONDITION_BOOTS	include/quest_hint_commands.h	same value 1
+ELF_MSG_CONDITION_SONG	QUEST_HINT_CONDITION_SONG	include/quest_hint_commands.h	same value 2
+ELF_MSG_CONDITION_MEDALLION	QUEST_HINT_CONDITION_MEDALLION	include/quest_hint_commands.h	same value 3
+ELF_MSG_CONDITION_MAGIC	QUEST_HINT_CONDITION_MAGIC	include/quest_hint_commands.h	same value 4
+ELF_MSG_FLAG	QUEST_HINT_FLAG	include/quest_hint_commands.h	same bytes, ARGS REORDERED: old (type, textId, tf, flag) -> new (type, flag, tf, textId)
+ELF_MSG_END	QUEST_HINT_END	include/quest_hint_commands.h	same bytes, same args (textId)
+ELF_MSG_B0	HINT_B0	include/quest_hint_commands.h	same bit packing; cond arg changed: old pasted a suffix (ELF_MSG_CONDITION_##cond_type), new takes the full constant
+ELF_MSG_B1	HINT_B1	include/quest_hint_commands.h	same bit packing; cond arg changed from pasted suffix to full constant
+ELF_MSG_B	HINT_B	include/quest_hint_commands.h	same expansion _SHIFTL(data, 0, 8); not in the requested list, added for completeness
+ELF_MSG_DUNGEON_ITEM	QUEST_HINT_DUNGEON_ITEM	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf, itemId) -> (type, itemId, tf, textId)
+ELF_MSG_ITEM	QUEST_HINT_ITEM	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf, slotItemId, itemId) -> (type, slotItemId, itemId, tf, textId)
+ELF_MSG_STRENGTH_UPG	QUEST_HINT_STRENGTH_UPG	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf, strUpg) -> (type, strUpg, tf, textId)
+ELF_MSG_BOOTS	QUEST_HINT_BOOTS	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf, itemId) -> (type, itemId, tf, textId)
+ELF_MSG_SONG	QUEST_HINT_SONG	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf, itemId) -> (type, itemId, tf, textId)
+ELF_MSG_MEDALLION	QUEST_HINT_MEDALLION	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf, itemId) -> (type, itemId, tf, textId)
+ELF_MSG_MAGIC	QUEST_HINT_MAGIC	include/quest_hint_commands.h	same bytes, ARGS REORDERED: (type, textId, tf) -> (type, tf, textId)
+ElfMessage	QuestHintCmd	include/quest_hint_commands.h	same 4 x u8 struct, size 0x4 (old definition was in include/z64.h:1128, not z64elf_message.h)
+CHAN_UPD_UNK_0	AUDIOCMD_OP_NOOP	include/audiothread_cmd.h	same value 0; ChannelUpdateType was merged into AudioThreadCmdOp (channel opcodes 0x00-0x0E)
+CHAN_UPD_VOL_SCALE	AUDIOCMD_OP_CHANNEL_SET_VOL_SCALE	include/audiothread_cmd.h	same value 1; same switch case in src/audio/internal/thread.c
+CHAN_UPD_VOL	AUDIOCMD_OP_CHANNEL_SET_VOL	include/audiothread_cmd.h	same value 2
+CHAN_UPD_PAN_SIGNED	AUDIOCMD_OP_CHANNEL_SET_PAN	include/audiothread_cmd.h	same value 3 (sets newPan)
+CHAN_UPD_FREQ_SCALE	AUDIOCMD_OP_CHANNEL_SET_FREQ_SCALE	include/audiothread_cmd.h	same value 4
+CHAN_UPD_REVERB	AUDIOCMD_OP_CHANNEL_SET_REVERB_VOLUME	include/audiothread_cmd.h	same value 5 (channel->reverb is now targetReverbVol)
+CHAN_UPD_SCRIPT_IO	AUDIOCMD_OP_CHANNEL_SET_IO	include/audiothread_cmd.h	same value 6 (soundScriptIO -> seqScriptIO)
+CHAN_UPD_PAN_UNSIGNED	AUDIOCMD_OP_CHANNEL_SET_PAN_WEIGHT	include/audiothread_cmd.h	same value 7 (sets panChannelWeight)
+CHAN_UPD_STOP_SOMETHING2	AUDIOCMD_OP_CHANNEL_SET_MUTE	include/audiothread_cmd.h	same value 8 (stopSomething2 -> muted)
+CHAN_UPD_MUTE_BEHAVE	AUDIOCMD_OP_CHANNEL_SET_MUTE_BEHAVIOR	include/audiothread_cmd.h	same value 9
+CHAN_UPD_VIBE_X8	AUDIOCMD_OP_CHANNEL_SET_VIBRATO_DEPTH	include/audiothread_cmd.h	same value 10 (asUbyte * 8 -> vibratoDepthTarget)
+CHAN_UPD_VIBE_X32	AUDIOCMD_OP_CHANNEL_SET_VIBRATO_RATE	include/audiothread_cmd.h	same value 11 (asUbyte * 32 -> vibratoRateTarget)
+CHAN_UPD_UNK_0F	AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_SIZE	include/audiothread_cmd.h	same value 12 (unk_0F -> combFilterSize)
+CHAN_UPD_UNK_20	AUDIOCMD_OP_CHANNEL_SET_COMB_FILTER_GAIN	include/audiothread_cmd.h	same value 13 (unk_20 -> combFilterGain)
+CHAN_UPD_STEREO	AUDIOCMD_OP_CHANNEL_SET_STEREO	include/audiothread_cmd.h	same value 14
+ChannelUpdateType	AudioThreadCmdOp	include/audiothread_cmd.h	the file-local enum in code_800E4FE0.c became the channel part of the global AudioThreadCmdOp enum (which also has the seqplayer/global ops)
+SURFACE_SFX_TYPE_0	SURFACE_MATERIAL_DIRT	include/bgcheck.h	same value 0; SurfaceSfxType became SurfaceMaterial (SurfaceType_GetSfxType -> SurfaceType_GetMaterial)
+SURFACE_SFX_TYPE_1	SURFACE_MATERIAL_SAND	include/bgcheck.h	same value 1
+SURFACE_SFX_TYPE_2	SURFACE_MATERIAL_STONE	include/bgcheck.h	same value 2
+SURFACE_SFX_TYPE_3	SURFACE_MATERIAL_JABU	include/bgcheck.h	same value 3
+SURFACE_SFX_TYPE_4	SURFACE_MATERIAL_WATER_SHALLOW	include/bgcheck.h	same value 4
+SURFACE_SFX_TYPE_5	SURFACE_MATERIAL_WATER_DEEP	include/bgcheck.h	same value 5
+SURFACE_SFX_TYPE_6	SURFACE_MATERIAL_TALL_GRASS	include/bgcheck.h	same value 6
+SURFACE_SFX_TYPE_7	SURFACE_MATERIAL_LAVA	include/bgcheck.h	same value 7
+SURFACE_SFX_TYPE_8	SURFACE_MATERIAL_GRASS	include/bgcheck.h	same value 8
+SURFACE_SFX_TYPE_9	SURFACE_MATERIAL_BRIDGE	include/bgcheck.h	same value 9
+SURFACE_SFX_TYPE_10	SURFACE_MATERIAL_WOOD	include/bgcheck.h	same value 10
+SURFACE_SFX_TYPE_11	SURFACE_MATERIAL_DIRT_SOFT	include/bgcheck.h	same value 11
+SURFACE_SFX_TYPE_12	SURFACE_MATERIAL_ICE	include/bgcheck.h	same value 12
+SURFACE_SFX_TYPE_13	SURFACE_MATERIAL_CARPET	include/bgcheck.h	same value 13
+SURFACE_SFX_TYPE_MAX	SURFACE_MATERIAL_MAX	include/bgcheck.h	same value 14
+SurfaceSfxType	SurfaceMaterial	include/bgcheck.h	same 14+MAX enum. Do not confuse with the new SurfaceSfxOffset enum (a different, 16-member enum used by SurfaceType_GetSfxOffset)
+CsCmdMusicFade	CsCmdFadeOutSeq	include/cutscene.h	same fields (u16 type -> seqPlayer, startFrame, endFrame); now a union padded to 0x30 (s32 _words[12]), was a 0x6 struct
+CsCmdMusicChange	CsCmdStartSeq	include/cutscene.h	same fields (u8 unk_00, u8 sequence -> seqIdPlusOne, ...); union padded to 0x30. The same layout is also used for stop-seq as CsCmdStopSeq
+CsCmdBase		include/cutscene.h	removed: the generic struct was split per command: CsCmdMisc (misc), CsCmdDestination (terminator), CsCmdTransition (transition), CsCmdCam; all are unions with the same first 6 bytes
+CsCmdEnvLighting	CsCmdLightSetting	include/cutscene.h	same fields (u8 unk_00, u8 setting -> settingPlusOne, ...); union padded to 0x30
+CS_CMD_END	CS_CMD_END_OF_SCRIPT	include/cutscene.h	same command; now written as -1 (comment 0xFFFF) instead of 0xFFFF
+CS_PLAYER_ACTION	CS_PLAYER_CUE	include/cutscene_commands.h	same expansion (wraps CS_ACTOR_CUE, old CS_NPC_ACTION); same 15 args, last three normX/Y/Z renamed unused0..2
+CS_CAM_POS_LIST	CS_CAM_EYE_SPLINE	include/cutscene_commands.h	removed as an alias: it was #define CS_CAM_POS_LIST CS_CAM_EYE_LIST, whose successor is CS_CAM_EYE_SPLINE
+CS_CAM_EYE_LIST	CS_CAM_EYE_SPLINE	include/cutscene_commands.h	same words: cmd 0x0001, CMD_HH(0x0001, startFrame), CMD_HH(endFrame, 0). Do not use new CS_CAM_EYE (cmd 0x0007, single point)
+SFX_SOUNDFONT_1_SIZE	Soundfont_0_SIZE	src/audio/game/session_init.c	no hardcoded 0x3AA0 now: size comes from the build-generated assets/audio/soundfont_sizes.h, summed into SFX_SOUNDFONTS_SIZE; first of the two, by order. File is session_init.c, not session_config.c
+SFX_SOUNDFONT_2_SIZE	Soundfont_1_SIZE	src/audio/game/session_init.c	no hardcoded 0x17B0 now: build-generated assets/audio/soundfont_sizes.h; second of the two, by order (SFX_SOUNDFONTS_SIZE = Soundfont_0_SIZE + Soundfont_1_SIZE)
+FLG_OFFGROUND	CAM_LOCKON_AT_FLAG_OFF_GROUND	src/code/z_camera.c	same value (1 << 7); FLG_ADJSLOPE (1 << 0) -> CAM_LOCKON_AT_FLAG_CALC_SLOPE_Y_ADJ next to it
+MSGCOL_DEFAULT	TEXT_COLOR_DEFAULT	include/message_data_fmt.h	same value 0 (HEX(CTRL_DEFAULT) = 0x0); now a TextColor enum member; switch in src/code/z_message.c (was z_message_PAL.c)
+MSGCOL_RED	TEXT_COLOR_RED	include/message_data_fmt.h	same value 1
+MSGCOL_ADJUSTABLE	TEXT_COLOR_ADJUSTABLE	include/message_data_fmt.h	same value 2
+MSGCOL_BLUE	TEXT_COLOR_BLUE	include/message_data_fmt.h	same value 3
+MSGCOL_LIGHTBLUE	TEXT_COLOR_LIGHTBLUE	include/message_data_fmt.h	same value 4
+MSGCOL_PURPLE	TEXT_COLOR_PURPLE	include/message_data_fmt.h	same value 5
+MSGCOL_YELLOW	TEXT_COLOR_YELLOW	include/message_data_fmt.h	same value 6
+MSGCOL_BLACK	TEXT_COLOR_BLACK	include/message_data_fmt.h	same value 7
+HS_HORSE_ARCHERY	HS_HBA	include/save.h	removed: the string-literal form ("\x00") is gone; message data now uses HIGHSCORE(HS_HBA) with the HighScores enum (value 0, already in old z64save.h)
+HS_LARGEST_FISH	HS_FISHING	include/save.h	removed: the string-literal form ("\x02") is gone; HIGHSCORE(HS_FISHING) with the HighScores enum (value 2)
+TargetContext	Attention	include/actor.h	same layout, size 0x98, all offsets match (TargetContextEntry -> LockOnReticle; e.g. targetedActor -> reticleActor, arrowPointedActor -> naviHoverActor, unk_94 -> arrowHoverActor)
+Audio_StartSeq	SEQCMD_PLAY_SEQUENCE	include/seqcmd.h	same command word (op 0x0), but ARGS CHANGED: (p, fade, seqId) -> (p, fadeInDuration, seqArg, seqId); old put seqArg in the high byte of the u16 seqId, now a separate arg (usually 0)
+Audio_SeqCmdA	SEQCMD_SET_CHANNEL_DISABLE_MASK	include/seqcmd.h	same word 0xA0000000 | p<<24 | (u16)mask
+Audio_SeqCmdB40	SEQCMD_RESET_TEMPO	include/seqcmd.h	same word 0xB0004000 | p<<24 | dur<<16; ARGS CHANGED: the old 3rd arg (always 0) is dropped: (p, duration)
+Audio_SeqCmd7	SEQCMD_SET_SEQPLAYER_IO	include/seqcmd.h	same word 0x70000000 | p<<24 | port<<16 | (u8)data; same arg order
+Audio_SeqCmdC		include/seqcmd.h	removed: the generic setup-command macro (op 0xC; a = subOp<<4 | targetPlayer) was split into SEQCMD_SETUP_* macros, one per sub-op (e.g. 0x30 -> SEQCMD_SETUP_SCALE_TEMPO, 0xA0 -> SEQCMD_SETUP_SET_SEQPLAYER_FREQ, 0x8x -> SEQCMD_SETUP_RESTORE_SEQPLAYER_VOLUME_WITH_SCALE_INDEX, 0x9x -> SEQCMD_SETUP_SET_CHANNEL_DISABLE_MASK)
+Audio_SeqCmd1	SEQCMD_STOP_SEQUENCE	include/seqcmd.h	same word 0x100000FF | p<<24 | fade<<16
+Audio_SeqCmdB		include/seqcmd.h	removed: generic tempo macro (op 0xB; b = subOp<<4) split into SEQCMD_SET_TEMPO / SPEED_UP_TEMPO / SLOW_DOWN_TEMPO / SCALE_TEMPO / RESET_TEMPO. Only old use, Audio_SeqCmdB(BGM_MAIN, 5, 0, 0xD2), is now SEQCMD_SET_TEMPO(BGM_MAIN, 5, 210)
+Audio_SeqCmd6	SEQCMD_SET_CHANNEL_VOLUME	include/seqcmd.h	same word (op 0x6), ARGS REORDERED: old (p, duration, channel, vol) -> new (p, channelIndex, duration, volume)
+Audio_SeqCmdE0	SEQCMD_SET_SOUND_OUTPUT_MODE	include/seqcmd.h	same word 0xE0000000 | (u8)mode; ARGS CHANGED: playerIdx dropped (old callers passed BGM_MAIN = 0, so the word is the same)
+Audio_SeqCmdE01	SEQCMD_DISABLE_PLAY_SEQUENCES	include/seqcmd.h	same word 0xE0000100 | value; ARGS CHANGED: playerIdx dropped (old callers passed BGM_MAIN = 0)
+Audio_SeqCmd8	SEQCMD_SET_CHANNEL_IO	include/seqcmd.h	same word (op 0x8), ARGS REORDERED: old (p, ioPort, channel, data) -> new (p, channelIndex, ioPort, ioData)
+Audio_DisableSeq	AUDIOCMD_GLOBAL_DISABLE_SEQPLAYER	include/audiothread_cmd.h	same audio-thread cmd: op 0x83, player<<16, s32 fadeOut (an AudioThread cmd, not a SEQCMD); same args
+Audio_SetVolScaleNow	SEQCMD_SET_SEQPLAYER_VOLUME_NOW	src/audio/game/sequence.c	same expansion: Audio_ProcessSeqCmd(op 4 | p<<24 | dur<<16 | (u8)(vol*127)); still local to the file, not in seqcmd.h
+Audio_SeqCmd4	SEQCMD_SET_SEQPLAYER_VOLUME	include/seqcmd.h	same word 0x40000000 | p<<24 | dur<<16 | vol
+Audio_SeqCmd3	SEQCMD_UNQUEUE_SEQUENCE	include/seqcmd.h	same word (op 0x3), ARGS CHANGED: (p, seqId) -> (p, fadeOutInDuration, seqId); old use is now SEQCMD_UNQUEUE_SEQUENCE(p, 0, seqId)
+Audio_SeqCmdB30	SEQCMD_SCALE_TEMPO	include/seqcmd.h	same word 0xB0003000 | p<<24 | dur<<16 | scale
+Audio_SeqCmd5	SEQCMD_SET_SEQPLAYER_FREQ	include/seqcmd.h	same word 0x50000000 | p<<24 | dur<<16 | freqScale
+WATERBOX_BGCAM_INDEX		src/code/z_bgcheck.c	removed: inlined as waterBox->properties & 0xFF in WaterBox_GetBgCamIndex; packing is now WATERBOX_PROPERTIES(bgCamIndex, lightIndex, roomIndex, isDisabled) in include/bgcheck.h
+COLPOLY_VIA_FLAG_TEST	COLPOLY_VTX_CHECK_FLAGS_ANY	include/bgcheck.h	same expansion ((vI) & (((flags) & 7) << 13)); same call sites in z_bgcheck.c
+ENDOOR_PARAMS_DOUBLE_DOOR_FLAG	ENDOOR_PARAMS_IS_DOUBLE_DOOR_MASK	src/overlays/actors/ovl_En_Door/z_en_door.h	same value 0x40 = PARAMS_MAKE_MASK(6, 1)
+CAM_FUNCDATA_FLAGS	CAM_FUNCDATA_INTERFACE_FIELD	include/camera.h	same expansion { x, CAM_DATA_FLAGS } -> { x, CAM_DATA_INTERFACE_FIELD } (enum value 0x09, renamed)
+FLT_MAX	MAXFLOAT	include/libc/math.h	same float value (3.40282347e+38f, the old long literal rounds to the same f32), same position
+VIRTUAL_TO_PHYSICAL	OS_K0_TO_PHYSICAL	include/ultra64/convert.h	same arithmetic, addr - 0x80000000 (cast now (u32) via char*); z_actor.c gSegments[6] = OS_K0_TO_PHYSICAL(...); PHYSICAL_TO_VIRTUAL is gone too (SEGMENTED_TO_VIRTUAL adds K0BASE)

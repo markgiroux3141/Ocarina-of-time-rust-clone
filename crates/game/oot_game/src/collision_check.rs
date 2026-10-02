@@ -56,30 +56,30 @@ pub const COLSHAPE_TRIS: u8 = 2;
 pub const COLSHAPE_QUAD: u8 = 3;
 pub const COLSHAPE_MAX: u8 = 4;
 
-// `ColliderType`.
-pub const COLTYPE_HIT0: u8 = 0;
-pub const COLTYPE_HIT1: u8 = 1;
-pub const COLTYPE_HIT2: u8 = 2;
-pub const COLTYPE_HIT3: u8 = 3;
-pub const COLTYPE_HIT4: u8 = 4;
-pub const COLTYPE_HIT5: u8 = 5;
-pub const COLTYPE_HIT6: u8 = 6;
-pub const COLTYPE_HIT7: u8 = 7;
-pub const COLTYPE_HIT8: u8 = 8;
-pub const COLTYPE_METAL: u8 = 9;
-pub const COLTYPE_NONE: u8 = 10;
-pub const COLTYPE_WOOD: u8 = 11;
-pub const COLTYPE_HARD: u8 = 12;
-pub const COLTYPE_TREE: u8 = 13;
+// `ColliderMaterial`.
+pub const COL_MATERIAL_HIT0: u8 = 0;
+pub const COL_MATERIAL_HIT1: u8 = 1;
+pub const COL_MATERIAL_HIT2: u8 = 2;
+pub const COL_MATERIAL_HIT3: u8 = 3;
+pub const COL_MATERIAL_HIT4: u8 = 4;
+pub const COL_MATERIAL_HIT5: u8 = 5;
+pub const COL_MATERIAL_HIT6: u8 = 6;
+pub const COL_MATERIAL_HIT7: u8 = 7;
+pub const COL_MATERIAL_HIT8: u8 = 8;
+pub const COL_MATERIAL_METAL: u8 = 9;
+pub const COL_MATERIAL_NONE: u8 = 10;
+pub const COL_MATERIAL_WOOD: u8 = 11;
+pub const COL_MATERIAL_HARD: u8 = 12;
+pub const COL_MATERIAL_TREE: u8 = 13;
 
-// `ElementType`.
-pub const ELEMTYPE_UNK0: u8 = 0;
-pub const ELEMTYPE_UNK1: u8 = 1;
-pub const ELEMTYPE_UNK2: u8 = 2;
-pub const ELEMTYPE_UNK3: u8 = 3;
-pub const ELEMTYPE_UNK4: u8 = 4;
-pub const ELEMTYPE_UNK5: u8 = 5;
-pub const ELEMTYPE_UNK6: u8 = 6;
+// `ElementMaterial`.
+pub const ELEM_MATERIAL_UNK0: u8 = 0;
+pub const ELEM_MATERIAL_UNK1: u8 = 1;
+pub const ELEM_MATERIAL_UNK2: u8 = 2;
+pub const ELEM_MATERIAL_UNK3: u8 = 3;
+pub const ELEM_MATERIAL_UNK4: u8 = 4;
+pub const ELEM_MATERIAL_UNK5: u8 = 5;
+pub const ELEM_MATERIAL_UNK6: u8 = 6;
 
 pub const AT_NONE: u8 = 0;
 pub const AT_ON: u8 = 1 << 0;
@@ -120,27 +120,27 @@ pub const OC2_TYPE_1: u8 = OC1_TYPE_1;
 pub const OC2_TYPE_2: u8 = OC1_TYPE_2;
 pub const OC2_FIRST_ONLY: u8 = 1 << 6;
 
-pub const TOUCH_NONE: u8 = 0;
-pub const TOUCH_ON: u8 = 1 << 0;
-pub const TOUCH_HIT: u8 = 1 << 1;
-pub const TOUCH_NEAREST: u8 = 1 << 2;
-pub const TOUCH_SFX_NORMAL: u8 = 0 << 3;
-pub const TOUCH_SFX_HARD: u8 = 1 << 3;
-pub const TOUCH_SFX_WOOD: u8 = 2 << 3;
-pub const TOUCH_SFX_NONE: u8 = 3 << 3;
-pub const TOUCH_AT_HITMARK: u8 = 1 << 5;
-pub const TOUCH_DREW_HITMARK: u8 = 1 << 6;
-pub const TOUCH_UNK7: u8 = 1 << 7;
+pub const ATELEM_NONE: u8 = 0;
+pub const ATELEM_ON: u8 = 1 << 0;
+pub const ATELEM_HIT: u8 = 1 << 1;
+pub const ATELEM_NEAREST: u8 = 1 << 2;
+pub const ATELEM_SFX_NORMAL: u8 = 0 << 3;
+pub const ATELEM_SFX_HARD: u8 = 1 << 3;
+pub const ATELEM_SFX_WOOD: u8 = 2 << 3;
+pub const ATELEM_SFX_NONE: u8 = 3 << 3;
+pub const ATELEM_AT_HITMARK: u8 = 1 << 5;
+pub const ATELEM_DREW_HITMARK: u8 = 1 << 6;
+pub const ATELEM_UNK7: u8 = 1 << 7;
 
-pub const BUMP_NONE: u8 = 0;
-pub const BUMP_ON: u8 = 1 << 0;
-pub const BUMP_HIT: u8 = 1 << 1;
-pub const BUMP_HOOKABLE: u8 = 1 << 2;
-pub const BUMP_NO_AT_INFO: u8 = 1 << 3;
-pub const BUMP_NO_DAMAGE: u8 = 1 << 4;
-pub const BUMP_NO_SWORD_SFX: u8 = 1 << 5;
-pub const BUMP_NO_HITMARK: u8 = 1 << 6;
-pub const BUMP_DRAW_HITMARK: u8 = 1 << 7;
+pub const ACELEM_NONE: u8 = 0;
+pub const ACELEM_ON: u8 = 1 << 0;
+pub const ACELEM_HIT: u8 = 1 << 1;
+pub const ACELEM_HOOKABLE: u8 = 1 << 2;
+pub const ACELEM_NO_AT_INFO: u8 = 1 << 3;
+pub const ACELEM_NO_DAMAGE: u8 = 1 << 4;
+pub const ACELEM_NO_SWORD_SFX: u8 = 1 << 5;
+pub const ACELEM_NO_HITMARK: u8 = 1 << 6;
+pub const ACELEM_DRAW_HITMARK: u8 = 1 << 7;
 
 pub const OCELEM_NONE: u8 = 0;
 pub const OCELEM_ON: u8 = 1 << 0;
@@ -173,7 +173,7 @@ pub const DMG_SPIN_ATTACK: u32 = DMG_SPIN_KOKIRI | DMG_SPIN_MASTER | DMG_SPIN_GI
 pub const DMG_JUMP_SLASH: u32 = DMG_JUMP_KOKIRI | DMG_JUMP_MASTER | DMG_JUMP_GIANT;
 pub const DMG_SWORD: u32 = DMG_SLASH | DMG_SPIN_ATTACK | DMG_JUMP_SLASH;
 
-/// `MASS_IMMOVABLE`, `MASS_HEAVY` (`z64actor.h`).
+/// `MASS_IMMOVABLE`, `MASS_HEAVY` (`actor.h`).
 pub const MASS_IMMOVABLE: u8 = 0xFF;
 pub const MASS_HEAVY: u8 = 0xFE;
 
@@ -291,38 +291,38 @@ pub struct ElemRef {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HitElem {
     pub elem: ElemRef,
-    pub toucher: ColliderTouch,
-    pub bumper: ColliderBump,
+    pub toucher: ColliderElementDamageInfoAT,
+    pub bumper: ColliderElementDamageInfoAC,
     pub elem_type: u8,
 }
 
-/// `ColliderTouch`: what an element does as an attack.
+/// `ColliderElementDamageInfoAT`: what an element does as an attack.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ColliderTouch {
+pub struct ColliderElementDamageInfoAT {
     pub dmg_flags: u32,
     pub effect: u8,
     pub damage: u8,
 }
 
-/// `ColliderBump`: what an element takes as an attack target.
+/// `ColliderElementDamageInfoAC`: what an element takes as an attack target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColliderBump {
+pub struct ColliderElementDamageInfoAC {
     pub dmg_flags: u32,
     pub effect: u8,
     pub defense: u8,
     pub hit_pos: [i16; 3],
 }
 
-impl Default for ColliderBump {
-    /// `Collider_InitBump`.
-    fn default() -> ColliderBump {
-        ColliderBump { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0, hit_pos: [0; 3] }
+impl Default for ColliderElementDamageInfoAC {
+    /// `Collider_InitElementDamageInfoAC`.
+    fn default() -> ColliderElementDamageInfoAC {
+        ColliderElementDamageInfoAC { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0, hit_pos: [0; 3] }
     }
 }
 
-/// `ColliderBumpInit`.
+/// `ColliderElementDamageInfoACInit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColliderBumpInit {
+pub struct ColliderElementDamageInfoACInit {
     pub dmg_flags: u32,
     pub effect: u8,
     pub defense: u8,
@@ -348,7 +348,7 @@ pub struct ColliderBase {
 impl Default for ColliderBase {
     /// `Collider_InitBase`.
     fn default() -> ColliderBase {
-        ColliderBase { actor: None, at: None, ac: None, oc: None, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_NONE, oc_flags2: OC2_NONE, col_type: COLTYPE_HIT3, shape: COLSHAPE_MAX }
+        ColliderBase { actor: None, at: None, ac: None, oc: None, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_NONE, oc_flags2: OC2_NONE, col_type: COL_MATERIAL_HIT3, shape: COLSHAPE_MAX }
     }
 }
 
@@ -391,11 +391,11 @@ pub struct ColliderInit {
     pub shape: u8,
 }
 
-/// `ColliderInfo`: one element's attack and target properties, and this frame's hits.
+/// `ColliderElement`: one element's attack and target properties, and this frame's hits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColliderInfo {
-    pub toucher: ColliderTouch,
-    pub bumper: ColliderBump,
+pub struct ColliderElement {
+    pub toucher: ColliderElementDamageInfoAT,
+    pub bumper: ColliderElementDamageInfoAC,
     pub elem_type: u8,
     pub toucher_flags: u8,
     pub bumper_flags: u8,
@@ -408,15 +408,15 @@ pub struct ColliderInfo {
     pub ac_hit_info: Option<HitElem>,
 }
 
-impl Default for ColliderInfo {
-    /// `Collider_InitInfo`.
-    fn default() -> ColliderInfo {
-        ColliderInfo {
-            toucher: ColliderTouch::default(),
-            bumper: ColliderBump::default(),
-            elem_type: ELEMTYPE_UNK0,
-            toucher_flags: TOUCH_NONE,
-            bumper_flags: BUMP_NONE,
+impl Default for ColliderElement {
+    /// `Collider_InitElement`.
+    fn default() -> ColliderElement {
+        ColliderElement {
+            toucher: ColliderElementDamageInfoAT::default(),
+            bumper: ColliderElementDamageInfoAC::default(),
+            elem_type: ELEM_MATERIAL_UNK0,
+            toucher_flags: ATELEM_NONE,
+            bumper_flags: ACELEM_NONE,
             oc_elem_flags: OCELEM_NONE,
             at_hit: None,
             ac_hit: None,
@@ -426,15 +426,15 @@ impl Default for ColliderInfo {
     }
 }
 
-impl ColliderInfo {
-    /// `Collider_InitInfo` + `Collider_SetInfo`.
-    pub fn new(init: &ColliderInfoInit) -> ColliderInfo {
-        let mut i = ColliderInfo::default();
+impl ColliderElement {
+    /// `Collider_InitElement` + `Collider_SetElement`.
+    pub fn new(init: &ColliderElementInit) -> ColliderElement {
+        let mut i = ColliderElement::default();
         i.set(init);
         i
     }
-    /// `Collider_SetInfo`.
-    pub fn set(&mut self, init: &ColliderInfoInit) {
+    /// `Collider_SetElement`.
+    pub fn set(&mut self, init: &ColliderElementInit) {
         self.elem_type = init.elem_type;
         self.toucher = init.toucher;
         self.bumper.dmg_flags = init.bumper.dmg_flags;
@@ -444,33 +444,33 @@ impl ColliderInfo {
         self.bumper_flags = init.bumper_flags;
         self.oc_elem_flags = init.oc_elem_flags;
     }
-    /// `Collider_ResetATInfo`.
+    /// `Collider_ResetATElement`.
     pub fn reset_at(&mut self) {
         self.at_hit = None;
         self.at_hit_info = None;
-        self.toucher_flags &= !TOUCH_HIT;
-        self.toucher_flags &= !TOUCH_DREW_HITMARK;
+        self.toucher_flags &= !ATELEM_HIT;
+        self.toucher_flags &= !ATELEM_DREW_HITMARK;
     }
-    /// `Collider_ResetACInfo`.
+    /// `Collider_ResetACElement`.
     pub fn reset_ac(&mut self) {
         self.bumper.hit_pos = [0; 3];
-        self.bumper_flags &= !BUMP_HIT;
-        self.bumper_flags &= !BUMP_DRAW_HITMARK;
+        self.bumper_flags &= !ACELEM_HIT;
+        self.bumper_flags &= !ACELEM_DRAW_HITMARK;
         self.ac_hit = None;
         self.ac_hit_info = None;
     }
-    /// `Collider_ResetOCInfo`.
+    /// `Collider_ResetOCElement`.
     pub fn reset_oc(&mut self) {
         self.oc_elem_flags &= !OCELEM_HIT;
     }
 }
 
-/// `ColliderInfoInit`.
+/// `ColliderElementInit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ColliderInfoInit {
+pub struct ColliderElementInit {
     pub elem_type: u8,
-    pub toucher: ColliderTouch,
-    pub bumper: ColliderBumpInit,
+    pub toucher: ColliderElementDamageInfoAT,
+    pub bumper: ColliderElementDamageInfoACInit,
     pub toucher_flags: u8,
     pub bumper_flags: u8,
     pub oc_elem_flags: u8,
@@ -484,7 +484,7 @@ pub struct ColliderInfoInit {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ColliderCylinder {
     pub base: ColliderBase,
-    pub info: ColliderInfo,
+    pub info: ColliderElement,
     pub dim: Cylinder16,
 }
 
@@ -492,7 +492,7 @@ pub struct ColliderCylinder {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColliderCylinderInit {
     pub base: ColliderInit,
-    pub info: ColliderInfoInit,
+    pub info: ColliderElementInit,
     pub dim: Cylinder16,
 }
 
@@ -527,14 +527,14 @@ pub struct ColliderJntSphElementDim {
 /// `ColliderJntSphElement`.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ColliderJntSphElement {
-    pub info: ColliderInfo,
+    pub info: ColliderElement,
     pub dim: ColliderJntSphElementDim,
 }
 
 /// `ColliderJntSphElementInit` (`ColliderJntSphElementDimInit` inlined).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColliderJntSphElementInit {
-    pub info: ColliderInfoInit,
+    pub info: ColliderElementInit,
     pub limb: u8,
     pub model_sphere: Sphere16,
     pub scale: i16,
@@ -555,7 +555,7 @@ impl ColliderJntSph {
         c.elements = elements
             .iter()
             .map(|e| ColliderJntSphElement {
-                info: ColliderInfo::new(&e.info),
+                info: ColliderElement::new(&e.info),
                 dim: ColliderJntSphElementDim { model_sphere: e.model_sphere, world_sphere: Sphere16::default(), scale: e.scale as f32 * 0.01, limb: e.limb },
             })
             .collect();
@@ -579,14 +579,14 @@ impl ColliderJntSph {
 /// `ColliderTrisElement`.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ColliderTrisElement {
-    pub info: ColliderInfo,
+    pub info: ColliderElement,
     pub dim: TriNorm,
 }
 
 /// `ColliderTrisElementInit`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColliderTrisElementInit {
-    pub info: ColliderInfoInit,
+    pub info: ColliderElementInit,
     pub vtx: [Vec3; 3],
 }
 
@@ -602,7 +602,7 @@ impl ColliderTris {
     pub fn new(base: &ColliderInit, elements: &[ColliderTrisElementInit]) -> ColliderTris {
         let mut c = ColliderTris::default();
         c.base.set(base);
-        c.elements = elements.iter().map(|e| ColliderTrisElement { info: ColliderInfo::new(&e.info), dim: tris_dim(&e.vtx) }).collect();
+        c.elements = elements.iter().map(|e| ColliderTrisElement { info: ColliderElement::new(&e.info), dim: tris_dim(&e.vtx) }).collect();
         c
     }
     /// `Collider_SetTrisVertices`.
@@ -648,7 +648,7 @@ impl ColliderQuadDim {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ColliderQuad {
     pub base: ColliderBase,
-    pub info: ColliderInfo,
+    pub info: ColliderElement,
     pub dim: ColliderQuadDim,
 }
 
@@ -656,7 +656,7 @@ pub struct ColliderQuad {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColliderQuadInit {
     pub base: ColliderInit,
-    pub info: ColliderInfoInit,
+    pub info: ColliderElementInit,
     pub quad: [Vec3; 4],
 }
 
@@ -838,7 +838,7 @@ impl Collider {
         }
     }
     /// Element `i`'s info.
-    pub fn info(&self, i: usize) -> Option<&ColliderInfo> {
+    pub fn info(&self, i: usize) -> Option<&ColliderElement> {
         match self {
             Collider::JntSph(c) => c.elements.get(i).map(|e| &e.info),
             Collider::Tris(c) => c.elements.get(i).map(|e| &e.info),
@@ -846,7 +846,7 @@ impl Collider {
             Collider::Quad(c) => (i == 0).then_some(&c.info),
         }
     }
-    pub fn info_mut(&mut self, i: usize) -> Option<&mut ColliderInfo> {
+    pub fn info_mut(&mut self, i: usize) -> Option<&mut ColliderElement> {
         match self {
             Collider::JntSph(c) => c.elements.get_mut(i).map(|e| &mut e.info),
             Collider::Tris(c) => c.elements.get_mut(i).map(|e| &mut e.info),
@@ -1131,20 +1131,20 @@ impl ColliderSet {
             for e in 0..ac.element_count() {
                 let Some(info) = self.cols[j].as_ref().and_then(|c| c.info(e)) else { break };
                 let Some(hit) = info.ac_hit_info else { continue };
-                if info.bumper_flags & BUMP_DRAW_HITMARK == 0 {
+                if info.bumper_flags & ACELEM_DRAW_HITMARK == 0 {
                     continue;
                 }
                 let (bumper_flags, elem_type) = (info.bumper_flags, info.elem_type);
                 let Some(ai) = self.index_of(hit.elem.col) else { continue };
                 let Some(at_info) = self.cols[ai].as_ref().and_then(|c| c.info(hit.elem.elem as usize)) else { continue };
-                if at_info.toucher_flags & TOUCH_DREW_HITMARK != 0 {
+                if at_info.toucher_flags & ATELEM_DREW_HITMARK != 0 {
                     continue;
                 }
                 let toucher_flags = at_info.toucher_flags;
                 let (Some(at), Some(ac)) = (self.cols[ai].as_ref(), self.cols[j].as_ref()) else { continue };
                 hit_effects(&mut self.hit_sfx, actors, at.base(), toucher_flags, ac.base(), bumper_flags, elem_type);
                 if let Some(at_info) = self.cols[ai].as_mut().and_then(|c| c.info_mut(hit.elem.elem as usize)) {
-                    at_info.toucher_flags |= TOUCH_DREW_HITMARK;
+                    at_info.toucher_flags |= ATELEM_DREW_HITMARK;
                 }
                 break;
             }
@@ -1208,12 +1208,12 @@ impl ColliderSet {
 }
 
 /// `CollisionCheck_ApplyDamage`.
-fn apply_damage(base: &ColliderBase, info: &ColliderInfo, actors: &mut ActorContext) {
+fn apply_damage(base: &ColliderBase, info: &ColliderElement, actors: &mut ActorContext) {
     let Some(h) = base.actor else { return };
     if base.ac_flags & AC_HIT == 0 {
         return;
     }
-    if info.bumper_flags & BUMP_HIT == 0 || info.bumper_flags & BUMP_NO_DAMAGE != 0 {
+    if info.bumper_flags & ACELEM_HIT == 0 || info.bumper_flags & ACELEM_NO_DAMAGE != 0 {
         return;
     }
     let Some(hit) = info.ac_hit_info else {
@@ -1245,7 +1245,7 @@ fn apply_damage(base: &ColliderBase, info: &ColliderInfo, actors: &mut ActorCont
     }
 }
 
-/// A deferred `Collider_ResetACBase` / `Collider_ResetACInfo` on the pair's AC collider.
+/// A deferred `Collider_ResetACBase` / `Collider_ResetACElement` on the pair's AC collider.
 #[derive(Debug, Clone, Copy)]
 struct AcReset {
     base: bool,
@@ -1279,7 +1279,7 @@ const HIT_INFO_EFFECT: [u8; 14] = [0, 1, 1, 0, 5, 2, 0, 0, 2, 3, 5, 3, 3, 4];
 const HIT_SOLID: u8 = 3;
 const HIT_WOOD: u8 = 4;
 const HIT_NONE: u8 = 5;
-const TOUCH_SFX_MASK: u8 = 3 << 3;
+const ATELEM_SFX_MASK: u8 = 3 << 3;
 
 /// Where `&collider->actor->projectedPos` (or `gSfxDefaultPos` with no actor) is.
 fn actor_sfx_pos(actor: Option<ActorHandle>) -> SfxPos {
@@ -1291,10 +1291,10 @@ fn actor_sfx_pos(actor: Option<ActorHandle>) -> SfxPos {
 /// `bumper_flags` and `elem_type`.
 fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, toucher_flags: u8, ac: &ColliderBase, bumper_flags: u8, elem_type: u8) {
     use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND};
-    if bumper_flags & BUMP_NO_HITMARK != 0 {
+    if bumper_flags & ACELEM_NO_HITMARK != 0 {
         return;
     }
-    if toucher_flags & TOUCH_AT_HITMARK == 0 && toucher_flags & TOUCH_DREW_HITMARK != 0 {
+    if toucher_flags & ATELEM_AT_HITMARK == 0 && toucher_flags & ATELEM_DREW_HITMARK != 0 {
         return;
     }
     if ac.actor.is_some() {
@@ -1308,7 +1308,7 @@ fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Collide
             HIT_NONE => {}
             _ => {
                 // EffectSsHitMark_SpawnFixedScale: not ported.
-                if bumper_flags & BUMP_NO_SWORD_SFX == 0 {
+                if bumper_flags & ACELEM_NO_SWORD_SFX == 0 {
                     sword_hit_audio(out, actors, at, elem_type);
                 }
             }
@@ -1324,15 +1324,15 @@ fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Collide
 /// Metal(Sfx)`: `NA_SE_IT_SHIELD_REFLECT_SW`), wood's.
 fn hit_solid(out: &mut Vec<(u16, SfxPos)>, toucher_flags: u8, collider: &ColliderBase) {
     use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND, NA_SE_IT_SHIELD_REFLECT_SW};
-    let flags = toucher_flags & TOUCH_SFX_MASK;
+    let flags = toucher_flags & ATELEM_SFX_MASK;
     let pos = actor_sfx_pos(collider.actor);
-    if flags == TOUCH_SFX_NORMAL && collider.col_type != COLTYPE_METAL {
+    if flags == ATELEM_SFX_NORMAL && collider.col_type != COL_MATERIAL_METAL {
         out.push((NA_SE_IT_SHIELD_BOUND, pos));
-    } else if flags == TOUCH_SFX_NORMAL {
+    } else if flags == ATELEM_SFX_NORMAL {
         out.push((NA_SE_IT_SHIELD_REFLECT_SW, pos));
-    } else if flags == TOUCH_SFX_HARD {
+    } else if flags == ATELEM_SFX_HARD {
         out.push((NA_SE_IT_SHIELD_BOUND, pos));
-    } else if flags == TOUCH_SFX_WOOD {
+    } else if flags == ATELEM_SFX_WOOD {
         out.push((NA_SE_IT_REFLECTION_WOOD, pos));
     }
 }
@@ -1344,9 +1344,9 @@ fn sword_hit_audio(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Col
     let Some(h) = at.actor else { return };
     if actors.actor(h).is_some_and(|a| a.category == crate::actor_ctx::ACTORCAT_PLAYER) {
         let id = match elem_type {
-            ELEMTYPE_UNK0 => NA_SE_IT_SWORD_STRIKE,
-            ELEMTYPE_UNK1 => NA_SE_IT_SWORD_STRIKE_HARD,
-            ELEMTYPE_UNK2 | ELEMTYPE_UNK3 => NA_SE_PL_WALK_GROUND - SFX_FLAG,
+            ELEM_MATERIAL_UNK0 => NA_SE_IT_SWORD_STRIKE,
+            ELEM_MATERIAL_UNK1 => NA_SE_IT_SWORD_STRIKE_HARD,
+            ELEM_MATERIAL_UNK2 | ELEM_MATERIAL_UNK3 => NA_SE_PL_WALK_GROUND - SFX_FLAG,
             _ => return,
         };
         out.push((id, SfxPos::Actor(h)));
@@ -1358,18 +1358,18 @@ fn v3s(v: [i16; 3]) -> Vec3 {
     Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32)
 }
 
-/// `CollisionCheck_SkipTouch`.
-fn skip_touch(i: &ColliderInfo) -> bool {
-    i.toucher_flags & TOUCH_ON == 0
+/// `CollisionCheck_IsElementNotAT`.
+fn skip_touch(i: &ColliderElement) -> bool {
+    i.toucher_flags & ATELEM_ON == 0
 }
 
-/// `CollisionCheck_SkipBump`.
-fn skip_bump(i: &ColliderInfo) -> bool {
-    i.bumper_flags & BUMP_ON == 0
+/// `CollisionCheck_IsElementNotAC`.
+fn skip_bump(i: &ColliderElement) -> bool {
+    i.bumper_flags & ACELEM_ON == 0
 }
 
 /// `CollisionCheck_NoSharedFlags`.
-fn no_shared_flags(at: &ColliderInfo, ac: &ColliderInfo) -> bool {
+fn no_shared_flags(at: &ColliderElement, ac: &ColliderElement) -> bool {
     at.toucher.dmg_flags & ac.bumper.dmg_flags == 0
 }
 
@@ -1387,7 +1387,7 @@ impl PairCtx<'_> {
     /// `CollisionCheck_SetATvsAC`: records the hit on both sides. (The C also takes the two
     /// elements' centres, which it doesn't use; the checks here don't compute them.)
     #[allow(clippy::too_many_arguments)]
-    fn set_at_vs_ac(&mut self, at: &mut ColliderBase, at_info: &mut ColliderInfo, at_elem: u16, ac: &mut ColliderBase, ac_info: &mut ColliderInfo, ac_elem: u16, hit_pos: Vec3) {
+    fn set_at_vs_ac(&mut self, at: &mut ColliderBase, at_info: &mut ColliderElement, at_elem: u16, ac: &mut ColliderBase, ac_info: &mut ColliderElement, ac_elem: u16, hit_pos: Vec3) {
         if ac.ac_flags & AC_HARD != 0 && at.actor.is_some() && ac.actor.is_some() {
             // CollisionCheck_SetBounce.
             at.at_flags |= AT_BOUNCED;
@@ -1395,12 +1395,12 @@ impl PairCtx<'_> {
         }
         let at_ref = ElemRef { col: self.ri, elem: at_elem };
         let ac_ref = ElemRef { col: self.rj, elem: ac_elem };
-        if ac_info.bumper_flags & BUMP_NO_AT_INFO == 0 {
+        if ac_info.bumper_flags & ACELEM_NO_AT_INFO == 0 {
             at.at_flags |= AT_HIT;
             at.at = ac.actor;
             at_info.at_hit = Some(self.rj);
             at_info.at_hit_info = Some(HitElem { elem: ac_ref, toucher: ac_info.toucher, bumper: ac_info.bumper, elem_type: ac_info.elem_type });
-            at_info.toucher_flags |= TOUCH_HIT;
+            at_info.toucher_flags |= ATELEM_HIT;
             if let Some(a) = at.actor.and_then(|h| self.actors.actor_mut(h)) {
                 a.col_chk_info.at_hit_effect = ac_info.bumper.effect;
             }
@@ -1409,23 +1409,23 @@ impl PairCtx<'_> {
         ac.ac = at.actor;
         ac_info.ac_hit = Some(self.ri);
         ac_info.ac_hit_info = Some(HitElem { elem: at_ref, toucher: at_info.toucher, bumper: at_info.bumper, elem_type: at_info.elem_type });
-        ac_info.bumper_flags |= BUMP_HIT;
+        ac_info.bumper_flags |= ACELEM_HIT;
         if let Some(a) = ac.actor.and_then(|h| self.actors.actor_mut(h)) {
             a.col_chk_info.ac_hit_effect = at_info.toucher.effect;
         }
         ac_info.bumper.hit_pos = [hit_pos.x as i16, hit_pos.y as i16, hit_pos.z as i16];
-        if at_info.toucher_flags & TOUCH_AT_HITMARK == 0 && ac.col_type != COLTYPE_METAL && ac.col_type != COLTYPE_WOOD && ac.col_type != COLTYPE_HARD {
-            ac_info.bumper_flags |= BUMP_DRAW_HITMARK;
+        if at_info.toucher_flags & ATELEM_AT_HITMARK == 0 && ac.col_type != COL_MATERIAL_METAL && ac.col_type != COL_MATERIAL_WOOD && ac.col_type != COL_MATERIAL_HARD {
+            ac_info.bumper_flags |= ACELEM_DRAW_HITMARK;
         } else {
             hit_effects(&mut self.set.hit_sfx, self.actors, at, at_info.toucher_flags, ac, ac_info.bumper_flags, ac_info.elem_type);
-            at_info.toucher_flags |= TOUCH_DREW_HITMARK;
+            at_info.toucher_flags |= ATELEM_DREW_HITMARK;
         }
     }
 
-    /// `Collider_QuadSetNearestAC`: with `TOUCH_NEAREST`, only a hit nearer than this frame's
+    /// `Collider_QuadSetNearestAC`: with `ATELEM_NEAREST`, only a hit nearer than this frame's
     /// nearest so far counts, and it undoes the AC side of the earlier one.
     fn quad_set_nearest_ac(&mut self, quad: &mut ColliderQuad, hit_pos: Vec3) -> bool {
-        if quad.info.toucher_flags & TOUCH_NEAREST == 0 {
+        if quad.info.toucher_flags & ATELEM_NEAREST == 0 {
             return true;
         }
         let dist = math3d::vec3f_dist_sq(v3s(quad.dim.dc_mid), hit_pos);
@@ -1433,7 +1433,7 @@ impl PairCtx<'_> {
             quad.dim.ac_dist_sq = dist;
             let base = quad.info.at_hit;
             let elem = quad.info.at_hit_info.map(|h| h.elem);
-            // Collider_ResetACBase(atHit), then Collider_ResetACInfo(atHitInfo).
+            // Collider_ResetACBase(atHit), then Collider_ResetACElement(atHitInfo).
             if let Some(r) = base {
                 if r == self.rj {
                     self.reset_ac_of_j.get_or_insert(AcReset { base: false, elem: None }).base = true;
@@ -1457,7 +1457,7 @@ impl PairCtx<'_> {
         false
     }
 
-    /// `CollisionCheck_AC_JntSphVsJntSph`.
+    /// `CollisionCheck_ATJntSphVsACJntSph`.
     fn jntsph_vs_jntsph(&mut self, at: &mut ColliderJntSph, ac: &mut ColliderJntSph) {
         for ai in 0..at.elements.len() {
             if skip_touch(&at.elements[ai].info) {
@@ -1489,7 +1489,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_JntSphVsCyl`.
+    /// `CollisionCheck_ATJntSphVsACCyl`.
     fn jntsph_vs_cyl(&mut self, at: &mut ColliderJntSph, ac: &mut ColliderCylinder) {
         if at.elements.is_empty() || ac.dim.radius <= 0 || ac.dim.height <= 0 || skip_bump(&ac.info) {
             return;
@@ -1510,7 +1510,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_CylVsJntSph`.
+    /// `CollisionCheck_ATCylVsACJntSph`.
     fn cyl_vs_jntsph(&mut self, at: &mut ColliderCylinder, ac: &mut ColliderJntSph) {
         if ac.elements.is_empty() || at.dim.radius <= 0 || at.dim.height <= 0 || skip_touch(&at.info) {
             return;
@@ -1533,7 +1533,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_JntSphVsTris`.
+    /// `CollisionCheck_ATJntSphVsACTris`.
     fn jntsph_vs_tris(&mut self, at: &mut ColliderJntSph, ac: &mut ColliderTris) {
         for ai in 0..at.elements.len() {
             if skip_touch(&at.elements[ai].info) {
@@ -1553,7 +1553,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_TrisVsJntSph`.
+    /// `CollisionCheck_ATTrisVsACJntSph`.
     fn tris_vs_jntsph(&mut self, at: &mut ColliderTris, ac: &mut ColliderJntSph) {
         for ci in 0..ac.elements.len() {
             if skip_bump(&ac.elements[ci].info) {
@@ -1575,7 +1575,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_JntSphVsQuad`.
+    /// `CollisionCheck_ATJntSphVsACQuad`.
     fn jntsph_vs_quad(&mut self, at: &mut ColliderJntSph, ac: &mut ColliderQuad) {
         if at.elements.is_empty() || skip_bump(&ac.info) {
             return;
@@ -1596,7 +1596,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_QuadVsJntSph`.
+    /// `CollisionCheck_ATQuadVsACJntSph`.
     fn quad_vs_jntsph(&mut self, at: &mut ColliderQuad, ac: &mut ColliderJntSph) {
         if ac.elements.is_empty() || skip_touch(&at.info) {
             return;
@@ -1621,7 +1621,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_CylVsCyl`.
+    /// `CollisionCheck_ATCylVsACCyl`.
     fn cyl_vs_cyl(&mut self, at: &mut ColliderCylinder, ac: &mut ColliderCylinder) {
         if at.dim.radius <= 0 || at.dim.height <= 0 || ac.dim.radius <= 0 || ac.dim.height <= 0 {
             return;
@@ -1645,7 +1645,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_CylVsTris`.
+    /// `CollisionCheck_ATCylVsACTris`.
     fn cyl_vs_tris(&mut self, at: &mut ColliderCylinder, ac: &mut ColliderTris) {
         if at.dim.radius <= 0 || at.dim.height <= 0 || ac.elements.is_empty() || skip_touch(&at.info) {
             return;
@@ -1663,7 +1663,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_TrisVsCyl`.
+    /// `CollisionCheck_ATTrisVsACCyl`.
     fn tris_vs_cyl(&mut self, at: &mut ColliderTris, ac: &mut ColliderCylinder) {
         if ac.dim.radius <= 0 || ac.dim.height <= 0 || at.elements.is_empty() || skip_bump(&ac.info) {
             return;
@@ -1681,7 +1681,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_CylVsQuad`.
+    /// `CollisionCheck_ATCylVsACQuad`.
     fn cyl_vs_quad(&mut self, at: &mut ColliderCylinder, ac: &mut ColliderQuad) {
         if at.dim.height <= 0 || at.dim.radius <= 0 {
             return;
@@ -1701,7 +1701,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_QuadVsCyl`: Player's sword against a cylinder (a bush, an NPC).
+    /// `CollisionCheck_ATQuadVsACCyl`: Player's sword against a cylinder (a bush, an NPC).
     fn quad_vs_cyl(&mut self, at: &mut ColliderQuad, ac: &mut ColliderCylinder) {
         if ac.dim.height <= 0 || ac.dim.radius <= 0 {
             return;
@@ -1723,7 +1723,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_TrisVsTris`.
+    /// `CollisionCheck_ATTrisVsACTris`.
     fn tris_vs_tris(&mut self, at: &mut ColliderTris, ac: &mut ColliderTris) {
         for ci in 0..ac.elements.len() {
             if skip_bump(&ac.elements[ci].info) {
@@ -1743,7 +1743,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_TrisVsQuad`.
+    /// `CollisionCheck_ATTrisVsACQuad`.
     fn tris_vs_quad(&mut self, at: &mut ColliderTris, ac: &mut ColliderQuad) {
         if at.elements.is_empty() || skip_bump(&ac.info) {
             return;
@@ -1763,7 +1763,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_QuadVsTris`.
+    /// `CollisionCheck_ATQuadVsACTris`.
     fn quad_vs_tris(&mut self, at: &mut ColliderQuad, ac: &mut ColliderTris) {
         if ac.elements.is_empty() || skip_touch(&at.info) {
             return;
@@ -1786,7 +1786,7 @@ impl PairCtx<'_> {
         }
     }
 
-    /// `CollisionCheck_AC_QuadVsQuad`.
+    /// `CollisionCheck_ATQuadVsACQuad`.
     fn quad_vs_quad(&mut self, at: &mut ColliderQuad, ac: &mut ColliderQuad) {
         if skip_touch(&at.info) || skip_bump(&ac.info) || no_shared_flags(&at.info, &ac.info) {
             return;
@@ -1851,7 +1851,7 @@ impl PairCtx<'_> {
 }
 
 /// The hit point on the line from `ac_pos` to `at_pos`, `radius` out from `ac_pos`, or `at_pos`
-/// when that's past it (`CollisionCheck_AC_JntSphVsCyl` and `_CylVsJntSph`).
+/// when that's past it (`CollisionCheck_ATJntSphVsACCyl` and `_CylVsJntSph`).
 fn hit_towards(at_pos: Vec3, ac_pos: Vec3, radius: f32, center_dist: f32) -> Vec3 {
     if !is_zero(center_dist) {
         let k = radius / center_dist;
@@ -1893,7 +1893,7 @@ fn mass_type(mass: u8) -> MassType {
 
 /// `CollisionCheck_SetOCvsOC`: marks both sides and pushes the actors apart by `overlap`.
 #[allow(clippy::too_many_arguments)]
-fn set_oc_vs_oc(left: &mut ColliderBase, left_info: &mut ColliderInfo, left_pos: Vec3, right: &mut ColliderBase, right_info: &mut ColliderInfo, right_pos: Vec3, overlap: f32, actors: &mut ActorContext) {
+fn set_oc_vs_oc(left: &mut ColliderBase, left_info: &mut ColliderElement, left_pos: Vec3, right: &mut ColliderBase, right_info: &mut ColliderElement, right_pos: Vec3, overlap: f32, actors: &mut ActorContext) {
     let (left_actor, right_actor) = (left.actor, right.actor);
     left.oc_flags1 |= OC1_HIT;
     left.oc = right_actor;

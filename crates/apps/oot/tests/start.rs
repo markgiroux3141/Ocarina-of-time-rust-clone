@@ -11,7 +11,7 @@ fn room_and_at_start_in_front_of_the_sword_chest() {
     if !oot_game::pack::default_pack_path().is_ok_and(|p| oot_game::pack::is_current(&p, None)) {
         return;
     }
-    let o = Options { entrance: Some("ENTR_SPOT04_0".into()), room: Some(2), at: vec![-232.0, 178.0, 2211.0, 0.0], time: "10:00".into(), child: true, ..Default::default() };
+    let o = Options { entrance: Some("ENTR_KOKIRI_FOREST_0".into()), room: Some(2), at: vec![-232.0, 178.0, 2211.0, 0.0], time: "10:00".into(), child: true, ..Default::default() };
     let a = oot::load_assets(&o).expect("the assets");
     let mut w = oot::new_play(&a, true);
     let none = PadState::default();

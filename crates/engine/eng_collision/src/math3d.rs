@@ -1,4 +1,4 @@
-//! Geometry primitives and tests ported from `sys_math3d.c` (decomp commit 2f4c25d): spheres,
+//! Geometry primitives and tests ported from `sys_math3d.c` (decomp commit 52a510f): spheres,
 //! cylinders, triangles with planes, and line segments.
 //!
 //! Faithful f32 port: every expression keeps the C's order of operations and the places where
@@ -7,7 +7,7 @@
 //! `Default::default()` there. `IS_ZERO(f)` is `fabsf(f) < 0.008f` (`eng_math::is_zero`).
 //!
 //! The C's `sqrt` (double) calls on f32 sums (`Math3D_Vec3fMagnitude`,
-//! `Math3D_SphVsSphOverlapCenter`) are f32 `sqrt` here: a correctly rounded double sqrt of an
+//! `Math3D_SphVsSphOverlapCenterDist`) are f32 `sqrt` here: a correctly rounded double sqrt of an
 //! f32, rounded back to f32, equals the correctly rounded f32 sqrt.
 
 use eng_math::is_zero;
@@ -21,14 +21,14 @@ pub use crate::bgcheck::tri_chk_point_para_y as tri_chk_point_para_y_impl;
 /// `Math3D_TriChkPointParaZImpl` (shared with `bgcheck`, where it is `tri_chk_point_para_z`).
 pub use crate::bgcheck::tri_chk_point_para_z as tri_chk_point_para_z_impl;
 
-/// `Sphere16` (`z64math.h`): a sphere with integer center and radius.
+/// `Sphere16` (`z_math.h`): a sphere with integer center and radius.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sphere16 {
     pub center: [i16; 3],
     pub radius: i16,
 }
 
-/// `Cylinder16` (`z64math.h`): a vertical cylinder whose bottom is at `pos.y + yShift`.
+/// `Cylinder16` (`z_math.h`): a vertical cylinder whose bottom is at `pos.y + yShift`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Cylinder16 {
     pub radius: i16,
@@ -37,21 +37,21 @@ pub struct Cylinder16 {
     pub pos: [i16; 3],
 }
 
-/// `Plane` (`z64math.h`): `normal · p + originDist = 0`.
+/// `Plane` (`z_math.h`): `normal · p + originDist = 0`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Plane {
     pub normal: Vec3,
     pub origin_dist: f32,
 }
 
-/// `TriNorm` (`z64math.h`): a triangle with its plane.
+/// `TriNorm` (`z_math.h`): a triangle with its plane.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TriNorm {
     pub vtx: [Vec3; 3],
     pub plane: Plane,
 }
 
-/// `Linef` (`z64math.h`): a line segment from `a` to `b`.
+/// `Linef` (`z_math.h`): a line segment from `a` to `b`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Linef {
     pub a: Vec3,
@@ -692,7 +692,7 @@ pub fn sph_vs_sph_overlap(sphere_a: &Sphere16, sphere_b: &Sphere16) -> (bool, f3
     (hit, overlap)
 }
 
-/// `Math3D_SphVsSphOverlapCenter`: whether the spheres overlap by more than 0.008 (the C's
+/// `Math3D_SphVsSphOverlapCenterDist`: whether the spheres overlap by more than 0.008 (the C's
 /// literal), the overlap (`rA + rB - dist`, 0 on a miss) and the center distance.
 pub fn sph_vs_sph_overlap_center(sphere_a: &Sphere16, sphere_b: &Sphere16) -> (bool, f32, f32) {
     let dx = sphere_a.center[0] as f32 - sphere_b.center[0] as f32;
@@ -706,7 +706,7 @@ pub fn sph_vs_sph_overlap_center(sphere_a: &Sphere16, sphere_b: &Sphere16) -> (b
     (false, 0.0, center_dist)
 }
 
-/// `Math3D_SphVsCylOverlapDist`: `Math3D_SphVsCylOverlapCenterDist` without the distance.
+/// `Math3D_SphVsCylOverlap`: `Math3D_SphVsCylOverlapCenterDist` without the distance.
 pub fn sph_vs_cyl_overlap_dist(sph: &Sphere16, cyl: &Cylinder16) -> (bool, f32) {
     let (hit, overlap, _) = sph_vs_cyl_overlap_center_dist(sph, cyl);
     (hit, overlap)
@@ -742,13 +742,13 @@ pub fn sph_vs_cyl_overlap_center_dist(sph: &Sphere16, cyl: &Cylinder16) -> (bool
     (false, 0.0, center_dist)
 }
 
-/// `Math3D_CylOutsideCyl`: `Math3D_CylOutsideCylDist` without the distance.
+/// `Math3D_CylVsCylOverlap`: `Math3D_CylVsCylOverlapCenterDist` without the distance.
 pub fn cyl_outside_cyl(ca: &Cylinder16, cb: &Cylinder16) -> (bool, f32) {
     let (hit, dead_space, _) = cyl_outside_cyl_dist(ca, cb);
     (hit, dead_space)
 }
 
-/// `Math3D_CylOutsideCylDist`: despite the name, whether the cylinders overlap (xz circles
+/// `Math3D_CylVsCylOverlapCenterDist`: despite the name, whether the cylinders overlap (xz circles
 /// within the combined radius, y ranges touching); `deadSpace` is `rA + rB - xzDist` (0 on a
 /// miss) and `xzDist` the xz center distance (always written).
 pub fn cyl_outside_cyl_dist(ca: &Cylinder16, cb: &Cylinder16) -> (bool, f32, f32) {

@@ -1,6 +1,6 @@
 //! What the audio library needs from the game, as the importer writes it into the pack: the
 //! ROM's three audio files, the tables the `code` file holds, and the tables of
-//! `audio_data.c` and `audio_init_params.c` (read from the decomp's C).
+//! `audio/internal/data.c` and `session_config.c` (read from the decomp's C).
 //!
 //! Nothing here is parsed ahead of time: the fonts, sequences and samples stay the ROM's bytes,
 //! and the library reads them as the game does (`AudioLoad_RelocateFont`, the sequence
@@ -17,7 +17,7 @@ pub struct RomFile {
     pub bytes: Vec<u8>,
 }
 
-/// `ReverbSettings` (`z64audio.h`), one row of `sReverbSettings`.
+/// `ReverbSettings` (`audio.h`), one row of `sReverbSettings`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct ReverbSettings {
     pub downsample_rate: u8,
@@ -34,7 +34,7 @@ pub struct ReverbSettings {
     pub low_pass_filter_cutoff_right: i16,
 }
 
-/// `AudioSpec` (`z64audio.h`), one row of `gAudioSpecs`, with its reverbs' settings.
+/// `AudioSpec` (`audio.h`), one row of `gAudioSpecs`, with its reverbs' settings.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AudioSpec {
     pub sampling_frequency: u32,
@@ -59,14 +59,14 @@ pub struct AudioSpec {
     pub temporary_sample_cache_size: i32,
 }
 
-/// The sizes `gAudioHeapInitSizes` is computed from (`audio_init_params.c`, `heaps.c`).
+/// The sizes `gAudioHeapInitSizes` is computed from (`session_config.c`, `heaps.c`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct HeapSizes {
     /// `sizeof(gAudioHeap)` (`src/buffers/heaps.c`).
     pub audio_heap: u32,
     /// `NUM_SOUNDFONTS`.
     pub num_soundfonts: u32,
-    /// `SFX_SEQ_SIZE`, `SFX_SOUNDFONT_1_SIZE`, `SFX_SOUNDFONT_2_SIZE`.
+    /// `SFX_SEQ_SIZE`, `Soundfont_0_SIZE`, `Soundfont_1_SIZE`.
     pub sfx_seq_size: u32,
     pub sfx_soundfont_1_size: u32,
     pub sfx_soundfont_2_size: u32,
@@ -76,13 +76,13 @@ pub struct HeapSizes {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AudioTables {
     /// `gSequenceTable`, `gSoundFontTable`, `gSampleBankTable` (`AudioTable`s) and
-    /// `gSequenceFontTable`, as the ROM holds them (`data/audio_tables.rodata.s`).
+    /// `gSequenceFontTable`, as the ROM holds them (at `baseroms/gc-eu-mq-dbg/config.yml`'s `gSequenceFontTable`).
     pub sequence_table: Vec<u8>,
     pub sound_font_table: Vec<u8>,
     pub sample_bank_table: Vec<u8>,
     pub sequence_font_table: Vec<u8>,
 
-    /// `audio_data.c`'s wave samples, in `gWaveSamples`' order: sawtooth, triangle, sine,
+    /// `audio/internal/data.c`'s wave samples, in `gWaveSamples`' order: sawtooth, triangle, sine,
     /// square, white noise, `D_8012EA90`, eighth pulse, quarter pulse (each 4 harmonics × 64).
     /// `gWaveSamples[8]` points into code (`noise_code`).
     pub wave_samples: Vec<Vec<i16>>,
@@ -107,12 +107,12 @@ pub struct AudioTables {
     /// `gAudioSpecs`.
     pub specs: Vec<AudioSpec>,
     pub heap_sizes: HeapSizes,
-    /// `gTatumsPerBeat` (`D_8014A6C0[1]`).
+    /// `gTempoData.seqTicksPerBeat`.
     pub tatums_per_beat: i16,
 
     /// The microcode's resampler filters: 64 phases × 4 taps (`aspMainData + 0xE0`).
     pub resample_lut: Vec<i16>,
-    /// The code `gWaveSamples[8]` reads as noise: `func_800E4FE0` and the 0x10400 bytes from it
+    /// The code `gWaveSamples[8]` reads as noise: `AudioThread_Update` and the 0x10400 bytes from it
     /// (its VRAM address is `noise_code_vram`).
     pub noise_code: Vec<u8>,
     pub noise_code_vram: u32,

@@ -3,7 +3,7 @@
 //! sign's child) that bounces and settles, and a white mark flashes along the cut. Walking more
 //! than 500 away puts the sign back whole and the pieces go.
 //!
-//! The sign offers to talk (`func_8002F2CC`, 68 units, facing it); its text is `params | 0x300`.
+//! The sign offers to talk (`Actor_OfferTalk`, 68 units, facing it); its text is `params | 0x300`.
 //! Once the box closes it waits 20 frames before offering again.
 //!
 //! Not ported: the ocarina repair (Zelda's Lullaby: no
@@ -14,7 +14,7 @@ use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use eng_math::{approach_f, approach_s, approach_zero_f, binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, ACTOR_FLAG_25, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER_TOUCH};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER_TOUCH};
 use oot_game::actor_ctx::{ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::audio::sfx::{NA_SE_EV_BOMB_DROP_WATER, NA_SE_EV_WOODPLATE_BOUND, NA_SE_IT_SWORD_STRIKE};
 use oot_game::camera::f_atan2f;
@@ -24,8 +24,8 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 pub const ACTOR_EN_KANBAN: i16 = 0x0141;
 
-/// `En_Kanban_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KANBAN, name: "En_Kanban", category: ACTORCAT_PROP, flags: ACTOR_FLAG_0 | ACTOR_FLAG_3 | ACTOR_FLAG_4, object: "object_kanban" };
+/// `En_Kanban_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KANBAN, name: "En_Kanban", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "object_kanban" };
 
 /// `ENKANBAN_PIECE`, `ENKANBAN_FISHING`.
 pub const ENKANBAN_PIECE: i16 = 0xFFDD_u16 as i16;
@@ -72,13 +72,13 @@ const CUT_VERT_R: u8 = 5;
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
-    base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_ON | AT_TYPE_ENEMY, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_1, shape: COLSHAPE_CYLINDER },
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0xFFCF_FFFF, effect: 0, damage: 0 },
-        bumper: ColliderBumpInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_ON | TOUCH_SFX_NORMAL,
-        bumper_flags: BUMP_ON,
+    base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_ON | AT_TYPE_ENEMY, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_1, shape: COLSHAPE_CYLINDER },
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0xFFCF_FFFF, effect: 0, damage: 0 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_ON | ATELEM_SFX_NORMAL,
+        bumper_flags: ACELEM_ON,
         oc_elem_flags: OCELEM_ON,
     },
     dim: Cylinder16 { radius: 20, height: 50, y_shift: 5, pos: [0; 3] },
@@ -275,7 +275,7 @@ impl EnKanban {
         let mut k = EnKanban::new(actor);
         if k.actor.params != ENKANBAN_PIECE {
             k.actor.target_mode = 0;
-            k.actor.flags |= ACTOR_FLAG_0;
+            k.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
             k.collider = ColliderCylinder::new(&CYLINDER_INIT);
             k.actor.text_id = if k.actor.params == ENKANBAN_FISHING {
                 if play.save.adult { 0x4090 } else { 0x409D }
@@ -332,7 +332,7 @@ impl EnKanban {
             self.z_target_timer -= 1;
         }
         if self.z_target_timer == 1 {
-            self.actor.flags &= !ACTOR_FLAG_0;
+            self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         }
         if self.part_flags == 0xFFFF {
             self.message(play);
@@ -350,7 +350,7 @@ impl EnKanban {
         play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
         play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
         if self.actor.xz_dist_to_player > 500.0 {
-            self.actor.flags |= ACTOR_FLAG_0;
+            self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
             self.part_flags = 0xFFFF;
         }
         if self.cut_mark_timer != 0 {
@@ -466,8 +466,8 @@ impl EnKanban {
         piece.spin_vel[1] = spin_y;
         piece.direction = direction;
         piece.air_timer = 100;
-        piece.actor.flags &= !ACTOR_FLAG_0;
-        piece.actor.flags |= ACTOR_FLAG_25;
+        piece.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
+        piece.actor.flags |= ACTOR_FLAG_UPDATE_DURING_OCARINA;
         self.cut_mark_timer = 5;
         audio_play_actor_sfx2(play, NA_SE_IT_SWORD_STRIKE);
         false

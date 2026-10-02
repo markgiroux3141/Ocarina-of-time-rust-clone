@@ -40,7 +40,7 @@ fn update(c: &mut GameCamera, d: &CameraData, p: &PlayerView, waist: Vec3) {
         player_waist: waist,
     };
     let mut g = CameraGlobals::main_init();
-    g.d_8011d3f0 = 0;
+    g.scene_init_letterbox_timer = 0;
     let mut op = OnePointStatics::new(&d.onepoint);
     let mut rand = crate::play::Rand::default();
     c.update(d, &f, &mut Letterbox::new(), &mut g, &mut op, &mut rand);
@@ -62,8 +62,8 @@ fn y_normal(d: &CameraData, h: f32) -> f32 {
     1.0 + d.oreg(46) as f32 * 0.01 - d.oreg(46) as f32 * 0.01 * (68.0 / h)
 }
 
-/// An angle measured back from a point the camera placed by it: `OLib_Vec3fDiffToVecSphGeo`'s
-/// `Math_FAtan2F` (a Taylor series) against `OLib_VecSphGeoToVec3f`'s sines differ by up to about
+/// An angle measured back from a point the camera placed by it: `OLib_Vec3fDiffToVecGeo`'s
+/// `Math_FAtan2F` (a Taylor series) against `OLib_VecGeoToVec3f`'s sines differ by up to about
 /// 0x10 at these angles.
 const ROUND_TRIP: i32 = 0x10;
 
@@ -79,9 +79,9 @@ fn camera_jump2_turns_behind_link_on_the_ladder() {
     let behind = 0i16.wrapping_sub(0x7FFF);
     let start_yaw = behind.wrapping_add(0x3000);
     let at0 = Vec3::new(0.0, p.height(), 0.0);
-    let eye0 = sph_geo_add(at0, VecSph { r: 100.0, pitch: 0x400, yaw: start_yaw });
-    let mut c = camera(&d, CAM_MODE_CLIMB, eye0);
-    assert_eq!(d.mode(c.setting, CAM_MODE_CLIMB).unwrap().func, "CAM_FUNC_JUMP2");
+    let eye0 = sph_geo_add(at0, VecSphGeo { r: 100.0, pitch: 0x400, yaw: start_yaw });
+    let mut c = camera(&d, CAM_MODE_WALL_CLIMB, eye0);
+    assert_eq!(d.mode(c.setting, CAM_MODE_WALL_CLIMB).unwrap().func, "CAM_FUNC_JUMP2");
     update(&mut c, &d, &p, Vec3::ZERO);
     // While animTimer (R_CAM_DEFAULT_ANIM_TIME) runs, the yaw halves the way to behind him:
     // Camera_LERPCeilS(behind, atToEyeNext.yaw, 0.5, 0xA).
@@ -92,7 +92,7 @@ fn camera_jump2_turns_behind_link_on_the_ladder() {
     // The distance from the moved at to the old eye, clamped to [minDist (1 - f), maxDist
     // (1 + f)] (the CLIMB data's values 1 to 3, scaled by Link's height and yNormal); no floor
     // anywhere, so the pitch stays the moved at's and the update rates go to 100.
-    let v = |i: usize| d.value((c.setting, CAM_MODE_CLIMB), i) as f32;
+    let v = |i: usize| d.value((c.setting, CAM_MODE_WALL_CLIMB), i) as f32;
     let (h, yn) = (p.height(), y_normal(&d, p.height()));
     let (min, max, fac) = (v(1) * 0.01 * h * yn, v(2) * 0.01 * h * yn, v(3) * 0.01);
     let r = c.at.distance(eye0).clamp(min - min * fac, max + max * fac);
@@ -102,7 +102,7 @@ fn camera_jump2_turns_behind_link_on_the_ladder() {
     assert!(c.eye.distance(c.eye_next) < 1e-3);
     // Once the timer's out, within yawAdj (0xA: the CLIMB data's flags & 2, else 0x2710) of
     // behind him.
-    let yaw_adj = if d.value((c.setting, CAM_MODE_CLIMB), 8) & 2 != 0 { 0xA } else { 0x2710 };
+    let yaw_adj = if d.value((c.setting, CAM_MODE_WALL_CLIMB), 8) & 2 != 0 { 0xA } else { 0x2710 };
     for _ in 0..d.oreg(23) + 5 {
         update(&mut c, &d, &p, Vec3::ZERO);
     }
@@ -118,7 +118,7 @@ fn camera_jump1_keeps_its_distance_in_the_air() {
     // The eye 20 from the at and steep (0x3800): the distance clamps to distMin, the pitch to
     // R_CAM_MAX_PITCH (OREG(5)).
     let at0 = Vec3::new(0.0, p.height(), 0.0);
-    let eye0 = sph_geo_add(at0, VecSph { r: 20.0, pitch: 0x3800, yaw: 0i16.wrapping_sub(0x7FFF) });
+    let eye0 = sph_geo_add(at0, VecSphGeo { r: 20.0, pitch: 0x3800, yaw: 0i16.wrapping_sub(0x7FFF) });
     let mut c = camera(&d, CAM_MODE_JUMP, eye0);
     assert_eq!(d.mode(c.setting, CAM_MODE_JUMP).unwrap().func, "CAM_FUNC_JUMP1");
     update(&mut c, &d, &p, Vec3::ZERO);
@@ -147,9 +147,9 @@ fn camera_unique1_hangs_at_its_pitch_target() {
     let p = player();
     let behind = 0i16.wrapping_sub(0x7FFF);
     let at0 = Vec3::new(0.0, p.height(), 0.0);
-    let eye0 = sph_geo_add(at0, VecSph { r: 120.0, pitch: 0x800, yaw: behind });
-    let mut c = camera(&d, CAM_MODE_HANG, eye0);
-    assert_eq!(d.mode(c.setting, CAM_MODE_HANG).unwrap().func, "CAM_FUNC_UNIQ1");
+    let eye0 = sph_geo_add(at0, VecSphGeo { r: 120.0, pitch: 0x800, yaw: behind });
+    let mut c = camera(&d, CAM_MODE_LEDGE_HANG, eye0);
+    assert_eq!(d.mode(c.setting, CAM_MODE_LEDGE_HANG).unwrap().func, "CAM_FUNC_UNIQ1");
     // Link's waist off to his right (+x, yaw 0x4000), more than 0x3A98 from the eye's yaw: the
     // yaw target moves by ((diff / R_CAM_DEFAULT_ANIM_TIME) / 4) * 3 a frame for that many
     // frames.
@@ -162,7 +162,7 @@ fn camera_unique1_hangs_at_its_pitch_target() {
     let adj = (((diff as i32 / timer as i32) / 4) * 3) as i16;
     // The pitch: pitchUpdateRateInv eased towards 100 by OREG(25), then the pitch eased from
     // eyeNext's towards pitchTarget (the HANG data's value 3, degrees) by its inverse.
-    let pitch_target = cam_deg_to_binang(d.value((c.setting, CAM_MODE_HANG), 3) as f32);
+    let pitch_target = cam_deg_to_binang(d.value((c.setting, CAM_MODE_LEDGE_HANG), 3) as f32);
     let rate = lerp_ceil_f(100.0, pitch_rate0, d.oreg(25) as f32 * 0.01, 0.1);
     assert_eq!(c.pitch_update_rate_inv, rate);
     // (eyeNextAtOffset is measured from the at before it moves.)

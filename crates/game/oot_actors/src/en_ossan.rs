@@ -2,7 +2,7 @@
 //! (`OssanType`); the Kokiri shop's (`OSSAN_TYPE_KOKIRI`, 0) is the one ported.
 //!
 //! **The Kokiri shopkeeper** stands behind the counter (33 in front of his placement) until
-//! Link talks to him (within 100: `func_8002F2CC`). Then:
+//! Link talks to him (within 100: `Actor_OfferTalk`). Then:
 //! 1. Link is hidden (`PLAYER_STATE2_29`), the shop's viewpoint turns to its browsing camera
 //!    (`Play_SetShopBrowsingViewpoint`: bg camera 1, `PIVOT_SHOP_BROWSING`), and the
 //!    shopkeeper drives the message box (`YREG(31)`): 0x9E "Welcome!", then 0x83, "Talk to the
@@ -16,7 +16,7 @@
 //!    prompt; "Buy" asks the item (`canBuyFunc`, `EnOssan_HandleCanBuyItem`): not enough
 //!    rupees (0x85), can't get it now (0x86), a quick buy ("Thanks a lot!", 0x84), or, the
 //!    first of a kind, the get-item flow: the shopkeeper offers it within 120
-//!    (`func_8002F434`), closes the box, and Player takes it when his talk ends; after its
+//!    (`Actor_OfferGetItem`), closes the box, and Player takes it when his talk ends; after its
 //!    text the item's price is charged (`buyEventFunc`) and 0x6B asks whether Link wants
 //!    something else.
 //! 4. B, "Quit" or "No" end it (`EnOssan_EndInteraction`).
@@ -35,7 +35,7 @@ use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{approach_f, step_to_s};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
 use oot_game::audio::sfx::{NA_SE_SY_CURSOR, NA_SE_SY_DECIDE, NA_SE_SY_ERROR, NA_SE_SY_MESSAGE_PASS};
 use oot_game::collision_check::MASS_IMMOVABLE;
@@ -56,8 +56,8 @@ pub const ACTOR_EN_OSSAN: i16 = 0x003D;
 const ACTOR_EN_ELF: i16 = 0x0018;
 const FAIRY_KOKIRI: i16 = 3;
 
-/// `En_Ossan_InitVars` (no draw until the shopkeeper's init sets one).
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_OSSAN, name: "En_Ossan", category: ACTORCAT_NPC, flags: ACTOR_FLAG_0 | ACTOR_FLAG_3 | ACTOR_FLAG_4, object: "gameplay_keep" };
+/// `En_Ossan_Profile` (no draw until the shopkeeper's init sets one).
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_OSSAN, name: "En_Ossan", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
 
 // `OssanType`.
 pub const OSSAN_TYPE_KOKIRI: i16 = 0;
@@ -87,7 +87,7 @@ pub const OSSAN_STATE_BROWSE_LEFT_SHELF: u8 = 6;
 pub const OSSAN_STATE_BROWSE_RIGHT_SHELF: u8 = 7;
 pub const OSSAN_STATE_LOOK_SHOPKEEPER: u8 = 8;
 pub const OSSAN_STATE_SELECT_ITEM: u8 = 9;
-pub const OSSAN_STATE_SELECT_ITEM_MILK_BOTTLE: u8 = 10;
+pub const OSSAN_STATE_SELECT_ITEM_BOTTLE_MILK_FULL: u8 = 10;
 pub const OSSAN_STATE_SELECT_ITEM_WEIRD_EGG: u8 = 11;
 pub const OSSAN_STATE_SELECT_ITEM_UNIMPLEMENTED: u8 = 12;
 pub const OSSAN_STATE_SELECT_ITEM_BOMBS: u8 = 13;
@@ -286,7 +286,7 @@ pub const SHOPKEEPER_STORES: [[ShopItem; 8]; 11] = [
     ],
 ];
 
-// `ITEMGETINF_*`, `EVENTCHKINF_*`, `INFTABLE_*` (`z64save.h`) the other shops read.
+// `ITEMGETINF_*`, `EVENTCHKINF_*`, `INFTABLE_*` (`save.h`) the other shops read.
 const ITEMGETINF_23: u16 = 0x23;
 const ITEMGETINF_24: u16 = 0x24;
 const ITEMGETINF_25: u16 = 0x25;
@@ -294,10 +294,10 @@ const ITEMGETINF_26: u16 = 0x26;
 const ITEMGETINF_2A: u16 = 0x2A;
 const ITEMGETINF_3F: u16 = 0x3F;
 const EVENTCHKINF_25: u16 = 0x25;
-const EVENTCHKINF_8C: u16 = 0x8C;
-const EVENTCHKINF_8D: u16 = 0x8D;
-const EVENTCHKINF_8E: u16 = 0x8E;
-const EVENTCHKINF_8F: u16 = 0x8F;
+const EVENTCHKINF_PAID_BACK_KEATON_MASK: u16 = 0x8C;
+const EVENTCHKINF_PAID_BACK_SKULL_MASK: u16 = 0x8D;
+const EVENTCHKINF_PAID_BACK_SPOOKY_MASK: u16 = 0x8E;
+const EVENTCHKINF_PAID_BACK_BUNNY_HOOD: u16 = 0x8F;
 const INFTABLE_FC: u16 = 0xFC;
 /// `QUEST_MEDALLION_FIRE`.
 const QUEST_MEDALLION_FIRE: u32 = 0x01;
@@ -645,7 +645,7 @@ impl EnOssan {
         if !self.are_shopkeeper_objects_loaded(play) {
             return;
         }
-        self.actor.flags &= !ACTOR_FLAG_4;
+        self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         self.actor.obj_bank_index = self.obj_bank_index1;
         self.shelves = play.actors.find(ACTOR_EN_TANA, ACTORCAT_PROP);
         if self.shelves.is_none() {
@@ -689,7 +689,7 @@ impl EnOssan {
         self.blink_timer = 20;
         self.eye_texture_idx = 0;
         self.blink = Blink::Wait;
-        self.actor.flags &= !ACTOR_FLAG_0;
+        self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         self.action = Action::Main;
     }
 
@@ -942,7 +942,7 @@ impl EnOssan {
 
     /// `EnOssan_SetLookToShopkeeperFromShelf`.
     fn set_look_to_shopkeeper_from_shelf(&mut self, play: &mut PlayState) {
-        play.audio.func_80078884(NA_SE_SY_CURSOR);
+        play.audio.play_sfx_centered(NA_SE_SY_CURSOR);
         self.draw_cursor = 0;
         self.state_flag = OSSAN_STATE_LOOK_SHOPKEEPER;
     }
@@ -1031,15 +1031,15 @@ impl EnOssan {
         } else {
             oot_game::item::rupees_change_by(&mut play.save, -price);
             if self.happy_mask_shop_state == OSSAN_HAPPY_STATE_REQUEST_PAYMENT_BUNNY_HOOD {
-                play.save.set_event_chk_inf(EVENTCHKINF_8F);
+                play.save.set_event_chk_inf(EVENTCHKINF_PAID_BACK_BUNNY_HOOD);
                 play.continue_textbox(0x70A9);
                 self.happy_mask_shop_state = OSSAN_HAPPY_STATE_ALL_MASKS_SOLD;
                 return;
             }
             match self.happy_mask_shop_state {
-                OSSAN_HAPPY_STATE_REQUEST_PAYMENT_KEATON_MASK => play.save.set_event_chk_inf(EVENTCHKINF_8C),
-                OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SPOOKY_MASK => play.save.set_event_chk_inf(EVENTCHKINF_8E),
-                OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SKULL_MASK => play.save.set_event_chk_inf(EVENTCHKINF_8D),
+                OSSAN_HAPPY_STATE_REQUEST_PAYMENT_KEATON_MASK => play.save.set_event_chk_inf(EVENTCHKINF_PAID_BACK_KEATON_MASK),
+                OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SPOOKY_MASK => play.save.set_event_chk_inf(EVENTCHKINF_PAID_BACK_SPOOKY_MASK),
+                OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SKULL_MASK => play.save.set_event_chk_inf(EVENTCHKINF_PAID_BACK_SKULL_MASK),
                 _ => {}
             }
             play.continue_textbox(0x70A7);
@@ -1060,7 +1060,7 @@ impl EnOssan {
                 }
             }
         } else if dialog_state == TEXT_STATE_EVENT && play.message_should_advance() {
-            play.audio.func_80078884(NA_SE_SY_MESSAGE_PASS);
+            play.audio.play_sfx_centered(NA_SE_SY_MESSAGE_PASS);
             match self.happy_mask_shop_state {
                 OSSAN_HAPPY_STATE_ALL_MASKS_SOLD => {
                     play.continue_textbox(0x70AA);
@@ -1109,7 +1109,7 @@ impl EnOssan {
     fn state_facing_shopkeeper(&mut self, play: &mut PlayState) {
         if play.message_state() == TEXT_STATE_CHOICE && !self.test_end_interaction(play) {
             if play.message_should_advance() && self.facing_shopkeeper_dialog_result(play) {
-                play.audio.func_80078884(NA_SE_SY_DECIDE);
+                play.audio.play_sfx_centered(NA_SE_SY_DECIDE);
                 return;
             }
             if self.stick_accum_x < 0 {
@@ -1119,7 +1119,7 @@ impl EnOssan {
                     self.state_flag = OSSAN_STATE_LOOK_SHELF_LEFT;
                     play.interface_ctx.set_do_action(DO_ACTION_DECIDE);
                     self.stick_left_prompt.is_enabled = false;
-                    play.audio.func_80078884(NA_SE_SY_CURSOR);
+                    play.audio.play_sfx_centered(NA_SE_SY_CURSOR);
                 }
             } else if self.stick_accum_x > 0 {
                 let next = self.set_cursor_index_from_neutral(0);
@@ -1128,7 +1128,7 @@ impl EnOssan {
                     self.state_flag = OSSAN_STATE_LOOK_SHELF_RIGHT;
                     play.interface_ctx.set_do_action(DO_ACTION_DECIDE);
                     self.stick_right_prompt.is_enabled = false;
-                    play.audio.func_80078884(NA_SE_SY_CURSOR);
+                    play.audio.play_sfx_centered(NA_SE_SY_CURSOR);
                 }
             }
         }
@@ -1214,11 +1214,11 @@ impl EnOssan {
                 play.continue_textbox(prompt);
                 self.stick_left_prompt.is_enabled = false;
                 self.stick_right_prompt.is_enabled = false;
-                play.audio.func_80078884(if matches!(params, SI_19 | SI_20) { NA_SE_SY_ERROR } else { NA_SE_SY_DECIDE });
+                play.audio.play_sfx_centered(if matches!(params, SI_19 | SI_20) { NA_SE_SY_ERROR } else { NA_SE_SY_DECIDE });
                 self.draw_cursor = 0;
                 self.state_flag = match params {
                     SI_KEATON_MASK | SI_SPOOKY_MASK | SI_SKULL_MASK | SI_BUNNY_HOOD | SI_MASK_OF_TRUTH | SI_ZORA_MASK | SI_GORON_MASK | SI_GERUDO_MASK => OSSAN_STATE_SELECT_ITEM_MASK,
-                    SI_MILK_BOTTLE => OSSAN_STATE_SELECT_ITEM_MILK_BOTTLE,
+                    SI_MILK_BOTTLE => OSSAN_STATE_SELECT_ITEM_BOTTLE_MILK_FULL,
                     SI_WEIRD_EGG => OSSAN_STATE_SELECT_ITEM_WEIRD_EGG,
                     SI_19 | SI_20 => OSSAN_STATE_SELECT_ITEM_UNIMPLEMENTED,
                     SI_BOMBS_5_R25 | SI_BOMBS_10 | SI_BOMBS_20 | SI_BOMBS_30 | SI_BOMBS_5_R35 => OSSAN_STATE_SELECT_ITEM_BOMBS,
@@ -1226,7 +1226,7 @@ impl EnOssan {
                 };
                 return true;
             }
-            play.audio.func_80078884(NA_SE_SY_ERROR);
+            play.audio.play_sfx_centered(NA_SE_SY_ERROR);
             return true;
         }
         false
@@ -1277,7 +1277,7 @@ impl EnOssan {
             if self.cursor_index != prev_index {
                 let t = self.selected_text(play);
                 play.continue_textbox(t);
-                play.audio.func_80078884(NA_SE_SY_CURSOR);
+                play.audio.play_sfx_centered(NA_SE_SY_CURSOR);
             }
         }
     }
@@ -1384,15 +1384,15 @@ impl EnOssan {
                 self.selected_out_of_stock(play);
             }
             CANBUY_RESULT_CANT_GET_NOW | CANBUY_RESULT_CANT_GET_NOW_5 => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x86);
             }
             CANBUY_RESULT_NEED_BOTTLE => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x96);
             }
             CANBUY_RESULT_NEED_RUPEES => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x85);
             }
             _ => {}
@@ -1439,11 +1439,11 @@ impl EnOssan {
                 self.selected_out_of_stock(play);
             }
             CANBUY_RESULT_CANT_GET_NOW => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x9D);
             }
             CANBUY_RESULT_NEED_RUPEES => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x85);
             }
             _ => {}
@@ -1462,11 +1462,11 @@ impl EnOssan {
                 self.selected_out_of_stock(play);
             }
             CANBUY_RESULT_CANT_GET_NOW => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x86);
             }
             CANBUY_RESULT_NEED_RUPEES => {
-                play.audio.func_80078884(NA_SE_SY_ERROR);
+                play.audio.play_sfx_centered(NA_SE_SY_ERROR);
                 self.set_state_cant_get_item(play, 0x85);
             }
             _ => {}
@@ -1640,7 +1640,7 @@ impl EnOssan {
 
     /// The way back to shopping from 0x6B's "Yes" (or its event end): Link turned back to the
     /// shopkeeper and hidden, the browsing camera, the hello text afresh, and a talk offer with
-    /// exchange item -1 so Player's get-item action ends into the talk (`func_8084E6D4`).
+    /// exchange item -1 so Player's get-item action ends into the talk (`Player_Action_8084E6D4`).
     fn continue_shopping(&mut self, play: &mut PlayState) {
         // "Continuing!!"
         if let Some(a) = play.player.and_then(|h| play.actors.actor_mut(h)) {
@@ -1652,7 +1652,7 @@ impl EnOssan {
         play.start_textbox(text, me);
         self.set_state_start_shopping(play, true);
         let a = self.actor.clone();
-        // func_8002F298(&this->actor, play, 100.0f, -1).
+        // Actor_OfferTalkExchangeEquiCylinder(&this->actor, play, 100.0f, -1).
         oot_game::npc::offer_talk_exchange(play, &a, 100.0, 0xFF);
     }
 
@@ -1783,7 +1783,7 @@ impl EnOssan {
         let choosing = matches!(
             self.state_flag,
             OSSAN_STATE_SELECT_ITEM
-                | OSSAN_STATE_SELECT_ITEM_MILK_BOTTLE
+                | OSSAN_STATE_SELECT_ITEM_BOTTLE_MILK_FULL
                 | OSSAN_STATE_SELECT_ITEM_WEIRD_EGG
                 | OSSAN_STATE_SELECT_ITEM_UNIMPLEMENTED
                 | OSSAN_STATE_SELECT_ITEM_BOMBS
@@ -1905,10 +1905,10 @@ impl EnOssan {
             let e = |f: u16| s.get_event_chk_inf(f);
             if s.inv_content(oot_game::item::ITEM_MASK_KEATON) == oot_game::item::ITEM_SOLD_OUT {
                 for (sold, paid, state, text) in [
-                    (ITEMGETINF_3B, EVENTCHKINF_8F, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_BUNNY_HOOD, 0x70C6),
-                    (ITEMGETINF_3A, EVENTCHKINF_8E, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SPOOKY_MASK, 0x70C5),
-                    (ITEMGETINF_39, EVENTCHKINF_8D, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SKULL_MASK, 0x70C4),
-                    (ITEMGETINF_38, EVENTCHKINF_8C, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_KEATON_MASK, 0x70A5),
+                    (ITEMGETINF_3B, EVENTCHKINF_PAID_BACK_BUNNY_HOOD, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_BUNNY_HOOD, 0x70C6),
+                    (ITEMGETINF_3A, EVENTCHKINF_PAID_BACK_SPOOKY_MASK, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SPOOKY_MASK, 0x70C5),
+                    (ITEMGETINF_39, EVENTCHKINF_PAID_BACK_SKULL_MASK, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SKULL_MASK, 0x70C4),
+                    (ITEMGETINF_38, EVENTCHKINF_PAID_BACK_KEATON_MASK, OSSAN_HAPPY_STATE_REQUEST_PAYMENT_KEATON_MASK, 0x70A5),
                 ] {
                     if g(sold) {
                         if !e(paid) {
@@ -1953,7 +1953,7 @@ impl EnOssan {
                 OSSAN_STATE_BROWSE_RIGHT_SHELF => self.state_browse_shelf(play, false),
                 OSSAN_STATE_LOOK_SHOPKEEPER => self.state_look_from_shelf_to_shopkeeper(play),
                 OSSAN_STATE_SELECT_ITEM => self.buy_prompt(play, Self::handle_can_buy_item),
-                OSSAN_STATE_SELECT_ITEM_MILK_BOTTLE => self.buy_prompt(play, Self::handle_can_buy_lon_lon_milk),
+                OSSAN_STATE_SELECT_ITEM_BOTTLE_MILK_FULL => self.buy_prompt(play, Self::handle_can_buy_lon_lon_milk),
                 OSSAN_STATE_SELECT_ITEM_WEIRD_EGG => self.buy_prompt(play, Self::handle_can_buy_weird_egg),
                 OSSAN_STATE_SELECT_ITEM_UNIMPLEMENTED => self.state_select_unimplemented_item(play),
                 OSSAN_STATE_SELECT_ITEM_BOMBS => self.state_select_bombs(play),

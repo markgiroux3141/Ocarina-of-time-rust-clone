@@ -14,7 +14,7 @@
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_4, ACTOR_FLAG_23, Actor};
+use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_THROW_ONLY, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -23,11 +23,11 @@ pub const ACTOR_EN_KUSA: i16 = 0x0125;
 /// `ACTOR_EN_INSECT`, `INSECT_TYPE_SPAWNED`.
 const ACTOR_EN_INSECT: i16 = 0x0020;
 const INSECT_TYPE_SPAWNED: i16 = 1;
-/// `ACTOR_FLAG_ENKUSA_CUT` (`z64actor.h`: bit 11).
-pub const ACTOR_FLAG_ENKUSA_CUT: u32 = 1 << 11;
+/// `ACTOR_FLAG_GRASS_DESTROYED` (`actor.h`: bit 11).
+pub const ACTOR_FLAG_GRASS_DESTROYED: u32 = 1 << 11;
 
-/// `En_Kusa_InitVars` (no draw until its object is in: `EnKusa_WaitObject` sets it).
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KUSA, name: "En_Kusa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_4 | ACTOR_FLAG_23, object: "gameplay_keep" };
+/// `En_Kusa_Profile` (no draw until its object is in: `EnKusa_WaitForObject` sets it).
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KUSA, name: "En_Kusa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: "gameplay_keep" };
 
 /// `OBJECT_GAMEPLAY_FIELD_KEEP`, `OBJECT_KUSA` (`object_table.h`).
 const OBJECT_GAMEPLAY_FIELD_KEEP: i16 = 0x0002;
@@ -43,19 +43,19 @@ const ENKUSA_TYPE_2: i16 = 2;
 /// `sCylinderInit`.
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
     base: ColliderInit {
-        col_type: COLTYPE_NONE,
+        col_type: COL_MATERIAL_NONE,
         at_flags: AT_NONE,
         ac_flags: AC_ON | AC_TYPE_PLAYER,
         oc_flags1: OC1_ON | OC1_TYPE_PLAYER | OC1_TYPE_2,
         oc_flags2: OC2_TYPE_2,
         shape: COLSHAPE_CYLINDER,
     },
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderBumpInit { dmg_flags: 0x4FC0_0758, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_NONE,
-        bumper_flags: BUMP_ON,
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC0_0758, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_NONE,
+        bumper_flags: ACELEM_ON,
         oc_elem_flags: OCELEM_ON,
     },
     dim: Cylinder16 { radius: 12, height: 44, y_shift: 0, pos: [0; 3] },
@@ -66,7 +66,7 @@ const COL_CHK_INFO_INIT: CollisionCheckInfoInit = CollisionCheckInfoInit { healt
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    /// `EnKusa_WaitObject`.
+    /// `EnKusa_WaitForObject`.
     WaitObject,
     /// `EnKusa_Main`.
     Main,
@@ -133,17 +133,17 @@ impl EnKusa {
         Box::new(k)
     }
 
-    /// `EnKusa_WaitObject`.
+    /// `EnKusa_WaitForObject`.
     fn wait_object(&mut self, play: &mut PlayState) {
         if self.obj_bank.is_some_and(|b| play.object_ctx.is_loaded(b)) {
-            if self.actor.flags & ACTOR_FLAG_ENKUSA_CUT != 0 {
+            if self.actor.flags & ACTOR_FLAG_GRASS_DESTROYED != 0 {
                 self.setup_cut();
             } else {
                 self.setup_main();
             }
             self.drawn = true;
             self.actor.obj_bank_index = self.obj_bank;
-            self.actor.flags &= !ACTOR_FLAG_4;
+            self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         }
     }
 
@@ -170,7 +170,7 @@ impl EnKusa {
     /// `EnKusa_SetupMain`.
     fn setup_main(&mut self) {
         self.setup_action(Action::Main);
-        self.actor.flags &= !ACTOR_FLAG_4;
+        self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     }
 
     /// `EnKusa_Main`.
@@ -189,7 +189,7 @@ impl EnKusa {
                 return;
             }
             self.setup_cut();
-            self.actor.flags |= ACTOR_FLAG_ENKUSA_CUT;
+            self.actor.flags |= ACTOR_FLAG_GRASS_DESTROYED;
         } else {
             if self.collider.base.oc_flags1 & OC1_TYPE_PLAYER == 0 && self.actor.xz_dist_to_player > 12.0 {
                 self.collider.base.oc_flags1 |= OC1_TYPE_PLAYER;
@@ -199,7 +199,7 @@ impl EnKusa {
                 play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
                 if self.actor.xz_dist_to_player < 400.0 {
                     play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
-                    // < 100: func_8002F580 offers the bush to Player's lift (not ported).
+                    // < 100: Actor_OfferCarry offers the bush to Player's lift (not ported).
                 }
             }
         }
@@ -234,7 +234,7 @@ impl EnKusa {
         self.setup_action(Action::Regrow);
         self.set_scale_small();
         self.actor.shape_rot = self.actor.home_rot;
-        self.actor.flags &= !ACTOR_FLAG_ENKUSA_CUT;
+        self.actor.flags &= !ACTOR_FLAG_GRASS_DESTROYED;
     }
 
     /// `EnKusa_Regrow`.
@@ -274,14 +274,14 @@ impl ActorImpl for EnKusa {
             Action::DoNothing => {}
             Action::Regrow => self.regrow(),
         }
-        self.actor.shape_y_offset = if self.actor.flags & ACTOR_FLAG_ENKUSA_CUT != 0 { -6.25 } else { 0.0 };
+        self.actor.shape_y_offset = if self.actor.flags & ACTOR_FLAG_GRASS_DESTROYED != 0 { -6.25 } else { 0.0 };
     }
     /// `EnKusa_Draw`: the stump when cut, else the type's bush.
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         if !self.drawn {
             return;
         }
-        let (file, dl) = if self.actor.flags & ACTOR_FLAG_ENKUSA_CUT != 0 {
+        let (file, dl) = if self.actor.flags & ACTOR_FLAG_GRASS_DESTROYED != 0 {
             ("object_kusa", "object_kusa_DL_0002E0")
         } else if self.ty() == ENKUSA_TYPE_0 {
             ("gameplay_field_keep", "gFieldBushDL")

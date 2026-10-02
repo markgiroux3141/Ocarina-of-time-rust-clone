@@ -1,5 +1,5 @@
-//! Ladder climbing on Link's house in Kokiri Forest (`func_8083F7BC` → `func_8083EC18`,
-//! `func_8084BF1C`, `func_8084C5F8`). The ladder is collision polys 786 and 787 of the scene
+//! Ladder climbing on Link's house in Kokiri Forest (`Player_ActionHandler_5` → `func_8083EC18`,
+//! `Player_Action_8084BF1C`, `Player_Action_8084C5F8`). The ladder is collision polys 786 and 787 of the scene
 //! (`WALL_FLAG_1`: wall type 2), facing −z at z = 1004 from the ground (y −80) to the porch
 //! (y 100); its top (polys 784 and 785, `WALL_FLAG_2`) faces the porch.
 
@@ -42,7 +42,7 @@ fn hold(w: &mut PlayState, stick_y: i8, n: usize) -> Vec<(Action, Vec3)> {
 
 #[test]
 fn child_link_climbs_the_ladder_to_his_house() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     // In front of the ladder, facing it (+z), with the camera behind: stick up walks at it.
     w.place_player(Vec3::new(-29.0, -80.0, 960.0), 0);
     // Stick up until the step off the top, then let go.
@@ -60,7 +60,7 @@ fn child_link_climbs_the_ladder_to_his_house() {
     // `wallDistance - 1` off its plane.
     assert!((at.x + 29.0).abs() < 8.0, "grabbed at {at:?}");
     assert!(at.z < 1004.0 && at.z > 990.0, "grabbed at {at:?}");
-    // It climbs (y rises through the rungs) and steps off the top (func_8084C5F8) onto the
+    // It climbs (y rises through the rungs) and steps off the top (Player_Action_8084C5F8) onto the
     // porch, standing at y 100.
     let top = run.iter().position(|(a, _)| *a == Action::ClimbEnd).expect("Link reaches the top");
     assert!(run[first..top].iter().all(|(a, _)| matches!(a, Action::Climb | Action::ItemPutAway)));
@@ -74,7 +74,7 @@ fn child_link_climbs_the_ladder_to_his_house() {
 
 #[test]
 fn child_link_climbs_down_from_his_porch() {
-    let Some(mut w) = enter("ENTR_SPOT04_3") else { return };
+    let Some(mut w) = enter("ENTR_KOKIRI_FOREST_3") else { return };
     // On the porch behind the ladder's top, facing the drop (-z). The porch's floor has bg
     // camera 4 (CAM_SET_PIVOT_IN_FRONT), whose eye is in front of the house, so the stick is
     // steered at the ladder's top (-29, 100, 990) rather than held up.
@@ -97,7 +97,7 @@ fn child_link_climbs_down_from_his_porch() {
     // ladder's top), Link hangs from the edge facing back (+z) and climbs down.
     assert!(run[grab].1.y > 50.0);
     assert_eq!(w.player().actor.shape_rot.y & !0xFF, 0, "facing the ladder (+z): {:#x}", w.player().actor.shape_rot.y);
-    // Down to the ground: stick down, then off the bottom (func_8084C5F8) standing.
+    // Down to the ground: stick down, then off the bottom (Player_Action_8084C5F8) standing.
     let mut down = Vec::new();
     for _ in 0..300 {
         down.extend(hold(&mut w, -60, 1));

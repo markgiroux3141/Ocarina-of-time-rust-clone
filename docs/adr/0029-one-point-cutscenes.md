@@ -29,18 +29,18 @@ interrupted main camera goes to `CAM_STAT_UNK3`, still updated but not the view)
 
 When a camera's timer reaches 0, `Camera_Finish` (the end of `Play_Draw`) makes its parent active
 again, takes it out of the queue and clears it; back at the main camera, Player's cutscene mode
-ends. The keyframe and spline tables (`z_onepointdemo_data.c`, and `Camera_Demo5`'s in
-`z_camera_data.c`) are statics in `code`: `SetInfo` and `Camera_Demo5` write into them (a
+ends. The keyframe and spline tables (`z_onepointdemo.c`, and `Camera_Demo5`'s in
+`z_camera_data.inc.c`) are statics in `code`: `SetInfo` and `Camera_Demo5` write into them (a
 case's timer, targets from the view, random offsets), and the cameras read them through
 pointers each frame. The camera functions also reach outside their camera: Player's cutscene
-mode (`func_8002DF38`), his position, another camera (`Camera_Copy`, `Camera_ChangeModeFlags`),
+mode (`Player_SetCsAction`), his position, another camera (`Camera_Copy`, `Camera_RequestModeImpl`),
 a new one-point cutscene, a sound.
 
 ## Decision
 
 - **The tables are in the pack** (`CameraData::onepoint`, pack format 15): every
   `OnePointCsFull` array (two-dimensional ones flattened), `CutsceneCameraPoint` array and `s16`
-  of `z_onepointdemo_data.c`, by declaration, and `Camera_Demo5`'s eight arrays, read from the
+  of `z_onepointdemo.c`, by declaration, and `Camera_Demo5`'s eight arrays, read from the
   C by the importer and checked byte for byte against `code` in the ROM (each `D_` symbol at its
   address's offset from one found by its bytes).
 - **The play state keeps them as statics** (`crate::onepoint::OnePointStatics`, with
@@ -51,8 +51,8 @@ a new one-point cutscene, a sound.
   `cs_id` (0x7FFF from `Camera_Init`), `data1` (the attention sound), `cs_info`
   (`OnePointCsInfo`) and `one_point_cam_data`; `PlayState` ports `OnePointCutscene_Init`,
   `_SetInfo`, `_SetAsChild`, `_RemoveCamera`, `_EndCutscene`, `_Attention`,
-  `_AttentionSetSfx`, `_CheckForCategory`, `func_800C0808` (with `Camera_InitPlayerSettings`
-  for a sub camera), `func_800C08AC`, `Play_SetCameraRoll` and `Camera_Finish`, called on the
+  `_AttentionSetSfx`, `_CheckForCategory`, `Play_InitCameraDataUsingPlayer` (with `Camera_InitDataUsingPlayer`
+  for a sub camera), `Play_ReturnToMainCam`, `Play_SetCameraRoll` and `Camera_Finish`, called on the
   active camera at the end of the frame as `Play_Draw` does.
 - **`play->view` is tracked** (`PlayState::view`: the eye, at and fov an active camera's update
   last set, `View_LookAt`), since one-point cutscenes start from it.
@@ -82,4 +82,4 @@ a new one-point cutscene, a sound.
   camera's yaw steers the routes.
 - Player's cutscene modes the attention camera asks for when the target is Player himself (12,
   69) and 3050's (5) aren't ported yet (`Door_Shutter` on Player, Phase 6); they're logged.
-- Quakes (`Quake_Add`) aren't ported; the cases that need them aren't either.
+- Quakes (`Quake_Request`) aren't ported; the cases that need them aren't either.

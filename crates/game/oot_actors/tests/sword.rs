@@ -1,6 +1,6 @@
 //! Milestone 5b checks: drawing the sword on B (the item change on `skelAnime2`), slashes
-//! (`func_80850224` → `func_80837948` → `func_808502D0`), combos, and putting the sword away.
-//! Expected values come from `z_player.c`'s tables (`D_808540F4`, `D_80854164`, `D_80854190`,
+//! (`Player_ActionHandler_7` → `func_80837948` → `Player_Action_808502D0`), combos, and putting the sword away.
+//! Expected values come from `z_player.c`'s tables (`sItemChangeInfo`, `sItemChangeTypes`, `D_80854190`,
 //! `D_80854480`) and code, not from the port.
 
 mod common;
@@ -21,15 +21,15 @@ fn b_draws_the_sword_and_slashes() {
     let d = w.data.clone();
     run(&mut w, &repeat(stick(0, 0), 2));
     let f = run(&mut w, &[b(stick(0, 0))]);
-    // func_80835F44(PLAYER_AP_SWORD_MASTER): anim type 0 → 1 is D_80854164[0][1] = -5, so the
-    // change plays D_808540F4[5] (link_normal_fighter2free) backwards at -1.2 × 2 on skelAnime2.
+    // Player_UseItem(PLAYER_IA_SWORD_MASTER): anim type 0 → 1 is sItemChangeTypes[0][1] = -5, so the
+    // change plays sItemChangeInfo[5] (link_normal_fighter2free) backwards at -1.2 × 2 on skelAnime2.
     assert_eq!(d.items.change_matrix[0][1], -5);
     assert_eq!(w.player().upper, UpperAction::Change);
     assert_eq!(d.anim_name(w.player().skel2.animation), "link_normal_fighter2free");
     assert!((w.player().skel2.play_speed + 2.4).abs() < 1e-6);
     assert_eq!(f[0].action, "StandingStill");
-    // The swap frame is D_808540F4[5].unk_04 - 1 = 9 (playing backwards from the last frame at
-    // 2.4 × 1.5 per game frame); the attack starts the same frame (D_80853614 set in func_80834A2C).
+    // The swap frame is sItemChangeInfo[5].changeFrame - 1 = 9 (playing backwards from the last frame at
+    // 2.4 × 1.5 per game frame); the attack starts the same frame (sUseHeldItem set in Player_UpperAction_ChangeHeldItem).
     let last = d.anims[w.player().skel2.animation].last_frame();
     let mut frames_to_swap = 1;
     let mut cur = last - 3.6;
@@ -41,7 +41,7 @@ fn b_draws_the_sword_and_slashes() {
     let a = f.iter().position(|x| x.action == "Attack").expect("slashed");
     assert_eq!(a + 1, frames_to_swap, "attack on the swap frame (last frame {last})");
     assert_eq!(w.player().held_item_ap, d.items.ap("SWORD_MASTER"));
-    assert_eq!(w.player().model_group, d.items.model_group("SWORD"));
+    assert_eq!(w.player().model_group, d.items.model_group("SWORD_AND_SHIELD"));
     assert_eq!(w.player().model_anim_type, 1, "sword + shield animation type");
     // Stick neutral, not targeting: func_80837818 → PLAYER_MWA_RIGHT_SLASH_1H.
     assert_eq!(f[a].anim, "link_fighter_Lside_kiru");
@@ -106,10 +106,10 @@ fn a_puts_the_sword_away() {
     run(&mut w, &s);
     assert_eq!(w.player().held_item_ap, d.items.ap("SWORD_MASTER"));
     assert_eq!(w.player().action, Action::StandingStill);
-    // func_8083C1DC: A, not locked on, heldItemActionParam >= PLAYER_AP_SWORD_MASTER →
-    // func_80835F44(ITEM_NONE): D_80854164[1][0] = 5, forwards at 1.2 (no item → no × 2).
-    // The press only queues the change (PLAYER_STATE1_8, set in the interrupt loop after this
-    // frame's func_80836670); func_808349DC starts it on the next frame.
+    // Player_ActionHandler_Roll: A, not locked on, heldItemActionParam >= PLAYER_IA_SWORD_MASTER →
+    // Player_UseItem(ITEM_NONE): sItemChangeTypes[1][0] = 5, forwards at 1.2 (no item → no × 2).
+    // The press only queues the change (PLAYER_STATE1_START_CHANGING_HELD_ITEM, set in the interrupt loop after this
+    // frame's Player_UpdateUpperBody); Player_UpperAction_Sword starts it on the next frame.
     run(&mut w, &[with(stick(0, 0), BTN_A)]);
     assert!(w.player().state1 & oot_actors::player::STATE1_8 != 0);
     run(&mut w, &[stick(0, 0)]);

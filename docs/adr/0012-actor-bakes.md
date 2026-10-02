@@ -10,7 +10,7 @@ ADR 0006 chose baked meshes plus a draw API, and ADR 0009 bakes what runtime sta
 Actors don't draw an object's lists as listed. For example:
 - `En_Kanban` calls the post's list, then `gSignRectangularDL` from `gameplay_keep`;
 - `En_Ko` draws a skeleton with a head limb from another object, the tunic and boots colours on segments 8 and 9, the eyes' texture on segment 0x0A, and a render mode on 0x0C that depends on its alpha;
-- the Z-target reticle is `gZTargetLockOnTriangleDL` after `Gfx_SetupDL_57`, not `_25`.
+- the Z-target reticle is `gLockOnReticleTriangleDL` after `Gfx_SetupDL_57`, not `_25`.
 
 What an actor draws depends on its C draw function. So the content crate knows it, and the importer can't guess it. The runtime can't run display lists either (ADR 0006).
 

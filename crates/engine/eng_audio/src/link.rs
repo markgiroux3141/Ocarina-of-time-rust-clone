@@ -1,8 +1,8 @@
 //! Between the game's thread and the audio thread: what the game does to the audio library
 //! (`GameOp`), and what it reads of it (`AudioView`).
 //!
-//! On the console both threads share `gAudioContext`. The game queues commands
-//! (`Audio_QueueCmd*`), hands them over (`Audio_ScheduleProcessCmds`), and reads a few fields
+//! On the console both threads share `gAudioCtx`. The game queues commands
+//! (`AudioThread_QueueCmd*`), hands them over (`AudioThread_ScheduleProcessCmds`), and reads a few fields
 //! directly: whether a player is enabled and its tempo, the IO ports, the channels' note
 //! priorities, the reset and load queues' messages. The audio thread runs on every retrace,
 //! three times per 20 Hz game frame.
@@ -18,15 +18,15 @@ use crate::context::AudioContext;
 /// One thing the game's thread does to the audio library, in the order it did them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameOp {
-    /// `Audio_QueueCmd` (and its typed variants): the op and args word, and the data word.
+    /// `AudioThread_QueueCmd` (and its typed variants): the op and args word, and the data word.
     Cmd(u32, u32),
-    /// `Audio_ScheduleProcessCmds`.
+    /// `AudioThread_ScheduleProcessCmds`.
     Schedule,
-    /// `Audio_ResetCmdQueue`.
+    /// `AudioThread_ResetCmdQueue`.
     ResetCmdQueue,
-    /// `func_800E5F88` (the spec change, `0xF9`): the audio side of it, as `AudioContext::func_800e5f88`.
+    /// `AudioThread_ResetAudioHeap` (the spec change, `0xF9`): the audio side of it, as `AudioContext::AudioThread_ResetAudioHeap`.
     ResetSpec(u8),
-    /// `Audio_NextRandom`'s `audRand` as the game's thread left it (both threads call it).
+    /// `AudioThread_NextRandom`'s `sAudioRandom` as the game's thread left it (both threads call it).
     SetAudRand(u32),
 }
 
@@ -35,7 +35,7 @@ pub enum GameOp {
 pub struct ChannelView {
     /// Not `sequenceChannelNone` (`IS_SEQUENCE_CHANNEL_VALID`).
     pub valid: bool,
-    /// `soundScriptIO`: the channel's IO ports (`func_800E6070`).
+    /// `soundScriptIO`: the channel's IO ports (`AudioThread_GetChannelIO`).
     pub sound_script_io: [i8; 8],
     /// `notePriority` (`Audio_SplitBgmChannels`).
     pub note_priority: u8,
@@ -48,12 +48,12 @@ pub struct PlayerView {
     /// `seqId` (not read by the game; for logs and tests).
     pub seq_id: u8,
     pub tempo: u16,
-    /// `soundScriptIO`: the player's IO ports (`func_800E60C4`).
+    /// `soundScriptIO`: the player's IO ports (`AudioThread_GetSeqPlayerIO`).
     pub sound_script_io: [i8; 8],
     pub channels: [ChannelView; 16],
 }
 
-/// What the game's thread reads of `gAudioContext`, taken after the audio side's retraces.
+/// What the game's thread reads of `gAudioCtx`, taken after the audio side's retraces.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AudioView {
     pub players: [PlayerView; 4],
@@ -64,7 +64,7 @@ pub struct AudioView {
     pub audio_reset_spec_id_to_load: u8,
     /// `func_800E6680`: the notes sounding.
     pub sounding_notes: i32,
-    /// `audioRandom`, `Audio_NextRandom`'s `audRand`, and `osGetCount()` as the audio side last
+    /// `audioRandom`, `AudioThread_NextRandom`'s `sAudioRandom`, and `osGetCount()` as the audio side last
     /// advanced it (the game's thread reads the count at its own time; here, at the view's).
     pub audio_random: u32,
     pub aud_rand: u32,
@@ -78,7 +78,7 @@ pub struct AudioView {
 impl AudioView {
     /// What the game reads before the audio side's first frame: `AudioLoad_Init` has loaded
     /// spec 0 at `refresh_rate` 60 (NTSC), no player is on. `updatesPerFrame` is
-    /// `AudioHeap_Init`'s arithmetic (`audio_heap.c`). The players' other fields stay zero
+    /// `AudioHeap_Init`'s arithmetic (`heap.c`). The players' other fields stay zero
     /// (the library's are its init's): the game reads them only of a player that plays.
     pub fn boot(tables: &crate::data::AudioTables) -> AudioView {
         const REFRESH_RATE: u32 = 60;
@@ -114,7 +114,7 @@ impl AudioContext {
                 }
                 GameOp::ResetCmdQueue => self.reset_cmd_queue(),
                 GameOp::ResetSpec(id) => {
-                    self.func_800e5f88(id as i32);
+                    self.audio_thread_reset_audio_heap(id as i32);
                 }
                 GameOp::SetAudRand(v) => self.aud_rand = v,
             }
@@ -158,14 +158,14 @@ impl AudioContext {
         self.audio_reset_queue.clear();
     }
 
-    /// `func_800E5F88`: starts the reset that loads spec `reset_preload_id` (`0xF9`).
+    /// `AudioThread_ResetAudioHeap`: starts the reset that loads spec `reset_preload_id` (`0xF9`).
     ///
     /// The C runs on the game's thread; here it runs as the audio side takes the game's frame
     /// (`GameOp::ResetSpec`), so the queues it empties and the fields it reads are the audio
     /// side's at that moment. Where the C blocks on `audioResetQueue` until a reset under way
     /// finishes (its status 1 or 2, so at most two more audio frames), the reset's steps run
     /// here at once, without those frames' output.
-    pub fn func_800e5f88(&mut self, reset_preload_id: i32) -> i32 {
+    pub fn audio_thread_reset_audio_heap(&mut self, reset_preload_id: i32) -> i32 {
         self.func_800e5f34();
         let reset_status = self.reset_status;
         if reset_status != 0 {

@@ -12,7 +12,7 @@ The working rules don't change:
 
 Reorder freely. The dependencies are noted, and nothing here is a commitment.
 
-## Where things stand (2026-10-01)
+## Where things stand (2026-10-02)
 
 **Done:** Phases 0 to 4 (GAME-01, GAME-02 and GAME-03). Kokiri Forest plays with:
 - collisions, props, climbing, Z-targeting, doors and the prerendered interiors;
@@ -60,8 +60,14 @@ cutscenes' music and sounds, and Player's cutscene modes from the C's tables; th
 across frames: the lights' override and blend, the rain, the lightning; the title cards; the
 opening's nightmare with its riders on their horses (skin skeletons, ADR 0030) and the
 drawbridge; the cutscenes checked against the C frame by frame), and the user has played the
-opening and the Deku Tree's talk by hand. Then Phase 6, the Deku Tree, on Master Quest,
-starting with the decomp upgrade (ADR 0028).
+opening and the Deku Tree's talk by hand.
+
+Now Phase 6, the Deku Tree, on Master Quest (GAME-05, [GAME-05-deku-tree.md](GAME-05-deku-tree.md)).
+Milestone 1, the decomp upgrade, is done ([ADR 0031](adr/0031-decomp-main.md)): the repo cites
+zeldaret/oot main at `52a510f`, migrated from `2f4c25d` through a generated name map
+(`docs/name-map`), the importer reads main's layout, and the pack is format 16. Every test passes
+and every render is the same bytes; the traces are the old ones' bytes once renamed. Next:
+milestone 2, damage and health.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -85,7 +91,7 @@ Done as planned, with one correction: the open mouth is `EVENTCHKINF_05`, not `E
 **Goal:** close the Kokiri Forest slice with its exit test from the plan: a headless scripted playthrough as a regression test.
 
 **What the C needs.** The Deku Tree's mouth is cutscene-driven (`z_bg_treemouth.c`):
-- Talking to the tree starts a cutscene (`D_808BCE20`, setting `EVENTCHKINF_0C` and `EVENTCHKINF_05`).
+- Talking to the tree starts a cutscene (`gDekuTreeMeetingCs`, setting `EVENTCHKINF_0C` and `EVENTCHKINF_05`).
 - The open mouth is drawn from `EVENTCHKINF_07` (env alpha 2150 instead of 500). *(Corrected in the milestone: `EVENTCHKINF_07` is the tree dead, set by `Door_Warp1` after Gohma, and only picks the colour. `EVENTCHKINF_05`, set by `func_808BC9EC` when Link says yes, holds the mouth open.)*
 
 Without a cutscene system, this milestone drives the mouth by save flags. The talk cutscene waits for Phase 4.
@@ -104,7 +110,7 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
   4. talk to a Kokiri child;
   5. cut a bush and collect its drop;
   6. walk to the tree;
-  7. into the mouth: the exit to `ENTR_YDAN_0`, ending in the Deku Tree scene.
+  7. into the mouth: the exit to `ENTR_DEKU_TREE_0`, ending in the Deku Tree scene.
 
   The same inputs also write a JSON trace, added to the goldens.
 - **The interactive checks** listed at the end of GAME-02, against Project64, before recording the playthrough.
@@ -123,7 +129,7 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
    - `SaveContext`'s inventory: items, equipment, upgrades, quest items, ammo. A new save as `Sram_InitNewSave` makes it.
    - `Item_Give` in full for what Kokiri Forest gives.
    - Player's get-item flow:
-     - `func_8002F434` / `func_8002F554` (later decomps call the first `Actor_OfferGetItem`);
+     - `Actor_OfferGetItem` / `Actor_OfferGetItemNearby`;
      - the get-item action with its animation;
      - `GetItem_Draw` and its draw functions (bakes, including `Gfx_TwoTexScroll`, which also fixes the placed recovery hearts);
      - the item's text.
@@ -146,12 +152,12 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
    - Import the cutscene scripts.
    - `csCtx`: the camera commands, Player's and the actors' cues (`npcActions`), text commands through the message box, transitions and terminators.
    - `Cutscene_HandleEntranceTriggers` and `cutsceneTrigger`.
-   - Player's cutscene modes (`func_8002DF54`), which also completes `En_Wonder_Talk2`'s forced texts.
-   - **Exit:** talking to the Deku Tree plays `D_808BCE20` to the end, yes plays `D_808BD520`, and his mouth opens (`EVENTCHKINF_05`); the scripted run from GAME-02 milestone 4 opens it the game's way, without the preset. *(Done with a new route, `NewSaveDekuTree`, from a new save through the shop and Mido; GAME-02's run keeps its preset.)*
+   - Player's cutscene modes (`Player_SetCsActionWithHaltedActors`), which also completes `En_Wonder_Talk2`'s forced texts.
+   - **Exit:** talking to the Deku Tree plays `gDekuTreeMeetingCs` to the end, yes plays `gDekuTreeMouthOpeningCs`, and his mouth opens (`EVENTCHKINF_05`); the scripted run from GAME-02 milestone 4 opens it the game's way, without the preset. *(Done with a new route, `NewSaveDekuTree`, from a new save through the shop and Mido; GAME-02's run keeps its preset.)*
 5. **Navi** (done: see [GAME-03](GAME-03-road-to-deku-tree.md) milestone 5 and ADR 0023).
    - `En_Elf` as Link's fairy: following, the target reticle's `naviRefPos`, C-Up and her text.
    - The Kokiri children's fairies.
-   - The game's opening: Navi waking Link (`ENTR_LINK_HOME` with its cutscene layer). The cutscene system covers it now; the pack needs the scene layers 4 and up, and Player the cutscene modes the wake-up's script cues.
+   - The game's opening: Navi waking Link (`ENTR_LINKS_HOUSE` with its cutscene layer). The cutscene system covers it now; the pack needs the scene layers 4 and up, and Player the cutscene modes the wake-up's script cues.
    - Navi's cues in the Deku Tree's talk (`npcActions[8]`).
    - **Exit:** a new save starts as the game does, and C-Up talks to Navi. *(Done: a new file plays the opening, four cutscene layers traced from their terminators; the Deku Tree's narration comes before the nightmare, so the wake-up is Link's house's layer 4, not the new file's 5.)*
 
@@ -165,13 +171,13 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
 
 1. **The import and the synth** (done: see [GAME-04](GAME-04-audio.md) milestone 1, ADRs 0024 and 0025):
    - soundfonts, samples and sequences into the pack;
-   - an `eng_audio` crate: an output device (for example `cpal`), and a synthesiser that follows `audio_synthesis.c` (ADPCM playback, envelopes, pan, reverb);
+   - an `eng_audio` crate: an output device (for example `cpal`), and a synthesiser that follows `synthesis.c` (ADPCM playback, envelopes, pan, reverb);
    - an ADR on how faithful the mixer is.
    - *(Done whole: the pack holds the ROM's audio files as they are; the library, the sequence
      player included, and the microcode are ported, offline and through the device.)*
 2. **The game's music** (done: see [GAME-04](GAME-04-audio.md) milestone 2, ADR 0026):
-   - `audio_seqplayer.c` driving the synth, including the game's IO ports;
-   - the scene's music (`Environment_PlaySceneSequence`, `func_800F5550` and the rest of `code_800EC960.c`), the ambience (`Audio_PlayNatureAmbienceSequence`).
+   - `seqplayer.c` driving the synth, including the game's IO ports;
+   - the scene's music (`Environment_PlaySceneSequence`, `Audio_PlaySceneSequence` and the rest of `general.c`), the ambience (`Audio_PlayNatureAmbienceSequence`).
    - **Exit:** Kokiri Forest's music plays and loops like the game. *(Done headless, checked
      command for command against the C, and in the window with no `--music`: the scenes'
      sound settings from the pack, the spec changes, the fades between scenes, the forest's
@@ -188,7 +194,7 @@ Without a cutscene system, this milestone drives the mouth by save flags. The ta
 
 **Goal:** finish the cutscenes between Phase 5 and Phase 6 (decided 2026-10-01): what GAME-03's
 cutscene system left out, the one-point cutscenes, and the camera modes still on the fallback.
-On decomp `2f4c25d`'s names; Phase 6's upgrade migrates them. See
+On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
 [GAME-04b-cutscenes.md](GAME-04b-cutscenes.md).
 
 1. **One-point cutscenes** (done, ADR 0029): `z_onepointdemo.c`, the cameras' queue and
@@ -220,7 +226,8 @@ On decomp `2f4c25d`'s names; Phase 6's upgrade migrates them. See
   the upgrade brings named functions such as `Player_Action_*`, and the existing citations move
   to the new names through an address-based map.
 
-1. **The decomp upgrade** (ADR 0028, superseding ADR 0004's pin):
+1. **The decomp upgrade** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 1 and
+   [ADR 0031](adr/0031-decomp-main.md), which supersedes ADR 0004's pin):
    - an address-based map from `2f4c25d`'s names to the new commit's: both build gc-eu-mq-dbg,
      so functions and statics pair by address in the two builds' symbol files (per overlay),
      fields by offset in the two commits' headers; generated by a tool, kept as a file, the
@@ -230,6 +237,8 @@ On decomp `2f4c25d`'s names; Phase 6's upgrade migrates them. See
    - the importer migrated to the new decomp's layout (paths, the C and headers it parses, the
      asset XMLs and extraction), the pack's record names that change renamed (a format bump);
    - **Exit:** every test passes and the goldens are the same bytes, on the new commit.
+     *(Done on zeldaret/oot main at `52a510f`: every test and render the same; the 30 traces
+     that carry C names re-recorded, each the old one's bytes once renamed through the map.)*
 2. **Damage and health:**
    - Player taking damage: knockback, invincibility frames, `Health_ChangeBy`. *(Mostly done in GAME-03 milestone 2 for the boulder, ADR 0020: the body hit, the stagger, the knockdown, the invincibility timer, the fall damage. Left: kinds 3 and 4 (frozen, shocked), the hit while swimming, burning, the red flash.)*
    - death and game over (`Play_TriggerVoidOut` exists);
@@ -259,7 +268,7 @@ On decomp `2f4c25d`'s names; Phase 6's upgrade migrates them. See
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:
-- **Rendering:** actor culling (`func_800314B0` / `func_800314D4` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`), the effect systems (`EffectSs`, `Effect`). The first effects to want: the bushes' and rocks' flying pieces (`EffectSsKakera` from `EnKusa_SpawnFragments` and `EnIshi`), and dust.
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`), the effect systems (`EffectSs`, `Effect`). The first effects to want: the bushes' and rocks' flying pieces (`EffectSsKakera` from `EnKusa_SpawnFragments` and `EnIshi`), and dust.
 - **World:** time passing (`Environment_Update`'s clock), day/night, weather.
 - **HUD and messages:** the minimap; the item icons and backgrounds in text; the ocarina modes.
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported.

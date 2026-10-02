@@ -6,7 +6,7 @@
 ## Context
 
 The horses (`object_horse_zelda`, `object_horse_ganon`, Epona's `object_horse` and Phase 6's
-Phantom Ganon's) are *skin* skeletons (`z64skin.h`, `LimbType="Skin"` in the XMLs), which the
+Phantom Ganon's) are *skin* skeletons (`skin.h`, `LimbType="Skin"` in the XMLs), which the
 importer skipped. The opening's nightmare needs two of them (`En_Viewer` types 0 and 4).
 
 **How the C draws a skin** (`z_skin.c`, `z_skin_awb.c`, `z_skin_matrix.c`). The skeleton's limbs

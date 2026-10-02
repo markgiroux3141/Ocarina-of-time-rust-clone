@@ -6,30 +6,30 @@
 ## Context
 
 **A new file starts with cutscenes.** The file select's `Sram_InitSave` (`z_sram.c:696`) enters
-`ENTR_LINK_HOME_0` as a child at 10:00 with `cutsceneIndex` 0xFFF1. `Play_Init` then loads the
+`ENTR_LINKS_HOUSE_0` as a child at 10:00 with `cutsceneIndex` 0xFFF1. `Play_Init` then loads the
 scene's cutscene layer `SCENE_LAYER_CUTSCENE_FIRST + (cutsceneIndex & 0xF)`: Link's house's
-layer 5. Traced from the headers and the terminators (`Cutscene_Command_Terminator`), the
+layer 5. Traced from the headers and the terminators (`CutsceneCmd_Destination`), the
 opening is a chain of four layers:
 
 | Layer | Script | What it shows | Its terminator |
 |---|---|---|---|
-| Link's house 5 (0xFFF1) | 0x15D0 | The Deku Tree's narration (0x109D to 0x109F) over Link asleep (cues 0x1C, 0x1D) | 35 at 280: `ENTR_SPOT00_0`, 0xFFF0, `FADE_BLACK_FAST` |
-| Hyrule Field 4 (0xFFF0) | 0x12400 | The nightmare: Link at the drawbridge in the storm (cues 5, 1, 6), Zelda's escape (`En_Viewer`s) | 11 at 540: `ENTR_SPOT04_0`, 0xFFF3, `FADE_WHITE` |
-| Kokiri Forest 7 (0xFFF3) | 0xA6D0 | The Deku Tree sends Navi (0x1099, 0x109A, her cues in `npcActions[8]`), then her flight through the village (the camera's 64-point list) | 10 at 940: `ENTR_LINK_HOME_0`, 0xFFF0, `FADE_BLACK` |
+| Link's house 5 (0xFFF1) | 0x15D0 | The Deku Tree's narration (0x109D to 0x109F) over Link asleep (cues 0x1C, 0x1D) | 35 at 280: `ENTR_HYRULE_FIELD_0`, 0xFFF0, `FADE_BLACK_FAST` |
+| Hyrule Field 4 (0xFFF0) | 0x12400 | The nightmare: Link at the drawbridge in the storm (cues 5, 1, 6), Zelda's escape (`En_Viewer`s) | 11 at 540: `ENTR_KOKIRI_FOREST_0`, 0xFFF3, `FADE_WHITE` |
+| Kokiri Forest 7 (0xFFF3) | 0xA6D0 | The Deku Tree sends Navi (0x1099, 0x109A, her cues in `npcActions[8]`), then her flight through the village (the camera's 64-point list) | 10 at 940: `ENTR_LINKS_HOUSE_0`, 0xFFF0, `FADE_BLACK` |
 | Link's house 4 (0xFFF0) | 0x1040 | Navi wakes Link (0x1095, 0x1096, 0x1000, 0x1098; cues 0x1C to 0x1F, then 5) | none: `CS_MISC` 12 at 647 ends it |
 
 So the wake-up is layer 4, not the new file's layer 5.
 
 **What that needs.** The pack held scene layers 0 to 3 only, and a layer's script was the key of
 the XML `<Cutscene>` symbol at its header's offset: no XML names these four. The entrances use
-two transitions the port ended at once, `TRANS_TYPE_CS_BLACK_FILL` (`ENTR_LINK_HOME_0_5`) and
-`TRANS_TYPE_FADE_WHITE_CS_DELAYED` (`ENTR_SPOT04_0_7`), both driven by the script's
+two transitions the port ended at once, `TRANS_TYPE_CS_BLACK_FILL` (`ENTR_LINKS_HOUSE_0_5`) and
+`TRANS_TYPE_FADE_WHITE_CS_DELAYED` (`ENTR_KOKIRI_FOREST_0_7`), both driven by the script's
 `cutsceneTransitionControl`. Player's cutscene modes 9 and 38 to 41 weren't ported.
 
 **Navi was a placeholder** everywhere `En_Elf` spawns (Player, the Kokiri, Mido, the
 shopkeeper, the item drops), and with her the target context's `naviRefPos`, Player's
 `naviTextId` and C-Up, and her cues in the Deku Tree's talk. Her C-Up text comes from a
-per-scene message script (`play->cUpElfMsgs`, `sNaviMsgFiles`, picked by
+per-scene message script (`play->naviQuestHints`, `sNaviQuestHintFiles`, picked by
 `SCENE_CMD_ID_SPECIAL_FILES`) that `z_elf_message.c` interprets. She carries two point lights
 (`z_lights.c`), and the renderer had only the frame's ambient and two directional lights.
 
@@ -45,10 +45,11 @@ per-scene message script (`play->cUpElfMsgs`, `sNaviMsgFiles`, picked by
     the growth is the layers' own actor lists and headers. Importing only the opening's four
     would save little, and the terminators already reach dozens of the others.
   - A cutscene layer's rooms are baked as a child's by day at 10:00, the new file's; the layer
-    number reaches the draw configs that read it (`Scene_DrawConfigSpot04`'s layers 4 and 6).
+    number reaches the draw configs that read it (`Scene_DrawConfigKokiriForest`'s layers 4 and 6).
 - **A layer's script without an XML name is keyed by its file and offset**
-  (`keys::cutscene_at`: `cutscene/spot04_scene/0xA6D0`), found by walking every layer's header
-  and the script to its `CS_END` (83 of them). Named ones keep their symbol's key. They join
+  (`keys::cutscene_at`: `cutscene/spot04_scene/0xA6D0`; ADR 0031's decomp names them all, that one
+  `gKokiriForestIntroNaviFlyingCs`), found by walking every layer's header
+  and the script to its `CS_END_OF_SCRIPT` (83 of them). Named ones keep their symbol's key. They join
   `CutsceneTables.scripts` as `<file>/0x<offset>`.
 - **`Play_Init` loads the cutscene layer,** with the special cases (Hyrule Field, Kokiri Forest)
   only outside them, and `Environment_Init`'s `cutsceneTransitionControl = 0`.
@@ -67,23 +68,23 @@ per-scene message script (`play->cUpElfMsgs`, `sNaviMsgFiles`, picked by
     segment 1 (the billboard `gGlowCircleSmallDL` multiplies in) as the identity, applied at draw
     time to limb 8, which `EnElf_OverrideLimbDraw` puts at its parent's origin, unrotated, at its
     pulsing scale.
-- **The target context has Navi's half of `func_8002C7BC`:** `naviRefPos` eased over four frames
-  (`unk_40`), `activeCategory`, `Actor_SetNaviToActor`'s colours, `func_8002C0C0` after Player
+- **The target context has Navi's half of `Attention_Update`:** `naviRefPos` eased over four frames
+  (`naviMoveProgressFactor`), `activeCategory`, `Attention_SetNaviState`'s colours, `Attention_Init` after Player
   spawns.
 - **Navi's C-Up texts are the ROM's bytes** (`table/elf_messages`): `elf_message_field` and
-  `elf_message_ydan` whole, and `code`'s `sChildSariaMsgs` and `sAdultSariaMsgs`. The importer
-  builds each from its `ELF_MSG_*` macros (`z64elf_message.h`'s packing, the constants read from
+  `elf_message_ydan` whole, and `code`'s `sChildSariaQuestHints` and `sAdultSariaQuestHints`. The importer
+  builds each from its `QUEST_HINT_*` macros (`quest_hint_commands.h`'s packing, the constants read from
   the headers) and checks them against the ROM; `oot_game::elf_message` is `z_elf_message.c`.
   `LayerData.c_up_elf_msg_num` is the special-files command's number.
 - **Player:** `Player_SpawnFairy` (`naviActor`, only in `GAMEMODE_NORMAL` and the credits),
-  `naviTextId` (cleared at the end of each update), the Navi branch of `func_8083B644` and
-  `func_80853148` (her talk request, `func_80835EA4(play, 0xB)`), `Interface_SetNaviCall`; the
-  opening's modes 9 and 38 to 41 through the typed handlers they use (`func_80850ED8`,
-  `func_8083303C`, `func_808330EC`), and the shadow they switch off and on; init modes 5 and 6 as
+  `naviTextId` (cleared at the end of each update), the Navi branch of `Player_ActionHandler_Talk` and
+  `Player_StartTalking` (her talk request, `Player_SetTurnAroundCamera(play, 0xB)`), `Interface_SetNaviCall`; the
+  opening's modes 9 and 38 to 41 through the typed handlers they use (`Player_AnimChangeOnceMorphZeroRootYawSpeed`,
+  `Player_AnimReplacePlayOnce`, `Player_AnimReplacePlayLoop`), and the shadow they switch off and on; init modes 5 and 6 as
   13 in a cutscene layer. Player's `actor.focus.pos` is now the head, as its draw sets it.
 - **Point lights are drawn.** `oot_game::lights` is `LightContext`'s list and `Lights_BindPoint`.
   `PlayState::draw` binds the list at each actor's position (`Actor_Draw`'s `Lights_BindAll`, none
-  with `ACTOR_FLAG_22`) into its draws' `DrawParams::lights`; the renderer adds up to three to
+  with `ACTOR_FLAG_IGNORE_POINT_LIGHTS`) into its draws' `DrawParams::lights`; the renderer adds up to three to
   the lit materials' directional lighting. The rooms get none, as in the C. The glow halo
   (`Lights_GlowCheck`, `Lights_DrawGlow`) isn't drawn.
 - **An init's children get their parent.** `Actor_SpawnAsChild` from an actor's init (Mido's
@@ -93,7 +94,7 @@ per-scene message script (`play->cUpElfMsgs`, `sNaviMsgFiles`, picked by
   for file 2, then `FileSelect_LoadGame`), `--new-file` in the game and the sandbox.
 - **The new routes don't move the old ones.** `Route::NewFileDekuTree` plays the opening, then
   the new save's run from where the wake-up leaves Link, with C-Up to Navi on the plateau. The
-  existing routes still start at `ENTR_LINK_HOME_0` with `cutsceneIndex` 0, so their traces keep
+  existing routes still start at `ENTR_LINKS_HOUSE_0` with `cutsceneIndex` 0, so their traces keep
   their frames.
 
 ## Consequences

@@ -1,11 +1,11 @@
 //! Cutscene scripts (docs/adr/0022-cutscenes.md): the pack holds each one as the ROM's bytes.
 //!
 //! - **Scene scripts** are the `<Cutscene>` symbols of the scene XMLs (73). Their length isn't
-//!   stored anywhere: `scene_script` walks the commands from the symbol's offset to `CS_END`,
-//!   as `Cutscene_ProcessCommands` would (`oot_game::cutscene::walk`).
+//!   stored anywhere: `scene_script` walks the commands from the symbol's offset to `CS_END_OF_SCRIPT`,
+//!   as `Cutscene_ProcessScript` would (`oot_game::cutscene::walk`).
 //! - **Overlay scripts** are the `CutsceneData` arrays of the actors' C (27, in
 //!   `*_cutscene_data*.c`), whose offsets in their overlay no XML gives. `expand` builds each
-//!   array's words from its macros, with `z64cutscene_commands.h`'s own definitions, and
+//!   array's words from its macros, with `cutscene_commands.h`'s own definitions, and
 //!   `overlay_scripts` finds those words in the overlay's file in the ROM and takes the ROM's
 //!   bytes. An array that isn't found is an import error.
 //! - **`sEntranceCutsceneTable`** (`z_demo.c`) names each entrance's script by symbol.
@@ -21,11 +21,11 @@ use oot_game::scene::EntranceInfo;
 use crate::csrc::{find_initializer, parse_enum, parse_int, strip_comments};
 use crate::rom::Rom;
 
-/// The script at `offset` in a scene file, through its `CS_END`.
+/// The script at `offset` in a scene file, through its `CS_END_OF_SCRIPT`.
 pub fn scene_script(data: &[u8], offset: usize) -> Result<Vec<u8>> {
     let d = data.get(offset..).context("offset past the file")?;
     let (_, end) = walk(d).map_err(|e| anyhow::anyhow!("{e}"))?;
-    let end = end.context("no CS_END")?;
+    let end = end.context("no CS_END_OF_SCRIPT")?;
     Ok(d[..end].to_vec())
 }
 
@@ -36,12 +36,15 @@ struct Define {
     body: String,
 }
 
-/// The macros of `z64cutscene_commands.h`, and the constants their arguments use: the
-/// `CutsceneCmd` and `CutsceneTerminatorDestination` enums and `CS_CMD_CONTINUE` /
-/// `CS_CMD_STOP` (`z64cutscene.h`).
+/// The macros of `cutscene_commands.h`, and the constants their arguments use: the
+/// `CutsceneCmd` and `CutsceneDestination` enums and `CS_CAM_CONTINUE` /
+/// `CS_CAM_STOP` (`cutscene.h`).
+#[derive(Clone)]
 pub struct Macros {
     defines: HashMap<String, Define>,
     consts: HashMap<String, i64>,
+    /// Everything else an argument may name: `player.h`'s `PLAYER_CUEID_*`, the file's own enums.
+    names: crate::csrc::Macros,
 }
 
 fn split_top(s: &str) -> Vec<String> {
@@ -91,8 +94,9 @@ fn subst(s: &str, map: &HashMap<&str, &str>) -> String {
 
 impl Macros {
     pub fn load(decomp: &Path) -> Result<Macros> {
-        let cmds = std::fs::read_to_string(decomp.join("include/z64cutscene_commands.h"))?;
-        let header = std::fs::read_to_string(decomp.join("include/z64cutscene.h"))?;
+        // As IDO builds it (`CS_FLOAT`'s `#else`: the float's bits).
+        let cmds = crate::csrc::read_c(decomp, "include/cutscene_commands.h")?;
+        let header = crate::csrc::read_c(decomp, "include/cutscene.h")?;
         let mut defines = HashMap::new();
         let joined = strip_comments(&cmds).replace("\\\r\n", " ").replace("\\\n", " ");
         for line in joined.lines() {
@@ -110,27 +114,37 @@ impl Macros {
             defines.insert(name, d);
         }
         let mut consts = HashMap::new();
-        for member in ["CS_CMD_CAM_EYE", "KOKIRI_FOREST_INTRO"] {
+        for member in ["CS_CMD_CAM_EYE_SPLINE", "CS_DEST_KOKIRI_FOREST_INTRO"] {
             for (v, n) in parse_enum(&header, member) {
                 consts.insert(n, v);
             }
         }
-        anyhow::ensure!(consts.get("CS_CMD_TERMINATOR") == Some(&0x3E8), "CutsceneCmd not read from z64cutscene.h");
-        anyhow::ensure!(consts.get("KOKIRI_FOREST_INTRO") == Some(&0x0B), "CutsceneTerminatorDestination not read from z64cutscene.h");
-        // `#define CS_CMD_CONTINUE 0`, `#define CS_CMD_STOP -1`.
+        anyhow::ensure!(consts.get("CS_CMD_DESTINATION") == Some(&0x3E8), "CutsceneCmd not read from cutscene.h");
+        anyhow::ensure!(consts.get("CS_DEST_KOKIRI_FOREST_INTRO") == Some(&0x0B), "CutsceneDestination not read from cutscene.h");
+        // `#define CS_CAM_CONTINUE 0`, `#define CS_CAM_STOP -1`.
         for l in strip_comments(&header).lines() {
             if let Some(r) = l.trim().strip_prefix("#define ") {
                 let mut it = r.split_whitespace();
                 if let (Some(n), Some(v)) = (it.next(), it.next())
-                    && n.starts_with("CS_CMD_")
+                    && n.starts_with("CS_CAM_")
                     && let Some(v) = parse_int(v)
                 {
                     consts.insert(n.to_string(), v);
                 }
             }
         }
-        anyhow::ensure!(consts.get("CS_CMD_STOP") == Some(&-1), "CS_CMD_STOP not read from z64cutscene.h");
-        Ok(Macros { defines, consts })
+        anyhow::ensure!(consts.get("CS_CAM_STOP") == Some(&-1), "CS_CAM_STOP not read from cutscene.h");
+        let mut names = crate::csrc::Macros::read(decomp, &["include/cutscene.h", "include/player.h"])?;
+        // `NA_BGM_*` (`sequence.h` builds the enum from the table).
+        names.add_table(&crate::csrc::read_c(decomp, "include/tables/sequence_table.h")?, 1);
+        Ok(Macros { defines, consts, names })
+    }
+
+    /// With the macros and enums of `src` (an overlay's own C) added.
+    pub fn with_source(&self, src: &str) -> Macros {
+        let mut m = self.clone();
+        m.names.add(src);
+        m
     }
 
     fn int(&self, s: &str) -> Result<i64> {
@@ -144,7 +158,7 @@ impl Macros {
         if let Some(r) = s.strip_prefix('(').and_then(|r| r.strip_suffix(')')) {
             return self.int(r);
         }
-        parse_int(s).with_context(|| format!("not an integer: {s}"))
+        parse_int(s).or_else(|| self.names.eval(s)).with_context(|| format!("not an integer: {s}"))
     }
 
     fn float(&self, s: &str) -> Result<f32> {
@@ -169,7 +183,7 @@ impl Macros {
             }
             _ => (item, None),
         };
-        // command_macros_base.h, and CMD_F (z64cutscene_commands.h: a float's bits).
+        // command_macros_base.h, and CMD_F (cutscene_commands.h: a float's bits).
         let a = |i: usize| -> Result<i64> { self.int(args.as_ref().and_then(|v| v.get(i)).with_context(|| format!("{item}: argument {i}"))?) };
         let w = match (name, &args) {
             ("CMD_W" | "CMD_PTR", Some(_)) => Some(a(0)? as u32),
@@ -177,7 +191,11 @@ impl Macros {
             ("CMD_BBH", Some(_)) => Some(Self::shiftl(a(0)?, 24, 8) | Self::shiftl(a(1)?, 16, 8) | Self::shiftl(a(2)?, 0, 16)),
             ("CMD_HBB", Some(_)) => Some(Self::shiftl(a(0)?, 16, 16) | Self::shiftl(a(1)?, 8, 8) | Self::shiftl(a(2)?, 0, 8)),
             ("CMD_BBBB", Some(_)) => Some(Self::shiftl(a(0)?, 24, 8) | Self::shiftl(a(1)?, 16, 8) | Self::shiftl(a(2)?, 8, 8) | Self::shiftl(a(3)?, 0, 8)),
-            ("CMD_F", Some(v)) => Some(self.float(&v[0])?.to_bits()),
+            // `CMD_F(CS_FLOAT(ieee754bin, f))`: IDO's branch of `CS_FLOAT` gives the bits.
+            ("CMD_F", Some(v)) => Some(match v[0].trim().strip_prefix("CS_FLOAT(").and_then(|r| r.strip_suffix(')')) {
+                Some(inner) => self.int(split_top(inner).first().context("CS_FLOAT's bits")?)? as u32,
+                None => self.float(&v[0])?.to_bits(),
+            }),
             _ => None,
         };
         if let Some(w) = w {
@@ -194,7 +212,7 @@ impl Macros {
                 let map: HashMap<&str, &str> = params.iter().map(|p| p.as_str()).zip(args.iter().map(|a| a.as_str())).collect();
                 subst(&d.body, &map)
             }
-            // An alias (`#define CS_CAM_POS_LIST CS_CAM_EYE_LIST`) called with arguments.
+            // An alias (`#define CS_CAM_EYE_SPLINE CS_CAM_EYE_SPLINE`) called with arguments.
             (None, Some(args)) => format!("{}({})", d.body, args.join(", ")),
             (None, None) => d.body.clone(),
             (Some(_), None) => bail!("{name} needs arguments"),
@@ -229,7 +247,7 @@ pub fn overlay_scripts(decomp: &Path, rom: &Rom) -> Result<Vec<CutsceneScript>> 
         let mut files: Vec<_> = std::fs::read_dir(&dir)?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "c")).collect();
         files.sort();
         for f in files {
-            let src = strip_comments(&std::fs::read_to_string(&f)?);
+            let src = crate::csrc::prepare(&std::fs::read_to_string(&f)?);
             let names: Vec<String> = src
                 .match_indices("CutsceneData ")
                 .filter_map(|(i, _)| {
@@ -244,7 +262,7 @@ pub fn overlay_scripts(decomp: &Path, rom: &Rom) -> Result<Vec<CutsceneScript>> 
             }
             let file = rom.file_by_name(&ovl).with_context(|| format!("{ovl} not in the ROM"))?;
             for name in names {
-                let words = macros.expand(&src, &name).with_context(|| format!("{}", f.display()))?;
+                let words = macros.with_source(&src).expand(&src, &name).with_context(|| format!("{}", f.display()))?;
                 let at = (0..file.len().saturating_sub(words.len()) + 1).step_by(4).find(|&o| file[o..o + words.len()] == words[..]);
                 let Some(at) = at else { bail!("{ovl}: {name} ({} bytes from its C) isn't in the overlay", words.len()) };
                 let data = file[at..at + words.len()].to_vec();
@@ -259,8 +277,8 @@ pub fn overlay_scripts(decomp: &Path, rom: &Rom) -> Result<Vec<CutsceneScript>> 
 /// `sEntranceCutsceneTable` (`z_demo.c`): `{ entrance, ageRestriction, flag, segAddr }` rows,
 /// the scripts by symbol (`script_key` gives each one's pack key).
 pub fn entrance_cutscenes(decomp: &Path, entrances: &[EntranceInfo], script_key: impl Fn(&str) -> Option<String>) -> Result<Vec<EntranceCutscene>> {
-    let src = strip_comments(&std::fs::read_to_string(decomp.join("src/code/z_demo.c"))?);
-    let save = std::fs::read_to_string(decomp.join("include/z64save.h"))?;
+    let src = crate::csrc::prepare(&std::fs::read_to_string(decomp.join("src/code/z_demo.c"))?);
+    let save = std::fs::read_to_string(decomp.join("include/save.h"))?;
     let flag = |n: &str| -> Result<u8> {
         save.lines()
             .find_map(|l| {
@@ -269,7 +287,7 @@ pub fn entrance_cutscenes(decomp: &Path, entrances: &[EntranceInfo], script_key:
                 (it.next()? == n).then(|| it.next().and_then(parse_int))?
             })
             .map(|v| v as u8)
-            .with_context(|| format!("no {n} in z64save.h"))
+            .with_context(|| format!("no {n} in save.h"))
     };
     let init = find_initializer(&src, "sEntranceCutsceneTable")?;
     let mut out = Vec::new();

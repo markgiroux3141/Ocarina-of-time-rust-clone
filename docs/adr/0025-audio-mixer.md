@@ -6,10 +6,10 @@
 ## Context
 
 On the console, sound is made in three places:
-- **The audio thread** (`code_800E4FE0.c`'s `func_800E5000`, run by `AudioMgr_HandleRetrace` on
-  every VI retrace): it runs the frame's sequence updates (`audio_seqplayer.c`,
-  `audio_effects.c`, `audio_playback.c`), then builds an RSP command list for the frame
-  (`audio_synthesis.c`), and hands the audio interface (AI) the buffer finished two frames ago.
+- **The audio thread** (`audio/internal/thread.c`'s `AudioThread_UpdateImpl`, run by `AudioMgr_HandleRetrace` on
+  every VI retrace): it runs the frame's sequence updates (`seqplayer.c`,
+  `effects.c`, `playback.c`), then builds an RSP command list for the frame
+  (`synthesis.c`), and hands the audio interface (AI) the buffer finished two frames ago.
 - **The RSP's audio microcode** (`aspMain`), which runs the list: decodes the samples
   (`aADPCMdec`), resamples them to the output rate (`aResample`), mixes them into dry and wet
   channels with their volumes and ramps (`aEnvMixer`), runs the reverbs' ring buffers, and
@@ -23,9 +23,9 @@ elsewhere. mupen64plus-rsp-hle's audio lists (`alist.c`, `alist_nead.c`,
 
 ## Decision
 
-- **The C is ported whole and literally** (`eng_audio`): every function of `audio_heap.c`,
-  `audio_load.c`, `audio_playback.c`, `audio_effects.c`, `audio_seqplayer.c`,
-  `audio_synthesis.c` and the audio thread's part of `code_800E4FE0.c`, with the decomp's
+- **The C is ported whole and literally** (`eng_audio`): every function of `heap.c`,
+  `audio/internal/load.c`, `playback.c`, `effects.c`, `seqplayer.c`,
+  `synthesis.c` and the audio thread's part of `audio/internal/thread.c`, with the decomp's
   names, in the C's types (f32 maths in f32, the integer widths and their wraps). The heap's
   pools and caches are the C's, with the C's sizes, on the C's 0x38000-byte heap, so what fits
   is what fits on the console: on spec 0, 72 short-lived sample DMA buffers and only 5 of the 24
@@ -51,7 +51,7 @@ elsewhere. mupen64plus-rsp-hle's audio lists (`alist.c`, `alist_nead.c`,
   - one audio frame per retrace, its three sequence updates before its synthesis
     (`AudioSynth_Update`), the AI handed the buffer of two frames before, and each frame's
     length chosen from `osAiGetLength`, which a model of the AI's queue answers (`thread::Ai`);
-  - the game's commands (`Audio_QueueCmd*`, `Audio_ScheduleProcessCmds`) run at the next
+  - the game's commands (`AudioThread_QueueCmd*`, `AudioThread_ScheduleProcessCmds`) run at the next
     retrace, as the command queue does.
 - **Offline is the console:** `Renderer` runs retraces and the AI model at 32006 Hz, and the
   output is what the AI would play, sample for sample. Tests and tools use it.
@@ -70,28 +70,28 @@ elsewhere. mupen64plus-rsp-hle's audio lists (`alist.c`, `alist_nead.c`,
   emulator here); it is checked against the C that builds the lists (the decoder against the
   reference decoder on every sample, the resampler's stepping, the mixer's volumes and ramps,
   the reverb's decay).
-- **`osGetCount()`** (the CPU's count register, mixed into `audioRandom` and `Audio_NextRandom`)
+- **`osGetCount()`** (the CPU's count register, mixed into `audioRandom` and `AudioThread_NextRandom`)
   advances by 46875000 / 60 per retrace, so runs repeat; on the console it depends on timing,
   and differs run to run. It reaches the sequences' random commands (`0xB7`, `0xB8`, `0xBD`,
   `0xCE`), the velocity and gate variances, and where the noise wave reads.
 - **The PI's DMAs complete at once**; an async load's chunk arrives a frame later, as its
   message would. Disk-drive media do nothing (as the game, which has no drive).
 - **NTSC, not PAL**, although the ROM is a European one: the port runs at 60 VIs a second
-  throughout (PAL would be 50, with `unk_2960` 20.03042).
+  throughout (PAL would be 50, with `maxTempoTvTypeFactors` 20.03042).
 - **The DAC and the analog stage** aren't modelled: the output is the AI's samples; the device's
   linear resampling and its rate nudging are the port's. The latency is about two frames (the
   console's own pipeline) plus the queue's 64 ms.
 - **Undefined behaviour in the C** is kept where it's within the structs: a script's unchecked
   call depth (`0xE4`'s `@bug`) writes past `stack[3]` into `remLoopIters`, as the struct's bytes
   lie. A division by zero (a zero portamento time, a zero variance) is guarded.
-- **`D_801755D0`** (a callback the game never sets) and the disk drive's async loads are left
+- **`gAudioCustomUpdateFunction`** (a callback the game never sets) and the disk drive's async loads are left
   out.
 
 ## Consequences
 
 - Sequences, notes, envelopes, vibrato, portamento, pan, reverb and the mute behaviours all
   work the C's way from the start: the game's side (which sequence plays when, the sound
-  effects: `code_800EC960.c`, `code_800F7260.c`, `code_800F9280.c`) only has to send the C's
+  effects: `general.c`, `sfx.c`, `sequence.c`) only has to send the C's
   commands.
 - Tests can check sound against the C: exact volumes per update, pitch by correlation, note
   counts against the extractor's interpreter, the reverb's decay.

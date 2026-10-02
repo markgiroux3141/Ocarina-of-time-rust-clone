@@ -2,16 +2,16 @@
 //! (1522, 0, 105), path 1 ((1522, 0, 105) to (1412, 0, 211)).
 //!
 //! Expected values from the C:
-//! - `func_80AAB948`: blocking, 60 from his home towards Link, facing him;
-//! - `EnMd_GetTextKokiriForest`: 0x102F, 0x1030 once `INFTABLE_0C` is set, 0x1033 with the Deku
+//! - `EnMd_BlockPath`: blocking, 60 from his home towards Link, facing him;
+//! - `EnMd_GetTextIdKokiriForest`: 0x102F, 0x1030 once `INFTABLE_0C` is set, 0x1033 with the Deku
 //!   Shield and the Kokiri Sword worn, 0x1034 with `EVENTCHKINF_04`;
-//! - `func_80AAAF04`: 0x102F sets `EVENTCHKINF_02` and `INFTABLE_0C` as it closes; 0x1033
-//!   returns 2, and `func_80AAB948` sets `EVENTCHKINF_04` and walks him along path 1 at 1.5;
-//! - `func_80AABD0C`: within 10 of path 1's last point he stops (`func_80AAB8F8`);
+//! - `EnMd_UpdateTalkState`: 0x102F sets `EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS` and `INFTABLE_0C` as it closes; 0x1033
+//!   returns 2, and `EnMd_BlockPath` sets `EVENTCHKINF_04` and walks him along path 1 at 1.5;
+//! - `EnMd_Walk`: within 10 of path 1's last point he stops (`EnMd_Watch`);
 //! - `EnMd_Init`: with `EVENTCHKINF_04`, at path 1's last point (`EnMd_SetMovedPos`);
-//! - `EnMd_ShouldSpawn`: not in Kokiri Forest once Link has Zelda's letter (`EVENTCHKINF_40`)
+//! - `EnMd_ShouldSpawn`: not in Kokiri Forest once Link has Zelda's letter (`EVENTCHKINF_OBTAINED_ZELDAS_LETTER`)
 //!   or has said goodbye (`EVENTCHKINF_1C`);
-//! - `func_80AAB5A4` / `func_80034DD4`: beyond 400 of Link he fades out 20 a step, and can't be
+//! - `EnMd_UpdateAlphaByDistance` / `Actor_UpdateAlphaByDistance`: beyond 400 of Link he fades out 20 a step, and can't be
 //!   targeted.
 
 mod common;
@@ -23,11 +23,11 @@ use glam::Vec3;
 use oot_actors::PlayExt;
 use oot_actors::en_md::{self, Action, EnMd};
 use oot_actors::script::stick_towards;
-use oot_game::actor::ACTOR_FLAG_0;
+use oot_game::actor::ACTOR_FLAG_ATTENTION_ENABLED;
 use oot_game::message::{MSGMODE_TEXT_AWAIT_INPUT, TEXT_STATE_AWAITING_NEXT, TEXT_STATE_CHOICE, TEXT_STATE_DONE, TEXT_STATE_DONE_HAS_NEXT, TEXT_STATE_NONE};
 use oot_game::play::{PlayState, scripted_input};
 use oot_game::play_scene::GameAssets;
-use oot_game::save::{EVENTCHKINF_04, EVENTCHKINF_40, SaveContext};
+use oot_game::save::{EVENTCHKINF_04, EVENTCHKINF_OBTAINED_ZELDAS_LETTER, SaveContext};
 
 const HOME: Vec3 = Vec3::new(1522.0, 0.0, 105.0);
 const PATH_END: Vec3 = Vec3::new(1412.0, 0.0, 211.0);
@@ -40,7 +40,7 @@ fn assets() -> Option<Arc<GameAssets>> {
 /// Kokiri Forest on a new save changed by `f`, a few frames in.
 fn forest(f: impl FnOnce(&mut SaveContext)) -> Option<(PlayState, PadState)> {
     let a = assets()?;
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").unwrap();
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").unwrap();
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     f(&mut save);
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
@@ -110,14 +110,14 @@ fn mido_blocks_the_way_and_his_first_talk_sets_its_flags() {
     assert!(xz(m.actor.world_pos, expect) < 0.01, "{} vs {expect}", m.actor.world_pos);
     assert_eq!(m.actor.shape_rot.y, m.actor.yaw_towards_player);
 
-    // 0x102F and its next texts (0x10D0, 0x10D1, 0x1030); closed: EVENTCHKINF_02, INFTABLE_0C.
+    // 0x102F and its next texts (0x10D0, 0x10D1, 0x1030); closed: EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS, INFTABLE_0C.
     let texts = talk(&mut w, &mut prev);
     assert_eq!(texts, [0x102F, 0x10D0, 0x10D1, 0x1030]);
-    assert!(w.save.get_event_chk_inf(en_md::EVENTCHKINF_02));
+    assert!(w.save.get_event_chk_inf(en_md::EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS));
     assert!(w.save.get_inf_table(en_md::INFTABLE_0C));
     assert!(!w.save.get_event_chk_inf(EVENTCHKINF_04));
     let m = mido(&w).unwrap();
-    assert_eq!((m.action, m.unk_1e0.talk_state), (Action::Blocking, 0));
+    assert_eq!((m.action, m.interact_info.talk_state), (Action::Blocking, 0));
     // Again: 0x1030 only.
     step(&mut w, &mut prev, PadState::default(), 15);
     assert_eq!(talk(&mut w, &mut prev), [0x1030]);
@@ -139,11 +139,11 @@ fn his_gestures_follow_the_texts_boxes() {
     }
     step(&mut w, &mut prev, PadState { button: BTN_A, ..Default::default() }, 1);
     step(&mut w, &mut prev, PadState::default(), 2);
-    // func_80AAAA24, 0x102F at its first box (unk_208 0): sequence 1, gMidoRaiseHand1Anim then
-    // gMidoHaltAnim (func_80AAA274).
+    // EnMd_UpdateAnimSequence_WithTalking, 0x102F at its first box (messageEntry 0): sequence 1, gMidoIdleToHaltAnim then
+    // gMidoHaltAnim (EnMd_UpdateAnimSequence_IdleToHalt).
     let m = mido(&w).unwrap();
-    assert_eq!((m.unk_1e0.talk_state, m.unk_208, m.unk_20b), (1, 0, 1));
-    assert!(m.skel.is("gMidoRaiseHand1Anim"));
+    assert_eq!((m.interact_info.talk_state, m.message_entry, m.anim_sequence), (1, 0, 1));
+    assert!(m.skel.is("gMidoIdleToHaltAnim"));
     for _ in 0..40 {
         if mido(&w).unwrap().skel.is("gMidoHaltAnim") {
             break;
@@ -160,10 +160,10 @@ fn with_the_sword_and_shield_worn_he_steps_aside() {
     step(&mut w, &mut prev, PadState::default(), 3);
     let texts = talk(&mut w, &mut prev);
     assert_eq!(texts, [0x1033, 0x10D2, 0x10D3, 0x1034]);
-    // func_80AAB948 on func_80AAAF04's 2: EVENTCHKINF_04, waypoint 1, speed 1.5, walking.
+    // EnMd_BlockPath on EnMd_UpdateTalkState's 2: EVENTCHKINF_04, waypoint 1, speed 1.5, walking.
     assert!(w.save.get_event_chk_inf(EVENTCHKINF_04));
     let m = mido(&w).unwrap();
-    assert_eq!((m.action, m.waypoint, m.actor.speed_xz, m.unk_1e0.talk_state), (Action::Walking, 1, 1.5, 0));
+    assert_eq!((m.action, m.waypoint, m.actor.speed_xz, m.interact_info.talk_state), (Action::Walking, 1, 1.5, 0));
     let mut walked = Vec::new();
     for _ in 0..300 {
         let m = mido(&w).unwrap();
@@ -174,8 +174,8 @@ fn with_the_sword_and_shield_worn_he_steps_aside() {
         step(&mut w, &mut prev, PadState::default(), 1);
     }
     let m = mido(&w).unwrap();
-    // func_80AABD0C: within 10 of path 1's last point (EnMd_FollowPath), waypoint back to 0,
-    // stopped (speed 0, play speed 0), home there (func_80AAB8F8).
+    // EnMd_Walk: within 10 of path 1's last point (EnMd_FollowPath), waypoint back to 0,
+    // stopped (speed 0, play speed 0), home there (EnMd_Watch).
     assert_eq!(m.action, Action::Arrived);
     assert!(xz(m.actor.world_pos, PATH_END) < 10.0, "{}", m.actor.world_pos);
     assert_eq!((m.waypoint, m.actor.speed_xz, m.skel.play_speed, m.actor.home_pos), (0, 0.0, 0.0, m.actor.world_pos));
@@ -198,7 +198,7 @@ fn with_eventchkinf_04_he_starts_at_his_paths_end() {
         return;
     };
     let m = mido(&w).expect("Mido");
-    // EnMd_SetMovedPos, func_80AAB874.
+    // EnMd_SetMovedPos, EnMd_Idle.
     assert_eq!((m.action, m.actor.world_pos), (Action::Moved, PATH_END));
     w.place_player(Vec3::new(1380.0, 0.0, 160.0), 0x2000);
     step(&mut w, &mut prev, PadState::default(), 3);
@@ -208,15 +208,15 @@ fn with_eventchkinf_04_he_starts_at_his_paths_end() {
 #[test]
 fn he_fades_out_beyond_400_and_comes_back() {
     let Some((mut w, mut prev)) = forest(|_| {}) else { return };
-    // Link spawns at Kokiri Forest's spawn 0, far away: func_80034DD4 steps the alpha down by
-    // 0x14 a frame (Math_SmoothStepToS(&alpha, 0, 6, 0x14, 1)), and clears ACTOR_FLAG_0.
+    // Link spawns at Kokiri Forest's spawn 0, far away: Actor_UpdateAlphaByDistance steps the alpha down by
+    // 0x14 a frame (Math_SmoothStepToS(&alpha, 0, 6, 0x14, 1)), and clears ACTOR_FLAG_ATTENTION_ENABLED.
     w.place_player(Vec3::new(0.0, 0.0, 0.0), 0);
     step(&mut w, &mut prev, PadState::default(), 1);
     let a0 = mido(&w).unwrap().alpha;
     step(&mut w, &mut prev, PadState::default(), 1);
     let m = mido(&w).unwrap();
     assert_eq!(m.alpha, (a0 - 0x14).max(0));
-    assert_eq!(m.actor.flags & ACTOR_FLAG_0, 0);
+    assert_eq!(m.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED, 0);
     // (A smooth step: 0x14 at most, a sixth of what's left, at least 1.)
     step(&mut w, &mut prev, PadState::default(), 60);
     assert_eq!(mido(&w).unwrap().alpha, 0);
@@ -225,14 +225,14 @@ fn he_fades_out_beyond_400_and_comes_back() {
     step(&mut w, &mut prev, PadState::default(), 2);
     let m = mido(&w).unwrap();
     assert!(m.alpha > 0);
-    assert_ne!(m.actor.flags & ACTOR_FLAG_0, 0);
+    assert_ne!(m.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED, 0);
 }
 
 #[test]
 fn en_md_should_spawn() {
-    // EnMd_ShouldSpawn: in Kokiri Forest only before Zelda's letter (EVENTCHKINF_40) and the
+    // EnMd_ShouldSpawn: in Kokiri Forest only before Zelda's letter (EVENTCHKINF_OBTAINED_ZELDAS_LETTER) and the
     // goodbye (EVENTCHKINF_1C).
-    let Some((w, _)) = forest(|s| s.set_event_chk_inf(EVENTCHKINF_40)) else { return };
+    let Some((w, _)) = forest(|s| s.set_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)) else { return };
     assert!(mido(&w).is_none(), "killed in his init");
     let Some((w, _)) = forest(|s| s.set_event_chk_inf(en_md::EVENTCHKINF_1C)) else { return };
     assert!(mido(&w).is_none());

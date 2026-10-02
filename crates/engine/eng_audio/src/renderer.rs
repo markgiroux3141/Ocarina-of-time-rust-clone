@@ -46,7 +46,7 @@ impl Renderer {
         }
     }
 
-    /// Queues a command as the game does (`Audio_QueueCmd*`, then `Audio_ScheduleProcessCmds`
+    /// Queues a command as the game does (`AudioThread_QueueCmd*`, then `AudioThread_ScheduleProcessCmds`
     /// at the end of its frame); the next retrace runs it.
     pub fn command(&mut self, op_args: u32, data: u32) {
         self.ctx.queue_cmd(op_args, data);

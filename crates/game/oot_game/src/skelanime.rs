@@ -1,11 +1,11 @@
 //! `SkelAnime` for Link animations (`LinkAnimation_*` in `z_skelanime.c`) and the
-//! `AnimationContext` request queue.
+//! `AnimTaskQueue` request queue.
 //!
 //! In the game, Link's frames are DMA'd from `link_animetion` straight into the frame tables
-//! (`AnimationContext_SetLoadFrame` starts the transfer; the dmamgr thread outranks the game
+//! (`AnimTaskQueue_AddLoadPlayerFrame` starts the transfer; the dmamgr thread outranks the game
 //! thread), while copy / interpolate / move-actor requests are queued and run after every
-//! actor has updated (`AnimationContext_Update`). This port applies loads immediately and
-//! queues the rest, in order. `AnimationContext_DisableQueue` suppresses the queued
+//! actor has updated (`AnimTaskQueue_Update`). This port applies loads immediately and
+//! queues the rest, in order. `AnimTaskQueue_DisableTransformTasksForGroup` suppresses the queued
 //! copy/interp requests of the current frame, as in the game.
 
 use eng_math::{UPDATE_SCALE, cos_s, sin_s};
@@ -23,8 +23,8 @@ pub const ANIMMODE_ONCE: u8 = 2;
 
 // `moveFlags` (`ANIM_FLAG_*`)
 pub const ANIM_FLAG_UPDATEXZ: u16 = 1 << 0;
-pub const ANIM_FLAG_UPDATEY: u16 = 1 << 1;
-pub const ANIM_FLAG_NOMOVE: u16 = 1 << 4;
+pub const ANIM_FLAG_UPDATE_Y: u16 = 1 << 1;
+pub const ANIM_FLAG_ADJUST_STARTING_POS: u16 = 1 << 4;
 
 pub type FrameTable = [[i16; 3]; LIMB_COUNT];
 
@@ -50,7 +50,7 @@ pub enum Request {
     CopyFalse { dst: Table, src: Table, flags: &'static [u8; LIMB_COUNT] },
     MoveActor { y_scale: f32 },
     /// A copy from another SkelAnime's joint table (Player's `skelAnime2`) into this one's:
-    /// `AnimationContext_SetCopyTrue` with a mask, or `SetCopyAll` without. The source is
+    /// `AnimTaskQueue_AddCopyUsingMap` with a mask, or `SetCopyAll` without. The source is
     /// captured when queued; nothing writes it between then and the queue running.
     CopyExternal { src: FrameTable, mask: Option<[u8; LIMB_COUNT]> },
 }
@@ -133,7 +133,7 @@ impl SkelAnime {
         }
     }
 
-    /// `AnimationContext_SetLoadFrame`: the frame lands in the table immediately (see module
+    /// `AnimTaskQueue_AddLoadPlayerFrame`: the frame lands in the table immediately (see module
     /// docs).
     fn load(&mut self, data: &GameData, anim: AnimId, frame: i32, dst: Table) {
         let a = &data.anims[anim];
@@ -151,12 +151,12 @@ impl SkelAnime {
         self.queue.push(r);
     }
 
-    /// `AnimationContext_DisableQueue`.
+    /// `AnimTaskQueue_DisableTransformTasksForGroup`.
     pub fn disable_queue(&mut self) {
         self.queue_disabled = true;
     }
 
-    /// `AnimationContext_Update` for this skeleton: runs the queued requests and resets the
+    /// `AnimTaskQueue_Update` for this skeleton: runs the queued requests and resets the
     /// queue flags.
     pub fn run_queue(&mut self, actor: &mut Actor) {
         let queue = std::mem::take(&mut self.queue);
@@ -197,7 +197,7 @@ impl SkelAnime {
                     }
                 }
                 Request::MoveActor { y_scale } => {
-                    // `AnimationContext_MoveActor`
+                    // `AnimTask_ActorMovement`
                     let d = self.update_translation(actor.shape_rot.y);
                     actor.world_pos.x += d.x * actor.scale.x;
                     actor.world_pos.y += d.y * actor.scale.y * y_scale;
@@ -360,12 +360,12 @@ impl SkelAnime {
         self.load(data, a2, f2 as i32, Table::Blend);
         self.push(Request::Interp { base: Table::Morph, other: Table::Blend, weight });
     }
-    /// `AnimationContext_SetCopyTrue` / `SetCopyAll` from another skeleton's joint table.
+    /// `AnimTaskQueue_AddCopyUsingMap` / `SetCopyAll` from another skeleton's joint table.
     pub fn request_copy_external(&mut self, src: &FrameTable, mask: Option<[u8; LIMB_COUNT]>) {
         self.push(Request::CopyExternal { src: *src, mask });
     }
 
-    /// `AnimationContext_SetMoveActor`.
+    /// `AnimTaskQueue_AddActorMovement`.
     pub fn request_move_actor(&mut self, y_scale: f32) {
         self.push(Request::MoveActor { y_scale });
     }
@@ -387,10 +387,10 @@ impl SkelAnime {
     }
 
     /// `SkelAnime_UpdateTranslation`: root motion since the last call, rotated into world
-    /// space, and resets the root x/z (and y with `ANIM_FLAG_UPDATEY`) to `base_transl`.
+    /// space, and resets the root x/z (and y with `ANIM_FLAG_UPDATE_Y`) to `base_transl`.
     pub fn update_translation(&mut self, angle: i16) -> Vec3 {
         let mut d = Vec3::ZERO;
-        if self.move_flags & ANIM_FLAG_NOMOVE == 0 {
+        if self.move_flags & ANIM_FLAG_ADJUST_STARTING_POS == 0 {
             let (x, z) = (self.joint[0][0] as f32, self.joint[0][2] as f32);
             let (s, c) = (sin_s(angle), cos_s(angle));
             d.x = x * c + z * s;
@@ -405,15 +405,15 @@ impl SkelAnime {
         self.joint[0][0] = self.base_transl[0];
         self.prev_transl[2] = self.joint[0][2];
         self.joint[0][2] = self.base_transl[2];
-        if self.move_flags & ANIM_FLAG_UPDATEY != 0 {
-            d.y = if self.move_flags & ANIM_FLAG_NOMOVE != 0 { 0.0 } else { (self.joint[0][1] as i32 - self.prev_transl[1] as i32) as f32 };
+        if self.move_flags & ANIM_FLAG_UPDATE_Y != 0 {
+            d.y = if self.move_flags & ANIM_FLAG_ADJUST_STARTING_POS != 0 { 0.0 } else { (self.joint[0][1] as i32 - self.prev_transl[1] as i32) as f32 };
             self.prev_transl[1] = self.joint[0][1];
             self.joint[0][1] = self.base_transl[1];
         } else {
             d.y = 0.0;
             self.prev_transl[1] = self.joint[0][1];
         }
-        self.move_flags &= !ANIM_FLAG_NOMOVE;
+        self.move_flags &= !ANIM_FLAG_ADJUST_STARTING_POS;
         d
     }
 }

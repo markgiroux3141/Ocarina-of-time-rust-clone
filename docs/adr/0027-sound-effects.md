@@ -7,7 +7,7 @@
 
 `Audio_PlaySfxGeneral(sfxId, pos, token, freqScale, vol, reverbAdd)` doesn't take values: it
 takes pointers, and keeps them. A request becomes an entry of one of seven banks
-(`code_800F7260.c`), and every `Audio_Update` the bank's entries are read through those
+(`sfx.c`), and every `Audio_Update` the bank's entries are read through those
 pointers again: the position (`Vec3f*`, nearly always an actor's `projectedPos`, which
 `Actor_DrawAll` recomputes every frame, or `gSfxDefaultPos`) for the distance, the priority,
 the pan and the reverb; the frequency and volume scales (`f32*`) and the reverb offset (`s8*`)
@@ -19,7 +19,7 @@ The scales and offsets point at a handful of the audio code's statics (`D_8016B7
 neighbours, the river's and waterfall's lerps, `gPitchFrequencies[i]`) or at the defaults
 (`gSfxDefaultFreqAndVolScale`, `gSfxDefaultReverb`). The game also reads the audio thread for
 the sound effects: the sound effects' sequence's channels (`IS_SEQUENCE_CHANNEL_VALID`, their
-IO port 1, which says a sound ended), `audioRandom`, and `Audio_NextRandom`'s `audRand`, which
+IO port 1, which says a sound ended), `audioRandom`, and `AudioThread_NextRandom`'s `sAudioRandom`, which
 both threads advance.
 
 ## Decision
@@ -35,7 +35,7 @@ both threads advance.
     pointer would read on).
 - **`projectedPos`** is computed where `Actor_DrawAll` computes it, through the frame's
   `viewProjectionMtxF` (`guPerspective` with the camera's look-at, as the port's
-  `view_proj`), and `actor->sfx` is played there too (`func_80030ED8`); `Actor_UpdateAll`
+  `view_proj`), and `actor->sfx` is played there too (`Actor_UpdateFlaggedAudio`); `Actor_UpdateAll`
   clears it, `Actor_Delete` stops the actor's sounds.
 - **The sound effects' engine is ported whole** (`oot_game::audio::sfx`): the requests and
   their swap table, the banks' linked lists in their arrays, the choice by priority, the
@@ -45,14 +45,14 @@ both threads advance.
   and `AudioMgr_StopAllSfx`.
 - **The audio thread's state the sound effects read comes through the view** (ADR 0026):
   the sound effects' channels' validity and IO ports, `audioRandom`; the game's
-  `Audio_NextRandom` advances its copy of `audRand` and sends it back (`GameOp::SetAudRand`).
+  `AudioThread_NextRandom` advances its copy of `sAudioRandom` and sends it back (`GameOp::SetAudRand`).
 - **Player's sounds are requests** (`PlayRequest::Sfx`), applied right after its update in the
   order it made them, as its other requests are (ADR 0016); the rest of the game calls
   `GameAudio` directly.
 - **The tables are in the pack**, read from the C (`table/audio`): `gSfxParams` from the seven
   bank tables (with the names, so the ids the code names are checked against them), the banks'
   sizes, `gChannelsPerBank`, `gUsedChannelsPerBank`, `gIsLargeSfxBank`, `sBehindScreenZ`,
-  `D_801305E4`, `D_80119E10` (the floors' footsteps) and `z_player.c`'s 40 `struct_80832924`
+  `sSfxSwordChargeFreqLevels`, `sSurfaceMaterialToSfxOffset` (the floors' footsteps) and `z_player.c`'s 40 `AnimSfxEntry`
   tables (the animations' sounds). The ids the code uses are constants (`NA_SE_*`), each
   checked against its table row by the pack's test.
 

@@ -7,11 +7,11 @@
 ## What was added
 
 - **`oot_core::csrc`**: a small parser for static C initializers (`type name[..] = { ... };`, nested braces, comments) and `/* 0xNN */` enum members. Where `#ifndef AVOID_UB` has two variants, the first definition (the as-shipped one) wins.
-- **`oot_core::player`**: Player's draw rules, loaded from `src/code/z_player_lib.c` and `include/z64player.h` at runtime:
+- **`oot_core::player`**: Player's draw rules, loaded from `src/code/z_player_lib.c` and `include/player.h` at runtime:
   - `sPlayerDListGroups` and every table it names, plus `gPlayerModelTypes` (16 model groups → left hand, right hand, sheath, waist)
   - `Player_OverrideLimbDrawGameplayDefault` logic: shield-indexed right-hand and sheath variants, open hands turning into fists when `speedXZ > 2`, and child without the Kokiri Sword getting the swordless sheath
-  - `Player_DrawImpl`: the eye texture on segment 0x08 and mouth on 0x09 (animation face field first, then `sEyeMouthIndices` from the blink state), and the tunic colour as env colour
-  - the blink timer (`func_80032CB4(…, 20, 80, 6)`)
+  - `Player_DrawImpl`: the eye texture on segment 0x08 and mouth on 0x09 (animation face field first, then `sPlayerFaces` from the blink state), and the tunic colour as env colour
+  - the blink timer (`FaceChange_UpdateBlinking(…, 20, 80, 6)`)
   - the child 0.64 root-translation scale
 - **`BuildOptions::limb_dlists`**: per-limb DL overrides (the `OverrideLimbDraw` equivalent). The segment-0x0D matrix map now counts a limb when either its own DL or the override is non-NULL, matching `SkelAnime_DrawFlexLimbLod`.
 - **Viewer**: Link is the default subject (Tock is still available). It has the full list of 573 Player animations with a filter, plus age, model group, shield, tunic, LOD and eye/mouth controls.

@@ -32,7 +32,7 @@ fn the_nightmares_rain_and_lightning() {
     let Some(a) = assets() else { return };
     // Hyrule Field's layer 4 (the nightmare), as the narration's terminator enters it.
     let mut save = SaveContext::file_select_new();
-    save.entrance_index = a.scenes.entrance_index("ENTR_SPOT00_0").unwrap();
+    save.entrance_index = a.scenes.entrance_index("ENTR_HYRULE_FIELD_0").unwrap();
     save.cutscene_index = 0xFFF0;
     let Some(mut w) = enter(&a, save) else { return };
     assert_eq!(w.save.scene_layer, 4);
@@ -86,7 +86,7 @@ fn the_nightmares_rain_and_lightning() {
 fn a_light_setting_override_blends_in() {
     let Some(a) = assets() else { return };
     // The Deku Tree (LIGHT_MODE_SETTINGS, setting 0; its intro seen).
-    let mut save = SaveContext::new(a.scenes.entrance_index("ENTR_YDAN_0").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(a.scenes.entrance_index("ENTR_DEKU_TREE_0").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
     save.set_event_chk_inf(0xA8);
     let Some(mut w) = enter(&a, save) else { return };
     tick(&mut w);
@@ -95,7 +95,7 @@ fn a_light_setting_override_blends_in() {
     assert!(list.len() > 1);
     let base = w.scene.as_ref().unwrap().lights;
     assert_eq!(base.ambient, list[0].ambient);
-    // Cutscene_Command_SetLighting's override (setting 1): the next Environment_Update switches
+    // CutsceneCmd_SetLightSetting's override (setting 1): the next Environment_Update switches
     // (prevLightSetting 0, lightBlend 0) and blends by the new setting's rate (fogNear >> 10,
     // times 4, at least 1) / 255 a frame.
     w.env_ctx.light_setting_override = 1;
@@ -115,7 +115,7 @@ fn a_light_setting_override_blends_in() {
 #[test]
 fn a_lightning_strike_flashes_the_ambient_light() {
     let Some(a) = assets() else { return };
-    let save = SaveContext::new(a.scenes.entrance_index("ENTR_SPOT04_0").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
+    let save = SaveContext::new(a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").unwrap(), false, oot_game::env::clock_time(10, 0) as u16);
     let Some(mut w) = enter(&a, save) else { return };
     tick(&mut w);
     let base = w.scene.as_ref().unwrap().lights.ambient;
@@ -149,7 +149,7 @@ fn a_lightning_strike_flashes_the_ambient_light() {
 #[test]
 fn entering_kokiri_forest_shows_its_place_name() {
     let Some(a) = assets() else { return };
-    // An entrance into Kokiri Forest (SCENE_SPOT04) whose entrance table row shows the title card
+    // An entrance into Kokiri Forest (SCENE_KOKIRI_FOREST) whose entrance table row shows the title card
     // (ENTRANCE_INFO_DISPLAY_TITLE_CARD_FLAG).
     let e = a.scenes.entrances.iter().position(|e| e.scene == 0x55 && e.title_card).expect("an entrance with the title card") as u16;
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);

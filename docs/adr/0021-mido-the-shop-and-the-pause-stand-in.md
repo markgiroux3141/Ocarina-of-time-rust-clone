@@ -18,7 +18,7 @@ Until now the game app called it itself, outside the play frame:
 is up (`msgMode == MSGMODE_NONE`, `z_play.c:833`). It reads Start from the frame's input.
 
 **The shopkeeper drives the message box.** `En_Ossan` sets the debug register `YREG(31)` while
-Link shops. `z_message_PAL.c` checks it in five places: no do-action changes, no B to skip the
+Link shops. `z_message.c` checks it in five places: no do-action changes, no B to skip the
 typing, no A at a wait-for-input code, and no A to close the box or answer a choice. The
 shopkeeper reads the choices and the stick himself, and continues the box with each item's
 texts. The message box port had `YREG(31)` fixed at 0.
@@ -28,7 +28,7 @@ shops, the bazaar, the bombchu shop, the Zora and Goron shops, the Happy Mask Sh
 27 states (`sStateFunc`). Each has its own objects, skeleton, init and draw (`sInitFuncs`, the
 `EnOssan_Draw*` functions).
 
-**The shop's items are functions.** `En_GirlA`'s `shopItemEntries` gives each of 50 items:
+**The shop's items are functions.** `En_GirlA`'s `sShopItemEntries` gives each of 50 items:
 - its object, its get-item model and its price;
 - its two texts;
 - three functions the shopkeeper calls with the play state and the item: can it be bought, give

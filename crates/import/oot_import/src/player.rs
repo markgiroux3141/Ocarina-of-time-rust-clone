@@ -1,5 +1,5 @@
 //! Player (Link) from the ROM and the decomp: the draw-rule tables read from `z_player_lib.c`
-//! and `z64player.h` (`oot_game::player_lib`, re-exported here), Link's skeleton and object
+//! and `player.h` (`oot_game::player_lib`, re-exported here), Link's skeleton and object
 //! data (`PlayerModel`, which applies the rules the way `Player_DrawImpl` and
 //! `Player_OverrideLimbDrawGameplayDefault` do), and Player's animations.
 
@@ -12,7 +12,7 @@ use eng_anim::skeleton::{LimbType, Skeleton};
 use eng_gbi::gbi::DrawList;
 use eng_gbi::model::{Binding, BuildOptions, build_draw_list};
 
-use crate::csrc::{Init, enum_members, find_initializer, strip_comments};
+use crate::csrc::{Init, Macros, enum_members, find_initializer};
 use crate::project::Project;
 use crate::symbols::AssetFile;
 use crate::z64::{ParseLinkAnimation, ParseSkeleton};
@@ -26,8 +26,9 @@ pub trait LoadPlayerRules: Sized {
 impl LoadPlayerRules for PlayerRules {
     fn load(decomp: &Path) -> Result<PlayerRules> {
         let lib_path = decomp.join("src/code/z_player_lib.c");
-        let lib = strip_comments(&std::fs::read_to_string(&lib_path).with_context(|| lib_path.display().to_string())?);
-        let header = std::fs::read_to_string(decomp.join("include/z64player.h")).context("z64player.h")?;
+        let lib = crate::csrc::prepare(&std::fs::read_to_string(&lib_path).with_context(|| lib_path.display().to_string())?);
+        let header = std::fs::read_to_string(decomp.join("include/player.h")).context("player.h")?;
+        let macros = Macros::read(decomp, &["include/player.h"])?;
 
         let model_types = members(&header, "PLAYER_MODELTYPE_");
         let group_names = members(&header, "PLAYER_MODELGROUP_")
@@ -75,14 +76,14 @@ impl LoadPlayerRules for PlayerRules {
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                let b = bytes(c)?;
+                let b = bytes(c, &macros)?;
                 Ok((tunic_names.get(i).cloned().unwrap_or_default(), [b[0], b[1], b[2]]))
             })
             .collect::<Result<Vec<_>>>()?;
-        let eye_mouth_indices = find_initializer(&lib, "sEyeMouthIndices")?
+        let eye_mouth_indices = find_initializer(&lib, "sPlayerFaces")?
             .list()
             .iter()
-            .map(|p| bytes(p).map(|b| [b[0], b[1]]))
+            .map(|p| bytes(p, &macros).map(|b| [b[0], b[1]]))
             .collect::<Result<Vec<_>>>()?;
 
         Ok(PlayerRules {
@@ -110,8 +111,9 @@ fn names(init: &Init) -> Vec<Option<String>> {
     init.flatten().into_iter().map(|s| (s != "NULL").then_some(s)).collect()
 }
 
-fn bytes(init: &Init) -> Result<Vec<u8>> {
-    init.flatten().iter().map(|s| Init::Atom(s.clone()).as_int().map(|v| v as u8).context("non-numeric entry")).collect()
+/// Numbers or names (`{ PLAYER_EYES_OPEN, PLAYER_MOUTH_CLOSED }`), as bytes.
+fn bytes(init: &Init, m: &Macros) -> Result<Vec<u8>> {
+    init.flatten().iter().map(|s| m.eval(s).map(|v| v as u8).with_context(|| format!("can't evaluate {s}"))).collect()
 }
 
 /// Link's skeleton and object data for one age, ready to build draw lists.

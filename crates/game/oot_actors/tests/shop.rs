@@ -6,7 +6,7 @@
 //! - `EnOssan_InitActionFunc`: the shopkeeper 33 in front of his placement (0, 0, -59), scale
 //!   0.01, not targetable, text 0x9E; `EnOssan_SpawnItemsOnShelves`: `sShopkeeperStores[0]`'s
 //!   items at their offsets from the shelves (0, 0, -20), turned `sItemShelfRot`;
-//! - `EnGirlA_InitializeItemAction`: scale 0.25, 24 up, the description text, the price;
+//! - `EnGirlA_WaitForObject`: scale 0.25, 24 up, the description text, the price;
 //! - talking: `PLAYER_STATE2_29`, `Play_SetShopBrowsingViewpoint` (bg camera 1,
 //!   `CAM_SET_PIVOT_SHOP_BROWSING`), `YREG(31)` 1; 0x9E, then 0x83;
 //! - the stick right: `EnOssan_State_LookToRightShelf` approaches -30 degrees
@@ -15,7 +15,7 @@
 //! - A: the buy prompt 0x89 and `EnOssan_TakeItemOffShelf` (0.15 a frame, to
 //!   `sSelectedItemPosition[0]` (17, 58, 30) from the shelves);
 //! - "Buy": `EnGirlA_CanBuy_DekuShield` (owned: 0x86; under 40 rupees: 0x85), or the get-item
-//!   flow (`func_8002F434` within 120), `Item_Give` owns it, and the 40 are charged after its
+//!   flow (`Actor_OfferGetItem` within 120), `Item_Give` owns it, and the 40 are charged after its
 //!   text (`EnGirlA_BuyEvent_ShieldDiscount`); 0x6B; B ends it (`EnOssan_EndInteraction`).
 
 mod common;
@@ -29,7 +29,7 @@ use oot_actors::en_girla::*;
 use oot_actors::en_ossan::*;
 use oot_actors::en_tana::EnTana;
 use oot_actors::player::{Action, STATE2_29};
-use oot_game::actor::ACTOR_FLAG_0;
+use oot_game::actor::ACTOR_FLAG_ATTENTION_ENABLED;
 use oot_game::actor_ctx::ActorHandle;
 use oot_game::camera::CAM_SET_PIVOT_SHOP_BROWSING;
 use oot_game::item::*;
@@ -134,11 +134,11 @@ fn the_kokiri_shop_sets_up_its_shelves() {
     // EnOssan_InitActionFunc: sShopkeeperPositionOffsets[0] (0, 0, 33), sShopkeeperScale[0].
     assert_eq!(o.action, oot_actors::en_ossan::Action::Main);
     assert_eq!((o.actor.world_pos, o.actor.scale), (Vec3::new(0.0, 0.0, -26.0), Vec3::splat(0.01)));
-    assert_eq!((o.actor.text_id, o.actor.flags & ACTOR_FLAG_0, o.actor.target_mode), (0x9E, 0, 2));
+    assert_eq!((o.actor.text_id, o.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED, o.actor.target_mode), (0x9E, 0, 2));
     assert_eq!((o.state_flag, o.cursor_z, o.cursor_color), (OSSAN_STATE_IDLE, 1.5, [0, 255 - (80.0 * o.cursor_anim_tween) as u32, 80, 255]));
     let shelves = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnTana>(h)).expect("En_Tana");
     assert_eq!(shelves.actor.world_pos, Vec3::new(0.0, 0.0, -20.0));
-    // sShopkeeperStores[OSSAN_TYPE_KOKIRI], with each item's shopItemEntries row.
+    // sShopkeeperStores[OSSAN_TYPE_KOKIRI], with each item's sShopItemEntries row.
     let store = [
         (SI_DEKU_SHIELD, [50, 52, -20], 40, 0x9F, 0x89),
         (SI_DEKU_NUTS_5, [50, 76, -20], 15, 0xB2, 0x7F),
@@ -271,13 +271,13 @@ fn a_second_deku_shield_cant_be_got_now() {
 #[test]
 fn a_quick_buy_of_deku_nuts_once_owned() {
     // With nuts owned (the first give sets the upgrade: 20), SI_DEKU_NUTS_5 is a quick buy:
-    // itemGiveFunc (Item_Give(ITEM_NUTS_5), 15 rupees), "Thanks a lot!" (0x84).
+    // itemGiveFunc (Item_Give(ITEM_DEKU_NUTS_5), 15 rupees), "Thanks a lot!" (0x84).
     let Some(mut s) = Shop::enter(20, |sv| {
-        item_give(sv, None, ITEM_NUTS_5);
+        item_give(sv, None, ITEM_DEKU_NUTS_5);
     }) else {
         return;
     };
-    let nuts = s.w.save.ammo(ITEM_NUT);
+    let nuts = s.w.save.ammo(ITEM_DEKU_NUT);
     s.talk();
     s.browse_right();
     // The stick up to slot 1 (EnOssan_CursorUpDown: the top row).
@@ -287,7 +287,7 @@ fn a_quick_buy_of_deku_nuts_once_owned() {
     s.until(30, |s| s.w.message_state() == TEXT_STATE_EVENT);
     s.buy();
     assert_eq!((s.ossan().state_flag, s.w.msg_ctx.text_id), (OSSAN_STATE_QUICK_BUY, 0x84));
-    assert_eq!(s.w.save.ammo(ITEM_NUT), nuts + 5);
+    assert_eq!(s.w.save.ammo(ITEM_DEKU_NUT), nuts + 5);
     assert_eq!(s.w.save.rupees + s.w.save.rupee_accumulator, 5);
     s.until(60, |s| s.w.message_state() == TEXT_STATE_EVENT);
     s.press(A);

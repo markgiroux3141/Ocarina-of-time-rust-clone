@@ -22,7 +22,7 @@ use glam::{Mat4, Vec3, Vec4};
 
 use crate::sys_matrix::MtxF;
 
-/// `SKIN_LIMB_TYPE_ANIMATED`, `SKIN_LIMB_TYPE_NORMAL` (`z64skin.h`).
+/// `SKIN_LIMB_TYPE_ANIMATED`, `SKIN_LIMB_TYPE_NORMAL` (`skin.h`).
 pub const SKIN_LIMB_TYPE_ANIMATED: i32 = 4;
 pub const SKIN_LIMB_TYPE_NORMAL: i32 = 11;
 /// `LIMB_DONE`.

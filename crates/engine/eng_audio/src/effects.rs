@@ -1,4 +1,4 @@
-//! `audio_effects.c`: what a player's fade and a channel's volume, pan and bend make of their
+//! `effects.c`: what a player's fade and a channel's volume, pan and bend make of their
 //! layers' notes, portamento, vibrato, and the ADSR envelopes.
 
 use crate::context::*;
@@ -111,7 +111,7 @@ impl AudioContext {
             self.notes[n].playback_state.vibrato_state = vib;
             return 1.0;
         }
-        // @bug (game): this probably meant to compare with gAudioContext.sequenceChannelNone.
+        // @bug (game): this probably meant to compare with gAudioCtx.sequenceChannelNone.
         // -1 isn't used as a channel pointer anywhere else.
         let channel = &self.channels[vib.channel.unwrap_or(CHANNEL_NONE)];
         if vib.extent_change_timer != 0 {

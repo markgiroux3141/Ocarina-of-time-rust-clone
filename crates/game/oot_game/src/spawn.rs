@@ -71,8 +71,8 @@ impl ActorImpl for Uninit {
 /// `Debug::placeholders` is on.
 ///
 /// **It can't be targeted** (a deviation): its `InitVars` flags may say targetable
-/// (`ACTOR_FLAG_0`), but the init that would set its focus, its target mode, or clear the flag
-/// again never runs, and it draws nothing. So `ACTOR_FLAG_0` is cleared, and the profile's
+/// (`ACTOR_FLAG_ATTENTION_ENABLED`), but the init that would set its focus, its target mode, or clear the flag
+/// again never runs, and it draws nothing. So `ACTOR_FLAG_ATTENTION_ENABLED` is cleared, and the profile's
 /// flags are kept in `profile_flags`.
 pub struct Placeholder {
     pub actor: Actor,
@@ -83,7 +83,7 @@ impl Placeholder {
     /// The "init" of every unported actor.
     pub fn init(mut actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
         let profile_flags = actor.flags;
-        actor.flags &= !crate::actor::ACTOR_FLAG_0;
+        actor.flags &= !crate::actor::ACTOR_FLAG_ATTENTION_ENABLED;
         Box::new(Placeholder { actor, profile_flags })
     }
 }
@@ -118,7 +118,7 @@ impl ActorImpl for Placeholder {
 pub enum SpawnFailure {
     /// `actorCtx->total > ACTOR_NUMBER_MAX`.
     TooMany,
-    /// No `ActorInit` for the id (an unset row of the actor table).
+    /// No `ActorProfile` for the id (an unset row of the actor table).
     NoProfile,
     /// Its object isn't in a bank (`objBankIndex < 0`), or it's an enemy in a cleared room.
     NoObject,
@@ -133,10 +133,10 @@ impl PlayState {
         }
         let Some(assets) = self.assets.clone() else { return Err(SpawnFailure::NoProfile) };
         let Some(init) = assets.actors.get(id).and_then(|a| a.init.clone()) else {
-            log::warn!("Actor_Spawn: no ActorInit for {}", assets.actors.name(id));
+            log::warn!("Actor_Spawn: no ActorProfile for {}", assets.actors.name(id));
             return Err(SpawnFailure::NoProfile);
         };
-        // Scene_CommandSpawnList sets Player's object to Link's for his age.
+        // Scene_CommandPlayerEntryList sets Player's object to Link's for his age.
         let object = if id == ACTOR_PLAYER { self.link_object_id } else { init.object_id };
         let bank = self.object_ctx.get_index(object);
         if bank.is_none() || (init.category as usize == ACTORCAT_ENEMY && self.flags.get_clear(self.room_ctx.cur.num)) {
@@ -264,7 +264,7 @@ impl PlayState {
         self.flags.temp_swch &= 0xFF_FFFF;
     }
 
-    /// `func_80031A28`: `Actor_Kill` for every actor whose object bank was dropped.
+    /// `Actor_KillAllWithMissingObject`: `Actor_Kill` for every actor whose object bank was dropped.
     pub fn kill_actors_without_objects(&mut self) {
         for h in self.actors.all() {
             if let Some(a) = self.actors.actor_mut(h)

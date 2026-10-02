@@ -1,12 +1,12 @@
 //! Dynamic (actor-owned) collision, ported from `z_bgcheck.c`'s `DynaPoly_*` and
-//! `BgCheck_*Dyna*` functions and `code_800430A0.c` (carrying actors that stand on them).
+//! `BgCheck_*Dyna*` functions and `z_bg_collect.c` (carrying actors that stand on them).
 //!
 //! Each frame `DynaPoly_UpdateContext` transforms every registered collision header by its
 //! actor's scale/rotation/position (`SkinMatrix_SetTranslateRotateYXZScale`) into one shared
 //! vertex and poly list, with per-actor floor/wall/ceiling lists and a bounding sphere. The
 //! entity checks in `bgcheck` test these after the static mesh. At the end of the frame
 //! `DynaPoly_UpdateBgActorTransforms` stores the transform as "previous", which is what
-//! `func_800430A0` uses to move an actor standing on the platform by the platform's motion.
+//! `DynaPolyActor_UpdateCarriedActorPos` uses to move an actor standing on the platform by the platform's motion.
 
 use std::sync::Arc;
 
@@ -19,12 +19,12 @@ use crate::collision::{CollisionHeader, CollisionPoly, VTX_INDEX_MASK};
 pub const BG_ACTOR_MAX: u16 = 50;
 pub const BGCHECK_SCENE: u16 = BG_ACTOR_MAX;
 
-/// `DynaPolyActor.unk_15C`: `DPM_PLAYER` (1) carries actors standing on it; bit 1 also turns
+/// `DynaPolyActor.transformFlags`: `DYNA_TRANSFORM_POS` (1) carries actors standing on it; bit 1 also turns
 /// them with it.
-pub const DPM_PLAYER: u32 = 1;
+pub const DYNA_TRANSFORM_POS: u32 = 1;
 pub const DPM_ROTATE: u32 = 2;
 
-/// `bgActorFlags` (`z64bgcheck.h`): the slot holds a bg actor; it's to be freed at the next
+/// `bgActorFlags` (`bgcheck.h`): the slot holds a bg actor; it's to be freed at the next
 /// `DynaPoly_UpdateContext` (`DynaPoly_DeleteBgActor`).
 pub const BGACTOR_IN_USE: u8 = 1 << 0;
 pub const BGACTOR_1: u8 = 1 << 1;
@@ -88,7 +88,7 @@ pub struct BgActorSource {
     pub shape_y_offset: f32,
 }
 
-/// `BgActor` (plus the owner's `DynaPolyActor.unk_15C`, and the slot's `bgActorFlags`).
+/// `BgActor` (plus the owner's `DynaPolyActor.transformFlags`, and the slot's `bgActorFlags`).
 pub struct BgActor {
     /// `dyna->bgActorFlags[bgId]`'s `BGACTOR_IN_USE` and `BGACTOR_1` (collision disabling is
     /// kept in `collision_disabled` and `ceiling_disabled`).
@@ -364,15 +364,15 @@ impl Dyna {
         *vtx_start += nv;
     }
 
-    /// `func_800433A4`: moves (and with `DPM_ROTATE`, turns) an actor standing on bg actor
+    /// `DynaPolyActor_TransformCarriedActor`: moves (and with `DPM_ROTATE`, turns) an actor standing on bg actor
     /// `bg` by the platform's motion since last frame. Returns the new position and the yaw
-    /// change (`func_800430A0`, `func_800432A0`).
+    /// change (`DynaPolyActor_UpdateCarriedActorPos`, `DynaPolyActor_UpdateCarriedActorRotY`).
     pub fn carry(&self, bg: u16, pos: Vec3) -> Option<(Vec3, i16)> {
         let a = self.actors.get(bg as usize)?;
         let mut out = pos;
         let mut dyaw = 0i16;
         let mut moved = false;
-        if a.move_flags & DPM_PLAYER != 0 {
+        if a.move_flags & DYNA_TRANSFORM_POS != 0 {
             // SkinMatrix_Invert fails (returns 2) only for singular matrices.
             let prev = srt_matrix(&a.prev);
             if prev.determinant() != 0.0 {

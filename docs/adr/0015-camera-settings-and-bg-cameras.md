@@ -11,9 +11,9 @@ priority. Scenes change the setting through their *bg cameras*: `BgCamInfo` entr
 collision header, each a setting plus data (usually a position, a rotation and a fov). The
 entries are named from several places:
 
-- **floors**: `Camera_Update` changes to the one under Player (`Camera_ChangeBgCamIndex`);
+- **floors**: `Camera_Update` changes to the one under Player (`Camera_RequestBgCam`);
 - **spawns**: `Play_Init` starts on the one in Player's params (`params & 0xFF`);
-- **the viewpoint**: a fixed-camera scene's `Play_ChangeViewpointBgCamIndex` asks for
+- **the viewpoint**: a fixed-camera scene's `Play_RequestViewpointBgCam` asks for
   `viewpoint - 1` every frame, and C-Up toggles it;
 - **doors**: `Camera_ChangeDoorCam` with the transition actor's side, or `CAM_SET_DOORC`.
 
@@ -23,7 +23,7 @@ on void-outs. The prerendered rooms, doors and exits of milestone 2 all hang on 
 Three things had to be decided:
 1. how the data gets into the pack;
 2. what the unported mode functions do now that there are settings;
-3. how much of `unk_14C` / `paramData` to model.
+3. how much of `stateFlags` / `paramData` to model.
 
 ## Decision
 
@@ -31,7 +31,7 @@ Three things had to be decided:
   - The importer reads every entry: its `unk_00` (the valid modes, the priority in bits
     24..27, and flags 0x40000000 / 0x80000000), and its `sCamSet*Modes` array, with
     `{ CAM_FUNC_NONE, 0, NULL }` holes.
-  - Setting names come from `z64camera.h`'s enum (`CameraData::settings`).
+  - Setting names come from `camera.h`'s enum (`CameraData::settings`).
   - The mode functions read their data by `(setting, mode)`.
 - **The bg cameras are part of the collision header** (`CollisionHeader::bg_cams`).
   - The list has no count. The importer reads at least every index the collision names
@@ -40,10 +40,10 @@ Three things had to be decided:
     up to 0x400, a data pointer in the file or NULL. It stops before any list the header or
     an earlier entry points at, as the extractor does.
   - A test checks that every scene's list covers everything the scene names.
-- **The setting changes are ported as they are**: `Camera_ChangeSettingFlags` (priorities,
-  `prevSetting`, the bg camera index flags 4 and 8), `Camera_ChangeBgCamIndex` (once a frame
-  through `unk_14A & 0x40`), `Camera_ChangeDoorCam`, `func_80057FC4` (a room's starting
-  setting), `func_8005B1A4`, and the floor check in `Camera_Update`. The play state has the
+- **The setting changes are ported as they are**: `Camera_RequestSettingImpl` (priorities,
+  `prevSetting`, the bg camera index flags 4 and 8), `Camera_RequestBgCam` (once a frame
+  through `behaviorFlags & 0x40`), `Camera_ChangeDoorCam`, `func_80057FC4` (a room's starting
+  setting), `Camera_SetFinishedFlag`, and the floor check in `Camera_Update`. The play state has the
   viewpoint and `R_SCENE_CAM_TYPE`.
 - **Mode functions ported this milestone**, besides Normal1, Parallel1 and KeepOn1:
   - `Camera_Fixed2` (`PIVOT_CRAWLSPACE`);
@@ -61,8 +61,8 @@ Three things had to be decided:
   - For NORMAL0 this is ADR 0013's rule.
   - For the prerendered settings, TALK (`Camera_KeepOn0`) keeps the fixed or pivot camera
     instead of flying off with Normal1.
-- **`Play_Init`'s `func_8005AC48(&mainCamera, 0xFF)` is `GameCamera::play_init_settings`.**
-  - Among other bits it sets `unk_14C` bit 1, which enables the floor's bg cameras.
+- **`Play_Init`'s `Camera_OverwriteStateFlags(&mainCamera, 0xFF)` is `GameCamera::play_init_settings`.**
+  - Among other bits it sets `stateFlags` bit 1, which enables the floor's bg cameras.
   - The spikes' view of a scene (`PlayState::new`, no `Play_Init`) keeps `Camera_Init`'s
     0x4000 | 4, so it runs without floor cameras, as before. That's why the goldens are
     unchanged.
@@ -76,7 +76,7 @@ Three things had to be decided:
 - **Entering by `Play_Init` changes the camera wherever a floor names a bg camera.**
   - Link's porch is `PIVOT_IN_FRONT`.
   - Some Kokiri entrances start on `START1`.
-  - `ROOM_BEHAVIOR_TYPE1_1` rooms start on `DUNGEON0`.
+  - `ROOM_TYPE_DUNGEON` rooms start on `DUNGEON0`.
   - Exits switch to `SCENE_TRANSITION`.
   - One climbing test steers at the ladder instead of holding the stick up, since the porch
     camera looks from in front of the house.
@@ -90,5 +90,5 @@ Three things had to be decided:
 - **Still on the fallback:** the other 50-odd functions, among them Battle1, KeepOn0, KeepOn3,
   Jump1/2, Uniq1, Subj3/4 and Normal2/3. A setting whose NORMAL function isn't ported
   (`TOWER_CLIMB`'s Normal2, `CRAWLSPACE`'s Subj4) runs Normal1 on NORMAL0's data.
-- `Camera_ChangeBgCamIndex` falls off the end of the C without a return value when refused;
+- `Camera_RequestBgCam` falls off the end of the C without a return value when refused;
   here it returns 0 (`@bug (game)`, no caller reads it).

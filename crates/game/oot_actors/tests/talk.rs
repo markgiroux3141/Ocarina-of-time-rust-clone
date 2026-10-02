@@ -1,7 +1,7 @@
 //! Talking and the message box, in Kokiri Forest after `Play_Init`: Player's side
-//! (`func_8083B644`, `func_80853148`, `func_8083A2F8`, `func_8084B530` in `z_player.c`), the
-//! actors' (`func_8002F2CC`, `Actor_ProcessTalkRequest`, `Actor_TextboxIsClosing`) and the box's
-//! (`z_message_PAL.c`). Expected values come from the C and the scene's actor list:
+//! (`Player_ActionHandler_Talk`, `Player_StartTalking`, `Player_SetupTalk`, `Player_Action_Talk` in `z_player.c`), the
+//! actors' (`Actor_OfferTalk`, `Actor_TalkOfferAccepted`, `Actor_TextboxIsClosing`) and the box's
+//! (`z_message.c`). Expected values come from the C and the scene's actor list:
 //! - the sign at (49, -80, 967), rotation 0x8000, params 0x031F: `EnKanban_Init` gives it
 //!   text `params | 0x300`; it offers within 68 when Link is in front of it (`EnKanban_Message`).
 
@@ -14,7 +14,7 @@ use glam::Vec3;
 use oot_actors::PlayExt;
 use oot_actors::en_kanban::EnKanban;
 use oot_actors::player::Action;
-use oot_game::actor::ACTOR_FLAG_8;
+use oot_game::actor::ACTOR_FLAG_TALK;
 use oot_game::actor_ctx::ActorHandle;
 use oot_game::message::*;
 use oot_game::play::{PlayState, scripted_input};
@@ -46,9 +46,9 @@ const A: PadState = PadState { button: BTN_A, stick_x: 0, stick_y: 0 };
 /// Kokiri Forest settled, Link placed at `pos` facing `yaw`, one frame for the actors to see
 /// him.
 fn at(pos: Vec3, yaw: i16) -> Option<(PlayState, PadState)> {
-    let mut w = enter("ENTR_SPOT04_0")?;
+    let mut w = enter("ENTR_KOKIRI_FOREST_0")?;
     let mut prev = PadState::default();
-    // Play_Init's fade-in, and the HUD's fade back after it: Camera_Init's D_8011D3F0 set alpha
+    // Play_Init's fade-in, and the HUD's fade back after it: Camera_Init's sSceneInitLetterboxTimer set alpha
     // type 2 for the first three frames, which the transition's 0xF200 then kept.
     frames(&mut w, &mut prev, NONE, 60);
     w.place_player(pos, yaw);
@@ -67,20 +67,20 @@ fn the_sign_by_links_house_shows_its_text_and_closes_on_a() {
     let Some((mut w, mut prev)) = at(Vec3::new(49.0, -80.0, 927.0), 0) else { return };
     let sign = sign_at(&w, sign_pos);
     assert_eq!(w.actors.actor(sign).unwrap().text_id, 0x031F, "params | 0x300");
-    // func_8002F2CC last frame: the sign is Player's targetActor, so func_8083B644 sets
-    // PLAYER_STATE2_1, and func_808473D4 (which runs before the interrupts, so a frame later)
+    // Actor_OfferTalk last frame: the sign is Player's targetActor, so Player_ActionHandler_Talk sets
+    // PLAYER_STATE2_CAN_ACCEPT_TALK_OFFER, and Player_UpdateInterface (which runs before the interrupts, so a frame later)
     // shows "Check" (the sign isn't an NPC).
     assert_eq!(w.player().target_actor, Some(sign));
     frames(&mut w, &mut prev, NONE, 1);
     assert_eq!(w.interface_ctx.unk_1f0, oot_game::interface::DO_ACTION_CHECK);
     assert_eq!(w.message_state(), TEXT_STATE_NONE);
 
-    // A: func_80853148 → func_8083A2F8 at once (not an NPC): the talk action, Player's text,
+    // A: Player_StartTalking → Player_SetupTalk at once (not an NPC): the talk action, Player's text,
     // the sign's talk request (answered in its update this frame), Message_StartTextbox.
     frames(&mut w, &mut prev, A, 1);
     let p = w.player();
     assert_eq!(p.action, Action::Talk);
-    assert_eq!((p.actor.flags & ACTOR_FLAG_8, p.actor.text_id, p.unk_664), (ACTOR_FLAG_8, 0x031F, Some(sign)));
+    assert_eq!((p.actor.flags & ACTOR_FLAG_TALK, p.actor.text_id, p.focus_actor), (ACTOR_FLAG_TALK, 0x031F, Some(sign)));
     assert!(w.actors.downcast::<EnKanban>(sign).unwrap().msg_flag);
     let m = &w.msg_ctx;
     assert_eq!((m.text_id, m.talk_actor, m.msg_mode), (0x031F, Some(sign), MSGMODE_TEXT_START));
@@ -88,7 +88,7 @@ fn the_sign_by_links_house_shows_its_text_and_closes_on_a() {
     assert_eq!((m.text_box_type, m.text_box_pos), (TEXTBOX_TYPE_WOODEN, 0));
     assert_eq!((m.textbox_color, m.textbox_color_alpha_target, m.textbox_color_alpha_current), ([70, 50, 30], 230, 0));
 
-    // MSGMODE_TEXT_START waits until D_8014B2F4 reaches 4 in a SCENE_CAM_TYPE_DEFAULT scene,
+    // MSGMODE_TEXT_START waits until sMessageStartFrameCount reaches 4 in a SCENE_CAM_TYPE_DEFAULT scene,
     // then places the box and starts growing it.
     frames(&mut w, &mut prev, NONE, 2);
     assert_eq!(w.msg_ctx.msg_mode, MSGMODE_TEXT_START);
@@ -98,7 +98,7 @@ fn the_sign_by_links_house_shows_its_text_and_closes_on_a() {
     // screen heights is above XREG(94) = 160; the arrow 59 below its top.
     let r = &w.msg_ctx.regs;
     assert_eq!((r.textbox_x_target, r.textbox_y_target, r.textbox_end_ypos), (34, 142, 201));
-    // The talk camera (CAM_MODE_TALK, on the sign) while Player has ACTOR_FLAG_8.
+    // The talk camera (CAM_MODE_TALK, on the sign) while Player has ACTOR_FLAG_TALK.
     assert_eq!(w.game_camera.mode, oot_game::camera::CAM_MODE_TALK);
     assert_eq!(w.game_camera.target, Some(sign));
 
@@ -162,12 +162,12 @@ fn the_sign_by_links_house_shows_its_text_and_closes_on_a() {
     assert_eq!(w.player().action, Action::Talk);
     frames(&mut w, &mut prev, NONE, 1);
     let p = w.player();
-    assert_eq!((p.action, p.actor.flags & ACTOR_FLAG_8, p.unk_88E), (Action::StandingStill, 0, 10));
+    assert_eq!((p.action, p.actor.flags & ACTOR_FLAG_TALK, p.textbox_btn_cooldown_timer), (Action::StandingStill, 0, 10));
     let k = w.actors.downcast::<EnKanban>(sign).unwrap();
     assert_eq!((k.msg_flag, k.msg_timer), (false, 20));
     assert_eq!((w.message_state(), w.msg_ctx.msg_mode), (TEXT_STATE_NONE, MSGMODE_NONE));
 
-    // unk_88E masks A for 10 frames, and the sign doesn't offer for 20: A does nothing.
+    // textboxBtnCooldownTimer masks A for 10 frames, and the sign doesn't offer for 20: A does nothing.
     frames(&mut w, &mut prev, A, 1);
     assert_eq!(w.player().action, Action::StandingStill);
     frames(&mut w, &mut prev, NONE, 21);
@@ -220,15 +220,15 @@ fn a_kokiri_child_talks_and_remembers_it() {
     let child = w.actors.all().into_iter().find(|&h| w.actors.downcast::<EnKo>(h).is_some_and(|k| k.actor.params & 0xFF == 1)).expect("child 1");
     frames(&mut w, &mut prev, NONE, 1);
     assert_eq!(w.player().target_actor, Some(child));
-    // func_80A97610: 0x1005 until INFTABLE_1E; "Speak" (an NPC).
+    // EnKo_GetTextId: 0x1005 until INFTABLE_1E; "Speak" (an NPC).
     assert_eq!(w.actors.actor(child).unwrap().text_id, 0x1005);
     assert_eq!(w.interface_ctx.unk_1f0, oot_game::interface::DO_ACTION_SPEAK);
 
-    // A: an NPC is talked to after the item is put away (func_80836898, then func_8083A2F8 the
-    // next frame); its talk request is answered at once (func_800343CC: unk_1E8.unk_00 = 1).
+    // A: an NPC is talked to after the item is put away (Player_SetupWaitForPutAway, then Player_SetupTalk the
+    // next frame); its talk request is answered at once (Npc_UpdateTalking: interactInfo.talkState = 1).
     frames(&mut w, &mut prev, A, 1);
     assert_eq!(w.player().action, Action::ItemPutAway);
-    assert_eq!(w.actors.downcast::<EnKo>(child).unwrap().unk_1e8.talk_state, 1);
+    assert_eq!(w.actors.downcast::<EnKo>(child).unwrap().interact_info.talk_state, 1);
     frames(&mut w, &mut prev, NONE, 1);
     assert_eq!(w.player().action, Action::Talk);
     assert_eq!((w.msg_ctx.text_id, w.msg_ctx.talk_actor), (0x1005, Some(child)));
@@ -242,9 +242,9 @@ fn a_kokiri_child_talks_and_remembers_it() {
         n += 1;
         assert!(n < 1000, "the talk ends");
     }
-    // func_80A97738 on TEXT_STATE_CLOSING: SET_INFTABLE(INFTABLE_1E), and the talk state 0.
+    // EnKo_UpdateTalkState on TEXT_STATE_CLOSING: SET_INFTABLE(INFTABLE_1E), and the talk state 0.
     assert!(w.save.get_inf_table(0x1E));
-    assert_eq!(w.actors.downcast::<EnKo>(child).unwrap().unk_1e8.talk_state, 0);
+    assert_eq!(w.actors.downcast::<EnKo>(child).unwrap().interact_info.talk_state, 0);
     frames(&mut w, &mut prev, NONE, 12);
     assert_eq!(w.actors.actor(child).unwrap().text_id, 0x1006, "the second text");
 }
@@ -254,7 +254,7 @@ fn the_spot_by_the_window_in_links_house_is_checked() {
     use oot_actors::en_wonder_talk2::{self, EnWonderTalk2};
     // En_Wonder_Talk2 params 0x8ABF at (78, 38, 116), rotation -29127: talk mode 2 (check
     // only), text 0x200 | 0x2A, no switch flag, rot.z 0 (range 0: offers within 50, from 40).
-    let Some(mut w) = enter("ENTR_LINK_HOME_0") else { return };
+    let Some(mut w) = enter("ENTR_LINKS_HOUSE_0") else { return };
     let mut prev = PadState::default();
     frames(&mut w, &mut prev, NONE, 40);
     let spot = w.actors.all().into_iter().find(|&h| w.actors.downcast::<EnWonderTalk2>(h).is_some()).expect("the spot");
@@ -284,14 +284,14 @@ fn talking_fades_the_hud_to_the_a_button_and_the_hearts() {
     let Some((mut w, mut prev)) = at(Vec3::new(49.0, -80.0, 927.0), 0) else { return };
     // Play_Init's fade-in (alpha type 50 after the transition's 2) is over: everything shown.
     let c = &w.interface_ctx;
-    assert_eq!((c.a_alpha, c.b_alpha, c.c_left_alpha, c.health_alpha, w.save.unk_13e8), (255, 255, 255, 255, 0));
+    assert_eq!((c.a_alpha, c.b_alpha, c.c_left_alpha, c.health_alpha, w.save.next_hud_visibility_mode), (255, 255, 255, 255, 0));
     frames(&mut w, &mut prev, NONE, 1);
     frames(&mut w, &mut prev, A, 1);
     // The talk camera (KEEP3's interface flags 0x3500): Camera_UpdateInterface's
-    // Interface_ChangeAlpha(5), after this frame's Interface_Update.
-    assert_eq!((w.game_camera.interface_flags as u16, w.save.unk_13e8, w.save.unk_13ec), (0x3500, 5, 1));
-    // func_80082850 case 5, maxAlpha 255 - (unk_13EC << 5) and alpha 255 - maxAlpha:
-    // func_8008277C clamps B, A and the C buttons to maxAlpha, then A (no longer 255) takes
+    // Interface_ChangeHudVisibilityMode(5), after this frame's Interface_Update.
+    assert_eq!((w.game_camera.interface_flags as u16, w.save.next_hud_visibility_mode, w.save.hud_visibility_mode_timer), (0x3500, 5, 1));
+    // Interface_UpdateHudAlphas case 5, maxAlpha 255 - (hudVisibilityModeTimer << 5) and alpha 255 - maxAlpha:
+    // Interface_DimButtonAlphas clamps B, A and the C buttons to maxAlpha, then A (no longer 255) takes
     // alpha, so it dips and comes back while B and C fade out; the hearts stay.
     let mut seen = Vec::new();
     for _ in 0..9 {
@@ -301,5 +301,5 @@ fn talking_fades_the_hud_to_the_a_button_and_the_hearts() {
     }
     let expected: Vec<(i16, i16, i16, i16)> = (1..=8).map(|k: i16| ((32 * k).min(255), (255 - 32 * k).max(0), (255 - 32 * k).max(0), 255)).chain([(255, 0, 0, 255)]).collect();
     assert_eq!(seen, expected);
-    assert_eq!(w.save.unk_13e8, 0, "done once alpha reaches 0");
+    assert_eq!(w.save.next_hud_visibility_mode, 0, "done once alpha reaches 0");
 }

@@ -7,7 +7,7 @@
 //! (`@bug (game)`, a print only: not ported).
 
 use eng_gfx::{DrawCmd, MeshKey};
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, Actor};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -15,8 +15,8 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matri
 /// `ACTOR_EN_TANA` (`actor_table.h`).
 pub const ACTOR_EN_TANA: i16 = 0x00C2;
 
-/// `En_Tana_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TANA, name: "En_Tana", category: ACTORCAT_PROP, flags: ACTOR_FLAG_0 | ACTOR_FLAG_3, object: "object_shop_dungen" };
+/// `En_Tana_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TANA, name: "En_Tana", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: "object_shop_dungen" };
 
 /// `sShelfDLists`.
 const SHELF_DLISTS: [&str; 3] = ["gShopDungenWoodenShelvesDL", "gShopDungenStoneShelvesDL", "gShopDungenStoneShelvesDL"];
@@ -50,7 +50,7 @@ impl EnTana {
     /// `EnTana_Init`.
     pub fn init(mut actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
         actor.scale = glam::Vec3::splat(1.0);
-        actor.flags &= !ACTOR_FLAG_0;
+        actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         Box::new(EnTana { actor })
     }
 

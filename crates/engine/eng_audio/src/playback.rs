@@ -1,14 +1,14 @@
-//! `audio_playback.c`: the notes. Each update turns what a note's layer and channel ask for
-//! into a `NoteSubEu` for the synthesis (volume and pan, resampling rate, reverb), allocates
+//! `playback.c`: the notes. Each update turns what a note's layer and channel ask for
+//! into a `NoteSampleState` for the synthesis (volume and pan, resampling rate, reverb), allocates
 //! notes to layers from the pools, and moves notes between the pools' lists as they decay and
 //! release. With them, the C's list functions (`AudioListItem`).
 
 use crate::context::*;
 use crate::layout::*;
 
-/// `gDefaultNoteSub`: enabled and needing init, the rest zero.
-pub fn default_note_sub() -> NoteSubEu {
-    NoteSubEu { enabled: true, needs_init: true, ..Default::default() }
+/// `gDefaultNoteSampleState`: enabled and needing init, the rest zero.
+pub fn default_note_sub() -> NoteSampleState {
+    NoteSampleState { enabled: true, needs_init: true, ..Default::default() }
 }
 
 /// The list node of layer `l` and of note `n` (layers first: their number doesn't change).
@@ -123,10 +123,10 @@ impl AudioContext {
         self.lists[note_node(n)].pool.unwrap_or(self.note_free_lists)
     }
 
-    // --- audio_playback.c
+    // --- playback.c
 
-    /// `Audio_InitNoteSub`: writes `noteSubsEu[sub]` from the note and the attributes.
-    pub fn init_note_sub(&mut self, n: NoteId, sub: usize, attrs: &NoteSubAttributes) {
+    /// `Audio_InitSampleState`: writes `noteSubsEu[sub]` from the note and the attributes.
+    pub fn init_note_sub(&mut self, n: NoteId, sub: usize, attrs: &NoteSampleStateAttributes) {
         let note = self.notes[n];
         let stereo_headset_effects = note.playback_state.stereo_headset_effects != 0;
         let mut vel = attrs.velocity;
@@ -150,14 +150,14 @@ impl AudioContext {
         s.stereo_headset_effects = stereo::stereo_headset_effects(stereo_data);
         s.uses_headset_pan_effects = stereo::uses_headset_pan_effects(stereo_data);
         let (vol_left, vol_right);
-        if stereo_headset_effects && sound_mode == SOUNDMODE_HEADSET {
+        if stereo_headset_effects && sound_mode == SOUND_OUTPUT_HEADSET {
             let half_pan_index = ((pan >> 1) as usize).min(0x3F);
             s.haas_effect_right_delay_size = t.haas_effect_delay_sizes[half_pan_index] as u8;
             s.haas_effect_left_delay_size = t.haas_effect_delay_sizes[0x3F - half_pan_index] as u8;
             s.use_haas_effect = true;
             vol_left = t.headset_pan_volume[pan as usize];
             vol_right = t.headset_pan_volume[0x7F - pan as usize];
-        } else if stereo_headset_effects && sound_mode == SOUNDMODE_STEREO {
+        } else if stereo_headset_effects && sound_mode == SOUND_OUTPUT_STEREO {
             let (mut strong_left, mut strong_right) = (false, false);
             s.haas_effect_left_delay_size = 0;
             s.haas_effect_right_delay_size = 0;
@@ -186,7 +186,7 @@ impl AudioContext {
                     s.stereo_strong_left = stereo::strong_left(stereo_data) ^ strong_left;
                 }
             }
-        } else if sound_mode == SOUNDMODE_MONO {
+        } else if sound_mode == SOUND_OUTPUT_MONO {
             s.stereo_headset_effects = false;
             s.uses_headset_pan_effects = false;
             vol_left = 0.707f32; // approx 1/sqrt(2)
@@ -206,8 +206,8 @@ impl AudioContext {
 
         s.gain = attrs.gain;
         s.filter = attrs.filter;
-        s.unk_07 = attrs.unk_14;
-        s.unk_0e = attrs.unk_16;
+        s.comb_filter_size = attrs.comb_filter_size;
+        s.comb_filter_gain = attrs.comb_filter_gain;
         s.reverb_vol = reverb_vol;
     }
 
@@ -341,7 +341,7 @@ impl AudioContext {
             let mut sub_attrs;
             let book_offset;
             if ps.unk_04 == 1 || ps.unk_04 == 2 {
-                sub_attrs = NoteSubAttributes {
+                sub_attrs = NoteSampleStateAttributes {
                     frequency: attrs.freq_scale,
                     velocity: attrs.velocity,
                     pan: attrs.pan,
@@ -349,14 +349,14 @@ impl AudioContext {
                     stereo: attrs.stereo,
                     gain: attrs.gain,
                     filter: attrs.filter,
-                    unk_14: attrs.unk_4,
-                    unk_16: attrs.unk_6,
+                    comb_filter_size: attrs.comb_filter_size,
+                    comb_filter_gain: attrs.comb_filter_gain,
                 };
                 book_offset = self.notes[i].note_sub_eu.book_offset;
             } else {
                 let layer = &self.sequence_layers[ps.parent_layer.expect("an attached note has a layer")];
                 let channel = &self.channels[layer.channel.unwrap_or(CHANNEL_NONE)];
-                sub_attrs = NoteSubAttributes {
+                sub_attrs = NoteSampleStateAttributes {
                     frequency: layer.note_freq_scale,
                     velocity: layer.note_velocity,
                     pan: layer.note_pan,
@@ -364,8 +364,8 @@ impl AudioContext {
                     reverb_vol: channel.reverb,
                     gain: channel.gain,
                     filter: channel.filter,
-                    unk_14: channel.unk_0f,
-                    unk_16: channel.unk_20,
+                    comb_filter_size: channel.comb_filter_size,
+                    comb_filter_gain: channel.comb_filter_gain,
                 };
                 book_offset = channel.book_offset & 0x7;
                 let muted = channel.seq_player.map(|p| self.seq_players[p].muted).unwrap_or(false);
@@ -542,8 +542,8 @@ impl AudioContext {
                     self.notes[n].playback_state.attributes.filter = filter_buf;
                 }
                 let attrs = &mut self.notes[n].playback_state.attributes;
-                attrs.unk_6 = chan.unk_20;
-                attrs.unk_4 = chan.unk_0f;
+                attrs.comb_filter_gain = chan.comb_filter_gain;
+                attrs.comb_filter_size = chan.comb_filter_size;
                 let muted = chan.seq_player.map(|p| self.seq_players[p].muted).unwrap_or(false);
                 if muted && (chan.mute_behavior & MUTE_BEHAVIOR_3) != 0 {
                     self.notes[n].note_sub_eu.finished = true;
@@ -865,7 +865,7 @@ impl AudioContext {
         for i in 0..self.num_notes as usize {
             let buffers = self.misc_pool.alloc(SIZEOF_NOTE_SYNTHESIS_BUFFERS);
             let note = &mut self.notes[i];
-            note.note_sub_eu = NoteSubEu::default();
+            note.note_sub_eu = NoteSampleState::default();
             let ps = &mut note.playback_state;
             ps.priority = 0;
             ps.unk_04 = 0;
@@ -887,7 +887,7 @@ impl AudioContext {
 }
 
 /// `Audio_NoteSetResamplingRate`.
-pub fn note_set_resampling_rate(s: &mut NoteSubEu, resampling_rate_input: f32) {
+pub fn note_set_resampling_rate(s: &mut NoteSampleState, resampling_rate_input: f32) {
     let resampling_rate;
     if resampling_rate_input < 2.0f32 {
         s.has_two_parts = false;

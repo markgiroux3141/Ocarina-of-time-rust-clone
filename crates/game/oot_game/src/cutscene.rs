@@ -3,11 +3,11 @@
 //!
 //! ## The scripts
 //!
-//! A script is an array of `CutsceneData` words (`z64cutscene_commands.h`): the number of
-//! commands and the last frame (`CS_BEGIN_CUTSCENE`), then the commands, each a type word and
-//! its entries, up to `CS_END`. The pack holds each script as the ROM's bytes, big-endian as
+//! A script is an array of `CutsceneData` words (`cutscene_commands.h`): the number of
+//! commands and the last frame (`CS_HEADER`), then the commands, each a type word and
+//! its entries, up to `CS_END_OF_SCRIPT`. The pack holds each script as the ROM's bytes, big-endian as
 //! the N64 reads them (`CutsceneScript`, docs/adr/0022-cutscenes.md), and this module reads
-//! them the way `Cutscene_ProcessCommands` does: a byte offset stands for each of the C's
+//! them the way `Cutscene_ProcessScript` does: a byte offset stands for each of the C's
 //! pointers into the script (`linkAction`, `npcActions`, the camera's points).
 //!
 //! The scripts come from two places, both read by the importer:
@@ -27,39 +27,39 @@ use crate::play::PlayState;
 use crate::save::GAMEMODE_NORMAL;
 use crate::transition::*;
 
-/// `CutsceneState` (`z64cutscene.h`).
+/// `CutsceneState` (`cutscene.h`).
 pub const CS_STATE_IDLE: u8 = 0;
-pub const CS_STATE_SKIPPABLE_INIT: u8 = 1;
-pub const CS_STATE_SKIPPABLE_EXEC: u8 = 2;
-pub const CS_STATE_UNSKIPPABLE_INIT: u8 = 3;
-pub const CS_STATE_UNSKIPPABLE_EXEC: u8 = 4;
+pub const CS_STATE_START: u8 = 1;
+pub const CS_STATE_RUN: u8 = 2;
+pub const CS_STATE_STOP: u8 = 3;
+pub const CS_STATE_RUN_UNSTOPPABLE: u8 = 4;
 
-/// `CutsceneCmd` (`z64cutscene.h`).
-pub const CS_CMD_CAM_EYE: i32 = 0x0001;
-pub const CS_CMD_CAM_AT: i32 = 0x0002;
+/// `CutsceneCmd` (`cutscene.h`).
+pub const CS_CMD_CAM_EYE_SPLINE: i32 = 0x0001;
+pub const CS_CMD_CAM_AT_SPLINE: i32 = 0x0002;
 pub const CS_CMD_MISC: i32 = 0x0003;
-pub const CS_CMD_SET_LIGHTING: i32 = 0x0004;
-pub const CS_CMD_CAM_EYE_REL_TO_PLAYER: i32 = 0x0005;
-pub const CS_CMD_CAM_AT_REL_TO_PLAYER: i32 = 0x0006;
-pub const CS_CMD_07: i32 = 0x0007;
-pub const CS_CMD_08: i32 = 0x0008;
-pub const CS_CMD_09: i32 = 0x0009;
-pub const CS_CMD_SET_PLAYER_ACTION: i32 = 0x000A;
-pub const CS_CMD_TEXTBOX: i32 = 0x0013;
-pub const CS_CMD_SCENE_TRANS_FX: i32 = 0x002D;
-pub const CS_CMD_PLAYBGM: i32 = 0x0056;
-pub const CS_CMD_STOPBGM: i32 = 0x0057;
-pub const CS_CMD_FADEBGM: i32 = 0x007C;
-pub const CS_CMD_SETTIME: i32 = 0x008C;
-pub const CS_CMD_TERMINATOR: i32 = 0x03E8;
-/// `CS_END()`'s first word.
-pub const CS_CMD_END: i32 = -1;
+pub const CS_CMD_LIGHT_SETTING: i32 = 0x0004;
+pub const CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER: i32 = 0x0005;
+pub const CS_CMD_CAM_AT_SPLINE_REL_TO_PLAYER: i32 = 0x0006;
+pub const CS_CMD_CAM_EYE: i32 = 0x0007;
+pub const CS_CMD_CAM_AT: i32 = 0x0008;
+pub const CS_CMD_RUMBLE_CONTROLLER: i32 = 0x0009;
+pub const CS_CMD_PLAYER_CUE: i32 = 0x000A;
+pub const CS_CMD_TEXT: i32 = 0x0013;
+pub const CS_CMD_TRANSITION: i32 = 0x002D;
+pub const CS_CMD_START_SEQ: i32 = 0x0056;
+pub const CS_CMD_STOP_SEQ: i32 = 0x0057;
+pub const CS_CMD_FADE_OUT_SEQ: i32 = 0x007C;
+pub const CS_CMD_TIME: i32 = 0x008C;
+pub const CS_CMD_DESTINATION: i32 = 0x03E8;
+/// `CS_END_OF_SCRIPT()`'s first word.
+pub const CS_CMD_END_OF_SCRIPT: i32 = -1;
 
-/// `CS_CMD_STOP` (`z64cutscene.h`): a camera point list's last point.
-pub const CS_CMD_STOP: i8 = -1;
+/// `CS_CAM_STOP` (`cutscene.h`): a camera point list's last point.
+pub const CS_CAM_STOP: i8 = -1;
 
-/// The command types `Cutscene_ProcessCommands` gives each actor cue slot, `npcActions[0]` to
-/// `[9]` (`CS_CMD_SET_ACTOR_ACTION_1` .. `_10` and the numbers listed with them).
+/// The command types `Cutscene_ProcessScript` gives each actor cue slot, `npcActions[0]` to
+/// `[9]` (`CS_CMD_ACTOR_CUE_0_0` .. `_10` and the numbers listed with them).
 pub const ACTOR_ACTION_SLOTS: [&[i32]; 10] = [
     &[0x0F, 17, 18, 23, 34, 39, 46, 76, 85, 93, 105, 107, 110, 119, 123, 138, 139, 144],
     &[0x0E, 16, 24, 35, 40, 48, 64, 68, 70, 78, 80, 94, 116, 118, 120, 125, 131, 141],
@@ -82,15 +82,15 @@ pub fn actor_action_slot(cmd_type: i32) -> Option<usize> {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CutsceneScript {
     /// The file it's in (a scene's, `ydan_scene`, or an overlay's, `ovl_Bg_Treemouth`) and its
-    /// symbol (`gDekuTreeIntroCs`, `D_808BCE20`).
+    /// symbol (`gDekuTreeIntroCs`, `gDekuTreeMeetingCs`).
     pub file: String,
     pub name: String,
-    /// The `CutsceneData` words as the ROM has them (big-endian), from `CS_BEGIN_CUTSCENE`
-    /// through `CS_END`.
+    /// The `CutsceneData` words as the ROM has them (big-endian), from `CS_HEADER`
+    /// through `CS_END_OF_SCRIPT`.
     pub data: Vec<u8>,
 }
 
-/// A row of `sEntranceCutsceneTable` (`z_demo.c`, `EntranceCutscene` in `z64cutscene.h`).
+/// A row of `sEntranceCutsceneTable` (`z_demo.c`, `EntranceCutscene` in `cutscene.h`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntranceCutscene {
     /// `entrance`: the `gEntranceTable` index, and its name.
@@ -121,7 +121,7 @@ impl CutsceneTables {
     }
 }
 
-/// A big-endian reader over a script (the C's `MemCpy` and struct reads).
+/// A big-endian reader over a script (the C's `MemCopy` and struct reads).
 pub fn be_u16(d: &[u8], o: usize) -> u16 {
     u16::from_be_bytes([d[o], d[o + 1]])
 }
@@ -135,7 +135,7 @@ pub fn be_f32(d: &[u8], o: usize) -> f32 {
     f32::from_bits(be_i32(d, o) as u32)
 }
 
-/// One command of a script, as `Cutscene_ProcessCommands` steps over it.
+/// One command of a script, as `Cutscene_ProcessScript` steps over it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ScriptCommand {
     /// The type word's offset, and the type.
@@ -150,9 +150,9 @@ pub struct ScriptCommand {
     pub end: usize,
 }
 
-/// The size of a camera point list from its header (the `CsCmdBase` at `offset`): the header,
-/// then 0x10-byte points up to the one flagged `CS_CMD_STOP`
-/// (`Cutscene_Command_CameraEyePoints`' size).
+/// The size of a camera point list from its header (the `CsCmdCam` at `offset`): the header,
+/// then 0x10-byte points up to the one flagged `CS_CAM_STOP`
+/// (`CutsceneCmd_UpdateCamEyeSpline`' size).
 fn camera_list_size(d: &[u8], offset: usize) -> Result<usize, String> {
     let mut size = 8;
     loop {
@@ -161,48 +161,48 @@ fn camera_list_size(d: &[u8], offset: usize) -> Result<usize, String> {
             return Err(format!("camera point list at {offset:#x} runs past the script"));
         }
         size += 0x10;
-        if d[p] as i8 == CS_CMD_STOP {
+        if d[p] as i8 == CS_CAM_STOP {
             return Ok(size);
         }
     }
 }
 
-/// The commands of a script in order, stepping as `Cutscene_ProcessCommands` does: at most
-/// `totalEntries` of them, stopping at `CS_END`'s -1. Also returns the offset just past the
-/// script (`CS_END`'s second word) when the walk reached it.
+/// The commands of a script in order, stepping as `Cutscene_ProcessScript` does: at most
+/// `totalEntries` of them, stopping at `CS_END_OF_SCRIPT`'s -1. Also returns the offset just past the
+/// script (`CS_END_OF_SCRIPT`'s second word) when the walk reached it.
 pub fn walk(d: &[u8]) -> Result<(Vec<ScriptCommand>, Option<usize>), String> {
     let word = |o: usize| -> Result<i32, String> { if o + 4 <= d.len() { Ok(be_i32(d, o)) } else { Err(format!("the script ends inside the word at {o:#x}")) } };
     let total = word(0)?;
     let mut at = 8;
     let mut out = Vec::new();
     let end;
-    // The walk goes on to CS_END even past totalEntries, so the importer finds the script's
+    // The walk goes on to CS_END_OF_SCRIPT even past totalEntries, so the importer finds the script's
     // end; `ScriptCommand`s past totalEntries are left out, as the C never reads them.
     let mut i = 0;
     loop {
         let cmd_type = word(at)?;
-        if cmd_type == CS_CMD_END {
+        if cmd_type == CS_CMD_END_OF_SCRIPT {
             end = Some(at + 8);
             break;
         }
         let start = at;
         at += 4;
         let (entries_offset, entries, entry_size, next) = match cmd_type {
-            CS_CMD_CAM_EYE | CS_CMD_CAM_EYE_REL_TO_PLAYER | CS_CMD_CAM_AT | CS_CMD_CAM_AT_REL_TO_PLAYER => {
+            CS_CMD_CAM_EYE_SPLINE | CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER | CS_CMD_CAM_AT_SPLINE | CS_CMD_CAM_AT_SPLINE_REL_TO_PLAYER => {
                 let size = camera_list_size(d, at)?;
                 (at + 8, (size - 8) / 0x10, 0x10, at + size)
             }
-            // Cutscene_Command_07 and _08: a header and one point.
-            CS_CMD_07 | CS_CMD_08 => (at + 8, 1, 0x10, at + 8 + 0x10),
+            // CutsceneCmd_SetCamEye and _08: a header and one point.
+            CS_CMD_CAM_EYE | CS_CMD_CAM_AT => (at + 8, 1, 0x10, at + 8 + 0x10),
             // A word (always 1), then the one 8-byte entry.
-            CS_CMD_TERMINATOR | CS_CMD_SCENE_TRANS_FX => (at + 4, 1, 8, at + 12),
+            CS_CMD_DESTINATION | CS_CMD_TRANSITION => (at + 4, 1, 8, at + 12),
             _ => {
                 let n = word(at)?;
                 if n < 0 {
                     return Err(format!("command {cmd_type:#x} at {start:#x} has {n} entries"));
                 }
                 let size = match cmd_type {
-                    CS_CMD_09 | CS_CMD_SETTIME | CS_CMD_TEXTBOX => 0xC,
+                    CS_CMD_RUMBLE_CONTROLLER | CS_CMD_TIME | CS_CMD_TEXT => 0xC,
                     _ => 0x30,
                 };
                 (at + 4, n as usize, size, at + 4 + n as usize * size)
@@ -217,15 +217,15 @@ pub fn walk(d: &[u8]) -> Result<(Vec<ScriptCommand>, Option<usize>), String> {
         i += 1;
         at = next;
         if i > 4096 {
-            return Err("no CS_END in 4096 commands".into());
+            return Err("no CS_END_OF_SCRIPT in 4096 commands".into());
         }
     }
     Ok((out, end))
 }
 
-/// `CsCmdActorAction` (`z64cutscene.h`): an actor's cue, or Player's (`linkAction`).
+/// `CsCmdActorCue` (`cutscene.h`): an actor's cue, or Player's (`linkAction`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct CsCmdActorAction {
+pub struct CsCmdActorCue {
     /// `action` ("dousa").
     pub action: u16,
     pub start_frame: u16,
@@ -238,11 +238,11 @@ pub struct CsCmdActorAction {
     pub normal: IVec3,
 }
 
-impl CsCmdActorAction {
+impl CsCmdActorCue {
     /// The 0x30-byte entry at `o`.
-    pub fn read(d: &[u8], o: usize) -> CsCmdActorAction {
+    pub fn read(d: &[u8], o: usize) -> CsCmdActorCue {
         let v3 = |o: usize| IVec3::new(be_i32(d, o), be_i32(d, o + 4), be_i32(d, o + 8));
-        CsCmdActorAction {
+        CsCmdActorCue {
             action: be_u16(d, o),
             start_frame: be_u16(d, o + 2),
             end_frame: be_u16(d, o + 4),
@@ -254,7 +254,7 @@ impl CsCmdActorAction {
     }
 }
 
-/// `CutsceneCameraPoint` (`z64cutscene.h`).
+/// `CutsceneCameraPoint` (`cutscene.h`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CutsceneCameraPoint {
     pub continue_flag: i8,
@@ -276,7 +276,7 @@ impl CutsceneCameraPoint {
         }
     }
 
-    /// The points from `o` up to and including the one flagged `CS_CMD_STOP`, as the camera's
+    /// The points from `o` up to and including the one flagged `CS_CAM_STOP`, as the camera's
     /// spline reads them through the C's pointer.
     pub fn read_list(d: &[u8], o: usize) -> Vec<CutsceneCameraPoint> {
         let mut out = Vec::new();
@@ -285,7 +285,7 @@ impl CutsceneCameraPoint {
             let pt = CutsceneCameraPoint::read(d, p);
             out.push(pt);
             p += 0x10;
-            if pt.continue_flag == CS_CMD_STOP {
+            if pt.continue_flag == CS_CAM_STOP {
                 break;
             }
         }
@@ -302,7 +302,7 @@ pub struct CsPtr {
 }
 
 impl CsPtr {
-    /// The camera points from here to the one flagged `CS_CMD_STOP`.
+    /// The camera points from here to the one flagged `CS_CAM_STOP`.
     pub fn points(&self) -> Vec<CutsceneCameraPoint> {
         CutsceneCameraPoint::read_list(&self.script.data, self.offset)
     }
@@ -314,51 +314,51 @@ impl CsPtr {
 /// `CutsceneContext` (`z64.h`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct CutsceneContext {
-    /// `segment`: the script (`Cutscene_SetSegment`, or an actor's `play->csCtx.segment = ...`).
+    /// `segment`: the script (`Cutscene_SetScript`, or an actor's `play->csCtx.segment = ...`).
     pub segment: Option<Arc<CutsceneScript>>,
     /// `state` (`CS_STATE_*`).
     pub state: u8,
-    /// `unk_0C`: 0 to 1 as a script starts (`func_8006472C`), back to 0 as it ends.
-    pub unk_0c: f32,
+    /// `timer`: 0 to 1 as a script starts (`Cutscene_StepTimer`), back to 0 as it ends.
+    pub timer: f32,
     /// `frames`: the script's frame counter.
     pub frames: u16,
     pub unk_12: u16,
     /// `subCamId`: the cutscene's camera.
     pub sub_cam_id: i16,
-    /// `unk_18`: the start frame of the eye list last applied; `unk_1A`, `unk_1B`: an at list, an
+    /// `camEyeSplinePointsAppliedFrame`: the start frame of the eye list last applied; `camAtReady`, `camEyeReady`: an at list, an
     /// eye list seen.
-    pub unk_18: u16,
-    pub unk_1a: u8,
-    pub unk_1b: u8,
+    pub cam_eye_spline_points_applied_frame: u16,
+    pub cam_at_ready: u8,
+    pub cam_eye_ready: u8,
     /// `subCamLookAtPoints`, `subCamEyePoints`.
     pub sub_cam_look_at_points: Option<CsPtr>,
     pub sub_cam_eye_points: Option<CsPtr>,
     /// `linkAction`, `npcActions[10]` ("npcdemopnt"): the cues in effect (copies of the
     /// script's entries).
-    pub link_action: Option<CsCmdActorAction>,
-    pub npc_actions: [Option<CsCmdActorAction>; 10],
+    pub link_action: Option<CsCmdActorCue>,
+    pub npc_actions: [Option<CsCmdActorCue>; 10],
 }
 
 /// `z_demo.c`'s file-scope variables. They live in the code segment, so they carry over from one
 /// play state to the next (`PlayState::reinit`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DemoStatics {
-    /// `D_8011E1C0`, `D_8011E1C4`: the text (and the ocarina action) a script's text command
+    /// `sCurTextId`, `sCurOcarinaAction`: the text (and the ocarina action) a script's text command
     /// last started.
-    pub d_8011e1c0: u16,
-    pub d_8011e1c4: u16,
-    /// `D_8015FCC0`, `D_8015FCC2`, `D_8015FCC4`: the start frames of the at list, the `CS_CMD_07`
-    /// list and the `CS_CMD_08` list last applied.
-    pub d_8015fcc0: u16,
-    pub d_8015fcc2: u16,
-    pub d_8015fcc4: u16,
+    pub cur_text_id: u16,
+    pub cur_ocarina_action: u16,
+    /// `gCamAtSplinePointsAppliedFrame`, `gCamEyePointAppliedFrame`, `gCamAtPointAppliedFrame`: the start frames of the at list, the `CS_CMD_CAM_EYE`
+    /// list and the `CS_CMD_CAM_AT` list last applied.
+    pub cam_at_spline_points_applied_frame: u16,
+    pub cam_eye_point_applied_frame: u16,
+    pub cam_at_point_applied_frame: u16,
     /// `sReturnToCamId`: the camera active when the script began.
     pub return_to_cam_id: i16,
-    /// `D_8015FCC8` (later decomps' `gUseCutsceneCam`): whether scripts drive a camera.
+    /// `gUseCutsceneCam`: whether scripts drive a camera.
     /// `Environment_Init` sets it (`z_kankyo.c:419`); the debug D-Left / D-Up replays clear and
     /// set it.
-    pub d_8015fcc8: u8,
-    /// `sQuakeIndex`, `sTitleCsState`, `D_8015FCCC`, `D_8015FCE4`.
+    pub use_cutscene_cam: u8,
+    /// `sQuakeIndex`, `sTitleDemoDestination`, `D_8015FCCC`, `D_8015FCE4`.
     pub quake_index: i16,
     pub title_cs_state: u8,
     pub d_8015fccc: u16,
@@ -368,17 +368,17 @@ pub struct DemoStatics {
 /// A script's commands, one line each, for `ootx cutscene` and the tests' messages.
 pub fn describe(d: &[u8]) -> Result<Vec<String>, String> {
     let (cmds, _) = walk(d)?;
-    let mut out = vec![format!("CS_BEGIN_CUTSCENE({}, {})", be_i32(d, 0), be_i32(d, 4))];
+    let mut out = vec![format!("CS_HEADER({}, {})", be_i32(d, 0), be_i32(d, 4))];
     for c in cmds {
         let e = |i: usize| c.entries_offset + i * c.entry_size;
         match c.cmd_type {
-            CS_CMD_CAM_EYE | CS_CMD_CAM_EYE_REL_TO_PLAYER | CS_CMD_CAM_AT | CS_CMD_CAM_AT_REL_TO_PLAYER | CS_CMD_07 | CS_CMD_08 => {
+            CS_CMD_CAM_EYE_SPLINE | CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER | CS_CMD_CAM_AT_SPLINE | CS_CMD_CAM_AT_SPLINE_REL_TO_PLAYER | CS_CMD_CAM_EYE | CS_CMD_CAM_AT => {
                 let what = match c.cmd_type {
-                    CS_CMD_CAM_EYE => "CAM_EYE",
-                    CS_CMD_CAM_EYE_REL_TO_PLAYER => "CAM_EYE_REL_TO_PLAYER",
-                    CS_CMD_CAM_AT => "CAM_AT",
-                    CS_CMD_CAM_AT_REL_TO_PLAYER => "CAM_AT_REL_TO_PLAYER",
-                    CS_CMD_07 => "CMD_07",
+                    CS_CMD_CAM_EYE_SPLINE => "CAM_EYE",
+                    CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER => "CAM_EYE_REL_TO_PLAYER",
+                    CS_CMD_CAM_AT_SPLINE => "CAM_AT",
+                    CS_CMD_CAM_AT_SPLINE_REL_TO_PLAYER => "CAM_AT_REL_TO_PLAYER",
+                    CS_CMD_CAM_EYE => "CMD_07",
                     _ => "CMD_08",
                 };
                 out.push(format!("  {what} frames {}..{}, {} points", be_u16(d, c.offset + 6), be_u16(d, c.offset + 8), c.entries));
@@ -387,11 +387,11 @@ pub fn describe(d: &[u8]) -> Result<Vec<String>, String> {
                     out.push(format!("    {:>2} roll {:>3} frame {:>4} fov {:.2} pos {:?}", p.continue_flag, p.camera_roll, p.next_point_frame, p.view_angle, p.pos));
                 }
             }
-            CS_CMD_TERMINATOR | CS_CMD_SCENE_TRANS_FX => {
-                let what = if c.cmd_type == CS_CMD_TERMINATOR { "TERMINATOR" } else { "SCENE_TRANS_FX" };
+            CS_CMD_DESTINATION | CS_CMD_TRANSITION => {
+                let what = if c.cmd_type == CS_CMD_DESTINATION { "TERMINATOR" } else { "SCENE_TRANS_FX" };
                 out.push(format!("  {what}({}, {}, {})", be_u16(d, e(0)), be_u16(d, e(0) + 2), be_u16(d, e(0) + 4)));
             }
-            CS_CMD_TEXTBOX => {
+            CS_CMD_TEXT => {
                 out.push(format!("  TEXT_LIST({})", c.entries));
                 for i in 0..c.entries {
                     let o = e(i);
@@ -409,13 +409,13 @@ pub fn describe(d: &[u8]) -> Result<Vec<String>, String> {
             t => {
                 let what = match t {
                     CS_CMD_MISC => "MISC".to_string(),
-                    CS_CMD_SET_LIGHTING => "LIGHTING".to_string(),
-                    CS_CMD_09 => "CMD_09".to_string(),
-                    CS_CMD_SET_PLAYER_ACTION => "PLAYER_ACTION".to_string(),
-                    CS_CMD_PLAYBGM => "PLAY_BGM".to_string(),
-                    CS_CMD_STOPBGM => "STOP_BGM".to_string(),
-                    CS_CMD_FADEBGM => "FADE_BGM".to_string(),
-                    CS_CMD_SETTIME => "TIME".to_string(),
+                    CS_CMD_LIGHT_SETTING => "LIGHTING".to_string(),
+                    CS_CMD_RUMBLE_CONTROLLER => "CMD_09".to_string(),
+                    CS_CMD_PLAYER_CUE => "PLAYER_ACTION".to_string(),
+                    CS_CMD_START_SEQ => "PLAY_BGM".to_string(),
+                    CS_CMD_STOP_SEQ => "STOP_BGM".to_string(),
+                    CS_CMD_FADE_OUT_SEQ => "FADE_BGM".to_string(),
+                    CS_CMD_TIME => "TIME".to_string(),
                     t => match actor_action_slot(t) {
                         Some(s) => format!("NPC_ACTION {t} (npcActions[{s}])"),
                         None => format!("UNUSED {t:#x}"),
@@ -425,7 +425,7 @@ pub fn describe(d: &[u8]) -> Result<Vec<String>, String> {
                 for i in 0..c.entries {
                     let o = e(i);
                     if c.entry_size == 0x30 {
-                        let a = CsCmdActorAction::read(d, o);
+                        let a = CsCmdActorCue::read(d, o);
                         out.push(format!("    {:#06x} frames {}..{} rot {:?} {:?} -> {:?}", a.action, a.start_frame, a.end_frame, a.rot, a.start_pos.to_array(), a.end_pos.to_array()));
                     } else {
                         out.push(format!("    {:#06x} frames {}..{} {:#010x}", be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4), be_i32(d, o + 6.min(c.entry_size - 4))));
@@ -441,17 +441,17 @@ pub fn describe(d: &[u8]) -> Result<Vec<String>, String> {
 // z_demo.c
 // ---------------------------------------------------------------------------------------------
 
-/// `EVENTCHKINF_*` (`z64save.h`) the commands and the triggers set or read.
-const EVENTCHKINF_18: u16 = 0x18;
-const EVENTCHKINF_45: u16 = 0x45;
+/// `EVENTCHKINF_*` (`save.h`) the commands and the triggers set or read.
+const EVENTCHKINF_EPONA_OBTAINED: u16 = 0x18;
+const EVENTCHKINF_OBTAINED_MASTER_SWORD: u16 = 0x45;
 const EVENTCHKINF_48: u16 = 0x48;
 const EVENTCHKINF_49: u16 = 0x49;
 const EVENTCHKINF_4A: u16 = 0x4A;
-const EVENTCHKINF_4F: u16 = 0x4F;
+const EVENTCHKINF_REVEALED_MASTER_SWORD: u16 = 0x4F;
 const EVENTCHKINF_54: u16 = 0x54;
 const EVENTCHKINF_65: u16 = 0x65;
-const EVENTCHKINF_67: u16 = 0x67;
-const EVENTCHKINF_69: u16 = 0x69;
+const EVENTCHKINF_DRAINED_WELL: u16 = 0x67;
+const EVENTCHKINF_RESTORED_LAKE_HYLIA: u16 = 0x69;
 const EVENTCHKINF_AA: u16 = 0xAA;
 const EVENTCHKINF_AC: u16 = 0xAC;
 const EVENTCHKINF_AD: u16 = 0xAD;
@@ -462,10 +462,10 @@ const EVENTCHKINF_BE: u16 = 0xBE;
 const EVENTCHKINF_BF: u16 = 0xBF;
 const EVENTCHKINF_C1: u16 = 0xC1;
 const EVENTCHKINF_C4: u16 = 0xC4;
-const EVENTCHKINF_C7: u16 = 0xC7;
+const EVENTCHKINF_GERUDO_CAUGHT_TOWER_FALL: u16 = 0xC7;
 const EVENTCHKINF_C8: u16 = 0xC8;
 
-/// `z64item.h`.
+/// `item.h`.
 const ITEM_SONG_REQUIEM: u8 = 0x5D;
 const ITEM_SONG_NOCTURNE: u8 = 0x5E;
 const ITEM_MEDALLION_FIRE: u8 = 0x67;
@@ -478,99 +478,99 @@ const QUEST_ZORA_SAPPHIRE: u32 = 0x14;
 /// | ((appearance & 3) << 1) | (speed & 1)`, with `TCC_WHITE` 1 and `TCS_SLOW` 1).
 const TRANS_TYPE_CIRCLE_NORMAL_WHITE_SLOW: u8 = 0x29;
 
-/// The terminator destinations that only start a transition (`Cutscene_Command_Terminator`'s
+/// The terminator destinations that only start a transition (`CutsceneCmd_Destination`'s
 /// arms that set `nextEntranceIndex`, maybe `cutsceneIndex`, `transitionType` and maybe
 /// `nextTransitionType`, and nothing else), transcribed from the C in its order.
 #[rustfmt::skip]
 const TERMINATOR_DESTINATIONS: &[(u16, &str, Option<u16>, u8, Option<u8>)] = &[
-    (1, "ENTR_HIRAL_DEMO_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
-    (2, "ENTR_HIRAL_DEMO_0", Some(0xFFF0), TRANS_TYPE_FILL_WHITE, None),
-    (3, "ENTR_SPOT09_0", Some(0xFFF1), TRANS_TYPE_FILL_WHITE, None),
-    (4, "ENTR_SPOT16_0", Some(0xFFF0), TRANS_TYPE_FILL_WHITE, None),
-    (5, "ENTR_SPOT04_0", Some(0xFFF0), TRANS_TYPE_FILL_WHITE, None),
-    (6, "ENTR_HIRAL_DEMO_0", Some(0xFFF2), TRANS_TYPE_FILL_WHITE, None),
-    (7, "ENTR_SPOT04_0", Some(0xFFF2), TRANS_TYPE_INSTANT, None),
-    (9, "ENTR_SPOT09_0", Some(0xFFF0), TRANS_TYPE_FILL_BROWN, None),
-    (10, "ENTR_LINK_HOME_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK, None),
-    (11, "ENTR_SPOT04_0", Some(0xFFF3), TRANS_TYPE_FADE_WHITE, None),
-    (12, "ENTR_SPOT16_5", None, TRANS_TYPE_FADE_BLACK, None),
-    (13, "ENTR_SPOT08_0", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
-    (14, "ENTR_SPOT04_11", None, TRANS_TYPE_FADE_BLACK, None),
-    (15, "ENTR_TOKINOMA_0", Some(0xFFF4), TRANS_TYPE_FADE_WHITE, None),
-    (16, "ENTR_TOKINOMA_0", Some(0xFFF5), TRANS_TYPE_FADE_WHITE, None),
-    (17, "ENTR_TOKINOMA_0", Some(0xFFF6), TRANS_TYPE_FADE_WHITE, None),
-    (19, "ENTR_SPOT16_0", Some(0x8000), TRANS_TYPE_FADE_BLACK_FAST, None),
-    (21, "ENTR_SPOT06_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None),
-    (23, "ENTR_HIRAL_DEMO_0", Some(0xFFF8), TRANS_TYPE_FADE_WHITE, None),
-    (24, "ENTR_BDAN_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (26, "ENTR_TOKINOMA_0", Some(0xFFF4), TRANS_TYPE_FADE_WHITE, None),
-    (27, "ENTR_TOKINOMA_0", Some(0xFFF5), TRANS_TYPE_FADE_WHITE, None),
-    (28, "ENTR_TOKINOMA_0", Some(0xFFF6), TRANS_TYPE_FADE_WHITE, None),
-    (33, "ENTR_SPOT00_0", None, TRANS_TYPE_FADE_WHITE, None),
-    (34, "ENTR_HIRAL_DEMO_0", Some(0xFFF3), TRANS_TYPE_FADE_WHITE, None),
-    (35, "ENTR_SPOT00_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK_FAST, None),
-    (38, "ENTR_HIRAL_DEMO_0", Some(0xFFF4), TRANS_TYPE_FADE_BLACK_FAST, None),
-    (39, "ENTR_TOKINOMA_0", Some(0xFFF9), TRANS_TYPE_FADE_BLACK_FAST, None),
-    (41, "ENTR_SPOT06_5", None, TRANS_TYPE_FADE_BLACK, None),
-    (42, "ENTR_SPOT01_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK_FAST, None),
-    (43, "ENTR_HAKASITARELAY_2", None, TRANS_TYPE_FADE_BLACK_FAST, None),
-    (44, "ENTR_TOKINOMA_3", None, TRANS_TYPE_FADE_WHITE_INSTANT, None),
-    (48, "ENTR_SPOT11_4", None, TRANS_TYPE_SANDSTORM_END, Some(TRANS_TYPE_SANDSTORM_END)),
-    (49, "ENTR_TOKINOMA_5", None, TRANS_TYPE_FADE_BLACK_FAST, None),
-    (50, "ENTR_SPOT01_13", None, TRANS_TYPE_FADE_WHITE_INSTANT, None),
-    (51, "ENTR_SPOT00_0", Some(0xFFF8), TRANS_TYPE_CIRCLE_NORMAL_WHITE_SLOW, None),
-    (52, "ENTR_TOKINOMA_0", Some(0xFFF7), TRANS_TYPE_INSTANT, None),
-    (53, "ENTR_SPOT00_16", None, TRANS_TYPE_FADE_WHITE, None),
-    (55, "ENTR_SPOT12_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
-    (56, "ENTR_SPOT01_0", Some(0xFFF4), TRANS_TYPE_FADE_BLACK, None),
-    (57, "ENTR_SPOT16_0", Some(0xFFF3), TRANS_TYPE_FADE_BLACK, None),
-    (58, "ENTR_SPOT18_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
-    (59, "ENTR_SPOT06_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
-    (60, "ENTR_SPOT08_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None),
-    (61, "ENTR_SPOT07_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK, None),
-    (63, "ENTR_SPOT04_0", Some(0xFFF7), TRANS_TYPE_FADE_BLACK, None),
-    (64, "ENTR_SPOT00_0", Some(0xFFF5), TRANS_TYPE_FADE_BLACK, None),
-    (66, "ENTR_SPOT01_14", None, TRANS_TYPE_FADE_BLACK, None),
-    (67, "ENTR_SPOT00_9", None, TRANS_TYPE_FADE_BLACK, None),
-    (68, "ENTR_HIRAL_DEMO_0", Some(0xFFF5), TRANS_TYPE_FADE_BLACK, None),
-    (69, "ENTR_SPOT04_12", None, TRANS_TYPE_FADE_BLACK, None),
-    (70, "ENTR_SPOT16_0", Some(0xFFF4), TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
-    (72, "ENTR_NAKANIWA_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
-    (74, "ENTR_SPOT20_0", Some(0xFFF3), TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE)),
-    (78, "ENTR_SPOT20_0", Some(0xFFF7), TRANS_TYPE_FADE_BLACK, None),
+    (1, "ENTR_CUTSCENE_MAP_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
+    (2, "ENTR_CUTSCENE_MAP_0", Some(0xFFF0), TRANS_TYPE_FILL_WHITE, None),
+    (3, "ENTR_GERUDO_VALLEY_0", Some(0xFFF1), TRANS_TYPE_FILL_WHITE, None),
+    (4, "ENTR_DEATH_MOUNTAIN_TRAIL_0", Some(0xFFF0), TRANS_TYPE_FILL_WHITE, None),
+    (5, "ENTR_KOKIRI_FOREST_0", Some(0xFFF0), TRANS_TYPE_FILL_WHITE, None),
+    (6, "ENTR_CUTSCENE_MAP_0", Some(0xFFF2), TRANS_TYPE_FILL_WHITE, None),
+    (7, "ENTR_KOKIRI_FOREST_0", Some(0xFFF2), TRANS_TYPE_INSTANT, None),
+    (9, "ENTR_GERUDO_VALLEY_0", Some(0xFFF0), TRANS_TYPE_FILL_BROWN, None),
+    (10, "ENTR_LINKS_HOUSE_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK, None),
+    (11, "ENTR_KOKIRI_FOREST_0", Some(0xFFF3), TRANS_TYPE_FADE_WHITE, None),
+    (12, "ENTR_DEATH_MOUNTAIN_TRAIL_5", None, TRANS_TYPE_FADE_BLACK, None),
+    (13, "ENTR_ZORAS_FOUNTAIN_0", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
+    (14, "ENTR_KOKIRI_FOREST_11", None, TRANS_TYPE_FADE_BLACK, None),
+    (15, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF4), TRANS_TYPE_FADE_WHITE, None),
+    (16, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF5), TRANS_TYPE_FADE_WHITE, None),
+    (17, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF6), TRANS_TYPE_FADE_WHITE, None),
+    (19, "ENTR_DEATH_MOUNTAIN_TRAIL_0", Some(0x8000), TRANS_TYPE_FADE_BLACK_FAST, None),
+    (21, "ENTR_LAKE_HYLIA_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None),
+    (23, "ENTR_CUTSCENE_MAP_0", Some(0xFFF8), TRANS_TYPE_FADE_WHITE, None),
+    (24, "ENTR_JABU_JABU_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (26, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF4), TRANS_TYPE_FADE_WHITE, None),
+    (27, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF5), TRANS_TYPE_FADE_WHITE, None),
+    (28, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF6), TRANS_TYPE_FADE_WHITE, None),
+    (33, "ENTR_HYRULE_FIELD_0", None, TRANS_TYPE_FADE_WHITE, None),
+    (34, "ENTR_CUTSCENE_MAP_0", Some(0xFFF3), TRANS_TYPE_FADE_WHITE, None),
+    (35, "ENTR_HYRULE_FIELD_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK_FAST, None),
+    (38, "ENTR_CUTSCENE_MAP_0", Some(0xFFF4), TRANS_TYPE_FADE_BLACK_FAST, None),
+    (39, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF9), TRANS_TYPE_FADE_BLACK_FAST, None),
+    (41, "ENTR_LAKE_HYLIA_5", None, TRANS_TYPE_FADE_BLACK, None),
+    (42, "ENTR_KAKARIKO_VILLAGE_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK_FAST, None),
+    (43, "ENTR_WINDMILL_AND_DAMPES_GRAVE_2", None, TRANS_TYPE_FADE_BLACK_FAST, None),
+    (44, "ENTR_TEMPLE_OF_TIME_3", None, TRANS_TYPE_FADE_WHITE_INSTANT, None),
+    (48, "ENTR_DESERT_COLOSSUS_4", None, TRANS_TYPE_SANDSTORM_END, Some(TRANS_TYPE_SANDSTORM_END)),
+    (49, "ENTR_TEMPLE_OF_TIME_5", None, TRANS_TYPE_FADE_BLACK_FAST, None),
+    (50, "ENTR_KAKARIKO_VILLAGE_13", None, TRANS_TYPE_FADE_WHITE_INSTANT, None),
+    (51, "ENTR_HYRULE_FIELD_0", Some(0xFFF8), TRANS_TYPE_CIRCLE_NORMAL_WHITE_SLOW, None),
+    (52, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF7), TRANS_TYPE_INSTANT, None),
+    (53, "ENTR_HYRULE_FIELD_16", None, TRANS_TYPE_FADE_WHITE, None),
+    (55, "ENTR_GERUDOS_FORTRESS_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
+    (56, "ENTR_KAKARIKO_VILLAGE_0", Some(0xFFF4), TRANS_TYPE_FADE_BLACK, None),
+    (57, "ENTR_DEATH_MOUNTAIN_TRAIL_0", Some(0xFFF3), TRANS_TYPE_FADE_BLACK, None),
+    (58, "ENTR_GORON_CITY_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
+    (59, "ENTR_LAKE_HYLIA_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
+    (60, "ENTR_ZORAS_FOUNTAIN_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None),
+    (61, "ENTR_ZORAS_DOMAIN_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK, None),
+    (63, "ENTR_KOKIRI_FOREST_0", Some(0xFFF7), TRANS_TYPE_FADE_BLACK, None),
+    (64, "ENTR_HYRULE_FIELD_0", Some(0xFFF5), TRANS_TYPE_FADE_BLACK, None),
+    (66, "ENTR_KAKARIKO_VILLAGE_14", None, TRANS_TYPE_FADE_BLACK, None),
+    (67, "ENTR_HYRULE_FIELD_9", None, TRANS_TYPE_FADE_BLACK, None),
+    (68, "ENTR_CUTSCENE_MAP_0", Some(0xFFF5), TRANS_TYPE_FADE_BLACK, None),
+    (69, "ENTR_KOKIRI_FOREST_12", None, TRANS_TYPE_FADE_BLACK, None),
+    (70, "ENTR_DEATH_MOUNTAIN_TRAIL_0", Some(0xFFF4), TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
+    (72, "ENTR_CASTLE_COURTYARD_ZELDA_0", Some(0xFFF0), TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
+    (74, "ENTR_LON_LON_RANCH_0", Some(0xFFF3), TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE)),
+    (78, "ENTR_LON_LON_RANCH_0", Some(0xFFF7), TRANS_TYPE_FADE_BLACK, None),
     // Cases 79 to 92 fall through to 93.
-    (79, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (80, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (81, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (82, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (83, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (84, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (85, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (86, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (87, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (88, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (89, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (90, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (91, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (92, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (93, "ENTR_SPOT20_0", None, TRANS_TYPE_FADE_BLACK, None),
-    (94, "ENTR_SPOT20_1", None, TRANS_TYPE_FADE_WHITE, None),
-    (98, "ENTR_SPOT17_5", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE)),
-    (99, "ENTR_SPOT05_3", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
-    (100, "ENTR_SPOT04_0", Some(0xFFF8), TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE)),
-    (101, "ENTR_SPOT11_6", None, TRANS_TYPE_SANDSTORM_END, None),
-    (102, "ENTR_TOKINOMA_6", None, TRANS_TYPE_FADE_BLACK, None),
-    (103, "ENTR_SPOT00_0", Some(0xFFF3), TRANS_TYPE_FADE_BLACK, None),
-    (105, "ENTR_SPOT02_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
-    (106, "ENTR_HAKAANA_OUKE_1", None, TRANS_TYPE_FADE_BLACK, None),
-    (107, "ENTR_GANONTIKA_2", None, TRANS_TYPE_FADE_BLACK, None),
-    (108, "ENTR_GANONTIKA_3", None, TRANS_TYPE_FADE_BLACK, None),
-    (109, "ENTR_GANONTIKA_4", None, TRANS_TYPE_FADE_BLACK, None),
-    (110, "ENTR_GANONTIKA_5", None, TRANS_TYPE_FADE_BLACK, None),
-    (111, "ENTR_GANONTIKA_6", None, TRANS_TYPE_FADE_BLACK, None),
-    (112, "ENTR_GANONTIKA_7", None, TRANS_TYPE_FADE_BLACK, None),
-    (114, "ENTR_SPOT00_3", None, TRANS_TYPE_FADE_BLACK, None),
-    (115, "ENTR_SPOT00_17", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
+    (79, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (80, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (81, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (82, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (83, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (84, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (85, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (86, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (87, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (88, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (89, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (90, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (91, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (92, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (93, "ENTR_LON_LON_RANCH_0", None, TRANS_TYPE_FADE_BLACK, None),
+    (94, "ENTR_LON_LON_RANCH_1", None, TRANS_TYPE_FADE_WHITE, None),
+    (98, "ENTR_DEATH_MOUNTAIN_CRATER_5", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE)),
+    (99, "ENTR_SACRED_FOREST_MEADOW_3", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
+    (100, "ENTR_KOKIRI_FOREST_0", Some(0xFFF8), TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE)),
+    (101, "ENTR_DESERT_COLOSSUS_6", None, TRANS_TYPE_SANDSTORM_END, None),
+    (102, "ENTR_TEMPLE_OF_TIME_6", None, TRANS_TYPE_FADE_BLACK, None),
+    (103, "ENTR_HYRULE_FIELD_0", Some(0xFFF3), TRANS_TYPE_FADE_BLACK, None),
+    (105, "ENTR_GRAVEYARD_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None),
+    (106, "ENTR_ROYAL_FAMILYS_TOMB_1", None, TRANS_TYPE_FADE_BLACK, None),
+    (107, "ENTR_INSIDE_GANONS_CASTLE_2", None, TRANS_TYPE_FADE_BLACK, None),
+    (108, "ENTR_INSIDE_GANONS_CASTLE_3", None, TRANS_TYPE_FADE_BLACK, None),
+    (109, "ENTR_INSIDE_GANONS_CASTLE_4", None, TRANS_TYPE_FADE_BLACK, None),
+    (110, "ENTR_INSIDE_GANONS_CASTLE_5", None, TRANS_TYPE_FADE_BLACK, None),
+    (111, "ENTR_INSIDE_GANONS_CASTLE_6", None, TRANS_TYPE_FADE_BLACK, None),
+    (112, "ENTR_INSIDE_GANONS_CASTLE_7", None, TRANS_TYPE_FADE_BLACK, None),
+    (114, "ENTR_HYRULE_FIELD_3", None, TRANS_TYPE_FADE_BLACK, None),
+    (115, "ENTR_HYRULE_FIELD_17", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK)),
 ];
 
 impl PlayState {
@@ -596,14 +596,14 @@ impl PlayState {
         self.assets.as_ref()?.scenes.entrances.iter().position(|e| e.name == name).map(|i| i as u16)
     }
 
-    /// `func_8002DF38` (`z_actor.c`): Player's `csMode`, the actor it's about (`unk_448`), and
+    /// `Player_SetCsAction` (`z_actor.c`): Player's `csMode`, the actor it's about (`csActor`), and
     /// `doorBgCamIndex` 0.
-    pub fn func_8002df38(&mut self, actor: Option<crate::actor_ctx::ActorHandle>, cs_mode: u8) -> bool {
+    pub fn player_set_cs_action(&mut self, actor: Option<crate::actor_ctx::ActorHandle>, cs_mode: u8) -> bool {
         self.set_player_cs_mode(actor, cs_mode, 0)
     }
 
-    /// `func_8002DF54` (`z_actor.c`): `func_8002DF38`, then `doorBgCamIndex` 1.
-    pub fn func_8002df54(&mut self, actor: Option<crate::actor_ctx::ActorHandle>, cs_mode: u8) -> bool {
+    /// `Player_SetCsActionWithHaltedActors` (`z_actor.c`): `Player_SetCsAction`, then `doorBgCamIndex` 1.
+    pub fn player_set_cs_action_with_halted_actors(&mut self, actor: Option<crate::actor_ctx::ActorHandle>, cs_mode: u8) -> bool {
         self.set_player_cs_mode(actor, cs_mode, 1)
     }
 
@@ -617,7 +617,7 @@ impl PlayState {
         }
     }
 
-    /// `Flags_SetEnv`, `Flags_UnsetEnv`, `Flags_GetEnv` (`code_8006C3A0.c`): `play->envFlags`.
+    /// `CutsceneFlags_Set`, `CutsceneFlags_Unset`, `CutsceneFlags_Get` (`z_env_flags.c`): `play->cutsceneFlags`.
     pub fn flags_set_env(&mut self, flag: i16) {
         self.env_flags[(flag / 16) as usize] |= 1 << (flag % 16);
     }
@@ -628,54 +628,54 @@ impl PlayState {
         self.env_flags[(flag / 16) as usize] & (1 << (flag % 16)) != 0
     }
 
-    /// `func_8006450C` (later decomps' `Cutscene_InitContext`).
-    pub fn func_8006450c(&mut self) {
+    /// `Cutscene_InitContext`.
+    pub fn init_context(&mut self) {
         self.cs_ctx.state = CS_STATE_IDLE;
-        self.cs_ctx.unk_0c = 0.0;
+        self.cs_ctx.timer = 0.0;
     }
 
-    /// `func_80064520`.
-    pub fn func_80064520(&mut self) {
-        self.cs_ctx.state = CS_STATE_SKIPPABLE_INIT;
+    /// `Cutscene_StartManual`.
+    pub fn start_manual(&mut self) {
+        self.cs_ctx.state = CS_STATE_START;
         self.cs_ctx.link_action = None;
     }
 
-    /// `func_80064534`: end the script (the debug camera's toggle, `Camera_Update`).
-    pub fn func_80064534(&mut self) {
-        if self.cs_ctx.state != CS_STATE_UNSKIPPABLE_EXEC {
-            self.cs_ctx.state = CS_STATE_UNSKIPPABLE_INIT;
+    /// `Cutscene_StopManual`: end the script (the debug camera's toggle, `Camera_Update`).
+    pub fn stop_manual(&mut self) {
+        if self.cs_ctx.state != CS_STATE_RUN_UNSTOPPABLE {
+            self.cs_ctx.state = CS_STATE_STOP;
         }
     }
 
-    /// `func_80064558` (later decomps' `Cutscene_UpdateManual`): outside a script
-    /// (`cutsceneIndex < 0xFFF0`), `sCsStateHandlers1`: an actor's own cutscene only fades the
+    /// `Cutscene_UpdateManual`: outside a script
+    /// (`cutsceneIndex < 0xFFF0`), `sManualCutsceneHandlers`: an actor's own cutscene only fades the
     /// letterbox and the interface in and out.
-    pub fn func_80064558(&mut self) {
+    pub fn update_manual(&mut self) {
         if self.save.cutscene_index < 0xFFF0 {
-            // sCsStateHandlers1: func_80064720, func_80064760, func_80064720, func_80068D84,
-            // func_80064720.
+            // sManualCutsceneHandlers: CutsceneHandler_DoNothing, CutsceneHandler_StartManual, CutsceneHandler_DoNothing, CutsceneHandler_StopManual,
+            // CutsceneHandler_DoNothing.
             match self.cs_ctx.state {
-                CS_STATE_SKIPPABLE_INIT => self.func_80064760(),
-                CS_STATE_UNSKIPPABLE_INIT => self.func_80068d84(),
+                CS_STATE_START => self.cutscene_handler_start_manual(),
+                CS_STATE_STOP => self.cutscene_handler_stop_manual(),
                 _ => {}
             }
         }
     }
 
-    /// `func_800645A0` (later decomps' `Cutscene_UpdateScripted`): a trigger starts the script
-    /// in `csCtx.segment` (`cutsceneIndex` 0xFFFD), then `sCsStateHandlers2` runs it.
-    pub fn func_800645a0(&mut self) {
+    /// `Cutscene_UpdateScripted`: a trigger starts the script
+    /// in `csCtx.segment` (`cutsceneIndex` 0xFFFD), then `sScriptedCutsceneHandlers` runs it.
+    pub fn update_scripted(&mut self) {
         let press = self.input.press;
         // The debug ROM's replays in a cutscene layer: D-Left without the script's camera, D-Up
         // with it.
         if press.held(BTN_DLEFT) && self.cs_ctx.state == CS_STATE_IDLE && self.is_cutscene_layer() {
-            self.demo.d_8015fcc8 = 0;
+            self.demo.use_cutscene_cam = 0;
             self.save.cutscene_index = 0xFFFD;
             self.save.cutscene_trigger = 1;
         }
-        // (gDbgCamEnabled: the debug camera isn't ported.)
+        // (gDebugCamEnabled: the debug camera isn't ported.)
         if press.held(BTN_DUP) && self.cs_ctx.state == CS_STATE_IDLE && self.is_cutscene_layer() {
-            self.demo.d_8015fcc8 = 1;
+            self.demo.use_cutscene_cam = 1;
             self.save.cutscene_index = 0xFFFD;
             self.save.cutscene_trigger = 1;
         }
@@ -688,48 +688,48 @@ impl PlayState {
             self.save.cutscene_trigger = 1;
         }
         if self.save.cutscene_index >= 0xFFF0 {
-            self.func_80068ecc();
-            // sCsStateHandlers2: func_80064720, func_800647C0, func_80068C3C, func_80068DC0,
-            // func_80068C3C.
+            self.setup_scripted();
+            // sScriptedCutsceneHandlers: CutsceneHandler_DoNothing, CutsceneHandler_StartScript, CutsceneHandler_RunScript, CutsceneHandler_StopScript,
+            // CutsceneHandler_RunScript.
             match self.cs_ctx.state {
-                CS_STATE_SKIPPABLE_INIT => self.func_800647c0(),
-                CS_STATE_SKIPPABLE_EXEC | CS_STATE_UNSKIPPABLE_EXEC => self.func_80068c3c(),
-                CS_STATE_UNSKIPPABLE_INIT => self.func_80068dc0(),
+                CS_STATE_START => self.cutscene_handler_start_script(),
+                CS_STATE_RUN | CS_STATE_RUN_UNSTOPPABLE => self.cutscene_handler_run_script(),
+                CS_STATE_STOP => self.cutscene_handler_stop_script(),
                 _ => {}
             }
         }
     }
 
-    /// `func_8006472C`: `unk_0C` towards `target` by 0.1; true once there.
-    fn func_8006472c(&mut self, target: f32) -> bool {
-        eng_math::step_to_f(&mut self.cs_ctx.unk_0c, target, 0.1)
+    /// `Cutscene_StepTimer`: `timer` towards `target` by 0.1; true once there.
+    fn step_timer(&mut self, target: f32) -> bool {
+        eng_math::step_to_f(&mut self.cs_ctx.timer, target, 0.1)
     }
 
-    /// `func_80064760`.
-    fn func_80064760(&mut self) {
+    /// `CutsceneHandler_StartManual`.
+    fn cutscene_handler_start_manual(&mut self) {
         crate::interface::change_alpha(&mut self.save, 1);
         self.letterbox.set_size_target(32);
-        if self.func_8006472c(1.0) {
+        if self.step_timer(1.0) {
             self.audio.set_cutscene_flag(1);
             self.cs_ctx.state += 1;
         }
     }
 
-    /// `func_800647C0`: the script runs as it starts.
-    fn func_800647c0(&mut self) {
-        self.func_80068c3c();
+    /// `CutsceneHandler_StartScript`: the script runs as it starts.
+    fn cutscene_handler_start_script(&mut self) {
+        self.cutscene_handler_run_script();
         crate::interface::change_alpha(&mut self.save, 1);
         self.letterbox.set_size_target(32);
-        if self.func_8006472c(1.0) {
+        if self.step_timer(1.0) {
             self.audio.set_cutscene_flag(1);
             self.cs_ctx.state += 1;
         }
     }
 
-    /// `func_80064824`: command 3, the misc actions, on `envCtx` and the rest of play. Those that
+    /// `CutsceneCmd_Misc`: command 3, the misc actions, on `envCtx` and the rest of play. Those that
     /// need what isn't ported (the skybox's change, quakes, title cards, the sandstorm, the Sun's
     /// Song, the scarecrow's song) are logged on their first frame; their sounds play.
-    fn func_80064824(&mut self, d: &[u8], o: usize) {
+    fn cutscene_cmd_misc(&mut self, d: &[u8], o: usize) {
         let (base, start, end) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4));
         let frames = self.cs_ctx.frames;
         if frames < start || (frames >= end && end != start) {
@@ -762,7 +762,7 @@ impl PlayState {
             3 => {
                 if first {
                     self.flags_set_env(0);
-                    if self.save.entrance_index == self.entrance_by_name("ENTR_TOKINOMA_0").unwrap_or(u16::MAX) {
+                    if self.save.entrance_index == self.entrance_by_name("ENTR_TEMPLE_OF_TIME_0").unwrap_or(u16::MAX) {
                         self.flags_set_env(2);
                     }
                 }
@@ -790,37 +790,37 @@ impl PlayState {
             }
             8 => {
                 if let Some(s) = self.scene.as_mut()
-                    && s.draw.room_unk_74[0] < 0x80
+                    && s.draw.room_draw_params[0] < 0x80
                 {
-                    s.draw.room_unk_74[0] += 4;
+                    s.draw.room_draw_params[0] += 4;
                 }
             }
             9 => self.env_ctx.precipitation[crate::env::PRECIP_SNOW_MAX] = 16,
             10 => self.flags_set_env(1),
             11 => {
                 if let Some(s) = self.scene.as_mut() {
-                    if s.draw.room_unk_74[0] < 0x672 {
-                        s.draw.room_unk_74[0] += 0x14;
+                    if s.draw.room_draw_params[0] < 0x672 {
+                        s.draw.room_draw_params[0] += 0x14;
                     }
                     if frames == 0x30F {
-                        self.audio.func_80078884(crate::audio::sfx::NA_SE_EV_DEKU_DEATH);
+                        self.audio.play_sfx_centered(crate::audio::sfx::NA_SE_EV_DEKU_DEATH);
                     } else if frames == 0x2CD {
-                        s.draw.room_unk_74[0] = 0;
+                        s.draw.room_draw_params[0] = 0;
                     }
                 }
             }
             12 => {
-                if first && self.cs_ctx.state != CS_STATE_UNSKIPPABLE_EXEC {
-                    self.cs_ctx.state = CS_STATE_UNSKIPPABLE_INIT;
+                if first && self.cs_ctx.state != CS_STATE_RUN_UNSTOPPABLE {
+                    self.cs_ctx.state = CS_STATE_STOP;
                 }
             }
             13 => {
                 if let Some(s) = self.scene.as_mut() {
-                    if s.draw.room_unk_74[1] == 0 {
-                        self.audio.func_80078884(crate::audio::sfx::NA_SE_EV_TRIFORCE_FLASH);
+                    if s.draw.room_draw_params[1] == 0 {
+                        self.audio.play_sfx_centered(crate::audio::sfx::NA_SE_EV_TRIFORCE_FLASH);
                     }
-                    if s.draw.room_unk_74[1] < 0xFF {
-                        s.draw.room_unk_74[1] += 5;
+                    if s.draw.room_draw_params[1] < 0xFF {
+                        s.draw.room_draw_params[1] += 5;
                     }
                 }
             }
@@ -835,8 +835,8 @@ impl PlayState {
                     self.title_ctx.init_place_name(&title, 160, 120, 144, 24, 20);
                 }
             }
-            16 => not_ported("Quake_Add"),
-            17 => not_ported("Quake_RemoveFromIdx"),
+            16 => not_ported("Quake_Request"),
+            17 => not_ported("Quake_RemoveRequest"),
             18 => {
                 use crate::env::{PRECIP_RAIN_CUR, PRECIP_RAIN_MAX, STORM_REQUEST_STOP};
                 self.env_ctx.precipitation[PRECIP_RAIN_MAX] = 0;
@@ -851,8 +851,8 @@ impl PlayState {
                 }
             }
             19 => self.save.set_event_chk_inf(EVENTCHKINF_65),
-            20 => self.save.set_event_chk_inf(EVENTCHKINF_67),
-            21 => self.save.set_event_chk_inf(EVENTCHKINF_69),
+            20 => self.save.set_event_chk_inf(EVENTCHKINF_DRAINED_WELL),
+            21 => self.save.set_event_chk_inf(EVENTCHKINF_RESTORED_LAKE_HYLIA),
             22 => {
                 self.vis_mono_color = [255, 255, 255, 255];
                 not_ported("the screen's monochrome tint (VisMono) drawn");
@@ -898,8 +898,8 @@ impl PlayState {
                     e.adj_light1_color[2] += 3;
                 }
             }
-            28 => self.unk_11de9 = true,
-            29 => self.unk_11de9 = false,
+            28 => self.halt_all_actors = true,
+            29 => self.halt_all_actors = false,
             30 => self.flags_set_env(3),
             31 => self.flags_set_env(4),
             32 => {
@@ -907,17 +907,17 @@ impl PlayState {
                     self.env_ctx.sandstorm_state = crate::env::SANDSTORM_FILL;
                 }
                 not_ported("the sandstorm drawn");
-                self.audio.func_800788cc(crate::audio::sfx::NA_SE_EV_SAND_STORM - crate::audio::sfx::SFX_FLAG);
+                self.audio.play_sfx_centered2(crate::audio::sfx::NA_SE_EV_SAND_STORM - crate::audio::sfx::SFX_FLAG);
             }
             33 => not_ported("the Sun's Song"),
-            // gSaveContext.dayTime -= gTimeSpeed (twice by night): time is stopped, gTimeSpeed 0.
+            // gSaveContext.save.dayTime -= gTimeSpeed (twice by night): time is stopped, gTimeSpeed 0.
             34 => {}
             35 => not_ported("the scarecrow's song after the credits"),
             _ => {}
         }
     }
 
-    /// Command 4, `Cutscene_Command_SetLighting` (`CsCmdEnvLighting`: the setting, plus one, at
+    /// Command 4, `CutsceneCmd_SetLightSetting` (`CsCmdLightSetting`: the setting, plus one, at
     /// byte 1): the light setting override, blended in from now (`Environment_Update`).
     fn cutscene_command_set_lighting(&mut self, d: &[u8], o: usize) {
         if self.cs_ctx.frames == be_u16(d, o + 2) {
@@ -926,22 +926,22 @@ impl PlayState {
         }
     }
 
-    /// Command 0x56, `Cutscene_Command_PlayBGM` (`CsCmdMusicChange`: the sequence at byte 1, plus
-    /// one): `func_800F595C`, a fanfare or the main bgm.
+    /// Command 0x56, `CutsceneCmd_StartSequence` (`CsCmdStartSeq`: the sequence at byte 1, plus
+    /// one): `Audio_PlaySequenceInCutscene`, a fanfare or the main bgm.
     fn cutscene_command_play_bgm(&mut self, d: &[u8], o: usize) {
         if self.cs_ctx.frames == be_u16(d, o + 2) {
-            self.audio.func_800f595c((d[o + 1] as u16).wrapping_sub(1));
+            self.audio.audio_play_sequence_in_cutscene((d[o + 1] as u16).wrapping_sub(1));
         }
     }
 
-    /// Command 0x57, `Cutscene_Command_StopBGM`: `func_800F59E8`.
+    /// Command 0x57, `CutsceneCmd_StopSequence`: `Audio_StopSequenceInCutscene`.
     fn cutscene_command_stop_bgm(&mut self, d: &[u8], o: usize) {
         if self.cs_ctx.frames == be_u16(d, o + 2) {
-            self.audio.func_800f59e8((d[o + 1] as u16).wrapping_sub(1));
+            self.audio.audio_stop_sequence_in_cutscene((d[o + 1] as u16).wrapping_sub(1));
         }
     }
 
-    /// Command 0x7C, `Cutscene_Command_FadeBGM` (`CsCmdMusicFade`): the fanfare player (type 3)
+    /// Command 0x7C, `CutsceneCmd_FadeOutSequence` (`CsCmdFadeOutSeq`): the fanfare player (type 3)
     /// or the main bgm faded out over the command's frames (`SEQCMD_STOP_SEQUENCE` with them).
     fn cutscene_command_fade_bgm(&mut self, d: &[u8], o: usize) {
         use crate::audio::{SEQ_PLAYER_BGM_MAIN, SEQ_PLAYER_FANFARE};
@@ -954,8 +954,8 @@ impl PlayState {
         }
     }
 
-    /// Command 0x8C, `func_80065134`: the time of day (`skyboxTime` isn't kept apart here).
-    fn func_80065134(&mut self, d: &[u8], o: usize) {
+    /// Command 0x8C, `CutsceneCmd_SetTime`: the time of day (`skyboxTime` isn't kept apart here).
+    fn cutscene_cmd_set_time(&mut self, d: &[u8], o: usize) {
         if self.cs_ctx.frames == be_u16(d, o + 2) {
             let (hour, minute) = (d[o + 6], d[o + 7]);
             let temp1 = ((hour as f32 * 60.0) / (360.0 / 0x4000 as f32)) as i32 as i16;
@@ -964,7 +964,7 @@ impl PlayState {
         }
     }
 
-    /// Command 0x3E8, `Cutscene_Command_Terminator`: on its frame (or A, B or Start after frame
+    /// Command 0x3E8, `CutsceneCmd_Destination`: on its frame (or A, B or Start after frame
     /// 20 outside normal play, or Start after frame 20 anywhere, off the Deku Tree's debug
     /// file), the script ends and its destination's transition starts.
     fn cutscene_command_terminator(&mut self, d: &[u8], o: usize) {
@@ -994,12 +994,12 @@ impl PlayState {
         if !(frames == start || temp || (frames > 20 && press.held(BTN_START) && self.save.file_num != 0xFEDC)) {
             return;
         }
-        self.cs_ctx.state = CS_STATE_UNSKIPPABLE_EXEC;
+        self.cs_ctx.state = CS_STATE_RUN_UNSTOPPABLE;
         self.audio.set_cutscene_flag(0);
         self.save.cutscene_transition_control = 1;
         log::debug!("cutscene terminator: destination {base}");
         if self.save.game_mode != GAMEMODE_NORMAL && frames != start {
-            self.save.unk_13e7 = 1;
+            self.save.force_rising_button_alphas = 1;
         }
         self.save.cutscene_index = 0;
         let go = |play: &mut PlayState, entrance: &str, cs_index: Option<u16>, ty: u8, next_ty: Option<u8>| {
@@ -1025,66 +1025,66 @@ impl PlayState {
             8 => {
                 // gSaveContext.fw.set = 0 (Farore's Wind isn't ported).
                 self.save.respawn[crate::save::RESPAWN_MODE_TOP].data = 0;
-                if !self.save.get_event_chk_inf(EVENTCHKINF_45) {
-                    self.save.set_event_chk_inf(EVENTCHKINF_45);
-                    go(self, "ENTR_HIRAL_DEMO_0", Some(0xFFF3), TRANS_TYPE_INSTANT, None);
+                if !self.save.get_event_chk_inf(EVENTCHKINF_OBTAINED_MASTER_SWORD) {
+                    self.save.set_event_chk_inf(EVENTCHKINF_OBTAINED_MASTER_SWORD);
+                    go(self, "ENTR_CUTSCENE_MAP_0", Some(0xFFF3), TRANS_TYPE_INSTANT, None);
                 } else {
                     if !self.is_cutscene_layer() {
                         age_not_ported(if !self.save.adult { "LINK_AGE_ADULT" } else { "LINK_AGE_CHILD" });
                     }
-                    go(self, "ENTR_TOKINOMA_2", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
+                    go(self, "ENTR_TEMPLE_OF_TIME_2", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
                 }
             }
             18 => {
-                self.save.set_event_chk_inf(EVENTCHKINF_4F);
-                go(self, "ENTR_TOKINOMA_4", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK));
+                self.save.set_event_chk_inf(EVENTCHKINF_REVEALED_MASTER_SWORD);
+                go(self, "ENTR_TEMPLE_OF_TIME_4", None, TRANS_TYPE_FADE_BLACK, Some(TRANS_TYPE_FADE_BLACK));
             }
             22 => {
                 crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_SONG_REQUIEM);
-                go(self, "ENTR_SPOT11_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
+                go(self, "ENTR_DESERT_COLOSSUS_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
             }
             25 => {
                 age_not_ported("LINK_AGE_ADULT");
-                go(self, "ENTR_KENJYANOMA_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
+                go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None);
             }
             29 | 30 | 31 => {
                 // gSaveContext.chamberCutsceneNum = 0, 1, 2: the Chamber of Sages isn't ported.
-                go(self, "ENTR_KENJYANOMA_0", None, TRANS_TYPE_FADE_WHITE, None);
+                go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", None, TRANS_TYPE_FADE_WHITE, None);
                 if base == 30 {
                     crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_MEDALLION_FIRE);
                 }
             }
             32 => {
                 age_not_ported("LINK_AGE_CHILD");
-                go(self, "ENTR_SPOT00_0", Some(0xFFF2), TRANS_TYPE_INSTANT, None);
+                go(self, "ENTR_HYRULE_FIELD_0", Some(0xFFF2), TRANS_TYPE_INSTANT, None);
             }
             40 => {
                 age_not_ported("LINK_AGE_ADULT");
-                go(self, "ENTR_TOKINOMA_0", Some(0xFFFA), TRANS_TYPE_FADE_BLACK_FAST, None);
+                go(self, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFFA), TRANS_TYPE_FADE_BLACK_FAST, None);
             }
             46 => {
-                self.save.set_event_chk_inf(EVENTCHKINF_4F);
-                go(self, "ENTR_TOKINOMA_4", None, TRANS_TYPE_FADE_BLACK_FAST, None);
+                self.save.set_event_chk_inf(EVENTCHKINF_REVEALED_MASTER_SWORD);
+                go(self, "ENTR_TEMPLE_OF_TIME_4", None, TRANS_TYPE_FADE_BLACK_FAST, None);
             }
             47 => {
                 crate::item::item_give(&mut self.save, Some(&mut self.audio), ITEM_SONG_NOCTURNE);
                 self.save.set_event_chk_inf(EVENTCHKINF_54);
-                go(self, "ENTR_SPOT01_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK_FAST, None);
+                go(self, "ENTR_KAKARIKO_VILLAGE_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK_FAST, None);
             }
             54 | 117 => {
                 // GAMEMODE_END_CREDITS, Audio_SetSfxBanksMute(0x6F).
                 self.save.game_mode = 3;
                 if base == 54 {
                     age_not_ported("LINK_AGE_CHILD");
-                    go(self, "ENTR_SPOT09_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None);
+                    go(self, "ENTR_GERUDO_VALLEY_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None);
                 } else {
                     age_not_ported("LINK_AGE_ADULT");
-                    go(self, "ENTR_SPOT00_0", Some(0xFFF7), TRANS_TYPE_FADE_WHITE, None);
+                    go(self, "ENTR_HYRULE_FIELD_0", Some(0xFFF7), TRANS_TYPE_FADE_WHITE, None);
                 }
             }
             62 => {
                 age_not_ported("LINK_AGE_ADULT");
-                go(self, "ENTR_SPOT04_0", Some(0xFFF6), TRANS_TYPE_FADE_BLACK, None);
+                go(self, "ENTR_KOKIRI_FOREST_0", Some(0xFFF6), TRANS_TYPE_FADE_BLACK, None);
             }
             65 | 73 | 75 | 76 | 77 => {
                 let (age, c) = match base {
@@ -1095,7 +1095,7 @@ impl PlayState {
                     _ => ("LINK_AGE_CHILD", 0xFFF6),
                 };
                 age_not_ported(age);
-                go(self, "ENTR_SPOT20_0", Some(c), TRANS_TYPE_FADE_BLACK, None);
+                go(self, "ENTR_LON_LON_RANCH_0", Some(c), TRANS_TYPE_FADE_BLACK, None);
             }
             71 => {
                 use crate::item::{EQUIP_TYPE_BOOTS, EQUIP_TYPE_TUNIC, EQUIP_VALUE_BOOTS_KOKIRI, EQUIP_VALUE_TUNIC_KOKIRI};
@@ -1104,46 +1104,46 @@ impl PlayState {
                 self.save.equips.equipment |= EQUIP_VALUE_BOOTS_KOKIRI << (EQUIP_TYPE_BOOTS * 4);
                 self.player_set_equipment_data();
                 age_not_ported("LINK_AGE_CHILD");
-                go(self, "ENTR_TOKINOMA_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None);
+                go(self, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None);
             }
             95 => {
                 if self.save.get_event_chk_inf(EVENTCHKINF_48) && self.save.get_event_chk_inf(EVENTCHKINF_49) && self.save.get_event_chk_inf(EVENTCHKINF_4A) {
-                    go(self, "ENTR_TOKINOMA_0", Some(0xFFF3), TRANS_TYPE_FADE_BLACK, None);
+                    go(self, "ENTR_TEMPLE_OF_TIME_0", Some(0xFFF3), TRANS_TYPE_FADE_BLACK, None);
                 } else {
                     match self.save.scene_layer {
-                        8 => go(self, "ENTR_SPOT05_0", None, TRANS_TYPE_FADE_BLACK, None),
-                        9 => go(self, "ENTR_SPOT17_0", None, TRANS_TYPE_FADE_BLACK, None),
-                        10 => go(self, "ENTR_SPOT06_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None),
+                        8 => go(self, "ENTR_SACRED_FOREST_MEADOW_0", None, TRANS_TYPE_FADE_BLACK, None),
+                        9 => go(self, "ENTR_DEATH_MOUNTAIN_CRATER_0", None, TRANS_TYPE_FADE_BLACK, None),
+                        10 => go(self, "ENTR_LAKE_HYLIA_0", Some(0xFFF0), TRANS_TYPE_FADE_WHITE, None),
                         _ => {}
                     }
                 }
             }
             96 => {
                 if self.save.check_quest_item(QUEST_MEDALLION_SHADOW) {
-                    go(self, "ENTR_KENJYANOMA_0", Some(0xFFF1), TRANS_TYPE_FADE_WHITE_FAST, None);
+                    go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", Some(0xFFF1), TRANS_TYPE_FADE_WHITE_FAST, None);
                 } else {
                     self.save.set_event_chk_inf(EVENTCHKINF_C8);
-                    go(self, "ENTR_SPOT11_8", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
+                    go(self, "ENTR_DESERT_COLOSSUS_8", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
                 }
             }
             97 => {
                 if self.save.check_quest_item(QUEST_MEDALLION_SPIRIT) {
-                    go(self, "ENTR_KENJYANOMA_0", Some(0xFFF1), TRANS_TYPE_FADE_WHITE_FAST, None);
+                    go(self, "ENTR_CHAMBER_OF_THE_SAGES_0", Some(0xFFF1), TRANS_TYPE_FADE_WHITE_FAST, None);
                 } else {
-                    go(self, "ENTR_SPOT02_8", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
+                    go(self, "ENTR_GRAVEYARD_8", None, TRANS_TYPE_FADE_WHITE, Some(TRANS_TYPE_FADE_WHITE));
                 }
             }
             104 => match self.demo.title_cs_state {
                 0 => {
-                    go(self, "ENTR_JYASINBOSS_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None);
+                    go(self, "ENTR_SPIRIT_TEMPLE_BOSS_0", Some(0xFFF2), TRANS_TYPE_FADE_BLACK, None);
                     self.demo.title_cs_state += 1;
                 }
                 1 => {
-                    go(self, "ENTR_SPOT17_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None);
+                    go(self, "ENTR_DEATH_MOUNTAIN_CRATER_0", Some(0xFFF1), TRANS_TYPE_FADE_BLACK, None);
                     self.demo.title_cs_state += 1;
                 }
                 2 => {
-                    go(self, "ENTR_HIRAL_DEMO_0", Some(0xFFF6), TRANS_TYPE_FADE_BLACK, None);
+                    go(self, "ENTR_CUTSCENE_MAP_0", Some(0xFFF6), TRANS_TYPE_FADE_BLACK, None);
                     self.demo.title_cs_state = 0;
                 }
                 _ => {}
@@ -1156,20 +1156,20 @@ impl PlayState {
                     self.save.cutscene_trigger = 1;
                 }
                 self.save.cutscene_index = 0xFFFF;
-                self.cs_ctx.state = CS_STATE_UNSKIPPABLE_INIT;
+                self.cs_ctx.state = CS_STATE_STOP;
             }
             116 => {
                 if self.save.get_event_chk_inf(EVENTCHKINF_C8) {
-                    go(self, "ENTR_SPOT02_8", None, TRANS_TYPE_FADE_WHITE, None);
+                    go(self, "ENTR_GRAVEYARD_8", None, TRANS_TYPE_FADE_WHITE, None);
                 } else {
-                    go(self, "ENTR_SPOT11_8", None, TRANS_TYPE_FADE_WHITE, None);
+                    go(self, "ENTR_DESERT_COLOSSUS_8", None, TRANS_TYPE_FADE_WHITE, None);
                 }
                 self.save.next_transition_type = TRANS_TYPE_FADE_WHITE;
             }
             118 => {
-                match self.entrance_by_name("ENTR_GANON_DEMO_0") {
+                match self.entrance_by_name("ENTR_GANON_BOSS_0") {
                     Some(e) => self.save.respawn[crate::save::RESPAWN_MODE_DOWN].entrance_index = e,
-                    None => log::error!("cutscene terminator 118: no entrance ENTR_GANON_DEMO_0"),
+                    None => log::error!("cutscene terminator 118: no entrance ENTR_GANON_BOSS_0"),
                 }
                 self.trigger_void_out();
                 self.save.respawn_flag = -2;
@@ -1177,7 +1177,7 @@ impl PlayState {
             }
             119 => {
                 self.save.day_time = crate::env::clock_time(12, 0) as u16;
-                go(self, "ENTR_NAKANIWA_1", None, TRANS_TYPE_FADE_WHITE, None);
+                go(self, "ENTR_CASTLE_COURTYARD_ZELDA_1", None, TRANS_TYPE_FADE_WHITE, None);
             }
             _ => {}
         }
@@ -1191,7 +1191,7 @@ impl PlayState {
         }
     }
 
-    /// Command 0x2D, `Cutscene_Command_TransitionFX`: a fill over the screen
+    /// Command 0x2D, `CutsceneCmd_Transition`: a fill over the screen
     /// (`envCtx.fillScreen`, `screenFillColor`), fading in or out over the command's frames.
     fn cutscene_command_transition_fx(&mut self, d: &[u8], o: usize) {
         let (base, start, end) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4));
@@ -1208,13 +1208,13 @@ impl PlayState {
             // Fairies' fountains and Ganon's castle's collapse.
             use crate::audio::sfx::{NA_SE_EV_WHITE_OUT, NA_SE_SY_WHITE_OUT_S, SfxF32, SfxPos, SfxS8};
             let entr = |n: &str| self.entrance_by_name(n) == Some(self.save.entrance_index);
-            let ganontika = self.assets.as_ref().and_then(|a| a.scenes.scenes.iter().position(|s| s.enum_name == "SCENE_GANONTIKA")).map(|i| i as u16) == Some(self.scene_id);
-            if entr("ENTR_KENJYANOMA_0") {
+            let ganontika = self.assets.as_ref().and_then(|a| a.scenes.scenes.iter().position(|s| s.enum_name == "SCENE_INSIDE_GANONS_CASTLE")).map(|i| i as u16) == Some(self.scene_id);
+            if entr("ENTR_CHAMBER_OF_THE_SAGES_0") {
                 self.audio.play_sfx_general(NA_SE_SY_WHITE_OUT_S, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
-            } else if entr("ENTR_TOKINOMA_0") || entr("ENTR_SPOT15_0") || entr("ENTR_YOUSEI_IZUMI_YOKO_0") {
+            } else if entr("ENTR_TEMPLE_OF_TIME_0") || entr("ENTR_HYRULE_CASTLE_0") || entr("ENTR_GREAT_FAIRYS_FOUNTAIN_SPELLS_0") {
                 self.audio.play_sfx_general(NA_SE_EV_WHITE_OUT, SfxPos::Default, 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
             } else if ganontika {
-                self.audio.func_800788cc(NA_SE_EV_WHITE_OUT);
+                self.audio.play_sfx_centered2(NA_SE_EV_WHITE_OUT);
             }
         }
         self.transition.screen_fill = match base {
@@ -1239,35 +1239,35 @@ impl PlayState {
         }
     }
 
-    /// Commands 1 and 5, `Cutscene_Command_CameraEyePoints`: once an at list has been seen
-    /// (`unk_1A`), the list whose frames these are puts the cutscene's camera on its splines.
+    /// Commands 1 and 5, `CutsceneCmd_UpdateCamEyeSpline`: once an at list has been seen
+    /// (`camAtReady`), the list whose frames these are puts the cutscene's camera on its splines.
     fn cutscene_command_camera_eye_points(&mut self, script: &Arc<CutsceneScript>, o: usize, relative_to_link: i16) {
         let d = &script.data;
         let (start, end) = (be_u16(d, o + 2), be_u16(d, o + 4));
         let cs = &mut self.cs_ctx;
-        if start < cs.frames && cs.frames < end && (cs.unk_18 < start || cs.unk_18 >= 0xF000) {
-            cs.unk_1b = 1;
+        if start < cs.frames && cs.frames < end && (cs.cam_eye_spline_points_applied_frame < start || cs.cam_eye_spline_points_applied_frame >= 0xF000) {
+            cs.cam_eye_ready = 1;
             cs.sub_cam_eye_points = Some(CsPtr { script: script.clone(), offset: o + 8 });
-            if cs.unk_1a != 0 {
-                cs.unk_18 = start;
-                if self.demo.d_8015fcc8 != 0 {
+            if cs.cam_at_ready != 0 {
+                cs.cam_eye_spline_points_applied_frame = start;
+                if self.demo.use_cutscene_cam != 0 {
                     self.apply_cutscene_camera(relative_to_link);
                 }
             }
         }
     }
 
-    /// Commands 2 and 6, `Cutscene_Command_CameraLookAtPoints`.
+    /// Commands 2 and 6, `CutsceneCmd_UpdateCamAtSpline`.
     fn cutscene_command_camera_look_at_points(&mut self, script: &Arc<CutsceneScript>, o: usize, relative_to_link: i16) {
         let d = &script.data;
         let (start, end) = (be_u16(d, o + 2), be_u16(d, o + 4));
         let cs = &mut self.cs_ctx;
-        if start < cs.frames && cs.frames < end && (self.demo.d_8015fcc0 < start || self.demo.d_8015fcc0 >= 0xF000) {
-            cs.unk_1a = 1;
+        if start < cs.frames && cs.frames < end && (self.demo.cam_at_spline_points_applied_frame < start || self.demo.cam_at_spline_points_applied_frame >= 0xF000) {
+            cs.cam_at_ready = 1;
             cs.sub_cam_look_at_points = Some(CsPtr { script: script.clone(), offset: o + 8 });
-            if cs.unk_1b != 0 {
-                self.demo.d_8015fcc0 = start;
-                if self.demo.d_8015fcc8 != 0 {
+            if cs.cam_eye_ready != 0 {
+                self.demo.cam_at_spline_points_applied_frame = start;
+                if self.demo.use_cutscene_cam != 0 {
                     self.apply_cutscene_camera(relative_to_link);
                 }
             }
@@ -1291,35 +1291,35 @@ impl PlayState {
         }
     }
 
-    /// Commands 7 and 8, `Cutscene_Command_07` and `_08`: one eye point, or one at point; with
+    /// Commands 7 and 8, `CutsceneCmd_SetCamEye` and `_08`: one eye point, or one at point; with
     /// both seen, the sub camera (`CAM_SET_FREE0`, no player) is put there at once.
     fn cutscene_command_07_08(&mut self, script: &Arc<CutsceneScript>, o: usize, eye: bool) {
         let d = &script.data;
         let (start, end) = (be_u16(d, o + 2), be_u16(d, o + 4));
         let frames = self.cs_ctx.frames;
-        let applied = if eye { self.demo.d_8015fcc2 } else { self.demo.d_8015fcc4 };
+        let applied = if eye { self.demo.cam_eye_point_applied_frame } else { self.demo.cam_at_point_applied_frame };
         if !(start < frames && frames < end && (applied < start || applied >= 0xF000)) {
             return;
         }
         let ptr = Some(CsPtr { script: script.clone(), offset: o + 8 });
         let other_ready = if eye {
-            self.cs_ctx.unk_1b = 1;
+            self.cs_ctx.cam_eye_ready = 1;
             self.cs_ctx.sub_cam_eye_points = ptr;
-            self.cs_ctx.unk_1a != 0
+            self.cs_ctx.cam_at_ready != 0
         } else {
-            self.cs_ctx.unk_1a = 1;
+            self.cs_ctx.cam_at_ready = 1;
             self.cs_ctx.sub_cam_look_at_points = ptr;
-            self.cs_ctx.unk_1b != 0
+            self.cs_ctx.cam_eye_ready != 0
         };
         if !other_ready {
             return;
         }
         if eye {
-            self.demo.d_8015fcc2 = start;
+            self.demo.cam_eye_point_applied_frame = start;
         } else {
-            self.demo.d_8015fcc4 = start;
+            self.demo.cam_at_point_applied_frame = start;
         }
-        if self.demo.d_8015fcc8 == 0 {
+        if self.demo.use_cutscene_cam == 0 {
             return;
         }
         let sub = self.cs_ctx.sub_cam_id;
@@ -1340,9 +1340,9 @@ impl PlayState {
         self.camera_set_fov(sub, eye_pt.view_angle);
     }
 
-    /// Command 0x13, `Cutscene_Command_Textbox`: a text opens on the first frame after its
+    /// Command 0x13, `CutsceneCmd_Text`: a text opens on the first frame after its
     /// start, and at its end frame the script waits while the box is up, answering a choice
-    /// with the branch's text, or waits for the event's end (ocarina actions: `func_8010BD58`,
+    /// with the branch's text, or waits for the event's end (ocarina actions: `Message_StartOcarina`,
     /// not ported).
     fn cutscene_command_textbox(&mut self, d: &[u8], o: usize) {
         let (base, start, end, ty, text_id1, text_id2) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4), be_u16(d, o + 6), be_u16(d, o + 8), be_u16(d, o + 10));
@@ -1351,8 +1351,8 @@ impl PlayState {
             return;
         }
         if ty != 2 {
-            if self.demo.d_8011e1c0 != base {
-                self.demo.d_8011e1c0 = base;
+            if self.demo.cur_text_id != base {
+                self.demo.cur_text_id = base;
                 if (ty == 3 && self.save.check_quest_item(QUEST_ZORA_SAPPHIRE)) || (ty == 4 && self.save.check_quest_item(QUEST_GORON_RUBY)) {
                     self.start_textbox(text_id1, None);
                 } else {
@@ -1360,9 +1360,9 @@ impl PlayState {
                 }
                 return;
             }
-        } else if self.demo.d_8011e1c4 != base {
-            self.demo.d_8011e1c4 = base;
-            log::warn!("cutscene text: ocarina action {base:#x} (func_8010BD58) not ported");
+        } else if self.demo.cur_ocarina_action != base {
+            self.demo.cur_ocarina_action = base;
+            log::warn!("cutscene text: ocarina action {base:#x} (Message_StartOcarina) not ported");
             return;
         }
         if frames >= end {
@@ -1386,95 +1386,95 @@ impl PlayState {
                     }
                 }
                 if st == TEXT_STATE_EVENT && self.message_should_advance() {
-                    log::warn!("cutscene text {base:#x}: the event's func_8010BD58 not ported");
+                    log::warn!("cutscene text {base:#x}: the event's Message_StartOcarina not ported");
                 }
             }
             if self.cs_ctx.frames == original {
                 crate::interface::change_alpha(&mut self.save, 1);
-                self.demo.d_8011e1c0 = 0;
-                self.demo.d_8011e1c4 = 0;
+                self.demo.cur_text_id = 0;
+                self.demo.cur_ocarina_action = 0;
             }
         }
     }
 
-    /// `Cutscene_ProcessCommands`: one frame of the script, command by command. Past the
+    /// `Cutscene_ProcessScript`: one frame of the script, command by command. Past the
     /// script's last frame, or on D-Right (the debug skip), the script ends
-    /// (`CS_STATE_UNSKIPPABLE_INIT`).
+    /// (`CS_STATE_STOP`).
     pub fn cutscene_process_commands(&mut self, script: Arc<CutsceneScript>) {
         let d = &script.data[..];
         let total = be_i32(d, 0);
         let end_frame = be_i32(d, 4);
-        if end_frame < self.cs_ctx.frames as i32 && self.cs_ctx.state != CS_STATE_UNSKIPPABLE_EXEC {
-            self.cs_ctx.state = CS_STATE_UNSKIPPABLE_INIT;
+        if end_frame < self.cs_ctx.frames as i32 && self.cs_ctx.state != CS_STATE_RUN_UNSTOPPABLE {
+            self.cs_ctx.state = CS_STATE_STOP;
             return;
         }
         if self.input.press.held(BTN_DRIGHT) {
-            self.cs_ctx.state = CS_STATE_UNSKIPPABLE_INIT;
+            self.cs_ctx.state = CS_STATE_STOP;
             return;
         }
         let mut p = 8;
         for _ in 0..total {
             let cmd_type = be_i32(d, p);
             p += 4;
-            if cmd_type == CS_CMD_END {
+            if cmd_type == CS_CMD_END_OF_SCRIPT {
                 return;
             }
             let entries = |p: usize| be_i32(d, p).max(0) as usize;
             match cmd_type {
-                CS_CMD_MISC | CS_CMD_SET_LIGHTING | CS_CMD_PLAYBGM | CS_CMD_STOPBGM | CS_CMD_FADEBGM => {
+                CS_CMD_MISC | CS_CMD_LIGHT_SETTING | CS_CMD_START_SEQ | CS_CMD_STOP_SEQ | CS_CMD_FADE_OUT_SEQ => {
                     let n = entries(p);
                     p += 4;
                     for _ in 0..n {
                         match cmd_type {
-                            CS_CMD_MISC => self.func_80064824(d, p),
-                            CS_CMD_SET_LIGHTING => self.cutscene_command_set_lighting(d, p),
-                            CS_CMD_PLAYBGM => self.cutscene_command_play_bgm(d, p),
-                            CS_CMD_STOPBGM => self.cutscene_command_stop_bgm(d, p),
+                            CS_CMD_MISC => self.cutscene_cmd_misc(d, p),
+                            CS_CMD_LIGHT_SETTING => self.cutscene_command_set_lighting(d, p),
+                            CS_CMD_START_SEQ => self.cutscene_command_play_bgm(d, p),
+                            CS_CMD_STOP_SEQ => self.cutscene_command_stop_bgm(d, p),
                             _ => self.cutscene_command_fade_bgm(d, p),
                         }
                         p += 0x30;
                     }
                 }
-                // Cutscene_Command_09 (Rumble_Request: no rumble), func_80065134.
-                CS_CMD_09 | CS_CMD_SETTIME => {
+                // CutsceneCmd_RumbleController (Rumble_Request: no rumble), CutsceneCmd_SetTime.
+                CS_CMD_RUMBLE_CONTROLLER | CS_CMD_TIME => {
                     let n = entries(p);
                     p += 4;
                     for _ in 0..n {
-                        if cmd_type == CS_CMD_SETTIME {
-                            self.func_80065134(d, p);
+                        if cmd_type == CS_CMD_TIME {
+                            self.cutscene_cmd_set_time(d, p);
                         }
                         p += 0xC;
                     }
                 }
-                CS_CMD_SET_PLAYER_ACTION => {
+                CS_CMD_PLAYER_CUE => {
                     let n = entries(p);
                     p += 4;
                     for _ in 0..n {
                         let (start, end) = (be_u16(d, p + 2), be_u16(d, p + 4));
                         if start < self.cs_ctx.frames && self.cs_ctx.frames <= end {
-                            self.cs_ctx.link_action = Some(CsCmdActorAction::read(d, p));
+                            self.cs_ctx.link_action = Some(CsCmdActorCue::read(d, p));
                         }
                         p += 0x30;
                     }
                 }
-                CS_CMD_CAM_EYE | CS_CMD_CAM_EYE_REL_TO_PLAYER => {
-                    self.cutscene_command_camera_eye_points(&script, p, (cmd_type == CS_CMD_CAM_EYE_REL_TO_PLAYER) as i16);
+                CS_CMD_CAM_EYE_SPLINE | CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER => {
+                    self.cutscene_command_camera_eye_points(&script, p, (cmd_type == CS_CMD_CAM_EYE_SPLINE_REL_TO_PLAYER) as i16);
                     p += camera_list_size(d, p).unwrap_or(8);
                 }
-                CS_CMD_CAM_AT | CS_CMD_CAM_AT_REL_TO_PLAYER => {
-                    self.cutscene_command_camera_look_at_points(&script, p, (cmd_type == CS_CMD_CAM_AT_REL_TO_PLAYER) as i16);
+                CS_CMD_CAM_AT_SPLINE | CS_CMD_CAM_AT_SPLINE_REL_TO_PLAYER => {
+                    self.cutscene_command_camera_look_at_points(&script, p, (cmd_type == CS_CMD_CAM_AT_SPLINE_REL_TO_PLAYER) as i16);
                     p += camera_list_size(d, p).unwrap_or(8);
                 }
-                CS_CMD_07 | CS_CMD_08 => {
-                    self.cutscene_command_07_08(&script, p, cmd_type == CS_CMD_07);
+                CS_CMD_CAM_EYE | CS_CMD_CAM_AT => {
+                    self.cutscene_command_07_08(&script, p, cmd_type == CS_CMD_CAM_EYE);
                     p += 8 + 0x10;
                 }
-                CS_CMD_TERMINATOR => {
+                CS_CMD_DESTINATION => {
                     p += 4;
                     self.cutscene_command_terminator(d, p);
                     p += 8;
                 }
-                CS_CMD_TEXTBOX => {
+                CS_CMD_TEXT => {
                     let n = entries(p);
                     p += 4;
                     for _ in 0..n {
@@ -1484,7 +1484,7 @@ impl PlayState {
                         p += 0xC;
                     }
                 }
-                CS_CMD_SCENE_TRANS_FX => {
+                CS_CMD_TRANSITION => {
                     p += 4;
                     self.cutscene_command_transition_fx(d, p);
                     p += 8;
@@ -1496,7 +1496,7 @@ impl PlayState {
                         for _ in 0..n {
                             let (start, end) = (be_u16(d, p + 2), be_u16(d, p + 4));
                             if start < self.cs_ctx.frames && self.cs_ctx.frames <= end {
-                                self.cs_ctx.npc_actions[slot] = Some(CsCmdActorAction::read(d, p));
+                                self.cs_ctx.npc_actions[slot] = Some(CsCmdActorCue::read(d, p));
                             }
                             p += 0x30;
                         }
@@ -1508,10 +1508,10 @@ impl PlayState {
         }
     }
 
-    /// `func_80068C3C` (later decomps' `CutsceneHandler_RunScript`): the next frame of the
+    /// `CutsceneHandler_RunScript`: the next frame of the
     /// script. (`Cutscene_DrawDebugInfo` with `BREG(0)`, and `dREG(95)`'s test script, are the
     /// debug ROM's.)
-    fn func_80068c3c(&mut self) {
+    fn cutscene_handler_run_script(&mut self) {
         if self.save.cutscene_index >= 0xFFF0 {
             self.cs_ctx.frames = self.cs_ctx.frames.wrapping_add(1);
             if let Some(s) = self.cs_ctx.segment.clone() {
@@ -1520,18 +1520,18 @@ impl PlayState {
         }
     }
 
-    /// `func_80068D84`: an actor's cutscene ends as `unk_0C` falls to 0.
-    fn func_80068d84(&mut self) {
-        if self.func_8006472c(0.0) {
+    /// `CutsceneHandler_StopManual`: an actor's cutscene ends as `timer` falls to 0.
+    fn cutscene_handler_stop_manual(&mut self) {
+        if self.step_timer(0.0) {
             self.audio.set_cutscene_flag(0);
             self.cs_ctx.state = CS_STATE_IDLE;
         }
     }
 
-    /// `func_80068DC0` (later decomps' `CutsceneHandler_StopScript`): once `unk_0C` is back to 0,
+    /// `CutsceneHandler_StopScript`: once `timer` is back to 0,
     /// the cues go, the camera that was active before comes back and the cutscene's is cleared.
-    fn func_80068dc0(&mut self) {
-        if !self.func_8006472c(0.0) {
+    fn cutscene_handler_stop_script(&mut self) {
+        if !self.step_timer(0.0) {
             return;
         }
         self.cs_ctx.link_action = None;
@@ -1539,7 +1539,7 @@ impl PlayState {
         log::debug!("cutscene over (right here, huh)");
         self.save.cutscene_index = 0;
         self.save.game_mode = GAMEMODE_NORMAL;
-        if self.demo.d_8015fcc8 != 0 {
+        if self.demo.use_cutscene_cam != 0 {
             let (ret, sub) = (self.demo.return_to_cam_id, self.cs_ctx.sub_cam_id);
             // The Hyrule Field Epona jumps' entrances keep the cutscene's view.
             if matches!(self.save.entrance_index, 0x028A | 0x028E | 0x0292 | 0x0476) {
@@ -1548,39 +1548,39 @@ impl PlayState {
             self.change_camera_status(ret, CAM_STAT_ACTIVE);
             self.clear_camera(sub);
             if let Some(c) = self.camera_mut(ret) {
-                c.func_8005b1a4();
+                c.set_finished_flag();
             }
         }
         self.audio.set_cutscene_flag(0);
         self.cs_ctx.state = CS_STATE_IDLE;
     }
 
-    /// `func_80068ECC` (later decomps' `Cutscene_SetupScripted`): a script starts, with the
-    /// cutscene camera if `D_8015FCC8`; an entrance's (`cutsceneTrigger` 2) or an actor's (1)
+    /// `Cutscene_SetupScripted`: a script starts, with the
+    /// cutscene camera if `gUseCutsceneCam`; an entrance's (`cutsceneTrigger` 2) or an actor's (1)
     /// fades the letterbox in, anything else puts it up at once.
-    fn func_80068ecc(&mut self) {
+    fn setup_scripted(&mut self) {
         if self.save.cutscene_trigger != 0 && self.cs_ctx.state == CS_STATE_IDLE && !self.player_in_cs_mode() {
             self.save.cutscene_index = 0xFFFD;
         }
         if self.save.cutscene_index >= 0xFFF0 && self.cs_ctx.state == CS_STATE_IDLE {
             self.flags_unset_env(0);
-            self.demo.d_8011e1c0 = 0;
-            self.demo.d_8011e1c4 = 0;
+            self.demo.cur_text_id = 0;
+            self.demo.cur_ocarina_action = 0;
             self.cs_ctx.unk_12 = 0;
             self.cs_ctx.link_action = None;
             self.cs_ctx.npc_actions = [None; 10];
             self.cs_ctx.state += 1;
-            if self.cs_ctx.state == CS_STATE_SKIPPABLE_INIT {
+            if self.cs_ctx.state == CS_STATE_START {
                 self.audio.set_cutscene_flag(1);
                 self.cs_ctx.frames = 0xFFFF;
-                self.cs_ctx.unk_18 = 0xFFFF;
-                self.demo.d_8015fcc0 = 0xFFFF;
-                self.demo.d_8015fcc2 = 0xFFFF;
-                self.demo.d_8015fcc4 = 0xFFFF;
-                self.cs_ctx.unk_1a = 0;
-                self.cs_ctx.unk_1b = 0;
+                self.cs_ctx.cam_eye_spline_points_applied_frame = 0xFFFF;
+                self.demo.cam_at_spline_points_applied_frame = 0xFFFF;
+                self.demo.cam_eye_point_applied_frame = 0xFFFF;
+                self.demo.cam_at_point_applied_frame = 0xFFFF;
+                self.cs_ctx.cam_at_ready = 0;
+                self.cs_ctx.cam_eye_ready = 0;
                 self.demo.return_to_cam_id = self.active_cam_id;
-                if self.demo.d_8015fcc8 != 0 {
+                if self.demo.use_cutscene_cam != 0 {
                     self.cs_ctx.sub_cam_id = self.create_sub_camera();
                 }
                 if self.save.cutscene_trigger == 0 {
@@ -1589,7 +1589,7 @@ impl PlayState {
                     self.letterbox.set_size(32);
                     self.cs_ctx.state += 1;
                 }
-                self.func_80068c3c();
+                self.cutscene_handler_run_script();
             }
             self.save.cutscene_trigger = 0;
         }
@@ -1611,7 +1611,7 @@ impl PlayState {
     /// `Cutscene_HandleEntranceTriggers` (`Play_Init`, after the scene loads): the first time in
     /// by an entrance of `sEntranceCutsceneTable`, for the right age and not on a respawn, its
     /// flag is set and its script starts (`cutsceneTrigger` 2). The Epona jumps' flag
-    /// (`EVENTCHKINF_18`) doesn't stop them replaying.
+    /// (`EVENTCHKINF_EPONA_OBTAINED`) doesn't stop them replaying.
     pub fn cutscene_handle_entrance_triggers(&mut self) {
         let Some(assets) = self.assets.clone() else { return };
         for e in &assets.cutscenes.entrance_cutscenes {
@@ -1619,7 +1619,7 @@ impl PlayState {
             // linkAge: LINK_AGE_ADULT 0, LINK_AGE_CHILD 1.
             let link_age = if self.save.adult { 0 } else { 1 };
             if self.save.entrance_index == e.entrance
-                && (!self.save.get_event_chk_inf(e.flag as u16) || e.flag as u16 == EVENTCHKINF_18)
+                && (!self.save.get_event_chk_inf(e.flag as u16) || e.flag as u16 == EVENTCHKINF_EPONA_OBTAINED)
                 && self.save.cutscene_index < 0xFFF0
                 && link_age == required_age
                 && self.save.respawn_flag <= 0
@@ -1646,7 +1646,7 @@ impl PlayState {
         }
     }
 
-    /// `Cutscene_SetSegment`.
+    /// `Cutscene_SetScript`.
     pub fn cutscene_set_segment(&mut self, script: Option<Arc<CutsceneScript>>) {
         self.cs_ctx.segment = script;
     }
@@ -1669,25 +1669,25 @@ pub fn handle_conditional_triggers(assets: &crate::play_scene::GameAssets, save:
     let is = |save: &crate::save::SaveContext, n: &str| entr(n) == Some(save.entrance_index);
     let scene_of = |save: &crate::save::SaveContext| assets.scenes.entrances.get(save.entrance_index as usize).map(|e| e.scene);
     let scene_id = |n: &str| assets.scenes.scenes.iter().position(|s| s.enum_name == n).map(|i| i as u16);
-    if is(save, "ENTR_SPOT11_1") && !save.get_event_chk_inf(EVENTCHKINF_AC) {
+    if is(save, "ENTR_DESERT_COLOSSUS_1") && !save.get_event_chk_inf(EVENTCHKINF_AC) {
         save.set_event_chk_inf(EVENTCHKINF_AC);
-        save.entrance_index = entr("ENTR_SPOT11_0").unwrap_or(save.entrance_index);
+        save.entrance_index = entr("ENTR_DESERT_COLOSSUS_0").unwrap_or(save.entrance_index);
         save.cutscene_index = 0xFFF0;
-    } else if is(save, "ENTR_SPOT01_0") && save.adult && save.get_event_chk_inf(EVENTCHKINF_48) && save.get_event_chk_inf(EVENTCHKINF_49) && save.get_event_chk_inf(EVENTCHKINF_4A) && !save.get_event_chk_inf(EVENTCHKINF_AA) {
+    } else if is(save, "ENTR_KAKARIKO_VILLAGE_0") && save.adult && save.get_event_chk_inf(EVENTCHKINF_48) && save.get_event_chk_inf(EVENTCHKINF_49) && save.get_event_chk_inf(EVENTCHKINF_4A) && !save.get_event_chk_inf(EVENTCHKINF_AA) {
         save.set_event_chk_inf(EVENTCHKINF_AA);
         save.cutscene_index = 0xFFF0;
-    } else if is(save, "ENTR_SPOT10_9") && !save.get_event_chk_inf(EVENTCHKINF_C1) {
+    } else if is(save, "ENTR_LOST_WOODS_9") && !save.get_event_chk_inf(EVENTCHKINF_C1) {
         save.set_event_chk_inf(EVENTCHKINF_C1);
         crate::item::item_give(save, None, crate::item::ITEM_OCARINA_FAIRY);
-        save.entrance_index = entr("ENTR_SPOT10_0").unwrap_or(save.entrance_index);
+        save.entrance_index = entr("ENTR_LOST_WOODS_0").unwrap_or(save.entrance_index);
         save.cutscene_index = 0xFFF0;
-    } else if save.check_quest_item(QUEST_MEDALLION_SPIRIT) && save.check_quest_item(QUEST_MEDALLION_SHADOW) && save.adult && !save.get_event_chk_inf(EVENTCHKINF_C4) && scene_of(save).is_some() && scene_of(save) == scene_id("SCENE_TOKINOMA") {
+    } else if save.check_quest_item(QUEST_MEDALLION_SPIRIT) && save.check_quest_item(QUEST_MEDALLION_SHADOW) && save.adult && !save.get_event_chk_inf(EVENTCHKINF_C4) && scene_of(save).is_some() && scene_of(save) == scene_id("SCENE_TEMPLE_OF_TIME") {
         save.set_event_chk_inf(EVENTCHKINF_C4);
-        save.entrance_index = entr("ENTR_TOKINOMA_0").unwrap_or(save.entrance_index);
+        save.entrance_index = entr("ENTR_TEMPLE_OF_TIME_0").unwrap_or(save.entrance_index);
         save.cutscene_index = 0xFFF8;
-    } else if !save.get_event_chk_inf(EVENTCHKINF_C7) && scene_of(save).is_some() && scene_of(save) == scene_id("SCENE_GANON_DEMO") {
-        save.set_event_chk_inf(EVENTCHKINF_C7);
-        save.entrance_index = entr("ENTR_GANON_DEMO_0").unwrap_or(save.entrance_index);
+    } else if !save.get_event_chk_inf(EVENTCHKINF_GERUDO_CAUGHT_TOWER_FALL) && scene_of(save).is_some() && scene_of(save) == scene_id("SCENE_GANON_BOSS") {
+        save.set_event_chk_inf(EVENTCHKINF_GERUDO_CAUGHT_TOWER_FALL);
+        save.entrance_index = entr("ENTR_GANON_BOSS_0").unwrap_or(save.entrance_index);
         save.cutscene_index = 0xFFF0;
     }
 }

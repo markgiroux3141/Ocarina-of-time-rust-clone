@@ -1,6 +1,6 @@
 //! Message table / text extraction, ported from the decomp's `tools/msgdis.py`.
 //!
-//! Layout (see `src/code/z_message_PAL.c` and `include/message_data_static.h`):
+//! Layout (see `src/code/z_message.c` and `include/message_data_static.h`):
 //! - `nes`/`staff` are tables of `MessageTableEntry { textId: u16, typePos: u8, pad: u8,
 //!   segment_ptr: u32 }` (8 bytes each), giving id, box type/position and a segment-7
 //!   pointer into that language's `*_message_data_static` file.
@@ -160,9 +160,9 @@ fn color_name(byte: u8) -> String {
 
 fn highscore_name(byte: u8) -> String {
     match byte {
-        0x00 => "HS_HORSE_ARCHERY",
+        0x00 => "HS_HBA",
         0x01 => "HS_POE_POINTS",
-        0x02 => "HS_LARGEST_FISH",
+        0x02 => "HS_FISHING",
         0x03 => "HS_HORSE_RACE",
         0x04 => "HS_MARATHON",
         0x06 => "HS_DAMPE_RACE",

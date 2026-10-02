@@ -2,12 +2,12 @@
 //!
 //! The library itself (`eng_audio`) runs on the audio thread and knows nothing of Zelda. The
 //! game talks to it from its own thread:
-//! - `seqcmd` (`code_800F9280.c`): the sequence commands (`Audio_QueueSeqCmd`,
+//! - `seqcmd` (`sequence.c`): the sequence commands (`Audio_QueueSeqCmd`,
 //!   `Audio_ProcessSeqCmd`), each player's volume, tempo and channel fades
-//!   (`D_8016E750`, `func_800FA3DC`), the player queues;
-//! - `bgm` (`code_800EC960.c`'s sequence parts): the scene's music (`func_800F5550`), the
+//!   (`gActiveSeqs`, `Audio_UpdateActiveSequences`), the player queues;
+//! - `bgm` (`general.c`'s sequence parts): the scene's music (`Audio_PlaySceneSequence`), the
 //!   sequence modes (`Audio_SetSequenceMode`), fanfares and the restored music, the nature
-//!   ambience and its channels' IO ports, and `Audio_Update` (`func_800F3054`);
+//!   ambience and its channels' IO ports, and `Audio_Update`;
 //! - `scene` (`z_kankyo.c`, `z_scene.c`): the scene's sound settings, `Environment_PlaySceneSequence`
 //!   and the time of day's music.
 //!
@@ -69,7 +69,7 @@ pub const NATURE_ID_MARKET_NIGHT: u8 = 0x05;
 pub const NATURE_ID_NONE: u8 = 0x13;
 pub const NATURE_ID_DISABLED: u8 = 0xFF;
 
-/// `NatureChannelIdx` (`sequence.h`).
+/// `NatureChannelIndex` (`sequence.h`).
 pub const NATURE_CHANNEL_STREAM_0: u8 = 0;
 pub const NATURE_CHANNEL_CRITTER_0: u8 = 1;
 pub const NATURE_CHANNEL_CRITTER_1: u8 = 2;
@@ -86,34 +86,34 @@ pub const CHANNEL_IO_PORT_0: u8 = 0;
 pub const CHANNEL_IO_PORT_1: u8 = 1;
 pub const CHANNEL_IO_PORT_7: u8 = 7;
 
-/// `SoundMode` (`z64audio.h`).
-pub const SOUNDMODE_STEREO: i8 = 0;
-pub const SOUNDMODE_HEADSET: i8 = 1;
-pub const SOUNDMODE_SURROUND: i8 = 2;
-pub const SOUNDMODE_MONO: i8 = 3;
+/// `SoundOutputMode` (`audio.h`).
+pub const SOUND_OUTPUT_STEREO: i8 = 0;
+pub const SOUND_OUTPUT_HEADSET: i8 = 1;
+pub const SOUND_OUTPUT_SURROUND: i8 = 2;
+pub const SOUND_OUTPUT_MONO: i8 = 3;
 
-/// `gSaveContext.audioSetting` 0: stereo (`func_800F6700`).
+/// `gSaveContext.soundSetting` 0: stereo (`Audio_SetSoundOutputMode`).
 pub const AUDIO_SETTING_STEREO: i8 = 0;
 
-/// `SFX_CHANNEL_SYSTEM0`, `SFX_CHANNEL_SYSTEM1`, `SFX_CHANNEL_OCARINA` (`code_800EC960.c`'s
+/// `SFX_CHANNEL_SYSTEM0`, `SFX_CHANNEL_SYSTEM1`, `SFX_CHANNEL_OCARINA` (`general.c`'s
 /// `SfxChannelIndex`).
 pub const SFX_CHANNEL_SYSTEM0: u8 = 0xB;
 pub const SFX_CHANNEL_SYSTEM1: u8 = 0xC;
 pub const SFX_CHANNEL_OCARINA: u8 = 0xD;
 
-/// `SEQUENCE_TABLE`, `FONT_TABLE`, `SAMPLE_TABLE` (`z64audio.h`).
+/// `SEQUENCE_TABLE`, `FONT_TABLE`, `SAMPLE_TABLE` (`audio.h`).
 pub const SEQUENCE_TABLE: i32 = 0;
 pub const FONT_TABLE: i32 = 1;
 pub const SAMPLE_TABLE: i32 = 2;
 
-/// `SEQ_FLAG_*` (`code_800EC960.c`): what `sSeqFlags` says of a sequence.
+/// `SEQ_FLAG_*` (`general.c`): what `sSeqFlags` says of a sequence.
 pub const SEQ_FLAG_ENEMY: u8 = 1 << 0;
 pub const SEQ_FLAG_FANFARE: u8 = 1 << 1;
 pub const SEQ_FLAG_FANFARE_GANON: u8 = 1 << 2;
 pub const SEQ_FLAG_RESTORE: u8 = 1 << 3;
-pub const SEQ_FLAG_4: u8 = 1 << 4;
-pub const SEQ_FLAG_5: u8 = 1 << 5;
-pub const SEQ_FLAG_6: u8 = 1 << 6;
+pub const SEQ_FLAG_RESUME: u8 = 1 << 4;
+pub const SEQ_FLAG_RESUME_PREV: u8 = 1 << 5;
+pub const SEQ_FLAG_SKIP_HARP_INTRO: u8 = 1 << 6;
 pub const SEQ_FLAG_NO_AMBIENCE: u8 = 1 << 7;
 
 /// `NatureAmbienceDataIO`: the player's IO ports' data, the channels it leaves alone, and the
@@ -140,35 +140,35 @@ pub struct SfxParams {
 /// The game's audio tables, read from the C by the importer (`keys::AUDIO_GAME`).
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AudioGameTables {
-    /// `sSeqFlags` (`code_800EC960.c`), one per sequence (0x6E).
+    /// `sSeqFlags` (`general.c`), one per sequence (0x6E).
     pub seq_flags: Vec<u8>,
-    /// `sSpecReverbs` (`code_800EC960.c`), one per audio spec (20).
+    /// `sSpecReverbs` (`general.c`), one per audio spec (20).
     pub spec_reverbs: Vec<i8>,
-    /// `sNatureAmbienceDataIO` (`code_800EC960.c`), by `NatureAmbienceId` (20).
+    /// `sNatureAmbienceDataIO` (`general.c`), by `NatureAmbienceId` (20).
     pub nature_ambience: Vec<NatureAmbienceDataIO>,
-    /// `gSoundModeList` (`audio_external_data.c`).
+    /// `gSoundOutputModes` (`audio/game/data.c`).
     pub sound_mode_list: Vec<u8>,
-    /// `sGanonsTowerLevelsVol` (`code_800EC960.c`).
+    /// `sGanonsTowerLevelsVol` (`general.c`).
     pub ganons_tower_levels_vol: Vec<u8>,
-    /// `gSfxParams` (`audio_sfx_params.c`): the seven banks' tables, by `SfxBankType`.
+    /// `gSfxParams` (`sfx_params.c`): the seven banks' tables, by `SfxBankType`.
     pub sfx_params: Vec<Vec<SfxParams>>,
-    /// `gSfxBankSizes` (`audio_external_data.c`): the banks' entry arrays' sizes
-    /// (`D_8016BAD0[9]`... in `code_800F7260.c`).
+    /// `gSfxBankSizes` (`audio/game/data.c`): the banks' entry arrays' sizes
+    /// (`D_8016BAD0[9]`... in `sfx.c`).
     pub sfx_bank_sizes: Vec<u8>,
-    /// `gIsLargeSfxBank`, `gChannelsPerBank`, `gUsedChannelsPerBank` (`code_800EC960.c`): by
+    /// `gIsLargeSfxBank`, `gChannelsPerBank`, `gUsedChannelsPerBank` (`general.c`): by
     /// bank; the last two by `gSfxChannelLayout` first.
     pub is_large_sfx_bank: Vec<u8>,
     pub channels_per_bank: Vec<Vec<u8>>,
     pub used_channels_per_bank: Vec<Vec<u8>>,
-    /// `sBehindScreenZ` (`code_800EC960.c`).
+    /// `sBehindScreenZ` (`general.c`).
     pub behind_screen_z: Vec<f32>,
-    /// `D_801305E4` (`code_800EC960.c`): the sword charge's frequency by level.
+    /// `sSfxSwordChargeFreqLevels` (`general.c`): the sword charge's frequency by level.
     pub charge_freq_scales: Vec<f32>,
-    /// `D_80119E10` (`z_bgcheck.c`): the footstep sound by `SURFACE_SFX_TYPE_*`
-    /// (`SurfaceType_GetSfxId`), each `NA_SE_PL_WALK_* - SFX_FLAG`.
+    /// `sSurfaceMaterialToSfxOffset` (`z_bgcheck.c`): the footstep sound by `SURFACE_SFX_TYPE_*`
+    /// (`SurfaceType_GetSfxOffset`), each `NA_SE_PL_WALK_* - SFX_FLAG`.
     pub floor_sfx: Vec<u16>,
-    /// `z_player.c`'s `struct_80832924` tables (`D_808545DC`...; a two-dimensional one's rows
-    /// as `D_80854A8C[i]`): the sounds `func_80832924` plays on an animation's frames, as
+    /// `z_player.c`'s `AnimSfxEntry` tables (`D_808545DC`...; a two-dimensional one's rows
+    /// as `D_80854A8C[i]`): the sounds `Player_ProcessAnimSfxList` plays on an animation's frames, as
     /// (`sfxId`, `field`).
     pub player_anim_sfx: Vec<(String, Vec<(u16, i16)>)>,
 }
@@ -184,12 +184,12 @@ impl AudioGameTables {
         self.sfx_params.get(((sfx_id >> 12) & 0xFF) as usize).and_then(|b| b.get((sfx_id & 0x1FF) as usize)).map(|p| (p.importance, p.params)).unwrap_or((0, 0))
     }
 
-    /// `SurfaceType_GetSfxId`'s table lookup: past it, `NA_SE_PL_WALK_GROUND - SFX_FLAG` (0).
+    /// `SurfaceType_GetSfxOffset`'s table lookup: past it, `NA_SE_PL_WALK_GROUND - SFX_FLAG` (0).
     pub fn surface_sfx_id(&self, sfx_type: u32) -> u16 {
         self.floor_sfx.get(sfx_type as usize).copied().unwrap_or(0)
     }
 
-    /// A `struct_80832924` table of `z_player.c` by name; empty if the pack has none.
+    /// A `AnimSfxEntry` table of `z_player.c` by name; empty if the pack has none.
     pub fn player_anim_sfx(&self, name: &str) -> &[(u16, i16)] {
         self.player_anim_sfx.iter().find(|(n, _)| n == name).map(|(_, t)| t.as_slice()).unwrap_or(&[])
     }
@@ -211,7 +211,7 @@ impl AudioGameTables {
 /// Not in the C: how many `GameOp`s wait for an audio side before the oldest go.
 const MAX_UNTAKEN_OPS: usize = 1 << 16;
 
-/// `FreqLerp` (`code_800EC960.c`).
+/// `FreqLerp` (`general.c`).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct FreqLerp {
     pub value: f32,
@@ -241,12 +241,12 @@ pub struct AudioLog {
     pub sfx: Vec<(u32, u16, sfx::SfxPos)>,
 }
 
-/// The statics of `code_800F9280.c`, `code_800EC960.c` (its sequence parts) and
-/// `audio_external_data.c`, and the hand-over to the audio side.
+/// The statics of `sequence.c`, `general.c` (its sequence parts) and
+/// `audio/game/data.c`, and the hand-over to the audio side.
 #[derive(Debug, Clone)]
 pub struct GameAudio {
     pub tables: Arc<AudioGameTables>,
-    /// The audio library's tables (`gSequenceFontTable` for `func_800E5E84`).
+    /// The audio library's tables (`gSequenceFontTable` for `AudioThread_GetFontsForSequence`).
     pub audio_tables: Arc<AudioTables>,
     /// What the audio side gave back last (`AudioContext::view`).
     pub view: AudioView,
@@ -258,27 +258,27 @@ pub struct GameAudio {
     /// Not in the C: the log, if asked for.
     pub log: Option<AudioLog>,
 
-    // audio_external_data.c
+    // audio/game/data.c
     pub seq_cmd_wr_pos: u8,
     pub seq_cmd_rd_pos: u8,
-    /// `D_80133408`: sequences other than the sfx player's don't start (seq command `0xE01`).
-    pub d_80133408: u8,
+    /// `gStartSeqDisabled`: sequences other than the sfx player's don't start (seq command `0xE01`).
+    pub start_seq_disabled: u8,
     pub audio_spec_id: u8,
     /// `D_80133418`: a spec change waits for the audio side's reset.
     pub d_80133418: u8,
     pub sfx_channel_layout: u8,
 
-    // code_800F9280.c
-    /// `D_8016E320`: each player's queue of sequences (`unk_0` the id, `unk_1` the priority).
-    pub d_8016e320: [[(u8, u8); 5]; 4],
-    /// `D_8016E348`: how many each queue holds.
-    pub d_8016e348: [u8; 4],
+    // sequence.c
+    /// `sSeqRequests`: each player's queue of sequences (`unk_0` the id, `unk_1` the priority).
+    pub seq_requests: [[(u8, u8); 5]; 4],
+    /// `sNumSeqRequests`: how many each queue holds.
+    pub num_seq_requests: [u8; 4],
     /// `sAudioSeqCmds`.
     pub seq_cmds: Box<[u32; 0x100]>,
-    /// `D_8016E750`.
+    /// `gActiveSeqs`.
     pub active: [ActiveSeq; 4],
 
-    // code_800EC960.c
+    // general.c
     pub sound_mode: i8,
     pub d_80130608: i8,
     pub audio_cutscene_flag: i8,
@@ -289,8 +289,8 @@ pub struct GameAudio {
     pub audio_enemy_dist: f32,
     pub audio_enemy_vol: i8,
     pub prev_main_bgm_seq_id: u16,
-    pub d_8013062c: u8,
-    pub d_80130630: u8,
+    pub seq_resume_point: u8,
+    pub prev_scene_seq_id: u8,
     pub num_frames_still: u32,
     pub num_frames_moving: u32,
     pub audio_base_filter: u8,
@@ -313,15 +313,15 @@ pub struct GameAudio {
     pub river_sound_main_bgm_lower: bool,
     pub river_sound_main_bgm_restore: bool,
     pub ganons_tower_vol: u8,
-    pub d_8016b9d8: u8,
-    pub d_8016b9f2: u8,
+    pub malon_singing_timer: u8,
+    pub malon_singing_disabled: u8,
     pub d_8016b9f3: u8,
-    pub d_8016b9f4: u8,
-    pub d_8016b9f6: u16,
+    pub fanfare_start_timer: u8,
+    pub fanfare_seq_id: u16,
     /// `sSfxChannelState`.
     pub sfx_channel_state: [bgm::SfxPlayerState; 16],
 
-    // code_800F7260.c
+    // sfx.c
     /// `gSfxBankMuted`.
     pub sfx_bank_muted: [u8; 7],
     /// The rest of the sound effects' statics (`sfx`).
@@ -348,15 +348,15 @@ impl GameAudio {
             log: None,
             seq_cmd_wr_pos: 0,
             seq_cmd_rd_pos: 0,
-            d_80133408: 0,
+            start_seq_disabled: 0,
             audio_spec_id: 0,
             d_80133418: 0,
             sfx_channel_layout: 0,
-            d_8016e320: [[(0, 0); 5]; 4],
-            d_8016e348: [0; 4],
+            seq_requests: [[(0, 0); 5]; 4],
+            num_seq_requests: [0; 4],
             seq_cmds: Box::new([0; 0x100]),
             active: [ActiveSeq::default(); 4],
-            sound_mode: SOUNDMODE_SURROUND,
+            sound_mode: SOUND_OUTPUT_SURROUND,
             d_80130608: 0,
             audio_cutscene_flag: 0,
             spec_reverb: 0,
@@ -366,8 +366,8 @@ impl GameAudio {
             audio_enemy_dist: 0.0,
             audio_enemy_vol: 127,
             prev_main_bgm_seq_id: NA_BGM_DISABLED,
-            d_8013062c: 0,
-            d_80130630: NA_BGM_GENERAL_SFX as u8,
+            seq_resume_point: 0,
+            prev_scene_seq_id: NA_BGM_GENERAL_SFX as u8,
             num_frames_still: 0,
             num_frames_moving: 0,
             audio_base_filter: 0,
@@ -388,11 +388,11 @@ impl GameAudio {
             river_sound_main_bgm_lower: false,
             river_sound_main_bgm_restore: false,
             ganons_tower_vol: 0,
-            d_8016b9d8: 0,
-            d_8016b9f2: 0,
+            malon_singing_timer: 0,
+            malon_singing_disabled: 0,
             d_8016b9f3: 0,
-            d_8016b9f4: 0,
-            d_8016b9f6: 0,
+            fanfare_start_timer: 0,
+            fanfare_seq_id: 0,
             sfx_channel_state: [bgm::SfxPlayerState::default(); 16],
             sfx_bank_muted: [0; 7],
         }
@@ -401,8 +401,8 @@ impl GameAudio {
     /// The audio manager's start (`AudioMgr_ThreadEntry`): `Audio_Init` is the audio side's
     /// (`AudioContext::new`; what the game reads of it then is `AudioView::boot`), then
     /// `Audio_InitSound`; then what the title screen leaves (its game state isn't ported):
-    /// `Sram_InitSram`'s `func_800F6700(gSaveContext.audioSetting)`, the SRAM header's sound
-    /// setting, `SRAM_HEADER_SOUND`, 0 (stereo) as `sZeldaMagic` writes a fresh one.
+    /// `Sram_InitSram`'s `Audio_SetSoundOutputMode(gSaveContext.soundSetting)`, the SRAM header's sound
+    /// setting, `SRAM_HEADER_SOUND`, 0 (stereo) as `sSramDefaultHeader` writes a fresh one.
     pub fn boot(tables: Arc<AudioGameTables>, audio_tables: Arc<AudioTables>) -> GameAudio {
         Self::boot_logged(tables, audio_tables, false)
     }
@@ -415,7 +415,7 @@ impl GameAudio {
         }
         a.view = AudioView::boot(&a.audio_tables);
         a.audio_init_sound();
-        a.func_800f6700(AUDIO_SETTING_STEREO);
+        a.audio_set_sound_output_mode(AUDIO_SETTING_STEREO);
         a
     }
 
@@ -441,27 +441,27 @@ impl GameAudio {
         self.ops.push(op);
     }
 
-    /// `Audio_QueueCmd`.
+    /// `AudioThread_QueueCmd`.
     pub fn queue_cmd(&mut self, op_args: u32, data: u32) {
         self.op(GameOp::Cmd(op_args, data));
     }
-    /// `Audio_QueueCmdF32`.
+    /// `AudioThread_QueueCmdF32`.
     pub fn queue_cmd_f32(&mut self, op_args: u32, data: f32) {
         self.queue_cmd(op_args, data.to_bits());
     }
-    /// `Audio_QueueCmdS32`.
+    /// `AudioThread_QueueCmdS32`.
     pub fn queue_cmd_s32(&mut self, op_args: u32, data: i32) {
         self.queue_cmd(op_args, data as u32);
     }
-    /// `Audio_QueueCmdS8`.
+    /// `AudioThread_QueueCmdS8`.
     pub fn queue_cmd_s8(&mut self, op_args: u32, data: i8) {
         self.queue_cmd(op_args, ((data as i32) << 0x18) as u32);
     }
-    /// `Audio_QueueCmdU16`.
+    /// `AudioThread_QueueCmdU16`.
     pub fn queue_cmd_u16(&mut self, op_args: u32, data: u16) {
         self.queue_cmd(op_args, (data as u32) << 0x10);
     }
-    /// `Audio_ScheduleProcessCmds`.
+    /// `AudioThread_ScheduleProcessCmds`.
     pub fn schedule_process_cmds(&mut self) {
         self.op(GameOp::Schedule);
     }
@@ -478,8 +478,8 @@ impl GameAudio {
         m >> 0x18
     }
 
-    /// `func_800E5E84` (`AudioLoad_GetFontsForSequence`): the fonts sequence `seq_id` uses.
-    pub fn func_800e5e84(&self, seq_id: u8) -> &[u8] {
+    /// `AudioThread_GetFontsForSequence` (`AudioLoad_GetFontsForSequence`): the fonts sequence `seq_id` uses.
+    pub fn audio_thread_get_fonts_for_sequence(&self, seq_id: u8) -> &[u8] {
         self.audio_tables.fonts_for_sequence(seq_id as u32)
     }
 
@@ -493,22 +493,22 @@ impl GameAudio {
         if self.view.audio_reset_spec_id_to_load as u32 != m { -1 } else { 1 }
     }
 
-    /// `func_800E5F88`: the spec change. The game's thread empties `audioResetQueue` (its copy
+    /// `AudioThread_ResetAudioHeap`: the spec change. The game's thread empties `audioResetQueue` (its copy
     /// of the messages, `func_800E5F34`); the rest runs on the audio side
-    /// (`AudioContext::func_800e5f88`).
-    pub fn func_800e5f88(&mut self, reset_preload_id: u8) {
+    /// (`AudioContext::AudioThread_ResetAudioHeap`).
+    pub fn audio_thread_reset_audio_heap(&mut self, reset_preload_id: u8) {
         self.view.reset_msgs.clear();
         self.op(GameOp::ResetSpec(reset_preload_id));
     }
 
-    /// `func_800E6070`: a channel's IO port, -1 with its player off.
-    pub fn func_800e6070(&self, player_idx: u8, channel_idx: u8, script_idx: u8) -> i8 {
+    /// `AudioThread_GetChannelIO`: a channel's IO port, -1 with its player off.
+    pub fn audio_thread_get_channel_io(&self, player_idx: u8, channel_idx: u8, script_idx: u8) -> i8 {
         let p = &self.view.players[player_idx as usize & 3];
         if p.enabled { p.channels[channel_idx as usize & 0xF].sound_script_io[script_idx as usize & 7] } else { -1 }
     }
 
-    /// `func_800E60C4`: a player's IO port.
-    pub fn func_800e60c4(&self, player_idx: u8, port: u8) -> i8 {
+    /// `AudioThread_GetSeqPlayerIO`: a player's IO port.
+    pub fn audio_thread_get_seq_player_io(&self, player_idx: u8, port: u8) -> i8 {
         self.view.players[player_idx as usize & 3].sound_script_io[port as usize & 7]
     }
 }

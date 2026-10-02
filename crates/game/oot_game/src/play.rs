@@ -5,26 +5,26 @@
 //! `PlayState::tick_with` runs one game frame (20 Hz, `R_UPDATE_RATE` 3) in the decomp's order
 //! (`Play_Update`, then the state `Play_Draw` leaves behind):
 //!
-//! 1. The transition (`crate::play_scene`: a scene's fade in or out), `Object_UpdateBank`,
-//!    `gameplayFrames++`, the frame's input, a room load finishing (`func_800973FC`), and the
+//! 1. The transition (`crate::play_scene`: a scene's fade in or out), `Object_UpdateEntries`,
+//!    `gameplayFrames++`, the frame's input, a room load finishing (`Room_ProcessRoomRequest`), and the
 //!    collision check over what the actors registered last frame (`CollisionCheck_AT`, `_OC`,
 //!    `_Damage`, then `_ClearContext`; `crate::collision_check`).
 //! 2. `Actor_UpdateAll`:
 //!    - first the room's actor list, if a room just loaded (`numSetupActors`);
 //!    - for each category in order (switch, BG, player, explosive, NPC, enemy, prop, item
 //!      action, misc, boss, door, chest), each actor newest first: `prevPos`, the distances
-//!      and yaw to Player, then its update if it's due (`freezeTimer` 0, `ACTOR_FLAG_4` or
-//!      `ACTOR_FLAG_6`), then `CollisionCheck_ResetDamage`. Killed actors are deleted, actors
+//!      and yaw to Player, then its update if it's due (`freezeTimer` 0, `ACTOR_FLAG_UPDATE_CULLING_DISABLED` or
+//!      `ACTOR_FLAG_INSIDE_CULLING_VOLUME`), then `CollisionCheck_ResetDamage`. Killed actors are deleted, actors
 //!      waiting for their object initialise once it's loaded (and skip this frame), and actors
 //!      whose object went are killed.
 //!      Player updates in its category, before the later ones, so they see where it went;
 //!    - after the BG category, `DynaPoly_UpdateContext`;
-//!    - the target context (`func_8002C7BC`), with `viewProjectionMtxF` from the last drawn
+//!    - the target context (`Attention_Update`), with `viewProjectionMtxF` from the last drawn
 //!      frame;
 //!    - `DynaPoly_UpdateBgActorTransforms`.
 //! 3. `Message_Update` (`crate::message`), then `Interface_Update` (`crate::interface`: the
 //!    buttons' status, the alpha fades, the health and rupee counters, the A button's flip).
-//! 4. `AnimationContext_Update`: every actor's queued animation requests (Player's joint copies,
+//! 4. `AnimTaskQueue_Update`: every actor's queued animation requests (Player's joint copies,
 //!    blends and root motion).
 //! 5. `Letterbox_Update`, then the cameras: the spikes' follow camera, and `Camera_Update`
 //!    (in the mode Player asked for during its update), which sets the letterbox's next target
@@ -33,7 +33,7 @@
 //!    joint table, so it's done once per game frame, not per rendered frame), the scene draw
 //!    config (`Scene_Draw`: this frame's texture scrolls and colours), the view the next
 //!    frame's target context reads, a second `Camera_Update` if the camera asked for one
-//!    (`view.unk_124`), and what the reticle and the message box draw (`func_8002C124` in
+//!    (`view.unk_124`), and what the reticle and the message box draw (`Attention_Draw` in
 //!    `Interface_Draw`, then `Message_Draw`).
 //! 7. Without a scene from the pack (the test course), the sandbox's void-out: below y −2000,
 //!    Player respawns. In a scene Player's own exit and void checks do this.
@@ -65,7 +65,7 @@ use eng_input::pad::{Input, PadMgr, PadState};
 use eng_math::GAME_HZ;
 use glam::{Mat4, Vec3};
 
-use crate::actor::{ACTOR_FLAG_4, ACTOR_FLAG_6, Actor};
+use crate::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_INSIDE_CULLING_VOLUME, Actor};
 use crate::actor_ctx::{ACTORCAT_BG, ACTORCAT_MAX, ActorContext, ActorHandle, ActorImpl};
 use crate::camera::{CAM_ID_MAIN, CAM_ID_NONE, CAM_ID_SUB_FIRST, CAM_STAT_ACTIVE, CAM_STAT_UNK100, CamFrame, CamView, CameraGlobals, CameraKind, FollowCamera, GameCamera, NUM_CAMS, PlayerView};
 use crate::collision_check::{ColliderShape, CollisionCheckContext};
@@ -86,7 +86,7 @@ use crate::transition::TRANS_MODE_OFF;
 /// `PLAYER_STATE1_21`: climbing (a ladder or a vine wall).
 pub const PLAYER_STATE1_21: u32 = 1 << 21;
 
-/// `VIEWPOINT_*` (`z64camera.h`): none, the locked bg camera (`BGCAM_INDEX_TOGGLE_LOCKED` + 1)
+/// `VIEWPOINT_*` (`camera.h`): none, the locked bg camera (`BGCAM_INDEX_TOGGLE_LOCKED` + 1)
 /// and the pivot one (`BGCAM_INDEX_TOGGLE_PIVOT` + 1).
 pub const VIEWPOINT_NONE: u8 = 0;
 pub const VIEWPOINT_LOCKED: u8 = 1;
@@ -317,7 +317,7 @@ pub struct PlayState {
     /// `roomCtx`, `objectCtx`.
     pub room_ctx: RoomContext,
     pub object_ctx: ObjectContext,
-    /// Link's object for his age (`Scene_CommandSpawnList`).
+    /// Link's object for his age (`Scene_CommandPlayerEntryList`).
     pub link_object_id: i16,
     /// `transiActorCtx.list`: the scene's transition actors (an entry's id is negated while
     /// its actor exists).
@@ -334,13 +334,13 @@ pub struct PlayState {
     /// `viewpoint` (`VIEWPOINT_*`): which of a fixed-camera scene's first two bg cameras is
     /// in use.
     pub viewpoint: u8,
-    /// `unk_11E18`: the vertical room-change planes' screen dimming.
-    pub unk_11e18: i16,
+    /// `bgCoverAlpha`: the vertical room-change planes' screen dimming.
+    pub bg_cover_alpha: i16,
     /// `sfxSources` (`z_sfx_source.c`).
     pub sfx_sources: [crate::sfx_source::SfxSource; crate::sfx_source::NUM_SFX_SOURCES],
     /// How many scene changes led here (the renderer reloads its meshes when it changes).
     pub scene_changes: u32,
-    /// `sRandInt` (`code_800FD970.c`): the game's random numbers, shared by the actors.
+    /// `sRandInt` (`qrand.c`): the game's random numbers, shared by the actors.
     /// (Player keeps its own sequence, as the spikes did.)
     pub rand: Rand,
     /// `msgCtx`, and the messages it reads (the pack's, when the app has one).
@@ -351,9 +351,9 @@ pub struct PlayState {
     /// `csCtx` (`crate::cutscene`), and `z_demo.c`'s statics.
     pub cs_ctx: crate::cutscene::CutsceneContext,
     pub demo: crate::cutscene::DemoStatics,
-    /// `envFlags` (`Flags_SetEnv`): flags cutscenes set for actors.
+    /// `envFlags` (`CutsceneFlags_Set`): flags cutscenes set for actors.
     pub env_flags: [u16; 20],
-    /// `cUpElfMsgs`: which of `sNaviMsgFiles` Navi's C-Up texts come from (the scene header's
+    /// `cUpElfMsgs`: which of `sNaviQuestHintFiles` Navi's C-Up texts come from (the scene header's
     /// `SCENE_CMD_ID_SPECIAL_FILES`), `None` for none (`Play_InitScene`).
     pub c_up_elf_msgs: Option<usize>,
     /// `lightCtx`: the actors' point lights (`crate::lights`).
@@ -368,10 +368,10 @@ pub struct PlayState {
     pub lightning_flash: Option<[u8; 4]>,
     /// `Environment_DrawRain`'s drops and rings this frame (`crate::weather`).
     pub rain: crate::weather::RainDraw,
-    /// `D_801614B0` (`z_play.c`): the screen's monochrome tint (`VisMono`) a cutscene sets.
+    /// `gVisMonoColor` (`z_play.c`): the screen's monochrome tint (`VisMono`) a cutscene sets.
     pub vis_mono_color: [u8; 4],
-    /// `unk_11DE9`: the actors frozen (`Actor_UpdateAll` skipped).
-    pub unk_11de9: bool,
+    /// `haltAllActors`: the actors frozen (`Actor_UpdateAll` skipped).
+    pub halt_all_actors: bool,
     /// `actorCtx.titleCtx`: the place name's title card.
     pub title_ctx: crate::title_card::TitleCardContext,
     /// The game's side of the audio (`crate::audio`): its statics are the code segment's, so a
@@ -384,7 +384,7 @@ pub struct PlayState {
     /// `advance_with`). A scene change carries it over.
     pub audio_side: Option<Box<dyn crate::audio::AudioSide>>,
     /// `sequenceCtx`: the scene's music and ambience (`Scene_CommandSoundSettings`).
-    pub sequence_ctx: crate::audio::scene::SequenceContext,
+    pub sequence_ctx: crate::audio::scene::SceneSequences,
     /// `envCtx.timeSeqState` (`Environment_PlayTimeBasedSequence`).
     pub time_seq_state: u8,
     /// The children each running init spawned (`Actor_SpawnAsChild`), innermost last: they get
@@ -459,7 +459,7 @@ impl PlayState {
             transition: TransitionState::default(),
             scene_cam_type: crate::scene::SCENE_CAM_TYPE_DEFAULT,
             viewpoint: VIEWPOINT_NONE,
-            unk_11e18: 0,
+            bg_cover_alpha: 0,
             sfx_sources: Default::default(),
             scene_changes: 0,
             rand: Rand::default(),
@@ -475,7 +475,7 @@ impl PlayState {
             lightning_flash: None,
             rain: Default::default(),
             vis_mono_color: [0; 4],
-            unk_11de9: false,
+            halt_all_actors: false,
             title_ctx: Default::default(),
             audio: Default::default(),
             audio_side: None,
@@ -510,7 +510,7 @@ impl PlayState {
         Some(h)
     }
 
-    /// The player's view for the camera (`Camera_InitPlayerSettings`, `Camera_Update`).
+    /// The player's view for the camera (`Camera_InitDataUsingPlayer`, `Camera_Update`).
     pub fn player_view(&self) -> Option<PlayerView> {
         let h = self.player?;
         let p = self.actors.get(h)?;
@@ -631,17 +631,17 @@ impl PlayState {
         if let Some(pp) = player_pos {
             base.update_distances(pp);
         }
-        base.flags &= !crate::actor::ACTOR_FLAG_24;
-        // Culling (func_800314D4, which sets ACTOR_FLAG_6 for actors in view) isn't ported:
+        base.flags &= !crate::actor::ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
+        // Culling (Actor_CullingVolumeTest, which sets ACTOR_FLAG_INSIDE_CULLING_VOLUME for actors in view) isn't ported:
         // every actor counts as in view.
-        base.flags |= ACTOR_FLAG_6;
+        base.flags |= ACTOR_FLAG_INSIDE_CULLING_VOLUME;
         let due = if base.freeze_timer > 0 {
             base.freeze_timer -= 1;
             base.freeze_timer == 0
         } else {
             true
         };
-        if due && base.flags & (ACTOR_FLAG_4 | ACTOR_FLAG_6) != 0 {
+        if due && base.flags & (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_INSIDE_CULLING_VOLUME) != 0 {
             let target = self.player_target();
             base.is_targeted = target == Some(h);
             if base.target_priority != 0 && target.is_none() {
@@ -670,7 +670,7 @@ impl PlayState {
         self.col_chk.set_oc(self.cur_actor, owner, id, c)
     }
 
-    /// Player's `unk_664`.
+    /// Player's `focusActor`.
     pub fn player_target(&self) -> Option<ActorHandle> {
         self.actors.get(self.player?)?.as_player()?.target()
     }
@@ -692,18 +692,18 @@ impl PlayState {
             self.audio.play_sfx_general(sfx_id, pos, 4, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxS8::Zero);
         }
         self.col_chk.clear();
-        if !self.unk_11de9 {
+        if !self.halt_all_actors {
             self.update_all_actors();
         }
-        // The cutscene system (z_demo.c): func_80064558, then func_800645A0.
-        self.func_80064558();
-        self.func_800645a0();
+        // The cutscene system (z_demo.c): Cutscene_UpdateManual, then Cutscene_UpdateScripted.
+        self.update_manual();
+        self.update_scripted();
         // (func_80095AA0 for both rooms: no room behaviour is ported.) The viewpoint.
         self.update_viewpoint();
         // Message_Update (no pause menu or game over), then Interface_Update.
         self.with_msg(|m, f| m.update(f));
         self.interface_update();
-        // AnimationContext_Update: every actor's queued animation requests.
+        // AnimTaskQueue_Update: every actor's queued animation requests.
         for h in self.actors.all() {
             if let Some(a) = self.actors.get_mut(h) {
                 a.animation_update();
@@ -759,10 +759,10 @@ impl PlayState {
         // Camera_Finish(GET_ACTIVE_CAM(this)): a one-point cutscene's camera whose timer ran out.
         self.camera_finish(self.active_cam_id);
         self.view_proj = self.camera_view_proj();
-        // Actor_DrawAll (func_800315AC): each actor's projectedPos through the frame's
-        // viewProjectionMtxF, then the sound it asked for (func_80030ED8).
+        // Actor_DrawAll: each actor's projectedPos through the frame's
+        // viewProjectionMtxF, then the sound it asked for (Actor_UpdateFlaggedAudio).
         self.actor_draw_all_sfx();
-        // Interface_Draw: the Z-target reticle (func_8002C124) with this frame's view.
+        // Interface_Draw: the Z-target reticle (Attention_Draw) with this frame's view.
         let reticle_player = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| crate::target::ReticlePlayer { state1_6: pi.state_flags1() & (1 << 6) != 0, target: pi.target() });
         if let Some(rp) = reticle_player {
             crate::target::draw_update(&mut self.target_ctx, &self.actors, self.view_proj, rp);
@@ -777,7 +777,7 @@ impl PlayState {
         self.prev = self.cur.take();
         self.cur = Some(self.capture());
         self.updated = true;
-        // Graph_Update: Audio_Update (func_800F3054) once the game state's frame is done.
+        // Graph_Update: Audio_Update once the game state's frame is done.
         self.audio_update();
         if self.next_play_init {
             // GameState_Destroy: AudioMgr_StopAllSfx, Audio_Update again, then the next
@@ -802,11 +802,11 @@ impl PlayState {
         });
     }
 
-    /// `Actor_DrawAll`'s sound part (`func_800315AC`): every actor's `projectedPos` and
+    /// `Actor_DrawAll`'s sound part (`Actor_DrawAll`): every actor's `projectedPos` and
     /// `projectedW` (`SkinMatrix_Vec3fMtxFMultXYZW` on `viewProjectionMtxF`), and the sound in
-    /// its `sfx` (`func_80030ED8`).
+    /// its `sfx` (`Actor_UpdateFlaggedAudio`).
     fn actor_draw_all_sfx(&mut self) {
-        use crate::actor::{ACTOR_FLAG_19, ACTOR_FLAG_20, ACTOR_FLAG_21, ACTOR_FLAG_28};
+        use crate::actor::{ACTOR_FLAG_SFX_ACTOR_POS_2, ACTOR_AUDIO_FLAG_SFX_CENTERED_1, ACTOR_AUDIO_FLAG_SFX_CENTERED_2, ACTOR_FLAG_SFX_TIMER};
         use crate::audio::sfx::{SfxF32, SfxPos, SfxS8, SFX_FLAG};
         let vp = self.view_proj;
         for h in self.actors.all() {
@@ -816,18 +816,18 @@ impl PlayState {
             a.projected_w = c.w;
             let (sfx, flags) = (a.sfx, a.flags);
             if sfx != 0 {
-                // func_80030ED8.
+                // Actor_UpdateFlaggedAudio.
                 let au = &mut self.audio;
-                if flags & ACTOR_FLAG_19 != 0 {
+                if flags & ACTOR_FLAG_SFX_ACTOR_POS_2 != 0 {
                     au.play_sfx_general(sfx, SfxPos::Actor(h), 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
-                } else if flags & ACTOR_FLAG_20 != 0 {
-                    au.func_80078884(sfx);
-                } else if flags & ACTOR_FLAG_21 != 0 {
-                    au.func_800788cc(sfx);
-                } else if flags & ACTOR_FLAG_28 != 0 {
+                } else if flags & ACTOR_AUDIO_FLAG_SFX_CENTERED_1 != 0 {
+                    au.play_sfx_centered(sfx);
+                } else if flags & ACTOR_AUDIO_FLAG_SFX_CENTERED_2 != 0 {
+                    au.play_sfx_centered2(sfx);
+                } else if flags & ACTOR_FLAG_SFX_TIMER != 0 {
                     au.func_800f4c58(SfxPos::Default, crate::audio::sfx::NA_SE_SY_TIMER - SFX_FLAG, sfx.wrapping_sub(1) as i8 as u8);
                 } else {
-                    au.func_80078914(SfxPos::Actor(h), sfx);
+                    au.play_sfx_at_pos(SfxPos::Actor(h), sfx);
                 }
             }
             // The actor's draw (an actor in the arena is drawn: init done, culling not ported).
@@ -928,7 +928,7 @@ impl PlayState {
         }
         // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y).
         let write = cam.player_write.take();
-        // Camera_UpdateInterface's Interface_ChangeAlpha.
+        // Camera_UpdateInterface's Interface_ChangeHudVisibilityMode.
         let alpha = cam.interface_alpha_change.take();
         if let Some((pos, yaw)) = write
             && let Some(a) = self.player.and_then(|h| self.actors.actor_mut(h))
@@ -954,14 +954,14 @@ impl PlayState {
         }
         for s in all {
             match s {
-                CamSfx::ModeChange(1) => self.audio.func_80078884(0),
-                // ROOM_BEHAVIOR_TYPE1_1: a dungeon room.
-                CamSfx::ModeChange(2) => self.audio.func_80078884(if self.room_ctx.cur.behavior_type1 == 1 { NA_SE_SY_ATTENTION_URGENCY } else { NA_SE_SY_ATTENTION_ON }),
-                CamSfx::ModeChange(4) => self.audio.func_80078884(NA_SE_SY_ATTENTION_URGENCY),
-                CamSfx::ModeChange(8) => self.audio.func_80078884(NA_SE_SY_ATTENTION_ON),
+                CamSfx::ModeChange(1) => self.audio.play_sfx_centered(0),
+                // ROOM_TYPE_DUNGEON: a dungeon room.
+                CamSfx::ModeChange(2) => self.audio.play_sfx_centered(if self.room_ctx.cur.behavior_type1 == 1 { NA_SE_SY_ATTENTION_URGENCY } else { NA_SE_SY_ATTENTION_ON }),
+                CamSfx::ModeChange(4) => self.audio.play_sfx_centered(NA_SE_SY_ATTENTION_URGENCY),
+                CamSfx::ModeChange(8) => self.audio.play_sfx_centered(NA_SE_SY_ATTENTION_ON),
                 CamSfx::ModeChange(_) => {}
-                CamSfx::Error => self.audio.func_80078884(NA_SE_SY_ERROR),
-                CamSfx::Sfx(id) => self.audio.func_80078884(id),
+                CamSfx::Error => self.audio.play_sfx_centered(NA_SE_SY_ERROR),
+                CamSfx::Sfx(id) => self.audio.play_sfx_centered(id),
                 CamSfx::Crawl => {
                     let Some(ph) = self.player else { continue };
                     let unk_89e = self.actors.get(ph).and_then(|p| p.as_player()).map(|p| p.unk_89e()).unwrap_or(0);
@@ -1036,13 +1036,13 @@ impl PlayState {
         self.active_cam_id = CAM_ID_MAIN;
     }
 
-    /// `Play_CameraChangeSetting`.
+    /// `Play_RequestCameraSetting`.
     pub fn camera_change_setting(&mut self, id: i16, setting: i16) -> i16 {
         let d = self.data.clone();
         self.camera_mut(id).map(|c| c.change_setting(&d.camera, setting)).unwrap_or(-99)
     }
 
-    /// `Play_CameraSetAtEye`.
+    /// `Play_SetCameraAtEye`.
     pub fn camera_set_at_eye(&mut self, id: i16, at: Vec3, eye: Vec3) {
         let player_pos = self.player.and_then(|h| self.actors.actor(h)).map(|a| a.world_pos).unwrap_or(Vec3::ZERO);
         if let Some(c) = self.camera_mut(id) {
@@ -1050,7 +1050,7 @@ impl PlayState {
         }
     }
 
-    /// `Play_CameraSetFov`.
+    /// `Play_SetCameraFov`.
     pub fn camera_set_fov(&mut self, id: i16, fov: f32) {
         if let Some(c) = self.camera_mut(id) {
             c.set_fov(fov);
@@ -1075,7 +1075,7 @@ impl PlayState {
             climbing: state1 & PLAYER_STATE1_21 != 0,
             state2_18: state2 & (1 << 18) != 0,
             no_transition: self.transition.trigger == crate::transition::TRANS_TRIGGER_OFF && self.transition.mode == TRANS_MODE_OFF,
-            // ROOM_BEHAVIOR_TYPE1_1.
+            // ROOM_TYPE_DUNGEON.
             dungeon_room: self.room_ctx.cur.behavior_type1 == 1,
             in_cs_mode: self.play_in_cs_mode(),
         };
@@ -1132,7 +1132,7 @@ impl PlayState {
         self.transition.trigger == crate::transition::TRANS_TRIGGER_START || p.is_some_and(|p| p.in_cs_mode())
     }
 
-    /// `Play_ChangeViewpointBgCamIndex`: the viewpoint's bg camera for the active camera.
+    /// `Play_RequestViewpointBgCam`: the viewpoint's bg camera for the active camera.
     pub fn change_viewpoint_bg_cam_index(&mut self) {
         let idx = self.viewpoint as i32 - 1;
         self.game_camera.change_bg_cam_index(&self.data.camera, &self.col, idx);
@@ -1145,7 +1145,7 @@ impl PlayState {
         assert!(viewpoint == VIEWPOINT_LOCKED || viewpoint == VIEWPOINT_PIVOT, "point == 1 || point == 2");
         self.viewpoint = viewpoint;
         if self.scene_cam_type != crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT && self.save.cutscene_index < 0xFFF0 {
-            self.audio.func_80078884(if viewpoint == VIEWPOINT_LOCKED { NA_SE_SY_CAMERA_ZOOM_DOWN } else { NA_SE_SY_CAMERA_ZOOM_UP });
+            self.audio.play_sfx_centered(if viewpoint == VIEWPOINT_LOCKED { NA_SE_SY_CAMERA_ZOOM_DOWN } else { NA_SE_SY_CAMERA_ZOOM_UP });
         }
         self.change_viewpoint_bg_cam_index();
     }
@@ -1161,7 +1161,7 @@ impl PlayState {
             if self.player_in_cs_mode() {
                 // "Changing viewpoint is prohibited during the cutscene".
             } else if self.scene_cam_type == crate::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT {
-                self.audio.func_80078884(crate::audio::sfx::NA_SE_SY_ERROR);
+                self.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_ERROR);
             } else {
                 self.set_viewpoint(self.viewpoint ^ (VIEWPOINT_LOCKED ^ VIEWPOINT_PIVOT));
             }
@@ -1179,13 +1179,13 @@ impl PlayState {
 
     pub fn cam_is_not_fixed(&self) -> bool {
         use crate::scene::*;
-        /// `SCENE_HAIRAL_NIWA`.
-        const SCENE_HAIRAL_NIWA: u16 = 0x45;
+        /// `SCENE_CASTLE_COURTYARD_GUARDS_DAY`.
+        const SCENE_CASTLE_COURTYARD_GUARDS_DAY: u16 = 0x45;
         !self.cam_room().image
             && self.scene_cam_type != SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT
             && self.scene_cam_type != SCENE_CAM_TYPE_FIXED
             && self.scene_cam_type != SCENE_CAM_TYPE_FIXED_MARKET
-            && self.scene_id != SCENE_HAIRAL_NIWA
+            && self.scene_id != SCENE_CASTLE_COURTYARD_GUARDS_DAY
     }
 
     /// What `func_80057FC4` reads of the current room.
@@ -1210,7 +1210,7 @@ impl PlayState {
                 self.col.dyna.update_context();
             }
         }
-        // func_8002C7BC with the actor Player keeps targeted, against the last frame's view.
+        // Attention_Update with the actor Player keeps targeted, against the last frame's view.
         if let Some(ph) = self.player
             && let Some(pi) = self.actors.get(ph).and_then(|p| p.as_player())
         {
@@ -1327,7 +1327,7 @@ impl PlayState {
 
     /// `Actor_DrawAll` (every actor from its render state `frame`), then the target reticle.
     /// `Actor_Draw` binds the light list's point lights at the actor's position
-    /// (`Lights_BindAll`; none with `ACTOR_FLAG_22`) for everything the actor draws.
+    /// (`Lights_BindAll`; none with `ACTOR_FLAG_IGNORE_POINT_LIGHTS`) for everything the actor draws.
     pub fn draw(&self, frame: &RenderFrame, view: &ViewInfo, out: &mut DrawOut) {
         // Play_Draw's weather before Actor_DrawAll: the bolts (before the rooms in the C) and
         // the rain.
@@ -1338,7 +1338,7 @@ impl PlayState {
             {
                 let (opa, xlu) = (out.opa.len(), out.xlu.len());
                 a.draw(rs, self, view, out);
-                let at = (a.base().flags & crate::actor::ACTOR_FLAG_22 == 0).then_some(rs.pos);
+                let at = (a.base().flags & crate::actor::ACTOR_FLAG_IGNORE_POINT_LIGHTS == 0).then_some(rs.pos);
                 let lights: Vec<eng_gfx::PointLight> = self.light_ctx.bind_all(at).into_iter().map(|l| eng_gfx::PointLight { dir: l.dir, color: l.color }).collect();
                 if !lights.is_empty() {
                     for c in out.opa[opa..].iter_mut().chain(out.xlu[xlu..].iter_mut()) {
@@ -1402,7 +1402,7 @@ pub fn actor_draw_matrix(rs: &RenderState) -> Mat4 {
         * Mat4::from_scale(rs.scale)
 }
 
-/// The game's random number generator (`code_800FD970.c`, and `z_actor.c`'s float helpers).
+/// The game's random number generator (`qrand.c`, and `z_actor.c`'s float helpers).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rand {
     /// `sRandInt`.
@@ -1446,7 +1446,7 @@ impl Rand {
     }
 }
 
-/// `!Object_IsLoaded(&play->objectCtx, actor->objBankIndex)` for an initialised actor that
+/// `!Object_IsLoaded(&play->objectCtx, actor->objectSlot)` for an initialised actor that
 /// spawned by id (actors built directly have no bank).
 fn base_bank_dropped(a: &Actor, objects: &ObjectContext) -> bool {
     a.obj_bank_index.is_some_and(|b| !objects.is_loaded(b))

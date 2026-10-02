@@ -19,7 +19,7 @@ use eng_math::step_to_s;
 
 use crate::env::clock_time;
 
-/// What a draw config reads: the frame counter and save state, and `roomCtx.unk_74`, which
+/// What a draw config reads: the frame counter and save state, and `roomCtx.drawParams`, which
 /// some configs keep their own state in across frames.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DrawConfigState {
@@ -27,15 +27,15 @@ pub struct DrawConfigState {
     pub gameplay_frames: u32,
     /// `LINK_IS_CHILD`.
     pub child: bool,
-    /// `gSaveContext.nightFlag`.
+    /// `gSaveContext.save.nightFlag`.
     pub night: bool,
     /// `gSaveContext.sceneLayer`.
     pub scene_layer: usize,
-    /// `gSaveContext.dayTime`.
+    /// `gSaveContext.save.dayTime`.
     pub day_time: u16,
-    /// `play->roomCtx.unk_74` ("context-specific data used by the current scene draw config",
+    /// `play->roomCtx.drawParams` ("context-specific data used by the current scene draw config",
     /// `z64.h`). Zeroed on scene load (`Room_Init` clears the room context).
-    pub room_unk_74: [i16; 2],
+    pub room_draw_params: [i16; 2],
     /// `GET_EVENTCHKINF(EVENTCHKINF_07)`.
     pub event_chk_inf_07: bool,
 }
@@ -121,9 +121,9 @@ pub fn gfx_two_tex_scroll(tile1: u32, x1: u32, y1: u32, width1: i32, height1: i3
 /// `Scene_DrawConfigDefault`: `sDefaultDisplayList` into both buffers, no segments.
 fn draw_config_default(_st: &mut DrawConfigState, _b: &mut Buffers) {}
 
-/// `Scene_DrawConfigSpot00` (Hyrule Field): the river's scrolling textures on segments 8 and
+/// `Scene_DrawConfigHyruleField` (Hyrule Field): the river's scrolling textures on segments 8 and
 /// 9, and at night a display list on segment 0xA that fades the lit-window overlay
-/// (`spot00_room_0DL_012B20`) in with `roomCtx.unk_74[0]` as its prim alpha.
+/// (`spot00_room_0DL_012B20`) in with `roomCtx.drawParams[0]` as its prim alpha.
 fn draw_config_spot00(st: &mut DrawConfigState, b: &mut Buffers) {
     let f = st.gameplay_frames;
     b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(3) % 128, 32, 32, 1, f % 128, f.wrapping_mul(3) % 128, 32, 32));
@@ -135,22 +135,22 @@ fn draw_config_spot00(st: &mut DrawConfigState, b: &mut Buffers) {
         vec![g_sp_end_display_list()]
     } else {
         if t > clock_time(18, 30) {
-            if st.room_unk_74[0] != 255 {
-                step_to_s(&mut st.room_unk_74[0], 255, 5);
+            if st.room_draw_params[0] != 255 {
+                step_to_s(&mut st.room_draw_params[0], 255, 5);
             }
-        } else if t >= clock_time(6, 0) && st.room_unk_74[0] != 0 {
-            step_to_s(&mut st.room_unk_74[0], 0, 10);
+        } else if t >= clock_time(6, 0) && st.room_draw_params[0] != 0 {
+            step_to_s(&mut st.room_draw_params[0], 0, 10);
         }
         // The gSPDisplayList(spot00_room_0DL_012B20) between them draws geometry that is in
         // the meshes; SegmentValues::read skips it.
-        vec![g_dp_set_prim_color(0, 0, 255, 255, 255, st.room_unk_74[0] as u32), (0xDE00_0000, 0), g_sp_end_display_list()]
+        vec![g_dp_set_prim_color(0, 0, 255, 255, 255, st.room_draw_params[0] as u32), (0xDE00_0000, 0), g_sp_end_display_list()]
     };
     b.xlu.insert(0x0A, dl);
 }
 
-/// `Scene_DrawConfigSpot04` (Kokiri Forest): the stream and waterfall scroll on segments 8
+/// `Scene_DrawConfigKokiriForest` (Kokiri Forest): the stream and waterfall scroll on segments 8
 /// and 9, env colours on 0xA (alpha `spA3`) and 0xB (alpha `spA0 * 0.1`), and a scroll by
-/// `roomCtx.unk_74[0]` on 0xC.
+/// `roomCtx.drawParams[0]` on 0xC.
 fn draw_config_spot04(st: &mut DrawConfigState, b: &mut Buffers) {
     let mut sp_a3: u8 = 128;
     let mut sp_a0: u16 = 500;
@@ -158,9 +158,9 @@ fn draw_config_spot04(st: &mut DrawConfigState, b: &mut Buffers) {
     b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
     b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(10) % 128, 32, 32, 1, f % 128, f.wrapping_mul(10) % 128, 32, 32));
     if st.scene_layer == 4 {
-        sp_a3 = 255u8.wrapping_sub(st.room_unk_74[0] as u8);
+        sp_a3 = 255u8.wrapping_sub(st.room_draw_params[0] as u8);
     } else if st.scene_layer == 6 {
-        sp_a0 = (st.room_unk_74[0] as i32 + 500) as u16;
+        sp_a0 = (st.room_draw_params[0] as i32 + 500) as u16;
     } else if (!st.is_cutscene_layer() || !st.child) && st.event_chk_inf_07 {
         sp_a0 = 2150;
     }
@@ -170,12 +170,12 @@ fn draw_config_spot04(st: &mut DrawConfigState, b: &mut Buffers) {
     b.opa.insert(0x0A, seg_a);
     b.xlu.insert(0x0B, seg_b.clone());
     b.opa.insert(0x0B, seg_b);
-    let scroll = (-(st.room_unk_74[0] as f32) * 0.02) as i16 as u32;
+    let scroll = (-(st.room_draw_params[0] as f32) * 0.02) as i16 as u32;
     b.opa.insert(0x0C, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, scroll, 32, 16, 1, 0, scroll, 32, 16));
 }
 
-/// `Scene_DrawConfigYdan` (the Deku Tree): a scroll on segment 9. Segment 8 points at the
-/// day or night texture (`D_8012A2F8[nightFlag]`), which is static data in the meshes.
+/// `Scene_DrawConfigDekuTree` (the Deku Tree): a scroll on segment 9. Segment 8 points at the
+/// day or night texture (`sDekuTreeEntranceTextures[nightFlag]`), which is static data in the meshes.
 fn draw_config_ydan(st: &mut DrawConfigState, b: &mut Buffers) {
     let f = st.gameplay_frames;
     b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - (f % 128), f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
@@ -186,9 +186,9 @@ type DrawConfigFn = fn(&mut DrawConfigState, &mut Buffers);
 /// The ported draw configs, by `SDC_*` name.
 const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_DEFAULT", draw_config_default),
-    ("SDC_SPOT00", draw_config_spot00),
-    ("SDC_SPOT04", draw_config_spot04),
-    ("SDC_YDAN", draw_config_ydan),
+    ("SDC_HYRULE_FIELD", draw_config_spot00),
+    ("SDC_KOKIRI_FOREST", draw_config_spot04),
+    ("SDC_DEKU_TREE", draw_config_ydan),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

@@ -593,7 +593,8 @@ impl Program {
                             }
                         }
                         arrays.insert(name, Array { names: Vec::new(), gfx, is_gfx: true });
-                    } else if ty == "void" && is_ptr {
+                    } else if ty == "void" && is_ptr || ty.ends_with("Func") {
+                        // Pointers by name: `void* sTextures[]`, `SceneDrawConfigFunc sSceneDrawConfigs[SDC_MAX]`.
                         let names = body.iter().filter(|t| t.k == K::Id).map(|t| t.s.clone()).collect();
                         arrays.insert(name, Array { names, gfx: Vec::new(), is_gfx: false });
                     }
@@ -750,11 +751,11 @@ pub struct State {
     /// `play->gameplayFrames`: incremented once per game frame (`Play_Update`).
     pub gameplay_frames: u32,
     pub child: bool,
-    /// `gSaveContext.nightFlag`.
+    /// `gSaveContext.save.nightFlag`.
     pub night: bool,
     /// `gSaveContext.sceneLayer` (0 child day, 1 child night, 2 adult day, 3 adult night, 4+ cutscenes).
     pub scene_layer: i64,
-    /// `gSaveContext.dayTime` / `skyboxTime`.
+    /// `gSaveContext.save.dayTime` / `skyboxTime`.
     pub day_time: u16,
 }
 
@@ -890,17 +891,17 @@ impl Machine<'_> {
         Some(match n {
             "play.sceneId" | "play->sceneId" => self.scene_id as f64,
             "true" | "LINK_AGE_CHILD" => 1.0,
-            "false" | "NULL" | "G_TX_RENDERTILE" | "LINK_AGE_ADULT" | "gSaveContext.cutsceneIndex" => 0.0,
-            // z64save.h: LINK_AGE_ADULT = 0, LINK_AGE_CHILD = 1.
-            "LINK_IS_CHILD" | "gSaveContext.linkAge" => b(st.child),
+            "false" | "NULL" | "G_TX_RENDERTILE" | "LINK_AGE_ADULT" | "gSaveContext.save.cutsceneIndex" => 0.0,
+            // save.h: LINK_AGE_ADULT = 0, LINK_AGE_CHILD = 1.
+            "LINK_IS_CHILD" | "gSaveContext.save.linkAge" => b(st.child),
             "LINK_IS_ADULT" => b(!st.child),
             "IS_DAY" => b(!st.night),
-            "IS_NIGHT" | "gSaveContext.nightFlag" => b(st.night),
+            "IS_NIGHT" | "gSaveContext.save.nightFlag" => b(st.night),
             // macros.h: IS_CUTSCENE_LAYER is gSaveContext.sceneLayer > 3.
             "IS_CUTSCENE_LAYER" => b(st.scene_layer > 3),
             "gSaveContext.sceneLayer" => st.scene_layer as f64,
             "play.gameplayFrames" => st.gameplay_frames as f64,
-            "gSaveContext.dayTime" | "gSaveContext.skyboxTime" => st.day_time as f64,
+            "gSaveContext.save.dayTime" | "gSaveContext.skyboxTime" => st.day_time as f64,
             "M_PI" => std::f64::consts::PI,
             _ => return None,
         })
@@ -1105,11 +1106,11 @@ impl Machine<'_> {
             }
         };
         match name {
-            "SEGMENTED_TO_VIRTUAL" | "VIRTUAL_TO_PHYSICAL" | "OS_K0_TO_PHYSICAL" | "OS_PHYSICAL_TO_K0" => {
+            "SEGMENTED_TO_VIRTUAL" | "OS_K0_TO_PHYSICAL" | "OS_PHYSICAL_TO_K0" => {
                 args.first().map(|e| self.eval(e)).unwrap_or(Val::Num(0.0, false))
             }
-            "Graph_Alloc" => self.new_dl(Vec::new()),
-            "Matrix_NewMtx" => Val::Mtx,
+            "Graph_Alloc" | "GRAPH_ALLOC" => self.new_dl(Vec::new()),
+            "Matrix_Finalize" | "MATRIX_FINALIZE" => Val::Mtx,
             "Gfx_TexScroll" => {
                 let (x, y, w, h) = (a(self, 1), a(self, 2), a(self, 3), a(self, 4));
                 self.new_dl(vec![Cmd::Raw(0xE800_0000, 0), tile_size(0.0, x, y, w, h), Cmd::Raw(0xDF00_0000, 0)])
@@ -1155,7 +1156,7 @@ impl Machine<'_> {
                 Val::Num(if name.contains("in") { r.sin() } else { r.cos() }, true)
             }
             "ABS" | "fabsf" => Val::Num(a(self, 0).abs(), false),
-            "OPEN_DISPS" | "CLOSE_DISPS" => Val::Num(0.0, false),
+            "OPEN_DISPS" | "CLOSE_DISPS" | "STACK_PAD" => Val::Num(0.0, false),
             _ => {
                 for e in args {
                     let _ = self.eval(e);

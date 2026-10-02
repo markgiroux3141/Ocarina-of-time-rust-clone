@@ -4,7 +4,7 @@
 //! A child waits for its objects (the skeleton of `object_km1` for a boy or `object_kw1` for a
 //! girl, Fado's head in `object_fa`, and the animations in `object_os_anime`), then stands and
 //! plays the animation its type and the story's progress pick (`sOsAnimeLookup`), turns its
-//! head and torso to Link (`func_80034A14`), blinks, and offers to talk. In Kokiri Forest and
+//! head and torso to Link (`Npc_TrackPoint`), blinks, and offers to talk. In Kokiri Forest and
 //! the Lost Woods it fades out beyond `appearDist` of Link (`func_80A98DB4`), and then can't be
 //! targeted. Child 3 guards the way to the Lost Woods until Link has the Kokiri Emerald
 //! (`func_80A995CC`).
@@ -13,8 +13,8 @@
 //! the eyes on 0x0A, opaque at full alpha (`func_80034BA0`) and translucent while fading
 //! (`func_80034CC4`), from meshes baked per head, eye and pass (docs/adr/0012-actor-bakes.md).
 //!
-//! Talking (`func_800343CC`): the child's text for the story's progress (`func_80A97610`), and
-//! the conversation's state each frame (`func_80A97738`): the flag a text sets once it's been
+//! Talking (`Npc_UpdateTalking`): the child's text for the story's progress (`EnKo_GetTextId`), and
+//! the conversation's state each frame (`EnKo_UpdateTalkState`): the flag a text sets once it's been
 //! read, and the answers to its questions.
 //!
 //! Not ported: Fado's saw trade in the Lost Woods,
@@ -28,21 +28,21 @@ use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use eng_math::{binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
-use oot_game::actor::{ACTOR_FLAG_0, ACTOR_FLAG_3, ACTOR_FLAG_4, Actor, UPDBGCHECKINFO_FLAG_2};
+use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
-use oot_game::npc::{NpcTrack, func_80034a14, func_80034f54};
+use oot_game::npc::{NpcTrack, track_point, actor_update_fidget_tables};
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
-use oot_game::save::{EVENTCHKINF_40, QUEST_KOKIRI_EMERALD, QUEST_MEDALLION_FOREST};
+use oot_game::save::{EVENTCHKINF_OBTAINED_ZELDAS_LETTER, QUEST_KOKIRI_EMERALD, QUEST_MEDALLION_FOREST};
 use oot_game::skelanime_std::*;
 
 pub const ACTOR_EN_KO: i16 = 0x0163;
 /// `ACTOR_EN_ELF`: the child's fairy (params 3).
 const ACTOR_EN_ELF: i16 = 0x0018;
 
-/// `En_Ko_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KO, name: "En_Ko", category: ACTORCAT_NPC, flags: ACTOR_FLAG_0 | ACTOR_FLAG_3 | ACTOR_FLAG_4, object: "gameplay_keep" };
+/// `En_Ko_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KO, name: "En_Ko", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
 
 // `OBJECT_*` (`object_table.h`).
 const OBJECT_OS_ANIME: i16 = 0x00C5;
@@ -51,13 +51,13 @@ const OBJECT_KW1: i16 = 0x00FD;
 const OBJECT_FA: i16 = 0x013D;
 
 // `SCENE_*`.
-const SCENE_KOKIRI_HOME: u16 = 0x26;
-const SCENE_KOKIRI_HOME3: u16 = 0x27;
-const SCENE_KOKIRI_HOME4: u16 = 0x28;
-const SCENE_KOKIRI_HOME5: u16 = 0x29;
+const SCENE_KNOW_IT_ALL_BROS_HOUSE: u16 = 0x26;
+const SCENE_TWINS_HOUSE: u16 = 0x27;
+const SCENE_MIDOS_HOUSE: u16 = 0x28;
+const SCENE_SARIAS_HOUSE: u16 = 0x29;
 const SCENE_KOKIRI_SHOP: u16 = 0x2D;
-const SCENE_SPOT04: u16 = 0x55;
-const SCENE_SPOT10: u16 = 0x5B;
+const SCENE_KOKIRI_FOREST: u16 = 0x55;
+const SCENE_LOST_WOODS: u16 = 0x5B;
 
 // `KokiriChildren`.
 pub const ENKO_TYPE_CHILD_0: u8 = 0;
@@ -102,13 +102,13 @@ const INFTABLE_B7: u16 = 0xB7;
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
-    base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderBumpInit { dmg_flags: 0, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_NONE,
-        bumper_flags: BUMP_NONE,
+    base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_NONE,
+        bumper_flags: ACELEM_NONE,
         oc_elem_flags: OCELEM_ON,
     },
     dim: Cylinder16 { radius: 20, height: 46, y_shift: 0, pos: [0; 3] },
@@ -170,48 +170,48 @@ const INTERACT_INFO: [(u8, f32, f32); 13] = [
 
 /// `sAnimationInfo`: animation (`object_os_anime`), speed, start, end, mode, morph frames.
 const ANIMATION_INFO: [(&str, f32, f32, f32, u8, f32); 34] = [
-    ("gObjOsAnim_8F6C", 1.0, 2.0, 14.0, ANIMMODE_LOOP_PARTIAL, 0.0),
-    ("gObjOsAnim_8F6C", 0.0, 1.0, 1.0, ANIMMODE_LOOP_PARTIAL, 0.0),
-    ("gObjOsAnim_9B64", 0.0, 0.0, 0.0, ANIMMODE_ONCE, 0.0),
-    ("gObjOsAnim_9B64", 0.0, 1.0, 1.0, ANIMMODE_ONCE, 0.0),
-    ("gObjOsAnim_9B64", 0.0, 2.0, 2.0, ANIMMODE_ONCE, 0.0),
-    ("gObjOsAnim_62DC", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_62DC", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -10.0),
-    ("gObjOsAnim_5808", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -10.0),
-    ("gObjOsAnim_7830", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_8178", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_65E0", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_879C", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7FFC", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_80B4", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_91AC", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_6F9C", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7064", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7120", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7F38", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7D94", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_6EE0", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_98EC", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_90EC", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_982C", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_9274", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_99A4", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_9028", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7E64", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_7454", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
-    ("gObjOsAnim_8F6C", 0.0, 1.0, 1.0, ANIMMODE_LOOP_PARTIAL, -8.0),
-    ("gObjOsAnim_7D94", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
-    ("gObjOsAnim_879C", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
-    ("gObjOsAnim_6A60", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
-    ("gObjOsAnim_7830", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
+    ("gKokiriBlockingAnim", 1.0, 2.0, 14.0, ANIMMODE_LOOP_PARTIAL, 0.0),
+    ("gKokiriBlockingAnim", 0.0, 1.0, 1.0, ANIMMODE_LOOP_PARTIAL, 0.0),
+    ("gKokiriStandUpAnim", 0.0, 0.0, 0.0, ANIMMODE_ONCE, 0.0),
+    ("gKokiriStandUpAnim", 0.0, 1.0, 1.0, ANIMMODE_ONCE, 0.0),
+    ("gKokiriStandUpAnim", 0.0, 2.0, 2.0, ANIMMODE_ONCE, 0.0),
+    ("gKokiriIdleAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriIdleAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -10.0),
+    ("gKokiriLaughingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -10.0),
+    ("gKokiriLiftingRockAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriRecliningStandingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriRecliningSittingUpAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriPunchingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriStandingHandOnChestAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriStandingHandsOnHipsAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriSittingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriSittingCrossedArmsLegsAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriStandingApprehensiveAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriLeaningOnArmsAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriRecliningLeaningBackAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriCuttingGrassAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriBackflipAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriLeaningForwardAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriStandingRightArmUpAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriStandingArmsBehindBackAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriStandingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriSittingCrossedLegsAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriSittingArmsUpAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriSittingHeadOnHandAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriSittingDiggingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, 0.0),
+    ("gKokiriBlockingAnim", 0.0, 1.0, 1.0, ANIMMODE_LOOP_PARTIAL, -8.0),
+    ("gKokiriCuttingGrassAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
+    ("gKokiriPunchingAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
+    ("gKokiriWipingForeheadAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
+    ("gKokiriLiftingRockAnim", 1.0, 0.0, -1.0, ANIMMODE_LOOP, -8.0),
 ];
 
 // `EnKoAnimation` indices used by name.
-const ENKO_ANIM_29: usize = 29;
-const ENKO_ANIM_30: usize = 30;
-const ENKO_ANIM_31: usize = 31;
-const ENKO_ANIM_32: usize = 32;
-const ENKO_ANIM_33: usize = 33;
+const ENKO_ANIM_BLOCKING_STATIC: usize = 29;
+const ENKO_ANIM_CUTTING_GRASS: usize = 30;
+const ENKO_ANIM_PUNCHING: usize = 31;
+const ENKO_ANIM_WIPING_FOREHEAD: usize = 32;
+const ENKO_ANIM_LIFTING_ROCK: usize = 33;
 
 /// `sOsAnimeLookup[type][forestQuestState]`.
 const OS_ANIME_LOOKUP: [[u8; 5]; 13] = [
@@ -344,16 +344,16 @@ pub struct EnKo {
     pub legs_bank: Option<usize>,
     pub os_anime_bank: Option<usize>,
     pub collider: ColliderCylinder,
-    /// `unk_1E8`.
-    pub unk_1e8: NpcTrack,
+    /// `interactInfo`.
+    pub interact_info: NpcTrack,
     pub forest_quest_state: usize,
     pub blink_timer: i16,
     pub eye_texture_index: i16,
     pub appear_dist: f32,
     pub look_dist: f32,
     pub model_alpha: f32,
-    pub unk_2e4: [i16; 16],
-    pub unk_304: [i16; 16],
+    pub fidget_table_y: [i16; 16],
+    pub fidget_table_z: [i16; 16],
     /// `unk_210`: Fado's trade sound played.
     pub unk_210: i16,
     animations: Vec<AnimationInfo>,
@@ -380,7 +380,7 @@ impl EnKo {
             legs_bank: None,
             os_anime_bank: None,
             collider: ColliderCylinder::default(),
-            unk_1e8: NpcTrack::default(),
+            interact_info: NpcTrack::default(),
             forest_quest_state: 0,
             blink_timer: 0,
             eye_texture_index: 0,
@@ -388,8 +388,8 @@ impl EnKo {
             appear_dist: 0.0,
             look_dist: 0.0,
             model_alpha: 0.0,
-            unk_2e4: [0; 16],
-            unk_304: [0; 16],
+            fidget_table_y: [0; 16],
+            fidget_table_z: [0; 16],
             animations: Vec::new(),
         };
         if k.ty() >= ENKO_TYPE_CHILD_MAX || !k.is_os_anime_available(play) || !k.are_objects_available(play) {
@@ -433,17 +433,17 @@ impl EnKo {
         let adult = s.adult;
         let medallion = s.check_quest_item(QUEST_MEDALLION_FOREST);
         match play.scene_id {
-            SCENE_SPOT04 => !(ty >= ENKO_TYPE_CHILD_7 && ty != ENKO_TYPE_CHILD_FADO) && !(!medallion && adult),
-            SCENE_KOKIRI_HOME => matches!(ty, ENKO_TYPE_CHILD_7 | ENKO_TYPE_CHILD_8 | ENKO_TYPE_CHILD_11),
-            SCENE_KOKIRI_HOME3 => {
+            SCENE_KOKIRI_FOREST => !(ty >= ENKO_TYPE_CHILD_7 && ty != ENKO_TYPE_CHILD_FADO) && !(!medallion && adult),
+            SCENE_KNOW_IT_ALL_BROS_HOUSE => matches!(ty, ENKO_TYPE_CHILD_7 | ENKO_TYPE_CHILD_8 | ENKO_TYPE_CHILD_11),
+            SCENE_TWINS_HOUSE => {
                 if adult && !medallion {
                     matches!(ty, ENKO_TYPE_CHILD_1 | ENKO_TYPE_CHILD_9)
                 } else {
                     ty == ENKO_TYPE_CHILD_9
                 }
             }
-            SCENE_KOKIRI_HOME4 => adult && !medallion && matches!(ty, ENKO_TYPE_CHILD_0 | ENKO_TYPE_CHILD_4),
-            SCENE_KOKIRI_HOME5 => adult && !medallion && ty == ENKO_TYPE_CHILD_6,
+            SCENE_MIDOS_HOUSE => adult && !medallion && matches!(ty, ENKO_TYPE_CHILD_0 | ENKO_TYPE_CHILD_4),
+            SCENE_SARIAS_HOUSE => adult && !medallion && ty == ENKO_TYPE_CHILD_6,
             SCENE_KOKIRI_SHOP => {
                 if adult && !medallion {
                     matches!(ty, ENKO_TYPE_CHILD_5 | ENKO_TYPE_CHILD_10)
@@ -452,7 +452,7 @@ impl EnKo {
                 }
             }
             // INV_CONTENT(ITEM_TRADE_ADULT) == ITEM_ODD_POTION: no inventory yet.
-            SCENE_SPOT10 => false,
+            SCENE_LOST_WOODS => false,
             _ => false,
         }
     }
@@ -461,7 +461,7 @@ impl EnKo {
     fn forest_quest_state(play: &PlayState) -> usize {
         let s = &play.save;
         if !s.adult {
-            if s.get_event_chk_inf(EVENTCHKINF_40) {
+            if s.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER) {
                 return ENKO_FQS_CHILD_SARIA;
             }
             if s.check_quest_item(QUEST_KOKIRI_EMERALD) {
@@ -479,7 +479,7 @@ impl EnKo {
             return if s.check_quest_item(QUEST_MEDALLION_FOREST) { ENKO_FQS_ADULT_SAVED } else { ENKO_FQS_ADULT_ENEMY };
         }
         if s.check_quest_item(QUEST_KOKIRI_EMERALD) {
-            return if s.get_event_chk_inf(EVENTCHKINF_40) { ENKO_FQS_CHILD_SARIA } else { ENKO_FQS_CHILD_STONE };
+            return if s.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER) { ENKO_FQS_CHILD_SARIA } else { ENKO_FQS_CHILD_STONE };
         }
         ENKO_FQS_CHILD_START
     }
@@ -502,7 +502,7 @@ impl EnKo {
             return;
         }
         let Some(assets) = play.assets.clone() else { return };
-        self.actor.flags &= !ACTOR_FLAG_4;
+        self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         self.actor.obj_bank_index = self.legs_bank;
         let (_, file, sym) = SKELETONS[self.model().legs];
         let skeleton = match assets.skeleton(file, sym) {
@@ -577,7 +577,7 @@ impl EnKo {
         self.actor.world_rot.y = self.actor.yaw_towards_player;
         self.actor.shape_rot.y = self.actor.yaw_towards_player;
         let Some(skel) = &mut self.skel else { return };
-        if self.unk_1e8.talk_state == 0 || !self.actor.is_targeted {
+        if self.interact_info.talk_state == 0 || !self.actor.is_targeted {
             let t = (self.actor.yaw_towards_player as f32 - home_yaw as f32).abs() * 0.001 * 3.0;
             skel.play_speed = if t < 1.0 { 1.0 } else { t.min(3.0) };
         } else {
@@ -592,25 +592,25 @@ impl EnKo {
     }
 
     fn track(&mut self, play: &mut PlayState, preset: usize, forced: i16) {
-        let mut t = self.unk_1e8;
-        func_80034a14(play, &mut self.actor, &mut t, preset, forced);
-        self.unk_1e8 = t;
+        let mut t = self.interact_info;
+        track_point(play, &mut self.actor, &mut t, preset, forced);
+        self.interact_info = t;
     }
 
     fn sway(&mut self, play: &PlayState) {
-        func_80034f54(play, &mut self.unk_2e4, &mut self.unk_304, 16);
+        actor_update_fidget_tables(play, &mut self.fidget_table_y, &mut self.fidget_table_z, 16);
     }
 
     /// `func_80A97D68`.
     fn func_80a97d68(&mut self, play: &mut PlayState) -> bool {
-        let forced = if self.unk_1e8.talk_state != 0 {
-            if !self.anim_is("gObjOsAnim_6A60") {
-                self.change_anim(ENKO_ANIM_32);
+        let forced = if self.interact_info.talk_state != 0 {
+            if !self.anim_is("gKokiriWipingForeheadAnim") {
+                self.change_anim(ENKO_ANIM_WIPING_FOREHEAD);
             }
             2
         } else {
-            if !self.anim_is("gObjOsAnim_7830") {
-                self.change_anim(ENKO_ANIM_33);
+            if !self.anim_is("gKokiriLiftingRockAnim") {
+                self.change_anim(ENKO_ANIM_LIFTING_ROCK);
             }
             1
         };
@@ -622,7 +622,7 @@ impl EnKo {
     fn func_80a97e18(&mut self, play: &mut PlayState) -> bool {
         self.sway(play);
         let mut forced = if self.is_within_talk_angle() { 2 } else { 1 };
-        if self.unk_1e8.talk_state != 0 {
+        if self.interact_info.talk_state != 0 {
             forced = 4;
         } else if self.look_dist < self.actor.xz_dist_to_player {
             forced = 1;
@@ -648,15 +648,15 @@ impl EnKo {
 
     /// `func_80A97F70`.
     fn func_80a97f70(&mut self, play: &mut PlayState) -> bool {
-        let forced = if self.unk_1e8.talk_state != 0 {
-            if !self.anim_is("gObjOsAnim_8F6C") {
-                self.change_anim(ENKO_ANIM_29);
+        let forced = if self.interact_info.talk_state != 0 {
+            if !self.anim_is("gKokiriBlockingAnim") {
+                self.change_anim(ENKO_ANIM_BLOCKING_STATIC);
             }
             self.sway(play);
             2
         } else {
-            if !self.anim_is("gObjOsAnim_7D94") {
-                self.change_anim(ENKO_ANIM_30);
+            if !self.anim_is("gKokiriCuttingGrassAnim") {
+                self.change_anim(ENKO_ANIM_CUTTING_GRASS);
             }
             1
         };
@@ -666,16 +666,16 @@ impl EnKo {
 
     /// `func_80A98034`.
     fn func_80a98034(&mut self, play: &mut PlayState) -> bool {
-        let (forced, r) = if self.unk_1e8.talk_state != 0 {
-            if !self.anim_is("gObjOsAnim_8F6C") {
-                self.change_anim(ENKO_ANIM_29);
+        let (forced, r) = if self.interact_info.talk_state != 0 {
+            if !self.anim_is("gKokiriBlockingAnim") {
+                self.change_anim(ENKO_ANIM_BLOCKING_STATIC);
             }
             self.sway(play);
             let r = self.is_within_talk_angle();
             (if r { 2 } else { 1 }, r)
         } else {
-            if !self.anim_is("gObjOsAnim_879C") {
-                self.change_anim(ENKO_ANIM_31);
+            if !self.anim_is("gKokiriPunchingAnim") {
+                self.change_anim(ENKO_ANIM_PUNCHING);
             }
             (1, self.is_within_talk_angle())
         };
@@ -686,7 +686,7 @@ impl EnKo {
     /// `func_80A98174`.
     fn func_80a98174(&mut self, play: &mut PlayState) -> bool {
         if let Some(s) = &mut self.skel {
-            if self.unk_1e8.talk_state != 0 {
+            if self.interact_info.talk_state != 0 {
                 if s.on_frame(18.0) {
                     s.play_speed = 0.0;
                 }
@@ -705,7 +705,7 @@ impl EnKo {
     /// `func_80A98ECC`: this frame's tracking by type and the story's progress
     /// (`EnKo_ChildStart` ... `EnKo_AdultSaved`).
     fn func_80a98ecc(&mut self, play: &mut PlayState) -> bool {
-        if play.scene_id == SCENE_SPOT10 && self.ty() == ENKO_TYPE_CHILD_FADO {
+        if play.scene_id == SCENE_LOST_WOODS && self.ty() == ENKO_TYPE_CHILD_FADO {
             return self.func_80a97e18(play);
         }
         type F = fn(&mut EnKo, &mut PlayState) -> bool;
@@ -728,10 +728,10 @@ impl EnKo {
         f(self, play)
     }
 
-    /// `func_80A96FD0`: what a child says, as a child.
+    /// `EnKo_GetTextIdChild`: what a child says, as a child.
     fn child_text(&self, play: &PlayState) -> u16 {
         let s = &play.save;
-        let letter = s.get_event_chk_inf(EVENTCHKINF_40);
+        let letter = s.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER);
         let stone = s.check_quest_item(QUEST_KOKIRI_EMERALD);
         match self.ty() {
             ENKO_TYPE_CHILD_FADO => {
@@ -761,7 +761,7 @@ impl EnKo {
         }
     }
 
-    /// `func_80A97338`: what a child says to adult Link (Fado's exchange item aside).
+    /// `EnKo_GetTextIdAdult`: what a child says to adult Link (Fado's exchange item aside).
     fn adult_text(&self, play: &PlayState) -> u16 {
         let s = &play.save;
         let medallion = s.check_quest_item(QUEST_MEDALLION_FOREST);
@@ -783,7 +783,7 @@ impl EnKo {
         }
     }
 
-    /// `func_80A97610`: the text (`Text_GetFaceReaction` is 0 without a mask).
+    /// `EnKo_GetTextId`: the text (`MaskReaction_GetTextId` is 0 without a mask).
     fn text(&self, play: &PlayState) -> u16 {
         if play.save.adult { self.adult_text(play) } else { self.child_text(play) }
     }
@@ -793,34 +793,34 @@ impl EnKo {
         if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
             // The view's eye, 40 up; all but type 0 turn their whole head to it (the debug
             // camera isn't ported).
-            self.unk_1e8.target = play.view.eye;
-            self.unk_1e8.eye_height = 40.0;
+            self.interact_info.target = play.view.eye;
+            self.interact_info.eye_height = 40.0;
             if self.ty() != ENKO_TYPE_CHILD_0 {
-                let mut t = self.unk_1e8;
-                oot_game::npc::func_80034a14(play, &mut self.actor, &mut t, 2, 2);
-                self.unk_1e8 = t;
+                let mut t = self.interact_info;
+                oot_game::npc::track_point(play, &mut self.actor, &mut t, 2, 2);
+                self.interact_info = t;
             }
         } else {
-            self.unk_1e8.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
+            self.interact_info.target = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
             let fqs = Self::forest_quest_state(play);
-            self.unk_1e8.eye_height = if play.save.adult && self.ty() == ENKO_TYPE_CHILD_FADO { -20.0 } else { EYE_HEIGHTS[self.ty() as usize][fqs] };
-            if !self.func_80a98ecc(play) && self.unk_1e8.talk_state == 0 {
+            self.interact_info.eye_height = if play.save.adult && self.ty() == ENKO_TYPE_CHILD_FADO { -20.0 } else { EYE_HEIGHTS[self.ty() as usize][fqs] };
+            if !self.func_80a98ecc(play) && self.interact_info.talk_state == 0 {
                 return;
             }
         }
         let text = self.text(play);
-        let mut talk_state = self.unk_1e8.talk_state;
+        let mut talk_state = self.interact_info.talk_state;
         let unk_210 = &mut self.unk_210;
-        oot_game::npc::talk_update(play, &mut self.actor, &mut talk_state, self.look_dist, |_, _| text, |play, actor| func_80a97738(play, actor, unk_210));
-        self.unk_1e8.talk_state = talk_state;
-        // Fado's trade in the Lost Woods (SCENE_SPOT10): not ported.
+        oot_game::npc::talk_update(play, &mut self.actor, &mut talk_state, self.look_dist, |_, _| text, |play, actor| update_talk_state(play, actor, unk_210));
+        self.interact_info.talk_state = talk_state;
+        // Fado's trade in the Lost Woods (SCENE_LOST_WOODS): not ported.
     }
 
     /// `func_80A98DB4`: fading in and out by Link's distance in Kokiri Forest and the Lost Woods,
     /// or in a cutscene by a quarter of the distance to the view's eye (the debug camera isn't
     /// ported).
     fn func_80a98db4(&mut self, play: &PlayState) {
-        if play.scene_id != SCENE_SPOT10 && play.scene_id != SCENE_SPOT04 {
+        if play.scene_id != SCENE_LOST_WOODS && play.scene_id != SCENE_KOKIRI_FOREST {
             self.model_alpha = 255.0;
             return;
         }
@@ -833,9 +833,9 @@ impl EnKo {
         let target = if self.appear_dist < dist { 0.0 } else { 255.0 };
         eng_math::smooth_step_to_f(&mut self.model_alpha, target, 0.3, 40.0, 1.0);
         if self.model_alpha < 10.0 {
-            self.actor.flags &= !ACTOR_FLAG_0;
+            self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         } else {
-            self.actor.flags |= ACTOR_FLAG_0;
+            self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         }
     }
 
@@ -885,7 +885,7 @@ impl EnKo {
 
 /// Indices into the render state's extras.
 mod rs {
-    /// `angles`: head x, y; torso x, y; then the sway (limbs 8, 9, 12: `unk_2E4`, `unk_304`).
+    /// `angles`: head x, y; torso x, y; then the sway (limbs 8, 9, 12: `fidgetTableY`, `fidgetTableZ`).
     pub const HEAD: usize = 0;
     pub const TORSO: usize = 2;
     pub const SWAY: usize = 4;
@@ -918,7 +918,7 @@ impl ActorImpl for EnKo {
                 self.func_80a98db4(play);
             }
         }
-        if self.unk_1e8.talk_state == 0 {
+        if self.interact_info.talk_state == 0 {
             self.actor.move_forward();
         }
         let fqs = Self::forest_quest_state(play);
@@ -941,8 +941,8 @@ impl ActorImpl for EnKo {
     /// `EnKo_PostLimbDraw`, limb 15: the focus at the head.
     fn draw_update(&mut self, _play: &mut PlayState) {
         let (Some(skel), Some(skeleton)) = (&self.skel, &self.skeleton) else { return };
-        let t = &self.unk_1e8;
-        let bones = Self::pose(skeleton, &skel.joint_table, [t.head[0], t.head[1]], [t.torso[0], t.torso[1]], &Self::sway_of(&self.unk_2e4, &self.unk_304));
+        let t = &self.interact_info;
+        let bones = Self::pose(skeleton, &skel.joint_table, [t.head[0], t.head[1]], [t.torso[0], t.torso[1]], &Self::sway_of(&self.fidget_table_y, &self.fidget_table_z));
         let rs = RenderState::of(&self.actor);
         let m = oot_game::play::actor_draw_matrix(&rs);
         if let Some(head) = bones.get(14) {
@@ -954,8 +954,8 @@ impl ActorImpl for EnKo {
         if let Some(s) = &self.skel {
             rs.joints = Some(eng_anim::anim::JointTable { rot: s.joint_table.clone(), face: 0 });
         }
-        let t = &self.unk_1e8;
-        let sway = Self::sway_of(&self.unk_2e4, &self.unk_304);
+        let t = &self.interact_info;
+        let sway = Self::sway_of(&self.fidget_table_y, &self.fidget_table_z);
         rs.angles = vec![t.head[0], t.head[1], t.torso[0], t.torso[1], sway[0].1, sway[0].2, sway[1].1, sway[1].2, sway[2].1, sway[2].2];
         rs.values = vec![self.model_alpha];
         rs.switches = vec![self.eye_texture_index.clamp(0, 2) as u32];
@@ -1005,14 +1005,14 @@ impl ActorImpl for EnKo {
     }
 }
 
-/// `func_80A97738`: the conversation's state each frame (`func_800343CC`'s second callback). 0
+/// `EnKo_UpdateTalkState`: the conversation's state each frame (`Npc_UpdateTalking`'s second callback). 0
 /// once the box closes (setting the flag that the text was read), 1 while it's up, 3 after the
 /// last text's A; a question goes on to its answer's text (2 for the one Fado's trade acts on).
-fn func_80a97738(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> i16 {
+fn update_talk_state(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> i16 {
     use oot_game::message::*;
     match play.message_state() {
         TEXT_STATE_CLOSING => {
-            // INFTABLE_* (z64save.h) are the bit numbers.
+            // INFTABLE_* (save.h) are the bit numbers.
             let flag = match actor.text_id {
                 0x1005 => 0x1E,
                 0x1008 => 0x22,
@@ -1033,7 +1033,7 @@ fn func_80a97738(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16) -> 
         }
         TEXT_STATE_DONE_FADING => {
             if matches!(actor.text_id, 0x10B7 | 0x10B8) && *unk_210 == 0 {
-                play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
+                play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
                 *unk_210 = 1;
             }
             1

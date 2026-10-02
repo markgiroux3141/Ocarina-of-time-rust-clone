@@ -41,7 +41,7 @@ pub const ACTOR_BG_YDAN_HASI: i16 = 0x0050;
 /// Not a game actor: the sandbox's dummy Z-target.
 pub const ACTOR_SANDBOX_DUMMY_TARGET: i16 = -2;
 
-/// An actor type's `ActorInit`: its id, category, initial flags and object dependency. (The
+/// An actor type's `ActorProfile`: its id, category, initial flags and object dependency. (The
 /// functions are the `ActorImpl` methods.)
 #[derive(Debug, Clone, Copy)]
 pub struct ActorProfile {
@@ -79,20 +79,20 @@ pub trait PlayerIface {
     fn state_flags1(&self) -> u32;
     /// `stateFlags2`.
     fn state_flags2(&self) -> u32;
-    /// `unk_664`: the actor Player is locked on to.
+    /// `focusActor`: the actor Player is locked on to.
     fn target(&self) -> Option<ActorHandle>;
-    /// `unk_66C`: the Z timer.
+    /// `zTargetActiveTimer`: the Z timer.
     fn target_timer(&self) -> i16;
-    /// `unk_84B[unk_846]`: the stick direction class.
+    /// `controlStickDirections[controlStickDataIndex]`: the stick direction class.
     fn stick_dir(&self) -> i8;
     /// `actor.focus.pos`: the head.
     fn focus(&self) -> Vec3;
     /// `speedXZ`, for the follow camera.
     fn speed_xz(&self) -> f32;
     /// `targetActor` and `targetActorDistance`: the nearest actor offering to talk this frame
-    /// (`func_8002F1C4`), reset at the end of every Player update.
+    /// (`Actor_OfferTalkExchange`), reset at the end of every Player update.
     fn talk_target(&self) -> (Option<ActorHandle>, f32);
-    /// `func_8002F1C4`'s write: `targetActor`, `targetActorDistance`, `exchangeItemId`.
+    /// `Actor_OfferTalkExchange`'s write: `targetActor`, `targetActorDistance`, `exchangeItemId`.
     fn set_talk_target(&mut self, actor: ActorHandle, distance: f32, exchange_item: u8);
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
@@ -101,10 +101,10 @@ pub trait PlayerIface {
     fn holds_actor(&self) -> bool;
     /// `getItemDirection`: how squarely the last `GI_NONE` offer this frame faced Link.
     fn get_item_direction(&self) -> i16;
-    /// `func_8002F434`'s write: `getItemId`, `interactRangeActor`, `getItemDirection`.
+    /// `Actor_OfferGetItem`'s write: `getItemId`, `interactRangeActor`, `getItemDirection`.
     fn set_get_item(&mut self, actor: ActorHandle, get_item_id: i16, direction: i16);
-    /// `func_8002F698`'s write: `unk_8A0` (the extra damage), `unk_8A1` (the kind: 1 a push,
-    /// 2 a knockdown, 3 a shock), `unk_8A2` (the yaw), `unk_8A4` (the speed), `unk_8A8` (the
+    /// `Actor_SetPlayerKnockback`'s write: `knockbackDamage` (the extra damage), `knockbackType` (the kind: 1 a push,
+    /// 2 a knockdown, 3 a shock), `knockbackRot` (the yaw), `knockbackSpeed` (the speed), `knockbackYVelocity` (the
     /// upward speed).
     fn set_knockback(&mut self, damage: u8, kind: u8, yaw: i16, speed: f32, vy: f32);
     /// `invincibilityTimer`.
@@ -114,7 +114,7 @@ pub trait PlayerIface {
     fn change_state_flags2(&mut self, set: u32, clear: u32);
     /// `Player_SetEquipmentData` from `save` (the pause menu's closing runs it).
     fn set_equipment_data(&mut self, data: &crate::data::GameData, save: &crate::save::SaveContext);
-    /// `func_8002DF38` / `func_8002DF54`'s writes: `csMode`, `unk_448` (the actor the mode is
+    /// `Player_SetCsAction` / `Player_SetCsActionWithHaltedActors`'s writes: `csMode`, `csActor` (the actor the mode is
     /// about) and `doorBgCamIndex`.
     fn set_cs_mode(&mut self, cs_mode: u8, actor: Option<ActorHandle>, door_bg_cam_index: i16);
     /// `csMode`.
@@ -127,7 +127,7 @@ pub trait PlayerIface {
     fn set_navi_text_id(&mut self, id: i16);
     /// `naviActor`: the fairy `Player_Init` spawned.
     fn navi_actor(&self) -> Option<ActorHandle>;
-    /// `unk_89E`: the floor's footstep (`SurfaceType_GetSfxId`'s offset), which the crawl's
+    /// `floorSfxOffset`: the floor's footstep (`SurfaceType_GetSfxOffset`'s offset), which the crawl's
     /// camera plays.
     fn unk_89e(&self) -> u16 {
         0
@@ -141,37 +141,37 @@ pub trait PlayerIface {
     fn change_state_flags1(&mut self, _set: u32, _clear: u32) {}
 }
 
-/// `PLAYER_BOOTS_IRON` (`z64player.h`).
+/// `PLAYER_BOOTS_IRON` (`player.h`).
 pub const PLAYER_BOOTS_IRON: u8 = 1;
 
-/// `PLAYER_BODYPART_*` (`z64player.h`) the other actors read.
+/// `PLAYER_BODYPART_*` (`player.h`) the other actors read.
 pub const PLAYER_BODYPART_WAIST: usize = 0;
 pub const PLAYER_BODYPART_HEAD: usize = 7;
 pub const PLAYER_BODYPART_HAT: usize = 8;
 
-/// An actor type: its data (with the base `Actor` inside) and its `ActorInit` functions.
+/// An actor type: its data (with the base `Actor` inside) and its `ActorProfile` functions.
 pub trait ActorImpl: Any {
     /// The actor's name (the overlay's, e.g. `Bg_Ydan_Hasi`).
     fn name(&self) -> &'static str;
     fn base(&self) -> &Actor;
     fn base_mut(&mut self) -> &mut Actor;
-    /// `ActorInit.update`.
+    /// `ActorProfile.update`.
     fn update(&mut self, play: &mut PlayState);
-    /// This actor's share of `AnimationContext_Update`: its queued animation requests.
+    /// This actor's share of `AnimTaskQueue_Update`: its queued animation requests.
     fn animation_update(&mut self) {}
-    /// The part of `ActorInit.draw` that changes the actor (Player's foot IK writes into its
+    /// The part of `ActorProfile.draw` that changes the actor (Player's foot IK writes into its
     /// joint table), run once per game frame.
     fn draw_update(&mut self, _play: &mut PlayState) {}
-    /// The audio calls of `ActorInit.draw` (`EnRiverSound_Draw`'s), where `Actor_DrawAll` makes
+    /// The audio calls of `ActorProfile.draw` (`EnRiverSound_Draw`'s), where `Actor_DrawAll` makes
     /// them: right after the actor's `projectedPos` and its `sfx`.
     fn draw_sfx(&mut self, _play: &mut PlayState) {}
     /// What the renderer blends between game frames.
     fn render_state(&self) -> RenderState {
         RenderState::of(self.base())
     }
-    /// `ActorInit.draw`: submit this frame's draws, from the blended state `rs`.
+    /// `ActorProfile.draw`: submit this frame's draws, from the blended state `rs`.
     fn draw(&self, _rs: &RenderState, _play: &PlayState, _view: &ViewInfo, _out: &mut DrawOut) {}
-    /// `ActorInit.destroy`.
+    /// `ActorProfile.destroy`.
     fn destroy(&mut self, _play: &mut PlayState) {}
     /// `GET_PLAYER`.
     fn as_player(&self) -> Option<&dyn PlayerIface> {
@@ -324,33 +324,33 @@ impl ActorContext {
     }
 }
 
-/// `func_8002F698`: an actor knocks Player back. Player takes it in its next update
+/// `Actor_SetPlayerKnockback`: an actor knocks Player back. Player takes it in its next update
 /// (`func_808382DC`): `kind` 1 a push, 2 a knockdown, 3 a shock, at `speed` along `yaw` with
 /// `vy` upwards, `damage` added to what the frame's collisions did.
-pub fn func_8002f698(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, kind: u8, damage: u8) {
+pub fn actor_set_player_knockback(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, kind: u8, damage: u8) {
     if let Some(pi) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
         pi.set_knockback(damage, kind, yaw, speed, vy);
     }
 }
 
-/// `func_8002F6D4`: a knockdown (kind 2).
-pub fn func_8002f6d4(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage: u8) {
-    func_8002f698(play, speed, yaw, vy, 2, damage);
+/// `Actor_SetPlayerKnockbackLarge`: a knockdown (kind 2).
+pub fn actor_set_player_knockback_large(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage: u8) {
+    actor_set_player_knockback(play, speed, yaw, vy, 2, damage);
 }
 
-/// `func_8002F71C`: a knockdown with no damage of its own.
-pub fn func_8002f71c(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
-    func_8002f6d4(play, speed, yaw, vy, 0);
+/// `Actor_SetPlayerKnockbackLargeNoDamage`: a knockdown with no damage of its own.
+pub fn actor_set_player_knockback_large_no_damage(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
+    actor_set_player_knockback_large(play, speed, yaw, vy, 0);
 }
 
-/// `func_8002F758`: a push (kind 1).
-pub fn func_8002f758(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage: u8) {
-    func_8002f698(play, speed, yaw, vy, 1, damage);
+/// `Actor_SetPlayerKnockbackSmall`: a push (kind 1).
+pub fn actor_set_player_knockback_small(play: &mut PlayState, speed: f32, yaw: i16, vy: f32, damage: u8) {
+    actor_set_player_knockback(play, speed, yaw, vy, 1, damage);
 }
 
-/// `func_8002F7A0`: a push with no damage of its own.
-pub fn func_8002f7a0(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
-    func_8002f758(play, speed, yaw, vy, 0);
+/// `Actor_SetPlayerKnockbackSmallNoDamage`: a push with no damage of its own.
+pub fn actor_set_player_knockback_small_no_damage(play: &mut PlayState, speed: f32, yaw: i16, vy: f32) {
+    actor_set_player_knockback_small(play, speed, yaw, vy, 0);
 }
 
 /// Where the updating actor's sounds are: `&this->actor.projectedPos` (`play.cur_actor`;
@@ -359,31 +359,31 @@ pub fn cur_sfx_pos(play: &PlayState) -> crate::audio::sfx::SfxPos {
     play.cur_actor.map(crate::audio::sfx::SfxPos::Actor).unwrap_or(crate::audio::sfx::SfxPos::Default)
 }
 
-/// `func_8002F7DC`: `Audio_PlaySfxGeneral` at the actor's `projectedPos`, with the defaults.
-pub fn func_8002f7dc(play: &mut PlayState, actor: ActorHandle, sfx_id: u16) {
+/// `Player_PlaySfx`: `Audio_PlaySfxGeneral` at the actor's `projectedPos`, with the defaults.
+pub fn player_play_sfx(play: &mut PlayState, actor: ActorHandle, sfx_id: u16) {
     use crate::audio::sfx::{SfxF32, SfxPos, SfxS8};
     play.audio.play_sfx_general(sfx_id, SfxPos::Actor(actor), 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
 }
 
-/// `Audio_PlayActorSfx2`: `func_80078914` at the updating actor's `projectedPos`.
+/// `Actor_PlaySfx`: `Sfx_PlaySfxAtPos` at the updating actor's `projectedPos`.
 pub fn audio_play_actor_sfx2(play: &mut PlayState, sfx_id: u16) {
     let pos = cur_sfx_pos(play);
-    play.audio.func_80078914(pos, sfx_id);
+    play.audio.play_sfx_at_pos(pos, sfx_id);
 }
 
-/// `func_8002F850`: a bounce: `NA_SE_EV_BOMB_BOUND`, then the floor's footstep (the water's
+/// `Actor_PlaySfx_SurfaceBomb`: a bounce: `NA_SE_EV_BOMB_BOUND`, then the floor's footstep (the water's
 /// when the actor is in water: shallow under 20) at the updating actor.
-pub fn func_8002f850(play: &mut PlayState, actor: &Actor) {
+pub fn actor_play_sfx_surface_bomb(play: &mut PlayState, actor: &Actor) {
     use crate::actor::BGCHECKFLAG_WATER;
     use crate::audio::sfx::{NA_SE_EV_BOMB_BOUND, NA_SE_PL_WALK_WATER0, NA_SE_PL_WALK_WATER1, SFX_FLAG};
     use crate::surface::SurfaceType;
     let sfx_id = if actor.bg_check_flags & BGCHECKFLAG_WATER != 0 {
         if actor.y_dist_to_water < 20.0 { NA_SE_PL_WALK_WATER0 - SFX_FLAG } else { NA_SE_PL_WALK_WATER1 - SFX_FLAG }
     } else {
-        // SurfaceType_GetSfxId (the C reads through a NULL floor: type 0 here).
+        // SurfaceType_GetSfxOffset (the C reads through a NULL floor: type 0 here).
         play.audio.tables.surface_sfx_id(actor.floor_poly.map(|p| play.col.sfx_type(p)).unwrap_or(0))
     };
     let pos = cur_sfx_pos(play);
-    play.audio.func_80078914(pos, NA_SE_EV_BOMB_BOUND);
-    play.audio.func_80078914(pos, sfx_id.wrapping_add(SFX_FLAG));
+    play.audio.play_sfx_at_pos(pos, NA_SE_EV_BOMB_BOUND);
+    play.audio.play_sfx_at_pos(pos, sfx_id.wrapping_add(SFX_FLAG));
 }

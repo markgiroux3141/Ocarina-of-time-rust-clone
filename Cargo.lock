@@ -2333,6 +2333,7 @@ dependencies = [
  "oot_actors",
  "oot_game",
  "quick-xml 0.42.0",
+ "regex",
  "serde",
  "serde_json",
  "sha1_smol",

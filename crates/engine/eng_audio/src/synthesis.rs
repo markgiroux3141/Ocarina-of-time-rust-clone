@@ -1,4 +1,4 @@
-//! `audio_synthesis.c`: the RSP command list of one audio frame. `AudioSynth_Update` runs the
+//! `synthesis.c`: the RSP command list of one audio frame. `AudioSynth_Update` runs the
 //! frame's sequence updates, then for each update decodes, resamples and mixes every enabled
 //! note into DMEM's dry and wet channels, adds and saves the reverbs, and interleaves the
 //! result into the AI buffer. The commands go to `self.cmds`; `rsp.rs` runs them.
@@ -11,7 +11,7 @@ use crate::rsp::{A_CONTINUE, A_ENVMIXER, A_INIT, A_LOOP};
 const DMEM_TEMP: u32 = 0x3C0;
 const DMEM_UNCOMPRESSED_NOTE: u32 = 0x580;
 const DMEM_HAAS_TEMP: u32 = 0x5C0;
-const DMEM_SCRATCH2: u32 = 0x760; // = DMEM_TEMP + DMEM_2CH_SIZE + a bit more
+const DMEM_COMB_TEMP: u32 = 0x760; // = DMEM_TEMP + DMEM_2CH_SIZE + a bit more
 const DMEM_COMPRESSED_ADPCM_DATA: u32 = 0x940; // = DMEM_LEFT_CH
 const DMEM_LEFT_CH: u32 = 0x940;
 const DMEM_RIGHT_CH: u32 = 0xAE0;
@@ -523,7 +523,7 @@ impl AudioContext {
             st.prev_haas_effect_right_delay_size = 0;
             st.reverb_vol = s.reverb_vol;
             st.num_parts = 0;
-            st.unk_1a = 1;
+            st.comb_filter_needs_init = 1;
             self.notes[note_index].note_sub_eu.finished = false;
             finished = false;
         }
@@ -788,23 +788,23 @@ impl AudioContext {
             self.cmd(a_filter(flags, DMEM_TEMP, buffers + NSB_MIX_ENVELOPE_STATE));
         }
 
-        let unk7 = s.unk_07 as u32;
-        let unk_e = s.unk_0e as u32;
+        let unk7 = s.comb_filter_size as u32;
+        let unk_e = s.comb_filter_gain as u32;
         let buf = buffers + NSB_UNK_STATE;
         if unk7 != 0 && unk_e != 0 {
-            self.cmd(audio_synth_dmem_move(DMEM_TEMP, DMEM_SCRATCH2, (ai_buf_len * SS) as u32));
-            let thing = DMEM_SCRATCH2 - unk7;
-            if self.notes[note_index].synthesis_state.unk_1a != 0 {
+            self.cmd(audio_synth_dmem_move(DMEM_TEMP, DMEM_COMB_TEMP, (ai_buf_len * SS) as u32));
+            let thing = DMEM_COMB_TEMP - unk7;
+            if self.notes[note_index].synthesis_state.comb_filter_needs_init != 0 {
                 self.cmd(a_clear_buffer(thing, unk7));
-                self.notes[note_index].synthesis_state.unk_1a = 0;
+                self.notes[note_index].synthesis_state.comb_filter_needs_init = 0;
             } else {
                 self.cmd(a_load_buffer(buf, thing, unk7));
             }
             self.cmd(a_save_buffer(DMEM_TEMP + (ai_buf_len * SS) as u32 - unk7, buf, unk7));
-            self.cmd(a_mix(((ai_buf_len * SS) >> 4) as u32, unk_e, DMEM_SCRATCH2, thing));
+            self.cmd(a_mix(((ai_buf_len * SS) >> 4) as u32, unk_e, DMEM_COMB_TEMP, thing));
             self.cmd(audio_synth_dmem_move(thing, DMEM_TEMP, (ai_buf_len * SS) as u32));
         } else {
-            self.notes[note_index].synthesis_state.unk_1a = 1;
+            self.notes[note_index].synthesis_state.comb_filter_needs_init = 1;
         }
 
         let st = self.notes[note_index].synthesis_state;

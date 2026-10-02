@@ -1,4 +1,4 @@
-//! Collision meshes with the game's `CollisionHeader` layout (`z64bgcheck.h`): Vec3s
+//! Collision meshes with the game's `CollisionHeader` layout (`bgcheck.h`): Vec3s
 //! vertices, `CollisionPoly`s, `SurfaceType` pairs and `WaterBox`es. The binary codec (from a
 //! ROM file, and back for synthetic geometry) is in `oot_import::z64`.
 

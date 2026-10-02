@@ -70,12 +70,12 @@ pub struct CollisionContext {
     verts: Vec<Vec3>,
     /// `colCtx->dyna`.
     pub dyna: Dyna,
-    /// The room water boxes are filtered by (`WaterBox_GetSurfaceImpl` compares with the
+    /// The room water boxes are filtered by (`BgCheck_GetWaterSurface` compares with the
     /// current room); set by whoever owns the rooms.
     pub water_room: u32,
 }
 
-/// `COLPOLY_VIA_FLAG_TEST`.
+/// `COLPOLY_VTX_CHECK_FLAGS_ANY`.
 fn xp_test(poly: &CollisionPoly, flags: u16) -> bool {
     poly.vtx[0] & ((flags & 7) << 13) != 0
 }
@@ -798,7 +798,7 @@ impl CollisionContext {
         self.check_line(IGNORE_ENTITY, IGNORE_NONE, a, b, 1.0, bcc)
     }
 
-    /// `WaterBox_GetSurfaceImpl`: the surface height of the first water box (for `room`, or one
+    /// `BgCheck_GetWaterSurface`: the surface height of the first water box (for `room`, or one
     /// marked for all rooms, `WATERBOX_ROOM_ALL`) whose x/z extent contains the point.
     pub fn water_surface(&self, x: f32, z: f32, room: u32) -> Option<f32> {
         for w in &self.header.water_boxes {

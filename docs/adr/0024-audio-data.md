@@ -14,15 +14,15 @@ The game's sound is three ROM files and a few tables:
   2; every book has order 2).
 - `Audioseq` (319 KB): 110 sequences, the scripts the sequence player runs.
 - In `code`: `gSoundFontTable`, `gSequenceTable`, `gSampleBankTable` (`AudioTable`s) and
-  `gSequenceFontTable`; and the C's own tables (`audio_data.c`: the pitch and bend tables, the
-  pan volumes, the wave samples, the filters; `audio_init_params.c`: the 18 audio specs and their
+  `gSequenceFontTable`; and the C's own tables (`audio/internal/data.c`: the pitch and bend tables, the
+  pan volumes, the wave samples, the filters; `session_config.c`: the 18 audio specs and their
   reverbs).
 
 `oot_extract::audio` already parses all of it, decodes the samples (a reference decoder, any
 order) and runs the sequences to MIDI. The runtime could take either:
 1. **Decoded at import:** fonts as typed records, samples as PCM, sequences as bytes.
 2. **As the ROM has them:** the files' bytes, relocated, interpreted and decoded when played,
-   by a port of the C (`audio_load.c`, `audio_seqplayer.c`, `audio_synthesis.c`) and of the
+   by a port of the C (`audio/internal/load.c`, `seqplayer.c`, `synthesis.c`) and of the
    microcode's `aADPCMdec`.
 
 What decides it:
@@ -53,12 +53,12 @@ What decides it:
   `audio/rom/Audiobank`, `audio/rom/Audioseq`, `audio/rom/Audiotable`), each with its ROM address,
   and **`audio/tables`** (`eng_audio::AudioTables`):
   - the four tables from the ROM, where the decomp's `data/audio_tables.rodata.s` says they are;
-  - `audio_data.c`'s tables and `audio_init_params.c`'s specs, read from the C (`csrc`, with
+  - `audio/internal/data.c`'s tables and `session_config.c`'s specs, read from the C (`csrc`, with
     `DEFAULT_REVERB_SETTINGS` and `SAMPLE_SIZE` expanded), `sizeof(gAudioHeap)` from
     `src/buffers/heaps.c` and the init sizes' `#define`s;
   - the microcode's resampler filters, from the ROM's `aspMainData` (`data/rsp.rodata.s`;
     ADR 0025);
-  - the 0x11000 bytes of `code` from `func_800E4FE0`, which `gWaveSamples[8]` reads as noise.
+  - the 0x11000 bytes of `code` from `AudioThread_Update`, which `gWaveSamples[8]` reads as noise.
 - **Nothing is decoded or parsed at import.** The runtime loads fonts, sequences and banks as
   the C does, from a cartridge of those files into a simulated RDRAM (`eng_audio::ram`: KSEG0
   addresses, so `AudioLoad_RelocateSample`'s `<= K0BASE` test still tells offsets from

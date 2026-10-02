@@ -31,7 +31,7 @@ Some of what the spikes built at load time depends on runtime state, and the pac
   - At runtime `LinkVariant::with_face` swaps them in.
   - The importer checks the swap gives exactly the interpreted draw list, for every face on the default model group and the last face on the others. `oot_import`'s tests repeat it for four faces on every group.
   - Tracking every word matters: one child texture reads TMEM that the eye load wrote.
-- **Draw configs** are ported to Rust (`oot_game::scene_table`) and run every frame with their inputs and their state (`roomCtx.unk_74`).
+- **Draw configs** are ported to Rust (`oot_game::scene_table`) and run every frame with their inputs and their state (`roomCtx.drawParams`).
   - A scene whose draw config isn't ported keeps the import-time values (frame 0): its textures don't scroll, and a note in the scene load says so.
   - Milestone 2 ports Kokiri Forest, Hyrule Field and the Deku Tree (the scenes the golden renders use), and the default config.
   - Each port is checked against the C interpreter over 12 frames in 42 states: six layers (the four game layers and two cutscene ones), seven times of day, each age and the night flag as the layer implies them.
@@ -39,7 +39,7 @@ Some of what the spikes built at load time depends on runtime state, and the pac
 ## Consequences
 
 - **Rendering is unchanged.** The golden renders (ADR 0001) are identical from the pack: 78 of 78.
-- **The ports are more faithful than the spike's interpreter.** Hyrule Field's night overlay fades in over 51 frames (`Math_StepToS` on `roomCtx.unk_74`). The interpreter never ran the step, so it always drew it at alpha 0. The oracle test asserts exactly that difference.
+- **The ports are more faithful than the spike's interpreter.** Hyrule Field's night overlay fades in over 51 frames (`Math_StepToS` on `roomCtx.drawParams`). The interpreter never ran the step, so it always drew it at alpha 0. The oracle test asserts exactly that difference.
 - **A draw config that picks geometry or textures by the time within a layer** is baked at the layer's time.
   - Hyrule Field's does, in two half hours: its overlay list is drawn from 6:30 to 7:00 (a day-layer time, baked at 10:00 without it) and not from 18:00 to 18:30 (a night-layer time, baked at midnight with it).
   - In both windows the overlay's alpha has already stepped to 0, so the frames look the same.

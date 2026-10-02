@@ -1,2 +1,4 @@
 # Batch files need CRLF: cmd misreads labels and gotos in LF ones.
 *.bat text eol=crlf
+# Shell scripts run in Linux containers (scripts/decomp): LF, or bash misreads them.
+*.sh text eol=lf

@@ -57,7 +57,7 @@ The spikes read everything at startup: the ROM through the decomp's XML offsets,
 ## Amendment (milestone 4)
 
 Format version 2:
-- `table/actors` (`oot_game::actor_table::ActorTable`: the actor table with every `ActorInit`);
+- `table/actors` (`oot_game::actor_table::ActorTable`: the actor table with every `ActorProfile`);
 - the entrance table in `table/scenes`;
 - per scene layer the entrance list, exit list, transition actors and the keep object's id;
 - per room its object list.

@@ -1,4 +1,4 @@
-//! Skin skeletons (`z64skin.h`) read from an object file: the runtime's `SkinSkeleton`, and the
+//! Skin skeletons (`skin.h`) read from an object file: the runtime's `SkinSkeleton`, and the
 //! mesh bake that gives every animated limb's vertex group a bone of its own
 //! (`oot_game::skin`).
 

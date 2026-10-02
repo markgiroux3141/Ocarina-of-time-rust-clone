@@ -1,13 +1,13 @@
 //! The training area's rolling boulder (`ovl_En_Goroiwa/z_en_goroiwa.c`) and what it does to
-//! Link: the body hit and the knockdown (`func_808382DC`, `func_80837C0C`, `func_8084370C`,
-//! `func_8084377C`, `func_80843954`, `func_80843A38` in `z_player.c`).
+//! Link: the body hit and the knockdown (`func_808382DC`, `func_80837C0C`, `Player_Action_8084370C`,
+//! `Player_Action_8084377C`, `Player_Action_80843954`, `Player_Action_80843A38` in `z_player.c`).
 //!
 //! Expected values come from the scene data and the C:
 //! - room 2's `En_Goroiwa`: params 0x0C02 (path 2, loop mode 0, bit 10: gravity and the floor
 //!   check), `rot.z` 1;
 //! - path 2: (-247, 120, 1869), (-247, 120, 1538), (-575, 120, 1538), (-575, 120, 1869),
 //!   (-247, 120, 1869);
-//! - `EnGoroiwa_SetSpeed`: `R_EN_GOROIWA_SPEED` 920 in `SCENE_SPOT04`, so 9.2 a frame, reached
+//! - `EnGoroiwa_SetSpeed`: `R_EN_GOROIWA_SPEED` 920 in `SCENE_KOKIRI_FOREST`, so 9.2 a frame, reached
 //!   by `Math_StepToF` steps of 0.3;
 //! - its sphere: radius 58, 59.5 up (bit 10), AT `0x20000000` with 4 damage; `MASS_HEAVY`.
 
@@ -38,7 +38,7 @@ fn tick(w: &mut PlayState) {
 /// Kokiri Forest on a new save with room 2 loaded and Link placed at `link`, facing `yaw`;
 /// returns once the boulder has spawned (its object loads with the room).
 fn room2(a: &Arc<GameAssets>, link: Vec3, yaw: i16) -> Option<(PlayState, ActorHandle)> {
-    let e = a.scenes.entrance_index("ENTR_SPOT04_0").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     let mut w = oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init");
     for _ in 0..20 {
@@ -181,14 +181,14 @@ fn it_knocks_link_down() {
     // update: func_808382DC's AC branch, func_80837C0C(0, 4.0, 5.0, yaw from the boulder to
     // Link, 20): Health_ChangeBy(-4) (the sphere's toucher damage, no damage table), 20
     // frames of invincibility, and with Link still (speed under 4), the stagger
-    // (func_8084370C) from the front: D_808544B0[0].
+    // (Player_Action_8084370C) from the front: D_808544B0[0].
     let p = w.player();
     assert_eq!(p.action, Action::Damaged);
     assert_eq!(w.save.health, health - 4, "a quarter heart");
     assert_eq!(p.invincibility_timer, 20);
     assert_eq!(w.data.anim_name(p.skel.animation), "link_normal_front_shit");
     // The boulder's update that frame: AT_HIT with Link ahead (yawTowardsPlayer within a
-    // quarter turn of its way), so EnGoroiwa_ReverseDirection; func_8002F6D4(2.0,
+    // quarter turn of its way), so EnGoroiwa_ReverseDirection; Actor_SetPlayerKnockbackLarge(2.0,
     // yawTowardsPlayer, 0.0, 0); EnGoroiwa_SetupMoveAndFallToGround (a hop: 5 up, 0.15 of its
     // speed); 50 frames without colliding (rot.z bit 0).
     let g = b(&w, h);
@@ -201,8 +201,8 @@ fn it_knocks_link_down() {
     assert!(g.state_flags & en_goroiwa::ENGOROIWA_PLAYER_IN_THE_WAY != 0);
     let away = g.actor.yaw_towards_player;
 
-    // Next frame, the knockback (unk_8A1 2 → sp5C[1] = 1): func_80837C0C(1, 2.0, 0.0, away):
-    // invincible, so no more damage; knocked down (func_8084377C) backwards at 2, facing the
+    // Next frame, the knockback (knockbackType 2 → sp5C[1] = 1): func_80837C0C(1, 2.0, 0.0, away):
+    // invincible, so no more damage; knocked down (Player_Action_8084377C) backwards at 2, facing the
     // boulder (the hit came from the front: shape.rot.y turned by 0x8000 back).
     tick(&mut w);
     let p = w.player();
@@ -211,9 +211,9 @@ fn it_knocks_link_down() {
     assert_eq!(w.data.anim_name(p.skel.animation), "link_normal_front_downA");
     assert_eq!((p.current_yaw, p.linear_velocity), (away, 2.0));
     assert_eq!(p.actor.shape_rot.y, away.wrapping_add(i16::MIN));
-    assert_eq!(p.unk_8A1, 0, "cleared at the end of Player_UpdateCommon");
+    assert_eq!(p.knockback_type, 0, "cleared at the end of Player_UpdateCommon");
 
-    // Down (func_80843954, front_downB), up (func_80843A38, front_down_wake), standing; all
+    // Down (Player_Action_80843954, front_downB), up (Player_Action_80843A38, front_down_wake), standing; all
     // the while invincible (func_808382BC keeps it at 20), then counting down.
     let mut seen = vec![Action::KnockedDown];
     while w.player().action != Action::StandingStill {

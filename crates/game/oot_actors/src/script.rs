@@ -10,7 +10,7 @@ use oot_game::surface::SurfaceType;
 use crate::PlayExt;
 
 /// The stick pointing Player towards `to` at magnitude `mag`, relative to the camera as
-/// `func_8083315C` reads it (`stick_to_mag_angle`: angle = `Math_Atan2S(stickY, -stickX)`, plus
+/// `Player_ProcessControlStick` reads it (`stick_to_mag_angle`: angle = `Math_Atan2S(stickY, -stickX)`, plus
 /// the camera's input yaw).
 pub fn stick_towards(play: &PlayState, to: Vec3, mag: f32) -> PadState {
     let p = play.player().actor.world_pos;

@@ -4,7 +4,7 @@
 //! (9601, 9602, `Camera_Demo9`) are in `crawl.rs`.
 //!
 //! Expected values come from the C: `OnePointCutscene_Init`'s queue and statuses,
-//! `OnePointCutscene_SetInfo`'s cases, `Camera_Demo5`'s branches with `z_camera_data.c`'s
+//! `OnePointCutscene_SetInfo`'s cases, `Camera_Demo5`'s branches with `z_camera_data.inc.c`'s
 //! keyframe tables (`D_8011D9F4`), `Camera_Unique9`'s keyframe timing, and `Camera_Finish`.
 
 mod common;
@@ -17,7 +17,7 @@ use oot_actors::PlayExt;
 use oot_actors::player::Action;
 use oot_game::actor_ctx::ACTORCAT_NPC;
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, SfxPos};
-use oot_game::camera::{CAM_ID_MAIN, CAM_SET_CS_ATTENTION, CAM_STAT_ACTIVE, CAM_STAT_UNK3, GameCamera, VecSph, diff_to_sph_geo, sph_geo_add, vec3_to_sph_geo};
+use oot_game::camera::{CAM_ID_MAIN, CAM_SET_CS_ATTENTION, CAM_STAT_ACTIVE, CAM_STAT_UNK3, GameCamera, VecSphGeo, diff_to_sph_geo, sph_geo_add, vec3_to_sph_geo};
 use oot_game::onepoint::{CAM_SET_CS_C, CAM_SET_FREE2};
 use oot_game::play::{PlayState, scripted_input};
 use oot_game::play_scene::GameAssets;
@@ -28,10 +28,10 @@ fn assets() -> Option<Arc<GameAssets>> {
     Some(oot_actors::game_assets(pack).expect("the pack's tables"))
 }
 
-/// Kokiri Forest's village (`ENTR_SPOT04_3`) on a new save, settled.
+/// Kokiri Forest's village (`ENTR_KOKIRI_FOREST_3`) on a new save, settled.
 fn village() -> Option<PlayState> {
     let a = assets()?;
-    let e = a.scenes.entrance_index("ENTR_SPOT04_3").expect("entrance");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_3").expect("entrance");
     let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
     frames(&mut w, 20);
@@ -94,7 +94,7 @@ fn an_attention_cutscene_on_a_far_npc() {
     assert_eq!(k1, if hit { 4 } else { (eye_target_dist * 0.005) as i16 + 8 });
     // The timer, counted down once by Unique9's first frame.
     assert_eq!(c.timer, 100 + k1 + 1 - 1);
-    // Player held about the target (func_8002DF54(play, target, 1)), the chime once.
+    // Player held about the target (Player_SetCsActionWithHaltedActors(play, target, 1)), the chime once.
     // (The camera updates after the actors: Player takes the mode next frame.)
     assert_eq!(w.player().cs_mode, 1);
     let chimes: Vec<_> = w.audio.log.as_ref().unwrap().sfx.iter().filter(|s| s.1 == NA_SE_SY_CORRECT_CHIME).cloned().collect();
@@ -106,7 +106,7 @@ fn an_attention_cutscene_on_a_far_npc() {
     let player_pos = w.player().actor.world_pos;
     let offset = diff_to_sph_geo(kid_focus, Vec3::new(player_pos.x, player_head.y, player_pos.z));
     let turned = |v: Vec3| {
-        let mut s: VecSph = vec3_to_sph_geo(v);
+        let mut s: VecSphGeo = vec3_to_sph_geo(v);
         s.yaw = s.yaw.wrapping_add(offset.yaw);
         s.pitch = s.pitch.wrapping_add(offset.pitch);
         s
@@ -143,14 +143,14 @@ fn the_falling_chests_shot() {
     let Some(mut w) = village() else { return };
     // OnePointCutscene_SetInfo's 4500 about any actor (the falling chest's): CAM_SET_FREE2,
     // the at 40 above the floor under the actor's focus, the eye 150 from it at pitch 0x3E8
-    // along the focus's yaw, fov 50, roll 0; Player held (func_8002DF54(play, NULL, 8)).
+    // along the focus's yaw, fov 50, roll 0; Player held (Player_SetCsActionWithHaltedActors(play, NULL, 8)).
     let kid = w.actors.all().into_iter().find(|&h| w.actors.actor(h).is_some_and(|a| a.category == ACTORCAT_NPC)).expect("an NPC");
     let me = w.cam_actor(kid).unwrap();
     let sub = w.onepoint_cutscene_init(4500, 9999, Some(me), CAM_ID_MAIN);
     let c = w.camera(sub).unwrap().clone();
     let floor = w.col.entity_raycast_down(me.focus_pos).0;
     let at = Vec3::new(me.focus_pos.x, floor + 40.0, me.focus_pos.z);
-    let eye = sph_geo_add(at, VecSph { r: 150.0, pitch: 0x3E8, yaw: me.focus_rot[1] });
+    let eye = sph_geo_add(at, VecSphGeo { r: 150.0, pitch: 0x3E8, yaw: me.focus_rot[1] });
     assert_eq!((c.cs_id, c.setting, c.timer, c.fov, c.roll), (4500, CAM_SET_FREE2, 9999, 50.0, 0));
     assert_eq!(c.at, at);
     assert!(c.eye.distance(eye) < 1e-3, "{} {eye}", c.eye);
@@ -172,7 +172,7 @@ fn an_attention_cutscene_on_link_himself() {
     // OnePointCutscene_Attention on Player (ACTORCAT_PLAYER: timer 30). Camera_Demo5's Player
     // branch: the eye more than 30 from his head, so D_8011D6AC, its keyframe 1's timer the
     // camera's - 1, the timer lengthened by keyframe 2's (1); then, less than 3000 frames since
-    // sDemo5PrevAction12Frame (-16), func_8002DF54(play, target, 69).
+    // sDemo5PrevAction12Frame (-16), Player_SetCsActionWithHaltedActors(play, target, 69).
     let me = w.cam_actor(w.player.unwrap()).unwrap();
     let sub = w.onepoint_attention(me);
     assert_eq!(w.camera(sub).unwrap().timer, 30);
@@ -184,9 +184,9 @@ fn an_attention_cutscene_on_link_himself() {
     assert_eq!(c.timer, 30 + 1 - 1);
     assert_eq!(w.player().cs_mode, 69);
     // Mode 69's start, D_80854B18[69] = { 3, &gPlayerAnim_link_hatto_demo }: func_80851094
-    // (func_80850F1C): the animation once at 2/3, morphing over 8 frames. (Player takes the
-    // mode in its next update's interrupts, func_8083ADD4, and runs the mode's start in the
-    // cutscene action, func_80852E14, the update after.)
+    // (Player_AnimChangeOnceMorphAdjustedZeroRootYawSpeed): the animation once at 2/3, morphing over 8 frames. (Player takes the
+    // mode in its next update's interrupts, Player_StartCsAction, and runs the mode's start in the
+    // cutscene action, Player_Action_CsAction, the update after.)
     frames(&mut w, 1);
     assert_eq!(w.player().action, Action::Cutscene);
     frames(&mut w, 1);

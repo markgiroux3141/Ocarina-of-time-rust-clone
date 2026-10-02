@@ -10,10 +10,10 @@
 in) to open (1: lowered 399, its top bridging a gap in the tree's floor).
 
 **The story moves it through cutscenes.** `func_808BC8B8` starts one when Link first comes near
-(`D_808BCE20`, setting `EVENTCHKINF_0C`), or when he Z-targets the tree afterwards
-(`D_808BD2A0`). `func_808BC9EC` waits for the cutscene to start and reads the answer to the
-tree's question. Yes sets `EVENTCHKINF_05` and plays `D_808BD520`, whose cue 3 opens the mouth;
-no plays `D_808BD790`. From then on, `EVENTCHKINF_05` holds the mouth open. There's no
+(`gDekuTreeMeetingCs`, setting `EVENTCHKINF_0C`), or when he Z-targets the tree afterwards
+(`gDekuTreeChoiceCs`). `func_808BC9EC` waits for the cutscene to start and reads the answer to the
+tree's question. Yes sets `EVENTCHKINF_05` and plays `gDekuTreeMouthOpeningCs`, whose cue 3 opens the mouth;
+no plays `gDekuTreeAskAgainCs`. From then on, `EVENTCHKINF_05` holds the mouth open. There's no
 cutscene system until GAME-03 milestone 4.
 
 **The roadmap had the flag wrong.** It said the open mouth comes from `EVENTCHKINF_07`. In the
@@ -21,9 +21,9 @@ C, `EVENTCHKINF_07` is set by `Door_Warp1`'s blue warp out of Gohma's room, with
 `EVENTCHKINF_09` and the Kokiri Emerald: the tree is dead. It only changes the draw.
 `BgTreemouth_Draw` sets `gDPSetEnvColor(128, 128, 128, alpha * 0.1f)` before
 `gDekuTreeMouthDL`, with `alpha` 500, or 2150 with `EVENTCHKINF_07`, or
-`roomCtx.unk_74[0] + 500` on scene layer 6 (the tree's death). The list's combiner is
+`roomCtx.drawParams[0] + 500` on scene layer 6 (the tree's death). The list's combiner is
 `(TEXEL1 - TEXEL0) * ENV_ALPHA + TEXEL0`, a blend from the living bark to the dead.
-`Scene_DrawConfigSpot04` does the same for the tree through segment 0x0B.
+`Scene_DrawConfigKokiriForest` does the same for the tree through segment 0x0B.
 
 **The playthrough needs the mouth open,** and a new save can't open it without the cutscenes.
 
@@ -59,7 +59,7 @@ C, `EVENTCHKINF_07` is set by `Door_Warp1`'s blue warp out of Gohma's room, with
     Emerald. It shows the dead colours, for comparing with a finished save in an emulator.
 
   The scene draw config now reads `EVENTCHKINF_07` from the save each frame, as
-  `Scene_DrawConfigSpot04` does. Only `Play_Init` saves can set it, so the goldens don't change.
+  `Scene_DrawConfigKokiriForest` does. Only `Play_Init` saves can set it, so the goldens don't change.
 - **DynaPoly deletion follows the C's slot flags.** `BGACTOR_IN_USE` and `BGACTOR_1`:
   - `delete_bg_actor` marks the slot, and it keeps colliding until the next
     `DynaPoly_UpdateContext` frees it;

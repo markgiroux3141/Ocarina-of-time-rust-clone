@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn a_loop_partial_starts_at_zero_and_wraps_into_its_range() {
         let mut s = SkelAnimeStd::init_flex(1, None);
-        // En_Ko's ENKO_ANIM_0: LOOP_PARTIAL from 2 to 14 (here 2 to 8). Animation_ChangeImpl
+        // En_Ko's ENKO_ANIM_BLOCKING_NOMORPH: LOOP_PARTIAL from 2 to 14 (here 2 to 8). Animation_ChangeImpl
         // sets curFrame 0 for the partial modes; the first update's 1 < startFrame 2 wraps to
         // (1 - 2) + 8 = 7.
         s.change(ramp(), 1.0, 2.0, 8.0, ANIMMODE_LOOP_PARTIAL, 0.0);

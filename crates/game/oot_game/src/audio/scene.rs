@@ -6,7 +6,7 @@ use super::*;
 use crate::env::clock_time;
 use crate::play::PlayState;
 
-/// `TimeBasedSeqState` (`z64environment.h`).
+/// `TimeBasedSeqState` (`environment.h`).
 pub const TIMESEQ_DAY_BGM: u8 = 0x00;
 pub const TIMESEQ_FADE_DAY_BGM: u8 = 0x01;
 pub const TIMESEQ_NIGHT_BEGIN_SFX: u8 = 0x02;
@@ -18,13 +18,13 @@ pub const TIMESEQ_MORNING_CRITTERS: u8 = 0x07;
 pub const TIMESEQ_DAY_DELAY: u8 = 0x08;
 pub const TIMESEQ_DISABLED: u8 = 0xFF;
 
-/// `ENTR_SPOT10_8`, `ENTR_SPOT10_9` (`entrance_table.h`): the Lost Woods' two exits on the
+/// `ENTR_LOST_WOODS_8`, `ENTR_LOST_WOODS_9` (`entrance_table.h`): the Lost Woods' two exits on the
 /// bridge between Kokiri Forest and Hyrule Field, looked up in the pack's entrance table.
-pub const LOST_WOODS_BRIDGE_ENTRANCES: [&str; 2] = ["ENTR_SPOT10_8", "ENTR_SPOT10_9"];
+pub const LOST_WOODS_BRIDGE_ENTRANCES: [&str; 2] = ["ENTR_LOST_WOODS_8", "ENTR_LOST_WOODS_9"];
 
-/// `SequenceContext` (`z64.h`): the scene's music and ambience.
+/// `SceneSequences` (`z64.h`): the scene's music and ambience.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SequenceContext {
+pub struct SceneSequences {
     pub seq_id: u8,
     pub nature_ambience_id: u8,
 }
@@ -78,11 +78,11 @@ impl PlayState {
         } else if nature == NATURE_ID_NONE {
             log::debug!("BGM設定 game_play->sound_info.BGM=[{seq_id}] old_bgm=[{}]", self.save.seq_id);
             if self.save.seq_id != seq_id {
-                self.audio.func_800f5550(seq_id as u16);
+                self.audio.audio_play_scene_sequence(seq_id as u16);
             }
         } else if day_time >= clock_time(7, 0) && day_time <= clock_time(17, 10) {
             if self.save.seq_id != seq_id {
-                self.audio.func_800f5550(seq_id as u16);
+                self.audio.audio_play_scene_sequence(seq_id as u16);
             }
             self.time_seq_state = TIMESEQ_FADE_DAY_BGM;
         } else {
@@ -117,7 +117,7 @@ impl PlayState {
                 if no_rain {
                     log::debug!("Na_StartMorinigBgm");
                     let s = self.sequence_ctx.seq_id as u16;
-                    self.audio.func_800f5510(s);
+                    self.audio.audio_play_morning_scene_sequence(s);
                 }
                 self.time_seq_state += 1;
             }
@@ -131,7 +131,7 @@ impl PlayState {
             }
             TIMESEQ_NIGHT_BEGIN_SFX => {
                 if day_time > clock_time(18, 0) {
-                    self.audio.func_800788cc(super::sfx::NA_SE_EV_DOG_CRY_EVENING);
+                    self.audio.play_sfx_centered2(super::sfx::NA_SE_EV_DOG_CRY_EVENING);
                     self.time_seq_state += 1;
                 }
             }
@@ -158,7 +158,7 @@ impl PlayState {
                 if day_time <= clock_time(19, 0) && day_time > clock_time(6, 30) {
                     // The day's count (totalDays, bgsDayCount, dogIsLost) and the egg hatching
                     // (Inventory_ReplaceItem, text 0x3066) come with time passing.
-                    self.audio.func_80078884(super::sfx::NA_SE_EV_CHICKEN_CRY_M);
+                    self.audio.play_sfx_centered(super::sfx::NA_SE_EV_CHICKEN_CRY_M);
                     self.time_seq_state += 1;
                 }
             }

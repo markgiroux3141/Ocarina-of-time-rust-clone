@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 15;
+pub const FORMAT_VERSION: u32 = 16;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -65,13 +65,13 @@ pub mod keys {
     pub const ITEMS: &str = "table/items";
     /// `cutscene::CutsceneTables`: `sEntranceCutsceneTable` and every script's key.
     pub const CUTSCENES: &str = "table/cutscenes";
-    /// `elf_message::ElfMessageTables`: Navi's C-Up texts (`sNaviMsgFiles`) and Saria's.
+    /// `elf_message::ElfMessageTables`: Navi's C-Up texts (`sNaviQuestHintFiles`) and Saria's.
     pub const ELF_MESSAGES: &str = "table/elf_messages";
-    /// `eng_audio::AudioTables`: the audio tables, `audio_data.c`'s, the audio specs, the
+    /// `eng_audio::AudioTables`: the audio tables, `audio/internal/data.c`'s, the audio specs, the
     /// microcode's resampler filters (docs/adr/0024-audio-data.md).
     pub const AUDIO_TABLES: &str = "audio/tables";
     /// `audio::AudioGameTables`: the game's audio tables (`sSeqFlags`, `sSpecReverbs`,
-    /// `sNatureAmbienceDataIO`, `gSoundModeList`; docs/adr/0026-the-games-audio.md).
+    /// `sNatureAmbienceDataIO`, `gSoundOutputModes`; docs/adr/0026-the-games-audio.md).
     pub const AUDIO_GAME: &str = "table/audio";
     /// The ROM files the audio library loads from (`Audiobank`, `Audioseq`, `Audiotable`).
     pub const AUDIO_ROM_FILES: [&str; 3] = ["Audiobank", "Audioseq", "Audiotable"];
@@ -128,12 +128,13 @@ pub mod keys {
         format!("player/{}/faces", age.name())
     }
     /// `cutscene::CutsceneScript`: a scene's or an overlay's script, e.g.
-    /// `cutscene/ovl_Bg_Treemouth/D_808BCE20` (docs/adr/0022-cutscenes.md).
+    /// `cutscene/ovl_Bg_Treemouth/gDekuTreeMeetingCs` (docs/adr/0022-cutscenes.md).
     pub fn cutscene(file: &str, symbol: &str) -> String {
         format!("cutscene/{file}/{symbol}")
     }
     /// A scene layer's script that no XML names, by its offset in the scene file, e.g.
-    /// `cutscene/spot04_scene/0xA6D0` (docs/adr/0023-navi-and-the-opening.md).
+    /// `cutscene/spot04_scene/0xA6D0` (docs/adr/0023-navi-and-the-opening.md; since the decomp
+    /// upgrade, docs/adr/0031-decomp-main.md, the XMLs name all of them).
     pub fn cutscene_at(file: &str, offset: usize) -> String {
         format!("cutscene/{file}/{}", cutscene_offset_name(offset))
     }

@@ -55,7 +55,7 @@ struct Cli {
     /// Camera yaw in degrees (0 = looking at the character's front).
     #[arg(long, default_value_t = 30.0)]
     yaw: f32,
-    /// Link: model group (PLAYER_MODELGROUP_* without prefix, e.g. DEFAULT, SWORD, BOW_SLINGSHOT).
+    /// Link: model group (PLAYER_MODELGROUP_* without prefix, e.g. DEFAULT, SWORD_AND_SHIELD, BOW_SLINGSHOT).
     #[arg(long)]
     group: Option<String>,
     /// Link: shield (NONE, DEKU, HYLIAN, MIRROR).

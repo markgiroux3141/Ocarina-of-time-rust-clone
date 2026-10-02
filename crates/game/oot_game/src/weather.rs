@@ -93,11 +93,11 @@ fn math_atan2f(x: f32, y: f32) -> f32 {
 impl PlayState {
     /// `Environment_DrawRain` (with `precipitation[PRECIP_RAIN_CUR]` drops): each drop 50 ahead
     /// of the eye, scattered by 100, leaning into the wind; rings on the ground around 280 ahead
-    /// while Player is below the eye. The main camera's `unk_14C & 0x100` or snow skips it.
+    /// while Player is below the eye. The main camera's `stateFlags & 0x100` or snow skips it.
     pub fn environment_draw_rain(&mut self) -> RainDraw {
         let mut out = RainDraw::default();
         let n = self.env_ctx.precipitation[PRECIP_RAIN_CUR];
-        if n == 0 || self.game_camera.unk_14c & 0x100 != 0 || self.env_ctx.precipitation[PRECIP_SNOW_CUR] != 0 {
+        if n == 0 || self.game_camera.state_flags & 0x100 != 0 || self.env_ctx.precipitation[PRECIP_SNOW_CUR] != 0 {
             return out;
         }
         let (eye, at) = (self.view.eye, self.view.at);

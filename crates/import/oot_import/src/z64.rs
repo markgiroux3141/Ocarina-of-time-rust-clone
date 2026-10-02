@@ -297,7 +297,7 @@ impl CollisionCodec for CollisionHeader {
             min = min.max((s.data[0] & 0xFF) as usize + 1);
         }
         for w in &water_boxes {
-            // WATERBOX_BGCAM_INDEX; 0xFF is none.
+            // WATERBOX_PROPERTIES' bgCamIndex (WaterBox_GetBgCamIndex); 0xFF is none.
             if w.properties & 0xFF != 0xFF {
                 min = min.max((w.properties & 0xFF) as usize + 1);
             }

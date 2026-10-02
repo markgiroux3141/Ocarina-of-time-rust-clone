@@ -40,6 +40,7 @@ gilrs = "0.11"
 glam = { version = "0.33", features = ["bytemuck", "serde"] }
 bytemuck = { version = "1", features = ["derive"] }
 quick-xml = "0.42"
+regex = "1"
 anyhow = "1"
 thiserror = "2"
 image = { version = "0.25", default-features = false, features = ["png"] }

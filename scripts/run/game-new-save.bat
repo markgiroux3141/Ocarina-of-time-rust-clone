@@ -13,5 +13,5 @@ rem Space again for yes at his question), his mouth opens, and in you go.
 setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot || exit /b 1
-"%BIN%\oot.exe" --entrance ENTR_LINK_HOME_0 %*
+"%BIN%\oot.exe" --entrance ENTR_LINKS_HOUSE_0 %*
 exit /b %errorlevel%

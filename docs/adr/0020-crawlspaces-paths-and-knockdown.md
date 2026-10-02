@@ -9,8 +9,8 @@ On a new save, Kokiri Forest's Kokiri Sword is in room 2, the training area, whi
 only through a crawlspace. Four pieces of the C stand between Link's bed and the chest.
 
 **The crawl is shared between Player and the camera.**
-- Player's side is small: `func_8083F0C8` enters at a crawlspace's wall (`WALL_FLAG_4`, `_5`),
-  `func_8084C760` sets the speed from the stick, `func_8083F570` and `func_8084C81C` climb out.
+- Player's side is small: `Player_TryEnteringCrawlspace` enters at a crawlspace's wall (`WALL_FLAG_CRAWLSPACE_1`, `_5`),
+  `Player_Action_8084C760` sets the speed from the stick, `Player_TryLeavingCrawlspace` and `Player_Action_8084C81C` climb out.
 - `Camera_Subj4` (`CAM_SET_CRAWLSPACE`) does the rest. At the end of `Play_Draw`, in a second
   `Camera_Update` that its first call asks for (`view.unk_124`), it moves Player: onto the
   crawlspace's line, to the ground, facing along it (`camera->player->actor.world.pos`,
@@ -18,14 +18,14 @@ only through a crawlspace. Four pieces of the C stand between Link's bed and the
 - The port's camera has only read Player until now (`PlayerView`).
 
 **The boulder follows a scene path.**
-- `En_Goroiwa` reads `play->setupPathList[params & 0xFF]`, from `SCENE_CMD_ID_PATH_LIST`, which
+- `En_Goroiwa` reads `play->pathList[params & 0xFF]`, from `SCENE_CMD_ID_PATH_LIST`, which
   the pack didn't import.
 - Like the exit list, the path list has no count.
 
 **The boulder knocks Link down.**
-- Its AT sphere hits Player's AC cylinder, and it asks for a knockdown (`func_8002F6D4`: kind 2).
+- Its AT sphere hits Player's AC cylinder, and it asks for a knockdown (`Actor_SetPlayerKnockbackLarge`: kind 2).
 - Player takes both in `func_808382DC`: the body hit's damage and stagger (`func_80837C0C`),
-  then the knockdown (`func_8084377C`, `func_80843954`, `func_80843A38`), with the invincibility
+  then the knockdown (`Player_Action_8084377C`, `Player_Action_80843954`, `Player_Action_80843A38`), with the invincibility
   timer.
 - The roadmap had Player's damage in Phase 6. Without it, the boulder would roll through Link.
 
@@ -45,7 +45,7 @@ for it, as a player does.
     file (`oot_import::scene::path_list`);
   - the importer's test checks every header's count against the decomp XMLs' `NumPaths`, and the
     points against the ROM;
-  - `PlayState::setup_path_list` is `play->setupPathList`.
+  - `PlayState::setup_path_list` is `play->pathList`.
 - **`Camera_Subj4` writes Player back through the camera.** The mode function stores what it
   writes in `GameCamera::player_write`. `PlayState::camera_update` applies it to Player right
   after that update, which is the draw-time second update, as in the C. The camera still only
@@ -61,8 +61,8 @@ for it, as a player does.
     - the stagger and the knockdown's actions;
     - `Player_InflictDamage`;
     - `Player_InBlockingCsMode` around the water and ledge checks, as the C has it.
-  - Actors ask through `oot_game::actor_ctx::func_8002f698` and its short forms, which write
-    Player's `unk_8A0` to `unk_8A8` (`PlayerIface::set_knockback`).
+  - Actors ask through `oot_game::actor_ctx::Actor_SetPlayerKnockback` and its short forms, which write
+    Player's `knockbackDamage` to `knockbackYVelocity` (`PlayerIface::set_knockback`).
   - Not ported, and logged:
     - dying at 0 health;
     - being frozen (kind 3) or shocked (kind 4);

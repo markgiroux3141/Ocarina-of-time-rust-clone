@@ -26,7 +26,7 @@
 | Rust | Decomp | Notes |
 |---|---|---|
 | `oot_core::scene` | `z_scene.c` (`Scene_CommandAlternateHeaderList`, `...RoomList`, `...SpecialFiles`, `...LightSettingsList`, `...SkyboxSettings`) | layer selection (an alternate header replaces the rest of the main header; adult night falls back to adult day), room list, keep object, `EnvLightSettings`, skybox id/config/light mode |
-| `oot_core::room::Room`, `RoomShape` | `z_scene.c` room commands, `z64scene.h` `RoomShape*` | room header per layer; shape types 0 (normal), 1 (image: its DL pair only) and 2 (cullable, with bounding spheres) |
+| `oot_core::room::Room`, `RoomShape` | `z_scene.c` room commands, `scene.h` `RoomShape*` | room header per layer; shape types 0 (normal), 1 (image: its DL pair only) and 2 (cullable, with bounding spheres) |
 | `oot_core::room::SceneDraw` | `Play_Draw`, `Room_Draw*`, `Scene_Draw` | segments 0 (`code` RAM image), 2 scene, 3 room, 4 `gameplay_keep`, 5 keep object; 8..0xD from the draw config; `Gfx_SetupDL_25Opa`/`Xlu` before the room DLs |
 | `oot_core::drawcfg` (moved from `oot_extract`) | `Scene_DrawConfig*` in `z_scene_table.c` | the extractor's C interpreter now takes runtime state (`gameplayFrames`, age, night flag, scene layer, day time) and is re-run every frame |
 | `oot_core::gbi` dynamic segments | `Gfx_TexScroll`, `Gfx_TwoTexScroll`, the Spot04 `displayListHead` DLs | tile sizes and env/prim colours set inside a per-frame segment are tagged on the material; the renderer re-applies them every frame (UV offset `-(Δuls / 4) / width`) |
@@ -36,7 +36,7 @@
 | `oot_render` | F3DEX2 lighting and fog | two directional lights plus ambient; per-vertex fog `z_ndc * fm + fo` (in 1/256ths) against the game's projection; `G_RM_FOG_SHADE_A` blend; `G_FOG` replaces shade alpha |
 | `oot_play::rooms` | `Play_Draw` order | OPA buffer (rooms, then Link), then XLU (rooms, then the circle shadow); clear colour = fog colour |
 
-Read from the decomp at runtime: `scene_table.h` (scene ids, `SDC_*`), `object_table.h` (keep object file), `sSceneDrawConfigs` and every draw config function (`z_scene_table.c`), `sTimeBasedLightConfigs` (`z_kankyo.c`, with `CLOCK_TIME` expanded), `SDC_*` enum (`z64scene.h`). `oot_core::csrc` gained `define_rows`, `parse_enum`, `parse_defines` (moved from the extractor) and now keeps commas inside parentheses (`CLOCK_TIME(4, 0)`) in one initializer atom.
+Read from the decomp at runtime: `scene_table.h` (scene ids, `SDC_*`), `object_table.h` (keep object file), `sSceneDrawConfigs` and every draw config function (`z_scene_table.c`), `sTimeBasedLightConfigs` (`z_kankyo.c`, with `CLOCK_TIME` expanded), `SDC_*` enum (`scene.h`). `oot_core::csrc` gained `define_rows`, `parse_enum`, `parse_defines` (moved from the extractor) and now keeps commas inside parentheses (`CLOCK_TIME(4, 0)`) in one initializer atom.
 
 ### Reuse of the extractor
 
@@ -75,7 +75,7 @@ Kokiri Forest (`spot04`, child day):
 
 | Check | Expected (source) | Port |
 |---|---|---|
-| Rooms, keep, draw config | `ROOM_LIST(3)`, `OBJECT_GAMEPLAY_FIELD_KEEP`, `SDC_SPOT04` | 3, `gameplay_field_keep`, `Scene_DrawConfigSpot04` |
+| Rooms, keep, draw config | `ROOM_LIST(3)`, `OBJECT_GAMEPLAY_FIELD_KEEP`, `SDC_KOKIRI_FOREST` | 3, `gameplay_field_keep`, `Scene_DrawConfigKokiriForest` |
 | Room shapes | all `ROOM_SHAPE_TYPE_CULLABLE` | 3 cullable rooms, 28 entries, 2060 triangles, 0 unknown opcodes, 0 unresolved |
 | Water scroll, frames 0..1000 | `Gfx_TwoTexScroll`: seg 9 tile 0 `(127 - f%128, f%128)`, tile 1 `(f%128, f%128)`; seg 8 with `f*10` on t | exact |
 | Stream UV shift at frame 40 | `(+40/4/32, -40/4/32)` on a 32x32 tile | exact |
@@ -112,14 +112,14 @@ New tools: `ootx scan-scenes`, `ootx dump-room --scene S --room N [--png DIR]` (
 
 | Rust (`oot_game::camera`) | Decomp | Notes |
 |---|---|---|
-| `GameCamera::new` | `Camera_Init`, `Camera_InitPlayerSettings`, `func_80057FC4` | eye at r 180, pitch 0x71C behind Player; `inputDir.y` = shape yaw; NORMAL0 because Kokiri's rooms have `behaviorType1` 0 |
+| `GameCamera::new` | `Camera_Init`, `Camera_InitDataUsingPlayer`, `func_80057FC4` | eye at r 180, pitch 0x71C behind Player; `inputDir.y` = shape yaw; NORMAL0 because Kokiri's rooms have `behaviorType1` 0 |
 | `GameCamera::update` | `Camera_Update` (player part) | `xzSpeed`, `speedRatio` (via `func_8002DCE4` = `R_RUN_SPEED_LIMIT`/100 × `OREG(8)`), ground raycast (`BgCheck_EntityRaycastDown5`), 200-frame out-of-bounds fallback, `inputDir` when the mode doesn't set it, up vector |
 | `normal1` | `Camera_Normal1` | read-only data from `CAM_FUNCDATA_NORM1` scaled by Player height (`R_CAM_YOFFSET_NORM`), swing start timer, update-rate LERPs, slope pitch, at/eye, pitch clamp (79.65° to −85°), eye bgcheck, `inputDir`, fov, roll, at LERP scale |
 | helpers | `Camera_CalcAtDefault`, `Camera_CalcSlopeYAdj`, `Camera_ClampDist`, `Camera_CalcDefaultYaw`, `Camera_CalcDefaultPitch`, `Camera_InterpolateCurve`, `Camera_LERPCeilF/S/Vec3f`, `Camera_ClampLERPScale`, `Camera_GetPitchAdjFromFloorHeightDiffs` (with its statics and even/odd frame alternation), `Camera_CalcUpFromPitchYawRoll` | |
 | swing and bgcheck | `func_80046E20`, `func_80045508`, `Camera_BGCheckInfo`, `Camera_BGCheck`, `Camera_BGCheckCorner` (`func_800427B4` → `Math3D_PlaneVsLineSegClosestPoint`, `Math3D_PlaneVsPlaneNewLine`, `Math3D_LineVsLineClosestTwoPoints`), `Camera_GetFloorYLayer`, `Math3D_Cos` | `BgCheck_CameraLineTest1` / `BgCheck_CameraRaycastDown2` map onto the existing static bgcheck with `COLPOLY_IGNORE_CAMERA` |
-| maths | `z_olib.c` (VecSph geo conversions, `ClampMin/MaxDist`, `DistNormalize`), `Math_FAtan2F` (Taylor series, `code_800FCE80.c`), `CAM_DEG_TO_BINANG` | |
+| maths | `z_olib.c` (VecSphGeo geo conversions, `ClampMin/MaxDist`, `DistNormalize`), `Math_FAtan2F` (Taylor series, `math64.c`), `CAM_DEG_TO_BINANG` | |
 
-Read from `z_camera_data.c` at runtime: `sOREGInit` (53 values) and `sSetNormal0ModeNormalData` (`CAM_FUNCDATA_NORM1(-20, 200, 300, 10, 12, 10, 35, 60, 60, 0x0003)`).
+Read from `z_camera_data.inc.c` at runtime: `sOREGInit` (53 values) and `sSetNormal0ModeNormalData` (`CAM_FUNCDATA_NORM1(-20, 200, 300, 10, 12, 10, 35, 60, 60, 0x0003)`).
 
 Frame order is as in `Play_Update`: Player updates with last frame's `inputDir.y`, then the camera updates. The render interpolates eye, at and fov between game frames like everything else. Headless traces now record the camera's eye, at, distance, fov and input yaw per frame.
 
@@ -145,7 +145,7 @@ Visual: `s04_sheet_camera_tour.png` (run, curve left, curve right, stop; the cam
 - **`sp94` in `Camera_Normal1` is clamped the wrong way round.** The code is `if (sp94 > 1.0f) sp94 = 1.0f; if (sp94 > -1.0f) sp94 = -1.0f;`, so the "acceleration" is always at most −1. Kept as shipped: it's why `Camera_CalcDefaultYaw`'s velocity is `2·curve − 1`.
 - **The fov update rate LERPs from `yOffsetUpdateRate`**, not from itself (`Camera_LERPCeilF(.., camera->yOffsetUpdateRate, ..)`). Kept as shipped.
 - **Stopping holds the camera for 40 frames (2 s) before it recentres.** While `startSwingTimer > 0` and Player is still, `Camera_CalcDefaultYaw`'s speed factor `Camera_InterpolateCurve(0.5, speedRatio)` is 0.
-- **Doorway spawns start inside the doorway.** Kokiri's house and tunnel exits have Player params like `0x0F05`: the low byte is a bg-camera index that `Player_Init` passes to `Camera_ChangeBgCamIndex`, which switches to a scene camera setting from the collision's bg-camera list. Only NORMAL0 is ported, so those spawns start with the eye inside the door frame until Link walks out. Spawn 0 (params `0x0FFF`, no bg camera) is unaffected.
+- **Doorway spawns start inside the doorway.** Kokiri's house and tunnel exits have Player params like `0x0F05`: the low byte is a bg-camera index that `Player_Init` passes to `Camera_RequestBgCam`, which switches to a scene camera setting from the collision's bg-camera list. Only NORMAL0 is ported, so those spawns start with the eye inside the door frame until Link walks out. Spawn 0 (params `0x0FFF`, no bg camera) is unaffected.
 
 ### Known gaps (milestone 2)
 
@@ -155,7 +155,7 @@ Visual: `s04_sheet_camera_tour.png` (run, curve left, curve right, stop; the cam
 
 **Answer:** `func_8008F87C` is ported. On slopes, Link's feet rest on the floor instead of sinking into it.
 
-- **Where it runs.** In the game it runs from `Player_OverrideLimbDrawGameplayCommon` for `PLAYER_LIMB_L_THIGH` / `R_THIGH`, while drawing. It adds the correction to `skelAnime.jointTable` itself (thigh −θ, shin +φ, foot +θ−φ on Z), so the change persists into the next frame's `SkelAnime_InterpFrameTable` morphs. The port therefore runs it on Player's joint table after `finish_frame` (the AnimationContext queue), in `World::tick`, where `Player_Draw` would come. It doesn't run in the renderer.
+- **Where it runs.** In the game it runs from `Player_OverrideLimbDrawGameplayCommon` for `PLAYER_LIMB_L_THIGH` / `R_THIGH`, while drawing. It adds the correction to `skelAnime.jointTable` itself (thigh −θ, shin +φ, foot +θ−φ on Z), so the change persists into the next frame's `SkelAnime_InterpFrameTable` morphs. The port therefore runs it on Player's joint table after `finish_frame` (the AnimTaskQueue queue), in `World::tick`, where `Player_Draw` would come. It doesn't run in the renderer.
 - **The solve.** The hip and ankle come from the model-space chain: `Actor_Draw`'s matrix, Player's root override (child scale 0.64, `unk_6C4`), then each limb's translate + ZYX rotation. The floor is probed 300 units down the shin plus 15 (`BgCheck_EntityRaycastDown4`). If the ankle is below `floor + D_80126068[age]`, a law-of-cosines solve on the thigh/shin lengths (`D_80126058`, `D_80126060`) bends the knee so the ankle reaches that height. Legs are only ever lifted: a downhill foot keeps its animated pose and can float a few units.
 - Read from `z_player_lib.c`: `D_80126038` (shin offset, equal to the skeletons' shin joint positions, which the test checks), `D_80126050`, `D_80126058` (`SQ(13.04f)`, `SQ(6.95f)`, with the macro expanded), `D_80126060`, `D_80126068`, `D_80126070`. The limb hierarchy comes from `gLinkAdultSkel` / `gLinkChildSkel` in the ROM.
 
@@ -178,12 +178,12 @@ Not modelled: the `unk_6C2` root tilt (diving) and fire-floor footprints (`Effec
 |---|---|---|
 | `func_8083A6AC` | same | line back towards `prevPos` at foot height; a near-vertical face (`|normal.y| < 600`) starts a hang with `link_normal_fall` |
 | `func_8083A5C4` | same | moves Player 1 unit past the face onto the top, facing the face normal; `Action::Hang` |
-| `Action::Hang` | `func_8084BBE4` | grab frame (11 for a walk-off, 1 for a mid-air grab) sets `unk_84F` ±1; any stick direction ≥ 55 (`unk_847`) climbs (groups 38/41), A lets go (`func_80837B60` bakes the hanging body's root offset in, then `func_80837B9C` falls) |
-| `Action::ClimbUp` | `func_8083A9B8`, `func_8084BDFC` | climb animation at speed 1.3; at the end `func_80832E48(1)` applies its x/z root motion |
-| interrupt 12 | `func_80838A14` | in the running list `D_80854424`. Class 1 (18 ≤ h < `unk_1C`) hops after 3 frames of pushing (`link_normal_jump`, vy = 0.08h + 5.5). Classes 2 and 3 step up after 6 frames or on A (100 / 150 step animations: position moved onto the top at once, `shape.yOffset` pulled down by (h − 41·s) or (h − 59·s) × 100). Class 4 (≥ `unk_14`) starts `link_normal_250jump_start` |
-| `Action::ClimbLedge` | `func_80845668` | eases `shape.yOffset` back at 150 per frame; the tall-ledge variant jumps on frame 8 with vy = min(h, `unk_0C`)·0.072 |
-| mid-air grab | `func_8084411C` | falling into a class ≥ 2 wall under 150 high: `pos.y += wallHeight`, `func_8083A5C4` with group 39, facing the wall |
-| `func_80832E48`, `func_80837B60`, `func_80837B9C`, `func_80832224` | same | root-motion baking, letting go |
+| `Action::Hang` | `Player_Action_8084BBE4` | grab frame (11 for a walk-off, 1 for a mid-air grab) sets `av1.actionVar1` ±1; any stick direction ≥ 55 (`controlStickSpinAngles`) climbs (groups 38/41), A lets go (`func_80837B60` bakes the hanging body's root offset in, then `func_80837B9C` falls) |
+| `Action::ClimbUp` | `func_8083A9B8`, `Player_Action_8084BDFC` | climb animation at speed 1.3; at the end `Player_ApplyAnimMovementScaledByAge(1)` applies its x/z root motion |
+| interrupt 12 | `Player_ActionHandler_12` | in the running list `sActionHandlerList8`. Class 1 (18 ≤ h < `unk_1C`) hops after 3 frames of pushing (`link_normal_jump`, vy = 0.08h + 5.5). Classes 2 and 3 step up after 6 frames or on A (100 / 150 step animations: position moved onto the top at once, `shape.yOffset` pulled down by (h − 41·s) or (h − 59·s) × 100). Class 4 (≥ `unk_14`) starts `link_normal_250jump_start` |
+| `Action::ClimbLedge` | `Player_Action_80845668` | eases `shape.yOffset` back at 150 per frame; the tall-ledge variant jumps on frame 8 with vy = min(h, `unk_0C`)·0.072 |
+| mid-air grab | `Player_Action_8084411C` | falling into a class ≥ 2 wall under 150 high: `pos.y += wallHeight`, `func_8083A5C4` with group 39, facing the wall |
+| `Player_ApplyAnimMovementScaledByAge`, `func_80837B60`, `func_80837B9C`, `func_80832224` | same | root-motion baking, letting go |
 
 `shape.yOffset` is new on `Actor`. It goes through the snapshot to the renderer and the foot IK, as `Actor_Draw` adds `yOffset × scale.y`. Anim groups 38–41 read from `D_80853914` are `link_normal_fall_up_free`, `link_normal_jump_climb_hold_free`, `..._wait_free` and `..._up_free`. The synthetic course gained three ledges (50, 70, 100 high) for the visual checks.
 
@@ -211,8 +211,8 @@ Visual: `s04_sheet_climb50.png`, `s04_sheet_climb100.png` (the jump, grab and cl
 
 ### Known gaps (milestone 4)
 
-- **Climbable walls** (`WALL_FLAG_3` vines and ladders, `FLOOR_PROPERTY_6`): climbing down onto them (`func_8084BF1C`), the mid-air wall grab (`func_8083EC18`) and wall climbing aren't ported. They're recorded in `Player::notes`, and Link falls instead.
-- **The camera doesn't switch to `CAM_MODE_HANG`**, so hanging from a tall ledge is seen from behind and above, with most of Link hidden below the edge.
+- **Climbable walls** (`WALL_FLAG_3` vines and ladders, `FLOOR_PROPERTY_6`): climbing down onto them (`Player_Action_8084BF1C`), the mid-air wall grab (`func_8083EC18`) and wall climbing aren't ported. They're recorded in `Player::notes`, and Link falls instead.
+- **The camera doesn't switch to `CAM_MODE_LEDGE_HANG`**, so hanging from a tall ledge is seen from behind and above, with most of Link hidden below the edge.
 - `shape.feetFloorFlag` (feet touching a floor also lets go of a hang) isn't computed. Dynamic-collision prompts (`WALL_FLAG_6` on dyna walls) and the swimming step-up out of water wait for milestones 6 and 7. Sounds are hooks only.
 
 ## Milestone 5: Z-targeting and the sword
@@ -223,30 +223,30 @@ Visual: `s04_sheet_climb50.png`, `s04_sheet_climb100.png` (the jump, grab and cl
 
 | Rust | Decomp | Notes |
 |---|---|---|
-| `Player::func_80836BEC` | same | the Z timer `unk_66C`; "Switch" Z-targeting (`zTargetSetting` 0): a press locks `arrowPointedActor` (the next candidate `unk_94` if it's already locked) and keeps it via `PLAYER_STATE2_13` until pressed again; nothing to target → `func_808355DC` parallel mode (`PLAYER_STATE1_17`, `targetYaw` = facing, squared up to a wall in front); `func_8002F0C8` drops a target out of the leash range once `unk_66C` < 6 |
-| `func_80833B54` / `B2C` / `BCC` / `C04`, `func_8008EE08`, `func_8008EDF0` | same | locked on (`PLAYER_STATE1_4`) needs a hostile target (`ACTOR_FLAG_0 \| ACTOR_FLAG_2`) |
-| `func_80837268` (target yaw), `func_8083DC54` / `func_8083DB98` (look at the target), `func_808368EC` (facing: towards the target once the reticle has locked, `targetYaw` in parallel mode) | same | spike 03's `func_808368EC` port lacked these branches |
-| `Action::TargetIdle` | `func_80840450` | lock-on stance, the two waits blended by the leading foot (`unk_870`) |
-| `Action::ParallelIdle` / `ParallelWalk` / `ParallelBackwalk` / `ParallelBackBrake(End)` | `func_808407CC`, `func_80840DE4`, `func_808414F8`, `func_8084170C`, `func_808417FC` | the side walk plays at `linearVelocity × MREG(95)/100`, signed by direction; `func_80841138` blends the back walk and back run |
-| `Action::TargetRun`, `Sidestep`, `TargetBackwalk`, `TargetBackBrake` | `func_8084227C`, `func_8084193C` (with `func_80841860`), `func_808423EC`, `func_8084251C` | chosen by `func_8083FC68` / `func_8083FD78` |
-| interrupt 10 | `func_8083BDBC`, `func_8083BCD0` | A while targeting: forward rolls; left/right hop (vy 3.5, speed 8.5), back flips (vy 5.8, speed 6); `currentYaw = facing + (dir << 14)`; landings from `D_80853D4C` (locked-on variant when locked); gravity −1.2 in the air while locked on |
-| `oot_game::target` | `func_8002C7BC`, `func_80032AF0`, `func_800328D4`, `func_8002EFC0`, `func_8002F090`, `func_80032880`, `Actor_UpdateAll` distances | runs after the actors each frame: the candidate within range, on screen (320×240 projection) and in line of sight (`BgCheck_CameraLineTest1`); the reticle size `unk_44` steps 500 → 80, then `unk_4B` counts and Player may turn to face the target |
+| `Player::Player_UpdateZTargeting` | same | the Z timer `zTargetActiveTimer`; "Switch" Z-targeting (`zTargetSetting` 0): a press locks `arrowPointedActor` (the next candidate `arrowHoverActor` if it's already locked) and keeps it via `PLAYER_STATE2_LOCK_ON_WITH_SWITCH` until pressed again; nothing to target → `Player_SetParallel` parallel mode (`PLAYER_STATE1_PARALLEL`, `targetYaw` = facing, squared up to a wall in front); `Attention_ShouldReleaseLockOn` drops a target out of the leash range once `zTargetActiveTimer` < 6 |
+| `Player_UpdateHostileLockOn` / `B2C` / `BCC` / `C04`, `Player_ClearZTargeting`, `Player_ReleaseLockOn` | same | locked on (`PLAYER_STATE1_HOSTILE_LOCK_ON`) needs a hostile target (`ACTOR_FLAG_ATTENTION_ENABLED \| ACTOR_FLAG_HOSTILE`) |
+| `Player_GetMovementSpeedAndYaw` (target yaw), `func_8083DC54` / `func_8083DB98` (look at the target), `Player_UpdateShapeYaw` (facing: towards the target once the reticle has locked, `targetYaw` in parallel mode) | same | spike 03's `Player_UpdateShapeYaw` port lacked these branches |
+| `Action::TargetIdle` | `Player_Action_80840450` | lock-on stance, the two waits blended by the leading foot (`unk_870`) |
+| `Action::ParallelIdle` / `ParallelWalk` / `ParallelBackwalk` / `ParallelBackBrake(End)` | `Player_Action_808407CC`, `Player_Action_80840DE4`, `Player_Action_808414F8`, `Player_Action_8084170C`, `Player_Action_808417FC` | the side walk plays at `linearVelocity × MREG(95)/100`, signed by direction; `func_80841138` blends the back walk and back run |
+| `Action::TargetRun`, `Sidestep`, `TargetBackwalk`, `TargetBackBrake` | `Player_Action_8084227C`, `Player_Action_8084193C` (with `func_80841860`), `Player_Action_808423EC`, `Player_Action_8084251C` | chosen by `func_8083FC68` / `func_8083FD78` |
+| interrupt 10 | `Player_ActionHandler_10`, `func_8083BCD0` | A while targeting: forward rolls; left/right hop (vy 3.5, speed 8.5), back flips (vy 5.8, speed 6); `currentYaw = facing + (dir << 14)`; landings from `D_80853D4C` (locked-on variant when locked); gravity −1.2 in the air while locked on |
+| `oot_game::target` | `Attention_Update`, `Attention_FindActor`, `Attention_FindActorInCategory`, `Attention_WeightedDistToPlayerSq`, `Attention_ActorIsInRange`, `Attention_ActorOnScreen`, `Actor_UpdateAll` distances | runs after the actors each frame: the candidate within range, on screen (320×240 projection) and in line of sight (`BgCheck_CameraLineTest1`); the reticle size `reticleRadius` steps 500 → 80, then `reticleSpinCounter` counts and Player may turn to face the target |
 
-Read at runtime: `D_80853D4C` (hop animations) and `D_80115FF8` (`TARGET_RANGE(range, leash)` per target mode, from `z_actor.c`). The dummy target is a box with targetMode 3; the reticle is three triangles sized by `unk_44`.
+Read at runtime: `D_80853D4C` (hop animations) and `sAttentionRanges` (`ATTENTION_RANGES(range, leash)` per target mode, from `z_actor.c`). The dummy target is a box with targetMode 3; the reticle is three triangles sized by `reticleRadius`.
 
 ### The sword (5b)
 
 | Rust | Decomp | Notes |
 |---|---|---|
-| `skel2`, `UpperAction` | `skelAnime2`, `func_82C` (`func_8083485C`, `func_808349DC`, `func_80834A2C`) | the upper-body layer |
-| `func_80836670` | same | runs inside `func_80837348` (and in the air); while the upper action is active its joints replace the upper body (`D_80853410`), or the whole body when standing on the wait/fidget; queued as a copy from `skelAnime2`'s table |
-| `func_80834298`, `func_80833DF8` | same | B presses `func_80835F44(B item)`; held B with the item in hand sets `D_80853618` |
-| `func_80835F44`, `func_80833664`, `func_8083399C`, `Player_SetModelGroup` | same | a different item with a change animation (`D_80854164[from][to]` ≠ 0) queues it (`PLAYER_STATE1_8`); the same item flags the press (`D_80853614`) |
-| `func_808340DC`, `func_80834A2C`, `func_808348EC` | same | the change animation (`D_808540F4`, backwards for negative entries, ×2 with an item) plays on `skelAnime2`; the item swaps on its swap frame; once the sword is in hand `D_80853614` is set and the slash starts that frame |
-| interrupt 7, `Action::Attack` | `func_80850224`, `func_8083BB20`, `func_80837818`, `func_80837948`, `func_808502D0`, `func_8084285C`, `func_80832F54`, `func_808375D8` | attack by stick direction (`D_80854480`: forward stab only when targeting, else forward/right/left slashes); three of the same in a row → its combo (+2); animation-driven lunge (`moveFlags` 0x209); the stab's speed 15 on frame 0; the active-weapon window from `D_80854190`; the end animation (locked-on variant when locked) into the stance |
-| interrupt 6 | `func_8083C1DC` | A with a sword in hand puts it away (`func_80835F44(ITEM_NONE)`) |
+| `skel2`, `UpperAction` | `skelAnime2`, `func_82C` (`func_8083485C`, `Player_UpperAction_Sword`, `Player_UpperAction_ChangeHeldItem`) | the upper-body layer |
+| `Player_UpdateUpperBody` | same | runs inside `Player_TryActionHandlerList` (and in the air); while the upper action is active its joints replace the upper body (`sUpperBodyLimbCopyMap`), or the whole body when standing on the wait/fidget; queued as a copy from `skelAnime2`'s table |
+| `Player_UpdateItems`, `Player_ProcessItemButtons` | same | B presses `Player_UseItem(B item)`; held B with the item in hand sets `sHeldItemButtonIsHeldDown` |
+| `Player_UseItem`, `Player_InitItemActionWithAnim`, `Player_InitItemAction`, `Player_SetModelGroup` | same | a different item with a change animation (`sItemChangeTypes[from][to]` ≠ 0) queues it (`PLAYER_STATE1_START_CHANGING_HELD_ITEM`); the same item flags the press (`sUseHeldItem`) |
+| `Player_StartChangingHeldItem`, `Player_UpperAction_ChangeHeldItem`, `Player_WaitToFinishItemChange` | same | the change animation (`sItemChangeInfo`, backwards for negative entries, ×2 with an item) plays on `skelAnime2`; the item swaps on its swap frame; once the sword is in hand `sUseHeldItem` is set and the slash starts that frame |
+| interrupt 7, `Action::Attack` | `Player_ActionHandler_7`, `func_8083BB20`, `func_80837818`, `func_80837948`, `Player_Action_808502D0`, `func_8084285C`, `Player_StartAnimMovement`, `Player_CanSpinAttack` | attack by stick direction (`D_80854480`: forward stab only when targeting, else forward/right/left slashes); three of the same in a row → its combo (+2); animation-driven lunge (`moveFlags` 0x209); the stab's speed 15 on frame 0; the active-weapon window from `D_80854190`; the end animation (locked-on variant when locked) into the stance |
+| interrupt 6 | `Player_ActionHandler_Roll` | A with a sword in hand puts it away (`Player_UseItem(ITEM_NONE)`) |
 
-Read at runtime: `gPlayerModelTypes` (animation type per model group), `sActionModelGroups`, `PLAYER_AP_*` / `PLAYER_MODELGROUP_*` / `PLAYER_MWA_*`, `D_808540F4`, `D_80854164`, `D_80854190`, `D_80854480`, `D_80853410`. The B button carries the age's sword (Master / Kokiri) as a fixed loadout.
+Read at runtime: `gPlayerModelTypes` (animation type per model group), `sActionModelGroups`, `PLAYER_AP_*` / `PLAYER_MODELGROUP_*` / `PLAYER_MWA_*`, `sItemChangeInfo`, `sItemChangeTypes`, `D_80854190`, `D_80854480`, `sUpperBodyLimbCopyMap`. The B button carries the age's sword (Master / Kokiri) as a fixed loadout.
 
 ### Results
 
@@ -254,13 +254,13 @@ Read at runtime: `gPlayerModelTypes` (animation type per model group), `sActionM
 
 | Check | Expected (source) | Port |
 |---|---|---|
-| Z with nothing to target | `PLAYER_STATE1_17`, `targetYaw` = facing, `ParallelIdle`; stick left strafes, stick back walks back, facing held; releasing Z ends it | yes |
-| Z at the dummy | locks (`unk_664`, `PLAYER_STATE1_4`), `TargetIdle` with group 7; stays locked with Z released (Switch); Z again unlocks | yes |
+| Z with nothing to target | `PLAYER_STATE1_PARALLEL`, `targetYaw` = facing, `ParallelIdle`; stick left strafes, stick back walks back, facing held; releasing Z ends it | yes |
+| Z at the dummy | locks (`focusActor`, `PLAYER_STATE1_HOSTILE_LOCK_ON`), `TargetIdle` with group 7; stays locked with Z released (Switch); Z again unlocks | yes |
 | Facing an off-axis target | turns to the yaw of its focus once the reticle locks | within 0x200 |
 | Stick sideways / back while locked | `Sidestep`, facing the target; `func_8083FC68`'s step back (> 6.8) and forward run (> 6) are out of reach of the stick's 6.0, so all lock-on movement sidesteps | yes |
 | Left hop | `link_fighter_Lside_jump`, vy 3.5, speed 8.5, yaw + 0x4000, lands with `..._endL` | exact |
 | Backflip | `link_fighter_backturn_jump`, vy 5.8, yaw + 0x8000, lands with `..._endR`, `PLAYER_STATE2_19` cleared | exact |
-| Leash | lost when √(350·525) ≈ 428.7 is crossed (the leash scales the squared distance), not before `unk_66C` < 6 | yes |
+| Leash | lost when √(350·525) ≈ 428.7 is crossed (the leash scales the squared distance), not before `zTargetActiveTimer` < 6 | yes |
 | B from standing | `fighter2free` backwards at −2.4 on `skelAnime2`; the swap on its frame 9; the slash (`Lside_kiru`, stick neutral, not targeting) the same frame; model group SWORD, animation type 1; the end animation into standing | exact |
 | B ×3 | slash, slash, `RIGHT_COMBO_1H` | yes |
 | Locked on, stick forward + B | `pierce_kiru` (stab) with the speed-15 lunge | yes |
@@ -272,7 +272,7 @@ Visual: `s04_sheet_target.png` (lock-on, circling, a side hop, a backflip, relea
 
 - **The camera doesn't switch for targeting.** `Camera_KeepOn1` (lock-on) and `Camera_Parallel1` (Z) aren't ported, so the Normal camera keeps following and the target can leave the screen during hops. This is the most visible gap in this milestone.
 - **No hits.** Weapon colliders, `func_80842DF4` (hits, recoil off walls), damage and the actor collision check aren't ported; `meleeWeaponState` marks the active window only.
-- Not ported: the jump slash (A with the sword while targeting, and `func_8083BBA0` in the air), spin attacks (the quick spin is detected; its effects aren't), the shield (R: `func_80834758`, `func_80834B5C`), other items and C buttons, and talking to friendly targets (they target as `PLAYER_STATE1_16` but nothing reacts).
+- Not ported: the jump slash (A with the sword while targeting, and `func_8083BBA0` in the air), spin attacks (the quick spin is detected; its effects aren't), the shield (R: `func_80834758`, `func_80834B5C`), other items and C buttons, and talking to friendly targets (they target as `PLAYER_STATE1_FRIENDLY_ACTOR_FOCUS` but nothing reacts).
 - The dummy has no Navi, no BGM-enemy tracking and no `targetPriority` users.
 
 ## Milestone 6: water and swimming
@@ -283,19 +283,19 @@ Visual: `s04_sheet_target.png` (lock-on, circling, a side hop, a backflip, relea
 
 | Rust | Decomp | Notes |
 |---|---|---|
-| `StaticCollision::water_surface` | `WaterBox_GetSurfaceImpl` (`z_bgcheck.c`) | first box whose room (`(properties >> 13) & 0x3F`) matches `curRoom`, or is 0x3F (all rooms); skips bit-19 boxes; strict x/z extent |
-| `Actor::update_bg_check_info` water part, `Actor::room` | `Actor_UpdateBgCheckInfo` (`UPDBGCHECKINFO_FLAG_2`), `WaterBox_GetSurface1` | `yDistToWater = surface - pos.y`; `BGCHECKFLAG_WATER` while ≥ 0, `WATER_TOUCH` on the first frame (ripples aren't spawned) |
-| `Player::func_8083D53C` | same | runs after the move and bgcheck in `Player_UpdateCommon`; enters water past `unk_2C` (`func_8083D36C`), leaves below `unk_24` (`func_8083CD54` + `func_8083D0A8`); not during `func_80845668` / `func_8084BDFC` (the ledge climbs) |
-| `func_8083D36C`, `func_8083D0A8`, `func_80832340` | same | `PLAYER_STATE1_27` / `PLAYER_STATE2_10`; if `STATE2_10` was already set (falling back in), `func_8083D12C` is forced and `unk_84F = 1` |
-| speed scale 0.5 | `D_808535E8` in `Player_UpdateCommon` | applies to every animation and velocity that uses it (spike 03's `speed_scale`) |
+| `StaticCollision::water_surface` | `BgCheck_GetWaterSurface` (`z_bgcheck.c`) | first box whose room (`(properties >> 13) & 0x3F`) matches `curRoom`, or is 0x3F (all rooms); skips bit-19 boxes; strict x/z extent |
+| `Actor::update_bg_check_info` water part, `Actor::room` | `Actor_UpdateBgCheckInfo` (`UPDBGCHECKINFO_FLAG_2`), `BgCheck_GetWaterSurfaceAllHack` | `yDistToWater = surface - pos.y`; `BGCHECKFLAG_WATER` while ≥ 0, `WATER_TOUCH` on the first frame (ripples aren't spawned) |
+| `Player::func_8083D53C` | same | runs after the move and bgcheck in `Player_UpdateCommon`; enters water past `unk_2C` (`func_8083D36C`), leaves below `unk_24` (`Player_SetupTurnInPlace` + `func_8083D0A8`); not during `Player_Action_80845668` / `Player_Action_8084BDFC` (the ledge climbs) |
+| `func_8083D36C`, `func_8083D0A8`, `func_80832340` | same | `PLAYER_STATE1_27` / `PLAYER_STATE2_10`; if `STATE2_10` was already set (falling back in), `func_8083D12C` is forced and `av1.actionVar1 = 1` |
+| speed scale 0.5 | `sWaterSpeedFactor` in `Player_UpdateCommon` | applies to every animation and velocity that uses it (spike 03's `speed_scale`) |
 | `func_8084B000` | same | buoyancy: towards −5 (sinking) above `unk_28`, +2 (rising) below it; sets `STATE2_10` below 100; gravity 0 |
 | `func_8084AEEC`, `func_8084B158`, `func_8084DBC4` | same | stroke acceleration only on stroke frames 10–20; speed cap `R_RUN_SPEED_LIMIT`/100 × 0.8; yaw at 1600; stroke playback speed from the speed (×2 on A/B) |
-| `Action::Swim` / `SwimMove` / `SwimTarget` | `func_8084D610`, `func_8084D84C` (+ `func_8084D530`), `func_8084DAB4` (+ `func_8084D980`, `func_8083FD78`) | interrupt list `D_80854444` = {0, 12, 5, −4}; forward / back / `Rside` / `Lside` strokes while targeting |
-| `Action::Dive` | `func_8084DC48`, `func_8083D12C`, `func_8083D330` | three phases: the start animation (vy 0, then −2 at frame 20); swim down while A is held and `yDistToWater` < 120 (`D_80854784[0]`, no scale upgrade); then float and pitch back (`unk_6C2` → −10000) and rise at min(depth·0.018 + 4, 8) |
-| `Action::Surface` | `func_8084E1EC` | `link_swimer_swim_deep_end`, then treading water |
+| `Action::Swim` / `SwimMove` / `SwimTarget` | `Player_Action_8084D610`, `Player_Action_8084D84C` (+ `func_8084D530`), `Player_Action_8084DAB4` (+ `func_8084D980`, `func_8083FD78`) | interrupt list `sActionHandlerList11` = {0, 12, 5, −4}; forward / back / `Rside` / `Lside` strokes while targeting |
+| `Action::Dive` | `Player_Action_8084DC48`, `func_8083D12C`, `func_8083D330` | three phases: the start animation (vy 0, then −2 at frame 20); swim down while A is held and `yDistToWater` < 120 (`D_80854784[0]`, no scale upgrade); then float and pitch back (`unk_6C2` → −10000) and rise at min(depth·0.018 + 4, 8) |
+| `Action::Surface` | `Player_Action_8084E1EC` | `link_swimer_swim_deep_end`, then treading water |
 | `LookRotations::root_pitch` in `gfx::pose_player` | `Player_OverrideLimbDrawGameplayCommon` | the root limb gets T(pos.x, (cos `unk_6C2` − 1)·200 + pos.y, pos.z) · RotX(`unk_6C2`); `unk_6C2` steps back to 0 by 400 per frame in `Player_UpdateCommon` |
 
-Read at runtime: `sAgeProperties` (`unk_24` / `unk_28` / `unk_2C` / `unk_30`: adult 36 / 44.8 / 56 / 68, child 22 / 29.6 / 32 / 48), `R_RUN_SPEED_LIMIT`, and the water boxes from the scene's collision header. Climbing out onto a ledge from the water (`link_swimer_swim_15step_up`) came for free from milestone 4's `func_80838A14`, which is in the swim interrupt list.
+Read at runtime: `sAgeProperties` (`unk_24` / `unk_28` / `unk_2C` / `unk_30`: adult 36 / 44.8 / 56 / 68, child 22 / 29.6 / 32 / 48), `R_RUN_SPEED_LIMIT`, and the water boxes from the scene's collision header. Climbing out onto a ledge from the water (`link_swimer_swim_15step_up`) came for free from milestone 4's `Player_ActionHandler_12`, which is in the swim interrupt list.
 
 **Test course:** a pool was added at x∈[−950, −500], z∈[650, 950], with the water surface at y −20, a deep end at −150, and a 26.6° ramp out along +x. `CollisionBuilder::water_box` writes the box, and the course round-trips through the binary format as before. The oot_play course view draws water boxes as translucent planes.
 
@@ -307,7 +307,7 @@ Read at runtime: `sAgeProperties` (`unk_24` / `unk_28` / `unk_2C` / `unk_30`: ad
 |---|---|---|
 | Water box query | room match or 0x3F, bit 19 skipped, strict edges | yes |
 | Age thresholds | `sAgeProperties` values above | exact |
-| Wading in down the ramp | swimming on the first frame with `yDistToWater` > 56 (the check follows the move); running before that; `D_808535E8` = 0.5 | exact frame |
+| Wading in down the ramp | swimming on the first frame with `yDistToWater` > 56 (the check follows the move); running before that; `sWaterSpeedFactor` = 0.5 | exact frame |
 | Treading water | settles 44.8 below the surface (`unk_28`); vy within [−5, 2]; falling in plays `swim_deep_end` | mean 44.8 ± 1.5 |
 | Strokes | top speed 6·0.8 = 4.8; each decelerating frame is exactly v − (0.02·v + 0.05) | exact |
 | Dive | vy 0 until the start animation's frame 20, then −2; `unk_6C2` = 16000; bottoms out between 110 and 130 below the surface (stops at 120, plus the last stroke); surfaces rising with `yDistToWater` < 68; back to treading water | yes |
@@ -328,9 +328,9 @@ Visual: `s04_sheet_swim.png` (the course: run down the ramp, surface, tread wate
 
 - **No underwater camera.** `CAM_MODE` changes for diving (`Camera_Normal3` / the dive setting) aren't ported, so the Normal camera follows Link under the surface.
 - Not ported:
-  - Iron boots (`func_8084E30C`, `func_8084E368`) and the Zora scale depths `D_80854784[1..2]`.
-  - Picking items up from the bottom (`func_8083E5A8`).
-  - Entering a scene in water (`func_8083C910` → `func_8084D7C4`).
+  - Iron boots (`Player_Action_8084E30C`, `Player_Action_8084E368`) and the Zora scale depths `D_80854784[1..2]`.
+  - Picking items up from the bottom (`Player_ActionHandler_2`).
+  - Entering a scene in water (`Player_SetStartingMovement` → `Player_Action_8084D7C4`).
   - Water currents / `WaterBox` light settings and camera settings.
   - Splashes (`func_8083CFA8`), ripples and bubbles (`func_8083D6EC`), and the swim sounds.
 - `Actor::room` stays 0; room transitions aren't modelled, so water boxes bound to other rooms won't register.
@@ -353,7 +353,7 @@ Visual: `s04_sheet_swim.png` (the course: run down the ramp, surface, tread wate
 | `check_ceiling` (dyna part) | `BgCheck_CheckDynaCeiling`, `BgCheck_CheckDynaCeilingList` | from the static result; `testPos.y = sign(ny)·checkHeight + ceilingY` |
 | `check_line` (dyna part) | `BgCheck_CheckLineAgainstDyna`, `..AgainstBgActor`, `..BgActorSSList`, `Math3D_LineVsSph` | only with `CHECK_DYNA`: walls, floors, then ceilings of each bg actor whose y range and sphere the segment touches |
 | `PolyId { bg, idx }`, `StaticCollision::surface` | the (`CollisionPoly*`, `bgId`) pairs, `SurfaceType_GetData` | surface types from the owning mesh's header; `BgCheck_ComputeWallDisplacement` keeps its bug of reading the previous wall's flag 27 from the scene's table |
-| `Actor::floor_bg_id`, carry at the start of `update_bg_check_info`, `Dyna::carry` | `Actor_UpdateBgCheckInfo`, `func_800433A4`, `func_800430A0`, `func_800432A0` | while grounded on a bg actor with `DPM_PLAYER`: pos = cur · prev⁻¹ · pos; with bit 1 also the yaw (and Player's `currentYaw`); the crushed check (`BGCHECKFLAG_CRUSHED` when floor and ceiling come from different meshes more than 15 apart) now has a second mesh to compare with |
+| `Actor::floor_bg_id`, carry at the start of `update_bg_check_info`, `Dyna::carry` | `Actor_UpdateBgCheckInfo`, `DynaPolyActor_TransformCarriedActor`, `DynaPolyActor_UpdateCarriedActorPos`, `DynaPolyActor_UpdateCarriedActorRotY` | while grounded on a bg actor with `DYNA_TRANSFORM_POS`: pos = cur · prev⁻¹ · pos; with bit 1 also the yaw (and Player's `currentYaw`); the crushed check (`BGCHECKFLAG_CRUSHED` when floor and ceiling come from different meshes more than 15 apart) now has a second mesh to compare with |
 | `bg_ydan_hasi::BgYdanHasi` | `BgYdanHasi_Init`, `BgYdanHasi_UpdateFloatingBlock` | scale 0.1 (`ICHAIN_VEC3F_DIV1000(scale, 100)`) then x/z 0.15; y = water + 20 + 2·sin(timer·π/25); x/z = home + facing · sin((frames & 0xFF)·π/128)·165 |
 | `World::tick_with` order | `Actor_UpdateAll` | BG category first (platform update, `DynaPoly_UpdateContext`), then Player, …, then `DynaPoly_UpdateBgActorTransforms` |
 | `gfx::platform_draw_list` | `BgYdanHasi_Draw` (`Gfx_DrawDListOpa`) | segment 6 = `object_ydan_objects`, posed by the bg actor's transform (the same matrix `Actor_Draw` builds) |
@@ -395,9 +395,9 @@ Visual: `s04_sheet_platform.png`: the textured block sliding and bobbing in the 
 
 - **One platform type.** Other `DynaPolyActor`s (elevators, push blocks, rotating platforms) need their own actor ports. The dyna layer itself handles any number of bg actors, and rotation via `DPM_ROTATE`, which the tests don't exercise.
 - **Player's platform-specific code isn't ported:**
-  - Grabbing, pushing and pulling blocks: `func_8083F7BC` (interrupt 5), `func_8083F9D0`, `func_8084B840`.
-  - The roll bonk's push on a dyna actor (`func_80844708`).
-  - Climbing a dyna wall (`func_8084BF1C`).
+  - Grabbing, pushing and pulling blocks: `Player_ActionHandler_5` (interrupt 5), `func_8083F9D0`, `func_8084B840`.
+  - The roll bonk's push on a dyna actor (`Player_Action_Roll`).
+  - Climbing a dyna wall (`Player_Action_8084BF1C`).
   - `DynaPoly_SetPlayerOnTop` / `SetPlayerAbove` interaction flags (nothing reads them yet).
   - The `BGACTOR_1` delete path and `DynaPoly_DeleteBgActor`.
 - **Camera:** the camera ignores this platform (by flag). Camera bgcheck against dyna meshes without the flag goes through the same `check_line`, but that path is untested.
@@ -406,9 +406,9 @@ Visual: `s04_sheet_platform.png`: the textured block sliding and bobbing in the 
 ## Milestone 8: sound (optional): left out
 
 Not started, by choice. The other seven milestones used the time. Sound is also a different kind of work from everything else in this spike:
-- Even a minimal "play Link's footsteps and sword swings" needs the audio engine itself: the sequence player (`audio_seqplayer.c`), soundfonts and sample banks from `Audiobank` / `Audiotable`, VADPCM decoding, the synthesis loop (`audio_synthesis.c`), and the sfx channel allocator behind `Audio_PlaySfxGeneral`.
+- Even a minimal "play Link's footsteps and sword swings" needs the audio engine itself: the sequence player (`seqplayer.c`), soundfonts and sample banks from `Audiobank` / `Audiotable`, VADPCM decoding, the synthesis loop (`synthesis.c`), and the sfx channel allocator behind `Audio_PlaySfxGeneral`.
 - None of that shares code with what's here.
-- The hooks are ready. The ported code already names the calls where sounds happen, e.g. `func_8002F7DC(&this->actor, NA_SE_...)`, `func_80832698` (voice), and the stroke sounds in `func_8084D530`. The surface sfx types (`SurfaceType_GetSfxId`) are also in `bgcheck`. A future audio spike can attach to these without touching Player again.
+- The hooks are ready. The ported code already names the calls where sounds happen, e.g. `Player_PlaySfx(&this->actor, NA_SE_...)`, `Player_PlayVoiceSfx` (voice), and the stroke sounds in `func_8084D530`. The surface sfx types (`SurfaceType_GetSfxOffset`) are also in `bgcheck`. A future audio spike can attach to these without touching Player again.
 
 ## Recommended next spikes
 

@@ -9,7 +9,7 @@
 //! (`EnItem00_Collected`).
 //!
 //! The items Player holds up (sticks, nuts, seeds, magic, keys, heart pieces and containers,
-//! shields and tunics) are offered to Player instead (`func_8002F554`, docs/adr/0019); Player's
+//! shields and tunics) are offered to Player instead (`Actor_OfferGetItemNearby`, docs/adr/0019); Player's
 //! get-item interrupt takes one by becoming its `parent`, and the item goes (`Actor_HasParent`).
 //!
 //! Drawn as `EnItem00_Draw` does: `gRupeeDL` with the rupee's colour on segment 8, or
@@ -36,10 +36,10 @@ pub const ACTOR_EN_ITEM00: i16 = 0x0015;
 const ACTOR_EN_ELF: i16 = 0x0018;
 const FAIRY_HEAL_TIMED: i16 = 0x02;
 
-/// `En_Item00_InitVars`.
+/// `En_Item00_Profile`.
 pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ITEM00, name: "En_Item00", category: ACTORCAT_MISC, flags: 0, object: "gameplay_keep" };
 
-// `Item00Type` (z64actor.h).
+// `Item00Type` (actor.h).
 pub const ITEM00_RUPEE_GREEN: i16 = 0x00;
 pub const ITEM00_RUPEE_BLUE: i16 = 0x01;
 pub const ITEM00_RUPEE_RED: i16 = 0x02;
@@ -75,7 +75,7 @@ const OBJECT_GI_SHIELD_1: &str = "object_gi_shield_1";
 const OBJECT_GI_SHIELD_2: &str = "object_gi_shield_2";
 const OBJECT_GI_CLOTHES: &str = "object_gi_clothes";
 
-/// `Object_GetIndex(&play->objectCtx, object)` for an object file.
+/// `Object_GetSlot(&play->objectCtx, object)` for an object file.
 fn object_bank(play: &PlayState, file: &str) -> Option<usize> {
     let id = play.assets.as_ref()?.scenes.objects.iter().position(|o| o == file)?;
     play.object_ctx.get_index(id as i16)
@@ -168,13 +168,13 @@ pub fn bakes() -> Vec<MeshBake> {
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
-    base: ColliderInit { col_type: COLTYPE_NONE, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_NONE, oc_flags2: OC2_NONE, shape: COLSHAPE_CYLINDER },
-    info: ColliderInfoInit {
-        elem_type: ELEMTYPE_UNK0,
-        toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderBumpInit { dmg_flags: 0x10, effect: 0, defense: 0 },
-        toucher_flags: TOUCH_NONE | TOUCH_SFX_NORMAL,
-        bumper_flags: BUMP_ON,
+    base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_NONE, oc_flags2: OC2_NONE, shape: COLSHAPE_CYLINDER },
+    info: ColliderElementInit {
+        elem_type: ELEM_MATERIAL_UNK0,
+        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x10, effect: 0, defense: 0 },
+        toucher_flags: ATELEM_NONE | ATELEM_SFX_NORMAL,
+        bumper_flags: ACELEM_ON,
         oc_elem_flags: OCELEM_NONE,
     },
     dim: eng_collision::math3d::Cylinder16 { radius: 10, height: 30, y_shift: 0, pos: [0; 3] },
@@ -291,7 +291,7 @@ impl EnItem00 {
                 set_scale(&mut e, 0.01);
             }
             ITEM00_SHIELD_DEKU | ITEM00_SHIELD_HYLIAN | ITEM00_TUNIC_ZORA | ITEM00_TUNIC_GORON => {
-                // objBankIndex = Object_GetIndex(OBJECT_GI_SHIELD_1 / _2 / OBJECT_GI_CLOTHES),
+                // objBankIndex = Object_GetSlot(OBJECT_GI_SHIELD_1 / _2 / OBJECT_GI_CLOTHES),
                 // Actor_SetObjectDependency. Without the object the index is -1 and
                 // Actor_UpdateAll kills the item (here at once).
                 let file = match e.actor.params {
@@ -357,28 +357,28 @@ impl EnItem00 {
                 item_give(&mut play.save, Some(&mut play.audio), ITEM_BOW);
             }
             ITEM00_ARROWS_SMALL => {
-                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_SMALL);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_5);
             }
             ITEM00_ARROWS_MEDIUM => {
-                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_MEDIUM);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_10);
             }
             ITEM00_ARROWS_LARGE => {
-                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_LARGE);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_ARROWS_30);
             }
             ITEM00_SMALL_KEY => {
-                item_give(&mut play.save, Some(&mut play.audio), ITEM_KEY_SMALL);
+                item_give(&mut play.save, Some(&mut play.audio), ITEM_SMALL_KEY);
             }
             // @bug (game): the large magic jar's get-item is the small one's, and the other
             // way round.
-            ITEM00_MAGIC_LARGE => get_item_id = GI_MAGIC_SMALL,
-            ITEM00_MAGIC_SMALL => get_item_id = GI_MAGIC_LARGE,
-            ITEM00_SEEDS => get_item_id = GI_SEEDS_5,
-            ITEM00_NUTS => get_item_id = GI_NUTS_5,
-            ITEM00_STICK => get_item_id = GI_STICKS_1,
+            ITEM00_MAGIC_LARGE => get_item_id = GI_MAGIC_JAR_SMALL,
+            ITEM00_MAGIC_SMALL => get_item_id = GI_MAGIC_JAR_LARGE,
+            ITEM00_SEEDS => get_item_id = GI_DEKU_SEEDS_5,
+            ITEM00_NUTS => get_item_id = GI_DEKU_NUTS_5,
+            ITEM00_STICK => get_item_id = GI_DEKU_STICKS_1,
             _ => {}
         }
         if get_item_id != GI_NONE && !actor_has_parent(&e.actor) {
-            // func_8002F554(&this->actor, play, getItemId), from inside whoever dropped it. The
+            // Actor_OfferGetItemNearby(&this->actor, play, getItemId), from inside whoever dropped it. The
             // item isn't in the actor context yet, so it can't be the offering actor here; when
             // Player dropped it (func_8083E4C4) the offer is wiped at the end of Player's update
             // anyway, so skipping it changes nothing.
@@ -604,8 +604,8 @@ impl ActorImpl for EnItem00 {
                 item_give(save, Some(&mut *audio), ITEM_RUPEE_GOLD);
                 GI_NONE
             }
-            ITEM00_STICK => GI_STICKS_1,
-            ITEM00_NUTS => GI_NUTS_5,
+            ITEM00_STICK => GI_DEKU_STICKS_1,
+            ITEM00_NUTS => GI_DEKU_NUTS_5,
             ITEM00_RECOVERY_HEART => {
                 item_give(save, Some(&mut *audio), ITEM_RECOVERY_HEART);
                 GI_NONE
@@ -623,23 +623,23 @@ impl ActorImpl for EnItem00 {
                 GI_NONE
             }
             ITEM00_ARROWS_SMALL => {
-                item_give(save, Some(&mut *audio), ITEM_ARROWS_SMALL);
+                item_give(save, Some(&mut *audio), ITEM_ARROWS_5);
                 GI_NONE
             }
             ITEM00_ARROWS_MEDIUM => {
-                item_give(save, Some(&mut *audio), ITEM_ARROWS_MEDIUM);
+                item_give(save, Some(&mut *audio), ITEM_ARROWS_10);
                 GI_NONE
             }
             ITEM00_ARROWS_LARGE => {
-                item_give(save, Some(&mut *audio), ITEM_ARROWS_LARGE);
+                item_give(save, Some(&mut *audio), ITEM_ARROWS_30);
                 GI_NONE
             }
-            ITEM00_SEEDS => GI_SEEDS_5,
-            ITEM00_SMALL_KEY => GI_KEY_SMALL,
+            ITEM00_SEEDS => GI_DEKU_SEEDS_5,
+            ITEM00_SMALL_KEY => GI_SMALL_KEY,
             ITEM00_HEART_PIECE => GI_HEART_PIECE,
             ITEM00_HEART_CONTAINER => GI_HEART_CONTAINER,
-            ITEM00_MAGIC_LARGE => GI_MAGIC_LARGE,
-            ITEM00_MAGIC_SMALL => GI_MAGIC_SMALL,
+            ITEM00_MAGIC_LARGE => GI_MAGIC_JAR_LARGE,
+            ITEM00_MAGIC_SMALL => GI_MAGIC_JAR_SMALL,
             ITEM00_SHIELD_DEKU => GI_SHIELD_DEKU,
             ITEM00_SHIELD_HYLIAN => GI_SHIELD_HYLIAN,
             ITEM00_TUNIC_ZORA => GI_TUNIC_ZORA,
@@ -666,9 +666,9 @@ impl ActorImpl for EnItem00 {
             return;
         }
         if p <= ITEM00_RUPEE_RED || p == ITEM00_RUPEE_ORANGE {
-            play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_RUPY);
+            play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_SY_GET_RUPY);
         } else {
-            play.audio.func_80078884(oot_game::audio::sfx::NA_SE_SY_GET_ITEM);
+            play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_SY_GET_ITEM);
         }
         play.flags.set_collectible(self.collectible_flag as i32);
         self.despawn_timer = 15;
@@ -820,7 +820,7 @@ fn setup_pop(play: &mut PlayState, h: ActorHandle, vy: f32, yaw: i16) {
         if !matches!(e.actor.params, ITEM00_SMALL_KEY | ITEM00_HEART_PIECE | ITEM00_HEART_CONTAINER) {
             e.actor.room = -1;
         }
-        e.actor.flags |= ACTOR_FLAG_4;
+        e.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     }
 }
 

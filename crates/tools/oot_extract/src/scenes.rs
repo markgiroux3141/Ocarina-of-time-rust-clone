@@ -180,7 +180,7 @@ impl Tables {
             scene_ids.insert(g(2), i as i64);
             scenes.push(SceneDef { id: i, file: g(0), title: g(1), enum_name: g(2), draw_config: g(3), unk_10: g(4), unk_12: g(5) });
         }
-        let z64scene = read_text(&inc.join("z64scene.h"))?;
+        let z64scene = read_text(&inc.join("scene.h"))?;
         let sdc_enum = parse_enum(&z64scene, "SDC_DEFAULT");
         let scene_table_src = read_text(&decomp.join("src/code/z_scene_table.c"))?;
         let drawcfg = drawcfg::Program::parse(&scene_table_src);
@@ -193,9 +193,9 @@ impl Tables {
             }
         }
         let seq_h = read_text(&inc.join("sequence.h")).unwrap_or_default();
-        let z64 = read_text(&inc.join("z64.h")).unwrap_or_default();
-        let cam = read_text(&inc.join("z64camera.h")).unwrap_or_default();
-        let light = read_text(&inc.join("z64light.h")).unwrap_or_default();
+        let skybox_h = read_text(&inc.join("skybox.h")).unwrap_or_default();
+        let cam = read_text(&inc.join("camera.h")).unwrap_or_default();
+        let light = read_text(&inc.join("light.h")).unwrap_or_default();
         let bgcheck_c = read_text(&decomp.join("src/code/z_bgcheck.c")).unwrap_or_default();
         Ok(Tables {
             actors,
@@ -204,14 +204,14 @@ impl Tables {
             scenes,
             scene_ids,
             sdc_funcs,
-            seqs: parse_defines(&seq_h, "NA_BGM_"),
+            seqs: crate::audio::sequence_names(decomp).into_iter().map(|(v, (n, _))| (v as i64, format!("NA_BGM_{n}"))).collect(),
             nature: parse_enum(&seq_h, "NATURE_ID_GENERAL_NIGHT"),
             cam_settings: parse_enum(&cam, "CAM_SET_NONE"),
-            skyboxes: parse_enum(&z64, "SKYBOX_NONE"),
+            skyboxes: parse_enum(&skybox_h, "SKYBOX_NONE"),
             scene_cam_types: parse_defines(&z64scene, "SCENE_CAM_TYPE_"),
             light_types: parse_enum(&light, "LIGHT_POINT_NOGLOW"),
-            sfx_types: parse_c_array(&bgcheck_c, "D_80119E10"),
-            wall_flags: parse_wall_flags(&bgcheck_c),
+            sfx_types: parse_c_array(&bgcheck_c, "sSurfaceMaterialToSfxOffset"),
+            wall_flags: parse_wall_flags(&bgcheck_c, &oot_import::csrc::Macros::new(&[&read_text(&inc.join("bgcheck.h")).unwrap_or_default()])),
             drawcfg,
         })
     }
@@ -226,12 +226,12 @@ impl Tables {
         match self.entrances.get(idx as usize) {
             Some((e, s, sp)) => json!({ "entrance": e, "scene": s, "spawn": sp.parse::<i64>().ok() }),
             None => json!({ "entrance": match idx {
-                0x7FF9 => "ENTR_RETURN_YOUSEI_IZUMI_YOKO",
-                0x7FFA => "ENTR_RETURN_SYATEKIJYOU",
+                0x7FF9 => "ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS",
+                0x7FFA => "ENTR_RETURN_SHOOTING_GALLERY",
                 0x7FFB => "ENTR_RETURN_2",
-                0x7FFC => "ENTR_RETURN_SHOP1",
+                0x7FFC => "ENTR_RETURN_BAZAAR",
                 0x7FFD => "ENTR_RETURN_4",
-                0x7FFE => "ENTR_RETURN_DAIYOUSEI_IZUMI",
+                0x7FFE => "ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_MAGIC",
                 0x7FFF => "ENTR_RETURN_GROTTO",
                 _ => "unknown",
             } }),
@@ -251,8 +251,9 @@ fn parse_c_array(src: &str, name: &str) -> Vec<String> {
         .collect()
 }
 
-/// `D_80119D90[WALL_TYPE_MAX]`: wall type -> WALL_FLAG_* bits (z_bgcheck.c).
-fn parse_wall_flags(src: &str) -> Vec<u32> {
+/// `D_80119D90[WALL_TYPE_MAX]`: wall type -> WALL_FLAG_* bits (z_bgcheck.c), each entry
+/// evaluated with bgcheck.h's macros.
+fn parse_wall_flags(src: &str, macros: &oot_import::csrc::Macros) -> Vec<u32> {
     let Some(p) = src.find("D_80119D90[") else { return Vec::new() };
     let Some(o) = src[p..].find('{') else { return Vec::new() };
     let Some(c) = src[p + o..].find("};") else { return Vec::new() };
@@ -260,11 +261,7 @@ fn parse_wall_flags(src: &str) -> Vec<u32> {
         .split(',')
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| {
-            s.split('|')
-                .filter_map(|f| f.trim().strip_prefix("WALL_FLAG_").and_then(|n| n.parse::<u32>().ok()).map(|b| 1u32 << b))
-                .fold(0, |a, b| a | b)
-        })
+        .map(|s| macros.eval(s).unwrap_or(0) as u32)
         .collect()
 }
 

@@ -1,4 +1,4 @@
-//! Milestone 5a checks: Z-targeting (`func_80836BEC`), parallel mode, the lock-on and parallel
+//! Milestone 5a checks: Z-targeting (`Player_UpdateZTargeting`), parallel mode, the lock-on and parallel
 //! movement actions, side hops and the backflip. Expected values come from `z_player.c` /
 //! `z_actor.c` (quoted per test), not from the port.
 
@@ -31,17 +31,17 @@ fn z_with_nothing_to_target_is_parallel_mode() {
     let Some(mut w) = world() else { return };
     let yaw0 = w.player().actor.shape_rot.y;
     let f = run(&mut w, &[stick(0, 0), z(stick(0, 0)), z(stick(0, 0))]);
-    // func_808355DC: PLAYER_STATE1_17 and targetYaw = the facing; standing → func_80839F30.
+    // Player_SetParallel: PLAYER_STATE1_PARALLEL and targetYaw = the facing; standing → func_80839F30.
     assert!(w.player().state1 & STATE1_17 != 0);
     assert_eq!(w.player().target_yaw, yaw0);
     assert_eq!(f[2].action, "ParallelIdle");
-    // Stick left (x -80) while holding Z: walk sideways (func_8083CB94 → func_80840DE4), facing
+    // Stick left (x -80) while holding Z: walk sideways (func_8083CB94 → Player_Action_80840DE4), facing
     // kept on targetYaw.
     let f = run(&mut w, &repeat(z(stick(-80, 0)), 20));
     assert!(f.iter().any(|x| x.action == "ParallelWalk" || x.action == "Sidestep"), "{:?}", f.iter().map(|x| &x.action).collect::<Vec<_>>());
     assert_eq!(w.player().actor.shape_rot.y, yaw0, "facing held");
     assert!(w.player().actor.world_pos.x < -20.0, "moved left: {:?}", w.player().actor.world_pos);
-    // Stick back: walk backwards (func_8083CB2C → func_808414F8), still facing -z.
+    // Stick back: walk backwards (func_8083CB2C → Player_Action_808414F8), still facing -z.
     let mut w2 = world().unwrap();
     let f = run(&mut w2, &[stick(0, 0), z(stick(0, 0))]);
     let _ = f;
@@ -49,7 +49,7 @@ fn z_with_nothing_to_target_is_parallel_mode() {
     assert!(f.iter().any(|x| x.action == "ParallelBackwalk"), "{:?}", f.iter().map(|x| &x.action).collect::<Vec<_>>());
     assert_eq!(w2.player().actor.shape_rot.y, yaw0);
     assert!(w2.player().actor.world_pos.z > 20.0, "moved backwards (+z): {:?}", w2.player().actor.world_pos);
-    // Releasing Z ends parallel mode (unk_66C → 0, func_8008EE08).
+    // Releasing Z ends parallel mode (zTargetActiveTimer → 0, Player_ClearZTargeting).
     run(&mut w2, &repeat(stick(0, 0), 3));
     assert!(w2.player().state1 & STATE1_17 == 0);
 }
@@ -59,32 +59,32 @@ fn z_locks_on_and_keeps_the_target_until_pressed_again() {
     let Some(mut w) = target_world(150.0) else { return };
     // Frame 1: the target context finds the dummy (arrowPointedActor). Frame 2: Z.
     let f = run(&mut w, &[stick(0, 0), z(stick(0, 0)), stick(0, 0)]);
-    assert_eq!(w.player().unk_664, Some(w.targets()[0]));
-    assert!(w.player().state1 & STATE1_4 != 0, "hostile target → PLAYER_STATE1_4");
-    // func_8083CEAC: func_80840450 with PLAYER_ANIMGROUP_7.
+    assert_eq!(w.player().focus_actor, Some(w.targets()[0]));
+    assert!(w.player().state1 & STATE1_4 != 0, "hostile target → PLAYER_STATE1_HOSTILE_LOCK_ON");
+    // func_8083CEAC: Player_Action_80840450 with PLAYER_ANIMGROUP_wait2waitR.
     assert_eq!(f[1].action, "TargetIdle");
     let enter = w.data.anim_name(w.data.player_anim(7, 0)).to_string();
     assert_eq!(f[1].anim, enter);
-    // "Switch" Z-targeting (zTargetSetting 0): released Z keeps the lock (PLAYER_STATE2_13).
+    // "Switch" Z-targeting (zTargetSetting 0): released Z keeps the lock (PLAYER_STATE2_LOCK_ON_WITH_SWITCH).
     run(&mut w, &repeat(stick(0, 0), 20));
-    assert_eq!(w.player().unk_664, Some(w.targets()[0]));
+    assert_eq!(w.player().focus_actor, Some(w.targets()[0]));
     // Z again with no other candidate drops it.
     run(&mut w, &[z(stick(0, 0)), stick(0, 0), stick(0, 0)]);
-    assert_eq!(w.player().unk_664, None);
+    assert_eq!(w.player().focus_actor, None);
     assert!(w.player().state1 & STATE1_4 == 0);
 }
 
 #[test]
 fn locked_on_player_turns_to_face_the_target() {
     // Target off to the side (still inside 0x2AAA of the facing and 350 units; on the -x side
-    // ramp B would block the line of sight, BgCheck_CameraLineTest1 in func_800328D4).
+    // ramp B would block the line of sight, BgCheck_CameraLineTest1 in Attention_FindActorInCategory).
     let Some(mut w) = world() else { return };
     w.spawn_target(Vec3::new(120.0, 0.0, -200.0));
     run(&mut w, &[stick(0, 0), z(stick(0, 0))]);
-    assert_eq!(w.player().unk_664, Some(w.targets()[0]));
+    assert_eq!(w.player().focus_actor, Some(w.targets()[0]));
     run(&mut w, &repeat(stick(0, 0), 40));
-    // func_80837268: once the reticle has locked (unk_4B != 0) the idle yaw is the yaw to the
-    // target's focus, and func_80840450 turns towards it.
+    // Player_GetMovementSpeedAndYaw: once the reticle has locked (reticleSpinCounter != 0) the idle yaw is the yaw to the
+    // target's focus, and Player_Action_80840450 turns towards it.
     let d = w.player().actor.shape_rot.y.wrapping_sub(yaw_to_target(&w)) as i32;
     assert!(d.abs() < 0x200, "facing {:#x} vs {:#x}", w.player().actor.shape_rot.y, yaw_to_target(&w));
 }
@@ -160,17 +160,17 @@ fn a_with_the_stick_back_backflips() {
 
 #[test]
 fn target_out_of_leash_range_is_lost() {
-    // targetMode 3: TARGET_RANGE(350, 525) → rangeSq 350², leashScale 350/525. func_8002F0C8
+    // targetMode 3: ATTENTION_RANGES(350, 525) → rangeSq 350², leashScale 350/525. Attention_ShouldReleaseLockOn
     // loses the target once leashScale · dist² ≥ rangeSq, i.e. dist ≥ sqrt(350 · 525) ≈ 428.7,
-    // and only while unk_66C < 6 (the first frames after locking can't lose it).
+    // and only while zTargetActiveTimer < 6 (the first frames after locking can't lose it).
     let Some(d) = data() else { return };
     assert_eq!(d.target_ranges[3], (350.0 * 350.0, 350.0 / 525.0));
     let limit = (350.0f32 * 525.0).sqrt();
     let Some(mut w) = target_world(300.0) else { return };
     run(&mut w, &[stick(0, 0), z(stick(0, 0))]);
-    assert_eq!(w.player().unk_664, Some(w.targets()[0]));
+    assert_eq!(w.player().focus_actor, Some(w.targets()[0]));
     run(&mut w, &repeat(stick(0, 0), 15));
-    assert_eq!(w.player().unk_664, Some(w.targets()[0]));
+    assert_eq!(w.player().focus_actor, Some(w.targets()[0]));
     // Carry the target away (as if it walked off), 10 units a frame.
     let mut seen = Vec::new();
     for k in 0..40 {
@@ -182,7 +182,7 @@ fn target_out_of_leash_range_is_lost() {
             t.focus_pos = t.world_pos + Vec3::Y * 40.0;
         }
         run(&mut w, &[stick(0, 0)]);
-        if w.player().unk_664.is_none() {
+        if w.player().focus_actor.is_none() {
             let (now, before) = (seen[seen.len() - 1], seen[seen.len() - 2]);
             assert!(now >= limit && before < limit, "lost seeing {now} (before {before}), limit {limit}");
             return;

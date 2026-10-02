@@ -10,15 +10,15 @@
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_23, Actor};
+use oot_game::actor::{ACTOR_FLAG_THROW_ONLY, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 pub const ACTOR_EN_ISHI: i16 = 0x014E;
 
-/// `En_Ishi_InitVars`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ISHI, name: "En_Ishi", category: ACTORCAT_PROP, flags: ACTOR_FLAG_23, object: "gameplay_field_keep" };
+/// `En_Ishi_Profile`.
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ISHI, name: "En_Ishi", category: ACTORCAT_PROP, flags: ACTOR_FLAG_THROW_ONLY, object: "gameplay_field_keep" };
 
 /// `ROCK_SMALL`, `ROCK_LARGE`.
 const ROCK_SMALL: usize = 0;
@@ -35,25 +35,25 @@ const MIN_VELOCITY_Y: f32 = -20.0;
 /// `sCylinderInits`.
 const CYLINDER_INITS: [ColliderCylinderInit; 2] = [
     ColliderCylinderInit {
-        base: ColliderInit { col_type: COLTYPE_HARD, at_flags: AT_NONE, ac_flags: AC_ON | AC_HARD | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
-        info: ColliderInfoInit {
-            elem_type: ELEMTYPE_UNK0,
-            toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderBumpInit { dmg_flags: 0x4FC1_FFFE, effect: 0, defense: 0 },
-            toucher_flags: TOUCH_NONE,
-            bumper_flags: BUMP_ON,
+        base: ColliderInit { col_type: COL_MATERIAL_HARD, at_flags: AT_NONE, ac_flags: AC_ON | AC_HARD | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
+        info: ColliderElementInit {
+            elem_type: ELEM_MATERIAL_UNK0,
+            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC1_FFFE, effect: 0, defense: 0 },
+            toucher_flags: ATELEM_NONE,
+            bumper_flags: ACELEM_ON,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 10, height: 18, y_shift: -2, pos: [0; 3] },
     },
     ColliderCylinderInit {
-        base: ColliderInit { col_type: COLTYPE_HARD, at_flags: AT_NONE, ac_flags: AC_ON | AC_HARD | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
-        info: ColliderInfoInit {
-            elem_type: ELEMTYPE_UNK0,
-            toucher: ColliderTouch { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderBumpInit { dmg_flags: 0x4FC1_FFF6, effect: 0, defense: 0 },
-            toucher_flags: TOUCH_NONE,
-            bumper_flags: BUMP_ON,
+        base: ColliderInit { col_type: COL_MATERIAL_HARD, at_flags: AT_NONE, ac_flags: AC_ON | AC_HARD | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
+        info: ColliderElementInit {
+            elem_type: ELEM_MATERIAL_UNK0,
+            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
+            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC1_FFF6, effect: 0, defense: 0 },
+            toucher_flags: ATELEM_NONE,
+            bumper_flags: ACELEM_ON,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 55, height: 70, y_shift: 0, pos: [0; 3] },
@@ -131,7 +131,7 @@ impl EnIshi {
             play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
             if self.actor.xz_dist_to_player < 400.0 {
                 play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
-                // < 90: func_8002F434 offers the rock to Player's lift (not ported).
+                // < 90: Actor_OfferGetItem offers the rock to Player's lift (not ported).
             }
         }
     }

@@ -112,7 +112,7 @@ The golden cases cover:
 | The game's pack | `oot_game::pack` | The contract: `FORMAT_VERSION`, `IMPORTER_VERSION`, record names (`keys`), where packs live (`%LOCALAPPDATA%\oot-clone\packs`, `OOT_PACK`, `OOT_DATA_DIR`), and `GamePack`'s typed access (`game_data`, `scene`, `room`, `link_variant`, …) |
 | Record types | `oot_game::{scene, player_lib, data, env, camera, footik}` | Serde on `GameData`, `CameraData`, `FootIkData`, `EnvTables`. New: `SceneTable`, `SceneData` / `LayerData` / `RoomData` / `EntryMesh`, `PlayerRules` (moved from the importer), `LinkVariant` / `LinkFaces`, `pack::Texture`, `pack::Manifest` |
 | The importer | `oot_import::pack` (+ `objects`, `tables`) | Tables → objects (on all cores) → Link → scenes → manifest. The C loaders moved here from the game as extension traits (`GameData::load(p)` with `LoadGameData`), and the texture, skeleton and animation readers are shared with the extractor (`objects`) |
-| Draw configs in Rust | `oot_game::scene_table` | `Scene_DrawConfigSpot04` (Kokiri Forest, moved up from milestone 4), `Spot00` (Hyrule Field), `Ydan` (the Deku Tree) and `Default`, with `Gfx_TwoTexScroll` / `Gfx_TexScroll` from `z_rcp.c`, and `Math_StepToS` in `eng_math` |
+| Draw configs in Rust | `oot_game::scene_table` | `Scene_DrawConfigKokiriForest` (Kokiri Forest, moved up from milestone 4), `Spot00` (Hyrule Field), `Ydan` (the Deku Tree) and `Default`, with `Gfx_TwoTexScroll` / `Gfx_TexScroll` from `z_rcp.c`, and `Math_StepToS` in `eng_math` |
 | Texture provenance | `eng_gbi` | Every TMEM word remembers the segment it was loaded from, and each decoded texture gets the mask of the words it reads (`TextureImage::source_segments`). This finds Link's face textures (ADR 0009) |
 | The command | `oot import [--rom] [--decomp] [--loose DIR]`, `ootx import` | The first launch imports by itself when the default pack is missing or stale |
 
@@ -148,7 +148,7 @@ Overlay assets use relocated code addresses (`0x80xxxxxx`), so they can't be rea
 |---|---|---|
 | Golden renders from the pack (`scripts/golden.py check`) | the ROM path's 78 hashes | 78/78 identical; also 78/78 with `OOT_PACK` pointing at a loose folder |
 | No ROM or decomp at runtime | | the sandbox renders `spot04_forward` identically from a folder with no `oot.toml`. `oot_game`, `oot_actors` and the sandbox don't depend on `oot_import`, and the layering test enforces it |
-| Tables vs `csrc` (`oot_import/tests/pack.rs`) | equal | `sintable` / `sATan2Tbl`; `GameData` with all 573 animations' frames, the REGs, `sAgeProperties`, the item tables, the camera data, the foot IK constants, the rigs and the target ranges; `PlayerRules`; `sTimeBasedLightConfigs`; the scene and object tables: all equal |
+| Tables vs `csrc` (`oot_import/tests/pack.rs`) | equal | `sintable` / `sAtan2Tbl`; `GameData` with all 573 animations' frames, the REGs, `sAgeProperties`, the item tables, the camera data, the foot IK constants, the rigs and the target ranges; `PlayerRules`; `sTimeBasedLightConfigs`; the scene and object tables: all equal |
 | Ported draw configs vs `drawcfg` | equal | Spot04, Spot00, Ydan and Default over 12 frames × 42 states: equal, except Hyrule Field after 18:30, where the C's `Math_StepToS` gives alpha 5 and the interpreter (which doesn't run it) 0 |
 | Room meshes and collision vs the ROM path | equal | Kokiri Forest, Hyrule Field and the Deku Tree, all four layers: equal, including the night layers built for 19:00 against the midnight bake |
 | Link vs interpreting the ROM | equal | 64 variants × 4 faces equal. The importer checks all 32 faces of the default group and the last face of the others |
@@ -213,16 +213,16 @@ Player, the dummy target and `Bg_Ydan_Hasi` are actors, and the cameras run from
 | Piece | Where | The decomp |
 |---|---|---|
 | `PlayState`: collision, the actor context, the cameras, the target context, `gameplayFrames`, the input, the debug switches, the respawn point | `oot_game::play` | `PlayState` (`z_play.c`) |
-| The frame (`tick_with`), documented step by step | `oot_game::play` | `Play_Update` → `Actor_UpdateAll` → `AnimationContext_Update` → `Camera_Update`, then what `Play_Draw` changes |
+| The frame (`tick_with`), documented step by step | `oot_game::play` | `Play_Update` → `Actor_UpdateAll` → `AnimTaskQueue_Update` → `Camera_Update`, then what `Play_Draw` changes |
 | The actor context: generational handles, `ACTORCAT_*` lists newest first, take out / put back, insert / remove, `downcast` | `oot_game::actor_ctx` | `ActorContext`, `Actor_AddToCategory`, `Actor_RemoveFromCategory` |
-| `ActorImpl` (`update`, `animation_update`, `draw_update`, `render_state`, `draw`, `destroy`, `as_player`), `ActorProfile`, `PlayerIface` | `oot_game::actor_ctx` | `ActorInit`, `GET_PLAYER` |
-| The base `Actor`: id, category, flags, params, focus, `targetMode`, `targetPriority`, `isTargeted`, `freezeTimer`, the distances and yaw to Player, killed | `oot_game::actor` | `Actor` (`z64actor.h`), `Actor_Init`, `Actor_Kill`, `Actor_UpdateAll`'s distances |
+| `ActorImpl` (`update`, `animation_update`, `draw_update`, `render_state`, `draw`, `destroy`, `as_player`), `ActorProfile`, `PlayerIface` | `oot_game::actor_ctx` | `ActorProfile`, `GET_PLAYER` |
+| The base `Actor`: id, category, flags, params, focus, `targetMode`, `targetPriority`, `isTargeted`, `freezeTimer`, the distances and yaw to Player, killed | `oot_game::actor` | `Actor` (`actor.h`), `Actor_Init`, `Actor_Kill`, `Actor_UpdateAll`'s distances |
 | Render blending: `RenderState` (position, rotation, scale, joint table, and extra angles, values and switches), `RenderFrame`, the teleport flag | `oot_game::play` | (the N64 draws each frame it updates) |
 | Draw submission: `MeshKey`, `DrawCmd`, `DrawParams`, `DrawLists` | `eng_gfx::submit` | `POLY_OPA_DISP` / `POLY_XLU_DISP` |
 | The list renderer: `MeshCache` (upload on first use, one instance per use in a frame, re-skin on change), `MeshSource`, `render_lists` | `eng_render::lists` | |
-| The target context over actors (targets are actors with `ACTOR_FLAG_0`), and the reticle as submitted lines | `oot_game::target` | `func_8002C7BC`, `func_80032AF0` |
-| Player as an actor (`Player_InitVars`), with its draw (posing moved from the app; mesh key with the face; the circle shadow in the XLU list) and `PlayerIface` | `oot_actors::player` | `Player_Update`, `Player_Draw` |
-| `Bg_Ydan_Hasi` as an actor (its transform in the base actor, its draw) | `oot_actors::bg_ydan_hasi` | `Bg_Ydan_Hasi_InitVars`, `BgYdanHasi_Draw` |
+| The target context over actors (targets are actors with `ACTOR_FLAG_ATTENTION_ENABLED`), and the reticle as submitted lines | `oot_game::target` | `Attention_Update`, `Attention_FindActor` |
+| Player as an actor (`Player_Profile`), with its draw (posing moved from the app; mesh key with the face; the circle shadow in the XLU list) and `PlayerIface` | `oot_actors::player` | `Player_Update`, `Player_Draw` |
+| `Bg_Ydan_Hasi` as an actor (its transform in the base actor, its draw) | `oot_actors::bg_ydan_hasi` | `Bg_Ydan_Hasi_Profile`, `BgYdanHasi_Draw` |
 | The dummy Z-target as an actor | `oot_actors::dummy_target` | (sandbox only) |
 | `new_play`, `PlayExt` (`player()`, `targets()`, `platform(i)`, `spawn_target`, `spawn_platform`) | `oot_actors` | |
 | The follow camera, `CameraKind`, `CamView` | `oot_game::camera` (from `world.rs`) | (spike 03's camera) |
@@ -235,14 +235,14 @@ The play client now builds each frame as `Room_Draw` (the rooms' entries in `Roo
 |---|---|---|
 | 1 | `gameplayFrames++`, the input | `Play_Update` |
 | 2 | Every category in order, each actor newest first: `prevPos`, distances and yaw to Player, the update if due. Killed actors deleted. After BG, `DynaPoly_UpdateContext`. Then the target context with the last drawn view, and `DynaPoly_UpdateBgActorTransforms` | `Actor_UpdateAll` |
-| 3 | Every actor's queued animation requests | `AnimationContext_Update` |
+| 3 | Every actor's queued animation requests | `AnimTaskQueue_Update` |
 | 4 | The follow camera, `Camera_Update` | `Play_Update` |
 | 5 | Every actor's draw-time state (Player's foot IK), and the view for the next frame's target context | `Play_Draw` |
 | 6 | The sandbox's void-out | |
 | 7 | Render states captured | |
 
 This was done in two steps:
-- **First, the spikes' `World` order exactly.** It had `AnimationContext_Update` and the foot IK straight after Player's update, and the target context after the cameras with the new view. This proved the new runtime reproduces the spikes bit for bit: all traces identical.
+- **First, the spikes' `World` order exactly.** It had `AnimTaskQueue_Update` and the foot IK straight after Player's update, and the target context after the cameras with the new view. This proved the new runtime reproduces the spikes bit for bit: all traces identical.
 - **Then the decomp's order.** No test and no golden changed. The differences it could make (the enemies' distances to Player before its animation's root motion, a one-frame-older view for the on-screen test) don't show in any scripted run.
 
 ### Results
@@ -272,7 +272,7 @@ This was done in two steps:
 
 ### Known gaps
 
-- **Culling isn't ported.** Every actor counts as in view (`ACTOR_FLAG_6`), so none skips its update or draw. `isDrawn` isn't tracked, so killed actors are deleted in the same frame rather than the next.
+- **Culling isn't ported.** Every actor counts as in view (`ACTOR_FLAG_INSIDE_CULLING_VOLUME`), so none skips its update or draw. `isDrawn` isn't tracked, so killed actors are deleted in the same frame rather than the next.
 - **The draw config runs outside the frame.** It runs when the renderer sees a new game frame, not in `Play_Update` or `Play_Draw`. It moves into the scene system with the rooms (milestone 4).
 - **Actors are constructed directly** (`new_play`, `spawn_target`, `spawn_platform`), not spawned from an id and params. Spawning from the scene's actor lists is milestone 4.
 - **Only baked meshes.** The runtime display-list path (ADR 0006's procedural case) has no user yet.
@@ -290,16 +290,16 @@ This was done in two steps:
 
 | Piece | Where | The decomp |
 |---|---|---|
-| Pack format 2: the actor table with every `ActorInit` (`table/actors`), the entrance table, and each scene layer's entrance list, exit list, transition actors and keep object id, and each room's object list | `oot_import` (`tables::LoadActorTable`, `room::load_entrances`, `scene::list_extent`), `oot_game::{actor_table, scene}` | `actor_table.h` + `<Name>_InitVars`, `entrance_table.h`, `SCENE_CMD_ID_ENTRANCE_LIST` / `EXIT_LIST` / `TRANSITION_ACTOR_LIST` / `OBJECT_LIST` |
+| Pack format 2: the actor table with every `ActorProfile` (`table/actors`), the entrance table, and each scene layer's entrance list, exit list, transition actors and keep object id, and each room's object list | `oot_import` (`tables::LoadActorTable`, `room::load_entrances`, `scene::list_extent`), `oot_game::{actor_table, scene}` | `actor_table.h` + `<Name>_Profile`, `entrance_table.h`, `SCENE_CMD_ID_SPAWN_LIST` / `EXIT_LIST` / `TRANSITION_ACTOR_LIST` / `OBJECT_LIST` |
 | `ootx scene-info`: a scene layer's spawns, entrances, exits, transition actors, and each room's objects and placements by name, from the pack | `ootx` | |
 | `SaveContext`: entrance, age, time, respawn points, entrance speed, next transition type | `oot_game::save` | `gSaveContext` |
-| `Play_Init`: the scene layer (with Hyrule Field's and Kokiri Forest's special cases), `Play_SpawnScene`, the header, the first room, Player, the cameras; a scene change rebuilds the play state (`reinit`) | `oot_game::play_scene` | `Play_Init`, `Play_SpawnScene`, `Play_InitScene`, `Scene_Command*`, `func_80096FE8`, `func_800304DC` |
-| The room context: current and previous room, loads finishing the next frame, the room header, `func_80097534` | `oot_game::room::RoomContext`, `play_scene` | `func_8009728C`, `func_800973FC`, `func_80097534`, `EnHoll_SwapRooms` |
-| The object context: banks, `Object_Spawn`, the room object list swap, loads one frame late | `oot_game::object_ctx` | `Object_InitBank`, `Object_Spawn`, `Object_UpdateBank`, `Scene_CommandObjectList`, `func_800982FC` |
-| Spawning by id: the profile from the table, the ported constructor or a `Placeholder`, init deferred until the object loads (`Uninit`), the room's actor list, transition actors, the room-change and object kills | `oot_game::spawn`, `play` | `Actor_Spawn`, `Actor_Init`, `Actor_SpawnEntry`, `Actor_SpawnTransitionActors`, `Actor_UpdateAll`, `func_80031B14`, `func_80031A28`, `Actor_Delete` |
+| `Play_Init`: the scene layer (with Hyrule Field's and Kokiri Forest's special cases), `Play_SpawnScene`, the header, the first room, Player, the cameras; a scene change rebuilds the play state (`reinit`) | `oot_game::play_scene` | `Play_Init`, `Play_SpawnScene`, `Play_InitScene`, `Scene_Command*`, `Room_SetupFirstRoom`, `Actor_InitContext` |
+| The room context: current and previous room, loads finishing the next frame, the room header, `Room_FinishRoomChange` | `oot_game::room::RoomContext`, `play_scene` | `Room_RequestNewRoom`, `Room_ProcessRoomRequest`, `Room_FinishRoomChange`, `EnHoll_SwapRooms` |
+| The object context: banks, `Object_LoadPersistent`, the room object list swap, loads one frame late | `oot_game::object_ctx` | `Object_InitContext`, `Object_LoadPersistent`, `Object_UpdateEntries`, `Scene_CommandObjectList`, `func_800982FC` |
+| Spawning by id: the profile from the table, the ported constructor or a `Placeholder`, init deferred until the object loads (`Uninit`), the room's actor list, transition actors, the room-change and object kills | `oot_game::spawn`, `play` | `Actor_Spawn`, `Actor_Init`, `Actor_SpawnEntry`, `Actor_SpawnTransitionActors`, `Actor_UpdateAll`, `func_80031B14`, `Actor_KillAllWithMissingObject`, `Actor_Delete` |
 | The transition: `Play_Update`'s trigger and modes, `TransitionFade`, the fills and the instant cut, `Scene_SetTransitionForNextEntrance`, void-outs and respawns | `oot_game::{transition, play_scene}` | `Play_Update`, `Play_SetupTransition`, `z_fbdemo_fade.c`, `Play_TriggerVoidOut`, `Play_TriggerRespawn`, `Play_SetupRespawnPoint` |
 | `PlayIo`: the save, the transition and the scene flags, lent to Player's update | `oot_game::play_scene` | (`play->` and `gSaveContext` writes) |
-| Player: `Player_Init`'s respawn point and start modes 0, 8..15 (walk in, stand), Navi's spawn, the exit and void check, the exit walk, the void fall | `oot_actors::player` | `Player_Init`, `D_80854738`, `func_8083CA20`/`54`/`9C`, `func_8083C910`, `func_80838E70`, `func_80839034`, `func_80845CA4`, `func_80845BA0`, `func_80845964`, `func_80838F5C`, `func_80838FB8`, `func_8084F88C`, `func_8083CF5C` |
+| Player: `Player_Init`'s respawn point and start modes 0, 8..15 (walk in, stand), Navi's spawn, the exit and void check, the exit walk, the void fall | `oot_actors::player` | `Player_Init`, `sStartModeFuncs`, `Player_StartMode_Idle`/`54`/`9C`, `Player_SetStartingMovement`, `func_80838E70`, `Player_HandleExitsAndVoids`, `Player_Action_80845CA4`, `func_80845BA0`, `func_80845964`, `func_80838F5C`, `func_80838FB8`, `Player_Action_8084F88C`, `func_8083CF5C` |
 | `En_Holl`: the room-change planes, every kind | `oot_actors::en_holl` | `z_en_holl.c` |
 | `Math_SmoothStepToF` | `eng_math` | `z_lib.c` |
 | Scripted-play helpers: steer the stick towards a point, find an exit's floor | `oot_actors::script` | |
@@ -310,38 +310,38 @@ The M3 gap "the draw config runs outside the frame" is closed: `Scene_Draw` runs
 
 ### Kokiri Forest from the pack
 
-`oot_sandbox --scene spot04 --entrance` (or `oot`): `ENTR_SPOT04_0`, child, 10:00, layer 0.
+`oot_sandbox --scene spot04 --entrance` (or `oot`): `ENTR_KOKIRI_FOREST_0`, child, 10:00, layer 0.
 
 | | Count | Notes |
 |---|---|---|
 | Rooms | 3 | Room 0 the village (the first room); 1 the path to the Deku Tree; 2 the Kokiri Sword's maze |
 | Placements (actor lists) | 78 / 9 / 12 | Room 0's all spawn in the first frame (`numSetupActors`) |
 | Transition actors | 2 | Both `En_Holl` kind 4 (horizontal planes 200 wide): 0 between rooms 0 and 2 (in the crawlspace), 1 between rooms 1 and 0 |
-| Exits | 12 | Exit 4 `ENTR_LINK_HOME_1`; the floors use 2..7 and 9..11 |
+| Exits | 12 | Exit 4 `ENTR_LINKS_HOUSE_1`; the floors use 2..7 and 9..11 |
 | Actors after the first frame | 82 | Player, 2 `En_Holl` (ported); Navi and the 78 placements (placeholders) |
-| Actors waiting for their object after frame 1 | the ones on room 0's objects (`object_gs`, `object_md`, `object_kanban`, …) | `Play_Init`'s room load swaps them in; frame 1's `Object_UpdateBank` starts the DMA and frame 2's finishes it, so they initialise in frame 2 (and update from frame 3) |
+| Actors waiting for their object after frame 1 | the ones on room 0's objects (`object_gs`, `object_md`, `object_kanban`, …) | `Play_Init`'s room load swaps them in; frame 1's `Object_UpdateEntries` starts the DMA and frame 2's finishes it, so they initialise in frame 2 (and update from frame 3) |
 
 The room change (`en_holl_changes_rooms_and_deletes_the_old_rooms_actors`):
 - walking from the village towards the Deku Tree, `En_Holl` 1 requests room 1 50 to 100 units past its plane;
-- the next frame the load finishes and `EnHoll_NextAction` lets room 0 go;
+- the next frame the load finishes and `EnHoll_WaitRoomLoaded` lets room 0 go;
 - `func_80031B14` deletes room 0's 78 placements, `En_Holl` 0 (whose destroy re-arms its entry) and Navi's placeholder (the real Navi leaves the rooms in her init: a known gap);
 - room 1's 9 placements spawn, and `En_Holl` 1 stays, now in room 1.
 
 ### Into Link's house and back out
 
-`oot_sandbox --entrance ENTR_SPOT04_3 --child --script house --trace out/m4/house.json` (and the test `link_walks_into_his_house_and_back_out`). The script steers the stick towards each exit's floor, as a player would.
+`oot_sandbox --entrance ENTR_KOKIRI_FOREST_3 --child --script house --trace out/m4/house.json` (and the test `link_walks_into_his_house_and_back_out`). The script steers the stick towards each exit's floor, as a player would.
 
 | Frame | Scene | What happens |
 |---|---|---|
-| 1 | Kokiri Forest | `Play_Init` by `ENTR_SPOT04_3`: spawn 3 on the porch (−31, 100, 1073), params `0x0DFF`: start mode 13 (`func_8083CA20`: the exit walk with `unk_850` −20, standing, since `linearVelocity` is 0). The fade in (`TRANS_TYPE_FADE_BLACK_FAST`) is set up: alpha 255 |
+| 1 | Kokiri Forest | `Play_Init` by `ENTR_KOKIRI_FOREST_3`: spawn 3 on the porch (−31, 100, 1073), params `0x0DFF`: start mode 13 (`Player_StartMode_Idle`: the exit walk with `av2.actionVar2` −20, standing, since `linearVelocity` is 0). The fade in (`TRANS_TYPE_FADE_BLACK_FAST`) is set up: alpha 255 |
 | 9 | | The fade is done: 7 updates of `R_UPDATE_RATE` 3 reach `transFadeDuration` 20 |
-| 20 | | `unk_850` reaches 0: `func_8083CF5C` stands (`func_80840BC8`) |
+| 20 | | `av2.actionVar2` reaches 0: `func_8083CF5C` stands (`Player_Action_Idle`) |
 | 31 | | The script turns Link back to the door |
-| 42 | | On the floor with exit 4 (z 1126.6): `nextEntranceIndex` `ENTR_LINK_HOME_1`, `TRANS_TRIGGER_START`, the exit walk at the entrance speed |
-| 51 | Link's house | The fade out took 9 frames; `Play_Init` by `ENTR_LINK_HOME_1`: spawn 1 (−4, 0, −114), `0x0EFF`: start mode 14, walking in at speed 2 for 15 frames |
+| 42 | | On the floor with exit 4 (z 1126.6): `nextEntranceIndex` `ENTR_LINKS_HOUSE_1`, `TRANS_TRIGGER_START`, the exit walk at the entrance speed |
+| 51 | Link's house | The fade out took 9 frames; `Play_Init` by `ENTR_LINKS_HOUSE_1`: spawn 1 (−4, 0, −114), `0x0EFF`: start mode 14, walking in at speed 2 for 15 frames |
 | 52 | | The room's 3 placements (and Navi): 5 actors; the fade in starts |
 | 66 | | The walk in ends and `func_8083CF5C` runs on (`func_8083C858`), then stands at z −65 |
-| 94 | | Back on the house's exit floor (exit 2: `ENTR_SPOT04_3`) |
+| 94 | | Back on the house's exit floor (exit 2: `ENTR_KOKIRI_FOREST_3`) |
 | 103 | Kokiri Forest | Spawn 3 again, standing; 82 actors from frame 104 |
 | 133 | | Done |
 
@@ -359,11 +359,11 @@ What the test asserts, all derived from the C:
 |---|---|
 | `cargo test --workspace` | 116 passed, 1 ignored |
 | Scene tests (`cargo test -p oot_actors --test scenes`, 6) | Kokiri's placements; the `En_Holl` room change; the house walk; a void-out back to where Link came in; the ported profiles against the actor table; every scene entering and playing 30 frames as child and adult (220 of 220) |
-| Pack oracles (`cargo test -p oot_import --test pack`, 10) | New: the entrance and actor tables against the C (1,556 entrances; 471 actor rows, every actor with its `ActorInit`); the length-less lists cover every exit a floor uses and the entrance each leads to (1,000+ exits); transition-actor rooms and object lists in range |
+| Pack oracles (`cargo test -p oot_import --test pack`, 10) | New: the entrance and actor tables against the C (1,556 entrances; 471 actor rows, every actor with its `ActorProfile`); the length-less lists cover every exit a floor uses and the entrance each leads to (1,000+ exits); transition-actor rooms and object lists in range |
 | Object banks (`object_ctx` unit test) | Room objects load a frame after the swap; a room change keeps matching banks and drops the rest |
 | Golden traces and renders | 78 of 78 identical (the sandbox's scenes stay the spikes' view unless `--entrance`) |
 | Import | 9.1 s, 40.5 MB, 10,839 records |
-| The windows | `oot` enters Kokiri Forest by `ENTR_SPOT04_0` and plays; `oot_sandbox --entrance ENTR_SPOT04_3` too |
+| The windows | `oot` enters Kokiri Forest by `ENTR_KOKIRI_FOREST_0` and plays; `oot_sandbox --entrance ENTR_KOKIRI_FOREST_3` too |
 
 ### Decisions
 
@@ -376,19 +376,19 @@ What the test asserts, all derived from the C:
   - the length-less lists are bounded like the decomp's extraction bounds them.
 - **ADR 0007 and 0008 amended** for spawning by id (`Uninit`) and format 2.
 - **The spikes' scene view stays the sandbox's default.** Entering by an entrance changes what's on screen (only the loaded rooms, placeholders if asked). So it's an opt-in flag, `--entrance`, rather than a change to the goldens. The game binary always enters by an entrance.
-- **The house run starts on the porch.** Link's house is up a ladder, and ladder climbing isn't ported. `ENTR_SPOT04_3` (arriving from the house) puts Link at the door; the run goes in and comes back out to the same spot.
+- **The house run starts on the porch.** Link's house is up a ladder, and ladder climbing isn't ported. `ENTR_KOKIRI_FOREST_3` (arriving from the house) puts Link at the door; the run goes in and comes back out to the same spot.
 
 ### Known gaps
 
 - **Prerendered rooms aren't drawn.**
   - Link's house and the other interiors are `ROOM_SHAPE_TYPE_IMAGE`: a JPEG background plus a little geometry. Only the geometry draws, flat-coloured.
-  - The fixed cameras those rooms use aren't ported either: the scene's bg camera list, `Camera_ChangeBgCamIndex` from the spawn params, `CAM_SET_SCENE_TRANSITION`. In a house the camera is the Normal camera.
+  - The fixed cameras those rooms use aren't ported either: the scene's bg camera list, `Camera_RequestBgCam` from the spawn params, `CAM_SET_SCENE_TRANSITION`. In a house the camera is the Normal camera.
 - **Only `En_Holl` changes rooms.** Doors (`En_Door`, `Door_Shutter`) are placeholders. So rooms behind doors (every dungeon, Kokiri's shop and houses have exits instead) can't be entered, and the maze's crawlspace needs crawling.
 - **Placeholders keep the room they spawned in.** Actors whose init takes them out of the rooms (Navi, `Object_Kankyo`, `En_Kusa`, `En_Ishi`…) are deleted by a room change. They also don't run their init, so their params-dependent behaviour (killing themselves on flags, spawning children) doesn't happen.
 - **Transitions:** only the fades, fills and the instant cut run as in the game. Wipes, the triforce and circles (doors, grottos) run as a 60-step black fade; the sandstorm and cutscene fills end at once. No title cards, music or sound.
 - **Player:**
   - start modes 1..7 (the pedestal, warps, blue warps, the jump into the Kokiri opening) stand still instead;
-  - entering deep water treads water instead of `func_8084D7C4`;
+  - entering deep water treads water instead of `Player_Action_8084D7C4`;
   - conveyor floors don't steer the exit walk;
   - the `ENTR_RETURN_*` groups (fountains, shops) aren't ported;
   - `Play_TriggerRespawn`'s Ganon's Castle and Hyrule Field special cases are left out.
