@@ -59,7 +59,7 @@ exit, the attention cameras, the falling chest's shot; the jump, climb and hang 
 cutscenes' music and sounds, and Player's cutscene modes from the C's tables; the environment
 across frames: the lights' override and blend, the rain, the lightning; the title cards; the
 opening's nightmare with its riders on their horses (skin skeletons, ADR 0030) and the
-drawbridge; the cutscenes checked against the C frame by frame). Left: the user's look at the
+drawbridge; the cutscenes checked against the C frame by frame), and the user has played the
 opening and the Deku Tree's talk by hand. Then Phase 6, the Deku Tree, on Master Quest,
 starting with the decomp upgrade (ADR 0028).
 

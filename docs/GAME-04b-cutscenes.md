@@ -17,7 +17,7 @@ rest.
 | 4 | The rest of `z_demo.c`'s commands: the misc actions (rain, lightning, ...), the lighting override (`envCtx.lightSettingOverride`), what the opening's and the Deku Tree's scripts need | done (the drawing of rain, bolts and flash: milestone 6) |
 | 5 | Title cards: `TitleCard_InitPlaceName` (`CS_MISC` 15) and the scene-entry title cards (`showTitleCard`), the place names' textures in the pack | done |
 | 6 | The opening's nightmare: `En_Viewer` (Zelda and Impa on the horse, Ganondorf), `Bg_Spot00_Hanebasi` (the drawbridge), the rain and lightning | done (Ganondorf's cape and the lightning's flash: known gaps) |
-| 7 | Cutscene polish: `Camera_Demo1`'s splines, the letterbox, the narration's placement and Link's poses checked against the C by tests; then the opening and the Deku Tree's talk by hand | done (the by-hand look is the user's) |
+| 7 | Cutscene polish: `Camera_Demo1`'s splines, the letterbox, the narration's placement and Link's poses checked against the C by tests; then the opening and the Deku Tree's talk by hand | done (looked at by hand: good) |
 
 Navi's sparkles and glow (BACKLOG #9) are effects, and the C-Up prompt (#8) is the HUD: not this
 phase unless they fall out of it.
@@ -611,3 +611,6 @@ route's bushes now give their green rupee in another order: (594, 542), (385, 64
 
 314 tests pass, 1 ignored. The goldens: the six Kokiri Forest runs' traces and
 `spot04_treemouth_open` (the motes) re-recorded (golden/README.md).
+
+After the second round of fixes the user played the opening again and found it good (2026-10-02):
+the phase is complete. BACKLOG #10 is closed.
