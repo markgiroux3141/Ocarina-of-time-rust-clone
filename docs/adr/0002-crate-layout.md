@@ -24,7 +24,7 @@ Crates live in one folder per layer under `crates/`:
 | `game/` | `oot_game` (framework) | engine |
 | `game/` | `oot_actors` (content) | engine, `oot_game` |
 | `apps/` | `oot` (the game; library + binary), `oot_sandbox` | everything except tools |
-| `tools/` | `ootx`, `oot_viewer`, `oot_extract`, `ootpad`, `layering` | everything except apps |
+| `tools/` | `ootx`, `oot_viewer`, `oot_extract`, `ootpad`, `layering`, `overworld`, `overworld_editor` (ADR 0035) | everything except apps |
 
 On top of the layers:
 - GPU and windowing crates (wgpu, eframe, egui, winit, pollster) are allowed only in `eng_render` and `eng_app` among the engine, import and game crates.

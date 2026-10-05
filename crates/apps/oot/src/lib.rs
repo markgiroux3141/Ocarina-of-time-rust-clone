@@ -93,6 +93,9 @@ pub struct Options {
     pub music: Option<u8>,
     /// Log what the game's side does to the audio from the start (`GameAudio::log`).
     pub audio_log: bool,
+    /// A custom level: a folder the overworld editor or `overworld build` wrote (`level.json`
+    /// and `textures/`), played in Kokiri Forest's light. Reloaded whenever it's rebuilt.
+    pub level: Option<PathBuf>,
 }
 
 /// The pack to play from: `path` if given, else `$OOT_PACK`, else the default one
@@ -163,6 +166,8 @@ pub struct Assets {
     pub target_hurts: Option<u8>,
     /// `gDTSlidingPlatformCol`, for the course's moving platform.
     pub platform_col: Option<Arc<eng_collision::collision::CollisionHeader>>,
+    /// A custom level's folder, and its `level.json`'s time when loaded (to reload a rebuild).
+    pub level: Option<(PathBuf, Option<std::time::SystemTime>)>,
 }
 
 pub fn parse_time(s: &str) -> Result<u16> {
@@ -233,6 +238,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         targets: Vec::new(),
         target_hurts: o.target_hurts,
         platform_col: None,
+        level: None,
         view: (o.view.len() == 6).then(|| (Vec3::new(o.view[0], o.view[1], o.view[2]), Vec3::new(o.view[3], o.view[4], o.view[5]))),
         pack,
     };
@@ -252,6 +258,8 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         a.entrance = Some(e);
         a.place = info.name.clone();
         a.game = Some(g);
+    } else if let Some(dir) = &o.level {
+        load_level(&mut a, dir, o.child)?;
     } else if a.scene_name.is_none() {
         a.platform_col = Some(oot_actors::bg_ydan_hasi::load_collision(&a.pack)?);
     } else {
@@ -269,6 +277,42 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         a.targets.push(pos + Vec3::new(r.sin(), 0.0, r.cos()) * dist);
     }
     Ok(a)
+}
+
+/// When a custom level's `level.json` was last written.
+pub fn level_stamp(dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(dir.join("level.json")).and_then(|m| m.modified()).ok()
+}
+
+/// Loads a custom level (`oot_import::level`): its room and collision, Link at its middle (or
+/// `--at`), in Kokiri Forest's light at the time of day (the overworld theme is Kokiri's).
+pub fn load_level(a: &mut Assets, dir: &std::path::Path, child: bool) -> Result<()> {
+    let t0 = Instant::now();
+    let stamp = level_stamp(dir);
+    let l = oot_import::level::load(dir)?;
+    let lights = rooms::load_all_rooms(&a.pack, &a.env_tables, "spot04", child, a.day_time).context("Kokiri Forest's lights")?.lights;
+    println!(
+        "level {} from {}: {} triangles, {} collision polys ({} vertices), {} water boxes; spawn at {} ({:.0} ms)",
+        l.name,
+        dir.display(),
+        l.triangles,
+        l.collision.polys.len(),
+        l.collision.vertices.len(),
+        l.collision.water_boxes.len(),
+        l.spawn.0,
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
+    for n in &l.notes {
+        println!("  note: {n}");
+    }
+    a.scene = Some(oot_import::level::scene(&l, lights, child));
+    a.collision = l.collision;
+    a.spawn = l.spawn;
+    a.place = l.name;
+    a.marks = Vec::new();
+    a.scene_name = None;
+    a.level = Some((dir.to_path_buf(), stamp));
+    Ok(())
 }
 
 /// (Re)loads the scene for Link's age: the layer, and with it the collision, spawns and rooms,
@@ -557,6 +601,8 @@ struct App {
     /// and it gives back what the game reads (docs/adr/0026-the-games-audio.md).
     audio: Option<eng_audio::output::AudioOutput>,
     audio_status: String,
+    /// When a custom level's file was last checked for a rebuild.
+    level_check: Instant,
 }
 
 impl App {
@@ -609,6 +655,7 @@ impl App {
             last_pad: PadState::default(),
             audio,
             audio_status,
+            level_check: Instant::now(),
         })
     }
 }
@@ -671,6 +718,29 @@ impl eframe::App for App {
                 }
             }
             self.world = new_play(&self.assets, child);
+        }
+        // A custom level that was rebuilt (the overworld editor exports every edit): reloaded,
+        // Link staying where he is.
+        if let Some((dir, stamp)) = self.assets.level.clone()
+            && self.level_check.elapsed().as_secs_f32() >= 0.5
+        {
+            self.level_check = Instant::now();
+            if level_stamp(&dir) != stamp {
+                let p = self.world.player();
+                let (child, pos, yaw) = (!p.adult, p.actor.world_pos, p.actor.shape_rot.y);
+                match load_level(&mut self.assets, &dir, child) {
+                    Ok(()) => {
+                        self.scene = SceneGfx::new(&self.assets);
+                        self.world = new_play_at(&self.assets, child, pos, yaw, false);
+                    }
+                    Err(e) => {
+                        log::error!("reloading the level: {e:#}");
+                        if let Some(l) = &mut self.assets.level {
+                            l.1 = level_stamp(&dir);
+                        }
+                    }
+                }
+            }
         }
         // Each game frame's hand-over to the audio side: its ops, and the view back.
         let audio = &self.audio;

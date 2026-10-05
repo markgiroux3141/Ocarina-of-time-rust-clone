@@ -87,6 +87,8 @@ impl CollisionHeader {
 #[derive(Debug, Default, Clone)]
 pub struct CollisionBuilder {
     pub header: CollisionHeader,
+    /// Each vertex's index, so deduplicating stays fast on big meshes (custom levels).
+    index: std::collections::HashMap<[i16; 3], u16>,
 }
 
 impl CollisionBuilder {
@@ -106,11 +108,13 @@ impl CollisionBuilder {
 
     fn vertex(&mut self, p: Vec3) -> u16 {
         let v = [p.x.round() as i16, p.y.round() as i16, p.z.round() as i16];
-        if let Some(i) = self.header.vertices.iter().position(|&w| w == v) {
-            return i as u16;
+        if let Some(&i) = self.index.get(&v) {
+            return i;
         }
         self.header.vertices.push(v);
-        (self.header.vertices.len() - 1) as u16
+        let i = (self.header.vertices.len() - 1) as u16;
+        self.index.insert(v, i);
+        i
     }
 
     /// Adds a triangle (counter-clockwise when viewed from the side the normal faces).

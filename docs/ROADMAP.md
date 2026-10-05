@@ -297,3 +297,8 @@ The plan's later items, roughly in order:
 - the pause menu in full.
 
 Then breadth across the rest of the 427 actor overlays and 36 effect overlays, in the order scenes need them. And a parallel track for custom levels: glTF to a mod pack, and the decomp-free import for sharing.
+
+The custom-levels track has started (ADR 0035): the overworld builder and editor (`crates/tools/overworld`,
+`crates/tools/overworld_editor`) make Kokiri Forest-style levels, and `oot_sandbox --level` plays them with child Link
+in the spikes' view. Next on it: the level as a mod pack entered by `Play_Init`, actors placed in the editor, hookshot
+targets, exits, and rooms for big levels.

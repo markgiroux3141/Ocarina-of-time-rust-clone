@@ -1,0 +1,14 @@
+[package]
+name = "overworld"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Overworld level geometry from outlines, regions, paths and painted terrain (engine-neutral)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# Constrained Delaunay triangulation of floors.
+spade = "2.15"
+# Walls' derived middle textures are cut from the library's PNGs (textures::derived_name).
+png = "0.18"

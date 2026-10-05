@@ -60,6 +60,10 @@ struct Cli {
     /// Start as child Link.
     #[arg(long)]
     child: bool,
+    /// Play a custom level: a folder the overworld editor (or `overworld build`) wrote, with
+    /// level.json and textures/. Reloaded whenever it's rebuilt; --at places Link.
+    #[arg(long)]
+    level: Option<PathBuf>,
     /// Headless: run a built-in script and write a contact sheet PNG.
     #[arg(long)]
     sheet: Option<PathBuf>,
@@ -156,6 +160,7 @@ fn options(cli: &Cli) -> Options {
         audio: !cli.no_audio,
         music: cli.music,
         audio_log: cli.audio_log.is_some(),
+        level: cli.level.clone(),
     }
 }
 

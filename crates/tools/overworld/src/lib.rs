@@ -1,0 +1,20 @@
+//! Overworld level geometry: an outline, regions raised or sunk inside it, and the edge of
+//! the world, built into textured, watertight meshes. No engine, no Blender: a level document
+//! (JSON) and a theme (JSON) in, meshes out.
+
+pub mod build;
+pub mod doc;
+pub mod export;
+pub mod geom;
+pub mod kit;
+pub mod map;
+pub mod mesh;
+pub mod noise;
+pub mod paths;
+pub mod terrain;
+pub mod textures;
+pub mod theme;
+
+pub use build::{build, Level};
+pub use doc::Doc;
+pub use theme::Theme;

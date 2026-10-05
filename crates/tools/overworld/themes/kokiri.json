@@ -1,0 +1,192 @@
+{
+  "name": "kokiri",
+  "textures": {
+    "ground": "kf_ground",
+    "cliff": "kf_cliff",
+    "cliff_strip": "kf_cliff_strip",
+    "cliff_strip_dark": "kf_cliff_strip_dark",
+    "grass_skirt": "kf_grass_skirt",
+    "hanging_roots": "kf_hanging_roots",
+    "forest_trunks": "kf_forest_trunks",
+    "forest_foliage": "kf_forest_foliage",
+    "water": "kf_water"
+  },
+  "floor": {
+    "material": "ground",
+    "tile": 400,
+    "surface": "ground"
+  },
+  "water": {
+    "material": "water",
+    "tile": 54,
+    "surface": "water",
+    "bed": {
+      "material": "ground",
+      "tile": 400,
+      "surface": "ground"
+    }
+  },
+  "bank": {
+    "material": "ground",
+    "tile": 400,
+    "surface": "ground"
+  },
+  "wall_styles": {
+    "cliff": {
+      "material": "cliff",
+      "tile_u": 167,
+      "surface": "wall",
+      "caps": {
+        "tile_v": 167,
+        "rows": 32,
+        "top": 0.15625,
+        "bottom": 0.6875,
+        "mirror": true
+      }
+    },
+    "ledge": {
+      "material": "cliff_strip",
+      "tile_u": 120,
+      "surface": "wall"
+    },
+    "shore": {
+      "material": "cliff_strip_dark",
+      "tile_u": 160,
+      "surface": "wall"
+    },
+    "vines": {
+      "material": "cliff",
+      "tile_u": 167,
+      "surface": "vines",
+      "caps": {
+        "tile_v": 167,
+        "rows": 32,
+        "top": 0.15625,
+        "bottom": 0.6875,
+        "mirror": true
+      }
+    },
+    "boundary_cliff": {
+      "material": "cliff",
+      "tile_u": 167,
+      "surface": "wall_nograb",
+      "caps": {
+        "tile_v": 167,
+        "rows": 32,
+        "top": 0.15625,
+        "bottom": 0.6875,
+        "mirror": true
+      }
+    },
+    "embankment": {
+      "material": "cliff",
+      "tile_u": 167,
+      "surface": "wall",
+      "caps": {
+        "tile_v": 167,
+        "rows": 32,
+        "top": 0.15625,
+        "bottom": 0.6875,
+        "mirror": true,
+        "anchor": "top"
+      }
+    }
+  },
+  "wall_rules": [
+    {
+      "over_water": true,
+      "style": "shore"
+    },
+    {
+      "max_height": 75,
+      "style": "ledge"
+    },
+    {
+      "style": "cliff"
+    }
+  ],
+  "boundary_style": "boundary_cliff",
+  "trees": {
+    "trunks": 480,
+    "trunk_material": "forest_trunks",
+    "trunk_tile": 280,
+    "foliage": 460,
+    "foliage_material": "forest_foliage",
+    "foliage_tile": 420,
+    "overlap": 180,
+    "foliage_in": 40,
+    "surface": "wall_nograb"
+  },
+  "light": {
+    "ambient": [
+      80,
+      80,
+      80
+    ],
+    "lights": [
+      {
+        "dir": [
+          73,
+          -73,
+          73
+        ],
+        "color": [
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "dir": [
+          -73,
+          73,
+          -73
+        ],
+        "color": [
+          70,
+          70,
+          90
+        ]
+      }
+    ]
+  },
+  "variation": {
+    "u_speed": 0.3,
+    "u_scale": 450,
+    "shade": 0.22,
+    "shade_scale": 380,
+    "seed": 1
+  },
+  "paths": {
+    "side": "embankment",
+    "max_slope": 35,
+    "bridge": {
+      "thickness": 40,
+      "top": {
+        "material": "ground",
+        "tile": 400,
+        "surface": "ground"
+      },
+      "side": {
+        "material": "cliff_strip",
+        "tile_u": 120,
+        "surface": "wall"
+      },
+      "under": {
+        "material": "cliff_strip_dark",
+        "tile": 160,
+        "surface": ""
+      },
+      "shape": "rock",
+      "rock": {
+        "depth_mid": 70,
+        "depth_end": 260,
+        "bulge": 0.15,
+        "lip": 14,
+        "lumps": 14,
+        "lump_scale": 140,
+        "style": "embankment"
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "overworld_editor"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Overworld level editor: draw an outline, regions and paths, paint terrain; the level rebuilds as you edit"
+
+[dependencies]
+overworld.workspace = true
+eframe.workspace = true
+image.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+serde_json.workspace = true
+# Open and save dialogs.
+rfd = "0.17"
