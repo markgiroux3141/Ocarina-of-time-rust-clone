@@ -24,8 +24,8 @@
 //! actor, run over the owned set exactly as the C runs over its pointers, then put them back:
 //! the collider state at check time is whatever the actor left, as with the pointers.
 //!
-//! The cross-collider pointers (`atHit`, `acHitInfo`, ...) are references by handle. The hit
-//! element's data an actor reads later (`acHitInfo->toucher.dmgFlags`) is copied into the
+//! The cross-collider pointers (`atHit`, `acHitElem`, ...) are references by handle. The hit
+//! element's data an actor reads later (`acHitElem->atDmgInfo.dmgFlags`) is copied into the
 //! reference when the hit is recorded (`HitElem`); in the game it is read through the pointer,
 //! and it only changes when the other actor re-initialises the collider.
 //!
@@ -159,6 +159,15 @@ pub const DMG_HOOKSHOT: u32 = 1 << 7;
 pub const DMG_SLASH_KOKIRI: u32 = 1 << 8;
 pub const DMG_SLASH_MASTER: u32 = 1 << 9;
 pub const DMG_SLASH_GIANT: u32 = 1 << 10;
+pub const DMG_ARROW_FIRE: u32 = 1 << 11;
+pub const DMG_ARROW_ICE: u32 = 1 << 12;
+pub const DMG_ARROW_LIGHT: u32 = 1 << 13;
+pub const DMG_ARROW_UNK1: u32 = 1 << 14;
+pub const DMG_ARROW_UNK2: u32 = 1 << 15;
+pub const DMG_ARROW_UNK3: u32 = 1 << 16;
+pub const DMG_MAGIC_FIRE: u32 = 1 << 17;
+pub const DMG_MAGIC_ICE: u32 = 1 << 18;
+pub const DMG_MAGIC_LIGHT: u32 = 1 << 19;
 pub const DMG_SHIELD: u32 = 1 << 20;
 pub const DMG_MIR_RAY: u32 = 1 << 21;
 pub const DMG_SPIN_KOKIRI: u32 = 1 << 22;
@@ -167,20 +176,70 @@ pub const DMG_SPIN_MASTER: u32 = 1 << 24;
 pub const DMG_JUMP_KOKIRI: u32 = 1 << 25;
 pub const DMG_JUMP_GIANT: u32 = 1 << 26;
 pub const DMG_JUMP_MASTER: u32 = 1 << 27;
+pub const DMG_UNKNOWN_1: u32 = 1 << 28;
+pub const DMG_UNBLOCKABLE: u32 = 1 << 29;
 pub const DMG_HAMMER_JUMP: u32 = 1 << 30;
+pub const DMG_UNKNOWN_2: u32 = 1 << 31;
 pub const DMG_SLASH: u32 = DMG_SLASH_KOKIRI | DMG_SLASH_MASTER | DMG_SLASH_GIANT;
 pub const DMG_SPIN_ATTACK: u32 = DMG_SPIN_KOKIRI | DMG_SPIN_MASTER | DMG_SPIN_GIANT;
 pub const DMG_JUMP_SLASH: u32 = DMG_JUMP_KOKIRI | DMG_JUMP_MASTER | DMG_JUMP_GIANT;
 pub const DMG_SWORD: u32 = DMG_SLASH | DMG_SPIN_ATTACK | DMG_JUMP_SLASH;
+pub const DMG_HAMMER: u32 = DMG_HAMMER_SWING | DMG_HAMMER_JUMP;
+pub const DMG_FIRE: u32 = DMG_ARROW_FIRE | DMG_MAGIC_FIRE;
+pub const DMG_ARROW: u32 = DMG_ARROW_NORMAL | DMG_ARROW_FIRE | DMG_ARROW_ICE | DMG_ARROW_LIGHT | DMG_ARROW_UNK1 | DMG_ARROW_UNK2 | DMG_ARROW_UNK3;
+pub const DMG_RANGED: u32 = DMG_ARROW | DMG_HOOKSHOT | DMG_SLINGSHOT;
+pub const DMG_DEFAULT: u32 = !(DMG_SHIELD | DMG_MIR_RAY);
+
+/// `DMG_ENTRY(damage, reaction)`: a damage table entry, the damage in the low nibble and the
+/// reaction (the actor's own `damageReaction` codes) above it.
+pub const fn dmg_entry(damage: u8, reaction: u8) -> u8 {
+    damage | (reaction << 4)
+}
+
+// `HitSpecialEffect` (`collision_check.h`): what an AT element's hit does besides the damage,
+// as `colChkInfo.acHitSpecialEffect` tells the actor it hit.
+pub const HIT_SPECIAL_EFFECT_NONE: u8 = 0;
+pub const HIT_SPECIAL_EFFECT_FIRE: u8 = 1;
+pub const HIT_SPECIAL_EFFECT_ICE: u8 = 2;
+pub const HIT_SPECIAL_EFFECT_ELECTRIC: u8 = 3;
+pub const HIT_SPECIAL_EFFECT_KNOCKBACK: u8 = 4;
+/// `HIT_SPECIAL_EFFECT_7` to `_9`: the same effect as `HIT_SPECIAL_EFFECT_NONE`.
+pub const HIT_SPECIAL_EFFECT_7: u8 = 7;
+pub const HIT_SPECIAL_EFFECT_8: u8 = 8;
+pub const HIT_SPECIAL_EFFECT_9: u8 = 9;
+
+// `HitBacklash`: what an AC element does to an attacker that hits it (`colChkInfo.atHitBacklash`).
+pub const HIT_BACKLASH_NONE: u8 = 0;
+pub const HIT_BACKLASH_ELECTRIC: u8 = 1;
 
 /// `MASS_IMMOVABLE`, `MASS_HEAVY` (`actor.h`).
 pub const MASS_IMMOVABLE: u8 = 0xFF;
 pub const MASS_HEAVY: u8 = 0xFE;
 
-/// `DamageTable`: per damage-flag bit, `DMG_ENTRY(damage, effect)`.
+/// `DamageTable`: per damage-flag bit, `DMG_ENTRY(damage, reaction)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DamageTable {
     pub table: [u8; 32],
+}
+
+impl DamageTable {
+    /// `CollisionCheck_ApplyDamage`'s lookup: the entry at the index of the attack's highest
+    /// damage flag (the loop shifts the flags down until they're 1, the lower bits shifted out).
+    ///
+    /// @bug (game): with no flag the loop runs to 32 and the C reads the byte after the table,
+    /// whatever follows it in the overlay's data. Here that reads 0 (no damage, no reaction).
+    pub fn lookup(&self, dmg_flags: u32) -> u8 {
+        let mut flags = dmg_flags;
+        let mut i = 0;
+        while i < 32 {
+            if flags == 1 {
+                break;
+            }
+            i += 1;
+            flags >>= 1;
+        }
+        self.table.get(i).copied().unwrap_or(0)
+    }
 }
 
 /// `CollisionCheckInfo`: an actor's collision properties and this frame's results.
@@ -194,10 +253,14 @@ pub struct CollisionCheckInfo {
     pub cyl_y_shift: i16,
     pub mass: u8,
     pub health: u8,
+    /// `damage`: what this frame's hits take off `health` (`Actor_ApplyDamage`).
     pub damage: u8,
-    pub damage_effect: u8,
-    pub at_hit_effect: u8,
-    pub ac_hit_effect: u8,
+    /// `damageReaction`: the damage table entry's reaction to this frame's hit.
+    pub damage_reaction: u8,
+    /// `atHitBacklash` (`HIT_BACKLASH_*`): from the AC element this actor's attack hit.
+    pub at_hit_backlash: u8,
+    /// `acHitSpecialEffect` (`HIT_SPECIAL_EFFECT_*`): from the AT element that hit this actor.
+    pub ac_hit_special_effect: u8,
 }
 
 impl CollisionCheckInfo {
@@ -212,18 +275,18 @@ impl CollisionCheckInfo {
             mass: 50,
             health: 8,
             damage: 0,
-            damage_effect: 0,
-            at_hit_effect: 0,
-            ac_hit_effect: 0,
+            damage_reaction: 0,
+            at_hit_backlash: 0,
+            ac_hit_special_effect: 0,
         }
     }
 
     /// `CollisionCheck_ResetDamage`: after each actor's turn in `Actor_UpdateAll`.
     pub fn reset_damage(&mut self) {
         self.damage = 0;
-        self.damage_effect = 0;
-        self.at_hit_effect = 0;
-        self.ac_hit_effect = 0;
+        self.damage_reaction = 0;
+        self.at_hit_backlash = 0;
+        self.ac_hit_special_effect = 0;
         self.displacement = Vec3::ZERO;
     }
 
@@ -287,20 +350,21 @@ pub struct ElemRef {
     pub elem: u16,
 }
 
-/// `atHitInfo` / `acHitInfo`: the element that hit, and its data as it was then.
+/// `atHitElem` / `acHitElem`: the element that hit, and its data as it was then.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HitElem {
     pub elem: ElemRef,
-    pub toucher: ColliderElementDamageInfoAT,
-    pub bumper: ColliderElementDamageInfoAC,
-    pub elem_type: u8,
+    pub at_dmg_info: ColliderElementDamageInfoAT,
+    pub ac_dmg_info: ColliderElementDamageInfoAC,
+    pub elem_material: u8,
 }
 
 /// `ColliderElementDamageInfoAT`: what an element does as an attack.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ColliderElementDamageInfoAT {
     pub dmg_flags: u32,
-    pub effect: u8,
+    /// `hitSpecialEffect` (`HIT_SPECIAL_EFFECT_*`): what the hit does besides the damage.
+    pub hit_special_effect: u8,
     pub damage: u8,
 }
 
@@ -308,7 +372,8 @@ pub struct ColliderElementDamageInfoAT {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColliderElementDamageInfoAC {
     pub dmg_flags: u32,
-    pub effect: u8,
+    /// `hitBacklash` (`HIT_BACKLASH_*`): what hitting it does to the attacker.
+    pub hit_backlash: u8,
     pub defense: u8,
     pub hit_pos: [i16; 3],
 }
@@ -316,7 +381,7 @@ pub struct ColliderElementDamageInfoAC {
 impl Default for ColliderElementDamageInfoAC {
     /// `Collider_InitElementDamageInfoAC`.
     fn default() -> ColliderElementDamageInfoAC {
-        ColliderElementDamageInfoAC { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0, hit_pos: [0; 3] }
+        ColliderElementDamageInfoAC { dmg_flags: 0xFFCF_FFFF, hit_backlash: 0, defense: 0, hit_pos: [0; 3] }
     }
 }
 
@@ -324,7 +389,7 @@ impl Default for ColliderElementDamageInfoAC {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColliderElementDamageInfoACInit {
     pub dmg_flags: u32,
-    pub effect: u8,
+    pub hit_backlash: u8,
     pub defense: u8,
 }
 
@@ -394,34 +459,34 @@ pub struct ColliderInit {
 /// `ColliderElement`: one element's attack and target properties, and this frame's hits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColliderElement {
-    pub toucher: ColliderElementDamageInfoAT,
-    pub bumper: ColliderElementDamageInfoAC,
-    pub elem_type: u8,
-    pub toucher_flags: u8,
-    pub bumper_flags: u8,
+    pub at_dmg_info: ColliderElementDamageInfoAT,
+    pub ac_dmg_info: ColliderElementDamageInfoAC,
+    pub elem_material: u8,
+    pub at_elem_flags: u8,
+    pub ac_elem_flags: u8,
     pub oc_elem_flags: u8,
     /// `atHit`, `acHit`: the collider this element hit / was hit by.
     pub at_hit: Option<ColliderRef>,
     pub ac_hit: Option<ColliderRef>,
-    /// `atHitInfo`, `acHitInfo`: the element.
-    pub at_hit_info: Option<HitElem>,
-    pub ac_hit_info: Option<HitElem>,
+    /// `atHitElem`, `acHitElem`: the element.
+    pub at_hit_elem: Option<HitElem>,
+    pub ac_hit_elem: Option<HitElem>,
 }
 
 impl Default for ColliderElement {
     /// `Collider_InitElement`.
     fn default() -> ColliderElement {
         ColliderElement {
-            toucher: ColliderElementDamageInfoAT::default(),
-            bumper: ColliderElementDamageInfoAC::default(),
-            elem_type: ELEM_MATERIAL_UNK0,
-            toucher_flags: ATELEM_NONE,
-            bumper_flags: ACELEM_NONE,
+            at_dmg_info: ColliderElementDamageInfoAT::default(),
+            ac_dmg_info: ColliderElementDamageInfoAC::default(),
+            elem_material: ELEM_MATERIAL_UNK0,
+            at_elem_flags: ATELEM_NONE,
+            ac_elem_flags: ACELEM_NONE,
             oc_elem_flags: OCELEM_NONE,
             at_hit: None,
             ac_hit: None,
-            at_hit_info: None,
-            ac_hit_info: None,
+            at_hit_elem: None,
+            ac_hit_elem: None,
         }
     }
 }
@@ -435,29 +500,29 @@ impl ColliderElement {
     }
     /// `Collider_SetElement`.
     pub fn set(&mut self, init: &ColliderElementInit) {
-        self.elem_type = init.elem_type;
-        self.toucher = init.toucher;
-        self.bumper.dmg_flags = init.bumper.dmg_flags;
-        self.bumper.effect = init.bumper.effect;
-        self.bumper.defense = init.bumper.defense;
-        self.toucher_flags = init.toucher_flags;
-        self.bumper_flags = init.bumper_flags;
+        self.elem_material = init.elem_material;
+        self.at_dmg_info = init.at_dmg_info;
+        self.ac_dmg_info.dmg_flags = init.ac_dmg_info.dmg_flags;
+        self.ac_dmg_info.hit_backlash = init.ac_dmg_info.hit_backlash;
+        self.ac_dmg_info.defense = init.ac_dmg_info.defense;
+        self.at_elem_flags = init.at_elem_flags;
+        self.ac_elem_flags = init.ac_elem_flags;
         self.oc_elem_flags = init.oc_elem_flags;
     }
     /// `Collider_ResetATElement`.
     pub fn reset_at(&mut self) {
         self.at_hit = None;
-        self.at_hit_info = None;
-        self.toucher_flags &= !ATELEM_HIT;
-        self.toucher_flags &= !ATELEM_DREW_HITMARK;
+        self.at_hit_elem = None;
+        self.at_elem_flags &= !ATELEM_HIT;
+        self.at_elem_flags &= !ATELEM_DREW_HITMARK;
     }
     /// `Collider_ResetACElement`.
     pub fn reset_ac(&mut self) {
-        self.bumper.hit_pos = [0; 3];
-        self.bumper_flags &= !ACELEM_HIT;
-        self.bumper_flags &= !ACELEM_DRAW_HITMARK;
+        self.ac_dmg_info.hit_pos = [0; 3];
+        self.ac_elem_flags &= !ACELEM_HIT;
+        self.ac_elem_flags &= !ACELEM_DRAW_HITMARK;
         self.ac_hit = None;
-        self.ac_hit_info = None;
+        self.ac_hit_elem = None;
     }
     /// `Collider_ResetOCElement`.
     pub fn reset_oc(&mut self) {
@@ -468,11 +533,11 @@ impl ColliderElement {
 /// `ColliderElementInit`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColliderElementInit {
-    pub elem_type: u8,
-    pub toucher: ColliderElementDamageInfoAT,
-    pub bumper: ColliderElementDamageInfoACInit,
-    pub toucher_flags: u8,
-    pub bumper_flags: u8,
+    pub elem_material: u8,
+    pub at_dmg_info: ColliderElementDamageInfoAT,
+    pub ac_dmg_info: ColliderElementDamageInfoACInit,
+    pub at_elem_flags: u8,
+    pub ac_elem_flags: u8,
     pub oc_elem_flags: u8,
 }
 
@@ -1130,21 +1195,21 @@ impl ColliderSet {
             // Cylinders and quads have one element; JntSph and Tris stop at the first mark.
             for e in 0..ac.element_count() {
                 let Some(info) = self.cols[j].as_ref().and_then(|c| c.info(e)) else { break };
-                let Some(hit) = info.ac_hit_info else { continue };
-                if info.bumper_flags & ACELEM_DRAW_HITMARK == 0 {
+                let Some(hit) = info.ac_hit_elem else { continue };
+                if info.ac_elem_flags & ACELEM_DRAW_HITMARK == 0 {
                     continue;
                 }
-                let (bumper_flags, elem_type) = (info.bumper_flags, info.elem_type);
+                let (ac_elem_flags, elem_material) = (info.ac_elem_flags, info.elem_material);
                 let Some(ai) = self.index_of(hit.elem.col) else { continue };
                 let Some(at_info) = self.cols[ai].as_ref().and_then(|c| c.info(hit.elem.elem as usize)) else { continue };
-                if at_info.toucher_flags & ATELEM_DREW_HITMARK != 0 {
+                if at_info.at_elem_flags & ATELEM_DREW_HITMARK != 0 {
                     continue;
                 }
-                let toucher_flags = at_info.toucher_flags;
+                let at_elem_flags = at_info.at_elem_flags;
                 let (Some(at), Some(ac)) = (self.cols[ai].as_ref(), self.cols[j].as_ref()) else { continue };
-                hit_effects(&mut self.hit_sfx, actors, at.base(), toucher_flags, ac.base(), bumper_flags, elem_type);
+                hit_effects(&mut self.hit_sfx, actors, at.base(), at_elem_flags, ac.base(), ac_elem_flags, elem_material);
                 if let Some(at_info) = self.cols[ai].as_mut().and_then(|c| c.info_mut(hit.elem.elem as usize)) {
-                    at_info.toucher_flags |= ATELEM_DREW_HITMARK;
+                    at_info.at_elem_flags |= ATELEM_DREW_HITMARK;
                 }
                 break;
             }
@@ -1189,7 +1254,7 @@ impl ColliderSet {
 
     // ---- Damage ----------------------------------------------------------------------------
 
-    /// `CollisionCheck_Damage`.
+    /// `CollisionCheck_Damage`: each AC collider's hits, by `sApplyDamageFuncs[col->shape]`.
     fn damage(&mut self, actors: &mut ActorContext) {
         for k in 0..self.ac.len() {
             let j = self.ac[k];
@@ -1197,46 +1262,62 @@ impl ColliderSet {
             if c.base().ac_flags & AC_NO_DAMAGE != 0 {
                 continue;
             }
-            let base = *c.base();
-            for e in 0..c.element_count() {
-                if let Some(info) = c.info(e) {
-                    apply_damage(&base, info, actors);
-                }
+            match c {
+                Collider::JntSph(c) => apply_damage_jnt_sph(c, actors),
+                Collider::Cylinder(c) => apply_damage_cyl(c, actors),
+                Collider::Tris(c) => apply_damage_tris(c, actors),
+                Collider::Quad(c) => apply_damage_quad(c, actors),
             }
         }
     }
 }
 
-/// `CollisionCheck_ApplyDamage`.
-fn apply_damage(base: &ColliderBase, info: &ColliderElement, actors: &mut ActorContext) {
+/// `CollisionCheck_ApplyDamageJntSph`: every sphere's hit.
+fn apply_damage_jnt_sph(c: &ColliderJntSph, actors: &mut ActorContext) {
+    for e in &c.elements {
+        apply_damage(&c.base, &e.info, actors);
+    }
+}
+
+/// `CollisionCheck_ApplyDamageCyl`.
+fn apply_damage_cyl(c: &ColliderCylinder, actors: &mut ActorContext) {
+    apply_damage(&c.base, &c.info, actors);
+}
+
+/// `CollisionCheck_ApplyDamageTris`: every triangle's hit.
+fn apply_damage_tris(c: &ColliderTris, actors: &mut ActorContext) {
+    for e in &c.elements {
+        apply_damage(&c.base, &e.info, actors);
+    }
+}
+
+/// `CollisionCheck_ApplyDamageQuad`.
+fn apply_damage_quad(c: &ColliderQuad, actors: &mut ActorContext) {
+    apply_damage(&c.base, &c.info, actors);
+}
+
+/// `CollisionCheck_ApplyDamage`: a hit element's damage to its actor's `colChkInfo`. With a
+/// damage table, the entry for the attack's damage flag (its reaction into `damageReaction`);
+/// without one, the attack's damage less the element's defence. A hard collider (`AC_HARD`)
+/// takes none.
+pub fn apply_damage(base: &ColliderBase, info: &ColliderElement, actors: &mut ActorContext) {
     let Some(h) = base.actor else { return };
     if base.ac_flags & AC_HIT == 0 {
         return;
     }
-    if info.bumper_flags & ACELEM_HIT == 0 || info.bumper_flags & ACELEM_NO_DAMAGE != 0 {
+    if info.ac_elem_flags & ACELEM_HIT == 0 || info.ac_elem_flags & ACELEM_NO_DAMAGE != 0 {
         return;
     }
-    let Some(hit) = info.ac_hit_info else {
+    let Some(hit) = info.ac_hit_elem else {
         log::error!("pclobj_elem->ac_hit_elem != NULL");
         return;
     };
     let Some(actor) = actors.actor_mut(h) else { return };
     let damage = match actor.col_chk_info.damage_table {
-        None => (hit.toucher.damage as f32 - info.bumper.defense as f32).max(0.0),
+        None => (hit.at_dmg_info.damage as f32 - info.ac_dmg_info.defense as f32).max(0.0),
         Some(tbl) => {
-            // The index of the first set bit, or 32 when dmgFlags isn't a single bit.
-            let mut flags = hit.toucher.dmg_flags;
-            let mut i = 0;
-            while i < 32 {
-                if flags == 1 {
-                    break;
-                }
-                i += 1;
-                flags >>= 1;
-            }
-            // @bug (game): with more than one flag set, i reaches 32 and reads past the table.
-            let entry = tbl.table.get(i).copied().unwrap_or(0);
-            actor.col_chk_info.damage_effect = (entry >> 4) & 0xF;
+            let entry = tbl.lookup(hit.at_dmg_info.dmg_flags);
+            actor.col_chk_info.damage_reaction = (entry >> 4) & 0xF;
             (entry & 0xF) as f32
         }
     };
@@ -1287,20 +1368,20 @@ fn actor_sfx_pos(actor: Option<ActorHandle>) -> SfxPos {
 }
 
 /// `CollisionCheck_HitEffects`' sounds, by the AC collider's `colType` (the hit marks, blood
-/// and sparks are effects, not ported): `at`'s element's `toucher_flags`, `ac`'s element's
-/// `bumper_flags` and `elem_type`.
-fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, toucher_flags: u8, ac: &ColliderBase, bumper_flags: u8, elem_type: u8) {
+/// and sparks are effects, not ported): `at`'s element's `at_elem_flags`, `ac`'s element's
+/// `ac_elem_flags` and `elem_material`.
+fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, at_elem_flags: u8, ac: &ColliderBase, ac_elem_flags: u8, elem_material: u8) {
     use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND};
-    if bumper_flags & ACELEM_NO_HITMARK != 0 {
+    if ac_elem_flags & ACELEM_NO_HITMARK != 0 {
         return;
     }
-    if toucher_flags & ATELEM_AT_HITMARK == 0 && toucher_flags & ATELEM_DREW_HITMARK != 0 {
+    if at_elem_flags & ATELEM_AT_HITMARK == 0 && at_elem_flags & ATELEM_DREW_HITMARK != 0 {
         return;
     }
     if ac.actor.is_some() {
         // sBloodFuncs[sHitInfo[ac->colType].blood]: effects.
         match HIT_INFO_EFFECT.get(ac.col_type as usize).copied().unwrap_or(HIT_NONE) {
-            HIT_SOLID => hit_solid(out, toucher_flags, ac),
+            HIT_SOLID => hit_solid(out, at_elem_flags, ac),
             HIT_WOOD => {
                 // CollisionCheck_SpawnShieldParticles(Wood): the particles aren't ported.
                 out.push((NA_SE_IT_REFLECTION_WOOD, actor_sfx_pos(at.actor)));
@@ -1308,8 +1389,8 @@ fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Collide
             HIT_NONE => {}
             _ => {
                 // EffectSsHitMark_SpawnFixedScale: not ported.
-                if bumper_flags & ACELEM_NO_SWORD_SFX == 0 {
-                    sword_hit_audio(out, actors, at, elem_type);
+                if ac_elem_flags & ACELEM_NO_SWORD_SFX == 0 {
+                    sword_hit_audio(out, actors, at, elem_material);
                 }
             }
         }
@@ -1320,11 +1401,11 @@ fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Collide
 }
 
 /// `CollisionCheck_HitSolid`'s sounds (METAL, WOOD, HARD and TREE AC colliders), by the AT
-/// element's `TOUCH_SFX_*`: the shield's bounce, metal's (`CollisionCheck_SpawnShieldParticles
+/// element's `ATELEM_SFX_*`: the shield's bounce, metal's (`CollisionCheck_SpawnShieldParticles
 /// Metal(Sfx)`: `NA_SE_IT_SHIELD_REFLECT_SW`), wood's.
-fn hit_solid(out: &mut Vec<(u16, SfxPos)>, toucher_flags: u8, collider: &ColliderBase) {
+fn hit_solid(out: &mut Vec<(u16, SfxPos)>, at_elem_flags: u8, collider: &ColliderBase) {
     use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND, NA_SE_IT_SHIELD_REFLECT_SW};
-    let flags = toucher_flags & ATELEM_SFX_MASK;
+    let flags = at_elem_flags & ATELEM_SFX_MASK;
     let pos = actor_sfx_pos(collider.actor);
     if flags == ATELEM_SFX_NORMAL && collider.col_type != COL_MATERIAL_METAL {
         out.push((NA_SE_IT_SHIELD_BOUND, pos));
@@ -1339,11 +1420,11 @@ fn hit_solid(out: &mut Vec<(u16, SfxPos)>, toucher_flags: u8, collider: &Collide
 
 /// `CollisionCheck_SwordHitAudio`: a Player-attached AT collider's strike, by the AC element's
 /// `elemType`.
-fn sword_hit_audio(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, elem_type: u8) {
+fn sword_hit_audio(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, elem_material: u8) {
     use crate::audio::sfx::{NA_SE_IT_SWORD_STRIKE, NA_SE_IT_SWORD_STRIKE_HARD, NA_SE_PL_WALK_GROUND, SFX_FLAG};
     let Some(h) = at.actor else { return };
     if actors.actor(h).is_some_and(|a| a.category == crate::actor_ctx::ACTORCAT_PLAYER) {
-        let id = match elem_type {
+        let id = match elem_material {
             ELEM_MATERIAL_UNK0 => NA_SE_IT_SWORD_STRIKE,
             ELEM_MATERIAL_UNK1 => NA_SE_IT_SWORD_STRIKE_HARD,
             ELEM_MATERIAL_UNK2 | ELEM_MATERIAL_UNK3 => NA_SE_PL_WALK_GROUND - SFX_FLAG,
@@ -1360,17 +1441,17 @@ fn v3s(v: [i16; 3]) -> Vec3 {
 
 /// `CollisionCheck_IsElementNotAT`.
 fn skip_touch(i: &ColliderElement) -> bool {
-    i.toucher_flags & ATELEM_ON == 0
+    i.at_elem_flags & ATELEM_ON == 0
 }
 
 /// `CollisionCheck_IsElementNotAC`.
 fn skip_bump(i: &ColliderElement) -> bool {
-    i.bumper_flags & ACELEM_ON == 0
+    i.ac_elem_flags & ACELEM_ON == 0
 }
 
 /// `CollisionCheck_NoSharedFlags`.
 fn no_shared_flags(at: &ColliderElement, ac: &ColliderElement) -> bool {
-    at.toucher.dmg_flags & ac.bumper.dmg_flags == 0
+    at.at_dmg_info.dmg_flags & ac.ac_dmg_info.dmg_flags == 0
 }
 
 /// The quad's two triangles as the AT side builds them: (2, 3, 1) and (2, 1, 0).
@@ -1395,45 +1476,45 @@ impl PairCtx<'_> {
         }
         let at_ref = ElemRef { col: self.ri, elem: at_elem };
         let ac_ref = ElemRef { col: self.rj, elem: ac_elem };
-        if ac_info.bumper_flags & ACELEM_NO_AT_INFO == 0 {
+        if ac_info.ac_elem_flags & ACELEM_NO_AT_INFO == 0 {
             at.at_flags |= AT_HIT;
             at.at = ac.actor;
             at_info.at_hit = Some(self.rj);
-            at_info.at_hit_info = Some(HitElem { elem: ac_ref, toucher: ac_info.toucher, bumper: ac_info.bumper, elem_type: ac_info.elem_type });
-            at_info.toucher_flags |= ATELEM_HIT;
+            at_info.at_hit_elem = Some(HitElem { elem: ac_ref, at_dmg_info: ac_info.at_dmg_info, ac_dmg_info: ac_info.ac_dmg_info, elem_material: ac_info.elem_material });
+            at_info.at_elem_flags |= ATELEM_HIT;
             if let Some(a) = at.actor.and_then(|h| self.actors.actor_mut(h)) {
-                a.col_chk_info.at_hit_effect = ac_info.bumper.effect;
+                a.col_chk_info.at_hit_backlash = ac_info.ac_dmg_info.hit_backlash;
             }
         }
         ac.ac_flags |= AC_HIT;
         ac.ac = at.actor;
         ac_info.ac_hit = Some(self.ri);
-        ac_info.ac_hit_info = Some(HitElem { elem: at_ref, toucher: at_info.toucher, bumper: at_info.bumper, elem_type: at_info.elem_type });
-        ac_info.bumper_flags |= ACELEM_HIT;
+        ac_info.ac_hit_elem = Some(HitElem { elem: at_ref, at_dmg_info: at_info.at_dmg_info, ac_dmg_info: at_info.ac_dmg_info, elem_material: at_info.elem_material });
+        ac_info.ac_elem_flags |= ACELEM_HIT;
         if let Some(a) = ac.actor.and_then(|h| self.actors.actor_mut(h)) {
-            a.col_chk_info.ac_hit_effect = at_info.toucher.effect;
+            a.col_chk_info.ac_hit_special_effect = at_info.at_dmg_info.hit_special_effect;
         }
-        ac_info.bumper.hit_pos = [hit_pos.x as i16, hit_pos.y as i16, hit_pos.z as i16];
-        if at_info.toucher_flags & ATELEM_AT_HITMARK == 0 && ac.col_type != COL_MATERIAL_METAL && ac.col_type != COL_MATERIAL_WOOD && ac.col_type != COL_MATERIAL_HARD {
-            ac_info.bumper_flags |= ACELEM_DRAW_HITMARK;
+        ac_info.ac_dmg_info.hit_pos = [hit_pos.x as i16, hit_pos.y as i16, hit_pos.z as i16];
+        if at_info.at_elem_flags & ATELEM_AT_HITMARK == 0 && ac.col_type != COL_MATERIAL_METAL && ac.col_type != COL_MATERIAL_WOOD && ac.col_type != COL_MATERIAL_HARD {
+            ac_info.ac_elem_flags |= ACELEM_DRAW_HITMARK;
         } else {
-            hit_effects(&mut self.set.hit_sfx, self.actors, at, at_info.toucher_flags, ac, ac_info.bumper_flags, ac_info.elem_type);
-            at_info.toucher_flags |= ATELEM_DREW_HITMARK;
+            hit_effects(&mut self.set.hit_sfx, self.actors, at, at_info.at_elem_flags, ac, ac_info.ac_elem_flags, ac_info.elem_material);
+            at_info.at_elem_flags |= ATELEM_DREW_HITMARK;
         }
     }
 
     /// `Collider_QuadSetNearestAC`: with `ATELEM_NEAREST`, only a hit nearer than this frame's
     /// nearest so far counts, and it undoes the AC side of the earlier one.
     fn quad_set_nearest_ac(&mut self, quad: &mut ColliderQuad, hit_pos: Vec3) -> bool {
-        if quad.info.toucher_flags & ATELEM_NEAREST == 0 {
+        if quad.info.at_elem_flags & ATELEM_NEAREST == 0 {
             return true;
         }
         let dist = math3d::vec3f_dist_sq(v3s(quad.dim.dc_mid), hit_pos);
         if dist < quad.dim.ac_dist_sq {
             quad.dim.ac_dist_sq = dist;
             let base = quad.info.at_hit;
-            let elem = quad.info.at_hit_info.map(|h| h.elem);
-            // Collider_ResetACBase(atHit), then Collider_ResetACElement(atHitInfo).
+            let elem = quad.info.at_hit_elem.map(|h| h.elem);
+            // Collider_ResetACBase(atHit), then Collider_ResetACElement(atHitElem).
             if let Some(r) = base {
                 if r == self.rj {
                     self.reset_ac_of_j.get_or_insert(AcReset { base: false, elem: None }).base = true;

@@ -89,11 +89,11 @@ pub const MIDO_LIMB_MAX: usize = 17;
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
     base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_NONE, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
     info: ColliderElementInit {
-        elem_type: ELEM_MATERIAL_UNK0,
-        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0, effect: 0, defense: 0 },
-        toucher_flags: ATELEM_NONE,
-        bumper_flags: ACELEM_NONE,
+        elem_material: ELEM_MATERIAL_UNK0,
+        at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0, hit_special_effect: 0, damage: 0 },
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0, hit_backlash: 0, defense: 0 },
+        at_elem_flags: ATELEM_NONE,
+        ac_elem_flags: ACELEM_NONE,
         oc_elem_flags: OCELEM_ON,
     },
     dim: Cylinder16 { radius: 36, height: 46, y_shift: 0, pos: [0; 3] },

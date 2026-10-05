@@ -41,6 +41,12 @@
 //! 9. If the transition ended the scene, `Play_Init` for the next entrance replaces this play
 //!    state (`PlayState::reinit`).
 //!
+//! While the game over menu is up (`IS_PAUSED`, `crate::kaleido`), steps 1's collision check and
+//! 2 don't run, nor the cameras; its states run in `Message_Update`'s place. While a game over is
+//! on otherwise (`crate::game_over`), `GameOver_Update` does. For four frames after an enemy's
+//! finishing blow (`actorCtx.freezeFlashTimer`) the actors and cutscenes stop and the screen
+//! flashes.
+//!
 //! The spikes' `World` ran step 3 and the foot IK right after Player's own update, and the
 //! target context after the cameras with the new view. Moving them to where the decomp has
 //! them changed none of the golden traces or renders, nor any test.
@@ -141,6 +147,8 @@ pub struct RenderState {
     pub switches: Vec<u32>,
     /// Don't blend into this state.
     pub teleported: bool,
+    /// `colorFilterParams` and `colorFilterTimer` (`Actor_Draw`'s tint), as the frame left them.
+    pub color_filter: (u16, u8),
 }
 
 /// `a` to `b` by `t`, the short way round.
@@ -188,6 +196,7 @@ impl RenderState {
             },
             switches: if t < 0.5 && self.switches.len() == next.switches.len() { self.switches.clone() } else { next.switches.clone() },
             teleported: false,
+            color_filter: next.color_filter,
         }
     }
 }
@@ -273,6 +282,10 @@ pub struct PlayState {
     /// `activeCamId`, `nextCamId`.
     pub active_cam_id: i16,
     pub next_cam_id: i16,
+    /// Player while his own update has him out of the arena (docs/adr/0007-actor-ownership.md),
+    /// as the camera sees him: set while his requests run, which in the C run inside his update
+    /// with him in place (`OnePointCutscene_Init` with `&this->actor`, `Play_InitCameraDataUsingPlayer`).
+    pub player_out_of_arena: Option<(PlayerView, crate::camera::CamActor)>,
     /// `z_camera.c`'s state every camera shares.
     pub cam_globals: CameraGlobals,
     /// The one-point cutscenes' statics (`crate::onepoint`): code segment statics, carried over
@@ -372,6 +385,12 @@ pub struct PlayState {
     pub vis_mono_color: [u8; 4],
     /// `haltAllActors`: the actors frozen (`Actor_UpdateAll` skipped).
     pub halt_all_actors: bool,
+    /// `pauseCtx`: the game over menu's stand-in (`crate::kaleido`; the pause menu itself isn't
+    /// ported).
+    pub pause_ctx: crate::kaleido::PauseContext,
+    /// `gameOverCtx` (`crate::game_over`), and `z_game_over.c`'s `sGameOverTimer`.
+    pub game_over_ctx: crate::game_over::GameOverContext,
+    pub game_over_timer: i16,
     /// `actorCtx.titleCtx`: the place name's title card.
     pub title_ctx: crate::title_card::TitleCardContext,
     /// The game's side of the audio (`crate::audio`): its statics are the code segment's, so a
@@ -422,6 +441,7 @@ impl PlayState {
             game_camera,
             sub_cameras: [None, None, None],
             active_cam_id: CAM_ID_MAIN,
+            player_out_of_arena: None,
             next_cam_id: CAM_ID_MAIN,
             cam_globals: CameraGlobals::main_init(),
             onepoint: crate::onepoint::OnePointStatics::new(&data.camera.onepoint),
@@ -476,6 +496,9 @@ impl PlayState {
             rain: Default::default(),
             vis_mono_color: [0; 4],
             halt_all_actors: false,
+            pause_ctx: Default::default(),
+            game_over_ctx: Default::default(),
+            game_over_timer: 0,
             title_ctx: Default::default(),
             audio: Default::default(),
             audio_side: None,
@@ -513,7 +536,14 @@ impl PlayState {
     /// The player's view for the camera (`Camera_InitDataUsingPlayer`, `Camera_Update`).
     pub fn player_view(&self) -> Option<PlayerView> {
         let h = self.player?;
-        let p = self.actors.get(h)?;
+        match self.actors.get(h) {
+            Some(p) => self.player_view_of_impl(p),
+            None => self.player_out_of_arena.as_ref().map(|(pv, _)| *pv),
+        }
+    }
+
+    /// `player_view` for Player given as himself (out of the arena in his own update).
+    pub fn player_view_of_impl(&self, p: &dyn ActorImpl) -> Option<PlayerView> {
         let pi = p.as_player()?;
         let adult = pi.adult();
         let a = p.base();
@@ -592,8 +622,9 @@ impl PlayState {
         self.tick_with(input);
     }
 
-    /// One actor's turn in `Actor_UpdateAll`.
-    fn update_actor(&mut self, h: ActorHandle, player_pos: Option<Vec3>) {
+    /// One actor's turn in `Actor_UpdateAll`. `can_freeze_category`: Player's state freezes this
+    /// actor's category (`sCategoryFreezeMasks`), and `exempt` the actors it doesn't freeze.
+    fn update_actor(&mut self, h: ActorHandle, player_pos: Option<Vec3>, can_freeze_category: bool, exempt: &[Option<ActorHandle>]) {
         let Some(mut a) = self.actors.take(h) else { return };
         let base = a.base_mut();
         if base.world_pos.y < -25000.0 {
@@ -613,6 +644,12 @@ impl PlayState {
         }
         if base_bank_dropped(a.base(), &self.object_ctx) {
             a.base_mut().kill();
+        } else if can_freeze_category && !exempt.contains(&Some(h)) {
+            // Frozen by Player's state (talking, dead, ...): only the damage is reset. (The
+            // ocarina's exception, ACTOR_FLAG_UPDATE_DURING_OCARINA, never comes up.)
+            a.base_mut().col_chk_info.reset_damage();
+            self.actors.put_back(h, a);
+            return;
         }
         let base = a.base_mut();
         if base.killed {
@@ -647,6 +684,9 @@ impl PlayState {
             if base.target_priority != 0 && target.is_none() {
                 base.target_priority = 0;
             }
+            if base.color_filter_timer != 0 {
+                base.color_filter_timer -= 1;
+            }
             self.cur_actor = Some(h);
             a.update(self);
             self.cur_actor = None;
@@ -680,28 +720,50 @@ impl PlayState {
         self.audio.frames += 1;
         self.update_transition();
         self.object_ctx.update_bank();
-        self.gameplay_frames += 1;
         self.input = input;
-        // Play_Update: KaleidoSetup_Update, only with no message box (gameMode GAMEMODE_NORMAL,
-        // no game over), before the actors.
-        if self.msg_ctx.msg_mode == crate::message::MSGMODE_NONE {
+        // Play_Update: KaleidoSetup_Update, only with no message box and no game over
+        // (gameMode GAMEMODE_NORMAL), before the actors.
+        if self.msg_ctx.msg_mode == crate::message::MSGMODE_NONE && self.game_over_ctx.state == crate::game_over::GAMEOVER_INACTIVE {
             self.kaleido_setup_update();
         }
-        self.room_finish_load();
-        for (sfx_id, pos) in self.col_chk.check(&mut self.actors) {
-            self.audio.play_sfx_general(sfx_id, pos, 4, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxS8::Zero);
+        let is_paused = self.pause_ctx.is_paused();
+        if !is_paused {
+            self.gameplay_frames += 1;
+            // (Rumble_SetUpdateEnabled.) An enemy's finishing blow (Enemy_StartFinishingBlow)
+            // stops the frame for four frames, flashing the screen on the odd ones.
+            let flash = self.actors.freeze_flash_timer;
+            if flash != 0 {
+                self.actors.freeze_flash_timer -= 1;
+            }
+            if flash != 0 && flash < 5 {
+                let t = self.actors.freeze_flash_timer;
+                self.transition.screen_fill = (t > 0 && t % 2 != 0).then_some([150, 150, 150, 80]);
+            } else {
+                self.room_finish_load();
+                for (sfx_id, pos) in self.col_chk.check(&mut self.actors) {
+                    self.audio.play_sfx_general(sfx_id, pos, 4, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxS8::Zero);
+                }
+                self.col_chk.clear();
+                if !self.halt_all_actors {
+                    self.update_all_actors();
+                }
+                // The cutscene system (z_demo.c): Cutscene_UpdateManual, then Cutscene_UpdateScripted.
+                self.update_manual();
+                self.update_scripted();
+                // (Effect_UpdateAll, EffectSs_UpdateAll: no effects are ported.)
+            }
         }
-        self.col_chk.clear();
-        if !self.halt_all_actors {
-            self.update_all_actors();
-        }
-        // The cutscene system (z_demo.c): Cutscene_UpdateManual, then Cutscene_UpdateScripted.
-        self.update_manual();
-        self.update_scripted();
         // (func_80095AA0 for both rooms: no room behaviour is ported.) The viewpoint.
         self.update_viewpoint();
-        // Message_Update (no pause menu or game over), then Interface_Update.
-        self.with_msg(|m, f| m.update(f));
+        // The game over menu (KaleidoScopeCall_Update) while paused, else GameOver_Update during
+        // a game over, else Message_Update; then Interface_Update.
+        if self.pause_ctx.is_paused() {
+            self.kaleido_scope_call_update();
+        } else if self.game_over_ctx.state != crate::game_over::GAMEOVER_INACTIVE {
+            self.game_over_update();
+        } else {
+            self.with_msg(|m, f| m.update(f));
+        }
         self.interface_update();
         // AnimTaskQueue_Update: every actor's queued animation requests.
         for h in self.actors.all() {
@@ -713,11 +775,13 @@ impl PlayState {
         // follow Player).
         self.sfx_source_update_all();
         self.letterbox.update(3);
-        if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
-            let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
-            self.follow_camera.update(&input, pos, facing, speed);
+        if !is_paused {
+            if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
+                let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
+                self.follow_camera.update(&input, pos, facing, speed);
+            }
+            self.camera_update(input);
         }
-        self.camera_update(input);
         // Environment_Update (pauseCtx.state 0: no pause menu): the rain, the time of day's
         // music, the lights (time doesn't pass).
         if self.assets.is_some() {
@@ -767,8 +831,13 @@ impl PlayState {
         if let Some(rp) = reticle_player {
             crate::target::draw_update(&mut self.target_ctx, &self.actors, self.view_proj, rp);
         }
-        // Message_Draw.
+        // Play_DrawOverlayElements: the pause menu's draw (the game over prompt's stick), then
+        // Message_Draw, then GameOver_FadeInLights.
+        self.kaleido_scope_draw_update();
         self.with_msg(|m, f| m.draw_update(f));
+        if self.game_over_ctx.state != crate::game_over::GAMEOVER_INACTIVE {
+            self.game_over_fade_in_lights();
+        }
         // The sandbox's void-out (a scene from the pack has Player's own).
         if self.assets.is_none() && self.player.and_then(|ph| self.actors.actor(ph)).is_some_and(|a| a.world_pos.y < -2000.0) {
             self.respawn();
@@ -1078,6 +1147,8 @@ impl PlayState {
             // ROOM_TYPE_DUNGEON.
             dungeon_room: self.room_ctx.cur.behavior_type1 == 1,
             in_cs_mode: self.play_in_cs_mode(),
+            paused: self.pause_ctx.is_paused(),
+            game_over_inactive: self.game_over_ctx.state == crate::game_over::GAMEOVER_INACTIVE,
         };
         self.interface_ctx.update(&mut self.save, &mut self.audio, &f);
     }
@@ -1197,14 +1268,33 @@ impl PlayState {
     /// `Actor_UpdateAll`.
     fn update_all_actors(&mut self) {
         self.spawn_setup_actors();
+        if self.actors.unk_02 != 0 {
+            self.actors.unk_02 -= 1;
+        }
+        // The actors Player's state doesn't freeze: the one it talks to (sp74, unless its text
+        // is Navi's, 0x6xx), Navi, what it holds (nothing here) and its children.
+        let pi = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player());
+        let player_state1 = pi.map(|p| p.state_flags1()).unwrap_or(0);
+        let talk_actor = pi.and_then(|p| p.talk_target().0);
+        let navi = pi.and_then(|p| p.navi_actor());
+        let player_text_id = self.player.and_then(|h| self.actors.actor(h)).map(|a| a.text_id).unwrap_or(0);
+        let sp74 = (player_state1 & crate::actor_ctx::PLAYER_STATE1_TALKING != 0 && player_text_id & 0xFF00 != 0x600).then_some(talk_actor).flatten();
+        let mut exempt = vec![sp74, navi];
         for cat in 0..ACTORCAT_MAX {
+            let can_freeze_category = player_state1 & crate::actor_ctx::S_CATEGORY_FREEZE_MASKS[cat] != 0;
             // A snapshot of the list: actors spawned now go to the head and wait for the
             // next frame, as with the decomp's linked lists.
             let list = self.actors.category(cat).to_vec();
             for h in list {
                 // Player updates before the later categories, so they see its new position.
                 let player_pos = self.player.and_then(|p| self.actors.actor(p)).map(|a| a.world_pos);
-                self.update_actor(h, player_pos);
+                // actor->parent == &player->actor.
+                let child_of_player = self.player.is_some() && self.actors.actor(h).is_some_and(|a| a.parent == self.player);
+                exempt.truncate(2);
+                if child_of_player {
+                    exempt.push(Some(h));
+                }
+                self.update_actor(h, player_pos, can_freeze_category, &exempt);
             }
             if cat == ACTORCAT_BG {
                 self.col.dyna.update_context();
@@ -1258,7 +1348,9 @@ impl PlayState {
         let mut actors = Vec::new();
         for h in self.actors.all() {
             if let Some(a) = self.actors.get_mut(h) {
-                actors.push((h, a.render_state()));
+                let mut rs = a.render_state();
+                rs.color_filter = (a.base().color_filter_params, a.base().color_filter_timer);
+                actors.push((h, rs));
                 a.base_mut().teleported = false;
             }
         }
@@ -1338,6 +1430,14 @@ impl PlayState {
             {
                 let (opa, xlu) = (out.opa.len(), out.xlu.len());
                 a.draw(rs, self, view, out);
+                // Actor_Draw's colour filter: the fog its draws in one list take, unless they set
+                // their own.
+                if let Some((fog, xlu_list)) = color_filter_fog(rs.color_filter) {
+                    let list = if xlu_list { &mut out.xlu[xlu..] } else { &mut out.opa[opa..] };
+                    for c in list.iter_mut().filter(|c| c.params.fog.is_none()) {
+                        c.params.fog = Some(fog);
+                    }
+                }
                 let at = (a.base().flags & crate::actor::ACTOR_FLAG_IGNORE_POINT_LIGHTS == 0).then_some(rs.pos);
                 let lights: Vec<eng_gfx::PointLight> = self.light_ctx.bind_all(at).into_iter().map(|l| eng_gfx::PointLight { dir: l.dir, color: l.color }).collect();
                 if !lights.is_empty() {
@@ -1371,8 +1471,39 @@ impl PlayState {
         let (env, fade) = self.draw_fills();
         out.opa_fill = env;
         out.xlu_fill = env;
-        out.overlay_fill = fade;
+        // Interface_Draw's black (unk_244, the game over's fade) over the transition's fade.
+        // (The C draws it after the HUD, which the game over has hidden by then.)
+        let unk_244 = self.interface_ctx.unk_244;
+        out.overlay_fill = if unk_244 > 0 { Some(match fade { Some(f) => crate::play_scene::compose_fill(f, [0, 0, 0, unk_244 as u8]), None => [0, 0, 0, unk_244 as u8] }) } else { fade };
     }
+}
+
+/// `Actor_Draw`'s colour filter (`colorFilterParams`, `colorFilterTimer`): the colour (grey,
+/// red or blue at the filter's intensity), then `func_80026400` (OPA) or `func_80026860` (XLU):
+/// `gSPFogPosition(0, 2800 * |cos| + 1700)` over the duration. Returns the fog and whether
+/// it's the XLU list's.
+pub fn color_filter_fog((params, timer): (u16, u8)) -> Option<(eng_gfx::FogOverride, bool)> {
+    use crate::actor::*;
+    if timer == 0 {
+        return None;
+    }
+    let intensity = colorfilter_get_colorintensity(params) | 7;
+    let mut color = [0u8, 0, 0, 255];
+    if params & COLORFILTER_COLORFLAG_GRAY != 0 {
+        color = [intensity, intensity, intensity, 255];
+    } else if params & COLORFILTER_COLORFLAG_RED != 0 {
+        color[0] = intensity;
+    } else {
+        color[2] = intensity;
+    }
+    let duration = colorfilter_get_duration(params) as i16;
+    // (PLATFORM_GC: a duration of 0 sets no fog.)
+    if duration == 0 {
+        return None;
+    }
+    let cos = eng_math::cos_s(((0x4000 / duration) as i32 * timer as i32) as i16);
+    let far = (2800.0 * cos.abs()) as i16 as i32 + 1700;
+    Some((crate::gbi::sp_fog_position(color, 0, far), params & COLORFILTER_BUFFLAG_XLU != 0))
 }
 
 /// Builds the game frame's `Input` from a scripted pad state, holding `prev` for edge

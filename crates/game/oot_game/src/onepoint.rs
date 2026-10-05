@@ -127,8 +127,10 @@ impl OnePointStatics {
 impl PlayState {
     /// What the camera functions read of actor `h` (`CamActor`).
     pub fn cam_actor(&self, h: ActorHandle) -> Option<CamActor> {
-        let a = self.actors.actor(h)?;
-        Some(self.cam_actor_of(h, a))
+        match self.actors.actor(h) {
+            Some(a) => Some(self.cam_actor_of(h, a)),
+            None => self.player_out_of_arena.as_ref().filter(|_| Some(h) == self.player).map(|(_, c)| *c),
+        }
     }
 
     /// `CamActor` for actor `h` given its base: an actor starting a one-point cutscene from its
@@ -616,7 +618,7 @@ impl PlayState {
             }
             4510 => {
                 let Some(a) = actor.map(|a| a.world_pos) else { return 0 };
-                let py = player.and_then(|h| self.actors.actor(h)).map(|a| a.world_pos.y).unwrap_or(0.0);
+                let py = self.player_view().map(|p| p.pos.y).unwrap_or(0.0);
                 let t = self.onepoint.table("D_8012133C");
                 let k = self.onepoint.kf(t, 0);
                 k.eye_target_init = a;
@@ -743,11 +745,11 @@ impl PlayState {
                     let z = if !self.save.adult { 100.0 } else { 120.0 };
                     self.onepoint.kf(t, 0).eye_target_init.z = z;
                     self.onepoint.kf(t, 1).eye_target_init.z = z;
-                    let state1 = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.state_flags1()).unwrap_or(0);
+                    let state1 = self.player_view().map(|p| p.state1).unwrap_or(0);
                     if state1 & PLAYER_STATE1_27 != 0 {
                         self.onepoint.kf(t, 2).at_target_init.z = 0.0;
                     }
-                    let Some((pos, shape_yaw)) = player.and_then(|h| self.actors.actor(h)).map(|a| (a.world_pos, a.shape_rot.y)) else { return 0 };
+                    let Some((pos, shape_yaw)) = self.player_view().map(|p| (p.pos, p.shape_yaw)) else { return 0 };
                     let mut sp_d0 = diff_to_sph_geo(pos, main.at);
                     sp_d0.yaw = sp_d0.yaw.wrapping_sub(shape_yaw);
                     self.onepoint.kf(t, 3).at_target_init = sph_geo_to_vec3(sp_d0);

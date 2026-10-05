@@ -31,6 +31,7 @@ pub mod bg_ydan_hasi;
 pub mod demo_tre_lgt;
 pub mod dummy_target;
 pub mod en_box;
+pub mod en_dekubaba;
 pub mod en_door;
 pub mod en_elf;
 pub mod en_girla;
@@ -60,7 +61,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -90,6 +91,7 @@ pub fn overlays() -> Overlays {
     o.register(bg_spot00_hanebasi::ACTOR_BG_SPOT00_HANEBASI, bg_spot00_hanebasi::BgSpot00Hanebasi::init);
     o.register(en_viewer::ACTOR_EN_VIEWER, en_viewer::EnViewer::init);
     o.register(object_kankyo::ACTOR_OBJECT_KANKYO, object_kankyo::ObjectKankyo::init);
+    o.register(en_dekubaba::ACTOR_EN_DEKUBABA, en_dekubaba::EnDekubaba::init);
     o
 }
 
@@ -108,6 +110,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(bg_spot00_hanebasi::bakes());
     v.extend(en_viewer::bakes());
     v.extend(object_kankyo::bakes());
+    v.extend(player::bakes());
     // z_kankyo.c's rain and lightning bolts.
     v.extend(oot_game::weather::bakes());
     // z_actor.c's target reticle.
@@ -184,6 +187,8 @@ pub trait PlayExt {
     fn equip_owned_unworn(&mut self) -> bool;
     /// Adds a dummy Z-target standing at `pos`.
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle;
+    /// Adds a dummy whose touch hurts Link with `effect` (`HIT_SPECIAL_EFFECT_*`).
+    fn spawn_hurting_target(&mut self, pos: Vec3, effect: u8) -> ActorHandle;
     /// Adds a `Bg_Ydan_Hasi` floating block with `header` (`gDTSlidingPlatformCol`) at `home`,
     /// floating on `water_surface`, with its collision built for the next frame.
     fn spawn_platform(&mut self, header: Arc<CollisionHeader>, home: Vec3, yaw: i16, water_surface: f32) -> ActorHandle;
@@ -235,6 +240,11 @@ impl PlayExt for PlayState {
     }
     fn equip_owned_unworn(&mut self) -> bool {
         self.pause_menu_equip()
+    }
+    fn spawn_hurting_target(&mut self, pos: Vec3, effect: u8) -> ActorHandle {
+        let h = self.spawn(Box::new(DummyTarget::hurting(pos, effect))).expect("spawn");
+        self.reset_blending();
+        h
     }
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle {
         let h = self.spawn(Box::new(DummyTarget::new(pos))).expect("spawn");

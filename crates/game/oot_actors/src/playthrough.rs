@@ -47,6 +47,14 @@
 //! the plateau once she has her text (`naviTimer` 600 on: 0x140, "the Great Deku Tree wants to
 //! talk to you").
 //!
+//! **A Deku Baba** (GAME-05 milestone 2, `Route::DekuBaba`, the `deku_baba` test and the
+//! `deku-baba` script) runs inside the Deku Tree on the `deku-tree-inside` preset (the intro
+//! seen), from a debug start on the top floor of room 0, 85 from the Deku Baba at (-195, 800,
+//! -195) and facing it (`DEKU_BABA_START`: the sandbox's `--at`, the test's `place_player`). Link
+//! stands until it bites him (half a heart: the exit's hit), then waits out its next bite, which
+//! misses from where the stagger left him; slashes it while it's stuck to the ground (weakened, it
+//! lies stretched out), runs in and cuts its stem, and ends once its head is a Deku Stick.
+//!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
 //! green rupees). The run cuts the four bushes by child 4 in turn until one drops (in the order
@@ -141,6 +149,12 @@ pub enum Step {
     WakeUp,
     /// C-Up to Navi, and her text read to the end.
     Navi,
+    /// A Deku Baba's bite has hit Link.
+    Bitten,
+    /// Slashed while stuck after a missed bite, it lies stretched out (`EnDekubaba_Vulnerable`).
+    BabaWeakened,
+    /// Its stem cut, its head is a Deku Stick (`EnDekubaba_DekuStick`).
+    BabaCut,
 }
 
 impl Step {
@@ -176,6 +190,9 @@ impl Step {
             Step::NaviSent => "navi_sent",
             Step::WakeUp => "wake_up",
             Step::Navi => "navi",
+            Step::Bitten => "bitten",
+            Step::BabaWeakened => "baba_weakened",
+            Step::BabaCut => "baba_cut",
         }
     }
 }
@@ -196,19 +213,40 @@ pub enum Route {
     /// The file select's new file: the opening, then the new save's run from where the wake-up
     /// leaves Link, with C-Up to Navi on the way (GAME-03 milestone 5).
     NewFileDekuTree,
+    /// Inside the Deku Tree, a Deku Baba's bite, then its stem cut (GAME-05 milestone 2), from a
+    /// debug start (`DEKU_BABA_START`).
+    DekuBaba,
 }
+
+/// The Deku Baba the `DekuBaba` route fights: room 0's `En_Dekubaba` (params 0) on the top floor.
+pub const DEKU_BABA_HOME: Vec3 = Vec3::new(-195.0, 800.0, -195.0);
+/// Where the `DekuBaba` route starts Link: 85 from the Deku Baba, on the floor outwards of it,
+/// facing it (yaw 0x2000).
+pub const DEKU_BABA_START: (Vec3, i16) = (Vec3::new(-255.104, 800.0, -255.104), 0x2000);
 
 impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
-        "ENTR_LINKS_HOUSE_0"
+        match self {
+            Route::DekuBaba => "ENTR_DEKU_TREE_0",
+            _ => "ENTR_LINKS_HOUSE_0",
+        }
     }
 
     /// The save preset it needs, if any.
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
+            Route::DekuBaba => Some("deku-tree-inside"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
+        }
+    }
+
+    /// Where Link starts instead of the entrance's spawn (a debug start), if anywhere.
+    pub fn start(self) -> Option<(Vec3, i16)> {
+        match self {
+            Route::DekuBaba => Some(DEKU_BABA_START),
+            _ => None,
         }
     }
 
@@ -239,6 +277,7 @@ impl Route {
             Route::MidoShop => "mido-shop",
             Route::NewSaveDekuTree => "new-save-deku-tree",
             Route::NewFileDekuTree => "new-file-deku-tree",
+            Route::DekuBaba => "deku-baba",
         }
     }
 
@@ -254,7 +293,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -311,6 +350,8 @@ enum Task {
     /// Idle until Navi has her text (Player's `naviTextId`, set by her update), then C-Up, and
     /// A through her text until the box closes and Link stands.
     TalkNavi,
+    /// Fight the Deku Baba whose home is here (`fight_baba`).
+    FightBaba(Vec3),
 }
 
 /// An actor the run talks to.
@@ -392,6 +433,7 @@ impl Playthrough {
             Route::MidoShop => Self::mido_shop(),
             Route::NewSaveDekuTree => Self::new_save_deku_tree(),
             Route::NewFileDekuTree => Self::new_file_deku_tree(),
+            Route::DekuBaba => vec![Task::FightBaba(DEKU_BABA_HOME)],
         };
         Playthrough {
             route,
@@ -868,6 +910,7 @@ impl Playthrough {
                 }
             }
             Task::CutBushes(bushes) => self.cut_bushes(w, &bushes),
+            Task::FightBaba(home) => self.fight_baba(w, home),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -903,6 +946,99 @@ impl Playthrough {
                         Some(if Self::text_waits(w) && (w.message_state() != TEXT_STATE_CHOICE || w.msg_ctx.choice_index == 0) { self.press(BTN_A) } else { idle })
                     }
                 }
+            }
+        }
+    }
+
+    /// `Task::FightBaba`'s phases in `sub`, keyed on the Deku Baba's action
+    /// (`oot_actors::en_dekubaba::Action`) and Link's health:
+    /// - 0: standing, until the bite hits (`Step::Bitten`);
+    /// - 1: Z held (locked on), until it's stuck after a missed bite (`EnDekubaba_RecoverFromAttackMiss`);
+    /// - 2: at its head, B within 50;
+    /// - 3: until it lies stretched out (`EnDekubaba_Vulnerable`, `Step::BabaWeakened`), else
+    ///   back to 2;
+    /// - 4: at its home at full tilt, B within 40;
+    /// - 5: until its head is a Deku Stick (`Step::BabaCut`), else back to 4.
+    fn fight_baba(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        use crate::en_dekubaba::{Action as BA, EnDekubaba};
+        use eng_input::pad::BTN_Z;
+        let idle = PadState::default();
+        let Some(b) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnDekubaba>(h).filter(|b| b.actor.home_pos.distance(home) < 1.0)) else {
+            // Its room's actors spawn (and wait for their object) in the first frames.
+            self.wait += 1;
+            if self.wait > 60 {
+                self.failure = Some(format!("no Deku Baba at {home}"));
+                return None;
+            }
+            return Some(idle);
+        };
+        let link = w.player().actor.world_pos;
+        let z = |mut p: PadState| {
+            p.button |= BTN_Z;
+            p
+        };
+        self.wait += 1;
+        if self.wait > 400 {
+            self.failure = Some(format!("the Deku Baba fight stalled in phase {} ({:?})", self.sub, b.action));
+            return None;
+        }
+        match self.sub {
+            0 => {
+                if w.save.health < w.save.health_capacity {
+                    self.steps.push((Step::Bitten, self.frame));
+                    self.done = Some(Step::Bitten);
+                    self.sub = 1;
+                    self.wait = 0;
+                }
+                Some(idle)
+            }
+            1 => {
+                if b.action == BA::RecoverFromAttackMiss {
+                    self.sub = 2;
+                    self.wait = 0;
+                }
+                Some(z(idle))
+            }
+            2 => {
+                let mut p = z(stick_towards(w, b.actor.world_pos, SLOW));
+                if Self::xz_dist(link, b.actor.world_pos) < 50.0 {
+                    p.button |= BTN_B;
+                    self.sub = 3;
+                    self.wait = 0;
+                }
+                Some(p)
+            }
+            3 => {
+                if b.action == BA::Vulnerable {
+                    self.steps.push((Step::BabaWeakened, self.frame));
+                    self.done = Some(Step::BabaWeakened);
+                    self.sub = 4;
+                    self.wait = 0;
+                } else if self.wait > 30 && b.action != BA::Attacked {
+                    self.sub = 2;
+                    self.wait = 0;
+                }
+                Some(z(idle))
+            }
+            4 => {
+                let mut p = z(stick_towards(w, home, FULL));
+                if Self::xz_dist(link, home) < 40.0 {
+                    p.button |= BTN_B;
+                    self.sub = 5;
+                    self.wait = 0;
+                }
+                Some(p)
+            }
+            _ => {
+                if b.action == BA::DekuStick {
+                    self.finish(Some(Step::BabaCut));
+                    return None;
+                }
+                if self.wait > 30 && b.action == BA::Vulnerable {
+                    self.sub = 4;
+                    self.wait = 0;
+                }
+                Some(idle)
             }
         }
     }

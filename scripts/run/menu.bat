@@ -28,6 +28,7 @@ echo    43  test-polish          GAME-04b's polish tests: the cutscene splines, 
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo    44  decomp-check         GAME-05's decomp upgrade check: a loose import against the old decomp's
+echo    45  test-damage          GAME-05's damage and health tests: the hit kinds, death and the game over, the Deku Baba
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -43,6 +44,9 @@ echo    26  game-music           Kokiri Forest with another sequence forced (the
 echo    29  game-night           Kokiri Forest at night: its nature ambience
 echo    33  game-door            A Kakariko house's door: its sounds, and Kakariko Village
 echo    37  game-crawlspace      At the crawlspace's mouth: through it and out (its one-point cutscene)
+echo    46  game-deku-baba       Inside the Deku Tree by a Deku Baba: its bite, its stem cut, death and the game over
+echo    47  game-deku-baba-fairy The same with a fairy in a bottle: dying, it revives Link
+echo    48  game-dummy           The training dummy, its touch hurting Link (asks which kind)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -54,6 +58,7 @@ echo    27  audio-wav            WAVs of Kokiri Forest's music, a note and a dru
 echo    30  sandbox-audio-log    The new file's run with its audio log and WAV, into out\run (opens the WAV)
 echo    34  sandbox-mido-shop-audio  The Mido and shop run's audio log and WAV, into out\run (opens the WAV)
 echo    35  ootx-sfx             Look a sound effect up by id or name
+echo    49  sandbox-deku-baba    The Deku Baba run's trace and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -107,10 +112,29 @@ if "%pick%"=="41" set "script=test-title-cards"
 if "%pick%"=="42" set "script=test-nightmare"
 if "%pick%"=="43" set "script=test-polish"
 if "%pick%"=="44" set "script=decomp-check"
+if "%pick%"=="45" set "script=test-damage"
+if "%pick%"=="46" set "script=game-deku-baba"
+if "%pick%"=="47" goto fairy
+if "%pick%"=="48" goto dummy
+if "%pick%"=="49" set "script=sandbox-deku-baba"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
 echo.
 echo %script% finished (exit code %errorlevel%).
+pause
+goto menu
+
+:fairy
+call "%~dp0game-deku-baba.bat" fairy
+echo game-deku-baba fairy finished (exit code %errorlevel%).
+pause
+goto menu
+
+:dummy
+set "kind="
+set /p "kind=Kind (none, fire, ice, electric, knockback): "
+call "%~dp0game-dummy.bat" %kind%
+echo game-dummy finished (exit code %errorlevel%).
 pause
 goto menu

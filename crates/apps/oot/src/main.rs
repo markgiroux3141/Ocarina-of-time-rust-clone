@@ -44,6 +44,13 @@ struct Cli {
     /// Then put Link at `x,y,z,yaw` (yaw in binary angle units).
     #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
     at: Vec<f32>,
+    /// A dummy target (the sandbox's stand-in enemy) this many units in front of --at.
+    #[arg(long, default_value_t = 0.0)]
+    target: f32,
+    /// The dummy hurts Link when he touches it: none (a plain hit), fire, ice, electric or
+    /// knockback.
+    #[arg(long)]
+    target_hurts: Option<String>,
     /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open),
     /// deku-tree-dead (also the tree dead, with the Kokiri Emerald), or sword-and-40-rupees (the
     /// Kokiri Sword worn and 40 rupees, for the shop).
@@ -118,6 +125,8 @@ fn main() -> Result<()> {
         new_file: cli.new_file,
         room: cli.room,
         at: cli.at,
+        target: cli.target,
+        target_hurts: cli.target_hurts.as_deref().map(oot::parse_hit_effect).transpose()?,
         audio: !cli.no_audio,
         music: cli.music,
         audio_log: false,

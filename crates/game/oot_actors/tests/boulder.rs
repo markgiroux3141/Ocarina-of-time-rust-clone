@@ -179,7 +179,7 @@ fn it_knocks_link_down() {
     }
     // The collision check of the frame before: its AT sphere on Link's AC cylinder. Player's
     // update: func_808382DC's AC branch, func_80837C0C(0, 4.0, 5.0, yaw from the boulder to
-    // Link, 20): Health_ChangeBy(-4) (the sphere's toucher damage, no damage table), 20
+    // Link, 20): Health_ChangeBy(-4) (the sphere's at_dmg_info damage, no damage table), 20
     // frames of invincibility, and with Link still (speed under 4), the stagger
     // (Player_Action_8084370C) from the front: D_808544B0[0].
     let p = w.player();

@@ -20,12 +20,15 @@ struct Material {
     env: vec4<f32>,
     // x: prim LOD fraction, y: alpha-test threshold (0 = off)
     params: vec4<f32>,
-    // x: flag bits (1 lit, 2 texgen, 4 opaque-output, 8 fog), y: two-cycle
+    // x: flag bits (1 lit, 2 texgen, 4 opaque-output, 8 fog), y: two-cycle, z/w: the draw's
+    // own fog multiplier and offset (f32 bits) when fog_color.w is 1
     flags: vec4<u32>,
     // Dynamic-segment texture scroll: slot 0 in xy, slot 1 in zw.
     uv_off: vec4<f32>,
     // params.z point lights bound for the draw: a direction, then a colour, each.
     lights: array<vec4<f32>, 6>,
+    // The draw's own fog colour (gDPSetFogColor before it), w 1 when it has one.
+    fog_color: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> g: Globals;
@@ -90,8 +93,14 @@ fn vs_main(v: VIn) -> VOut {
     let depth = max(-(g.view * vec4<f32>(v.pos, 1.0)).z, 0.001);
     let nf = g.fog.zw;
     let z_ndc = (nf.y + nf.x) / (nf.y - nf.x) - 2.0 * nf.x * nf.y / ((nf.y - nf.x) * depth);
-    o.fog = clamp((z_ndc * g.fog.x + g.fog.y) / 256.0, 0.0, 1.0);
-    if ((flags & 16u) != 0u && (g.fog.x != 0.0 || g.fog.y != 0.0)) {
+    var fm = g.fog.x;
+    var fo = g.fog.y;
+    if (m.fog_color.w > 0.5) {
+        fm = bitcast<f32>(m.flags.z);
+        fo = bitcast<f32>(m.flags.w);
+    }
+    o.fog = clamp((z_ndc * fm + fo) / 256.0, 0.0, 1.0);
+    if ((flags & 16u) != 0u && (fm != 0.0 || fo != 0.0)) {
         // With G_FOG the RSP writes the fog factor into the vertex alpha.
         o.shade.a = o.fog;
     }
@@ -154,7 +163,11 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
     }
     if ((m.flags.x & 8u) != 0u) {
         // G_RM_FOG_SHADE_A: fog colour weighted by the (fog-replaced) shade alpha.
-        c = vec4<f32>(mix(c.rgb, g.fog_color.rgb, i.fog), c.a);
+        var fog_rgb = g.fog_color.rgb;
+        if (m.fog_color.w > 0.5) {
+            fog_rgb = m.fog_color.rgb;
+        }
+        c = vec4<f32>(mix(c.rgb, fog_rgb, i.fog), c.a);
     }
     if ((m.flags.x & 4u) != 0u) {
         c.a = 1.0;

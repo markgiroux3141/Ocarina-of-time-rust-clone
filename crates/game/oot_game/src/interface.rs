@@ -170,6 +170,9 @@ pub struct InterfaceContext {
     pub navi_calling: bool,
     pub c_up_invisible: i16,
     pub c_up_timer: i16,
+    /// `unk_244`: a black fill over the screen at this alpha (`Interface_Draw`'s last rectangle),
+    /// which the game over menu raises to 255 before the respawn.
+    pub unk_244: i16,
 }
 
 impl Default for InterfaceContext {
@@ -208,9 +211,13 @@ impl Default for InterfaceContext {
             navi_calling: false,
             c_up_invisible: 0,
             c_up_timer: 0,
+            unk_244: 0,
         }
     }
 }
+
+/// `HUD_VISIBILITY_NOTHING` (`save.h`): the interface fades out entirely.
+pub const HUD_VISIBILITY_NOTHING: u16 = 1;
 
 /// `Interface_ChangeHudVisibilityMode`: the interface fades to `alpha_type`'s buttons (`nextHudVisibilityMode` steps it
 /// in `Interface_Update`).
@@ -237,6 +244,9 @@ pub struct IfaceFrame {
     pub dungeon_room: bool,
     /// `Player_InCsMode(play) || Play_InCsMode(play)`.
     pub in_cs_mode: bool,
+    /// `IS_PAUSED(&play->pauseCtx)`, `play->gameOverCtx.state == GAMEOVER_INACTIVE`.
+    pub paused: bool,
+    pub game_over_inactive: bool,
 }
 
 /// `Health_IsCritical` (`z_lifemeter.c`): at or under a heart (two, three, or 2.75 with more
@@ -621,8 +631,11 @@ impl InterfaceContext {
         if !self.initialised {
             return;
         }
-        // (No pause menu, minigame or cutscene layer; no game over.)
-        self.func_80083108(save, f);
+        // The buttons' status, unless paused or in a game over (func_80083108 checks the
+        // message box itself). (No minigame or cutscene layer.)
+        if !f.paused && f.game_over_inactive {
+            self.func_80083108(save, f);
+        }
         match save.next_hud_visibility_mode {
             1..=13 => {
                 let alpha = (255 - ((save.hud_visibility_mode_timer as i16) << 5)).max(0);
@@ -1109,7 +1122,7 @@ mod tests {
 
     fn frame() -> IfaceFrame {
         // SCENE_KOKIRI_FOREST.
-        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false }
+        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false, paused: false, game_over_inactive: true }
     }
 
     #[test]

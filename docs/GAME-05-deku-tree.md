@@ -8,8 +8,8 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The decomp upgrade: an address-based name map from `2f4c25d`'s names to the new commit's, the citations migrated by it, the importer on the new layout, the pack's record names renamed (a format bump); every test passes and the goldens are the same bytes | done |
-| 2 | Damage and health: Player taking damage (kinds 3 and 4, the hit while swimming, burning, the red flash), death and game over, the enemies' damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`) | |
-| 3 | The first enemies: `En_Dekubaba`, `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs); enemy targeting and `Camera_Battle1`; drops on death; the effects they need (`EffectSs`) | |
+| 2 | Damage and health: Player taking damage (kinds 3 and 4, the hit while swimming, burning, the red flash), death and game over, the enemies' damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`) | done |
+| 3 | The first enemies: `En_Dekubaba` (ported in milestone 2 but its effects), `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs); enemy targeting and `Camera_Battle1`; drops on death; the effects they need (`EffectSs`) | |
 | 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors | |
 | 5 | Items in use: Deku sticks and nuts, the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`) | |
 | 6 | Gohma: `Boss_Goma` and her larvae; the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
@@ -260,3 +260,187 @@ scripts\run\decomp-check.bat
 - `scripts\run\name-map.bat "D:\OOT Modding\OTT decomp\z64oot" "D:\OOT Modding\oot-main"
   "D:\OOT Modding\Debug Roms\baserom.z64"` regenerates the map (two Docker images and two full builds
   the first time). `git diff docs/name-map` should then be empty.
+
+## Milestone 2: damage and health
+
+**Answer:** done. Link takes every kind of hit the C has, flashes red while he's invincible,
+and can die: the game over runs to "Continue?" and back to the entrance, or a bottled fairy
+revives him. Enemies take damage from their damage tables. The exit holds:
+- the training dummy hits Link, with each hit kind;
+- a Deku Baba bites him (`En_Dekubaba`, ported whole but its effects), and he cuts it down for
+  a Deku Stick.
+
+The pack is format 17, in `out/data14` (Link's ice block). Decisions are in
+[ADR 0032](adr/0032-damage-death-and-the-game-over-stand-in.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 45 to 49):
+- `game-deku-baba.bat`: the game inside the Deku Tree, by a Deku Baba (`fairy` adds a bottled
+  fairy);
+- `game-dummy.bat KIND`: the training dummy, hurting Link with `none`, `fire`, `ice`,
+  `electric` or `knockback`;
+- `sandbox-deku-baba.bat`: the exit run headless, its trace and screenshots;
+- `test-damage.bat`: the milestone's tests.
+
+### What was built
+
+**Player taking damage** (`oot_actors::player`). The body hit, the stagger, the knockdown and
+the invincibility timer were already ported for the boulder (ADR 0020). New:
+- **`func_80837C0C`'s other kinds:**
+  - kind 3, frozen (`Player_Action_8084FB10`): the ice block, broken by mashing A or after its
+    timer, with `NA_SE_PL_FREEZE_S` and `NA_SE_PL_ICE_BROKEN`;
+  - kind 4, electrified (`Player_Action_8084FBF4`): 20 frames, the body's shock
+    (`bodyShockTimer`, the sparks' sounds);
+  - the hit while swimming (`Player_Action_8084E30C`, `func_80832594`'s knockback in the water).
+- **Burning** (`func_8083819C`, `func_8083821C`, `func_80838280`, the body's flames): a fire hit
+  sets Link burning, and dying without the Goron Tunic in a hot room or on a hot floor sets him
+  burning again. A Deku Shield on his arm
+  burns away (`Inventory_DeleteEquipment`), its pieces left as an `Item_Shield` placeholder.
+- **The red flash** (`Player_Draw`): `damageFlickerAnimCounter` and `Gfx_SetFog2`, while the
+  invincibility timer runs. The engine takes a per-draw fog for it (ADR 0032).
+
+**Death and game over.**
+- **Player:** at no health `func_80836448` starts the game over (`GAMEOVER_DEATH_START`), or the
+  revival (`GAMEOVER_REVIVE_START`) when a bottle holds a fairy (`Inventory_ConsumeFairy`). The
+  death animations on land and in the water (`Player_Action_80843CEC`,
+  `Player_Action_8084E368`), the voice (`NA_SE_VO_LI_DOWN`), the letterbox, and `func_80843AE8`:
+  the fall's end, or the revival's fairy and Link getting up.
+- **`z_game_over.c`** (`oot_game::game_over`): `GameOver_Update` whole, its resets (the spoiling
+  items, the temporary B button, the HUD), the game over lights (`Environment_InitGameOverLights`,
+  `_FadeIn`, `_FadeOut`), and the revival's states 20 to 24.
+- **The game over menu's stand-in** (`oot_game::kaleido`): the pause menu's game over states 8
+  to 17 run with the C's timers and inputs, undrawn; "Continue? Yes" respawns at the entrance
+  with three hearts. ADR 0032.
+- **`Play_Update`'s order:** the game over and the pause menu stop the actors, the collision
+  check and the cutscenes as the C's `IS_PAUSED` does; `GameOver_Update` runs in
+  `Message_Update`'s place.
+- **`Actor_UpdateAll`'s freezes:** the category masks by Player's state, the colour filter's
+  timer, the finishing blow's freeze (`Enemy_StartFinishingBlow`).
+
+**Enemy damage.**
+- `DamageTable` and its lookup, the `DMG_*` flags, `DMG_ENTRY`.
+- `CollisionCheck_ApplyDamage` with its four shapes (`CollisionCheck_ApplyDamageJntSph`, `Cyl`,
+  `Tris`, `Quad`), and `CollisionCheck_SetATvsAC`'s special effect and backlash under main's
+  names (`hitSpecialEffect`, `hitBacklash`).
+- `Actor_ApplyDamage`, `Actor_SetColorFilter` and the filter's draw (`func_80026400`), and
+  `Actor_SetDropFlagJntSph` with the drop table's override for an arrow's or magic's kill.
+
+**`En_Dekubaba`** (`oot_actors::en_dekubaba`, pulled forward from milestone 3): every action,
+both sizes, the damage tables, the drops (Deku Nuts, the Deku Stick), its floor shadow and its
+skeleton. Its seven spheres follow the head and the stem through `sys_matrix.c`'s functions,
+which `oot_game::sys_matrix` now has (`Matrix_Translate`, `_Scale`, `_RotateZYX`,
+`_MultVec3f`...).
+
+**The training dummy** (`dummy_target`): takes Link's hits through the Deku Baba's table, and
+with `--target-hurts KIND` hurts him.
+
+**Save presets:** `deku-tree-inside` (the Deku Tree's intro seen, `EVENTCHKINF_A8`) and
+`deku-tree-inside-fairy` (a fairy in the first bottle).
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game15`, `OOT_DATA_DIR=out/data14`): 345
+passed, 0 failed, 1 ignored. 26 are new, with their expectations from the C:
+- **`oot_game --test damage`** (13):
+  - `Health_ChangeBy`, the double defence's shift, `Actor_ApplyDamage`;
+  - `DMG_ENTRY`, the table's lookup (by the highest flag set);
+  - a JntSph hit sphere by sphere (the C stops after the first unless `OC2_FIRST_ONLY`);
+  - a hard collider, the special effect reaching its actor;
+  - `Gfx_SetFog`'s multiplier and offset, the colour filter's fog over its duration;
+  - `Inventory_ConsumeFairy`, `Inventory_DeleteEquipment`, the drop flag.
+- **`oot_actors --test damage`** (13):
+  - each hit kind's response and timers: the stagger, the knockdown, frozen, electrified (19
+    frames after the hit's), burning and the shield burnt, the swimming hit;
+  - the flash's fog following the invincibility timer;
+  - death frame by frame: the game over states' run lengths (`DEATH_START`, `WAIT_GROUND`,
+    `DELAY_MENU` 18 frames off the pause, the menu's states 8 to 14 with "GAME OVER" 30 frames,
+    the delay 40, the window 10), then No, Continue, the fade's 26 frames, and the respawn;
+  - the fairy's revival (states 22, 23, 24: 50, 64 and 50 frames);
+  - the Deku Baba's tables for the Kokiri Sword, child and adult;
+  - the exit's two runs, and Link's sword on the dummy.
+
+**The exit run** (`Route::DekuBaba`, `--script deku-baba`): Link starts on the Deku Tree's top
+floor, facing a Deku Baba 85 away. It bites him at frame 31 (`bitten`, half a heart), he hits
+it while it's stuck after a missed bite (`baba_weakened`, 143), then cuts its stem
+(`baba_cut`, 182). Its screenshots show the Baba drawn, the bite and the stick.
+
+**The goldens.** Against milestone 1's build (`target/game14`, c806460, on data13):
+- **`course_pit/sheet.png`** differs on its last six tiles (frames 48 to 58): the landing's
+  fall damage now flashes Link red. Its trace is the same bytes.
+- Every other trace and render is the same bytes. The freezes don't reach them, since no
+  golden's actors run while Link talks to an actor that stops them or dies.
+- **New case `deku_baba`:** the exit run's trace, 182 frames, the same bytes over two runs.
+
+Re-recorded and logged in [golden/README.md](../golden/README.md): 86 hashes, 62 cases.
+
+### Decisions
+
+- **[ADR 0032](adr/0032-damage-death-and-the-game-over-stand-in.md):**
+  - the game over menu's states run undrawn, "Continue? Yes" as the C;
+  - `En_Dekubaba` ported whole now;
+  - a per-draw fog in the engine for the flash and the colour filter;
+  - `Actor_UpdateAll`'s freezes;
+  - Player's new `Rand` calls on the game's generator through `PlayIo`;
+  - the dummy's colliders;
+  - pack format 17.
+- **The renderer's fallback fog takes the camera's clip planes.** Where a scene has no fog (the
+  test course), the fallback's range was 1 to 2, so the red flash's factor saturated. The
+  scenes' own fog is unchanged.
+- **The exit run starts on the Baba's floor,** not at the Deku Tree's entrance: the scripted
+  run is the bite and the kill. The intro cutscene is skipped by the preset
+  (`EVENTCHKINF_A8`), since it gets in the way of a run that starts inside.
+- **The comment on the damage table's lookup was wrong.** It said several flags read the
+  lowest; the C's loop shifts the flags right until they're 0, so it reads the highest. Only no
+  flag at all is the bug (index 32, past the table).
+
+### Known gaps
+
+- **No effects:** the Deku Baba's dirt, dust and flames, Link's sparks and flames as particles,
+  the ice's pieces. Their `Rand` calls aren't made (milestone 3, with `EffectSs`).
+- **The game over menu isn't drawn**, and its "Save? Yes" doesn't write the save to SRAM.
+  "Continue? No" respawns, where the C goes to the title screen. Milestone 5's pause menu.
+- **No rumble** (`Rumble_Request`).
+- **`Item_Shield`** (the burnt Deku Shield's pieces) is a placeholder, and the shield's bounce
+  off an attack (`hitBacklash`'s recoil on Player) isn't ported.
+- **The idle fidget keeps Player's own generator** (ADR 0032).
+- **`ActorShadow_DrawCircle`** isn't ported for any actor; the Deku Baba draws only its own
+  floor shadow.
+- **One swing can hit the dummy on several frames:** it never changes state on a hit, where
+  an enemy's reaction keeps the same swing from hitting it again.
+- **The Deku Stick drops just below Link's reach** in the exit run's spot; the run doesn't pick
+  it up.
+- **No guarding with the shield (R).** Player's guard isn't ported (BACKLOG #4): the shield's
+  collider (`shieldQuad`) is never registered, and Link can't block. It's milestone 3's, since
+  the Deku Scrubs' nuts are beaten by deflecting them.
+
+### Fixes after playing by hand
+
+- **The death and revival cameras ignored Link** (BACKLOG #16). Dying with a bottled fairy, the
+  camera went to the floor near the room's origin and stayed there after Link got up. Player
+  starts the death's one-point cutscene (9806, `Camera_KeepOn4` on `CAM_SET_TURN_AROUND`) and
+  the revival's (9908, `Camera_Unique9`) from his own update, where he's out of the actor arena
+  (ADR 0007). So `OnePointCutscene_SetInfo` found no Player:
+  - 9806's camera turned about (0, 0, 0);
+  - 9908's setup returned early, so its camera never ran its keyframes, never timed out, and
+    the main camera never got control back.
+
+  Now the play state holds Player's camera view while his requests run
+  (`PlayState::player_out_of_arena`), as the C has him in place. The fairy test checks both
+  cameras and the return to the main camera. The crawlspace's 9601 and 9602 don't read Player,
+  and every golden is unchanged.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\test-damage.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-deku-baba.bat
+```
+
+By hand:
+- `game-deku-baba.bat`: stand still and the Baba bites; Q (Z) locks on, E (B) slashes. Let it
+  bite you down to nothing: the game over runs; at "Save?" in the console, D then Space for No;
+  at "Continue?" Space, and Link starts again at the entrance.
+- `game-deku-baba.bat fairy`: dying, the fairy revives Link.
+- `game-dummy.bat ice` (or `fire`, `electric`, `knockback`, `none`): walk into the dummy.

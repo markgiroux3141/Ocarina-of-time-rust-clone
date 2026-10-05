@@ -142,6 +142,9 @@ pub struct SaveContext {
     pub event_chk_inf: [u16; 14],
     pub item_get_inf: [u16; 4],
     pub inf_table: [u16; 30],
+    /// `eventInf`: the flags of an event in progress (a minigame, the marathon), which a game
+    /// over clears.
+    pub event_inf: [u16; 4],
     /// `playerName`, in the file select's character codes.
     pub player_name: [u8; 8],
     /// `deaths`.
@@ -192,6 +195,9 @@ pub struct SaveContext {
     /// `language`: English.
     pub language: u8,
 }
+
+/// `EVENTCHKINF_A8` (`save.h`): the Deku Tree's intro seen.
+pub const EVENTCHKINF_A8: u16 = 0xA8;
 
 /// `GAMEMODE_NORMAL` (`save.h`).
 pub const GAMEMODE_NORMAL: u8 = 0;
@@ -299,6 +305,29 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "deku-tree-inside",
+        about: "deku-tree-open, and the Deku Tree's intro seen (EVENTCHKINF_A8, sEntranceCutsceneTable's flag for ENTR_DEKU_TREE_0), so entering it plays no cutscene",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+        },
+    },
+    SavePreset {
+        name: "deku-tree-inside-fairy",
+        about: "deku-tree-inside, and a fairy in the first bottle (ITEM_BOTTLE_FAIRY in SLOT_BOTTLE_1), which revives Link once (Inventory_ConsumeFairy)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            s.inventory.items[crate::item::SLOT_BOTTLE_1] = crate::item::ITEM_BOTTLE_FAIRY;
+        },
+    },
+    SavePreset {
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {
@@ -348,6 +377,7 @@ impl SaveContext {
             event_chk_inf: [0; 14],
             item_get_inf: [0; 4],
             inf_table: [0; 30],
+            event_inf: [0; 4],
             player_name: [0x3E; 8],
             deaths: 0,
             navi_timer: 0,

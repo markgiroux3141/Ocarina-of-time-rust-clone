@@ -37,11 +37,11 @@ const CYLINDER_INITS: [ColliderCylinderInit; 2] = [
     ColliderCylinderInit {
         base: ColliderInit { col_type: COL_MATERIAL_HARD, at_flags: AT_NONE, ac_flags: AC_ON | AC_HARD | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
         info: ColliderElementInit {
-            elem_type: ELEM_MATERIAL_UNK0,
-            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC1_FFFE, effect: 0, defense: 0 },
-            toucher_flags: ATELEM_NONE,
-            bumper_flags: ACELEM_ON,
+            elem_material: ELEM_MATERIAL_UNK0,
+            at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0, hit_special_effect: 0, damage: 0 },
+            ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC1_FFFE, hit_backlash: 0, defense: 0 },
+            at_elem_flags: ATELEM_NONE,
+            ac_elem_flags: ACELEM_ON,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 10, height: 18, y_shift: -2, pos: [0; 3] },
@@ -49,11 +49,11 @@ const CYLINDER_INITS: [ColliderCylinderInit; 2] = [
     ColliderCylinderInit {
         base: ColliderInit { col_type: COL_MATERIAL_HARD, at_flags: AT_NONE, ac_flags: AC_ON | AC_HARD | AC_TYPE_PLAYER, oc_flags1: OC1_ON | OC1_TYPE_ALL, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
         info: ColliderElementInit {
-            elem_type: ELEM_MATERIAL_UNK0,
-            toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
-            bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC1_FFF6, effect: 0, defense: 0 },
-            toucher_flags: ATELEM_NONE,
-            bumper_flags: ACELEM_ON,
+            elem_material: ELEM_MATERIAL_UNK0,
+            at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0, hit_special_effect: 0, damage: 0 },
+            ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0x4FC1_FFF6, hit_backlash: 0, defense: 0 },
+            at_elem_flags: ATELEM_NONE,
+            ac_elem_flags: ACELEM_ON,
             oc_elem_flags: OCELEM_ON,
         },
         dim: Cylinder16 { radius: 55, height: 70, y_shift: 0, pos: [0; 3] },
@@ -115,7 +115,7 @@ impl EnIshi {
         let ty = self.ty();
         // Actor_HasParent: Player doesn't lift things yet.
         let hit = self.collider.base.ac_flags & AC_HIT != 0;
-        if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_info.is_some_and(|h| h.toucher.dmg_flags & DMG_BREAKS_ROCK != 0) {
+        if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_elem.is_some_and(|h| h.at_dmg_info.dmg_flags & DMG_BREAKS_ROCK != 0) {
             // EnIshi_DropCollectible.
             let mut drop_params = (self.actor.params >> 8) & 0xF;
             if drop_params >= 0xD {

@@ -51,11 +51,11 @@ const SCENE_KOKIRI_FOREST: u16 = 0x55;
 /// `sJntSphElementsInit`: one sphere of 58, AT `0x20000000` with 4 damage.
 const JNT_SPH_ELEMENTS: [ColliderJntSphElementInit; 1] = [ColliderJntSphElementInit {
     info: ColliderElementInit {
-        elem_type: ELEM_MATERIAL_UNK0,
-        toucher: ColliderElementDamageInfoAT { dmg_flags: 0x2000_0000, effect: 0x00, damage: 0x04 },
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0, effect: 0, defense: 0 },
-        toucher_flags: ATELEM_ON | ATELEM_SFX_NORMAL,
-        bumper_flags: ACELEM_NONE,
+        elem_material: ELEM_MATERIAL_UNK0,
+        at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0x2000_0000, hit_special_effect: 0x00, damage: 0x04 },
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0, hit_backlash: 0, defense: 0 },
+        at_elem_flags: ATELEM_ON | ATELEM_SFX_NORMAL,
+        ac_elem_flags: ACELEM_NONE,
         oc_elem_flags: OCELEM_ON,
     },
     limb: 0,

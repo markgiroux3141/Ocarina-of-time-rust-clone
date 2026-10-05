@@ -10,7 +10,7 @@ use glam::{Mat3, Mat4, Vec3};
 
 use crate::Renderer;
 use crate::device::COLOR_FORMAT;
-use crate::materials::{MATERIAL_STRIDE, MaterialUniform, material_uniform, material_uniform_with};
+use crate::materials::{MATERIAL_STRIDE, MaterialUniform, material_uniform, material_uniform_with, uses_fog};
 use crate::pipelines::{GpuVertex, PipelineKey};
 
 pub struct GpuModel {
@@ -175,15 +175,16 @@ impl GpuModel {
     }
 
     /// Rewrites the uniforms of materials that read dynamic segments (scrolling tile sizes,
-    /// draw-config colours) for this frame's values, and of the lit ones for the draw's point
-    /// lights.
-    pub fn set_draw_values(&self, queue: &wgpu::Queue, v: Option<&SegmentValues>, lights: &[eng_gfx::PointLight]) {
+    /// draw-config colours) for this frame's values, of the lit ones for the draw's point
+    /// lights, and of the fogged ones for the draw's fog (`fog_changed`: it differs from the
+    /// one they were last written with).
+    pub fn set_draw_values(&self, queue: &wgpu::Queue, v: Option<&SegmentValues>, lights: &[eng_gfx::PointLight], fog: Option<&eng_gfx::FogOverride>, fog_changed: bool) {
         for (i, m) in self.materials.iter().enumerate() {
             let dynamic = self.dynamic.contains(&i);
-            if !(dynamic && v.is_some()) && !m.lit {
+            if !(dynamic && v.is_some()) && !m.lit && !(fog_changed && uses_fog(m)) {
                 continue;
             }
-            let u = material_uniform_with(m, v.filter(|_| dynamic), lights);
+            let u = material_uniform_with(m, v.filter(|_| dynamic), lights, fog);
             queue.write_buffer(&self.material_buf, i as u64 * MATERIAL_STRIDE, bytemuck::bytes_of(&u));
         }
     }

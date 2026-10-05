@@ -57,6 +57,24 @@ pub const ACTOR_FLAG_CAN_PRESS_SWITCHES: u32 = 1 << 26;
 /// Can't be targeted by the arrow-pointed search (`Attention_WeightedDistToPlayerSq`).
 pub const ACTOR_FLAG_LOCK_ON_DISABLED: u32 = 1 << 27;
 
+// `colorFilterParams` (`actor.h`): `Actor_SetColorFilter`'s colour, intensity, list and duration.
+pub const COLORFILTER_COLORFLAG_GRAY: u16 = 0x8000;
+pub const COLORFILTER_COLORFLAG_RED: u16 = 0x4000;
+pub const COLORFILTER_COLORFLAG_BLUE: u16 = 0x0000;
+pub const COLORFILTER_INTENSITY_FLAG: i16 = 0x8000u16 as i16;
+pub const COLORFILTER_BUFFLAG_XLU: u16 = 0x2000;
+pub const COLORFILTER_BUFFLAG_OPA: u16 = 0x0000;
+
+/// `COLORFILTER_GET_COLORINTENSITY`.
+pub fn colorfilter_get_colorintensity(params: u16) -> u8 {
+    ((params & 0x1F00) >> 5) as u8
+}
+
+/// `COLORFILTER_GET_DURATION`.
+pub fn colorfilter_get_duration(params: u16) -> u16 {
+    params & 0xFF
+}
+
 pub const UPDBGCHECKINFO_FLAG_0: u32 = 1 << 0; // walls
 pub const UPDBGCHECKINFO_FLAG_1: u32 = 1 << 1; // ceiling
 pub const UPDBGCHECKINFO_FLAG_2: u32 = 1 << 2; // floor and water
@@ -148,7 +166,20 @@ pub struct Actor {
     /// `sfx`: a sound the actor asks `Actor_DrawAll` to play this frame (`Actor_PlaySfx_Flagged2` and
     /// the rest, `Actor_UpdateFlaggedAudio`); `Actor_UpdateAll` clears it first.
     pub sfx: u16,
+    /// `colorFilterParams`, `colorFilterTimer`: `Actor_SetColorFilter`'s tint (`Actor_Draw`'s fog),
+    /// counted down by `Actor_UpdateAll` before each update.
+    pub color_filter_params: u16,
+    pub color_filter_timer: u8,
+    /// `dropFlag`: what the last hit was (`Actor_SetDropFlag`): an arrow's or magic's kind, which
+    /// an enemy's drop can depend on.
+    pub drop_flag: u8,
+    /// `naviEnemyId` (`NAVI_ENEMY_*`): what Navi says about the actor (`NAVI_ENEMY_NONE`, 0xFF, for
+    /// none).
+    pub navi_enemy_id: u8,
 }
+
+/// `NAVI_ENEMY_NONE`.
+pub const NAVI_ENEMY_NONE: u8 = 0xFF;
 
 impl Actor {
     /// A spawned actor as `Actor_Spawn` + `Actor_Init` set it up before the actor's own init:
@@ -204,6 +235,75 @@ impl Actor {
             projected_pos: Vec3::ZERO,
             projected_w: 0.0,
             sfx: 0,
+            color_filter_params: 0,
+            color_filter_timer: 0,
+            drop_flag: 0,
+            // Actor_Init: actor->naviEnemyId = NAVI_ENEMY_NONE.
+            navi_enemy_id: NAVI_ENEMY_NONE,
+        }
+    }
+
+    /// `Actor_ApplyDamage`: this frame's damage off `colChkInfo.health`, down to 0. Returns the
+    /// health left.
+    pub fn apply_damage(&mut self) -> u8 {
+        let c = &mut self.col_chk_info;
+        if c.health <= c.damage {
+            c.health = 0;
+        } else {
+            c.health -= c.damage;
+        }
+        c.health
+    }
+
+    /// `Actor_SetColorFilter`: tint the actor `color_flag` (`COLORFILTER_COLORFLAG_*`) at up to
+    /// `color_intensity_max`, in the OPA or XLU list (`buf_flag`), for `duration` frames.
+    ///
+    /// @bug (game): the gray check compares the s16 `colorFlag` with 0x8000, which an s16 can't
+    /// hold, so the light arrow's sound never plays.
+    pub fn set_color_filter(&mut self, color_flag: u16, color_intensity_max: i16, buf_flag: u16, duration: u16) {
+        self.color_filter_params = color_flag | buf_flag | (((color_intensity_max & 0xF8) as u16) << 5) | duration;
+        self.color_filter_timer = duration as u8;
+    }
+
+    /// `Actor_SetDropFlagJntSph`: `dropFlag` from every sphere's hit, the last element first (an
+    /// ice or fire magic hit with `freeze_flag` freezes the actor for the hit's damage in frames).
+    pub fn set_drop_flag_jnt_sph(&mut self, jnt_sph: &crate::collision_check::ColliderJntSph, freeze_flag: bool) {
+        self.drop_flag = 0;
+        for e in jnt_sph.elements.iter().rev() {
+            let flag = match e.info.ac_hit_elem {
+                None => 0,
+                Some(h) => self.drop_flag_of(&h.at_dmg_info, freeze_flag),
+            };
+            self.drop_flag |= flag;
+        }
+    }
+
+    /// `Actor_SetDropFlag`'s and `Actor_SetDropFlagJntSph`'s flag for one hit.
+    fn drop_flag_of(&mut self, at: &crate::collision_check::ColliderElementDamageInfoAT, freeze_flag: bool) -> u8 {
+        use crate::collision_check::*;
+        let f = at.dmg_flags;
+        if freeze_flag && f & (DMG_UNKNOWN_1 | DMG_MAGIC_ICE | DMG_MAGIC_FIRE) != 0 {
+            self.freeze_timer = at.damage as u16;
+            0x00
+        } else if f & DMG_ARROW_FIRE != 0 {
+            0x01
+        } else if f & DMG_ARROW_ICE != 0 {
+            0x02
+        } else if f & DMG_ARROW_UNK1 != 0 {
+            0x04
+        } else if f & DMG_ARROW_UNK2 != 0 {
+            0x08
+        } else if f & DMG_ARROW_UNK3 != 0 {
+            0x10
+        } else if f & DMG_ARROW_LIGHT != 0 {
+            0x20
+        } else if f & DMG_MAGIC_LIGHT != 0 {
+            if freeze_flag {
+                self.freeze_timer = at.damage as u16;
+            }
+            0x40
+        } else {
+            0x00
         }
     }
 

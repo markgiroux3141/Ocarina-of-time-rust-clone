@@ -353,6 +353,49 @@ pub fn health_change_by(save: &mut SaveContext, audio: Option<&mut GameAudio>, m
     true
 }
 
+/// `Inventory_ConsumeFairy` (`z_parameter.c`): a bottled fairy is used up (the first bottle
+/// holding one; the first C button holding one first, whose bottle then empties). True if
+/// there was one. (`Interface_LoadItemIcon1`: the icons are drawn from the items.)
+pub fn inventory_consume_fairy(save: &mut SaveContext) -> bool {
+    let mut bottle_slot = slot(ITEM_BOTTLE_FAIRY);
+    for mut i in 0..4 {
+        if save.inventory.items[bottle_slot + i] == ITEM_BOTTLE_FAIRY {
+            for j in 1..4 {
+                if save.equips.button_items[j] == ITEM_BOTTLE_FAIRY {
+                    save.equips.button_items[j] = ITEM_BOTTLE_EMPTY;
+                    i = 0;
+                    bottle_slot = save.equips.c_button_slots[j - 1] as usize;
+                    break;
+                }
+            }
+            save.inventory.items[bottle_slot + i] = ITEM_BOTTLE_EMPTY;
+            return true;
+        }
+    }
+    false
+}
+
+/// `Inventory_DeleteEquipment` (`z_inventory.c`): the piece of `equipment` worn is taken off and
+/// out of the inventory (the Kokiri tunic is put on in a tunic's place; a sword's loss empties
+/// B). Returns the piece's value (0 for none). The caller runs `Player_SetEquipmentData`, as
+/// the C does here. (`pauseCtx.cursorSpecialPos`: no pause menu.)
+pub fn inventory_delete_equipment(save: &mut SaveContext, equipment: usize) -> u16 {
+    let mut equip_value = save.equips.equipment & EQUIP_MASKS[equipment];
+    if equip_value != 0 {
+        equip_value >>= EQUIP_SHIFTS[equipment];
+        save.equips.equipment &= EQUIP_NEG_MASKS[equipment];
+        save.inventory.equipment ^= owned_equip_flag(equipment, equip_value - 1);
+        if equipment == EQUIP_TYPE_TUNIC {
+            save.equips.equipment |= EQUIP_VALUE_TUNIC_KOKIRI << (EQUIP_TYPE_TUNIC * 4);
+        }
+        if equipment == EQUIP_TYPE_SWORD {
+            save.equips.button_items[0] = ITEM_NONE;
+            save.inf_table[crate::save::INFTABLE_INDEX_1DX] = 1;
+        }
+    }
+    equip_value
+}
+
 /// `Rupees_ChangeBy`: counted in by `Interface_Update`.
 pub fn rupees_change_by(save: &mut SaveContext, rupee_change: i16) {
     save.rupee_accumulator += rupee_change;

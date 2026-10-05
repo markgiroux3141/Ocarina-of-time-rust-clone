@@ -26,6 +26,8 @@ struct Instance {
     posed: Option<(Mat4, Vec<Mat4>)>,
     /// The point lights its lit materials were last written with.
     lights: Vec<eng_gfx::PointLight>,
+    /// The fog its fogged materials were last written with.
+    fog: Option<eng_gfx::FogOverride>,
 }
 
 /// Uploaded meshes by key, with their per-frame instances.
@@ -67,7 +69,7 @@ impl MeshCache {
                 self.missing.insert(cmd.mesh.clone(), ());
                 return false;
             };
-            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new() });
+            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None });
         }
         let inst = &mut list[n];
         if inst.posed.as_ref().is_none_or(|(t, b)| *t != cmd.transform || *b != cmd.bones) {
@@ -75,9 +77,11 @@ impl MeshCache {
             inst.posed = Some((cmd.transform, cmd.bones.clone()));
         }
         let lights_changed = inst.lights != cmd.params.lights;
-        if (cmd.params.segments.is_some() && inst.model.has_dynamic_materials()) || lights_changed {
-            inst.model.set_draw_values(queue, cmd.params.segments.as_ref(), &cmd.params.lights);
+        let fog_changed = inst.fog != cmd.params.fog;
+        if (cmd.params.segments.is_some() && inst.model.has_dynamic_materials()) || lights_changed || fog_changed {
+            inst.model.set_draw_values(queue, cmd.params.segments.as_ref(), &cmd.params.lights, cmd.params.fog.as_ref(), fog_changed);
             inst.lights = cmd.params.lights.clone();
+            inst.fog = cmd.params.fog;
         }
         true
     }

@@ -72,6 +72,8 @@ CASES = [
     # GAME-03 milestone 3: a new save from Link's bed to the sword, 42 rupees, the Deku Shield
     # bought in the Kokiri shop, both worn, Mido's talk, and past him.
     ("mido_shop", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--script", "mido-shop", "--trace", "{trace}"]),
+    # GAME-05 milestone 2: a Deku Baba's bite, then its stem cut, inside the Deku Tree.
+    ("deku_baba", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "deku-baba", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

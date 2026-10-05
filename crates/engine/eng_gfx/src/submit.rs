@@ -41,6 +41,18 @@ pub struct DrawParams {
     /// frame's (the game binds an actor's near its position, `Lights_BindAll`). At most
     /// `MAX_POINT_LIGHTS` are used.
     pub lights: Vec<PointLight>,
+    /// This draw's fog in place of the frame's (`gDPSetFogColor` and `gSPFogFactor` set in the
+    /// list before it): the materials that fog use it.
+    pub fog: Option<FogOverride>,
+}
+
+/// A draw's own fog: the fog colour and the RSP's fog factor (`gSPFogFactor`'s multiplier
+/// and offset, in the frame's projection).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FogOverride {
+    pub color: [u8; 4],
+    pub multiplier: i16,
+    pub offset: i16,
 }
 
 /// A point light bound for one draw: the RSP's directional light it becomes, a direction (not

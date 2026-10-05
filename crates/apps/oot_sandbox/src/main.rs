@@ -42,6 +42,10 @@ struct Cli {
     /// Place a dummy Z-target this many units in front of the spawn (0 = none).
     #[arg(long, default_value_t = 0.0)]
     target: f32,
+    /// The dummy targets hurt Link when he touches them: none (a plain hit), fire, ice,
+    /// electric or knockback.
+    #[arg(long)]
+    target_hurts: Option<String>,
     /// Place Link at `x,y,z,yaw` (yaw in binary angle units) instead of the spawn or the
     /// script's start; works in scenes too.
     #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
@@ -72,7 +76,9 @@ struct Cli {
     /// crawlspace and past the boulder to the Kokiri Sword's chest), `mido-shop` (on to 40
     /// rupees, the Deku Shield from the Kokiri shop, both worn, and past Mido) and
     /// `new-save-deku-tree` (on into the meadow, the Deku Tree's talk answered yes, and into
-    /// his mouth).
+    /// his mouth); with --entrance ENTR_DEKU_TREE_0 --child --preset deku-tree-inside also
+    /// `deku-baba` (GAME-05's run: a Deku Baba's bite, then its stem cut, from a start by it on
+    /// the top floor).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -138,6 +144,7 @@ fn options(cli: &Cli) -> Options {
         no_foot_ik: cli.no_foot_ik,
         // The target script places a dummy 200 ahead unless --target says otherwise.
         target: if cli.target == 0.0 && cli.script == "target" { 200.0 } else { cli.target },
+        target_hurts: cli.target_hurts.as_deref().map(|s| oot::parse_hit_effect(s).expect("--target-hurts")),
         at: cli.at.clone(),
         child: cli.child,
         pack: cli.pack.clone(),
@@ -410,6 +417,12 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
     let mut w = new_play(a, cli.child);
     if let (Some((p, y)), None) = (start, &cli.scene) {
         w = new_play_at(a, cli.child, p, y, true);
+    }
+    // A route's debug start (the Deku Baba's), unless --at puts Link elsewhere.
+    if let Some((p, y)) = route.and_then(|r| r.start())
+        && cli.at.is_empty()
+    {
+        w.place_player(p, y);
     }
     if let [x, y, z, yaw] = cli.at[..] {
         if a.entrance.is_some() {

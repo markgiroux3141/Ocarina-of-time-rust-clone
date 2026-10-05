@@ -66,8 +66,11 @@ Now Phase 6, the Deku Tree, on Master Quest (GAME-05, [GAME-05-deku-tree.md](GAM
 Milestone 1, the decomp upgrade, is done ([ADR 0031](adr/0031-decomp-main.md)): the repo cites
 zeldaret/oot main at `52a510f`, migrated from `2f4c25d` through a generated name map
 (`docs/name-map`), the importer reads main's layout, and the pack is format 16. Every test passes
-and every render is the same bytes; the traces are the old ones' bytes once renamed. Next:
-milestone 2, damage and health.
+and every render is the same bytes; the traces are the old ones' bytes once renamed.
+Milestone 2, damage and health, is done ([ADR 0032](adr/0032-damage-death-and-the-game-over-stand-in.md)):
+every hit kind, the red flash, death and the game over (its menu a stand-in, undrawn), a bottled
+fairy's revival, the damage tables, and `En_Dekubaba` pulled forward; pack format 17. Next:
+milestone 3, the first enemies.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -76,7 +79,7 @@ the 2026-09-30 deferral: the scripted runs play the cutscenes.
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
 - ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
-- The pause menu isn't ported: Start stands in for its equipping (ADR 0019), read in the play frame where `KaleidoSetup_Update` reads it (ADR 0021).
+- The pause menu isn't ported: Start stands in for its equipping (ADR 0019), read in the play frame where `KaleidoSetup_Update` reads it (ADR 0021). Its game over screens run undrawn, and "Continue? No" respawns instead of going to the title screen (ADR 0032).
 - Unported actors are placeholders. Among them: Saria, the opening's nightmare (`En_Viewer`, the drawbridge), and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3. Navi and the other fairies: GAME-03 milestone 5.)
 - ~~There are no cutscenes: the importer skips all 73.~~ Undone in GAME-03 milestone 4 (ADR 0022): the 73 scene scripts and the 27 overlay ones are in the pack, and the Deku Tree's talk opens his mouth on a new save. The `deku-tree-open` preset stays for the shortcuts and GAME-02's run.
 - ~~The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up.~~ Undone in GAME-03 milestone 5 (ADR 0023): every scene's cutscene layers are in the pack, and a new file plays the opening. The routes from Link's bed keep their start (`cutsceneIndex` 0).
@@ -239,14 +242,16 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
    - **Exit:** every test passes and the goldens are the same bytes, on the new commit.
      *(Done on zeldaret/oot main at `52a510f`: every test and render the same; the 30 traces
      that carry C names re-recorded, each the old one's bytes once renamed through the map.)*
-2. **Damage and health:**
-   - Player taking damage: knockback, invincibility frames, `Health_ChangeBy`. *(Mostly done in GAME-03 milestone 2 for the boulder, ADR 0020: the body hit, the stagger, the knockdown, the invincibility timer, the fall damage. Left: kinds 3 and 4 (frozen, shocked), the hit while swimming, burning, the red flash.)*
-   - death and game over (`Play_TriggerVoidOut` exists);
-   - enemy damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`).
-   - **Exit:** the dummy and a Deku Baba hit Link.
+2. **Damage and health** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 2 and
+   [ADR 0032](adr/0032-damage-death-and-the-game-over-stand-in.md)):
+   - Player taking damage: knockback, invincibility frames, `Health_ChangeBy`. *(Mostly done in GAME-03 milestone 2 for the boulder, ADR 0020: the body hit, the stagger, the knockdown, the invincibility timer, the fall damage. Left: kinds 3 and 4 (frozen, shocked), the hit while swimming, burning, the red flash.)* *(Done: all of them.)*
+   - death and game over (`Play_TriggerVoidOut` exists); *(done: `func_80836448`, the death animations, `z_game_over.c`, a bottled fairy's revival, and the game over menu's states as a stand-in, undrawn, "Continue? Yes" as the C)*
+   - enemy damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`). *(Done, with `Actor_ApplyDamage`, the colour filter and the drop flag.)*
+   - **Exit:** the dummy and a Deku Baba hit Link. *(Done: the dummy hurts Link with each hit kind; a Deku Baba bites him and he cuts its stem, the golden `deku_baba`.)*
 3. **The first enemies:**
-   - `En_Dekubaba`, `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs);
+   - `En_Dekubaba` *(ported in milestone 2, whole but its effects)*, `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs);
    - enemy targeting and `Camera_Battle1`;
+   - Player's guard with the shield (R: the shield's collider, blocking and deflecting; BACKLOG #4), which the Deku Scrubs' nuts need;
    - drops on death;
    - the effects they need (`EffectSs`: dust, hit sparks, the death flame).
 4. **Dungeon mechanics:**

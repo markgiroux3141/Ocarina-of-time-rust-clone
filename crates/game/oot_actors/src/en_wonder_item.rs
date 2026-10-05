@@ -72,11 +72,11 @@ const DAMAGE_FLAGS: [u32; 7] = [DMG_SLASH | DMG_DEKU_STICK, DMG_ARROW, DMG_HAMME
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
     base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_NONE, oc_flags2: OC2_TYPE_2, shape: COLSHAPE_CYLINDER },
     info: ColliderElementInit {
-        elem_type: ELEM_MATERIAL_UNK0,
-        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-        toucher_flags: ATELEM_NONE,
-        bumper_flags: ACELEM_ON,
+        elem_material: ELEM_MATERIAL_UNK0,
+        at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0, hit_special_effect: 0, damage: 0 },
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, hit_backlash: 0, defense: 0 },
+        at_elem_flags: ATELEM_NONE,
+        ac_elem_flags: ACELEM_ON,
         oc_elem_flags: OCELEM_NONE,
     },
     dim: Cylinder16 { radius: 20, height: 30, y_shift: 0, pos: [0; 3] },
@@ -193,7 +193,7 @@ impl EnWonderItem {
                 let col_type_index = (rot_z & 0xFF) as usize;
                 this.collider = ColliderCylinder::new(&CYLINDER_INIT);
                 // (An index past the table reads past it in the C.)
-                this.collider.info.bumper.dmg_flags = DAMAGE_FLAGS.get(col_type_index).copied().unwrap_or(0);
+                this.collider.info.ac_dmg_info.dmg_flags = DAMAGE_FLAGS.get(col_type_index).copied().unwrap_or(0);
                 this.collider.dim.radius = 20;
                 this.collider.dim.height = 30;
                 this.update = Update::InteractSwitch;
@@ -202,7 +202,7 @@ impl EnWonderItem {
             WONDERITEM_PROXIMITY_SWITCH => this.update = Update::ProximitySwitch,
             WONDERITEM_BOMB_SOLDIER => {
                 this.collider = ColliderCylinder::new(&CYLINDER_INIT);
-                this.collider.info.bumper.dmg_flags = DMG_SLINGSHOT;
+                this.collider.info.ac_dmg_info.dmg_flags = DMG_SLINGSHOT;
                 this.unk_pos = this.actor.world_pos;
                 this.collider.dim.radius = 35;
                 this.collider.dim.height = 75;

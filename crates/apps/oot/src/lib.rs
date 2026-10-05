@@ -58,8 +58,12 @@ pub struct Options {
     pub follow_camera: bool,
     /// Foot IK (func_8008F87C) off.
     pub no_foot_ik: bool,
-    /// A dummy Z-target this many units in front of the spawn (0 = none).
+    /// A dummy Z-target this many units in front of the spawn (0 = none); in a scene entered by
+    /// `Play_Init`, in front of `at`.
     pub target: f32,
+    /// The dummy targets hurt Link when he touches them, with this hit special effect
+    /// (`HIT_SPECIAL_EFFECT_*`; `parse_hit_effect`).
+    pub target_hurts: Option<u8>,
     /// Link at `x,y,z,yaw` instead of the spawn (with an entrance: after `Play_Init`, and
     /// after `room`).
     pub at: Vec<f32>,
@@ -154,8 +158,9 @@ pub struct Assets {
     pub view: Option<(Vec3, Vec3)>,
     pub follow_camera: bool,
     pub foot_ik: bool,
-    /// Dummy target positions.
+    /// Dummy target positions, and their touch's hit special effect if they hurt.
     pub targets: Vec<Vec3>,
+    pub target_hurts: Option<u8>,
     /// `gDTSlidingPlatformCol`, for the course's moving platform.
     pub platform_col: Option<Arc<eng_collision::collision::CollisionHeader>>,
 }
@@ -226,6 +231,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         follow_camera: o.follow_camera,
         foot_ik: !o.no_foot_ik,
         targets: Vec::new(),
+        target_hurts: o.target_hurts,
         platform_col: None,
         view: (o.view.len() == 6).then(|| (Vec3::new(o.view[0], o.view[1], o.view[2]), Vec3::new(o.view[3], o.view[4], o.view[5]))),
         pack,
@@ -335,6 +341,7 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
                 if let Some((pos, yaw)) = a.start_at {
                     w.place_player(pos, yaw);
                 }
+                spawn_targets(&mut w, a);
                 if a.follow_camera {
                     w.toggle_camera();
                 }
@@ -358,12 +365,34 @@ pub fn new_play_at(a: &Assets, child: bool, pos: Vec3, yaw: i16, targets: bool) 
     w.debug.foot_ik = a.foot_ik;
     w.debug.placeholders = a.placeholders;
     if targets {
-        for &p in &a.targets {
-            w.spawn_target(p);
-        }
+        spawn_targets(&mut w, a);
     }
     add_platform(&mut w, a);
     w
+}
+
+/// The dummy targets, hurting ones with `target_hurts`.
+fn spawn_targets(w: &mut PlayState, a: &Assets) {
+    for &p in &a.targets {
+        match a.target_hurts {
+            Some(e) => w.spawn_hurting_target(p, e),
+            None => w.spawn_target(p),
+        };
+    }
+}
+
+/// `--target-hurts`'s names for the hit special effects (`HIT_SPECIAL_EFFECT_*`): none, fire,
+/// ice, electric, knockback.
+pub fn parse_hit_effect(s: &str) -> Result<u8> {
+    use oot_game::collision_check::*;
+    Ok(match s {
+        "none" => HIT_SPECIAL_EFFECT_NONE,
+        "fire" => HIT_SPECIAL_EFFECT_FIRE,
+        "ice" => HIT_SPECIAL_EFFECT_ICE,
+        "electric" => HIT_SPECIAL_EFFECT_ELECTRIC,
+        "knockback" => HIT_SPECIAL_EFFECT_KNOCKBACK,
+        _ => anyhow::bail!("--target-hurts: none, fire, ice, electric or knockback, not {s}"),
+    })
 }
 
 /// The course's moving platform (`Bg_Ydan_Hasi` floating block) in its channel.

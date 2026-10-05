@@ -210,7 +210,49 @@ pub struct ActorContext {
     free: Vec<u32>,
     /// `actorLists[ACTORCAT_MAX]`, newest first.
     lists: [Vec<ActorHandle>; ACTORCAT_MAX],
+    /// `freezeFlashTimer`: an enemy's finishing blow (`Enemy_StartFinishingBlow`) stops play for
+    /// four frames, with a white flash (`Play_Update`).
+    pub freeze_flash_timer: u8,
+    /// `unk_02`: the hammer's shock wave (`func_80842A28`), counted down by `Actor_UpdateAll`; it
+    /// stuns enemies that check it. Nothing sets it here (the hammer isn't ported).
+    pub unk_02: u8,
 }
+
+/// `PLAYER_STATE1_*` (`player.h`) that freeze actors' updates (`sCategoryFreezeMasks`).
+pub const PLAYER_STATE1_TALKING: u32 = 1 << 6;
+pub const PLAYER_STATE1_DEAD: u32 = 1 << 7;
+pub const PLAYER_STATE1_10: u32 = 1 << 10;
+pub const PLAYER_STATE1_28: u32 = 1 << 28;
+pub const PLAYER_STATE1_29: u32 = 1 << 29;
+
+/// `sCategoryFreezeMasks` (`z_actor.c`): by category, the Player states that freeze its actors
+/// (`Actor_UpdateAll` only resets their damage).
+pub const S_CATEGORY_FREEZE_MASKS: [u32; ACTORCAT_MAX] = [
+    // ACTORCAT_SWITCH
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_28,
+    // ACTORCAT_BG
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_28,
+    // ACTORCAT_PLAYER
+    0,
+    // ACTORCAT_EXPLOSIVE
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_10 | PLAYER_STATE1_28,
+    // ACTORCAT_NPC
+    PLAYER_STATE1_DEAD,
+    // ACTORCAT_ENEMY
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_28 | PLAYER_STATE1_29,
+    // ACTORCAT_PROP
+    PLAYER_STATE1_DEAD | PLAYER_STATE1_28,
+    // ACTORCAT_ITEMACTION
+    0,
+    // ACTORCAT_MISC
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_28 | PLAYER_STATE1_29,
+    // ACTORCAT_BOSS
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_10 | PLAYER_STATE1_28,
+    // ACTORCAT_DOOR
+    0,
+    // ACTORCAT_CHEST
+    PLAYER_STATE1_TALKING | PLAYER_STATE1_DEAD | PLAYER_STATE1_28,
+];
 
 impl ActorContext {
     /// `actorCtx->total`.
@@ -242,6 +284,16 @@ impl ActorContext {
         };
         self.lists[cat].insert(0, h);
         Some(h)
+    }
+
+    /// `Actor_ChangeCategory`'s lists: `h` out of its category's list and onto the head of
+    /// `category`'s (`Actor_RemoveFromCategory`, `Actor_AddToCategory`). The caller sets the base's
+    /// `category` (the actor may be out for its update).
+    pub fn change_category(&mut self, h: ActorHandle, category: usize) {
+        for l in self.lists.iter_mut() {
+            l.retain(|&x| x != h);
+        }
+        self.lists[category.min(ACTORCAT_MAX - 1)].insert(0, h);
     }
 
     fn slot(&self, h: ActorHandle) -> Option<&Slot> {
@@ -363,6 +415,13 @@ pub fn cur_sfx_pos(play: &PlayState) -> crate::audio::sfx::SfxPos {
 pub fn player_play_sfx(play: &mut PlayState, actor: ActorHandle, sfx_id: u16) {
     use crate::audio::sfx::{SfxF32, SfxPos, SfxS8};
     play.audio.play_sfx_general(sfx_id, SfxPos::Actor(actor), 4, SfxF32::One, SfxF32::One, SfxS8::Zero);
+}
+
+/// `Enemy_StartFinishingBlow`: the frame stops for a flash (`actorCtx.freezeFlashTimer` 5) and the
+/// last hit's sound plays where the enemy is, for 20 frames (`SfxSource_PlaySfxAtFixedWorldPos`).
+pub fn enemy_start_finishing_blow(play: &mut PlayState, actor: &Actor) {
+    play.actors.freeze_flash_timer = 5;
+    play.sfx_source_play_sfx_at_fixed_world_pos(actor.world_pos, 20, crate::audio::sfx::NA_SE_EN_LAST_DAMAGE);
 }
 
 /// `Actor_PlaySfx`: `Sfx_PlaySfxAtPos` at the updating actor's `projectedPos`.

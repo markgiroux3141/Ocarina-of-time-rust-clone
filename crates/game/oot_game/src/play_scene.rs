@@ -244,6 +244,8 @@ pub struct PlayIo {
     pub scene_id: u16,
     pub room: i8,
     pub cur_spawn: usize,
+    /// `sRandInt`: the game's random numbers (Player's burning and shock draw from them).
+    pub rand: crate::play::Rand,
 }
 
 impl PlayIo {
@@ -317,6 +319,7 @@ impl PlayState {
             scene_id: self.scene_id,
             room: self.room_ctx.cur.num,
             cur_spawn: self.cur_spawn,
+            rand: self.rand,
         }
     }
 
@@ -325,6 +328,7 @@ impl PlayState {
         self.save = io.save;
         self.transition = io.transition;
         self.flags = io.flags;
+        self.rand = io.rand;
     }
 
     fn with_io<R>(&mut self, f: impl FnOnce(&mut PlayIo) -> R) -> R {
@@ -869,7 +873,7 @@ impl PlayState {
 
 /// `top` blended over `bottom`, both full-screen fills, as one fill: the same pixels as drawing
 /// `bottom` then `top`.
-fn compose_fill(bottom: [u8; 4], top: [u8; 4]) -> [u8; 4] {
+pub(crate) fn compose_fill(bottom: [u8; 4], top: [u8; 4]) -> [u8; 4] {
     let (ab, at) = (bottom[3] as f32 / 255.0, top[3] as f32 / 255.0);
     let a = at + ab * (1.0 - at);
     if a <= 0.0 {

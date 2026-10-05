@@ -165,6 +165,80 @@ pub enum PlayRequest {
     /// `OnePointCutscene_Init(play, cs_id, timer, actor, parent)`, the actor Player himself
     /// (`player`) or NULL.
     OnePointCutscene { cs_id: i16, timer: i16, player: bool, parent: i16 },
+    /// `play->gameOverCtx.state = state` (`func_80836448`, `func_80843AE8`).
+    GameOverState(u16),
+    /// `Letterbox_SetSizeTarget(size)`.
+    LetterboxSizeTarget(i32),
+    /// `Player_SpawnFairy(play, this, &pos, &offset, FAIRY_REVIVE_DEATH)`: the bottled fairy that
+    /// revives Link, at `pos` (the offset applied).
+    SpawnReviveFairy(Vec3),
+    /// `func_8083819C`'s burnt Deku Shield: `Actor_Spawn(ACTOR_ITEM_SHIELD, pos, params 1)` and
+    /// `Message_StartTextbox(play, 0x305F, NULL)` (`Inventory_DeleteEquipment` ran in place).
+    BurnDekuShield(Vec3),
+    /// The death's and the revival's audio calls.
+    Audio(PlayerAudio),
+}
+
+/// The audio calls of Player's death and revival.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlayerAudio {
+    /// `Audio_SetBgmVolumeOffDuringFanfare`.
+    BgmVolumeOffDuringFanfare,
+    /// `Audio_SetBgmVolumeOnDuringFanfare`.
+    BgmVolumeOnDuringFanfare,
+    /// `Audio_StopBgmAndFanfare(fadeOutDuration)`.
+    StopBgmAndFanfare(u16),
+    /// `Audio_PlayFanfare(seqId)`.
+    PlayFanfare(u16),
+}
+
+/// `PlayerHitResponseType` (`player.h`): `func_80837C0C`'s reactions.
+pub const PLAYER_HIT_RESPONSE_NONE: i32 = 0;
+pub const PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE: i32 = 1;
+pub const PLAYER_HIT_RESPONSE_KNOCKBACK_SMALL: i32 = 2;
+pub const PLAYER_HIT_RESPONSE_FROZEN: i32 = 3;
+pub const PLAYER_HIT_RESPONSE_ELECTRIFIED: i32 = 4;
+
+/// `PlayerKnockbackType` (`player.h`): what `Actor_SetPlayerKnockback` asks for.
+pub const PLAYER_KNOCKBACK_NONE: u8 = 0;
+pub const PLAYER_KNOCKBACK_SMALL: u8 = 1;
+pub const PLAYER_KNOCKBACK_LARGE: u8 = 2;
+pub const PLAYER_KNOCKBACK_LARGE_ELECTRIFIED: u8 = 3;
+
+/// `PLAYER_TUNIC_GORON`, `PLAYER_SHIELD_DEKU` (`player.h`).
+const PLAYER_TUNIC_GORON: u8 = 1;
+const PLAYER_SHIELD_DEKU: u8 = 1;
+/// `ROOM_ENV_HOT` (`room.h`): a hot room's `environmentType` (`behaviorType2`).
+const ROOM_ENV_HOT: u8 = 3;
+/// `SCENE_SPIRIT_TEMPLE_BOSS` (`scene_table.h`).
+const SCENE_SPIRIT_TEMPLE_BOSS: u16 = 0x17;
+/// `ACTOR_ITEM_SHIELD` (`actor_table.h`): the burning Deku Shield thrown off.
+const ACTOR_ITEM_SHIELD: i16 = 0x00EE;
+
+/// The ice round frozen Link (`Player_Draw` under `PLAYER_STATE2_14`): `gEffIceFragment3DL` with
+/// `Gfx_TwoTexScroll` on segment 8 and `gDPSetEnvColor(0, 50, 100, 255)`.
+const ICE_BAKE: &str = "Player/ice";
+const SEG_ICE_SCROLL: u8 = 0x08;
+const SEG_ICE_ENV: u8 = 0x0C;
+
+/// `Player_Draw`'s ice scroll at `gameplay_frames`: `Gfx_TwoTexScroll(G_TX_RENDERTILE, 0,
+/// (0 - gameplayFrames) % 128, 32, 32, 1, 0, (gameplayFrames * -2) % 128, 32, 32)` (u32 arithmetic).
+fn ice_scroll(gameplay_frames: u32) -> Vec<(u32, u32)> {
+    let y1 = 0u32.wrapping_sub(gameplay_frames) % 128;
+    let y2 = gameplay_frames.wrapping_mul((-2i32) as u32) % 128;
+    oot_game::scene_table::gfx_two_tex_scroll(0, 0, y1, 32, 32, 1, 0, y2, 32, 32)
+}
+
+/// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice.
+pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
+    use oot_game::pack::{BakeBody, BakeSegment, MeshBake};
+    vec![MeshBake {
+        name: ICE_BAKE.into(),
+        object: "gameplay_keep".into(),
+        segments: vec![(SEG_ICE_ENV, BakeSegment::Commands(vec![(0xFB00_0000, 0x0032_64FF), (0xDF00_0000, 0)])), (SEG_ICE_SCROLL, BakeSegment::Dynamic(ice_scroll(0)))],
+        prelude: vec![SEG_ICE_ENV],
+        body: BakeBody::DLists(vec![("gameplay_keep".into(), "gEffIceFragment3DL".into())]),
+    }]
 }
 
 /// Player's sounds: what its `Player_PlaySfx`-style calls ask the audio for, at Player
@@ -335,6 +409,16 @@ pub enum Action {
     GetUp,
     /// `Player_Action_CsAction`: in a cutscene mode (`csMode`).
     Cutscene,
+    /// `Player_Action_8084FB10`: frozen in ice (`PLAYER_HIT_RESPONSE_FROZEN`), then the thaw.
+    Frozen,
+    /// `Player_Action_8084FBF4`: electrified (`PLAYER_HIT_RESPONSE_ELECTRIFIED`).
+    Electrified,
+    /// `Player_Action_8084E30C`: hit while swimming.
+    SwimDamaged,
+    /// `Player_Action_80843CEC`: dying (or revived) on the ground.
+    Dying,
+    /// `Player_Action_8084E368`: dying (or revived) while swimming.
+    DyingInWater,
 }
 
 /// `func_A74`: what `Player_Action_WaitForPutAway` runs once the item is away.
@@ -403,6 +487,11 @@ impl Action {
             Action::Down => "Player_Action_80843954",
             Action::GetUp => "Player_Action_80843A38",
             Action::Cutscene => "Player_Action_CsAction",
+            Action::Frozen => "Player_Action_8084FB10",
+            Action::Electrified => "Player_Action_8084FBF4",
+            Action::SwimDamaged => "Player_Action_8084E30C",
+            Action::Dying => "Player_Action_80843CEC",
+            Action::DyingInWater => "Player_Action_8084E368",
         }
     }
 }
@@ -480,6 +569,9 @@ pub struct Env<'a> {
     pub cs_frames: u16,
     pub cs_link_action: Option<CsCmdActorCue>,
     pub scene_id: u16,
+    /// `play->gameOverCtx.state`, and `play->roomCtx.curRoom.environmentType` (`behaviorType2`).
+    pub game_over_state: u16,
+    pub room_behavior_type2: u8,
 }
 
 impl Env<'_> {
@@ -680,8 +772,17 @@ pub struct Player {
     /// `invincibilityTimer`: no damage while non-zero; positive counts down after a hit (and
     /// is visible), negative counts up (the roll's, when Link's cylinder is also AT).
     pub invincibility_timer: i8,
-    /// `damageFlickerAnimCounter`: `Player_SetIntangibility`'s reset of the hit flash's phase (the flash isn't drawn).
+    /// `damageFlickerAnimCounter`: the hit flash's phase (`Player_Draw` steps it while the
+    /// invincibility is visible; `Player_SetIntangibility` resets it).
     pub damage_flicker_anim_counter: u8,
+    /// The hit flash's red fog this frame (`Player_Draw`'s `Gfx_SetFog2` far plane), or none.
+    pub damage_flash_far: Option<i32>,
+    /// `bodyShockTimer`, `unk_892`: the electric shock's sparks (`Player_UpdateBodyShock`).
+    pub body_shock_timer: u8,
+    pub unk_892: u8,
+    /// `bodyIsBurning`, `bodyFlameTimers`: each body part's flame (`Player_UpdateBodyBurn`).
+    pub body_is_burning: bool,
+    pub body_flame_timers: [u8; BODYPART_MAX],
     /// `knockbackDamage` .. `knockbackYVelocity`: the knockback an actor asked for this frame (`Actor_SetPlayerKnockback`):
     /// the extra damage, the kind (1 a push, 2 a knockdown, 3 a shock), the yaw, the speed and
     /// the upward speed. `knockbackType` is cleared at the end of every update.
@@ -855,6 +956,11 @@ impl Player {
             put_away_cooldown_timer: 0,
             invincibility_timer: 0,
             damage_flicker_anim_counter: 0,
+            damage_flash_far: None,
+            body_shock_timer: 0,
+            unk_892: 0,
+            body_is_burning: false,
+            body_flame_timers: [0; BODYPART_MAX],
             knockback_damage: 0,
             knockback_type: 0,
             knockback_rot: 0,
@@ -1071,6 +1177,13 @@ impl Player {
         }
         self.update_interface(env);
         self.update_z_targeting(env);
+        // (The burning Deku stick and the fishing rod: not held.)
+        if self.body_shock_timer != 0 {
+            self.update_body_shock(env);
+        }
+        if self.body_is_burning {
+            self.update_body_burn(env);
+        }
 
         scaled_step_to_s(&mut self.unk_6C2, 0, 400);
         // FaceChange_UpdateBlinking(this->faceChange.face, 20, 80, 6) and the face alternation.
@@ -1095,17 +1208,31 @@ impl Player {
 
         if !self.in_blocking_cs_mode(env) && self.state2 & STATE2_18 == 0 {
             self.func_8083D53C(env);
-            if env.io.borrow().save.health == 0 {
-                // Dying (func_80836448, func_80837B9C) isn't ported: Link carries on.
-                self.note("out of health: dying (func_80836448) not ported");
-            }
-            let trigger_start = env.io.borrow().transition.trigger == TRANS_TRIGGER_START;
-            if self.actor.parent.is_none() && (trigger_start || self.unk_A87 != 0 || !self.func_808382DC(env)) {
-                self.func_8083AA10(env);
+            if self.actor.category == ACTORCAT_PLAYER && env.io.borrow().save.health == 0 {
+                // Out of health: let go of a ledge or a wall, else die once on the ground or in
+                // the water.
+                if self.state1 & (STATE1_13 | STATE1_14 | STATE1_21) != 0 {
+                    self.func_80832440();
+                    self.func_80837B9C(data);
+                } else if self.grounded() || self.state1 & STATE1_27 != 0 {
+                    let anim = if self.func_808332B8() {
+                        data.anim("link_swimer_swim_down")
+                    } else if self.body_shock_timer != 0 {
+                        data.anim("link_normal_electric_shock_end")
+                    } else {
+                        data.anim("link_derth_rebirth")
+                    };
+                    self.func_80836448(env, anim);
+                }
             } else {
-                self.fall_start_height = self.actor.world_pos.y as i16;
+                let trigger_start = env.io.borrow().transition.trigger == TRANS_TRIGGER_START;
+                if self.actor.parent.is_none() && (trigger_start || self.unk_A87 != 0 || !self.func_808382DC(env)) {
+                    self.func_8083AA10(env);
+                } else {
+                    self.fall_start_height = self.actor.world_pos.y as i16;
+                }
+                // (Player_DetectRumbleSecrets: the rumble.)
             }
-            // (Player_DetectRumbleSecrets: the rumble.)
         }
 
         // A script running: its cue's mode (6) or held still (0x31), unless riding, grabbed or
@@ -1308,6 +1435,11 @@ impl Player {
             Action::KnockedDown => self.action_8084377c(env),
             Action::Down => self.action_80843954(env),
             Action::GetUp => self.action_80843a38(env),
+            Action::Frozen => self.action_8084fb10(env),
+            Action::Electrified => self.action_8084fbf4(env),
+            Action::SwimDamaged => self.action_8084e30c(env),
+            Action::Dying => self.action_80843cec(env),
+            Action::DyingInWater => self.action_8084e368(env),
         }
     }
 
@@ -2068,8 +2200,8 @@ impl Player {
     /// - a hurting wall or floor (`func_80042108`, the hot floors `FLOOR_TYPE_2`, `_3`).
     ///
     /// `unk_A86`'s damage is never set, and the shield's bounce needs shielding, which isn't
-    /// ported (the shield's quad is never registered, so `AC_BOUNCED` is never set). The
-    /// burning (`func_8083821C`), the shock timer, the rumble and the sounds aren't ported.
+    /// ported (the shield's quad is never registered, so `AC_BOUNCED` is never set, nor the
+    /// burnt Deku Shield of a fire hit on it). The rumble isn't ported.
     fn func_808382DC(&mut self, env: &Env) -> bool {
         use oot_game::actor::BGCHECKFLAG_CRUSHED;
         if self.unk_A86 != 0 {
@@ -2111,15 +2243,15 @@ impl Player {
             self.sfx(PlayerSfx::NoPos(NA_SE_OC_ABYSS));
             return true;
         }
-        if self.knockback_type != 0 && (self.knockback_type >= 2 || self.invincibility_timer == 0) {
-            const SP5C: [i32; 3] = [2, 1, 1];
-            // func_80838280: acHitEffect 1 sets Link burning (func_8083821C, not ported).
-            if self.knockback_type == 3 {
-                // this->bodyShockTimer = 40 (Player_UpdateBodyShock, not ported).
-                self.note("shock (shockTimer) not ported");
+        if self.knockback_type != PLAYER_KNOCKBACK_NONE && (self.knockback_type >= PLAYER_KNOCKBACK_LARGE || self.invincibility_timer == 0) {
+            // knockbackResponse, by knockbackType.
+            const KNOCKBACK_RESPONSE: [i32; 3] = [PLAYER_HIT_RESPONSE_KNOCKBACK_SMALL, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE];
+            self.func_80838280(env);
+            if self.knockback_type == PLAYER_KNOCKBACK_LARGE_ELECTRIFIED {
+                self.body_shock_timer = 40;
             }
             self.actor.col_chk_info.damage = self.actor.col_chk_info.damage.wrapping_add(self.knockback_damage);
-            let (kind, speed, vy, yaw) = (SP5C[self.knockback_type as usize - 1], self.knockback_speed, self.knockback_y_velocity, self.knockback_rot);
+            let (kind, speed, vy, yaw) = (KNOCKBACK_RESPONSE[self.knockback_type as usize - 1], self.knockback_speed, self.knockback_y_velocity, self.knockback_rot);
             self.func_80837C0C(env, kind, speed, vy, yaw, 20);
             return true;
         }
@@ -2139,16 +2271,18 @@ impl Player {
                 self.play_sfx(NA_SE_PL_BODY_HIT);
             }
             let ac_pos = self.cylinder.base.ac.and_then(|h| env.target(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
-            let effect = self.actor.col_chk_info.ac_hit_effect;
+            let effect = self.actor.col_chk_info.ac_hit_special_effect;
             let sp4c = if self.state1 & STATE1_27 != 0 {
-                0
+                PLAYER_HIT_RESPONSE_NONE
             } else {
                 match effect {
-                    2 => 3,
-                    3 => 4,
-                    4 => 1,
-                    // func_80838280.
-                    _ => 0,
+                    cc::HIT_SPECIAL_EFFECT_ICE => PLAYER_HIT_RESPONSE_FROZEN,
+                    cc::HIT_SPECIAL_EFFECT_ELECTRIC => PLAYER_HIT_RESPONSE_ELECTRIFIED,
+                    cc::HIT_SPECIAL_EFFECT_KNOCKBACK => PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE,
+                    _ => {
+                        self.func_80838280(env);
+                        PLAYER_HIT_RESPONSE_NONE
+                    }
                 }
             };
             // Actor_WorldYawTowardActor(ac, &this->actor).
@@ -2194,12 +2328,15 @@ impl Player {
     ];
 
     /// `func_80837C0C`: hurt by `colChkInfo.damage`, `arg6` frames of invincibility, and the
-    /// reaction: knocked down (`Player_Action_8084377C`) for kinds 1 and 2, in the air, hanging or
-    /// climbing, at `arg3` and `arg4` from `arg5` (kind 2 with its own); otherwise a stagger
-    /// (`Player_Action_8084370C`), or only a flinch when running fast (`unk_890`). Not ported: kind 3
-    /// (frozen, `Player_Action_8084FB10`), kind 4 (the electric shock, `Player_Action_8084FBF4`) and the hit
-    /// while swimming (`Player_Action_8084E30C`), which only take the damage here; the rumble; the
-    /// sounds.
+    /// reaction (`arg2`, `PLAYER_HIT_RESPONSE_*`):
+    /// - frozen (`Player_Action_8084FB10`) or electrified (`Player_Action_8084FBF4`);
+    /// - swimming, the swimming hit (`Player_Action_8084E30C`);
+    /// - knocked down (`Player_Action_8084377C`) for the knockbacks, in the air, hanging or
+    ///   climbing, at `arg3` and `arg4` from `arg5` (the small knockback with its own);
+    /// - otherwise a stagger (`Player_Action_8084370C`), or only a flinch when running fast
+    ///   (`unk_890`).
+    ///
+    /// Out of health it takes no reaction (a fall in the air). The rumble isn't ported.
     fn func_80837C0C(&mut self, env: &Env, arg2: i32, arg3: f32, arg4: f32, mut arg5: i16, arg6: i8) {
         let data = env.data;
         let mut sp2c = None;
@@ -2217,19 +2354,54 @@ impl Player {
             return;
         }
         self.set_intangibility(arg6);
-        if arg2 == 3 || arg2 == 4 {
-            self.note(format!("func_80837C0C kind {arg2} (frozen, shocked) not ported"));
-            return;
+        if arg2 == PLAYER_HIT_RESPONSE_FROZEN {
+            self.setup_action(data, Action::Frozen, 0);
+            sp2c = Some(data.anim("link_normal_ice_down"));
+            self.func_80832224();
+            // (Player_RequestRumble(this, 255, 10, 40, 0).)
+            self.play_sfx(NA_SE_PL_FREEZE_S);
+            self.play_voice_sfx(NA_SE_VO_LI_FREEZE);
+        } else if arg2 == PLAYER_HIT_RESPONSE_ELECTRIFIED {
+            self.setup_action(data, Action::Electrified, 0);
+            // (Player_RequestRumble(this, 255, 80, 150, 0).) Player_AnimPlayLoopAdjusted.
+            let a = data.anim("link_normal_electric_shock");
+            self.skel.play_loop_set_speed(data, a, 2.0 / 3.0);
+            self.func_80832224();
+            self.action_var2 = 20;
+        } else {
+            if !self.func_80837C0C_hit(env, arg2, arg3, arg4, &mut arg5, &mut sp2c) {
+                // The running flinch: no reaction.
+                return;
+            }
         }
-        arg5 = arg5.wrapping_sub(self.actor.shape_rot.y);
+        // func_80832564: func_80832440, and Player_DetachHeldActor (Link holds nothing here).
+        self.func_80832440();
+        self.state1 |= STATE1_26;
+        if let Some(a) = sp2c {
+            // Player_AnimPlayOnceAdjusted.
+            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+        }
+    }
+
+    /// `func_80837C0C`'s reactions other than frozen and electrified: the swimming hit, the
+    /// knockdown or the stagger, then the facing. False for the running flinch (`unk_890` 20 and
+    /// nothing else: the C returns there).
+    fn func_80837C0C_hit(&mut self, env: &Env, arg2: i32, arg3: f32, arg4: f32, arg5: &mut i16, sp2c: &mut Option<AnimId>) -> bool {
+        let data = env.data;
+        *arg5 = arg5.wrapping_sub(self.actor.shape_rot.y);
+        let arg5 = *arg5;
         if self.state1 & STATE1_27 != 0 {
-            self.note("hit while swimming (Player_Action_8084E30C) not ported");
-            return;
-        } else if arg2 == 1 || arg2 == 2 || !self.grounded() || self.state1 & (STATE1_13 | STATE1_14 | STATE1_21) != 0 {
+            self.setup_action(data, Action::SwimDamaged, 0);
+            // (Player_RequestRumble(this, 180, 20, 50, 0).)
+            self.linear_velocity = 4.0;
+            self.actor.velocity.y = 0.0;
+            *sp2c = Some(data.anim("link_swimer_swim_hit"));
+            self.play_voice_sfx(NA_SE_VO_LI_DAMAGE_S);
+        } else if arg2 == PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE || arg2 == PLAYER_HIT_RESPONSE_KNOCKBACK_SMALL || !self.grounded() || self.state1 & (STATE1_13 | STATE1_14 | STATE1_21) != 0 {
             self.setup_action(data, Action::KnockedDown, 0);
             self.state3 |= STATE3_1;
             self.func_80832224();
-            if arg2 == 2 {
+            if arg2 == PLAYER_HIT_RESPONSE_KNOCKBACK_SMALL {
                 self.action_var2 = 4;
                 self.actor.speed_xz = 3.0;
                 self.linear_velocity = 3.0;
@@ -2242,7 +2414,7 @@ impl Player {
                 self.actor.speed_xz = arg3;
                 self.linear_velocity = arg3;
                 self.actor.velocity.y = arg4;
-                sp2c = Some(if abs16(arg5) > 0x4000 { data.anim("link_normal_front_downA") } else { data.anim("link_normal_back_downA") });
+                *sp2c = Some(if abs16(arg5) > 0x4000 { data.anim("link_normal_front_downA") } else { data.anim("link_normal_back_downA") });
                 // (NA_SE_VO_BL_DOWN for a dead non-Player: Link is the Player.)
                 self.play_voice_sfx(NA_SE_VO_LI_FALL_L);
             }
@@ -2251,8 +2423,9 @@ impl Player {
         } else {
             if self.linear_velocity > 4.0 && self.state1 & STATE1_4 == 0 {
                 self.unk_890 = 20;
+                // (Player_RequestRumble(this, 120, 20, 10, 0).)
                 self.play_voice_sfx(NA_SE_VO_LI_DAMAGE_S);
-                return;
+                return false;
             }
             self.setup_action(data, Action::Damaged, 0);
             self.func_80833C3C();
@@ -2267,7 +2440,7 @@ impl Player {
             if self.state1 & STATE1_4 != 0 {
                 i += 1;
             }
-            sp2c = Some(data.anim(Self::D_808544B0[i]));
+            *sp2c = Some(data.anim(Self::D_808544B0[i]));
             self.play_voice_sfx(NA_SE_VO_LI_DAMAGE_S);
         }
         self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(arg5);
@@ -2276,13 +2449,7 @@ impl Player {
         if abs16(arg5) > 0x4000 {
             self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(i16::MIN);
         }
-        // func_80832564: func_80832440, and Player_DetachHeldActor (Link holds nothing here).
-        self.func_80832440();
-        self.state1 |= STATE1_26;
-        if let Some(a) = sp2c {
-            // Player_AnimPlayOnceAdjusted.
-            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
-        }
+        true
     }
 
     /// `Player_Action_8084370C`: staggering; standing again at the end (`func_80839F90`).
@@ -2372,6 +2539,287 @@ impl Player {
             }
         }
         self.process_anim_sfx_list(env.audio.player_anim_sfx("D_808545DC"));
+    }
+
+    // ================================================================================
+    // Burning and the shock (Player_UpdateBodyBurn, Player_UpdateBodyShock)
+
+    /// `func_80838280`: a fire hit sets Link burning; Link cries out.
+    fn func_80838280(&mut self, env: &Env) {
+        if self.actor.col_chk_info.ac_hit_special_effect == cc::HIT_SPECIAL_EFFECT_FIRE {
+            self.func_8083821C(env);
+        }
+        self.play_voice_sfx(NA_SE_VO_LI_FALL_L);
+    }
+
+    /// `func_8083821C`: every body part catches fire, for 0 to 199 (`Rand_S16Offset(0, 200)`).
+    fn func_8083821C(&mut self, env: &Env) {
+        let mut io = env.io.borrow_mut();
+        for t in self.body_flame_timers.iter_mut() {
+            *t = io.rand.s16_offset(0, 200) as u8;
+        }
+        self.body_is_burning = true;
+    }
+
+    /// `func_8083819C`: a Deku Shield worn burns away: thrown off as `Item_Shield`, out of the
+    /// equipment (`Inventory_DeleteEquipment`, which runs `Player_SetEquipmentData`), with its
+    /// text.
+    fn func_8083819C(&mut self, env: &Env) {
+        if self.current_shield == PLAYER_SHIELD_DEKU {
+            self.play_requests.push(PlayRequest::BurnDekuShield(self.actor.world_pos));
+            let mut io = env.io.borrow_mut();
+            oot_game::item::inventory_delete_equipment(&mut io.save, oot_game::item::EQUIP_TYPE_SHIELD);
+            let save = io.save.clone();
+            drop(io);
+            self.set_equipment_data(env.data, &save);
+        }
+    }
+
+    /// `Player_UpdateBodyShock`: the shock's sparks, at a random body part every so often, each
+    /// with its crackle (`NA_SE_PL_SPARK`). The sparks (`EffectSsFhgFlash_SpawnShock`) are effects,
+    /// not ported; their `Rand` calls are made.
+    fn update_body_shock(&mut self, env: &Env) {
+        self.body_shock_timer -= 1;
+        self.unk_892 = self.unk_892.wrapping_add(self.body_shock_timer);
+        if self.unk_892 > 20 {
+            let mut shock_scale = self.body_shock_timer as i32 * 2;
+            self.unk_892 -= 20;
+            if shock_scale > 40 {
+                shock_scale = 40;
+            }
+            let mut io = env.io.borrow_mut();
+            let part = io.rand.zero_float(BODYPART_MAX as f32 - 0.1) as usize;
+            let bp = self.body_parts_pos[part];
+            let p = self.actor.world_pos;
+            let x = (io.rand.centered_float(5.0) + bp.x) - p.x;
+            let y = (io.rand.centered_float(5.0) + bp.y) - p.y;
+            let z = (io.rand.centered_float(5.0) + bp.z) - p.z;
+            let _ = (Vec3::new(x, y, z), shock_scale);
+            drop(io);
+            self.actor.play_sfx_flagged2(NA_SE_PL_SPARK - SFX_FLAG);
+        }
+    }
+
+    /// `Player_UpdateBodyBurn`: the flames burn down (faster running, slowly in the Goron Tunic,
+    /// at once with `PLAYER_STATE2_3`), with the torch's roar and half a heart's quarter off
+    /// every 8 frames while any burns (every frame in Twinrova's room). A Deku Shield burns away
+    /// first (`func_8083819C`). The flames (`EffectSsFireTail_SpawnFlameOnPlayer`) are effects,
+    /// not ported.
+    fn update_body_burn(&mut self, env: &Env) {
+        let sp54 = if self.current_tunic == PLAYER_TUNIC_GORON { 20 } else { (self.linear_velocity * 0.4) as i32 + 1 };
+        let sp58 = if self.state2 & STATE2_3 != 0 { 100 } else { 0 };
+        let mut spawned_flame = false;
+        self.func_8083819C(env);
+        for t in self.body_flame_timers.iter_mut() {
+            let timer_step = sp58 + sp54;
+            if *t as i32 <= timer_step {
+                *t = 0;
+            } else {
+                spawned_flame = true;
+                *t = (*t as i32 - timer_step) as u8;
+                // The flame's scale and intensity (EffectSsFireTail_SpawnFlameOnPlayer).
+            }
+        }
+        if spawned_flame {
+            self.play_sfx(NA_SE_EV_TORCH - SFX_FLAG);
+            let dmg_cooldown = if env.scene_id == SCENE_SPIRIT_TEMPLE_BOSS { 0 } else { 7 };
+            if dmg_cooldown & env.gameplay_frames == 0 {
+                self.player_inflict_damage(env, -1);
+            }
+        } else {
+            self.body_is_burning = false;
+        }
+    }
+
+    // ================================================================================
+    // Frozen, electrified, the swimming hit
+
+    /// `func_80832594`: struggling out of the ice: `actionVar2` grows with the stick's spin and
+    /// 5 per A or B; true once past `arg2`.
+    fn func_80832594(&mut self, arg1: i32, arg2: i32) -> bool {
+        let control_stick_angle_diff = self.prev_control_stick_angle.wrapping_sub(self.s.stick_angle);
+        let k = ((control_stick_angle_diff as i32).abs() as f32 * self.s.stick_mag.abs() * 2.541_580_2e-6) as i16;
+        self.action_var2 = self.action_var2.wrapping_add((arg1 as i16).wrapping_add(k));
+        if self.input.press.held(BTN_A) || self.input.press.held(eng_input::pad::BTN_B) {
+            self.action_var2 = self.action_var2.wrapping_add(5);
+        }
+        self.action_var2 as i32 > arg2
+    }
+
+    /// `Player_Action_8084FB10`: frozen. A quarter heart off every 4 frames until Link struggles
+    /// free (`func_80832594`), shattering the ice (`EffectSsIcePiece_SpawnBurst`, an effect, not
+    /// ported); then standing at the animation's end, invulnerable for 20 frames.
+    fn action_8084fb10(&mut self, env: &Env) {
+        if self.action_var1 >= 0 {
+            if self.action_var1 < 6 {
+                self.action_var1 += 1;
+            }
+            if self.func_80832594(1, 100) {
+                self.action_var1 = -1;
+                self.play_sfx(NA_SE_PL_ICE_BROKEN);
+            } else {
+                self.state2 |= STATE2_14;
+            }
+            if env.gameplay_frames % 4 == 0 {
+                self.player_inflict_damage(env, -1);
+            }
+        } else if self.skel.update(env.data) {
+            self.func_80839F90(env.data);
+            self.set_invulnerability(-20);
+        }
+    }
+
+    /// `Player_Action_8084FBF4`: electrified for 20 frames, a quarter heart off at the start of
+    /// each 25 (`func_80837B18`: out of health, the count stops), the sparks going and the cry.
+    fn action_8084fbf4(&mut self, env: &Env) {
+        self.skel.update(env.data);
+        self.func_808382BC();
+        if self.action_var2 % 25 != 0 || self.func_80837B18(env, -1) {
+            // DECR(this->av2.actionVar2) == 0.
+            if self.action_var2 != 0 {
+                self.action_var2 -= 1;
+            }
+            if self.action_var2 == 0 {
+                self.func_80839F90(env.data);
+            }
+        }
+        self.body_shock_timer = 40;
+        self.actor.play_sfx_flagged2((NA_SE_VO_LI_TAKEN_AWAY - SFX_FLAG).wrapping_add(self.age.climb.unk_92));
+    }
+
+    /// `Player_Action_8084E30C`: hit while swimming; treading water again at the animation's end.
+    fn action_8084e30c(&mut self, env: &Env) {
+        self.func_8084B000();
+        if self.skel.update(env.data) {
+            self.func_80838F18(env.data);
+        }
+        let yaw = self.actor.shape_rot.y;
+        self.linear_velocity = self.func_8084AEEC(self.linear_velocity, 0.0, yaw);
+    }
+
+    // ================================================================================
+    // Death and the revival
+
+    /// `func_80836448`: Link dies with `anim` (swimming: `Player_Action_8084E368`, else
+    /// `Player_Action_80843CEC`; `PLAYER_STATE1_DEAD`). The music goes; a bottled fairy is used up
+    /// and revives him (`GAMEOVER_REVIVE_START`), else it's the game over
+    /// (`GAMEOVER_DEATH_START`, its fanfare). The camera's one-point cutscene 9806 and the
+    /// letterbox follow.
+    fn func_80836448(&mut self, env: &Env, anim: AnimId) {
+        use oot_game::game_over::{GAMEOVER_DEATH_START, GAMEOVER_REVIVE_START};
+        let data = env.data;
+        let cond = self.func_808332B8();
+        // func_80832564: func_80832440, and Player_DetachHeldActor (nothing held).
+        self.func_80832440();
+        self.setup_action(data, if cond { Action::DyingInWater } else { Action::Dying }, 0);
+        self.state1 |= STATE1_7;
+        self.skel.play_once(data, anim);
+        if anim == data.anim("link_derth_rebirth") {
+            self.skel.end_frame = 84.0;
+        }
+        self.func_80832224();
+        self.play_voice_sfx(NA_SE_VO_LI_DOWN);
+        if self.actor.category == ACTORCAT_PLAYER {
+            self.play_requests.push(PlayRequest::Audio(PlayerAudio::BgmVolumeOffDuringFanfare));
+            let mut io = env.io.borrow_mut();
+            if oot_game::item::inventory_consume_fairy(&mut io.save) {
+                drop(io);
+                self.play_requests.push(PlayRequest::GameOverState(GAMEOVER_REVIVE_START));
+                self.action_var1 = 1;
+            } else {
+                io.save.seq_id = oot_game::audio::NA_BGM_DISABLED as u8;
+                io.save.nature_ambience_id = oot_game::audio::NATURE_ID_DISABLED;
+                drop(io);
+                self.play_requests.push(PlayRequest::GameOverState(GAMEOVER_DEATH_START));
+                self.play_requests.push(PlayRequest::Audio(PlayerAudio::StopBgmAndFanfare(0)));
+                self.play_requests.push(PlayRequest::Audio(PlayerAudio::PlayFanfare(oot_game::audio::NA_BGM_GAME_OVER)));
+            }
+            self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 9806, timer: if cond { 120 } else { 60 }, player: true, parent: CAM_ID_MAIN });
+            self.play_requests.push(PlayRequest::LetterboxSizeTarget(32));
+        }
+    }
+
+    /// `func_80843AE8`, once the death's animation has ended:
+    /// - reviving (`actionVar1`): the fairy comes out (`Player_SpawnFairy`, `FAIRY_REVIVE_DEATH`)
+    ///   with its sound and the camera's one-point cutscene 9908; 60 frames later Link gets up
+    ///   (`gPlayerAnim_link_derth_rebirth` from frame 99) with 20 hearts' worth to count in
+    ///   (`healthAccumulator` 0x140), and once counted he stands, invulnerable for 20 frames;
+    /// - dead: the game over waits a second for its menu (`GAMEOVER_DEATH_DELAY_MENU`).
+    fn func_80843AE8(&mut self, env: &Env) {
+        use oot_game::game_over::{GAMEOVER_DEATH_DELAY_MENU, GAMEOVER_DEATH_WAIT_GROUND};
+        let data = env.data;
+        if self.action_var2 != 0 {
+            if self.action_var2 > 0 {
+                self.action_var2 -= 1;
+                if self.action_var2 == 0 {
+                    if self.state1 & STATE1_27 != 0 {
+                        let a = data.anim("link_swimer_swim_wait");
+                        let last = data.anims[a].last_frame();
+                        self.skel.change(data, a, 1.0, 0.0, last, ANIMMODE_ONCE, -16.0);
+                    } else {
+                        let a = data.anim("link_derth_rebirth");
+                        let last = data.anims[a].last_frame();
+                        self.skel.change(data, a, 1.0, 99.0, last, ANIMMODE_ONCE, 0.0);
+                    }
+                    env.io.borrow_mut().save.health_accumulator = 0x140;
+                    self.action_var2 = -1;
+                }
+            } else if env.io.borrow().save.health_accumulator == 0 {
+                self.state1 &= !STATE1_7;
+                if self.state1 & STATE1_27 != 0 {
+                    self.func_80838F18(data);
+                } else {
+                    self.func_80853080(data);
+                }
+                self.unk_A87 = 20;
+                self.set_invulnerability(-20);
+                self.play_requests.push(PlayRequest::Audio(PlayerAudio::BgmVolumeOnDuringFanfare));
+            }
+        } else if self.action_var1 != 0 {
+            self.action_var2 = 60;
+            // D_808545E4: 5 in front.
+            let pos = self.get_relative_position(self.actor.world_pos, Vec3::new(0.0, 0.0, 5.0));
+            self.play_requests.push(PlayRequest::SpawnReviveFairy(pos));
+            self.play_sfx(NA_SE_EV_FIATY_HEAL - SFX_FLAG);
+            self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 9908, timer: 125, player: true, parent: CAM_ID_MAIN });
+        } else if env.game_over_state == GAMEOVER_DEATH_WAIT_GROUND {
+            self.play_requests.push(PlayRequest::GameOverState(GAMEOVER_DEATH_DELAY_MENU));
+        }
+    }
+
+    /// `Player_Action_80843CEC`: dying on the ground. Without the Goron Tunic, a hot room, a
+    /// void floor or a hot floor set Link burning again. At the animation's end, `func_80843AE8`;
+    /// before it, the fall's sounds (`D_808545F0`, or the shock's bound at frame 88).
+    fn action_80843cec(&mut self, env: &Env) {
+        if self.current_tunic != PLAYER_TUNIC_GORON {
+            let hot_floor = self.s.floor_type.wrapping_sub(FLOOR_TYPE_2) <= FLOOR_TYPE_3 - FLOOR_TYPE_2;
+            let floor_hurts = self.actor.floor_poly.is_some_and(|f| env.col.flag27(f));
+            if env.room_behavior_type2 == ROOM_ENV_HOT || self.s.floor_type == FLOOR_TYPE_9 || (hot_floor && !floor_hurts) {
+                self.func_8083821C(env);
+            }
+        }
+        self.decelerate_to_zero();
+        if self.skel.update(env.data) {
+            if self.actor.category == ACTORCAT_PLAYER {
+                self.func_80843AE8(env);
+            }
+            return;
+        }
+        if self.skel.animation == env.data.anim("link_derth_rebirth") {
+            self.process_anim_sfx_list(env.audio.player_anim_sfx("D_808545F0"));
+        } else if self.skel.animation == env.data.anim("link_normal_electric_shock_end") && self.skel.on_frame(88.0) {
+            self.play_floor_sfx(NA_SE_PL_BOUND);
+        }
+    }
+
+    /// `Player_Action_8084E368`: dying while swimming; `func_80843AE8` at the animation's end.
+    fn action_8084e368(&mut self, env: &Env) {
+        self.func_8084B000();
+        if self.skel.update(env.data) {
+            self.func_80843AE8(env);
+        }
+        let yaw = self.actor.shape_rot.y;
+        self.linear_velocity = self.func_8084AEEC(self.linear_velocity, 0.0, yaw);
     }
 
     /// `func_8083EC18`: onto the wall in front if it's 79 tall and climbable: vines and
@@ -4893,8 +5341,8 @@ impl Player {
     /// `func_80837918`: the sword quad's damage type for this attack.
     fn func_80837918(&mut self, quad: usize, dmg_flags: u32) {
         let q = &mut self.melee_weapon_quads[quad];
-        q.info.toucher.dmg_flags = dmg_flags;
-        q.info.toucher_flags = if dmg_flags == cc::DMG_DEKU_STICK { cc::ATELEM_ON | cc::ATELEM_NEAREST | cc::ATELEM_SFX_WOOD } else { cc::ATELEM_ON | cc::ATELEM_NEAREST };
+        q.info.at_dmg_info.dmg_flags = dmg_flags;
+        q.info.at_elem_flags = if dmg_flags == cc::DMG_DEKU_STICK { cc::ATELEM_ON | cc::ATELEM_NEAREST | cc::ATELEM_SFX_WOOD } else { cc::ATELEM_ON | cc::ATELEM_NEAREST };
     }
 
     /// `func_80832318`: weapon inactive.
@@ -7204,17 +7652,17 @@ const D_80854488: [[u32; 2]; 5] = [
     [cc::DMG_HAMMER_SWING, cc::DMG_HAMMER_JUMP],
 ];
 
-const NO_TOUCH: ColliderElementDamageInfoAT = ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 };
+const NO_TOUCH: ColliderElementDamageInfoAT = ColliderElementDamageInfoAT { dmg_flags: 0, hit_special_effect: 0, damage: 0 };
 
 /// `D_80854624`: the body.
 const D_80854624: ColliderCylinderInit = ColliderCylinderInit {
     base: ColliderInit { col_type: cc::COL_MATERIAL_HIT5, at_flags: cc::AT_NONE, ac_flags: cc::AC_ON | cc::AC_TYPE_ENEMY, oc_flags1: cc::OC1_ON | cc::OC1_TYPE_ALL, oc_flags2: cc::OC2_TYPE_PLAYER, shape: cc::COLSHAPE_CYLINDER },
     info: ColliderElementInit {
-        elem_type: cc::ELEM_MATERIAL_UNK1,
-        toucher: NO_TOUCH,
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-        toucher_flags: cc::ATELEM_NONE,
-        bumper_flags: cc::ACELEM_ON,
+        elem_material: cc::ELEM_MATERIAL_UNK1,
+        at_dmg_info: NO_TOUCH,
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, hit_backlash: 0, defense: 0 },
+        at_elem_flags: cc::ATELEM_NONE,
+        ac_elem_flags: cc::ACELEM_ON,
         oc_elem_flags: cc::OCELEM_ON,
     },
     dim: Cylinder16 { radius: 12, height: 60, y_shift: 0, pos: [0; 3] },
@@ -7224,11 +7672,11 @@ const D_80854624: ColliderCylinderInit = ColliderCylinderInit {
 const D_80854650: ColliderQuadInit = ColliderQuadInit {
     base: ColliderInit { col_type: cc::COL_MATERIAL_NONE, at_flags: cc::AT_ON | cc::AT_TYPE_PLAYER, ac_flags: cc::AC_NONE, oc_flags1: cc::OC1_NONE, oc_flags2: cc::OC2_TYPE_PLAYER, shape: cc::COLSHAPE_QUAD },
     info: ColliderElementInit {
-        elem_type: cc::ELEM_MATERIAL_UNK2,
-        toucher: ColliderElementDamageInfoAT { dmg_flags: 0x0000_0100, effect: 0, damage: 1 },
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, effect: 0, defense: 0 },
-        toucher_flags: cc::ATELEM_ON | cc::ATELEM_SFX_NORMAL,
-        bumper_flags: cc::ACELEM_NONE,
+        elem_material: cc::ELEM_MATERIAL_UNK2,
+        at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0x0000_0100, hit_special_effect: 0, damage: 1 },
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0xFFCF_FFFF, hit_backlash: 0, defense: 0 },
+        at_elem_flags: cc::ATELEM_ON | cc::ATELEM_SFX_NORMAL,
+        ac_elem_flags: cc::ACELEM_NONE,
         oc_elem_flags: cc::OCELEM_NONE,
     },
     quad: [Vec3::ZERO; 4],
@@ -7238,11 +7686,11 @@ const D_80854650: ColliderQuadInit = ColliderQuadInit {
 const D_808546A0: ColliderQuadInit = ColliderQuadInit {
     base: ColliderInit { col_type: cc::COL_MATERIAL_METAL, at_flags: cc::AT_ON | cc::AT_TYPE_PLAYER, ac_flags: cc::AC_ON | cc::AC_HARD | cc::AC_TYPE_ENEMY, oc_flags1: cc::OC1_NONE, oc_flags2: cc::OC2_TYPE_PLAYER, shape: cc::COLSHAPE_QUAD },
     info: ColliderElementInit {
-        elem_type: cc::ELEM_MATERIAL_UNK2,
-        toucher: ColliderElementDamageInfoAT { dmg_flags: 0x0010_0000, effect: 0, damage: 0 },
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0xDFCF_FFFF, effect: 0, defense: 0 },
-        toucher_flags: cc::ATELEM_ON | cc::ATELEM_SFX_NORMAL,
-        bumper_flags: cc::ACELEM_ON,
+        elem_material: cc::ELEM_MATERIAL_UNK2,
+        at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0x0010_0000, hit_special_effect: 0, damage: 0 },
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0xDFCF_FFFF, hit_backlash: 0, defense: 0 },
+        at_elem_flags: cc::ATELEM_ON | cc::ATELEM_SFX_NORMAL,
+        ac_elem_flags: cc::ACELEM_ON,
         oc_elem_flags: cc::OCELEM_NONE,
     },
     quad: [Vec3::ZERO; 4],
@@ -7314,6 +7762,10 @@ mod rs {
     pub const HIDDEN: usize = 6;
     /// `switches`: `shape.shadowDraw` set.
     pub const SHADOW: usize = 7;
+    /// `switches`: the hit flash's fog far plane (`Player_Draw`'s `Gfx_SetFog2`), 0 for none.
+    pub const DAMAGE_FLASH_FAR: usize = 8;
+    /// `switches`: the frozen ice's scale (`PLAYER_STATE2_14`), 0 for none.
+    pub const ICE_SCALE: usize = 9;
 }
 
 impl LookRotations {
@@ -7415,6 +7867,8 @@ impl ActorImpl for Player {
             cs_frames: play.cs_ctx.frames,
             cs_link_action: play.cs_ctx.link_action,
             scene_id: play.scene_id,
+            game_over_state: play.game_over_ctx.state,
+            room_behavior_type2: play.room_ctx.cur.behavior_type2,
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for textboxBtnCooldownTimer frames after a talk.
@@ -7428,9 +7882,13 @@ impl ActorImpl for Player {
         }
         Player::update(self, &env, input);
         play.put_io(io.into_inner());
+        // The requests run where the C's calls are, inside Player's update, with Player in place
+        // for the camera (PlayState::player_out_of_arena).
+        play.player_out_of_arena = play.player.and_then(|h| Some((play.player_view_of_impl(self)?, play.cam_actor_of(h, &self.actor))));
         for r in std::mem::take(&mut self.play_requests) {
             apply_play_request(play, r);
         }
+        play.player_out_of_arena = None;
         // Player_UpdateCamAndSeqModes' requests, in its order: Camera_SetViewParam, then
         // Camera_RequestMode.
         if let Some((mode, target)) = self.cam_request.take() {
@@ -7458,6 +7916,16 @@ impl ActorImpl for Player {
     fn draw_update(&mut self, play: &mut PlayState) {
         if self.inert {
             return;
+        }
+        // Player_Draw (not under PLAYER_STATE2_29): while the invincibility is visible, the red
+        // fog's far plane swings between 2000 and 6000 (Gfx_SetFog2(255, 0, 0, 0, 0, far)), by
+        // damageFlickerAnimCounter stepped faster as the timer runs out.
+        self.damage_flash_far = None;
+        if self.state2 & STATE2_29 == 0 && self.invincibility_timer > 0 {
+            let step = (50 - self.invincibility_timer as i32).clamp(8, 40);
+            self.damage_flicker_anim_counter = self.damage_flicker_anim_counter.wrapping_add(step as u8);
+            let far = 4000 - (cos_s((self.damage_flicker_anim_counter as i32 * 256) as i16) * 2000.0) as i32;
+            self.damage_flash_far = Some(far);
         }
         if play.debug.foot_ik {
             self.legs = Some(self.apply_foot_ik(&play.data, &play.col));
@@ -7495,7 +7963,7 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 8];
+        let mut switches = vec![0u32; 10];
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
@@ -7504,6 +7972,9 @@ impl ActorImpl for Player {
         switches[rs::CRAWLING] = (self.state2 & STATE2_18 != 0) as u32;
         switches[rs::HIDDEN] = (self.state2 & STATE2_29 != 0) as u32;
         switches[rs::SHADOW] = self.shadow_feet as u32;
+        switches[rs::DAMAGE_FLASH_FAR] = self.damage_flash_far.map(|f| f as u32).unwrap_or(0);
+        // The ice's scale while frozen: (actionVar1 >> 1) * 22.
+        switches[rs::ICE_SCALE] = if self.state2 & STATE2_14 != 0 { ((self.action_var1 >> 1) as i32 * 22) as u32 } else { 0 };
         RenderState {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
@@ -7514,6 +7985,7 @@ impl ActorImpl for Player {
             values,
             switches,
             teleported: self.actor.teleported,
+            color_filter: (0, 0),
         }
     }
 
@@ -7554,7 +8026,19 @@ impl ActorImpl for Player {
         // crawl's camera is inside him.
         let projected_z = (play.view_proj * st.pos.extend(1.0)).z;
         if !(st.switches[rs::CRAWLING] != 0 && projected_z < 0.0) {
-            out.opa.push(DrawCmd { mesh, transform: root, bones, params: Default::default() });
+            // The hit flash: Link's OPA lists in the red fog (Play_SetFog puts the scene's back).
+            let flash = st.switches.get(rs::DAMAGE_FLASH_FAR).copied().unwrap_or(0);
+            let fog = (flash != 0).then(|| oot_game::gbi::gfx_set_fog(255, 0, 0, 0, 0, flash as i32));
+            out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
+        }
+        // Frozen (PLAYER_STATE2_14): the ice, at Actor_Draw's matrix scaled by
+        // (actionVar1 >> 1) * 22, in the XLU list.
+        let ice = st.switches.get(rs::ICE_SCALE).copied().unwrap_or(0);
+        if ice != 0 {
+            let mut sv = eng_gfx::SegmentValues::default();
+            sv.read(SEG_ICE_SCROLL, &ice_scroll(play.gameplay_frames));
+            let m = root * Mat4::from_scale(Vec3::splat(ice as f32));
+            out.xlu.push(DrawCmd { mesh: MeshKey::named(oot_game::pack::keys::bake(ICE_BAKE)), transform: m, bones: Vec::new(), params: eng_gfx::DrawParams { segments: Some(sv), ..Default::default() } });
         }
         // Player_DrawGetItem (unk_862 > 0): GetItem_Draw at sGetItemRefPos, 3.3 in front and 14
         // up (6 for an exchange item; IREG(90) is 0), spinning, at 0.2.
@@ -7786,6 +8270,26 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             }
         }
         PlayRequest::FadeOutAllSeq(n) => play.audio.func_800f6964(n),
+        PlayRequest::GameOverState(s) => play.game_over_ctx.state = s,
+        PlayRequest::LetterboxSizeTarget(t) => play.letterbox.set_size_target(t),
+        PlayRequest::SpawnReviveFairy(pos) => {
+            if let Err(e) = play.actor_spawn(crate::en_elf::ACTOR_EN_ELF, pos, [0; 3], crate::en_elf::FAIRY_REVIVE_DEATH) {
+                log::debug!("the revival's fairy: {e:?}");
+            }
+        }
+        PlayRequest::BurnDekuShield(pos) => {
+            // Actor_Spawn(ACTOR_ITEM_SHIELD, params 1): Item_Shield isn't ported (a placeholder).
+            if let Err(e) = play.actor_spawn(ACTOR_ITEM_SHIELD, pos, [0; 3], 1) {
+                log::debug!("Item_Shield: {e:?}");
+            }
+            play.start_textbox(0x305F, None);
+        }
+        PlayRequest::Audio(a) => match a {
+            PlayerAudio::BgmVolumeOffDuringFanfare => play.audio.audio_set_bgm_volume_off_during_fanfare(),
+            PlayerAudio::BgmVolumeOnDuringFanfare => play.audio.audio_set_bgm_volume_on_during_fanfare(),
+            PlayerAudio::StopBgmAndFanfare(d) => play.audio.audio_stop_bgm_and_fanfare(d),
+            PlayerAudio::PlayFanfare(id) => play.audio.play_fanfare(id),
+        },
         PlayRequest::Sfx(s) => {
             use oot_game::audio::sfx::SfxPos;
             let Some(me) = play.player else { return };

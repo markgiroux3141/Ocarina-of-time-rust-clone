@@ -85,7 +85,10 @@ impl Renderer {
     ) {
         let aspect = target.size.0 as f32 / target.size.1 as f32;
         let view = camera.view();
-        let fog = light.fog.unwrap_or(Fog { color: Vec3::ZERO, multiplier: 0.0, offset: 0.0, near: 1.0, far: 2.0 });
+        // No fog: a zero factor, against the frame's own projection (a draw's own fog,
+        // `eng_gfx::DrawParams::fog`, is computed against it).
+        let (near, far) = camera.clip_planes();
+        let fog = light.fog.unwrap_or(Fog { color: Vec3::ZERO, multiplier: 0.0, offset: 0.0, near, far });
         let globals = Globals {
             view_proj: (camera.proj(aspect) * view).to_cols_array_2d(),
             view: view.to_cols_array_2d(),

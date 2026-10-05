@@ -170,11 +170,11 @@ pub fn bakes() -> Vec<MeshBake> {
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
     base: ColliderInit { col_type: COL_MATERIAL_NONE, at_flags: AT_NONE, ac_flags: AC_ON | AC_TYPE_PLAYER, oc_flags1: OC1_NONE, oc_flags2: OC2_NONE, shape: COLSHAPE_CYLINDER },
     info: ColliderElementInit {
-        elem_type: ELEM_MATERIAL_UNK0,
-        toucher: ColliderElementDamageInfoAT { dmg_flags: 0, effect: 0, damage: 0 },
-        bumper: ColliderElementDamageInfoACInit { dmg_flags: 0x10, effect: 0, defense: 0 },
-        toucher_flags: ATELEM_NONE | ATELEM_SFX_NORMAL,
-        bumper_flags: ACELEM_ON,
+        elem_material: ELEM_MATERIAL_UNK0,
+        at_dmg_info: ColliderElementDamageInfoAT { dmg_flags: 0, hit_special_effect: 0, damage: 0 },
+        ac_dmg_info: ColliderElementDamageInfoACInit { dmg_flags: 0x10, hit_backlash: 0, defense: 0 },
+        at_elem_flags: ATELEM_NONE | ATELEM_SFX_NORMAL,
+        ac_elem_flags: ACELEM_ON,
         oc_elem_flags: OCELEM_NONE,
     },
     dim: eng_collision::math3d::Cylinder16 { radius: 10, height: 30, y_shift: 0, pos: [0; 3] },
@@ -851,16 +851,24 @@ pub fn item_drop_collectible(play: &mut PlayState, spawn_pos: Vec3, params: i16)
 
 /// `Item_DropCollectibleRandom`: a drop from table `params >> 4` (`sItemDropIds`, a random one
 /// of its 16), as many as `sDropQuantities` says. `ITEM00_FLEXIBLE` gives what Link needs most.
+/// A `from_actor` hit by an arrow or magic (its `dropFlag`) drops a fixed entry instead (the
+/// light arrow's a purple rupee).
 pub fn item_drop_collectible_random(play: &mut PlayState, from_actor: Option<&Actor>, spawn_pos: Vec3, params: i16) {
     let Some(assets) = play.assets.clone() else { return };
     let tables = &assets.item_drops;
     let mut drop_table_index = (play.rand.zero_one() * 16.0) as i16;
     let param8000 = params as u16 & 0x8000 != 0;
     let mut params = params & 0x7FFF;
-    // fromActor->dropFlag, which picks a fixed table and entry, isn't kept (0).
-    let _ = from_actor;
     let id_at = |params: i16, i: i16| tables.ids.get((params + i) as usize).copied().unwrap_or(ITEM00_NONE as u8);
-    let mut drop_id = id_at(params, drop_table_index) as i16;
+    let drop_flag = from_actor.map(|a| a.drop_flag).unwrap_or(0);
+    if from_actor.is_some() && drop_flag != 0 {
+        let fixed = [(0x01, 1, 11), (0x02, 1, 6), (0x04, 6, 9), (0x08, 3, 11), (0x10, 6, 12), (0x20, 0, 0), (0x40, 0, 1)];
+        if let Some(&(_, table, index)) = fixed.iter().find(|(f, _, _)| drop_flag & f != 0) {
+            params = table * 0x10;
+            drop_table_index = index;
+        }
+    }
+    let mut drop_id = if from_actor.is_some() && drop_flag & 0x20 != 0 { ITEM00_RUPEE_PURPLE } else { id_at(params, drop_table_index) as i16 };
     if drop_id == ITEM00_FLEXIBLE {
         let s = &play.save;
         if s.health <= 0x10 {

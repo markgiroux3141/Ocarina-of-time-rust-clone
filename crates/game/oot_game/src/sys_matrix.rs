@@ -1,9 +1,11 @@
-//! `sys_matrix.c`'s rotation functions on an `MtxF`, ported as written for the actors that
-//! build a rotation and read it back as angles (`En_Goroiwa`'s roll). The field names are the
-//! C's: `MtxF` stores `xx, yx, zx, wx, xy, ...` in that order, and a column vector `v`
-//! transforms as `x' = xx·vx + xy·vy + xz·vz + xw`.
+//! `sys_matrix.c`'s functions on an `MtxF`, ported as written for the actors whose game state
+//! depends on a matrix: `En_Goroiwa`'s roll (built and read back as angles), `En_Dekubaba`'s
+//! collider spheres (placed by the matrices its draw builds). The field names are the C's:
+//! `MtxF` stores `xx, yx, zx, wx, xy, ...` in that order, and a column vector `v` transforms as
+//! `x' = xx·vx + xy·vy + xz·vz + xw`. The `s16` angles go through `Math_SinS` and `Math_CosS`.
 
 use crate::camera::f_atan2f;
+use eng_math::{cos_s, sin_s};
 use glam::Vec3;
 
 /// `MtxF`.
@@ -66,6 +68,155 @@ impl MtxF {
     }
 
     pub const IDENTITY: MtxF = MtxF { xx: 1.0, yx: 0.0, zx: 0.0, wx: 0.0, xy: 0.0, yy: 1.0, zy: 0.0, wy: 0.0, xz: 0.0, yz: 0.0, zz: 1.0, wz: 0.0, xw: 0.0, yw: 0.0, zw: 0.0, ww: 1.0 };
+
+    /// `Matrix_Translate(x, y, z, MTXMODE_NEW)` (`SkinMatrix_SetTranslate`).
+    pub fn set_translate(x: f32, y: f32, z: f32) -> MtxF {
+        MtxF { xw: x, yw: y, zw: z, ..MtxF::IDENTITY }
+    }
+
+    /// `Matrix_Translate(x, y, z, MTXMODE_APPLY)`.
+    pub fn translate(&mut self, x: f32, y: f32, z: f32) {
+        self.xw += self.xx * x + self.xy * y + self.xz * z;
+        self.yw += self.yx * x + self.yy * y + self.yz * z;
+        self.zw += self.zx * x + self.zy * y + self.zz * z;
+        self.ww += self.wx * x + self.wy * y + self.wz * z;
+    }
+
+    /// `Matrix_Scale(x, y, z, MTXMODE_APPLY)`.
+    pub fn scale(&mut self, x: f32, y: f32, z: f32) {
+        self.xx *= x;
+        self.yx *= x;
+        self.zx *= x;
+        self.xy *= y;
+        self.yy *= y;
+        self.zy *= y;
+        self.xz *= z;
+        self.yz *= z;
+        self.zz *= z;
+        self.wx *= x;
+        self.wy *= y;
+        self.wz *= z;
+    }
+
+    /// The rotations `Matrix_RotateZYX` and `Matrix_TranslateRotateZYX` apply: about z (always,
+    /// even by 0), then y, then x (each skipped at 0).
+    fn rotate_zyx_parts(&mut self, x: i16, y: i16, z: i16) {
+        let (sin, cos) = (sin_s(z), cos_s(z));
+        let rz = |a: &mut f32, b: &mut f32| {
+            let (t1, t2) = (*a, *b);
+            *a = t1 * cos + t2 * sin;
+            *b = t2 * cos - t1 * sin;
+        };
+        rz(&mut self.xx, &mut self.xy);
+        rz(&mut self.yx, &mut self.yy);
+        rz(&mut self.zx, &mut self.zy);
+        rz(&mut self.wx, &mut self.wy);
+        if y != 0 {
+            let (sin, cos) = (sin_s(y), cos_s(y));
+            let ry = |a: &mut f32, b: &mut f32| {
+                let (t1, t2) = (*a, *b);
+                *a = t1 * cos - t2 * sin;
+                *b = t1 * sin + t2 * cos;
+            };
+            ry(&mut self.xx, &mut self.xz);
+            ry(&mut self.yx, &mut self.yz);
+            ry(&mut self.zx, &mut self.zz);
+            ry(&mut self.wx, &mut self.wz);
+        }
+        if x != 0 {
+            let (sin, cos) = (sin_s(x), cos_s(x));
+            let rx = |a: &mut f32, b: &mut f32| {
+                let (t1, t2) = (*a, *b);
+                *a = t1 * cos + t2 * sin;
+                *b = t2 * cos - t1 * sin;
+            };
+            rx(&mut self.xy, &mut self.xz);
+            rx(&mut self.yy, &mut self.yz);
+            rx(&mut self.zy, &mut self.zz);
+            rx(&mut self.wy, &mut self.wz);
+        }
+    }
+
+    /// `Matrix_RotateZYX(x, y, z, MTXMODE_APPLY)`.
+    pub fn rotate_zyx(&mut self, x: i16, y: i16, z: i16) {
+        self.rotate_zyx_parts(x, y, z);
+    }
+
+    /// `Matrix_TranslateRotateZYX(&translation, &rotation)`: a limb's place in its parent (the
+    /// translation in the current frame, then the rotation).
+    pub fn translate_rotate_zyx(&mut self, t: Vec3, r: [i16; 3]) {
+        self.xw += self.xx * t.x + self.xy * t.y + self.xz * t.z;
+        self.yw += self.yx * t.x + self.yy * t.y + self.yz * t.z;
+        self.zw += self.zx * t.x + self.zy * t.y + self.zz * t.z;
+        self.ww += self.wx * t.x + self.wy * t.y + self.wz * t.z;
+        self.rotate_zyx_parts(r[0], r[1], r[2]);
+    }
+
+    /// `Matrix_SetTranslateRotateYXZ(tx, ty, tz, &rot)`: `Actor_Draw`'s model matrix before its
+    /// scale.
+    pub fn set_translate_rotate_yxz(tx: f32, ty: f32, tz: f32, rot: [i16; 3]) -> MtxF {
+        let mut m = MtxF::IDENTITY;
+        let (temp1, temp2) = (sin_s(rot[1]), cos_s(rot[1]));
+        m.xx = temp2;
+        m.zx = -temp1;
+        m.xw = tx;
+        m.yw = ty;
+        m.zw = tz;
+        m.wx = 0.0;
+        m.wy = 0.0;
+        m.wz = 0.0;
+        m.ww = 1.0;
+        if rot[0] != 0 {
+            let (sin, cos) = (sin_s(rot[0]), cos_s(rot[0]));
+            m.zz = temp2 * cos;
+            m.zy = temp2 * sin;
+            m.xz = temp1 * cos;
+            m.xy = temp1 * sin;
+            m.yz = -sin;
+            m.yy = cos;
+        } else {
+            m.zz = temp2;
+            m.xz = temp1;
+            m.yz = 0.0;
+            m.zy = 0.0;
+            m.xy = 0.0;
+            m.yy = 1.0;
+        }
+        if rot[2] != 0 {
+            let (sin, cos) = (sin_s(rot[2]), cos_s(rot[2]));
+            let (t1, t2) = (m.xx, m.xy);
+            m.xx = t1 * cos + t2 * sin;
+            m.xy = t2 * cos - t1 * sin;
+            let (t1, t2) = (m.zx, m.zy);
+            m.zx = t1 * cos + t2 * sin;
+            m.zy = t2 * cos - t1 * sin;
+            let t2 = m.yy;
+            m.yx = t2 * sin;
+            m.yy = t2 * cos;
+        } else {
+            m.yx = 0.0;
+        }
+        m
+    }
+
+    /// `Matrix_MultVec3f`.
+    pub fn mult_vec3f(&self, v: Vec3) -> Vec3 {
+        Vec3::new(
+            self.xw + (self.xx * v.x + self.xy * v.y + self.xz * v.z),
+            self.yw + (self.yx * v.x + self.yy * v.y + self.yz * v.z),
+            self.zw + (self.zx * v.x + self.zy * v.y + self.zz * v.z),
+        )
+    }
+
+    /// The matrix as glam's (column-major: `x_axis` is `(xx, yx, zx, wx)`).
+    pub fn to_mat4(&self) -> glam::Mat4 {
+        glam::Mat4::from_cols(
+            glam::Vec4::new(self.xx, self.yx, self.zx, self.wx),
+            glam::Vec4::new(self.xy, self.yy, self.zy, self.wy),
+            glam::Vec4::new(self.xz, self.yz, self.zz, self.wz),
+            glam::Vec4::new(self.xw, self.yw, self.zw, self.ww),
+        )
+    }
 
     /// `Matrix_RotateX(x, MTXMODE_APPLY)`.
     pub fn rotate_x(&mut self, x: f32) {

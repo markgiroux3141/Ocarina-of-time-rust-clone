@@ -227,6 +227,36 @@ fn calc_dxt_4b(width: u32) -> u32 {
 }
 
 /// `Vtx` (16 bytes, big-endian): `ob`, `flag` 0, `tc` (s10.5), `cn`.
+/// `gSPFogPosition(min, max)` after `gDPSetFogColor(color)`: the fog factor's multiplier
+/// (`128000 / (max - min)`) and offset (`(500 - min) * 256 / (max - min)`), each the low 16 bits
+/// as the command packs them.
+pub fn sp_fog_position(color: [u8; 4], min: i32, max: i32) -> eng_gfx::FogOverride {
+    let d = max - min;
+    eng_gfx::FogOverride { color, multiplier: (128000 / d) as i16, offset: ((500 - min) * 256 / d) as i16 }
+}
+
+/// `Gfx_SetFog` (`z_rcp.c`): the fog colour, and its position from `near` to `far` (a far plane
+/// of `near + 1` for equal ones). From 1000 there's no fog; above 996 it's clamped there
+/// (`gSPFogFactor(0x7FFF, -0x7F00)`); below 0 everything is fogged (`gSPFogFactor(0, 255)`).
+///
+/// @bug (game): with `far - near` under 4 the multiplier overflows 16 bits (only the case
+/// above 996 is caught).
+pub fn gfx_set_fog(r: u8, g: u8, b: u8, a: u8, near: i32, mut far: i32) -> eng_gfx::FogOverride {
+    if far == near {
+        far += 1;
+    }
+    let color = [r, g, b, a];
+    if near >= 1000 {
+        eng_gfx::FogOverride { color, multiplier: 0, offset: 0 }
+    } else if near > 996 {
+        eng_gfx::FogOverride { color, multiplier: 0x7FFF, offset: -0x7F00 }
+    } else if near < 0 {
+        eng_gfx::FogOverride { color, multiplier: 0, offset: 255 }
+    } else {
+        sp_fog_position(color, near, far)
+    }
+}
+
 pub fn push_vtx(out: &mut Vec<u8>, ob: [i32; 3], tc: [i32; 2], cn: [u8; 4]) {
     for v in ob {
         out.extend_from_slice(&(v as i16).to_be_bytes());

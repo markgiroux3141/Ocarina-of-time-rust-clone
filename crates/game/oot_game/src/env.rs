@@ -478,6 +478,12 @@ pub struct EnvStatics {
     pub weather_mode: u8,
     pub lightning_strike: LightningStrike,
     pub lightning_bolts: [LightningBolt; 3],
+    /// `sGameOverLightsIntensity`, and the two game over lights' nodes (`sNGameOverLightNode`,
+    /// `sSGameOverLightNode`; `None` once removed: the C's nodes point at the static infos,
+    /// which later writes then change to no effect).
+    pub game_over_lights_intensity: u8,
+    pub n_game_over_light_node: Option<crate::lights::LightNode>,
+    pub s_game_over_light_node: Option<crate::lights::LightNode>,
 }
 
 impl EnvStatics {
@@ -632,5 +638,94 @@ impl crate::play::PlayState {
         }
         let st = self.env_statics.lightning_strike;
         self.lightning_flash = (st.state != LIGHTNING_STRIKE_WAIT).then_some([st.flash_red, st.flash_green, st.flash_blue, st.flash_alpha as u8]);
+    }
+
+    /// The two game over lights at `intensity`: 10 to the north-west and 10 to the south-east
+    /// of Player, 10 up (`Lights_PointNoGlowSetInfo` with the position truncated, then offset).
+    fn game_over_light_infos(&self, intensity: u8) -> [crate::lights::LightInfo; 2] {
+        use crate::lights::LightInfo;
+        let p = self.player.and_then(|h| self.actors.actor(h)).map(|a| a.world_pos).unwrap_or_default();
+        let x = |d: f32| ((p.x as i16) as f32 + d) as i16;
+        let y = ((p.y as i16) as f32 + 10.0) as i16;
+        let z = |d: f32| ((p.z as i16) as f32 + d) as i16;
+        let c = [intensity; 3];
+        [LightInfo::point_no_glow(x(-10.0), y, z(-10.0), c, 255), LightInfo::point_no_glow(x(10.0), y, z(10.0), c, 255)]
+    }
+
+    /// `Environment_InitGameOverLights`: two black point lights inserted at Player.
+    pub fn environment_init_game_over_lights(&mut self) {
+        self.env_statics.game_over_lights_intensity = 0;
+        let [n, s] = self.game_over_light_infos(0);
+        self.env_statics.n_game_over_light_node = self.light_ctx.insert_light(n);
+        self.env_statics.s_game_over_light_node = self.light_ctx.insert_light(s);
+    }
+
+    /// `Environment_FadeInGameOverLights`: the lights follow Player and brighten by 2 a frame
+    /// to 254; the scene darkens (the ambient and the first light down by 12 a frame to -255,
+    /// the fog black, the far plane and the fog pulled in), or in a fixed-camera scene the
+    /// screen fills with black at the lights' intensity.
+    pub fn environment_fade_in_game_over_lights(&mut self) {
+        let intensity = self.env_statics.game_over_lights_intensity;
+        let [n, s] = self.game_over_light_infos(intensity);
+        self.light_ctx.set_info(self.env_statics.n_game_over_light_node, n);
+        self.light_ctx.set_info(self.env_statics.s_game_over_light_node, s);
+        if intensity < 254 {
+            self.env_statics.game_over_lights_intensity += 2;
+        }
+        if self.cam_is_not_fixed() {
+            let e = &mut self.env_ctx;
+            for i in 0..3 {
+                if e.adj_ambient_color[i] > -255 {
+                    e.adj_ambient_color[i] -= 12;
+                    e.adj_light1_color[i] -= 12;
+                }
+                e.adj_fog_color[i] = -255;
+            }
+            if e.light_settings.fog_far as i32 + e.adj_fog_far as i32 > 900 {
+                e.adj_fog_far -= 100;
+            }
+            if e.light_settings.fog_near_raw as i16 as i32 + e.adj_fog_near as i32 > 950 {
+                e.adj_fog_near -= 10;
+            }
+        } else {
+            self.transition.screen_fill = Some([0, 0, 0, self.env_statics.game_over_lights_intensity]);
+        }
+    }
+
+    /// `Environment_FadeOutGameOverLights`: the lights dim by 3 a frame and go at intensity 1,
+    /// and the scene's adjustments ease back to none (or the black fill fades out).
+    ///
+    /// @bug (game): the lights are removed only if the intensity passes through exactly 1. A
+    /// fade out from an intensity that's 2 more than a multiple of 3 (the revival's, which
+    /// fades in from 0 by 2) goes 2, then 0, and they stay, unlit.
+    pub fn environment_fade_out_game_over_lights(&mut self) {
+        let st = &mut self.env_statics;
+        if st.game_over_lights_intensity >= 3 {
+            st.game_over_lights_intensity -= 3;
+        } else {
+            st.game_over_lights_intensity = 0;
+        }
+        let intensity = st.game_over_lights_intensity;
+        if intensity == 1 {
+            let (n, s) = (st.n_game_over_light_node.take(), st.s_game_over_light_node.take());
+            self.light_ctx.remove_light(n);
+            self.light_ctx.remove_light(s);
+        } else if intensity >= 2 {
+            let [n, s] = self.game_over_light_infos(intensity);
+            self.light_ctx.set_info(self.env_statics.n_game_over_light_node, n);
+            self.light_ctx.set_info(self.env_statics.s_game_over_light_node, s);
+        }
+        if self.cam_is_not_fixed() {
+            let e = &mut self.env_ctx;
+            for i in 0..3 {
+                eng_math::smooth_step_to_s(&mut e.adj_ambient_color[i], 0, 5, 12, 1);
+                eng_math::smooth_step_to_s(&mut e.adj_light1_color[i], 0, 5, 12, 1);
+                e.adj_fog_color[i] = 0;
+            }
+            e.adj_fog_far = 0;
+            e.adj_fog_near = 0;
+        } else {
+            self.transition.screen_fill = if intensity == 0 { None } else { Some([0, 0, 0, intensity]) };
+        }
     }
 }
