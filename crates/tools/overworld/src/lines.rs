@@ -1,5 +1,5 @@
 //! Things drawn along lines of nodes (`Doc::lines`): dirt paths painted into the ground as Kokiri
-//! Forest's are, and fences standing on it (ADR 0036).
+//! Forest's are, fences standing on it, hanging bridges and walk-through hedges (ADR 0036).
 //!
 //! A dirt path doesn't lie on the ground as a decal (which would fight the floor for depth). It
 //! is cut into the floor: the floors take extra points on two rings round its centre line (with
@@ -10,12 +10,12 @@
 //! The edge wanders a little (smooth noise along the line), as the decals' blotches do.
 
 use crate::doc::Line;
-use crate::geom::{dist, dist_to_seg, lerp, Sampling, P2, P3};
+use crate::geom::{dist, dist_to_seg, lerp, segments_cross, signed_area, Sampling, P2, P3};
 use crate::mesh::Mesh;
 use crate::noise::relief;
 use crate::paths::centre_line;
 use crate::props::Ground;
-use crate::theme::{Dirt, FenceStyle, Hanging};
+use crate::theme::{Dirt, FenceStyle, Hanging, HedgeStyle};
 
 /// One dirt path: its centre line, and where its weight is full (`r1`) and nothing (`r2`).
 pub struct DirtLine {
@@ -234,6 +234,83 @@ pub fn fence(line: &Line, style: &FenceStyle, mesh: &mut Mesh, ground: &Ground) 
         problems.push(format!("{} {:?}: {missing} of its points are off the ground", line.kind, line.name));
     }
     problems
+}
+
+/// A walk-through hedge over the closed loop of `line`'s nodes, straight between them: its top
+/// `height` above the ground everywhere (points every `spacing` inside and along the edge), grass
+/// skirts round it facing out, down to the ground, both in object `hedges`. Under it, collision
+/// only (`hedges_collision`), a floor of tall-grass footsteps a hair above the ground. Its top
+/// and skirts don't collide: Link wades through, as spot04's. Returns the problems.
+pub fn hedge(line: &Line, st: &HedgeStyle, mesh: &mut Mesh, ground: &Ground) -> Vec<String> {
+    let name = if line.name.is_empty() { "hedge".to_string() } else { line.name.clone() };
+    let mut xy: Vec<P2> = line.nodes.iter().filter(|n| n.len() >= 2).map(|n| [n[0], n[1]]).collect();
+    xy.dedup_by(|a, b| dist(*a, *b) < 1.0);
+    while xy.len() > 1 && dist(xy[0], xy[xy.len() - 1]) < 1.0 {
+        xy.pop();
+    }
+    if xy.len() < 3 {
+        return vec![format!("hedge {name}: it needs 3 nodes")];
+    }
+    let n = xy.len();
+    for i in 0..n {
+        for j in i + 2..n {
+            if (j + 1) % n == i {
+                continue;
+            }
+            if segments_cross(xy[i], xy[(i + 1) % n], xy[j], xy[(j + 1) % n]) {
+                let p = lerp(xy[i], xy[(i + 1) % n], 0.5);
+                return vec![format!("hedge {name}: its edge crosses itself near ({:.0}, {:.0})", p[0], p[1])];
+            }
+        }
+    }
+    if signed_area(&xy) < 0.0 {
+        xy.reverse();
+    }
+    // the edge, with points every `spacing`
+    let spacing = st.spacing.max(10.0);
+    let mut ring: Vec<P2> = vec![];
+    for i in 0..n {
+        let (a, b) = (xy[i], xy[(i + 1) % n]);
+        let k = ((dist(a, b) / spacing).ceil() as usize).max(1);
+        ring.extend((0..k).map(|m| lerp(a, b, m as f64 / k as f64)));
+    }
+    let mut missing = 0;
+    let mut floor = |p: P2| {
+        ground.at(mesh, p).0.unwrap_or_else(|| {
+            missing += 1;
+            0.0
+        })
+    };
+    let tris: Vec<[P3; 3]> = crate::build::triangulate_with(&ring, &[], spacing, &[])
+        .into_iter()
+        .map(|t| {
+            let t = if crate::geom::cross(t[0], t[1], t[2]) < 0.0 { [t[0], t[2], t[1]] } else { t };
+            t.map(|p| [p[0], p[1], floor(p)])
+        })
+        .collect();
+    let base: Vec<f64> = ring.iter().map(|&p| floor(p)).collect();
+    let h = st.height;
+    let tt = st.top_tile.max(1.0);
+    for t in &tris {
+        let top = t.map(|q| [q[0], q[1], q[2] + h]);
+        mesh.tri("hedges", top, t.map(|q| [q[0] / tt, q[1] / tt]), &st.top, "");
+        mesh.col_tri("hedges_collision", t.map(|q| [q[0], q[1], q[2] + 2.0]), &st.surface);
+    }
+    // the skirts, the texture running on round the edge
+    let mut u = 0.0;
+    for i in 0..ring.len() {
+        let j = (i + 1) % ring.len();
+        let (a, b, za, zb) = (ring[i], ring[j], base[i], base[j]);
+        let du = dist(a, b) / st.side_tile.max(1.0);
+        let quad = [[a[0], a[1], za], [b[0], b[1], zb], [b[0], b[1], zb + h], [a[0], a[1], za + h]];
+        mesh.quad("hedges", quad, [[u, 0.0], [u + du, 0.0], [u + du, 1.0], [u, 1.0]], &st.side, "");
+        u += du;
+    }
+    if missing > 0 {
+        vec![format!("hedge {name}: {missing} of its points are off the ground")]
+    } else {
+        vec![]
+    }
 }
 
 /// The catenary's parameter for a span `l` sagging `d` in the middle: a (cosh(l / 2a) - 1) = d.

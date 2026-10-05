@@ -183,10 +183,23 @@ pub fn catmull_rom(p0: P2, p1: P2, p2: P2, p3: P2, n: usize) -> Vec<P2> {
 
 /// How a curve is sampled: every so often (the same everywhere), or adaptively, keeping only
 /// the points needed to stay within `tol` of the true curve, with no piece longer than `max`.
+/// `Facets` keeps the same corners as `Within` but cuts the long pieces along their straight
+/// chords, so the curve shows as flat facets. `Straight` isn't a curve at all: the straight
+/// line between the two nodes, in pieces no longer than `max`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Sampling {
     Every(f64),
     Within { tol: f64, max: f64 },
+    Facets { tol: f64, max: f64 },
+    Straight { max: f64 },
+}
+
+/// The straight line from a to b in pieces no longer than `max`: a first and b last, exactly.
+fn straight(a: P2, b: P2, max: f64) -> Vec<P2> {
+    let n = ((dist(a, b) / max.max(1.0)).ceil() as usize).max(1);
+    let mut out: Vec<P2> = (0..n).map(|k| lerp(a, b, k as f64 / n as f64)).collect();
+    out.push(b);
+    out
 }
 
 /// The centripetal Catmull-Rom curve from p1 to p2 (p0 and p3 shape the tangents), sampled:
@@ -194,13 +207,18 @@ pub enum Sampling {
 pub fn sample_curve(p0: P2, p1: P2, p2: P2, p3: P2, s: Sampling) -> Vec<P2> {
     match s {
         Sampling::Every(d) => catmull_rom(p0, p1, p2, p3, ((dist(p1, p2) / d).ceil() as usize).max(1)),
+        Sampling::Straight { max } => straight(p1, p2, max),
+        Sampling::Facets { tol, max } => {
+            let (dense, keep) = dp_curve(p0, p1, p2, p3, tol);
+            let kept: Vec<P2> = (0..dense.len()).filter(|&i| keep[i]).map(|i| dense[i]).collect();
+            let mut out = vec![p1];
+            for w in kept.windows(2) {
+                out.extend_from_slice(&straight(w[0], w[1], max)[1..]);
+            }
+            out
+        }
         Sampling::Within { tol, max } => {
-            let dense = catmull_rom(p0, p1, p2, p3, ((dist(p1, p2) / 8.0).ceil() as usize).clamp(4, 4000));
-            let last = dense.len() - 1;
-            let mut keep = vec![false; dense.len()];
-            keep[0] = true;
-            keep[last] = true;
-            dp_mark(&dense, 0, last, tol, &mut keep);
+            let (dense, keep) = dp_curve(p0, p1, p2, p3, tol);
             let mut arc = vec![0.0];
             for w in dense.windows(2) {
                 arc.push(arc.last().unwrap() + dist(w[0], w[1]));
@@ -226,6 +244,17 @@ pub fn sample_curve(p0: P2, p1: P2, p2: P2, p3: P2, s: Sampling) -> Vec<P2> {
             out
         }
     }
+}
+
+/// The curve sampled densely, and the points Douglas-Peucker keeps to stay within `tol` of it.
+fn dp_curve(p0: P2, p1: P2, p2: P2, p3: P2, tol: f64) -> (Vec<P2>, Vec<bool>) {
+    let dense = catmull_rom(p0, p1, p2, p3, ((dist(p1, p2) / 8.0).ceil() as usize).clamp(4, 4000));
+    let last = dense.len() - 1;
+    let mut keep = vec![false; dense.len()];
+    keep[0] = true;
+    keep[last] = true;
+    dp_mark(&dense, 0, last, tol, &mut keep);
+    (dense, keep)
 }
 
 /// Marks the points Douglas-Peucker keeps between a and b.
@@ -314,6 +343,14 @@ mod tests {
         assert_eq!(p.len(), 5);
         assert_eq!(p[0], [10.0, 0.0]);
         assert_eq!(p[4], [20.0, 5.0]);
+    }
+
+    #[test]
+    fn straight_ignores_the_neighbours() {
+        let p = sample_curve([0.0, 50.0], [10.0, 0.0], [40.0, 0.0], [30.0, -70.0], Sampling::Straight { max: 10.0 });
+        assert_eq!(p.len(), 4);
+        assert_eq!((p[0], p[3]), ([10.0, 0.0], [40.0, 0.0]));
+        assert!(p.iter().all(|q| q[1] == 0.0));
     }
 
     #[test]

@@ -187,6 +187,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             }
             k if theme.fences.contains_key(k) => {}
             "bridge" if theme.hanging.is_some() => {}
+            "hedge" if theme.hedge.is_some() => {}
             k => problems.push(format!("line {i} ({}): {k} lines aren't built yet", l.name)),
         }
     }
@@ -257,10 +258,10 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         }
     }
     lap("terrain");
-    // kit pieces and fences stand on the finished ground, and are lit with it
+    // kit pieces, fences and hedges stand on the finished ground, and are lit with it
     let placed = props::place(&doc.props, kit, &mut b.mesh, &mut b.problems);
     lap("props");
-    if doc.lines.iter().any(|l| theme.fences.contains_key(&l.kind) || l.kind == "bridge") {
+    if doc.lines.iter().any(|l| theme.fences.contains_key(&l.kind) || l.kind == "bridge" || l.kind == "hedge") {
         let ground = props::Ground::new(&b.mesh);
         let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
         for l in &doc.lines {
@@ -270,9 +271,12 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             } else if let (true, Some(h)) = (l.kind == "bridge", &theme.hanging) {
                 let mut pr = crate::lines::bridge(l, h, max_slope, &mut b.mesh, &ground);
                 b.problems.append(&mut pr);
+            } else if let (true, Some(h)) = (l.kind == "hedge", &theme.hedge) {
+                let mut pr = crate::lines::hedge(l, h, &mut b.mesh, &ground);
+                b.problems.append(&mut pr);
             }
         }
-        lap("fences and bridges");
+        lap("fences, bridges and hedges");
     }
     if let Some(l) = &theme.light {
         let seed = b.seed();
@@ -1859,6 +1863,147 @@ mod tests {
         assert!(build(&d, &th).is_err());
     }
 
+    /// Faceted and hard edges: fewer corners round the curves (the straight pieces keep their
+    /// points, for terrain and walls), the hard ones straight from node to node, and every level
+    /// still closed.
+    #[test]
+    fn faceted_and_hard_edges_are_lighter_and_still_watertight() {
+        let th = Theme::kokiri();
+        let mut total = [0; 3];
+        for doc in [sample_doc(), paths_doc(), painted(bumpy(paths_doc()))] {
+            let mut corners = vec![];
+            for edges in ["smooth", "faceted", "hard"] {
+                let mut d = doc.clone();
+                d.settings.edges = edges.into();
+                let lvl = build(&d, &th).unwrap();
+                assert!(lvl.problems.is_empty(), "{} {edges}: {:?}", doc.name, lvl.problems);
+                let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+                assert!(bad.is_empty(), "{} {edges}: {} open edges, e.g. {:?}", doc.name, bad.len(), &bad[..bad.len().min(6)]);
+                let lp = crate::map::sample_loops(&d).unwrap();
+                corners.push(lp.polys.iter().map(|p| simplify_closed(p, 0.5).len()).sum::<usize>());
+                if edges == "hard" {
+                    // every loop point lies on the straight line between two of its nodes
+                    for (ids, poly) in lp.nodes.iter().zip(&lp.polys) {
+                        let nodes: Vec<P2> = ids.iter().map(|&i| lp.verts[i]).collect();
+                        let on = |p: P2| (0..nodes.len()).any(|k| dist_to_seg(p, nodes[k], nodes[(k + 1) % nodes.len()]).0 < 1e-6);
+                        assert!(poly.iter().all(|&p| on(p)), "{}", doc.name);
+                    }
+                }
+            }
+            assert!(corners[1] <= corners[0] && corners[2] <= corners[1], "{}: {corners:?}", doc.name);
+            for (t, c) in total.iter_mut().zip(corners) {
+                *t += c;
+            }
+        }
+        assert!(total[1] < total[0] && total[2] < total[1], "{total:?}");
+        let mut d = sample_doc();
+        d.settings.edges = "wavy".into();
+        assert!(build(&d, &th).is_err());
+    }
+
+    /// A hedge drawn as a closed line: a top 28 over the ground covering the shape, skirts facing
+    /// out, and a tall-grass floor under it that only collides.
+    #[test]
+    fn hedges_cover_their_shape() {
+        let th = Theme::kokiri();
+        let mut d = sample_doc();
+        // drawn clockwise: the builder turns it round
+        let sq = [[-200.0, 0.0], [-200.0, 300.0], [200.0, 300.0], [200.0, 0.0]];
+        d.lines.push(Line { name: "h".into(), kind: "hedge".into(), nodes: sq.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false });
+        let lvl = build(&d, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let o = lvl.mesh.objects.iter().find(|o| o.name == "hedges").unwrap();
+        assert!(o.verts.iter().all(|v| v[2].abs() < 1e-6 || (v[2] - 28.0).abs() < 1e-6));
+        let (mut top, mut sides) = (0.0, 0);
+        for t in &o.tris {
+            let p = t.map(|v| o.verts[v]);
+            let n = [
+                (p[1][1] - p[0][1]) * (p[2][2] - p[0][2]) - (p[1][2] - p[0][2]) * (p[2][1] - p[0][1]),
+                (p[1][2] - p[0][2]) * (p[2][0] - p[0][0]) - (p[1][0] - p[0][0]) * (p[2][2] - p[0][2]),
+                (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]),
+            ];
+            if n[2].abs() > 1e-6 {
+                assert!(n[2] > 0.0, "the top faces up");
+                top += n[2] / 2.0;
+            } else {
+                // out from the middle (0, 150)
+                let c = [(p[0][0] + p[1][0] + p[2][0]) / 3.0, (p[0][1] + p[1][1] + p[2][1]) / 3.0 - 150.0];
+                assert!(n[0] * c[0] + n[1] * c[1] > 0.0, "a skirt faces in at {c:?}");
+                sides += 1;
+            }
+        }
+        assert!((top - 400.0 * 300.0).abs() < 1.0, "{top}");
+        assert!(sides >= 2 * 14, "{sides}: a quad every 100 round 1400");
+        let c = lvl.mesh.objects.iter().find(|o| o.name == "hedges_collision").unwrap();
+        assert!(c.collision_only && c.verts.iter().all(|v| (v[2] - 2.0).abs() < 1e-6));
+        assert!(lvl.mesh.surfaces.iter().any(|s| s == "tall_grass"));
+        // a shape crossing itself is reported
+        let mut d = sample_doc();
+        let bow = [[-200.0, 0.0], [200.0, 300.0], [200.0, 0.0], [-200.0, 300.0]];
+        d.lines.push(Line { name: "bow".into(), kind: "hedge".into(), nodes: bow.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: true });
+        let lvl = build(&d, &th).unwrap();
+        assert!(lvl.problems.iter().any(|p| p.contains("crosses itself")), "{:?}", lvl.problems);
+    }
+
+    /// Vines (a tiling wall piece) reach from the floor to the wall's top however tall, repeat
+    /// their texture instead of stretching, and are as wide as the flat face lets them be.
+    #[test]
+    fn vines_tile_and_reach_the_top() {
+        use crate::doc::Prop;
+        use crate::pieces::{Kit, Piece, PieceMaterial, Scale};
+        let th = Theme::kokiri();
+        // 200 x 140 on the wall's face (y 0, facing +y), its texture every 50 across and 70 up
+        let verts = vec![[-100.0, 0.0, 0.0], [100.0, 0.0, 0.0], [100.0, 0.0, 140.0], [-100.0, 0.0, 140.0]];
+        let uv = |v: [f64; 3]| [v[0] / 50.0, v[2] / 70.0];
+        let tris = vec![[0, 2, 1], [0, 3, 2]];
+        let vines = Piece {
+            name: "vines".into(),
+            label: "Vines".into(),
+            kind: "wall".into(),
+            materials: vec![PieceMaterial { texture: "kf_vines".into(), tint: [1.0; 3] }],
+            normals: vec![[0.0, 1.0, 0.0]; 4],
+            uvs: tris.iter().map(|t: &[u32; 3]| t.map(|v| uv(verts[v as usize]))).collect(),
+            tris,
+            mat: vec![0, 0],
+            bounds: [[-100.0, 0.0, 0.0], [100.0, 0.0, 140.0]],
+            footprint: vec![[-100.0, 0.0], [100.0, 0.0]],
+            scale: Scale { min: [0.4, 1.0, 0.1], max: [10.0, 1.0, 50.0], uniform: false },
+            tiles: true,
+            verts,
+            ..Default::default()
+        };
+        let kit = Kit { pieces: vec![vines], ..Default::default() };
+        // the island squared off: its south face is flat and 400 wide
+        let mut doc = sample_doc();
+        doc.settings.edges = "hard".into();
+        doc.regions[1].nodes = vec![vec![-700.0, -500.0], vec![-300.0, -500.0], vec![-300.0, -100.0], vec![-700.0, -100.0]];
+        for (z, sx) in [(120.0, 1.0), (900.0, 1.0), (120.0, 1.8)] {
+            let mut d = doc.clone();
+            d.regions[1].z = z;
+            d.props.push(Prop { piece: "vines".into(), at: [-480.0, -540.0], z: None, yaw: 0.0, scale: [sx, 1.0, 1.0] });
+            let lvl = build_with(&d, &th, Some(&kit)).unwrap();
+            assert_eq!(lvl.props.len(), 1, "{z} {sx}: {:?}", lvl.problems);
+            let o = lvl.mesh.objects.iter().find(|o| o.name == "props").unwrap();
+            let top = o.verts.iter().map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+            assert!((top - z).abs() < 1e-6, "{z}: reaches {top}");
+            let (u0, u1) = o.uvs.iter().flatten().fold((f64::INFINITY, f64::NEG_INFINITY), |a, q| (a.0.min(q[0]), a.1.max(q[0])));
+            let v1 = o.uvs.iter().flatten().map(|q| q[1]).fold(f64::NEG_INFINITY, f64::max);
+            assert!(((u1 - u0) - 200.0 * sx / 50.0).abs() < 1e-6, "{z} {sx}: u {u0}..{u1}");
+            assert!((v1 - z / 70.0).abs() < 1e-6, "{z}: v to {v1}");
+            // the editor's ghost is where it was built, and knows the face is 400 wide
+            let ground = crate::props::Ground::new(&lvl.mesh);
+            let pv = crate::openings::preview(&kit.pieces[0], &d.props[0], &lvl.mesh, &ground).unwrap();
+            assert!((pv.prop.at[0] - lvl.props[0].origin[0]).abs() < 1e-6 && pv.prop.scale == lvl.props[0].scale);
+            assert!((pv.room - 400.0).abs() < 1.0, "{}", pv.room);
+            assert_eq!(pv.tris.len(), 2);
+        }
+        // wider than the flat face: refused, saying how wide it is
+        let mut d = doc.clone();
+        d.props.push(Prop { piece: "vines".into(), at: [-500.0, -540.0], z: None, yaw: 0.0, scale: [2.0, 1.0, 1.0] });
+        let lvl = build_with(&d, &th, Some(&kit)).unwrap();
+        assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("400 wide here (flat")), "{:?}", lvl.problems);
+    }
+
     #[test]
     fn levels_with_paths_are_watertight_too() {
         let lvl = build(&paths_doc(), &Theme::kokiri()).unwrap();
@@ -1937,6 +2082,37 @@ mod tests {
             let tops = bad.iter().filter(|e| (e.0 .2 - 5000).abs() < 150 && (e.1 .2 - 5000).abs() < 150).count();
             assert!(tops >= mouths, "{piece}: the mouth's top edge(s) should be open: {bad:?}");
         }
+        // near a corner of hard edges: put down 20 from a square corner, the log slides along the
+        // wall until it's all on the one face; 20 short of a 25-degree turn, it reaches round it
+        // (a long face at low detail, which strays far from the plane beyond the mouth)
+        let mut bent = doc.clone();
+        bent.regions[1].nodes = vec![vec![-700.0, -500.0], vec![-400.0, -500.0], vec![-218.7, -415.5], vec![-300.0, -100.0], vec![-700.0, -100.0]];
+        for (d, at, x) in [(&doc, [-320.0, -540.0], (-700.0, -350.0)), (&bent, [-420.0, -540.0], (-421.0, -419.0))] {
+            for detail in ["high", "low"] {
+                let mut d = d.clone();
+                d.settings.edges = "hard".into();
+                d.settings.detail = detail.into();
+                d.props.push(Prop { piece: "log".into(), at, z: None, yaw: 0.0, scale: [1.0; 3] });
+                let lvl = build_with(&d, &theme, Some(&kit)).unwrap();
+                assert_eq!(lvl.props.len(), 1, "{detail} {at:?}: {:?}", lvl.problems);
+                let pl = &lvl.props[0];
+                assert!(pl.origin[0] >= x.0 && pl.origin[0] <= x.1, "{detail} {at:?}: at {:?}", pl.origin);
+                let f = crate::props::facing(pl.yaw);
+                let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+                let near_mouth = |q: (i64, i64, i64)| {
+                    let p = [q.0 as f64 / 100.0, q.1 as f64 / 100.0, q.2 as f64 / 100.0];
+                    ((p[0] - pl.origin[0]) * f[1] - (p[1] - pl.origin[1]) * f[0]).abs() <= 31.0 && p[2] - pl.origin[2] <= 51.0
+                };
+                assert!(!bad.is_empty() && bad.iter().all(|e| near_mouth(e.0) && near_mouth(e.1)), "{detail} {at:?}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+            }
+        }
+        // a face too narrow for it is refused, saying so
+        let mut narrow = doc.clone();
+        narrow.settings.edges = "hard".into();
+        narrow.regions[1].nodes = vec![vec![-560.0, -500.0], vec![-500.0, -500.0], vec![-300.0, -100.0], vec![-700.0, -100.0]];
+        narrow.props.push(Prop { piece: "log".into(), at: [-530.0, -540.0], z: None, yaw: 0.0, scale: [1.0; 3] });
+        let lvl = build_with(&narrow, &theme, Some(&kit)).unwrap();
+        assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("corner to corner")), "{:?}", lvl.problems);
     }
 
     /// A dirt path from the ground up a ramp: cut into the floors (points on its rings), drawn

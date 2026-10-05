@@ -6,6 +6,7 @@
     "cliff_strip": "kf_cliff_strip",
     "cliff_strip_dark": "kf_cliff_strip_dark",
     "grass_skirt": "kf_grass_skirt",
+    "hedge_top": "kf_hedge_top",
     "hanging_roots": "kf_hanging_roots",
     "forest_trunks": "kf_forest_trunks",
     "forest_foliage": "kf_forest_foliage",
@@ -178,6 +179,15 @@
   "fences": {
     "fence": { "material": "fence", "height": 40, "tile": 40, "surface": "fence" },
     "lattice": { "material": "fence_post", "height": 120, "tile": 30, "surface": "wall_nograb" }
+  },
+  "hedge": {
+    "top": "hedge_top",
+    "top_tile": 80,
+    "side": "grass_skirt",
+    "side_tile": 140,
+    "height": 28,
+    "spacing": 100,
+    "surface": "tall_grass"
   },
   "hanging": {
     "deck": "log_side",

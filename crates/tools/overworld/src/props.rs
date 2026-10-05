@@ -207,13 +207,8 @@ pub fn place(props: &[Prop], kit: Option<&Kit>, mesh: &mut Mesh, problems: &mut 
         if piece.kind == "opening" || piece.kind == "wall" {
             match crate::openings::fit(piece, prop, mesh, &ground) {
                 Ok(f) => {
-                    let mut scale = piece.scale.clamp(prop.scale);
-                    scale[1] = f.depth;
-                    if piece.opening.is_none() {
-                        scale[2] = f.height;
-                    }
-                    let fit_prop = Prop { at: [f.origin[0], f.origin[1]], yaw: f.yaw, scale, z: Some(f.origin[2]), piece: prop.piece.clone() };
-                    stood.push((i, piece, f.origin, scale, fit_prop));
+                    let fit_prop = crate::openings::fitted(piece, prop, &f);
+                    stood.push((i, piece, f.origin, fit_prop.scale, fit_prop));
                     fitted.push((stood.len() - 1, f));
                 }
                 Err(e) => problems.push(format!("prop {i}: {e}")),
@@ -254,7 +249,8 @@ pub fn place(props: &[Prop], kit: Option<&Kit>, mesh: &mut Mesh, problems: &mut 
             let m = &piece.materials[piece.mat[t] as usize];
             let p = tri.map(|v| transform(piece.verts[v as usize], origin, prop.yaw, scale));
             let n = tri.map(|v| normal(piece.normals[v as usize], prop.yaw, scale));
-            mesh.tri_lit("props", p, n, piece.uvs[t], &m.texture, m.tint);
+            let uv = if piece.tiles { tiled_uvs(piece, t, scale) } else { piece.uvs[t] };
+            mesh.tri_lit("props", p, n, uv, &m.texture, m.tint);
         }
         // a crawlspace's floor calls for its own camera: the line through it, 22 past each mouth
         // and 12 up, as spot04's (Camera_Subj4 carries Link along it)
@@ -282,6 +278,33 @@ pub fn place(props: &[Prop], kit: Option<&Kit>, mesh: &mut Mesh, problems: &mut 
         });
     }
     out
+}
+
+/// A tiling piece's UVs for triangle t at `scale`: its own texture mapping (affine over the
+/// triangle, in the plane it spreads over: x and z for a wall piece) evaluated where the scaled
+/// corners are, so the texture repeats at its own density instead of stretching.
+fn tiled_uvs(piece: &Piece, t: usize, scale: [f64; 3]) -> [[f64; 2]; 3] {
+    let p = piece.tris[t].map(|v| piece.verts[v as usize]);
+    let uv = piece.uvs[t];
+    let spread = |k: usize| p.iter().map(|q| q[k]).fold(f64::NEG_INFINITY, f64::max) - p.iter().map(|q| q[k]).fold(f64::INFINITY, f64::min);
+    let flat = (0..3).min_by(|&a, &b| spread(a).total_cmp(&spread(b))).unwrap();
+    let (i, j) = match flat {
+        0 => (1, 2),
+        1 => (0, 2),
+        _ => (0, 1),
+    };
+    let (a, b, c) = ([p[0][i], p[0][j]], [p[1][i], p[1][j]], [p[2][i], p[2][j]]);
+    let d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+    if d.abs() < 1e-9 {
+        return uv;
+    }
+    p.map(|q| {
+        let x = [q[i] * scale[i], q[j] * scale[j]];
+        let l1 = ((x[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (x[1] - a[1])) / d;
+        let l2 = ((b[0] - a[0]) * (x[1] - a[1]) - (x[0] - a[0]) * (b[1] - a[1])) / d;
+        let l0 = 1.0 - l1 - l2;
+        [uv[0][0] * l0 + uv[1][0] * l1 + uv[2][0] * l2, uv[0][1] * l0 + uv[1][1] * l1 + uv[2][1] * l2]
+    })
 }
 
 /// The prop whose footprint holds p (the last placed wins, as it's drawn on top).

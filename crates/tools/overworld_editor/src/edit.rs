@@ -318,7 +318,7 @@ impl Shapes {
                     return line.into_iter().map(|(q, s)| ((q), (0..xy.len() - 1).rev().find(|&k| node_s[k] <= s + 1e-9).unwrap_or(0))).collect();
                 }
                 let mut pts: Vec<(P2, usize)> = xy.iter().enumerate().map(|(i, &q)| (q, i)).collect();
-                if l.closed {
+                if l.closed || l.kind == "hedge" {
                     pts.push((xy[0], xy.len() - 1));
                 }
                 pts
@@ -454,7 +454,7 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
 pub fn new_line(doc: &Doc, kind: &str, nodes: Vec<P2>) -> Line {
     let names: Vec<&str> = doc.lines.iter().map(|r| r.name.as_str()).collect();
     let name = (1..).map(|i| format!("{kind} {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
-    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false }
+    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: kind == "hedge" }
 }
 
 /// A new level: an oval outline about 4000 by 2800.

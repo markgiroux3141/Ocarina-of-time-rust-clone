@@ -42,8 +42,8 @@ under Files.
   Modes: Raise, Lower, Smooth, Flatten, Bumps, Erase (keys 1-6). Ctrl turns raise into lower; Shift smooths. `[` and `]`
   size it; *Hard core* is the share of the radius at full strength. Paint in the plan or in 3D (there, Alt-drag or
   middle-drag orbits). Each stroke is one undo step. The rebuild follows a few times a second while you paint.
-- **Prop (K):** the Kit panel lists the kit's pieces by kind (houses, stumps, stepping stones, hedges, openings, wall
-  pieces), with their size, triangles and collision vertices. Click in the plan or 3D to place the chosen piece; it
+- **Prop (K):** the Kit panel lists the kit's pieces by kind (houses, stumps, stepping stones, openings, wall pieces),
+  with their size, triangles and collision vertices. Click in the plan or 3D to place the chosen piece; it
   stands on the ground (a house on its doorway, a stone in water). Drag a prop to move it, in either view. In the plan,
   the selected prop has a handle on its facing arrow (drag: turn, in 15° steps) and one on its corner (drag: scale,
   within the piece's limits). Alt: no snapping. Q / E turn it 15° (Shift: 1°), PgUp/PgDn raise or sink it (it then
@@ -57,11 +57,20 @@ under Files.
   panel switches between rails (40 tall) and the lattice (120), and can close it back to the first node.
 - **Bridge (H):** click a point on each floor the bridge joins (anywhere on it: the ends land at the floor's edge), then
   Enter. A hanging rope bridge sags between them. The panel sets its width, and a deck too steep to walk is reported.
-- **Openings and wall pieces:** in the Prop tool, click near a wall with the log tunnel, the crawlspace, the vine patch or
-  the waterfall chosen. It fits itself to the nearest wall, and an opening cuts its gap (see Wall openings in
-  `../overworld/README.md`). Drag it along the wall to move it. Its panel says where it fitted, or why it couldn't (too
-  low, not flat, not parallel, no room behind). A crawlspace needs a ridge with flat, parallel walls: draw it with sharp
-  corners (S). Vines and the waterfall need a flat wall and reach its top.
+- **Hedge (J):** click the corners of a patch of tall grass, then click the first one or press Enter, as for a region.
+  Link wades through it. Its nodes drag like a fence's, and a double-click on its edge adds one. See Hedges in
+  `../overworld/README.md`.
+- **Openings and wall pieces:** in the Prop tool with the log tunnel, the crawlspace, the vine patch or the waterfall
+  chosen, hover a wall, best in the 3D view: a green ghost shows where it would go (fitted to that wall, slid clear of
+  corners, with how wide the wall is), or a red ring says why it can't (too low, not flat, not parallel, no room behind).
+  Click to put it there. The plan shows the same ghost from above. Drag one along the walls in 3D to move it (the ghost
+  follows). An opening cuts its gap (see Wall openings in `../overworld/README.md`). A crawlspace needs a ridge with flat,
+  parallel walls: draw it with sharp corners (S), or with Hard edges. Vines and the waterfall always reach from the floor
+  to the wall's top; the panel's *Width* sets how wide they are, up to the flat face they're on (it says how wide that
+  is). The vines' texture repeats as they grow.
+- **Edges:** the Level panel's *Edges* (next to *Detail*) sets how every outline, region and path runs between its
+  nodes: *Smooth* curves, *Faceted* (the curves in a few flat panels) or *Hard* (straight node to node, so the
+  nodes you place are the corners). See Edges in `../overworld/README.md`.
 - **Several regions:** Shift-click regions (in the plan, in 3D or in Contents) to select several. PgUp/PgDn, the panel's
   -20/+20 and dragging in 3D raise or sink them all together; Delete deletes them all.
 - **Bumps:** a region's panel (and the outline's) has *Bumps*: height, size, edge fade and seed. See the Bumps section

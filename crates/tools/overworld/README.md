@@ -53,6 +53,7 @@ Done:
 
 - **Fences and hanging bridges** (2026-10-05, `lines` of kind `fence`, `lattice`, `bridge`): fences stand on the ground with
   a post at every node; rope bridges sag between their anchors on a catenary, and Link walks across.
+- **Hedges** (2026-10-05, `lines` of kind `hedge`): walk-through tall grass over any shape of nodes, drawn like a region.
 - **Wall openings** (2026-10-05, `src/openings.rs`): the log tunnel and the crawlspace set into the wall nearest where they're
   put, with a gap cut to fit; vines and the waterfall stand on walls. Link walks into the log and crawls through the
   crawlspace.
@@ -112,7 +113,7 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
 ```
 
 - **Nodes are control points.** Edges between them are smooth curves (centripetal Catmull-Rom). A
-  third value of 1 marks a sharp node.
+  third value of 1 marks a sharp node. `settings.edges` changes that for the whole level (see Edges below).
 - **One web of shared nodes.** A region's node within `weld` of another loop's node *is* that node,
   so a region drawn against the outline shares the outline's edge. Each edge is sampled once, and
   everything touching it uses the same points, which is why the result is watertight. Loops may share
@@ -152,6 +153,22 @@ varies. A path the terrain steepens past walkable is reported. Tests: `painted_t
 (every non-ground vertex moves by exactly the offset under it, still watertight, ponds level) and the brush tests in
 `terrain.rs`. `sketch_hills` (a hill under the island, a rise and a hollow, written by `make_levels.py`) was walked end to end in
 pd-walk before the move, with one waypoint on the hill's flank as a pass-through.
+
+## Edges (`settings.edges`)
+
+How the outline's, regions' and paths' edges run between their nodes (2026-10-05; dirt lines follow the paths'):
+
+| | |
+|---|---|
+| `smooth` (default) | The curves, as before. |
+| `faceted` | The same curves as a few long flat panels: corners where the curve strays more than 20 (`doc::FACET_TOL`, or the detail's tolerance if larger) from a straight piece, about 16 round a circle 1000 across. Low-poly, as the game's walls are. |
+| `hard` | Straight from node to node, every node a corner: the shape is exactly the nodes you placed. |
+
+The straight pieces still get a point every `sample` (or the detail's longest piece; `geom::Sampling::Facets` and
+`Straight` cut along the chord), so painted terrain and walls follow the ground along them. That's why faceted
+isn't lighter at high detail, but at medium `sketch_village` goes from 5,737 triangles to 3,982 (faceted) and 3,796
+(hard). Straightened edges can cross where the curves didn't: the build reports where. Test:
+`faceted_and_hard_edges_are_lighter_and_still_watertight`.
 
 ## Detail (`settings.detail`, `doc::Detail`)
 
@@ -240,10 +257,10 @@ does it on first start and whenever the manifest changes. The manifest says, per
 | `mido_house`, `saria_house`, `twins_house`, `knowitall_house`, `shop` | 185 to 349 tall | Doorway at the origin. x1 to x1.5. |
 | `stump_post`, `stump_post_tall` | 98 x 98 x 120 / 180 | Where spot04's plank walkways land. |
 | `stone_small`, `_medium`, `_large` | 80 to 120 wide | Origin on top: stands in water 15 above the surface. |
-| `hedge` | 174 x 235 x 28 | Tall grass: Link wades through it (its walls and top only stopped the camera, so the kit drops them), on tall-grass footsteps. Spot04's has skirts on two sides; the kit adds the rest (`close_sides`). |
+| `hedge` | 174 x 235 x 28 | Tall grass: Link wades through it (its walls and top only stopped the camera, so the kit drops them), on tall-grass footsteps. Spot04's has skirts on two sides; the kit adds the rest (`close_sides`). Kept for older levels: new hedges are drawn as shapes (Hedges below), and the editor's Kit panel no longer lists it. |
 | `log_tunnel` | mouth 221 x 220, 857 deep | Both of spot04's log exits (Hyrule Field, Lost Woods) are this model. |
 | `crawlspace` | 40 wide, 27 high, 320 long | Wall type 5 at both mouths. |
-| `vines`, `waterfall` | | Wall pieces: climbable vines, a translucent fall. |
+| `vines`, `waterfall` | | Wall pieces: climbable vines, a translucent fall. The vines tile (`"tiles": true`): see Wall openings. |
 
 Houses bring their door shadows (decals) and Link's house its graffiti and mushrooms.
 
@@ -320,11 +337,26 @@ The deck collides as `planks` (bridge footsteps), with invisible `wall_nograb` w
 stays on. In `sketch_village`, Link walks from the lookout across to the plateau, dipping 35 in the middle. Test:
 `hanging_bridges_sag_by_their_span_and_report_steep_ends`.
 
+## Hedges (`lines` of kind `hedge`, `lines::hedge`, the theme's `hedge`)
+
+Kokiri's tall grass over the closed shape of a line's nodes (always closed, straight between nodes; a shape crossing
+itself is reported). Its top stands `height` (28) above the ground everywhere, with points every `spacing` (100) inside
+and along the edge so it follows hills, textured `hedge_top` world-projected every 80 (spot04's density). Grass skirts
+(`grass_skirt`, every 140 along, as the kit's) face out round it, down to the ground. Neither collides: under it, a
+floor of tall-grass footsteps 2 above the ground does (object `hedges_collision`), so Link wades through, as through
+spot04's. Built after props, on the finished ground. Test: `hedges_cover_their_shape`.
+
 ## Wall openings (`src/openings.rs`)
 
 A prop whose piece is an opening (`log_tunnel`, `crawlspace`) or a wall piece (`vines`, `waterfall`) is fitted to the wall
 nearest its `at` (within 300): its origin goes on the wall's face, at the floor in front, facing out over it. Its `yaw`
 and `z` are ignored.
+
+It has to sit on one face: the wall from corner to corner (a turn of more than 60 degrees, as at a hard or faceted
+edge's node) must be at least its width plus 20 each side. Put down near a corner, it slides along the wall until it's
+clear of it; on a face too narrow it's refused ("the wall is 201 wide here (corner to corner); it needs 262"). Gentler
+turns count as the same wall, as far as they stay within 60 of its plane, even where a long face (low detail) strays
+further beyond the mouth (`openings::span`; the cut's `same_wall` likewise only looks across the mouth).
 
 - **Room.** An opening needs:
   - a wall tall enough for its mouth, plus 10;
@@ -339,9 +371,15 @@ and `z` are ignored.
   Draw the ridge with sharp corners (straight, parallel edges). Its floor calls for a crawlspace camera
   (`CAM_SET_CRAWLSPACE`, the line through it, 22 past each mouth and 12 up, as spot04's), so `Camera_Subj4` takes over
   while Link crawls, as in the game (`Mesh::cameras`, `level.json`'s `cameras`, the role `crawl_floor#k`).
-- **Wall pieces** (vines, the waterfall) lie flat on the wall from its foot to its top (z scale to fit, within the
-  piece's limits). They need a flat wall (within 3) as wide as they are. The vines' collision lies where they're drawn,
-  just in front of the wall, so Link climbs them anywhere.
+- **Wall pieces** (vines, the waterfall) lie flat on the wall from its foot to its top (z scale to fit). They need a flat
+  face (within 3 of a plane, `WALL_PIECE_FLAT`) as wide as they are plus 10 each side; near a corner they slide along
+  it like an opening, and on a face too narrow the problem says how wide it is (`Fit::room`). The x scale is their width.
+  The vines' collision lies where they're drawn, just in front of the wall, so Link climbs them anywhere.
+- **Tiling** (a piece's `tiles`, set for the vines): its texture repeats at the piece's own density as it's scaled
+  (`props::tiled_uvs` evaluates each triangle's own texture mapping at the scaled corners), instead of stretching, so a
+  patch can be any width and reach any height: the height limits don't apply. Test: `vines_tile_and_reach_the_top`.
+- **Previews.** `openings::preview` fits a piece where it would be put down without building: its triangles, the
+  fitted prop and the face's width. The editor draws it as a ghost.
 
 If a piece doesn't fit, the problem says why: too low, not flat, not parallel, no room, no floor beyond.
 - **The gap.** The wall's triangles round the mouth come out, grown until the mouth is inside them. The area they

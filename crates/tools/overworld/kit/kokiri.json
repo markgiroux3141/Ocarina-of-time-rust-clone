@@ -119,8 +119,9 @@
       "name": "vines", "label": "Vine patch", "kind": "wall",
       "take": { "box": [[-548, 930, 55], [-520, 1142, 205]] },
       "origin": "base", "facing": "normal",
-      "scale": { "min": [0.5, 1, 0.6], "max": [3, 1, 4] },
-      "about": "Climbable (wall type 4). Placed on a wall's face."
+      "scale": { "min": [0.4, 1, 0.1], "max": [10, 1, 50] },
+      "tiles": true,
+      "about": "Climbable (wall type 4). Placed on a wall's face, from the floor to the wall's top; its width (x scale, 202 at 1) is limited by the flat face it's on. Its texture repeats as it grows."
     },
     {
       "name": "waterfall", "label": "Waterfall", "kind": "wall",

@@ -10,8 +10,10 @@ use crate::view3d::{View3d, FOV};
 use crate::worker::{Done, Job, Msg, Worker};
 use eframe::egui::{self, Align2, Color32, FontId, Key, KeyboardShortcut, Modifiers, PointerButton, Pos2, Sense, Shape, Stroke, Vec2};
 use overworld::doc::Prop;
-use overworld::geom::{dist, point_in_poly, P2};
+use overworld::geom::{dist, dist_to_loop, point_in_poly, P2};
+use overworld::openings::Preview;
 use overworld::pieces::Kit;
+use overworld::props::Ground;
 use overworld::terrain::{Brush, Mode, Terrain};
 use overworld::textures::Library;
 use overworld::{export, Doc, Level, Theme};
@@ -34,7 +36,7 @@ enum Tool {
     Brush,
     /// Placing kit pieces.
     Prop,
-    /// Drawing a line of a kind: "dirt" (fences and bridges to come).
+    /// Drawing a line of a kind: "dirt", "fence", "bridge" or "hedge" (a closed shape).
     Line(&'static str),
 }
 
@@ -76,6 +78,8 @@ enum Gesture3 {
     Paint,
     /// Moving a prop over the plane at its height (the grab point's offset, that height).
     Prop { i: usize, off: P2, z: f64 },
+    /// Sliding a wall piece or opening along the walls under the pointer.
+    WallProp { i: usize },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -128,6 +132,8 @@ pub struct App {
     sent: Option<(Doc, bool)>,
     built: Option<Doc>,
     level: Option<Arc<Level>>,
+    /// The last build's floors, for fitting wall pieces where they'd go (the ghost).
+    ground: Option<Arc<Ground>>,
     scene: Option<Arc<Scene>>,
     build_error: Option<String>,
     problems: Vec<String>,
@@ -253,6 +259,7 @@ impl App {
             sent: None,
             built: None,
             level: None,
+            ground: None,
             scene: None,
             build_error: None,
             problems: vec![],
@@ -465,6 +472,7 @@ impl App {
                         eprintln!("build {:.1} ms, plan scene {t_scene:.1} ms, 3D upload {:.1} ms", d.ms, t.elapsed().as_secs_f64() * 1000.0 - t_scene);
                     }
                     self.scene = Some(Arc::new(scene));
+                    self.ground = Some(Arc::new(Ground::new(&l.mesh)));
                     self.level = Some(l);
                     self.build_error = None;
                 }
@@ -587,9 +595,48 @@ impl App {
         self.kit.as_ref().and_then(|k| k.get(&prop.piece)).is_some_and(|p| p.kind == "opening" || p.kind == "wall")
     }
 
-    /// The prop under p, the topmost (last) first.
+    /// The prop under p, the topmost (last) first. A wall piece seen from above is a line along
+    /// the wall: it's under p when p is near it.
     fn prop_at(&self, p: P2) -> Option<usize> {
-        (0..self.doc.props.len()).rev().find(|&i| point_in_poly(p, &self.prop_footprint(i)))
+        let reach = (PICK / self.view.scale).max(10.0);
+        (0..self.doc.props.len()).rev().find(|&i| {
+            let fp = self.prop_footprint(i);
+            point_in_poly(p, &fp) || (self.on_wall(i) && fp.len() >= 2 && dist_to_loop(p, &fp) <= reach)
+        })
+    }
+
+    /// Whether the Prop tool's piece fits itself to a wall (an opening or a wall piece).
+    fn chosen_on_wall(&self) -> bool {
+        self.kit.as_ref().and_then(|k| k.get(&self.piece)).is_some_and(|p| p.kind == "opening" || p.kind == "wall")
+    }
+
+    /// Where a wall piece or opening would go in the last build if it were `prop` (the ghost), or
+    /// why it can't go there. None before a build, or for a piece the kit hasn't got.
+    fn ghost(&self, prop: &Prop) -> Option<Result<Preview, String>> {
+        let piece = self.kit.as_ref()?.get(&prop.piece)?;
+        let (l, g) = (self.level.as_ref()?, self.ground.as_ref()?);
+        Some(overworld::openings::preview(piece, prop, &l.mesh, g))
+    }
+
+    /// The wall piece or opening (as last built) at a point on its face or in its mouth.
+    fn wall_prop_near(&self, q: [f64; 3]) -> Option<usize> {
+        let (kit, l) = (self.kit.as_ref()?, self.level.as_ref()?);
+        l.props
+            .iter()
+            .rev()
+            .filter(|pl| self.doc.props.get(pl.index).is_some_and(|p| p.piece == pl.piece) && self.on_wall(pl.index))
+            .find(|pl| {
+                let Some(piece) = kit.get(&pl.piece) else { return false };
+                // into the piece's own frame: unturned, unscaled
+                let (s, c) = pl.yaw.to_radians().sin_cos();
+                let d = [q[0] - pl.origin[0], q[1] - pl.origin[1], q[2] - pl.origin[2]];
+                let x = (d[0] * c + d[1] * s) / pl.scale[0].max(1e-6);
+                let y = (-d[0] * s + d[1] * c) / pl.scale[1].max(1e-6);
+                let z = d[2] / pl.scale[2].max(1e-6);
+                let b = piece.bounds;
+                x >= b[0][0] - 10.0 && x <= b[1][0] + 10.0 && y >= b[0][1] - 10.0 && y <= b[1][1] + 30.0 && z >= b[0][2] - 10.0 && z <= b[1][2] + 10.0
+            })
+            .map(|pl| pl.index)
     }
 
     /// Where a prop's origin stands in the last build (its height), if it's been built.
@@ -784,7 +831,7 @@ impl App {
     /// inserted there, so the edge is shared), or a free point.
     fn draw_click(&mut self, w: P2) {
         let tol = PICK / self.view.scale;
-        if self.tool == Tool::Region && self.drawing.len() >= 3 && dist(w, self.drawing[0]) <= tol {
+        if matches!(self.tool, Tool::Region | Tool::Line("hedge")) && self.drawing.len() >= 3 && dist(w, self.drawing[0]) <= tol {
             self.finish_drawing();
             return;
         }
@@ -833,6 +880,7 @@ impl App {
                 self.sel = Sel::Path(self.doc.paths.len() - 1);
                 self.tool = Tool::Select;
             }
+            Tool::Line("hedge") if pts.len() < 3 => self.status = "a hedge needs 3 points".into(),
             Tool::Line(kind) if pts.len() >= 2 => {
                 let l = edit::new_line(&self.doc, kind, pts);
                 self.status = format!("{} added", l.name);
@@ -939,6 +987,9 @@ impl App {
         }
         if pressed(Key::H) {
             self.set_tool(Tool::Line("bridge"));
+        }
+        if pressed(Key::J) {
+            self.set_tool(Tool::Line("hedge"));
         }
         let fine = if shift { 1.0 } else { 15.0 };
         if pressed(Key::Q) {
@@ -1213,6 +1264,18 @@ impl App {
             let (o, d) = ray(cam, p);
             scene.as_ref().and_then(|s| s.raycast(o, d))
         };
+        // for wall pieces: the point under the pointer (a wall's face, or a floor) and where to put
+        // one down for it to fit there (a little out from a face, so that face is the nearest wall)
+        let wall_spot = |cam: &crate::view3d::Camera, p: Pos2| -> Option<([f64; 3], P2)> {
+            let (o, d) = ray(cam, p);
+            let s = scene.as_ref()?;
+            let floor = s.raycast(o, d);
+            match s.raycast_wall(o, d) {
+                Some((t, q, n)) if floor.is_none_or(|f| t < f.0) => Some((q, [q[0] + n[0] * 5.0, q[1] + n[1] * 5.0])),
+                _ => floor.map(|(_, q)| (q, [q[0], q[1]])),
+            }
+        };
+        let wall_tool = self.tool == Tool::Prop && self.chosen_on_wall();
         if let Some(h) = resp.hover_pos() {
             if let Some((_, q)) = hit_at(&cam, h) {
                 self.cursor = Some([q[0], q[1]]);
@@ -1234,13 +1297,17 @@ impl App {
         if resp.drag_started_by(PointerButton::Primary) {
             self.gesture3 = if painting { Gesture3::Paint } else { Gesture3::Orbit };
             let origin = ctx.input(|i| i.pointer.press_origin());
-            // dragging a prop moves it, over the plane at its height
+            // dragging a prop moves it, over the plane at its height; a wall piece or opening
+            // slides along the walls under the pointer
             if let (Some(o), false) = (origin, painting) {
-                if let Some((_, q)) = hit_at(&cam, o) {
+                if let Some(i) = wall_spot(&cam, o).and_then(|(q, _)| self.wall_prop_near(q)) {
+                    self.sel = Sel::Prop(i);
+                    self.gesture3 = Gesture3::WallProp { i };
+                } else if let Some((_, q)) = hit_at(&cam, o) {
                     if let Some(i) = self.prop_at([q[0], q[1]]) {
                         let at = self.doc.props[i].at;
                         self.sel = Sel::Prop(i);
-                        self.gesture3 = Gesture3::Prop { i, off: [at[0] - q[0], at[1] - q[1]], z: q[2] };
+                        self.gesture3 = if self.on_wall(i) { Gesture3::WallProp { i } } else { Gesture3::Prop { i, off: [at[0] - q[0], at[1] - q[1]], z: q[2] } };
                     }
                 }
             }
@@ -1286,6 +1353,12 @@ impl App {
                         }
                     }
                 }
+                Gesture3::WallProp { i } => {
+                    let i = *i;
+                    if let Some((_, at)) = resp.interact_pointer_pos().and_then(|p| wall_spot(&cam, p)) {
+                        self.doc.props[i].at = at.map(|x| x.round());
+                    }
+                }
                 Gesture3::Paint | Gesture3::None => {}
             }
         }
@@ -1300,8 +1373,11 @@ impl App {
         }
         if resp.clicked() && !painting {
             let hit = resp.interact_pointer_pos().and_then(|p| hit_at(&cam, p));
-            let s = match hit {
-                Some((_, q)) => {
+            let spot = resp.interact_pointer_pos().and_then(|p| wall_spot(&cam, p));
+            let on_wall_prop = spot.and_then(|(q, _)| self.wall_prop_near(q));
+            let s = match (on_wall_prop, hit) {
+                (Some(i), _) => Sel::Prop(i),
+                (None, Some((_, q))) => {
                     let w = [q[0], q[1]];
                     match (self.prop_at(w), self.shapes.line_near(&self.doc, w, 1.0, true), self.shapes.path_near(&self.doc, w, 1.0, true)) {
                         (Some(i), _, _) => Sel::Prop(i),
@@ -1310,10 +1386,15 @@ impl App {
                         _ => self.shapes.loop_at(w).map_or(Sel::None, Sel::Loop),
                     }
                 }
-                None => Sel::None,
+                (None, None) => Sel::None,
             };
             let shift = ctx.input(|i| i.modifiers.shift);
             match (self.tool, hit, s) {
+                (Tool::Prop, _, Sel::Loop(_) | Sel::Path(_) | Sel::Line(_) | Sel::None) if wall_tool => {
+                    if let Some((_, at)) = spot {
+                        self.place_prop(at);
+                    }
+                }
                 (Tool::Prop, Some((_, q)), Sel::Loop(_) | Sel::Path(_) | Sel::None) => self.place_prop([q[0], q[1]]),
                 _ => self.click_select(s, shift),
             }
@@ -1427,11 +1508,57 @@ impl App {
             let r = pts.iter().map(|q| (q[0] - prop.at[0]).hypot(q[1] - prop.at[1])).fold(40.0, f64::max);
             line3(&[[prop.at[0], prop.at[1], z], [prop.at[0] + f[0] * r * 1.15, prop.at[1] + f[1] * r * 1.15, z]], false, Stroke::new(2.0, PROP_COLOUR));
         }
+        // the ghost: where a wall piece would go (the one being put down, or dragged), or why not
+        let ghost = match (&self.gesture3, resp.hover_pos()) {
+            (Gesture3::WallProp { i }, _) => self.doc.props.get(*i).cloned().zip(resp.interact_pointer_pos()),
+            (_, Some(h)) if wall_tool => wall_spot(&cam, h).map(|(_, at)| (Prop { piece: self.piece.clone(), at, z: None, yaw: 0.0, scale: [1.0; 3] }, h)),
+            _ => None,
+        };
+        if let Some((prop, h)) = ghost {
+            match self.ghost(&prop) {
+                Some(Ok(pv)) => {
+                    let fill = Color32::from_rgba_unmultiplied(90, 235, 170, 70);
+                    let mut mesh = egui::epaint::Mesh::default();
+                    for t in &pv.tris {
+                        let s: Vec<Pos2> = t.iter().filter_map(|q| cam.project(rect, glam::Vec3::new(q[0] as f32, q[1] as f32, q[2] as f32))).collect();
+                        if s.len() == 3 {
+                            let base = mesh.vertices.len() as u32;
+                            for p in s {
+                                mesh.colored_vertex(p, fill);
+                            }
+                            mesh.add_triangle(base, base + 1, base + 2);
+                        }
+                    }
+                    painter.add(Shape::mesh(mesh));
+                    // its foot along the wall, and which way it faces
+                    let f = overworld::props::facing(pv.prop.yaw);
+                    let z = pv.prop.z.unwrap_or(0.0) + 1.0;
+                    let (o, ac) = (pv.prop.at, [f[1], -f[0]]);
+                    let w = pv.tris.iter().flatten().map(|q| ((q[0] - o[0]) * ac[0] + (q[1] - o[1]) * ac[1]).abs()).fold(20.0, f64::max);
+                    line3(&[[o[0] - ac[0] * w, o[1] - ac[1] * w, z], [o[0] + ac[0] * w, o[1] + ac[1] * w, z]], false, Stroke::new(3.0, PROP_COLOUR));
+                    line3(&[[o[0], o[1], z], [o[0] + f[0] * 60.0, o[1] + f[1] * 60.0, z]], false, Stroke::new(2.0, PROP_COLOUR));
+                    let what = if matches!(self.gesture3, Gesture3::WallProp { .. }) { "let go: move it here" } else { "click: put it here" };
+                    let text = format!("{what} · the wall is {:.0} wide here", pv.room);
+                    painter.text(h + Vec2::new(15.0, 1.0), Align2::LEFT_BOTTOM, &text, FontId::proportional(13.0), Color32::from_black_alpha(220));
+                    painter.text(h + Vec2::new(14.0, 0.0), Align2::LEFT_BOTTOM, &text, FontId::proportional(13.0), PROP_COLOUR);
+                }
+                Some(Err(e)) => {
+                    let red = Color32::from_rgb(255, 110, 90);
+                    painter.circle_stroke(h, 10.0, Stroke::new(2.5, red));
+                    let e = e.split_once(": ").map_or(e.as_str(), |x| x.1).to_string();
+                    painter.text(h + Vec2::new(15.0, 1.0), Align2::LEFT_BOTTOM, &e, FontId::proportional(13.0), Color32::from_black_alpha(220));
+                    painter.text(h + Vec2::new(14.0, 0.0), Align2::LEFT_BOTTOM, &e, FontId::proportional(13.0), red);
+                }
+                None => {}
+            }
+        }
         painter.text(
             rect.left_bottom() + Vec2::new(10.0, -8.0),
             Align2::LEFT_BOTTOM,
             if self.tool == Tool::Brush {
                 "drag: paint · Alt-drag or middle-drag: orbit · right-drag: pan · wheel: zoom · Ctrl: lower · Shift: smooth"
+            } else if wall_tool {
+                "hover a wall: the ghost shows where it goes (red: why it can't) · click: put it there · drag one along the walls · drag elsewhere: orbit"
             } else if self.tool == Tool::Prop {
                 "click: place the Kit panel's piece · drag a prop: move it · Q / E: turn · drag elsewhere: orbit · right-drag: pan"
             } else {
@@ -1632,6 +1759,24 @@ impl App {
                 }
             }
         }
+        // the ghost of a wall piece about to be put down: where it fits, or why it can't
+        if let (Tool::Prop, true, Some(h), Gesture::None) = (self.tool, self.chosen_on_wall(), hover, &self.gesture) {
+            let probe = Prop { piece: self.piece.clone(), at: v.to_world(h), z: None, yaw: 0.0, scale: [1.0; 3] };
+            let piece = self.kit.as_ref().and_then(|k| k.get(&self.piece)).cloned();
+            match (self.ghost(&probe), piece) {
+                (Some(Ok(pv)), Some(piece)) => {
+                    let pts: Vec<Pos2> = overworld::props::footprint(&piece, &pv.prop).iter().map(|&q| v.to_screen(q)).collect();
+                    painter.add(Shape::closed_line(pts, Stroke::new(2.5, PROP_COLOUR)));
+                    let f = overworld::props::facing(pv.prop.yaw);
+                    painter.arrow(v.to_screen(pv.prop.at), Vec2::new(f[0] as f32, -f[1] as f32) * 18.0, Stroke::new(2.0, PROP_COLOUR));
+                }
+                (Some(Err(e)), _) => {
+                    let e = e.split_once(": ").map_or(e.as_str(), |x| x.1).to_string();
+                    painter.text(h + Vec2::new(14.0, 0.0), Align2::LEFT_BOTTOM, e, FontId::proportional(12.0), Color32::from_rgb(255, 110, 90));
+                }
+                _ => {}
+            }
+        }
         // drawing in progress
         if !self.drawing.is_empty() {
             let col = match self.tool {
@@ -1647,7 +1792,7 @@ impl App {
             for p in &pts[..self.drawing.len()] {
                 painter.circle_filled(*p, 4.0, col);
             }
-            if self.tool == Tool::Region && self.drawing.len() >= 3 {
+            if matches!(self.tool, Tool::Region | Tool::Line("hedge")) && self.drawing.len() >= 3 {
                 let first = v.to_screen(self.drawing[0]);
                 let close = hover.is_some_and(|h| h.distance(first) as f64 <= PICK);
                 painter.circle_stroke(first, if close { 10.0 } else { 7.0 }, Stroke::new(2.0, col));
@@ -1710,6 +1855,7 @@ impl App {
                 (Tool::Line("dirt"), "Dirt", "D"),
                 (Tool::Line("fence"), "Fence", "G"),
                 (Tool::Line("bridge"), "Bridge", "H"),
+                (Tool::Line("hedge"), "Hedge", "J"),
             ] {
                 if ui.selectable_label(self.tool == t, name).on_hover_text(format!("key {key}")).clicked() {
                     self.set_tool(t);
@@ -1759,7 +1905,9 @@ impl App {
                 Tool::Region => "click points (on a node or edge to share it) · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
                 Tool::Path => "click points · put the ends inside the floors they start and finish on (they land at the edge) · double-click or Enter to finish · Esc: cancel",
                 Tool::Brush => "drag to paint · Ctrl: lower · Shift: smooth · [ ]: size · 1-6: raise, lower, smooth, flatten, bumps, erase · right-drag: pan",
+                Tool::Prop if self.chosen_on_wall() => "hover a wall (best in 3D): the ghost shows where it goes, or why it can't · click: put it there · drag one along the walls to move it · Del: delete",
                 Tool::Prop => "click: place the Kit panel's piece · drag a prop: move · its arrow's handle: turn (Q / E) · its corner: scale · Alt: no snap · Ctrl+D: duplicate · Del: delete",
+                Tool::Line("hedge") => "click its corners (straight between them) · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
                 Tool::Line(_) => "click points along it · double-click or Enter to finish · Backspace: undo point · Esc: cancel",
             };
             ui.label(hint);
@@ -1878,6 +2026,7 @@ impl App {
                 "dirt" => "Dirt path",
                 "fence" | "lattice" => "Fence",
                 "bridge" => "Hanging bridge",
+                "hedge" => "Hedge",
                 k => k,
             });
             ui.text_edit_singleline(&mut l.name);
@@ -1907,6 +2056,12 @@ impl App {
                 }
             });
         }
+        if l.kind == "hedge" {
+            let h = self.theme.hedge.as_ref().map_or(28.0, |h| h.height);
+            ui.weak(format!(
+                "Tall grass over the shape of its nodes (straight between them), {h:.0} above the ground with grass skirts round it. Link wades through it, with tall-grass footsteps."
+            ));
+        }
         if l.kind == "dirt" {
             ui.weak("Painted into the floor: the ground under it fades to dirt across its soft edge (the theme's), and the middle has dirt footsteps.");
         }
@@ -1929,7 +2084,8 @@ impl App {
             ui.label("No kit. It's cut from the extracted Kokiri Forest (extracted/scenes/overworld/spot04) by `overworld kit-pieces`, into out/overworld/kit/kokiri.");
             return;
         };
-        let mut kinds: Vec<&str> = kit.pieces.iter().map(|p| p.kind.as_str()).collect();
+        // hedges are drawn as shapes (the Hedge tool), not dropped in
+        let mut kinds: Vec<&str> = kit.pieces.iter().map(|p| p.kind.as_str()).filter(|&k| k != "hedge").collect();
         kinds.dedup();
         for kind in kinds {
             ui.label(egui::RichText::new(kind_name(kind)).weak());
@@ -1955,7 +2111,7 @@ impl App {
             ui.label("Turn new props");
             ui.add(egui::DragValue::new(&mut self.place_yaw).speed(1.0).range(-180.0..=180.0).suffix("°"));
         });
-        ui.weak("Click in the plan or 3D to place. Doors and the log tunnel's exit are scenery until levels load through Play_Init (ADR 0035's next step).");
+        ui.weak("Click in the plan or 3D to place. Openings and wall pieces go best in 3D: hover a wall and a ghost shows where it'd go. Hedges: draw them with the Hedge tool (J). Doors and the log tunnel's exit are scenery until levels load through Play_Init (ADR 0035's next step).");
     }
 
     fn prop_ui(&mut self, ui: &mut egui::Ui, i: usize) {
@@ -1965,6 +2121,11 @@ impl App {
         let tag = format!("prop {i}: ");
         let trouble: Vec<String> = self.problems.iter().filter(|p| p.starts_with(&tag)).map(|p| p[tag.len()..].to_string()).collect();
         let piece = self.kit.as_ref().and_then(|k| k.get(&self.doc.props[i].piece)).cloned();
+        // a wall piece's flat face where it is (asked at its narrowest, which fits wherever any does)
+        let room = piece.as_ref().filter(|p| p.kind == "wall").and_then(|p| {
+            let probe = Prop { scale: [p.scale.min[0], 1.0, 1.0], ..self.doc.props[i].clone() };
+            self.ghost(&probe)?.ok().map(|pv| pv.room)
+        });
         let prop = &mut self.doc.props[i];
         ui.horizontal(|ui| {
             ui.strong(piece.as_ref().map_or(prop.piece.clone(), |p| p.label.clone()));
@@ -1986,6 +2147,30 @@ impl App {
                     None => "not yet (see below)".into(),
                 });
                 ui.end_row();
+                if let Some(p) = piece.as_ref().filter(|p| p.kind == "wall") {
+                    let base = (p.bounds[1][0] - p.bounds[0][0]).max(1.0);
+                    let lo = base * p.scale.min[0];
+                    let hi = room.map_or(base * p.scale.max[0], |r| (r - 2.0 * overworld::openings::WALL_PIECE_MARGIN).min(base * p.scale.max[0])).max(lo);
+                    let mut w = prop.scale[0].clamp(p.scale.min[0], p.scale.max[0]) * base;
+                    ui.label("Width").on_hover_text("Across the wall: as wide as the flat face it's on allows");
+                    ui.horizontal(|ui| {
+                        if ui.add(egui::DragValue::new(&mut w).speed(1.0).range(lo..=hi)).changed() {
+                            prop.scale[0] = (w / base * 1000.0).round() / 1000.0;
+                        }
+                        match room {
+                            Some(r) => ui.weak(format!("the flat face here is {r:.0}: up to {hi:.0}")),
+                            None => ui.weak("no flat face here"),
+                        };
+                    });
+                    ui.end_row();
+                    let tall = p.bounds[1][2] - p.bounds[0][2];
+                    ui.label("Height").on_hover_text("Always from the floor to the wall's top");
+                    ui.weak(match &placed {
+                        Some(pl) => format!("floor to the wall's top: {:.0}", pl.scale[2] * tall),
+                        None => "floor to the wall's top".into(),
+                    });
+                    ui.end_row();
+                }
                 return;
             }
             ui.label("Height").on_hover_text("On the ground: its base (a house's doorway, a stone's top) stands on the floor there");
@@ -2029,7 +2214,7 @@ impl App {
         });
         prop.at = prop.at.map(|x| (x * 100.0).round() / 100.0);
         if fitted {
-            ui.weak("It fits itself to the wall nearest where you put it: on its face, facing out over the floor in front. Drag it along the wall to move it.");
+            ui.weak("It fits itself to the wall nearest where you put it: on its face, facing out over the floor in front, slid along clear of corners. Drag it along the walls in 3D to move it.");
         }
         for t in &trouble {
             ui.colored_label(Color32::from_rgb(255, 200, 80), t);
@@ -2388,6 +2573,17 @@ impl App {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Edges").on_hover_text(
+                "How outlines, regions and paths run between their nodes. Smooth: curves.                  Faceted: the same curves in a few long straight pieces, low-poly like the game's own.                  Hard: straight from node to node, every node a corner.",
+            );
+            for (e, name) in [("smooth", "Smooth"), ("faceted", "Faceted"), ("hard", "Hard")] {
+                let on = self.doc.settings.edges == e || (e == "smooth" && self.doc.settings.edges.is_empty());
+                if ui.selectable_label(on, name).clicked() {
+                    self.doc.settings.edges = e.into();
+                }
+            }
+        });
         let b = &mut self.doc.boundary;
         ui.label("Edge of the world");
         egui::Grid::new("boundary").num_columns(2).show(ui, |ui| {
@@ -2536,7 +2732,7 @@ fn noise_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
 }
 
 const KEYS: &str = "\
-V select · R draw region · P draw path · B brush · K props · D dirt path · G fence · H bridge
+V select · R draw region · P draw path · B brush · K props · D dirt path · G fence · H bridge · J hedge
 Drag a node to move it (and every loop sharing it)
 Drop a node on another to share it
 Alt while dragging: no snapping

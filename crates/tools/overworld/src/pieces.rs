@@ -64,6 +64,10 @@ pub struct PieceDef {
     /// its four sides): a band of `material` from the top down to the base, `tile` per repeat.
     #[serde(default)]
     pub close_sides: Option<CloseSides>,
+    /// A wall piece whose texture repeats with its size instead of stretching (the vines): see
+    /// `Piece::tiles`.
+    #[serde(default)]
+    pub tiles: bool,
     #[serde(default)]
     pub about: String,
 }
@@ -178,6 +182,10 @@ pub struct Piece {
     /// Where it was in spot04: the origin and the turn (degrees) that faced it north.
     pub source_origin: [f64; 3],
     pub source_yaw: f64,
+    /// Scaled, its texture repeats at the piece's own density instead of stretching; set on a
+    /// wall, it reaches from the floor to the wall's top however tall that is.
+    #[serde(default)]
+    pub tiles: bool,
     pub about: String,
 }
 
@@ -533,6 +541,7 @@ pub fn cut(manifest: &Manifest, glb: &[u8], collision: &Value) -> Result<Kit, St
             scale: def.scale.clone().unwrap_or_default(),
             source_origin: origin.map(|x| r(x, 1e3)),
             source_yaw: r(yaw.to_degrees(), 1e3),
+            tiles: def.tiles,
             about: def.about.clone(),
             ..Default::default()
         };

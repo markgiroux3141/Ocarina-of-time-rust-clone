@@ -45,7 +45,8 @@ pub struct Doc {
 /// something along, by `kind`:
 /// - "dirt": a dirt path painted into the ground (smooth curve through the nodes, `width` across);
 /// - "fence" and "lattice": fences, straight between nodes (`closed` joins the last to the first);
-/// - "bridge": a hanging bridge between its two anchors.
+/// - "bridge": a hanging bridge between its two anchors;
+/// - "hedge": a walk-through hedge over the closed shape of its nodes (always closed).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Line {
     #[serde(default)]
@@ -202,13 +203,20 @@ pub struct Settings {
     /// Mesh resolution: "high" (curves every `sample`, the default), "medium" or "low" (curves
     /// sampled by how much they bend, coarser floors and bridges). See `Detail`.
     pub detail: String,
+    /// How the outline's, regions' and paths' edges run between their nodes: "smooth" (curves,
+    /// the default), "faceted" (the same curves in a few long straight pieces, low-poly like
+    /// the game's own) or "hard" (straight from node to node, every node a corner).
+    pub edges: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { sample: 60.0, steiner: 250.0, weld: 1.0, seed: 0, detail: "high".into() }
+        Settings { sample: 60.0, steiner: 250.0, weld: 1.0, seed: 0, detail: "high".into(), edges: "smooth".into() }
     }
 }
+
+/// Faceted edges stay within this of the smooth curve: about 16 pieces round a circle 1000 across.
+pub const FACET_TOL: f64 = 20.0;
 
 /// What a detail level means for the builder.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -232,7 +240,7 @@ pub struct Detail {
 impl Settings {
     pub fn detail(&self) -> Result<Detail, String> {
         let s = self.sample.max(1.0);
-        Ok(match self.detail.as_str() {
+        let mut d = match self.detail.as_str() {
             "high" | "" => Detail { curves: Sampling::Every(s), paths: Sampling::Every(s * 0.5), steiner: self.steiner, terrain: 1.0, bumps: 4.0, walls3: false },
             "medium" => Detail {
                 curves: Sampling::Within { tol: 2.5, max: s * 4.0 },
@@ -251,7 +259,23 @@ impl Settings {
                 walls3: true,
             },
             d => return Err(format!("unknown detail {d:?} (high, medium or low)")),
-        })
+        };
+        // the detail's longest piece, so straight stretches keep their points for terrain and walls
+        let longest = |c: Sampling| match c {
+            Sampling::Every(m) | Sampling::Within { max: m, .. } | Sampling::Facets { max: m, .. } | Sampling::Straight { max: m } => m,
+        };
+        let edged = |c: Sampling| match self.edges.as_str() {
+            "smooth" | "" => Ok(c),
+            "faceted" => Ok(Sampling::Facets { tol: match c {
+                Sampling::Within { tol, .. } => tol.max(FACET_TOL),
+                _ => FACET_TOL,
+            }, max: longest(c) }),
+            "hard" => Ok(Sampling::Straight { max: longest(c) }),
+            e => Err(format!("unknown edges {e:?} (smooth, faceted or hard)")),
+        };
+        d.curves = edged(d.curves)?;
+        d.paths = edged(d.paths)?;
+        Ok(d)
     }
 }
 

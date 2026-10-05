@@ -31,6 +31,8 @@ pub struct Fit {
     pub far: Option<(P2, P2)>,
     /// For a wall piece: the z scale that takes it to the wall's top.
     pub height: f64,
+    /// How wide the wall it sits on is there, corner to corner (a wall piece's: its flat face).
+    pub room: f64,
     /// The wall's object and its triangles near the front.
     obj: usize,
     n: P2,
@@ -81,7 +83,6 @@ fn placed_points<'a>(piece: &'a Piece, prop: &'a Prop, fit: &'a Fit) -> impl Fn(
     move |v| crate::props::transform(v, fit.origin, fit.yaw, scale)
 }
 
-/// Fits a wall piece or opening to the wall near its `at`.
 /// A wall's shape across `half` either side of `base` (facing `n`), below `z_hi`: how far its
 /// points stray from the plane there (its bend), and its top.
 fn survey(mesh: &Mesh, obj: usize, base: P2, n: P2, half: f64, z_hi: f64) -> (f64, f64) {
@@ -128,6 +129,95 @@ fn survey(mesh: &Mesh, obj: usize, base: P2, n: P2, half: f64, z_hi: f64) -> (f6
     (bend, top)
 }
 
+/// How far the wall through `base` facing `n` runs either side of it (along it, from base),
+/// between heights z0 and z1: its faces that face about the same way and stay within `tol` of
+/// the plane, end to end. It stops at a corner (where the wall turns more than 60 degrees, or
+/// strays more than `tol` from the plane) or a gap.
+fn span(mesh: &Mesh, obj: usize, base: P2, n: P2, z0: f64, z1: f64, tol: f64) -> (f64, f64) {
+    let o = &mesh.objects[obj];
+    let mut runs: Vec<(f64, f64)> = vec![];
+    for tri in &o.tris {
+        let [a, b, c] = tri.map(|v| o.verts[v]);
+        let (e, f) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+        let nn = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2]];
+        let l = nn[0].hypot(nn[1]);
+        if l < 1e-6 || (nn[0] * n[0] + nn[1] * n[1]) / l < 0.5 {
+            continue;
+        }
+        let (zl, zh) = (a[2].min(b[2]).min(c[2]), a[2].max(b[2]).max(c[2]));
+        if zh <= z0 || zl >= z1 {
+            continue;
+        }
+        // the stretch of it within tol of the plane (a long face round a corner counts up to there)
+        let ((s0, d0), (s1, d1)) = plan_seg([a, b, c], base, n);
+        let at = |d: f64| if (d1 - d0).abs() < 1e-9 { None } else { Some(s0 + (d - d0) / (d1 - d0) * (s1 - s0)) };
+        let (mut lo, mut hi) = (s0, s1);
+        for lim in [-tol, tol] {
+            if let Some(x) = at(lim) {
+                if (d1 - d0) * lim > 0.0 { hi = hi.min(x) } else { lo = lo.max(x) }
+            }
+        }
+        if d0.abs() > tol && d1.abs() > tol && d0 * d1 > 0.0 || lo >= hi {
+            continue;
+        }
+        runs.push((lo, hi));
+    }
+    let (mut lo, mut hi) = (0.0f64, 0.0f64);
+    loop {
+        let (l0, h0) = (lo, hi);
+        for &(a, b) in &runs {
+            if a <= hi + 1.0 && b >= lo - 1.0 {
+                lo = lo.min(a);
+                hi = hi.max(b);
+            }
+        }
+        if (lo, hi) == (l0, h0) {
+            return (lo, hi);
+        }
+    }
+}
+
+/// A vertical triangle seen from above is a segment: its ends (the points furthest along the
+/// wall through `base` facing `n`), each as (along, out from the plane).
+fn plan_seg(pts: [P3; 3], base: P2, n: P2) -> ((f64, f64), (f64, f64)) {
+    let t = [-n[1], n[0]];
+    let sd = pts.map(|q| ((q[0] - base[0]) * t[0] + (q[1] - base[1]) * t[1], (q[0] - base[0]) * n[0] + (q[1] - base[1]) * n[1]));
+    let lo = sd.iter().cloned().min_by(|x, y| x.0.total_cmp(&y.0)).unwrap();
+    let hi = sd.iter().cloned().max_by(|x, y| x.0.total_cmp(&y.0)).unwrap();
+    (lo, hi)
+}
+
+/// A wall piece needs this much flat wall each side of it, and flat means within this of a plane.
+pub const WALL_PIECE_MARGIN: f64 = 10.0;
+pub const WALL_PIECE_FLAT: f64 = 3.0;
+
+/// The prop as it was fitted: on the wall, turned to face out, scaled to the room behind (an
+/// opening's depth) or the wall's height (a wall piece), at its height on the floor in front.
+pub fn fitted(piece: &Piece, prop: &Prop, fit: &Fit) -> Prop {
+    let mut scale = piece.scale.clamp(prop.scale);
+    scale[1] = fit.depth;
+    if piece.opening.is_none() {
+        scale[2] = fit.height;
+    }
+    Prop { at: [fit.origin[0], fit.origin[1]], yaw: fit.yaw, scale, z: Some(fit.origin[2]), piece: prop.piece.clone() }
+}
+
+/// Where a wall piece or opening put down at `prop.at` would go, for an editor's ghost: its
+/// triangles in the level, the fitted prop, and how wide the wall is there (`Fit::room`).
+/// Whether an opening's gap can be cut is only known when it's built.
+pub struct Preview {
+    pub tris: Vec<[P3; 3]>,
+    pub prop: Prop,
+    pub room: f64,
+}
+
+pub fn preview(piece: &Piece, prop: &Prop, mesh: &Mesh, ground: &Ground) -> Result<Preview, String> {
+    let f = fit(piece, prop, mesh, ground)?;
+    let p = fitted(piece, prop, &f);
+    let tris = piece.tris.iter().map(|t| t.map(|v| crate::props::transform(piece.verts[v as usize], f.origin, p.yaw, p.scale))).collect();
+    Ok(Preview { tris, prop: p, room: f.room })
+}
+
 /// How far an opening's wall may stray from flat: a log's rim stands well out from the wall and
 /// covers a curve; a crawlspace's arches lie flat on the wall, so its walls must be flat.
 fn bend_allowed(piece: &Piece) -> f64 {
@@ -140,21 +230,44 @@ fn bend_allowed(piece: &Piece) -> f64 {
 /// Fits a wall piece or opening to the wall near its `at`.
 pub fn fit(piece: &Piece, prop: &Prop, mesh: &Mesh, ground: &Ground) -> Result<Fit, String> {
     let name = &piece.label;
-    let (obj, base, n) = nearest_wall(mesh, prop.at, 300.0, None).ok_or(format!("{name}: no wall within 300 of it"))?;
-    let floor = ground.at(mesh, [base[0] + n[0] * 12.0, base[1] + n[1] * 12.0]).0.ok_or(format!("{name}: no floor in front of the wall"))?;
+    let (obj, mut base, mut n) = nearest_wall(mesh, prop.at, 300.0, None).ok_or(format!("{name}: no wall within 300 of it"))?;
+    let floor_at = |base: P2, n: P2| ground.at(mesh, [base[0] + n[0] * 12.0, base[1] + n[1] * 12.0]).0.ok_or(format!("{name}: no floor in front of the wall"));
+    let mut floor = floor_at(base, n)?;
+    // the piece across the wall, and a little wall each side: near a corner (a hard or faceted
+    // edge's node) it slides along the wall until it's all on the one face. A wall piece lies
+    // flat on the wall, so its face is the flat stretch; an opening's may bend a little.
+    let scale = piece.scale.clamp(prop.scale);
+    let (margin, tol, tall) = match &piece.opening {
+        Some(o) => (20.0, 60.0, o.height),
+        None => (WALL_PIECE_MARGIN, WALL_PIECE_FLAT, 20.0),
+    };
+    let half = piece.verts.iter().filter(|v| v[1] * scale[1] > -40.0).map(|v| v[0].abs() * scale[0]).fold(0.0, f64::max) + margin;
+    let (a, b) = span(mesh, obj, base, n, floor + 1.0, floor + tall, tol);
+    if b - a < 2.0 * half {
+        let what = if piece.opening.is_some() { "corner to corner" } else { "flat, corner to corner" };
+        return Err(format!("{name}: the wall is {:.0} wide here ({what}); it needs {:.0}", b - a, 2.0 * half));
+    }
+    let shift = if b < half { b - half } else if a > -half { a + half } else { 0.0 };
+    if shift != 0.0 {
+        let t = [-n[1], n[0]];
+        let p = [base[0] + t[0] * shift + n[0], base[1] + t[1] * shift + n[1]];
+        (_, base, n) = nearest_wall(mesh, p, 20.0, Some(n)).filter(|w| w.0 == obj).ok_or(format!("{name}: the wall moved under it"))?;
+        floor = floor_at(base, n)?;
+    }
     let yaw = (-n[0]).atan2(n[1]).to_degrees();
-    let mut fit = Fit { origin: [base[0], base[1], floor], yaw, depth: piece.scale.clamp(prop.scale)[1], far: None, height: piece.scale.clamp(prop.scale)[2], obj, n, base };
+    let mut fit = Fit { origin: [base[0], base[1], floor], yaw, depth: scale[1], far: None, height: scale[2], room: b - a, obj, n, base };
     let Some(op) = &piece.opening else {
         // wall pieces (vines, a waterfall) lie flat on the wall's face, a hair out so they don't
         // fight it for depth, from the floor to the wall's top: the wall must be flat there
         let width = (piece.bounds[1][0] - piece.bounds[0][0]) * piece.scale.clamp(prop.scale)[0];
-        let (bend, top) = survey(mesh, obj, base, n, width / 2.0 + 10.0, f64::INFINITY);
-        if bend > 3.0 {
+        let (bend, top) = survey(mesh, obj, base, n, width / 2.0 + WALL_PIECE_MARGIN, f64::INFINITY);
+        if bend > WALL_PIECE_FLAT {
             return Err(format!("{name}: the wall isn't flat here ({bend:.0} off); it goes on a flat stretch {width:.0} wide"));
         }
         let height = (piece.bounds[1][2] - piece.bounds[0][2]).max(1.0);
         let need = (top - floor) / height;
-        if need < piece.scale.min[2] - 1e-9 || need > piece.scale.max[2] + 1e-9 {
+        // a tiling piece reaches any height (its texture repeats); others keep to their limits
+        if need <= 0.0 || !piece.tiles && (need < piece.scale.min[2] - 1e-9 || need > piece.scale.max[2] + 1e-9) {
             return Err(format!("{name}: the wall is {:.0} tall here; it reaches {:.0} to {:.0}", top - floor, height * piece.scale.min[2], height * piece.scale.max[2]));
         }
         fit.origin = [base[0] + n[0] * 1.5, base[1] + n[1] * 1.5, floor];
@@ -270,7 +383,6 @@ fn clip_below(poly: &[P2], z0: f64) -> Vec<P2> {
 pub fn punch(mesh: &mut Mesh, obj: usize, base: P2, n: P2, outline: &[P3]) -> Result<(), String> {
     let t = [-n[1], n[0]];
     let sz = |q: P3| [(q[0] - base[0]) * t[0] + (q[1] - base[1]) * t[1], q[2]];
-    let dn = |q: P3| (q[0] - base[0]) * n[0] + (q[1] - base[1]) * n[1];
     let m = hull(outline.iter().map(|&q| sz(q)).collect());
     if m.len() < 3 {
         return Err("no mouth to cut".into());
@@ -282,13 +394,20 @@ pub fn punch(mesh: &mut Mesh, obj: usize, base: P2, n: P2, outline: &[P3]) -> Re
     }
     let pad = 6.0;
     let o = &mesh.objects[obj];
-    // this wall's own faces: facing the same way, near the plane
+    // this wall's own faces: facing the same way, near the plane across the mouth (a long face
+    // round a corner may stray further from it beyond)
     let same_wall = |ti: usize| {
         let [a, b, c] = o.tris[ti].map(|v| o.verts[v]);
         let (e, f) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
         let nn = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2]];
         let l = nn[0].hypot(nn[1]);
-        l > 1e-6 && (nn[0] * n[0] + nn[1] * n[1]) / l > 0.5 && [a, b, c].iter().all(|&q| dn(q).abs() <= 80.0)
+        if l <= 1e-6 || (nn[0] * n[0] + nn[1] * n[1]) / l <= 0.5 {
+            return false;
+        }
+        let ((s0, d0), (s1, d1)) = plan_seg([a, b, c], base, n);
+        let d_at = |x: f64| if s1 - s0 < 1e-9 { d0 } else { d0 + (x.clamp(s0, s1) - s0) / (s1 - s0) * (d1 - d0) };
+        let (x0, x1) = (s0.max(lo[0] - 20.0), s1.min(hi[0] + 20.0));
+        x0 <= x1 && d_at(x0).abs() <= 80.0 && d_at(x1).abs() <= 80.0
     };
     // the wall's triangles over the mouth's box (and a little round it)
     let cut: Vec<usize> = (0..o.tris.len())

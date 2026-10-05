@@ -38,6 +38,25 @@ pub struct Theme {
     /// Hanging bridges (needed by levels with bridge lines).
     #[serde(default)]
     pub hanging: Option<Hanging>,
+    /// Walk-through hedges (needed by levels with hedge lines).
+    #[serde(default)]
+    pub hedge: Option<HedgeStyle>,
+}
+
+/// A walk-through hedge (Kokiri's tall grass): over a closed line of nodes, a top `height` above
+/// the ground (`top`, world-projected, `top_tile` per repeat), with skirts (`side`, `side_tile`
+/// per repeat along) down to the ground round it. Points every `spacing` inside and along its
+/// edge, so it follows the ground. Only drawn: Link wades through it, on a floor of `surface`
+/// footsteps a hair above the ground.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HedgeStyle {
+    pub top: String,
+    pub top_tile: f64,
+    pub side: String,
+    pub side_tile: f64,
+    pub height: f64,
+    pub spacing: f64,
+    pub surface: String,
 }
 
 /// A hanging bridge between two anchors: a deck of planks `width` across (`deck` on top, `under`

@@ -86,6 +86,8 @@ pub struct Scene {
     zr: (f32, f32),
     /// Collision floors (up-facing), for heights under the cursor: triangles in grid cells.
     floors: Vec<[[f64; 3]; 3]>,
+    /// The walls and cliffs (drawn, vertical), for putting wall pieces on them in 3D.
+    walls: Vec<[[f64; 3]; 3]>,
     cells: std::collections::HashMap<(i32, i32), Vec<u32>>,
     pub bounds: [f64; 4],
     pub triangles: usize,
@@ -116,7 +118,7 @@ impl Scene {
                 Some([0, 1, 2].map(|k| b[k] / a[k].max(1e-3)))
             })
             .collect();
-        let (mut tris, mut floors) = (vec![], vec![]);
+        let (mut tris, mut floors, mut walls) = (vec![], vec![], vec![]);
         let mut cells: std::collections::HashMap<(i32, i32), Vec<u32>> = Default::default();
         let mut bounds = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
         let mut zr = (f32::INFINITY, f32::NEG_INFINITY);
@@ -130,6 +132,9 @@ impl Scene {
                     bounds = [bounds[0].min(q[0]), bounds[1].min(q[1]), bounds[2].max(q[0]), bounds[3].max(q[1])];
                 }
                 if up.abs() < 1e-3 {
+                    if !o.collision_only && (o.name == "walls" || o.name == "cliffs") {
+                        walls.push(p);
+                    }
                     continue; // vertical: nothing to see from above
                 }
                 // collision floors (props' too, though their collision isn't drawn)
@@ -179,7 +184,7 @@ impl Scene {
             let b = if zr.0.is_finite() { zr.0 } else { 0.0 };
             zr = (b, b + 100.0);
         }
-        Scene { tris, mats, zr, floors, cells, bounds, triangles: lvl.mesh.triangles(), rim: lvl.rim }
+        Scene { tris, mats, zr, floors, walls, cells, bounds, triangles: lvl.mesh.triangles(), rim: lvl.rim }
     }
 
     /// The highest collision floor at p.
@@ -205,33 +210,30 @@ impl Scene {
 
     /// The nearest collision floor a ray from `o` along `d` hits: (distance along d, point).
     pub fn raycast(&self, o: [f64; 3], d: [f64; 3]) -> Option<(f64, [f64; 3])> {
-        let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-        let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        let mut best: Option<f64> = None;
-        for [a, b, c] in &self.floors {
-            let (e1, e2) = (sub(*b, *a), sub(*c, *a));
-            let p = cross(d, e2);
-            let det = dot(e1, p);
-            if det.abs() < 1e-12 {
-                continue;
-            }
-            let t0 = sub(o, *a);
-            let u = dot(t0, p) / det;
-            if !(0.0..=1.0).contains(&u) {
-                continue;
-            }
-            let q = cross(t0, e1);
-            let v = dot(d, q) / det;
-            if v < 0.0 || u + v > 1.0 {
-                continue;
-            }
-            let t = dot(e2, q) / det;
-            if t > 0.0 && best.is_none_or(|b| t < b) {
-                best = Some(t);
+        let best = self.floors.iter().filter_map(|t| ray_tri(o, d, t)).fold(None, |b: Option<f64>, t| Some(b.map_or(t, |b| b.min(t))));
+        best.map(|t| (t, [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t]))
+    }
+
+    /// The nearest wall or cliff a ray hits: (distance along d, point, the wall's normal seen from
+    /// above, turned to face the ray's origin).
+    pub fn raycast_wall(&self, o: [f64; 3], d: [f64; 3]) -> Option<(f64, [f64; 3], P2)> {
+        let mut best: Option<(f64, usize)> = None;
+        for (i, tri) in self.walls.iter().enumerate() {
+            if let Some(t) = ray_tri(o, d, tri) {
+                if best.is_none_or(|b| t < b.0) {
+                    best = Some((t, i));
+                }
             }
         }
-        best.map(|t| (t, [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t]))
+        let (t, i) = best?;
+        let [a, b, c] = self.walls[i];
+        let n = [(b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]), (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2])];
+        let l = n[0].hypot(n[1]).max(1e-9);
+        let mut n = [n[0] / l, n[1] / l];
+        if n[0] * d[0] + n[1] * d[1] > 0.0 {
+            n = [-n[0], -n[1]];
+        }
+        Some((t, [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t], n))
     }
 
     /// Draws the level. `tex(mat)` gives a material's texture, if it's loaded.
@@ -294,6 +296,32 @@ impl Scene {
     }
 }
 
+/// Where a ray from `o` along `d` meets triangle `tri` (Moller-Trumbore): its distance along d.
+fn ray_tri(o: [f64; 3], d: [f64; 3], tri: &[[f64; 3]; 3]) -> Option<f64> {
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let [a, b, c] = *tri;
+    let (e1, e2) = (sub(b, a), sub(c, a));
+    let p = cross(d, e2);
+    let det = dot(e1, p);
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    let t0 = sub(o, a);
+    let u = dot(t0, p) / det;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = cross(t0, e1);
+    let v = dot(d, q) / det;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let t = dot(e2, q) / det;
+    (t > 0.0).then_some(t)
+}
+
 /// Low ground dark green, through grass and sand, to pale rock at the top.
 fn height_colour(h: f32) -> [f32; 3] {
     const STOPS: [(f32, [f32; 3]); 5] = [
@@ -321,4 +349,30 @@ pub fn texture_options(info: &TexInfo) -> egui::TextureOptions {
         _ => egui::TextureWrapMode::Repeat,
     };
     egui::TextureOptions { magnification: egui::TextureFilter::Linear, minification: egui::TextureFilter::Linear, wrap_mode: wrap, mipmap_mode: None }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A ray across the level at knee height hits a wall (a region's or the edge's), and the
+    /// wall's normal comes back facing where the ray came from; a ray straight down hits no wall.
+    #[test]
+    fn rays_hit_walls_facing_back() {
+        let p = concat!(env!("CARGO_MANIFEST_DIR"), "/../overworld/examples/sketch/sketch_plateau.json");
+        let doc: overworld::Doc = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+        let theme = Theme::kokiri();
+        let lvl = overworld::build(&doc, &theme).unwrap();
+        let s = Scene::new(&lvl, &theme, None);
+        let pts: Vec<P2> = doc.outline.nodes.iter().map(|n| [n[0], n[1]]).collect();
+        let c = [pts.iter().map(|q| q[0]).sum::<f64>() / pts.len() as f64, pts.iter().map(|q| q[1]).sum::<f64>() / pts.len() as f64];
+        for a in 0..8 {
+            let a = a as f64 / 8.0 * std::f64::consts::TAU;
+            let d = [a.cos(), a.sin(), 0.0];
+            let (t, q, n) = s.raycast_wall([c[0], c[1], doc.outline.z + 50.0], d).expect("a wall all round");
+            assert!(t > 0.0 && (q[2] - doc.outline.z - 50.0).abs() < 1e-6);
+            assert!(n[0] * d[0] + n[1] * d[1] < 0.0 && (n[0].hypot(n[1]) - 1.0).abs() < 1e-9);
+        }
+        assert!(s.raycast_wall([c[0], c[1], 5000.0], [0.0, 0.0, -1.0]).is_none());
+    }
 }
