@@ -3,8 +3,9 @@
 //! is also written there (pd-walk, watching it, reloads): after the editor has the build, and
 //! only if no newer edit is waiting, so writing files never holds up what you see.
 
+use overworld::pieces::Kit;
 use overworld::textures::Library;
-use overworld::{build, export, Doc, Level, Theme};
+use overworld::{build_with, export, Doc, Level, Theme};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
@@ -14,6 +15,8 @@ pub struct Job {
     pub doc: Doc,
     pub theme: Arc<Theme>,
     pub lib: Option<Arc<Library>>,
+    /// The kit props come from.
+    pub kit: Option<Arc<Kit>>,
     pub export: Option<PathBuf>,
 }
 
@@ -53,7 +56,7 @@ impl Worker {
                     job = newer;
                 }
                 let t = Instant::now();
-                let level = build(&job.doc, &job.theme).map(Arc::new);
+                let level = build_with(&job.doc, &job.theme, job.kit.as_deref()).map(Arc::new);
                 let problems = level.as_ref().map(|l| l.problems.clone()).unwrap_or_default();
                 let ms = t.elapsed().as_secs_f64() * 1000.0;
                 let built = level.as_ref().ok().cloned();

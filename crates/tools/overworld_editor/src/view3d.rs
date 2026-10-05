@@ -123,6 +123,7 @@ struct Batch {
     bind: wgpu::BindGroup,
     kind: Kind,
     cull: bool,
+    decal: bool,
 }
 
 struct Target {
@@ -139,7 +140,7 @@ pub struct View3d {
     tex_layout: wgpu::BindGroupLayout,
     globals: wgpu::Buffer,
     globals_bg: wgpu::BindGroup,
-    pipelines: HashMap<(Kind, bool), wgpu::RenderPipeline>,
+    pipelines: HashMap<(Kind, bool, bool), wgpu::RenderPipeline>,
     batches: Vec<Batch>,
     /// By texture name.
     textures: HashMap<String, wgpu::TextureView>,
@@ -186,6 +187,16 @@ impl View3d {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -223,8 +234,10 @@ impl View3d {
         }
     }
 
-    fn pipeline(&mut self, kind: Kind, cull: bool) {
-        if self.pipelines.contains_key(&(kind, cull)) {
+    /// A pipeline per alpha kind, culling and decal (drawn on the surface it lies on: pulled
+    /// towards the eye, as the N64's decal depth mode lets it win ties).
+    fn pipeline(&mut self, kind: Kind, cull: bool, decal: bool) {
+        if self.pipelines.contains_key(&(kind, cull, decal)) {
             return;
         }
         let fs = match kind {
@@ -256,7 +269,7 @@ impl View3d {
                 depth_write_enabled: Some(kind != Kind::Blend),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
-                bias: Default::default(),
+                bias: if decal { wgpu::DepthBiasState { constant: -8, slope_scale: -2.0, clamp: 0.0 } } else { Default::default() },
             }),
             multisample: wgpu::MultisampleState { count: SAMPLES, ..Default::default() },
             fragment: Some(wgpu::FragmentState {
@@ -272,13 +285,13 @@ impl View3d {
             multiview_mask: None,
             cache: None,
         });
-        self.pipelines.insert((kind, cull), p);
+        self.pipelines.insert((kind, cull, decal), p);
     }
 
     /// Uploads a built level: one batch per material.
     pub fn set_level(&mut self, lvl: &Level, mats: &[Mat], lib: Option<&Library>) {
         let mut verts: Vec<Vec<Vertex>> = vec![vec![]; mats.len()];
-        for o in &lvl.mesh.objects {
+        for o in lvl.mesh.objects.iter().filter(|o| !o.collision_only) {
             for (t, tri) in o.tris.iter().enumerate() {
                 let m = o.mat[t];
                 let alpha = if mats[m].info.alpha == "blend" { (mats[m].info.opacity * 255.0) as u8 } else { 255 };
@@ -286,10 +299,16 @@ impl View3d {
                     let v = o.verts[tri[c]];
                     let col = o.colors.get(tri[c]).copied().unwrap_or([255, 255, 255]);
                     let uv = o.uvs[t][c];
+                    // a blend material's alpha is how much of its second texture shows
+                    let a = match (&mats[m].overlay, o.blend.get(tri[c])) {
+                        (Some(_), Some(w)) => (w * 255.0).round().clamp(0.0, 255.0) as u8,
+                        (Some(_), None) => 0,
+                        _ => alpha,
+                    };
                     verts[m].push(Vertex {
                         pos: [v[0] as f32, v[1] as f32, v[2] as f32],
                         uv: [uv[0] as f32, 1.0 - uv[1] as f32],
-                        color: [col[0], col[1], col[2], alpha],
+                        color: [col[0], col[1], col[2], a],
                     });
                 }
             }
@@ -303,15 +322,18 @@ impl View3d {
             }
             let info = &mats[m].info;
             let name = &mats[m].name;
-            if !self.textures.contains_key(name) {
-                if let Some((w, h, px)) = lib.and_then(|l| l.rgba(name)) {
-                    if let Some(img) = image::RgbaImage::from_raw(w, h, px) {
-                        let v = upload_texture(&device, &queue, &img);
-                        self.textures.insert(name.clone(), v);
+            for n in std::iter::once(name).chain(mats[m].overlay.as_ref()) {
+                if !self.textures.contains_key(n) {
+                    if let Some((w, h, px)) = lib.and_then(|l| l.rgba(n)) {
+                        if let Some(img) = image::RgbaImage::from_raw(w, h, px) {
+                            let v = upload_texture(&device, &queue, &img);
+                            self.textures.insert(n.clone(), v);
+                        }
                     }
                 }
             }
             let view = self.textures.get(name).unwrap_or(&self.white);
+            let view2 = mats[m].overlay.as_ref().and_then(|o| self.textures.get(o)).unwrap_or(view);
             let wrap = |w: &str| match w {
                 "clamp" => wgpu::AddressMode::ClampToEdge,
                 "mirror" => wgpu::AddressMode::MirrorRepeat,
@@ -332,6 +354,7 @@ impl View3d {
                 entries: &[
                     wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
                     wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(view2) },
                 ],
             });
             let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -345,8 +368,8 @@ impl View3d {
                 _ => Kind::Opaque,
             };
             let cull = info.cull != "none";
-            self.pipeline(kind, cull);
-            self.batches.push(Batch { vbuf, count: vs.len() as u32, bind, kind, cull });
+            self.pipeline(kind, cull, info.decal);
+            self.batches.push(Batch { vbuf, count: vs.len() as u32, bind, kind, cull, decal: info.decal });
         }
         // opaque, then cutouts, then blended (water) last
         self.batches.sort_by_key(|b| b.kind as u8);
@@ -402,7 +425,7 @@ impl View3d {
             });
             pass.set_bind_group(0, &self.globals_bg, &[]);
             for b in &self.batches {
-                pass.set_pipeline(&self.pipelines[&(b.kind, b.cull)]);
+                pass.set_pipeline(&self.pipelines[&(b.kind, b.cull, b.decal)]);
                 pass.set_bind_group(1, &b.bind, &[]);
                 pass.set_vertex_buffer(0, b.vbuf.slice(..));
                 pass.draw(0..b.count, 0..1);

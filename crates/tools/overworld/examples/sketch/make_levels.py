@@ -10,6 +10,10 @@
 - sketch_hills: sketch_bumpy with painted terrain (the grid the editor's brush paints): a broad hill
   under the island, which lifts it with its ramps, a rise in the open south-west and a hollow in the
   middle of the ground.
+- sketch_village: sketch_pond at medium detail with Kokiri's houses, stumps, a hedge and stepping
+  stones across the pond (kit pieces, `props`), a ramp up to the north-east plateau where the
+  Know-It-All Brothers live, a lookout joined to it by a hanging bridge, the south-west rise, which
+  Link's house stands on, dirt paths between the doors and fences (`lines`).
 
 Hand-placed points are in sketch pixels, so the level's scale is the trace's alone:
 
@@ -103,7 +107,54 @@ def main():
         (300, -700, 700, -70),
     ])
 
-    for d in (plateau, pond, paths, bumpy, hills):
+    village = copy.deepcopy(pond)
+    village["name"] = "sketch_village"
+    village["settings"] = {"detail": "medium"}
+    # a lookout west of the plateau, at its height (sharp corners: flat walls, the north and south
+    # ones parallel for the crawlspace), with a ramp up and a hanging bridge across
+    village["regions"] = village["regions"] + [
+        {"name": "lookout", "nodes": [[350, 1060, 1], [920, 1060, 1], [920, 1480, 1], [350, 1480, 1]], "z": 160}]
+    village["paths"] = [{"name": "plateau_ramp", "nodes": [[1900, 700], [2100, 1600]], "width": 220},
+                        {"name": "lookout_ramp", "nodes": [[450, 500], [600, 1250]], "width": 180}]
+    village["terrain"] = paint_hills([(-2200, -1300, 1100, 120)])
+
+    def prop(piece, x, y, yaw=0, scale=None):
+        p = {"piece": piece, "at": [x, y], "yaw": yaw}
+        if scale:
+            p["scale"] = scale
+        return p
+
+    village["props"] = [
+        prop("link_house", -1500, -1500),
+        prop("mido_house", -2000, 1200, -90),
+        prop("saria_house", 200, -1300, 20),
+        prop("twins_house", 1200, -300, 90),
+        prop("shop", 2300, -300, 120),
+        prop("knowitall_house", 2300, 1900, 180),
+        prop("stump_post", -200, -400),
+        prop("stump_post_tall", 100, -300),
+        prop("hedge", -1700, 600, 30, [1.5, 1.5, 1]),
+        prop("stone_small", -700, 600),
+        prop("stone_medium", -560, 730),
+        prop("stone_large", -420, 860),
+        # set into walls: a log exit in the edge of the world, a crawlspace through the lookout,
+        # vines up its east face
+        prop("log_tunnel", -2900, 1350),
+        prop("crawlspace", 800, 1040),
+        prop("vines", 940, 1200),
+    ]
+    # dirt paths between the doors, as Kokiri's
+    village["lines"] = [
+        {"name": "main path", "kind": "dirt", "nodes": [[-1470, -1180], [-900, -800], [-250, -650], [150, -1050]]},
+        {"name": "east path", "kind": "dirt", "nodes": [[-250, -650], [500, -350], [1100, -330], [1700, -250], [2150, -380]]},
+        {"name": "plateau path", "kind": "dirt", "nodes": [[1700, -250], [1900, 500], [2100, 1500], [2280, 1780]]},
+        # a pen round the stumps, open on the path side, and the lattice by the hedge
+        {"name": "pen", "kind": "fence", "nodes": [[-40, -230], [-420, -260], [-440, -520], [-330, -560]]},
+        {"name": "lattice", "kind": "lattice", "nodes": [[-1450, 350], [-1250, 520]]},
+        {"name": "rope bridge", "kind": "bridge", "nodes": [[880, 1400], [1780, 1760]]},
+    ]
+
+    for d in (plateau, pond, paths, bumpy, hills, village):
         path = os.path.join(HERE, d["name"] + ".json")
         with open(path, "w") as f:
             json.dump(d, f, indent=1)

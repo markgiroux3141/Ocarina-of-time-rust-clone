@@ -465,6 +465,8 @@ mod tests {
             boundary: BoundaryDesign::default(),
             settings: Settings::default(),
             terrain: None,
+            props: vec![],
+            lines: vec![],
         }
     }
 

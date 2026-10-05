@@ -545,5 +545,7 @@ fn n64_extras(m: &Material, tex: [Option<usize>; 2]) -> Value {
         "n64_texgen": m.texgen,
         "n64_decal": m.decal,
         "n64_texture1_used": tex[1].is_some(),
+        // the glTF texture of tile 1 (the material's baseColorTexture is tile 0's), on TEXCOORD_1
+        "n64_texture1": tex[1],
     })
 }

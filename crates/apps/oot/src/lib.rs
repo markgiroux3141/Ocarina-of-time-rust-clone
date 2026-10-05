@@ -408,6 +408,12 @@ pub fn new_play_at(a: &Assets, child: bool, pos: Vec3, yaw: i16, targets: bool) 
     }
     w.debug.foot_ik = a.foot_ik;
     w.debug.placeholders = a.placeholders;
+    // a custom level's camera starts as Play_Init's does, which lets floors call for their bg
+    // cameras (a crawlspace's line)
+    if a.level.is_some() {
+        w.play_init_camera = true;
+        w.reset_cameras();
+    }
     if targets {
         spawn_targets(&mut w, a);
     }

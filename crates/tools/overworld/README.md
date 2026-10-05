@@ -42,7 +42,22 @@ Done:
 - **Detail** (2026-10-05): `settings.detail` high (the default, unchanged), medium or low. `sketch_hills` is 24,254 /
   7,815 / 5,011 triangles and looks nearly the same at each.
 
-Not yet: props and houses.
+- **Props** (2026-10-05, ADR 0036): Kokiri Forest's houses, stumps, stepping stones, hedge, log tunnel and crawlspace,
+  cut from the extract by a committed manifest (`kit/kokiri.json`, `src/pieces.rs`) and placed in the document (`props`,
+  `src/props.rs`). They stand on the finished ground, with their collision, and are counted against the game's 8192
+  collision vertices. Example: `examples/sketch/sketch_village.json`.
+
+- **Dirt paths** (2026-10-05, `lines` of kind `dirt`, `src/lines.rs`): painted into the floor, not laid on it. The floors
+  take points on rings round the path, and the ground blends from grass to dirt by vertex weight, as Kokiri's ground
+  combiner blends its two textures.
+
+- **Fences and hanging bridges** (2026-10-05, `lines` of kind `fence`, `lattice`, `bridge`): fences stand on the ground with
+  a post at every node; rope bridges sag between their anchors on a catenary, and Link walks across.
+- **Wall openings** (2026-10-05, `src/openings.rs`): the log tunnel and the crawlspace set into the wall nearest where they're
+  put, with a gap cut to fit; vines and the waterfall stand on walls. Link walks into the log and crawls through the
+  crawlspace.
+
+Not yet: exits and doors that lead somewhere (they wait for levels to load through `Play_Init`).
 See the roadmap.
 
 ## Usage
@@ -53,7 +68,8 @@ From the repo root:
 cargo run --release -p overworld_editor -- crates/tools/overworld/examples/sketch/sketch_paths.json
 cargo test --release -p overworld -p overworld_editor
 target/release/overworld kit-textures       # extracted/scenes/overworld/spot04/spot04.glb -> out/overworld/textures/kokiri
-target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau --textures out/overworld/textures/kokiri
+target/release/overworld kit-pieces         # kit/kokiri.json + the extract -> out/overworld/kit/kokiri/pieces.json
+target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau --textures out/overworld/textures/kokiri [--kit out/overworld/kit/kokiri]
 target/release/oot_sandbox --level out/overworld/sketch_plateau --child   # play it (reloads on rebuild; --at x,y,z,yaw places Link)
 python crates/tools/overworld/tools/trace_sketch.py sketch.png level.json --scale 8 --region blue:z=120 --region red:kind=water,z=-100,surface=-20
 python crates/tools/overworld/tools/plan.py <out>/level.json plan.png --doc level.json   # floors by height, bank, walls, tree line
@@ -86,7 +102,13 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
              { "name": "bridge", "nodes": [[x, y], [x, y, z, width], [x, y]], "mode": "floating" },
              { "name": "climb", "nodes": [...], "modes": ["attached", "floating"], "width": 160, "edge": "vines" } ],
   "boundary": { "cliff_min": 280, "bank": 220, "bank_rise": 80, "rise_slope": 0.25, "reach": 300, "panel_tol": 90 },
-  "settings": { "sample": 60, "steiner": 250, "weld": 1 } }
+  "settings": { "sample": 60, "steiner": 250, "weld": 1 },
+  "props": [ { "piece": "saria_house", "at": [200, -1300], "yaw": 20 },
+             { "piece": "stone_large", "at": [-420, 860] },
+             { "piece": "hedge", "at": [-1700, 600], "yaw": 30, "scale": [1.5, 1.5, 1] } ],
+  "lines": [ { "name": "main path", "kind": "dirt", "nodes": [[-1470, -1180], [-900, -800], [-250, -650]], "width": 160 },
+             { "name": "pen", "kind": "fence", "nodes": [[-40, -230], [-420, -260], [-440, -520]], "closed": false },
+             { "name": "rope bridge", "kind": "bridge", "nodes": [[880, 1330], [1780, 1760]] } ] }
 ```
 
 - **Nodes are control points.** Edges between them are smooth curves (centripetal Catmull-Rom). A
@@ -197,6 +219,143 @@ Tests: `levels_with_paths_are_watertight_too` (ground, walls, cliffs, bank and t
 
 Not yet: railings, and supports under long bridges.
 
+## Props and the kit (`kit/kokiri.json`, `src/pieces.rs`, `src/props.rs`, ADR 0036)
+
+**The kit.** `overworld kit-pieces` cuts Kokiri Forest's pieces out of the clone's extract (`spot04.glb` for the meshes,
+`collision.json` for the collision) into `out/overworld/kit/kokiri/pieces.json` (ROM data, never committed). The editor
+does it on first start and whenever the manifest changes. The manifest says, per piece:
+
+- **Source:** a box in the scene (x east, y north, z up). It takes every connected piece of a room mesh wholly inside it,
+  or, with `materials`, the faces of those roles (for pieces joined to the terrain: the log tunnel, the crawlspace).
+  Collision is every poly wholly inside the box. Each spot04 surface type maps to a collision role in the manifest's
+  `surfaces`; an unmapped one fails the cut.
+- **Frame:** `origin` (base, top, door, or a point) and `facing` (door, normal, or a direction). A piece is stored with
+  its origin at 0 and facing +y.
+- **Scale limits**, **door** (exit and entrance, checked against the doorway's floor) and **opening** (for pieces set
+  into walls).
+
+| Piece | Size | Notes |
+|---|---|---|
+| `link_house` | 554 x 587 x 435 | Door on the porch, 181 up; the ladder climbs to it. Fixed size. |
+| `mido_house`, `saria_house`, `twins_house`, `knowitall_house`, `shop` | 185 to 349 tall | Doorway at the origin. x1 to x1.5. |
+| `stump_post`, `stump_post_tall` | 98 x 98 x 120 / 180 | Where spot04's plank walkways land. |
+| `stone_small`, `_medium`, `_large` | 80 to 120 wide | Origin on top: stands in water 15 above the surface. |
+| `hedge` | 174 x 235 x 28 | Tall grass: Link wades through it (its walls and top only stopped the camera, so the kit drops them), on tall-grass footsteps. Spot04's has skirts on two sides; the kit adds the rest (`close_sides`). |
+| `log_tunnel` | mouth 221 x 220, 857 deep | Both of spot04's log exits (Hyrule Field, Lost Woods) are this model. |
+| `crawlspace` | 40 wide, 27 high, 320 long | Wall type 5 at both mouths. |
+| `vines`, `waterfall` | | Wall pieces: climbable vines, a translucent fall. |
+
+Houses bring their door shadows (decals) and Link's house its graffiti and mushrooms.
+
+**Props.** `props: [{ "piece", "at": [x, y], "z"?, "yaw"?, "scale"? }]` in the document. `yaw` is degrees
+counter-clockwise from north; `scale` is along the piece's own axes, kept within its limits. After the painted terrain
+moves the ground, and before lighting:
+- each prop's origin stands on the highest floor under its anchor (a house's doorway, otherwise its origin), or at `z`
+  if it has one;
+- a stone stands in water 15 above the surface.
+
+Its triangles keep the source's normals and tints (object `props`). Its collision goes into object `props_collision`,
+never drawn (`"render": false`), with roles the game knows: wood, dirt, stone, planks, fence, ladder, ladder top, crawl,
+door, exit. Doors and exits collide as plain floor: they lead somewhere once levels load through `Play_Init` (ADR 0035's
+next step). Ground falling more than 20 below a prop's base under its footprint is reported.
+
+**The collision budget.** `Level::collision_vertices` counts what the game's collision will hold (corners merged at
+whole units, as `CollisionBuilder` does): at most 8192. `sketch_village` at medium detail is 2,933, the game's own count.
+
+Tests: `the_kokiri_pieces_come_out_of_the_extracted_scene` (the counts match the old Blender kit's; doors, the ladder,
+the log tunnel's opening, the crawlspace; skipped without the extract), `props_stand_on_the_ground_turned_and_scaled`,
+`houses_stand_on_their_doorway_and_stones_in_water`. In the game, Link climbs Link's house's ladder onto its porch
+(`oot_sandbox --level out/overworld/sketch_village --child --at=-1470,250,1000,0 --script hold --frames 300`).
+
+Openings and wall pieces (kinds `opening` and `wall`: the log tunnel, the crawlspace, the vine patch, the waterfall) aren't
+stood on the ground but fitted to the nearest wall: see Wall openings.
+
+## Dirt paths (`lines` of kind `dirt`, `src/lines.rs`, the theme's `dirt`)
+
+Kokiri Forest's yellow paths are 22 decal quads: strips, junctions and end caps, whose textures are white blotches with
+soft alpha, tinted yellow-brown at 70%. Decals would fight the floor for depth, so here a dirt path is painted into the
+floor:
+
+- **Cut into the floor.** A line of nodes is a smooth curve (as paths are), `width` across (the theme's 160). Two rings run
+  round it, round both ends: one where the dirt is full (half the width less half the soft edge) and one where it ends.
+  The floors take points on both rings, with constraint edges between them, so the soft edge is a band of the floor's own
+  triangles. Each floor vertex gets a weight (1 to 0) from its distance to the centre line, and the edge wanders by up to
+  `wobble` (smooth noise along the line).
+- **Blended in.** The floor's triangles that touch dirt take the material `ground+dirt`, which draws two textures, blended
+  by the vertices' weights. In the game it's Kokiri's own ground combiner, (TEXEL1 - TEXEL0) x weight + TEXEL0 then x
+  shade, with the weight in the vertex alpha (`alpha` in `level.json`). Texture 1 is texture 0 with the dirt drawn over it
+  (`textures::composite_name`): the decal strip's middle columns, mirrored across so it tiles, tinted and at its opacity,
+  twice per floor tile, at four times the floor texture's size. Both textures share the floor's world-projected UVs.
+- **Dirt underfoot.** Floor that's mostly dirt collides as `dirt` (spot04's surface 13, dirt footsteps).
+
+Paths may cross and run up ramps. Where two overlap, the stronger weight wins, and a ring point that lands inside
+another stretch of dirt is left out, so its constraint edge isn't added. Test: `dirt_paths_are_cut_into_the_floor` (the
+level stays watertight, there are points on both rings, the materials and surfaces). The editor's 3D view draws the
+blend, and the plan tints the floor by the weights.
+
+## Fences (`lines` of kind `fence` or `lattice`, the theme's `fences`)
+
+Spot04's fences are 40-tall quads with a post drawn into the texture every 40; the lattice by the crawlspace is 120 tall,
+30 per repeat. A fence line is straight between its nodes (`closed` joins the last to the first). Each stretch gets a
+whole number of repeats, so a post stands at every node. Its foot follows the finished ground: points every repeat,
+kept only where the ground bends more than 3. The panels are drawn once (the texture is double-sided) in object
+`fences`, and collide from both sides (`fences_collision`, as `fence`, which the hookshot holds, or `wall_nograb` for the
+lattice). Points off the ground are reported. Test: `fences_stand_on_the_ground_with_a_post_at_every_node`.
+
+## Hanging bridges (`lines` of kind `bridge`, the theme's `hanging`)
+
+Spot04 has rigid plank walkways but no rope bridge, so this one is made in its textures:
+
+- **Deck:** planks (`kf_log_side` on top, `kf_log_end` beneath, both cut-out, so there are gaps between the planks), 80
+  wide, a plank every 20.
+- **Ropes:** strips of the fence's top rail (`kf_fence@1-8`, rows 1 to 8). A hand rope runs 50 above each edge, with
+  uprights every 60. A post (`kf_post_bark`) stands at each corner.
+
+Each span between nodes sags on a catenary, 6% of its span in the middle. Each anchor stands on the ground there, or at
+its node's third value. The two ends **land at their floors' edges**: put them anywhere on the floor they start from, and
+each moves towards the other anchor while the floor stays at its height, as paths' ends do. A deck end steeper than the
+walkable 35° is reported.
+
+The deck collides as `planks` (bridge footsteps), with invisible `wall_nograb` walls 70 tall along both edges so Link
+stays on. In `sketch_village`, Link walks from the lookout across to the plateau, dipping 35 in the middle. Test:
+`hanging_bridges_sag_by_their_span_and_report_steep_ends`.
+
+## Wall openings (`src/openings.rs`)
+
+A prop whose piece is an opening (`log_tunnel`, `crawlspace`) or a wall piece (`vines`, `waterfall`) is fitted to the wall
+nearest its `at` (within 300): its origin goes on the wall's face, at the floor in front, facing out over it. Its `yaw`
+and `z` are ignored.
+
+- **Room.** An opening needs:
+  - a wall tall enough for its mouth, plus 10;
+  - space behind: ground above the mouth for at least its `min_depth`, or the edge of the world.
+- **The log tunnel** stands well out from the wall, so its wall may curve up to 40 off flat across the mouth. Its cone is
+  cut back (y scale, down to 0.4) to the room there is.
+- **The crawlspace** goes through a ridge to the floor beyond. It's stretched to the ridge's depth (its y scale, 0.5 to 3),
+  and the far wall gets a gap too. Its arches lie flat on the walls, so:
+  - both walls must be flat (within 4 across the mouth) and parallel (within 4°);
+  - the floors at both ends must be level (within 6).
+
+  Draw the ridge with sharp corners (straight, parallel edges). Its floor calls for a crawlspace camera
+  (`CAM_SET_CRAWLSPACE`, the line through it, 22 past each mouth and 12 up, as spot04's), so `Camera_Subj4` takes over
+  while Link crawls, as in the game (`Mesh::cameras`, `level.json`'s `cameras`, the role `crawl_floor#k`).
+- **Wall pieces** (vines, the waterfall) lie flat on the wall from its foot to its top (z scale to fit, within the
+  piece's limits). They need a flat wall (within 3) as wide as they are. The vines' collision lies where they're drawn,
+  just in front of the wall, so Link climbs them anywhere.
+
+If a piece doesn't fit, the problem says why: too low, not flat, not parallel, no room, no floor beyond.
+- **The gap.** The wall's triangles round the mouth come out, grown until the mouth is inside them. The area they
+  covered, less the mouth's outline (the piece's front seen face on, kept a unit above the floor), is triangulated again.
+  Each new point lies on the old wall's own surface and takes its UVs from the old triangle under it. So the texture
+  carries on, the material and collision stay the wall's, and the wall is closed everywhere but the mouth. The mouth's
+  own points lie on the piece's front, so a curved wall bends to meet the log's rim with no gap. Test:
+  `openings_are_set_into_walls` (also refuses a crawlspace through a round island).
+
+The log tunnel's exit floor and the crawlspace's wall type 5 come with their collision. In the game (`sketch_village`),
+Link walks 740 into the log. With A at the crawlspace's mouth (`--script crawl`) he crawls through to the far side,
+seen from the crawlspace camera. He climbs the vines anywhere across them onto the lookout.
+The log's exit leads nowhere until levels load through `Play_Init`.
+
 ## Automatic texturing (`themes/kokiri.json`)
 
 The document never names a texture. The builder classifies every piece of geometry and the theme maps
@@ -204,7 +363,7 @@ each class to a material, a tiling and overlays:
 
 | Geometry | Rule | Kokiri |
 |---|---|---|
-| Floors, the bank | World-projected UVs: seamless across faces, regions and the bank | `ground`, 400 per tile |
+| Floors, the bank | World-projected UVs: seamless across faces, regions and the bank | `ground`, 400 per tile: Kokiri's two textures as the game mixes them, the camo with a detail texture eight times finer (`kit::ground_with_detail`, 256 x 256) |
 | Pond beds, water | World-projected | `ground`; `water` at 54 per tile |
 | Walls | First matching `wall_rules` entry: over water, then height | Shore `cliff_strip_dark`; up to 75 high `cliff_strip` (ledge); taller `cliff` |
 | | A region's `edge` overrides the rules for its own walls | e.g. `vines` |
@@ -237,8 +396,8 @@ bank are bridged by the forest. Trunks stand on the bank's outer edge, so nothin
 3. **Paths**: done (see above). Next for them: railings and supports.
 4. **Checks.** Child Link reachability in the crate: which floors connect, and ledges, vines and swim-outs.
    The game's own movement can now test them too (`oot_sandbox --level` with `--script`/`--trace`).
-5. **Props and blocks**: houses, stumps, fences placed on floors. The editor stores where; a theme's kit says
-   what.
+5. **Props and blocks**: done (ADR 0036): houses, stumps and stones on floors, dirt paths, fences, hanging bridges and
+   wall openings.
 6. **The editor** (`../overworld_editor`): built, with plan and 3D views, path profiles, the brush and Play.
 7. **Play mode** (ADR 0035's consequences): the level as a mod pack so `Play_Init` enters it, actors placed
    in the editor, hookshot targets, exits between levels, and rooms for big levels.

@@ -1,6 +1,6 @@
-//! The editor window: a plan view of the level with its outline, regions and paths drawn over
-//! the built level, tools to draw and edit them, and panels for their properties. Every edit is
-//! rebuilt in the background; with live export on, the build is also written out for the game
+//! The editor window: a plan view of the level with its outline, regions, paths and props drawn
+//! over the built level, tools to draw and edit them, and panels for their properties. Every edit
+//! is rebuilt in the background; with live export on, the build is also written out for the game
 //! (`oot_sandbox --level`), which reloads it.
 
 use crate::edit::{self, NodeRef, Shapes};
@@ -9,7 +9,9 @@ use crate::scene::{self, Scene, Shading, View};
 use crate::view3d::{View3d, FOV};
 use crate::worker::{Done, Job, Msg, Worker};
 use eframe::egui::{self, Align2, Color32, FontId, Key, KeyboardShortcut, Modifiers, PointerButton, Pos2, Sense, Shape, Stroke, Vec2};
-use overworld::geom::{dist, P2};
+use overworld::doc::Prop;
+use overworld::geom::{dist, point_in_poly, P2};
+use overworld::pieces::Kit;
 use overworld::terrain::{Brush, Mode, Terrain};
 use overworld::textures::Library;
 use overworld::{export, Doc, Level, Theme};
@@ -30,6 +32,10 @@ enum Tool {
     Region,
     Path,
     Brush,
+    /// Placing kit pieces.
+    Prop,
+    /// Drawing a line of a kind: "dirt" (fences and bridges to come).
+    Line(&'static str),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -38,12 +44,25 @@ enum Sel {
     Loop(usize),
     Path(usize),
     Node(NodeRef),
+    Prop(usize),
+    Line(usize),
 }
 
 enum Gesture {
     None,
     Nodes(Vec<NodeRef>),
     Pan,
+    Prop(PropDrag),
+}
+
+/// Dragging a prop in the plan: moving it (the grab point's offset from its origin), turning it by
+/// its facing handle, or scaling it by its corner handle (its scale at the start, and the handle's
+/// distance from the origin at scale 1).
+#[derive(Clone, Copy)]
+enum PropDrag {
+    Move { i: usize, off: P2 },
+    Turn { i: usize },
+    Scale { i: usize, start: [f64; 3], d0: f64 },
 }
 
 /// A drag in the 3D view.
@@ -55,6 +74,8 @@ enum Gesture3 {
     Height { ls: Vec<(usize, f64)>, per_px: f64, dy: f64 },
     /// Painting terrain.
     Paint,
+    /// Moving a prop over the plane at its height (the grab point's offset, that height).
+    Prop { i: usize, off: P2, z: f64 },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -77,6 +98,8 @@ pub struct Options {
     pub doc: Option<PathBuf>,
     pub theme: Option<PathBuf>,
     pub textures: Option<PathBuf>,
+    /// The kit props come from (`pieces.json`); by default out/overworld/kit/kokiri.
+    pub kit: Option<PathBuf>,
     /// A region or path to select at the start, by name.
     pub select: Option<String>,
 }
@@ -131,6 +154,10 @@ pub struct App {
     flatten_to: f64,
     /// Loops selected besides `sel` (Shift-click).
     multi: Vec<usize>,
+    kit: Option<Arc<Kit>>,
+    /// The piece the Prop tool places, and the turn it places it with.
+    piece: String,
+    place_yaw: f64,
 }
 
 impl App {
@@ -175,12 +202,31 @@ impl App {
                 None
             }
         });
+        // the Kokiri kit, cut from the extracted scene the first time (and again when its
+        // manifest changes)
+        let kit_dir = opts.kit.clone().unwrap_or(Path::new(ROOT).join("out/overworld/kit/kokiri"));
+        if opts.kit.is_none() {
+            let manifest = overworld::pieces::kokiri_manifest();
+            let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+            let stale = modified(&kit_dir.join("pieces.json")).is_none_or(|k| modified(manifest).is_some_and(|m| m > k));
+            if stale && Path::new(ROOT).join("extracted/scenes/overworld/spot04/spot04.glb").exists() {
+                match overworld::pieces::export(manifest, Path::new(ROOT), &kit_dir) {
+                    Ok(k) => status = format!("cut the Kokiri kit ({} pieces) into {}", k.pieces.len(), kit_dir.display()),
+                    Err(e) => status = format!("Kokiri kit: {e}"),
+                }
+            }
+        }
+        let kit = Kit::load(&kit_dir).ok().map(Arc::new);
+        let piece = kit.as_ref().and_then(|k| k.pieces.first()).map(|p| p.name.clone()).unwrap_or_default();
         let out_dir = out_dir_for(&doc);
         let sel = match &opts.select {
             Some(n) => match (doc.regions.iter().position(|r| &r.name == n), doc.paths.iter().position(|p| &p.name == n)) {
                 (Some(i), _) => Sel::Loop(i + 1),
                 (None, Some(k)) => Sel::Path(k),
-                _ => Sel::None,
+                _ => match n.strip_prefix("prop:").and_then(|i| i.parse::<usize>().ok()) {
+                    Some(i) if i < doc.props.len() => Sel::Prop(i),
+                    _ => Sel::None,
+                },
             },
             None => Sel::None,
         };
@@ -229,6 +275,9 @@ impl App {
             brush: Brush::default(),
             flatten_to: 0.0,
             multi: vec![],
+            kit,
+            piece,
+            place_yaw: 0.0,
         }
     }
 
@@ -248,6 +297,9 @@ impl App {
             Sel::Path(p) => p < self.doc.paths.len(),
             Sel::Node(NodeRef::Loop(l, i)) => l < edit::loop_count(&self.doc) && i < edit::loop_nodes(&self.doc, l).len(),
             Sel::Node(NodeRef::Path(p, i)) => p < self.doc.paths.len() && i < self.doc.paths[p].nodes.len(),
+            Sel::Prop(i) => i < self.doc.props.len(),
+            Sel::Line(k) => k < self.doc.lines.len(),
+            Sel::Node(NodeRef::Line(k, i)) => k < self.doc.lines.len() && i < self.doc.lines[k].nodes.len(),
         };
         if !ok {
             self.sel = Sel::None;
@@ -376,6 +428,7 @@ impl App {
             doc: self.doc.clone(),
             theme: self.theme.clone(),
             lib: self.lib.clone(),
+            kit: self.kit.clone(),
             export: self.live.then(|| self.out_dir.clone()),
         });
         self.sent = Some(key);
@@ -495,7 +548,104 @@ impl App {
                 self.doc.paths.remove(p);
                 self.sel = Sel::None;
             }
+            Sel::Prop(i) => {
+                self.doc.props.remove(i);
+                self.sel = Sel::None;
+            }
+            Sel::Line(k) => {
+                self.doc.lines.remove(k);
+                self.sel = Sel::None;
+            }
             Sel::None => {}
+        }
+    }
+
+    // ---- props ----------------------------------------------------------------------------
+
+    /// A prop's footprint in the level (from the kit, so it follows edits before the rebuild).
+    fn prop_footprint(&self, i: usize) -> Vec<P2> {
+        let prop = &self.doc.props[i];
+        match self.kit.as_ref().and_then(|k| k.get(&prop.piece)) {
+            // set into a wall: where the builder fitted it
+            Some(piece) if self.on_wall(i) => self
+                .level
+                .as_ref()
+                .and_then(|l| l.props.iter().find(|pl| pl.index == i && pl.piece == prop.piece))
+                .map(|pl| pl.footprint.clone())
+                .unwrap_or_else(|| overworld::props::footprint(piece, prop)),
+            Some(piece) => overworld::props::footprint(piece, prop),
+            None => (0..8).map(|k| {
+                let a = k as f64 / 8.0 * std::f64::consts::TAU;
+                [prop.at[0] + 60.0 * a.cos(), prop.at[1] + 60.0 * a.sin()]
+            }).collect(),
+        }
+    }
+
+    /// Whether a prop fits itself to the nearest wall (an opening or a wall piece).
+    fn on_wall(&self, i: usize) -> bool {
+        let prop = &self.doc.props[i];
+        self.kit.as_ref().and_then(|k| k.get(&prop.piece)).is_some_and(|p| p.kind == "opening" || p.kind == "wall")
+    }
+
+    /// The prop under p, the topmost (last) first.
+    fn prop_at(&self, p: P2) -> Option<usize> {
+        (0..self.doc.props.len()).rev().find(|&i| point_in_poly(p, &self.prop_footprint(i)))
+    }
+
+    /// Where a prop's origin stands in the last build (its height), if it's been built.
+    fn prop_z(&self, i: usize) -> Option<f64> {
+        self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.index == i)).map(|pl| pl.origin[2])
+    }
+
+    /// The handles of a prop in the plan: (turn handle, scale handle, the scale handle's distance
+    /// from the origin at scale 1), in level coordinates.
+    fn prop_handles(&self, i: usize) -> Option<(P2, P2, f64)> {
+        if self.on_wall(i) {
+            return None;
+        }
+        let prop = &self.doc.props[i];
+        let piece = self.kit.as_ref()?.get(&prop.piece)?;
+        let scale = piece.scale.clamp(prop.scale);
+        let r = piece.footprint.iter().map(|q| (q[0] * scale[0]).hypot(q[1] * scale[1])).fold(0.0, f64::max);
+        let len = (r * 1.15).max(36.0 / self.view.scale);
+        let f = overworld::props::facing(prop.yaw);
+        let turn = [prop.at[0] + f[0] * len, prop.at[1] + f[1] * len];
+        let corner = [piece.bounds[1][0], piece.bounds[1][1]];
+        let w = overworld::props::transform([corner[0], corner[1], 0.0], [prop.at[0], prop.at[1], 0.0], prop.yaw, scale);
+        Some((turn, [w[0], w[1]], corner[0].hypot(corner[1]).max(1.0)))
+    }
+
+    /// Places the chosen piece at p, turned as the last one placed, and selects it.
+    fn place_prop(&mut self, p: P2) {
+        let Some(piece) = self.kit.as_ref().and_then(|k| k.get(&self.piece)) else {
+            self.status = "no kit piece chosen (Kit panel)".into();
+            return;
+        };
+        let label = piece.label.clone();
+        self.doc.props.push(Prop { piece: self.piece.clone(), at: [p[0].round(), p[1].round()], z: None, yaw: self.place_yaw, scale: [1.0; 3] });
+        self.sel = Sel::Prop(self.doc.props.len() - 1);
+        self.status = format!("{label} placed: drag to move, its arrow's handle turns it (Q / E), its corner scales it");
+    }
+
+    /// Turns the selected prop by `d` degrees.
+    fn turn_prop(&mut self, d: f64) {
+        if let Sel::Prop(i) = self.sel {
+            let y = &mut self.doc.props[i].yaw;
+            *y = ((*y + d) % 360.0 + 360.0) % 360.0;
+            if *y > 180.0 {
+                *y -= 360.0;
+            }
+            self.place_yaw = *y;
+        }
+    }
+
+    fn duplicate_prop(&mut self) {
+        if let Sel::Prop(i) = self.sel {
+            let mut p = self.doc.props[i].clone();
+            p.at[0] += 120.0;
+            p.at[1] -= 120.0;
+            self.doc.props.push(p);
+            self.sel = Sel::Prop(self.doc.props.len() - 1);
         }
     }
 
@@ -530,6 +680,10 @@ impl App {
             Sel::Node(NodeRef::Loop(l, _)) => {
                 self.sel = Sel::Loop(l);
                 self.raise(dz);
+            }
+            Sel::Prop(i) => {
+                let z = self.doc.props[i].z.or(self.prop_z(i)).unwrap_or(0.0);
+                self.doc.props[i].z = Some((z + dz).round());
             }
             _ => {}
         }
@@ -594,6 +748,10 @@ impl App {
     /// Inserts a node on the nearest curve or path line at w, if one is close.
     fn insert_at(&mut self, w: P2) -> bool {
         let tol = PICK / self.view.scale;
+        if let Some((k, i, q)) = self.shapes.line_near(&self.doc, w, tol, false) {
+            self.sel = Sel::Node(edit::insert_line_node(&mut self.doc, k, i, q));
+            return true;
+        }
         if let Some((k, i, q)) = self.shapes.path_near(&self.doc, w, tol, false) {
             self.sel = Sel::Node(edit::insert_path_node(&mut self.doc, k, i, q));
             return true;
@@ -610,6 +768,12 @@ impl App {
         if let Some(r) = edit::node_near(&self.doc, w, tol).filter(|_| self.show_nodes) {
             return Sel::Node(r);
         }
+        if let Some(i) = self.prop_at(w) {
+            return Sel::Prop(i);
+        }
+        if let Some((k, _, _)) = self.shapes.line_near(&self.doc, w, tol, true) {
+            return Sel::Line(k);
+        }
         if let Some((k, _, _)) = self.shapes.path_near(&self.doc, w, tol, true) {
             return Sel::Path(k);
         }
@@ -624,7 +788,7 @@ impl App {
             self.finish_drawing();
             return;
         }
-        if self.tool == Tool::Path {
+        if matches!(self.tool, Tool::Path | Tool::Line(_)) {
             // no snapping: a path end exactly on a region's edge could take either side's height.
             // Ends go inside the floor they start from; the builder lands them at its edge.
             let p = [w[0].round(), w[1].round()];
@@ -669,9 +833,16 @@ impl App {
                 self.sel = Sel::Path(self.doc.paths.len() - 1);
                 self.tool = Tool::Select;
             }
+            Tool::Line(kind) if pts.len() >= 2 => {
+                let l = edit::new_line(&self.doc, kind, pts);
+                self.status = format!("{} added", l.name);
+                self.doc.lines.push(l);
+                self.sel = Sel::Line(self.doc.lines.len() - 1);
+                self.tool = Tool::Select;
+            }
             Tool::Region => self.status = "a region needs 3 points".into(),
-            Tool::Path => self.status = "a path needs 2 points".into(),
-            Tool::Select | Tool::Brush => {}
+            Tool::Path | Tool::Line(_) => self.status = "it needs 2 points".into(),
+            Tool::Select | Tool::Brush | Tool::Prop => {}
         }
     }
 
@@ -719,6 +890,9 @@ impl App {
         if sc(Modifiers::COMMAND, Key::N) {
             self.new_doc();
         }
+        if sc(Modifiers::COMMAND, Key::D) {
+            self.duplicate_prop();
+        }
         if ctx.egui_wants_keyboard_input() {
             return;
         }
@@ -753,6 +927,25 @@ impl App {
         }
         if pressed(Key::B) {
             self.set_tool(Tool::Brush);
+        }
+        if pressed(Key::K) {
+            self.set_tool(Tool::Prop);
+        }
+        if pressed(Key::D) {
+            self.set_tool(Tool::Line("dirt"));
+        }
+        if pressed(Key::G) {
+            self.set_tool(Tool::Line("fence"));
+        }
+        if pressed(Key::H) {
+            self.set_tool(Tool::Line("bridge"));
+        }
+        let fine = if shift { 1.0 } else { 15.0 };
+        if pressed(Key::Q) {
+            self.turn_prop(fine);
+        }
+        if pressed(Key::E) {
+            self.turn_prop(-fine);
         }
         if self.tool == Tool::Brush {
             for (k, m) in [(Key::Num1, Mode::Raise), (Key::Num2, Mode::Lower), (Key::Num3, Mode::Smooth), (Key::Num4, Mode::Flatten), (Key::Num5, Mode::Bumps), (Key::Num6, Mode::Erase)] {
@@ -834,10 +1027,23 @@ impl App {
         if resp.drag_started_by(PointerButton::Primary) {
             let origin = ctx.input(|i| i.pointer.press_origin()).map(|p| self.view.to_world(p));
             self.gesture = if self.tool == Tool::Brush { Gesture::None } else { Gesture::Pan };
-            if let (Tool::Select, Some(o), true) = (self.tool, origin, self.show_nodes) {
-                if let Some(r) = edit::node_near(&self.doc, o, tol) {
+            if let (Tool::Select | Tool::Prop, Some(o)) = (self.tool, origin) {
+                // the selected prop's handles, then nodes, then any prop's footprint
+                let handles = match self.sel {
+                    Sel::Prop(i) => self.prop_handles(i).map(|h| (i, h)),
+                    _ => None,
+                };
+                if let Some((i, _)) = handles.filter(|(_, (t, _, _))| dist(o, *t) <= tol * 1.3) {
+                    self.gesture = Gesture::Prop(PropDrag::Turn { i });
+                } else if let Some((i, (_, _, d0))) = handles.filter(|(_, (_, c, _))| dist(o, *c) <= tol * 1.3) {
+                    self.gesture = Gesture::Prop(PropDrag::Scale { i, start: self.doc.props[i].scale, d0 });
+                } else if let Some(r) = edit::node_near(&self.doc, o, tol).filter(|_| self.show_nodes && self.tool == Tool::Select) {
                     self.sel = Sel::Node(r);
                     self.gesture = Gesture::Nodes(edit::group(&self.doc, r));
+                } else if let Some(i) = self.prop_at(o) {
+                    self.sel = Sel::Prop(i);
+                    let at = self.doc.props[i].at;
+                    self.gesture = Gesture::Prop(PropDrag::Move { i, off: [at[0] - o[0], at[1] - o[1]] });
                 }
             }
         }
@@ -854,6 +1060,13 @@ impl App {
                             .unwrap_or([w[0].round(), w[1].round()]);
                         let refs = refs.clone();
                         edit::move_group(&mut self.doc, &refs, target);
+                    }
+                }
+                Gesture::Prop(d) => {
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let w = self.view.to_world(p);
+                        let alt = ctx.input(|i| i.modifiers.alt);
+                        self.drag_prop(*d, w, alt);
                     }
                 }
                 Gesture::Pan => self.pan(resp.drag_delta()),
@@ -876,7 +1089,11 @@ impl App {
                         self.click_select(self.pick(w), shift);
                     }
                     Tool::Brush => {}
-                    Tool::Path if resp.double_clicked() => self.finish_drawing(),
+                    Tool::Prop => match self.prop_at(w) {
+                        Some(i) => self.sel = Sel::Prop(i),
+                        None => self.place_prop(w),
+                    },
+                    Tool::Path | Tool::Line(_) if resp.double_clicked() => self.finish_drawing(),
                     _ => self.draw_click(w),
                 }
             }
@@ -944,6 +1161,34 @@ impl App {
         self.paint(&painter, &ctx, hover);
     }
 
+    /// A prop drag in the plan or 3D at w (Alt: no snapping).
+    fn drag_prop(&mut self, d: PropDrag, w: P2, alt: bool) {
+        match d {
+            PropDrag::Move { i, off } => {
+                let p = [w[0] + off[0], w[1] + off[1]];
+                self.doc.props[i].at = if alt { p } else { [p[0].round(), p[1].round()] };
+            }
+            PropDrag::Turn { i } => {
+                let at = self.doc.props[i].at;
+                let a = (w[1] - at[1]).atan2(w[0] - at[0]).to_degrees() - 90.0;
+                let a = if alt { a } else { (a / 15.0).round() * 15.0 };
+                let a = ((a % 360.0) + 540.0) % 360.0 - 180.0;
+                self.doc.props[i].yaw = (a * 100.0).round() / 100.0;
+                self.place_yaw = self.doc.props[i].yaw;
+            }
+            PropDrag::Scale { i, start, d0 } => {
+                let at = self.doc.props[i].at;
+                let f = dist(w, at) / d0;
+                let f = if alt { f } else { (f / 0.05).round() * 0.05 };
+                let s = [f, f, start[2] * f / start[0].max(1e-6)];
+                let lim = self.kit.as_ref().and_then(|k| k.get(&self.doc.props[i].piece)).map(|p| p.scale.clone()).unwrap_or_default();
+                // the footprint scales; the height follows only where the piece scales evenly
+                let s = if lim.uniform { lim.clamp(s) } else { lim.clamp([s[0], s[1], start[2]]) };
+                self.doc.props[i].scale = s.map(|x| (x * 1000.0).round() / 1000.0);
+            }
+        }
+    }
+
     /// The 3D view: orbit, pan and zoom; click to select; drag the selected region to raise or
     /// sink it.
     fn view3d_ui(&mut self, ui: &mut egui::Ui) {
@@ -989,6 +1234,16 @@ impl App {
         if resp.drag_started_by(PointerButton::Primary) {
             self.gesture3 = if painting { Gesture3::Paint } else { Gesture3::Orbit };
             let origin = ctx.input(|i| i.pointer.press_origin());
+            // dragging a prop moves it, over the plane at its height
+            if let (Some(o), false) = (origin, painting) {
+                if let Some((_, q)) = hit_at(&cam, o) {
+                    if let Some(i) = self.prop_at([q[0], q[1]]) {
+                        let at = self.doc.props[i].at;
+                        self.sel = Sel::Prop(i);
+                        self.gesture3 = Gesture3::Prop { i, off: [at[0] - q[0], at[1] - q[1]], z: q[2] };
+                    }
+                }
+            }
             if let (Sel::Loop(_), Some(o), false) = (self.sel, origin, painting) {
                 if let Some((t, q)) = hit_at(&cam, o) {
                     let ls = self.selected_loops();
@@ -1017,6 +1272,20 @@ impl App {
                         }
                     }
                 }
+                Gesture3::Prop { i, off, z } => {
+                    let (i, off, z) = (*i, *off, *z);
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let (o, d) = ray(&cam, p);
+                        if d[2].abs() > 1e-6 {
+                            let t = (z - o[2]) / d[2];
+                            if t > 0.0 {
+                                let w = [o[0] + d[0] * t - off[0], o[1] + d[1] * t - off[1]];
+                                let alt = ctx.input(|i| i.modifiers.alt);
+                                self.drag_prop(PropDrag::Move { i, off: [0.0, 0.0] }, w, alt);
+                            }
+                        }
+                    }
+                }
                 Gesture3::Paint | Gesture3::None => {}
             }
         }
@@ -1034,15 +1303,20 @@ impl App {
             let s = match hit {
                 Some((_, q)) => {
                     let w = [q[0], q[1]];
-                    match self.shapes.path_near(&self.doc, w, 1.0, true) {
-                        Some((k, _, _)) => Sel::Path(k),
-                        None => self.shapes.loop_at(w).map_or(Sel::None, Sel::Loop),
+                    match (self.prop_at(w), self.shapes.line_near(&self.doc, w, 1.0, true), self.shapes.path_near(&self.doc, w, 1.0, true)) {
+                        (Some(i), _, _) => Sel::Prop(i),
+                        (None, Some((k, _, _)), _) => Sel::Line(k),
+                        (None, None, Some((k, _, _))) => Sel::Path(k),
+                        _ => self.shapes.loop_at(w).map_or(Sel::None, Sel::Loop),
                     }
                 }
                 None => Sel::None,
             };
             let shift = ctx.input(|i| i.modifiers.shift);
-            self.click_select(s, shift);
+            match (self.tool, hit, s) {
+                (Tool::Prop, Some((_, q)), Sel::Loop(_) | Sel::Path(_) | Sel::None) => self.place_prop([q[0], q[1]]),
+                _ => self.click_select(s, shift),
+            }
             if resp.double_clicked() {
                 if let Some((_, q)) = hit {
                     cam.target = glam::Vec3::new(q[0] as f32, q[1] as f32, q[2] as f32);
@@ -1142,11 +1416,24 @@ impl App {
                 }
             }
         }
+        // the selected prop: its footprint at its base, and which way it faces
+        if let Sel::Prop(i) = self.sel {
+            let prop = &self.doc.props[i];
+            let z = prop.z.or(self.prop_z(i)).or_else(|| self.scene.as_ref().and_then(|s| s.floor_z(prop.at))).unwrap_or(0.0) + 2.0;
+            let pts: Vec<[f64; 3]> = self.prop_footprint(i).iter().map(|q| [q[0], q[1], z]).collect();
+            line3(&pts, true, Stroke::new(4.0, Color32::from_black_alpha(120)));
+            line3(&pts, true, Stroke::new(2.0, PROP_COLOUR));
+            let f = overworld::props::facing(prop.yaw);
+            let r = pts.iter().map(|q| (q[0] - prop.at[0]).hypot(q[1] - prop.at[1])).fold(40.0, f64::max);
+            line3(&[[prop.at[0], prop.at[1], z], [prop.at[0] + f[0] * r * 1.15, prop.at[1] + f[1] * r * 1.15, z]], false, Stroke::new(2.0, PROP_COLOUR));
+        }
         painter.text(
             rect.left_bottom() + Vec2::new(10.0, -8.0),
             Align2::LEFT_BOTTOM,
             if self.tool == Tool::Brush {
                 "drag: paint · Alt-drag or middle-drag: orbit · right-drag: pan · wheel: zoom · Ctrl: lower · Shift: smooth"
+            } else if self.tool == Tool::Prop {
+                "click: place the Kit panel's piece · drag a prop: move it · Q / E: turn · drag elsewhere: orbit · right-drag: pan"
             } else {
                 "drag: orbit · right-drag: pan · wheel: zoom · double-click: orbit round that spot · drag the selected regions: raise / sink"
             },
@@ -1220,6 +1507,43 @@ impl App {
             }
             painter.add(Shape::closed_line(pts, Stroke::new(width, col)));
         }
+        // props: footprints, which way they face, and the selected one's handles
+        for i in 0..self.doc.props.len() {
+            let sel = self.sel == Sel::Prop(i);
+            let pts: Vec<Pos2> = self.prop_footprint(i).iter().map(|&q| v.to_screen(q)).collect();
+            if sel {
+                painter.add(Shape::closed_line(pts.clone(), Stroke::new(6.0, Color32::from_black_alpha(110))));
+            }
+            painter.add(Shape::closed_line(pts, Stroke::new(if sel { 2.5 } else { 1.3 }, PROP_COLOUR)));
+            let prop = &self.doc.props[i];
+            let o = v.to_screen(prop.at);
+            let f = overworld::props::facing(prop.yaw);
+            painter.arrow(o, Vec2::new(f[0] as f32, -f[1] as f32) * 16.0, Stroke::new(1.5, PROP_COLOUR));
+            if sel {
+                if let Some((turn, corner, _)) = self.prop_handles(i) {
+                    let (t, c) = (v.to_screen(turn), v.to_screen(corner));
+                    painter.line_segment([o, t], Stroke::new(1.5, PROP_COLOUR));
+                    painter.circle(t, 6.0, PROP_COLOUR, Stroke::new(1.0, Color32::BLACK));
+                    painter.rect(egui::Rect::from_center_size(c, Vec2::splat(10.0)), 0.0, PROP_COLOUR, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Middle);
+                }
+            }
+        }
+        // lines: dirt paths as their band, others as their line
+        for (k, c) in self.shapes.lines.iter().enumerate() {
+            let l = &self.doc.lines[k];
+            let pts: Vec<Pos2> = c.iter().map(|x| v.to_screen(x.0)).collect();
+            let sel = self.sel == Sel::Line(k) || matches!(self.sel, Sel::Node(NodeRef::Line(j, _)) if j == k);
+            let col = line_colour(&l.kind);
+            if l.kind == "dirt" {
+                let w = l.width.or(self.theme.dirt.as_ref().map(|d| d.width)).unwrap_or(160.0);
+                let px = (w * v.scale) as f32;
+                painter.add(Shape::line(pts.clone(), Stroke::new(px.max(2.0), col.gamma_multiply(if sel { 0.45 } else { 0.25 }))));
+            }
+            if sel {
+                painter.add(Shape::line(pts.clone(), Stroke::new(5.0, Color32::from_black_alpha(110))));
+            }
+            painter.extend(Shape::dashed_line(&pts, Stroke::new(if sel { 3.0 } else { 1.6 }, col), 10.0, 4.0));
+        }
         // paths: dashed centre lines
         for (k, c) in self.shapes.paths.iter().enumerate() {
             let pts: Vec<Pos2> = c.iter().map(|x| v.to_screen(x.0)).collect();
@@ -1241,6 +1565,12 @@ impl App {
             for (k, c) in self.shapes.paths.iter().enumerate() {
                 if let Some(m) = c.get(c.len() / 2) {
                     label(v.to_screen(m.0) + Vec2::new(0.0, -12.0), &edit::path_name(&self.doc, k), Color32::from_rgb(245, 200, 255));
+                }
+            }
+            if v.scale > 0.06 {
+                for prop in &self.doc.props {
+                    let name = self.kit.as_ref().and_then(|k| k.get(&prop.piece)).map_or(prop.piece.as_str(), |p| p.label.as_str());
+                    label(v.to_screen(prop.at) + Vec2::new(0.0, 14.0), name, Color32::from_rgb(200, 255, 230));
                 }
             }
         }
@@ -1279,6 +1609,15 @@ impl App {
                     }
                 }
             }
+            for (k, line) in self.doc.lines.iter().enumerate() {
+                for i in 0..line.nodes.len() {
+                    let r = NodeRef::Line(k, i);
+                    let p = v.to_screen(edit::node_pos(&self.doc, r));
+                    let rad = 4.5 + if hovered == Some(r) { 2.0 } else { 0.0 };
+                    let fill = if sel_group.contains(&r) { Color32::from_rgb(255, 120, 40) } else { line_colour(&line.kind) };
+                    painter.rect(egui::Rect::from_center_size(p, Vec2::splat(rad * 2.0)), 2.0, fill, Stroke::new(1.0, Color32::BLACK), egui::StrokeKind::Middle);
+                }
+            }
             for (k, path) in self.doc.paths.iter().enumerate() {
                 for (i, n) in path.nodes.iter().enumerate() {
                     let r = NodeRef::Path(k, i);
@@ -1295,7 +1634,11 @@ impl App {
         }
         // drawing in progress
         if !self.drawing.is_empty() {
-            let col = if self.tool == Tool::Region { Color32::from_rgb(255, 230, 120) } else { Color32::from_rgb(235, 130, 255) };
+            let col = match self.tool {
+                Tool::Region => Color32::from_rgb(255, 230, 120),
+                Tool::Line(kind) => line_colour(kind),
+                _ => Color32::from_rgb(235, 130, 255),
+            };
             let mut pts: Vec<Pos2> = self.drawing.iter().map(|&p| v.to_screen(p)).collect();
             if let Some(h) = hover {
                 pts.push(h);
@@ -1358,7 +1701,16 @@ impl App {
                 self.save(true);
             }
             ui.separator();
-            for (t, name, key) in [(Tool::Select, "Select", "V"), (Tool::Region, "Region", "R"), (Tool::Path, "Path", "P"), (Tool::Brush, "Brush", "B")] {
+            for (t, name, key) in [
+                (Tool::Select, "Select", "V"),
+                (Tool::Region, "Region", "R"),
+                (Tool::Path, "Path", "P"),
+                (Tool::Brush, "Brush", "B"),
+                (Tool::Prop, "Prop", "K"),
+                (Tool::Line("dirt"), "Dirt", "D"),
+                (Tool::Line("fence"), "Fence", "G"),
+                (Tool::Line("bridge"), "Bridge", "H"),
+            ] {
                 if ui.selectable_label(self.tool == t, name).on_hover_text(format!("key {key}")).clicked() {
                     self.set_tool(t);
                 }
@@ -1407,6 +1759,8 @@ impl App {
                 Tool::Region => "click points (on a node or edge to share it) · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
                 Tool::Path => "click points · put the ends inside the floors they start and finish on (they land at the edge) · double-click or Enter to finish · Esc: cancel",
                 Tool::Brush => "drag to paint · Ctrl: lower · Shift: smooth · [ ]: size · 1-6: raise, lower, smooth, flatten, bumps, erase · right-drag: pan",
+                Tool::Prop => "click: place the Kit panel's piece · drag a prop: move · its arrow's handle: turn (Q / E) · its corner: scale · Alt: no snap · Ctrl+D: duplicate · Del: delete",
+                Tool::Line(_) => "click points along it · double-click or Enter to finish · Backspace: undo point · Esc: cancel",
             };
             ui.label(hint);
         });
@@ -1419,6 +1773,9 @@ impl App {
         egui::ScrollArea::vertical().show(ui, |ui| {
             if self.tool == Tool::Brush {
                 egui::CollapsingHeader::new("Brush").default_open(true).show(ui, |ui| self.brush_ui(ui));
+            }
+            if self.tool == Tool::Prop {
+                egui::CollapsingHeader::new("Kit").default_open(true).show(ui, |ui| self.kit_ui(ui));
             }
             egui::CollapsingHeader::new("Selection").default_open(true).show(ui, |ui| self.selection_ui(ui));
             egui::CollapsingHeader::new("Contents").default_open(true).show(ui, |ui| self.contents_ui(ui));
@@ -1499,11 +1856,207 @@ impl App {
                 match r {
                     NodeRef::Loop(l, _) => self.loop_ui(ui, l),
                     NodeRef::Path(p, _) => self.path_ui(ui, p),
+                    NodeRef::Line(k, _) => self.line_ui(ui, k),
                 }
             }
             Sel::Loop(l) => self.loop_ui(ui, l),
             Sel::Path(p) => self.path_ui(ui, p),
+            Sel::Prop(i) => self.prop_ui(ui, i),
+            Sel::Line(k) => self.line_ui(ui, k),
         }
+    }
+
+    fn line_ui(&mut self, ui: &mut egui::Ui, k: usize) {
+        let default_width = match self.doc.lines[k].kind.as_str() {
+            "dirt" => self.theme.dirt.as_ref().map(|d| d.width),
+            "bridge" => self.theme.hanging.as_ref().map(|h| h.width),
+            _ => None,
+        };
+        let l = &mut self.doc.lines[k];
+        ui.horizontal(|ui| {
+            ui.strong(match l.kind.as_str() {
+                "dirt" => "Dirt path",
+                "fence" | "lattice" => "Fence",
+                "bridge" => "Hanging bridge",
+                k => k,
+            });
+            ui.text_edit_singleline(&mut l.name);
+        });
+        if l.kind == "fence" || l.kind == "lattice" {
+            ui.horizontal(|ui| {
+                ui.label("Style");
+                ui.selectable_value(&mut l.kind, "fence".to_string(), "rails (40)").on_hover_text("The training ground's: 40 tall, a post every 40");
+                ui.selectable_value(&mut l.kind, "lattice".to_string(), "lattice (120)").on_hover_text("The tall lattice by the crawlspace");
+            });
+            ui.checkbox(&mut l.closed, "Closed (back to the first node)");
+            ui.weak("Straight between nodes, a post at every node, standing on the ground; collides from both sides.");
+        }
+        if let Some(dw) = default_width {
+            ui.horizontal(|ui| {
+                let mut own = l.width.is_some();
+                if ui.checkbox(&mut own, "Width").on_hover_text("Off: the theme's").changed() {
+                    l.width = own.then_some(dw);
+                }
+                match &mut l.width {
+                    Some(w) => {
+                        ui.add(egui::DragValue::new(w).speed(1.0).range(20.0..=2000.0));
+                    }
+                    None => {
+                        ui.weak(format!("{dw:.0}"));
+                    }
+                }
+            });
+        }
+        if l.kind == "dirt" {
+            ui.weak("Painted into the floor: the ground under it fades to dirt across its soft edge (the theme's), and the middle has dirt footsteps.");
+        }
+        if l.kind == "bridge" {
+            let sag = self.theme.hanging.as_ref().map_or(0.0, |h| h.sag * 100.0);
+            ui.weak(format!(
+                "Planks and ropes between its nodes, sagging {sag:.0}% of each span. Put its ends on the floors it joins: they land at the floors' edges. A deck too steep to walk is reported."
+            ));
+        }
+        ui.label(format!("{} nodes · double-click it to add one", l.nodes.len()));
+        if ui.button("Delete").clicked() {
+            self.sel = Sel::Line(k);
+            self.delete_selection();
+        }
+    }
+
+    /// The kit's pieces, by kind: the one the Prop tool places.
+    fn kit_ui(&mut self, ui: &mut egui::Ui) {
+        let Some(kit) = self.kit.clone() else {
+            ui.label("No kit. It's cut from the extracted Kokiri Forest (extracted/scenes/overworld/spot04) by `overworld kit-pieces`, into out/overworld/kit/kokiri.");
+            return;
+        };
+        let mut kinds: Vec<&str> = kit.pieces.iter().map(|p| p.kind.as_str()).collect();
+        kinds.dedup();
+        for kind in kinds {
+            ui.label(egui::RichText::new(kind_name(kind)).weak());
+            ui.horizontal_wrapped(|ui| {
+                for p in kit.pieces.iter().filter(|p| p.kind == kind) {
+                    let tip = format!(
+                        "{:.0} x {:.0} x {:.0} · {} triangles · {} collision vertices{}{}",
+                        p.bounds[1][0] - p.bounds[0][0],
+                        p.bounds[1][1] - p.bounds[0][1],
+                        p.bounds[1][2] - p.bounds[0][2],
+                        p.tris.len(),
+                        p.collision_vertices(),
+                        if p.scale.locked() { " · fixed size" } else { "" },
+                        if p.about.is_empty() { String::new() } else { format!("\n{}", p.about) }
+                    );
+                    if ui.selectable_label(self.piece == p.name, &p.label).on_hover_text(tip).clicked() {
+                        self.piece = p.name.clone();
+                    }
+                }
+            });
+        }
+        ui.horizontal(|ui| {
+            ui.label("Turn new props");
+            ui.add(egui::DragValue::new(&mut self.place_yaw).speed(1.0).range(-180.0..=180.0).suffix("°"));
+        });
+        ui.weak("Click in the plan or 3D to place. Doors and the log tunnel's exit are scenery until levels load through Play_Init (ADR 0035's next step).");
+    }
+
+    fn prop_ui(&mut self, ui: &mut egui::Ui, i: usize) {
+        let built_z = self.prop_z(i);
+        let fitted = self.on_wall(i);
+        let placed = self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.index == i).cloned());
+        let tag = format!("prop {i}: ");
+        let trouble: Vec<String> = self.problems.iter().filter(|p| p.starts_with(&tag)).map(|p| p[tag.len()..].to_string()).collect();
+        let piece = self.kit.as_ref().and_then(|k| k.get(&self.doc.props[i].piece)).cloned();
+        let prop = &mut self.doc.props[i];
+        ui.horizontal(|ui| {
+            ui.strong(piece.as_ref().map_or(prop.piece.clone(), |p| p.label.clone()));
+            if piece.is_none() {
+                ui.colored_label(Color32::from_rgb(255, 90, 90), "not in the kit");
+            }
+        });
+        egui::Grid::new("prop").num_columns(2).show(ui, |ui| {
+            ui.label("Position");
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut prop.at[0]).speed(2.0).prefix("x "));
+                ui.add(egui::DragValue::new(&mut prop.at[1]).speed(2.0).prefix("y "));
+            });
+            ui.end_row();
+            if fitted {
+                ui.label("Fitted");
+                ui.label(match &placed {
+                    Some(pl) => format!("on the wall at {:.0}, {:.0}, facing {:.0}°, depth x{:.2}", pl.origin[0], pl.origin[1], pl.yaw, pl.scale[1]),
+                    None => "not yet (see below)".into(),
+                });
+                ui.end_row();
+                return;
+            }
+            ui.label("Height").on_hover_text("On the ground: its base (a house's doorway, a stone's top) stands on the floor there");
+            ui.horizontal(|ui| {
+                let mut ground = prop.z.is_none();
+                if ui.checkbox(&mut ground, "on the ground").changed() {
+                    prop.z = if ground { None } else { Some(built_z.unwrap_or(0.0).round()) };
+                }
+                match &mut prop.z {
+                    Some(z) => {
+                        ui.add(egui::DragValue::new(z).speed(1.0));
+                    }
+                    None => {
+                        ui.weak(built_z.map_or(String::new(), |z| format!("{z:.0}")));
+                    }
+                }
+            });
+            ui.end_row();
+            ui.label("Turn").on_hover_text("Degrees counter-clockwise from north (Q / E: 15, with Shift 1)");
+            ui.add(egui::DragValue::new(&mut prop.yaw).speed(1.0).range(-180.0..=180.0).suffix("°"));
+            ui.end_row();
+            if let Some(p) = &piece {
+                let lim = p.scale.clone();
+                ui.label("Scale");
+                if lim.locked() {
+                    ui.weak("fixed (Link must fit)");
+                } else if lim.uniform {
+                    let mut f = prop.scale[0];
+                    if ui.add(egui::DragValue::new(&mut f).speed(0.01).range(lim.min[0]..=lim.max[0])).changed() {
+                        prop.scale = [f; 3];
+                    }
+                } else {
+                    ui.horizontal(|ui| {
+                        for (k, name) in ["x", "y", "z"].iter().enumerate() {
+                            ui.add_enabled(lim.min[k] < lim.max[k], egui::DragValue::new(&mut prop.scale[k]).speed(0.01).range(lim.min[k]..=lim.max[k]).prefix(format!("{name} ")));
+                        }
+                    });
+                }
+                ui.end_row();
+            }
+        });
+        prop.at = prop.at.map(|x| (x * 100.0).round() / 100.0);
+        if fitted {
+            ui.weak("It fits itself to the wall nearest where you put it: on its face, facing out over the floor in front. Drag it along the wall to move it.");
+        }
+        for t in &trouble {
+            ui.colored_label(Color32::from_rgb(255, 200, 80), t);
+        }
+        if let Some(p) = &piece {
+            ui.label(format!("{} triangles · {} collision vertices", p.tris.len(), p.collision_vertices()));
+            if let Some(d) = &p.door {
+                ui.weak(format!("Its door led to {} (exit {}). Scenery until levels load through Play_Init.", d.entrance, d.exit));
+            }
+            if let Some(o) = &p.opening {
+                ui.weak(format!("Opening {:.0} wide, {:.0} high, {:.0} deep (down to {:.0}).", o.width, o.height, o.depth, o.min_depth));
+            }
+            if !p.functions.is_empty() {
+                ui.weak(format!("Link can use: {}", p.functions.join(", ")));
+            }
+            if !p.about.is_empty() {
+                ui.weak(&p.about);
+            }
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Duplicate (Ctrl+D)").clicked() {
+                self.duplicate_prop();
+            }
+            if ui.button("Delete (Del)").clicked() {
+                self.delete_selection();
+            }
+        });
     }
 
     fn node_ui(&mut self, ui: &mut egui::Ui, r: NodeRef) {
@@ -1531,6 +2084,7 @@ impl App {
                         .map(|q| match q {
                             NodeRef::Loop(l, _) => edit::loop_name(&self.doc, *l),
                             NodeRef::Path(k, _) => edit::path_name(&self.doc, *k),
+                            NodeRef::Line(k, _) => edit::line_name(&self.doc, *k),
                         })
                         .collect();
                     ui.label(format!("Shared by {}", names.join(", ")));
@@ -1575,6 +2129,7 @@ impl App {
                     }
                 }
             }
+            NodeRef::Line(..) => {}
         }
         if ui.button("Delete node (Del)").clicked() {
             self.delete_selection();
@@ -1737,6 +2292,8 @@ impl App {
         let cur = match self.sel {
             Sel::Loop(l) | Sel::Node(NodeRef::Loop(l, _)) => Some(Sel::Loop(l)),
             Sel::Path(p) | Sel::Node(NodeRef::Path(p, _)) => Some(Sel::Path(p)),
+            Sel::Prop(i) => Some(Sel::Prop(i)),
+            Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => Some(Sel::Line(k)),
             Sel::None => None,
         };
         let shift = ui.input(|i| i.modifiers.shift);
@@ -1757,6 +2314,18 @@ impl App {
                 self.click_select(Sel::Path(k), false);
             }
         }
+        for k in 0..self.doc.lines.len() {
+            if ui.selectable_label(cur == Some(Sel::Line(k)), format!("{}  ({})", edit::line_name(&self.doc, k), self.doc.lines[k].kind)).clicked() {
+                self.click_select(Sel::Line(k), false);
+            }
+        }
+        for i in 0..self.doc.props.len() {
+            let p = &self.doc.props[i];
+            let name = self.kit.as_ref().and_then(|k| k.get(&p.piece)).map_or(p.piece.clone(), |x| x.label.clone());
+            if ui.selectable_label(cur == Some(Sel::Prop(i)), format!("{name}  at {:.0}, {:.0}", p.at[0], p.at[1])).clicked() {
+                self.click_select(Sel::Prop(i), false);
+            }
+        }
     }
 
     fn build_ui(&mut self, ui: &mut egui::Ui) {
@@ -1771,6 +2340,18 @@ impl App {
         }
         if let Some(s) = &self.scene {
             ui.label(format!("{} triangles · rim {:.0} to {:.0} · {:.0} ms", s.triangles, s.rim.0, s.rim.1, self.build_ms));
+        }
+        if let Some(l) = &self.level {
+            let props: usize = l.props.iter().map(|p| p.collision_vertices).sum();
+            let text = format!(
+                "Collision: {} of {} vertices{}",
+                l.collision_vertices,
+                overworld::props::MAX_COLLISION_VERTICES,
+                if props > 0 { format!(" (props about {props})") } else { String::new() }
+            );
+            let over = l.collision_vertices > overworld::props::MAX_COLLISION_VERTICES;
+            let r = if over { ui.colored_label(Color32::from_rgb(255, 90, 90), text) } else { ui.label(text) };
+            r.on_hover_text("The game indexes collision vertices in 13 bits. Over the limit the game refuses the level: build at a lower detail.");
         }
         if let Some(l) = &self.level {
             egui::CollapsingHeader::new(format!("Triangles ({} detail)", self.doc.settings.detail)).id_salt("tris").show(ui, |ui| {
@@ -1896,6 +2477,29 @@ impl App {
     }
 }
 
+const PROP_COLOUR: Color32 = Color32::from_rgb(90, 235, 170);
+
+fn line_colour(kind: &str) -> Color32 {
+    match kind {
+        "dirt" => Color32::from_rgb(235, 200, 110),
+        "fence" | "lattice" => Color32::from_rgb(190, 130, 80),
+        "bridge" => Color32::from_rgb(160, 210, 240),
+        _ => Color32::from_rgb(200, 150, 100),
+    }
+}
+
+fn kind_name(kind: &str) -> &str {
+    match kind {
+        "house" => "Houses",
+        "tower" => "Stumps",
+        "stone" => "Stepping stones",
+        "hedge" => "Hedges",
+        "opening" => "Openings (click near a wall: it's set into it)",
+        "wall" => "On walls (click near a wall)",
+        k => k,
+    }
+}
+
 fn brush_colour(m: Mode) -> Color32 {
     match m {
         Mode::Raise => Color32::from_rgb(255, 200, 80),
@@ -1932,7 +2536,7 @@ fn noise_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
 }
 
 const KEYS: &str = "\
-V select · R draw region · P draw path · B brush
+V select · R draw region · P draw path · B brush · K props · D dirt path · G fence · H bridge
 Drag a node to move it (and every loop sharing it)
 Drop a node on another to share it
 Alt while dragging: no snapping
@@ -1945,6 +2549,9 @@ Brush: drag to paint · Ctrl: lower · Shift: smooth
   [ ]: size · 1-6: raise, lower, smooth, flatten, bumps, erase
 Wheel: zoom · right or middle drag: pan
 F: fit · T: textured / heights / lines · N: nodes
+Props: drag to move · the arrow's handle turns, the corner scales
+  Q / E: turn 15 (Shift: 1) · PgUp / PgDn: raise / sink
+  Ctrl+D: duplicate · Alt while dragging: no snapping
 W: play from the cursor (the game, child Link)
 Ctrl+Z / Ctrl+Y: undo / redo · Ctrl+S: save";
 

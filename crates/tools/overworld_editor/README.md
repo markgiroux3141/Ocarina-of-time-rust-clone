@@ -1,19 +1,21 @@
 # Overworld editor
 
 The standalone editor around the `overworld` crate (roadmap item 6 in `../overworld/README.md`). Draw a level's outline, regions
-and paths over a plan of the built level, set heights in a 3D view beside it and in a path's side profile. Every edit is
+and paths and place Kokiri's houses and features over a plan of the built level, set heights in a 3D view beside it and in a path's side profile. Every edit is
 rebuilt in the background (under 0.1 s for the sketch levels), and **▶ Play** plays the build in the game with child Link
 and the pad (`oot_sandbox --level`, ADR 0035), which reloads it whenever the editor writes a new one.
 
 ```
 cargo build --release -p overworld_editor -p oot_sandbox
-target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_paths.json [--theme <theme.json>] [--textures <dir>] [--select <name>]
+target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_village.json [--theme <theme.json>] [--textures <dir>] [--kit <dir>] [--select <name>]
 ```
 
-`--select` selects a region or path by name at the start (handy for screenshots: the profile shows for a path).
+`--select` selects a region or path by name, or a prop by `prop:N`, at the start (handy for screenshots: the profile shows
+for a path).
 
 The texture library is `out/overworld/textures/kokiri`, made on first start from the extracted Kokiri Forest scene
-(`overworld kit-textures`; ROM data, never committed). Play needs `target/release/oot_sandbox` and the game's pack (its
+(`overworld kit-textures`; ROM data, never committed). So is the kit of pieces, `out/overworld/kit/kokiri`, cut from the same
+extract by `overworld kit-pieces` (and again whenever `../overworld/kit/kokiri.json` changes). Play needs `target/release/oot_sandbox` and the game's pack (its
 first run imports it from the ROM in `oot.toml`). The build goes to `out/overworld/<level name>/`, which you can change
 under Files.
 
@@ -40,6 +42,26 @@ under Files.
   Modes: Raise, Lower, Smooth, Flatten, Bumps, Erase (keys 1-6). Ctrl turns raise into lower; Shift smooths. `[` and `]`
   size it; *Hard core* is the share of the radius at full strength. Paint in the plan or in 3D (there, Alt-drag or
   middle-drag orbits). Each stroke is one undo step. The rebuild follows a few times a second while you paint.
+- **Prop (K):** the Kit panel lists the kit's pieces by kind (houses, stumps, stepping stones, hedges, openings, wall
+  pieces), with their size, triangles and collision vertices. Click in the plan or 3D to place the chosen piece; it
+  stands on the ground (a house on its doorway, a stone in water). Drag a prop to move it, in either view. In the plan,
+  the selected prop has a handle on its facing arrow (drag: turn, in 15° steps) and one on its corner (drag: scale,
+  within the piece's limits). Alt: no snapping. Q / E turn it 15° (Shift: 1°), PgUp/PgDn raise or sink it (it then
+  keeps its own height; "on the ground" puts it back), Ctrl+D duplicates it, Delete removes it. The panel sets its
+  position, height, turn and scale, and tells what Link can use (door, ladder, crawl...). Doors and the log tunnel's exit
+  are scenery until levels load through `Play_Init`. See Props in `../overworld/README.md`.
+- **Dirt (D):** click points along a dirt path, then double-click or press Enter. It's painted into the floor (see Dirt
+  paths in `../overworld/README.md`): the ground under it fades to dirt across its soft edge. Its nodes drag like a
+  path's, a double-click on it adds one, and the panel sets its name and width.
+- **Fence (G):** click points along a fence (straight between them, a post at each), then double-click or Enter. The
+  panel switches between rails (40 tall) and the lattice (120), and can close it back to the first node.
+- **Bridge (H):** click a point on each floor the bridge joins (anywhere on it: the ends land at the floor's edge), then
+  Enter. A hanging rope bridge sags between them. The panel sets its width, and a deck too steep to walk is reported.
+- **Openings and wall pieces:** in the Prop tool, click near a wall with the log tunnel, the crawlspace, the vine patch or
+  the waterfall chosen. It fits itself to the nearest wall, and an opening cuts its gap (see Wall openings in
+  `../overworld/README.md`). Drag it along the wall to move it. Its panel says where it fitted, or why it couldn't (too
+  low, not flat, not parallel, no room behind). A crawlspace needs a ridge with flat, parallel walls: draw it with sharp
+  corners (S). Vines and the waterfall need a flat wall and reach its top.
 - **Several regions:** Shift-click regions (in the plan, in 3D or in Contents) to select several. PgUp/PgDn, the panel's
   -20/+20 and dragging in 3D raise or sink them all together; Delete deletes them all.
 - **Bumps:** a region's panel (and the outline's) has *Bumps*: height, size, edge fade and seed. See the Bumps section
@@ -62,7 +84,8 @@ under Files.
 - Undo/redo: Ctrl+Z / Ctrl+Y. Each drag or each field edit is one step. Save writes the document with each node on one line.
 
 **Detail:** Level settings has High / Medium / Low (see Detail in `../overworld/README.md`); the Build panel's *Triangles* lists
-each object's count.
+each object's count. **Collision** shows the vertices the game's collision will hold, of 8192 at most (in red past it), and
+the props' share.
 
 The side panel has the selection's properties, a list of everything in the level, the build's status and problems (a
 failed build shows the last good one and rings the spot the error names, such as loops crossing), the edge-of-the-world
@@ -81,4 +104,4 @@ and sampling settings, and Files (theme, texture library, export folder).
   with 4x MSAA and mipmapped textures, shown as an egui image, the way the OoT Clone's `oot_viewer` does it.
 - `app.rs`: the window, tools, panels, undo, files and Play.
 
-Not yet: editing nodes in 3D, props.
+Not yet: editing nodes in 3D; props' handles in 3D (move works there; turn and scale are in the plan, the panel and Q / E).

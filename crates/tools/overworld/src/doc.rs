@@ -33,6 +33,50 @@ pub struct Doc {
     /// Painted hills and hollows (`terrain.rs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terrain: Option<crate::terrain::Terrain>,
+    /// Kit pieces placed in the level: houses, stumps, stones... (`props.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub props: Vec<Prop>,
+    /// Things drawn along lines of nodes: dirt paths, fences, hanging bridges (`lines.rs`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lines: Vec<Line>,
+}
+
+/// A line of nodes `[x, y]` (or `[x, y, z]` for a bridge's anchors) that the builder draws
+/// something along, by `kind`:
+/// - "dirt": a dirt path painted into the ground (smooth curve through the nodes, `width` across);
+/// - "fence" and "lattice": fences, straight between nodes (`closed` joins the last to the first);
+/// - "bridge": a hanging bridge between its two anchors.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Line {
+    #[serde(default)]
+    pub name: String,
+    pub kind: String,
+    pub nodes: Vec<Vec<f64>>,
+    /// Else the theme's for the kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub closed: bool,
+}
+
+/// A kit piece (`pieces.rs`) placed in the level. Its origin (a house's door floor, a stone's
+/// top, a stump's base) stands at `at`, on the ground there unless `z` sets its height; it faces
+/// `yaw` degrees counter-clockwise from north (0: as it faced in its source, +y).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Prop {
+    pub piece: String,
+    pub at: [f64; 2],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<f64>,
+    #[serde(default)]
+    pub yaw: f64,
+    /// Along the piece's own x, y and z, within its limits (`Piece::scale`).
+    #[serde(default = "one3")]
+    pub scale: [f64; 3],
+}
+
+fn one3() -> [f64; 3] {
+    [1.0; 3]
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

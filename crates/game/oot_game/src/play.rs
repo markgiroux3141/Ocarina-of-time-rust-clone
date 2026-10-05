@@ -298,6 +298,9 @@ pub struct PlayState {
     pub letterbox: Letterbox,
     /// The spikes' follow camera, and which camera drives Player and the view.
     pub follow_camera: FollowCamera,
+    /// The main camera starts as `Play_Init`'s does (floors' bg cameras on) even without the
+    /// pack's scene: a custom level's.
+    pub play_init_camera: bool,
     pub camera_kind: CameraKind,
     /// `actorCtx.targetCtx`.
     pub target_ctx: TargetCtx,
@@ -450,6 +453,7 @@ impl PlayState {
         let view = crate::camera::CamView { eye: game_camera.eye, at: game_camera.at, fov: game_camera.fov };
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
+            play_init_camera: false,
             game_camera,
             sub_cameras: [None, None, None],
             active_cam_id: CAM_ID_MAIN,
@@ -585,7 +589,7 @@ impl PlayState {
         if let Some(pv) = self.player_view() {
             self.follow_camera = FollowCamera::behind(pv.pos, pv.shape_yaw, pv.adult);
             self.game_camera = GameCamera::new(&self.data.camera, &pv);
-            if self.scene.is_some() && self.assets.is_some() {
+            if self.scene.is_some() && (self.assets.is_some() || self.play_init_camera) {
                 let room = self.cam_room();
                 self.game_camera.play_init_settings(room);
             }

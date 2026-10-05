@@ -46,6 +46,25 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
         problems.push("no texture library: the MTL names textures/<texture>.png, which aren't there".into());
     }
     let mut j = lvl.mesh.to_json(&tex);
+    // blend materials (the ground under a dirt path) draw a second texture by vertex weight
+    for (i, m) in lvl.mesh.materials.iter().enumerate() {
+        let Some(name2) = theme.overlay_texture(m) else { continue };
+        let Some(l) = lib else { continue };
+        let info2 = l.get(&name2);
+        let dst = out.join("textures").join(&info2.file);
+        match l.png(&name2) {
+            Some(bytes) => {
+                if std::fs::read(&dst).ok().as_ref() != Some(&bytes) && std::fs::write(&dst, &bytes).is_err() {
+                    problems.push(format!("texture {name2}: can't write {}", dst.display()));
+                }
+            }
+            None => problems.push(format!("texture {name2}: its parts aren't in {}", l.dir.display())),
+        }
+        let jm = &mut j["materials"][i];
+        jm["texture2"] = name2.clone().into();
+        jm["file2"] = format!("textures/{}", info2.file).into();
+        jm["blend"] = "vertex".into();
+    }
     j["name"] = doc.name.clone().into();
     j["theme"] = theme.name.clone().into();
     j["problems"] = problems.clone().into();

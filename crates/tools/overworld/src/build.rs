@@ -24,7 +24,10 @@ use crate::geom::*;
 use crate::map::{Map, VOID};
 use crate::mesh::Mesh;
 use crate::noise::{fbm3, relief};
+use crate::lines::{DirtLine, DirtPaths};
 use crate::paths::{self, PathGeo};
+use crate::pieces::Kit;
+use crate::props::{self, Placed};
 use crate::terrain::Field;
 use crate::theme::{Rock, Theme, WallStyle};
 use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
@@ -36,6 +39,10 @@ pub struct Level {
     /// Lowest and highest rim (tree line base).
     pub rim: (f64, f64),
     pub faces: usize,
+    /// The kit pieces placed (`props.rs`).
+    pub props: Vec<Placed>,
+    /// What the game's collision will hold (`Mesh::collision_vertices`): at most 8192.
+    pub collision_vertices: usize,
 }
 
 struct Info {
@@ -66,6 +73,8 @@ struct Builder<'a> {
     extra: HashMap<usize, Vec<(f64, P2)>>,
     /// Capped walls in three bands (`Detail::walls3`).
     walls3: bool,
+    /// Dirt paths painted into the floors.
+    dirt: DirtPaths,
 }
 
 struct WallJob<'a> {
@@ -83,7 +92,13 @@ struct WallJob<'a> {
     over_water: bool,
 }
 
+/// Builds a level without a kit: props are reported, not placed.
 pub fn build(doc: &Doc, theme: &Theme) -> Result<Level, String> {
+    build_with(doc, theme, None)
+}
+
+/// Builds a level, placing its props from `kit` (`pieces.rs`).
+pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, String> {
     // OW_TIMING=1 prints how long each phase takes
     let timing = std::env::var_os("OW_TIMING").is_some();
     let mut clock = std::time::Instant::now();
@@ -161,6 +176,20 @@ pub fn build(doc: &Doc, theme: &Theme) -> Result<Level, String> {
     lap("paths");
     let map = if ribbons.is_empty() && probes.is_empty() { pre } else { Map::build_with(doc, &ribbons, &probes)? };
     lap("map + paths");
+    // dirt paths (lines of kind dirt): the other kinds come with fences and bridges
+    let mut dirt = DirtPaths::default();
+    for (i, l) in doc.lines.iter().enumerate() {
+        match l.kind.as_str() {
+            "dirt" => {
+                let th = theme.dirt.as_ref().ok_or_else(|| format!("line {i} ({}): theme {} has no dirt section", l.name, theme.name))?;
+                let seed = doc.settings.seed.wrapping_mul(0x9E37_79B9) ^ (i as u32).wrapping_mul(7919);
+                dirt.lines.push(DirtLine::new(l, th, doc.settings.detail()?.paths, seed).map_err(|e| format!("line {i}: {e}"))?);
+            }
+            k if theme.fences.contains_key(k) => {}
+            "bridge" if theme.hanging.is_some() => {}
+            k => problems.push(format!("line {i} ({}): {k} lines aren't built yet", l.name)),
+        }
+    }
     let n = map.verts.len();
     let mut b = Builder {
         doc,
@@ -176,6 +205,7 @@ pub fn build(doc: &Doc, theme: &Theme) -> Result<Level, String> {
         mids: HashMap::new(),
         extra: HashMap::new(),
         walls3: doc.settings.detail()?.walls3,
+        dirt,
     };
     for h in 0..b.map.half_face.len() {
         let f = b.map.half_face[h];
@@ -203,6 +233,8 @@ pub fn build(doc: &Doc, theme: &Theme) -> Result<Level, String> {
     lap("bridges");
     b.emit_walls();
     lap("emit_walls");
+    b.paint_dirt();
+    lap("dirt");
     // painted terrain deforms the finished level (before lighting, so hills are shaded)
     if let Some(t) = doc.terrain.as_ref().filter(|t| !t.is_empty()) {
         let field = Field::new(t, doc, &b.map.loop_polys);
@@ -225,12 +257,30 @@ pub fn build(doc: &Doc, theme: &Theme) -> Result<Level, String> {
         }
     }
     lap("terrain");
+    // kit pieces and fences stand on the finished ground, and are lit with it
+    let placed = props::place(&doc.props, kit, &mut b.mesh, &mut b.problems);
+    lap("props");
+    if doc.lines.iter().any(|l| theme.fences.contains_key(&l.kind) || l.kind == "bridge") {
+        let ground = props::Ground::new(&b.mesh);
+        let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
+        for l in &doc.lines {
+            if let Some(style) = theme.fences.get(&l.kind) {
+                let mut pr = crate::lines::fence(l, style, &mut b.mesh, &ground);
+                b.problems.append(&mut pr);
+            } else if let (true, Some(h)) = (l.kind == "bridge", &theme.hanging) {
+                let mut pr = crate::lines::bridge(l, h, max_slope, &mut b.mesh, &ground);
+                b.problems.append(&mut pr);
+            }
+        }
+        lap("fences and bridges");
+    }
     if let Some(l) = &theme.light {
         let seed = b.seed();
         b.mesh.shade(l, theme.variation.as_ref().map(|v| (v, seed)));
     }
     lap("lighting");
-    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim })
+    let collision_vertices = b.mesh.collision_vertices();
+    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices })
 }
 
 impl<'a> Builder<'a> {
@@ -389,7 +439,26 @@ impl<'a> Builder<'a> {
                     y += d;
                 }
             }
-            let tris: Vec<[P3; 3]> = triangulate_with(&outer, &holes, steiner, &extra)
+            // dirt paths: points on their rings (full, none) with edges between, inside this face
+            let mut segs: Vec<[P2; 2]> = vec![];
+            if water.is_none() && !self.dirt.is_empty() {
+                let usable = |p: P2| point_in_poly(p, &outer) && !holes.iter().any(|h| point_in_poly(p, h)) && index.dist_within(p, 4.0) > 3.0;
+                for run in self.dirt.rings() {
+                    let mut prev: Option<P2> = None;
+                    for p in run {
+                        if usable(p) {
+                            extra.push(p);
+                            if let Some(q) = prev {
+                                segs.push([q, p]);
+                            }
+                            prev = Some(p);
+                        } else {
+                            prev = None;
+                        }
+                    }
+                }
+            }
+            let tris: Vec<[P3; 3]> = triangulate_full(&outer, &holes, steiner, &extra, &segs)
                 .into_iter()
                 .map(|t| {
                     t.map(|q| {
@@ -415,6 +484,33 @@ impl<'a> Builder<'a> {
                 if let Some(w) = water {
                     let uv = p.map(|q| [q[0] / th.water.tile, q[1] / th.water.tile]);
                     self.mesh.tri("water", p.map(|q| [q[0], q[1], w]), uv, &th.water.material, &th.water.surface);
+                }
+            }
+        }
+    }
+
+    /// Dirt paths: each floor vertex's weight, and the floor's triangles where there's any dirt
+    /// drawn with the blend material `<floor>+dirt` (the dirt's footsteps where it's mostly dirt).
+    fn paint_dirt(&mut self) {
+        if self.dirt.is_empty() {
+            return;
+        }
+        let th = self.theme;
+        let Some(d) = &th.dirt else { return };
+        let floor = self.mesh.material_id(&th.floor.material);
+        let blend = self.mesh.material_id(&format!("{}+dirt", th.floor.material));
+        let surface = self.mesh.surface_id(&d.surface);
+        let Some(o) = self.mesh.objects.iter_mut().find(|o| o.name == "ground") else { return };
+        o.blend = o.verts.iter().map(|v| self.dirt.weight([v[0], v[1]])).collect();
+        for t in 0..o.tris.len() {
+            if o.mat[t] != floor {
+                continue;
+            }
+            let w = o.tris[t].map(|v| o.blend[v]);
+            if w.iter().any(|&x| x > 1e-3) {
+                o.mat[t] = blend;
+                if o.surf[t] >= 0 && (w[0] + w[1] + w[2]) / 3.0 >= 0.5 {
+                    o.surf[t] = surface;
                 }
             }
         }
@@ -1292,6 +1388,12 @@ pub fn triangulate(outer: &[P2], holes: &[Vec<P2>], steiner: f64) -> Vec<[P2; 3]
 
 /// `triangulate` with `extra` interior points as well.
 pub fn triangulate_with(outer: &[P2], holes: &[Vec<P2>], steiner: f64, extra: &[P2]) -> Vec<[P2; 3]> {
+    triangulate_full(outer, holes, steiner, extra, &[])
+}
+
+/// `triangulate_with` and edges `segs` between interior points that triangles mustn't cross (a
+/// dirt path's rings), where they can be added (crossing another, one is left out).
+pub fn triangulate_full(outer: &[P2], holes: &[Vec<P2>], steiner: f64, extra: &[P2], segs: &[[P2; 2]]) -> Vec<[P2; 3]> {
     let mut cdt = ConstrainedDelaunayTriangulation::<Point2<f64>>::new();
     let mut rings: Vec<&[P2]> = vec![outer];
     rings.extend(holes.iter().map(|h| h.as_slice()));
@@ -1326,6 +1428,13 @@ pub fn triangulate_with(outer: &[P2], holes: &[Vec<P2>], steiner: f64, extra: &[
     }
     for p in extra {
         let _ = cdt.insert(Point2::new(p[0], p[1]));
+    }
+    for [a, b] in segs {
+        if let (Ok(a), Ok(b)) = (cdt.insert(Point2::new(a[0], a[1])), cdt.insert(Point2::new(b[0], b[1]))) {
+            if a != b && cdt.can_add_constraint(a, b) {
+                cdt.add_constraint(a, b);
+            }
+        }
     }
     let mut out = vec![];
     for f in cdt.inner_faces() {
@@ -1465,6 +1574,8 @@ mod tests {
             boundary: BoundaryDesign::default(),
             settings: Settings::default(),
             terrain: None,
+            props: vec![],
+            lines: vec![],
         }
     }
 
@@ -1502,7 +1613,7 @@ mod tests {
         assert!((lvl.rim.1 - (160.0 + bd.cliff_min + bd.bank_rise)).abs() < 1e-6, "rim {:?}", lvl.rim);
         // and never steeper than the slope along the edge
         let map = Map::build(&doc).unwrap();
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, map };
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, dirt: DirtPaths::default(), map };
         b.regions = std::iter::once(Info { z: 0.0, water: None, edge: None, noise: None })
             .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), edge: None, noise: None }))
             .collect();
@@ -1582,6 +1693,8 @@ mod tests {
             boundary: BoundaryDesign::default(),
             settings: Settings::default(),
             terrain: None,
+            props: vec![],
+            lines: vec![],
         }
     }
 
@@ -1751,6 +1864,119 @@ mod tests {
         let lvl = build(&paths_doc(), &Theme::kokiri()).unwrap();
         let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
         assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+    }
+
+    /// An opening set into a region's wall: fitted on the wall facing out, the wall's triangles
+    /// round its mouth replaced so the wall is still closed everywhere but the mouth itself, and
+    /// a crawlspace stretched through to the floor beyond, its far wall cut too.
+    #[test]
+    fn openings_are_set_into_walls() {
+        use crate::doc::Prop;
+        use crate::pieces::{Kit, Opening, Piece, PieceMaterial, Scale};
+        let doc = sample_doc();
+        let theme = Theme::kokiri();
+        // a 60 x 50 tunnel 150 deep: a front frame at y 0, the far end at y -150
+        let box_tunnel = |name: &str, exit: Option<u32>| {
+            let ring = |y: f64| vec![[-30.0, y, 0.0], [30.0, y, 0.0], [30.0, y, 50.0], [-30.0, y, 50.0]];
+            let mut verts = ring(0.0);
+            verts.extend(ring(-150.0));
+            Piece {
+                name: name.into(),
+                label: name.into(),
+                kind: "opening".into(),
+                materials: vec![PieceMaterial { texture: "kf_tunnel_mouth".into(), tint: [1.0; 3] }],
+                normals: vec![[0.0, 0.0, 1.0]; 8],
+                tris: vec![[0, 4, 5], [0, 5, 1], [1, 5, 6], [1, 6, 2], [2, 6, 7], [2, 7, 3], [3, 7, 4], [3, 4, 0]],
+                uvs: vec![[[0.0; 2]; 3]; 8],
+                mat: vec![0; 8],
+                bounds: [[-30.0, -150.0, 0.0], [30.0, 0.0, 50.0]],
+                footprint: vec![[-30.0, -150.0], [30.0, -150.0], [30.0, 0.0], [-30.0, 0.0]],
+                scale: Scale { min: [1.0, 0.4, 1.0], max: [1.0, 5.0, 1.0], uniform: false },
+                opening: Some(Opening { width: 60.0, height: 50.0, depth: 150.0, min_depth: 60.0, exit }),
+                verts,
+                ..Default::default()
+            }
+        };
+        let kit = Kit { pieces: vec![box_tunnel("log", Some(1)), box_tunnel("crawl", None)], ..Default::default() };
+        // the island squared off (sharp corners: flat walls, north and south parallel), 400 across
+        let mut doc = doc;
+        doc.regions[1].nodes = vec![vec![-700.0, -500.0, 1.0], vec![-300.0, -500.0, 1.0], vec![-300.0, -100.0, 1.0], vec![-700.0, -100.0, 1.0]];
+        let (at, n) = ([-500.0, -540.0], [0.0, -1.0]);
+        // the round island: a crawlspace can't go through it (its walls aren't flat or parallel)
+        let mut round = sample_doc();
+        round.props.push(Prop { piece: "crawl".into(), at: [-500.0, -640.0], z: None, yaw: 0.0, scale: [1.0; 3] });
+        let lvl = build_with(&round, &theme, Some(&kit)).unwrap();
+        assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("off flat") || p.contains("parallel")), "{:?}", lvl.problems);
+        for (piece, far) in [("log", false), ("crawl", true)] {
+            let mut d = doc.clone();
+            d.props.push(Prop { piece: piece.into(), at, z: None, yaw: 0.0, scale: [1.0; 3] });
+            let lvl = build_with(&d, &theme, Some(&kit)).unwrap();
+            assert_eq!(lvl.props.len(), 1, "{piece}: {:?}", lvl.problems);
+            let pl = &lvl.props[0];
+            // on the wall's foot, facing out
+            let f = crate::props::facing(pl.yaw);
+            assert!(f[0] * n[0] + f[1] * n[1] > 0.95, "{piece} faces {f:?}, the wall {n:?}");
+            assert!(pl.origin[2].abs() < 1.0);
+            // the crawlspace reaches the floor beyond the ridge (400 across), the log fits as it is
+            if far {
+                assert!((pl.scale[1] * 150.0 - 400.0).abs() < 2.0, "{piece}: {:?}", pl.scale);
+            } else {
+                assert_eq!(pl.scale[1], 1.0);
+            }
+            // closed everywhere but the mouths: open edges only round them, inside their outline
+            let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+            let mouths = if far { 2 } else { 1 };
+            let near_mouth = |e: &((i64, i64, i64), (i64, i64, i64))| {
+                [e.0, e.1].iter().all(|q| {
+                    let p = [q.0 as f64 / 100.0, q.1 as f64 / 100.0, q.2 as f64 / 100.0];
+                    let local = [(p[0] - pl.origin[0]) * f[1] - (p[1] - pl.origin[1]) * f[0], p[2] - pl.origin[2]];
+                    local[0].abs() <= 31.0 && local[1] <= 51.0
+                })
+            };
+            assert!(!bad.is_empty() && bad.iter().all(near_mouth), "{piece}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+            let tops = bad.iter().filter(|e| (e.0 .2 - 5000).abs() < 150 && (e.1 .2 - 5000).abs() < 150).count();
+            assert!(tops >= mouths, "{piece}: the mouth's top edge(s) should be open: {bad:?}");
+        }
+    }
+
+    /// A dirt path from the ground up a ramp: cut into the floors (points on its rings), drawn
+    /// with the blend material by vertex weight, dirt footsteps where it's mostly dirt, and the
+    /// level as watertight as before.
+    #[test]
+    fn dirt_paths_are_cut_into_the_floor() {
+        let mut doc = paths_doc();
+        doc.lines.push(crate::doc::Line { name: "dirt".into(), kind: "dirt".into(), nodes: vec![vec![1000.0, -1500.0], vec![1000.0, -300.0], vec![1000.0, 900.0]], width: None, closed: false });
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        let g = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        assert_eq!(g.blend.len(), g.verts.len());
+        let mat = |n: &str| lvl.mesh.materials.iter().position(|m| m == n).unwrap();
+        let (blend, dirt) = (mat("ground+dirt"), lvl.mesh.surfaces.iter().position(|s| s == "dirt").unwrap() as i64);
+        // the soft edge has vertices: the floor's points lie on both rings (full and none)
+        let edge = g.verts.iter().zip(&g.blend).filter(|(v, _)| v[1] < -400.0 && (v[0] - 1000.0).abs() > 30.0 && (v[0] - 1000.0).abs() < 150.0);
+        let (full, none) = edge.fold((0, 0), |(f, n), (_, &w)| (f + (w == 1.0) as usize, n + (w == 0.0) as usize));
+        assert!(full > 20 && none > 20, "{full} full and {none} bare vertices by the path");
+        // every blended triangle touches dirt, every triangle of the floor near the path blends,
+        // and the middle of the path collides as dirt
+        for t in 0..g.tris.len() {
+            let w = g.tris[t].map(|v| g.blend[v]);
+            let c = g.tris[t].map(|v| g.verts[v]);
+            let m = [(c[0][0] + c[1][0] + c[2][0]) / 3.0, (c[0][1] + c[1][1] + c[2][1]) / 3.0];
+            if g.mat[t] == blend {
+                assert!(w.iter().any(|&x| x > 0.0));
+            }
+            if (m[0] - 1000.0).abs() < 50.0 && m[1] < -500.0 && m[1] > -1400.0 {
+                assert_eq!((g.mat[t], g.surf[t]), (blend, dirt), "triangle at {m:?}");
+            }
+            if (m[0] - 1000.0).abs() > 300.0 {
+                assert_ne!(g.mat[t], blend, "triangle at {m:?} is far from the path");
+            }
+        }
+        // the export carries the weights and the second texture's name
+        let j = lvl.mesh.to_json(&|r| (r.to_string(), crate::textures::TexInfo::plain(r)));
+        assert!(j["objects"].as_array().unwrap().iter().any(|o| o["alpha"].as_array().is_some_and(|a| !a.is_empty())));
+        assert_eq!(Theme::kokiri().overlay_texture("ground+dirt").unwrap(), "kf_ground+kf_dirt_strip@9b8c34-70-2-16-48");
     }
 
     #[test]

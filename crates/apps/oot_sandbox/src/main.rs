@@ -71,7 +71,7 @@ struct Cli {
     #[arg(long)]
     trace: Option<PathBuf>,
     /// Script for --sheet / --trace: run-roll, ledge, pit, stairs, walls, turn, idle, still,
-    /// forward, tour, climb50, climb70, climb100, hang, ramp-stand, target, parallel, sword,
+    /// forward, hold, crawl, tour, climb50, climb70, climb100, hang, ramp-stand, target, parallel, sword,
     /// swim, tread, platform, cup (C-Up: a house's viewpoint toggle), door (walk to a door and
     /// press A), open (press A where Link stands); with --entrance ENTR_KOKIRI_FOREST_3 also `house` (steers Link into his house and back
     /// out through the exits); with --entrance ENTR_LINKS_HOUSE_0 --child --preset deku-tree-open
@@ -337,6 +337,21 @@ fn script(name: &str) -> Result<(Vec<PadState>, Option<(Vec3, i16)>)> {
         "forward" => {
             s.extend(rep(stick(0, 80), 40));
             s.extend(rep(stick(0, 0), 10));
+            start = None;
+        }
+        // Hold the stick forward the whole run (--frames long): up a ladder, along a path.
+        "hold" => {
+            s.extend(rep(stick(0, 80), 20000));
+            start = None;
+        }
+        // Walk to a crawlspace in front, tap A at its mouth ("Enter"), and crawl on through.
+        "crawl" => {
+            s.extend(rep(stick(0, 50), 60));
+            for _ in 0..10 {
+                s.push(PadState { button: BTN_A, stick_x: 0, stick_y: 50 });
+                s.extend(rep(stick(0, 50), 3));
+            }
+            s.extend(rep(stick(0, 80), 20000));
             start = None;
         }
         other => anyhow::bail!("unknown script {other}"),

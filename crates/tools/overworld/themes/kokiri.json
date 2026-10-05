@@ -9,7 +9,14 @@
     "hanging_roots": "kf_hanging_roots",
     "forest_trunks": "kf_forest_trunks",
     "forest_foliage": "kf_forest_foliage",
-    "water": "kf_water"
+    "water": "kf_water",
+    "dirt_strip": "kf_dirt_strip",
+    "fence": "kf_fence",
+    "fence_post": "kf_fence_post",
+    "log_side": "kf_log_side",
+    "log_end": "kf_log_end",
+    "rope": "kf_fence@1-8",
+    "post_bark": "kf_post_bark"
   },
   "floor": {
     "material": "ground",
@@ -156,6 +163,38 @@
     "shade": 0.22,
     "shade_scale": 380,
     "seed": 1
+  },
+  "dirt": {
+    "texture": "dirt_strip",
+    "tint": [155, 140, 52],
+    "opacity": 0.702,
+    "repeats": 2,
+    "columns": [16, 48],
+    "width": 160,
+    "soft": 50,
+    "wobble": 14,
+    "surface": "dirt"
+  },
+  "fences": {
+    "fence": { "material": "fence", "height": 40, "tile": 40, "surface": "fence" },
+    "lattice": { "material": "fence_post", "height": 120, "tile": 30, "surface": "wall_nograb" }
+  },
+  "hanging": {
+    "deck": "log_side",
+    "under": "log_end",
+    "width": 80,
+    "across": 2,
+    "plank": 20,
+    "sag": 0.06,
+    "rope": "rope",
+    "rope_width": 6,
+    "rail": 50,
+    "spacing": 60,
+    "post": "post_bark",
+    "post_size": [12, 75],
+    "surface": "planks",
+    "side_surface": "wall_nograb",
+    "side": 70
   },
   "paths": {
     "side": "embankment",

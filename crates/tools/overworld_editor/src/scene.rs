@@ -63,6 +63,21 @@ pub struct Mat {
     /// The texture's name in the library (derived ones too: a wall's middle rows).
     pub name: String,
     pub info: TexInfo,
+    /// A blend material's second texture (the ground with dirt over it), drawn by vertex weight.
+    pub overlay: Option<String>,
+}
+
+/// The mean colour of a library texture (0-1).
+fn mean_colour(lib: &Library, name: &str) -> Option<[f64; 3]> {
+    let (_, _, px) = lib.rgba(name)?;
+    let n = (px.len() / 4).max(1) as f64;
+    let mut c = [0.0; 3];
+    for q in px.chunks(4) {
+        for k in 0..3 {
+            c[k] += q[k] as f64 / 255.0;
+        }
+    }
+    Some(c.map(|x| x / n))
 }
 
 pub struct Scene {
@@ -88,7 +103,17 @@ impl Scene {
             .map(|role| {
                 let name = theme.texture_name(role);
                 let info = lib.map(|l| l.get(&name)).unwrap_or_else(|| TexInfo::plain(&name));
-                Mat { role: role.clone(), name, info }
+                Mat { role: role.clone(), name, info, overlay: theme.overlay_texture(role) }
+            })
+            .collect();
+        // seen from above, a blend shows its second texture as a tint of the first: their mean
+        // colours' ratio, by each vertex's weight
+        let tints: Vec<Option<[f64; 3]>> = mats
+            .iter()
+            .map(|m| {
+                let (o, l) = (m.overlay.as_ref()?, lib?);
+                let (a, b) = (mean_colour(l, &m.name)?, mean_colour(l, o)?);
+                Some([0, 1, 2].map(|k| b[k] / a[k].max(1e-3)))
             })
             .collect();
         let (mut tris, mut floors) = (vec![], vec![]);
@@ -107,6 +132,7 @@ impl Scene {
                 if up.abs() < 1e-3 {
                     continue; // vertical: nothing to see from above
                 }
+                // collision floors (props' too, though their collision isn't drawn)
                 if o.surf[t] >= 0 && up > 0.0 {
                     let i = floors.len() as u32;
                     floors.push(p);
@@ -118,7 +144,16 @@ impl Scene {
                         }
                     }
                 }
-                let c = tri.map(|v| o.colors.get(v).copied().unwrap_or([255, 255, 255]));
+                if o.collision_only {
+                    continue;
+                }
+                let mut c = tri.map(|v| o.colors.get(v).copied().unwrap_or([255, 255, 255]));
+                if let (Some(Some(r)), false) = (tints.get(o.mat[t]), o.blend.is_empty()) {
+                    for (k, &v) in tri.iter().enumerate() {
+                        let w = o.blend[v];
+                        c[k] = [0, 1, 2].map(|j| (c[k][j] as f64 * (1.0 + (r[j] - 1.0) * w)).round().clamp(0.0, 255.0) as u8);
+                    }
+                }
                 let pf = p.map(|q| [q[0] as f32, q[1] as f32, q[2] as f32]);
                 if o.name == "ground" {
                     for q in &pf {

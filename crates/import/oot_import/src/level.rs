@@ -10,6 +10,14 @@
 //!   the room's OPA list, translucent ones (water, at their opacity) in the XLU list.
 //! - Surface roles become Kokiri Forest's own surface types (`ROLES`). Water surfaces are not
 //!   collision: each pond becomes a water box at its surface.
+//! - Objects marked `"render": false` (kit pieces' collision meshes) are collision only, and
+//!   materials marked `"decal"` (door shadows) draw in the decal depth mode, as spot04's do.
+//! - Scene cameras (`cameras`): a crawlspace's line becomes a `CAM_SET_CRAWLSPACE` bg camera
+//!   after a `CAM_SET_NORMAL0` one at index 0 (every other floor's), and a surface role
+//!   `<role>#k` calls for bg camera k from its floor, as spot04's crawlspace floor does.
+//! - A material with a second texture (`file2`, the ground under a dirt path) blends it in by the
+//!   vertices' weights (the object's `alpha`), two cycles as Kokiri's own ground:
+//!   (TEXEL1 - TEXEL0) x SHADE_ALPHA + TEXEL0, then x SHADE.
 //!
 //! The collision header indexes vertices in 13 bits, so a level's collision may have at most
 //! 8192 vertices; bigger levels are refused with a hint (build at a lower detail).
@@ -30,8 +38,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// Collision surface roles -> surface type words, from Kokiri Forest (spot04's collision,
-/// with the bg camera index cleared: custom levels have no bg cameras).
-pub const ROLES: [(&str, u32, u32); 4] = [
+/// with the bg camera index cleared: custom levels have no bg cameras). Word 1's low nibble is
+/// the footstep sound (SURFACE_SFX_TYPE: 0 dirt, 2 stone, 8 grass, 9 bridge, 10 wood); bit 17
+/// lets the hookshot hold.
+pub const ROLES: [(&str, u32, u32); 16] = [
     // spot04 surface 10: grass footsteps
     ("ground", 0x0000_0000, 0x0000_0FC8),
     // ledges Link may grab
@@ -40,6 +50,30 @@ pub const ROLES: [(&str, u32, u32); 4] = [
     ("wall_nograb", 0x0020_0000, 0x0000_0FC8),
     // spot04 surface 15: WALL_TYPE 4, climbable vines
     ("vines", 0x0080_0000, 0x0000_0FCA),
+    // kit pieces (crates/tools/overworld/kit/kokiri.json maps spot04's types to these)
+    // spot04 13: the dirt path, dirt footsteps
+    ("dirt", 0x0000_0000, 0x0000_0FC0),
+    // 27: the stepping stones
+    ("stone", 0x0000_0000, 0x0000_0FC2),
+    // 20: the floor inside the hedge's tall grass (tall-grass footsteps)
+    ("tall_grass", 0x0000_0000, 0x0000_0FC6),
+    // 28: the log walkways' planks
+    ("planks", 0x0000_0000, 0x0000_0FC9),
+    // 0, 23: houses and stumps
+    ("wood", 0x0000_0000, 0x0000_0FCA),
+    // 29: the training ground's fences (the hookshot holds)
+    ("fence", 0x0000_0000, 0x0002_0FCA),
+    // 26 and 25: Link's ladder (WALL_TYPE 2) and its top (3)
+    ("ladder", 0x0040_0000, 0x0002_0FCA),
+    ("ladder_top", 0x0060_0000, 0x0000_0FCA),
+    // 32: the crawlspace's mouths (WALL_TYPE 5)
+    ("crawl", 0x00A0_0000, 0x0000_0FCA),
+    // 44: the crawlspace's floor (its bg camera, the crawlspace's line, comes from `#k`)
+    ("crawl_floor", 0x0000_0000, 0x0000_0FCA),
+    // doorways (spot04 1 to 7) and exits (22, 24): plain floor until levels load through
+    // Play_Init, as an exit in the spikes' view stops on a black screen
+    ("door", 0x0000_0000, 0x0000_0FC8),
+    ("exit", 0x0000_0000, 0x0000_0FCA),
 ];
 
 /// The collision header's vertex indices are 13 bits.
@@ -68,13 +102,19 @@ fn wrap(s: &str) -> WrapMode {
     }
 }
 
-/// TEXEL0 x SHADE, colour and alpha, one cycle.
-fn material(texture: usize, wrap_s: WrapMode, wrap_t: WrapMode, blend: BlendMode, cull: CullMode) -> Material {
-    let cc = combiner::encode([1, 15, 4, 7, 1, 7, 4, 7], [1, 15, 4, 7, 1, 7, 4, 7]);
+/// TEXEL0 x SHADE, colour and alpha, one cycle; with a second texture, TEXEL1 blended over TEXEL0
+/// by SHADE_ALPHA, then x SHADE, alpha one (two cycles).
+fn material(texture: usize, texture2: Option<usize>, wrap_s: WrapMode, wrap_t: WrapMode, blend: BlendMode, cull: CullMode, decal: bool) -> Material {
+    // GBI selectors: colour TEXEL0 1, TEXEL1 2, SHADE 4, SHADE_ALPHA 11, COMBINED 0, zero 15 (a, b),
+    // 31 (c), 7 (d); alpha TEXEL0 1, SHADE 4, ONE 6, COMBINED 0, zero 7
+    let (cc, two_cycle) = match texture2 {
+        None => (combiner::encode([1, 15, 4, 7, 1, 7, 4, 7], [1, 15, 4, 7, 1, 7, 4, 7]), false),
+        Some(_) => (combiner::encode([2, 1, 11, 1, 7, 7, 7, 6], [0, 15, 4, 7, 7, 7, 7, 0]), true),
+    };
     let translucent = blend == BlendMode::Translucent;
     Material {
         combiner: Combiner::decode(cc),
-        two_cycle: false,
+        two_cycle,
         prim: [255; 4],
         prim_lod_frac: 0,
         env: [255; 4],
@@ -83,12 +123,12 @@ fn material(texture: usize, wrap_s: WrapMode, wrap_t: WrapMode, blend: BlendMode
         geometry_mode: 0,
         othermode_h: 0,
         othermode_l: 0,
-        textures: [Some(TextureSlot { image: texture, wrap_s, wrap_t }), None],
+        textures: [Some(TextureSlot { image: texture, wrap_s, wrap_t }), texture2.map(|image| TextureSlot { image, wrap_s, wrap_t })],
         blend,
         cull,
         depth_test: true,
         depth_write: !translucent,
-        decal: false,
+        decal,
         lit: false,
         texgen: false,
         bilinear: true,
@@ -127,17 +167,23 @@ pub fn load(dir: &Path) -> Result<Level> {
         xlu: bool,
         index: usize,
         alpha: u8,
+        /// Blends a second texture by vertex weight.
+        blend: bool,
     }
     let mut mats: Vec<Mat> = vec![];
-    for m in j["materials"].as_array().context("level.json: no materials")? {
-        let file = dir.join(m["file"].as_str().unwrap_or(""));
-        let img = match image::open(&file) {
+    let mut open_image = |key: &str, m: &Value| {
+        let file = dir.join(m[key].as_str().unwrap_or(""));
+        match image::open(&file) {
             Ok(i) => i.to_rgba8(),
             Err(e) => {
                 notes.push(format!("{}: {e}; drawn white", file.display()));
                 image::RgbaImage::from_pixel(1, 1, image::Rgba([255; 4]))
             }
-        };
+        }
+    };
+    for m in j["materials"].as_array().context("level.json: no materials")? {
+        let img = open_image("file", m);
+        let img2 = m.get("file2").and_then(|f| f.as_str()).map(|_| open_image("file2", m));
         let (blend, alpha) = match m["alpha"].as_str() {
             Some("cutout") => (BlendMode::Cutout(128), 255),
             Some("blend") => (BlendMode::Translucent, (m["opacity"].as_f64().unwrap_or(1.0) * 255.0).round() as u8),
@@ -146,17 +192,22 @@ pub fn load(dir: &Path) -> Result<Level> {
         let cull = if m["cull"].as_str() == Some("none") { CullMode::None } else { CullMode::Back };
         let translucent = blend == BlendMode::Translucent;
         let d = if translucent { &mut xlu } else { &mut opa };
-        let h = hash(img.as_raw()) ^ (img.width() as u64) << 48;
-        let (w, ht) = img.dimensions();
-        let tex = d.intern_texture(h, || TextureImage {
-            image: DecodedImage { width: w, height: ht, rgba: img.into_raw() },
-            fmt: 0,
-            siz: 3,
-            hash: h,
-            source_segments: 0,
-        });
-        let index = d.intern_material(material(tex, wrap(m["wrap_u"].as_str().unwrap_or("")), wrap(m["wrap_v"].as_str().unwrap_or("")), blend, cull));
-        mats.push(Mat { xlu: translucent, index, alpha });
+        let mut intern = |img: image::RgbaImage| {
+            let h = hash(img.as_raw()) ^ (img.width() as u64) << 48;
+            let (w, ht) = img.dimensions();
+            d.intern_texture(h, || TextureImage {
+                image: DecodedImage { width: w, height: ht, rgba: img.into_raw() },
+                fmt: 0,
+                siz: 3,
+                hash: h,
+                source_segments: 0,
+            })
+        };
+        let tex = intern(img);
+        let tex2 = img2.map(&mut intern);
+        let decal = m["decal"].as_bool() == Some(true);
+        let index = d.intern_material(material(tex, tex2, wrap(m["wrap_u"].as_str().unwrap_or("")), wrap(m["wrap_v"].as_str().unwrap_or("")), blend, cull, decal));
+        mats.push(Mat { xlu: translucent, index, alpha, blend: tex2.is_some() });
     }
     let roles: Vec<String> = j["surfaces"].as_array().map(|a| a.iter().map(|s| s.as_str().unwrap_or("").to_string()).collect()).unwrap_or_default();
 
@@ -169,26 +220,35 @@ pub fn load(dir: &Path) -> Result<Level> {
     let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
     for o in j["objects"].as_array().context("level.json: no objects")? {
         let (verts, tris, uvs, colors) = (floats(o, "verts"), ints(o, "tris"), floats(o, "uvs"), ints(o, "colors"));
+        let weights = ints(o, "alpha");
         let (mat, surf) = (ints(o, "material"), ints(o, "surface"));
+        let render = o["render"].as_bool() != Some(false);
         ensure!(verts.len() % 3 == 0 && tris.len() % 3 == 0 && uvs.len() == tris.len() * 2, "{name}: object {} is malformed", o["name"]);
         for t in 0..tris.len() / 3 {
             let idx = [tris[3 * t] as usize, tris[3 * t + 1] as usize, tris[3 * t + 2] as usize];
             let p = idx.map(|i| game([verts[3 * i], verts[3 * i + 1], verts[3 * i + 2]]));
-            let m = &mats[mat[t] as usize];
-            for (c, &i) in idx.iter().enumerate() {
+            let drawn = render && mat.get(t).is_some_and(|&m| m >= 0);
+            for (c, &i) in idx.iter().enumerate().filter(|_| drawn) {
+                let m = &mats[mat[t] as usize];
                 let rgb = if colors.len() >= 3 * (i + 1) { [colors[3 * i] as u8, colors[3 * i + 1] as u8, colors[3 * i + 2] as u8] } else { [255; 3] };
                 let uv = Vec2::new(uvs[6 * t + 2 * c], 1.0 - uvs[6 * t + 2 * c + 1]);
+                // a blend material's vertex alpha is how much of its second texture shows
+                let a = if m.blend { weights.get(i).map_or(0, |&w| w.clamp(0, 255) as u8) } else { m.alpha };
                 batches.entry((m.xlu, m.index)).or_default().push(Vertex {
                     bone: NO_BONE,
                     pos: p[c],
                     normal: Vec3::Y,
-                    color: [rgb[0], rgb[1], rgb[2], m.alpha],
-                    uv: [uv, Vec2::ZERO],
+                    color: [rgb[0], rgb[1], rgb[2], a],
+                    uv: [uv, uv],
                 });
-                lo = lo.min(p[c]);
-                hi = hi.max(p[c]);
             }
-            triangles += 1;
+            for q in p {
+                lo = lo.min(q);
+                hi = hi.max(q);
+            }
+            if drawn {
+                triangles += 1;
+            }
             let s = surf.get(t).copied().unwrap_or(-1);
             if s < 0 {
                 continue;
@@ -198,8 +258,13 @@ pub fn load(dir: &Path) -> Result<Level> {
                 water.push(p);
                 continue;
             }
+            // `<role>#k`: the role's words with bg camera k
+            let (role, cam) = match role.split_once('#') {
+                Some((r, k)) => (r, k.parse::<u32>().unwrap_or(0).min(0xFF)),
+                None => (role, 0),
+            };
             let ty = *surfaces.entry(s as usize).or_insert_with(|| match ROLES.iter().find(|r| r.0 == role) {
-                Some(&(_, w0, w1)) => Some(col.surface(w0, w1)),
+                Some(&(_, w0, w1)) => Some(col.surface(w0 | cam, w1)),
                 None if role.is_empty() => None,
                 None => {
                     notes.push(format!("surface role {role:?} unknown: collides as ground"));
@@ -224,7 +289,36 @@ pub fn load(dir: &Path) -> Result<Level> {
         let (x0, z0) = (bl.x.floor(), bl.y.floor());
         col.water_box(x0 as i16, z0 as i16, (bh.x.ceil() - x0) as i16, (bh.y.ceil() - z0) as i16, y.round() as i16, 0x3F);
     }
-    let collision = col.finish();
+    let mut collision = col.finish();
+    // scene cameras: the normal one every floor calls for (index 0), then the level's
+    let cams = j["cameras"].as_array().cloned().unwrap_or_default();
+    if !cams.is_empty() {
+        collision.bg_cams.push(eng_collision::collision::BgCamInfo { setting: 0x01, count: 0, data: vec![] });
+        for c in &cams {
+            let pts: Vec<[i16; 3]> = c["points"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .map(|p| {
+                            let q = game([0, 1, 2].map(|k| p[k].as_f64().unwrap_or(0.0) as f32));
+                            [q.x.round() as i16, q.y.round() as i16, q.z.round() as i16]
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            match c["setting"].as_str() {
+                // CAM_SET_CRAWLSPACE's data: each end three times, as spot04's
+                Some("crawlspace") if pts.len() == 2 => {
+                    let data = vec![pts[0], pts[0], pts[0], pts[1], pts[1], pts[1]];
+                    collision.bg_cams.push(eng_collision::collision::BgCamInfo { setting: 0x1E, count: data.len() as i16, data });
+                }
+                s => {
+                    notes.push(format!("camera {s:?}: not a crawlspace line; the normal camera instead"));
+                    collision.bg_cams.push(eng_collision::collision::BgCamInfo { setting: 0x01, count: 0, data: vec![] });
+                }
+            }
+        }
+    }
     if collision.vertices.len() > MAX_COLLISION_VERTICES {
         bail!(
             "{name}: its collision has {} vertices, and the game indexes at most {MAX_COLLISION_VERTICES}: build it at a lower detail (Level settings: Medium or Low)",
@@ -365,13 +459,16 @@ mod tests {
     fn write_level(dir: &Path) {
         std::fs::create_dir_all(dir.join("textures")).unwrap();
         image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 180, 120, 255])).save(dir.join("textures/g.png")).unwrap();
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([150, 140, 50, 255])).save(dir.join("textures/d.png")).unwrap();
         let j = serde_json::json!({
             "name": "test_level",
             "materials": [
                 {"name": "ground", "file": "textures/g.png", "wrap_u": "repeat", "wrap_v": "repeat", "alpha": "opaque", "opacity": 1.0, "cull": "back"},
-                {"name": "water", "file": "textures/g.png", "wrap_u": "repeat", "wrap_v": "repeat", "alpha": "blend", "opacity": 0.5, "cull": "none"}
+                {"name": "water", "file": "textures/g.png", "wrap_u": "repeat", "wrap_v": "repeat", "alpha": "blend", "opacity": 0.5, "cull": "none"},
+                {"name": "kf_shadow", "file": "textures/g.png", "wrap_u": "clamp", "wrap_v": "clamp", "alpha": "blend", "opacity": 1.0, "cull": "back", "decal": true},
+                {"name": "ground+dirt", "file": "textures/g.png", "file2": "textures/d.png", "blend": "vertex", "wrap_u": "repeat", "wrap_v": "repeat", "alpha": "opaque", "opacity": 1.0, "cull": "back"}
             ],
-            "surfaces": ["ground", "wall_nograb", "water"],
+            "surfaces": ["ground", "wall_nograb", "water", "crawl"],
             "objects": [
                 {"name": "ground", "verts": [-1000, -1000, 0, 1000, -1000, 0, 1000, 1000, 0, -1000, 1000, 0], "tris": [0, 1, 2, 0, 2, 3],
                  "uvs": [0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1], "colors": [100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100],
@@ -379,7 +476,13 @@ mod tests {
                 {"name": "walls", "verts": [-1000, 1000, 0, 1000, 1000, 0, 1000, 1000, 300], "tris": [0, 2, 1],
                  "uvs": [0, 0, 1, 1, 1, 0], "colors": [], "material": [0], "surface": [1]},
                 {"name": "water", "verts": [0, 0, -20, 200, 0, -20, 200, 100, -20], "tris": [0, 1, 2],
-                 "uvs": [0, 0, 1, 0, 1, 1], "colors": [], "material": [1], "surface": [2]}
+                 "uvs": [0, 0, 1, 0, 1, 1], "colors": [], "material": [1], "surface": [2]},
+                {"name": "props", "verts": [0, 0, 0, 50, 0, 0, 50, 50, 0], "tris": [0, 1, 2],
+                 "uvs": [0, 0, 1, 0, 1, 1], "colors": [], "material": [2], "surface": [-1]},
+                {"name": "props_collision", "render": false, "verts": [-500, -500, 100, -400, -500, 100, -400, -400, 100], "tris": [0, 1, 2],
+                 "uvs": [0, 0, 0, 0, 0, 0], "colors": [], "material": [-1], "surface": [3]},
+                {"name": "dirt", "verts": [0, 0, 1, 10, 0, 1, 10, 10, 1], "tris": [0, 1, 2], "alpha": [255, 128, 0],
+                 "uvs": [0, 0, 1, 0, 1, 1], "colors": [], "material": [3], "surface": [-1]}
             ]
         });
         std::fs::write(dir.join("level.json"), j.to_string()).unwrap();
@@ -391,13 +494,23 @@ mod tests {
         write_level(&dir);
         let l = load(&dir).unwrap();
         assert!(l.notes.is_empty(), "{:?}", l.notes);
-        assert_eq!(l.triangles, 4);
+        assert_eq!(l.triangles, 6, "the collision-only triangle isn't drawn");
         let e = &l.room.entries[0];
-        assert_eq!(e.opa.as_ref().unwrap().triangle_count(), 3);
+        let opa = e.opa.as_ref().unwrap();
+        assert_eq!(opa.triangle_count(), 4);
+        // the dirt: two textures, two cycles, the weights as vertex alpha
+        let b = opa.batches.iter().find(|b| opa.materials[b.material].textures[1].is_some()).unwrap();
+        assert!(opa.materials[b.material].two_cycle);
+        assert_eq!(b.vertices.iter().map(|v| v.color[3]).collect::<Vec<_>>(), vec![255, 128, 0]);
         // water is translucent, at half alpha, and not collision but a water box
         let x = e.xlu.as_ref().unwrap();
-        assert_eq!((x.triangle_count(), x.batches[0].vertices[0].color[3]), (1, 128));
-        assert_eq!(l.collision.polys.len(), 3);
+        assert_eq!((x.triangle_count(), x.batches[0].vertices[0].color[3]), (2, 128));
+        // the door shadow draws as a decal
+        assert!(x.batches.iter().any(|b| x.materials[b.material].decal));
+        assert_eq!(l.collision.polys.len(), 4);
+        // the kit's collision-only crawlspace wall is WALL_TYPE 5
+        let crawl = l.collision.polys.iter().find(|p| p.normal[1] > 0 && l.collision.vertex(p.vtx[0] as usize & 0x1FFF).y > 50.0).unwrap();
+        assert_eq!(l.collision.surface_types[crawl.ty as usize].data, [0x00A0_0000, 0x0000_0FCA]);
         let wb = &l.collision.water_boxes[0];
         assert_eq!((wb.x_min, wb.z_min, wb.x_length, wb.z_length, wb.y_surface), (0, -100, 200, 100, -20));
         // the floor faces up in the game's axes (y up), the wall can't be grabbed

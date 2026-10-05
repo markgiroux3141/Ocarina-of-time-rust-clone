@@ -14,19 +14,20 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// spot04's material N -> what its texture is.
+/// spot04's material N -> what its texture is. The dirt path is decals (45 to 47, and 51 in the
+/// training area): white blotches with soft alpha, tinted yellow-brown by the combiner's prim.
 pub const KOKIRI_ROLES: [&str; 52] = [
     "house_bark", "house_door_dark", "stump_top", "door_curtain", "porch_floor", "porch_trim", "porch_under",
     "hanging_vines", "porch_rail", "ladder", "ladder_back", "mushroom", "door_frame", "mido_bark", "log_bark",
     "tunnel_mouth", "ground", "forest_trunks", "forest_foliage", "cliff", "cliff_strip", "cliff_strip_dark",
     "grass_skirt", "hedge_top", "fence", "fence_post", "log_end", "log_side", "roof_leaf", "hanging_roots",
     "tunnel_ring", "stone_top", "stone_side", "post_bark", "saria_bark", "shop_bark", "shop_sign", "deku_bark",
-    "deku_leaves", "shadow", "shadow_link", "graffiti_a", "graffiti_b", "graffiti_c", "water", "water_foam",
-    "water_ripple", "water_ripple_b", "vines", "deku_face", "shadow_deku", "water_ripple_c",
+    "deku_leaves", "shadow", "shadow_link", "graffiti_a", "graffiti_b", "graffiti_c", "water", "dirt_end",
+    "dirt_strip", "dirt_junction", "vines", "deku_face", "shadow_deku", "dirt_patch",
 ];
 
 /// The roles the Kokiri theme draws with: (role, width, height, wrap u, wrap v).
-const CHECKED: [(&str, u32, u32, &str, &str); 9] = [
+const CHECKED: [(&str, u32, u32, &str, &str); 10] = [
     ("ground", 32, 32, "repeat", "repeat"),
     ("forest_trunks", 64, 64, "repeat", "clamp"),
     ("forest_foliage", 32, 32, "repeat", "clamp"),
@@ -36,6 +37,7 @@ const CHECKED: [(&str, u32, u32, &str, &str); 9] = [
     ("grass_skirt", 64, 16, "repeat", "clamp"),
     ("hanging_roots", 64, 32, "repeat", "clamp"),
     ("water", 32, 32, "repeat", "repeat"),
+    ("dirt_strip", 64, 64, "clamp", "repeat"),
 ];
 
 /// A glb's JSON and binary chunk.
@@ -109,6 +111,7 @@ pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
             alpha: alpha.into(),
             opacity: (opacity * 10000.0).round() / 10000.0,
             cull: if ex["n64_cull"].as_str() == Some("None") { "none".into() } else { "back".into() },
+            decal: ex["n64_decal"].as_bool() == Some(true),
         };
         std::fs::write(out.join(&info.file), png).map_err(|e| format!("{}: {e}", out.display()))?;
         lib.insert(format!("kf_{role}"), info);
@@ -122,9 +125,91 @@ pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
             ));
         }
     }
+    ground_with_detail(&j, bin, &mats, &texs, &images, &views, out, &mut lib)?;
     let json = serde_json::to_string_pretty(&lib).map_err(|e| e.to_string())?;
     std::fs::write(out.join("textures.json"), json).map_err(|e| format!("{}: {e}", out.display()))?;
     Ok(lib.len())
+}
+
+/// Kokiri's ground as the game draws it. Its material mixes two textures half and half,
+/// (TEXEL1 - TEXEL0) x ENV_ALPHA (0x80) + TEXEL0: the camo, one repeat every 400 units, and a
+/// detail texture on tile 1, eight times finer (its own UVs, TEXCOORD_1). The library's `kf_ground`
+/// is that mix baked into one tile: the camo filtered up to the detail's resolution with the detail
+/// repeating across it, so a floor textured once per 400 units looks as the game's does.
+#[allow(clippy::too_many_arguments)]
+fn ground_with_detail(j: &Value, bin: &[u8], mats: &[Value], texs: &[Value], images: &[Value], views: &[Value], out: &Path, lib: &mut BTreeMap<String, TexInfo>) -> Result<(), String> {
+    let Some((mi, m)) = mats.iter().enumerate().find(|(_, m)| {
+        m["name"].as_str().and_then(|n| n.rsplit("mat").next()).and_then(|s| s.parse::<usize>().ok()).and_then(|n| KOKIRI_ROLES.get(n)) == Some(&"ground")
+    }) else {
+        return Err("spot04 has no ground material".into());
+    };
+    let ex = &m["extras"];
+    let base = m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64().ok_or("the ground has no texture")? as usize;
+    // tile 1's texture: recorded by newer extractions; else the one the extractor added right after
+    // tile 0's (it adds a material's textures in turn), which no material uses as its own
+    let t1 = match ex["n64_texture1"].as_u64() {
+        Some(i) => i as usize,
+        None => {
+            let used: Vec<u64> = mats.iter().filter_map(|m| m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64()).collect();
+            if used.contains(&(base as u64 + 1)) || base + 1 >= texs.len() {
+                return Err("can't tell the ground's detail texture: re-extract spot04".into());
+            }
+            base + 1
+        }
+    };
+    let png = |ti: usize| -> Result<(u32, u32, Vec<u8>), String> {
+        let img = &images[texs[ti]["source"].as_u64().ok_or("texture without an image")? as usize];
+        let v = &views[img["bufferView"].as_u64().ok_or("image without a buffer view")? as usize];
+        let (off, len) = (v["byteOffset"].as_u64().unwrap_or(0) as usize, v["byteLength"].as_u64().unwrap_or(0) as usize);
+        crate::textures::decode_png(bin.get(off..off + len).ok_or("image outside the binary chunk")?).ok_or("bad PNG".into())
+    };
+    // how much finer tile 1's UVs run than tile 0's, from a primitive using the material
+    let mut ratio = None;
+    'find: for node in j["nodes"].as_array().cloned().unwrap_or_default() {
+        let Some(mesh) = node["mesh"].as_u64() else { continue };
+        for prim in j["meshes"][mesh as usize]["primitives"].as_array().cloned().unwrap_or_default() {
+            if prim["material"].as_u64() != Some(mi as u64) {
+                continue;
+            }
+            let at = &prim["attributes"];
+            let (Some(a0), Some(a1)) = (at["TEXCOORD_0"].as_u64(), at["TEXCOORD_1"].as_u64()) else { continue };
+            let (u0, u1) = (crate::pieces::accessor(j, bin, a0 as usize, 2)?, crate::pieces::accessor(j, bin, a1 as usize, 2)?);
+            let span = |u: &[f64]| {
+                let xs = u.iter().step_by(2);
+                xs.clone().cloned().fold(f64::NEG_INFINITY, f64::max) - xs.cloned().fold(f64::INFINITY, f64::min)
+            };
+            if span(&u0) > 0.5 {
+                ratio = Some((span(&u1) / span(&u0)).round() as u32);
+                break 'find;
+            }
+        }
+    }
+    let k = ratio.filter(|&r| (1..=16).contains(&r)).ok_or("can't tell the ground's detail scale")?;
+    let a = u8::from_str_radix(ex["n64_env"].as_str().unwrap_or("#80808080").get(7..9).unwrap_or("80"), 16).unwrap_or(0x80) as f64 / 255.0;
+    let ((w0, h0, p0), (w1, h1, p1)) = (png(base)?, png(t1)?);
+    let (w, h) = (w1 * k, h1 * k);
+    let mut px = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            // the camo filtered up (bilinear, repeating), the detail texel for texel
+            let fx = (x as f64 + 0.5) * w0 as f64 / w as f64 - 0.5;
+            let fy = (y as f64 + 0.5) * h0 as f64 / h as f64 - 0.5;
+            let (ix, iy) = (fx.floor(), fy.floor());
+            let (tx, ty) = (fx - ix, fy - iy);
+            let at = |i: i64, j: i64, c: usize| p0[((j.rem_euclid(h0 as i64) as u32 * w0 + i.rem_euclid(w0 as i64) as u32) * 4) as usize + c] as f64;
+            let d = ((y % h1) * w1 + x % w1) as usize * 4;
+            for c in 0..3 {
+                let (i, jj) = (ix as i64, iy as i64);
+                let c0 = (at(i, jj, c) * (1.0 - tx) + at(i + 1, jj, c) * tx) * (1.0 - ty) + (at(i, jj + 1, c) * (1.0 - tx) + at(i + 1, jj + 1, c) * tx) * ty;
+                px.push((c0 + (p1[d + c] as f64 - c0) * a).round().clamp(0.0, 255.0) as u8);
+            }
+            px.push(255);
+        }
+    }
+    let info = lib.get_mut("kf_ground").ok_or("no kf_ground")?;
+    std::fs::write(out.join(&info.file), crate::textures::encode_png(w, h, &px)).map_err(|e| format!("{}: {e}", out.display()))?;
+    info.size = vec![w, h];
+    Ok(())
 }
 
 #[cfg(test)]
@@ -150,6 +235,10 @@ mod tests {
         // the old Blender export read these as clamp; the glb says mirror
         assert_eq!((lib.get("kf_stone_top").wrap_u.as_str(), lib.get("kf_stone_top").wrap_v.as_str()), ("mirror", "mirror"));
         assert_eq!(lib.rgba("kf_cliff").unwrap().0, 32);
+        // the ground is its camo with the detail texture, eight times finer, mixed in
+        assert_eq!(lib.get("kf_ground").size, vec![256, 256]);
+        // the dirt path's decals and the door shadows are drawn as decals; the ground isn't
+        assert!(lib.get("kf_dirt_strip").decal && lib.get("kf_shadow").decal && !lib.get("kf_ground").decal);
         let _ = std::fs::remove_dir_all(&out);
     }
 }

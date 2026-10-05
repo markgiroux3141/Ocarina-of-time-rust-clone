@@ -3,7 +3,7 @@
 //!
 //! Loops are numbered as the builder numbers them: 0 is the outline, i + 1 is region i.
 
-use overworld::doc::{node_sharp, Doc, Path, Region};
+use overworld::doc::{node_sharp, Doc, Line, Path, Region};
 use overworld::geom::{dist, dist_to_seg, lerp, point_in_poly, signed_area, P2};
 use overworld::map::sample_loops;
 use overworld::paths::centre_line;
@@ -14,6 +14,8 @@ pub enum NodeRef {
     Loop(usize, usize),
     /// (path, node index)
     Path(usize, usize),
+    /// (line, node index): dirt paths, fences, bridges
+    Line(usize, usize),
 }
 
 pub fn loop_count(doc: &Doc) -> usize {
@@ -60,6 +62,15 @@ pub fn path_name(doc: &Doc, p: usize) -> String {
     }
 }
 
+pub fn line_name(doc: &Doc, k: usize) -> String {
+    let l = &doc.lines[k];
+    if l.name.is_empty() {
+        format!("{} {k}", l.kind)
+    } else {
+        l.name.clone()
+    }
+}
+
 pub fn node_pos(doc: &Doc, r: NodeRef) -> P2 {
     match r {
         NodeRef::Loop(l, i) => {
@@ -69,6 +80,10 @@ pub fn node_pos(doc: &Doc, r: NodeRef) -> P2 {
         NodeRef::Path(p, i) => {
             let n = &doc.paths[p].nodes[i];
             [n[0].unwrap_or(0.0), n[1].unwrap_or(0.0)]
+        }
+        NodeRef::Line(k, i) => {
+            let n = &doc.lines[k].nodes[i];
+            [n[0], n[1]]
         }
     }
 }
@@ -85,13 +100,18 @@ fn set_pos(doc: &mut Doc, r: NodeRef, p: P2) {
             n[0] = Some(p[0]);
             n[1] = Some(p[1]);
         }
+        NodeRef::Line(k, i) => {
+            let n = &mut doc.lines[k].nodes[i];
+            n[0] = p[0];
+            n[1] = p[1];
+        }
     }
 }
 
 /// The node and every loop node welded to it (the builder treats them as one node).
 pub fn group(doc: &Doc, r: NodeRef) -> Vec<NodeRef> {
     match r {
-        NodeRef::Path(..) => vec![r],
+        NodeRef::Path(..) | NodeRef::Line(..) => vec![r],
         NodeRef::Loop(..) => {
             let p = node_pos(doc, r);
             let mut out = vec![r];
@@ -117,7 +137,7 @@ pub fn move_group(doc: &mut Doc, refs: &[NodeRef], p: P2) {
 pub fn is_sharp(doc: &Doc, refs: &[NodeRef]) -> bool {
     refs.iter().any(|&r| match r {
         NodeRef::Loop(l, i) => node_sharp(&loop_nodes(doc, l)[i]),
-        NodeRef::Path(..) => false,
+        NodeRef::Path(..) | NodeRef::Line(..) => false,
     })
 }
 
@@ -144,12 +164,15 @@ pub fn delete_node(doc: &mut Doc, r: NodeRef) -> Result<(), String> {
             NodeRef::Path(p, _) if doc.paths[p].nodes.len() <= 2 => {
                 return Err(format!("{} needs at least 2 nodes: delete the path instead", path_name(doc, p)))
             }
+            NodeRef::Line(k, _) if doc.lines[k].nodes.len() <= 2 => {
+                return Err(format!("{} needs at least 2 nodes: delete it instead", line_name(doc, k)))
+            }
             _ => {}
         }
     }
     // highest index first, so earlier indices stay valid
     refs.sort_by_key(|q| std::cmp::Reverse(match *q {
-        NodeRef::Loop(_, i) | NodeRef::Path(_, i) => i,
+        NodeRef::Loop(_, i) | NodeRef::Path(_, i) | NodeRef::Line(_, i) => i,
     }));
     for q in refs {
         match q {
@@ -162,6 +185,9 @@ pub fn delete_node(doc: &mut Doc, r: NodeRef) -> Result<(), String> {
                 if i < path.modes.len() {
                     path.modes.remove(i.min(path.modes.len() - 1));
                 }
+            }
+            NodeRef::Line(k, i) => {
+                doc.lines[k].nodes.remove(i);
             }
         }
     }
@@ -213,6 +239,12 @@ pub fn insert_path_node(doc: &mut Doc, pi: usize, k: usize, p: P2) -> NodeRef {
     NodeRef::Path(pi, k + 1)
 }
 
+/// Inserts a node at p on a line between its nodes k and k + 1 (or, closed, after its last).
+pub fn insert_line_node(doc: &mut Doc, li: usize, k: usize, p: P2) -> NodeRef {
+    doc.lines[li].nodes.insert(k + 1, vec![p[0].round(), p[1].round()]);
+    NodeRef::Line(li, k + 1)
+}
+
 /// The curves the builder draws, sampled, with the document segment each point starts.
 pub struct Shapes {
     /// Per loop: closed polyline points, each with the node index whose edge it lies on.
@@ -220,6 +252,8 @@ pub struct Shapes {
     pub areas: Vec<f64>,
     /// Per path: the centre line, each point with the node index whose segment it lies on.
     pub paths: Vec<Vec<(P2, usize)>>,
+    /// Per line: as the builder draws it (dirt: a smooth curve; fences and bridges: straight).
+    pub lines: Vec<Vec<(P2, usize)>>,
     /// Why the loops couldn't be sampled (then each loop is drawn straight between its nodes).
     pub error: Option<String>,
 }
@@ -271,7 +305,42 @@ impl Shapes {
                     .collect()
             })
             .collect();
-        Shapes { loops, areas, paths, error }
+        let lines = doc
+            .lines
+            .iter()
+            .map(|l| {
+                let xy: Vec<P2> = l.nodes.iter().filter(|n| n.len() >= 2).map(|n| [n[0], n[1]]).collect();
+                if xy.len() < 2 {
+                    return xy.into_iter().map(|q| (q, 0)).collect();
+                }
+                if l.kind == "dirt" {
+                    let (line, node_s) = centre_line(&xy, path_sampling(doc));
+                    return line.into_iter().map(|(q, s)| ((q), (0..xy.len() - 1).rev().find(|&k| node_s[k] <= s + 1e-9).unwrap_or(0))).collect();
+                }
+                let mut pts: Vec<(P2, usize)> = xy.iter().enumerate().map(|(i, &q)| (q, i)).collect();
+                if l.closed {
+                    pts.push((xy[0], xy.len() - 1));
+                }
+                pts
+            })
+            .collect();
+        Shapes { loops, areas, paths, lines, error }
+    }
+
+    /// The nearest line to p within `tol` (or a dirt path's half width, if `width`): (line, node
+    /// index of the segment, nearest point).
+    pub fn line_near(&self, doc: &Doc, p: P2, tol: f64, width: bool) -> Option<(usize, usize, P2)> {
+        let mut best: Option<(f64, usize, usize, P2)> = None;
+        for (k, c) in self.lines.iter().enumerate() {
+            let reach = if width { tol.max(doc.lines[k].width.unwrap_or(0.0) * 0.5) } else { tol };
+            for w in c.windows(2) {
+                let (d, t) = dist_to_seg(p, w[0].0, w[1].0);
+                if d <= reach && best.is_none_or(|x| d < x.0) {
+                    best = Some((d, k, w[0].1, lerp(w[0].0, w[1].0, t)));
+                }
+            }
+        }
+        best.map(|(_, k, i, q)| (k, i, q))
     }
 
     pub fn poly(&self, l: usize) -> Vec<P2> {
@@ -342,6 +411,12 @@ pub fn node_near_except(doc: &Doc, p: P2, tol: f64, except: &[NodeRef]) -> Optio
             consider(dist(p, node_pos(doc, r)), r);
         }
     }
+    for (k, line) in doc.lines.iter().enumerate() {
+        for i in 0..line.nodes.len() {
+            let r = NodeRef::Line(k, i);
+            consider(dist(p, node_pos(doc, r)), r);
+        }
+    }
     for l in 0..loop_count(doc) {
         for i in 0..loop_nodes(doc, l).len() {
             let r = NodeRef::Loop(l, i);
@@ -374,6 +449,12 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
         edge: None,
         shape: None,
     }
+}
+
+pub fn new_line(doc: &Doc, kind: &str, nodes: Vec<P2>) -> Line {
+    let names: Vec<&str> = doc.lines.iter().map(|r| r.name.as_str()).collect();
+    let name = (1..).map(|i| format!("{kind} {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
+    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false }
 }
 
 /// A new level: an oval outline about 4000 by 2800.

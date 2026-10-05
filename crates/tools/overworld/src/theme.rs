@@ -29,6 +29,68 @@ pub struct Theme {
     /// Embankment sides and bridge decks (needed by levels with paths).
     #[serde(default)]
     pub paths: Option<PathTheme>,
+    /// Dirt paths painted into the ground (needed by levels with dirt lines).
+    #[serde(default)]
+    pub dirt: Option<Dirt>,
+    /// Fence styles by line kind ("fence", "lattice").
+    #[serde(default)]
+    pub fences: std::collections::BTreeMap<String, FenceStyle>,
+    /// Hanging bridges (needed by levels with bridge lines).
+    #[serde(default)]
+    pub hanging: Option<Hanging>,
+}
+
+/// A hanging bridge between two anchors: a deck of planks `width` across (`deck` on top, `under`
+/// beneath; the texture `across` times across, one plank every `plank` along), sagging on a
+/// catenary by `sag` of its span; ropes (`rope`, a strip `rope_width` tall) `rail` above each edge
+/// with uprights every `spacing`; a post (`post`, `post_size`: width, height) at each corner. The
+/// deck collides as `surface`, with invisible walls (`side_surface`) `side` tall along both edges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Hanging {
+    pub deck: String,
+    pub under: String,
+    pub width: f64,
+    pub across: f64,
+    pub plank: f64,
+    pub sag: f64,
+    pub rope: String,
+    pub rope_width: f64,
+    pub rail: f64,
+    pub spacing: f64,
+    pub post: String,
+    pub post_size: [f64; 2],
+    pub surface: String,
+    pub side_surface: String,
+    pub side: f64,
+}
+
+/// A fence: panels `height` tall standing on the ground along a line, the texture repeating every
+/// `tile` (a post in each repeat), drawn double-sided, colliding as `surface` from both sides.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FenceStyle {
+    pub material: String,
+    pub height: f64,
+    pub tile: f64,
+    pub surface: String,
+}
+
+/// A dirt path: the floor under it blends from its own material to `<floor>+dirt`, whose second
+/// texture is the floor's with the dirt drawn over it (`textures::composite_name`): the decal's
+/// `texture` (a strip, its `columns` middle mirrored across so it tiles), multiplied by `tint`, at
+/// `opacity`, `repeats` times per floor tile. The weight is 1 within `width` / 2 - `soft` / 2 of
+/// the centre line and falls to 0 at `width` / 2 + `soft` / 2; the edge wanders by up to
+/// `wobble`. Floor that's mostly dirt collides as `surface` (dirt footsteps).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Dirt {
+    pub texture: String,
+    pub tint: [f64; 3],
+    pub opacity: f64,
+    pub repeats: u32,
+    pub columns: [u32; 2],
+    pub width: f64,
+    pub soft: f64,
+    pub wobble: f64,
+    pub surface: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -257,6 +319,10 @@ impl Theme {
     /// The texture a material role uses. A role `<material>~mid` is the middle rows of the
     /// texture that capped walls of that material use (`Detail::walls3`).
     pub fn texture_name(&self, role: &str) -> String {
+        // a blend (the ground under a dirt path) draws its base as texture 0
+        if let Some((base, _)) = role.split_once('+') {
+            return self.texture_name(base);
+        }
         if let Some(base) = role.strip_suffix("~mid") {
             let name = self.texture_name(base);
             let caps = self.wall_styles.values().filter(|w| w.material == base).find_map(|w| w.caps.as_ref().filter(|c| c.rows > 0));
@@ -270,6 +336,19 @@ impl Theme {
             };
         }
         self.textures.get(role).cloned().unwrap_or_else(|| role.to_string())
+    }
+
+    /// A blend role's second texture (`<base>+dirt`: the base with the dirt drawn over it), blended
+    /// in by each vertex's weight. None for every other role.
+    pub fn overlay_texture(&self, role: &str) -> Option<String> {
+        let (base, over) = role.split_once('+')?;
+        match over {
+            "dirt" => {
+                let d = self.dirt.as_ref()?;
+                Some(crate::textures::composite_name(&self.texture_name(base), &self.texture_name(&d.texture), d.tint, d.opacity, d.repeats, d.columns))
+            }
+            _ => None,
+        }
     }
 
     pub fn wall_style(&self, height: f64, over_water: bool) -> &str {

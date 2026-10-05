@@ -1,5 +1,7 @@
 // The editor's 3D view: texture x baked vertex colour, as the N64 (and pd-walk) draws it, with
-// a light distance fog into the sky colour.
+// a light distance fog into the sky colour. A blend material (the ground under a dirt path) mixes
+// in its second texture by the vertex alpha; every other material binds its texture twice, so
+// the mix changes nothing.
 
 struct Globals {
     view_proj: mat4x4<f32>,
@@ -11,6 +13,13 @@ struct Globals {
 @group(0) @binding(0) var<uniform> g: Globals;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+@group(1) @binding(2) var tex2: texture_2d<f32>;
+
+fn texel(in_uv: vec2<f32>, a: f32) -> vec4<f32> {
+    let t = textureSample(tex, samp, in_uv);
+    let u = textureSample(tex2, samp, in_uv);
+    return vec4<f32>(mix(t.rgb, u.rgb, a), t.a);
+}
 
 struct VsIn {
     @location(0) pos: vec3<f32>,
@@ -42,13 +51,13 @@ fn fogged(rgb: vec3<f32>, dist: f32) -> vec3<f32> {
 
 @fragment
 fn fs_opaque(in: VsOut) -> @location(0) vec4<f32> {
-    let t = textureSample(tex, samp, in.uv);
+    let t = texel(in.uv, in.color.a);
     return vec4<f32>(fogged(t.rgb * in.color.rgb, in.dist), 1.0);
 }
 
 @fragment
 fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
-    let t = textureSample(tex, samp, in.uv);
+    let t = texel(in.uv, 0.0);
     if (t.a * in.color.a < 0.5) {
         discard;
     }
@@ -57,7 +66,7 @@ fn fs_cutout(in: VsOut) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_blend(in: VsOut) -> @location(0) vec4<f32> {
-    let t = textureSample(tex, samp, in.uv);
+    let t = texel(in.uv, 0.0);
     let a = t.a * in.color.a;
     if (a < 0.02) {
         discard;

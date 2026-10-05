@@ -1,0 +1,152 @@
+{
+  "name": "kokiri",
+  "about": "Pieces cut from Kokiri Forest (spot04) by `overworld kit-pieces`, and the measurements of the pieces the builder generates in its textures. Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot04/spot04.glb",
+    "collision": "extracted/scenes/overworld/spot04/collision.json"
+  },
+  "surfaces": {
+    "about": "spot04 surface type -> collision role (oot_import::level::ROLES). Floors keep their footstep sound; exits and doors collide as plain floor until levels load through Play_Init.",
+    "0": "wood", "1": "door", "2": "door", "3": "door", "4": "door", "5": "door", "6": "door", "7": "door",
+    "8": "wood", "9": "wood", "10": "ground", "11": "ground", "12": "dirt", "13": "dirt", "14": "wall_nograb",
+    "15": "vines", "16": "wood", "17": "wall_nograb", "18": "ground", "19": "ground", "20": "tall_grass", "21": "wood",
+    "22": "exit", "23": "wood", "24": "exit", "25": "ladder_top", "26": "ladder", "27": "stone", "28": "planks",
+    "29": "fence", "30": "wood", "31": "exit", "32": "crawl", "33": "crawl", "34": "crawl", "35": "ground",
+    "36": "dirt", "37": "dirt", "38": "ground", "39": "dirt", "40": "ground", "41": "ground", "42": "ground",
+    "43": "wall_nograb", "44": "crawl_floor", "45": "wood"
+  },
+  "pieces": [
+    {
+      "name": "link_house", "label": "Link's house", "kind": "house",
+      "take": { "box": [[-300, -1560, -85], [280, -985, 360]] },
+      "origin": "base", "facing": "door",
+      "door": { "exit": 4, "entrance": "ENTR_LINK_HOME_1" },
+      "about": "Its origin is its foot (the hollow's floor in spot04): the door is on the porch, 181 up, and the ladder (wall types 2 and 3) climbs to it. Locked: the ladder and porch are sized for child Link."
+    },
+    {
+      "name": "mido_house", "label": "Mido's house", "kind": "house",
+      "take": { "box": [[-590, 460, -5], [-285, 815, 340]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 10, "entrance": "ENTR_KOKIRI_HOME4_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true }
+    },
+    {
+      "name": "saria_house", "label": "Saria's house", "kind": "house",
+      "take": { "box": [[275, -985, -5], [730, -580, 320]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 11, "entrance": "ENTR_KOKIRI_HOME5_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true }
+    },
+    {
+      "name": "twins_house", "label": "The Twins' house", "kind": "house",
+      "take": { "box": [[855, -790, -5], [1350, -415, 355]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 9, "entrance": "ENTR_KOKIRI_HOME3_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true }
+    },
+    {
+      "name": "knowitall_house", "label": "Know-It-All Brothers' house", "kind": "house",
+      "take": { "box": [[-1520, -640, 115], [-895, -75, 395]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 6, "entrance": "ENTR_KOKIRI_HOME_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true }
+    },
+    {
+      "name": "shop", "label": "Kokiri Shop", "kind": "house",
+      "take": { "box": [[465, 140, -5], [1165, 865, 190]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 5, "entrance": "ENTR_KOKIRI_SHOP_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true }
+    },
+    {
+      "name": "stump_post", "label": "Stump post", "kind": "tower",
+      "take": { "box": [[420, -170, -5], [530, -55, 125]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "The plank walkways run from the ground to its top (120)."
+    },
+    {
+      "name": "stump_post_tall", "label": "Tall stump post", "kind": "tower",
+      "take": { "box": [[-40, -42, -5], [66, 66, 185]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] }
+    },
+    {
+      "name": "stone_small", "label": "Stepping stone, small", "kind": "stone",
+      "take": { "box": [[503, 113, -70], [593, 203, 8]] },
+      "origin": "top",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 3] }
+    },
+    {
+      "name": "stone_medium", "label": "Stepping stone, medium", "kind": "stone",
+      "take": { "box": [[143, 153, -70], [233, 243, 8]] },
+      "origin": "top",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 3] }
+    },
+    {
+      "name": "stone_large", "label": "Stepping stone, large", "kind": "stone",
+      "take": { "box": [[303, 113, -70], [433, 243, 8]] },
+      "origin": "top",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 3] }
+    },
+    {
+      "name": "hedge", "label": "Hedge", "kind": "hedge",
+      "take": { "box": [[-565, -320, -5], [-381, -75, 33]], "rooms": ["room_0_opa"] },
+      "origin": "base",
+      "close_sides": { "material": "grass_skirt", "tile": 140 },
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [4, 4, 2] },
+      "about": "A patch of tall grass, 28 tall: Link wades through it (its walls and top collide only for the camera, so the kit leaves them out), on a floor of tall-grass footsteps. Spot04's has grass skirts on two sides only; the kit adds the others."
+    },
+    {
+      "name": "log_tunnel", "label": "Log tunnel (exit)", "kind": "opening",
+      "take": { "box": [[-2400, 150, -150], [-1395, 450, 140]], "materials": ["log_bark", "tunnel_ring"] },
+      "collision": { "box": [[-2340, 170, -100], [-1395, 420, 140]] },
+      "origin": [-1473, 294, -80], "facing": [1, 0],
+      "opening": { "exit": 3, "min_depth": 350 },
+      "scale": { "min": [1, 0.4, 1], "max": [1, 1, 1] },
+      "about": "The Hyrule Field exit's log; the Lost Woods' (exit 7, on the north rim) is the same model. The origin is on the wall's face at the tunnel's floor, facing out. Its cone runs 857 into the wall and may be shortened (y scale) to the space behind; the exit floor starts 144 in."
+    },
+    {
+      "name": "crawlspace", "label": "Crawlspace", "kind": "opening",
+      "take": { "box": [[-830, -1390, 110], [-740, -1050, 170]], "rooms": ["room_2_opa"], "materials": ["tunnel_mouth", "stump_top"] },
+      "collision": { "box": [[-830, -1390, 110], [-740, -1050, 170]] },
+      "origin": [-785, -1059, 120], "facing": [0, 1],
+      "opening": { "min_depth": 160 },
+      "scale": { "min": [1, 0.5, 1], "max": [1, 3, 1] },
+      "about": "A tunnel 40 wide and 27 high through a ridge, with an arch at each end; its walls are wall type 5 (crawlspace). The origin is the entry arch's foot, facing out; the far arch is 320 back (y scale changes the length)."
+    },
+    {
+      "name": "vines", "label": "Vine patch", "kind": "wall",
+      "take": { "box": [[-548, 930, 55], [-520, 1142, 205]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.6], "max": [3, 1, 4] },
+      "about": "Climbable (wall type 4). Placed on a wall's face."
+    },
+    {
+      "name": "waterfall", "label": "Waterfall", "kind": "wall",
+      "take": { "box": [[374, 491, -17], [425, 570, 279]], "rooms": ["room_0_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.3], "max": [3, 1, 2] },
+      "about": "Translucent; the game scrolls its texture, the kit doesn't yet."
+    }
+  ],
+  "generated": {
+    "about": "Measured from spot04 for the pieces the builder makes along node lines (ADR 0036).",
+    "dirt_path": {
+      "texture": "dirt_strip", "end": "dirt_end", "junction": "dirt_junction", "tint": [155, 140, 52], "opacity": 0.702,
+      "width": 160, "tile_along": 170, "surface": "dirt",
+      "about": "Decals in spot04 (strips u across the path, v along; end caps and junctions 0-1 patches); the builder paints it into the floor instead."
+    },
+    "fence": {
+      "texture": "fence", "height": 40, "tile": 40, "surface": "fence",
+      "about": "A post every 40 is in the texture: whole repeats between nodes put a post on each. Drawn double-sided, collided both ways."
+    },
+    "lattice_fence": { "texture": "fence_post", "height": 120, "tile": 30, "surface": "wall_nograb" },
+    "planks": {
+      "top": "log_side", "under": "log_end", "width": 40, "tile_across": 20, "tile_along": 20, "surface": "planks",
+      "about": "The log walkways between the stump posts: flat decks 40 wide."
+    },
+    "rope": { "texture": "fence", "rows": [0, 4], "about": "Spot04 has no rope texture: the fence's top rail rows." },
+    "grass_skirt": { "texture": "grass_skirt", "height": 28, "tile": 40 }
+  }
+}

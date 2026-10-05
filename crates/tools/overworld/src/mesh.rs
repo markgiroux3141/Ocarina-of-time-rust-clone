@@ -23,6 +23,15 @@ pub struct Object {
     pub surf: Vec<i64>,
     /// Baked lighting per vertex (0-255), empty if unlit.
     pub colors: Vec<[u8; 3]>,
+    /// Kit pieces' own vertex normals (lighting uses them instead of the faces'), and a colour
+    /// multiplied into each vertex's shade. Empty for everything else.
+    pub normals: Vec<P3>,
+    pub tints: Vec<[f64; 3]>,
+    /// Collision only, never drawn (kit pieces' collision meshes): `mat` is unused.
+    pub collision_only: bool,
+    /// Per vertex, how much of a blend material's second texture shows (0-1): the dirt under a
+    /// dirt path. Empty where nothing blends.
+    pub blend: Vec<f64>,
 }
 
 #[derive(Default)]
@@ -30,6 +39,16 @@ pub struct Mesh {
     pub materials: Vec<String>,
     pub surfaces: Vec<String>,
     pub objects: Vec<Object>,
+    /// Scene cameras floors can call for: a crawlspace's line (`CAM_SET_CRAWLSPACE`). A surface
+    /// role `<role>#k` names camera k - 1 (`oot_import::level` puts the normal camera first).
+    pub cameras: Vec<Camera>,
+}
+
+/// A scene camera: its setting ("crawlspace") and its points (x east, y north, z up).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Camera {
+    pub setting: String,
+    pub points: Vec<P3>,
 }
 
 fn id(list: &mut Vec<String>, name: &str) -> usize {
@@ -52,13 +71,7 @@ impl Mesh {
         }
         let m = id(&mut self.materials, mat);
         let s = if surface.is_empty() { -1 } else { id(&mut self.surfaces, surface) as i64 };
-        let oi = match self.objects.iter().position(|o| o.name == obj) {
-            Some(i) => i,
-            None => {
-                self.objects.push(Object { name: obj.to_string(), ..Default::default() });
-                self.objects.len() - 1
-            }
-        };
+        let oi = self.object(obj, false);
         let o = &mut self.objects[oi];
         let mut ids = [0; 3];
         for (k, q) in p.iter().enumerate() {
@@ -75,6 +88,96 @@ impl Mesh {
         o.uvs.push(uv);
         o.mat.push(m);
         o.surf.push(s);
+    }
+
+    pub fn material_id(&mut self, name: &str) -> usize {
+        id(&mut self.materials, name)
+    }
+
+    pub fn surface_id(&mut self, name: &str) -> i64 {
+        id(&mut self.surfaces, name) as i64
+    }
+
+    fn object(&mut self, obj: &str, collision_only: bool) -> usize {
+        match self.objects.iter().position(|o| o.name == obj) {
+            Some(i) => i,
+            None => {
+                self.objects.push(Object { name: obj.to_string(), collision_only, ..Default::default() });
+                self.objects.len() - 1
+            }
+        }
+    }
+
+    /// A drawn triangle with its own vertex normals and a tint per vertex (a kit piece's), not
+    /// collision. Corners weld only where position, normal and tint all agree, so a piece's
+    /// sharp edges stay sharp. Use it only for objects made this way.
+    pub fn tri_lit(&mut self, obj: &str, p: [P3; 3], n: [P3; 3], uv: [UV; 3], mat: &str, tint: [f64; 3]) {
+        let m = id(&mut self.materials, mat);
+        let oi = self.object(obj, false);
+        let o = &mut self.objects[oi];
+        let mut ids = [0; 3];
+        for k in 0..3 {
+            let (q, nk) = (p[k], n[k]);
+            let key = ((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64, (q[2] * 1000.0).round() as i64);
+            let nkey = (nk[0] * 1000.0).round() as i64 * 1_000_003 + (nk[1] * 1000.0).round() as i64 * 1009 + (nk[2] * 1000.0).round() as i64;
+            let tkey = (tint[0] * 255.0).round() as i64 * 65536 + (tint[1] * 255.0).round() as i64 * 256 + (tint[2] * 255.0).round() as i64;
+            let full = (key.0, key.1, key.2 ^ nkey.wrapping_mul(31) ^ tkey.wrapping_mul(7919));
+            ids[k] = *o.index.entry(full).or_insert_with(|| {
+                o.verts.push(q);
+                o.normals.push(nk);
+                o.tints.push(tint);
+                o.verts.len() - 1
+            });
+        }
+        if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
+            return;
+        }
+        o.tris.push(ids);
+        o.uvs.push(uv);
+        o.mat.push(m);
+        o.surf.push(-1);
+    }
+
+    /// A collision triangle that's never drawn, counter-clockwise from the side Link stands on.
+    pub fn col_tri(&mut self, obj: &str, p: [P3; 3], surface: &str) {
+        let s = id(&mut self.surfaces, surface) as i64;
+        let oi = self.object(obj, true);
+        let o = &mut self.objects[oi];
+        let mut ids = [0; 3];
+        for (k, q) in p.iter().enumerate() {
+            let key = ((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64, (q[2] * 1000.0).round() as i64);
+            ids[k] = *o.index.entry(key).or_insert_with(|| {
+                o.verts.push(*q);
+                o.verts.len() - 1
+            });
+        }
+        if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
+            return;
+        }
+        o.tris.push(ids);
+        o.uvs.push([[0.0; 2]; 3]);
+        o.mat.push(usize::MAX);
+        o.surf.push(s);
+    }
+
+    /// The collision vertices the game will make of this (`oot_import::level`): corners of
+    /// collision triangles other than water, merged at whole units as `CollisionBuilder` does.
+    /// At most 8192 fit.
+    pub fn collision_vertices(&self) -> usize {
+        let water = self.surfaces.iter().position(|s| s == "water").map(|i| i as i64);
+        let mut seen = std::collections::HashSet::new();
+        for o in &self.objects {
+            for (t, tri) in o.tris.iter().enumerate() {
+                if o.surf[t] < 0 || Some(o.surf[t]) == water {
+                    continue;
+                }
+                for &v in tri {
+                    let q = o.verts[v];
+                    seen.insert([q[0].round() as i64, q[1].round() as i64, q[2].round() as i64]);
+                }
+            }
+        }
+        seen.len()
     }
 
     /// A quad p0 p1 p2 p3 (counter-clockwise from the front) as two triangles.
@@ -97,10 +200,13 @@ impl Mesh {
                 ([l.dir[0] / n, l.dir[1] / n, l.dir[2] / n], l.color)
             })
             .collect();
-        for o in &mut self.objects {
+        for o in self.objects.iter_mut().filter(|o| !o.collision_only) {
             let vary = if o.name == "water" { None } else { var };
             let mut nrm = vec![[0.0f64; 3]; o.verts.len()];
-            for t in &o.tris {
+            if !o.normals.is_empty() {
+                nrm.copy_from_slice(&o.normals);
+            }
+            for t in o.tris.iter().filter(|_| o.normals.is_empty()) {
                 let (a, b, c) = (o.verts[t[0]], o.verts[t[1]], o.verts[t[2]]);
                 let (e, f) = ([b[0] - a[0], b[1] - a[1], b[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
                 let n = [e[1] * f[2] - e[2] * f[1], e[2] * f[0] - e[0] * f[2], e[0] * f[1] - e[1] * f[0]];
@@ -128,24 +234,31 @@ impl Mesh {
                         let k = 1.0 + v.shade * fbm3([p[0] / v.shade_scale, p[1] / v.shade_scale, p[2] / v.shade_scale], seed.wrapping_add(11));
                         c = c.map(|x| x * k);
                     }
+                    if let Some(t) = o.tints.get(vi) {
+                        c = [c[0] * t[0], c[1] * t[1], c[2] * t[2]];
+                    }
                     c.map(|x| x.round().clamp(0.0, 255.0) as u8)
                 })
                 .collect();
         }
     }
 
-    /// Moves every vertex up by `dz(x, y)`. Call it once the mesh is complete: the vertex index
-    /// that welds new triangles' corners is keyed by the old positions.
+    /// Moves every vertex up by `dz(x, y)`, and keys the vertex index by the new positions, so
+    /// triangles added after (props, openings' walls) weld to them.
     pub fn displace(&mut self, dz: impl Fn([f64; 2]) -> f64) {
         for o in &mut self.objects {
             for v in &mut o.verts {
                 v[2] += dz([v[0], v[1]]);
             }
+            if o.normals.is_empty() {
+                o.index = o.verts.iter().enumerate().map(|(i, q)| (((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64, (q[2] * 1000.0).round() as i64), i)).collect();
+            }
         }
     }
 
+    /// Drawn triangles (not collision-only ones).
     pub fn triangles(&self) -> usize {
-        self.objects.iter().map(|o| o.tris.len()).sum()
+        self.objects.iter().filter(|o| !o.collision_only).map(|o| o.tris.len()).sum()
     }
 
     /// `tex(role)` gives a material role's texture name and how it's drawn.
@@ -155,19 +268,35 @@ impl Mesh {
             "axes": "x east, y north, z up",
             "materials": self.materials.iter().map(|m| {
                 let (name, info) = tex(m);
-                json!({"name": m, "texture": name, "file": format!("textures/{}", info.file), "wrap_u": info.wrap_u,
-                       "wrap_v": info.wrap_v, "alpha": info.alpha, "opacity": info.opacity, "cull": info.cull})
+                let mut j = json!({"name": m, "texture": name, "file": format!("textures/{}", info.file), "wrap_u": info.wrap_u,
+                       "wrap_v": info.wrap_v, "alpha": info.alpha, "opacity": info.opacity, "cull": info.cull});
+                if info.decal {
+                    j["decal"] = true.into();
+                }
+                j
             }).collect::<Vec<_>>(),
             "surfaces": self.surfaces,
-            "objects": self.objects.iter().map(|o| json!({
-                "name": o.name,
-                "verts": o.verts.iter().flat_map(|v| v.iter().map(|&x| r(x))).collect::<Vec<_>>(),
-                "tris": o.tris.iter().flatten().collect::<Vec<_>>(),
-                "uvs": o.uvs.iter().flatten().flat_map(|uv| uv.iter().map(|&x| (x * 1e5).round() / 1e5)).collect::<Vec<_>>(),
-                "colors": o.colors.iter().flatten().collect::<Vec<_>>(),
-                "material": o.mat,
-                "surface": o.surf,
-            })).collect::<Vec<_>>(),
+            "cameras": self.cameras.iter().map(|c| json!({"setting": c.setting, "points": c.points.iter().map(|p| p.map(r)).collect::<Vec<_>>()})).collect::<Vec<_>>(),
+            // a collision-only object has no material (-1) and isn't drawn
+            "objects": self.objects.iter().map(|o| {
+                let mut j = json!({
+                    "name": o.name,
+                    "verts": o.verts.iter().flat_map(|v| v.iter().map(|&x| r(x))).collect::<Vec<_>>(),
+                    "tris": o.tris.iter().flatten().collect::<Vec<_>>(),
+                    "uvs": o.uvs.iter().flatten().flat_map(|uv| uv.iter().map(|&x| (x * 1e5).round() / 1e5)).collect::<Vec<_>>(),
+                    "colors": o.colors.iter().flatten().collect::<Vec<_>>(),
+                    "material": o.mat.iter().map(|&m| if o.collision_only { -1 } else { m as i64 }).collect::<Vec<_>>(),
+                    "surface": o.surf,
+                });
+                if o.collision_only {
+                    j["render"] = false.into();
+                }
+                // blend weights ride in the vertex colours' alpha (0-255)
+                if !o.blend.is_empty() {
+                    j["alpha"] = o.blend.iter().map(|w| (w * 255.0).round().clamp(0.0, 255.0) as u8).collect::<Vec<_>>().into();
+                }
+                j
+            }).collect::<Vec<_>>(),
         })
     }
 
@@ -186,7 +315,7 @@ impl Mesh {
         }).collect();
         let mut obj = format!("# overworld level\nmtllib {mtl_name}\n");
         let (mut vbase, mut tbase) = (1, 1);
-        for o in &self.objects {
+        for o in self.objects.iter().filter(|o| !o.collision_only) {
             let _ = writeln!(obj, "o {}", o.name);
             for (i, v) in o.verts.iter().enumerate() {
                 // colours twice: `v x y z r g b` for most tools, `#vcolor` (0-255) for the GE64
