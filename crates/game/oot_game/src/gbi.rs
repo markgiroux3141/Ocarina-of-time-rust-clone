@@ -40,8 +40,10 @@ pub mod cc_ab {
 }
 /// The colour c slot.
 pub mod cc_c {
+    pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
     pub const PRIMITIVE: u32 = 3;
+    pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
     pub const ZERO: u32 = 31;
 }
@@ -50,6 +52,7 @@ pub mod cc_d {
     pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
     pub const PRIMITIVE: u32 = 3;
+    pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
     pub const ONE: u32 = 6;
     pub const ZERO: u32 = 7;
@@ -59,6 +62,7 @@ pub mod ac {
     pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
     pub const PRIMITIVE: u32 = 3;
+    pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
     pub const ONE: u32 = 6;
     pub const ZERO: u32 = 7;
@@ -212,7 +216,69 @@ impl Dl {
     pub fn alpha_compare_none(&mut self) {
         self.othermode_l(0, 2, 0);
     }
+    /// `gDPSetRenderMode(c1, c2)`: `G_SETOTHERMODE_L` from `G_MDSFT_RENDERMODE` (3), 29 bits.
+    pub fn render_mode(&mut self, c1: u32, c2: u32) {
+        self.othermode_l(3, 29, c1 | c2);
+    }
+    /// `gDPSetCycleType(type)`: `G_SETOTHERMODE_H` from `G_MDSFT_CYCLETYPE` (20), 2 bits.
+    pub fn cycle_type(&mut self, ty: u32) {
+        self.othermode_h(20, 2, ty);
+    }
+    /// `gDPSetColorDither(mode)`: `G_SETOTHERMODE_H` from `G_MDSFT_RGBDITHER` (6), 2 bits.
+    pub fn color_dither(&mut self, mode: u32) {
+        self.othermode_h(6, 2, mode);
+    }
+    /// `gSPSetGeometryMode(mode)` (F3DEX2: `gSPGeometryMode(0, mode)`).
+    pub fn set_geometry_mode(&mut self, mode: u32) {
+        self.0.push((0xD9FF_FFFF, mode));
+    }
+    /// `gSPClearGeometryMode(mode)` (F3DEX2: `gSPGeometryMode(mode, 0)`).
+    pub fn clear_geometry_mode(&mut self, mode: u32) {
+        self.0.push((0xD900_0000 | (!mode & 0x00FF_FFFF), 0));
+    }
+    /// `gSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, on)`.
+    pub fn texture_on(&mut self, on: bool) {
+        self.0.push((0xD700_0000 | on as u32 * 2, 0xFFFF_FFFF));
+    }
+    /// `gSP2Triangles(v00, v01, v02, flag0, v10, v11, v12, flag1)` (F3DEX2: `G_TRI2`, indices
+    /// times 2).
+    pub fn tri2(&mut self, a: [u32; 3], b: [u32; 3]) {
+        self.0.push((0x0600_0000 | (a[0] * 2) << 16 | (a[1] * 2) << 8 | a[2] * 2, (b[0] * 2) << 16 | (b[1] * 2) << 8 | b[2] * 2));
+    }
 }
+
+// Render modes (`gbi.h`): `G_RM_*` for `gDPSetRenderMode`, first cycle then second.
+/// `GBL_c1(G_BL_CLR_FOG, G_BL_A_SHADE, G_BL_CLR_IN, G_BL_1MA)`.
+pub const G_RM_FOG_SHADE_A: u32 = 0xC800_0000;
+/// `GBL_c1(G_BL_CLR_IN, G_BL_0, G_BL_CLR_IN, G_BL_1)`.
+pub const G_RM_PASS: u32 = 0x0C08_0000;
+/// `Z_CMP | IM_RD | CVG_DST_SAVE | FORCE_BL | ZMODE_XLU | GBL_c2(G_BL_CLR_IN, G_BL_A_IN,
+/// G_BL_CLR_MEM, G_BL_1MA)`.
+pub const G_RM_ZB_CLD_SURF2: u32 = 0x0010_4B50;
+/// `Z_CMP | IM_RD | CVG_DST_SAVE | FORCE_BL | ZMODE_DEC | GBL_c2(G_BL_CLR_IN, G_BL_A_IN,
+/// G_BL_CLR_MEM, G_BL_1MA)`.
+pub const G_RM_ZB_OVL_SURF2: u32 = 0x0010_4F50;
+/// `AA_EN | Z_CMP | IM_RD | CVG_DST_WRAP | CLR_ON_CVG | FORCE_BL | ZMODE_XLU | GBL_c2(G_BL_CLR_IN,
+/// G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA)`.
+pub const G_RM_AA_ZB_XLU_SURF2: u32 = 0x0010_49D8;
+/// As `G_RM_AA_ZB_XLU_SURF2` with `ZMODE_DEC`.
+pub const G_RM_AA_ZB_XLU_DECAL2: u32 = 0x0010_4DD8;
+
+// Geometry mode bits (F3DEX2).
+pub const G_ZBUFFER: u32 = 0x0000_0001;
+pub const G_SHADE: u32 = 0x0000_0004;
+pub const G_CULL_BACK: u32 = 0x0000_0400;
+pub const G_CULL_BOTH: u32 = 0x0000_0600;
+pub const G_FOG: u32 = 0x0001_0000;
+pub const G_LIGHTING: u32 = 0x0002_0000;
+pub const G_TEXTURE_GEN: u32 = 0x0004_0000;
+pub const G_TEXTURE_GEN_LINEAR: u32 = 0x0008_0000;
+pub const G_SHADING_SMOOTH: u32 = 0x0020_0000;
+
+/// `G_CYC_1CYCLE`, `G_CYC_2CYCLE`; `G_CD_DISABLE`.
+pub const G_CYC_1CYCLE: u32 = 0;
+pub const G_CYC_2CYCLE: u32 = 1 << 20;
+pub const G_CD_DISABLE: u32 = 3 << 6;
 
 /// `CALC_DXT(width, b_txl)`: `TXL2WORDS` is `MAX(1, width * b_txl / 8)`, `G_TX_DXT_FRAC` 11.
 fn calc_dxt(width: u32, b_txl: u32) -> u32 {
@@ -345,6 +411,74 @@ pub mod setup_dl {
         // G_AD_NOISE (2 << 4), G_CD_NOISE (2 << 6), G_TC_FILT, G_TF_BILERP, G_TP_PERSP.
         d.0.push((0xEF00_0000 | 0x20 | 0x80 | (6 << 9) | (2 << 12) | (1 << 19), 0x0050_4B50));
         d.0.push((0xD900_0000, 0x0000_0001 | 0x0000_0004 | 0x0000_0400 | 0x0020_0000));
+        d
+    }
+
+    /// `G_CC_PASS2`: `0, 0, 0, COMBINED, 0, 0, 0, COMBINED`.
+    pub const PASS2: [u32; 8] = [cc_ab::ZERO, cc_ab::ZERO, cc_c::ZERO, cc_d::COMBINED, ac::ZERO, ac::ZERO, ac::ZERO, ac::COMBINED];
+    /// `PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, PRIMITIVE, 0, TEXEL0, 0`: a texture tinted
+    /// from the env colour to the prim one.
+    pub const PRIM_ENV_TEXEL0: [u32; 8] = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::TEXEL0, cc_d::ENVIRONMENT, ac::PRIMITIVE, ac::ZERO, ac::TEXEL0, ac::ZERO];
+
+    /// `SETUPDL_0`: `gsSPTexture(.., G_ON)`, `gsDPSetCombineLERP(PRIMITIVE, ENVIRONMENT, TEXEL0,
+    /// ENVIRONMENT, PRIMITIVE, 0, TEXEL0, 0, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED)`,
+    /// `gsDPSetOtherMode(G_AD_NOISE | G_CD_NOISE | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE |
+    /// G_TL_TILE | G_TD_CLAMP | G_TP_PERSP | G_CYC_2CYCLE | G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL |
+    /// G_RM_FOG_SHADE_A | G_RM_ZB_CLD_SURF2)`, `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE |
+    /// G_CULL_BACK | G_FOG | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_0() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        d.combine_lerp(PRIM_ENV_TEXEL0, PASS2);
+        d.0.push((0xEF00_0000 | 0x20 | 0x80 | (6 << 9) | (2 << 12) | (1 << 19) | G_CYC_2CYCLE, G_RM_FOG_SHADE_A | G_RM_ZB_CLD_SURF2));
+        d.0.push((0xD900_0000, G_ZBUFFER | G_SHADE | G_CULL_BACK | G_FOG | G_SHADING_SMOOTH));
+        d
+    }
+
+    /// `SETUPDL_38`: `gsSPTexture(.., G_OFF)`, `gsDPSetCombineMode(G_CC_SHADE, G_CC_SHADE)`,
+    /// `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP | G_CYC_1CYCLE |
+    /// G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL | G_RM_AA_ZB_XLU_SURF | G_RM_AA_ZB_XLU_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_38() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(false);
+        // G_CC_SHADE: 0, 0, 0, SHADE, 0, 0, 0, SHADE.
+        let shade = [cc_ab::ZERO, cc_ab::ZERO, cc_c::ZERO, cc_d::SHADE, ac::ZERO, ac::ZERO, ac::ZERO, ac::SHADE];
+        d.combine_lerp(shade, shade);
+        // G_RM_AA_ZB_XLU_SURF (its first-cycle blender GBL_c1(G_BL_CLR_IN, G_BL_A_IN,
+        // G_BL_CLR_MEM, G_BL_1MA) = 0x00400000) | G_RM_AA_ZB_XLU_SURF2.
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0040_0000 | G_RM_AA_ZB_XLU_SURF2));
+        d.0.push((0xD900_0000, G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH));
+        d
+    }
+
+    /// `SETUPDL_44`: `gsSPTexture(.., G_ON)`, `gsDPSetCombineMode(G_CC_MODULATEIA_PRIM,
+    /// G_CC_PASS2)`, `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP |
+    /// G_CYC_2CYCLE | G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL | G_RM_FOG_SHADE_A | G_RM_ZB_OVL_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_CULL_BACK | G_FOG | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_44() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        d.combine_lerp(MODULATEIA_PRIM, PASS2);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP | G_CYC_2CYCLE, G_RM_FOG_SHADE_A | G_RM_ZB_OVL_SURF2));
+        d.0.push((0xD900_0000, G_ZBUFFER | G_SHADE | G_CULL_BACK | G_FOG | G_SHADING_SMOOTH));
+        d
+    }
+
+    /// `SETUPDL_60`: `gsSPTexture(.., G_ON)`, `PRIM_ENV_TEXEL0` in both cycles,
+    /// `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP | G_CYC_1CYCLE |
+    /// G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL | G_RM_ZB_CLD_SURF | G_RM_ZB_CLD_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_CULL_BACK | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_60() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        d.combine_lerp(PRIM_ENV_TEXEL0, PRIM_ENV_TEXEL0);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0050_4B50));
+        d.0.push((0xD900_0000, G_ZBUFFER | G_SHADE | G_CULL_BACK | G_SHADING_SMOOTH));
         d
     }
 

@@ -26,12 +26,12 @@
 //! `PREG(75)` and `PREG(76)` are 0 (only the debug register editor sets them), so the
 //! at-calculations skip their slope adjustment and take the fov-based off-ground branch.
 //!
-//! A mode whose function isn't ported (BATTLE's `Camera_Battle1`, TALK's `Camera_KeepOn3` and
-//! `Camera_KeepOn0`, JUMP, CLIMB, HANG...) runs its setting's NORMAL function if that one is
+//! A mode whose function isn't ported runs its setting's NORMAL function if that one is
 //! ported, else `Camera_Normal1` on NORMAL0's NORMAL data; `camera->mode` still changes as in
 //! the game. Not modelled: water and hot-room checks, quakes, the low-health wiggle, the debug
-//! camera, `func_80043F94` (scenes with the skybox disabled) and the interface alpha. The
-//! camera's sounds (`CamSfx`) are played by the play state.
+//! camera and the interface alpha; `func_80043F94` (the bg check of scenes with the skybox
+//! disabled) only for `Camera_Battle1` (the other modes that call it use `Camera_BGCheckInfo`
+//! in its place). The camera's sounds (`CamSfx`) are played by the play state.
 
 use eng_collision::bgcheck::{self, CollisionContext, PolyId};
 use eng_input::pad::{BTN_CLEFT, BTN_CRIGHT, Input};
@@ -208,6 +208,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_JUMP1",
     "CAM_FUNC_JUMP2",
     "CAM_FUNC_UNIQ1",
+    "CAM_FUNC_BATT1",
 ];
 
 /// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
@@ -388,6 +389,14 @@ const R_CAM_PITCH_FLOOR_CHECK_NEAR_WEIGHT: usize = 20;
 const R_CAM_AT_LERP_STEP_SCALE_MIN: usize = 41;
 const R_CAM_AT_LERP_STEP_SCALE_FAC: usize = 42;
 const R_CAM_YOFFSET_NORM: usize = 46;
+const R_CAM_BATTLE1_ROLL_TARGET_BASE: usize = 36;
+const R_CAM_BATTLE1_ROLL_STEP_SCALE: usize = 37;
+const R_CAM_BATTLE1_XYZ_OFFSET_UPDATE_RATE_TARGET: usize = 40;
+/// `BATTLE1_FLAG_0`, `BATTLE1_FLAG_1` (`camera.h`).
+const BATTLE1_FLAG_0: i16 = 1 << 0;
+const BATTLE1_FLAG_1: i16 = 1 << 1;
+/// `PLAYER_STATE1_CHARGING_SPIN_ATTACK`.
+const PLAYER_STATE1_CHARGING_SPIN_ATTACK: u32 = 1 << 12;
 
 // ---------------------------------------------------------------------------------------------
 // Maths (z_olib.c, math64.c, z_camera.c helpers)
@@ -921,6 +930,39 @@ fn camera_xz_angle(to: Vec3, from: Vec3) -> i16 {
     cam_deg_to_binang(rad_to_deg(f_atan2f(from.x - to.x, from.z - to.z)))
 }
 
+/// `Battle1ReadOnlyData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Batt1Ro {
+    y_offset: f32,
+    distance: f32,
+    swing_yaw_initial: f32,
+    swing_yaw_final: f32,
+    swing_pitch_initial: f32,
+    swing_pitch_final: f32,
+    swing_pitch_adj: f32,
+    fov: f32,
+    at_lerp_scale_on_ground: f32,
+    y_offset_off_ground: f32,
+    at_lerp_scale_off_ground: f32,
+    interface_field: i16,
+}
+
+/// `Battle1ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Batt1Rw {
+    initial_eye_to_at_dist: f32,
+    roll: f32,
+    y_pos_offset: f32,
+    target: Option<ActorHandle>,
+    unk_10: f32,
+    /// Unused.
+    unk_14: i16,
+    initial_eye_to_at_yaw: i16,
+    initial_eye_to_at_pitch: i16,
+    anim_timer: i16,
+    charge_timer: i16,
+}
+
 /// `KeepOn1ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default)]
 struct Keep1Rw {
@@ -1140,6 +1182,12 @@ pub struct CamFrame<'a> {
     pub main_player_pos_rot: (Vec3, i16),
     /// `player->bodyPartsPos[PLAYER_BODYPART_WAIST]` (`Camera_Unique1`).
     pub player_waist: Vec3,
+    /// `player->meleeWeaponState != 0` and `gSaveContext.save.info.playerData.health`
+    /// (`Camera_Battle1`'s fov).
+    pub player_melee_weapon_active: bool,
+    pub health: i16,
+    /// `play->envCtx.skyboxDisabled` (the room's `SCENE_CMD_SKYBOX_DISABLES`).
+    pub skybox_disabled: bool,
 }
 
 /// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
@@ -1346,6 +1394,8 @@ pub struct GameCamera {
     para1_rw: Para1Rw,
     keep1_ro: Keep1Ro,
     keep1_rw: Keep1Rw,
+    batt1_ro: Batt1Ro,
+    batt1_rw: Batt1Rw,
     keep3_ro: Keep3Ro,
     keep3_rw: Keep3Rw,
     keep0: Keep0,
@@ -1461,6 +1511,8 @@ impl GameCamera {
             para1_rw: Para1Rw::default(),
             keep1_ro: Keep1Ro::default(),
             keep1_rw: Keep1Rw::default(),
+            batt1_ro: Batt1Ro::default(),
+            batt1_rw: Batt1Rw::default(),
             keep3_ro: Keep3Ro::default(),
             keep3_rw: Keep3Rw::default(),
             keep0: Keep0::default(),
@@ -3071,6 +3123,7 @@ impl GameCamera {
                 Some("CAM_FUNC_JUMP1") => self.jump1(d, col, p),
                 Some("CAM_FUNC_JUMP2") => self.jump2(d, col, p),
                 Some("CAM_FUNC_UNIQ1") => self.unique1(d, col, p, f.player_waist),
+                Some("CAM_FUNC_BATT1") => self.battle1(d, col, p, f),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else if self.has_player {
@@ -3228,6 +3281,60 @@ impl GameCamera {
         to.norm = to.poly.map(|id| col.poly_normal(id)).unwrap_or(Vec3::Y);
         to.pos = to.norm + new_pos;
         BGCHECK_SCENE + 1
+    }
+
+    /// `func_80043F94`: `Camera_BGCheckInfo` for the scenes with the skybox disabled, where a
+    /// wall the line meets (a poly no flatter than a floor's 0.5, no steeper a ceiling's -0.8)
+    /// sets the point down where the line crosses Player's floor's plane, if it does, else just
+    /// short of the old point. Returns 0 when nothing is between `from` and `to.pos`.
+    fn func_80043f94(&self, col: &CollisionContext, from: Vec3, to: &mut ColChk) -> i32 {
+        let mut from_to_geo = diff_to_sph_geo(from, to.pos);
+        from_to_geo.r += 8.0;
+        let to_pos = sph_geo_add(from, from_to_geo);
+        let bcc = bgcheck::CHECK_WALL | bgcheck::CHECK_FLOOR | bgcheck::CHECK_CEILING | bgcheck::CHECK_ONE_FACE | bgcheck::CHECK_DYNA;
+        let mut to_new_pos;
+        match col.check_line(bgcheck::IGNORE_CAMERA, bgcheck::IGNORE_NONE, from, to_pos, 1.0, bcc) {
+            Some((hit, poly)) => {
+                to_new_pos = hit;
+                to.poly = Some(poly);
+            }
+            None => {
+                let n = -dist_normalize(from, to.pos);
+                to.norm = n;
+                to_new_pos = to.pos;
+                to_new_pos.y += 5.0;
+                // BgCheck_CameraRaycastDown2.
+                let (floor_y, floor_poly) = col.raycast_down(to_new_pos, bgcheck::IGNORE_CAMERA, bgcheck::DOWN_CHECK_WALLS | bgcheck::DOWN_CHECK_FLOORS, 1.0);
+                if to.pos.y - floor_y > 5.0 || floor_poly.is_none() {
+                    // Not on the ground or below it.
+                    to.pos += n;
+                    return 0;
+                }
+                // Touching the ground: 1 above it.
+                to.poly = floor_poly;
+                to_new_pos.y = floor_y + 1.0;
+            }
+        }
+        to.norm = to.poly.map(|id| col.poly_normal(id)).unwrap_or(Vec3::Y);
+        if to.norm.y > 0.5 || to.norm.y < -0.8 {
+            to.pos = to.norm + to_new_pos;
+        } else if let Some(fp) = self.player_floor_poly {
+            let floor = col.poly(fp);
+            let n = col.poly_normal(fp);
+            let (crosses, at) = eng_collision::math3d::line_seg_vs_plane(n.x, n.y, n.z, floor.dist as f32, from, to_pos, true);
+            if crosses {
+                // The line from -> to touches the poly Player is on.
+                to.norm = n;
+                to.poly = Some(fp);
+                to.pos = to.norm + at;
+            } else {
+                let n = -dist_normalize(from, to.pos);
+                to.norm = n;
+                to.pos += n;
+                return 0;
+            }
+        }
+        1
     }
 
     /// `Camera_BGCheck`.
@@ -4120,6 +4227,193 @@ impl GameCamera {
         self.fov = lerp_ceil_f(ro.unk_20, self.fov, self.fov_update_rate, 1.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
         self.at_lerp_step_scale = self.clamp_lerp_scale(d, if sp80 { ro.unk_2c } else { ro.unk_24 });
+    }
+
+    /// `Camera_Battle1` (BATTLE, `CAM_MODE_Z_TARGET_UNFRIENDLY`): locked on to an enemy, the
+    /// camera frames Player and the target from behind him, swinging round to keep the enemy
+    /// within `swingYaw` of the view (more the closer it is), its pitch between the swing
+    /// pitches by the distance, leaning (`roll`) as Player moves and narrowing the view as the
+    /// enemy comes near (and more with the sword out or with a heart or less). Charging a spin
+    /// attack holds it, then backs it off to 250. With no target (or a killed one) it asks for
+    /// Z_PARALLEL.
+    fn battle1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, f: &CamFrame) {
+        let mut skip_eye_at_calc = false;
+        let mut player_height = p.height();
+        let reload = matches!(self.anim_state, 0 | 10 | 20);
+        if reload {
+            let v = |i: usize| d.value(self.cur(), i) as f32;
+            let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
+            self.batt1_ro = Batt1Ro {
+                y_offset: v(0) * 0.01 * player_height * y_normal,
+                distance: v(1),
+                swing_yaw_initial: v(2),
+                swing_yaw_final: v(3),
+                swing_pitch_initial: v(4),
+                swing_pitch_final: v(5),
+                swing_pitch_adj: v(6) * 0.01,
+                fov: v(7),
+                at_lerp_scale_on_ground: v(8) * 0.01,
+                interface_field: d.value(self.cur(), 9),
+                y_offset_off_ground: v(10) * 0.01 * player_height * y_normal,
+                at_lerp_scale_off_ground: v(11) * 0.01,
+            };
+            self.batt1_rw.charge_timer = 40;
+            self.batt1_rw.unk_10 = d.oreg_s(12);
+        }
+        let ro = self.batt1_ro;
+        let mut distance = ro.distance;
+        let mut sp7c = ro.swing_pitch_initial;
+        let mut sp78 = ro.swing_pitch_final;
+        let mut fov = ro.fov;
+        let rw = &mut self.batt1_rw;
+        if p.state1 & PLAYER_STATE1_CHARGING_SPIN_ATTACK != 0 {
+            // Charging the sword.
+            rw.unk_10 = lerp_ceil_f(d.oreg_s(12) * (1.0 - 0.5), rw.unk_10, d.oreg_s(25), 0.1);
+            self.xz_offset_update_rate = lerp_ceil_f(0.2, self.xz_offset_update_rate, d.oreg_s(25), 0.1);
+            self.y_offset_update_rate = lerp_ceil_f(0.2, self.y_offset_update_rate, d.oreg_s(25), 0.1);
+            if rw.charge_timer > -20 {
+                rw.charge_timer -= 1;
+            } else {
+                distance = 250.0;
+                sp7c = 50.0;
+                sp78 = 40.0;
+                fov = 60.0;
+            }
+        } else if rw.charge_timer < 0 {
+            distance = 250.0;
+            sp7c = 50.0;
+            sp78 = 40.0;
+            fov = 60.0;
+            rw.charge_timer += 1;
+        } else {
+            rw.charge_timer = 40;
+            rw.unk_10 = lerp_ceil_f(d.oreg_s(12), rw.unk_10, d.oreg_s(25), 0.1);
+            let target = d.oreg_s(R_CAM_BATTLE1_XYZ_OFFSET_UPDATE_RATE_TARGET);
+            self.xz_offset_update_rate = lerp_ceil_f(target, self.xz_offset_update_rate, d.oreg_s(25) * self.speed_ratio, 0.1);
+            self.y_offset_update_rate = lerp_ceil_f(target, self.y_offset_update_rate, d.oreg_s(26) * self.speed_ratio, 0.1);
+        }
+        self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.fov_update_rate, self.speed_ratio * 0.05, 0.1);
+        player_height += ro.y_offset;
+        let at_to_eye_dir = diff_to_sph_geo(self.at, self.eye);
+        let at_to_eye_next_dir = diff_to_sph_geo(self.at, self.eye_next);
+        let Some(focus) = f.target_focus.filter(|_| self.target.is_some()) else {
+            // "camera: warning: battle: target is not valid, change parallel".
+            self.target = None;
+            self.change_mode(d, CAM_MODE_Z_PARALLEL);
+            return;
+        };
+        self.interface_flags = ro.interface_field;
+        if reload {
+            let rw = &mut self.batt1_rw;
+            rw.unk_14 = 0;
+            rw.roll = 0.0;
+            rw.target = self.target;
+            self.anim_state += 1;
+            // (The debug ROM's check that the target's id is above 0: never Player.)
+            rw.anim_timer = d.oreg(R_CAM_DEFAULT_ANIM_TIME) + d.oreg(24);
+            rw.initial_eye_to_at_yaw = at_to_eye_dir.yaw;
+            rw.initial_eye_to_at_pitch = at_to_eye_dir.pitch;
+            rw.initial_eye_to_at_dist = at_to_eye_dir.r;
+            rw.y_pos_offset = self.player_pos.y - self.player_pos_delta.y;
+        }
+        let active = self.status == CAM_STAT_ACTIVE;
+        if active {
+            self.update_direction = true;
+            self.input_dir = [at_to_eye_dir.pitch.wrapping_neg(), at_to_eye_dir.yaw.wrapping_sub(0x7FFF), 0];
+        }
+        let is_off_ground = if self.player_grounded(p) {
+            self.batt1_rw.y_pos_offset = self.player_pos.y;
+            false
+        } else {
+            true
+        };
+        if self.batt1_rw.anim_timer == 0 {
+            self.at_lerp_step_scale = self.clamp_lerp_scale(d, if is_off_ground { ro.at_lerp_scale_off_ground } else { ro.at_lerp_scale_on_ground });
+        }
+        self.target_pos = focus;
+        if self.batt1_rw.target != self.target {
+            // "camera: battle: change target".
+            self.anim_state = 0;
+            return;
+        }
+        // CAM_LOCKON_AT_FLAG_CALC_SLOPE_Y_ADJ (1) is passed, but PREG(76) is 0, so no slope
+        // adjustment.
+        let (y_off, flags) = if is_off_ground { (ro.y_offset_off_ground, 0x80 | 1 | ro.interface_field) } else { (ro.y_offset, 1 | ro.interface_field) };
+        let mut y = self.batt1_rw.y_pos_offset;
+        let mut player_to_target_dir = self.calc_at_for_lock_on(d, p, self.target_pos, y_off, distance, &mut y, flags);
+        self.batt1_rw.y_pos_offset = y;
+        let mut tmp_ang2 = player_to_target_dir.yaw;
+        let player_head = self.player_pos + Vec3::Y * player_height;
+        player_to_target_dir = diff_to_sph_geo(player_head, self.target_pos);
+        let dist_ratio = if player_to_target_dir.r > distance { 1.0 } else { player_to_target_dir.r / distance };
+        let target_pos = self.target_pos;
+        let mut at_to_target_dir = diff_to_sph_geo(self.at, target_pos);
+        at_to_target_dir.r = distance - ((if at_to_target_dir.r <= distance { at_to_target_dir.r } else { distance }) * 0.5);
+        let swing_angle = ro.swing_yaw_initial + ((ro.swing_yaw_final - ro.swing_yaw_initial) * (1.1 - dist_ratio));
+        let spf8 = swing_angle + d.oreg(13) as f32;
+        self.dist = lerp_ceil_f(distance, self.dist, d.oreg_s(11), 2.0);
+        let mut spb4 = VecSphGeo { r: self.dist, yaw: at_to_eye_next_dir.yaw, pitch: 0 };
+        let mut tmp_ang1 = at_to_target_dir.yaw.wrapping_sub(at_to_eye_next_dir.yaw.wrapping_sub(0x7FFF));
+        let rw = &mut self.batt1_rw;
+        if rw.anim_timer != 0 {
+            if rw.anim_timer >= d.oreg(24) {
+                let sp86 = rw.anim_timer - d.oreg(24);
+                player_to_target_dir = diff_to_sph_geo(self.at, self.eye);
+                player_to_target_dir.yaw = tmp_ang2.wrapping_sub(0x7FFF);
+                let var2 = 1.0 / d.oreg(R_CAM_DEFAULT_ANIM_TIME) as f32;
+                let var3 = (rw.initial_eye_to_at_dist - player_to_target_dir.r) * var2;
+                tmp_ang1 = (rw.initial_eye_to_at_yaw.wrapping_sub(player_to_target_dir.yaw) as f32 * var2) as i32 as i16;
+                tmp_ang2 = (rw.initial_eye_to_at_pitch.wrapping_sub(player_to_target_dir.pitch) as f32 * var2) as i32 as i16;
+                spb4.r = lerp_ceil_f(player_to_target_dir.r + (var3 * sp86 as f32), at_to_eye_dir.r, d.oreg_s(28), 1.0);
+                spb4.yaw = lerp_ceil_s((player_to_target_dir.yaw as i32 + tmp_ang1 as i32 * sp86 as i32) as i16, at_to_eye_dir.yaw, d.oreg_s(28), 0xA);
+                spb4.pitch = lerp_ceil_s((player_to_target_dir.pitch as i32 + tmp_ang2 as i32 * sp86 as i32) as i16, at_to_eye_dir.pitch, d.oreg_s(28), 0xA);
+            } else {
+                skip_eye_at_calc = true;
+            }
+            rw.anim_timer -= 1;
+        } else if (tmp_ang1 as i32).abs() > cam_deg_to_binang(swing_angle) as i32 {
+            let spfc = cam_binang_to_deg(tmp_ang1);
+            let temp_f2_2 = swing_angle + (spf8 - swing_angle) * (clamp_max_dist(at_to_target_dir.r, spb4.r) / spb4.r);
+            let temp_f12_2 = ((temp_f2_2 * temp_f2_2) - 2.0) / (temp_f2_2 - 360.0);
+            let var2 = (temp_f12_2 * spfc) + (2.0 - (360.0 * temp_f12_2));
+            let temp_f14 = spfc * spfc / var2;
+            tmp_ang2 = if tmp_ang1 >= 0 { cam_deg_to_binang(temp_f14) } else { cam_deg_to_binang(temp_f14).wrapping_neg() };
+            spb4.yaw = at_to_eye_next_dir.yaw.wrapping_sub(0x7FFF).wrapping_add(tmp_ang2).wrapping_sub(0x7FFF);
+        } else {
+            let spfc = (1.0 - self.speed_ratio) * 0.05;
+            tmp_ang2 = if tmp_ang1 >= 0 { cam_deg_to_binang(swing_angle) } else { cam_deg_to_binang(swing_angle).wrapping_neg() };
+            spb4.yaw = at_to_eye_next_dir.yaw.wrapping_sub(((tmp_ang2 as i32 - tmp_ang1 as i32) as f32 * spfc) as i32 as i16);
+        }
+
+        if !skip_eye_at_calc {
+            let var3 = at_to_target_dir.pitch as f32 * ro.swing_pitch_adj;
+            // F32_LERPIMP(sp7C, sp78, distRatio).
+            let var2 = sp7c + (sp78 - sp7c) * dist_ratio;
+            tmp_ang1 = cam_deg_to_binang(var2).wrapping_sub((player_to_target_dir.pitch as f32 * ((1.0 - 0.5) + dist_ratio * (1.0 - 0.5))) as i32 as i16);
+            tmp_ang1 = tmp_ang1.wrapping_add(var3 as i32 as i16);
+            tmp_ang1 = tmp_ang1.clamp(-0x2AA8, 0x2AA8);
+            spb4.pitch = lerp_ceil_s(tmp_ang1, at_to_eye_next_dir.pitch, self.batt1_rw.unk_10, 0xA);
+            self.eye_next = sph_geo_add(self.at, spb4);
+            let mut c = ColChk { pos: self.eye_next, ..Default::default() };
+            if active {
+                if !f.skybox_disabled || ro.interface_field & BATTLE1_FLAG_0 != 0 {
+                    Self::bg_check_info(col, self.at, &mut c);
+                } else if ro.interface_field & BATTLE1_FLAG_1 != 0 {
+                    self.func_80043f94(col, self.at, &mut c);
+                } else {
+                    c.pos -= dist_normalize(self.at, c.pos);
+                }
+                self.eye = c.pos;
+            } else {
+                self.eye = self.eye_next;
+            }
+        }
+        let rw = &mut self.batt1_rw;
+        rw.roll += ((d.oreg(R_CAM_BATTLE1_ROLL_TARGET_BASE) as f32 * self.speed_ratio * (1.0 - dist_ratio)) - rw.roll) * d.oreg_s(R_CAM_BATTLE1_ROLL_STEP_SCALE);
+        self.roll = cam_deg_to_binang(rw.roll);
+        let scale = if f.player_melee_weapon_active || f.health <= 0x10 { 0.8 } else { 1.0 };
+        self.fov = lerp_ceil_f(scale * (fov - ((fov * 0.05) * dist_ratio)), self.fov, self.fov_update_rate, 1.0);
+        // @bug (game): no return value (unused).
     }
 
     /// `Camera_KeepOn3` (TALK in the normal settings): over `initTimer` frames the camera

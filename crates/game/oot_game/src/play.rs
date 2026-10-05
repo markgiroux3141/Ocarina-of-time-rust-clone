@@ -427,6 +427,18 @@ pub struct PlayState {
     cur: Option<RenderFrame>,
     /// The camera `cur` was captured from.
     captured_cam_id: i16,
+    /// `sEffectSsInfo`: the soft sprites (`crate::effect`), a fresh table each `Play_Init`.
+    pub effect_ss: crate::effect::EffectSsInfo,
+    /// Sounds a spawn's reuse of a slot stopped (`EffectSs_Delete`), for `Audio_StopSfxByPos`.
+    pub effect_ss_stops: Vec<crate::audio::sfx::SfxPos>,
+    /// `sEffectContext`: the sparks and the shield particles.
+    pub effect_ctx: crate::effect::EffectContext,
+    /// This game frame's effect draws (`Effect_DrawAll`, `EffectSs_DrawAll`), appended after the
+    /// actors' by `draw`.
+    pub effect_draws: crate::effect::EffectDraws,
+    /// `play->state.frames`: the game state's frames run (`GameState_Update` counts them after
+    /// each one).
+    pub state_frames: u32,
 }
 
 impl PlayState {
@@ -515,6 +527,11 @@ impl PlayState {
             prev: None,
             cur: None,
             captured_cam_id: CAM_ID_MAIN,
+            effect_ss: Default::default(),
+            effect_ss_stops: Vec::new(),
+            effect_ctx: Default::default(),
+            effect_draws: Default::default(),
+            state_frames: 0,
         }
     }
 
@@ -740,9 +757,8 @@ impl PlayState {
                 self.transition.screen_fill = (t > 0 && t % 2 != 0).then_some([150, 150, 150, 80]);
             } else {
                 self.room_finish_load();
-                for (sfx_id, pos) in self.col_chk.check(&mut self.actors) {
-                    self.audio.play_sfx_general(sfx_id, pos, 4, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxF32::One, crate::audio::sfx::SfxS8::Zero);
-                }
+                let hit_fx = self.col_chk.check(&mut self.actors);
+                self.collision_check_hit_fx(hit_fx);
                 self.col_chk.clear();
                 if !self.halt_all_actors {
                     self.update_all_actors();
@@ -750,7 +766,9 @@ impl PlayState {
                 // The cutscene system (z_demo.c): Cutscene_UpdateManual, then Cutscene_UpdateScripted.
                 self.update_manual();
                 self.update_scripted();
-                // (Effect_UpdateAll, EffectSs_UpdateAll: no effects are ported.)
+                // The effects (crate::effect): Effect_UpdateAll, then EffectSs_UpdateAll.
+                self.effect_update_all();
+                self.effect_ss_update_all();
             }
         }
         // (func_80095AA0 for both rooms: no room behaviour is ported.) The viewpoint.
@@ -808,6 +826,9 @@ impl PlayState {
                 self.actors.put_back(h, a);
             }
         }
+        self.flush_effect_ss_stops();
+        // The end of Actor_DrawAll: Effect_DrawAll, then EffectSs_DrawAll.
+        self.effect_draw_all();
         let frames = self.gameplay_frames;
         let tree_dead = self.save.get_event_chk_inf(crate::save::EVENTCHKINF_07);
         if let Some(s) = &mut self.scene {
@@ -846,6 +867,8 @@ impl PlayState {
         self.prev = self.cur.take();
         self.cur = Some(self.capture());
         self.updated = true;
+        // GameState_Update: gameState->frames++.
+        self.state_frames = self.state_frames.wrapping_add(1);
         // Graph_Update: Audio_Update once the game state's frame is done.
         self.audio_update();
         if self.next_play_init {
@@ -863,11 +886,13 @@ impl PlayState {
     /// `Audio_Update` with the sound effects' positions: an actor's `projectedPos`.
     fn audio_update(&mut self) {
         use crate::audio::sfx::SfxPos;
-        let (actors, sources) = (&self.actors, &self.sfx_sources);
+        let (actors, sources, effects) = (&self.actors, &self.sfx_sources, &self.effect_ss);
         self.audio.audio_update_with(&|p| match p {
             SfxPos::Default => Some(Vec3::ZERO),
             SfxPos::Actor(h) => actors.actor(h).map(|a| a.projected_pos),
             SfxPos::Source(i) => sources.get(i as usize).map(|s| s.projected_pos),
+            SfxPos::EffectSsPos(i) => effects.table.get(i as usize).map(|e| e.pos),
+            SfxPos::EffectSsVec(i) => effects.table.get(i as usize).map(|e| e.vec),
         });
     }
 
@@ -969,6 +994,7 @@ impl PlayState {
         let player_actor_info = self.player.and_then(|h| self.cam_actor(h));
         let main_player_pos_rot = self.game_camera.main_player_pos_rot();
         let player_waist = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.body_part(crate::actor_ctx::PLAYER_BODYPART_WAIST)).unwrap_or(pv.pos);
+        let player_melee_weapon_active = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).is_some_and(|p| p.melee_weapon_state() != 0);
         let oc_lines = self.col_chk.oc_lines(&mut self.actors);
         let f = CamFrame {
             col: &self.col,
@@ -987,6 +1013,9 @@ impl PlayState {
             view: self.view,
             main_player_pos_rot,
             player_waist,
+            player_melee_weapon_active,
+            health: self.save.health,
+            skybox_disabled: self.scene.as_ref().and_then(|s| s.room(self.room_ctx.cur.num)).is_some_and(|r| r.skybox_disabled),
         };
         let cam = if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut((id - CAM_ID_SUB_FIRST) as usize).and_then(|c| c.as_mut()) };
         let Some(cam) = cam else { return };
@@ -1284,8 +1313,11 @@ impl PlayState {
             let can_freeze_category = player_state1 & crate::actor_ctx::S_CATEGORY_FREEZE_MASKS[cat] != 0;
             // A snapshot of the list: actors spawned now go to the head and wait for the
             // next frame, as with the decomp's linked lists.
-            let list = self.actors.category(cat).to_vec();
-            for h in list {
+            let mut list = self.actors.category(cat).to_vec();
+            let mut i = 0;
+            while i < list.len() {
+                let h = list[i];
+                i += 1;
                 // Player updates before the later categories, so they see its new position.
                 let player_pos = self.player.and_then(|p| self.actors.actor(p)).map(|a| a.world_pos);
                 // actor->parent == &player->actor.
@@ -1295,6 +1327,17 @@ impl PlayState {
                     exempt.push(Some(h));
                 }
                 self.update_actor(h, player_pos, can_freeze_category, &exempt);
+                // An actor that changed its category in its update (Actor_ChangeCategory: to the
+                // head of the other list) leaves the loop's `actor = actor->next` in that list:
+                // the rest of this category waits for the next frame, and the other list's
+                // actors after it update here (with this category's freeze mask), and again in
+                // their own category's turn if that's later.
+                if let Some(c) = self.actors.actor(h).map(|a| a.category).filter(|&c| c != cat)
+                    && let Some(at) = self.actors.category(c).iter().position(|&x| x == h)
+                {
+                    list = self.actors.category(c)[at + 1..].to_vec();
+                    i = 0;
+                }
             }
             if cat == ACTORCAT_BG {
                 self.col.dyna.update_context();
@@ -1448,7 +1491,10 @@ impl PlayState {
             }
         }
         let _ = view;
-        // The end of Actor_DrawAll: TitleCard_Draw.
+        // The end of Actor_DrawAll: the effects (drawn in the game frame, crate::effect), then
+        // TitleCard_Draw.
+        out.opa.extend(self.effect_draws.opa.iter().cloned());
+        out.xlu.extend(self.effect_draws.xlu.iter().cloned());
         let mut title = Vec::new();
         self.title_ctx.draw(&mut title);
         out.overlay_2d.extend(title.iter().map(|s| s.draw_cmd()));

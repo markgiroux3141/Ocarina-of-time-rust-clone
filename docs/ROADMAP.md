@@ -69,8 +69,12 @@ zeldaret/oot main at `52a510f`, migrated from `2f4c25d` through a generated name
 and every render is the same bytes; the traces are the old ones' bytes once renamed.
 Milestone 2, damage and health, is done ([ADR 0032](adr/0032-damage-death-and-the-game-over-stand-in.md)):
 every hit kind, the red flash, death and the game over (its menu a stand-in, undrawn), a bottled
-fairy's revival, the damage tables, and `En_Dekubaba` pulled forward; pack format 17. Next:
-milestone 3, the first enemies.
+fairy's revival, the damage tables, and `En_Dekubaba` pulled forward; pack format 17.
+Milestone 3a, combat basics, is done ([ADR 0033](adr/0033-effects.md),
+[ADR 0034](adr/0034-guard-battle-camera-and-the-first-enemies.md)): the guard with the shield
+(blocking, a Deku nut bounced back), `Camera_Battle1`, the effects (`EffectSs` and
+`z_effect.c`'s), the Keese and the withered Deku Baba, drops on death; pack format 18. Next:
+milestone 3b, the rest of the Deku Tree's enemies.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -248,12 +252,16 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
    - death and game over (`Play_TriggerVoidOut` exists); *(done: `func_80836448`, the death animations, `z_game_over.c`, a bottled fairy's revival, and the game over menu's states as a stand-in, undrawn, "Continue? Yes" as the C)*
    - enemy damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`). *(Done, with `Actor_ApplyDamage`, the colour filter and the drop flag.)*
    - **Exit:** the dummy and a Deku Baba hit Link. *(Done: the dummy hurts Link with each hit kind; a Deku Baba bites him and he cuts its stem, the golden `deku_baba`.)*
-3. **The first enemies:**
-   - `En_Dekubaba` *(ported in milestone 2, whole but its effects)*, `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs);
-   - enemy targeting and `Camera_Battle1`;
-   - Player's guard with the shield (R: the shield's collider, blocking and deflecting; BACKLOG #4), which the Deku Scrubs' nuts need;
-   - drops on death;
-   - the effects they need (`EffectSs`: dust, hit sparks, the death flame).
+3. **The first enemies,** split in two (decided 2026-10-05):
+   - **3a, combat basics** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 3a,
+     [ADR 0033](adr/0033-effects.md) and [ADR 0034](adr/0034-guard-battle-camera-and-the-first-enemies.md)):
+     - Player's guard with the shield (R: the shield's collider, blocking and deflecting; BACKLOG #4), which the Deku Scrubs' nuts need;
+     - enemy targeting and `Camera_Battle1`;
+     - the effects (`EffectSs` and `z_effect.c`'s: dust, fragments, hit marks, the flames, the death flame), with `En_Dekubaba`'s *(ported in milestone 2, whole but its effects)*;
+     - the MQ Deku Tree's layer-0 enemies that need nothing more: `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5);
+     - drops on death;
+     - **Exit:** Link blocks a hit with the shield, and fights a Keese and a withered Deku Baba in the Deku Tree with the battle camera; the kills show their effects and drop items. *(Done: `Route::Combat`, the golden `combat`; `En_Nutsball` pulled forward from 3b for the deflection, `Item_Shield` ported.)*
+   - **3b, the rest of the MQ Deku Tree's enemies:** `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6).
 4. **Dungeon mechanics:**
    - `Door_Shutter` and small keys;
    - switches, torches (lighting Deku sticks), webs to burn or fall through;
@@ -265,7 +273,7 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
    - a minimal pause menu for equipping (`z_kaleido_scope` is about 7,700 lines, so only the item screen at first);
    - saving (`z_sram.c`).
 6. **Gohma:**
-   - `Boss_Goma` (about 2,100 lines) and her larvae;
+   - `Boss_Goma` (about 2,100 lines); her eggs and larvae (`En_Goma`) are pulled forward to 3b;
    - the boss room's camera and cutscenes (Phase 4's cutscene system);
    - the heart container, the blue warp out.
    - **Exit:** a scripted run through the Deku Tree to Gohma's defeat.
@@ -273,7 +281,7 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:
-- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`), the effect systems (`EffectSs`, `Effect`). The first effects to want: the bushes' and rocks' flying pieces (`EffectSsKakera` from `EnKusa_SpawnFragments` and `EnIshi`), and dust.
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033) with the overlays their callers needed; next to want: the bushes' and rocks' flying pieces (`EffectSsKakera` from `EnKusa_SpawnFragments` and `EnIshi`), the sword's trail (`EffectBlure`).
 - **World:** time passing (`Environment_Update`'s clock), day/night, weather.
 - **HUD and messages:** the minimap; the item icons and backgrounds in text; the ocarina modes.
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported.

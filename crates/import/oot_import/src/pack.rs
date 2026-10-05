@@ -631,15 +631,17 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
         let faces = faces_of(&default)?;
         w.put(&keys::link_faces(age), &faces)?;
         let (last_eye, last_mouth) = (rules.eye_textures.len() - 1, rules.mouth_textures.len() - 1);
-        // Every model group, hand state, shield and (the child's) sword on B or not, each set of
-        // hand, sheath and waist lists once.
+        // Every model group, hand state, shield, (the child's) sword on B or not and the shield
+        // held up or not, each set of hand, sheath and waist lists once.
         let mut loadouts = Vec::new();
         for (gi, g) in rules.model_groups.iter().enumerate() {
             for fists in [false, true] {
                 for shield in 0..rules.shields.len() {
                     for sword in [true, false] {
-                        let lo = Loadout { model_group: gi, moving_fast: fists, shield, child_has_kokiri_sword: sword, ..default.clone() };
-                        loadouts.push((g, fists, lo));
+                        for holding_shield in [false, true] {
+                            let lo = Loadout { model_group: gi, moving_fast: fists, shield, child_has_kokiri_sword: sword, holding_shield, ..default.clone() };
+                            loadouts.push((g, fists, lo));
+                        }
                     }
                 }
             }

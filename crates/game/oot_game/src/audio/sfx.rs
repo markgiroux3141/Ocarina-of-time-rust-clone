@@ -79,6 +79,9 @@ pub enum SfxPos {
     Actor(ActorHandle),
     /// `&play->sfxSources[i].projectedPos` (`z_sfx_source.c`).
     Source(u8),
+    /// `&effectSs->pos` and `&effectSs->vec` of the soft sprite in slot `i` (`crate::effect`).
+    EffectSsPos(u8),
+    EffectSsVec(u8),
 }
 
 /// Where a sound effect's frequency or volume scale is: the `f32*` the C passes.
@@ -1568,6 +1571,17 @@ pub const NA_SE_VO_RT_THROW: u16 = 0x6865;
 pub const NA_SE_VO_Z0_SURPRISE: u16 = 0x686E;
 pub const NA_SE_VO_Z0_THROW: u16 = 0x686F;
 pub const NA_SE_VO_SK_LAUGH: u16 = 0x6873;
+pub const NA_SE_EN_EXTINCT: u16 = 0x3878;
+pub const NA_SE_EV_FLAME_IGNITION: u16 = 0x2822;
+pub const NA_SE_EN_FFLY_DEAD: u16 = 0x3842;
+pub const NA_SE_EN_FFLY_ATTACK: u16 = 0x3840;
+pub const NA_SE_EN_FFLY_FLY: u16 = 0x3841;
+pub const NA_SE_IT_SHIELD_POSTURE: u16 = 0x181F;
+pub const NA_SE_IT_SHIELD_REMOVE: u16 = 0x1826;
+pub const NA_SE_IT_WALL_HIT_SOFT: u16 = 0x181B;
+pub const NA_SE_IT_WALL_HIT_HARD: u16 = 0x181A;
+pub const NA_SE_IT_WALL_HIT_BUYO: u16 = 0x182C;
+pub const NA_SE_EN_OCTAROCK_ROCK: u16 = 0x38C0;
 /// The constants above with their names, for the pack's test.
 pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_PL_WALK_GROUND", NA_SE_PL_WALK_GROUND),
@@ -1724,4 +1738,15 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_VO_NA_HELLO_3", NA_SE_VO_NA_HELLO_3),
     ("NA_SE_EV_NAVY_CRASH", NA_SE_EV_NAVY_CRASH),
     ("NA_SE_VO_RT_THROW", NA_SE_VO_RT_THROW),
+    ("NA_SE_EN_EXTINCT", NA_SE_EN_EXTINCT),
+    ("NA_SE_EV_FLAME_IGNITION", NA_SE_EV_FLAME_IGNITION),
+    ("NA_SE_EN_FFLY_DEAD", NA_SE_EN_FFLY_DEAD),
+    ("NA_SE_EN_FFLY_ATTACK", NA_SE_EN_FFLY_ATTACK),
+    ("NA_SE_EN_FFLY_FLY", NA_SE_EN_FFLY_FLY),
+    ("NA_SE_IT_SHIELD_POSTURE", NA_SE_IT_SHIELD_POSTURE),
+    ("NA_SE_IT_SHIELD_REMOVE", NA_SE_IT_SHIELD_REMOVE),
+    ("NA_SE_IT_WALL_HIT_SOFT", NA_SE_IT_WALL_HIT_SOFT),
+    ("NA_SE_IT_WALL_HIT_HARD", NA_SE_IT_WALL_HIT_HARD),
+    ("NA_SE_IT_WALL_HIT_BUYO", NA_SE_IT_WALL_HIT_BUYO),
+    ("NA_SE_EN_OCTAROCK_ROCK", NA_SE_EN_OCTAROCK_ROCK),
 ];

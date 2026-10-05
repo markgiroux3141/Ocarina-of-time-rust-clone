@@ -174,6 +174,15 @@ impl GpuModel {
         self.dirty.set(true);
     }
 
+    /// Replaces the vertex colours (`DrawParams::vertex_colors`), or puts the mesh's own back
+    /// with `None`.
+    pub fn set_vertex_colors(&mut self, colors: Option<&[[u8; 4]]>) {
+        for (i, (out, v)) in self.skinned.iter_mut().zip(&self.base).enumerate() {
+            out.color = colors.and_then(|c| c.get(i)).copied().unwrap_or(v.color);
+        }
+        self.dirty.set(true);
+    }
+
     /// Rewrites the uniforms of materials that read dynamic segments (scrolling tile sizes,
     /// draw-config colours) for this frame's values, of the lit ones for the draw's point
     /// lights, and of the fogged ones for the draw's fog (`fog_changed`: it differs from the

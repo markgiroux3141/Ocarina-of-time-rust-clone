@@ -135,6 +135,19 @@ pub fn decode_texture(f: &AssetFile, data: &Arc<[u8]>, t: &Symbol, files: &Files
 }
 
 /// `file`'s XML symbol `symbol`.
+/// An overlay file as RAM holds it at its link address (`segments.csv`'s VRAM start), for
+/// segment 0 (KSEG0 pointers): zeros up to the address's low 24 bits, then the file. Returns
+/// the image and the overlay's VRAM start.
+fn overlay_ram_image(p: &Project, files: &Files, name: &str) -> Result<(std::sync::Arc<[u8]>, u32)> {
+    let v = crate::version::VersionConfig::load(&p.config.decomp)?;
+    let vram = v.segment_vram.get(name).copied().with_context(|| format!("segments.csv: no VRAM for {name}"))?;
+    let data = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
+    let pad = (vram & 0x00FF_FFFF) as usize;
+    let mut img = vec![0u8; pad + data.len()];
+    img[pad..].copy_from_slice(&data);
+    Ok((img.into(), vram))
+}
+
 pub fn symbol_in<'a>(p: &'a Project, file: &str, symbol: &str) -> Result<(&'a AssetFile, &'a Symbol)> {
     let f = p.symbols.file(file).with_context(|| format!("no XML for {file}"))?;
     let s = f.find(symbol).with_context(|| format!("{file} has no {symbol}"))?;
@@ -301,6 +314,15 @@ impl ObjectSegments {
                 }
                 for (f, symbol) in lists {
                     let (sym_file, sym) = symbol_in(p, f, symbol)?;
+                    if sym_file.segment.is_none() && sym_file.name.starts_with("ovl_") {
+                        // A list in an overlay (`z_eff_ss_fhg_flash.c`'s `sShockDL`): its
+                        // pointers are the overlay's link-time KSEG0 addresses, so the overlay
+                        // goes on segment 0 where it links (`segments.csv`), as `code` does.
+                        let (img, vram) = overlay_ram_image(p, files, &sym_file.name)?;
+                        it.segments[0] = Some(Segment::Data { buf: img, base: 0 });
+                        it.run(vram + sym.offset);
+                        continue;
+                    }
                     it.run(((sym_file.segment.unwrap_or(6) as u32) << 24) | sym.offset);
                 }
                 Ok(it.draw)

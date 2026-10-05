@@ -246,6 +246,18 @@ pub struct PlayIo {
     pub cur_spawn: usize,
     /// `sRandInt`: the game's random numbers (Player's burning and shock draw from them).
     pub rand: crate::play::Rand,
+    /// `sEffectSsInfo` (Player's flames and sparks spawn into it), and the sounds a reused
+    /// slot's deletion stopped.
+    pub effect_ss: crate::effect::EffectSsInfo,
+    pub effect_ss_stops: Vec<crate::audio::sfx::SfxPos>,
+}
+
+impl PlayIo {
+    /// The effects' spawner on the lent table (no objects: Player spawns nothing that needs
+    /// one).
+    pub fn ss(&mut self) -> crate::effect::SsSpawn<'_> {
+        crate::effect::SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: None, stops: &mut self.effect_ss_stops }
+    }
 }
 
 impl PlayIo {
@@ -320,6 +332,8 @@ impl PlayState {
             room: self.room_ctx.cur.num,
             cur_spawn: self.cur_spawn,
             rand: self.rand,
+            effect_ss: std::mem::take(&mut self.effect_ss),
+            effect_ss_stops: std::mem::take(&mut self.effect_ss_stops),
         }
     }
 
@@ -329,6 +343,9 @@ impl PlayState {
         self.transition = io.transition;
         self.flags = io.flags;
         self.rand = io.rand;
+        self.effect_ss = io.effect_ss;
+        self.effect_ss_stops = io.effect_ss_stops;
+        self.flush_effect_ss_stops();
     }
 
     fn with_io<R>(&mut self, f: impl FnOnce(&mut PlayIo) -> R) -> R {

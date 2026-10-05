@@ -70,6 +70,14 @@ pub struct ActorHandle {
     generation: u32,
 }
 
+#[cfg(test)]
+impl ActorHandle {
+    /// A handle for the crate's tests that need one without an actor context.
+    pub(crate) fn for_test(index: u32) -> ActorHandle {
+        ActorHandle { index, generation: 0 }
+    }
+}
+
 /// What the framework (the camera, the target context, `Actor_UpdateAll`) reads from Player
 /// (`GET_PLAYER(play)`). Player implements it; everything else is Player's own business.
 pub trait PlayerIface {
@@ -139,6 +147,18 @@ pub trait PlayerIface {
     /// An outside write of `stateFlags1`: `set` bits on, then `clear` bits off (`Camera_Finish`
     /// and `Camera_Demo5`'s `PLAYER_STATE1_29`).
     fn change_state_flags1(&mut self, _set: u32, _clear: u32) {}
+    /// `meleeWeaponState` (0 none, 1 swinging, -1 the swing's end).
+    fn melee_weapon_state(&self) -> i8 {
+        0
+    }
+    /// `currentShield` (`PLAYER_SHIELD_*`).
+    fn current_shield(&self) -> u8 {
+        0
+    }
+    /// `shieldMf`: the shield's matrix, in hand or on the back, from the last draw.
+    fn shield_mf(&self) -> crate::sys_matrix::MtxF {
+        crate::sys_matrix::MtxF::IDENTITY
+    }
 }
 
 /// `PLAYER_BOOTS_IRON` (`player.h`).
@@ -146,6 +166,8 @@ pub const PLAYER_BOOTS_IRON: u8 = 1;
 
 /// `PLAYER_BODYPART_*` (`player.h`) the other actors read.
 pub const PLAYER_BODYPART_WAIST: usize = 0;
+/// `PLAYER_BODYPART_MAX`.
+pub const PLAYER_BODYPART_MAX: usize = 18;
 pub const PLAYER_BODYPART_HEAD: usize = 7;
 pub const PLAYER_BODYPART_HAT: usize = 8;
 
@@ -173,6 +195,12 @@ pub trait ActorImpl: Any {
     fn draw(&self, _rs: &RenderState, _play: &PlayState, _view: &ViewInfo, _out: &mut DrawOut) {}
     /// `ActorProfile.destroy`.
     fn destroy(&mut self, _play: &mut PlayState) {}
+    /// What `Effect_Ss_En_Fire` reads for a flame on body part `i` (`firePos`): the actor's
+    /// table at 0x14C, `Vec3s` with flag 0x8000 else `Vec3f`. An actor with none there has
+    /// zeroes (the zeroed actor memory, as `En_Dekubaba`'s unused fields).
+    fn effect_fire_pos(&self, _i: usize, _vec3s: bool) -> Vec3 {
+        Vec3::ZERO
+    }
     /// `GET_PLAYER`.
     fn as_player(&self) -> Option<&dyn PlayerIface> {
         None
@@ -422,6 +450,11 @@ pub fn player_play_sfx(play: &mut PlayState, actor: ActorHandle, sfx_id: u16) {
 pub fn enemy_start_finishing_blow(play: &mut PlayState, actor: &Actor) {
     play.actors.freeze_flash_timer = 5;
     play.sfx_source_play_sfx_at_fixed_world_pos(actor.world_pos, 20, crate::audio::sfx::NA_SE_EN_LAST_DAMAGE);
+}
+
+/// `Actor_PlaySfx` on the actor `h` (an effect's spawn, for the actor it's spawned for).
+pub fn audio_play_actor_sfx_at(play: &mut PlayState, h: ActorHandle, sfx_id: u16) {
+    play.audio.play_sfx_at_pos(crate::audio::sfx::SfxPos::Actor(h), sfx_id);
 }
 
 /// `Actor_PlaySfx`: `Sfx_PlaySfxAtPos` at the updating actor's `projectedPos`.

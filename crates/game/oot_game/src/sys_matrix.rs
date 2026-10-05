@@ -208,6 +208,12 @@ impl MtxF {
         )
     }
 
+    /// From glam's (column-major: `x_axis` is `(xx, yx, zx, wx)`).
+    pub fn from_mat4(m: glam::Mat4) -> MtxF {
+        let [xx, yx, zx, wx, xy, yy, zy, wy, xz, yz, zz, wz, xw, yw, zw, ww] = m.to_cols_array();
+        MtxF { xx, yx, zx, wx, xy, yy, zy, wy, xz, yz, zz, wz, xw, yw, zw, ww }
+    }
+
     /// The matrix as glam's (column-major: `x_axis` is `(xx, yx, zx, wx)`).
     pub fn to_mat4(&self) -> glam::Mat4 {
         glam::Mat4::from_cols(

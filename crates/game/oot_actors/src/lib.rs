@@ -34,21 +34,25 @@ pub mod en_box;
 pub mod en_dekubaba;
 pub mod en_door;
 pub mod en_elf;
+pub mod en_firefly;
 pub mod en_girla;
 pub mod en_goroiwa;
 pub mod en_holl;
 pub mod en_item00;
 pub mod en_ishi;
 pub mod en_kanban;
+pub mod en_karebaba;
 pub mod en_ko;
 pub mod en_kusa;
 pub mod en_md;
+pub mod en_nutsball;
 pub mod en_ossan;
 pub mod en_river_sound;
 pub mod en_tana;
 pub mod en_viewer;
 pub mod en_wonder_item;
 pub mod en_wonder_talk2;
+pub mod item_shield;
 pub mod obj_hana;
 pub mod object_kankyo;
 pub mod player;
@@ -61,7 +65,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -92,6 +96,10 @@ pub fn overlays() -> Overlays {
     o.register(en_viewer::ACTOR_EN_VIEWER, en_viewer::EnViewer::init);
     o.register(object_kankyo::ACTOR_OBJECT_KANKYO, object_kankyo::ObjectKankyo::init);
     o.register(en_dekubaba::ACTOR_EN_DEKUBABA, en_dekubaba::EnDekubaba::init);
+    o.register(en_karebaba::ACTOR_EN_KAREBABA, en_karebaba::EnKarebaba::init);
+    o.register(en_firefly::ACTOR_EN_FIREFLY, en_firefly::EnFirefly::init);
+    o.register(en_nutsball::ACTOR_EN_NUTSBALL, en_nutsball::EnNutsball::init);
+    o.register(item_shield::ACTOR_ITEM_SHIELD, item_shield::ItemShield::init);
     o
 }
 
@@ -113,6 +121,8 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(player::bakes());
     // z_kankyo.c's rain and lightning bolts.
     v.extend(oot_game::weather::bakes());
+    // The effects (z_effect_soft_sprite.c's overlays and z_effect.c's).
+    v.extend(oot_game::effect::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).

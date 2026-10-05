@@ -55,10 +55,28 @@
 //! misses from where the stagger left him; slashes it while it's stuck to the ground (weakened, it
 //! lies stretched out), runs in and cuts its stem, and ends once its head is a Deku Stick.
 //!
+//! **The shield and the first fights** (GAME-05 milestone 3a, `Route::Combat`, the `combat` test
+//! and script) run inside the Deku Tree on the `deku-tree-inside` preset, from a debug start on
+//! the ground floor of room 0 (`COMBAT_START`), by the withered Deku Baba at (-88, 0, -363) and
+//! the Keese perched on the wall 48 from it at (-54, 262, -397). (The ground floor, not the top
+//! one: a withered Deku Baba's head flies back from where it faced as it dies, and on the top
+//! floor it falls down the middle.) Link walks up to the Deku Baba until it springs, locks on
+//! (Z: the battle camera, `Camera_Battle1`), slashes it while it's upright
+//! (`Step::KarebabaKilled`), and picks up the Deku Stick it leaves (`Step::StickTaken`); the
+//! Keese dives at him meanwhile (within 120 of its perch). The Deku Baba first: while it's up, Z
+//! would lock on to it rather than the Keese (the nearer, in front), and nowhere within reach of
+//! the Keese has it outside the 60 degrees `Attention_WeightedDistToPlayerSq` looks in. Then Link
+//! locks on to the Keese and holds the shield up (R on the lock-on: `func_80834758`) until it
+//! blocks a dive (`Step::Blocked`); the Keese hovers after (`EnFirefly_Stay`) and he slashes it
+//! (B) until it dies; it shrinks away and drops from table 14 (`Step::KeeseKilled`, the drop in
+//! `drop` if any, picked up). Between the two, Link walks back to the start: the Deku Baba grows
+//! back where he picked up its stick, and bites within reach of its home.
+//!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
 //! green rupees). The run cuts the four bushes by child 4 in turn until one drops (in the order
-//! that gives a drop with `Object_Kankyo`'s draws in the forest). A change to
+//! that gives a drop with `Object_Kankyo`'s draws in the forest and, since GAME-05 milestone 3a,
+//! the effects' draws and the slash's recoil off the walls by the bushes). A change to
 //! who calls `Rand` and when changes the draws; if all four then come up empty (about one
 //! time in five), the run stops with "none of the 4 bushes dropped anything", and the list or
 //! its order needs changing.
@@ -155,6 +173,14 @@ pub enum Step {
     BabaWeakened,
     /// Its stem cut, its head is a Deku Stick (`EnDekubaba_DekuStick`).
     BabaCut,
+    /// A Keese's dive blocked by the shield (Player's `Player_Action_808435C4`).
+    Blocked,
+    /// The Keese slashed to death, gone (`EnFirefly_Disappear` over) and its drop, if any, picked up.
+    KeeseKilled,
+    /// The withered Deku Baba slashed while upright (`EnKarebaba_Dying`).
+    KarebabaKilled,
+    /// Its Deku Stick picked up (`GI_DEKU_STICKS_1`).
+    StickTaken,
 }
 
 impl Step {
@@ -193,6 +219,10 @@ impl Step {
             Step::Bitten => "bitten",
             Step::BabaWeakened => "baba_weakened",
             Step::BabaCut => "baba_cut",
+            Step::Blocked => "blocked",
+            Step::KeeseKilled => "keese_killed",
+            Step::KarebabaKilled => "karebaba_killed",
+            Step::StickTaken => "stick_taken",
         }
     }
 }
@@ -216,7 +246,20 @@ pub enum Route {
     /// Inside the Deku Tree, a Deku Baba's bite, then its stem cut (GAME-05 milestone 2), from a
     /// debug start (`DEKU_BABA_START`).
     DekuBaba,
+    /// Inside the Deku Tree, a Keese's dive blocked with the shield, the Keese and a withered
+    /// Deku Baba killed with the battle camera on, their drops picked up (GAME-05 milestone 3a),
+    /// from a debug start (`COMBAT_START`).
+    Combat,
 }
+
+/// The `Combat` route's Keese: room 0's `En_Firefly` (params 3, perched) on the ground floor's
+/// wall, 262 up.
+pub const COMBAT_KEESE_HOME: Vec3 = Vec3::new(-54.0, 262.0, -397.0);
+/// Its withered Deku Baba: room 0's `En_Karebaba` on the ground floor.
+pub const COMBAT_KAREBABA_HOME: Vec3 = Vec3::new(-88.0, 0.0, -363.0);
+/// Where the `Combat` route starts Link: on the ground floor, 150 across from the Keese towards
+/// the room's middle, facing it (yaw 0x8000: -z).
+pub const COMBAT_START: (Vec3, i16) = (Vec3::new(-54.0, 0.0, -247.0), -0x8000);
 
 /// The Deku Baba the `DekuBaba` route fights: room 0's `En_Dekubaba` (params 0) on the top floor.
 pub const DEKU_BABA_HOME: Vec3 = Vec3::new(-195.0, 800.0, -195.0);
@@ -228,7 +271,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -237,7 +280,7 @@ impl Route {
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
-            Route::DekuBaba => Some("deku-tree-inside"),
+            Route::DekuBaba | Route::Combat => Some("deku-tree-inside"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -246,6 +289,7 @@ impl Route {
     pub fn start(self) -> Option<(Vec3, i16)> {
         match self {
             Route::DekuBaba => Some(DEKU_BABA_START),
+            Route::Combat => Some(COMBAT_START),
             _ => None,
         }
     }
@@ -278,6 +322,7 @@ impl Route {
             Route::NewSaveDekuTree => "new-save-deku-tree",
             Route::NewFileDekuTree => "new-file-deku-tree",
             Route::DekuBaba => "deku-baba",
+            Route::Combat => "combat",
         }
     }
 
@@ -287,13 +332,14 @@ impl Route {
             Route::MidoShop => 12000,
             Route::NewSaveDekuTree => 16000,
             Route::NewFileDekuTree => 24000,
+            Route::Combat => 9000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -352,6 +398,12 @@ enum Task {
     TalkNavi,
     /// Fight the Deku Baba whose home is here (`fight_baba`).
     FightBaba(Vec3),
+    /// Block the dive of the perched Keese whose home is here (`block_keese`).
+    BlockKeese(Vec3),
+    /// Kill that Keese and pick up its drop (`kill_keese`).
+    KillKeese(Vec3),
+    /// Kill the withered Deku Baba whose home is here and pick up its stick (`fight_karebaba`).
+    FightKarebaba(Vec3),
 }
 
 /// An actor the run talks to.
@@ -434,6 +486,9 @@ impl Playthrough {
             Route::NewSaveDekuTree => Self::new_save_deku_tree(),
             Route::NewFileDekuTree => Self::new_file_deku_tree(),
             Route::DekuBaba => vec![Task::FightBaba(DEKU_BABA_HOME)],
+            // Back to the start between the fights: the Deku Baba grows back where Link picked up
+            // its stick, and its head bites within reach of its home.
+            Route::Combat => vec![Task::FightKarebaba(COMBAT_KAREBABA_HOME), Task::Walk(vec![COMBAT_START.0]), Task::BlockKeese(COMBAT_KEESE_HOME), Task::KillKeese(COMBAT_KEESE_HOME)],
         };
         Playthrough {
             route,
@@ -627,7 +682,7 @@ impl Playthrough {
             Task::Walk(vec![Vec3::new(0.0, -80.0, 800.0), Vec3::new(0.0, 0.0, 480.0), Vec3::new(400.0, 0.0, 470.0)]),
             // Child 4 at (669, 0, 521) faces about -z.
             Task::Talk(Who::Kokiri(4), Vec3::new(660.0, 0.0, 465.0), Step::Kokiri),
-            Task::CutBushes(vec![Vec3::new(594.0, 0.0, 542.0), Vec3::new(385.0, 0.0, 643.0), Vec3::new(572.0, 0.0, 603.0), Vec3::new(678.0, 0.0, 596.0)]),
+            Task::CutBushes(vec![Vec3::new(594.0, 0.0, 542.0), Vec3::new(385.0, 0.0, 643.0), Vec3::new(678.0, 0.0, 596.0), Vec3::new(572.0, 0.0, 603.0)]),
             // Through the stream's ford and along its east side, round Mido where he stands
             // aside (path 1's end, (1412, 0, 211): the preset's EVENTCHKINF_04) by the narrow
             // bank west of him, along the path to the En_Holl and down into the meadow, to the
@@ -911,6 +966,9 @@ impl Playthrough {
             }
             Task::CutBushes(bushes) => self.cut_bushes(w, &bushes),
             Task::FightBaba(home) => self.fight_baba(w, home),
+            Task::BlockKeese(home) => self.block_keese(w, home),
+            Task::KillKeese(home) => self.kill_keese(w, home),
+            Task::FightKarebaba(home) => self.fight_karebaba(w, home),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -1039,6 +1097,246 @@ impl Playthrough {
                     self.wait = 0;
                 }
                 Some(idle)
+            }
+        }
+    }
+
+    /// The `En_Firefly` whose home is `home`, if it's still there.
+    fn keese_at(w: &PlayState, home: Vec3) -> Option<(ActorHandle, &crate::en_firefly::EnFirefly)> {
+        w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::en_firefly::EnFirefly>(h).filter(|k| k.actor.home_pos.distance(home) < 1.0).map(|k| (h, k)))
+    }
+
+    /// `Task::BlockKeese`'s phases in `sub`:
+    /// - 0: at the Keese across the floor while it's perched, until it isn't (it dives within
+    ///   120: `EnFirefly_AttackFromPerched`);
+    /// - 1: turned to it in place, and Z pressed while it's ahead, until Link is locked on to it
+    ///   (`focusActor`);
+    /// - 2: Z (locked on) and R (the shield up on the upper body, `func_80834758`), until the
+    ///   shield takes a dive (Player's `Player_Action_808435C4`, `Step::Blocked`).
+    fn block_keese(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        use crate::en_firefly::Action as KA;
+        use eng_input::pad::{BTN_R, BTN_Z};
+        let idle = PadState::default();
+        let Some((_, k)) = Self::keese_at(w, home) else {
+            self.wait += 1;
+            if self.wait > 60 {
+                self.failure = Some(format!("no Keese at {home}"));
+                return None;
+            }
+            return Some(idle);
+        };
+        self.wait += 1;
+        if self.wait > 2400 {
+            self.failure = Some(format!("the Keese's block stalled in phase {} ({:?})", self.sub, k.action));
+            return None;
+        }
+        let (kh, k_pos) = (Self::keese_at(w, home).map(|(h, _)| h), k.actor.world_pos);
+        match self.sub {
+            0 => {
+                if k.action != KA::Perched {
+                    self.sub = 1;
+                    self.wait = 0;
+                    return Some(idle);
+                }
+                Some(stick_towards(w, home, SLOW))
+            }
+            1 => {
+                if w.player().focus_actor.is_some() && w.player().focus_actor == kh {
+                    self.sub = 2;
+                    return Some(PadState { button: BTN_Z, ..idle });
+                }
+                // Turned to it in place while it's off to the side (a light tilt: past the dead
+                // zone, too little to walk; no Z, which would strafe), else Z on every other frame
+                // until it's in range.
+                let off = eng_math::vec3f_yaw(w.player().actor.world_pos, k_pos).wrapping_sub(w.player().actor.shape_rot.y);
+                if (off as i32).abs() > 0x1000 {
+                    return Some(stick_towards(w, k_pos, 25.0));
+                }
+                Some(if self.prev.button & BTN_Z == 0 { PadState { button: BTN_Z, ..idle } } else { idle })
+            }
+            _ => {
+                if w.player().action == PA::GuardHit {
+                    self.finish(Some(Step::Blocked));
+                    return None;
+                }
+                if w.player().focus_actor != kh {
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                Some(PadState { button: BTN_Z | BTN_R, ..idle })
+            }
+        }
+    }
+
+    /// `Task::KillKeese`'s phases in `sub`:
+    /// - 0: B once, drawing the sword (its first slash at nothing), locked on (Z);
+    /// - 1: locked on with the shield up (Z and R) until a dive is blocked and the Keese hovers
+    ///   (`EnFirefly_Stay`, its `AT_HIT`), then R let go, in at a run to within 25 across, and B;
+    /// - 4: Z held through the slash; killed (`EnFirefly_Die`): 2; else back to 1;
+    /// - 2: until it's gone (`EnFirefly_Disappear` over), noting the drop (`Item_DropCollectibleRandom`);
+    /// - 3: onto the drop until it's collected, then `Step::KeeseKilled`.
+    fn kill_keese(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        use crate::en_firefly::Action as KA;
+        use eng_input::pad::{BTN_R, BTN_Z};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 5000 {
+            self.failure = Some(format!("the Keese fight stalled in phase {}", self.sub));
+            return None;
+        }
+        match self.sub {
+            0 | 1 | 4 => {
+                let Some((_, k)) = Self::keese_at(w, home) else {
+                    self.failure = Some("the Keese went before it was killed".into());
+                    return None;
+                };
+                if matches!(k.action, KA::Die | KA::Disappear) {
+                    self.sub = 2;
+                    self.items = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<EnItem00>(h).is_some()).collect();
+                    return Some(idle);
+                }
+                let p = w.player();
+                match self.sub {
+                    0 => {
+                        if p.held_item_ap == w.data.items.ap("SWORD_KOKIRI") && p.action != PA::Attack {
+                            self.sub = 1;
+                        }
+                        Some(PadState { button: BTN_Z | if self.prev.button & BTN_B == 0 && p.action != PA::Attack { BTN_B } else { 0 }, ..idle })
+                    }
+                    1 => {
+                        if k.action == KA::Stay && matches!(p.action, PA::TargetIdle | PA::TargetRun | PA::GuardHit | PA::StandingStill) {
+                            // In reach (25 across: it hovers some 55 up): B; else in at a run, still
+                            // locked on.
+                            if Self::xz_dist(p.actor.world_pos, k.actor.world_pos) > 25.0 {
+                                let mut s = stick_towards(w, k.actor.world_pos, RUN);
+                                s.button |= BTN_Z;
+                                return Some(s);
+                            }
+                            self.sub = 4;
+                            self.tries = 0;
+                            return Some(PadState { button: BTN_Z | BTN_B, ..idle });
+                        }
+                        Some(PadState { button: BTN_Z | BTN_R, ..idle })
+                    }
+                    _ => {
+                        self.tries += 1;
+                        if self.tries > 6 && p.action != PA::Attack {
+                            self.sub = 1;
+                        }
+                        Some(PadState { button: BTN_Z, ..idle })
+                    }
+                }
+            }
+            2 => {
+                if Self::keese_at(w, home).is_some() {
+                    return Some(idle);
+                }
+                self.dropped = w.actors.all().into_iter().find(|h| !self.items.contains(h) && w.actors.downcast::<EnItem00>(*h).is_some());
+                self.drop = self.dropped.and_then(|h| w.actors.actor(h)).map(|a| a.params);
+                if self.dropped.is_none() {
+                    self.finish(Some(Step::KeeseKilled));
+                    return None;
+                }
+                self.sub = 3;
+                Some(idle)
+            }
+            _ => {
+                let Some(it) = self.dropped.and_then(|h| w.actors.downcast::<EnItem00>(h)).filter(|i| i.action != ItemAction::Collected) else {
+                    self.finish(Some(Step::KeeseKilled));
+                    return None;
+                };
+                Some(stick_towards(w, it.actor.world_pos, SLOW))
+            }
+        }
+    }
+
+    /// `Task::FightKarebaba`'s phases in `sub`, keyed on its action (`en_karebaba::Action`):
+    /// - 0: towards it until it springs (`EnKarebaba_Awaken`);
+    /// - 1: locked on (Z); once it's upright (`EnKarebaba_Upright`, `_Spin`), within 40 of its
+    ///   home, B;
+    /// - 2: until it's dying (`Step::KarebabaKilled`), else back to 1;
+    /// - 3: until its head is the stick (`EnKarebaba_DeadItemDrop`), then onto it, A while it
+    ///   offers (Player's `getItemId`), until Link has it;
+    /// - 4: A through the item's text until the box closes and Link stands (`Step::StickTaken`).
+    fn fight_karebaba(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        use crate::en_karebaba::{Action as KA, EnKarebaba};
+        use eng_input::pad::BTN_Z;
+        let idle = PadState::default();
+        let Some((h, b)) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnKarebaba>(h).filter(|b| b.actor.home_pos.distance(home) < 1.0).map(|b| (h, b))) else {
+            // Its room's actors spawn (and wait for their object) in the first frames.
+            self.wait += 1;
+            if self.wait > 60 {
+                self.failure = Some(format!("no withered Deku Baba at {home}"));
+                return None;
+            }
+            return Some(idle);
+        };
+        let link = w.player().actor.world_pos;
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("the withered Deku Baba fight stalled in phase {} ({:?})", self.sub, b.action));
+            return None;
+        }
+        let z = |mut p: PadState| {
+            p.button |= BTN_Z;
+            p
+        };
+        match self.sub {
+            0 => {
+                if b.action == KA::Awaken {
+                    self.sub = 1;
+                    return Some(z(idle));
+                }
+                Some(stick_towards(w, home, RUN))
+            }
+            1 => {
+                if matches!(b.action, KA::Upright | KA::Spin) && Self::xz_dist(link, home) < 40.0 {
+                    self.sub = 2;
+                    self.tries = 0;
+                    let mut p = z(idle);
+                    p.button |= BTN_B;
+                    return Some(p);
+                }
+                if Self::xz_dist(link, home) < 32.0 {
+                    return Some(z(idle));
+                }
+                Some(z(stick_towards(w, home, SLOW)))
+            }
+            2 => {
+                if b.action == KA::Dying {
+                    self.steps.push((Step::KarebabaKilled, self.frame));
+                    self.done = Some(Step::KarebabaKilled);
+                    self.sub = 3;
+                    self.tries = w.save.ammo(oot_game::item::ITEM_DEKU_STICK) as usize;
+                    return Some(idle);
+                }
+                self.tries += 1;
+                if self.tries > 20 {
+                    self.sub = 1;
+                }
+                Some(z(idle))
+            }
+            4 => {
+                // A through the item's text until the box closes and Link stands.
+                if w.message_state() == TEXT_STATE_NONE && !matches!(w.player().action, PA::GetItem | PA::ItemPutAway) {
+                    self.finish(Some(Step::StickTaken));
+                    return None;
+                }
+                Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
+            }
+            _ => {
+                if w.save.ammo(oot_game::item::ITEM_DEKU_STICK) as usize > self.tries {
+                    self.sub = 4;
+                    return Some(idle);
+                }
+                if b.action != KA::DeadItemDrop {
+                    return Some(idle);
+                }
+                let p = w.player();
+                if p.interact_range_actor == Some(h) && p.get_item_id != 0 {
+                    return Some(self.press(BTN_A));
+                }
+                Some(stick_towards(w, b.actor.world_pos, SLOW))
             }
         }
     }

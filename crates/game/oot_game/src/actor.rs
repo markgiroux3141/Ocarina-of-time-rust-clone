@@ -278,6 +278,14 @@ impl Actor {
         }
     }
 
+    /// `Actor_SetDropFlag`: `dropFlag` from one element's hit.
+    pub fn set_drop_flag(&mut self, elem: &crate::collision_check::ColliderElement, freeze_flag: bool) {
+        self.drop_flag = match elem.ac_hit_elem {
+            None => 0,
+            Some(h) => self.drop_flag_of(&h.at_dmg_info, freeze_flag),
+        };
+    }
+
     /// `Actor_SetDropFlag`'s and `Actor_SetDropFlagJntSph`'s flag for one hit.
     fn drop_flag_of(&mut self, at: &crate::collision_check::ColliderElementDamageInfoAT, freeze_flag: bool) -> u8 {
         use crate::collision_check::*;
@@ -409,6 +417,20 @@ impl Actor {
     /// `Actor_MoveXZGravity`.
     pub fn move_forward(&mut self) {
         self.update_velocity();
+        self.update_pos();
+    }
+
+    /// `Actor_UpdateVelocityXYZ`: `speed` along the world yaw and pitch (a positive pitch up).
+    pub fn update_velocity_xyz(&mut self) {
+        let speed_xz = self.speed_xz * cos_s(self.world_rot.x);
+        self.velocity.x = speed_xz * sin_s(self.world_rot.y);
+        self.velocity.y = self.speed_xz * sin_s(self.world_rot.x);
+        self.velocity.z = speed_xz * cos_s(self.world_rot.y);
+    }
+
+    /// `Actor_MoveXYZ`.
+    pub fn move_xyz(&mut self) {
+        self.update_velocity_xyz();
         self.update_pos();
     }
 

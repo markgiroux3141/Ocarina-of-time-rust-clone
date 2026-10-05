@@ -29,6 +29,7 @@ echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo    44  decomp-check         GAME-05's decomp upgrade check: a loose import against the old decomp's
 echo    45  test-damage          GAME-05's damage and health tests: the hit kinds, death and the game over, the Deku Baba
+echo    50  test-combat          GAME-05's combat tests: the guard, the battle camera, the effects, the Keese, the withered Deku Baba
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -47,6 +48,7 @@ echo    37  game-crawlspace      At the crawlspace's mouth: through it and out (
 echo    46  game-deku-baba       Inside the Deku Tree by a Deku Baba: its bite, its stem cut, death and the game over
 echo    47  game-deku-baba-fairy The same with a fairy in a bottle: dying, it revives Link
 echo    48  game-dummy           The training dummy, its touch hurting Link (asks which kind)
+echo    51  game-combat          Inside the Deku Tree by a withered Deku Baba and a Keese: the shield (R), the battle camera
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -59,6 +61,7 @@ echo    30  sandbox-audio-log    The new file's run with its audio log and WAV, 
 echo    34  sandbox-mido-shop-audio  The Mido and shop run's audio log and WAV, into out\run (opens the WAV)
 echo    35  ootx-sfx             Look a sound effect up by id or name
 echo    49  sandbox-deku-baba    The Deku Baba run's trace and screenshots, into out\run
+echo    52  sandbox-combat       The combat run's trace and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -117,6 +120,9 @@ if "%pick%"=="46" set "script=game-deku-baba"
 if "%pick%"=="47" goto fairy
 if "%pick%"=="48" goto dummy
 if "%pick%"=="49" set "script=sandbox-deku-baba"
+if "%pick%"=="50" set "script=test-combat"
+if "%pick%"=="51" set "script=game-combat"
+if "%pick%"=="52" set "script=sandbox-combat"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

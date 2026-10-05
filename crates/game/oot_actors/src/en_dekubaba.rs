@@ -20,10 +20,12 @@
 //!   does 1, its jump attack 2 (4 for child Link: the init rewrites the table's entry); Deku
 //!   Nuts stun it.
 //!
-//! The whole overlay is ported. Not ported: the effects (the dirt bursts, the dust, the flames
-//! of a fire hit: `EffectSsHahen`, `func_8002829C`, `func_800286CC`, `EffectSsEnFire`; their
-//! `Rand` calls aren't made), and the generic circle shadow (`ActorShadow_DrawCircle`, not
-//! ported for any actor; its own floor shadow, `EnDekubaba_DrawShadow`, is drawn).
+//! The whole overlay is ported, with its effects (since GAME-05 milestone 3a: the dirt bursts
+//! `EffectSsHahen_SpawnBurst`, the dust `func_8002829C` and `func_800286CC`, a fire hit's flames
+//! `EffectSsEnFire_SpawnVec3f`, which follow the struct's unused `unk_14C`: zeroes, so they burn
+//! at the world's origin, the C's own bug). Not ported: the generic circle shadow
+//! (`ActorShadow_DrawCircle`, not ported for any actor; its own floor shadow,
+//! `EnDekubaba_DrawShadow`, is drawn).
 
 use std::sync::Arc;
 
@@ -70,6 +72,10 @@ const DEKUBABA_HEAD_LIMB_ROOT: u8 = 1;
 /// `NAVI_ENEMY_DEKU_BABA`, `NAVI_ENEMY_BIG_DEKU_BABA` (`actor.h`).
 const NAVI_ENEMY_DEKU_BABA: u8 = 0x07;
 const NAVI_ENEMY_BIG_DEKU_BABA: u8 = 0x08;
+
+/// `EnDekubaba_Attack`'s `sEffPrimColor` and `sEffEnvColor`: the bite's green dust.
+const S_EFF_PRIM_COLOR: [u8; 4] = [105, 255, 105, 255];
+const S_EFF_ENV_COLOR: [u8; 4] = [150, 250, 150, 0];
 
 /// `ITEM00_NUTS`, `COLLECTIBLE_DROP_TABLE_3` (`z_en_item00.h`).
 const ITEM00_NUTS: i16 = 0x0C;
@@ -295,6 +301,19 @@ impl EnDekubaba {
         b.action_state = 0;
         b.floor_poly = None;
         Box::new(b)
+    }
+
+    /// `EffectSsHahen_SpawnBurst(play, pos, scaleFac * 3, 0, scaleFac * 12, scaleFac * 5, count,
+    /// HAHEN_OBJECT_DEFAULT, 10, NULL)`: the withered fragments its calls throw.
+    fn hahen_burst(&self, play: &mut PlayState, pos: Vec3, count: i16) {
+        let f = self.scale_fac;
+        play.with_ss(|s| s.hahen_spawn_burst(pos, f * 3.0, 0, (f * 12.0) as i16, (f * 5.0) as i16, count, -1, 10, None));
+    }
+
+    /// `&this->actor` for an effect's spawn.
+    fn ss_actor(&self, play: &PlayState) -> Option<oot_game::effect::SsActor> {
+        let r = self.actor.shape_rot;
+        play.cur_actor.map(|h| oot_game::effect::SsActor { handle: h, world_pos: self.actor.world_pos, shape_rot: [r.x, r.y, r.z] })
     }
 
     /// `EnDekubaba_DisableStemColliderAC`.
@@ -549,7 +568,7 @@ impl EnDekubaba {
         let dz = dxz * self.scale_fac * cos_s(self.actor.shape_rot.y);
         self.actor.world_pos.x = self.actor.home_pos.x + dx;
         self.actor.world_pos.z = self.actor.home_pos.z + dz;
-        // EffectSsHahen_SpawnBurst at home: an effect, not ported.
+        self.hahen_burst(play, self.actor.home_pos, 1);
         if self.action_state == 0 {
             if dist_xz(self.actor.home_pos, player_pos) < 240.0 * self.scale_fac {
                 self.setup_prepare_attack();
@@ -561,7 +580,7 @@ impl EnDekubaba {
 
     /// `EnDekubaba_EnterGround`: 15 frames back down into the leaves, shrinking, the stem
     /// folding; then waiting again.
-    fn enter_ground(&mut self) {
+    fn enter_ground(&mut self, play: &mut PlayState) {
         if self.action_state != 0 {
             self.action_state -= 1;
         }
@@ -591,7 +610,7 @@ impl EnDekubaba {
         let dz = dxz * self.scale_fac * cos_s(self.actor.shape_rot.y);
         self.actor.world_pos.x = self.actor.home_pos.x + dx;
         self.actor.world_pos.z = self.actor.home_pos.z + dz;
-        // EffectSsHahen_SpawnBurst at home: an effect, not ported.
+        self.hahen_burst(play, self.actor.home_pos, 1);
         if self.action_state == 0 {
             self.setup_wait_player_near();
         }
@@ -665,7 +684,10 @@ impl EnDekubaba {
                     let last = a.last_frame();
                     self.skel.change(a, 4.0, 0.0, last, ANIMMODE_LOOP, 0.0);
                 }
-                // func_8002829C: the bite's dust, an effect, not ported.
+                // func_8002829C: the bite's dust, ahead at 5 (sEffPrimColor, sEffEnvColor).
+                let vel = Vec3::new(sin_s(self.actor.shape_rot.y) * 5.0, 0.0, cos_s(self.actor.shape_rot.y) * 5.0);
+                let (pos, scale) = (self.actor.world_pos, (self.scale_fac * 100.0) as i16);
+                play.with_ss(|s| s.func_8002829c(pos, vel, Vec3::ZERO, S_EFF_PRIM_COLOR, S_EFF_ENV_COLOR, 1, scale));
                 self.action_state = 1;
                 self.collider.base.ac_flags |= AC_ON;
             }
@@ -715,7 +737,18 @@ impl EnDekubaba {
                 scaled_step_to_s(&mut s[0], -0x888, 0x16C);
                 scaled_step_to_s(&mut s[1], -0x888, 0x16C);
                 if scaled_step_to_s(&mut s[2], -0x888, 0x16C) {
-                    // func_800286CC three times along the stem: dust, an effect, not ported.
+                    // func_800286CC three times along the stem, 30 apart from home.
+                    let dx = sin_s(self.actor.shape_rot.y) * 30.0 * self.scale_fac;
+                    let dz = cos_s(self.actor.shape_rot.y) * 30.0 * self.scale_fac;
+                    let mut eff_pos = self.actor.home_pos;
+                    let (scale, step) = ((self.scale_fac * 500.0) as i16, (self.scale_fac * 50.0) as i16);
+                    play.with_ss(|ss| {
+                        for _ in 0..3 {
+                            ss.func_800286cc(eff_pos, Vec3::ZERO, Vec3::ZERO, scale, step);
+                            eff_pos.x += dx;
+                            eff_pos.z += dz;
+                        }
+                    });
                     self.action_state = 1;
                 }
             }
@@ -875,19 +908,34 @@ impl EnDekubaba {
             scaled_step_to_s(&mut self.actor.shape_rot.x, 0x4800, 0x71C);
             scaled_step_to_s(&mut self.stem_parts_rot[0], 0x4800, 0x71C);
             scaled_step_to_s(&mut self.stem_parts_rot[1], 0x4800, 0x71C);
-            // EffectSsHahen_SpawnBurst at the head: an effect, not ported.
+            self.hahen_burst(play, self.actor.world_pos, 1);
             if self.actor.scale.x > 0.005 && (self.actor.bg_check_flags & BGCHECKFLAG_GROUND_TOUCH != 0 || self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0) {
                 self.actor.scale = Vec3::ZERO;
                 self.actor.speed_xz = 0.0;
                 self.actor.flags &= !(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
-                // EffectSsHahen_SpawnBurst (15 pieces): an effect, not ported.
+                self.hahen_burst(play, self.actor.world_pos, 15);
             }
             if self.actor.bg_check_flags & BGCHECKFLAG_GROUND_TOUCH != 0 {
                 audio_play_actor_sfx2(play, NA_SE_EN_DODO_M_GND);
                 self.action_state = 1;
             }
         } else if self.action_state == 1 {
-            // func_800286CC along the stem and at home: dust, an effect, not ported.
+            // func_800286CC four times along the fallen stem (20 apart), then at home.
+            let mut eff_pos = self.actor.world_pos;
+            let r = self.actor.shape_rot;
+            let dy = sin_s(r.x) * 20.0;
+            let dx = -20.0 * cos_s(r.x) * sin_s(r.y);
+            let dz = -20.0 * cos_s(r.x) * cos_s(r.y);
+            let (home, scale, step) = (self.actor.home_pos, (self.scale_fac * 500.0) as i16, (self.scale_fac * 100.0) as i16);
+            play.with_ss(|ss| {
+                for _ in 0..4 {
+                    ss.func_800286cc(eff_pos, Vec3::ZERO, Vec3::ZERO, 500, 50);
+                    eff_pos.x += dx;
+                    eff_pos.y += dy;
+                    eff_pos.z += dz;
+                }
+                ss.func_800286cc(home, Vec3::ZERO, Vec3::ZERO, scale, step);
+            });
             self.setup_deku_stick(play);
         }
     }
@@ -897,7 +945,8 @@ impl EnDekubaba {
     fn die(&mut self, play: &mut PlayState) {
         step_to_f(&mut self.actor.world_pos.y, self.actor.home_pos.y, self.scale_fac * 5.0);
         if step_to_f(&mut self.actor.scale.x, self.scale_fac * 0.1 * 0.01, self.scale_fac * 0.1 * 0.01) {
-            // func_800286CC at home: dust, an effect, not ported.
+            let (home, scale, step) = (self.actor.home_pos, (self.scale_fac * 500.0) as i16, (self.scale_fac * 100.0) as i16);
+            play.with_ss(|ss| ss.func_800286cc(home, Vec3::ZERO, Vec3::ZERO, scale, step));
             let pos = self.actor.world_pos;
             if self.actor.drop_flag == 0 {
                 crate::en_item00::item_drop_collectible(play, pos, ITEM00_NUTS);
@@ -914,7 +963,7 @@ impl EnDekubaba {
         self.actor.scale.y = self.actor.scale.x;
         self.actor.scale.z = self.actor.scale.x;
         self.actor.shape_rot.z = self.actor.shape_rot.z.wrapping_add(0x1C70);
-        // EffectSsHahen_SpawnBurst at home: an effect, not ported.
+        self.hahen_burst(play, self.actor.home_pos, 1);
     }
 
     /// `EnDekubaba_DekuStick`: the stick lies for 200 frames (blinking for the last 40), to be
@@ -974,7 +1023,13 @@ impl EnDekubaba {
                 }
                 self.actor.col_chk_info.health = new_health.max(0) as u8;
                 if reaction == EN_DEKUBABA_DMG_REACT_FIRE {
-                    // EffectSsEnFire_SpawnVec3f four times: the flames, an effect, not ported.
+                    // EffectSsEnFire_SpawnVec3f four times, on body parts 0 to 3: the struct's
+                    // unused fields at 0x14C (EnDekubaba::effect_fire_pos).
+                    let scale = (self.scale_fac * 70.0) as i16;
+                    let me = self.ss_actor(play);
+                    for i in 0..4 {
+                        play.effect_ss_en_fire_spawn_vec3f(me, self.actor.world_pos, scale, 0, 0, i);
+                    }
                 }
             } else {
                 return;
@@ -1081,7 +1136,7 @@ impl ActorImpl for EnDekubaba {
         match self.action {
             Action::WaitPlayerNear => self.wait_player_near(play),
             Action::ExitGround => self.exit_ground(play),
-            Action::EnterGround => self.enter_ground(),
+            Action::EnterGround => self.enter_ground(play),
             Action::ChompAir => self.chomp_air(play),
             Action::Attack => self.attack(play),
             Action::PrepareAttack => self.prepare_attack(play),
@@ -1235,7 +1290,7 @@ impl ActorImpl for EnDekubaba {
 
 /// `func_80038A28` (`z_bgcheck.c`): a matrix at `t` whose y axis is the floor's normal (the
 /// normal's `s16` components over 32767, `CollisionPoly_GetNormalF`).
-fn floor_matrix(normal: [i16; 3], t: Vec3) -> Mat4 {
+pub(crate) fn floor_matrix(normal: [i16; 3], t: Vec3) -> Mat4 {
     let (nx, ny, nz) = (normal[0] as f32 * (1.0 / 32767.0), normal[1] as f32 * (1.0 / 32767.0), normal[2] as f32 * (1.0 / 32767.0));
     let mut xx = (1.0 - nx * nx).sqrt();
     let (zz, yz);

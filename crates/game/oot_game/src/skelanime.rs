@@ -331,6 +331,14 @@ impl SkelAnime {
     }
 
     /// `LinkAnimation_CopyJointToMorph`.
+    /// `Animation_Reverse`: play back the other way, from the end to the start.
+    pub fn reverse(&mut self) {
+        let start = self.start_frame;
+        self.start_frame = self.end_frame;
+        self.play_speed = -self.play_speed;
+        self.end_frame = start;
+    }
+
     pub fn copy_joint_to_morph(&mut self) {
         self.push(Request::CopyAll { dst: Table::Morph, src: Table::Joint });
     }

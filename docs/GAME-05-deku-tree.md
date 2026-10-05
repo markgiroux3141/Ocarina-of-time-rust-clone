@@ -9,10 +9,11 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 |---|---|---|
 | 1 | The decomp upgrade: an address-based name map from `2f4c25d`'s names to the new commit's, the citations migrated by it, the importer on the new layout, the pack's record names renamed (a format bump); every test passes and the goldens are the same bytes | done |
 | 2 | Damage and health: Player taking damage (kinds 3 and 4, the hit while swimming, burning, the red flash), death and game over, the enemies' damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`) | done |
-| 3 | The first enemies: `En_Dekubaba` (ported in milestone 2 but its effects), `En_St` (Skulltula), `En_Hintnuts` / `En_Dekunuts` (Deku Scrubs); enemy targeting and `Camera_Battle1`; drops on death; the effects they need (`EffectSs`) | |
+| 3a | Combat basics: Player's guard with the shield (blocking, deflecting); `Camera_Battle1`; the effects (`EffectSs`, `z_effect.c`), `En_Dekubaba`'s included; `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5); drops on death | done |
+| 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | |
 | 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors | |
 | 5 | Items in use: Deku sticks and nuts, the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`) | |
-| 6 | Gohma: `Boss_Goma` and her larvae; the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
+| 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
 
 The working rules are the same as for the earlier phases:
 - no game data in the repo;
@@ -444,3 +445,194 @@ By hand:
   at "Continue?" Space, and Link starts again at the entrance.
 - `game-deku-baba.bat fairy`: dying, the fairy revives Link.
 - `game-dummy.bat ice` (or `fire`, `electric`, `knockback`, `none`): walk into the dummy.
+
+## Milestone 3a: combat basics
+
+**Answer:** done. Link guards with the shield (R), blocking blows and bouncing a Deku Scrub's
+nut back. Locked on to an enemy, the camera is `Camera_Battle1`. The game's effects are in:
+the hit marks, dust, fragments, flames, sparks and the shield's streaks. The Keese
+(`En_Firefly`) and the withered Deku Baba (`En_Karebaba`) are ported whole, and kills drop
+items. The exit holds: in the Deku Tree's first room, Link kills a withered Deku Baba and takes
+its Deku Stick, blocks a Keese's dive and kills the Keese, with the battle camera on; the kills
+show their effects and the drops are picked up.
+
+The pack is format 18, in `out/data15`. Decisions are in [ADR 0033](adr/0033-effects.md) (the
+effects) and [ADR 0034](adr/0034-guard-battle-camera-and-the-first-enemies.md) (the rest).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 50 to 52):
+- `game-combat.bat`: the game on the Deku Tree's ground floor, by the withered Deku Baba and
+  under the Keese;
+- `test-combat.bat`: the milestone's tests;
+- `sandbox-combat.bat`: the exit run headless, its trace and screenshots.
+
+### What was built
+
+**The guard** (`oot_actors::player`):
+- **R guards:** `Player_ActionHandler_11` and `Player_Action_80843188`. The stick tilts the
+  shield. B stabs from behind it (`func_808428D8`). Climbing, talking or picking up interrupts
+  it. Letting go lowers it.
+- **R while locked on** raises the shield on the upper body (`func_80834758`, `func_80834B5C`,
+  `func_80834C74`).
+- **The shield in hand** (`Player_SetModelsForHoldingShield`, `func_8008EC70`): the held
+  shield's model in the pack (ADR 0034). Its collider, `shieldQuad`, is registered from the
+  hand (`Player_UpdateShieldCollider`), wood for the Deku Shield.
+- **A blow on the shield** (`func_808382DC`'s `AC_BOUNCED` path, `Player_Action_808435C4`): no
+  damage, the recoil (the body's in the guard, the upper body's otherwise) and the push back at
+  -18. A fire blow burns the Deku Shield.
+- **The swing's contact** (`func_80842DF4`): a swing bounced off something hard rebounds
+  (`func_80842D20`, `Player_Action_808505DC`). The blade meeting a wall strikes sparks (wood's,
+  or metal's with the soft or hard wall's sound) and pushes Link back at 14. A hit on an actor
+  freezes play a frame.
+- **`Item_Shield`** whole: a Deku Shield lying about, and the burnt one, which takes the
+  shield's place (`shieldMf`), hops, burns with eight flames and shrinks away.
+- **`En_Nutsball`** whole, pulled forward from 3b: the Deku Scrubs' nut. It breaks on anything,
+  and bounces back off the Deku Shield (or the adult's Hylian Shield) as Link's attack.
+- `Player_SetupAction` stops the idle fidget's voices (`func_808326F0`) as the C does.
+
+**`Camera_Battle1`** (`oot_game::camera`), whole: the swing to keep the enemy off to the side,
+the pitch by the distance, the roll, the fov, the spin attack's charge, the target lost. With it,
+`func_80043F94`, the bg check of rooms with the skybox disabled. BATTLE no longer falls back to
+`Camera_Normal1`.
+
+**The effects** (`oot_game::effect`, ADR 0033):
+- `EffectSs` whole: the table, the spawn, the update, the draw, the
+  `z_effect_soft_sprite_old_init.c` helpers;
+- eight overlays: `Effect_Ss_Dust`, `_Hahen`, `_HitMark`, `_En_Fire`, `_En_Ice`, `_Dead_Db`,
+  `_Fire_Tail` and `_Fhg_Flash` (the shock);
+- `z_effect.c`'s sparks and shield particles.
+
+Their callers now call them:
+- the collision check's hit marks, blood and shield streaks;
+- `En_Dekubaba`'s dirt, dust and flames;
+- the chest's, the boulder's, the sign's and the Deku Tree's mouth's dust and fragments;
+- Link's burning flames, shock sparks and the dust of his rolls.
+
+**`En_Karebaba`**, whole: idle in its leaves, springing up, upright and spinning, retracting, a
+slash killing it, the Deku Stick it leaves (offered for 200 frames), regrowing.
+
+**`En_Firefly`**, whole: perched, the dive from the perch, flying about, the attack, the bite,
+hovering after it, flying home. Hit, it is stunned, set alight, frozen or killed by its damage
+table. Dying, it falls, shrinks and drops from table 14. Its fire and frost trail from the draw.
+
+**`Actor_UpdateAll`** follows the C's list walk when an actor changes its category in its own
+update (ADR 0034).
+
+**The engine and the importer:**
+- a draw's per-vertex colours (the sparks);
+- bakes of overlay display lists (segment 0 as RAM holds the overlay);
+- the held-shield Link variants;
+- `MtxF` from glam's matrices.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game16`, `OOT_DATA_DIR=out/data15`):
+359 passed, 0 failed, 1 ignored. New, with their expectations from the C:
+- **`oot_actors --test guard`** (5):
+  - the guard coming up, held and lowered: the animations by `modelAnimType`, the sounds, the
+    collider at the hand's matrix;
+  - a blow blocked: no damage, the recoil, the speed, then the guard again;
+  - a Deku nut bounced back at the shield's yaw as `DMG_DEKU_STICK`;
+  - a nut hurting Link without the guard and breaking into 15 fragments;
+  - a fire blow burning the Deku Shield away (`Item_Shield`'s flames and timers).
+- **`oot_game` `camera::tests`** (3):
+  - `Camera_Battle1`'s data and timers, the swing and pitch it settles to, the fov at a heart
+    or less;
+  - the spin attack's charge (40 frames down to -20, back off to 250);
+  - Z_PARALLEL when the target goes.
+- **`oot_actors --test effects`** (1): a hit mark's life, colours, texture and draw, frame by
+  frame.
+- **`oot_actors --test enemies`** (4):
+  - the withered Deku Baba's states frame by frame (the rise, upright, the spin's geometry, the
+    retract);
+  - its death by a slash, the stick, the regrowth;
+  - the Keese's dive from its perch;
+  - a slash killing a Keese, its fall and shrink, and table 14's drop.
+- **`oot_actors --test combat`** (1): the exit run.
+
+**The exit run** (`Route::Combat`, `--script combat`, from a debug start on the ground floor of
+room 0):
+- the withered Deku Baba springs up and is slashed at frame 107 (`karebaba_killed`);
+- Link picks up its stick (`stick_taken`, 412);
+- he locks on to the Keese and blocks its dive with the shield (`blocked`, 689);
+- he slashes it while it hovers;
+- it dies, and he picks up its drop (a green rupee: table 14's heart, at full health) at frame
+  1890 (`keese_killed`).
+
+The run shows 1,322 frames on the battle camera, 5 hit marks, 51 fragments and 5 dust clouds.
+
+**The goldens.** Against milestone 2's build (`target/game15`, b9ce90c, on data14):
+- **`course_target`** (its sheet and trace) and **`course_target_locked`**: locked on to the
+  dummy, the camera is `Camera_Battle1`. The camera differs from frame 1. Link's moves follow
+  the camera's input yaw from frame 16.
+- **`deku_baba`**: the battle camera from frame 32 (the lock-on). The steering follows it, and
+  the steps come 3 frames later (`baba_weakened` 145, `baba_cut` 184).
+- **`playthrough`, `mido_shop`, `new_save_deku_tree`, `new_file_deku_tree`** and
+  **`mido_shop_audio`**: each is the same up to the first slash that meets a wall (frame 865 by
+  the bushes, 2838 at the plateau's switch). There the slash now recoils (`func_80842DF4`:
+  `NA_SE_IT_REFLECTION_WOOD`, the wood's sparks, the speed -14), and the rest follows.
+  - The playthrough's four bushes then gave no drop, so their order changed (the third and
+    fourth swapped). Its bush step is now at frame 1137 (977 before).
+  - The audio log's first difference is that sound. The voices `Player_SetupAction` now stops
+    change nothing before it.
+- **New case `combat`:** the exit run's trace, 1890 frames, the same bytes over two runs.
+- Every other trace and render is the same bytes.
+
+Re-recorded and logged in [golden/README.md](../golden/README.md): 87 hashes, 63 cases.
+
+### Decisions
+
+- **[ADR 0033](adr/0033-effects.md):**
+  - the effects are play state, updated and drawn where the C does them;
+  - the draws run once per game frame, for their `Rand` calls;
+  - bakes with dynamic colours, per-vertex colours and overlay display lists;
+  - the eight overlays the callers need.
+- **[ADR 0034](adr/0034-guard-battle-camera-and-the-first-enemies.md):**
+  - the held shield as a loadout bit, baked both ways;
+  - `En_Nutsball` and `Item_Shield` whole;
+  - `func_80043F94` for `Camera_Battle1`;
+  - `Actor_UpdateAll`'s list walk;
+  - pack format 18;
+  - short scripted runs, the feel checked by hand.
+- **The exit run is on the ground floor.** On the top floor, a withered Deku Baba's head flies
+  back from where it faced and falls down the middle.
+- **The exit kills the withered Deku Baba before the Keese.** While it's up, Z locks on to it
+  rather than the Keese, and nowhere in the Keese's reach has it out of Z's view.
+
+### Known gaps
+
+- **Effects not ported:** the sword's trail (`EffectBlure`); `Effect_Ss_Fhg_Flash`'s light
+  ball; every other soft sprite type, among them the bushes' and rocks' pieces
+  (`EffectSsKakera`) and water splashes (`EffectSsSibuki`).
+- **`func_80043F94` only for `Camera_Battle1`.** `Camera_KeepOn1` and `Camera_Parallel1` use
+  `Camera_BGCheckInfo` in its place in rooms with the skybox disabled.
+- **No lit torches:** `Obj_Syokudai` is a placeholder, so a Keese never catches fire from one.
+- **`ActorShadow_DrawCircle`** is still not ported for any actor.
+- **The guard's other shields:** the adult's guard and the Mirror Shield's are ported as the C
+  has them, but untested (no adult route has a shield yet).
+- **No rumble.**
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\test-combat.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-combat.bat
+```
+
+By hand, `game-combat.bat` (WASD the stick, Q is Z, E is B, R is R, Space is A):
+- **The guard:** hold R with nothing locked on. Link raises the Deku Shield in his right hand
+  (his sword stays on his back). Tilt the stick: the shield turns. Let go: it comes down.
+- **The withered Deku Baba:** walk towards it (ahead at the start, a little to the side, by the wall); it springs up and
+  spins its head. Q to lock on: the camera swings behind Link and keeps the Baba off to the
+  side. E while it's upright: a white hit flash, dirt and dust; its head flies off and lands as
+  a Deku Stick. Space by the stick picks it up. It grows back after a while.
+- **The Keese:** it dives from the wall above. Lock on and hold R: the dive hits the shield
+  (sparks, no damage, Link pushed back), and the Keese hovers. Let go of R and press E. It falls,
+  shrinks away, and may leave an item. Without the shield, its bite costs half a heart.
+- **A slash at a wall** recoils with sparks and a knock.
+- **What to report:**
+  - whether blocking feels right: when R takes effect, how far Link is pushed;
+  - whether the battle camera feels right as you move round an enemy;
+  - anything that looks off in the effects.

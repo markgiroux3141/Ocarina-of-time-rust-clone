@@ -177,6 +177,14 @@ pub enum PlayRequest {
     BurnDekuShield(Vec3),
     /// The death's and the revival's audio calls.
     Audio(PlayerAudio),
+    /// `CollisionCheck_SpawnShieldParticles` (`metal`: with its light) or the particles of
+    /// `CollisionCheck_SpawnShieldParticlesWood` (its sound is a `Sfx`): the sword on a wall
+    /// (`func_80842DF4`).
+    ShieldParticles { pos: Vec3, metal: bool },
+    /// `func_80832630`: a hit's freeze, `actorCtx.freezeFlashTimer` 1 unless one runs.
+    FreezeFlash,
+    /// `sBloodFuncs[kind]` at `pos` (`func_8002F9EC`'s `CollisionCheck_BlueBlood`).
+    Blood { kind: u8, pos: Vec3 },
 }
 
 /// The audio calls of Player's death and revival.
@@ -208,12 +216,11 @@ pub const PLAYER_KNOCKBACK_LARGE_ELECTRIFIED: u8 = 3;
 /// `PLAYER_TUNIC_GORON`, `PLAYER_SHIELD_DEKU` (`player.h`).
 const PLAYER_TUNIC_GORON: u8 = 1;
 const PLAYER_SHIELD_DEKU: u8 = 1;
+const PLAYER_SHIELD_HYLIAN: u8 = 2;
 /// `ROOM_ENV_HOT` (`room.h`): a hot room's `environmentType` (`behaviorType2`).
 const ROOM_ENV_HOT: u8 = 3;
 /// `SCENE_SPIRIT_TEMPLE_BOSS` (`scene_table.h`).
 const SCENE_SPIRIT_TEMPLE_BOSS: u16 = 0x17;
-/// `ACTOR_ITEM_SHIELD` (`actor_table.h`): the burning Deku Shield thrown off.
-const ACTOR_ITEM_SHIELD: i16 = 0x00EE;
 
 /// The ice round frozen Link (`Player_Draw` under `PLAYER_STATE2_14`): `gEffIceFragment3DL` with
 /// `Gfx_TwoTexScroll` on segment 8 and `gDPSetEnvColor(0, 50, 100, 255)`.
@@ -264,6 +271,9 @@ pub enum PlayerSfx {
 
 /// `SurfaceMaterial` (`bgcheck.h`): the ones Player names.
 const SURFACE_MATERIAL_SAND: u16 = 1;
+/// `SURFACE_MATERIAL_WOOD`, `SURFACE_MATERIAL_DIRT_SOFT` (`bgcheck.h`).
+const SURFACE_MATERIAL_WOOD: u16 = 10;
+const SURFACE_MATERIAL_DIRT_SOFT: u16 = 11;
 const SURFACE_MATERIAL_WATER_SHALLOW: u16 = 4;
 const SURFACE_MATERIAL_WATER_DEEP: u16 = 5;
 /// `PLAYER_BOOTS_IRON` (`player.h`).
@@ -286,6 +296,7 @@ const FLOOR_PROPERTY_7: u32 = 7;
 const FLOOR_PROPERTY_8: u32 = 8;
 const FLOOR_PROPERTY_9: u32 = 9;
 const FLOOR_TYPE_6: u32 = 6;
+const FLOOR_TYPE_8: u32 = 8;
 const FLOOR_TYPE_7: u32 = 7;
 const FLOOR_TYPE_9: u32 = 9;
 const FLOOR_TYPE_2: u32 = 2;
@@ -296,6 +307,10 @@ const SCENE_FOREST_TEMPLE: u16 = 0x03;
 /// `PLAYER_ANIMGROUP_*` indices used here (group 0 = wait, 1 = walk, 2 = run, ...).
 pub mod group {
     pub const WAIT: usize = 0;
+    /// `PLAYER_ANIMGROUP_defense`, `_defense_wait`, `_defense_end` (`player.h`).
+    pub const DEFENSE: usize = 0x14;
+    pub const DEFENSE_WAIT: usize = 0x15;
+    pub const DEFENSE_END: usize = 0x16;
     pub const WALK: usize = 1;
     pub const RUN: usize = 2;
     pub const DAMAGE_RUN: usize = 3;
@@ -419,6 +434,12 @@ pub enum Action {
     Dying,
     /// `Player_Action_8084E368`: dying (or revived) while swimming.
     DyingInWater,
+    /// `Player_Action_80843188`: guarding with the shield (R), the shield aimed with the stick.
+    Guard,
+    /// `Player_Action_808435C4`: pushed back by a hit on the shield.
+    GuardHit,
+    /// `Player_Action_808505DC`: the sword's rebound off something hard (`func_80842D20`).
+    Rebound,
 }
 
 /// `func_A74`: what `Player_Action_WaitForPutAway` runs once the item is away.
@@ -443,6 +464,12 @@ pub enum UpperAction {
     Sword,
     /// `Player_UpperAction_ChangeHeldItem`: an item change playing on `skelAnime2`.
     Change,
+    /// `func_80834B5C`: the shield held up while Z-targeting, until R is let go.
+    ShieldUp,
+    /// `func_80834BD4`: the shield's recoil from a blocked hit, back to up.
+    ShieldHit,
+    /// `func_80834C74`: the shield coming down.
+    ShieldDown,
 }
 
 impl Action {
@@ -492,6 +519,9 @@ impl Action {
             Action::SwimDamaged => "Player_Action_8084E30C",
             Action::Dying => "Player_Action_80843CEC",
             Action::DyingInWater => "Player_Action_8084E368",
+            Action::Guard => "Player_Action_80843188",
+            Action::GuardHit => "Player_Action_808435C4",
+            Action::Rebound => "Player_Action_808505DC",
         }
     }
 }
@@ -615,6 +645,11 @@ pub struct Player {
     /// Walk/run cycle phase in walk-animation frames (0..29).
     pub unk_868: f32,
     pub unk_870: f32,
+    /// `unk_86C`: the guard's lock-on weight (1 locked on to an enemy as the guard starts).
+    pub unk_86c: f32,
+    /// `rightHandType == PLAYER_MODELTYPE_RH_SHIELD` through `Player_SetModelsForHoldingShield`:
+    /// the shield in the right hand (the sheath without it), until the models are set again.
+    pub holding_shield: bool,
     pub unk_874: f32,
     /// Current run speed limit (`R_RUN_SPEED_LIMIT`, reduced when running into walls).
     pub unk_880: f32,
@@ -709,12 +744,17 @@ pub struct Player {
     pub cylinder: ColliderCylinder,
     /// `meleeWeaponQuads`: the sword's two AT quads, set from the draw. Collider ids 1 and 2.
     pub melee_weapon_quads: [ColliderQuad; 2],
-    /// `shieldQuad`: collider id 3 (shielding isn't ported, so it's never registered).
+    /// `shieldQuad`: collider id 3, registered while shielding (`Player_UpdateShieldCollider`).
     pub shield_quad: ColliderQuad,
+    /// `shieldMf`: the shield's matrix from the last draw, in the right hand or on the back.
+    pub shield_mf: glam::Mat4,
     /// `meleeWeaponInfo`: the sword's tip and base last frame, for the blur and the two quads.
     pub melee_weapon_info: [WeaponInfo; 3],
     /// `bodyPartsPos` (`PLAYER_BODYPART_*`), from the last draw.
     pub body_parts_pos: [Vec3; BODYPART_MAX],
+    /// `actor.shape.feetPos`: the feet (`FOOT_LEFT`, `FOOT_RIGHT`), from the last draw
+    /// (`Actor_SetFeetPos` in `Player_PostLimbDrawGameplay`).
+    pub feet_pos: [Vec3; 2],
     /// `targetActor`, `targetActorDistance`, `exchangeItemId`: who offered to talk this frame
     /// (`Actor_OfferTalkExchange`). Accepting it (the talk interrupt) comes with the message box.
     pub target_actor: Option<ActorHandle>,
@@ -855,6 +895,8 @@ impl Player {
             unk_864: 0.0,
             unk_868: 0.0,
             unk_870: 0.0,
+            unk_86c: 0.0,
+            holding_shield: false,
             unk_874: 0.0,
             floor_pitch: 0,
             floor_pitch_alt: 0,
@@ -922,8 +964,10 @@ impl Player {
             cylinder: ColliderCylinder::new(&D_80854624),
             melee_weapon_quads: [ColliderQuad::new(&D_80854650), ColliderQuad::new(&D_80854650)],
             shield_quad: ColliderQuad::new(&D_808546A0),
+            shield_mf: glam::Mat4::IDENTITY,
             melee_weapon_info: [WeaponInfo::default(); 3],
             body_parts_pos: [pos; BODYPART_MAX],
+            feet_pos: [pos; 2],
             target_actor: None,
             target_actor_distance: f32::MAX,
             exchange_item_id: 0,
@@ -1440,6 +1484,9 @@ impl Player {
             Action::SwimDamaged => self.action_8084e30c(env),
             Action::Dying => self.action_80843cec(env),
             Action::DyingInWater => self.action_8084e368(env),
+            Action::Guard => self.action_80843188(env),
+            Action::GuardHit => self.action_808435c4(env),
+            Action::Rebound => self.action_808505dc(env),
         }
     }
 
@@ -2199,9 +2246,11 @@ impl Player {
     /// - a hit on the body cylinder (`AC_HIT`);
     /// - a hurting wall or floor (`func_80042108`, the hot floors `FLOOR_TYPE_2`, `_3`).
     ///
-    /// `unk_A86`'s damage is never set, and the shield's bounce needs shielding, which isn't
-    /// ported (the shield's quad is never registered, so `AC_BOUNCED` is never set, nor the
-    /// burnt Deku Shield of a fire hit on it). The rumble isn't ported.
+    /// A hit on the shield (its quad `AC_BOUNCED`) is blocked instead: Link is pushed back at 18
+    /// with the guard's recoil (`Player_Action_808435C4`; on the upper body outside the guard,
+    /// `func_80834BD4`), and a fire hit burns a Deku Shield away (`func_8083819C`).
+    ///
+    /// `unk_A86`'s damage is never set. The rumble isn't ported.
     fn func_808382DC(&mut self, env: &Env) -> bool {
         use oot_game::actor::BGCHECKFLAG_CRUSHED;
         if self.unk_A86 != 0 {
@@ -2255,8 +2304,42 @@ impl Player {
             self.func_80837C0C(env, kind, speed, vy, yaw, 20);
             return true;
         }
-        // sp64: the shield's AC_BOUNCED (never set), or the roll's block. @bug (game): that one
-        // tests the attacking collider's u8 atFlags against 0x20000000, so it never holds.
+        // sp64: the shield's AC_BOUNCED, or the roll's block. @bug (game): that one tests the
+        // attacking collider's u8 atFlags against 0x20000000, so it never holds.
+        let sp64 = self.shield_quad.base.ac_flags & cc::AC_BOUNCED != 0;
+        if sp64 {
+            let data = env.data;
+            // (Player_RequestRumble: the rumble isn't ported.)
+            if !self.is_child_with_hylian_shield() {
+                if self.invincibility_timer >= 0 {
+                    let sp54 = self.action == Action::Guard;
+                    if !self.func_808332B8() {
+                        self.setup_action(data, Action::GuardHit, 0);
+                    }
+                    self.action_var1 = sp54 as _;
+                    let two = self.holds_two_handed_weapon(data) as usize;
+                    if !sp54 {
+                        self.set_upper_action_func(UpperAction::ShieldHit);
+                        // D_808543BC, D_808543B4.
+                        let anim = if self.unk_870 < 0.5 { ["link_anchor_defense_hit", "link_anchor_defense_long_hitR"][two] } else { ["link_anchor_defense_hit", "link_anchor_defense_long_hitL"][two] };
+                        let a = data.anim(anim);
+                        self.skel2.play_once(data, a);
+                    } else {
+                        // D_808543C4.
+                        let a = data.anim(["link_normal_defense_hit", "link_fighter_defense_long_hit"][two]);
+                        self.skel.play_once(data, a);
+                    }
+                }
+                if self.state1 & (STATE1_13 | STATE1_14 | STATE1_21) == 0 {
+                    self.linear_velocity = -18.0;
+                    self.current_yaw = self.actor.shape_rot.y;
+                }
+            }
+            if self.shield_quad.info.ac_hit_elem.is_some_and(|h| h.at_dmg_info.hit_special_effect == cc::HIT_SPECIAL_EFFECT_FIRE) {
+                self.func_8083819C(env);
+            }
+            return false;
+        }
         if self.unk_A87 != 0
             || self.invincibility_timer > 0
             || self.state1 & STATE1_26 != 0
@@ -2575,9 +2658,9 @@ impl Player {
         }
     }
 
-    /// `Player_UpdateBodyShock`: the shock's sparks, at a random body part every so often, each
-    /// with its crackle (`NA_SE_PL_SPARK`). The sparks (`EffectSsFhgFlash_SpawnShock`) are effects,
-    /// not ported; their `Rand` calls are made.
+    /// `Player_UpdateBodyShock`: the shock's sparks (`EffectSsFhgFlash_SpawnShock`, which then
+    /// jump about Link's body parts themselves), every so often, each with its crackle
+    /// (`NA_SE_PL_SPARK`).
     fn update_body_shock(&mut self, env: &Env) {
         self.body_shock_timer -= 1;
         self.unk_892 = self.unk_892.wrapping_add(self.body_shock_timer);
@@ -2594,7 +2677,7 @@ impl Player {
             let x = (io.rand.centered_float(5.0) + bp.x) - p.x;
             let y = (io.rand.centered_float(5.0) + bp.y) - p.y;
             let z = (io.rand.centered_float(5.0) + bp.z) - p.z;
-            let _ = (Vec3::new(x, y, z), shock_scale);
+            io.ss().fhg_flash_spawn_shock(env.me, Vec3::new(x, y, z), shock_scale as i16, oot_game::effect::fhg_flash::FHGFLASH_SHOCK_PLAYER);
             drop(io);
             self.actor.play_sfx_flagged2(NA_SE_PL_SPARK - SFX_FLAG);
         }
@@ -2603,21 +2686,26 @@ impl Player {
     /// `Player_UpdateBodyBurn`: the flames burn down (faster running, slowly in the Goron Tunic,
     /// at once with `PLAYER_STATE2_3`), with the torch's roar and half a heart's quarter off
     /// every 8 frames while any burns (every frame in Twinrova's room). A Deku Shield burns away
-    /// first (`func_8083819C`). The flames (`EffectSsFireTail_SpawnFlameOnPlayer`) are effects,
-    /// not ported.
+    /// first (`func_8083819C`). Each burning part has its flame this frame
+    /// (`EffectSsFireTail_SpawnFlameOnPlayer`), as big and bright as its timer.
     fn update_body_burn(&mut self, env: &Env) {
         let sp54 = if self.current_tunic == PLAYER_TUNIC_GORON { 20 } else { (self.linear_velocity * 0.4) as i32 + 1 };
         let sp58 = if self.state2 & STATE2_3 != 0 { 100 } else { 0 };
         let mut spawned_flame = false;
         self.func_8083819C(env);
-        for t in self.body_flame_timers.iter_mut() {
+        for (i, t) in self.body_flame_timers.iter_mut().enumerate() {
             let timer_step = sp58 + sp54;
             if *t as i32 <= timer_step {
                 *t = 0;
             } else {
                 spawned_flame = true;
                 *t = (*t as i32 - timer_step) as u8;
-                // The flame's scale and intensity (EffectSsFireTail_SpawnFlameOnPlayer).
+                let flame_scale = if *t as f32 > 20.0 { ((*t as f32 - 20.0) * 0.01).clamp(0.199_999_99, 0.2) } else { *t as f32 * 0.01 };
+                let flame_intensity = ((*t as f32 - 25.0) * 0.02).clamp(0.0, 1.0);
+                if let Some(me) = env.me {
+                    let pos = self.body_parts_pos[i];
+                    env.io.borrow_mut().ss().fire_tail_spawn_flame(me, self.actor.velocity, pos, flame_scale, i as i16, flame_intensity);
+                }
             }
         }
         if spawned_flame {
@@ -3202,14 +3290,20 @@ impl Player {
     // ================================================================================
     // Action setup and shared helpers
 
-    /// `Player_SetupAction`: switch action function.
-    fn setup_action(&mut self, _data: &GameData, action: Action, flags: i32) -> bool {
+    /// `Player_SetupAction`: switch action function. A change of item (the shield held, `itemAction`
+    /// -1) goes back to the held item's models (`func_8008EC70`) unless `flags` 1 keeps the
+    /// shield; without `flags` 1 the upper body goes back to the held item's action
+    /// (`func_80834644`) and the shield down.
+    fn setup_action(&mut self, data: &GameData, action: Action, flags: i32) -> bool {
         if self.action == action {
             return false;
         }
         self.action = action;
+        if self.item_ap != self.held_item_ap && (flags & 1 == 0 || self.state1 & STATE1_22 == 0) {
+            self.func_8008ec70(data);
+        }
         if flags & 1 == 0 && self.state1 & STATE1_11 == 0 {
-            // func_80834644: nothing held.
+            self.func_80834644(data);
             self.state1 &= !STATE1_22;
         }
         self.finish_anim_movement();
@@ -3219,7 +3313,447 @@ impl Player {
         self.action_var1 = 0;
         self.action_var2 = 0;
         self.idle_type = 0;
+        self.func_808326F0();
         true
+    }
+
+    /// `func_80834644`: the upper body back to the held item's action (an item change in progress
+    /// finished: `Player_FinishItemChange`), nothing held up (`Player_DetachHeldActor`: Player
+    /// holds no actor here), no change pending.
+    fn func_80834644(&mut self, data: &GameData) {
+        if self.upper == UpperAction::Change {
+            // Player_FinishItemChange: the change's sounds aren't the swap's here; its item goes
+            // into the hand.
+            let ap = self.held_item.unwrap_or(0);
+            self.use_item(data, ap);
+        }
+        let f = self.upper_for(data, self.held_item_ap);
+        self.set_upper_action_func(f);
+        self.idle_type = 0;
+        self.state1 &= !STATE1_8;
+    }
+
+    /// `Player_IsChildWithHylianShield`.
+    fn is_child_with_hylian_shield(&self) -> bool {
+        !self.adult && self.current_shield == PLAYER_SHIELD_HYLIAN
+    }
+
+    /// `Player_HoldsTwoHandedWeapon`: the Biggoron's Sword through the hammer.
+    fn holds_two_handed_weapon(&self, data: &GameData) -> bool {
+        let it = &data.items;
+        (it.ap("SWORD_BIGGORON")..=it.ap("HAMMER")).contains(&self.held_item_ap)
+    }
+
+    /// `Player_CheckHostileLockOn`.
+    fn check_hostile_lock_on(&self) -> bool {
+        self.state1 & STATE1_4 != 0
+    }
+
+    /// `Player_SetModelsForHoldingShield`: guarding with nothing else in hand (or the item in
+    /// hand being the one held), the shield goes into the right hand (`PLAYER_MODELTYPE_RH_SHIELD`,
+    /// the sheath without it: `SHEATH_18` to `_16`, `_19` to `_17`), with the guard's animation
+    /// type (`PLAYER_ANIMTYPE_2`) and no item action (-1).
+    fn set_models_for_holding_shield(&mut self, data: &GameData) {
+        if self.state1 & STATE1_22 != 0 && (self.item_ap < 0 || self.item_ap == self.held_item_ap) && !self.holds_two_handed_weapon(data) && !self.is_child_with_hylian_shield() {
+            self.holding_shield = true;
+            self.model_anim_type = 2;
+            self.item_ap = -1;
+        }
+    }
+
+    /// `func_8008EC70`: back to the held item's action and models.
+    fn func_8008ec70(&mut self, data: &GameData) {
+        self.item_ap = self.held_item_ap;
+        let g = data.items.action_model_group.get(self.held_item_ap.max(0) as usize).copied().unwrap_or(self.model_group);
+        self.player_set_model_group(data, g);
+        self.unk_6AD = 0;
+    }
+
+    /// `func_808346C4`: the shield's upper-body action (`func_80834B5C`); the animation raising it
+    /// from the stance's lead foot (`unk_870`: `D_808543A4`, `D_808543AC`).
+    fn func_808346c4(&mut self, data: &GameData) -> AnimId {
+        self.set_upper_action_func(UpperAction::ShieldUp);
+        // Player_DetachHeldActor: Player holds no actor here.
+        let two = self.holds_two_handed_weapon(data);
+        let name = match (self.unk_870 < 0.5, two) {
+            (true, false) => "link_anchor_waitR2defense",
+            (true, true) => "link_anchor_waitR2defense_long",
+            (false, false) => "link_anchor_waitL2defense",
+            (false, true) => "link_anchor_waitL2defense_long",
+        };
+        data.anim(name)
+    }
+
+    /// `func_80834758`: R while Z-targeting raises the shield on the upper body (not riding, not
+    /// in a cutscene's hold, nothing being changed, a shield worn and not the child's Hylian
+    /// Shield): its animation at its last frame, `NA_SE_IT_SHIELD_POSTURE`.
+    fn func_80834758(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.state1 & (STATE1_22 | STATE1_23 | STATE1_29) == 0
+            && self.held_item_ap == self.item_ap
+            && self.current_shield != 0
+            && !self.is_child_with_hylian_shield()
+            && self.is_z_targeting()
+            && self.input.cur.held(eng_input::pad::BTN_R)
+        {
+            let anim = self.func_808346c4(data);
+            let frame = data.anims[anim].last_frame();
+            self.skel2.change(data, anim, 1.0, frame, frame, ANIMMODE_ONCE, 0.0);
+            self.play_sfx(NA_SE_IT_SHIELD_POSTURE);
+            return true;
+        }
+        false
+    }
+
+    /// `func_80834894`: lowering the shield: the raise played backwards (`func_80834C74`), the
+    /// held item's models back, `NA_SE_IT_SHIELD_REMOVE`.
+    fn func_80834894(&mut self, data: &GameData) {
+        self.set_upper_action_func(UpperAction::ShieldDown);
+        if self.item_ap < 0 {
+            self.func_8008ec70(data);
+        }
+        self.skel2.reverse();
+        self.play_sfx(NA_SE_IT_SHIELD_REMOVE);
+    }
+
+    /// `func_80834B5C`: the shield up while R is held, else coming down.
+    fn func_80834b5c(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        self.skel2.update(data);
+        if !self.input.cur.held(eng_input::pad::BTN_R) {
+            self.func_80834894(data);
+        } else {
+            self.state1 |= STATE1_22;
+            self.set_models_for_holding_shield(data);
+        }
+        true
+    }
+
+    /// `func_80834BD4`: the hit's recoil on the upper body; once played, the shield up again.
+    fn func_80834bd4(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.skel2.update(data) {
+            let anim = self.func_808346c4(data);
+            let frame = data.anims[anim].last_frame();
+            self.skel2.change(data, anim, 1.0, frame, frame, ANIMMODE_ONCE, 0.0);
+        }
+        self.state1 |= STATE1_22;
+        self.set_models_for_holding_shield(data);
+        true
+    }
+
+    /// `func_80834C74`: the shield coming down; once down (or with B pressed), the held item's
+    /// upper-body action again, on the wait loop.
+    fn func_80834c74(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        self.s.use_held_item = self.s.held_item_button_is_held_down;
+        if self.s.use_held_item || self.skel2.update(data) {
+            let f = self.upper_for(data, self.held_item_ap);
+            self.set_upper_action_func(f);
+            let a = self.anim(data, group::WAIT);
+            self.skel2.play_loop(data, a);
+            self.idle_type = 0;
+            self.run_upper(env);
+            return false;
+        }
+        true
+    }
+
+    /// `Player_ActionHandler_11`: R guards (a shield worn; the child's Hylian Shield always,
+    /// another only when not Z-targeting): the guard's first frame (its animation at the end),
+    /// `NA_SE_IT_SHIELD_POSTURE`; the lock-on weight `unk_86C` set as it starts.
+    fn action_handler_11(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.current_shield != 0
+            && self.input.cur.held(eng_input::pad::BTN_R)
+            && (self.is_child_with_hylian_shield() || (!self.friendly_lock_on_or_parallel() && self.focus_actor.is_none()))
+        {
+            self.func_80832318();
+            // Player_DetachHeldActor: Player holds no actor here.
+            if self.setup_action(data, Action::Guard, 0) {
+                self.state1 |= STATE1_22;
+                let anim = if !self.is_child_with_hylian_shield() {
+                    self.set_models_for_holding_shield(data);
+                    self.anim(data, group::DEFENSE)
+                } else {
+                    data.anim("clink_normal_defense_ALL")
+                };
+                if anim != self.skel.animation {
+                    if self.check_hostile_lock_on() {
+                        self.unk_86c = 1.0;
+                    } else {
+                        self.unk_86c = 0.0;
+                        self.func_80833C3C();
+                    }
+                    self.upper_limb_rot_x = 0;
+                    self.upper_limb_rot_y = 0;
+                    self.upper_limb_rot_z = 0;
+                }
+                let frame = data.anims[anim].last_frame();
+                self.skel.change(data, anim, 1.0, frame, frame, ANIMMODE_ONCE, 0.0);
+                if self.is_child_with_hylian_shield() {
+                    // ANIM_FLAG_DISABLE_CHILD_ROOT_ADJUSTMENT.
+                    self.start_anim_movement(4);
+                }
+                self.play_sfx(NA_SE_IT_SHIELD_POSTURE);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_80843188`: guarding. Once the guard's animation is up, the defence's wait
+    /// loops; the stick tilts the shield (the focus's pitch up to 3500, the upper body's yaw),
+    /// relative to the camera. B stabs from behind it (`func_808428D8`), the stab's sword active
+    /// until its frame 2 with the walls' recoil (`func_80842DF4`). Climbing, talking or picking
+    /// up interrupts it (`func_80842964`); letting go of R ends it: the guard's end, the held
+    /// item's models back, `NA_SE_IT_SHIELD_REMOVE`.
+    fn action_80843188(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            if !self.is_child_with_hylian_shield() {
+                let a = self.anim(data, group::DEFENSE_WAIT);
+                self.skel.play_loop(data, a);
+            }
+            self.action_var2 = 1;
+            self.action_var1 = 0;
+        }
+        if !self.is_child_with_hylian_shield() {
+            self.state1 |= STATE1_22;
+            self.update_upper_body(env);
+            self.state1 &= !STATE1_22;
+        }
+        self.decelerate_to_zero();
+        if self.action_var2 != 0 {
+            let sp54 = self.input.rel.stick_y as f32 * 100.0;
+            let sp50 = self.input.rel.stick_x as f32 * -120.0;
+            let sp4e = self.actor.shape_rot.y.wrapping_sub(env.cam_input_yaw);
+            let sp40 = cos_s(sp4e);
+            let mut sp4c = ((sin_s(sp4e) * sp50) + (sp54 * sp40)) as i32 as i16;
+            let sp40 = cos_s(sp4e);
+            let sp4a = ((sp50 * sp40) - (sin_s(sp4e) * sp54)) as i32 as i16;
+            if sp4c > 3500 {
+                sp4c = 3500;
+            }
+            let mut sp48 = ((sp4c as i32 - self.actor.focus_rot.x as i32).abs() as f32 * 0.25) as i32 as i16;
+            if sp48 < 100 {
+                sp48 = 100;
+            }
+            let mut sp46 = ((sp4a as i32 - self.upper_limb_rot_y as i32).abs() as f32 * 0.25) as i32 as i16;
+            if sp46 < 50 {
+                sp46 = 50;
+            }
+            scaled_step_to_s(&mut self.actor.focus_rot.x, sp4c, sp48);
+            self.upper_limb_rot_x = self.actor.focus_rot.x;
+            scaled_step_to_s(&mut self.upper_limb_rot_y, sp4a, sp46);
+            if self.action_var1 != 0 {
+                if !self.func_80842df4(env) {
+                    if self.skel.cur_frame < 2.0 {
+                        self.func_80833A20(env, 1);
+                    }
+                } else {
+                    self.action_var2 = 1;
+                    self.action_var1 = 0;
+                }
+            } else if !self.func_80842964(env) {
+                if self.action_handler_11(env) {
+                    self.func_808428d8(env);
+                } else {
+                    self.state1 &= !STATE1_22;
+                    self.func_80832318();
+                    if self.is_child_with_hylian_shield() {
+                        self.func_8083A060(data);
+                        let a = data.anim("clink_normal_defense_ALL");
+                        let last = data.anims[a].last_frame();
+                        self.skel.change(data, a, 1.0, last, 0.0, ANIMMODE_ONCE, 0.0);
+                        self.start_anim_movement(4);
+                    } else {
+                        if self.item_ap < 0 {
+                            self.func_8008ec70(data);
+                        }
+                        let a = self.anim(data, group::DEFENSE_END);
+                        self.func_8083A098(data, a);
+                    }
+                    self.play_sfx(NA_SE_IT_SHIELD_REMOVE);
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+        self.state1 |= STATE1_22;
+        self.set_models_for_holding_shield(data);
+        // UNK6AE_ROT_FOCUS_X | UNK6AE_ROT_UPPER_X | UNK6AE_ROT_UPPER_Y.
+        self.unk_6AE_rot_flags |= 0x01 | 0x40 | 0x80;
+    }
+
+    /// `func_80842964`: climbing on (`Player_ActionHandler_13`), talking or picking up
+    /// (`Player_ActionHandler_2`) interrupts the guard.
+    fn func_80842964(&mut self, env: &Env) -> bool {
+        self.action_handler_13(env) || self.action_handler_talk(env) || self.action_handler_2(env)
+    }
+
+    /// `func_808428D8`: B with a sword stabs from the guard (`link_normal_defense_kiru`,
+    /// `PLAYER_MWA_STAB_1H`), towards where the upper body aims.
+    fn func_808428d8(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if !self.is_child_with_hylian_shield() && Self::melee_weapon(self.held_item_ap) != 0 && self.s.use_held_item {
+            let a = data.anim("link_normal_defense_kiru");
+            self.skel.play_once(data, a);
+            self.action_var1 = 1;
+            self.melee_weapon_animation = data.items.mwa("STAB_1H");
+            self.current_yaw = self.actor.shape_rot.y.wrapping_add(self.upper_limb_rot_y);
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_808435C4`: pushed back by a hit on the shield. Outside the guard, the
+    /// upper body's recoil (`func_80834BD4`) plays to the shield up again, or to an interrupt,
+    /// then the targeting stance; in the guard, the body's recoil, then the guard again at its
+    /// end.
+    fn action_808435c4(&mut self, env: &Env) {
+        let data = env.data;
+        self.decelerate_to_zero();
+        if self.action_var1 == 0 {
+            self.s.item_action = self.update_upper_body(env) as i32;
+            if self.upper == UpperAction::ShieldUp || self.try_action_interrupt_upper(env, 4.0) >= 1 {
+                self.setup_action(data, Action::TargetIdle, 1);
+            }
+        } else {
+            let r = self.try_action_interrupt(env, 4.0);
+            if r != 0 && (r >= 1 || self.skel.update(data)) {
+                self.setup_action(data, Action::Guard, 1);
+                self.state1 |= STATE1_22;
+                self.set_models_for_holding_shield(data);
+                let anim = self.anim(data, group::DEFENSE);
+                let frames = data.anims[anim].last_frame();
+                self.skel.change(data, anim, 1.0, frames, frames, ANIMMODE_ONCE, 0.0);
+            }
+        }
+    }
+
+    /// `Player_TryActionInterrupt` on the upper body's animation (`upperSkelAnime`).
+    fn try_action_interrupt_upper(&mut self, env: &Env, arg3: f32) -> i32 {
+        if (self.skel2.end_frame - arg3) <= self.skel2.cur_frame {
+            if self.try_action_handler_list(env, Self::S_ACTION_HANDLER_LIST_IDLE, true) {
+                return 0;
+            }
+            if self.get_movement_speed_and_yaw(env, 0.018).0 {
+                return 1;
+            }
+        }
+        -1
+    }
+
+    /// `func_80842D20`: the sword's rebound (`Player_Action_808505DC`; not out of the guard):
+    /// `D_808545CC`'s rebound by the weapon's length and the lock-on; pushed back at 18.
+    fn func_80842d20(&mut self, env: &Env) {
+        let data = env.data;
+        if self.action != Action::Guard {
+            self.func_80832440();
+            self.setup_action(data, Action::Rebound, 0);
+            let sp28 = if self.check_hostile_lock_on() { 2 } else { 0 };
+            let names = ["link_fighter_rebound", "link_fighter_rebound_long", "link_fighter_reboundR", "link_fighter_rebound_longR"];
+            let a = data.anim(names[self.holds_two_handed_weapon(data) as usize + sp28]);
+            // Player_AnimPlayOnceAdjusted.
+            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+        }
+        // (Player_RequestRumble: the rumble isn't ported.)
+        self.linear_velocity = -18.0;
+        // func_80842CF0: a Deku Stick breaking, the Biggoron's Sword's wear: neither is held.
+    }
+
+    /// `func_80842DF4`: the swing's contact. A swing bounced off something hard (`AT_BOUNCED`)
+    /// rebounds (`func_80842D20`) with the hit's freeze; from frame 2, the sword's tip 10 beyond
+    /// the blade meeting a wall (`BgCheck_EntityLineTest1`) strikes sparks (wood's, or the shield
+    /// particles with a soft or hard wall's sound) and pushes Link back at 14 (unless he's going
+    /// backwards). A hit on an actor freezes play a frame (not a sign's), and an electric
+    /// backlash shocks Link (half a heart). True when the swing was cut short.
+    fn func_80842df4(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.melee_weapon_state <= 0 {
+            return false;
+        }
+        let spin = data.items.mwa("SPIN_ATTACK_1H");
+        let q = &self.melee_weapon_quads;
+        if self.melee_weapon_animation < spin {
+            if q[0].base.at_flags & cc::AT_BOUNCED == 0 && q[1].base.at_flags & cc::AT_BOUNCED == 0 {
+                if self.skel.cur_frame >= 2.0 {
+                    let tip = self.melee_weapon_info[0].tip;
+                    let base_to_tip = self.melee_weapon_info[0].base - tip;
+                    let mut phi = base_to_tip.length();
+                    if phi != 0.0 {
+                        phi = (phi + 10.0) / phi;
+                    }
+                    let sp68 = tip + base_to_tip * phi;
+                    // (SurfaceType_IsIgnoredByEntities: the entity line test skips those polys already.)
+                    if let Some((sp5c, poly)) = env.col.entity_line_test(sp68, tip, true, false, false, true)
+                        && env.col.floor_type(poly) != FLOOR_TYPE_6
+                        && !self.func_8002f9ec(env, poly, sp5c)
+                    {
+                        // (The hammer's quake: not held.)
+                        if self.linear_velocity >= 0.0 {
+                            let material = env.col.sfx_type(poly) as u16;
+                            if material == SURFACE_MATERIAL_WOOD {
+                                self.play_requests.push(PlayRequest::ShieldParticles { pos: sp5c, metal: false });
+                                self.sfx(PlayerSfx::Actor(NA_SE_IT_REFLECTION_WOOD));
+                            } else {
+                                self.play_requests.push(PlayRequest::ShieldParticles { pos: sp5c, metal: true });
+                                self.play_sfx(if material == SURFACE_MATERIAL_DIRT_SOFT { NA_SE_IT_WALL_HIT_SOFT } else { NA_SE_IT_WALL_HIT_HARD });
+                            }
+                            // func_80842CF0: no stick or Biggoron's Sword.
+                            self.linear_velocity = -14.0;
+                        }
+                    }
+                }
+            } else {
+                self.func_80842d20(env);
+                self.play_requests.push(PlayRequest::FreezeFlash);
+                return true;
+            }
+        }
+        let q = &self.melee_weapon_quads;
+        let temp1 = q[0].base.at_flags & cc::AT_HIT != 0 || q[1].base.at_flags & cc::AT_HIT != 0;
+        if temp1 {
+            if self.melee_weapon_animation < spin {
+                // @bug (game): meleeWeaponQuads[temp1 ? 1 : 0] with temp1 a boolean is always the
+                // second quad, whichever one hit.
+                let at = self.melee_weapon_quads[1].base.at;
+                if at.and_then(|h| env.target(h)).is_some_and(|a| a.id != crate::en_kanban::ACTOR_EN_KANBAN) {
+                    self.play_requests.push(PlayRequest::FreezeFlash);
+                }
+            }
+            // func_80842AC4 (a Deku Stick) and func_80842B7C (the Biggoron's Sword): neither held.
+            if self.held_item_ap != data.items.ap("HAMMER") && self.actor.col_chk_info.at_hit_backlash == cc::HIT_BACKLASH_ELECTRIC {
+                self.actor.col_chk_info.damage = 8;
+                let yaw = self.actor.shape_rot.y;
+                self.func_80837C0C(env, PLAYER_HIT_RESPONSE_ELECTRIFIED, 0.0, 0.0, yaw, 20);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `func_8002F9EC` (`z_actor.c`): the sword on a `FLOOR_TYPE_8` surface (Jabu-Jabu's
+    /// flesh): blue blood and `NA_SE_IT_WALL_HIT_BUYO`. (`roomCtx.drawParams[0]` isn't modelled.)
+    fn func_8002f9ec(&mut self, env: &Env, poly: eng_collision::bgcheck::PolyId, pos: Vec3) -> bool {
+        if env.col.floor_type(poly) == FLOOR_TYPE_8 {
+            self.play_requests.push(PlayRequest::Blood { kind: cc::BLOOD_BLUE, pos });
+            self.play_sfx(NA_SE_IT_WALL_HIT_BUYO);
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_808505DC`: the rebound; from frame 6, standing.
+    fn action_808505dc(&mut self, env: &Env) {
+        let data = env.data;
+        self.skel.update(data);
+        self.decelerate_to_zero();
+        if self.skel.cur_frame >= 6.0 {
+            self.func_80839FFC(data);
+        }
     }
 
     /// `Player_ZeroSpeedXZ`.
@@ -3329,10 +3863,11 @@ impl Player {
         }
     }
 
-    /// `Player_TryActionHandlerList`: the per-action list of interrupts (`sActionHandlerFuncs`). Ported: 6
-    /// (`Player_ActionHandler_Roll`, roll / put the sword away on A), 7 (`Player_ActionHandler_7`, B attacks), 10
-    /// (`Player_ActionHandler_10`, hops while targeting) and 12 (`Player_ActionHandler_12`, climbing onto ledges);
-    /// the others need other items, doors or NPCs and report "not taken".
+    /// `Player_TryActionHandlerList`: the per-action list of interrupts (`sActionHandlerFuncs`). Ported: 0, 1,
+    /// 2, 4 (talking), 5, 6 (`Player_ActionHandler_Roll`, roll / put the sword away on A), 7
+    /// (`Player_ActionHandler_7`, B attacks), 10 (`Player_ActionHandler_10`, hops while targeting), 11
+    /// (`Player_ActionHandler_11`, the guard on R), 12 (`Player_ActionHandler_12`, climbing onto ledges) and 13;
+    /// the others need other items and report "not taken".
     fn try_action_handler_list(&mut self, env: &Env, list: &[i8], arg3: bool) -> bool {
         if self.state1 & (1 | (1 << 7) | STATE1_29) != 0 {
             return false;
@@ -3356,6 +3891,9 @@ impl Player {
                 return true;
             }
             if idx == 2 && self.action_handler_2(env) {
+                return true;
+            }
+            if idx == 11 && self.action_handler_11(env) {
                 return true;
             }
             if idx == 4 && self.action_handler_talk(env) {
@@ -4111,13 +4649,31 @@ impl Player {
             }
             let yaw = self.actor.shape_rot.y;
             self.func_8083DF68(speed, yaw);
-            // func_8084269C: on a ground or sand floor the roll raises dust (its effect,
-            // func_800286CC, isn't ported) and its sound.
-            if self.floor_sfx_offset == 0 || self.floor_sfx_offset == SURFACE_MATERIAL_SAND {
+            if self.func_8084269c(env) {
                 self.actor.play_sfx_flagged2(NA_SE_PL_ROLL_DUST - SFX_FLAG);
             }
             self.process_anim_sfx_list(env.audio.player_anim_sfx("sRollAnimSfxList"));
         }
+    }
+
+    /// `func_8084269C`: on a dirt or sand floor, a puff of dust at each foot (`func_800286CC`),
+    /// each at a point scattered by `func_8084260C` from the floor under the foot. True when there
+    /// was dust.
+    ///
+    /// @bug (game): the right foot's puff is at the foot itself; its scattered point is drawn
+    /// and not used.
+    fn func_8084269c(&mut self, env: &Env) -> bool {
+        if self.floor_sfx_offset == 0 || self.floor_sfx_offset == SURFACE_MATERIAL_SAND {
+            let mut io = env.io.borrow_mut();
+            let [l, r] = self.feet_pos;
+            let floor = self.actor.floor_height;
+            let p = func_8084260c(&mut io.rand, l, floor - l.y, 7.0, 5.0);
+            io.ss().func_800286cc(p, Vec3::ZERO, Vec3::ZERO, 50, 30);
+            let _ = func_8084260c(&mut io.rand, r, floor - r.y, 7.0, 5.0);
+            io.ss().func_800286cc(r, Vec3::ZERO, Vec3::ZERO, 50, 30);
+            return true;
+        }
+        false
     }
 
     /// `Player_TryActionInterrupt`: near the end of an animation, allow interrupts or restarting to run.
@@ -5036,11 +5592,13 @@ impl Player {
 
     fn run_upper(&mut self, env: &Env) -> bool {
         match self.upper {
-            // func_8083485C / Player_UpperAction_Sword: func_80834758 (shield up on R) is not ported.
-            UpperAction::Default => false,
+            // func_8083485C.
+            UpperAction::Default => self.func_80834758(env),
+            // Player_UpperAction_Sword: func_80834758, then func_8083499C.
             UpperAction::Sword => {
-                // func_8083499C.
-                if self.state1 & STATE1_8 != 0 {
+                if self.func_80834758(env) {
+                    true
+                } else if self.state1 & STATE1_8 != 0 {
                     self.start_changing_held_item(env.data);
                     true
                 } else {
@@ -5048,6 +5606,9 @@ impl Player {
                 }
             }
             UpperAction::Change => self.upper_action_change_held_item(env),
+            UpperAction::ShieldUp => self.func_80834b5c(env),
+            UpperAction::ShieldHit => self.func_80834bd4(env),
+            UpperAction::ShieldDown => self.func_80834c74(env),
         }
     }
 
@@ -5178,6 +5739,9 @@ impl Player {
             t = 0;
         }
         self.model_anim_type = t;
+        // Player_SetModels: the group's hands and sheath, then Player_SetModelsForHoldingShield.
+        self.holding_shield = false;
+        self.set_models_for_holding_shield(data);
     }
 
     /// `Player_StartChangingHeldItem`: start the change animation on `skelAnime2`.
@@ -5428,23 +5992,26 @@ impl Player {
         let data = env.data;
         let a = data.items.attacks[self.melee_weapon_animation];
         self.state2 |= STATE2_5;
-        // func_80842DF4 (weapon hits and recoil off walls): no actor/weapon collision.
-        self.func_8084285C(env, 0.0, a.active_start, a.active_end);
-        if self.state2 & STATE2_30 != 0 && self.skel.on_frame(0.0) {
-            self.linear_velocity = 15.0;
-            self.state2 &= !STATE2_30;
-        }
-        // linearVelocity > 12: dust (func_8084269C).
-        step_to_f(&mut self.linear_velocity, 0.0, 5.0);
-        self.func_8083C50C();
-        if self.skel.update(data) && !self.action_handler_7(env) {
-            let mf = self.skel.move_flags;
-            let end = if self.state1 & STATE1_4 != 0 { a.end_locked } else { a.end };
-            self.func_80832318();
-            self.skel.move_flags = 0;
-            self.func_8083A098(data, end);
-            self.skel.move_flags = mf;
-            self.state3 |= STATE3_3;
+        if !self.func_80842df4(env) {
+            self.func_8084285C(env, 0.0, a.active_start, a.active_end);
+            if self.state2 & STATE2_30 != 0 && self.skel.on_frame(0.0) {
+                self.linear_velocity = 15.0;
+                self.state2 &= !STATE2_30;
+            }
+            if self.linear_velocity > 12.0 {
+                self.func_8084269c(env);
+            }
+            step_to_f(&mut self.linear_velocity, 0.0, 5.0);
+            self.func_8083C50C();
+            if self.skel.update(data) && !self.action_handler_7(env) {
+                let mf = self.skel.move_flags;
+                let end = if self.state1 & STATE1_4 != 0 { a.end_locked } else { a.end };
+                self.func_80832318();
+                self.skel.move_flags = 0;
+                self.func_8083A098(data, end);
+                self.skel.move_flags = mf;
+                self.state3 |= STATE3_3;
+            }
         }
     }
 
@@ -7509,7 +8076,35 @@ impl Player {
         for (i, name) in BODYPART_LIMBS.iter().enumerate() {
             self.body_parts_pos[i] = world[data.limb(name)].transform_point3(Vec3::ZERO);
         }
+        // Actor_SetFeetPos: sLeftRightFootLimbModelFootPos[linkAge] in each foot's space.
+        let foot = if self.adult { Vec3::new(200.0, 300.0, 0.0) } else { Vec3::new(200.0, 200.0, 0.0) };
+        self.feet_pos = [world[data.limb("L_FOOT")].transform_point3(foot), world[data.limb("R_FOOT")].transform_point3(foot)];
         world
+    }
+
+    /// `this->rightHandType == PLAYER_MODELTYPE_RH_SHIELD`: the model group's right hand
+    /// (`gPlayerModelTypes`), or the shield held up (`Player_SetModelsForHoldingShield`).
+    fn right_hand_is_shield(&self, play: &PlayState) -> bool {
+        if self.holding_shield {
+            return true;
+        }
+        let rules = &play.rules;
+        let name = play.data.items.model_group_names.get(self.model_group).map(String::as_str).unwrap_or("");
+        rules.model_group(name).is_some_and(|g| rules.model_groups[g].right == rules.model_type("RH_SHIELD"))
+    }
+
+    /// `Player_UpdateShieldCollider`: while shielding, the shield's quad from the limb's matrix,
+    /// its material the shield's (`shieldColMaterials`: the Deku Shield wood, the others metal),
+    /// registered for AC and AT.
+    fn update_shield_collider(&mut self, play: &mut PlayState, mtx: glam::Mat4, quad_src: &[Vec3; 4]) {
+        const SHIELD_COL_MATERIALS: [u8; 4] = [cc::COL_MATERIAL_METAL, cc::COL_MATERIAL_WOOD, cc::COL_MATERIAL_METAL, cc::COL_MATERIAL_METAL];
+        if self.state1 & STATE1_22 != 0 {
+            self.shield_quad.base.col_type = SHIELD_COL_MATERIALS[self.current_shield as usize];
+            let d = quad_src.map(|v| mtx.transform_point3(v));
+            self.shield_quad.set_vertices(d[0], d[1], d[2], d[3]);
+            play.collision_check_set_ac(&self.actor, COLLIDER_SHIELD, &mut self.shield_quad);
+            play.collision_check_set_at(&self.actor, COLLIDER_SHIELD, &mut self.shield_quad);
+        }
     }
 
     /// `Player_PostLimbDrawGameplay`, `PLAYER_LIMB_R_HAND`: `sGetItemRefPos`, where the held-up
@@ -7620,6 +8215,14 @@ pub const COLLIDER_SHIELD: u8 = 3;
 /// `PLAYER_BODYPART_MAX`, and the limbs of `PLAYER_BODYPART_*` in order: every limb after the
 /// root that has a display list (`Player_OverrideLimbDrawGameplayCommon`).
 pub const BODYPART_MAX: usize = 18;
+/// `func_8084260C`: `src` scattered by up to `arg3` across and `arg4` up, from `arg2` above it.
+fn func_8084260c(rand: &mut oot_game::play::Rand, src: Vec3, arg2: f32, arg3: f32, arg4: f32) -> Vec3 {
+    let x = (rand.zero_one() * arg3) + src.x;
+    let y = (rand.zero_one() * arg4) + (src.y + arg2);
+    let z = (rand.zero_one() * arg3) + src.z;
+    Vec3::new(x, y, z)
+}
+
 const BODYPART_LIMBS: [&str; BODYPART_MAX] =
     ["WAIST", "R_THIGH", "R_SHIN", "R_FOOT", "L_THIGH", "L_SHIN", "L_FOOT", "HEAD", "HAT", "COLLAR", "L_SHOULDER", "L_FOREARM", "L_HAND", "R_SHOULDER", "R_FOREARM", "R_HAND", "SHEATH", "TORSO"];
 pub const BODYPART_R_FOOT: usize = 3;
@@ -7766,6 +8369,8 @@ mod rs {
     pub const DAMAGE_FLASH_FAR: usize = 8;
     /// `switches`: the frozen ice's scale (`PLAYER_STATE2_14`), 0 for none.
     pub const ICE_SCALE: usize = 9;
+    /// `switches`: the shield in the right hand (`Player_SetModelsForHoldingShield`).
+    pub const HOLDING_SHIELD: usize = 10;
 }
 
 impl LookRotations {
@@ -7935,6 +8540,26 @@ impl ActorImpl for Player {
         // Player_PostLimbDrawGameplay, PLAYER_LIMB_L_HAND: leftHandPos.
         self.left_hand_pos = world[data.limb("L_HAND")].transform_point3(Vec3::ZERO);
         self.post_limb_draw_l_hand(play, world[data.limb("L_HAND")]);
+        // PLAYER_LIMB_R_HAND: the shield in hand (sRightHandLimbModelShieldQuadVertices).
+        let right_hand_is_shield = self.right_hand_is_shield(play);
+        if self.actor.scale.y >= 0.0 && right_hand_is_shield {
+            const V: [Vec3; 4] = [Vec3::new(-4500.0, -3000.0, -600.0), Vec3::new(1500.0, -3000.0, -600.0), Vec3::new(-4500.0, 3000.0, -600.0), Vec3::new(1500.0, 3000.0, -600.0)];
+            self.shield_mf = world[data.limb("R_HAND")];
+            self.update_shield_collider(play, world[data.limb("R_HAND")], &V);
+        }
+        // PLAYER_LIMB_SHEATH, the right hand not holding the shield (RH_FF, Farore's Wind, isn't
+        // ported): the child's Hylian Shield guards on his back (sSheathLimbModelShieldQuadVertices),
+        // and the shield's matrix is on the back (sSheathLimbModelShieldOnBackPos, ...ZyxRot).
+        if self.actor.scale.y >= 0.0 && !right_hand_is_shield {
+            const V: [Vec3; 4] = [Vec3::new(-3000.0, -3000.0, -900.0), Vec3::new(3000.0, -3000.0, -900.0), Vec3::new(-3000.0, 3000.0, -900.0), Vec3::new(3000.0, 3000.0, -900.0)];
+            let sheath = world[data.limb("SHEATH")];
+            if self.is_child_with_hylian_shield() {
+                self.update_shield_collider(play, sheath, &V);
+            }
+            let mut mf = oot_game::sys_matrix::MtxF::from_mat4(sheath);
+            mf.translate_rotate_zyx(Vec3::new(630.0, 100.0, -30.0), [0, 0, 0x7FFF]);
+            self.shield_mf = mf.to_mat4();
+        }
     }
 
 
@@ -7963,7 +8588,7 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 10];
+        let mut switches = vec![0u32; 11];
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
@@ -7975,6 +8600,7 @@ impl ActorImpl for Player {
         switches[rs::DAMAGE_FLASH_FAR] = self.damage_flash_far.map(|f| f as u32).unwrap_or(0);
         // The ice's scale while frozen: (actionVar1 >> 1) * 22.
         switches[rs::ICE_SCALE] = if self.state2 & STATE2_14 != 0 { ((self.action_var1 >> 1) as i32 * 22) as u32 } else { 0 };
+        switches[rs::HOLDING_SHIELD] = self.holding_shield as u32;
         RenderState {
             pos: self.actor.world_pos,
             rot: [0, self.actor.shape_rot.y, 0],
@@ -8019,6 +8645,7 @@ impl ActorImpl for Player {
             // Player_OverrideLimbDrawGameplayDefault reads the save's B item as it draws.
             child_has_kokiri_sword: play.save.equips.button_items[0] == oot_game::item::ITEM_SWORD_KOKIRI,
             moving_fast: fists,
+            holding_shield: st.switches.get(rs::HOLDING_SHIELD).copied().unwrap_or(0) != 0,
         };
         let mesh = MeshKey { name: loadout.variant_key(rules), segment_textures: vec![(8, eye as u16), (9, mouth as u16)] };
         // In a crawlspace, with Link behind the near plane (actor.projectedPos.z < 0, from
@@ -8083,6 +8710,15 @@ impl ActorImpl for Player {
 impl PlayerIface for Player {
     fn adult(&self) -> bool {
         self.adult
+    }
+    fn current_shield(&self) -> u8 {
+        self.current_shield
+    }
+    fn melee_weapon_state(&self) -> i8 {
+        self.melee_weapon_state as i8
+    }
+    fn shield_mf(&self) -> oot_game::sys_matrix::MtxF {
+        oot_game::sys_matrix::MtxF::from_mat4(self.shield_mf)
     }
     fn set_cs_mode(&mut self, cs_mode: u8, actor: Option<ActorHandle>, door_bg_cam_index: i16) {
         self.cs_mode = cs_mode;
@@ -8278,12 +8914,22 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             }
         }
         PlayRequest::BurnDekuShield(pos) => {
-            // Actor_Spawn(ACTOR_ITEM_SHIELD, params 1): Item_Shield isn't ported (a placeholder).
-            if let Err(e) = play.actor_spawn(ACTOR_ITEM_SHIELD, pos, [0; 3], 1) {
+            // Actor_Spawn(ACTOR_ITEM_SHIELD, params 1): the burning shield thrown off.
+            if let Err(e) = play.actor_spawn(crate::item_shield::ACTOR_ITEM_SHIELD, pos, [0; 3], 1) {
                 log::debug!("Item_Shield: {e:?}");
             }
             play.start_textbox(0x305F, None);
         }
+        PlayRequest::ShieldParticles { pos, metal } => {
+            let fx = if metal { cc::HitFx::ShieldParticlesMetal(pos) } else { cc::HitFx::ShieldParticlesWood(pos) };
+            play.collision_check_hit_fx(vec![fx]);
+        }
+        PlayRequest::FreezeFlash => {
+            if play.actors.freeze_flash_timer == 0 {
+                play.actors.freeze_flash_timer = 1;
+            }
+        }
+        PlayRequest::Blood { kind, pos } => play.collision_check_hit_fx(vec![cc::HitFx::Blood(kind, pos)]),
         PlayRequest::Audio(a) => match a {
             PlayerAudio::BgmVolumeOffDuringFanfare => play.audio.audio_set_bgm_volume_off_during_fanfare(),
             PlayerAudio::BgmVolumeOnDuringFanfare => play.audio.audio_set_bgm_volume_on_during_fanfare(),

@@ -38,7 +38,7 @@ fn camera_data_read_from_decomp() {
     let m = mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_Z_TARGET_FRIENDLY);
     assert_eq!(m.func, "CAM_FUNC_KEEP1");
     assert_eq!(m.values, [-20, 120, 140, 25, 45, -5, 15, 15, 45, 50, 0x2001, -50, 30]);
-    // STILL is Normal1 too; BATTLE is Camera_Battle1 (not ported).
+    // STILL is Normal1 too; BATTLE is Camera_Battle1.
     assert_eq!(mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_STILL).func, "CAM_FUNC_NORM1");
     assert_eq!(mode(camera::CAM_SET_NORMAL0, camera::CAM_MODE_Z_TARGET_UNFRIENDLY).func, "CAM_FUNC_BATT1");
 

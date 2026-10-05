@@ -28,6 +28,8 @@ struct Instance {
     lights: Vec<eng_gfx::PointLight>,
     /// The fog its fogged materials were last written with.
     fog: Option<eng_gfx::FogOverride>,
+    /// The vertex colours it was last given (`DrawParams::vertex_colors`).
+    vertex_colors: Option<Vec<[u8; 4]>>,
 }
 
 /// Uploaded meshes by key, with their per-frame instances.
@@ -69,12 +71,16 @@ impl MeshCache {
                 self.missing.insert(cmd.mesh.clone(), ());
                 return false;
             };
-            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None });
+            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None, vertex_colors: None });
         }
         let inst = &mut list[n];
         if inst.posed.as_ref().is_none_or(|(t, b)| *t != cmd.transform || *b != cmd.bones) {
             inst.model.pose(&cmd.bones, cmd.transform);
             inst.posed = Some((cmd.transform, cmd.bones.clone()));
+        }
+        if inst.vertex_colors != cmd.params.vertex_colors {
+            inst.model.set_vertex_colors(cmd.params.vertex_colors.as_deref());
+            inst.vertex_colors = cmd.params.vertex_colors.clone();
         }
         let lights_changed = inst.lights != cmd.params.lights;
         let fog_changed = inst.fog != cmd.params.fog;

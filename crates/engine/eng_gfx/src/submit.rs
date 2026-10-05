@@ -44,6 +44,10 @@ pub struct DrawParams {
     /// This draw's fog in place of the frame's (`gDPSetFogColor` and `gSPFogFactor` set in the
     /// list before it): the materials that fog use it.
     pub fog: Option<FogOverride>,
+    /// The mesh's vertex colours replaced, vertex by vertex in the mesh's order (its batches'
+    /// triangle-list vertices): vertices the game builds every frame (`GRAPH_ALLOC`'d `Vtx`
+    /// with the frame's colours, `z_eff_spark.c`). Vertices past the end keep their own.
+    pub vertex_colors: Option<Vec<[u8; 4]>>,
 }
 
 /// A draw's own fog: the fog colour and the RSP's fog factor (`gSPFogFactor`'s multiplier

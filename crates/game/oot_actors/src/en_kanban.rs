@@ -551,13 +551,17 @@ impl EnKanban {
         }
         if bounced {
             audio_play_actor_sfx2(play, NA_SE_EV_WOODPLATE_BOUND);
-            // The dust (func_800286CC): not ported. Its random positions are drawn from the
-            // game's sequence all the same.
+            // The dust (func_800286CC), half the pieces plus 3 clouds around it, 3 above the floor.
             let n = (self.part_count as f32 * 0.5) as i16 + 3;
-            for _ in 0..n {
-                play.rand.centered_float((self.part_count as f32 * 0.5) + 20.0);
-                play.rand.centered_float((self.part_count as f32 * 0.5) + 20.0);
-            }
+            let (wp, y) = (self.actor.world_pos, self.actor.floor_height + 3.0);
+            let r = (self.part_count as f32 * 0.5) + 20.0;
+            play.with_ss(|ss| {
+                for _ in 0..n {
+                    let x = wp.x + ss.rand.centered_float(r);
+                    let z = wp.z + ss.rand.centered_float(r);
+                    ss.func_800286cc(Vec3::new(x, y, z), Vec3::ZERO, Vec3::new(0.0, 0.1, 0.0), 100, 5);
+                }
+            });
         }
         // DECR(airTimer).
         if self.air_timer != 0 {

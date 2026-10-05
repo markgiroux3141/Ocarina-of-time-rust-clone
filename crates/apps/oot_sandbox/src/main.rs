@@ -672,6 +672,8 @@ fn write_audio(cli: &Cli, w: &PlayState, run: &RunAudio) -> Result<()> {
         let sfx_pos = |n: &mut std::collections::HashMap<oot_game::audio::sfx::SfxPos, usize>, p: oot_game::audio::sfx::SfxPos| match p {
             oot_game::audio::sfx::SfxPos::Default => "default".to_string(),
             oot_game::audio::sfx::SfxPos::Source(i) => format!("source {i}"),
+            oot_game::audio::sfx::SfxPos::EffectSsPos(i) => format!("effect {i} pos"),
+            oot_game::audio::sfx::SfxPos::EffectSsVec(i) => format!("effect {i} vec"),
             oot_game::audio::sfx::SfxPos::Actor(_) => {
                 let k = n.len();
                 format!("actor {}", n.entry(p).or_insert(k))

@@ -1,5 +1,6 @@
 //! The mode functions GAME-04b milestone 2 ported (`Camera_Jump1`, `Camera_Jump2`,
-//! `Camera_Unique1`), on the pack's camera data with no collision: a child Link standing at the
+//! `Camera_Unique1`) and GAME-05 milestone 3a's `Camera_Battle1`, on the pack's camera data with
+//! no collision: a child Link standing at the
 //! origin facing +z, the main camera put where each test says. Expected values are the C's
 //! arithmetic on the modes' data (`sSetNormal0Mode*Data`) and the `OREG`s.
 
@@ -19,12 +20,17 @@ fn player() -> PlayerView {
 
 /// One `Camera_Update` of `c` with Link as `p`, in an empty world.
 fn update(c: &mut GameCamera, d: &CameraData, p: &PlayerView, waist: Vec3) {
+    update_with(c, d, p, waist, None, 0x30);
+}
+
+/// `update` with the target's focus (`Actor_GetFocus(camera->target)`) and Link's health.
+fn update_with(c: &mut GameCamera, d: &CameraData, p: &PlayerView, waist: Vec3, target_focus: Option<Vec3>, health: i16) {
     let col = CollisionContext::new(Default::default());
     let oc = crate::collision_check::OcLines::default();
     let f = CamFrame {
         col: &col,
         player: *p,
-        target_focus: None,
+        target_focus,
         door: None,
         transitioning: false,
         frames: 100,
@@ -38,6 +44,9 @@ fn update(c: &mut GameCamera, d: &CameraData, p: &PlayerView, waist: Vec3) {
         view: CamView { eye: c.eye, at: c.at, fov: c.fov },
         main_player_pos_rot: (c.player_pos, c.player_rot_y),
         player_waist: waist,
+        player_melee_weapon_active: false,
+        health,
+        skybox_disabled: false,
     };
     let mut g = CameraGlobals::main_init();
     g.scene_init_letterbox_timer = 0;
@@ -186,4 +195,124 @@ fn camera_unique1_hangs_at_its_pitch_target() {
         yaw = cur;
     }
     assert_eq!(c.roll, 0);
+}
+
+/// NORMAL0's BATTLE (`sSetNormal0ModeZTargetUnfriendlyData`): `CAM_FUNCDATA_BATT1(-20, 180, 10,
+/// 80, 0, 10, 25, 50, 80, interfaceField, -40, 25)`.
+fn battle(d: &CameraData) -> (GameCamera, PlayerView, Vec3) {
+    let p = player();
+    // The eye 150 behind Link (yaw 0 - 0x7FFF), a little above; the enemy straight ahead, 400
+    // off: farther than the data's distance, so distRatio is 1.
+    let at0 = Vec3::new(0.0, p.height(), 0.0);
+    let eye0 = sph_geo_add(at0, VecSphGeo { r: 150.0, pitch: 0x600, yaw: 0i16.wrapping_sub(0x7FFF) });
+    let mut c = camera(d, CAM_MODE_Z_TARGET_UNFRIENDLY, eye0);
+    assert_eq!(d.mode(c.setting, CAM_MODE_Z_TARGET_UNFRIENDLY).unwrap().func, "CAM_FUNC_BATT1");
+    c.set_target(crate::actor_ctx::ActorHandle::for_test(1));
+    (c, p, Vec3::new(0.0, 20.0, 400.0))
+}
+
+#[test]
+fn camera_battle1_keeps_the_enemy_off_to_the_side() {
+    let Some(d) = data() else { return };
+    let (mut c, p, focus) = battle(&d);
+    update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    // RELOAD_PARAMS: the data as read (yOffset and yOffsetOffGround scaled by Link's height and
+    // yNormal), chargeTimer 40; animTimer CAM_DEFAULT_ANIM_TIME + CAM_GLOBAL_24, one counted.
+    let v = |i: usize| d.value((c.setting, CAM_MODE_Z_TARGET_UNFRIENDLY), i);
+    assert_eq!([v(0), v(1), v(2), v(3), v(4), v(5), v(6), v(7), v(8), v(10), v(11)], [-20, 180, 10, 80, 0, 10, 25, 50, 80, -40, 25]);
+    let (h, yn) = (p.height(), y_normal(&d, p.height()));
+    let ro = c.batt1_ro;
+    assert_eq!((ro.y_offset, ro.distance, ro.fov), (-20.0 * 0.01 * h * yn, 180.0, 50.0));
+    assert_eq!(ro.y_offset_off_ground, -40.0 * 0.01 * h * yn);
+    assert_eq!(c.interface_flags, v(9));
+    assert_eq!(c.batt1_rw.charge_timer, 40);
+    assert_eq!(c.batt1_rw.anim_timer, d.oreg(23) + d.oreg(24) - 1);
+    assert_eq!(c.batt1_rw.target, c.target);
+    for _ in 0..200 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    }
+    assert_eq!(c.batt1_rw.anim_timer, 0);
+    // distRatio 1 (the head 400 from the enemy, over 180): swingAngle = 10 + (80 - 10) * (1.1 -
+    // 1) = 17 degrees. The first tmpAng1 is the enemy's yaw from the at (0) less the view's
+    // (0 - 0x7FFF - 0x7FFF, wrapping to 2): -2, so the swing goes to that side, -17 degrees.
+    // Standing (speedRatio 0), within it the view's yaw steps by (s16)((-17 degrees - tmpAng1) *
+    // 0.05) a frame, towards putting the enemy 17 degrees off the view's axis; it stops where a
+    // step is no more than OLib's round trip (eyeNext placed by sines, measured back by
+    // Math_FAtan2F's series) takes back, ROUND_TRIP / 0.05 short at most.
+    let swing = 10.0 + (80.0 - 10.0) * (1.1f32 - 1.0);
+    assert_eq!(0i16.wrapping_sub(0i16.wrapping_sub(0x7FFF).wrapping_sub(0x7FFF)), -2);
+    let view = diff_to_sph_geo(c.at, c.eye_next);
+    let to_target = diff_to_sph_geo(c.at, focus);
+    let off = to_target.yaw.wrapping_sub(view.yaw.wrapping_sub(0x7FFF)) as i32;
+    let want = -(cam_deg_to_binang(swing) as i32);
+    assert!(off >= want && off <= want + (ROUND_TRIP as f32 / 0.05) as i32, "{off} vs {want}");
+    // Settled: another frame doesn't move it.
+    update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    assert_eq!(diff_to_sph_geo(c.at, c.eye_next).yaw, view.yaw);
+    // The pitch: CAM_DEG_TO_BINANG(F32_LERPIMP(0, 10, 1)) - (s16)(playerToTargetDir.pitch * (0.5
+    // + 0.5)) + (s16)(atToTargetDir.pitch * 0.25), clamped to 0x2AA8 either way, eased by unk_10
+    // (CAM_GLOBAL_12, 0.1): it too stops where a step is what the round trip takes back, up to
+    // ROUND_TRIP / 0.1 short.
+    assert_eq!(c.batt1_rw.unk_10, d.oreg(12) as f32 * 0.01);
+    let head = Vec3::new(0.0, h + ro.y_offset, 0.0);
+    let ptt = diff_to_sph_geo(head, focus);
+    let want = cam_deg_to_binang(10.0).wrapping_sub((ptt.pitch as f32 * 1.0) as i32 as i16).wrapping_add((to_target.pitch as f32 * 0.25) as i32 as i16).clamp(-0x2AA8, 0x2AA8);
+    let slack = (ROUND_TRIP as f32 / c.batt1_rw.unk_10) as i32;
+    assert!(yaw_close(view.pitch, want, slack), "{:#x} vs {want:#x}", view.pitch);
+    // The distance eases to 180 (Camera_LERPCeilF(distance, dist, CAM_GLOBAL_11, 2)).
+    assert!((c.dist - 180.0).abs() <= 2.0, "{}", c.dist);
+    // No roll standing (CAM_BATTLE1_ROLL_TARGET_BASE * speedRatio 0); the fov to 50 - 50 * 0.05
+    // * 1 = 47.5 (within Camera_LERPCeilF's 1).
+    assert_eq!(c.roll, 0);
+    assert!((c.fov - 47.5).abs() <= 1.0, "{}", c.fov);
+    // A heart or less (health <= 0x10): the fov times 0.8.
+    for _ in 0..200 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x10);
+    }
+    assert!((c.fov - 47.5 * 0.8).abs() <= 1.0, "{}", c.fov);
+}
+
+#[test]
+fn camera_battle1_backs_off_while_a_spin_attack_charges() {
+    let Some(d) = data() else { return };
+    let (mut c, mut p, focus) = battle(&d);
+    for _ in 0..20 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    }
+    // PLAYER_STATE1_CHARGING_SPIN_ATTACK: chargeTimer down from 40 one a frame to -20, then
+    // the distance 250, the swing pitches 50 and 40, the fov 60.
+    p.state1 |= PLAYER_STATE1_CHARGING_SPIN_ATTACK;
+    for k in 1..=60 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+        assert_eq!(c.batt1_rw.charge_timer, 40 - k);
+    }
+    for _ in 0..200 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    }
+    assert_eq!(c.batt1_rw.charge_timer, -20);
+    assert!((c.dist - 250.0).abs() <= 2.0, "{}", c.dist);
+    // distRatio 1 again (400 over 250): the fov to 60 - 60 * 0.05 = 57.
+    assert!((c.fov - 57.0).abs() <= 1.0, "{}", c.fov);
+    // Let go: chargeTimer climbs back to 0 a frame at a time, still backed off, then 40.
+    p.state1 &= !PLAYER_STATE1_CHARGING_SPIN_ATTACK;
+    for k in 1..=20 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+        assert_eq!(c.batt1_rw.charge_timer, -20 + k);
+    }
+    update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    assert_eq!(c.batt1_rw.charge_timer, 40);
+}
+
+#[test]
+fn camera_battle1_lets_go_when_the_target_is_gone() {
+    let Some(d) = data() else { return };
+    let (mut c, p, focus) = battle(&d);
+    for _ in 0..10 {
+        update_with(&mut c, &d, &p, Vec3::ZERO, Some(focus), 0x30);
+    }
+    assert_eq!(c.mode, CAM_MODE_Z_TARGET_UNFRIENDLY);
+    // camera->target->update == NULL (killed): target NULL, Camera_RequestMode(Z_PARALLEL).
+    update_with(&mut c, &d, &p, Vec3::ZERO, None, 0x30);
+    assert_eq!(c.target, None);
+    assert_eq!(c.mode, CAM_MODE_Z_PARALLEL);
 }

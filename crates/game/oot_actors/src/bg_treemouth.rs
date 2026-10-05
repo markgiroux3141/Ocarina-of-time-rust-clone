@@ -217,11 +217,11 @@ impl BgTreemouth {
         } else {
             self.unk_168 = 1.0;
         }
-        if play.save.scene_layer == 6 && play.cs_ctx.frames >= 0x2BD && play.gameplay_frames.is_multiple_of(8) {
-            // The bark falling as the tree dies: sp34 = (Rand_ZeroOne() * 1158 + 3407, 970,
-            // Rand_ZeroOne() * 2026 - 2163), EffectSsHahen_SpawnBurst(...): effects aren't ported.
-            let _x = play.rand.zero_one() * 1158.0 + 3407.0;
-            let _z = play.rand.zero_one() * 2026.0 + -2163.0;
+        if play.save.scene_layer == 6 && play.cs_ctx.frames >= 0x2BD && play.state_frames.is_multiple_of(8) {
+            // The bark falling as the tree dies, from a random point.
+            let x = play.rand.zero_one() * 1158.0 + 3407.0;
+            let z = play.rand.zero_one() * 2026.0 + -2163.0;
+            play.with_ss(|ss| ss.hahen_spawn_burst(Vec3::new(x, 970.0, z), 0.8, 0, 50, 30, 1, -1, 10, None));
         }
     }
 

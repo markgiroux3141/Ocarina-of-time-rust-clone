@@ -1004,18 +1004,43 @@ impl CollisionCheckContext {
     /// `CollisionCheck_AT`, `CollisionCheck_OC` and `CollisionCheck_Damage` over the registered
     /// colliders, as `Play_Update` runs them. The colliders are taken out of their actors
     /// for the checks (`ActorImpl::collider_mut`) and put back after.
-    /// Returns the hit effects' sounds (`Audio_PlaySfxGeneral(id, pos, 4, ...)` with the
-    /// defaults), in order.
-    pub fn check(&self, actors: &mut ActorContext) -> Vec<(u16, SfxPos)> {
+    /// Returns the hit effects (`CollisionCheck_HitEffects`: the sounds, the hit marks, the
+    /// blood, the shield's particles), in order, for the play state to run.
+    pub fn check(&self, actors: &mut ActorContext) -> Vec<HitFx> {
         let mut set = ColliderSet::take(self, actors);
         set.at(actors);
         set.oc(actors);
         set.damage(actors);
-        let hit_sfx = std::mem::take(&mut set.hit_sfx);
+        let hit_fx = std::mem::take(&mut set.hit_fx);
         set.put_back(actors);
-        hit_sfx
+        hit_fx
     }
 }
+
+/// One of `CollisionCheck_HitEffects`' calls, in its order: run by the play state after the
+/// checks (`PlayState::collision_check_hit_fx`), since they need the effects and the audio.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HitFx {
+    /// `Audio_PlaySfxGeneral(id, pos, 4, ...)` with the defaults (`SFX_PLAY_AT_POS`,
+    /// `SFX_PLAY_CENTERED`).
+    Sfx(u16, SfxPos),
+    /// `EffectSsHitMark_SpawnFixedScale(play, type, hitPos)`.
+    HitMark(i32, Vec3),
+    /// `sBloodFuncs[blood]` at the hit (`BLOOD_*`: 1 blue, 2 green, 3 water, 4 and 5 red).
+    Blood(u8, Vec3),
+    /// `CollisionCheck_SpawnShieldParticles` (metal's: with its light).
+    ShieldParticlesMetal(Vec3),
+    /// `CollisionCheck_SpawnShieldParticlesWood`'s particles (no light; its sound is a `Sfx`).
+    ShieldParticlesWood(Vec3),
+}
+
+/// `ColChkBloodType` (`z_collision_check.c`).
+pub const BLOOD_NONE: u8 = 0;
+pub const BLOOD_BLUE: u8 = 1;
+pub const BLOOD_GREEN: u8 = 2;
+pub const BLOOD_WATER: u8 = 3;
+pub const BLOOD_RED: u8 = 4;
+pub const BLOOD_RED2: u8 = 5;
 
 /// An OC collider's shape, as `CollisionCheck_LineOC` sees it.
 #[derive(Debug, Clone, PartialEq)]
@@ -1070,13 +1095,13 @@ struct ColliderSet {
     at: Vec<usize>,
     ac: Vec<usize>,
     oc: Vec<usize>,
-    /// The hit effects' sounds, in order.
-    hit_sfx: Vec<(u16, SfxPos)>,
+    /// The hit effects, in order.
+    hit_fx: Vec<HitFx>,
 }
 
 impl ColliderSet {
     fn take(ctx: &CollisionCheckContext, actors: &mut ActorContext) -> ColliderSet {
-        let mut s = ColliderSet { refs: Vec::new(), cols: Vec::new(), at: Vec::new(), ac: Vec::new(), oc: Vec::new(), hit_sfx: Vec::new() };
+        let mut s = ColliderSet { refs: Vec::new(), cols: Vec::new(), at: Vec::new(), ac: Vec::new(), oc: Vec::new(), hit_fx: Vec::new() };
         let index = |s: &mut ColliderSet, r: ColliderRef, actors: &mut ActorContext| -> usize {
             if let Some(i) = s.refs.iter().position(|x| *x == r) {
                 return i;
@@ -1206,8 +1231,10 @@ impl ColliderSet {
                     continue;
                 }
                 let at_elem_flags = at_info.at_elem_flags;
+                // Math_Vec3s_ToVec3f(&hitPos, &elem->acDmgInfo.hitPos).
+                let hit_pos = v3s(info.ac_dmg_info.hit_pos);
                 let (Some(at), Some(ac)) = (self.cols[ai].as_ref(), self.cols[j].as_ref()) else { continue };
-                hit_effects(&mut self.hit_sfx, actors, at.base(), at_elem_flags, ac.base(), ac_elem_flags, elem_material);
+                hit_effects(&mut self.hit_fx, actors, at.base(), at_elem_flags, ac.base(), ac_elem_flags, elem_material, hit_pos);
                 if let Some(at_info) = self.cols[ai].as_mut().and_then(|c| c.info_mut(hit.elem.elem as usize)) {
                     at_info.at_elem_flags |= ATELEM_DREW_HITMARK;
                 }
@@ -1355,8 +1382,10 @@ struct PairCtx<'a> {
 }
 
 /// `sHitInfo`'s effects by `colType` (`HIT_*`: 0 white, 1 dust, 2 red, 3 solid, 4 wood, 5
-/// none). (Its blood isn't ported.)
+/// none).
 const HIT_INFO_EFFECT: [u8; 14] = [0, 1, 1, 0, 5, 2, 0, 0, 2, 3, 5, 3, 3, 4];
+/// `sHitInfo`'s blood by `colType` (`BLOOD_*`).
+const HIT_INFO_BLOOD: [u8; 14] = [BLOOD_BLUE, BLOOD_NONE, BLOOD_GREEN, BLOOD_NONE, BLOOD_WATER, BLOOD_NONE, BLOOD_GREEN, BLOOD_RED, BLOOD_BLUE, BLOOD_NONE, BLOOD_NONE, BLOOD_NONE, BLOOD_NONE, BLOOD_NONE];
 const HIT_SOLID: u8 = 3;
 const HIT_WOOD: u8 = 4;
 const HIT_NONE: u8 = 5;
@@ -1367,11 +1396,14 @@ fn actor_sfx_pos(actor: Option<ActorHandle>) -> SfxPos {
     actor.map(SfxPos::Actor).unwrap_or(SfxPos::Default)
 }
 
-/// `CollisionCheck_HitEffects`' sounds, by the AC collider's `colType` (the hit marks, blood
-/// and sparks are effects, not ported): `at`'s element's `at_elem_flags`, `ac`'s element's
-/// `ac_elem_flags` and `elem_material`.
-fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, at_elem_flags: u8, ac: &ColliderBase, ac_elem_flags: u8, elem_material: u8) {
+/// `CollisionCheck_HitEffects`, by the AC collider's `colType` (`sHitInfo`): its blood, then
+/// a solid's (`CollisionCheck_HitSolid`), wood's (the shield particles) or the hit mark with the
+/// sword's sound; with no actor, the white mark and the shield's bounce. `at`'s element's
+/// `at_elem_flags`, `ac`'s element's `ac_elem_flags` and `elem_material`, at `hit_pos`.
+#[allow(clippy::too_many_arguments)]
+fn hit_effects(out: &mut Vec<HitFx>, actors: &ActorContext, at: &ColliderBase, at_elem_flags: u8, ac: &ColliderBase, ac_elem_flags: u8, elem_material: u8, hit_pos: Vec3) {
     use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND};
+    use crate::effect::hitmark::EFFECT_HITMARK_WHITE;
     if ac_elem_flags & ACELEM_NO_HITMARK != 0 {
         return;
     }
@@ -1379,48 +1411,65 @@ fn hit_effects(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Collide
         return;
     }
     if ac.actor.is_some() {
-        // sBloodFuncs[sHitInfo[ac->colType].blood]: effects.
+        // sBloodFuncs[sHitInfo[acCol->colMaterial].blood].
+        let blood = HIT_INFO_BLOOD.get(ac.col_type as usize).copied().unwrap_or(BLOOD_NONE);
+        if blood != BLOOD_NONE {
+            out.push(HitFx::Blood(blood, hit_pos));
+        }
         match HIT_INFO_EFFECT.get(ac.col_type as usize).copied().unwrap_or(HIT_NONE) {
-            HIT_SOLID => hit_solid(out, at_elem_flags, ac),
+            HIT_SOLID => hit_solid(out, at_elem_flags, ac, hit_pos),
             HIT_WOOD => {
-                // CollisionCheck_SpawnShieldParticles(Wood): the particles aren't ported.
-                out.push((NA_SE_IT_REFLECTION_WOOD, actor_sfx_pos(at.actor)));
+                if at.actor.is_none() {
+                    out.push(HitFx::ShieldParticlesMetal(hit_pos));
+                    out.push(HitFx::Sfx(NA_SE_IT_REFLECTION_WOOD, SfxPos::Default));
+                } else {
+                    // CollisionCheck_SpawnShieldParticlesWood.
+                    out.push(HitFx::ShieldParticlesWood(hit_pos));
+                    out.push(HitFx::Sfx(NA_SE_IT_REFLECTION_WOOD, actor_sfx_pos(at.actor)));
+                }
             }
             HIT_NONE => {}
-            _ => {
-                // EffectSsHitMark_SpawnFixedScale: not ported.
+            effect => {
+                out.push(HitFx::HitMark(effect as i32, hit_pos));
                 if ac_elem_flags & ACELEM_NO_SWORD_SFX == 0 {
                     sword_hit_audio(out, actors, at, elem_material);
                 }
             }
         }
     } else {
-        // The white hit mark: not ported.
-        out.push((NA_SE_IT_SHIELD_BOUND, actor_sfx_pos(ac.actor)));
+        out.push(HitFx::HitMark(EFFECT_HITMARK_WHITE, hit_pos));
+        out.push(HitFx::Sfx(NA_SE_IT_SHIELD_BOUND, actor_sfx_pos(ac.actor)));
     }
 }
 
-/// `CollisionCheck_HitSolid`'s sounds (METAL, WOOD, HARD and TREE AC colliders), by the AT
-/// element's `ATELEM_SFX_*`: the shield's bounce, metal's (`CollisionCheck_SpawnShieldParticles
-/// Metal(Sfx)`: `NA_SE_IT_SHIELD_REFLECT_SW`), wood's.
-fn hit_solid(out: &mut Vec<(u16, SfxPos)>, at_elem_flags: u8, collider: &ColliderBase) {
+/// `CollisionCheck_HitSolid` (METAL, WOOD, HARD and TREE AC colliders), by the AT element's
+/// `ATELEM_SFX_*`: the white mark and the shield's bounce; metal's mark, particles and
+/// `NA_SE_IT_SHIELD_REFLECT_SW` (`CollisionCheck_SpawnShieldParticlesMetal(Sfx)`); the dust mark
+/// and wood's sound.
+fn hit_solid(out: &mut Vec<HitFx>, at_elem_flags: u8, collider: &ColliderBase, hit_pos: Vec3) {
     use crate::audio::sfx::{NA_SE_IT_REFLECTION_WOOD, NA_SE_IT_SHIELD_BOUND, NA_SE_IT_SHIELD_REFLECT_SW};
+    use crate::effect::hitmark::{EFFECT_HITMARK_DUST, EFFECT_HITMARK_METAL, EFFECT_HITMARK_WHITE};
     let flags = at_elem_flags & ATELEM_SFX_MASK;
     let pos = actor_sfx_pos(collider.actor);
     if flags == ATELEM_SFX_NORMAL && collider.col_type != COL_MATERIAL_METAL {
-        out.push((NA_SE_IT_SHIELD_BOUND, pos));
+        out.push(HitFx::HitMark(EFFECT_HITMARK_WHITE, hit_pos));
+        out.push(HitFx::Sfx(NA_SE_IT_SHIELD_BOUND, pos));
     } else if flags == ATELEM_SFX_NORMAL {
-        out.push((NA_SE_IT_SHIELD_REFLECT_SW, pos));
+        out.push(HitFx::HitMark(EFFECT_HITMARK_METAL, hit_pos));
+        out.push(HitFx::ShieldParticlesMetal(hit_pos));
+        out.push(HitFx::Sfx(NA_SE_IT_SHIELD_REFLECT_SW, pos));
     } else if flags == ATELEM_SFX_HARD {
-        out.push((NA_SE_IT_SHIELD_BOUND, pos));
+        out.push(HitFx::HitMark(EFFECT_HITMARK_WHITE, hit_pos));
+        out.push(HitFx::Sfx(NA_SE_IT_SHIELD_BOUND, pos));
     } else if flags == ATELEM_SFX_WOOD {
-        out.push((NA_SE_IT_REFLECTION_WOOD, pos));
+        out.push(HitFx::HitMark(EFFECT_HITMARK_DUST, hit_pos));
+        out.push(HitFx::Sfx(NA_SE_IT_REFLECTION_WOOD, pos));
     }
 }
 
 /// `CollisionCheck_SwordHitAudio`: a Player-attached AT collider's strike, by the AC element's
 /// `elemType`.
-fn sword_hit_audio(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &ColliderBase, elem_material: u8) {
+fn sword_hit_audio(out: &mut Vec<HitFx>, actors: &ActorContext, at: &ColliderBase, elem_material: u8) {
     use crate::audio::sfx::{NA_SE_IT_SWORD_STRIKE, NA_SE_IT_SWORD_STRIKE_HARD, NA_SE_PL_WALK_GROUND, SFX_FLAG};
     let Some(h) = at.actor else { return };
     if actors.actor(h).is_some_and(|a| a.category == crate::actor_ctx::ACTORCAT_PLAYER) {
@@ -1430,7 +1479,7 @@ fn sword_hit_audio(out: &mut Vec<(u16, SfxPos)>, actors: &ActorContext, at: &Col
             ELEM_MATERIAL_UNK2 | ELEM_MATERIAL_UNK3 => NA_SE_PL_WALK_GROUND - SFX_FLAG,
             _ => return,
         };
-        out.push((id, SfxPos::Actor(h)));
+        out.push(HitFx::Sfx(id, SfxPos::Actor(h)));
     }
 }
 
@@ -1498,7 +1547,7 @@ impl PairCtx<'_> {
         if at_info.at_elem_flags & ATELEM_AT_HITMARK == 0 && ac.col_type != COL_MATERIAL_METAL && ac.col_type != COL_MATERIAL_WOOD && ac.col_type != COL_MATERIAL_HARD {
             ac_info.ac_elem_flags |= ACELEM_DRAW_HITMARK;
         } else {
-            hit_effects(&mut self.set.hit_sfx, self.actors, at, at_info.at_elem_flags, ac, ac_info.ac_elem_flags, ac_info.elem_material);
+            hit_effects(&mut self.set.hit_fx, self.actors, at, at_info.at_elem_flags, ac, ac_info.ac_elem_flags, ac_info.elem_material, hit_pos);
             at_info.at_elem_flags |= ATELEM_DREW_HITMARK;
         }
     }

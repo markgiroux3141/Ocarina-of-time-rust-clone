@@ -22,6 +22,7 @@ pub mod course;
 pub mod cutscene;
 pub mod data;
 pub mod draw;
+pub mod effect;
 pub mod elf_message;
 pub mod env;
 pub mod footik;

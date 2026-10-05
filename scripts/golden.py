@@ -74,6 +74,9 @@ CASES = [
     ("mido_shop", S, ["--entrance", "ENTR_LINKS_HOUSE_0", "--child", "--script", "mido-shop", "--trace", "{trace}"]),
     # GAME-05 milestone 2: a Deku Baba's bite, then its stem cut, inside the Deku Tree.
     ("deku_baba", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "deku-baba", "--trace", "{trace}"]),
+    # GAME-05 milestone 3a: a withered Deku Baba slashed and its stick taken, a Keese's dive
+    # blocked with the shield and the Keese slashed, with the battle camera, inside the Deku Tree.
+    ("combat", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "combat", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

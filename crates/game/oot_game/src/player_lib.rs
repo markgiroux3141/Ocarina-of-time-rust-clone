@@ -115,13 +115,22 @@ impl PlayerRules {
         }
 
         let (mut right, mut right_variant) = (g.right, 0);
+        let mut sheath = g.sheath;
+        if lo.holding_shield {
+            right = t("RH_SHIELD");
+            if sheath == t("SHEATH_18") {
+                sheath = t("SHEATH_16");
+            } else if sheath == t("SHEATH_19") {
+                sheath = t("SHEATH_17");
+            }
+        }
         if right == t("RH_SHIELD") {
             right_variant = lo.shield;
         } else if right == t("RH_OPEN") && lo.moving_fast {
             right = t("RH_CLOSED");
         }
 
-        let (mut sheath, mut sheath_variant) = (g.sheath, 0);
+        let mut sheath_variant = 0;
         let no_kokiri_sword = lo.age == Age::Child && !lo.child_has_kokiri_sword;
         if sheath == t("SHEATH_18") || sheath == t("SHEATH_19") {
             sheath_variant = lo.shield;
@@ -167,6 +176,10 @@ pub struct Loadout {
     pub child_has_kokiri_sword: bool,
     /// `actor.speed > 2`: open hands are drawn as fists while running.
     pub moving_fast: bool,
+    /// `Player_SetModelsForHoldingShield`: guarding, the shield in the right hand
+    /// (`PLAYER_MODELTYPE_RH_SHIELD`) and the sheath without it (`SHEATH_18` to `_16`, `_19` to `_17`).
+    #[serde(default)]
+    pub holding_shield: bool,
 }
 
 impl Loadout {
@@ -184,6 +197,7 @@ impl Loadout {
             tunic: 0,
             child_has_kokiri_sword: true,
             moving_fast: false,
+            holding_shield: false,
         }
     }
 }

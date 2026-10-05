@@ -293,14 +293,25 @@ impl EnGoroiwa {
         0
     }
 
-    /// `EnGoroiwa_SpawnDust`: the dust of a drop (`func_800286CC`, not ported); its
-    /// `Rand_ZeroOne` calls are made.
-    fn spawn_dust(play: &mut PlayState) {
-        for _ in 0..8 {
-            for _ in 0..5 {
-                play.rand.zero_one();
+    /// `EnGoroiwa_SpawnDust`: the dust of a drop, two clouds at each of eight points round
+    /// `pos` (`func_800286CC`, rising at 0.3).
+    fn spawn_dust(play: &mut PlayState, pos: Vec3) {
+        // sVelocity, sAccel.
+        let (velocity, accel) = (Vec3::ZERO, Vec3::new(0.0, 0.3, 0.0));
+        play.with_ss(|ss| {
+            let mut angle: i16 = 0;
+            for _ in 0..8 {
+                angle = angle.wrapping_add(0x4E20);
+                let x = pos.x + (47.0 * (ss.rand.zero_one() * 0.5 + 0.5)) * eng_math::sin_s(angle);
+                let y = pos.y + (ss.rand.zero_one() - 0.5) * 40.0;
+                let z = pos.z + (47.0 * (ss.rand.zero_one() * 0.5 + 0.5)) * eng_math::cos_s(angle);
+                let rand_pos = Vec3::new(x, y, z);
+                let s1 = ((ss.rand.zero_one() * 30.0) as i16).wrapping_add(100);
+                ss.func_800286cc(rand_pos, velocity, accel, s1, 80);
+                let s2 = ((ss.rand.zero_one() * 20.0) as i16).wrapping_add(80);
+                ss.func_800286cc(rand_pos, velocity, accel, s2, 80);
             }
-        }
+        });
     }
 
     /// `EnGoroiwa_MoveAndFall`: towards the next point across at the speed along the yaw,
@@ -369,7 +380,8 @@ impl EnGoroiwa {
                     let (floor_y, _) = play.col.entity_raycast_down(self.actor.world_pos + Vec3::Y * 50.0);
                     let y_dist_to_floor = floor_y - (self.actor.world_pos.y - 59.5);
                     if y_dist_to_floor.abs() < 15.0 {
-                        Self::spawn_dust(play);
+                        let dust_pos = Vec3::new(self.actor.world_pos.x, floor_y + 10.0, self.actor.world_pos.z);
+                        Self::spawn_dust(play, dust_pos);
                     }
                 }
             }

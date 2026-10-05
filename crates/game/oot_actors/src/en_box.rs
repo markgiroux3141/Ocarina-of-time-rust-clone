@@ -342,13 +342,20 @@ impl EnBox {
         }
     }
 
-    /// `EnBox_SpawnDust`: 20 dust clouds at random places around it (`EnBox_RandomDustKinematic`;
-    /// the effect, `func_8002873C`, isn't ported: only its random numbers are drawn).
+    /// `EnBox_SpawnDust`: 20 dust clouds at random places within 25 around it, drifting out
+    /// and up (`EnBox_RandomDustKinematic`, then `func_8002873C(.., 100, 30, 15)`).
     fn spawn_dust(&mut self, play: &mut PlayState) {
-        for _ in 0..20 {
-            play.rand.zero_one();
-            play.rand.zero_one();
-        }
+        let base = self.actor.world_pos;
+        play.with_ss(|ss| {
+            for _ in 0..20 {
+                // EnBox_RandomDustKinematic.
+                let random_radius = ss.rand.zero_one() * 25.0;
+                let random_angle = (ss.rand.zero_one() * 65536.0) as i32 as i16;
+                let pos = Vec3::new(base.x + eng_math::sin_s(random_angle) * random_radius, base.y, base.z + eng_math::cos_s(random_angle) * random_radius);
+                let velocity = Vec3::new(eng_math::sin_s(random_angle), 1.0, eng_math::cos_s(random_angle));
+                ss.func_8002873c(pos, velocity, Vec3::ZERO, 100, 30, 15);
+            }
+        });
     }
 
     /// `EnBox_Fall`.
