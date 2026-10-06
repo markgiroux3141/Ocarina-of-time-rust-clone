@@ -22,6 +22,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Arc;
 
+mod chrome;
+mod icons;
+mod inspector;
+mod outliner;
+mod palette;
+mod style;
+mod thumbs;
+mod widgets;
+
 /// The repository root (the editor lives in crates/tools/overworld_editor).
 pub const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../..");
 
@@ -164,10 +173,79 @@ pub struct App {
     /// The piece the Prop tool places, and the turn it places it with.
     piece: String,
     place_yaw: f64,
+    /// What new regions, paths and lines start as (the palette's choices).
+    new: NewThings,
+    /// The palette's kit search and category, and the pieces chosen most recently.
+    kit_query: String,
+    kit_cat: String,
+    recent: Vec<String>,
+    /// The outliner's filter.
+    filter: String,
+    /// What clicks in the plan pick.
+    pickable: Pickable,
+    thumbs: thumbs::Thumbs,
+    show_keys: bool,
+    show_level: bool,
+}
+
+/// What the drawing tools make: the palette sets these before you draw.
+struct NewThings {
+    /// "floor" or "water".
+    region_kind: String,
+    /// A new floor's height above the ground it's drawn on.
+    rise: f64,
+    /// A new pond's depth, from its surface (20 below the ground) to its bed.
+    depth: f64,
+    edge: Option<String>,
+    path_mode: String,
+    path_width: f64,
+    path_shape: Option<String>,
+    /// "fence" (rails) or "lattice".
+    fence: String,
+    closed: bool,
+    dirt_width: Option<f64>,
+    bridge_width: Option<f64>,
+}
+
+impl Default for NewThings {
+    fn default() -> Self {
+        NewThings {
+            region_kind: "floor".into(),
+            rise: 120.0,
+            depth: 80.0,
+            edge: None,
+            path_mode: "attached".into(),
+            path_width: 160.0,
+            path_shape: None,
+            fence: "fence".into(),
+            closed: false,
+            dirt_width: None,
+            bridge_width: None,
+        }
+    }
+}
+
+/// The kinds of thing a click in the plan can pick.
+struct Pickable {
+    regions: bool,
+    paths: bool,
+    lines: bool,
+    props: bool,
+}
+
+impl Pickable {
+    fn node(&self, r: &NodeRef) -> bool {
+        match r {
+            NodeRef::Loop(..) => self.regions,
+            NodeRef::Path(..) => self.paths,
+            NodeRef::Line(..) => self.lines,
+        }
+    }
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext, opts: Options) -> App {
+        style::apply(&cc.egui_ctx);
         let v3 = cc.wgpu_render_state.as_ref().map(View3d::new);
         let ctx = cc.egui_ctx.clone();
         let worker = Worker::new(move || ctx.request_repaint());
@@ -285,6 +363,15 @@ impl App {
             kit,
             piece,
             place_yaw: 0.0,
+            new: NewThings::default(),
+            kit_query: String::new(),
+            kit_cat: "all".into(),
+            recent: vec![],
+            filter: String::new(),
+            pickable: Pickable { regions: true, paths: true, lines: true, props: true },
+            thumbs: thumbs::Thumbs::default(),
+            show_keys: false,
+            show_level: false,
         }
     }
 
@@ -669,6 +756,10 @@ impl App {
             return;
         };
         let label = piece.label.clone();
+        let name = self.piece.clone();
+        self.recent.retain(|n| *n != name);
+        self.recent.insert(0, name);
+        self.recent.truncate(4);
         self.doc.props.push(Prop { piece: self.piece.clone(), at: [p[0].round(), p[1].round()], z: None, yaw: self.place_yaw, scale: [1.0; 3] });
         self.sel = Sel::Prop(self.doc.props.len() - 1);
         self.status = format!("{label} placed: drag to move, its arrow's handle turns it (Q / E), its corner scales it");
@@ -810,21 +901,24 @@ impl App {
         false
     }
 
+    /// What a click at w picks: nodes, then props, lines, paths and regions, of the kinds the
+    /// palette lets clicks pick.
     fn pick(&self, w: P2) -> Sel {
         let tol = PICK / self.view.scale;
-        if let Some(r) = edit::node_near(&self.doc, w, tol).filter(|_| self.show_nodes) {
+        let pk = &self.pickable;
+        if let Some(r) = edit::node_near(&self.doc, w, tol).filter(|r| self.show_nodes && pk.node(r)) {
             return Sel::Node(r);
         }
-        if let Some(i) = self.prop_at(w) {
+        if let Some(i) = self.prop_at(w).filter(|_| pk.props) {
             return Sel::Prop(i);
         }
-        if let Some((k, _, _)) = self.shapes.line_near(&self.doc, w, tol, true) {
+        if let Some((k, _, _)) = self.shapes.line_near(&self.doc, w, tol, true).filter(|_| pk.lines) {
             return Sel::Line(k);
         }
-        if let Some((k, _, _)) = self.shapes.path_near(&self.doc, w, tol, true) {
+        if let Some((k, _, _)) = self.shapes.path_near(&self.doc, w, tol, true).filter(|_| pk.paths) {
             return Sel::Path(k);
         }
-        self.shapes.loop_at(w).map_or(Sel::None, Sel::Loop)
+        self.shapes.loop_at(w).filter(|_| pk.regions).map_or(Sel::None, Sel::Loop)
     }
 
     /// A drawing click: onto an existing loop node (shared), onto a loop's edge (a node is
@@ -867,15 +961,26 @@ impl App {
             Tool::Region if pts.len() >= 3 => {
                 let n = pts.len() as f64;
                 let c = [pts.iter().map(|p| p[0]).sum::<f64>() / n, pts.iter().map(|p| p[1]).sum::<f64>() / n];
-                let z = edit::base_z(&self.doc, &self.shapes, c) + 120.0;
-                let r = edit::new_region(&self.doc, pts, z);
+                let ground = edit::base_z(&self.doc, &self.shapes, c);
+                let water = self.new.region_kind == "water";
+                // a pond's surface 20 below the ground round it, its bed `depth` below that
+                let z = if water { ground - 20.0 - self.new.depth } else { ground + self.new.rise };
+                let mut r = edit::new_region(&self.doc, pts, z);
+                r.edge = self.new.edge.clone();
+                if water {
+                    r.kind = "water".into();
+                    r.surface = Some(ground - 20.0);
+                }
                 self.status = format!("{} added at height {z:.0}: PageUp/PageDown raise and sink it", r.name);
                 self.doc.regions.push(r);
                 self.sel = Sel::Loop(self.doc.regions.len());
                 self.tool = Tool::Select;
             }
             Tool::Path if pts.len() >= 2 => {
-                let p = edit::new_path(&self.doc, pts);
+                let mut p = edit::new_path(&self.doc, pts);
+                p.width = self.new.path_width;
+                p.mode = self.new.path_mode.clone();
+                p.shape = self.new.path_shape.clone();
                 self.status = format!("{} added: its ends take the floor's height", p.name);
                 self.doc.paths.push(p);
                 self.sel = Sel::Path(self.doc.paths.len() - 1);
@@ -883,7 +988,14 @@ impl App {
             }
             Tool::Line("hedge") if pts.len() < 3 => self.status = "a hedge needs 3 points".into(),
             Tool::Line(kind) if pts.len() >= 2 => {
-                let l = edit::new_line(&self.doc, kind, pts);
+                let kind = if kind == "fence" { self.new.fence.as_str() } else { kind };
+                let mut l = edit::new_line(&self.doc, kind, pts);
+                match kind {
+                    "fence" | "lattice" => l.closed = self.new.closed,
+                    "dirt" => l.width = self.new.dirt_width,
+                    "bridge" => l.width = self.new.bridge_width,
+                    _ => {}
+                }
                 self.status = format!("{} added", l.name);
                 self.doc.lines.push(l);
                 self.sel = Sel::Line(self.doc.lines.len() - 1);
@@ -944,6 +1056,9 @@ impl App {
         }
         if ctx.egui_wants_keyboard_input() {
             return;
+        }
+        if ctx.input(|i| i.key_pressed(Key::Questionmark) || i.key_pressed(Key::F1)) {
+            self.show_keys = !self.show_keys;
         }
         let (shift, ctrl) = ctx.input(|i| (i.modifiers.shift, i.modifiers.command));
         if ctrl {
@@ -1089,10 +1204,10 @@ impl App {
                     self.gesture = Gesture::Prop(PropDrag::Turn { i });
                 } else if let Some((i, (_, _, d0))) = handles.filter(|(_, (_, c, _))| dist(o, *c) <= tol * 1.3) {
                     self.gesture = Gesture::Prop(PropDrag::Scale { i, start: self.doc.props[i].scale, d0 });
-                } else if let Some(r) = edit::node_near(&self.doc, o, tol).filter(|_| self.show_nodes && self.tool == Tool::Select) {
+                } else if let Some(r) = edit::node_near(&self.doc, o, tol).filter(|r| self.show_nodes && self.tool == Tool::Select && self.pickable.node(r)) {
                     self.sel = Sel::Node(r);
                     self.gesture = Gesture::Nodes(edit::group(&self.doc, r));
-                } else if let Some(i) = self.prop_at(o) {
+                } else if let Some(i) = self.prop_at(o).filter(|_| self.pickable.props || self.tool == Tool::Prop) {
                     self.sel = Sel::Prop(i);
                     let at = self.doc.props[i].at;
                     self.gesture = Gesture::Prop(PropDrag::Move { i, off: [at[0] - o[0], at[1] - o[1]] });
@@ -1211,6 +1326,7 @@ impl App {
 
         self.refresh_shapes();
         self.paint(&painter, &ctx, hover);
+        self.plan_overlays(ui, resp.rect);
     }
 
     /// A prop drag in the plan or 3D at w (Alt: no snapping).
@@ -1601,7 +1717,7 @@ impl App {
 
     fn paint(&mut self, painter: &egui::Painter, ctx: &egui::Context, hover: Option<Pos2>) {
         let rect = self.view.rect;
-        painter.rect_filled(rect, 0.0, Color32::from_rgb(22, 26, 28));
+        painter.rect_filled(rect, 0.0, style::VIEW_BG);
         let ids = self.texture_ids(ctx);
         let v = self.view;
         if let Some(s) = &self.scene {
@@ -1832,627 +1948,6 @@ impl App {
 
     // ---- panels ---------------------------------------------------------------------------
 
-    fn top_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if ui.button("New").clicked() {
-                self.new_doc();
-            }
-            if ui.button("Open…").clicked() {
-                self.open();
-            }
-            if ui.button("Save").clicked() {
-                self.save(false);
-            }
-            if ui.button("Save as…").clicked() {
-                self.save(true);
-            }
-            ui.separator();
-            for (t, name, key) in [
-                (Tool::Select, "Select", "V"),
-                (Tool::Region, "Region", "R"),
-                (Tool::Path, "Path", "P"),
-                (Tool::Brush, "Brush", "B"),
-                (Tool::Prop, "Prop", "K"),
-                (Tool::Line("dirt"), "Dirt", "D"),
-                (Tool::Line("fence"), "Fence", "G"),
-                (Tool::Line("bridge"), "Bridge", "H"),
-                (Tool::Line("hedge"), "Hedge", "J"),
-            ] {
-                if ui.selectable_label(self.tool == t, name).on_hover_text(format!("key {key}")).clicked() {
-                    self.set_tool(t);
-                }
-            }
-            ui.separator();
-            for (s, name) in [(Shading::Textured, "Textured"), (Shading::Height, "Heights"), (Shading::Off, "Lines")] {
-                if ui.selectable_label(self.shading == s, name).on_hover_text("key T cycles").clicked() {
-                    self.shading = s;
-                }
-            }
-            ui.checkbox(&mut self.show_nodes, "Nodes");
-            ui.separator();
-            for (l, name) in [(Layout::Plan, "Plan"), (Layout::Split, "Plan + 3D"), (Layout::ThreeD, "3D")] {
-                if ui.add_enabled(l == Layout::Plan || self.v3.is_some(), egui::Button::selectable(self.layout == l, name)).clicked() {
-                    self.layout = l;
-                }
-            }
-            if ui.button("Fit").on_hover_text("key F").clicked() {
-                self.fit();
-            }
-            ui.separator();
-            if ui.button("▶ Play").on_hover_text("Play the level in the game with child Link (W plays from the cursor; right-click: play from here)").clicked() {
-                self.play(None);
-            }
-            ui.separator();
-            if self.building() {
-                ui.spinner();
-                ui.label("building");
-            } else if self.build_error.is_some() {
-                ui.colored_label(Color32::from_rgb(255, 90, 90), "build failed");
-            } else if self.level.is_some() {
-                ui.label(format!("built in {:.0} ms", self.build_ms));
-            }
-        });
-    }
-
-    fn bottom_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if let Some(c) = self.cursor {
-                let z = self.scene.as_ref().and_then(|s| s.floor_z(c));
-                ui.monospace(format!("x {:6.0}  y {:6.0}  floor {}", c[0], c[1], z.map_or("-".into(), |z| format!("{z:.0}"))));
-                ui.separator();
-            }
-            let hint = match self.tool {
-                Tool::Select => "drag nodes (onto another node to share it; Alt: no snap) · double-click a line: add node · Del: delete · S: sharp · PgUp/PgDn: raise/sink · right-drag: pan · wheel: zoom",
-                Tool::Region => "click points (on a node or edge to share it) · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
-                Tool::Path => "click points · put the ends inside the floors they start and finish on (a ramp ending inside a plateau cuts into it) · double-click or Enter to finish · Esc: cancel",
-                Tool::Brush => "drag to paint · Ctrl: lower · Shift: smooth · [ ]: size · 1-6: raise, lower, smooth, flatten, bumps, erase · right-drag: pan",
-                Tool::Prop if self.chosen_on_wall() => "hover a wall (best in 3D): the ghost shows where it goes, or why it can't · click: put it there · drag one along the walls to move it · Del: delete",
-                Tool::Prop => "click: place the Kit panel's piece · drag a prop: move · its arrow's handle: turn (Q / E) · its corner: scale · Alt: no snap · Ctrl+D: duplicate · Del: delete",
-                Tool::Line("hedge") => "click its corners (straight between them) · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
-                Tool::Line(_) => "click points along it · double-click or Enter to finish · Backspace: undo point · Esc: cancel",
-            };
-            ui.label(hint);
-        });
-        if !self.status.is_empty() {
-            ui.label(&self.status);
-        }
-    }
-
-    fn side_panel(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            if self.tool == Tool::Brush {
-                egui::CollapsingHeader::new("Brush").default_open(true).show(ui, |ui| self.brush_ui(ui));
-            }
-            if self.tool == Tool::Prop {
-                egui::CollapsingHeader::new("Kit").default_open(true).show(ui, |ui| self.kit_ui(ui));
-            }
-            egui::CollapsingHeader::new("Selection").default_open(true).show(ui, |ui| self.selection_ui(ui));
-            egui::CollapsingHeader::new("Contents").default_open(true).show(ui, |ui| self.contents_ui(ui));
-            egui::CollapsingHeader::new("Build").default_open(true).show(ui, |ui| self.build_ui(ui));
-            egui::CollapsingHeader::new("Level settings").show(ui, |ui| self.level_ui(ui));
-            egui::CollapsingHeader::new("Files").show(ui, |ui| self.files_ui(ui));
-            egui::CollapsingHeader::new("Keys").show(ui, |ui| {
-                ui.label(KEYS);
-            });
-        });
-    }
-
-    fn brush_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            for (m, name, key) in [(Mode::Raise, "Raise", 1), (Mode::Lower, "Lower", 2), (Mode::Smooth, "Smooth", 3), (Mode::Flatten, "Flatten", 4), (Mode::Bumps, "Bumps", 5), (Mode::Erase, "Erase", 6)] {
-                if ui.selectable_label(self.brush.mode == m, name).on_hover_text(format!("key {key}")).clicked() {
-                    self.brush.mode = m;
-                }
-            }
-        });
-        let b = &mut self.brush;
-        egui::Grid::new("brush").num_columns(2).show(ui, |ui| {
-            ui.label("Size").on_hover_text("Radius ([ and ])");
-            ui.add(egui::DragValue::new(&mut b.radius).speed(5.0).range(30.0..=5000.0));
-            ui.end_row();
-            ui.label("Strength").on_hover_text("Raise, lower, bumps: units per second at the middle. Others: how fast they act");
-            ui.add(egui::DragValue::new(&mut b.strength).speed(1.0).range(1.0..=2000.0));
-            ui.end_row();
-            ui.label("Hard core").on_hover_text("The share of the radius at full strength");
-            ui.add(egui::Slider::new(&mut b.falloff, 0.0..=0.95));
-            ui.end_row();
-            if b.mode == Mode::Bumps {
-                ui.label("Bump size");
-                ui.add(egui::DragValue::new(&mut b.bump_scale).speed(5.0).range(50.0..=5000.0));
-                ui.end_row();
-                ui.label("Seed");
-                ui.add(egui::DragValue::new(&mut b.seed));
-                ui.end_row();
-            }
-        });
-        ui.weak("The brush paints one smooth height offset over everything: regions, paths and bridges ride on it, ponds stay level. Region heights stay as they are.");
-        if self.doc.terrain.is_some() && ui.button("Clear all painted terrain").clicked() {
-            self.doc.terrain = None;
-        }
-    }
-
-    fn selection_ui(&mut self, ui: &mut egui::Ui) {
-        if !self.multi.is_empty() {
-            let ls = self.selected_loops();
-            let names: Vec<String> = ls.iter().map(|&l| edit::loop_name(&self.doc, l)).collect();
-            ui.strong(format!("{} selected: {}", ls.len(), names.join(", ")));
-            let mut dz = 0.0;
-            ui.horizontal(|ui| {
-                ui.label("All together");
-                if ui.button("-20").clicked() {
-                    dz = -20.0;
-                }
-                if ui.button("+20").clicked() {
-                    dz = 20.0;
-                }
-            });
-            if dz != 0.0 {
-                self.raise(dz);
-            }
-            if ui.button("Delete these regions").clicked() {
-                self.delete_selection();
-                return;
-            }
-            ui.separator();
-        }
-        match self.sel {
-            Sel::None => {
-                ui.label("Nothing selected. Click a region, path or node.");
-            }
-            Sel::Node(r) => {
-                self.node_ui(ui, r);
-                ui.separator();
-                match r {
-                    NodeRef::Loop(l, _) => self.loop_ui(ui, l),
-                    NodeRef::Path(p, _) => self.path_ui(ui, p),
-                    NodeRef::Line(k, _) => self.line_ui(ui, k),
-                }
-            }
-            Sel::Loop(l) => self.loop_ui(ui, l),
-            Sel::Path(p) => self.path_ui(ui, p),
-            Sel::Prop(i) => self.prop_ui(ui, i),
-            Sel::Line(k) => self.line_ui(ui, k),
-        }
-    }
-
-    fn line_ui(&mut self, ui: &mut egui::Ui, k: usize) {
-        let default_width = match self.doc.lines[k].kind.as_str() {
-            "dirt" => self.theme.dirt.as_ref().map(|d| d.width),
-            "bridge" => self.theme.hanging.as_ref().map(|h| h.width),
-            _ => None,
-        };
-        let l = &mut self.doc.lines[k];
-        ui.horizontal(|ui| {
-            ui.strong(match l.kind.as_str() {
-                "dirt" => "Dirt path",
-                "fence" | "lattice" => "Fence",
-                "bridge" => "Hanging bridge",
-                "hedge" => "Hedge",
-                k => k,
-            });
-            ui.text_edit_singleline(&mut l.name);
-        });
-        if l.kind == "fence" || l.kind == "lattice" {
-            ui.horizontal(|ui| {
-                ui.label("Style");
-                ui.selectable_value(&mut l.kind, "fence".to_string(), "rails (40)").on_hover_text("The training ground's: 40 tall, a post every 40");
-                ui.selectable_value(&mut l.kind, "lattice".to_string(), "lattice (120)").on_hover_text("The tall lattice by the crawlspace");
-            });
-            ui.checkbox(&mut l.closed, "Closed (back to the first node)");
-            ui.weak("Straight between nodes, a post at every node, standing on the ground; collides from both sides.");
-        }
-        if let Some(dw) = default_width {
-            ui.horizontal(|ui| {
-                let mut own = l.width.is_some();
-                if ui.checkbox(&mut own, "Width").on_hover_text("Off: the theme's").changed() {
-                    l.width = own.then_some(dw);
-                }
-                match &mut l.width {
-                    Some(w) => {
-                        ui.add(egui::DragValue::new(w).speed(1.0).range(20.0..=2000.0));
-                    }
-                    None => {
-                        ui.weak(format!("{dw:.0}"));
-                    }
-                }
-            });
-        }
-        if l.kind == "hedge" {
-            let h = self.theme.hedge.as_ref().map_or(28.0, |h| h.height);
-            ui.weak(format!(
-                "Tall grass over the shape of its nodes (straight between them), {h:.0} above the ground with grass skirts round it. Link wades through it, with tall-grass footsteps."
-            ));
-        }
-        if l.kind == "dirt" {
-            ui.weak("Painted into the floor: the ground under it fades to dirt across its soft edge (the theme's), and the middle has dirt footsteps.");
-        }
-        if l.kind == "bridge" {
-            let sag = self.theme.hanging.as_ref().map_or(0.0, |h| h.sag * 100.0);
-            ui.weak(format!(
-                "Planks and ropes between its nodes, sagging {sag:.0}% of each span. Put its ends on the floors it joins: they land at the floors' edges. A deck too steep to walk is reported."
-            ));
-        }
-        ui.label(format!("{} nodes · double-click it to add one", l.nodes.len()));
-        if ui.button("Delete").clicked() {
-            self.sel = Sel::Line(k);
-            self.delete_selection();
-        }
-    }
-
-    /// The kit's pieces, by kind: the one the Prop tool places.
-    fn kit_ui(&mut self, ui: &mut egui::Ui) {
-        let Some(kit) = self.kit.clone() else {
-            ui.label("No kit. It's cut from the extracted Kokiri Forest (extracted/scenes/overworld/spot04) by `overworld kit-pieces`, into out/overworld/kit/kokiri.");
-            return;
-        };
-        // hedges are drawn as shapes (the Hedge tool), not dropped in
-        let mut kinds: Vec<&str> = kit.pieces.iter().map(|p| p.kind.as_str()).filter(|&k| k != "hedge").collect();
-        kinds.dedup();
-        for kind in kinds {
-            ui.label(egui::RichText::new(kind_name(kind)).weak());
-            ui.horizontal_wrapped(|ui| {
-                for p in kit.pieces.iter().filter(|p| p.kind == kind) {
-                    let tip = format!(
-                        "{:.0} x {:.0} x {:.0} · {} triangles · {} collision vertices{}{}",
-                        p.bounds[1][0] - p.bounds[0][0],
-                        p.bounds[1][1] - p.bounds[0][1],
-                        p.bounds[1][2] - p.bounds[0][2],
-                        p.tris.len(),
-                        p.collision_vertices(),
-                        if p.scale.locked() { " · fixed size" } else { "" },
-                        if p.about.is_empty() { String::new() } else { format!("\n{}", p.about) }
-                    );
-                    if ui.selectable_label(self.piece == p.name, &p.label).on_hover_text(tip).clicked() {
-                        self.piece = p.name.clone();
-                    }
-                }
-            });
-        }
-        ui.horizontal(|ui| {
-            ui.label("Turn new props");
-            ui.add(egui::DragValue::new(&mut self.place_yaw).speed(1.0).range(-180.0..=180.0).suffix("°"));
-        });
-        ui.weak("Click in the plan or 3D to place. Openings and wall pieces go best in 3D: hover a wall and a ghost shows where it'd go. Hedges: draw them with the Hedge tool (J). Doors and the log tunnel's exit are scenery until levels load through Play_Init (ADR 0035's next step).");
-    }
-
-    fn prop_ui(&mut self, ui: &mut egui::Ui, i: usize) {
-        let built_z = self.prop_z(i);
-        let fitted = self.on_wall(i);
-        let placed = self.level.as_ref().and_then(|l| l.props.iter().find(|pl| pl.index == i).cloned());
-        let tag = format!("prop {i}: ");
-        let trouble: Vec<String> = self.problems.iter().filter(|p| p.starts_with(&tag)).map(|p| p[tag.len()..].to_string()).collect();
-        let piece = self.kit.as_ref().and_then(|k| k.get(&self.doc.props[i].piece)).cloned();
-        // a wall piece's flat face where it is (asked at its narrowest, which fits wherever any does)
-        let room = piece.as_ref().filter(|p| p.kind == "wall").and_then(|p| {
-            let probe = Prop { scale: [p.scale.min[0], 1.0, 1.0], ..self.doc.props[i].clone() };
-            self.ghost(&probe)?.ok().map(|pv| pv.room)
-        });
-        let prop = &mut self.doc.props[i];
-        ui.horizontal(|ui| {
-            ui.strong(piece.as_ref().map_or(prop.piece.clone(), |p| p.label.clone()));
-            if piece.is_none() {
-                ui.colored_label(Color32::from_rgb(255, 90, 90), "not in the kit");
-            }
-        });
-        egui::Grid::new("prop").num_columns(2).show(ui, |ui| {
-            ui.label("Position");
-            ui.horizontal(|ui| {
-                ui.add(egui::DragValue::new(&mut prop.at[0]).speed(2.0).prefix("x "));
-                ui.add(egui::DragValue::new(&mut prop.at[1]).speed(2.0).prefix("y "));
-            });
-            ui.end_row();
-            if fitted {
-                ui.label("Fitted");
-                ui.label(match &placed {
-                    Some(pl) => format!("on the wall at {:.0}, {:.0}, facing {:.0}°, depth x{:.2}", pl.origin[0], pl.origin[1], pl.yaw, pl.scale[1]),
-                    None => "not yet (see below)".into(),
-                });
-                ui.end_row();
-                if let Some(p) = piece.as_ref().filter(|p| p.kind == "wall") {
-                    let base = (p.bounds[1][0] - p.bounds[0][0]).max(1.0);
-                    let lo = base * p.scale.min[0];
-                    let hi = room.map_or(base * p.scale.max[0], |r| (r - 2.0 * overworld::openings::WALL_PIECE_MARGIN).min(base * p.scale.max[0])).max(lo);
-                    let mut w = prop.scale[0].clamp(p.scale.min[0], p.scale.max[0]) * base;
-                    ui.label("Width").on_hover_text("Across the wall: as wide as the flat face it's on allows");
-                    ui.horizontal(|ui| {
-                        if ui.add(egui::DragValue::new(&mut w).speed(1.0).range(lo..=hi)).changed() {
-                            prop.scale[0] = (w / base * 1000.0).round() / 1000.0;
-                        }
-                        match room {
-                            Some(r) => ui.weak(format!("the flat face here is {r:.0}: up to {hi:.0}")),
-                            None => ui.weak("no flat face here"),
-                        };
-                    });
-                    ui.end_row();
-                    let tall = p.bounds[1][2] - p.bounds[0][2];
-                    ui.label("Height").on_hover_text("Always from the floor to the wall's top");
-                    ui.weak(match &placed {
-                        Some(pl) => format!("floor to the wall's top: {:.0}", pl.scale[2] * tall),
-                        None => "floor to the wall's top".into(),
-                    });
-                    ui.end_row();
-                }
-                return;
-            }
-            ui.label("Height").on_hover_text("On the ground: its base (a house's doorway, a stone's top) stands on the floor there");
-            ui.horizontal(|ui| {
-                let mut ground = prop.z.is_none();
-                if ui.checkbox(&mut ground, "on the ground").changed() {
-                    prop.z = if ground { None } else { Some(built_z.unwrap_or(0.0).round()) };
-                }
-                match &mut prop.z {
-                    Some(z) => {
-                        ui.add(egui::DragValue::new(z).speed(1.0));
-                    }
-                    None => {
-                        ui.weak(built_z.map_or(String::new(), |z| format!("{z:.0}")));
-                    }
-                }
-            });
-            ui.end_row();
-            ui.label("Turn").on_hover_text("Degrees counter-clockwise from north (Q / E: 15, with Shift 1)");
-            ui.add(egui::DragValue::new(&mut prop.yaw).speed(1.0).range(-180.0..=180.0).suffix("°"));
-            ui.end_row();
-            if let Some(p) = &piece {
-                let lim = p.scale.clone();
-                ui.label("Scale");
-                if lim.locked() {
-                    ui.weak("fixed (Link must fit)");
-                } else if lim.uniform {
-                    let mut f = prop.scale[0];
-                    if ui.add(egui::DragValue::new(&mut f).speed(0.01).range(lim.min[0]..=lim.max[0])).changed() {
-                        prop.scale = [f; 3];
-                    }
-                } else {
-                    ui.horizontal(|ui| {
-                        for (k, name) in ["x", "y", "z"].iter().enumerate() {
-                            ui.add_enabled(lim.min[k] < lim.max[k], egui::DragValue::new(&mut prop.scale[k]).speed(0.01).range(lim.min[k]..=lim.max[k]).prefix(format!("{name} ")));
-                        }
-                    });
-                }
-                ui.end_row();
-            }
-        });
-        prop.at = prop.at.map(|x| (x * 100.0).round() / 100.0);
-        if fitted {
-            ui.weak("It fits itself to the wall nearest where you put it: on its face, facing out over the floor in front, slid along clear of corners. Drag it along the walls in 3D to move it.");
-        }
-        for t in &trouble {
-            ui.colored_label(Color32::from_rgb(255, 200, 80), t);
-        }
-        if let Some(p) = &piece {
-            ui.label(format!("{} triangles · {} collision vertices", p.tris.len(), p.collision_vertices()));
-            if let Some(d) = &p.door {
-                ui.weak(format!("Its door led to {} (exit {}). Scenery until levels load through Play_Init.", d.entrance, d.exit));
-            }
-            if let Some(o) = &p.opening {
-                ui.weak(format!("Opening {:.0} wide, {:.0} high, {:.0} deep (down to {:.0}).", o.width, o.height, o.depth, o.min_depth));
-            }
-            if !p.functions.is_empty() {
-                ui.weak(format!("Link can use: {}", p.functions.join(", ")));
-            }
-            if !p.about.is_empty() {
-                ui.weak(&p.about);
-            }
-        }
-        ui.horizontal(|ui| {
-            if ui.button("Duplicate (Ctrl+D)").clicked() {
-                self.duplicate_prop();
-            }
-            if ui.button("Delete (Del)").clicked() {
-                self.delete_selection();
-            }
-        });
-    }
-
-    fn node_ui(&mut self, ui: &mut egui::Ui, r: NodeRef) {
-        let g = edit::group(&self.doc, r);
-        let mut p = edit::node_pos(&self.doc, r);
-        ui.horizontal(|ui| {
-            ui.strong("Node");
-            ui.label("x");
-            let a = ui.add(egui::DragValue::new(&mut p[0]).speed(2.0));
-            ui.label("y");
-            let b = ui.add(egui::DragValue::new(&mut p[1]).speed(2.0));
-            if a.changed() || b.changed() {
-                edit::move_group(&mut self.doc, &g, p);
-            }
-        });
-        match r {
-            NodeRef::Loop(..) => {
-                let mut sharp = edit::is_sharp(&self.doc, &g);
-                if ui.checkbox(&mut sharp, "Sharp corner (S)").changed() {
-                    edit::set_sharp(&mut self.doc, &g, sharp);
-                }
-                if g.len() > 1 {
-                    let names: Vec<String> = g
-                        .iter()
-                        .map(|q| match q {
-                            NodeRef::Loop(l, _) => edit::loop_name(&self.doc, *l),
-                            NodeRef::Path(k, _) => edit::path_name(&self.doc, *k),
-                            NodeRef::Line(k, _) => edit::line_name(&self.doc, *k),
-                        })
-                        .collect();
-                    ui.label(format!("Shared by {}", names.join(", ")));
-                }
-            }
-            NodeRef::Path(k, i) => {
-                let floor = self.scene.as_ref().and_then(|s| s.floor_z(p)).unwrap_or(edit::base_z(&self.doc, &self.shapes, p)).round();
-                let n = &mut self.doc.paths[k].nodes[i];
-                let mut z = n.get(2).copied().flatten();
-                let mut w = n.get(3).copied().flatten();
-                let width = self.doc.paths[k].width;
-                let (mut zc, mut wc) = (z.is_some(), w.is_some());
-                let mut changed = false;
-                ui.horizontal(|ui| {
-                    changed |= ui.checkbox(&mut zc, "Height").on_hover_text("Off: an end takes the floor's height, a middle node is interpolated").changed();
-                    if zc {
-                        let mut v = z.unwrap_or(floor);
-                        changed |= ui.add(egui::DragValue::new(&mut v).speed(1.0)).changed();
-                        z = Some(v);
-                    } else {
-                        z = None;
-                    }
-                });
-                ui.horizontal(|ui| {
-                    changed |= ui.checkbox(&mut wc, "Width").on_hover_text("Off: the path's width").changed();
-                    if wc {
-                        let mut v = w.unwrap_or(width);
-                        changed |= ui.add(egui::DragValue::new(&mut v).speed(1.0).range(20.0..=2000.0)).changed();
-                        w = Some(v);
-                    } else {
-                        w = None;
-                    }
-                });
-                if changed {
-                    let n = &mut self.doc.paths[k].nodes[i];
-                    n.truncate(2);
-                    if z.is_some() || w.is_some() {
-                        n.push(z);
-                    }
-                    if w.is_some() {
-                        n.push(w);
-                    }
-                }
-            }
-            NodeRef::Line(..) => {}
-        }
-        if ui.button("Delete node (Del)").clicked() {
-            self.delete_selection();
-        }
-    }
-
-    fn loop_ui(&mut self, ui: &mut egui::Ui, l: usize) {
-        if l == 0 {
-            ui.strong("Outline");
-            ui.horizontal(|ui| {
-                ui.label("Ground height");
-                ui.add(egui::DragValue::new(&mut self.doc.outline.z).speed(1.0));
-            });
-            noise_ui(ui, &mut self.doc.outline.noise);
-            ui.label(format!("{} nodes", self.doc.outline.nodes.len()));
-            return;
-        }
-        let styles: Vec<String> = self.theme.wall_styles.keys().cloned().collect();
-        let r = &mut self.doc.regions[l - 1];
-        ui.horizontal(|ui| {
-            ui.strong("Region");
-            ui.text_edit_singleline(&mut r.name);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Kind");
-            egui::ComboBox::from_id_salt("kind").selected_text(r.kind.clone()).show_ui(ui, |ui| {
-                ui.selectable_value(&mut r.kind, "floor".to_string(), "floor");
-                ui.selectable_value(&mut r.kind, "water".to_string(), "water");
-            });
-        });
-        let mut dz = 0.0;
-        ui.horizontal(|ui| {
-            ui.label(if r.kind == "water" { "Bed" } else { "Height" });
-            ui.add(egui::DragValue::new(&mut r.z).speed(1.0));
-            if ui.button("-20").clicked() {
-                dz = -20.0;
-            }
-            if ui.button("+20").clicked() {
-                dz = 20.0;
-            }
-        });
-        r.z += dz;
-        if r.kind == "water" {
-            ui.horizontal(|ui| {
-                ui.label("Surface");
-                let mut s = r.surface.unwrap_or(r.z + 60.0);
-                if ui.add(egui::DragValue::new(&mut s).speed(1.0)).changed() {
-                    r.surface = Some(s);
-                }
-            });
-        }
-        ui.horizontal(|ui| {
-            ui.label("Edge");
-            egui::ComboBox::from_id_salt("edge")
-                .selected_text(r.edge.clone().unwrap_or("theme rules".into()))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut r.edge, None, "theme rules");
-                    for s in &styles {
-                        ui.selectable_value(&mut r.edge, Some(s.clone()), s);
-                    }
-                })
-                .response
-                .on_hover_text("The wall style of this region's own walls (where it's the higher side)");
-        });
-        noise_ui(ui, &mut r.noise);
-        ui.label(format!("{} nodes", r.nodes.len()));
-        if ui.button("Delete region").clicked() {
-            self.sel = Sel::Loop(l);
-            self.delete_selection();
-        }
-    }
-
-    fn path_ui(&mut self, ui: &mut egui::Ui, k: usize) {
-        let styles: Vec<String> = self.theme.wall_styles.keys().cloned().collect();
-        let p = &mut self.doc.paths[k];
-        ui.horizontal(|ui| {
-            ui.strong("Path");
-            ui.text_edit_singleline(&mut p.name);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Width");
-            ui.add(egui::DragValue::new(&mut p.width).speed(1.0).range(20.0..=2000.0));
-        });
-        let segs = p.nodes.len().saturating_sub(1);
-        let mut modes: Vec<String> = (0..segs).map(|i| p.modes.get(i).cloned().unwrap_or(p.mode.clone())).collect();
-        let mut changed = false;
-        ui.horizontal(|ui| {
-            ui.label("Mode");
-            let before = p.mode.clone();
-            egui::ComboBox::from_id_salt("mode").selected_text(p.mode.clone()).show_ui(ui, |ui| {
-                ui.selectable_value(&mut p.mode, "attached".to_string(), "attached (embankment)");
-                ui.selectable_value(&mut p.mode, "floating".to_string(), "floating (bridge)");
-            });
-            if p.mode != before {
-                p.modes.clear();
-                modes = vec![p.mode.clone(); segs];
-            }
-        });
-        if segs > 1 {
-            ui.label("Segments");
-            for (i, m) in modes.iter_mut().enumerate() {
-                ui.horizontal(|ui| {
-                    ui.label(format!("  {} to {}", i, i + 1));
-                    egui::ComboBox::from_id_salt(("seg", i)).selected_text(m.clone()).show_ui(ui, |ui| {
-                        changed |= ui.selectable_value(m, "attached".to_string(), "attached").changed();
-                        changed |= ui.selectable_value(m, "floating".to_string(), "floating").changed();
-                    });
-                });
-            }
-        }
-        if changed {
-            p.modes = if modes.iter().all(|m| *m == p.mode) { vec![] } else { modes };
-        }
-        ui.horizontal(|ui| {
-            ui.label("Sides");
-            egui::ComboBox::from_id_salt("pedge").selected_text(p.edge.clone().unwrap_or("theme's".into())).show_ui(ui, |ui| {
-                ui.selectable_value(&mut p.edge, None, "theme's");
-                for s in &styles {
-                    ui.selectable_value(&mut p.edge, Some(s.clone()), s);
-                }
-            });
-        });
-        ui.horizontal(|ui| {
-            ui.label("Bridge shape");
-            egui::ComboBox::from_id_salt("shape").selected_text(p.shape.clone().unwrap_or("theme's".into())).show_ui(ui, |ui| {
-                ui.selectable_value(&mut p.shape, None, "theme's");
-                ui.selectable_value(&mut p.shape, Some("rock".into()), "rock arch");
-                ui.selectable_value(&mut p.shape, Some("slab".into()), "slab");
-            });
-        });
-        ui.label(format!("{} nodes", p.nodes.len()));
-        if ui.button("Delete path").clicked() {
-            self.sel = Sel::Path(k);
-            self.delete_selection();
-        }
-    }
-
     fn profile_ui(&mut self, ui: &mut egui::Ui, k: usize) {
         let selected = match self.sel {
             Sel::Node(NodeRef::Path(p, i)) if p == k => Some(i),
@@ -2473,219 +1968,6 @@ impl App {
         }
         self.profile_hover = out.hover;
     }
-
-    fn contents_ui(&mut self, ui: &mut egui::Ui) {
-        let cur = match self.sel {
-            Sel::Loop(l) | Sel::Node(NodeRef::Loop(l, _)) => Some(Sel::Loop(l)),
-            Sel::Path(p) | Sel::Node(NodeRef::Path(p, _)) => Some(Sel::Path(p)),
-            Sel::Prop(i) => Some(Sel::Prop(i)),
-            Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => Some(Sel::Line(k)),
-            Sel::None => None,
-        };
-        let shift = ui.input(|i| i.modifiers.shift);
-        let ls = self.selected_loops();
-        let on = |l: usize| cur == Some(Sel::Loop(l)) || ls.contains(&l);
-        if ui.selectable_label(on(0), format!("outline  {:.0}", self.doc.outline.z)).clicked() {
-            self.click_select(Sel::Loop(0), shift);
-        }
-        for l in 1..edit::loop_count(&self.doc) {
-            let r = &self.doc.regions[l - 1];
-            let text = format!("{}  {:.0}{}", edit::loop_name(&self.doc, l), r.z, if r.kind == "water" { "  (water)" } else { "" });
-            if ui.selectable_label(on(l), text).on_hover_text("Shift-click: select several").clicked() {
-                self.click_select(Sel::Loop(l), shift);
-            }
-        }
-        for k in 0..self.doc.paths.len() {
-            if ui.selectable_label(cur == Some(Sel::Path(k)), format!("{}  ({})", edit::path_name(&self.doc, k), self.doc.paths[k].mode)).clicked() {
-                self.click_select(Sel::Path(k), false);
-            }
-        }
-        for k in 0..self.doc.lines.len() {
-            if ui.selectable_label(cur == Some(Sel::Line(k)), format!("{}  ({})", edit::line_name(&self.doc, k), self.doc.lines[k].kind)).clicked() {
-                self.click_select(Sel::Line(k), false);
-            }
-        }
-        for i in 0..self.doc.props.len() {
-            let p = &self.doc.props[i];
-            let name = self.kit.as_ref().and_then(|k| k.get(&p.piece)).map_or(p.piece.clone(), |x| x.label.clone());
-            if ui.selectable_label(cur == Some(Sel::Prop(i)), format!("{name}  at {:.0}, {:.0}", p.at[0], p.at[1])).clicked() {
-                self.click_select(Sel::Prop(i), false);
-            }
-        }
-    }
-
-    fn build_ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(e) = &self.shapes.error {
-            ui.colored_label(Color32::from_rgb(255, 90, 90), e);
-        }
-        if let Some(e) = &self.build_error {
-            ui.colored_label(Color32::from_rgb(255, 90, 90), e);
-            if self.level.is_some() {
-                ui.label("Showing the last good build.");
-            }
-        }
-        if let Some(s) = &self.scene {
-            ui.label(format!("{} triangles · rim {:.0} to {:.0} · {:.0} ms", s.triangles, s.rim.0, s.rim.1, self.build_ms));
-        }
-        if let Some(l) = &self.level {
-            let props: usize = l.props.iter().map(|p| p.collision_vertices).sum();
-            let text = format!(
-                "Collision: {} of {} vertices{}",
-                l.collision_vertices,
-                overworld::props::MAX_COLLISION_VERTICES,
-                if props > 0 { format!(" (props about {props})") } else { String::new() }
-            );
-            let over = l.collision_vertices > overworld::props::MAX_COLLISION_VERTICES;
-            let r = if over { ui.colored_label(Color32::from_rgb(255, 90, 90), text) } else { ui.label(text) };
-            r.on_hover_text("The game indexes collision vertices in 13 bits. Over the limit the game refuses the level: build at a lower detail.");
-        }
-        if let Some(l) = &self.level {
-            egui::CollapsingHeader::new(format!("Triangles ({} detail)", self.doc.settings.detail)).id_salt("tris").show(ui, |ui| {
-                egui::Grid::new("tris_grid").num_columns(2).show(ui, |ui| {
-                    let mut objs: Vec<(&str, usize)> = l.mesh.objects.iter().map(|o| (o.name.as_str(), o.tris.len())).collect();
-                    objs.sort_by(|a, b| b.1.cmp(&a.1));
-                    for (n, t) in objs {
-                        ui.label(n);
-                        ui.monospace(format!("{t:6}"));
-                        ui.end_row();
-                    }
-                });
-                ui.weak("For scale: Kokiri Forest is about 3,750 triangles in all (its village about 1,200), in a space about an eighth the size of the sketch levels.");
-            });
-        }
-        for p in &self.problems {
-            ui.colored_label(Color32::from_rgb(255, 200, 80), p);
-        }
-    }
-
-    fn level_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label("Name");
-            ui.text_edit_singleline(&mut self.doc.name);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Detail").on_hover_text(
-                "Mesh resolution. High: curves every 'Curve sample' units, walls a band per texture repeat. \
-                 Medium and Low: curves sampled by how much they bend, walls in three bands, coarser floors and bridges.",
-            );
-            for (d, name) in [("high", "High"), ("medium", "Medium"), ("low", "Low")] {
-                if ui.selectable_label(self.doc.settings.detail == d, name).clicked() {
-                    self.doc.settings.detail = d.into();
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Edges").on_hover_text(
-                "How outlines, regions and paths run between their nodes. Smooth: curves.                  Faceted: the same curves in a few long straight pieces, low-poly like the game's own.                  Hard: straight from node to node, every node a corner.",
-            );
-            for (e, name) in [("smooth", "Smooth"), ("faceted", "Faceted"), ("hard", "Hard")] {
-                let on = self.doc.settings.edges == e || (e == "smooth" && self.doc.settings.edges.is_empty());
-                if ui.selectable_label(on, name).clicked() {
-                    self.doc.settings.edges = e.into();
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label("Walls").on_hover_text(
-                "How the cliffs are textured. Tiled: the grassy top and bottom keep their size and the rock between repeats, \
-                 sharp on any wall. Middle stretched: the grassy top and bottom keep their size and the rock between is \
-                 stretched once over the rest. Stretched: the texture once over the wall's height, growing across with it, \
-                 as Kokiri Forest's own walls are: blurrier on tall walls, and walls of different heights don't quite meet.",
-            );
-            for (w, name) in [("tiled", "Tiled"), ("stretched_middle", "Middle stretched"), ("stretched", "Stretched")] {
-                let on = self.doc.settings.wall_texture == w || (w == "tiled" && self.doc.settings.wall_texture.is_empty());
-                if ui.selectable_label(on, name).clicked() {
-                    self.doc.settings.wall_texture = w.into();
-                }
-            }
-        });
-        let b = &mut self.doc.boundary;
-        ui.label("Edge of the world");
-        egui::Grid::new("boundary").num_columns(2).show(ui, |ui| {
-            let row = |ui: &mut egui::Ui, name: &str, tip: &str, v: &mut f64, speed: f64| {
-                ui.label(name).on_hover_text(tip);
-                ui.add(egui::DragValue::new(v).speed(speed).range(0.0..=100000.0));
-                ui.end_row();
-            };
-            row(ui, "Cliff", "The rim stands at least this far above the floors at the edge", &mut b.cliff_min, 1.0);
-            row(ui, "Bank depth", "How far the bank reaches back to the tree line", &mut b.bank, 1.0);
-            row(ui, "Bank rise", "The bank's rise above the rim, over its depth", &mut b.bank_rise, 1.0);
-            row(ui, "Rise slope", "How fast the rim may climb along the edge (1 in 4 = 0.25)", &mut b.rise_slope, 0.005);
-            row(ui, "Reach", "Floors this close to the edge raise the rim", &mut b.reach, 1.0);
-            row(ui, "Panel tolerance", "How far the tree line's straight panels may stray from the bank", &mut b.panel_tol, 1.0);
-        });
-        let s = &mut self.doc.settings;
-        ui.label("Sampling");
-        egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
-            ui.label("Curve sample").on_hover_text("Curves are sampled about this often");
-            ui.add(egui::DragValue::new(&mut s.sample).speed(1.0).range(10.0..=1000.0));
-            ui.end_row();
-            ui.label("Floor points").on_hover_text("Interior points in floors, this far apart");
-            ui.add(egui::DragValue::new(&mut s.steiner).speed(1.0).range(50.0..=5000.0));
-            ui.end_row();
-            ui.label("Weld").on_hover_text("Nodes closer than this are one node");
-            ui.add(egui::DragValue::new(&mut s.weld).speed(0.1).range(0.0..=50.0));
-            ui.end_row();
-            ui.label("Seed").on_hover_text("Varies the texture and shade noise");
-            ui.add(egui::DragValue::new(&mut s.seed));
-            ui.end_row();
-        });
-    }
-
-    fn files_ui(&mut self, ui: &mut egui::Ui) {
-        ui.label(format!("Document: {}", self.file.as_ref().map_or("(unsaved)".into(), |f| f.display().to_string())));
-        ui.horizontal(|ui| {
-            ui.label(format!("Theme: {}", self.theme.name));
-            if ui.button("Load…").clicked() {
-                if let Some(p) = rfd::FileDialog::new().add_filter("theme", &["json"]).set_directory(Path::new(ROOT).join("crates/tools/overworld/themes")).pick_file() {
-                    match Theme::load(&p.to_string_lossy()) {
-                        Ok(t) => {
-                            self.theme = Arc::new(t);
-                            self.theme_file = Some(p);
-                            self.sent = None;
-                        }
-                        Err(e) => self.status = e,
-                    }
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(format!("Textures: {}", self.lib.as_ref().map_or("(none)".into(), |l| l.dir.display().to_string())));
-            if ui.button("Choose…").clicked() {
-                if let Some(d) = rfd::FileDialog::new().pick_folder() {
-                    match Library::load(&d) {
-                        Ok(l) => {
-                            self.lib = Some(Arc::new(l));
-                            self.textures.clear();
-                            self.sent = None;
-                        }
-                        Err(e) => self.status = e,
-                    }
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(format!("Export to: {}", self.out_dir.display()));
-            if ui.button("Choose…").clicked() {
-                if let Some(d) = rfd::FileDialog::new().pick_folder() {
-                    self.out_dir = d;
-                    self.sent = None;
-                }
-            }
-        });
-        if ui.checkbox(&mut self.live, "Export every build (the game reloads it)").changed() {
-            self.sent = None;
-        }
-        if ui.button("Export now").clicked() {
-            match (&self.level, &self.built) {
-                (Some(l), Some(d)) => match export::write(d, &self.theme, l, self.lib.as_deref(), &self.out_dir) {
-                    Ok(_) => self.status = format!("exported to {}", self.out_dir.display()),
-                    Err(e) => self.status = e,
-                },
-                _ => self.status = "nothing built yet".into(),
-            }
-        }
-    }
 }
 
 const PROP_COLOUR: Color32 = Color32::from_rgb(90, 235, 170);
@@ -2695,19 +1977,8 @@ fn line_colour(kind: &str) -> Color32 {
         "dirt" => Color32::from_rgb(235, 200, 110),
         "fence" | "lattice" => Color32::from_rgb(190, 130, 80),
         "bridge" => Color32::from_rgb(160, 210, 240),
+        "hedge" => Color32::from_rgb(127, 191, 77),
         _ => Color32::from_rgb(200, 150, 100),
-    }
-}
-
-fn kind_name(kind: &str) -> &str {
-    match kind {
-        "house" => "Houses",
-        "tower" => "Stumps",
-        "stone" => "Stepping stones",
-        "hedge" => "Hedges",
-        "opening" => "Openings (click near a wall: it's set into it)",
-        "wall" => "On walls (click near a wall)",
-        k => k,
     }
 }
 
@@ -2722,50 +1993,6 @@ fn brush_colour(m: Mode) -> Color32 {
     }
 }
 
-/// A floor's bumps: on or off, and their settings.
-fn noise_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
-    let mut on = noise.is_some();
-    if ui.checkbox(&mut on, "Bumps").on_hover_text("Smooth noise on the floor, fading out towards its edges").changed() {
-        *noise = on.then(overworld::doc::Noise::default);
-    }
-    if let Some(n) = noise {
-        egui::Grid::new(ui.next_auto_id()).num_columns(2).show(ui, |ui| {
-            ui.label("  Height").on_hover_text("Up to this far up or down");
-            ui.add(egui::DragValue::new(&mut n.amplitude).speed(0.5).range(0.0..=500.0));
-            ui.end_row();
-            ui.label("  Size").on_hover_text("About how far apart the bumps are");
-            ui.add(egui::DragValue::new(&mut n.scale).speed(5.0).range(50.0..=5000.0));
-            ui.end_row();
-            ui.label("  Edge fade").on_hover_text("Bumps fade out over this distance from the floor's edges, which keep its height");
-            ui.add(egui::DragValue::new(&mut n.edge).speed(2.0).range(1.0..=3000.0));
-            ui.end_row();
-            ui.label("  Seed").on_hover_text("Another pattern");
-            ui.add(egui::DragValue::new(&mut n.seed));
-            ui.end_row();
-        });
-    }
-}
-
-const KEYS: &str = "\
-V select · R draw region · P draw path · B brush · K props · D dirt path · G fence · H bridge · J hedge
-Drag a node to move it (and every loop sharing it)
-Drop a node on another to share it
-Alt while dragging: no snapping
-Double-click a line: add a node
-Del / Backspace: delete node, region or path
-S: sharp / smooth corner
-Shift-click regions to select several
-PgUp / PgDn or ] / [: raise / sink 20 (Shift: 100)
-Brush: drag to paint · Ctrl: lower · Shift: smooth
-  [ ]: size · 1-6: raise, lower, smooth, flatten, bumps, erase
-Wheel: zoom · right or middle drag: pan
-F: fit · T: textured / heights / lines · N: nodes
-Props: drag to move · the arrow's handle turns, the corner scales
-  Q / E: turn 15 (Shift: 1) · PgUp / PgDn: raise / sink
-  Ctrl+D: duplicate · Alt while dragging: no snapping
-W: play from the cursor (the game, child Link)
-Ctrl+Z / Ctrl+Y: undo / redo · Ctrl+S: save";
-
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -2773,9 +2000,20 @@ impl eframe::App for App {
         self.keys(&ctx);
         self.refresh_shapes();
 
-        egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
-        egui::Panel::bottom("bottom").show(ui, |ui| self.bottom_bar(ui));
-        egui::Panel::left("side").resizable(true).default_size(320.0).show(ui, |ui| self.side_panel(ui));
+        egui::Panel::top("top").frame(chrome::panel_frame(style::PANEL, egui::Margin::symmetric(10, 6))).show(ui, |ui| self.top_bar(ui));
+        egui::Panel::bottom("status").frame(chrome::panel_frame(style::BG, egui::Margin::symmetric(12, 4))).show(ui, |ui| self.status_bar(ui));
+        egui::Panel::left("rail").exact_size(54.0).resizable(false).frame(chrome::panel_frame(style::BG, egui::Margin::symmetric(0, 6))).show(ui, |ui| self.rail(ui));
+        egui::Panel::left("palette").resizable(true).default_size(284.0).size_range(240.0..=420.0).frame(chrome::panel_frame(style::PANEL, egui::Margin::ZERO)).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("palette").auto_shrink([false, false]).show(ui, |ui| self.palette(ui));
+        });
+        egui::Panel::right("side").resizable(true).default_size(316.0).size_range(260.0..=460.0).frame(chrome::panel_frame(style::PANEL, egui::Margin::ZERO)).show(ui, |ui| {
+            // the inspector takes what it needs, up to 60%; the outliner the rest
+            let h = ui.available_height();
+            egui::ScrollArea::vertical().id_salt("inspector").max_height(h * 0.6).auto_shrink([false, true]).show(ui, |ui| self.inspector(ui));
+            let r = ui.available_rect_before_wrap();
+            ui.painter().line_segment([r.left_top(), r.right_top()], Stroke::new(1.0, style::LINE));
+            self.outliner(ui);
+        });
         self.profile_hover = None;
         let profile_path = match self.sel {
             Sel::Path(k) | Sel::Node(NodeRef::Path(k, _)) => Some(k),
@@ -2795,7 +2033,9 @@ impl eframe::App for App {
                     self.view3d_ui(&mut ui.new_child(egui::UiBuilder::new().max_rect(b.shrink2(Vec2::new(1.0, 0.0)))));
                 }
             }
+            self.layout_overlay(ui, r);
         });
+        self.windows(&ctx);
 
         // edits settle into one undo step once the mouse is up and no field is being typed in
         if !ctx.input(|i| i.pointer.any_down()) && !ctx.egui_wants_keyboard_input() {
