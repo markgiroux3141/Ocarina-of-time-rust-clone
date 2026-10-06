@@ -70,7 +70,9 @@ under Files.
   is). The vines' texture repeats as they grow.
 - **Edges:** the Level panel's *Edges* (next to *Detail*) sets how every outline, region and path runs between its
   nodes: *Smooth* curves, *Faceted* (the curves in a few flat panels) or *Hard* (straight node to node, so the
-  nodes you place are the corners). See Edges in `../overworld/README.md`.
+  nodes you place are the corners). See Edges in `../overworld/README.md`. *Walls* switches the cliffs between
+  *Tiled* (caps at their size, the rock between repeating), *Middle stretched* (caps at their size, the rock between
+  stretched once) and *Stretched* (the texture once over each wall's height, as Kokiri's own walls are).
 - **Several regions:** Shift-click regions (in the plan, in 3D or in Contents) to select several. PgUp/PgDn, the panel's
   -20/+20 and dragging in 3D raise or sink them all together; Delete deletes them all.
 - **Bumps:** a region's panel (and the outline's) has *Bumps*: height, size, edge fade and seed. See the Bumps section

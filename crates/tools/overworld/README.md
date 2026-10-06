@@ -170,6 +170,23 @@ isn't lighter at high detail, but at medium `sketch_village` goes from 5,737 tri
 (hard). Straightened edges can cross where the curves didn't: the build reports where. Test:
 `faceted_and_hard_edges_are_lighter_and_still_watertight`.
 
+## Wall texture (`settings.wall_texture`)
+
+How capped walls (the cliffs, the edge of the world's too) are textured (2026-10-05):
+
+- `tiled` (the default): the grassy top and bottom caps keep their size and the rock between repeats, so every wall is
+  as sharp as a short one (see Automatic texturing).
+- `stretched_middle`: the caps keep their size and the rock between is stretched once over the rest of the wall. The
+  middle is plain rock, so it blurs little, and the crisp grass edges are what make walls look sharp. Lighter than tiled.
+- `stretched`: the texture once over the wall's height (v 0 at its foot, 1 at its top, the caps stretched with it), and
+  across it as many units per repeat as keeps the texture's shape (`tile_u` x the run's mean height / `tile_v`). This is
+  how Kokiri Forest's own walls are: blurrier on tall walls, and where walls of different heights meet the texture
+  doesn't line up. Embankment sides and rock arches stay top-anchored. Test: `walls_tile_or_stretch`.
+
+`sketch_village`, triangles at high / medium / low: tiled 11,075 / 5,589 / 3,960, middle stretched 9,043 / 5,589 /
+3,960 (the same at medium and low: one middle band either way), stretched 7,007 / 4,145 / 3,028. Before the middle grew
+(below), tiled was 13,467 / 5,737 / 4,076.
+
 ## Detail (`settings.detail`, `doc::Detail`)
 
 | | High (default) | Medium | Low |
@@ -183,12 +200,12 @@ isn't lighter at high detail, but at medium `sketch_village` goes from 5,737 tri
 
 High builds exactly what it always did. Adaptive curves (`geom::sample_curve`) sample densely, keep what Douglas-Peucker
 needs to stay within the tolerance and cut long pieces evenly, so straight stretches become long panels, as Kokiri's
-are. **Three-band walls** are the big saving: the cliff texture's middle (rows 5 to 9, 26 units of plain rock) used to
-be a band of its own for every repeat, about 13 bands on a 400-unit cliff. At medium and low the middle is one band
+are. **Three-band walls** are the big saving: the cliff texture's middle used to be a band of its own for every
+repeat (about 13 bands on a 400-unit cliff, when the middle was rows 5 to 9). At medium and low the middle is one band
 with a texture of its own, the middle rows, mirror-repeating vertically. That texture is derived from the library's PNG
-(`textures::derived_name`, e.g. `kf_cliff@5-10m`, written as `kf_cliff-rows5-10.png`, material role `cliff~mid`, OBJ
-material `cliff-mid_MirrorT`), so the kit needs nothing new. Each middle texel is 5.2 units, as in the caps (the banded
-middle stretched them to 6.5). Tests: `lower_detail_is_lighter_and_still_watertight`,
+(`textures::derived_name`, e.g. `kf_cliff@5-26m`, written as `kf_cliff-rows5-26.png`, material role `cliff~mid`, OBJ
+material `cliff-mid_MirrorT`), so the kit needs nothing new. Three-band walls don't fold (see Automatic texturing): the
+fold's two bands cost about a fifth more, so their repeats stretch a little instead. Tests: `lower_detail_is_lighter_and_still_watertight`,
 `derived_textures_are_rows_of_their_base`. Before the move, Low walked pd-walk's route over `sketch_hills` with
 the two hill-flank waypoints as pass-throughs. For N64 use the derived middle (32 x 5) isn't a power of two yet.
 
@@ -406,7 +423,7 @@ each class to a material, a tiling and overlays:
 | Walls | First matching `wall_rules` entry: over water, then height | Shore `cliff_strip_dark`; up to 75 high `cliff_strip` (ledge); taller `cliff` |
 | | A region's `edge` overrides the rules for its own walls | e.g. `vines` |
 | Wall U | Arc length round the face, continuous round corners, **snapped to whole repeats round a closed loop**, so there's no seam | |
-| Wall V | **Caps:** the texture's grassy top and bottom keep their own size on every wall, and a middle section repeats as many times as the height needs, so tall walls are as sharp as short ones. Walls no taller than the texture show it once. The middle runs from texel centre to texel centre and can be **mirrored** (every other repeat upside down), so repeats meet texel for texel. The repeat count is fixed per wall run, so neighbouring segments match | `cliff`: rows 0-4 top, rows 10-31 bottom, rows 5-9 (the flat dark rock under the lip) repeat, mirrored, at 167 units per texture height |
+| Wall V | **Caps:** the texture's grassy top and bottom keep their own size on every wall, and a middle section repeats as many times as the height needs, so tall walls are as sharp as short ones. Walls no taller than the texture show it once. The middle runs from texel centre to texel centre and can be **mirrored** (every other repeat upside down), so repeats meet texel for texel; mirrored, it repeats a whole odd number of times and **folds** the rest (a part-repeat up into the middle and back down at its foot), so every texel keeps its size on every wall (at high detail; three-band walls stretch the repeats instead, at most about 1.7 x). The repeat count is fixed per wall run, so neighbouring segments match. `settings.wall_texture` can stretch the middle or the whole texture instead | `cliff`: rows 0-4 top, rows 26-31 bottom, rows 5-25 (the dark rock under the lip down to the light mossy rock) repeat, mirrored, at 167 units per texture height: one repeat is the texture as drawn. The joins fall on rows 5 and 25, alike either side, so they don't show as lines. The middle used to be rows 5-9, 26 units, about ten thin stripes on a 400-unit wall |
 | Overlays | Optional: a skirt along wall feet and a fringe from tops (`skirt`, `fringe`) | Off: the cliff texture has its own grass edges |
 | Lighting | Baked into vertex colours, as the N64 lights by normals: ambient + directional lights, normals smoothed per object | Kokiri at 10:00: ambient 80, white key light, dim blue fill |
 | Variation | Breaks up repetition with smooth noise, no seams: along walls, u advances at a speed drifting by `u_speed` over about `u_scale` units, so streaks don't land at regular intervals; the baked shade varies by `shade` over about `shade_scale` (not on water). `settings.seed` in the level varies it per level | Speed ±30% over ~450 units, shade ±22% over ~380 |

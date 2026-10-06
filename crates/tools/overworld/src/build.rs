@@ -19,7 +19,7 @@
 //! Objects: ground, water, walls, cliffs (the boundary's), bank, trees (trunks), foliage,
 //! bridges, overlays.
 
-use crate::doc::{Doc, Noise};
+use crate::doc::{Doc, Noise, WallTexture};
 use crate::geom::*;
 use crate::map::{Map, VOID};
 use crate::mesh::Mesh;
@@ -73,6 +73,8 @@ struct Builder<'a> {
     extra: HashMap<usize, Vec<(f64, P2)>>,
     /// Capped walls in three bands (`Detail::walls3`).
     walls3: bool,
+    /// How capped walls are textured (`Detail::walls`).
+    wall_texture: WallTexture,
     /// Dirt paths painted into the floors.
     dirt: DirtPaths,
 }
@@ -206,6 +208,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         mids: HashMap::new(),
         extra: HashMap::new(),
         walls3: doc.settings.detail()?.walls3,
+        wall_texture: doc.settings.detail()?.walls,
         dirt,
     };
     for h in 0..b.map.half_face.len() {
@@ -647,7 +650,6 @@ impl<'a> Builder<'a> {
                     self.problems.push(format!("theme {} has no wall style {name:?}", th.name));
                     continue;
                 };
-                let tile = if same { snap(total, ws.tile_u) } else { ws.tile_u };
                 let (mut lsum, mut hsum) = (0.0, 0.0);
                 for &i in &run {
                     let (_, _, bot, top, t0, t1) = part[hs[i]].unwrap();
@@ -655,7 +657,7 @@ impl<'a> Builder<'a> {
                     lsum += l;
                     hsum += l * 0.5 * ((top[0] - bot[0]) + (top[1] - bot[1]));
                 }
-                let reps = ws.caps.as_ref().map_or(0, |c| c.repeats(hsum / lsum.max(1e-9)));
+                let (tile, reps) = self.wall_tiling(ws, hsum / lsum.max(1e-9), same.then_some(total));
                 for &i in &run {
                     let h = hs[i];
                     let (p, q, bot, top, t0, t1) = part[h].unwrap();
@@ -667,30 +669,76 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// A wall column's texture bands from b up to t: (z0, z1, v0, v1). With caps and `reps`
-    /// middle repeats: the bottom cap, the middle `reps` times, the top cap, the caps at their
-    /// own size (squeezed on walls too short for them). Otherwise one band, the texture
-    /// stretched over it (repeated per `band` units on walls taller than that).
-    fn bands(ws: &WallStyle, reps: usize, b: f64, t: f64, walls3: bool) -> Vec<(f64, f64, f64, f64, bool)> {
+    /// A run of wall's u tile (units per repeat along it) and middle repeats, for its mean height
+    /// `h`; `around`: the run is a whole loop this long (in u), so u is snapped to whole repeats.
+    /// Tiled, the caps keep their size and the middle repeats (`Caps::repeats`, folded to fit).
+    /// With the middle stretched, the caps keep their size and the middle is one band over the
+    /// rest. Stretched (`Settings::wall_texture`), a capped wall shows its texture once over its
+    /// height, and the texture grows across with it, keeping its shape: Kokiri's own way, blurrier
+    /// on tall walls, and walls of different heights don't meet texel for texel.
+    fn wall_tiling(&self, ws: &WallStyle, h: f64, around: Option<f64>) -> (f64, usize) {
+        let along = match (&ws.caps, self.wall_texture) {
+            (Some(c), WallTexture::Stretched) => ws.tile_u * (h / c.tile_v).max(0.25),
+            _ => ws.tile_u,
+        };
+        let tile = around.map_or(along, |t| snap(t, along));
+        let reps = match (&ws.caps, self.wall_texture) {
+            (Some(c), WallTexture::Tiled) => c.repeats(h, self.fold()),
+            (Some(c), WallTexture::StretchedMiddle) => usize::from(h > c.tile_v),
+            _ => 0,
+        };
+        (tile, reps)
+    }
+
+    /// Whether a capped wall's middle folds to keep its size (`bands`): tiled, at high detail.
+    /// The fold's two bands cost about a fifth more triangles, so three-band walls (medium and
+    /// low) stretch their repeats a little instead (at most about 1.7 x).
+    fn fold(&self) -> bool {
+        self.wall_texture == WallTexture::Tiled && !self.walls3
+    }
+
+    /// A wall column's texture bands from b up to t: (z0, z1, v0, v1, middle texture). With caps
+    /// and `reps` middle repeats: the bottom cap, the middle `reps` times, the top cap, the caps
+    /// at their own size (squeezed on walls too short for them). With `fold` (and a mirrored
+    /// middle), the whole repeats keep their size and what's left over is folded at the middle's
+    /// foot: a part-repeat up into it and back down (two bands, empty when nothing's left over,
+    /// so every column of a wall has the same bands). Otherwise the repeats stretch to fill.
+    /// Without caps, one band, the texture stretched over it (repeated per `band` units on
+    /// walls taller than that).
+    fn bands(ws: &WallStyle, reps: usize, b: f64, t: f64, walls3: bool, fold: bool) -> Vec<(f64, f64, f64, f64, bool)> {
         let h = t - b;
         match &ws.caps {
             Some(c) if reps > 0 => {
-                let (hb, ht, half) = (c.bottom * c.tile_v, c.top * c.tile_v, 0.5 * c.unit() * reps as f64);
-                let (hb, ht, m) = if h >= hb + ht + half {
-                    (hb, ht, (h - hb - ht) / reps as f64)
+                let unit = c.unit();
+                let (hb, ht, half) = (c.bottom * c.tile_v, c.top * c.tile_v, 0.5 * unit * reps as f64);
+                let (hb, ht, mid) = if h >= hb + ht + half {
+                    (hb, ht, h - hb - ht)
                 } else {
                     let s = h / (hb + ht + half);
-                    (hb * s, ht * s, 0.5 * c.unit() * s)
+                    (hb * s, ht * s, half * s)
                 };
+                let fold = fold && c.mirror;
+                let p = if fold { ((mid - reps as f64 * unit) / 2.0).clamp(0.0, unit * 0.98) } else { 0.0 };
+                let m = (mid - 2.0 * p) / reps as f64;
+                let derived = walls3 && c.rows > 0;
+                let (m0, m1) = c.middle();
                 let mut out = vec![(b, b + hb, 0.0, c.bottom, false)];
-                if walls3 && c.rows > 0 {
+                let z = b + hb;
+                if fold {
+                    // up into the middle a share f of a repeat, and back down to its foot
+                    let f = p / unit;
+                    let (v0, vk) = if derived { (0.0, f) } else { (m0, m0 + (m1 - m0) * f) };
+                    out.push((z, z + p, v0, vk, derived));
+                    out.push((z + p, z + 2.0 * p, vk, v0, derived));
+                }
+                let z = z + 2.0 * p;
+                if derived {
                     // one band of the middle's own texture, v counting repeats (mirrored by its wrap)
-                    out.push((b + hb, t - ht, 0.0, reps as f64, true));
+                    out.push((z, t - ht, 0.0, reps as f64, true));
                 } else {
-                    let (m0, m1) = c.middle();
                     for k in 0..reps {
                         let (v0, v1) = if c.mirror && k % 2 == 1 { (m1, m0) } else { (m0, m1) };
-                        out.push((b + hb + k as f64 * m, b + hb + (k + 1) as f64 * m, v0, v1, false));
+                        out.push((z + k as f64 * m, z + (k + 1) as f64 * m, v0, v1, false));
                     }
                 }
                 out.push((t - ht, t, 1.0 - c.top, 1.0, false));
@@ -732,7 +780,7 @@ impl<'a> Builder<'a> {
                     }
                     self.levels[v].push(t);
                 } else {
-                    for (z0, z1, ..) in Self::bands(j.ws, j.reps, b, t, self.walls3) {
+                    for (z0, z1, ..) in Self::bands(j.ws, j.reps, b, t, self.walls3, self.fold()) {
                         self.levels[v].push(z0);
                         self.levels[v].push(z1);
                     }
@@ -755,7 +803,8 @@ impl<'a> Builder<'a> {
             self.overlays(p, q, bot, top, ws, u, over_water);
             return;
         }
-        let (bp, bq) = (Self::bands(ws, reps, bot[0], top[0], self.walls3), Self::bands(ws, reps, bot[1], top[1], self.walls3));
+        let fold = self.fold();
+        let (bp, bq) = (Self::bands(ws, reps, bot[0], top[0], self.walls3, fold), Self::bands(ws, reps, bot[1], top[1], self.walls3, fold));
         let mid = format!("{}~mid", ws.material);
         let (pp, qq) = (self.map.verts[p], self.map.verts[q]);
         let (up, uq) = (u[0] / tile, u[1] / tile);
@@ -1266,7 +1315,6 @@ impl<'a> Builder<'a> {
             let o = self.map.half_pts(&hs); // clockwise, the level on the right
             // the cliffs
             let total: f64 = hs.iter().map(|&h| self.map.len(h)).sum();
-            let tile = snap(hs.iter().map(|&h| self.ulen(h)).sum(), cliff.tile_u);
             let floor = |b: &Self, i: usize| {
                 let (h, f) = (hs[i], b.map.half_face[hs[i] ^ 1]);
                 [b.hv(f, b.map.from(h)), b.hv(f, b.map.to(h))]
@@ -1278,7 +1326,7 @@ impl<'a> Builder<'a> {
                 })
                 .sum::<f64>()
                 / total;
-            let reps = cliff.caps.as_ref().map_or(0, |c| c.repeats(mean));
+            let (tile, reps) = self.wall_tiling(cliff, mean, Some(hs.iter().map(|&h| self.ulen(h)).sum()));
             let mut u = 0.0;
             for i in 0..n {
                 let h = hs[i];
@@ -1617,7 +1665,7 @@ mod tests {
         assert!((lvl.rim.1 - (160.0 + bd.cliff_min + bd.bank_rise)).abs() < 1e-6, "rim {:?}", lvl.rim);
         // and never steeper than the slope along the edge
         let map = Map::build(&doc).unwrap();
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, dirt: DirtPaths::default(), map };
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), map };
         b.regions = std::iter::once(Info { z: 0.0, water: None, edge: None, noise: None })
             .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), edge: None, noise: None }))
             .collect();
@@ -1634,35 +1682,49 @@ mod tests {
         let th = Theme::kokiri();
         let ws = &th.wall_styles["cliff"];
         let c = ws.caps.as_ref().unwrap();
-        // a 400-tall wall: caps at their own size, the middle an odd number of times (mirrored),
-        // v continuous at every join
-        let reps = c.repeats(400.0);
-        assert!(c.mirror && reps % 2 == 1 && reps > 1, "{reps}");
-        let b = Builder::bands(ws, reps, 100.0, 500.0, false);
-        for w in b.windows(2) {
-            assert!((w[0].3 - w[1].2).abs() < 0.5 / c.rows as f64 + 1e-9, "v meets across every join");
-        }
-        assert_eq!(b.len(), reps + 2);
-        assert!((b[0].1 - b[0].0 - c.bottom * c.tile_v).abs() < 1e-9);
-        assert!((b[reps + 1].1 - b[reps + 1].0 - c.top * c.tile_v).abs() < 1e-9);
-        for w in b.windows(2) {
-            assert!((w[0].1 - w[1].0).abs() < 1e-9, "bands meet");
-        }
         let (m0, m1) = c.middle();
-        assert!(b[1..=reps].iter().enumerate().all(|(k, m)| (m.2, m.3) == if k % 2 == 0 { (m0, m1) } else { (m1, m0) }));
-        // short walls show the texture once, stretched
-        assert_eq!(c.repeats(120.0), 0);
-        assert_eq!(Builder::bands(ws, 0, 0.0, 120.0, false), vec![(0.0, 120.0, 0.0, 1.0, false)]);
-        // just over the texture's own height, one middle about its own size
-        let b = Builder::bands(ws, c.repeats(170.0), 0.0, 170.0, false);
+        let check = |b: &[(f64, f64, f64, f64, bool)]| {
+            for w in b.windows(2) {
+                assert!((w[0].1 - w[1].0).abs() < 1e-9, "bands meet");
+                assert!((w[0].3 - w[1].2).abs() < 0.5 / c.rows as f64 + 1e-9, "v meets across every join: {b:?}");
+            }
+        };
+        // every wall taller than the texture: caps at their own size, the middle an odd number
+        // of whole repeats (mirrored), each exactly its own size, the rest folded at its foot
+        for h in [170.0, 230.0, 300.0, 400.0, 520.0, 777.0, 1500.0] {
+            let reps = c.repeats(h, true);
+            assert!(c.mirror && reps % 2 == 1, "{h}: {reps}");
+            // without the fold, the odd count that stretches least: never more than about 1.7 x
+            let r = c.repeats(h, false);
+            let s = (h - (c.bottom + c.top) * c.tile_v) / (r as f64 * c.unit());
+            assert!(r % 2 == 1 && (1.0 / 1.75..=1.75).contains(&s), "{h}: {r} repeats at {s}");
+            let b = Builder::bands(ws, reps, 100.0, 100.0 + h, false, true);
+            check(&b);
+            assert_eq!(b.len(), reps + 4);
+            assert!((b[0].1 - b[0].0 - c.bottom * c.tile_v).abs() < 1e-9);
+            assert!((b[reps + 3].1 - b[reps + 3].0 - c.top * c.tile_v).abs() < 1e-9);
+            let fold = b[1].1 - b[1].0;
+            assert!(fold >= 0.0 && fold < c.unit() && (b[2].1 - b[2].0 - fold).abs() < 1e-9, "{h}: fold {fold}");
+            assert_eq!((b[1].2, b[2].3), (m0, m0), "the fold starts and ends at the middle's foot");
+            for (k, m) in b[3..3 + reps].iter().enumerate() {
+                assert!((m.1 - m.0 - c.unit()).abs() < 1e-6, "{h}: a whole repeat is {}", m.1 - m.0);
+                assert_eq!((m.2, m.3), if k % 2 == 0 { (m0, m1) } else { (m1, m0) });
+            }
+            // three-band walls: the same caps and fold, and one middle band counting its repeats in v
+            let b3 = Builder::bands(ws, reps, 100.0, 100.0 + h, true, true);
+            assert_eq!(b3.len(), 5);
+            assert_eq!((b3[0], b3[4]), (b[0], b[reps + 3]));
+            assert!((b3[1].1 - b[1].1).abs() < 1e-9 && b3[1].2 == 0.0 && b3[2].3 == 0.0 && b3[1].4 && b3[2].4);
+            assert_eq!((b3[3].0, b3[3].1, b3[3].2, b3[3].3, b3[3].4), (b[3].0, b[reps + 2].1, 0.0, reps as f64, true));
+        }
+        // the middle stretched instead: no fold, the repeat fills the rest
+        let b = Builder::bands(ws, 1, 0.0, 400.0, false, false);
+        check(&b);
         assert_eq!(b.len(), 3);
-        assert!((b[1].1 - b[1].0 - c.unit()).abs() < 5.0);
-        // three-band walls: the same caps, and one middle band counting its repeats in v
-        let b3 = Builder::bands(ws, reps, 100.0, 500.0, true);
-        let b = Builder::bands(ws, reps, 100.0, 500.0, false);
-        assert_eq!(b3.len(), 3);
-        assert_eq!((b3[0], b3[2]), (b[0], b[reps + 1]));
-        assert_eq!((b3[1].0, b3[1].1, b3[1].2, b3[1].3, b3[1].4), (b[1].0, b[reps].1, 0.0, reps as f64, true));
+        assert!((b[1].1 - b[1].0 - (400.0 - (c.bottom + c.top) * c.tile_v)).abs() < 1e-9);
+        // short walls show the texture once, stretched
+        assert_eq!((c.repeats(120.0, true), c.repeats(120.0, false)), (0, 0));
+        assert_eq!(Builder::bands(ws, 0, 0.0, 120.0, false, true), vec![(0.0, 120.0, 0.0, 1.0, false)]);
     }
 
     /// A square level with a plateau (200) in its north-east, a ramp up to it from the south, a
@@ -1899,6 +1961,73 @@ mod tests {
         let mut d = sample_doc();
         d.settings.edges = "wavy".into();
         assert!(build(&d, &th).is_err());
+    }
+
+    /// Stretched walls: the texture once over each wall's height (v from 0 at the foot to 1 at the
+    /// top), and across it repeats only as often as keeps its shape; tiled ones repeat far more.
+    #[test]
+    fn walls_tile_or_stretch() {
+        let th = Theme::kokiri();
+        let mut d = sample_doc();
+        d.settings.edges = "hard".into();
+        d.regions = vec![Region {
+            name: "block".into(),
+            nodes: vec![vec![-700.0, -500.0], vec![-300.0, -500.0], vec![-300.0, -100.0], vec![-700.0, -100.0]],
+            z: 400.0,
+            kind: "floor".into(),
+            surface: None,
+            edge: None,
+            noise: None,
+        }];
+        let mut most_u = vec![];
+        for (mode, detail) in [("tiled", "high"), ("stretched", "high"), ("stretched", "low"), ("stretched_middle", "high")] {
+            let mut d = d.clone();
+            d.settings.wall_texture = mode.into();
+            d.settings.detail = detail.into();
+            let lvl = build(&d, &th).unwrap();
+            assert!(lvl.problems.is_empty(), "{mode}: {:?}", lvl.problems);
+            let o = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+            if mode == "stretched" {
+                for (t, uv) in o.tris.iter().zip(&o.uvs) {
+                    for k in 0..3 {
+                        let z = o.verts[t[k]][2];
+                        assert!((uv[k][1] - z / 400.0).abs() < 1e-6, "{mode} {detail}: v {} at z {z}", uv[k][1]);
+                    }
+                }
+                assert!(!lvl.mesh.materials.iter().any(|m| m.ends_with("~mid")), "no middle band to repeat");
+            }
+            if mode == "stretched_middle" {
+                // the caps at their own size, the middle once over the rest
+                let c = th.wall_styles["cliff"].caps.clone().unwrap();
+                let (hb, ht) = (c.bottom * c.tile_v, c.top * c.tile_v);
+                let (m0, m1) = c.middle();
+                for (t, uv) in o.tris.iter().zip(&o.uvs) {
+                    let zs = t.map(|v| o.verts[v][2]);
+                    // which band the triangle is in, by its middle
+                    let zc = (zs[0] + zs[1] + zs[2]) / 3.0;
+                    for k in 0..3 {
+                        let z = zs[k];
+                        let v = if zc < hb {
+                            z / hb * c.bottom
+                        } else if zc > 400.0 - ht {
+                            1.0 - c.top + (z - (400.0 - ht)) / ht * c.top
+                        } else {
+                            m0 + (z - hb) / (400.0 - hb - ht) * (m1 - m0)
+                        };
+                        assert!((uv[k][1] - v).abs() < 1e-6, "v {} at z {z}, not {v}", uv[k][1]);
+                    }
+                }
+            }
+            let u = o.uvs.iter().flatten().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max);
+            assert!((u - u.round()).abs() < 1e-6, "{mode}: whole repeats round the block, {u}");
+            most_u.push(u);
+        }
+        // round the 1600 of wall: 167 per repeat tiled (and with the middle stretched), 400 (the
+        // height) stretched
+        assert!(most_u[1] < most_u[0] / 2.0 && most_u[1] == most_u[2] && most_u[3] == most_u[0], "{most_u:?}");
+        let mut bad = d.clone();
+        bad.settings.wall_texture = "wavy".into();
+        assert!(build(&bad, &th).is_err());
     }
 
     /// A hedge drawn as a closed line: a top 28 over the ground covering the shape, skirts facing

@@ -2584,6 +2584,20 @@ impl App {
                 }
             }
         });
+        ui.horizontal(|ui| {
+            ui.label("Walls").on_hover_text(
+                "How the cliffs are textured. Tiled: the grassy top and bottom keep their size and the rock between repeats, \
+                 sharp on any wall. Middle stretched: the grassy top and bottom keep their size and the rock between is \
+                 stretched once over the rest. Stretched: the texture once over the wall's height, growing across with it, \
+                 as Kokiri Forest's own walls are: blurrier on tall walls, and walls of different heights don't quite meet.",
+            );
+            for (w, name) in [("tiled", "Tiled"), ("stretched_middle", "Middle stretched"), ("stretched", "Stretched")] {
+                let on = self.doc.settings.wall_texture == w || (w == "tiled" && self.doc.settings.wall_texture.is_empty());
+                if ui.selectable_label(on, name).clicked() {
+                    self.doc.settings.wall_texture = w.into();
+                }
+            }
+        });
         let b = &mut self.doc.boundary;
         ui.label("Edge of the world");
         egui::Grid::new("boundary").num_columns(2).show(ui, |ui| {

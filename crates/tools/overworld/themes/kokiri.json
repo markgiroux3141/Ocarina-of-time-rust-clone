@@ -48,7 +48,7 @@
         "tile_v": 167,
         "rows": 32,
         "top": 0.15625,
-        "bottom": 0.6875,
+        "bottom": 0.1875,
         "mirror": true
       }
     },
@@ -70,7 +70,7 @@
         "tile_v": 167,
         "rows": 32,
         "top": 0.15625,
-        "bottom": 0.6875,
+        "bottom": 0.1875,
         "mirror": true
       }
     },
@@ -82,7 +82,7 @@
         "tile_v": 167,
         "rows": 32,
         "top": 0.15625,
-        "bottom": 0.6875,
+        "bottom": 0.1875,
         "mirror": true
       }
     },
@@ -94,7 +94,7 @@
         "tile_v": 167,
         "rows": 32,
         "top": 0.15625,
-        "bottom": 0.6875,
+        "bottom": 0.1875,
         "mirror": true,
         "anchor": "top"
       }

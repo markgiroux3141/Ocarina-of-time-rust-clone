@@ -198,7 +198,9 @@ pub struct DirLight {
 /// to `bottom` is the bottom cap, from `1 - top` to 1 the top cap, and the rows between repeat
 /// as many times as the wall needs. `tile_v` is the texture's full height in units (so caps
 /// keep their size on every wall). Walls no taller than `tile_v` show the texture once,
-/// stretched.
+/// stretched. A mirrored middle repeats a whole odd number of times; what's left is folded (a
+/// part-repeat up and back down at its foot), so it keeps its size on every wall, or, where
+/// triangles count more (three-band walls), the repeats stretch a little to fill.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Caps {
     pub tile_v: f64,
@@ -231,17 +233,23 @@ impl Caps {
         (self.bottom + h, 1.0 - self.top - h)
     }
 
-    /// How many times the middle repeats on a wall `h` tall (0: show the texture once, stretched).
-    pub fn repeats(&self, h: f64) -> usize {
+    /// How many times the middle repeats on a wall `h` tall (0: show the texture once,
+    /// stretched). Mirrored, an odd count: with `fold`, the most that fit whole (the fold takes
+    /// the rest); without, the one that stretches or squeezes them least. Not mirrored, the
+    /// nearest count, stretched to fit.
+    pub fn repeats(&self, h: f64, fold: bool) -> usize {
         if h <= self.tile_v {
-            0
+            return 0;
+        }
+        let x = (h - (self.bottom + self.top) * self.tile_v) / self.unit();
+        if !self.mirror {
+            return (x.round() as usize).max(1);
+        }
+        let below = ((((x - 1.0) / 2.0).floor().max(0.0)) as usize) * 2 + 1;
+        if fold || (x / below as f64).ln() <= ((below + 2) as f64 / x).ln() {
+            below
         } else {
-            let x = (h - (self.bottom + self.top) * self.tile_v) / self.unit();
-            if self.mirror {
-                ((((x - 1.0) / 2.0).round().max(0.0)) as usize) * 2 + 1
-            } else {
-                (x.round() as usize).max(1)
-            }
+            below + 2
         }
     }
 }

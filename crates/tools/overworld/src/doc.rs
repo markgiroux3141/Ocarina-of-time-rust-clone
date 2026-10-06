@@ -207,11 +207,16 @@ pub struct Settings {
     /// the default), "faceted" (the same curves in a few long straight pieces, low-poly like
     /// the game's own) or "hard" (straight from node to node, every node a corner).
     pub edges: String,
+    /// How capped walls (the cliffs) are textured: "tiled" (the default: the caps keep their size
+    /// and the middle repeats), "stretched_middle" (the caps keep their size, the middle is
+    /// stretched once over the rest) or "stretched" (the texture once over the wall's height, as
+    /// wide as that keeps its shape: Kokiri's own way, blurrier on tall walls). See `WallTexture`.
+    pub wall_texture: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { sample: 60.0, steiner: 250.0, weld: 1.0, seed: 0, detail: "high".into(), edges: "smooth".into() }
+        Settings { sample: 60.0, steiner: 250.0, weld: 1.0, seed: 0, detail: "high".into(), edges: "smooth".into(), wall_texture: "tiled".into() }
     }
 }
 
@@ -235,13 +240,26 @@ pub struct Detail {
     /// own texture (the middle rows, `textures::derived_name`) repeating as often as the height
     /// needs. Otherwise each middle repeat is a band of its own.
     pub walls3: bool,
+    /// How capped walls are textured (`Settings::wall_texture`).
+    pub walls: WallTexture,
+}
+
+/// How capped walls are textured (`Settings::wall_texture`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WallTexture {
+    /// The caps at their size, the middle repeating (mirrored, folded to fit: `Caps`).
+    Tiled,
+    /// The caps at their size, the middle once, stretched over the rest.
+    StretchedMiddle,
+    /// The texture once over the wall's height, growing across with it.
+    Stretched,
 }
 
 impl Settings {
     pub fn detail(&self) -> Result<Detail, String> {
         let s = self.sample.max(1.0);
         let mut d = match self.detail.as_str() {
-            "high" | "" => Detail { curves: Sampling::Every(s), paths: Sampling::Every(s * 0.5), steiner: self.steiner, terrain: 1.0, bumps: 4.0, walls3: false },
+            "high" | "" => Detail { curves: Sampling::Every(s), paths: Sampling::Every(s * 0.5), steiner: self.steiner, terrain: 1.0, bumps: 4.0, walls3: false, walls: WallTexture::Tiled },
             "medium" => Detail {
                 curves: Sampling::Within { tol: 2.5, max: s * 4.0 },
                 paths: Sampling::Within { tol: 2.5, max: s * 2.0 },
@@ -249,6 +267,7 @@ impl Settings {
                 terrain: 1.5,
                 bumps: 3.0,
                 walls3: true,
+                walls: WallTexture::Tiled,
             },
             "low" => Detail {
                 curves: Sampling::Within { tol: 6.0, max: s * 8.0 },
@@ -257,6 +276,7 @@ impl Settings {
                 terrain: 2.0,
                 bumps: 2.0,
                 walls3: true,
+                walls: WallTexture::Tiled,
             },
             d => return Err(format!("unknown detail {d:?} (high, medium or low)")),
         };
@@ -275,6 +295,12 @@ impl Settings {
         };
         d.curves = edged(d.curves)?;
         d.paths = edged(d.paths)?;
+        d.walls = match self.wall_texture.as_str() {
+            "tiled" | "" => WallTexture::Tiled,
+            "stretched_middle" => WallTexture::StretchedMiddle,
+            "stretched" => WallTexture::Stretched,
+            w => return Err(format!("unknown wall_texture {w:?} (tiled, stretched_middle or stretched)")),
+        };
         Ok(d)
     }
 }
