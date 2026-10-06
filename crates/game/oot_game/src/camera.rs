@@ -28,7 +28,8 @@
 //!
 //! A mode whose function isn't ported runs its setting's NORMAL function if that one is
 //! ported, else `Camera_Normal1` on NORMAL0's NORMAL data; `camera->mode` still changes as in
-//! the game. Not modelled: water and hot-room checks, quakes, the low-health wiggle, the debug
+//! the game. The quakes (`crate::quake`) shake the view as `Camera_Update` applies them.
+//! Not modelled: water and hot-room checks, the low-health wiggle, the debug
 //! camera and the interface alpha; `func_80043F94` (the bg check of scenes with the skybox
 //! disabled) only for `Camera_Battle1` (the other modes that call it use `Camera_BGCheckInfo`
 //! in its place). The camera's sounds (`CamSfx`) are played by the play state.
@@ -1188,6 +1189,9 @@ pub struct CamFrame<'a> {
     pub health: i16,
     /// `play->envCtx.skyboxDisabled` (the room's `SCENE_CMD_SKYBOX_DISABLES`).
     pub skybox_disabled: bool,
+    /// `play->cameraPtrs`: each camera's eye and at before this update (`None`: NULL), which
+    /// `Quake_Update` reads for the quakes on the other cameras (`crate::quake`).
+    pub cameras: [Option<(Vec3, Vec3)>; NUM_CAMS],
 }
 
 /// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
@@ -1418,6 +1422,15 @@ pub struct GameCamera {
     /// renderer's 60 Hz blending between game frames shows the new view without easing into
     /// it. `PlayState`'s render capture reads and clears it.
     pub view_cut: bool,
+    /// `quakeOffset`: the quakes' eye offset the last update that got to the view merged
+    /// (`Camera_GetQuakeOffset`).
+    pub quake_offset: Vec3,
+    /// Not fields in the C: what the last update's `View_LookAt` added to the eye and the at
+    /// (the quakes' `atOffset` and `eyeOffset`, which are equal), and to the fovy
+    /// (`CAM_BINANG_TO_DEG(fovOffset)`); zero when no quake applied, the setting is
+    /// `CAM_SET_TURN_AROUND`, or the update stopped before the view (`shaken_view`).
+    pub view_offset: Vec3,
+    pub view_fov_offset: f32,
 }
 
 impl GameCamera {
@@ -1531,7 +1544,16 @@ impl GameCamera {
             eye_at_col_chk: ColChk::default(),
             new_eye_col_chk: ColChk::default(),
             view_cut: false,
+            quake_offset: Vec3::ZERO,
+            view_offset: Vec3::ZERO,
+            view_fov_offset: 0.0,
         }
+    }
+
+    /// The view this camera's last update set (`View_LookAt`'s eye and at, and the fovy):
+    /// its eye, at and fov with the quakes' offsets.
+    pub fn shaken_view(&self) -> CamView {
+        CamView { eye: self.eye + self.view_offset, at: self.at + self.view_offset, fov: self.fov + self.view_fov_offset }
     }
 
     /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
@@ -3061,19 +3083,24 @@ impl GameCamera {
     }
 
     /// `Camera_Update`, with `Camera_UpdateInterface`'s letterbox target at the end: `g` is the
-    /// state every camera shares (`CameraGlobals`).
-    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand) {
+    /// state every camera shares (`CameraGlobals`), `quake` the quakes' requests.
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand, quake: &mut crate::quake::QuakeStatics) {
         self.interface_flags = g.interface_flags;
         self.interface_alpha = g.interface_alpha;
         self.oob_timer = g.oob_timer;
-        self.update_inner(d, f, letterbox, g, op, rand);
+        self.update_inner(d, f, letterbox, g, op, rand, quake);
         g.interface_flags = self.interface_flags;
         g.interface_alpha = self.interface_alpha;
         g.oob_timer = self.oob_timer;
     }
 
-    fn update_inner(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand) {
+    #[allow(clippy::too_many_arguments)]
+    fn update_inner(&mut self, d: &CameraData, f: &CamFrame, letterbox: &mut Letterbox, g: &mut CameraGlobals, op: &mut crate::onepoint::OnePointStatics, rand: &mut crate::play::Rand, quake: &mut crate::quake::QuakeStatics) {
         let (col, p, frames) = (f.col, &f.player, f.frames);
+        // (Set again below when the update gets as far as the view.)
+        self.view_offset = Vec3::ZERO;
+        self.view_fov_offset = 0.0;
         if self.status == CAM_STAT_CUT {
             return;
         }
@@ -3149,8 +3176,28 @@ impl GameCamera {
             return;
         }
 
-        let angle = diff_to_sph_geo(self.eye, self.at);
-        self.up = calc_up(angle.pitch, angle.yaw, self.roll);
+        // Quake_Update, with this camera's eye and at as its mode function left them, and the
+        // view (View_LookAt) shaken by the quakes on it, unless the setting is TURN_AROUND.
+        // (CAM_VIEW_UP, Camera_UpdateDistortion and Hyrule Field's View_SetScale aren't modelled.)
+        let mut cams = f.cameras;
+        if let Some(c) = usize::try_from(self.cam_id).ok().and_then(|i| cams.get_mut(i)) {
+            *c = Some((self.eye, self.at));
+        }
+        let mut cam_shake = crate::quake::ShakeInfo::default();
+        let num_quakes_applied = quake.quake_update(self.cam_id, &cams, rand, &mut cam_shake);
+        let angle;
+        if num_quakes_applied != 0 && self.setting != CAM_SET_TURN_AROUND {
+            let view_at = self.at + cam_shake.at_offset;
+            let view_eye = self.eye + cam_shake.eye_offset;
+            angle = diff_to_sph_geo(view_eye, view_at);
+            self.up = calc_up(angle.pitch.wrapping_add(cam_shake.up_pitch_offset), angle.yaw.wrapping_add(cam_shake.up_yaw_offset), self.roll);
+            self.view_offset = cam_shake.eye_offset;
+            self.view_fov_offset = cam_binang_to_deg(cam_shake.fov_offset);
+        } else {
+            angle = diff_to_sph_geo(self.eye, self.at);
+            self.up = calc_up(angle.pitch, angle.yaw, self.roll);
+        }
+        self.quake_offset = cam_shake.eye_offset;
         self.cam_dir = [angle.pitch, angle.yaw, 0];
         if !self.update_direction {
             self.input_dir = [angle.pitch, angle.yaw, 0];

@@ -816,3 +816,118 @@ fn the_one_point_tables_are_the_roms() {
     let k = &d.keyframes[d.keyframe_table("D_8011D9F4").unwrap()].1;
     assert_eq!((k[0].action_flags, k[0].init_flags as u16, k[0].timer_init, k[0].eye_target_init.z), (0x8F, 0x0504, 0x14, 300.0));
 }
+
+/// `table/map` against the ROM: `z_map_data.c`'s arrays, in their order in `code`'s data, each
+/// found right after the one before it, with `gMapDataTable`'s pointers at their addresses
+/// (`code`'s VRAM from `segments.csv`); and `gMapMarkDataTable`'s arrays in `ovl_map_mark_data`,
+/// with the table's pointers at theirs.
+#[test]
+fn the_map_tables_are_the_roms() {
+    let Some(c) = ctx() else { return };
+    let t = c.pack.map_tables().unwrap();
+    assert_eq!(t, oot_import::map::load(&c.p.config.decomp).unwrap());
+    let d = &t.data;
+    let vc = oot_import::version::VersionConfig::load(&c.p.config.decomp).unwrap();
+    let be16 = |v: &[i16]| -> Vec<u8> { v.iter().flat_map(|x| x.to_be_bytes()).collect() };
+    let beu16 = |v: &[u16]| -> Vec<u8> { v.iter().flat_map(|x| x.to_be_bytes()).collect() };
+    let bef32 = |v: &[f32]| -> Vec<u8> { v.iter().flat_map(|x| x.to_bits().to_be_bytes()).collect() };
+    // MapData's order, which is also the arrays' in z_map_data.c.
+    let arrays: Vec<(&str, Vec<u8>)> = vec![
+        ("sFloorTexIndexOffset", be16(&d.floor_tex_index_offset)),
+        ("sBossFloor", be16(&d.boss_floor)),
+        ("sRoomPalette", be16(&d.room_palette)),
+        ("sMaxPaletteCount", be16(&d.max_palette_count)),
+        ("sPaletteRoom", be16(&d.palette_room)),
+        ("sRoomCompassOffsetX", be16(&d.room_compass_offset_x)),
+        ("sRoomCompassOffsetY", be16(&d.room_compass_offset_y)),
+        ("sDgnMinimapCount", d.dgn_minimap_count.clone()),
+        ("sDgnMinimapTexIndexOffset", beu16(&d.dgn_minimap_tex_index_offset)),
+        ("sOwMinimapTexSize", beu16(&d.ow_minimap_tex_size)),
+        ("sOwMinimapTexOffset", beu16(&d.ow_minimap_tex_offset)),
+        ("sOwMinimapPosX", be16(&d.ow_minimap_pos_x)),
+        ("sOwMinimapPosY", be16(&d.ow_minimap_pos_y)),
+        ("sOwCompassInfo", be16(&d.ow_compass_info)),
+        ("sDgnTexIndexBase", be16(&d.dgn_tex_index_base)),
+        ("sDgnCompassInfo", be16(&d.dgn_compass_info)),
+        ("sOwMinimapWidth", be16(&d.ow_minimap_width)),
+        ("sOwMinimapHeight", be16(&d.ow_minimap_height)),
+        ("sOwEntranceIconPosX", be16(&d.ow_entrance_icon_pos_x)),
+        ("sOwEntranceIconPosY", be16(&d.ow_entrance_icon_pos_y)),
+        ("sOwEntranceFlag", beu16(&d.ow_entrance_flag)),
+        ("sFloorCoordY", bef32(&d.floor_coord_y)),
+        ("sSwitchEntryCount", beu16(&d.switch_entry_count)),
+        ("sSwitchFromRoom", d.switch_from_room.clone()),
+        ("sSwitchFromFloor", d.switch_from_floor.clone()),
+        ("sSwitchToRoom", d.switch_to_room.clone()),
+        ("sFloorID", d.floor_id.clone()),
+        ("sSkullFloorIconY", be16(&d.skull_floor_icon_y)),
+    ];
+    // Each array right after the last (its alignment's padding at most), the first found by its bytes.
+    let chain = |file: &[u8], arrays: &[(&str, Vec<u8>)]| -> Vec<usize> {
+        let first = &arrays[0].1;
+        let mut at = vec![file.windows(first.len()).position(|w| w == first.as_slice()).unwrap_or_else(|| panic!("{} not in the file", arrays[0].0))];
+        for (k, (name, bytes)) in arrays.iter().enumerate().skip(1) {
+            let end = at[k - 1] + arrays[k - 1].1.len();
+            let o = (end..end + 8).find(|&o| file.get(o..o + bytes.len()) == Some(bytes.as_slice())).unwrap_or_else(|| panic!("{name} isn't after {}", arrays[k - 1].0));
+            at.push(o);
+        }
+        at
+    };
+    // The pointer table after the last array, each pointer at its array.
+    let pointers = |file: &[u8], after: usize, n: usize| -> Vec<u32> {
+        let o = after.next_multiple_of(4);
+        (0..n).map(|k| u32::from_be_bytes(file[o + 4 * k..o + 4 * k + 4].try_into().unwrap())).collect()
+    };
+    let code = c.p.rom.file_by_name("code").unwrap();
+    let at = chain(&code, &arrays);
+    let table = pointers(&code, at[arrays.len() - 1] + arrays[arrays.len() - 1].1.len(), arrays.len());
+    for (k, (name, _)) in arrays.iter().enumerate() {
+        assert_eq!(vc.file_offset("code", table[k]).unwrap(), at[k], "gMapDataTable's {name}");
+    }
+    // A few values against z_map_data.c: the Deku Tree's floors, room 0's palette and compass
+    // offset, its switches, the floor 8 past the last dungeon reading sBossFloor[0].
+    assert_eq!(&d.floor_coord_y[..8], &[9999.0, 9999.0, 9999.0, 760.0, 360.0, -40.0, -1000.0, -2000.0]);
+    assert_eq!(d.floor_coord_y[7 * 8 + 4], -343.3);
+    assert_eq!((d.room_palette[0], d.room_palette[10], d.room_palette[11]), (10, 11, 0));
+    assert_eq!((d.room_compass_offset_x[0], d.room_compass_offset_y[0]), (1090, -660));
+    assert_eq!((d.switch_entry_count[0], &d.switch_from_room[..5], &d.switch_to_room[..5]), (5, &[11, 0, 0, 12, 11][..], &[12, 11, 12, 11, 0][..]));
+    assert_eq!(d.floor_tex_index_offset(9, 8), 7);
+    assert_eq!(d.floor_id[3], 6, "F_3F");
+    assert_eq!((d.ow_entrance_flag[0], d.ow_entrance_flag[1]), (0xFFFF, 8), "INFTABLE_1A8_SHIFT");
+
+    // gMapMarkDataTable (MapMarkData: 3 x 0x26 bytes) in ovl_map_mark_data.
+    assert_eq!(oot_import::map::map_mark_data_file(&c.p.config.decomp).unwrap(), "src/overlays/misc/ovl_map_mark_data/z_map_mark_data_mq.c");
+    let names = ["sMapMarkDekuTree", "sMapMarkDodongosCavern", "sMapMarkJabuJabuBelly", "sMapMarkForestTemple", "sMapMarkFireTemple", "sMapMarkWaterTemple", "sMapMarkSpiritTemple", "sMapMarkShadowTemple", "sMapMarkBottomWell", "sMapMarkIceCavern"];
+    assert_eq!(t.marks.len(), names.len());
+    let mark_arrays: Vec<(&str, Vec<u8>)> = t
+        .marks
+        .iter()
+        .zip(names)
+        .map(|(rooms, name)| {
+            let mut b = Vec::new();
+            for icon in rooms.iter().flatten() {
+                b.extend([icon.mark_type as u8, icon.count]);
+                for p in &icon.points {
+                    b.extend([p.chest_flag as u8, p.x, p.y]);
+                }
+            }
+            assert_eq!(b.len(), rooms.len() * 0x72, "{name}");
+            (name, b)
+        })
+        .collect();
+    let ovl = c.p.rom.file_by_name("ovl_map_mark_data").unwrap();
+    let at = chain(&ovl, &mark_arrays);
+    let last = mark_arrays.len() - 1;
+    let table = pointers(&ovl, at[last] + mark_arrays[last].1.len(), names.len());
+    for (k, name) in names.iter().enumerate() {
+        assert_eq!(vc.file_offset("ovl_map_mark_data", table[k]).unwrap(), at[k], "gMapMarkDataTable's {name}");
+    }
+    // The Deku Tree's (MQ): room 0's chest (flag 3, at 71, 50), room 5's two; dgnMinimapCount's 13 rooms.
+    let dt = &t.marks[0];
+    assert_eq!(dt.len(), 13);
+    assert_eq!(dt.len(), d.dgn_minimap_count[0] as usize);
+    assert_eq!((dt[0][0].mark_type, dt[0][0].count, dt[0][0].points[0]), (oot_game::map::MAP_MARK_CHEST, 1, oot_game::map::MapMarkPoint { chest_flag: 3, x: 71, y: 50 }));
+    assert_eq!(dt[0][1].mark_type, oot_game::map::MAP_MARK_NONE);
+    assert_eq!(dt[1][0].mark_type, oot_game::map::MAP_MARK_NONE);
+    assert_eq!((dt[5][0].count, dt[5][0].points[1].chest_flag), (2, 5));
+}

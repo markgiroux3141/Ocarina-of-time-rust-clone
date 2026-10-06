@@ -129,6 +129,8 @@ pub enum PlayRequest {
     RoomChangeDone,
     /// The door's `openAnim` and `playerIsOpening = true`.
     OpenDoor { door: ActorHandle, open_anim: u8 },
+    /// `slidingDoor->isActive = true`: Player opens a sliding door (`Door_Shutter`).
+    SlidingDoorActive(ActorHandle),
     /// `doorActor->room = play->roomCtx.curRoom.num`, and its double's.
     DoorRoom { door: ActorHandle },
     /// `actor->flags |= ACTOR_FLAG_TALK`: Player accepted the actor's talk offer (the actor's
@@ -185,6 +187,9 @@ pub enum PlayRequest {
     FreezeFlash,
     /// `sBloodFuncs[kind]` at `pos` (`func_8002F9EC`'s `CollisionCheck_BlueBlood`).
     Blood { kind: u8, pos: Vec3 },
+    /// `Player_RequestQuake(play, speed, y, duration)`: a decaying quake (type 3) on the main
+    /// camera (`crate::quake`).
+    Quake { speed: i32, y: i32, duration: i32 },
 }
 
 /// The audio calls of Player's death and revival.
@@ -785,6 +790,11 @@ pub struct Player {
     pub door_type: i8,
     pub door_direction: i8,
     pub door_actor: Option<ActorHandle>,
+    /// `unk_447`: the door type of the sliding door being walked through (set, never read).
+    pub unk_447: i8,
+    /// `cv.slidingDoorBgCamIndex`: the bg camera of the room a sliding door leads into
+    /// (`Door_Shutter` hands it to `Camera_ChangeDoorCam` as it opens).
+    pub sliding_door_bg_cam_index: i16,
     /// What the update asks of the play state (`PlayRequest`).
     pub play_requests: Vec<PlayRequest>,
     /// `unk_A84`: the height the void check measures falls from.
@@ -987,6 +997,8 @@ impl Player {
             unk_45C: Vec3::ZERO,
             door_timer: 0,
             door_type: PLAYER_DOORTYPE_NONE,
+            unk_447: 0,
+            sliding_door_bg_cam_index: 0,
             door_direction: 0,
             door_actor: None,
             play_requests: Vec::new(),
@@ -1553,7 +1565,30 @@ impl Player {
         } else {
             (self.age.wall_radius, 26.0, self.age.ceiling_check_height)
         };
-        let flags = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_1 | UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4 | UPDBGCHECKINFO_FLAG_5;
+        let all = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_1 | UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4 | UPDBGCHECKINFO_FLAG_5;
+        let mut flags = if self.state1 & (STATE1_29 | STATE1_31) != 0 {
+            if self.state1 & STATE1_31 != 0 {
+                self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND;
+                UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4 | UPDBGCHECKINFO_FLAG_5
+            } else if self.state1 & STATE1_0 != 0 && (self.unk_A84 as i32 - self.actor.world_pos.y as i32) >= 100 {
+                UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4 | UPDBGCHECKINFO_FLAG_5
+            } else if self.state1 & STATE1_0 == 0 && matches!(self.action, Action::DoorOpen | Action::ExitWalk) {
+                // Through a door (Player_Action_80845EF8, Player_Action_80845CA4): no walls.
+                self.actor.bg_check_flags &= !(BGCHECKFLAG_WALL | BGCHECKFLAG_PLAYER_WALL_INTERACT);
+                UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4 | UPDBGCHECKINFO_FLAG_5
+            } else {
+                all
+            }
+        } else {
+            all
+        };
+        // PLAYER_STATE3_0.
+        if self.state3 & (1 << 0) != 0 {
+            flags &= !(UPDBGCHECKINFO_FLAG_1 | UPDBGCHECKINFO_FLAG_2);
+        }
+        if flags & UPDBGCHECKINFO_FLAG_2 != 0 {
+            self.state3 |= STATE3_4;
+        }
         self.actor.update_bg_check_info(col, wall_h, radius, ceil_h, flags);
         // DynaPolyActor_UpdateCarriedActorRotY: a rotating platform turns Player's currentYaw too.
         self.current_yaw = self.current_yaw.wrapping_add(self.actor.carried_yaw);
@@ -1575,7 +1610,11 @@ impl Player {
             }
             if self.actor.category == ACTORCAT_PLAYER {
                 self.sfx(PlayerSfx::CodeReverb(col.echo(fp) as i8));
-                // (Environment_ChangeLightSetting, DynaPoly_SetPlayerAbove: not ported here.)
+                if self.actor.floor_bg_id == eng_collision::bgcheck::BGCHECK_SCENE {
+                    // (Environment_ChangeLightSetting: not ported here.)
+                } else {
+                    col.dyna.set_interact_flag(self.actor.floor_bg_id, eng_collision::dyna::DYNA_INTERACT_PLAYER_ABOVE);
+                }
             }
         }
         let floor = self.actor.floor_poly;
@@ -1629,6 +1668,10 @@ impl Player {
         if self.grounded() {
             self.s.floor_type = self.actor.floor_poly.map(|p| col.floor_type(p)).unwrap_or(0);
             if !self.update_hover_boots() {
+                if self.actor.floor_bg_id != eng_collision::bgcheck::BGCHECK_SCENE {
+                    // DynaPoly_SetPlayerOnTop.
+                    col.dyna.set_interact_flag(self.actor.floor_bg_id, eng_collision::dyna::DYNA_INTERACT_PLAYER_ON_TOP);
+                }
                 if let Some(fp) = self.actor.floor_poly {
                     let n = col.poly_normal(fp);
                     let inv_ny = 1.0 / n.y;
@@ -4635,7 +4678,8 @@ impl Player {
                 let a = self.anim(data, group::ROLL_BONK);
                 self.skel.play_once(data, a);
                 self.linear_velocity = -self.linear_velocity;
-                // (Player_RequestQuake's quake and the rumble aren't ported.)
+                self.play_requests.push(PlayRequest::Quake { speed: 33267, y: 3, duration: 12 });
+                // (Player_RequestRumble isn't ported.)
                 self.play_sfx(NA_SE_PL_BODY_HIT);
                 self.play_voice_sfx(NA_SE_VO_LI_CLIMB_END);
                 self.action_var2 = 1;
@@ -4698,7 +4742,7 @@ impl Player {
     /// `func_80843E64`: landing. Returns 1/2 for a damaging fall (≥ 400 / 800: `D_80854600`'s
     /// half heart and heart, then 40 frames of invincibility, the body's and the voice's
     /// sounds), -1 when that was the last of Link's health, 0 otherwise with the landing's sound.
-    /// (The quake and the rumble aren't ported.)
+    /// (The rumble isn't ported.)
     fn func_80843E64(&mut self, env: &Env) -> i32 {
         let sp34 = if self.s.floor_type == FLOOR_TYPE_6 || self.s.floor_type == FLOOR_TYPE_9 { 0 } else { self.fall_distance as i32 };
         step_to_f(&mut self.linear_velocity, 0.0, 1.0);
@@ -4711,6 +4755,7 @@ impl Player {
                 return -1;
             }
             self.set_intangibility(40);
+            self.play_requests.push(PlayRequest::Quake { speed: 32967, y: 2, duration: 30 });
             self.play_sfx(NA_SE_PL_BODY_HIT);
             // D_80854600[impactIndex].sfxId (both rows).
             self.play_voice_sfx(NA_SE_VO_LI_LAND_DAMAGE_S);
@@ -6646,10 +6691,12 @@ impl Player {
     /// 0x28F). A scene-exit door starts the exit under its far side (`Player_HandleExitsAndVoids`, entrance
     /// speed 2); any other gets the door camera and loads the room behind it.
     ///
-    /// An ajar door (`PLAYER_DOORTYPE_AJAR`) shows text 0xD0 instead.
+    /// An ajar door (`PLAYER_DOORTYPE_AJAR`) shows text 0xD0 instead. A sliding door
+    /// (`Door_Shutter`, `PLAYER_DOORTYPE_SLIDING`) is walked through instead
+    /// (`Player_Action_80845CA4`), its camera index kept for the door (`cv.slidingDoorBgCamIndex`).
     ///
-    /// Not ported: sliding doors (`Door_Shutter`), `Door_Killer`, holding Ruto
-    /// (`ACTOR_EN_RU1`), and `Player_Action_TryOpeningDoor` (a cutscene's door walk).
+    /// Not ported: `Door_Killer`, holding Ruto (`ACTOR_EN_RU1`), and
+    /// `Player_Action_TryOpeningDoor` (a cutscene's door walk).
     fn action_handler_1(&mut self, env: &Env) -> bool {
         if self.door_type == PLAYER_DOORTYPE_NONE || self.state1 & STATE1_11 != 0 {
             return false;
@@ -6667,11 +6714,69 @@ impl Player {
         }
         let mut door_direction = self.door_direction as i32;
         let (sp78, sp74) = (cos_s(door.shape_rot.y), sin_s(door.shape_rot.y));
+        let (door_params, door_category) = (door.params, door.category);
+        let entry = env.transi_actors.get((door_params as u16 >> oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize).copied();
         if self.door_type == PLAYER_DOORTYPE_SLIDING {
-            self.note("sliding doors (Door_Shutter) aren't ported");
-            return false;
+            // A Door_Shutter: Link walks up to it, 20 on, and through, to 120 past it
+            // (Player_Action_80845CA4), facing the way it leads.
+            let data = env.data;
+            self.current_yaw = door.home_rot.y;
+            if door_direction > 0 {
+                self.current_yaw = self.current_yaw.wrapping_sub(-0x8000i32 as i16);
+            }
+            self.actor.shape_rot.y = self.current_yaw;
+            if self.linear_velocity <= 0.0 {
+                self.linear_velocity = 0.1;
+            }
+            let yaw = self.actor.shape_rot.y;
+            self.func_80838E70(data, 50.0, yaw);
+            self.action_var1 = 0;
+            self.unk_447 = self.door_type;
+            self.state1 |= STATE1_29;
+            let pos = self.actor.world_pos;
+            self.unk_450.x = pos.x + (door_direction as f32 * 20.0) * sp74;
+            self.unk_450.z = pos.z + (door_direction as f32 * 20.0) * sp78;
+            self.unk_45C.x = pos.x + (door_direction as f32 * -120.0) * sp74;
+            self.unk_45C.z = pos.z + (door_direction as f32 * -120.0) * sp78;
+            self.play_requests.push(PlayRequest::SlidingDoorActive(dh));
+            self.func_80832224();
+            if self.door_timer != 0 {
+                // Unlocking first: Link stands until the door's timer runs out.
+                self.action_var2 = 0;
+                let a = self.anim(data, group::WAIT);
+                self.anim_change_once_morph(data, a);
+                self.skel.end_frame = 0.0;
+            } else {
+                self.linear_velocity = 0.1;
+            }
+            if door_category == oot_game::actor_ctx::ACTORCAT_DOOR
+                && let Some(t) = entry
+            {
+                self.sliding_door_bg_cam_index = t.sides[if door_direction > 0 { 0 } else { 1 }].1 as i16;
+                // (Actor_DisableLens: there's no lens.)
+            }
+        } else {
+            self.open_door_with_handle(env, dh, &mut door_direction, sp78, sp74, entry);
         }
+        let side = if door_direction > 0 { 0 } else { 1 };
+        if door_category == oot_game::actor_ctx::ACTORCAT_DOOR
+            && let Some(t) = entry
+        {
+            let front_room = t.sides[side].0;
+            if front_room >= 0 && front_room != env.io.borrow().room {
+                self.play_requests.push(PlayRequest::RoomLoad(front_room));
+            }
+        }
+        self.play_requests.push(PlayRequest::DoorRoom { door: dh });
+        true
+    }
+
+    /// `Player_ActionHandler_1`'s door with a handle (`En_Door`; `Door_Killer` isn't ported):
+    /// Link lines up 22 in front and plays the opening for his side and age.
+    fn open_door_with_handle(&mut self, env: &Env, dh: ActorHandle, door_direction_out: &mut i32, sp78: f32, sp74: f32, entry: Option<oot_game::scene::TransitionActorEntry>) {
+        let Some(door) = env.actors.actor(dh) else { return };
         use crate::en_door::{DOOR_OPEN_ANIM_ADULT_L, DOOR_OPEN_ANIM_ADULT_R, DOOR_OPEN_ANIM_CHILD_L, DOOR_OPEN_ANIM_CHILD_R, DOOR_SCENEEXIT};
+        let door_direction = *door_direction_out;
         let open_anim = match (door_direction < 0, self.adult) {
             (true, true) => DOOR_OPEN_ANIM_ADULT_L,
             (true, false) => DOOR_OPEN_ANIM_CHILD_L,
@@ -6686,7 +6791,7 @@ impl Player {
         };
         let data = env.data;
         let anim = self.anim(data, group);
-        let (door_pos, door_yaw, door_parent, door_params, door_category) = (door.world_pos, door.shape_rot.y, door.parent, door.params, door.category);
+        let (door_pos, door_yaw, door_parent, door_params) = (door.world_pos, door.shape_rot.y, door.parent, door.params);
         self.setup_action(data, Action::DoorOpen, 0);
         self.put_away_held_item(data);
         self.actor.shape_rot.y = if door_direction < 0 { door_yaw } else { door_yaw.wrapping_add(-0x8000i32 as i16) };
@@ -6701,6 +6806,7 @@ impl Player {
         }
         self.func_80832224();
         self.start_anim_movement(0x28F);
+        let mut door_direction = door_direction;
         // The second half of a double door (spawned as a child).
         if door_parent.is_some() {
             door_direction = -door_direction;
@@ -6710,7 +6816,6 @@ impl Player {
         self.state1 |= STATE1_29;
         // (Actor_DisableLens: there's no lens.)
         let side = if door_direction > 0 { 0 } else { 1 };
-        let entry = env.transi_actors.get((door_params as u16 >> oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize).copied();
         if (door_params as u16 >> 7) & 7 == DOOR_SCENEEXIT {
             let check = Vec3::new(door_pos.x - sp6c * sp74, door_pos.y + 10.0, door_pos.z - sp6c * sp78);
             // BgCheck_EntityRaycastDown1. @bug (game): the poly's bgId is taken as BGCHECK_SCENE.
@@ -6723,16 +6828,7 @@ impl Player {
             // 38, 26 and 10 frames times sInvWaterSpeedFactor (1).
             self.play_requests.push(PlayRequest::DoorCam { door: dh, bg_cam_index: t.sides[side].1 as i16, timers: [38, 26, 10] });
         }
-        if door_category == oot_game::actor_ctx::ACTORCAT_DOOR
-            && let Some(t) = entry
-        {
-            let front_room = t.sides[side].0;
-            if front_room >= 0 && front_room != env.io.borrow().room {
-                self.play_requests.push(PlayRequest::RoomLoad(front_room));
-            }
-        }
-        self.play_requests.push(PlayRequest::DoorRoom { door: dh });
-        true
+        *door_direction_out = door_direction;
     }
 
     /// `Player_Action_80845EF8`: the door animation, then standing; the old room goes, the door camera
@@ -8461,6 +8557,24 @@ pub fn play_damage_player(play: &mut PlayState, damage: i32) -> bool {
     true
 }
 
+/// `PLAYER_IA_DEKU_STICK` (`player.h`: 6), as `heldItemAction` (`held_item_ap`).
+pub const PLAYER_IA_DEKU_STICK: i32 = 6;
+
+impl Player {
+    /// `Player_IsBurningStickInRange` (`z_player_lib.c`): a burning Deku Stick in hand
+    /// (`unk_860` its timer) with its tip (`MELEE_WEAPON_INFO_TIP(&meleeWeaponInfo[0])`) within
+    /// `xz_range` across of `pos` and 0 to `y_range` above it.
+    pub fn is_burning_stick_in_range(&self, pos: Vec3, xz_range: f32, y_range: f32) -> bool {
+        if self.held_item_ap == PLAYER_IA_DEKU_STICK && self.unk_860 != 0 {
+            // Math_Vec3f_Diff(tip, pos, &diff).
+            let diff = self.melee_weapon_info[0].tip - pos;
+            ((diff.x * diff.x) + (diff.z * diff.z)) <= (xz_range * xz_range) && 0.0 <= diff.y && diff.y <= y_range
+        } else {
+            false
+        }
+    }
+}
+
 impl ActorImpl for Player {
     fn name(&self) -> &'static str {
         PROFILE.name
@@ -8871,6 +8985,11 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
                 dr.player_is_opening = true;
             }
         }
+        PlayRequest::SlidingDoorActive(door) => {
+            if let Some(dr) = play.actors.downcast_mut::<crate::door_shutter::DoorShutter>(door) {
+                dr.is_active = 1;
+            }
+        }
         PlayRequest::DoorRoom { door } => {
             let room = play.room_ctx.cur.num;
             let attached = play.actors.actor_mut(door).and_then(|a| {
@@ -8961,6 +9080,13 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             }
         }
         PlayRequest::Blood { kind, pos } => play.collision_check_hit_fx(vec![cc::HitFx::Blood(kind, pos)]),
+        PlayRequest::Quake { speed, y, duration } => {
+            // Player_RequestQuake: the s32s passed on as the setters' s16s.
+            let quake_index = play.quake_request(oot_game::camera::CAM_ID_MAIN, oot_game::quake::QUAKE_TYPE_3);
+            play.quake_set_speed(quake_index, speed as i16);
+            play.quake_set_perturbations(quake_index, y as i16, 0, 0, 0);
+            play.quake_set_duration(quake_index, duration as i16);
+        }
         PlayRequest::Audio(a) => match a {
             PlayerAudio::BgmVolumeOffDuringFanfare => play.audio.audio_set_bgm_volume_off_during_fanfare(),
             PlayerAudio::BgmVolumeOnDuringFanfare => play.audio.audio_set_bgm_volume_on_during_fanfare(),

@@ -727,7 +727,7 @@ impl PlayState {
     }
 
     /// `CutsceneCmd_Misc`: command 3, the misc actions, on `envCtx` and the rest of play. Those that
-    /// need what isn't ported (the skybox's change, quakes, title cards, the sandstorm, the Sun's
+    /// need what isn't ported (the skybox's change, title cards, the sandstorm, the Sun's
     /// Song, the scarecrow's song) are logged on their first frame; their sounds play.
     fn cutscene_cmd_misc(&mut self, d: &[u8], o: usize) {
         let (base, start, end) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4));
@@ -835,8 +835,21 @@ impl PlayState {
                     self.title_ctx.init_place_name(&title, 160, 120, 144, 24, 20);
                 }
             }
-            16 => not_ported("Quake_Request"),
-            17 => not_ported("Quake_RemoveRequest"),
+            16 => {
+                if first {
+                    // CS_MISC_QUAKE_START: a quake on the active camera until CS_MISC_QUAKE_STOP.
+                    let i = self.quake_request(crate::camera::CAM_ID_NONE, crate::quake::QUAKE_TYPE_6);
+                    self.demo.quake_index = i;
+                    self.quake_set_speed(i, 0x7FFF);
+                    self.quake_set_perturbations(i, 4, 0, 1000, 0);
+                    self.quake_set_duration(i, 800);
+                }
+            }
+            17 => {
+                if first {
+                    self.quake_remove_request(self.demo.quake_index);
+                }
+            }
             18 => {
                 use crate::env::{PRECIP_RAIN_CUR, PRECIP_RAIN_MAX, STORM_REQUEST_STOP};
                 self.env_ctx.precipitation[PRECIP_RAIN_MAX] = 0;

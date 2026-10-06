@@ -175,7 +175,7 @@ fn an_egg_squishes_and_sheds_fragments_every_16_frames() {
     let h = spawn_egg(&mut w, GROUND_EGG, 7);
     idle(&mut w, 1);
     let mut events = 0;
-    for _ in 0..128 {
+    for _ in 0..512 {
         let (angle0, amount0, timer0) = (goma(&w, h).egg_squish_angle, goma(&w, h).egg_squish_amount, goma(&w, h).egg_timer);
         idle(&mut w, 1);
         let g = goma(&w, h);
@@ -201,7 +201,8 @@ fn an_egg_squishes_and_sheds_fragments_every_16_frames() {
             }
         }
     }
-    // Eight chances (a half each) in 128 frames.
+    // 32 chances (a half each) in 512 frames. (128 frames' eight chances all missed once room 0's
+    // torches joined the Rand calls in milestone 4a: how many come depends on Rand's stream.)
     assert!(events > 0);
 }
 

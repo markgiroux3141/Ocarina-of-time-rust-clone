@@ -30,8 +30,7 @@
 //! logs them; the pieces' display lists (`bossLimbDL`) are hers, baked by `boss_limb_bake` when
 //! she's ported. `En_Goma_Profile`'s id is `ACTOR_BOSS_GOMA` (@bug (game)): every En_Goma gets
 //! that id, as `Actor_Spawn` copies it (`PROFILE`). Not ported: the generic circle shadow
-//! (`ActorShadow_DrawCircle`, for no actor), and the camera's quake offset in the larva's draw
-//! (quakes aren't ported: 0).
+//! (`ActorShadow_DrawCircle`, for no actor).
 
 use std::sync::Arc;
 
@@ -917,10 +916,10 @@ impl EnGoma {
     }
 
     /// `EnGoma_Draw` for `ENGOMA_NORMAL`: the larva's model matrix, its slope's tilt under its
-    /// own rotation (`BINANG_TO_RAD_ALT`).
-    fn larva_matrix(rs: &RenderState, slope_pitch: i16, slope_roll: i16) -> Mat4 {
-        // play->mainCamera.quakeOffset.y: quakes aren't ported (0).
-        Mat4::from_translation(rs.pos + Vec3::Y * (rs.y_offset * rs.scale.y))
+    /// own rotation (`BINANG_TO_RAD_ALT`), raised by the main camera's quake offset
+    /// (`play->mainCamera.quakeOffset.y`, `quake_y`).
+    fn larva_matrix(rs: &RenderState, slope_pitch: i16, slope_roll: i16, quake_y: f32) -> Mat4 {
+        Mat4::from_translation(rs.pos + Vec3::Y * ((rs.y_offset * rs.scale.y) + quake_y))
             * Mat4::from_rotation_x(binang_to_rad_alt(slope_pitch))
             * Mat4::from_rotation_z(binang_to_rad_alt(slope_roll))
             * Mat4::from_rotation_y(binang_to_rad_alt(rs.rot[1]))
@@ -1158,7 +1157,7 @@ impl ActorImpl for EnGoma {
     ///   `eggPitch`; its texture scrolling with `eggTimer` (`sin(eggTimer × 5°) × 31.9 + 31`);
     /// - the debris: `gBrownFragmentDL` at `Actor_Draw`'s matrix;
     /// - a piece of Queen Gohma: `bossLimbDL` with back faces drawn.
-    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), [goma_type, egg_timer, body_env], v, [slope_pitch, slope_roll, eye_pitch, eye_yaw]) = (&rs.joints, rs.switches.as_slice(), rs.values.as_slice(), rs.angles.as_slice())
         else {
             return;
@@ -1170,7 +1169,7 @@ impl ActorImpl for EnGoma {
         match *goma_type as u16 as i16 {
             ENGOMA_NORMAL => {
                 let Some(skeleton) = &self.skeleton else { return };
-                let m = Self::larva_matrix(rs, *slope_pitch, *slope_roll);
+                let m = Self::larva_matrix(rs, *slope_pitch, *slope_roll, play.game_camera.quake_offset.y);
                 let bones = larva_pose(skeleton, &joints.rot, *eye_pitch, *eye_yaw);
                 // (s16)this->eyeEnvColor[i], 255.
                 let e = rs::EYE_ENV;

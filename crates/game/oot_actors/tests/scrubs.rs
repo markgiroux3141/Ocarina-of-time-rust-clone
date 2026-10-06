@@ -452,7 +452,13 @@ fn the_hint_scrubs_order_puzzle() {
     r.until(120, NONE, |r| r.w.actors.downcast::<EnHintnuts>(s3).is_none_or(|n| n.actor.killed));
     assert!(r.w.flags.get_clear(9));
     assert_eq!(puzzle_counter(&mut r), 3);
-    r.until(30, NONE, |r| [s1, s2].iter().all(|&h| r.w.actors.downcast::<EnHintnuts>(h).is_none_or(|n| n.actor.killed)));
+    // The clear unbars room 9's door to room 11 (Door_Shutter, type 1), with its attention
+    // cameras on the door and on Link (OnePointCutscene_Attention), which hold the actors while
+    // they run: the two sink once the cameras are done.
+    let door = r.w.actors.all().into_iter().find(|&h| r.w.actors.downcast::<oot_actors::door_shutter::DoorShutter>(h).is_some_and(|d| d.transition_index() == 4)).expect("room 9's door");
+    r.until(5, NONE, |r| r.get::<oot_actors::door_shutter::DoorShutter>(door).action == oot_actors::door_shutter::Action::Unbar);
+    r.until(300, NONE, |r| [s1, s2].iter().all(|&h| r.w.actors.downcast::<EnHintnuts>(h).is_none_or(|n| n.actor.killed)));
+    assert_eq!(r.get::<oot_actors::door_shutter::DoorShutter>(door).bars_closed_amount, 0.0);
     let flowers: Vec<ActorHandle> =
         r.w.actors.all().into_iter().filter(|&x| r.w.actors.downcast::<EnHintnuts>(x).is_some_and(|n| n.actor.params == oot_actors::en_hintnuts::HINTNUTS_FLOWER)).collect();
     assert_eq!(flowers.len(), 3);

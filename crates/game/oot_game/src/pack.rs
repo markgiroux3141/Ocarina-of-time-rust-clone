@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 19;
+pub const FORMAT_VERSION: u32 = 20;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -63,6 +63,8 @@ pub mod keys {
     pub const INTERFACE: &str = "table/interface";
     /// `item::ItemTables`: `sGetItemTable` and `sDrawItemTable`.
     pub const ITEMS: &str = "table/items";
+    /// `map::MapTables`: `gMapDataTable` and `gMapMarkDataTable`.
+    pub const MAP: &str = "table/map";
     /// `cutscene::CutsceneTables`: `sEntranceCutsceneTable` and every script's key.
     pub const CUTSCENES: &str = "table/cutscenes";
     /// `elf_message::ElfMessageTables`: Navi's C-Up texts (`sNaviQuestHintFiles`) and Saria's.
@@ -406,6 +408,10 @@ impl GamePack {
 
     pub fn interface(&self) -> Result<crate::interface::InterfaceTables> {
         self.assets.get(keys::INTERFACE)
+    }
+
+    pub fn map_tables(&self) -> Result<crate::map::MapTables> {
+        self.assets.get(keys::MAP)
     }
 
     /// A scene by name: `spot04` or `spot04_scene`.

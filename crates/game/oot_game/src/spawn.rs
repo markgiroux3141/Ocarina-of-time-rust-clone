@@ -288,9 +288,24 @@ impl PlayState {
             a.destroy(self);
             self.actors.put_back(h, a);
         }
-        self.actors.remove(h);
+        self.actor_remove_from_category(h);
         if self.player == Some(h) {
             self.player = None;
+        }
+    }
+
+    /// `Actor_RemoveFromCategory`: the actor leaves its list and is freed. The current room's
+    /// last enemy gone sets the room's temporary clear flag (`Flags_SetTempClear`), which
+    /// opens its barred doors and shows its room-clear chests.
+    pub fn actor_remove_from_category(&mut self, h: ActorHandle) {
+        let Some((room, category)) = self.actors.actor(h).map(|a| (a.room, a.category)) else {
+            self.actors.remove(h);
+            return;
+        };
+        self.actors.remove(h);
+        let cur = self.room_ctx.cur.num;
+        if room == cur && category == crate::actor_ctx::ACTORCAT_ENEMY && self.actors.category(crate::actor_ctx::ACTORCAT_ENEMY).is_empty() {
+            self.flags.set_temp_clear(cur);
         }
     }
 }
@@ -323,6 +338,29 @@ impl SceneFlags {
             0..=0x1F => self.swch |= 1 << flag,
             0x20..=0x3F => self.temp_swch |= 1 << (flag - 0x20),
             _ => {}
+        }
+    }
+
+    /// `Flags_UnsetSwitch`.
+    pub fn unset_switch(&mut self, flag: i32) {
+        match flag {
+            0..=0x1F => self.swch &= !(1 << flag),
+            0x20..=0x3F => self.temp_swch &= !(1 << (flag - 0x20)),
+            _ => {}
+        }
+    }
+
+    /// `Flags_SetTempClear`: `tempClear |= 1 << flag` (a room number).
+    pub fn set_temp_clear(&mut self, room: i8) {
+        if (0..=0x1F).contains(&room) {
+            self.temp_clear |= 1 << room;
+        }
+    }
+
+    /// `Flags_UnsetTempClear`.
+    pub fn unset_temp_clear(&mut self, room: i8) {
+        if (0..=0x1F).contains(&room) {
+            self.temp_clear &= !(1 << room);
         }
     }
 

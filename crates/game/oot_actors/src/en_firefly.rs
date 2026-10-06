@@ -27,8 +27,7 @@
 //!
 //! The whole overlay is ported. Not ported, so never reached: the Lens of Truth (a params 0x8000
 //! Keese is invisible: `play->actorCtx.lensActive` is never set), arrows (`ACTOR_FLAG_ATTACHED_TO_ARROW`
-//! is never set), the Skull Mask (`Player_GetMask` is always `PLAYER_MASK_NONE`), and a lit torch
-//! (`Obj_Syokudai` isn't ported: its placeholder has no `litTimer`, so no torch is lit). The
+//! is never set) and the Skull Mask (`Player_GetMask` is always `PLAYER_MASK_NONE`). The
 //! draw's env colour (alpha 0 for a fire body, 255 else) doesn't reach the skeleton's mesh, whose
 //! combiner doesn't read it. The generic circle shadow (`ActorShadow_DrawCircle`) isn't ported for
 //! any actor.
@@ -48,6 +47,8 @@ use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::{ANIMMODE_LOOP_INTERP, Anim, SkelAnimeStd};
 use oot_game::sys_matrix::MtxF;
+
+use crate::obj_syokudai::ACTOR_OBJ_SYOKUDAI;
 
 pub const ACTOR_EN_FIREFLY: i16 = 0x0013;
 const OBJECT: &str = "object_firefly";
@@ -106,8 +107,6 @@ const NAVI_ENEMY_FIRE_KEESE: u8 = 0x11;
 const NAVI_ENEMY_KEESE: u8 = 0x12;
 const NAVI_ENEMY_ICE_KEESE: u8 = 0x56;
 
-/// `ACTOR_OBJ_SYOKUDAI` (`actor_table.h`).
-const ACTOR_OBJ_SYOKUDAI: i16 = 0x005E;
 /// `COLLECTIBLE_DROP_TABLE_14` (`z_en_item00.h`).
 const COLLECTIBLE_DROP_TABLE_14: i16 = 14;
 
@@ -469,8 +468,6 @@ impl EnFirefly {
 
     /// `EnFirefly_ApproachLitTorch`: the nearest lit torch (an `Obj_Syokudai` with `litTimer`)
     /// draws it to its flame, 67 above it, catching fire within 15. True while there's one.
-    ///
-    /// `Obj_Syokudai` isn't ported: its placeholder has no `litTimer`, so no torch is lit.
     fn approach_lit_torch(&mut self, play: &PlayState) -> bool {
         let mut closest: Option<Vec3> = None;
         let mut closest_dist = 35000.0;
@@ -790,13 +787,22 @@ impl EnFirefly {
         }
     }
 
-    /// `Actor_Draw`'s model matrix (`Matrix_SetTranslateRotateYXZ`, then the scale).
-    fn actor_mtx(&self) -> MtxF {
+    /// `Actor_Draw`'s model matrix (`Matrix_SetTranslateRotateYXZ`, then the scale), moved by
+    /// the main camera's quake offset (`quake`) while the actor has `ACTOR_FLAG_IGNORE_QUAKE`.
+    fn actor_mtx(&self, quake: Vec3) -> MtxF {
         let a = &self.actor;
-        let mut m = MtxF::set_translate_rotate_yxz(a.world_pos.x, a.world_pos.y + a.shape_y_offset * a.scale.y, a.world_pos.z, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]);
+        let t = ignore_quake_translation(a.flags, a.world_pos, a.shape_y_offset * a.scale.y, quake);
+        let mut m = MtxF::set_translate_rotate_yxz(t.x, t.y, t.z, [a.shape_rot.x, a.shape_rot.y, a.shape_rot.z]);
         m.scale(a.scale.x, a.scale.y, a.scale.z);
         m
     }
+}
+
+/// `Actor_Draw`'s translation: the position raised by `shape.yOffset * scale.y` (`y_offset`), and
+/// with `ACTOR_FLAG_IGNORE_QUAKE` moved by `play->mainCamera.quakeOffset` too, so the actor
+/// shakes with the view and keeps still on the screen.
+fn ignore_quake_translation(flags: u32, pos: Vec3, y_offset: f32, quake: Vec3) -> Vec3 {
+    if flags & ACTOR_FLAG_IGNORE_QUAKE != 0 { Vec3::new(pos.x + quake.x, pos.y + (y_offset + quake.y), pos.z + quake.z) } else { Vec3::new(pos.x, pos.y + y_offset, pos.z) }
 }
 
 /// `EnFirefly_OverrideLimbDraw`'s change to the pose: the root 2300 higher (unless drawn for
@@ -811,10 +817,9 @@ fn keese_pose(skeleton: &Skeleton, joints: &[[i16; 3]], xlu_hidden: bool) -> Vec
     })
 }
 
-/// `((ObjSyokudai*)iter)->litTimer` for the torch `h`: `Obj_Syokudai` isn't ported (GAME-05
-/// milestone 4), so no torch is lit.
-fn obj_syokudai_lit_timer(_play: &PlayState, _h: oot_game::actor_ctx::ActorHandle) -> i16 {
-    0
+/// `((ObjSyokudai*)iter)->litTimer` for the torch `h`.
+fn obj_syokudai_lit_timer(play: &PlayState, h: oot_game::actor_ctx::ActorHandle) -> i16 {
+    play.actors.downcast::<crate::obj_syokudai::ObjSyokudai>(h).map(|t| t.lit_timer).unwrap_or(0)
 }
 
 impl ActorImpl for EnFirefly {
@@ -894,7 +899,7 @@ impl ActorImpl for EnFirefly {
         let Some(skeleton) = self.skeleton.clone() else { return };
         let xlu_hidden = self.draw_xlu; // && !play->actorCtx.lensActive (never set).
         let bones = keese_pose(&skeleton, &self.skel.joint_table, xlu_hidden);
-        let model = self.actor_mtx().to_mat4();
+        let model = self.actor_mtx(play.game_camera.quake_offset).to_mat4();
         // sFireEffPrimColor, sFireEffEnvColor, sIceEffPrimColor, sIceEffEnvColor, sEffVel, sEffAccel.
         const FIRE_PRIM: [u8; 4] = [255, 255, 100, 255];
         const FIRE_ENV: [u8; 4] = [255, 50, 0, 0];
@@ -955,14 +960,16 @@ impl ActorImpl for EnFirefly {
     /// `EnFirefly_DrawOpa` (`EnFirefly_DrawXlu` for a Lens of Truth one, which draws nothing
     /// without the lens): the skeleton, its root raised, and on a normal one's head the eyes
     /// (`gKeeseEyesDL`).
-    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), [body, xlu]) = (&rs.joints, rs.switches.as_slice()) else { return };
         let Some(skeleton) = &self.skeleton else { return };
         if *xlu != 0 {
             // Every limb's dList is set to NULL without the lens.
             return;
         }
-        let model = oot_game::play::actor_draw_matrix(rs);
+        let mut model = oot_game::play::actor_draw_matrix(rs);
+        // (The translation is the matrix's last column as it is.)
+        model.w_axis = ignore_quake_translation(self.actor.flags, rs.pos, rs.y_offset * rs.scale.y, play.game_camera.quake_offset).extend(1.0);
         let bones = keese_pose(skeleton, &joints.rot, false);
         if *body as u8 == EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL {
             let head = model * bones[KEESE_LIMB_HEAD - 1];

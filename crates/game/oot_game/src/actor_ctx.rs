@@ -213,6 +213,11 @@ pub trait ActorImpl: Any {
     fn collider_mut(&mut self, _id: u8) -> Option<crate::collision_check::ColliderMut<'_>> {
         None
     }
+    /// A DynaPoly actor's `dyna.bgId`, for `DynaPoly_UnsetAllInteractFlags` after its update.
+    /// `None` for an actor with no bg actor (or none that reads its interact flags).
+    fn dyna_bg_id(&self) -> Option<u16> {
+        None
+    }
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -527,4 +532,80 @@ pub fn actor_play_sfx_surface_bomb(play: &mut PlayState, actor: &Actor) {
     let pos = cur_sfx_pos(play);
     play.audio.play_sfx_at_pos(pos, NA_SE_EV_BOMB_BOUND);
     play.audio.play_sfx_at_pos(pos, sfx_id.wrapping_add(SFX_FLAG));
+}
+
+// `DoorLockType`.
+pub const DOORLOCK_NORMAL: usize = 0;
+pub const DOORLOCK_BOSS: usize = 1;
+pub const DOORLOCK_NORMAL_SPIRIT: usize = 2;
+
+/// `DoorLockInfo`.
+struct DoorLockInfo {
+    chain_angle: f32,
+    chain_length: f32,
+    y_shift: f32,
+    chains_scale: f32,
+    chains_rot_z_init: f32,
+    /// `chainDL`, `lockDL`: `(file, symbol)`.
+    chain_dl: (&'static str, &'static str),
+    lock_dl: (&'static str, &'static str),
+}
+
+/// `sDoorLocksInfo`, by `DoorLockType`.
+const S_DOOR_LOCKS_INFO: [DoorLockInfo; 3] = [
+    DoorLockInfo {
+        chain_angle: 0.54,
+        chain_length: 6000.0,
+        y_shift: 5000.0,
+        chains_scale: 1.0,
+        chains_rot_z_init: 0.0,
+        chain_dl: ("gameplay_dangeon_keep", "gDoorChainDL"),
+        lock_dl: ("gameplay_dangeon_keep", "gDoorLockDL"),
+    },
+    DoorLockInfo {
+        chain_angle: 0.644,
+        chain_length: 12000.0,
+        y_shift: 8000.0,
+        chains_scale: 1.0,
+        chains_rot_z_init: 0.0,
+        chain_dl: ("object_bdoor", "gBossDoorChainDL"),
+        lock_dl: ("object_bdoor", "gBossDoorLockDL"),
+    },
+    DoorLockInfo {
+        chain_angle: 0.64000005,
+        chain_length: 8500.0,
+        y_shift: 8000.0,
+        chains_scale: 1.75,
+        chains_rot_z_init: 0.1,
+        chain_dl: ("gameplay_dangeon_keep", "gDoorChainDL"),
+        lock_dl: ("gameplay_dangeon_keep", "gDoorLockDL"),
+    },
+];
+
+/// `Actor_DrawDoorLock`: a locked door's four chains and its lock, of `DoorLockType` `ty`,
+/// under `base` (the door's matrix as the caller left it). `frame` runs from 10 (shut) to 0
+/// (open): the chains slide out and the lock shrinks.
+pub fn actor_draw_door_lock(out: &mut DrawOut, base: &crate::sys_matrix::MtxF, frame: i32, ty: usize) {
+    let entry = &S_DOOR_LOCKS_INFO[ty];
+    let mut chain_rot_z = entry.chains_rot_z_init;
+    let mut base_mtx = *base;
+    base_mtx.translate(0.0, entry.y_shift, 500.0);
+    let chains_translate_x = -((10 - frame) as f32) * (entry.chain_angle - chain_rot_z).sin() * 0.1 * entry.chain_length;
+    let chains_translate_y = (10 - frame) as f32 * (entry.chain_angle - chain_rot_z).cos() * 0.1 * entry.chain_length;
+    let mesh = |(file, symbol): (&str, &str)| eng_gfx::MeshKey::named(crate::pack::keys::mesh(file, symbol));
+    for i in 0..4 {
+        let mut m = base_mtx;
+        m.rotate_z(chain_rot_z);
+        m.translate(chains_translate_x, chains_translate_y, 0.0);
+        if entry.chains_scale != 1.0 {
+            m.scale(entry.chains_scale, entry.chains_scale, entry.chains_scale);
+        }
+        out.opa.push(eng_gfx::DrawCmd::new(mesh(entry.chain_dl), m.to_mat4()));
+        let rot_z_step = if i % 2 != 0 { 2.0 * entry.chain_angle } else { std::f32::consts::PI - 2.0 * entry.chain_angle };
+        chain_rot_z += rot_z_step;
+    }
+    let scale = frame as f32 * 0.1;
+    let mut m = base_mtx;
+    m.scale(scale, scale, scale);
+    out.opa.push(eng_gfx::DrawCmd::new(mesh(entry.lock_dl), m.to_mat4()));
 }

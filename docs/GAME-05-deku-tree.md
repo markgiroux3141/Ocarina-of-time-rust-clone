@@ -11,8 +11,8 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | 2 | Damage and health: Player taking damage (kinds 3 and 4, the hit while swimming, burning, the red flash), death and game over, the enemies' damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`) | done |
 | 3a | Combat basics: Player's guard with the shield (blocking, deflecting); `Camera_Battle1`; the effects (`EffectSs`, `z_effect.c`), `En_Dekubaba`'s included; `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5); drops on death | done |
 | 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | done |
-| 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`) | |
-| 5 | Items in use: Deku sticks and nuts, the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`) | |
+| 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`); room-to-room travel. Split in three: 4a doors, switches, torches and webs; 4b the Deku Stick (pulled forward from 5) and the props; 4c pushing and Master Quest's extras | 4a done |
+| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`) | |
 | 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
 
 The working rules are the same as for the earlier phases:
@@ -888,3 +888,355 @@ scripts\run\sandbox-scrub.bat
   drop and turns, the Skullwalltula's dash, the larva's leap); whether bouncing a nut back with
   R feels as it should; anything that looks off (the Gold Skulltula's shine and its token's size,
   the egg's squish, the bubbles' direction, the effects).
+
+## Milestone 4: the dungeon's mechanics
+
+**Status:** split agreed (2026-10-06). The user chose:
+- three parts, 4a, 4b and 4c, as below;
+- the Deku Stick pulled forward into 4b, used from C-Left only: a save preset and the Start
+  stand-in put owned sticks there, and the C buttons in full stay in milestone 5;
+- every actor whose use needs an item or song Link won't have (the time blocks, the rocks, the
+  crates, the eye switches, room 2's ladder) ported whole, its trigger injected in the tests;
+- the map and compass as data only, drawn by milestone 5's pause menu.
+
+### The survey
+
+The placements come from `ootx scene-info --scene ydan` (pack format 19, `out/data16`). Layers 0
+to 3 all read the scene's one header (0x0), so this is every placement in the Master Quest Deku
+Tree. Rooms are written as "front/back" for the transition actors (`sides[0]`, `sides[1]`).
+
+**The transition actors:**
+- **`Door_Shutter`, 9 doors** (`z_door_shutter.c`, 1,086 lines):
+  - plain (type 0): rooms 1/0 and 8/7;
+  - barred until the room is cleared (type 1, `SHUTTER_FRONT_CLEAR`): 11/9, 0/10 and 7/6;
+  - barred until a switch flag is set (type 2, `SHUTTER_FRONT_SWITCH`): 2/1 on 0x0C (room 1's
+    eye switch) and 5/4 on 0x19 (room 4's two timed torches);
+  - type 7 (`SHUTTER_FRONT_SWITCH_BACK_CLEAR`): 6/5 on 0x09 (room 5's timed torches) and 4/3 on
+    0x15 (room 3's eye switch).
+
+  There is no key-locked door (type 11) and no boss door (type 5). MQ's Deku Tree places no
+  small key, and the boss room is entered by a drop (exit 2).
+- **`En_Holl`, 3, already ported:** the drops 0 to 3 and 3 to 9 (`ENHOLL_V_INVISIBLE`) and the
+  plane between 7 and 3 (`ENHOLL_H_INVISIBLE`).
+
+**The mechanisms:**
+
+| Actor | Placed | What it does in MQ | C lines | Needs |
+|---|---|---|---|---|
+| `Obj_Switch` | 7 | Floor switches, pressed once: room 0's top floor (0x27: the web over room 10's door burns and room 0's golden torches light), room 3 (0x02: its golden torch; 0x14: its falling chest), room 10 (0x3D: the three rising platforms). Held down: room 5 (0x3E) and room 7 (0x38), their golden torches. Eye switches: room 1 (0x0C, the door to room 2) and room 3 (0x15, the door to room 4) | 848 | The eye takes only seeds and arrows (`0x0001F824`): the slingshot |
+| `Obj_Syokudai` | 14 | Golden torches lit by a switch flag: room 0 ×3, room 3, room 5, room 7 ×4. Timed torches: room 4 ×2 (both lit: 0x19, the door to room 5), room 5 ×2 (0x09, the door to room 6), room 10 (0x13, its falling chest). Room 10 has a wooden torch that is always lit | 315 | Lighting one needs a burning Deku Stick, or fire arrows or Din's Fire |
+| `Bg_Ydan_Sp` (webs) | 8 | Floor webs: room 0's bottom (a fall of over 750 onto it breaks it: the drop to room 3) and room 3's upper floor (burned: the drop to room 9). Wall webs: room 0's top, over room 10's door (burned by switch 0x27); room 0's middle floor, over room 1's door; room 2; room 3; room 7 ×2 | 467 | The wall webs but one, and room 3's floor web, burn only from a burning stick (`Player_IsBurningStickInRange`) or fire |
+| `Bg_Ydan_Hasi` | 3 | Room 5's floating block and its water; room 10's three rising platforms (0x3D, up for 260 frames) | 202 | Nothing. The floating block is ported (the spikes'), but its init and the other two kinds aren't |
+| `Bg_Ydan_Maruta` | 2 | Room 5's rolling spiked log; room 2's ladder, which falls when hit (0x21) | 218 | The ladder takes only a seed (`DMG_SLINGSHOT`) |
+| `Obj_Kibako2` (crates) | 3 | Room 0's middle-floor crate, with the Gold Skulltula (`En_Sw` 0x8102) placed inside it on its own (the crate's params 0xFFFF spawn none); room 10 ×2 | 189, and `Effect_Ss_Kakera` 436 | It breaks only on an explosion (`func_80033684`) or the hammer (`0x40000040`) |
+| `Obj_Lift` | 1 | Room 2: a platform that shakes when stood on, falls and breaks (0x20) | 240 | Quakes and `Effect_Ss_Kakera` |
+| `Obj_Timeblock` | 10 | The Song of Time's blocks: room 2 ×4 and room 7 ×5 hidden (no collision); room 5 ×1 standing on the purple rupee's chest | 367 | The ocarina. The song's effect (`Demo_Effect`, 2,092) spawns only on the song |
+| `Obj_Bombiwa` | 3 | Room 2's rocks | 158 | Bombs (or the hammer) |
+| `Obj_Makeoshihiki` | 1 | Room 3: spawns a small push block (`Obj_Oshihiki`) on the upper floor; pushed off into the pit, it sets 0x10 and stays | 144, and `Obj_Oshihiki` 688 | Player's push and pull (`Player_Action_8084B78C`, `_8084B898`, `_8084B9E4`: not ported; `func_8083F72C` only logs) |
+| `Bg_Haka` | 8 | Room 7's gravestones, pulled back 60 | 174 | Player's pull |
+| `Elf_Msg`, `Elf_Msg2` | 8, 4 | Navi's hints: places where she calls, and tags to check with C-Up | 230, 194 | Nothing: Navi's forced talks and C-Up are ported |
+| `En_Wonder_Item` | 4 | Room 7 | ported | |
+| `En_Box` | 7 | The map (room 0's ledge, flag 3), the compass (room 2), the slingshot (room 10, when the room is cleared), two Deku Shields falling on 0x14 (room 3) and 0x13 (room 10), the purple rupee (room 5, under the time block), a recovery heart (room 5) | ported | |
+
+**Elsewhere:**
+- **Small keys.** `Item_Give` already counts them in the save. The HUD's key count
+  (`Interface_Draw`) isn't drawn, and nothing in MQ's Deku Tree gives or takes one.
+- **The map and compass.** `Item_Give` already sets them in `dungeonItems`. The pause data isn't
+  ported:
+  - `z_map_exp.c` (635 lines): `Map_Init`, `Map_InitData` and `Map_Update`, which record the
+    rooms visited and the floor Link is on;
+  - `z_map_data.c` (351): the dungeons' tables;
+  - `z_map_mark.c` (167): the chests' and the boss's marks.
+
+  The HUD's minimap (`Minimap_Draw`) is a cross-cutting debt.
+- **Quakes** (`z_quake.c`, 509 lines) aren't ported (ADR 0029). `Door_Shutter`'s slam and
+  `Obj_Lift`'s shake call them.
+- **Player's sliding door** (`Player_ActionHandler_1`'s `PLAYER_DOORTYPE_SLIDING` branch, the walk
+  through it in `Player_Action_80845CA4`) only logs today. So do the Deku Stick
+  (`Player_InitDekuStickIA`, `Player_UpdateBurningDekuStick`, its breaking) and push and pull.
+
+**What Link can't do yet, and what it closes off:**
+- **The slingshot (milestone 5):** the eye switches in rooms 1 and 3 (the doors to rooms 2 and
+  4) and room 2's ladder. So rooms 2 and 4 to 8 stay debug starts until milestone 5.
+- **The Deku Stick** (also milestone 5 on the roadmap): every torch Link lights, the wall webs but
+  the one switch 0x27 burns, and room 3's floor web (the way to rooms 9 and 11).
+- **Push and pull:** room 3's block and room 7's gravestones.
+- **The ocarina:** the time blocks.
+- **Bombs:** the rocks, and the crates, so room 0's Gold Skulltula stays shut in its crate.
+
+Without the stick, Link reaches rooms 0, 10 and 3. With it, he also reaches room 1 and rooms 9
+and 11 (room 9's door to room 11 opens when the hint scrubs' puzzle clears the room).
+
+### The split
+
+Each part ports its actors whole, with C-derived tests per actor, and keeps one short scripted
+run as its exit and golden. A trigger Link can't use yet (a seed, a song, an explosion) is
+injected in the tests where the actor reacts to it.
+
+**4a: doors, switches, torches and webs**
+- `Door_Shutter` whole: every type and style, the Gohma block and Phantom Ganon's bars as their
+  collisions, the Jabu Jabu and boss doors' draws baked. With it:
+  - Player's sliding door: the A press, the walk through, the door camera, the room swap and
+    `Room_FinishRoomChange`, the respawn point, and the wait when the door bars behind him
+    (cutscene actions 2 and 7);
+  - `Actor_DrawDoorLock` and the small keys' count on the HUD (tested on a key-locked door that a
+    test spawns).
+- `z_quake.c` whole: the cameras' shake, for the door's slam and `Obj_Lift`, and for the one-point
+  cases ADR 0029 left out for want of quakes.
+- `Obj_Switch` whole: floor (once, toggle, held), rusty, eye and crystal. The eye's seed hit is
+  injected in the tests.
+- `Obj_Syokudai` whole: golden, timed and wooden torches, their light and flame. A Keese set
+  alight at one (`EnFirefly_ApproachLitTorch`, already ported) now works. Lighting from a stick
+  reads Player's held item, so it waits for 4b; fire is injected in the tests.
+- `Bg_Ydan_Sp` whole: the floor webs bounce under Link, break under a fall of over 750, and
+  rewrite their collision's vertices each frame (the engine gets a DynaPoly whose vertices change;
+  the C writes the object's shared header, so both floor webs share it). The wall webs burn on a
+  switch flag or fire. The burning stick's checks (`Player_IsBurningStickInRange`) are ported and
+  reached in 4b.
+- `Elf_Msg` and `Elf_Msg2` whole.
+- The map and compass in the pause data: `z_map_exp.c`'s data side, `z_map_data.c`'s tables in
+  the pack (format 20), and `z_map_mark.c`'s marks; drawn in milestone 5.
+- A debug start for every room, each checked by placing Link and running frames (he stands, and
+  the room doesn't change).
+- **Exit:** from a debug start on room 0's top floor, Link steps on the switch: the web over room
+  10's door burns (the chime, the flames) and the three golden torches light, with the attention
+  cameras. He opens room 10's sliding door and walks through, the room changes, and the door
+  slams and bars behind him (room 10's enemies are alive), with his pause. That run is the golden.
+  A C-derived test covers the drop through room 0's floor web into room 3.
+
+**4b: the Deku Stick and the props**
+- The Deku Stick, pulled forward from milestone 5: in hand (its bakes), swung as a weapon
+  (`DMG_DEKU_STICK`, its length), broken (`unk_85C`, the piece that falls, its ammo), lit at a
+  torch and burning (`Player_UpdateBurningDekuStick`: 210 frames, the flame at its tip, the stub
+  burnt down), put out in water. It lights the timed torches and burns the webs. It's used from
+  C-Left (`Player_ProcessItemButtons`' C buttons); a save preset and the Start stand-in put owned
+  sticks there.
+- `Bg_Ydan_Hasi` whole: the water, the floating block and the three rising platforms. The spikes'
+  sandbox platform is rebuilt on its init.
+- `Bg_Ydan_Maruta` whole: the rolling log. The ladder's fall on a seed is injected in the tests.
+- `Obj_Kibako2` whole, and `Effect_Ss_Kakera` whole with its callers that are already ported
+  (`En_Kusa`'s and `En_Ishi`'s pieces, a cross-cutting debt). Their `Rand` calls shift the Kokiri
+  Forest runs: expect golden changes there.
+- `Obj_Lift` whole.
+- **Exit:** in room 0, Link lights a Deku Stick at a golden torch on the middle floor, burns the
+  web over room 1's door, and goes through the door. That run is the golden. C-derived tests
+  cover room 4's two timed torches opening its door, room 10's timed torch dropping its chest, and
+  a stick breaking on a hit.
+
+**4c: pushing and Master Quest's extras**
+- Player's push and pull: `func_8083F72C` and the push and pull actions, `PLAYER_STATE2_4`, the
+  block's pull on Link (`dyna.unk_150`), and `CAM_MODE_PUSH_PULL`.
+- `Obj_Oshihiki` whole and `Obj_Makeoshihiki` (room 3's block); `Bg_Haka` whole (room 7's
+  gravestones).
+- `Obj_Timeblock` whole: shown or hidden with its collision, from its flags. The song's side
+  waits for the ocarina, and its `Demo_Effect` stays a placeholder (it spawns only on the song).
+- `Obj_Bombiwa` whole. The explosion is injected in the tests.
+- Room-to-room travel made solid: a C-derived test walks the connections milestone 4 opens
+  (0 to 10, 0 to 1, the drops 0 to 3 and 3 to 9, then 9 to 11 once the room is cleared) through
+  the real doors and drops, from one start.
+- **Exit:** in room 3, Link pushes the block off the upper floor into the pit (0x10, the chime)
+  and climbs onto it. That run is the golden.
+
+The new decisions go in ADRs from 0038. Every part's scripts, docs and goldens are as in 3b.
+
+## Milestone 4a: doors, switches, torches and webs
+
+**Answer:** done. The MQ Deku Tree's sliding doors open, bar and unbar; its switches, torches,
+webs and Navi's hint spots work; the camera shakes; the map and compass are recorded. Every
+actor is ported whole, including the paths a Deku Stick, a seed or an arrow will reach later;
+the tests inject those. The exit holds; its run is the golden `shutter`.
+
+The pack is format 20, in `out/data17`. Decisions are in
+[ADR 0038](adr/0038-sliding-doors-and-room-travel.md) (the doors and room travel),
+[ADR 0039](adr/0039-quakes.md) (quakes) and
+[ADR 0040](adr/0040-switches-torches-webs-and-the-map-data.md) (the rest).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 56 to 58):
+- `test-mechanics.bat`: the milestone's tests;
+- `game-dungeon.bat WHERE`: the game from a debug start: `switch` (room 0's top floor by the
+  floor switch, the default), `lobby-top`, `lobby`, or `room1` to `room10`;
+- `sandbox-shutter.bat`: the exit run headless, its trace and screenshots.
+
+### What was built
+
+**The sliding doors** (`oot_actors::door_shutter`, ADR 0038):
+- `Door_Shutter` whole: every type (plain, barred until the room is cleared or a switch is set,
+  locked by a small key or the boss key, unopenable from behind), every style (the Deku Tree's
+  doors and the other dungeons', the Jabu Jabu door's eight sections, the boss door's texture per
+  dungeon), the bars, the slam with its dust and quake, Gohma's slab and Phantom Ganon's bars with
+  their collision.
+- Player's sliding door: the A press, the walk 20 to the door and 120 past it, the door camera,
+  the room behind loaded and the old one dropped, the respawn point, and the pause when the door
+  bars behind him (cutscene actions 2 and 7).
+- `Player_ProcessSceneCollision` now picks its bg check flags as the C does, so a door's walk
+  skips the doorway's wall.
+- A room's last enemy gone sets its temporary clear flag (`Actor_RemoveFromCategory`), which
+  unbars its doors and shows its room-clear chests.
+- `Actor_DrawDoorLock` (both doors draw it), and the HUD's small key icon and count, in the
+  scenes `Interface_Draw` lists (not the Deku Tree).
+- DynaPolyActor's interact flags (`DynaPolyActor_IsPlayerOnTop` and the like), set by Player and
+  `Actor_UpdateBgCheckInfo`, cleared after the owner's update.
+
+**Quakes** (`oot_game::quake`, ADR 0039): `z_quake.c` whole, run in `Camera_Update`, the shake added
+to the view. The door's slam, Player's roll into a wall and damaging fall, `En_Goroiwa`'s drop and
+the cutscenes' quake commands call it.
+
+**Switches, torches, webs and Navi's tags** (ADR 0040):
+- `Obj_Switch` (`obj_switch`) whole: floor (once, toggle, held), rusty, eye and crystal; the frozen
+  kind's ice (`Obj_Ice_Poly`) is a placeholder. Room 0's top-floor switch burns the web over room
+  10's door and lights the golden torches.
+- `Obj_Syokudai` (`obj_syokudai`) whole: golden torches lit by a switch flag, timed ones lit by fire
+  (several lit at once set their flag), the wooden one always lit, the flame and its point light,
+  and a Keese catching fire at a lit torch (`En_Firefly`'s hook now reads the torch).
+- `Bg_Ydan_Sp` (`bg_ydan_sp`) whole: the floor webs bounce under Link, break under a fall of over
+  750 (the drop from room 0's top floor to room 3), and rewrite their collision's vertices each
+  frame (an object header shared through `Dyna::replace_shared_header`); the wall webs burn on a
+  switch flag or fire.
+- `Elf_Msg` and `Elf_Msg2` (`elf_msg`, `elf_msg2`) whole: the spots where Navi speaks up, and the
+  tags to check with C-Up.
+
+**The map and compass** (`oot_game::map`, ADR 0040): `z_map_exp.c`'s data side (the rooms visited,
+the floor Link is on, the palettes, `mapIndex`), with `z_map_data.c`'s tables and MQ's map marks
+in the pack (`table/map`, checked against the ROM). Nothing is drawn: milestone 5's pause menu
+will.
+
+**Debug starts:** `playthrough::DEKU_TREE_ROOM_STARTS`, one per room but room 11 (its whole floor is
+the drop to Gohma), plus one on room 0's top floor.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game18`, `OOT_DATA_DIR=out/data17`): 501
+passed, 0 failed, 1 ignored. 54 are new, with their expectations from the C:
+- **`oot_actors --test doors`** (7): the doors room 0 spawns (types, style, object, the init's
+  `home.pos.z` quirk); through room 10's door frame by frame (the offer, the walk's targets, the
+  door camera, 3 to 15 a frame up to 200, the slam at 30 a frame, 11 dust clouds, the respawn
+  point, 32 frames held); room 10's clear unbarring it (the attention cameras, the bars in 6
+  frames, as f32 steps them); room 1's door barred by its eye switch's flag and back; a key spent
+  on a key-locked door (10 frames of unlocking); the draw from Link's side only, and the lock's
+  chains; Gohma's slab falling and bouncing in her room.
+- **`oot_actors --test switches`** (7): room 0's floor switch (pressed, the attention camera, down,
+  staying down), room 5's held switch, room 3's eye switch hit with a seed (from the right side
+  only), toggle floor and crystal switches, the targetable crystal and the frozen eye.
+- **`oot_actors --test torches`** (6): room 0's golden torches lit by 0x27, room 4's timed pair
+  setting 0x19, one alone burning out, room 10's wooden and timed torches, the Deku Stick's paths,
+  a Keese catching fire.
+- **`oot_actors --test webs`** (9): the floor web's swing and bounce, broken by a long fall with Link
+  through into room 3, burnt by its switch flag, a burning stick or fire, a destroyed web staying
+  gone.
+- **`oot_actors --test elf_msg`** (4): Navi's forced text, the kills on flags, `Elf_Msg2` through C-Up.
+- **`oot_actors --test map`** (5): entering the Deku Tree, a room change, the floor from Link's
+  height, Kokiri Forest, the map and compass chests.
+- **`oot_actors --test debug_starts`** (1): every room's start; **`--test shutter_run`** (1): the
+  exit run.
+- **`oot_game`**: 11 quake tests (each type frame by frame, the countdown, the table's limits, the
+  camera's view shaken) and the key counter's.
+- **`oot_import --test pack`**: the map tables against the ROM; **`eng_collision`**: the shared
+  header.
+- Five older tests changed where the new actors meet them, each the game's behaviour:
+  - `switches`: flag 0x27 also burns the web (a second chime the same frame) and lights the
+    golden torches (more attention cameras to wait out);
+  - `scrubs`: solving the hint scrubs' puzzle clears room 9, whose door to room 11 now unbars with
+    attention cameras that hold the actors a while;
+  - `skulltulas`: the Skullwalltula's vines and the Gold Skulltula's ledge are in Navi's hint
+    spots (`Elf_Msg` 0x1F02): the tests set their flag, as if heard;
+  - `torches`: the tests clear their room, which now unbars its doors with their own attention
+    cameras;
+  - `gohma_larvae`: an egg's fragments come by `Rand` (half a chance every 16 frames); with room 0's
+    torches drawing too, 128 frames happened to bring none, so the test watches 512.
+
+**The exit run** (`Route::Shutter`, `--script shutter`, from a debug start on room 0's top floor,
+by the switch): Link steps on the switch (`switch_pressed` 49); the web over room 10's door burns
+and the golden torches light with their attention cameras (`web_burnt` 114). On the way to the
+door the Keese perched above it dives and bites him (half a heart), and at the door Navi speaks
+up (`Elf_Msg` 0x0103, text 0x103). He opens the door (`door_opened` 525), walks through, the door
+slams (548) and bars behind him (room 10's enemies are alive), and he's let go (`door_barred`
+581). 581 frames.
+
+**The goldens.** Against milestone 3b's build (`target/game17`, cd5f68f, on data16):
+- **`course_run-roll`, `course_run-roll_child` and `course_pit` sheets:** the camera shakes on the
+  roll into a wall and the damaging fall (quakes); their traces are the same bytes.
+- **`playthrough`, `new_save_deku_tree`, `new_file_deku_tree`:** the same until the end of the Deku
+  Tree's intro, then the dungeon camera's eye sits lower: room 0's floor web has collision now.
+  (Without `Bg_Ydan_Sp` registered they're the baseline's bytes.)
+- **`scrub` and `combat`:** room 4's two and room 0's three torches call `Rand` at init. The scrub's
+  run differs from frame 151 in the battle camera only; the combat run's steering from frame 432,
+  `blocked` at 717 (720), `keese_killed` at 779 (782). (Without `Obj_Syokudai` registered they're
+  the baseline's bytes.)
+- **`deku_baba`** and every other case: the same bytes.
+- **New case `shutter`:** the exit run, the same bytes over two runs.
+
+Re-recorded and logged in [golden/README.md](../golden/README.md): 89 hashes, 65 cases.
+
+### Decisions
+
+- **[ADR 0038](adr/0038-sliding-doors-and-room-travel.md):** `Door_Shutter` whole with Player's
+  sliding door; the door walks skip walls as in the C; the room's temporary clear on its last
+  enemy; the interact flags in a `Cell` on the engine's bg actor; the key counter and the lock;
+  the debug starts; the exit's run.
+- **[ADR 0039](adr/0039-quakes.md):** `z_quake.c` whole, its table a code static on the play state;
+  the shake as offsets on the camera; the callers wired.
+- **[ADR 0040](adr/0040-switches-torches-webs-and-the-map-data.md):** each actor whole, its later
+  triggers injected in the tests; the shared web header; a bake per swapped texture; the torch's
+  unshifted `torchType` (`@bug (game)`); the map's state and tables; pack format 20.
+- **The ports ran in parallel** as five worktree agents (the switches, the torches and Navi's tags,
+  the webs, the quakes, the map), with the doors here; the shared plumbing (the interact flags)
+  was written first and handed to each.
+- **The exit's run plays the room as it is:** the Keese's dive and Navi's hint are part of it, not
+  removed; the run re-lines Link up at the door if he's knocked away, and reads the text.
+
+### Known gaps
+
+- **Not usable by hand yet:** the timed torches and most webs need a burning Deku Stick (4b); the
+  eye switches and room 2's ladder need the slingshot (milestone 5), so rooms 2 and 4 to 8 are
+  reached by debug starts only.
+- **Placeholders still in the Deku Tree:** `Bg_Ydan_Hasi`'s init and kinds, `Bg_Ydan_Maruta`,
+  `Obj_Kibako2` (room 0's Gold Skulltula is in the open), `Obj_Lift` (4b); `Obj_Timeblock`,
+  `Obj_Bombiwa`, `Obj_Makeoshihiki`, `Bg_Haka` (4c); `Obj_Ice_Poly`. So room 10's floor switch
+  raises nothing yet.
+- **Nothing of the map is drawn** (milestone 5's pause menu, the HUD's minimap).
+- **Quakes:** the roll part isn't drawn (the renderer keeps Y up), nor is the shake applied to the
+  prerendered backgrounds or the skybox. No rumble anywhere.
+- **The Gohma slab** shakes the main camera, not `Boss_Goma`'s sub camera (milestone 6).
+- The torches' glow (`Lights_GlowCheck`) and the actors' cull zones aren't ported.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-mechanics.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-shutter.bat
+```
+
+### By hand
+
+`game-dungeon.bat WHERE` (or menu 57). WASD the stick, Q is Z, E is B, R the shield, Space A,
+I is C-Up (Navi).
+1. **`switch`** (the default): walk onto the floor switch in front of you. It sinks with a click
+   and a chime; the camera turns to the switch, then to each of the three golden torches as they
+   light, and the web over the door to your left (across the floor, by the torch) burns away in
+   flames. Then walk to that door: the Keese above it dives at you (R blocks it). In front of the
+   door Navi speaks up; read it. Face the door and press Space: it slides up, the camera changes,
+   Link walks through; behind him it slams down with dust and a shake, metal bars drop over it,
+   and Link starts back. Room 10 is beyond: kill its Deku Baba and the larvae (walk near the eggs
+   to hatch them); when the last one dies, the camera turns to the door, the bars lift, and the
+   big chest appears (the slingshot).
+2. **`lobby-top`**, then jump down the middle: you land on the big web on the ground floor, which
+   sags and tears, and you drop through into the basement (room 3).
+3. **`lobby`**: walk across the web in the middle of the ground floor: it bounces under you with a
+   creak.
+4. **`room3`**: one floor switch (on the raised floor at the back) lights the room's golden torch,
+   with the camera turning to it; the other (by the torch) drops a small chest from above (a Deku
+   Shield) with its own camera.
+5. **`room5`** and **`room7`**: stand on the floor switch: the golden torches light while you stand
+   there; step off and they go out.
+6. **`room9`**: the hint scrubs (as in 3b). Solved, the camera shows the door to room 11 unbarring;
+   go through it and you drop into Gohma's room (she's a placeholder).
+7. Anywhere: roll into a wall: the camera gives a small shake. Navi now speaks up at her MQ hint
+   spots by herself; at the others (room 4's torches, for one) Z-target the spot and press I
+   (C-Up).
+- **What to report:** whether the door's timing feels right (how close you must stand, how fast it
+  opens and slams, Link's pause), the switch's press and the attention cameras' pacing, the web's
+  bounce and tearing, the torches' flames and light, and whether the shakes look right.

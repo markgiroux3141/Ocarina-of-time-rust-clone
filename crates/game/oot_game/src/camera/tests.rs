@@ -47,12 +47,13 @@ fn update_with(c: &mut GameCamera, d: &CameraData, p: &PlayerView, waist: Vec3, 
         player_melee_weapon_active: false,
         health,
         skybox_disabled: false,
+        cameras: [Some((c.eye, c.at)), None, None, None],
     };
     let mut g = CameraGlobals::main_init();
     g.scene_init_letterbox_timer = 0;
     let mut op = OnePointStatics::new(&d.onepoint);
     let mut rand = crate::play::Rand::default();
-    c.update(d, &f, &mut Letterbox::new(), &mut g, &mut op, &mut rand);
+    c.update(d, &f, &mut Letterbox::new(), &mut g, &mut op, &mut rand, &mut crate::quake::QuakeStatics::default());
 }
 
 /// The main camera behind Link in `mode`, its eye (and `eyeNext`) moved to `eye`.

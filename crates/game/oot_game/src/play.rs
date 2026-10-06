@@ -291,6 +291,9 @@ pub struct PlayState {
     /// The one-point cutscenes' statics (`crate::onepoint`): code segment statics, carried over
     /// scene changes.
     pub onepoint: crate::onepoint::OnePointStatics,
+    /// `z_quake.c`'s request table (`crate::quake`): code segment statics, carried over scene
+    /// changes.
+    pub quake: crate::quake::QuakeStatics,
     /// `play->view`'s eye, at and fovy: what the active camera's last `Camera_Update` set
     /// (`View_LookAt`), which one-point cutscenes start from.
     pub view: crate::camera::CamView,
@@ -364,6 +367,8 @@ pub struct PlayState {
     pub messages: Option<Arc<MessageTable>>,
     /// `interfaceCtx`.
     pub interface_ctx: InterfaceContext,
+    /// `z_map_exp.c`'s state (`crate::map`): `interfaceCtx`'s map fields, its REGs and statics.
+    pub map: crate::map::MapState,
     /// `csCtx` (`crate::cutscene`), and `z_demo.c`'s statics.
     pub cs_ctx: crate::cutscene::CutsceneContext,
     pub demo: crate::cutscene::DemoStatics,
@@ -461,6 +466,7 @@ impl PlayState {
             next_cam_id: CAM_ID_MAIN,
             cam_globals: CameraGlobals::main_init(),
             onepoint: crate::onepoint::OnePointStatics::new(&data.camera.onepoint),
+            quake: Default::default(),
             view,
             letterbox: Letterbox::new(),
             camera_kind: CameraKind::Game,
@@ -524,6 +530,7 @@ impl PlayState {
             overlay_statics: Default::default(),
             messages: None,
             interface_ctx: InterfaceContext::default(),
+            map: Default::default(),
             next_play_init: false,
             updated: false,
             pre_update_fill: Some([0, 0, 0, 255]),
@@ -679,7 +686,7 @@ impl PlayState {
             self.audio.stop_sfx_by_pos(crate::audio::sfx::SfxPos::Actor(h));
             a.destroy(self);
             self.actors.put_back(h, a);
-            self.actors.remove(h);
+            self.actor_remove_from_category(h);
             if self.player == Some(h) {
                 self.player = None;
             }
@@ -711,6 +718,10 @@ impl PlayState {
             self.cur_actor = Some(h);
             a.update(self);
             self.cur_actor = None;
+            // DynaPoly_UnsetAllInteractFlags.
+            if let Some(bg) = a.dyna_bg_id() {
+                self.col.dyna.unset_all_interact_flags(bg);
+            }
         }
         a.base_mut().col_chk_info.reset_damage();
         self.actors.put_back(h, a);
@@ -1000,6 +1011,7 @@ impl PlayState {
         let player_waist = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.body_part(crate::actor_ctx::PLAYER_BODYPART_WAIST)).unwrap_or(pv.pos);
         let player_melee_weapon_active = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).is_some_and(|p| p.melee_weapon_state() != 0);
         let oc_lines = self.col_chk.oc_lines(&mut self.actors);
+        let cameras = std::array::from_fn(|i| self.camera(i as i16).map(|c| (c.eye, c.at)));
         let f = CamFrame {
             col: &self.col,
             player: pv,
@@ -1020,13 +1032,14 @@ impl PlayState {
             player_melee_weapon_active,
             health: self.save.health,
             skybox_disabled: self.scene.as_ref().and_then(|s| s.room(self.room_ctx.cur.num)).is_some_and(|r| r.skybox_disabled),
+            cameras,
         };
         let cam = if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut((id - CAM_ID_SUB_FIRST) as usize).and_then(|c| c.as_mut()) };
         let Some(cam) = cam else { return };
-        cam.update(&self.data.camera, &f, &mut self.letterbox, &mut self.cam_globals, &mut self.onepoint, &mut self.rand);
-        // View_LookAt: an active camera's update sets play->view.
+        cam.update(&self.data.camera, &f, &mut self.letterbox, &mut self.cam_globals, &mut self.onepoint, &mut self.rand, &mut self.quake);
+        // View_LookAt: an active camera's update sets play->view (with the quakes' shake).
         if cam.status == crate::camera::CAM_STAT_ACTIVE {
-            self.view = crate::camera::CamView { eye: cam.eye, at: cam.at, fov: cam.fov };
+            self.view = cam.shaken_view();
         }
         // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y).
         let write = cam.player_write.take();
@@ -1184,6 +1197,11 @@ impl PlayState {
             game_over_inactive: self.game_over_ctx.state == crate::game_over::GAMEOVER_INACTIVE,
         };
         self.interface_ctx.update(&mut self.save, &mut self.audio, &f);
+        // Map_Update, which Interface_Update calls between the HUD's fade and the health
+        // accumulator (neither reads the other's state).
+        if self.interface_ctx.initialised {
+            self.map_update();
+        }
     }
 
     /// Runs `f` on the message context with this frame's view of play (nothing without the
@@ -1373,7 +1391,7 @@ impl PlayState {
     /// `play->view.eye` for the active camera.
     fn view_eye(&self) -> Vec3 {
         match self.camera_kind {
-            CameraKind::Game => self.active_camera().eye,
+            CameraKind::Game => self.active_camera().shaken_view().eye,
             CameraKind::Follow => self.follow_camera.eye(),
         }
     }
@@ -1382,8 +1400,8 @@ impl PlayState {
     fn camera_view_proj(&self) -> Mat4 {
         let (eye, at, fov) = match self.camera_kind {
             CameraKind::Game => {
-                let c = self.active_camera();
-                (c.eye, c.at, c.fov)
+                let v = self.active_camera().shaken_view();
+                (v.eye, v.at, v.fov)
             }
             CameraKind::Follow => (self.follow_camera.eye(), self.follow_camera.at, 50.0),
         };
@@ -1402,10 +1420,7 @@ impl PlayState {
             }
         }
         let view = match self.camera_kind {
-            CameraKind::Game => {
-                let c = self.active_camera();
-                CamView { eye: c.eye, at: c.at, fov: c.fov }
-            }
+            CameraKind::Game => self.active_camera().shaken_view(),
             CameraKind::Follow => CamView { eye: self.follow_camera.eye(), at: self.follow_camera.at, fov: 50.0 },
         };
         let active = self.active_cam_id;

@@ -126,6 +126,8 @@ pub struct Restrictions {
 pub struct InterfaceContext {
     /// `Interface_Init` ran (in `Play_Init`): the HUD is drawn and updated.
     pub initialised: bool,
+    /// `play->sceneId`, which `Interface_Draw` reads (the small key counter's scenes).
+    pub scene_id: u16,
     /// `unk_1EC`: the A button's flip (1, 2: to the new label; 3, 4 when paused).
     pub unk_1ec: u16,
     /// `unk_1EE`: the do-action the A button shows; `unk_1F0`: the one it's turning to.
@@ -179,6 +181,7 @@ impl Default for InterfaceContext {
     fn default() -> InterfaceContext {
         InterfaceContext {
             initialised: false,
+            scene_id: 0,
             unk_1ec: 0,
             unk_1ee: 0,
             unk_1f0: 0,
@@ -276,7 +279,7 @@ impl InterfaceContext {
     pub fn init(save: &mut SaveContext, tables: &InterfaceTables, scene_id: u16) -> InterfaceContext {
         save.next_hud_visibility_mode = 0;
         save.hud_visibility_mode = 0;
-        let mut c = InterfaceContext { initialised: true, ..Default::default() };
+        let mut c = InterfaceContext { initialised: true, scene_id, ..Default::default() };
         // Health_InitMeter.
         c.unk_228 = 0x140;
         c.unk_226 = save.health;
@@ -743,7 +746,28 @@ impl InterfaceContext {
         self.health_draw_meter(save, out);
         // Rupee icon: Gfx_TextureIA8(gRupeeCounterIconTex, 16, 16, 26, 206, 16, 16).
         out.push(Sprite::rect(RUPEE_ICON, 26.0, 206.0, 42.0, 222.0, Some([200, 255, 100, self.magic_alpha as u8]), Some([0, 80, 0, 255])));
-        // (The small key counter only shows in dungeons.)
+        // The small key icon and counter, in the scenes with small keys (not the first three
+        // dungeons), once the dungeon has had one (`dungeonKeys[mapIndex] >= 0`).
+        if KEY_COUNTER_SCENES.contains(&self.scene_id)
+            && let Some(&keys) = save.inventory.dungeon_keys.get(save.map_index as usize)
+            && keys >= 0
+        {
+            // Gfx_TextureIA8(gSmallKeyCounterIconTex, 16, 16, 26, 190, 16, 16).
+            out.push(Sprite::rect(SMALL_KEY_ICON, 26.0, 190.0, 42.0, 206.0, Some([200, 230, 255, self.magic_alpha as u8]), Some([0, 0, 20, 255])));
+            // counterDigits[2], [3]: tens and units (Gfx_TextureI8 after the prim-alpha combiner).
+            let prim = Some([255, 255, 255, self.magic_alpha as u8]);
+            let (mut tens, mut units) = (0i16, keys as i16);
+            while units >= 10 {
+                tens += 1;
+                units -= 10;
+            }
+            let mut x = 42.0;
+            if tens != 0 {
+                out.push(Sprite::rect(digit_sprite(tens as usize), x, 190.0, x + 8.0, 206.0, prim, None));
+                x += 8.0;
+            }
+            out.push(Sprite::rect(digit_sprite(units as usize), x, 190.0, x + 8.0, 206.0, prim, None));
+        }
         let rgb = if save.rupees == save.wallet_capacity() {
             [120, 255, 0]
         } else if save.rupees != 0 {
@@ -950,6 +974,27 @@ fn a_button_view(top: f32, bottom: f32, left: f32, right: f32) -> Mat4 {
 
 // The HUD's sprites.
 const RUPEE_ICON: &str = "hud/rupee_icon";
+const SMALL_KEY_ICON: &str = "hud/small_key_icon";
+
+/// The scenes `Interface_Draw`'s `switch` shows the small key counter in (`scene_table.h`'s ids):
+/// the dungeons with small keys and the Treasure Chest Shop, not the Deku Tree, Dodongo's
+/// Cavern or Jabu-Jabu's Belly.
+const KEY_COUNTER_SCENES: [u16; 14] = [
+    0x03, // SCENE_FOREST_TEMPLE
+    0x04, // SCENE_FIRE_TEMPLE
+    0x05, // SCENE_WATER_TEMPLE
+    0x06, // SCENE_SPIRIT_TEMPLE
+    0x07, // SCENE_SHADOW_TEMPLE
+    0x08, // SCENE_BOTTOM_OF_THE_WELL
+    0x09, // SCENE_ICE_CAVERN
+    0x0A, // SCENE_GANONS_TOWER
+    0x0B, // SCENE_GERUDO_TRAINING_GROUND
+    0x0C, // SCENE_THIEVES_HIDEOUT
+    0x0D, // SCENE_INSIDE_GANONS_CASTLE
+    0x0E, // SCENE_GANONS_TOWER_COLLAPSE_INTERIOR
+    0x0F, // SCENE_INSIDE_GANONS_CASTLE_COLLAPSE
+    0x10, // SCENE_TREASURE_BOX_SHOP
+];
 const BUTTON: &str = "hud/button";
 const A_BUTTON: &str = "hud/a_button";
 const EMPTY_C: [&str; 3] = ["hud/empty_c_left", "hud/empty_c_down", "hud/empty_c_right"];
@@ -1031,6 +1076,8 @@ pub fn bakes() -> Vec<SpriteBake> {
     }
     // The rupee icon after Gfx_SetupDL_39Overlay (G_CC_MODULATEIA_PRIM).
     v.push(SpriteBake { name: RUPEE_ICON.into(), tex: param("gRupeeCounterIconTex"), load: ia8(16, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: 16, t: 16 } });
+    // The small key icon, the same way.
+    v.push(SpriteBake { name: SMALL_KEY_ICON.into(), tex: param("gSmallKeyCounterIconTex"), load: ia8(16, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: 16, t: 16 } });
     // The counter digits: Gfx_TextureI8 after the prim-alpha combiner.
     for d in 0..10 {
         let mut setup = setup_dl::setup_dl_39();
@@ -1156,6 +1203,34 @@ mod tests {
         // 31400 / WREG(5) (3) a frame: 10466 → past 15700, so -15700 → -5233 → 0.
         assert_eq!(angles, [(1, 10466), (2, -15700), (2, -5233), (0, 0)]);
         assert_eq!((c.unk_1ee, c.do_action_segment[0]), (DO_ACTION_CHECK, Some(DO_ACTION_CHECK)));
+    }
+
+    #[test]
+    fn the_small_key_counter_shows_in_the_dungeons_with_keys() {
+        // What Interface_Draw puts on the key row, y 190 to 206: the icon at x 26, then the
+        // counter's digits from x 42, 8 apart.
+        let key_row = |scene_id: u16, keys: i8| {
+            let mut s = new_save();
+            let c = InterfaceContext::init(&mut s, &InterfaceTables::default(), scene_id);
+            s.map_index = 3;
+            s.inventory.dungeon_keys[3] = keys;
+            let mut out = Vec::new();
+            c.draw_hud_1(&s, &mut out);
+            let on_row = |x0: f32, w: f32| move |sp: &&crate::sprite::Sprite| sp.transform == crate::sprite::rect_transform(x0, 190.0, x0 + w, 206.0);
+            let mut row: Vec<String> = out.iter().filter(on_row(26.0, 16.0)).map(|sp| sp.name.clone()).collect();
+            for k in 0..2 {
+                row.extend(out.iter().filter(on_row(42.0 + 8.0 * k as f32, 8.0)).map(|sp| sp.name.clone()));
+            }
+            row
+        };
+        // SCENE_FOREST_TEMPLE: the icon and the units; the tens only when non-zero.
+        assert_eq!(key_row(0x03, 3), ["hud/small_key_icon", "hud/digit3"]);
+        assert_eq!(key_row(0x03, 12), ["hud/small_key_icon", "hud/digit1", "hud/digit2"]);
+        assert_eq!(key_row(0x03, 0), ["hud/small_key_icon", "hud/digit0"]);
+        // dungeonKeys < 0: the dungeon never had a key.
+        assert!(key_row(0x03, -1).is_empty());
+        // SCENE_DEKU_TREE isn't one of the switch's scenes.
+        assert!(key_row(0x00, 3).is_empty());
     }
 
     #[test]

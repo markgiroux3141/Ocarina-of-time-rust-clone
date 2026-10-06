@@ -49,9 +49,12 @@ fn deku_tree_init(a: &Arc<GameAssets>) -> PlayState {
     PlayState::play_init_with(a.clone(), data().unwrap(), rules().unwrap(), save, audio).expect("Play_Init")
 }
 
-/// `deku_tree_init`, the entrance's walk in over.
+/// `deku_tree_init`, the entrance's walk in over. Navi's hints by the vines and the Gold
+/// Skulltula's ledge (room 0's three `Elf_Msg` 0x1F02) as if heard: their flag 0x1F set, so they
+/// go (`ElfMsg_KillCheck`) instead of stopping Link for Navi's forced text.
 fn deku_tree(a: &Arc<GameAssets>) -> PlayState {
     let mut w = deku_tree_init(a);
+    w.flags.set_switch(0x1F);
     idle(&mut w, 60);
     w
 }

@@ -29,6 +29,15 @@ pub const DPM_ROTATE: u32 = 2;
 pub const BGACTOR_IN_USE: u8 = 1 << 0;
 pub const BGACTOR_1: u8 = 1 << 1;
 
+/// `DynaPolyActor.interactFlags` (`actor.h`): what stood on or over the bg actor since its last
+/// update. Player sets the two Player flags from his floor (`DynaPoly_SetPlayerOnTop`,
+/// `DynaPoly_SetPlayerAbove`); `Actor_UpdateBgCheckInfo` sets the actor flags (`func_80043334`);
+/// `Actor_UpdateAll` clears them after the owner's update (`DynaPoly_UnsetAllInteractFlags`).
+pub const DYNA_INTERACT_ACTOR_ON_TOP: u8 = 1 << 0;
+pub const DYNA_INTERACT_PLAYER_ON_TOP: u8 = 1 << 1;
+pub const DYNA_INTERACT_PLAYER_ABOVE: u8 = 1 << 2;
+pub const DYNA_INTERACT_ACTOR_SWITCH_PRESSED: u8 = 1 << 3;
+
 /// `ScaleRotPos`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ScaleRotPos {
@@ -111,6 +120,9 @@ pub struct BgActor {
     pub sphere_radius: i16,
     pub min_y: f32,
     pub max_y: f32,
+    /// The owner's `interactFlags` (`DYNA_INTERACT_*`). A `Cell`, since the C sets them from
+    /// code that only reads the collision (`Actor_UpdateBgCheckInfo`, Player's floor check).
+    pub interact_flags: std::cell::Cell<u8>,
 }
 
 /// `DynaCollisionContext`.
@@ -175,6 +187,8 @@ impl Dyna {
             sphere_radius: 0,
             min_y: 0.0,
             max_y: 0.0,
+            // DynaPolyActor_Init's interactFlags = 0.
+            interact_flags: std::cell::Cell::new(0),
         };
         if slot == self.actors.len() {
             self.actors.push(a);
@@ -218,6 +232,55 @@ impl Dyna {
         if let Some(a) = self.actors.get_mut(bg as usize) {
             a.ceiling_disabled = true;
             self.invalidate = true;
+        }
+    }
+
+    /// Sets `flag` (`DYNA_INTERACT_*`) on bg actor `bg`, if it's one in use (`DynaPoly_GetActor`
+    /// non-NULL): `DynaPolyActor_SetActorOnTop`, `_SetPlayerOnTop`, `_SetPlayerAbove`,
+    /// `_SetSwitchPressed`, reached through `DynaPoly_SetPlayerOnTop` and the like.
+    pub fn set_interact_flag(&self, bg: u16, flag: u8) {
+        if self.is_bg_actor(bg) {
+            let a = &self.actors[bg as usize];
+            a.interact_flags.set(a.interact_flags.get() | flag);
+        }
+    }
+
+    /// `func_80043334` (`Actor_UpdateBgCheckInfo`'s floor): an actor on bg actor `bg`; one with
+    /// `ACTOR_FLAG_CAN_PRESS_SWITCHES` presses it too.
+    pub fn set_actor_on_top(&self, bg: u16, can_press_switches: bool) {
+        // DynaPoly_IsBgIdBgActor, then DynaPoly_GetActor.
+        self.set_interact_flag(bg, DYNA_INTERACT_ACTOR_ON_TOP);
+        if can_press_switches {
+            self.set_interact_flag(bg, DYNA_INTERACT_ACTOR_SWITCH_PRESSED);
+        }
+    }
+
+    /// `DynaPolyActor_IsActorOnTop`, `_IsPlayerOnTop`, `_IsPlayerAbove`, `_IsSwitchPressed`:
+    /// whether bg actor `bg`'s `interactFlags` has `flag`.
+    pub fn interact_flag(&self, bg: u16, flag: u8) -> bool {
+        self.actors.get(bg as usize).is_some_and(|a| a.interact_flags.get() & flag != 0)
+    }
+
+    /// `DynaPoly_UnsetAllInteractFlags` (after the owner's update in `Actor_UpdateAll`):
+    /// `DynaPolyActor_UnsetAllInteractFlags` on bg actor `bg`, if it's in use.
+    pub fn unset_all_interact_flags(&self, bg: u16) {
+        if let Some(a) = self.actors.get(bg as usize)
+            && a.in_use()
+        {
+            a.interact_flags.set(0);
+        }
+    }
+
+    /// A write into a collision header that bg actors share: the C's bg actors point at their
+    /// object's `CollisionHeader` (`DynaPoly_SetBgActor`), so an actor that rewrites its object's
+    /// vertices (`BgYdanSp_UpdateFloorWebCollision`) changes them for every bg actor made from
+    /// it. Every bg actor in use whose header is `old` (the same `Arc`) now has `new`. Nothing
+    /// is rebuilt here, as in the C: `DynaPoly_UpdateContext` reads the header again only for a
+    /// bg actor whose transform changed since last frame, or when the lookup is invalidated
+    /// (`DynaPoly_AddBgActorToLookup`); one standing still keeps the vertices it last expanded.
+    pub fn replace_shared_header(&mut self, old: &Arc<CollisionHeader>, new: Arc<CollisionHeader>) {
+        for a in self.actors.iter_mut().filter(|a| a.in_use() && Arc::ptr_eq(&a.header, old)) {
+            a.header = new.clone();
         }
     }
 

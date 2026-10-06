@@ -978,4 +978,40 @@ mod tests {
         }
         assert_eq!(c.dyna.set_bg_actor(plat, at(0.0), 0), BG_ACTOR_MAX);
     }
+
+    /// Two bg actors made from one header (as `DynaPoly_SetBgActor` points both at their object's
+    /// `CollisionHeader`): a write into it reaches both, but `DynaPoly_AddBgActorToLookup` reads
+    /// the header again only for one whose transform changed, or when the lookup is invalidated.
+    #[test]
+    fn a_shared_headers_new_vertices_reach_a_bg_actor_when_it_moves_or_the_lookup_is_invalidated() {
+        use crate::dyna::BgActorSource;
+        let mut c = box_room();
+        let mut b = CollisionBuilder::new();
+        let s = b.surface(0, 0);
+        b.quad(Vec3::new(-50.0, 0.0, 50.0), Vec3::new(50.0, 0.0, 50.0), Vec3::new(50.0, 0.0, -50.0), Vec3::new(-50.0, 0.0, -50.0), s);
+        let plat = std::sync::Arc::new(b.finish());
+        let at = |x: f32, y: f32| BgActorSource { pos: Vec3::new(x, y, 0.0), shape_rot: [0; 3], scale: Vec3::ONE, shape_y_offset: 0.0 };
+        let still = c.dyna.set_bg_actor(plat.clone(), at(-120.0, 10.0), 0);
+        let moving = c.dyna.set_bg_actor(plat.clone(), at(0.0, 10.0), 0);
+        c.dyna.update_context();
+        c.dyna.update_prev_transforms();
+        let top = |c: &CollisionContext, x: f32| c.entity_raycast_down(Vec3::new(x, 100.0, 0.0)).0;
+        assert_eq!((top(&c, -120.0), top(&c, 0.0)), (10.0, 10.0));
+
+        // The shared header's vertices go up 5.
+        let mut raised = (*plat).clone();
+        raised.vertices.iter_mut().for_each(|v| v[1] += 5);
+        let raised = std::sync::Arc::new(raised);
+        c.dyna.replace_shared_header(&plat, raised.clone());
+        assert!(std::sync::Arc::ptr_eq(&c.dyna.actors[still as usize].header, &raised));
+        c.dyna.set_source(moving, at(0.0, 11.0));
+        c.dyna.update_context();
+        c.dyna.update_prev_transforms();
+        // The one that moved reads the new vertices; the one standing still keeps its old ones.
+        assert_eq!((top(&c, -120.0), top(&c, 0.0)), (10.0, 16.0));
+        // DynaPoly_EnableCollision invalidates the lookup: both are expanded again.
+        c.dyna.set_collision_disabled(still, false);
+        c.dyna.update_context();
+        assert_eq!((top(&c, -120.0), top(&c, 0.0)), (15.0, 16.0));
+    }
 }

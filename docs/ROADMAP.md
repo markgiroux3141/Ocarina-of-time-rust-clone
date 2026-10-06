@@ -78,8 +78,13 @@ Milestone 3b, the rest of the Deku Tree's enemies, is done
 ([ADR 0037](adr/0037-the-deku-trees-other-enemies.md)): the Deku Scrubs (with the salesman a
 Business Scrub becomes), the Skulltula, the Skullwalltulas and Gold Skulltulas (with the token,
 the save's Gold Skulltula flags), Gohma's eggs and larvae (their boss side waiting for
-`Boss_Goma`), four more effect overlays; pack format 19. Next: milestone 4, the dungeon's
-mechanics.
+`Boss_Goma`), four more effect overlays; pack format 19.
+Milestone 4a, the dungeon's doors, switches, torches and webs, is done
+([ADR 0038](adr/0038-sliding-doors-and-room-travel.md), [ADR 0039](adr/0039-quakes.md),
+[ADR 0040](adr/0040-switches-torches-webs-and-the-map-data.md)): the sliding doors with Player's
+side and small keys, the quakes, the switches, torches, webs and Navi's hint spots, the map and
+compass as data, a debug start per room; pack format 20. Next: milestone 4b, the Deku Stick and
+the props.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -268,15 +273,26 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
      - **Exit:** Link blocks a hit with the shield, and fights a Keese and a withered Deku Baba in the Deku Tree with the battle camera; the kills show their effects and drop items. *(Done: `Route::Combat`, the golden `combat`; `En_Nutsball` pulled forward from 3b for the deflection, `Item_Shield` ported.)*
    - **3b, the rest of the MQ Deku Tree's enemies** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 3b and [ADR 0037](adr/0037-the-deku-trees-other-enemies.md)): `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6).
      - **Exit:** from debug starts in their rooms, Link bounces a Deku Scrub's nut back to knock it out and catches it, kills a Skullwalltula, a Gold Skulltula (its token collected) and a Skulltula, and a Gohma egg hatches and its larva is killed. *(Done: `Route::Scrub`, the golden `scrub`, for the Mad Scrub; the rest by C-derived tests from debug starts in their rooms and by hand. `En_Dns`, the salesman a caught Business Scrub becomes, and `En_Si`, the token, ported whole; `EffectBlure`, the Skulltula's trail, still not.)*
-4. **Dungeon mechanics:**
-   - `Door_Shutter` and small keys;
-   - switches, torches (lighting Deku sticks), webs to burn or fall through;
-   - the map and compass in the pause data;
-   - `Bg_Ydan_*` (`Bg_Ydan_Hasi` is ported from the spikes);
-   - the crates and pots (`Obj_Kibako2`: room 0's hides a Gold Skulltula, out in the open while
-     it's a placeholder).
+4. **Dungeon mechanics,** split in three (decided 2026-10-06; every actor ported whole, the
+   triggers Link can't use yet injected in the tests):
+   - **4a, doors, switches, torches and webs** (done: see [GAME-05](GAME-05-deku-tree.md)
+     milestone 4a and ADRs [0038](adr/0038-sliding-doors-and-room-travel.md),
+     [0039](adr/0039-quakes.md), [0040](adr/0040-switches-torches-webs-and-the-map-data.md)):
+     `Door_Shutter` with Player's sliding door and small keys; `z_quake.c`; `Obj_Switch`,
+     `Obj_Syokudai`, `Bg_Ydan_Sp`, `Elf_Msg`, `Elf_Msg2`; the map and compass as data (drawn in
+     milestone 5); a debug start per room.
+     - **Exit:** from room 0's top floor, the switch burns the web and Link goes through room 10's
+       sliding door, which bars behind him. *(Done: `Route::Shutter`, the golden `shutter`.)*
+   - **4b, the Deku Stick and the props:** the Deku Stick pulled forward from milestone 5 (used
+     from C-Left), `Bg_Ydan_Hasi` and `Bg_Ydan_Maruta` whole, `Obj_Kibako2` with
+     `Effect_Ss_Kakera` (and `En_Kusa`'s and `En_Ishi`'s pieces), `Obj_Lift`.
+     - **Exit:** a Deku Stick lit at a golden torch burns the web over room 1's door.
+   - **4c, pushing and Master Quest's extras:** Player's push and pull, `Obj_Oshihiki` and
+     `Obj_Makeoshihiki`, `Bg_Haka`, `Obj_Timeblock`, `Obj_Bombiwa`; the connections milestone 4
+     opens walked through from one start.
+     - **Exit:** room 3's block pushed off into the pit and climbed.
 5. **Items in use:**
-   - Deku sticks and nuts, the Fairy Slingshot (`EnArrow` for seeds);
+   - Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot (`EnArrow` for seeds);
    - the C buttons in full;
    - a minimal pause menu for equipping (`z_kaleido_scope` is about 7,700 lines, so only the item screen at first);
    - saving (`z_sram.c`).
@@ -289,9 +305,12 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:
+- **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), but the camera's roll isn't
+  drawn (the renderer keeps Y up), and the shake isn't applied to the prerendered backgrounds
+  and the skybox.
 - **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed; next to want: the bushes' and rocks' flying pieces (`EffectSsKakera` from `EnKusa_SpawnFragments` and `EnIshi`), the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** time passing (`Environment_Update`'s clock), day/night, weather.
-- **HUD and messages:** the minimap; the item icons and backgrounds in text; the ocarina modes.
+- **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; the ocarina modes.
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.
 - **Tools:** the `oot_extract::text` refactor onto `oot_import::text`.
 - **Faithfulness checks:** side-by-side captures against Project64 for each milestone's visuals, kept as a checklist in the phase doc.

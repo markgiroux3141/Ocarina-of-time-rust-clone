@@ -183,8 +183,8 @@ pub struct SaveContext {
     pub gs_flags: [i32; 6],
     /// `savedSceneId`.
     pub saved_scene_id: u16,
-    /// `mapIndex`: the dungeon whose items `Item_Give` counts (0 outside dungeons here: the
-    /// map system isn't ported).
+    /// `mapIndex`: the dungeon whose items `Item_Give` counts, or the overworld area's minimap
+    /// (`Map_Init`, `crate::map`; other scenes keep the last one's).
     pub map_index: u16,
     /// `buttonStatus` (B, the C buttons, A; `BTN_ENABLED` 0, `BTN_DISABLED` 0xFF).
     pub button_status: [u8; 5],

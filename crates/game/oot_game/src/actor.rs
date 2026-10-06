@@ -448,9 +448,13 @@ impl Actor {
     }
 
     /// `func_8002E2AC`: floor raycast from 50 above `pos`, snapping to the floor.
-    fn update_floor(&mut self, col: &CollisionContext, mut pos: Vec3, flags: u32, ceiling_bg: Option<u16>) -> bool {
+    fn update_floor(&mut self, col: &CollisionContext, mut pos: Vec3, flags: u32, ceiling_bg: Option<u16>, own_bg: Option<u16>) -> bool {
         pos.y += 50.0;
-        let (floor, poly) = col.entity_raycast_down(pos);
+        // BgCheck_EntityRaycastDown5 with the actor: a DynaPoly actor's own collision is skipped.
+        let (floor, poly) = match own_bg {
+            Some(bg) => col.entity_raycast_down_actor(pos, bg),
+            None => col.entity_raycast_down(pos),
+        };
         self.floor_height = floor;
         self.floor_poly = poly;
         self.bg_check_flags &= !(BGCHECKFLAG_GROUND_TOUCH | BGCHECKFLAG_GROUND_LEAVE | BGCHECKFLAG_GROUND_STRICT);
@@ -487,8 +491,14 @@ impl Actor {
                     self.velocity.y = 0.0;
                 }
                 self.bg_check_flags |= BGCHECKFLAG_GROUND;
+                // func_80043334.
+                col.dyna.set_actor_on_top(self.floor_bg_id, self.flags & ACTOR_FLAG_CAN_PRESS_SWITCHES == ACTOR_FLAG_CAN_PRESS_SWITCHES);
             }
         } else {
+            if self.bg_check_flags & BGCHECKFLAG_GROUND != 0 && diff >= -11.0 {
+                // func_80043334.
+                col.dyna.set_actor_on_top(self.floor_bg_id, self.flags & ACTOR_FLAG_CAN_PRESS_SWITCHES == ACTOR_FLAG_CAN_PRESS_SWITCHES);
+            }
             return self.check_leave_ground(diff, flags);
         }
         true
@@ -496,6 +506,12 @@ impl Actor {
 
     /// `Actor_UpdateBgCheckInfo`.
     pub fn update_bg_check_info(&mut self, col: &CollisionContext, wall_check_height: f32, wall_check_radius: f32, ceiling_check_height: f32, flags: u32) {
+        self.update_bg_check_info_of(col, wall_check_height, wall_check_radius, ceiling_check_height, flags, None);
+    }
+
+    /// `Actor_UpdateBgCheckInfo` for a DynaPoly actor whose bg actor is `own_bg`: the C passes
+    /// the actor to the floor's raycast, which skips the actor's own collision.
+    pub fn update_bg_check_info_of(&mut self, col: &CollisionContext, wall_check_height: f32, wall_check_radius: f32, ceiling_check_height: f32, flags: u32, own_bg: Option<u16>) {
         let dy = self.world_pos.y - self.prev_pos.y;
         // DynaPolyActor_TransformCarriedActor: ride the platform we're standing on.
         self.carried_yaw = 0;
@@ -536,7 +552,7 @@ impl Actor {
         }
         if flags & UPDBGCHECKINFO_FLAG_2 != 0 {
             let p = Vec3::new(self.world_pos.x, self.prev_pos.y, self.world_pos.z);
-            self.update_floor(col, p, flags, ceiling_bg);
+            self.update_floor(col, p, flags, ceiling_bg, own_bg);
             // BgCheck_GetWaterSurfaceAllHack (ripples not modelled).
             match col.water_surface(self.world_pos.x, self.world_pos.z, col.water_room) {
                 Some(y) => {

@@ -10,7 +10,8 @@ use crate::scene::RoomData;
 /// camera is `CAM_SET_PREREND_FIXED`; a multi-background room's is the one for the camera's
 /// bg camera, or for its `roomImageOverrideBgCamIndex` (`Room_GetImageMultiBgEntry`, which
 /// hangs when there's none: nothing is drawn here). Not modelled: that function's write of the
-/// index into Player's params, and the quake offset (no quakes).
+/// index into Player's params, and the background's shift by the active camera's quake offset
+/// (`Camera_GetQuakeOffset`: the renderer draws it unmoved).
 pub fn image_background(cam: &GameCamera, col: &CollisionContext, room: &RoomData) -> Option<usize> {
     if cam.setting != CAM_SET_PREREND_FIXED || room.backgrounds.is_empty() {
         return None;

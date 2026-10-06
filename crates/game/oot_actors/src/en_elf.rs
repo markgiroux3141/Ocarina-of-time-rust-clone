@@ -17,7 +17,7 @@
 //!
 //! Not ported: the sparkles (`EffectSsKiraKira`: their spawn's `Rand` calls are made), the
 //! lights' effect on the draw (`crate::lights` keeps them, the renderer can't draw
-//! them), `Environment_AdjustLights` while Navi talks, and `Elf_Msg` (no ported scene has one).
+//! them), and `Environment_AdjustLights` while Navi talks.
 
 use std::sync::Arc;
 
@@ -197,6 +197,9 @@ pub struct EnElf {
     pub update_fn: Update,
     /// `shape.shadowAlpha` (`func_80A04D90` sets 50; only the big fairy has a shadow).
     pub shadow_alpha: u8,
+    /// `elfMsg`: the `Elf_Msg` whose place Link is in, set by its update each frame and cleared
+    /// by hers; her talk accepted ends it (`ACTOR_FLAG_TALK`).
+    pub elf_msg: Option<ActorHandle>,
 }
 
 /// What the fairy reads of Player (`GET_PLAYER(play)`), at the start of its update.
@@ -287,6 +290,7 @@ impl EnElf {
             action: Action::Spawner,
             update_fn: Update::Normal,
             shadow_alpha: 0xFF,
+            elf_msg: None,
         }
     }
 
@@ -1308,7 +1312,10 @@ impl EnElf {
             self.fairy_flags |= 0x20;
             self.update_fn = Update::Talk;
             self.func_80a01c38(3);
-            // (elfMsg->actor.flags |= ACTOR_FLAG_TALK: no Elf_Msg.)
+            // The Elf_Msg that set her text this frame ends with the talk.
+            if let Some(m) = self.elf_msg.and_then(|h| play.actors.actor_mut(h)) {
+                m.flags |= oot_game::actor::ACTOR_FLAG_TALK;
+            }
             self.actor.flags &= !ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         } else {
             self.run_action(play);
@@ -1322,6 +1329,7 @@ impl EnElf {
                 }
             }
         }
+        self.elf_msg = None;
         self.timer = self.timer.wrapping_add(1);
         if self.unk_2a4 > 0.0 {
             step_to_f(&mut self.unk_2a4, 0.0, 0.05);

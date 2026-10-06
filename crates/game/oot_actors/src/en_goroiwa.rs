@@ -14,8 +14,8 @@
 //!
 //! The whole overlay is ported, with what Kokiri Forest's boulder never reaches: the climbs and
 //! drops between points of different heights (bit 10 clear: `EnGoroiwa_MoveUp`,
-//! `EnGoroiwa_MoveDown`), the round trip and the breaking loop. Not ported: the
-//! quake of a drop (`Quake_Request`), the dust, splashes, ripples and fragments (the effects; their
+//! `EnGoroiwa_MoveDown`, with its drop's quake), the round trip and the breaking loop. Not
+//! ported: the dust, splashes, ripples and fragments (the effects; their
 //! `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
 //! (`ActorShadow_DrawCircle`).
 
@@ -362,7 +362,8 @@ impl EnGoroiwa {
     }
 
     /// `EnGoroiwa_MoveDownToNextWaypoint`: dropping to the next point, bouncing once at 0.3;
-    /// into water, slowed. (The quake, the dust and the splashes aren't ported.)
+    /// into water, slowed; the first landing within 600 of Link shakes the active camera. (The
+    /// dust and the splashes aren't ported.)
     fn move_down_to_next_waypoint(&mut self, play: &mut PlayState) -> bool {
         let next = self.point(play, self.next_waypoint);
         let next_y = next.y;
@@ -373,7 +374,12 @@ impl EnGoroiwa {
         self.actor.world_pos.y += self.actor.velocity.y;
         if self.actor.velocity.y < 0.0 && self.actor.world_pos.y <= next_y {
             if self.bounce_count == 0 {
-                // Quake_Request(GET_ACTIVE_CAM(play), 3) within 600 of Link: not ported.
+                if self.actor.xz_dist_to_player < 600.0 {
+                    let quake_index = play.quake_request(oot_game::camera::CAM_ID_NONE, oot_game::quake::QUAKE_TYPE_3);
+                    play.quake_set_speed(quake_index, -0x3CB0);
+                    play.quake_set_perturbations(quake_index, 3, 0, 0, 0);
+                    play.quake_set_duration(quake_index, 7);
+                }
                 self.roll_rot_speed = 0.0;
                 if self.state_flags & ENGOROIWA_IN_WATER == 0 {
                     // BgCheck_EntityRaycastDown5 from 50 up.

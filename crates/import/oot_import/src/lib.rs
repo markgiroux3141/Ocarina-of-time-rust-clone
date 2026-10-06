@@ -14,6 +14,7 @@ pub mod cutscene;
 pub mod drawcfg;
 pub mod elf_message;
 pub mod level;
+pub mod map;
 pub mod objects;
 pub mod pack;
 pub mod player;

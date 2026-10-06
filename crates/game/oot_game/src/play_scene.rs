@@ -77,6 +77,8 @@ pub struct GameAssets {
     pub interface: crate::interface::InterfaceTables,
     /// `sGetItemTable`, `sDrawItemTable`.
     pub items: crate::item::ItemTables,
+    /// `gMapDataTable`, `gMapMarkDataTable` (`crate::map`).
+    pub map: crate::map::MapTables,
     /// `sEntranceCutsceneTable` and the scripts' keys (docs/adr/0022-cutscenes.md).
     pub cutscenes: crate::cutscene::CutsceneTables,
     /// Navi's C-Up texts and Saria's (`z_elf_message.c`).
@@ -101,6 +103,7 @@ impl GameAssets {
             item_drops: pack.item_drops()?,
             interface: pack.interface()?,
             items: pack.items()?,
+            map: pack.map_tables()?,
             cutscenes: pack.cutscene_tables()?,
             elf_messages: pack.elf_messages()?,
             audio: Arc::new(pack.audio_game_tables()?),
@@ -408,8 +411,9 @@ impl PlayState {
         let col = CollisionContext::new(assets.pack.collision(&ld.collision)?);
         let mut play = PlayState::new(data, rules, col, (Vec3::ZERO, 0), save.adult);
         play.audio = audio;
-        // Audio_SetExtraFilter(0), before the scene.
+        // Audio_SetExtraFilter(0), before the scene; then Quake_Init.
         play.audio.set_extra_filter(0);
+        play.quake.quake_init();
         play.assets = Some(assets.clone());
         play.messages = Some(assets.messages.clone());
         play.scene_id = scene_id;
@@ -475,6 +479,8 @@ impl PlayState {
         // Interface_Init (Interface_SetSceneRestrictions comes later in Play_Init; nothing reads
         // the restrictions between).
         play.interface_ctx = crate::interface::InterfaceContext::init(&mut play.save, &assets.interface, scene_id);
+        // Interface_Init's Map_Init (Room_SetupFirstRoom has set roomCtx.curRoom.num).
+        play.map_init();
 
         // Actor_InitContext: the scene's saved flags, then Player.
         let saved = play.save.scene_flags(scene_id);
@@ -509,6 +515,8 @@ impl PlayState {
             play.audio.play_sfx_at_pos(crate::audio::sfx::SfxPos::Actor(p), id);
             play.save.entrance_sound = 0;
         }
+        // Player_Init's last call: Map_SavePlayerInitialInfo.
+        play.map_save_player_initial_info();
         // Attention_Init (Actor_InitContext's, once Player is in): Navi's point at Player.
         if let Some(a) = play.actors.actor(p).cloned() {
             let eye = play.game_camera.eye;
@@ -555,6 +563,8 @@ impl PlayState {
         let Some(assets) = self.assets.clone() else { return };
         // Play_Destroy → Actor_CleanupContext → Play_SaveSceneFlags.
         self.save_scene_flags();
+        // Interface_Destroy: Map_Destroy.
+        self.map_destroy();
         let audio = std::mem::take(&mut self.audio);
         let fallback = audio.clone();
         let side = self.audio_side.take();
@@ -575,6 +585,9 @@ impl PlayState {
                 next.demo = crate::cutscene::DemoStatics { use_cutscene_cam: next.demo.use_cutscene_cam, ..self.demo };
                 next.cam_globals.next_uid = self.cam_globals.next_uid;
                 next.onepoint = std::mem::replace(&mut self.onepoint, crate::onepoint::OnePointStatics::new(&Default::default()));
+                // So is sQuakeRequests, which Play_Init's Quake_Init clears.
+                next.quake = self.quake;
+                next.quake.quake_init();
                 // gWeatherMode and the lightning bolts are z_kankyo.c's (Environment_Init resets the
                 // strike and the bolts, which play_init_with did on next's defaults).
                 next.env_statics.weather_mode = self.env_statics.weather_mode;
@@ -644,7 +657,13 @@ impl PlayState {
         self.kill_actors_outside_rooms();
         self.spawn_transition_actors();
         self.col.water_room = self.room_ctx.cur.num.max(0) as u32;
-        // (Map_InitRoomData, Map_SavePlayerInitialInfo: no map yet.) Audio_SetEnvReverb.
+        // Map_InitRoomData, then Map_SavePlayerInitialInfo outside SCENE_HYRULE_FIELD .. SCENE_LON_LON_RANCH;
+        // Audio_SetEnvReverb.
+        let room = self.room_ctx.cur.num as i16;
+        self.map_init_room_data(room);
+        if crate::map::room_change_saves_initial_info(self.scene_id) {
+            self.map_save_player_initial_info();
+        }
         let echo = self.room_ctx.cur.echo as i8;
         self.audio.set_env_reverb(echo);
     }

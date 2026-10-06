@@ -28,8 +28,12 @@ use oot_game::spawn::Overlays;
 pub mod bg_spot00_hanebasi;
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
+pub mod bg_ydan_sp;
 pub mod demo_tre_lgt;
+pub mod door_shutter;
 pub mod dummy_target;
+pub mod elf_msg;
+pub mod elf_msg2;
 pub mod en_box;
 pub mod en_dekubaba;
 pub mod en_dekunuts;
@@ -62,6 +66,8 @@ pub mod en_wonder_item;
 pub mod en_wonder_talk2;
 pub mod item_shield;
 pub mod obj_hana;
+pub mod obj_switch;
+pub mod obj_syokudai;
 pub mod object_kankyo;
 pub mod player;
 pub mod playthrough;
@@ -73,7 +79,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -117,6 +123,12 @@ pub fn overlays() -> Overlays {
     o.register(en_goma::ACTOR_EN_GOMA, en_goma::EnGoma::init);
     o.register(en_sw::ACTOR_EN_SW, en_sw::EnSw::init);
     o.register(en_si::ACTOR_EN_SI, en_si::EnSi::init);
+    o.register(door_shutter::ACTOR_DOOR_SHUTTER, door_shutter::DoorShutter::init);
+    o.register(bg_ydan_sp::ACTOR_BG_YDAN_SP, bg_ydan_sp::BgYdanSp::init);
+    o.register(obj_switch::ACTOR_OBJ_SWITCH, obj_switch::ObjSwitch::init);
+    o.register(obj_syokudai::ACTOR_OBJ_SYOKUDAI, obj_syokudai::ObjSyokudai::init);
+    o.register(elf_msg::ACTOR_ELF_MSG, elf_msg::ElfMsg::init);
+    o.register(elf_msg2::ACTOR_ELF_MSG2, elf_msg2::ElfMsg2::init);
     o
 }
 
@@ -140,6 +152,10 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_st::bakes());
     v.extend(en_goma::bakes());
     v.extend(en_sw::bakes());
+    v.extend(door_shutter::bakes());
+    v.extend(bg_ydan_sp::bakes());
+    v.extend(obj_switch::bakes());
+    v.extend(obj_syokudai::bakes());
     // z_kankyo.c's rain and lightning bolts.
     v.extend(oot_game::weather::bakes());
     // The effects (z_effect_soft_sprite.c's overlays and z_effect.c's).

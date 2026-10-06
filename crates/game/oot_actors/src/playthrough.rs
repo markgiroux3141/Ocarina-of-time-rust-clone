@@ -196,6 +196,17 @@ pub enum Step {
     ScrubCaught,
     /// The Mad Scrub dead and gone (`EnDekunuts_Die` over), its drop, if any, picked up.
     ScrubKilled,
+    /// Room 0's top-floor switch pressed (`Obj_Switch` 0x2700: flag 0x27 set).
+    SwitchPressed,
+    /// The web over room 10's door burnt away (`Bg_Ydan_Sp` 0x19CA gone), Link free again
+    /// after the attention cameras.
+    WebBurnt,
+    /// Room 10's sliding door opened (`Door_Shutter`: Player walking through it,
+    /// `Player_Action_80845CA4`).
+    DoorOpened,
+    /// Through it, the door shut and barred behind Link (room 10's enemies alive:
+    /// `DoorShutter_WaitClear`), and Link free after his pause (`PLAYER_CSACTION_7`).
+    DoorBarred,
 }
 
 impl Step {
@@ -241,6 +252,10 @@ impl Step {
             Step::NutBounced => "nut_bounced",
             Step::ScrubCaught => "scrub_caught",
             Step::ScrubKilled => "scrub_killed",
+            Step::SwitchPressed => "switch_pressed",
+            Step::WebBurnt => "web_burnt",
+            Step::DoorOpened => "door_opened",
+            Step::DoorBarred => "door_barred",
         }
     }
 }
@@ -271,13 +286,61 @@ pub enum Route {
     /// Inside the Deku Tree, a Mad Scrub's nut bounced back off the shield, the scrub caught and
     /// killed (GAME-05 milestone 3b), from a debug start in room 4 (`SCRUB_START`).
     Scrub,
+    /// Inside the Deku Tree, room 0's top-floor switch pressed, the web over room 10's door
+    /// burnt, and through the door, which bars behind Link (GAME-05 milestone 4a), from a debug
+    /// start on the top floor (`SHUTTER_START`).
+    Shutter,
 }
+
+/// The `Shutter` route's switch: room 0's top-floor `Obj_Switch` (params 0x2700), and its flag.
+pub const SHUTTER_SWITCH_HOME: Vec3 = Vec3::new(-311.0, 800.0, -311.0);
+pub const SHUTTER_SWITCH_FLAG: i32 = 0x27;
+/// The web the flag burns: `Bg_Ydan_Sp` 0x19CA, over room 10's door.
+pub const SHUTTER_WEB_HOME: Vec3 = Vec3::new(-491.0, 800.0, -1.0);
+/// Room 10's door (transition 6, at (-560, 800, 0) facing -x), and where Link lines up in
+/// front of it on room 0's side.
+pub const SHUTTER_DOOR: usize = 6;
+pub const SHUTTER_DOOR_FRONT: Vec3 = Vec3::new(-525.0, 800.0, 0.0);
+/// Where the route starts Link: on the top floor 100 from the switch, facing it.
+pub const SHUTTER_START: (Vec3, i16) = (Vec3::new(-382.0, 800.0, -241.0), -0x6000);
 
 /// The `Scrub` route's Mad Scrub: room 4's `En_Dekunuts` (params 0xFF00), facing -z.
 pub const SCRUB_HOME: Vec3 = Vec3::new(-74.0, -880.0, 1046.0);
 /// Its room, and where the route starts Link: 250 in front of the scrub, facing it (yaw 0: +z).
 pub const SCRUB_START_ROOM: i8 = 4;
 pub const SCRUB_START: (Vec3, i16) = (Vec3::new(-74.0, -880.0, 796.0), 0);
+
+/// A debug start in each room of the Deku Tree (MQ), `(room, position, yaw, name)`: on the
+/// room's floor, clear of its holes (GAME-05 milestone 4a). The game's and the sandbox's
+/// `--room`/`--at` take the same values (`game-dungeon.bat`), and
+/// `oot_actors --test debug_starts` checks each: Link stands, and the room doesn't change.
+/// Room 11 has none: past room 9's door, its whole floor is exit 2, the drop into Gohma's room.
+pub const DEKU_TREE_ROOM_STARTS: [(i8, Vec3, i16, &str); 12] = [
+    (0, Vec3::new(0.0, 0.0, 480.0), -0x8000, "lobby"),
+    (0, Vec3::new(-420.0, 800.0, 60.0), -0x4000, "lobby-top"),
+    (1, Vec3::new(-700.0, 400.0, 760.0), 0, "room1"),
+    (2, Vec3::new(-1100.0, 280.0, 1150.0), 0, "room2"),
+    (3, Vec3::new(-718.0, -820.0, 177.0), 8202, "room3"),
+    (4, Vec3::new(-74.0, -880.0, 796.0), 0, "room4"),
+    (5, Vec3::new(-1197.0, -880.0, 1079.0), -0x4000, "room5"),
+    (6, Vec3::new(-1860.0, -760.0, 900.0), 0, "room6"),
+    (7, Vec3::new(-1900.0, -760.0, 500.0), 0, "room7"),
+    (8, Vec3::new(-2550.0, -760.0, -480.0), 0, "room8"),
+    (9, Vec3::new(-660.0, -1880.0, -620.0), -0x8000, "room9"),
+    (10, Vec3::new(-700.0, 800.0, 100.0), 0, "room10"),
+];
+
+/// A debug start in `room` of the scene `w` was just entered in: the room requested
+/// (`Room_RequestNewRoom`), a frame for it to load, the change finished
+/// (`Room_FinishRoomChange`), then Link placed at `pos` facing `yaw` (what `Route::debug_start`
+/// and the game's `--room`/`--at` do).
+pub fn deku_tree_room_start(w: &mut PlayState, room: i8, pos: Vec3, yaw: i16) {
+    if room != w.room_ctx.cur.num && w.room_request(room) {
+        w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
+        w.room_change_done();
+    }
+    w.place_player(pos, yaw);
+}
 
 /// The `Combat` route's Keese: room 0's `En_Firefly` (params 3, perched) on the ground floor's
 /// wall, 262 up.
@@ -298,7 +361,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -307,7 +370,7 @@ impl Route {
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
-            Route::DekuBaba | Route::Combat | Route::Scrub => Some("deku-tree-inside"),
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter => Some("deku-tree-inside"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -318,6 +381,7 @@ impl Route {
             Route::DekuBaba => Some(DEKU_BABA_START),
             Route::Combat => Some(COMBAT_START),
             Route::Scrub => Some(SCRUB_START),
+            Route::Shutter => Some(SHUTTER_START),
             _ => None,
         }
     }
@@ -374,6 +438,7 @@ impl Route {
             Route::DekuBaba => "deku-baba",
             Route::Combat => "combat",
             Route::Scrub => "scrub",
+            Route::Shutter => "shutter",
         }
     }
 
@@ -385,13 +450,14 @@ impl Route {
             Route::NewFileDekuTree => 24000,
             Route::Combat => 9000,
             Route::Scrub => 3000,
+            Route::Shutter => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -461,6 +527,16 @@ enum Task {
     BounceNut(Vec3),
     /// Catch that Mad Scrub and kill it, and pick up its drop (`catch_scrub`).
     CatchScrub(Vec3),
+    /// Onto the floor switch whose home is here until its flag is set.
+    PressSwitch(Vec3, i32, Step),
+    /// Idle until the web whose home is here has burnt away and Link is free.
+    WaitWebBurnt(Vec3, Step),
+    /// Open the sliding door from this transition entry: walk to the point in front of it, at it
+    /// until it offers (Player's `doorType` `PLAYER_DOORTYPE_SLIDING`), A, until Link walks
+    /// through.
+    OpenSlidingDoor(usize, Vec3, Step),
+    /// Idle until the door from this transition entry is shut behind Link and he's free.
+    WaitDoorShut(usize, Step),
 }
 
 /// An actor the run talks to.
@@ -547,6 +623,12 @@ impl Playthrough {
             // its stick, and its head bites within reach of its home.
             Route::Combat => vec![Task::FightKarebaba(COMBAT_KAREBABA_HOME), Task::Walk(vec![COMBAT_START.0]), Task::BlockKeese(COMBAT_KEESE_HOME), Task::KillKeese(COMBAT_KEESE_HOME)],
             Route::Scrub => vec![Task::BounceNut(SCRUB_HOME), Task::CatchScrub(SCRUB_HOME)],
+            Route::Shutter => vec![
+                Task::PressSwitch(SHUTTER_SWITCH_HOME, SHUTTER_SWITCH_FLAG, Step::SwitchPressed),
+                Task::WaitWebBurnt(SHUTTER_WEB_HOME, Step::WebBurnt),
+                Task::OpenSlidingDoor(SHUTTER_DOOR, SHUTTER_DOOR_FRONT, Step::DoorOpened),
+                Task::WaitDoorShut(SHUTTER_DOOR, Step::DoorBarred),
+            ],
         };
         Playthrough {
             route,
@@ -1029,6 +1111,10 @@ impl Playthrough {
             Task::FightKarebaba(home) => self.fight_karebaba(w, home),
             Task::BounceNut(home) => self.bounce_nut(w, home),
             Task::CatchScrub(home) => self.catch_scrub(w, home),
+            Task::PressSwitch(home, flag, step) => self.press_switch(w, home, flag, step),
+            Task::WaitWebBurnt(home, step) => self.wait_web_burnt(w, home, step),
+            Task::OpenSlidingDoor(index, front, step) => self.open_sliding_door(w, index, front, step),
+            Task::WaitDoorShut(index, step) => self.wait_door_shut(w, index, step),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -1319,6 +1405,105 @@ impl Playthrough {
 
     /// `Task::BounceNut`: the guard (R, nothing locked on) until the scrub's nut has bounced off
     /// the Deku Shield and knocked it out of its flower (`EnDekunuts_BeginRun`, `Step::NutBounced`).
+    /// `Task::PressSwitch`: towards the switch's middle until its flag is set.
+    fn press_switch(&mut self, w: &PlayState, home: Vec3, flag: i32, step: Step) -> Option<PadState> {
+        if w.flags.get_switch(flag) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 300 {
+            self.failure = Some(format!("the switch at {home} never pressed"));
+            return None;
+        }
+        Some(stick_towards(w, home, SLOW))
+    }
+
+    /// `Task::WaitWebBurnt`: idle until no web is at `home` and Link stands free (the
+    /// attention cameras over).
+    fn wait_web_burnt(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
+        let web = w.actors.all().into_iter().any(|h| w.actors.downcast::<crate::bg_ydan_sp::BgYdanSp>(h).is_some_and(|s| s.actor.world_pos.distance(home) < 1.0));
+        let p = w.player();
+        if !web && p.cs_mode == 0 && Self::settled(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("the web at {home} never burnt (Link {:?}, cs {})", p.action, p.cs_mode));
+            return None;
+        }
+        Some(PadState::default())
+    }
+
+    /// `Task::OpenSlidingDoor`'s phases in `sub`: 0 to the point in front, 1 at the door until it
+    /// offers, then A until Link walks through.
+    fn open_sliding_door(&mut self, w: &PlayState, index: usize, front: Vec3, step: Step) -> Option<PadState> {
+        use crate::door_shutter::DoorShutter;
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("the door from transition {index} never opened (sub {})", self.sub));
+            return None;
+        }
+        let Some(door) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<DoorShutter>(h).filter(|d| d.transition_index() == index)) else {
+            self.failure = Some(format!("no Door_Shutter from transition {index}"));
+            return None;
+        };
+        let p = w.player();
+        // A text that opens by itself (an Elf_Msg by the door calling Navi) holds Link until
+        // it's read.
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+        }
+        if p.action == PA::ExitWalk {
+            self.finish(Some(step));
+            return None;
+        }
+        match self.sub {
+            0 => {
+                if Self::xz_dist(p.actor.world_pos, front) < 8.0 {
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                Some(stick_towards(w, front, SLOW))
+            }
+            _ => {
+                if p.door_type == crate::player::PLAYER_DOORTYPE_SLIDING {
+                    return Some(self.press(BTN_A));
+                }
+                // Knocked off the line (a Keese): back in front of it.
+                if Self::xz_dist(p.actor.world_pos, front) > 20.0 {
+                    self.sub = 0;
+                    return Some(idle);
+                }
+                // At the door, slowly: facing it, Link is offered to open it.
+                Some(stick_towards(w, door.actor.world_pos, 30.0))
+            }
+        }
+    }
+
+    /// `Task::WaitDoorShut`: idle until the door is down and Link stands free.
+    fn wait_door_shut(&mut self, w: &PlayState, index: usize, step: Step) -> Option<PadState> {
+        use crate::door_shutter::{Action as DA, DoorShutter};
+        let Some(door) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<DoorShutter>(h).filter(|d| d.transition_index() == index)) else {
+            self.failure = Some(format!("no Door_Shutter from transition {index}"));
+            return None;
+        };
+        let shut = !matches!(door.action, DA::Open | DA::Close | DA::JabuDoorClose | DA::WaitPlayerSurprised);
+        let p = w.player();
+        if shut && p.cs_mode == 0 && Self::settled(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("the door from transition {index} never shut ({:?}; Link {:?}, cs {})", door.action, p.action, p.cs_mode));
+            return None;
+        }
+        Some(PadState::default())
+    }
+
     fn bounce_nut(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
         use crate::en_dekunuts::Action as NA;
         use eng_input::pad::BTN_R;

@@ -20,9 +20,9 @@
 //! A checkable door (a shop closed at night, a locked house) has text instead
 //! (`EnDoor_WaitForCheck` offers to talk within 40; `EnDoor_Check` waits for the box to close).
 //!
-//! Not ported: small keys (a locked door's lock never opens: there's no key count),
-//! the lock's chains (`Actor_DrawDoorLock`), and the bubbles of a door opened underwater
-//! (`EffectSsBubble`, with their count's `Rand_ZeroOne`).
+//! A locked door's chains and lock are drawn (`Actor_DrawDoorLock`). Not ported: opening it
+//! with a small key (no En_Door is locked in the ported scenes), and the bubbles of a door
+//! opened underwater (`EffectSsBubble`, with their count's `Rand_ZeroOne`).
 
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
@@ -463,7 +463,9 @@ impl ActorImpl for EnDoor {
             let s = if world_rot_y > 0 { 1 } else { 0 };
             out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&ajar_bake_name(s))), m));
         }
-        // lockTimer != 0: Actor_DrawDoorLock (the chains) isn't ported.
+        if self.lock_timer != 0 {
+            oot_game::actor_ctx::actor_draw_door_lock(out, &oot_game::sys_matrix::MtxF::from_mat4(m), self.lock_timer as i32, oot_game::actor_ctx::DOORLOCK_NORMAL);
+        }
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
