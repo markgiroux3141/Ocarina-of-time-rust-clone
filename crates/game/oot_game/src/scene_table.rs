@@ -95,8 +95,7 @@ fn g_dp_set_prim_color(m: u32, l: u32, r: u32, g: u32, b: u32, a: u32) -> (u32, 
 }
 
 /// `Gfx_TexScroll` (`z_rcp.c`).
-#[allow(dead_code)]
-fn gfx_tex_scroll(x: u32, y: u32, width: i32, height: i32) -> Dl {
+pub fn gfx_tex_scroll(x: u32, y: u32, width: i32, height: i32) -> Dl {
     let (x, y) = (x % (512 << 2), y % (512 << 2));
     vec![
         g_dp_tile_sync(),

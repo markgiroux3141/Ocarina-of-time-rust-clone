@@ -16,6 +16,11 @@ pub const WALL_FLAG_3: u32 = 8;
 pub const WALL_FLAG_CRAWLSPACE_1: u32 = 16;
 pub const WALL_FLAG_CRAWLSPACE_2: u32 = 32;
 pub const WALL_FLAG_6: u32 = 64;
+/// `WALL_FLAG_CRAWLSPACE` (`bgcheck.h`): either crawlspace flag.
+pub const WALL_FLAG_CRAWLSPACE: u32 = WALL_FLAG_CRAWLSPACE_1 | WALL_FLAG_CRAWLSPACE_2;
+/// `COLPOLY_IGNORE_PROJECTILES` (`bgcheck.h`): a poly flag, in the top 3 bits of its first
+/// vertex index (`COLPOLY_VTX_CHECK_FLAGS_ANY`).
+pub const COLPOLY_IGNORE_PROJECTILES: u16 = 1 << 2;
 
 /// The `SurfaceType_Get*` accessors, on the collision context that owns the poly.
 pub trait SurfaceType {
@@ -43,6 +48,9 @@ pub trait SurfaceType {
     fn flag27(&self, id: PolyId) -> bool;
     /// `SurfaceType_GetEcho`: the floor's reverb (`Audio_SetCodeReverb`).
     fn echo(&self, id: PolyId) -> u32;
+    /// `SurfaceType_IsIgnoredByProjectiles`: the poly's `COLPOLY_IGNORE_PROJECTILES` flag (a bg
+    /// actor's poly always has its header here, which the C checks first).
+    fn is_ignored_by_projectiles(&self, id: PolyId) -> bool;
 }
 
 impl SurfaceType for CollisionContext {
@@ -81,5 +89,8 @@ impl SurfaceType for CollisionContext {
     }
     fn echo(&self, id: PolyId) -> u32 {
         self.surface_word(id, 1) >> 11 & 0x3F
+    }
+    fn is_ignored_by_projectiles(&self, id: PolyId) -> bool {
+        self.poly(id).vtx[0] & ((COLPOLY_IGNORE_PROJECTILES & 7) << 13) != 0
     }
 }

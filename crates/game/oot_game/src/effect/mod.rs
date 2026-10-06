@@ -18,8 +18,10 @@
 //! first enemies, the Deku Baba and Player's burning and shock call: `Effect_Ss_Dust`,
 //! `Effect_Ss_Hahen`, `Effect_Ss_HitMark`, `Effect_Ss_En_Fire`, `Effect_Ss_En_Ice`,
 //! `Effect_Ss_Dead_Db`, `Effect_Ss_Fire_Tail` and `Effect_Ss_Fhg_Flash` (its shock; the light
-//! ball needs `object_fhg`). Spawning another type logs it and does nothing, as the C does for a
-//! type with no init.
+//! ball needs `object_fhg`); and for milestone 3b's enemies, `Effect_Ss_Fcircle` (a Mad Scrub
+//! set alight), `Effect_Ss_Blast` (the Skulltula's landing), and the Gohma larvae's
+//! `Effect_Ss_K_Fire` and `Effect_Ss_Sibuki`. Spawning another type logs it and does nothing, as
+//! the C does for a type with no init.
 //!
 //! ## `z_effect.c`
 //!
@@ -36,15 +38,19 @@
 //! texture and setup an overlay draws with is a bake (`bakes()`); the colours are dynamic
 //! segment values.
 
+pub mod blast;
 pub mod dead_db;
 pub mod dust;
 pub mod en_fire;
 pub mod en_ice;
+pub mod fcircle;
 pub mod fhg_flash;
 pub mod fire_tail;
 pub mod hahen;
 pub mod hitmark;
+pub mod k_fire;
 pub mod shield_particle;
+pub mod sibuki;
 pub mod spark;
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -58,12 +64,16 @@ use crate::play::{PlayState, Rand};
 
 // EffectSsType (`tables/effect_ss_table.h`): the ported ones, and the table's end.
 pub const EFFECT_SS_DUST: u8 = 0x00;
+pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
+pub const EFFECT_SS_SIBUKI: u8 = 0x11;
 pub const EFFECT_SS_HITMARK: u8 = 0x15;
 pub const EFFECT_SS_FHG_FLASH: u8 = 0x16;
+pub const EFFECT_SS_K_FIRE: u8 = 0x17;
 pub const EFFECT_SS_EN_ICE: u8 = 0x1B;
 pub const EFFECT_SS_FIRE_TAIL: u8 = 0x1C;
 pub const EFFECT_SS_EN_FIRE: u8 = 0x1D;
+pub const EFFECT_SS_FCIRCLE: u8 = 0x1F;
 pub const EFFECT_SS_DEAD_DB: u8 = 0x20;
 pub const EFFECT_SS_TYPE_MAX: u8 = 0x25;
 
@@ -77,6 +87,8 @@ pub enum SsUpdate {
     Dust,
     /// `EffectSsDust_UpdateFire` (unused in the game).
     DustFire,
+    /// `EffectSsBlast_Update`.
+    Blast,
     /// `EffectSsHahen_Update`.
     Hahen,
     /// `EffectSsHitMark_Update`.
@@ -95,6 +107,12 @@ pub enum SsUpdate {
     FhgFlashShock,
     /// `EffectSsFhgFlash_UpdateLightBall`.
     FhgFlashLightBall,
+    /// `EffectSsFcircle_Update`.
+    Fcircle,
+    /// `EffectSsKFire_Update`.
+    KFire,
+    /// `EffectSsSibuki_Update`.
+    Sibuki,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -102,6 +120,8 @@ pub enum SsUpdate {
 pub enum SsDraw {
     /// `EffectSsDust_Draw`.
     Dust,
+    /// `EffectSsBlast_Draw`.
+    Blast,
     /// `EffectSsHahen_Draw`.
     Hahen,
     /// `EffectSsHahen_DrawGray` (the Shadow Temple's skull pots: drawn as `Hahen`'s, logged).
@@ -118,6 +138,12 @@ pub enum SsDraw {
     FireTail,
     /// `EffectSsFhgFlash_DrawShock`.
     FhgFlashShock,
+    /// `EffectSsFcircle_Draw`.
+    Fcircle,
+    /// `EffectSsKFire_Draw`.
+    KFire,
+    /// `EffectSsSibuki_Draw`.
+    Sibuki,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -201,6 +227,7 @@ pub struct SsSpawn<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SsInit {
     Dust(dust::DustInit),
+    Blast(blast::BlastInit),
     Hahen(hahen::HahenInit),
     HitMark(hitmark::HitMarkInit),
     EnFire(en_fire::EnFireInit),
@@ -208,6 +235,9 @@ pub enum SsInit {
     DeadDb(dead_db::DeadDbInit),
     FireTail(fire_tail::FireTailInit),
     FhgFlash(fhg_flash::FhgFlashInit),
+    Fcircle(fcircle::FcircleInit),
+    KFire(k_fire::KFireInit),
+    Sibuki(sibuki::SibukiInit),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -284,6 +314,7 @@ impl SsSpawn<'_> {
         let mut e = EffectSs { ty, priority: priority as u8, ..EffectSs::default() };
         let ok = match init {
             SsInit::Dust(p) => dust::init(self, &mut e, &p),
+            SsInit::Blast(p) => blast::init(&mut e, &p),
             SsInit::Hahen(p) => hahen::init(self, &mut e, &p),
             SsInit::HitMark(p) => hitmark::init(&mut e, &p),
             SsInit::EnFire(p) => en_fire::init(self, &mut e, &p),
@@ -291,6 +322,9 @@ impl SsSpawn<'_> {
             SsInit::DeadDb(p) => dead_db::init(&mut e, &p),
             SsInit::FireTail(p) => fire_tail::init(&mut e, &p),
             SsInit::FhgFlash(p) => fhg_flash::init(self, &mut e, &p),
+            SsInit::Fcircle(p) => fcircle::init(&mut e, &p),
+            SsInit::KFire(p) => k_fire::init(self, &mut e, &p),
+            SsInit::Sibuki(p) => sibuki::init(self, &mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -327,6 +361,11 @@ impl SsSpawn<'_> {
         self.dust_spawn(2, pos, velocity, accel, prim, env, scale, scale_step, life, 0);
     }
 
+    /// `func_8002857C`: brown dust, draw flags 4, scale 100 growing 5, 10 frames.
+    pub fn func_8002857c(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3) {
+        self.dust_spawn(4, pos, velocity, accel, S_DUST_BROWN_PRIM, S_DUST_BROWN_ENV, 100, 5, 10, 0);
+    }
+
     /// `func_8002865C`: brown dust (`sDustBrownPrim`, `sDustBrownEnv`), draw flags 4.
     pub fn func_8002865c(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16) {
         self.dust_spawn(4, pos, velocity, accel, S_DUST_BROWN_PRIM, S_DUST_BROWN_ENV, scale, scale_step, 10, 0);
@@ -345,6 +384,50 @@ impl SsSpawn<'_> {
     /// `func_800287AC`: brown dust, draw flags 5.
     pub fn func_800287ac(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16, life: i16) {
         self.dust_spawn(5, pos, velocity, accel, S_DUST_BROWN_PRIM, S_DUST_BROWN_ENV, scale, scale_step, life, 0);
+    }
+
+    /// `func_80028894`: a point up to `rand_scale` from `src_pos` the way `randAngle` points, with
+    /// a velocity of 1 up and outwards that way.
+    pub fn func_80028894(&mut self, src_pos: Vec3, rand_scale: f32) -> (Vec3, Vec3, Vec3) {
+        let rand = self.rand.zero_one() * rand_scale;
+        let rand_angle = (self.rand.zero_one() * 65536.0) as i32 as i16;
+        let (s, c) = (eng_math::sin_s(rand_angle), eng_math::cos_s(rand_angle));
+        let new_pos = Vec3::new(src_pos.x + s * rand, src_pos.y, src_pos.z + c * rand);
+        let velocity = Vec3::new(s, 1.0, c);
+        (new_pos, velocity, Vec3::ZERO)
+    }
+
+    /// `func_80028990`: 20 puffs of brown dust round `src_pos` (`func_8002873C`, 100 big
+    /// growing by 30, 7 frames).
+    pub fn func_80028990(&mut self, rand_scale: f32, src_pos: Vec3) {
+        for _ in 0..20 {
+            let (pos, velocity, accel) = self.func_80028894(src_pos, rand_scale);
+            self.func_8002873c(pos, velocity, accel, 100, 30, 7);
+        }
+    }
+
+    /// `EffectSsBlast_Spawn`: a ring-shaped shockwave on the floor under `pos`, `scale × 64 / 400`
+    /// wide, growing by `scale_step`, which shrinks by `scale_step_decay` each frame.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blast_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, inner_color: [u8; 4], outer_color: [u8; 4], scale: i16, scale_step: i16, scale_step_decay: i16, life: i16) {
+        let p = blast::BlastInit { pos, velocity, accel, inner_color, outer_color, scale, scale_step, scale_step_decay, life };
+        self.spawn(EFFECT_SS_BLAST, 128, SsInit::Blast(p));
+    }
+
+    /// `EffectSsBlast_SpawnWhiteShockwaveSetScale`: white inside (`{255, 255, 255, 255}`), grey
+    /// out (`{200, 200, 200, 0}`), the step's decay 35.
+    pub fn blast_spawn_white_shockwave_set_scale(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16, life: i16) {
+        self.blast_spawn(pos, velocity, accel, [255, 255, 255, 255], [200, 200, 200, 0], scale, scale_step, 35, life);
+    }
+
+    /// `EffectSsBlast_SpawnShockwaveSetColor`: quickly spreading (scale 100, step 375, decay 35).
+    pub fn blast_spawn_shockwave_set_color(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, inner_color: [u8; 4], outer_color: [u8; 4], life: i16) {
+        self.blast_spawn(pos, velocity, accel, inner_color, outer_color, 100, 375, 35, life);
+    }
+
+    /// `EffectSsBlast_SpawnWhiteShockwave`: white, quickly spreading, for 10 frames.
+    pub fn blast_spawn_white_shockwave(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3) {
+        self.blast_spawn_shockwave_set_color(pos, velocity, accel, [255, 255, 255, 255], [200, 200, 200, 0], 10);
     }
 
     /// `EffectSsHahen_Spawn`: one fragment, `gEffFragments1DL` (the withered Deku fragment)
@@ -455,6 +538,33 @@ impl SsSpawn<'_> {
         let p = fhg_flash::FhgFlashInit { pos, velocity: Vec3::ZERO, accel: Vec3::ZERO, scale, param, actor, ty: fhg_flash::FHGFLASH_SHOCK };
         self.spawn(EFFECT_SS_FHG_FLASH, 128, SsInit::FhgFlash(p));
     }
+
+    /// `EffectSsFCircle_Spawn`.
+    pub fn fcircle_spawn(&mut self, actor: SsActor, pos: Vec3, radius: i16, height: i16) {
+        self.spawn(EFFECT_SS_FCIRCLE, 128, SsInit::Fcircle(fcircle::FcircleInit { actor, pos, radius, height }));
+    }
+
+    /// `EffectSsKFire_Spawn`.
+    pub fn k_fire_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale_max: i16, ty: u8) {
+        let p = k_fire::KFireInit { pos, velocity, accel, scale_max, ty };
+        self.spawn(EFFECT_SS_K_FIRE, 128, SsInit::KFire(p));
+    }
+
+    /// `EffectSsSibuki_Spawn`.
+    pub fn sibuki_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, move_delay: i16, direction: i16, scale: i16) {
+        let p = sibuki::SibukiInit { pos, velocity, accel, move_delay, direction, scale };
+        self.spawn(EFFECT_SS_SIBUKI, 128, SsInit::Sibuki(p));
+    }
+
+    /// `EffectSsSibuki_SpawnBurst`: 30 bubbles (`KREG(19) + 30`, the debug register 0) at `pos`,
+    /// all to one side (`Rand_ZeroOne() × 1.99`, truncated), six more leaving each frame
+    /// (`moveDelay` `i / (KREG(27) + 6)`), 40 big (`KREG(18) + 40`).
+    pub fn sibuki_spawn_burst(&mut self, pos: Vec3) {
+        let rand_direction = (self.rand.zero_one() * 1.99) as i16;
+        for i in 0..30i16 {
+            self.sibuki_spawn(pos, Vec3::ZERO, Vec3::ZERO, i / 6, rand_direction, 40);
+        }
+    }
 }
 
 /// `sDustBrownPrim`, `sDustBrownEnv` (`z_effect_soft_sprite_old_init.c`).
@@ -495,6 +605,8 @@ pub struct DrawCtx<'a> {
     /// `play->gameplayFrames`, `play->state.frames`.
     pub gameplay_frames: u32,
     pub state_frames: u32,
+    /// `play->colCtx` (`Effect_Ss_Blast`'s floor, `func_800BFCB8`).
+    pub col: &'a eng_collision::bgcheck::CollisionContext,
     /// `GET_PLAYER(play)->bodyPartsPos`.
     pub player_body_parts: Option<Vec<Vec3>>,
     pub actors: &'a crate::actor_ctx::ActorContext,
@@ -535,11 +647,14 @@ pub(crate) fn identity_mtx() -> Vec<u8> {
 /// Every bake the effects draw with.
 pub fn bakes() -> Vec<MeshBake> {
     let mut v = dust::bakes();
+    v.extend(blast::bakes());
     v.extend(hitmark::bakes());
     v.extend(en_fire::bakes());
     v.extend(en_ice::bakes());
     v.extend(dead_db::bakes());
     v.extend(fhg_flash::bakes());
+    v.extend(fcircle::bakes());
+    v.extend(sibuki::bakes());
     v.extend(spark::bakes());
     v.extend(shield_particle::bakes());
     v
@@ -622,6 +737,7 @@ impl PlayState {
         match u {
             SsUpdate::Dust => dust::update(self, &mut e),
             SsUpdate::DustFire => dust::update_fire(self, &mut e),
+            SsUpdate::Blast => blast::update(&mut e),
             SsUpdate::Hahen => hahen::update(self, &mut e),
             SsUpdate::HitMark => hitmark::update(&mut e),
             SsUpdate::EnFire => en_fire::update(self, &mut e),
@@ -631,6 +747,9 @@ impl PlayState {
             SsUpdate::FireTail => fire_tail::update(&mut e),
             SsUpdate::FhgFlashShock => fhg_flash::update_shock(self, &mut e),
             SsUpdate::FhgFlashLightBall => fhg_flash::update_light_ball(self, &mut e),
+            SsUpdate::Fcircle => fcircle::update(self, &mut e),
+            SsUpdate::KFire => k_fire::update(&mut e),
+            SsUpdate::Sibuki => sibuki::update(self, &mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -653,6 +772,7 @@ impl PlayState {
             cam_dir_yaw: self.cam_dir_yaw(),
             gameplay_frames: self.gameplay_frames,
             state_frames: self.state_frames,
+            col: &self.col,
             player_body_parts,
             actors: &self.actors,
             rand: &mut self.rand,
@@ -680,6 +800,7 @@ impl PlayState {
             let Some(d) = e.draw else { continue };
             match d {
                 SsDraw::Dust => dust::draw(e, &ctx, &mut out),
+                SsDraw::Blast => blast::draw(e, &ctx, &mut out),
                 SsDraw::Hahen | SsDraw::HahenGray => hahen::draw(e, &mut out),
                 SsDraw::HitMark => hitmark::draw(e, &ctx, &mut out),
                 SsDraw::EnFire => en_fire::draw(e, &ctx, &mut out),
@@ -687,6 +808,9 @@ impl PlayState {
                 SsDraw::DeadDb => dead_db::draw(e, ctx.billboard, &mut out),
                 SsDraw::FireTail => fire_tail::draw(e, &ctx, &mut out),
                 SsDraw::FhgFlashShock => fhg_flash::draw_shock(e, ctx.billboard, &mut out),
+                SsDraw::Fcircle => fcircle::draw(e, ctx.gameplay_frames, &mut out),
+                SsDraw::KFire => k_fire::draw(e, i, &ctx, &mut out),
+                SsDraw::Sibuki => sibuki::draw(e, ctx.billboard, &mut out),
             }
         }
         for i in deleted {
@@ -753,6 +877,32 @@ impl PlayState {
                 self.effect_ctx.shield_particles[i] = Some(s);
                 i + SPARK_COUNT + BLURE_COUNT
             }
+        }
+    }
+
+    /// `Effect_Delete`: the effect at `index` (as `Effect_Add` gave it) made inactive and
+    /// destroyed. `TOTAL_EFFECT_COUNT` (what an `Effect_Add` that found no slot gives, as for
+    /// every `EffectBlure`, which isn't ported) does nothing.
+    pub fn effect_delete(&mut self, index: usize) {
+        const TOTAL: usize = SPARK_COUNT + BLURE_COUNT + SHIELD_PARTICLE_COUNT;
+        if index == TOTAL {
+            return;
+        }
+        if index < SPARK_COUNT {
+            // EffectSpark_Destroy does nothing.
+            self.effect_ctx.sparks[index] = None;
+            return;
+        }
+        let index = index - SPARK_COUNT;
+        if index < BLURE_COUNT {
+            // No trail is ever added (EffectBlure isn't ported).
+            return;
+        }
+        let index = index - BLURE_COUNT;
+        if index < SHIELD_PARTICLE_COUNT
+            && let Some(s) = self.effect_ctx.shield_particles[index].take()
+        {
+            shield_particle::destroy(self, &s);
         }
     }
 
@@ -847,9 +997,9 @@ impl PlayState {
                     self.effect_add(EffectInit::Spark(blood_spark(v, start, end)));
                 }
                 HitFx::Blood(BLOOD_WATER, v) => {
-                    // CollisionCheck_WaterBurst: EffectSsSibuki_SpawnBurst (not ported; no actor
-                    // has HIT4), then CollisionCheck_SpawnWaterDroplets.
-                    log::debug!("CollisionCheck_WaterBurst: EffectSsSibuki is not ported");
+                    // CollisionCheck_WaterBurst: EffectSsSibuki_SpawnBurst (no actor has HIT4),
+                    // then CollisionCheck_SpawnWaterDroplets.
+                    self.with_ss(|s| s.sibuki_spawn_burst(v));
                     let start = [[255, 255, 255, 255], [100, 100, 100, 100], [100, 100, 100, 100], [100, 100, 100, 100]];
                     let end = [[50, 50, 50, 50], [50, 50, 50, 50], [50, 50, 50, 50], [0, 0, 0, 0]];
                     self.effect_add(EffectInit::Spark(blood_spark(v, start, end)));

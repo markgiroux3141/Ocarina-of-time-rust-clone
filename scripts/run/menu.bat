@@ -30,6 +30,7 @@ echo     5  import               Re-import the asset pack
 echo    44  decomp-check         GAME-05's decomp upgrade check: a loose import against the old decomp's
 echo    45  test-damage          GAME-05's damage and health tests: the hit kinds, death and the game over, the Deku Baba
 echo    50  test-combat          GAME-05's combat tests: the guard, the battle camera, the effects, the Keese, the withered Deku Baba
+echo    53  test-enemies         GAME-05's other enemies' tests: the Deku Scrubs, the Skulltulas, Gohma's larvae
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -49,6 +50,7 @@ echo    46  game-deku-baba       Inside the Deku Tree by a Deku Baba: its bite, 
 echo    47  game-deku-baba-fairy The same with a fairy in a bottle: dying, it revives Link
 echo    48  game-dummy           The training dummy, its touch hurting Link (asks which kind)
 echo    51  game-combat          Inside the Deku Tree by a withered Deku Baba and a Keese: the shield (R), the battle camera
+echo    54  game-enemies         Inside the Deku Tree by an enemy of milestone 3b (asks which)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -62,6 +64,7 @@ echo    34  sandbox-mido-shop-audio  The Mido and shop run's audio log and WAV, 
 echo    35  ootx-sfx             Look a sound effect up by id or name
 echo    49  sandbox-deku-baba    The Deku Baba run's trace and screenshots, into out\run
 echo    52  sandbox-combat       The combat run's trace and screenshots, into out\run
+echo    55  sandbox-scrub        The Mad Scrub run's trace and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -123,6 +126,9 @@ if "%pick%"=="49" set "script=sandbox-deku-baba"
 if "%pick%"=="50" set "script=test-combat"
 if "%pick%"=="51" set "script=game-combat"
 if "%pick%"=="52" set "script=sandbox-combat"
+if "%pick%"=="53" set "script=test-enemies"
+if "%pick%"=="54" goto enemies
+if "%pick%"=="55" set "script=sandbox-scrub"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -142,5 +148,13 @@ set "kind="
 set /p "kind=Kind (none, fire, ice, electric, knockback): "
 call "%~dp0game-dummy.bat" %kind%
 echo game-dummy finished (exit code %errorlevel%).
+pause
+goto menu
+
+:enemies
+set "who="
+set /p "who=Enemy (scrub, hint, shop, skulltula, walltula, gold, larva): "
+call "%~dp0game-enemies.bat" %who%
+echo game-enemies finished (exit code %errorlevel%).
 pause
 goto menu

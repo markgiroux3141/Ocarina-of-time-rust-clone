@@ -72,6 +72,15 @@
 //! `drop` if any, picked up). Between the two, Link walks back to the start: the Deku Baba grows
 //! back where he picked up its stick, and bites within reach of its home.
 //!
+//! **A Mad Scrub** (GAME-05 milestone 3b, `Route::Scrub`, the `scrub` test and script) runs
+//! inside the Deku Tree on the `deku-tree-inside` preset, from a debug start in room 4
+//! (`SCRUB_START_ROOM`: `Room_RequestNewRoom` and `Room_FinishRoomChange`, then Link placed at
+//! `SCRUB_START`), 250 in front of the `En_Dekunuts` at (-74, -880, 1046) and facing it. Link holds
+//! the guard (R) until the scrub's nut, bounced back off the Deku Shield, knocks it out of its
+//! flower (`Step::NutBounced`: `EnDekunuts_SetupBeginRun`); then he locks on (Z) and runs it down,
+//! slashing (B) once it's within reach (`Step::ScrubCaught`: `EnDekunuts_BeDamaged`), until it
+//! dies (`Step::ScrubKilled`: gone, its drop from table 3, if any, picked up).
+//!
 //! **The drop depends on `Rand`.** A cut Kokiri bush draws from drop table 2, which gives
 //! something for 5 of its 16 entries at full health (`func_8001F404` turns the hearts into
 //! green rupees). The run cuts the four bushes by child 4 in turn until one drops (in the order
@@ -181,6 +190,12 @@ pub enum Step {
     KarebabaKilled,
     /// Its Deku Stick picked up (`GI_DEKU_STICKS_1`).
     StickTaken,
+    /// A Mad Scrub's nut bounced back off the shield and knocked it out (`EnDekunuts_BeginRun`).
+    NutBounced,
+    /// The Mad Scrub caught and slashed (`EnDekunuts_BeDamaged`).
+    ScrubCaught,
+    /// The Mad Scrub dead and gone (`EnDekunuts_Die` over), its drop, if any, picked up.
+    ScrubKilled,
 }
 
 impl Step {
@@ -223,6 +238,9 @@ impl Step {
             Step::KeeseKilled => "keese_killed",
             Step::KarebabaKilled => "karebaba_killed",
             Step::StickTaken => "stick_taken",
+            Step::NutBounced => "nut_bounced",
+            Step::ScrubCaught => "scrub_caught",
+            Step::ScrubKilled => "scrub_killed",
         }
     }
 }
@@ -250,7 +268,16 @@ pub enum Route {
     /// Deku Baba killed with the battle camera on, their drops picked up (GAME-05 milestone 3a),
     /// from a debug start (`COMBAT_START`).
     Combat,
+    /// Inside the Deku Tree, a Mad Scrub's nut bounced back off the shield, the scrub caught and
+    /// killed (GAME-05 milestone 3b), from a debug start in room 4 (`SCRUB_START`).
+    Scrub,
 }
+
+/// The `Scrub` route's Mad Scrub: room 4's `En_Dekunuts` (params 0xFF00), facing -z.
+pub const SCRUB_HOME: Vec3 = Vec3::new(-74.0, -880.0, 1046.0);
+/// Its room, and where the route starts Link: 250 in front of the scrub, facing it (yaw 0: +z).
+pub const SCRUB_START_ROOM: i8 = 4;
+pub const SCRUB_START: (Vec3, i16) = (Vec3::new(-74.0, -880.0, 796.0), 0);
 
 /// The `Combat` route's Keese: room 0's `En_Firefly` (params 3, perched) on the ground floor's
 /// wall, 262 up.
@@ -271,7 +298,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -280,7 +307,7 @@ impl Route {
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
-            Route::DekuBaba | Route::Combat => Some("deku-tree-inside"),
+            Route::DekuBaba | Route::Combat | Route::Scrub => Some("deku-tree-inside"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -290,7 +317,30 @@ impl Route {
         match self {
             Route::DekuBaba => Some(DEKU_BABA_START),
             Route::Combat => Some(COMBAT_START),
+            Route::Scrub => Some(SCRUB_START),
             _ => None,
+        }
+    }
+
+    /// The room a debug start changes to after `Play_Init`, if any.
+    pub fn start_room(self) -> Option<i8> {
+        match self {
+            Route::Scrub => Some(SCRUB_START_ROOM),
+            _ => None,
+        }
+    }
+
+    /// The debug start on a play state just entered at `entrance()`: the start's room
+    /// (`Room_RequestNewRoom`, a frame for it to load, `Room_FinishRoomChange`), then Link placed.
+    pub fn debug_start(self, w: &mut PlayState) {
+        if let Some(room) = self.start_room()
+            && w.room_request(room)
+        {
+            w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
+            w.room_change_done();
+        }
+        if let Some((p, y)) = self.start() {
+            w.place_player(p, y);
         }
     }
 
@@ -323,6 +373,7 @@ impl Route {
             Route::NewFileDekuTree => "new-file-deku-tree",
             Route::DekuBaba => "deku-baba",
             Route::Combat => "combat",
+            Route::Scrub => "scrub",
         }
     }
 
@@ -333,13 +384,14 @@ impl Route {
             Route::NewSaveDekuTree => 16000,
             Route::NewFileDekuTree => 24000,
             Route::Combat => 9000,
+            Route::Scrub => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -404,6 +456,11 @@ enum Task {
     KillKeese(Vec3),
     /// Kill the withered Deku Baba whose home is here and pick up its stick (`fight_karebaba`).
     FightKarebaba(Vec3),
+    /// The guard up until the Mad Scrub whose home is here is knocked out by its own nut
+    /// (`bounce_nut`).
+    BounceNut(Vec3),
+    /// Catch that Mad Scrub and kill it, and pick up its drop (`catch_scrub`).
+    CatchScrub(Vec3),
 }
 
 /// An actor the run talks to.
@@ -489,6 +546,7 @@ impl Playthrough {
             // Back to the start between the fights: the Deku Baba grows back where Link picked up
             // its stick, and its head bites within reach of its home.
             Route::Combat => vec![Task::FightKarebaba(COMBAT_KAREBABA_HOME), Task::Walk(vec![COMBAT_START.0]), Task::BlockKeese(COMBAT_KEESE_HOME), Task::KillKeese(COMBAT_KEESE_HOME)],
+            Route::Scrub => vec![Task::BounceNut(SCRUB_HOME), Task::CatchScrub(SCRUB_HOME)],
         };
         Playthrough {
             route,
@@ -969,6 +1027,8 @@ impl Playthrough {
             Task::BlockKeese(home) => self.block_keese(w, home),
             Task::KillKeese(home) => self.kill_keese(w, home),
             Task::FightKarebaba(home) => self.fight_karebaba(w, home),
+            Task::BounceNut(home) => self.bounce_nut(w, home),
+            Task::CatchScrub(home) => self.catch_scrub(w, home),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -1204,7 +1264,9 @@ impl Playthrough {
                         Some(PadState { button: BTN_Z | if self.prev.button & BTN_B == 0 && p.action != PA::Attack { BTN_B } else { 0 }, ..idle })
                     }
                     1 => {
-                        if k.action == KA::Stay && matches!(p.action, PA::TargetIdle | PA::TargetRun | PA::GuardHit | PA::StandingStill) {
+                        // (Sidestep too: the stick towards a Keese off to the side starts a
+                        // sidestep, which the next frame's stick has to keep going.)
+                        if k.action == KA::Stay && matches!(p.action, PA::TargetIdle | PA::TargetRun | PA::Sidestep | PA::GuardHit | PA::StandingStill) {
                             // In reach (25 across: it hovers some 55 up): B; else in at a run, still
                             // locked on.
                             if Self::xz_dist(p.actor.world_pos, k.actor.world_pos) > 25.0 {
@@ -1243,6 +1305,109 @@ impl Playthrough {
             _ => {
                 let Some(it) = self.dropped.and_then(|h| w.actors.downcast::<EnItem00>(h)).filter(|i| i.action != ItemAction::Collected) else {
                     self.finish(Some(Step::KeeseKilled));
+                    return None;
+                };
+                Some(stick_towards(w, it.actor.world_pos, SLOW))
+            }
+        }
+    }
+
+    /// The `En_Dekunuts` (not its flower) whose home is `home`, if it's still there.
+    fn mad_scrub_at(w: &PlayState, home: Vec3) -> Option<(ActorHandle, &crate::en_dekunuts::EnDekunuts)> {
+        w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::en_dekunuts::EnDekunuts>(h).filter(|n| n.actor.home_pos.distance(home) < 1.0 && n.actor.params != crate::en_dekunuts::DEKUNUTS_FLOWER && !n.actor.killed).map(|n| (h, n)))
+    }
+
+    /// `Task::BounceNut`: the guard (R, nothing locked on) until the scrub's nut has bounced off
+    /// the Deku Shield and knocked it out of its flower (`EnDekunuts_BeginRun`, `Step::NutBounced`).
+    fn bounce_nut(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        use crate::en_dekunuts::Action as NA;
+        use eng_input::pad::BTN_R;
+        let idle = PadState::default();
+        self.wait += 1;
+        let Some((_, n)) = Self::mad_scrub_at(w, home) else {
+            // Its room's actors spawn in the first frames.
+            if self.wait > 60 {
+                self.failure = Some(format!("no Mad Scrub at {home}"));
+                return None;
+            }
+            return Some(idle);
+        };
+        if n.action == NA::BeginRun {
+            self.finish(Some(Step::NutBounced));
+            return None;
+        }
+        if self.wait > 600 {
+            self.failure = Some(format!("the Mad Scrub's nut didn't come back: {:?}", n.action));
+            return None;
+        }
+        Some(PadState { button: BTN_R, ..idle })
+    }
+
+    /// `Task::CatchScrub`'s phases in `sub`:
+    /// - 0: Z on every other frame until Link is locked on to the scrub (`focusActor`);
+    /// - 1: locked on (Z), after it at a run; within 45 across, B; once it's hit
+    ///   (`EnDekunuts_BeDamaged`), `Step::ScrubCaught`; a slash that misses, after it again;
+    /// - 2: until it's gone (`EnDekunuts_Die` over), noting its drop (`Item_DropCollectibleRandom`);
+    /// - 3: onto the drop until it's collected, then `Step::ScrubKilled`.
+    fn catch_scrub(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
+        use crate::en_dekunuts::Action as NA;
+        use eng_input::pad::BTN_Z;
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 2400 {
+            self.failure = Some(format!("the Mad Scrub's chase stalled in phase {}", self.sub));
+            return None;
+        }
+        let z = |mut p: PadState| {
+            p.button |= BTN_Z;
+            p
+        };
+        match self.sub {
+            0 | 1 => {
+                let Some((h, n)) = Self::mad_scrub_at(w, home) else {
+                    self.failure = Some("the Mad Scrub went before it was caught".into());
+                    return None;
+                };
+                if matches!(n.action, NA::BeDamaged | NA::Die) {
+                    self.steps.push((Step::ScrubCaught, self.frame));
+                    self.done = Some(Step::ScrubCaught);
+                    self.sub = 2;
+                    self.items = w.actors.all().into_iter().filter(|&x| w.actors.downcast::<EnItem00>(x).is_some()).collect();
+                    return Some(z(idle));
+                }
+                let p = w.player();
+                if self.sub == 0 {
+                    if p.focus_actor == Some(h) {
+                        self.sub = 1;
+                        return Some(z(idle));
+                    }
+                    return Some(if self.prev.button & BTN_Z == 0 { z(idle) } else { idle });
+                }
+                if p.focus_actor != Some(h) {
+                    self.sub = 0;
+                    return Some(idle);
+                }
+                if Self::xz_dist(p.actor.world_pos, n.actor.world_pos) < 45.0 && p.action != PA::Attack {
+                    return Some(z(self.press(BTN_B)));
+                }
+                Some(z(stick_towards(w, n.actor.world_pos, RUN)))
+            }
+            2 => {
+                if Self::mad_scrub_at(w, home).is_some() {
+                    return Some(idle);
+                }
+                self.dropped = w.actors.all().into_iter().find(|h| !self.items.contains(h) && w.actors.downcast::<EnItem00>(*h).is_some());
+                self.drop = self.dropped.and_then(|h| w.actors.actor(h)).map(|a| a.params);
+                if self.dropped.is_none() {
+                    self.finish(Some(Step::ScrubKilled));
+                    return None;
+                }
+                self.sub = 3;
+                Some(idle)
+            }
+            _ => {
+                let Some(it) = self.dropped.and_then(|h| w.actors.downcast::<EnItem00>(h)).filter(|i| i.action != ItemAction::Collected) else {
+                    self.finish(Some(Step::ScrubKilled));
                     return None;
                 };
                 Some(stick_towards(w, it.actor.world_pos, SLOW))

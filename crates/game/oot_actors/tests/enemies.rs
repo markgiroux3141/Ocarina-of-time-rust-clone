@@ -365,13 +365,14 @@ fn a_sword_slash_kills_a_keese_and_it_disappears_dropping_from_table_14() {
     let gone = w.actors.downcast::<EnFirefly>(h).is_none() || w.actors.actor(h).is_some_and(|a| a.killed);
     assert!(gone, "the Keese is gone");
     // What table 14 drops (sItemDropIds[14 * 16 + Rand_ZeroOne() * 16]): at most one, at the
-    // Keese, one of the table's.
+    // Keese, one of the table's (after func_8001F404: a recovery heart, 3, at full health is a
+    // green rupee, 0).
     let ids = &a.item_drops.ids[14 * 16..14 * 16 + 16];
     let new_items: Vec<&EnItem00> = w.actors.all().into_iter().filter(|i| !items_before.contains(i)).filter_map(|i| w.actors.downcast::<EnItem00>(i)).collect();
     assert!(new_items.len() <= 1);
     for it in &new_items {
         assert!(it.actor.home_pos.distance(last) < 1.0, "{:?} vs {last:?}", it.actor.home_pos);
-        assert!(ids.contains(&(it.actor.params as u8)), "{} in {ids:?}", it.actor.params);
+        assert!(ids.contains(&(it.actor.params as u8)) || (it.actor.params == 0 && ids.contains(&3)), "{} in {ids:?}", it.actor.params);
     }
     eprintln!("table 14: {ids:?}; dropped {:?}", new_items.iter().map(|i| i.actor.params).collect::<Vec<_>>());
 }

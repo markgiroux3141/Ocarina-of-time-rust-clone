@@ -10,8 +10,8 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | 1 | The decomp upgrade: an address-based name map from `2f4c25d`'s names to the new commit's, the citations migrated by it, the importer on the new layout, the pack's record names renamed (a format bump); every test passes and the goldens are the same bytes | done |
 | 2 | Damage and health: Player taking damage (kinds 3 and 4, the hit while swimming, burning, the red flash), death and game over, the enemies' damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`) | done |
 | 3a | Combat basics: Player's guard with the shield (blocking, deflecting); `Camera_Battle1`; the effects (`EffectSs`, `z_effect.c`), `En_Dekubaba`'s included; `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5); drops on death | done |
-| 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | |
-| 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors | |
+| 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | done |
+| 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`) | |
 | 5 | Items in use: Deku sticks and nuts, the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`) | |
 | 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
 
@@ -636,3 +636,255 @@ By hand, `game-combat.bat` (WASD the stick, Q is Z, E is B, R is R, Space is A):
   - whether blocking feels right: when R takes effect, how far Link is pushed;
   - whether the battle camera feels right as you move round an enemy;
   - anything that looks off in the effects.
+
+## Milestone 3b: the rest of the Deku Tree's enemies
+
+**Answer:** done. Every enemy the Master Quest Deku Tree places is ported whole:
+- the Deku Scrubs: `En_Dekunuts` (the Mad Scrub), `En_Hintnuts` (the hint scrubs and their order
+  puzzle) and `En_Shopnuts` (the Business Scrub), with what a caught Business Scrub becomes
+  (`En_Dns`, the salesman);
+- the Skulltula (`En_St`);
+- the Skullwalltula and the Gold Skulltula (`En_Sw`), with the token a Gold Skulltula leaves
+  (`En_Si`), the save's token count and Gold Skulltula flags;
+- Gohma's eggs and larvae (`En_Goma`, pulled forward from milestone 6), its boss side waiting
+  for `Boss_Goma`.
+
+Four effect overlays they call are ported whole too (`Effect_Ss_Fcircle`, `_Blast`, `_K_Fire`,
+`_Sibuki`). The exit holds; its run is the golden `scrub`.
+
+The pack is format 19, in `out/data16`. Decisions are in
+[ADR 0037](adr/0037-the-deku-trees-other-enemies.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 53 to 55):
+- `test-enemies.bat`: the milestone's tests;
+- `game-enemies.bat NAME`: the game from a debug start in an enemy's room (`scrub`, `hint`,
+  `shop`, `skulltula`, `walltula`, `gold`, `larva`);
+- `sandbox-scrub.bat`: the exit run headless, its trace and screenshots.
+
+### The exit
+
+Proposed (change it if you meant something else): from debug starts in their rooms,
+- Link bounces a Deku Scrub's nut back off the Deku Shield, which knocks it out of its flower,
+  catches it and kills it (the Mad Scrub in room 4: the scripted run and golden);
+- he kills a Skullwalltula, a Gold Skulltula (and collects its token) and a Skulltula;
+- a Gohma egg hatches and he kills its larva.
+
+"Catches it" is read as the Mad Scrub's: knocked out, it runs, and Link runs it down and slashes
+it. The hint scrubs' catch (a talk) and the Business Scrub's (the salesman) are covered by the
+tests and the hand tests. The other kills are C-derived tests (each from a debug start in its
+room) and hand tests, not scripted runs (feedback: no long runs against `Rand`-driven enemies).
+
+### What was built
+
+**The Deku Scrubs** (`oot_actors::en_dekunuts`, `en_hintnuts`, `en_shopnuts`, `en_dns`):
+- **The Mad Scrub:** waiting in its flower (its timer from `Rand`), up to spit nuts at Link
+  (`En_Nutsball`, its nose swelling), down when he's near; its own nut bounced back knocks it out:
+  it runs away three times, gasping between, then home; a Deku Nut's flash stuns it, fire sets it
+  in a ring of fire, a sword kills it (the white puff, 15 fragments, a drop from table 3). Its
+  flower is its child and becomes a prop when it dies.
+- **The hint scrubs:** the same in the ground, but only their own nut knocks them out.
+  `sPuzzleCounter` (an overlay static, on the play state) counts room 9's three in order: out of
+  order, the third wrong one plays the error chime and the three sink and come back; in order,
+  the third becomes friendly (`ACTORCAT_BG`) and runs, and caught (by touch, or Z) it talks
+  (0x109C), leaves a recovery heart, runs off, and clears the room; the other two sink and are
+  gone. `Actor_SetTextWithPrefix` is ported (`oot_game::npc`).
+- **The Business Scrub** peeks and spits; hit by anything it spins up out of the ground and is
+  replaced by the salesman (`En_Dns` with its params, room 3's 4: the Deku Shield for 50). He
+  offers to talk; his choice checks the sale (`EnDns_CanBuy*`: not enough rupees, already owned,
+  not usable yet), offers the item and is paid when Link has it; bought or not, he burrows down
+  in dust (`func_80028990`), leaving three recovery hearts after a sale.
+
+**The Skulltula** (`oot_actors::en_st`): on its thread bobbing; Link near and below, it drops,
+lands with a shockwave (`Effect_Ss_Blast`), waits turning to face him and away, laughing, its
+teeth flashing; back up when he leaves. Its six cylinders: the metal front sways it, the back
+or body hurts it (2 health), a Deku Nut stuns it; dead, it bounces three times, rolls over,
+burns away in seven flames and drops from table 14. Touching Link costs half a heart and
+knocks him down (`play->damagePlayer`, ported as `player::play_damage_player`). Its spin's trail
+(`EffectBlure`) isn't ported (ADR 0033, 0037).
+
+**The Skullwalltula and the Gold Skulltula** (`oot_actors::en_sw`, `en_si`): a Skullwalltula finds its wall 60 behind it and turns on
+it now and then (its turns and waits from `Rand`); with Link climbing within 130 and in its
+sight it laughs, turns to him and dashes down the wall at him, purple-fogged, then brakes and
+goes home. One hit kills it: it tumbles down, bounces twice with rings of dust, dissolves in nine
+puffs and drops from table 3. A Gold Skulltula walks its wall or floor turning on the spot (one
+of type 2 only at night; 3 and 4, spawned by others, jump out); two hits kill it: it spins,
+dissolves, and leaves its token (`En_Si`), which grows and spins until Link touches it:
+`Item_Give(ITEM_SKULL_TOKEN)` (the count and the quest bit), Link held for the text 0xB4 and the
+small item fanfare, and its Gold Skulltula flag set (`SET_GS_FLAGS`) when the text closes. A
+Gold Skulltula whose flag is set isn't spawned again. The save keeps `gsFlags`; the messages'
+token count (`MESSAGE_TOKENS`) reads it. Ported with them: `Actor_SpawnFloorDustRing`,
+`func_8002DDF4`, `SurfaceType_IsIgnoredByProjectiles`, and the Gold Skulltula's look as a bake
+(the skeleton with its ten gold limbs).
+
+**Gohma's eggs and larvae** (`oot_actors::en_goma`): an egg squishes and sheds fragments; Link
+within 100 for 10 frames, it falls (a ceiling egg drops) and hatches into a larva, its shell 15
+pieces of debris (`En_Goma` 10 to 24). The larva stands, chases Link, crouches and jumps at him;
+the shield knocks it back or out of its jump, a Deku Nut stuns it, a sword's hit sprays bubbles
+(`Effect_Ss_Sibuki`) and throws it back to flee; at no health it dies, a flame rises
+(`Effect_Ss_K_Fire`), it shrinks away and drops from table 3. A hit breaks an egg before it
+hatches. Its boss side is ported and waits for `Boss_Goma` (milestone 6): her eggs (params 0 to
+2), her pieces (100 and up), the writes into her `childrenGohmaState` through a marked hook.
+`En_Goma`'s profile carries `ACTOR_BOSS_GOMA`'s id, as the C's does, and every egg and larva
+gets it.
+
+**The effects** (`oot_game::effect`): `Effect_Ss_Fcircle`, `_Blast`, `_K_Fire` (on `_En_Fire`'s
+bake) and `_Sibuki`, whole with their bakes; `CollisionCheck_WaterBurst` now spawns its bubbles;
+`Effect_Delete`; the blast's draw reads the floor (`DrawCtx::col`).
+
+**Elsewhere:**
+- `CollisionCheck_GetSwordDamage`; Player's `unk_860` (always 0 until a Deku Stick can burn);
+  `func_80028894` and `func_80028990`.
+- Debug starts in a room: `Route::debug_start` (the room requested, a frame, the change
+  finished, then Link placed), as the game's and the sandbox's `--room`.
+- The draw-time `Rand` of a hurt larva runs in `draw_update`, once per game frame (ADR 0037).
+- Per-limb colours as dynamic segments in skeleton bakes (the Skulltula's teeth, the larva's eyes
+  and body); the Business Scrub's nose drawn apart while it spits.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game17`, `OOT_DATA_DIR=out/data16`):
+447 passed, 0 failed, 1 ignored. New, with their expectations from the C:
+- **`oot_actors --test scrubs`** (6):
+  - the Mad Scrub's init (its shots, its table, its timer, its flower as its child), up (the
+    collider's height frame by frame, `NA_SE_EN_NUTS_UP` on frame 8, `AC_ON` on 9), its stand,
+    its spit (the nut 23 ahead and 12 up on frame 6), its next round and its burrow;
+  - its own nut bounced back by Link's guard knocking it out (37 high, mass 50), its run (speed
+    to 7.5 by 1), its gasp, a slash (knocked back at 10, red for the damage animation), its death
+    (the puff, 15 fragments, its flower a prop);
+  - a Deku Nut's stun (five loops, four faints, blue) and fire's ring (`EffectSsFCircle_Spawn`
+    40 by 50), their hits injected;
+  - the hint scrubs' puzzle: their texts (0x1000, 0x1000, 0x109C), a sword's hit (down, not
+    counted), out of order (-1, -2, -3, the error chime, -4, all three back up), in order (1, 2,
+    then the third friendly in `ACTORCAT_BG`), caught and talking, the heart, the room cleared,
+    the other two gone, the flowers props;
+  - the Business Scrub into the salesman (`En_Dns` 4: 0x10CB, 50, the Deku Shield), the choice,
+    "already owned" (0x10A6), his burrow (`NA_SE_EN_AKINDONUTS_HIDE`, 0x2000 a frame, gone 400
+    down, nothing paid), and one selling a piece of heart already bought gone at init;
+  - the Deku Shield sold: 0x10A7, the offer, Link holding it up, paid 50 when the text is done,
+    three hearts.
+- **`oot_actors --test skulltula_st`** (9): its colliders, scale and ceiling; the bob by the frame
+  counter; the drop, the shockwave and the landing, waiting and turning; back to the ceiling; a
+  slash on its front (the sway, no damage) and on its back (the spin, red); the killing slash's
+  three bounces, the roll and seven flames; a Deku Nut's 120-frame stun; touching Link.
+- **`oot_actors --test skulltulas`** (6): the Skullwalltula finding its wall and turning; its dash
+  at Link climbing its vines; a slash killing it (the fall, the bounces, nine puffs, table 3); a
+  Gold Skulltula's two slashes and its token; the token taken (the count, the freeze, 0xB4, the
+  fanfare, the flag) and the Gold Skulltula not spawned again; the spawned ones jumping out or
+  waiting for the night.
+- **`oot_actors --test gohma_larvae`** (9): the eggs' init (`sSpawnNum`, their `Rand` values);
+  the squish and the fragments every 16 frames; hatching after 10 frames near (the 15 pieces of
+  shell); the chase and the jump; two Kokiri Sword slashes (the bubbles, the hurt, the flight,
+  the death, the flame, the shrink, table 3); an egg broken; a Deku Nut's stun; the shield's
+  knockback; the ceiling egg's fall.
+- **`oot_actors --test scrub_run`** (1): the exit run.
+- Two older tests changed: `enemies`' Keese kill now allows a heart turned into a green rupee
+  at full health (`func_8001F404`, as the combat test did), and `scenes` finds a profile's row by
+  name (`En_Goma`'s id is `Boss_Goma`'s) and reads `En_Sw`'s params after its init's conversion.
+
+**The exit run** (`Route::Scrub`, `--script scrub`): Link guards from frame 1; the Mad Scrub
+spits and its nut comes back off the Deku Shield into it (`nut_bounced` 73); he locks on and runs
+it down as it runs and gasps, and slashes it (`scrub_caught` 142); it dies (`scrub_killed` 170,
+no drop this time). 170 frames.
+
+**The goldens.** Against milestone 3a's build (`target/game16`, 552ce5d, on data15):
+- **`playthrough`, `mido_shop`, `new_save_deku_tree`, `mido_shop_audio`**: Kokiri Forest's Gold
+  Skulltula (out only at night) was a placeholder; it now calls `Rand`, so the playthrough's
+  first bush drops (the bush step at 1085, not 1138), and the plateau switch's rupee lands on
+  Link (the switch step 6 frames sooner, the rest 14 later).
+- **`deku_baba`, `combat`**: room 0's Skullwalltula's init moves it into the enemy list during
+  `Actor_UpdateAll`, and the loop goes on there as the C's does, so room 0's enemies update a
+  frame sooner; its new actors call `Rand`. The Deku Baba bites at 30 (31). The combat run's
+  Keese chase stalled and was fixed (a sidestep now keeps the chase going): `keese_killed` at 782
+  (1890).
+- **New case `scrub`:** the exit run, the same bytes over two runs.
+
+Re-recorded and logged in [golden/README.md](../golden/README.md): 88 hashes, 64 cases.
+
+### Decisions
+
+- **[ADR 0037](adr/0037-the-deku-trees-other-enemies.md):** every enemy whole with what it
+  becomes (`En_Si`, `En_Dns`); the four effects whole; `EffectBlure` still unported;
+  `En_Goma`'s boss side behind a hook; draw-time `Rand` in `draw_update`; per-limb colours in
+  bakes; debug starts change room first; the exit's run is the Mad Scrub's; pack format 19.
+- **The ADRs' numbers:** 0035 and 0036 are the overworld editor's, so this milestone's is 0037.
+- **Room 0's actors call `Rand` now:** 3a's combat route had to be re-tuned (below), and the
+  goldens in the Deku Tree changed.
+- **The Deku Tree's "big" Skulltulas are the normal size:** both placed have params 0 (params 1
+  is the big one).
+
+### Known gaps
+
+- **`EffectBlure`** (the Skulltula's spin trail, and Link's sword's) isn't ported.
+- **`Boss_Goma`** isn't: the larvae's hook logs its writes, and no boss piece has a bake yet.
+- **Not reachable yet:** Deku Nuts, arrows, a burning Deku Stick, the Lens of Truth and the
+  hammer's shock wave aren't Player's yet; the tests inject their hits where the enemies react
+  to them (the stuns, the fire ring).
+- **Room 2's Skulltula** hangs 468 above the floor below it; `EnSt_IsCloseToPlayer` allows 400,
+  so it only drops for Link on the higher ground (as in the game).
+- **The order of `Rand` in a call's arguments** (a larva's debris positions, its hurt colours)
+  assumes IDO evaluates them left to right; it isn't checked against the disassembly.
+- **`ActorShadow_DrawCircle`** is still not ported for any actor; no quake offset.
+- **`En_Sw`'s**: the Gold Skulltula's shine is lit from the camera's view, not from the eye
+  towards it (`func_8002EBCC`'s look-at); the room 0 Gold Skulltula's crate (`Obj_Kibako2`) is a
+  placeholder, so it's out in the open; the Skullwalltulas sit above Link's reach until he has
+  nuts or the slingshot; no hookshot (the token's pull).
+
+### Fixes after playing by hand
+
+- **`game-enemies.bat shop` dropped Link into a hole.** Its start, 250 to the Business Scrub's
+  -x side, is over one of room 3's holes down to room 9; the floor check that picked it read
+  another surface. It's now 220 off towards -x and -z, (-718, -820, 177), on the floor and in
+  the 160 to 480 the scrub needs to come up. The tests' start was the same spot (they passed
+  because they move Link next to the salesman soon after) and is moved too.
+- **The hint scrubs' order isn't 2, 3, 1.** That's the original Deku Tree's: its third scrub
+  tells it (text 0x109B, "The order is... 2 3 1", still in the ROM). Master Quest's room places
+  the scrubs differently, and its third says 0x109C (Queen Gohma's weak spot) instead. The C
+  counts the scrubs by their params, 1, 2, 3 (`EnHintnuts_HitByScrubProjectile2`), and the MQ
+  scene puts params 1 at (-369, -1880, -904), 2 at (-947, -1880, -757) and 3, the one that
+  talks, at (-660, -1880, -951): from the debug start (or from where Link drops in from room 3),
+  facing them, the right one, then the left one, then the middle one.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-enemies.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-scrub.bat
+```
+
+### By hand
+
+`game-enemies.bat NAME` (or menu 54). WASD the stick, Q is Z, E is B, R the shield, Space A.
+1. **`scrub`** (room 4): the Mad Scrub pops up and spits at you. Hold R facing it: the nut bounces
+   back into it, and it jumps out and runs. Q to lock on, run after it, E when close: a white
+   puff and fragments, maybe a drop. Without R the nut costs half a heart. Walk within about 120
+   and it hides.
+2. **`hint`** (room 9): three scrubs spit at you. Knock each out with its own nut (R): first the
+   one to your right, then the one to your left, then the one ahead. The first two freeze blue and
+   faint; the third runs: catch it (walk into it, or Q) and it talks, leaves a heart and runs off;
+   the other two sink away. In another order: an error chime, and all three sink and come back.
+3. **`shop`** (room 3): the Business Scrub spits; knock it out with its nut: it spins up and
+   stands, nervous. A by it: it offers the Deku Shield for 50; you have one, so it says so and
+   burrows away in dust, spinning.
+4. **`skulltula`** (room 5): it drops from the ceiling with a sound and a white ring on the
+   floor, bobs, laughs, its teeth flash red, and it turns to face you and away. E on its front:
+   sparks and a metal sound, it swings on its thread. E on its back: red, a cry, it spins and
+   rises; a second back slash kills it (three bounces, it rolls over, seven small flames, maybe an
+   item). Under it: half a heart and a knockdown. Walk away: it climbs back up.
+5. **`walltula`** (room 0): look up at the vines: it turns now and then. Climb the vines (the
+   stick into the wall) and keep moving: it laughs, turns purple and dashes down at you. Hold
+   still on the vines: it goes back. (It can't be reached from the floor yet.)
+6. **`gold`** (room 0's ledge): two slashes: red, then it spins and puffs away, a jingle, and a
+   token rises spinning. Walk into it: Link freezes, the small item fanfare, "You destroyed a
+   Gold Skulltula...". Leave the Deku Tree by its entrance and come back: it's gone.
+7. **`larva`** (room 0's ledge): the ceiling egg drops onto the chest and hatches into a larva
+   in a burst of shell; walk to the ledge egg: it falls and hatches. A larva runs at you, crouches
+   (eyes red) and leaps. E: bubbles, it flashes and is thrown back, then flees; a second E kills it
+   (it rolls over, a flame, it shrinks away, maybe an item). R as it leaps stops it.
+- **What to report:** whether each enemy's timing feels right (the scrubs' spit, the Skulltula's
+  drop and turns, the Skullwalltula's dash, the larva's leap); whether bouncing a nut back with
+  R feels as it should; anything that looks off (the Gold Skulltula's shine and its token's size,
+  the egg's squish, the bubbles' direction, the effects).

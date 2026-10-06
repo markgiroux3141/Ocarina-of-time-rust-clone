@@ -178,6 +178,9 @@ pub struct SaveContext {
     pub inventory: Inventory,
     /// `sceneFlags`, by scene id.
     pub scene_flags: Vec<SavedSceneFlags>,
+    /// `gsFlags`: the Gold Skulltulas' tokens taken, a byte of flags per index (a scene's
+    /// number + 1 in the placed ones' params), four to a word (`GET_GS_FLAGS`, `SET_GS_FLAGS`).
+    pub gs_flags: [i32; 6],
     /// `savedSceneId`.
     pub saved_scene_id: u16,
     /// `mapIndex`: the dungeon whose items `Item_Give` counts (0 outside dungeons here: the
@@ -198,6 +201,10 @@ pub struct SaveContext {
 
 /// `EVENTCHKINF_A8` (`save.h`): the Deku Tree's intro seen.
 pub const EVENTCHKINF_A8: u16 = 0xA8;
+
+/// `gGsFlagsMasks`, `gGsFlagsShifts` (`z_inventory.c`).
+pub const GS_FLAGS_MASKS: [u32; 4] = [0x0000_00FF, 0x0000_FF00, 0x00FF_0000, 0xFF00_0000];
+pub const GS_FLAGS_SHIFTS: [u32; 4] = [0, 8, 16, 24];
 
 /// `GAMEMODE_NORMAL` (`save.h`).
 pub const GAMEMODE_NORMAL: u8 = 0;
@@ -408,6 +415,7 @@ impl SaveContext {
                 gs_tokens: 0,
             },
             scene_flags: vec![SavedSceneFlags::default(); SCENE_FLAGS_COUNT],
+            gs_flags: [0; 6],
             saved_scene_id: 0,
             map_index: 0,
             button_status: [0; 5],
@@ -737,6 +745,17 @@ impl SaveContext {
     /// `IS_DAY`.
     pub fn is_day(&self) -> bool {
         !self.night_flag
+    }
+
+    /// `GET_GS_FLAGS(index)` (`save.h`): `gsFlags[index >> 2]`'s byte `index & 3`
+    /// (`gGsFlagsMasks`, `gGsFlagsShifts`).
+    pub fn get_gs_flags(&self, index: i32) -> u32 {
+        (self.gs_flags[(index >> 2) as usize] as u32 & GS_FLAGS_MASKS[(index & 3) as usize]) >> GS_FLAGS_SHIFTS[(index & 3) as usize]
+    }
+
+    /// `SET_GS_FLAGS(index, value)` (`save.h`): `value` or'ed into that byte.
+    pub fn set_gs_flags(&mut self, index: i32, value: i32) {
+        self.gs_flags[(index >> 2) as usize] |= value << GS_FLAGS_SHIFTS[(index & 3) as usize];
     }
 }
 

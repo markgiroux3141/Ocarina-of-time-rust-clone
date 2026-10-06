@@ -1040,7 +1040,8 @@ impl MessageContext {
                 }
                 decoded_buf_pos -= 1;
             } else if matches!(cur_char, MESSAGE_MARATHON_TIME | MESSAGE_RACE_TIME | MESSAGE_POINTS | MESSAGE_TOKENS | MESSAGE_FISH_INFO | MESSAGE_TIME) {
-                // The timers, scores and the clock: only the clock is kept by the save here.
+                // The timers, scores, tokens and the clock: only the clock and the tokens are
+                // kept by the save here.
                 for d in &self.number_digits(cur_char, save) {
                     if *d != b' ' {
                         self.font.load_char(d - b' ', char_tex_idx);
@@ -1117,7 +1118,8 @@ impl MessageContext {
     }
 
     /// The characters `Message_Decode` writes for a number: `MESSAGE_TIME` (the clock as
-    /// "hh:mm"); the timers, scores and tokens the save doesn't keep read as 0.
+    /// "hh:mm"), `MESSAGE_TOKENS` (`gsTokens`); the timers and scores the save doesn't keep read
+    /// as 0.
     fn number_digits(&self, c: u8, save: &SaveContext) -> Vec<u8> {
         let d = |v: i16| b'0' + v as u8;
         match c {
@@ -1133,6 +1135,29 @@ impl MessageContext {
                     digits[3] -= 10;
                 }
                 vec![d(digits[0]), d(digits[1]), b':', d(digits[2]), d(digits[3])]
+            }
+            MESSAGE_TOKENS => {
+                // The Gold Skulltula tokens collected, without leading zeros.
+                let mut digits = [0i16, 0, save.inventory.gs_tokens];
+                while digits[2] >= 100 {
+                    digits[0] += 1;
+                    digits[2] -= 100;
+                }
+                while digits[2] >= 10 {
+                    digits[1] += 1;
+                    digits[2] -= 10;
+                }
+                let mut load_char = false;
+                let mut out = Vec::new();
+                for (i, &v) in digits.iter().enumerate() {
+                    if i == 2 || v != 0 {
+                        load_char = true;
+                    }
+                    if load_char {
+                        out.push(d(v));
+                    }
+                }
+                out
             }
             MESSAGE_MARATHON_TIME | MESSAGE_RACE_TIME => vec![b'0', b'0', b'"', b'0', b'0', b'"'],
             _ => vec![b'0'],
@@ -1158,8 +1183,13 @@ impl MessageContext {
             // The piece of heart texts follow each other: one per piece already held.
             text_id += ((f.save.inventory.quest_items & 0xF000_0000) >> QUEST_HEART_PIECE_COUNT) as u16;
         }
-        // (The Biggoron's Sword and gold Skulltula variants of 0xC and 0xB4 need equipment
-        // and flags this save doesn't keep.)
+        // (The Biggoron's Sword variant of 0xC needs equipment this save doesn't keep.)
+        // EVENTCHKINF_96 (`save.h`, 0x96): the Gold Skulltula token's text, 0xB5 once it's set.
+        // @bug (game): it reads `msgCtx->textId`, the last text's id (the new one is set
+        // below), so it takes the last text to have been 0xB4 too.
+        else if self.text_id == 0xB4 && f.save.get_event_chk_inf(0x96) {
+            text_id = 0xB5;
+        }
         if matches!(text_id, 0x4077 | 0x407A | 0x2061 | 0x5035 | 0x40AC) {
             change_alpha(f.save, 1);
         }

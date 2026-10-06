@@ -58,6 +58,38 @@ pub fn offer_talk_default(play: &mut PlayState, actor: &Actor) -> bool {
     offer_talk(play, actor, r)
 }
 
+/// `Actor_SetTextWithPrefix`: `base_text_id` with the scene's message prefix (0x1000 for the
+/// forest's scenes, the Deku Tree and its boss room among them; 0x2000 to 0x7000 for the
+/// field, the mountain, Zora's, Kakariko, the desert and the market; else none).
+pub fn actor_set_text_with_prefix(scene_id: u16, actor: &mut Actor, base_text_id: i16) {
+    // The SCENE_* ids (`tables/scene_table.h`), in the C's cases' order; 112 is a number in the C.
+    let prefix: i16 = match scene_id {
+        // SCENE_DEKU_TREE, _DEKU_TREE_BOSS, _FOREST_TEMPLE_BOSS, _KNOW_IT_ALL_BROS_HOUSE,
+        // _TWINS_HOUSE, _MIDOS_HOUSE, _SARIAS_HOUSE, _KOKIRI_SHOP, _LINKS_HOUSE, _KOKIRI_FOREST,
+        // _SACRED_FOREST_MEADOW, _LOST_WOODS, 112.
+        0x00 | 0x11 | 0x14 | 0x26 | 0x27 | 0x28 | 0x29 | 0x2D | 0x34 | 0x55 | 0x56 | 0x5B | 112 => 0x1000,
+        // SCENE_STABLE, _HYRULE_FIELD, _LON_LON_RANCH.
+        0x36 | 0x51 | 0x63 => 0x2000,
+        // SCENE_FIRE_TEMPLE, _DODONGOS_CAVERN_BOSS, _FIRE_TEMPLE_BOSS, _DEATH_MOUNTAIN_TRAIL,
+        // _DEATH_MOUNTAIN_CRATER, _GORON_CITY.
+        0x04 | 0x12 | 0x15 | 0x60 | 0x61 | 0x62 => 0x3000,
+        // SCENE_JABU_JABU, _JABU_JABU_BOSS, _ZORAS_RIVER, _ZORAS_DOMAIN, _ZORAS_FOUNTAIN.
+        0x02 | 0x13 | 0x54 | 0x58 | 0x59 => 0x4000,
+        // SCENE_SHADOW_TEMPLE, _SHADOW_TEMPLE_BOSS, _KAKARIKO_CENTER_GUEST_HOUSE,
+        // _BACK_ALLEY_HOUSE, _DOG_LADY_HOUSE, _GRAVEKEEPERS_HUT, _REDEAD_GRAVE,
+        // _WINDMILL_AND_DAMPES_GRAVE, _KAKARIKO_VILLAGE, _GRAVEYARD.
+        0x07 | 0x18 | 0x2A | 0x2B | 0x35 | 0x3A | 0x3F | 0x48 | 0x52 | 0x53 => 0x5000,
+        // SCENE_SPIRIT_TEMPLE, _SPIRIT_TEMPLE_BOSS, _IMPAS_HOUSE, _CARPENTERS_TENT, _LAKE_HYLIA,
+        // _GERUDO_VALLEY, _DESERT_COLOSSUS.
+        0x06 | 0x17 | 0x37 | 0x39 | 0x57 | 0x5A | 0x5C => 0x6000,
+        // SCENE_MARKET_ENTRANCE_DAY, _BACK_ALLEY_DAY, _BACK_ALLEY_NIGHT, _MARKET_DAY,
+        // _MARKET_NIGHT, _MARKET_RUINS, _HYRULE_CASTLE.
+        0x1B | 0x1E | 0x1F | 0x20 | 0x21 | 0x22 | 0x5F => 0x7000,
+        _ => 0x0000,
+    };
+    actor.text_id = (prefix | base_text_id) as u16;
+}
+
 /// `Actor_TextboxIsClosing`: the message box is on its closing frame (`TEXT_STATE_CLOSING`).
 pub fn textbox_is_closing(play: &PlayState) -> bool {
     play.message_state() == crate::message::TEXT_STATE_CLOSING

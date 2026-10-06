@@ -77,6 +77,9 @@ CASES = [
     # GAME-05 milestone 3a: a withered Deku Baba slashed and its stick taken, a Keese's dive
     # blocked with the shield and the Keese slashed, with the battle camera, inside the Deku Tree.
     ("combat", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "combat", "--trace", "{trace}"]),
+    # GAME-05 milestone 3b: from a debug start in room 4, a Mad Scrub's nut bounced back off the
+    # Deku Shield knocks it out of its flower, and it's caught and slashed, inside the Deku Tree.
+    ("scrub", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "scrub", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

@@ -100,7 +100,7 @@ pub fn update(play: &mut PlayState, this: &mut EffectSs) {
     }
 }
 
-fn bake_name(dl: u8) -> String {
+pub(crate) fn bake_name(dl: u8) -> String {
     format!("EffectSs/fire/{dl}")
 }
 

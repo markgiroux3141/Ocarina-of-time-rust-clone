@@ -32,10 +32,14 @@ pub mod demo_tre_lgt;
 pub mod dummy_target;
 pub mod en_box;
 pub mod en_dekubaba;
+pub mod en_dekunuts;
+pub mod en_dns;
 pub mod en_door;
 pub mod en_elf;
 pub mod en_firefly;
 pub mod en_girla;
+pub mod en_hintnuts;
+pub mod en_goma;
 pub mod en_goroiwa;
 pub mod en_holl;
 pub mod en_item00;
@@ -47,7 +51,11 @@ pub mod en_kusa;
 pub mod en_md;
 pub mod en_nutsball;
 pub mod en_ossan;
+pub mod en_shopnuts;
 pub mod en_river_sound;
+pub mod en_st;
+pub mod en_si;
+pub mod en_sw;
 pub mod en_tana;
 pub mod en_viewer;
 pub mod en_wonder_item;
@@ -65,7 +73,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
 /// only the floating block the sandbox builds directly.)
@@ -100,6 +108,15 @@ pub fn overlays() -> Overlays {
     o.register(en_firefly::ACTOR_EN_FIREFLY, en_firefly::EnFirefly::init);
     o.register(en_nutsball::ACTOR_EN_NUTSBALL, en_nutsball::EnNutsball::init);
     o.register(item_shield::ACTOR_ITEM_SHIELD, item_shield::ItemShield::init);
+    o.register(en_dekunuts::ACTOR_EN_DEKUNUTS, en_dekunuts::EnDekunuts::init);
+    o.register(en_hintnuts::ACTOR_EN_HINTNUTS, en_hintnuts::EnHintnuts::init);
+    o.register(en_shopnuts::ACTOR_EN_SHOPNUTS, en_shopnuts::EnShopnuts::init);
+    o.register(en_dns::ACTOR_EN_DNS, en_dns::EnDns::init);
+    o.register(en_st::ACTOR_EN_ST, en_st::EnSt::init);
+    // Spawned as ACTOR_EN_GOMA; its profile's id (what the actor gets) is ACTOR_BOSS_GOMA.
+    o.register(en_goma::ACTOR_EN_GOMA, en_goma::EnGoma::init);
+    o.register(en_sw::ACTOR_EN_SW, en_sw::EnSw::init);
+    o.register(en_si::ACTOR_EN_SI, en_si::EnSi::init);
     o
 }
 
@@ -119,6 +136,10 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_viewer::bakes());
     v.extend(object_kankyo::bakes());
     v.extend(player::bakes());
+    v.extend(en_shopnuts::bakes());
+    v.extend(en_st::bakes());
+    v.extend(en_goma::bakes());
+    v.extend(en_sw::bakes());
     // z_kankyo.c's rain and lightning bolts.
     v.extend(oot_game::weather::bakes());
     // The effects (z_effect_soft_sprite.c's overlays and z_effect.c's).

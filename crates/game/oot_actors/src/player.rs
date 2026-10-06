@@ -730,6 +730,10 @@ pub struct Player {
     pub get_item_direction: i16,
     /// `unk_862`: the draw id plus one of the item held up (0: none; `Player_DrawGetItem`).
     pub unk_862: i16,
+    /// `unk_860`: the burning Deku Stick's timer, among other things (the bow's -1, the
+    /// slingshot's -2, the hookshot's -3); `Player_InitItemAction` zeroes it. None of the items
+    /// that set it is held yet, so it stays 0 (`En_St` reads it).
+    pub unk_860: i16,
     /// `leftHandPos`: the left hand limb's origin in the last draw.
     pub left_hand_pos: Vec3,
     /// `play->gameplayFrames` at the last update (the held-up item's spin when drawn).
@@ -954,6 +958,7 @@ impl Player {
             interact_range_actor: None,
             get_item_direction: 0x6000,
             unk_862: 0,
+            unk_860: 0,
             left_hand_pos: pos,
             gameplay_frames: 0,
             item_change_type: 0,
@@ -5722,6 +5727,7 @@ impl Player {
 
     /// `Player_InitItemAction`: the item is in hand.
     fn init_item_action(&mut self, data: &GameData, ap: i32) {
+        self.unk_860 = 0;
         self.held_item_ap = ap;
         self.item_ap = ap;
         self.model_group = self.next_model_group;
@@ -8428,6 +8434,31 @@ pub fn pose(rig: &oot_game::footik::Rig, joints: &eng_anim::anim::JointTable, lo
         }
     }
     out
+}
+
+/// `play->damagePlayer(play, damage)` from another actor's update (`Player_Init` sets it to
+/// `Player_InflictDamage`), Player in the actor arena: unless in a blocking cutscene mode
+/// (`Player_InBlockingCsMode`) or invincible (`func_80837B18`), `Health_ChangeBy(damage)`; true
+/// when it took the last of Link's health (`PLAYER_STATE2_7` cleared).
+pub fn play_damage_player(play: &mut PlayState, damage: i32) -> bool {
+    let trigger_start = play.transition.trigger == TRANS_TRIGGER_START;
+    let Some(h) = play.player else { return false };
+    let Some(p) = play.actors.downcast::<Player>(h) else { return false };
+    // Player_InBlockingCsMode.
+    if p.state1 & (STATE1_7 | STATE1_29) != 0 || p.cs_mode != 0 || trigger_start || p.state1 & STATE1_0 != 0 || p.state3 & STATE3_7 != 0 {
+        return false;
+    }
+    // func_80837B18: nothing while invincible; Health_ChangeBy (a gain's sound centred).
+    if p.invincibility_timer != 0 || p.actor.category != ACTORCAT_PLAYER {
+        return false;
+    }
+    if oot_game::item::health_change_by(&mut play.save, Some(&mut play.audio), damage as i16) {
+        return false;
+    }
+    if let Some(p) = play.actors.downcast_mut::<Player>(h) {
+        p.state2 &= !STATE2_7;
+    }
+    true
 }
 
 impl ActorImpl for Player {

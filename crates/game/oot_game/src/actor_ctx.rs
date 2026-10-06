@@ -452,6 +452,55 @@ pub fn enemy_start_finishing_blow(play: &mut PlayState, actor: &Actor) {
     play.sfx_source_play_sfx_at_fixed_world_pos(actor.world_pos, 20, crate::audio::sfx::NA_SE_EN_LAST_DAMAGE);
 }
 
+/// `func_8002DDF4`: Player's `PLAYER_STATE2_12` (holding still on a ladder or a climbable
+/// wall: `Player_Action_8084BF1C`).
+pub fn func_8002ddf4(play: &PlayState) -> bool {
+    /// `PLAYER_STATE2_12` (`player.h`).
+    const PLAYER_STATE2_12: u32 = 1 << 12;
+    play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).is_some_and(|p| p.state_flags2() & PLAYER_STATE2_12 != 0)
+}
+
+/// `Math_SinF` and `Math_CosF` (`sys_math.c`): the angle in radians as a binary angle
+/// (`(s16)(angle * (0x7FFF / M_PI))`, in double precision) through `sins` and `coss`.
+fn math_sin_f(angle: f32) -> f32 {
+    eng_math::sin_s((angle as f64 * (32767.0 / std::f64::consts::PI)) as i32 as i16)
+}
+fn math_cos_f(angle: f32) -> f32 {
+    eng_math::cos_s((angle as f64 * (32767.0 / std::f64::consts::PI)) as i32 as i16)
+}
+
+/// `Actor_SpawnFloorDustRing`: `amount_minus_one + 1` clouds of brown dust on the actor's floor
+/// height in a ring of `radius` round `pos_xz`, drifting up (a random 0.3 ± 0.1) and out at
+/// random up to `rand_accel_weight / 2`: `func_8002857C` with `scale` 0, else lit
+/// (`func_800286CC`) or not (`func_8002865C`).
+#[allow(clippy::too_many_arguments)]
+pub fn actor_spawn_floor_dust_ring(play: &mut PlayState, actor: &Actor, pos_xz: Vec3, radius: f32, amount_minus_one: i32, rand_accel_weight: f32, scale: i16, scale_step: i16, use_lighting: bool) {
+    let velocity = Vec3::ZERO;
+    let mut accel = Vec3::new(0.0, 0.3, 0.0);
+    let floor_height = actor.floor_height;
+    play.with_ss(|ss| {
+        let mut angle = (ss.rand.zero_one() - 0.5) * (2.0 * 3.14);
+        let mut pos = Vec3::new(0.0, floor_height, 0.0);
+        accel.y += (ss.rand.zero_one() - 0.5) * 0.2;
+        let mut i = amount_minus_one;
+        while i >= 0 {
+            pos.x = pos_xz.x + math_sin_f(angle) * radius;
+            pos.z = pos_xz.z + math_cos_f(angle) * radius;
+            accel.x = (ss.rand.zero_one() - 0.5) * rand_accel_weight;
+            accel.z = (ss.rand.zero_one() - 0.5) * rand_accel_weight;
+            if scale == 0 {
+                ss.func_8002857c(pos, velocity, accel);
+            } else if use_lighting {
+                ss.func_800286cc(pos, velocity, accel, scale, scale_step);
+            } else {
+                ss.func_8002865c(pos, velocity, accel, scale, scale_step);
+            }
+            angle += (2.0 * 3.14) / (amount_minus_one as f32 + 1.0);
+            i -= 1;
+        }
+    });
+}
+
 /// `Actor_PlaySfx` on the actor `h` (an effect's spawn, for the actor it's spawned for).
 pub fn audio_play_actor_sfx_at(play: &mut PlayState, h: ActorHandle, sfx_id: u16) {
     play.audio.play_sfx_at_pos(crate::audio::sfx::SfxPos::Actor(h), sfx_id);

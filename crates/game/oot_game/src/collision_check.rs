@@ -190,6 +190,25 @@ pub const DMG_ARROW: u32 = DMG_ARROW_NORMAL | DMG_ARROW_FIRE | DMG_ARROW_ICE | D
 pub const DMG_RANGED: u32 = DMG_ARROW | DMG_HOOKSHOT | DMG_SLINGSHOT;
 pub const DMG_DEFAULT: u32 = !(DMG_SHIELD | DMG_MIR_RAY);
 
+/// `CollisionCheck_GetSwordDamage`: a sword's (or the hammer's, or a Deku Stick's) damage by
+/// its flags: the Kokiri Sword's slash and spin 1; its jump slash, the Master Sword's slash and
+/// spin, the hammer's swing and a stick 2; the hammer's jump, the Master Sword's jump slash and
+/// the Giant's Knife's slash and spin 4; the Giant's Knife's jump slash 8; else 0. (The debug
+/// build also writes it to `KREG(7)`, a debug register: not kept.)
+pub fn collision_check_get_sword_damage(dmg_flags: u32) -> u8 {
+    if dmg_flags & (DMG_SPIN_KOKIRI | DMG_SLASH_KOKIRI) != 0 {
+        1
+    } else if dmg_flags & (DMG_JUMP_KOKIRI | DMG_SPIN_MASTER | DMG_SLASH_MASTER | DMG_HAMMER_SWING | DMG_DEKU_STICK) != 0 {
+        2
+    } else if dmg_flags & (DMG_HAMMER_JUMP | DMG_JUMP_MASTER | DMG_SPIN_GIANT | DMG_SLASH_GIANT) != 0 {
+        4
+    } else if dmg_flags & DMG_JUMP_GIANT != 0 {
+        8
+    } else {
+        0
+    }
+}
+
 /// `DMG_ENTRY(damage, reaction)`: a damage table entry, the damage in the low nibble and the
 /// reaction (the actor's own `damageReaction` codes) above it.
 pub const fn dmg_entry(damage: u8, reaction: u8) -> u8 {

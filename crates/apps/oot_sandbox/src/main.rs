@@ -82,7 +82,8 @@ struct Cli {
     /// `new-save-deku-tree` (on into the meadow, the Deku Tree's talk answered yes, and into
     /// his mouth); with --entrance ENTR_DEKU_TREE_0 --child --preset deku-tree-inside also
     /// `deku-baba` (GAME-05's run: a Deku Baba's bite, then its stem cut, from a start by it on
-    /// the top floor).
+    /// the top floor), `combat` (a withered Deku Baba and a Keese, the shield) and `scrub` (from a
+    /// start in room 4: a Mad Scrub's nut bounced back, the scrub caught and killed).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -438,11 +439,12 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
     if let (Some((p, y)), None) = (start, &cli.scene) {
         w = new_play_at(a, cli.child, p, y, true);
     }
-    // A route's debug start (the Deku Baba's), unless --at puts Link elsewhere.
-    if let Some((p, y)) = route.and_then(|r| r.start())
+    // A route's debug start (the Deku Baba's; in its room, the Mad Scrub's), unless --at puts
+    // Link elsewhere.
+    if let Some(r) = route
         && cli.at.is_empty()
     {
-        w.place_player(p, y);
+        r.debug_start(&mut w);
     }
     if let [x, y, z, yaw] = cli.at[..] {
         if a.entrance.is_some() {

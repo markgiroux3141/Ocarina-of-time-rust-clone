@@ -113,7 +113,14 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
         let ported = ov.is_ported(e.id);
         let found = w.actors.all().into_iter().filter_map(|h| w.actors.actor(h)).any(|a| {
             let at_pos = if ported { a.home_pos.x == pos.x && a.home_pos.z == pos.z } else { a.home_pos == pos };
-            let params = if e.id == oot_actors::en_item00::ACTOR_EN_ITEM00 { e.params & 0xFF } else { e.params };
+            // EnSw_Init converts a placed Gold Skulltula's (en_sw::init_params).
+            let params = if e.id == oot_actors::en_item00::ACTOR_EN_ITEM00 {
+                e.params & 0xFF
+            } else if e.id == oot_actors::en_sw::ACTOR_EN_SW {
+                oot_actors::en_sw::init_params(e.params)
+            } else {
+                e.params
+            };
             // ObjectKankyo_Init: thisx->room = -1 (the dust stays through room changes).
             let room = if e.id == oot_actors::object_kankyo::ACTOR_OBJECT_KANKYO { -1 } else { 0 };
             a.id == e.id && a.params == params && at_pos && a.room == room && a.category == at.get(e.id).unwrap().init.as_ref().unwrap().category as usize
@@ -279,17 +286,19 @@ fn link_walks_into_his_house_and_back_out() {
 }
 
 /// The ported actors' profiles are their `ActorProfile`s (from the pack's actor table, read from
-/// the overlays' C by the importer).
+/// the overlays' C by the importer). The table's row is found by the overlay's name: a profile's
+/// id can be another row's (`En_Goma`'s is `ACTOR_BOSS_GOMA`).
 #[test]
 fn ported_profiles_match_the_actor_table() {
     let Some(a) = assets() else { return };
     for p in oot_actors::PROFILES.iter().filter(|p| p.id >= 0) {
-        let info = a.actors.get(p.id).unwrap();
+        let row = a.actors.actors.iter().position(|r| r.name == p.name).unwrap_or_else(|| panic!("{} in the actor table", p.name)) as i16;
+        let info = a.actors.get(row).unwrap();
         let init = info.init.as_ref().unwrap();
         assert_eq!(info.name, p.name);
         assert_eq!((init.id, init.category as usize, init.flags), (p.id, p.category, p.flags), "{}", p.name);
         assert_eq!(a.scenes.objects[init.object_id as usize], p.object, "{}", p.name);
-        assert!(a.overlays.is_ported(p.id) || p.id == oot_game::actor_ctx::ACTOR_BG_YDAN_HASI, "{} has a constructor", p.name);
+        assert!(a.overlays.is_ported(row) || row == oot_game::actor_ctx::ACTOR_BG_YDAN_HASI, "{} has a constructor", p.name);
     }
 }
 

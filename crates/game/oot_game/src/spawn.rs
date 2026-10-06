@@ -173,9 +173,15 @@ impl PlayState {
     /// the children it spawns get it as their parent.
     pub(crate) fn run_init(&mut self, h: ActorHandle, actor: Actor, ctor: crate::spawn::ActorCtor) -> Box<dyn ActorImpl> {
         self.init_children.push(Vec::new());
+        let category = actor.category;
         let init = ctor(actor, self);
         let children = self.init_children.pop().unwrap_or_default();
         self.link_init_children(h, children);
+        // Actor_ChangeCategory in the init (`En_Sw`'s Skullwalltula, an enemy among the NPCs):
+        // to the head of its new list, which `Actor_UpdateAll` then walks on in.
+        if init.base().category != category {
+            self.actors.change_category(h, init.base().category);
+        }
         init
     }
 
