@@ -7,10 +7,13 @@
 //! Standing on the ground: a piece's origin goes on the highest floor under its anchor (a house's
 //! door at its base, so its doorway meets the ground; otherwise the origin), or at the prop's `z`.
 //! A stone (kind "stone") stands in water with its top 15 above the surface, as spot04's do. Where
-//! the ground under a piece's footprint falls away more than 20 below its base, it's reported.
+//! the ground under a piece's base outline falls away more than 20 below its base, it's reported.
+//!
+//! Houses, stumps and hedges level the bumps under them (`pads`, used by the floors): their
+//! base outline's ground is flat at the bump where they stand, easing back to the bumps around.
 
 use crate::doc::Prop;
-use crate::geom::{point_in_poly, P2, P3};
+use crate::geom::{dist, dist_to_seg, lerp, point_in_poly, P2, P3};
 use crate::mesh::Mesh;
 use crate::pieces::{Kit, Piece};
 
@@ -155,18 +158,110 @@ pub fn facing(yaw_deg: f64) -> P2 {
     [-s, c]
 }
 
-/// Where a prop's origin goes: its xy, and its height on the ground (or its own `z`).
-pub fn stand(piece: &Piece, prop: &Prop, ground: &Ground, mesh: &Mesh) -> (P3, Vec<String>) {
-    let scale = piece.scale.clamp(prop.scale);
-    let mut problems = vec![];
-    // a door at the piece's base (not up on a porch) stands on the ground
-    let anchor = match piece.door.as_ref().filter(|d| d.pos[2].abs() < 1.0) {
+/// Where a prop meets the ground: a door at the piece's base (not up on a porch), else its origin.
+fn anchor(piece: &Piece, prop: &Prop) -> P2 {
+    match piece.door.as_ref().filter(|d| d.pos[2].abs() < 1.0) {
         Some(d) => {
-            let a = transform([d.pos[0], d.pos[1], 0.0], [prop.at[0], prop.at[1], 0.0], prop.yaw, scale);
+            let a = transform([d.pos[0], d.pos[1], 0.0], [prop.at[0], prop.at[1], 0.0], prop.yaw, piece.scale.clamp(prop.scale));
             [a[0], a[1]]
         }
         None => prop.at,
-    };
+    }
+}
+
+/// Kinds that level the bumps under them unless told otherwise (`Prop::level`).
+pub fn levels_by_default(kind: &str) -> bool {
+    matches!(kind, "house" | "tower" | "hedge")
+}
+
+/// Where a prop levels the bumps under it: its base outline (`Piece::base_outline`, with its
+/// anchor) in level coordinates, counter-clockwise. The floor there takes the bump at the anchor,
+/// so the prop's origin lands where it would anyway.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Pad {
+    pub ring: Vec<P2>,
+    pub anchor: P2,
+    /// min x, min y, max x, max y of the ring.
+    pub bb: [f64; 4],
+}
+
+impl Pad {
+    /// How far p is outside the ring (0 inside).
+    pub fn dist(&self, p: P2) -> f64 {
+        if point_in_poly(p, &self.ring) {
+            return 0.0;
+        }
+        (0..self.ring.len()).map(|i| dist_to_seg(p, self.ring[i], self.ring[(i + 1) % self.ring.len()]).0).fold(f64::INFINITY, f64::min)
+    }
+
+    /// The ring grown by d: each corner cut round (convex, counter-clockwise), with points at
+    /// most `step` apart.
+    pub fn grown(&self, d: f64, step: f64) -> Vec<P2> {
+        let n = self.ring.len();
+        let out_normal = |a: P2, b: P2| {
+            let l = dist(a, b).max(1e-9);
+            [(b[1] - a[1]) / l, -(b[0] - a[0]) / l]
+        };
+        let mut pts: Vec<P2> = vec![];
+        for i in 0..n {
+            let (prev, p, next) = (self.ring[(i + n - 1) % n], self.ring[i], self.ring[(i + 1) % n]);
+            let (n0, n1) = (out_normal(prev, p), out_normal(p, next));
+            // the corner's arc, in steps of at most 45 degrees
+            let turn = (n0[0] * n1[1] - n0[1] * n1[0]).atan2(n0[0] * n1[0] + n0[1] * n1[1]).max(0.0);
+            let k = (turn / 45f64.to_radians()).ceil().max(1.0) as usize;
+            let a0 = n0[1].atan2(n0[0]);
+            for j in 0..=k {
+                let a = a0 + turn * j as f64 / k as f64;
+                pts.push([p[0] + d * a.cos(), p[1] + d * a.sin()]);
+            }
+        }
+        pts.dedup_by(|a, b| dist(*a, *b) < 1e-6);
+        let mut out = vec![];
+        for i in 0..pts.len() {
+            let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+            let k = (dist(a, b) / step).ceil().max(1.0) as usize;
+            out.extend((0..k).map(|j| lerp(a, b, j as f64 / k as f64)));
+        }
+        out
+    }
+}
+
+/// The pads of the props on the ground that level the bumps under them (in the order of `props`).
+pub fn pads(props: &[Prop], kit: Option<&Kit>) -> Vec<Pad> {
+    let Some(kit) = kit else { return vec![] };
+    props
+        .iter()
+        .filter(|prop| prop.z.is_none())
+        .filter_map(|prop| {
+            let piece = kit.get(&prop.piece)?;
+            if piece.kind == "opening" || piece.kind == "wall" || !prop.level.unwrap_or_else(|| levels_by_default(&piece.kind)) {
+                return None;
+            }
+            let scale = piece.scale.clamp(prop.scale);
+            let anchor = anchor(piece, prop);
+            let mut pts: Vec<P2> = piece
+                .base_outline()
+                .iter()
+                .map(|q| {
+                    let w = transform([q[0], q[1], 0.0], [prop.at[0], prop.at[1], 0.0], prop.yaw, scale);
+                    [w[0], w[1]]
+                })
+                .collect();
+            pts.push(anchor);
+            let ring = crate::pieces::hull(pts);
+            if ring.len() < 3 {
+                return None;
+            }
+            let bb = ring.iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]);
+            Some(Pad { ring, anchor, bb })
+        })
+        .collect()
+}
+
+/// Where a prop's origin goes: its xy, and its height on the ground (or its own `z`).
+pub fn stand(piece: &Piece, prop: &Prop, ground: &Ground, mesh: &Mesh) -> (P3, Vec<String>) {
+    let mut problems = vec![];
+    let anchor = anchor(piece, prop);
     let z = match prop.z {
         Some(z) => z,
         None => {
@@ -218,10 +313,10 @@ pub fn place(props: &[Prop], kit: Option<&Kit>, mesh: &mut Mesh, problems: &mut 
         let (origin, mut pr) = stand(piece, prop, &ground, mesh);
         problems.append(&mut pr);
         let scale = piece.scale.clamp(prop.scale);
-        // uneven ground under the footprint
+        // uneven ground under its base (eaves may hang over a dip)
         if prop.z.is_none() && piece.kind != "stone" && piece.kind != "opening" && piece.kind != "wall" {
             let mut lowest = origin[2];
-            for q in &piece.footprint {
+            for q in &piece.base_outline() {
                 let w = transform([q[0] * 0.9, q[1] * 0.9, 0.0], origin, prop.yaw, scale);
                 if let (Some(f), _) = ground.at(mesh, [w[0], w[1]]) {
                     lowest = lowest.min(f);
@@ -355,7 +450,7 @@ mod tests {
     fn props_stand_on_the_ground_turned_and_scaled() {
         let kit = Kit { pieces: vec![test_piece("tower")], ..Default::default() };
         let mut m = slope_mesh();
-        let props = vec![Prop { piece: "box".into(), at: [200.0, 0.0], z: None, yaw: 90.0, scale: [5.0, 1.0, 1.0] }];
+        let props = vec![Prop { level: None, piece: "box".into(), at: [200.0, 0.0], z: None, yaw: 90.0, scale: [5.0, 1.0, 1.0] }];
         let mut problems = vec![];
         let placed = place(&props, Some(&kit), &mut m, &mut problems);
         assert_eq!(placed.len(), 1);
@@ -387,9 +482,9 @@ mod tests {
         let mut m = slope_mesh();
         // facing east (yaw -90): the door is 50 east of the origin, where the ground is 12.5 up
         let props = vec![
-            Prop { piece: "box".into(), at: [0.0, -500.0], z: None, yaw: -90.0, scale: [1.0; 3] },
-            Prop { piece: "stone".into(), at: [450.0, 450.0], z: None, yaw: 0.0, scale: [1.0; 3] },
-            Prop { piece: "nothing".into(), at: [0.0, 0.0], z: Some(3.0), yaw: 0.0, scale: [1.0; 3] },
+            Prop { level: None, piece: "box".into(), at: [0.0, -500.0], z: None, yaw: -90.0, scale: [1.0; 3] },
+            Prop { level: None, piece: "stone".into(), at: [450.0, 450.0], z: None, yaw: 0.0, scale: [1.0; 3] },
+            Prop { level: None, piece: "nothing".into(), at: [0.0, 0.0], z: Some(3.0), yaw: 0.0, scale: [1.0; 3] },
         ];
         let mut problems = vec![];
         let placed = place(&props, Some(&kit), &mut m, &mut problems);

@@ -74,6 +74,10 @@ pub struct Prop {
     /// Along the piece's own x, y and z, within its limits (`Piece::scale`).
     #[serde(default = "one3")]
     pub scale: [f64; 3],
+    /// Whether bumps level out under it (`props::pads`); else by its kind (houses, stumps and
+    /// hedges do). Only on the ground: not with `z`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<bool>,
 }
 
 fn one3() -> [f64; 3] {

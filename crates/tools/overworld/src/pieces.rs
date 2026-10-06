@@ -234,6 +234,14 @@ impl Piece {
     pub fn collision_vertices(&self) -> usize {
         self.col_verts.len()
     }
+
+    /// Where it meets the ground, seen from above: the hull of what's within 10 of its base (a
+    /// house's walls, not its eaves). The whole footprint if that's too little to have a hull.
+    pub fn base_outline(&self) -> Vec<[f64; 2]> {
+        let low = self.bounds[0][2] + 10.0;
+        let h = hull(self.verts.iter().chain(&self.col_verts).filter(|q| q[2] <= low).map(|q| [q[0], q[1]]).collect());
+        if h.len() >= 3 { h } else { self.footprint.clone() }
+    }
 }
 
 /// One render triangle of the scene, in builder axes.

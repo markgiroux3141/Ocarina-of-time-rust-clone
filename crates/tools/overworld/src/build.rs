@@ -78,6 +78,8 @@ struct Builder<'a> {
     wall_texture: WallTexture,
     /// Dirt paths painted into the floors.
     dirt: DirtPaths,
+    /// Where props level the bumps under them.
+    pads: Vec<props::Pad>,
 }
 
 struct WallJob<'a> {
@@ -211,6 +213,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         walls3: doc.settings.detail()?.walls3,
         wall_texture: doc.settings.detail()?.walls,
         dirt,
+        pads: props::pads(&doc.props, kit),
     };
     for h in 0..b.map.half_face.len() {
         let f = b.map.half_face[h];
@@ -289,6 +292,17 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     lap("lighting");
     let collision_vertices = b.mesh.collision_vertices();
     Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices })
+}
+
+/// A prop's pad (`props::Pad`) is level this far past its base outline, under its walls' feet.
+const PAD_MARGIN: f64 = 15.0;
+/// The steepest a pad's skirt climbs back to the bumps, in degrees.
+const PAD_SLOPE: f64 = 30.0;
+
+/// How wide a pad's skirt is on a floor bumped by n: the bumps reach 2 x amplitude from the pad,
+/// and the smoothstep climbs at most 1.5 x its average slope.
+fn pad_skirt(n: &Noise) -> f64 {
+    (1.5 * 2.0 * n.amplitude.abs() / PAD_SLOPE.to_radians().tan()).max(0.5 * n.edge).max(20.0)
 }
 
 impl<'a> Builder<'a> {
@@ -472,6 +486,36 @@ impl<'a> Builder<'a> {
                     }
                 }
             }
+            // props level the bumps under them: flat at the bump at the prop's anchor out to
+            // PAD_MARGIN past its base, easing back to the bumps over the skirt; the flat part's
+            // edge is held by constrained edges, so every triangle under the prop is level, and
+            // the floor's own points (as dense as its bumps) take the skirt
+            let mut pads: Vec<(&props::Pad, f64, f64)> = vec![];
+            if let Some(n) = noise {
+                let skirt = pad_skirt(n);
+                let reach = PAD_MARGIN + skirt;
+                let bb = outer.iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]);
+                let inside = |p: P2| point_in_poly(p, &outer) && !holes.iter().any(|h| point_in_poly(p, h));
+                let usable = |p: P2| inside(p) && index.dist_within(p, 4.0) > 3.0;
+                for pd in &self.pads {
+                    if pd.bb[0] - reach > bb[2] || pd.bb[2] + reach < bb[0] || pd.bb[1] - reach > bb[3] || pd.bb[3] + reach < bb[1] {
+                        continue;
+                    }
+                    // a prop standing in another face meets this one at its unbumped height
+                    let h = if inside(pd.anchor) { self.bump(n, face.region, pd.anchor, &index) } else { 0.0 };
+                    let ring = pd.grown(PAD_MARGIN, steiner.max(40.0));
+                    for i in 0..ring.len() {
+                        let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
+                        if usable(a) {
+                            extra.push(a);
+                            if usable(b) {
+                                segs.push([a, b]);
+                            }
+                        }
+                    }
+                    pads.push((pd, h, skirt));
+                }
+            }
             let tris: Vec<[P3; 3]> = triangulate_full(&outer, &holes, steiner, &extra, &segs)
                 .into_iter()
                 .map(|t| {
@@ -481,7 +525,12 @@ impl<'a> Builder<'a> {
                             let base = self.height(f, q);
                             match noise {
                                 Some(n) => {
-                                    let z = base + self.bump(n, face.region, q, &index);
+                                    let mut bump = self.bump(n, face.region, q, &index);
+                                    for &(pd, h, skirt) in &pads {
+                                        let t = ((pd.dist(q) - PAD_MARGIN) / skirt).clamp(0.0, 1.0);
+                                        bump = h + (bump - h) * t * t * (3.0 - 2.0 * t);
+                                    }
+                                    let z = base + bump;
                                     // a pond's bed stays under its surface
                                     water.map_or(z, |w| if base < w { z.min(w - 5.0) } else { z })
                                 }
@@ -1675,7 +1724,7 @@ mod tests {
         assert!((lvl.rim.1 - (160.0 + bd.cliff_min + bd.bank_rise)).abs() < 1e-6, "rim {:?}", lvl.rim);
         // and never steeper than the slope along the edge
         let map = Map::build(&doc).unwrap();
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), map };
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map };
         b.regions = std::iter::once(Info { z: 0.0, water: None, edge: None, noise: None })
             .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), edge: None, noise: None }))
             .collect();
@@ -1842,6 +1891,66 @@ mod tests {
             r.noise = Some(Noise { amplitude: 25.0, ..Default::default() });
         }
         doc
+    }
+
+    #[test]
+    fn props_level_the_bumps_under_them() {
+        use crate::doc::Prop;
+        use crate::pieces::{Door, Piece};
+        // a 200 x 160 hut 120 tall, door at the front, eaves 60 out all round up at 120
+        let mut verts = vec![];
+        for (r, z) in [(1.0, 0.0), (1.0, 120.0), (1.6, 120.0)] {
+            verts.extend([[-100.0 * r, -80.0 * r, z], [100.0 * r, -80.0 * r, z], [100.0 * r, 80.0 * r, z], [-100.0 * r, 80.0 * r, z]]);
+        }
+        let hut = Piece {
+            name: "hut".into(),
+            kind: "house".into(),
+            footprint: crate::pieces::hull(verts.iter().map(|q| [q[0], q[1]]).collect()),
+            bounds: [[-160.0, -128.0, 0.0], [160.0, 128.0, 120.0]],
+            verts,
+            door: Some(Door { pos: [0.0, 80.0, 0.0], exit: 1, entrance: "X".into() }),
+            ..Default::default()
+        };
+        assert_eq!(hut.base_outline().len(), 4, "the walls' feet, not the eaves");
+        let kit = Kit { pieces: vec![hut.clone()], ..Default::default() };
+        let th = Theme::kokiri();
+        let hut_at = |at: [f64; 2], level: Option<bool>| Prop { level, piece: "hut".into(), at, z: None, yaw: 30.0, scale: [1.0; 3] };
+        let ground_of = |lvl: &Level| props::Ground::new(&lvl.mesh);
+        // the ground's heights under a hut: its base's corners, its middle and its doorway
+        let under = |lvl: &Level, prop: &Prop| -> Vec<f64> {
+            let g = ground_of(lvl);
+            let pad = &props::pads(std::slice::from_ref(&Prop { level: Some(true), ..prop.clone() }), Some(&kit))[0];
+            pad.ring.iter().chain([&prop.at, &pad.anchor]).map(|&p| g.at(&lvl.mesh, p).0.unwrap()).collect()
+        };
+        let spread = |zs: &[f64]| zs.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)) - zs.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+        let (here, there) = ([0.0, 200.0], [-900.0, 300.0]);
+        let mut doc = bumpy(sample_doc());
+        let bare = build_with(&doc, &th, Some(&kit)).unwrap();
+        // left alone (or told not to), the hut's corners stand on bumps
+        doc.props = vec![hut_at(here, Some(false))];
+        let lvl = build_with(&doc, &th, Some(&kit)).unwrap();
+        assert!(spread(&under(&lvl, &doc.props[0])) > 2.0, "{:?}", under(&lvl, &doc.props[0]));
+        // levelled: flat under it, at the bump at its door, and still watertight
+        doc.props = vec![hut_at(here, None)];
+        let lvl = build_with(&doc, &th, Some(&kit)).unwrap();
+        let zs = under(&lvl, &doc.props[0]);
+        assert!(spread(&zs) < 1e-6, "{zs:?}");
+        assert!((lvl.props[0].origin[2] - zs[0]).abs() < 1e-6);
+        assert!(!lvl.problems.iter().any(|p| p.contains("falls")), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        // moved: level where it is now, and its old spot is as it was with no hut
+        doc.props = vec![hut_at(there, None)];
+        let lvl = build_with(&doc, &th, Some(&kit)).unwrap();
+        assert!(spread(&under(&lvl, &doc.props[0])) < 1e-6);
+        let old = under(&lvl, &hut_at(here, None));
+        let was = under(&bare, &hut_at(here, None));
+        assert!(old.iter().zip(&was).all(|(a, b)| (a - b).abs() < 1e-6), "{old:?} vs {was:?}");
+        // deleted: the ground is just the bumps again
+        doc.props.clear();
+        let lvl = build_with(&doc, &th, Some(&kit)).unwrap();
+        let (a, b) = (lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap(), bare.mesh.objects.iter().find(|o| o.name == "ground").unwrap());
+        assert!(a.verts == b.verts && a.tris == b.tris);
     }
 
     #[test]
@@ -2145,7 +2254,7 @@ mod tests {
         for (z, sx) in [(120.0, 1.0), (900.0, 1.0), (120.0, 1.8)] {
             let mut d = doc.clone();
             d.regions[1].z = z;
-            d.props.push(Prop { piece: "vines".into(), at: [-480.0, -540.0], z: None, yaw: 0.0, scale: [sx, 1.0, 1.0] });
+            d.props.push(Prop { level: None, piece: "vines".into(), at: [-480.0, -540.0], z: None, yaw: 0.0, scale: [sx, 1.0, 1.0] });
             let lvl = build_with(&d, &th, Some(&kit)).unwrap();
             assert_eq!(lvl.props.len(), 1, "{z} {sx}: {:?}", lvl.problems);
             let o = lvl.mesh.objects.iter().find(|o| o.name == "props").unwrap();
@@ -2164,7 +2273,7 @@ mod tests {
         }
         // wider than the flat face: refused, saying how wide it is
         let mut d = doc.clone();
-        d.props.push(Prop { piece: "vines".into(), at: [-500.0, -540.0], z: None, yaw: 0.0, scale: [2.0, 1.0, 1.0] });
+        d.props.push(Prop { level: None, piece: "vines".into(), at: [-500.0, -540.0], z: None, yaw: 0.0, scale: [2.0, 1.0, 1.0] });
         let lvl = build_with(&d, &th, Some(&kit)).unwrap();
         assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("400 wide here (flat")), "{:?}", lvl.problems);
     }
@@ -2214,12 +2323,12 @@ mod tests {
         let (at, n) = ([-500.0, -540.0], [0.0, -1.0]);
         // the round island: a crawlspace can't go through it (its walls aren't flat or parallel)
         let mut round = sample_doc();
-        round.props.push(Prop { piece: "crawl".into(), at: [-500.0, -640.0], z: None, yaw: 0.0, scale: [1.0; 3] });
+        round.props.push(Prop { level: None, piece: "crawl".into(), at: [-500.0, -640.0], z: None, yaw: 0.0, scale: [1.0; 3] });
         let lvl = build_with(&round, &theme, Some(&kit)).unwrap();
         assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("off flat") || p.contains("parallel")), "{:?}", lvl.problems);
         for (piece, far) in [("log", false), ("crawl", true)] {
             let mut d = doc.clone();
-            d.props.push(Prop { piece: piece.into(), at, z: None, yaw: 0.0, scale: [1.0; 3] });
+            d.props.push(Prop { level: None, piece: piece.into(), at, z: None, yaw: 0.0, scale: [1.0; 3] });
             let lvl = build_with(&d, &theme, Some(&kit)).unwrap();
             assert_eq!(lvl.props.len(), 1, "{piece}: {:?}", lvl.problems);
             let pl = &lvl.props[0];
@@ -2257,7 +2366,7 @@ mod tests {
                 let mut d = d.clone();
                 d.settings.edges = "hard".into();
                 d.settings.detail = detail.into();
-                d.props.push(Prop { piece: "log".into(), at, z: None, yaw: 0.0, scale: [1.0; 3] });
+                d.props.push(Prop { level: None, piece: "log".into(), at, z: None, yaw: 0.0, scale: [1.0; 3] });
                 let lvl = build_with(&d, &theme, Some(&kit)).unwrap();
                 assert_eq!(lvl.props.len(), 1, "{detail} {at:?}: {:?}", lvl.problems);
                 let pl = &lvl.props[0];
@@ -2275,7 +2384,7 @@ mod tests {
         let mut narrow = doc.clone();
         narrow.settings.edges = "hard".into();
         narrow.regions[1].nodes = vec![vec![-560.0, -500.0], vec![-500.0, -500.0], vec![-300.0, -100.0], vec![-700.0, -100.0]];
-        narrow.props.push(Prop { piece: "log".into(), at: [-530.0, -540.0], z: None, yaw: 0.0, scale: [1.0; 3] });
+        narrow.props.push(Prop { level: None, piece: "log".into(), at: [-530.0, -540.0], z: None, yaw: 0.0, scale: [1.0; 3] });
         let lvl = build_with(&narrow, &theme, Some(&kit)).unwrap();
         assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("corner to corner")), "{:?}", lvl.problems);
     }

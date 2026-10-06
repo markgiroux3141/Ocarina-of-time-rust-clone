@@ -490,6 +490,17 @@ impl App {
                         self.place_yaw = prop.yaw;
                     }
                 });
+                if let Some(p) = &piece {
+                    let default = overworld::props::levels_by_default(&p.kind);
+                    field(ui, "Level", Some("Bumps on the floor flatten under its base and ease back around it, so it stands level. Only while it's on the ground."), |ui| {
+                        let mut on = prop.level.unwrap_or(default);
+                        ui.add_enabled_ui(prop.z.is_none(), |ui| {
+                            if widgets::toggle(ui, &mut on, "level the ground").changed() {
+                                prop.level = (on != default).then_some(on);
+                            }
+                        });
+                    });
+                }
             }
             if let Some(p) = piece.as_ref().filter(|_| !fitted) {
                 let lim = p.scale.clone();

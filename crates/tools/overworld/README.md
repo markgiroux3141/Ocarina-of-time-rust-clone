@@ -137,6 +137,20 @@ Seen from PD's eye height, ±35 hardly shows, because the theme's shade variatio
 900-unit hills reads well. The edge fade hides bumps where
 they'd show most, at the foot of walls. Letting them run to walls (walls following them) is the next step, with the brush.
 
+**Under props** (2026-10-06): houses, stumps and hedges level the bumps under them (`props::pads`, `Builder::floors`), so
+they stand level instead of a corner sinking in or floating. A prop's pad is its **base outline** (`Piece::base_outline`:
+the hull of what's within 10 of its base, so a house's walls, not its eaves) plus its doorway, grown by 15. Inside, the
+floor is flat at the bump at the prop's anchor, so the prop stands where it would anyway, just level. Around it, the
+bumps come back over a skirt `max(3 x amplitude / tan 30°, edge / 2)` wide (smoothstep, so never steeper than 30°):
+about 100 at amplitude 20, 360 at 70. The pad's edge goes into the floor as constrained edges (points as far apart as the
+floor's own), so every triangle under the prop is exactly level; the floor's own points take the skirt.
+Nothing is stored: the pads come from `doc.props` on each build, so moving a prop moves its pad and deleting it brings
+the bumps back. Overlapping pads: the later prop wins. A prop's `"level": false` (or true) overrides its kind; a prop
+with its own `z` and openings and wall pieces never level. Cost: `sketch_village` with ±40 bumps everywhere has 312
+more ground triangles for its nine levelled props (1,377 vs 1,065). Painted terrain isn't levelled yet: a prop on a
+painted hill still tilts against it (Link's house in `sketch_village`). Test: `props_level_the_bumps_under_them`
+(level, told not to, moved, deleted).
+
 ## Painted terrain (`terrain` in the document, `src/terrain.rs`)
 
 `{ "cell": 50, "detail": 100, "chunks": { "cx,cy": [256 offsets], ... } }`: height offsets at grid nodes `cell` apart,
@@ -285,7 +299,7 @@ does it on first start and whenever the manifest changes. The manifest says, per
 
 Houses bring their door shadows (decals) and Link's house its graffiti and mushrooms.
 
-**Props.** `props: [{ "piece", "at": [x, y], "z"?, "yaw"?, "scale"? }]` in the document. `yaw` is degrees
+**Props.** `props: [{ "piece", "at": [x, y], "z"?, "yaw"?, "scale"?, "level"? }]` in the document. `yaw` is degrees
 counter-clockwise from north; `scale` is along the piece's own axes, kept within its limits. After the painted terrain
 moves the ground, and before lighting:
 - each prop's origin stands on the highest floor under its anchor (a house's doorway, otherwise its origin), or at `z`
@@ -295,7 +309,8 @@ moves the ground, and before lighting:
 Its triangles keep the source's normals and tints (object `props`). Its collision goes into object `props_collision`,
 never drawn (`"render": false`), with roles the game knows: wood, dirt, stone, planks, fence, ladder, ladder top, crawl,
 door, exit. Doors and exits collide as plain floor: they lead somewhere once levels load through `Play_Init` (ADR 0035's
-next step). Ground falling more than 20 below a prop's base under its footprint is reported.
+next step). Ground falling more than 20 below a prop's base under its base outline is reported. Houses, stumps and hedges
+level the bumps under them (`"level"` overrides): see Bumps.
 
 **The collision budget.** `Level::collision_vertices` counts what the game's collision will hold (corners merged at
 whole units, as `CollisionBuilder` does): at most 8192. `sketch_village` at medium detail is 2,933, the game's own count.

@@ -760,7 +760,7 @@ impl App {
         self.recent.retain(|n| *n != name);
         self.recent.insert(0, name);
         self.recent.truncate(4);
-        self.doc.props.push(Prop { piece: self.piece.clone(), at: [p[0].round(), p[1].round()], z: None, yaw: self.place_yaw, scale: [1.0; 3] });
+        self.doc.props.push(Prop { level: None, piece: self.piece.clone(), at: [p[0].round(), p[1].round()], z: None, yaw: self.place_yaw, scale: [1.0; 3] });
         self.sel = Sel::Prop(self.doc.props.len() - 1);
         self.status = format!("{label} placed: drag to move, its arrow's handle turns it (Q / E), its corner scales it");
     }
@@ -1628,7 +1628,7 @@ impl App {
         // the ghost: where a wall piece would go (the one being put down, or dragged), or why not
         let ghost = match (&self.gesture3, resp.hover_pos()) {
             (Gesture3::WallProp { i }, _) => self.doc.props.get(*i).cloned().zip(resp.interact_pointer_pos()),
-            (_, Some(h)) if wall_tool => wall_spot(&cam, h).map(|(_, at)| (Prop { piece: self.piece.clone(), at, z: None, yaw: 0.0, scale: [1.0; 3] }, h)),
+            (_, Some(h)) if wall_tool => wall_spot(&cam, h).map(|(_, at)| (Prop { level: None, piece: self.piece.clone(), at, z: None, yaw: 0.0, scale: [1.0; 3] }, h)),
             _ => None,
         };
         if let Some((prop, h)) = ghost {
@@ -1878,7 +1878,7 @@ impl App {
         }
         // the ghost of a wall piece about to be put down: where it fits, or why it can't
         if let (Tool::Prop, true, Some(h), Gesture::None) = (self.tool, self.chosen_on_wall(), hover, &self.gesture) {
-            let probe = Prop { piece: self.piece.clone(), at: v.to_world(h), z: None, yaw: 0.0, scale: [1.0; 3] };
+            let probe = Prop { level: None, piece: self.piece.clone(), at: v.to_world(h), z: None, yaw: 0.0, scale: [1.0; 3] };
             let piece = self.kit.as_ref().and_then(|k| k.get(&self.piece)).cloned();
             match (self.ghost(&probe), piece) {
                 (Some(Ok(pv)), Some(piece)) => {

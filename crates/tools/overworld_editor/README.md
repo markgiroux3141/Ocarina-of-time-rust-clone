@@ -104,6 +104,8 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   -20/+20 and dragging in 3D raise or sink them all together; Delete deletes them all.
 - **Bumps:** a region's inspector (and the outline's) has *Bumps*: height, size, edge fade and seed. See the Bumps section
   of `../overworld/README.md`. The Heights view shows them best from above, and the 3D view or Play up close.
+  Houses, stumps and hedges level the bumps under them, rebuilt with every move; a prop's inspector has *Level* to turn
+  that off (or on for another kind). Only while it's on the ground.
 - **Path profile:** selecting a path opens its side view under the plan, laid out by the builder's own `paths::layout`.
   You see the ground under it, embankments filled down to the ground, bridges in blue, and each segment's slope, with
   anything steeper than the theme's walkable slope (35°) in red. Drag a node up or down to set its height (5-unit

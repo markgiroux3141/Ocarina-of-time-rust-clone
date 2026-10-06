@@ -199,7 +199,7 @@ pub fn fitted(piece: &Piece, prop: &Prop, fit: &Fit) -> Prop {
     if piece.opening.is_none() {
         scale[2] = fit.height;
     }
-    Prop { at: [fit.origin[0], fit.origin[1]], yaw: fit.yaw, scale, z: Some(fit.origin[2]), piece: prop.piece.clone() }
+    Prop { at: [fit.origin[0], fit.origin[1]], yaw: fit.yaw, scale, z: Some(fit.origin[2]), piece: prop.piece.clone(), level: None }
 }
 
 /// Where a wall piece or opening put down at `prop.at` would go, for an editor's ghost: its
