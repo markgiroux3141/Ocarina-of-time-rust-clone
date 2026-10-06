@@ -27,6 +27,7 @@ Done:
 
 - **Paths** (2026-10-05): ramps and embankments joined to the ground, bridge decks with open space under them, and
   paths that switch from one to the other. All walked end to end in pd-walk before the move (`examples/sketch/sketch_paths.json`).
+  Since then, a ramp running on past a plateau's edge cuts into the plateau instead of landing at the edge.
 
 - **The editor** (2026-10-05, `../overworld_editor`, see its README): draw and edit the outline, regions and paths over a
   plan of the built level, with a 3D view beside it and a side profile for paths, where heights are set by dragging. It
@@ -218,16 +219,19 @@ A path is a line of nodes `[x, y]`, `[x, y, z]` or `[x, y, z, width]`. Between n
 heights linear along it.
 - **Heights fill themselves in.** An end with no z takes the floor's height there, and a node between ends with
   none is interpolated. A ramp is just two points, one on the ground and one on a plateau.
-- **Landing.** An end standing on a floor of its own height, where the ground falls away further in, lands at that
-  floor's edge. The slope finishes exactly at the edge, however far onto the plateau the node is, and a deck starts
-  there.
-- **Attached** segments are embankments. Their footprint joins the web, and wherever it overlaps other ground the
-  higher surface wins. A ramp drawn overlapping a cliff or the outer wall therefore meets it edge to edge, and the
-  forest rim rises over it like any high ground. Footprints may cross anything: every crossing becomes a vertex,
-  and the part outside the outline is cut off. Where a ramp rises past the floor beside it, the wall between them
-  changes sides at the crossing point. The sides use the theme's `embankment` style (a path's `edge` overrides it).
-  That style is **top-anchored**: the grass lip follows the sloping top edge, and the rock repeats down at its own
-  size until the ground cuts it off.
+- **Cuttings.** An attached end's slope runs all the way to its node. A ramp from the ground to a point halfway
+  into a plateau rises to the plateau's edge as an embankment, then goes on into the plateau as a cutting, reaching
+  the top at the node. Put the top node at the edge to land flush there (a node a little inside leaves a low lip).
+- **Landing.** A floating end standing on a floor of its own height, where the ground falls away further in, lands
+  at that floor's edge: the deck starts exactly at the edge, however far onto the plateau the node is.
+- **Attached** segments are embankments and cuttings. Their footprint joins the web, and inside it the ground is the
+  path's surface, above the region's or below it (where two paths overlap, the higher). A ramp drawn overlapping a
+  cliff therefore meets it edge to edge if it's higher there, and cuts a notch into it if it's lower. The forest rim
+  rises over a path like any high ground. Footprints may cross anything: every crossing becomes a vertex, and the
+  part outside the outline is cut off. Where a ramp rises past the floor beside it, the wall between them changes
+  sides at the crossing point. The sides, an embankment's and a cutting's, use the theme's `embankment` style (a
+  path's `edge` overrides it). That style is **top-anchored**: the grass lip follows the top edge, and the rock
+  repeats down at its own size until the ground cuts it off. Test: `a_ramp_into_a_plateau_cuts_in`.
 - **Floating** segments are bridges. The deck's top is world-projected. Where it lands, its end follows the floor's
   own edge: the deck's sides are passed to the map as probes, so their crossings become floor vertices, and the end
   shares them. Below the deck is the theme's (or the path's `shape`) body:

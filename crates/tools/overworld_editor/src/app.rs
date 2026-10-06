@@ -837,7 +837,8 @@ impl App {
         }
         if matches!(self.tool, Tool::Path | Tool::Line(_)) {
             // no snapping: a path end exactly on a region's edge could take either side's height.
-            // Ends go inside the floor they start from; the builder lands them at its edge.
+            // Ends go inside the floor they start from: a ramp slopes on to its end (cutting into a
+            // plateau it runs into), a bridge's floating end lands at the floor's edge.
             let p = [w[0].round(), w[1].round()];
             if self.drawing.last() != Some(&p) {
                 self.drawing.push(p);
@@ -1903,7 +1904,7 @@ impl App {
             let hint = match self.tool {
                 Tool::Select => "drag nodes (onto another node to share it; Alt: no snap) · double-click a line: add node · Del: delete · S: sharp · PgUp/PgDn: raise/sink · right-drag: pan · wheel: zoom",
                 Tool::Region => "click points (on a node or edge to share it) · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
-                Tool::Path => "click points · put the ends inside the floors they start and finish on (they land at the edge) · double-click or Enter to finish · Esc: cancel",
+                Tool::Path => "click points · put the ends inside the floors they start and finish on (a ramp ending inside a plateau cuts into it) · double-click or Enter to finish · Esc: cancel",
                 Tool::Brush => "drag to paint · Ctrl: lower · Shift: smooth · [ ]: size · 1-6: raise, lower, smooth, flatten, bumps, erase · right-drag: pan",
                 Tool::Prop if self.chosen_on_wall() => "hover a wall (best in 3D): the ghost shows where it goes, or why it can't · click: put it there · drag one along the walls to move it · Del: delete",
                 Tool::Prop => "click: place the Kit panel's piece · drag a prop: move · its arrow's handle: turn (Q / E) · its corner: scale · Alt: no snap · Ctrl+D: duplicate · Del: delete",

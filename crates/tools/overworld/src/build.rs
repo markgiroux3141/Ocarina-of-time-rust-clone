@@ -8,8 +8,9 @@
 //!   no seam; v is one stretched band (or a few on very tall walls). Wall columns are split at
 //!   every height another wall or floor meets that corner, so there are no T-junctions.
 //! - Paths (`paths.rs`): an attached run's footprint joins the map, and over it the ground is the
-//!   higher of the region and the path's surface, so an embankment meets cliffs and the outline
-//!   edge to edge. Its sides take the theme's embankment style. Floating runs are bridge decks.
+//!   path's surface: an embankment where it's above the region, a cutting where it's below (a
+//!   ramp running on into a plateau). Embankment sides take the theme's embankment style; a
+//!   cutting's sides are the region's own walls. Floating runs are bridge decks.
 //! - Overlays: grass along wall feet (not under water), roots hanging from tall cliffs.
 //! - Boundary: a cliff from each floor up to the rim line, a bank back to the tree line (the
 //!   outline grown by the bank's depth, simplified to long straight panels), trunks standing on
@@ -303,14 +304,11 @@ impl<'a> Builder<'a> {
         l * (1.0 + v.u_speed * fbm3([m[0] / v.u_scale, m[1] / v.u_scale, 0.37], self.seed())).max(0.3)
     }
 
-    /// The ground's height in face f at p: its region's, or an attached path's surface above it.
+    /// The ground's height in face f at p: an attached path's surface where one covers it (the
+    /// highest where they overlap), raised over the region's or cut into it; else the region's.
     fn height(&self, f: usize, p: P2) -> f64 {
         let face = &self.map.faces[f];
-        let mut z = self.regions[face.region].z;
-        for &k in &face.paths {
-            z = z.max(self.paths[k].z_at(p));
-        }
-        z
+        face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or(self.regions[face.region].z)
     }
 
     fn hv(&self, f: usize, v: usize) -> f64 {
@@ -327,6 +325,15 @@ impl<'a> Builder<'a> {
             .filter(|&(_, z)| z > base + 0.5)
             .max_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(k, _)| k)
+    }
+
+    /// The path cut into the ground beside face `beside` (a floor no path covers) along face f,
+    /// if f's ground is a path's: the highest covering f.
+    fn cut_path(&self, f: usize, beside: usize, p: P2) -> Option<usize> {
+        if !self.map.faces[beside].paths.is_empty() {
+            return None;
+        }
+        self.map.faces[f].paths.iter().map(|&k| (k, self.paths[k].z_at(p))).max_by(|a, b| a.1.total_cmp(&b.1)).map(|(k, _)| k)
     }
 
     /// Water lies in a pond region's faces that no path covers.
@@ -619,7 +626,10 @@ impl<'a> Builder<'a> {
                 }
             };
             let mp = lerp(self.map.verts[p], self.map.verts[q], 0.5 * (pr.4 + pr.5));
-            let name = match self.top_path(fl, mp) {
+            // an embankment's sides (the higher ground a path's) and a cutting's (the lower) are
+            // the path's: a cutting's sides shrink to nothing, where the region's rules would
+            // change style partway along
+            let name = match self.top_path(fl, mp).or_else(|| self.cut_path(fr, fl, mp)) {
                 Some(k) => self.paths[k].edge.clone().unwrap_or_else(|| th.paths.as_ref().map_or("cliff".into(), |t| t.side.clone())),
                 None => {
                     let own = self.regions[self.map.faces[fl].region].edge.clone();
@@ -1781,6 +1791,32 @@ mod tests {
         assert!(tops.iter().any(|v| v[0].abs() < 100.0), "the deck crosses the middle");
         assert!(tops.iter().all(|v| v[0] >= -601.0 && v[0] <= 601.0), "and starts at the plateaus' edges");
         assert!(ground.verts.iter().filter(|v| v[0].abs() < 300.0 && (v[1] - 1000.0).abs() < 300.0).all(|v| v[2].abs() < 1e-6));
+    }
+
+    /// The ramp runs on 300 into the east plateau (from its edge at y 600 to its node at y 900):
+    /// a cutting, its floor below the plateau's 240 and rising to it at the node, walled on both
+    /// sides by the plateau's own cliff, and open where it meets the plateau's edge.
+    #[test]
+    fn a_ramp_into_a_plateau_cuts_in() {
+        let lvl = build(&paths_doc(), &Theme::kokiri()).unwrap();
+        let obj = |n: &str| lvl.mesh.objects.iter().find(|o| o.name == n).unwrap_or_else(|| panic!("no {n}"));
+        // the ramp climbs 240 over its 1200: 180 at the plateau's edge
+        // (the plateau's floor shares the cutting's edges, at 240)
+        let want = |v: &P3| 240.0 * (v[1] + 300.0) / 1200.0;
+        let cut: Vec<&P3> = obj("ground").verts.iter().filter(|v| (v[0] - 1000.0).abs() < 81.0 && v[1] > 610.0 && v[1] < 890.0).collect();
+        assert!(cut.iter().any(|v| (v[2] - want(v)).abs() < 2.0 && v[2] < 230.0), "the cutting's floor");
+        for v in &cut {
+            let edge = (v[0] - 1000.0).abs() > 79.0 && (v[2] - 240.0).abs() < 1e-6;
+            assert!((v[2] - want(v)).abs() < 2.0 || edge, "the cutting's floor at {v:?}, not {}", want(v));
+        }
+        // walls on both sides, from the cutting's floor up to the plateau's top
+        let walls = obj("walls");
+        for side in [920.0, 1080.0] {
+            let w: Vec<&P3> = walls.verts.iter().filter(|v| (v[0] - side).abs() < 1.0 && v[1] > 650.0 && v[1] < 850.0).collect();
+            assert!(w.iter().any(|v| (v[2] - 240.0).abs() < 1e-6) && w.iter().any(|v| v[2] < 220.0), "the cutting's side at x {side}");
+        }
+        // no wall across the mouth, above the ramp, where it passes the plateau's edge
+        assert!(!walls.verts.iter().any(|v| (v[0] - 1000.0).abs() < 70.0 && (v[1] - 600.0).abs() < 1.0 && v[2] > 182.0));
     }
 
     fn open_edges(lvl: &Level, objs: &[&str]) -> Vec<((i64, i64, i64), (i64, i64, i64))> {

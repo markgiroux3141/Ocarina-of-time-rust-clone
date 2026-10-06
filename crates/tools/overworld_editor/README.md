@@ -33,8 +33,9 @@ under Files.
   A click on a loop's edge adds a node there and shares it, so a region can be drawn against the outline or another
   region. New regions start 120 above the ground they're drawn on.
 - **Path (P):** click points, then double-click or press Enter to finish. Put each end *inside* the floor it starts or
-  finishes on, not on its edge: an end takes the floor's height and the builder lands it at the floor's edge (see the
-  paths section of `../overworld/README.md`). An end exactly on an edge could take either side's height, so path clicks never snap
+  finishes on, not on its edge: an end takes the floor's height. A ramp slopes all the way to its end, so one that
+  ends halfway into a plateau cuts into it, and a bridge's floating end lands at the floor's edge (see the paths
+  section of `../overworld/README.md`). An end exactly on an edge could take either side's height, so path clicks never snap
   to region nodes. The panel sets width, mode per segment (attached embankment or floating bridge), side style and
   bridge shape. A path node's height and width are optional, per node.
 - **Brush (B):** paints the level's terrain (see Painted terrain in `../overworld/README.md`): one smooth height offset that

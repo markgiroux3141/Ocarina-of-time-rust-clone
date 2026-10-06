@@ -5,14 +5,19 @@
 //! floor's height there (at an end) or is interpolated (between). Widths are per node or the
 //! path's.
 //!
-//! **Landing.** An end that stands on a floor of its own height, with the ground falling away
-//! below the path further in, lands where the floor's edge is: the slope ends there (not at the
-//! node, which may be well inside the plateau), and a floating deck starts there. So a ramp is
-//! drawn from a point on the ground to a point anywhere on the plateau, with no heights at all.
+//! **Cuttings.** An attached end's slope runs all the way to its node. A ramp drawn from the
+//! ground to a point halfway into a plateau rises to the plateau's edge as an embankment and
+//! goes on into the plateau as a cutting, reaching the top at the node: inside its footprint the
+//! path's surface is the ground, above or below the region's (`build.rs`).
 //!
-//! **Runs.** Each segment between nodes is attached (an embankment: its footprint, the
-//! `ribbon`, joins the ground's map, and where it overlaps other ground the higher surface wins)
-//! or floating (a deck with open space under it). Consecutive segments of one kind make a run.
+//! **Landing.** A floating end that stands on a floor of its own height, with the ground falling
+//! away below the path further in, lands where the floor's edge is: the deck starts there (not
+//! at the node, which may be well inside the plateau). So a bridge is drawn between points
+//! anywhere on the floors it joins, with no heights at all.
+//!
+//! **Runs.** Each segment between nodes is attached (an embankment or cutting: its footprint,
+//! the `ribbon`, joins the ground's map) or floating (a deck with open space under it).
+//! Consecutive segments of one kind make a run.
 
 use crate::doc::Path;
 use crate::geom::*;
@@ -163,9 +168,13 @@ pub fn layout(path: &Path, base: &dyn Fn(P2) -> f64, sampling: Sampling) -> Resu
             zk[k] = Some(base(xy[k]));
         }
     }
-    // landing: walk in from each end until the ground under the line falls below the end's height
+    // landing (floating ends): walk in from each end until the ground under the line falls below
+    // the end's height
     let mut land: [Option<f64>; 2] = [None, None];
     for (e, (k, inward)) in [(0usize, true), (n - 1, false)].into_iter().enumerate() {
+        if !floating[if inward { 0 } else { n - 2 }] {
+            continue; // an attached end slopes on to its node, cutting in
+        }
         let ze = zk[k].unwrap();
         if base(xy[k]) < ze - 0.5 {
             continue; // the end itself is in mid air
@@ -314,13 +323,14 @@ mod tests {
     }
 
     #[test]
-    fn a_ramp_lands_at_the_plateau_edge() {
+    fn a_ramp_slopes_on_to_its_end_node() {
         let g = layout(&path(vec![vec![Some(0.0), Some(0.0)], vec![Some(1300.0), Some(0.0)]], vec![]), &base, Sampling::Every(30.0)).unwrap();
-        // z 0 at the start, 200 at the plateau's edge (x 1000), flat beyond
+        // z 0 at the start, 200 at the node (x 1300) well inside the plateau: below the
+        // plateau's 200 from its edge (x 1000) on, so it cuts in
         assert!(g.st[0].z.abs() < 1e-9);
-        assert!((g.z_at([1000.0, 0.0]) - 200.0).abs() < 1.0, "{}", g.z_at([1000.0, 0.0]));
-        assert!((g.z_at([500.0, 0.0]) - 100.0).abs() < 1.0);
-        assert!((g.z_at([1200.0, 0.0]) - 200.0).abs() < 1e-6);
+        assert!((g.z_at([1300.0, 0.0]) - 200.0).abs() < 1e-6);
+        assert!((g.z_at([650.0, 0.0]) - 100.0).abs() < 1.0);
+        assert!((g.z_at([1000.0, 0.0]) - 200.0 * 1000.0 / 1300.0).abs() < 1.0, "{}", g.z_at([1000.0, 0.0]));
         assert_eq!(g.runs.len(), 1);
     }
 
