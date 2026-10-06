@@ -58,6 +58,10 @@ Done:
 - **Wall openings** (2026-10-05, `src/openings.rs`): the log tunnel and the crawlspace set into the wall nearest where they're
   put, with a gap cut to fit; vines and the waterfall stand on walls. Link walks into the log and crawls through the
   crawlspace.
+- **Areas and tunnels** (2026-10-06, `lines` of kind `tunnel`, `src/tunnels.rs`): a region drawn outside the outline is an
+  area of its own, with its own edge of the world; a tunnel Link walks through goes from a wall to a wall, through a ridge,
+  under a plateau or from one area to another, along a curve through its nodes, with rough cave walls if wanted.
+  Example: `examples/sketch/sketch_tunnels.json`.
 
 Not yet: exits and doors that lead somewhere (they wait for levels to load through `Play_Init`).
 See the roadmap.
@@ -110,7 +114,9 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
              { "piece": "hedge", "at": [-1700, 600], "yaw": 30, "scale": [1.5, 1.5, 1] } ],
   "lines": [ { "name": "main path", "kind": "dirt", "nodes": [[-1470, -1180], [-900, -800], [-250, -650]], "width": 160 },
              { "name": "pen", "kind": "fence", "nodes": [[-40, -230], [-420, -260], [-440, -520]], "closed": false },
-             { "name": "rope bridge", "kind": "bridge", "nodes": [[880, 1330], [1780, 1760]] } ] }
+             { "name": "rope bridge", "kind": "bridge", "nodes": [[880, 1330], [1780, 1760]] },
+             { "name": "cave", "kind": "tunnel", "nodes": [[-1300, -100], [-250, 120, 40], [800, 0]], "width": 200, "height": 200,
+               "noise": { "amplitude": 25, "scale": 300, "edge": 120 } } ] }
 ```
 
 - **Nodes are control points.** Edges between them are smooth curves (centripetal Catmull-Rom). A
@@ -121,6 +127,10 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
   nodes and edges but may not cross or overlap (refused with the place where they do).
 - **Faces.** The web cuts the plane into faces. Each face belongs to the innermost loop around it,
   which gives its height, so nesting (a region inside a region) just works.
+- **Areas.** A region drawn outside the outline (and round nothing) is an area apart from the rest: the web has a second
+  outer edge, and the edge of the world (cliffs, bank, trees) goes round each. The editor starts one at the ground's
+  height. Tunnels join areas (see Tunnels). Areas closer than twice the bank are reported: their forests would run into
+  each other.
 
 ## Bumps (`noise` on the outline or a region)
 
@@ -429,6 +439,46 @@ The log tunnel's exit floor and the crawlspace's wall type 5 come with their col
 Link walks 740 into the log. With A at the crawlspace's mouth (`--script crawl`) he crawls through to the far side,
 seen from the crawlspace camera. He climbs the vines anywhere across them onto the lookout.
 The log's exit leads nowhere until levels load through `Play_Init`.
+
+## Tunnels (`lines` of kind `tunnel`, `src/tunnels.rs`, the theme's `tunnel`)
+
+A passage Link walks through, from a mouth in one wall to a mouth in another: through a ridge, under a plateau, or from
+one area's edge of the world to another's. Draw it from a floor, through the wall, to a floor beyond; nodes between bend
+it (a smooth curve through them, as a dirt path's).
+
+- **Mouths.** Walking along the line over the ground from each end, the mouth is where it first meets a wall taller than
+  the tunnel plus `tunnels::COVER` (20), or the edge of the world (beyond which there's no ground at all). Lower walls on
+  the way are climbed, as ground. The mouth sits on that wall's face, square to it, and slides along it clear of corners as
+  an opening does (`openings::seat`); the wall may bend up to 40 off flat across it, and the line must go in within 60° of
+  square on. Its floor is a unit over the wall's foot (the wall keeps its bottom edge, as for openings).
+- **The bore.** Straight in from each mouth (0.6 x its width + 20, less in a thin ridge), then through the nodes between, as
+  one curve, with an upright cross-section every `sample / 2` (high detail; `sample` at medium, `2 x sample` at low): a
+  floor `width` across, walls rising to an arch `height` over the floor (the arch a half circle when the height allows,
+  else flattened). The floor runs straight from one mouth's floor to the other's, through any node's own height (its third
+  value). Too tight a turn for its width, or turning before it's clear of its wall, is refused.
+- **The gaps.** Each mouth's wall is cut to the bore's cross-section there (`openings::punch_with`, the opening's gap
+  cutting with the mouth given exactly), so the wall, the bore and the floors meet edge for edge: the level stays
+  watertight. If the second mouth can't be cut, the first wall is put back.
+- **Rough walls** (`noise`: `amplitude`, `scale`, `edge`, `seed`, as bumps): the walls and roof push in and out by up to
+  `amplitude` (at most a quarter of the width), the passage wanders from side to side by half that and the floor rolls up to
+  a third of it, in features about `scale` across, all fading to nothing within `edge` of the mouths (0: rough right up
+  to them). Cross-sections come at least every `scale / 4`.
+- **Room.** Ground over the roof by at least 20 all along, or none at all (past the edge of the world, where nothing is
+  seen): where there's less, it's built and reported ("comes out of the ground near ..."). So is a floor steeper than the
+  walkable 35°.
+- **Look.** Floor: the theme's `floor` (Kokiri: the ground's own grass, grass footsteps; a `<floor>+dirt` blend would be dirt all over).
+  Walls and roof: `wall` (Kokiri: the cliff's middle rows, `cliff~mid`), u along the tunnel every `tile_u`, v round it every
+  `tile_v`, colliding as `wall_nograb`. The light falls off inside to `dark` (0.45) of what it is outside, `dark_depth` (350)
+  in from the nearer mouth (vertex tints, baked with the lighting).
+
+Built after the painted terrain and before props, on the finished walls; object `tunnels`. In the game Link runs through
+both of `sketch_tunnels`' tunnels with the stick held, the camera following inside (`oot_sandbox --level <out> --child
+--at=-1250,2,-50,16384 --script hold`). Test: `tunnels_go_through_walls_and_close_round_their_mouths` (watertight at
+high and low detail, smooth and rough; between two areas; reported with too little ground over it; refused at a wall
+too low; a node's own height).
+
+Not yet: a mouth in a floor (a tunnel going down from the top of a plateau), tunnels crossing each other, the side
+profile for a tunnel's heights, and a bg camera setting of its own (the normal camera copes at 200 x 200).
 
 ## Automatic texturing (`themes/kokiri.json`)
 

@@ -10,7 +10,7 @@ cargo build --release -p overworld_editor -p oot_sandbox
 target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_village.json [--theme <theme.json>] [--textures <dir>] [--kit <dir>] [--select <name>]
 ```
 
-`--select` selects a region or path by name, or a prop by `prop:N`, at the start (handy for screenshots: the profile shows
+`--select` selects a region or path by name, a prop by `prop:N` or a line by `line:N`, at the start (handy for screenshots: the profile shows
 for a path).
 
 The texture library is `out/overworld/textures/kokiri`, made on first start from the extracted Kokiri Forest scene
@@ -27,7 +27,7 @@ in the File menu.
   8192), the **⚠ problems** (click one to select and frame what it's about), the keys sheet (also `?` or F1), and
   ▶ **Play**.
 - **Tool rail** (far left): the tools as icons with their keys, grouped: select · region, path · brush · props ·
-  dirt, fence, bridge, hedge.
+  dirt, fence, bridge, hedge, tunnel.
 - **Palette** (left): what the current tool adds, and how. Select: which kinds a click in the plan picks (turn props
   off to click through to the floor under them) and the main keys. Region: floor or water and how high a new one
   starts. Path: attached or floating, width, bridge shape. Brush: its six modes, size, strength and hard core, with
@@ -57,7 +57,9 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   selected region by 20 (Shift: 100), or a path node's height.
 - **Region (R):** click points, then click the first point or press Enter to close. A click on an existing node shares it.
   A click on a loop's edge adds a node there and shares it, so a region can be drawn against the outline or another
-  region. New regions start 120 above the ground they're drawn on.
+  region. New regions start 120 above the ground they're drawn on. One drawn outside everything is a new **area**: it
+  starts at the ground's height, with an edge of the world of its own (see Areas in `../overworld/README.md`); join it to
+  the rest with a tunnel.
 - **Path (P):** click points, then double-click or press Enter to finish. Put each end *inside* the floor it starts or
   finishes on, not on its edge: an end takes the floor's height. A ramp slopes all the way to its end, so one that
   ends halfway into a plateau cuts into it, and a bridge's floating end lands at the floor's edge (see the paths
@@ -86,6 +88,13 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   Enter. A hanging rope bridge sags between them. The inspector sets its width, and a deck too steep to walk is reported.
 - **Hedge (J):** click the corners of a patch of tall grass, then click the first one or press Enter, as for a region.
   Link wades through it. Its nodes drag like a fence's, and a double-click on its edge adds one. See Hedges in
+  `../overworld/README.md`.
+- **Tunnel (U):** click on the floor in front of the wall it goes into, any bends, then on the floor beyond the far wall
+  (or in another area), then double-click or Enter. Its mouths go where the line meets a wall taller than the tunnel,
+  walking in from each end; in between it follows the nodes. The palette sets the next one's width, height and rough
+  walls; the inspector the same, with *Rough walls* (how much, size, smooth mouths, seed), and a middle node's *Floor
+  height* (blank: a straight slope between the mouths). The plan draws it as a dark band where it was built, from mouth
+  to mouth. A wall too low, too little ground over it or too tight a turn is reported. See Tunnels in
   `../overworld/README.md`.
 - **Openings and wall pieces:** in the Prop tool with the log tunnel, the crawlspace, the vine patch or the waterfall
   chosen, hover a wall, best in the 3D view: a green ghost shows where it would go (fitted to that wall, slid clear of

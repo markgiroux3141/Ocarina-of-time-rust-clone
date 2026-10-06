@@ -103,8 +103,10 @@ impl Ground {
         }
         let (mut floor, mut water) = (None::<f64>, None::<f64>);
         for &(oi, t, wt) in &self.cells[fy as usize * self.w + fx as usize] {
+            // (a wall cut since, by an opening or a tunnel, has other triangles: never floors)
+            let Some(tri) = mesh.objects.get(oi).and_then(|o| o.tris.get(t)) else { continue };
             let o = &mesh.objects[oi];
-            let [a, b, c] = o.tris[t].map(|v| o.verts[v]);
+            let [a, b, c] = tri.map(|v| o.verts[v]);
             let d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
             if d.abs() < 1e-9 {
                 continue;

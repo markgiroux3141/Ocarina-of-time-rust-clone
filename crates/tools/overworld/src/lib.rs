@@ -18,6 +18,7 @@ pub mod props;
 pub mod terrain;
 pub mod textures;
 pub mod theme;
+pub mod tunnels;
 
 pub use build::{build, build_with, Level};
 pub use doc::Doc;

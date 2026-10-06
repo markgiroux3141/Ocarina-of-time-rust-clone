@@ -41,6 +41,27 @@ pub struct Theme {
     /// Walk-through hedges (needed by levels with hedge lines).
     #[serde(default)]
     pub hedge: Option<HedgeStyle>,
+    /// Tunnels (needed by levels with tunnel lines).
+    #[serde(default)]
+    pub tunnel: Option<TunnelStyle>,
+}
+
+/// A tunnel (`tunnels.rs`): `width` across its floor and `height` from its floor to its roof (a
+/// line's own override them), walls rising to an arch. Its floor is `floor` (world-projected; a
+/// `<floor>+dirt` blend is dirt all over), its walls and roof `wall`, `tile_u` along the tunnel
+/// and `tile_v` round it per repeat, colliding as `wall_surface`. Inside, the light falls to `dark`
+/// of what it is outside, `dark_depth` in from a mouth.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelStyle {
+    pub width: f64,
+    pub height: f64,
+    pub floor: Surface,
+    pub wall: String,
+    pub tile_u: f64,
+    pub tile_v: f64,
+    pub wall_surface: String,
+    pub dark: f64,
+    pub dark_depth: f64,
 }
 
 /// A walk-through hedge (Kokiri's tall grass): over a closed line of nodes, a top `height` above

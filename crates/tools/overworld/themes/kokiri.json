@@ -189,6 +189,21 @@
     "spacing": 100,
     "surface": "tall_grass"
   },
+  "tunnel": {
+    "width": 200,
+    "height": 200,
+    "floor": {
+      "material": "ground",
+      "tile": 400,
+      "surface": "ground"
+    },
+    "wall": "cliff~mid",
+    "tile_u": 167,
+    "tile_v": 110,
+    "wall_surface": "wall_nograb",
+    "dark": 0.45,
+    "dark_depth": 350
+  },
   "hanging": {
     "deck": "log_side",
     "under": "log_end",

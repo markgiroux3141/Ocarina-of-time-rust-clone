@@ -104,6 +104,7 @@ impl App {
             }
             field(ui, "Edge", Some("The wall style of its own walls (where it's the higher side)"), |ui| style_combo(ui, "new edge", &mut n.edge, &styles, "theme rules"));
             widgets::hint(ui, "Click points; click the first one or press Enter to close it. A click on a node or an edge shares it.");
+            widgets::hint(ui, "Drawn outside everything, it's a new area at the ground's height, with an edge of the world of its own: join it to the rest with a tunnel (U).");
         });
     }
 
@@ -343,6 +344,20 @@ impl App {
                     let theme_w = th.hanging.as_ref().map_or(80.0, |h| h.width);
                     field(ui, "Width", Some("The theme's unless you set one"), |ui| widgets::theme_num(ui, &mut self.new.bridge_width, theme_w, 1.0, 20.0..=2000.0));
                     widgets::hint(ui, "Click a point on each floor it joins (anywhere on it: the ends land at the floor's edge), then press Enter. A deck too steep to walk is reported.");
+                });
+            }
+            "tunnel" => {
+                let wall = th.tunnel.as_ref().and_then(|t| tex(self, ui, &t.wall.clone()));
+                section(ui, "pal look", "Look", None, true, |ui| {
+                    let w = (ui.available_width() - 8.0) / 2.0;
+                    widgets::card(ui, w, true, "Rock", "An arch, darker inside, a grass floor", |p, r| widgets::texture_swatch(p, r, wall, 1.5, Color32::WHITE, PANEL2));
+                    let (tw, tt) = th.tunnel.as_ref().map_or((200.0, 200.0), |t| (t.width, t.height));
+                    let (w0, w1) = overworld::tunnels::WIDTH;
+                    let (h0, h1) = overworld::tunnels::HEIGHT;
+                    field(ui, "Width", Some("Across its floor: the theme's unless you set one"), |ui| widgets::theme_num(ui, &mut self.new.tunnel_width, tw, 1.0, w0..=w1));
+                    field(ui, "Height", Some("Its floor to its roof: the theme's unless you set one"), |ui| widgets::theme_num(ui, &mut self.new.tunnel_height, tt, 1.0, h0..=h1));
+                    widgets::toggle(ui, &mut self.new.tunnel_rough, "Rough walls").on_hover_text("Its walls and roof push in and out and it wanders a little, like a cave (the inspector has the settings)");
+                    widgets::hint(ui, "Click on the floor in front of the wall it goes into, any bends, then on the floor beyond the far wall; Enter to finish. Its mouths go where it meets the walls. The wall has to be taller than the tunnel, with ground over it all the way.");
                 });
             }
             _ => {

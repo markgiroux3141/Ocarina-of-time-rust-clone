@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 
 pub type UV = [f64; 2];
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Object {
     pub name: String,
     pub verts: Vec<P3>,

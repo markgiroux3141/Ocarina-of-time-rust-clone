@@ -329,9 +329,26 @@ pub fn load(dir: &Path) -> Result<Level> {
         ensure!(v.abs().max_element() < 32000.0, "{name}: reaches {v}, past the game's 16-bit coordinates");
     }
 
-    // Link starts at the middle, on the highest floor there, facing north (-z)
-    let mid = (lo + hi) * 0.5;
-    let y = floor_at(&collision, mid.x, mid.z).unwrap_or_else(|| {
+    // Link starts at the middle, on the highest floor there, facing north (-z); or, where there's
+    // none (a level of separate areas, with the void between them), on the floor nearest it
+    let mut mid = (lo + hi) * 0.5;
+    let reach = (hi - lo).max_element();
+    let found = floor_at(&collision, mid.x, mid.z).or_else(|| {
+        let mut r = 50.0;
+        while r < reach {
+            for k in 0..32 {
+                let a = k as f32 / 32.0 * std::f32::consts::TAU;
+                let (x, z) = (mid.x + r * a.cos(), mid.z + r * a.sin());
+                if let Some(y) = floor_at(&collision, x, z) {
+                    (mid.x, mid.z) = (x, z);
+                    return Some(y);
+                }
+            }
+            r += 50.0;
+        }
+        None
+    });
+    let y = found.unwrap_or_else(|| {
         notes.push("no floor under the middle: starting above it".into());
         hi.y
     });
@@ -392,11 +409,12 @@ fn water_patches(tris: &[[Vec3; 3]]) -> Vec<(Vec2, Vec2, f32)> {
     v
 }
 
-/// The highest collision floor at (x, z).
+/// The highest collision floor at (x, z): polys less than 60 degrees from level, the
+/// ones the game sorts as floors (`StaticLookup_AddPoly`: normal y over 0.5).
 fn floor_at(h: &CollisionHeader, x: f32, z: f32) -> Option<f32> {
     let mut best: Option<f32> = None;
     for p in &h.polys {
-        if p.normal[1] <= 0 {
+        if p.normal[1] <= 0x3FFF {
             continue;
         }
         let [a, b, c] = [0, 1, 2].map(|k| h.vertex((p.vtx[k] & 0x1FFF) as usize));

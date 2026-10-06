@@ -41,6 +41,11 @@ pub struct Fit {
 
 /// The wall nearest p within `reach`: (object, a point on it below p, its outward normal).
 fn nearest_wall(mesh: &Mesh, p: P2, reach: f64, facing: Option<P2>) -> Option<(usize, P2, P2)> {
+    nearest_wall_facing(mesh, p, reach, facing.map(|f| (f, 0.9)))
+}
+
+/// `nearest_wall`, of the walls facing within `facing.1` (a cosine) of `facing.0`.
+pub(crate) fn nearest_wall_facing(mesh: &Mesh, p: P2, reach: f64, facing: Option<(P2, f64)>) -> Option<(usize, P2, P2)> {
     let mut best: Option<(f64, usize, P2, P2)> = None;
     for (oi, o) in mesh.objects.iter().enumerate() {
         if o.collision_only || !["walls", "cliffs"].contains(&o.name.as_str()) {
@@ -56,7 +61,7 @@ fn nearest_wall(mesh: &Mesh, p: P2, reach: f64, facing: Option<P2>) -> Option<(u
                 continue; // not a vertical wall
             }
             let n = [nn[0] / lxy, nn[1] / lxy];
-            if facing.is_some_and(|f| n[0] * f[0] + n[1] * f[1] < 0.9) {
+            if facing.is_some_and(|(f, c)| n[0] * f[0] + n[1] * f[1] < c) {
                 continue;
             }
             // the triangle seen from above is a segment along the wall
@@ -85,7 +90,7 @@ fn placed_points<'a>(piece: &'a Piece, prop: &'a Prop, fit: &'a Fit) -> impl Fn(
 
 /// A wall's shape across `half` either side of `base` (facing `n`), below `z_hi`: how far its
 /// points stray from the plane there (its bend), and its top.
-fn survey(mesh: &Mesh, obj: usize, base: P2, n: P2, half: f64, z_hi: f64) -> (f64, f64) {
+pub(crate) fn survey(mesh: &Mesh, obj: usize, base: P2, n: P2, half: f64, z_hi: f64) -> (f64, f64) {
     let o = &mesh.objects[obj];
     let t = [-n[1], n[0]];
     let (mut bend, mut top): (f64, f64) = (0.0, f64::NEG_INFINITY);
@@ -227,12 +232,42 @@ fn bend_allowed(piece: &Piece) -> f64 {
     }
 }
 
+/// Where something `half` wide each side of its middle (its margin included) sits on a wall.
+pub(crate) struct Seat {
+    pub base: P2,
+    pub n: P2,
+    /// The floor in front.
+    pub floor: f64,
+    /// How wide the wall is there, corner to corner.
+    pub room: f64,
+}
+
+/// Seats something `half` wide each side of its middle on wall `obj` at `base` (facing `n`): near
+/// a corner it slides along the wall until it's all on the one face, the face being the wall
+/// within `tol` of its plane from the floor up to `tall`. `what` says what the face is, for the
+/// error when it's too narrow.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn seat(mesh: &Mesh, ground: &Ground, obj: usize, mut base: P2, mut n: P2, half: f64, tall: f64, tol: f64, what: &str) -> Result<Seat, String> {
+    let floor_at = |base: P2, n: P2| ground.at(mesh, [base[0] + n[0] * 12.0, base[1] + n[1] * 12.0]).0.ok_or("no floor in front of the wall".to_string());
+    let mut floor = floor_at(base, n)?;
+    let (a, b) = span(mesh, obj, base, n, floor + 1.0, floor + tall, tol);
+    if b - a < 2.0 * half {
+        return Err(format!("the wall is {:.0} wide here ({what}); it needs {:.0}", b - a, 2.0 * half));
+    }
+    let shift = if b < half { b - half } else if a > -half { a + half } else { 0.0 };
+    if shift != 0.0 {
+        let t = [-n[1], n[0]];
+        let p = [base[0] + t[0] * shift + n[0], base[1] + t[1] * shift + n[1]];
+        (_, base, n) = nearest_wall(mesh, p, 20.0, Some(n)).filter(|w| w.0 == obj).ok_or("the wall moved under it".to_string())?;
+        floor = floor_at(base, n)?;
+    }
+    Ok(Seat { base, n, floor, room: b - a })
+}
+
 /// Fits a wall piece or opening to the wall near its `at`.
 pub fn fit(piece: &Piece, prop: &Prop, mesh: &Mesh, ground: &Ground) -> Result<Fit, String> {
     let name = &piece.label;
-    let (obj, mut base, mut n) = nearest_wall(mesh, prop.at, 300.0, None).ok_or(format!("{name}: no wall within 300 of it"))?;
-    let floor_at = |base: P2, n: P2| ground.at(mesh, [base[0] + n[0] * 12.0, base[1] + n[1] * 12.0]).0.ok_or(format!("{name}: no floor in front of the wall"));
-    let mut floor = floor_at(base, n)?;
+    let (obj, base, n) = nearest_wall(mesh, prop.at, 300.0, None).ok_or(format!("{name}: no wall within 300 of it"))?;
     // the piece across the wall, and a little wall each side: near a corner (a hard or faceted
     // edge's node) it slides along the wall until it's all on the one face. A wall piece lies
     // flat on the wall, so its face is the flat stretch; an opening's may bend a little.
@@ -242,20 +277,10 @@ pub fn fit(piece: &Piece, prop: &Prop, mesh: &Mesh, ground: &Ground) -> Result<F
         None => (WALL_PIECE_MARGIN, WALL_PIECE_FLAT, 20.0),
     };
     let half = piece.verts.iter().filter(|v| v[1] * scale[1] > -40.0).map(|v| v[0].abs() * scale[0]).fold(0.0, f64::max) + margin;
-    let (a, b) = span(mesh, obj, base, n, floor + 1.0, floor + tall, tol);
-    if b - a < 2.0 * half {
-        let what = if piece.opening.is_some() { "corner to corner" } else { "flat, corner to corner" };
-        return Err(format!("{name}: the wall is {:.0} wide here ({what}); it needs {:.0}", b - a, 2.0 * half));
-    }
-    let shift = if b < half { b - half } else if a > -half { a + half } else { 0.0 };
-    if shift != 0.0 {
-        let t = [-n[1], n[0]];
-        let p = [base[0] + t[0] * shift + n[0], base[1] + t[1] * shift + n[1]];
-        (_, base, n) = nearest_wall(mesh, p, 20.0, Some(n)).filter(|w| w.0 == obj).ok_or(format!("{name}: the wall moved under it"))?;
-        floor = floor_at(base, n)?;
-    }
+    let what = if piece.opening.is_some() { "corner to corner" } else { "flat, corner to corner" };
+    let Seat { base, n, floor, room } = seat(mesh, ground, obj, base, n, half, tall, tol, what).map_err(|e| format!("{name}: {e}"))?;
     let yaw = (-n[0]).atan2(n[1]).to_degrees();
-    let mut fit = Fit { origin: [base[0], base[1], floor], yaw, depth: scale[1], far: None, height: scale[2], room: b - a, obj, n, base };
+    let mut fit = Fit { origin: [base[0], base[1], floor], yaw, depth: scale[1], far: None, height: scale[2], room, obj, n, base };
     let Some(op) = &piece.opening else {
         // wall pieces (vines, a waterfall) lie flat on the wall's face, a hair out so they don't
         // fight it for depth, from the floor to the wall's top: the wall must be flat there
@@ -387,8 +412,18 @@ pub fn punch(mesh: &mut Mesh, obj: usize, base: P2, n: P2, outline: &[P3]) -> Re
     if m.len() < 3 {
         return Err("no mouth to cut".into());
     }
+    punch_with(mesh, obj, base, n, &m, &|bottom| Ok(clip_below(&m, bottom + 1.0))).map(|_| ())
+}
+
+/// `punch` with the mouth given by `mouth(floor)`: a simple polygon in the wall's plane, as
+/// (along the wall from `base`, height) with the wall's own `[-n.y, n.x]` along, for the floor's
+/// height under it; `extent` (the same) bounds where it may be. Returns the mouth's points in
+/// the level (as `mouth` gave them, on the plane through `base`) and the floor's height.
+pub(crate) fn punch_with(mesh: &mut Mesh, obj: usize, base: P2, n: P2, extent: &[P2], mouth_at: &dyn Fn(f64) -> Result<Vec<P2>, String>) -> Result<(Vec<P3>, f64), String> {
+    let t = [-n[1], n[0]];
+    let sz = |q: P3| [(q[0] - base[0]) * t[0] + (q[1] - base[1]) * t[1], q[2]];
     let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
-    for q in &m {
+    for q in extent {
         lo = [lo[0].min(q[0]), lo[1].min(q[1])];
         hi = [hi[0].max(q[0]), hi[1].max(q[1])];
     }
@@ -430,7 +465,7 @@ pub fn punch(mesh: &mut Mesh, obj: usize, base: P2, n: P2, outline: &[P3]) -> Re
     // the cut area's outline (edges used once, chained), grown until the mouth is inside it:
     // where only half a quad touched the mouth's box, the outline would cross the mouth
     let mut cut = cut;
-    let (ring, outer, mouth) = 'grow: {
+    let (ring, outer, mouth, bottom) = 'grow: {
         for _ in 0..24 {
             let mut count: std::collections::HashMap<(usize, usize), (usize, usize)> = Default::default();
             for &ti in &cut {
@@ -482,13 +517,13 @@ pub fn punch(mesh: &mut Mesh, obj: usize, base: P2, n: P2, outline: &[P3]) -> Re
             for q in outer.iter().filter(|q| q[0] > lo[0] && q[0] < hi[0] && q[1] < lo[1] + 20.0) {
                 bottom = bottom.max(q[1]);
             }
-            let mouth = clip_below(&m, bottom + 1.0);
-            if mouth.len() < 3 {
+            let mouth = mouth_at(bottom)?;
+            if mouth.len() < 3 || mouth.iter().any(|q| q[1] < bottom + 0.5) {
                 return Err("the mouth is below the floor".into());
             }
             let inside: Vec<usize> = ring.iter().zip(&outer).filter(|(_, q)| crate::geom::point_in_poly(**q, &mouth)).map(|(&v, _)| v).collect();
             if inside.is_empty() {
-                break 'grow (ring, outer, mouth);
+                break 'grow (ring, outer, mouth, bottom);
             }
             let before = cut.len();
             for ti in 0..o.tris.len() {
@@ -590,5 +625,5 @@ pub fn punch(mesh: &mut Mesh, obj: usize, base: P2, n: P2, outline: &[P3]) -> Re
         let surface = if *surf >= 0 { surfs[*surf as usize].as_str() } else { "" };
         mesh.tri(&name, tri.map(place), uvs, &mats[*mat], surface);
     }
-    Ok(())
+    Ok((mouth.iter().map(|q| [base[0] + t[0] * q[0], base[1] + t[1] * q[0], q[1]]).collect(), bottom))
 }

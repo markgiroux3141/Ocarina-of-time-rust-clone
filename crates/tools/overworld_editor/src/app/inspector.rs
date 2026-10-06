@@ -283,14 +283,17 @@ impl App {
         let theme_w = match kind.as_str() {
             "dirt" => self.theme.dirt.as_ref().map(|d| d.width),
             "bridge" => self.theme.hanging.as_ref().map(|h| h.width),
+            "tunnel" => self.theme.tunnel.as_ref().map(|t| t.width),
             _ => None,
         };
+        let tunnel_h = self.theme.tunnel.as_ref().map_or(200.0, |t| t.height);
         let (icon, what) = match kind.as_str() {
             "dirt" => (Icon::Dirt, "Dirt path"),
             "fence" => (Icon::Fence, "Fence · rails"),
             "lattice" => (Icon::Fence, "Fence · lattice"),
             "bridge" => (Icon::Bridge, "Rope bridge"),
             "hedge" => (Icon::Hedge, "Hedge"),
+            "tunnel" => (Icon::Tunnel, "Tunnel"),
             _ => (Icon::Dirt, "Line"),
         };
         let sag = self.theme.hanging.as_ref().map_or(0.0, |h| h.sag * 100.0);
@@ -311,7 +314,8 @@ impl App {
                 widgets::hint(ui, "Straight between nodes, a post at every node, standing on the ground; collides from both sides.");
             }
             if let Some(tw) = theme_w {
-                field(ui, "Width", Some("The theme's unless you set one"), |ui| widgets::theme_num(ui, &mut l.width, tw, 1.0, 20.0..=2000.0));
+                let range = if l.kind == "tunnel" { overworld::tunnels::WIDTH.0..=overworld::tunnels::WIDTH.1 } else { 20.0..=2000.0 };
+                field(ui, "Width", Some("The theme's unless you set one"), |ui| widgets::theme_num(ui, &mut l.width, tw, 1.0, range));
             }
             match l.kind.as_str() {
                 "dirt" => widgets::hint(ui, "Painted into the floor: the ground fades to dirt across its soft edge, and the middle has dirt footsteps."),
@@ -329,9 +333,17 @@ impl App {
                     });
                     widgets::hint(ui, "Tall grass over its shape, straight between its nodes, with grass skirts round it. Link wades through it.");
                 }
+                "tunnel" => {
+                    let (h0, h1) = overworld::tunnels::HEIGHT;
+                    field(ui, "Height", Some("Its floor to its roof: the theme's unless you set one"), |ui| widgets::theme_num(ui, &mut l.height, tunnel_h, 1.0, h0..=h1));
+                    widgets::hint(ui, "Its mouths go where it meets a wall taller than it is, walking in from each end: put the ends on the floors in front of the walls. In between it follows its nodes; a node can set the floor's height there.");
+                }
                 _ => {}
             }
         });
+        if l.kind == "tunnel" {
+            section(ui, "ins lrough", "Rough walls", None, true, |ui| rough_ui(ui, &mut l.noise));
+        }
         let n = l.nodes.len();
         section(ui, "ins lnodes", "Nodes", None, true, |ui| {
             chips(ui, &[(Some(n.to_string()), "nodes"), (None, "double-click it to add one")]);
@@ -393,6 +405,26 @@ impl App {
                         }
                         if w.is_some() {
                             n.push(w);
+                        }
+                    }
+                }
+                NodeRef::Line(k, i) if self.doc.lines[k].kind == "tunnel" && i > 0 && i + 1 < self.doc.lines[k].nodes.len() => {
+                    // the floor there as built (its middle line's nearest point), else the ground's
+                    let built = self.level.as_ref().and_then(|lv| lv.tunnels.iter().find(|t| t.0 == k)).and_then(|t| {
+                        t.1.iter().min_by(|a, b| (a[0] - p[0]).hypot(a[1] - p[1]).total_cmp(&(b[0] - p[0]).hypot(b[1] - p[1]))).map(|q| q[2])
+                    });
+                    let auto = built.unwrap_or(self.doc.outline.z).round();
+                    let n = &self.doc.lines[k].nodes[i];
+                    let mut z = n.get(2).copied();
+                    let mut changed = false;
+                    field(ui, "Floor height", Some("Blank: on a straight slope between its mouths' floors (and other nodes' heights)"), |ui| {
+                        changed |= own_num(ui, &mut z, auto, 1.0, -100000.0..=100000.0, "auto");
+                    });
+                    if changed {
+                        let n = &mut self.doc.lines[k].nodes[i];
+                        n.truncate(2);
+                        if let Some(z) = z {
+                            n.push(z);
                         }
                     }
                 }
@@ -585,6 +617,20 @@ fn noise_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
         field(ui, "  Height", Some("Up to this far up or down"), |ui| ui.add(egui::DragValue::new(&mut n.amplitude).speed(0.5).range(0.0..=500.0)));
         field(ui, "  Size", Some("About how far apart the bumps are"), |ui| ui.add(egui::DragValue::new(&mut n.scale).speed(5.0).range(50.0..=5000.0)));
         field(ui, "  Edge fade", Some("Bumps fade out over this distance from the floor's edges, which keep its height"), |ui| ui.add(egui::DragValue::new(&mut n.edge).speed(2.0).range(1.0..=3000.0)));
+        field(ui, "  Seed", Some("Another pattern"), |ui| ui.add(egui::DragValue::new(&mut n.seed)));
+    }
+}
+
+/// A tunnel's rough walls: a switch, and their settings when on.
+fn rough_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
+    let mut on = noise.is_some();
+    if widgets::toggle(ui, &mut on, "Rough").on_hover_text("Its walls and roof push in and out, it wanders a little from side to side and its floor rolls, like a cave").changed() {
+        *noise = on.then(edit::rough_walls);
+    }
+    if let Some(n) = noise {
+        field(ui, "  How much", Some("Walls and roof in or out by up to this (at most a quarter of its width); it wanders half as much, its floor rolls a third"), |ui| ui.add(egui::DragValue::new(&mut n.amplitude).speed(0.5).range(0.0..=200.0)));
+        field(ui, "  Size", Some("About how far apart the lumps are"), |ui| ui.add(egui::DragValue::new(&mut n.scale).speed(5.0).range(50.0..=5000.0)));
+        field(ui, "  Smooth mouths", Some("Fades in over this far from each mouth, so the mouths stay clean arches (0: rough right up to the wall)"), |ui| ui.add(egui::DragValue::new(&mut n.edge).speed(2.0).range(0.0..=3000.0)));
         field(ui, "  Seed", Some("Another pattern"), |ui| ui.add(egui::DragValue::new(&mut n.seed)));
     }
 }

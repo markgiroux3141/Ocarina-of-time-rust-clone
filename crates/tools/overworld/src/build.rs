@@ -44,6 +44,8 @@ pub struct Level {
     pub props: Vec<Placed>,
     /// What the game's collision will hold (`Mesh::collision_vertices`): at most 8192.
     pub collision_vertices: usize,
+    /// The tunnels built: (line index, the floor along its middle).
+    pub tunnels: Vec<(usize, Vec<P3>)>,
 }
 
 struct Info {
@@ -193,6 +195,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             k if theme.fences.contains_key(k) => {}
             "bridge" if theme.hanging.is_some() => {}
             "hedge" if theme.hedge.is_some() => {}
+            "tunnel" if theme.tunnel.is_some() => {}
             k => problems.push(format!("line {i} ({}): {k} lines aren't built yet", l.name)),
         }
     }
@@ -265,6 +268,36 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         }
     }
     lap("terrain");
+    // tunnels go through the finished walls, before props stand on the ground
+    let mut built_tunnels = vec![];
+    if let Some(tt) = theme.tunnel.as_ref().filter(|_| doc.lines.iter().any(|l| l.kind == "tunnel")) {
+        let ground = props::Ground::new(&b.mesh);
+        let detail = doc.settings.detail()?;
+        let fine: u8 = match doc.settings.detail.as_str() {
+            "medium" => 1,
+            "low" => 2,
+            _ => 0,
+        };
+        let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
+        let mut bores = vec![];
+        for (i, l) in doc.lines.iter().enumerate().filter(|(_, l)| l.kind == "tunnel") {
+            let mut step = doc.settings.sample.max(1.0) * [0.5, 1.0, 2.0][fine as usize];
+            if let Some(n) = l.noise.as_ref().filter(|n| n.amplitude != 0.0 && n.scale > 0.0) {
+                step = step.min((n.scale / 4.0).max(10.0));
+            }
+            let seed = doc.settings.seed.wrapping_mul(0x9E37_79B9) ^ (i as u32).wrapping_mul(7919);
+            match crate::tunnels::build(l, tt, theme, detail.paths, fine, step, max_slope, seed, &mut b.mesh, &ground) {
+                Ok((bore, pr)) => {
+                    built_tunnels.push((i, bore.floor.clone()));
+                    bores.push(bore);
+                    b.problems.extend(pr.into_iter().map(|p| format!("line {i} ({}): {p}", l.name)));
+                }
+                Err(e) => b.problems.push(format!("line {i} ({}): {e}", l.name)),
+            }
+        }
+        crate::tunnels::finish(&mut b.mesh, &bores, tt);
+        lap("tunnels");
+    }
     // kit pieces, fences and hedges stand on the finished ground, and are lit with it
     let placed = props::place(&doc.props, kit, &mut b.mesh, &mut b.problems);
     lap("props");
@@ -291,7 +324,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     }
     lap("lighting");
     let collision_vertices = b.mesh.collision_vertices();
-    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices })
+    Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels })
 }
 
 /// A prop's pad (`props::Pad`) is level this far past its base outline, under its walls' feet.
@@ -1368,6 +1401,7 @@ impl<'a> Builder<'a> {
             self.problems.push(format!("theme {} has no boundary style {:?}", th.name, th.boundary_style));
             return;
         };
+        let mut lines: Vec<Vec<P2>> = vec![];
         for (hs, top) in rims {
             let hs = hs.clone();
             let n = hs.len();
@@ -1418,6 +1452,7 @@ impl<'a> Builder<'a> {
             for &z in &rim_t {
                 self.rim = (self.rim.0.min(z), self.rim.1.max(z));
             }
+            lines.push(t.clone());
             // the bank, from the cliff tops out to the tree line
             let key = |p: P2| ((p[0] * 1000.0).round() as i64, (p[1] * 1000.0).round() as i64);
             let mut zs: HashMap<(i64, i64), f64> = HashMap::new();
@@ -1466,6 +1501,23 @@ impl<'a> Builder<'a> {
                 );
                 ut += lt;
                 uf += lf;
+            }
+        }
+        // separate areas (regions outside the outline) each have their own edge of the world: their
+        // forests mustn't run into each other
+        for i in 0..lines.len() {
+            for j in i + 1..lines.len() {
+                let (a, b) = (&lines[i], &lines[j]);
+                let hit = (0..a.len()).find_map(|k| {
+                    let (p, q) = (a[k], a[(k + 1) % a.len()]);
+                    (0..b.len()).find(|&m| segments_cross(p, q, b[m], b[(m + 1) % b.len()])).map(|_| p)
+                });
+                if let Some(p) = hit.or_else(|| point_in_poly(a[0], b).then_some(a[0])).or_else(|| point_in_poly(b[0], a).then_some(b[0])) {
+                    self.problems.push(format!(
+                        "two areas' edges of the world run into each other near ({:.0}, {:.0}): keep separate areas at least {:.0} apart (twice the bank)",
+                        p[0], p[1], 2.0 * bd.bank
+                    ));
+                }
             }
         }
     }
@@ -2183,7 +2235,7 @@ mod tests {
         let mut d = sample_doc();
         // drawn clockwise: the builder turns it round
         let sq = [[-200.0, 0.0], [-200.0, 300.0], [200.0, 300.0], [200.0, 0.0]];
-        d.lines.push(Line { name: "h".into(), kind: "hedge".into(), nodes: sq.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false });
+        d.lines.push(Line { name: "h".into(), kind: "hedge".into(), nodes: sq.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false, height: None, noise: None });
         let lvl = build(&d, &th).unwrap();
         assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
         let o = lvl.mesh.objects.iter().find(|o| o.name == "hedges").unwrap();
@@ -2214,7 +2266,7 @@ mod tests {
         // a shape crossing itself is reported
         let mut d = sample_doc();
         let bow = [[-200.0, 0.0], [200.0, 300.0], [200.0, 0.0], [-200.0, 300.0]];
-        d.lines.push(Line { name: "bow".into(), kind: "hedge".into(), nodes: bow.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: true });
+        d.lines.push(Line { name: "bow".into(), kind: "hedge".into(), nodes: bow.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: true, height: None, noise: None });
         let lvl = build(&d, &th).unwrap();
         assert!(lvl.problems.iter().any(|p| p.contains("crosses itself")), "{:?}", lvl.problems);
     }
@@ -2389,13 +2441,91 @@ mod tests {
         assert!(lvl.props.is_empty() && lvl.problems.iter().any(|p| p.contains("corner to corner")), "{:?}", lvl.problems);
     }
 
+    /// A square plateau 1000 across and `z` high in a square outline 3000 by 2000, and a tunnel
+    /// drawn through it from the ground on one side to the ground on the other.
+    fn tunnel_doc(z: f64) -> Doc {
+        let sq = |x0: f64, y0: f64, x1: f64, y1: f64| vec![vec![x0, y0, 1.0], vec![x1, y0, 1.0], vec![x1, y1, 1.0], vec![x0, y1, 1.0]];
+        let mut doc: Doc = serde_json::from_value(serde_json::json!({ "name": "tunnel", "outline": { "nodes": sq(0.0, 0.0, 3000.0, 2000.0) } })).unwrap();
+        doc.regions.push(Region { name: "plateau".into(), nodes: sq(1000.0, 500.0, 2000.0, 1500.0), z, kind: "floor".into(), surface: None, edge: None, noise: None });
+        doc.lines.push(Line { name: "cave".into(), kind: "tunnel".into(), nodes: vec![vec![500.0, 1000.0], vec![1500.0, 1150.0], vec![2500.0, 1000.0]], width: None, closed: false, height: None, noise: None });
+        doc
+    }
+
+    #[test]
+    fn tunnels_go_through_walls_and_close_round_their_mouths() {
+        let theme = Theme::kokiri();
+        let solid = ["ground", "walls", "cliffs", "bank", "trees", "tunnels"];
+        let tt = theme.tunnel.clone().unwrap();
+        // through a plateau, smooth and rough, at each detail
+        for detail in ["high", "low"] {
+            for rough in [false, true] {
+                let mut doc = tunnel_doc(300.0);
+                doc.settings.detail = detail.into();
+                if rough {
+                    doc.lines[0].noise = Some(Noise { amplitude: 25.0, scale: 300.0, edge: 120.0, seed: 1 });
+                }
+                let lvl = build(&doc, &theme).unwrap();
+                assert!(lvl.problems.is_empty(), "{detail} {rough}: {:?}", lvl.problems);
+                let bad = open_edges(&lvl, &solid);
+                assert!(bad.is_empty(), "{detail} {rough}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+                // its mouths are in the plateau's west and east walls, its floor a unit over the ground
+                let t = lvl.mesh.objects.iter().find(|o| o.name == "tunnels").unwrap();
+                let (x0, x1) = t.verts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, v| (a.0.min(v[0]), a.1.max(v[0])));
+                assert!((x0 - 1000.0).abs() < 1.0 && (x1 - 2000.0).abs() < 1.0, "{detail} {rough}: from x {x0} to {x1}");
+                let top = t.verts.iter().map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+                assert!(top <= 1.0 + tt.height + if rough { 25.0 } else { 0.0 } + 1e-6, "{detail} {rough}: roof at {top}");
+                let floor = t.verts.iter().filter(|v| (v[0] - 1500.0).abs() < 40.0).map(|v| v[2]).fold(f64::INFINITY, f64::min);
+                assert!((floor - 1.0).abs() < 1e-6 || rough && floor >= 1.0, "{detail} {rough}: floor at {floor}");
+                // dark inside, the ground's grass underfoot
+                assert_eq!(t.tints.len(), t.verts.len());
+                assert!(t.tints.iter().any(|k| (k[0] - tt.dark).abs() < 1e-6) && t.tints.iter().any(|k| k[0] > 0.95));
+                let ground = lvl.mesh.surfaces.iter().position(|s| s == "ground").unwrap() as i64;
+                let grass = lvl.mesh.materials.iter().position(|m| m == "ground").unwrap();
+                assert!(t.surf.contains(&ground) && t.mat.contains(&grass));
+            }
+        }
+        // from one area's edge of the world to another's (a region drawn outside the outline)
+        let mut doc = tunnel_doc(300.0);
+        doc.regions[0].nodes = vec![vec![3600.0, 0.0, 1.0], vec![5000.0, 0.0, 1.0], vec![5000.0, 2000.0, 1.0], vec![3600.0, 2000.0, 1.0]];
+        doc.regions[0].z = 0.0;
+        doc.lines[0].nodes = vec![vec![2500.0, 1000.0], vec![3300.0, 1200.0], vec![4100.0, 1000.0]];
+        let lvl = build(&doc, &theme).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        assert!(open_edges(&lvl, &solid).is_empty());
+        let t = lvl.mesh.objects.iter().find(|o| o.name == "tunnels").unwrap();
+        let (x0, x1) = t.verts.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, v| (a.0.min(v[0]), a.1.max(v[0])));
+        assert!((x0 - 3000.0).abs() < 1.0 && (x1 - 3600.0).abs() < 1.0, "from x {x0} to {x1}");
+        // areas closer than twice the bank: their forests would run into each other
+        doc.regions[0].nodes = vec![vec![3300.0, 0.0, 1.0], vec![5000.0, 0.0, 1.0], vec![5000.0, 2000.0, 1.0], vec![3300.0, 2000.0, 1.0]];
+        let lvl = build(&doc, &theme).unwrap();
+        assert!(lvl.problems.iter().any(|p| p.starts_with("two areas' edges of the world run into each other")), "{:?}", lvl.problems);
+        // too little ground over it (a dip in the plateau): built, and reported
+        let mut doc = tunnel_doc(300.0);
+        doc.regions.push(Region { name: "dip".into(), nodes: vec![vec![1350.0, 800.0, 1.0], vec![1650.0, 800.0, 1.0], vec![1650.0, 1400.0, 1.0], vec![1350.0, 1400.0, 1.0]], z: 150.0, kind: "floor".into(), surface: None, edge: None, noise: None });
+        let lvl = build(&doc, &theme).unwrap();
+        assert!(lvl.problems.iter().any(|p| p.starts_with("line 0 (cave): it comes out of the ground")), "{:?}", lvl.problems);
+        // a wall too low for it: not built, and why
+        let lvl = build(&tunnel_doc(150.0), &theme).unwrap();
+        assert!(lvl.mesh.objects.iter().all(|o| o.name != "tunnels"));
+        assert!(lvl.problems.iter().any(|p| p.contains("doesn't go into a wall (the tallest it meets from there is 150")), "{:?}", lvl.problems);
+        // a node's own height: the floor passes through it
+        let mut doc = tunnel_doc(400.0);
+        doc.lines[0].nodes[1].push(60.0);
+        let lvl = build(&doc, &theme).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let t = lvl.mesh.objects.iter().find(|o| o.name == "tunnels").unwrap();
+        // (the floor's highest near the node: it rises to it and falls away)
+        let high = t.verts.iter().filter(|v| (v[0] - 1500.0).hypot(v[1] - 1150.0) < 130.0 && v[2] < 100.0).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+        assert!((high - 60.0).abs() < 3.0, "floor under the node at {high}");
+    }
+
     /// A dirt path from the ground up a ramp: cut into the floors (points on its rings), drawn
     /// with the blend material by vertex weight, dirt footsteps where it's mostly dirt, and the
     /// level as watertight as before.
     #[test]
     fn dirt_paths_are_cut_into_the_floor() {
         let mut doc = paths_doc();
-        doc.lines.push(crate::doc::Line { name: "dirt".into(), kind: "dirt".into(), nodes: vec![vec![1000.0, -1500.0], vec![1000.0, -300.0], vec![1000.0, 900.0]], width: None, closed: false });
+        doc.lines.push(crate::doc::Line { name: "dirt".into(), kind: "dirt".into(), nodes: vec![vec![1000.0, -1500.0], vec![1000.0, -300.0], vec![1000.0, 900.0]], width: None, closed: false, height: None, noise: None });
         let lvl = build(&doc, &Theme::kokiri()).unwrap();
         let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
         assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);

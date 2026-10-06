@@ -46,7 +46,10 @@ pub struct Doc {
 /// - "dirt": a dirt path painted into the ground (smooth curve through the nodes, `width` across);
 /// - "fence" and "lattice": fences, straight between nodes (`closed` joins the last to the first);
 /// - "bridge": a hanging bridge between its two anchors;
-/// - "hedge": a walk-through hedge over the closed shape of its nodes (always closed).
+/// - "hedge": a walk-through hedge over the closed shape of its nodes (always closed);
+/// - "tunnel": a tunnel Link walks through, from a wall to a wall (`tunnels.rs`): through a ridge
+///   or under a plateau, or from one area's edge of the world to another's. A node's third value
+///   sets the floor's height there.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Line {
     #[serde(default)]
@@ -58,6 +61,13 @@ pub struct Line {
     pub width: Option<f64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub closed: bool,
+    /// A tunnel's height, floor to roof (else the theme's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<f64>,
+    /// A tunnel's rough walls: they and its roof push in and out by up to `amplitude`, in features
+    /// about `scale` across, smooth within `edge` of its mouths; the floor rolls a little.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise: Option<Noise>,
 }
 
 /// A kit piece (`pieces.rs`) placed in the level. Its origin (a house's door floor, a stone's

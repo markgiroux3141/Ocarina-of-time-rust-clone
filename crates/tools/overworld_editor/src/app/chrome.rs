@@ -28,7 +28,7 @@ pub const RAIL: [&[Tool]; 5] = [
     &[Tool::Region, Tool::Path],
     &[Tool::Brush],
     &[Tool::Prop],
-    &[Tool::Line("dirt"), Tool::Line("fence"), Tool::Line("bridge"), Tool::Line("hedge")],
+    &[Tool::Line("dirt"), Tool::Line("fence"), Tool::Line("bridge"), Tool::Line("hedge"), Tool::Line("tunnel")],
 ];
 
 pub fn tool_info(t: Tool) -> ToolInfo {
@@ -72,6 +72,13 @@ pub fn tool_info(t: Tool) -> ToolInfo {
         Tool::Line("dirt") => ToolInfo { icon: Icon::Dirt, name: "Dirt path", key: "D", about: "Dirt painted into the floor, with dirt footsteps.", hint: line },
         Tool::Line("fence") => ToolInfo { icon: Icon::Fence, name: "Fence", key: "G", about: "Straight between its nodes, a post at every node.", hint: line },
         Tool::Line("bridge") => ToolInfo { icon: Icon::Bridge, name: "Rope bridge", key: "H", about: "Planks and ropes sagging from one floor to another.", hint: line },
+        Tool::Line("tunnel") => ToolInfo {
+            icon: Icon::Tunnel,
+            name: "Tunnel",
+            key: "U",
+            about: "A passage through a wall: under a plateau, through a ridge, or from one area to another.",
+            hint: "click on the floor in front of the wall it goes into, then any bends, then on the floor beyond · double-click or Enter to finish · Esc: cancel",
+        },
         Tool::Line(_) => ToolInfo {
             icon: Icon::Hedge,
             name: "Hedge",
@@ -680,7 +687,7 @@ fn play_button(ui: &mut egui::Ui) -> egui::Response {
 /// Every key, by what it's for.
 fn keys_sheet(ui: &mut egui::Ui) {
     let groups: [(&str, &[(&str, &str)]); 6] = [
-        ("Tools", &[("V", "Select"), ("R", "Draw a region"), ("P", "Draw a path"), ("B", "Brush"), ("K", "Props"), ("D", "Dirt path"), ("G", "Fence"), ("H", "Rope bridge"), ("J", "Hedge")]),
+        ("Tools", &[("V", "Select"), ("R", "Draw a region"), ("P", "Draw a path"), ("B", "Brush"), ("K", "Props"), ("D", "Dirt path"), ("G", "Fence"), ("H", "Rope bridge"), ("J", "Hedge"), ("U", "Tunnel")]),
         (
             "Editing",
             &[

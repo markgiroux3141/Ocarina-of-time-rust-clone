@@ -313,7 +313,7 @@ impl Shapes {
                 if xy.len() < 2 {
                     return xy.into_iter().map(|q| (q, 0)).collect();
                 }
-                if l.kind == "dirt" {
+                if l.kind == "dirt" || l.kind == "tunnel" {
                     let (line, node_s) = centre_line(&xy, path_sampling(doc));
                     return line.into_iter().map(|(q, s)| ((q), (0..xy.len() - 1).rev().find(|&k| node_s[k] <= s + 1e-9).unwrap_or(0))).collect();
                 }
@@ -352,6 +352,14 @@ impl Shapes {
         (0..self.loops.len())
             .filter(|&l| self.loops[l].len() >= 3 && point_in_poly(p, &self.poly(l)))
             .min_by(|&a, &b| self.areas[a].total_cmp(&self.areas[b]))
+    }
+
+    /// Whether a new loop through `pts` is outside every loop (and has none inside it): a new
+    /// area, apart from the rest, with its own edge of the world.
+    pub fn outside_everything(&self, pts: &[P2]) -> bool {
+        let n = pts.len().max(1) as f64;
+        let c = [pts.iter().map(|p| p[0]).sum::<f64>() / n, pts.iter().map(|p| p[1]).sum::<f64>() / n];
+        pts.iter().chain(std::iter::once(&c)).all(|&p| self.loop_at(p).is_none()) && !self.loops.iter().any(|l| l.first().is_some_and(|x| point_in_poly(x.0, pts)))
     }
 
     /// The nearest loop edge to p within `tol`: (loop, node index of the edge, nearest point).
@@ -454,7 +462,12 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
 pub fn new_line(doc: &Doc, kind: &str, nodes: Vec<P2>) -> Line {
     let names: Vec<&str> = doc.lines.iter().map(|r| r.name.as_str()).collect();
     let name = (1..).map(|i| format!("{kind} {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
-    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: kind == "hedge" }
+    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: kind == "hedge", height: None, noise: None }
+}
+
+/// A tunnel's rough walls when they're first turned on.
+pub fn rough_walls() -> overworld::doc::Noise {
+    overworld::doc::Noise { amplitude: 25.0, scale: 300.0, edge: 120.0, seed: 0 }
 }
 
 /// A new level: an oval outline about 4000 by 2800.
@@ -570,6 +583,10 @@ mod tests {
         assert_eq!(s.loop_at([800.0, 500.0]), Some(0));
         assert_eq!(s.loop_at([2000.0, 500.0]), None);
         assert_eq!(base_z(&d, &s, [200.0, 500.0]), 120.0);
+        // a new area: beside the outline, not round it or inside it
+        assert!(s.outside_everything(&[[1500.0, 0.0], [2500.0, 0.0], [2500.0, 1000.0], [1500.0, 1000.0]]));
+        assert!(!s.outside_everything(&[[-500.0, -500.0], [1500.0, -500.0], [1500.0, 1500.0], [-500.0, 1500.0]]));
+        assert!(!s.outside_everything(&[[600.0, 100.0], [900.0, 100.0], [900.0, 400.0]]));
         // the region's right edge runs from node 1 (400, 300) to node 2 (400, 700)
         let (l, k, q) = s.loop_edge_near([405.0, 500.0], 10.0).unwrap();
         assert_eq!((l, k), (1, 1));

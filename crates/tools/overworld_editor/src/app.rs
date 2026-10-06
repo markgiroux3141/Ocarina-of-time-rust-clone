@@ -45,7 +45,7 @@ enum Tool {
     Brush,
     /// Placing kit pieces.
     Prop,
-    /// Drawing a line of a kind: "dirt", "fence", "bridge" or "hedge" (a closed shape).
+    /// Drawing a line of a kind: "dirt", "fence", "bridge", "hedge" (a closed shape) or "tunnel".
     Line(&'static str),
 }
 
@@ -205,6 +205,9 @@ struct NewThings {
     closed: bool,
     dirt_width: Option<f64>,
     bridge_width: Option<f64>,
+    tunnel_width: Option<f64>,
+    tunnel_height: Option<f64>,
+    tunnel_rough: bool,
 }
 
 impl Default for NewThings {
@@ -221,6 +224,9 @@ impl Default for NewThings {
             closed: false,
             dirt_width: None,
             bridge_width: None,
+            tunnel_width: None,
+            tunnel_height: None,
+            tunnel_rough: false,
         }
     }
 }
@@ -307,8 +313,9 @@ impl App {
             Some(n) => match (doc.regions.iter().position(|r| &r.name == n), doc.paths.iter().position(|p| &p.name == n)) {
                 (Some(i), _) => Sel::Loop(i + 1),
                 (None, Some(k)) => Sel::Path(k),
-                _ => match n.strip_prefix("prop:").and_then(|i| i.parse::<usize>().ok()) {
-                    Some(i) if i < doc.props.len() => Sel::Prop(i),
+                _ => match (n.strip_prefix("prop:").and_then(|i| i.parse::<usize>().ok()), n.strip_prefix("line:").and_then(|i| i.parse::<usize>().ok())) {
+                    (Some(i), _) if i < doc.props.len() => Sel::Prop(i),
+                    (_, Some(k)) if k < doc.lines.len() => Sel::Line(k),
                     _ => Sel::None,
                 },
             },
@@ -963,15 +970,27 @@ impl App {
                 let c = [pts.iter().map(|p| p[0]).sum::<f64>() / n, pts.iter().map(|p| p[1]).sum::<f64>() / n];
                 let ground = edit::base_z(&self.doc, &self.shapes, c);
                 let water = self.new.region_kind == "water";
+                // drawn outside everything, a new area: at the ground's height, with its own edge of the world
+                let area = self.shapes.outside_everything(&pts);
                 // a pond's surface 20 below the ground round it, its bed `depth` below that
-                let z = if water { ground - 20.0 - self.new.depth } else { ground + self.new.rise };
+                let z = if water {
+                    ground - 20.0 - self.new.depth
+                } else if area {
+                    ground
+                } else {
+                    ground + self.new.rise
+                };
                 let mut r = edit::new_region(&self.doc, pts, z);
                 r.edge = self.new.edge.clone();
                 if water {
                     r.kind = "water".into();
                     r.surface = Some(ground - 20.0);
                 }
-                self.status = format!("{} added at height {z:.0}: PageUp/PageDown raise and sink it", r.name);
+                self.status = if area {
+                    format!("{} added: a new area at the ground's height ({z:.0}), with an edge of the world of its own. Join it to the rest with a tunnel (U)", r.name)
+                } else {
+                    format!("{} added at height {z:.0}: PageUp/PageDown raise and sink it", r.name)
+                };
                 self.doc.regions.push(r);
                 self.sel = Sel::Loop(self.doc.regions.len());
                 self.tool = Tool::Select;
@@ -994,6 +1013,13 @@ impl App {
                     "fence" | "lattice" => l.closed = self.new.closed,
                     "dirt" => l.width = self.new.dirt_width,
                     "bridge" => l.width = self.new.bridge_width,
+                    "tunnel" => {
+                        l.width = self.new.tunnel_width;
+                        l.height = self.new.tunnel_height;
+                        if self.new.tunnel_rough {
+                            l.noise = Some(edit::rough_walls());
+                        }
+                    }
                     _ => {}
                 }
                 self.status = format!("{} added", l.name);
@@ -1013,7 +1039,8 @@ impl App {
     }
 
     fn fit(&mut self) {
-        let pts: Vec<P2> = self.doc.outline.nodes.iter().filter(|n| n.len() >= 2).map(|n| [n[0], n[1]]).collect();
+        // every loop's nodes: areas drawn outside the outline too
+        let pts: Vec<P2> = (0..edit::loop_count(&self.doc)).flat_map(|l| edit::loop_nodes(&self.doc, l).iter()).filter(|n| n.len() >= 2).map(|n| [n[0], n[1]]).collect();
         let mut bb = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
         for p in &pts {
             bb = [bb[0].min(p[0]), bb[1].min(p[1]), bb[2].max(p[0]), bb[3].max(p[1])];
@@ -1106,6 +1133,9 @@ impl App {
         }
         if pressed(Key::J) {
             self.set_tool(Tool::Line("hedge"));
+        }
+        if pressed(Key::U) {
+            self.set_tool(Tool::Line("tunnel"));
         }
         let fine = if shift { 1.0 } else { 15.0 };
         if pressed(Key::Q) {
@@ -1783,6 +1813,16 @@ impl App {
                 let px = (w * v.scale) as f32;
                 painter.add(Shape::line(pts.clone(), Stroke::new(px.max(2.0), col.gamma_multiply(if sel { 0.45 } else { 0.25 }))));
             }
+            // a tunnel is under the ground: its width as a dark band, edged, where it was built (from
+            // mouth to mouth, going straight in at each), else along its line
+            if l.kind == "tunnel" {
+                let w = l.width.or(self.theme.tunnel.as_ref().map(|t| t.width)).unwrap_or(200.0);
+                let px = (w * v.scale) as f32;
+                let built = self.level.as_ref().and_then(|lv| lv.tunnels.iter().find(|t| t.0 == k)).map(|t| t.1.iter().map(|q| v.to_screen([q[0], q[1]])).collect::<Vec<Pos2>>());
+                let band = built.unwrap_or_else(|| pts.clone());
+                painter.add(Shape::line(band.clone(), Stroke::new(px.max(2.0) + 2.0, col.gamma_multiply(if sel { 0.5 } else { 0.3 }))));
+                painter.add(Shape::line(band, Stroke::new(px.max(2.0) - 1.0, Color32::from_rgba_unmultiplied(20, 16, 30, if sel { 150 } else { 110 }))));
+            }
             if sel {
                 painter.add(Shape::line(pts.clone(), Stroke::new(5.0, Color32::from_black_alpha(110))));
             }
@@ -1978,6 +2018,7 @@ fn line_colour(kind: &str) -> Color32 {
         "fence" | "lattice" => Color32::from_rgb(190, 130, 80),
         "bridge" => Color32::from_rgb(160, 210, 240),
         "hedge" => Color32::from_rgb(127, 191, 77),
+        "tunnel" => Color32::from_rgb(190, 170, 255),
         _ => Color32::from_rgb(200, 150, 100),
     }
 }
