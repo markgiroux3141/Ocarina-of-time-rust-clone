@@ -14,16 +14,17 @@
 //!
 //! The whole overlay is ported, with what Kokiri Forest's boulder never reaches: the climbs and
 //! drops between points of different heights (bit 10 clear: `EnGoroiwa_MoveUp`,
-//! `EnGoroiwa_MoveDown`, with its drop's quake), the round trip and the breaking loop. Not
-//! ported: the dust, splashes, ripples and fragments (the effects; their
-//! `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
+//! `EnGoroiwa_MoveDown`, with its drop's quake), the round trip and the breaking loop with its
+//! fragments (`EffectSsKakera`) and dust. Not ported: the splashes and ripples (the effects;
+//! their `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
 //! (`ActorShadow_DrawCircle`).
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
-use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2, actor_set_player_knockback_large, player_play_sfx};
+use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, actor_set_player_knockback_large, audio_play_actor_sfx2, func_80033480, player_play_sfx};
 use oot_game::audio::sfx::{NA_SE_EV_BIGBALL_ROLL, NA_SE_PL_BODY_HIT, SFX_FLAG};
 use oot_game::collision_check::*;
+use oot_game::effect::kakera::KAKERA_COLOR_NONE;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::sys_matrix::{MtxF, binang_to_rad};
 
@@ -456,14 +457,37 @@ impl EnGoroiwa {
         self.face_next_waypoint(play);
     }
 
-    /// `EnGoroiwa_SpawnFragments`: the break at the path's ends (`EffectSsKakera_Spawn`,
-    /// `func_80033480`: not ported); the overlay's `Rand_ZeroOne` calls are made.
-    fn spawn_fragments(play: &mut PlayState) {
-        for _ in 0..16 {
-            for _ in 0..6 {
-                play.rand.zero_one();
+    /// `EnGoroiwa_SpawnFragments`: the break at the path's ends: 16 fragments of
+    /// `gBoulderFragmentsDL` round its centre (`yOffsets` up), a turn of 0x4E20 apart, scattered
+    /// within 50 across and 50 up and down on a random angle (`angle2`), flying out at a fifth of
+    /// that and up at 2 to 17 (one bounce, radius 10; 1 to 8 big; 70 frames); then dust in two
+    /// rings (`func_80033480`: six puffs 80 across, 70 big, and six 90 across, 110 big).
+    /// The C passes `objId` 1 (`OBJECT_GAMEPLAY_KEEP`, where `gBoulderFragmentsDL` is), so the
+    /// fragments' object isn't checked.
+    pub fn spawn_fragments(&self, play: &mut PlayState) {
+        let this_pos = self.actor.world_pos;
+        let y_offset = Y_OFFSETS[((self.actor.params >> 10) & 1) as usize];
+        play.with_ss(|ss| {
+            let mut angle1: i16 = 0;
+            for _ in 0..16 {
+                let sin1 = eng_math::sin_s(angle1);
+                let cos1 = eng_math::cos_s(angle1);
+                let angle2 = (ss.rand.zero_one() * 65535.0) as i32 as i16;
+                let x = ss.rand.zero_one() * 50.0 * sin1 * eng_math::sin_s(angle2);
+                let sin2 = eng_math::sin_s(angle2);
+                let y = (ss.rand.zero_one() - 0.5) * 100.0 * sin2 + y_offset;
+                let z = ss.rand.zero_one() * 50.0 * cos1 * eng_math::sin_s(angle2);
+                let velocity = Vec3::new(x * 0.2, ss.rand.zero_one() * 15.0 + 2.0, z * 0.2);
+                // Math_Vec3f_Sum(&effectPos, thisPos, &effectPos).
+                let pos = Vec3::new(x + this_pos.x, y + this_pos.y, z + this_pos.z);
+                let scale = (ss.rand.zero_one() * 7.0 + 1.0) as i16;
+                ss.kakera_spawn(pos, velocity, pos, -340, 33, 28, 2, 0, scale, 1, 0, 70, KAKERA_COLOR_NONE, 1, Some(("gameplay_keep", "gBoulderFragmentsDL")));
+                angle1 = angle1.wrapping_add(0x4E20);
             }
-        }
+        });
+        let effect_pos = Vec3::new(this_pos.x, this_pos.y + y_offset, this_pos.z);
+        func_80033480(play, effect_pos, 80.0, 5, 70, 110, 1);
+        func_80033480(play, effect_pos, 90.0, 5, 110, 160, 1);
     }
 
     /// `EnGoroiwa_SetupRoll`.
@@ -515,7 +539,7 @@ impl EnGoroiwa {
         } else if if self.bgc() == 1 { self.move_and_fall(play) } else { self.move_(play) } {
             let loop_mode = self.loop_mode();
             if loop_mode == ENGOROIWA_LOOPMODE_ONEWAY_BREAK && (self.next_waypoint == 0 || self.next_waypoint == self.end_waypoint) {
-                Self::spawn_fragments(play);
+                self.spawn_fragments(play);
             }
             self.next_waypoint(play);
             if loop_mode == ENGOROIWA_LOOPMODE_ROUNDTRIP && (self.current_waypoint == 0 || self.current_waypoint == self.end_waypoint) {

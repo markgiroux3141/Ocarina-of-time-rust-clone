@@ -44,6 +44,10 @@ struct Cli {
     /// Then put Link at `x,y,z,yaw` (yaw in binary angle units).
     #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
     at: Vec<f32>,
+    /// After entering, set these switch flags (hex, comma-separated: --switch 0x27), as if
+    /// their switches had just been pressed (a debug start, e.g. room 0's golden torches lit).
+    #[arg(long, value_delimiter = ',')]
+    switch: Vec<String>,
     /// A dummy target (the sandbox's stand-in enemy) this many units in front of --at.
     #[arg(long, default_value_t = 0.0)]
     target: f32,
@@ -52,7 +56,8 @@ struct Cli {
     #[arg(long)]
     target_hurts: Option<String>,
     /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open),
-    /// deku-tree-dead (also the tree dead, with the Kokiri Emerald), or sword-and-40-rupees (the
+    /// deku-tree-dead (also the tree dead, with the Kokiri Emerald), deku-tree-inside (its intro
+    /// seen), deku-tree-sticks (and ten Deku Sticks on C-Left), or sword-and-40-rupees (the
     /// Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,
@@ -125,6 +130,7 @@ fn main() -> Result<()> {
         new_file: cli.new_file,
         room: cli.room,
         at: cli.at,
+        switches: cli.switch.iter().map(|s| oot::parse_switch_flag(s)).collect::<anyhow::Result<_>>()?,
         target: cli.target,
         target_hurts: cli.target_hurts.as_deref().map(oot::parse_hit_effect).transpose()?,
         audio: !cli.no_audio,

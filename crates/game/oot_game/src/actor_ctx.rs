@@ -105,6 +105,11 @@ pub trait PlayerIface {
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;
+    /// What `Player_GetEnvironmentalHazard` reads of Player: `underwaterTimer`, `currentBoots`,
+    /// `currentTunic`, and whether he's on the ground (`BGCHECKFLAG_GROUND`).
+    fn env_hazard_state(&self) -> (i16, u8, u8, bool) {
+        (0, 0, 0, true)
+    }
     /// `heldActor != NULL`.
     fn holds_actor(&self) -> bool;
     /// `getItemDirection`: how squarely the last `GI_NONE` offer this frame faced Link.
@@ -504,6 +509,68 @@ pub fn actor_spawn_floor_dust_ring(play: &mut PlayState, actor: &Actor, pos_xz: 
             i -= 1;
         }
     });
+}
+
+/// `func_80033480`: `amount_minus_one + 1` puffs of brown dust in a cube `rand_range_diameter`
+/// across round `pos_base`, each `scale_base` to 1.2 times it (truncated), rising at 0.3: lit
+/// (`func_800286CC`) when `arg6` isn't 0, else not (`func_8002865C`). Four `Rand` calls a puff.
+#[allow(clippy::too_many_arguments)]
+pub fn func_80033480(play: &mut PlayState, pos_base: Vec3, rand_range_diameter: f32, amount_minus_one: i32, scale_base: i16, scale_step: i16, arg6: u8) {
+    let velocity = Vec3::ZERO;
+    let accel = Vec3::new(0.0, 0.3, 0.0);
+    play.with_ss(|ss| {
+        let mut i = amount_minus_one;
+        while i >= 0 {
+            let x = pos_base.x + ((ss.rand.zero_one() - 0.5) * rand_range_diameter);
+            let y = pos_base.y + ((ss.rand.zero_one() - 0.5) * rand_range_diameter);
+            let z = pos_base.z + ((ss.rand.zero_one() - 0.5) * rand_range_diameter);
+            let pos = Vec3::new(x, y, z);
+            // (s16)((scaleBase * Rand_ZeroOne()) * 0.2f) + scaleBase.
+            let scale = (((scale_base as f32 * ss.rand.zero_one()) * 0.2) as i16).wrapping_add(scale_base);
+            if arg6 as u32 != 0 {
+                ss.func_800286cc(pos, velocity, accel, scale, scale_step);
+            } else {
+                ss.func_8002865c(pos, velocity, accel, scale, scale_step);
+            }
+            i -= 1;
+        }
+    });
+}
+
+/// `Actor_GetCollidedExplosive`: the actor whose hit the collider took, if it's an explosive
+/// (`ACTORCAT_EXPLOSIVE`), the hit cleared (`AC_HIT`).
+pub fn actor_get_collided_explosive(play: &PlayState, collider: &mut crate::collision_check::ColliderBase) -> Option<ActorHandle> {
+    if collider.ac_flags & crate::collision_check::AC_HIT != 0
+        && let Some(h) = collider.ac
+        && play.actors.actor(h).is_some_and(|a| a.category == ACTORCAT_EXPLOSIVE)
+    {
+        collider.ac_flags &= !crate::collision_check::AC_HIT;
+        return Some(h);
+    }
+    None
+}
+
+/// `func_80033684`: an exploding explosive (`ACTORCAT_EXPLOSIVE` with params 1: a bomb's
+/// explosion) whose blast reaches `explosive_actor` (within `shape.rot.z × 10 + 80`, the
+/// explosion's radius growing with its `rot.z`), from the list's head; `me` is
+/// `explosive_actor`'s own handle, skipped.
+pub fn func_80033684(play: &PlayState, me: Option<ActorHandle>, explosive_actor: &Actor) -> Option<ActorHandle> {
+    for &h in play.actors.category(ACTORCAT_EXPLOSIVE) {
+        if Some(h) == me {
+            continue;
+        }
+        let Some(actor) = play.actors.actor(h) else { continue };
+        if actor.params != 1 {
+            continue;
+        }
+        // Actor_WorldDistXYZToActor(explosiveActor, actor).
+        let d = actor.world_pos - explosive_actor.world_pos;
+        let dist = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
+        if dist <= (actor.shape_rot.z as i32 * 10) as f32 + 80.0 {
+            return Some(h);
+        }
+    }
+    None
 }
 
 /// `Actor_PlaySfx` on the actor `h` (an effect's spawn, for the actor it's spawned for).

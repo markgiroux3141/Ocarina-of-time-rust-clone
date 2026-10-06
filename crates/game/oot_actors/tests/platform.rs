@@ -2,8 +2,10 @@
 //! block (`gDTSlidingPlatformCol` of `object_ydan_objects`, from the asset pack). Expected values follow
 //! from `z_bgcheck.c` (`DynaPoly_AddBgActorToLookup`, the `BgCheck_*Dyna*` checks),
 //! `z_bg_collect.c` (carrying) and `z_bg_ydan_hasi.c`, not from the port.
-//! The course's channel: water y -20 over x∈[350,950], z∈[-300,-100]; the platform's home is
-//! (650, 0, -200) facing +x (0x4000).
+//! The course's channel: water y -20 over x∈[350,950], z∈[-300,-100], the course's second water
+//! box (`waterBoxes[1]`, which `BgYdanHasi_Init` and its update read); the platform's home is
+//! (650, 0, -200) facing +x (0x4000), built by `BgYdanHasi_Init` with params 0xFF00 (as Master
+//! Quest's room 5 places it).
 
 mod common;
 
@@ -25,7 +27,7 @@ fn header() -> Option<Arc<CollisionHeader>> {
 
 fn world_with_platform(pos: Vec3, yaw: i16) -> Option<PlayState> {
     let mut w = world_at(pos, yaw)?;
-    w.spawn_platform(header()?, PLATFORM_HOME, PLATFORM_YAW, CHANNEL_WATER);
+    w.spawn_platform(header()?, PLATFORM_HOME, PLATFORM_YAW);
     Some(w)
 }
 
@@ -37,6 +39,19 @@ fn the_collision_is_a_1000_unit_box() {
     assert_eq!((h.vertices.len(), h.polys.len()), (8, 12));
     assert_eq!((h.min_bounds, h.max_bounds), ([-500, -400, -500], [500, 0, 500]));
     assert!(h.polys.iter().all(|p| p.vtx[0] & 0x2000 != 0));
+}
+
+#[test]
+fn the_init_floats_it_on_the_courses_water_box_1() {
+    // BgYdanHasi_Init: HASI_WATER_BLOCK (0xFF00 & 0xFF), type 0x3F; world.pos.y =
+    // waterBoxes[1].ySurface + 20 = -20 + 20; home kept; scale 0.1 with x and z 0.15.
+    let Some(w) = world_with_platform(Vec3::new(0.0, 0.0, 0.0), 0) else { return };
+    let b = w.col.header.water_boxes[1];
+    assert_eq!((b.x_min, b.z_min, b.x_length, b.z_length, b.y_surface), (350, -300, 600, 200, CHANNEL_WATER as i16));
+    let p = w.platform(0);
+    assert_eq!((p.actor.params, p.ty, p.timer, p.action), (oot_actors::bg_ydan_hasi::HASI_WATER_BLOCK, 0x3F, 0, oot_actors::bg_ydan_hasi::Action::UpdateFloatingBlock));
+    assert_eq!((p.pos(), p.actor.home_pos), (Vec3::new(650.0, 0.0, -200.0), PLATFORM_HOME));
+    assert_eq!(p.actor.scale, Vec3::new(0.15, 0.1, 0.15));
 }
 
 #[test]
@@ -63,7 +78,7 @@ fn expand_srt_transforms_and_bounds() {
 #[test]
 fn the_platform_slides_and_bobs() {
     // BgYdanHasi_UpdateFloatingBlock: x = home.x + sinS(0x4000) · sin((frames & 0xFF)·π/128) · 165;
-    // y = water + 20 + 2·sin(timer·π/25), the timer counting 50, 49, ... 1, 50, ...
+    // y = waterBoxes[1].ySurface + 20 + 2·sin(timer·π/25), the timer counting 50, 49, ... 1, 50, ...
     let Some(mut w) = world_with_platform(Vec3::new(0.0, 0.0, 0.0), 0) else { return };
     let mut timer = 0i32;
     for n in 1..=300u32 {

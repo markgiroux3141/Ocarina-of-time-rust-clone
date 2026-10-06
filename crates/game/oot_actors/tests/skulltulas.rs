@@ -3,6 +3,9 @@
 //! Tree's first room (room 0): the Skullwalltula on the vines at (95, 133, -308) (params 0, yaw
 //! -2913) and the Gold Skulltula at (278, 360, 332) (params 0x8102), as the MQ scene places them.
 //!
+//! The Gold Skulltula is shut in room 0's large crate (`Obj_Kibako2`): its test breaks the crate
+//! with an injected explosion first, as a bomb would.
+//!
 //! Expected values are worked out from the C in the comments.
 
 mod common;
@@ -434,6 +437,13 @@ fn a_gold_skulltula_takes_two_slashes_and_leaves_its_token() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree(&a);
     let h = sw_near(&w, GOLD_PLACED).expect("the Gold Skulltula");
+    // It's shut in room 0's large crate (Obj_Kibako2 0xFFFF at (279, 360, 333)), which only a
+    // hammer or an explosion breaks: an explosion in reach first (func_80033684: an
+    // ACTORCAT_EXPLOSIVE actor with params 1 within rot.z × 10 + 80). The crate breaks that
+    // frame (its collision off) and is gone the next (ObjKibako2_Kill: bit 15 set, no En_Sw of
+    // its own).
+    let crate_ = break_room_0s_crate(&mut w);
+    assert!(w.actors.actor(crate_).is_none_or(|c| c.killed));
     // EnSw_Init: params 0x8102 has 0x8000: type ((0x8102 - 0x8000) >> 13 & 7) + 1 = 1, so 0x2102;
     // then its index one less, (0x2102 >> 8 & 0x1F) - 1 = 0: 0x2002 (GET_GS_FLAGS(0) & 2).
     let s = sw(&w, h);
@@ -513,6 +523,49 @@ fn a_gold_skulltula_takes_two_slashes_and_leaves_its_token() {
     assert_eq!(tok.actor.home_pos, at + Vec3::new(0.0, 10.0, 0.0));
     assert_eq!(tok.actor.parent, None);
     assert_eq!(tok.action, TokenAction::Spin);
+}
+
+/// A bomb's explosion as `func_80033684` sees one (`ACTORCAT_EXPLOSIVE`, params 1, `shape.rot.z`
+/// the blast's size); it does nothing itself (`En_Bom` isn't ported).
+struct Blast {
+    actor: oot_game::actor::Actor,
+}
+
+impl oot_game::actor_ctx::ActorImpl for Blast {
+    fn name(&self) -> &'static str {
+        "Injected explosion"
+    }
+    fn base(&self) -> &oot_game::actor::Actor {
+        &self.actor
+    }
+    fn base_mut(&mut self) -> &mut oot_game::actor::Actor {
+        &mut self.actor
+    }
+    fn update(&mut self, _play: &mut PlayState) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// Room 0's large crate broken by an explosion 20 from it (rot.z 0: a reach of 80); the
+/// explosion gone after. Returns the crate's handle.
+fn break_room_0s_crate(w: &mut PlayState) -> ActorHandle {
+    use oot_actors::obj_kibako2::{Action as CrateAction, ObjKibako2};
+    let at = Vec3::new(279.0, 360.0, 333.0);
+    let c = w.actors.all().into_iter().find(|&c| w.actors.downcast::<ObjKibako2>(c).is_some_and(|k| k.actor.home_pos == at)).expect("room 0's crate");
+    let mut b = oot_game::actor::Actor::new(at + Vec3::new(20.0, 0.0, 0.0), 0);
+    b.id = 0x0010; // ACTOR_EN_BOM
+    b.category = oot_game::actor_ctx::ACTORCAT_EXPLOSIVE;
+    b.params = 1;
+    let blast = w.spawn(Box::new(Blast { actor: b })).expect("spawn");
+    idle(w, 1);
+    assert_eq!(w.actors.downcast::<ObjKibako2>(c).unwrap().action, CrateAction::Kill);
+    w.actors.actor_mut(blast).unwrap().kill();
+    idle(w, 1);
+    c
 }
 
 fn token(w: &PlayState, h: ActorHandle) -> &EnSi {

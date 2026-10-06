@@ -70,6 +70,9 @@ pub struct Options {
     /// With an entrance: after `Play_Init`, this room loaded as walking into it would load it
     /// (a debug start somewhere the spawns don't reach, e.g. room 2's sword chest).
     pub room: Option<i8>,
+    /// With an entrance: switch flags set after `Play_Init` (and `room`), as if pressed
+    /// (`Flags_SetSwitch`; the actors see them on their next update).
+    pub switches: Vec<i32>,
     /// Child Link.
     pub child: bool,
     /// A pack file or loose folder to use instead of the default pack.
@@ -149,6 +152,8 @@ pub struct Assets {
     /// (`--room`, `--at`).
     pub start_room: Option<i8>,
     pub start_at: Option<(Vec3, i16)>,
+    /// With an entrance: the switch flags to set after `Play_Init` (`--switch`).
+    pub start_switches: Vec<i32>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
     /// Open the output device (`Options::audio`), the sequence to force (`Options::music`), the
@@ -226,6 +231,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         new_file: o.new_file,
         start_room: o.room,
         start_at: None,
+        start_switches: o.switches.clone(),
         scene_name: o.scene.clone(),
         spawn_index: o.spawn,
         audio: o.audio,
@@ -358,6 +364,14 @@ pub fn load_scene(a: &mut Assets, child: bool) -> Result<()> {
     Ok(())
 }
 
+/// A switch flag for `--switch`: hex (`0x27`, or `27`), 0 to 0x3F.
+pub fn parse_switch_flag(s: &str) -> anyhow::Result<i32> {
+    let t = s.trim();
+    let v = i32::from_str_radix(t.trim_start_matches("0x").trim_start_matches("0X"), 16).map_err(|e| anyhow::anyhow!("--switch {t}: {e}"))?;
+    anyhow::ensure!((0..0x40).contains(&v), "--switch {t}: a switch flag is 0 to 0x3F");
+    Ok(v)
+}
+
 /// The play state: `Play_Init` at the entrance, or Player at the spawn (or `--at`) with the
 /// course's platform and the dummy targets.
 pub fn new_play(a: &Assets, child: bool) -> PlayState {
@@ -381,6 +395,9 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
                         w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
                         w.room_change_done();
                     }
+                }
+                for &flag in &a.start_switches {
+                    w.flags.set_switch(flag);
                 }
                 if let Some((pos, yaw)) = a.start_at {
                     w.place_player(pos, yaw);
@@ -448,7 +465,7 @@ pub fn parse_hit_effect(s: &str) -> Result<u8> {
 /// The course's moving platform (`Bg_Ydan_Hasi` floating block) in its channel.
 pub fn add_platform(w: &mut PlayState, a: &Assets) {
     if let (Some(h), None) = (&a.platform_col, &a.scene) {
-        w.spawn_platform(h.clone(), course::PLATFORM_HOME, course::PLATFORM_YAW, course::CHANNEL_WATER);
+        w.spawn_platform(h.clone(), course::PLATFORM_HOME, course::PLATFORM_YAW);
     }
 }
 

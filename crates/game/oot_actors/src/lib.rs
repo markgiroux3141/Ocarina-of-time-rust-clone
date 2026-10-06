@@ -28,6 +28,7 @@ use oot_game::spawn::Overlays;
 pub mod bg_spot00_hanebasi;
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
+pub mod bg_ydan_maruta;
 pub mod bg_ydan_sp;
 pub mod demo_tre_lgt;
 pub mod door_shutter;
@@ -66,6 +67,8 @@ pub mod en_wonder_item;
 pub mod en_wonder_talk2;
 pub mod item_shield;
 pub mod obj_hana;
+pub mod obj_kibako2;
+pub mod obj_lift;
 pub mod obj_switch;
 pub mod obj_syokudai;
 pub mod object_kankyo;
@@ -79,10 +82,9 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE];
 
-/// The constructors `Actor_Spawn` uses for ids this crate ports. (`Bg_Ydan_Hasi`'s init isn't:
-/// only the floating block the sandbox builds directly.)
+/// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
     let mut o = Overlays::default();
     o.register(oot_game::actor_ctx::ACTOR_PLAYER, Player::init);
@@ -125,10 +127,14 @@ pub fn overlays() -> Overlays {
     o.register(en_si::ACTOR_EN_SI, en_si::EnSi::init);
     o.register(door_shutter::ACTOR_DOOR_SHUTTER, door_shutter::DoorShutter::init);
     o.register(bg_ydan_sp::ACTOR_BG_YDAN_SP, bg_ydan_sp::BgYdanSp::init);
+    o.register(ACTOR_BG_YDAN_HASI, BgYdanHasi::init);
+    o.register(bg_ydan_maruta::ACTOR_BG_YDAN_MARUTA, bg_ydan_maruta::BgYdanMaruta::init);
     o.register(obj_switch::ACTOR_OBJ_SWITCH, obj_switch::ObjSwitch::init);
     o.register(obj_syokudai::ACTOR_OBJ_SYOKUDAI, obj_syokudai::ObjSyokudai::init);
     o.register(elf_msg::ACTOR_ELF_MSG, elf_msg::ElfMsg::init);
     o.register(elf_msg2::ACTOR_ELF_MSG2, elf_msg2::ElfMsg2::init);
+    o.register(obj_kibako2::ACTOR_OBJ_KIBAKO2, obj_kibako2::ObjKibako2::init);
+    o.register(obj_lift::ACTOR_OBJ_LIFT, obj_lift::ObjLift::init);
     o
 }
 
@@ -154,6 +160,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_sw::bakes());
     v.extend(door_shutter::bakes());
     v.extend(bg_ydan_sp::bakes());
+    v.extend(bg_ydan_hasi::bakes());
     v.extend(obj_switch::bakes());
     v.extend(obj_syokudai::bakes());
     // z_kankyo.c's rain and lightning bolts.
@@ -236,9 +243,12 @@ pub trait PlayExt {
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle;
     /// Adds a dummy whose touch hurts Link with `effect` (`HIT_SPECIAL_EFFECT_*`).
     fn spawn_hurting_target(&mut self, pos: Vec3, effect: u8) -> ActorHandle;
-    /// Adds a `Bg_Ydan_Hasi` floating block with `header` (`gDTSlidingPlatformCol`) at `home`,
-    /// floating on `water_surface`, with its collision built for the next frame.
-    fn spawn_platform(&mut self, header: Arc<CollisionHeader>, home: Vec3, yaw: i16, water_surface: f32) -> ActorHandle;
+    /// Adds a `Bg_Ydan_Hasi` floating block (params `0xFF00`, as Master Quest's room 5 places it)
+    /// with `header` (`gDTSlidingPlatformCol`) at `home` facing `yaw`, through its init
+    /// (`BgYdanHasi_Init`, as `Actor_Spawn` would run it: the sandbox's course has no object
+    /// banks), floating on the collision's `waterBoxes[1]`, with its collision built for the next
+    /// frame.
+    fn spawn_platform(&mut self, header: Arc<CollisionHeader>, home: Vec3, yaw: i16) -> ActorHandle;
 }
 
 impl PlayExt for PlayState {
@@ -298,8 +308,12 @@ impl PlayExt for PlayState {
         self.reset_blending();
         h
     }
-    fn spawn_platform(&mut self, header: Arc<CollisionHeader>, home: Vec3, yaw: i16, water_surface: f32) -> ActorHandle {
-        let p = BgYdanHasi::new(&mut self.col.dyna, header, home, yaw, water_surface);
+    fn spawn_platform(&mut self, header: Arc<CollisionHeader>, home: Vec3, yaw: i16) -> ActorHandle {
+        // Actor_Spawn's copy of the profile and the placement.
+        let mut a = Actor::new(home, yaw);
+        bg_ydan_hasi::PROFILE.apply(&mut a);
+        a.params = 0xFF00u16 as i16;
+        let p = BgYdanHasi::init_with(a, self, Some(header));
         let h = self.spawn(Box::new(p)).expect("spawn");
         self.col.dyna.update_context();
         self.reset_blending();

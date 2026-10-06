@@ -83,8 +83,14 @@ Milestone 4a, the dungeon's doors, switches, torches and webs, is done
 ([ADR 0038](adr/0038-sliding-doors-and-room-travel.md), [ADR 0039](adr/0039-quakes.md),
 [ADR 0040](adr/0040-switches-torches-webs-and-the-map-data.md)): the sliding doors with Player's
 side and small keys, the quakes, the switches, torches, webs and Navi's hint spots, the map and
-compass as data, a debug start per room; pack format 20. Next: milestone 4b, the Deku Stick and
-the props.
+compass as data, a debug start per room; pack format 20.
+Milestone 4b, the Deku Stick and the props, is done
+([ADR 0041](adr/0041-the-deku-stick-and-the-item-buttons.md),
+[ADR 0042](adr/0042-the-deku-trees-props-and-the-fragments.md)): the Deku Stick from C-Left
+(Player's item buttons and item change whole), lit at the torches, burning, breaking, the webs it
+burns; room 5's log and floating block with its water, room 10's rising platforms, room 2's lift
+and ladder, the crates, and the fragments (`Effect_Ss_Kakera`) the bushes and rocks now spawn too;
+pack format 21. Next: milestone 4c, pushing and Master Quest's extras.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -283,17 +289,23 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
      milestone 5); a debug start per room.
      - **Exit:** from room 0's top floor, the switch burns the web and Link goes through room 10's
        sliding door, which bars behind him. *(Done: `Route::Shutter`, the golden `shutter`.)*
-   - **4b, the Deku Stick and the props:** the Deku Stick pulled forward from milestone 5 (used
-     from C-Left), `Bg_Ydan_Hasi` and `Bg_Ydan_Maruta` whole, `Obj_Kibako2` with
-     `Effect_Ss_Kakera` (and `En_Kusa`'s and `En_Ishi`'s pieces), `Obj_Lift`.
-     - **Exit:** a Deku Stick lit at a golden torch burns the web over room 1's door.
+   - **4b, the Deku Stick and the props** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 4b
+     and ADRs [0041](adr/0041-the-deku-stick-and-the-item-buttons.md),
+     [0042](adr/0042-the-deku-trees-props-and-the-fragments.md)): the Deku Stick pulled forward
+     from milestone 5 (used from C-Left; Player's item buttons whole), `Bg_Ydan_Hasi` and
+     `Bg_Ydan_Maruta` whole, `Obj_Kibako2` with `Effect_Ss_Kakera` (and `En_Kusa`'s, `En_Ishi`'s
+     and `En_Goroiwa`'s pieces), `Obj_Lift`.
+     - **Exit:** a Deku Stick lit at a golden torch burns the web over room 1's door. *(Done:
+       `Route::Stick`, the golden `stick`; the stick is swung with its C button, B taking the
+       sword out, as in the C.)*
    - **4c, pushing and Master Quest's extras:** Player's push and pull, `Obj_Oshihiki` and
      `Obj_Makeoshihiki`, `Bg_Haka`, `Obj_Timeblock`, `Obj_Bombiwa`; the connections milestone 4
      opens walked through from one start.
      - **Exit:** room 3's block pushed off into the pit and climbed.
 5. **Items in use:**
    - Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot (`EnArrow` for seeds);
-   - the C buttons in full;
+   - the C buttons in full (`Player_ProcessItemButtons` and `Player_UseItem` are whole since 4b:
+     the other items' branches log what they'd start);
    - a minimal pause menu for equipping (`z_kaleido_scope` is about 7,700 lines, so only the item screen at first);
    - saving (`z_sram.c`).
 6. **Gohma:**
@@ -308,7 +320,7 @@ Pick these up when a milestone touches them, or as filler:
 - **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), but the camera's roll isn't
   drawn (the renderer keeps Y up), and the shake isn't applied to the prerendered backgrounds
   and the skybox.
-- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed; next to want: the bushes' and rocks' flying pieces (`EffectSsKakera` from `EnKusa_SpawnFragments` and `EnIshi`), the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** time passing (`Environment_Update`'s clock), day/night, weather.
 - **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; the ocarina modes.
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.

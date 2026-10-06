@@ -91,6 +91,15 @@ use crate::transition::TRANS_MODE_OFF;
 
 /// `PLAYER_STATE1_21`: climbing (a ladder or a vine wall).
 pub const PLAYER_STATE1_21: u32 = 1 << 21;
+/// `PLAYER_STATE1_27`: in water (swimming).
+pub const PLAYER_STATE1_27: u32 = 1 << 27;
+
+// `PlayerEnvHazard` (`player.h`).
+pub const PLAYER_ENV_HAZARD_NONE: u8 = 0;
+pub const PLAYER_ENV_HAZARD_HOTROOM: u8 = 1;
+pub const PLAYER_ENV_HAZARD_UNDERWATER_FLOOR: u8 = 2;
+pub const PLAYER_ENV_HAZARD_SWIMMING: u8 = 3;
+pub const PLAYER_ENV_HAZARD_UNDERWATER_FREE: u8 = 4;
 
 /// `VIEWPOINT_*` (`camera.h`): none, the locked bg camera (`BGCAM_INDEX_TOGGLE_LOCKED` + 1)
 /// and the pivot one (`BGCAM_INDEX_TOGGLE_PIVOT` + 1).
@@ -965,15 +974,18 @@ impl PlayState {
             return;
         }
         if self.input.press.held(BTN_START) && self.pause_menu_equip() {
-            log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}", self.save.equips.equipment, self.save.equips.button_items[0]);
+            log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}, C-Left {:#04x}", self.save.equips.equipment, self.save.equips.button_items[0], self.save.equips.button_items[1]);
         }
     }
 
     /// The pause menu's equipping, as a stand-in (docs/adr/0019-inventory-and-saves.md):
-    /// `SaveContext::equip_owned_unworn`, then `Player_SetEquipmentData` as the menu's closing
-    /// runs it. Returns whether anything was equipped.
+    /// `SaveContext::equip_owned_unworn` and `SaveContext::equip_sticks_on_empty_c_left`, then
+    /// `Player_SetEquipmentData` as the menu's closing runs it. Returns whether anything was
+    /// equipped.
     pub fn pause_menu_equip(&mut self) -> bool {
-        if !self.save.equip_owned_unworn() {
+        let equipment = self.save.equip_owned_unworn();
+        let sticks = self.save.equip_sticks_on_empty_c_left();
+        if !equipment && !sticks {
             return false;
         }
         let (data, save) = (self.data.clone(), self.save.clone());
@@ -1181,6 +1193,46 @@ impl PlayState {
         }
     }
 
+    /// `Player_GetEnvironmentalHazard` (`z_player_lib.c`): a hot room (`ROOM_ENV_HOT`), under water
+    /// (`underwaterTimer` over 80 with the iron boots, or 300 without: on the floor with them, else
+    /// free), or swimming (`PLAYER_STATE1_27`), else none. The first time in a hot room without the
+    /// Goron Tunic, or under water in the iron boots without the Zora Tunic, Player not in a
+    /// cutscene, its text (0x3040, 0x401D) opens once (`envHazardTextTriggerFlags`).
+    pub fn player_get_environmental_hazard(&mut self) -> u8 {
+        /// `ROOM_ENV_HOT` (`room.h`).
+        const ROOM_ENV_HOT: u8 = 3;
+        /// `PLAYER_BOOTS_IRON`, `PLAYER_TUNIC_GORON`, `PLAYER_TUNIC_ZORA` (`player.h`).
+        const PLAYER_BOOTS_IRON: u8 = 1;
+        const PLAYER_TUNIC_GORON: u8 = 1;
+        const PLAYER_TUNIC_ZORA: u8 = 2;
+        /// `sEnvHazardTextTriggers`, by hazard less one: `ENV_HAZARD_TEXT_TRIGGER_HOTROOM` (1 << 0)
+        /// and `_UNDERWATER` (1 << 1), and their texts.
+        const TEXT_TRIGGERS: [(u8, u16); 4] = [(1 << 0, 0x3040), (1 << 1, 0x401D), (0, 0x0000), (1 << 1, 0x401D)];
+        let Some(p) = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()) else { return PLAYER_ENV_HAZARD_NONE };
+        let (underwater_timer, boots, tunic, grounded) = p.env_hazard_state();
+        let state1 = p.state_flags1();
+        let env_hazard = if self.room_ctx.cur.behavior_type2 == ROOM_ENV_HOT {
+            PLAYER_ENV_HAZARD_HOTROOM - 1
+        } else if underwater_timer > 80 && (boots == PLAYER_BOOTS_IRON || underwater_timer >= 300) {
+            if boots == PLAYER_BOOTS_IRON && grounded { PLAYER_ENV_HAZARD_UNDERWATER_FLOOR - 1 } else { PLAYER_ENV_HAZARD_UNDERWATER_FREE - 1 }
+        } else if state1 & PLAYER_STATE1_27 != 0 {
+            PLAYER_ENV_HAZARD_SWIMMING - 1
+        } else {
+            return PLAYER_ENV_HAZARD_NONE;
+        };
+        let (flag, text_id) = TEXT_TRIGGERS[env_hazard as usize];
+        if !self.player_in_cs_mode()
+            && flag != 0
+            && self.save.env_hazard_text_trigger_flags & flag == 0
+            && ((env_hazard == PLAYER_ENV_HAZARD_HOTROOM - 1 && tunic != PLAYER_TUNIC_GORON)
+                || ((env_hazard == PLAYER_ENV_HAZARD_UNDERWATER_FLOOR - 1 || env_hazard == PLAYER_ENV_HAZARD_UNDERWATER_FREE - 1) && boots == PLAYER_BOOTS_IRON && tunic != PLAYER_TUNIC_ZORA))
+        {
+            self.start_textbox(text_id, None);
+            self.save.env_hazard_text_trigger_flags |= flag;
+        }
+        env_hazard + 1
+    }
+
     /// `Interface_Update` with this frame's view of play.
     fn interface_update(&mut self) {
         let (state1, state2) = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| (pi.state_flags1(), pi.state_flags2())).unwrap_or((0, 0));
@@ -1195,7 +1247,12 @@ impl PlayState {
             in_cs_mode: self.play_in_cs_mode(),
             paused: self.pause_ctx.is_paused(),
             game_over_inactive: self.game_over_ctx.state == crate::game_over::GAMEOVER_INACTIVE,
+            env_hazard: PLAYER_ENV_HAZARD_NONE,
         };
+        // Player_GetEnvironmentalHazard, which Interface_Update calls (func_80083108 first, under
+        // its message check, then for sEnvHazard every frame): its text opens on its first call,
+        // after func_80083108 has read the message box.
+        let f = crate::interface::IfaceFrame { env_hazard: if self.interface_ctx.initialised { self.player_get_environmental_hazard() } else { PLAYER_ENV_HAZARD_NONE }, ..f };
         self.interface_ctx.update(&mut self.save, &mut self.audio, &f);
         // Map_Update, which Interface_Update calls between the HUD's fade and the health
         // accumulator (neither reads the other's state).

@@ -83,6 +83,10 @@ CASES = [
     # GAME-05 milestone 4a: from a debug start on room 0's top floor, the floor switch burns the
     # web over room 10's door, and Link goes through the sliding door, which bars behind him.
     ("shutter", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "shutter", "--trace", "{trace}"]),
+    # GAME-05 milestone 4b: from a debug start by room 0's middle-floor golden torch (ten Deku
+    # Sticks on C-Left, the torches lit), a stick lit at the torch burns the web over room 1's
+    # door, and Link goes through the door into room 1.
+    ("stick", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-sticks", "--script", "stick", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

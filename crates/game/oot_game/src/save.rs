@@ -191,6 +191,9 @@ pub struct SaveContext {
     /// `forceRisingButtonAlphas`, `nextHudVisibilityMode`, `hudVisibilityMode`, `hudVisibilityModeTimer`, `prevHudVisibilityMode`: the interface's alpha
     /// type (`Interface_ChangeHudVisibilityMode`), its fade step and the type to go back to.
     pub force_rising_button_alphas: u8,
+    /// `envHazardTextTriggerFlags` (`ENV_HAZARD_TEXT_TRIGGER_*`): the hot room's and the iron
+    /// boots' underwater texts shown once (`Player_GetEnvironmentalHazard`).
+    pub env_hazard_text_trigger_flags: u8,
     pub next_hud_visibility_mode: u16,
     pub hud_visibility_mode: u16,
     pub hud_visibility_mode_timer: u16,
@@ -335,6 +338,19 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "deku-tree-sticks",
+        about: "deku-tree-inside, and ten Deku Sticks (Item_Give(ITEM_DEKU_STICKS_10)) on C-Left, as the pause menu equips them (GAME-05 milestone 4b)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, ITEM_DEKU_STICKS_10);
+            s.equip_item_on_c_left(ITEM_DEKU_STICK);
+        },
+    },
+    SavePreset {
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {
@@ -420,6 +436,7 @@ impl SaveContext {
             map_index: 0,
             button_status: [0; 5],
             force_rising_button_alphas: 0,
+            env_hazard_text_trigger_flags: 0,
             next_hud_visibility_mode: 0,
             hud_visibility_mode: 0,
             hud_visibility_mode_timer: 0,
@@ -661,6 +678,41 @@ impl SaveContext {
             }
         }
         any
+    }
+
+    /// What the pause menu's item screen does when C-Left equips `item` from its slot
+    /// (`KaleidoScope_UpdateItemEquip`, `z_kaleido_item.c`): an item already on C-Down or C-Right
+    /// swaps with C-Left's (or leaves that button empty), then C-Left gets it
+    /// (`BUTTON_ITEM_EQUIP(0, EQUIP_SLOT_C_LEFT)`, `C_SLOT_EQUIP(0, EQUIP_SLOT_C_LEFT)`; its icon,
+    /// `Interface_LoadItemIcon1`, is the HUD's own draw). The pause menu isn't ported: this is its
+    /// effect, for the presets and the game's equip key.
+    pub fn equip_item_on_c_left(&mut self, item: u8) {
+        let slot = slot(item) as u8;
+        for c in 1..3 {
+            // (The bow's and its arrows' cases aside.)
+            if self.equips.c_button_slots[c] == slot {
+                if self.equips.button_items[1] != ITEM_NONE {
+                    self.equips.button_items[c + 1] = self.equips.button_items[1];
+                    self.equips.c_button_slots[c] = self.equips.c_button_slots[0];
+                } else {
+                    self.equips.button_items[c + 1] = ITEM_NONE;
+                    self.equips.c_button_slots[c] = SLOT_NONE;
+                }
+            }
+        }
+        self.equips.button_items[1] = item;
+        self.equips.c_button_slots[0] = slot;
+    }
+
+    /// The game's stand-in for the pause menu's item screen: owned Deku Sticks go on an empty
+    /// C-Left for child Link (`gItemAgeReqs`: the child's only), as [`Self::equip_item_on_c_left`]
+    /// equips them. Returns whether they did.
+    pub fn equip_sticks_on_empty_c_left(&mut self) -> bool {
+        if self.adult || self.equips.button_items[1] != ITEM_NONE || self.inv_content(ITEM_DEKU_STICK) != ITEM_DEKU_STICK || self.equips.button_items[2..].contains(&ITEM_DEKU_STICK) {
+            return false;
+        }
+        self.equip_item_on_c_left(ITEM_DEKU_STICK);
+        true
     }
 
     /// `INV_CONTENT(item)`.

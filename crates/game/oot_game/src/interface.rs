@@ -172,6 +172,9 @@ pub struct InterfaceContext {
     pub navi_calling: bool,
     pub c_up_invisible: i16,
     pub c_up_timer: i16,
+    /// `sEnvHazard`: the hazard less the tunic that protects from it (the hot room's and
+    /// underwater timers that read it aren't ported).
+    pub env_hazard: u8,
     /// `unk_244`: a black fill over the screen at this alpha (`Interface_Draw`'s last rectangle),
     /// which the game over menu raises to 255 before the respawn.
     pub unk_244: i16,
@@ -212,6 +215,7 @@ impl Default for InterfaceContext {
             beating_heart_env: [0; 3],
             restrictions: Restrictions::default(),
             navi_calling: false,
+            env_hazard: 0,
             c_up_invisible: 0,
             c_up_timer: 0,
             unk_244: 0,
@@ -250,6 +254,8 @@ pub struct IfaceFrame {
     /// `IS_PAUSED(&play->pauseCtx)`, `play->gameOverCtx.state == GAMEOVER_INACTIVE`.
     pub paused: bool,
     pub game_over_inactive: bool,
+    /// `Player_GetEnvironmentalHazard(play)` (`PLAYER_ENV_HAZARD_*`, `crate::play`).
+    pub env_hazard: u8,
 }
 
 /// `Health_IsCritical` (`z_lifemeter.c`): at or under a heart (two, three, or 2.75 with more
@@ -488,8 +494,9 @@ impl InterfaceContext {
     ///
     /// B with nothing, or a bow, slingshot or bombchu a minigame put there, gets back what
     /// `buttonStatus[0]` kept, unless B has had no sword since the file began
-    /// (`infTable[INFTABLE_INDEX_1DX]`). Riding, the minigames, the fishing pond, the Chamber
-    /// of Sages and `Player_GetEnvironmentalHazard`'s water and heat hazards aren't ported.
+    /// (`infTable[INFTABLE_INDEX_1DX]`). In or under water (`Player_GetEnvironmentalHazard`, swimming
+    /// included) B and the C buttons are disabled. Riding, the minigames, the fishing pond and the
+    /// Chamber of Sages aren't ported.
     fn func_80083108(&mut self, save: &mut SaveContext, f: &IfaceFrame) {
         use crate::item::*;
         use crate::save::INFTABLE_INDEX_1DX;
@@ -499,7 +506,43 @@ impl InterfaceContext {
             return;
         }
         let mut sp28 = false;
-        // (Player_GetEnvironmentalHazard: no water or heat hazard is detected here.)
+        // In or under water (PLAYER_ENV_HAZARD_UNDERWATER_FLOOR to _UNDERWATER_FREE, swimming between):
+        // B and the C buttons disabled, but on the floor in the iron boots a C button with the
+        // hookshot or longshot.
+        use crate::play::{PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, PLAYER_ENV_HAZARD_UNDERWATER_FREE};
+        if (PLAYER_ENV_HAZARD_UNDERWATER_FLOOR..=PLAYER_ENV_HAZARD_UNDERWATER_FREE).contains(&f.env_hazard) {
+            if save.button_status[0] != BTN_DISABLED {
+                sp28 = true;
+            }
+            save.button_status[0] = BTN_DISABLED;
+            for i in 1..4 {
+                if f.env_hazard == PLAYER_ENV_HAZARD_UNDERWATER_FLOOR {
+                    if save.equips.button_items[i] != ITEM_HOOKSHOT && save.equips.button_items[i] != ITEM_LONGSHOT {
+                        if save.button_status[i] == BTN_ENABLED {
+                            sp28 = true;
+                        }
+                        save.button_status[i] = BTN_DISABLED;
+                    } else {
+                        if save.button_status[i] == BTN_DISABLED {
+                            sp28 = true;
+                        }
+                        save.button_status[i] = BTN_ENABLED;
+                    }
+                } else {
+                    if save.button_status[i] == BTN_ENABLED {
+                        sp28 = true;
+                    }
+                    save.button_status[i] = BTN_DISABLED;
+                }
+            }
+            if sp28 {
+                // HUD_VISIBILITY_NO_CHANGE.
+                save.hud_visibility_mode = 0;
+            }
+            // Interface_ChangeHudVisibilityMode(HUD_VISIBILITY_ALL).
+            change_alpha(save, 50);
+            return;
+        }
         if f.climbing || f.state2_18 {
             if save.button_status[0] != BTN_DISABLED {
                 save.button_status[..4].fill(BTN_DISABLED);
@@ -688,6 +731,16 @@ impl InterfaceContext {
             }
         }
         self.health_update_beating_heart(save, audio, f.in_cs_mode);
+        // sEnvHazard: none in the Goron Tunic in a hot room (EQUIP_VALUE_TUNIC_GORON, 2), or in
+        // the Zora Tunic in or under water (EQUIP_VALUE_TUNIC_ZORA, 3).
+        {
+            use crate::play::{PLAYER_ENV_HAZARD_HOTROOM, PLAYER_ENV_HAZARD_NONE, PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, PLAYER_ENV_HAZARD_UNDERWATER_FREE};
+            let tunic = save.cur_equip_value(crate::item::EQUIP_TYPE_TUNIC);
+            self.env_hazard = f.env_hazard;
+            if (f.env_hazard == PLAYER_ENV_HAZARD_HOTROOM && tunic == 2) || ((PLAYER_ENV_HAZARD_UNDERWATER_FLOOR..=PLAYER_ENV_HAZARD_UNDERWATER_FREE).contains(&f.env_hazard) && tunic == 3) {
+                self.env_hazard = PLAYER_ENV_HAZARD_NONE;
+            }
+        }
         self.health_update_meter();
         if save.rupee_accumulator != 0 {
             if save.rupee_accumulator > 0 {
@@ -1169,7 +1222,7 @@ mod tests {
 
     fn frame() -> IfaceFrame {
         // SCENE_KOKIRI_FOREST.
-        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false, paused: false, game_over_inactive: true }
+        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false, paused: false, game_over_inactive: true, env_hazard: 0 }
     }
 
     #[test]
@@ -1203,6 +1256,35 @@ mod tests {
         // 31400 / WREG(5) (3) a frame: 10466 → past 15700, so -15700 → -5233 → 0.
         assert_eq!(angles, [(1, 10466), (2, -15700), (2, -5233), (0, 0)]);
         assert_eq!((c.unk_1ee, c.do_action_segment[0]), (DO_ACTION_CHECK, Some(DO_ACTION_CHECK)));
+    }
+
+    #[test]
+    fn in_and_under_water_the_buttons_are_disabled_but_the_hookshot_on_the_floor() {
+        use crate::item::{ITEM_DEKU_STICK, ITEM_HOOKSHOT};
+        use crate::play::{PLAYER_ENV_HAZARD_HOTROOM, PLAYER_ENV_HAZARD_SWIMMING, PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, PLAYER_ENV_HAZARD_UNDERWATER_FREE};
+        let mut s = new_save();
+        let mut c = InterfaceContext::init(&mut s, &InterfaceTables::default(), 0x55);
+        s.equips.button_items[1] = ITEM_DEKU_STICK;
+        s.equips.button_items[2] = ITEM_HOOKSHOT;
+        let mut audio = GameAudio::default();
+        // func_80083108: swimming (3) and under water free (4), between UNDERWATER_FLOOR (2) and
+        // UNDERWATER_FREE: B and every C button disabled, the HUD to HUD_VISIBILITY_ALL (50).
+        for hazard in [PLAYER_ENV_HAZARD_SWIMMING, PLAYER_ENV_HAZARD_UNDERWATER_FREE] {
+            s.button_status = [BTN_ENABLED; 5];
+            c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: hazard, ..frame() });
+            assert_eq!(s.button_status[..4], [BTN_DISABLED; 4], "{hazard}");
+            assert_eq!(s.hud_visibility_mode, 50);
+        }
+        // On the floor in the iron boots (2): a C button with the hookshot (or longshot) enabled.
+        s.button_status = [BTN_ENABLED; 5];
+        c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, ..frame() });
+        assert_eq!(s.button_status[..4], [BTN_DISABLED, BTN_DISABLED, BTN_ENABLED, BTN_DISABLED]);
+        // A hot room isn't in the range: the buttons by the scene's restrictions.
+        s.button_status = [BTN_ENABLED; 5];
+        c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: PLAYER_ENV_HAZARD_HOTROOM, ..frame() });
+        assert_eq!(s.button_status[..4], [BTN_ENABLED; 4]);
+        // sEnvHazard: the hot room's, unless in the Goron Tunic.
+        assert_eq!(c.env_hazard, PLAYER_ENV_HAZARD_HOTROOM);
     }
 
     #[test]

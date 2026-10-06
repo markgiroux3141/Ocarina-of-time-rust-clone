@@ -1240,3 +1240,284 @@ I is C-Up (Navi).
 - **What to report:** whether the door's timing feels right (how close you must stand, how fast it
   opens and slams, Link's pause), the switch's press and the attention cameras' pacing, the web's
   bounce and tearing, the torches' flames and light, and whether the shakes look right.
+
+## Milestone 4b: the Deku Stick and the props
+
+**Answer:** done. The Deku Stick comes out from C-Left, lights at a torch, burns for 210 frames,
+lights the timed torches, burns the webs, and breaks on a hit; room 5's log and floating block,
+room 10's rising platforms, room 2's lift and ladder, and the crates are ported whole, with the
+fragments they break into (`Effect_Ss_Kakera`), which the bushes, rocks and the training boulder
+now spawn too. The exit holds; its run is the golden `stick`.
+
+The pack is format 21, in `out/data18`. Decisions are in
+[ADR 0041](adr/0041-the-deku-stick-and-the-item-buttons.md) (the stick and the item buttons) and
+[ADR 0042](adr/0042-the-deku-trees-props-and-the-fragments.md) (the props and the fragments).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 59 to 61):
+- `test-sticks.bat`: the milestone's tests;
+- `game-sticks.bat WHERE`: the game with ten Deku Sticks on C-Left, from a debug start: `torch`
+  (room 0's middle floor by its lit golden torch, the default), `room3` (by its lit golden torch,
+  the door to room 4 open), `room10` (by its wooden torch), `room5` or `room2` (on the lift);
+- `sandbox-stick.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** agreed (2026-10-06). The user chose:
+- `Player_UseItem` and `Player_InitItemAction` ported whole: the branches for items no button can
+  hold yet (nuts, the lens, spells, masks, the ocarina and bottles, explosives, the hookshot, the
+  bow and slingshot) keep their checks and log where they'd start something unported;
+- the C's water (corrected after the user's hand test, see "Fixes after playing by hand"): in
+  water B and the C buttons are disabled, which puts the stick out;
+- milestone 3b's `gold` test breaks room 0's crate with an injected explosion first.
+
+### The survey
+
+**Player, for the stick** (`z_player.c`, `z_player_lib.c`; what the port has today):
+
+| C | What it does for the stick | Port today |
+|---|---|---|
+| `Player_ProcessItemButtons`, `Player_GetItemOnButton`, `Player_ItemIsInUse` (~70 lines) | B and the three C buttons (`sItemButtons`); a held item no button has is put away | B only |
+| `Player_UseItem` (~95) | No sticks left: `NA_SE_SY_ERROR`. Otherwise the change animation or `Player_InitItemActionWithAnim`. Its other branches: the lens, nuts, spells, masks, the ocarina and bottles, explosives | The sword's path only |
+| `Player_InitItemAction`, `sItemActionInitFuncs` (~80) | Zeroes `unk_85C`, `unk_858`, `unk_860`; `Player_InitDekuStickIA` sets `unk_85C` (the stick's length) to 1. The others: the bow and slingshot, explosives (spawns `En_Bom`), the hookshot (spawns `Arms_Hook`), the boomerang | Zeroes `unk_860`; no init funcs |
+| `Player_FinishItemChange`, `func_8008F2BC` | `NA_SE_PL_CHANGE_ARMS` for a stick | To check |
+| `func_80837818`, `Player_CanSpinAttack`, `Player_ActionHandler_8` | The stick always does `FORWARD_SLASH_1H`, never spins, never charges | The stick's lines missing; the hammer's branch and the two-handed `++` too |
+| `func_80837948`, `D_80854488` | `DMG_DEKU_STICK` (`ATELEM_SFX_WOOD`), the jump attack's `DMG_JUMP_MASTER` | Ported |
+| `func_80842DF4`, `func_80842D20`, `func_80842CF0`, `func_80842AC4`, `func_80842A88`, `func_80842B7C` | A hit or a wall breaks a stick longer than half: `EffectSsStick_Spawn`, `unk_85C` 0.5, `Inventory_ChangeAmmo(-1)`, put away, `NA_SE_IT_WOODSTICK_BROKEN`. (`func_80842B7C`: the Biggoron's Sword's wear) | Logged as not held |
+| `Player_UpdateBurningDekuStick` (~25), from `Player_UpdateCommon` | 210 frames: the flame grows over the first 10, `unk_85C` shrinks over the last 20, then -1 stick and put away. The flame is `func_8002836C`'s dust at the tip each frame (scale up to 200, 8 frames) | Not ported (`Effect_Ss_Dust` is) |
+| `Player_PostLimbDrawGameplay`, left hand (~25) | The tip `unk_85C × 5000` along the hand, always tracked (`meleeWeaponInfo[0]`); `gLinkChildLinkDekuStickDL`, scaled by `unk_85C` along its length | The sword's half only |
+| `Effect_Ss_Stick` (88) | The broken half flying back (child: the stick; adult: the broken Giant's Knife blade) | Not ported |
+
+The data side is already in the pack: `PLAYER_MODELGROUP_10` (closed hands, `SHEATH_18`) is baked
+with the other Link variants, and the change tables (`sItemChangeTypes`, `sItemChangeInfo`) are
+read whole. `Item_Give` for sticks, `Inventory_ChangeAmmo`, the C buttons' icons and ammo counts
+on the HUD, `C_BTN_ITEM`, and J as C-Left are ported. `Obj_Syokudai` (which lights the stick) and
+`Bg_Ydan_Sp` (which it burns) read it already.
+
+**Water putting a stick out.** (Corrected after playing by hand: the survey first read the C as
+having no such path.) `unk_860` is zeroed only by `Player_InitItemAction`, but in water
+`func_80083108` disables B and the C buttons (`Player_GetEnvironmentalHazard`'s
+`PLAYER_ENV_HAZARD_SWIMMING` lies between `_UNDERWATER_FLOOR` and `_UNDERWATER_FREE`), and the swim's
+actions run the item code: the stick, on no button, is put away and so put out. A press while
+standing still (`Player_ActionHandler_Roll`) puts it away too, as does a hit that breaks it.
+
+**The props** (placements from `ootx scene-info --scene ydan`, pack format 20):
+
+| Actor | Placed | C lines | What it needs that isn't ported |
+|---|---|---|---|
+| `Bg_Ydan_Hasi` | Room 5: `0xFF00` (the floating block), `0xFF01` (the water, on switch 0x3F, which nothing in MQ sets: "never runs in Master Quest"). Room 10: `0x3D02` (the three rising platforms, switch 0x3D, 260 frames up) | 202 | Writes the scene's `waterBoxes[1].ySurface` (the engine's water boxes are read-only); one-point 3040 (ported) |
+| `Bg_Ydan_Maruta` | Room 5: `0x00FF` (the spiked log, spinning in place; its tris knock Link back, no damage). Room 2: `0x0121` (the ladder, 280 up, falls on a seed: `DMG_SLINGSHOT`, switch 0x21, one-point 3010) | 218 | Nothing |
+| `Obj_Kibako2` | Room 0's middle floor (`0xFFFF`, the Gold Skulltula `En_Sw` `0x8102` inside it); room 10 ×2 | 189 | `Effect_Ss_Kakera`, `func_80033480` (dust puffs), `func_80033684` (an explosion's reach). Broken only by `0x40000040` (the hammer, explosions). Each drops a green rupee (`home.rot.x` 0) |
+| `Obj_Lift` | Room 2 (`0x0080`): shakes 20 frames when stood on, falls, breaks into 4 pieces, sets switch 0x20 | 240 | `Effect_Ss_Kakera`, `func_80033480`, `BgCheck_EntityRaycastDown4`; quakes are in |
+| `Effect_Ss_Kakera` | Spawned by the crates, the lift, `En_Kusa` (a cut bush's leaves), `En_Ishi` (a broken rock), `En_Goroiwa` (the training boulder at its path's end) | 436 | Bakes per fragment list; `BgCheck_SphVsFirstPoly` |
+
+`En_Goroiwa` is a third caller already ported: today it draws `Rand` as `Effect_Ss_Kakera` and
+`func_80033480` would, without spawning them. `En_Kusa` draws none, so the Kokiri Forest runs will
+change; `En_Ishi`'s pieces only come from a hammer, an explosion or a throw, none of which happen.
+
+**Elsewhere:** the room 0 Gold Skulltula's crate is a real wall now, so milestone 3b's `gold` test
+and hand test (two slashes on that Gold Skulltula) need the crate broken first, by an injected
+explosion.
+
+### Scope
+
+- **The Deku Stick from C-Left**, Player's functions above ported whole for the stick. A new save
+  preset, `deku-tree-sticks`: `deku-tree-inside` and ten Deku Sticks
+  (`Item_Give(ITEM_DEKU_STICKS_10)`) on C-Left. (Switch 0x27 is a temporary flag no save holds:
+  the debug starts set it after `Play_Init` instead, the game's new `--switch`.) The Start
+  stand-in also puts owned sticks on an empty C-Left.
+- **`Effect_Ss_Stick`** and **`Effect_Ss_Kakera`** whole, with `func_80033480` and `func_80033684`;
+  `En_Kusa`'s, `En_Ishi`'s and `En_Goroiwa`'s pieces.
+- **`Bg_Ydan_Hasi`**, **`Bg_Ydan_Maruta`**, **`Obj_Kibako2`**, **`Obj_Lift`** whole; the sandbox's
+  platform rebuilt on the real init; the scene's water boxes writable.
+- **Pack format 21** (`out/data18`): the stick's and the broken blade's lists, the fragments'
+  lists, the props' bakes.
+
+### The exit
+
+From a debug start on room 0's middle floor by the golden torch (`deku-tree-sticks`, 0x27 set),
+Link takes a Deku Stick out (C-Left), holds it to the flame (it catches: `unk_860` 210), runs round
+to room 1's door, burns its web (`Bg_Ydan_Sp` 0x1FD6, one-point 3020), and goes through the sliding
+door into room 1. That run is the golden. C-derived tests cover room 4's two timed torches opening
+its door, room 10's timed torch dropping its chest, a stick breaking on a hit (a target and a
+wall), burning down, and each prop.
+
+### What was built
+
+**The Deku Stick** (`oot_actors::player`, `oot_game::effect::stick`, ADR 0041):
+- Player's item buttons whole: `Player_ProcessItemButtons` (B and the three C buttons,
+  `Player_GetItemOnButton`, a held item no button has put away), `Player_UseItem` (no sticks left:
+  `NA_SE_SY_ERROR`; the change or the item at once; the item in hand used), `Player_UpdateItems`
+  with the C's conditions (the main camera, no cutscene), `Player_CanUpdateItems`,
+  `Player_InitItemAction` with its init functions (`Player_InitDekuStickIA`: `unk_85C` 1), the
+  change animation's start, swap and end, and `Player_FinishItemChange`'s sounds
+  (`NA_SE_IT_SWORD_PUTAWAY`, `_PICKOUT`, `NA_SE_PL_CHANGE_ARMS`). The branches for items no button
+  holds yet (nuts, the lens, spells, masks, the ocarina, bottles, bombs, the hookshot, the bow)
+  keep their checks and log what they'd start.
+- Swung with C-Left again: always `FORWARD_SLASH_2H` (`func_80837818`; the stick counts as
+  two-handed), `DMG_DEKU_STICK` with the wood's sound, no spin. B with the stick out takes the
+  sword out instead (B is the sword's), as the C does.
+- Broken on a hit or a wall (`func_80842AC4`): the far half flies off backwards
+  (`Effect_Ss_Stick`), half stays in hand as it's put away, one stick less,
+  `NA_SE_IT_WOODSTICK_BROKEN`. The Biggoron's Sword's wear (`func_80842B7C`) is ported with it.
+- Lit at a torch and burning (`Player_UpdateBurningDekuStick`): 210 frames, the flame (a dust puff
+  at the tip each frame) growing over the first 10, the stick shrinking over the last 20, then one
+  stick less and put away. The tip is tracked every frame (`Player_PostLimbDrawGameplay`), so the
+  torches light it and the webs burn from it; the stick is drawn in the left hand, stretched by
+  its length.
+- In water: B and the C buttons are disabled (`Player_GetEnvironmentalHazard` and
+  `func_80083108`'s water branch, ported after the first hand test), so the first swimming frame
+  puts the stick away and out, and the sword away.
+- The Start stand-in puts owned sticks on an empty C-Left; the preset `deku-tree-sticks`; the
+  game's `--switch` debug option.
+
+**The props** (ADR 0042):
+- `Bg_Ydan_Hasi` (`bg_ydan_hasi`) whole: room 5's floating block (sliding ±165, bobbing) and its
+  water (lowered 5 at init; on its flag, never set in MQ, down 47 for 600 frames and back),
+  written into the scene's water box 1, which Link's depth follows; room 10's three platforms,
+  undrawn until switch 0x3D, rising 120 with one-point 3040, down after 260 frames, the switch
+  popping back up. The sandbox's platform uses the real init.
+- `Bg_Ydan_Maruta` (`bg_ydan_maruta`) whole: room 5's spiked log spinning (0x360 a frame), its
+  triangles hurting Link a quarter heart and knocking him down along its facing; room 2's ladder,
+  280 up until a seed hits it (0x21, the chime, one-point 3010), shaking 20 frames and falling.
+- `Obj_Kibako2` (`obj_kibako2`) whole: solid, broken only by the hammer or an explosion (16
+  fragments, dust, `NA_SE_EV_WOODBOX_BREAK`), a green rupee, `En_Sw` spawned for params without bit
+  15. Room 0's Gold Skulltula is placed inside its crate.
+- `Obj_Lift` (`obj_lift`) whole: room 2's platform waits for Link on top, shakes 20 frames with a
+  quake, falls, and breaks into 9 pieces with dust on the floor below, setting 0x20 (gone for good).
+- `Effect_Ss_Kakera` (`oot_game::effect::kakera`) whole, with `func_80033480` (the dust puffs),
+  `func_80033684` (an explosive in reach) and `BgCheck_SphVsFirstPoly`; `En_Kusa`'s leaves,
+  `En_Ishi`'s pieces and dust, and `En_Goroiwa`'s pieces are real now.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game19`, `OOT_DATA_DIR=out/data18`): 543
+passed, 0 failed, 1 ignored (546 with the water fix below). 42 are new, with their expectations
+from the C:
+- **`oot_actors --test stick`** (10): C-Left takes a stick out frame by frame (the change,
+  backwards at 2.4 a frame doubled for an item, the swap on frame 6, `NA_SE_PL_CHANGE_ARMS`, model
+  group 10, the tip 66 up, the stick drawn) and A puts it away; none left: the error; B takes the
+  sword out; Start puts sticks on C-Left; lit at room 0's torch and burnt down frame by frame (the
+  timer, the flame's scale, the length, one stick less, put away); broken on a target (the swing,
+  its damage, the half flying at 26 up, 6 back) and on a wall; room 4's timed torches lit with a
+  burning stick opening the door to room 5; room 10's wooden torch lighting it and the timed torch
+  dropping the chest; and in water (after the fix below): wading in disables the buttons and puts
+  the lit stick out the next frame, the sword goes away in the water and the buttons come back on
+  land, falling into room 5's pool puts the stick out. `oot_game`'s interface tests: the water
+  branch (the hookshot kept on the floor).
+- **`--test stick_run`** (1): the exit run.
+- **`--test hasi`** (5), **`--test maruta`** (5), **`--test crates`** (5), **`--test lift`** (4),
+  **`--test fragments`** (9): each prop and the fragments frame by frame, against replayed `Rand`
+  where they draw it; `platform` (one more), `eng_collision` (a written water box).
+- **`--test debug_starts`** (one more): the stick's starts stand in their rooms.
+- Older tests changed where the new code meets them, each the game's behaviour:
+  - `torches`: its stick test takes a real stick out (C-Left) instead of setting one for a frame
+    (the real Player puts an item no button has away); Player's update now counts a set
+    `unk_860` down before the torch reads it (204, not 205);
+  - `skulltulas`: the Gold Skulltula test breaks room 0's crate first with an injected explosion
+    (the user's choice).
+
+**The exit run** (`Route::Stick`, `--script stick`, from the debug start by the torch): the stick
+out (`stick_out` 28), lit at the torch (`stick_lit` 51; Navi's hint there read with it held to the
+flame), round the floor and over the gap at a run, the web burnt from the tip (one-point 3020; the
+stick burns out as it does: `web_burnt` 374), Navi's hint at the door, through the door
+(`door_opened` 611) into room 1 (`through_door` 647). 648 frames.
+
+**The goldens.** Against milestone 4a's build (`target/game18`, 1ac8d49, on data17), each
+difference proven by taking its cause out:
+- **`playthrough`**: a cut bush's leaves (`EnKusa_SpawnFragments`) draw `Rand` before its drop, so
+  the first bush now drops (from frame 864): `bush` 889 (1084), `deku_tree` 2034 (2236). Without
+  the leaves it's the baseline's bytes. With the water fix, the sword in hand is put away in the
+  stream Link swims across, so he climbs out with nothing in hand (`anim` from frame 1109); the
+  steps are the same frames.
+- **`mido_shop_audio`**: `NA_SE_IT_SWORD_PICKOUT` when the sword comes out (frame 2834); the audio
+  library's own random then moves which footsteps get their metal clink (`func_800F4010`), the
+  same count of sounds. Without the pickout it's the baseline's bytes.
+- **`course_platform`** (trace and sheet): the floating block's slide computed in double as the
+  C's `M_PI` makes it, about 1e-4 from frame 13. In f32 it's the baseline's bytes.
+- Every other case the same bytes. **New case `stick`**: the exit run, the same bytes over two runs.
+
+Re-recorded and logged in [golden/README.md](../golden/README.md): 90 hashes, 66 cases.
+
+### Decisions
+
+- **[ADR 0041](adr/0041-the-deku-stick-and-the-item-buttons.md):** Player's item functions whole,
+  the branches for items no button holds logging what they'd start; `heldItemId` an item; Player's
+  view of the ammo; the C's water and B; the stick drawn and `Effect_Ss_Stick`; the C-Left stand-in
+  and preset; `--switch`; the exit's run.
+- **[ADR 0042](adr/0042-the-deku-trees-props-and-the-fragments.md):** each prop and
+  `Effect_Ss_Kakera` whole, triggers injected; water boxes written in place; the Kakera tables
+  read past their ends as the game does; a bake per fragment list; pack format 21.
+- **The ports ran in parallel** as two worktree agents (the fragments with the crates and the lift;
+  `Bg_Ydan_Hasi` with the water boxes and `Bg_Ydan_Maruta`), with the stick here.
+- **The stick is swung with C-Left**, not B: that's the C (the user's "swung as a weapon" holds,
+  from its own button).
+
+### Known gaps
+
+- **The C buttons' other items** (nuts, the slingshot, bombs...) and the pause menu: milestone 5.
+  Their branches in `Player_UseItem` log.
+- **Not breakable by hand yet:** the crates and rocks (the hammer, bombs), room 2's ladder (the
+  slingshot). Room 0's Gold Skulltula sits in its crate, but the sword reaches it through the
+  crate: hits aren't blocked by background collision, in the C either.
+- **Room 5's water flag** (0x3F) is never set in MQ: its sinking is reachable by injection only.
+- **The hazards' other users:** the hot room's and underwater timers (`sEnvHazard`) and the lens's
+  magic aren't ported; the C-Up prompt (which dims under water) isn't drawn.
+- `Player_ActionHandler_8` (the spin attack's charge) is still not ported (the stick doesn't use it).
+
+### Fixes after playing by hand
+
+- **The lit stick didn't go out in water.** The survey had read the C as having no path for it.
+  It has one through the interface: `func_80083108` disables B and the C buttons for
+  `Player_GetEnvironmentalHazard`'s values from `UNDERWATER_FLOOR` (2) to `UNDERWATER_FREE` (4), and
+  swimming is 3, between them; the port had no hazard. The swim's actions run the item code
+  (`Player_TryActionHandlerList` with the upper body), so the first frame Link swims, the stick,
+  on no button, is put away and out; the sword goes away too. `Player_GetEnvironmentalHazard` is
+  ported whole (with its texts) and the interface's water branch with `sEnvHazard`; the
+  `playthrough` golden changed (Link climbs out of the stream with his sword put away).
+- **Rolling into a crate doesn't break it:** as in the game. The Deku Tree's crates are the large
+  ones (`Obj_Kibako2`), broken only by the hammer or an explosion; the small ones a roll breaks
+  (`Obj_Kibako`) aren't placed there.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-sticks.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-stick.bat
+```
+
+### By hand
+
+`game-sticks.bat WHERE` (or menu 60). WASD the stick, J is C-Left, E is B, Q is Z, R the shield,
+Space A, I is C-Up (Navi), Enter Start.
+1. **`torch`** (the default): J takes a stick out (Link draws it from behind, with a sound; the
+   C-Left icon shows 10). Walk into the torch in front of you until the stick's end is in the
+   flame: it catches (a whoosh), and burns with a growing flame. Navi's hint there opens; read it.
+   Turn left and run round the floor: it rises to a ledge; keep running and Link jumps the gap.
+   Follow it round to the door with the web; walk into the web with the burning end: the camera
+   turns to it and it burns away. If the stick burns out on the way (about 10 seconds), the last
+   second it shrinks and Link puts it away; go back for another. Open the door (Space).
+2. Anywhere with the stick out: **J again** swings it; hit a wall or an enemy and it breaks (half
+   flies off behind, one stick less). **E** takes the sword out instead. **Space** standing still
+   puts it away. With none left J gives the error sound.
+3. **`room3`**: light the stick at the torch, go through the door ahead (it's open; it bars behind
+   you, the Mad Scrub's alive), and touch both torches with the burning end before the first goes
+   out: the camera shows the door to room 5 unbarring.
+4. **`room10`**: light the stick at the wooden torch by you, drop down to the timed torch below
+   and light it: a chest falls with its camera. Step on the floor switch: the camera shows three
+   platforms rising by the timed torch; climb them before they sink (about 13 seconds).
+5. **`room5`**: the pool has moving water, the block slides and bobs, the spiked log spins with a
+   rolling sound. Ride the block into the log: a quarter heart and a knockdown.
+6. **`room2`**: you stand on the lift: it shakes (a small camera shake, rattles), falls and breaks
+   into planks with dust. Leave the room and come back: it's gone.
+7. **Kokiri Forest** (`game.bat`): cut a bush: leaves fly up and fall.
+8. **Water** (`room5`, or Kokiri Forest's stream): walk in with a burning stick: as Link starts
+   swimming the B and C buttons dim and the stick goes out (put away); a sword in hand is put away
+   too. Out of the water the buttons come back.
+9. **Start** puts sticks on an empty C-Left: `game-dungeon.bat room10` (no sticks), kill the
+   Deku Baba, pick up the stick it leaves, press Enter: the stick appears on C-Left (J).
+- **What to report:** how taking the stick out and swinging it feel (C-Left, J twice), the
+  flame's size and the stick's burning down, whether the gap jump is fair, the web's burning, how
+  the leaves, planks and crate pieces look and move, the platforms' and lift's timing, the log's
+  knockdown.

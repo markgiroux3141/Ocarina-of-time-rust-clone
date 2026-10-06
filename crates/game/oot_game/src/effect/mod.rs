@@ -20,8 +20,10 @@
 //! `Effect_Ss_Dead_Db`, `Effect_Ss_Fire_Tail` and `Effect_Ss_Fhg_Flash` (its shock; the light
 //! ball needs `object_fhg`); and for milestone 3b's enemies, `Effect_Ss_Fcircle` (a Mad Scrub
 //! set alight), `Effect_Ss_Blast` (the Skulltula's landing), and the Gohma larvae's
-//! `Effect_Ss_K_Fire` and `Effect_Ss_Sibuki`. Spawning another type logs it and does nothing, as
-//! the C does for a type with no init.
+//! `Effect_Ss_K_Fire` and `Effect_Ss_Sibuki`; for milestone 4b's props, `Effect_Ss_Kakera` (the
+//! fragments of crates, bushes, rocks and the falling platform) and the Deku Stick's
+//! `Effect_Ss_Stick` (its broken half). Spawning another type logs it
+//! and does nothing, as the C does for a type with no init.
 //!
 //! ## `z_effect.c`
 //!
@@ -49,9 +51,11 @@ pub mod fire_tail;
 pub mod hahen;
 pub mod hitmark;
 pub mod k_fire;
+pub mod kakera;
 pub mod shield_particle;
 pub mod sibuki;
 pub mod spark;
+pub mod stick;
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::{Mat4, Vec3};
@@ -66,10 +70,12 @@ use crate::play::{PlayState, Rand};
 pub const EFFECT_SS_DUST: u8 = 0x00;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
+pub const EFFECT_SS_STICK: u8 = 0x10;
 pub const EFFECT_SS_SIBUKI: u8 = 0x11;
 pub const EFFECT_SS_HITMARK: u8 = 0x15;
 pub const EFFECT_SS_FHG_FLASH: u8 = 0x16;
 pub const EFFECT_SS_K_FIRE: u8 = 0x17;
+pub const EFFECT_SS_KAKERA: u8 = 0x19;
 pub const EFFECT_SS_EN_ICE: u8 = 0x1B;
 pub const EFFECT_SS_FIRE_TAIL: u8 = 0x1C;
 pub const EFFECT_SS_EN_FIRE: u8 = 0x1D;
@@ -113,6 +119,10 @@ pub enum SsUpdate {
     KFire,
     /// `EffectSsSibuki_Update`.
     Sibuki,
+    /// `EffectSsStick_Update`.
+    Stick,
+    /// `EffectSsKakera_Update`.
+    Kakera,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -144,6 +154,10 @@ pub enum SsDraw {
     KFire,
     /// `EffectSsSibuki_Draw`.
     Sibuki,
+    /// `EffectSsStick_Draw`.
+    Stick,
+    /// `EffectSsKakera_Draw`.
+    Kakera,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -238,6 +252,8 @@ pub enum SsInit {
     Fcircle(fcircle::FcircleInit),
     KFire(k_fire::KFireInit),
     Sibuki(sibuki::SibukiInit),
+    Stick(stick::StickInit),
+    Kakera(kakera::KakeraInit),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -325,6 +341,8 @@ impl SsSpawn<'_> {
             SsInit::Fcircle(p) => fcircle::init(&mut e, &p),
             SsInit::KFire(p) => k_fire::init(self, &mut e, &p),
             SsInit::Sibuki(p) => sibuki::init(self, &mut e, &p),
+            SsInit::Stick(p) => stick::init(self, &mut e, &p),
+            SsInit::Kakera(p) => kakera::init(self, &mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -430,6 +448,12 @@ impl SsSpawn<'_> {
         self.blast_spawn_shockwave_set_color(pos, velocity, accel, [255, 255, 255, 255], [200, 200, 200, 0], 10);
     }
 
+    /// `EffectSsStick_Spawn`: a broken stick's (or blade's) half flying off from `pos` along
+    /// `yaw`, the age's piece (`adult`: `gSaveContext.save.linkAge`).
+    pub fn stick_spawn(&mut self, pos: Vec3, yaw: i16, adult: bool) {
+        self.spawn(EFFECT_SS_STICK, 128, SsInit::Stick(stick::StickInit { pos, yaw, adult }));
+    }
+
     /// `EffectSsHahen_Spawn`: one fragment, `gEffFragments1DL` (the withered Deku fragment)
     /// without `dlist`. Its life is capped at 200.
     #[allow(clippy::too_many_arguments)]
@@ -450,6 +474,49 @@ impl SsSpawn<'_> {
             let s = self.rand.s16_offset(scale, rand_scale_range);
             self.hahen_spawn(pos, Vec3::new(vx, vy, vz), accel, unused, s, obj_id, life, dlist);
         }
+    }
+
+    /// `EffectSsKakera_Spawn`: one fragment drawn with `dlist` (in object `obj_id`), at
+    /// priority 101; `arg3` is its `vec` (where its forces pull from), `arg5` to `arg11` its regs
+    /// as `Effect_Ss_Kakera` names them (`rReg4`, `rReg5`, `rReg6`, `rReg0`, `rScale`, `rReg8`,
+    /// `rReg9`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn kakera_spawn(
+        &mut self,
+        pos: Vec3,
+        velocity: Vec3,
+        arg3: Vec3,
+        gravity: i16,
+        arg5: i16,
+        arg6: i16,
+        arg7: i16,
+        arg8: i16,
+        scale: i16,
+        arg10: i16,
+        arg11: i16,
+        life: i32,
+        color_idx: i16,
+        obj_id: i16,
+        dlist: SsGfx,
+    ) {
+        let p = kakera::KakeraInit {
+            pos,
+            velocity,
+            unk_18: arg3,
+            gravity,
+            unk_26: arg5,
+            unk_28: arg6,
+            unk_2a: arg7,
+            unk_2c: arg8,
+            scale,
+            unk_30: arg10,
+            unk_32: arg11,
+            life,
+            color_idx,
+            obj_id,
+            dlist,
+        };
+        self.spawn(EFFECT_SS_KAKERA, 101, SsInit::Kakera(p));
     }
 
     /// `EffectSsHitMark_Spawn`.
@@ -657,6 +724,7 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(sibuki::bakes());
     v.extend(spark::bakes());
     v.extend(shield_particle::bakes());
+    v.extend(kakera::bakes());
     v
 }
 
@@ -750,6 +818,8 @@ impl PlayState {
             SsUpdate::Fcircle => fcircle::update(self, &mut e),
             SsUpdate::KFire => k_fire::update(&mut e),
             SsUpdate::Sibuki => sibuki::update(self, &mut e),
+            SsUpdate::Stick => stick::update(&mut e),
+            SsUpdate::Kakera => kakera::update(self, &mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -811,6 +881,8 @@ impl PlayState {
                 SsDraw::Fcircle => fcircle::draw(e, ctx.gameplay_frames, &mut out),
                 SsDraw::KFire => k_fire::draw(e, i, &ctx, &mut out),
                 SsDraw::Sibuki => sibuki::draw(e, ctx.billboard, &mut out),
+                SsDraw::Stick => stick::draw(e, ctx.state_frames, &mut out),
+                SsDraw::Kakera => kakera::draw(e, &mut out),
             }
         }
         for i in deleted {

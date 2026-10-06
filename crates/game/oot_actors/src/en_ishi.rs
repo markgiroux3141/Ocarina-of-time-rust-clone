@@ -2,17 +2,19 @@
 //! or a silver boulder (1, `gSilverRockDL`). The sword bounces off it (`AC_HARD`); a hammer or an
 //! explosion breaks a small one.
 //!
-//! A broken small rock drops from its table (`EnIshi_DropCollectible`).
+//! A broken small rock drops from its table (`EnIshi_DropCollectible`), and breaks into pieces
+//! (`sFragmentSpawnFuncs`: `EffectSsKakera`) and dust (`sDustSpawnFuncs`: `func_80033480`); both
+//! kinds' are ported (the large rock's come from `EnIshi_Fly`).
 //!
 //! Not ported: lifting and throwing (Player can't lift yet, so `Actor_HasParent` is never
-//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached), and the fragments
-//! and dust (effects).
+//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_THROW_ONLY, Actor};
-use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor::{ACTOR_FLAG_THROW_ONLY, Actor, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL};
+use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480};
 use oot_game::collision_check::*;
+use oot_game::effect::kakera::{KAKERA_COLOR_NONE, KAKERA_COLOR_WHITE, OBJECT_GAMEPLAY_FIELD_KEEP};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 pub const ACTOR_EN_ISHI: i16 = 0x014E;
@@ -123,7 +125,8 @@ impl EnIshi {
             }
             crate::en_item00::item_drop_collectible_random(play, None, self.actor.world_pos, drop_params << 4);
             play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, BREAK_SFX_DURATIONS[ty], BREAK_SFX_IDS[ty]);
-            // sFragmentSpawnFuncs, sDustSpawnFuncs: the effects aren't ported.
+            self.spawn_fragments(play, ty);
+            self.spawn_dust(play, ty);
             self.actor.kill();
         } else if self.actor.xz_dist_to_player < 600.0 {
             self.collider.update(&self.actor);
@@ -134,6 +137,126 @@ impl EnIshi {
                 // < 90: Actor_OfferGetItem offers the rock to Player's lift (not ported).
             }
         }
+    }
+}
+
+/// `EnIshi_SpawnFragmentsSmall`'s `scales`.
+pub const FRAGMENT_SCALES_SMALL: [i16; 6] = [16, 13, 11, 9, 7, 5];
+/// `EnIshi_SpawnFragmentsLarge`'s `scales`.
+pub const FRAGMENT_SCALES_LARGE: [i16; 9] = [145, 135, 120, 100, 70, 50, 45, 40, 35];
+
+impl EnIshi {
+    /// `sFragmentSpawnFuncs[type]`.
+    pub fn spawn_fragments(&self, play: &mut PlayState, ty: usize) {
+        if ty == ROCK_SMALL { self.spawn_fragments_small(play) } else { self.spawn_fragments_large(play) }
+    }
+
+    /// `sDustSpawnFuncs[type]`.
+    pub fn spawn_dust(&self, play: &mut PlayState, ty: usize) {
+        if ty == ROCK_SMALL { self.spawn_dust_small(play) } else { self.spawn_dust_large(play) }
+    }
+
+    /// The rock's velocity bounced off the ground (`BGCHECKFLAG_GROUND`: across `xz`, up `-y`)
+    /// or a wall (`BGCHECKFLAG_WALL`: back `-xz`, `y`).
+    fn bounced_velocity(&self, xz: f32, y: f32) -> Vec3 {
+        let mut velocity = self.actor.velocity;
+        if self.actor.bg_check_flags & BGCHECKFLAG_GROUND != 0 {
+            velocity.x *= xz;
+            velocity.y *= -y;
+            velocity.z *= xz;
+        } else if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 {
+            velocity.x *= -xz;
+            velocity.y *= y;
+            velocity.z *= -xz;
+        }
+        velocity
+    }
+
+    /// `EnIshi_SpawnFragmentsSmall`: six chips of `gFieldKakeraDL` (`scales`), within 4 across
+    /// and 5 to 10 up, with the rock's bounced velocity ±5.5 across and up to 6 up; bouncing
+    /// (collision mode 1, three bounces, radius 10), tumbling (`0x41` or `0x21`), gravity
+    /// -420/256, 40 frames.
+    fn spawn_fragments_small(&self, play: &mut PlayState) {
+        let wp = self.actor.world_pos;
+        let bounced = self.bounced_velocity(0.8, 0.8);
+        play.with_ss(|ss| {
+            for &scale in &FRAGMENT_SCALES_SMALL {
+                let x = wp.x + (ss.rand.zero_one() - 0.5) * 8.0;
+                let y = wp.y + (ss.rand.zero_one() * 5.0) + 5.0;
+                let z = wp.z + (ss.rand.zero_one() - 0.5) * 8.0;
+                let pos = Vec3::new(x, y, z);
+                let mut velocity = bounced;
+                velocity.x += (ss.rand.zero_one() - 0.5) * 11.0;
+                velocity.y += ss.rand.zero_one() * 6.0;
+                velocity.z += (ss.rand.zero_one() - 0.5) * 11.0;
+                let phi_v0 = if ss.rand.zero_one() < 0.5 { 65 } else { 33 };
+                ss.kakera_spawn(pos, velocity, pos, -420, phi_v0, 30, 5, 0, scale, 3, 10, 40, KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_FIELD_KEEP, Some(("gameplay_field_keep", "gFieldKakeraDL")));
+            }
+        });
+    }
+
+    /// `EnIshi_SpawnFragmentsLarge`: nine pieces of `gSilverRockFragmentsDL` (`scales`), white,
+    /// round the rock a turn of 0x4E20 apart from 0x1000 + 0x4E20 (up to 10 out, 5 to 45 up),
+    /// with its bounced velocity plus up to 10 out and some up; the first big and heavy, the
+    /// next three medium, the rest light; five bounces, 70 frames.
+    fn spawn_fragments_large(&self, play: &mut PlayState) {
+        let wp = self.actor.world_pos;
+        let bounced = self.bounced_velocity(0.9, 0.8);
+        play.with_ss(|ss| {
+            let mut angle: i16 = 0x1000;
+            for (i, &scale) in FRAGMENT_SCALES_LARGE.iter().enumerate() {
+                angle = angle.wrapping_add(0x4E20);
+                let rand = ss.rand.zero_one() * 10.0;
+                let x = wp.x + (eng_math::sin_s(angle) * rand);
+                let y = wp.y + (ss.rand.zero_one() * 40.0) + 5.0;
+                let z = wp.z + (eng_math::cos_s(angle) * rand);
+                let pos = Vec3::new(x, y, z);
+                let mut velocity = bounced;
+                let rand = ss.rand.zero_one() * 10.0;
+                velocity.x += rand * eng_math::sin_s(angle);
+                // (Rand_ZeroOne() * 4.0f) + ((Rand_ZeroOne() * i) * 0.7f): left to right, as IDO
+                // evaluates the operands.
+                let r1 = ss.rand.zero_one() * 4.0;
+                let r2 = (ss.rand.zero_one() * i as f32) * 0.7;
+                velocity.y += r1 + r2;
+                velocity.z += rand * eng_math::cos_s(angle);
+                let (phi_v0, phi_v1) = if i == 0 {
+                    (41, -450)
+                } else if i < 4 {
+                    (37, -380)
+                } else {
+                    (69, -320)
+                };
+                ss.kakera_spawn(pos, velocity, wp, phi_v1, phi_v0, 30, 5, 0, scale, 5, 2, 70, KAKERA_COLOR_WHITE, OBJECT_GAMEPLAY_FIELD_KEEP, Some(("gameplay_field_keep", "gSilverRockFragmentsDL")));
+            }
+        });
+    }
+
+    /// The dust's centre: the rock's position, moved by twice its velocity off the ground or a
+    /// wall.
+    fn dust_pos(&self) -> Vec3 {
+        let mut pos = self.actor.world_pos;
+        let v = self.actor.velocity;
+        if self.actor.bg_check_flags & BGCHECKFLAG_GROUND != 0 {
+            pos.x += 2.0 * v.x;
+            pos.y -= 2.0 * v.y;
+            pos.z += 2.0 * v.z;
+        } else if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 {
+            pos.x -= 2.0 * v.x;
+            pos.y += 2.0 * v.y;
+            pos.z -= 2.0 * v.z;
+        }
+        pos
+    }
+
+    /// `EnIshi_SpawnDustSmall`: four puffs 60 across, 80 big (`func_80033480`, lit).
+    fn spawn_dust_small(&self, play: &mut PlayState) {
+        func_80033480(play, self.dust_pos(), 60.0, 3, 0x50, 0x3C, 1);
+    }
+
+    /// `EnIshi_SpawnDustLarge`: eleven puffs 140 across, 180 big.
+    fn spawn_dust_large(&self, play: &mut PlayState) {
+        func_80033480(play, self.dust_pos(), 140.0, 0xA, 0xB4, 0x5A, 1);
     }
 }
 

@@ -4,19 +4,19 @@
 //! Params: bits 0..1 the type (0 `gFieldBushDL` from `gameplay_field_keep`, 1 and 2
 //! `object_kusa`'s bush), bit 4 bugs hide in it, bits 8..11 the drop table.
 //!
-//! A cut bush drops from its table (`EnKusa_DropCollectible`: `Item_DropCollectibleRandom`,
-//! `crate::en_item00`).
+//! A cut bush scatters its leaves (`EnKusa_SpawnFragments`: eight `EffectSsKakera`) and drops
+//! from its table (`EnKusa_DropCollectible`: `Item_DropCollectibleRandom`, `crate::en_item00`).
 //!
 //! Not ported: lifting and throwing (Player can't lift yet: `Actor_HasParent` is never true, so
-//! `EnKusa_LiftedUp`, `EnKusa_Fall` and `EnKusa_UprootedWaitRegrow` aren't reached), the
-//! leaves (`EffectSsKakera`, so the random numbers they'd draw before the drop aren't drawn).
-//! The bugs spawn as `En_Insect` (a placeholder).
+//! `EnKusa_LiftedUp`, `EnKusa_Fall` and `EnKusa_UprootedWaitRegrow` aren't reached). The bugs
+//! spawn as `En_Insect` (a placeholder).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_THROW_ONLY, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
+use oot_game::effect::kakera::{KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_KEEP};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 pub const ACTOR_EN_KUSA: i16 = 0x0125;
@@ -34,6 +34,12 @@ const OBJECT_GAMEPLAY_FIELD_KEEP: i16 = 0x0002;
 const OBJECT_KUSA: i16 = 0x012B;
 /// `sObjectIds`.
 const OBJECT_IDS: [i16; 3] = [OBJECT_GAMEPLAY_FIELD_KEEP, OBJECT_KUSA, OBJECT_KUSA];
+
+/// `sUnitDirections`: the four leaves' directions out of the bush.
+const UNIT_DIRECTIONS: [Vec3; 4] = [Vec3::new(0.0, 0.7071, 0.7071), Vec3::new(0.7071, 0.7071, 0.0), Vec3::new(0.0, 0.7071, -0.7071), Vec3::new(-0.7071, 0.7071, 0.0)];
+
+/// `sFragmentScales`.
+pub const FRAGMENT_SCALES: [i16; 8] = [108, 102, 96, 84, 66, 55, 42, 38];
 
 /// `ENKUSA_TYPE_*`.
 const ENKUSA_TYPE_0: i16 = 0;
@@ -167,6 +173,33 @@ impl EnKusa {
         }
     }
 
+    /// `EnKusa_SpawnFragments`: for each of `sUnitDirections`, a stalk (`gCuttableShrubStalkDL`)
+    /// 20 out (scaled) and 10 up, flying ±4 across and up to 10 up, its scale
+    /// `sFragmentScales[(s32)(Rand × 111.1) & 7]`; then a tip (`gCuttableShrubTipDL`) 40 out, ±3
+    /// across, its scale index `% 7` (the last scale never comes up for a tip). Gravity -100/256,
+    /// tumbling at medium speed, light drag (40, 3), 80 frames, falling 600 past Player's floor.
+    pub fn spawn_fragments(&self, play: &mut PlayState) {
+        let (wp, sc) = (self.actor.world_pos, self.actor.scale);
+        play.with_ss(|ss| {
+            for dir in &UNIT_DIRECTIONS {
+                let pos = Vec3::new(wp.x + (dir.x * sc.x * 20.0), wp.y + (dir.y * sc.y * 20.0) + 10.0, wp.z + (dir.z * sc.z * 20.0));
+                let vx = (ss.rand.zero_one() - 0.5) * 8.0;
+                let vy = ss.rand.zero_one() * 10.0;
+                let vz = (ss.rand.zero_one() - 0.5) * 8.0;
+                let scale_index = ((ss.rand.zero_one() * 111.1) as i32 & 7) as usize;
+                let (velocity, dl) = (Vec3::new(vx, vy, vz), Some(("gameplay_keep", "gCuttableShrubStalkDL")));
+                ss.kakera_spawn(pos, velocity, pos, -100, 64, 40, 3, 0, FRAGMENT_SCALES[scale_index], 0, 0, 80, KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_KEEP, dl);
+                let pos = Vec3::new(wp.x + (dir.x * sc.x * 40.0), wp.y + (dir.y * sc.y * 40.0) + 10.0, wp.z + (dir.z * sc.z * 40.0));
+                let vx = (ss.rand.zero_one() - 0.5) * 6.0;
+                let vy = ss.rand.zero_one() * 10.0;
+                let vz = (ss.rand.zero_one() - 0.5) * 6.0;
+                let scale_index = ((ss.rand.zero_one() * 111.1) as i32 % 7) as usize;
+                let (velocity, dl) = (Vec3::new(vx, vy, vz), Some(("gameplay_keep", "gCuttableShrubTipDL")));
+                ss.kakera_spawn(pos, velocity, pos, -100, 64, 40, 3, 0, FRAGMENT_SCALES[scale_index], 0, 0, 80, KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_KEEP, dl);
+            }
+        });
+    }
+
     /// `EnKusa_SetupMain`.
     fn setup_main(&mut self) {
         self.setup_action(Action::Main);
@@ -178,7 +211,7 @@ impl EnKusa {
         // Actor_HasParent (lifted): Player doesn't lift things yet.
         if self.collider.base.ac_flags & AC_HIT != 0 {
             self.collider.base.ac_flags &= !AC_HIT;
-            // EnKusa_SpawnFragments: not ported.
+            self.spawn_fragments(play);
             self.drop_collectible(play);
             play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, oot_game::audio::sfx::NA_SE_EV_PLANT_BROKEN);
             if (self.actor.params >> 4) & 1 != 0 {

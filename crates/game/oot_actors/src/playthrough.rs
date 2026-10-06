@@ -207,6 +207,12 @@ pub enum Step {
     /// Through it, the door shut and barred behind Link (room 10's enemies alive:
     /// `DoorShutter_WaitClear`), and Link free after his pause (`PLAYER_CSACTION_7`).
     DoorBarred,
+    /// A Deku Stick in hand from C-Left (`heldItemAction` `PLAYER_IA_DEKU_STICK`, the change over).
+    StickOut,
+    /// The stick lit at a torch's flame (Player's `unk_860` 210, `Obj_Syokudai`).
+    StickLit,
+    /// Through a plain sliding door into the next room, the door shut behind Link and he free.
+    ThroughDoor,
 }
 
 impl Step {
@@ -256,6 +262,9 @@ impl Step {
             Step::WebBurnt => "web_burnt",
             Step::DoorOpened => "door_opened",
             Step::DoorBarred => "door_barred",
+            Step::StickOut => "stick_out",
+            Step::StickLit => "stick_lit",
+            Step::ThroughDoor => "through_door",
         }
     }
 }
@@ -290,7 +299,37 @@ pub enum Route {
     /// burnt, and through the door, which bars behind Link (GAME-05 milestone 4a), from a debug
     /// start on the top floor (`SHUTTER_START`).
     Shutter,
+    /// Inside the Deku Tree, a Deku Stick out from C-Left, lit at the middle floor's golden
+    /// torch, round the floor and across its gap, the web over room 1's door burnt with it, and
+    /// through the door into room 1 (GAME-05 milestone 4b), from a debug start by the torch
+    /// with ten sticks on C-Left (`deku-tree-sticks`) and the torches lit by flag 0x27
+    /// (`STICK_START`).
+    Stick,
 }
+
+/// The `Stick` route's torch: room 0's middle-floor golden torch (`Obj_Syokudai` 0x03E7, lit by
+/// flag 0x27), and the flag, set by the debug start as if the top floor's switch were pressed.
+pub const STICK_TORCH_HOME: Vec3 = Vec3::new(400.0, 360.0, 121.0);
+pub const STICK_TORCH_FLAG: i32 = 0x27;
+/// Where the route starts Link: on the middle floor 70 across from the torch, facing it.
+pub const STICK_START: (Vec3, i16) = (Vec3::new(330.0, 360.0, 100.0), 0x4000);
+/// The web over room 1's door: `Bg_Ydan_Sp` 0x1FD6, facing the room's middle.
+pub const STICK_WEB_HOME: Vec3 = Vec3::new(-388.0, 400.0, 389.0);
+/// Room 1's door (transition 0, at (-455, 400, 455)), and where Link lines up in front of it on
+/// room 0's side.
+pub const STICK_DOOR: usize = 0;
+pub const STICK_DOOR_FRONT: Vec3 = Vec3::new(-425.0, 400.0, 425.0);
+/// The middle floor's walkway (y 360 by the torch, rising to 400 at its north end) round to the
+/// gap before the door's ledge, and over it (from 352 to 338 degrees about the room's middle,
+/// 107 across at the same height: Link jumps it at a run), then into the door's alcove.
+pub const STICK_PATH: [Vec3; 6] = [
+    Vec3::new(320.0, 360.0, 185.0),
+    Vec3::new(185.0, 360.0, 320.0),
+    Vec3::new(64.0, 387.0, 364.0),
+    Vec3::new(-14.0, 400.0, 400.0),
+    Vec3::new(-175.0, 400.0, 360.0),
+    Vec3::new(-300.0, 400.0, 300.0),
+];
 
 /// The `Shutter` route's switch: room 0's top-floor `Obj_Switch` (params 0x2700), and its flag.
 pub const SHUTTER_SWITCH_HOME: Vec3 = Vec3::new(-311.0, 800.0, -311.0);
@@ -330,6 +369,26 @@ pub const DEKU_TREE_ROOM_STARTS: [(i8, Vec3, i16, &str); 12] = [
     (10, Vec3::new(-700.0, 800.0, 100.0), 0, "room10"),
 ];
 
+/// The debug starts with Deku Sticks (GAME-05 milestone 4b, `game-sticks.bat`, the
+/// `deku-tree-sticks` preset): `(room, position, yaw, name, switch flags set after Play_Init)`.
+/// `oot_actors --test debug_starts` checks each: Link stands, and the room doesn't change.
+/// - `torch`: room 0's middle floor by its golden torch, lit (0x27, as if the top floor's switch
+///   were pressed): `Route::Stick`'s start;
+/// - `room3`: by room 3's golden torch, lit (0x02, its floor switch's), the door to room 4 open
+///   (0x15, its eye switch's): fire to carry to room 4's timed torches;
+/// - `room10`: by room 10's wooden torch (always lit), its timed torch and the floor switch of the
+///   rising platforms below;
+/// - `room5`: room 5's own start, by the spiked log and the floating block;
+/// - `room2`: on room 2's lift (`Obj_Lift` 0x0080, its top 18 above its home: it starts shaking at
+///   once).
+pub const STICK_STARTS: [(i8, Vec3, i16, &str, &[i32]); 5] = [
+    (0, STICK_START.0, STICK_START.1, "torch", &[STICK_TORCH_FLAG]),
+    (3, Vec3::new(-102.0, -880.0, 330.0), -0x8000, "room3", &[0x02, 0x15]),
+    (10, Vec3::new(-700.0, 800.0, -60.0), -0x4000, "room10", &[]),
+    (5, Vec3::new(-1197.0, -880.0, 1079.0), -0x4000, "room5", &[]),
+    (2, Vec3::new(-1214.0, 408.0, 1208.0), 0, "room2", &[]),
+];
+
 /// A debug start in `room` of the scene `w` was just entered in: the room requested
 /// (`Room_RequestNewRoom`), a frame for it to load, the change finished
 /// (`Room_FinishRoomChange`), then Link placed at `pos` facing `yaw` (what `Route::debug_start`
@@ -361,7 +420,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -371,6 +430,7 @@ impl Route {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
             Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter => Some("deku-tree-inside"),
+            Route::Stick => Some("deku-tree-sticks"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -382,7 +442,16 @@ impl Route {
             Route::Combat => Some(COMBAT_START),
             Route::Scrub => Some(SCRUB_START),
             Route::Shutter => Some(SHUTTER_START),
+            Route::Stick => Some(STICK_START),
             _ => None,
+        }
+    }
+
+    /// The switch flags a debug start sets after `Play_Init` (the game's `--switch`).
+    pub fn start_switches(self) -> &'static [i32] {
+        match self {
+            Route::Stick => &[STICK_TORCH_FLAG],
+            _ => &[],
         }
     }
 
@@ -402,6 +471,9 @@ impl Route {
         {
             w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
             w.room_change_done();
+        }
+        for &flag in self.start_switches() {
+            w.flags.set_switch(flag);
         }
         if let Some((p, y)) = self.start() {
             w.place_player(p, y);
@@ -439,6 +511,7 @@ impl Route {
             Route::Combat => "combat",
             Route::Scrub => "scrub",
             Route::Shutter => "shutter",
+            Route::Stick => "stick",
         }
     }
 
@@ -451,13 +524,14 @@ impl Route {
             Route::Combat => 9000,
             Route::Scrub => 3000,
             Route::Shutter => 3000,
+            Route::Stick => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -537,6 +611,15 @@ enum Task {
     OpenSlidingDoor(usize, Vec3, Step),
     /// Idle until the door from this transition entry is shut behind Link and he's free.
     WaitDoorShut(usize, Step),
+    /// Idle until the main camera is the active one again (the attention cameras over).
+    WaitCameras,
+    /// C-Left until a Deku Stick is in hand and the change is over.
+    TakeStick(Step),
+    /// At the torch whose home is here, slowly, until the stick in hand catches fire.
+    LightStick(Vec3, Step),
+    /// At the web whose home is here, slowly, the stick burning, until it's burnt away (its
+    /// one-point cutscene over) and Link is free.
+    BurnWeb(Vec3, Step),
 }
 
 /// An actor the run talks to.
@@ -628,6 +711,16 @@ impl Playthrough {
                 Task::WaitWebBurnt(SHUTTER_WEB_HOME, Step::WebBurnt),
                 Task::OpenSlidingDoor(SHUTTER_DOOR, SHUTTER_DOOR_FRONT, Step::DoorOpened),
                 Task::WaitDoorShut(SHUTTER_DOOR, Step::DoorBarred),
+            ],
+            Route::Stick => vec![
+                // The golden torches light with their attention cameras as the flag goes on.
+                Task::WaitCameras,
+                Task::TakeStick(Step::StickOut),
+                Task::LightStick(STICK_TORCH_HOME, Step::StickLit),
+                Task::Hurry(STICK_PATH.to_vec()),
+                Task::BurnWeb(STICK_WEB_HOME, Step::WebBurnt),
+                Task::OpenSlidingDoor(STICK_DOOR, STICK_DOOR_FRONT, Step::DoorOpened),
+                Task::WaitDoorShut(STICK_DOOR, Step::ThroughDoor),
             ],
         };
         Playthrough {
@@ -1115,6 +1208,10 @@ impl Playthrough {
             Task::WaitWebBurnt(home, step) => self.wait_web_burnt(w, home, step),
             Task::OpenSlidingDoor(index, front, step) => self.open_sliding_door(w, index, front, step),
             Task::WaitDoorShut(index, step) => self.wait_door_shut(w, index, step),
+            Task::WaitCameras => self.wait_cameras(w),
+            Task::TakeStick(step) => self.take_stick(w, step),
+            Task::LightStick(home, step) => self.light_stick(w, home, step),
+            Task::BurnWeb(home, step) => self.burn_web(w, home, step),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -1479,6 +1576,90 @@ impl Playthrough {
                 }
                 // At the door, slowly: facing it, Link is offered to open it.
                 Some(stick_towards(w, door.actor.world_pos, 30.0))
+            }
+        }
+    }
+
+    /// `Task::WaitCameras`: idle until `activeCamId` is `CAM_ID_MAIN` and Link stands.
+    fn wait_cameras(&mut self, w: &PlayState) -> Option<PadState> {
+        if w.active_cam_id == oot_game::camera::CAM_ID_MAIN && Self::settled(w) {
+            self.finish(None);
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("the cameras never came back to the main one ({})", w.active_cam_id));
+            return None;
+        }
+        Some(PadState::default())
+    }
+
+    /// `Task::TakeStick`: C-Left (pressed every other frame) until the stick is in hand
+    /// (`heldItemAction`) and the change animation is over.
+    fn take_stick(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let p = w.player();
+        if p.held_item_ap == crate::player::PLAYER_IA_DEKU_STICK && p.upper != crate::player::UpperAction::Change {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 120 {
+            self.failure = Some(format!("no Deku Stick from C-Left (held {}, C-Left {:#x})", p.held_item_ap, w.save.equips.button_items[1]));
+            return None;
+        }
+        if p.held_item_id == oot_game::item::ITEM_DEKU_STICK { Some(PadState::default()) } else { Some(self.press(eng_input::pad::BTN_CLEFT)) }
+    }
+
+    /// `Task::LightStick`: until the stick's `unk_860` is set (it caught fire), Link steered so the
+    /// stick's tip (held out to his right) comes to the flame, 67 above the torch's home: towards
+    /// the flame less the tip's offset from Link, slowly, then still. A text that opens (Navi's
+    /// hint by the torch) is read.
+    fn light_stick(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        let p = w.player();
+        if p.held_item_ap == crate::player::PLAYER_IA_DEKU_STICK && p.unk_860 != 0 {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 400 {
+            self.failure = Some(format!("the stick never caught fire at {home} (tip {:?}, Link {:?})", p.melee_weapon_info[0].tip, p.actor.world_pos));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+        }
+        let link = p.actor.world_pos;
+        let to = home - (p.melee_weapon_info[0].tip - link);
+        if Self::xz_dist(link, to) < 3.0 {
+            return Some(idle);
+        }
+        Some(stick_towards(w, to, if Self::xz_dist(link, to) < 15.0 { 30.0 } else { SLOW }))
+    }
+
+    /// `Task::BurnWeb`: at the web slowly until it's gone (`Bg_Ydan_Sp` burnt away), any text
+    /// read, the cameras back and Link free.
+    fn burn_web(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        let web = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::bg_ydan_sp::BgYdanSp>(h).filter(|s| s.actor.home_pos.distance(home) < 1.0 || s.actor.world_pos.distance(home) < 1.0));
+        self.wait += 1;
+        if self.wait > 600 {
+            let p = w.player();
+            self.failure = Some(format!("the web at {home} never burnt (stick {} {}, tip {:?})", p.held_item_ap, p.unk_860, p.melee_weapon_info[0].tip));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+        }
+        match web {
+            Some(_) if w.active_cam_id == oot_game::camera::CAM_ID_MAIN => Some(stick_towards(w, home, SLOW)),
+            Some(_) => Some(idle),
+            None => {
+                if w.active_cam_id == oot_game::camera::CAM_ID_MAIN && Self::settled(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(idle)
             }
         }
     }

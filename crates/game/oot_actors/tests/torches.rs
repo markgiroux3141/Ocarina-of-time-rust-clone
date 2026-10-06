@@ -5,9 +5,10 @@
 //! - room 10's wooden torch 0x2400 (bit 10: always lit) at (-653, 800, -105), and its timed one
 //!   0x1053 (count 1, flag 0x13) at (-1067, 720, -5).
 //!
-//! Expected values are worked out from the C in the comments. Link can't light a torch yet (the
-//! Deku Stick is milestone 4b's, Din's Fire and fire arrows later): a fire hit on the flame's
-//! collider is injected as the collision check leaves it (`AC_HIT`, `acHitElem`).
+//! Expected values are worked out from the C in the comments. Fire (Din's Fire, fire arrows:
+//! later milestones) is injected on the flame's collider as the collision check leaves it
+//! (`AC_HIT`, `acHitElem`); the Deku Stick (milestone 4b) is taken out from C-Left, its tip and
+//! timer set for the frame (`tests/stick.rs` lights the torches with it as Link plays).
 
 mod common;
 
@@ -343,27 +344,51 @@ fn room_10s_wooden_torch_is_always_lit_and_its_timed_one_sets_0x13() {
     assert_eq!(attention_targets(&w).first(), Some(&Some(timed)));
 }
 
-/// One frame with Player holding a Deku Stick (`heldItemAction` `PLAYER_IA_DEKU_STICK`), its tip
-/// (`meleeWeaponInfo[0]`'s, which the draw sets after the updates) at `tip` and its `unk_860` at
-/// `unk_860`: what milestone 4b's stick will give, set by hand. Its held item is put back after
-/// (its own update would start changing to it otherwise).
-fn frame_with_stick(w: &mut PlayState, tip: Vec3, unk_860: i16) {
+/// Ten Deku Sticks on C-Left (`Item_Give(ITEM_DEKU_STICKS_10)`, as the pause menu equips them),
+/// and one taken out (C-Left until it's in hand and the change is over).
+fn take_stick(w: &mut PlayState) {
+    oot_game::item::item_give(&mut w.save, None, oot_game::item::ITEM_DEKU_STICKS_10);
+    w.save.equip_item_on_c_left(oot_game::item::ITEM_DEKU_STICK);
     let stick = w.data.items.ap("DEKU_STICK");
+    // Player_UpdateItems uses no button off the main camera (the room's clear has its attention
+    // cameras up).
+    for _ in 0..600 {
+        if w.active_cam_id == oot_game::camera::CAM_ID_MAIN {
+            break;
+        }
+        idle(w, 1);
+    }
+    // C-Left every other frame until the change starts (a frozen frame after the clear can miss
+    // one press), then until the stick is in hand.
+    let mut prev = PadState::default();
+    for _ in 0..60 {
+        let p = w.player();
+        if p.held_item_ap == stick && p.upper != oot_actors::player::UpperAction::Change {
+            return;
+        }
+        let cur = if p.held_item_id != oot_game::item::ITEM_DEKU_STICK && prev.button == 0 { PadState { button: eng_input::pad::BTN_CLEFT, ..Default::default() } } else { PadState::default() };
+        w.tick_with(scripted_input(prev, cur));
+        prev = cur;
+    }
+    panic!("the stick never came out");
+}
+
+/// One frame with the Deku Stick in hand (`take_stick`), its tip (`meleeWeaponInfo[0]`'s, which
+/// the draw sets after the updates) put at `tip` and its `unk_860` (the burning stick's timer)
+/// at `unk_860` before it. Player updates before the torches: with `unk_860` set,
+/// `Player_UpdateBurningDekuStick` counts it down first (`DECR`).
+fn frame_with_stick(w: &mut PlayState, tip: Vec3, unk_860: i16) {
     let p = w.player_mut();
-    let held = (p.held_item_ap, p.item_ap);
-    p.held_item_ap = stick;
-    p.item_ap = stick;
     p.melee_weapon_info[0].tip = tip;
     p.unk_860 = unk_860;
     idle(w, 1);
-    let p = w.player_mut();
-    (p.held_item_ap, p.item_ap) = held;
 }
 
 #[test]
 fn a_deku_stick_at_the_flame_is_lit_or_lights_it() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree_room(&a, 4);
+    take_stick(&mut w);
     let ts = torches(&w, 0x1099);
     let (first, second) = (ts[0], ts[1]);
     let flame = |w: &PlayState, h: ActorHandle| torch(w, h).actor.world_pos + Vec3::new(0.0, 67.0, 0.0);
@@ -371,8 +396,9 @@ fn a_deku_stick_at_the_flame_is_lit_or_lights_it() {
     let f = flame(&w, first);
     frame_with_stick(&mut w, f, 0);
     assert_eq!((torch(&w, first).lit_timer, w.player().unk_860), (0, 0));
-    // A burning one (unk_860 150) within 20 of the flame (19 off): the torch lit (litTimer 2 * 50
-    // + 110, then 209), sLitTorchCount 1, and the stick's unk_860 back up to 200.
+    // A burning one (unk_860 150, 149 after Player's update) within 20 of the flame (19 off): the
+    // torch lit (litTimer 2 * 50 + 110, then 209), sLitTorchCount 1, and the stick's unk_860 back
+    // up to 200.
     let f = flame(&w, first) + Vec3::new(19.0, 0.0, 0.0);
     let frame = w.audio.frames + 1;
     frame_with_stick(&mut w, f, 150);
@@ -389,15 +415,14 @@ fn a_deku_stick_at_the_flame_is_lit_or_lights_it() {
     frame_with_stick(&mut w, f, 0);
     assert_eq!((w.player().unk_860, torch(&w, first).lit_timer), (210, 207));
     assert!(sfx_on(&w, frame, NA_SE_EV_FLAME_IGNITION));
-    // Burnt down to 150 (set here: waiting for it, Player's own update, idling, puts his real
-    // held item back with Player_InitItemAction, which zeroes unk_860), under 200, the stick at
-    // it again: back up to 200, then 199.
+    // The torch burnt down to 150 (set here), under 2 * 50 + 100, the burning stick at it again:
+    // back up to 200, then 199.
     torch_mut(&mut w, first).lit_timer = 150;
     let f = flame(&w, first);
     frame_with_stick(&mut w, f, 205);
     assert_eq!(torch(&w, first).lit_timer, 199);
-    // ... the stick burning on (unk_860 205, not under 200): left as it is.
-    assert_eq!(w.player().unk_860, 205);
+    // ... the stick burning on (unk_860 205, 204 after Player's update: not under 200): left as it is.
+    assert_eq!(w.player().unk_860, 204);
 }
 
 #[test]

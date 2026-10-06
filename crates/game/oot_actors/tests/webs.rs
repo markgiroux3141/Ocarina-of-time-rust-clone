@@ -8,9 +8,11 @@
 //!   door);
 //! - room 3's floor web, 0x0FC6 at (-635, -820, 0) (destroyed 6).
 //!
-//! Expected values are worked out from the C in the comments. Link can't hold a Deku Stick yet,
-//! so the tests set what Player holds (`heldItemAction`, `unk_860`, the stick's tip); a fire hit,
-//! which nothing Link has gives, is set on the web's collider as the collision check leaves it.
+//! Expected values are worked out from the C in the comments. The tests set what Player holds
+//! (`heldItemAction`, `unk_860`, the stick's tip) for a frame: the webs (`ACTORCAT_BG`) update
+//! before Player and read it as set. (Link's own stick, lit at a torch, burns room 1's web in
+//! `tests/stick_run.rs`.) A fire hit, which nothing Link has gives, is set on the web's collider
+//! as the collision check leaves it.
 
 mod common;
 

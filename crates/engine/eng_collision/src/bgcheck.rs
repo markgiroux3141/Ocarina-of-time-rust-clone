@@ -41,6 +41,12 @@ pub const DOWN_CHECK_FLOORS: u32 = 1 << 2;
 pub const DOWN_CHECK_WALLS_SIMPLE: u32 = 1 << 3;
 pub const DOWN_CHECK_GROUND_ONLY: u32 = 1 << 4;
 
+// bciFlags (`z_bgcheck.c`'s `BGCHECK_IGNORE_*`)
+pub const BGCHECK_IGNORE_NONE: u16 = 0;
+pub const BGCHECK_IGNORE_CEILING: u16 = 1 << 0;
+pub const BGCHECK_IGNORE_WALL: u16 = 1 << 1;
+pub const BGCHECK_IGNORE_FLOOR: u16 = 1 << 2;
+
 
 /// A collision poly and the mesh it belongs to: the game's (`CollisionPoly*`, `bgId`) pair.
 /// `bg` is `BGCHECK_SCENE` for the static mesh, else the `DynaPoly` bg actor, and `idx`
@@ -527,6 +533,103 @@ impl CollisionContext {
         result
     }
 
+    // ---- first poly in a sphere -------------------------------------------------------
+
+    /// `CollisionPoly_SphVsPoly`: `Math3D_TriVsSphIntersect` of the poly and the sphere (its
+    /// centre and radius truncated to a `Sphere16`).
+    fn sph_vs_poly(p: &CollisionPoly, verts: &[Vec3], center: Vec3, radius: f32) -> bool {
+        let tri = crate::math3d::TriNorm { vtx: tri(p, verts), plane: crate::math3d::Plane { normal: normal(p), origin_dist: p.dist as f32 } };
+        let sphere = crate::math3d::Sphere16 { center: [center.x as i16, center.y as i16, center.z as i16], radius: radius as i16 };
+        crate::math3d::tri_vs_sph_intersect(&sphere, &tri).0
+    }
+
+    /// `BgCheck_SphVsFirstStaticPolyList`: the list's first poly the sphere touches. The list is
+    /// sorted by the polys' lowest vertex: it stops at the first poly wholly above the sphere.
+    fn sph_vs_first_static_poly_list(&self, list: &[u16], xp: u16, center: Vec3, radius: f32) -> Option<PolyId> {
+        for &idx in list {
+            let p = self.spoly(idx);
+            if xp_test(p, xp) {
+                continue;
+            }
+            let [ya, yb, yc] = vy(p, &self.verts);
+            if center.y + radius < ya && center.y + radius < yb && center.y + radius < yc {
+                break;
+            }
+            if Self::sph_vs_poly(p, &self.verts, center, radius) {
+                return Some(PolyId::scene(idx));
+            }
+        }
+        None
+    }
+
+    /// `BgCheck_SphVsFirstDynaPolyList`.
+    fn sph_vs_first_dyna_poly_list(&self, bg: u16, list: &[u16], xp: u16, center: Vec3, radius: f32) -> Option<PolyId> {
+        for &idx in list {
+            let p = &self.dyna.polys[idx as usize];
+            if xp_test(p, xp) {
+                continue;
+            }
+            if Self::sph_vs_poly(p, &self.dyna.verts, center, radius) {
+                return Some(PolyId { bg, idx });
+            }
+        }
+        None
+    }
+
+    /// `BgCheck_SphVsFirstPolyImpl`: the first poly the sphere at `center` touches, the static
+    /// mesh's floors, walls and ceilings (`BgCheck_SphVsFirstStaticPoly`), then each bg actor's
+    /// ceilings, walls and floors (`BgCheck_SphVsFirstDynaPoly`) whose bounding sphere it
+    /// reaches, but `skip`'s (the actor's own). `ignore` is `bciFlags` (`BGCHECK_IGNORE_*`).
+    /// None outside the static mesh's bounds (`BgCheck_GetStaticLookup` gives no lookup).
+    /// (`@bug (game)`: the C's `outBgId` stays `BGCHECK_SCENE` for a dyna poly; the id here
+    /// is the true one, and the public callers don't read it.)
+    pub fn sph_vs_first_poly_impl(&self, xp: u16, center: Vec3, radius: f32, skip: Option<u16>, ignore: u16) -> Option<PolyId> {
+        if !self.in_bounds(center) {
+            return None;
+        }
+        // BgCheck_SphVsFirstStaticPoly.
+        let lists: [(&[u16], u16); 3] = [(&self.floor, BGCHECK_IGNORE_FLOOR), (&self.wall, BGCHECK_IGNORE_WALL), (&self.ceiling, BGCHECK_IGNORE_CEILING)];
+        for (list, flag) in lists {
+            if !list.is_empty()
+                && ignore & flag == 0
+                && let Some(id) = self.sph_vs_first_static_poly_list(list, xp, center, radius)
+            {
+                return Some(id);
+            }
+        }
+        // BgCheck_SphVsFirstDynaPoly.
+        let test = crate::math3d::Sphere16 { center: [center.x as i16, center.y as i16, center.z as i16], radius: radius as i16 };
+        for (i, a) in self.dyna.actors.iter().enumerate() {
+            if !a.in_use() || skip == Some(i as u16) {
+                continue;
+            }
+            let bounding = crate::math3d::Sphere16 { center: a.sphere_center, radius: a.sphere_radius };
+            if !crate::math3d::sph_vs_sph(&test, &bounding) {
+                continue;
+            }
+            // BgCheck_SphVsFirstDynaPolyInBgActor.
+            let lists: [(&[u16], u16); 3] = [(&a.ceiling, BGCHECK_IGNORE_CEILING), (&a.wall, BGCHECK_IGNORE_WALL), (&a.floor, BGCHECK_IGNORE_FLOOR)];
+            for (list, flag) in lists {
+                if ignore & flag == 0
+                    && let Some(id) = self.sph_vs_first_dyna_poly_list(i as u16, list, xp, center, radius)
+                {
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
+    /// `BgCheck_SphVsFirstPoly`: whether the sphere at `center` touches any poly.
+    pub fn sph_vs_first_poly(&self, center: Vec3, radius: f32) -> bool {
+        self.sph_vs_first_poly_impl(IGNORE_NONE, center, radius, None, BGCHECK_IGNORE_NONE).is_some()
+    }
+
+    /// `BgCheck_SphVsFirstWall`: whether the sphere at `center` touches any wall.
+    pub fn sph_vs_first_wall(&self, center: Vec3, radius: f32) -> bool {
+        self.sph_vs_first_poly_impl(IGNORE_NONE, center, radius, None, BGCHECK_IGNORE_FLOOR | BGCHECK_IGNORE_CEILING).is_some()
+    }
+
     /// `BgCheck_CheckWallImpl`, used by `BgCheck_EntitySphVsWall3/4`.
     /// Returns (hit, resolved position, wall poly).
     pub fn check_wall(&self, xp: u16, pos_next: Vec3, pos_prev: Vec3, radius: f32, check_height: f32, arg_a: u8) -> (bool, Vec3, Option<PolyId>) {
@@ -813,6 +916,26 @@ impl CollisionContext {
         None
     }
 
+    /// `colCtx->colHeader->waterBoxes[index].ySurface`, if the scene has that many water boxes.
+    pub fn water_box_surface(&self, index: usize) -> Option<i16> {
+        self.header.water_boxes.get(index).map(|w| w.y_surface)
+    }
+
+    /// `colCtx->colHeader->waterBoxes[index].ySurface = y_surface`: an actor moving a water
+    /// box's surface (`Bg_Ydan_Hasi`'s water). The C writes the scene's header in place, so every
+    /// later `BgCheck_GetWaterSurface` (`WaterBox_GetSurface1`, Player's `depthInWater`) sees it,
+    /// until the scene is loaded again (a new context). Returns whether that box exists (the C
+    /// has no check; past the end it writes over whatever follows).
+    pub fn set_water_box_surface(&mut self, index: usize, y_surface: i16) -> bool {
+        match self.header.water_boxes.get_mut(index) {
+            Some(w) => {
+                w.y_surface = y_surface;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn poly_normal(&self, id: PolyId) -> Vec3 {
         normal(self.poly(id))
     }
@@ -1013,5 +1136,28 @@ mod tests {
         c.dyna.set_collision_disabled(still, false);
         c.dyna.update_context();
         assert_eq!((top(&c, -120.0), top(&c, 0.0)), (15.0, 16.0));
+    }
+
+    /// `waterBoxes[i].ySurface` written in place (`Bg_Ydan_Hasi`'s water): the next
+    /// `BgCheck_GetWaterSurface` reads the new height; the other boxes keep theirs.
+    #[test]
+    fn a_water_boxs_surface_written_in_place_is_what_the_water_checks_see() {
+        let mut b = CollisionBuilder::new();
+        let s = b.surface(0, 0);
+        b.quad(Vec3::new(-200.0, -100.0, 200.0), Vec3::new(200.0, -100.0, 200.0), Vec3::new(200.0, -100.0, -200.0), Vec3::new(-200.0, -100.0, -200.0), s);
+        // Box 0 for room 3 only, box 1 for every room (WATERBOX_ROOM_ALL).
+        b.water_box(-200, -200, 100, 400, -10, 3);
+        b.water_box(0, -200, 200, 400, -20, 0x3F);
+        let mut c = CollisionContext::new(b.finish());
+        assert_eq!((c.water_box_surface(0), c.water_box_surface(1), c.water_box_surface(2)), (Some(-10), Some(-20), None));
+        assert_eq!(c.water_surface(100.0, 0.0, 0), Some(-20.0));
+        // home.pos.y - 47, truncated to the s16.
+        assert!(c.set_water_box_surface(1, (-20.0f32 - 47.0) as i16));
+        assert_eq!(c.water_surface(100.0, 0.0, 0), Some(-67.0));
+        assert_eq!(c.water_surface(-150.0, 0.0, 3), Some(-10.0));
+        assert_eq!(c.header.water_boxes[1].y_surface, -67);
+        // No box 2: nothing written.
+        assert!(!c.set_water_box_surface(2, 0));
+        assert_eq!(c.header.water_boxes.len(), 2);
     }
 }

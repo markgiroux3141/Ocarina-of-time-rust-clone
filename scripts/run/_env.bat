@@ -3,7 +3,7 @@
 @rem
 @rem A session that builds into a new target folder, or imports a new pack format into a new
 @rem data folder, changes these two names.
-set "TARGET_NAME=game18"
+set "TARGET_NAME=game19"
 set "DATA_NAME=data17"
 
 @rem The repo's root: two folders up from this file.

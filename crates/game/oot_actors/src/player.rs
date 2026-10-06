@@ -41,6 +41,12 @@ pub const STATE1_0: u32 = 1 << 0; // going through an exit
 pub const STATE1_2: u32 = 1 << 2;
 pub const STATE1_3: u32 = 1 << 3;
 pub const STATE1_8: u32 = 1 << 8; // item change pending
+/// `sItemButtons`: B, C-Left, C-Down, C-Right (`Player_GetItemOnButton`'s 0 to 3).
+const S_ITEM_BUTTONS: [u16; 4] = [eng_input::pad::BTN_B, eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT];
+/// `PLAYER_MASK_NONE` (`player.h`).
+const PLAYER_MASK_NONE: u8 = 0;
+/// `PLAYER_ITEM_CHG_13` (`z_player.c`'s `ItemChangeType`): the bottle's and boomerang's change.
+const PLAYER_ITEM_CHG_13: i32 = 13;
 pub const STATE1_10: u32 = 1 << 10; // getting an item
 pub const STATE1_24: u32 = 1 << 24;
 pub const STATE1_4: u32 = 1 << 4; // locked on (Player_CheckHostileLockOn)
@@ -190,6 +196,8 @@ pub enum PlayRequest {
     /// `Player_RequestQuake(play, speed, y, duration)`: a decaying quake (type 3) on the main
     /// camera (`crate::quake`).
     Quake { speed: i32, y: i32, duration: i32 },
+    /// `TitleCard_Clear(play, &play->actorCtx.titleCtx)` (`Player_UseItem`'s cutscene items).
+    TitleCardClear,
 }
 
 /// The audio calls of Player's death and revival.
@@ -607,6 +615,8 @@ pub struct Env<'a> {
     /// `play->gameOverCtx.state`, and `play->roomCtx.curRoom.environmentType` (`behaviorType2`).
     pub game_over_state: u16,
     pub room_behavior_type2: u8,
+    /// `play->activeCamId`.
+    pub active_cam_id: i16,
 }
 
 impl Env<'_> {
@@ -706,11 +716,16 @@ pub struct Player {
     pub skel2: SkelAnime,
     /// `func_82C`.
     pub upper: UpperAction,
-    /// `heldItemActionParam`, `itemActionParam` (PLAYER_AP_*), `heldItemId` (the item being
-    /// changed to, as its action param).
+    /// `heldItemAction`, `itemAction` (`PLAYER_IA_*`), `heldItemId` (the item in hand or being
+    /// changed to, `ITEM_*`), `heldItemButton` (the button it was used from: 0 B, 1 to 3 the C
+    /// buttons).
     pub held_item_ap: i32,
     pub item_ap: i32,
-    pub held_item: Option<i32>,
+    pub held_item_id: u8,
+    pub held_item_button: i8,
+    /// `currentMask` (`PLAYER_MASK_*`): set by `Player_UseItem`'s mask branch, which no button
+    /// reaches yet (masks aren't drawn).
+    pub current_mask: u8,
     /// `modelGroup`, `nextModelGroup` (PLAYER_MODELGROUP_*).
     pub model_group: usize,
     pub next_model_group: usize,
@@ -735,10 +750,20 @@ pub struct Player {
     pub get_item_direction: i16,
     /// `unk_862`: the draw id plus one of the item held up (0: none; `Player_DrawGetItem`).
     pub unk_862: i16,
-    /// `unk_860`: the burning Deku Stick's timer, among other things (the bow's -1, the
-    /// slingshot's -2, the hookshot's -3); `Player_InitItemAction` zeroes it. None of the items
-    /// that set it is held yet, so it stays 0 (`En_St` reads it).
+    /// `unk_860`: the burning Deku Stick's timer (210 lit at a torch, `Obj_Syokudai`), among
+    /// other things (the bow's -1, the slingshot's -2, the hookshot's -3, the fishing rod's);
+    /// `Player_InitItemAction` zeroes it. `En_St`, `Obj_Syokudai` and `Bg_Ydan_Sp` read it.
     pub unk_860: i16,
+    /// `unk_85C`: the Deku Stick's length (1 whole, 0.5 broken, shrinking to 0 as it burns out;
+    /// `Player_InitDekuStickIA`), and `unk_858` (the bow string's and the fishing rod's).
+    pub unk_85c: f32,
+    pub unk_858: f32,
+    /// `unk_834`: the bow's and slingshot's timer, zeroed when the item change ends.
+    pub unk_834: i16,
+    /// The save's `AMMO()` and the explosives out (`actorLists[ACTORCAT_EXPLOSIVE].length`) as
+    /// `Player_UseItem` reads them, refreshed at the start of Player's update (see `ammo`).
+    pub ammo_view: [i8; 16],
+    pub explosive_count: usize,
     /// `leftHandPos`: the left hand limb's origin in the last draw.
     pub left_hand_pos: Vec3,
     /// `play->gameplayFrames` at the last update (the held-up item's spin when drawn).
@@ -952,7 +977,11 @@ impl Player {
             upper: UpperAction::Default,
             held_item_ap: 0,
             item_ap: 0,
-            held_item: None,
+            // Player_Init: heldItemId = ITEM_NONE, then Player_UseItem(ITEM_NONE) leaves no item
+            // in hand (PLAYER_IA_NONE, the default model group).
+            held_item_id: oot_game::item::ITEM_NONE,
+            held_item_button: 0,
+            current_mask: 0,
             model_group: data.items.model_group("DEFAULT"),
             next_model_group: data.items.model_group("DEFAULT"),
             // A plain start is the map select's file's (SaveContext::debug): the Kokiri Sword and
@@ -969,6 +998,11 @@ impl Player {
             get_item_direction: 0x6000,
             unk_862: 0,
             unk_860: 0,
+            unk_85c: 0.0,
+            unk_858: 0.0,
+            unk_834: 0,
+            ammo_view: [0; 16],
+            explosive_count: 0,
             left_hand_pos: pos,
             gameplay_frames: 0,
             item_change_type: 0,
@@ -1109,7 +1143,7 @@ impl Player {
         self.current_tunic = (save.cur_equip_value(EQUIP_TYPE_TUNIC) as u8).wrapping_sub(1);
         self.current_boots = (save.cur_equip_value(EQUIP_TYPE_BOOTS) as u8).wrapping_sub(1);
         self.current_sword_item_id = save.b_btn_item();
-        let g = data.items.action_model_group.get(self.held_item_ap as usize).copied().unwrap_or(self.model_group);
+        let g = self.action_to_model_group(data, self.held_item_ap);
         self.player_set_model_group(data, g);
     }
 
@@ -1214,6 +1248,8 @@ impl Player {
         self.frame += 1;
         self.gameplay_frames = env.gameplay_frames;
         self.input = input;
+        self.ammo_view = env.io.borrow().save.inventory.ammo;
+        self.explosive_count = env.actors.category(oot_game::actor_ctx::ACTORCAT_EXPLOSIVE).len();
         let data = env.data;
         self.actor.prev_pos = self.actor.home_pos;
 
@@ -1238,7 +1274,11 @@ impl Player {
         }
         self.update_interface(env);
         self.update_z_targeting(env);
-        // (The burning Deku stick and the fishing rod: not held.)
+        if self.held_item_ap == env.data.items.ap("DEKU_STICK") && self.unk_860 != 0 {
+            self.update_burning_deku_stick(env);
+        } else if self.held_item_ap == env.data.items.ap("FISHING_POLE") && self.unk_860 < 0 {
+            self.unk_860 += 1;
+        }
         if self.body_shock_timer != 0 {
             self.update_body_shock(env);
         }
@@ -2054,7 +2094,7 @@ impl Player {
     /// `Player_PutAwayHeldItem`: put a held item away (`Player_UseItem(ITEM_NONE)`).
     fn put_away_held_item(&mut self, data: &GameData) -> bool {
         if self.held_item_ap >= data.items.ap("FISHING_POLE") {
-            self.use_item(data, 0);
+            self.use_item(data, oot_game::item::ITEM_NONE);
             true
         } else {
             false
@@ -2767,6 +2807,41 @@ impl Player {
         }
     }
 
+    /// `Player_UpdateBurningDekuStick`: a burning stick (`unk_860` counting down from 210). Burnt
+    /// away (`unk_85C` 0), it's put away. At 0: one stick less, the stick gone (`unk_85C` 0, and
+    /// `unk_860` 1 so the next frame puts it away); over 200 the flame grows over 10 frames;
+    /// under 20 the stick shrinks with it. The flame is a dust puff at the tip each frame
+    /// (`func_8002836C`: rising at 0.5 a frame, yellow in red, up to 200 big, 8 frames).
+    fn update_burning_deku_stick(&mut self, env: &Env) {
+        // D_808547A4, D_808547B0, D_808547BC, D_808547C0.
+        const VELOCITY: Vec3 = Vec3::new(0.0, 0.5, 0.0);
+        const ACCEL: Vec3 = Vec3::new(0.0, 0.5, 0.0);
+        const PRIM: [u8; 4] = [255, 255, 100, 255];
+        const ENV: [u8; 4] = [255, 50, 0, 0];
+        if self.unk_85c == 0.0 {
+            self.use_item(env.data, oot_game::item::ITEM_NONE);
+            return;
+        }
+        let mut temp = 1.0f32;
+        // DECR(unk_860): the new value, held at 0.
+        if self.unk_860 != 0 {
+            self.unk_860 -= 1;
+        }
+        if self.unk_860 == 0 {
+            self.change_ammo(env, oot_game::item::ITEM_DEKU_STICK, -1);
+            self.unk_860 = 1;
+            temp = 0.0;
+            self.unk_85c = temp;
+        } else if self.unk_860 > 200 {
+            temp = (210 - self.unk_860) as f32 / 10.0;
+        } else if self.unk_860 < 20 {
+            temp = self.unk_860 as f32 / 20.0;
+            self.unk_85c = temp;
+        }
+        let tip = self.melee_weapon_info[0].tip;
+        env.io.borrow_mut().ss().func_8002836c(tip, VELOCITY, ACCEL, PRIM, ENV, (temp * 200.0) as i16, 0, 8);
+    }
+
     // ================================================================================
     // Frozen, electrified, the swimming hit
 
@@ -3370,10 +3445,7 @@ impl Player {
     /// holds no actor here), no change pending.
     fn func_80834644(&mut self, data: &GameData) {
         if self.upper == UpperAction::Change {
-            // Player_FinishItemChange: the change's sounds aren't the swap's here; its item goes
-            // into the hand.
-            let ap = self.held_item.unwrap_or(0);
-            self.use_item(data, ap);
+            self.finish_item_change(data);
         }
         let f = self.upper_for(data, self.held_item_ap);
         self.set_upper_action_func(f);
@@ -3412,7 +3484,7 @@ impl Player {
     /// `func_8008EC70`: back to the held item's action and models.
     fn func_8008ec70(&mut self, data: &GameData) {
         self.item_ap = self.held_item_ap;
-        let g = data.items.action_model_group.get(self.held_item_ap.max(0) as usize).copied().unwrap_or(self.model_group);
+        let g = self.action_to_model_group(data, self.held_item_ap);
         self.player_set_model_group(data, g);
         self.unk_6AD = 0;
     }
@@ -3709,7 +3781,65 @@ impl Player {
         }
         // (Player_RequestRumble: the rumble isn't ported.)
         self.linear_velocity = -18.0;
-        // func_80842CF0: a Deku Stick breaking, the Biggoron's Sword's wear: neither is held.
+        self.func_80842cf0(env);
+    }
+
+    /// `func_80842A88`: one Deku Stick less, and what's left of it put away.
+    fn func_80842a88(&mut self, env: &Env) {
+        self.change_ammo(env, oot_game::item::ITEM_DEKU_STICK, -1);
+        self.use_item(env.data, oot_game::item::ITEM_NONE);
+    }
+
+    /// `func_80842AC4`: a Deku Stick longer than half breaks on a hit: with sticks left, its far
+    /// half flies off backwards from the right hand (`EffectSsStick_Spawn`), half of it stays
+    /// (`unk_85C` 0.5) as it's put away, one stick less, `NA_SE_IT_WOODSTICK_BROKEN`. True for any
+    /// such stick.
+    fn func_80842ac4(&mut self, env: &Env) -> bool {
+        if self.held_item_ap == env.data.items.ap("DEKU_STICK") && self.unk_85c > 0.5 {
+            if env.io.borrow().save.ammo(oot_game::item::ITEM_DEKU_STICK) != 0 {
+                let (pos, yaw) = (self.body_parts_pos[BODYPART_R_HAND], self.actor.shape_rot.y.wrapping_add(0x8000u16 as i16));
+                env.io.borrow_mut().ss().stick_spawn(pos, yaw, self.adult);
+                self.unk_85c = 0.5;
+                self.func_80842a88(env);
+                self.play_sfx(NA_SE_IT_WOODSTICK_BROKEN);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// `func_80842B7C`: the Biggoron's Sword wears down a point a hit (`swordHealth`) unless it's
+    /// the unbreakable one (`bgsFlag`); at 0 the blade flies off (`EffectSsStick_Spawn`), the
+    /// knife's broken in the save (`func_800849EC`) and `NA_SE_IT_MAJIN_SWORD_BROKEN` sounds. True
+    /// for the Biggoron's Sword.
+    fn func_80842b7c(&mut self, env: &Env) -> bool {
+        if self.held_item_ap != env.data.items.ap("SWORD_BIGGORON") {
+            return false;
+        }
+        let broke = {
+            let mut io = env.io.borrow_mut();
+            if !io.save.bgs_flag && io.save.sword_health > 0 {
+                io.save.sword_health -= 1;
+                io.save.sword_health == 0
+            } else {
+                false
+            }
+        };
+        if broke {
+            let (pos, yaw) = (self.body_parts_pos[BODYPART_R_HAND], self.actor.shape_rot.y.wrapping_add(0x8000u16 as i16));
+            let mut io = env.io.borrow_mut();
+            io.ss().stick_spawn(pos, yaw, self.adult);
+            oot_game::item::func_800849ec(&mut io.save);
+            drop(io);
+            self.play_sfx(NA_SE_IT_MAJIN_SWORD_BROKEN);
+        }
+        true
+    }
+
+    /// `func_80842CF0`: a stick breaks or the Biggoron's Sword wears (a wall struck, a rebound).
+    fn func_80842cf0(&mut self, env: &Env) {
+        self.func_80842ac4(env);
+        self.func_80842b7c(env);
     }
 
     /// `func_80842DF4`: the swing's contact. A swing bounced off something hard (`AT_BOUNCED`)
@@ -3750,7 +3880,7 @@ impl Player {
                                 self.play_requests.push(PlayRequest::ShieldParticles { pos: sp5c, metal: true });
                                 self.play_sfx(if material == SURFACE_MATERIAL_DIRT_SOFT { NA_SE_IT_WALL_HIT_SOFT } else { NA_SE_IT_WALL_HIT_HARD });
                             }
-                            // func_80842CF0: no stick or Biggoron's Sword.
+                            self.func_80842cf0(env);
                             self.linear_velocity = -14.0;
                         }
                     }
@@ -3772,12 +3902,14 @@ impl Player {
                     self.play_requests.push(PlayRequest::FreezeFlash);
                 }
             }
-            // func_80842AC4 (a Deku Stick) and func_80842B7C (the Biggoron's Sword): neither held.
-            if self.held_item_ap != data.items.ap("HAMMER") && self.actor.col_chk_info.at_hit_backlash == cc::HIT_BACKLASH_ELECTRIC {
-                self.actor.col_chk_info.damage = 8;
-                let yaw = self.actor.shape_rot.y;
-                self.func_80837C0C(env, PLAYER_HIT_RESPONSE_ELECTRIFIED, 0.0, 0.0, yaw, 20);
-                return true;
+            if !self.func_80842ac4(env) && self.held_item_ap != data.items.ap("HAMMER") {
+                self.func_80842b7c(env);
+                if self.actor.col_chk_info.at_hit_backlash == cc::HIT_BACKLASH_ELECTRIC {
+                    self.actor.col_chk_info.damage = 8;
+                    let yaw = self.actor.shape_rot.y;
+                    self.func_80837C0C(env, PLAYER_HIT_RESPONSE_ELECTRIFIED, 0.0, 0.0, yaw, 20);
+                    return true;
+                }
             }
         }
         false
@@ -3992,9 +4124,8 @@ impl Player {
             if self.try_roll(env) {
                 return true;
             }
-            // putAwayCooldownTimer (a charge timer) is 0 here.
-            if self.held_item_ap >= env.data.items.ap("SWORD_MASTER") {
-                self.use_item(env.data, 0);
+            if self.put_away_cooldown_timer == 0 && self.held_item_ap >= env.data.items.ap("SWORD_MASTER") {
+                self.use_item(env.data, oot_game::item::ITEM_NONE);
             } else {
                 self.state2 ^= 1 << 20;
             }
@@ -5617,7 +5748,7 @@ impl Player {
     fn update_upper_body(&mut self, env: &Env) -> bool {
         let data = env.data;
         // Hookshot flight: not held.
-        if self.can_update_items() {
+        if self.can_update_items(data) {
             self.update_items(env);
         }
         if !self.run_upper(env) {
@@ -5635,9 +5766,15 @@ impl Player {
         true
     }
 
-    /// `Player_CanUpdateItems`: the item system may run.
-    fn can_update_items(&self) -> bool {
-        self.upper != UpperAction::Change || self.held_item == Some(self.held_item_ap)
+    /// `Player_CanUpdateItems`: the item system may run: not waiting for an item to be put away
+    /// (unless a change to the cutscene's sword or to nothing is starting), and no change playing
+    /// to an item not yet in hand.
+    fn can_update_items(&self, data: &GameData) -> bool {
+        use oot_game::item::ITEM_NONE;
+        /// `ITEM_SWORD_CS` (`item.h`).
+        const ITEM_SWORD_CS: u8 = 0xFC;
+        (self.action != Action::ItemPutAway || (self.state1 & STATE1_8 != 0 && (self.held_item_id == ITEM_SWORD_CS || self.held_item_id == ITEM_NONE)))
+            && (self.upper != UpperAction::Change || data.items.item_to_action_param(self.held_item_id) == self.held_item_ap)
     }
 
     fn run_upper(&mut self, env: &Env) -> bool {
@@ -5682,9 +5819,25 @@ impl Player {
         }
     }
 
-    /// `Player_UpdateItems`: B / C buttons, then a pending change.
+    /// `Player_UpdateItems`: the item buttons (`Player_ProcessItemButtons`) while Player may use
+    /// them: Player's own category, no change starting, the held item the one in use (or the
+    /// shield up), alive, no cutscene, no cutscene action, the main camera active, no exit
+    /// starting; then a change pending starts. (`shootingGalleryStatus` is 0 and
+    /// `timerState` never `TIMER_STATE_STOP`: no shooting gallery or timer is ported.)
     fn update_items(&mut self, env: &Env) {
-        if self.state1 & STATE1_8 == 0 && (self.held_item_ap == self.item_ap || self.state1 & STATE1_22 != 0) {
+        let (health, trigger) = {
+            let io = env.io.borrow();
+            (io.save.health, io.transition.trigger)
+        };
+        if self.actor.category == ACTORCAT_PLAYER
+            && self.state1 & STATE1_8 == 0
+            && (self.held_item_ap == self.item_ap || self.state1 & STATE1_22 != 0)
+            && health != 0
+            && env.cs_state == oot_game::cutscene::CS_STATE_IDLE
+            && self.cs_mode == 0
+            && env.active_cam_id == CAM_ID_MAIN
+            && trigger != TRANS_TRIGGER_START
+        {
             self.process_item_buttons(env);
         }
         if self.state1 & STATE1_8 != 0 {
@@ -5692,36 +5845,58 @@ impl Player {
         }
     }
 
-    /// `Player_ProcessItemButtons`: the item buttons. B's item is the save's (`B_BTN_ITEM`, through
-    /// `Player_GetItemOnButton`): nothing happens on a B with no item. The C buttons' items (in the save,
-    /// on the HUD) aren't used here: their actions (the slingshot, bombs, the ocarina, ...)
-    /// aren't ported. A held item no button has any more is put away.
+    /// `Player_ItemIsInUse`: `item` is the one in use (`itemAction`).
+    fn item_is_in_use(&self, data: &GameData, item: u8) -> bool {
+        item < oot_game::item::ITEM_NONE_FE && data.items.item_to_action_param(item) == self.item_ap
+    }
+
+    /// `Player_ItemIsItemAction`.
+    fn item_is_item_action(data: &GameData, item1: u8, item_action: i32) -> bool {
+        item1 < oot_game::item::ITEM_NONE_FE && data.items.item_to_action_param(item1) == item_action
+    }
+
+    /// `Player_GetItemOnButton`: B's item and the three C buttons' (`B_BTN_ITEM`, `C_BTN_ITEM`),
+    /// `ITEM_NONE` past them (no button pressed). (`bombchuBowlingStatus` is 0: the bowling alley
+    /// isn't ported.)
+    fn get_item_on_button(buttons: &[u8; 4], index: usize) -> u8 {
+        buttons.get(index).copied().unwrap_or(oot_game::item::ITEM_NONE)
+    }
+
+    /// `Player_ProcessItemButtons`: a mask no C button has any more comes off; an item in use
+    /// (from the fishing rod on) that no button has is put away; then the first of B, C-Left,
+    /// C-Down and C-Right pressed (`sItemButtons`) uses its item, or with none pressed, a button
+    /// held down with the item in hand marks it held (`sHeldItemButtonIsHeldDown`).
     fn process_item_buttons(&mut self, env: &Env) {
-        use oot_game::item::ITEM_NONE_FE;
-        // (currentMask: masks aren't ported.)
-        if self.state1 & (STATE1_11 | STATE1_29) != 0 {
-            return;
-        }
-        // (func_8008F128: the hookshot's and boomerang's flight: not held.)
-        let items = &env.data.items;
-        let (b_item, c_items) = {
+        use oot_game::item::{ITEM_NONE, ITEM_NONE_FE};
+        let data = env.data;
+        let buttons = {
             let io = env.io.borrow();
-            (io.save.b_btn_item(), [io.save.c_btn_item(0), io.save.c_btn_item(1), io.save.c_btn_item(2)])
+            [io.save.b_btn_item(), io.save.c_btn_item(0), io.save.c_btn_item(1), io.save.c_btn_item(2)]
         };
-        // Player_ItemIsInUse: the button's item is the one in hand.
-        let holds = |item: u8| item < ITEM_NONE_FE && items.item_to_action_param(item) == self.item_ap;
-        if self.item_ap >= items.ap("FISHING_POLE") && !holds(b_item) && !c_items.iter().any(|&c| holds(c)) {
-            self.use_item(env.data, 0);
+        if self.current_mask != PLAYER_MASK_NONE {
+            let mask_item_action = self.current_mask as i32 - 1 + data.items.ap("MASK_KEATON");
+            if !buttons[1..].iter().any(|&b| Self::item_is_item_action(data, b, mask_item_action)) {
+                self.current_mask = PLAYER_MASK_NONE;
+            }
+        }
+        if self.state1 & (STATE1_11 | STATE1_29) != 0 || self.func_8008f128(data) {
             return;
         }
-        // sItemButtons: B, C-left, C-down, C-right; only B's item is used (Player_GetItemOnButton(0)).
-        if self.input.press.held(eng_input::pad::BTN_B) {
-            if b_item < ITEM_NONE_FE {
-                let ap = items.item_to_action_param(b_item);
-                self.use_item(env.data, ap);
+        if self.item_ap >= data.items.ap("FISHING_POLE") && !buttons.iter().any(|&b| self.item_is_in_use(data, b)) {
+            self.use_item(data, ITEM_NONE);
+            return;
+        }
+        let i = S_ITEM_BUTTONS.iter().position(|&b| self.input.press.held(b)).unwrap_or(S_ITEM_BUTTONS.len());
+        let item = Self::get_item_on_button(&buttons, i);
+        if item >= ITEM_NONE_FE {
+            let i = S_ITEM_BUTTONS.iter().position(|&b| self.input.cur.held(b)).unwrap_or(S_ITEM_BUTTONS.len());
+            let item = Self::get_item_on_button(&buttons, i);
+            if item < ITEM_NONE_FE && data.items.item_to_action_param(item) == self.held_item_ap {
+                self.s.held_item_button_is_held_down = true;
             }
-        } else if self.input.cur.held(eng_input::pad::BTN_B) && b_item < ITEM_NONE_FE && items.item_to_action_param(b_item) == self.held_item_ap {
-            self.s.held_item_button_is_held_down = true;
+        } else {
+            self.held_item_button = i as i8;
+            self.use_item(data, item);
         }
     }
 
@@ -5731,26 +5906,136 @@ impl Player {
         if m > 0 && m < 6 { m } else { 0 }
     }
 
-    /// `Player_UseItem`: use / change to the item `ap` (as its action param; 0 = put away). For
-    /// the sword this starts the change animation, or, with the sword already in hand, flags the
-    /// press (`sUseHeldItem`) for an attack.
-    fn use_item(&mut self, data: &GameData, ap: i32) {
-        let ok = (self.held_item_ap == self.item_ap && (self.state1 & STATE1_22 == 0 || Self::melee_weapon(ap) != 0 || ap == 0))
-            || (self.item_ap < 0 && (Self::melee_weapon(ap) != 0 || ap == 0));
-        if !ok || !(ap == 0 || self.state1 & STATE1_27 == 0) {
+    /// `Player_ActionToModelGroup`: the item's model group (`sActionModelGroups`), the child's
+    /// sword alone when he wears the Hylian Shield.
+    fn action_to_model_group(&self, data: &GameData, item_action: i32) -> usize {
+        let it = &data.items;
+        let model_group = it.action_model_group[item_action.max(0) as usize];
+        if model_group == it.model_group("SWORD_AND_SHIELD") && self.is_child_with_hylian_shield() { it.model_group("CHILD_HYLIAN_SHIELD") } else { model_group }
+    }
+
+    /// `Player_ActionToMagicSpell`: 0 to 5 for the spells (`PLAYER_IA_MAGIC_SPELL_15` on), else -1.
+    fn action_to_magic_spell(data: &GameData, item_action: i32) -> i32 {
+        let magic_spell = item_action - data.items.ap("MAGIC_SPELL_15");
+        if (0..6).contains(&magic_spell) { magic_spell } else { -1 }
+    }
+
+    /// `Player_ActionToExplosive`: 0 a bomb, 1 a bombchu, else -1.
+    fn action_to_explosive(data: &GameData, item_action: i32) -> i32 {
+        let explosive = item_action - data.items.ap("BOMB");
+        if (0..2).contains(&explosive) { explosive } else { -1 }
+    }
+
+    /// `Player_HoldsHookshot`.
+    fn holds_hookshot(&self, data: &GameData) -> bool {
+        self.held_item_ap == data.items.ap("HOOKSHOT") || self.held_item_ap == data.items.ap("LONGSHOT")
+    }
+
+    /// `func_8008F128`: the hookshot in hand with no hook (`heldActor`) on it. Player holds no
+    /// actor here (`Arms_Hook` isn't ported).
+    fn func_8008f128(&self, data: &GameData) -> bool {
+        self.holds_hookshot(data)
+    }
+
+    /// `func_8008F2BC`: 0 to 2 for the swords (the cutscene's sword is 0), else -1.
+    fn func_8008f2bc(data: &GameData, item_action: i32) -> i32 {
+        let it = &data.items;
+        if item_action == it.ap("SWORD_CS") {
+            return 0;
+        }
+        let sword = item_action - it.ap("SWORD_MASTER");
+        if (0..3).contains(&sword) { sword } else { -1 }
+    }
+
+    /// `Player_DetachHeldActor`: Player holds no actor (nothing is carried here), but an
+    /// explosive in hand goes: no item action, `heldItemId` `ITEM_NONE_FE` (the NTSC 1.1 and later
+    /// order, as the debug ROM has it).
+    fn detach_held_actor(&mut self, data: &GameData) {
+        if Self::action_to_explosive(data, self.held_item_ap) >= 0 {
+            self.next_model_group = self.action_to_model_group(data, 0);
+            self.init_item_action(data, 0);
+            self.held_item_id = oot_game::item::ITEM_NONE_FE;
+        }
+    }
+
+    /// `AMMO(item)` as Player sees it this frame: the save's, refreshed at the start of its update
+    /// and after its own `Inventory_ChangeAmmo` (`Player_SetupAction` reaches `Player_UseItem`
+    /// through `Player_FinishItemChange` without the save at hand).
+    fn ammo(&self, item: u8) -> i8 {
+        self.ammo_view.get(oot_game::item::slot(item)).copied().unwrap_or(0)
+    }
+
+    /// `Inventory_ChangeAmmo(item, change)`, with Player's view of the ammo brought up to date.
+    fn change_ammo(&mut self, env: &Env, item: u8, change: i16) {
+        let mut io = env.io.borrow_mut();
+        oot_game::item::inventory_change_ammo(&mut io.save, item, change);
+        self.ammo_view = io.save.inventory.ammo;
+    }
+
+    /// `Player_UseItem`: use `item` (`ITEM_NONE`: put away what's in hand), from a button or the
+    /// change animation's swap. Only with the item in hand in use (or the shield up and a melee
+    /// weapon or nothing asked for, or no item action at all), and not swimming (but nothing, or
+    /// the hookshot on the ground):
+    /// - no stick, bean or explosive left (or three explosives out): `NA_SE_SY_ERROR`;
+    /// - the lens, nuts, spells, masks, the ocarina and the bottles their own ways (none can be on
+    ///   a button yet: what they'd start is logged);
+    /// - another item: the change animation (`PLAYER_STATE1_START_CHANGING_HELD_ITEM`), or the
+    ///   item at once when the two hold alike;
+    /// - the item in hand: used (`sUseHeldItem`).
+    fn use_item(&mut self, data: &GameData, item: u8) {
+        use oot_game::item::{ITEM_BOMB, ITEM_BOMBCHU, ITEM_DEKU_NUT, ITEM_DEKU_STICK, ITEM_MAGIC_BEAN};
+        let it = &data.items;
+        let item_action = it.item_to_action_param(item);
+        let none = it.ap("NONE");
+        if !((self.held_item_ap == self.item_ap && (self.state1 & STATE1_22 == 0 || Self::melee_weapon(item_action) != 0 || item_action == none))
+            || (self.item_ap < 0 && (Self::melee_weapon(item_action) != 0 || item_action == none)))
+        {
             return;
         }
-        // Sticks, nuts, lens, magic, masks, ocarina and bottles aren't on the buttons here.
-        if ap != self.held_item_ap {
-            let it = &data.items;
-            self.next_model_group = it.action_model_group[ap as usize];
-            let next_type = it.model_group_anim_type[self.next_model_group];
-            let cur_type = it.model_group_anim_type[self.model_group];
-            if self.held_item_ap >= 0 && self.held_item != Some(ap) && it.change_matrix[cur_type][next_type] != 0 {
-                self.held_item = Some(ap);
+        if !(item_action == none || self.state1 & STATE1_27 == 0 || (self.grounded() && (item_action == it.ap("HOOKSHOT") || item_action == it.ap("LONGSHOT")))) {
+            return;
+        }
+        // (play->bombchuBowlingStatus is 0: the bowling alley isn't ported.)
+        let explosive = Self::action_to_explosive(data, item_action);
+        const EXPLOSIVE_ITEMS: [u8; 2] = [ITEM_BOMB, ITEM_BOMBCHU];
+        if (item_action == it.ap("DEKU_STICK") && self.ammo(ITEM_DEKU_STICK) == 0)
+            || (item_action == it.ap("MAGIC_BEAN") && self.ammo(ITEM_MAGIC_BEAN) == 0)
+            || (explosive >= 0 && (self.ammo(EXPLOSIVE_ITEMS[explosive as usize]) == 0 || self.explosive_count >= 3))
+        {
+            // Out of ammo, or three explosives out already.
+            self.sfx(PlayerSfx::NoPos(NA_SE_SY_ERROR));
+        } else if item_action == it.ap("LENS_OF_TRUTH") {
+            self.note("Player_UseItem: the Lens of Truth (Magic_RequestChange, actorCtx.lensActive) isn't ported");
+        } else if item_action == it.ap("DEKU_NUT") {
+            if self.ammo(ITEM_DEKU_NUT) != 0 {
+                self.note("Player_UseItem: func_8083C61C (throwing a Deku Nut, Player_Action_8084E604) isn't ported");
+            } else {
+                self.sfx(PlayerSfx::NoPos(NA_SE_SY_ERROR));
+            }
+        } else if Self::action_to_magic_spell(data, item_action) >= 0 {
+            self.note("Player_UseItem: the spells (the magic meter, unk_6AD 4) aren't ported");
+        } else if item_action >= it.ap("MASK_KEATON") {
+            // The masks (not drawn).
+            self.current_mask = if self.current_mask != PLAYER_MASK_NONE { PLAYER_MASK_NONE } else { (item_action - it.ap("MASK_KEATON") + 1) as u8 };
+            self.func_808328EC(NA_SE_PL_CHANGE_ARMS);
+        } else if (item_action >= it.ap("OCARINA_FAIRY") && item_action <= it.ap("OCARINA_OF_TIME")) || item_action >= it.ap("BOTTLE_FISH") {
+            // The cutscene items: their action (Player_ActionHandler_13 with unk_6AD 4) isn't ported.
+            if !self.check_hostile_lock_on() || (item_action >= it.ap("BOTTLE_POTION_RED") && item_action <= it.ap("BOTTLE_FAIRY")) {
+                self.play_requests.push(PlayRequest::TitleCardClear);
+                self.unk_6AD = 4;
+                self.item_ap = item_action;
+            }
+        } else if item_action != self.held_item_ap || explosive >= 0 {
+            // A new item in hand (an explosive with none held: Player holds no actor here).
+            self.next_model_group = self.action_to_model_group(data, item_action);
+            let next_anim_type = it.model_group_anim_type[self.next_model_group];
+            if self.held_item_ap >= 0 && Self::action_to_magic_spell(data, item_action) < 0 && item != self.held_item_id && it.change_matrix[it.model_group_anim_type[self.model_group]][next_anim_type] != 0 {
+                self.held_item_id = item;
                 self.state1 |= STATE1_8;
             } else {
-                self.init_item_action_with_anim(data, ap);
+                // Player_DestroyHookshot: no hook is held.
+                self.detach_held_actor(data);
+                self.init_item_action_with_anim(data, item_action);
             }
         } else {
             self.s.use_held_item = true;
@@ -5770,14 +6055,42 @@ impl Player {
         }
     }
 
-    /// `Player_InitItemAction`: the item is in hand.
+    /// `Player_InitItemAction`: the item is in hand: `unk_85C`, `unk_858` and `unk_860` zeroed,
+    /// the item's init (`sItemActionInitFuncs`), the model group.
     fn init_item_action(&mut self, data: &GameData, ap: i32) {
+        self.unk_85c = 0.0;
+        self.unk_858 = 0.0;
         self.unk_860 = 0;
         self.held_item_ap = ap;
         self.item_ap = ap;
         self.model_group = self.next_model_group;
         self.state1 &= !(STATE1_3 | STATE1_24);
-        // sItemActionInitFuncs[ap] is Player_InitDefaultIA (empty) for no item and the swords.
+        let it = &data.items;
+        if ap == it.ap("DEKU_STICK") {
+            // Player_InitDekuStickIA: the stick whole.
+            self.unk_85c = 1.0;
+        } else if ap >= it.ap("BOW") && ap <= it.ap("SLINGSHOT") {
+            // Player_InitBowOrSlingshotIA.
+            self.state1 |= STATE1_3;
+            self.unk_860 = if ap != it.ap("SLINGSHOT") { -1 } else { -2 };
+        } else if ap == it.ap("HOOKSHOT") || ap == it.ap("LONGSHOT") {
+            // Player_InitHookshotIA: the hook (Arms_Hook) isn't ported.
+            self.state1 |= STATE1_3;
+            self.unk_860 = -3;
+            self.note("Player_InitHookshotIA: Arms_Hook isn't ported");
+        } else if ap == it.ap("BOMB") || ap == it.ap("BOMBCHU") {
+            // Player_InitExplosiveIA: carrying something, the item goes back; else the bomb
+            // (En_Bom, En_Bom_Chu) would be spawned in hand and its ammo spent.
+            if self.state1 & STATE1_11 != 0 {
+                self.put_away_held_item(data);
+            } else {
+                self.note("Player_InitExplosiveIA: En_Bom and En_Bom_Chu aren't ported");
+            }
+        } else if ap == it.ap("BOOMERANG") {
+            // Player_InitBoomerangIA.
+            self.state1 |= STATE1_24;
+        }
+        // Player_InitDefaultIA and Player_InitHammerIA: nothing.
         self.player_set_model_group(data, self.model_group);
     }
 
@@ -5795,40 +6108,48 @@ impl Player {
         self.set_models_for_holding_shield(data);
     }
 
-    /// `Player_StartChangingHeldItem`: start the change animation on `skelAnime2`.
+    /// `Player_StartChangingHeldItem`: start the change animation on `skelAnime2` (the bottle's and
+    /// the boomerang's own, `PLAYER_ITEM_CHG_13`, in either direction), twice as fast when an
+    /// item comes out.
     fn start_changing_held_item(&mut self, data: &GameData) {
-        let sp37 = self.held_item.unwrap_or(0);
-        self.set_upper_action_func(UpperAction::Change);
         let it = &data.items;
+        let held_item_action = it.item_to_action_param(self.held_item_id);
+        self.set_upper_action_func(UpperAction::Change);
         let next_type = it.model_group_anim_type[self.next_model_group];
-        let sp38 = it.change_matrix[it.model_group_anim_type[self.model_group]][next_type];
-        // Bottle / boomerang use sItemChangeInfo[13]: not on the buttons.
-        self.item_change_type = sp38.unsigned_abs() as usize;
+        let mut item_change_type = it.change_matrix[it.model_group_anim_type[self.model_group]][next_type];
+        let (bottle, boomerang) = (it.ap("BOTTLE"), it.ap("BOOMERANG"));
+        if held_item_action == bottle || held_item_action == boomerang || (held_item_action == it.ap("NONE") && (self.held_item_ap == bottle || self.held_item_ap == boomerang)) {
+            item_change_type = if held_item_action == it.ap("NONE") { -PLAYER_ITEM_CHG_13 } else { PLAYER_ITEM_CHG_13 };
+        }
+        self.item_change_type = item_change_type.unsigned_abs() as usize;
         let mut anim = it.change_anims[self.item_change_type].0;
         if anim == data.anim("link_normal_fighter2free") && self.current_shield == 0 {
             anim = data.anim("link_normal_free2fighter_free");
         }
         let last = data.anims[anim].last_frame();
-        let (mut speed, start, end) = if sp38 >= 0 { (1.2, 0.0, last) } else { (-1.2, last, 0.0) };
-        if sp37 != 0 {
+        let (mut speed, start, end) = if item_change_type >= 0 { (1.2, 0.0, last) } else { (-1.2, last, 0.0) };
+        if held_item_action != it.ap("NONE") {
             speed *= 2.0;
         }
         self.skel2.change(data, anim, speed, start, end, ANIMMODE_ONCE, 0.0);
         self.state1 &= !STATE1_8;
     }
 
-    /// `Player_UpperAction_ChangeHeldItem`: the change playing. On its swap frame the item goes into the hand; once
-    /// it's in hand a B press (or any press for a non-two-handed item) ends the change.
+    /// `Player_UpperAction_ChangeHeldItem`: the change playing. On its swap frame the item goes
+    /// into the hand; once it's in hand, a press (any for an item not held like a sword,
+    /// `PLAYER_ANIMTYPE_3`) ends the change.
     fn upper_action_change_held_item(&mut self, env: &Env) -> bool {
         let data = env.data;
         let done = self.skel2.update(data);
-        let in_hand = self.held_item == Some(self.held_item_ap) && {
+        // (shootingGalleryStatus is 0.)
+        let in_hand = data.items.item_to_action_param(self.held_item_id) == self.held_item_ap && {
             self.s.use_held_item = self.s.use_held_item || self.model_anim_type != 3;
             self.s.use_held_item
         };
         if done || in_hand {
             let f = self.upper_for(data, self.held_item_ap);
             self.set_upper_action_func(f);
+            self.unk_834 = 0;
             self.idle_type = 0;
             self.s.held_item_button_is_held_down = self.s.use_held_item;
             return self.run_upper(env);
@@ -5844,18 +6165,34 @@ impl Player {
         true
     }
 
-    /// `Player_WaitToFinishItemChange`: swap the item on the change animation's swap frame.
+    /// `Player_WaitToFinishItemChange`: swap the item on the change animation's swap frame
+    /// (`sItemChangeInfo`'s, a frame earlier played backwards).
     fn wait_to_finish_item_change(&mut self, env: &Env) {
         let mut t = env.data.items.change_anims[self.item_change_type].1;
         if self.skel2.play_speed < 0.0 {
             t -= 1.0;
         }
         if self.skel2.on_frame(t) {
-            // Player_FinishItemChange: the sword sounds, then Player_UseItem(heldItemId).
-            let ap = self.held_item.unwrap_or(0);
-            self.use_item(env.data, ap);
+            self.finish_item_change(env.data);
         }
         self.player_update_hostile_lock_on_env(env);
+    }
+
+    /// `Player_FinishItemChange`: the item in hand goes (a sword back in its sheath, anything else
+    /// with `NA_SE_PL_CHANGE_ARMS`), `Player_UseItem(heldItemId)`, and the new one comes out the
+    /// same way.
+    fn finish_item_change(&mut self, data: &GameData) {
+        let none = data.items.ap("NONE");
+        if self.held_item_ap != none {
+            self.func_808328EC(if Self::func_8008f2bc(data, self.held_item_ap) >= 0 { NA_SE_IT_SWORD_PUTAWAY } else { NA_SE_PL_CHANGE_ARMS });
+        }
+        let item = self.held_item_id;
+        self.use_item(data, item);
+        if Self::func_8008f2bc(data, self.held_item_ap) >= 0 {
+            self.func_808328EC(NA_SE_IT_SWORD_PICKOUT);
+        } else if self.held_item_ap != none {
+            self.func_808328EC(NA_SE_PL_CHANGE_ARMS);
+        }
     }
 
     /// `Player_ActionHandler_7` (interrupt 7): B with a melee weapon in hand attacks.
@@ -5878,8 +6215,12 @@ impl Player {
         self.state1 & STATE1_22 == 0 && Self::melee_weapon(self.held_item_ap) != 0 && self.s.use_held_item
     }
 
-    /// `Player_CanSpinAttack`: the stick spun a quarter-turn each of the last 3 frames (a quick spin).
-    fn can_spin_attack(&self) -> bool {
+    /// `Player_CanSpinAttack`: the stick spun a quarter-turn each of the last 3 frames (a quick spin);
+    /// never with a Deku Stick or the broken knife.
+    fn can_spin_attack(&self, data: &GameData, sword_health: u16) -> bool {
+        if self.held_item_ap == data.items.ap("DEKU_STICK") || self.holds_broken_knife(data, sword_health) {
+            return false;
+        }
         let mut sp = [0i32; 4];
         for (i, v) in self.control_stick_spin_angles.iter().enumerate() {
             if *v < 0 {
@@ -5900,25 +6241,50 @@ impl Player {
         true
     }
 
-    /// `func_80837818`: which attack, by stick direction (`D_80854480`).
+    /// `Player_HoldsBrokenKnife`: the Biggoron's Sword with no health left.
+    fn holds_broken_knife(&self, data: &GameData, sword_health: u16) -> bool {
+        self.held_item_ap == data.items.ap("SWORD_BIGGORON") && sword_health == 0
+    }
+
+    /// `func_80837818`: which attack: the hammer's by the stick's direction (`D_80854484`); else a
+    /// spin, or by the stick's direction (`D_80854480`: a stab only locked on), a Deku Stick
+    /// always the forward slash; a two-handed weapon (the Biggoron's Sword, the stick, the
+    /// hammer) its two-handed version, the next.
     fn func_80837818(&mut self, env: &Env) -> usize {
         let it = &env.data.items;
-        let sp1c = self.stick_dir();
-        let sp18 = if self.can_spin_attack() {
-            it.mwa("SPIN_ATTACK_1H")
-        } else if sp1c < 0 {
-            if self.is_z_targeting() { it.mwa("FORWARD_SLASH_1H") } else { it.mwa("RIGHT_SLASH_1H") }
+        let mut sp1c = self.stick_dir();
+        let mut sp18;
+        if self.held_item_ap == it.ap("HAMMER") {
+            if sp1c <= -1 {
+                sp1c = 0;
+            }
+            // D_80854484.
+            sp18 = [it.mwa("HAMMER_FORWARD"), it.mwa("HAMMER_SIDE"), it.mwa("HAMMER_FORWARD"), it.mwa("HAMMER_SIDE")][sp1c as usize];
+            self.unk_845 = 0;
         } else {
-            let mut a = it.attack_by_dir[sp1c as usize];
-            if a == it.mwa("STAB_1H") {
-                self.state2 |= STATE2_30;
-                if !self.is_z_targeting() {
-                    a = it.mwa("FORWARD_SLASH_1H");
+            let sword_health = env.io.borrow().save.sword_health;
+            if self.can_spin_attack(env.data, sword_health) {
+                sp18 = it.mwa("SPIN_ATTACK_1H");
+            } else {
+                if sp1c <= -1 {
+                    sp18 = if self.is_z_targeting() { it.mwa("FORWARD_SLASH_1H") } else { it.mwa("RIGHT_SLASH_1H") };
+                } else {
+                    sp18 = it.attack_by_dir[sp1c as usize];
+                    if sp18 == it.mwa("STAB_1H") {
+                        self.state2 |= STATE2_30;
+                        if !self.is_z_targeting() {
+                            sp18 = it.mwa("FORWARD_SLASH_1H");
+                        }
+                    }
+                }
+                if self.held_item_ap == it.ap("DEKU_STICK") {
+                    sp18 = it.mwa("FORWARD_SLASH_1H");
                 }
             }
-            a
-        };
-        // Deku sticks and the two-handed Biggoron's Sword: not held.
+            if self.holds_two_handed_weapon(env.data) {
+                sp18 += 1;
+            }
+        }
         sp18
     }
 
@@ -8220,17 +8586,33 @@ impl Player {
         }
     }
 
-    /// `Player_PostLimbDrawGameplay` for `PLAYER_LIMB_L_HAND`, the sword part: with the weapon
-    /// active, its tip and base from the hand's matrix (`Player_CalcMeleeWeaponTipPositions`), then the quads
-    /// (`Player_UpdateMeleeWeaponInfo`).
+    /// `Player_PostLimbDrawGameplay` for `PLAYER_LIMB_L_HAND`, the weapon part. With a Deku Stick
+    /// in use, its tip (`unk_85C × 5000` along the hand) is tracked every frame: the weapon info
+    /// while it swings, else just the tip (what the torches and webs read); the stick's list is
+    /// drawn by `draw`. Otherwise, with a weapon active, its tip and base from the hand's matrix
+    /// and the quads.
     fn post_limb_draw_l_hand(&mut self, play: &mut PlayState, hand: glam::Mat4) {
-        if self.actor.scale.y < 0.0 || self.melee_weapon_state == 0 {
-            return;
+        if self.item_ap == play.data.items.ap("DEKU_STICK") {
+            if self.actor.scale.y >= 0.0 {
+                let tips = self.calc_melee_weapon_tip_positions(hand, self.unk_85c * 5000.0);
+                if self.melee_weapon_state != 0 {
+                    self.update_melee_weapon_info(play, hand, tips);
+                } else {
+                    self.melee_weapon_info[0].tip = tips[0];
+                }
+            }
+        } else if self.actor.scale.y >= 0.0 && self.melee_weapon_state != 0 {
+            // Player_HoldsBrokenKnife: never (child Link). sMeleeWeaponLengths[Player_GetMeleeWeaponHeld].
+            let len = MELEE_WEAPON_LENGTHS[Self::melee_weapon(self.held_item_ap) as usize];
+            let tips = self.calc_melee_weapon_tip_positions(hand, len);
+            self.update_melee_weapon_info(play, hand, tips);
         }
-        // Player_HoldsBrokenKnife: never. sMeleeWeaponTipOffsetFromLeftHand0.x = sMeleeWeaponLengths[...].
-        let len = MELEE_WEAPON_LENGTHS[Self::melee_weapon(self.held_item_ap) as usize];
+    }
+
+    /// `Player_CalcMeleeWeaponTipPositions` with `sMeleeWeaponTipOffsetFromLeftHand0.x` = `len`: the
+    /// far edge is 1200 longer, and longer still in a combo's third attack.
+    fn calc_melee_weapon_tip_positions(&mut self, hand: glam::Mat4, len: f32) -> [Vec3; 3] {
         let melee_weapon_tip_offset_from_left_hand0 = Vec3::new(len, 400.0, 0.0);
-        // Player_CalcMeleeWeaponTipPositions: the far edge is longer, and longer still in a combo's third attack.
         let mut x = len;
         if self.unk_845 >= 3 {
             // As written: drawing advances unk_845 while the combo attack is active.
@@ -8240,10 +8622,13 @@ impl Player {
         x += 1200.0;
         let melee_weapon_tip_offset_from_left_hand1 = Vec3::new(x, -400.0, 1000.0);
         let melee_weapon_tip_offset_from_left_hand2 = Vec3::new(x, 1400.0, -1000.0);
-        let tips = [hand.transform_point3(melee_weapon_tip_offset_from_left_hand0), hand.transform_point3(melee_weapon_tip_offset_from_left_hand1), hand.transform_point3(melee_weapon_tip_offset_from_left_hand2)];
-        // Player_UpdateMeleeWeaponInfo.
+        [hand.transform_point3(melee_weapon_tip_offset_from_left_hand0), hand.transform_point3(melee_weapon_tip_offset_from_left_hand1), hand.transform_point3(melee_weapon_tip_offset_from_left_hand2)]
+    }
+
+    /// `Player_UpdateMeleeWeaponInfo`: the first edge (the sword trail's: `EffectBlure` isn't
+    /// ported), then while the weapon swings (not a spin, unless `PLAYER_STATE2_17`) the two quads.
+    fn update_melee_weapon_info(&mut self, play: &mut PlayState, hand: glam::Mat4, tips: [Vec3; 3]) {
         let bases = S_MELEE_WEAPON_BASE_OFFSET_FROM_LEFT_HAND0.map(|v| hand.transform_point3(v));
-        // The first edge is the sword trail's (EffectBlure isn't ported).
         update_weapon_info(play, &self.actor, None, &mut self.melee_weapon_info[0], tips[0], bases[0]);
         let spin = play.data.items.mwa("SPIN_ATTACK_1H");
         if self.melee_weapon_state > 0 && (self.melee_weapon_animation < spin || self.state2 & STATE2_17 != 0) {
@@ -8473,6 +8858,10 @@ mod rs {
     pub const ICE_SCALE: usize = 9;
     /// `switches`: the shield in the right hand (`Player_SetModelsForHoldingShield`).
     pub const HOLDING_SHIELD: usize = 10;
+    /// `switches`: a Deku Stick in use (`itemAction == PLAYER_IA_DEKU_STICK`), drawn in the left
+    /// hand; `values`: its length (`unk_85C`).
+    pub const DEKU_STICK: usize = 11;
+    pub const STICK_LENGTH: usize = 5;
 }
 
 impl LookRotations {
@@ -8619,6 +9008,7 @@ impl ActorImpl for Player {
             scene_id: play.scene_id,
             game_over_state: play.game_over_ctx.state,
             room_behavior_type2: play.room_ctx.cur.behavior_type2,
+            active_cam_id: play.active_cam_id,
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for textboxBtnCooldownTimer frames after a talk.
@@ -8728,12 +9118,14 @@ impl ActorImpl for Player {
         angles[rs::ROOT_PITCH] = look.root_pitch;
         // Matrix_RotateZYX(0, play->gameplayFrames * 1000, 0) (Player_DrawGetItemImpl).
         angles[rs::GET_ITEM_SPIN] = (self.gameplay_frames as i32).wrapping_mul(1000) as i16;
-        let mut values = vec![0.0f32; 5];
+        let mut values = vec![0.0f32; 6];
         values[rs::SPEED_XZ] = self.actor.speed_xz;
+        values[rs::STICK_LENGTH] = self.unk_85c;
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 11];
+        let mut switches = vec![0u32; 12];
+        switches[rs::DEKU_STICK] = (self.item_ap == PLAYER_IA_DEKU_STICK) as u32;
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
@@ -8801,6 +9193,17 @@ impl ActorImpl for Player {
             // The hit flash: Link's OPA lists in the red fog (Play_SetFog puts the scene's back).
             let flash = st.switches.get(rs::DAMAGE_FLASH_FAR).copied().unwrap_or(0);
             let fog = (flash != 0).then(|| oot_game::gbi::gfx_set_fog(255, 0, 0, 0, 0, flash as i32));
+            // Player_PostLimbDrawGameplay, PLAYER_LIMB_L_HAND: a Deku Stick in use,
+            // gLinkChildLinkDekuStickDL in the hand (translated, turned, and stretched along its
+            // length by unk_85C), in Link's OPA list.
+            if st.switches.get(rs::DEKU_STICK).copied().unwrap_or(0) != 0 {
+                let hand = root * bones[play.data.limb("L_HAND")];
+                let mut mf = oot_game::sys_matrix::MtxF::from_mat4(hand);
+                mf.translate_rotate_zyx(Vec3::new(-428.26, 267.2, -33.82), [-0x8000, 0, 0x4000]);
+                let m = mf.to_mat4() * Mat4::from_scale(Vec3::new(1.0, st.values[rs::STICK_LENGTH], 1.0));
+                let stick = MeshKey::named(oot_game::pack::keys::mesh("object_link_child", "gLinkChildLinkDekuStickDL"));
+                out.opa.push(DrawCmd { mesh: stick, transform: m, bones: Vec::new(), params: eng_gfx::DrawParams { fog, ..Default::default() } });
+            }
             out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
         }
         // Frozen (PLAYER_STATE2_14): the ice, at Actor_Draw's matrix scaled by
@@ -8904,6 +9307,9 @@ impl PlayerIface for Player {
     }
     /// `Player_InBlockingCsMode` without `transitionTrigger` (magic isn't ported), or
     /// `unk_6AD == 4`.
+    fn env_hazard_state(&self) -> (i16, u8, u8, bool) {
+        (self.underwater_timer, self.current_boots, self.current_tunic, self.grounded())
+    }
     fn in_cs_mode(&self) -> bool {
         self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0 || self.unk_6AD == 4
     }
@@ -9086,6 +9492,9 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             play.quake_set_speed(quake_index, speed as i16);
             play.quake_set_perturbations(quake_index, y as i16, 0, 0, 0);
             play.quake_set_duration(quake_index, duration as i16);
+        }
+        PlayRequest::TitleCardClear => {
+            play.title_ctx.clear();
         }
         PlayRequest::Audio(a) => match a {
             PlayerAudio::BgmVolumeOffDuringFanfare => play.audio.audio_set_bgm_volume_off_during_fanfare(),
