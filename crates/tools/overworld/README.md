@@ -525,3 +525,6 @@ bank are bridged by the forest. Trunks stand on the bank's outer edge, so nothin
 6. **The editor** (`../overworld_editor`): built, with plan and 3D views, path profiles, the brush and Play.
 7. **Play mode** (ADR 0035's consequences): the level as a mod pack so `Play_Init` enters it, actors placed
    in the editor, hookshot targets, exits between levels, and rooms for big levels.
+
+Ideas for more varied levels (rocks, edge profiles, path sections, rivers, measuring, non-destructive editing), not yet
+decided: `docs/OVERWORLD-EDITOR-IDEAS.md`.
