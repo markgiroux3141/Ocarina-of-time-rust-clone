@@ -351,6 +351,23 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "deku-tree-slingshot",
+        about: "deku-tree-sticks, and ten Deku nuts (Item_Give(ITEM_DEKU_NUTS_10)) on C-Down and the Fairy Slingshot with 30 seeds (Item_Give(ITEM_SLINGSHOT)) on C-Right, as the pause menu equips them (GAME-05 milestone 5a)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, ITEM_DEKU_STICKS_10);
+            s.equip_item_on_c(0, ITEM_DEKU_STICK);
+            item_give(s, None, ITEM_DEKU_NUTS_10);
+            s.equip_item_on_c(1, ITEM_DEKU_NUT);
+            item_give(s, None, ITEM_SLINGSHOT);
+            s.equip_item_on_c(2, ITEM_SLINGSHOT);
+        },
+    },
+    SavePreset {
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {
@@ -680,28 +697,54 @@ impl SaveContext {
         any
     }
 
-    /// What the pause menu's item screen does when C-Left equips `item` from its slot
-    /// (`KaleidoScope_UpdateItemEquip`, `z_kaleido_item.c`): an item already on C-Down or C-Right
-    /// swaps with C-Left's (or leaves that button empty), then C-Left gets it
-    /// (`BUTTON_ITEM_EQUIP(0, EQUIP_SLOT_C_LEFT)`, `C_SLOT_EQUIP(0, EQUIP_SLOT_C_LEFT)`; its icon,
-    /// `Interface_LoadItemIcon1`, is the HUD's own draw). The pause menu isn't ported: this is its
-    /// effect, for the presets and the game's equip key.
+    /// What the pause menu's item screen does when C-Left equips `item` from its slot: see
+    /// [`Self::equip_item_on_c`].
     pub fn equip_item_on_c_left(&mut self, item: u8) {
+        self.equip_item_on_c(0, item);
+    }
+
+    /// What the pause menu's item screen does when C button `target` (0 C-Left, 1 C-Down, 2
+    /// C-Right) equips `item` from its slot (`KaleidoScope_UpdateItemEquip`, `z_kaleido_item.c`):
+    /// an item already on one of the other two C buttons swaps with `target`'s (or leaves that
+    /// button empty), then `target` gets it (`BUTTON_ITEM_EQUIP(0, EQUIP_SLOT_C_*)`,
+    /// `C_SLOT_EQUIP`; its icon, `Interface_LoadItemIcon1`, is the HUD's own draw). The bow's
+    /// and its arrows' cases aside. The pause menu isn't ported: this is its effect, for the
+    /// presets and Start's stand-in.
+    pub fn equip_item_on_c(&mut self, target: usize, item: u8) {
         let slot = slot(item) as u8;
-        for c in 1..3 {
-            // (The bow's and its arrows' cases aside.)
-            if self.equips.c_button_slots[c] == slot {
-                if self.equips.button_items[1] != ITEM_NONE {
-                    self.equips.button_items[c + 1] = self.equips.button_items[1];
-                    self.equips.c_button_slots[c] = self.equips.c_button_slots[0];
-                } else {
-                    self.equips.button_items[c + 1] = ITEM_NONE;
-                    self.equips.c_button_slots[c] = SLOT_NONE;
-                }
+        // The C checks the other two buttons in order and swaps with the first that has the slot.
+        if let Some(c) = (0..3).filter(|&c| c != target).find(|&c| self.equips.c_button_slots[c] == slot) {
+            if self.equips.button_items[target + 1] != ITEM_NONE {
+                self.equips.button_items[c + 1] = self.equips.button_items[target + 1];
+                self.equips.c_button_slots[c] = self.equips.c_button_slots[target];
+            } else {
+                self.equips.button_items[c + 1] = ITEM_NONE;
+                self.equips.c_button_slots[c] = SLOT_NONE;
             }
         }
-        self.equips.button_items[1] = item;
-        self.equips.c_button_slots[0] = slot;
+        self.equips.button_items[target + 1] = item;
+        self.equips.c_button_slots[target] = slot;
+    }
+
+    /// Start's stand-in for the pause menu's item screen (GAME-05 milestone 5a): owned Deku nuts
+    /// and an owned Fairy Slingshot each go on the first empty C button (C-Left, C-Down, C-Right)
+    /// for child Link (`gItemAgeReqs`: the child's), unless a C button has them already, as
+    /// [`Self::equip_item_on_c`] equips them. Returns whether any did.
+    pub fn equip_nuts_and_slingshot_on_empty_c(&mut self) -> bool {
+        if self.adult {
+            return false;
+        }
+        let mut any = false;
+        for item in [ITEM_DEKU_NUT, ITEM_SLINGSHOT] {
+            if self.inv_content(item) != item || self.equips.button_items[1..].contains(&item) {
+                continue;
+            }
+            if let Some(t) = (0..3).find(|&t| self.equips.button_items[t + 1] == ITEM_NONE) {
+                self.equip_item_on_c(t, item);
+                any = true;
+            }
+        }
+        any
     }
 
     /// The game's stand-in for the pause menu's item screen: owned Deku Sticks go on an empty

@@ -33,6 +33,8 @@ pub const CHECK_ALL: u32 = CHECK_WALL | CHECK_FLOOR | CHECK_CEILING | CHECK_ONE_
 pub const IGNORE_NONE: u16 = 0;
 pub const IGNORE_CAMERA: u16 = 1 << 0;
 pub const IGNORE_ENTITY: u16 = 1 << 1;
+/// `COLPOLY_IGNORE_PROJECTILES` (`bgcheck.h`).
+pub const IGNORE_PROJECTILES: u16 = 1 << 2;
 
 // downChkFlags
 pub const DOWN_CHECK_CEILINGS: u32 = 1 << 0;
@@ -931,6 +933,26 @@ impl CollisionContext {
             bcc |= CHECK_ONE_FACE;
         }
         self.check_line_skip(IGNORE_ENTITY, IGNORE_NONE, a, b, chk_dist, bcc, Some(own_bg))
+    }
+
+    /// `BgCheck_ProjectileLineTest`: `BgCheck_EntityLineTest1` past the polys projectiles go
+    /// through (`COLPOLY_IGNORE_PROJECTILES` rather than `COLPOLY_IGNORE_ENTITY`), bg actors
+    /// included.
+    pub fn projectile_line_test(&self, a: Vec3, b: Vec3, wall: bool, floor: bool, ceil: bool, one_face: bool) -> Option<(Vec3, PolyId)> {
+        let mut bcc = CHECK_DYNA;
+        if wall {
+            bcc |= CHECK_WALL;
+        }
+        if floor {
+            bcc |= CHECK_FLOOR;
+        }
+        if ceil {
+            bcc |= CHECK_CEILING;
+        }
+        if one_face {
+            bcc |= CHECK_ONE_FACE;
+        }
+        self.check_line(IGNORE_PROJECTILES, IGNORE_NONE, a, b, 1.0, bcc)
     }
 
     /// `BgCheck_GetWaterSurface`: the surface height of the first water box (for `room`, or one

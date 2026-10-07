@@ -86,7 +86,20 @@ impl LoadPlayerRules for PlayerRules {
             .map(|p| bytes(p, &macros).map(|b| [b[0], b[1]]))
             .collect::<Result<Vec<_>>>()?;
 
+        // Player_OverrideLimbDrawGameplayFirstPerson's tables, by the limb each replaces.
+        let first_person_dls = [
+            (LIMB_L_FOREARM, "sFirstPersonLeftForearmDLs"),
+            (LIMB_L_HAND, "sFirstPersonLeftHandDLs"),
+            (LIMB_R_SHOULDER, "sFirstPersonRightShoulderDLs"),
+            (LIMB_R_FOREARM, "sFirstPersonForearmDLs"),
+            (LIMB_R_HAND, "sFirstPersonRightHandHoldingWeaponDLs"),
+        ]
+        .into_iter()
+        .map(|(limb, name)| Ok((limb, names(&find_initializer(&lib, name)?))))
+        .collect::<Result<Vec<_>>>()?;
+
         Ok(PlayerRules {
+            first_person_dls,
             dl_groups,
             model_groups,
             shields,

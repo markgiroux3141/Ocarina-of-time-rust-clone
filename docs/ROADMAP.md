@@ -94,7 +94,13 @@ pack format 21. Milestone 4c, pushing and Master Quest's extras, is done
 ([ADR 0043](adr/0043-push-and-pull.md), [ADR 0044](adr/0044-master-quests-extras-and-room-travel.md)):
 Player's push and pull, room 3's push block into the pit, the gravestones, the Song of Time's
 blocks and the rocks (their song and explosions injected), and a test walking every connection
-milestone 4 opened; pack format 22. Next: milestone 5, items in use.
+milestone 4 opened; pack format 22. Milestone 5, items in use, is split in three (decided
+2026-10-07): 5a, the Fairy Slingshot and Deku nuts, is done
+([ADR 0045](adr/0045-the-fairy-slingshot-first-person-and-deku-nuts.md),
+[ADR 0046](adr/0046-en-arrow-the-nuts-stun-and-the-flash.md)): Player's slingshot and first person
+(C-Up's look and the aim, `Camera_Subj3`), the nut's throw, `En_Arrow`, `En_M_Fire1`,
+`Effect_Ss_Stone1` and the screen's flash, the eye switches and room 2's ladder hit for real, the
+room travel test round rooms 1 to 8; pack format 23. Next: 5b, the pause menu.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -310,12 +316,26 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
      through from one start (`--test travel`).
      - **Exit:** room 3's block pushed off into the pit and climbed. *(Done: `Route::Push`, the
        golden `push`. Room 7's gravestones are sunk too low in Master Quest to hold on to.)*
-5. **Items in use:**
-   - Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot (`EnArrow` for seeds);
-   - the C buttons in full (`Player_ProcessItemButtons` and `Player_UseItem` are whole since 4b:
-     the other items' branches log what they'd start);
-   - a minimal pause menu for equipping (`z_kaleido_scope` is about 7,700 lines, so only the item screen at first);
-   - saving (`z_sram.c`).
+5. **Items in use,** split in three (decided 2026-10-07; see [GAME-05](GAME-05-deku-tree.md)
+   milestone 5's survey):
+   - **5a, the Fairy Slingshot and Deku nuts** (done: see [GAME-05](GAME-05-deku-tree.md)
+     milestone 5a, ADRs [0045](adr/0045-the-fairy-slingshot-first-person-and-deku-nuts.md) and
+     [0046](adr/0046-en-arrow-the-nuts-stun-and-the-flash.md)): Player's bow and slingshot
+     actions, first person (C-Up's look and the aim) with `Camera_Subj3`, the nut's throw,
+     `heldActor`; `En_Arrow` whole (the adult arrows' trail and the magic arrows logged),
+     `En_M_Fire1`, `Effect_Ss_Stone1`, the screen's flash; Start's stand-in putting nuts and the
+     slingshot on C buttons; the eye switches, room 2's ladder and room 10's chest for real; the
+     room travel test round rooms 1 to 8; BACKLOG #18.
+     - **Exit:** from room 1, the slingshot aimed in first person at the eye, the door to room 2
+       unbarred, and through it. *(Done: `Route::Slingshot`, the golden `slingshot`.)*
+   - **5b, the pause menu:** its frame (`KaleidoSetup`, the open and close, the pages' box and
+     turns, the cursor, the name and info panels), the item page and the dungeon map page (with
+     its marks) whole, the equipment and quest pages' backgrounds with their contents logged; the
+     C buttons equipped from it, replacing the item half of Start's stand-in; the game over
+     screens drawn.
+   - **5c, saving:** `z_sram.c`'s save and load whole, the slots on disk in the C's layout, the
+     pause menu's save prompt, the game over's `Sram_WriteSave`, and a stand-in for the file
+     select's load.
 6. **Gohma:**
    - `Boss_Goma` (about 2,100 lines); her eggs and larvae (`En_Goma`) are pulled forward to 3b;
    - the boss room's camera and cutscenes (Phase 4's cutscene system);

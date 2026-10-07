@@ -2161,3 +2161,49 @@ fn oc_cyl_vs_cyl(left: &mut ColliderCylinder, _rl: ColliderRef, right: &mut Coll
         set_oc_vs_oc(&mut left.base, &mut left.info, lp, &mut right.base, &mut right.info, rp, dead_space, actors);
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// z_player_lib.c's weapon edges
+// ---------------------------------------------------------------------------------------------
+
+/// `WeaponInfo` (`player.h`): a weapon's edge as it was last drawn.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WeaponInfo {
+    pub active: bool,
+    /// `posA`: for a melee weapon its tip (the end away from the hand).
+    pub pos_a: Vec3,
+    /// `posB`: its base (by the hand).
+    pub pos_b: Vec3,
+}
+
+/// `Player_UpdateWeaponInfo` (`z_player_lib.c`), for any actor's weapon: moves the edge `info`
+/// to `new_pos_a`, `new_pos_b`. The first time it only records it (and resets the quad's AT);
+/// an edge that hasn't moved resets the AT and says so; one that moved stretches the quad
+/// (`collider`: the owner's collider `id`) from the old edge to the new one
+/// (`Collider_SetQuadVertices(collider, newPosB, newPosA, &posB, &posA)`) and attacks with it
+/// (`CollisionCheck_SetAT`). Returns whether the edge is new or moved.
+pub fn player_update_weapon_info(play: &mut crate::play::PlayState, owner: &Actor, collider: Option<(u8, &mut ColliderQuad)>, info: &mut WeaponInfo, new_pos_a: Vec3, new_pos_b: Vec3) -> bool {
+    if !info.active {
+        if let Some((_, c)) = collider {
+            c.reset_at();
+        }
+        info.pos_a = new_pos_a;
+        info.pos_b = new_pos_b;
+        info.active = true;
+        true
+    } else if info.pos_a.x == new_pos_a.x && info.pos_a.y == new_pos_a.y && info.pos_a.z == new_pos_a.z && info.pos_b.x == new_pos_b.x && info.pos_b.y == new_pos_b.y && info.pos_b.z == new_pos_b.z {
+        if let Some((_, c)) = collider {
+            c.reset_at();
+        }
+        false
+    } else {
+        if let Some((id, c)) = collider {
+            c.set_vertices(new_pos_b, new_pos_a, info.pos_b, info.pos_a);
+            play.collision_check_set_at(owner, id, c);
+        }
+        info.pos_b = new_pos_b;
+        info.pos_a = new_pos_a;
+        info.active = true;
+        true
+    }
+}

@@ -220,6 +220,11 @@ pub enum Step {
     BlockInPit,
     /// Down in the pit beside the block, climbed onto it: standing on its top.
     OnBlock,
+    /// The Fairy Slingshot drawn with a seed in first person (`func_808351D4`'s wait, `heldActor`
+    /// set, `Player_Action_8084B1D8`).
+    SlingshotDrawn,
+    /// A seed shot into an eye switch: its flag set (`Obj_Switch`'s eye, closed).
+    EyeShot,
 }
 
 impl Step {
@@ -275,6 +280,8 @@ impl Step {
             Step::BlockGrabbed => "block_grabbed",
             Step::BlockInPit => "block_in_pit",
             Step::OnBlock => "on_block",
+            Step::SlingshotDrawn => "slingshot_drawn",
+            Step::EyeShot => "eye_shot",
         }
     }
 }
@@ -320,6 +327,11 @@ pub enum Route {
     /// chime), then down into the pit beside it and up onto it (GAME-05 milestone 4c), from a
     /// debug start on the upper floor behind the block (`PUSH_START`).
     Push,
+    /// Inside the Deku Tree, the Fairy Slingshot out from C-Right and aimed in first person at
+    /// room 1's eye switch, a seed shot into it (flag 0x0C, the door to room 2 unbarred with its
+    /// camera), and through that door into room 2 (GAME-05 milestone 5a), from a debug start 250
+    /// in front of the eye (`SLINGSHOT_START`, the `deku-tree-slingshot` preset).
+    Slingshot,
 }
 
 /// The `Push` route's block: room 3's `Obj_Oshihiki` (params 0xFFC0, small) on the upper floor,
@@ -429,6 +441,44 @@ pub const STICK_STARTS: [(i8, Vec3, i16, &str, &[i32]); 5] = [
     (2, Vec3::new(-1214.0, 408.0, 1208.0), 0, "room2", &[]),
 ];
 
+/// Room 1's eye switch (`Obj_Switch` 0x0C02, facing 0x6000, over the door to room 2: its flag
+/// 0x0C opens it), and room 3's (0x1502, facing -z, over the door to room 4: flag 0x15).
+pub const ROOM1_EYE_HOME: Vec3 = Vec3::new(-920.0, 542.0, 918.0);
+pub const ROOM1_EYE_FLAG: i32 = 0x0C;
+pub const ROOM3_EYE_HOME: Vec3 = Vec3::new(-76.0, -727.0, 551.0);
+pub const ROOM3_EYE_FLAG: i32 = 0x15;
+/// Room 2's ladder (`Bg_Ydan_Maruta` 0x0121, facing -0x2000, 280 above the floor until a seed hits
+/// it: flag 0x21).
+pub const ROOM2_LADDER_HOME: Vec3 = Vec3::new(-1066.0, 560.0, 1066.0);
+pub const ROOM2_LADDER_FLAG: i32 = 0x21;
+/// Room 10's chest with the Fairy Slingshot (`En_Box` 0x10A6: `GI_SLINGSHOT`, flag 6, appearing
+/// when the room is cleared).
+pub const ROOM10_SLINGSHOT_CHEST_HOME: Vec3 = Vec3::new(-1082.0, 820.0, 387.0);
+/// The eye's front: its triangles are 8.5 in front of its home (`sEyeTrisElementsInit`), along
+/// its facing (0x6000).
+pub const ROOM1_EYE_FRONT: Vec3 = Vec3::new(6.01, 0.0, -6.01);
+/// Room 1's door to room 2 (transition 5, at (-936, 400, 936) facing 0x6000), and where Link lines
+/// up in front of it on room 1's side.
+pub const ROOM1_DOOR: usize = 5;
+pub const ROOM1_DOOR_FRONT: Vec3 = Vec3::new(-915.0, 400.0, 915.0);
+/// Where `Route::Slingshot` starts Link: room 1, 250 in front of the eye, facing it.
+pub const SLINGSHOT_START: (Vec3, i16) = (Vec3::new(-743.0, 400.0, 741.0), -0x2000);
+/// The debug starts with the slingshot (GAME-05 milestone 5a, `game-slingshot.bat`, the
+/// `deku-tree-slingshot` preset): `(room, position, yaw, name)`. `oot_actors --test
+/// debug_starts` checks each: Link stands, and the room doesn't change.
+/// - `room1`: room 1, 250 in front of its eye switch, facing it: `Route::Slingshot`'s start;
+/// - `room3`: room 3's floor under its eye switch, facing it (+z);
+/// - `room2`: room 2's floor south-west of the ladder, facing it, where the lift (`Obj_Lift`, its
+///   top 408) doesn't block the shot (the travel test's spot);
+/// - `room10`: in front of room 10's slingshot chest (its front is the side away from its facing,
+///   +z: Link stands south of it facing +z); the chest appears once the room's enemies are gone.
+pub const SLINGSHOT_STARTS: [(i8, Vec3, i16, &str); 4] = [
+    (1, SLINGSHOT_START.0, SLINGSHOT_START.1, "room1"),
+    (3, Vec3::new(-76.0, -880.0, 351.0), 0, "room3"),
+    (2, Vec3::new(-1130.0, 280.0, 1360.0), 30533, "room2"),
+    (10, Vec3::new(-1082.0, 820.0, 300.0), 0, "room10"),
+];
+
 /// A debug start in `room` of the scene `w` was just entered in: the room requested
 /// (`Room_RequestNewRoom`), a frame for it to load, the change finished
 /// (`Room_FinishRoomChange`), then Link placed at `pos` facing `yaw` (what `Route::debug_start`
@@ -460,7 +510,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -471,6 +521,7 @@ impl Route {
             Route::DekuTree => Some("deku-tree-open"),
             Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Push => Some("deku-tree-inside"),
             Route::Stick => Some("deku-tree-sticks"),
+            Route::Slingshot => Some("deku-tree-slingshot"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -484,6 +535,7 @@ impl Route {
             Route::Shutter => Some(SHUTTER_START),
             Route::Stick => Some(STICK_START),
             Route::Push => Some(PUSH_START),
+            Route::Slingshot => Some(SLINGSHOT_START),
             _ => None,
         }
     }
@@ -496,18 +548,34 @@ impl Route {
         }
     }
 
+    /// The rooms a debug start marks cleared (`Flags_SetClear`) before it changes room: their
+    /// enemies don't spawn (`Actor_Spawn`), as on a save that beat them. Room 1's big Deku Baba
+    /// wakes within 500 of Link anywhere on its floor and fights him: the slingshot's run isn't
+    /// about it.
+    pub fn start_clears(self) -> &'static [i8] {
+        match self {
+            Route::Slingshot => &[1],
+            _ => &[],
+        }
+    }
+
     /// The room a debug start changes to after `Play_Init`, if any.
     pub fn start_room(self) -> Option<i8> {
         match self {
             Route::Scrub => Some(SCRUB_START_ROOM),
             Route::Push => Some(3),
+            Route::Slingshot => Some(1),
             _ => None,
         }
     }
 
-    /// The debug start on a play state just entered at `entrance()`: the start's room
-    /// (`Room_RequestNewRoom`, a frame for it to load, `Room_FinishRoomChange`), then Link placed.
+    /// The debug start on a play state just entered at `entrance()`: the rooms it marks cleared,
+    /// the start's room (`Room_RequestNewRoom`, a frame for it to load, `Room_FinishRoomChange`),
+    /// then Link placed.
     pub fn debug_start(self, w: &mut PlayState) {
+        for &room in self.start_clears() {
+            w.flags.set_clear(room);
+        }
         if let Some(room) = self.start_room()
             && w.room_request(room)
         {
@@ -555,6 +623,7 @@ impl Route {
             Route::Shutter => "shutter",
             Route::Stick => "stick",
             Route::Push => "push",
+            Route::Slingshot => "slingshot",
         }
     }
 
@@ -569,13 +638,14 @@ impl Route {
             Route::Shutter => 3000,
             Route::Stick => 3000,
             Route::Push => 3000,
+            Route::Slingshot => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -670,6 +740,13 @@ enum Task {
     /// A held and the stick forward until this switch flag is set, holding on again if he lets
     /// go (a text that opens is read first).
     PushBlock(Vec3, i32, Step),
+    /// C-Right held until the slingshot is drawn with a seed in hand in first person.
+    DrawSlingshot(Step),
+    /// C-Right still held, the stick steering the aim until the seed in hand points at this
+    /// position, then let go, until this switch flag is set (a miss draws again).
+    Shoot(Vec3, i32, Step),
+    /// A until first person is over.
+    LeaveFirstPerson,
     /// At the push block (from beside it, lower down) until Link stands on its top.
     ClimbBlock(Step),
 }
@@ -773,6 +850,15 @@ impl Playthrough {
                 Task::BurnWeb(STICK_WEB_HOME, Step::WebBurnt),
                 Task::OpenSlidingDoor(STICK_DOOR, STICK_DOOR_FRONT, Step::DoorOpened),
                 Task::WaitDoorShut(STICK_DOOR, Step::ThroughDoor),
+            ],
+            Route::Slingshot => vec![
+                Task::DrawSlingshot(Step::SlingshotDrawn),
+                Task::Shoot(ROOM1_EYE_HOME + ROOM1_EYE_FRONT, ROOM1_EYE_FLAG, Step::EyeShot),
+                Task::LeaveFirstPerson,
+                // The door to room 2 unbars with its attention camera.
+                Task::WaitCameras,
+                Task::OpenSlidingDoor(ROOM1_DOOR, ROOM1_DOOR_FRONT, Step::DoorOpened),
+                Task::WaitDoorShut(ROOM1_DOOR, Step::ThroughDoor),
             ],
             Route::Push => vec![
                 Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
@@ -1275,6 +1361,15 @@ impl Playthrough {
             Task::GrabBlock(home, step) => self.grab_block(w, home, step),
             Task::PushBlock(home, flag, step) => self.push_block(w, home, flag, step),
             Task::ClimbBlock(step) => self.climb_block(w, step),
+            Task::DrawSlingshot(step) => self.draw_slingshot(w, step),
+            Task::Shoot(target, flag, step) => self.shoot(w, target, flag, step),
+            Task::LeaveFirstPerson => {
+                if w.player().unk_6AD == 0 {
+                    self.finish(None);
+                    return None;
+                }
+                Some(self.press(BTN_A))
+            }
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -1671,6 +1766,80 @@ impl Playthrough {
             return None;
         }
         if p.held_item_id == oot_game::item::ITEM_DEKU_STICK { Some(PadState::default()) } else { Some(self.press(eng_input::pad::BTN_CLEFT)) }
+    }
+
+    /// `Task::DrawSlingshot`: C-Right held until the slingshot is drawn (`unk_836` set, the wait)
+    /// with a seed in hand, in first person.
+    fn draw_slingshot(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let p = w.player();
+        if p.held_actor.is_some() && p.unk_836 > 0 && p.action == crate::player::Action::FirstPerson {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 120 {
+            self.failure = Some(format!("the slingshot was never drawn (held {}, C-Right {:#x}, seeds {})", p.held_item_ap, w.save.equips.button_items[3], w.save.ammo(oot_game::item::ITEM_SLINGSHOT)));
+            return None;
+        }
+        Some(PadState { button: eng_input::pad::BTN_CRIGHT, ..Default::default() })
+    }
+
+    /// `Task::Shoot`: aiming in first person, C-Right held: the seed in hand's direction (its
+    /// `world.rot`, from the left hand's matrix: what `Actor_SetProjectileSpeed` shoots it along)
+    /// steered at `target` with the stick (`func_8084ABD8`: each frame `(1 - cos(stick * 200)) *
+    /// 1500`; the stick's magnitude the largest whose step is within the error), then C-Right let
+    /// go within 64 of it, and idle until the flag is set. A seed that misses: drawn again.
+    fn shoot(&mut self, w: &PlayState, target: Vec3, flag: i32, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        if w.flags.get_switch(flag) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("no seed hit flag {flag:#x}'s eye at {target}"));
+            return None;
+        }
+        let p = w.player();
+        let held = PadState { button: eng_input::pad::BTN_CRIGHT, ..Default::default() };
+        match self.sub {
+            0 => {
+                if p.held_actor.is_some() && p.unk_836 > 0 && p.unk_6AD == 2 {
+                    self.sub = 1;
+                }
+                Some(held)
+            }
+            1 => {
+                let Some(seed) = p.held_actor.and_then(|h| w.actors.actor(h)) else {
+                    self.sub = 0;
+                    return Some(held);
+                };
+                // Math_Vec3f_Yaw and Math_Vec3f_Pitch from the seed (rot.x is the pitch down).
+                let d = target - seed.world_pos;
+                let want_yaw = eng_math::vec3f_yaw(seed.world_pos, target);
+                let want_pitch = eng_math::atan2_s((d.x * d.x + d.z * d.z).sqrt(), -d.y);
+                let (ey, ep) = (want_yaw.wrapping_sub(seed.world_rot.y) as i32, want_pitch.wrapping_sub(seed.world_rot.x) as i32);
+                if ey.abs() < 64 && ep.abs() < 64 {
+                    self.sub = 2;
+                    self.tries = 0;
+                    return Some(idle);
+                }
+                // The largest stick (past the dead zone of 7) whose step is within the error.
+                let stick = |err: i32| -> i8 {
+                    let s = (1..=60).rev().find(|&s: &i32| ((1.0 - eng_math::cos_s((s * 200) as i16)) * 1500.0) as i32 <= err.abs() * 3 / 4).unwrap_or(0);
+                    if s == 0 { 0 } else { ((s + 7) * err.signum()) as i8 }
+                };
+                // A negative stick x turns the focus's yaw up; a positive stick y pitches it down.
+                Some(PadState { button: eng_input::pad::BTN_CRIGHT, stick_x: -stick(ey), stick_y: stick(ep) })
+            }
+            _ => {
+                self.tries += 1;
+                if self.tries > 40 {
+                    self.sub = 0;
+                }
+                Some(idle)
+            }
+        }
     }
 
     /// `Task::LightStick`: until the stick's `unk_860` is set (it caught fire), Link steered so the
@@ -2550,5 +2719,17 @@ impl Playthrough {
                 }
             },
         }
+    }
+}
+
+impl Playthrough {
+    /// A slingshot shot from wherever Link stands (the travel test's shots, GAME-05 milestone 5a):
+    /// `Task::DrawSlingshot`, `Task::Shoot` at `target` until switch flag `flag` is set, then
+    /// `Task::LeaveFirstPerson`; steps `SlingshotDrawn` and `EyeShot` (the flag set, whatever it
+    /// opens). `Route::Slingshot`'s frame cap.
+    pub fn slingshot_shot(target: Vec3, flag: i32) -> Playthrough {
+        let mut p = Self::for_route(Route::Slingshot);
+        p.tasks = vec![Task::DrawSlingshot(Step::SlingshotDrawn), Task::Shoot(target, flag, Step::EyeShot), Task::LeaveFirstPerson];
+        p
     }
 }

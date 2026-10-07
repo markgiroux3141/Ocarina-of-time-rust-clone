@@ -79,7 +79,9 @@ pub fn is_fade_type(t: u8) -> bool {
 /// `TransitionFade` (`z_fbdemo_fade.c`), the instance every in-game transition here uses.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TransitionFade {
-    /// 0: none, 1: timed fade, 2: `iREG(50)`-driven (unused here).
+    /// `TransitionFadeType`: 0 none, 1 a timed fade (`TRANS_FADE_TYPE_ONE_WAY`), 2 the flash
+    /// `R_TRANS_FADE_FLASH_ALPHA_STEP` drives (`TRANS_FADE_TYPE_FLASH`: Play's
+    /// `transitionFadeFlash`).
     pub fade_type: u8,
     /// 1: from covered to clear (arriving), 0: from clear to covered (leaving).
     pub fade_direction: u8,
@@ -123,16 +125,43 @@ impl TransitionFade {
         self.is_done = false;
     }
 
-    /// `TransitionFade_Update`: `update_rate` is `R_UPDATE_RATE` (3).
-    pub fn update(&mut self, update_rate: u16, fade_duration: u16) {
-        if self.fade_type == 1 {
-            self.fade_timer += update_rate;
-            if self.fade_timer >= fade_duration {
-                self.fade_timer = fade_duration;
-                self.is_done = true;
+    /// `TransitionFade_Update`: `update_rate` is `R_UPDATE_RATE` (3), `fade_duration`
+    /// `gSaveContext.transFadeDuration`, `flash_alpha_step` `R_TRANS_FADE_FLASH_ALPHA_STEP`
+    /// (`iREG(50)`, `regs.h`).
+    ///
+    /// The flash (`TRANS_FADE_TYPE_FLASH`): a negative step starts it, the alpha straight to 255
+    /// (`Math_StepToS(.., 255, 255)`) and the step to 150; a positive one steps itself towards 20
+    /// by 60 (150, 90, 30, 20, 20 ...) and the alpha down by it to 0, where the step goes back to
+    /// 0 and the fade is done. A step of 0 leaves the alpha as it is.
+    pub fn update(&mut self, update_rate: u16, fade_duration: u16, flash_alpha_step: &mut i16) {
+        match self.fade_type {
+            1 => {
+                self.fade_timer += update_rate;
+                if self.fade_timer >= fade_duration {
+                    self.fade_timer = fade_duration;
+                    self.is_done = true;
+                }
+                let alpha = ((255.0 * self.fade_timer as f32) / fade_duration.max(1) as f32) as i32;
+                self.color[3] = if self.fade_direction != 0 { 255 - alpha } else { alpha } as u8;
             }
-            let alpha = ((255.0 * self.fade_timer as f32) / fade_duration.max(1) as f32) as i32;
-            self.color[3] = if self.fade_direction != 0 { 255 - alpha } else { alpha } as u8;
+            2 => {
+                let mut new_alpha = self.color[3] as i16;
+                if *flash_alpha_step != 0 {
+                    if *flash_alpha_step < 0 {
+                        if eng_math::step_to_s(&mut new_alpha, 255, 255) {
+                            *flash_alpha_step = 150;
+                        }
+                    } else {
+                        eng_math::step_to_s(flash_alpha_step, 20, 60);
+                        if eng_math::step_to_s(&mut new_alpha, 0, *flash_alpha_step) {
+                            *flash_alpha_step = 0;
+                            self.is_done = true;
+                        }
+                    }
+                }
+                self.color[3] = new_alpha as u8;
+            }
+            _ => {}
         }
     }
 
@@ -141,6 +170,10 @@ impl TransitionFade {
         (self.color[3] > 0).then_some(self.color)
     }
 }
+
+/// `TRANS_INSTANCE_TYPE_FADE_FLASH` (`transition_instances.h`): what `TransitionFade_SetType`
+/// makes a flash.
+pub const TRANS_INSTANCE_TYPE_FADE_FLASH: i32 = 3;
 
 /// `RGBA8(r, g, b, a)`.
 pub const fn rgba8(r: u8, g: u8, b: u8, a: u8) -> u32 {

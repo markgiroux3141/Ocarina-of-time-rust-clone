@@ -22,7 +22,7 @@ mod passes;
 mod pipelines;
 mod view;
 
-pub use device::{COLOR_FORMAT, SAMPLES, Target, headless_device};
+pub use device::{COLOR_FORMAT, NON_FEATURES, SAMPLES, Target, headless_device};
 pub use lists::{MeshCache, MeshSource};
 pub use model::GpuModel;
 pub use passes::Screen;

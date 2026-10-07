@@ -137,6 +137,10 @@ fn a_knockback_hit_knocks_link_down() {
     // From in front (|yRot| > 0x4000): gPlayerAnim_link_normal_front_downA.
     assert_eq!(w.data.anim_name(p.skel.animation), "link_normal_front_downA");
     assert_eq!(w.save.health, health - 8);
+    // Player_UpdateCamAndSeqModes: knocked down (Player_Action_8084377C), the main camera is asked
+    // for CAM_MODE_STILL (BACKLOG #18), which the course's setting has.
+    assert_eq!(p.update_cam_and_seq_modes(), Some((oot_game::camera::CAM_MODE_STILL, None)));
+    assert_eq!(w.game_camera.mode, oot_game::camera::CAM_MODE_STILL);
 }
 
 #[test]

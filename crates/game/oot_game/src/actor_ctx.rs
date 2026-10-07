@@ -105,6 +105,15 @@ pub trait PlayerIface {
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;
+    /// Player's part of `Player_InBlockingCsMode` (`z_player_lib.c`): everything but
+    /// `play->transitionTrigger == TRANS_TRIGGER_START` (magic isn't ported).
+    fn in_blocking_cs_mode(&self) -> bool {
+        false
+    }
+    /// `unk_A73`: 4 when a seed or an arrow is let go, counted down each update.
+    fn unk_a73(&self) -> u8 {
+        0
+    }
     /// What `Player_GetEnvironmentalHazard` reads of Player: `underwaterTimer`, `currentBoots`,
     /// `currentTunic`, and whether he's on the ground (`BGCHECKFLAG_GROUND`).
     fn env_hazard_state(&self) -> (i16, u8, u8, bool) {
@@ -685,4 +694,24 @@ pub fn actor_draw_door_lock(out: &mut DrawOut, base: &crate::sys_matrix::MtxF, f
     let mut m = base_mtx;
     m.scale(scale, scale, scale);
     out.opa.push(eng_gfx::DrawCmd::new(mesh(entry.lock_dl), m.to_mat4()));
+}
+
+/// `FLOOR_TYPE_8` (`bgcheck.h`): Jabu-Jabu's walls.
+pub const FLOOR_TYPE_8: u32 = 8;
+
+/// `func_8002F9EC`: a projectile (the updating actor) hitting `poly` at `pos`: a poly of
+/// `FLOOR_TYPE_8` (Jabu-Jabu's flesh) sets `roomCtx.drawParams[0]` 1 for the scene's draw
+/// config, bleeds blue (`CollisionCheck_BlueBlood(play, NULL, pos)`) and plays
+/// `NA_SE_IT_WALL_HIT_BUYO` at the actor (`Actor_PlaySfx`). Returns whether it was one.
+pub fn func_8002f9ec(play: &mut PlayState, poly: eng_collision::bgcheck::PolyId, pos: Vec3) -> bool {
+    use crate::surface::SurfaceType;
+    if play.col.floor_type(poly) == FLOOR_TYPE_8 {
+        if let Some(s) = &mut play.scene {
+            s.draw.room_draw_params[0] = 1;
+        }
+        play.collision_check_hit_fx(vec![crate::collision_check::HitFx::Blood(crate::collision_check::BLOOD_BLUE, pos)]);
+        audio_play_actor_sfx2(play, crate::audio::sfx::NA_SE_IT_WALL_HIT_BUYO);
+        return true;
+    }
+    false
 }

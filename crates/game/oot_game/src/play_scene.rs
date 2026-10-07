@@ -471,6 +471,12 @@ impl PlayState {
         play.env_ctx = env::EnvCtx::init(ld.skybox.light_mode, day, sky, play.save.day_time);
         play.env_statics.init();
         play.vis_mono_color[3] = 0;
+        // Play_Init, after Letterbox_Init: the flash (TransitionFade_Init, _SetType(FADE_FLASH),
+        // _SetColor(RGBA8(160, 160, 160, 255)), _Start: clear).
+        play.transition_fade_flash = crate::transition::TransitionFade::default();
+        play.transition_fade_flash.set_type(crate::transition::TRANS_INSTANCE_TYPE_FADE_FLASH);
+        play.transition_fade_flash.set_color(crate::transition::rgba8(160, 160, 160, 255));
+        play.transition_fade_flash.start();
         // envCtx->timeSeqState = TIMESEQ_DAY_BGM (z_kankyo.c:292).
         play.time_seq_state = crate::audio::scene::TIMESEQ_DAY_BGM;
         play.cs_ctx.npc_actions = [None; 10];
@@ -591,6 +597,8 @@ impl PlayState {
                 // gWeatherMode and the lightning bolts are z_kankyo.c's (Environment_Init resets the
                 // strike and the bolts, which play_init_with did on next's defaults).
                 next.env_statics.weather_mode = self.env_statics.weather_mode;
+                // R_TRANS_FADE_FLASH_ALPHA_STEP is a debug register (gRegEditor's).
+                next.trans_fade_flash_alpha_step = self.trans_fade_flash_alpha_step;
                 *self = next;
             }
             Err(e) => {
@@ -797,7 +805,7 @@ impl PlayState {
                     self.transition.trigger = TRANS_TRIGGER_OFF;
                 } else {
                     let d = self.save.trans_fade_duration;
-                    self.transition.fade.update(R_UPDATE_RATE, d);
+                    self.transition.fade.update(R_UPDATE_RATE, d, &mut self.trans_fade_flash_alpha_step);
                 }
             }
             _ => {}
@@ -873,8 +881,8 @@ impl PlayState {
     }
 
     /// What covers the screen this frame: `Play_Draw` draws the environment's fill
-    /// (`envCtx.fillScreen`, a cutscene's `TRANSITION_FX`) and the transition's fade over it, as
-    /// one fill (two full-screen blends compose into one).
+    /// (`envCtx.fillScreen`, a cutscene's `TRANSITION_FX`), and the transition's fade and the
+    /// flash over it, as one fill (two full-screen blends compose into one).
     pub fn screen_fill(&self) -> Option<[u8; 4]> {
         let tr = &self.transition;
         // A state from Play_Init that hasn't run a frame yet: its fade starts in its first
@@ -883,7 +891,7 @@ impl PlayState {
             return self.pre_update_fill;
         }
         let env = tr.screen_fill.filter(|f| f[3] > 0);
-        let fade = (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT || tr.mode == TRANS_MODE_INSTANCE_WAIT).then(|| tr.fade.fill()).flatten();
+        let fade = self.transition_fills();
         match (env, fade) {
             (Some(e), Some(f)) => Some(compose_fill(e, f)),
             (e, f) => f.or(e),
@@ -894,16 +902,28 @@ impl PlayState {
 impl PlayState {
     /// The fills as `Play_Draw` draws them: the cutscene's (`envCtx.fillScreen`,
     /// `Environment_FillScreen(.., FILL_SCREEN_OPA | FILL_SCREEN_XLU)`: at the end of both the OPA
-    /// and the XLU lists, so the opaque scene takes it twice) and the transition's (at the start
-    /// of `OVERLAY_DISP`, under the HUD and the message box). `(cutscene, transition)`.
+    /// and the XLU lists, so the opaque scene takes it twice) and the transition's with the flash
+    /// over it (at the start of `OVERLAY_DISP`, under the HUD and the message box).
+    /// `(cutscene, transition)`.
     pub fn draw_fills(&self) -> (Option<[u8; 4]>, Option<[u8; 4]>) {
         let tr = &self.transition;
         if !self.updated && tr.trigger != TRANS_TRIGGER_OFF {
             return (None, self.pre_update_fill);
         }
         let env = tr.screen_fill.filter(|f| f[3] > 0);
+        (env, self.transition_fills())
+    }
+
+    /// What `Play_Draw` draws at the start of `OVERLAY_DISP`, as one fill: the transition's fade
+    /// (while an instance runs), then the flash (`TransitionFade_Draw(&this->transitionFadeFlash)`,
+    /// whatever the transition).
+    fn transition_fills(&self) -> Option<[u8; 4]> {
+        let tr = &self.transition;
         let fade = (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT || tr.mode == TRANS_MODE_INSTANCE_WAIT).then(|| tr.fade.fill()).flatten();
-        (env, fade)
+        match (fade, self.transition_fade_flash.fill()) {
+            (Some(f), Some(flash)) => Some(compose_fill(f, flash)),
+            (f, flash) => flash.or(f),
+        }
     }
 }
 

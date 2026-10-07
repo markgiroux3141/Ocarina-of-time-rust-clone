@@ -526,15 +526,24 @@ fn a_killing_slash_bounces_it_three_times_then_it_burns_and_drops() {
     idle(&mut w, 1);
     let gone = w.actors.downcast::<EnSt>(h).is_none() || w.actors.actor(h).is_some_and(|a| a.killed);
     assert!(gone);
-    // Table 14 (sItemDropIds[14 * 16 + Rand_ZeroOne() * 16]): at most one, where it died.
+    // Table 14 (sItemDropIds[14 * 16 + Rand_ZeroOne() * 16]): one entry's item, as many as its
+    // sDropQuantities (none for an ITEM00_NONE entry), where it died. (Which entry is Rand's.)
     let ids = &a.item_drops.ids[14 * 16..14 * 16 + 16];
+    let quantities = &a.item_drops.quantities[14 * 16..14 * 16 + 16];
     let new_items: Vec<&EnItem00> = w.actors.all().into_iter().filter(|i| !items_before.contains(i)).filter_map(|i| w.actors.downcast::<EnItem00>(i)).collect();
-    assert!(new_items.len() <= 1);
     for it in &new_items {
         assert!(it.actor.home_pos.distance(last) < 1.0);
+        assert_eq!(it.actor.params, new_items[0].actor.params);
+    }
+    if let Some(first) = new_items.first() {
         // What func_8001F404 makes of the table's ids for Link (a recovery heart at full health is a
         // green rupee).
-        assert!(ids.iter().any(|&id| oot_actors::en_item00::func_8001f404(&w, id as i16) == it.actor.params), "{:#x}", it.actor.params);
+        assert!(
+            (0..16).any(|i| oot_actors::en_item00::func_8001f404(&w, ids[i] as i16) == first.actor.params && quantities[i] as usize == new_items.len()),
+            "{} of {:#x}",
+            new_items.len(),
+            first.actor.params
+        );
     }
 }
 

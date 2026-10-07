@@ -227,6 +227,10 @@ impl Renderer {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     front_face: wgpu::FrontFace::Ccw,
                     cull_mode: cull,
+                    // The NoN microcode: no clipping at the near plane, the depth clamped
+                    // instead (shader.wgsl's fs_main keeps the far plane), where the device has
+                    // it (`crate::device::NON_FEATURES`).
+                    unclipped_depth: device.features().contains(wgpu::Features::DEPTH_CLIP_CONTROL),
                     ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {

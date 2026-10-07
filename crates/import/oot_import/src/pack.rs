@@ -647,6 +647,10 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
                 }
             }
         }
+        // Aiming in first person (Player_OverrideLimbDrawGameplayFirstPerson): only the arms.
+        for (gi, g) in rules.model_groups.iter().enumerate() {
+            loadouts.push((g, false, Loadout { model_group: gi, first_person: true, ..default.clone() }));
+        }
         let mut seen = BTreeSet::new();
         for (g, fists, lo) in loadouts {
             let key = lo.variant_key(rules);

@@ -22,8 +22,9 @@
 //! set alight), `Effect_Ss_Blast` (the Skulltula's landing), and the Gohma larvae's
 //! `Effect_Ss_K_Fire` and `Effect_Ss_Sibuki`; for milestone 4b's props, `Effect_Ss_Kakera` (the
 //! fragments of crates, bushes, rocks and the falling platform) and the Deku Stick's
-//! `Effect_Ss_Stick` (its broken half). Spawning another type logs it
-//! and does nothing, as the C does for a type with no init.
+//! `Effect_Ss_Stick` (its broken half); for milestone 5a's Deku Seeds and Nuts,
+//! `Effect_Ss_Stone1` (where one hits). Spawning another type logs it and does nothing, as the C
+//! does for a type with no init.
 //!
 //! ## `z_effect.c`
 //!
@@ -56,6 +57,7 @@ pub mod shield_particle;
 pub mod sibuki;
 pub mod spark;
 pub mod stick;
+pub mod stone1;
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::{Mat4, Vec3};
@@ -72,6 +74,7 @@ pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
 pub const EFFECT_SS_STICK: u8 = 0x10;
 pub const EFFECT_SS_SIBUKI: u8 = 0x11;
+pub const EFFECT_SS_STONE1: u8 = 0x14;
 pub const EFFECT_SS_HITMARK: u8 = 0x15;
 pub const EFFECT_SS_FHG_FLASH: u8 = 0x16;
 pub const EFFECT_SS_K_FIRE: u8 = 0x17;
@@ -123,6 +126,8 @@ pub enum SsUpdate {
     Stick,
     /// `EffectSsKakera_Update`.
     Kakera,
+    /// `EffectSsStone1_Update`.
+    Stone1,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -158,6 +163,8 @@ pub enum SsDraw {
     Stick,
     /// `EffectSsKakera_Draw`.
     Kakera,
+    /// `EffectSsStone1_Draw`.
+    Stone1,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -254,6 +261,7 @@ pub enum SsInit {
     Sibuki(sibuki::SibukiInit),
     Stick(stick::StickInit),
     Kakera(kakera::KakeraInit),
+    Stone1(stone1::Stone1Init),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -343,6 +351,7 @@ impl SsSpawn<'_> {
             SsInit::Sibuki(p) => sibuki::init(self, &mut e, &p),
             SsInit::Stick(p) => stick::init(self, &mut e, &p),
             SsInit::Kakera(p) => kakera::init(self, &mut e, &p),
+            SsInit::Stone1(p) => stone1::init(&mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -452,6 +461,12 @@ impl SsSpawn<'_> {
     /// `yaw`, the age's piece (`adult`: `gSaveContext.save.linkAge`).
     pub fn stick_spawn(&mut self, pos: Vec3, yaw: i16, adult: bool) {
         self.spawn(EFFECT_SS_STICK, 128, SsInit::Stick(stick::StickInit { pos, yaw, adult }));
+    }
+
+    /// `EffectSsStone1_Spawn`: the burst where a Deku Seed or Nut hit, at `pos`
+    /// (`freeze_fade_flash`: see `stone1::update`).
+    pub fn stone1_spawn(&mut self, pos: Vec3, freeze_fade_flash: bool) {
+        self.spawn(EFFECT_SS_STONE1, 128, SsInit::Stone1(stone1::Stone1Init { pos, freeze_fade_flash }));
     }
 
     /// `EffectSsHahen_Spawn`: one fragment, `gEffFragments1DL` (the withered Deku fragment)
@@ -665,6 +680,8 @@ pub struct EffectDraws {
 pub struct DrawCtx<'a> {
     /// `play->billboardMtxF`.
     pub billboard: Mat4,
+    /// `play->viewProjectionMtxF` (this frame's: `Play_Draw` sets it before `Actor_DrawAll`).
+    pub view_proj: Mat4,
     /// `play->view.eye`.
     pub eye: Vec3,
     /// `Camera_GetCamDirYaw(GET_ACTIVE_CAM(play))`.
@@ -725,6 +742,7 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(spark::bakes());
     v.extend(shield_particle::bakes());
     v.extend(kakera::bakes());
+    v.extend(stone1::bakes());
     v
 }
 
@@ -820,6 +838,7 @@ impl PlayState {
             SsUpdate::Sibuki => sibuki::update(self, &mut e),
             SsUpdate::Stick => stick::update(&mut e),
             SsUpdate::Kakera => kakera::update(self, &mut e),
+            SsUpdate::Stone1 => stone1::update(self, &mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -838,6 +857,7 @@ impl PlayState {
         let player_body_parts = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|p| (0..crate::actor_ctx::PLAYER_BODYPART_MAX).map(|i| p.body_part(i)).collect());
         let mut ctx = DrawCtx {
             billboard: self.billboard_mtx(),
+            view_proj: self.camera_view_proj(),
             eye: self.view.eye,
             cam_dir_yaw: self.cam_dir_yaw(),
             gameplay_frames: self.gameplay_frames,
@@ -883,6 +903,7 @@ impl PlayState {
                 SsDraw::Sibuki => sibuki::draw(e, ctx.billboard, &mut out),
                 SsDraw::Stick => stick::draw(e, ctx.state_frames, &mut out),
                 SsDraw::Kakera => kakera::draw(e, &mut out),
+                SsDraw::Stone1 => stone1::draw(e, &ctx, &mut out),
             }
         }
         for i in deleted {

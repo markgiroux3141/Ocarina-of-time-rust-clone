@@ -17,6 +17,15 @@ use eng_gfx::{DrawList, TextureImage};
 
 /// Skeleton limb indices (`PLAYER_LIMB_*` minus one, since the enum starts at NONE).
 pub const LIMB_WAIST: u8 = 1;
+/// `PLAYER_LIMB_L_FOREARM`, `_R_SHOULDER`, `_R_FOREARM` (`player.h`), less one.
+pub const LIMB_L_FOREARM: u8 = 14;
+pub const LIMB_R_SHOULDER: u8 = 16;
+pub const LIMB_R_FOREARM: u8 = 17;
+/// `PLAYER_LIMB_MAX - 1`: Link's limbs.
+pub const LIMB_COUNT: u8 = 21;
+/// `Player_OverrideLimbDrawGameplayFirstPerson`'s right hand holding the hookshot (in its own
+/// code, not a table): `gLinkAdultRightHandHoldingHookshotFarDL`.
+pub const FIRST_PERSON_HOOKSHOT_DL: &str = "gLinkAdultRightHandHoldingHookshotFarDL";
 pub const LIMB_L_HAND: u8 = 15;
 pub const LIMB_R_HAND: u8 = 18;
 pub const LIMB_SHEATH: u8 = 19;
@@ -83,6 +92,11 @@ pub struct PlayerRules {
     pub mouth_textures: Vec<String>,
     /// `sPlayerFaces`: default eye and mouth per `actor.shape.face`.
     pub eye_mouth_indices: Vec<[u8; 2]>,
+    /// `Player_OverrideLimbDrawGameplayFirstPerson`'s lists, by limb: `sFirstPersonLeftForearmDLs`,
+    /// `sFirstPersonLeftHandDLs`, `sFirstPersonRightShoulderDLs`, `sFirstPersonForearmDLs` and
+    /// `sFirstPersonRightHandHoldingWeaponDLs`, each `[adult, child]` (`None` a NULL).
+    #[serde(default)]
+    pub first_person_dls: Vec<(u8, Vec<Option<String>>)>,
 }
 
 impl PlayerRules {
@@ -105,6 +119,9 @@ impl PlayerRules {
     /// Display lists for the hand, sheath and waist limbs, following
     /// `Player_OverrideLimbDrawGameplayDefault`. `None` means the limb draws nothing.
     pub fn limb_dlists(&self, lo: &Loadout, lod: usize) -> Vec<(u8, Option<String>)> {
+        if lo.first_person {
+            return self.first_person_limb_dlists(lo);
+        }
         let g = &self.model_groups[lo.model_group.min(self.model_groups.len() - 1)];
         let t = |n: &str| self.model_type(n);
         let shield_max = self.shields.len();
@@ -150,6 +167,22 @@ impl PlayerRules {
         ]
     }
 
+    /// `Player_OverrideLimbDrawGameplayFirstPerson` aiming (`unk_6AD` 2): every limb but the arms
+    /// draws nothing; the arms draw the first-person lists, the right hand the hookshot's in the
+    /// hookshot's model groups (`Player_HoldsHookshot`).
+    fn first_person_limb_dlists(&self, lo: &Loadout) -> Vec<(u8, Option<String>)> {
+        let hookshot = self.model_groups.get(lo.model_group).is_some_and(|g| g.name == "HOOKSHOT");
+        (0..LIMB_COUNT)
+            .map(|limb| {
+                if limb == LIMB_R_HAND && hookshot {
+                    return (limb, Some(FIRST_PERSON_HOOKSHOT_DL.to_string()));
+                }
+                let dl = self.first_person_dls.iter().find(|(l, _)| *l == limb).and_then(|(_, v)| v.get(lo.age as usize).cloned().flatten());
+                (limb, dl)
+            })
+            .collect()
+    }
+
     /// Eye and mouth texture indices for a frame, as in `Player_DrawImpl`: the animation's
     /// face field wins, otherwise the blink state (`actor.shape.face`) picks the default.
     pub fn face_indices(&self, anim_face: u16, blink_face: usize) -> (usize, usize) {
@@ -180,6 +213,9 @@ pub struct Loadout {
     /// (`PLAYER_MODELTYPE_RH_SHIELD`) and the sheath without it (`SHEATH_18` to `_16`, `_19` to `_17`).
     #[serde(default)]
     pub holding_shield: bool,
+    /// `Player_OverrideLimbDrawGameplayFirstPerson` aiming: only the arms.
+    #[serde(default)]
+    pub first_person: bool,
 }
 
 impl Loadout {
@@ -198,6 +234,7 @@ impl Loadout {
             child_has_kokiri_sword: true,
             moving_fast: false,
             holding_shield: false,
+            first_person: false,
         }
     }
 }

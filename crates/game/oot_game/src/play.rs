@@ -26,9 +26,10 @@
 //!    buttons' status, the alpha fades, the health and rupee counters, the A button's flip).
 //! 4. `AnimTaskQueue_Update`: every actor's queued animation requests (Player's joint copies,
 //!    blends and root motion).
-//! 5. `Letterbox_Update`, then the cameras: the spikes' follow camera, and `Camera_Update`
-//!    (in the mode Player asked for during its update), which sets the letterbox's next target
-//!    and the interface's alpha type (`Camera_UpdateInterface`).
+//! 5. `Letterbox_Update`, the screen's flash (`transitionFadeFlash`), then the cameras: the
+//!    spikes' follow camera, and `Camera_Update` (in the mode Player asked for during its
+//!    update), which sets the letterbox's next target and the interface's alpha type
+//!    (`Camera_UpdateInterface`).
 //! 6. What `Play_Draw` changes: each actor's draw-time state (Player's foot IK writes into its
 //!    joint table, so it's done once per game frame, not per rendered frame), the scene draw
 //!    config (`Scene_Draw`: this frame's texture scrolls and colours), the view the next
@@ -400,6 +401,15 @@ pub struct PlayState {
     pub rain: crate::weather::RainDraw,
     /// `gVisMonoColor` (`z_play.c`): the screen's monochrome tint (`VisMono`) a cutscene sets.
     pub vis_mono_color: [u8; 4],
+    /// `transitionFadeFlash`: the screen's flash (a Deku Nut's), a `TransitionFade` of the flash
+    /// type (`TRANS_FADE_TYPE_FLASH`) `Play_Init` makes grey (`RGBA8(160, 160, 160, 255)`),
+    /// stepped by `Play_Update` after the letterbox and drawn by `Play_Draw` over the
+    /// transition's fade.
+    pub transition_fade_flash: crate::transition::TransitionFade,
+    /// `R_TRANS_FADE_FLASH_ALPHA_STEP` (`iREG(50)`, `regs.h`): negative starts the flash, then
+    /// its alpha's step (`TransitionFade_Update`). A debug register: it outlives the play state
+    /// (`reinit` carries it over).
+    pub trans_fade_flash_alpha_step: i16,
     /// `haltAllActors`: the actors frozen (`Actor_UpdateAll` skipped).
     pub halt_all_actors: bool,
     /// `pauseCtx`: the game over menu's stand-in (`crate::kaleido`; the pause menu itself isn't
@@ -462,7 +472,7 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, iron_boots: false };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
         let game_camera = GameCamera::new(&data.camera, &pv);
         let view = crate::camera::CamView { eye: game_camera.eye, at: game_camera.at, fov: game_camera.fov };
         PlayState {
@@ -526,6 +536,8 @@ impl PlayState {
             lightning_flash: None,
             rain: Default::default(),
             vis_mono_color: [0; 4],
+            transition_fade_flash: Default::default(),
+            trans_fade_flash_alpha_step: 0,
             halt_all_actors: false,
             pause_ctx: Default::default(),
             game_over_ctx: Default::default(),
@@ -595,6 +607,8 @@ impl PlayState {
             climbing: pi.state_flags1() & PLAYER_STATE1_21 != 0,
             state1: pi.state_flags1(),
             iron_boots: pi.current_boots() == crate::actor_ctx::PLAYER_BOOTS_IRON,
+            focus_pos: a.focus_pos,
+            focus_rot: [a.focus_rot.x, a.focus_rot.y, a.focus_rot.z],
         })
     }
 
@@ -813,10 +827,13 @@ impl PlayState {
                 a.animation_update();
             }
         }
-        // SfxSource_UpdateAll, then Letterbox_Update(R_UPDATE_RATE), then the cameras (they
-        // follow Player).
+        // SfxSource_UpdateAll, then Letterbox_Update(R_UPDATE_RATE), the screen's flash, then the
+        // cameras (they follow Player).
         self.sfx_source_update_all();
         self.letterbox.update(3);
+        // TransitionFade_Update(&this->transitionFadeFlash, R_UPDATE_RATE).
+        let duration = self.save.trans_fade_duration;
+        self.transition_fade_flash.update(3, duration, &mut self.trans_fade_flash_alpha_step);
         if !is_paused {
             if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
                 let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
@@ -974,7 +991,8 @@ impl PlayState {
             return;
         }
         if self.input.press.held(BTN_START) && self.pause_menu_equip() {
-            log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}, C-Left {:#04x}", self.save.equips.equipment, self.save.equips.button_items[0], self.save.equips.button_items[1]);
+            let b = self.save.equips.button_items;
+            log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}, C {:#04x} {:#04x} {:#04x}", self.save.equips.equipment, b[0], b[1], b[2], b[3]);
         }
     }
 
@@ -985,7 +1003,8 @@ impl PlayState {
     pub fn pause_menu_equip(&mut self) -> bool {
         let equipment = self.save.equip_owned_unworn();
         let sticks = self.save.equip_sticks_on_empty_c_left();
-        if !equipment && !sticks {
+        let nuts_and_slingshot = self.save.equip_nuts_and_slingshot_on_empty_c();
+        if !equipment && !sticks && !nuts_and_slingshot {
             return false;
         }
         let (data, save) = (self.data.clone(), self.save.clone());
@@ -1454,7 +1473,7 @@ impl PlayState {
     }
 
     /// `play->viewProjectionMtxF` for the active camera: the game's 320x240 view, `zNear` 10.
-    fn camera_view_proj(&self) -> Mat4 {
+    pub(crate) fn camera_view_proj(&self) -> Mat4 {
         let (eye, at, fov) = match self.camera_kind {
             CameraKind::Game => {
                 let v = self.active_camera().shaken_view();

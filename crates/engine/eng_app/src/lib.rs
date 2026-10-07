@@ -25,10 +25,20 @@ pub fn run_window<A: eframe::App + 'static>(
     size: [f32; 2],
     app: impl FnOnce(&eframe::CreationContext) -> Result<A> + 'static,
 ) -> Result<()> {
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size(size).with_title(title),
         ..Default::default()
     };
+    // The renderer's optional features (`eng_render::NON_FEATURES`: the game's NoN
+    // microcode), where the adapter has them.
+    if let egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        let base = setup.device_descriptor.clone();
+        setup.device_descriptor = std::sync::Arc::new(move |adapter| {
+            let mut d = base(adapter);
+            d.required_features |= adapter.features() & eng_render::NON_FEATURES;
+            d
+        });
+    }
     eframe::run_native(name, options, Box::new(move |cc| Ok(Box::new(app(cc)?)))).map_err(|e| anyhow::anyhow!("{e}"))
 }
 

@@ -202,6 +202,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_KEEP4",
     "CAM_FUNC_DEMO3",
     "CAM_FUNC_SUBJ4",
+    "CAM_FUNC_SUBJ3",
     "CAM_FUNC_DEMO1",
     "CAM_FUNC_UNIQ9",
     "CAM_FUNC_DEMO9",
@@ -921,6 +922,16 @@ struct Subj4 {
     zoom_timer: i16,
 }
 
+/// `Subj3ReadWriteData`: where the eye was when first person began, and the frames of the
+/// ease into it.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Subj3 {
+    r: f32,
+    yaw: i16,
+    pitch: i16,
+    anim_timer: i16,
+}
+
 /// `BINANG_LERPIMPINV(v0, v1, t)`: `v0 + (s16)(v1 - v0) / t`, an integer division.
 fn binang_lerpimpinv(v0: i16, v1: i16, t: i16) -> i16 {
     (v0 as i32 + v1.wrapping_sub(v0) as i32 / t as i32) as i16
@@ -1272,6 +1283,9 @@ pub struct PlayerView {
     pub state1: u32,
     /// `currentBoots == PLAYER_BOOTS_IRON`.
     pub iron_boots: bool,
+    /// `Actor_GetFocus`: `actor.focus.pos` and `actor.focus.rot` (`Camera_Subj3`'s first person).
+    pub focus_pos: Vec3,
+    pub focus_rot: [i16; 3],
 }
 
 /// `PLAYER_STATE1_29`: Player in a cutscene-like state (walking through an exit or a door).
@@ -1407,6 +1421,7 @@ pub struct GameCamera {
     keep4_rw: Keep4Rw,
     demo3: Demo3,
     subj4: Subj4,
+    subj3: Subj3,
     fixd: FixedData,
     uniq: UniqueData,
     update_direction: bool,
@@ -1533,6 +1548,7 @@ impl GameCamera {
             keep4_rw: Keep4Rw::default(),
             demo3: Demo3::default(),
             subj4: Subj4::default(),
+            subj3: Subj3::default(),
             fixd: FixedData::default(),
             uniq: UniqueData::default(),
             update_direction: false,
@@ -1559,7 +1575,7 @@ impl GameCamera {
     /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
     /// origin, `CAM_SET_FREE0`, `CAM_STAT_CUT` until made active.
     pub fn init_sub(d: &CameraData, g: &mut CameraGlobals, cam_id: i16) -> GameCamera {
-        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, iron_boots: false };
+        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
         let mut c = GameCamera::new(d, &origin);
         let uid = g.camera_init();
         c.eye = Vec3::ZERO;
@@ -3142,6 +3158,9 @@ impl GameCamera {
                 Some("CAM_FUNC_DEMO3") => self.demo3(d, col, p, frames, &f.input),
                 Some("CAM_FUNC_SUBJ4") => {
                     self.subj4(d, col, p);
+                }
+                Some("CAM_FUNC_SUBJ3") => {
+                    self.subj3(d, col, p, f.skybox_disabled);
                 }
                 Some("CAM_FUNC_DEMO1") => self.demo1(d, p),
                 Some("CAM_FUNC_UNIQ9") => self.unique9(d, f, op, letterbox),
@@ -5197,6 +5216,95 @@ impl GameCamera {
         let temp_a0 = (temp_f16 + s.forward_yaw as f32) as i32 as i16;
         self.at = Vec3::new(self.eye.x + sin_s(temp_a0) * 10.0, self.eye.y, self.eye.z + cos_s(temp_a0) * 10.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        true
+    }
+
+    /// `Camera_Subj3` (`CAM_MODE_FIRST_PERSON`, `_AIM_ADULT`, `_AIM_CHILD`, `_Z_AIM`,
+    /// `_AIM_BOOMERANG`): first person. Its first call each frame only asks for the second one
+    /// at the end of `Play_Draw` (`view.unk_124`). The second eases over `CAM_DEFAULT_ANIM_TIME`
+    /// frames from where the eye was to behind Player's focus (`at` towards the focus raised by
+    /// `eyeNextYOffset`, the eye's distance, yaw and pitch stepped by `CAM_GLOBAL_28`, the eye
+    /// checked against the walls), then holds `at` at the data's offset turned by the focus's
+    /// pitch and yaw, `eyeNext` `eyeNextDist` behind it and the eye `eyeDist` behind it. The fov
+    /// steps to the data's. Returns the C's value.
+    fn subj3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView, skybox_disabled: bool) -> bool {
+        // sp60 = Actor_GetFocus(&camera->player->actor).
+        let (sp60_pos, sp60_rot) = (p.focus_pos, p.focus_rot);
+        let player_height = p.height();
+        if self.view_unk_124 == 0 {
+            // camera->camId | 0x50: the main camera.
+            self.view_unk_124 = 0x50;
+            return true;
+        }
+        self.func_80043abc(d);
+        // (Camera_CopyPREGToModeValues: the debug registers hold the mode's values.)
+        let key = self.cur();
+        let v = |i: usize| d.value(key, i);
+        // GET_NEXT_SCALED_RO_DATA: the value * 0.01.
+        let eye_next_y_offset = v(0) as f32 * 0.01 * player_height;
+        let eye_dist = v(1) as f32;
+        let eye_next_dist = v(2) as f32;
+        // (roData->unk_0C = v(3): unused.)
+        let mut at_offset = Vec3::new(v(4) as f32 * 0.1, v(5) as f32 * 0.1, v(6) as f32 * 0.1);
+        let fov_target = v(7) as f32;
+        let interface_field = v(8);
+        let sp84 = VecSphGeo { r: eye_next_dist, yaw: sp60_rot[1].wrapping_sub(0x7FFF), pitch: sp60_rot[0] };
+        let mut sp98 = sp60_pos;
+        sp98.y += eye_next_y_offset;
+        // (sp8C = Camera_AddVecGeoToVec3f(&sp98, &sp84): unused.)
+        let mut sp7c = diff_to_sph_geo(self.at, self.eye);
+        self.interface_flags = interface_field;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.subj3 = Subj3 { r: sp7c.r, yaw: sp7c.yaw, pitch: sp7c.pitch, anim_timer: d.oreg(R_CAM_DEFAULT_ANIM_TIME) };
+            self.dist = eye_next_dist;
+            self.anim_state += 1;
+            self.r_update_rate_inv = 1.0;
+            self.dist = eye_next_dist;
+        }
+        let rw = self.subj3;
+        if rw.anim_timer != 0 {
+            let t = 1.0 / rw.anim_timer as f32;
+            // F32_LERPIMP(at, sp98, t).
+            self.at.x += (sp98.x - self.at.x) * t;
+            self.at.y += (sp98.y - self.at.y) * t;
+            self.at.z += (sp98.z - self.at.z) * t;
+            let t = 1.0 / d.oreg(R_CAM_DEFAULT_ANIM_TIME) as f32;
+            let sp58 = (rw.r - sp84.r) * t;
+            // (s16)(tGeo.yaw - sp84.yaw) * temp, truncated into an s16.
+            let sp52 = (rw.yaw.wrapping_sub(sp84.yaw) as f32 * t) as i32 as i16;
+            let sp50 = (rw.pitch.wrapping_sub(sp84.pitch) as f32 * t) as i32 as i16;
+            let cam_global_28 = d.oreg(28) as f32 * 0.01;
+            sp7c.r = lerp_ceil_f(sp84.r + sp58 * rw.anim_timer as f32, sp7c.r, cam_global_28, 1.0);
+            sp7c.yaw = lerp_ceil_s((sp84.yaw as i32 + sp52 as i32 * rw.anim_timer as i32) as i16, sp7c.yaw, cam_global_28, 0xA);
+            sp7c.pitch = lerp_ceil_s((sp84.pitch as i32 + sp50 as i32 * rw.anim_timer as i32) as i16, sp7c.pitch, cam_global_28, 0xA);
+            self.eye_next = sph_geo_add(self.at, sp7c);
+            self.eye = self.eye_next;
+            self.subj3.anim_timer -= 1;
+            let mut c = ColChk { pos: self.eye, ..Default::default() };
+            if !skybox_disabled {
+                // Camera_BGCheck.
+                Self::bg_check_info(col, self.at, &mut c);
+            } else {
+                // func_80044340.
+                self.func_80043f94(col, self.at, &mut c);
+            }
+            self.eye = c.pos;
+        } else {
+            let (sp58, t) = (sin_s(sp60_rot[0].wrapping_neg()), cos_s(sp60_rot[0].wrapping_neg()));
+            let sp98 = Vec3::new(at_offset.x, at_offset.y * t - at_offset.z * sp58, at_offset.y * sp58 + at_offset.z * t);
+            let yaw = sp60_rot[1].wrapping_sub(0x7FFF);
+            let (sp58, t) = (sin_s(yaw), cos_s(yaw));
+            at_offset = Vec3::new(sp98.z * sp58 + sp98.x * t, sp98.y, sp98.z * t - sp98.x * sp58);
+            self.at = at_offset + sp60_pos;
+            let mut geo = VecSphGeo { r: eye_next_dist, yaw, pitch: sp60_rot[0] };
+            self.eye_next = sph_geo_add(self.at, geo);
+            geo.r = eye_dist;
+            self.eye = sph_geo_add(self.at, geo);
+        }
+        self.pos_offset = self.at - self.player_pos;
+        self.fov = lerp_ceil_f(fov_target, self.fov, 0.25, 1.0);
+        self.roll = 0;
+        self.at_lerp_step_scale = 0.0;
         true
     }
 

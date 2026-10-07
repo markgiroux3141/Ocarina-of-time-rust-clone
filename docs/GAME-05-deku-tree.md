@@ -11,8 +11,8 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | 2 | Damage and health: Player taking damage (kinds 3 and 4, the hit while swimming, burning, the red flash), death and game over, the enemies' damage tables (`CollisionCheck_ApplyDamage`, `DamageTable`) | done |
 | 3a | Combat basics: Player's guard with the shield (blocking, deflecting); `Camera_Battle1`; the effects (`EffectSs`, `z_effect.c`), `En_Dekubaba`'s included; `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5); drops on death | done |
 | 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | done |
-| 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`); room-to-room travel. Split in three: 4a doors, switches, torches and webs; 4b the Deku Stick (pulled forward from 5) and the props; 4c pushing and Master Quest's extras | 4a done |
-| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`) | |
+| 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`); room-to-room travel. Split in three: 4a doors, switches, torches and webs; 4b the Deku Stick (pulled forward from 5) and the props; 4c pushing and Master Quest's extras | done |
+| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`). Split in three: 5a the slingshot and nuts; 5b the pause menu; 5c saving | 5a done |
 | 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
 
 The working rules are the same as for the earlier phases:
@@ -1730,3 +1730,363 @@ C-Up (Navi), Enter Start.
 
 The user played it (2026-10-07): the blocks work, and room 0's middle-floor vines take Link to the
 top floor (BACKLOG #17 closed: only the travel test's scripted climb fell short).
+
+## Milestone 5: items in use
+
+**Status:** split agreed (2026-10-07). The user chose:
+- three parts, 5a, 5b and 5c, as below;
+- `En_Arrow` ported whole, the adult arrows' trail (`EffectBlure`) and the magic arrows' children
+  logging what they'd do;
+- 5b's pause menu with the item page and the dungeon map page whole; the equipment and quest
+  pages showing their backgrounds, their contents logged; Start's stand-in keeping only its
+  equipment half;
+- until then, Start's stand-in putting an owned slingshot and nuts on empty C buttons, and a
+  preset with both.
+
+### The survey
+
+Line counts are the decomp's (`52a510f`), per function where it matters. "Port today" is
+`3f5c0ac` (milestone 4c).
+
+**Player, the slingshot** (`z_player.c`; `sItemActionUpdateFuncs` sends the bow, the slingshot and
+the hookshot to `func_8083501C`, which the port maps to `func_8083485C`'s default):
+
+| C | What it does | Lines | Port today |
+|---|---|---|---|
+| `func_8083501C`, `func_80834F2C`, `func_80834D2C`, `func_80834EB8` | The upper body's wait: a press of the item's button raises it (`gPlayerAnim_link_bow_bow_ready`); Z-targeted it stays third person, else `unk_6AD` 2 (first person) | 66 | Not ported |
+| `func_8083442C`, `func_80834380` | Raised: `func_808351D4`, `PLAYER_STATE1_9`, `unk_834` 14; a seed in the pouch spawns `En_Arrow` (`ARROW_SEED`) as Player's child, held (`heldActor`) | 61 | Not ported |
+| `func_808351D4`, `func_808350A4` | Drawn back (the upper body's z roll to 1200); the button let go fires: the seed let go (`unk_A73` 4, the parent cleared), one seed less (`Inventory_ChangeAmmo`), a rumble; none: `NA_SE_IT_SLING_FLICK` | 87 | Not ported |
+| `func_808353D8`, `func_80835588` | After the shot: the next one on the button (`link_bow_bow_shoot_next`), or lowered (`_shoot_end`) | 52 | Not ported |
+| `func_80834FBC`, `func_80834E44`, `func_80834E7C` | The hookshot's hook; the shooting gallery's B (`shootingGalleryStatus` 0 here) | 24 | Not ported (never true for the child) |
+| `Player_InitBowOrSlingshotIA` | `PLAYER_STATE1_3`, `unk_860` -2 | 10 | Ported (4b) |
+
+**Player, first person** (C-Up's look and the aim):
+
+| C | What it does | Lines | Port today |
+|---|---|---|---|
+| `func_8083B8F4` | C-Up on the ground (or swimming shallow): `unk_6AD` 1, if the camera allows `CAM_MODE_FIRST_PERSON` | 13 | Logs (`Player_ActionHandler_0`) |
+| `Player_ActionHandler_13`'s first-person branch, `func_8083AD4C` | `unk_6AD` 1 or 2: `CAM_MODE_FIRST_PERSON` or `_AIM_CHILD`; `Player_Action_8084B1D8`, `PLAYER_STATE1_20`, `NA_SE_SY_CAMERA_ZOOM_UP` (the error sound when the camera refuses) | 40 | Logs. The cutscene items' branch (`unk_6AD` 4: the ocarina, bottles, trades, spells) stays logged |
+| `Player_Action_8084B1D8`, `func_8084ABD8`, `func_8084AEEC`, `func_8084B000`, `func_8083C148`, `func_8083B010` | The look: the stick turns the focus (slowly for the look, eased for the aim, ±19114 of the body); A, B, R (or any C button in the look) ends it; in water it floats | 151 | Not ported |
+| `func_8002DD6C`, `func_8002DD78` (`z_actor.c`) and their callers in ported functions: `func_8083DC54`, `func_8083FC68`, `func_8083FD78`, `func_8083356C` (`link_bow_side_walk`), `Player_UpdateCamAndSeqModes` (`CAM_MODE_Z_AIM`), `Player_UpdateInterface`, `Player_UpdateCommon` (`func_8084FF7C`, the string's swing) | Aiming Z-targeted, in third person | ~60 | The branches are missing (one logs) |
+
+**Player, Deku nuts:** `func_8083C61C` (13: not in an indoors room, on the ground, nuts left) and
+`Player_Action_8084E604` (14: `link_normal_light_bom`; frame 3 one nut less and `En_Arrow`
+`ARROW_NUT` from the right hand, pitched 4000, `NA_SE_VO_LI_SWORD_N`), and
+`Player_UpdateUpperBody`'s return after it. `Player_UseItem` logs today.
+
+**Player's draw** (`z_player_lib.c`): `Player_OverrideLimbDrawGameplayFirstPerson` (25: in the
+look nothing is drawn; aiming, the arms and the slingshot, `sFirstPerson*DLs`), chosen by
+`Player_Draw` when the head is behind the view (`unk_6AD` set); the right hand's string
+(`gLinkChildSlingshotStringDL` stretched by `unk_858` towards the left hand, `PLAYER_STATE1_9`); the
+held seed placed by the left hand's matrix (`heldActor`). The `BOW_SLINGSHOT` model group (the
+slingshot in the right hand) is already baked as a Link variant; the first-person lists and the
+string aren't. Player holds no actor today (`heldActor`; `Player_DetachHeldActor` notes it).
+
+**The camera:** `Camera_Subj3` (137) runs `CAM_MODE_FIRST_PERSON`, `_AIM_CHILD` and `_Z_AIM` on
+every setting the Deku Tree uses (`NORMAL0`'s data); not ported. `Camera_RequestModeImpl`'s
+first-person sounds and `Camera_UpdateInterface` (the HUD's mode from the data's interface field)
+are.
+
+**Actors and effects:**
+
+| C | What | Lines | Needs |
+|---|---|---|---|
+| `En_Arrow` | Seeds (`ARROW_SEED`: 80 a frame, 15 frames, gravity -0.4 for the last 7, `DMG_SLINGSHOT`, the sparkle `gEffSparklesDL`, `NA_SE_IT_SLING_SHOT`; on a hit or a wall `Effect_Ss_Stone1` and `NA_SE_IT_SLING_REFLECT`) and nuts (`ARROW_NUT`: the same flight; on a hit or a wall `En_M_Fire1`, the screen's flash, `NA_SE_IT_DEKU`). The adult's arrows: `gArrowSkel` and its two animations, sticking into walls and actors, carrying an actor (`ACTOR_FLAG_CAN_ATTACH_TO_ARROW`), the trail (`EffectBlure`), the magic arrows' children | 513 | `BgCheck_ProjectileLineTest`, `func_8002F9EC` (Jabu Jabu's walls), `Player_UpdateWeaponInfo` for an actor's collider (the port's is Player's), `EffectBlure` (`z_eff_blure.c`, 1,056: not ported, the sword's trail debt), `Arrow_Fire`/`_Ice`/`_Light` (not ported) |
+| `En_M_Fire1` | The nut's stun: a cylinder of radius 200, `DMG_DEKU_NUT`, for five frames | 79 | Nothing |
+| `Effect_Ss_Stone1` | The seed's and nut's puff | 96 | A bake |
+| The flash | Play's `transitionFadeFlash` (`TransitionFade`'s flash type, stepped by `R_TRANS_FADE_FLASH_ALPHA_STEP`), grey 160 | ~25 | Not ported (the port has the other fades) |
+
+Already waiting for them: `Obj_Switch`'s eye (`0x0001F824`, injected in its tests), `Bg_Ydan_Maruta`'s
+ladder (`DMG_SLINGSHOT`, injected), and the enemies' damage tables' slingshot and nut entries.
+
+**Getting them:** the slingshot is room 10's chest (`En_Box` `0x10A6`: `GI_SLINGSHOT`, flag 6,
+appearing when room 10 is cleared: its Deku Baba and Gohma's eggs). `Item_Give` (the bullet bag,
+30 seeds) is ported. Nuts come from drops and the Business Scrub (`En_Dns`). Nothing puts an item
+on a button but the pause menu: until it's ported, Start's stand-in puts sticks on an empty C-Left
+(ADR 0041). The HUD draws the C buttons' items and ammo; K and L are C-Down and C-Right.
+
+**The rooms the slingshot opens** (placements from `ootx scene-info --scene ydan`):
+- room 1's eye (0x0C) opens the door to room 2; room 2 is a dead end (the ladder's seed, 0x21; the
+  compass chest; the rocks and the hidden time blocks wait for bombs and the song);
+- room 3's eye (0x15) opens the door to room 4; then 4 to 5 (room 4's timed torches, 0x19), 5 to 6
+  (room 5's timed torches, 0x09), 6 to 7, 7 to 8, and 7 back to room 3's upper floor (the
+  `En_Holl` plane). Rooms 4, 6 and 7 bar their doors behind Link until they're cleared: room 4's
+  Mad Scrub; room 6's Mad Scrub, Keese and eight Gohma eggs; room 7's two Deku Babas, a withered
+  one and four Keese. Clearing them by fighting waits on `Rand`.
+
+**The pause menu** (`ovl_kaleido_scope`, about 9,000 lines with its tables; the roadmap's 7,700):
+
+| File | Lines | What |
+|---|---|---|
+| `z_kaleido_setup.c` | 200 | `KaleidoSetup_Update` (Start: ported as the stand-in's entry), `KaleidoSetup_Init` |
+| `z_kaleido_scope.c` | 4,751 | About 940 of tables; `KaleidoScope_Update` (1,085: every pause state, opening, the pages, the save prompt, closing, the game over's (a stand-in today, ADR 0032), the debug menu's entry); `KaleidoScope_Draw` (48), `_DrawPages` (433: the four pages' box, each page's contents called), `_DrawUIOverlay` (496: the name and info panels, the buttons' prompts), `_SetVertices` and `_SetPageVertices` (828: the pages' quads), the cursor (137), page turns (99), `_UpdateNamePanel` (71), `_UpdateOpening` (32), the dungeon map's load and update (48), `_DrawGameOver` (45), the player's prerender for the equipment page (32) |
+| `z_kaleido_item.c` | 869 | The item page: the cursor over the 24 slots (`KaleidoScope_DrawItemSelect`, 415), the ammo digits (60), equipping on a C button with the icon flying there (`KaleidoScope_UpdateItemEquip`, 327) |
+| `z_kaleido_equipment.c` | 715 | The equipment page, with Link drawn in it (`KaleidoScope_DrawPlayerWork`) |
+| `z_kaleido_map.c` | 945 | The dungeon map page (342: the map and compass milestone 4 left as data, "drawn by milestone 5's pause menu") and the world map (575) |
+| `z_lmap_mark.c` | 183 | The chests' and the boss's marks on the dungeon map (their data is in the pack, ADR 0040) |
+| `z_kaleido_collect.c` | 873 | The quest status page |
+| `z_kaleido_prompt.c` | 45 | The prompts' cursor (ported for the game over stand-in) |
+
+Its textures: `icon_item_static` (the item icons, read for the HUD already, and the pages'
+backgrounds), `icon_item_24_static`, `icon_item_<language>_static` (the titles and prompts),
+`item_name_static`, `map_name_static`; the paused scene behind it (`z_prerender.c`'s filters). The
+game over screens draw through the same `KaleidoScope_Draw`, so they'd be drawn too.
+
+Start's stand-in equips more than items: it puts owned, unworn swords, shields, tunics and boots on
+(`SaveContext::equip_owned_unworn`), which the scripted runs from Kokiri Forest rely on. That's the
+equipment page's job in the C.
+
+**Saving** (`z_sram.c`, 1,086):
+- `Sram_WriteSave` (53: the checksum, the slot and its backup), `Sram_OpenSave` (168: the entrance
+  a save loads at by its saved scene, dungeons at their entrances), `Sram_VerifyAndLoadAllSaves`
+  (184: the checksums, a bad slot restored from its backup), `Sram_InitSave` (105: a new file's
+  name and slot), `Sram_EraseSave`, `Sram_CopySave`, `Sram_InitSram` (55: the header, its "ZELDA"
+  check, the sound and Z-targeting options); the iQue's path (163) isn't this ROM.
+- Callers: the pause menu's save prompt (`KaleidoScope_Update`), the game over's (ported, logs
+  `Sram_WriteSave`).
+- The port has `Sram_InitNewSave` and `Sram_InitDebugSave` (ADR 0019) and `Play_SaveSceneFlags`; no
+  file on disk. The file select (`z_file_choose.c`) isn't ported, so loading needs a stand-in, for
+  example a `--file N` option doing what `FileSelect_LoadGame` does. The `Save` struct (`save.h`)
+  would be written in the C's byte layout, so a slot holds the game's bytes.
+
+**Elsewhere:** BACKLOG #18 (no `CAM_MODE_STILL` when knocked down) is in
+`Player_UpdateCamAndSeqModes`, the function `CAM_MODE_Z_AIM` goes into: it can ride along with the
+slingshot.
+
+### The split
+
+- **5a, the slingshot and Deku nuts** (about 1,500 lines of C, like 4b):
+  - Player: the slingshot's upper actions, first person (C-Up's look and the aim), aiming
+    Z-targeted, the nut's throw, `heldActor`, the first-person draw and the string (bakes);
+    `Camera_Subj3`; BACKLOG #18.
+  - `En_Arrow` whole for seeds and nuts, `En_M_Fire1`, `Effect_Ss_Stone1`, the flash,
+    `BgCheck_ProjectileLineTest`. The adult's arrows ported too, their trail and the magic arrows
+    logging.
+  - Equipping before the pause menu: Start's stand-in also puts an owned slingshot and nuts on
+    empty C buttons; a preset with both.
+  - The eye switches, room 2's ladder and room 10's chest for real (the tests' injections replaced
+    where the real shot now reaches them).
+  - The travel test extended: room 1 to 2 (the eye) and back; room 3's eye to 4, 5, 6, 7, 8 and
+    back to room 3's upper floor through the plane, without its `place_player` there. The rooms
+    that bar until cleared (4, 6, 7) and room 10's chest have their enemies killed by injection
+    (`Actor_Kill`), not fought.
+  - **Exit:** from a debug start in room 1 with the slingshot, Link takes it out, aims in first
+    person at the eye and shoots: the eye closes, the door to room 2 unbars with its camera, and he
+    goes through. That run is the golden.
+- **5b, the pause menu:** its frame (`KaleidoSetup`, the open and close, the pages' box and turns,
+  the cursor, the name and info panels) and the item page whole, replacing the item half of
+  Start's stand-in; the C buttons equipped from it. The dungeon map page (with its marks) whole too;
+  the equipment and quest pages showing their backgrounds, their contents logged. The game over
+  screens drawn.
+- **5c, saving:** `z_sram.c`'s save and load whole, the slots on disk in the C's layout, the pause
+  menu's save prompt, the game over's `Sram_WriteSave`, and a stand-in for the file select's load.
+
+## Milestone 5a: the Fairy Slingshot and Deku nuts
+
+**Answer:** done. C-Right takes the Fairy Slingshot out and raises it into first person; held, it
+draws a seed; let go, it shoots, and the seeds close the eye switches and drop room 2's ladder.
+Z-targeted it aims in third person; C-Up looks around in first person; C-Down throws a Deku nut,
+which flashes the screen and stuns. Room 10's chest gives the slingshot, and Start's stand-in puts
+it and nuts on C buttons until 5b's pause menu. The exit holds; its run is the golden `slingshot`.
+
+The pack is format 23, in `out/data20`. Decisions are in
+[ADR 0045](adr/0045-the-fairy-slingshot-first-person-and-deku-nuts.md) (Player's side) and
+[ADR 0046](adr/0046-en-arrow-the-nuts-stun-and-the-flash.md) (the projectiles and the flash).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 65 to 67):
+- `test-slingshot.bat`: the milestone's tests;
+- `game-slingshot.bat WHERE`: the game with the slingshot on C-Right (L), nuts on C-Down (K) and
+  sticks on C-Left (J) (`deku-tree-slingshot`), from a debug start: `room1` (250 in front of room
+  1's eye switch, the default), `room3` (under room 3's eye switch), `room2` (in front of the
+  ladder) or `room10` (by the slingshot's chest);
+- `sandbox-slingshot.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestone 5's split, as agreed (2026-10-07; see "Milestone 5" above).
+
+### What was built
+
+**Player** (`oot_actors::player`, ADR 0045):
+- The bow's and slingshot's upper-body actions whole (`func_8083501C`, `func_80834F2C`,
+  `func_80834D2C`, `func_80834EB8`, `func_8083442C`, `func_80834380`, `func_808351D4`,
+  `func_808350A4`, `func_808353D8`, `func_80835588`, the hookshot's `func_80834FBC`, the shooting
+  gallery's checks); the string's spring (`func_8084FF7C`).
+- First person: C-Up's look (`func_8083B8F4`), `Player_ActionHandler_13`'s first-person branch
+  with `func_8083AD4C`, `Player_Action_8084B1D8` with `func_8084ABD8` (the stick's turn: steady in
+  the look, eased when aiming). The main camera's answers are computed by Player from a view of
+  it, the requests made after his update.
+- Aiming Z-targeted: the branches in `func_8083DC54`, `func_8083DDC8`, `func_8083FC68`,
+  `func_8083FD78`, `func_8083356C` (the bow's side walk) and `CAM_MODE_Z_AIM`.
+- `heldActor`: the seed spawned as Player's child (`Actor_SpawnAsChild`) and let go through
+  requests, placed by his draw at the left hand; `Player_DetachHeldActor` whole and called where
+  the C calls it (`func_80832564`, `func_80834644`, `func_808346C4`, the guard, a cutscene mode).
+- The Deku nut: `func_8083C61C` (not indoors, on the ground) and `Player_Action_8084E604` (frame 3:
+  one nut less, `En_Arrow` `ARROW_NUT` from the right hand, pitched 4000).
+- The draw: the first-person Link variant (`Player_OverrideLimbDrawGameplayFirstPerson`: the
+  arms only when aiming, nothing in the look), the string from the right hand
+  (`gLinkChildSlingshotStringDL`, stretched by `unk_858`, draw-time state).
+- Player's `actor.focus.pos` as the C has it (`sPlayerFocusOffsetFromHead` in the head's drawn
+  space; it was the head limb's origin): found by the first person's view (below).
+- BACKLOG #18: knocked down, Player asks for `CAM_MODE_STILL`.
+
+**The camera:** `Camera_Subj3` whole (first person, the aims), with Player's focus in the
+camera's view of him.
+
+**The projectiles** (ADR 0046, a worktree agent): `En_Arrow` whole (the adult arrows' trail and the
+magic arrows logging), `En_M_Fire1`, `Effect_Ss_Stone1`, Play's flash (`transitionFadeFlash`,
+`R_TRANS_FADE_FLASH_ALPHA_STEP`), `BgCheck_ProjectileLineTest`, `func_8002F9EC`, and
+`Player_UpdateWeaponInfo` for any actor.
+
+**Equipping and starts:** Start's stand-in puts owned nuts and the slingshot on the first empty C
+buttons (`SaveContext::equip_item_on_c`, `KaleidoScope_UpdateItemEquip`'s swap for any C button);
+the preset `deku-tree-slingshot`; `SLINGSHOT_STARTS` (room 1's eye, room 3's eye, room 2's ladder,
+room 10's chest); `Route::start_clears` (a debug start's rooms marked cleared before it loads
+them).
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game21`, `OOT_DATA_DIR=out/data20`):
+603 passed, 0 failed, 1 ignored (579 before). 24 are new, with their expectations from the C:
+- **`oot_actors --test slingshot`** (12): the slingshot out (the change's swap on its 4th frame,
+  `PLAYER_STATE1_3`, `unk_860` -2, `NA_SE_PL_CHANGE_ARMS`), raised into first person the next frame
+  with the aim's camera and no seed (the C's dry first raise), then drawn with a seed after the
+  ready animation (`NA_SE_IT_SLING_DRAW`, the seed Player's child at the left hand); the shot on
+  letting go (29 seeds, `unk_A73` 4, the parent cleared) and the string's spring frame by frame;
+  the flick with no seeds; A ending first person and the slingshot lowered
+  (`link_bow_bow_shoot_end`); C-Up's look (`unk_6AD` 1, the stick turning the focus 960 a frame);
+  the Z-targeted aim (`CAM_MODE_Z_AIM`, no first person); a nut thrown (frame 3, at the right
+  hand, pitched 4000, the voice); Start's stand-in and the C buttons' swap; the first-person draw
+  (the arms' variant, baked, and the string); `Camera_Subj3`'s settled view (at, eyeNext, eye from
+  the data and Player's focus); room 10's chest giving the slingshot (30 seeds, flag 6) and Start
+  putting it on C-Down; a seed from the `room2` start over the lift into the ladder.
+- **`--test arrows`** (10): a seed let go without a shot is gone at once; a shot seed's 15 frames
+  (speed 80, gravity from the 8th, positions and the quad frame by frame); a held seed waits; a
+  seed into a wall (the burst's 8 frames, `NA_SE_IT_SLING_REFLECT`); a nut flying whatever
+  `unk_A73` (and `ARROW_CS_NUT`); a nut into a wall (the flash's alpha 255, 165, 135 ... 0,
+  `En_M_Fire1`, `NA_SE_IT_DEKU`); the nut's stun on room 5's Skulltula; real seeds into room 1's
+  eye, room 2's ladder and room 3's eye.
+- **`--test slingshot_run`** (1): the exit run.
+- **`--test debug_starts`** (one more): the slingshot's starts stand in their rooms.
+- `--test damage`: the knockdown asks for `CAM_MODE_STILL` (BACKLOG #18).
+- **`--test travel`** (extended, a worktree agent): from the one start, now with the slingshot,
+  also room 1 to 2 (room 1's eye shot, room 2's ladder shot from its floor and climbed) and back;
+  and instead of placing Link on room 3's upper floor, the loop: room 3's eye, rooms 4 (its timed
+  torches lit with a stick from room 3's torch), 5 (its golden torch while its switch is held, the
+  floating block ridden under the spiked log crouching with R, its timed torches), 6, 7 (the webs
+  over the doors to room 8 and to the crawlspace burnt with sticks lit at its held-switch torches),
+  8 and back, the crawlspace to room 3's upper floor; then room 3's block pushed into the trench
+  (`Route::Push`) to carry fire from room 3's torch up to its floor web, the drop to room 9 and 9
+  to 11 as before. 7943 frames (2942 before). Two `place_player`s are left: room 0's top floor
+  (the scripted vine climb, BACKLOG #17's) and beside room 9's running hint scrub.
+- One older test changed: `skulltula_st`'s killing slash expected at most one drop, but
+  `Item_DropCollectibleRandom` drops its entry's `sDropQuantities`; with the focus fix the `Rand`
+  stream (Navi's flight) lands on an entry of more than one. It now checks one entry's item and
+  quantity.
+
+**The exit run** (`Route::Slingshot`, `--script slingshot`, from `SLINGSHOT_START` in room 1 with
+the room cleared): C-Right held, the slingshot out and drawn in first person (`slingshot_drawn`
+19), the stick steering the seed's aim at the eye (from the seed's own position and rotation),
+let go: the seed bursts on the eye (`eye_shot` 31, flag 0x0C), A out of first person, the door's
+attention cameras, then through the door (`door_opened` 245) into room 2 (`through_door` 281).
+281 frames.
+
+**The goldens.** Against milestone 4c's build (`target/game20`, 3f5c0ac, on data19: 91/91
+identical): `combat`, `shutter`, `stick`, `mido_shop_audio` and `new_file_deku_tree` changed, each
+from Player's focus (the one-point cutscenes' shots aimed at Link, Navi's resting point, the
+attention system's line of sight), proven by reverting it; every other case the same bytes. **New
+case `slingshot`**: the exit run, the same bytes over two runs. Then, after playing by hand, the
+near plane (below): 28 renders changed (the course sheets' posts nearest the camera, the edges of
+Kokiri Forest's, Hyrule Field's and the Deku Tree's shots), no trace, proven by taking the feature
+out. Logged in [golden/README.md](../golden/README.md): 92 hashes, 68 cases.
+
+### Decisions
+
+- **[ADR 0045](adr/0045-the-fairy-slingshot-first-person-and-deku-nuts.md):** Player's slingshot,
+  first person and nut whole, the boomerang's actions noted; the camera's answers computed by
+  Player; `heldActor` through requests and the draw; the first-person variant; the stand-in and
+  preset; the dry first raise kept; `Camera_Subj3`; BACKLOG #18; Player's focus; the exit's run
+  from room 1 cleared.
+- **[ADR 0046](adr/0046-en-arrow-the-nuts-stun-and-the-flash.md):** `En_Arrow` whole with the
+  trail and magic arrows logging; `En_M_Fire1`, `Effect_Ss_Stone1`, the flash, the projectile line
+  test, the shared weapon info.
+- **The ports ran in parallel** as two worktree agents (the projectiles; the travel test), with
+  Player, the camera and the bakes here.
+- **Room travel, from the C** (the agent's findings): room 7's way to room 3 is a crawlspace, which
+  puts a stick away (`Player_TryEnteringCrawlspace`), so room 3's floor web takes fire from room
+  3's own torch, carried over the trench by the pushed block; door 7 (type 1, sides 7 and 6) is
+  barred from room 6, not 7 (`DoorShutter_SetupDoor`: only its back stays `SHUTTER_FRONT_CLEAR`);
+  room 5 is crossed on the floating block in its phase, under the spiked log crouched (R: the
+  cylinder 38 to 19 high). Enemies killed during a cutscene are deleted only once it's over
+  (`sCategoryFreezeMasks`), so a room's clear can come late; the test keeps room 4's far egg until
+  its torches are lit.
+- **The exit's run starts with room 1 cleared:** its big Deku Baba (scale 2.5) wakes within 500 of
+  Link anywhere on the floor and bit him while he aimed (`Rand`'s fight). `game-slingshot.bat
+  room1` keeps it.
+
+### Known gaps
+
+- **The pause menu** (5b): Start is still the stand-in, putting owned items on empty C buttons.
+- **The adult's arrows' trail** (`EffectBlure`) and the magic arrows' actors log; the boomerang's
+  upper-body actions (`func_80835800` on) aren't ported (its item is a later dungeon's).
+- **Player keeps its own copy** of `Player_UpdateWeaponInfo` (fields `tip`/`base`) beside the
+  shared one; folding it in is left for later.
+- `bodyPartsPos` for a limb the first-person draw leaves out: the C keeps the last frame's
+  (`sCurBodyPartPos` only moves for a drawn limb); the port computes them all.
+
+### Fixes found while building
+
+- **Player's focus was the head limb's origin**, not the C's `sPlayerFocusOffsetFromHead` in the
+  head's drawn space: in first person the camera (`Camera_Subj3`, which hangs off it) sat at the
+  neck and the slingshot showed at the top of the screen. Fixed (ADR 0045); five goldens moved.
+
+### Fixes after playing by hand
+
+- **Part of the slingshot's string was missing** as Link drew it back: the string's pouch comes
+  nearer to the camera than the near plane. The game's microcode is F3DZEX2's NoN variant
+  (`graph.c`: `gspF3DZEX2_NoN_fifo`), which clips nothing at the near plane, only at the far one;
+  the GPU clipped both. The renderer now draws with unclipped depth (wgpu's
+  `DEPTH_CLIP_CONTROL`, `eng_render::NON_FEATURES`, asked for in the headless and the window's
+  devices where the adapter has it; a nearer depth clamped to the near plane) and drops a pixel
+  past the far plane in `shader.wgsl` (ADR 0045). Everything near the camera draws as on the
+  console: 28 renders changed, no trace (golden/README.md). A GPU without the feature clips as
+  before.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-slingshot.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-slingshot.bat
+```
+
+### By hand
+
+`game-slingshot.bat WHERE` (or menu 66). WASD the stick, L is C-Right (the slingshot), K C-Down
+(nuts), J C-Left (sticks), I C-Up, Space A, E is B, Q is Z, R the shield, Enter Start.
+1. **`room1`** (the default): L takes the slingshot out and the view goes into first person (a
+   letterbox, the slingshot's fork in front). Keep L held: after a moment the string draws back
+   with a sound (the first raise is dry, as in the C). Aim with the stick at the eye over the
+   door (pushing up aims down, as in the game; the aim turns slowly, then faster) and let go of
+   L: the seed flies with a twang and bursts with a puff on the eye, which closes with a chime;
+   the camera shows the door's bars going up. Space (A) leaves first person. Go through the door
+   into room 2. Room 1's big Deku Baba in the middle wakes and lunges: fight it or keep your
+   distance.
+2. In first person, L again shoots the next seed; the C-Right counter counts down. Set the
+   seeds aside: at 0 the string only flicks. E (B) leaves first person and takes the sword out.
+3. **Z-aim:** Q (Z) then L: the slingshot raised in third person, the camera over the shoulder;
+   walk sideways with the stick.
+4. **The look:** I (C-Up) with nothing to talk about: first person without the slingshot; the
+   stick looks around; I or Space again returns.
+5. **Nuts:** K throws a Deku nut: a grey-white flash where it lands, and what's near it is
+   stunned (room 1's big Deku Baba, from the `room1` start, freezes for a moment). The nut count
+   goes down. A nut flies through enemies and bursts only on walls and floors, as in the game.
+6. **`room2`**: shoot the ladder above the door's ledge: it shakes and falls with its camera;
+   climb it to the door.
+7. **`room3`**: shoot the eye over the door ahead: the door to room 4 opens.
+8. **The chest:** `game-sticks.bat room10` (no slingshot yet): kill room 10's enemies; the big
+   chest drops with its camera; open it: the Fairy Slingshot. Enter (Start) puts it on C-Down.
+- **What to report:** how aiming feels (the stick's speed, the inverted pitch, the slow start),
+  the slingshot's and string's look in first person and Z-aim, the dry first raise's delay, the
+  seed's flight, puff and sounds, the nut's flash and the stun, the letterbox, and the C-Up look.

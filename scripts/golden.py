@@ -91,6 +91,10 @@ CASES = [
     # pushes the block along the floor's channel and off its end into the pit (flag 0x10, the
     # chime), then goes down into the pit beside it and climbs onto it.
     ("push", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "push", "--trace", "{trace}"]),
+    # GAME-05 milestone 5a: from a debug start in room 1 250 in front of its eye switch (the
+    # slingshot on C-Right), Link takes the Fairy Slingshot out, aims in first person and shoots a
+    # seed into the eye (flag 0x0C): the door to room 2 unbars, and he goes through it.
+    ("slingshot", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot", "--script", "slingshot", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

@@ -1,10 +1,17 @@
-//! Room-to-room travel in the Master Quest Deku Tree (GAME-05 milestone 4c): from one start, Link
-//! takes every connection milestone 4 opened, each room change through the real door or drop:
-//! 0 to 10 and back (`Door_Shutter` barred until the room is cleared), 0 to 1 and back (a plain
-//! door, its web burnt with a Deku Stick), the drop from 0 to 3 (room 0's floor web broken by a
-//! fall of over 750, `En_Holl`), the drop from 3 to 9 (room 3's floor web burnt), and 9 to 11
-//! (the hint scrubs' puzzle clearing room 9, which unbars its door). Within a room Link is placed
-//! where walking there needs what isn't ported (said where); enemies in the way are killed.
+//! Room-to-room travel in the Master Quest Deku Tree (GAME-05 milestones 4c and 5a): from one
+//! start, Link takes every connection milestones 4 and 5a opened, each room change through the
+//! real door, drop or plane: 0 to 10 and back (`Door_Shutter` barred until the room is cleared),
+//! 0 to 1 and back (a plain door, its web burnt with a Deku Stick), 1 to 2 and back (the Fairy
+//! Slingshot's seed into room 1's eye switch, and into room 2's ladder, climbed), the drop from 0
+//! to 3 (room 0's floor web broken by a fall of over 750, `En_Holl`), round from room 3's floor
+//! to its upper floor (3 to 4 by room 3's eye switch, 4 to 5 by room 4's timed torches lit with a
+//! stick from room 3, 5 to 6 by room 5's, lit from its held switch's torch across the pool on the
+//! floating block, 6 to 7 once room 6 is cleared, 7 to 8 and back through a burnt web, and 7 to
+//! 3 through the crawlspace and its `En_Holl`), the drop from 3 to 9 (room 3's floor web burnt
+//! with fire carried up from its lower floor by way of its push block), and 9 to 11 (the hint
+//! scrubs' puzzle clearing room 9, which unbars its door). Within a room Link walks, climbs,
+//! swims, jumps or crawls; he's placed twice, where walking there needs what isn't ported or the
+//! scripted climb fails (said where); enemies in the way are killed.
 //!
 //! Expected values are worked out from the C in the comments.
 
@@ -13,15 +20,17 @@ mod common;
 use std::sync::Arc;
 
 use common::*;
-use eng_input::pad::{BTN_A, BTN_CLEFT, PadState};
+use eng_input::pad::{BTN_A, BTN_CLEFT, BTN_R, PadState};
 use glam::Vec3;
 use oot_actors::PlayExt;
+use oot_actors::bg_ydan_hasi::BgYdanHasi;
+use oot_actors::bg_ydan_maruta::{Action as MarutaAction, BgYdanMaruta};
 use oot_actors::bg_ydan_sp::{Action as WebAction, BgYdanSp};
 use oot_actors::door_shutter::{Action as DoorAction, DoorShutter};
 use oot_actors::en_hintnuts::{Action as HintAction, EnHintnuts};
 use oot_actors::obj_syokudai::ObjSyokudai;
-use oot_actors::player::{Action as PA, PLAYER_DOORTYPE_SLIDING, PLAYER_IA_DEKU_STICK, UpperAction};
-use oot_actors::playthrough::{Playthrough, Route, SHUTTER_DOOR, STICK_DOOR, STICK_START, Step};
+use oot_actors::player::{Action as PA, PLAYER_DOORTYPE_SLIDING, PLAYER_IA_DEKU_STICK, STATE2_16, UpperAction};
+use oot_actors::playthrough::{PUSH_START, Playthrough, ROOM1_DOOR, ROOM1_EYE_FLAG, ROOM2_LADDER_FLAG, ROOM2_LADDER_HOME, ROOM3_EYE_FLAG, ROOM3_EYE_HOME, Route, SHUTTER_DOOR, SLINGSHOT_START, STICK_DOOR, STICK_START, Step};
 use oot_actors::script::stick_towards;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorHandle};
 use oot_game::camera::CAM_ID_MAIN;
@@ -125,15 +134,20 @@ impl Run {
 
     /// A scripted route's tasks driven from where Link is, each step checked by `check`.
     #[track_caller]
-    fn route(&mut self, route: Route, mut check: impl FnMut(&PlayState, Step)) -> Vec<Step> {
-        let mut run = Playthrough::for_route(route);
+    fn route(&mut self, route: Route, check: impl FnMut(&PlayState, Step)) -> Vec<Step> {
+        self.run(Playthrough::for_route(route), check)
+    }
+
+    /// A scripted run's tasks driven from where Link is, each step checked by `check`.
+    #[track_caller]
+    fn run(&mut self, mut run: Playthrough, mut check: impl FnMut(&PlayState, Step)) -> Vec<Step> {
         while let Some(p) = run.next(&self.w) {
             self.frame(p);
             if let Some(s) = run.take_done() {
                 check(&self.w, s);
             }
         }
-        assert!(run.failure.is_none(), "{route:?}: {:?}", run.failure);
+        assert!(run.failure.is_none(), "{:?}: {:?}", run.route, run.failure);
         run.steps.iter().map(|s| s.0).collect()
     }
 
@@ -147,6 +161,30 @@ impl Run {
         let at = door(&self.w, index).actor.world_pos;
         self.until(120, "the door's offer", |w| w.player().door_type == PLAYER_DOORTYPE_SLIDING, |w, _| stick_towards(w, at, 30.0));
         self.until(10, "A on the door", |w| w.player().action == PA::ExitWalk, |_, prev| if prev.button & BTN_A != 0 { NONE } else { PadState { button: BTN_A, ..NONE } });
+    }
+
+    /// `open_door` at a run, for a burning stick: to `front` at full tilt, then straight at the
+    /// door until it offers itself, then A.
+    #[track_caller]
+    fn run_door(&mut self, index: usize, front: Vec3) {
+        self.walk(&[front], 80.0);
+        let at = door(&self.w, index).actor.world_pos;
+        self.until(120, "the door's offer", |w| w.player().door_type == PLAYER_DOORTYPE_SLIDING, |w, _| stick_towards(w, at, 60.0));
+        self.until(10, "A on the door", |w| w.player().action == PA::ExitWalk, |_, prev| if prev.button & BTN_A != 0 { NONE } else { PadState { button: BTN_A, ..NONE } });
+    }
+
+    /// C-Left until a Deku Stick is in hand and the change is over (pressed again only once it's
+    /// let go: each press an edge).
+    #[track_caller]
+    fn take_stick(&mut self) {
+        self.until(
+            60,
+            "the stick out",
+            |w| w.player().held_item_ap == PLAYER_IA_DEKU_STICK && w.player().upper != UpperAction::Change,
+            |w, prev| {
+                if w.player().held_item_ap == PLAYER_IA_DEKU_STICK || prev.button & BTN_CLEFT != 0 { NONE } else { PadState { button: BTN_CLEFT, ..NONE } }
+            },
+        );
     }
 
     /// Until the door from transition `index` is down behind Link and he's free.
@@ -179,6 +217,16 @@ fn web(w: &PlayState, flag: u8) -> Option<&BgYdanSp> {
     w.actors.all().into_iter().find_map(|h| w.actors.downcast::<BgYdanSp>(h).filter(|s| s.is_destroyed_switch_flag == flag && !s.actor.killed))
 }
 
+/// Room 2's ladder (`Bg_Ydan_Maruta` 0x0121).
+fn ladder(w: &PlayState) -> &BgYdanMaruta {
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<BgYdanMaruta>(h).filter(|m| m.actor.params == oot_actors::bg_ydan_maruta::MARUTA_LADDER)).expect("room 2's ladder")
+}
+
+/// Room 5's floating block (`Bg_Ydan_Hasi` 0xFF00: kind 0, `HASI_WATER_BLOCK`).
+fn block5(w: &PlayState) -> &BgYdanHasi {
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<BgYdanHasi>(h).filter(|b| b.actor.params == 0)).expect("room 5's floating block")
+}
+
 fn torch_at(w: &PlayState, home: Vec3) -> &ObjSyokudai {
     w.actors.all().into_iter().find_map(|h| w.actors.downcast::<ObjSyokudai>(h).filter(|t| t.actor.home_pos.distance(home) < 1.0)).expect("the torch")
 }
@@ -186,12 +234,14 @@ fn torch_at(w: &PlayState, home: Vec3) -> &ObjSyokudai {
 #[test]
 fn link_travels_the_deku_trees_open_connections() {
     let Some(a) = assets() else { return };
-    // One start: `Route::Shutter`'s debug start on room 0's top floor, ten Deku Sticks on C-Left
-    // (`deku-tree-sticks`), Navi's forced hints in room 0 heard (`Elf_Msg` 0x1F02's flag 0x1F).
+    // One start: `Route::Shutter`'s debug start on room 0's top floor, ten Deku Sticks on C-Left,
+    // ten Deku nuts on C-Down and the Fairy Slingshot with 30 seeds on C-Right
+    // (`deku-tree-slingshot`), Navi's forced hints in rooms 0 and 2 heard (`Elf_Msg` 0x1F02's flag
+    // 0x1F).
     let route = Route::Shutter;
     let e = a.scenes.entrance_index(route.entrance()).expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
-    save.apply_preset("deku-tree-sticks").unwrap();
+    save.apply_preset("deku-tree-slingshot").unwrap();
     let w = PlayState::play_init_with(a.clone(), data().unwrap(), rules().unwrap(), save, oot_game::audio::GameAudio::default()).expect("Play_Init");
     let mut r = Run { w, prev: NONE, frames: 0 };
     route.debug_start(&mut r.w);
@@ -265,7 +315,67 @@ fn link_travels_the_deku_trees_open_connections() {
     assert_eq!(steps, vec![Step::StickOut, Step::StickLit, Step::WebBurnt, Step::DoorOpened, Step::ThroughDoor]);
     r.kill_enemies(|_, _| false);
     r.settle();
-    // Back through it from room 1's side (it faces room 0, rot y 0x6000): a plain door both ways.
+    eprintln!("2: in room 1 at frame {}", r.frames);
+
+    // 3. Room 1 to room 2 and back. Across room 1 (its enemies gone, the big Deku Baba among
+    // them) to `Route::Slingshot`'s start, 250 in front of the eye switch over the door to room 2
+    // (Obj_Switch 0x0C02: eye, once, flag 0x0C), and its run: the Fairy Slingshot drawn from
+    // C-Right, a seed into the eye (ObjSwitch_EyeIsHit: the seed from in front; ObjSwitch_SetOn,
+    // flag 0x0C). The door (transition 5, params 0x008C: type 2 SHUTTER_FRONT_SWITCH on 0x0C,
+    // sides 2 and 1) is barred from room 1, its back (DoorShutter_SetupDoor: front room 2 isn't
+    // the door's room), until the flag: DoorShutter_BarAndWaitSwitchFlag unbars with its
+    // attention camera. Through it: Room_RequestNewRoom(2).
+    r.walk(&[SLINGSHOT_START.0], 60.0);
+    r.settle();
+    let steps = r.route(Route::Slingshot, |w, s| match s {
+        Step::EyeShot => assert!(w.flags.get_switch(ROOM1_EYE_FLAG)),
+        Step::DoorOpened => assert_eq!(w.room_ctx.cur.num, 2),
+        Step::ThroughDoor => assert_eq!((w.room_ctx.cur.num, w.room_ctx.prev.num), (2, -1)),
+        _ => {}
+    });
+    assert_eq!(steps, vec![Step::SlingshotDrawn, Step::EyeShot, Step::DoorOpened, Step::ThroughDoor]);
+    r.kill_enemies(|_, _| false);
+    r.settle();
+    // Room 2's ladder (Bg_Ydan_Maruta 0x0121) hangs from the 560 floor over the door's ledge
+    // (400), 280 above its own floor (280) until a seed hits it. From the ledge it's out of reach:
+    // a seed aimed up at its middle (67 up) meets the 560 floor's edge first (BgCheck_
+    // ProjectileLineTest stops it about 38 short). So off the ledge onto the floor (a 120 drop), and
+    // from 300 out in front of it (its face looks along -0x2000, into the room), clear of the lift
+    // (Obj_Lift 0x0080, whose top, 408, is in the way from the debug start's (-1278, 1278)), a
+    // seed: func_808BF078 (DMG_SLINGSHOT), flag 0x21, 20 frames of shaking, the fall to 280.
+    r.walk(&[Vec3::new(-1010.0, 400.0, 1090.0)], 60.0);
+    r.until(120, "off the ledge", |w| !w.player().grounded(), |w, _| stick_towards(w, Vec3::new(-1150.0, 280.0, 1090.0), 60.0));
+    r.idle_until(120, "on room 2's floor", |w| w.player().grounded());
+    assert_eq!(r.w.player().actor.world_pos.y, 280.0);
+    r.walk(&[Vec3::new(-1140.0, 280.0, 1150.0), Vec3::new(-1130.0, 280.0, 1360.0)], 80.0);
+    r.settle();
+    let steps = r.run(Playthrough::slingshot_shot(ROOM2_LADDER_HOME + Vec3::Y * 67.0, ROOM2_LADDER_FLAG), |_, _| {});
+    assert_eq!(steps, vec![Step::SlingshotDrawn, Step::EyeShot]);
+    r.idle_until(120, "the ladder down", |w| ladder(w).action == MarutaAction::DoNothing);
+    assert_eq!(ladder(&r.w).actor.world_pos, Vec3::new(-1066.0, 280.0, 1066.0));
+    // Up it: at its foot, into its face until Link takes hold (func_8083EC18: the ladder's wall),
+    // the stick up (Player_Action_8084BF1C reads it straight) until he steps off the top
+    // (Player_Action_8084C5F8) onto the ledge.
+    r.walk(&[Vec3::new(-1110.0, 280.0, 1110.0)], 80.0);
+    r.settle();
+    let foot = Vec3::new(ROOM2_LADDER_HOME.x, 280.0, ROOM2_LADDER_HOME.z);
+    r.until(120, "onto the ladder", |w| matches!(w.player().action, PA::Climb | PA::ItemPutAway), |w, _| stick_towards(w, foot, 60.0));
+    r.until(400, "up the ladder", |w| w.player().action == PA::ClimbEnd, |w, _| if w.player().action == PA::Climb { PadState { stick_y: 60, ..NONE } } else { NONE });
+    r.settle();
+    assert_eq!(r.w.player().actor.world_pos.y, 400.0);
+    // Back through the door from room 2's side (it faces room 1, rot y 0x6000): from its front
+    // room it's plain (DoorShutter_SetupDoor: SHUTTER), Room_RequestNewRoom(1). Room 1's enemies
+    // spawned again with it.
+    r.open_door(ROOM1_DOOR, Vec3::new(-960.0, 400.0, 960.0));
+    assert_eq!(r.w.room_ctx.cur.num, 1);
+    r.wait_door_shut(ROOM1_DOOR);
+    assert_eq!(r.rooms(), (1, -1));
+    r.frame(NONE);
+    r.kill_enemies(|_, _| false);
+    r.settle();
+    eprintln!("3: back in room 1 at frame {}", r.frames);
+    // Back through room 0's door from room 1's side (it faces room 0, rot y 0x6000): a plain door
+    // both ways.
     r.open_door(STICK_DOOR, Vec3::new(-480.0, 400.0, 480.0));
     assert_eq!(r.w.room_ctx.cur.num, 0);
     r.wait_door_shut(STICK_DOOR);
@@ -274,9 +384,9 @@ fn link_travels_the_deku_trees_open_connections() {
     r.frame(NONE);
     r.kill_enemies(|_, _| false);
     r.settle();
-    eprintln!("2: back in room 0 at frame {}", r.frames);
+    eprintln!("4: back in room 0 at frame {}", r.frames);
 
-    // 3. Room 0 to room 3: the drop. It takes a fall of over 750 onto the floor web (y 0), so
+    // 5. Room 0 to room 3: the drop. It takes a fall of over 750 onto the floor web (y 0), so
     // from the top floor. The middle floor's vines (WALL_FLAG_3, x 416 to 480, z 0 to 240) take
     // Link up there by hand (checked by the user), but this test's scripted climb dropped off
     // under the top floor's rim (the highest it got was 747), and the other climbable wall
@@ -307,9 +417,9 @@ fn link_travels_the_deku_trees_open_connections() {
     assert!(r.w.flags.get_switch(0x05));
     r.idle_until(5, "room 0 gone", |w| w.room_ctx.prev.num == -1);
     r.kill_enemies(|_, _| false);
-    eprintln!("3: in room 3 at frame {}", r.frames);
+    eprintln!("5: in room 3 at frame {}", r.frames);
 
-    // 4. Room 3 to room 9. Out of the water he lands in (the pit, floor -940), up the trench
+    // 6. Room 3 to room 4. Out of the water he lands in (the pit, floor -940), up the trench
     // (-905) and the 60 ledge onto the raised floor (-845), onto the floor switch (Obj_Switch
     // 0x0200: flag 0x02); the golden torch (Obj_Syokudai 0x03C2, flag 0x02) lights with its
     // attention camera (ObjSyokudai_Update: litTimer -1).
@@ -318,32 +428,257 @@ fn link_travels_the_deku_trees_open_connections() {
     r.until(200, "room 3's switch", |w| w.flags.get_switch(0x02), |w, _| stick_towards(w, Vec3::new(-102.0, -845.0, -410.0), 40.0));
     r.settle();
     assert_eq!(torch_at(&r.w, torch3).lit_timer, -1);
-    // Back down through the water and out onto the floor by the torch, a stick from C-Left
-    // (once the main camera is back), its tip at the flame (67 up): Player's unk_860 210.
+    // Back down through the water and out onto the floor by the torch, under the eye switch over
+    // the door to room 4 (Obj_Switch 0x1502 at (-76, -727, 551), facing -z: its triangles 8.5 in
+    // front), and a seed up into it from 220 in front: flag 0x15. The door (transition 2, params
+    // 0x01D5: type 7 SHUTTER_FRONT_SWITCH_BACK_CLEAR on 0x15, sides 4 and 3) is barred from room 3,
+    // its back, until the flag (DoorShutter_BarAndWaitSwitchFlag), and unbars with its camera.
     r.walk(&[Vec3::new(-100.0, -905.0, -60.0), Vec3::new(-200.0, -940.0, 0.0), Vec3::new(-200.0, -880.0, 200.0), Vec3::new(-102.0, -880.0, 330.0)], 80.0);
     r.settle();
-    r.until(
-        60,
-        "the stick out",
-        |w| w.player().held_item_ap == PLAYER_IA_DEKU_STICK && w.player().upper != UpperAction::Change,
-        |w, prev| {
-            if w.player().held_item_ap == PLAYER_IA_DEKU_STICK || prev.button & BTN_CLEFT != 0 { NONE } else { PadState { button: BTN_CLEFT, ..NONE } }
-        },
-    );
-    r.until(300, "the stick lit", |w| w.player().unk_860 != 0, |w, _| tip_towards(w, torch3 + Vec3::Y * 67.0));
+    assert!(door(&r.w, 2).bars_closed_amount > 0.0);
+    let steps = r.run(Playthrough::slingshot_shot(ROOM3_EYE_HOME + Vec3::new(0.0, 0.0, -8.5), ROOM3_EYE_FLAG), |_, _| {});
+    assert_eq!(steps, vec![Step::SlingshotDrawn, Step::EyeShot]);
+    r.settle();
+    assert_eq!((door(&r.w, 2).action, door(&r.w, 2).bars_closed_amount), (DoorAction::UnbarredCheckSwitchFlag, 0.0));
+    // A stick from C-Left (once the main camera is back), its tip at the flame (67 up):
+    // Player's unk_860 210 (ObjSyokudai_Update, interactionType -1).
+    r.take_stick();
+    r.until(60, "the stick lit at room 3's torch", |w| w.player().unk_860 != 0, |w, _| tip_into_flame(w, torch3));
     assert_eq!(r.w.player().unk_860, 210);
+    let lit = r.frames;
+    // At a run through the door: Room_RequestNewRoom(4). From room 4, its front, the door is
+    // SHUTTER_FRONT_CLEAR (DoorShutter_SetupDoor), and room 4 isn't cleared: shut behind Link, it
+    // bars (DoorShutter_WaitClear) with Link surprised (PLAYER_CSACTION_2) for 30 frames.
+    r.run_door(2, Vec3::new(-75.0, -880.0, 530.0));
+    assert_eq!(r.w.room_ctx.cur.num, 4);
+    r.idle_until(300, "room 4's door barred", |w| !matches!(door(w, 2).action, DoorAction::Open | DoorAction::Close));
+    assert_eq!((r.rooms(), door(&r.w, 2).action, door(&r.w, 2).bars_closed_amount), ((4, -1), DoorAction::WaitPlayerSurprised, 1.0));
+    // Room 4's two timed torches (Obj_Syokudai 0x1099: type 1, count 2, flag 0x19), with the
+    // stick from room 3. The room's enemies would clear it, and DoorShutter_WaitClear's unbarring
+    // brings two attention cameras (the door and Link: 60 frames with Link held) that the stick's
+    // 210 frames can't spare, so the Mad Scrub and the Gohma eggs near the torches are killed now
+    // and the egg in the room's east corner (En_Goma 6 at (47, -880, 1052): EnGoma_Egg hatches
+    // only with Link within 100 in x and z) once the torches are lit.
+    let egg = Vec3::new(47.0, -880.0, 1052.0);
+    r.kill_enemies(|w, h| w.actors.actor(h).is_some_and(|a| a.home_pos.distance(egg) < 1.0));
+    // The first: sLitTorchCount 1, under the count: litTimer 50 * 2 + 110 (210), the stick back
+    // up to 200. The second within that: the count reached, Flags_SetSwitch(0x19), both kept lit.
+    let (t4a, t4b) = (Vec3::new(-281.0, -880.0, 881.0), Vec3::new(-282.0, -880.0, 1041.0));
+    r.until(200, "room 4's first torch lit", |w| torch_at(w, t4a).lit_timer > 0, |w, _| tip_into_flame(w, t4a));
+    assert_eq!(r.w.player().unk_860, 200);
+    eprintln!("   room 4's first torch {} frames after the stick was lit", r.frames - lit);
+    r.until(200, "room 4's second torch lit", |w| w.flags.get_switch(0x19), |w, _| tip_into_flame(w, t4b));
+    r.frame(NONE);
+    assert_eq!((torch_at(&r.w, t4a).lit_timer, torch_at(&r.w, t4b).lit_timer), (-1, -1));
+    // The egg: deleted once the torch's attention camera is over (Actor_UpdateAll freezes the
+    // enemy category, killed ones too, while Player is in a cutscene: sCategoryFreezeMasks'
+    // PLAYER_STATE1_29), room 4's temporary clear, and DoorShutter_WaitClear unbars. The door to room 5
+    // (transition 8, params 0x0099: type 2 SHUTTER_FRONT_SWITCH on 0x19, sides 5 and 4) is barred
+    // from room 4 until 0x19: it unbars too.
+    r.kill_enemies(|_, _| false);
+    r.idle_until(200, "room 4's door unbarred", |w| door(w, 2).bars_closed_amount == 0.0);
     r.settle();
-    // The floor web (Bg_Ydan_Sp 0x0FC6 at (-635, -820, 0)) is on the upper floor (-810 to -820),
-    // 85 and more over the trench and the water: past what child Link's ledge check reaches
-    // (ageProperties->unk_0C, 71). In the game the way up is room 3's push block
-    // (Obj_Makeoshihiki, pushed into the trench: Player's push, not ported yet) or round rooms
-    // 4 to 7 (the slingshot's eye switches). So he's placed on the upper floor east of the web,
-    // the stick still burning, and walks onto its edge.
-    r.w.place_player(Vec3::new(-520.0, -820.0, 0.0), -0x4000);
+    assert!(r.w.flags.get_clear(4));
+    assert_eq!([door(&r.w, 2).bars_closed_amount, door(&r.w, 8).bars_closed_amount], [0.0, 0.0]);
+    eprintln!("6: room 4's torches lit at frame {}", r.frames);
+
+    // 7. Room 4 to room 5 (the door from room 4's side, its back: it faces +x, rot y 0x4000);
+    // from room 5, its front, plain.
+    r.open_door(8, Vec3::new(-305.0, -880.0, 960.0));
+    assert_eq!(r.w.room_ctx.cur.num, 5);
+    r.wait_door_shut(8);
+    assert_eq!((r.rooms(), door(&r.w, 8).action), ((5, -1), DoorAction::Idle));
+    r.frame(NONE);
+    r.kill_enemies(|_, _| false);
     r.settle();
+    // Room 5's door to room 6 (transition 1, params 0x01C9: type 7 on 0x09, sides 6 and 5) is
+    // barred from room 5 until its two timed torches (Obj_Syokudai 0x1089: type 1, count 2, flag
+    // 0x09) are lit, over the pool on its west bank. The only fire is the golden torch
+    // (Obj_Syokudai 0x03FE: type 0, count 15, flag 0x3E) on the east bank, lit while its held
+    // floor switch (Obj_Switch 0x3E20: floor, OBJSWITCH_SUBTYPE_HOLD, flag 0x3E) 130 north of it
+    // is pressed: ObjSyokudai_Update keeps litTimer -1 while the flag is set, and 20 once it isn't,
+    // counting down to out; ObjSwitch_FloorDown clears the flag 6 frames (releaseTimer) after
+    // Link steps off. Any lit litTimer lights the stick (unk_860 210). So: a stick out (the one
+    // from room 4 burnt out first), onto the switch (its camera and the torch's), off it and the
+    // stick into the flame within those 26 frames.
+    let (switch5, torch5) = (Vec3::new(-527.0, -880.0, 1114.0), Vec3::new(-528.0, -880.0, 984.0));
+    r.idle_until(200, "room 4's stick burnt out", |w| w.player().held_item_ap != PLAYER_IA_DEKU_STICK);
+    r.walk(&[Vec3::new(-470.0, -880.0, 1114.0)], 60.0);
+    r.settle();
+    r.take_stick();
+    r.until(100, "room 5's switch", |w| w.flags.get_switch(0x3E), |w, _| stick_towards(w, switch5, 40.0));
+    r.settle();
+    assert_eq!(torch_at(&r.w, torch5).lit_timer, -1);
+    // The pool's floating block (Bg_Ydan_Hasi 0xFF00, BgYdanHasi_UpdateFloatingBlock) carries Link
+    // across: along x, -835 + 165 sin(gameplayFrames & 0xFF * pi / 128): at the east end
+    // (-670) at 64, the west end (-1000) at 192. So Link waits on the switch for the block (until
+    // 20), steps off and lights the stick (about 40), and runs off the bank onto the block as it
+    // comes to the east end: the stick's 210 frames last the crossing.
+    r.idle_until(256, "the block coming east", |w| w.gameplay_frames & 0xFF == 20);
+    r.until(60, "the stick lit at room 5's torch", |w| w.player().unk_860 != 0, |w, _| tip_into_flame(w, torch5));
+    let lit = r.frames;
+    assert!(torch_at(&r.w, torch5).lit_timer > 0 && !r.w.flags.get_switch(0x3E));
+    r.until(60, "on the floating block", |w| w.player().grounded() && w.player().actor.floor_bg_id == block5(w).bg, |w, _| stick_towards(w, block5(w).actor.world_pos, 80.0));
+    // Over the block's middle turns the spiked log (Bg_Ydan_Maruta 0x00FF: its triangles across
+    // x = -835 from 30 to 50 over the block's top), which knocks a standing Link into the water
+    // (his cylinder 38 high). R (Player_ActionHandler_11: the guard, PLAYER_STATE1_SHIELDING)
+    // crouches him behind the shield, the stick still in hand: his cylinder the feet to the head
+    // plus 10, times 0.8: 19. Held till the log is behind him.
+    r.until(100, "under the spiked log", |w| w.gameplay_frames & 0xFF >= 140, |_, _| PadState { button: BTN_R, ..NONE });
+    assert!(r.w.player().actor.world_pos.x < -850.0 && r.w.player().actor.floor_bg_id == block5(&r.w).bg);
+    // Off the block's west end onto the bank at a run (the jump off its edge: a 20 rise), and the
+    // timed torches: the first, sLitTorchCount 1 (litTimer 210, the stick back up to 200); the
+    // second, the count reached: 0x09, and the door unbars.
+    r.idle_until(60, "the block nearing the west bank", |w| w.gameplay_frames & 0xFF >= 155);
+    r.until(60, "on room 5's west bank", |w| w.player().grounded() && w.player().actor.world_pos.x < -1070.0, |w, _| stick_towards(w, Vec3::new(-1160.0, -880.0, 1054.0), 80.0));
+    assert_eq!(r.w.player().actor.world_pos.y, -880.0);
+    let (t5a, t5b) = (Vec3::new(-1160.0, -880.0, 993.0), Vec3::new(-1161.0, -880.0, 1147.0));
+    r.until(100, "room 5's first timed torch lit", |w| torch_at(w, t5a).lit_timer > 0, |w, _| tip_into_flame(w, t5a));
+    eprintln!("   room 5's first timed torch {} frames after the stick was lit", r.frames - lit);
+    r.until(100, "room 5's second timed torch lit", |w| w.flags.get_switch(0x09), |w, _| tip_into_flame(w, t5b));
+    r.settle();
+    assert_eq!((door(&r.w, 1).action, door(&r.w, 1).bars_closed_amount), (DoorAction::UnbarredCheckSwitchFlag, 0.0));
+    eprintln!("7: room 5's torches lit at frame {}", r.frames);
+
+    // 8. Room 5 to room 6 to room 7. Up to the door's floor (-760): onto the Song of Time block
+    // (Obj_Timeblock 0xB9FF, there from the start: its top -820) 50 up, and on 60 up, each a
+    // ledge climb (Player_ActionHandler_12).
+    r.walk(&[Vec3::new(-1290.0, -870.0, 1070.0)], 80.0);
+    r.until(150, "up onto room 5's -760 floor", |w| w.player().grounded() && w.player().actor.world_pos.y == -760.0, |w, _| stick_towards(w, Vec3::new(-1480.0, -760.0, 1070.0), 80.0));
+    // Through the door from room 5's side (it faces +x, rot y 0x4000): from room 6, its front,
+    // it's SHUTTER_FRONT_CLEAR: barred behind Link until room 6 is cleared, as is the door on to
+    // room 7 (transition 7, params 0x007F: type 1, sides 7 and 6), from room 6, its back.
+    r.open_door(1, Vec3::new(-1505.0, -760.0, 1070.0));
+    assert_eq!(r.w.room_ctx.cur.num, 6);
+    r.idle_until(300, "room 6's door barred", |w| !matches!(door(w, 1).action, DoorAction::Open | DoorAction::Close));
+    assert_eq!((r.rooms(), door(&r.w, 1).bars_closed_amount, door(&r.w, 7).action), ((6, -1), 1.0, DoorAction::WaitClear));
+    // Room 6's enemies die (deleted once Link's surprise is over: Actor_UpdateAll's freeze of
+    // the enemy category in a cutscene): its temporary clear, made permanent, and both doors
+    // unbar.
+    r.kill_enemies(|_, _| false);
+    r.idle_until(60, "room 6's temporary clear", |w| w.flags.get_temp_clear(6));
+    r.idle_until(400, "room 6's doors unbarred", |w| door(w, 1).bars_closed_amount == 0.0 && door(w, 7).bars_closed_amount == 0.0);
+    r.settle();
+    assert!(r.w.flags.get_clear(6));
+    // Through the door to room 7 from room 6's side (it faces +z, rot y 0): plain from room 7.
+    r.open_door(7, Vec3::new(-1855.0, -760.0, 800.0));
+    assert_eq!(r.w.room_ctx.cur.num, 7);
+    r.wait_door_shut(7);
+    assert_eq!((r.rooms(), door(&r.w, 7).action), ((7, -1), DoorAction::Idle));
+    r.frame(NONE);
+    r.kill_enemies(|_, _| false);
+    r.settle();
+    eprintln!("8: in room 7 at frame {}", r.frames);
+
+    // 9. Room 7 to room 8 and back. Room 7's door to room 8 (transition 3, params 0x003F: type 0,
+    // plain) is behind a wall web (Bg_Ydan_Sp 0x1FCF: WEB_WALL, destroyed flag 0x0F, no burn
+    // flag), which a burning stick's tip burns within 100 across its face (BgYdanSp_WallWebIdle).
+    // The fire: room 7's four golden torches (Obj_Syokudai 0x03F8: type 0, count 15, flag 0x38)
+    // round its held floor switch (Obj_Switch 0x3820: flag 0x38), lit while it's pressed, as room
+    // 5's. A stick out, onto the switch, and off it into the south torch's flame.
+    let switch7 = Vec3::new(-1959.0, -760.0, 90.0);
+    r.walk(&[Vec3::new(-1900.0, -760.0, 400.0), Vec3::new(-1915.0, -760.0, 135.0)], 80.0);
+    r.settle();
+    r.take_stick();
+    r.until(100, "room 7's switch", |w| w.flags.get_switch(0x38), |w, _| stick_towards(w, switch7, 40.0));
+    r.settle();
+    let t7s = Vec3::new(-1961.0, -760.0, 5.0);
+    r.until(60, "the stick lit at room 7's south torch", |w| w.player().unk_860 != 0, |w, _| tip_into_flame(w, t7s));
+    // Round the gravestone (Bg_Haka at (-2084, -775, -104)) to the web: it burns (the chime, its
+    // destroyed flag, one-point cutscene 3020).
+    let web8 = Vec3::new(-2297.0, -760.0, -327.0);
+    r.walk(&[Vec3::new(-1990.0, -760.0, -200.0), Vec3::new(-2250.0, -760.0, -290.0)], 80.0);
+    r.until(200, "the web over room 8's door burnt", |w| w.flags.get_switch(0x0F), |w, _| stick_towards(w, web8, 40.0));
+    r.settle();
+    // Through the door (it faces into room 7, rot y 0x2000) and back.
+    r.open_door(3, Vec3::new(-2395.0, -760.0, -428.0));
+    assert_eq!(r.w.room_ctx.cur.num, 8);
+    r.wait_door_shut(3);
+    assert_eq!(r.rooms(), (8, -1));
+    r.frame(NONE);
+    r.kill_enemies(|_, _| false);
+    r.settle();
+    r.open_door(3, Vec3::new(-2445.0, -760.0, -478.0));
+    assert_eq!(r.w.room_ctx.cur.num, 7);
+    r.wait_door_shut(3);
+    assert_eq!(r.rooms(), (7, -1));
+    r.frame(NONE);
+    r.kill_enemies(|_, _| false);
+    r.settle();
+    eprintln!("9: back in room 7 at frame {}", r.frames);
+
+    // 10. Room 7 to room 3's upper floor. Room 7's crawlspace east to room 3 is behind another
+    // wall web (Bg_Ydan_Sp 0x1FC7: destroyed flag 0x07): the switch again, the stick lit at the
+    // east torch, down the slope to the web.
+    r.idle_until(200, "the stick burnt out", |w| w.player().held_item_ap != PLAYER_IA_DEKU_STICK);
+    r.walk(&[Vec3::new(-2000.0, -760.0, -200.0), Vec3::new(-1915.0, -760.0, 50.0)], 80.0);
+    r.settle();
+    r.take_stick();
+    r.until(100, "room 7's switch again", |w| w.flags.get_switch(0x38), |w, _| stick_towards(w, switch7, 40.0));
+    r.settle();
+    let t7e = Vec3::new(-1875.0, -760.0, 89.0);
+    r.until(60, "the stick lit at room 7's east torch", |w| w.player().unk_860 != 0, |w, _| tip_into_flame(w, t7e));
+    let web7 = Vec3::new(-1355.0, -820.0, 3.0);
+    r.walk(&[Vec3::new(-1600.0, -760.0, 40.0), Vec3::new(-1420.0, -805.0, 10.0)], 80.0);
+    r.until(200, "the web over the crawlspace burnt", |w| w.flags.get_switch(0x07), |w, _| stick_towards(w, web7, 40.0));
+    r.settle();
+    // Into the crawlspace: at its mouth (WALL_FLAG_CRAWLSPACE) "Enter" (PLAYER_STATE2_DO_ACTION_
+    // ENTER), A: Player_TryEnteringCrawlspace's Player_SetupWaitForPutAway puts the stick away
+    // first (so no fire comes through it). The stick forward until he's out the other end
+    // (Player_Action_8084C81C). On the way the En_Holl (transition 11, params 0x013F:
+    // ENHOLL_H_INVISIBLE at (-1055, -820, 0) facing +x, sides 7 and 3), with him 50 to 100 past
+    // it on its +x side, requests room 3, and EnHoll_WaitRoomLoaded finishes the change.
+    let mouth = Vec3::new(-1100.0, -820.0, 0.0);
+    r.until(120, "the crawlspace's Enter", |w| w.player().state2 & STATE2_16 != 0, |w, _| stick_towards(w, mouth, 40.0));
+    r.until(10, "into the crawlspace", |w| matches!(w.player().action, PA::Crawl | PA::ItemPutAway), |w, prev| {
+        let mut p = stick_towards(w, mouth, 40.0);
+        if prev.button & BTN_A == 0 {
+            p.button = BTN_A;
+        }
+        p
+    });
+    r.until(600, "out of the crawlspace", |w| w.player().action == PA::CrawlExit, |_, _| PadState { stick_y: 60, ..NONE });
+    r.settle();
+    assert_eq!(r.rooms(), (3, -1));
+    assert_eq!(r.w.player().actor.world_pos.y, -820.0);
+    r.kill_enemies(|_, _| false);
+    eprintln!("10: on room 3's upper floor at frame {}", r.frames);
+
+    // 11. Room 3 to room 9. The floor web (Bg_Ydan_Sp 0x0FC6 at (-635, -820, 0)) wants fire, and
+    // the only fire is room 3's golden torch on the floor below (-880), where the pit's water
+    // (surface -895, 45 deep over -940: past child Link's 32, he swims, and the stick goes) is
+    // between it and the upper floor. The way back up with the stick: room 3's push block,
+    // `Route::Push` (Obj_Oshihiki pushed along the upper floor's channel and off its end into
+    // the trench, flag 0x10: Navi's hint there read on the way), Link down beside it and up on it.
+    r.walk(&[Vec3::new(-800.0, -815.0, -200.0), PUSH_START.0], 60.0);
+    r.settle();
+    let steps = r.route(Route::Push, |w, s| {
+        if s == Step::BlockInPit {
+            assert!(w.flags.get_switch(0x10));
+        }
+    });
+    assert_eq!(steps, vec![Step::BlockGrabbed, Step::BlockInPit, Step::OnBlock]);
+    // To the torch: down the trench (-905, 10 under the water), across the water swimming, out
+    // onto the floor by the torch; a stick from C-Left, lit.
+    r.walk(&[Vec3::new(-280.0, -905.0, -230.0), Vec3::new(-180.0, -905.0, -60.0), Vec3::new(-170.0, -940.0, 30.0), Vec3::new(-160.0, -880.0, 140.0), Vec3::new(-102.0, -880.0, 320.0)], 80.0);
+    r.settle();
+    r.take_stick();
+    r.until(60, "the stick lit at room 3's torch", |w| w.player().unk_860 != 0, |w, _| tip_into_flame(w, torch3));
+    let lit = r.frames;
+    // Back with it dry: off the torch's floor's edge at a run (z 80, -880) the jump carries Link
+    // over the 80 of deep water onto the trench (-905). Along the trench to the block's south
+    // face and up it (its top 60 up: Player_ActionHandler_12's climb, the stick kept), and from
+    // its top up onto the upper floor (35 up: the ledge climb).
+    r.walk(&[Vec3::new(-165.0, -880.0, 100.0)], 80.0);
+    r.until(60, "over the water", |w| w.player().grounded() && w.player().actor.world_pos.z < -5.0, |w, _| stick_towards(w, Vec3::new(-200.0, -905.0, -120.0), 80.0));
+    assert_eq!((r.w.player().actor.world_pos.y, r.w.player().held_item_ap), (-905.0, PLAYER_IA_DEKU_STICK));
+    r.walk(&[Vec3::new(-230.0, -905.0, -150.0), Vec3::new(-300.0, -905.0, -210.0), Vec3::new(-365.0, -905.0, -210.0)], 80.0);
+    r.until(100, "up on the block", |w| w.player().grounded() && w.player().actor.world_pos.y > -850.0, |w, _| stick_towards(w, Vec3::new(-365.0, -845.0, -290.0), 80.0));
+    r.until(100, "up on the upper floor", |w| w.player().grounded() && w.player().actor.world_pos.y > -825.0 && w.player().actor.world_pos.x < -400.0, |w, _| stick_towards(w, Vec3::new(-470.0, -810.0, -290.0), 80.0));
+    // Onto the web's edge.
+    r.walk(&[Vec3::new(-500.0, -815.0, -150.0), Vec3::new(-560.0, -820.0, 0.0)], 80.0);
+    eprintln!("   at room 3's floor web {} frames after the stick was lit", r.frames - lit);
     let web3 = web(&r.w, 0x06).expect("room 3's floor web").actor.world_pos;
-    r.walk(&[Vec3::new(-560.0, -820.0, 0.0)], 40.0);
-    r.settle();
     assert!(r.w.player().held_item_ap == PLAYER_IA_DEKU_STICK && r.w.player().unk_860 > 0);
     // C-Left again swings the stick (FORWARD_SLASH_2H): its burning tip comes down into the web,
     // 0 to 50 over the point 50 under it and within 70 across (BgYdanSp_FloorWebIdle's
@@ -370,9 +705,9 @@ fn link_travels_the_deku_trees_open_connections() {
     // He lands in room 9's water; out of it, to the room's debug start.
     r.walk(&[Vec3::new(-660.0, -1880.0, -620.0)], 80.0);
     r.settle();
-    eprintln!("4: in room 9 at frame {}", r.frames);
+    eprintln!("11: in room 9 at frame {}", r.frames);
 
-    // 5. Room 9 to room 11: the hint scrubs' order puzzle (tests/scrubs.rs), nuts injected in
+    // 12. Room 9 to room 11: the hint scrubs' order puzzle (tests/scrubs.rs), nuts injected in
     // order: 1 (sPuzzleCounter 1), 2 (2), each frozen; 3 with the count at 2:
     // EnHintnuts_HitByScrubProjectile1 makes it friendly (ACTORCAT_BG) and it runs.
     let [s1, s2, s3] = HINT_HOMES.map(|p| {
@@ -412,18 +747,33 @@ fn link_travels_the_deku_trees_open_connections() {
     // Room 11's whole floor is exit 2 (the drop into Gohma's room): the run stops there.
     r.open_door(4, Vec3::new(-882.0, -1880.0, -932.0));
     assert_eq!((r.w.room_ctx.cur.num, door(&r.w, 4).actor.room), (11, 11));
-    eprintln!("5: into room 11 after {} frames", r.frames);
-    assert!(r.frames < 3500, "{} frames", r.frames);
+    eprintln!("12: into room 11 after {} frames", r.frames);
+    assert!(r.frames < 9000, "{} frames", r.frames);
 }
 
-/// The pad that steers Link so the stick's tip comes to `to`: towards `to` less the tip's offset
-/// from him (the stick is held out to his right), slowly; still once there.
-fn tip_towards(w: &PlayState, to: Vec3) -> PadState {
+/// The pad that takes a stick's tip into the flame of the torch at `home` quickly (a burning
+/// stick's time is short): at the torch at a run, slowing as it nears, until Link is against
+/// its stand (its OC cylinder, radius 12, keeps him about 25 off); then, standing, turned in
+/// place (a stick under 27: `Player_CalcSpeedAndYawFromControlStick` takes 20 off, no speed)
+/// to the facing that puts the standing pose's tip (22 ahead, 11.5 to the left, 67 up: the
+/// flame's height) nearest the flame.
+fn tip_into_flame(w: &PlayState, home: Vec3) -> PadState {
     let p = w.player();
     let link = p.actor.world_pos;
-    let at = to - (p.melee_weapon_info[0].tip - link);
-    let d = xz_dist(at, link);
-    if d < 3.0 { NONE } else { stick_towards(w, at, if d < 15.0 { 30.0 } else { 40.0 }) }
+    let d = xz_dist(link, home);
+    if d > 34.0 {
+        return stick_towards(w, home, 80.0);
+    }
+    let tip_at = |yaw: i16| {
+        let (s, c) = (eng_math::sin_s(yaw), eng_math::cos_s(yaw));
+        link + Vec3::new(s, 0.0, c) * 22.0 + Vec3::new(c, 0.0, -s) * 11.5
+    };
+    let best = (0..64).map(|k| (k * 0x400) as i16).min_by(|&a, &b| xz_dist(tip_at(a), home).total_cmp(&xz_dist(tip_at(b), home))).unwrap();
+    if (best.wrapping_sub(p.actor.shape_rot.y) as i32).abs() < 0x300 {
+        return NONE;
+    }
+    let to = link + Vec3::new(eng_math::sin_s(best), 0.0, eng_math::cos_s(best)) * 100.0;
+    stick_towards(w, to, 24.0)
 }
 
 /// Room 9's three hint scrubs' homes, by their place in the puzzle (params 1, 2, 3).

@@ -52,12 +52,15 @@ struct VOut {
     @location(1) uv0: vec2<f32>,
     @location(2) uv1: vec2<f32>,
     @location(3) fog: f32,
+    // The clip position's z and w (the far plane's test in fs_main).
+    @location(4) zw: vec2<f32>,
 };
 
 @vertex
 fn vs_main(v: VIn) -> VOut {
     var o: VOut;
     o.clip = g.view_proj * vec4<f32>(v.pos, 1.0);
+    o.zw = o.clip.zw;
     let flags = m.flags.x;
     if ((flags & 1u) != 0u) {
         // With G_LIGHTING the vertex colour bytes hold the normal; only alpha is a colour.
@@ -159,6 +162,14 @@ fn fs_main(i: VOut) -> @location(0) vec4<f32> {
         c = run_cycle(m.sel[2], m.sel[3], c, a, b, i.shade);
     }
     if (m.params.y > 0.0 && c.a < m.params.y) {
+        discard;
+    }
+    // The game's microcode is F3DZEX2's NoN variant (graph.c: gspF3DZEX2_NoN_fifo): nothing is
+    // clipped at the near plane, only the far one. The pipelines draw with unclipped depth
+    // (`DEPTH_CLIP_CONTROL`: a depth nearer than the near plane is clamped to it, per sample);
+    // past the far plane a pixel is dropped here. (Without the feature the hardware clips both,
+    // and this never fires.)
+    if (i.zw.x > i.zw.y) {
         discard;
     }
     if ((m.flags.x & 8u) != 0u) {

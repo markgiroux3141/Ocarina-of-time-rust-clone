@@ -41,6 +41,8 @@ use eng_collision::math3d::Cylinder16;
 pub const STATE1_0: u32 = 1 << 0; // going through an exit
 pub const STATE1_2: u32 = 1 << 2;
 pub const STATE1_3: u32 = 1 << 3;
+/// `PLAYER_STATE1_9`: the bow's or slingshot's string drawn back (`func_8083442C`, `func_808351D4`).
+pub const STATE1_9: u32 = 1 << 9;
 pub const STATE1_8: u32 = 1 << 8; // item change pending
 /// `sItemButtons`: B, C-Left, C-Down, C-Right (`Player_GetItemOnButton`'s 0 to 3).
 const S_ITEM_BUTTONS: [u16; 4] = [eng_input::pad::BTN_B, eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT];
@@ -201,6 +203,19 @@ pub enum PlayRequest {
     Quake { speed: i32, y: i32, duration: i32 },
     /// `TitleCard_Clear(play, &play->actorCtx.titleCtx)` (`Player_UseItem`'s cutscene items).
     TitleCardClear,
+    /// `this->heldActor = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_ARROW,
+    /// world.pos, 0, shape.rot.y, 0, params)` (`func_8083442C`): the seed or arrow held, Player's
+    /// child. Applied by Player's update, which sets `heldActor`.
+    SpawnHeldArrow { pos: Vec3, yaw: i16, params: i16 },
+    /// `heldActor->parent = NULL`: Player lets go of what he held (`Player_DetachHeldActor`,
+    /// `func_808350A4`'s shot).
+    ReleaseHeld(ActorHandle),
+    /// `Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ARROW, pos, rot, params)`: a Deku nut thrown
+    /// (`Player_Action_8084E604`).
+    SpawnArrow { pos: Vec3, rot: [i16; 3], params: i16 },
+    /// `Camera_RequestMode(Play_GetCamera(play, CAM_ID_MAIN), mode)` made inside Player's update
+    /// (`func_8083AD4C`), which used its result already (`Player::camera_request_mode`).
+    CamRequestMode(i16),
 }
 
 /// The audio calls of Player's death and revival.
@@ -237,6 +252,39 @@ const PLAYER_SHIELD_HYLIAN: u8 = 2;
 const ROOM_ENV_HOT: u8 = 3;
 /// `SCENE_SPIRIT_TEMPLE_BOSS` (`scene_table.h`).
 const SCENE_SPIRIT_TEMPLE_BOSS: u16 = 0x17;
+
+/// `D_80854398`: the string drawn back, by `unk_860`: `NA_SE_IT_BOW_DRAW`, `NA_SE_IT_SLING_DRAW`,
+/// `NA_SE_IT_HOOKSHOT_READY` (`itembank_table.h`: 0x1807, 0x1821, 0x1827).
+const D_80854398: [u16; 3] = [0x1807, 0x1821, 0x1827];
+/// `D_808543DC`: let go with nothing loaded: `NA_SE_IT_BOW_FLICK`, `NA_SE_IT_SLING_FLICK` (0x1830,
+/// 0x1835).
+const D_808543DC: [u16; 2] = [0x1830, 0x1835];
+/// `NA_SE_IT_HOOKSHOT_RECEIVE` (`itembank_table.h`: 0x1828).
+const NA_SE_IT_HOOKSHOT_RECEIVE: u16 = 0x1828;
+/// `D_808543CC` and `D_808543D4`: the bow's and the hookshot's raise from walking, and their wait.
+const D_808543CC: [&str; 2] = ["link_bow_walk2ready", "link_hook_walk2ready"];
+const D_808543D4: [&str; 2] = ["link_bow_bow_wait", "link_hook_wait"];
+/// `ACTOR_EN_ARROW` (`actor_table.h`: 0x0016).
+pub const ACTOR_EN_ARROW: i16 = 0x0016;
+/// `ArrowType` (`z_en_arrow.h`).
+pub const ARROW_NORMAL_HORSE: i16 = 1;
+pub const ARROW_NORMAL: i16 = 2;
+pub const ARROW_FIRE: i16 = 3;
+pub const ARROW_SEED: i16 = 9;
+pub const ARROW_NUT: i16 = 10;
+/// `ROOM_TYPE_INDOORS` (`room.h`): `roomCtx.curRoom.type` (the room's `behaviorType1`).
+const ROOM_TYPE_INDOORS: u8 = 2;
+/// `UNK6AE_ROT_*` (`player.h`).
+const UNK6AE_ROT_FOCUS_X: u16 = 1 << 0;
+const UNK6AE_ROT_FOCUS_Y: u16 = 1 << 1;
+const UNK6AE_ROT_UPPER_X: u16 = 1 << 6;
+const UNK6AE_ROT_UPPER_Z: u16 = 1 << 8;
+/// `CAM_STATE_LOCK_MODE` (`camera.h`): the main camera takes no mode request.
+const CAM_STATE_LOCK_MODE: i16 = 1 << 5;
+/// `BowSlingshotStringData` (`Player_PostLimbDrawGameplay`, `sBowSlingshotStringData`): the
+/// adult's bow string and the child's slingshot string, and where they hang from the right hand.
+const BOW_SLINGSHOT_STRING: [(&str, &str, Vec3); 2] =
+    [("object_link_boy", "gLinkAdultBowStringDL", Vec3::new(0.0, -360.4, 0.0)), ("object_link_child", "gLinkChildSlingshotStringDL", Vec3::new(606.0, 236.0, 0.0))];
 
 /// The ice round frozen Link (`Player_Draw` under `PLAYER_STATE2_14`): `gEffIceFragment3DL` with
 /// `Gfx_TwoTexScroll` on segment 8 and `gDPSetEnvColor(0, 50, 100, 255)`.
@@ -466,6 +514,11 @@ pub enum Action {
     Push,
     /// `Player_Action_8084B9E4`: pulling.
     Pull,
+    /// `Player_Action_8084B1D8`: first person: C-Up's look (`unk_6AD` 1) or aiming an item
+    /// (`unk_6AD` 2).
+    FirstPerson,
+    /// `Player_Action_8084E604`: throwing a Deku nut.
+    ThrowNut,
 }
 
 /// `D_80854870`: the push's slips (`ANIMSFX_DATA(ANIMSFX_TYPE_FLOOR, 3)`, `-(.., 21)`).
@@ -509,6 +562,14 @@ pub enum UpperAction {
     ShieldHit,
     /// `func_80834C74`: the shield coming down.
     ShieldDown,
+    /// `func_8083501C`: the bow, the slingshot or the hookshot in hand, lowered.
+    Bow,
+    /// `func_808351D4`: raised, the string drawn back.
+    BowDrawn,
+    /// `func_808353D8`: just shot, the next shot or lowering.
+    BowShot,
+    /// `func_80835588`: lowering (`link_bow_bow_shoot_end`).
+    BowLower,
 }
 
 impl Action {
@@ -564,6 +625,8 @@ impl Action {
             Action::PushWait => "Player_Action_8084B78C",
             Action::Push => "Player_Action_8084B898",
             Action::Pull => "Player_Action_8084B9E4",
+            Action::FirstPerson => "Player_Action_8084B1D8",
+            Action::ThrowNut => "Player_Action_8084E604",
         }
     }
 }
@@ -600,6 +663,9 @@ pub struct PlayerStatics {
     pub held_item_button_is_held_down: bool,
     /// `D_80858AA0`: the animation's `moveFlags` when a cutscene mode starts.
     pub d_80858aa0: i32,
+    /// The main camera's mode after Player's own `Camera_RequestMode` calls this update (they're
+    /// made on the camera after it, `PlayRequest::CamRequestMode`); `None` before any.
+    pub cam_mode: Option<i16>,
 }
 
 /// Per-frame environment the update needs.
@@ -646,6 +712,12 @@ pub struct Env<'a> {
     pub room_behavior_type2: u8,
     /// `play->activeCamId`.
     pub active_cam_id: i16,
+    /// The main camera as this update began: its setting's modes (`sCameraSettings[setting]`'s
+    /// `validModes`, `unk_00`) and its mode, for `Camera_CheckValidMode` and `Camera_RequestMode`.
+    pub main_cam_valid_modes: u32,
+    pub main_cam_mode: i16,
+    /// `R_SCENE_CAM_TYPE`.
+    pub scene_cam_type: u8,
 }
 
 impl Env<'_> {
@@ -906,6 +978,17 @@ pub struct Player {
     /// damage).
     pub unk_A86: i8,
     pub unk_A87: u8,
+    /// `unk_A73`: 4 on a shot (`func_808350A4`) or a boomerang's throw, counted down by
+    /// `Player_UpdateCommon`; `EnArrow_Shoot` lets a seed or an arrow fly only while it's set.
+    pub unk_A73: u8,
+    /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child).
+    pub held_actor: Option<ActorHandle>,
+    /// `unk_836`: the bow's and slingshot's upper-body state (`func_808351D4`), zeroed with each
+    /// upper-body action.
+    pub unk_836: i8,
+    /// `play->roomCtx.curRoom.type` as this update began (`func_8083C61C` reads it from
+    /// `Player_UseItem`, which the item change reaches without the play state).
+    pub room_type_view: u8,
 }
 
 /// `sSkeletonBaseTransl`: the root translation Link's animations are authored around.
@@ -1096,6 +1179,10 @@ impl Player {
             knockback_y_velocity: 0.0,
             unk_A86: 0,
             unk_A87: 0,
+            unk_A73: 0,
+            held_actor: None,
+            unk_836: 0,
+            room_type_view: 0,
         };
         // A plain start (the tests' and the sandbox's): standing still (`func_80853080`).
         p.func_80853080(data);
@@ -1283,14 +1370,22 @@ impl Player {
         self.input = input;
         self.ammo_view = env.io.borrow().save.inventory.ammo;
         self.explosive_count = env.actors.category(oot_game::actor_ctx::ACTORCAT_EXPLOSIVE).len();
+        self.room_type_view = env.room_behavior_type1;
+        self.s.cam_mode = None;
         let data = env.data;
+        // Player_Update: what Player held is gone (update == NULL): Player_DetachHeldActor.
+        if self.held_actor.is_some_and(|h| env.target(h).is_none_or(|a| a.killed)) {
+            self.detach_held_actor(data);
+        }
         self.actor.prev_pos = self.actor.home_pos;
 
         // An offering actor that went (update == NULL) offers nothing.
         if self.interact_range_actor.is_some_and(|h| Some(h) != env.me && env.target(h).is_none_or(|a| a.killed)) {
             self.interact_range_actor = None;
         }
-        // unk_A73/A87 timers, invincibility: not modelled.
+        if self.unk_A73 != 0 {
+            self.unk_A73 -= 1;
+        }
         if self.textbox_btn_cooldown_timer != 0 {
             self.textbox_btn_cooldown_timer -= 1;
         }
@@ -1323,6 +1418,10 @@ impl Player {
         // FaceChange_UpdateBlinking(this->faceChange.face, 20, 80, 6) and the face alternation.
         let blink = self.blinker.step();
         self.face = blink + if env.gameplay_frames & 32 != 0 { 0 } else { 3 };
+        // (currentMask == PLAYER_MASK_BUNNY: Player_UpdateBunnyEars; the masks aren't drawn.)
+        if self.func_8002dd6c() {
+            self.func_8084ff7c();
+        }
 
         if self.skel.move_flags & 0x80 == 0 {
             // Not on ice and no hover boots: speed and direction come straight from Player.
@@ -1436,7 +1535,10 @@ impl Player {
             return None;
         }
         let mut target = None;
-        let mode = if self.state2 & STATE2_8 != 0 {
+        // (Flying with the hookshot, CAM_MODE_HOOKSHOT_FLY: the hookshot isn't ported.)
+        let mode = if self.action == Action::KnockedDown {
+            CAM_MODE_STILL
+        } else if self.state2 & STATE2_8 != 0 {
             CAM_MODE_PUSH_PULL
         } else if let Some(t) = self.focus_actor {
             target = Some(t);
@@ -1455,8 +1557,13 @@ impl Player {
             // Player_FriendlyLockOnOrParallel.
             if self.state1 & (STATE1_16 | STATE1_17 | STATE1_30) != 0 { CAM_MODE_Z_LEDGE_HANG } else { CAM_MODE_LEDGE_HANG }
         } else if self.state1 & (STATE1_17 | STATE1_30) != 0 {
-            // func_8002DD78 / func_808334B4 (bow, slingshot, boomerang in hand): not ported.
-            if self.state1 & STATE1_21 != 0 { CAM_MODE_Z_WALL_CLIMB } else { CAM_MODE_Z_PARALLEL }
+            if self.func_8002dd78() || self.func_808334b4() {
+                CAM_MODE_Z_AIM
+            } else if self.state1 & STATE1_21 != 0 {
+                CAM_MODE_Z_WALL_CLIMB
+            } else {
+                CAM_MODE_Z_PARALLEL
+            }
         } else if self.state1 & (STATE1_18 | STATE1_21) != 0 {
             if self.action == Action::ClimbLedge || self.state1 & STATE1_21 != 0 { CAM_MODE_WALL_CLIMB } else { CAM_MODE_JUMP }
         } else if self.state1 & STATE1_19 != 0 {
@@ -1522,9 +1629,6 @@ impl Player {
         // look rotations of the upper body are left out here).
         let head = oot_game::footik::limb_matrix(rig, actor, root, &self.skel.joint, data.limb("HEAD"));
         self.head_pos = head.transform_point3(Vec3::ZERO);
-        // actor.focus.pos (Player_PostLimbDrawGameplay's head), which the others read (Navi's
-        // point, Attention_SetNaviState).
-        self.actor.focus_pos = self.head_pos;
         legs
     }
 
@@ -1580,6 +1684,8 @@ impl Player {
             Action::PushWait => self.action_8084b78c(env),
             Action::Push => self.action_8084b898(env),
             Action::Pull => self.action_8084b9e4(env),
+            Action::FirstPerson => self.action_8084b1d8(env),
+            Action::ThrowNut => self.action_8084e604(env),
         }
     }
 
@@ -1932,8 +2038,7 @@ impl Player {
     fn func_8083A5C4(&mut self, data: &GameData, env: &Env, wall: PolyId, dist: f32, anim: AnimId) {
         let n = env.col.poly_normal(wall);
         self.setup_action(data, Action::Hang, 0);
-        // func_80832564: func_80832440, and drop a held actor (none).
-        self.func_80832440();
+        self.func_80832564(data);
         self.skel.play_once(data, anim);
         self.actor.world_pos.x -= (dist + 1.0) * n.x;
         self.actor.world_pos.z -= (dist + 1.0) * n.z;
@@ -2799,8 +2904,7 @@ impl Player {
                 return;
             }
         }
-        // func_80832564: func_80832440, and Player_DetachHeldActor (Link holds nothing here).
-        self.func_80832440();
+        self.func_80832564(env.data);
         self.state1 |= STATE1_26;
         if let Some(a) = sp2c {
             // Player_AnimPlayOnceAdjusted.
@@ -3174,8 +3278,7 @@ impl Player {
         use oot_game::game_over::{GAMEOVER_DEATH_START, GAMEOVER_REVIVE_START};
         let data = env.data;
         let cond = self.func_808332B8();
-        // func_80832564: func_80832440, and Player_DetachHeldActor (nothing held).
-        self.func_80832440();
+        self.func_80832564(data);
         self.setup_action(data, if cond { Action::DyingInWater } else { Action::Dying }, 0);
         self.state1 |= STATE1_7;
         self.skel.play_once(data, anim);
@@ -3695,15 +3798,17 @@ impl Player {
     }
 
     /// `func_80834644`: the upper body back to the held item's action (an item change in progress
-    /// finished: `Player_FinishItemChange`), nothing held up (`Player_DetachHeldActor`: Player
-    /// holds no actor here), no change pending.
+    /// finished: `Player_FinishItemChange`), nothing held up (`Player_DetachHeldActor`), no change
+    /// pending.
     fn func_80834644(&mut self, data: &GameData) {
         if self.upper == UpperAction::Change {
             self.finish_item_change(data);
         }
         let f = self.upper_for(data, self.held_item_ap);
         self.set_upper_action_func(f);
+        self.unk_834 = 0;
         self.idle_type = 0;
+        self.detach_held_actor(data);
         self.state1 &= !STATE1_8;
     }
 
@@ -3747,7 +3852,7 @@ impl Player {
     /// from the stance's lead foot (`unk_870`: `D_808543A4`, `D_808543AC`).
     fn func_808346c4(&mut self, data: &GameData) -> AnimId {
         self.set_upper_action_func(UpperAction::ShieldUp);
-        // Player_DetachHeldActor: Player holds no actor here.
+        self.detach_held_actor(data);
         let two = self.holds_two_handed_weapon(data);
         let name = match (self.unk_870 < 0.5, two) {
             (true, false) => "link_anchor_waitR2defense",
@@ -3843,7 +3948,7 @@ impl Player {
             && (self.is_child_with_hylian_shield() || (!self.friendly_lock_on_or_parallel() && self.focus_actor.is_none()))
         {
             self.func_80832318();
-            // Player_DetachHeldActor: Player holds no actor here.
+            self.detach_held_actor(data);
             if self.setup_action(data, Action::Guard, 0) {
                 self.state1 |= STATE1_22;
                 let anim = if !self.is_child_with_hylian_shield() {
@@ -4654,10 +4759,17 @@ impl Player {
         var
     }
 
-    /// `func_8083DC54`: look at the target, or at the ground ahead.
+    /// `func_8083DC54`: look at the target (aiming, with the upper body), or at the ground ahead
+    /// (steeply down on `FLOOR_TYPE_11`).
     fn func_8083DC54(&mut self, env: &Env) {
+        let aiming = self.func_8002dd78() || self.func_808334b4();
         if self.focus_actor.is_some() {
-            self.func_8083DB98(env, false);
+            self.func_8083DB98(env, aiming);
+            return;
+        }
+        if self.s.floor_type == FLOOR_TYPE_11 {
+            smooth_step_to_s(&mut self.actor.focus_rot.x, -20000, 10, 4000, 800);
+            self.func_80836AB8_arg(aiming);
             return;
         }
         let mut sp46 = 0i16;
@@ -4669,12 +4781,12 @@ impl Player {
         }
         self.actor.focus_rot.y = self.actor.shape_rot.y;
         smooth_step_to_s(&mut self.actor.focus_rot.x, sp46, 14, 4000, 30);
-        self.func_80836AB8();
+        self.func_80836AB8_arg(aiming);
     }
 
-    /// `func_8083DDC8`: lean into turns when running fast.
+    /// `func_8083DDC8`: lean into turns when running fast (not aiming).
     fn func_8083DDC8(&mut self, env: &Env) {
-        if self.linear_velocity > 5.0 {
+        if !self.func_8002dd78() && !self.func_808334b4() && self.linear_velocity > 5.0 {
             let t1 = f2s(self.linear_velocity * 200.0).clamp(-4000, 4000);
             let t2 = f2s(self.current_yaw.wrapping_sub(self.actor.shape_rot.y) as f32 * self.linear_velocity * 0.1);
             let t2 = t2.wrapping_neg().clamp(-4000, 4000);
@@ -5408,7 +5520,8 @@ impl Player {
     fn func_8083FC68(&mut self, env: &Env, speed: f32, yaw: i16) -> i32 {
         let sp1c = yaw.wrapping_sub(self.actor.shape_rot.y) as f32;
         if self.focus_actor.is_some() {
-            self.func_8083DB98(env, false);
+            let aiming = self.func_8002dd78() || self.func_808334b4();
+            self.func_8083DB98(env, aiming);
         }
         let t = sp1c.abs() / 32768.0;
         if speed > (t * t) * 50.0 + 6.0 {
@@ -5424,15 +5537,30 @@ impl Player {
     fn func_8083FD78(&mut self, env: &Env, speed: &mut f32, yaw: &mut i16) -> i32 {
         let sp2e = yaw.wrapping_sub(self.target_yaw);
         let sp2c = (sp2e as i32).unsigned_abs() as u16;
-        // Bow / boomerang aiming: not held.
-        if self.focus_actor.is_some() {
+        if (self.func_8002dd78() || self.func_808334b4()) && self.focus_actor.is_none() {
+            // Aiming in parallel: only sideways, the focus pitched by the stick.
+            *speed *= sin_s(sp2c as i16);
+            if *speed != 0.0 {
+                *yaw = ((if sp2e >= 0 { 1i32 } else { -1 }) << 0xE).wrapping_add(self.actor.shape_rot.y as i32) as i16;
+            } else {
+                *yaw = self.actor.shape_rot.y;
+            }
+            if self.focus_actor.is_some() {
+                self.func_8083DB98(env, true);
+            } else {
+                let t = (self.input.rel.stick_y as f32 * 240.0) as i32 as i16;
+                smooth_step_to_s(&mut self.actor.focus_rot.x, t, 14, 4000, 30);
+                self.func_80836AB8_arg(true);
+            }
+        } else if self.focus_actor.is_some() {
             return self.func_8083FC68(env, *speed, *yaw);
-        }
-        self.func_8083DC54(env);
-        if *speed != 0.0 && sp2c < 6000 {
-            return 1;
-        } else if *speed > sin_s((0x4000u16.wrapping_sub(sp2c >> 1)) as i16) * 200.0 {
-            return -1;
+        } else {
+            self.func_8083DC54(env);
+            if *speed != 0.0 && sp2c < 6000 {
+                return 1;
+            } else if *speed > sin_s((0x4000u16.wrapping_sub(sp2c >> 1)) as i16) * 200.0 {
+                return -1;
+            }
         }
         0
     }
@@ -5780,7 +5908,7 @@ impl Player {
     fn action_80840de4(&mut self, env: &Env) {
         let data = env.data;
         self.skel.mode = ANIMMODE_LOOP;
-        self.skel.animation = self.anim(data, group::PARALLEL_SIDEWALK);
+        self.skel.animation = self.func_8083356c(data);
         let (frames, coeff) = (29.0, self.regs.mreg(95) as f32 / 100.0);
         self.skel.anim_length = frames;
         self.skel.end_frame = frames - 1.0;
@@ -6004,6 +6132,9 @@ impl Player {
         // Hookshot flight: not held.
         if self.can_update_items(data) {
             self.update_items(env);
+            if self.action == Action::ThrowNut {
+                return true;
+            }
         }
         if !self.run_upper(env) {
             return false;
@@ -6050,18 +6181,31 @@ impl Player {
             UpperAction::ShieldUp => self.func_80834b5c(env),
             UpperAction::ShieldHit => self.func_80834bd4(env),
             UpperAction::ShieldDown => self.func_80834c74(env),
+            UpperAction::Bow => self.func_8083501c(env),
+            UpperAction::BowDrawn => self.func_808351d4(env),
+            UpperAction::BowShot => self.func_808353d8(env),
+            UpperAction::BowLower => self.func_80835588(env),
         }
     }
 
     /// `sItemActionUpdateFuncs[actionParam]`: the upper-body action for a held item.
+    /// The bombs' `Player_UpperAction_CarryActor` (carrying isn't ported: Player holds no bomb) and the
+    /// boomerang's `func_80835800` (not ported) run `func_8083485C`'s default here.
     fn upper_for(&self, data: &GameData, ap: i32) -> UpperAction {
         let it = &data.items;
-        if (it.ap("SWORD_MASTER")..=it.ap("SWORD_BIGGORON")).contains(&ap) { UpperAction::Sword } else { UpperAction::Default }
+        if (it.ap("SWORD_MASTER")..=it.ap("SWORD_BIGGORON")).contains(&ap) {
+            UpperAction::Sword
+        } else if (it.ap("BOW")..=it.ap("LONGSHOT")).contains(&ap) {
+            UpperAction::Bow
+        } else {
+            UpperAction::Default
+        }
     }
 
     /// `Player_SetUpperActionFunc`.
     fn set_upper_action_func(&mut self, f: UpperAction) {
         self.upper = f;
+        self.unk_836 = 0;
         self.upper_anim_interp_weight = 0.0;
         self.func_808326F0();
     }
@@ -6154,6 +6298,468 @@ impl Player {
         }
     }
 
+    // ================================================================================
+    // The bow and the slingshot (func_80834D2C to func_80835588), first person
+    // (func_8083B8F4, func_8083AD4C, Player_Action_8084B1D8), the Deku nut (func_8083C61C,
+    // Player_Action_8084E604)
+
+    /// `func_8002DD6C` (`z_actor.c`): the bow, the slingshot or the hookshot in hand
+    /// (`PLAYER_STATE1_3`, from `Player_InitBowOrSlingshotIA` or `Player_InitHookshotIA`).
+    fn func_8002dd6c(&self) -> bool {
+        self.state1 & STATE1_3 != 0
+    }
+
+    /// `func_8002DD78` (`z_actor.c`): and raised (`unk_834`).
+    fn func_8002dd78(&self) -> bool {
+        self.func_8002dd6c() && self.unk_834 != 0
+    }
+
+    /// `func_808332E4`: the boomerang in hand (`PLAYER_STATE1_USING_BOOMERANG`).
+    fn func_808332e4(&self) -> bool {
+        self.state1 & STATE1_24 != 0
+    }
+
+    /// `func_808334B4`: and raised.
+    fn func_808334b4(&self) -> bool {
+        self.func_808332e4() && self.unk_834 != 0
+    }
+
+    /// `func_8083356C`: walking sideways in parallel mode, the bow's side walk while aiming.
+    fn func_8083356c(&self, data: &GameData) -> AnimId {
+        if self.func_8002dd78() { data.anim("link_bow_side_walk") } else { self.anim(data, group::PARALLEL_SIDEWALK) }
+    }
+
+    /// `func_80832564`: `func_80832440`, and `Player_DetachHeldActor`.
+    fn func_80832564(&mut self, data: &GameData) {
+        self.func_80832440();
+        self.detach_held_actor(data);
+    }
+
+    /// `func_8084FF7C` (`Player_UpdateCommon`, with the bow, slingshot or hookshot in hand): the
+    /// string's spring after a shot: `unk_858` its stretch, `unk_85C` its speed, damped by 0.3.
+    fn func_8084ff7c(&mut self) {
+        self.unk_858 += self.unk_85c;
+        self.unk_85c -= self.unk_858 * 5.0;
+        self.unk_85c *= 0.3;
+        if self.unk_85c.abs() < 0.00001 {
+            self.unk_85c = 0.0;
+            if self.unk_858.abs() < 0.00001 {
+                self.unk_858 = 0.0;
+            }
+        }
+    }
+
+    /// `Camera_CheckValidMode(Play_GetCamera(play, CAM_ID_MAIN), mode)`: 0 if the main camera's
+    /// setting has no such mode, -1 if it's already in it, else `mode | 0x80000000`. (The camera
+    /// as this update began, with Player's own requests this update made.)
+    fn camera_check_valid_mode(&self, env: &Env, mode: i16) -> i32 {
+        let cur = self.s.cam_mode.unwrap_or(env.main_cam_mode);
+        if env.main_cam_valid_modes & (1u32 << mode) == 0 {
+            0
+        } else if mode == cur {
+            -1
+        } else {
+            (0x8000_0000u32 | mode as u32) as i32
+        }
+    }
+
+    /// `Camera_RequestMode(Play_GetCamera(play, CAM_ID_MAIN), mode)`: what
+    /// `Camera_RequestModeImpl` returns (-1 locked or unchanged; refused, `CAM_MODE_NORMAL` or,
+    /// from another mode, `0xC0000000 | mode` with the camera forced to normal; else
+    /// `0x80000000 | mode`). The request itself is made on the camera after Player's update, in
+    /// its place among his requests (`PlayRequest::CamRequestMode`), with the camera's sounds.
+    fn camera_request_mode(&mut self, env: &Env, mode: i16) -> i32 {
+        use oot_game::camera::CAM_MODE_NORMAL;
+        let cur = self.s.cam_mode.unwrap_or(env.main_cam_mode);
+        self.play_requests.push(PlayRequest::CamRequestMode(mode));
+        if env.cam_state_flags & CAM_STATE_LOCK_MODE != 0 {
+            return -1;
+        }
+        if (env.main_cam_valid_modes & 0x3FFF_FFFF) & (1u32 << mode) == 0 {
+            if cur != CAM_MODE_NORMAL {
+                self.s.cam_mode = Some(CAM_MODE_NORMAL);
+                return (0xC000_0000u32 | mode as u32) as i32;
+            }
+            return CAM_MODE_NORMAL as i32;
+        }
+        if mode == cur {
+            return -1;
+        }
+        self.s.cam_mode = Some(mode);
+        (0x8000_0000u32 | mode as u32) as i32
+    }
+
+    /// `func_80834D2C`: the item raised: the bow's (or hookshot's) ready on the upper body, if
+    /// `func_8083442C` draws it; the boomerang's own wait (`func_80835884`: the boomerang's actions
+    /// aren't ported, they log). Standing, the body waits (riding: `link_uma_anim_walk`).
+    fn func_80834d2c(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.held_item_ap != data.items.ap("BOOMERANG") {
+            if !self.func_8083442c(env) {
+                return false;
+            }
+            let anim = data.anim(if !self.holds_hookshot(data) { "link_bow_bow_ready" } else { "link_hook_shot_ready" });
+            self.skel2.play_once(data, anim);
+        } else {
+            self.note("func_80834D2C: the boomerang's wait (func_80835884) isn't ported");
+            self.unk_834 = 10;
+            let a = data.anim("link_boom_throw_wait2waitR");
+            self.skel2.play_once(data, a);
+        }
+        if self.state1 & STATE1_23 != 0 {
+            let a = data.anim("link_uma_anim_walk");
+            self.skel.play_loop(data, a);
+        } else if self.grounded() && !self.update_hostile_lock_on() {
+            let a = self.anim(data, group::WAIT);
+            self.skel.play_loop(data, a);
+        }
+        true
+    }
+
+    /// `func_80834E44`: the shooting gallery's B (`shootingGalleryStatus > 0`): no gallery is
+    /// ported, so never.
+    fn func_80834e44(&self) -> bool {
+        false
+    }
+
+    /// `func_80834E7C`: the shooting gallery's buttons held (`shootingGalleryStatus != 0`): never.
+    fn func_80834e7c(&self) -> bool {
+        false
+    }
+
+    /// `func_80834EB8`: raised, stay in third person while Z-targeting (or where the main
+    /// camera's setting has no aim, `CAM_MODE_AIM_ADULT` for either age); else first person
+    /// (`unk_6AD` 2). Returns whether it stays in third person.
+    fn func_80834eb8(&mut self, env: &Env) -> bool {
+        if self.unk_6AD == 0 || self.unk_6AD == 2 {
+            if self.is_z_targeting() || self.camera_check_valid_mode(env, oot_game::camera::CAM_MODE_AIM_ADULT) == 0 {
+                return true;
+            }
+            self.unk_6AD = 2;
+        }
+        false
+    }
+
+    /// `func_80834F2C`: the item's button pressed again (`sUseHeldItem`), no door ahead and no
+    /// boomerang in flight: raise it (`func_80834D2C`), then `func_80834EB8`.
+    fn func_80834f2c(&mut self, env: &Env) -> bool {
+        if self.door_type == PLAYER_DOORTYPE_NONE && self.state1 & STATE1_25 == 0 && (self.s.use_held_item || self.func_80834e44()) && self.func_80834d2c(env) {
+            return self.func_80834eb8(env);
+        }
+        false
+    }
+
+    /// `func_80834FBC`: the hookshot's hook back on it (`actor.child`): held again, with its sound.
+    fn func_80834fbc(&mut self) -> bool {
+        if self.actor.child.is_some() {
+            if self.held_actor.is_none() {
+                self.held_actor = self.actor.child;
+                // (Player_RequestRumble(this, 255, 10, 250, 0): the rumble isn't ported.)
+                self.play_sfx(NA_SE_IT_HOOKSHOT_RECEIVE);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// `func_8083501C` (`sItemActionUpdateFuncs` for the bow, the slingshot and the hookshot):
+    /// lowered; the shield (`func_80834758`) or the item raised (`func_80834F2C`) takes the upper
+    /// body. `unk_860` is made positive (a new shot may draw).
+    fn func_8083501c(&mut self, env: &Env) -> bool {
+        if self.unk_860 >= 0 {
+            self.unk_860 = -self.unk_860;
+        }
+        if (!self.holds_hookshot(env.data) || self.func_80834fbc()) && !self.func_80834758(env) && !self.func_80834f2c(env) {
+            return false;
+        }
+        true
+    }
+
+    /// `func_80834380`: the ammo's item and the arrow type for what's in hand (the adult's bow, by
+    /// its arrows' kind, a plain arrow on a horse; the child's slingshot, a seed), and the ammo
+    /// left (`minigameState` and `shootingGalleryStatus` are 0: no horseback archery or
+    /// gallery is ported).
+    fn func_80834380(&self, data: &GameData) -> (i32, u8, i16) {
+        use oot_game::item::{ITEM_BOW, ITEM_SLINGSHOT};
+        let (item, ty) = if self.adult {
+            (ITEM_BOW, if self.state1 & STATE1_23 != 0 { ARROW_NORMAL_HORSE } else { ARROW_NORMAL + (self.held_item_ap - data.items.ap("BOW")) as i16 })
+        } else {
+            (ITEM_SLINGSHOT, ARROW_SEED)
+        };
+        (self.ammo(item) as i32, item, ty)
+    }
+
+    /// `func_8083442C`: draw the string (`func_808351D4`, `PLAYER_STATE1_9`, `unk_834` 14) with its
+    /// sound (`D_80854398`), a seed or arrow in hand if there's ammo (`En_Arrow`, Player's child:
+    /// `PlayRequest::SpawnHeldArrow`). A magic arrow with the magic busy gives the error instead
+    /// (`gSaveContext.magicState` is idle: magic isn't ported); a magic arrow's cost
+    /// (`Magic_RequestChange`, `sMagicArrowCosts`) logs and the arrow is a plain one.
+    fn func_8083442c(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        // (heldItemAction BOW_FIRE..BOW_0E with gSaveContext.magicState != MAGIC_STATE_IDLE: the
+        // error. The magic meter isn't ported: always idle.)
+        self.set_upper_action_func(UpperAction::BowDrawn);
+        self.state1 |= STATE1_9;
+        self.unk_834 = 14;
+        if self.unk_860 >= 0 {
+            self.play_sfx(D_80854398[(self.unk_860.unsigned_abs() as usize).saturating_sub(1).min(2)]);
+            let (ammo, _item, mut arrow_type) = self.func_80834380(data);
+            if !self.holds_hookshot(data) && ammo > 0 {
+                let magic_arrow_type = arrow_type - ARROW_FIRE;
+                if self.unk_860 >= 0 {
+                    if (0..=2).contains(&magic_arrow_type) {
+                        self.note("func_8083442C: a magic arrow's cost (Magic_RequestChange) isn't ported: a plain arrow");
+                        arrow_type = ARROW_NORMAL;
+                    }
+                    self.play_requests.push(PlayRequest::SpawnHeldArrow { pos: self.actor.world_pos, yaw: self.actor.shape_rot.y, params: arrow_type });
+                }
+            }
+        }
+        true
+    }
+
+    /// `func_808350A4`: the shot: the seed or arrow in hand let go (`unk_A73` 4, its parent
+    /// cleared), one less (`Inventory_ChangeAmmo`; the rumble isn't ported). False with nothing in
+    /// hand.
+    fn func_808350a4(&mut self, env: &Env) -> bool {
+        let Some(h) = self.held_actor else { return false };
+        if !self.holds_hookshot(env.data) {
+            let (_, item, _) = self.func_80834380(env.data);
+            // (minigameState 1: hbaAmmo; shootingGalleryStatus: the gallery's count. Neither is
+            // ported.)
+            self.change_ammo(env, item, -1);
+            // (Player_RequestRumble(this, 150, 10, 150, 0).)
+        }
+        // (The hookshot's Player_RequestRumble(this, 255, 20, 150, 0).)
+        self.unk_A73 = 4;
+        self.play_requests.push(PlayRequest::ReleaseHeld(h));
+        self.actor.child = None;
+        self.held_actor = None;
+        true
+    }
+
+    /// `func_808351D4`: raised and drawn: the upper body rolls to 1200; the raise from the side
+    /// walk, then the wait loop (`unk_836` 1, then 2). Let go (the button up, or `unk_860`
+    /// negative) once in the wait: the shot (`func_808353D8`; nothing in hand, the flick's sound).
+    fn func_808351d4(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        let sp2c = if !self.holds_hookshot(data) { 0 } else { 1 };
+        scaled_step_to_s(&mut self.upper_limb_rot_z, 1200, 400);
+        self.unk_6AE_rot_flags |= UNK6AE_ROT_UPPER_Z;
+        if self.unk_836 == 0 && self.check_for_idle_anim(data) == 0 && self.skel.animation == data.anim("link_bow_side_walk") {
+            let a = data.anim(D_808543CC[sp2c]);
+            self.skel2.play_once(data, a);
+            self.unk_836 = -1;
+        } else if self.skel2.update(data) {
+            let a = data.anim(D_808543D4[sp2c]);
+            self.skel2.play_loop(data, a);
+            self.unk_836 = 1;
+        } else if self.unk_836 == 1 {
+            self.unk_836 = 2;
+        }
+        if self.unk_834 > 10 {
+            self.unk_834 -= 1;
+        }
+        self.func_80834eb8(env);
+        if self.unk_836 > 0 && (self.unk_860 < 0 || (!self.s.held_item_button_is_held_down && !self.func_80834e7c())) {
+            self.set_upper_action_func(UpperAction::BowShot);
+            if self.unk_860 >= 0 {
+                if sp2c == 0 {
+                    if !self.func_808350a4(env) {
+                        self.play_sfx(D_808543DC[(self.unk_860.unsigned_abs() as usize).saturating_sub(1).min(1)]);
+                    }
+                } else if self.grounded() {
+                    self.func_808350a4(env);
+                }
+            }
+            self.unk_834 = 10;
+            self.zero_speed_xz();
+        } else {
+            self.state1 |= STATE1_9;
+        }
+        true
+    }
+
+    /// `func_808353D8`: after the shot: the button again draws the next (`func_8083442C`,
+    /// `link_bow_bow_shoot_next`); else, after `unk_834`'s frames and out of Z-targeting and first
+    /// person, lowered (`func_80835588`, `link_bow_bow_shoot_end`).
+    fn func_808353d8(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        self.skel2.update(data);
+        if self.holds_hookshot(data) && !self.func_80834fbc() {
+            return true;
+        }
+        if !self.func_80834758(env) && (self.s.use_held_item || (self.unk_860 < 0 && self.s.held_item_button_is_held_down) || self.func_80834e44()) {
+            self.unk_860 = self.unk_860.abs();
+            if self.func_8083442c(env) {
+                if self.holds_hookshot(data) {
+                    self.unk_836 = 1;
+                } else {
+                    let a = data.anim("link_bow_bow_shoot_next");
+                    self.skel2.play_once(data, a);
+                }
+            }
+        } else {
+            if self.unk_834 != 0 {
+                self.unk_834 -= 1;
+            }
+            if self.is_z_targeting() || self.unk_6AD != 0 || self.state1 & STATE1_20 != 0 {
+                if self.unk_834 == 0 {
+                    self.unk_834 += 1;
+                }
+                return true;
+            }
+            if self.holds_hookshot(data) {
+                self.set_upper_action_func(UpperAction::Bow);
+            } else {
+                self.set_upper_action_func(UpperAction::BowLower);
+                let a = data.anim("link_bow_bow_shoot_end");
+                self.skel2.play_once(data, a);
+            }
+            self.unk_834 = 0;
+        }
+        true
+    }
+
+    /// `func_80835588`: lowering, back to `func_8083501C` when it ends (at once in the air).
+    fn func_80835588(&mut self, env: &Env) -> bool {
+        if !self.grounded() || self.skel2.update(env.data) {
+            self.set_upper_action_func(UpperAction::Bow);
+        }
+        true
+    }
+
+    /// `func_8083B8F4`: C-Up's look (`unk_6AD` 1), not carrying or riding, where the main
+    /// camera's setting has first person, on the ground or swimming shallow.
+    fn func_8083b8f4(&mut self, env: &Env) -> bool {
+        if self.state1 & (STATE1_11 | STATE1_23) == 0 && self.camera_check_valid_mode(env, oot_game::camera::CAM_MODE_FIRST_PERSON) != 0 && (self.grounded() || (self.func_808332B8() && self.actor.y_dist_to_water < self.age.unk_2C)) {
+            self.unk_6AD = 1;
+            return true;
+        }
+        false
+    }
+
+    /// `func_8083AD4C`: the main camera's first-person mode: aiming (`unk_6AD` 2) the bow's
+    /// (`CAM_MODE_AIM_ADULT`), the slingshot's (`_AIM_CHILD`) or the boomerang's; else the look
+    /// (`CAM_MODE_FIRST_PERSON`). Returns `Camera_RequestMode`'s result.
+    fn func_8083ad4c(&mut self, env: &Env) -> i32 {
+        use oot_game::camera::{CAM_MODE_AIM_ADULT, CAM_MODE_AIM_BOOMERANG, CAM_MODE_AIM_CHILD, CAM_MODE_FIRST_PERSON};
+        let cam_mode = if self.unk_6AD == 2 {
+            if self.func_8002dd6c() {
+                if self.adult { CAM_MODE_AIM_ADULT } else { CAM_MODE_AIM_CHILD }
+            } else {
+                CAM_MODE_AIM_BOOMERANG
+            }
+        } else {
+            CAM_MODE_FIRST_PERSON
+        };
+        self.camera_request_mode(env, cam_mode)
+    }
+
+    /// `Player_Action_8084B1D8`: first person. Swimming, Link floats (`func_8084B000`); else he
+    /// stops. Aiming, the item's upper body runs. A cutscene, a lock-on, the camera refusing, or
+    /// a button (aiming: A, B or R, Z-targeting, or the item lowered; the look: those or a C
+    /// button) end it (`func_8083C148`, `NA_SE_SY_CAMERA_ZOOM_UP`); else after 13 frames (at once
+    /// in the look) the stick turns the view (`func_8084ABD8`).
+    fn action_8084b1d8(&mut self, env: &Env) {
+        use eng_input::pad::{BTN_B, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP, BTN_R};
+        let data = env.data;
+        if self.state1 & STATE1_27 != 0 {
+            self.func_8084B000();
+            self.linear_velocity = self.func_8084AEEC(self.linear_velocity, 0.0, self.actor.shape_rot.y);
+        } else {
+            self.decelerate_to_zero();
+        }
+        if self.unk_6AD == 2 && (self.func_8002dd6c() || self.func_808332e4()) {
+            self.update_upper_body(env);
+        }
+        let press = self.input.press.button;
+        if self.cs_mode != 0
+            || self.unk_6AD == 0
+            || self.unk_6AD >= 4
+            || self.update_hostile_lock_on()
+            || self.focus_actor.is_some()
+            || self.func_8083ad4c(env) == oot_game::camera::CAM_MODE_NORMAL as i32
+            || (self.unk_6AD == 2 && (press & (BTN_A | BTN_B | BTN_R) != 0 || self.friendly_lock_on_or_parallel() || (!self.func_8002dd78() && !self.func_808334b4())))
+            || (self.unk_6AD == 1 && press & (BTN_A | BTN_B | BTN_R | BTN_CUP | BTN_CDOWN | BTN_CLEFT | BTN_CRIGHT) != 0)
+        {
+            self.func_8083C148(data);
+            self.sfx(PlayerSfx::NoPos(NA_SE_SY_CAMERA_ZOOM_UP));
+        } else {
+            // DECR(this->av2.actionVar2).
+            if self.action_var2 != 0 {
+                self.action_var2 -= 1;
+            }
+            if self.action_var2 == 0 || self.unk_6AD != 2 {
+                if self.func_8008f128(data) {
+                    self.unk_6AE_rot_flags |= UNK6AE_ROT_FOCUS_X | UNK6AE_ROT_FOCUS_Y | UNK6AE_ROT_UPPER_X;
+                } else {
+                    self.actor.shape_rot.y = self.func_8084abd8(false, 0);
+                }
+            }
+        }
+        self.current_yaw = self.actor.shape_rot.y;
+    }
+
+    /// `func_8084ABD8`: first person's turn. In the look the stick pitches the focus (to 240 per
+    /// unit, eased) and turns it (16 per unit, at most 3000 a frame); aiming (or `arg2`) the
+    /// focus moves by `1 - cos` of the stick (riding, pitched at most 3500, else 14000), turned
+    /// at most 19114 off the body. Returns the body's yaw less `arg3` (`func_80836AB8`).
+    fn func_8084abd8(&mut self, arg2: bool, arg3: i16) -> i16 {
+        let (sx, sy) = (self.input.rel.stick_x as i32, self.input.rel.stick_y as i32);
+        if !self.func_8002dd78() && !self.func_808334b4() && !arg2 {
+            let temp2 = (sy as f32 * 240.0) as i32 as i16;
+            smooth_step_to_s(&mut self.actor.focus_rot.x, temp2, 14, 4000, 30);
+            let temp2 = ((sx as f32 * -16.0) as i32 as i16).clamp(-3000, 3000);
+            self.actor.focus_rot.y = self.actor.focus_rot.y.wrapping_add(temp2);
+        } else {
+            let temp1: i32 = if self.state1 & STATE1_23 != 0 { 3500 } else { 14000 };
+            let temp3 = ((if sy >= 0 { 1 } else { -1 }) * ((1.0 - cos_s((sy * 200) as i16)) * 1500.0) as i32) as i16;
+            self.actor.focus_rot.x = self.actor.focus_rot.x.wrapping_add(temp3);
+            self.actor.focus_rot.x = (self.actor.focus_rot.x as i32).clamp(-temp1, temp1) as i16;
+            let temp1: i32 = 19114;
+            let mut temp2 = self.actor.focus_rot.y.wrapping_sub(self.actor.shape_rot.y);
+            let temp3 = ((if sx >= 0 { 1 } else { -1 }) * ((1.0 - cos_s((sx * 200) as i16)) * -1500.0) as i32) as i16;
+            temp2 = temp2.wrapping_add(temp3);
+            self.actor.focus_rot.y = ((temp2 as i32).clamp(-temp1, temp1) as i16).wrapping_add(self.actor.shape_rot.y);
+        }
+        self.unk_6AE_rot_flags |= UNK6AE_ROT_FOCUS_Y;
+        // (play->shootingGalleryStatus != 0: no gallery.)
+        let aiming = self.func_8002dd78() || self.func_808334b4();
+        self.func_80836AB8_arg(aiming).wrapping_sub(arg3)
+    }
+
+    /// `func_8083C61C`: a Deku nut thrown (`Player_Action_8084E604`, `link_normal_light_bom`), not
+    /// in an indoors room, on the ground, with nuts left.
+    fn func_8083c61c(&mut self, data: &GameData) -> bool {
+        if self.room_type_view != ROOM_TYPE_INDOORS && self.grounded() && self.ammo(oot_game::item::ITEM_DEKU_NUT) != 0 {
+            self.setup_action(data, Action::ThrowNut, 0);
+            let a = data.anim("link_normal_light_bom");
+            self.skel.play_once(data, a);
+            self.unk_6AD = 0;
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_8084E604`: the nut's throw: on frame 3 one nut less and `En_Arrow`
+    /// (`ARROW_NUT`) from the right hand, pitched 4000 along Link's facing, with
+    /// `NA_SE_VO_LI_SWORD_N`; at the end, `link_normal_light_bom_end` back to standing
+    /// (`func_8083A098`). Link slows to a stop.
+    fn action_8084e604(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            let a = data.anim("link_normal_light_bom_end");
+            self.func_8083A098(data, a);
+        } else if self.skel.on_frame(3.0) {
+            self.change_ammo(env, oot_game::item::ITEM_DEKU_NUT, -1);
+            let pos = self.body_parts_pos[BODYPART_R_HAND];
+            self.play_requests.push(PlayRequest::SpawnArrow { pos, rot: [4000, self.actor.shape_rot.y, 0], params: ARROW_NUT });
+            self.play_voice_sfx(NA_SE_VO_LI_SWORD_N);
+        }
+        self.decelerate_to_zero();
+    }
+
     /// `Player_ActionToMeleeWeapon`.
     fn melee_weapon(ap: i32) -> i32 {
         let m = ap - 2;
@@ -6201,10 +6807,21 @@ impl Player {
         if (0..3).contains(&sword) { sword } else { -1 }
     }
 
-    /// `Player_DetachHeldActor`: Player holds no actor (nothing is carried here), but an
-    /// explosive in hand goes: no item action, `heldItemId` `ITEM_NONE_FE` (the NTSC 1.1 and later
-    /// order, as the debug ROM has it).
+    /// `Player_DetachHeldActor`: what Player holds (the seed or arrow in hand; carrying isn't
+    /// ported) is let go, unless it's the hookshot's hook: no child, no `heldActor`, its
+    /// `parent` cleared (`PlayRequest::ReleaseHeld`), `PLAYER_STATE1_CARRYING_ACTOR` off. And an
+    /// explosive in hand goes: no item action, `heldItemId` `ITEM_NONE_FE` (the NTSC 1.1 and
+    /// later order, as the debug ROM has it).
     fn detach_held_actor(&mut self, data: &GameData) {
+        if let Some(h) = self.held_actor
+            && !self.holds_hookshot(data)
+        {
+            self.actor.child = None;
+            self.held_actor = None;
+            self.interact_range_actor = None;
+            self.play_requests.push(PlayRequest::ReleaseHeld(h));
+            self.state1 &= !STATE1_11;
+        }
         if Self::action_to_explosive(data, self.held_item_ap) >= 0 {
             self.next_model_group = self.action_to_model_group(data, 0);
             self.init_item_action(data, 0);
@@ -6231,8 +6848,8 @@ impl Player {
     /// weapon or nothing asked for, or no item action at all), and not swimming (but nothing, or
     /// the hookshot on the ground):
     /// - no stick, bean or explosive left (or three explosives out): `NA_SE_SY_ERROR`;
-    /// - the lens, nuts, spells, masks, the ocarina and the bottles their own ways (none can be on
-    ///   a button yet: what they'd start is logged);
+    /// - nuts thrown (`func_8083C61C`); the lens, spells, masks, the ocarina and the bottles their
+    ///   own ways (none can be on a button yet: what they'd start is logged);
     /// - another item: the change animation (`PLAYER_STATE1_START_CHANGING_HELD_ITEM`), or the
     ///   item at once when the two hold alike;
     /// - the item in hand: used (`sUseHeldItem`).
@@ -6262,7 +6879,7 @@ impl Player {
             self.note("Player_UseItem: the Lens of Truth (Magic_RequestChange, actorCtx.lensActive) isn't ported");
         } else if item_action == it.ap("DEKU_NUT") {
             if self.ammo(ITEM_DEKU_NUT) != 0 {
-                self.note("Player_UseItem: func_8083C61C (throwing a Deku Nut, Player_Action_8084E604) isn't ported");
+                self.func_8083c61c(data);
             } else {
                 self.sfx(PlayerSfx::NoPos(NA_SE_SY_ERROR));
             }
@@ -6740,8 +7357,7 @@ impl Player {
     /// `func_8083D36C`: start swimming.
     fn func_8083D36C(&mut self, env: &Env) {
         let data = env.data;
-        // func_80832564.
-        self.func_80832440();
+        self.func_80832564(data);
         if self.state2 & STATE2_10 != 0 {
             self.state2 &= !STATE2_10;
             self.func_8083D12C(env, false);
@@ -7543,12 +8159,31 @@ impl Player {
 
     /// `Player_ActionHandler_13` (interrupt 13, and the actions that check it first): with `unk_6AD` set
     /// and Link on the ground, swimming or riding, a cutscene mode takes over
-    /// (`Player_StartCsAction`). The items and spells (`unk_6AD` 2 and 4) aren't ported.
+    /// (`Player_StartCsAction`); else first person (`unk_6AD` 1 the look, 2 the aim) if the main
+    /// camera takes its mode (`func_8083AD4C`), with `NA_SE_SY_CAMERA_ZOOM_UP`, or the error. The
+    /// cutscene items and spells (`unk_6AD` 4: the trade items, bottles, the ocarina and magic)
+    /// aren't ported: they log.
     fn action_handler_13(&mut self, env: &Env) -> bool {
         if self.unk_6AD != 0 && (self.func_808332B8() || self.grounded() || self.state1 & STATE1_23 != 0) {
             if !self.start_cs_action(env.data) {
-                self.note(format!("Player_ActionHandler_13 with unk_6AD {}: items and first person aren't ported", self.unk_6AD));
-                return false;
+                if self.unk_6AD == 4 {
+                    self.note("Player_ActionHandler_13 with unk_6AD 4: the spells, trade items, bottles and the ocarina aren't ported");
+                    return false;
+                } else if self.func_8083ad4c(env) != oot_game::camera::CAM_MODE_NORMAL as i32 {
+                    if self.state1 & STATE1_23 == 0 {
+                        self.setup_action(env.data, Action::FirstPerson, 1);
+                        self.action_var2 = 13;
+                        self.func_8083B010();
+                    }
+                    self.state1 |= STATE1_20;
+                    self.sfx(PlayerSfx::NoPos(NA_SE_SY_CAMERA_ZOOM_UP));
+                    self.zero_speed_xz();
+                    return true;
+                } else {
+                    self.unk_6AD = 0;
+                    self.sfx(PlayerSfx::NoPos(NA_SE_SY_ERROR));
+                    return false;
+                }
             }
             self.func_80832224();
             return true;
@@ -7557,8 +8192,9 @@ impl Player {
     }
 
     /// `Player_ActionHandler_0` (interrupt 0): a cutscene mode (or an item) waiting (`unk_6AD`) takes
-    /// over through `Player_ActionHandler_13`; a target Navi would talk about sets `PLAYER_STATE2_21`. C-Up
-    /// into first person (`func_8083B8F4`) isn't ported.
+    /// over through `Player_ActionHandler_13`; a target Navi would talk about sets `PLAYER_STATE2_21`;
+    /// else C-Up looks in first person (`func_8083B8F4`), or gives the error where it can't (not
+    /// in the shops' and houses' fixed views).
     fn action_handler_0(&mut self, env: &Env) -> bool {
         if self.unk_6AD != 0 {
             self.action_handler_13(env);
@@ -7567,8 +8203,14 @@ impl Player {
         // (naviEnemyId is NAVI_ENEMY_NONE for every ported actor.)
         if self.focus_actor.and_then(|h| env.target(h)).is_some_and(|t| t.flags & (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_TALK_WITH_C_UP) == (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_TALK_WITH_C_UP)) {
             self.state2 |= STATE2_21;
-        } else if self.navi_text_id == 0 && self.state1 & STATE1_4 == 0 && self.input.press.held(eng_input::pad::BTN_CUP) {
-            self.note("C-Up into first person (func_8083B8F4) not ported");
+        } else if self.navi_text_id == 0
+            && !self.check_hostile_lock_on()
+            && self.input.press.held(eng_input::pad::BTN_CUP)
+            && env.scene_cam_type != oot_game::scene::SCENE_CAM_TYPE_FIXED_SHOP_VIEWPOINT
+            && env.scene_cam_type != oot_game::scene::SCENE_CAM_TYPE_FIXED_TOGGLE_VIEWPOINT
+            && !self.func_8083b8f4(env)
+        {
+            self.sfx(PlayerSfx::NoPos(NA_SE_SY_ERROR));
         }
         false
     }
@@ -7588,7 +8230,7 @@ impl Player {
             self.finish_anim_movement();
             self.prev_cs_mode = self.cs_mode;
             log::debug!("DEMO MODE={}", self.cs_mode);
-            self.func_80852C0C(self.cs_mode);
+            self.func_80852C0C(env.data, self.cs_mode);
             let m = self.cs_mode;
             self.func_80852B4C(env, None, m, true);
         }
@@ -7980,8 +8622,12 @@ impl Player {
     }
 
     /// `func_80852C0C`: modes other than 1, 8, 0x31 and 7 drop what Link holds
-    /// (`Player_DetachHeldActor`: nothing is ever held here).
-    fn func_80852C0C(&mut self, _cs_mode: u8) {}
+    /// (`Player_DetachHeldActor`).
+    fn func_80852C0C(&mut self, data: &GameData, cs_mode: u8) {
+        if cs_mode != 1 && cs_mode != 8 && cs_mode != 0x31 && cs_mode != 7 {
+            self.detach_held_actor(data);
+        }
+    }
 
     /// `func_80852C50` (mode 6): Link follows the script's cues (`linkAction`), each mapped to
     /// a mode by `sCueToCsActionMap`. A cue's start puts him at its start (`func_808529D0`) or, for the
@@ -8012,7 +8658,7 @@ impl Player {
             self.finish_anim_movement();
             log::debug!("TOOL MODE={sp24}");
             let m = sp24.unsigned_abs();
-            self.func_80852C0C(m);
+            self.func_80852C0C(env.data, m);
             self.func_80852B4C(env, Some(link), m, true);
             self.action_var2 = 0;
             self.action_var1 = 0;
@@ -8798,6 +9444,11 @@ impl Player {
         for (i, name) in BODYPART_LIMBS.iter().enumerate() {
             self.body_parts_pos[i] = world[data.limb(name)].transform_point3(Vec3::ZERO);
         }
+        // Player_PostLimbDrawGameplay, PLAYER_LIMB_HEAD: actor.focus.pos is
+        // sPlayerFocusOffsetFromHead (1100, -700, 0) in the head limb's space, as drawn (the look
+        // rotations in): what Navi's point, the attention system and first person's camera
+        // (Camera_Subj3, Actor_GetFocus) read.
+        self.actor.focus_pos = world[data.limb("HEAD")].transform_point3(Vec3::new(1100.0, -700.0, 0.0));
         // Actor_SetFeetPos: sLeftRightFootLimbModelFootPos[linkAge] in each foot's space.
         let foot = if self.adult { Vec3::new(200.0, 300.0, 0.0) } else { Vec3::new(200.0, 200.0, 0.0) };
         self.feet_pos = [world[data.limb("L_FOOT")].transform_point3(foot), world[data.limb("R_FOOT")].transform_point3(foot)];
@@ -8806,6 +9457,19 @@ impl Player {
 
     /// `this->rightHandType == PLAYER_MODELTYPE_RH_SHIELD`: the model group's right hand
     /// (`gPlayerModelTypes`), or the shield held up (`Player_SetModelsForHoldingShield`).
+    /// `rightHandType` is `PLAYER_MODELTYPE_RH_BOW_SLINGSHOT` or `_2` (not holding the shield).
+    fn right_hand_is_bow_slingshot(&self, play: &PlayState) -> bool {
+        if self.holding_shield {
+            return false;
+        }
+        let rules = &play.rules;
+        let name = play.data.items.model_group_names.get(self.model_group).map(String::as_str).unwrap_or("");
+        rules.model_group(name).is_some_and(|g| {
+            let r = rules.model_groups[g].right;
+            r == rules.model_type("RH_BOW_SLINGSHOT") || r == rules.model_type("RH_BOW_SLINGSHOT_2")
+        })
+    }
+
     fn right_hand_is_shield(&self, play: &PlayState) -> bool {
         if self.holding_shield {
             return true;
@@ -8860,6 +9524,47 @@ impl Player {
             let len = MELEE_WEAPON_LENGTHS[Self::melee_weapon(self.held_item_ap) as usize];
             let tips = self.calc_melee_weapon_tip_positions(hand, len);
             self.update_melee_weapon_info(play, hand, tips);
+        }
+        // (A bottle in the left hand, PLAYER_MODELTYPE_LH_BOTTLE: the bottles aren't ported.)
+        // The seed or arrow in hand, drawn back (PLAYER_STATE1_9): at D_80126128 from the hand,
+        // turned by Matrix_RotateZYX(0x69E8, -0x5708, 0x458E). (Carrying, the carried actor's
+        // turn, and mf_9E0 and unk_3BC with nothing held: carrying isn't ported.)
+        if self.actor.scale.y >= 0.0
+            && !self.holds_hookshot(&play.data)
+            && let Some(h) = self.held_actor
+            && self.state1 & STATE1_9 != 0
+        {
+            let mut mf = oot_game::sys_matrix::MtxF::from_mat4(hand);
+            let pos = mf.mult_vec3f(Vec3::new(398.0, 1419.0, 244.0));
+            mf.rotate_zyx(0x69E8, -0x5708, 0x458E);
+            let r = mf.to_yxz_rot_s(false);
+            if let Some(a) = play.actors.actor_mut(h) {
+                a.world_pos = pos;
+                a.world_rot = Rot { x: r[0], y: r[1], z: r[2] };
+                a.shape_rot = a.world_rot;
+            }
+        }
+    }
+
+    /// `Player_PostLimbDrawGameplay`'s `PLAYER_LIMB_R_HAND` with the bow or slingshot in the right
+    /// hand: drawn back (`PLAYER_STATE1_9`, `unk_860` positive, `unk_834` at most 10), the
+    /// string's stretch (`unk_858`) is its point's distance from the hand less 3, by 1.6, at most
+    /// 1, and its spring's speed (`unk_85C`) -0.5. Draw-time state.
+    fn post_limb_draw_r_hand_string(&mut self, hand: glam::Mat4) {
+        if self.state1 & STATE1_9 != 0 && self.unk_860 >= 0 && self.unk_834 <= 10 {
+            let pos = BOW_SLINGSHOT_STRING[(!self.adult) as usize].2;
+            let sp90 = hand.transform_point3(pos);
+            let dist = self.body_parts_pos[BODYPART_R_HAND].distance(sp90);
+            self.unk_858 = dist - 3.0;
+            if dist < 3.0 {
+                self.unk_858 = 0.0;
+            } else {
+                self.unk_858 *= 1.6;
+                if self.unk_858 > 1.0 {
+                    self.unk_858 = 1.0;
+                }
+            }
+            self.unk_85c = -0.5;
         }
     }
 
@@ -9116,6 +9821,11 @@ mod rs {
     /// hand; `values`: its length (`unk_85C`).
     pub const DEKU_STICK: usize = 11;
     pub const STICK_LENGTH: usize = 5;
+    /// `values`: the bow's or slingshot's string stretch (`unk_858`), and `actor.focus.pos`
+    /// (x, y, z); `switches`: `unk_6AD` (first person).
+    pub const STRING: usize = 6;
+    pub const FOCUS: usize = 7;
+    pub const UNK_6AD: usize = 12;
 }
 
 impl LookRotations {
@@ -9263,6 +9973,9 @@ impl ActorImpl for Player {
             game_over_state: play.game_over_ctx.state,
             room_behavior_type2: play.room_ctx.cur.behavior_type2,
             active_cam_id: play.active_cam_id,
+            main_cam_valid_modes: play.data.camera.setting_flags(play.game_camera.setting),
+            main_cam_mode: play.game_camera.mode,
+            scene_cam_type: play.scene_cam_type,
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for textboxBtnCooldownTimer frames after a talk.
@@ -9280,6 +9993,11 @@ impl ActorImpl for Player {
         // for the camera (PlayState::player_out_of_arena).
         play.player_out_of_arena = play.player.and_then(|h| Some((play.player_view_of_impl(self)?, play.cam_actor_of(h, &self.actor))));
         for r in std::mem::take(&mut self.play_requests) {
+            if let PlayRequest::SpawnHeldArrow { pos, yaw, params } = r {
+                // Actor_SpawnAsChild: Player (the updating actor) its parent, it his child.
+                self.held_actor = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_ARROW, pos, [0, yaw, 0], params).map_err(|e| log::debug!("En_Arrow: {e:?}")).ok();
+                continue;
+            }
             apply_play_request(play, r);
         }
         play.player_out_of_arena = None;
@@ -9329,6 +10047,10 @@ impl ActorImpl for Player {
         // Player_PostLimbDrawGameplay, PLAYER_LIMB_L_HAND: leftHandPos.
         self.left_hand_pos = world[data.limb("L_HAND")].transform_point3(Vec3::ZERO);
         self.post_limb_draw_l_hand(play, world[data.limb("L_HAND")]);
+        // PLAYER_LIMB_R_HAND: the bow's or slingshot's string drawn back.
+        if self.right_hand_is_bow_slingshot(play) {
+            self.post_limb_draw_r_hand_string(world[data.limb("R_HAND")]);
+        }
         // PLAYER_LIMB_R_HAND: the shield in hand (sRightHandLimbModelShieldQuadVertices).
         let right_hand_is_shield = self.right_hand_is_shield(play);
         if self.actor.scale.y >= 0.0 && right_hand_is_shield {
@@ -9372,14 +10094,18 @@ impl ActorImpl for Player {
         angles[rs::ROOT_PITCH] = look.root_pitch;
         // Matrix_RotateZYX(0, play->gameplayFrames * 1000, 0) (Player_DrawGetItemImpl).
         angles[rs::GET_ITEM_SPIN] = (self.gameplay_frames as i32).wrapping_mul(1000) as i16;
-        let mut values = vec![0.0f32; 6];
+        let mut values = vec![0.0f32; 10];
         values[rs::SPEED_XZ] = self.actor.speed_xz;
         values[rs::STICK_LENGTH] = self.unk_85c;
+        values[rs::STRING] = self.unk_858;
+        let f = self.actor.focus_pos;
+        values[rs::FOCUS..rs::FOCUS + 3].copy_from_slice(&[f.x, f.y, f.z]);
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 12];
+        let mut switches = vec![0u32; 13];
         switches[rs::DEKU_STICK] = (self.item_ap == PLAYER_IA_DEKU_STICK) as u32;
+        switches[rs::UNK_6AD] = self.unk_6AD as u32;
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.model_group as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
@@ -9437,13 +10163,36 @@ impl ActorImpl for Player {
             child_has_kokiri_sword: play.save.equips.button_items[0] == oot_game::item::ITEM_SWORD_KOKIRI,
             moving_fast: fists,
             holding_shield: st.switches.get(rs::HOLDING_SHIELD).copied().unwrap_or(0) != 0,
+            first_person: false,
         };
+        // In first person (unk_6AD), with the head (focus.pos) projected behind -4
+        // (SkinMatrix_Vec3fMtxFMultXYZ with viewProjectionMtxF),
+        // Player_OverrideLimbDrawGameplayFirstPerson: nothing in the look, only the arms aiming.
+        // Else in a crawlspace, with Link behind the near plane (actor.projectedPos.z < 0),
+        // Player_OverrideLimbDrawGameplayCrawling draws no limb: the crawl's camera is inside him.
+        let unk_6ad = st.switches.get(rs::UNK_6AD).copied().unwrap_or(0);
+        let v = &st.values;
+        let focus = Vec3::new(v[rs::FOCUS], v[rs::FOCUS + 1], v[rs::FOCUS + 2]);
+        let first_person = unk_6ad != 0 && (play.view_proj * focus.extend(1.0)).z < -4.0;
+        let loadout = oot_game::player_lib::Loadout { first_person, ..loadout };
         let mesh = MeshKey { name: loadout.variant_key(rules), segment_textures: vec![(8, eye as u16), (9, mouth as u16)] };
-        // In a crawlspace, with Link behind the near plane (actor.projectedPos.z < 0, from
-        // viewProjectionMtxF), Player_OverrideLimbDrawGameplayCrawling draws no limb: the
-        // crawl's camera is inside him.
         let projected_z = (play.view_proj * st.pos.extend(1.0)).z;
-        if !(st.switches[rs::CRAWLING] != 0 && projected_z < 0.0) {
+        let limbs_drawn = if unk_6ad != 0 { !first_person || unk_6ad == 2 } else { !(st.switches[rs::CRAWLING] != 0 && projected_z < 0.0) };
+        // Player_PostLimbDrawGameplay, PLAYER_LIMB_R_HAND with the bow or slingshot in the right
+        // hand (rightHandType BOW_SLINGSHOT): its string (sBowSlingshotStringData), at its point
+        // from the hand, stretched along y by unk_858 and for the child turned by unk_858 * -0.2
+        // about z, in the XLU list (whatever the limbs draw).
+        if self.right_hand_is_bow_slingshot(play) {
+            let (file, dl, p) = BOW_SLINGSHOT_STRING[(!self.adult) as usize];
+            let hand = root * bones[play.data.limb("R_HAND")];
+            let len = st.values[rs::STRING];
+            let mut m = hand * Mat4::from_translation(p) * Mat4::from_scale(Vec3::new(1.0, len, 1.0));
+            if !self.adult {
+                m *= Mat4::from_rotation_z(len * -0.2);
+            }
+            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::pack::keys::mesh(file, dl)), m));
+        }
+        if limbs_drawn {
             // The hit flash: Link's OPA lists in the red fog (Play_SetFog puts the scene's back).
             let flash = st.switches.get(rs::DAMAGE_FLASH_FAR).copied().unwrap_or(0);
             let fog = (flash != 0).then(|| oot_game::gbi::gfx_set_fog(255, 0, 0, 0, 0, flash as i32));
@@ -9546,7 +10295,7 @@ impl PlayerIface for Player {
         self.control_stick_directions[self.control_stick_data_index as usize]
     }
     fn focus(&self) -> Vec3 {
-        self.head_pos
+        self.actor.focus_pos
     }
     fn speed_xz(&self) -> f32 {
         self.actor.speed_xz
@@ -9566,6 +10315,12 @@ impl PlayerIface for Player {
     }
     fn in_cs_mode(&self) -> bool {
         self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0 || self.unk_6AD == 4
+    }
+    fn in_blocking_cs_mode(&self) -> bool {
+        self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0
+    }
+    fn unk_a73(&self) -> u8 {
+        self.unk_A73
     }
     /// Player holds no actors here (lifting isn't ported).
     fn holds_actor(&self) -> bool {
@@ -9749,6 +10504,22 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         }
         PlayRequest::TitleCardClear => {
             play.title_ctx.clear();
+        }
+        // Handled by Player's update, which keeps the handle.
+        PlayRequest::SpawnHeldArrow { .. } => {}
+        PlayRequest::ReleaseHeld(h) => {
+            if let Some(a) = play.actors.actor_mut(h) {
+                a.parent = None;
+            }
+        }
+        PlayRequest::SpawnArrow { pos, rot, params } => {
+            if let Err(e) = play.actor_spawn(ACTOR_EN_ARROW, pos, rot, params) {
+                log::debug!("En_Arrow: {e:?}");
+            }
+        }
+        PlayRequest::CamRequestMode(mode) => {
+            play.game_camera.change_mode(&play.data.camera, mode);
+            play.camera_sfx();
         }
         PlayRequest::Audio(a) => match a {
             PlayerAudio::BgmVolumeOffDuringFanfare => play.audio.audio_set_bgm_volume_off_during_fanfare(),

@@ -91,6 +91,11 @@ impl Target {
     }
 }
 
+/// The optional features the renderer asks for: `DEPTH_CLIP_CONTROL`, for the game's NoN
+/// microcode (no near-plane clipping: `pipelines.rs`, `shader.wgsl`). Without it the near plane
+/// clips as on any GPU.
+pub const NON_FEATURES: wgpu::Features = wgpu::Features::DEPTH_CLIP_CONTROL;
+
 /// Creates a device without a window, for screenshots and tests.
 pub fn headless_device() -> Result<(wgpu::Device, wgpu::Queue)> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
@@ -102,6 +107,7 @@ pub fn headless_device() -> Result<(wgpu::Device, wgpu::Queue)> {
     }))
     .context("no GPU adapter")?;
     log::info!("adapter: {:?}", adapter.get_info().name);
-    let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))?;
+    let desc = wgpu::DeviceDescriptor { required_features: adapter.features() & NON_FEATURES, ..Default::default() };
+    let (device, queue) = pollster::block_on(adapter.request_device(&desc))?;
     Ok((device, queue))
 }
