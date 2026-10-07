@@ -123,6 +123,14 @@ pub struct BgActor {
     /// The owner's `interactFlags` (`DYNA_INTERACT_*`). A `Cell`, since the C sets them from
     /// code that only reads the collision (`Actor_UpdateBgCheckInfo`, Player's floor check).
     pub interact_flags: std::cell::Cell<u8>,
+    /// The owner's `DynaPolyActor.unk_150`, `unk_154` and `unk_158`: the push or pull on it.
+    /// Player at its wall adds his force to `unk_150` (2 pushing, -2 pulling) and sets `unk_158` to
+    /// his yaw (`func_8002DFA4`); the owner reads them in its update and zeroes `unk_150` when it's
+    /// done with them. Cells, as the interact flags: Player writes them while he only reads the
+    /// collision.
+    pub unk_150: std::cell::Cell<f32>,
+    pub unk_154: std::cell::Cell<f32>,
+    pub unk_158: std::cell::Cell<i16>,
 }
 
 /// `DynaCollisionContext`.
@@ -187,8 +195,12 @@ impl Dyna {
             sphere_radius: 0,
             min_y: 0.0,
             max_y: 0.0,
-            // DynaPolyActor_Init's interactFlags = 0.
+            // DynaPolyActor_Init's interactFlags = 0, unk_150 = unk_154 = 0 (and unk_158 the
+            // zeroed actor's).
             interact_flags: std::cell::Cell::new(0),
+            unk_150: std::cell::Cell::new(0.0),
+            unk_154: std::cell::Cell::new(0.0),
+            unk_158: std::cell::Cell::new(0),
         };
         if slot == self.actors.len() {
             self.actors.push(a);
@@ -259,6 +271,53 @@ impl Dyna {
     /// whether bg actor `bg`'s `interactFlags` has `flag`.
     pub fn interact_flag(&self, bg: u16, flag: u8) -> bool {
         self.actors.get(bg as usize).is_some_and(|a| a.interact_flags.get() & flag != 0)
+    }
+
+    /// Bg actor `bg`'s `dyna.unk_150` (0 for an id that isn't a bg actor).
+    pub fn unk_150(&self, bg: u16) -> f32 {
+        self.actors.get(bg as usize).map_or(0.0, |a| a.unk_150.get())
+    }
+
+    /// Sets bg actor `bg`'s `dyna.unk_150` (the owner's write: `this->dyna.unk_150 = 0.0f`).
+    pub fn set_unk_150(&self, bg: u16, v: f32) {
+        if let Some(a) = self.actors.get(bg as usize) {
+            a.unk_150.set(v);
+        }
+    }
+
+    /// Bg actor `bg`'s `dyna.unk_154`.
+    pub fn unk_154(&self, bg: u16) -> f32 {
+        self.actors.get(bg as usize).map_or(0.0, |a| a.unk_154.get())
+    }
+
+    /// Sets bg actor `bg`'s `dyna.unk_154`.
+    pub fn set_unk_154(&self, bg: u16, v: f32) {
+        if let Some(a) = self.actors.get(bg as usize) {
+            a.unk_154.set(v);
+        }
+    }
+
+    /// Bg actor `bg`'s `dyna.unk_158` (the yaw it's pushed along).
+    pub fn unk_158(&self, bg: u16) -> i16 {
+        self.actors.get(bg as usize).map_or(0, |a| a.unk_158.get())
+    }
+
+    /// `z_actor.c`'s `func_8002DF90`: `unk_150` and `unk_154` zeroed.
+    #[allow(non_snake_case)]
+    pub fn func_8002DF90(&self, bg: u16) {
+        self.set_unk_150(bg, 0.0);
+        self.set_unk_154(bg, 0.0);
+    }
+
+    /// `z_actor.c`'s `func_8002DFA4` on `DynaPoly_GetActor(bg)`: `arg1` added to `unk_150`, `unk_158`
+    /// set to `arg2`. Nothing for an id that isn't a bg actor in use (`DynaPoly_GetActor`'s NULL).
+    #[allow(non_snake_case)]
+    pub fn func_8002DFA4(&self, bg: u16, arg1: f32, arg2: i16) {
+        if self.is_bg_actor(bg) {
+            let a = &self.actors[bg as usize];
+            a.unk_150.set(a.unk_150.get() + arg1);
+            a.unk_158.set(arg2);
+        }
     }
 
     /// `DynaPoly_UnsetAllInteractFlags` (after the owner's update in `Actor_UpdateAll`):

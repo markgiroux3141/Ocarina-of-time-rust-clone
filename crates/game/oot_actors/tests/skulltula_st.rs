@@ -80,8 +80,26 @@ fn sfx_frames(w: &PlayState, id: u16, after: u32) -> Vec<u32> {
     w.audio.log.as_ref().unwrap().sfx.iter().filter(|&&(f, s, _)| f > after && s == id).map(|&(f, _, _)| f).collect()
 }
 
+/// Room 5's Skulltula hangs 14 over the Song of Time block on the purple rupee's chest
+/// (`Obj_Timeblock` 0xB9FF, its top at -820): with the block there, the Skulltula's `floorHeight`
+/// is its top and Link on the floor below never brings it down (`EnSt_IsCloseToPlayer`). The
+/// block hidden, as the song leaves it (params bit 15 off, its collision off), once it's spawned
+/// (its object loads two frames after the room).
+fn hide_the_time_block(w: &mut PlayState) {
+    for b in w.actors.all() {
+        if let Some(t) = w.actors.downcast_mut::<oot_actors::obj_timeblock::ObjTimeblock>(b) {
+            t.actor.params &= !(0x8000u16 as i16);
+            t.unk_175 = false;
+            t.is_visible = false;
+            let bg = t.bg;
+            w.col.dyna.set_collision_disabled(bg, true);
+        }
+    }
+}
+
 /// Link `dx` along +x from room 5's Skulltula's home, on the floor there, facing it (-x).
 fn place_link(w: &mut PlayState, dx: f32) {
+    hide_the_time_block(w);
     let (y, _) = w.col.entity_raycast_down(Vec3::new(HOME5.x + dx, HOME5.y, HOME5.z));
     w.place_player(Vec3::new(HOME5.x + dx, y, HOME5.z), -0x4000);
 }
@@ -93,6 +111,7 @@ fn on_the_ground(a: &Arc<GameAssets>) -> (PlayState, ActorHandle) {
     let mut n = 0;
     while st(&w, h).action != Action::WaitOnGround {
         idle(&mut w, 1);
+        hide_the_time_block(&mut w);
         n += 1;
         assert!(n < 60, "it never landed: {:?}", st(&w, h).action);
     }
@@ -513,7 +532,9 @@ fn a_killing_slash_bounces_it_three_times_then_it_burns_and_drops() {
     assert!(new_items.len() <= 1);
     for it in &new_items {
         assert!(it.actor.home_pos.distance(last) < 1.0);
-        assert!(ids.contains(&(it.actor.params as u8)));
+        // What func_8001F404 makes of the table's ids for Link (a recovery heart at full health is a
+        // green rupee).
+        assert!(ids.iter().any(|&id| oot_actors::en_item00::func_8001f404(&w, id as i16) == it.actor.params), "{:#x}", it.actor.params);
     }
 }
 

@@ -90,7 +90,11 @@ Milestone 4b, the Deku Stick and the props, is done
 (Player's item buttons and item change whole), lit at the torches, burning, breaking, the webs it
 burns; room 5's log and floating block with its water, room 10's rising platforms, room 2's lift
 and ladder, the crates, and the fragments (`Effect_Ss_Kakera`) the bushes and rocks now spawn too;
-pack format 21. Next: milestone 4c, pushing and Master Quest's extras.
+pack format 21. Milestone 4c, pushing and Master Quest's extras, is done
+([ADR 0043](adr/0043-push-and-pull.md), [ADR 0044](adr/0044-master-quests-extras-and-room-travel.md)):
+Player's push and pull, room 3's push block into the pit, the gravestones, the Song of Time's
+blocks and the rocks (their song and explosions injected), and a test walking every connection
+milestone 4 opened; pack format 22. Next: milestone 5, items in use.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -298,10 +302,14 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
      - **Exit:** a Deku Stick lit at a golden torch burns the web over room 1's door. *(Done:
        `Route::Stick`, the golden `stick`; the stick is swung with its C button, B taking the
        sword out, as in the C.)*
-   - **4c, pushing and Master Quest's extras:** Player's push and pull, `Obj_Oshihiki` and
-     `Obj_Makeoshihiki`, `Bg_Haka`, `Obj_Timeblock`, `Obj_Bombiwa`; the connections milestone 4
-     opens walked through from one start.
-     - **Exit:** room 3's block pushed off into the pit and climbed.
+   - **4c, pushing and Master Quest's extras** (done: see [GAME-05](GAME-05-deku-tree.md)
+     milestone 4c and ADRs [0043](adr/0043-push-and-pull.md),
+     [0044](adr/0044-master-quests-extras-and-room-travel.md)): Player's push and pull (the heavy
+     block's lift logged past its checks), `Obj_Oshihiki` and `Obj_Makeoshihiki`, `Bg_Haka`,
+     `Obj_Timeblock` (the song injected), `Obj_Bombiwa`; the connections milestone 4 opens walked
+     through from one start (`--test travel`).
+     - **Exit:** room 3's block pushed off into the pit and climbed. *(Done: `Route::Push`, the
+       golden `push`. Room 7's gravestones are sunk too low in Master Quest to hold on to.)*
 5. **Items in use:**
    - Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot (`EnArrow` for seeds);
    - the C buttons in full (`Player_ProcessItemButtons` and `Player_UseItem` are whole since 4b:

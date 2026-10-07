@@ -213,6 +213,13 @@ pub enum Step {
     StickLit,
     /// Through a plain sliding door into the next room, the door shut behind Link and he free.
     ThroughDoor,
+    /// Holding on to a push block (`Player_Action_8084B78C`, A at its wall).
+    BlockGrabbed,
+    /// Room 3's block pushed off the upper floor into the pit: `Obj_Makeoshihiki`'s flag 0x10 set
+    /// (its draw, with `NA_SE_SY_TRE_BOX_APPEAR`).
+    BlockInPit,
+    /// Down in the pit beside the block, climbed onto it: standing on its top.
+    OnBlock,
 }
 
 impl Step {
@@ -265,6 +272,9 @@ impl Step {
             Step::StickOut => "stick_out",
             Step::StickLit => "stick_lit",
             Step::ThroughDoor => "through_door",
+            Step::BlockGrabbed => "block_grabbed",
+            Step::BlockInPit => "block_in_pit",
+            Step::OnBlock => "on_block",
         }
     }
 }
@@ -305,7 +315,37 @@ pub enum Route {
     /// with ten sticks on C-Left (`deku-tree-sticks`) and the torches lit by flag 0x27
     /// (`STICK_START`).
     Stick,
+    /// Inside the Deku Tree, room 3's push block (`Obj_Oshihiki`, spawned by `Obj_Makeoshihiki`)
+    /// pushed along the upper floor's channel and off its end into the pit (flag 0x10, the
+    /// chime), then down into the pit beside it and up onto it (GAME-05 milestone 4c), from a
+    /// debug start on the upper floor behind the block (`PUSH_START`).
+    Push,
 }
+
+/// The `Push` route's block: room 3's `Obj_Oshihiki` (params 0xFFC0, small) on the upper floor,
+/// where `Obj_Makeoshihiki` (0xFF10, `home.rot.z` 1) puts it with flag 0x10 clear; where it ends
+/// up, down in the pit (`sBlocks[1]`); and the flag.
+pub const PUSH_BLOCK_HOME: Vec3 = Vec3::new(-605.0, -820.0, -290.0);
+pub const PUSH_BLOCK_PIT: Vec3 = Vec3::new(-365.0, -905.0, -290.0);
+pub const PUSH_BLOCK_FLAG: i32 = 0x10;
+/// Where the route starts Link: on the upper floor 95 behind the block, facing it (+x). Navi's
+/// hint there (`Elf_Msg` 0x3208: text 0x108, within 80 of (-600, -291); gone with flag 0x10)
+/// calls once he's closer.
+pub const PUSH_START: (Vec3, i16) = (Vec3::new(-700.0, -810.0, -290.0), 0x4000);
+/// The debug starts of GAME-05 milestone 4c (`game-push.bat`, `deku-tree-inside`): `(room,
+/// position, yaw, name)`. `oot_actors --test debug_starts` checks each: Link stands, and the room
+/// doesn't change.
+/// - `room3`: on the upper floor behind room 3's push block, facing it: `Route::Push`'s start;
+/// - `room7`: room 7 by its gravestones (`Bg_Haka`) and the Song of Time's hidden stair
+///   (`Obj_Timeblock` 0x39FF), facing -z towards them;
+/// - `room2`: room 2's 480 floor, west of its four hidden Song of Time blocks and under the ledge
+///   (656) with the three rocks (`Obj_Bombiwa`), facing +x.
+pub const PUSH_STARTS: [(i8, Vec3, i16, &str); 3] =
+    [(3, PUSH_START.0, PUSH_START.1, "room3"), (7, Vec3::new(-1925.0, -760.0, 360.0), i16::MIN, "room7"), (2, Vec3::new(-1290.0, 480.0, 1440.0), 0x4000, "room2")];
+/// From the channel's end, out of it onto the upper floor's -z side, then east off the floor's
+/// edge (x -395) down into the pit (y -905) beside the block, and round to its south, in line
+/// with its middle (the block's south face is at z -260, x -395 to -335).
+pub const PUSH_PIT_PATH: [Vec3; 3] = [Vec3::new(-430.0, -810.0, -230.0), Vec3::new(-380.0, -905.0, -200.0), Vec3::new(-365.0, -905.0, -175.0)];
 
 /// The `Stick` route's torch: room 0's middle-floor golden torch (`Obj_Syokudai` 0x03E7, lit by
 /// flag 0x27), and the flag, set by the debug start as if the top floor's switch were pressed.
@@ -420,7 +460,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -429,7 +469,7 @@ impl Route {
     pub fn preset(self) -> Option<&'static str> {
         match self {
             Route::DekuTree => Some("deku-tree-open"),
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter => Some("deku-tree-inside"),
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Push => Some("deku-tree-inside"),
             Route::Stick => Some("deku-tree-sticks"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -443,6 +483,7 @@ impl Route {
             Route::Scrub => Some(SCRUB_START),
             Route::Shutter => Some(SHUTTER_START),
             Route::Stick => Some(STICK_START),
+            Route::Push => Some(PUSH_START),
             _ => None,
         }
     }
@@ -459,6 +500,7 @@ impl Route {
     pub fn start_room(self) -> Option<i8> {
         match self {
             Route::Scrub => Some(SCRUB_START_ROOM),
+            Route::Push => Some(3),
             _ => None,
         }
     }
@@ -512,6 +554,7 @@ impl Route {
             Route::Scrub => "scrub",
             Route::Shutter => "shutter",
             Route::Stick => "stick",
+            Route::Push => "push",
         }
     }
 
@@ -525,13 +568,14 @@ impl Route {
             Route::Scrub => 3000,
             Route::Shutter => 3000,
             Route::Stick => 3000,
+            Route::Push => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -620,6 +664,14 @@ enum Task {
     /// At the web whose home is here, slowly, the stick burning, until it's burnt away (its
     /// one-point cutscene over) and Link is free.
     BurnWeb(Vec3, Step),
+    /// Hold on to the push block whose home is here: at it until "Grab" (`PLAYER_STATE2_0`), then
+    /// A held, standing, until Link holds on (`Player_Action_8084B78C`).
+    GrabBlock(Vec3, Step),
+    /// A held and the stick forward until this switch flag is set, holding on again if he lets
+    /// go (a text that opens is read first).
+    PushBlock(Vec3, i32, Step),
+    /// At the push block (from beside it, lower down) until Link stands on its top.
+    ClimbBlock(Step),
 }
 
 /// An actor the run talks to.
@@ -721,6 +773,14 @@ impl Playthrough {
                 Task::BurnWeb(STICK_WEB_HOME, Step::WebBurnt),
                 Task::OpenSlidingDoor(STICK_DOOR, STICK_DOOR_FRONT, Step::DoorOpened),
                 Task::WaitDoorShut(STICK_DOOR, Step::ThroughDoor),
+            ],
+            Route::Push => vec![
+                Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
+                Task::PushBlock(PUSH_BLOCK_HOME, PUSH_BLOCK_FLAG, Step::BlockInPit),
+                // Link lets go once the block has dropped away from his hands.
+                Task::Settle(None),
+                Task::Walk(PUSH_PIT_PATH.to_vec()),
+                Task::ClimbBlock(Step::OnBlock),
             ],
         };
         Playthrough {
@@ -1212,6 +1272,9 @@ impl Playthrough {
             Task::TakeStick(step) => self.take_stick(w, step),
             Task::LightStick(home, step) => self.light_stick(w, home, step),
             Task::BurnWeb(home, step) => self.burn_web(w, home, step),
+            Task::GrabBlock(home, step) => self.grab_block(w, home, step),
+            Task::PushBlock(home, flag, step) => self.push_block(w, home, flag, step),
+            Task::ClimbBlock(step) => self.climb_block(w, step),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -1662,6 +1725,117 @@ impl Playthrough {
                 Some(idle)
             }
         }
+    }
+
+    /// The push block (`Obj_Oshihiki`) whose start (its spawn place) is `home`, or the only one.
+    fn push_block_actor(w: &PlayState, home: Vec3) -> Option<&crate::obj_oshihiki::ObjOshihiki> {
+        let blocks: Vec<&crate::obj_oshihiki::ObjOshihiki> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::obj_oshihiki::ObjOshihiki>(h)).collect();
+        let n = blocks.len();
+        blocks.into_iter().find(|b| n == 1 || b.actor.world_pos.distance(home) < 1.0)
+    }
+
+    /// Whether Link holds on to a wall to push or pull.
+    fn holding_on(w: &PlayState) -> bool {
+        matches!(w.player().action, PA::PushWait | PA::Push | PA::Pull)
+    }
+
+    /// The pad that gets Link to hold on to the block: at it, slowly, until "Grab"
+    /// (`PLAYER_STATE2_0`: at its wall, facing it), then still with A held (A held when he's
+    /// already still: a press while moving would roll).
+    fn grab_pad(&mut self, w: &PlayState, block: Vec3) -> PadState {
+        let p = w.player();
+        if p.state2 & crate::player::STATE2_0 != 0 && p.linear_velocity == 0.0 {
+            return PadState { button: BTN_A, ..Default::default() };
+        }
+        if p.state2 & crate::player::STATE2_0 != 0 {
+            return PadState::default();
+        }
+        stick_towards(w, block, SLOW)
+    }
+
+    /// `Task::GrabBlock`.
+    fn grab_block(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
+        if Self::holding_on(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        // Navi's hint by the block (text 0x108) is read on the way: several pages.
+        if self.wait > 1200 {
+            let p = w.player();
+            self.failure = Some(format!("never held on to the block at {home} (Link {:?} at {:?}, state2 {:#x})", p.action, p.actor.world_pos, p.state2));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { PadState::default() });
+        }
+        let Some(b) = Self::push_block_actor(w, home) else {
+            self.failure = Some(format!("no push block at {home}"));
+            return None;
+        };
+        let at = b.actor.world_pos;
+        Some(self.grab_pad(w, at))
+    }
+
+    /// `Task::PushBlock`: holding on, A and the stick towards the block (along Link's facing:
+    /// `func_8083FFB8` takes the stick's part along it), until the flag is set; let go (a text,
+    /// the block stopped by a wall), he holds on again.
+    fn push_block(&mut self, w: &PlayState, home: Vec3, flag: i32, step: Step) -> Option<PadState> {
+        if w.flags.get_switch(flag) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 900 {
+            let p = w.player();
+            self.failure = Some(format!("flag {flag:#x} never set (Link {:?} at {:?})", p.action, p.actor.world_pos));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { PadState::default() });
+        }
+        let Some(b) = Self::push_block_actor(w, home) else {
+            self.failure = Some(format!("no push block at {home}"));
+            return None;
+        };
+        let at = b.actor.world_pos;
+        if Self::holding_on(w) {
+            let p = w.player();
+            let ahead = p.actor.world_pos + Vec3::new(eng_math::sin_s(p.actor.shape_rot.y), 0.0, eng_math::cos_s(p.actor.shape_rot.y)) * 100.0;
+            let mut pad = stick_towards(w, ahead, RUN);
+            pad.button = BTN_A;
+            return Some(pad);
+        }
+        Some(self.grab_pad(w, at))
+    }
+
+    /// `Task::ClimbBlock`: at the block (its top's middle) until Link stands on it, settled.
+    fn climb_block(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let Some(b) = Self::push_block_actor(w, PUSH_BLOCK_PIT) else {
+            self.failure = Some("no push block".into());
+            return None;
+        };
+        let p = w.player();
+        if p.actor.floor_bg_id == b.bg && Self::settled(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 300 {
+            self.failure = Some(format!("never onto the block (Link {:?} at {:?}, floor bg {})", p.action, p.actor.world_pos, p.actor.floor_bg_id));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { PadState::default() });
+        }
+        if p.actor.floor_bg_id == b.bg {
+            return Some(PadState::default());
+        }
+        // Straight at its south face. From the pit's floor it's 60 up, a child's `unk_14` or more:
+        // after 6 frames pressed on it `Player_ActionHandler_12` jumps and grabs its edge
+        // (`gPlayerAnim_link_normal_250jump_start`), and the hang climbs up with the stick past 55
+        // (`controlStickSpinAngles`, past the dead zone): at full tilt.
+        Some(stick_towards(w, b.actor.world_pos, FULL))
     }
 
     /// `Task::WaitDoorShut`: idle until the door is down and Link stands free.

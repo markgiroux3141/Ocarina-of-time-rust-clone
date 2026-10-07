@@ -414,6 +414,16 @@ impl ActorContext {
     }
 }
 
+/// `DynaPoly_GetActor`: the actor that owns bg actor `bg` (its `ActorImpl::dyna_bg_id`), if `bg`
+/// is a bg actor in use and not marked for deletion. An actor out of the arena while it updates
+/// isn't found (it never looks itself up).
+pub fn dyna_poly_get_actor(actors: &ActorContext, col: &eng_collision::bgcheck::CollisionContext, bg: u16) -> Option<ActorHandle> {
+    if !col.dyna.is_bg_actor(bg) {
+        return None;
+    }
+    actors.all().into_iter().find(|&h| actors.get(h).is_some_and(|a| a.dyna_bg_id() == Some(bg)))
+}
+
 /// `Actor_SetPlayerKnockback`: an actor knocks Player back. Player takes it in its next update
 /// (`func_808382DC`): `kind` 1 a push, 2 a knockdown, 3 a shock, at `speed` along `yaw` with
 /// `vy` upwards, `damage` added to what the frame's collisions did.

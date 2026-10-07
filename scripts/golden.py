@@ -87,6 +87,10 @@ CASES = [
     # Sticks on C-Left, the torches lit), a stick lit at the torch burns the web over room 1's
     # door, and Link goes through the door into room 1.
     ("stick", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-sticks", "--script", "stick", "--trace", "{trace}"]),
+    # GAME-05 milestone 4c: from a debug start on room 3's upper floor behind its push block, Link
+    # pushes the block along the floor's channel and off its end into the pit (flag 0x10, the
+    # chime), then goes down into the pit beside it and climbs onto it.
+    ("push", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-inside", "--script", "push", "--trace", "{trace}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

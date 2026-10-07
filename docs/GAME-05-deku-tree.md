@@ -1521,3 +1521,212 @@ Space A, I is C-Up (Navi), Enter Start.
   flame's size and the stick's burning down, whether the gap jump is fair, the web's burning, how
   the leaves, planks and crate pieces look and move, the platforms' and lift's timing, the log's
   knockdown.
+
+## Milestone 4c: pushing and Master Quest's extras
+
+**Answer:** done. Link holds on to a block and pushes or pulls it; room 3's block goes along the
+upper floor's channel and off its end into the pit, where it's the step back up; the gravestones,
+the Song of Time's blocks and the rocks are ported whole, their song and explosions injected; one
+test walks every connection milestone 4 opened from one start. The exit holds; its run is the
+golden `push`.
+
+The pack is format 22, in `out/data19`. Decisions are in [ADR 0043](adr/0043-push-and-pull.md)
+(push and pull, the blocks) and [ADR 0044](adr/0044-master-quests-extras-and-room-travel.md) (the
+extras, room travel).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 62 to 64):
+- `test-push.bat`: the milestone's tests;
+- `game-push.bat WHERE`: the game from a debug start: `room3` (room 3's upper floor behind the
+  push block, the default), `room7` (by the gravestones and the hidden stair), `room2` (under the
+  rocks' ledge, by the hidden blocks);
+- `sandbox-push.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestone 4's split, unchanged (surveyed at the end of 4b's session). The
+user chose (2026-10-07) to port `Player_ActionHandler_5`'s `Bg_Heavy_Block` branch to its checks,
+logging past them that Player's lift isn't ported.
+
+### The survey
+
+**Player, push and pull** (`z_player.c`; the port has none of it: `Player_ActionHandler_5` shows
+"Grab" (`PLAYER_STATE2_0`) at a pushable wall and logs on A):
+- `Player_ActionHandler_5`'s push branch (A at a wall with `WALL_FLAG_6`, grounded, the wall 39 or
+  more high): `unk_3C4` the wall's DynaPoly actor, `func_8083F72C` (`gPlayerAnim_link_normal_push_wait`);
+- `func_8083F9D0` (still at that wall with A or `PLAYER_STATE2_4`, else `push_wait_end`),
+  `func_8083FAB8` and `func_8083FB14` (into pushing and pulling), `func_8083FFB8` (the stick's
+  push or pull along the wall);
+- the actions: `Player_Action_8084B78C` (waiting at the wall), `Player_Action_8084B898` (pushing:
+  `link_normal_pushing`, `NA_SE_VO_LI_PUSH` on frame 11, the floor's slip sounds, 2 a frame),
+  `Player_Action_8084B9E4` (pulling: `PLAYER_ANIMGROUP_pulling`, a floor 26 up and 40 behind checked
+  with `func_8083973C` and a line test, -2 a frame);
+- `func_8084B840` and `z_actor.c`'s `func_8002DFA4`: the force on the wall's actor
+  (`DynaPolyActor.unk_150` += force, `unk_158` the yaw). The engine's bg actor needs `unk_150`,
+  `unk_154`, `unk_158` (next to the interact flags of ADR 0038);
+- `func_8083F524`; `Player_GetStrength` (`z_player_lib.c`) for the heavier blocks;
+- `CAM_MODE_PUSH_PULL` is already requested (`Player_UpdateCamAndSeqModes`) and runs
+  `Camera_Parallel1`, ported, on the settings' `PushPull` data.
+
+About 200 lines of C. `PLAYER_STATE2_4` is cleared by `func_80832440` (ported).
+
+**The actors:**
+
+| Actor | Placed (MQ) | C lines | Notes |
+|---|---|---|---|
+| `Obj_Makeoshihiki` | room 3, `0xFF10`, `home.rot.z` 1 | 144 | Spawns `Obj_Oshihiki` as its child at `sBlocks[1]`'s position for its flags: on the upper floor (-605, -820, -290), or, flag 0x10 set, down in the pit (-365, -905, -290); a small block (`PUSHBLOCK_SMALL_START_ON`). Its **draw** sets and unsets the flags (`sFlagSwitchFuncs`) when the block rests at a position: draw-time state, to run in `draw_update` (ADR 0037's rule). *(Built: the "chime" is `NA_SE_SY_TRE_BOX_APPEAR`; the draw also clears the second flag, 0x3F, though its params turn it off, as the C does.)* |
+| `Obj_Oshihiki` | spawned by the above | 688 | The push block: pushed or pulled a block length (`unk_150`), stacking, falling off ledges (`BgCheck_EntityRaycastDown6`, `BgCheck_EntityLineTest3`), `DynaPolyActor_SetSwitchPressed`/`SetActorOnTop`, `Player_GetStrength` for the large kinds, `NA_SE_EV_ROCK_SLIDE`; its textures by colour |
+| `Bg_Haka` | room 7 ×8, params 0 | 174 | A gravestone pulled 60 back (`minVelocityY`), `NA_SE_EV_ROCK_SLIDE`; the chime for params 1; `En_Poh` spawned only in the graveyard at night (not ported: a placeholder, never reached here). *(Built: MQ's stones are sunk 15 into the floor, too low for Link to hold on to: see below.)* |
+| `Obj_Timeblock` | room 2 ×4, room 7 ×5 (`0x39FF`), room 5 ×1 (`0xB9FF`, on the purple rupee's chest) | 367 | Shown or hidden with its collision from its switch flag (0x3F) *(corrected: MQ's params set bit 6, so it's params bit 15, which the song flips; the flag is unused)*; the Song of Time (`msgCtx.lastPlayedSong`, `ocarinaMode`: not ported, add the fields and inject) toggles it with `Demo_Effect` (a placeholder, as agreed) and an attention camera |
+| `Obj_Bombiwa` | room 2 ×3 (params 3, 4, 8) | 158 | Broken by an explosion (`func_80033684`, ported in 4b) or the hammer: `Effect_Ss_Kakera` (ported), `func_80033480`, its switch flag |
+
+**Room travel:** a C-derived test walking the connections milestone 4 opened from one start: 0 to
+10 (the switch's web, the door), 0 to 1 (a stick from the middle floor's torch, the web, the door),
+the drops 0 to 3 and 3 to 9, then 9 to 11 once the hint scrubs clear room 9.
+
+**Exit (as agreed):** in room 3, Link pushes the block off the upper floor into the pit (flag 0x10
+set by `Obj_Makeoshihiki`'s draw, the chime) and climbs onto it. That run is the golden.
+
+### What was built
+
+**Player, push and pull** (`oot_actors::player`, ADR 0043):
+- `Player_ActionHandler_5`'s push branch: A at a `WALL_FLAG_6` wall 39 or more high, Link holding
+  on (`func_8083F72C`, after putting away what's in hand: `func_8083A388`), `unk_3C4` the wall's
+  DynaPoly actor; a `Bg_Heavy_Block`'s strength check (`Player_GetStrength`), its lift logged.
+- The actions: holding on (`Player_Action_8084B78C`), pushing (`_8084B898`: push_start, pushing,
+  `NA_SE_VO_LI_PUSH` on frame 11, the floor's slips, 2 a frame on the block and Link moving at 2),
+  pulling (`_8084B9E4`: the pull group's animations, the floor 40 behind within 20 and no wall
+  between, -2 a frame); letting go (`func_8083F9D0`: `push_wait_end`); the stick along Link's
+  facing (`func_8083FFB8`); `PLAYER_STATE2_4`; the push camera (`CAM_MODE_PUSH_PULL`, already in).
+- The engine: `DynaPolyActor.unk_150`, `unk_154`, `unk_158` on the bg actor slot
+  (`Dyna::func_8002DFA4`, `func_8002DF90`); `DynaPoly_GetActor` (`actor_ctx::dyna_poly_get_actor`,
+  every DynaPoly actor giving its bg id); `BgCheck_EntityRaycastDown6` and
+  `BgCheck_EntityLineTest3`, which skip the caller's own collision.
+
+**The blocks** (ADR 0043):
+- `Obj_Oshihiki` (`obj_oshihiki`) whole: the push (0.5 faster a frame up to 2, 20 a push, a
+  10-frame wait, `NA_SE_EV_ROCK_SLIDE`, `NA_SE_EV_BLOCK_BOUND` against a wall), the five floor
+  points and the fall off a ledge, the wall check along the push, the strength each size needs, the
+  init's flags, a block riding on another (`ObjOshihiki_MoveWithBlockUnder`, in `draw_update`),
+  pressing a switch it rests on; `gPushBlockDL` baked per texture with its colour.
+- `Obj_Makeoshihiki` (`obj_makeoshihiki`) whole: the block spawned as its child where its flags
+  say, and its draw's flags and chime where the block rests (in `draw_update`).
+
+**Master Quest's extras** (ADR 0044, a worktree agent):
+- `Bg_Haka` (`bg_haka`) whole: the pull to 60, its earth, the dirt patch's sand, the graveyard's
+  and Lake Hylia's paths, the Poe (a placeholder).
+- `Obj_Timeblock` (`obj_timeblock`) whole: shown or hidden with its collision, the song (Player's
+  `PLAYER_STATE2_24` and the new `msgCtx.lastPlayedSong`, injected), `Demo_Effect` (a placeholder),
+  the attention camera; drawn with its colour (a bake).
+- `Obj_Bombiwa` (`obj_bombiwa`) whole: broken by an explosion or the hammer, its fragments (one more
+  `Effect_Ss_Kakera` list) and dust, its flag.
+
+**Room travel** (`oot_actors --test travel`, a worktree agent): from one `Play_Init`, 0 to 10 and
+back, 0 to 1 and back, the drops 0 to 3 and 3 to 9, 9 to 11, each room change the real door or drop.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game20`, `OOT_DATA_DIR=out/data19`): 579
+passed, 0 failed, 1 ignored (546 before). 33 are new, with their expectations from the C:
+- **`oot_actors --test push`** (9): holding on and pushing room 3's block frame by frame (Grab, A,
+  `push_wait`, the first frame's refusal, `unk_150` and `unk_158`, `pushDist` 0.5, 1.5, 3 ... 19, 20,
+  the sounds, the 10-frame wait, the next push); letting go; pulling it back to its start
+  (`NA_SE_EV_BLOCK_BOUND` against the channel's step, then no further); off the channel's end into
+  the pit (falling 1.5, 4.5, 9 ... and landing on the 11th frame, flag 0x10, 0x3F cleared, the chime,
+  immovable); where the block spawns by its flags (Navi's hint there gone with 0x10); spawned
+  blocks' flags and the large one's strength; a block riding on another; room 7's sunk stones too
+  low to hold; Link pulling a gravestone flush with the floor.
+- **`--test push_run`** (1): the exit run.
+- **`--test travel`** (1): room travel, 2942 frames.
+- **`--test gravestones`** (7), **`--test timeblocks`** (6), **`--test rocks`** (7): each actor frame by
+  frame where it matters, against replayed `Rand` where it draws it, the triggers injected.
+- **`--test debug_starts`** (one more): the push starts stand in their rooms.
+- `eng_collision` (one more): the force fields, the raycast and line test past an actor's own
+  collision.
+- One older test changed: `skulltula_st` hides room 5's time block as the song would (the shown
+  block under room 5's Skulltula is its floor, so it doesn't drop to Link below, as in the game),
+  and its drop check maps the drop table through `func_8001F404` (the block's first frames move
+  the `Rand` stream: without the block there's no drop at all, as at the baseline; the time block's
+  attention flag was ruled out).
+
+**The exit run** (`Route::Push`, `--script push`, from `PUSH_START` on room 3's upper floor behind
+the block): Navi's hint by the block (0x108) read on the way, Link holds on (`block_grabbed` 327),
+twelve pushes along the channel and off its end (`block_in_pit` 600: flag 0x10, the chime), out of
+the channel, down into the pit south of the block, and up onto it: pressed against its 60-high
+side he jumps and grabs its edge, and climbs up with the stick at full tilt (`on_block` 729). 729
+frames.
+
+**The goldens.** Against milestone 4b's build (`target/game19`, 6987231, on data18: its own check
+90/90 identical), every one of the 90 hashes is the same bytes: no run enters rooms 2, 3, 5 or 7,
+and none holds A at a pushable wall. **New case `push`**: the exit run, the same bytes over two runs.
+Re-recorded and logged in [golden/README.md](../golden/README.md): 91 hashes, 67 cases.
+
+### Decisions
+
+- **[ADR 0043](adr/0043-push-and-pull.md):** Player's push and pull whole, the heavy block's lift
+  logged past its checks (the user's choice); the force on the engine's bg actor; `DynaPoly_GetActor`
+  through `dyna_bg_id`; the raycast and line test skipping an actor's own collision; the blocks
+  whole, their draws' state in `draw_update`.
+- **[ADR 0044](adr/0044-master-quests-extras-and-room-travel.md):** the extras whole, the song
+  injected; room 7's stones left as the data has them (too low to hold), Player's pull tested on a
+  stone flush with the floor; the Skulltula test's hidden block; the travel test's real doors and
+  drops.
+- **The ports ran in parallel** as two worktree agents (the extras; the travel test), with Player and
+  the blocks here.
+- **No "block already in the pit" debug start:** the game's `--switch` sets flags after the room
+  loads, and `Obj_Makeoshihiki`'s draw would clear 0x10 again with the block at its first place.
+
+### Known gaps
+
+- **Room 7's gravestones can't be pulled in Master Quest:** sunk 15 into the floor, their fronts
+  stand 34 over it (28 where Player measures), under the 39 holding on needs; Link climbs onto them.
+  That's the data, not a port gap (checked against `Player_ActionHandler_5`).
+- **The ocarina and bombs:** the time blocks and the rocks wait for them (milestone 5 and later);
+  `Demo_Effect` and `En_Poh` are placeholders. Player's lift (the heavy block, the pots) isn't
+  ported (BACKLOG #4).
+- **Found, in the backlog:** Player doesn't ask for `CAM_MODE_STILL` while knocked down (#18); an
+  init's children come after their parent in the port's lists, before it in the C's (#19). (#17,
+  room 0's middle-floor vines not reaching the top floor, was the travel test's scripted climb: by
+  hand they do.)
+- The travel test places Link within a room three times (room 0's top floor, room 3's upper floor:
+  the slingshot's loop, beside the running hint scrub).
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-push.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-push.bat
+```
+
+### By hand
+
+`game-push.bat WHERE` (or menu 63). WASD the stick, Space A, E is B, Q is Z, R the shield, I is
+C-Up (Navi), Enter Start.
+1. **`room3`** (the default): walk up to the block ahead; Navi calls (read her hint with Space).
+   At the block "Grab" shows: hold Space and Link holds on (the camera moves behind him). Still
+   holding Space, push W: he heaves (a grunt) and the block slides a block length with a grinding
+   sound, then a short pause before the next. Let go of Space: he lets go.
+2. **Pull:** after a push or two, hold Space and pull S: he pulls it back towards him, backing off.
+   Back at its start it stops with a thud and won't come further.
+3. **Into the pit:** push it twelve times to the channel's end: it drops into the pit below with a
+   thud and a chime. Try to push it again from above or below: it won't move.
+4. **Climb:** step off the floor's edge beside the block (south of it) into the pit (water), turn to
+   the block and walk into it: Link jumps up, grabs its edge and climbs on with the stick held
+   fully. From its top, the upper floor is a step up.
+5. **`room7`**: the gravestones stand low in the floor: walking into one, Link climbs onto it (no
+   "Grab"). The Song of Time's stair here is hidden (no ocarina yet). Room 5 (`game-dungeon.bat
+   room5`) has the purple block standing on the chest.
+6. **`room2`**: the three rocks on the ledge above are solid (the sword bounces off: no bombs yet);
+   the four Song of Time blocks around you are hidden.
+7. **Vines** (`game-dungeon.bat lobby`, BACKLOG #17): climb room 0's middle-floor vines by the
+   golden torch to their top: does Link get onto the top floor, or drop off under its rim? In the
+   game, compare.
+- **What to report:** how holding on, pushing and pulling feel (the A hold, the pauses, the camera),
+  the block's look and sounds, the drop and the chime, the climb onto it from the pit, and the
+  vines.
+
+### Played by hand
+
+The user played it (2026-10-07): the blocks work, and room 0's middle-floor vines take Link to the
+top floor (BACKLOG #17 closed: only the travel test's scripted climb fell short).

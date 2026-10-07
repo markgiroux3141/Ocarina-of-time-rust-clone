@@ -1415,6 +1415,8 @@ pub const NA_SE_PL_JUMP_HEAVYBOOTS: u16 = 0x081D;
 pub const NA_SE_PL_LAND: u16 = 0x0820;
 pub const NA_SE_PL_LAND_HEAVYBOOTS: u16 = 0x082D;
 pub const NA_SE_PL_SLIPDOWN: u16 = 0x0830;
+/// `NA_SE_PL_SLIP` (`playerbank_table.h`: 0x840): the push's and pull's slips.
+pub const NA_SE_PL_SLIP: u16 = 0x0840;
 pub const NA_SE_PL_CLIMB_CLIFF: u16 = 0x0831;
 pub const NA_SE_PL_ROLL: u16 = 0x083C;
 pub const NA_SE_PL_SKIP: u16 = 0x083D;
@@ -1574,6 +1576,8 @@ pub const NA_SE_VO_LI_SWEAT: u16 = 0x680F;
 pub const NA_SE_VO_LI_RELAX: u16 = 0x6811;
 pub const NA_SE_VO_LI_GROAN: u16 = 0x6813;
 pub const NA_SE_VO_LI_AUTO_JUMP: u16 = 0x6814;
+/// `NA_SE_VO_LI_PUSH` (`voicebank_table.h`: 0x6818).
+pub const NA_SE_VO_LI_PUSH: u16 = 0x6818;
 pub const NA_SE_VO_LI_HOOKSHOT_HANG: u16 = 0x6819;
 pub const NA_SE_VO_LI_LAND_DAMAGE_S: u16 = 0x681A;
 pub const NA_SE_VO_NAVY_ENEMY: u16 = 0x6840;
@@ -1649,6 +1653,7 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_PL_LAND", NA_SE_PL_LAND),
     ("NA_SE_PL_LAND_HEAVYBOOTS", NA_SE_PL_LAND_HEAVYBOOTS),
     ("NA_SE_PL_SLIPDOWN", NA_SE_PL_SLIPDOWN),
+    ("NA_SE_PL_SLIP", NA_SE_PL_SLIP),
     ("NA_SE_PL_CLIMB_CLIFF", NA_SE_PL_CLIMB_CLIFF),
     ("NA_SE_PL_ROLL", NA_SE_PL_ROLL),
     ("NA_SE_PL_SKIP", NA_SE_PL_SKIP),
@@ -1769,6 +1774,7 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_VO_LI_SWEAT", NA_SE_VO_LI_SWEAT),
     ("NA_SE_VO_LI_RELAX", NA_SE_VO_LI_RELAX),
     ("NA_SE_VO_LI_AUTO_JUMP", NA_SE_VO_LI_AUTO_JUMP),
+    ("NA_SE_VO_LI_PUSH", NA_SE_VO_LI_PUSH),
     ("NA_SE_VO_LI_HOOKSHOT_HANG", NA_SE_VO_LI_HOOKSHOT_HANG),
     ("NA_SE_VO_LI_LAND_DAMAGE_S", NA_SE_VO_LI_LAND_DAMAGE_S),
     ("NA_SE_VO_NAVY_ENEMY", NA_SE_VO_NAVY_ENEMY),

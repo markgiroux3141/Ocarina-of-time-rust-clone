@@ -15,6 +15,7 @@
 #![allow(non_snake_case)] // fields keep the decomp's unk_XXX names
 
 use eng_collision::bgcheck::{BGCHECK_Y_MIN, CollisionContext, PolyId, udist_plane_to_pos};
+use eng_collision::dyna::BGCHECK_SCENE;
 use eng_input::pad::{BTN_A, BTN_Z, Input, stick_to_mag_angle};
 use eng_math::*;
 use glam::Vec3;
@@ -81,6 +82,8 @@ pub const STATE2_13: u32 = 1 << 13; // keep the target (Switch Z-targeting)
 pub const STATE2_21: u32 = 1 << 21;
 pub const STATE2_2: u32 = 1 << 2;
 pub const STATE2_3: u32 = 1 << 3;
+/// `PLAYER_STATE2_4`: pushing or pulling a block that takes it (the block clears it when it stops).
+pub const STATE2_4: u32 = 1 << 4;
 pub const STATE2_5: u32 = 1 << 5; // facing follows currentYaw
 pub const STATE2_6: u32 = 1 << 6;
 pub const STATE2_8: u32 = 1 << 8;
@@ -324,6 +327,10 @@ pub mod group {
     pub const DEFENSE: usize = 0x14;
     pub const DEFENSE_WAIT: usize = 0x15;
     pub const DEFENSE_END: usize = 0x16;
+    /// `PLAYER_ANIMGROUP_pull_start`, `_pulling`, `_pull_end` (`player.h`).
+    pub const PULL_START: usize = 0x23;
+    pub const PULLING: usize = 0x24;
+    pub const PULL_END: usize = 0x25;
     pub const WALK: usize = 1;
     pub const RUN: usize = 2;
     pub const DAMAGE_RUN: usize = 3;
@@ -453,7 +460,24 @@ pub enum Action {
     GuardHit,
     /// `Player_Action_808505DC`: the sword's rebound off something hard (`func_80842D20`).
     Rebound,
+    /// `Player_Action_8084B78C`: holding on to a wall to push or pull (A at a `WALL_FLAG_6` wall).
+    PushWait,
+    /// `Player_Action_8084B898`: pushing.
+    Push,
+    /// `Player_Action_8084B9E4`: pulling.
+    Pull,
 }
+
+/// `D_80854870`: the push's slips (`ANIMSFX_DATA(ANIMSFX_TYPE_FLOOR, 3)`, `-(.., 21)`).
+const D_80854870: [(u16, i16); 2] = [(NA_SE_PL_SLIP, 0x1000 | 3), (NA_SE_PL_SLIP, -(0x1000 | 21))];
+/// `D_80854878`: the pull's (frames 4 and 24).
+const D_80854878: [(u16, i16); 2] = [(NA_SE_PL_SLIP, 0x1000 | 4), (NA_SE_PL_SLIP, -(0x1000 | 24))];
+/// `D_80854880`: where the pull looks for the floor behind Link: 26 up, 40 back.
+const D_80854880: Vec3 = Vec3::new(0.0, 26.0, -40.0);
+/// `ACTOR_BG_HEAVY_BLOCK` (`actor_table.h`: 0x0092).
+const ACTOR_BG_HEAVY_BLOCK: i16 = 0x0092;
+/// `SPEED_MODE_LINEAR` (`Player_GetMovementSpeedAndYaw`'s `speedMode`).
+const SPEED_MODE_LINEAR: f32 = 0.0;
 
 /// `func_A74`: what `Player_Action_WaitForPutAway` runs once the item is away.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -466,6 +490,8 @@ pub enum A74 {
     GetItem,
     /// `func_8083A40C`: the crawl.
     Crawl,
+    /// `func_8083A388`: holding on to the wall to push or pull (`Player_Action_8084B78C`).
+    PushWait,
 }
 
 /// Player's upper-body action (`this->upperActionFunc`), run from `Player_UpdateUpperBody`.
@@ -535,6 +561,9 @@ impl Action {
             Action::Guard => "Player_Action_80843188",
             Action::GuardHit => "Player_Action_808435C4",
             Action::Rebound => "Player_Action_808505DC",
+            Action::PushWait => "Player_Action_8084B78C",
+            Action::Push => "Player_Action_8084B898",
+            Action::Pull => "Player_Action_8084B9E4",
         }
     }
 }
@@ -834,6 +863,9 @@ pub struct Player {
     pub door_bg_cam_index: i16,
     /// `func_A74`.
     pub func_a74: Option<A74>,
+    /// `unk_3C4`: the DynaPoly actor whose wall Link holds on to (`Player_ActionHandler_5`), or
+    /// none for the scene's own wall.
+    pub unk_3c4: Option<ActorHandle>,
     /// Start mode 0 (`Player_StartMode_Nothing`): `update` is a no-op and `draw` is NULL.
     pub inert: bool,
     /// `naviTextId`: what Navi says when C-Up talks to her (her update sets it; negative: she
@@ -1043,6 +1075,7 @@ impl Player {
             cs_actor: None,
             door_bg_cam_index: 0,
             func_a74: None,
+            unk_3c4: None,
             inert: false,
             navi_text_id: 0,
             navi_actor: None,
@@ -1544,6 +1577,9 @@ impl Player {
             Action::Guard => self.action_80843188(env),
             Action::GuardHit => self.action_808435c4(env),
             Action::Rebound => self.action_808505dc(env),
+            Action::PushWait => self.action_8084b78c(env),
+            Action::Push => self.action_8084b898(env),
+            Action::Pull => self.action_8084b9e4(env),
         }
     }
 
@@ -2113,6 +2149,7 @@ impl Player {
                 Some(A74::Talk) => self.setup_talk(env.data),
                 Some(A74::GetItem) => self.func_8083A434(env.data),
                 Some(A74::Crawl) => self.func_8083A40C(env.data),
+                Some(A74::PushWait) => self.func_8083A388(env.data),
                 None => {}
             }
         }
@@ -2128,9 +2165,11 @@ impl Player {
     }
 
     /// `Player_ActionHandler_5` (interrupt 5): at a wall Link faces: climbing it (`func_8083EC18`),
-    /// entering a crawlspace (`Player_TryEnteringCrawlspace`), or pushing it. Pushing and pulling
-    /// (`func_8083F72C`, `Bg_Heavy_Block`) aren't ported: A at a pushable wall only shows
-    /// "Grab" (`PLAYER_STATE2_0`).
+    /// entering a crawlspace (`Player_TryEnteringCrawlspace`), or, standing on the ground at a
+    /// `WALL_FLAG_6` wall 39 or more high, "Grab" (`PLAYER_STATE2_0`) and on A holding on to it to
+    /// push or pull (`func_8083F72C`), `unk_3C4` the wall's DynaPoly actor (none for the scene's).
+    /// A `Bg_Heavy_Block`'s wall needs the gold gauntlets (`Player_GetStrength`) and is lifted
+    /// (`func_8083A0F4`): Player's lift isn't ported, so that logs and returns as the C does.
     fn action_handler_5(&mut self, env: &Env) -> bool {
         if self.state1 & STATE1_11 == 0 && self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0 && self.s.wall_facing_diff < 0x3000 {
             let flags = self.s.wall_flags;
@@ -2140,11 +2179,226 @@ impl Player {
             if !self.func_808332B8() && (self.linear_velocity == 0.0 || self.state2 & STATE2_2 == 0) && flags & WALL_FLAG_6 != 0 && self.grounded() && self.wall_height >= 39.0 {
                 self.state2 |= STATE2_0;
                 if self.input.cur.held(BTN_A) {
-                    self.note("pushing a wall (func_8083F72C) not ported");
+                    let wall_bg = self.wall_bg_id();
+                    let wall_poly_actor = if wall_bg != BGCHECK_SCENE { oot_game::actor_ctx::dyna_poly_get_actor(env.actors, env.col, wall_bg) } else { None };
+                    if wall_bg != BGCHECK_SCENE && wall_poly_actor.is_some() {
+                        let h = wall_poly_actor.unwrap();
+                        if env.actors.actor(h).is_some_and(|a| a.id == ACTOR_BG_HEAVY_BLOCK) {
+                            if oot_game::player_lib::player_get_strength(&env.io.borrow().save) < oot_game::player_lib::PLAYER_STR_GOLD_G {
+                                return false;
+                            }
+                            // Player_SetupWaitForPutAway(func_8083A0F4), PLAYER_STATE1_CARRYING_ACTOR,
+                            // interactRangeActor the block, getItemId GI_NONE, the yaw off the wall,
+                            // func_80832224: Player's lift isn't ported.
+                            self.note("lifting a Bg_Heavy_Block (func_8083A0F4) not ported");
+                            return true;
+                        }
+                        self.unk_3c4 = wall_poly_actor;
+                    } else {
+                        self.unk_3c4 = None;
+                    }
+                    let anim = env.data.anim("link_normal_push_wait");
+                    self.func_8083F72C(env, anim);
+                    return true;
                 }
             }
         }
         false
+    }
+
+    /// `this->actor.wallBgId`: the bg id of the wall Link last touched (`BGCHECK_SCENE` for the
+    /// scene's own).
+    fn wall_bg_id(&self) -> u16 {
+        self.actor.wall_poly.map_or(BGCHECK_SCENE, |p| p.bg)
+    }
+
+    /// `func_8083F72C`: holding on to the wall (`Player_Action_8084B78C`, after the held item is
+    /// put away: `func_8083A388`), `anim` played once, still, facing the wall.
+    fn func_8083F72C(&mut self, env: &Env, anim: AnimId) {
+        let data = env.data;
+        if !self.setup_wait_for_put_away(data, env, A74::PushWait) {
+            self.setup_action(data, Action::PushWait, 0);
+        }
+        self.skel.play_once(data, anim);
+        self.func_80832224();
+        self.current_yaw = self.actor.wall_yaw.wrapping_add(i16::MIN);
+        self.actor.shape_rot.y = self.current_yaw;
+    }
+
+    /// `func_8083A388`.
+    fn func_8083A388(&mut self, data: &GameData) {
+        self.setup_action(data, Action::PushWait, 0);
+    }
+
+    /// `func_8083F524`: kept at the wall, 26 up, `wallCheckRadius` + 5 off it, looking 30 ahead
+    /// (`func_8083F360`).
+    fn func_8083F524(&mut self, env: &Env) -> bool {
+        let r = self.age.wall_radius + 5.0;
+        self.func_8083F360(env, 26.0, r, 30.0, 0.0)
+    }
+
+    /// `func_8083F9D0`: still holding on? At a wall, with the block taking the push
+    /// (`PLAYER_STATE2_4`) or A held, and the wall still `unk_3C4`'s (the scene's for none): true
+    /// while the block takes it (nothing to decide), false to read the stick. Otherwise Link lets
+    /// go (`gPlayerAnim_link_normal_push_wait_end`, standing) and it's true.
+    fn func_8083F9D0(&mut self, env: &Env) -> bool {
+        if self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0 && (self.state2 & STATE2_4 != 0 || self.input.cur.held(BTN_A)) {
+            let wall_bg = self.wall_bg_id();
+            let wall_poly_actor = if wall_bg != BGCHECK_SCENE { oot_game::actor_ctx::dyna_poly_get_actor(env.actors, env.col, wall_bg) } else { None };
+            // &wallPolyActor->actor == this->unk_3C4 (NULL's actor is NULL).
+            if wall_poly_actor == self.unk_3c4 {
+                return self.state2 & STATE2_4 != 0;
+            }
+        }
+        let data = env.data;
+        self.func_80839FFC(data);
+        self.skel.play_once(data, data.anim("link_normal_push_wait_end"));
+        self.state2 &= !STATE2_4;
+        true
+    }
+
+    /// `func_8083FAB8`: pushing (`Player_Action_8084B898`), `gPlayerAnim_link_normal_push_start`.
+    fn func_8083FAB8(&mut self, data: &GameData) {
+        self.setup_action(data, Action::Push, 0);
+        self.state2 |= STATE2_4;
+        self.skel.play_once(data, data.anim("link_normal_push_start"));
+    }
+
+    /// `func_8083FB14`: pulling (`Player_Action_8084B9E4`), `PLAYER_ANIMGROUP_pull_start`.
+    fn func_8083FB14(&mut self, data: &GameData) {
+        self.setup_action(data, Action::Pull, 0);
+        self.state2 |= STATE2_4;
+        self.skel.play_once(data, data.player_anim(group::PULL_START, self.model_anim_type));
+    }
+
+    /// `func_8083FFB8`: the stick along Link's facing: its speed times the cosine of its angle
+    /// off his yaw; 1 forwards (push), -1 backwards (pull), 0 with the stick still or square
+    /// across.
+    fn func_8083FFB8(&self, arg1: &mut f32, arg2: i16) -> i32 {
+        let temp1 = arg2.wrapping_sub(self.actor.shape_rot.y);
+        // ABS(temp1) as a u16, then Math_CosS's s16.
+        let temp2 = (temp1 as i32).unsigned_abs() as u16;
+        let temp3 = cos_s(temp2 as i16);
+        *arg1 *= temp3;
+        if *arg1 != 0.0 {
+            if temp3 > 0.0 { 1 } else { -1 }
+        } else {
+            0
+        }
+    }
+
+    /// `func_8084B840`: the push (`arg2` 2) or pull (-2) on the wall's DynaPoly actor
+    /// (`func_8002DFA4`: added to its `unk_150`, `unk_158` Link's `world.rot.y`).
+    fn func_8084B840(&self, env: &Env, arg2: f32) {
+        let wall_bg = self.wall_bg_id();
+        if wall_bg != BGCHECK_SCENE {
+            // DynaPoly_GetActor, then func_8002DFA4 (nothing for a bg id not in use).
+            env.col.dyna.func_8002DFA4(wall_bg, arg2, self.actor.world_rot.y);
+        }
+    }
+
+    /// `Player_Action_8084B78C`: holding on to the wall (`PLAYER_STATE2_0`, `_6`, `_8`: the push
+    /// camera, `CAM_MODE_PUSH_PULL`). Once the animation is done, unless he lets go
+    /// (`func_8083F9D0`), the stick along his facing pushes (`func_8083FAB8`) or pulls
+    /// (`func_8083FB14`).
+    fn action_8084b78c(&mut self, env: &Env) {
+        self.state2 |= STATE2_0 | STATE2_6 | STATE2_8;
+        self.func_8083F524(env);
+        if self.skel.update(env.data) && !self.func_8083F9D0(env) {
+            let (_, mut speed_target, yaw_target) = self.get_movement_speed_and_yaw(env, SPEED_MODE_LINEAR);
+            let temp = self.func_8083FFB8(&mut speed_target, yaw_target);
+            if temp > 0 {
+                self.func_8083FAB8(env.data);
+            } else if temp < 0 {
+                self.func_8083FB14(env.data);
+            }
+        }
+    }
+
+    /// `Player_Action_8084B898`: pushing: `gPlayerAnim_link_normal_push_start`, then
+    /// `gPlayerAnim_link_normal_pushing` looped (`av2.actionVar2` 1); `NA_SE_VO_LI_PUSH` on the start's
+    /// frame 11, the floor's slips on frames 3 and 21 (`D_80854870`). Unless he lets go: the stick
+    /// back pulls, still ends (`gPlayerAnim_link_normal_push_end`), forwards pushes on
+    /// (`PLAYER_STATE2_4`). While the push is taken, 2 on the block (`func_8084B840`) and Link
+    /// moving at 2.
+    fn action_8084b898(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_0 | STATE2_6 | STATE2_8;
+        // func_80832CB0.
+        if self.skel.update(data) {
+            self.skel.play_loop(data, data.anim("link_normal_pushing"));
+            self.action_var2 = 1;
+        } else if self.action_var2 == 0 && self.skel.on_frame(11.0) {
+            self.play_voice_sfx(NA_SE_VO_LI_PUSH);
+        }
+        self.process_anim_sfx_list(&D_80854870);
+        self.func_8083F524(env);
+        if !self.func_8083F9D0(env) {
+            let (_, mut speed_target, yaw_target) = self.get_movement_speed_and_yaw(env, SPEED_MODE_LINEAR);
+            let temp = self.func_8083FFB8(&mut speed_target, yaw_target);
+            if temp < 0 {
+                self.func_8083FB14(data);
+            } else if temp == 0 {
+                let anim = data.anim("link_normal_push_end");
+                self.func_8083F72C(env, anim);
+            } else {
+                self.state2 |= STATE2_4;
+            }
+        }
+        if self.state2 & STATE2_4 != 0 {
+            self.func_8084B840(env, 2.0);
+            self.linear_velocity = 2.0;
+        }
+    }
+
+    /// `Player_Action_8084B9E4`: pulling: `PLAYER_ANIMGROUP_pull_start`, then `_pulling` looped
+    /// (`av2.actionVar2` 1); `NA_SE_VO_LI_PUSH` on the start's frame 11, then the floor's slips on
+    /// the loop's frames 4 and 24 (`D_80854878`). Unless he lets go: the stick forwards pushes,
+    /// still ends (`PLAYER_ANIMGROUP_pull_end`), back pulls on (`PLAYER_STATE2_4`). While the pull
+    /// is taken: with a floor 40 behind him within 20 of his feet (`func_8083973C` at 26 up) and
+    /// no wall between (`BgCheck_EntityLineTest1` 26 up), -2 on the block (`func_8084B840`); else
+    /// the pull stops (`PLAYER_STATE2_4` cleared).
+    fn action_8084b9e4(&mut self, env: &Env) {
+        let data = env.data;
+        let anim = data.player_anim(group::PULLING, self.model_anim_type);
+        self.state2 |= STATE2_0 | STATE2_6 | STATE2_8;
+        // func_80832CB0.
+        if self.skel.update(data) {
+            self.skel.play_loop(data, anim);
+            self.action_var2 = 1;
+        } else if self.action_var2 == 0 {
+            if self.skel.on_frame(11.0) {
+                self.play_voice_sfx(NA_SE_VO_LI_PUSH);
+            }
+        } else {
+            self.process_anim_sfx_list(&D_80854878);
+        }
+        self.func_8083F524(env);
+        if !self.func_8083F9D0(env) {
+            let (_, mut speed_target, yaw_target) = self.get_movement_speed_and_yaw(env, SPEED_MODE_LINEAR);
+            let temp1 = self.func_8083FFB8(&mut speed_target, yaw_target);
+            if temp1 > 0 {
+                self.func_8083FAB8(data);
+            } else if temp1 == 0 {
+                let anim = data.player_anim(group::PULL_END, self.model_anim_type);
+                self.func_8083F72C(env, anim);
+            } else {
+                self.state2 |= STATE2_4;
+            }
+        }
+        if self.state2 & STATE2_4 != 0 {
+            // func_8083973C: the point behind (sp5C) and the floor under it.
+            let sp5c = self.get_relative_position(self.actor.world_pos, D_80854880);
+            let temp2 = env.col.entity_raycast_down(sp5c).0 - self.actor.world_pos.y;
+            if temp2.abs() < 20.0 {
+                let sp44 = Vec3::new(self.actor.world_pos.x, sp5c.y, self.actor.world_pos.z);
+                if env.col.entity_line_test(sp44, sp5c, true, false, false, true).is_none() {
+                    self.func_8084B840(env, -2.0);
+                    return;
+                }
+            }
+            self.state2 &= !STATE2_4;
+        }
     }
 
     /// `Player_TryEnteringCrawlspace`: a child at a crawlspace's wall (`WALL_FLAG_CRAWLSPACE_1`, `_5`), within 8 of the
@@ -3977,7 +4231,7 @@ impl Player {
         self.melee_weapon_state = 0;
         self.unk_6AD = 0;
         self.state1 &= !(STATE1_13 | STATE1_14 | STATE1_20 | STATE1_21);
-        self.state2 &= !((1 << 4) | (1 << 7) | STATE2_18);
+        self.state2 &= !(STATE2_4 | (1 << 7) | STATE2_18);
         self.actor.shape_rot.x = 0;
     }
 

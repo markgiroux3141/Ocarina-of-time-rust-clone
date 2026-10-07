@@ -389,6 +389,12 @@ impl ActorImpl for BgSpot00Hanebasi {
         }
     }
 
+    /// `DynaPoly_GetActor` finds it by its bg id; `Actor_UpdateAll` clears its interact flags after
+    /// its update.
+    fn dyna_bg_id(&self) -> Option<u16> {
+        (self.bg != eng_collision::dyna::BG_ACTOR_MAX).then_some(self.bg)
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }

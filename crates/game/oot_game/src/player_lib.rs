@@ -282,3 +282,23 @@ impl LinkVariant {
         draw.textures.iter().enumerate().filter(|(_, t)| t.source_segments & (1 << segment) != 0).map(|(i, _)| i).collect()
     }
 }
+
+/// `PlayerStrength` (`player.h`): what `Player_GetStrength` returns.
+pub const PLAYER_STR_NONE: i32 = 0;
+pub const PLAYER_STR_BRACELET: i32 = 1;
+pub const PLAYER_STR_SILVER_G: i32 = 2;
+pub const PLAYER_STR_GOLD_G: i32 = 3;
+pub const PLAYER_STR_MAX: i32 = 4;
+
+/// `Player_GetStrength` (`z_player_lib.c`): the strength upgrade for an adult; a child with any
+/// strength upgrade has the bracelet's, else none.
+pub fn player_get_strength(save: &crate::save::SaveContext) -> i32 {
+    let strength_upgrade = save.cur_upg_value(crate::item::UPG_STRENGTH) as i32;
+    if save.adult {
+        strength_upgrade
+    } else if strength_upgrade != 0 {
+        PLAYER_STR_BRACELET
+    } else {
+        PLAYER_STR_NONE
+    }
+}

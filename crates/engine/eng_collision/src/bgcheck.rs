@@ -394,6 +394,11 @@ impl CollisionContext {
         self.raycast_down_skip(pos, IGNORE_ENTITY, DOWN_CHECK_WALLS_SIMPLE | DOWN_CHECK_FLOORS | DOWN_CHECK_GROUND_ONLY, 1.0, Some(own_bg))
     }
 
+    /// `BgCheck_EntityRaycastDown6`: `BgCheck_EntityRaycastDown4` with its own `chk_dist`.
+    pub fn entity_raycast_down6(&self, pos: Vec3, own_bg: u16, chk_dist: f32) -> (f32, Option<PolyId>) {
+        self.raycast_down_skip(pos, IGNORE_ENTITY, DOWN_CHECK_WALLS_SIMPLE | DOWN_CHECK_FLOORS | DOWN_CHECK_GROUND_ONLY, chk_dist, Some(own_bg))
+    }
+
     // ---- walls ------------------------------------------------------------------------
 
     /// `BgCheck_ComputeWallDisplacement`. @bug (game): the previous wall's flag 27 is read
@@ -817,11 +822,12 @@ impl CollisionContext {
     /// `BgCheck_CheckLineAgainstDyna` (with `BgCheck_CheckLineAgainstBgActor`: walls, floors,
     /// then ceilings of each bg actor the segment's bounding sphere test passes).
     #[allow(clippy::too_many_arguments)]
-    fn line_dyna(&self, xp: u16, a: Vec3, b: &mut Vec3, out: &mut Option<(Vec3, PolyId)>, dist_sq: &mut f32, chk_dist: f32, bcc: u32) -> bool {
+    fn line_dyna(&self, xp: u16, a: Vec3, b: &mut Vec3, out: &mut Option<(Vec3, PolyId)>, dist_sq: &mut f32, chk_dist: f32, bcc: u32, skip: Option<u16>) -> bool {
         let d = &self.dyna;
         let mut result = false;
         for (i, act) in d.actors.iter().enumerate() {
-            if !act.in_use() || act.collision_disabled {
+            // The actor making the test is skipped (`actor != bgActors[i].actor`).
+            if !act.in_use() || act.collision_disabled || skip == Some(i as u16) {
                 continue;
             }
             let (ay, by) = (a.y, b.y);
@@ -858,6 +864,12 @@ impl CollisionContext {
     /// `BgCheck_CheckLineImpl`: the closest poly the segment `a`→`b` crosses (bg actors too
     /// with `CHECK_DYNA`).
     pub fn check_line(&self, xp1: u16, xp2: u16, a: Vec3, b: Vec3, chk_dist: f32, bcc: u32) -> Option<(Vec3, PolyId)> {
+        self.check_line_skip(xp1, xp2, a, b, chk_dist, bcc, None)
+    }
+
+    /// `BgCheck_CheckLineImpl` for an actor with its own bg actor `skip`, which it ignores.
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_line_skip(&self, xp1: u16, xp2: u16, a: Vec3, b: Vec3, chk_dist: f32, bcc: u32, skip: Option<u16>) -> Option<(Vec3, PolyId)> {
         if !self.in_bounds(a) {
             return None;
         }
@@ -877,7 +889,7 @@ impl CollisionContext {
             dist_sq = (hit - a).length_squared();
         }
         if bcc & CHECK_DYNA != 0 && !self.dyna.is_empty() {
-            self.line_dyna(xp1, a, &mut bt, &mut out, &mut dist_sq, chk_dist, bcc);
+            self.line_dyna(xp1, a, &mut bt, &mut out, &mut dist_sq, chk_dist, bcc, skip);
         }
         out
     }
@@ -899,6 +911,26 @@ impl CollisionContext {
             bcc |= CHECK_ONE_FACE;
         }
         self.check_line(IGNORE_ENTITY, IGNORE_NONE, a, b, 1.0, bcc)
+    }
+
+    /// `BgCheck_EntityLineTest3`: `BgCheck_EntityLineTest1` for an actor, skipping its own bg
+    /// actor `own_bg`, with `chk_dist`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn entity_line_test3(&self, a: Vec3, b: Vec3, wall: bool, floor: bool, ceil: bool, one_face: bool, own_bg: u16, chk_dist: f32) -> Option<(Vec3, PolyId)> {
+        let mut bcc = CHECK_DYNA;
+        if wall {
+            bcc |= CHECK_WALL;
+        }
+        if floor {
+            bcc |= CHECK_FLOOR;
+        }
+        if ceil {
+            bcc |= CHECK_CEILING;
+        }
+        if one_face {
+            bcc |= CHECK_ONE_FACE;
+        }
+        self.check_line_skip(IGNORE_ENTITY, IGNORE_NONE, a, b, chk_dist, bcc, Some(own_bg))
     }
 
     /// `BgCheck_GetWaterSurface`: the surface height of the first water box (for `room`, or one
@@ -1159,5 +1191,39 @@ mod tests {
         // No box 2: nothing written.
         assert!(!c.set_water_box_surface(2, 0));
         assert_eq!(c.header.water_boxes.len(), 2);
+    }
+
+    /// `DynaPolyActor.unk_150`/`unk_158` on the bg actor slot (`func_8002DFA4` adds and sets them
+    /// only for a bg actor in use; `DynaPolyActor_Init` zeroes them), and the tests an actor makes
+    /// past its own collision: `BgCheck_EntityRaycastDown6` and `BgCheck_EntityLineTest3`.
+    #[test]
+    fn a_bg_actors_push_and_the_tests_that_skip_its_own_collision() {
+        use crate::dyna::BgActorSource;
+        let mut c = box_room();
+        let mut b = CollisionBuilder::new();
+        let s = b.surface(0, 0);
+        // A 40-high box's top and its +x face (facing +x).
+        b.quad(Vec3::new(-20.0, 40.0, 20.0), Vec3::new(20.0, 40.0, 20.0), Vec3::new(20.0, 40.0, -20.0), Vec3::new(-20.0, 40.0, -20.0), s);
+        b.quad(Vec3::new(20.0, 0.0, 20.0), Vec3::new(20.0, 0.0, -20.0), Vec3::new(20.0, 40.0, -20.0), Vec3::new(20.0, 40.0, 20.0), s);
+        let block = std::sync::Arc::new(b.finish());
+        let src = BgActorSource { pos: Vec3::ZERO, shape_rot: [0; 3], scale: Vec3::ONE, shape_y_offset: 0.0 };
+        let bg = c.dyna.set_bg_actor(block.clone(), src, 1);
+        c.dyna.update_context();
+        assert_eq!((c.dyna.unk_150(bg), c.dyna.unk_154(bg), c.dyna.unk_158(bg)), (0.0, 0.0, 0));
+        c.dyna.func_8002DFA4(bg, 2.0, 0x4000);
+        c.dyna.func_8002DFA4(bg, 2.0, 0x4000);
+        assert_eq!((c.dyna.unk_150(bg), c.dyna.unk_158(bg)), (4.0, 0x4000));
+        c.dyna.func_8002DF90(bg);
+        assert_eq!((c.dyna.unk_150(bg), c.dyna.unk_158(bg)), (0.0, 0x4000));
+        // An id not in use: nothing.
+        c.dyna.func_8002DFA4(7, 2.0, 0);
+        assert_eq!(c.dyna.unk_150(7), 0.0);
+        // Down onto its top, or past it to the floor when it's the actor's own.
+        assert_eq!(c.entity_raycast_down(Vec3::new(0.0, 100.0, 0.0)).0, 40.0);
+        assert_eq!(c.entity_raycast_down6(Vec3::new(0.0, 100.0, 0.0), bg, 0.0).0, 0.0);
+        // Across its +x face from outside, or through it for its own test.
+        let (a, z) = (Vec3::new(60.0, 10.0, 0.0), Vec3::new(-60.0, 10.0, 0.0));
+        assert_eq!(c.entity_line_test(a, z, true, false, false, true).map(|h| h.1.bg), Some(bg));
+        assert_eq!(c.entity_line_test3(a, z, true, false, false, true, bg, 0.0), None);
     }
 }

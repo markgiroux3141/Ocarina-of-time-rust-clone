@@ -360,6 +360,9 @@ pub struct MessageContext {
     pub text_delay: u16,
     pub ocarina_mode: u16,
     pub ocarina_action: u16,
+    /// `lastPlayedSong` (`OCARINA_SONG_*`): written only by the ocarina's staff, which isn't ported,
+    /// so it keeps the zeroed play state's 0 unless a test sets it (`Obj_Timeblock` reads it).
+    pub last_played_song: u16,
     pub textbox_background_idx: u16,
     pub textbox_background_fore_color_idx: u8,
     pub textbox_background_back_color_idx: u8,
@@ -507,6 +510,7 @@ impl MessageContext {
             text_delay_timer: 0,
             text_delay: 0,
             ocarina_mode: 0,
+            last_played_song: 0,
             ocarina_action: 0,
             textbox_background_idx: 0,
             textbox_background_fore_color_idx: 0,

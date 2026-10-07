@@ -33,6 +33,7 @@ echo    50  test-combat          GAME-05's combat tests: the guard, the battle c
 echo    53  test-enemies         GAME-05's other enemies' tests: the Deku Scrubs, the Skulltulas, Gohma's larvae
 echo    56  test-mechanics       GAME-05's dungeon mechanics tests: the sliding doors, switches, torches, webs, quakes, the map
 echo    59  test-sticks          GAME-05's Deku Stick and props tests: the stick, the platforms, the log, the crates, the lift
+echo    62  test-push            GAME-05's push and pull tests: the push block, the gravestones, the time blocks, the rocks, room travel
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -55,6 +56,7 @@ echo    51  game-combat          Inside the Deku Tree by a withered Deku Baba an
 echo    54  game-enemies         Inside the Deku Tree by an enemy of milestone 3b (asks which)
 echo    57  game-dungeon         Inside the Deku Tree at a room's debug start: the switch, the doors (asks where)
 echo    60  game-sticks          Inside the Deku Tree with Deku Sticks on C-Left (J), by a torch (asks where)
+echo    63  game-push            Inside the Deku Tree by room 3's push block, or room 7's or room 2's extras (asks where)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -71,6 +73,7 @@ echo    52  sandbox-combat       The combat run's trace and screenshots, into ou
 echo    55  sandbox-scrub        The Mad Scrub run's trace and screenshots, into out\run
 echo    58  sandbox-shutter      The switch and sliding door run's trace and screenshots, into out\run
 echo    61  sandbox-stick        The Deku Stick run's trace and screenshots (the torch, the web, room 1), into out\run
+echo    64  sandbox-push         The push block run's trace and screenshots (pushed into the pit, climbed), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -141,6 +144,9 @@ if "%pick%"=="58" set "script=sandbox-shutter"
 if "%pick%"=="59" set "script=test-sticks"
 if "%pick%"=="60" goto sticks
 if "%pick%"=="61" set "script=sandbox-stick"
+if "%pick%"=="62" set "script=test-push"
+if "%pick%"=="63" goto push
+if "%pick%"=="64" set "script=sandbox-push"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -184,5 +190,13 @@ set "where="
 set /p "where=Where (torch, room3, room10, room5, room2): "
 call "%~dp0game-sticks.bat" %where%
 echo game-sticks finished (exit code %errorlevel%).
+pause
+goto menu
+
+:push
+set "where="
+set /p "where=Where (room3, room7, room2): "
+call "%~dp0game-push.bat" %where%
+echo game-push finished (exit code %errorlevel%).
 pause
 goto menu
