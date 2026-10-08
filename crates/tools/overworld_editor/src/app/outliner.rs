@@ -37,7 +37,7 @@ impl App {
         let q = self.filter.to_lowercase();
         let flagged: Vec<Sel> = self.problems.iter().filter_map(|p| self.problem_target(p)).collect();
         let cur = match self.sel {
-            Sel::Loop(l) | Sel::Node(NodeRef::Loop(l, _)) => Some(Sel::Loop(l)),
+            Sel::Loop(l) | Sel::Node(NodeRef::Loop(l, _)) | Sel::Edge(l, _) => Some(Sel::Loop(l)),
             Sel::Path(p) | Sel::Node(NodeRef::Path(p, _)) => Some(Sel::Path(p)),
             Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => Some(Sel::Line(k)),
             Sel::Prop(i) => Some(Sel::Prop(i)),
@@ -52,7 +52,7 @@ impl App {
             terrain.push(Row {
                 sel: Sel::Loop(i + 1),
                 name: edit::loop_name(&self.doc, i + 1),
-                meta: if water { format!("bed {:.0}", r.z) } else { format!("{:.0}", r.z) },
+                meta: format!("{}{}", if water { format!("bed {:.0}", r.z) } else { format!("{:.0}", r.z) }, profile_tag(r)),
                 col: if water { style::WATER } else { style::FLOOR },
             });
         }
@@ -140,7 +140,7 @@ impl App {
     /// Fits the plan (and the 3D view) round the selection.
     pub(super) fn frame_sel(&mut self) {
         let pts: Vec<P2> = match self.sel {
-            Sel::Loop(l) | Sel::Node(NodeRef::Loop(l, _)) => self.shapes.loops.get(l).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default(),
+            Sel::Loop(l) | Sel::Node(NodeRef::Loop(l, _)) | Sel::Edge(l, _) => self.shapes.loops.get(l).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default(),
             Sel::Path(k) | Sel::Node(NodeRef::Path(k, _)) => self.shapes.paths.get(k).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default(),
             Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => self.shapes.lines.get(k).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default(),
             Sel::Prop(i) if i < self.doc.props.len() => self.prop_footprint(i),
@@ -243,4 +243,22 @@ fn row(ui: &mut egui::Ui, r: &Row, depth: f32, selected: bool, flagged: bool) ->
     }
     p.galley(Pos2::new(meta_x, rect.center().y - meta.size().y / 2.0), meta, FAINT);
     resp.on_hover_text(if flagged { "The build has a problem with it (see ⚠ at the top). Double-click: frame it." } else { "Click: select (Shift: several regions) · double-click: frame it" })
+}
+
+/// What a region's edges do besides cliffs, for its row: " · slope", " · terraces" or both.
+fn profile_tag(r: &overworld::doc::Region) -> String {
+    let mut names: Vec<&str> = vec![];
+    for k in 0..r.nodes.len() {
+        if let Some(p) = r.edge_profile(k) {
+            let n = super::inspector::profile_name(Some(p));
+            if !names.contains(&n) {
+                names.push(n);
+            }
+        }
+    }
+    let pit = if r.kind == "pit" { " · pit" } else { "" };
+    if names.is_empty() {
+        return pit.into();
+    }
+    format!("{pit} · {}", names.join(", ").to_lowercase())
 }

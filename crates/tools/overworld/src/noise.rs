@@ -50,6 +50,18 @@ pub fn relief(p: [f64; 2], seed: u32) -> f64 {
     (2.6 * out / (1.0 + 0.45 + 0.45 * 0.45)).tanh()
 }
 
+/// `relief` in three dimensions: rock faces bulging in and out.
+pub fn relief3(p: [f64; 3], seed: u32) -> f64 {
+    let mut out = 0.0;
+    let (mut f, mut a) = (1.0, 1.0);
+    for o in 0..3u32 {
+        out += a * value3([p[0] * f + 31.7 * o as f64, p[1] * f - 12.9 * o as f64, p[2] * f + 5.3 * o as f64], seed.wrapping_add(o * 101));
+        f *= 2.1;
+        a *= 0.45;
+    }
+    (2.6 * out / (1.0 + 0.45 + 0.45 * 0.45)).tanh()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

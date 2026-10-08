@@ -62,6 +62,11 @@ Done:
   area of its own, with its own edge of the world; a tunnel Link walks through goes from a wall to a wall, through a ridge,
   under a plateau or from one area to another, along a curve through its nodes, with rough cave walls if wanted.
   Example: `examples/sketch/sketch_tunnels.json`.
+- **Edge profiles and pits** (2026-10-08, `src/profiles.rs`): a region's edges, all of them or one at a time, can be a
+  slope, terraces, an overhang or ragged rock instead of a cliff, built inward from the edge so the footprint stays as
+  drawn; and a region can be a pit, a drop into the void. Example: `examples/sketch/sketch_profiles.json` (a rolling
+  hill, a mesa with one sloped side, a terraced hollow, a lake with a shelving bed, a stepped hillside, an overhanging
+  ragged crag, a chasm).
 
 Not yet: exits and doors that lead somewhere (they wait for levels to load through `Play_Init`).
 See the roadmap.
@@ -103,7 +108,10 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
 { "name": "sketch",
   "outline": { "nodes": [[x, y], ...], "z": 0, "noise": { "amplitude": 70, "scale": 900, "edge": 300 } },
   "regions": [ { "name": "pond", "nodes": [[x, y], [x, y, 1], ...], "z": -100, "kind": "water", "surface": -20 },
-               { "name": "ledge", "nodes": [...], "z": 160, "edge": "vines", "noise": { "amplitude": 30 } } ],
+               { "name": "ledge", "nodes": [...], "z": 160, "edge": "vines", "noise": { "amplitude": 30 } },
+               { "name": "hill", "nodes": [...], "z": 220, "profile": { "kind": "slope", "angle": 22, "round": 0.7 } },
+               { "name": "mesa", "nodes": [...], "z": 320, "profiles": [{ "kind": "slope", "angle": 30 }, null, null, null] },
+               { "name": "chasm", "nodes": [...], "z": -600, "kind": "pit" } ],
   "paths": [ { "name": "ramp", "nodes": [[x, y], [x, y]] },
              { "name": "bridge", "nodes": [[x, y], [x, y, z, width], [x, y]], "mode": "floating" },
              { "name": "climb", "nodes": [...], "modes": ["attached", "floating"], "width": 160, "edge": "vines" } ],
@@ -480,6 +488,68 @@ too low; a node's own height).
 Not yet: a mouth in a floor (a tunnel going down from the top of a plateau), tunnels crossing each other, the side
 profile for a tunnel's heights, and a bg camera setting of its own (the normal camera copes at 200 x 200).
 
+## Edge profiles (`profile` and `profiles` on a region, `src/profiles.rs`)
+
+How a region's edge meets the floor beside it, when it isn't a cliff. `profile` is the region's, for all its edges;
+`profiles` has one entry per edge (edge k runs from node k to the next; `null` keeps the region's). The editor keeps
+`profiles` in step with its nodes: a node added on an edge gives both halves the edge's profile, and a node deleted
+leaves the merged edge the first one's.
+
+A profile is built **inward** from the edge, so the region's footprint stays exactly as drawn and nothing beside it
+moves. A raised region comes down to the floor beside it; a sunken one, or a pond's bed, goes up to it. Only edges with
+a floor beside them count (not the outline's, which face the edge of the world, nor an edge another region is drawn
+against from inside). Where two regions both profile an edge they share, the higher one's wins, as the higher side owns
+a wall.
+
+| Kind | Numbers | What it builds |
+|---|---|---|
+| `cliff` | | A wall, as without a profile. |
+| `slope` | `angle` (30), `round` (0) | The floor from the height beside it at the edge up to the region's, never steeper than `angle`. `round` (0 to 1) eases the crest and the foot into an S curve, keeping the steepest part at `angle`, so the slope is up to half as long again. A slope longer than the region is wide never reaches the top: a small region all slope is a rounded mound. |
+| `terraces` | `steps` (3), `rise` (the drop shared evenly), `depth` (120) | Treads `depth` deep, `rise` apart, the last step up onto the region's own floor. Steps that would go below the floor beside are left out; the height they don't cover is a cliff at the edge. |
+| `overhang` | `depth` (60) | The cliff undercut `depth` into the higher side: vertical up to its lip, which curves back out to the edge at the top (the top 45% of the wall, at most 1.5 x `depth`). The floor below runs in under it. |
+| `ragged` | `amplitude` (18), `scale` (160), `seed` | The cliff's face pushed in and out by up to `amplitude` (`noise::relief3`), in lumps about `scale` across, easing to nothing at its top and foot. |
+
+How they're built:
+- **Slopes** are a height field over the region's floor: at each point, every sloped edge within its slope's length gives
+  a height (`Foot::dev`), and the floor takes the lowest of what the raised edges give and the highest of what the
+  sunken ones give. So the field is continuous, and an edge beside a cliff edge carries the slope round the corner, the
+  cliff's top following it down. How far in a point is follows `settings.edges`: with smooth edges it's the plain
+  distance, so slopes and steps round off round corners and round the ends of a profiled stretch; with hard or faceted
+  edges it's mitred (`Foot::dist`: square off each piece, split at a corner along its bisector, square round a free
+  end), and the traced lines get their corners back (`geom::sharpen`), so they keep sharp corners as the edges do. Nothing changes in the map: the
+  floors take points along lines across the slope (`Field::rings`, about 80 apart at high detail, 150 medium, 250 low,
+  at least 6, 4 or 3 over a rounded slope), the last along the crest as constrained edges, and every vertex takes the
+  field's height. The edge's wall has no height left, so there's none.
+- **Terraces** cut their step lines into the map (`Field::cuts`: level sets of the distance in from the terraced edges,
+  traced by marching squares, simplified, clipped to the region's own floor; `Map::build_with`'s `cuts`). Each tread is
+  then a face of its own, flat at its height (read at a point well inside it, `anchor`), and the risers between them
+  are walls like any other, styled by the theme's rules (Kokiri's ledge strip up to 75 tall): watertight by
+  construction.
+- **Overhangs and ragged rock** bend the cliff (`Builder::bends`, `column`): each wall column on a bent edge moves
+  along the mean of its walls' outward normals, by a function of its height, and gets extra levels so the bend shows.
+  A bent run eases in over a little distance from each end (twice the overhang's depth, half the rock's size), so it
+  meets the walls beyond exactly; a whole loop has no ends. Under an overhang, the lower floor runs in to the wall's
+  foot (`undercuts`). Overhangs over water aren't built yet (reported; a cliff instead).
+
+Paths lay themselves out on the profiled floors (`Field::base`, also the editor's path profile, `profiles::Ground`).
+Slopes steeper than the walkable 35 degrees are reported. Tests: `profiles::tests` (the field, the step lines),
+`edge_profiles_slope_and_step_and_stay_watertight` (an island sloping, a plateau terraced, a pond shelving, at high and
+low detail, with smooth, hard and faceted edges), `hard_edges_keep_sharp_corners`, `one_edge_slopes_and_the_others_stay_cliffs`, `overhangs_undercut_and_ragged_rock_stays_on_its_edges`.
+In the game (`sketch_profiles`), child Link runs up the hill, and down into the hollow, jumping off its treads.
+
+Not yet: profiles on the outline's edges (the edge of the world's types, ideas section 6), a profile per stretch shorter
+than an edge, slopes switching to the cliff texture when steep, and overhangs over water.
+
+## Pits (`"kind": "pit"`)
+
+A region of kind `pit` has no ground: its walls go down from the floor round it to its `z`, where a floor drawn dark
+(object `pits`) collides as `void`, which the game makes floor property 12: Link falling onto it voids out, as into the
+game's bottomless pits (Gerudo Valley, Death Mountain Crater), and is put back at his respawn point (in a
+custom level, where he started). The walls fade to
+dark going down (vertex tints). A pit can have profiles like any region: a slope into it is a funnel, ragged rock a
+chasm. Test: `pits_drop_into_a_dark_void`. In the game, Link runs off the chasm's edge in `sketch_profiles`, falls,
+and is put back after the fade to black.
+
 ## Automatic texturing (`themes/kokiri.json`)
 
 The document never names a texture. The builder classifies every piece of geometry and the theme maps
@@ -515,8 +585,7 @@ bank are bridged by the forest. Trunks stand on the bank's outer edge, so nothin
 
 1. **Hills and a terrain brush**: done (Bumps, Painted terrain). Next: slopes over about 35° switching to the
    cliff texture automatically, and a steepness overlay in the editor.
-2. **Soft edges.** A per-edge style `slope`: a sloped band instead of a vertical wall (Kokiri's north
-   rim).
+2. **Soft edges**: done, and more (Edge profiles): slopes, terraces, overhangs and ragged rock per edge, and pits.
 3. **Paths**: done (see above). Next for them: railings and supports.
 4. **Checks.** Child Link reachability in the crate: which floors connect, and ledges, vines and swim-outs.
    The game's own movement can now test them too (`oot_sandbox --level` with `--script`/`--trace`).

@@ -1,5 +1,7 @@
 //! Plane geometry helpers: points are `[x, y]` (x east, y north), heights are separate.
 
+use std::collections::HashMap;
+
 pub type P2 = [f64; 2];
 pub type P3 = [f64; 3];
 
@@ -333,9 +335,211 @@ pub fn offset_right(pts: &[P2], d: f64) -> Vec<P2> {
         .collect()
 }
 
+/// A field sampled on a square grid, for tracing its level sets (marching squares).
+pub struct Grid {
+    pub x0: f64,
+    pub y0: f64,
+    pub cell: f64,
+    pub nx: usize,
+    pub ny: usize,
+    pub f: Vec<f64>,
+}
+
+impl Grid {
+    /// `f` sampled every `cell` over the box `[x0, y0, x1, y1]`.
+    pub fn new(bb: [f64; 4], cell: f64, f: impl Fn(P2) -> f64) -> Grid {
+        let cell = cell.max(1e-3);
+        let nx = ((bb[2] - bb[0]) / cell).ceil() as usize + 1;
+        let ny = ((bb[3] - bb[1]) / cell).ceil() as usize + 1;
+        let mut g = Grid { x0: bb[0], y0: bb[1], cell, nx, ny, f: Vec::with_capacity(nx * ny) };
+        for j in 0..ny {
+            for i in 0..nx {
+                let p = g.at(i, j);
+                g.f.push(f(p));
+            }
+        }
+        g
+    }
+
+    pub fn at(&self, i: usize, j: usize) -> P2 {
+        [self.x0 + i as f64 * self.cell, self.y0 + j as f64 * self.cell]
+    }
+
+    /// The curves where the field crosses `level`, as polylines: closed ones end on their first
+    /// point, open ones run to the grid's edge.
+    pub fn level_set(&self, level: f64) -> Vec<Vec<P2>> {
+        let (nx, ny) = (self.nx, self.ny);
+        if nx < 2 || ny < 2 {
+            return vec![];
+        }
+        let val = |i: usize, j: usize| self.f[j * nx + i] - level;
+        type Key = (u8, usize, usize);
+        let mut pos: HashMap<Key, P2> = HashMap::new();
+        let mut segs: Vec<(Key, Key)> = vec![];
+        for j in 0..ny - 1 {
+            for i in 0..nx - 1 {
+                let c = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)];
+                let e: [(Key, usize, usize); 4] = [((0, i, j), 0, 1), ((1, i + 1, j), 1, 2), ((0, i, j + 1), 3, 2), ((1, i, j), 0, 3)];
+                let mut hit = vec![];
+                for (k, (key, a, b)) in e.iter().enumerate() {
+                    let (fa, fb) = (val(c[*a].0, c[*a].1), val(c[*b].0, c[*b].1));
+                    if (fa < 0.0) != (fb < 0.0) {
+                        pos.entry(*key).or_insert_with(|| lerp(self.at(c[*a].0, c[*a].1), self.at(c[*b].0, c[*b].1), fa / (fa - fb)));
+                        hit.push(k);
+                    }
+                }
+                match hit.len() {
+                    2 => segs.push((e[hit[0]].0, e[hit[1]].0)),
+                    4 => {
+                        // a saddle: pair the crossings round the corner on the same side as the middle
+                        let mid = (val(i, j) + val(i + 1, j) + val(i + 1, j + 1) + val(i, j + 1)) / 4.0;
+                        if (mid < 0.0) == (val(i, j) < 0.0) {
+                            segs.push((e[0].0, e[1].0));
+                            segs.push((e[2].0, e[3].0));
+                        } else {
+                            segs.push((e[0].0, e[3].0));
+                            segs.push((e[1].0, e[2].0));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut adj: HashMap<Key, Vec<usize>> = HashMap::new();
+        for (s, (a, b)) in segs.iter().enumerate() {
+            adj.entry(*a).or_default().push(s);
+            adj.entry(*b).or_default().push(s);
+        }
+        let mut used = vec![false; segs.len()];
+        let mut out = vec![];
+        let walk = |start: Key, used: &mut Vec<bool>| {
+            let mut line = vec![pos[&start]];
+            let mut k = start;
+            while let Some(&s) = adj[&k].iter().find(|&&s| !used[s]) {
+                used[s] = true;
+                k = if segs[s].0 == k { segs[s].1 } else { segs[s].0 };
+                line.push(pos[&k]);
+                if k == start {
+                    break;
+                }
+            }
+            line
+        };
+        // open lines first, from their ends at the grid's edge, then the rings
+        let ends: Vec<Key> = adj.iter().filter(|(_, v)| v.len() == 1).map(|(k, _)| *k).collect();
+        let mut ends = ends;
+        ends.sort();
+        for k in ends {
+            if adj[&k].iter().any(|&s| !used[s]) {
+                out.push(walk(k, &mut used));
+            }
+        }
+        for s in 0..segs.len() {
+            if !used[s] {
+                out.push(walk(segs[s].0, &mut used));
+            }
+        }
+        out
+    }
+}
+
+/// Douglas-Peucker on a polyline that may be closed (ending on its first point), then long pieces
+/// cut evenly to at most `max`.
+pub fn simplify_line(pts: &[P2], tol: f64, max: f64) -> Vec<P2> {
+    let closed = pts.len() > 3 && dist(pts[0], pts[pts.len() - 1]) < 1e-9;
+    let mut s = if closed {
+        let mut s = simplify_closed(&pts[..pts.len() - 1], tol);
+        s.push(s[0]);
+        s
+    } else {
+        douglas_peucker(pts, tol)
+    };
+    if max > 0.0 {
+        let mut out = vec![s[0]];
+        for w in s.windows(2) {
+            let n = ((dist(w[0], w[1]) / max).ceil() as usize).max(1);
+            for k in 1..=n {
+                out.push(lerp(w[0], w[1], k as f64 / n as f64));
+            }
+        }
+        s = out;
+    }
+    s
+}
+
+/// A simplified polyline's corners made sharp again: marching squares cut a corner that falls
+/// between grid points with a short bevel, so a piece shorter than `short` between two longer
+/// ones (twice its length at least) is replaced by the point where those two meet (if it's within `short` of the bevel).
+/// Closed lines (ending on their first point) wrap round.
+pub fn sharpen(pts: &[P2], short: f64) -> Vec<P2> {
+    let closed = pts.len() > 3 && dist(pts[0], pts[pts.len() - 1]) < 1e-9;
+    let mut v: Vec<P2> = if closed { pts[..pts.len() - 1].to_vec() } else { pts.to_vec() };
+    let meet = |a: P2, b: P2, c: P2, d: P2| -> Option<P2> {
+        let (r, s) = (sub(b, a), sub(d, c));
+        let den = r[0] * s[1] - r[1] * s[0];
+        if den.abs() < 1e-9 * dist(a, b) * dist(c, d) {
+            return None;
+        }
+        let t = ((c[0] - a[0]) * s[1] - (c[1] - a[1]) * s[0]) / den;
+        Some([a[0] + r[0] * t, a[1] + r[1] * t])
+    };
+    let mut i = 0;
+    while v.len() >= 4 && i < v.len() {
+        let n = v.len();
+        if !closed && (i == 0 || i + 2 >= n) {
+            i += 1;
+            continue;
+        }
+        let (a, b, c, d) = (v[(i + n - 1) % n], v[i], v[(i + 1) % n], v[(i + 2) % n]);
+        let l = dist(b, c);
+        if l < short && dist(a, b) > 2.0 * l && dist(c, d) > 2.0 * l {
+            if let Some(x) = meet(a, b, c, d).filter(|&x| dist(x, b) < short && dist(x, c) < short) {
+                v[i] = x;
+                v.remove((i + 1) % n);
+                if (i + 1) % n < i {
+                    i = i.saturating_sub(1);
+                }
+                continue;
+            }
+        }
+        i += 1;
+    }
+    if closed {
+        v.push(v[0]);
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sharpen_restores_bevelled_corners() {
+        let l = sharpen(&[[0.0, 0.0], [0.0, 90.0], [10.0, 100.0], [100.0, 100.0]], 15.0);
+        assert_eq!(l, vec![[0.0, 0.0], [0.0, 100.0], [100.0, 100.0]]);
+        // an arc in short pieces is left alone (no longer pieces either side)
+        let arc: Vec<P2> = (0..10).map(|k| [(k as f64 * 0.15).cos() * 50.0, (k as f64 * 0.15).sin() * 50.0]).collect();
+        assert_eq!(sharpen(&arc, 15.0), arc);
+    }
+
+    #[test]
+    fn level_sets_are_rings_and_open_lines() {
+        // distance from the origin: a ring at 50
+        let g = Grid::new([-100.0, -100.0, 100.0, 100.0], 5.0, |p| p[0].hypot(p[1]));
+        let ls = g.level_set(50.0);
+        assert_eq!(ls.len(), 1);
+        let r = &ls[0];
+        assert_eq!(r[0], r[r.len() - 1]);
+        assert!(r.iter().all(|p| (p[0].hypot(p[1]) - 50.0).abs() < 0.5));
+        // a straight line across: x = 30, open, end to end
+        let g = Grid::new([-100.0, -100.0, 100.0, 100.0], 7.0, |p| p[0]);
+        let ls = g.level_set(30.0);
+        assert_eq!(ls.len(), 1);
+        assert!(ls[0].iter().all(|p| (p[0] - 30.0).abs() < 1e-9));
+        let s = simplify_line(&ls[0], 0.1, 0.0);
+        assert_eq!(s.len(), 2);
+    }
 
     #[test]
     fn catmull_rom_hits_its_ends() {

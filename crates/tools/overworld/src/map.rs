@@ -39,6 +39,8 @@ pub struct Map {
     /// The document's loops (0 = outline) as vertex ids, and their polygons.
     pub loops: Vec<Vec<usize>>,
     pub loop_polys: Vec<Vec<P2>>,
+    /// Per loop vertex: the document edge (the node it starts from) the piece after it lies on.
+    pub loop_edges: Vec<Vec<usize>>,
 }
 
 /// The document's loops (the outline, then each region) welded into one set of nodes and
@@ -56,6 +58,8 @@ pub struct Loops {
     /// Each loop's vertex ids, and its polygon.
     pub loops: Vec<Vec<usize>>,
     pub polys: Vec<Vec<P2>>,
+    /// Per loop vertex: the document edge (the node it starts from) the piece after it lies on.
+    pub edge_of: Vec<Vec<usize>>,
 }
 
 pub fn sample_loops(doc: &Doc) -> Result<Loops, String> {
@@ -128,11 +132,13 @@ pub fn sample_loops(doc: &Doc) -> Result<Loops, String> {
             edges.insert(key, vids);
         }
     }
+    let mut edge_of: Vec<Vec<usize>> = vec![];
     let loops: Vec<Vec<usize>> = loop_nodes
         .iter()
-        .map(|ids| {
+        .zip(&doc_index)
+        .map(|(ids, from)| {
             let n = ids.len();
-            let mut out = vec![];
+            let (mut out, mut of) = (vec![], vec![]);
             for k in 0..n {
                 let (a, b) = (ids[k], ids[(k + 1) % n]);
                 let mut v = edges[&(a.min(b), a.max(b))].clone();
@@ -140,12 +146,14 @@ pub fn sample_loops(doc: &Doc) -> Result<Loops, String> {
                     v.reverse();
                 }
                 out.extend_from_slice(&v[..v.len() - 1]);
+                of.extend(std::iter::repeat_n(from[k], v.len() - 1));
             }
+            edge_of.push(of);
             out
         })
         .collect();
     let loop_polys: Vec<Vec<P2>> = loops.iter().map(|l| l.iter().map(|&v| verts[v]).collect()).collect();
-    Ok(Loops { verts, sharp, nodes: loop_nodes, doc_index, edges, loops, polys: loop_polys })
+    Ok(Loops { verts, sharp, nodes: loop_nodes, doc_index, edges, loops, polys: loop_polys, edge_of })
 }
 
 impl Map {
@@ -179,15 +187,18 @@ impl Map {
     }
 
     pub fn build(doc: &Doc) -> Result<Map, String> {
-        Self::build_with(doc, &[], &[])
+        Self::build_with(doc, &[], &[], &[])
     }
 
     /// With `ribbons`: attached paths' footprints, (path index, counter-clockwise polygon). These
     /// may cross anything: every crossing becomes a vertex. `probes` are polylines that only
     /// split the edges they cross (adding a vertex there) and are then dropped: a bridge deck's
-    /// sides, so its end can share the floor edge's vertices.
-    pub fn build_with(doc: &Doc, ribbons: &[(usize, Vec<P2>)], probes: &[Vec<P2>]) -> Result<Map, String> {
-        let Loops { mut verts, edges, loops, polys: loop_polys, .. } = sample_loops(doc)?;
+    /// sides, so its end can share the floor edge's vertices. `cuts` are polylines (closed if
+    /// their ends meet) that stay as edges, splitting the faces they cross: terraces' steps
+    /// (`profiles.rs`). Each runs from a loop's edge to a loop's edge, or round in a ring; an
+    /// end on a loop's vertex is that vertex.
+    pub fn build_with(doc: &Doc, ribbons: &[(usize, Vec<P2>)], probes: &[Vec<P2>], cuts: &[Vec<P2>]) -> Result<Map, String> {
+        let Loops { mut verts, edges, loops, polys: loop_polys, edge_of, .. } = sample_loops(doc)?;
         // 3. segments, checked for crossings
         let mut keys: Vec<_> = edges.keys().copied().collect();
         keys.sort();
@@ -222,7 +233,28 @@ impl Map {
                 }
             }
         }
-        // ribbons, then every crossing split
+        // cuts (their ends welded to the loops' vertices), ribbons, then every crossing split
+        let loop_verts = verts.len();
+        let near = |verts: &Vec<P2>, p: P2| (0..loop_verts).find(|&v| dist(verts[v], p) < 1e-4);
+        for c in cuts {
+            let closed = c.len() > 2 && dist(c[0], c[c.len() - 1]) < 1e-9;
+            let pts = if closed { &c[..c.len() - 1] } else { &c[..] };
+            let ids: Vec<usize> = pts
+                .iter()
+                .map(|&p| {
+                    near(&verts, p).unwrap_or_else(|| {
+                        verts.push(p);
+                        verts.len() - 1
+                    })
+                })
+                .collect();
+            for i in 0..ids.len() - usize::from(!closed) {
+                let (a, b) = (ids[i], ids[(i + 1) % ids.len()]);
+                if a != b {
+                    segs.push([a, b]);
+                }
+            }
+        }
         for (_, rb) in ribbons {
             let first = verts.len();
             verts.extend_from_slice(rb);
@@ -238,7 +270,7 @@ impl Map {
                 segs.push([first + i, first + i + 1]);
             }
         }
-        if !ribbons.is_empty() || !probes.is_empty() {
+        if !ribbons.is_empty() || !probes.is_empty() || !cuts.is_empty() {
             let probe: Vec<bool> = (0..segs.len()).map(|i| i >= real).collect();
             segs = split_segments(&mut verts, segs, &probe);
         }
@@ -276,6 +308,7 @@ impl Map {
             void_cycles: vec![],
             loops,
             loop_polys,
+            loop_edges: edge_of,
         };
         let mut seen = vec![false; nh];
         for h0 in 0..nh {
@@ -459,7 +492,7 @@ mod tests {
             outline: Outline { nodes: outline, z: 0.0, noise: None },
             regions: regions
                 .into_iter()
-                .map(|(nodes, z)| Region { name: String::new(), nodes, z, kind: "floor".into(), surface: None, edge: None, noise: None })
+                .map(|(nodes, z)| Region { name: String::new(), nodes, z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] })
                 .collect(),
             paths: vec![],
             boundary: BoundaryDesign::default(),
@@ -512,7 +545,7 @@ mod tests {
     fn a_ribbon_past_the_outline_is_cut_by_it() {
         // a footprint from inside the square to well outside its east side
         let rb = vec![[600.0, 400.0], [1400.0, 400.0], [1400.0, 600.0], [600.0, 600.0]];
-        let m = Map::build_with(&doc(sq(0.0, 0.0, 1000.0), vec![]), &[(0, rb)], &[]).unwrap();
+        let m = Map::build_with(&doc(sq(0.0, 0.0, 1000.0), vec![]), &[(0, rb)], &[], &[]).unwrap();
         assert_eq!(m.faces.len(), 2, "the ground and the path's part inside");
         assert_eq!(m.faces.iter().filter(|f| f.paths == vec![0]).count(), 1);
         assert_eq!(m.void_cycles.len(), 1);

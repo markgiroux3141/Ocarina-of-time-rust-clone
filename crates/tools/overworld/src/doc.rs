@@ -111,7 +111,8 @@ pub struct Region {
     pub nodes: Vec<Vec<f64>>,
     #[serde(default)]
     pub z: f64,
-    /// "floor" or "water" (z is then the bed).
+    /// "floor", "water" (z is then the bed) or "pit" (a drop into the void: z is how far down
+    /// its walls go, where Link voids out).
     #[serde(default = "floor")]
     pub kind: String,
     /// Water: the surface height.
@@ -124,6 +125,99 @@ pub struct Region {
     /// Bumps on this region's floor (a pond's bed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noise: Option<Noise>,
+    /// How its edges come down to the floors beside it (or up to them, sunk): cliffs if none.
+    /// See `profiles.rs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Profile>,
+    /// Per edge (edge k runs from node k to the next), overriding `profile`; null keeps it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<Option<Profile>>,
+}
+
+impl Region {
+    /// Edge k's profile: its own, else the region's (None: a cliff).
+    pub fn edge_profile(&self, k: usize) -> Option<&Profile> {
+        self.profiles.get(k).and_then(|p| p.as_ref()).or(self.profile.as_ref()).filter(|p| **p != Profile::Cliff)
+    }
+}
+
+/// How a region's edge meets the floor beside it, built inward from the edge, so the region's
+/// footprint stays as drawn (`profiles.rs`). A raised region comes down to the floor beside it; a
+/// sunken one (a pond's bed too) goes up to it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Profile {
+    /// A wall, as without a profile.
+    Cliff,
+    /// A slope from the floor beside it at the edge to the region's height, at most `angle`
+    /// degrees steep. `round` (0 to 1) rounds its crest and its foot (1: an S curve), keeping the
+    /// steepest part at `angle`, so the slope is up to half as long again.
+    Slope {
+        #[serde(default = "slope_angle")]
+        angle: f64,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        round: f64,
+    },
+    /// Steps from the floor beside it to the region's height: `steps` risers (the last up onto the
+    /// region's own floor), `depth` deep each, `rise` tall (else the drop shared evenly). Steps
+    /// that would go below the floor beside are left out; the height they don't cover is a cliff
+    /// at the edge.
+    Terraces {
+        #[serde(default = "terrace_steps")]
+        steps: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rise: Option<f64>,
+        #[serde(default = "terrace_depth")]
+        depth: f64,
+    },
+    /// A cliff whose top juts out `depth` over its foot: the wall is undercut into the higher side,
+    /// its lip curving back out to the edge at the top, and the floor below runs in under it.
+    Overhang {
+        #[serde(default = "overhang_depth")]
+        depth: f64,
+    },
+    /// A cliff whose face pushes in and out by up to `amplitude`, in lumps about `scale` across;
+    /// its top and foot stay on the edge.
+    Ragged {
+        #[serde(default = "ragged_amplitude")]
+        amplitude: f64,
+        #[serde(default = "ragged_scale")]
+        scale: f64,
+        #[serde(default, skip_serializing_if = "is_zero_u32")]
+        seed: u32,
+    },
+}
+
+pub fn overhang_depth() -> f64 {
+    60.0
+}
+
+pub fn ragged_amplitude() -> f64 {
+    18.0
+}
+
+pub fn ragged_scale() -> f64 {
+    160.0
+}
+
+fn is_zero_u32(x: &u32) -> bool {
+    *x == 0
+}
+
+pub fn slope_angle() -> f64 {
+    30.0
+}
+
+pub fn terrace_steps() -> u32 {
+    3
+}
+
+pub fn terrace_depth() -> f64 {
+    120.0
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
 }
 
 /// Bumps on a floor: smooth noise of up to `amplitude` up or down, with features about `scale`

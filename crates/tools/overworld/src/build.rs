@@ -24,10 +24,11 @@ use crate::doc::{Doc, Noise, WallTexture};
 use crate::geom::*;
 use crate::map::{Map, VOID};
 use crate::mesh::Mesh;
-use crate::noise::{fbm3, relief};
+use crate::noise::{fbm3, relief, relief3};
 use crate::lines::{DirtLine, DirtPaths};
 use crate::paths::{self, PathGeo};
 use crate::pieces::Kit;
+use crate::profiles::{self, Wall};
 use crate::props::{self, Placed};
 use crate::terrain::Field;
 use crate::theme::{Rock, Theme, WallStyle};
@@ -51,6 +52,8 @@ pub struct Level {
 struct Info {
     z: f64,
     water: Option<f64>,
+    /// A pit: no ground, a void floor at z.
+    pit: bool,
     edge: Option<String>,
     noise: Option<Noise>,
 }
@@ -82,6 +85,21 @@ struct Builder<'a> {
     dirt: DirtPaths,
     /// Where props level the bumps under them.
     pads: Vec<props::Pad>,
+    /// Regions' edge profiles: slopes and terraces (`profiles.rs`).
+    field: profiles::Field,
+    /// A point well inside each face of a region with terraces, where its tread's height is read.
+    anchors: Vec<Option<P2>>,
+    /// The bent cliffs' columns (overhangs, ragged rock), by map vertex (`bends`).
+    bent: HashMap<usize, Bent>,
+}
+
+/// A bent cliff's column: which way is out (towards the lower floor), how far into the bend it is
+/// (0 at a bent run's ends, easing to 1), and how it's bent.
+#[derive(Clone, Copy, Debug)]
+struct Bent {
+    out: P2,
+    w: f64,
+    wall: Wall,
 }
 
 struct WallJob<'a> {
@@ -97,6 +115,8 @@ struct WallJob<'a> {
     tile: f64,
     reps: usize,
     over_water: bool,
+    /// An overhang or ragged rock on its edge (`profiles::Wall`).
+    bend: Option<Wall>,
 }
 
 /// Builds a level without a kit: props are reported, not placed.
@@ -115,12 +135,12 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             clock = std::time::Instant::now();
         }
     };
-    let mut regions = vec![Info { z: doc.outline.z, water: None, edge: None, noise: doc.outline.noise.clone() }];
+    let mut regions = vec![Info { z: doc.outline.z, water: None, pit: false, edge: None, noise: doc.outline.noise.clone() }];
     for (i, r) in doc.regions.iter().enumerate() {
         let water = match r.kind.as_str() {
-            "floor" => None,
+            "floor" | "pit" => None,
             "water" => Some(r.surface.unwrap_or(r.z + 60.0)),
-            k => return Err(format!("region {i} ({}): unknown kind {k:?}", r.name)),
+            k => return Err(format!("region {i} ({}): unknown kind {k:?} (floor, water or pit)", r.name)),
         };
         if let Some(e) = &r.edge {
             if !theme.wall_styles.contains_key(e) {
@@ -132,23 +152,24 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
                 return Err(format!("region {i} ({}): noise scale must be positive", r.name));
             }
         }
-        regions.push(Info { z: r.z, water, edge: r.edge.clone(), noise: r.noise.clone() });
+        regions.push(Info { z: r.z, water, pit: r.kind == "pit", edge: r.edge.clone(), noise: r.noise.clone() });
     }
-    // paths lay themselves out on the regions' ground, then their footprints join the map
+    // paths lay themselves out on the regions' ground (their profiles included), then their
+    // footprints join the map
     let pre = Map::build(doc)?;
     lap("map");
+    let mut problems = vec![];
+    let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
+    let zs: Vec<f64> = regions.iter().map(|r| r.z).collect();
+    let field = profiles::Field::new(doc, &pre, &zs, max_slope, &mut problems)?;
     let paths: Vec<PathGeo> = {
-        let areas: Vec<f64> = pre.loop_polys.iter().map(|p| signed_area(p).abs()).collect();
-        let base = |p: P2| -> f64 {
-            (0..pre.loop_polys.len())
-                .filter(|&l| point_in_poly(p, &pre.loop_polys[l]))
-                .min_by(|&x, &y| areas[x].total_cmp(&areas[y]))
-                .map_or(doc.outline.z, |l| regions[l].z)
-        };
+        let base = |p: P2| field.base(&pre.loop_polys, p);
         let sampling = doc.settings.detail()?.paths;
         doc.paths.iter().map(|p| paths::layout(p, &base, sampling)).collect::<Result<_, _>>()?
     };
-    let mut problems = vec![];
+    // terraces' step lines cut the regions' floors into treads
+    let cuts = field.cuts(&pre, curve_tol(doc.settings.detail()?.curves));
+    lap("profiles");
     if !paths.is_empty() {
         let pt = theme.paths.as_ref().ok_or_else(|| format!("theme {} has no paths section", theme.name))?;
         for g in &paths {
@@ -181,7 +202,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         }
     }
     lap("paths");
-    let map = if ribbons.is_empty() && probes.is_empty() { pre } else { Map::build_with(doc, &ribbons, &probes)? };
+    let map = if ribbons.is_empty() && probes.is_empty() && cuts.is_empty() { pre } else { Map::build_with(doc, &ribbons, &probes, &cuts)? };
     lap("map + paths");
     // dirt paths (lines of kind dirt): the other kinds come with fences and bridges
     let mut dirt = DirtPaths::default();
@@ -200,6 +221,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         }
     }
     let n = map.verts.len();
+    let anchors = (0..map.faces.len()).map(|f| field.stepped(map.faces[f].region).then(|| anchor(&map, f))).collect();
     let mut b = Builder {
         doc,
         theme,
@@ -217,6 +239,9 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         wall_texture: doc.settings.detail()?.walls,
         dirt,
         pads: props::pads(&doc.props, kit),
+        field,
+        anchors,
+        bent: HashMap::new(),
     };
     for h in 0..b.map.half_face.len() {
         let f = b.map.half_face[h];
@@ -236,6 +261,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     lap("walls");
     b.boundary(&rims);
     lap("boundary");
+    b.bends();
     b.edge_points();
     lap("edge_points");
     b.floors();
@@ -243,6 +269,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     b.bridges();
     lap("bridges");
     b.emit_walls();
+    b.undercuts();
     lap("emit_walls");
     b.paint_dirt();
     lap("dirt");
@@ -318,6 +345,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         }
         lap("fences, bridges and hedges");
     }
+    b.pit_tints();
     if let Some(l) = &theme.light {
         let seed = b.seed();
         b.mesh.shade(l, theme.variation.as_ref().map(|v| (v, seed)));
@@ -326,6 +354,12 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     let collision_vertices = b.mesh.collision_vertices();
     Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels })
 }
+
+/// The collision role of a pit's floor: Link falling onto it voids out (`oot_import::level`
+/// makes it floor property 12, as the game's bottomless pits).
+pub const PIT_SURFACE: &str = "void";
+/// How dark a pit's floor is drawn, and its walls at the bottom.
+const PIT_DARK: f64 = 0.06;
 
 /// A prop's pad (`props::Pad`) is level this far past its base outline, under its walls' feet.
 const PAD_MARGIN: f64 = 15.0;
@@ -352,10 +386,11 @@ impl<'a> Builder<'a> {
     }
 
     /// The ground's height in face f at p: an attached path's surface where one covers it (the
-    /// highest where they overlap), raised over the region's or cut into it; else the region's.
+    /// highest where they overlap), raised over the region's or cut into it; else the region's,
+    /// with its edges' profiles.
     fn height(&self, f: usize, p: P2) -> f64 {
         let face = &self.map.faces[f];
-        face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or(self.regions[face.region].z)
+        face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or_else(|| self.field.z(face.region, p, self.anchors[f].unwrap_or(p)))
     }
 
     fn hv(&self, f: usize, v: usize) -> f64 {
@@ -387,6 +422,12 @@ impl<'a> Builder<'a> {
     fn water(&self, f: usize) -> bool {
         let face = &self.map.faces[f];
         face.paths.is_empty() && self.regions[face.region].water.is_some()
+    }
+
+    /// A pit's floor: the void Link falls into (no path over it).
+    fn pit(&self, f: usize) -> bool {
+        let face = &self.map.faces[f];
+        face.paths.is_empty() && self.regions[face.region].pit
     }
 
     /// The vertex where segment h's wall changes sides, `t` along h (shared by both half-edges).
@@ -457,6 +498,13 @@ impl<'a> Builder<'a> {
 
     fn floors(&mut self) {
         let th = self.theme;
+        let detail = self.doc.settings.detail().expect("checked by the map");
+        let (spacing, rounded, max) = match self.doc.settings.detail.as_str() {
+            "medium" => (150.0, 4, 2.0 * self.doc.settings.sample),
+            "low" => (250.0, 3, 4.0 * self.doc.settings.sample),
+            _ => (80.0, 6, self.doc.settings.sample),
+        };
+        let slope_rings: Vec<Vec<Vec<P2>>> = (0..self.regions.len()).map(|r| self.field.rings(r, spacing, rounded, curve_tol(detail.curves), max)).collect();
         for f in 0..self.map.faces.len() {
             let face = &self.map.faces[f];
             let outer = self.ring(&self.map.cycles[face.outer]);
@@ -464,7 +512,8 @@ impl<'a> Builder<'a> {
             let water = if self.water(f) { self.regions[face.region].water } else { None };
             let surf = if water.is_some() { &th.water.bed } else { &th.floor };
             // bumps: not under a path (its surface wins), denser points to show them
-            let noise = self.regions[face.region].noise.as_ref().filter(|n| n.amplitude != 0.0 && face.paths.is_empty());
+            let noise = self.regions[face.region].noise.as_ref().filter(|n| n.amplitude != 0.0 && face.paths.is_empty() && !self.regions[face.region].pit);
+            let pit = self.pit(f);
             let detail = self.doc.settings.detail().expect("checked by the map");
             let steiner = match noise {
                 Some(n) => detail.steiner.min((n.scale / detail.bumps).max(40.0)),
@@ -500,8 +549,26 @@ impl<'a> Builder<'a> {
                     y += d;
                 }
             }
-            // dirt paths: points on their rings (full, none) with edges between, inside this face
             let mut segs: Vec<[P2; 2]> = vec![];
+            // slopes: points along lines across them, the crest held by constrained edges
+            if face.paths.is_empty() {
+                let usable = |p: P2| point_in_poly(p, &outer) && !holes.iter().any(|h| point_in_poly(p, h)) && index.dist_within(p, 4.0) > 3.0;
+                for run in &slope_rings[face.region] {
+                    let mut prev: Option<P2> = None;
+                    for &p in run {
+                        if usable(p) {
+                            extra.push(p);
+                            if let Some(q) = prev {
+                                segs.push([q, p]);
+                            }
+                            prev = Some(p);
+                        } else {
+                            prev = None;
+                        }
+                    }
+                }
+            }
+            // dirt paths: points on their rings (full, none) with edges between, inside this face
             if water.is_none() && !self.dirt.is_empty() {
                 let usable = |p: P2| point_in_poly(p, &outer) && !holes.iter().any(|h| point_in_poly(p, h)) && index.dist_within(p, 4.0) > 3.0;
                 for run in self.dirt.rings() {
@@ -576,7 +643,12 @@ impl<'a> Builder<'a> {
                 .collect();
             for p in tris {
                 let uv = p.map(|q| [q[0] / surf.tile, q[1] / surf.tile]);
-                self.mesh.tri("ground", p, uv, &surf.material, &surf.surface);
+                if pit {
+                    // drawn dark (`pit_tints`), colliding as the void
+                    self.mesh.tri("pits", p, uv, &surf.material, PIT_SURFACE);
+                } else {
+                    self.mesh.tri("ground", p, uv, &surf.material, &surf.surface);
+                }
                 if let Some(w) = water {
                     let uv = p.map(|q| [q[0] / th.water.tile, q[1] / th.water.tile]);
                     self.mesh.tri("water", p.map(|q| [q[0], q[1], w]), uv, &th.water.material, &th.water.surface);
@@ -852,7 +924,249 @@ impl<'a> Builder<'a> {
     #[allow(clippy::too_many_arguments)]
     fn wall(&mut self, obj: &'static str, half: Option<usize>, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &'a WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool) {
         if (top[0] - bot[0]).max(top[1] - bot[1]) >= 0.5 {
-            self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water });
+            // a region's own cliffs (not an embankment's sides, nor the edge of the world's) may be bent
+            let whole = half.is_some_and(|h| self.map.from(h) == p && self.map.to(h) == q);
+            let bend = (obj == "walls" && whole && ws.caps.as_ref().is_none_or(|c| c.anchor != "top")).then(|| self.field.wall(self.map.verts[p], self.map.verts[q])).flatten();
+            let bend = match bend {
+                Some(Wall::Overhang { .. }) if over_water => {
+                    let m = lerp(self.map.verts[p], self.map.verts[q], 0.5);
+                    let msg = format!("an overhang over water near ({:.0}, {:.0}) isn't built yet: a cliff instead", m[0], m[1]);
+                    if !self.problems.iter().any(|x| x.starts_with("an overhang over water")) {
+                        self.problems.push(msg);
+                    }
+                    None
+                }
+                b => b,
+            };
+            self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water, bend });
+        }
+    }
+
+    /// Pits are dark: their floors, and their walls fading down to it from the floor round them.
+    fn pit_tints(&mut self) {
+        // each pit face's floor and the highest floor round it
+        let mut pits: Vec<(Vec<P2>, f64, f64)> = vec![];
+        for f in 0..self.map.faces.len() {
+            if !self.pit(f) {
+                continue;
+            }
+            let face = &self.map.faces[f];
+            let mut rim = f64::NEG_INFINITY;
+            for &c in std::iter::once(&face.outer).chain(face.holes.iter()) {
+                for &h in &self.map.cycles[c] {
+                    let g = self.map.half_face[h ^ 1];
+                    if g != VOID {
+                        rim = rim.max(self.hv(g, self.map.from(h)));
+                    }
+                }
+            }
+            let bottom = self.regions[face.region].z;
+            if rim > bottom {
+                pits.push((self.map.cycle_pts(face.outer), bottom, rim));
+            }
+        }
+        if pits.is_empty() {
+            return;
+        }
+        for o in self.mesh.objects.iter_mut() {
+            match o.name.as_str() {
+                "pits" => o.tints = vec![[PIT_DARK; 3]; o.verts.len()],
+                "walls" => {
+                    o.tints = o
+                        .verts
+                        .iter()
+                        .map(|v| {
+                            let p = [v[0], v[1]];
+                            let k = pits
+                                .iter()
+                                .filter(|(poly, b, r)| v[2] < *r && v[2] >= b - 1.0 && (point_in_poly(p, poly) || dist_to_loop(p, poly) < 1.0))
+                                .map(|(_, b, r)| {
+                                    let t = ((v[2] - b) / (r - b)).clamp(0.0, 1.0);
+                                    PIT_DARK + (1.0 - PIT_DARK) * t * t * (3.0 - 2.0 * t)
+                                })
+                                .fold(1.0, f64::min);
+                            [k; 3]
+                        })
+                        .collect();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The bent cliffs' columns (`Bent`): out is the mean of the bent walls' outward normals there;
+    /// the bend eases in over `taper` from each end of a run of bent walls (where a bent run meets
+    /// a straight wall, or another kind of bend), so it meets the walls beyond exactly. Bent
+    /// columns get extra levels, so the bend shows.
+    fn bends(&mut self) {
+        let bent: Vec<usize> = (0..self.jobs.len()).filter(|&j| self.jobs[j].bend.is_some()).collect();
+        if bent.is_empty() {
+            return;
+        }
+        let mut at: HashMap<usize, Vec<usize>> = HashMap::new();
+        for &j in &bent {
+            at.entry(self.jobs[j].p).or_default().push(j);
+            at.entry(self.jobs[j].q).or_default().push(j);
+        }
+        let out_of = |s: &Self, j: usize| {
+            let (a, b) = (s.map.verts[s.jobs[j].p], s.map.verts[s.jobs[j].q]);
+            let d = sub(b, a);
+            let l = d[0].hypot(d[1]).max(1e-9);
+            [d[1] / l, -d[0] / l]
+        };
+        // ends: a column one bent wall reaches, or where two kinds meet
+        let mut dist_to_end: HashMap<usize, f64> = HashMap::new();
+        let mut queue: Vec<usize> = vec![];
+        for (&v, js) in &at {
+            let kinds_differ = js.iter().any(|&j| self.jobs[j].bend != self.jobs[js[0]].bend);
+            if js.len() < 2 || kinds_differ {
+                dist_to_end.insert(v, 0.0);
+                queue.push(v);
+            }
+        }
+        // distances along the runs from their ends (runs are chains: a few passes settle them)
+        for _ in 0..at.len() {
+            let mut changed = false;
+            for &j in &bent {
+                let (p, q) = (self.jobs[j].p, self.jobs[j].q);
+                let l = dist(self.map.verts[p], self.map.verts[q]);
+                for (a, b) in [(p, q), (q, p)] {
+                    if let Some(&da) = dist_to_end.get(&a) {
+                        if dist_to_end.get(&b).is_none_or(|&db| da + l < db - 1e-9) {
+                            dist_to_end.insert(b, da + l);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        for (&v, js) in &at {
+            let mut o = [0.0, 0.0];
+            for &j in js {
+                let n = out_of(self, j);
+                o = [o[0] + n[0], o[1] + n[1]];
+            }
+            let l = o[0].hypot(o[1]);
+            if l < 1e-6 {
+                continue;
+            }
+            let wall = self.jobs[js[0]].bend.unwrap();
+            let taper = match wall {
+                Wall::Overhang { depth } => (2.0 * depth).max(40.0),
+                Wall::Ragged { scale, .. } => (0.5 * scale).max(20.0),
+            };
+            let d = dist_to_end.get(&v).copied().unwrap_or(f64::INFINITY);
+            let t = (d / taper).min(1.0);
+            self.bent.insert(v, Bent { out: [o[0] / l, o[1] / l], w: t * t * (3.0 - 2.0 * t), wall });
+            // rows to show the bend: through an overhang's lip, every so often up ragged rock
+            for &j in js {
+                let (b, t) = if self.jobs[j].p == v { (self.jobs[j].bot[0], self.jobs[j].top[0]) } else { (self.jobs[j].bot[1], self.jobs[j].top[1]) };
+                let h = t - b;
+                if h < 2.0 {
+                    continue;
+                }
+                match wall {
+                    Wall::Overhang { depth } => {
+                        let lip = Self::lip(h, depth);
+                        for k in 1..=6 {
+                            self.levels[v].push(t - lip * k as f64 / 6.0);
+                        }
+                    }
+                    Wall::Ragged { scale, .. } => {
+                        let n = (h / (scale / 5.0).max(12.0)).ceil().max(2.0) as usize;
+                        for k in 1..n {
+                            self.levels[v].push(b + h * k as f64 / n as f64);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// An overhang's lip: the top part of a cliff `h` tall that curves back out to its edge.
+    fn lip(h: f64, depth: f64) -> f64 {
+        (0.45 * h).min(1.5 * depth).max(1.0)
+    }
+
+    /// A wall column's point at height z (its foot b, its top t): on the map vertex, or bent.
+    fn column(&self, v: usize, z: f64, b: f64, t: f64) -> P3 {
+        let p = self.map.verts[v];
+        let Some(bt) = self.bent.get(&v).filter(|bt| bt.w > 0.0) else { return [p[0], p[1], z] };
+        let h = t - b;
+        if h < 1.0 {
+            return [p[0], p[1], z];
+        }
+        let s = ((z - b) / h).clamp(0.0, 1.0);
+        let off = match bt.wall {
+            Wall::Overhang { depth } => {
+                // in under the higher side (against out), vertical up to the lip, then curving out
+                let lip = Self::lip(h, depth);
+                let s0 = 1.0 - lip / h;
+                let g = if s <= s0 { 1.0 } else { (std::f64::consts::FRAC_PI_2 * (s - s0) / (1.0 - s0)).cos() };
+                -depth.min(h) * bt.w * g
+            }
+            Wall::Ragged { amplitude, scale, seed } => {
+                let e = |x: f64| {
+                    let x = (x / 0.2).clamp(0.0, 1.0);
+                    x * x * (3.0 - 2.0 * x)
+                };
+                amplitude * bt.w * e(s) * e(1.0 - s) * relief3([p[0] / scale, p[1] / scale, z / scale], seed)
+            }
+        };
+        [p[0] + bt.out[0] * off, p[1] + bt.out[1] * off, z]
+    }
+
+    /// Under each overhang the lower floor runs in to the wall's foot: a strip from the floor's
+    /// edge (with the points it has there) to the foot of the bent wall.
+    fn undercuts(&mut self) {
+        let th = self.theme;
+        let jobs: Vec<(usize, usize, usize, [f64; 2], [f64; 2])> = self
+            .jobs
+            .iter()
+            .filter(|j| matches!(j.bend, Some(Wall::Overhang { .. })))
+            .filter_map(|j| Some((j.half?, j.p, j.q, j.bot, j.top)))
+            .collect();
+        let key = |p: P2| ((p[0] * 1000.0).round() as i64, (p[1] * 1000.0).round() as i64);
+        for (h, p, q, bot, top) in jobs {
+            let fr = self.map.half_face[h ^ 1];
+            if fr == VOID {
+                continue;
+            }
+            let (pp, qq) = (self.map.verts[p], self.map.verts[q]);
+            // the floor's edge from p to q: its points on h's twin, in order from p
+            let mut edge = vec![pp];
+            if let Some(x) = self.extra.get(&(h ^ 1)) {
+                let mut x = x.clone();
+                x.sort_by(|a, b| b.0.total_cmp(&a.0));
+                edge.extend(x.into_iter().filter(|e| e.0 > 1e-9 && e.0 < 1.0 - 1e-9).map(|e| e.1));
+            }
+            edge.push(qq);
+            let (fp, fq) = (self.column(p, bot[0], bot[0], top[0]), self.column(q, bot[1], bot[1], top[1]));
+            let mut zs: HashMap<(i64, i64), f64> = HashMap::new();
+            for &e in &edge {
+                zs.insert(key(e), self.height(fr, e));
+            }
+            let mut poly = edge.clone();
+            for f in [fq, fp] {
+                let f2 = [f[0], f[1]];
+                if !zs.contains_key(&key(f2)) {
+                    zs.insert(key(f2), f[2]);
+                    poly.push(f2);
+                }
+            }
+            if poly.len() < 3 || signed_area(&poly).abs() < 1e-3 {
+                continue;
+            }
+            let poly = if signed_area(&poly) < 0.0 { poly.into_iter().rev().collect::<Vec<_>>() } else { poly };
+            let surf = &th.floor;
+            for t in triangulate(&poly, &[], 0.0) {
+                let Some(pts) = t.iter().map(|q| zs.get(&key(*q)).map(|&z| [q[0], q[1], z])).collect::<Option<Vec<P3>>>() else { continue };
+                let uv = t.map(|q| [q[0] / surf.tile, q[1] / surf.tile]);
+                self.tri_facing("ground", [pts[0], pts[1], pts[2]], uv, &surf.material, &surf.surface, [0.0, 0.0, 1.0]);
+            }
         }
     }
 
@@ -886,6 +1200,8 @@ impl<'a> Builder<'a> {
         for j in &jobs {
             self.emit_wall(j.obj, j.p, j.q, j.bot, j.top, j.ws, j.u, j.tile, j.reps, j.over_water);
         }
+        // kept for the floors under overhangs (`undercuts`)
+        self.jobs = jobs;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -909,32 +1225,24 @@ impl<'a> Builder<'a> {
             c
         };
         let f = |z: f64, a: f64, b: f64| if b - a > 1e-6 { (z - a) / (b - a) } else { 0.0 };
+        let _ = (pp, qq);
         for (&(p0, p1, pv0, pv1, middle), &(q0, q1, qv0, qv1, _)) in bp.iter().zip(bq.iter()) {
             let mat = if middle { mid.as_str() } else { ws.material.as_str() };
             let (cp, cq) = (col(self, p, p0, p1), col(self, q, q0, q1));
             let tp: Vec<f64> = cp.iter().map(|&z| f(z, p0, p1)).collect();
             let tq: Vec<f64> = cq.iter().map(|&z| f(z, q0, q1)).collect();
+            // the columns' points, bent where the cliff is (an overhang, ragged rock)
+            let xp: Vec<P3> = cp.iter().map(|&z| self.column(p, z, bot[0], top[0])).collect();
+            let xq: Vec<P3> = cq.iter().map(|&z| self.column(q, z, bot[1], top[1])).collect();
             let vp = |t: f64| pv0 + (pv1 - pv0) * t;
             let vq = |t: f64| qv0 + (qv1 - qv0) * t;
             let (mut i, mut j) = (0, 0);
             while i + 1 < cp.len() || j + 1 < cq.len() {
                 if j + 1 >= cq.len() || (i + 1 < cp.len() && tp[i + 1] <= tq[j + 1]) {
-                    self.mesh.tri(
-                        obj,
-                        [[pp[0], pp[1], cp[i]], [qq[0], qq[1], cq[j]], [pp[0], pp[1], cp[i + 1]]],
-                        [[up, vp(tp[i])], [uq, vq(tq[j])], [up, vp(tp[i + 1])]],
-                        mat,
-                        &ws.surface,
-                    );
+                    self.mesh.tri(obj, [xp[i], xq[j], xp[i + 1]], [[up, vp(tp[i])], [uq, vq(tq[j])], [up, vp(tp[i + 1])]], mat, &ws.surface);
                     i += 1;
                 } else {
-                    self.mesh.tri(
-                        obj,
-                        [[pp[0], pp[1], cp[i]], [qq[0], qq[1], cq[j]], [qq[0], qq[1], cq[j + 1]]],
-                        [[up, vp(tp[i])], [uq, vq(tq[j])], [uq, vq(tq[j + 1])]],
-                        mat,
-                        &ws.surface,
-                    );
+                    self.mesh.tri(obj, [xp[i], xq[j], xq[j + 1]], [[up, vp(tp[i])], [uq, vq(tq[j])], [uq, vq(tq[j + 1])]], mat, &ws.surface);
                     j += 1;
                 }
             }
@@ -1523,6 +1831,34 @@ impl<'a> Builder<'a> {
     }
 }
 
+/// How closely lines derived from the curves (terraces' steps, slopes' rings) follow them.
+fn curve_tol(s: Sampling) -> f64 {
+    match s {
+        Sampling::Within { tol, .. } | Sampling::Facets { tol, .. } => tol.min(5.0),
+        _ => 1.0,
+    }
+}
+
+/// A point well inside face f: the middle of the roundest triangle of its triangulation.
+fn anchor(map: &Map, f: usize) -> P2 {
+    let face = &map.faces[f];
+    let outer = map.cycle_pts(face.outer);
+    let holes: Vec<Vec<P2>> = face.holes.iter().map(|&c| map.cycle_pts(c)).collect();
+    let mut best = (f64::NEG_INFINITY, outer[0]);
+    for [a, b, c] in triangulate(&outer, &holes, 0.0) {
+        let (la, lb, lc) = (dist(b, c), dist(a, c), dist(a, b));
+        let per = la + lb + lc;
+        if per < 1e-12 {
+            continue;
+        }
+        let r = cross(a, b, c).abs() / per;
+        if r > best.0 {
+            best = (r, [(la * a[0] + lb * b[0] + lc * c[0]) / per, (la * a[1] + lb * b[1] + lc * c[1]) / per]);
+        }
+    }
+    best.1
+}
+
 /// Index runs of equal values round a cycle (a run never wraps unless the whole cycle is one).
 fn runs<T: PartialEq>(vals: &[T]) -> Vec<Vec<usize>> {
     let n = vals.len();
@@ -1729,9 +2065,9 @@ mod tests {
             name: "test".into(),
             outline: Outline { nodes: outline, z: 0.0, noise: None },
             regions: vec![
-                Region { name: "north".into(), nodes: north, z: 160.0, kind: "floor".into(), surface: None, edge: None, noise: None },
-                Region { name: "island".into(), nodes: ring(-500.0, -300.0, 300.0), z: 120.0, kind: "floor".into(), surface: None, edge: None, noise: None },
-                Region { name: "pond".into(), nodes: ring(500.0, -400.0, 280.0), z: -100.0, kind: "water".into(), surface: Some(-20.0), edge: None, noise: None },
+                Region { name: "north".into(), nodes: north, z: 160.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
+                Region { name: "island".into(), nodes: ring(-500.0, -300.0, 300.0), z: 120.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
+                Region { name: "pond".into(), nodes: ring(500.0, -400.0, 280.0), z: -100.0, kind: "water".into(), surface: Some(-20.0), edge: None, noise: None, profile: None, profiles: vec![] },
             ],
             paths: vec![],
             boundary: BoundaryDesign::default(),
@@ -1776,9 +2112,12 @@ mod tests {
         assert!((lvl.rim.1 - (160.0 + bd.cliff_min + bd.bank_rise)).abs() < 1e-6, "rim {:?}", lvl.rim);
         // and never steeper than the slope along the edge
         let map = Map::build(&doc).unwrap();
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map };
-        b.regions = std::iter::once(Info { z: 0.0, water: None, edge: None, noise: None })
-            .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), edge: None, noise: None }))
+        let zs: Vec<f64> = std::iter::once(0.0).chain(doc.regions.iter().map(|r| r.z)).collect();
+        let field = profiles::Field::new(&doc, &map, &zs, 35.0, &mut vec![]).unwrap();
+        let anchors = vec![None; map.faces.len()];
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new() };
+        b.regions = std::iter::once(Info { z: 0.0, water: None, pit: false, edge: None, noise: None })
+            .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), pit: false, edge: None, noise: None }))
             .collect();
         for (hs, top) in b.rim_profiles() {
             for i in 0..hs.len() {
@@ -1859,8 +2198,8 @@ mod tests {
             name: "paths".into(),
             outline: Outline { nodes: sq(-2000.0, -2000.0, 4000.0, 4000.0), z: 0.0, noise: None },
             regions: vec![
-                Region { name: "east".into(), nodes: sq(600.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None },
-                Region { name: "west".into(), nodes: sq(-1400.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None },
+                Region { name: "east".into(), nodes: sq(600.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
+                Region { name: "west".into(), nodes: sq(-1400.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
             ],
             paths: vec![
                 path("ramp", vec![n(1000.0, -300.0), n(1000.0, 900.0)], vec![]),
@@ -2175,6 +2514,8 @@ mod tests {
             surface: None,
             edge: None,
             noise: None,
+            profile: None,
+            profiles: vec![],
         }];
         let mut most_u = vec![];
         for (mode, detail) in [("tiled", "high"), ("stretched", "high"), ("stretched", "low"), ("stretched_middle", "high")] {
@@ -2337,6 +2678,139 @@ mod tests {
         assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
     }
 
+    /// The sample level with the island sloping down to the ground, the north plateau terraced
+    /// on its three inner edges (its two on the outline face the void: cliffs) and the pond's bed
+    /// shelving up to its shore.
+    fn profiled_doc() -> Doc {
+        let mut doc = sample_doc();
+        doc.regions[0].profile = Some(Profile::Terraces { steps: 4, rise: None, depth: 80.0 });
+        doc.regions[1].profile = Some(Profile::Slope { angle: 35.0, round: 0.5 });
+        doc.regions[2].profile = Some(Profile::Slope { angle: 20.0, round: 0.0 });
+        doc
+    }
+
+    #[test]
+    fn edge_profiles_slope_and_step_and_stay_watertight() {
+        let th = Theme::kokiri();
+        let plain = build(&sample_doc(), &th).unwrap();
+        for (detail, edges) in [("high", "smooth"), ("low", "smooth"), ("low", "hard"), ("high", "faceted")] {
+            let mut doc = profiled_doc();
+            doc.settings.detail = detail.into();
+            doc.settings.edges = edges.into();
+            let detail = format!("{detail} {edges}");
+            let detail = detail.as_str();
+            let lvl = build(&doc, &th).unwrap();
+            assert!(lvl.problems.is_empty(), "{detail}: {:?}", lvl.problems);
+            let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+            assert!(bad.is_empty(), "{detail}: {} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+            let ground = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+            let inside = |poly: &[P2]| -> Vec<f64> { ground.verts.iter().filter(|v| point_in_poly([v[0], v[1]], poly)).map(|v| v[2]).collect() };
+            let polys = Map::build(&doc).unwrap().loop_polys;
+            // the island: from the ground at its edge up to 120, with no wall round it
+            let zs = inside(&polys[2]);
+            assert!(zs.iter().all(|&z| (-1e-6..=120.0 + 1e-6).contains(&z)), "{detail}: island {:?}", zs.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |a, &z| (a.0.min(z), a.1.max(z))));
+            assert!(zs.iter().any(|&z| z > 119.9) && zs.iter().any(|&z| z > 30.0 && z < 90.0));
+            let walls = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+            let near_island = walls.verts.iter().filter(|v| (dist([v[0], v[1]], [-500.0, -300.0]) - 300.0).abs() < 40.0).count();
+            assert_eq!(near_island, 0, "{detail}: the island's cliff is gone");
+            // the plateau: treads at 40, 80, 120 and its top at 160, risers between them
+            for z in [40.0, 80.0, 120.0, 160.0] {
+                assert!(inside(&polys[1]).iter().any(|x| (x - z).abs() < 1e-6), "{detail}: a tread at {z}");
+            }
+            assert!(inside(&polys[1]).iter().all(|x| [0.0, 40.0, 80.0, 120.0, 160.0].iter().any(|z| (x - z).abs() < 1e-6)), "{detail}: treads are flat");
+            assert!(walls.verts.iter().any(|v| point_in_poly([v[0], v[1]], &polys[1]) && dist_to_loop([v[0], v[1]], &polys[1]) > 70.0), "{detail}: risers inside");
+            // the pond's bed shelves from the shore (0) down to -100
+            let bed = inside(&polys[3]);
+            assert!(bed.iter().all(|&z| (-100.0 - 1e-6..=1e-6).contains(&z)) && bed.iter().any(|&z| z > -60.0 && z < -40.0), "{detail}: pond");
+            if detail == "high smooth" {
+                assert!(lvl.mesh.triangles() < 2 * plain.mesh.triangles(), "{} vs {}", lvl.mesh.triangles(), plain.mesh.triangles());
+            }
+        }
+        // a cliff profile is the same as none
+        let mut doc = sample_doc();
+        doc.regions[1].profile = Some(Profile::Cliff);
+        assert_eq!(build(&doc, &th).unwrap().mesh.triangles(), plain.mesh.triangles());
+    }
+
+    #[test]
+    fn overhangs_undercut_and_ragged_rock_stays_on_its_edges() {
+        let th = Theme::kokiri();
+        for detail in ["high", "low"] {
+            let mut doc = sample_doc();
+            doc.settings.detail = detail.into();
+            // the island overhangs all round (no ends: no taper); the plateau's inner cliffs are ragged
+            doc.regions[1].profile = Some(Profile::Overhang { depth: 50.0 });
+            doc.regions[0].profile = Some(Profile::Ragged { amplitude: 20.0, scale: 150.0, seed: 0 });
+            let lvl = build(&doc, &th).unwrap();
+            assert!(lvl.problems.is_empty(), "{detail}: {:?}", lvl.problems);
+            let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+            assert!(bad.is_empty(), "{detail}: {} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+            let polys = Map::build(&doc).unwrap().loop_polys;
+            let walls = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+            let ground = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+            // the island: its cliff's foot 50 in under it, the ground running in to meet it
+            let island = &polys[2];
+            let under = |v: &P3| point_in_poly([v[0], v[1]], island) && dist_to_loop([v[0], v[1]], island) > 45.0;
+            assert!(walls.verts.iter().any(|v| under(v) && v[2] < 1.0), "{detail}: the wall's foot is undercut");
+            assert!(ground.verts.iter().any(|v| under(v) && v[2].abs() < 1e-6), "{detail}: the ground runs in under it");
+            assert!(walls.verts.iter().filter(|v| (v[2] - 120.0).abs() < 1e-6 && point_in_poly([v[0], v[1]], island)).all(|v| dist_to_loop([v[0], v[1]], island) < 1e-3), "{detail}: the lip is on the edge");
+            // the plateau: its face within 20 of the edge, its top and foot exactly on it
+            let north = &polys[1];
+            let near: Vec<&P3> = walls.verts.iter().filter(|v| dist_to_loop([v[0], v[1]], north) < 40.0 && v[2] > -1e-6 && v[2] < 160.0 + 1e-6).collect();
+            let off = |v: &P3| dist_to_loop([v[0], v[1]], north);
+            assert!(near.iter().all(|v| off(v) <= 20.0 + 1e-6), "{detail}: within the amplitude");
+            assert!(near.iter().any(|v| off(v) > 5.0), "{detail}: the face is bent");
+            assert!(near.iter().filter(|v| v[2].abs() < 1e-6 || (v[2] - 160.0).abs() < 1e-6).all(|v| off(v) < 1e-3), "{detail}: top and foot on the edge");
+        }
+    }
+
+    #[test]
+    fn pits_drop_into_a_dark_void() {
+        let th = Theme::kokiri();
+        let mut doc = sample_doc();
+        let ring: Vec<Vec<f64>> = (0..8)
+            .map(|k| {
+                let a = k as f64 / 8.0 * std::f64::consts::TAU;
+                vec![300.0 + 200.0 * a.cos(), 300.0 + 200.0 * a.sin()]
+            })
+            .collect();
+        doc.regions.push(Region { name: "chasm".into(), nodes: ring, z: -600.0, kind: "pit".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
+        let lvl = build(&doc, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "pits", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        let pits = lvl.mesh.objects.iter().find(|o| o.name == "pits").expect("a pit floor");
+        assert!(pits.verts.iter().all(|v| (v[2] + 600.0).abs() < 1e-6));
+        let void = lvl.mesh.surfaces.iter().position(|s| s == PIT_SURFACE).unwrap() as i64;
+        assert!(pits.surf.iter().all(|&s| s == void), "the void underfoot");
+        assert!(pits.colors.iter().all(|c| c.iter().all(|&x| x < 30)), "dark");
+        // its walls darken going down: bright at the top, dark at the bottom
+        let walls = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+        let shade = |z: f64| walls.verts.iter().zip(&walls.colors).filter(|(v, _)| (v[2] - z).abs() < 1e-6 && dist([v[0], v[1]], [300.0, 300.0]) < 205.0).map(|(_, c)| c[1] as f64).fold(0.0, f64::max);
+        assert!(shade(0.0) > 4.0 * shade(-600.0), "{} vs {}", shade(0.0), shade(-600.0));
+        // and the ground has no floor there
+        let ground = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        assert!(!ground.verts.iter().any(|v| dist([v[0], v[1]], [300.0, 300.0]) < 150.0));
+    }
+
+    #[test]
+    fn one_edge_slopes_and_the_others_stay_cliffs() {
+        // the island's edge from node 2 to 3 only (its nodes are a ring of 7)
+        let th = Theme::kokiri();
+        let mut doc = sample_doc();
+        doc.regions[1].profiles = vec![None, None, Some(Profile::Slope { angle: 30.0, round: 0.0 })];
+        let lvl = build(&doc, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        let walls = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+        let ring = &doc.regions[1].nodes;
+        let mid = |k: usize| lerp([ring[k][0], ring[k][1]], [ring[k + 1][0], ring[k + 1][1]], 0.5);
+        let wall_near = |p: P2| walls.verts.iter().any(|v| dist([v[0], v[1]], p) < 60.0 && v[2] > 100.0);
+        assert!(!wall_near(mid(2)), "the sloped edge has no cliff");
+        assert!(wall_near(mid(4)) && wall_near(mid(5)), "the others do");
+    }
+
     /// An opening set into a region's wall: fitted on the wall facing out, the wall's triangles
     /// round its mouth replaced so the wall is still closed everywhere but the mouth itself, and
     /// a crawlspace stretched through to the floor beyond, its far wall cut too.
@@ -2446,7 +2920,7 @@ mod tests {
     fn tunnel_doc(z: f64) -> Doc {
         let sq = |x0: f64, y0: f64, x1: f64, y1: f64| vec![vec![x0, y0, 1.0], vec![x1, y0, 1.0], vec![x1, y1, 1.0], vec![x0, y1, 1.0]];
         let mut doc: Doc = serde_json::from_value(serde_json::json!({ "name": "tunnel", "outline": { "nodes": sq(0.0, 0.0, 3000.0, 2000.0) } })).unwrap();
-        doc.regions.push(Region { name: "plateau".into(), nodes: sq(1000.0, 500.0, 2000.0, 1500.0), z, kind: "floor".into(), surface: None, edge: None, noise: None });
+        doc.regions.push(Region { name: "plateau".into(), nodes: sq(1000.0, 500.0, 2000.0, 1500.0), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
         doc.lines.push(Line { name: "cave".into(), kind: "tunnel".into(), nodes: vec![vec![500.0, 1000.0], vec![1500.0, 1150.0], vec![2500.0, 1000.0]], width: None, closed: false, height: None, noise: None });
         doc
     }
@@ -2501,7 +2975,7 @@ mod tests {
         assert!(lvl.problems.iter().any(|p| p.starts_with("two areas' edges of the world run into each other")), "{:?}", lvl.problems);
         // too little ground over it (a dip in the plateau): built, and reported
         let mut doc = tunnel_doc(300.0);
-        doc.regions.push(Region { name: "dip".into(), nodes: vec![vec![1350.0, 800.0, 1.0], vec![1650.0, 800.0, 1.0], vec![1650.0, 1400.0, 1.0], vec![1350.0, 1400.0, 1.0]], z: 150.0, kind: "floor".into(), surface: None, edge: None, noise: None });
+        doc.regions.push(Region { name: "dip".into(), nodes: vec![vec![1350.0, 800.0, 1.0], vec![1650.0, 800.0, 1.0], vec![1650.0, 1400.0, 1.0], vec![1350.0, 1400.0, 1.0]], z: 150.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
         let lvl = build(&doc, &theme).unwrap();
         assert!(lvl.problems.iter().any(|p| p.starts_with("line 0 (cave): it comes out of the ground")), "{:?}", lvl.problems);
         // a wall too low for it: not built, and why

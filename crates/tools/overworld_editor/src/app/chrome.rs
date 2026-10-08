@@ -647,6 +647,9 @@ impl App {
         if let Some(rest) = p.strip_prefix("line ") {
             return index(rest).filter(|&i| i < self.doc.lines.len()).map(Sel::Line);
         }
+        if let Some(rest) = p.strip_prefix("region ") {
+            return index(rest).filter(|&i| i < self.doc.regions.len()).map(|i| Sel::Loop(i + 1));
+        }
         if let Some(rest) = p.strip_prefix("path ") {
             let name = rest.split(':').next()?;
             return self.doc.paths.iter().position(|q| q.name == name).map(Sel::Path);

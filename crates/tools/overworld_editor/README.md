@@ -10,8 +10,8 @@ cargo build --release -p overworld_editor -p oot_sandbox
 target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_village.json [--theme <theme.json>] [--textures <dir>] [--kit <dir>] [--select <name>]
 ```
 
-`--select` selects a region or path by name, a prop by `prop:N` or a line by `line:N`, at the start (handy for screenshots: the profile shows
-for a path).
+`--select` selects a region or path by name, a prop by `prop:N`, a line by `line:N` or a region's edge by `edge:<region>:<k>`, at the
+start (handy for screenshots: the profile shows for a path).
 
 The texture library is `out/overworld/textures/kokiri`, made on first start from the extracted Kokiri Forest scene
 (`overworld kit-textures`; ROM data, never committed). So is the kit of pieces, `out/overworld/kit/kokiri`, cut from the same
@@ -29,8 +29,8 @@ in the File menu.
 - **Tool rail** (far left): the tools as icons with their keys, grouped: select · region, path · brush · props ·
   dirt, fence, bridge, hedge, tunnel.
 - **Palette** (left): what the current tool adds, and how. Select: which kinds a click in the plan picks (turn props
-  off to click through to the floor under them) and the main keys. Region: floor or water and how high a new one
-  starts. Path: attached or floating, width, bridge shape. Brush: its six modes, size, strength and hard core, with
+  off to click through to the floor under them, edges off to pick a region by its edge) and the main keys. Region:
+  floor, water or pit, and how high a new one starts (a pit: how deep). Path: attached or floating, width, bridge shape. Brush: its six modes, size, strength and hard core, with
   its falloff drawn. Props: the kit as thumbnails, with a search, categories and the last four used. Dirt, fence,
   bridge, hedge: their look (swatches from the theme's own textures), and width or style for the next one drawn.
 - **Inspector** (right): the selection's header card (its kind, its name to rename, delete), the build's problems
@@ -55,11 +55,21 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   Hold Alt to drag without snapping. Double-click a line to add a node: on an edge two loops share, the node goes into both.
   Delete removes the node, region or path. S makes a corner sharp or smooth again. PgUp/PgDn (or `]`/`[`) raise or sink the
   selected region by 20 (Shift: 100), or a path node's height.
+- **Edges:** a click near a region's edge (between two nodes) selects that edge; Shift-click more edges of the same
+  region to select them together. The inspector then shows an *Edge* section above the region's own: its profile, the
+  region's (the default) or one of its own: *Cliff*, *Slope* (angle, rounding), *Terraces* (steps, step height, depth),
+  *Overhang* (depth) or *Ragged* (how much, size, seed). Del puts the selected edges back to the region's profile. The
+  region's own profile, for all its edges, is in its *Edges* section. In the plan, a sloped edge has hachures pointing in
+  (as maps draw slopes), terraces a second line just inside, an overhang a dashed line just outside, ragged rock a
+  zig-zag. A profile is built inward from the edge, so the region keeps its shape; a sunken region's edges go up to the
+  floor beside them. See Edge profiles in `../overworld/README.md`. An edge two regions share is the selected region's, else
+  the higher one's: select the region first to give the lower one's side a profile.
 - **Region (R):** click points, then click the first point or press Enter to close. A click on an existing node shares it.
   A click on a loop's edge adds a node there and shares it, so a region can be drawn against the outline or another
   region. New regions start 120 above the ground they're drawn on. One drawn outside everything is a new **area**: it
   starts at the ground's height, with an edge of the world of its own (see Areas in `../overworld/README.md`); join it to
-  the rest with a tunnel.
+  the rest with a tunnel. A *Pit* (palette) is a drop into the void, its walls going down the palette's depth (600) below
+  the ground round it: Link falling in voids out (see Pits in `../overworld/README.md`).
 - **Path (P):** click points, then double-click or press Enter to finish. Put each end *inside* the floor it starts or
   finishes on, not on its edge: an end takes the floor's height. A ramp slopes all the way to its end, so one that
   ends halfway into a plateau cuts into it, and a bridge's floating end lands at the floor's edge (see the paths

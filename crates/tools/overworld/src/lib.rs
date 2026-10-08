@@ -14,6 +14,7 @@ pub mod noise;
 pub mod openings;
 pub mod paths;
 pub mod pieces;
+pub mod profiles;
 pub mod props;
 pub mod terrain;
 pub mod textures;

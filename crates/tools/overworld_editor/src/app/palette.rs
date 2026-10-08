@@ -47,17 +47,17 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
                 let p = &mut self.pickable;
-                for (on, name) in [(&mut p.regions, "Regions"), (&mut p.paths, "Paths"), (&mut p.lines, "Lines"), (&mut p.props, "Props")] {
+                for (on, name) in [(&mut p.regions, "Regions"), (&mut p.edges, "Edges"), (&mut p.paths, "Paths"), (&mut p.lines, "Lines"), (&mut p.props, "Props")] {
                     if widgets::chip(ui, name, None, *on).on_hover_text("Off: clicks in the plan go through it").clicked() {
                         *on = !*on;
                     }
                 }
             });
-            widgets::hint(ui, "Turn a kind off to click through it in the plan, say to grab the floor under a house.");
+            widgets::hint(ui, "Turn a kind off to click through it in the plan, say to grab the floor under a house. A click near a region's edge picks the edge, to give it a slope or terraces.");
         });
         section(ui, "pal quick", "Quick keys", None, true, |ui| {
             for (keys, what) in [
-                (&["Shift", "click"][..], "select several regions"),
+                (&["Shift", "click"][..], "select several regions or edges"),
                 (&["Alt", "drag"][..], "move without snapping"),
                 (&["S"][..], "sharp or smooth corner"),
                 (&["PgUp", "PgDn"][..], "raise or sink 20"),
@@ -81,7 +81,7 @@ impl App {
         let water = self.lib_texture(ui.ctx(), &self.theme.texture_name(&self.theme.water.material.clone()));
         let styles: Vec<String> = self.theme.wall_styles.keys().cloned().collect();
         section(ui, "pal rkind", "Kind", None, true, |ui| {
-            let w = (ui.available_width() - 8.0) / 2.0;
+            let w = (ui.available_width() - 16.0) / 3.0;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let n = &mut self.new;
@@ -91,12 +91,17 @@ impl App {
                 if widgets::card(ui, w, n.region_kind == "water", "Water", "A pond: a bed and a surface", |p, r| widgets::texture_swatch(p, r, water, 3.0, Color32::WHITE, style::WATER)).clicked() {
                     n.region_kind = "water".into();
                 }
+                if widgets::card(ui, w, n.region_kind == "pit", "Pit", "A drop into the void", |p, r| widgets::texture_swatch(p, r, ground, 1.6, Color32::from_gray(40), Color32::from_gray(20))).clicked() {
+                    n.region_kind = "pit".into();
+                }
             });
         });
         section(ui, "pal rnew", "New regions", None, true, |ui| {
             let n = &mut self.new;
             if n.region_kind == "water" {
                 field(ui, "Depth", Some("From its surface, 20 below the ground round it, down to its bed"), |ui| ui.add(egui::DragValue::new(&mut n.depth).speed(1.0).range(10.0..=2000.0)));
+            } else if n.region_kind == "pit" {
+                field(ui, "Depth", Some("How far its walls go down below the ground round it: Link voids out falling in"), |ui| ui.add(egui::DragValue::new(&mut n.pit_depth).speed(5.0).range(220.0..=5000.0)));
             } else {
                 field(ui, "Rise", Some("How far above the ground it's drawn on a new region starts. Change it later in the inspector (PgUp / PgDn)."), |ui| {
                     ui.add(egui::DragValue::new(&mut n.rise).speed(1.0).range(-2000.0..=2000.0))

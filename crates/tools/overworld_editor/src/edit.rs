@@ -3,7 +3,7 @@
 //!
 //! Loops are numbered as the builder numbers them: 0 is the outline, i + 1 is region i.
 
-use overworld::doc::{node_sharp, Doc, Line, Path, Region};
+use overworld::doc::{node_sharp, Doc, Line, Path, Profile, Region};
 use overworld::geom::{dist, dist_to_seg, lerp, point_in_poly, signed_area, P2};
 use overworld::map::sample_loops;
 use overworld::paths::centre_line;
@@ -178,6 +178,14 @@ pub fn delete_node(doc: &mut Doc, r: NodeRef) -> Result<(), String> {
         match q {
             NodeRef::Loop(l, i) => {
                 loop_nodes_mut(doc, l).remove(i);
+                // its two edges become one, which keeps the first one's profile
+                if l > 0 {
+                    let r = &mut doc.regions[l - 1];
+                    if i < r.profiles.len() {
+                        r.profiles.remove(i);
+                    }
+                    tidy_profiles(r);
+                }
             }
             NodeRef::Path(p, i) => {
                 let path = &mut doc.paths[p];
@@ -217,8 +225,45 @@ pub fn insert_loop_node(doc: &mut Doc, l: usize, k: usize, p: P2) -> NodeRef {
     }
     for &(m, j) in &at {
         loop_nodes_mut(doc, m).insert(j + 1, vec![p[0], p[1]]);
+        // both halves of the edge keep its profile
+        if m > 0 {
+            let r = &mut doc.regions[m - 1];
+            if j < r.profiles.len() {
+                let e = r.profiles[j].clone();
+                r.profiles.insert(j + 1, e);
+            }
+        }
     }
     NodeRef::Loop(l, k + 1)
+}
+
+/// Region loop l's edges `ks` take profile `p` of their own (None: the region's again).
+pub fn set_edge_profile(doc: &mut Doc, l: usize, ks: &[usize], p: Option<Profile>) {
+    if l == 0 {
+        return;
+    }
+    let r = &mut doc.regions[l - 1];
+    let n = r.nodes.len();
+    for &k in ks.iter().filter(|&&k| k < n) {
+        if r.profiles.len() <= k {
+            r.profiles.resize(k + 1, None);
+        }
+        r.profiles[k] = p.clone();
+    }
+    tidy_profiles(r);
+}
+
+/// Region loop l's edge k's own profile, if it has one.
+pub fn own_edge_profile(doc: &Doc, l: usize, k: usize) -> Option<&Profile> {
+    (l > 0).then(|| doc.regions[l - 1].profiles.get(k).and_then(|p| p.as_ref())).flatten()
+}
+
+/// Per-edge profiles: none past the last edge, and no list at all when none is set.
+fn tidy_profiles(r: &mut Region) {
+    r.profiles.truncate(r.nodes.len());
+    while r.profiles.last().is_some_and(|p| p.is_none()) {
+        r.profiles.pop();
+    }
 }
 
 /// Inserts a node at p on a path between its nodes k and k + 1. Height is left to be
@@ -378,6 +423,27 @@ impl Shapes {
         best.map(|(_, l, k, q)| (l, k, q))
     }
 
+    /// Every loop with an edge within `tol` of p, nearest first: (loop, node index of the edge,
+    /// distance). A shared edge is every sharing loop's.
+    pub fn loop_edges_near(&self, p: P2, tol: f64) -> Vec<(usize, usize, f64)> {
+        let mut out: Vec<(usize, usize, f64)> = vec![];
+        for (l, c) in self.loops.iter().enumerate() {
+            let n = c.len();
+            let mut best: Option<(f64, usize)> = None;
+            for i in 0..n {
+                let d = dist_to_seg(p, c[i].0, c[(i + 1) % n].0).0;
+                if d <= tol && best.is_none_or(|x| d < x.0) {
+                    best = Some((d, c[i].1));
+                }
+            }
+            if let Some((d, k)) = best {
+                out.push((l, k, d));
+            }
+        }
+        out.sort_by(|a, b| a.2.total_cmp(&b.2));
+        out
+    }
+
     /// The nearest path centre line to p within `tol` (or within each path's half width, if
     /// `width`): (path, node index of the segment, nearest point).
     pub fn path_near(&self, doc: &Doc, p: P2, tol: f64, width: bool) -> Option<(usize, usize, P2)> {
@@ -442,7 +508,7 @@ pub fn base_z(doc: &Doc, shapes: &Shapes, p: P2) -> f64 {
 pub fn new_region(doc: &Doc, nodes: Vec<P2>, z: f64) -> Region {
     let names: Vec<&str> = doc.regions.iter().map(|r| r.name.as_str()).collect();
     let name = (1..).map(|i| format!("region {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
-    Region { name, nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), z, kind: "floor".into(), surface: None, edge: None, noise: None }
+    Region { name, nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] }
 }
 
 pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
@@ -598,6 +664,30 @@ mod tests {
         let g = group(&d, NodeRef::Loop(0, 0));
         assert_eq!(node_near_except(&d, [2.0, 2.0], 5.0, &g), None);
         assert_eq!(node_near_except(&d, [998.0, 3.0], 5.0, &g), Some(NodeRef::Loop(0, 1)));
+    }
+
+    #[test]
+    fn edge_profiles_follow_their_edges() {
+        let mut d = doc();
+        let slope = Profile::Slope { angle: 30.0, round: 0.0 };
+        // the region's right edge (node 1 to 2) slopes
+        set_edge_profile(&mut d, 1, &[1], Some(slope.clone()));
+        assert_eq!(d.regions[0].profiles, vec![None, Some(slope.clone())]);
+        // a node on it: both halves slope
+        insert_loop_node(&mut d, 1, 1, [400.0, 500.0]);
+        assert_eq!(d.regions[0].profiles, vec![None, Some(slope.clone()), Some(slope.clone())]);
+        // a node before it goes: the edge before it keeps its own (none)
+        delete_node(&mut d, NodeRef::Loop(1, 1)).unwrap();
+        assert_eq!(d.regions[0].profiles, vec![None, Some(slope.clone())]);
+        assert_eq!(own_edge_profile(&d, 1, 1), Some(&slope));
+        // back to the region's: no list left
+        set_edge_profile(&mut d, 1, &[1], None);
+        assert!(d.regions[0].profiles.is_empty());
+        // shared edges are found for every loop sharing them
+        let s = Shapes::new(&d);
+        let near: Vec<usize> = s.loop_edges_near([0.0, 500.0], 5.0).iter().map(|x| x.0).collect();
+        assert_eq!(near, vec![0, 1]);
+        overworld::map::Map::build(&d).unwrap();
     }
 
     #[test]

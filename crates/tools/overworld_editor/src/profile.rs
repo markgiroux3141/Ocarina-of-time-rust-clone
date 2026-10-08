@@ -23,7 +23,10 @@ pub struct Profile {
 }
 
 pub fn profile(doc: &Doc, shapes: &Shapes, k: usize) -> Result<Profile, String> {
-    let base = |p: P2| edit::base_z(doc, shapes, p);
+    // the regions' floors with their edge profiles (slopes, terraces), when any has one
+    let profiled = doc.regions.iter().any(|r| r.profile.is_some() || !r.profiles.is_empty());
+    let shaped = profiled.then(|| overworld::profiles::Ground::new(doc).ok()).flatten();
+    let base = |p: P2| shaped.as_ref().map_or_else(|| edit::base_z(doc, shapes, p), |g| g.at(p));
     let path = &doc.paths[k];
     let geo = paths::layout(path, &base, edit::path_sampling(doc))?;
     let xy: Vec<P2> = path.nodes.iter().map(|n| [n[0].unwrap_or(0.0), n[1].unwrap_or(0.0)]).collect();

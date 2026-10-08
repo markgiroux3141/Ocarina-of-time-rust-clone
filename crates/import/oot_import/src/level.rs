@@ -41,7 +41,7 @@ use std::sync::Arc;
 /// with the bg camera index cleared: custom levels have no bg cameras). Word 1's low nibble is
 /// the footstep sound (SURFACE_SFX_TYPE: 0 dirt, 2 stone, 8 grass, 9 bridge, 10 wood); bit 17
 /// lets the hookshot hold.
-pub const ROLES: [(&str, u32, u32); 16] = [
+pub const ROLES: [(&str, u32, u32); 17] = [
     // spot04 surface 10: grass footsteps
     ("ground", 0x0000_0000, 0x0000_0FC8),
     // ledges Link may grab
@@ -74,6 +74,9 @@ pub const ROLES: [(&str, u32, u32); 16] = [
     // Play_Init, as an exit in the spikes' view stops on a black screen
     ("door", 0x0000_0000, 0x0000_0FC8),
     ("exit", 0x0000_0000, 0x0000_0FCA),
+    // a pit's floor: FLOOR_PROPERTY_12, the void (Player_HandleExitsAndVoids voids Link out as he
+    // falls onto it), as the game's bottomless pits
+    ("void", 0x3000_0000, 0x0000_0FC8),
 ];
 
 /// The collision header's vertex indices are 13 bits.

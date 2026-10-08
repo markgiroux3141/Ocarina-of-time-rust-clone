@@ -10,7 +10,7 @@ use crate::view3d::{View3d, FOV};
 use crate::worker::{Done, Job, Msg, Worker};
 use eframe::egui::{self, Align2, Color32, FontId, Key, KeyboardShortcut, Modifiers, PointerButton, Pos2, Sense, Shape, Stroke, Vec2};
 use overworld::doc::Prop;
-use overworld::geom::{dist, dist_to_loop, point_in_poly, P2};
+use overworld::geom::{dist, dist_to_loop, point_in_poly, signed_area, P2};
 use overworld::openings::Preview;
 use overworld::pieces::Kit;
 use overworld::props::Ground;
@@ -57,6 +57,9 @@ enum Sel {
     Node(NodeRef),
     Prop(usize),
     Line(usize),
+    /// A region's edges, to give them a profile: (loop, the edge clicked, by the node it starts
+    /// from). Shift-clicked edges of the same loop are in `edge_multi`.
+    Edge(usize, usize),
 }
 
 enum Gesture {
@@ -169,6 +172,8 @@ pub struct App {
     flatten_to: f64,
     /// Loops selected besides `sel` (Shift-click).
     multi: Vec<usize>,
+    /// The other selected edges of `Sel::Edge`'s loop.
+    edge_multi: Vec<usize>,
     kit: Option<Arc<Kit>>,
     /// The piece the Prop tool places, and the turn it places it with.
     piece: String,
@@ -192,6 +197,8 @@ pub struct App {
 struct NewThings {
     /// "floor" or "water".
     region_kind: String,
+    /// A new pit's depth below the ground round it.
+    pit_depth: f64,
     /// A new floor's height above the ground it's drawn on.
     rise: f64,
     /// A new pond's depth, from its surface (20 below the ground) to its bed.
@@ -214,6 +221,7 @@ impl Default for NewThings {
     fn default() -> Self {
         NewThings {
             region_kind: "floor".into(),
+            pit_depth: 600.0,
             rise: 120.0,
             depth: 80.0,
             edge: None,
@@ -234,6 +242,8 @@ impl Default for NewThings {
 /// The kinds of thing a click in the plan can pick.
 struct Pickable {
     regions: bool,
+    /// Regions' edges (near an edge, a click picks it rather than the region).
+    edges: bool,
     paths: bool,
     lines: bool,
     props: bool,
@@ -316,7 +326,13 @@ impl App {
                 _ => match (n.strip_prefix("prop:").and_then(|i| i.parse::<usize>().ok()), n.strip_prefix("line:").and_then(|i| i.parse::<usize>().ok())) {
                     (Some(i), _) if i < doc.props.len() => Sel::Prop(i),
                     (_, Some(k)) if k < doc.lines.len() => Sel::Line(k),
-                    _ => Sel::None,
+                    // edge:<region name>:<k>
+                    _ => n
+                        .strip_prefix("edge:")
+                        .and_then(|e| e.rsplit_once(':'))
+                        .and_then(|(name, k)| Some((doc.regions.iter().position(|r| r.name == name)?, k.parse::<usize>().ok()?)))
+                        .filter(|&(i, k)| k < doc.regions[i].nodes.len())
+                        .map_or(Sel::None, |(i, k)| Sel::Edge(i + 1, k)),
                 },
             },
             None => Sel::None,
@@ -367,6 +383,7 @@ impl App {
             brush: Brush::default(),
             flatten_to: 0.0,
             multi: vec![],
+            edge_multi: vec![],
             kit,
             piece,
             place_yaw: 0.0,
@@ -375,7 +392,7 @@ impl App {
             kit_cat: "all".into(),
             recent: vec![],
             filter: String::new(),
-            pickable: Pickable { regions: true, paths: true, lines: true, props: true },
+            pickable: Pickable { regions: true, edges: true, paths: true, lines: true, props: true },
             thumbs: thumbs::Thumbs::default(),
             show_keys: false,
             show_level: false,
@@ -401,6 +418,7 @@ impl App {
             Sel::Prop(i) => i < self.doc.props.len(),
             Sel::Line(k) => k < self.doc.lines.len(),
             Sel::Node(NodeRef::Line(k, i)) => k < self.doc.lines.len() && i < self.doc.lines[k].nodes.len(),
+            Sel::Edge(l, k) => l > 0 && l < edit::loop_count(&self.doc) && k < edit::loop_nodes(&self.doc, l).len(),
         };
         if !ok {
             self.sel = Sel::None;
@@ -658,6 +676,12 @@ impl App {
                 self.doc.lines.remove(k);
                 self.sel = Sel::None;
             }
+            // an edge isn't deleted: it goes back to its region's profile
+            Sel::Edge(l, _) => {
+                let ks = self.selected_edges();
+                edit::set_edge_profile(&mut self.doc, l, &ks, None);
+                self.status = format!("{} edge{} back to {}'s profile", ks.len(), if ks.len() == 1 { "" } else { "s" }, edit::loop_name(&self.doc, l));
+            }
             Sel::None => {}
         }
     }
@@ -822,7 +846,7 @@ impl App {
                 n.resize(n.len().max(3), None);
                 n[2] = Some(z + dz);
             }
-            Sel::Node(NodeRef::Loop(l, _)) => {
+            Sel::Node(NodeRef::Loop(l, _)) | Sel::Edge(l, _) => {
                 self.sel = Sel::Loop(l);
                 self.raise(dz);
             }
@@ -848,8 +872,48 @@ impl App {
         out
     }
 
-    /// A click selecting `s`: with Shift, a loop joins (or leaves) the selected loops.
+    /// The height of the floor beside region loop l: the innermost loop just outside its first
+    /// edge (the outline's ground outside every loop).
+    fn beside_z(&self, l: usize) -> f64 {
+        let c = &self.shapes.loops[l];
+        if c.len() < 3 {
+            return self.doc.outline.z;
+        }
+        let poly: Vec<P2> = c.iter().map(|x| x.0).collect();
+        let (a, b) = (poly[0], poly[1]);
+        let d = [b[0] - a[0], b[1] - a[1]];
+        let len = d[0].hypot(d[1]).max(1e-9);
+        // out is right of the walk round a counter-clockwise loop
+        let s = if signed_area(&poly) > 0.0 { 1.0 } else { -1.0 };
+        let m = [(a[0] + b[0]) / 2.0 + s * d[1] / len * 3.0, (a[1] + b[1]) / 2.0 - s * d[0] / len * 3.0];
+        self.shapes.loop_at(m).filter(|&x| x != l).map_or(self.doc.outline.z, |x| edit::loop_z(&self.doc, x))
+    }
+
+    /// The selected edges of `Sel::Edge`'s loop: the one clicked first, then the Shift-clicked.
+    fn selected_edges(&self) -> Vec<usize> {
+        match self.sel {
+            Sel::Edge(_, k) => std::iter::once(k).chain(self.edge_multi.iter().copied().filter(|&j| j != k)).collect(),
+            _ => vec![],
+        }
+    }
+
+    /// A click selecting `s`: with Shift, a loop joins (or leaves) the selected loops, and an edge
+    /// of the selected edges' loop joins (or leaves) them.
     fn click_select(&mut self, s: Sel, shift: bool) {
+        if let (Sel::Edge(l, k), true, Sel::Edge(l0, _)) = (s, shift, self.sel) {
+            if l == l0 {
+                let mut ks = self.selected_edges();
+                if let Some(i) = ks.iter().position(|&x| x == k) {
+                    ks.remove(i);
+                } else {
+                    ks.push(k);
+                }
+                self.sel = ks.first().map_or(Sel::None, |&k| Sel::Edge(l, k));
+                self.edge_multi = ks.into_iter().skip(1).collect();
+                return;
+            }
+        }
+        self.edge_multi.clear();
         match (s, shift) {
             (Sel::Loop(l), true) => {
                 let mut ls = self.selected_loops();
@@ -925,7 +989,28 @@ impl App {
         if let Some((k, _, _)) = self.shapes.path_near(&self.doc, w, tol, true).filter(|_| pk.paths) {
             return Sel::Path(k);
         }
+        if let Some(e) = self.edge_at(w).filter(|_| pk.edges) {
+            return e;
+        }
         self.shapes.loop_at(w).filter(|_| pk.regions).map_or(Sel::None, Sel::Loop)
+    }
+
+    /// A region's edge near w (not the outline's own: it faces the edge of the world). An edge
+    /// two regions share is the selected region's, else the higher one's (whose wall it is).
+    fn edge_at(&self, w: P2) -> Option<Sel> {
+        let tol = PICK / self.view.scale;
+        let near = self.shapes.loop_edges_near(w, tol);
+        let d0 = near.first()?.2;
+        let cur = match self.sel {
+            Sel::Loop(l) | Sel::Edge(l, _) | Sel::Node(NodeRef::Loop(l, _)) => Some(l),
+            _ => None,
+        };
+        let (l, k, _) = near
+            .iter()
+            .copied()
+            .filter(|c| c.0 > 0 && c.2 <= d0 + 0.25 * tol)
+            .max_by(|a, b| (Some(a.0) == cur).cmp(&(Some(b.0) == cur)).then(edit::loop_z(&self.doc, a.0).total_cmp(&edit::loop_z(&self.doc, b.0))))?;
+        Some(Sel::Edge(l, k))
     }
 
     /// A drawing click: onto an existing loop node (shared), onto a loop's edge (a node is
@@ -970,11 +1055,14 @@ impl App {
                 let c = [pts.iter().map(|p| p[0]).sum::<f64>() / n, pts.iter().map(|p| p[1]).sum::<f64>() / n];
                 let ground = edit::base_z(&self.doc, &self.shapes, c);
                 let water = self.new.region_kind == "water";
+                let pit = self.new.region_kind == "pit";
                 // drawn outside everything, a new area: at the ground's height, with its own edge of the world
                 let area = self.shapes.outside_everything(&pts);
                 // a pond's surface 20 below the ground round it, its bed `depth` below that
                 let z = if water {
                     ground - 20.0 - self.new.depth
+                } else if pit {
+                    ground - self.new.pit_depth
                 } else if area {
                     ground
                 } else {
@@ -985,6 +1073,9 @@ impl App {
                 if water {
                     r.kind = "water".into();
                     r.surface = Some(ground - 20.0);
+                }
+                if pit {
+                    r.kind = "pit".into();
                 }
                 self.status = if area {
                     format!("{} added: a new area at the ground's height ({z:.0}), with an edge of the world of its own. Join it to the rest with a tunnel (U)", r.name)
@@ -1191,7 +1282,7 @@ impl App {
     }
 
     fn canvas(&mut self, ui: &mut egui::Ui) {
-        let (resp, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
+        let (resp, painter) = fixed_painter(ui, "plan");
         self.view.rect = resp.rect;
         if self.fit_pending && resp.rect.width() > 50.0 {
             self.fit();
@@ -1394,7 +1485,7 @@ impl App {
             ui.label("The 3D view needs the wgpu backend.");
             return;
         };
-        let (resp, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
+        let (resp, painter) = fixed_painter(ui, "3d view");
         let rect = resp.rect;
         if rect.width() < 4.0 || rect.height() < 4.0 {
             return;
@@ -1745,6 +1836,117 @@ impl App {
             .collect()
     }
 
+    /// Regions' edge profiles in the plan: hachures pointing in over a slope (as maps draw them),
+    /// a second line just inside for terraces; the selected edges thick, the one under the
+    /// pointer (Select) lit.
+    fn paint_edges(&self, painter: &egui::Painter, hover: Option<Pos2>) {
+        use overworld::doc::Profile;
+        let v = self.view;
+        let sel = match self.sel {
+            Sel::Edge(l, _) => Some((l, self.selected_edges())),
+            _ => None,
+        };
+        let hovered = match (self.tool, hover, &self.gesture) {
+            (Tool::Select, Some(h), Gesture::None) if self.pickable.edges => match self.edge_at(v.to_world(h)) {
+                Some(Sel::Edge(l, k)) => Some((l, k)),
+                _ => None,
+            },
+            _ => None,
+        };
+        for (l, c) in self.shapes.loops.iter().enumerate().skip(1) {
+            let n = c.len();
+            if n < 3 || l > self.doc.regions.len() {
+                continue;
+            }
+            let r = &self.doc.regions[l - 1];
+            let ccw = signed_area(&c.iter().map(|x| x.0).collect::<Vec<_>>()) > 0.0;
+            // runs of points along one document edge each
+            let mut runs: Vec<(usize, Vec<P2>)> = vec![];
+            for i in 0..n {
+                let (a, b, k) = (c[i].0, c[(i + 1) % n].0, c[i].1);
+                match runs.last_mut() {
+                    Some((k0, pts)) if *k0 == k => pts.push(b),
+                    _ => runs.push((k, vec![a, b])),
+                }
+            }
+            for (k, pts) in runs {
+                let screen: Vec<Pos2> = pts.iter().map(|&q| v.to_screen(q)).collect();
+                let is_sel = sel.as_ref().is_some_and(|(sl, ks)| *sl == l && ks.contains(&k));
+                if is_sel {
+                    painter.add(Shape::line(screen.clone(), Stroke::new(8.0, Color32::from_black_alpha(140))));
+                    painter.add(Shape::line(screen.clone(), Stroke::new(4.0, style::ACCENT)));
+                } else if hovered == Some((l, k)) {
+                    painter.add(Shape::line(screen.clone(), Stroke::new(4.0, style::ACCENT.gamma_multiply(0.55))));
+                }
+                let prof = r.edge_profile(k);
+                if prof.is_none() {
+                    continue;
+                }
+                let col = Color32::from_rgb(255, 226, 150);
+                // inward, in screen space (the plan's y points up)
+                let inward = |a: P2, b: P2| -> Vec2 {
+                    let d = [b[0] - a[0], b[1] - a[1]];
+                    let len = d[0].hypot(d[1]).max(1e-9);
+                    let w = if ccw { [-d[1] / len, d[0] / len] } else { [d[1] / len, -d[0] / len] };
+                    Vec2::new(w[0] as f32, -w[1] as f32)
+                };
+                match prof {
+                    Some(Profile::Slope { .. }) => {
+                        let mut along = 6.0f32;
+                        for i in 0..pts.len() - 1 {
+                            let (a, b) = (screen[i], screen[i + 1]);
+                            let len = (b - a).length();
+                            let nrm = inward(pts[i], pts[i + 1]);
+                            while along < len {
+                                let p = a + (b - a) * (along / len);
+                                painter.line_segment([p, p + nrm * 9.0], Stroke::new(1.4, col));
+                                along += 11.0;
+                            }
+                            along -= len;
+                        }
+                    }
+                    Some(Profile::Overhang { .. }) => {
+                        // a second line just outside, as the lip over the undercut
+                        let outer: Vec<Pos2> = (0..pts.len())
+                            .map(|i| {
+                                let (a, b) = if i + 1 < pts.len() { (pts[i], pts[i + 1]) } else { (pts[i - 1], pts[i]) };
+                                screen[i] - inward(a, b) * 4.0
+                            })
+                            .collect();
+                        painter.extend(Shape::dashed_line(&outer, Stroke::new(1.4, col), 5.0, 3.0));
+                    }
+                    Some(Profile::Ragged { .. }) => {
+                        // a zig-zag along it
+                        let mut along = 0.0f32;
+                        let mut zig: Vec<Pos2> = vec![];
+                        for i in 0..pts.len() - 1 {
+                            let (a, b) = (screen[i], screen[i + 1]);
+                            let len = (b - a).length();
+                            let nrm = inward(pts[i], pts[i + 1]);
+                            while along < len {
+                                let k = (zig.len() % 2) as f32 * 2.0 - 1.0;
+                                zig.push(a + (b - a) * (along / len) + nrm * (3.0 * k + 3.0));
+                                along += 6.0;
+                            }
+                            along -= len;
+                        }
+                        painter.add(Shape::line(zig, Stroke::new(1.2, col)));
+                    }
+                    Some(Profile::Terraces { .. }) => {
+                        let inner: Vec<Pos2> = (0..pts.len())
+                            .map(|i| {
+                                let (a, b) = if i + 1 < pts.len() { (pts[i], pts[i + 1]) } else { (pts[i - 1], pts[i]) };
+                                screen[i] + inward(a, b) * 5.0
+                            })
+                            .collect();
+                        painter.add(Shape::line(inner, Stroke::new(1.4, col)));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     fn paint(&mut self, painter: &egui::Painter, ctx: &egui::Context, hover: Option<Pos2>) {
         let rect = self.view.rect;
         painter.rect_filled(rect, 0.0, style::VIEW_BG);
@@ -1767,10 +1969,13 @@ impl App {
                 continue;
             }
             let water = l > 0 && self.doc.regions[l - 1].kind == "water";
+            let pit = l > 0 && self.doc.regions[l - 1].kind == "pit";
             let col = if l == 0 {
                 Color32::from_rgb(235, 235, 235)
             } else if water {
                 Color32::from_rgb(110, 180, 255)
+            } else if pit {
+                Color32::from_rgb(190, 130, 255)
             } else {
                 Color32::from_rgb(255, 196, 80)
             };
@@ -1781,6 +1986,7 @@ impl App {
             }
             painter.add(Shape::closed_line(pts, Stroke::new(width, col)));
         }
+        self.paint_edges(painter, hover);
         // props: footprints, which way they face, and the selected one's handles
         for i in 0..self.doc.props.len() {
             let sel = self.sel == Sel::Prop(i);
@@ -2023,6 +2229,16 @@ fn line_colour(kind: &str) -> Color32 {
     }
 }
 
+/// A view's whole area, sensing clicks and drags under a fixed id. An automatic id would count the
+/// panels laid out before it, and the path profile's panel comes and goes with the selection: a
+/// selection changing mid-drag (a path's node grabbed, say) would give the view a new id, and
+/// egui would lose the drag.
+fn fixed_painter(ui: &mut egui::Ui, name: &str) -> (egui::Response, egui::Painter) {
+    let (rect, _) = ui.allocate_exact_size(ui.available_size(), Sense::hover());
+    let resp = ui.interact(rect, egui::Id::new(("overworld view", name)), Sense::click_and_drag());
+    (resp, ui.painter_at(rect))
+}
+
 fn brush_colour(m: Mode) -> Color32 {
     match m {
         Mode::Raise => Color32::from_rgb(255, 200, 80),
@@ -2088,6 +2304,13 @@ impl eframe::App for App {
             Sel::Loop(l) => Some(l),
             _ => None,
         };
+        match self.sel {
+            Sel::Edge(l, k) => {
+                let nodes = edit::loop_nodes(&self.doc, l).len();
+                self.edge_multi.retain(|&j| j < nodes && j != k);
+            }
+            _ => self.edge_multi.clear(),
+        }
         self.multi.retain(|&l| l < n && Some(l) != primary);
         if primary.is_none() {
             self.multi.clear();

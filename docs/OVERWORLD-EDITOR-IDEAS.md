@@ -1,8 +1,19 @@
 # Overworld editor: ideas for more varied levels
 
-A brainstorm from 2026-10-06, to come back to. Nothing here is built or decided. The editor and builder are
-described in `crates/tools/overworld_editor/README.md` and `crates/tools/overworld/README.md`; their own roadmap is at
-the end of the builder's README.
+A brainstorm from 2026-10-06, to come back to. The editor and builder are described in
+`crates/tools/overworld_editor/README.md` and `crates/tools/overworld/README.md`; their own roadmap is at the end of the
+builder's README.
+
+## Progress
+
+- **2026-10-08, edge profiles (pick 2):** slope, terraces, overhang and ragged rock, for a whole region or edge by edge,
+  built inward from the edge; terraced regions (a region's profile); pits; ponds whose beds shelve to the shore (a
+  slope on a pond). See Edge profiles and Pits in the builder's README; example `sketch_profiles.json`. Marked *built*
+  below.
+
+The order agreed for the rest: lofted contour rocks and standalone arches; path cross-sections, "make it walkable" and
+junctions; the precision tools (measure, Link gauges, section cut, grid and snaps); relative heights and brush layers;
+then rivers and the scatter and array rules.
 
 ## The aim
 
@@ -50,7 +61,8 @@ themes, not in extra tools.
 - **Contour hills.** Draw closed contour loops at heights and the builder fits smooth ground through them. This covers
   the big shapes the brush is used for now, without the brush's problem (see Non-destructive editing).
 - **Standalone rock arches.** The rock arch under floating paths already exists; let it stand alone between two points.
-- **Edge profiles, per stretch of an edge.** This extends the builder roadmap's soft edges. Each stretch picks one:
+- **Edge profiles, per stretch of an edge** (*built*, per edge between two nodes). This extends the builder roadmap's
+  soft edges. Each stretch picks one:
   - cliff, as now;
   - slope at an angle (Hyrule Field);
   - terraces (a number of steps of a given height);
@@ -58,9 +70,10 @@ themes, not in extra tools.
   - ragged rock (noise on the wall face).
 
   A region could be a cliff on one side and a gentle slope on the other.
-- **Terraced regions.** One loop, a step count and a step height: Goron City's rings, or terraced hillsides.
-- **Pits and chasms.** A region kind with no floor, where Link voids out: Gerudo Valley's canyon, the drops in Death
-  Mountain Crater.
+- **Terraced regions** (*built*: a region whose profile is terraces). One loop, a step count and a step height: Goron
+  City's rings, or terraced hillsides.
+- **Pits and chasms** (*built*). A region kind with no floor, where Link voids out: Gerudo Valley's canyon, the drops in
+  Death Mountain Crater.
 
 ## 2. Pathways
 
@@ -84,7 +97,8 @@ themes, not in extra tools.
   waterfall, with the falls set on the walls they cross. The game needs current support for it (Zora's River pushes
   Link along).
 - **Liquid kinds.** Lava, quicksand and swamp, as theme materials plus surface types on the existing pond machinery.
-- **Lakes with shape.** A depth profile towards the shore rather than a flat bed, and islands.
+- **Lakes with shape.** A depth profile towards the shore rather than a flat bed (*built*: a slope on a pond), and
+  islands.
 
 ## 4. Non-destructive editing
 
