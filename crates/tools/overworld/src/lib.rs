@@ -17,6 +17,7 @@ pub mod paths;
 pub mod pieces;
 pub mod profiles;
 pub mod props;
+pub mod rocks;
 pub mod terrain;
 pub mod textures;
 pub mod theme;

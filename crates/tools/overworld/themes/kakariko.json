@@ -323,6 +323,24 @@
     "side_surface": "wall_nograb",
     "side": 70
   },
+  "rocks": {
+    "style": "rock",
+    "top": {
+      "material": "ground",
+      "tile": 480,
+      "surface": "ground"
+    },
+    "lumps": 14,
+    "lump_scale": 140,
+    "arch": {
+      "width": 200,
+      "height": 560,
+      "depth": 110,
+      "lip": 14,
+      "bulge": 0.18,
+      "foot": 2.4
+    }
+  },
   "paths": {
     "side": "embankment",
     "max_slope": 35,

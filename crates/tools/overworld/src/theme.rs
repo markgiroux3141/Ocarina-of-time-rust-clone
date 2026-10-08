@@ -52,6 +52,35 @@ pub struct Theme {
     /// (`with_others`).
     #[serde(default)]
     pub steps: Option<Steps>,
+    /// Freestanding rocks and arches (needed by levels with rock or arch lines).
+    #[serde(default)]
+    pub rocks: Option<Rocks>,
+}
+
+/// Freestanding rocks and arches (`rocks.rs`): their sides are the wall style `style` (a line's own
+/// overrides it), their tops `top` (world-projected on a rock, along and across an arch). Their
+/// faces push in and out by `lumps`, in lumps about `lump_scale` across, unless a line sets its own.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rocks {
+    pub style: String,
+    pub top: Surface,
+    pub lumps: f64,
+    pub lump_scale: f64,
+    pub arch: ArchStyle,
+}
+
+/// A standalone arch's defaults (`rocks::arch`): `width` across its top, `height` from the ground
+/// to the top of its crown, `depth` thick there; its cross-section is a bridge rock's (`lip` down
+/// from the top's edge, sides bulging out by `bulge` of the half-width, a rounded underside).
+/// Towards its feet it grows `foot` times as thick and half that again as wide.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArchStyle {
+    pub width: f64,
+    pub height: f64,
+    pub depth: f64,
+    pub lip: f64,
+    pub bulge: f64,
+    pub foot: f64,
 }
 
 /// Stairs as Kakariko's are: a ramp with steps drawn on it. The ramp is `tread`, repeating

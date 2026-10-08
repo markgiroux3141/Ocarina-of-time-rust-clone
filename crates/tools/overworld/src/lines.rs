@@ -485,7 +485,7 @@ mod tests {
     }
 
     fn straight() -> DirtPaths {
-        let line = Line { name: "d".into(), kind: "dirt".into(), nodes: vec![vec![0.0, 0.0], vec![1000.0, 0.0]], width: None, closed: false, height: None, noise: None };
+        let line = Line { name: "d".into(), kind: "dirt".into(), nodes: vec![vec![0.0, 0.0], vec![1000.0, 0.0]], width: None, closed: false, height: None, noise: None, ..Default::default() };
         DirtPaths { lines: vec![DirtLine::new(&line, &theme(), Sampling::Every(50.0), 0).unwrap()] }
     }
 
@@ -510,7 +510,7 @@ mod tests {
         let g = Ground::new(&m);
         let style = FenceStyle { material: "fence".into(), height: 40.0, tile: 40.0, surface: "fence".into() };
         // 410 long east-west (on the slope), then 395 north-south (level)
-        let line = Line { name: "f".into(), kind: "fence".into(), nodes: vec![vec![-205.0, 0.0], vec![205.0, 0.0], vec![205.0, -395.0]], width: None, closed: false, height: None, noise: None };
+        let line = Line { name: "f".into(), kind: "fence".into(), nodes: vec![vec![-205.0, 0.0], vec![205.0, 0.0], vec![205.0, -395.0]], width: None, closed: false, height: None, noise: None, ..Default::default() };
         assert!(fence(&line, &style, &mut m, &g).is_empty());
         let f = m.objects.iter().find(|o| o.name == "fences").unwrap();
         // whole repeats on each stretch: 410 / 40 -> 10, 395 / 40 -> 10, so u ends on whole numbers
@@ -540,7 +540,7 @@ mod tests {
         m.quad("ground", [[300.0, -200.0, 200.0], [800.0, -200.0, 200.0], [800.0, 200.0, 200.0], [300.0, 200.0, 200.0]], [[0.0; 2]; 4], "ground", "ground");
         let g = Ground::new(&m);
         let th = Theme::kokiri().hanging.unwrap();
-        let line = Line { name: "b".into(), kind: "bridge".into(), nodes: vec![vec![-300.0, 0.0], vec![300.0, 0.0]], width: None, closed: false, height: None, noise: None };
+        let line = Line { name: "b".into(), kind: "bridge".into(), nodes: vec![vec![-300.0, 0.0], vec![300.0, 0.0]], width: None, closed: false, height: None, noise: None, ..Default::default() };
         assert!(bridge(&line, &th, 35.0, &mut m, &g).is_empty());
         let deck = m.objects.iter().find(|o| o.name == "hanging_collision").unwrap();
         let floor_z: Vec<f64> = deck.verts.iter().filter(|v| v[1].abs() < 41.0 && v[2] < 205.0).map(|v| v[2]).collect();

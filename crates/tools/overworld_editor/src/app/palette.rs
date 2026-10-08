@@ -365,6 +365,24 @@ impl App {
                     widgets::hint(ui, "Click on the floor in front of the wall it goes into, any bends, then on the floor beyond the far wall; Enter to finish. Its mouths go where it meets the walls. The wall has to be taller than the tunnel, with ground over it all the way.");
                 });
             }
+            "rock" => {
+                section(ui, "pal look", "Shape", None, true, |ui| {
+                    let cur = self.new.rock_look;
+                    let names: Vec<&str> = overworld::doc::rock_looks().iter().map(|l| l.name).collect();
+                    if let Some(lk) = super::inspector::rock_cards(ui, |lk| names.iter().position(|n| *n == lk.name) == Some(cur)) {
+                        self.new.rock_look = names.iter().position(|n| *n == lk.name).unwrap_or(0);
+                    }
+                    widgets::hint(ui, "Click round its footprint; click the first point or press Enter to close it. Its heights grow with its size. Then shape it in the inspector: drag its contours in the side view.");
+                });
+            }
+            "arch" => {
+                let (aw, ah) = th.rocks.as_ref().map_or((200.0, 560.0), |r| (r.arch.width, r.arch.height));
+                section(ui, "pal look", "Size", None, true, |ui| {
+                    field(ui, "Height", Some("From the ground at its feet to the top of its crown: the theme's unless you set one"), |ui| widgets::theme_num(ui, &mut self.new.arch_height, ah, 1.0, 40.0..=5000.0));
+                    field(ui, "Width", Some("Across its top: the theme's unless you set one"), |ui| widgets::theme_num(ui, &mut self.new.arch_width, aw, 1.0, 20.0..=2000.0));
+                    widgets::hint(ui, "Click where each foot stands (points between bend it), then press Enter. It rises from the ground at one end to its crown and down to the ground at the other.");
+                });
+            }
             _ => {
                 let top = th.hedge.as_ref().and_then(|h| tex(self, ui, &h.top.clone()));
                 section(ui, "pal look", "Look", None, true, |ui| {

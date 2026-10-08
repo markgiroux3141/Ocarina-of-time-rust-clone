@@ -17,8 +17,14 @@ builder's README.
   After the first try by hand: a band's ends slope down into the forest beside it (and the forest runs right up to
   them), and stacks are picked as one of Kakariko's three edges, their parts under Fine-tune.
 
-The order agreed for the rest: lofted contour rocks and standalone arches; path cross-sections, "make it walkable" and
-junctions; the precision tools (measure, Link gauges, section cut, grid and snaps); relative heights and brush layers;
+- **2026-10-08, rocks and arches (pick 1, section 1):** freestanding rocks lofted from a footprint through contours
+  (each a scaled, shifted copy of the footprint, at a height), with lumps, layers and any wall style; five shapes to
+  start from (boulder, mesa, spire, mushroom, pillar) and a side view in the editor where contours are dragged; and
+  standalone arches between two points, the bridge rock swept square to a curve so the legs are thick. Both are closed
+  solids standing on the finished ground; Link stands on a mesa's top and walks an arch's crown. See Rocks and arches
+  in the builder's README; example `sketch_rocks.json`. Marked *built* in section 1.
+
+The order agreed for the rest: path cross-sections, "make it walkable" and junctions; the precision tools (measure, Link gauges, section cut, grid and snaps); relative heights and brush layers;
 then rivers and the scatter and array rules.
 
 ## The aim
@@ -64,9 +70,13 @@ themes, not in extra tools. A document may name a style, its theme's or another'
   - Lake Hylia's pillar, Desert Colossus's rocks.
 
   It's the region tool again, with heights dragged in a profile. No sculpting.
+
+  *Built* (2026-10-08), with each upper loop a copy of the footprint, scaled and shifted, rather than drawn: that keeps
+  it a handful of numbers that follow the footprint when it moves. A loop drawn as its own shape is still open.
 - **Contour hills.** Draw closed contour loops at heights and the builder fits smooth ground through them. This covers
   the big shapes the brush is used for now, without the brush's problem (see Non-destructive editing).
-- **Standalone rock arches.** The rock arch under floating paths already exists; let it stand alone between two points.
+- **Standalone rock arches** (*built*). The rock arch under floating paths already exists; let it stand alone between
+  two points.
 - **Edge profiles, per stretch of an edge** (*built*, per edge between two nodes). This extends the builder roadmap's
   soft edges. Each stretch picks one:
   - cliff, as now;

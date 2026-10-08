@@ -50,7 +50,12 @@ pub struct Doc {
 /// - "tunnel": a tunnel Link walks through, from a wall to a wall (`tunnels.rs`): through a ridge
 ///   or under a plateau, or from one area's edge of the world to another's. A node's third value
 ///   sets the floor's height there.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// - "rock": a freestanding rock over the closed shape of its nodes (its footprint), lofted up
+///   through its `contours` (`rocks.rs`): boulders, spires, mesas, mushrooms. A node's third value
+///   of 1 makes it a sharp corner, as a region's.
+/// - "arch": a natural rock arch from the ground at its first node to the ground at its last,
+///   `height` tall, `width` across its top, `depth` thick at its crown (`rocks.rs`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Line {
     #[serde(default)]
     pub name: String,
@@ -65,9 +70,137 @@ pub struct Line {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<f64>,
     /// A tunnel's rough walls: they and its roof push in and out by up to `amplitude`, in features
-    /// about `scale` across, smooth within `edge` of its mouths; the floor rolls a little.
+    /// about `scale` across, smooth within `edge` of its mouths; the floor rolls a little. A rock's
+    /// or an arch's lumps (`edge` unused): its faces push in and out by up to `amplitude`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noise: Option<Noise>,
+    /// A rock's shape above its footprint, lowest first: each a copy of the footprint, scaled and
+    /// shifted, at a height over the ground. The last is its flat top.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contours: Vec<Contour>,
+    /// A rock's layers: grooves round it every so often, as in banded sandstone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layers: Option<Layers>,
+    /// A rock's or an arch's wall style, the theme's or another's (`kakariko:rock`). Else the
+    /// theme's `rocks.style`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    /// An arch's thickness at its crown, top to underside (else the theme's).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<f64>,
+    /// How many pieces an arch is built of along it: few for a faceted arch, many for a smooth one
+    /// (`rocks::ARCH_SEGMENTS`). Else about one every so often, by the level's detail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<u32>,
+}
+
+/// One of a rock's contours (`Line::contours`): its footprint scaled by `scale` about the
+/// footprint's centre and moved by `shift`, `z` above the ground at its foot. A contour wider than
+/// the one below it overhangs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Contour {
+    pub z: f64,
+    #[serde(default = "one")]
+    pub scale: f64,
+    #[serde(default, skip_serializing_if = "is_zero2")]
+    pub shift: [f64; 2],
+}
+
+impl Contour {
+    pub fn new(z: f64, scale: f64) -> Contour {
+        Contour { z, scale, shift: [0.0; 2] }
+    }
+}
+
+/// Grooves round a rock (`Line::layers`): one every `height`, cut up to `depth` in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Layers {
+    pub height: f64,
+    pub depth: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+fn is_zero2(x: &[f64; 2]) -> bool {
+    *x == [0.0; 2]
+}
+
+/// A rock shape to start from: what the editor offers for a new rock, its contours as heights
+/// and scales for a footprint about `size` across.
+pub struct RockLook {
+    pub name: &'static str,
+    pub tip: &'static str,
+    /// (height, scale) for each contour, lowest first.
+    pub contours: &'static [(f64, f64)],
+    /// Lumps: (how much, how big).
+    pub lumps: Option<(f64, f64)>,
+    pub layers: Option<(f64, f64)>,
+}
+
+impl RockLook {
+    /// This look's contours for a footprint about `size` across (the heights are for one about
+    /// 400 across, and grow with it).
+    pub fn contours(&self, size: f64) -> Vec<Contour> {
+        let k = (size / 400.0).clamp(0.5, 4.0);
+        self.contours.iter().map(|&(z, s)| Contour::new((z * k).round(), s)).collect()
+    }
+
+    /// Whether `line`'s contours have this look's shape (at any size).
+    pub fn is(&self, line: &Line) -> bool {
+        let c = &line.contours;
+        if c.len() != self.contours.len() || c.iter().any(|x| x.shift != [0.0; 2]) {
+            return false;
+        }
+        let k = c.last().map_or(1.0, |t| t.z) / self.contours.last().map_or(1.0, |t| t.0);
+        c.iter().zip(self.contours).all(|(x, &(z, s))| (x.scale - s).abs() < 1e-6 && (x.z - z * k).abs() < 1.5)
+    }
+
+    pub fn noise(&self) -> Option<Noise> {
+        self.lumps.map(|(amplitude, scale)| Noise { amplitude, scale, edge: 0.0, seed: 0 })
+    }
+}
+
+/// Rock shapes to start from. The first is the default.
+pub fn rock_looks() -> Vec<RockLook> {
+    vec![
+        RockLook {
+            name: "Boulder",
+            tip: "A rounded rock: wider a little way up, then curving in to a small top",
+            contours: &[(90.0, 1.08), (190.0, 0.82), (240.0, 0.35)],
+            lumps: Some((16.0, 140.0)),
+            layers: None,
+        },
+        RockLook {
+            name: "Mesa",
+            tip: "Steep sides up to a broad flat top you can stand on (Gerudo Valley, Desert Colossus)",
+            contours: &[(380.0, 0.86)],
+            lumps: Some((12.0, 160.0)),
+            layers: Some((120.0, 14.0)),
+        },
+        RockLook {
+            name: "Spire",
+            tip: "A tall needle of rock narrowing to a point",
+            contours: &[(260.0, 0.62), (620.0, 0.3), (820.0, 0.08)],
+            lumps: Some((10.0, 120.0)),
+            layers: None,
+        },
+        RockLook {
+            name: "Mushroom",
+            tip: "A narrow stem under a wide overhanging cap",
+            contours: &[(160.0, 0.48), (260.0, 0.62), (330.0, 1.2), (380.0, 1.1)],
+            lumps: Some((10.0, 120.0)),
+            layers: None,
+        },
+        RockLook {
+            name: "Pillar",
+            tip: "Straight up to a flat top (Lake Hylia's pillar)",
+            contours: &[(700.0, 0.94)],
+            lumps: Some((8.0, 180.0)),
+            layers: None,
+        },
+    ]
 }
 
 /// A kit piece (`pieces.rs`) placed in the level. Its origin (a house's door floor, a stone's

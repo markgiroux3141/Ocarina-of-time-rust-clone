@@ -23,11 +23,12 @@ pub struct ToolInfo {
 }
 
 /// The rail's tools, in groups.
-pub const RAIL: [&[Tool]; 5] = [
+pub const RAIL: [&[Tool]; 6] = [
     &[Tool::Select],
     &[Tool::Region, Tool::Path],
     &[Tool::Brush],
     &[Tool::Prop],
+    &[Tool::Line("rock"), Tool::Line("arch")],
     &[Tool::Line("dirt"), Tool::Line("fence"), Tool::Line("bridge"), Tool::Line("hedge"), Tool::Line("tunnel")],
 ];
 
@@ -78,6 +79,20 @@ pub fn tool_info(t: Tool) -> ToolInfo {
             key: "U",
             about: "A passage through a wall: under a plateau, through a ridge, or from one area to another.",
             hint: "click on the floor in front of the wall it goes into, then any bends, then on the floor beyond · double-click or Enter to finish · Esc: cancel",
+        },
+        Tool::Line("rock") => ToolInfo {
+            icon: Icon::Rock,
+            name: "Rock",
+            key: "O",
+            about: "A freestanding rock over a shape: a boulder, a mesa, a spire, a mushroom or a pillar, lofted up through its contours.",
+            hint: "click round its footprint · click the first point or Enter to close · Backspace: undo point · Esc: cancel",
+        },
+        Tool::Line("arch") => ToolInfo {
+            icon: Icon::Arch,
+            name: "Arch",
+            key: "A",
+            about: "A natural rock arch from the ground at one end to the ground at the other.",
+            hint: "click where each foot stands (points between bend it) · double-click or Enter to finish · Esc: cancel",
         },
         Tool::Line(_) => ToolInfo {
             icon: Icon::Hedge,
@@ -537,6 +552,22 @@ impl App {
         });
     }
 
+    /// While the document doesn't build: why, across the bottom of the views, so it's plain that
+    /// they still show the last build that worked.
+    pub(super) fn failed_overlay(&mut self, ui: &mut egui::Ui, rect: Rect) {
+        let Some(e) = self.build_error.clone() else { return };
+        let what = if self.level.is_some() { "Build failed: the views show the last build that worked" } else { "Build failed: nothing to show until it builds" };
+        overlay(ui, "build failed", Align2::CENTER_BOTTOM, rect.center_bottom() + Vec2::new(0.0, -46.0), |ui| {
+            egui::Frame::new().fill(Color32::from_rgba_unmultiplied(48, 16, 16, 235)).stroke(Stroke::new(1.0, BAD)).corner_radius(8.0).inner_margin(Margin::symmetric(12, 7)).show(ui, |ui| {
+                ui.set_max_width((rect.width() - 60.0).clamp(200.0, 760.0));
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(what).font(style::semibold(12.5)).color(BAD));
+                    ui.add(egui::Label::new(RichText::new(e).size(12.0).color(TEXT)).wrap());
+                });
+            });
+        });
+    }
+
     /// Plan, plan + 3D or 3D, at the top right of the views.
     pub(super) fn layout_overlay(&mut self, ui: &mut egui::Ui, rect: Rect) {
         overlay(ui, "layout", Align2::RIGHT_TOP, rect.right_top() + Vec2::new(-10.0, 10.0), |ui| {
@@ -701,7 +732,7 @@ fn play_button(ui: &mut egui::Ui) -> egui::Response {
 /// Every key, by what it's for.
 fn keys_sheet(ui: &mut egui::Ui) {
     let groups: [(&str, &[(&str, &str)]); 6] = [
-        ("Tools", &[("V", "Select"), ("R", "Draw a region"), ("P", "Draw a path"), ("B", "Brush"), ("K", "Props"), ("D", "Dirt path"), ("G", "Fence"), ("H", "Rope bridge"), ("J", "Hedge"), ("U", "Tunnel")]),
+        ("Tools", &[("V", "Select"), ("R", "Draw a region"), ("P", "Draw a path"), ("B", "Brush"), ("K", "Props"), ("D", "Dirt path"), ("G", "Fence"), ("H", "Rope bridge"), ("J", "Hedge"), ("U", "Tunnel"), ("O", "Rock"), ("A", "Arch")]),
         (
             "Editing",
             &[

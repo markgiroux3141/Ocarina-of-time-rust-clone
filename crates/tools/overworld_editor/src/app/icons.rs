@@ -15,6 +15,8 @@ pub enum Icon {
     Bridge,
     Hedge,
     Tunnel,
+    Rock,
+    Arch,
     Outline,
     Water,
     Trash,
@@ -144,6 +146,22 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32, width: f32) {
             line(&[(9.0, 20.0), (9.0, 14.0)], faint);
             line(&[(15.0, 14.0), (15.0, 20.0)], faint);
             seg((2.0, 20.0), (22.0, 20.0));
+        }
+        Icon::Rock => {
+            // a rock with an overhanging top, on the ground
+            line(&[(6.0, 20.0), (7.5, 14.0), (5.0, 9.5), (8.0, 5.5), (14.0, 4.5), (19.5, 7.0), (18.0, 11.5), (17.0, 15.0), (18.5, 20.0)], st);
+            line(&[(8.0, 9.5), (15.0, 9.0)], faint);
+            seg((2.5, 20.0), (21.5, 20.0));
+        }
+        Icon::Arch => {
+            // a natural arch standing on the ground: thick legs, a thinner crown
+            line(&[(3.0, 20.0), (3.5, 13.0)], st);
+            arc(12.0, 12.5, 8.5, 180.0, 360.0);
+            line(&[(20.5, 13.0), (21.0, 20.0)], st);
+            line(&[(8.5, 20.0), (8.0, 13.5)], st);
+            arc(12.0, 13.5, 4.0, 180.0, 360.0);
+            line(&[(16.0, 13.5), (15.5, 20.0)], st);
+            seg((1.5, 20.0), (22.5, 20.0));
         }
         Icon::Outline => {
             cubic((5.0, 6.0), (9.0, 3.0), (15.0, 3.0), (19.0, 6.0), st);

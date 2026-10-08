@@ -73,6 +73,9 @@ Done:
   (Stacks), and an outline edge can have ground beyond it climbing to a crest instead of the forest (Beyond the outline):
   Kakariko's brick and rock under Death Mountain Trail, its cliff and grass slope, its mossy south wall. Example:
   `examples/sketch/sketch_kakariko.json`.
+- **Rocks and arches** (2026-10-08, `src/rocks.rs`): freestanding rocks lofted from a footprint up through contours
+  (boulders, mesas, spires, mushrooms, pillars, leaning rocks, with lumps and layers), and natural rock arches standing
+  on the ground between two points. Example: `examples/sketch/sketch_rocks.json`.
 
 Not yet: exits and doors that lead somewhere (they wait for levels to load through `Play_Init`).
 See the roadmap.
@@ -131,7 +134,10 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
              { "name": "pen", "kind": "fence", "nodes": [[-40, -230], [-420, -260], [-440, -520]], "closed": false },
              { "name": "rope bridge", "kind": "bridge", "nodes": [[880, 1330], [1780, 1760]] },
              { "name": "cave", "kind": "tunnel", "nodes": [[-1300, -100], [-250, 120, 40], [800, 0]], "width": 200, "height": 200,
-               "noise": { "amplitude": 25, "scale": 300, "edge": 120 } } ] }
+               "noise": { "amplitude": 25, "scale": 300, "edge": 120 } },
+             { "name": "mesa", "kind": "rock", "nodes": [[-2100, 400], [-1700, 700], [-2100, 1000], [-2500, 700]],
+               "contours": [{ "z": 380, "scale": 0.86 }], "layers": { "height": 120, "depth": 14 } },
+             { "name": "arch", "kind": "arch", "nodes": [[-1200, 1700], [300, 1800]], "height": 560 } ] }
 ```
 
 - **Nodes are control points.** Edges between them are smooth curves (centripetal Catmull-Rom). A
@@ -221,7 +227,8 @@ How capped walls (the cliffs, the edge of the world's too) are textured (2026-10
 - `stretched`: the texture once over the wall's height (v 0 at its foot, 1 at its top, the caps stretched with it), and
   across it as many units per repeat as keeps the texture's shape (`tile_u` x the run's mean height / `tile_v`). This is
   how Kokiri Forest's own walls are: blurrier on tall walls, and where walls of different heights meet the texture
-  doesn't line up. Embankment sides and rock arches stay top-anchored. Test: `walls_tile_or_stretch`.
+  doesn't line up. Embankment sides and the rock under bridges stay top-anchored; rocks and standalone arches follow
+  the setting (see Rocks and arches). Test: `walls_tile_or_stretch`.
 
 `sketch_village`, triangles at high / medium / low: tiled 11,075 / 5,589 / 3,960, middle stretched 9,043 / 5,589 /
 3,960 (the same at medium and low: one middle band either way), stretched 7,007 / 4,145 / 3,028. Before the middle grew
@@ -277,8 +284,10 @@ heights linear along it.
   - `rock`, a natural arch (Zora's River style). Each cross-section runs down a lip from the deck's edge, bulges
     out, and curves round to a rounded bottom. It's deep where it meets the ground and thin mid-span, with lumpy
     noise. It's textured like a top-anchored wall, by arc length down from the deck's edge, so the grass lip sits
-    under the deck's edge. Both halves meet on the bottom line, vertex for vertex. It carries on into the ground it
-    lands on, hidden behind the cliff, and back into an embankment it continues, without bulging out of it.
+    under the deck's edge. Both halves meet on the bottom line, vertex for vertex (exactly since 2026-10-08, lumps and
+    all: a lump there moves both straight down), and a free end's face goes through the body's own end points. It
+    carries on into the ground it lands on, hidden behind the cliff, and back into an embankment it continues, without
+    bulging out of it. A standalone arch is the same body swept along a curve (`rocks::sweep`; see Rocks and arches).
   - `slab`: an underside and edge strips over the deck's `thickness`.
 
   There is an end face only where an end is free.
@@ -513,6 +522,74 @@ too low; a node's own height).
 
 Not yet: a mouth in a floor (a tunnel going down from the top of a plateau), tunnels crossing each other, the side
 profile for a tunnel's heights, and a bg camera setting of its own (the normal camera copes at 200 x 200).
+
+## Rocks and arches (`lines` of kind `rock` and `arch`, `src/rocks.rs`, the theme's `rocks`)
+
+**A rock** is a line of kind `rock`: its nodes are its footprint, a closed shape (a smooth curve through them as a
+region's is, a node's third value of 1 a sharp corner), and its `contours` say how it rises from it:
+
+```json
+{ "name": "mushroom", "kind": "rock", "nodes": [[430, 1300], [720, 1380], [770, 1220], [480, 1160]],
+  "contours": [{ "z": 136, "scale": 0.48 }, { "z": 221, "scale": 0.62 }, { "z": 280, "scale": 1.2 }, { "z": 323, "scale": 1.1 }],
+  "noise": { "amplitude": 10, "scale": 120 }, "layers": { "height": 120, "depth": 14 }, "style": "kakariko:rock" }
+```
+
+- **Contours.** Each is a copy of the footprint, scaled by `scale` about the footprint's centre and moved by `shift`
+  (`[x, y]`), `z` above the ground at the rock's foot, lowest first. The last is the rock's top, flat, so Link can stand
+  on it. Between them the scale and the shift run smoothly (a cubic through the contours: `rocks::Shape`, which the
+  editor's side view draws too), so three or four contours make a rounded boulder, and a contour wider than the one
+  below it overhangs: a mushroom's cap. A contour that isn't above the one below it is left out, reported. No contours:
+  one at 300, scaled 0.85.
+- **On the ground.** The rock's foot is the lowest ground round its footprint, and its heights are over that. Below its
+  foot it goes straight on down to `SINK` (30) under the lowest ground beneath it, closed underneath, so it's one closed
+  solid however the ground lies (on a slope, across a cliff, in a pond). It's built on the finished ground, after tunnels
+  and before props, so props, fences and hedges can stand on its top. A top under the ground it stands on, or a footprint
+  off the ground, is reported.
+- **Lumps** (`noise`: `amplitude`, `scale`, `seed`; else the theme's `lumps` and `lump_scale`) push its faces in and out
+  (`noise::relief3`), sideways only, so the top stays flat; less where it's thin, so a spire's tip doesn't fold.
+- **Layers** (`layers`: `height`, `depth`) cut a groove round it every `height`: in by `depth` halfway up each layer, out
+  again at its ends.
+- **Look.** Its sides are the line's `style` (any wall style, the theme's own or pinned: `kakariko:rock`), else the
+  theme's `rocks.style` (Kokiri: `cliff`; Kakariko: `rock`). u runs round it in whole repeats (no seam), at the rock's
+  mean width; v runs down from the top by arc length, so the texture keeps its size up slopes and overhangs: a capped
+  style keeps its grassy top cap at the rim and its bottom cap at the foot, the middle repeating between (an odd number
+  of times if mirrored, stretched to fit); a banded style goes a band at a time. With `settings.wall_texture` stretched,
+  a capped style is as on walls: `stretched` once over the whole side (and as wide a repeat round it as keeps its shape),
+  `stretched_middle` its caps at their size and its middle once between. Its top is the theme's `rocks.top` (the
+  ground), world-projected, colliding as floor. Objects `rocks` (sides and underside) and `rock_tops`.
+- **Rings** come at the foot, at every contour, where the texture's bands meet, at each layer's ends and middle, and
+  between those no further apart than `sample` up the side (twice that at medium detail, three times at low). Round it,
+  the footprint's points as the detail samples curves. At medium detail most rocks are 250 to 400 collision vertices; a
+  layered mesa 840 across and 800 tall about 860.
+
+**An arch** is a line of kind `arch` from the ground at its first node to the ground at its last, along the line through
+its nodes as `settings.edges` draws it, as a path's (nodes between bend it in plan: smooth curves, faceted, or straight
+between them when hard). It rises from a little under each foot (`SINK` under the lowest ground round
+it) to its crown halfway along, the top of its crown `height` over its feet's ground (the theme's `rocks.arch.height`
+unless the line sets its own), on a curve steep at the feet and rounded at the crown. Its cross-section is the bridge
+rock's, `width` across its top and `depth` thick at the crown, but square to the arch (a frame at each cross-section,
+along the curve), so its legs are as thick along the arch as its crown is deep; towards its feet it grows `foot` (2.4)
+times as thick and half that again as wide. Its body is swept as the bridge rock is (`rocks::sweep`): lumps, the style
+top-anchored down from the top's edges (with `wall_texture` stretched, a capped style runs once from the top's edge to
+the underside instead, each half cross-section cut at fractions of its own length, into 8, 6 or 4 pieces at high,
+medium and low detail; `stretched_middle` keeps the top cap at its size), end faces through the body's own points, so it's a closed solid. Its top is the
+theme's top (u along it, v across) where it's no steeper than 50° (`ARCH_TOP`), walkable at the crown; steeper, the
+rock's middle rows. It's built of `segments` pieces along it (4 to 200: few for a faceted, low-poly arch, many for a
+smooth one), shared out either side of the crown by length; with none of its own, about one every half `sample` at
+high detail (as far again at medium, twice at low), at least 4 a side (`rocks::arch_split`, `arch_step`). There's always
+a cross-section at the crown, so its top is exactly `height` over its feet. Reported:
+feet closer than its width, no room under its crown (too thick for its height), and a crown bent more tightly than it's
+thick (its underside would fold).
+
+Tests: `rocks_and_arches_are_closed_solids_on_the_ground` (no open edges at high and low detail, tiled, stretched and
+middle stretched; stretched, the texture once from the top to the foot; a mushroom's cap
+overhangs; a mesa's top is flat at its height and collides as ground, its grooves cut in; the cliff texture stays in its
+rows; an arch's feet in the ground and its crown at its height; lighter at low detail),
+`arches_take_their_segments`, `rocks_and_arches_report_what_they_cant_do`, `rocks::tests`. In the game (`sketch_rocks`), child Link lands on the mesa's
+top at its height and runs across it, jumping off its edge, and runs along an arch's crown and down it.
+
+Not yet: a contour drawn as a shape of its own (they're copies of the footprint, scaled and shifted), simpler collision
+for rocks and arches (they collide as drawn), and a rock cut into the floor (it stands on it, sunk a little way in).
 
 ## Edge profiles (`profile` and `profiles` on a region, `src/profiles.rs`)
 

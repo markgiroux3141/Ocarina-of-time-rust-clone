@@ -8,7 +8,7 @@ use super::widgets::{self, field, section};
 use super::{line_colour, App, Sel, PROP_COLOUR};
 use crate::edit::{self, NodeRef};
 use eframe::egui::{self, Color32, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
-use overworld::doc::{stack_looks, Part, Profile, Prop, Skyline, StackLook};
+use overworld::doc::{rock_looks, stack_looks, Contour, Layers, Part, Profile, Prop, RockLook, Skyline, StackLook};
 
 /// What the header card shows on the left.
 enum Tile {
@@ -419,6 +419,8 @@ impl App {
             "bridge" => (Icon::Bridge, "Rope bridge"),
             "hedge" => (Icon::Hedge, "Hedge"),
             "tunnel" => (Icon::Tunnel, "Tunnel"),
+            "rock" => (Icon::Rock, "Rock"),
+            "arch" => (Icon::Arch, "Arch"),
             _ => (Icon::Dirt, "Line"),
         };
         let sag = self.theme.hanging.as_ref().map_or(0.0, |h| h.sag * 100.0);
@@ -428,6 +430,18 @@ impl App {
         self.problems_for(ui, Sel::Line(k));
         if let Some(n) = node {
             self.node_section(ui, n);
+        }
+        if kind == "rock" || kind == "arch" {
+            self.rock_sections(ui, k);
+            let n = self.doc.lines[k].nodes.len();
+            section(ui, "ins lnodes", "Nodes", None, true, |ui| {
+                chips(ui, &[(Some(n.to_string()), "nodes"), (None, "double-click it to add one")]);
+            });
+            if delete {
+                self.sel = Sel::Line(k);
+                self.delete_selection();
+            }
+            return;
         }
         let l = &mut self.doc.lines[k];
         section(ui, "ins llook", "Look", None, true, |ui| {
@@ -476,6 +490,76 @@ impl App {
         if delete {
             self.sel = Sel::Line(k);
             self.delete_selection();
+        }
+    }
+
+    /// A rock's shape (its look, its contours in a side view, lumps, layers, style) or an arch's
+    /// size, lumps and style.
+    fn rock_sections(&mut self, ui: &mut egui::Ui, k: usize) {
+        let styles = self.theme.style_names();
+        let rk = self.theme.rocks.clone();
+        let theme_style = rk.as_ref().map_or("cliff".to_string(), |r| r.style.clone());
+        let lumps = rk.as_ref().map_or((14.0, 140.0), |r| (r.lumps, r.lump_scale));
+        // the footprint's width as drawn, for a look's heights
+        let foot: Vec<overworld::geom::P2> = self.shapes.lines.get(k).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default();
+        let size = if foot.len() > 3 { 2.0 * (overworld::geom::signed_area(&foot).abs() / std::f64::consts::PI).sqrt() } else { 400.0 };
+        let l = &mut self.doc.lines[k];
+        if l.kind == "rock" {
+            let tall = l.contours.last().map_or(0.0, |c| c.z);
+            section(ui, "ins rshape", "Shape", Some(format!("{tall:.0} tall")), true, |ui| {
+                if let Some(look) = rock_cards(ui, |lk| lk.is(l)) {
+                    edit::rock_shape(l, &look);
+                }
+                rock_profile(ui, &mut l.contours, 0.5 * size);
+                widgets::hint(ui, "Drag a contour's handle up or down for its height, in or out for its width (Shift: finer). The footprint is the shape drawn in the plan; a contour wider than the one below it overhangs. Its top is flat, and Link can stand on it.");
+                let custom = !rock_looks().iter().any(|lk| lk.is(l));
+                if widgets::disclosure(ui, "ins rfine", "Fine-tune", custom) {
+                    contours_ui(ui, &mut l.contours);
+                }
+            });
+            section(ui, "ins rsurface", "Surface", None, true, |ui| {
+                lumps_ui(ui, &mut l.noise, lumps);
+                let mut on = l.layers.is_some();
+                if widgets::toggle(ui, &mut on, "Layers").on_hover_text("Grooves round it every so often, as in banded rock").changed() {
+                    l.layers = on.then(|| Layers { height: (0.3 * size).clamp(60.0, 300.0).round(), depth: 12.0 });
+                }
+                if let Some(ly) = &mut l.layers {
+                    field(ui, "  Every", Some("How tall each layer is"), |ui| ui.add(egui::DragValue::new(&mut ly.height).speed(1.0).range(20.0..=2000.0)));
+                    field(ui, "  Depth", Some("How far its grooves cut in"), |ui| ui.add(egui::DragValue::new(&mut ly.depth).speed(0.5).range(1.0..=200.0)));
+                }
+                field(ui, "Style", Some("Its sides' look: a wall style, this theme's or another's. Its top is the theme's ground"), |ui| {
+                    style_combo(ui, "rock style", &mut l.style, &styles, &format!("theme's ({theme_style})"))
+                });
+            });
+        } else {
+            let (w, h, d) = rk.as_ref().map_or((200.0, 560.0, 110.0), |r| (r.arch.width, r.arch.height, r.arch.depth));
+            // how many segments it gets with none of its own, as the builder counts them
+            let auto = if foot.len() >= 2 {
+                let feet = [edit::base_z(&self.doc, &self.shapes, foot[0]), edit::base_z(&self.doc, &self.shapes, foot[foot.len() - 1])];
+                let (a_top, total) = overworld::rocks::arch_lengths(&foot, feet, self.doc.lines[k].height.unwrap_or(h));
+                let (m0, m1) = overworld::rocks::arch_split(a_top, total, overworld::rocks::arch_step(&self.doc.settings), None);
+                (m0 + m1) as f64
+            } else {
+                16.0
+            };
+            let l = &mut self.doc.lines[k];
+            section(ui, "ins rarch", "Size", None, true, |ui| {
+                field(ui, "Height", Some("From the ground at its feet to the top of its crown: the theme's unless you set one (PgUp/PgDn)"), |ui| widgets::theme_num(ui, &mut l.height, h, 1.0, 40.0..=5000.0));
+                field(ui, "Width", Some("Across its top: the theme's unless you set one"), |ui| widgets::theme_num(ui, &mut l.width, w, 1.0, 20.0..=2000.0));
+                field(ui, "Thickness", Some("Top to underside at its crown; it grows towards its feet. The theme's unless you set one"), |ui| widgets::theme_num(ui, &mut l.depth, d, 1.0, 10.0..=2000.0));
+                let (s0, s1) = overworld::rocks::ARCH_SEGMENTS;
+                field(ui, "Segments", Some("How many pieces it's built of along it: few for a faceted, low-poly arch, more for a smooth one. Blank: by the level's detail"), |ui| {
+                    let mut n = l.segments.map(f64::from);
+                    if own_num(ui, &mut n, auto, 0.2, s0 as f64..=s1 as f64, "auto") {
+                        l.segments = n.map(|x| x.round() as u32);
+                    }
+                });
+                widgets::hint(ui, "It stands on the ground at its first and last nodes, rising to its crown halfway; nodes between bend it. Its top is walkable where it isn't steep.");
+            });
+            section(ui, "ins rsurface", "Surface", None, true, |ui| {
+                lumps_ui(ui, &mut l.noise, lumps);
+                field(ui, "Style", Some("Its rock's look: a wall style, this theme's or another's"), |ui| style_combo(ui, "arch style", &mut l.style, &styles, &format!("theme's ({theme_style})")));
+            });
         }
     }
 
@@ -757,6 +841,186 @@ fn rough_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
         field(ui, "  Size", Some("About how far apart the lumps are"), |ui| ui.add(egui::DragValue::new(&mut n.scale).speed(5.0).range(50.0..=5000.0)));
         field(ui, "  Smooth mouths", Some("Fades in over this far from each mouth, so the mouths stay clean arches (0: rough right up to the wall)"), |ui| ui.add(egui::DragValue::new(&mut n.edge).speed(2.0).range(0.0..=3000.0)));
         field(ui, "  Seed", Some("Another pattern"), |ui| ui.add(egui::DragValue::new(&mut n.seed)));
+    }
+}
+
+/// A rock's or an arch's lumps: the theme's (`theme`: how much, how big) unless it has its own.
+fn lumps_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>, theme: (f64, f64)) {
+    let mut own = noise.is_some();
+    let tip = format!("Its faces push in and out. Off: the theme's ({:.0}, about {:.0} across)", theme.0, theme.1);
+    if widgets::toggle(ui, &mut own, "Own lumps").on_hover_text(tip).changed() {
+        *noise = own.then_some(overworld::doc::Noise { amplitude: theme.0, scale: theme.1, edge: 0.0, seed: 0 });
+    }
+    if let Some(n) = noise {
+        field(ui, "  How much", Some("In or out by up to this (less where it's thin)"), |ui| ui.add(egui::DragValue::new(&mut n.amplitude).speed(0.5).range(0.0..=200.0)));
+        field(ui, "  Size", Some("About how far apart the lumps are"), |ui| ui.add(egui::DragValue::new(&mut n.scale).speed(2.0).range(20.0..=3000.0)));
+        field(ui, "  Seed", Some("Another pattern"), |ui| ui.add(egui::DragValue::new(&mut n.seed)));
+    }
+}
+
+/// The rock looks as cards, three to a row, each with its silhouette; the ones `is` says it is
+/// lit. Returns the one clicked.
+pub(super) fn rock_cards(ui: &mut egui::Ui, is: impl Fn(&RockLook) -> bool) -> Option<RockLook> {
+    let looks = rock_looks();
+    let mut chose = None;
+    let gap = 6.0;
+    let w = ((ui.available_width() - 2.0 * gap) / 3.0).floor();
+    for row in looks.chunks(3) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for lk in row {
+                let on = is(lk);
+                let cs = lk.contours(400.0);
+                if widgets::card(ui, w, on, lk.name, "", |p, r| {
+                    paint_rock(p, r, &cs, 200.0, None);
+                })
+                .on_hover_text(lk.tip)
+                .clicked()
+                    && !on
+                {
+                    chose = Some(lk.name);
+                }
+            }
+        });
+        ui.add_space(gap);
+    }
+    chose.and_then(|n| rock_looks().into_iter().find(|lk| lk.name == n))
+}
+
+/// The extent of a rock's side view, its footprint `r` either side of its centre: (width, height)
+/// in its units, with a margin.
+fn rock_span(contours: &[Contour], r: f64) -> (f64, f64) {
+    let (shape, _) = overworld::rocks::Shape::new(contours);
+    let top = shape.top().max(1.0);
+    let wide = (0..=32)
+        .map(|i| {
+            let z = top * i as f64 / 32.0;
+            shape.scale(z) * r + shape.shift(z)[0].abs()
+        })
+        .fold(r, f64::max);
+    (2.0 * wide * 1.15, top * 1.12)
+}
+
+/// A rock's side view in `rect`, seen from the south: the ground, and its silhouette from the
+/// footprint (`r` either side of its centre) up through its contours, as the builder lofts it,
+/// `span` (width, height: else its own) fitted in. Returns where each contour's handle goes (its
+/// right edge) and the scale (pixels per unit).
+fn paint_rock(p: &egui::Painter, rect: Rect, contours: &[Contour], r: f64, span: Option<(f64, f64)>) -> (Vec<Pos2>, f64) {
+    p.rect_filled(rect, 6.0, Color32::from_rgb(0x9f, 0xc3, 0xe8));
+    let (shape, _) = overworld::rocks::Shape::new(contours);
+    let top = shape.top().max(1.0);
+    let n = 48;
+    let samples: Vec<(f64, f64, f64)> = (0..=n)
+        .map(|i| {
+            let z = top * i as f64 / n as f64;
+            (z, shape.scale(z) * r, shape.shift(z)[0])
+        })
+        .collect();
+    let (sw, sh) = span.unwrap_or_else(|| rock_span(contours, r));
+    let inner = rect.shrink2(Vec2::new(8.0, 6.0));
+    let k = (inner.width() as f64 / sw.max(1.0)).min((inner.height() as f64 - 4.0) / sh.max(1.0));
+    let ground_y = inner.bottom() - 2.0;
+    let cx = inner.center().x as f64;
+    let at = |x: f64, z: f64| Pos2::new((cx + x * k) as f32, ground_y - (z * k) as f32);
+    p.rect_filled(Rect::from_min_max(Pos2::new(rect.left(), ground_y), rect.right_bottom()), 0.0, Color32::from_rgb(0x4a, 0x3d, 0x2c));
+    let rock = Color32::from_rgb(0xa8, 0x8f, 0x6c);
+    // the silhouette in horizontal strips (each convex)
+    for w in samples.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let quad = vec![at(a.2 - a.1, a.0), at(a.2 + a.1, a.0), at(b.2 + b.1, b.0), at(b.2 - b.1, b.0)];
+        p.add(egui::Shape::convex_polygon(quad, rock, Stroke::new(0.6, rock)));
+    }
+    let edge = Stroke::new(1.4, Color32::from_rgb(0x5c, 0x4a, 0x34));
+    p.add(egui::Shape::line(samples.iter().map(|s| at(s.2 - s.1, s.0)).collect(), edge));
+    p.add(egui::Shape::line(samples.iter().map(|s| at(s.2 + s.1, s.0)).collect(), edge));
+    let t = samples[n];
+    p.line_segment([at(t.2 - t.1, top), at(t.2 + t.1, top)], Stroke::new(2.0, style::FLOOR));
+    p.line_segment([Pos2::new(rect.left(), ground_y), Pos2::new(rect.right(), ground_y)], Stroke::new(1.5, style::FLOOR));
+    (contours.iter().map(|c| at(c.shift[0] + c.scale * r, c.z)).collect(), k)
+}
+
+/// A rock's contours in a side view, its footprint `r` either side of its centre: drag a contour's
+/// handle up and down for its height, in and out for its scale (Shift: finer). The view keeps its
+/// scale during a drag, so the handle stays under the pointer.
+fn rock_profile(ui: &mut egui::Ui, contours: &mut [Contour], r: f64) {
+    let w = ui.available_width();
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 170.0), Sense::click_and_drag());
+    let p = ui.painter_at(rect);
+    let id = ui.id().with("rock profile drag");
+    let held: Option<(usize, f64, f64)> = ui.ctx().data(|d| d.get_temp(id));
+    let span = held.map(|h| (h.1, h.2)).unwrap_or_else(|| rock_span(contours, r));
+    let (handles, k) = paint_rock(&p, rect, contours, r, Some(span));
+    let hover = resp.hover_pos();
+    for (i, h) in handles.iter().enumerate() {
+        let on = held.is_some_and(|x| x.0 == i) || hover.is_some_and(|q| q.distance(*h) < 14.0);
+        p.circle(*h, if on { 6.0 } else { 5.0 }, if on { ACCENT } else { Color32::WHITE }, Stroke::new(1.2, Color32::BLACK));
+        p.text(*h + Vec2::new(9.0, 0.0), egui::Align2::LEFT_CENTER, format!("{:.0}", contours[i].z), egui::FontId::proportional(10.5), Color32::BLACK);
+    }
+    if resp.drag_started() {
+        if let Some(pos) = resp.interact_pointer_pos() {
+            let best = handles.iter().enumerate().map(|(i, h)| (i, h.distance(pos))).filter(|x| x.1 < 14.0).min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((i, _)) = best {
+                ui.ctx().data_mut(|d| d.insert_temp(id, (i, span.0, span.1)));
+            }
+        }
+    }
+    if let (Some((i, _, _)), true) = (held, resp.dragged()) {
+        let d = resp.drag_delta();
+        let fine = if ui.input(|x| x.modifiers.shift) { 0.25 } else { 1.0 };
+        let lo = if i == 0 { 5.0 } else { contours[i - 1].z + 5.0 };
+        let hi = contours.get(i + 1).map_or(20000.0, |c| c.z - 5.0);
+        let c = &mut contours[i];
+        c.z = (c.z - d.y as f64 * fine / k).clamp(lo, hi);
+        c.scale = (c.scale + d.x as f64 * fine / k / r.max(1.0)).clamp(0.02, 3.0);
+    }
+    if resp.drag_stopped() && held.is_some() {
+        ui.ctx().data_mut(|d| d.remove::<(usize, f64, f64)>(id));
+        for c in contours.iter_mut() {
+            c.z = c.z.round();
+            c.scale = (c.scale * 100.0).round() / 100.0;
+        }
+    }
+}
+
+/// A rock's contours as numbers, lowest first: each one's height, scale and shift; add, remove.
+fn contours_ui(ui: &mut egui::Ui, contours: &mut Vec<Contour>) {
+    let mut remove = None;
+    let n = contours.len();
+    for (i, c) in contours.iter_mut().enumerate() {
+        ui.push_id(("contour", i), |ui| {
+            ui.add_space(4.0);
+            field(ui, &format!("  {}", i + 1), Some("Its height over the ground at the rock's foot"), |ui| {
+                ui.add(egui::DragValue::new(&mut c.z).speed(1.0).range(1.0..=20000.0).prefix("height "));
+            });
+            field(ui, "    Scale", Some("Its size, of the footprint's: over 100% it's wider than the footprint"), |ui| {
+                let mut pc = c.scale * 100.0;
+                if ui.add(egui::DragValue::new(&mut pc).speed(0.5).range(2.0..=300.0).suffix("%")).changed() {
+                    c.scale = pc / 100.0;
+                }
+            });
+            field(ui, "    Shift", Some("How far it's moved from over the footprint's centre: a leaning rock"), |ui| {
+                ui.add(egui::DragValue::new(&mut c.shift[0]).speed(1.0).prefix("x "));
+                ui.add(egui::DragValue::new(&mut c.shift[1]).speed(1.0).prefix("y "));
+            });
+            if n > 1 {
+                field(ui, "    ", None, |ui| {
+                    if widgets::button(ui, None, "Remove", None, false).clicked() {
+                        remove = Some(i);
+                    }
+                });
+            }
+        });
+    }
+    if let Some(i) = remove {
+        contours.remove(i);
+    }
+    ui.add_space(4.0);
+    if widgets::button(ui, None, "+ Contour", None, false).on_hover_text("A new top, a little higher and narrower").clicked() {
+        let (z, s) = contours.last().map_or((300.0, 0.85), |c| (c.z + 80.0, c.scale * 0.8));
+        contours.push(Contour::new(z.round(), (s * 100.0).round() / 100.0));
+    }
+    if contours.windows(2).any(|w| w[1].z <= w[0].z) {
+        widgets::hint(ui, "Each contour must be higher than the one below it: the build leaves out any that aren't.");
     }
 }
 

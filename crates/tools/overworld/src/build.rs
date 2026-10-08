@@ -30,6 +30,7 @@ use crate::paths::{self, PathGeo};
 use crate::pieces::Kit;
 use crate::profiles::{self, Wall};
 use crate::props::{self, Placed};
+use crate::rocks::{self, Frame, Half, Lumps};
 use crate::terrain::Field;
 use crate::theme::{Rock, Theme, WallStyle};
 use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
@@ -233,6 +234,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             "bridge" if theme.hanging.is_some() => {}
             "hedge" if theme.hedge.is_some() => {}
             "tunnel" if theme.tunnel.is_some() => {}
+            "rock" | "arch" if theme.rocks.is_some() => {}
             k => problems.push(format!("line {i} ({}): {k} lines aren't built yet", l.name)),
         }
     }
@@ -357,6 +359,45 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         }
         crate::tunnels::finish(&mut b.mesh, &bores, tt);
         lap("tunnels");
+    }
+    // rocks and arches stand on the finished ground, before props (which can stand on them)
+    if let Some(rk) = theme.rocks.as_ref().filter(|_| doc.lines.iter().any(|l| l.kind == "rock" || l.kind == "arch")) {
+        let ground = props::Ground::new(&b.mesh);
+        let detail = doc.settings.detail()?;
+        let k = match doc.settings.detail.as_str() {
+            "medium" => 2.0,
+            "low" => 3.0,
+            _ => 1.0,
+        };
+        let pieces = [8, 6, 4][k as usize - 1];
+        let fine = rocks::Fineness { curves: detail.curves, step: doc.settings.sample.max(1.0) * k, walls: detail.walls, pieces };
+        let arch_fine = rocks::Fineness { curves: detail.paths, step: rocks::arch_step(&doc.settings), walls: detail.walls, pieces };
+        for (i, l) in doc.lines.iter().enumerate().filter(|(_, l)| l.kind == "rock" || l.kind == "arch") {
+            let name = if l.name.is_empty() { format!("{} {i}", l.kind) } else { l.name.clone() };
+            let style = match l.style.as_ref() {
+                Some(s) if theme.wall_styles.contains_key(s) => s.clone(),
+                Some(s) => {
+                    b.problems.push(format!("line {i} ({name}): theme {} has no wall style {s:?}, so it's the theme's rock", theme.name));
+                    rk.style.clone()
+                }
+                None => rk.style.clone(),
+            };
+            let Some(ws) = theme.wall_styles.get(&style) else {
+                b.problems.push(format!("line {i} ({name}): theme {} has no wall style {style:?} for rocks", theme.name));
+                continue;
+            };
+            let seed = b.seed() ^ (i as u32).wrapping_mul(7919).wrapping_add(31);
+            let made = if l.kind == "rock" {
+                rocks::rock(l, rk, ws, &fine, seed, &mut b.mesh, &ground)
+            } else {
+                rocks::arch(l, rk, ws, &arch_fine, seed, &mut b.mesh, &ground)
+            };
+            match made {
+                Ok(pr) => b.problems.extend(pr.into_iter().map(|p| format!("line {i} ({name}): {p}"))),
+                Err(e) => b.problems.push(format!("line {i} ({name}): {e}")),
+            }
+        }
+        lap("rocks");
     }
     // kit pieces, fences and hedges stand on the finished ground, and are lit with it
     let placed = props::place(&doc.props, kit, &mut b.mesh, &mut b.problems);
@@ -1751,11 +1792,9 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// A rock arch under a deck, stations b0..=b1. Each station has a half cross-section per side:
-    /// down `lip` from the deck's edge, out by the bulge, round to the bottom centre at the arch's
-    /// depth there. Its surface is textured like a top-anchored wall, by arc length down from the
-    /// deck's edge, band by band, each band clipped where the cross-section ends: both halves meet
-    /// on the bottom line, vertex for vertex. `abut`: (s, +1 or -1 into the bridge) where the run
+    /// A rock arch under a deck, stations b0..=b1 (`rocks::sweep`). Each station has a half
+    /// cross-section per side: down `lip` from the deck's edge, out by the bulge, round to the
+    /// bottom centre at the arch's depth there. `abut`: (s, +1 or -1 into the bridge) where the run
     /// continues an embankment (no bulge or lumps there, so the rock stays inside it).
     #[allow(clippy::too_many_arguments)]
     fn rock_body(&mut self, g: &PathGeo, b0: usize, b1: usize, span: (f64, f64), abut: &[(f64, f64)], rk: &Rock, caps: (bool, bool)) {
@@ -1763,132 +1802,23 @@ impl<'a> Builder<'a> {
             self.problems.push(format!("theme {} has no wall style {:?} for rock", self.theme.name, rk.style));
             return;
         };
-        let Some(c) = ws.caps.clone() else { return };
         let seed = self.seed().wrapping_add(23);
         let smooth = |a: f64, b: f64, x: f64| {
             let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
             t * t * (3.0 - 2.0 * t)
         };
-        // each station's half cross-section: (x out from the centre line, y down from the deck)
-        struct Half {
-            pts: Vec<[f64; 2]>,
-            arc: Vec<f64>,
-            taper: f64,
+        let mut frames = vec![];
+        let mut halves = vec![];
+        for i in b0..=b1 {
+            let st = &g.st[i];
+            let t = if span.1 - span.0 > 1e-6 { ((st.s - span.0) / (span.1 - span.0)).clamp(0.0, 1.0) } else { 0.5 };
+            let depth = rk.depth_mid + (rk.depth_end - rk.depth_mid) * (1.0 - (std::f64::consts::PI * t).sin()).powf(1.5);
+            let taper = abut.iter().map(|&(s, dir)| smooth(0.0, st.w, (st.s - s) * dir)).fold(1.0, f64::min);
+            let hw = st.w * 0.5;
+            halves.push(Half::rock(hw, hw * (1.0 + rk.bulge * taper), rk.lip.min(depth * 0.5), depth, taper));
+            frames.push(Frame { o: [st.p[0], st.p[1], st.z], left: [-st.dir[1], st.dir[0], 0.0], down: [0.0, 0.0, -1.0], fwd: [st.dir[0], st.dir[1], 0.0], s: st.s });
         }
-        let halves: Vec<Half> = (b0..=b1)
-            .map(|i| {
-                let st = &g.st[i];
-                let t = if span.1 - span.0 > 1e-6 { ((st.s - span.0) / (span.1 - span.0)).clamp(0.0, 1.0) } else { 0.5 };
-                let depth = rk.depth_mid + (rk.depth_end - rk.depth_mid) * (1.0 - (std::f64::consts::PI * t).sin()).powf(1.5);
-                let taper = abut.iter().map(|&(s, dir)| smooth(0.0, st.w, (st.s - s) * dir)).fold(1.0, f64::min);
-                let hw = st.w * 0.5;
-                let rx = hw * (1.0 + rk.bulge * taper);
-                let lip = rk.lip.min(depth * 0.5);
-                let mut pts = vec![[hw, 0.0]];
-                let k = 14;
-                for j in 0..=k {
-                    let th = j as f64 / k as f64 * std::f64::consts::FRAC_PI_2;
-                    pts.push([rx * th.cos().powf(0.8), lip + (depth - lip) * th.sin().powf(0.8)]);
-                }
-                let mut arc = vec![0.0];
-                for w in pts.windows(2) {
-                    arc.push(arc.last().unwrap() + dist(w[0], w[1]));
-                }
-                Half { pts, arc, taper }
-            })
-            .collect();
-        let ht = c.top * c.tile_v;
-        // a point on station ri's half (left or right), `a` down from the deck's edge, and its outward normal
-        let point = |ri: usize, left: bool, a: f64| -> (P3, [f64; 3]) {
-            let h = &halves[ri];
-            let total = *h.arc.last().unwrap();
-            let a = a.clamp(0.0, total);
-            let k = (1..h.arc.len()).find(|&k| h.arc[k] >= a).unwrap_or(h.arc.len() - 1);
-            let seg = (h.arc[k] - h.arc[k - 1]).max(1e-9);
-            let t = (a - h.arc[k - 1]) / seg;
-            let (p0, p1) = (h.pts[k - 1], h.pts[k]);
-            let (x, y) = (p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t);
-            let (dx, dy) = ((p1[0] - p0[0]) / seg, (p1[1] - p0[1]) / seg);
-            let (nx, ny) = (dy, -dx);
-            let st = &g.st[b0 + ri];
-            let lat = if left { [-st.dir[1], st.dir[0]] } else { [st.dir[1], -st.dir[0]] };
-            let base = [st.p[0] + lat[0] * x, st.p[1] + lat[1] * x, st.z - y];
-            let amp = rk.lumps * h.taper * smooth(0.0, ht, a);
-            let d = if amp > 0.0 { amp * fbm3([base[0] / rk.lump_scale, base[1] / rk.lump_scale, base[2] / rk.lump_scale], seed) } else { 0.0 };
-            let (x2, y2) = (x + nx * d, y + ny * d);
-            ([st.p[0] + lat[0] * x2, st.p[1] + lat[1] * x2, st.z - y2], [lat[0] * nx, lat[1] * nx, -ny])
-        };
-        let (m0, m1) = c.middle();
-        let unit = c.unit();
-        for ri in 0..halves.len() - 1 {
-            let (a0, a1) = (*halves[ri].arc.last().unwrap(), *halves[ri + 1].arc.last().unwrap());
-            let (s0, s1) = (g.st[b0 + ri].s, g.st[b0 + ri + 1].s);
-            let mut bands = vec![(0.0, ht, 1.0, 1.0 - c.top)];
-            let (mut d, mut k) = (ht, 0);
-            while d < a0.max(a1) {
-                let (va, vb) = if c.mirror && k % 2 == 1 { (m0, m1) } else { (m1, m0) };
-                bands.push((d, d + unit, va, vb));
-                d += unit;
-                k += 1;
-            }
-            for left in [true, false] {
-                for &(d0, d1, va, vb) in &bands {
-                    // the band in (t along the strip, arc a), clipped to a <= the arc's length there
-                    let rect = [(0.0, d0), (1.0, d0), (1.0, d1), (0.0, d1)];
-                    let lim = |t: f64, a: f64| a0 + (a1 - a0) * t - a;
-                    let mut poly: Vec<(f64, f64)> = vec![];
-                    for i in 0..4 {
-                        let (a, b) = (rect[i], rect[(i + 1) % 4]);
-                        let (fa, fb) = (lim(a.0, a.1), lim(b.0, b.1));
-                        if fa >= -1e-9 {
-                            poly.push(a);
-                        }
-                        if (fa >= -1e-9) != (fb >= -1e-9) {
-                            let t = fa / (fa - fb);
-                            poly.push((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
-                        }
-                    }
-                    if poly.len() < 3 {
-                        continue;
-                    }
-                    let vs: Vec<(P3, [f64; 2], [f64; 3])> = poly
-                        .iter()
-                        .map(|&(t, a)| {
-                            let at = a0 + (a1 - a0) * t;
-                            let f = if at > 1e-9 { a / at } else { 0.0 };
-                            let (p0, n0) = point(ri, left, f * a0);
-                            let (p1, n1) = point(ri + 1, left, f * a1);
-                            let p = [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t, p0[2] + (p1[2] - p0[2]) * t];
-                            let n = [n0[0] + n1[0], n0[1] + n1[1], n0[2] + n1[2]];
-                            (p, [(s0 + (s1 - s0) * t) / ws.tile_u, va + (vb - va) * (a - d0) / (d1 - d0)], n)
-                        })
-                        .collect();
-                    let want = vs.iter().fold([0.0; 3], |acc, v| [acc[0] + v.2[0], acc[1] + v.2[1], acc[2] + v.2[2]]);
-                    for i in 1..vs.len() - 1 {
-                        self.tri_facing("bridge_rock", [vs[0].0, vs[i].0, vs[i + 1].0], [vs[0].1, vs[i].1, vs[i + 1].1], &ws.material, &ws.surface, want);
-                    }
-                }
-            }
-        }
-        // end faces where the rock ends in the open: its whole cross-section
-        for (cap, ri, back) in [(caps.0, 0usize, true), (caps.1, halves.len() - 1, false)] {
-            if !cap {
-                continue;
-            }
-            let st = &g.st[b0 + ri];
-            let h = &halves[ri];
-            let mut ring: Vec<P2> = h.pts.iter().map(|p| [p[0], p[1]]).collect();
-            ring.extend(h.pts.iter().rev().skip(1).map(|p| [-p[0], p[1]]));
-            ring.pop();
-            let ring = if signed_area(&ring) < 0.0 { ring.into_iter().rev().collect::<Vec<_>>() } else { ring };
-            let right = [st.dir[1], -st.dir[0]];
-            let want = if back { [-st.dir[0], -st.dir[1], 0.0] } else { [st.dir[0], st.dir[1], 0.0] };
-            for t in triangulate(&ring, &[], 0.0) {
-                let q = t.map(|[x, y]| [st.p[0] + right[0] * x, st.p[1] + right[1] * x, st.z - y]);
-                let uv = t.map(|[x, y]| [x / ws.tile_u, 1.0 - y / c.tile_v]);
-                self.tri_facing("bridge_rock", q, uv, &ws.material, &ws.surface, want);
-            }
-        }
+        rocks::sweep(&mut self.mesh, "bridge_rock", &frames, &halves, &ws, Lumps { amount: rk.lumps, scale: rk.lump_scale, seed }, caps, WallTexture::Tiled, 8);
     }
 
     /// Skirt along the foot (not under water) and fringe from the top, 1.5 in front, for styles
@@ -3125,7 +3055,7 @@ mod tests {
         let mut d = sample_doc();
         // drawn clockwise: the builder turns it round
         let sq = [[-200.0, 0.0], [-200.0, 300.0], [200.0, 300.0], [200.0, 0.0]];
-        d.lines.push(Line { name: "h".into(), kind: "hedge".into(), nodes: sq.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false, height: None, noise: None });
+        d.lines.push(Line { name: "h".into(), kind: "hedge".into(), nodes: sq.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: false, height: None, noise: None, ..Default::default() });
         let lvl = build(&d, &th).unwrap();
         assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
         let o = lvl.mesh.objects.iter().find(|o| o.name == "hedges").unwrap();
@@ -3156,7 +3086,7 @@ mod tests {
         // a shape crossing itself is reported
         let mut d = sample_doc();
         let bow = [[-200.0, 0.0], [200.0, 300.0], [200.0, 0.0], [-200.0, 300.0]];
-        d.lines.push(Line { name: "bow".into(), kind: "hedge".into(), nodes: bow.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: true, height: None, noise: None });
+        d.lines.push(Line { name: "bow".into(), kind: "hedge".into(), nodes: bow.iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: true, height: None, noise: None, ..Default::default() });
         let lvl = build(&d, &th).unwrap();
         assert!(lvl.problems.iter().any(|p| p.contains("crosses itself")), "{:?}", lvl.problems);
     }
@@ -3470,7 +3400,7 @@ mod tests {
         let sq = |x0: f64, y0: f64, x1: f64, y1: f64| vec![vec![x0, y0, 1.0], vec![x1, y0, 1.0], vec![x1, y1, 1.0], vec![x0, y1, 1.0]];
         let mut doc: Doc = serde_json::from_value(serde_json::json!({ "name": "tunnel", "outline": { "nodes": sq(0.0, 0.0, 3000.0, 2000.0) } })).unwrap();
         doc.regions.push(Region { name: "plateau".into(), nodes: sq(1000.0, 500.0, 2000.0, 1500.0), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
-        doc.lines.push(Line { name: "cave".into(), kind: "tunnel".into(), nodes: vec![vec![500.0, 1000.0], vec![1500.0, 1150.0], vec![2500.0, 1000.0]], width: None, closed: false, height: None, noise: None });
+        doc.lines.push(Line { name: "cave".into(), kind: "tunnel".into(), nodes: vec![vec![500.0, 1000.0], vec![1500.0, 1150.0], vec![2500.0, 1000.0]], width: None, closed: false, height: None, noise: None, ..Default::default() });
         doc
     }
 
@@ -3548,7 +3478,7 @@ mod tests {
     #[test]
     fn dirt_paths_are_cut_into_the_floor() {
         let mut doc = paths_doc();
-        doc.lines.push(crate::doc::Line { name: "dirt".into(), kind: "dirt".into(), nodes: vec![vec![1000.0, -1500.0], vec![1000.0, -300.0], vec![1000.0, 900.0]], width: None, closed: false, height: None, noise: None });
+        doc.lines.push(crate::doc::Line { name: "dirt".into(), kind: "dirt".into(), nodes: vec![vec![1000.0, -1500.0], vec![1000.0, -300.0], vec![1000.0, 900.0]], width: None, closed: false, height: None, noise: None, ..Default::default() });
         let lvl = build(&doc, &Theme::kokiri()).unwrap();
         let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
         assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
@@ -3580,6 +3510,149 @@ mod tests {
         let j = lvl.mesh.to_json(&|r| (r.to_string(), crate::textures::TexInfo::plain(r)));
         assert!(j["objects"].as_array().unwrap().iter().any(|o| o["alpha"].as_array().is_some_and(|a| !a.is_empty())));
         assert_eq!(Theme::kokiri().overlay_texture("ground+dirt").unwrap(), "kf_ground+kf_dirt_strip@9b8c34-70-2-16-48");
+    }
+
+    /// The sample level with a mushroom rock (its cap overhangs), a layered mesa and an arch, all
+    /// on the ground (z 0) south and west of the regions.
+    fn rocks_doc() -> Doc {
+        let mut d = sample_doc();
+        let oval = |cx: f64, cy: f64, r: f64| -> Vec<Vec<f64>> {
+            (0..9).map(|k| {
+                let a = k as f64 / 9.0 * std::f64::consts::TAU;
+                vec![cx + r * a.cos(), cy + 0.8 * r * a.sin()]
+            }).collect()
+        };
+        d.lines.push(Line { name: "mushroom".into(), kind: "rock".into(), nodes: oval(300.0, -1000.0, 150.0), contours: vec![Contour::new(150.0, 0.5), Contour::new(260.0, 1.3)], ..Default::default() });
+        d.lines.push(Line {
+            name: "mesa".into(),
+            kind: "rock".into(),
+            nodes: oval(-800.0, 500.0, 220.0),
+            contours: vec![Contour::new(300.0, 0.85)],
+            layers: Some(Layers { height: 100.0, depth: 10.0 }),
+            noise: Some(Noise { amplitude: 12.0, scale: 150.0, edge: 0.0, seed: 2 }),
+            ..Default::default()
+        });
+        d.lines.push(Line { name: "arch".into(), kind: "arch".into(), nodes: vec![vec![-1000.0, -700.0], vec![-200.0, -1200.0]], height: Some(450.0), ..Default::default() });
+        d
+    }
+
+    /// Rocks and arches are closed solids standing on the ground: a rock's foot is the lowest
+    /// ground round it and it goes on down into the ground, its flat top at its last contour and
+    /// colliding as floor, a contour wider than the one below overhanging; an arch's feet are in
+    /// the ground and its crown's top at its height.
+    #[test]
+    fn rocks_and_arches_are_closed_solids_on_the_ground() {
+        let th = Theme::kokiri();
+        for (detail, walls) in [("high", "tiled"), ("low", "tiled"), ("high", "stretched"), ("medium", "stretched_middle")] {
+            let mut d = rocks_doc();
+            d.settings.detail = detail.into();
+            d.settings.wall_texture = walls.into();
+            let detail = format!("{detail} {walls}");
+            let lvl = build(&d, &th).unwrap();
+            assert!(lvl.problems.is_empty(), "{detail}: {:?}", lvl.problems);
+            let open = open_edges(&lvl, &["rocks", "rock_tops"]);
+            assert!(open.is_empty(), "{detail}: {} open edges, e.g. {:?}", open.len(), &open[..open.len().min(4)]);
+            let rocks = lvl.mesh.objects.iter().find(|o| o.name == "rocks").unwrap();
+            let tops = lvl.mesh.objects.iter().find(|o| o.name == "rock_tops").unwrap();
+            let near = |o: &crate::mesh::Object, c: P2, r: f64| -> Vec<P3> { o.verts.iter().copied().filter(|v| dist([v[0], v[1]], c) < r).collect() };
+            // the mushroom: down into the ground, its top at 260, its cap wider than its foot
+            let m = near(rocks, [300.0, -1000.0], 400.0);
+            assert!(m.iter().any(|v| v[2] < -rocks::SINK + 1e-6), "{detail}: it goes into the ground");
+            let mt = near(tops, [300.0, -1000.0], 400.0);
+            assert!(!mt.is_empty() && mt.iter().all(|v| (v[2] - 260.0).abs() < 1e-6), "{detail}: the mushroom's top");
+            let reach = |vs: &[P3]| vs.iter().map(|v| dist([v[0], v[1]], [300.0, -1000.0])).fold(0.0, f64::max);
+            let foot: Vec<P3> = m.iter().copied().filter(|v| v[2].abs() < 1e-6).collect();
+            assert!(reach(&mt) > 1.15 * reach(&foot), "{detail}: the cap overhangs ({:.0} over {:.0})", reach(&mt), reach(&foot));
+            // the mesa's top is at 300 and collides as the ground does
+            let ground = lvl.mesh.surfaces.iter().position(|s| s == "ground").unwrap() as i64;
+            let on_mesa = |t: &[usize; 3]| t.iter().all(|&v| dist([tops.verts[v][0], tops.verts[v][1]], [-800.0, 500.0]) < 400.0);
+            assert!(tops.tris.iter().enumerate().filter(|(_, t)| on_mesa(t)).all(|(k, t)| tops.surf[k] == ground && t.iter().all(|&v| (tops.verts[v][2] - 300.0).abs() < 1e-6)));
+            // its grooves cut in: points well inside its foot halfway up a layer
+            let mesa = near(rocks, [-800.0, 500.0], 500.0);
+            let r_at = |z: f64| mesa.iter().filter(|v| (v[2] - z).abs() < 1e-6).map(|v| dist([v[0], v[1]], [-800.0, 500.0])).sum::<f64>();
+            assert!(r_at(50.0) < r_at(100.0), "{detail}: a groove halfway up the first layer");
+            // the rocks' sides keep within the clamped cliff texture
+            let cliff = lvl.mesh.materials.iter().position(|m| m == "cliff").unwrap();
+            let on_rock = |t: &[usize; 3]| t.iter().all(|&v| [[300.0, -1000.0], [-800.0, 500.0]].iter().any(|&c| dist([rocks.verts[v][0], rocks.verts[v][1]], c) < 400.0));
+            for (k, uv) in rocks.uvs.iter().enumerate() {
+                if rocks.mat[k] == cliff && on_rock(&rocks.tris[k]) {
+                    assert!(uv.iter().all(|q| q[1] > -1e-6 && q[1] < 1.0 + 1e-6), "{detail}: v {uv:?}");
+                    // stretched, the texture is once over the side: its top at the top, its foot at the foot
+                    if walls == "stretched" {
+                        for (c, q) in rocks.tris[k].iter().zip(uv) {
+                            let z = rocks.verts[*c][2];
+                            if (z - 260.0).abs() < 1e-6 || (z - 300.0).abs() < 1e-6 {
+                                assert!((q[1] - 1.0).abs() < 1e-6, "{detail}: v {} at the top", q[1]);
+                            } else if z.abs() < 1e-6 {
+                                assert!(q[1].abs() < 1e-6, "{detail}: v {} at the foot", q[1]);
+                            }
+                        }
+                    }
+                }
+            }
+            // the arch: feet in the ground, the crown's top at 450 over it
+            let a = near(rocks, [-600.0, -950.0], 900.0);
+            assert!(a.iter().any(|v| v[2] < -rocks::SINK + 1e-6), "{detail}: its feet are in the ground");
+            let crown = near(tops, [-600.0, -950.0], 900.0).iter().map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+            assert!((crown - 450.0).abs() < 2.0, "{detail}: the crown at {crown:.1}");
+        }
+        // lower detail is lighter
+        let tris = |detail: &str| {
+            let mut d = rocks_doc();
+            d.settings.detail = detail.into();
+            let lvl = build(&d, &th).unwrap();
+            lvl.mesh.objects.iter().filter(|o| o.name.starts_with("rock")).map(|o| o.tris.len()).sum::<usize>()
+        };
+        assert!(tris("low") * 5 < tris("high") * 3, "{} {}", tris("low"), tris("high"));
+    }
+
+    /// An arch's own segments set how many pieces it's built of along it (its top a quad each),
+    /// keeping one at its crown; with none, `arch_lengths` and `arch_split` say how many it gets.
+    #[test]
+    fn arches_take_their_segments() {
+        let th = Theme::kokiri();
+        let nodes = vec![vec![-1000.0, -700.0], vec![-200.0, -1200.0]];
+        for segments in [Some(6), Some(40), None] {
+            let mut d = sample_doc();
+            d.lines.push(Line { name: "arch".into(), kind: "arch".into(), nodes: nodes.clone(), height: Some(450.0), segments, ..Default::default() });
+            let lvl = build(&d, &th).unwrap();
+            assert!(lvl.problems.is_empty(), "{segments:?}: {:?}", lvl.problems);
+            assert!(open_edges(&lvl, &["rocks", "rock_tops"]).is_empty(), "{segments:?}: closed");
+            let tops = lvl.mesh.objects.iter().find(|o| o.name == "rock_tops").unwrap();
+            let want = segments.map_or_else(
+                || {
+                    let plan: Vec<P2> = nodes.iter().map(|n| [n[0], n[1]]).collect();
+                    let (a_top, total) = rocks::arch_lengths(&plan, [0.0, 0.0], 450.0);
+                    let (m0, m1) = rocks::arch_split(a_top, total, rocks::arch_step(&d.settings), None);
+                    m0 + m1
+                },
+                |n| n as usize,
+            );
+            assert_eq!(tops.tris.len(), 2 * want, "{segments:?}");
+            let crown = tops.verts.iter().map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+            assert!((crown - 450.0).abs() < 1.0, "{segments:?}: crown {crown:.1}");
+        }
+    }
+
+    /// What can't be built is reported: contours out of order, an arch too short for its width or
+    /// too thick for its height, a rock off the ground.
+    #[test]
+    fn rocks_and_arches_report_what_they_cant_do() {
+        let th = Theme::kokiri();
+        let problems = |l: Line| {
+            let mut d = sample_doc();
+            d.lines.push(l);
+            build(&d, &th).unwrap().problems
+        };
+        let square = |cx: f64, cy: f64| vec![vec![cx - 100.0, cy - 100.0], vec![cx + 100.0, cy - 100.0], vec![cx + 100.0, cy + 100.0], vec![cx - 100.0, cy + 100.0]];
+        let p = problems(Line { name: "r".into(), kind: "rock".into(), nodes: square(300.0, -1000.0), contours: vec![Contour::new(200.0, 0.8), Contour::new(150.0, 0.5)], ..Default::default() });
+        assert!(p.iter().any(|p| p.contains("isn't above the one below")), "{p:?}");
+        let p = problems(Line { name: "r".into(), kind: "rock".into(), nodes: square(9000.0, 0.0), ..Default::default() });
+        assert!(p.iter().any(|p| p.contains("isn't on the ground")), "{p:?}");
+        let p = problems(Line { name: "a".into(), kind: "arch".into(), nodes: vec![vec![0.0, -1000.0], vec![100.0, -1000.0]], ..Default::default() });
+        assert!(p.iter().any(|p| p.contains("less than its width")), "{p:?}");
+        let p = problems(Line { name: "a".into(), kind: "arch".into(), nodes: vec![vec![-600.0, -1000.0], vec![400.0, -1000.0]], height: Some(120.0), ..Default::default() });
+        assert!(p.iter().any(|p| p.contains("no room under it")), "{p:?}");
     }
 
     #[test]

@@ -134,6 +134,38 @@ pub fn move_group(doc: &mut Doc, refs: &[NodeRef], p: P2) {
     }
 }
 
+/// Every node of loop l, with the nodes welded to them (a region drawn against the outline takes
+/// the outline's shared nodes along), and where each is: what moving it whole moves.
+pub fn loop_whole(doc: &Doc, l: usize) -> Vec<(NodeRef, P2)> {
+    let mut out: Vec<(NodeRef, P2)> = vec![];
+    for i in 0..loop_nodes(doc, l).len() {
+        for r in group(doc, NodeRef::Loop(l, i)) {
+            if !out.iter().any(|x| x.0 == r) {
+                out.push((r, node_pos(doc, r)));
+            }
+        }
+    }
+    out
+}
+
+/// Every node of path k, and where each is.
+pub fn path_whole(doc: &Doc, k: usize) -> Vec<(NodeRef, P2)> {
+    (0..doc.paths[k].nodes.len()).map(|i| NodeRef::Path(k, i)).map(|r| (r, node_pos(doc, r))).collect()
+}
+
+/// Every node of line k, and where each is.
+pub fn line_whole(doc: &Doc, k: usize) -> Vec<(NodeRef, P2)> {
+    (0..doc.lines[k].nodes.len()).map(|i| NodeRef::Line(k, i)).map(|r| (r, node_pos(doc, r))).collect()
+}
+
+/// Moves nodes from where they were (`start`, as `*_whole` gave them) by `d`, to whole units.
+pub fn move_whole(doc: &mut Doc, start: &[(NodeRef, P2)], d: P2) {
+    let d = [d[0].round(), d[1].round()];
+    for &(r, p) in start {
+        set_pos(doc, r, [p[0] + d[0], p[1] + d[1]]);
+    }
+}
+
 pub fn is_sharp(doc: &Doc, refs: &[NodeRef]) -> bool {
     refs.iter().any(|&r| match r {
         NodeRef::Loop(l, i) => node_sharp(&loop_nodes(doc, l)[i]),
@@ -412,9 +444,13 @@ impl Shapes {
                 if xy.len() < 2 {
                     return xy.into_iter().map(|q| (q, 0)).collect();
                 }
-                if l.kind == "dirt" || l.kind == "tunnel" {
+                if l.kind == "dirt" || l.kind == "tunnel" || l.kind == "arch" {
                     let (line, node_s) = centre_line(&xy, path_sampling(doc));
                     return line.into_iter().map(|(q, s)| ((q), (0..xy.len() - 1).rev().find(|&k| node_s[k] <= s + 1e-9).unwrap_or(0))).collect();
+                }
+                // a rock's footprint: the closed curve the builder lofts it from
+                if l.kind == "rock" && xy.len() >= 3 {
+                    return rock_footprint(doc, l);
                 }
                 let mut pts: Vec<(P2, usize)> = xy.iter().enumerate().map(|(i, &q)| (q, i)).collect();
                 if l.closed || l.kind == "hedge" {
@@ -440,6 +476,19 @@ impl Shapes {
             }
         }
         best.map(|(_, k, i, q)| (k, i, q))
+    }
+
+    /// The closed line (a rock, a hedge, a closed fence) whose shape p is inside, the smallest.
+    pub fn line_at(&self, doc: &Doc, p: P2) -> Option<usize> {
+        (0..self.lines.len())
+            .filter(|&k| {
+                let l = &doc.lines[k];
+                (l.closed || l.kind == "rock" || l.kind == "hedge") && self.lines[k].len() >= 4
+            })
+            .map(|k| (k, self.lines[k].iter().map(|x| x.0).collect::<Vec<P2>>()))
+            .filter(|(_, pts)| point_in_poly(p, pts))
+            .min_by(|a, b| signed_area(&a.1).abs().total_cmp(&signed_area(&b.1).abs()))
+            .map(|x| x.0)
     }
 
     pub fn poly(&self, l: usize) -> Vec<P2> {
@@ -584,7 +633,68 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
 pub fn new_line(doc: &Doc, kind: &str, nodes: Vec<P2>) -> Line {
     let names: Vec<&str> = doc.lines.iter().map(|r| r.name.as_str()).collect();
     let name = (1..).map(|i| format!("{kind} {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
-    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: kind == "hedge", height: None, noise: None }
+    Line { name, kind: kind.into(), nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), width: None, closed: kind == "hedge" || kind == "rock", height: None, noise: None, ..Default::default() }
+}
+
+/// A rock's footprint as the builder samples it (`overworld::rocks::footprint`), closed (its first
+/// point again at the end), each point with the node its piece starts from.
+pub fn rock_footprint(doc: &Doc, l: &Line) -> Vec<(P2, usize)> {
+    let nodes: Vec<(usize, &Vec<f64>)> = l.nodes.iter().enumerate().filter(|(_, n)| n.len() >= 2).collect();
+    let xy: Vec<P2> = nodes.iter().map(|(_, n)| [n[0], n[1]]).collect();
+    let sharp: Vec<bool> = nodes.iter().map(|(_, n)| node_sharp(n)).collect();
+    let curves = doc.settings.detail().map(|d| d.curves).unwrap_or(overworld::geom::Sampling::Every(doc.settings.sample.max(1.0)));
+    let mut out: Vec<(P2, usize)> = overworld::rocks::footprint_pieces(&xy, &sharp, curves).into_iter().map(|(q, k)| (q, nodes[k].0)).collect();
+    if let Some(&(p, _)) = out.first() {
+        out.push((p, nodes[nodes.len() - 1].0));
+    }
+    out
+}
+
+/// A rock's contours over its footprint `foot` (closed, as `rock_footprint` gives it), lowest
+/// first: the footprint scaled about its centre and shifted, as the builder lofts it (without the
+/// lumps).
+pub fn rock_contours(l: &Line, foot: &[P2]) -> Vec<Vec<P2>> {
+    if foot.len() < 3 {
+        return vec![];
+    }
+    let c = overworld::rocks::centroid(&foot[..foot.len() - 1]);
+    l.contours.iter().map(|ct| foot.iter().map(|p| [c[0] + (p[0] - c[0]) * ct.scale + ct.shift[0], c[1] + (p[1] - c[1]) * ct.scale + ct.shift[1]]).collect()).collect()
+}
+
+/// Makes a rock `dz` taller, its contours keeping their proportions (their heights all scaled).
+pub fn rock_taller(l: &mut Line, dz: f64) {
+    let Some(top) = l.contours.last().map(|c| c.z) else { return };
+    let k = ((top + dz).max(20.0)) / top.max(1e-9);
+    for c in &mut l.contours {
+        c.z = (c.z * k).round();
+    }
+}
+
+/// The point `t` (0 to 1) of the way along a polyline, and its direction there.
+pub fn along(c: &[(P2, usize)], t: f64) -> Option<(P2, P2)> {
+    let total: f64 = c.windows(2).map(|w| dist(w[0].0, w[1].0)).sum();
+    let mut left = total * t.clamp(0.0, 1.0);
+    let last = c.len().saturating_sub(2);
+    for (i, w) in c.windows(2).enumerate() {
+        let d = dist(w[0].0, w[1].0);
+        if d > 1e-9 && (left <= d || i == last) {
+            let f = (left / d).clamp(0.0, 1.0);
+            let dir = [(w[1].0[0] - w[0].0[0]) / d, (w[1].0[1] - w[0].0[1]) / d];
+            return Some((lerp(w[0].0, w[1].0, f), dir));
+        }
+        left -= d;
+    }
+    None
+}
+
+/// A new rock's contours, lumps and layers in a look (`overworld::doc::rock_looks`), sized to its
+/// footprint.
+pub fn rock_shape(l: &mut Line, look: &overworld::doc::RockLook) {
+    let xy: Vec<P2> = l.nodes.iter().filter(|n| n.len() >= 2).map(|n| [n[0], n[1]]).collect();
+    let size = 2.0 * (signed_area(&xy).abs() / std::f64::consts::PI).sqrt();
+    l.contours = look.contours(size);
+    l.noise = look.noise();
+    l.layers = look.layers.map(|(height, depth)| overworld::doc::Layers { height: (height * (size / 400.0).clamp(0.5, 4.0)).round(), depth });
 }
 
 /// A tunnel's rough walls when they're first turned on.
@@ -806,6 +916,59 @@ mod tests {
         let s = to_json(&d);
         assert!(s.contains("[400.0, 300.0, 1.0]"), "{s}");
         let back: Doc = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, d);
+    }
+
+    /// A rock is picked inside its footprint and moves whole; a region moving whole takes the
+    /// outline nodes it shares along.
+    #[test]
+    fn whole_things_move_together() {
+        let mut d = doc();
+        let sq: Vec<P2> = vec![[-100.0, -100.0], [100.0, -100.0], [100.0, 100.0], [-100.0, 100.0]];
+        d.lines.push(new_line(&d, "rock", sq.clone()));
+        let s = Shapes::new(&d);
+        assert_eq!(s.line_at(&d, [10.0, 20.0]), Some(0));
+        assert_eq!(s.line_at(&d, [500.0, 20.0]), None);
+        let start = line_whole(&d, 0);
+        move_whole(&mut d, &start, [50.4, -30.0]);
+        assert!(d.lines[0].nodes.iter().zip(&sq).all(|(n, p)| n[0] == p[0] + 50.0 && n[1] == p[1] - 30.0));
+        // the region shares outline nodes: they go with it, and stay shared
+        let r = loop_whole(&d, 1);
+        let shared = r.iter().filter(|x| matches!(x.0, NodeRef::Loop(0, _))).count();
+        assert!(shared > 0, "the doc's region shares the outline's nodes");
+        move_whole(&mut d, &r, [10.0, 0.0]);
+        for &(q, p) in &r {
+            assert_eq!(node_pos(&d, q), [p[0] + 10.0, p[1]]);
+        }
+    }
+
+    /// A new rock takes a look's shape sized to its footprint; its contours are drawn round its
+    /// footprint's centre; it grows taller in proportion; its shape round-trips through JSON.
+    #[test]
+    fn rocks_take_a_look_grow_and_round_trip() {
+        let mut d = doc();
+        let sq: Vec<P2> = vec![[-400.0, -400.0], [400.0, -400.0], [400.0, 400.0], [-400.0, 400.0]];
+        let mut l = new_line(&d, "rock", sq);
+        assert!(l.closed);
+        let looks = overworld::doc::rock_looks();
+        let mesa = looks.iter().find(|x| x.name == "Mesa").unwrap();
+        rock_shape(&mut l, mesa);
+        assert!(mesa.is(&l) && !looks[0].is(&l));
+        // 800 across: about twice the look's heights (for 400)
+        let top = l.contours.last().unwrap().z;
+        assert!((top - 380.0 * 2.0 * (4.0 / std::f64::consts::PI).sqrt()).abs() < 2.0, "{top}");
+        assert!(l.layers.is_some() && l.noise.is_some());
+        rock_taller(&mut l, 100.0);
+        assert!((l.contours.last().unwrap().z - top - 100.0).abs() < 1.0);
+        assert!(mesa.is(&l), "still a mesa, taller");
+        d.lines.push(l);
+        let s = Shapes::new(&d);
+        let foot: Vec<P2> = s.lines[0].iter().map(|x| x.0).collect();
+        assert_eq!(foot.first(), foot.last(), "closed");
+        let ring = &rock_contours(&d.lines[0], &foot)[0];
+        // the footprint scaled by the mesa's 0.86 about its centre (the middle of the square)
+        assert!(ring.iter().zip(&foot).all(|(p, q)| dist(*p, [q[0] * 0.86, q[1] * 0.86]) < 1e-6));
+        let back: Doc = serde_json::from_str(&to_json(&d)).unwrap();
         assert_eq!(back, d);
     }
 }

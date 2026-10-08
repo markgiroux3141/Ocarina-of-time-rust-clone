@@ -45,7 +45,8 @@ enum Tool {
     Brush,
     /// Placing kit pieces.
     Prop,
-    /// Drawing a line of a kind: "dirt", "fence", "bridge", "hedge" (a closed shape) or "tunnel".
+    /// Drawing a line of a kind: "dirt", "fence", "bridge", "hedge" (a closed shape), "tunnel",
+    /// "rock" (a closed shape) or "arch".
     Line(&'static str),
 }
 
@@ -65,6 +66,8 @@ enum Sel {
 enum Gesture {
     None,
     Nodes(Vec<NodeRef>),
+    /// Moving a whole region, path or line: its nodes where they were, and where the drag began.
+    Whole { start: Vec<(NodeRef, P2)>, from: P2 },
     Pan,
     Prop(PropDrag),
 }
@@ -215,6 +218,10 @@ struct NewThings {
     tunnel_width: Option<f64>,
     tunnel_height: Option<f64>,
     tunnel_rough: bool,
+    /// The look a new rock starts with (`overworld::doc::rock_looks`).
+    rock_look: usize,
+    arch_width: Option<f64>,
+    arch_height: Option<f64>,
 }
 
 impl Default for NewThings {
@@ -235,6 +242,9 @@ impl Default for NewThings {
             tunnel_width: None,
             tunnel_height: None,
             tunnel_rough: false,
+            rock_look: 0,
+            arch_width: None,
+            arch_height: None,
         }
     }
 }
@@ -888,6 +898,12 @@ impl App {
                 let z = self.doc.props[i].z.or(self.prop_z(i)).unwrap_or(0.0);
                 self.doc.props[i].z = Some((z + dz).round());
             }
+            // a rock grows taller (its contours keep their proportions), an arch's crown rises
+            Sel::Line(k) if self.doc.lines[k].kind == "rock" => edit::rock_taller(&mut self.doc.lines[k], dz),
+            Sel::Line(k) if self.doc.lines[k].kind == "arch" => {
+                let h = self.doc.lines[k].height.unwrap_or(self.theme.rocks.as_ref().map_or(560.0, |r| r.arch.height));
+                self.doc.lines[k].height = Some((h + dz).max(40.0));
+            }
             _ => {}
         }
     }
@@ -1006,6 +1022,39 @@ impl App {
         false
     }
 
+    /// What a drag from w moves whole (not a node or a prop: those come first): any line on it or
+    /// round it (a rock, its footprint), else the selected path on it, else the selected regions
+    /// round it (not the outline: that would be the whole level). The selection it makes, and the
+    /// nodes it moves, where they are.
+    fn whole_at(&self, w: P2) -> Option<(Sel, Vec<(NodeRef, P2)>)> {
+        let tol = PICK / self.view.scale;
+        let pk = &self.pickable;
+        let line = self.shapes.line_near(&self.doc, w, tol, true).map(|x| x.0).or_else(|| self.shapes.line_at(&self.doc, w));
+        if let Some(k) = line.filter(|_| pk.lines) {
+            return Some((Sel::Line(k), edit::line_whole(&self.doc, k)));
+        }
+        if let Sel::Path(k) = self.sel {
+            if self.shapes.path_near(&self.doc, w, tol, true).is_some_and(|x| x.0 == k) {
+                return Some((Sel::Path(k), edit::path_whole(&self.doc, k)));
+            }
+        }
+        if let Sel::Loop(l) = self.sel {
+            let ls: Vec<usize> = self.selected_loops().into_iter().filter(|&l| l > 0).collect();
+            if ls.iter().any(|&q| point_in_poly(w, &self.shapes.poly(q))) {
+                let mut start: Vec<(NodeRef, P2)> = vec![];
+                for q in ls {
+                    for x in edit::loop_whole(&self.doc, q) {
+                        if !start.iter().any(|y| y.0 == x.0) {
+                            start.push(x);
+                        }
+                    }
+                }
+                return Some((Sel::Loop(l), start));
+            }
+        }
+        None
+    }
+
     /// What a click at w picks: nodes, then props, lines, paths and regions, of the kinds the
     /// palette lets clicks pick.
     fn pick(&self, w: P2) -> Sel {
@@ -1018,6 +1067,9 @@ impl App {
             return Sel::Prop(i);
         }
         if let Some((k, _, _)) = self.shapes.line_near(&self.doc, w, tol, true).filter(|_| pk.lines) {
+            return Sel::Line(k);
+        }
+        if let Some(k) = self.shapes.line_at(&self.doc, w).filter(|_| pk.lines) {
             return Sel::Line(k);
         }
         if let Some((k, _, _)) = self.shapes.path_near(&self.doc, w, tol, true).filter(|_| pk.paths) {
@@ -1057,7 +1109,7 @@ impl App {
     /// inserted there, so the edge is shared), or a free point.
     fn draw_click(&mut self, w: P2) {
         let tol = PICK / self.view.scale;
-        if matches!(self.tool, Tool::Region | Tool::Line("hedge")) && self.drawing.len() >= 3 && dist(w, self.drawing[0]) <= tol {
+        if matches!(self.tool, Tool::Region | Tool::Line("hedge" | "rock")) && self.drawing.len() >= 3 && dist(w, self.drawing[0]) <= tol {
             self.finish_drawing();
             return;
         }
@@ -1137,6 +1189,7 @@ impl App {
                 self.tool = Tool::Select;
             }
             Tool::Line("hedge") if pts.len() < 3 => self.status = "a hedge needs 3 points".into(),
+            Tool::Line("rock") if pts.len() < 3 => self.status = "a rock needs 3 points round its footprint".into(),
             Tool::Line(kind) if pts.len() >= 2 => {
                 let kind = if kind == "fence" { self.new.fence.as_str() } else { kind };
                 let mut l = edit::new_line(&self.doc, kind, pts);
@@ -1144,6 +1197,15 @@ impl App {
                     "fence" | "lattice" => l.closed = self.new.closed,
                     "dirt" => l.width = self.new.dirt_width,
                     "bridge" => l.width = self.new.bridge_width,
+                    "rock" => {
+                        let looks = overworld::doc::rock_looks();
+                        let look = &looks[self.new.rock_look.min(looks.len() - 1)];
+                        edit::rock_shape(&mut l, look);
+                    }
+                    "arch" => {
+                        l.width = self.new.arch_width;
+                        l.height = self.new.arch_height;
+                    }
                     "tunnel" => {
                         l.width = self.new.tunnel_width;
                         l.height = self.new.tunnel_height;
@@ -1268,6 +1330,12 @@ impl App {
         if pressed(Key::U) {
             self.set_tool(Tool::Line("tunnel"));
         }
+        if pressed(Key::O) {
+            self.set_tool(Tool::Line("rock"));
+        }
+        if pressed(Key::A) {
+            self.set_tool(Tool::Line("arch"));
+        }
         let fine = if shift { 1.0 } else { 15.0 };
         if pressed(Key::Q) {
             self.turn_prop(fine);
@@ -1372,6 +1440,9 @@ impl App {
                     self.sel = Sel::Prop(i);
                     let at = self.doc.props[i].at;
                     self.gesture = Gesture::Prop(PropDrag::Move { i, off: [at[0] - o[0], at[1] - o[1]] });
+                } else if let Some((sel, start)) = self.whole_at(o).filter(|_| self.tool == Tool::Select) {
+                    self.sel = sel;
+                    self.gesture = Gesture::Whole { start, from: o };
                 }
             }
         }
@@ -1395,6 +1466,15 @@ impl App {
                         let w = self.view.to_world(p);
                         let alt = ctx.input(|i| i.modifiers.alt);
                         self.drag_prop(*d, w, alt);
+                    }
+                }
+                Gesture::Whole { start, from } => {
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let w = self.view.to_world(p);
+                        let d = [w[0] - from[0], w[1] - from[1]];
+                        let start = start.clone();
+                        edit::move_whole(&mut self.doc, &start, d);
+                        self.status = format!("moving by {:.0}, {:.0}", d[0].round(), d[1].round());
                     }
                 }
                 Gesture::Pan => self.pan(resp.drag_delta()),
@@ -1661,7 +1741,10 @@ impl App {
                         (Some(i), _, _) => Sel::Prop(i),
                         (None, Some((k, _, _)), _) => Sel::Line(k),
                         (None, None, Some((k, _, _))) => Sel::Path(k),
-                        _ => self.shapes.loop_at(w).map_or(Sel::None, Sel::Loop),
+                        _ => match self.shapes.line_at(&self.doc, w) {
+                            Some(k) => Sel::Line(k),
+                            None => self.shapes.loop_at(w).map_or(Sel::None, Sel::Loop),
+                        },
                     }
                 }
                 (None, None) => Sel::None,
@@ -1766,6 +1849,91 @@ impl App {
             if let Ok(pr) = crate::profile::profile(&self.doc, &self.shapes, k) {
                 let pts: Vec<[f64; 3]> = pr.geo.st.iter().map(|x| [x.p[0], x.p[1], x.z + 2.0]).collect();
                 line3(&pts, false, Stroke::new(3.0, Color32::from_rgb(235, 130, 255)));
+            }
+        }
+        // the selected line, prop or node, in the selection's orange: a rock as a cage of its
+        // contours, an arch along its top, anything else along the ground
+        let hi = |pts: &[[f64; 3]], closed: bool| {
+            line3(pts, closed, Stroke::new(4.0, Color32::from_black_alpha(120)));
+            line3(pts, closed, Stroke::new(2.0, Color32::from_rgb(255, 150, 50)));
+        };
+        let ground = |p: P2| edit::base_z(&self.doc, &self.shapes, p) + lift(p);
+        let floor = |p: P2| self.scene.as_ref().and_then(|s| s.floor_z(p)).unwrap_or_else(|| ground(p));
+        let sel_line = match self.sel {
+            Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => Some(k),
+            _ => None,
+        };
+        if let Some(k) = sel_line.filter(|&k| k < self.shapes.lines.len()) {
+            let l = &self.doc.lines[k];
+            let c = &self.shapes.lines[k];
+            let plan: Vec<P2> = c.iter().map(|x| x.0).collect();
+            match l.kind.as_str() {
+                "rock" if plan.len() > 3 => {
+                    // its foot on the design ground (the build's floor there may be its own top)
+                    let foot = plan.iter().map(|&p| ground(p)).fold(f64::INFINITY, f64::min);
+                    let base: Vec<[f64; 3]> = plan.iter().map(|p| [p[0], p[1], foot + 1.0]).collect();
+                    hi(&base, true);
+                    let rings = edit::rock_contours(l, &plan);
+                    for (ring, ct) in rings.iter().zip(&l.contours) {
+                        let pts: Vec<[f64; 3]> = ring.iter().map(|p| [p[0], p[1], foot + ct.z + 1.0]).collect();
+                        hi(&pts, true);
+                    }
+                    // a few uprights joining them
+                    let n = plan.len().saturating_sub(1).max(1);
+                    for j in (0..n).step_by((n / 6).max(1)) {
+                        let mut up = vec![base[j]];
+                        up.extend(rings.iter().zip(&l.contours).map(|(r, ct)| [r[j][0], r[j][1], foot + ct.z + 1.0]));
+                        hi(&up, false);
+                    }
+                }
+                "arch" if plan.len() >= 2 => {
+                    let h = l.height.or(self.theme.rocks.as_ref().map(|r| r.arch.height)).unwrap_or(560.0);
+                    let feet = [ground(plan[0]), ground(plan[plan.len() - 1])];
+                    let total: f64 = plan.windows(2).map(|w| dist(w[0], w[1])).sum::<f64>().max(1e-9);
+                    let mut s = 0.0;
+                    let mut pts = vec![];
+                    for (i, p) in plan.iter().enumerate() {
+                        if i > 0 {
+                            s += dist(plan[i - 1], *p);
+                        }
+                        pts.push([p[0], p[1], overworld::rocks::arch_z(feet, h, s / total) + 3.0]);
+                    }
+                    hi(&pts, false);
+                }
+                "tunnel" => {
+                    let built = self.level.as_ref().and_then(|lv| lv.tunnels.iter().find(|t| t.0 == k)).map(|t| t.1.iter().map(|q| [q[0], q[1], q[2] + 3.0]).collect::<Vec<_>>());
+                    hi(&built.unwrap_or_else(|| plan.iter().map(|&p| [p[0], p[1], floor(p) + 3.0]).collect()), false);
+                }
+                _ => {
+                    let pts: Vec<[f64; 3]> = plan.iter().map(|&p| [p[0], p[1], floor(p) + 3.0]).collect();
+                    hi(&pts, false);
+                }
+            }
+        }
+        if let Sel::Prop(i) = self.sel {
+            if i < self.doc.props.len() {
+                let fp = self.prop_footprint(i);
+                let z = self.doc.props[i].z.or(self.prop_z(i)).unwrap_or_else(|| floor(self.doc.props[i].at));
+                let tall = self.kit.as_ref().and_then(|k| k.get(&self.doc.props[i].piece)).map_or(60.0, |p| (p.bounds[1][2] - p.bounds[0][2]) * self.doc.props[i].scale[2]);
+                let lo: Vec<[f64; 3]> = fp.iter().map(|p| [p[0], p[1], z + 1.0]).collect();
+                let up: Vec<[f64; 3]> = fp.iter().map(|p| [p[0], p[1], z + tall]).collect();
+                hi(&lo, true);
+                hi(&up, true);
+                for (a, b) in lo.iter().zip(&up) {
+                    hi(&[*a, *b], false);
+                }
+            }
+        }
+        // a node: a post standing on it
+        if let Sel::Node(r) = self.sel {
+            let p = edit::node_pos(&self.doc, r);
+            let z = match r {
+                NodeRef::Path(k, i) => self.doc.paths[k].nodes[i].get(2).copied().flatten().unwrap_or_else(|| floor(p)),
+                _ => floor(p),
+            };
+            hi(&[[p[0], p[1], z], [p[0], p[1], z + 150.0]], false);
+            if let Some(q) = cam.project(rect, glam::Vec3::new(p[0] as f32, p[1] as f32, (z + 150.0) as f32)) {
+                painter.circle(q, 5.0, Color32::from_rgb(255, 150, 50), Stroke::new(1.5, Color32::BLACK));
             }
         }
         if let Some(p) = self.profile_hover {
@@ -2116,6 +2284,33 @@ impl App {
                 painter.add(Shape::line(band.clone(), Stroke::new(px.max(2.0) + 2.0, col.gamma_multiply(if sel { 0.5 } else { 0.3 }))));
                 painter.add(Shape::line(band, Stroke::new(px.max(2.0) - 1.0, Color32::from_rgba_unmultiplied(20, 16, 30, if sel { 150 } else { 110 }))));
             }
+            // a rock: its footprint solid, its contours dashed inside (or outside, overhanging)
+            if l.kind == "rock" {
+                if sel {
+                    painter.add(Shape::line(pts.clone(), Stroke::new(6.0, Color32::from_black_alpha(110))));
+                }
+                let foot: Vec<P2> = c.iter().map(|x| x.0).collect();
+                let n = l.contours.len();
+                for (j, ring) in edit::rock_contours(l, &foot).iter().enumerate() {
+                    let rp: Vec<Pos2> = ring.iter().map(|&q| v.to_screen(q)).collect();
+                    let top = j + 1 == n;
+                    let a = if sel { 1.0 } else { 0.55 };
+                    painter.extend(Shape::dashed_line(&rp, Stroke::new(if top { 1.8 } else { 1.0 }, col.gamma_multiply(a)), if top { 7.0 } else { 3.0 }, 3.0));
+                }
+                painter.add(Shape::line(pts, Stroke::new(if sel { 3.0 } else { 1.8 }, col)));
+                continue;
+            }
+            // an arch: its width as a band, its crown marked
+            if l.kind == "arch" {
+                let w = l.width.or(self.theme.rocks.as_ref().map(|r| r.arch.width)).unwrap_or(200.0);
+                painter.add(Shape::line(pts.clone(), Stroke::new(((w * v.scale) as f32).max(2.0), col.gamma_multiply(if sel { 0.4 } else { 0.22 }))));
+                if let Some(m) = edit::along(c, 0.5) {
+                    let s = v.to_screen(m.0);
+                    let d = Vec2::new(m.1[0] as f32, -m.1[1] as f32);
+                    let n = Vec2::new(-d.y, d.x) * (((w * 0.5 * v.scale) as f32).max(4.0) + 3.0);
+                    painter.line_segment([s - n, s + n], Stroke::new(if sel { 2.5 } else { 1.5 }, col));
+                }
+            }
             if sel {
                 painter.add(Shape::line(pts.clone(), Stroke::new(5.0, Color32::from_black_alpha(110))));
             }
@@ -2142,6 +2337,24 @@ impl App {
             for (k, c) in self.shapes.paths.iter().enumerate() {
                 if let Some(m) = c.get(c.len() / 2) {
                     label(v.to_screen(m.0) + Vec2::new(0.0, -12.0), &edit::path_name(&self.doc, k), Color32::from_rgb(245, 200, 255));
+                }
+            }
+            // rocks and arches: their name and how tall they are
+            for (k, c) in self.shapes.lines.iter().enumerate() {
+                let l = &self.doc.lines[k];
+                let h = match l.kind.as_str() {
+                    "rock" => l.contours.last().map(|t| t.z),
+                    "arch" => l.height.or(self.theme.rocks.as_ref().map(|r| r.arch.height)),
+                    _ => continue,
+                };
+                let at = if l.kind == "rock" && c.len() > 3 {
+                    let foot: Vec<P2> = c[..c.len() - 1].iter().map(|x| x.0).collect();
+                    Some(overworld::rocks::centroid(&foot))
+                } else {
+                    edit::along(c, 0.5).map(|m| m.0)
+                };
+                if let (Some(at), Some(h)) = (at, h) {
+                    label(v.to_screen(at) + Vec2::new(0.0, -12.0), &format!("{}  {h:.0}", edit::line_name(&self.doc, k)), Color32::from_rgb(240, 220, 190));
                 }
             }
             if v.scale > 0.06 {
@@ -2242,7 +2455,7 @@ impl App {
             for p in &pts[..self.drawing.len()] {
                 painter.circle_filled(*p, 4.0, col);
             }
-            if matches!(self.tool, Tool::Region | Tool::Line("hedge")) && self.drawing.len() >= 3 {
+            if matches!(self.tool, Tool::Region | Tool::Line("hedge" | "rock")) && self.drawing.len() >= 3 {
                 let first = v.to_screen(self.drawing[0]);
                 let close = hover.is_some_and(|h| h.distance(first) as f64 <= PICK);
                 painter.circle_stroke(first, if close { 10.0 } else { 7.0 }, Stroke::new(2.0, col));
@@ -2312,6 +2525,7 @@ fn line_colour(kind: &str) -> Color32 {
         "bridge" => Color32::from_rgb(160, 210, 240),
         "hedge" => Color32::from_rgb(127, 191, 77),
         "tunnel" => Color32::from_rgb(190, 170, 255),
+        "rock" | "arch" => Color32::from_rgb(214, 186, 150),
         _ => Color32::from_rgb(200, 150, 100),
     }
 }
@@ -2378,6 +2592,7 @@ impl eframe::App for App {
                 }
             }
             self.layout_overlay(ui, r);
+            self.failed_overlay(ui, r);
         });
         self.windows(&ctx);
 

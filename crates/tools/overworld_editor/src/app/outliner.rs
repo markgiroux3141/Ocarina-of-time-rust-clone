@@ -70,11 +70,13 @@ impl App {
             .enumerate()
             .map(|(k, l)| {
                 let meta = match l.kind.as_str() {
-                    "fence" => "rails",
-                    "lattice" => "lattice",
-                    k => k,
+                    "fence" => "rails".to_string(),
+                    "lattice" => "lattice".to_string(),
+                    "rock" => format!("rock {:.0}", l.contours.last().map_or(0.0, |c| c.z)),
+                    "arch" => format!("arch {:.0}", l.height.or(self.theme.rocks.as_ref().map(|r| r.arch.height)).unwrap_or(0.0)),
+                    k => k.to_string(),
                 };
-                Row { sel: Sel::Line(k), name: edit::line_name(&self.doc, k), meta: meta.into(), col: line_colour(&l.kind) }
+                Row { sel: Sel::Line(k), name: edit::line_name(&self.doc, k), meta, col: line_colour(&l.kind) }
             })
             .collect();
         // props by the kit's kinds, in the kit's order

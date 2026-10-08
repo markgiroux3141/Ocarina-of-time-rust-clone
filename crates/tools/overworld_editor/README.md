@@ -27,7 +27,7 @@ in the File menu.
   8192), the **⚠ problems** (click one to select and frame what it's about), the keys sheet (also `?` or F1), and
   ▶ **Play**.
 - **Tool rail** (far left): the tools as icons with their keys, grouped: select · region, path · brush · props ·
-  dirt, fence, bridge, hedge, tunnel.
+  rock, arch · dirt, fence, bridge, hedge, tunnel.
 - **Palette** (left): what the current tool adds, and how. Select: which kinds a click in the plan picks (turn props
   off to click through to the floor under them, edges off to pick a region by its edge) and the main keys. Region:
   floor, water or pit, and how high a new one starts (a pit: how deep). Path: attached or floating, width, bridge shape. Brush: its six modes, size, strength and hard core, with
@@ -55,6 +55,11 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   Hold Alt to drag without snapping. Double-click a line to add a node: on an edge two loops share, the node goes into both.
   Delete removes the node, region or path. S makes a corner sharp or smooth again. PgUp/PgDn (or `]`/`[`) raise or sink the
   selected region by 20 (Shift: 100), or a path node's height.
+- **Moving a whole thing:** drag a line (a rock or a hedge from anywhere inside its shape, an arch, fence or dirt path along
+  it) to move it whole, in whole units; it's selected as you do. Select a region or a path first, then drag it by its body
+  (not a node) to move it whole: a region takes the nodes it shares with the outline or other regions along, so it stays
+  attached; Shift-clicked regions move together. The outline doesn't move whole (that's the whole level): drag its nodes.
+  A drag on empty ground still pans.
 - **Edges:** a click near a region's edge (between two nodes) selects that edge; Shift-click more edges of the same
   region to select them together. The inspector then shows an *Edge* section above the region's own: its profile, the
   region's (the default) or one of its own: *Cliff*, *Slope* (angle, rounding), *Terraces* (steps, step height, depth),
@@ -125,6 +130,22 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   height* (blank: a straight slope between the mouths). The plan draws it as a dark band where it was built, from mouth
   to mouth. A wall too low, too little ground over it or too tight a turn is reported. See Tunnels in
   `../overworld/README.md`.
+- **Rock (O):** click round its footprint, then click the first point or press Enter, as for a region. Afterwards a click
+  anywhere inside it selects it, and a drag there moves it. It starts in the
+  palette's shape (cards with their silhouettes: *Boulder*, *Mesa*, *Spire*, *Mushroom*, *Pillar*), its heights grown to
+  its size. Its inspector's *Shape* has the same cards (one click reshapes it), and under them a **side view** of it, as
+  it's lofted, with a handle on each contour: drag one up or down for its height, in or out for its width (Shift: finer).
+  *Fine-tune* lists the contours as numbers (height, scale, a shift that leans it) with *+ Contour* and *Remove*.
+  *Surface* has its own lumps (else the theme's), *Layers* (grooves every so often) and its *Style* (any theme's wall
+  style). PgUp/PgDn make it taller or shorter, its contours keeping their proportions. In the plan its footprint is solid
+  and its contours dashed inside it (outside where they overhang), the top one bolder, with its height by its name. Its
+  nodes drag like a hedge's, and a double-click on its edge adds one. See Rocks and arches in `../overworld/README.md`.
+- **Arch (A):** click where each foot stands (points between bend it), then double-click or Enter. The palette and the
+  inspector set its *Height* (the top of its crown over its feet), *Width* (across its top) and *Thickness* (at its
+  crown), each the theme's until set, and the inspector its *Segments*: how many pieces it's built of along it (few for a
+  faceted arch, more for a smooth one; blank shows, greyed, the count the level's detail gives it); *Surface* its lumps
+  and style. PgUp/PgDn raise or lower its crown. The plan draws
+  its width as a band with a tick across its crown. No room under it, or feet closer than its width, is reported.
 - **Openings and wall pieces:** in the Prop tool with the log tunnel, the crawlspace, the vine patch or the waterfall
   chosen, hover a wall, best in the 3D view: a green ghost shows where it would go (fitted to that wall, slid clear of
   corners, with how wide the wall is), or a red ring says why it can't (too low, not flat, not parallel, no room behind).
@@ -161,8 +182,10 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
 - **3D view** (Plan + 3D, or 3D, in the top bar): the build in perspective, textured with its baked lighting as the game
   draws it. Drag to orbit, right-drag to pan, wheel to zoom; a double-click orbits round that spot. Click a region or
   path to select it, then **drag the selected region up or down to raise or sink it** (5-unit steps; Shift: 1). The
-  selection is outlined at its height straight away, and the level catches up when the rebuild lands. F frames both
-  views.
+  selection is outlined at its height straight away, and the level catches up when the rebuild lands. The selection is
+  drawn in orange over the view: a region round its edge, a path along it, a rock as a cage of its footprint and contours,
+  an arch along its top, any other line along the ground, a prop as a box, a node as a post standing on it. F frames
+  both views.
 - **Play:** ▶ Play exports the build and starts the game (`oot_sandbox --level <out dir> --child`) with child Link: the USB
   N64 pad, or the keyboard (WASD, Space A, E B, Q Z-target). W plays from the cursor, and so does the right-click menu's
   "Play from here", facing north. While the game is open, every rebuild is exported and it reloads the level with Link
@@ -173,7 +196,8 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
 **Detail:** Level settings has High / Medium / Low (see Detail in `../overworld/README.md`); click the build status in
 the top bar for each object's triangles. The **collision meter** beside it shows the vertices the game's collision will
 hold, of 8192 at most (amber near it, red past it); its popup has the props' share. A failed build shows the last good
-one, says why under ⚠, and rings the spot the error names (such as loops crossing) in the plan.
+one, says why under ⚠ and in a red banner across the bottom of the views, and rings the spot the error names (such as
+loops crossing) in the plan.
 
 ## Code
 
@@ -188,7 +212,7 @@ one, says why under ⚠, and rings the spot the error names (such as loops cross
   with 4x MSAA and mipmapped textures, shown as an egui image, the way the OoT Clone's `oot_viewer` does it.
 - `app.rs`: the editor's state, tools, plan and 3D input, drawing the plan, undo, files and Play; its panels in `app/`:
   `chrome.rs` (top bar, tool rail, status bar, view overlays, keys sheet, level settings), `palette.rs`,
-  `inspector.rs`, `outliner.rs`, `widgets.rs` (sections, rows, segmented choices, cards, chips, theme-default fields),
+  `inspector.rs` (with a rock's shape cards and side view), `outliner.rs`, `widgets.rs` (sections, rows, segmented choices, cards, chips, theme-default fields),
   `icons.rs` (line icons drawn with egui shapes), `style.rs` (colours, fonts, egui visuals) and `thumbs.rs` (the kit's
   thumbnails, by a small software rasteriser).
 
