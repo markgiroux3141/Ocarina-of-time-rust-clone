@@ -36,49 +36,49 @@
     "z": 0,
     "beyond": [
       {
-        "z": 1200,
+        "z": 405,
         "profile": {
           "kind": "stack",
           "parts": [
             {
               "kind": "wall",
               "rise": 330,
-              "style": "cliff"
+              "style": "kakariko:cliff"
             },
             {
               "kind": "slope",
-              "angle": 36,
-              "rise": 75
-            },
-            {
-              "kind": "slope",
-              "angle": 76,
-              "style": "mountain"
+              "rise": 75,
+              "angle": 36
             }
           ]
+        },
+        "rough": 0.45,
+        "skyline": {
+          "style": "kakariko:mountain",
+          "height": 675
         }
       },
       {
-        "z": 1200,
+        "z": 405,
         "profile": {
           "kind": "stack",
           "parts": [
             {
               "kind": "wall",
               "rise": 330,
-              "style": "cliff"
+              "style": "kakariko:cliff"
             },
             {
               "kind": "slope",
-              "angle": 36,
-              "rise": 75
-            },
-            {
-              "kind": "slope",
-              "angle": 76,
-              "style": "mountain"
+              "rise": 75,
+              "angle": 36
             }
           ]
+        },
+        "rough": 0.45,
+        "skyline": {
+          "style": "kakariko:mountain",
+          "height": 675
         }
       },
       null,
@@ -90,26 +90,27 @@
             {
               "kind": "wall",
               "rise": 320,
-              "style": "brick"
+              "style": "kakariko:brick"
             },
             {
               "kind": "wall",
               "rise": 160,
-              "style": "rock"
+              "style": "kakariko:rock"
             },
             {
               "kind": "slope",
-              "angle": 69,
-              "rise": 300,
-              "style": "rock"
+              "rise": 200,
+              "angle": 65,
+              "style": "kakariko:rock"
             },
             {
               "kind": "slope",
-              "angle": 37,
-              "style": "rock"
+              "angle": 42,
+              "style": "kakariko:rock"
             }
           ]
-        }
+        },
+        "rough": 0.4
       },
       {
         "z": 1160,
@@ -119,26 +120,27 @@
             {
               "kind": "wall",
               "rise": 320,
-              "style": "brick"
+              "style": "kakariko:brick"
             },
             {
               "kind": "wall",
               "rise": 160,
-              "style": "rock"
+              "style": "kakariko:rock"
             },
             {
               "kind": "slope",
-              "angle": 69,
-              "rise": 300,
-              "style": "rock"
+              "rise": 200,
+              "angle": 65,
+              "style": "kakariko:rock"
             },
             {
               "kind": "slope",
-              "angle": 37,
-              "style": "rock"
+              "angle": 42,
+              "style": "kakariko:rock"
             }
           ]
-        }
+        },
+        "rough": 0.4
       },
       {
         "z": 940,
@@ -148,14 +150,16 @@
             {
               "kind": "wall",
               "rise": 330,
-              "style": "cliff"
+              "style": "kakariko:cliff"
             },
             {
               "kind": "slope",
-              "angle": 36
+              "angle": 36,
+              "round": 0.5
             }
           ]
-        }
+        },
+        "rough": 0.12
       }
     ]
   },

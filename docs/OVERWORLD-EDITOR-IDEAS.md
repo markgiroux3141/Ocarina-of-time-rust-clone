@@ -14,6 +14,8 @@ builder's README.
 - **2026-10-08, Kakariko (section 7):** switchable and mixable themes with a Kakariko theme; stacked profiles with a
   style per part, steep slopes drawn as walls; ground beyond the outline's edges instead of the forest. See Themes,
   Stacks and Beyond the outline in the builder's README; example `sketch_kakariko.json`. Marked *built* in section 7.
+  After the first try by hand: a band's ends slope down into the forest beside it (and the forest runs right up to
+  them), and stacks are picked as one of Kakariko's three edges, their parts under Fine-tune.
 
 The order agreed for the rest: lofted contour rocks and standalone arches; path cross-sections, "make it walkable" and
 junctions; the precision tools (measure, Link gauges, section cut, grid and snaps); relative heights and brush layers;
@@ -193,7 +195,8 @@ floor stays as drawn:
 - `mountain`, a steep wall with an angle and a height, its texture once over it, the skyline its cut-out top;
 - `stack`, a stack as above, ending in a crest where the level meets the sky (Kakariko's west wing and north).
 
-Then backdrop cards beyond the crest, and joins where one boundary type meets the next.
+Then backdrop cards beyond the crest, and joins where one boundary type meets the next (*built* where ground meets the
+forest: its end slopes down into the trees).
 
 **Themes you can switch and mix** (*built*).
 - Every theme fills the same named **styles**: `cliff`, `ledge`, `shore`, `vines`, `brick`, `stone`, `rock`,

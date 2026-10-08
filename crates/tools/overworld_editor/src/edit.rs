@@ -275,6 +275,24 @@ pub fn set_beyond(doc: &mut Doc, ks: &[usize], b: Option<Beyond>) {
     tidy_beyond(o);
 }
 
+/// After the level's theme changed: Kakariko ends at the sky, so an outline that's forest all
+/// round gets Kakariko's grass slope beyond every edge; switched away again while every edge is
+/// still just that, it's the forest again. Returns whether it changed.
+pub fn theme_switched(doc: &mut Doc) -> bool {
+    let n = doc.outline.nodes.len();
+    let grass = overworld::doc::stack_looks()[0].beyond(doc.outline.z);
+    let all = |doc: &Doc, b: Option<&Beyond>| (0..n).all(|k| beyond_of(doc, k) == b);
+    if doc.settings.theme == "kakariko" && all(doc, None) {
+        set_beyond(doc, &(0..n).collect::<Vec<_>>(), Some(grass));
+        true
+    } else if doc.settings.theme != "kakariko" && n > 0 && all(doc, Some(&grass)) {
+        set_beyond(doc, &(0..n).collect::<Vec<_>>(), None);
+        true
+    } else {
+        false
+    }
+}
+
 /// What's beyond the outline's edge k, if not the forest.
 pub fn beyond_of(doc: &Doc, k: usize) -> Option<&Beyond> {
     doc.outline.beyond.get(k).and_then(|b| b.as_ref())
@@ -558,7 +576,8 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
         modes: vec![],
         edge: None,
         shape: None,
-        look: None,
+        // in Kakariko a path is stairs to start with: its ramps are
+        look: (doc.settings.theme == "kakariko").then(|| "steps".into()),
     }
 }
 
@@ -662,10 +681,35 @@ mod tests {
     }
 
     #[test]
+    fn kakariko_ends_at_a_grass_slope_unless_the_outline_has_its_own() {
+        let mut d = blank_doc();
+        let n = d.outline.nodes.len();
+        let grass = overworld::doc::stack_looks()[0].beyond(d.outline.z);
+        // forest all round: switching to Kakariko puts its grass slope beyond every edge
+        d.settings.theme = "kakariko".into();
+        assert!(theme_switched(&mut d));
+        assert!((0..n).all(|k| beyond_of(&d, k) == Some(&grass)));
+        // and back: still just that, so the forest again
+        d.settings.theme = "kokiri".into();
+        assert!(theme_switched(&mut d));
+        assert!(d.outline.beyond.is_empty());
+        // an edge set by hand: switching leaves the outline as it is
+        set_beyond(&mut d, &[2], Some(stack_looks_rock()));
+        let before = d.outline.clone();
+        d.settings.theme = "kakariko".into();
+        assert!(!theme_switched(&mut d));
+        assert_eq!(d.outline, before);
+    }
+
+    fn stack_looks_rock() -> Beyond {
+        overworld::doc::stack_looks()[1].beyond(0.0)
+    }
+
+    #[test]
     fn what_is_beyond_the_outline_follows_its_edges() {
         let mut d = doc();
         let n = d.outline.nodes.len();
-        let rise = Beyond { z: 900.0, profile: Profile::Slope { angle: 30.0, round: 0.0 } };
+        let rise = Beyond::new(900.0, Profile::Slope { angle: 30.0, round: 0.0 });
         set_beyond(&mut d, &[1], Some(rise.clone()));
         assert_eq!(d.outline.beyond, vec![None, Some(rise.clone())]);
         // a node on it: both halves have it

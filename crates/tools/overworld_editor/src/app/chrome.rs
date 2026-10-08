@@ -600,6 +600,7 @@ impl App {
             ) {
                 // a theme file loaded by hand gives way to the one chosen here
                 self.theme_file = None;
+                crate::edit::theme_switched(&mut self.doc);
             }
             let s = &mut self.doc.settings;
             field(

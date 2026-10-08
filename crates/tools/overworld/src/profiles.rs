@@ -175,8 +175,12 @@ struct Foot {
     /// Mitred distances (hard or faceted edges): at each end, the tangent half way between this
     /// piece's and the next profiled piece's (the joint's bisector), or None at a free end.
     mitre: Option<[Option<P2>; 2]>,
-    /// Which loop piece it is (to find its neighbours).
+    /// Which loop pieces it is, the first and the last (to find its neighbours): consecutive
+    /// pieces in one line, with the same profile, are one foot.
     m: usize,
+    m_end: usize,
+    /// A band's end, facing the void (`Field::new_with`'s `ends`).
+    end: bool,
 }
 
 impl Foot {
@@ -309,12 +313,24 @@ pub struct Field {
     mitre: bool,
     /// The stacked profiles, one per stacked foot (`Kind::Stack`'s id).
     stacks: Vec<Stack>,
+    /// Per loop with ends (a band's), the wall style its ends' slopes are drawn as, if any.
+    end_looks: HashMap<usize, String>,
 }
+
+/// A band's ends (`beyond.rs`): the floor beside the loop's edges that face the void, and the wall
+/// style their slope is drawn as (none: the floor).
+pub type Ends = HashMap<usize, (f64, Option<String>)>;
 
 impl Field {
     /// From the map of the document's loops alone (`Map::build`: no paths' ribbons yet), with each
     /// region's height (`zs[0]` the outline's). Profiles steeper than `max_slope` are reported.
     pub fn new(doc: &Doc, map: &Map, zs: &[f64], max_slope: f64, problems: &mut Vec<String>) -> Result<Field, String> {
+        Field::new_with(doc, map, zs, max_slope, problems, &Ends::new())
+    }
+
+    /// As `new`, with the floor beside some loops' edges that face the void (`ends`): a band's
+    /// ends, which slope down to the forest's cliff tops (`beyond.rs`).
+    pub fn new_with(doc: &Doc, map: &Map, zs: &[f64], max_slope: f64, problems: &mut Vec<String>, ends: &Ends) -> Result<Field, String> {
         let mut half: HashMap<(usize, usize), usize> = HashMap::new();
         for (s, &[a, b]) in map.segs.iter().enumerate() {
             half.insert((a, b), 2 * s);
@@ -350,6 +366,8 @@ impl Field {
             let ccw = signed_area(&map.loop_polys[l]) > 0.0;
             let top = zs[l];
             let mut feet = vec![];
+            // which profile each foot is (the same one gives the same kind for the same floor beside)
+            let mut keys: Vec<*const Profile> = vec![];
             let mut steep = 0.0f64;
             for m in 0..lp.len() {
                 let Some(p) = prof[l][m] else { continue };
@@ -361,10 +379,15 @@ impl Field {
                 let Some(&h) = half.get(&(u, v)) else { continue };
                 let (fin, fout) = if ccw { (map.half_face[h], map.half_face[h ^ 1]) } else { (map.half_face[h ^ 1], map.half_face[h]) };
                 // the region's own floor on the inside (not a region drawn against it), a floor outside
-                if fin == VOID || fout == VOID || map.faces[fin].region != l {
+                // (or a band's end)
+                if fin == VOID || map.faces[fin].region != l {
                     continue;
                 }
-                let n = zs[map.faces[fout].region];
+                let n = match (fout == VOID, ends.get(&l)) {
+                    (false, _) => zs[map.faces[fout].region],
+                    (true, Some(&(n, _))) => n,
+                    (true, None) => continue,
+                };
                 let drop = (top - n).abs();
                 if drop < 0.5 {
                     continue;
@@ -379,7 +402,10 @@ impl Field {
                         continue;
                     }
                     Profile::Slope { angle, round } => {
-                        steep = steep.max(angle);
+                        // a band's ends are scenery, not for walking up
+                        if fout != VOID {
+                            steep = steep.max(angle);
+                        }
                         let round = round.clamp(0.0, 1.0);
                         Kind::Slope { run: drop / angle.to_radians().tan() * (1.0 + 0.5 * round), round }
                     }
@@ -394,14 +420,33 @@ impl Field {
                     }
                     Profile::Cliff => continue,
                 };
-                feet.push(Foot { a: map.verts[u], b: map.verts[v], n, kind, mitre: None, m });
+                feet.push(Foot { a: map.verts[u], b: map.verts[v], n, kind, mitre: None, m, m_end: m, end: fout == VOID });
+                keys.push(p as *const Profile);
             }
             if feet.is_empty() {
                 continue;
             }
+            // consecutive pieces of one straight edge (the map cuts edges into many) with the same
+            // profile and floor beside are one foot: the same distances, far fewer to measure
+            let mut merged: Vec<Foot> = vec![];
+            let mut last_key: Option<*const Profile> = None;
+            for (f, key) in feet.into_iter().zip(keys) {
+                if let Some(g) = merged.last_mut() {
+                    let (s, t) = (sub(g.b, g.a), sub(f.b, f.a));
+                    let in_line = (s[0] * t[1] - s[1] * t[0]).abs() <= 1e-9 * s[0].hypot(s[1]) * t[0].hypot(t[1]) && s[0] * t[0] + s[1] * t[1] > 0.0;
+                    if last_key == Some(key) && g.m_end + 1 == f.m && g.end == f.end && (g.n - f.n).abs() < 1e-9 && dist(g.b, f.a) < 1e-9 && in_line {
+                        g.b = f.b;
+                        g.m_end = f.m;
+                        continue;
+                    }
+                }
+                merged.push(f);
+                last_key = Some(key);
+            }
+            let mut feet = merged;
             // hard or faceted edges: mitred joints between profiled pieces of the same kind
             if matches!(doc.settings.edges.as_str(), "hard" | "faceted") {
-                let at: HashMap<usize, usize> = feet.iter().enumerate().map(|(i, f)| (f.m, i)).collect();
+                let at: HashMap<usize, usize> = feet.iter().enumerate().flat_map(|(i, f)| [(f.m, i), (f.m_end, i)]).collect();
                 let tangent = |f: &Foot| {
                     let d = sub(f.b, f.a);
                     let l = d[0].hypot(d[1]).max(1e-9);
@@ -412,7 +457,7 @@ impl Field {
                     .iter()
                     .map(|f| {
                         let t = tangent(f);
-                        [(f.m + n - 1) % n, (f.m + 1) % n].map(|m| {
+                        [(f.m + n - 1) % n, (f.m_end + 1) % n].map(|m| {
                             let g = &feet[*at.get(&m)?];
                             if g.class() != f.class() {
                                 return None;
@@ -456,7 +501,8 @@ impl Field {
             }
         }
         let mitre = matches!(doc.settings.edges.as_str(), "hard" | "faceted");
-        Ok(Field { zs: zs.to_vec(), regions, loop_areas, walls, wall_buckets, mitre, stacks })
+        let end_looks = ends.iter().filter_map(|(&l, (_, s))| Some((l, s.clone()?))).collect();
+        Ok(Field { zs: zs.to_vec(), regions, loop_areas, walls, wall_buckets, mitre, stacks, end_looks })
     }
 
     /// How the cliff on the piece p -> q is bent, if it lies on a loop piece with an overhang or
@@ -530,22 +576,36 @@ impl Field {
     }
 
     /// How region r's floor at p (in the face whose anchor is `anchor`) is drawn, if it's a stack's
-    /// slope not drawn as the floor: the look, the direction along its foot (a wall-textured
-    /// slope's u runs that way) and the heights of the slope's foot and crest.
+    /// slope (or a band's end) not drawn as the floor: the look, the direction along its foot (a
+    /// wall-textured slope's u runs that way) and the heights of the slope's foot and crest.
     pub fn look(&self, r: usize, p: P2, anchor: P2) -> Option<(Look, P2, [f64; 2])> {
-        let (f, st, d) = self.stack_at(r, p)?;
-        let rf = self.regions[r].as_ref()?;
-        let k = if st.cuts.is_empty() { st.segment(d) } else { self.segment_at(rf, anchor).map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
-        let pc = st.piece(k, d)?;
-        if pc.look == Look::Floor || (pc.h1 - pc.h0).abs() < 1e-9 {
-            return None;
+        let rf = self.regions.get(r)?.as_ref()?;
+        let here = self.z(r, p, anchor);
+        let along = |f: &Foot| {
+            let t = sub(f.b, f.a);
+            let l = t[0].hypot(t[1]).max(1e-9);
+            [t[0] / l, t[1] / l]
+        };
+        if let Some((f, st, d)) = self.stack_at(r, p) {
+            let k = if st.cuts.is_empty() { st.segment(d) } else { self.segment_at(rf, anchor).map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
+            let z = |h: f64| f.n + (rf.top - f.n).signum() * h;
+            // the stack sets the floor here (not a band's end, lower)
+            if (here - z(st.height(k, d))).abs() <= 0.5 {
+                let pc = st.piece(k, d)?;
+                if pc.look == Look::Floor || (pc.h1 - pc.h0).abs() < 1e-9 {
+                    return None;
+                }
+                let (z0, z1) = (z(pc.h0), z(pc.h1));
+                return Some((pc.look.clone(), along(f), [z0.min(z1), z0.max(z1)]));
+            }
         }
-        let t = sub(f.b, f.a);
-        let l = t[0].hypot(t[1]).max(1e-9);
-        let top = self.regions[r].as_ref()?.top;
-        let z = |h: f64| f.n + (top - f.n).signum() * h;
-        let (z0, z1) = (z(pc.h0), z(pc.h1));
-        Some((pc.look.clone(), [t[0] / l, t[1] / l], [z0.min(z1), z0.max(z1)]))
+        // a band's end, drawn as its stack's last slope
+        let style = self.end_looks.get(&r)?;
+        let f = rf.near(p).filter(|f| f.end).find(|f| {
+            let d = f.dist(p);
+            d < f.reach() && (rf.top + f.dev(rf.top, d) - here).abs() <= 0.5
+        })?;
+        Some((Look::Style(style.clone()), along(f), [f.n.min(rf.top), f.n.max(rf.top)]))
     }
 
     /// The style a stack gives the wall p -> q in region r, if it's one of a stack's walls with a

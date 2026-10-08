@@ -346,17 +346,32 @@ pub struct Grid {
 }
 
 impl Grid {
-    /// `f` sampled every `cell` over the box `[x0, y0, x1, y1]`.
-    pub fn new(bb: [f64; 4], cell: f64, f: impl Fn(P2) -> f64) -> Grid {
+    /// `f` sampled every `cell` over the box `[x0, y0, x1, y1]`. A big grid is filled in bands of
+    /// rows on several threads (the values are the same either way).
+    pub fn new(bb: [f64; 4], cell: f64, f: impl Fn(P2) -> f64 + Sync) -> Grid {
         let cell = cell.max(1e-3);
         let nx = ((bb[2] - bb[0]) / cell).ceil() as usize + 1;
         let ny = ((bb[3] - bb[1]) / cell).ceil() as usize + 1;
-        let mut g = Grid { x0: bb[0], y0: bb[1], cell, nx, ny, f: Vec::with_capacity(nx * ny) };
-        for j in 0..ny {
-            for i in 0..nx {
-                let p = g.at(i, j);
-                g.f.push(f(p));
+        let mut g = Grid { x0: bb[0], y0: bb[1], cell, nx, ny, f: vec![0.0; nx * ny] };
+        let (x0, y0) = (g.x0, g.y0);
+        let fill = |rows: &mut [f64], j0: usize| {
+            for (r, row) in rows.chunks_mut(nx).enumerate() {
+                for (i, v) in row.iter_mut().enumerate() {
+                    *v = f([x0 + i as f64 * cell, y0 + (j0 + r) as f64 * cell]);
+                }
             }
+        };
+        let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(16);
+        if nx * ny < 20_000 || threads < 2 {
+            fill(&mut g.f, 0);
+        } else {
+            let per = ny.div_ceil(threads);
+            std::thread::scope(|sc| {
+                for (k, rows) in g.f.chunks_mut(per * nx).enumerate() {
+                    let fill = &fill;
+                    sc.spawn(move || fill(rows, k * per));
+                }
+            });
         }
         g
     }

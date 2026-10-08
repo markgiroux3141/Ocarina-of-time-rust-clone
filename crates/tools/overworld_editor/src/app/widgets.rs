@@ -96,6 +96,29 @@ pub fn kbd(ui: &mut Ui, text: &str) -> Response {
     resp
 }
 
+/// A small heading that opens and closes what's under it (closed at first, open while `force`):
+/// returns whether it's open.
+pub fn disclosure(ui: &mut Ui, id: &str, label: &str, force: bool) -> bool {
+    let id = Id::new(("disclosure", id));
+    let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(id, false));
+    let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.5), MUTED);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), if force { Sense::hover() } else { Sense::click() });
+    if resp.clicked() {
+        open = !open;
+        ui.data_mut(|d| d.insert_persisted(id, open));
+    }
+    let open = open || force;
+    let col = if resp.hovered() && !force { TEXT } else { MUTED };
+    let p = ui.painter();
+    let c = Pos2::new(rect.left() + 6.0, rect.center().y);
+    let pts = if open { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(0.0, 2.5), c + Vec2::new(4.0, -2.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(2.5, 0.0), c + Vec2::new(-2.0, 4.0)] };
+    p.add(egui::Shape::line(pts, Stroke::new(1.8, col)));
+    let gw = g.size().x;
+    p.galley(Pos2::new(rect.left() + 16.0, rect.center().y - g.size().y / 2.0), g, col);
+    p.line_segment([Pos2::new(rect.left() + 22.0 + gw, rect.center().y), Pos2::new(rect.right(), rect.center().y)], Stroke::new(1.0, LINE));
+    open
+}
+
 /// A choice of a few, as one segmented control across the available width. Returns whether it
 /// changed.
 pub fn segmented<T: PartialEq + Clone>(ui: &mut Ui, cur: &mut T, options: &[(T, &str)]) -> bool {

@@ -566,6 +566,17 @@ In the game (`sketch_profiles`), child Link runs up the hill, and down into the 
 
 ### Stacks (`"kind": "stack"`)
 
+Kakariko's three edges are ready-made looks (`doc::stack_looks`, what the editor offers first), in Kakariko's styles
+pinned (`kakariko:rock`...), so they look the same whatever the level's theme. From spot01 (materials 18, 21, 29, 31):
+
+| Look | Parts | Beyond the outline |
+|---|---|---|
+| *Grass slope* (the west wing) | a cliff 330, a grass slope at 36° rounded 0.5 | crest 940, roughness 0.12 |
+| *Rock face* (under Death Mountain Trail) | brick 320, a rock wall 160, rock at 65° for 200, rock at 42° | crest 1160, roughness 0.4: spot01's rock is low-poly facets up to a ridge that wanders between about 720 and 1280 |
+| *Mossy wall* (the south edge) | a cliff 330, a strip of grass 75 up | a skyline wall in `mountain` up to 1080, roughness 0.45: spot01's is 17 near-upright quads standing on the ledge, the texture once over each, tops from about 460 at the ends to 1670 |
+
+As a region's profile (no far edge to stand on) the mossy wall is the stack's last part (`StackLook::region_profile`).
+
 `{ "kind": "stack", "parts": [{ "kind": "wall", "rise": 320, "style": "brick" }, { "kind": "wall", "rise": 160, "style":
 "rock" }, { "kind": "slope", "angle": 69, "rise": 300, "style": "rock" }, { "kind": "slope", "angle": 37, "style": "rock" }] }`
 is Kakariko's edge under Death Mountain Trail (measured from spot01: see `docs/OVERWORLD-EDITOR-IDEAS.md` section 7). Each
@@ -596,20 +607,50 @@ the crest: the level ends at the sky, as Kakariko's does. Null (the default) is 
 
 Each run of edges with the same beyond becomes a **band** (`beyond::expand`): a region outside the outline drawn against
 that run, sharing its nodes (so its edge is the outline's), at the crest's height and as deep as its profile reaches plus
-60 (`CREST`). Its profile is built inward from the shared edge as any region's is, which is outward from the level: the
-level's floor stays exactly as drawn, and walls, slopes, step lines and styles are the regions' own, watertight with it.
-A run round the whole outline is cut in two; a node two runs share gets one far point, as far out as the wider needs.
-The bands are the document's last regions while it's built (the editor never sees them).
+60 (`CREST`), all along: an open end goes straight out from the band's own edge, a sharp corner is mitred. Its profile is
+built inward from the shared edge as any region's is, which is outward from the level: the level's floor stays exactly
+as drawn, and walls, slopes, step lines and styles are the regions' own, watertight with it. A run round the whole
+outline is cut in two; a node two runs share gets one far point, as far out as the wider needs. The bands are the
+document's last regions while it's built (the editor never sees them).
+
+**A band's ends.** Where the forest is beside a band (not another band), its side edge is an *end*: the ground slopes
+down to it (`beyond::hip`) to the forest's cliff tops (`outline.z + boundary.cliff_min`), as steep as the profile's last
+slope (at most 45°), so the ground rolls off into the trees rather than stopping at a face as tall as the crest. The
+end's slope is drawn as that last slope is: grass, rock, the mossy wall (`profiles::Field::look`). Its walls die into it,
+since the floor takes the lowest of what its feet give. In `profiles::Field::new_with` the end's foot faces the void, its
+floor beside given by `Bands::ends`.
 
 The edge of the world (`Builder::partial_boundary`): a band's far edges have none; its two side edges get a face of the
-theme's boundary cliff from its floor down to the level's, facing out, closing its end off. The forest stands on the
-other edges: cliffs along them, and the bank and trees along the stretches of the tree line nearest them, each ending
-there. Its rim follows only the forest's own edges, so a crest beside it doesn't raise it. Test:
+theme's boundary cliff from its floor down to the level's, facing out, closing its end off (at an end, only as high as
+the forest's cliffs). The forest stands on the other edges: cliffs along them, and the bank and trees along the
+stretches of the tree line nearest them. The tree line is split where its nearest edge changes from the forest's to a
+band's (it's simplified into long pieces, and one that ran on past a band used to take a whole edge's trees with it),
+and each stretch reaches over to the band's side edge: its last trees and its bank end on it, at the foot of the band's
+end. Its rim follows only the forest's own edges, so a crest beside it doesn't raise it. Test:
 `beyond_the_outline_ground_climbs_to_a_crest_and_the_forest_stands_only_where_it_should` (the crests' heights, the floor
-inside unchanged, no trees past a band, watertight but for the far edges, the side faces' feet and the forest's two ends).
+inside unchanged, an end down to the cliff tops and the band full depth there, trees all along the forest's edges and
+none past a band, watertight but for the far edges, the side faces' feet and the forest's two ends).
 
-Not yet: backdrop cards past the crest (Kakariko's Death Mountain), the mossy wall leaning as one part rather than a
-steep slope, and the forest's ends closed off.
+**Roughness** (`Beyond::rough`, `beyond::Rough`): above the walls at the band's foot, its heights are scaled by
+1 + rough x noise (`noise::relief`, lumps about `ROUGH_SCALE` 900 across), so its crest rises and falls as a mountain's
+does. It's applied in `Builder::height`, which every floor and wall height goes through, so they still meet. A rough
+band's far edge drops `CREST` (the strip past the ridge falls away behind it rather than standing up over it where the
+noise differs), and along it heights run straight from one far node to the next (the map's other points on a straight
+stretch stay in line, so no near-flat triangle between three of them stands up as a sliver).
+
+**Build time.** Stacked edges cost the most: their lines are traced on grids (`geom::Grid`), which are filled on several
+threads, and consecutive pieces of one straight edge with the same profile are one foot (the map cuts edges into many),
+so each grid cell and floor vertex measures a few feet rather than a hundred. `sketch_kakariko` builds in about 140 ms
+(`OW_TIMING=1` prints the steps).
+
+**A skyline wall** (`Beyond::skyline`: a style and a height above the ground): a wall standing on the band's far edge
+(`Builder::skylines`), from a little under the ground up its height, a column at least every 300 (`FAR_STEP`); its
+height varies with the band's roughness and comes down towards an end the forest is beside (to 12% over 1.2 x its
+height). Its style is stretched once over each column, as spot01's mossy wall is, so a cut-out top (the `mountain`
+texture's top five rows) is the skyline. Test: `kakariko_looks_rough_ridges_and_a_mossy_skyline_wall`.
+
+Not yet: backdrop cards past the crest (Kakariko's Death Mountain). Where two bands of different heights meet at a
+corner, the higher one's ground can show above the lower one's ridge.
 
 ## Pits (`"kind": "pit"`)
 

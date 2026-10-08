@@ -64,16 +64,23 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   zig-zag. A profile is built inward from the edge, so the region keeps its shape; a sunken region's edges go up to the
   floor beside them. See Edge profiles in `../overworld/README.md`. An edge two regions share is the selected region's, else
   the higher one's: select the region first to give the lower one's side a profile.
-- **Stacks:** a *Stack* profile is a list of parts from the foot in, each a *Wall* or a *Slope* with its height (blank: a
-  share of what's left), a slope's angle, and its *Style* (any theme's wall style; a slope with one is drawn as that wall).
-  ↑ ↓ reorder them, *Remove* drops one, *+ Wall* and *+ Slope* add one. *Presets* start from Kakariko's edges: *Cliff +
-  slope* (the west wing), *Brick + rock* (under Death Mountain Trail), *Mossy wall* (the south edge). In the plan a stack
-  has a line along its foot where it starts with a wall, and ticks where it slopes. See Stacks in `../overworld/README.md`.
+- **Stacks:** a *Stack* profile shows Kakariko's edges as three cards, each with a cross-section: *Grass slope* (the west
+  wing), *Rock face* (under Death Mountain Trail), *Mossy wall* (the south edge), in Kakariko's own textures whatever
+  the level's theme. The one the stack is lights up.
+  Its parts are under *Fine-tune* (closed until opened, open while the stack is none of the three): a list from the foot
+  in, each a *Wall* or a *Slope* with its height (blank: a share of what's left), a slope's angle, and its *Style* (any
+  theme's wall style; a slope with one is drawn as that wall). ↑ ↓ reorder them, *Remove* drops one, *+ Wall* and
+  *+ Slope* add one. In the plan a stack has a line along its foot where it starts with a wall, and ticks where it
+  slopes. See Stacks in `../overworld/README.md`.
 - **Beyond the outline:** a click near an outline edge selects it (an edge a region shares with the outline is the
   outline's unless that region is selected). Its inspector section, *Beyond*, is *Forest* (the edge of the world as it
-  was) or *Ground*: a *Crest* height and a profile, usually a stack, built outward from the edge, with nothing past the
-  crest. Shift-click more outline edges to set them together; Del puts them back to the forest. In the plan, blue ticks
-  point out from those edges. See Beyond the outline in `../overworld/README.md`.
+  was) or *Ground*: one of Kakariko's three edges (the cards; *Grass slope* to start) and its *Height* above the level's
+  floor (the crest, or a skyline wall's top), which a card sets to Kakariko's. *Fine-tune* holds *Roughness* (how much
+  the height rises and falls), *Skyline wall* (a style standing on the far edge: the mossy wall) and the whole profile
+  (any kind, or the stack's parts). The ground is built outward from the edge, with nothing past its crest, and its
+  ends slope down into the forest beside it.
+  Shift-click more outline edges to set them together; Del puts them back to the forest. In the plan, blue ticks point
+  out from those edges. See Beyond the outline in `../overworld/README.md`.
 - **Region (R):** click points, then click the first point or press Enter to close. A click on an existing node shares it.
   A click on a loop's edge adds a node there and shares it, so a region can be drawn against the outline or another
   region. New regions start 120 above the ground they're drawn on. One drawn outside everything is a new **area**: it
@@ -86,7 +93,7 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   section of `../overworld/README.md`). An end exactly on an edge could take either side's height, so path clicks never snap
   to region nodes. The inspector sets width, mode per segment (attached embankment or floating bridge), surface (*Ground*,
   or *Steps*: Kakariko's stairs, a ramp with steps drawn on it; drawn twice as long as it climbs its sides show the stairs'
-  profile, any other slope plain brick repeating along them), side style and
+  profile, any other slope plain brick repeating along them; a new path on Kakariko's theme starts as *Steps*), side style and
   bridge shape. A path node's height and width are optional, per node.
 - **Brush (B):** paints the level's terrain (see Painted terrain in `../overworld/README.md`): one smooth height offset that
   everything rides on, so painting across several regions raises them all together, with their walls, paths and bridges.
@@ -130,8 +137,9 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   and tree that isn't pinned to a style follows. A region's *Edge* and a path's *Sides* list the level's theme's styles
   first, then the other themes' (`kakariko:brick`, `kokiri:cliff`), which stay as they are when the theme changes. A
   style the theme doesn't have falls back to its own walls, with a problem saying so. The texture libraries of every
-  theme are made from the extract on first start (`out/overworld/textures/<theme>`). See Themes in
-  `../overworld/README.md`.
+  theme are made from the extract on first start (`out/overworld/textures/<theme>`). Kakariko ends at the sky: switching
+  to it gives an outline that's forest all round Kakariko's *Grass slope* beyond every edge (and switching away, while
+  every edge is still just that, the forest again; `edit::theme_switched`). See Themes in `../overworld/README.md`.
 - **New levels** start at Low detail, Hard edges and Stretched walls (File → New, and the editor with no file). A level
   without these settings in its file keeps High, Smooth and Tiled.
 - **Edges:** Level settings' *Edges* (next to *Detail*) sets how every outline, region and path runs between its

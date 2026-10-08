@@ -174,7 +174,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     lap("map");
     let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
     let zs: Vec<f64> = regions.iter().map(|r| r.z).collect();
-    let field = profiles::Field::new(doc, &pre, &zs, max_slope, &mut problems)?;
+    let field = profiles::Field::new_with(doc, &pre, &zs, max_slope, &mut problems, &bands.ends)?;
     let mut paths: Vec<PathGeo> = {
         let base = |p: P2| field.base(&pre.loop_polys, p);
         let sampling = doc.settings.detail()?.paths;
@@ -291,6 +291,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     b.walls();
     lap("walls");
     b.boundary(&rims);
+    b.skylines();
     lap("boundary");
     b.bends();
     b.edge_points();
@@ -422,7 +423,15 @@ impl<'a> Builder<'a> {
     /// with its edges' profiles.
     fn height(&self, f: usize, p: P2) -> f64 {
         let face = &self.map.faces[f];
-        face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or_else(|| self.field.z(face.region, p, self.anchors[f].unwrap_or(p)))
+        face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or_else(|| {
+            let z = self.field.z(face.region, p, self.anchors[f].unwrap_or(p));
+            // a rough band's (`beyond.rs`): every height there goes through here, so its walls
+            // and floors still meet
+            match self.bands.rough.get(&face.region) {
+                Some(r) => self.rough_z(face.region, r, p, z),
+                None => z,
+            }
+        })
     }
 
     fn hv(&self, f: usize, v: usize) -> f64 {
@@ -485,6 +494,29 @@ impl<'a> Builder<'a> {
         }
         let m = lerp(self.map.verts[self.map.from(h)], self.map.verts[self.map.to(h)], 0.5);
         self.sky.iter().find(|(a, b, _)| dist_to_seg(m, *a, *b).0 < 1e-6).map(|x| x.2)
+    }
+
+    /// A rough band's height at p, z before roughness. Its far edge drops a little, so the strip
+    /// past the ridge falls away behind it (else, roughened differently, it stands up over the
+    /// ridge in places), and along it heights run straight from one of the band's far nodes to the
+    /// next: the map's other points on it stay in line, so no sliver of a triangle between three
+    /// of them stands up.
+    fn rough_z(&self, l: usize, r: &crate::beyond::Rough, p: P2, z: f64) -> f64 {
+        if self.sky_at_point(p) == Some(false) {
+            if let Some(k) = (0..r.far.len().saturating_sub(1)).find(|&k| dist_to_seg(p, r.far[k], r.far[k + 1]).0 < 1e-6) {
+                let (a, b) = (r.far[k], r.far[k + 1]);
+                let at = |q: P2| r.at(q, self.field.z(l, q, q)) - crate::beyond::CREST;
+                let s = dist_to_seg(p, a, b).1;
+                return at(a) + (at(b) - at(a)) * s;
+            }
+            return r.at(p, z) - crate::beyond::CREST;
+        }
+        r.at(p, z)
+    }
+
+    /// The band edge (far or side) p lies on, if any: whether it's a side.
+    fn sky_at_point(&self, p: P2) -> Option<bool> {
+        self.sky.iter().find(|(a, b, _)| dist_to_seg(p, *a, *b).0 < 1e-6).map(|x| x.2)
     }
 
     /// Whether the outer half-edge h has the forest beyond it (not a band's far or side edge).
@@ -2033,6 +2065,63 @@ impl<'a> Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
+    /// The walls standing on bands' far edges (`Beyond::skyline`, Kakariko's mossy wall): from a
+    /// little under the ground there up its height, which varies with the band's roughness and
+    /// comes down towards an end the forest is beside; the style stretched once over each column,
+    /// as spot01's is, so a cut-out top is the skyline.
+    fn skylines(&mut self) {
+        let th = self.theme;
+        for sk in self.bands.skylines.clone() {
+            let ws = match th.wall_styles.get(&sk.style) {
+                Some(ws) => ws,
+                None => {
+                    self.problems.push(format!("theme {} has no wall style {:?} for a skyline wall, so it's the theme's cliff", th.name, sk.style));
+                    th.wall_styles.get(th.wall_style(f64::INFINITY, false)).expect("the theme's own style")
+                }
+            };
+            let n = sk.pts.len();
+            let mut s = vec![0.0; n];
+            for i in 1..n {
+                s[i] = s[i - 1] + dist(sk.pts[i - 1], sk.pts[i]);
+            }
+            let total = s[n - 1];
+            // the ground under each point (the band's crest there), and how high the wall rises
+            let taper = 1.2 * sk.height;
+            let rough = crate::beyond::Rough { base: 0.0, amount: sk.amount, seed: sk.seed, far: vec![] };
+            let cols: Vec<(f64, f64)> = (0..n)
+                .map(|i| {
+                    let p = sk.pts[i];
+                    let z = self.field.z(sk.l, p, p);
+                    let z = self.bands.rough.get(&sk.l).map_or(z, |r| self.rough_z(sk.l, r, p, z));
+                    let mut e = 1.0f64;
+                    for (open, d) in [(sk.open[0], s[i]), (sk.open[1], total - s[i])] {
+                        if open {
+                            let t = (d / taper).clamp(0.0, 1.0);
+                            e = e.min(0.12 + 0.88 * t * t * (3.0 - 2.0 * t));
+                        }
+                    }
+                    (z, sk.height * e * rough.factor(p))
+                })
+                .collect();
+            // a little under the ground, which runs straight between the points as the wall does
+            const SINK: f64 = 30.0;
+            for i in 0..n - 1 {
+                let (a, b) = (sk.pts[i], sk.pts[i + 1]);
+                let ((za, ha), (zb, hb)) = (cols[i], cols[i + 1]);
+                let (ua, ub) = (s[i] / ws.tile_u, s[i + 1] / ws.tile_u);
+                let (ba, bb) = (za - SINK, zb - SINK);
+                let (ta, tb) = (za + ha, zb + hb);
+                self.mesh.quad(
+                    "cliffs",
+                    [[a[0], a[1], ba], [b[0], b[1], bb], [b[0], b[1], tb], [a[0], a[1], ta]],
+                    [[ua, 0.0], [ub, 0.0], [ub, 1.0], [ua, 1.0]],
+                    &ws.material,
+                    &ws.surface,
+                );
+            }
+        }
+    }
+
     /// The edge of the world round an outer loop that's forest only in places (`beyond.rs`): the
     /// cliffs on its forest half-edges, and the bank and trees along the stretches of the tree
     /// line nearest them, each closed off where it ends.
@@ -2075,27 +2164,61 @@ impl<'a> Builder<'a> {
             self.wall("cliffs", None, self.map.to(h), self.map.from(h), [low, low], [fl[1], fl[0]], cliff, [0.0, self.ulen(h)], tile, reps, false);
         }
         // the tree line, kept where its nearest outer edge is forest
-        let t = tree_line(&o, bd.bank, bd.panel_tol);
-        if t.len() < 3 {
+        let traced = tree_line(&o, bd.bank, bd.panel_tol);
+        if traced.len() < 3 {
             self.problems.push("no tree line could be traced round the outline".into());
             return;
         }
-        let near: Vec<(usize, f64)> = t
-            .iter()
-            .map(|&p| {
-                let (mut best, mut at) = (f64::INFINITY, (0, 0.0));
-                for i in 0..n {
-                    let (d, s) = dist_to_seg(p, o[i], o[(i + 1) % n]);
-                    if d < best {
-                        best = d;
-                        at = (i, s);
+        // the outer edge nearest p (of the forest's only, or any) and how far along it
+        let nearest = |p: P2, forest_only: bool| {
+            let (mut best, mut at) = (f64::INFINITY, (0, 0.0));
+            for i in (0..n).filter(|&i| !forest_only || forest[i]) {
+                let (d, s) = dist_to_seg(p, o[i], o[(i + 1) % n]);
+                if d < best {
+                    best = d;
+                    at = (i, s);
+                }
+            }
+            at
+        };
+        // the tree line is simplified into long pieces, which may run from the forest's part to a
+        // band's, or lie beside the forest only in their middle: each is walked in short steps
+        // and split exactly where its nearest edge changes, so the forest runs right up to a band
+        // (else a whole outline edge beside a band could lose its trees). Each stretch kept is
+        // simplified again below.
+        let step = (bd.bank / 4.0).max(10.0);
+        let (mut t, mut near, mut keep) = (vec![], vec![], vec![]);
+        for j in 0..traced.len() {
+            let (p, q) = (traced[j], traced[(j + 1) % traced.len()]);
+            let k = (dist(p, q) / step).ceil().max(1.0) as usize;
+            for i in 0..k {
+                let (s0, s1) = (i as f64 / k as f64, (i + 1) as f64 / k as f64);
+                let x0 = lerp(p, q, s0);
+                let n0 = nearest(x0, false);
+                t.push(x0);
+                near.push(n0);
+                keep.push(forest[n0.0]);
+                if forest[n0.0] == forest[nearest(lerp(p, q, s1), false).0] {
+                    continue;
+                }
+                // a: the forest's end of the step, b: the band's
+                let (mut a, mut b) = if forest[n0.0] { (s0, s1) } else { (s1, s0) };
+                for _ in 0..40 {
+                    let mid = 0.5 * (a + b);
+                    if forest[nearest(lerp(p, q, mid), false).0] {
+                        a = mid;
+                    } else {
+                        b = mid;
                     }
                 }
-                at
-            })
-            .collect();
-        let rim_t: Vec<f64> = near.iter().map(|&(i, s)| top[i] + (top[(i + 1) % n] - top[i]) * s + bd.bank_rise).collect();
-        let keep: Vec<bool> = near.iter().map(|&(i, _)| forest[i]).collect();
+                let x = lerp(p, q, a);
+                if dist(x, x0) > 1.0 && dist(x, lerp(p, q, s1)) > 1.0 {
+                    t.push(x);
+                    near.push(nearest(x, true));
+                    keep.push(true);
+                }
+            }
+        }
         let m = t.len();
         let Some(start) = (0..m).find(|&k| keep[k] && !keep[(k + m - 1) % m]) else { return };
         let mut k = 0;
@@ -2113,14 +2236,61 @@ impl<'a> Builder<'a> {
             if run.len() < 2 {
                 continue;
             }
-            let pts: Vec<P2> = run.iter().map(|&j| t[j]).collect();
-            let zt: Vec<f64> = run.iter().map(|&j| rim_t[j]).collect();
+            let (mut last, mut first) = (near[run[run.len() - 1]].0, near[run[0]].0);
+            // beside a band's side edge, the stretch reaches over to it: its end dropped square
+            // onto the side edge, at the band's floor there, so the trees and the bank end at the
+            // foot of the band's ground. The outer edges are in pieces: from the piece nearest the
+            // end, along the forest's to the corner, then along the side edge's out from it
+            // (`step`: n - 1 going back round the loop, 1 forward).
+            let reach_over = |end: usize, from: usize, step: usize| -> Option<(usize, P2, f64)> {
+                let mut c = from;
+                for _ in 0..n {
+                    let next = (c + step) % n;
+                    if !forest[next] {
+                        break;
+                    }
+                    c = next;
+                }
+                // the corner, and the side edge's pieces from it
+                let mut i = (c + step) % n;
+                let corner = if step == 1 { o[i] } else { o[c] };
+                let mut best: Option<(f64, P2, f64)> = None;
+                for _ in 0..n {
+                    if !self.side(hs[i]) {
+                        break;
+                    }
+                    let (a, b) = (o[i], o[(i + 1) % n]);
+                    let (d, s) = dist_to_seg(t[end], a, b);
+                    if best.is_none_or(|x| d < x.0) {
+                        let fl = floor(self, i);
+                        best = Some((d, lerp(a, b, s), fl[0] + (fl[1] - fl[0]) * s));
+                    }
+                    i = (i + step) % n;
+                }
+                let (d, q, z) = best?;
+                (d >= 1.0 && dist(q, corner) > 1.0).then_some((c, q, z))
+            };
+            let (end, start) = (run[run.len() - 1], run[0]);
+            let after = reach_over(end, last, n - 1);
+            let before = reach_over(start, first, 1);
+            if let Some((c, ..)) = after {
+                last = c;
+            }
+            if let Some((c, ..)) = before {
+                first = c;
+            }
+            // the stretch as few points as the tree line had (its ends kept)
+            let line = simplify_line(&run.iter().map(|&j| t[j]).collect::<Vec<_>>(), bd.panel_tol, 0.0);
+            let rim_at = |p: P2| {
+                let (i, s) = nearest(p, true);
+                top[i] + (top[(i + 1) % n] - top[i]) * s + bd.bank_rise
+            };
+            let (pts, zt): (Vec<P2>, Vec<f64>) = before.map(|x| (x.1, x.2)).into_iter().chain(line.into_iter().map(|p| (p, rim_at(p)))).chain(after.map(|x| (x.1, x.2))).unzip();
             for &z in &zt {
                 self.rim = (self.rim.0.min(z), self.rim.1.max(z));
             }
             // the bank: the tree line's stretch (counter-clockwise), then back along the outer
             // edges nearest it (clockwise), from the last's start to the first's end
-            let (last, first) = (near[run[run.len() - 1]].0, near[run[0]].0);
             let mut poly = pts.clone();
             let mut i = last;
             loop {
@@ -3542,7 +3712,7 @@ mod tests {
         let west_wing = Profile::Stack { parts: vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, None, None)] };
         let mossy = Profile::Stack { parts: vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, Some(75.0), None), Part::slope(76.0, None, Some("mountain"))] };
         // the outline runs (-2000, -2000), (2000, -2000), (2000, 2000), (-2000, 2000): edge 1 east, 2 north
-        doc.outline.beyond = vec![None, Some(Beyond { z: 1200.0, profile: mossy }), Some(Beyond { z: 900.0, profile: west_wing }), None];
+        doc.outline.beyond = vec![None, Some(Beyond::new(1200.0, mossy)), Some(Beyond::new(900.0, west_wing)), None];
         let th = Theme::for_doc(&doc, None).unwrap();
         for detail in ["high", "low"] {
             doc.settings.detail = detail.into();
@@ -3554,7 +3724,13 @@ mod tests {
             // the level's own floor along the edges is where it was
             let g = obj("ground");
             let top = |f: &dyn Fn(&P3) -> bool| g.verts.iter().filter(|v| f(v)).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
-            assert!((top(&|v| v[1] > 2000.5 && v[0] < 1500.0) - 900.0).abs() < 1e-6, "{detail}");
+            assert!((top(&|v| v[1] > 2000.5 && v[0] < 1500.0) - 900.0).abs() < 1e-6, "{detail}: {}", top(&|v| v[1] > 2000.5 && v[0] < 1500.0));
+            // the north band's west end (the forest beside it) slopes down to the forest's cliff
+            // tops, and is the band's full depth there, square to its edge
+            let foot = doc.outline.z + doc.boundary.cliff_min;
+            let end: Vec<&P3> = g.verts.iter().filter(|v| (v[0] + 2000.0).abs() < 1e-6 && v[1] > 2000.5).collect();
+            assert!(!end.is_empty() && end.iter().all(|v| (v[2] - foot).abs() < 1e-6), "{detail}: the west end {end:?}");
+            assert!(end.iter().any(|v| v[1] > 2000.0 + crate::profiles::reach(&doc.outline.beyond[2].as_ref().unwrap().profile, 900.0)), "{detail}: the band's full depth");
             assert!((top(&|v| v[0] > 2000.5 && v[1] < 1500.0) - 1200.0).abs() < 1e-6, "{detail}");
             assert!(g.verts.iter().filter(|v| (v[1] - 1999.0).abs() < 1.0 && v[0].abs() < 1500.0).all(|v| v[2].abs() < 1e-6), "{detail}: the floor inside the north edge");
             // the forest stands along the south and west, not past the bands
@@ -3562,6 +3738,8 @@ mod tests {
                 assert!(obj(name).verts.iter().all(|v| v[1] < 2000.0 + 1.0 && v[0] < 2000.0 + 1.0), "{detail}: {name} beyond a band");
             }
             assert!(obj("trees").verts.iter().any(|v| v[1] < -2100.0), "{detail}: trees along the south");
+            // and along the whole west edge, up to the north band's end
+            assert!(obj("trees").verts.iter().any(|v| v[0] < -2000.0 && v[1] > 1990.0), "{detail}: trees up to the band's end");
             // the forest's rim isn't raised by the bands' crests
             assert!(lvl.rim.1 < 400.0, "{detail}: rim {:?}", lvl.rim);
             // watertight but for the bands' far edges (the level ends there) and the forest's ends
@@ -3595,6 +3773,44 @@ mod tests {
             assert!(bad.len() <= 6, "{detail}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(8)]);
             let ends = bad.iter().filter(|(a, b)| a.0 == b.0 && a.1 == b.1).count();
             assert_eq!(ends, 2, "{detail}: the trunks' two ends: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn kakariko_looks_rough_ridges_and_a_mossy_skyline_wall() {
+        // the paths level on Kokiri's theme: beyond its north edge Kakariko's rock face, beyond its
+        // east edge the mossy wall (both in Kakariko's styles, pinned)
+        let mut doc = paths_doc();
+        let looks = crate::doc::stack_looks();
+        let (rock, mossy) = (looks.iter().find(|l| l.name == "Rock face").unwrap(), looks.iter().find(|l| l.name == "Mossy wall").unwrap());
+        doc.outline.beyond = vec![None, Some(mossy.beyond(0.0)), Some(rock.beyond(0.0)), None];
+        let th = Theme::for_doc(&doc, None).unwrap();
+        for detail in ["high", "low"] {
+            doc.settings.detail = detail.into();
+            let lvl = build(&doc, &th).unwrap();
+            let problems: Vec<_> = lvl.problems.iter().filter(|p| !p.contains("degrees")).collect();
+            assert!(problems.is_empty(), "{detail}: {problems:?}");
+            let obj = |n: &str| lvl.mesh.objects.iter().find(|o| o.name == n).unwrap();
+            // the rock's ridge rises and falls: along its crest (far from its ends), the floor's
+            // highest points differ by a few hundred
+            let g = obj("ground");
+            let crest: Vec<f64> = (0..6)
+                .map(|k| {
+                    let x = -1200.0 + 400.0 * k as f64;
+                    g.verts.iter().filter(|v| v[1] > 2300.0 && (v[0] - x).abs() < 200.0).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max)
+                })
+                .collect();
+            let (lo, hi) = crest.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &z| (a.min(z), b.max(z)));
+            assert!(lo > 700.0 && hi - lo > 100.0, "{detail}: the ridge {crest:?}");
+            // the level's floor beside it stays where it was
+            assert!(g.verts.iter().filter(|v| (v[1] - 1999.0).abs() < 1.0 && v[0].abs() < 1500.0).all(|v| v[2].abs() < 1e-6), "{detail}: the floor inside");
+            // the mossy wall stands past the east band's ledge, its top well above it, coming down
+            // towards the band's south end (the forest beside it), not its north (the rock beside)
+            let wall: Vec<&P3> = obj("cliffs").verts.iter().filter(|v| v[0] > 2100.0).collect();
+            let top = |f: &dyn Fn(&P3) -> bool| wall.iter().filter(|v| f(v)).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+            let (south, middle) = (top(&|v| v[1] < -1900.0), top(&|v| v[1].abs() < 600.0));
+            assert!(middle > 405.0 + 300.0, "{detail}: the mossy wall's top {middle}");
+            assert!(south < middle - 200.0, "{detail}: it comes down at its end: {south} vs {middle}");
         }
     }
 

@@ -113,9 +113,41 @@ pub struct Outline {
 /// stack...), and nothing past the crest. `beyond.rs`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Beyond {
-    /// The crest's height.
+    /// The crest's height (the ground's: a skyline wall rises above it).
     pub z: f64,
     pub profile: Profile,
+    /// How rough the ground is above the walls at its foot: its height there varies by up to this
+    /// fraction (0: smooth), in lumps about `ROUGH_SCALE` across, so its crest rises and falls as a
+    /// mountain's does. A skyline wall's height varies by as much.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rough: f64,
+    /// A wall standing on the far edge, rising above the ground there (Kakariko's mossy wall: its
+    /// cut-out top is the skyline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skyline: Option<Skyline>,
+}
+
+impl Beyond {
+    pub fn new(z: f64, profile: Profile) -> Beyond {
+        Beyond { z, profile, rough: 0.0, skyline: None }
+    }
+
+    /// The highest it reaches, a skyline wall's top included (before roughness).
+    pub fn top(&self) -> f64 {
+        self.z + self.skyline.as_ref().map_or(0.0, |s| s.height)
+    }
+}
+
+/// How far apart a rough band's lumps are (`Beyond::rough`), about: spot01's ridge rises and falls
+/// about this often.
+pub const ROUGH_SCALE: f64 = 900.0;
+
+/// A wall on a band's far edge (`Beyond::skyline`): its style is stretched once over its height.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Skyline {
+    pub style: String,
+    /// How high it rises above the ground at its foot (less towards an end the forest is beside).
+    pub height: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -243,6 +275,91 @@ impl Part {
     pub fn slope(angle: f64, rise: Option<f64>, style: Option<&str>) -> Part {
         Part { kind: "slope".into(), rise, angle, round: 0.0, style: style.map(String::from) }
     }
+}
+
+/// One of Kakariko's edges, to start from: what the editor offers before a profile's parts.
+pub struct StackLook {
+    pub name: &'static str,
+    /// Where it is in Kakariko, and what it's made of.
+    pub tip: &'static str,
+    /// How high it reaches above the village floor there (beyond the outline, its top).
+    pub crest: f64,
+    pub parts: Vec<Part>,
+    /// Beyond the outline: its roughness (`Beyond::rough`).
+    pub rough: f64,
+    /// Beyond the outline: a wall standing on the far edge, this style, up to `crest`; the ground
+    /// in front of it climbs only as its parts do.
+    pub skyline: Option<&'static str>,
+}
+
+impl StackLook {
+    pub fn profile(&self) -> Profile {
+        Profile::Stack { parts: self.parts.clone() }
+    }
+
+    /// As a region's edge profile, which has no far edge for a skyline wall to stand on: the
+    /// wall is the stack's last part.
+    pub fn region_profile(&self) -> Profile {
+        let mut parts = self.parts.clone();
+        if let Some(style) = self.skyline {
+            parts.push(Part::wall(None, Some(style)));
+        }
+        Profile::Stack { parts }
+    }
+
+    /// What lies beyond an outline edge in this look, with the level's ground at `ground`.
+    pub fn beyond(&self, ground: f64) -> Beyond {
+        let parts: f64 = self.parts.iter().filter_map(|p| p.rise).sum();
+        match self.skyline {
+            Some(style) => Beyond { z: ground + parts, profile: self.profile(), rough: self.rough, skyline: Some(Skyline { style: style.into(), height: (self.crest - parts).max(0.0) }) },
+            None => Beyond { z: ground + self.crest, profile: self.profile(), rough: self.rough, skyline: None },
+        }
+    }
+
+    /// Whether `b` is this look (at any height).
+    pub fn is(&self, b: &Beyond) -> bool {
+        b.profile == self.profile() && (b.rough - self.rough).abs() < 1e-9 && b.skyline.as_ref().map(|s| s.style.as_str()) == self.skyline
+    }
+}
+
+/// Kakariko's edges, measured from spot01 (see docs/OVERWORLD-EDITOR-IDEAS.md, section 7), in
+/// Kakariko's own styles whatever the level's theme. The first is the default.
+pub fn stack_looks() -> Vec<StackLook> {
+    let round = |mut p: Part, r: f64| {
+        p.round = r;
+        p
+    };
+    vec![
+        StackLook {
+            name: "Grass slope",
+            tip: "Kakariko's west wing: a cliff 330 tall, then a grass slope at 36° up to about 940",
+            crest: 940.0,
+            parts: vec![Part::wall(Some(330.0), Some("kakariko:cliff")), round(Part::slope(36.0, None, None), 0.5)],
+            rough: 0.12,
+            skyline: None,
+        },
+        StackLook {
+            name: "Rock face",
+            tip: "Under Death Mountain Trail: a brick wall 320 tall, a rock wall 160 behind it, then a mountain side of rock up to a ridge about 1160 high that rises and falls",
+            crest: 1160.0,
+            parts: vec![
+                Part::wall(Some(320.0), Some("kakariko:brick")),
+                Part::wall(Some(160.0), Some("kakariko:rock")),
+                Part::slope(65.0, Some(200.0), Some("kakariko:rock")),
+                Part::slope(42.0, None, Some("kakariko:rock")),
+            ],
+            rough: 0.4,
+            skyline: None,
+        },
+        StackLook {
+            name: "Mossy wall",
+            tip: "Kakariko's south edge: a cliff 330 tall, a strip of grass, then a mossy wall straight up to about 1080, its top rising and falling",
+            crest: 1080.0,
+            parts: vec![Part::wall(Some(330.0), Some("kakariko:cliff")), Part::slope(36.0, Some(75.0), None)],
+            rough: 0.45,
+            skyline: Some("kakariko:mountain"),
+        },
+    ]
 }
 
 pub fn overhang_depth() -> f64 {
