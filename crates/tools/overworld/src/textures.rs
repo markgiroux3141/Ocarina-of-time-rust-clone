@@ -167,9 +167,14 @@ pub fn encode_png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Textures by name: one folder's (`load`), or several themes' folders merged (`load_all`), each
+/// texture read from the folder it came from.
 pub struct Library {
+    /// The first folder: where textures not listed in any `textures.json` are looked for.
     pub dir: PathBuf,
     pub info: BTreeMap<String, TexInfo>,
+    /// The folder each listed texture came from, when there are several.
+    from: BTreeMap<String, PathBuf>,
 }
 
 impl Library {
@@ -182,7 +187,29 @@ impl Library {
         } else {
             BTreeMap::new()
         };
-        Ok(Library { dir: dir.to_path_buf(), info })
+        Ok(Library { dir: dir.to_path_buf(), info, from: BTreeMap::new() })
+    }
+
+    /// Several folders' libraries as one (the themes' `kf_`, `kak_`...). A name in more than one
+    /// is the first folder's.
+    pub fn load_all(dirs: &[PathBuf]) -> Result<Library, String> {
+        let first = dirs.first().ok_or("no texture folders")?;
+        let mut lib = Library::load(first)?;
+        for d in &dirs[1..] {
+            let other = Library::load(d)?;
+            for (name, info) in other.info {
+                if !lib.info.contains_key(&name) {
+                    lib.from.insert(name.clone(), d.clone());
+                    lib.info.insert(name, info);
+                }
+            }
+        }
+        Ok(lib)
+    }
+
+    /// Where a library texture's file is (not for derived or composite names, which are made).
+    pub fn path(&self, name: &str) -> PathBuf {
+        self.from.get(name).unwrap_or(&self.dir).join(&self.get(name).file)
     }
 
     pub fn get(&self, name: &str) -> TexInfo {
@@ -248,7 +275,7 @@ impl Library {
             }
             return Some((w, r1 - r0, px[(r0 * w * 4) as usize..(r1 * w * 4) as usize].to_vec()));
         }
-        decode_png(&std::fs::read(self.dir.join(&self.get(name).file)).ok()?)
+        decode_png(&std::fs::read(self.path(name)).ok()?)
     }
 
     /// A texture as PNG bytes, to go next to a level: the library's file, or a derived one made.
@@ -257,7 +284,7 @@ impl Library {
             let (w, h, px) = self.rgba(name)?;
             return Some(encode_png(w, h, &px));
         }
-        std::fs::read(self.dir.join(&self.get(name).file)).ok()
+        std::fs::read(self.path(name)).ok()
     }
 }
 

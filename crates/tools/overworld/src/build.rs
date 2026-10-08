@@ -91,6 +91,12 @@ struct Builder<'a> {
     anchors: Vec<Option<P2>>,
     /// The bent cliffs' columns (overhangs, ragged rock), by map vertex (`bends`).
     bent: HashMap<usize, Bent>,
+    /// The outer edges with no forest beyond them: the bands' far edges (false: nothing at all)
+    /// and side edges (true: a face closing the band off). By position: step lines ending on a
+    /// band's side split its pieces.
+    sky: Vec<(P2, P2, bool)>,
+    /// The bands added for what lies beyond the outline (`beyond.rs`).
+    bands: crate::beyond::Bands,
 }
 
 /// A bent cliff's column: which way is out (towards the lower floor), how far into the bend it is
@@ -135,6 +141,10 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             clock = std::time::Instant::now();
         }
     };
+    // what lies beyond the outline's edges: bands, regions outside it (`beyond.rs`)
+    let (expanded, bands) = crate::beyond::expand(doc)?;
+    let doc: &Doc = &expanded;
+    let mut problems = vec![];
     let mut regions = vec![Info { z: doc.outline.z, water: None, pit: false, edge: None, noise: doc.outline.noise.clone() }];
     for (i, r) in doc.regions.iter().enumerate() {
         let water = match r.kind.as_str() {
@@ -142,9 +152,13 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             "water" => Some(r.surface.unwrap_or(r.z + 60.0)),
             k => return Err(format!("region {i} ({}): unknown kind {k:?} (floor, water or pit)", r.name)),
         };
+        // a style the theme doesn't have (a level switched to another theme) falls back to the
+        // theme's own walls
+        let mut edge = r.edge.clone();
         if let Some(e) = &r.edge {
             if !theme.wall_styles.contains_key(e) {
-                return Err(format!("region {i} ({}): theme {} has no wall style {e:?}", r.name, theme.name));
+                problems.push(format!("region {i} ({}): theme {} has no wall style {e:?}, so its walls are the theme's own", r.name, theme.name));
+                edge = None;
             }
         }
         if let Some(n) = &r.noise {
@@ -152,17 +166,16 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
                 return Err(format!("region {i} ({}): noise scale must be positive", r.name));
             }
         }
-        regions.push(Info { z: r.z, water, pit: r.kind == "pit", edge: r.edge.clone(), noise: r.noise.clone() });
+        regions.push(Info { z: r.z, water, pit: r.kind == "pit", edge, noise: r.noise.clone() });
     }
     // paths lay themselves out on the regions' ground (their profiles included), then their
     // footprints join the map
     let pre = Map::build(doc)?;
     lap("map");
-    let mut problems = vec![];
     let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
     let zs: Vec<f64> = regions.iter().map(|r| r.z).collect();
     let field = profiles::Field::new(doc, &pre, &zs, max_slope, &mut problems)?;
-    let paths: Vec<PathGeo> = {
+    let mut paths: Vec<PathGeo> = {
         let base = |p: P2| field.base(&pre.loop_polys, p);
         let sampling = doc.settings.detail()?.paths;
         doc.paths.iter().map(|p| paths::layout(p, &base, sampling)).collect::<Result<_, _>>()?
@@ -172,10 +185,13 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     lap("profiles");
     if !paths.is_empty() {
         let pt = theme.paths.as_ref().ok_or_else(|| format!("theme {} has no paths section", theme.name))?;
-        for g in &paths {
-            let side = g.edge.as_ref().unwrap_or(&pt.side);
-            if !theme.wall_styles.contains_key(side) {
-                return Err(format!("path {}: theme {} has no wall style {side:?}", g.name, theme.name));
+        for g in &mut paths {
+            if let Some(e) = g.edge.as_ref().filter(|e| !theme.wall_styles.contains_key(*e)) {
+                problems.push(format!("path {}: theme {} has no wall style {e:?}, so its sides are the theme's own", g.name, theme.name));
+                g.edge = None;
+            }
+            if !theme.wall_styles.contains_key(&pt.side) {
+                return Err(format!("theme {} has no wall style {:?} for paths' sides", theme.name, pt.side));
             }
             if g.max_slope > pt.max_slope + 1e-9 {
                 problems.push(format!("path {}: {:.0} degrees at its steepest, over the walkable {:.0}", g.name, g.max_slope, pt.max_slope));
@@ -242,7 +258,22 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         field,
         anchors,
         bent: HashMap::new(),
+        sky: vec![],
+        bands,
     };
+    // the bands' far edges (nothing beyond them) and side edges (a face closing them off)
+    for (j, far) in b.bands.far.iter().enumerate() {
+        let l = b.bands.first + 1 + j;
+        let lp = &b.map.loops[l];
+        for m in 0..lp.len() {
+            let e = b.map.loop_edges[l][m];
+            let side = b.bands.sides[j].contains(&e);
+            if side || far.contains(&e) {
+                let (u, v) = (lp[m], lp[(m + 1) % lp.len()]);
+                b.sky.push((b.map.verts[u], b.map.verts[v], side));
+            }
+        }
+    }
     for h in 0..b.map.half_face.len() {
         let f = b.map.half_face[h];
         if f != VOID {
@@ -269,6 +300,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     b.bridges();
     lap("bridges");
     b.emit_walls();
+    b.stair_sides();
     b.undercuts();
     lap("emit_walls");
     b.paint_dirt();
@@ -446,6 +478,25 @@ impl<'a> Builder<'a> {
         v
     }
 
+    /// The band edge (far or side) the outer half-edge h lies on, if any: whether it's a side.
+    fn sky_at(&self, h: usize) -> Option<bool> {
+        if self.sky.is_empty() {
+            return None;
+        }
+        let m = lerp(self.map.verts[self.map.from(h)], self.map.verts[self.map.to(h)], 0.5);
+        self.sky.iter().find(|(a, b, _)| dist_to_seg(m, *a, *b).0 < 1e-6).map(|x| x.2)
+    }
+
+    /// Whether the outer half-edge h has the forest beyond it (not a band's far or side edge).
+    fn forest(&self, h: usize) -> bool {
+        self.sky_at(h).is_none()
+    }
+
+    /// Whether the outer half-edge h is a band's side edge.
+    fn side(&self, h: usize) -> bool {
+        self.sky_at(h) == Some(true)
+    }
+
     /// The rim line (cliff tops) at each vertex of each void loop.
     fn rim_profiles(&mut self) -> Vec<(Vec<usize>, Vec<f64>)> {
         let bd = &self.doc.boundary;
@@ -461,9 +512,18 @@ impl<'a> Builder<'a> {
                 .map(|i| {
                     let v = self.map.from(hs[i]);
                     let p = self.map.verts[v];
-                    let f = self.hv(self.map.half_face[hs[i] ^ 1], v).max(self.hv(self.map.half_face[hs[(i + n - 1) % n] ^ 1], v));
+                    let (here, before) = (hs[i], hs[(i + n - 1) % n]);
+                    // only the forest's own edges set its rim (none beside bands' ends and far edges)
+                    if !self.forest(here) && !self.forest(before) {
+                        return f64::NEG_INFINITY;
+                    }
+                    let fz = |h: usize| if self.forest(h) { self.hv(self.map.half_face[h ^ 1], v) } else { f64::NEG_INFINITY };
+                    let f = fz(here).max(fz(before));
                     let mut near = f;
                     for (r, poly) in self.map.loop_polys.iter().enumerate().skip(1) {
+                        if self.bands.is_band(r) {
+                            continue;
+                        }
                         let reg = &self.regions[r];
                         if reg.water.is_none() && reg.z > near && (point_in_poly(p, poly) || dist_to_loop(p, poly) <= bd.reach) {
                             near = reg.z;
@@ -489,7 +549,9 @@ impl<'a> Builder<'a> {
                 })
                 .collect();
             for i in 0..n {
-                self.levels[self.map.from(hs[i])].push(top[i]);
+                if self.forest(hs[i]) || self.forest(hs[(i + n - 1) % n]) {
+                    self.levels[self.map.from(hs[i])].push(top[i]);
+                }
             }
             out.push((hs, top));
         }
@@ -641,7 +703,35 @@ impl<'a> Builder<'a> {
                     })
                 })
                 .collect();
+            let anchor = self.anchors[f].unwrap_or(outer[0]);
+            let (fregion, bare) = (face.region, face.paths.is_empty());
+            let face_paths = face.paths.clone();
             for p in tris {
+                // stairs: the step texture along the path's surface, one step every `step`
+                let c = [(p[0][0] + p[1][0] + p[2][0]) / 3.0, (p[0][1] + p[1][1] + p[2][1]) / 3.0];
+                let top = face_paths.iter().copied().max_by(|&a, &b| self.paths[a].z_at(c).total_cmp(&self.paths[b].z_at(c)));
+                if let Some((k, st)) = top.and_then(|k| Some((k, self.stairs(k)?.clone()))).filter(|_| water.is_none() && !pit) {
+                    let g = &self.paths[k];
+                    let uv = p.map(|q| g.along([q[0], q[1]]).map_or([0.0, 0.0], |(_, _, s3, left, _, w)| [st.across * (0.5 + left / w.max(1e-9)), s3 / st.step]));
+                    self.mesh.tri("ground", p, uv, &st.tread, &st.surface);
+                    continue;
+                }
+                // a stack's slope drawn as a wall: u along its foot, v up the face
+                let c = [(p[0][0] + p[1][0] + p[2][0]) / 3.0, (p[0][1] + p[1][1] + p[2][1]) / 3.0];
+                let look = (water.is_none() && !pit && bare).then(|| self.field.look(fregion, c, anchor)).flatten();
+                if let Some((ws, t, zs)) = look.and_then(|(lk, t, zs)| self.slope_style(&lk).map(|ws| (ws, t, zs))) {
+                    // capped styles repeat their middle rows, banded ones their band; the rest are
+                    // stretched once over the slope, as a wall of that style is over its height
+                    let (mat, v): (String, Box<dyn Fn(f64) -> f64>) = match (&ws.caps, ws.band) {
+                        (Some(c), _) if c.rows > 0 => (format!("{}~mid", ws.material), Box::new(move |z| z / c.unit())),
+                        (Some(c), _) => (ws.material.clone(), Box::new(move |z| z / c.tile_v)),
+                        (None, Some(b)) => (ws.material.clone(), Box::new(move |z| z / b)),
+                        (None, None) => (ws.material.clone(), Box::new(move |z| (z - zs[0]) / (zs[1] - zs[0]).max(1e-9))),
+                    };
+                    let uv = p.map(|q| [(q[0] * t[0] + q[1] * t[1]) / ws.tile_u, v(q[2])]);
+                    self.mesh.tri("ground", p, uv, &mat, &ws.surface);
+                    continue;
+                }
                 let uv = p.map(|q| [q[0] / surf.tile, q[1] / surf.tile]);
                 if pit {
                     // drawn dark (`pit_tints`), colliding as the void
@@ -655,6 +745,99 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+    }
+
+    /// Path k's stairs, if its look is steps and the theme (or another it borrows from) has them.
+    fn stairs(&self, k: usize) -> Option<&'a crate::theme::Steps> {
+        (self.paths[k].look.as_deref() == Some("steps")).then(|| self.theme.steps.as_ref()).flatten()
+    }
+
+    /// The style of path k's sides if it's stairs: the stairs' profile on stairs of Kakariko's slope,
+    /// a plain wall repeating along the rest (`Steps::tiled`).
+    fn stair_side(&self, k: usize) -> Option<String> {
+        let st = self.stairs(k)?;
+        let fits = (self.paths[k].max_slope - 0.5f64.atan().to_degrees()).abs() <= crate::theme::PROFILE_FIT;
+        Some(if fits { st.side.clone() } else { st.tiled.clone().unwrap_or_else(|| st.side.clone()) })
+    }
+
+    /// Stairs' sides: their texture stretched once over each stair, u from its low end to its high
+    /// end, v from its foot to its top, so the stairs' profile drawn in it runs along the slope (as
+    /// Kakariko's are).
+    fn stair_sides(&mut self) {
+        let Some(st) = &self.theme.steps else { return };
+        // each stairs path's sides' style, and whether it's the profile (else a tiled wall)
+        let mut stairs: Vec<(usize, &WallStyle, bool)> = vec![];
+        for k in 0..self.paths.len() {
+            let Some(name) = self.stair_side(k).filter(|_| self.paths[k].edge.is_none()) else { continue };
+            match self.theme.wall_styles.get(&name) {
+                Some(ws) => stairs.push((k, ws, name == st.side)),
+                None => self.problems.push(format!("theme {} has no wall style {name:?} for stairs' sides", self.theme.name)),
+            }
+        }
+        if stairs.is_empty() {
+            return;
+        }
+        let mats: Vec<Option<usize>> = stairs.iter().map(|s| self.mesh.materials.iter().position(|m| *m == s.1.material)).collect();
+        let paths = &self.paths;
+        let Some(o) = self.mesh.objects.iter_mut().find(|o| o.name == "walls") else { return };
+        for t in 0..o.tris.len() {
+            if !mats.contains(&Some(o.mat[t])) {
+                continue;
+            }
+            let c = o.tris[t].map(|v| o.verts[v]);
+            let m = [(c[0][0] + c[1][0] + c[2][0]) / 3.0, (c[0][1] + c[1][1] + c[2][1]) / 3.0];
+            // the stair it's beside: the nearest stairs path of this material, its run there
+            let Some((j, (run, ..))) = (0..stairs.len())
+                .filter(|&j| mats[j] == Some(o.mat[t]))
+                .filter_map(|j| Some((j, paths[stairs[j].0].along(m)?)))
+                // on its sides (half its width out), not another wall of the same style nearby
+                .filter(|(_, x)| x.4 <= 0.5 * x.5 + 2.0)
+                .min_by(|a, b| (a.1).4.total_cmp(&(b.1).4))
+            else {
+                continue;
+            };
+            let (k, ws, profile) = stairs[j];
+            let g = &paths[k];
+            let r = &g.runs[run];
+            let (a, b) = (&g.st[r.i0], &g.st[r.i1]);
+            let (lo, hi) = if a.z <= b.z { (a, b) } else { (b, a) };
+            let (len, rise) = ((hi.s - lo.s).abs().max(1e-9), (hi.z - lo.z).max(1e-9));
+            let dir = (hi.s - lo.s).signum();
+            if profile {
+                // the profile: once over the stair, its diagonal along the slope
+                o.uvs[t] = c.map(|q| {
+                    let s = g.along([q[0], q[1]]).map_or(lo.s, |x| x.1);
+                    [((s - lo.s) * dir / len).clamp(0.0, 1.0), (q[2] - lo.z) / rise]
+                });
+            } else {
+                // a tiled wall: its bricks one size all over, along the stair and up from its foot
+                // (a wall's own v is per column: stretched on a side whose height runs to nothing)
+                let band = ws.band.or(ws.caps.as_ref().map(|c| c.tile_v)).unwrap_or(ws.tile_u);
+                o.uvs[t] = c.map(|q| {
+                    let s = g.along([q[0], q[1]]).map_or(lo.s, |x| x.1);
+                    [(s - lo.s) * dir / ws.tile_u, (q[2] - lo.z) / band]
+                });
+            }
+        }
+    }
+
+    /// The wall style a stack's slope is drawn as: its own (if the theme has it), or for a steep
+    /// slope with none, the theme's style for a tall wall.
+    fn slope_style(&mut self, look: &profiles::Look) -> Option<WallStyle> {
+        let th = self.theme;
+        let name = match look {
+            profiles::Look::Floor => return None,
+            profiles::Look::Style(s) if th.wall_styles.contains_key(s) => s.clone(),
+            profiles::Look::Style(s) => {
+                let msg = format!("theme {} has no wall style {s:?} for a slope, so it's the theme's cliff", th.name);
+                if !self.problems.contains(&msg) {
+                    self.problems.push(msg);
+                }
+                th.wall_style(f64::INFINITY, false).to_string()
+            }
+            profiles::Look::Steep => th.wall_style(f64::INFINITY, false).to_string(),
+        };
+        th.wall_styles.get(&name).cloned()
     }
 
     /// Dirt paths: each floor vertex's weight, and the floor's triangles where there's any dirt
@@ -783,12 +966,23 @@ impl<'a> Builder<'a> {
             // an embankment's sides (the higher ground a path's) and a cutting's (the lower) are
             // the path's: a cutting's sides shrink to nothing, where the region's rules would
             // change style partway along
-            let name = match self.top_path(fl, mp).or_else(|| self.cut_path(fr, fl, mp)) {
-                Some(k) => self.paths[k].edge.clone().unwrap_or_else(|| th.paths.as_ref().map_or("cliff".into(), |t| t.side.clone())),
+            // a path the higher side (an embankment's side) or the lower (a cutting's); stairs' cuttings
+            // are the stairs' `cutting` wall, not their sides' profile
+            let top = self.top_path(fl, mp);
+            let name = match top.map(|k| (k, true)).or_else(|| self.cut_path(fr, fl, mp).map(|k| (k, false))) {
+                Some((k, embankment)) => self.paths[k]
+                    .edge
+                    .clone()
+                    .or_else(|| if embankment { self.stair_side(k) } else { self.stairs(k).and_then(|st| st.cutting.clone()) })
+                    .unwrap_or_else(|| th.paths.as_ref().map_or("cliff".into(), |t| t.side.clone())),
                 None => {
-                    let own = self.regions[self.map.faces[fl].region].edge.clone();
+                    let (rl, rr) = (self.map.faces[fl].region, self.map.faces[fr].region);
+                    let (a, b) = (self.map.verts[p], self.map.verts[q]);
+                    let tol = 2.0 * curve_tol(self.doc.settings.detail().expect("checked by the map").curves) + 2.0;
+                    let stacked = self.field.wall_style(rl, a, b, tol).or_else(|| self.field.wall_style(rr, a, b, tol)).filter(|s| th.wall_styles.contains_key(s));
+                    let own = self.regions[rl].edge.clone();
                     let hgt = 0.5 * ((pr.3[0] - pr.2[0]) + (pr.3[1] - pr.2[1]));
-                    own.unwrap_or_else(|| th.wall_style(hgt, self.water(fr)).to_string())
+                    stacked.or(own).unwrap_or_else(|| th.wall_style(hgt, self.water(fr)).to_string())
                 }
             };
             part[h] = Some(pr);
@@ -1195,7 +1389,7 @@ impl<'a> Builder<'a> {
         }
         for l in self.levels.iter_mut() {
             l.sort_by(f64::total_cmp);
-            l.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+            l.dedup_by(|a, b| (*a - *b).abs() < 0.01);
         }
         for j in &jobs {
             self.emit_wall(j.obj, j.p, j.q, j.bot, j.top, j.ws, j.u, j.tile, j.reps, j.over_water);
@@ -1218,7 +1412,7 @@ impl<'a> Builder<'a> {
         let (up, uq) = (u[0] / tile, u[1] / tile);
         let col = |s: &Self, v: usize, z0: f64, z1: f64| -> Vec<f64> {
             let mut c = vec![z0];
-            c.extend(s.levels[v].iter().copied().filter(|&z| z > z0 + 0.5 && z < z1 - 0.5));
+            c.extend(s.levels[v].iter().copied().filter(|&z| z > z0 + 0.01 && z < z1 - 0.01));
             if z1 - z0 > 1e-6 {
                 c.push(z1);
             }
@@ -1272,7 +1466,7 @@ impl<'a> Builder<'a> {
         }
         // what meets each end column, as depths below the top
         let lv: [Vec<f64>; 2] = [(p, 0), (q, 1)].map(|(v, e)| {
-            self.levels[v].iter().filter(|&&z| z > bot[e] + 0.5 && z < top[e] - 0.5).map(|&z| top[e] - z).collect()
+            self.levels[v].iter().filter(|&&z| z > bot[e] + 0.01 && z < top[e] - 0.01).map(|&z| top[e] - z).collect()
         });
         let foot = |x: f64, d: f64| hh[0] + (hh[1] - hh[0]) * x - d;
         let want = [qq[1] - pp[1], -(qq[0] - pp[0]), 0.0];
@@ -1304,7 +1498,7 @@ impl<'a> Builder<'a> {
                 full.push(a);
                 for (e, x) in [(0usize, 0.0), (1, 1.0)] {
                     if (a.0 - x).abs() < 1e-9 && (b.0 - x).abs() < 1e-9 {
-                        let mut ds: Vec<f64> = lv[e].iter().copied().filter(|&d| d > a.1.min(b.1) + 0.25 && d < a.1.max(b.1) - 0.25).collect();
+                        let mut ds: Vec<f64> = lv[e].iter().copied().filter(|&d| d > a.1.min(b.1) + 0.005 && d < a.1.max(b.1) - 0.005).collect();
                         ds.sort_by(f64::total_cmp);
                         if b.1 < a.1 {
                             ds.reverse();
@@ -1713,6 +1907,13 @@ impl<'a> Builder<'a> {
         for (hs, top) in rims {
             let hs = hs.clone();
             let n = hs.len();
+            // part forest, part sky (bands' far edges): the forest only where it stands
+            if !hs.iter().all(|&h| self.forest(h)) {
+                if hs.iter().any(|&h| self.forest(h)) {
+                    self.partial_boundary(&hs, top, cliff);
+                }
+                continue;
+            }
             let o = self.map.half_pts(&hs); // clockwise, the level on the right
             // the cliffs
             let total: f64 = hs.iter().map(|&h| self.map.len(h)).sum();
@@ -1829,6 +2030,179 @@ impl<'a> Builder<'a> {
             }
         }
     }
+}
+
+impl<'a> Builder<'a> {
+    /// The edge of the world round an outer loop that's forest only in places (`beyond.rs`): the
+    /// cliffs on its forest half-edges, and the bank and trees along the stretches of the tree
+    /// line nearest them, each closed off where it ends.
+    fn partial_boundary(&mut self, hs: &[usize], top: &[f64], cliff: &'a WallStyle) {
+        let th = self.theme;
+        let bd = &self.doc.boundary;
+        let n = hs.len();
+        let o = self.map.half_pts(hs); // clockwise, the level on the right
+        let forest: Vec<bool> = hs.iter().map(|&h| self.forest(h)).collect();
+        let floor = |b: &Self, i: usize| {
+            let (h, f) = (hs[i], b.map.half_face[hs[i] ^ 1]);
+            [b.hv(f, b.map.from(h)), b.hv(f, b.map.to(h))]
+        };
+        // the cliffs
+        let total: f64 = (0..n).filter(|&i| forest[i]).map(|i| self.map.len(hs[i])).sum();
+        let mean: f64 = (0..n)
+            .filter(|&i| forest[i])
+            .map(|i| {
+                let fl = floor(self, i);
+                self.map.len(hs[i]) * (0.5 * (top[i] + top[(i + 1) % n]) - 0.5 * (fl[0] + fl[1]))
+            })
+            .sum::<f64>()
+            / total.max(1e-9);
+        let (tile, reps) = self.wall_tiling(cliff, mean, None);
+        let mut u = 0.0;
+        for i in (0..n).filter(|&i| forest[i]) {
+            let h = hs[i];
+            let l = self.ulen(h);
+            let w = self.water(self.map.half_face[h ^ 1]);
+            self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w);
+            u += l;
+        }
+        // the bands' side edges: a face from the band's floor down to the level's, facing out
+        let base = self.doc.outline.z;
+        let sides: Vec<usize> = (0..n).filter(|&i| self.side(hs[i])).collect();
+        for i in sides {
+            let h = hs[i];
+            let fl = floor(self, i);
+            let low = base.min(fl[0]).min(fl[1]);
+            self.wall("cliffs", None, self.map.to(h), self.map.from(h), [low, low], [fl[1], fl[0]], cliff, [0.0, self.ulen(h)], tile, reps, false);
+        }
+        // the tree line, kept where its nearest outer edge is forest
+        let t = tree_line(&o, bd.bank, bd.panel_tol);
+        if t.len() < 3 {
+            self.problems.push("no tree line could be traced round the outline".into());
+            return;
+        }
+        let near: Vec<(usize, f64)> = t
+            .iter()
+            .map(|&p| {
+                let (mut best, mut at) = (f64::INFINITY, (0, 0.0));
+                for i in 0..n {
+                    let (d, s) = dist_to_seg(p, o[i], o[(i + 1) % n]);
+                    if d < best {
+                        best = d;
+                        at = (i, s);
+                    }
+                }
+                at
+            })
+            .collect();
+        let rim_t: Vec<f64> = near.iter().map(|&(i, s)| top[i] + (top[(i + 1) % n] - top[i]) * s + bd.bank_rise).collect();
+        let keep: Vec<bool> = near.iter().map(|&(i, _)| forest[i]).collect();
+        let m = t.len();
+        let Some(start) = (0..m).find(|&k| keep[k] && !keep[(k + m - 1) % m]) else { return };
+        let mut k = 0;
+        while k < m {
+            let i0 = (start + k) % m;
+            if !keep[i0] {
+                k += 1;
+                continue;
+            }
+            let mut run = vec![];
+            while k < m && keep[(start + k) % m] {
+                run.push((start + k) % m);
+                k += 1;
+            }
+            if run.len() < 2 {
+                continue;
+            }
+            let pts: Vec<P2> = run.iter().map(|&j| t[j]).collect();
+            let zt: Vec<f64> = run.iter().map(|&j| rim_t[j]).collect();
+            for &z in &zt {
+                self.rim = (self.rim.0.min(z), self.rim.1.max(z));
+            }
+            // the bank: the tree line's stretch (counter-clockwise), then back along the outer
+            // edges nearest it (clockwise), from the last's start to the first's end
+            let (last, first) = (near[run[run.len() - 1]].0, near[run[0]].0);
+            let mut poly = pts.clone();
+            let mut i = last;
+            loop {
+                poly.push(o[i]);
+                if i == (first + 1) % n {
+                    break;
+                }
+                i = (i + 1) % n;
+                if poly.len() > n + pts.len() + 1 {
+                    break;
+                }
+            }
+            let key = |p: P2| ((p[0] * 1000.0).round() as i64, (p[1] * 1000.0).round() as i64);
+            let mut zs: HashMap<(i64, i64), f64> = HashMap::new();
+            for i in 0..n {
+                zs.insert(key(o[i]), top[i]);
+            }
+            for (p, z) in pts.iter().zip(&zt) {
+                zs.insert(key(*p), *z);
+            }
+            for tri in triangulate(&poly, &[], 0.0) {
+                let Some(p) = tri.iter().map(|q| zs.get(&key(*q)).map(|&z| [q[0], q[1], z])).collect::<Option<Vec<_>>>() else {
+                    self.problems.push("bank triangle off the outline and tree line".into());
+                    continue;
+                };
+                let uv = tri.map(|q| [q[0] / th.bank.tile, q[1] / th.bank.tile]);
+                self.mesh.tri("bank", [p[0], p[1], p[2]], uv, &th.bank.material, &th.bank.surface);
+            }
+            // trunks along the stretch facing in, foliage over them and a little in front
+            let tr = &th.trees;
+            let r: Vec<P2> = pts.iter().rev().copied().collect(); // the level on the right
+            let rz: Vec<f64> = zt.iter().rev().copied().collect();
+            let fol = offset_open_right(&r, tr.foliage_in);
+            let len = |q: &[P2]| q.windows(2).map(|w| dist(w[0], w[1])).sum::<f64>();
+            let (tt, tf) = (snap(len(&r), tr.trunk_tile), snap(len(&fol), tr.foliage_tile));
+            let (mut ut, mut uf) = (0.0, 0.0);
+            for i in 0..r.len() - 1 {
+                let j = i + 1;
+                let (a, b) = (rz[i], rz[j]);
+                let lt = dist(r[i], r[j]);
+                self.mesh.quad(
+                    "trees",
+                    [[r[i][0], r[i][1], a], [r[j][0], r[j][1], b], [r[j][0], r[j][1], b + tr.trunks], [r[i][0], r[i][1], a + tr.trunks]],
+                    [[ut / tt, 0.0], [(ut + lt) / tt, 0.0], [(ut + lt) / tt, 1.0], [ut / tt, 1.0]],
+                    &tr.trunk_material,
+                    &tr.surface,
+                );
+                let (fa, fb) = (a + tr.trunks - tr.overlap, b + tr.trunks - tr.overlap);
+                let lf = dist(fol[i], fol[j]);
+                self.mesh.quad(
+                    "foliage",
+                    [[fol[i][0], fol[i][1], fa], [fol[j][0], fol[j][1], fb], [fol[j][0], fol[j][1], fb + tr.foliage], [fol[i][0], fol[i][1], fa + tr.foliage]],
+                    [[uf / tf, 0.0], [(uf + lf) / tf, 0.0], [(uf + lf) / tf, 1.0], [uf / tf, 1.0]],
+                    &tr.foliage_material,
+                    "",
+                );
+                ut += lt;
+                uf += lf;
+            }
+        }
+    }
+}
+
+/// An open line moved `d` to its right (each point along the mean of its pieces' normals).
+fn offset_open_right(pts: &[P2], d: f64) -> Vec<P2> {
+    let n = pts.len();
+    let right = |a: P2, b: P2| {
+        let v = sub(b, a);
+        let l = v[0].hypot(v[1]).max(1e-9);
+        [v[1] / l, -v[0] / l]
+    };
+    (0..n)
+        .map(|i| {
+            let a = if i > 0 { right(pts[i - 1], pts[i]) } else { right(pts[0], pts[1]) };
+            let b = if i + 1 < n { right(pts[i], pts[i + 1]) } else { a };
+            let m = [a[0] + b[0], a[1] + b[1]];
+            let l = m[0].hypot(m[1]).max(1e-9);
+            let m = [m[0] / l, m[1] / l];
+            let cosa = (m[0] * a[0] + m[1] * a[1]).max(0.5);
+            [pts[i][0] + m[0] * d / cosa, pts[i][1] + m[1] * d / cosa]
+        })
+        .collect()
 }
 
 /// How closely lines derived from the curves (terraces' steps, slopes' rings) follow them.
@@ -2063,7 +2437,7 @@ mod tests {
         };
         Doc {
             name: "test".into(),
-            outline: Outline { nodes: outline, z: 0.0, noise: None },
+            outline: Outline { nodes: outline, z: 0.0, noise: None, beyond: vec![] },
             regions: vec![
                 Region { name: "north".into(), nodes: north, z: 160.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
                 Region { name: "island".into(), nodes: ring(-500.0, -300.0, 300.0), z: 120.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
@@ -2115,7 +2489,7 @@ mod tests {
         let zs: Vec<f64> = std::iter::once(0.0).chain(doc.regions.iter().map(|r| r.z)).collect();
         let field = profiles::Field::new(&doc, &map, &zs, 35.0, &mut vec![]).unwrap();
         let anchors = vec![None; map.faces.len()];
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new() };
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new(), sky: vec![], bands: Default::default() };
         b.regions = std::iter::once(Info { z: 0.0, water: None, pit: false, edge: None, noise: None })
             .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), pit: false, edge: None, noise: None }))
             .collect();
@@ -2192,11 +2566,12 @@ mod tests {
             modes: modes.into_iter().map(String::from).collect(),
             edge: None,
             shape: None,
+            look: None,
         };
         let n = |x: f64, y: f64| vec![Some(x), Some(y)];
         Doc {
             name: "paths".into(),
-            outline: Outline { nodes: sq(-2000.0, -2000.0, 4000.0, 4000.0), z: 0.0, noise: None },
+            outline: Outline { nodes: sq(-2000.0, -2000.0, 4000.0, 4000.0), z: 0.0, noise: None, beyond: vec![] },
             regions: vec![
                 Region { name: "east".into(), nodes: sq(600.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
                 Region { name: "west".into(), nodes: sq(-1400.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
@@ -2260,6 +2635,11 @@ mod tests {
     }
 
     fn open_edges(lvl: &Level, objs: &[&str]) -> Vec<((i64, i64, i64), (i64, i64, i64))> {
+        open_edges_under(lvl, objs, Theme::kokiri().trees.trunks)
+    }
+
+    /// Open edges, but for the tree tops (`trunks` over the rim).
+    fn open_edges_under(lvl: &Level, objs: &[&str], trunks: f64) -> Vec<((i64, i64, i64), (i64, i64, i64))> {
         let key = |p: &P3| ((p[0] * 100.0).round() as i64, (p[1] * 100.0).round() as i64, (p[2] * 100.0).round() as i64);
         let mut edges: HashMap<_, usize> = HashMap::new();
         for o in lvl.mesh.objects.iter().filter(|o| objs.contains(&o.name.as_str())) {
@@ -2270,7 +2650,6 @@ mod tests {
                 }
             }
         }
-        let trunks = Theme::kokiri().trees.trunks;
         let low_top = ((lvl.rim.0 + trunks) * 100.0).round() as i64 - 1;
         edges.into_iter().filter(|(e, n)| *n != 2 && !(e.0 .2 >= low_top && e.1 .2 >= low_top)).map(|(e, _)| e).collect()
     }
@@ -3066,6 +3445,241 @@ mod tests {
         for e in at_edge {
             assert!(ground.contains_key(e), "deck edge {e:?} isn't a floor edge");
         }
+    }
+
+    #[test]
+    fn themes_switch_and_mix_and_stay_watertight() {
+        let wall_mats = |lvl: &Level| -> std::collections::BTreeSet<String> {
+            let walls = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+            walls.mat.iter().map(|&m| lvl.mesh.materials[m].clone()).collect()
+        };
+        let mut doc = paths_doc();
+        doc.settings.theme = "kakariko".into();
+        let th = Theme::for_doc(&doc, None).unwrap();
+        assert_eq!(th.name, "kakariko");
+        let lvl = build(&doc, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges_under(&lvl, &["ground", "walls", "cliffs", "bank", "trees"], th.trees.trunks);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        // the 240 plateaus' walls are Kakariko's brick; its ground and cliffs its own
+        assert!(wall_mats(&lvl).contains("brick"), "{:?}", wall_mats(&lvl));
+        assert_eq!(th.texture_name("brick"), "kak_brick");
+        assert_eq!(th.texture_name(&th.floor.material), "kak_ground");
+        assert_eq!(th.texture_name("cliff~mid"), crate::textures::derived_name("kak_cliff", 3, 30, true));
+        // a region pinned to Kokiri's cliff keeps it under Kakariko, its middle rows Kokiri's
+        doc.regions[0].edge = Some("kokiri:cliff".into());
+        doc.settings.detail = "low".into();
+        let lvl = build(&doc, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let mats = wall_mats(&lvl);
+        assert!(mats.contains("kokiri:cliff") || mats.contains("kokiri:cliff~mid"), "{mats:?}");
+        assert_eq!(th.texture_name("kokiri:cliff"), "kf_cliff");
+        assert_eq!(th.texture_name("kokiri:cliff~mid"), Theme::kokiri().texture_name("cliff~mid"));
+        // pinned to the level's own theme, it's the plain style
+        assert_eq!(th.wall_styles["kakariko:cliff"].material, "kakariko:cliff");
+        assert_eq!(th.texture_name("kakariko:cliff"), "kak_cliff");
+        // a style the theme doesn't have falls back to the theme's walls, and says so
+        doc.settings.theme = "kokiri".into();
+        doc.regions[0].edge = Some("brick".into());
+        doc.paths[0].edge = Some("rock".into());
+        let th = Theme::for_doc(&doc, None).unwrap();
+        let lvl = build(&doc, &th).unwrap();
+        assert_eq!(lvl.problems.len(), 2, "{:?}", lvl.problems);
+        assert!(lvl.problems[0].contains("no wall style \"brick\""), "{:?}", lvl.problems);
+        assert!(!wall_mats(&lvl).contains("brick"));
+        // the editor lists the level's theme's styles first, then the others' pinned
+        let names = th.style_names();
+        let first_pinned = names.iter().position(|n| n.contains(':')).unwrap();
+        assert!(names[..first_pinned].contains(&"cliff".to_string()) && names[first_pinned..].contains(&"kakariko:brick".to_string()));
+        assert!(!names.iter().any(|n| n.starts_with("kokiri:")), "the level's own theme isn't listed twice");
+    }
+
+    #[test]
+    fn stacked_edges_build_walls_and_slopes_and_stay_watertight() {
+        // the sample level in Kakariko's look: the island a cliff with a grass slope above it, the
+        // north plateau (raised to 700) a brick wall, a rock wall a ledge behind it, then steep rock
+        let mut doc = sample_doc();
+        doc.settings.theme = "kakariko".into();
+        doc.regions[0].z = 700.0;
+        doc.regions[1].z = 500.0;
+        doc.regions[1].profile = Some(Profile::Stack { parts: vec![Part::wall(Some(200.0), None), Part::slope(55.0, None, None)] });
+        doc.regions[0].profile = Some(Profile::Stack {
+            parts: vec![Part::wall(Some(200.0), Some("brick")), Part::wall(Some(120.0), Some("rock")), Part::slope(69.0, Some(200.0), Some("rock")), Part::slope(40.0, None, None)],
+        });
+        let th = Theme::for_doc(&doc, None).unwrap();
+        for detail in ["high", "low"] {
+            doc.settings.detail = detail.into();
+            let lvl = build(&doc, &th).unwrap();
+            let steep: Vec<_> = lvl.problems.iter().filter(|p| !p.contains("degrees")).collect();
+            assert!(steep.is_empty(), "{detail}: {:?}", lvl.problems);
+            let bad = open_edges_under(&lvl, &["ground", "walls", "cliffs", "bank", "trees"], th.trees.trunks);
+            assert!(bad.is_empty(), "{detail}: {} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+            let mats = |name: &str| -> std::collections::BTreeSet<String> {
+                let o = lvl.mesh.objects.iter().find(|o| o.name == name).unwrap();
+                o.mat.iter().map(|&m| lvl.mesh.materials[m].clone()).collect()
+            };
+            // the plateau's brick and rock walls; its steep rock drawn as rock on the ground
+            let walls = mats("walls");
+            assert!(walls.contains("brick") || walls.contains("brick~mid"), "{detail}: {walls:?}");
+            assert!(walls.contains("rock"), "{detail}: {walls:?}");
+            assert!(mats("ground").contains("rock"), "{detail}: {:?}", mats("ground"));
+            // the island's edge stands 200 up from the ground beside it, then slopes to its top
+            let g = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+            let island_top = g.verts.iter().filter(|v| dist([v[0], v[1]], [-500.0, -300.0]) < 300.0).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+            assert!((island_top - 500.0).abs() < 1e-6, "{detail}: {island_top}");
+            let lowest = g.verts.iter().filter(|v| dist([v[0], v[1]], [-500.0, -300.0]) < 260.0).map(|v| v[2]).fold(f64::INFINITY, f64::min);
+            assert!(lowest > 199.0, "{detail}: the island's floor starts 200 up at its edge: {lowest}");
+        }
+    }
+
+    #[test]
+    fn beyond_the_outline_ground_climbs_to_a_crest_and_the_forest_stands_only_where_it_should() {
+        // the paths level (a square 4000 across) in Kakariko's look: beyond its north edge a cliff
+        // and a grass slope up to 900, beyond its east edge the mossy wall up to 1200; forest on
+        // the other two
+        let mut doc = paths_doc();
+        doc.settings.theme = "kakariko".into();
+        let west_wing = Profile::Stack { parts: vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, None, None)] };
+        let mossy = Profile::Stack { parts: vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, Some(75.0), None), Part::slope(76.0, None, Some("mountain"))] };
+        // the outline runs (-2000, -2000), (2000, -2000), (2000, 2000), (-2000, 2000): edge 1 east, 2 north
+        doc.outline.beyond = vec![None, Some(Beyond { z: 1200.0, profile: mossy }), Some(Beyond { z: 900.0, profile: west_wing }), None];
+        let th = Theme::for_doc(&doc, None).unwrap();
+        for detail in ["high", "low"] {
+            doc.settings.detail = detail.into();
+            let lvl = build(&doc, &th).unwrap();
+            let problems: Vec<_> = lvl.problems.iter().filter(|p| !p.contains("degrees")).collect();
+            assert!(problems.is_empty(), "{detail}: {problems:?}");
+            let obj = |n: &str| lvl.mesh.objects.iter().find(|o| o.name == n).unwrap();
+            // the ground beyond the north edge climbs to its crest at 900 (the east's to 1200), and
+            // the level's own floor along the edges is where it was
+            let g = obj("ground");
+            let top = |f: &dyn Fn(&P3) -> bool| g.verts.iter().filter(|v| f(v)).map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max);
+            assert!((top(&|v| v[1] > 2000.5 && v[0] < 1500.0) - 900.0).abs() < 1e-6, "{detail}");
+            assert!((top(&|v| v[0] > 2000.5 && v[1] < 1500.0) - 1200.0).abs() < 1e-6, "{detail}");
+            assert!(g.verts.iter().filter(|v| (v[1] - 1999.0).abs() < 1.0 && v[0].abs() < 1500.0).all(|v| v[2].abs() < 1e-6), "{detail}: the floor inside the north edge");
+            // the forest stands along the south and west, not past the bands
+            for name in ["trees", "foliage"] {
+                assert!(obj(name).verts.iter().all(|v| v[1] < 2000.0 + 1.0 && v[0] < 2000.0 + 1.0), "{detail}: {name} beyond a band");
+            }
+            assert!(obj("trees").verts.iter().any(|v| v[1] < -2100.0), "{detail}: trees along the south");
+            // the forest's rim isn't raised by the bands' crests
+            assert!(lvl.rim.1 < 400.0, "{detail}: rim {:?}", lvl.rim);
+            // watertight but for the bands' far edges (the level ends there) and the forest's ends
+            let (expanded, bands) = crate::beyond::expand(&doc).unwrap();
+            let far: Vec<(P2, P2)> = bands
+                .far
+                .iter()
+                .enumerate()
+                .flat_map(|(j, es)| {
+                    let r = &expanded.regions[bands.first + j];
+                    let n = r.nodes.len();
+                    es.iter().map(move |&k| ([r.nodes[k][0], r.nodes[k][1]], [r.nodes[(k + 1) % n][0], r.nodes[(k + 1) % n][1]])).collect::<Vec<_>>()
+                })
+                .collect();
+            let inside = |x: i64, y: i64| x.abs() <= 200_001 && y.abs() <= 200_001;
+            let bad: Vec<_> = open_edges_under(&lvl, &["ground", "walls", "cliffs", "bank", "trees"], th.trees.trunks)
+                .into_iter()
+                .filter(|(a, b)| {
+                    let m = [(a.0 + b.0) as f64 / 200.0, (a.1 + b.1) as f64 / 200.0];
+                    // the bands' far edges
+                    !far.iter().any(|&(p, q)| dist_to_seg(m, p, q).0 < 1.0)
+                        // the bands' side faces' feet, under the forest's bank
+                        && !(a.2 <= 0 && b.2 <= 0 && !(inside(a.0, a.1) && inside(b.0, b.1)))
+                        // where a band, its side face and the forest's cliff meet (three walls at a corner)
+                        && !(a.0 == b.0 && a.1 == b.1 && a.0.abs() == 200_000 && a.1.abs() == 200_000)
+                })
+                .collect();
+            // the cliffs' tops meet the bank only where the forest is; elsewhere (the band's side
+            // faces' bottoms, the forest cliff's ends) edges are open by design: just few
+            // and the forest's two ends: each its bank's end, its trunks' end and the cliff top's last piece
+            assert!(bad.len() <= 6, "{detail}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(8)]);
+            let ends = bad.iter().filter(|(a, b)| a.0 == b.0 && a.1 == b.1).count();
+            assert_eq!(ends, 2, "{detail}: the trunks' two ends: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn stairs_are_a_ramp_with_steps_drawn_on_it() {
+        // the paths level's ramp as Kakariko's stairs, in a Kokiri level (borrowing Kakariko's)
+        let mut doc = paths_doc();
+        doc.paths[0].look = Some("steps".into());
+        let th = Theme::for_doc(&doc, None).unwrap();
+        assert_eq!(th.steps.as_ref().map(|s| s.tread.as_str()), Some("kakariko:steps"));
+        assert_eq!(th.texture_name("kakariko:steps"), "kak_steps");
+        let lvl = build(&doc, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        let mats = &lvl.mesh.materials;
+        let st = th.steps.as_ref().unwrap();
+        // the tread: twice across, one step every 22.4 along its surface
+        let g = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        let treads: Vec<usize> = (0..g.tris.len()).filter(|&t| mats[g.mat[t]] == st.tread).collect();
+        assert!(!treads.is_empty());
+        let (mut lo, mut hi) = ((f64::INFINITY, 0.0), (f64::NEG_INFINITY, 0.0));
+        for &t in &treads {
+            for k in 0..3 {
+                let (v, uv) = (g.verts[g.tris[t][k]], g.uvs[t][k]);
+                assert!((-1e-6..=2.0 + 1e-6).contains(&uv[0]), "u {}", uv[0]);
+                if v[2] < lo.0 {
+                    lo = (v[2], uv[1]);
+                }
+                if v[2] > hi.0 {
+                    hi = (v[2], uv[1]);
+                }
+            }
+        }
+        // the ramp climbs from the ground to the plateau's 240 over 1200: its surface is about
+        // 1224 long, 55 steps
+        let steps = (hi.1 - lo.1).abs();
+        assert!((hi.0 - lo.0 - 240.0).abs() < 1e-6, "{lo:?} {hi:?}");
+        assert!((steps - 1200f64.hypot(240.0) / 22.4).abs() < 0.5, "{steps} steps");
+        // an 11 degree stair's sides are plain brick, repeating along them
+        let walls = |lvl: &Level| -> std::collections::BTreeSet<String> {
+            let w = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+            w.mat.iter().map(|&m| lvl.mesh.materials[m].clone()).collect()
+        };
+        let (side, tiled) = (&th.wall_styles[&st.side].material, &th.wall_styles[st.tiled.as_ref().unwrap()].material);
+        assert!(walls(&lvl).contains(tiled) && !walls(&lvl).contains(side), "{:?}", walls(&lvl));
+        // its bricks one size all over: v up from the stair's foot, the same band everywhere (a
+        // wall's own v is per column, stretched where the side's height runs to nothing)
+        let ws = &th.wall_styles[st.tiled.as_ref().unwrap()];
+        let band = ws.band.unwrap();
+        let w = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+        let offs: Vec<f64> = (0..w.tris.len())
+            .filter(|&t| &lvl.mesh.materials[w.mat[t]] == tiled)
+            .flat_map(|t| (0..3).map(move |k| (t, k)))
+            .map(|(t, k)| w.verts[w.tris[t][k]][2] - w.uvs[t][k][1] * band)
+            .collect();
+        assert!(offs.iter().all(|o| (o - offs[0]).abs() < 1e-6), "{:?}", &offs[..offs.len().min(8)]);
+        // one of Kakariko's slope (240 up over 480) has the stairs' profile on its sides, the
+        // texture once over the stair (u and v within 0 to 1)
+        doc.paths[0].nodes[0] = vec![Some(1000.0), Some(420.0)];
+        let lvl = build(&doc, &th).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let w = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+        let mats = &lvl.mesh.materials;
+        let sides: Vec<usize> = (0..w.tris.len()).filter(|&t| &mats[w.mat[t]] == side).collect();
+        assert!(!sides.is_empty() && !walls(&lvl).contains(tiled), "{:?}", walls(&lvl));
+        // where it cuts into the plateau, the walls above it are brick with the grass on top
+        // (top-anchored), not its sides' profile
+        let cutting = &th.wall_styles[st.cutting.as_ref().unwrap()];
+        assert_eq!(cutting.caps.as_ref().map(|c| c.anchor.as_str()), Some("top"));
+        assert!(walls(&lvl).contains(&cutting.material), "{:?}", walls(&lvl));
+        // every profile triangle is under the stairs' surface (240 up over y 420 to 900): sides, not cuttings
+        for &t in &sides {
+            let c = w.tris[t].map(|v| w.verts[v]);
+            let (y, z) = ((c[0][1] + c[1][1] + c[2][1]) / 3.0, (c[0][2] + c[1][2] + c[2][2]) / 3.0);
+            assert!(z <= 240.0 * ((y - 420.0) / 480.0).clamp(0.0, 1.0) + 1.0, "a profile triangle above the stairs at y {y:.0}, z {z:.0}");
+        }
+        for &t in &sides {
+            for uv in w.uvs[t] {
+                assert!((-1e-6..=1.0 + 1e-6).contains(&uv[0]) && uv[1] <= 1.0 + 1e-6, "{uv:?}");
+            }
+        }
+        // an unknown look is refused
+        doc.paths[0].look = Some("cobbles".into());
+        assert!(build(&doc, &th).is_err());
     }
 
     #[test]

@@ -57,6 +57,8 @@ pub struct PathGeo {
     pub shape: Option<String>,
     /// Steepest slope, in degrees.
     pub max_slope: f64,
+    /// Its attached runs' look (`Path::look`).
+    pub look: Option<String>,
 }
 
 impl PathGeo {
@@ -71,6 +73,28 @@ impl PathGeo {
             }
         }
         z
+    }
+
+    /// Where p is along the attached runs' centre line: the run's index, how far along it is (the
+    /// station's `s`, horizontal) and how far along the surface (its slope included), how far to
+    /// the left of the line, how far from it, and the path's width there.
+    pub fn along(&self, p: P2) -> Option<(usize, f64, f64, f64, f64, f64)> {
+        let mut best: Option<(usize, f64, f64, f64, f64, f64)> = None;
+        for (k, r) in self.runs.iter().enumerate().filter(|(_, r)| !r.floating) {
+            let mut s3 = 0.0;
+            for i in r.i0..r.i1 {
+                let (a, b) = (&self.st[i], &self.st[i + 1]);
+                let l3 = (b.s - a.s).hypot(b.z - a.z);
+                let (d, t) = dist_to_seg(p, a.p, b.p);
+                if best.is_none_or(|x| d < x.4) {
+                    let q = sub(p, lerp(a.p, b.p, t));
+                    let left = a.dir[0] * q[1] - a.dir[1] * q[0];
+                    best = Some((k, a.s + (b.s - a.s) * t, s3 + l3 * t, left, d, a.w + (b.w - a.w) * t));
+                }
+                s3 += l3;
+            }
+        }
+        best
     }
 
     /// Distance from p to the centre line of the attached runs (infinite if none).
@@ -290,7 +314,11 @@ pub fn layout(path: &Path, base: &dyn Fn(P2) -> f64, sampling: Sampling) -> Resu
         .windows(2)
         .map(|w| ((w[1].z - w[0].z).abs() / (w[1].s - w[0].s).max(1e-9)).atan().to_degrees())
         .fold(0.0, f64::max);
-    let geo = PathGeo { name: name.clone(), st, runs, edge: path.edge.clone(), shape: path.shape.clone(), max_slope };
+    match path.look.as_deref() {
+        None | Some("steps") => {}
+        Some(l) => return Err(format!("path {name}: unknown look {l:?} (steps, or none for the ground)")),
+    }
+    let geo = PathGeo { name: name.clone(), st, runs, edge: path.edge.clone(), shape: path.shape.clone(), max_slope, look: path.look.clone() };
     // a footprint that folds over itself turns too tightly for its width
     for r in geo.runs.iter().filter(|r| !r.floating) {
         let rb = geo.ribbon(r);
@@ -314,7 +342,7 @@ mod tests {
     use super::*;
 
     fn path(nodes: Vec<Vec<Option<f64>>>, modes: Vec<&str>) -> Path {
-        Path { name: "t".into(), nodes, width: 100.0, mode: "attached".into(), modes: modes.into_iter().map(String::from).collect(), edge: None, shape: None }
+        Path { name: "t".into(), nodes, width: 100.0, mode: "attached".into(), modes: modes.into_iter().map(String::from).collect(), edge: None, shape: None, look: None }
     }
 
     /// Ground at 0 except a plateau at 200 for x > 1000.

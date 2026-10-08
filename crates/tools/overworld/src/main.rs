@@ -1,34 +1,44 @@
-//! overworld build <level.json> <out dir> [--theme <theme.json>] [--textures <dir>] [--kit <dir>]
-//! overworld kit-textures [<spot04.glb>] [<out dir>]
+//! overworld build <level.json> <out dir> [--theme <theme.json>] [--textures <dir>]... [--kit <dir>]
+//! overworld kit-textures [<theme>...]
 //! overworld kit-pieces [<manifest.json>] [<out dir>]
 //!
-//! `kit-textures` makes the Kokiri texture library (`kit.rs`) from the clone's extracted scene,
-//! by default `extracted/scenes/overworld/spot04/spot04.glb` into `out/overworld/textures/kokiri`.
+//! `kit-textures` makes the themes' texture libraries (`kit.rs`) from the clone's extracted scenes
+//! (Kokiri Forest's spot04, Kakariko's spot01), each into `out/overworld/textures/<theme>`: all of
+//! them, or the themes named.
 //!
 //! `kit-pieces` cuts the pieces of a kit manifest (`kit/kokiri.json`: houses, stumps, stones, the log
 //! tunnel, the crawlspace...) out of the extract it names, by default into `out/overworld/kit/kokiri`
 //! (`pieces.rs`). Paths in the manifest are relative to the working directory (the repo root).
 //!
 //! `build` writes <out>/level.json (meshes with materials and collision surfaces), level.obj and
-//! level.mtl, and copies the textures the level uses from the texture library `--textures`
-//! (PNGs plus textures.json) into <out>/textures. Props come from the kit `--kit` (by default
+//! level.mtl, and copies the textures the level uses from the texture libraries `--textures` (PNGs
+//! plus textures.json; by default every theme's in `out/overworld/textures`) into <out>/textures.
+//! The theme is the document's `settings.theme` unless `--theme` gives a file. Props come from the kit `--kit` (by default
 //! `out/overworld/kit/kokiri`, if it's there). Prints a summary. Exit code 1 on errors.
 
 use overworld::textures::Library;
 use overworld::pieces::Kit;
 use overworld::{build_with, export, Doc, Theme};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Where the themes' texture libraries go, one folder each.
+const TEXTURES: &str = "out/overworld/textures";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("kit-textures") {
-        let glb = args.get(2).cloned().unwrap_or("extracted/scenes/overworld/spot04/spot04.glb".into());
-        let out = args.get(3).cloned().unwrap_or("out/overworld/textures/kokiri".into());
-        match overworld::kit::export_kokiri(Path::new(&glb), Path::new(&out)) {
-            Ok(n) => println!("{n} textures in {out}"),
-            Err(e) => {
-                eprintln!("error: {e}");
-                std::process::exit(1);
+        let wanted = &args[2..];
+        for sc in overworld::kit::SCENES {
+            if !wanted.is_empty() && !wanted.iter().any(|w| w == sc.theme) {
+                continue;
+            }
+            let out = format!("{TEXTURES}/{}", sc.theme);
+            match overworld::kit::export(sc, Path::new(sc.glb), Path::new(&out)) {
+                Ok(n) => println!("{}: {n} textures in {out}", sc.label),
+                Err(e) => {
+                    eprintln!("error: {}: {e}", sc.label);
+                    std::process::exit(1);
+                }
             }
         }
         return;
@@ -61,8 +71,8 @@ fn main() {
         return;
     }
     if args.len() < 4 || args[1] != "build" {
-        eprintln!("usage: overworld build <level.json> <out dir> [--theme <theme.json>] [--textures <dir>] [--kit <dir>]");
-        eprintln!("       overworld kit-textures [<spot04.glb>] [<out dir>]");
+        eprintln!("usage: overworld build <level.json> <out dir> [--theme <theme.json>] [--textures <dir>]... [--kit <dir>]");
+        eprintln!("       overworld kit-textures [<theme>...]");
         eprintln!("       overworld kit-pieces [<manifest.json>] [<out dir>]");
         std::process::exit(2);
     }
@@ -70,14 +80,13 @@ fn main() {
     let run = || -> Result<(), String> {
         let doc: Doc = serde_json::from_str(&std::fs::read_to_string(&args[2]).map_err(|e| format!("{}: {e}", args[2]))?)
             .map_err(|e| format!("{}: {e}", args[2]))?;
-        let theme = match opt("--theme") {
-            Some(p) => Theme::load(&p?)?,
-            None => Theme::kokiri(),
-        };
-        let lib = match opt("--textures") {
-            Some(p) => Some(Library::load(Path::new(&p?))?),
-            None => None,
-        };
+        let theme = Theme::for_doc(&doc, opt("--theme").map(|p| Theme::load(&p?)).transpose()?)?;
+        let mut dirs: Vec<PathBuf> =
+            args.iter().enumerate().filter(|(_, a)| *a == "--textures").filter_map(|(i, _)| args.get(i + 1)).map(PathBuf::from).collect();
+        if dirs.is_empty() {
+            dirs = overworld::kit::SCENES.iter().map(|sc| Path::new(TEXTURES).join(sc.theme)).filter(|d| d.join("textures.json").exists()).collect();
+        }
+        let lib = if dirs.is_empty() { None } else { Some(Library::load_all(&dirs)?) };
         let kit = match opt("--kit") {
             Some(p) => Some(Kit::load(Path::new(&p?))?),
             None => Kit::load(Path::new("out/overworld/kit/kokiri")).ok(),

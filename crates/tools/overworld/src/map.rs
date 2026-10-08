@@ -489,7 +489,7 @@ mod tests {
     fn doc(outline: Vec<Vec<f64>>, regions: Vec<(Vec<Vec<f64>>, f64)>) -> Doc {
         Doc {
             name: "t".into(),
-            outline: Outline { nodes: outline, z: 0.0, noise: None },
+            outline: Outline { nodes: outline, z: 0.0, noise: None, beyond: vec![] },
             regions: regions
                 .into_iter()
                 .map(|(nodes, z)| Region { name: String::new(), nodes, z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] })

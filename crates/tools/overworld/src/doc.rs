@@ -102,6 +102,20 @@ pub struct Outline {
     /// Bumps on the ground.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub noise: Option<Noise>,
+    /// Per edge (edge k runs from node k to the next): what lies beyond it, instead of the forest
+    /// (null). See `beyond.rs`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub beyond: Vec<Option<Beyond>>,
+}
+
+/// What lies beyond an outline edge, instead of the forest: ground climbing from the edge to a
+/// crest at `z`, as `profile` says (built outward from the edge: a cliff, a slope, terraces, a
+/// stack...), and nothing past the crest. `beyond.rs`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Beyond {
+    /// The crest's height.
+    pub z: f64,
+    pub profile: Profile,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -186,6 +200,49 @@ pub enum Profile {
         #[serde(default, skip_serializing_if = "is_zero_u32")]
         seed: u32,
     },
+    /// Parts from the foot in, each a wall or a slope with its own height and look: a cliff with a
+    /// grass slope above it, a brick wall under a rock face (Kakariko's edges). Walls past the edge
+    /// are step lines cut into the floor, as terraces' risers are; slopes are the floor's height
+    /// between them. See `Part`.
+    Stack { parts: Vec<Part> },
+}
+
+/// One part of a stacked profile (`Profile::Stack`), listed from the foot in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Part {
+    /// "wall" (upright) or "slope".
+    pub kind: String,
+    /// How much of the drop it climbs. Blank: an even share of what the parts with one leave. If
+    /// those climb more than the drop, the stack doesn't fit and that edge is a cliff (a short side
+    /// of a stacked ridge); if every part has one and they climb less, the rest is a cliff at the
+    /// edge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rise: Option<f64>,
+    /// A slope's angle, in degrees.
+    #[serde(default = "slope_angle")]
+    pub angle: f64,
+    /// A slope's rounding (0 to 1), as `Profile::Slope`'s.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub round: f64,
+    /// A wall style, the theme's or another's (`kakariko:rock`): a wall's look, or a slope textured
+    /// as a wall (along the edge and up the face). Blank: a wall by the theme's rules; a slope the
+    /// floor, or the theme's cliff when it's steeper than `STEEP`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+}
+
+/// Slopes steeper than this (degrees) with no style of their own are textured as the theme's
+/// cliff, not the floor.
+pub const STEEP: f64 = 60.0;
+
+impl Part {
+    pub fn wall(rise: Option<f64>, style: Option<&str>) -> Part {
+        Part { kind: "wall".into(), rise, angle: slope_angle(), round: 0.0, style: style.map(String::from) }
+    }
+
+    pub fn slope(angle: f64, rise: Option<f64>, style: Option<&str>) -> Part {
+        Part { kind: "slope".into(), rise, angle, round: 0.0, style: style.map(String::from) }
+    }
 }
 
 pub fn overhang_depth() -> f64 {
@@ -262,6 +319,10 @@ pub struct Path {
     /// Floating runs' shape: "rock" (a natural arch) or "slab" (else the theme's).
     #[serde(default)]
     pub shape: Option<String>,
+    /// How its attached runs look: none, the ground; "steps", stairs as Kakariko's are (a ramp with
+    /// steps drawn on it, its sides the stairs' profile: the theme's `steps`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub look: Option<String>,
 }
 
 fn path_width() -> f64 {
@@ -320,11 +381,28 @@ pub struct Settings {
     /// stretched once over the rest) or "stretched" (the texture once over the wall's height, as
     /// wide as that keeps its shape: Kokiri's own way, blurrier on tall walls). See `WallTexture`.
     pub wall_texture: String,
+    /// The level's theme ("kokiri", the default, or "kakariko"): how every style the document
+    /// doesn't pin to a theme looks. `Theme::for_doc`.
+    #[serde(skip_serializing_if = "is_kokiri")]
+    pub theme: String,
+}
+
+fn is_kokiri(t: &String) -> bool {
+    t == "kokiri"
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { sample: 60.0, steiner: 250.0, weld: 1.0, seed: 0, detail: "high".into(), edges: "smooth".into(), wall_texture: "tiled".into() }
+        Settings {
+            sample: 60.0,
+            steiner: 250.0,
+            weld: 1.0,
+            seed: 0,
+            detail: "high".into(),
+            edges: "smooth".into(),
+            wall_texture: "tiled".into(),
+            theme: "kokiri".into(),
+        }
     }
 }
 

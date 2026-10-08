@@ -11,6 +11,10 @@ builder's README.
   slope on a pond). See Edge profiles and Pits in the builder's README; example `sketch_profiles.json`. Marked *built*
   below.
 
+- **2026-10-08, Kakariko (section 7):** switchable and mixable themes with a Kakariko theme; stacked profiles with a
+  style per part, steep slopes drawn as walls; ground beyond the outline's edges instead of the forest. See Themes,
+  Stacks and Beyond the outline in the builder's README; example `sketch_kakariko.json`. Marked *built* in section 7.
+
 The order agreed for the rest: lofted contour rocks and standalone arches; path cross-sections, "make it walkable" and
 junctions; the precision tools (measure, Link gauges, section cut, grid and snaps); relative heights and brush layers;
 then rivers and the scatter and array rules.
@@ -32,7 +36,7 @@ it. A new feature fits if:
 3. the level still builds watertight with it.
 
 The theme chooses the look, so the document never names a texture. Biome variety (rock, sand, snow) belongs in
-themes, not in extra tools.
+themes, not in extra tools. A document may name a style, its theme's or another's (section 7).
 
 ## What OoT has that we can't build yet
 
@@ -81,7 +85,8 @@ themes, not in extra tools.
   - **cliff-side ledge:** cut into a wall on one side, dropping off on the other (Death Mountain Trail, Gerudo Valley);
   - **sunken lane:** a cutting with walls on both sides (Kakariko's roads);
   - **causeway:** raised, with optional railings;
-  - **steps:** a step height, with the run solved from the slope;
+  - **steps:** a step height, with the run solved from the slope (*built* as Kakariko does stairs: a path's look
+    `steps`, a ramp with steps drawn on it and the stairs' profile on its sides);
   - **boardwalk:** planks on stumps or posts at a spacing (Kokiri Forest's walkways, made parametric).
 - **"Make it walkable."** Give two endpoints and the builder adds switchbacks so the slope stays under the walkable
   35°. You choose the corridor width and turn style; it solves the zig-zag. You state the constraint, not the geometry.
@@ -156,6 +161,57 @@ Other ideas:
   hedge maze, Kakariko's walls, the castle town wall.
 - **Caverns and holes.** A region with a ceiling (an enclosed cave room), and tunnels that start in a floor (grotto
   holes; already under the tunnels' "Not yet").
+
+## 7. Kakariko: stacked edges, the edge of the world as edges, and themes
+
+Added 2026-10-08, from taking Kakariko Village (spot01) apart: which texture is on which surface, how big each is
+drawn, and cross-sections through its edges. Its surroundings are each a short **stack** of parts, not one wall:
+
+| Where | Going outward, from the floor at the foot | Texture (spot01 material) |
+|---|---|---|
+| North, under Death Mountain Trail | A brick retaining wall 320 tall, a rock wall 160 tall, rock at 69°, a rock slope at 37° up to about +1160, then the sky | Brick with a grass top (21, 22); striated rock (31), projected so it runs on unbroken from the wall onto the slope, a repeat every ~670 |
+| West wing, both sides of the entrance road | A cliff 330 tall, then a grass slope at 33 to 39° up to about +940, then the sky | Rock and dirt with a grass lip (18), once over the wall's height; the ground |
+| South | A cliff 330 tall, a short grass slope at 36°, then a mossy wall at 76°, about 670 tall, to the skyline | Mossy rock (29), once over the height. It's a cut-out texture: its grassy top row is the jagged skyline |
+| East, by the graveyard | A tree line on cards, like Kokiri's | Trunks and foliage (34, 35) |
+| Far off | Two Death Mountain cards | 24, 25 |
+
+The village floor isn't flat either: it tilts by up to 8°.
+
+**Stacked profiles** (*built*). A profile that is a list of parts going out from the foot: a wall (a height, optionally leaning)
+or a slope (an angle and a rise), each with its own style, ending in a crest. On a region's edge it's built inward, as
+profiles are now: wall parts are step lines cut into the floor (as terraces' risers are) and slope parts are the
+slope's height field between them. Terraces are then one particular stack.
+
+**Steep slopes textured as walls** (*built*, for a stack's slopes). Above about 60°, a slope part is textured along the edge and up the face (the
+roadmap's "slopes switching to the cliff texture when steep"). A rock style repeats by height, so the rock runs on
+across the fold between a vertical part and a slope, as spot01's does.
+
+**The outline's edges get profiles too** (*built* as `outline.beyond`: forest, or ground to a crest with any profile;
+a mountain is a stack ending in the mossy wall), built **outward**, where the bank and trees are now, so the walkable
+floor stays as drawn:
+- `forest`, today's cliff, bank and trees (the default);
+- `mountain`, a steep wall with an angle and a height, its texture once over it, the skyline its cut-out top;
+- `stack`, a stack as above, ending in a crest where the level meets the sky (Kakariko's west wing and north).
+
+Then backdrop cards beyond the crest, and joins where one boundary type meets the next.
+
+**Themes you can switch and mix** (*built*).
+- Every theme fills the same named **styles**: `cliff`, `ledge`, `shore`, `vines`, `brick`, `stone`, `rock`,
+  `mountain` and so on. The document names a style, never a texture, so this section's rule above still holds.
+- `settings.theme` is the level's theme. A plain style resolves in it; `kakariko:brick` pins another theme's. That's
+  how a level mixes themes while the themes stay apart.
+- Switching the theme reskins everything not pinned. A style the theme doesn't have falls back to the theme's own
+  walls, and the build reports it.
+- Textures live in one library across themes (`kf_*` Kokiri, `kak_*` Kakariko), each made from its scene's extract,
+  with its role table and size checks. A theme can borrow another's texture by its library name (Kakariko has no
+  water texture).
+- The editor gets a theme picker in the Level panel; style pickers list the level's theme first and the others
+  after.
+- Kakariko's houses can be cut from its room mesh like Kokiri's. Its windmill, well, gate and watchtower are actors,
+  not room geometry, so they're separate work.
+
+Order: the theme pipeline and a Kakariko theme; then stacks and steep slopes on region edges; then the outline's
+boundary types.
 
 ## What to keep out
 

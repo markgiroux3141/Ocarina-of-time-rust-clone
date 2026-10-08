@@ -8,7 +8,7 @@ use super::widgets::{self, field, section};
 use super::{line_colour, App, Sel, PROP_COLOUR};
 use crate::edit::{self, NodeRef};
 use eframe::egui::{self, Color32, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
-use overworld::doc::{Profile, Prop};
+use overworld::doc::{Beyond, Part, Profile, Prop};
 
 /// What the header card shows on the left.
 enum Tile {
@@ -140,7 +140,7 @@ impl App {
         if l >= edit::loop_count(&self.doc) {
             return;
         }
-        let styles: Vec<String> = self.theme.wall_styles.keys().cloned().collect();
+        let styles = self.theme.style_names();
         let node = match self.sel {
             Sel::Node(r) => Some(r),
             _ => None,
@@ -150,6 +150,9 @@ impl App {
             self.problems_for(ui, Sel::Loop(0));
             if let Some(r) = node {
                 self.node_section(ui, r);
+            }
+            if let Sel::Edge(..) = self.sel {
+                self.beyond_section(ui);
             }
             let o = &mut self.doc.outline;
             section(ui, "ins ground", "Ground", None, true, |ui| {
@@ -214,7 +217,7 @@ impl App {
         let own = r.profiles.iter().filter(|p| p.is_some()).count();
         let drop = (r.z - beside).abs();
         section(ui, "ins edges", "Edges", (own > 0).then(|| format!("{own} own")), true, |ui| {
-            profile_ui(ui, "region", &mut r.profile, None, drop);
+            profile_ui(ui, "region", &mut r.profile, None, drop, &styles);
             widgets::hint(
                 ui,
                 if water {
@@ -234,6 +237,46 @@ impl App {
         }
     }
 
+    /// What lies beyond the selected outline edges (all of them at once): the forest, or ground
+    /// climbing to a crest (`beyond.rs`).
+    fn beyond_section(&mut self, ui: &mut egui::Ui) {
+        let ks = self.selected_edges();
+        let Some(&k0) = ks.first() else { return };
+        let mut b = edit::beyond_of(&self.doc, k0).cloned();
+        let mixed = ks.iter().any(|&k| edit::beyond_of(&self.doc, k).cloned() != b);
+        let n = self.doc.outline.nodes.len();
+        let title = if ks.len() == 1 { format!("Beyond edge {} → {}", k0, (k0 + 1) % n) } else { format!("Beyond {} edges", ks.len()) };
+        let styles = self.theme.style_names();
+        let ground = self.doc.outline.z;
+        let mut changed = false;
+        section(ui, "ins beyond", &title, None, true, |ui| {
+            if mixed {
+                widgets::hint(ui, "They differ: a choice here sets them all.");
+            }
+            let mut kind = if b.is_some() { "ground" } else { "forest" }.to_string();
+            field(ui, "Beyond", Some("Forest: a cliff, a bank and trees, the edge of the world as it's always been. Ground: ground climbing from the edge to a crest, built outward, and nothing past it"), |ui| {
+                if widgets::segmented(ui, &mut kind, &[("forest".to_string(), "Forest"), ("ground".to_string(), "Ground")]) {
+                    b = (kind == "ground").then(|| Beyond { z: ground + 900.0, profile: Profile::Stack { parts: stack_presets()[0].2.clone() } });
+                    changed = true;
+                }
+            });
+            if let Some(be) = b.as_mut() {
+                field(ui, "Crest", Some("How high the ground climbs, the crest where the level ends at the sky"), |ui| {
+                    changed |= ui.add(egui::DragValue::new(&mut be.z).speed(1.0)).changed();
+                });
+                let mut p = Some(be.profile.clone());
+                if profile_ui(ui, "beyond", &mut p, None, (be.z - ground).abs(), &styles) {
+                    be.profile = p.unwrap_or(Profile::Cliff);
+                    changed = true;
+                }
+            }
+            widgets::hint(ui, "Shift-click more outline edges to set them together. Del: back to the forest.");
+        });
+        if changed {
+            edit::set_beyond(&mut self.doc, &ks, b);
+        }
+    }
+
     /// The selected edges' own profile (all of them at once).
     fn edge_section(&mut self, ui: &mut egui::Ui, l: usize) {
         let ks = self.selected_edges();
@@ -245,12 +288,13 @@ impl App {
         let n = r.nodes.len();
         let title = if ks.len() == 1 { format!("Edge {} → {}", k0, (k0 + 1) % n) } else { format!("{} edges", ks.len()) };
         let mut changed = false;
+        let styles = self.theme.style_names();
         section(ui, "ins edge", &title, None, true, |ui| {
             if mixed {
                 widgets::hint(ui, "They differ: a choice here sets them all.");
             }
             let drop = (r.z - self.beside_z(l)).abs();
-            changed = profile_ui(ui, "edge", &mut p, Some(region), drop);
+            changed = profile_ui(ui, "edge", &mut p, Some(region), drop, &styles);
             widgets::hint(ui, "Shift-click more edges of this region to set them together. Del: back to the region's.");
         });
         if changed {
@@ -262,7 +306,7 @@ impl App {
         if k >= self.doc.paths.len() {
             return;
         }
-        let styles: Vec<String> = self.theme.wall_styles.keys().cloned().collect();
+        let styles = self.theme.style_names();
         let node = match self.sel {
             Sel::Node(r) => Some(r),
             _ => None,
@@ -298,7 +342,13 @@ impl App {
             }
         });
         section(ui, "ins plook", "Look", None, true, |ui| {
-            field(ui, "Sides", Some("The wall style of its sides"), |ui| style_combo(ui, "pedge", &mut p.edge, &styles, "theme's"));
+            field(
+                ui,
+                "Surface",
+                Some("Ground, or stairs as Kakariko's are: a ramp with steps drawn on it, its sides the stairs' profile. Kakariko's are 1 in 2 (26.6°): a 160 rise over 320"),
+                |ui| widgets::segmented(ui, &mut p.look, &[(None, "Ground"), (Some("steps".to_string()), "Steps")]),
+            );
+            field(ui, "Sides", Some("The wall style of its sides (stairs: the stairs' own unless you set one)"), |ui| style_combo(ui, "pedge", &mut p.edge, &styles, "theme's"));
             field(ui, "Bridge shape", Some("Under its floating segments"), |ui| widgets::segmented(ui, &mut p.shape, &[(None, "Theme's"), (Some("rock".to_string()), "Rock arch"), (Some("slab".to_string()), "Slab")]));
         });
         let n = p.nodes.len();
@@ -761,7 +811,109 @@ pub(super) fn profile_name(p: Option<&Profile>) -> &'static str {
         Some(Profile::Terraces { .. }) => "Terraces",
         Some(Profile::Overhang { .. }) => "Overhang",
         Some(Profile::Ragged { .. }) => "Ragged",
+        Some(Profile::Stack { .. }) => "Stack",
     }
+}
+
+/// Stacks people start from: Kakariko's edges.
+fn stack_presets() -> [(&'static str, &'static str, Vec<Part>); 3] {
+    [
+        ("Cliff + slope", "Kakariko's west wing: a cliff 330 tall, then a grass slope at 36° the rest of the way", vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, None, None)]),
+        (
+            "Brick + rock",
+            "Under Death Mountain Trail: a brick wall 320 tall, a rock wall 160 behind it, rock at 69° for 300, then a rock slope at 37°",
+            vec![Part::wall(Some(320.0), Some("brick")), Part::wall(Some(160.0), Some("rock")), Part::slope(69.0, Some(300.0), Some("rock")), Part::slope(37.0, None, Some("rock"))],
+        ),
+        (
+            "Mossy wall",
+            "Kakariko's south edge: a cliff 330 tall, a strip of grass at 36°, then a mossy wall at 76° to the top",
+            vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, Some(75.0), None), Part::slope(76.0, None, Some("mountain"))],
+        ),
+    ]
+}
+
+/// A stack's parts, from the foot in: each a wall or a slope, its height (blank: a share of the
+/// rest), a slope's angle, and its style. Returns whether they changed.
+fn stack_ui(ui: &mut egui::Ui, parts: &mut Vec<Part>, drop: f64, styles: &[String]) -> bool {
+    let mut changed = false;
+    field(ui, "  Presets", Some("Kakariko's edges, to start from"), |ui| {
+        ui.horizontal_wrapped(|ui| {
+            for (name, tip, ps) in stack_presets() {
+                if widgets::button(ui, None, name, None, false).on_hover_text(tip).clicked() {
+                    *parts = ps;
+                    changed = true;
+                }
+            }
+        });
+    });
+    let fixed: f64 = parts.iter().filter_map(|p| p.rise).sum();
+    let free = parts.iter().filter(|p| p.rise.is_none()).count();
+    let share = if free > 0 { ((drop - fixed) / free as f64).max(0.0).round() } else { 0.0 };
+    if fixed > drop + 0.5 {
+        widgets::hint(ui, &format!("Its parts climb {fixed:.0}, more than the {drop:.0} drop: it's a cliff until they fit."));
+    }
+    let mut action: Option<(usize, i32)> = None;
+    let n = parts.len();
+    for (i, p) in parts.iter_mut().enumerate() {
+        ui.push_id(("part", i), |ui| {
+            ui.add_space(4.0);
+            field(ui, &format!("  {}", i + 1), Some("A wall stands upright; a slope climbs at its angle"), |ui| {
+                changed |= widgets::segmented(ui, &mut p.kind, &[("wall".to_string(), "Wall"), ("slope".to_string(), "Slope")]);
+            });
+            field(ui, "    Height", Some("How much of the drop it climbs. Blank: an even share of what the others leave"), |ui| {
+                changed |= own_num(ui, &mut p.rise, share, 1.0, 0.0..=10000.0, "share");
+            });
+            if p.kind == "slope" {
+                field(ui, "    Angle", Some("Link walks up to 35°; past 60° a slope with no style is drawn as the theme's cliff"), |ui| {
+                    changed |= ui.add(egui::DragValue::new(&mut p.angle).speed(0.5).range(2.0..=88.0).suffix("°")).changed();
+                    if p.angle > 35.0 {
+                        ui.label(RichText::new("steep").size(11.0).color(WARN));
+                    }
+                });
+            }
+            let none = if p.kind == "slope" { "floor" } else { "theme rules" };
+            field(ui, "    Style", Some("Its look: a wall style, this theme's or another's. A slope with one is drawn as that wall, along the edge and up the face"), |ui| {
+                changed |= style_combo(ui, &format!("part style {i}"), &mut p.style, styles, none);
+            });
+            field(ui, "    ", None, |ui| {
+                ui.horizontal(|ui| {
+                    if i > 0 && widgets::button(ui, None, "↑", Some(30.0), false).on_hover_text("Nearer the foot").clicked() {
+                        action = Some((i, -1));
+                    }
+                    if i + 1 < n && widgets::button(ui, None, "↓", Some(30.0), false).on_hover_text("Further in").clicked() {
+                        action = Some((i, 1));
+                    }
+                    if n > 1 && widgets::button(ui, None, "Remove", None, false).clicked() {
+                        action = Some((i, 0));
+                    }
+                });
+            });
+        });
+    }
+    match action {
+        Some((i, 0)) => {
+            parts.remove(i);
+            changed = true;
+        }
+        Some((i, d)) => {
+            parts.swap(i, (i as i32 + d) as usize);
+            changed = true;
+        }
+        None => {}
+    }
+    field(ui, "  Add", None, |ui| {
+        ui.horizontal(|ui| {
+            if widgets::button(ui, None, "+ Wall", None, false).clicked() {
+                parts.push(Part::wall(Some(160.0), None));
+                changed = true;
+            }
+            if widgets::button(ui, None, "+ Slope", None, false).clicked() {
+                parts.push(Part::slope(overworld::doc::slope_angle(), None, None));
+                changed = true;
+            }
+        });
+    });
+    changed
 }
 
 /// A profile: cliff, slope, terraces, overhang or ragged rock, and their numbers. With `inherit`
@@ -769,7 +921,7 @@ pub(super) fn profile_name(p: Option<&Profile>) -> &'static str {
 ///
 /// `drop`: about how far the region stands above (or below) the floor beside it, for the terraces'
 /// even step height.
-fn profile_ui(ui: &mut egui::Ui, id: &str, p: &mut Option<Profile>, inherit: Option<&str>, drop: f64) -> bool {
+fn profile_ui(ui: &mut egui::Ui, id: &str, p: &mut Option<Profile>, inherit: Option<&str>, drop: f64, styles: &[String]) -> bool {
     let kind = |p: &Option<Profile>| match p {
         None if inherit.is_some() => "inherit",
         None | Some(Profile::Cliff) => "cliff",
@@ -777,12 +929,13 @@ fn profile_ui(ui: &mut egui::Ui, id: &str, p: &mut Option<Profile>, inherit: Opt
         Some(Profile::Terraces { .. }) => "terraces",
         Some(Profile::Overhang { .. }) => "overhang",
         Some(Profile::Ragged { .. }) => "ragged",
+        Some(Profile::Stack { .. }) => "stack",
     };
     let mut k = kind(p).to_string();
     let mut changed = false;
     let region = inherit.map(|r| format!("Region's ({r})"));
     ui.push_id(id, |ui| {
-        field(ui, "Profile", Some("Cliff: a wall. Slope: a ramp of ground. Terraces: steps. Overhang: the top juts out over an undercut. Ragged: a cliff of lumpy rock."), |ui| {
+        field(ui, "Profile", Some("Cliff: a wall. Slope: a ramp of ground. Terraces: steps. Overhang: the top juts out over an undercut. Ragged: a cliff of lumpy rock. Stack: walls and slopes one above the other, each with its own look (Kakariko's edges)."), |ui| {
             let mut opts: Vec<(String, &str)> = vec![];
             if let Some(r) = &region {
                 opts.push(("inherit".into(), r.as_str()));
@@ -793,6 +946,7 @@ fn profile_ui(ui: &mut egui::Ui, id: &str, p: &mut Option<Profile>, inherit: Opt
                 ("terraces".to_string(), "Terraces"),
                 ("overhang".to_string(), "Overhang"),
                 ("ragged".to_string(), "Ragged"),
+                ("stack".to_string(), "Stack"),
             ]);
             // too many for one row: rows of three (the region's on its own above, for an edge)
             ui.vertical(|ui| {
@@ -815,6 +969,7 @@ fn profile_ui(ui: &mut egui::Ui, id: &str, p: &mut Option<Profile>, inherit: Opt
                 "slope" => Some(Profile::Slope { angle: overworld::doc::slope_angle(), round: 0.0 }),
                 "overhang" => Some(Profile::Overhang { depth: overworld::doc::overhang_depth() }),
                 "ragged" => Some(Profile::Ragged { amplitude: overworld::doc::ragged_amplitude(), scale: overworld::doc::ragged_scale(), seed: 0 }),
+                "stack" => Some(Profile::Stack { parts: stack_presets()[0].2.clone() }),
                 _ => Some(Profile::Terraces { steps: overworld::doc::terrace_steps(), rise: None, depth: overworld::doc::terrace_depth() }),
             };
             changed = true;
@@ -847,6 +1002,9 @@ fn profile_ui(ui: &mut egui::Ui, id: &str, p: &mut Option<Profile>, inherit: Opt
                 field(ui, "  Depth", Some("How far the top juts out over the foot: the cliff is undercut this far, and the floor below runs in under it"), |ui| {
                     changed |= ui.add(egui::DragValue::new(depth).speed(1.0).range(5.0..=1000.0)).changed();
                 });
+            }
+            Some(Profile::Stack { parts }) => {
+                changed |= stack_ui(ui, parts, drop, styles);
             }
             Some(Profile::Ragged { amplitude, scale, seed }) => {
                 field(ui, "  How much", Some("The rock pushes in and out by up to this; the top and foot stay on the edge"), |ui| {

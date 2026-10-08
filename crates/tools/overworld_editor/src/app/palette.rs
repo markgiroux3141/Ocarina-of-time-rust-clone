@@ -79,7 +79,7 @@ impl App {
     fn region_palette(&mut self, ui: &mut egui::Ui) {
         let ground = self.lib_texture(ui.ctx(), &self.theme.texture_name(&self.theme.floor.material.clone()));
         let water = self.lib_texture(ui.ctx(), &self.theme.texture_name(&self.theme.water.material.clone()));
-        let styles: Vec<String> = self.theme.wall_styles.keys().cloned().collect();
+        let styles = self.theme.style_names();
         section(ui, "pal rkind", "Kind", None, true, |ui| {
             let w = (ui.available_width() - 16.0) / 3.0;
             ui.horizontal(|ui| {

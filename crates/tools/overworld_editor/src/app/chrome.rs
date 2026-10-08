@@ -231,7 +231,7 @@ impl App {
         if src(ui, &format!("Theme: {}", self.theme.name), theme_where, "Load…") {
             ui.close();
             if let Some(p) = rfd::FileDialog::new().add_filter("theme", &["json"]).set_directory(Path::new(ROOT).join("crates/tools/overworld/themes")).pick_file() {
-                match Theme::load(&p.to_string_lossy()) {
+                match Theme::load(&p.to_string_lossy()).and_then(|t| Theme::for_doc(&self.doc, Some(t))) {
                     Ok(t) => {
                         self.theme = Arc::new(t);
                         self.theme_file = Some(p);
@@ -591,6 +591,16 @@ impl App {
     fn level_settings(&mut self, ui: &mut egui::Ui) {
         section(ui, "level", "Level", None, true, |ui| {
             field(ui, "Name", Some("Also the export folder's name"), |ui| ui.add(egui::TextEdit::singleline(&mut self.doc.name).desired_width(ui.available_width())));
+            let themes: Vec<(String, &str)> = overworld::theme::BUILTIN.iter().map(|&t| (t.to_string(), overworld::kit::scene(t).map_or(t, |sc| sc.label))).collect();
+            if field(
+                ui,
+                "Theme",
+                Some("How the level looks: every wall, floor and tree not pinned to another theme's style. Styles of other themes stay pinned when you switch."),
+                |ui| widgets::segmented(ui, &mut self.doc.settings.theme, &themes),
+            ) {
+                // a theme file loaded by hand gives way to the one chosen here
+                self.theme_file = None;
+            }
             let s = &mut self.doc.settings;
             field(
                 ui,

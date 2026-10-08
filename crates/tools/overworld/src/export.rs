@@ -21,7 +21,7 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
     if let Some(l) = lib {
         for m in &lvl.mesh.materials {
             let (name, info) = tex(m);
-            let src = l.dir.join(&info.file);
+            let src = l.path(&name);
             let dst = out.join("textures").join(&info.file);
             if name.contains('@') {
                 // a derived texture (a wall's middle rows): made from its base

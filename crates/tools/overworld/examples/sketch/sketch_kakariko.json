@@ -1,0 +1,211 @@
+{
+  "name": "sketch_kakariko",
+  "outline": {
+    "nodes": [
+      [
+        -3000,
+        -2000,
+        1
+      ],
+      [
+        0,
+        -2200,
+        1
+      ],
+      [
+        3000,
+        -2000,
+        1
+      ],
+      [
+        3000,
+        2000,
+        1
+      ],
+      [
+        0,
+        2200,
+        1
+      ],
+      [
+        -3000,
+        2000,
+        1
+      ]
+    ],
+    "z": 0,
+    "beyond": [
+      {
+        "z": 1200,
+        "profile": {
+          "kind": "stack",
+          "parts": [
+            {
+              "kind": "wall",
+              "rise": 330,
+              "style": "cliff"
+            },
+            {
+              "kind": "slope",
+              "angle": 36,
+              "rise": 75
+            },
+            {
+              "kind": "slope",
+              "angle": 76,
+              "style": "mountain"
+            }
+          ]
+        }
+      },
+      {
+        "z": 1200,
+        "profile": {
+          "kind": "stack",
+          "parts": [
+            {
+              "kind": "wall",
+              "rise": 330,
+              "style": "cliff"
+            },
+            {
+              "kind": "slope",
+              "angle": 36,
+              "rise": 75
+            },
+            {
+              "kind": "slope",
+              "angle": 76,
+              "style": "mountain"
+            }
+          ]
+        }
+      },
+      null,
+      {
+        "z": 1160,
+        "profile": {
+          "kind": "stack",
+          "parts": [
+            {
+              "kind": "wall",
+              "rise": 320,
+              "style": "brick"
+            },
+            {
+              "kind": "wall",
+              "rise": 160,
+              "style": "rock"
+            },
+            {
+              "kind": "slope",
+              "angle": 69,
+              "rise": 300,
+              "style": "rock"
+            },
+            {
+              "kind": "slope",
+              "angle": 37,
+              "style": "rock"
+            }
+          ]
+        }
+      },
+      {
+        "z": 1160,
+        "profile": {
+          "kind": "stack",
+          "parts": [
+            {
+              "kind": "wall",
+              "rise": 320,
+              "style": "brick"
+            },
+            {
+              "kind": "wall",
+              "rise": 160,
+              "style": "rock"
+            },
+            {
+              "kind": "slope",
+              "angle": 69,
+              "rise": 300,
+              "style": "rock"
+            },
+            {
+              "kind": "slope",
+              "angle": 37,
+              "style": "rock"
+            }
+          ]
+        }
+      },
+      {
+        "z": 940,
+        "profile": {
+          "kind": "stack",
+          "parts": [
+            {
+              "kind": "wall",
+              "rise": 330,
+              "style": "cliff"
+            },
+            {
+              "kind": "slope",
+              "angle": 36
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "regions": [
+    {
+      "name": "terrace",
+      "nodes": [
+        [
+          400,
+          -400,
+          1
+        ],
+        [
+          1600,
+          -400,
+          1
+        ],
+        [
+          1600,
+          500,
+          1
+        ],
+        [
+          400,
+          500,
+          1
+        ]
+      ],
+      "z": 160
+    }
+  ],
+  "paths": [
+    {
+      "name": "terrace stairs",
+      "nodes": [
+        [
+          1000,
+          -720
+        ],
+        [
+          1000,
+          -400
+        ]
+      ],
+      "width": 200,
+      "look": "steps"
+    }
+  ],
+  "settings": {
+    "theme": "kakariko",
+    "edges": "hard"
+  }
+}

@@ -7,6 +7,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// The built-in themes, in the order the editor lists them; each draws from its scene's texture
+/// library (`kit::SCENES`).
+pub const BUILTIN: [&str; 2] = ["kokiri", "kakariko"];
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Theme {
     pub name: String,
@@ -44,7 +48,36 @@ pub struct Theme {
     /// Tunnels (needed by levels with tunnel lines).
     #[serde(default)]
     pub tunnel: Option<TunnelStyle>,
+    /// Stairs (paths whose look is "steps"). A theme without its own borrows another's
+    /// (`with_others`).
+    #[serde(default)]
+    pub steps: Option<Steps>,
 }
+
+/// Stairs as Kakariko's are: a ramp with steps drawn on it. The ramp is `tread`, repeating
+/// `across` times across the stair's width (Kakariko's twice, mirrored, so its middle is a seam
+/// whatever its width) and once per step, every `step` along its surface, colliding as `surface`;
+/// its sides are the wall style `side`, its texture stretched once over the whole stair (from its
+/// low end to its high end, from its foot to its top), so the stairs' profile in it runs along the
+/// slope. That only fits stairs of Kakariko's slope (1 in 2, within `PROFILE_FIT` degrees); others'
+/// sides are the wall style `tiled`, a plain wall repeating along them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Steps {
+    pub tread: String,
+    pub across: f64,
+    pub step: f64,
+    pub side: String,
+    #[serde(default)]
+    pub tiled: Option<String>,
+    /// The walls beside stairs cut into higher ground (above the stairs, up to the floor beside).
+    #[serde(default)]
+    pub cutting: Option<String>,
+    pub surface: String,
+}
+
+/// How far (degrees) a stair's slope may be from 1 in 2 (26.6°) for the stairs' profile texture on
+/// its sides; steeper or shallower stairs get `Steps::tiled`.
+pub const PROFILE_FIT: f64 = 5.0;
 
 /// A tunnel (`tunnels.rs`): `width` across its floor and `height` from its floor to its roof (a
 /// line's own override them), walls rising to an arch. Its floor is `floor` (world-projected; a
@@ -361,6 +394,70 @@ impl Theme {
 
     pub fn kokiri() -> Theme {
         serde_json::from_str(include_str!("../themes/kokiri.json")).expect("built-in kokiri theme")
+    }
+
+    pub fn kakariko() -> Theme {
+        serde_json::from_str(include_str!("../themes/kakariko.json")).expect("built-in kakariko theme")
+    }
+
+    /// A built-in theme by name (`BUILTIN`).
+    pub fn builtin(name: &str) -> Option<Theme> {
+        match name {
+            "kokiri" => Some(Theme::kokiri()),
+            "kakariko" => Some(Theme::kakariko()),
+            _ => None,
+        }
+    }
+
+    /// The theme a document builds with: its `settings.theme` (or `main`, a theme file's, if
+    /// given), with every built-in theme's styles reachable as `<theme>:<style>` (`with_others`).
+    pub fn for_doc(doc: &crate::Doc, main: Option<Theme>) -> Result<Theme, String> {
+        let main = match main {
+            Some(t) => t,
+            None => Theme::builtin(&doc.settings.theme)
+                .ok_or_else(|| format!("no theme {:?} (themes: {})", doc.settings.theme, BUILTIN.join(", ")))?,
+        };
+        let others: Vec<Theme> = BUILTIN.iter().filter_map(|n| Theme::builtin(n)).collect();
+        Ok(main.with_others(&others))
+    }
+
+    /// This theme, plus every theme's wall styles under `<theme>:<style>` (its own too, so a style
+    /// pinned to the level's own theme still resolves). Their materials become `<theme>:<role>`,
+    /// whose textures are that theme's, so a level can mix themes while each style keeps its look.
+    pub fn with_others(mut self, others: &[Theme]) -> Theme {
+        let own = self.clone();
+        for o in std::iter::once(&own).chain(others.iter().filter(|o| o.name != own.name)) {
+            let q = |role: &str| format!("{}:{role}", o.name);
+            for (k, ws) in &o.wall_styles {
+                let mut ws = ws.clone();
+                for m in [Some(&mut ws.material), ws.skirt.as_mut().map(|x| &mut x.material), ws.fringe.as_mut().map(|x| &mut x.material)].into_iter().flatten() {
+                    self.textures.insert(q(m), o.texture_name(m));
+                    *m = q(m);
+                }
+                self.wall_styles.insert(q(k), ws);
+            }
+        }
+        // stairs: a theme without its own borrows the first other theme's
+        if self.steps.is_none() {
+            if let Some((o, st)) = others.iter().find_map(|o| Some((o, o.steps.as_ref()?))) {
+                let tread = format!("{}:{}", o.name, st.tread);
+                self.textures.insert(tread.clone(), o.texture_name(&st.tread));
+                let q = |t: &String| format!("{}:{t}", o.name);
+                let (side, tiled, cutting) = (q(&st.side), st.tiled.as_ref().map(q), st.cutting.as_ref().map(q));
+                self.steps = Some(Steps { tread, side, tiled, cutting, ..st.clone() });
+            }
+        }
+        self
+    }
+
+    /// The wall styles a document can name, the theme's own first (plain), then the other themes'
+    /// (`<theme>:<style>`), each group sorted.
+    pub fn style_names(&self) -> Vec<String> {
+        let (mut plain, mut pinned): (Vec<String>, Vec<String>) = self.wall_styles.keys().cloned().partition(|k| !k.contains(':'));
+        pinned.retain(|k| !k.starts_with(&format!("{}:", self.name)));
+        plain.sort();
+        pinned.sort();
+        plain.into_iter().chain(pinned).collect()
     }
 
     /// The style of a wall `height` tall, over water or not.

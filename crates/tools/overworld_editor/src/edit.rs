@@ -3,7 +3,7 @@
 //!
 //! Loops are numbered as the builder numbers them: 0 is the outline, i + 1 is region i.
 
-use overworld::doc::{node_sharp, Doc, Line, Path, Profile, Region};
+use overworld::doc::{node_sharp, Beyond, Doc, Line, Outline, Path, Profile, Region};
 use overworld::geom::{dist, dist_to_seg, lerp, point_in_poly, signed_area, P2};
 use overworld::map::sample_loops;
 use overworld::paths::centre_line;
@@ -178,13 +178,19 @@ pub fn delete_node(doc: &mut Doc, r: NodeRef) -> Result<(), String> {
         match q {
             NodeRef::Loop(l, i) => {
                 loop_nodes_mut(doc, l).remove(i);
-                // its two edges become one, which keeps the first one's profile
+                // its two edges become one, which keeps the first one's profile (or what's beyond it)
                 if l > 0 {
                     let r = &mut doc.regions[l - 1];
                     if i < r.profiles.len() {
                         r.profiles.remove(i);
                     }
                     tidy_profiles(r);
+                } else {
+                    let o = &mut doc.outline;
+                    if i < o.beyond.len() {
+                        o.beyond.remove(i);
+                    }
+                    tidy_beyond(o);
                 }
             }
             NodeRef::Path(p, i) => {
@@ -225,13 +231,16 @@ pub fn insert_loop_node(doc: &mut Doc, l: usize, k: usize, p: P2) -> NodeRef {
     }
     for &(m, j) in &at {
         loop_nodes_mut(doc, m).insert(j + 1, vec![p[0], p[1]]);
-        // both halves of the edge keep its profile
+        // both halves of the edge keep its profile (or what's beyond it)
         if m > 0 {
             let r = &mut doc.regions[m - 1];
             if j < r.profiles.len() {
                 let e = r.profiles[j].clone();
                 r.profiles.insert(j + 1, e);
             }
+        } else if j < doc.outline.beyond.len() {
+            let e = doc.outline.beyond[j].clone();
+            doc.outline.beyond.insert(j + 1, e);
         }
     }
     NodeRef::Loop(l, k + 1)
@@ -251,6 +260,33 @@ pub fn set_edge_profile(doc: &mut Doc, l: usize, ks: &[usize], p: Option<Profile
         r.profiles[k] = p.clone();
     }
     tidy_profiles(r);
+}
+
+/// The outline's edges `ks` have `b` beyond them (None: the forest).
+pub fn set_beyond(doc: &mut Doc, ks: &[usize], b: Option<Beyond>) {
+    let o = &mut doc.outline;
+    let n = o.nodes.len();
+    for &k in ks.iter().filter(|&&k| k < n) {
+        if o.beyond.len() <= k {
+            o.beyond.resize(k + 1, None);
+        }
+        o.beyond[k] = b.clone();
+    }
+    tidy_beyond(o);
+}
+
+/// What's beyond the outline's edge k, if not the forest.
+pub fn beyond_of(doc: &Doc, k: usize) -> Option<&Beyond> {
+    doc.outline.beyond.get(k).and_then(|b| b.as_ref())
+}
+
+/// What's beyond the outline's edges: none past the last edge, and no list at all when it's all
+/// forest.
+fn tidy_beyond(o: &mut Outline) {
+    o.beyond.truncate(o.nodes.len());
+    while o.beyond.last().is_some_and(|b| b.is_none()) {
+        o.beyond.pop();
+    }
 }
 
 /// Region loop l's edge k's own profile, if it has one.
@@ -522,6 +558,7 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
         modes: vec![],
         edge: None,
         shape: None,
+        look: None,
     }
 }
 
@@ -544,7 +581,14 @@ pub fn blank_doc() -> Doc {
             vec![(2000.0 * a.cos()).round(), (1400.0 * a.sin()).round()]
         })
         .collect();
-    serde_json::from_value(serde_json::json!({ "name": "untitled", "outline": { "nodes": nodes, "z": 0 } })).unwrap()
+    // new levels start light and low-poly, as the game's own: low detail, hard edges, walls
+    // textured once over their height (a document without these settings keeps the old defaults)
+    serde_json::from_value(serde_json::json!({
+        "name": "untitled",
+        "outline": { "nodes": nodes, "z": 0 },
+        "settings": { "detail": "low", "edges": "hard", "wall_texture": "stretched" }
+    }))
+    .unwrap()
 }
 
 /// JSON with each node (an array of numbers) on one line.
@@ -615,6 +659,28 @@ mod tests {
         assert_eq!(d.regions[0].nodes[0][..2], [-50.0, -20.0][..]);
         // still one loop web: the builder accepts it
         overworld::map::Map::build(&d).unwrap();
+    }
+
+    #[test]
+    fn what_is_beyond_the_outline_follows_its_edges() {
+        let mut d = doc();
+        let n = d.outline.nodes.len();
+        let rise = Beyond { z: 900.0, profile: Profile::Slope { angle: 30.0, round: 0.0 } };
+        set_beyond(&mut d, &[1], Some(rise.clone()));
+        assert_eq!(d.outline.beyond, vec![None, Some(rise.clone())]);
+        // a node on it: both halves have it
+        let (a, b) = (&d.outline.nodes[1], &d.outline.nodes[2]);
+        let mid = [0.5 * (a[0] + b[0]), 0.5 * (a[1] + b[1])];
+        insert_loop_node(&mut d, 0, 1, mid);
+        assert_eq!(d.outline.nodes.len(), n + 1);
+        assert_eq!(d.outline.beyond, vec![None, Some(rise.clone()), Some(rise.clone())]);
+        assert_eq!(beyond_of(&d, 2), Some(&rise));
+        // the node goes again: the merged edge keeps it
+        delete_node(&mut d, NodeRef::Loop(0, 2)).unwrap();
+        assert_eq!(d.outline.beyond, vec![None, Some(rise.clone())]);
+        // back to the forest: no list left
+        set_beyond(&mut d, &[1], None);
+        assert!(d.outline.beyond.is_empty());
     }
 
     #[test]

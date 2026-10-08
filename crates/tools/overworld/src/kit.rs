@@ -1,13 +1,15 @@
-//! The Kokiri Forest texture library, made from the clone's extracted scene
-//! (`extracted/scenes/overworld/spot04/spot04.glb`, written by `oot_extract`): each render
-//! material's image as `kf_<role>.png`, and `textures.json` with its wrap per axis (the glb's
+//! The texture libraries, one per theme, made from the clone's extracted scenes
+//! (`extracted/scenes/overworld/<scene>/<scene>.glb`, written by `oot_extract`): each render
+//! material's image as `<prefix><role>.png`, and `textures.json` with its wrap per axis (the glb's
 //! samplers), alpha (`n64_blend`), translucent opacity (`baseColorFactor[3]`) and culling
-//! (`n64_cull`). The decomp's spot04 XML names no textures, so the glb is the only source.
+//! (`n64_cull`). The decomp's scene XMLs name no textures, so the glb is the only source. Kokiri
+//! Forest (spot04) is `kf_`, Kakariko Village (spot01) `kak_`, so the libraries never clash and a
+//! level can draw from several.
 //!
-//! Materials are named `room_<r>_<opa|xlu>_mat<N>`; N picks the role from `KOKIRI_ROLES`, which
-//! was read off the textures and where the scene uses them. N follows the extractor's order, so
-//! the roles the Kokiri theme uses are checked against their known size and wrap: if a new
-//! extraction reorders them, the export fails instead of mixing textures up.
+//! Materials are named `room_<r>_<opa|xlu>_mat<N>`; N picks the role from the scene's `roles`, which
+//! were read off the textures and where the scene uses them. N follows the extractor's order, so
+//! the roles a theme uses are checked against their known size and wrap: if a new extraction
+//! reorders them, the export fails instead of mixing textures up.
 
 use crate::textures::TexInfo;
 use serde_json::Value;
@@ -26,19 +28,89 @@ pub const KOKIRI_ROLES: [&str; 52] = [
     "dirt_strip", "dirt_junction", "vines", "deku_face", "shadow_deku", "dirt_patch",
 ];
 
-/// The roles the Kokiri theme draws with: (role, width, height, wrap u, wrap v).
-const CHECKED: [(&str, u32, u32, &str, &str); 10] = [
-    ("ground", 32, 32, "repeat", "repeat"),
-    ("forest_trunks", 64, 64, "repeat", "clamp"),
-    ("forest_foliage", 32, 32, "repeat", "clamp"),
-    ("cliff", 32, 32, "repeat", "repeat"),
-    ("cliff_strip", 32, 16, "repeat", "repeat"),
-    ("cliff_strip_dark", 32, 16, "repeat", "repeat"),
-    ("grass_skirt", 64, 16, "repeat", "clamp"),
-    ("hanging_roots", 64, 32, "repeat", "clamp"),
-    ("water", 32, 32, "repeat", "repeat"),
-    ("dirt_strip", 64, 64, "clamp", "repeat"),
+/// spot01's material N -> what its texture is (2026-10-08, from the textures and where Kakariko
+/// draws them). `ground` is most of the village and its slopes, `ground_light` the lower west (the
+/// entrance road): each the camo mixed half and half with a finer detail texture, as Kokiri's
+/// ground. `cliff` is the rock and dirt with a grass lip under the west wing's slopes, `brick` and
+/// `brick_b` the retaining walls, `rock` the striated rock under Death Mountain Trail, `mountain`
+/// the mossy wall along the south edge (cut out at the top: the skyline), `stone` and `stone_dark`
+/// the big blocks in the east. `backdrop_a` and `_b` are the far Death Mountain cards; the well's
+/// shaft (`well_shaft`) is mixed with moss by vertex alpha, which the library doesn't bake.
+pub const KAKARIKO_ROLES: [&str; 46] = [
+    "post_wood", "sign", "ground_light", "ground", "house_plaster", "house_tin", "house_stone", "house_plaster_b",
+    "house_shade_a", "house_stone_b", "roof_red", "roof_blue", "house_shade_b", "house_shade_c", "house_shade_d",
+    "house_shade_e", "house_shade_f", "scaffold", "cliff", "steps", "steps_side", "brick", "brick_b", "trim",
+    "backdrop_a", "backdrop_b", "fence", "ladder", "ladder_b", "mountain", "dirt", "rock", "gate", "shutter",
+    "forest_trunks", "forest_foliage", "steps_b", "stone", "stone_dark", "stone_c", "trim_b", "well_rim",
+    "well_shaft", "well_rail", "tower_post", "pebbles",
 ];
+
+/// A scene's texture library: where it comes from, its prefix, its material roles, the roles its
+/// theme draws with (role, width, height, wrap u, wrap v), checked on every export, and the roles
+/// drawn as the camo mixed with a finer detail texture (baked into one, `ground_with_detail`).
+pub struct SceneTextures {
+    pub theme: &'static str,
+    pub label: &'static str,
+    pub glb: &'static str,
+    pub prefix: &'static str,
+    pub roles: &'static [&'static str],
+    pub checked: &'static [(&'static str, u32, u32, &'static str, &'static str)],
+    pub detailed: &'static [&'static str],
+}
+
+pub const KOKIRI: SceneTextures = SceneTextures {
+    theme: "kokiri",
+    label: "Kokiri Forest",
+    glb: "extracted/scenes/overworld/spot04/spot04.glb",
+    prefix: "kf_",
+    roles: &KOKIRI_ROLES,
+    checked: &[
+        ("ground", 32, 32, "repeat", "repeat"),
+        ("forest_trunks", 64, 64, "repeat", "clamp"),
+        ("forest_foliage", 32, 32, "repeat", "clamp"),
+        ("cliff", 32, 32, "repeat", "repeat"),
+        ("cliff_strip", 32, 16, "repeat", "repeat"),
+        ("cliff_strip_dark", 32, 16, "repeat", "repeat"),
+        ("grass_skirt", 64, 16, "repeat", "clamp"),
+        ("hanging_roots", 64, 32, "repeat", "clamp"),
+        ("water", 32, 32, "repeat", "repeat"),
+        ("dirt_strip", 64, 64, "clamp", "repeat"),
+    ],
+    detailed: &["ground"],
+};
+
+pub const KAKARIKO: SceneTextures = SceneTextures {
+    theme: "kakariko",
+    label: "Kakariko Village",
+    glb: "extracted/scenes/overworld/spot01/spot01.glb",
+    prefix: "kak_",
+    roles: &KAKARIKO_ROLES,
+    checked: &[
+        ("ground", 32, 32, "repeat", "repeat"),
+        ("ground_light", 32, 32, "repeat", "repeat"),
+        ("cliff", 32, 32, "repeat", "clamp"),
+        ("steps", 64, 16, "mirror", "repeat"),
+        ("brick", 32, 32, "repeat", "clamp"),
+        ("brick_b", 32, 32, "repeat", "clamp"),
+        ("fence", 64, 64, "repeat", "clamp"),
+        ("mountain", 64, 64, "repeat", "clamp"),
+        ("dirt", 64, 64, "repeat", "repeat"),
+        ("rock", 64, 64, "repeat", "repeat"),
+        ("forest_trunks", 64, 64, "repeat", "clamp"),
+        ("forest_foliage", 32, 32, "repeat", "clamp"),
+        ("stone", 64, 64, "repeat", "repeat"),
+        ("stone_dark", 64, 64, "repeat", "repeat"),
+    ],
+    detailed: &["ground", "ground_light"],
+};
+
+/// Every scene with a texture library, in the order the editor lists their themes.
+pub const SCENES: [&SceneTextures; 2] = [&KOKIRI, &KAKARIKO];
+
+/// The scene whose library a theme draws from.
+pub fn scene(theme: &str) -> Option<&'static SceneTextures> {
+    SCENES.into_iter().find(|s| s.theme == theme)
+}
 
 /// A glb's JSON and binary chunk.
 pub fn read_glb(bytes: &[u8]) -> Result<(Value, &[u8]), String> {
@@ -69,8 +141,13 @@ fn wrap(code: Option<u64>) -> &'static str {
     }
 }
 
-/// Writes the library into `out` from spot04's glb. Returns the number of textures.
+/// Writes the Kokiri library into `out` from spot04's glb. Returns the number of textures.
 pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
+    export(&KOKIRI, glb, out)
+}
+
+/// Writes a scene's library into `out` from its glb. Returns the number of textures.
+pub fn export(sc: &SceneTextures, glb: &Path, out: &Path) -> Result<usize, String> {
     let bytes = std::fs::read(glb).map_err(|e| format!("{}: {e}", glb.display()))?;
     let (j, bin) = read_glb(&bytes)?;
     let arr = |k: &str| j[k].as_array().cloned().unwrap_or_default();
@@ -82,7 +159,7 @@ pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
         let Some(blend) = ex["n64_blend"].as_str() else { continue }; // collision materials have none
         let name = m["name"].as_str().unwrap_or("");
         let Some(n) = name.rsplit("mat").next().and_then(|s| s.parse::<usize>().ok()) else { continue };
-        let Some(role) = KOKIRI_ROLES.get(n) else { continue };
+        let Some(role) = sc.roles.get(n) else { continue };
         let pbr = &m["pbrMetallicRoughness"];
         let Some(ti) = pbr["baseColorTexture"]["index"].as_u64() else { continue };
         let t = &texs[ti as usize];
@@ -104,7 +181,7 @@ pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
         };
         let opacity = if alpha == "blend" { pbr["baseColorFactor"][3].as_f64().unwrap_or(1.0) } else { 1.0 };
         let info = TexInfo {
-            file: format!("kf_{role}.png"),
+            file: format!("{}{role}.png", sc.prefix),
             size: vec![w, h],
             wrap_u: wrap(s.and_then(|s| s["wrapS"].as_u64())).into(),
             wrap_v: wrap(s.and_then(|s| s["wrapT"].as_u64())).into(),
@@ -114,34 +191,49 @@ pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
             decal: ex["n64_decal"].as_bool() == Some(true),
         };
         std::fs::write(out.join(&info.file), png).map_err(|e| format!("{}: {e}", out.display()))?;
-        lib.insert(format!("kf_{role}"), info);
+        lib.insert(format!("{}{role}", sc.prefix), info);
     }
-    for (role, w, h, wu, wv) in CHECKED {
-        let t = lib.get(&format!("kf_{role}")).ok_or(format!("spot04 has no material for {role}: has the extraction changed?"))?;
+    for &(role, w, h, wu, wv) in sc.checked {
+        let p = sc.prefix;
+        let t = lib.get(&format!("{p}{role}")).ok_or(format!("{} has no material for {role}: has the extraction changed?", sc.glb))?;
         if t.size != [w, h] || t.wrap_u != wu || t.wrap_v != wv {
             return Err(format!(
-                "kf_{role} is {:?} {}/{}, expected [{w}, {h}] {wu}/{wv}: the extraction's material order changed, so KOKIRI_ROLES needs updating",
-                t.size, t.wrap_u, t.wrap_v
+                "{p}{role} is {:?} {}/{}, expected [{w}, {h}] {wu}/{wv}: the extraction's material order changed, so the {} roles need updating",
+                t.size, t.wrap_u, t.wrap_v, sc.theme
             ));
         }
     }
-    ground_with_detail(&j, bin, &mats, &texs, &images, &views, out, &mut lib)?;
+    for role in sc.detailed {
+        ground_with_detail(sc, role, &j, bin, &mats, &texs, &images, &views, out, &mut lib)?;
+    }
     let json = serde_json::to_string_pretty(&lib).map_err(|e| e.to_string())?;
     std::fs::write(out.join("textures.json"), json).map_err(|e| format!("{}: {e}", out.display()))?;
     Ok(lib.len())
 }
 
-/// Kokiri's ground as the game draws it. Its material mixes two textures half and half,
-/// (TEXEL1 - TEXEL0) x ENV_ALPHA (0x80) + TEXEL0: the camo, one repeat every 400 units, and a
-/// detail texture on tile 1, eight times finer (its own UVs, TEXCOORD_1). The library's `kf_ground`
-/// is that mix baked into one tile: the camo filtered up to the detail's resolution with the detail
-/// repeating across it, so a floor textured once per 400 units looks as the game's does.
+/// A ground as the game draws it (Kokiri's, Kakariko's two). Its material mixes two textures half
+/// and half, (TEXEL1 - TEXEL0) x ENV_ALPHA (0x80) + TEXEL0: the camo, one repeat every 400 units
+/// in Kokiri (480 in Kakariko), and a detail texture on tile 1, several times finer (its own UVs,
+/// TEXCOORD_1; eight times in Kokiri). The library's texture is that mix baked into one tile: the
+/// camo filtered up to the detail's resolution with the detail repeating across it, so a floor
+/// textured once per camo repeat looks as the game's does.
 #[allow(clippy::too_many_arguments)]
-fn ground_with_detail(j: &Value, bin: &[u8], mats: &[Value], texs: &[Value], images: &[Value], views: &[Value], out: &Path, lib: &mut BTreeMap<String, TexInfo>) -> Result<(), String> {
+fn ground_with_detail(
+    sc: &SceneTextures,
+    role: &str,
+    j: &Value,
+    bin: &[u8],
+    mats: &[Value],
+    texs: &[Value],
+    images: &[Value],
+    views: &[Value],
+    out: &Path,
+    lib: &mut BTreeMap<String, TexInfo>,
+) -> Result<(), String> {
     let Some((mi, m)) = mats.iter().enumerate().find(|(_, m)| {
-        m["name"].as_str().and_then(|n| n.rsplit("mat").next()).and_then(|s| s.parse::<usize>().ok()).and_then(|n| KOKIRI_ROLES.get(n)) == Some(&"ground")
+        m["name"].as_str().and_then(|n| n.rsplit("mat").next()).and_then(|s| s.parse::<usize>().ok()).and_then(|n| sc.roles.get(n)) == Some(&role)
     }) else {
-        return Err("spot04 has no ground material".into());
+        return Err(format!("{} has no {role} material", sc.glb));
     };
     let ex = &m["extras"];
     let base = m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64().ok_or("the ground has no texture")? as usize;
@@ -152,7 +244,7 @@ fn ground_with_detail(j: &Value, bin: &[u8], mats: &[Value], texs: &[Value], ima
         None => {
             let used: Vec<u64> = mats.iter().filter_map(|m| m["pbrMetallicRoughness"]["baseColorTexture"]["index"].as_u64()).collect();
             if used.contains(&(base as u64 + 1)) || base + 1 >= texs.len() {
-                return Err("can't tell the ground's detail texture: re-extract spot04".into());
+                return Err(format!("can't tell {role}'s detail texture: re-extract {}", sc.glb));
             }
             base + 1
         }
@@ -184,7 +276,7 @@ fn ground_with_detail(j: &Value, bin: &[u8], mats: &[Value], texs: &[Value], ima
             }
         }
     }
-    let k = ratio.filter(|&r| (1..=16).contains(&r)).ok_or("can't tell the ground's detail scale")?;
+    let k = ratio.filter(|&r| (1..=16).contains(&r)).ok_or(format!("can't tell {role}'s detail scale"))?;
     let a = u8::from_str_radix(ex["n64_env"].as_str().unwrap_or("#80808080").get(7..9).unwrap_or("80"), 16).unwrap_or(0x80) as f64 / 255.0;
     let ((w0, h0, p0), (w1, h1, p1)) = (png(base)?, png(t1)?);
     let (w, h) = (w1 * k, h1 * k);
@@ -206,7 +298,8 @@ fn ground_with_detail(j: &Value, bin: &[u8], mats: &[Value], texs: &[Value], ima
             px.push(255);
         }
     }
-    let info = lib.get_mut("kf_ground").ok_or("no kf_ground")?;
+    let name = format!("{}{role}", sc.prefix);
+    let info = lib.get_mut(&name).ok_or(format!("no {name}"))?;
     std::fs::write(out.join(&info.file), crate::textures::encode_png(w, h, &px)).map_err(|e| format!("{}: {e}", out.display()))?;
     info.size = vec![w, h];
     Ok(())
@@ -239,6 +332,30 @@ mod tests {
         assert_eq!(lib.get("kf_ground").size, vec![256, 256]);
         // the dirt path's decals and the door shadows are drawn as decals; the ground isn't
         assert!(lib.get("kf_dirt_strip").decal && lib.get("kf_shadow").decal && !lib.get("kf_ground").decal);
+        let _ = std::fs::remove_dir_all(&out);
+    }
+
+    /// Needs the clone's extract: skipped without it.
+    #[test]
+    fn the_kakariko_library_comes_out_of_the_extracted_scene() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let glb = root.join(KAKARIKO.glb);
+        if !glb.exists() {
+            eprintln!("skipping: no {}", glb.display());
+            return;
+        }
+        let out = std::env::temp_dir().join(format!("ow_kit_kak_test_{}", std::process::id()));
+        let n = export(&KAKARIKO, &glb, &out).unwrap();
+        assert_eq!(n, KAKARIKO_ROLES.len());
+        let lib = crate::textures::Library::load(&out).unwrap();
+        // the mountain wall's grassy top is cut out: the skyline
+        assert_eq!(lib.get("kak_mountain").alpha, "cutout");
+        assert_eq!(lib.get("kak_brick").alpha, "opaque");
+        // both grounds have their detail mixed in, finer than the camo
+        for g in ["kak_ground", "kak_ground_light"] {
+            assert!(lib.get(g).size[0] > 32, "{g}: {:?}", lib.get(g).size);
+        }
+        assert_ne!(lib.rgba("kak_ground").unwrap().2, lib.rgba("kak_ground_light").unwrap().2);
         let _ = std::fs::remove_dir_all(&out);
     }
 }

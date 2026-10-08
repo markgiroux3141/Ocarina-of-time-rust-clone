@@ -20,10 +20,16 @@
 //! round a corner and the end of a profiled stretch; with hard or faceted edges it's mitred
 //! (`Foot::dist`), so they keep sharp corners, as the edges do.
 //!
+//! - **Stacks:** parts from the foot in, walls and slopes (`Stack`). Walls past the edge are step
+//!   lines cut into the map, as terraces' are; between them the floor follows the slopes, so each
+//!   face between two step lines is a *segment* of the stack, read at the face's `anchor` (which
+//!   segment) and at the point (how high in it). A wall right at the edge raises the edge itself.
+//!   Walls and slopes may have their own wall style (`Field::wall_style`, `Field::look`).
+//!
 //! Overhangs and ragged rock don't change the floors: they bend the cliff on the edge (`Wall`,
 //! looked up by `Field::wall`; `build.rs` bends the wall's columns).
 
-use crate::doc::{Doc, Profile};
+use crate::doc::{Doc, Part, Profile, STEEP};
 use crate::geom::*;
 use crate::map::{Map, VOID};
 use std::collections::HashMap;
@@ -32,6 +38,131 @@ use std::collections::HashMap;
 enum Kind {
     Slope { run: f64, round: f64 },
     Steps { steps: u32, rise: f64, depth: f64 },
+    /// `Field::stacks[id]`, reaching `reach` in.
+    Stack { id: usize, reach: f64 },
+}
+
+/// How a piece of a stack's slope is drawn.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Look {
+    /// The floor's own material, world-projected.
+    Floor,
+    /// As this wall style, along the edge and up the face.
+    Style(String),
+    /// Steeper than `STEEP` with no style: the theme's cliff.
+    Steep,
+}
+
+/// A slope piece of a stack: from `d0` to `d1` in, `h0` to `h1` up from the foot.
+#[derive(Clone, Debug)]
+struct Piece {
+    d0: f64,
+    d1: f64,
+    h0: f64,
+    h1: f64,
+    round: f64,
+    look: Look,
+}
+
+/// Flat ground between two walls that would stand on the same line (a brick wall under a rock
+/// wall): a ledge this deep, so each is a wall of its own.
+const LEDGE: f64 = 12.0;
+
+/// A stacked profile for one drop (`Profile::Stack`): its segments, the floor between walls.
+#[derive(Clone, Debug)]
+struct Stack {
+    /// Each segment's slope pieces, and its height where it starts (just past its wall).
+    segs: Vec<(f64, Vec<Piece>)>,
+    /// The walls past the edge (distances in, ascending): segment k runs from cut k - 1 to cut k.
+    cuts: Vec<f64>,
+    /// Every wall, the edge's (at 0) too: its distance in and its style.
+    walls: Vec<(f64, Option<String>)>,
+    reach: f64,
+}
+
+impl Stack {
+    /// The parts' set heights: more than the drop and the stack doesn't fit (`Field::new` makes
+    /// the edge a cliff).
+    fn fixed(parts: &[Part]) -> f64 {
+        parts.iter().filter_map(|p| p.rise).map(|r| r.max(0.0)).sum()
+    }
+
+    fn new(parts: &[Part], drop: f64) -> Stack {
+        let fixed = Stack::fixed(parts);
+        let free = parts.iter().filter(|p| p.rise.is_none()).count();
+        let share = if free > 0 { (drop - fixed).max(0.0) / free as f64 } else { 0.0 };
+        // every part with a height, climbing less than the drop: the rest is a cliff at the edge
+        let rest = if free == 0 && fixed < drop { drop - fixed } else { 0.0 };
+        let mut st = Stack { segs: vec![(rest, vec![])], cuts: vec![], walls: vec![], reach: 0.0 };
+        let (mut d, mut h) = (0.0, rest);
+        let mut wall_here = rest > 0.0;
+        if rest > 0.0 {
+            st.walls.push((0.0, None));
+        }
+        for p in parts {
+            let r = p.rise.map_or(share, |r| r.max(0.0));
+            if r < 0.5 {
+                continue;
+            }
+            if p.kind == "wall" {
+                if wall_here {
+                    st.segs.last_mut().unwrap().1.push(Piece { d0: d, d1: d + LEDGE, h0: h, h1: h, round: 0.0, look: Look::Floor });
+                    d += LEDGE;
+                }
+                h += r;
+                if d > 0.0 {
+                    st.cuts.push(d);
+                    st.segs.push((h, vec![]));
+                } else {
+                    st.segs[0].0 = h;
+                }
+                st.walls.push((d, p.style.clone()));
+                wall_here = true;
+            } else {
+                let round = p.round.clamp(0.0, 1.0);
+                let run = r / p.angle.clamp(1.0, 89.0).to_radians().tan() * (1.0 + 0.5 * round);
+                let look = match &p.style {
+                    Some(s) => Look::Style(s.clone()),
+                    None if p.angle > STEEP => Look::Steep,
+                    None => Look::Floor,
+                };
+                st.segs.last_mut().unwrap().1.push(Piece { d0: d, d1: d + run, h0: h, h1: h + r, round, look });
+                d += run;
+                h += r;
+                wall_here = false;
+            }
+        }
+        st.reach = d;
+        st
+    }
+
+    /// Which segment a point `d` in is in.
+    fn segment(&self, d: f64) -> usize {
+        self.cuts.iter().filter(|&&c| d > c).count()
+    }
+
+    /// The height up from the foot `d` in, in segment k (clamped to it).
+    fn height(&self, k: usize, d: f64) -> f64 {
+        let k = k.min(self.segs.len() - 1);
+        let (start, pieces) = &self.segs[k];
+        let lo = if k == 0 { 0.0 } else { self.cuts[k - 1] };
+        let d = d.clamp(lo, self.cuts.get(k).copied().unwrap_or(f64::INFINITY));
+        let mut h = *start;
+        for p in pieces {
+            if d <= p.d0 {
+                break;
+            }
+            let s = ((d - p.d0) / (p.d1 - p.d0).max(1e-9)).clamp(0.0, 1.0);
+            let g = s + (s * s * (3.0 - 2.0 * s) - s) * p.round;
+            h = p.h0 + (p.h1 - p.h0) * g;
+        }
+        h
+    }
+
+    /// The slope piece `d` in, in segment k.
+    fn piece(&self, k: usize, d: f64) -> Option<&Piece> {
+        self.segs.get(k)?.1.iter().find(|p| d >= p.d0 - 1e-9 && d <= p.d1 + 1e-9)
+    }
 }
 
 /// A profiled piece of a region's edge, with the height of the floor beside it.
@@ -54,11 +185,28 @@ impl Foot {
         match self.kind {
             Kind::Slope { run, .. } => run,
             Kind::Steps { steps, depth, .. } => steps.saturating_sub(1) as f64 * depth,
+            Kind::Stack { reach, .. } => reach,
         }
     }
 
     fn stepped(&self) -> bool {
         matches!(self.kind, Kind::Steps { .. })
+    }
+
+    /// Slope 0, terraces 1, stack 2: feet of one class mitre with each other.
+    fn class(&self) -> usize {
+        match self.kind {
+            Kind::Slope { .. } => 0,
+            Kind::Steps { .. } => 1,
+            Kind::Stack { .. } => 2,
+        }
+    }
+
+    fn stack(&self) -> Option<usize> {
+        match self.kind {
+            Kind::Stack { id, .. } => Some(id),
+            _ => None,
+        }
     }
 
     /// The floor's height less the region's, `d` in from this foot.
@@ -74,6 +222,7 @@ impl Foot {
                 let below = steps.saturating_sub(1).saturating_sub(j) as f64;
                 (self.n - top).signum() * (below * rise).min((self.n - top).abs())
             }
+            Kind::Stack { .. } => 0.0,
         }
     }
 
@@ -112,6 +261,7 @@ impl Foot {
         match self.kind {
             Kind::Slope { run, .. } => d / run,
             Kind::Steps { depth, .. } => d / depth,
+            Kind::Stack { .. } => d,
         }
     }
 }
@@ -133,8 +283,10 @@ struct RegionField {
     buckets: HashMap<(i64, i64), Vec<u32>>,
     /// The region's box.
     bb: [f64; 4],
-    /// The slopes' and the terraces' longest reach in.
-    reach: [f64; 2],
+    /// The slopes', the terraces' and the stacks' longest reach in.
+    reach: [f64; 3],
+    /// Whether a stack has walls past the edge (step lines: faces are read at their anchors).
+    stack_cuts: bool,
 }
 
 impl RegionField {
@@ -155,6 +307,8 @@ pub struct Field {
     wall_buckets: HashMap<(i64, i64), Vec<u32>>,
     /// Hard or faceted edges: distances are mitred, and the traced lines get their corners back.
     mitre: bool,
+    /// The stacked profiles, one per stacked foot (`Kind::Stack`'s id).
+    stacks: Vec<Stack>,
 }
 
 impl Field {
@@ -190,6 +344,7 @@ impl Field {
         }
         let mut regions: Vec<Option<RegionField>> = (0..n_loops).map(|_| None).collect();
         let mut walls: Vec<(P2, P2, Wall)> = vec![];
+        let mut stacks: Vec<Stack> = vec![];
         for l in 1..n_loops {
             let lp = &map.loops[l];
             let ccw = signed_area(&map.loop_polys[l]) > 0.0;
@@ -229,6 +384,14 @@ impl Field {
                         Kind::Slope { run: drop / angle.to_radians().tan() * (1.0 + 0.5 * round), round }
                     }
                     Profile::Terraces { steps, rise, depth } => Kind::Steps { steps, rise: rise.unwrap_or(drop / steps as f64), depth },
+                    // a stack taller than the drop (a short side of a stacked ridge) is a cliff there
+                    Profile::Stack { ref parts } if Stack::fixed(parts) > drop + 0.5 => continue,
+                    Profile::Stack { ref parts } => {
+                        let st = Stack::new(parts, drop);
+                        let reach = st.reach;
+                        stacks.push(st);
+                        Kind::Stack { id: stacks.len() - 1, reach }
+                    }
                     Profile::Cliff => continue,
                 };
                 feet.push(Foot { a: map.verts[u], b: map.verts[v], n, kind, mitre: None, m });
@@ -251,7 +414,7 @@ impl Field {
                         let t = tangent(f);
                         [(f.m + n - 1) % n, (f.m + 1) % n].map(|m| {
                             let g = &feet[*at.get(&m)?];
-                            if g.stepped() != f.stepped() {
+                            if g.class() != f.class() {
                                 return None;
                             }
                             let s = tangent(g);
@@ -268,9 +431,10 @@ impl Field {
             if steep > max_slope + 1e-9 {
                 problems.push(format!("{}: its slopes are {steep:.0} degrees at their steepest, over the walkable {max_slope:.0}", name(l)));
             }
-            let reach = |stepped: bool| feet.iter().filter(|f| f.stepped() == stepped).map(Foot::reach).fold(0.0, f64::max);
-            let reach = [reach(false), reach(true)];
-            let cell = reach[0].max(reach[1]).max(20.0);
+            let reach = |class: usize| feet.iter().filter(|f| f.class() == class).map(Foot::reach).fold(0.0, f64::max);
+            let reach = [reach(0), reach(1), reach(2)];
+            let stack_cuts = feet.iter().filter_map(Foot::stack).any(|id| !stacks[id].cuts.is_empty());
+            let cell = reach[0].max(reach[1]).max(reach[2]).max(20.0);
             let mut buckets: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
             for (k, f) in feet.iter().enumerate() {
                 let (i0, i1) = ((f.a[0].min(f.b[0]) / cell).floor() as i64, (f.a[0].max(f.b[0]) / cell).floor() as i64);
@@ -282,7 +446,7 @@ impl Field {
                 }
             }
             let bb = map.loop_polys[l].iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]);
-            regions[l] = Some(RegionField { top, feet, cell, buckets, bb, reach });
+            regions[l] = Some(RegionField { top, feet, cell, buckets, bb, reach, stack_cuts });
         }
         let loop_areas = map.loop_polys.iter().map(|p| signed_area(p).abs()).collect();
         let mut wall_buckets: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
@@ -292,7 +456,7 @@ impl Field {
             }
         }
         let mitre = matches!(doc.settings.edges.as_str(), "hard" | "faceted");
-        Ok(Field { zs: zs.to_vec(), regions, loop_areas, walls, wall_buckets, mitre })
+        Ok(Field { zs: zs.to_vec(), regions, loop_areas, walls, wall_buckets, mitre, stacks })
     }
 
     /// How the cliff on the piece p -> q is bent, if it lies on a loop piece with an overhang or
@@ -308,9 +472,10 @@ impl Field {
         self.regions.iter().all(Option::is_none)
     }
 
-    /// Whether region r's floor has terraces (its faces are flat treads: see `z`).
+    /// Whether region r's floor has step lines (terraces' treads, a stack's walls past its edge):
+    /// its faces are then read at their anchors (see `z`).
     pub fn stepped(&self, r: usize) -> bool {
-        self.regions.get(r).and_then(|x| x.as_ref()).is_some_and(|f| f.reach[1] > 0.0)
+        self.regions.get(r).and_then(|x| x.as_ref()).is_some_and(|f| f.reach[1] > 0.0 || f.stack_cuts)
     }
 
     /// Region r's floor height at p. Terraces are read at `anchor` (a point well inside p's face:
@@ -322,7 +487,7 @@ impl Field {
             if rf.reach[usize::from(stepped)] <= 0.0 {
                 continue;
             }
-            for f in rf.near(q).filter(|f| f.stepped() == stepped) {
+            for f in rf.near(q).filter(|f| f.stepped() == stepped && f.stack().is_none()) {
                 let d = f.dist(q);
                 if d >= f.reach() {
                     continue;
@@ -332,7 +497,72 @@ impl Field {
                 up = up.max(dev);
             }
         }
+        // stacks: the segment the face is in (at its anchor), the height at p within it
+        if rf.reach[2] > 0.0 {
+            let seg = rf.stack_cuts.then(|| self.segment_at(rf, anchor)).flatten();
+            for f in rf.near(p) {
+                let Some(id) = f.stack() else { continue };
+                let st = &self.stacks[id];
+                let d = f.dist(p);
+                // an anchor with no stacked foot near it is past every wall
+                let k = if st.cuts.is_empty() { 0 } else { seg.map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
+                if d >= st.reach && k + 1 >= st.segs.len() {
+                    continue;
+                }
+                let dev = f.n + (rf.top - f.n).signum() * st.height(k, d) - rf.top;
+                down = down.min(dev);
+                up = up.max(dev);
+            }
+        }
         rf.top + down + up
+    }
+
+    /// Which segment of its stack the anchor of a face is in: by the stacked foot nearest it (a long
+    /// face, a ledge along a whole edge, reaches far from the feet near some of its points).
+    fn segment_at(&self, rf: &RegionField, anchor: P2) -> Option<usize> {
+        rf.near(anchor).filter_map(|f| Some((f.dist(anchor), f.stack()?))).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(d, id)| self.stacks[id].segment(d))
+    }
+
+    /// The stacked foot nearest p in region r (within its reach), with its stack and p's distance in.
+    fn stack_at(&self, r: usize, p: P2) -> Option<(&Foot, &Stack, f64)> {
+        let rf = self.regions.get(r)?.as_ref().filter(|f| f.reach[2] > 0.0)?;
+        rf.near(p).filter_map(|f| Some((f, &self.stacks[f.stack()?], f.dist(p)))).filter(|x| x.2 < x.1.reach + 1e-6).min_by(|a, b| a.2.total_cmp(&b.2))
+    }
+
+    /// How region r's floor at p (in the face whose anchor is `anchor`) is drawn, if it's a stack's
+    /// slope not drawn as the floor: the look, the direction along its foot (a wall-textured
+    /// slope's u runs that way) and the heights of the slope's foot and crest.
+    pub fn look(&self, r: usize, p: P2, anchor: P2) -> Option<(Look, P2, [f64; 2])> {
+        let (f, st, d) = self.stack_at(r, p)?;
+        let rf = self.regions[r].as_ref()?;
+        let k = if st.cuts.is_empty() { st.segment(d) } else { self.segment_at(rf, anchor).map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
+        let pc = st.piece(k, d)?;
+        if pc.look == Look::Floor || (pc.h1 - pc.h0).abs() < 1e-9 {
+            return None;
+        }
+        let t = sub(f.b, f.a);
+        let l = t[0].hypot(t[1]).max(1e-9);
+        let top = self.regions[r].as_ref()?.top;
+        let z = |h: f64| f.n + (top - f.n).signum() * h;
+        let (z0, z1) = (z(pc.h0), z(pc.h1));
+        Some((pc.look.clone(), [t[0] / l, t[1] / l], [z0.min(z1), z0.max(z1)]))
+    }
+
+    /// The style a stack gives the wall p -> q in region r, if it's one of a stack's walls with a
+    /// style: on a stacked edge (a wall at the edge), or along one of its step lines (`tol`: how far
+    /// off the line its ends may be, the traced lines' tolerance).
+    pub fn wall_style(&self, r: usize, p: P2, q: P2, tol: f64) -> Option<String> {
+        let rf = self.regions.get(r)?.as_ref().filter(|f| f.reach[2] > 0.0)?;
+        let m = lerp(p, q, 0.5);
+        // on the edge: on a stacked loop piece (p -> q is it, or part of it)
+        if let Some(f) = rf.near(m).find(|f| f.stack().is_some() && dist_to_seg(m, f.a, f.b).0 < 1e-6) {
+            return self.stacks[f.stack()?].walls.iter().find(|w| w.0 == 0.0).and_then(|w| w.1.clone());
+        }
+        // along a step line: both ends that far in from the nearest stacked foot
+        let nearest = |x: P2| rf.near(x).filter(|f| f.stack().is_some()).map(|f| (f.dist(x), f)).min_by(|a, b| a.0.total_cmp(&b.0));
+        let (_, f) = nearest(m)?;
+        let (dp, dq) = (nearest(p)?.0, nearest(q)?.0);
+        self.stacks[f.stack()?].walls.iter().filter(|w| w.0 > 0.0).find(|w| (dp - w.0).abs() <= tol && (dq - w.0).abs() <= tol).and_then(|w| w.1.clone())
     }
 
     /// The floor's height at p under the document's loops alone: the innermost loop's (its
@@ -341,9 +571,63 @@ impl Field {
         (0..polys.len()).filter(|&l| point_in_poly(p, &polys[l])).min_by(|&x, &y| self.loop_areas[x].total_cmp(&self.loop_areas[y])).map_or(self.zs[0], |l| self.z(l, p, p))
     }
 
+    /// Lines across region r's stacks' slopes: along each slope piece's foot and crest (where
+    /// they aren't step lines already) and between them about `spacing` apart, as `rings`.
+    fn stack_rings(&self, r: usize, spacing: f64, rounded: usize, tol: f64, max: f64) -> Vec<Vec<P2>> {
+        let Some(rf) = self.regions.get(r).and_then(|x| x.as_ref()).filter(|f| f.reach[2] > 0.0) else { return vec![] };
+        let mut ds: Vec<f64> = vec![];
+        let mut cuts: Vec<f64> = vec![];
+        for id in rf.feet.iter().filter_map(Foot::stack) {
+            let st = &self.stacks[id];
+            cuts.extend(st.cuts.iter().copied());
+            for (_, pieces) in &st.segs {
+                for p in pieces.iter().filter(|p| (p.h1 - p.h0).abs() > 1e-9) {
+                    let per = ((p.d1 - p.d0) / spacing.max(1.0)).ceil().max(if p.round > 0.0 { rounded as f64 } else { 1.0 }).clamp(1.0, 8.0) as usize;
+                    ds.extend((0..=per).map(|k| p.d0 + (p.d1 - p.d0) * k as f64 / per as f64));
+                }
+            }
+        }
+        ds.retain(|&d| d > 0.5 && !cuts.iter().any(|c| (c - d).abs() < 1.0));
+        ds.sort_by(f64::total_cmp);
+        ds.dedup_by(|a, b| (*a - *b).abs() < 1.0);
+        if ds.is_empty() {
+            return vec![];
+        }
+        let cell = (ds[0] / 3.0).clamp(3.0, 15.0);
+        let m = 2.0 * cell;
+        let bb = [rf.bb[0] - m, rf.bb[1] - m, rf.bb[2] + m, rf.bb[3] + m];
+        let cap = ds[ds.len() - 1] + 2.0 * cell;
+        let grid = Self::stack_grid(rf, bb, cell, cap);
+        let mut out = vec![];
+        for &d in &ds {
+            for line in grid.level_set(d) {
+                let mut line = simplify_line(&line, tol, 0.0);
+                if self.mitre {
+                    line = sharpen(&line, 2.5 * cell);
+                }
+                out.push(simplify_line(&line, 0.0, max));
+            }
+        }
+        out
+    }
+
+    /// The distance in from region's nearest stacked foot over its box, capped. Points further
+    /// than half as far again from every stacked foot (a mitred distance is at least the plain one
+    /// over the square root of 2) are the cap without measuring each foot.
+    fn stack_grid(rf: &RegionField, bb: [f64; 4], cell: f64, cap: f64) -> Grid {
+        let segs: Vec<[P2; 2]> = rf.feet.iter().filter(|f| f.stack().is_some()).map(|f| [f.a, f.b]).collect();
+        let index = SegIndex::new(&segs.iter().map(|s| &s[..]).collect::<Vec<_>>(), 1.5 * cap);
+        Grid::new(bb, cell, |p| {
+            if index.dist_within(p, 1.5 * cap) >= 1.5 * cap {
+                return cap;
+            }
+            rf.near(p).filter(|f| f.stack().is_some()).map(|f| f.dist(p)).fold(cap, f64::min)
+        })
+    }
+
     /// The scaled distance in from the region's nearest foot of one kind (`Foot::scaled`), capped.
     fn scaled(rf: &RegionField, p: P2, stepped: bool, cap: f64) -> f64 {
-        rf.near(p).filter(|f| f.stepped() == stepped).map(|f| f.scaled(p)).fold(cap, f64::min)
+        rf.near(p).filter(|f| f.stepped() == stepped && f.stack().is_none()).map(|f| f.scaled(p)).fold(cap, f64::min)
     }
 
     /// Terraces' step lines, cut into the map (`Map::build_with`'s cuts): for each region with
@@ -352,6 +636,28 @@ impl Field {
     pub fn cuts(&self, map: &Map, tol: f64) -> Vec<Vec<P2>> {
         let edges = Edges::new(&map.loop_polys);
         let mut out = vec![];
+        // stacks' walls past the edge: lines that far in from their feet
+        for (r, rf) in self.regions.iter().enumerate() {
+            let Some(rf) = rf.as_ref().filter(|f| f.stack_cuts) else { continue };
+            let mut ds: Vec<f64> = rf.feet.iter().filter_map(Foot::stack).flat_map(|id| self.stacks[id].cuts.iter().copied()).collect();
+            ds.sort_by(f64::total_cmp);
+            ds.dedup_by(|a, b| (*a - *b).abs() < 1.0);
+            // each line is traced on its own, so the cell needn't be finer than the gaps between them
+            let cell = (ds[0] / 3.0).clamp(3.0, 12.0);
+            let m = 2.0 * cell;
+            let bb = [rf.bb[0] - m, rf.bb[1] - m, rf.bb[2] + m, rf.bb[3] + m];
+            let cap = ds[ds.len() - 1] + 2.0 * cell;
+            let grid = Self::stack_grid(rf, bb, cell, cap);
+            for &d in &ds {
+                for line in grid.level_set(d) {
+                    let mut line = simplify_line(&line, tol, 0.0);
+                    if self.mitre {
+                        line = sharpen(&line, 2.5 * cell);
+                    }
+                    out.extend(clip(&line, &edges, &map.loop_polys, &self.loop_areas, r));
+                }
+            }
+        }
         for (r, rf) in self.regions.iter().enumerate() {
             let Some(rf) = rf.as_ref().filter(|f| f.reach[1] > 0.0) else { continue };
             let most = rf.feet.iter().filter_map(|f| match f.kind {
@@ -384,7 +690,8 @@ impl Field {
     /// most 8), simplified within `tol`, in pieces at most `max` long. Not clipped: the floors take
     /// the points inside them.
     pub fn rings(&self, r: usize, spacing: f64, rounded: usize, tol: f64, max: f64) -> Vec<Vec<P2>> {
-        let Some(rf) = self.regions.get(r).and_then(|x| x.as_ref()).filter(|f| f.reach[0] > 0.0) else { return vec![] };
+        let mut out = self.stack_rings(r, spacing, rounded, tol, max);
+        let Some(rf) = self.regions.get(r).and_then(|x| x.as_ref()).filter(|f| f.reach[0] > 0.0) else { return out };
         let (mut run, mut longest, mut round) = (f64::INFINITY, 0.0f64, false);
         for f in &rf.feet {
             if let Kind::Slope { run: r, round: o } = f.kind {
@@ -398,7 +705,6 @@ impl Field {
         let m = 2.0 * cell;
         let bb = [rf.bb[0] - m, rf.bb[1] - m, rf.bb[2] + m, rf.bb[3] + m];
         let grid = Grid::new(bb, cell, |p| Self::scaled(rf, p, false, 2.0));
-        let mut out = vec![];
         for k in 1..=per {
             for line in grid.level_set(k as f64 / per as f64) {
                 let mut line = simplify_line(&line, tol, 0.0);
@@ -445,8 +751,18 @@ fn cells(a: P2, b: P2, cell: f64) -> Vec<(i64, i64)> {
     out
 }
 
+/// How far in a profile reaches for a drop (0 for a cliff of any kind).
+pub fn reach(p: &Profile, drop: f64) -> f64 {
+    match p {
+        Profile::Slope { angle, round } => drop / angle.clamp(1.0, 89.0).to_radians().tan() * (1.0 + 0.5 * round.clamp(0.0, 1.0)),
+        Profile::Terraces { steps, depth, .. } => steps.saturating_sub(1) as f64 * depth,
+        Profile::Stack { parts } => Stack::new(parts, drop).reach,
+        Profile::Cliff | Profile::Overhang { .. } | Profile::Ragged { .. } => 0.0,
+    }
+}
+
 /// Whether a profile's numbers make sense.
-fn check(p: &Profile) -> Result<(), String> {
+pub fn check(p: &Profile) -> Result<(), String> {
     match *p {
         Profile::Cliff => Ok(()),
         Profile::Slope { angle, round } if angle > 0.5 && angle < 89.5 && (0.0..=1.0).contains(&round) => Ok(()),
@@ -457,6 +773,23 @@ fn check(p: &Profile) -> Result<(), String> {
         Profile::Overhang { .. } => Err("an overhang's depth must be more than 0 (and at most 1000)".into()),
         Profile::Ragged { amplitude, scale, .. } if amplitude >= 0.0 && scale >= 10.0 => Ok(()),
         Profile::Ragged { .. } => Err("ragged rock needs a size of at least 10 and a height of 0 or more".into()),
+        Profile::Stack { ref parts } => {
+            if parts.is_empty() || parts.len() > 16 {
+                return Err("a stack needs 1 to 16 parts".into());
+            }
+            for (i, p) in parts.iter().enumerate() {
+                match p.kind.as_str() {
+                    "wall" => {}
+                    "slope" if p.angle > 0.5 && p.angle < 89.5 && (0.0..=1.0).contains(&p.round) => {}
+                    "slope" => return Err(format!("stack part {i}: a slope's angle must be between 1 and 89 degrees, its rounding between 0 and 1")),
+                    k => return Err(format!("stack part {i}: {k:?} isn't a part (wall or slope)")),
+                }
+                if p.rise.is_some_and(|r| r.is_nan() || r < 0.0) {
+                    return Err(format!("stack part {i}: its rise can't be below 0"));
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -696,6 +1029,64 @@ mod tests {
         assert!((f.z(1, [0.0, 0.0], [0.0, 0.0]) + 150.0).abs() < 1e-9);
         let z = f.z(1, [0.0, -900.0], [0.0, 0.0]);
         assert!(z < 0.0 && z > -150.0, "{z}");
+    }
+
+    #[test]
+    fn a_stack_climbs_wall_then_slope_and_cuts_its_inner_walls() {
+        // Kakariko's west wing: a cliff 330 tall at the edge, a grass slope at 36 degrees the rest
+        let parts = vec![Part::wall(Some(330.0), Some("cliff")), Part::slope(36.0, None, None)];
+        let d = doc(Profile::Stack { parts }, 900.0);
+        let (map, f) = field(&d);
+        let run = 570.0 / 36f64.to_radians().tan();
+        // the edge stands 330 up (the wall), the slope climbs from there to the top
+        assert!((f.z(1, [0.0, -1000.0], [0.0, -900.0]) - 330.0).abs() < 1e-6);
+        assert!((f.z(1, [0.0, -1000.0 + run / 2.0], [0.0, 0.0]) - 615.0).abs() < 1e-6);
+        assert!((f.z(1, [0.0, -1000.0 + run + 1.0], [0.0, 0.0]) - 900.0).abs() < 1e-9);
+        assert!(!f.stepped(1), "no walls past the edge");
+        assert!(f.cuts(&map, 0.5).is_empty());
+        assert_eq!(f.wall_style(1, [-500.0, -1000.0], [500.0, -1000.0], 1.0).as_deref(), Some("cliff"));
+        assert!(f.look(1, [0.0, -1000.0 + run / 2.0], [0.0, 0.0]).is_none(), "a gentle slope is the floor");
+        // Kakariko's north: brick 320, rock 160 above it, rock at 69 degrees for 300, then 37 degrees
+        let parts = vec![
+            Part::wall(Some(320.0), Some("brick")),
+            Part::wall(Some(160.0), Some("rock")),
+            Part::slope(69.0, Some(300.0), Some("rock")),
+            Part::slope(37.0, None, Some("rock")),
+        ];
+        let d = doc(Profile::Stack { parts }, 1160.0);
+        let (map, f) = field(&d);
+        assert!(f.stepped(1));
+        // the two walls can't stand on one line: the rock wall stands a ledge in
+        let cuts = f.cuts(&map, 0.5);
+        assert_eq!(cuts.len(), 1, "{cuts:?}");
+        assert!(cuts[0].iter().all(|p| (p[1] - (-1000.0 + LEDGE)).abs() < 0.05), "{cuts:?}");
+        // on the ledge (read in its own face) 320 up; past the rock wall 480, rising
+        let ledge = [0.0, -1000.0 + LEDGE / 2.0];
+        assert!((f.z(1, ledge, ledge) - 320.0).abs() < 1e-6);
+        let on_cut = [0.0, -1000.0 + LEDGE];
+        assert!((f.z(1, on_cut, ledge) - 320.0).abs() < 1e-6, "the foot of the rock wall");
+        assert!((f.z(1, on_cut, [0.0, 0.0]) - 480.0).abs() < 1e-6, "its top");
+        assert_eq!(f.wall_style(1, [-500.0, -1000.0], [500.0, -1000.0], 1.0).as_deref(), Some("brick"));
+        assert_eq!(f.wall_style(1, [-500.0, -1000.0 + LEDGE], [500.0, -1000.0 + LEDGE], 1.0).as_deref(), Some("rock"));
+        // the steep rock is drawn as rock, along the foot
+        let up = 300.0 / 69f64.to_radians().tan();
+        let (look, t, zs) = f.look(1, [0.0, -1000.0 + LEDGE + up / 2.0], [0.0, 0.0]).unwrap();
+        assert!((zs[0] - 480.0).abs() < 1e-6 && (zs[1] - 780.0).abs() < 1e-6, "{zs:?}");
+        assert_eq!(look, Look::Style("rock".into()));
+        assert!((t[0].abs() - 1.0).abs() < 1e-9);
+        // and it reaches the top
+        let reach = LEDGE + up + (1160.0 - 780.0) / 37f64.to_radians().tan();
+        assert!((f.z(1, [0.0, -1000.0 + reach + 1.0], [0.0, 0.0]) - 1160.0).abs() < 1e-9);
+        // more than the drop: a cliff there; less, with every part's height set: a cliff for the rest
+        let d = doc(Profile::Stack { parts: vec![Part::wall(Some(400.0), None), Part::slope(30.0, Some(400.0), None)] }, 400.0);
+        let (_, f) = field(&d);
+        assert!(f.is_empty());
+        let st = Stack::new(&[Part::slope(30.0, Some(100.0), None)], 400.0);
+        assert_eq!(st.walls, vec![(0.0, None)]);
+        assert!((st.segs[0].0 - 300.0).abs() < 1e-9 && (st.height(0, 1e9) - 400.0).abs() < 1e-9);
+        // nonsense refused
+        let d = doc(Profile::Stack { parts: vec![] }, 200.0);
+        assert!(Field::new(&d, &Map::build(&d).unwrap(), &[0.0, 200.0], 35.0, &mut vec![]).is_err());
     }
 
     #[test]

@@ -68,6 +68,12 @@ Done:
   hill, a mesa with one sloped side, a terraced hollow, a lake with a shelving bed, a stepped hillside, an overhanging
   ragged crag, a chasm).
 
+- **Themes, stacks and what's beyond the outline** (2026-10-08): a level's theme is Kokiri Forest's or Kakariko's, and a
+  level can pin any theme's styles (Themes). A region's edge can be a stack of walls and slopes with their own looks
+  (Stacks), and an outline edge can have ground beyond it climbing to a crest instead of the forest (Beyond the outline):
+  Kakariko's brick and rock under Death Mountain Trail, its cliff and grass slope, its mossy south wall. Example:
+  `examples/sketch/sketch_kakariko.json`.
+
 Not yet: exits and doors that lead somewhere (they wait for levels to load through `Play_Init`).
 See the roadmap.
 
@@ -78,9 +84,9 @@ From the repo root:
 ```
 cargo run --release -p overworld_editor -- crates/tools/overworld/examples/sketch/sketch_paths.json
 cargo test --release -p overworld -p overworld_editor
-target/release/overworld kit-textures       # extracted/scenes/overworld/spot04/spot04.glb -> out/overworld/textures/kokiri
+target/release/overworld kit-textures       # the extracted scenes (spot04, spot01) -> out/overworld/textures/<theme>
 target/release/overworld kit-pieces         # kit/kokiri.json + the extract -> out/overworld/kit/kokiri/pieces.json
-target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau --textures out/overworld/textures/kokiri [--kit out/overworld/kit/kokiri]
+target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau [--kit out/overworld/kit/kokiri]
 target/release/oot_sandbox --level out/overworld/sketch_plateau --child   # play it (reloads on rebuild; --at x,y,z,yaw places Link)
 python crates/tools/overworld/tools/trace_sketch.py sketch.png level.json --scale 8 --region blue:z=120 --region red:kind=water,z=-100,surface=-20
 python crates/tools/overworld/tools/plan.py <out>/level.json plan.png --doc level.json   # floors by height, bank, walls, tree line
@@ -94,10 +100,10 @@ about 200 ms to 12, with byte-identical output.
 Output (`<out>/`): `level.json` holds objects (ground, water, walls, boundary, trees, foliage, overlays)
 with vertices, triangles, per-corner UVs, a material role and a collision surface role per triangle.
 `level.obj` and `level.mtl` are for any tool (OBJ is y-up), with the textures the level uses copied
-into `textures/` from the `--textures` library. That's a folder of PNGs plus `textures.json`, giving
-each texture's wrap per axis, alpha (opaque, cutout or blend) and culling. For Kokiri it's
-`out/overworld/textures/kokiri`, written by `overworld kit-textures` (`src/kit.rs`) from the extracted
-scene's glb (ROM data, git-ignored; the editor makes it on first start). The MTL gives `map_Kd`, `map_d`
+into `textures/` from the texture libraries (`--textures`, as often as needed; by default every theme's). A library is
+a folder of PNGs plus `textures.json`, giving each texture's wrap per axis, alpha (opaque, cutout or blend) and
+culling: `out/overworld/textures/kokiri` and `.../kakariko`, written by `overworld kit-textures` (`src/kit.rs`) from
+the extracted scenes' glbs (ROM data, git-ignored; the editor makes them on first start). The MTL gives `map_Kd`, `map_d`
 for alpha and `d` for translucency; material names carry the GE64 dialect's flags
 (`forest_trunks_ClampT_Cutout`), which pd-walk and Blender's OBJ import read. In `level.json`, the axes
 are x east, y north, z up, and heights are absolute: the game reads it (`oot_import::level`, ADR 0035).
@@ -106,7 +112,8 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
 
 ```json
 { "name": "sketch",
-  "outline": { "nodes": [[x, y], ...], "z": 0, "noise": { "amplitude": 70, "scale": 900, "edge": 300 } },
+  "outline": { "nodes": [[x, y], ...], "z": 0, "noise": { "amplitude": 70, "scale": 900, "edge": 300 },
+               "beyond": [null, { "z": 940, "profile": { "kind": "stack", "parts": [{ "kind": "wall", "rise": 330 }, { "kind": "slope", "angle": 36 }] } }] },
   "regions": [ { "name": "pond", "nodes": [[x, y], [x, y, 1], ...], "z": -100, "kind": "water", "surface": -20 },
                { "name": "ledge", "nodes": [...], "z": 160, "edge": "vines", "noise": { "amplitude": 30 } },
                { "name": "hill", "nodes": [...], "z": 220, "profile": { "kind": "slope", "angle": 22, "round": 0.7 } },
@@ -116,7 +123,7 @@ are x east, y north, z up, and heights are absolute: the game reads it (`oot_imp
              { "name": "bridge", "nodes": [[x, y], [x, y, z, width], [x, y]], "mode": "floating" },
              { "name": "climb", "nodes": [...], "modes": ["attached", "floating"], "width": 160, "edge": "vines" } ],
   "boundary": { "cliff_min": 280, "bank": 220, "bank_rise": 80, "rise_slope": 0.25, "reach": 300, "panel_tol": 90 },
-  "settings": { "sample": 60, "steiner": 250, "weld": 1 },
+  "settings": { "sample": 60, "steiner": 250, "weld": 1, "theme": "kakariko" },
   "props": [ { "piece": "saria_house", "at": [200, -1300], "yaw": 20 },
              { "piece": "stone_large", "at": [-420, 860] },
              { "piece": "hedge", "at": [-1700, 600], "yaw": 30, "scale": [1.5, 1.5, 1] } ],
@@ -286,6 +293,25 @@ heights linear along it.
 
 Tests: `levels_with_paths_are_watertight_too` (ground, walls, cliffs, bank and trees share every edge) and
 `a_deck_meets_the_floor_it_lands_on_edge_for_edge`.
+
+**Stairs** (`"look": "steps"`, 2026-10-08): Kakariko's stairs aren't steps but a ramp at 1 in 2 (26.6°) with steps drawn
+on it, one every 22.4 along its surface (10 up, 20 along), and the triangle under each side is one texture stretched
+over the whole stair, its diagonal the stairs' profile. A path with the look `steps` is the same: its attached runs are
+drawn with the theme's `steps` (the tread twice across, mirrored, so its middle is a seam as Kakariko's is; one step per
+`step` along the surface; colliding as `stone`), and its sides (unless the path sets its own `edge`) with the steps' side
+style, re-mapped once over each stair (u from its low end to its high end, v from its foot to its top: `stair_sides`).
+For Kakariko's proportions draw the ramp twice as long as it climbs. The profile texture only fits that slope (its diagonal
+is the slope), so stairs more than 5° off 26.6° (`theme::PROFILE_FIT`) get the steps' `tiled` style on their sides
+instead: Kakariko's brick without its grass lip (`brick_plain`, the brick's middle rows), repeating every 280 along and
+every 236 up from the stair's foot, so the bricks are one size all over (a wall's own v is per column, which would
+stretch them on a side whose height runs to nothing). Where
+stairs cut into higher ground, the walls above them are the steps' `cutting` style: Kakariko's brick with its grass top,
+top-anchored (`brick_top`), so the grass follows the higher floor's edge. A theme without stairs (Kokiri) borrows
+Kakariko's.
+
+Walls of different styles meeting at a corner split their columns at each other's heights however close (within 0.01;
+it used to be 0.5, which left gaps where two styles' cap lines fall a fraction apart).
+Collision is the ramp, as in the game. Test: `stairs_are_a_ramp_with_steps_drawn_on_it`.
 
 Not yet: railings, and supports under long bridges.
 
@@ -508,6 +534,7 @@ a wall.
 | `terraces` | `steps` (3), `rise` (the drop shared evenly), `depth` (120) | Treads `depth` deep, `rise` apart, the last step up onto the region's own floor. Steps that would go below the floor beside are left out; the height they don't cover is a cliff at the edge. |
 | `overhang` | `depth` (60) | The cliff undercut `depth` into the higher side: vertical up to its lip, which curves back out to the edge at the top (the top 45% of the wall, at most 1.5 x `depth`). The floor below runs in under it. |
 | `ragged` | `amplitude` (18), `scale` (160), `seed` | The cliff's face pushed in and out by up to `amplitude` (`noise::relief3`), in lumps about `scale` across, easing to nothing at its top and foot. |
+| `stack` | `parts` | Walls and slopes from the foot in, each with its own height and look: see Stacks. |
 
 How they're built:
 - **Slopes** are a height field over the region's floor: at each point, every sloped edge within its slope's length gives
@@ -537,8 +564,52 @@ Slopes steeper than the walkable 35 degrees are reported. Tests: `profiles::test
 low detail, with smooth, hard and faceted edges), `hard_edges_keep_sharp_corners`, `one_edge_slopes_and_the_others_stay_cliffs`, `overhangs_undercut_and_ragged_rock_stays_on_its_edges`.
 In the game (`sketch_profiles`), child Link runs up the hill, and down into the hollow, jumping off its treads.
 
-Not yet: profiles on the outline's edges (the edge of the world's types, ideas section 6), a profile per stretch shorter
-than an edge, slopes switching to the cliff texture when steep, and overhangs over water.
+### Stacks (`"kind": "stack"`)
+
+`{ "kind": "stack", "parts": [{ "kind": "wall", "rise": 320, "style": "brick" }, { "kind": "wall", "rise": 160, "style":
+"rock" }, { "kind": "slope", "angle": 69, "rise": 300, "style": "rock" }, { "kind": "slope", "angle": 37, "style": "rock" }] }`
+is Kakariko's edge under Death Mountain Trail (measured from spot01: see `docs/OVERWORLD-EDITOR-IDEAS.md` section 7). Each
+part climbs its `rise` of the drop; parts without one share what's left evenly. Parts with one that climb more than the
+drop don't fit: that edge is a cliff (a short side of a stacked ridge). If every part has one and they climb less, the
+rest is a cliff at the edge. A slope has an `angle` and a `round` as a slope profile does. A part's `style` is any wall
+style, the theme's or another's (`kakariko:rock`, see Themes); with none, a wall goes by the theme's rules and a slope is
+the floor, or the theme's tall-wall style when it's steeper than 60° (`doc::STEEP`).
+
+How it's built (`profiles::Stack`): a wall right at the edge raises the edge itself (the edge's wall, as a cliff's). Walls
+further in are step lines cut into the map as terraces' are, and two walls with nothing between them stand a 12-unit
+ledge apart (`LEDGE`), each a wall of its own. Between the step lines the floor follows the slopes as a slope profile's
+does, with lines across them for the floors to follow. So each face between step lines is a segment of the stack: which
+one is read at the face's anchor, by the stacked foot nearest it, and the height within it at each point. A wall takes
+its part's style on the edge or along its step line (`Field::wall_style`); a slope with a style is drawn as that wall
+(`Field::look`): u along its foot, v up the face, the middle rows repeating for a capped style, a band style by its band,
+any other stretched once over the slope (the mossy wall's cut-out top stays at the top). Tests:
+`a_stack_climbs_wall_then_slope_and_cuts_its_inner_walls`, `stacked_edges_build_walls_and_slopes_and_stay_watertight`.
+
+Not yet: a profile per stretch shorter than an edge, overhangs over water, and two stacks of different sizes meeting in
+one corner of a region (where a face can take one's segment for the other's).
+
+## Beyond the outline (`outline.beyond`, `src/beyond.rs`)
+
+Per outline edge (edge k runs from node k to the next), what lies beyond it instead of the forest: `{ "z": 1160,
+"profile": ... }`, ground climbing from the edge to a crest at `z`, as the profile says, built outward, and nothing past
+the crest: the level ends at the sky, as Kakariko's does. Null (the default) is the forest.
+
+Each run of edges with the same beyond becomes a **band** (`beyond::expand`): a region outside the outline drawn against
+that run, sharing its nodes (so its edge is the outline's), at the crest's height and as deep as its profile reaches plus
+60 (`CREST`). Its profile is built inward from the shared edge as any region's is, which is outward from the level: the
+level's floor stays exactly as drawn, and walls, slopes, step lines and styles are the regions' own, watertight with it.
+A run round the whole outline is cut in two; a node two runs share gets one far point, as far out as the wider needs.
+The bands are the document's last regions while it's built (the editor never sees them).
+
+The edge of the world (`Builder::partial_boundary`): a band's far edges have none; its two side edges get a face of the
+theme's boundary cliff from its floor down to the level's, facing out, closing its end off. The forest stands on the
+other edges: cliffs along them, and the bank and trees along the stretches of the tree line nearest them, each ending
+there. Its rim follows only the forest's own edges, so a crest beside it doesn't raise it. Test:
+`beyond_the_outline_ground_climbs_to_a_crest_and_the_forest_stands_only_where_it_should` (the crests' heights, the floor
+inside unchanged, no trees past a band, watertight but for the far edges, the side faces' feet and the forest's two ends).
+
+Not yet: backdrop cards past the crest (Kakariko's Death Mountain), the mossy wall leaning as one part rather than a
+steep slope, and the forest's ends closed off.
 
 ## Pits (`"kind": "pit"`)
 
@@ -549,6 +620,41 @@ custom level, where he started). The walls fade to
 dark going down (vertex tints). A pit can have profiles like any region: a slope into it is a funnel, ragged rock a
 chasm. Test: `pits_drop_into_a_dark_void`. In the game, Link runs off the chasm's edge in `sketch_profiles`, falls,
 and is put back after the fade to black.
+
+## Themes (`themes/*.json`, `settings.theme`)
+
+A level's `settings.theme` is `kokiri` (the default) or `kakariko` (2026-10-08). The document names styles, never
+textures, so switching the theme reskins the level. `Theme::for_doc` makes the theme a level builds with: the
+level's own, plus every built-in theme's wall styles as `<theme>:<style>` (`Theme::with_others`; their materials
+become `<theme>:<role>`, resolving to that theme's textures). A region's `edge` or a path's `edge` can name either,
+so a level mixes themes: `"edge": "kokiri:cliff"` keeps Kokiri's cliff in a Kakariko level whatever its theme. A
+plain style the theme doesn't have falls back to the theme's own walls, reported. Test:
+`themes_switch_and_mix_and_stay_watertight`.
+
+**The libraries** (`kit::SCENES`): each theme's textures come from its scene, `kf_` from Kokiri Forest (spot04), `kak_`
+from Kakariko Village (spot01), each with its material role table and a size and wrap check on the roles its theme
+draws with. Both scenes' grounds mix the camo with a finer detail texture, baked into one (`ground_with_detail`). The
+library loads every theme's folder as one (`Library::load_all`), and a theme can borrow another's texture by name:
+Kakariko has no water, hedge or rope textures, so it uses Kokiri's.
+
+**Kakariko** (`themes/kakariko.json`, measured from spot01; see `docs/OVERWORLD-EDITOR-IDEAS.md` section 7):
+
+| Style | Texture | How it's drawn |
+|---|---|---|
+| Floor, bank | `kak_ground`, its detail mixed in | 480 per repeat |
+| `ledge` (walls up to 320, the rule), `brick` | The brick retaining wall with a grass top | 280 along; caps (3 rows top, 2 bottom), the middle mirrored |
+| `cliff` (taller walls), `vines`, `boundary_cliff`, `embankment` | Rock and dirt with a grass lip, as under the west wing's slopes | 280 along; caps, 320 a repeat |
+| `shore` | The big dark stone blocks | 160 a repeat |
+| `stone` | The big pale stone blocks | 300 along, 200 a band |
+| `rock` | The striated rock under Death Mountain Trail | 670 a repeat |
+| `mountain` | The mossy wall along the south edge, cut out at the top | 900 along, once over its height |
+| Trees | Kakariko's trunks and foliage | 300 tall each |
+| Fence | Kakariko's wooden fence | 60 tall |
+
+| Stairs (`steps`) | Kakariko's step tread; `steps_side`, the stairs' profile under a stone wall | See Stairs (Paths) |
+
+Water, hedges, lattices, hanging bridges and dirt paths borrow Kokiri's textures; a tunnel's walls are the rock.
+Kakariko's houses aren't in the kit yet.
 
 ## Automatic texturing (`themes/kokiri.json`)
 
@@ -585,7 +691,8 @@ bank are bridged by the forest. Trunks stand on the bank's outer edge, so nothin
 
 1. **Hills and a terrain brush**: done (Bumps, Painted terrain). Next: slopes over about 35° switching to the
    cliff texture automatically, and a steepness overlay in the editor.
-2. **Soft edges**: done, and more (Edge profiles): slopes, terraces, overhangs and ragged rock per edge, and pits.
+2. **Soft edges**: done, and more (Edge profiles): slopes, terraces, overhangs, ragged rock and stacks per edge, pits,
+   and ground beyond the outline instead of the forest.
 3. **Paths**: done (see above). Next for them: railings and supports.
 4. **Checks.** Child Link reachability in the crate: which floors connect, and ledges, vines and swim-outs.
    The game's own movement can now test them too (`oot_sandbox --level` with `--script`/`--trace`).

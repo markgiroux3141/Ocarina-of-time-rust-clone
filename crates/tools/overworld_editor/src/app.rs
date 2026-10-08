@@ -276,26 +276,37 @@ impl App {
             },
             None => (edit::blank_doc(), None),
         };
-        let theme = match &opts.theme {
-            Some(p) => Theme::load(&p.to_string_lossy()).unwrap_or_else(|e| {
+        // the document's theme, or a theme file's
+        let file_theme = opts.theme.as_ref().and_then(|p| match Theme::load(&p.to_string_lossy()) {
+            Ok(t) => Some(t),
+            Err(e) => {
                 status = e;
-                Theme::kokiri()
-            }),
-            None => Theme::kokiri(),
-        };
-        // the Kokiri library, made from the extracted scene the first time
-        let tex_dir = opts.textures.clone().or_else(|| {
-            let d = Path::new(ROOT).join("out/overworld/textures/kokiri");
-            let glb = Path::new(ROOT).join("extracted/scenes/overworld/spot04/spot04.glb");
-            if !d.join("textures.json").exists() && glb.exists() {
-                match overworld::kit::export_kokiri(&glb, &d) {
-                    Ok(n) => status = format!("made the Kokiri texture library ({n} textures) in {}", d.display()),
-                    Err(e) => status = format!("Kokiri textures: {e}"),
-                }
+                None
             }
-            d.join("textures.json").exists().then_some(d)
         });
-        let lib = tex_dir.and_then(|d| match Library::load(&d) {
+        let theme = Theme::for_doc(&doc, file_theme).unwrap_or_else(|e| {
+            status = e;
+            Theme::kokiri().with_others(&[Theme::kakariko()])
+        });
+        // every theme's library, each made from its extracted scene the first time
+        let tex_dirs: Vec<PathBuf> = match &opts.textures {
+            Some(d) => vec![d.clone()],
+            None => overworld::kit::SCENES
+                .iter()
+                .filter_map(|sc| {
+                    let d = Path::new(ROOT).join("out/overworld/textures").join(sc.theme);
+                    let glb = Path::new(ROOT).join(sc.glb);
+                    if !d.join("textures.json").exists() && glb.exists() {
+                        match overworld::kit::export(sc, &glb, &d) {
+                            Ok(n) => status = format!("made the {} texture library ({n} textures) in {}", sc.label, d.display()),
+                            Err(e) => status = format!("{} textures: {e}", sc.label),
+                        }
+                    }
+                    d.join("textures.json").exists().then_some(d)
+                })
+                .collect(),
+        };
+        let lib = (!tex_dirs.is_empty()).then(|| Library::load_all(&tex_dirs)).and_then(|r| match r {
             Ok(l) => Some(Arc::new(l)),
             Err(e) => {
                 status = e;
@@ -326,13 +337,16 @@ impl App {
                 _ => match (n.strip_prefix("prop:").and_then(|i| i.parse::<usize>().ok()), n.strip_prefix("line:").and_then(|i| i.parse::<usize>().ok())) {
                     (Some(i), _) if i < doc.props.len() => Sel::Prop(i),
                     (_, Some(k)) if k < doc.lines.len() => Sel::Line(k),
-                    // edge:<region name>:<k>
+                    // edge:<region name>:<k>, or edge:outline:<k>
                     _ => n
                         .strip_prefix("edge:")
                         .and_then(|e| e.rsplit_once(':'))
-                        .and_then(|(name, k)| Some((doc.regions.iter().position(|r| r.name == name)?, k.parse::<usize>().ok()?)))
-                        .filter(|&(i, k)| k < doc.regions[i].nodes.len())
-                        .map_or(Sel::None, |(i, k)| Sel::Edge(i + 1, k)),
+                        .and_then(|(name, k)| {
+                            let l = if name == "outline" { 0 } else { doc.regions.iter().position(|r| r.name == name)? + 1 };
+                            Some((l, k.parse::<usize>().ok()?))
+                        })
+                        .filter(|&(l, k)| k < edit::loop_nodes(&doc, l).len())
+                        .map_or(Sel::None, |(l, k)| Sel::Edge(l, k)),
                 },
             },
             None => Sel::None,
@@ -418,7 +432,7 @@ impl App {
             Sel::Prop(i) => i < self.doc.props.len(),
             Sel::Line(k) => k < self.doc.lines.len(),
             Sel::Node(NodeRef::Line(k, i)) => k < self.doc.lines.len() && i < self.doc.lines[k].nodes.len(),
-            Sel::Edge(l, k) => l > 0 && l < edit::loop_count(&self.doc) && k < edit::loop_nodes(&self.doc, l).len(),
+            Sel::Edge(l, k) => l < edit::loop_count(&self.doc) && k < edit::loop_nodes(&self.doc, l).len(),
         };
         if !ok {
             self.sel = Sel::None;
@@ -538,7 +552,22 @@ impl App {
 
     // ---- building -------------------------------------------------------------------------
 
+    /// The theme follows the document's `settings.theme` (unless a theme file was loaded).
+    fn sync_theme(&mut self) {
+        if self.theme_file.is_some() || self.theme.name == self.doc.settings.theme {
+            return;
+        }
+        match Theme::for_doc(&self.doc, None) {
+            Ok(t) => {
+                self.theme = Arc::new(t);
+                self.thumbs = Default::default();
+            }
+            Err(e) => self.status = e,
+        }
+    }
+
     fn send_build(&mut self) {
+        self.sync_theme();
         let key = (self.doc.clone(), self.live);
         if self.sent.as_ref() == Some(&key) {
             return;
@@ -676,7 +705,12 @@ impl App {
                 self.doc.lines.remove(k);
                 self.sel = Sel::None;
             }
-            // an edge isn't deleted: it goes back to its region's profile
+            // an edge isn't deleted: it goes back to its region's profile (the outline's to the forest)
+            Sel::Edge(0, _) => {
+                let ks = self.selected_edges();
+                edit::set_beyond(&mut self.doc, &ks, None);
+                self.status = format!("{} outline edge{} back to the forest", ks.len(), if ks.len() == 1 { "" } else { "s" });
+            }
             Sel::Edge(l, _) => {
                 let ks = self.selected_edges();
                 edit::set_edge_profile(&mut self.doc, l, &ks, None);
@@ -995,8 +1029,9 @@ impl App {
         self.shapes.loop_at(w).filter(|_| pk.regions).map_or(Sel::None, Sel::Loop)
     }
 
-    /// A region's edge near w (not the outline's own: it faces the edge of the world). An edge
-    /// two regions share is the selected region's, else the higher one's (whose wall it is).
+    /// A loop's edge near w. An edge two loops share is the selected one's, else the outline's (a
+    /// region's edges on the outline face the edge of the world: what's beyond is the outline's),
+    /// else the higher region's (whose wall it is).
     fn edge_at(&self, w: P2) -> Option<Sel> {
         let tol = PICK / self.view.scale;
         let near = self.shapes.loop_edges_near(w, tol);
@@ -1008,8 +1043,13 @@ impl App {
         let (l, k, _) = near
             .iter()
             .copied()
-            .filter(|c| c.0 > 0 && c.2 <= d0 + 0.25 * tol)
-            .max_by(|a, b| (Some(a.0) == cur).cmp(&(Some(b.0) == cur)).then(edit::loop_z(&self.doc, a.0).total_cmp(&edit::loop_z(&self.doc, b.0))))?;
+            .filter(|c| c.2 <= d0 + 0.25 * tol)
+            .max_by(|a, b| {
+                (Some(a.0) == cur)
+                    .cmp(&(Some(b.0) == cur))
+                    .then((a.0 == 0).cmp(&(b.0 == 0)))
+                    .then(edit::loop_z(&self.doc, a.0).total_cmp(&edit::loop_z(&self.doc, b.0)))
+            })?;
         Some(Sel::Edge(l, k))
     }
 
@@ -1853,12 +1893,11 @@ impl App {
             },
             _ => None,
         };
-        for (l, c) in self.shapes.loops.iter().enumerate().skip(1) {
+        for (l, c) in self.shapes.loops.iter().enumerate() {
             let n = c.len();
             if n < 3 || l > self.doc.regions.len() {
                 continue;
             }
-            let r = &self.doc.regions[l - 1];
             let ccw = signed_area(&c.iter().map(|x| x.0).collect::<Vec<_>>()) > 0.0;
             // runs of points along one document edge each
             let mut runs: Vec<(usize, Vec<P2>)> = vec![];
@@ -1878,11 +1917,33 @@ impl App {
                 } else if hovered == Some((l, k)) {
                     painter.add(Shape::line(screen.clone(), Stroke::new(4.0, style::ACCENT.gamma_multiply(0.55))));
                 }
-                let prof = r.edge_profile(k);
+                let col = Color32::from_rgb(255, 226, 150);
+                if l == 0 {
+                    // ground beyond the outline: ticks pointing out over it, a line along its foot
+                    if edit::beyond_of(&self.doc, k).is_some() {
+                        let sky = Color32::from_rgb(170, 205, 255);
+                        let mut along = 6.0f32;
+                        for i in 0..pts.len() - 1 {
+                            let (a, b) = (screen[i], screen[i + 1]);
+                            let len = (b - a).length();
+                            let d = [pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]];
+                            let dl = d[0].hypot(d[1]).max(1e-9);
+                            let w = if ccw { [d[1] / dl, -d[0] / dl] } else { [-d[1] / dl, d[0] / dl] };
+                            let out = Vec2::new(w[0] as f32, -w[1] as f32);
+                            while along < len {
+                                let p = a + (b - a) * (along / len);
+                                painter.line_segment([p + out * 2.0, p + out * 11.0], Stroke::new(1.4, sky));
+                                along += 9.0;
+                            }
+                            along -= len;
+                        }
+                    }
+                    continue;
+                }
+                let prof = self.doc.regions[l - 1].edge_profile(k);
                 if prof.is_none() {
                     continue;
                 }
-                let col = Color32::from_rgb(255, 226, 150);
                 // inward, in screen space (the plan's y points up)
                 let inward = |a: P2, b: P2| -> Vec2 {
                     let d = [b[0] - a[0], b[1] - a[1]];
@@ -1931,6 +1992,32 @@ impl App {
                             along -= len;
                         }
                         painter.add(Shape::line(zig, Stroke::new(1.2, col)));
+                    }
+                    Some(Profile::Stack { parts }) => {
+                        // a line where it starts with a wall, ticks where it slopes
+                        if parts.first().is_some_and(|p| p.kind == "wall") {
+                            let inner: Vec<Pos2> = (0..pts.len())
+                                .map(|i| {
+                                    let (a, b) = if i + 1 < pts.len() { (pts[i], pts[i + 1]) } else { (pts[i - 1], pts[i]) };
+                                    screen[i] + inward(a, b) * 3.0
+                                })
+                                .collect();
+                            painter.add(Shape::line(inner, Stroke::new(1.6, col)));
+                        }
+                        if parts.iter().any(|p| p.kind == "slope") {
+                            let mut along = 6.0f32;
+                            for i in 0..pts.len() - 1 {
+                                let (a, b) = (screen[i], screen[i + 1]);
+                                let len = (b - a).length();
+                                let nrm = inward(pts[i], pts[i + 1]);
+                                while along < len {
+                                    let p = a + (b - a) * (along / len);
+                                    painter.line_segment([p + nrm * 6.0, p + nrm * 13.0], Stroke::new(1.4, col));
+                                    along += 11.0;
+                                }
+                                along -= len;
+                            }
+                        }
                     }
                     Some(Profile::Terraces { .. }) => {
                         let inner: Vec<Pos2> = (0..pts.len())

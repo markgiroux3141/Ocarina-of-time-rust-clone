@@ -2,6 +2,7 @@
 //! the world, built into textured, watertight meshes. No engine, no Blender: a level document
 //! (JSON) and a theme (JSON) in, meshes out.
 
+pub mod beyond;
 pub mod build;
 pub mod doc;
 pub mod export;

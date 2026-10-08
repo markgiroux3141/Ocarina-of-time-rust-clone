@@ -10,7 +10,7 @@ cargo build --release -p overworld_editor -p oot_sandbox
 target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_village.json [--theme <theme.json>] [--textures <dir>] [--kit <dir>] [--select <name>]
 ```
 
-`--select` selects a region or path by name, a prop by `prop:N`, a line by `line:N` or a region's edge by `edge:<region>:<k>`, at the
+`--select` selects a region or path by name, a prop by `prop:N`, a line by `line:N`, a region's edge by `edge:<region>:<k>` or an outline edge by `edge:outline:<k>`, at the
 start (handy for screenshots: the profile shows for a path).
 
 The texture library is `out/overworld/textures/kokiri`, made on first start from the extracted Kokiri Forest scene
@@ -22,7 +22,7 @@ in the File menu.
 ## The window
 
 - **Top bar:** the File menu (new, open, save, export, live export, and the theme, texture library and export folder),
-  *Level settings…* (a window: name, detail, edges, walls, the edge of the world, sampling), undo and redo. On the
+  *Level settings…* (a window: name, theme, detail, edges, walls, the edge of the world, sampling), undo and redo. On the
   right: the build's status (click it for the triangles by object), the **collision meter** (vertices of the game's
   8192), the **⚠ problems** (click one to select and frame what it's about), the keys sheet (also `?` or F1), and
   ▶ **Play**.
@@ -58,12 +58,22 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
 - **Edges:** a click near a region's edge (between two nodes) selects that edge; Shift-click more edges of the same
   region to select them together. The inspector then shows an *Edge* section above the region's own: its profile, the
   region's (the default) or one of its own: *Cliff*, *Slope* (angle, rounding), *Terraces* (steps, step height, depth),
-  *Overhang* (depth) or *Ragged* (how much, size, seed). Del puts the selected edges back to the region's profile. The
+  *Overhang* (depth), *Ragged* (how much, size, seed) or *Stack*. Del puts the selected edges back to the region's profile. The
   region's own profile, for all its edges, is in its *Edges* section. In the plan, a sloped edge has hachures pointing in
   (as maps draw slopes), terraces a second line just inside, an overhang a dashed line just outside, ragged rock a
   zig-zag. A profile is built inward from the edge, so the region keeps its shape; a sunken region's edges go up to the
   floor beside them. See Edge profiles in `../overworld/README.md`. An edge two regions share is the selected region's, else
   the higher one's: select the region first to give the lower one's side a profile.
+- **Stacks:** a *Stack* profile is a list of parts from the foot in, each a *Wall* or a *Slope* with its height (blank: a
+  share of what's left), a slope's angle, and its *Style* (any theme's wall style; a slope with one is drawn as that wall).
+  ↑ ↓ reorder them, *Remove* drops one, *+ Wall* and *+ Slope* add one. *Presets* start from Kakariko's edges: *Cliff +
+  slope* (the west wing), *Brick + rock* (under Death Mountain Trail), *Mossy wall* (the south edge). In the plan a stack
+  has a line along its foot where it starts with a wall, and ticks where it slopes. See Stacks in `../overworld/README.md`.
+- **Beyond the outline:** a click near an outline edge selects it (an edge a region shares with the outline is the
+  outline's unless that region is selected). Its inspector section, *Beyond*, is *Forest* (the edge of the world as it
+  was) or *Ground*: a *Crest* height and a profile, usually a stack, built outward from the edge, with nothing past the
+  crest. Shift-click more outline edges to set them together; Del puts them back to the forest. In the plan, blue ticks
+  point out from those edges. See Beyond the outline in `../overworld/README.md`.
 - **Region (R):** click points, then click the first point or press Enter to close. A click on an existing node shares it.
   A click on a loop's edge adds a node there and shares it, so a region can be drawn against the outline or another
   region. New regions start 120 above the ground they're drawn on. One drawn outside everything is a new **area**: it
@@ -74,7 +84,9 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   finishes on, not on its edge: an end takes the floor's height. A ramp slopes all the way to its end, so one that
   ends halfway into a plateau cuts into it, and a bridge's floating end lands at the floor's edge (see the paths
   section of `../overworld/README.md`). An end exactly on an edge could take either side's height, so path clicks never snap
-  to region nodes. The inspector sets width, mode per segment (attached embankment or floating bridge), side style and
+  to region nodes. The inspector sets width, mode per segment (attached embankment or floating bridge), surface (*Ground*,
+  or *Steps*: Kakariko's stairs, a ramp with steps drawn on it; drawn twice as long as it climbs its sides show the stairs'
+  profile, any other slope plain brick repeating along them), side style and
   bridge shape. A path node's height and width are optional, per node.
 - **Brush (B):** paints the level's terrain (see Painted terrain in `../overworld/README.md`): one smooth height offset that
   everything rides on, so painting across several regions raises them all together, with their walls, paths and bridges.
@@ -114,6 +126,14 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   parallel walls: draw it with sharp corners (S), or with Hard edges. Vines and the waterfall always reach from the floor
   to the wall's top; the inspector's *Width* sets how wide they are, up to the flat face they're on (it says how wide that
   is). The vines' texture repeats as they grow.
+- **Themes:** Level settings' *Theme* switches the level between Kokiri Forest and Kakariko Village: every floor, wall
+  and tree that isn't pinned to a style follows. A region's *Edge* and a path's *Sides* list the level's theme's styles
+  first, then the other themes' (`kakariko:brick`, `kokiri:cliff`), which stay as they are when the theme changes. A
+  style the theme doesn't have falls back to its own walls, with a problem saying so. The texture libraries of every
+  theme are made from the extract on first start (`out/overworld/textures/<theme>`). See Themes in
+  `../overworld/README.md`.
+- **New levels** start at Low detail, Hard edges and Stretched walls (File → New, and the editor with no file). A level
+  without these settings in its file keeps High, Smooth and Tiled.
 - **Edges:** Level settings' *Edges* (next to *Detail*) sets how every outline, region and path runs between its
   nodes: *Smooth* curves, *Faceted* (the curves in a few flat panels) or *Hard* (straight node to node, so the
   nodes you place are the corners). See Edges in `../overworld/README.md`. *Walls* switches the cliffs between
