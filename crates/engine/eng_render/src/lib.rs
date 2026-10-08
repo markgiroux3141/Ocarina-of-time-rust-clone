@@ -38,6 +38,9 @@ pub struct Renderer {
     /// The overlay's globals (the orthographic interface projection).
     pub(crate) overlay_globals_buf: wgpu::Buffer,
     pub(crate) overlay_globals_bg: wgpu::BindGroup,
+    /// The pause menu's globals (its own perspective, `eng_gfx::DrawLists::pause`).
+    pub(crate) pause_globals_buf: wgpu::Buffer,
+    pub(crate) pause_globals_bg: wgpu::BindGroup,
     /// Clip-space triangles (the letterbox bars).
     pub(crate) fill_pipeline: wgpu::RenderPipeline,
     pub(crate) material_layout: wgpu::BindGroupLayout,

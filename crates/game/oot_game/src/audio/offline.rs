@@ -1,13 +1,13 @@
 //! Not in the C: the audio side of a headless run. After each game frame the play state's
 //! `GameOp`s go to an offline renderer (`eng_audio::Renderer`), which runs the frame's VI
-//! retraces (`R_UPDATE_RATE`, 3 per 20 Hz frame) and gives back what the game reads next
+//! retraces (`R_UPDATE_RATE`: 3 per 20 Hz frame, 2 in the pause menu) and gives back what the
+//! game reads next
 //! (docs/adr/0026-the-games-audio.md). What the AI played is the run's sound.
 
 use eng_audio::{AudioData, Renderer};
 
 use super::{AudioSide, GameAudio};
 use crate::play::PlayState;
-use crate::play_scene::R_UPDATE_RATE;
 
 pub struct OfflineAudio {
     pub renderer: Renderer,
@@ -18,7 +18,7 @@ pub struct OfflineAudio {
 impl AudioSide for OfflineAudio {
     fn hand_over(&mut self, audio: &mut GameAudio) {
         let ops = audio.take_ops();
-        let view = self.renderer.game_frame(&ops, R_UPDATE_RATE as u64);
+        let view = self.renderer.game_frame(&ops, audio.update_rate as u64);
         audio.set_view(view);
         if !self.keep_output {
             self.renderer.out.clear();

@@ -83,7 +83,10 @@ struct Cli {
     /// his mouth); with --entrance ENTR_DEKU_TREE_0 --child --preset deku-tree-inside also
     /// `deku-baba` (GAME-05's run: a Deku Baba's bite, then its stem cut, from a start by it on
     /// the top floor), `combat` (a withered Deku Baba and a Keese, the shield) and `scrub` (from a
-    /// start in room 4: a Mad Scrub's nut bounced back, the scrub caught and killed).
+    /// start in room 4: a Mad Scrub's nut bounced back, the scrub caught and killed); with
+    /// --preset deku-tree-slingshot-owned `pause` (GAME-05 5b's run: the pause menu, the slingshot
+    /// onto C-Right, the map page, closed), and with any items `pause-pages` (the menu opened, its
+    /// pages turned right four times, closed).
     #[arg(long, default_value = "run-roll")]
     script: String,
     /// Headless: one screenshot after the script, from the chase camera.
@@ -299,6 +302,20 @@ fn script(name: &str) -> Result<(Vec<PadState>, Option<(Vec3, i16)>)> {
         "ramp-stand" => {
             s.extend(rep(stick(0, 0), 20));
             start = Some((Vec3::new(-700.0, 80.0, -300.0), 0x4000));
+        }
+        // The pause menu (GAME-05 5b): Start, its pages turned right four times (R), Start.
+        "pause-pages" => {
+            let press = |b: u16| PadState { button: b, stick_x: 0, stick_y: 0 };
+            s.extend(rep(stick(0, 0), 60));
+            s.push(press(eng_input::pad::BTN_START));
+            s.extend(rep(stick(0, 0), 40));
+            for _ in 0..4 {
+                s.push(press(eng_input::pad::BTN_R));
+                s.extend(rep(stick(0, 0), 25));
+            }
+            s.push(press(eng_input::pad::BTN_START));
+            s.extend(rep(stick(0, 0), 20));
+            start = None;
         }
         // A few frames standing at the spawn (for screenshots).
         "still" => {
@@ -582,6 +599,20 @@ fn run_script(
                     "eye": cam.eye.to_array(),
                     "at": cam.at.to_array(),
                     "fov": cam.fov,
+                });
+            }
+            // While paused (GAME-05 milestone 5b): the pause menu's state, main state, page, item
+            // cursor (point, special position), the equip's flying icon and the C buttons' items.
+            let pc = &w.pause_ctx;
+            if pc.is_paused() {
+                t["pause"] = serde_json::json!({
+                    "state": pc.state,
+                    "main": pc.main_state,
+                    "page": pc.page_index,
+                    "cursor": [pc.cursor_point[0], pc.cursor_special_pos],
+                    "equip_anim": [pc.equip_anim_x, pc.equip_anim_y, pc.regs.wreg90, pc.equip_anim_alpha],
+                    "c_items": &w.save.equips.button_items[1..],
+                    "update_rate": w.r_update_rate,
                 });
             }
         }

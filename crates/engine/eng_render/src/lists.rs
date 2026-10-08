@@ -115,16 +115,21 @@ impl Renderer {
         let mut order: Vec<(&MeshKey, usize)> = Vec::new();
         let mut ortho: Vec<bool> = Vec::new();
         let mut order_2d: Vec<(&MeshKey, usize)> = Vec::new();
+        let mut order_pause: Vec<(&MeshKey, usize)> = Vec::new();
         let mut opa_models = 0;
         let n_opa = lists.opa.len();
-        for (k, (cmd, is_2d)) in lists.ordered().map(|c| (c, false)).chain(lists.overlay_2d.iter().map(|c| (c, true))).enumerate() {
+        // 0: the 3D lists, 1: the pause menu's, 2: the overlay's.
+        let all = lists.ordered().map(|c| (c, 0)).chain(lists.pause.iter().map(|c| (c, 1))).chain(lists.overlay_2d.iter().map(|c| (c, 2)));
+        for (k, (cmd, list)) in all.enumerate() {
             if k == n_opa {
                 opa_models = order.len();
             }
             let n = uses.entry(&cmd.mesh).or_default();
             if cache.prepare(self, device, queue, source, cmd, *n) {
-                if is_2d {
+                if list == 2 {
                     order_2d.push((&cmd.mesh, *n));
+                } else if list == 1 {
+                    order_pause.push((&cmd.mesh, *n));
                 } else {
                     order.push((&cmd.mesh, *n));
                     ortho.push(cmd.params.screen);
@@ -134,12 +139,15 @@ impl Renderer {
         }
         let models: Vec<&GpuModel> = order.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
         let models_2d: Vec<&GpuModel> = order_2d.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
+        let models_pause: Vec<&GpuModel> = order_pause.iter().map(|(k, n)| &cache.meshes[*k][*n].model).collect();
         let overlay: Vec<LineVertex> = lists.overlay.iter().map(|p| LineVertex { pos: p.pos.to_array(), color: p.color }).collect();
-        if n_opa >= lists.opa.len() + lists.xlu.len() + lists.overlay_2d.len() {
+        if n_opa >= lists.opa.len() + lists.xlu.len() + lists.pause.len() + lists.overlay_2d.len() {
             opa_models = order.len();
         }
         let screen = Screen {
             overlay_models: &models_2d,
+            pause_models: &models_pause,
+            pause_view: lists.pause_view,
             letterbox_rows: lists.letterbox_rows,
             ortho_models: &ortho,
             opa_models,

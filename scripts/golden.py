@@ -95,6 +95,14 @@ CASES = [
     # slingshot on C-Right), Link takes the Fairy Slingshot out, aims in first person and shoots a
     # seed into the eye (flag 0x0C): the door to room 2 unbars, and he goes through it.
     ("slingshot", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot", "--script", "slingshot", "--trace", "{trace}"]),
+    # GAME-05 milestone 5b-1: inside the Deku Tree with the slingshot owned but on no button,
+    # Start opens the pause menu, the item page's cursor goes to the slingshot, C-Right equips it
+    # (its icon flying to the button), R turns to the map page, Start closes the menu: the
+    # trace and the game resumed with the slingshot on C-Right; then the run cut at frame 60
+    # (the item page, the icon in flight) and at 82 (the map page).
+    ("pause", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot-owned", "--script", "pause", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("pause_item", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot-owned", "--script", "pause", "--frames", "60", "--screenshot", "{shot}"]),
+    ("pause_map", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot-owned", "--script", "pause", "--frames", "82", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

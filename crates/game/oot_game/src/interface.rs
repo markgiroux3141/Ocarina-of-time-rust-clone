@@ -17,9 +17,12 @@
 //!   fishing rod baked) and the C items' ammo counts (`Interface_DrawAmmoCount`), from the
 //!   save's buttons. `Interface_LoadItemIcon1/2` load nothing: the icon drawn is the button's
 //!   item as it draws.
+//! - **The pause menu's part** (docs/adr/0047-the-pause-menu.md): the START button and its label
+//!   while paused, the B button's label (`Interface_LoadActionLabelB`: "SAVE" in the menu), the
+//!   item page's icon flying to its C button (`HudPause`).
 //! - **Not ported:** the magic meter (no magic), the minimap, the timers, the C-Up Navi prompt,
-//!   the B button's label (only the ocarina loads one), the B button's ammo count (only while
-//!   riding or in a minigame), double defence's hearts, and the pause menu. `func_80083108`'s
+//!   the B button's ammo count (only while riding or in a minigame), double defence's hearts.
+//!   `func_80083108`'s
 //!   riding, minigame, fishing, water and horse-race cases, and its item-type restrictions, are
 //!   left out: with nothing on the C buttons they don't change a button's status.
 //!
@@ -225,6 +228,56 @@ impl Default for InterfaceContext {
 
 /// `HUD_VISIBILITY_NOTHING` (`save.h`): the interface fades out entirely.
 pub const HUD_VISIBILITY_NOTHING: u16 = 1;
+/// `HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS` (`save.h`).
+pub const HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS: u16 = 7;
+
+/// `func_80084BF4(play, 1)` (the pause menu's opening, `KaleidoScope_UpdateOpening`): B's item
+/// back from `buttonStatus[0]` where a slingshot, bow, bombchu or fishing rod stood in for it
+/// (or B was empty with `infTable[INFTABLE_INDEX_1DX]` clear), the buttons enabled, the HUD to
+/// `HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS`. (`Interface_LoadItemIcon1` loads nothing: the
+/// HUD draws B's item.) The other flag's callers aren't ported.
+pub fn func_80084bf4(save: &mut SaveContext) {
+    use crate::item::{ITEM_BOMBCHU, ITEM_BOW, ITEM_FISHING_POLE, ITEM_SLINGSHOT};
+    let b = save.equips.button_items[0];
+    let stand_in = b == ITEM_SLINGSHOT || b == ITEM_BOW || b == ITEM_BOMBCHU || b == ITEM_FISHING_POLE;
+    if stand_in || save.button_status[0] == BTN_DISABLED {
+        if stand_in {
+            save.equips.button_items[0] = save.button_status[0];
+        }
+    } else if b == crate::save::ITEM_NONE {
+        // (`buttonItems[0] != ITEM_NONE` is false here.)
+        if save.inf_table[crate::save::INFTABLE_INDEX_1DX] == 0 {
+            save.equips.button_items[0] = save.button_status[0];
+        }
+    }
+    save.button_status[0..4].copy_from_slice(&[BTN_ENABLED; 4]);
+    change_alpha(save, HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS);
+}
+
+/// `START_BUTTON_R`, `_G`, `_B` (`interface.h`, `PLATFORM_GC`).
+const START_BUTTON_COLOR: [u8; 3] = [120, 120, 120];
+
+/// What `Interface_Draw` reads of the pause menu (`pauseCtx`).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct HudPause {
+    /// `IS_PAUSED` and not a game over: the START button and its label.
+    pub start: bool,
+    /// The item page's equip (`PAUSE_STATE_MAIN`, `PAUSE_MAIN_STATE_3`).
+    pub equip: Option<EquipAnim>,
+}
+
+/// The icon flying to a C button: `equipTargetItem` (or a magic arrow's `0xBF` + n),
+/// `equipAnimX` and `equipAnimY` (tenths), its size `WREG(90)` (tenths), `equipAnimAlpha`, and
+/// whether the menu greyed its icon.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EquipAnim {
+    pub item: u16,
+    pub x: i16,
+    pub y: i16,
+    pub size: i16,
+    pub alpha: i16,
+    pub gray: bool,
+}
 
 /// `Interface_ChangeHudVisibilityMode`: the interface fades to `alpha_type`'s buttons (`nextHudVisibilityMode` steps it
 /// in `Interface_Update`).
@@ -347,7 +400,8 @@ impl InterfaceContext {
         }
     }
 
-    /// `Interface_SetDoAction`: the A button flips to `action` (the pause menu isn't ported).
+    /// `Interface_SetDoAction`: the A button flips to `action` (the pause menu's branch:
+    /// `PlayState::interface_set_do_action_paused`).
     pub fn set_do_action(&mut self, action: u16) {
         if self.unk_1f0 != action {
             self.unk_1f0 = action;
@@ -854,7 +908,7 @@ impl InterfaceContext {
 
     /// `Interface_Draw` after the reticle: the item buttons, the B item, the A button and its
     /// label.
-    pub fn draw_hud_2(&self, save: &SaveContext, out: &mut Vec<Sprite>) {
+    pub fn draw_hud_2(&self, save: &SaveContext, pause: &HudPause, out: &mut Vec<Sprite>) {
         // Interface_DrawItemButtons.
         let btn = |i: usize, name: &str, rgb: [u8; 3], alpha: i16, out: &mut Vec<Sprite>| {
             let (x, y, w) = (ITEM_BTN_X[i] as f32, ITEM_BTN_Y[i] as f32, ITEM_BTN_WIDTH[i] as f32);
@@ -865,17 +919,35 @@ impl InterfaceContext {
         for i in 1..4 {
             btn(i, BUTTON, C_BTN_COLOR, c_alphas[i - 1], out);
         }
-        // (The START button only with the pause menu; the C-Up prompt with Navi calling.)
+        // The START button and its label while paused (not in a game over): the button's
+        // texture at startButtonLeftPos[LANGUAGE_ENG] (132, 17), 22 across, in grey (GameCube:
+        // START_BUTTON_R, G, B 120);
+        // the label (doActionSegment's third, "Return"'s texture) at R_START_LABEL_X/Y (120, 20),
+        // 48 by 16 at R_START_LABEL_DD 100, under the prim and env combiner, env (0, 0, 0, 0).
+        if pause.start {
+            let a = self.start_alpha as u8;
+            out.push(Sprite::rect(BUTTON, 132.0, 17.0, 154.0, 39.0, Some([START_BUTTON_COLOR[0], START_BUTTON_COLOR[1], START_BUTTON_COLOR[2], a]), None));
+            if let Some(action) = self.do_action_segment[2] {
+                out.push(Sprite::rect(do_action_rect_sprite(action), 120.0, 20.0, 168.0, 36.0, Some([255, 255, 255, a]), Some([0, 0, 0, 0])));
+            }
+        }
+        // (The C-Up prompt with Navi calling.)
         // Empty C button arrows.
         for i in 1..4 {
             if save.equips.button_items[i] > 0xF0 {
                 btn(i, EMPTY_C[i - 1], C_BTN_COLOR, c_alphas[i - 1], out);
             }
         }
-        // The B item (the B label only follows Interface_LoadActionLabelB; B's ammo count only
-        // while riding or in a minigame).
-        if !self.unk_1fa && save.equips.button_items[0] != crate::save::ITEM_NONE {
-            item_icon(0, save.equips.button_items[0], self.b_alpha, out);
+        // The B item (B's ammo count only while riding or in a minigame), or the label
+        // Interface_LoadActionLabelB loaded: at R_B_LABEL_X/Y (B_BUTTON_X - 9, B_BUTTON_Y + 6),
+        // 48 by 16 at R_B_LABEL_SCALE 100, under the prim and env combiner.
+        if !self.unk_1fa {
+            if save.equips.button_items[0] != crate::save::ITEM_NONE {
+                item_icon(0, save.equips.button_items[0], self.b_alpha, out);
+            }
+        } else if let Some(action) = self.do_action_segment[1] {
+            let env = if pause.start { [0, 0, 0, 0] } else { [0, 0, 0, 255] };
+            out.push(Sprite::rect(do_action_rect_sprite(action), 151.0, 23.0, 199.0, 39.0, Some([255, 255, 255, self.b_alpha as u8]), Some(env)));
         }
         // The C items, each with its ammo count.
         for i in 1..4 {
@@ -895,6 +967,31 @@ impl InterfaceContext {
         if let Some(action) = self.do_action_segment[slot] {
             let label = view * Mat4::from_translation(Vec3::new(0.0, 0.0, WREG_46 / 10.0)) * turn;
             out.push(Sprite { name: do_action_sprite(action), transform: label, prim: Some([255, 255, 255, a]), env: None });
+        }
+        // The pause menu's equip: the icon at cursorVtx[16..19] (equipAnimX / 10, equipAnimY /
+        // 10, WREG(90) / 10 across) under Gfx_SetupDL_42Overlay and G_CC_MODULATERGBA_PRIM with
+        // the identity matrix (the overlay's space); a magic arrow's effect grows while it fades
+        // in, 32 across.
+        if let Some(e) = pause.equip {
+            let (x0, y0, size) = ((e.x / 10) as f32, (e.y / 10) as f32, (e.size / 10) as f32);
+            let (tex, rect, prim) = if e.item < 0xBF {
+                let tex = if e.gray { crate::kaleido::gfx::KTex::ItemIconGray(e.item as u8) } else { crate::kaleido::gfx::KTex::ItemIcon(e.item as u8) };
+                (tex, (x0, x0 + size, y0, y0 - size), [255, 255, 255, e.alpha as u8])
+            } else {
+                let c = crate::kaleido::item::MAGIC_ARROW_EFFECTS[((e.item - 0xBF) as usize).min(2)];
+                let (mut x0, mut x1, mut y0, mut y1) = (x0, x0 + size, y0, y0 - size);
+                if e.alpha > 0 && e.alpha < 255 {
+                    let s = ((e.alpha / 8) / 2) as f32;
+                    x0 -= s;
+                    x1 = x0 + 32.0 + s * 2.0;
+                    y0 += s;
+                    y1 = y0 - 32.0 - s * 2.0;
+                }
+                (crate::kaleido::gfx::KTex::MagicArrowEffect, (x0, x1, y0, y1), [c[0] as u8, c[1] as u8, c[2] as u8, e.alpha as u8])
+            };
+            let (x0, x1, y0, y1) = rect;
+            let transform = Mat4::from_translation(Vec3::new(x0, y0, 0.0)) * Mat4::from_scale(Vec3::new(x1 - x0, y0 - y1, 1.0));
+            out.push(Sprite { name: crate::kaleido::gfx::bake_name(tex, crate::kaleido::gfx::Cc::ModulateIaPrim), transform, prim: Some(prim), env: Some([0, 0, 0, 255]) });
         }
     }
 
@@ -1075,6 +1172,11 @@ fn item_icon_sprite(item: u8) -> String {
 fn ammo_digit_sprite(d: usize) -> String {
     format!("hud/ammo_digit{d}")
 }
+/// The do-action label drawn as a rectangle (the B button's and the START button's).
+fn do_action_rect_sprite(action: u16) -> String {
+    format!("hud/do_action_rect/{action:02x}")
+}
+
 pub fn do_action_sprite(action: u16) -> String {
     format!("hud/do_action{action:02X}")
 }
@@ -1207,6 +1309,19 @@ pub fn bakes() -> Vec<SpriteBake> {
             prim: true,
             env: false,
             quad: Quad::Vtx(vtx),
+        });
+        // The same label as the B button's and the START button's rectangle (after
+        // Gfx_SetupDL_39Overlay, the prim and env combiner).
+        let mut setup = setup_dl::setup_dl_39();
+        setup.combine_lerp(PRIM_ENV_BY_TEXEL, PRIM_ENV_BY_TEXEL);
+        v.push(SpriteBake {
+            name: do_action_rect_sprite(action),
+            tex: TexSrc::File { file: "do_action_static".into(), offset: action as u32 * DO_ACTION_TEX_SIZE },
+            load: Load::new(G_IM_FMT_IA, G_IM_SIZ_4B, 48, 16, G_TX_WRAP),
+            setup,
+            prim: true,
+            env: true,
+            quad: Quad::Rect { s: 48, t: 16 },
         });
     }
     v

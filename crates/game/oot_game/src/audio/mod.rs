@@ -257,6 +257,9 @@ pub struct GameAudio {
     pub frames: u32,
     /// Not in the C: the log, if asked for.
     pub log: Option<AudioLog>,
+    /// Not in the C: the last game frame's `R_UPDATE_RATE`, the retraces the audio side runs
+    /// before the next one (`graph.c`'s `updateRate`).
+    pub update_rate: u16,
 
     // audio/game/data.c
     pub seq_cmd_wr_pos: u8,
@@ -346,6 +349,7 @@ impl GameAudio {
             ops: Vec::new(),
             frames: 0,
             log: None,
+            update_rate: crate::play_scene::R_UPDATE_RATE,
             seq_cmd_wr_pos: 0,
             seq_cmd_rd_pos: 0,
             start_seq_disabled: 0,

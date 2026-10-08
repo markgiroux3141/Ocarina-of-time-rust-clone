@@ -32,6 +32,10 @@ pub(crate) struct Globals {
 pub struct Screen<'a> {
     /// Models in the interface's orthographic projection (`eng_gfx::DrawLists::overlay_2d`).
     pub overlay_models: &'a [&'a GpuModel],
+    /// The pause menu's models, in `pause_view`'s perspective (`eng_gfx::DrawLists::pause`):
+    /// after the letterbox, before the overlay's fill.
+    pub pause_models: &'a [&'a GpuModel],
+    pub pause_view: Option<eng_gfx::Perspective>,
     /// The letterbox bars' height in rows of 240.
     pub letterbox_rows: f32,
     /// Per model of the 3D lists, whether it's drawn in the orthographic projection (a
@@ -116,6 +120,13 @@ impl Renderer {
             fog: [0.0, 0.0, 1.0, 2.0],
         };
         queue.write_buffer(&self.overlay_globals_buf, 0, bytemuck::bytes_of(&overlay_globals));
+        // The pause menu's View_Apply: guPerspective with the target's aspect (the 3D view's
+        // way of widening), the view already in each model's transform. No lights or fog.
+        if let Some(p) = screen.pause_view {
+            let proj = glam::camera::rh::proj::directx::perspective(p.fovy.to_radians(), aspect, p.near, p.far);
+            let pause_globals = Globals { view_proj: proj.to_cols_array_2d(), fog: [0.0, 0.0, p.near, p.far], ..overlay_globals };
+            queue.write_buffer(&self.pause_globals_buf, 0, bytemuck::bytes_of(&pause_globals));
+        }
         let line_buf = |lines: &[LineVertex]| {
             (!lines.is_empty()).then(|| {
                 let b = device.create_buffer(&wgpu::BufferDescriptor {
@@ -151,7 +162,7 @@ impl Renderer {
             })
         };
         let fill_bufs = [screen.opa_fill, screen.xlu_fill, screen.overlay_fill].map(|f| fill_quad(f).and_then(|q| line_buf(&q)));
-        for m in models.iter().chain(screen.overlay_models) {
+        for m in models.iter().chain(screen.pause_models).chain(screen.overlay_models) {
             if m.dirty.replace(false) {
                 queue.write_buffer(&m.vertex_buf, 0, bytemuck::cast_slice(&m.skinned));
             }
@@ -222,6 +233,18 @@ impl Renderer {
             pass.set_bind_group(0, &self.globals_bg, &[]);
             pass.set_vertex_buffer(0, b.slice(..));
             pass.draw(0..bars.len() as u32, 0..1);
+        }
+        if screen.pause_view.is_some() && !screen.pause_models.is_empty() {
+            pass.set_bind_group(0, &self.pause_globals_bg, &[]);
+            for m in screen.pause_models {
+                pass.set_vertex_buffer(0, m.vertex_buf.slice(..));
+                for &(start, count, mat, tbg, key) in &m.draws {
+                    pass.set_pipeline(&self.pipelines[&key]);
+                    pass.set_bind_group(1, &m.material_bg, &[mat * MATERIAL_STRIDE as u32]);
+                    pass.set_bind_group(2, &m.texture_bgs[tbg], &[]);
+                    pass.draw(start..start + count, 0..1);
+                }
+            }
         }
         draw_fill(&mut pass, 2);
         if !screen.overlay_models.is_empty() {

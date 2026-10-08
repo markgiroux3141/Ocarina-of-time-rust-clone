@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 23;
+pub const FORMAT_VERSION: u32 = 24;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -197,6 +197,9 @@ pub enum BakeSegment {
     Dynamic(Vec<(u32, u32)>),
     /// A whole ROM file (a skybox's `vr_*_static` textures and palettes).
     File(String),
+    /// An RGBA32 image of a ROM file (`pixels` long at `offset`), greyed by
+    /// `crate::kaleido::gray_out_texture_rgba32` (the pause menu's wrong-age item icons).
+    GrayRgba32 { file: String, offset: u32, pixels: u32 },
     /// Data the draw code builds (a skybox's `roomVtx`).
     Bytes(Vec<u8>),
 }

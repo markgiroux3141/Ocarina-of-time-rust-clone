@@ -4,8 +4,8 @@
 //! `func_80834EB8`, `Player_ActionHandler_13`), the string drawn and let go (`func_808351D4`,
 //! `func_808350A4`, `func_808353D8`, `func_80835588`, `func_8084FF7C`), the look with C-Up
 //! (`func_8083B8F4`, `Player_Action_8084B1D8`, `func_8084ABD8`), aiming Z-targeted
-//! (`CAM_MODE_Z_AIM`), a Deku nut thrown (`func_8083C61C`, `Player_Action_8084E604`), Start's
-//! stand-in putting them on C buttons, and the first-person draw
+//! (`CAM_MODE_Z_AIM`), a Deku nut thrown (`func_8083C61C`, `Player_Action_8084E604`), the pause
+//! menu putting them on C buttons, and the first-person draw
 //! (`Player_OverrideLimbDrawGameplayFirstPerson`, the string).
 //!
 //! Expected values are worked out from the C in the comments. The tables they read:
@@ -21,7 +21,7 @@ mod common;
 use std::sync::Arc;
 
 use common::*;
-use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_CUP, BTN_START, BTN_Z, PadState};
+use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_CUP, BTN_Z, PadState};
 use glam::Vec3;
 use oot_actors::PlayExt;
 use oot_actors::player::{ARROW_NUT, ARROW_SEED, Action, STATE1_3, STATE1_9, STATE1_20, UpperAction};
@@ -388,22 +388,22 @@ fn a_deku_nut_is_thrown() {
 }
 
 #[test]
-fn start_puts_nuts_and_the_slingshot_on_empty_c_buttons() {
+fn the_pause_menu_puts_nuts_and_the_slingshot_on_c_buttons() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree(&a, "deku-tree-sticks", 1, ROOM1_START.0, ROOM1_START.1);
     // Picked up (Item_Give): nuts and the slingshot owned, on no button.
     item_give(&mut w.save, None, ITEM_DEKU_NUTS_10);
     item_give(&mut w.save, None, ITEM_SLINGSHOT);
     assert_eq!(&w.save.equips.button_items[1..], &[ITEM_DEKU_STICK, ITEM_NONE, ITEM_NONE]);
-    // Start (the pause menu's stand-in): each on the first empty C button, as
-    // KaleidoScope_UpdateItemEquip equips them.
-    frame(&mut w, PadState::default(), press(BTN_START));
+    // The pause menu's item page: the nuts onto C-Down, the slingshot onto C-Right.
+    pause_equip(&mut w, oot_game::item::SLOT_DEKU_NUT as u16, 1);
+    pause_equip(&mut w, oot_game::item::SLOT_SLINGSHOT as u16, 2);
     assert_eq!(&w.save.equips.button_items[1..], &[ITEM_DEKU_STICK, ITEM_DEKU_NUT, ITEM_SLINGSHOT]);
     let s = &w.save.equips.c_button_slots;
     assert_eq!(*s, [oot_game::item::SLOT_DEKU_STICK as u8, oot_game::item::SLOT_DEKU_NUT as u8, oot_game::item::SLOT_SLINGSHOT as u8]);
-    // KaleidoScope_UpdateItemEquip's swap: the slingshot onto C-Left (already on C-Right)
-    // swaps the sticks there.
-    w.save.equip_item_on_c(0, ITEM_SLINGSHOT);
+    // KaleidoScope_UpdateItemEquip's swap: the slingshot onto C-Left (already on C-Right) swaps
+    // the sticks there.
+    pause_equip(&mut w, oot_game::item::SLOT_SLINGSHOT as u16, 0);
     assert_eq!(&w.save.equips.button_items[1..], &[ITEM_SLINGSHOT, ITEM_DEKU_NUT, ITEM_DEKU_STICK]);
 }
 
@@ -520,10 +520,9 @@ fn room_10s_chest_gives_the_slingshot() {
     // 30 seeds; the chest's flag 6 (Flags_SetTreasure).
     assert_eq!((w.save.inv_content(ITEM_SLINGSHOT), w.save.ammo(ITEM_SLINGSHOT)), (ITEM_SLINGSHOT, 30));
     assert!(w.flags.get_treasure(6));
-    // Nothing puts it on a button but the pause menu: Start's stand-in, on C-Down (C-Left has the
-    // sticks).
+    // Nothing puts it on a button but the pause menu: onto C-Down (C-Left has the sticks).
     assert!(!w.save.equips.button_items[1..].contains(&ITEM_SLINGSHOT));
-    frame(&mut w, PadState::default(), press(BTN_START));
+    pause_equip(&mut w, oot_game::item::SLOT_SLINGSHOT as u16, 1);
     assert_eq!(&w.save.equips.button_items[1..], &[ITEM_DEKU_STICK, ITEM_SLINGSHOT, ITEM_NONE]);
 }
 

@@ -322,8 +322,10 @@ fn the_left_shelf_and_back() {
 }
 
 #[test]
-fn start_equips_in_the_play_frame_but_not_with_a_message_up() {
-    // KaleidoSetup_Update, only with msgMode MSGMODE_NONE (z_play.c): the stand-in.
+fn start_opens_the_pause_menu_but_not_with_a_message_up() {
+    use oot_game::kaleido::{PAUSE_MAIN_STATE_IDLE, PAUSE_STATE_MAIN, PAUSE_STATE_OFF};
+    // KaleidoSetup_Update, only with msgMode MSGMODE_NONE (z_play.c). The menu's resume runs the
+    // equipment page's stand-in.
     let Some(mut s) = Shop::enter(0, |sv| {
         item_give(sv, None, ITEM_SHIELD_DEKU);
         item_give(sv, None, ITEM_SWORD_KOKIRI);
@@ -332,10 +334,15 @@ fn start_equips_in_the_play_frame_but_not_with_a_message_up() {
     };
     s.talk();
     s.press(PadState { button: BTN_START, ..NONE });
-    assert_eq!(s.w.save.cur_equip_value(EQUIP_TYPE_SHIELD), EQUIP_VALUE_SHIELD_NONE, "not while talking");
+    assert_eq!(s.w.pause_ctx.state, PAUSE_STATE_OFF, "not while talking");
     s.press(B);
     s.until(80, |s| s.w.msg_ctx.msg_mode == 0 && s.w.player().action == Action::StandingStill);
     s.press(PadState { button: BTN_START, ..NONE });
+    assert_ne!(s.w.pause_ctx.state, PAUSE_STATE_OFF);
+    s.until(80, |s| s.w.pause_ctx.state == PAUSE_STATE_MAIN && s.w.pause_ctx.main_state == PAUSE_MAIN_STATE_IDLE);
+    assert_eq!(s.w.save.cur_equip_value(EQUIP_TYPE_SHIELD), EQUIP_VALUE_SHIELD_NONE, "not while the menu's open");
+    s.press(PadState { button: BTN_START, ..NONE });
+    s.until(40, |s| s.w.pause_ctx.state == PAUSE_STATE_OFF);
     assert_eq!(s.w.save.cur_equip_value(EQUIP_TYPE_SHIELD), EQUIP_VALUE_SHIELD_DEKU);
     assert_eq!(s.w.save.cur_equip_value(EQUIP_TYPE_SWORD), EQUIP_VALUE_SWORD_KOKIRI);
     assert_eq!(s.w.save.equips.button_items[0], ITEM_SWORD_KOKIRI);

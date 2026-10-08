@@ -58,7 +58,8 @@ struct Cli {
     /// A debug save preset: deku-tree-open (the Deku Tree met and his mouth open),
     /// deku-tree-dead (also the tree dead, with the Kokiri Emerald), deku-tree-inside (its intro
     /// seen), deku-tree-sticks (and ten Deku Sticks on C-Left), deku-tree-slingshot (and ten
-    /// Deku nuts on C-Down and the Fairy Slingshot on C-Right), or sword-and-40-rupees (the
+    /// Deku nuts on C-Down and the Fairy Slingshot on C-Right), deku-tree-slingshot-owned (the
+    /// slingshot on no button, for the pause menu to equip), or sword-and-40-rupees (the
     /// Kokiri Sword worn and 40 rupees, for the shop).
     #[arg(long)]
     preset: Option<String>,

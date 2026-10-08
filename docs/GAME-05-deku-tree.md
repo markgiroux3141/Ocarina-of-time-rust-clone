@@ -2090,3 +2090,381 @@ scripts\run\sandbox-slingshot.bat
 - **What to report:** how aiming feels (the stick's speed, the inverted pitch, the slow start),
   the slingshot's and string's look in first person and Z-aim, the dry first raise's delay, the
   seed's flight, puff and sounds, the nut's flash and the stun, the letterbox, and the C-Up look.
+
+## Milestone 5b: the pause menu
+
+**Status:** split agreed (2026-10-07). The user chose:
+- two parts, 5b-1 (the frame and the item page) and 5b-2 (the dungeon map and the game over), as
+  below;
+- outside dungeons, the world map page showing its background only, its contents and `INIT`'s
+  world map points logged;
+- logged: `INIT`'s Link portrait for the equipment page, the quest page's song states' ocarina
+  calls (the states ported), the L press's debug editor (the menu stays open), B's save prompt
+  (5c's);
+- the menu at the C's 30 frames a second, and the scene behind it kept from the `SETUP` frame's
+  lists, without the anti-aliasing filter.
+
+### The survey
+
+Line counts are the decomp's (`52a510f`), for this ROM's branches only: `gc-eu-mq-dbg`
+(`PLATFORM_GC`, `OOT_PAL`, `OOT_MQ`, `DEBUG_FEATURES`; the language is English). "Port today" is
+`16b8e94` (milestone 5a).
+
+**The frame** (`z_kaleido_scope.c`, 4,751 lines: 27 functions and about 1,900 lines of tables):
+
+| C | Lines | What | Port today |
+|---|---|---|---|
+| `KaleidoScope_Update` | 1,084 | Every pause state. `INIT` (374: the buttons saved, icons loaded and greyed by age, the language textures, the dungeon map loaded, the world map's points and the trade marker (190), the equipment page's Link portrait); `OPENING_1`/`_2` (33); `MAIN` (131: Start closes, B opens the save prompt, the item equip's state, the quest page's song states); `SAVE_PROMPT` (116); the game over's 10 to 17 (300); `CLOSING`, `RESUME_GAMEPLAY` (69) | The game over states (ADR 0032) |
+| `KaleidoScope_DrawPages` | 429 | The cursor's colour cycle; the stick's repeat filter (input in the draw: first 10 frames, then every 3); the three other pages, then the active one, each a page matrix (translated 93.55 out, scaled 0.78, turned by its pitch), its 15 background tiles, then its contents; the save and game over prompt page | The prompt's part (`KaleidoScope_UpdatePrompt`) |
+| `KaleidoScope_DrawUIOverlay` | 495 | The info panel, the L and R buttons, the name panel (the item's or point's name), the prompts ("(C) to Equip", "To Map", ...) | Not ported |
+| `KaleidoScope_SetVertices`, `_SetPageVertices` | 657 | Every page's quads each frame: the 3x5 background grid (80x32 tiles, the per-column colour gradient), the items', equipment's, quest's, cursor's, overlay's and prompt's quads | Not ported |
+| Cursor, page turns, name panel, opening (`_SetDefaultCursor`, `_SetupPageSwitch`, `_HandlePageToggles`, `_DrawCursor`, `_DrawPageSections`, `_UpdateCursorVtx`, `_UpdatePageSwitch`, `_UpdateNamePanel`, `_UpdateOpening`, `_SetView`, `_MoveCursorToSpecialPos`, the quad helpers) | about 470 | The page ring (item, map, quest, equipment), R right and Z left, the arrows' stick repeat (10 frames); a turn is 16 steps of the eye round the box of pages; the name panel's timer (70, shown 40) | Not ported |
+| `_LoadDungeonMap`, `_UpdateDungeonMap`, `_OverridePalIndexCI4` | 75 | The dungeon map page's two room textures and the current room's palette index | Not ported |
+| `_DrawGameOver` | 44 | "GAME OVER" with its scrolling mask (two textures, two cycles) | Not drawn |
+| `_SetupPlayerPreRender`, `_ProcessPlayerPreRender` | 30 | The equipment page's Link, rendered to a 64x112 image | Not ported |
+| `_GrayOutTextureRGBA32` | 20 | The wrong age's icons greyed when the menu opens (`(r + 2g + b) / 7`) | Not ported |
+
+The rest of the frame:
+- **`z_kaleido_setup.c`** (`KaleidoSetup_Update`, 66; `KaleidoSetup_Init`, 58): Start opens the menu
+  on the last page viewed (from the page to its right, scrolling left); the setup sets
+  `R_UPDATE_RATE` 2, the letterbox to 0, and calls `func_800F64E0(1)`. The port has the update's
+  conditions in part and logs.
+- **`z_kaleido_scope_call.c`** (`KaleidoScopeCall_Update`, 66; `_Draw`, 13): the letterbox's wait,
+  the background's prerender, then `KaleidoScope_Update`; the draw from `READY` on. Ported for the
+  game over.
+- **`z_kaleido_prompt.c`** (36): ported (the game over).
+- **`z_kaleido_manager.c`** (113): the overlays share one RAM area with `ovl_player_actor`. A port
+  without overlays needs none of it, nor the `Object_ReloadAll` and `func_800418D0` that make up
+  for the menu writing over object memory.
+- **The HUD's part** (`z_parameter.c`): the START button (`startAlpha`, 2860), the icon flying to
+  the C button (3450-3500, drawn by the HUD in its overlay, not by the menu), the B button's
+  "SAVE" label, the HUD hidden for the debug editor (3224).
+
+**How Play pauses** (`IS_PAUSED`: `state != PAUSE_STATE_OFF` or `debugState` open):
+- **Stops** (`z_play.c`): `gameplayFrames`, the room requests, `CollisionCheck_*` (1024-1033),
+  `Actor_UpdateAll` with Player (1038), the cutscenes (1042, 1045), `Effect_UpdateAll` and
+  `EffectSs_UpdateAll` (1048, 1051), `Message_Update` (1092-1101: `KaleidoScopeCall_Update`
+  instead), every camera (1130-1147), `Environment_Update`'s body (`z_kankyo.c` 945: time, rain,
+  the time-based music, the lights' blend), `Map_Update` (`z_map_exp.c` 568), the buttons'
+  status (`func_80083108`, `z_parameter.c` 4055).
+- **Keeps running:** the object loads, `Skybox_Update`, `Interface_Update` (the health and rupee
+  meters, the HUD's alphas), `SfxSource_UpdateAll`, `Letterbox_Update`, the fade.
+- **Sound:** `func_800F64E0(1)` on the Start frame (`z_kaleido_setup.c` 130): `NA_SE_SY_WIN_OPEN`
+  and the global mute, which each sequence takes by its mute behaviour (most music stops starting
+  notes and halves the held ones; Hyrule Field's and the ambience keep on softer; the world's
+  sound effects go quiet, the system's and the ocarina's channels don't). `func_800F64E0(0)` when
+  Start closes (`NA_SE_SY_WIN_CLOSE`, the unmute), on that frame, not when the pages have closed.
+  The port has `func_800F64E0` and the mute behaviours.
+- **The rate:** `R_UPDATE_RATE` 2 while paused (30 frames a second), back to 3 at
+  `RESUME_GAMEPLAY` (4707). The port runs a fixed 20 Hz (`eng_math::GAME_HZ`), and the audio's
+  offline renderer takes 3 retraces a frame.
+- **Port today** (`play.rs` 774-925): actors, collision, cutscenes, effects and the cameras stop;
+  `Message_Update` gives way to the game over's update. The environment isn't stopped (the C stops
+  it), `kaleido_setup_update` doesn't check `IS_PAUSED`, the cutscene index, the shooting
+  gallery, the magic or the bowling alley, and sets no state.
+
+**The scene behind the menu** (`z_play.c` 1271-1426, `PreRender.c`):
+- `SETUP`: the scene is drawn as usual (no HUD), copied to `gZBuffer` with its coverage, and that
+  frame isn't shown. `PROCESS`: the next frame runs `PreRender_ApplyFilters` on the CPU: the VI's
+  edge anti-aliasing redone in software on every partly covered pixel (`AntiAliasFilter`, 136:
+  each edge pixel blended towards its fully covered neighbours' second-highest and second-lowest
+  values by its uncovered eighths). The divot filter runs only with a debug register
+  (`R_HREG_MODE`). `READY`, for as long as the menu is up: the saved image is copied back and
+  **the scene isn't drawn** (skybox, rooms, actors, effects skipped); the menu then draws on it
+  without depth, and the HUD over the menu.
+- The port has no coverage buffer: it draws with MSAA, so its edges are already smoothed. It has
+  no framebuffer copy (one pass into one target, read back only to the CPU).
+
+**The item page** (`z_kaleido_item.c`, 869):
+
+| C | Lines | What |
+|---|---|---|
+| `KaleidoScope_DrawItemSelect` | 411 | The cursor over the 6x4 grid (left and right step to the next item in the row, then the next row; past the row's start onto the page arrow; up and down within the column, no wrap; from an arrow, column by column), C-Left, C-Down or C-Right starts the equip (the wrong age or a sold-out item: `NA_SE_SY_ERROR`), the magic arrows' start, the outlines on the three equipped slots, the 24 icons, the cursor's slot enlarged, the ammo |
+| `KaleidoScope_DrawAmmoCount` | 53 | Two 8x8 digits: grey for the wrong age, grey 130 at 0, green at capacity |
+| `KaleidoScope_UpdateItemEquip` | 326 | The icon's flight to the button (10 frames; its size `WREG(90)` 320 to 240 the first time, 280 after, a C quirk of the registers' reset), the magic arrows' four stages, then the C buttons' swap (C-Down and C-Right don't copy the slot for the bow's case: kept) |
+| `KaleidoScope_SetCursorPos`, `_SetItemCursorPos` | 8 | The cursor's corner (the second is never called) |
+
+Tables: `gSlotAgeReqs`, `gItemAgeReqs`, `gEquipAgeReqs` (`z_kaleido_scope.c` 751-892; the port has
+`EQUIP_AGE_REQS` only), `gAmmoItems`, `sAmmoVtxOffset`, `sCButtonPosX/Y`. No `Rand` anywhere in the
+menu.
+
+**The dungeon map page** (`z_kaleido_map.c` `KaleidoScope_DrawDungeonMap`, 341; `z_lmap_mark.c`,
+183; `z_lmap_mark_data_mq.c`, 531 of data):
+- The page runs in the 10 dungeons and 8 boss rooms (`sInDungeonScene`); everywhere else the map
+  page is the **world map** (`KaleidoScope_DrawWorldMap`, 574, and `INIT`'s points, 190).
+- It draws the dungeon's title, the boss key, compass and map icons owned, the floor buttons (the
+  visited floors, or all with the map; the viewed one in blue), Link's head at his floor, the boss
+  skull (with the compass), the Gold Skulltula icon, the current room's palette pulsing (20-frame
+  stages), and the floor's two 48x85 room maps: **CI4 textures drawn with a palette built at run
+  time** (`Map_SetFloorPalettesData`, ported; `mapPalette`).
+- The cursor: the floors' column and the items' column; up and down a floor reloads the maps.
+- `PauseMapMark_Draw` (with the compass): the viewed floor's chests (hidden once opened,
+  `Flags_GetTreasure`) and the boss's mark. The Master Quest Deku Tree's: 3F chests 2 and 6, 2F 1,
+  1F 3, B1 0, 4 and 5, B2 the boss. The boss mark's pulse runs only in the boss scenes, where the
+  marks aren't drawn: it stays 1.0.
+- **The pack has `gMapDataTable` and the minimap's `gMapMarkDataTable` (ADR 0040), not the pause
+  map's `gPauseMapMarkDataTable`** (its own struct, `PauseMapMarkData`): the importer needs to read
+  it.
+
+**The equipment and quest pages** (`z_kaleido_equipment.c`, 715; `z_kaleido_collect.c`, 873):
+their backgrounds are `KaleidoScope_DrawPages`'s (the frame); the files draw only their contents,
+and their cursors live in those draws. Logged, the cursor stays on the arrow it came in by, and
+the page turns on. Logging `KaleidoScope_DrawEquipment` also leaves out its A-button equipping,
+which Start's stand-in keeps doing. The quest page's song states in `KaleidoScope_Update` are
+reachable only from its contents (the ocarina isn't ported).
+
+**The game over** (ADR 0032's states are ported): drawn, it's `KaleidoScope_DrawGameOver` and
+`DrawPages`' prompt page with `icon_item_gameover_static`'s message and prompts.
+
+**The textures** (all English; the PAL XMLs for four of them):
+
+| File | What the menu uses | In the pack |
+|---|---|---|
+| `icon_item_static` | 90 item icons (RGBA32 32x32), 69 language-neutral page tiles (IA8 80x32), the cursor's corners, the info panel, L and R, A, B, C symbols, the prompt cursor | The HUD's item icons (rectangles, another setup) |
+| `icon_item_24_static` | 20 icons 24x24 (dungeon items, quest items) | Two, for text |
+| `icon_item_nes_static` | 9 English page tiles (the titles), 10 dungeon titles, the prompts' labels, "Yes"/"No", the save prompt | No |
+| `item_name_static` | 123 item names (IA4 128x16) | No |
+| `map_name_static` | The world map's 12 point names and 22 area names | No |
+| `icon_item_dungeon_static` | 17 floor buttons, Link's head, the skull | No |
+| `map_48x85_static` | 68 room maps (CI4 48x85) | No |
+| `icon_item_field_static` | The world map (CI8 216x128 in pieces, clouds, area boxes) | No |
+| `icon_item_gameover_static` | "GAME OVER" (three parts and the mask), "Continue?" | No |
+| `parameter_static` | The ammo digits, the equipped outline, the map's chest and boss marks | The digits |
+
+`map_i_static` is the HUD's minimap, not the menu's.
+
+**Drawing it in the port:**
+- **No runtime display lists** (ADR 0006): each texture with its setup is a sprite bake (ADR
+  0017), drawn under a transform with dynamic colours. The menu's quads under the page matrices
+  fit that: a quad of the C's own vertices (`Quad::Vtx`), the vertex colours per draw
+  (`DrawParams::vertex_colors`, the gradient and the alpha). About 450 bakes for the item page and
+  the frame (icons and their greyed copies, names, tiles, the overlay), about 100 more for the map
+  page and the game over.
+- **The pages need a projection of their own:** `View_LookAt` from `eye` (0, 0, 64 at rest; the
+  page turns move it) to the origin, fovy 60, near 10, far 12800, the 320x240 viewport. The pages
+  stand 93.55 out, so the page behind the eye and the side pages cross it. The HUD's way (the A
+  button: a projective transform divided on the CPU) doesn't clip, so they'd mirror. They need
+  the GPU's clipping: a list drawn with its own view and projection, in the overlay's 4:3 frame,
+  without depth, back faces culled, after the scene and before the HUD.
+- **The dungeon map's room textures** need their palette at draw time (16 colours, one index
+  pulsing): the renderer has only decoded RGBA textures. A colour-indexed texture with a palette
+  per draw is an engine feature (and a pack format change).
+- **The greyed icons** are bytes the importer must make (the runtime has no ROM).
+- **Link's portrait** (render to texture) only if the equipment page's contents come in; not
+  needed here.
+
+**Start's stand-in and what relies on it:**
+- **Equipment half** (`SaveContext::equip_owned_unworn`): `Task::Equip` in `mido_shop` and the
+  routes that extend it (`MidoShop`, `NewSaveDekuTree`, `NewFileDekuTree`); `--test chest`,
+  `--test shop`, `--test playthrough`, `--test sfx_route`. The goldens `mido_shop`,
+  `mido_shop_audio`, `new_save_deku_tree` and `new_file_deku_tree` press Start: with a real menu
+  opening and closing, their later frames shift.
+- **Item half** (`equip_sticks_on_empty_c_left`, `equip_nuts_and_slingshot_on_empty_c`):
+  `--test stick` (Start puts sticks on C-Left), `--test slingshot` (Start's nuts and slingshot;
+  room 10's chest then Start). The presets call `equip_item_on_c` directly and stay.
+- `PlayExt::equip_owned_unworn` runs both halves despite its name.
+
+### The split
+
+About 4,800 lines of C ported, with tables, plus two engine features: three times 5a. In two:
+
+- **5b-1, the frame and the item page** (about 3,700):
+  - `KaleidoSetup` whole, `KaleidoScopeCall`, `KaleidoScope_Update`'s states but the game over's
+    (ported) and what the questions leave out; `_DrawPages`, `_DrawUIOverlay`, `_SetVertices`,
+    `_SetPageVertices`, the cursor, page turns, name panel and opening whole; the four pages'
+    backgrounds; the HUD's START button, flying icon and "SAVE" label.
+  - The item page whole (`z_kaleido_item.c`), with the age tables and the greyed icons.
+  - Play paused as the C pauses it (the environment too), `R_UPDATE_RATE` 2 while paused, the
+    scene behind (below).
+  - The engine: the pause list with its own view and projection.
+  - Start's stand-in: only its equipment half, run when the menu closes (`RESUME_GAMEPLAY`, where
+    `Player_SetEquipmentData` runs).
+  - The save prompt (B) logs (5c's).
+  - **Exit:** from a debug start with the slingshot owned and C-Right empty, Start, the cursor to
+    the slingshot, C-Right, Start: the menu closes and the slingshot is on C-Right. The golden
+    `pause`, with screenshots of the item page.
+- **5b-2, the dungeon map and the game over** (about 1,100):
+  - `KaleidoScope_DrawDungeonMap` whole, `_LoadDungeonMap`, `_UpdateDungeonMap`,
+    `_OverridePalIndexCI4`, `z_lmap_mark.c` whole, `gPauseMapMarkDataTable` imported.
+  - The engine: colour-indexed textures with a palette per draw.
+  - The game over screens drawn (`_DrawGameOver`, the prompt page).
+  - **Exit:** the map page from a debug start (the visited floors, the chests' marks with the
+    compass, a floor changed with the stick); the game over's screens in its golden.
+
+**The scene behind the menu** (both parts): the C saves the frame and stops drawing the scene.
+The port would do the same without a copy: at `SETUP` it keeps that frame's scene lists and
+redraws them unchanged while `READY` (no actor's draw, no draw-time state), the menu over them.
+`PreRender_ApplyFilters` is left out: it redoes the console's edge anti-aliasing from its
+coverage values, which the port doesn't have (MSAA smooths the same edges); the divot filter is
+debug-only.
+
+## Milestone 5b-1: the pause menu's frame and the item page
+
+**Answer:** done. Enter (Start) opens the pause menu as the game does: the scene stops behind it,
+the pages turn up into view at 30 frames a second, and the item page's cursor, its name panel and
+"(C) to Equip" work; C-Left, C-Down or C-Right sends the item's icon flying to the button. R and Z
+turn the four pages (the equipment, quest and map pages show their backgrounds), Start closes the
+menu and the game resumes, wearing what's owned (the equipment page's stand-in). The exit holds;
+its run is the golden `pause`, with `pause_item` and `pause_map` its screenshots.
+
+The pack is format 24, in `out/data21`. Decisions are in
+[ADR 0047](adr/0047-the-pause-menu.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 68 to 70):
+- `test-pause.bat`: the milestone's tests;
+- `game-pause.bat`: the game inside the Deku Tree with the slingshot owned but on no button
+  (`deku-tree-slingshot-owned`): Enter opens the menu;
+- `sandbox-pause.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** 5b's split as agreed (2026-10-07, above); 5b-2 (the dungeon map page and
+the game over drawn) is next.
+
+### What was built
+
+**The menu** (`oot_game::kaleido`, ADR 0047):
+- `KaleidoSetup_Init` (the `PauseContext`'s defaults) and `KaleidoSetup_Update` whole (the
+  shooting gallery, magic and bowling alley checks have nothing ported to read): Start opens on
+  the last page viewed, `R_UPDATE_RATE` 2, the letterbox closing, `func_800F64E0(1)`.
+- `KaleidoScopeCall_Update` and `_Draw`: the letterbox's wait, the background's prerender, the
+  overlay loaded (its statics fresh, `KaleidoStatics`), the menu's update and draw.
+- `KaleidoScope_Update`'s states but the save prompt's (logged, 5c): `INIT` (the world map's points
+  and the trade marker logged), `OPENING_1`, `OPENING_2`, `MAIN` (Start closes; B logs the save
+  prompt; the equip; the quest page's song states with their ocarina calls logged), `CLOSING`,
+  `RESUME_GAMEPLAY`; the game over's states as ADR 0032 had them.
+- The frame whole: `KaleidoScope_Draw`, `_DrawPages` (the cursor's colour cycle, the stick's
+  repeat, the four pages' matrices and backgrounds), `_DrawPageSections`, `_DrawUIOverlay` (the
+  info panel, L and R pulsing, the cursor on the arrows, the name panel, the prompts),
+  `_SetVertices`, `_SetPageVertices`, `_DrawCursor`, `_UpdateCursorVtx`, `_SetupPageSwitch`,
+  `_HandlePageToggles` (L logs the debug editor), `_UpdatePageSwitch`, `_UpdateNamePanel`,
+  `_UpdateOpening`, `_SetDefaultCursor`, `_MoveCursorToSpecialPos`, `_SetView`,
+  `_GrayOutTextureRGBA32`, `KaleidoScope_UpdatePrompt`; the REGs (`PauseRegs`), the tables
+  (`gSlotAgeReqs`, `gItemAgeReqs`, `gPageSwitchNextButtonStatus`, the pages' colours and quads).
+- The item page whole (`z_kaleido_item.c`): `KaleidoScope_DrawItemSelect`, `_DrawAmmoCount`,
+  `_UpdateItemEquip`, `_SetCursorPos`, `gAmmoItems`.
+- Logged: `KaleidoScope_DrawEquipment`, `_DrawQuestStatus`, `_DrawDungeonMap` and
+  `PauseMapMark_Draw` (5b-2), `_DrawWorldMap`, `_DrawGameOver` (5b-2), the Link portrait.
+
+**The draw** (ADR 0047): a recorder of the C's quads (`KaleidoGfx`), each a sprite bake placed by
+its vertices; about 370 bakes, the wrong age's icons greyed by the importer
+(`BakeSegment::GrayRgba32`); the cursor's vertices resolved when the frame is drawn
+(`KaleidoScope_UpdateCursorVtx` at the end of the draw, as the next update's race makes it).
+
+**The engine:** the pause list (`DrawLists::pause`, `pause_view`): drawn after the 3D lists,
+before the overlay, in its own perspective, the GPU clipping it. `R_UPDATE_RATE` as play state
+(`PlayState::r_update_rate`): the app's loop, the letterbox, the flash's fade and the offline
+audio's retraces follow it.
+
+**Play paused** as the C pauses it: `Environment_Update`'s body stops too; from the background's
+`PROCESS` on, Play's draw-time state stops and the scene's lists are redrawn as saved, with the
+saved frame's fills; the saving frame skips the overlay elements; `KaleidoScopeCall_Draw` before
+`Interface_Draw`.
+
+**The HUD** (`z_parameter.c`): the START button and its label, the B button's label ("SAVE"),
+`Interface_SetDoAction`'s paused branch, the icon flying to its C button, `func_80084BF4`'s
+opening branch.
+
+**Start's stand-in:** down to its equipment half, run as the menu resumes; its item half and
+`PlayState::pause_menu_equip` gone. The preset `deku-tree-slingshot-owned` (the slingshot on no
+button). The scripted runs' `Task::Equip` opens and closes the menu.
+
+**The exit run:** `Route::Pause` (`--script pause`): from the Deku Tree's spawn, the menu opened,
+the cursor to the slingshot, C-Right, R to the map page, the menu closed. The sandbox's trace
+carries the menu's state while paused.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game22`, `OOT_DATA_DIR=out/data21`):
+624 passed, 0 failed, 1 ignored (603 before). 21 are new, with their expectations from the C:
+- **`oot_actors --test pause`** (13): Start opening the menu frame by frame (the right page and
+  its eye, `R_UPDATE_RATE` 2, `NA_SE_SY_WIN_OPEN`, the prerender's two frames, `INIT`, 8 frames of
+  `OPENING_1` with the alpha 15 a frame, 8 of `OPENING_2`, then the item page, the eye at (0, 0,
+  64), the panel, START and L and R in place, the page's buttons, "SAVE" on B, "DECIDE" on A, the
+  first draw's cursor pushed from the sticks to the nuts); the cursor's moves (along the row,
+  never back to column 0, the arrows, column by column from an arrow, up and down without
+  wrapping); the held stick's moves on frames 0, 11 and 14; C-Right's equip (the icon from (-940,
+  240) by (208, 86) a frame, `WREG(90)` 320 to 240, the swap after it, the next equip shrinking 4
+  a frame); a wrong age's error and its grey icon; R's 16-frame turn (the eye by (-4, -4), L and R
+  out and back, `NA_SE_SY_WIN_SCROLL_RIGHT`, the map's buttons); Start closing (8 frames,
+  `NA_SE_SY_WIN_CLOSE`, the resume: the buttons as they were, 20 frames a second); the equipment
+  stand-in at the resume; B's save prompt logged; Start refused during the fade-in; every quad of
+  a session baked and covering its texture; a bake's vertex order; the scene behind stopped.
+- **`--test pause_run`** (1): the exit run.
+- **`oot_game` `kaleido::tests`** (7): the greying, the age tables, the page turns' eye steps and
+  pages, the C buttons' swap, a magic arrow onto the bow, the bow beside a bow with arrows (the
+  slot only C-Left copies), the bakes.
+- Rewritten for the menu: `--test stick` (the menu puts sticks on C-Left), `--test slingshot`
+  (nuts and the slingshot through the menu, the swap; room 10's chest then the menu), `--test
+  shop` (Start opens the menu, not while talking; its resume wears the shield and the sword).
+
+**The exit run** (`Route::Pause`, `--script pause`, the `deku-tree-slingshot-owned` preset):
+`menu_opened` 52, `cursor_on_item` 55, `item_equipped` 66, `page_turned` 82, `menu_closed` 93.
+
+**The goldens.** Against milestone 5a's build (`target/game21`, 16b8e94, on data20: 92/92
+identical, its outputs in `out/golden_base5b`): the four runs that wore their equipment with Start
+(`mido_shop`, `mido_shop_audio`, `new_save_deku_tree`, `new_file_deku_tree`) now open and close
+the menu (32 frames paused each time, 66 frames longer in all, with the menu's sounds), proven by
+putting the old instant equip back (the baseline's bytes); every other case the same bytes. New:
+`pause` (the trace and the game resumed), `pause_item` (cut at frame 60: the icon in flight) and
+`pause_map` (cut at 82), each the same bytes over two runs. Logged in
+[golden/README.md](../golden/README.md): 96 hashes, 71 cases.
+
+### Decisions
+
+- **[ADR 0047](adr/0047-the-pause-menu.md):** the recorder of the C's quads and its bakes; the pause
+  list in its own perspective; the cursor's race kept as its result; `R_UPDATE_RATE` as play
+  state; the scene behind kept by stopping Play's draw-time state, without the anti-alias filter;
+  the overlay's statics; the greyed icons from the importer; what logs; the stand-in's equipment
+  half at the resume; the HUD's part; the faithful bugs; pack format 24.
+- **The first open's cursor** lands on the second item, as the C's does: `KaleidoSetup_Init`
+  (every `Play_Init`) leaves `cursorItem[PAUSE_ITEM]` at `PAUSE_ITEM_NONE`, and the first idle draw
+  pushes the stick right (`stickAdjX` 40).
+
+### Known gaps
+
+- **5b-2:** the dungeon map page's contents (its CI4 room maps want a palette per draw) and its
+  marks (`gPauseMapMarkDataTable`, not in the pack yet); the game over's message and prompt page.
+- **Logged:** the equipment and quest pages' contents (with the equipment page's A equipping,
+  whose stand-in runs at the resume), the world map's, the Link portrait, the debug inventory
+  editor (L), the save prompt (B, 5c).
+- **The frame the background is saved on is shown** with the HUD; the console doesn't show it.
+- **A wide window shows the side pages** at its edges.
+- **Player's overlay statics** aren't reset when the menu closes (the C reloads `ovl_player_actor`).
+- **`gSaveContext.worldMapArea`** isn't read from the scene (only the world map uses it).
+
+### Fixes found while building
+
+- None in the old code; the C's cursor race was found in the reading (ADR 0047).
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-pause.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-pause.bat
+```
+
+### By hand
+
+`game-pause.bat` (or menu 69). Enter is Start, WASD the stick, J, K, L the C buttons (C-Left,
+C-Down, C-Right), R is R, Q is Z, T is L, E is B, Space A.
+1. **Opening:** stand still a moment after the scene fades in, then Enter: the sound of the menu
+   opening, the music quietens, the pages swing up from below into a box around the view with the
+   item page in front ("SELECT ITEM"), the HUD's START button shows "Return", B "Save", A
+   "Decide". The cursor starts on the Deku nuts (the second item), as on the console.
+2. **The cursor:** WASD moves it. Left and right step to the next item in the row, then on to the
+   next rows; past the edge it lands on the L or R arrow (a chime), and pushing on turns the page
+   after a moment. Up and down stay in the column. Hold a direction: one step, then a pause, then
+   quick repeats. The item's name shows in the panel, alternating with "(C) to Equip".
+3. **Equipping:** on the slingshot, L (C-Right): its icon flies to the C-Right button, shrinking.
+   Equip it on J (C-Left) too: it moves, and the sticks go to C-Right.
+4. **Pages:** R and Q (Z) turn the box to the next page right or left (the map, quest and
+   equipment pages show their backgrounds; their contents come later). The C buttons dim off the
+   item page.
+5. **Closing:** Enter: the pages swing down, the music comes back, the game goes on; the slingshot
+   is on C-Right and works.
+- **What to report:** the opening and closing's speed and swing, the page turns, the cursor's feel
+  (the repeat's delay and speed), the icon's flight, the panel's name and prompt, the HUD's look in
+  the menu, and anything drawn wrong (a texture, a colour, a page edge).

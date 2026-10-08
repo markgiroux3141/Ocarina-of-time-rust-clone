@@ -136,6 +136,8 @@ pub trait PlayerIface {
     fn change_state_flags2(&mut self, set: u32, clear: u32);
     /// `Player_SetEquipmentData` from `save` (the pause menu's closing runs it).
     fn set_equipment_data(&mut self, data: &crate::data::GameData, save: &crate::save::SaveContext);
+    /// `player->talkActor = NULL` (the pause menu's closing): `targetActor`.
+    fn clear_talk_actor(&mut self);
     /// `Player_SetCsAction` / `Player_SetCsActionWithHaltedActors`'s writes: `csMode`, `csActor` (the actor the mode is
     /// about) and `doorBgCamIndex`.
     fn set_cs_mode(&mut self, cs_mode: u8, actor: Option<ActorHandle>, door_bg_cam_index: i16);

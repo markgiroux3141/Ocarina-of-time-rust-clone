@@ -120,3 +120,59 @@ pub fn dump(frames: &[Frame]) {
         );
     }
 }
+
+/// The pause menu as a player uses it (GAME-05 milestone 5b): Start until the menu is open and
+/// idle, the item page's cursor to `slot` (along its row, then its column; each move a push of
+/// the stick and a release), C button `button` (0 C-Left, 1 C-Down, 2 C-Right) until the equip is
+/// over, then Start until the game resumes.
+pub fn pause_equip(w: &mut PlayState, slot: u16, button: usize) {
+    use eng_input::pad::{BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_START};
+    use oot_game::kaleido::*;
+    let tick = |w: &mut PlayState, cur: PadState| w.tick_with(scripted_input(PadState::default(), cur));
+    let idle_menu = |w: &PlayState| w.pause_ctx.state == PAUSE_STATE_MAIN && w.pause_ctx.main_state == PAUSE_MAIN_STATE_IDLE;
+    // Start, again each other frame until KaleidoSetup_Update takes it (not during a
+    // transition or a cutscene).
+    for f in 0..300 {
+        if idle_menu(w) {
+            break;
+        }
+        let start = w.pause_ctx.state == PAUSE_STATE_OFF && f % 2 == 0;
+        tick(w, PadState { button: if start { BTN_START } else { 0 }, ..Default::default() });
+    }
+    assert!(idle_menu(w), "the pause menu didn't open (state {})", w.pause_ctx.state);
+    assert_eq!(w.pause_ctx.page_index, PAUSE_ITEM, "the menu opened on another page");
+    for _ in 0..40 {
+        let p = &w.pause_ctx;
+        let (x, y) = (p.cursor_x[0], p.cursor_y[0]);
+        let (tx, ty) = ((slot % 6) as i16, (slot / 6) as i16);
+        let (sx, sy) = if p.cursor_special_pos == PAUSE_CURSOR_PAGE_LEFT {
+            (80, 0)
+        } else if p.cursor_special_pos == PAUSE_CURSOR_PAGE_RIGHT {
+            (-80, 0)
+        } else if x != tx {
+            (if tx < x { -80 } else { 80 }, 0)
+        } else if y != ty {
+            (0, if ty < y { 80 } else { -80 })
+        } else {
+            break;
+        };
+        tick(w, PadState { button: 0, stick_x: sx, stick_y: sy });
+        tick(w, PadState::default());
+    }
+    assert_eq!((w.pause_ctx.cursor_point[0], w.pause_ctx.cursor_special_pos), (slot as i16, 0), "the cursor didn't get to slot {slot}");
+    tick(w, PadState { button: [BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT][button], ..Default::default() });
+    for _ in 0..40 {
+        if idle_menu(w) {
+            break;
+        }
+        tick(w, PadState::default());
+    }
+    tick(w, PadState { button: BTN_START, ..Default::default() });
+    for _ in 0..40 {
+        if !w.pause_ctx.is_paused() {
+            break;
+        }
+        tick(w, PadState::default());
+    }
+    assert!(!w.pause_ctx.is_paused(), "the pause menu didn't close");
+}

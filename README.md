@@ -92,7 +92,8 @@ target/release/oot --entrance ENTR_KOKIRI_FOREST_1 --preset deku-tree-open   # a
 target/release/oot --entrance ENTR_LINKS_HOUSE_0             # a new save in Link's bed: the ramp, the crawlspace, the boulder, the
                                                            # Kokiri Sword's chest, then 40 rupees, the shop and Mido
 target/release/oot --entrance ENTR_KOKIRI_FOREST_4 --preset sword-and-40-rupees   # outside the Kokiri shop with the sword worn and 40
-                                                           # rupees: buy the Deku Shield, Enter (Start) to wear it
+                                                           # rupees: buy the Deku Shield, Enter (Start) twice to wear it
+                                                           # (the pause menu's closing equips it)
 
 # Sandbox: the test course and the debug views
 target/release/oot_sandbox                                 # test course, adult Link
@@ -135,7 +136,7 @@ python scripts/golden.py check --bin-dir target/release
 
 Concurrent sessions build into their own folder: `CARGO_TARGET_DIR=target/<name> cargo build --release`.
 
-Play controls: N64 stick to move, A to roll / jump / dive, B for the sword, Z to target, C-left/C-right to turn the follow camera. On keyboard: WASD/arrows, Shift to walk, Space for A, E for B, Q for Z, J/L for C-left/right. F1 toggles the collision wireframe, F2 the HUD, F3 switches between the game camera and spike 03's follow camera, F4 toggles foot IK, P the placeholder markers, Tab switches age (entering again), Backspace respawns (in a scene entered by an entrance: `Play_TriggerVoidOut`, back to where Link came in). Enter (Start) stands in for the pause menu's equipping: it equips every owned piece of a type with nothing worn, the sword also on B (the pause menu isn't ported; ADR 0019). At a crawlspace's mouth A says Enter: the stick forward crawls, back backs out.
+Play controls: N64 stick to move, A to roll / jump / dive, B for the sword, Z to target, C-left/C-right to turn the follow camera. On keyboard: WASD/arrows, Shift to walk, Space for A, E for B, Q for Z, J/L for C-left/right. F1 toggles the collision wireframe, F2 the HUD, F3 switches between the game camera and spike 03's follow camera, F4 toggles foot IK, P the placeholder markers, Tab switches age (entering again), Backspace respawns (in a scene entered by an entrance: `Play_TriggerVoidOut`, back to where Link came in). Enter (Start) opens the pause menu (its frame and item page; ADR 0047): WASD moves the cursor, J/K/L equip the item under it on C-Left/Down/Right, R and Q (R and Z) turn the pages, Enter closes it. Closing it equips every owned piece of a type with nothing worn, the sword also on B (the equipment page's stand-in; ADR 0019). At a crawlspace's mouth A says Enter: the stick forward crawls, back backs out.
 
 Viewer controls: left-drag to orbit, right-drag to pan, scroll to zoom. The sidebar switches between Link and Tock and has the animation list (with a filter for Link's 573), playback, frame scrub and interpolation. For Link it adds age, model group, shield, tunic, running fists, LOD, and eye/mouth overrides; for Tock, face and emblem colour. Both have a skeleton overlay and per-material combiner/texture details. Rendered images go to `out/`, which is git-ignored.
 

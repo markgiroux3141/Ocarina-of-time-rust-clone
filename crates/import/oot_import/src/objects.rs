@@ -292,6 +292,13 @@ impl ObjectSegments {
                     let buf = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
                     bindings.push(Binding { segment: *seg, buf, base: 0 });
                 }
+                BakeSegment::GrayRgba32 { file: name, offset, pixels } => {
+                    let buf = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
+                    let (start, len) = (*offset as usize, *pixels as usize * 4);
+                    let mut img = buf.get(start..start + len).with_context(|| format!("{name}: no {len} bytes at {start:#x}"))?.to_vec();
+                    oot_game::kaleido::gray_out_texture_rgba32(&mut img);
+                    bindings.push(Binding { segment: *seg, buf: img.as_slice().into(), base: 0 });
+                }
                 BakeSegment::Bytes(bytes) => {
                     bindings.push(Binding { segment: *seg, buf: bytes.as_slice().into(), base: 0 });
                 }

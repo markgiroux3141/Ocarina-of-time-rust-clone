@@ -100,7 +100,13 @@ milestone 4 opened; pack format 22. Milestone 5, items in use, is split in three
 [ADR 0046](adr/0046-en-arrow-the-nuts-stun-and-the-flash.md)): Player's slingshot and first person
 (C-Up's look and the aim, `Camera_Subj3`), the nut's throw, `En_Arrow`, `En_M_Fire1`,
 `Effect_Ss_Stone1` and the screen's flash, the eye switches and room 2's ladder hit for real, the
-room travel test round rooms 1 to 8; pack format 23. Next: 5b, the pause menu.
+room travel test round rooms 1 to 8; pack format 23. 5b, the pause menu, is split in two (decided
+2026-10-07): 5b-1, its frame and the item page, is done
+([ADR 0047](adr/0047-the-pause-menu.md)): `KaleidoSetup`, the opening and closing at 30 frames a
+second, the four pages' box and turns, the cursor, the name and info panels, the item page whole
+with the equip's flight to the C button, the other pages' backgrounds, the scene behind kept,
+the HUD's START and B labels; Start's stand-in down to its equipment half, at the menu's resume;
+pack format 24. Next: 5b-2, the dungeon map page and the game over drawn.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -109,7 +115,7 @@ the 2026-09-30 deferral: the scripted runs play the cutscenes.
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
 - ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
-- The pause menu isn't ported: Start stands in for its equipping (ADR 0019), read in the play frame where `KaleidoSetup_Update` reads it (ADR 0021). Its game over screens run undrawn, and "Continue? No" respawns instead of going to the title screen (ADR 0032).
+- The pause menu's frame and item page are ported (ADR 0047); the equipment, quest and map pages show only their backgrounds (their contents logged), and the equipment page's equipping is a stand-in run as the menu closes: every owned piece of a type with nothing worn goes on (ADR 0019, 0047). The save prompt and the debug inventory editor log. The game over screens run undrawn (5b-2), and "Continue? No" respawns instead of going to the title screen (ADR 0032).
 - Unported actors are placeholders. Among them: Saria, the opening's nightmare (`En_Viewer`, the drawbridge), and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3. Navi and the other fairies: GAME-03 milestone 5.)
 - ~~There are no cutscenes: the importer skips all 73.~~ Undone in GAME-03 milestone 4 (ADR 0022): the 73 scene scripts and the 27 overlay ones are in the pack, and the Deku Tree's talk opens his mouth on a new save. The `deku-tree-open` preset stays for the shortcuts and GAME-02's run.
 - ~~The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up.~~ Undone in GAME-03 milestone 5 (ADR 0023): every scene's cutscene layers are in the pack, and a new file plays the opening. The routes from Link's bed keep their start (`cutsceneIndex` 0).
@@ -324,7 +330,7 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
      actions, first person (C-Up's look and the aim) with `Camera_Subj3`, the nut's throw,
      `heldActor`; `En_Arrow` whole (the adult arrows' trail and the magic arrows logged),
      `En_M_Fire1`, `Effect_Ss_Stone1`, the screen's flash; Start's stand-in putting nuts and the
-     slingshot on C buttons; the eye switches, room 2's ladder and room 10's chest for real; the
+     slingshot on C buttons (replaced by the menu in 5b-1); the eye switches, room 2's ladder and room 10's chest for real; the
      room travel test round rooms 1 to 8; BACKLOG #18.
      - **Exit:** from room 1, the slingshot aimed in first person at the eye, the door to room 2
        unbarred, and through it. *(Done: `Route::Slingshot`, the golden `slingshot`.)*
@@ -332,7 +338,18 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
      turns, the cursor, the name and info panels), the item page and the dungeon map page (with
      its marks) whole, the equipment and quest pages' backgrounds with their contents logged; the
      C buttons equipped from it, replacing the item half of Start's stand-in; the game over
-     screens drawn.
+     screens drawn. Split in two (decided 2026-10-07):
+     - **5b-1, the frame and the item page** (done: see [GAME-05](GAME-05-deku-tree.md) milestone
+       5b-1, [ADR 0047](adr/0047-the-pause-menu.md)): the frame whole, the item page whole with
+       the equip's flight, the other pages' backgrounds (the world map's too, outside dungeons),
+       the menu at `R_UPDATE_RATE` 2, the scene behind kept, the HUD's pause part; Start's
+       stand-in down to its equipment half.
+       - **Exit:** in the Deku Tree, the menu opened, the slingshot equipped on C-Right from the
+         item page, the page turned and the menu closed. *(Done: `Route::Pause`, the golden
+         `pause` with `pause_item` and `pause_map`.)*
+     - **5b-2, the dungeon map page and the game over:** `z_kaleido_map.c`'s dungeon map
+       whole with `z_lmap_mark.c`'s marks; the game over screens drawn through
+       `KaleidoScope_Draw`.
    - **5c, saving:** `z_sram.c`'s save and load whole, the slots on disk in the C's layout, the
      pause menu's save prompt, the game over's `Sram_WriteSave`, and a stand-in for the file
      select's load.

@@ -10308,6 +10308,9 @@ impl PlayerIface for Player {
         self.target_actor_distance = distance;
         self.exchange_item_id = exchange_item;
     }
+    fn clear_talk_actor(&mut self) {
+        self.target_actor = None;
+    }
     /// `Player_InBlockingCsMode` without `transitionTrigger` (magic isn't ported), or
     /// `unk_6AD == 4`.
     fn env_hazard_state(&self) -> (i16, u8, u8, bool) {

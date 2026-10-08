@@ -118,6 +118,18 @@ impl Renderer {
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: overlay_globals_buf.as_entire_binding() }],
         });
 
+        let pause_globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("pause globals"),
+            size: std::mem::size_of::<Globals>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let pause_globals_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pause globals"),
+            layout: &globals_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: pause_globals_buf.as_entire_binding() }],
+        });
+
         let line_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("lines"),
             bind_group_layouts: &[Some(&globals_layout)],
@@ -187,6 +199,8 @@ impl Renderer {
             globals_bg,
             overlay_globals_buf,
             overlay_globals_bg,
+            pause_globals_buf,
+            pause_globals_bg,
             fill_pipeline,
             material_layout,
             texture_layout,

@@ -69,7 +69,6 @@ use std::sync::Arc;
 use eng_collision::bgcheck::CollisionContext;
 use eng_gfx::DrawLists;
 use eng_input::pad::{Input, PadMgr, PadState};
-use eng_math::GAME_HZ;
 use glam::{Mat4, Vec3};
 
 use crate::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_INSIDE_CULLING_VOLUME, Actor};
@@ -466,6 +465,11 @@ pub struct PlayState {
     /// `play->state.frames`: the game state's frames run (`GameState_Update` counts them after
     /// each one).
     pub state_frames: u32,
+    /// `R_UPDATE_RATE` (`SREG(30)`): the VI retraces a game frame lasts (`graph.c` gives it to
+    /// the frame buffer's `updateRate`). 3 in play (20 frames a second); the pause menu sets 2
+    /// (30 a second) from Start until it resumes the game (`KaleidoSetup_Update`,
+    /// `KaleidoScope_Update`'s `PAUSE_STATE_RESUME_GAMEPLAY`).
+    pub r_update_rate: u16,
 }
 
 impl PlayState {
@@ -555,6 +559,7 @@ impl PlayState {
             next_play_init: false,
             updated: false,
             pre_update_fill: Some([0, 0, 0, 255]),
+            r_update_rate: crate::play_scene::R_UPDATE_RATE,
             acc: 0.0,
             prev: None,
             cur: None,
@@ -830,10 +835,10 @@ impl PlayState {
         // SfxSource_UpdateAll, then Letterbox_Update(R_UPDATE_RATE), the screen's flash, then the
         // cameras (they follow Player).
         self.sfx_source_update_all();
-        self.letterbox.update(3);
+        self.letterbox.update(self.r_update_rate as i32);
         // TransitionFade_Update(&this->transitionFadeFlash, R_UPDATE_RATE).
         let duration = self.save.trans_fade_duration;
-        self.transition_fade_flash.update(3, duration, &mut self.trans_fade_flash_alpha_step);
+        self.transition_fade_flash.update(self.r_update_rate, duration, &mut self.trans_fade_flash_alpha_step);
         if !is_paused {
             if let Some(p) = self.player.and_then(|ph| self.actors.get(ph)) {
                 let (pos, facing, speed) = (p.base().world_pos, p.base().shape_rot.y, p.as_player().map(|i| i.speed_xz()).unwrap_or(0.0));
@@ -841,16 +846,20 @@ impl PlayState {
             }
             self.camera_update(input);
         }
-        // Environment_Update (pauseCtx.state 0: no pause menu): the rain, the time of day's
-        // music, the lights (time doesn't pass).
-        if self.assets.is_some() {
+        // Environment_Update: its body only with no pause menu (z_kankyo.c: pauseCtx->state
+        // PAUSE_STATE_OFF): the rain, the time of day's music, the lights (time doesn't pass).
+        if self.assets.is_some() && self.pause_ctx.state == crate::kaleido::PAUSE_STATE_OFF {
             self.env_ctx.update_rain(self.gameplay_frames);
             self.environment_play_time_based_sequence();
             self.environment_update_lights();
         }
+        // Play_Draw: once the pause menu's background is saved (R_PAUSE_BG_PRERENDER_STATE
+        // PROCESS on), the saved frame is restored and the scene isn't drawn: none of its
+        // draw-time state moves (kaleido: the port redraws the same lists).
+        let draw_scene = !self.pause_bg_ready();
         // Play_Draw's environment, before the rooms and the actors: the lightning's strike and
         // its bolts (Environment_UpdateLightningStrike, Environment_DrawLightning).
-        if self.assets.is_some() {
+        if self.assets.is_some() && draw_scene {
             self.environment_update_lightning_strike();
             let (eye, at) = (self.view.eye, self.view.at);
             self.lightning_bolts = self.env_statics.update_lightning_bolts(eye, at, &mut self.rand);
@@ -859,22 +868,24 @@ impl PlayState {
         }
         // Play_Draw: the actors' draw-time state (Player's foot IK), and the view it sets up
         // (play->viewProjectionMtxF), which the next frame's target context reads.
-        for h in self.actors.all() {
-            if let Some(mut a) = self.actors.take(h) {
-                self.cur_actor = Some(h);
-                a.draw_update(self);
-                self.cur_actor = None;
-                self.actors.put_back(h, a);
+        if draw_scene {
+            for h in self.actors.all() {
+                if let Some(mut a) = self.actors.take(h) {
+                    self.cur_actor = Some(h);
+                    a.draw_update(self);
+                    self.cur_actor = None;
+                    self.actors.put_back(h, a);
+                }
             }
-        }
-        self.flush_effect_ss_stops();
-        // The end of Actor_DrawAll: Effect_DrawAll, then EffectSs_DrawAll.
-        self.effect_draw_all();
-        let frames = self.gameplay_frames;
-        let tree_dead = self.save.get_event_chk_inf(crate::save::EVENTCHKINF_07);
-        if let Some(s) = &mut self.scene {
-            s.draw.event_chk_inf_07 = tree_dead;
-            s.run_draw_config(frames);
+            self.flush_effect_ss_stops();
+            // The end of Actor_DrawAll: Effect_DrawAll, then EffectSs_DrawAll.
+            self.effect_draw_all();
+            let frames = self.gameplay_frames;
+            let tree_dead = self.save.get_event_chk_inf(crate::save::EVENTCHKINF_07);
+            if let Some(s) = &mut self.scene {
+                s.draw.event_chk_inf_07 = tree_dead;
+                s.run_draw_config(frames);
+            }
         }
         // The end of Play_Draw: a camera that asked for it (view.unk_124) updates again.
         if self.game_camera.view_unk_124 != 0 {
@@ -887,18 +898,26 @@ impl PlayState {
         self.view_proj = self.camera_view_proj();
         // Actor_DrawAll: each actor's projectedPos through the frame's
         // viewProjectionMtxF, then the sound it asked for (Actor_UpdateFlaggedAudio).
-        self.actor_draw_all_sfx();
-        // Interface_Draw: the Z-target reticle (Attention_Draw) with this frame's view.
+        if draw_scene {
+            self.actor_draw_all_sfx();
+        }
+        // Interface_Draw: the Z-target reticle (Attention_Draw) with this frame's view (not
+        // with the pause background saving or saved; the saving frame draws no overlay
+        // elements).
         let reticle_player = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player()).map(|pi| crate::target::ReticlePlayer { state1_6: pi.state_flags1() & (1 << 6) != 0, target: pi.target() });
-        if let Some(rp) = reticle_player {
+        if let Some(rp) = reticle_player
+            && draw_scene
+            && self.pause_ctx.bg_prerender_state != crate::kaleido::PAUSE_BG_PRERENDER_SETUP
+        {
             crate::target::draw_update(&mut self.target_ctx, &self.actors, self.view_proj, rp);
         }
-        // Play_DrawOverlayElements: the pause menu's draw (the game over prompt's stick), then
-        // Message_Draw, then GameOver_FadeInLights.
-        self.kaleido_scope_draw_update();
-        self.with_msg(|m, f| m.draw_update(f));
-        if self.game_over_ctx.state != crate::game_over::GAMEOVER_INACTIVE {
-            self.game_over_fade_in_lights();
+        // Play_DrawOverlayElements (not on the frame the pause background is saved): the pause
+        // menu's draw, then Message_Draw, then GameOver_FadeInLights.
+        if !self.kaleido_scope_draw_update() {
+            self.with_msg(|m, f| m.draw_update(f));
+            if self.game_over_ctx.state != crate::game_over::GAMEOVER_INACTIVE {
+                self.game_over_fade_in_lights();
+            }
         }
         // The sandbox's void-out (a scene from the pack has Player's own).
         if self.assets.is_none() && self.player.and_then(|ph| self.actors.actor(ph)).is_some_and(|a| a.world_pos.y < -2000.0) {
@@ -910,8 +929,10 @@ impl PlayState {
         self.updated = true;
         // GameState_Update: gameState->frames++.
         self.state_frames = self.state_frames.wrapping_add(1);
-        // Graph_Update: Audio_Update once the game state's frame is done.
+        // Graph_Update: Audio_Update once the game state's frame is done; the frame lasts
+        // R_UPDATE_RATE retraces, the audio side's to run (cfb->updateRate).
         self.audio_update();
+        self.audio.update_rate = self.r_update_rate;
         if self.next_play_init {
             // GameState_Destroy: AudioMgr_StopAllSfx, Audio_Update again, then the next
             // Play_Init.
@@ -975,36 +996,11 @@ impl PlayState {
         }
     }
 
-    /// `KaleidoSetup_Update` (`z_kaleido_setup.c`): Start opens the pause menu when nothing
-    /// stops it (no menu open, no transition, no cutscene: `Play_InCsMode`; the shooting
-    /// gallery, magic filling and the bowling alley's switch don't come up). The pause menu
-    /// isn't ported: its equipping's stand-in (`pause_menu_equip`) runs in its place, at once
-    /// (docs/adr/0021-mido-the-shop-and-the-pause-stand-in.md). L with C-Up is the debug menu,
-    /// which needs `BREG(0)`: nothing.
-    fn kaleido_setup_update(&mut self) {
-        use crate::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
-        use eng_input::pad::{BTN_CUP, BTN_L, BTN_START};
-        if self.transition.trigger != TRANS_TRIGGER_OFF || self.transition.mode != TRANS_MODE_OFF || self.play_in_cs_mode() {
-            return;
-        }
-        if self.input.cur.held(BTN_L) && self.input.press.held(BTN_CUP) {
-            return;
-        }
-        if self.input.press.held(BTN_START) && self.pause_menu_equip() {
-            let b = self.save.equips.button_items;
-            log::info!("equipped (the pause menu's stand-in): equipment {:#06x}, B {:#04x}, C {:#04x} {:#04x} {:#04x}", self.save.equips.equipment, b[0], b[1], b[2], b[3]);
-        }
-    }
-
-    /// The pause menu's equipping, as a stand-in (docs/adr/0019-inventory-and-saves.md):
-    /// `SaveContext::equip_owned_unworn` and `SaveContext::equip_sticks_on_empty_c_left`, then
-    /// `Player_SetEquipmentData` as the menu's closing runs it. Returns whether anything was
-    /// equipped.
-    pub fn pause_menu_equip(&mut self) -> bool {
-        let equipment = self.save.equip_owned_unworn();
-        let sticks = self.save.equip_sticks_on_empty_c_left();
-        let nuts_and_slingshot = self.save.equip_nuts_and_slingshot_on_empty_c();
-        if !equipment && !sticks && !nuts_and_slingshot {
+    /// The equipment page's stand-in (docs/adr/0021, docs/adr/0047): what's owned and unworn
+    /// goes on (`SaveContext::equip_owned_unworn`), then `Player_SetEquipmentData` as the menu's
+    /// resume runs it. Returns whether anything was equipped.
+    pub fn equip_owned_unworn_stand_in(&mut self) -> bool {
+        if !self.save.equip_owned_unworn() {
             return false;
         }
         let (data, save) = (self.data.clone(), self.save.clone());
@@ -1529,10 +1525,11 @@ impl PlayState {
     /// (`GameAudio::take_ops`, `GameAudio::set_view`).
     pub fn advance_with(&mut self, dt: f32, mut after: impl FnMut(&mut crate::audio::GameAudio)) -> u32 {
         self.acc += dt.min(0.25);
-        let step = 1.0 / GAME_HZ;
         let mut n = 0;
-        while self.acc >= step && n < 5 {
-            self.acc -= step;
+        // Each frame lasts its R_UPDATE_RATE retraces of 60 Hz (20 Hz in play, 30 in the pause
+        // menu).
+        while self.acc >= self.frame_seconds() && n < 5 {
+            self.acc -= self.frame_seconds();
             self.tick();
             after(&mut self.audio);
             n += 1;
@@ -1540,9 +1537,14 @@ impl PlayState {
         n
     }
 
+    /// How long the next game frame lasts: `R_UPDATE_RATE` retraces of the 60 Hz VI.
+    pub fn frame_seconds(&self) -> f32 {
+        self.r_update_rate.max(1) as f32 / 60.0
+    }
+
     /// The render state between the last two game frames.
     pub fn render_frame(&self) -> RenderFrame {
-        let t = (self.acc * GAME_HZ).clamp(0.0, 1.0);
+        let t = (self.acc / self.frame_seconds()).clamp(0.0, 1.0);
         match (&self.prev, &self.cur) {
             (Some(p), Some(c)) => p.lerp(c, t),
             (_, Some(c)) => c.clone(),
@@ -1590,26 +1592,40 @@ impl PlayState {
         // TitleCard_Draw.
         out.opa.extend(self.effect_draws.opa.iter().cloned());
         out.xlu.extend(self.effect_draws.xlu.iter().cloned());
-        let mut title = Vec::new();
-        self.title_ctx.draw(&mut title);
-        out.overlay_2d.extend(title.iter().map(|s| s.draw_cmd()));
-        // Play_DrawOverlayElements → Interface_Draw: the HUD either side of the reticle, then
-        // the message box.
-        let hud = |f: fn(&InterfaceContext, &SaveContext, &mut Vec<crate::sprite::Sprite>), out: &mut DrawOut| {
-            if self.interface_ctx.initialised {
-                let mut sprites = Vec::new();
-                f(&self.interface_ctx, &self.save, &mut sprites);
-                out.overlay_2d.extend(sprites.iter().map(|s| s.draw_cmd()));
-            }
-        };
-        hud(InterfaceContext::draw_hud_1, out);
-        crate::target::draw(&self.target_ctx, &self.actors, self.gameplay_frames, out);
-        hud(InterfaceContext::draw_hud_2, out);
+        let draw_scene = !self.pause_bg_ready();
+        if draw_scene {
+            let mut title = Vec::new();
+            self.title_ctx.draw(&mut title);
+            out.overlay_2d.extend(title.iter().map(|s| s.draw_cmd()));
+        }
+        // Play_DrawOverlayElements: KaleidoScopeCall_Draw (the pause menu's list), then
+        // Interface_Draw (the HUD either side of the reticle), then the message box.
+        out.pause = self.kaleido_draw_cmds();
+        if !out.pause.is_empty() {
+            out.pause_view = Some(crate::kaleido::gfx::PAUSE_VIEW);
+        }
+        let hud_pause = self.hud_pause();
+        if self.interface_ctx.initialised {
+            let mut sprites = Vec::new();
+            self.interface_ctx.draw_hud_1(&self.save, &mut sprites);
+            out.overlay_2d.extend(sprites.iter().map(|s| s.draw_cmd()));
+        }
+        if draw_scene {
+            crate::target::draw(&self.target_ctx, &self.actors, self.gameplay_frames, out);
+        }
+        if self.interface_ctx.initialised {
+            let mut sprites = Vec::new();
+            self.interface_ctx.draw_hud_2(&self.save, &hud_pause, &mut sprites);
+            out.overlay_2d.extend(sprites.iter().map(|s| s.draw_cmd()));
+        }
         self.msg_ctx.draw(out);
         out.letterbox_rows = frame.letterbox;
         // The fills, where Play_Draw draws them (the transition's under the overlay's HUD and
-        // message box).
-        let (env, fade) = self.draw_fills();
+        // message box); over the saved pause background, the ones it was saved with.
+        let (env, fade) = match self.pause_ctx.bg_fills {
+            Some(f) if !draw_scene => f,
+            _ => self.draw_fills(),
+        };
         out.opa_fill = env;
         out.xlu_fill = env;
         // Interface_Draw's black (unk_244, the game over's fade) over the transition's fade.

@@ -700,8 +700,7 @@ impl eframe::App for App {
         }
         let kb = eng_app::keyboard(&ctx);
         let pad = merge(self.pads.as_ref().and_then(|p| p.state()), &kb);
-        // Start (Enter) is read by the play frame: KaleidoSetup_Update runs the pause menu's
-        // equipping stand-in (PlayState::pause_menu_equip).
+        // Start (Enter) is read by the play frame: KaleidoSetup_Update opens the pause menu.
         self.last_pad = pad;
         self.world.poll(pad);
         ctx.input(|i| {

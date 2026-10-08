@@ -35,6 +35,7 @@ echo    56  test-mechanics       GAME-05's dungeon mechanics tests: the sliding 
 echo    59  test-sticks          GAME-05's Deku Stick and props tests: the stick, the platforms, the log, the crates, the lift
 echo    62  test-push            GAME-05's push and pull tests: the push block, the gravestones, the time blocks, the rocks, room travel
 echo    65  test-slingshot       GAME-05's slingshot and nut tests: first person, the seeds, the eye switches, room travel
+echo    68  test-pause           GAME-05's pause menu tests: opening, the item page's cursor, the equip, the pages, closing
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -59,6 +60,7 @@ echo    57  game-dungeon         Inside the Deku Tree at a room's debug start: t
 echo    60  game-sticks          Inside the Deku Tree with Deku Sticks on C-Left (J), by a torch (asks where)
 echo    63  game-push            Inside the Deku Tree by room 3's push block, or room 7's or room 2's extras (asks where)
 echo    66  game-slingshot       Inside the Deku Tree with the slingshot (L), nuts (K) and sticks (J), by an eye switch (asks where)
+echo    69  game-pause           Inside the Deku Tree with the slingshot on no button: the pause menu (Enter) to equip it
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -77,6 +79,7 @@ echo    58  sandbox-shutter      The switch and sliding door run's trace and scr
 echo    61  sandbox-stick        The Deku Stick run's trace and screenshots (the torch, the web, room 1), into out\run
 echo    64  sandbox-push         The push block run's trace and screenshots (pushed into the pit, climbed), into out\run
 echo    67  sandbox-slingshot    The slingshot run's trace and screenshots (the eye shot, the door, room 2), into out\run
+echo    70  sandbox-pause        The pause menu run's trace and screenshots (the item page, the equip, the map page), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -153,6 +156,9 @@ if "%pick%"=="64" set "script=sandbox-push"
 if "%pick%"=="65" set "script=test-slingshot"
 if "%pick%"=="66" goto slingshot
 if "%pick%"=="67" set "script=sandbox-slingshot"
+if "%pick%"=="68" set "script=test-pause"
+if "%pick%"=="69" set "script=game-pause"
+if "%pick%"=="70" set "script=sandbox-pause"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

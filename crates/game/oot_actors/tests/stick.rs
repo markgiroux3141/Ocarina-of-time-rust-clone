@@ -262,17 +262,15 @@ fn b_with_a_stick_out_takes_the_sword_out() {
 }
 
 #[test]
-fn start_puts_owned_sticks_on_an_empty_c_left() {
+fn the_pause_menu_puts_owned_sticks_on_c_left() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree(&a, "deku-tree-inside", 0, None);
     oot_game::item::item_give(&mut w.save, None, ITEM_DEKU_STICKS_10);
     assert_eq!(w.save.equips.button_items[1], ITEM_NONE);
-    // The stand-in for the pause menu's item screen: C-Left gets the stick (its slot), as
-    // KaleidoScope_UpdateItemEquip equips it.
-    assert!(w.pause_menu_equip());
+    // The pause menu's item page: the cursor on the sticks, C-Left (KaleidoScope_UpdateItemEquip
+    // puts the item and its slot on the button).
+    pause_equip(&mut w, SLOT_DEKU_STICK as u16, 0);
     assert_eq!((w.save.equips.button_items[1], w.save.equips.c_button_slots[0]), (ITEM_DEKU_STICK, SLOT_DEKU_STICK as u8));
-    // Nothing more to do.
-    assert!(!w.pause_menu_equip());
 }
 
 #[test]

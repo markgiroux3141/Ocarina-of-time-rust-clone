@@ -141,7 +141,7 @@ pub enum Step {
     Boulder,
     /// The chest opened, its item's text read and closed, Link standing.
     Chest,
-    /// The Kokiri Sword worn (Start: the pause menu's stand-in).
+    /// The Kokiri Sword worn (the pause menu opened and closed: the equipment page's stand-in).
     SwordOn,
     /// Back through the crawlspace onto the plateau (room 0), standing.
     Plateau,
@@ -155,7 +155,8 @@ pub enum Step {
     Shop,
     /// The Deku Shield bought: its text read, the shopping over, Link standing.
     Shield,
-    /// The Kokiri Sword and the Deku Shield worn (Start: the pause menu's stand-in).
+    /// The Kokiri Sword and the Deku Shield worn (the pause menu opened and closed: the equipment
+    /// page's stand-in).
     Equipped,
     /// Out of the shop (`ENTR_KOKIRI_FOREST_4`), settled.
     ShopOut,
@@ -225,6 +226,16 @@ pub enum Step {
     SlingshotDrawn,
     /// A seed shot into an eye switch: its flag set (`Obj_Switch`'s eye, closed).
     EyeShot,
+    /// The pause menu open (`PAUSE_STATE_MAIN`, idle).
+    MenuOpened,
+    /// The item page's cursor on the item to equip.
+    CursorOnItem,
+    /// The item on its C button (`KaleidoScope_UpdateItemEquip` over).
+    ItemEquipped,
+    /// The menu turned to the next page (`KaleidoScope_UpdatePageSwitch` over).
+    PageTurned,
+    /// The menu closed: the game resumed (`PAUSE_STATE_OFF`).
+    MenuClosed,
 }
 
 impl Step {
@@ -282,6 +293,11 @@ impl Step {
             Step::OnBlock => "on_block",
             Step::SlingshotDrawn => "slingshot_drawn",
             Step::EyeShot => "eye_shot",
+            Step::MenuOpened => "menu_opened",
+            Step::CursorOnItem => "cursor_on_item",
+            Step::ItemEquipped => "item_equipped",
+            Step::PageTurned => "page_turned",
+            Step::MenuClosed => "menu_closed",
         }
     }
 }
@@ -332,7 +348,17 @@ pub enum Route {
     /// camera), and through that door into room 2 (GAME-05 milestone 5a), from a debug start 250
     /// in front of the eye (`SLINGSHOT_START`, the `deku-tree-slingshot` preset).
     Slingshot,
+    /// Inside the Deku Tree, the pause menu opened, the item page's cursor to the Fairy
+    /// Slingshot, C-Right equipping it (the icon flying to the button), the page turned to the map,
+    /// and the menu closed: the slingshot on C-Right (GAME-05 milestone 5b-1), from the scene's
+    /// spawn with the slingshot owned and C-Right empty (`deku-tree-slingshot-owned`).
+    Pause,
 }
+
+/// The `Pause` route's item: the Fairy Slingshot's slot (`SLOT_SLINGSHOT`, the grid's second row,
+/// first column), and its button (C-Right).
+pub const PAUSE_SLOT: u16 = 6;
+pub const PAUSE_C_BUTTON: usize = 2;
 
 /// The `Push` route's block: room 3's `Obj_Oshihiki` (params 0xFFC0, small) on the upper floor,
 /// where `Obj_Makeoshihiki` (0xFF10, `home.rot.z` 1) puts it with flag 0x10 clear; where it ends
@@ -510,7 +536,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -522,6 +548,7 @@ impl Route {
             Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Push => Some("deku-tree-inside"),
             Route::Stick => Some("deku-tree-sticks"),
             Route::Slingshot => Some("deku-tree-slingshot"),
+            Route::Pause => Some("deku-tree-slingshot-owned"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -624,6 +651,7 @@ impl Route {
             Route::Stick => "stick",
             Route::Push => "push",
             Route::Slingshot => "slingshot",
+            Route::Pause => "pause",
         }
     }
 
@@ -639,13 +667,14 @@ impl Route {
             Route::Stick => 3000,
             Route::Push => 3000,
             Route::Slingshot => 3000,
+            Route::Pause => 1000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -687,9 +716,20 @@ enum Task {
     /// shelf, A on its first item (the Deku Shield), "Buy", A through the item's text, B at
     /// "anything else?", until Link stands.
     BuyShield,
-    /// Start (`KaleidoSetup_Update`'s pause menu, the equipping stand-in) until everything
-    /// owned is worn (`SaveContext::equip_owned_unworn` has nothing left to do).
+    /// The pause menu opened (Start) and closed again (Start), whose resume runs the equipment
+    /// page's stand-in, until everything owned is worn (`SaveContext::equip_owned_unworn` has
+    /// nothing left to do).
     Equip(Step),
+    /// Start until the pause menu is open and idle.
+    OpenMenu(Step),
+    /// The stick (a push, then a release, each move) until the item page's cursor is on this slot.
+    MenuCursor(u16, Step),
+    /// This C button (0 C-Left, 1 C-Down, 2 C-Right) until the item under the cursor is on it.
+    EquipOnC(usize, Step),
+    /// R until the menu has turned to the page on the right.
+    TurnPageRight(Step),
+    /// Start until the menu has closed.
+    CloseMenu(Step),
     /// Idle until Mido has walked to his path's end.
     WaitMido,
     /// Towards the point until the Deku Tree's talk starts (`Bg_Treemouth`'s trigger), then A
@@ -751,6 +791,11 @@ enum Task {
     ClimbBlock(Step),
 }
 
+/// The pause menu open and idle (`PAUSE_STATE_MAIN`, `PAUSE_MAIN_STATE_IDLE`).
+fn menu_idle(w: &PlayState) -> bool {
+    w.pause_ctx.state == oot_game::kaleido::PAUSE_STATE_MAIN && w.pause_ctx.main_state == oot_game::kaleido::PAUSE_MAIN_STATE_IDLE
+}
+
 /// An actor the run talks to.
 #[derive(Debug, Clone, Copy)]
 enum Who {
@@ -803,6 +848,8 @@ pub struct Playthrough {
     tries: usize,
     /// The rupees on the last frame seen.
     last_rupees: i16,
+    /// The menu's page when `Task::TurnPageRight` pressed R.
+    items_page: u16,
 }
 
 impl Default for Playthrough {
@@ -860,6 +907,14 @@ impl Playthrough {
                 Task::OpenSlidingDoor(ROOM1_DOOR, ROOM1_DOOR_FRONT, Step::DoorOpened),
                 Task::WaitDoorShut(ROOM1_DOOR, Step::ThroughDoor),
             ],
+            Route::Pause => vec![
+                Task::Settle(None),
+                Task::OpenMenu(Step::MenuOpened),
+                Task::MenuCursor(PAUSE_SLOT, Step::CursorOnItem),
+                Task::EquipOnC(PAUSE_C_BUTTON, Step::ItemEquipped),
+                Task::TurnPageRight(Step::PageTurned),
+                Task::CloseMenu(Step::MenuClosed),
+            ],
             Route::Push => vec![
                 Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
                 Task::PushBlock(PUSH_BLOCK_HOME, PUSH_BLOCK_FLAG, Step::BlockInPit),
@@ -890,6 +945,7 @@ impl Playthrough {
             rupees: Vec::new(),
             tries: 0,
             last_rupees: 0,
+            items_page: 0,
         }
     }
 
@@ -1173,6 +1229,49 @@ impl Playthrough {
         Some(PadState::default())
     }
 
+    /// Start, when `KaleidoSetup_Update` would read it: no message box, no transition, no
+    /// cutscene.
+    fn press_start_to_open(&self, w: &PlayState) -> PadState {
+        let ready = w.msg_ctx.msg_mode == oot_game::message::MSGMODE_NONE && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF && !w.play_in_cs_mode();
+        if ready { self.press(BTN_START) } else { PadState::default() }
+    }
+
+    /// `Task::MenuCursor`: the item page's cursor (`cursorX`, `cursorY` on the 6x4 grid) to
+    /// `slot`, along its row first, then its column; each move a push of the stick and a release
+    /// (`KaleidoScope_DrawPages`' repeat passes a first push at once).
+    fn menu_cursor(&mut self, w: &PlayState, slot: u16, step: Step) -> Option<PadState> {
+        use oot_game::kaleido::PAUSE_ITEM;
+        let p = &w.pause_ctx;
+        let i = PAUSE_ITEM as usize;
+        let idle = PadState::default();
+        if p.cursor_special_pos == 0 && p.cursor_point[i] as u16 == slot && menu_idle(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 200 {
+            self.failure = Some(format!("the cursor never got to slot {slot} (at {}, special {})", p.cursor_point[i], p.cursor_special_pos));
+            return None;
+        }
+        // A release between pushes.
+        if self.prev.stick_x != 0 || self.prev.stick_y != 0 || !menu_idle(w) {
+            return Some(idle);
+        }
+        let (tx, ty) = ((slot % 6) as i16, (slot / 6) as i16);
+        let (x, y) = (p.cursor_x[i], p.cursor_y[i]);
+        let (sx, sy) = if p.cursor_special_pos == oot_game::kaleido::PAUSE_CURSOR_PAGE_LEFT {
+            (80, 0)
+        } else if p.cursor_special_pos == oot_game::kaleido::PAUSE_CURSOR_PAGE_RIGHT {
+            (-80, 0)
+        } else if x != tx {
+            (if tx < x { -80 } else { 80 }, 0)
+        } else {
+            // Up the screen is the stick up (`stickAdjY > 30`: cursorY less one).
+            (0, if ty < y { 80 } else { -80 })
+        };
+        Some(PadState { button: 0, stick_x: sx, stick_y: sy })
+    }
+
     /// A button pressed this frame, released on the next (so each press is an edge).
     fn press(&self, button: u16) -> PadState {
         if self.prev.button & button != 0 { PadState::default() } else { PadState { button, ..Default::default() } }
@@ -1241,18 +1340,116 @@ impl Playthrough {
             Task::SlashSwitch(from, at) => self.slash_switch(w, from, at),
             Task::BuyShield => self.buy_shield(w),
             Task::Equip(step) => {
-                // Done once the stand-in would equip nothing more.
-                if !w.save.clone().equip_owned_unworn() {
+                // Open the menu, then close it: its resume equips (the equipment page's stand-in).
+                if self.sub == 0 && !w.save.clone().equip_owned_unworn() {
                     self.finish(Some(step));
                     return None;
                 }
                 self.wait += 1;
-                if self.wait > 30 {
-                    self.failure = Some(format!("Start didn't equip what's owned (equipment {:#06x}, worn {:#06x})", w.save.inventory.equipment, w.save.equips.equipment));
+                if self.wait > 300 {
+                    self.failure = Some(format!("the pause menu didn't equip what's owned (equipment {:#06x}, worn {:#06x}, pause state {})", w.save.inventory.equipment, w.save.equips.equipment, w.pause_ctx.state));
                     return None;
                 }
-                // KaleidoSetup_Update reads Start only with no message box.
-                Some(if w.msg_ctx.msg_mode == oot_game::message::MSGMODE_NONE { self.press(BTN_START) } else { idle })
+                match self.sub {
+                    0 => {
+                        if w.pause_ctx.state != oot_game::kaleido::PAUSE_STATE_OFF {
+                            self.sub = 1;
+                            return Some(idle);
+                        }
+                        Some(self.press_start_to_open(w))
+                    }
+                    1 => {
+                        if menu_idle(w) {
+                            self.sub = 2;
+                        }
+                        Some(idle)
+                    }
+                    2 => {
+                        if w.pause_ctx.state == oot_game::kaleido::PAUSE_STATE_CLOSING {
+                            self.sub = 3;
+                            return Some(idle);
+                        }
+                        Some(self.press(BTN_START))
+                    }
+                    _ => {
+                        if w.pause_ctx.state == oot_game::kaleido::PAUSE_STATE_OFF {
+                            self.sub = 0;
+                        }
+                        Some(idle)
+                    }
+                }
+            }
+            Task::OpenMenu(step) => {
+                if menu_idle(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 200 {
+                    self.failure = Some(format!("the pause menu didn't open (pause state {})", w.pause_ctx.state));
+                    return None;
+                }
+                Some(if w.pause_ctx.state == oot_game::kaleido::PAUSE_STATE_OFF { self.press_start_to_open(w) } else { idle })
+            }
+            Task::MenuCursor(slot, step) => self.menu_cursor(w, slot, step),
+            Task::EquipOnC(button, step) => {
+                use oot_game::kaleido::{PAUSE_ITEM, PAUSE_MAIN_STATE_3};
+                let p = &w.pause_ctx;
+                let item = p.cursor_item[PAUSE_ITEM as usize];
+                // sub 0: pressed; 1: the icon in flight; done when it's on the button.
+                if self.sub == 1 && menu_idle(w) {
+                    if w.save.equips.button_items[button + 1] as u16 == item {
+                        self.finish(Some(step));
+                        return None;
+                    }
+                    self.failure = Some(format!("C button {button} has {:#x}, not {item:#x}", w.save.equips.button_items[button + 1]));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 120 {
+                    self.failure = Some(format!("the equip never finished (main state {})", p.main_state));
+                    return None;
+                }
+                if p.main_state == PAUSE_MAIN_STATE_3 {
+                    self.sub = 1;
+                }
+                let b = [eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT][button];
+                Some(if self.sub == 0 { self.press(b) } else { idle })
+            }
+            Task::TurnPageRight(step) => {
+                let p = &w.pause_ctx;
+                if self.sub == 0 {
+                    self.sub = 1;
+                    self.items_page = p.page_index;
+                    return Some(self.press(eng_input::pad::BTN_R));
+                }
+                if menu_idle(w) && p.page_index != self.items_page {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 60 {
+                    self.failure = Some(format!("the page never turned (page {}, main state {})", p.page_index, p.main_state));
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::CloseMenu(step) => {
+                use oot_game::kaleido::PAUSE_STATE_OFF;
+                if self.sub == 1 && w.pause_ctx.state == PAUSE_STATE_OFF {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 120 {
+                    self.failure = Some(format!("the pause menu never closed (pause state {})", w.pause_ctx.state));
+                    return None;
+                }
+                if self.sub == 0 {
+                    self.sub = 1;
+                    return Some(self.press(BTN_START));
+                }
+                Some(idle)
             }
             Task::WaitMido => {
                 let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnMd>(h)) else {

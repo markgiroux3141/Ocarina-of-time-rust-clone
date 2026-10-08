@@ -178,8 +178,8 @@ fn is_overworld(scene_id: u16) -> bool {
 }
 
 /// The ten dungeons and their boss rooms (`Map_InitData`'s, `Map_InitRoomData`'s and
-/// `Map_SetFloorPalettesData`'s cases).
-fn is_dungeon_or_boss(scene_id: u16) -> bool {
+/// `Map_SetFloorPalettesData`'s cases, and the pause menu's `sInDungeonScene`).
+pub(crate) fn is_dungeon_or_boss(scene_id: u16) -> bool {
     scene_id <= SCENE_ICE_CAVERN || (SCENE_DEKU_TREE_BOSS..=SCENE_SHADOW_TEMPLE_BOSS).contains(&scene_id)
 }
 

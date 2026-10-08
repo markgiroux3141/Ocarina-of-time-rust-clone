@@ -28,6 +28,9 @@ pub enum TexSrc {
     /// Bytes at `offset` in a ROM file (a font glyph, a `message_static` image the draw code
     /// loads with another format than the XML's).
     File { file: String, offset: u32 },
+    /// An RGBA32 image at `offset` in a ROM file, `pixels` long, greyed as the pause menu greys
+    /// it in RAM (`KaleidoScope_GrayOutTextureRGBA32`, `crate::kaleido::gray_out_texture_rgba32`).
+    GrayRgba32 { file: String, offset: u32, pixels: u32 },
 }
 
 /// The draw code's `gDPLoadTextureBlock` (or `_4b` for 4-bit sizes).
@@ -90,9 +93,10 @@ impl SpriteBake {
         let tex = match &self.tex {
             TexSrc::Symbol { file, symbol } => BakeSegment::Texture { file: file.clone(), symbol: symbol.clone() },
             TexSrc::File { file, .. } => BakeSegment::File(file.clone()),
+            TexSrc::GrayRgba32 { file, offset, pixels } => BakeSegment::GrayRgba32 { file: file.clone(), offset: *offset, pixels: *pixels },
         };
         let offset = match &self.tex {
-            TexSrc::Symbol { .. } => 0,
+            TexSrc::Symbol { .. } | TexSrc::GrayRgba32 { .. } => 0,
             TexSrc::File { offset, .. } => *offset,
         };
         let l = self.load;

@@ -86,6 +86,14 @@ impl DrawCmd {
     }
 }
 
+/// A perspective projection: the vertical field of view in degrees, the near and far planes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Perspective {
+    pub fovy: f32,
+    pub near: f32,
+    pub far: f32,
+}
+
 /// A coloured line vertex (debug lines come in pairs).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LinePoint {
@@ -109,6 +117,14 @@ pub struct DrawLists {
     /// The letterbox bars' height in rows of the 240-row frame (`Letterbox_GetSize`): black
     /// over the 3D lists, under `overlay_2d`.
     pub letterbox_rows: f32,
+    /// The pause menu (`KaleidoScope_Draw` into `POLY_OPA_DISP`, over the saved frame): drawn
+    /// after the 3D lists, their fills and the letterbox, before the overlay's fill and
+    /// `overlay_2d`, in `pause_view`'s perspective. Each command's transform is the view and the
+    /// model (the menu's `View_LookAt` times its matrix), so the GPU clips what's behind the eye.
+    pub pause: Vec<DrawCmd>,
+    /// The pause menu's projection (`View_Apply`'s `guPerspective`); the aspect is the target's,
+    /// as the 3D view's.
+    pub pause_view: Option<Perspective>,
     /// Full-screen fills (RGBA, blended by alpha), drawn where the game's lists put them: at the
     /// end of the OPA list, at the end of the XLU list, and at the start of the overlay (over the
     /// letterbox, under `overlay_2d`).

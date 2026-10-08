@@ -189,6 +189,8 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(oot_game::message::bakes().iter().map(|b| b.mesh_bake()));
     // The HUD's.
     v.extend(oot_game::interface::bakes().iter().map(|b| b.mesh_bake()));
+    // The pause menu's (docs/adr/0047-the-pause-menu.md).
+    v.extend(oot_game::kaleido::gfx::bakes().iter().map(|b| b.mesh_bake()));
     v.extend(en_arrow::bakes());
     v
 }
@@ -252,9 +254,9 @@ pub trait PlayExt {
     /// Moves Player to `pos` facing `yaw`, standing, with the cameras behind it (a test or
     /// sandbox start somewhere other than the entrance's spawn).
     fn place_player(&mut self, pos: Vec3, yaw: i16);
-    /// The pause menu's equipping, as a stand-in (the pause menu isn't ported):
+    /// The equipment page's stand-in (`PlayState::equip_owned_unworn_stand_in`):
     /// [`oot_game::save::SaveContext::equip_owned_unworn`], then `Player_SetEquipmentData` as the menu's
-    /// closing runs it. Returns whether anything was equipped.
+    /// resume runs it. Returns whether anything was equipped.
     fn equip_owned_unworn(&mut self) -> bool;
     /// Adds a dummy Z-target standing at `pos`.
     fn spawn_target(&mut self, pos: Vec3) -> ActorHandle;
@@ -313,7 +315,7 @@ impl PlayExt for PlayState {
         self.reset_blending();
     }
     fn equip_owned_unworn(&mut self) -> bool {
-        self.pause_menu_equip()
+        self.equip_owned_unworn_stand_in()
     }
     fn spawn_hurting_target(&mut self, pos: Vec3, effect: u8) -> ActorHandle {
         let h = self.spawn(Box::new(DummyTarget::hurting(pos, effect))).expect("spawn");
