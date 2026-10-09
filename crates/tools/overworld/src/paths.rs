@@ -609,8 +609,11 @@ fn layout_inner(path: &Path, base: &dyn Fn(P2) -> f64, sampling: Sampling, ends:
     // the end's height
     let mut land: [Option<f64>; 2] = [None, None];
     for (e, (k, inward)) in [(0usize, true), (n - 1, false)].into_iter().enumerate() {
-        // a switchback (`climbs`) doesn't: its climb carries on to its end node, cutting in
-        if climbs.is_some() || !floating[if inward { 0 } else { n - 2 }] {
+        // a switchback (`climbs`) doesn't: its climb carries on to its end node, cutting in; nor
+        // does an end its section raises or sinks (a boardwalk): it ramps on to its node, where it
+        // meets the ground
+        let seg = if inward { 0 } else { n - 2 };
+        if climbs.is_some() || !floating[seg] || sections[seg].as_ref().is_some_and(|s| s.offset().abs() > 1e-9) {
             continue; // an attached end slopes on to its node, cutting in
         }
         let ze = zk[k].unwrap();
@@ -905,6 +908,26 @@ mod tests {
         // gentle enough already: straight
         let easy = meander(&p, 0.0, 100.0).unwrap().unwrap();
         assert_eq!(easy.turns, 0);
+    }
+
+    #[test]
+    fn a_boardwalk_over_a_pond_ramps_down_to_its_ends_instead_of_landing() {
+        // a pond 292 deep for |x| < 300: a bridge would land on its shores, but a boardwalk raised
+        // 80 runs on to its nodes on the ground and meets it there
+        let pond = |p: P2| if p[0].abs() < 300.0 { -292.0 } else { 0.0 };
+        let mut p = path(vec![vec![Some(-370.0), Some(0.0)], vec![Some(370.0), Some(0.0)]], vec![]);
+        p.section = Some(Section::Boardwalk { height: 80.0, spacing: 200.0 });
+        let g = layout(&p, &pond, Sampling::Every(20.0)).unwrap();
+        assert_eq!(g.runs.len(), 1);
+        let r = &g.runs[0];
+        assert!(r.floating && !r.land0 && !r.land1 && r.i0 == 0 && r.i1 == g.st.len() - 1, "{r:?}");
+        assert!(g.st[0].z.abs() < 1e-9 && g.st.last().unwrap().z.abs() < 1e-9);
+        assert!((g.z_at([0.0, 0.0]) - 80.0).abs() < 1e-6);
+        // a plain floating bridge still lands
+        p.section = None;
+        p.mode = "floating".into();
+        let g = layout(&p, &pond, Sampling::Every(20.0)).unwrap();
+        assert!(g.runs[0].land0 && g.runs[0].land1);
     }
 
     #[test]

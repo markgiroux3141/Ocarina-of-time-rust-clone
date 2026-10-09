@@ -351,8 +351,10 @@ keeps to the half of each segment beside it, so on a short segment it's steeper,
 A boardwalk's deck is the theme's hanging-bridge planks (`hanging.deck`, one every `plank` along, `across` repeats
 over the width, colliding as `planks`), 12 thick (`BOARD`), the logs' ends round its edges and under it; a pair of
 posts (`hanging.post`, twice the rope bridge's post size) every `spacing`, from its underside to 20 into the ground,
-wherever it stands more than 10 clear of it. Where it lands on a floor, the deck ends on the floor's edge as a
-bridge's does.
+wherever it stands more than 10 clear of it. A floating end whose section raises or sinks it (a boardwalk's always
+does) doesn't land on the floor's edge as a bridge's does: it ramps on to its node, where it meets the ground, so put a
+boardwalk's ends on the shore where it should touch down (landing there pulled a deck already partway up its ramp down
+to the shoreline, twisting its end).
 
 **Railings** (`"railings": "fence"`, any fence kind of the theme's). Along both sides, 8 in, wherever the floor
 just outside the side is 40 or more (`doc::RAIL_DROP`) below the path's own, read off the built ground: a causeway's
