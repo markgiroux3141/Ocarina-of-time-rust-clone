@@ -171,6 +171,7 @@ fn options(cli: &Cli) -> Options {
         new_file: cli.new_file,
         room: None,
         switches: Vec::new(),
+        clears: Vec::new(),
         audio: !cli.no_audio,
         music: cli.music,
         audio_log: cli.audio_log.is_some(),

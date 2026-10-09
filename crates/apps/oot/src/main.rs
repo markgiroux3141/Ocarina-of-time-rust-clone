@@ -48,6 +48,10 @@ struct Cli {
     /// their switches had just been pressed (a debug start, e.g. room 0's golden torches lit).
     #[arg(long, value_delimiter = ',')]
     switch: Vec<String>,
+    /// After entering, set these rooms cleared (comma-separated: --clear 9), as if their
+    /// enemies or puzzles were beaten (a debug start, e.g. room 9's door to room 11 open).
+    #[arg(long, value_delimiter = ',')]
+    clear: Vec<i8>,
     /// A dummy target (the sandbox's stand-in enemy) this many units in front of --at.
     #[arg(long, default_value_t = 0.0)]
     target: f32,
@@ -142,6 +146,7 @@ fn main() -> Result<()> {
         room: cli.room,
         at: cli.at,
         switches: cli.switch.iter().map(|s| oot::parse_switch_flag(s)).collect::<anyhow::Result<_>>()?,
+        clears: cli.clear.clone(),
         target: cli.target,
         target_hurts: cli.target_hurts.as_deref().map(oot::parse_hit_effect).transpose()?,
         audio: !cli.no_audio,

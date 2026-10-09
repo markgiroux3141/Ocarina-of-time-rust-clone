@@ -52,6 +52,19 @@ pub struct DrawParams {
     /// of the mesh that has one: a texture the draw code writes in RAM (the pause map's rooms,
     /// colour-indexed through a palette it changes every frame). The mesh's wrap and filter stay.
     pub image: Option<DrawImage>,
+    /// Texels the game builds at run time in place of the mesh's textures loaded from these
+    /// addresses (`TextureImage::source_addr`), in whichever slot they're bound: textures the
+    /// game writes in its object's RAM (Queen Gohma's, erased pixel by pixel as she dies). Each
+    /// must be its texture's size; the mesh's wrap and filter stay.
+    pub texture_images: Vec<SourceImage>,
+}
+
+/// One texture of a mesh replaced for a draw (`DrawParams::texture_images`): the address it was
+/// loaded from, and the texels in its place.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceImage {
+    pub source: u32,
+    pub image: DrawImage,
 }
 
 /// A draw's own texels (`DrawParams::image`): RGBA8, row by row from the top.

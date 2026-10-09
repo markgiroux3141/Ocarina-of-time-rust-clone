@@ -38,6 +38,9 @@ echo    65  test-slingshot       GAME-05's slingshot and nut tests: first person
 echo    68  test-pause           GAME-05's pause menu tests: opening, the item page's cursor, the equip, the pages, closing
 echo    71  test-dungeon-map     GAME-05's map page and game over tests: the floors, the room maps, the marks, the screens
 echo    76  test-save            GAME-05's saving tests: z_sram.c, the save prompt, the game over's save, the reset and load
+echo    80  test-gohma           GAME-05's Gohma tests: her intro, her eye's hits, her eggs, her death and decay, the heart
+echo    83  test-blue-warp       GAME-05's blue warp tests: the warp, the float, the way out, the arrival by blue warp
+echo    86  test-boss-room       GAME-05's last tests: room 9 into Gohma's room, the whole Deku Tree from one start
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -67,6 +70,9 @@ echo    72  game-dungeon-map     Inside the Deku Tree with the compass: the paus
 echo    74  game-game-over       Inside the Deku Tree with a quarter heart by a Deku Baba: its bite, the game over's screens
 echo    77  game-save            Inside the Deku Tree, a debug start in memory: equip, save (Enter, E, Space), F5 loads it
 echo    79  game-file            File 2 of your save file (out\saves): game-file.bat N [--new-file]
+echo    81  game-gohma           Queen Gohma's room: her intro, the fight (asks: first try or again)
+echo    84  game-blue-warp       Queen Gohma's room after her defeat, before the blue warp: into it, out to the Deku Tree
+echo    87  game-boss-room       The Deku Tree's room 9, cleared: through room 11 into Gohma's room, the fight, the warp
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -89,6 +95,9 @@ echo    70  sandbox-pause        The pause menu run's trace and screenshots (the
 echo    73  sandbox-dungeon-map  The map page run's trace and screenshots (1F, then 2F), into out\run
 echo    75  sandbox-game-over    The game over run's trace and screenshots (the message, the prompts), into out\run
 echo    78  sandbox-save         The save run's trace, screenshots and SRAM image (saved, reset, loaded), into out\run
+echo    82  sandbox-gohma        The Gohma run's trace and screenshots (the card, the stun, her decay, the heart), into out\run
+echo    85  sandbox-blue-warp    The blue warp run's trace and screenshots (the warp, the float, the arrival), into out\run
+echo    88  sandbox-boss-room    The room 9 to Gohma's room run's trace and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -177,6 +186,15 @@ if "%pick%"=="76" set "script=test-save"
 if "%pick%"=="77" set "script=game-save"
 if "%pick%"=="78" set "script=sandbox-save"
 if "%pick%"=="79" set "script=game-file"
+if "%pick%"=="80" set "script=test-gohma"
+if "%pick%"=="81" goto gohma
+if "%pick%"=="82" set "script=sandbox-gohma"
+if "%pick%"=="83" set "script=test-blue-warp"
+if "%pick%"=="84" set "script=game-blue-warp"
+if "%pick%"=="85" set "script=sandbox-blue-warp"
+if "%pick%"=="86" set "script=test-boss-room"
+if "%pick%"=="87" set "script=game-boss-room"
+if "%pick%"=="88" set "script=sandbox-boss-room"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -228,6 +246,14 @@ set "where="
 set /p "where=Where (room3, room7, room2): "
 call "%~dp0game-push.bat" %where%
 echo game-push finished (exit code %errorlevel%).
+pause
+goto menu
+
+:gohma
+set "try="
+set /p "try=First try or again (empty or again): "
+call "%~dp0game-gohma.bat" %try%
+echo game-gohma finished (exit code %errorlevel%).
 pause
 goto menu
 

@@ -440,6 +440,67 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "deku-tree-gohma",
+        about: "deku-tree-slingshot, for Queen Gohma's room (ENTR_DEKU_TREE_BOSS_0): the Kokiri Sword and Deku Shield, sticks on C-Left, nuts on C-Down, the slingshot on C-Right, three hearts; her battle not begun, so her intro plays whole (GAME-05 milestone 6a)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, ITEM_DEKU_STICKS_10);
+            s.equip_item_on_c(0, ITEM_DEKU_STICK);
+            item_give(s, None, ITEM_DEKU_NUTS_10);
+            s.equip_item_on_c(1, ITEM_DEKU_NUT);
+            item_give(s, None, ITEM_SLINGSHOT);
+            s.equip_item_on_c(2, ITEM_SLINGSHOT);
+        },
+    },
+    SavePreset {
+        name: "deku-tree-gohma-again",
+        about: "deku-tree-gohma with her battle begun (EVENTCHKINF_BEGAN_GOHMA_BATTLE), as after a game over in her room: her intro skips the slab's fall and the look at her, and shows no title card (GAME-05 milestone 6a)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, ITEM_DEKU_STICKS_10);
+            s.equip_item_on_c(0, ITEM_DEKU_STICK);
+            item_give(s, None, ITEM_DEKU_NUTS_10);
+            s.equip_item_on_c(1, ITEM_DEKU_NUT);
+            item_give(s, None, ITEM_SLINGSHOT);
+            s.equip_item_on_c(2, ITEM_SLINGSHOT);
+            // EVENTCHKINF_BEGAN_GOHMA_BATTLE (save.h).
+            s.set_event_chk_inf(0x70);
+        },
+    },
+    SavePreset {
+        name: "deku-tree-gohma-cleared",
+        about: "deku-tree-gohma-again, and Queen Gohma beaten: her room (SCENE_DEKU_TREE_BOSS, room 1) cleared and its heart container taken (collectible flag 0x1F, four hearts), so her init leaves the blue warp (GAME-05 milestone 6b)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, ITEM_DEKU_STICKS_10);
+            s.equip_item_on_c(0, ITEM_DEKU_STICK);
+            item_give(s, None, ITEM_DEKU_NUTS_10);
+            s.equip_item_on_c(1, ITEM_DEKU_NUT);
+            item_give(s, None, ITEM_SLINGSHOT);
+            s.equip_item_on_c(2, ITEM_SLINGSHOT);
+            // EVENTCHKINF_BEGAN_GOHMA_BATTLE (save.h).
+            s.set_event_chk_inf(0x70);
+            // SCENE_DEKU_TREE_BOSS (0x11): BossGoma_Defeated's Flags_SetClear(room 1) and
+            // Item_B_Heart's Flags_SetCollectible(0x1F), as Play_SaveSceneFlags keeps them.
+            s.scene_flags[0x11].clear |= 1 << 1;
+            s.scene_flags[0x11].collect |= 1 << 0x1F;
+            // GI_HEART_CONTAINER_2: Item_Give(ITEM_HEART_CONTAINER).
+            item_give(s, None, crate::item::ITEM_HEART_CONTAINER);
+        },
+    },
+    SavePreset {
         name: "deku-tree-slingshot-owned",
         about: "deku-tree-sticks, ten Deku nuts on C-Down, and the Fairy Slingshot with 30 seeds owned but on no button, as room 10's chest leaves it: the pause menu equips it (GAME-05 milestone 5b)",
         apply: |s| {

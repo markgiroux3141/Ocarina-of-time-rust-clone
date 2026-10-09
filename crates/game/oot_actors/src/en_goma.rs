@@ -25,10 +25,10 @@
 //!   frames), lies **dead** (`EnGoma_Dead`, a flame: `EffectSsKFire`), shrinks away with
 //!   `NA_SE_EN_EXTINCT` and drops from table 3.
 //!
-//! The whole overlay is ported. Queen Gohma (`Boss_Goma`) isn't (GAME-05 milestone 6): its eggs'
-//! and larvae's writes to her `childrenGohmaState` go through `boss_goma_set_child_state`, which
-//! logs them; the pieces' display lists (`bossLimbDL`) are hers, baked by `boss_limb_bake` when
-//! she's ported. `En_Goma_Profile`'s id is `ACTOR_BOSS_GOMA` (@bug (game)): every En_Goma gets
+//! The whole overlay is ported. Queen Gohma's (`Boss_Goma`, `crate::boss_goma`) eggs and larvae
+//! write their state into her `childrenGohmaState` (`boss_goma_set_child_state`); her pieces draw
+//! her limbs' lists (`bossLimbDL`, baked by `boss_limb_bake`), with her textures as her object's RAM
+//! has them (erased as she dies). `En_Goma_Profile`'s id is `ACTOR_BOSS_GOMA` (@bug (game)): every En_Goma gets
 //! that id, as `Actor_Spawn` copies it (`PROFILE`). Not ported: the generic circle shadow
 //! (`ActorShadow_DrawCircle`, for no actor).
 
@@ -929,17 +929,15 @@ impl EnGoma {
     }
 }
 
-/// `((BossGoma*)this->actor.parent)->childrenGohmaState[index] = state`.
-///
-/// HOOK (GAME-05 milestone 6): `Boss_Goma` isn't ported, so there's no state to write; the
-/// write is logged. Its port makes this the write into the parent's `childrenGohmaState`. (The
-/// C writes through whatever the parent is: with none, a placed egg's NULL; only Queen Gohma's
-/// own eggs and larvae, params 0 to 2, reach here in the game.)
+/// `((BossGoma*)this->actor.parent)->childrenGohmaState[index] = state`. (The C writes through
+/// whatever the parent is: with none, a placed egg's NULL, and past the array for params 3 to 5;
+/// only Queen Gohma's own eggs and larvae, params 0 to 2, reach here in the game. Those are
+/// logged.)
 pub fn boss_goma_set_child_state(play: &mut PlayState, parent: Option<ActorHandle>, index: i16, state: i8) {
-    let parent_name = parent.and_then(|h| play.actors.get(h)).map(|a| a.name());
-    match parent_name {
-        Some(name) => log::warn!("En_Goma: childrenGohmaState[{index}] = {state} on its parent ({name}): Boss_Goma isn't ported"),
-        None => log::warn!("En_Goma: childrenGohmaState[{index}] = {state} with no parent (the C writes through NULL)"),
+    match parent.and_then(|h| play.actors.downcast_mut::<crate::boss_goma::BossGoma>(h)) {
+        Some(goma) if (0..3).contains(&index) => goma.children_gohma_state[index as usize] = state as i16,
+        Some(_) => log::warn!("En_Goma: childrenGohmaState[{index}] = {state}: past the array (the C writes past it)"),
+        None => log::warn!("En_Goma: childrenGohmaState[{index}] = {state} with no Boss_Goma parent (the C writes through it)"),
     }
 }
 
@@ -963,8 +961,7 @@ pub fn boss_limb_bake_name(symbol: &str) -> String {
 }
 
 /// `EnGoma_NoBackfaceCullingDlist` on segment 8, then `bossLimbDL` (`file`'s `symbol`): the bake
-/// of one of Queen Gohma's pieces. `Boss_Goma`'s port (GAME-05 milestone 6) lists one per limb
-/// list her `BossGoma_PostLimbDraw` hands over.
+/// of one of Queen Gohma's pieces. `Boss_Goma`'s bakes list one per limb that breaks off.
 pub fn boss_limb_bake(file: &str, symbol: &str) -> MeshBake {
     use oot_game::gbi::*;
     /// `G_RM_AA_ZB_TEX_EDGE2` (`gbi.h`): `AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_CLAMP |
@@ -1156,7 +1153,8 @@ impl ActorImpl for EnGoma {
     ///   turning axis (`eggSquishAngle`, `eggSquishAmount`), moved by `eggYOffset` and rolled by
     ///   `eggPitch`; its texture scrolling with `eggTimer` (`sin(eggTimer × 5°) × 31.9 + 31`);
     /// - the debris: `gBrownFragmentDL` at `Actor_Draw`'s matrix;
-    /// - a piece of Queen Gohma: `bossLimbDL` with back faces drawn.
+    /// - a piece of Queen Gohma: `bossLimbDL` with back faces drawn, her textures as her object's
+    ///   RAM has them (`boss_goma::decay_images`).
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), [goma_type, egg_timer, body_env], v, [slope_pitch, slope_roll, eye_pitch, eye_yaw]) = (&rs.joints, rs.switches.as_slice(), rs.values.as_slice(), rs.angles.as_slice())
         else {
@@ -1207,7 +1205,13 @@ impl ActorImpl for EnGoma {
             }
             ENGOMA_BOSSLIMB => {
                 if let Some((_, symbol)) = self.boss_limb_dl {
-                    out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&boss_limb_bake_name(symbol))), model));
+                    let texture_images = crate::boss_goma::decay_images(play, self.actor.obj_bank_index);
+                    out.opa.push(DrawCmd {
+                        mesh: MeshKey::named(keys::bake(&boss_limb_bake_name(symbol))),
+                        transform: model,
+                        bones: Vec::new(),
+                        params: DrawParams { texture_images, ..Default::default() },
+                    });
                 }
             }
             _ => {}

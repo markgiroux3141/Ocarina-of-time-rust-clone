@@ -8,6 +8,13 @@
 //! objects a room's object list swaps in (`func_800982FC`) load asynchronously. The first
 //! `Object_UpdateEntries` after the swap starts their DMA and the next one sees it done, so they
 //! are loaded one frame later.
+//!
+//! What the game writes into a loaded object's RAM (Queen Gohma's textures, erased as she dies:
+//! `BossGoma_ClearPixels`) is kept per bank (`ObjectContext::written`), the file's bytes copied
+//! from the pack where the writes start, and lost when the bank's object changes, as a new DMA
+//! overwrites the RAM.
+
+use std::collections::BTreeMap;
 
 /// `OBJECT_EXCHANGE_BANK_MAX` (`object.h`).
 pub const OBJECT_EXCHANGE_BANK_MAX: usize = 19;
@@ -34,6 +41,9 @@ pub struct ObjectContext {
     pub num_persistent_entries: usize,
     pub main_keep_index: usize,
     pub sub_keep_index: usize,
+    /// The object RAM the game has written, by bank and the region's offset in the file: the
+    /// region's bytes as they are now.
+    pub written: BTreeMap<(usize, u32), Vec<u8>>,
 }
 
 impl Default for ObjectContext {
@@ -44,6 +54,7 @@ impl Default for ObjectContext {
             num_persistent_entries: 0,
             main_keep_index: 0,
             sub_keep_index: 0,
+            written: BTreeMap::new(),
         }
     }
 }
@@ -60,6 +71,7 @@ impl ObjectContext {
     pub fn spawn(&mut self, id: i16) -> usize {
         assert!(self.num < OBJECT_EXCHANGE_BANK_MAX, "this->num < OBJECT_EXCHANGE_BANK_MAX");
         self.status[self.num] = ObjectEntry { id, dma_started: false };
+        self.forget_written(self.num);
         self.num += 1;
         self.num_persistent_entries = self.num;
         self.num - 1
@@ -91,6 +103,23 @@ impl ObjectContext {
     /// `func_800982FC`: starts swapping `id` into `bank`.
     fn exchange(&mut self, bank: usize, id: i16) {
         self.status[bank] = ObjectEntry { id: -id, dma_started: false };
+        self.forget_written(bank);
+    }
+
+    /// A new object in `bank`: what was written into the old one's RAM is gone.
+    fn forget_written(&mut self, bank: usize) {
+        self.written.retain(|&(b, _), _| b != bank);
+    }
+
+    /// The written region of `bank`'s object at `offset`, if the game has written it.
+    pub fn written(&self, bank: usize, offset: u32) -> Option<&[u8]> {
+        self.written.get(&(bank, offset)).map(|v| v.as_slice())
+    }
+
+    /// The region of `bank`'s object at `offset` to write into: `file` (the object's bytes there,
+    /// from the pack) the first time.
+    pub fn written_mut(&mut self, bank: usize, offset: u32, file: impl FnOnce() -> Vec<u8>) -> &mut Vec<u8> {
+        self.written.entry((bank, offset)).or_insert_with(file)
     }
 
     /// `Scene_CommandObjectList`: keeps the room banks that already hold the list's objects in
@@ -105,6 +134,7 @@ impl ObjectContext {
                 for s in &mut self.status[i..self.num] {
                     *s = ObjectEntry { id: OBJECT_INVALID, dma_started: false };
                 }
+                self.written.retain(|&(b, _), _| b < i);
                 self.num = i;
                 dropped = true;
                 continue;
@@ -128,6 +158,18 @@ impl ObjectContext {
     }
 }
 
+/// An RGBA16 texture's texels (`G_IM_FMT_RGBA`, `G_IM_SIZ_16b`, big-endian, as an object holds
+/// them) as a draw's own image (`eng_gfx::DrawImage`), decoded as the importer decodes textures.
+pub fn rgba16_image(texels: &[u8], width: u32, height: u32) -> eng_gfx::DrawImage {
+    let n = (width * height) as usize;
+    let mut rgba = Vec::with_capacity(n * 4);
+    for i in 0..n {
+        let v = texels.get(i * 2..i * 2 + 2).map_or(0, |b| u16::from_be_bytes([b[0], b[1]]));
+        rgba.extend_from_slice(&eng_gbi::texture::rgba16(v));
+    }
+    eng_gfx::DrawImage { width, height, rgba: rgba.into() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,5 +190,23 @@ mod tests {
         assert!(o.command_object_list(&[10, 12]));
         assert_eq!(o.ids(), vec![1, 2, 10, -12]);
         assert!(o.get_index(11).is_none());
+    }
+
+    #[test]
+    fn written_object_ram_is_lost_with_the_object() {
+        let mut o = ObjectContext::init_bank();
+        o.spawn(2);
+        o.command_object_list(&[10, 11]);
+        o.update_bank();
+        o.update_bank();
+        let b = o.get_index(11).unwrap();
+        o.written_mut(b, 0x100, || vec![1, 2, 3])[1] = 0;
+        assert_eq!(o.written(b, 0x100), Some(&[1, 0, 3][..]));
+        // The same objects again: kept (the bank keeps its object, so its RAM).
+        o.command_object_list(&[10, 11]);
+        assert_eq!(o.written(b, 0x100), Some(&[1, 0, 3][..]));
+        // 11 dropped: gone with it.
+        o.command_object_list(&[10, 12]);
+        assert_eq!(o.written(b, 0x100), None);
     }
 }

@@ -184,6 +184,10 @@ pub struct TextureImage {
     /// Textures from segments the draw code binds per frame (Link's eyes on 8, mouth on 9) can
     /// be swapped by it.
     pub source_segments: u16,
+    /// The address (`G_SETTIMG`'s, segmented) the texel at the tile's first TMEM word was loaded
+    /// from, if it was loaded by this list: the texture's source in its file, which a draw's
+    /// `DrawParams::texture_images` names to replace it.
+    pub source_addr: Option<u32>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

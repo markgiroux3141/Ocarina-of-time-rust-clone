@@ -32,6 +32,8 @@ struct Instance {
     vertex_colors: Option<Vec<[u8; 4]>>,
     /// The image it was last given (`DrawParams::image`).
     image: Option<eng_gfx::DrawImage>,
+    /// The textures it was last given by source (`DrawParams::texture_images`).
+    texture_images: Vec<eng_gfx::SourceImage>,
 }
 
 /// Uploaded meshes by key, with their per-frame instances.
@@ -73,7 +75,7 @@ impl MeshCache {
                 self.missing.insert(cmd.mesh.clone(), ());
                 return false;
             };
-            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None, vertex_colors: None, image: None });
+            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None, vertex_colors: None, image: None, texture_images: Vec::new() });
         }
         let inst = &mut list[n];
         if inst.posed.as_ref().is_none_or(|(t, b)| *t != cmd.transform || *b != cmd.bones) {
@@ -84,9 +86,10 @@ impl MeshCache {
             inst.model.set_vertex_colors(cmd.params.vertex_colors.as_deref());
             inst.vertex_colors = cmd.params.vertex_colors.clone();
         }
-        if inst.image != cmd.params.image {
-            r.set_image(device, queue, &mut inst.model, cmd.params.image.as_ref());
+        if inst.image != cmd.params.image || inst.texture_images != cmd.params.texture_images {
+            r.set_images(device, queue, &mut inst.model, cmd.params.image.as_ref(), &cmd.params.texture_images);
             inst.image = cmd.params.image.clone();
+            inst.texture_images = cmd.params.texture_images.clone();
         }
         let lights_changed = inst.lights != cmd.params.lights;
         let fog_changed = inst.fog != cmd.params.fog;

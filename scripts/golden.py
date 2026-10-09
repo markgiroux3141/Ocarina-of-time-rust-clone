@@ -125,6 +125,27 @@ CASES = [
     ("save", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-save", "--script", "save", "--trace", "{trace}", "--screenshot", "{shot}", "--sram", "{sram}"]),
     ("save_prompt_turn", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-save", "--script", "save", "--frames", "69", "--screenshot", "{shot}"]),
     ("save_prompt", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-save", "--script", "save", "--frames", "73", "--screenshot", "{shot}"]),
+    # GAME-05 milestone 6a: Queen Gohma's room from its entrance's spawn: in, her intro, looked at
+    # with the slingshot, the fight (a seed into her red eye, jump slashes, a seed on the ceiling),
+    # her death and the heart container taken: the trace and the end; then the run cut at frame
+    # 560 (her drop: the boss's title card) and 1430 (her death: her textures half erased, her
+    # pieces, the room flashing blue).
+    ("gohma", S, ["--entrance", "ENTR_DEKU_TREE_BOSS_0", "--child", "--preset", "deku-tree-gohma", "--script", "gohma", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("gohma_title", S, ["--entrance", "ENTR_DEKU_TREE_BOSS_0", "--child", "--preset", "deku-tree-gohma", "--script", "gohma", "--frames", "560", "--screenshot", "{shot}"]),
+    ("gohma_decay", S, ["--entrance", "ENTR_DEKU_TREE_BOSS_0", "--child", "--preset", "deku-tree-gohma", "--script", "gohma", "--frames", "1430", "--screenshot", "{shot}"]),
+    # GAME-05 milestone 6b: Queen Gohma's cleared room, before the blue warp she leaves: into it,
+    # the float, the white fade out with the Kokiri Emerald, Kokiri Forest by blue warp and the
+    # Deku Tree's emerald cutscene, part 1, to its terminator: the trace and the end; then the run
+    # cut at frame 200 (Link in the warp's rays) and 700 (the Deku Tree's text).
+    ("blue_warp", S, ["--entrance", "ENTR_DEKU_TREE_BOSS_0", "--child", "--preset", "deku-tree-gohma-cleared", "--script", "blue-warp", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("blue_warp_float", S, ["--entrance", "ENTR_DEKU_TREE_BOSS_0", "--child", "--preset", "deku-tree-gohma-cleared", "--script", "blue-warp", "--frames", "200", "--screenshot", "{shot}"]),
+    ("blue_warp_forest", S, ["--entrance", "ENTR_DEKU_TREE_BOSS_0", "--child", "--preset", "deku-tree-gohma-cleared", "--script", "blue-warp", "--frames", "700", "--screenshot", "{shot}"]),
+    # GAME-05 milestone 6c: room 9's debug start, the room cleared (its door to room 11 open):
+    # through the door, onto room 11's floor (exit 2) and into Queen Gohma's room, standing in its
+    # corridor: the trace and the end; then the run cut at frame 265 (Link through the door into
+    # room 11).
+    ("boss_room", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot", "--script", "boss-room", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("boss_room_door", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot", "--script", "boss-room", "--frames", "265", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

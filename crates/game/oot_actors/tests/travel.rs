@@ -9,7 +9,10 @@
 //! floating block, 6 to 7 once room 6 is cleared, 7 to 8 and back through a burnt web, and 7 to
 //! 3 through the crawlspace and its `En_Holl`), the drop from 3 to 9 (room 3's floor web burnt
 //! with fire carried up from its lower floor by way of its push block), and 9 to 11 (the hint
-//! scrubs' puzzle clearing room 9, which unbars its door). Within a room Link walks, climbs,
+//! scrubs' puzzle clearing room 9, which unbars its door); then (milestone 6c) room 11's floor
+//! into Queen Gohma's room, her fight and the heart, and the blue warp out to Kokiri Forest's
+//! emerald cutscene, part 1, by the scripted routes (`Route::BossRoom`, `Gohma`, `BlueWarp`)
+//! chained, the whole Deku Tree from one Play_Init. Within a room Link walks, climbs,
 //! swims, jumps or crawls; he's placed twice, where walking there needs what isn't ported or the
 //! scripted climb fails (said where); enemies in the way are killed.
 //!
@@ -148,6 +151,7 @@ impl Run {
             }
         }
         assert!(run.failure.is_none(), "{:?}: {:?}", run.route, run.failure);
+        eprintln!("{:?}: steps {:?}", run.route, run.steps);
         run.steps.iter().map(|s| s.0).collect()
     }
 
@@ -743,12 +747,52 @@ fn link_travels_the_deku_trees_open_connections() {
     r.idle_until(5, "room 9's door unbarring", |w| door(w, 4).action == DoorAction::Unbar);
     r.idle_until(400, "room 9's door unbarred", |w| door(w, 4).action == DoorAction::Idle && door(w, 4).bars_closed_amount == 0.0);
     r.settle();
-    // Through it from room 9's side (it faces room 9, rot y 0x105B): Room_RequestNewRoom(11).
-    // Room 11's whole floor is exit 2 (the drop into Gohma's room): the run stops there.
-    r.open_door(4, Vec3::new(-882.0, -1880.0, -932.0));
-    assert_eq!((r.w.room_ctx.cur.num, door(&r.w, 4).actor.room), (11, 11));
-    eprintln!("12: into room 11 after {} frames", r.frames);
-    assert!(r.frames < 9000, "{} frames", r.frames);
+    // The rest is the scripted routes from room 9's debug start on (milestone 6c): through the
+    // door from room 9's side (it faces room 9, rot y 0x105B): Room_RequestNewRoom(11). Room 11's
+    // floor past it is exit 2 (floor_effect 2): ENTR_DEKU_TREE_BOSS_0, Queen Gohma's room. Then
+    // her fight and the heart (`Route::Gohma`), and the blue warp out to Kokiri Forest's emerald
+    // cutscene, part 1 (`Route::BlueWarp`).
+    let start = r.frames;
+    let capacity = r.w.save.health_capacity;
+    let steps = r.run(Playthrough::for_routes(&[Route::BossRoom, Route::Gohma, Route::BlueWarp]), |w, s| {
+        match s {
+            Step::DoorOpened => assert_eq!((w.room_ctx.cur.num, door(w, 4).actor.room), (11, 11)),
+            // SCENE_DEKU_TREE_BOSS (0x11), room 1 (the corridor; room 0 is hers).
+            Step::BossRoom => assert_eq!((w.scene_id, w.room_ctx.cur.num), (0x11, 1)),
+            // BossGoma_Defeated: the room cleared (Flags_SetClear), the warp spawned.
+            Step::GohmaGone => assert!(w.flags.get_clear(w.room_ctx.cur.num)),
+            // Item_B_Heart: its collectible flag, and a heart more (GI_HEART_CONTAINER_2).
+            Step::HeartTaken => assert!(w.flags.get_collectible(0x1F) && w.save.health_capacity == capacity + 0x10),
+            Step::WarpedOut => assert!(w.save.check_quest_item(oot_game::item::QUEST_KOKIRI_EMERALD)),
+            // SCENE_KOKIRI_FOREST (0x55).
+            Step::Arrived => assert_eq!(w.scene_id, 0x55),
+            _ => {}
+        }
+    });
+    eprintln!("12-14: room 11, Gohma and the blue warp in {} frames, {} in all", r.frames - start, r.frames);
+    // In order (the fight's own steps between, as many as it takes).
+    let mut rest = steps.iter();
+    for s in [
+        Step::DoorOpened,
+        Step::BossRoom,
+        Step::GohmaEntered,
+        Step::GohmaWaiting,
+        Step::GohmaLookedAt,
+        Step::GohmaBattle,
+        Step::GohmaStunned,
+        Step::GohmaHit,
+        Step::GohmaDefeated,
+        Step::GohmaGone,
+        Step::HeartTaken,
+        Step::WarpEntered,
+        Step::WarpedOut,
+        Step::Arrived,
+        Step::EmeraldPart1Over,
+    ] {
+        assert!(rest.any(|&t| t == s), "{s:?} in order in {steps:?}");
+    }
+    assert!(r.w.save.get_event_chk_inf(oot_actors::boss_goma::EVENTCHKINF_BEGAN_GOHMA_BATTLE));
+    assert!(r.frames < 12000, "{} frames", r.frames);
 }
 
 /// The pad that takes a stick's tip into the flame of the torch at `home` quickly (a burning

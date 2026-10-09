@@ -206,6 +206,7 @@ pub fn load(dir: &Path) -> Result<Level> {
                 siz: 3,
                 hash: h,
                 source_segments: 0,
+                source_addr: None,
             })
         };
         let tex = intern(img);

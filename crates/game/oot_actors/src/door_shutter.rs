@@ -851,10 +851,16 @@ impl DoorShutter {
             if !play.save.get_event_chk_inf(EVENTCHKINF_BEGAN_GOHMA_BATTLE) {
                 self.is_active = 10;
                 audio_play_actor_sfx2(play, NA_SE_EV_STONE_BOUND);
-                // ((BossGoma*)this->dyna.actor.parent)->subCamId: Boss_Goma isn't ported, so the
-                // main camera stands in for her sub camera.
-                log::debug!("Door_Shutter: the Gohma slab's quake on Boss_Goma's sub camera (not ported): the main camera's");
-                Self::request_quake_and_rumble(play, 2, 10, CAM_ID_MAIN);
+                // ((BossGoma*)this->dyna.actor.parent)->subCamId. With no Queen Gohma for a parent
+                // (a test's slab: the C would read through NULL), the main camera's.
+                let sub_cam_id = match self.actor.parent.and_then(|h| play.actors.downcast::<crate::boss_goma::BossGoma>(h)) {
+                    Some(goma) => goma.sub_cam_id,
+                    None => {
+                        log::warn!("Door_Shutter: the Gohma slab has no Boss_Goma parent: its quake goes to the main camera");
+                        CAM_ID_MAIN
+                    }
+                };
+                Self::request_quake_and_rumble(play, 2, 10, sub_cam_id);
                 let (a, pos) = (self.actor.clone(), self.actor.world_pos);
                 actor_spawn_floor_dust_ring(play, &a, pos, 70.0, 20, 8.0, 500, 10, true);
             }

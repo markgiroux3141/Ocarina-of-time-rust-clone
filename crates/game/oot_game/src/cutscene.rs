@@ -592,7 +592,7 @@ impl PlayState {
     }
 
     /// The `gEntranceTable` index of the entrance `name`.
-    fn entrance_by_name(&self, name: &str) -> Option<u16> {
+    pub fn entrance_by_name(&self, name: &str) -> Option<u16> {
         self.assets.as_ref()?.scenes.entrances.iter().position(|e| e.name == name).map(|i| i as u16)
     }
 

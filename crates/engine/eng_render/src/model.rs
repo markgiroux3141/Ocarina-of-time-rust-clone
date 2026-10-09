@@ -27,7 +27,11 @@ pub struct GpuModel {
     /// `Renderer::set_image` rebuilds them from.
     tex_keys: Vec<([Option<TextureSlot>; 2], bool)>,
     views: Vec<wgpu::TextureView>,
-    /// The draw's own texels in texture slot 0 (`eng_gfx::DrawParams::image`), if it has them.
+    /// Where each texture was loaded from (`TextureImage::source_addr`), what
+    /// `DrawParams::texture_images` names.
+    sources: Vec<Option<u32>>,
+    /// The draw's own texels (`eng_gfx::DrawParams::image` in texture slot 0,
+    /// `DrawParams::texture_images` by source), if it has them.
     image: Option<ImageOverride>,
     /// (vertex start, count, material index, texture bind group index, pipeline key)
     pub(crate) draws: Vec<(u32, u32, u32, usize, PipelineKey)>,
@@ -36,11 +40,15 @@ pub struct GpuModel {
     pub(crate) skinned: Vec<GpuVertex>,
 }
 
-/// A draw's own image (`eng_gfx::DrawParams::image`): its texture, and the model's texture bind
-/// groups with it in slot 0.
+/// A draw's own images: slot 0's (`eng_gfx::DrawParams::image`) and the textures replaced by
+/// source (`DrawParams::texture_images`, by the mesh's texture index), and the model's texture
+/// bind groups with them in place.
 struct ImageOverride {
-    size: (u32, u32),
-    texture: wgpu::Texture,
+    /// Slot 0's size, and each replaced texture's index and size: the bind groups are made again
+    /// only when these change.
+    shape: (Option<(u32, u32)>, Vec<(usize, (u32, u32))>),
+    slot0: Option<wgpu::Texture>,
+    replaced: Vec<wgpu::Texture>,
     bgs: Vec<wgpu::BindGroup>,
 }
 
@@ -150,6 +158,7 @@ impl Renderer {
             texture_bgs,
             tex_keys,
             views,
+            sources: draw.textures.iter().map(|t| t.source_addr).collect(),
             image: None,
             draws,
             skinned: base.clone(),
@@ -190,31 +199,55 @@ impl Renderer {
         })
     }
 
-    /// Gives the model a draw's own texels in texture slot 0 (`eng_gfx::DrawParams::image`), or
-    /// puts its own textures back with `None`. The texture is made again only when the size
-    /// changes; the texels are written each call.
-    pub fn set_image(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, model: &mut GpuModel, image: Option<&eng_gfx::DrawImage>) {
-        let Some(img) = image else {
+    /// Gives the model a draw's own texels: `image` in texture slot 0 (`eng_gfx::DrawParams::image`)
+    /// and `replaced` in place of the textures loaded from their sources
+    /// (`DrawParams::texture_images`), or puts its own textures back when there are none. The
+    /// textures and bind groups are made again only when the sizes or the replaced textures
+    /// change; the texels are written each call.
+    pub fn set_images(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, model: &mut GpuModel, image: Option<&eng_gfx::DrawImage>, replaced: &[eng_gfx::SourceImage]) {
+        let mut by_index: Vec<(usize, &eng_gfx::DrawImage)> = Vec::new();
+        for r in replaced {
+            for (i, s) in model.sources.iter().enumerate() {
+                if *s == Some(r.source) {
+                    by_index.push((i, &r.image));
+                }
+            }
+        }
+        if image.is_none() && by_index.is_empty() {
             model.image = None;
             return;
-        };
-        if model.image.as_ref().is_none_or(|o| o.size != (img.width, img.height)) {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("draw image"),
-                size: wgpu::Extent3d { width: img.width, height: img.height, depth_or_array_layers: 1 },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: COLOR_FORMAT,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            let view = texture.create_view(&Default::default());
-            let bgs = model.tex_keys.clone().into_iter().map(|k| self.texture_bind_group(device, &model.views, k, Some(&view))).collect();
-            model.image = Some(ImageOverride { size: (img.width, img.height), texture, bgs });
+        }
+        let shape = (image.map(|i| (i.width, i.height)), by_index.iter().map(|(i, img)| (*i, (img.width, img.height))).collect::<Vec<_>>());
+        if model.image.as_ref().is_none_or(|o| o.shape != shape) {
+            let make = |w: u32, h: u32| {
+                device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("draw image"),
+                    size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: COLOR_FORMAT,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                })
+            };
+            let slot0 = image.map(|i| make(i.width, i.height));
+            let replaced: Vec<wgpu::Texture> = by_index.iter().map(|(_, img)| make(img.width, img.height)).collect();
+            let mut views = model.views.clone();
+            for ((i, _), t) in by_index.iter().zip(&replaced) {
+                views[*i] = t.create_view(&Default::default());
+            }
+            let slot0_view = slot0.as_ref().map(|t| t.create_view(&Default::default()));
+            let bgs = model.tex_keys.clone().into_iter().map(|k| self.texture_bind_group(device, &views, k, slot0_view.as_ref())).collect();
+            model.image = Some(ImageOverride { shape, slot0, replaced, bgs });
         }
         if let Some(o) = &model.image {
-            write_texture(queue, &o.texture, img.width, img.height, &img.rgba);
+            if let (Some(t), Some(img)) = (&o.slot0, image) {
+                write_texture(queue, t, img.width, img.height, &img.rgba);
+            }
+            for (t, (_, img)) in o.replaced.iter().zip(&by_index) {
+                write_texture(queue, t, img.width, img.height, &img.rgba);
+            }
         }
     }
 }

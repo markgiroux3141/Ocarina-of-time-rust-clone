@@ -541,7 +541,9 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
 fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWriter, tally: &mut Tally) -> Result<()> {
     // The scenes' place names (oot_game::title_card), from scene_table.h's title files.
     let st = SceneTables::load(&p.config.decomp).context("scene tables")?;
-    let titles = oot_game::title_card::bakes(st.scenes.iter().map(|s| s.title_file.as_str()));
+    let mut titles = oot_game::title_card::bakes(st.scenes.iter().map(|s| s.title_file.as_str()));
+    // And the bosses' names (`TitleCard_InitBossName`).
+    titles.extend(oot_game::title_card::boss_bakes());
     for b in oot_actors::bakes().into_iter().chain(titles.iter().map(|t| t.mesh_bake())) {
         let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
         anyhow::ensure!(d.stats.unresolved_addresses.is_empty(), "bake {}: unresolved {:?}", b.name, d.stats.unresolved_addresses.keys().collect::<Vec<_>>());

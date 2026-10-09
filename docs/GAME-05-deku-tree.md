@@ -5,6 +5,9 @@ ROM has it (Master Quest), up to Gohma's defeat. Decided in
 [ADR 0028](adr/0028-phase-6-master-quest-and-the-decomp-upgrade.md): gc-eu-mq-dbg stays the only
 ROM, and the decomp is upgraded first, before any dungeon work.
 
+**Status:** done (2026-10-09). Every milestone below is built; the whole Deku Tree runs to
+Gohma's defeat and the blue warp out in one test (milestone 6c).
+
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The decomp upgrade: an address-based name map from `2f4c25d`'s names to the new commit's, the citations migrated by it, the importer on the new layout, the pack's record names renamed (a format bump); every test passes and the goldens are the same bytes | done |
@@ -13,7 +16,7 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | done |
 | 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`); room-to-room travel. Split in three: 4a doors, switches, torches and webs; 4b the Deku Stick (pulled forward from 5) and the props; 4c pushing and Master Quest's extras | done |
 | 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`). Split in three: 5a the slingshot and nuts; 5b the pause menu; 5c saving | done |
-| 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
+| 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat. Split in three: 6a Queen Gohma, 6b the blue warp, 6c the run through the Deku Tree | done |
 
 The working rules are the same as for the earlier phases:
 - no game data in the repo;
@@ -1196,7 +1199,8 @@ Re-recorded and logged in [golden/README.md](../golden/README.md): 89 hashes, 65
 - **Nothing of the map is drawn** (milestone 5's pause menu, the HUD's minimap).
 - **Quakes:** the roll part isn't drawn (the renderer keeps Y up), nor is the shake applied to the
   prerendered backgrounds or the skybox. No rumble anywhere.
-- **The Gohma slab** shakes the main camera, not `Boss_Goma`'s sub camera (milestone 6).
+- **The Gohma slab** shakes the main camera, not `Boss_Goma`'s sub camera (milestone 6). *(Fixed in
+  6a: her sub camera.)*
 - The torches' glow (`Lights_GlowCheck`) and the actors' cull zones aren't ported.
 
 ### How to check
@@ -2988,3 +2992,521 @@ Enter is Start, WASD the stick, J the C-Left button, E is B, Space A, F5 the con
 SRAM in memory), then "Continue playing?".
 - **What to report:** the prompt's turn in and out and its speed, the glow, the sounds, the menu
   closing after Yes, the reset's feel, and anything a loaded file has wrong.
+
+## Milestone 6: Gohma
+
+**Status:** decided (2026-10-09). The user chose:
+- three parts: 6a Queen Gohma (`Boss_Goma` whole with her intro and death, `Item_B_Heart`), 6b the
+  blue warp, 6c the run through the Deku Tree;
+- her decay drawn through per-draw images keyed by the texture's source address (ADR 0048
+  extended), her six textures' texels in the pack, pack format 27;
+- the warp leading to Kokiri Forest's first cutscene, played to its terminator (`Door_Warp1`'s
+  destination warp and Player's start mode 2 ported); the rest of the chain to the backlog;
+- short goldens from debug starts (the fight, the warp, room 9 into the boss room), and the full
+  run from the Deku Tree's start as one test that checks events, not a golden.
+
+### The survey
+
+Line counts are the decomp's (`52a510f`). None of the three files has a version branch, so for
+`Boss_Goma` and `Item_B_Heart` this ROM's branches are the whole file; `Door_Warp1` branches only
+on its params. "Port today" is `3fdac7f` (milestone 5c).
+
+**`Boss_Goma`** (`z_boss_goma.c`, 2,175 lines; 1,660 in functions, the rest the collider's 13
+elements, `sClearPixelTableFirstPass` and `SecondPass` (256 bytes each), `sDeadLimbLifetime` (100),
+the init chain). Nothing of it is ported; `En_Goma`'s boss side waits for it (milestone 3b).
+
+| C | Lines | What |
+|---|---|---|
+| `BossGoma_Init`, `_Destroy`, `_SpawnChildGohma` | 28, 6, 6 | Health 10, immovable, upside down at y -300 (the ceiling), `SetupEncounter`; with the room cleared she's killed at once and spawns the warp at (0, -640, 0) and the heart at (141, -640, -84) |
+| The 18 `BossGoma_Setup*` | 128 | Each action's animation and timers (`Rand_S16Offset` in four of them); `SetupDefeated` stops the music |
+| `BossGoma_Encounter`, `_SetupEncounterState4` | 305, 40 | **The intro**, her own sub camera: Link held at the room's entrance (150, 350) (mode 8), the camera from the ceiling's centre zooming on him; frame 176 the slab (`Door_Shutter` `SHUTTER_GOHMA_BLOCK`) falls behind him and the lights change (setting override 3, then 4); 190 he turns (mode 2); 228 control back; then until he has looked at her (in view 16 frames, `projectedPos`), she wanders the ceiling; then the eye roll, her run, the drop to the floor (dust, sound, rumble), the cry, **"Queen Gohma"** (`TitleCard_InitBossName`, the first time only), the boss music, `EVENTCHKINF_BEGAN_GOHMA_BATTLE`, the camera back. With the flag already set (a second try) the door and look-at parts are skipped |
+| `BossGoma_Defeated` | 271 | **The death:** her sub camera circling, Link pulled 100 in front of her (mode 1); bubbles every 8 frames; from 1,080 the dust and fragments at random limbs (`@bug (game)`: index 0, never written, is the origin), the death cry, **her textures erased** pixel by pixel (`BossGoma_ClearPixels`, 4 a frame, two passes; `@bug (game)`: progress 256 reads one byte past the first table, which is the second's 1, and clears the first pixel of the next texture), the room's ambient and fog flashing blue (`adjAmbientColor`, `adjFogColor`); at frame 1,001 her limbs break off as `En_Goma` pieces (params 100 + lifetime); the boss-clear music; the heart spawned at her; the camera back to the main one's view; the warp spawned at a random spot (up to 10,000 `Rand` tries) and the room cleared; she shrinks away |
+| The 9 floor actions | 217 | `FloorMain` (towards Link while patient (200 frames), else away; a wall: climb), the attack (posture within 150, the lunge, quake, rest), stunned (nut 40 frames, seed 90, struck down 150), damaged, the landings |
+| The ceiling and falls | 168 | `WallClimb`, `CeilingMoveToCenter`, `CeilingIdle`, preparing (70 frames, red eye: the window to shoot her down) and laying her three eggs (`En_Goma` 0 to 2), `FallJump` once they're dead, `FallStruckDown` |
+| `BossGoma_UpdateCeilingMovement` | 38 | Her steps on the ceiling: 5 fragments a step (`Effect_Ss_Hahen`) |
+| `_UpdateEye`, `_UpdateHit`, `_UpdateTailLimbsScale`, `_UpdateMainEnvColor`, `_UpdateEyeEnvColor`, `_Update` | 64, 49, 20, 30, 10, 53 | The eye: closes when Link shoots (`unk_A73`, which she clears) or at random (every 16 frames, 30%), open and red while she attacks; **the hit:** only on the eye, only while open: on the ceiling she falls; stunned, a sword's damage (`CollisionCheck_GetSwordDamage`: the Kokiri Sword's slash 1, its jump slash 2); patient on the floor, a seed or nut stuns her. The colours |
+| `_OverrideLimbDraw`, `_PostLimbDraw`, `_EmptyDlist`, `_NoBackfaceCullingDlist`, `_Draw`, `_PlayEffectsAndSfx` | 88, 50, 10, 13, 19, 17 | Env colour on every limb, the eye's (random while invincible: draw-time `Rand`) and the iris's apart; the eyelids' and iris's rotations, the iris and tail scaled; limbs hidden when closed or broken off; segment 8 culling or not; the post draw sets her focus, claw and tail points, the colliders' spheres, the dead limbs' points, and **spawns the broken-off pieces** |
+
+**`Item_B_Heart`** (`z_item_b_heart.c`, 117 lines; 67 in functions): the heart container, bobbing and
+growing to 0.4, `GI_HEART_CONTAINER_2` offered within 30/40, collectible flag 0x1F; drawn
+translucent when a `Door_Warp1` is behind it. Not ported. Its mesh is baked already as the
+get-item draw `GetItem/12/0` (`GID_HEART_CONTAINER`).
+
+**`Door_Warp1`** (`z_door_warp1.c`, 1,064 lines; 950 in functions). Not ported. What this ROM's
+Deku Tree reaches:
+
+| C | Lines | Reached |
+|---|---|---|
+| `_Init`, `_Destroy`, `_SetupAction`, `_ChooseInitialAction`, `_Update`, `_Draw` | 23, 12, 3, 25, 9, 28 | Yes |
+| `_SetupWarp` | 89 | Its `WARP_DUNGEON_CHILD` (0) and `WARP_DESTINATION` (6) cases |
+| `_WarpAppear`, `_PlayerInRange`, `_ChildWarpIdle` | 33, 13, 16 | Yes: the blue warp grows in (sound, light rays), and Link within 60 starts one-point 9703 and mode 10 (walk to its centre) |
+| `_ChildWarpOut` | 62 | Its Deku Tree branch: Link floats up (his gravity 0.1), 100 frames on: `EVENTCHKINF_07` and `_09`, `Item_Give(ITEM_KOKIRI_EMERALD)`, `ENTR_KOKIRI_FOREST_0` with cutscene 0xFFF1 (a second time: `ENTR_KOKIRI_FOREST_11`), the slow white fade |
+| `_DrawWarp` | 101 | Yes: two rings of `gWarpPortalDL`, each its own matrix (segments 9 and 10), scrolling |
+| `_Destination`, `_DoNothing` | 19, 2 | Only if Kokiri Forest's arrival plays: its cutscene layer places a `Door_Warp1` 6 |
+| The adult warp, the crystals, Ruto's warp, the clear-flag warp, `func_8099B020` (`WARP_UNK_7`) | about 530 | No: logged |
+
+**The boss room** (`ydan_boss`, `ENTR_DEKU_TREE_BOSS_0`): two rooms; Link enters room 1 standing
+(start mode 13) at (321, -640, 772); room 1 holds Gohma and 8 bushes, room 0 the way back (exit 1,
+`ENTR_DEKU_TREE_1`). Its bg camera is `CAM_SET_NONE`, so the room's camera is the normal one; the
+cutscenes are her sub camera, set each frame (`Play_SetCameraAtEye`). Already in the port: the
+scene and its pack records (a test enters it, `doors.rs`), `Door_Shutter`'s Gohma slab (its quake
+goes to the main camera where the C shakes her sub camera: a hook to replace), the manual
+cutscenes, sub cameras, Player's modes 1, 2, 7, 8, 10 and 11, the lights' overrides and
+adjustments, point lights, every effect and combat helper she calls, `Effect_Ss_Dust`
+(`func_8002836C`), the white fades.
+
+**Missing for her, beyond the three actors:**
+- an actor driving its own sub camera (the plumbing is there; she's the first), `SUB_CAM_ID_DONE`;
+- `TitleCard_InitBossName` and the boss card's sprites (`gGohmaTitleCardTex`, IA8 128x40 for
+  English, drawn as 32 rows then 8);
+- one-point 9703 (its keyframes are in the pack already);
+- `NA_BGM_BOSS`, `NA_BGM_BOSS_CLEAR`, the `NA_SE_EN_GOMA_*` boss sounds, `NA_SE_EV_WARP_HOLE`,
+  `NA_SE_EV_LINK_WARP`;
+- `En_Goma`'s writes into her `childrenGohmaState` (a logging hook today).
+
+**The draw:**
+- **Her skeleton** is one baked mesh skinned by bones, as every skeleton is. Per-limb colours,
+  hidden limbs, the iris and tail scale and the two segment-8 lists all have patterns already
+  (the eye and iris baked apart as the larva's body is, a hidden limb's bone zeroed, a scale
+  multiplied onto its bone after posing, one bake per segment-8 list). No engine change.
+- **Her decay** writes zeros into six of `object_goma`'s textures (`gGohmaBodyTex`,
+  `ShellUndersideTex`, `DarkShellTex`, `EyeTex` 16x16, `ShellTex`, `IrisTex` 32x32 RGBA16, one after
+  another in the file), and her broken-off pieces draw with the same textures. The engine's one
+  per-draw image (ADR 0048) replaces every texture of a draw with one image, so this needs a
+  decision (below).
+- **The warp's portal** loads two matrices from segments (9 and 10), which no bake does yet: a bake
+  segment bound to a bone, the two matrices passed as the draw's bones. Its combiner blends its two
+  scrolled tiles by `LOD_FRACTION`, which the shader takes as 0; to be checked against the
+  hardware's value with texture LOD off.
+- **The heart** is the get-item bake, in the opaque or the translucent list.
+
+**The pack:** `object_goma`'s skeleton and animations, `object_warp1`'s portal list and
+`object_gi_hearts`' lists are in it; new are the bakes (Gohma's skeleton with segment 8 bound,
+cull and no-cull; her eye and iris; her limb lists as `En_Goma`'s pieces; the warp's portal with
+its matrices; the boss card's two sprites) and, for the decay, her six textures' texels where the
+game can read them. **Pack format 27** (`out/data24`).
+
+**The way to her** (the exit's run):
+- The travel test (`--test travel`, 7,943 frames) already walks from room 0's top floor through
+  every room to room 9's door to room 11, and stops there.
+- Room 11 has no actors: its floor, just past the door at y -1880, is exit 2 (a floor with
+  `floor_effect` 2: the exit sets the respawn point and voids out, `respawnFlag` -2). Walking onto
+  it is ported (`Player_HandleExitsAndVoids`) but no test has stepped on such a floor yet.
+- MQ's Deku Tree has no small key and no boss door; nothing else is missing on the way.
+
+**After the warp:** cutscene 0xFFF1 is Kokiri Forest's layer 5,
+`gKokiriForestKokiriEmeraldPart1Cs`: Link arrives by blue warp (start mode 2, not ported) beside a
+`Door_Warp1` 6 before the Deku Tree, who talks (0x1024 to 0x1027, a choice) with Navi; its
+terminator goes on to the castle town's cutscene map (Ganondorf on his horse), the world's
+creation in four more scenes, back to Kokiri Forest for the Triforce (layer 4) and the Deku Tree's
+death (layer 6, with `Demo_Effect`), and ends at `ENTR_KOKIRI_FOREST_11`. The port has
+`Bg_Treemouth`, Navi's cues, `Object_Kankyo` and the Deku Tree's death misc command; not the other
+scenes' actors or `Demo_Effect`.
+
+### The proposal
+
+**The split.** The cutscenes are `Boss_Goma`'s own actions (`Encounter`, `Defeated`), and the fight
+starts at the end of `Encounter`, so "the cutscenes" don't split off from her. Proposed:
+- **6a, Queen Gohma:** `Boss_Goma` whole (the intro and the death are hers), her draw and decay,
+  `Item_B_Heart` whole (67 lines, spawned by her death), the boss card, the music and sounds, the
+  slab's quake on her camera, `En_Goma`'s hook replaced. `Door_Warp1` spawns as a placeholder.
+  Debug start: `game-gohma.bat` in the boss room (`deku-tree-gohma`: sword, shield, the slingshot
+  and nuts on C), `game-gohma.bat again` with her battle begun (the short intro).
+  **Exit:** from the boss room's start, the intro, the fight (seeds into her red eye, jump
+  slashes), the death, the heart taken: `Route::Gohma`, the golden `gohma`.
+- **6b, the blue warp:** `Door_Warp1` for this ROM's Deku Tree (as decided below), one-point 9703,
+  the slow white fade, `Player` start mode 2 if Kokiri Forest's arrival is ported. Debug start:
+  `game-warp.bat`, the boss room cleared (Gohma's init spawns the warp and heart).
+  **Exit:** into the warp: the float, the emerald, `EVENTCHKINF_07` and `_09`, Kokiri Forest:
+  `Route::BlueWarp`, the golden `blue_warp`.
+- **6c, through the Deku Tree:** room 11's exit floor, the travel test carried on into the boss
+  room, Gohma and the warp. **Exit:** the run from the Deku Tree's start to Gohma's defeat (shape
+  below).
+
+The other decisions (the user's choices are in the status above):
+- **The decay:** per-draw images keyed by the texture's source address *(chosen)*; or her mesh
+  baked in parts, one per texture, each with ADR 0048's one image; or the decay logged.
+- **Where the warp leads:** to the end of Kokiri Forest's first cutscene *(chosen)*; or to the
+  warp's fade only; or the whole chain to the Deku Tree's death.
+- **The run's shape:** short goldens from debug starts and the full run as a test *(chosen)*; or
+  the full run (about 11,000 frames) as a golden; or short goldens only.
+
+## Milestone 6a: Queen Gohma
+
+**Answer:** done. Queen Gohma is fought as in the game. Link walks in and her intro plays: the
+camera from the ceiling closes in on him, the slab drops behind him, and she waits on the ceiling
+until he has looked at her. Then her eye rolls, she runs, drops to the floor, and "Parasitic
+Armored Arachnid GOHMA" shows with the boss music. In the fight:
+- a seed or a Deku nut into her eye while it's red stuns her, and the Kokiri Sword hurts her
+  then, a jump slash twice as much as a slash;
+- on the ceiling, a seed while she prepares her eggs knocks her down, stunned for longer;
+- otherwise she lays three eggs, and jumps down once their larvae are dead.
+
+At no health her death plays: her camera circles her, the room flashes blue, her textures are
+erased bit by bit, her limbs break off, and she shrinks away. The heart container she leaves gives
+a fourth heart. The exit holds; its run is the golden `gohma`, with `gohma_title` and
+`gohma_decay`.
+
+The pack is format 27, in `out/data24`. Decisions are in [ADR 0050](adr/0050-queen-gohma.md) and
+[ADR 0051](adr/0051-textures-replaced-by-source-and-the-object-ram.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 80 to 82):
+- `test-gohma.bat`: the milestone's tests (then 3b's larvae, the slab's and the title card's);
+- `game-gohma.bat`: her room, a debug start (`deku-tree-gohma`); `game-gohma.bat again` with her
+  battle begun (`deku-tree-gohma-again`);
+- `sandbox-gohma.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** 6a is done; 6b (the blue warp) and 6c (the run through the Deku Tree) are
+next.
+
+### What was built
+
+**`Boss_Goma`** (`oot_actors::boss_goma`, ADR 0050), whole, function by function:
+- **her intro** (`BossGoma_Encounter`, `_SetupEncounterState4`): the trigger at the room's entrance,
+  her own sub camera set every frame, Link held, turned and freed through Player's cutscene modes
+  (8, 2, 7, 1), the slab (`Door_Shutter` `SHUTTER_GOHMA_BLOCK`, her child) at frame 176, the lights'
+  overrides, the look-at check on her `projectedPos`, the eye roll, the run, the drop, the title card,
+  `NA_BGM_BOSS`, `EVENTCHKINF_BEGAN_GOHMA_BATTLE`, the main camera written back;
+- **the fight:** every floor and ceiling action, `BossGoma_UpdateEye` (Link's shot closing her eye,
+  her random blinks, closed while a child lives), `_UpdateHit`, the colours, the tail's swell, her
+  three eggs (`En_Goma` 0 to 2) and their larvae's deaths written back into her `childrenGohmaState`
+  (the 3b hook replaced);
+- **her death** (`BossGoma_Defeated`): her camera circling, Link pulled before her, the bubbles,
+  dust and fragments at her limbs, the blue flashes (`adjAmbientColor`, `adjFogColor`), the decay,
+  the 20 pieces at frame 1001, `NA_BGM_BOSS_CLEAR`, the heart, the warp (a placeholder until 6b) and
+  the room cleared, the shrink;
+- **her draw:** one skeleton bake with her env colour, her eye and iris apart (the eye's random
+  colours while she's invincible made in `draw_update`), the eyelids and iris turned, the tail and
+  iris scaled, broken-off limbs hidden, segment 8's two lists (two bakes of each); her post draw's
+  points, spheres and pieces once per game frame.
+
+**Her decay** (ADR 0051): textures carry the address they were loaded from
+(`TextureImage::source_addr`); a draw can replace textures by that address
+(`DrawParams::texture_images`); the bytes the game writes into a loaded object are play state
+(`ObjectContext::written`). `BossGoma_ClearPixels` writes into her six textures' region as the C
+indexes it; her draw and her pieces' pass the region's textures in place of the baked ones.
+
+**Elsewhere:**
+- `Item_B_Heart` (`oot_actors::item_b_heart`), whole: its growth, bob and spin, `GI_HEART_CONTAINER_2`,
+  its flag; drawn translucent with a warp behind it.
+- `TitleCard_InitBossName` and `TitleCard_Draw`'s second block; the boss name's two sprite bakes.
+- Player's jump slash, pulled forward: `Player_ActionHandler_10` whole, `func_8083BA90`,
+  `func_8083BBA0` (from a jump), `Player_Action_80844AF4`.
+- The slab's quake on her sub camera (4a's hook replaced).
+- `NA_BGM_BOSS`, `NA_BGM_BOSS_CLEAR`, the `NA_SE_EN_GOMA_*` boss sounds, `NA_SE_EV_WARP_HOLE`,
+  `NA_SE_EV_LINK_WARP`.
+- The presets `deku-tree-gohma` and `deku-tree-gohma-again`; `Route::Gohma`.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game25`, `OOT_DATA_DIR=out/data24`):
+722 passed, 0 failed, 1 ignored (706 before); 16 are new. New, with their expectations from the C:
+- **`oot_actors --test gohma`** (13): her init (health 10, immovable, upside down at -300, the
+  lights at 4, her 13 spheres); a cleared room's warp at (0, -640, 0) and heart at (141, -640, -84);
+  her intro frame by frame (state 1's camera and positions, the slab at 176 with the lights at 3,
+  its quake on her sub camera, the turn at 190, the hand-back at 228); a second try (state 4 at
+  once, no title card, the boss music); a seed's and a nut's stun (90 and 40 frames, not with her
+  eye closed or her patience gone); Link's shot closing her eye (11 frames left after the update)
+  but not while it's red; a sword's damage while stunned (1 and 2, the bubbles, invincible 10
+  frames, the damage animation, the defeat with the finishing blow and the music stopped); a hit on
+  the ceiling (down, the crash, stunned 150 with `sfxFaintTimer` 92); her eggs (the tail at 24, 32,
+  40, 48, three eggs her children a third of a turn apart, their deaths written back, the jump
+  down); her death (`framesUntilNextAction` by her updates, the 20 pieces at 1001, the first pass's
+  pixels by `sClearPixelTableFirstPass` and the step-256 write into the underside's first pixel, the
+  heart at 271, the warp and the clear at 341, gone by 400, the boss-clear music); the heart
+  container (its growth, spin, flag, not spawned again); the jump slash (5 across and 5 up,
+  `NA_SE_VO_LI_SWORD_L`, its finish on landing); her bakes and their textures' sources.
+- **`oot_actors --test gohma_run`** (1): the exit's run.
+- **`oot_game` `title_card::tests`** (1): a boss name's two blocks; **`object_ctx::tests`** (1): the
+  written RAM kept with its object and dropped with it.
+
+**The exit run** (`Route::Gohma`, `--script gohma`, `deku-tree-gohma`): `gohma_entered` 72,
+`gohma_waiting` 301, `gohma_looked_at` 383, `gohma_battle` 632, `gohma_stunned` 674, `gohma_hit`
+712, `gohma_knocked_down` 1075, `gohma_defeated` 1216, `gohma_gone` 1603, `heart_taken` 1788.
+
+**The goldens.** Against 5c's build (`target/game24`, on data23: 110/110 identical, its outputs in
+`out/golden_base6`): every hash the same bytes. New: `gohma` (the trace and the end),
+`gohma_title` (frame 560), `gohma_decay` (1430), each the same bytes over two runs. Logged in
+[golden/README.md](../golden/README.md): 114 hashes, 84 cases.
+
+### Decisions
+
+- **[ADR 0050](adr/0050-queen-gohma.md):** `Boss_Goma` whole with her cutscenes as her own
+  actions and her own sub camera; her draw from one skeleton bake and two limbs apart, two variants
+  for segment 8; the boss title card's second block; `Item_B_Heart` on the get-item bake; the jump
+  slash pulled forward; the slab's quake on her camera; a reactive exit run.
+- **[ADR 0051](adr/0051-textures-replaced-by-source-and-the-object-ram.md):** textures replaced
+  by their source address, and the object RAM the game writes, for her decay; pack format 27.
+- **The jump slash pulled forward:** the fight is a Kokiri Sword's, and the C's jump slash (A while
+  locked on) is what a player uses on her; it rolled before.
+
+### Known gaps
+
+- **The blue warp** she spawns is a placeholder (6b): it isn't drawn and doesn't warp.
+- **The run doesn't fight her larvae:** if she lays her eggs it stops with a failure (her `Rand`
+  never lets it in this run); by hand they're there.
+- **Logged:** the rumble (`Rumble_Override`); the circle shadow (`ActorShadow_DrawCircle`, for no
+  actor yet).
+- **The eye's random colours** while she's invincible assume IDO evaluates the three `Rand`s left
+  to right, as `En_Goma`'s do (the randomness debt).
+
+### Fixes found while building
+
+- **The run's slingshot after a stun:** locked on, C-Right aims in third person at the target, so
+  the first-person aim never fired, and Link took five hits; the route aims through the lock-on.
+- **The route walked slowly** into the corridor's mouth, which rises 16, and stopped there; it
+  walks at full tilt.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-gohma.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-gohma.bat
+```
+
+### By hand
+
+`game-gohma.bat` (or menu 81). WASD the stick, Q is Z, E is B, Space A, L the slingshot (C-Right),
+K nuts (C-Down), I C-Up, R the shield.
+1. **The intro:** walk up the corridor: Link stops, the camera looks down at him from the ceiling
+   and closes in, a slab thuds down behind him, he turns. Once free, look up at her (L, then the
+   stick to aim up; or I): she rolls her eye at you, runs, drops, cries, and the title card shows
+   with the boss music.
+2. **Stun her:** she walks at you; within reach she rears up and her eye turns red. Q to lock on, L
+   to draw (aimed at her), let go: she's stunned (blue flashing, fainting). A nut (K) when she's
+   close does it too.
+3. **Hurt her:** E (B) for the sword, then Q locked on and Space (A): a jump slash (or E slashes).
+   Bubbles, she flashes red. After her stun she backs off, climbs a wall and crosses the ceiling.
+4. **On the ceiling:** when her eye turns red, shoot it: she crashes down, stunned longer. If you
+   miss, she lays three eggs: kill the larvae and she jumps down.
+5. **Her death:** the camera circles her, the room flashes blue, her body loses its texture bit by
+   bit, limbs break off and roll, she shrinks away. Walk to the heart: a fourth heart.
+6. **Again:** `game-gohma.bat again`: no slab or wait, straight to her eye roll, no title card.
+- **What to report:** the intro's camera and timing, how the stun and her red eye read, the jump
+  slash's feel, the death's look (the decay, the pieces, the flashes), the heart's bob, and the
+  blue warp (not there yet: 6b).
+
+## Milestone 6b: the blue warp
+
+**Answer:** done. The blue warp Queen Gohma leaves grows in. Link walks into it and the camera
+closes in round him; he floats up in its light, and a slow white fade takes him out with the
+Kokiri Emerald (`EVENTCHKINF_07`, `_09`). He arrives by blue warp before the Deku Tree, falling
+from high above, and the Deku Tree's emerald cutscene, part 1, plays: his texts with Navi, then
+its terminator's transition on to Ganondorf's tale. Going through the warp a second time takes
+him to the forest's path instead, with no cutscene. The exit holds; its run is the golden
+`blue_warp`, with `blue_warp_float` and `blue_warp_forest`.
+
+The pack is still format 27 (`out/data24`; one more bake, the warp's portal). Decisions are in
+[ADR 0052](adr/0052-the-blue-warp.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 83 to 85):
+- `test-blue-warp.bat`: the milestone's tests (then 6a's);
+- `game-blue-warp.bat`: Gohma's cleared room (`deku-tree-gohma-cleared`), in front of the warp;
+- `sandbox-blue-warp.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** 6a and 6b are done; 6c (the run through the Deku Tree) is next.
+
+### What was built
+
+**`Door_Warp1`** (`oot_actors::door_warp1`, ADR 0052), for this ROM's Deku Tree:
+- **the child warp** whole: it grows in (`DoorWarp1_WarpAppear`: the ring and the rays' widths,
+  `NA_SE_EV_WARP_HOLE`); in it, Link (`DoorWarp1_ChildWarpIdle`): `NA_SE_EV_LINK_WARP`, one-point
+  9703, his walk to its centre (`PLAYER_CSACTION_10`); his float and the way out
+  (`DoorWarp1_ChildWarpOut`'s Deku Tree branch: the emerald and flags, `ENTR_KOKIRI_FOREST_0` with
+  0xFFF1, later `ENTR_KOKIRI_FOREST_11`; the slow white fade); its two point lights; the room's
+  light adjustments reset when it goes;
+- **the destination warp** (`DoorWarp1_Destination`): killed at its init unless Link arrived by
+  blue warp within 100 of it, else faded in and out;
+- **its draw** (`DoorWarp1_DrawWarp`): `gWarpPortalDL`'s two rings, each on a matrix the draw
+  computes (`BakeSegment::Matrix`: the matrices passed as bones), scrolling, coloured by
+  `temp_f0`;
+- the other kinds' setups and actions logged (the adult warp and crystals, Ruto's, the clear
+  flag's, `WARP_UNK_7`, the Sages' fade).
+
+**Elsewhere:**
+- `BakeSegment::Matrix` in the importer (display lists only).
+- One-point 9703 in `OnePointCutscene_SetInfo`.
+- Player's start mode 2 (`Player_StartMode_BlueWarp`) and `Player_Action_BlueWarpArrive`.
+- `PlayState::entrance_by_name` public; the preset `deku-tree-gohma-cleared`; `Route::BlueWarp`.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game25`, `OOT_DATA_DIR=out/data24`):
+729 passed, 0 failed, 1 ignored (722 before); 7 are new. New, with their expectations from the C (`oot_actors --test blue_warp`, 7):
+- the child warp growing in (the ring to 100, the rays' widths to 120 and 232, the lights and
+  offsets of its setup, then idle);
+- taking Link in (`NA_SE_EV_LINK_WARP`, one-point 9703 on `CAM_SET_CS_C` with three keyframes,
+  `PLAYER_CSACTION_10`, `unk_450`), and 101 frames on, the way out (`EVENTCHKINF_07`, `_09`,
+  `QUEST_KOKIRI_EMERALD`, `ENTR_KOKIRI_FOREST_0` with 0xFFF1, the slow white fade, white in), Link
+  rising through the fade;
+- a second time (`EVENTCHKINF_07` set): `ENTR_KOKIRI_FOREST_11`, no cutscene, no emerald;
+- the arrival by blue warp (start mode 2, held over the cue's start (2857, -594) as he falls,
+  landed into the cutscene's mode; the layer's destination warp killed at its init);
+- 9703's keyframes from the view;
+- the portal's bake (24 triangles, its two rings on bones 0 and 1);
+- the exit's run.
+
+**The exit run** (`Route::BlueWarp`, `--script blue-warp`, `deku-tree-gohma-cleared`):
+`warp_entered` 139, `warped_out` 292, `arrived` 372, `emerald_part1_over` 944; texts 0x1024,
+0x1091, 0x1092 (a choice), 0x1027.
+
+**The goldens.** Against 6a's (114 hashes): `gohma/shot.png` changed. That run's last frame now
+shows the blue warp, where a placeholder stood; proved by taking `Door_Warp1` out of the overlays,
+which brings it back to the same bytes. The other 113 are the same bytes. New: `blue_warp` (the
+trace and the end), `blue_warp_float` (frame 200), `blue_warp_forest` (700), each the same bytes
+over two runs. Logged in [golden/README.md](../golden/README.md): 118 hashes, 87 cases.
+
+### Decisions
+
+- **[ADR 0052](adr/0052-the-blue-warp.md):** `Door_Warp1` for its two kinds here, the rest
+  logged; a bake segment bound to a draw's matrix; one-point 9703; Player's arrival by blue warp;
+  Kokiri Forest's first cutscene to its terminator; `LOD_FRACTION` left 0.
+- **The chain after part 1** (Ganondorf's tale in the castle town's cutscene map, the world's
+  creation in four scenes, the Triforce and the Deku Tree's death back in Kokiri Forest, with
+  `Demo_Effect`) is in the backlog (#23), as chosen.
+
+### Known gaps
+
+- **After part 1** the game goes on into the chain with placeholders (BACKLOG #23).
+- **The warp's second tile** isn't blended in: the combiner's `LOD_FRACTION` is 0 in the shader
+  (BACKLOG #24).
+- **No rumble** (logged).
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-blue-warp.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-blue-warp.bat
+```
+
+### By hand
+
+`game-blue-warp.bat` (or menu 84). WASD the stick, Space A.
+1. **The warp:** in front of you a blue ring grows from the floor, its light rising, with a
+   steady hum.
+2. **In:** walk into it: a chime, the camera swings in close round Link as he steps to its centre,
+   then rises with him as he floats up in the light; the screen fades to white.
+3. **Out:** from white, Link falls from high above the Deku Tree's meadow and lands; the camera
+   shows the Deku Tree, and his texts follow (Space through them; a choice, the first is fine).
+4. **After:** the cutscene goes on to Ganondorf's tale, whose scenes aren't ported: expect
+   placeholders there (BACKLOG #23).
+- **What to report:** the warp's look (its rings, the scroll, the light), the float's speed, the
+  fade, the fall and landing, and the Deku Tree's cutscene up to the end of his texts.
+
+## Milestone 6c: the run through the Deku Tree
+
+**Answer:** done, and with it milestone 6 and GAME-05. Room 9's door, unbarred once its hint
+scrubs' puzzle is solved, leads into room 11, whose floor is the scene's exit 2. That exit takes
+Link into Queen Gohma's room. The whole Deku Tree now runs from one `Play_Init` in a test, the
+travel test carried on: every room's connection, room 11, her fight and the heart container,
+then the blue warp out to the Deku Tree's emerald cutscene, part 1. The short exit run, room 9
+into her room, is the golden `boss_room`, with `boss_room_door`.
+
+No port was needed: room 11 has no actors, and its exit already worked like every other floor
+exit. The pack is unchanged (format 27, `out/data24`). No ADR: 6c decides nothing about how the
+game is built (a chained run and a debug start's option, below).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 86 to 88):
+- `test-boss-room.bat`: the milestone's tests, then 6a's and 6b's, and the game's debug starts;
+- `game-boss-room.bat`: room 9 cleared (`--clear 9`, `deku-tree-slingshot`): through room 11 into
+  her room, her fight, the warp;
+- `sandbox-boss-room.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestone 6 is done (6a, 6b and 6c), and with it GAME-05, Phase 6 of the
+[roadmap](ROADMAP.md).
+
+### What was built
+
+- **`Route::BossRoom`** (the `boss-room` script): room 9's debug start with the room cleared
+  (`start_clears`), through its door to room 11 (transition 4, `Task::OpenSlidingDoor`), onto room
+  11's floor (`Task::Exit` to `ENTR_DEKU_TREE_BOSS_0`); step `boss_room`.
+- **`Playthrough::for_routes`:** several routes' tasks as one run, their frame caps added up
+  (the travel test's `BossRoom`, `Gohma` and `BlueWarp`).
+- **The travel test carried on** (`travel.rs`): after room 9's puzzle, the three routes chained,
+  each step checked against the C:
+  - room 11 through the door;
+  - `SCENE_DEKU_TREE_BOSS` at its corridor (room 1);
+  - her room cleared once she's gone;
+  - the heart's collectible flag and a heart more;
+  - the Kokiri Emerald;
+  - Kokiri Forest;
+  - `EVENTCHKINF_BEGAN_GOHMA_BATTLE` at the end.
+- **`--clear` for the game** (`oot.exe --clear 9`): rooms set cleared after `Play_Init`, before
+  `--room` (`Flags_SetClear`), as `Route::start_clears` does for the routes.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game25`, `OOT_DATA_DIR=out/data24`):
+731 passed, 0 failed, 1 ignored (729 before); 2 are new, and the travel test runs further.
+- `oot_actors --test boss_room`: the exit's run. Room 9 starts cleared; room 11 is reached
+  through the door; one scene change; `ENTR_DEKU_TREE_BOSS_0` at room 1; Link standing.
+- `oot --test start`, `clear_starts_room_9_with_its_door_open`: with `--clear 9`, room 9's door to
+  room 11 starts unbarred; without it, barred.
+- `oot_actors --test travel`: the whole Deku Tree, 10,663 frames (under the 12,000 asserted).
+  Room 9 is reached at 7,406. From there, counted from the chained run's start:
+
+  | Step | Frame |
+  |---|---|
+  | The door | 152 |
+  | Her room | 213 |
+  | Looked at | 576 |
+  | Her battle | 825 |
+  | Defeated | 1,417 |
+  | Gone | 1,804 |
+  | The heart | 1,995 |
+  | Into the warp | 2,056 |
+  | Out | 2,209 |
+  | Arrived | 2,289 |
+  | Part 1's terminator | 2,861 |
+
+**The exit run** (`Route::BossRoom`, `--script boss-room`, `deku-tree-slingshot`):
+`door_opened` 251, `boss_room` 313.
+
+**The goldens.** Against 6b's 118 hashes, all are the same bytes; the `--clear` option and
+`for_routes` change no run. New:
+- `boss_room`: the trace and the end, Link in her room's corridor;
+- `boss_room_door`: frame 265, Link through the door into room 11.
+
+Each is the same bytes over two runs. Logged in [golden/README.md](../golden/README.md): 121
+hashes, 89 cases.
+
+### Known gaps
+
+- **The travel test isn't the game from the Deku Tree's entrance.** It starts on room 0's top
+  floor (`Route::Shutter`'s debug start) with the room's enemies killed. Link is placed twice:
+  - on the top floor for the drop to room 3 (the scripted vine climb falls short; by hand it
+    doesn't, BACKLOG #17);
+  - by room 9's third hint scrub to catch it.
+
+  The rest is played, as in 4c and 5a.
+- **After part 1,** BACKLOG #23 and #24 stand as in 6b.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\test-boss-room.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-boss-room.bat
+```
+
+### By hand
+
+`game-boss-room.bat` (or menu 87). WASD the stick, Q is Z, E is B, Space A, L the slingshot (C-Right).
+1. **Room 9's door:** face the door ahead and to the left with its bars open, and press Space to
+   go through: the camera follows Link into a short dark corridor, room 11.
+2. **Into her room:** walk on across room 11's floor. The screen fades and Link stands at the
+   start of Queen Gohma's corridor.
+3. **On:** her fight and the warp play as in `game-gohma.bat` and `game-blue-warp.bat`, one after
+   the other, with nothing reloaded between.
+- **What to report:** the door and the room change, room 11's look, the fade into her room, and
+  anything that differs from playing 6a and 6b from their own debug starts.

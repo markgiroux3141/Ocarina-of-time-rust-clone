@@ -72,7 +72,7 @@ pub fn mesh(img: DecodedImage, fmt: u8, siz: u8) -> DrawList {
     let mut d = DrawList::default();
     let hash = img.rgba.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
     let (w, h) = (img.width as f32, img.height as f32);
-    let image = d.intern_texture(hash, || TextureImage { image: img, fmt, siz, hash, source_segments: 0 });
+    let image = d.intern_texture(hash, || TextureImage { image: img, fmt, siz, hash, source_segments: 0, source_addr: None });
     // Copy mode has no combiner; as 1-cycle (Room_DrawBackground2D's scaled path):
     // gDPSetCombineLERP(0, 0, 0, TEXEL0, 0, 0, 0, 1, 0, 0, 0, TEXEL0, 0, 0, 0, 1).
     let cc = combiner::encode([15, 15, 31, 1, 7, 7, 7, 6], [15, 15, 31, 1, 7, 7, 7, 6]);

@@ -115,7 +115,17 @@ this ROM on an SRAM image the play state carries (the save file `out\saves\<ROM 
 bound by the apps only), every field of `Save` laid out in the C's bytes, the pause menu's save
 prompt and its page, the game over's `Sram_WriteSave`, `--file N` (and `--new-file`) for the file
 select's load, the debug starts on an SRAM in memory, F5 the console's reset, `ootx sram` for the
-file select's erase and copy; pack format 26. Milestone 5 is done. Next: milestone 6, Gohma.
+file select's erase and copy; pack format 26. Milestone 5 is done. Milestone 6, Gohma, is split in three (decided
+2026-10-09): 6a, Queen Gohma, is done ([ADR 0050](adr/0050-queen-gohma.md),
+[ADR 0051](adr/0051-textures-replaced-by-source-and-the-object-ram.md)): `Boss_Goma` whole with
+her intro and death (her own sub camera), the boss title card, her draw with her decay (textures
+replaced by their source address, the object RAM the game writes), `Item_B_Heart`, the jump
+slash pulled forward; pack format 27. 6b, the blue warp, is done
+([ADR 0052](adr/0052-the-blue-warp.md)): `Door_Warp1` for this ROM's Deku Tree, its portal on two
+matrices the draw computes, one-point 9703, Player's arrival by blue warp, Kokiri Forest's emerald
+cutscene to its terminator. 6c, the run through the Deku Tree, is done: room 9 into Gohma's
+room as a short golden, and the travel test carried on through her fight and the warp, the whole
+Deku Tree from one `Play_Init`. Milestone 6 is done, and with it Phase 6 (GAME-05).
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -265,7 +275,7 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
    narration's placement and Link's poses checked against the C by tests (no port bugs found);
    the look by hand is the user's.
 
-## Phase 6: the Deku Tree (GAME-05)
+## Phase 6: the Deku Tree (GAME-05, done)
 
 **Decisions (2026-10-01, [ADR 0028](adr/0028-phase-6-master-quest-and-the-decomp-upgrade.md)):**
 - **Master Quest.** The user chose the debug ROM's Deku Tree: gc-eu-mq-dbg stays the only ROM
@@ -375,11 +385,33 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
        Yes: the save written, the menu closed; the console's reset loads the file back with its
        state restored. *(Done: `Route::Save`, the golden `save` with its SRAM image,
        `save_prompt_turn` and `save_prompt`.)*
-6. **Gohma:**
+6. **Gohma,** split in three (decided 2026-10-09; see [GAME-05](GAME-05-deku-tree.md) milestone
+   6's survey):
    - `Boss_Goma` (about 2,100 lines); her eggs and larvae (`En_Goma`) are pulled forward to 3b;
    - the boss room's camera and cutscenes (Phase 4's cutscene system);
    - the heart container, the blue warp out.
    - **Exit:** a scripted run through the Deku Tree to Gohma's defeat.
+   - **6a, Queen Gohma** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 6a,
+     [ADR 0050](adr/0050-queen-gohma.md), [ADR 0051](adr/0051-textures-replaced-by-source-and-the-object-ram.md)):
+     `Boss_Goma` whole (her intro and death are her own actions, on her own sub camera), her draw
+     and decay, `TitleCard_InitBossName`, `Item_B_Heart` whole, the slab's quake on her camera,
+     Player's jump slash pulled forward.
+     - **Exit:** from the boss room's entrance, her intro, the fight, her death, the heart
+       container taken. *(Done: `Route::Gohma`, the golden `gohma` with `gohma_title` and
+       `gohma_decay`.)*
+   - **6b, the blue warp** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 6b,
+     [ADR 0052](adr/0052-the-blue-warp.md)): `Door_Warp1` for this ROM's Deku Tree (the child warp;
+     the destination warp at Kokiri Forest's arrival), one-point 9703, Player's blue-warp arrival
+     (start mode 2), Kokiri Forest's first cutscene to its terminator.
+     - **Exit:** into the warp, out with the Kokiri Emerald, the arrival and the Deku Tree's texts.
+       *(Done: `Route::BlueWarp`, the golden `blue_warp` with `blue_warp_float` and
+       `blue_warp_forest`.)*
+   - **6c, through the Deku Tree** (done: see [GAME-05](GAME-05-deku-tree.md) milestone 6c):
+     room 11's exit floor; the full run as a test (the travel test carried on through her fight
+     and the warp); a short golden from room 9 into the boss room; `--clear` for the game.
+     - **Exit:** from room 9's debug start through room 11 into her room. *(Done:
+       `Route::BossRoom`, the golden `boss_room` with `boss_room_door`; the whole Deku Tree in
+       `travel.rs`.)*
 
 ## Cross-cutting debts
 

@@ -255,6 +255,36 @@ pub enum Step {
     /// After the console's reset, the file loaded (`FileSelect_LoadGame`, `Play_Init`) and Link
     /// standing.
     Loaded,
+    /// At the boss room's entrance: Queen Gohma's intro started (`BossGoma_Encounter` state 1).
+    GohmaEntered,
+    /// The intro's first part over: Link free to look for her (state 3).
+    GohmaWaiting,
+    /// Looked at for 16 frames: her eye roll's cutscene (state 4).
+    GohmaLookedAt,
+    /// Her intro over: the fight (`BossGoma_FloorMain`, the camera back).
+    GohmaBattle,
+    /// A seed into her red eye: stunned (`BossGoma_FloorStunned`), the first time.
+    GohmaStunned,
+    /// A sword's hit while she's stunned (her health down), the first time.
+    GohmaHit,
+    /// A seed into her eye on the ceiling: knocked down (`BossGoma_FallStruckDown`), the first time.
+    GohmaKnockedDown,
+    /// Her health gone: `BossGoma_Defeated`.
+    GohmaDefeated,
+    /// Her death's cutscene over: she's gone, the camera back.
+    GohmaGone,
+    /// The heart container taken: a heart more (`Item_B_Heart`, `GI_HEART_CONTAINER_2`).
+    HeartTaken,
+    /// In the blue warp: its one-point cutscene, Link floating up (`DoorWarp1_ChildWarpOut`).
+    WarpEntered,
+    /// Out of the boss room: the scene changed, the emerald and its flags given.
+    WarpedOut,
+    /// Kokiri Forest by blue warp: Link landed (out of `Player_Action_BlueWarpArrive`).
+    Arrived,
+    /// The Deku Tree's emerald, part 1, over: its terminator's transition started.
+    EmeraldPart1Over,
+    /// In Queen Gohma's room (`ENTR_DEKU_TREE_BOSS_0`) by room 11's floor (exit 2), standing.
+    BossRoom,
 }
 
 impl Step {
@@ -324,6 +354,21 @@ impl Step {
             Step::Respawned => "respawned",
             Step::Saved => "saved",
             Step::Loaded => "loaded",
+            Step::GohmaEntered => "gohma_entered",
+            Step::GohmaWaiting => "gohma_waiting",
+            Step::GohmaLookedAt => "gohma_looked_at",
+            Step::GohmaBattle => "gohma_battle",
+            Step::GohmaStunned => "gohma_stunned",
+            Step::GohmaHit => "gohma_hit",
+            Step::GohmaKnockedDown => "gohma_knocked_down",
+            Step::GohmaDefeated => "gohma_defeated",
+            Step::GohmaGone => "gohma_gone",
+            Step::HeartTaken => "heart_taken",
+            Step::WarpEntered => "warp_entered",
+            Step::WarpedOut => "warped_out",
+            Step::Arrived => "arrived",
+            Step::EmeraldPart1Over => "emerald_part1_over",
+            Step::BossRoom => "boss_room",
         }
     }
 }
@@ -395,7 +440,42 @@ pub enum Route {
     /// three hearts and the slingshot on C-Left (GAME-05 milestone 5c), from the scene's spawn
     /// (`deku-tree-save`, a debug start: file 2 of an SRAM in memory).
     Save,
+    /// Queen Gohma's room (`ENTR_DEKU_TREE_BOSS_0`): to the room's entrance, her intro, the
+    /// slingshot aimed up at her on the ceiling until she notices, the fight (seeds into her red
+    /// eye, on the floor and on the ceiling; jump slashes while she's stunned), her death and the
+    /// heart container taken (GAME-05 milestone 6a), from the entrance's spawn with the sword, the
+    /// shield, sticks, nuts and the slingshot on C (`deku-tree-gohma`).
+    Gohma,
+    /// Queen Gohma's room after her defeat (`deku-tree-gohma-cleared`: her init leaves the blue
+    /// warp): into the warp, floating up, the white fade out with the Kokiri Emerald; Kokiri
+    /// Forest by blue warp (falling in, landing) and the Deku Tree's emerald cutscene, part 1,
+    /// read through to its terminator (GAME-05 milestone 6b), from a debug start in front of the
+    /// warp (`BLUE_WARP_START`).
+    BlueWarp,
+    /// Inside the Deku Tree, room 9 with its hint scrubs' puzzle solved (the room cleared, its door
+    /// to room 11 unbarred): through that door, onto room 11's floor (exit 2, `floor_effect` 2: the
+    /// respawn point set, a void out), and into Queen Gohma's room, standing (GAME-05 milestone 6c),
+    /// from room 9's debug start.
+    BossRoom,
 }
+
+/// The `BossRoom` route's door: room 9's to room 11 (transition 4), and in front of it on room
+/// 9's side (it faces room 9, rot y 0x105B).
+pub const ROOM9_DOOR: usize = 4;
+pub const ROOM9_DOOR_FRONT: Vec3 = Vec3::new(-882.0, -1880.0, -932.0);
+
+/// Where the `BlueWarp` route starts Link: 150 in front of the warp her init leaves at (0, -640,
+/// 0), facing it.
+pub const BLUE_WARP_START: (Vec3, i16) = (Vec3::new(0.0, -640.0, 150.0), -0x8000);
+
+/// Where `BossGoma_Encounter` waits for Link: the boss room's entrance (150, 350), within 60.
+pub const GOHMA_ENTRANCE: Vec3 = Vec3::new(150.0, -640.0, 350.0);
+/// Where the `Gohma` route looks up at her from in her intro: halfway from the entrance to the
+/// ceiling's centre.
+pub const GOHMA_LOOK_FROM: Vec3 = Vec3::new(0.0, -640.0, 0.0);
+/// Where the `Gohma` route shoots up at her on the ceiling from: 310 from the ceiling's centre
+/// (-150, -350, where she settles), towards the entrance.
+pub const GOHMA_SHOOT_UP_FROM: Vec3 = Vec3::new(-150.0, -640.0, -40.0);
 
 /// The `Save` route's button (C-Left), and the file the debug start saves to and the reset
 /// loads (file 2: `fileNum` 1).
@@ -584,6 +664,8 @@ impl Route {
     pub fn entrance(self) -> &'static str {
         match self {
             Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause | Route::DungeonMap | Route::GameOver | Route::Save => "ENTR_DEKU_TREE_0",
+            Route::Gohma | Route::BlueWarp => "ENTR_DEKU_TREE_BOSS_0",
+            Route::BossRoom => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -599,6 +681,9 @@ impl Route {
             Route::DungeonMap => Some("deku-tree-compass"),
             Route::GameOver => Some("deku-tree-quarter-heart"),
             Route::Save => Some("deku-tree-save"),
+            Route::Gohma => Some("deku-tree-gohma"),
+            Route::BlueWarp => Some("deku-tree-gohma-cleared"),
+            Route::BossRoom => Some("deku-tree-slingshot"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -613,6 +698,8 @@ impl Route {
             Route::Stick => Some(STICK_START),
             Route::Push => Some(PUSH_START),
             Route::Slingshot => Some(SLINGSHOT_START),
+            Route::BlueWarp => Some(BLUE_WARP_START),
+            Route::BossRoom => Some((Vec3::new(-660.0, -1880.0, -620.0), -0x8000)),
             _ => None,
         }
     }
@@ -632,6 +719,7 @@ impl Route {
     pub fn start_clears(self) -> &'static [i8] {
         match self {
             Route::Slingshot => &[1],
+            Route::BossRoom => &[9],
             _ => &[],
         }
     }
@@ -642,6 +730,7 @@ impl Route {
             Route::Scrub => Some(SCRUB_START_ROOM),
             Route::Push => Some(3),
             Route::Slingshot => Some(1),
+            Route::BossRoom => Some(9),
             _ => None,
         }
     }
@@ -709,6 +798,9 @@ impl Route {
             Route::DungeonMap => "dungeon-map",
             Route::GameOver => "game-over",
             Route::Save => "save",
+            Route::Gohma => "gohma",
+            Route::BlueWarp => "blue-warp",
+            Route::BossRoom => "boss-room",
         }
     }
 
@@ -728,13 +820,16 @@ impl Route {
             Route::DungeonMap => 1000,
             Route::GameOver => 1500,
             Route::Save => 1000,
+            Route::Gohma => 6000,
+            Route::BlueWarp => 3000,
+            Route::BossRoom => 1000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -863,6 +958,30 @@ enum Task {
     Shoot(Vec3, i32, Step),
     /// A until first person is over.
     LeaveFirstPerson,
+    /// To the boss room's entrance until Queen Gohma's intro starts (`Step::GohmaEntered`), then
+    /// idle until its first part is over (`Step::GohmaWaiting`).
+    GohmaIntro,
+    /// In to `GOHMA_LOOK_FROM`, then the slingshot drawn and aimed at her eye on the ceiling
+    /// (C-Right held: no seed shot) until she's noticed and her eye roll starts.
+    GohmaLook(Step),
+    /// Idle (C-Right let go once out of first person) until her intro is over: the fight, the main
+    /// camera back.
+    GohmaWaitBattle(Step),
+    /// The fight (`gohma_fight`), until she's defeated.
+    GohmaFight(Step),
+    /// Idle until her death's cutscene is over: she's gone, Link free.
+    GohmaWaitGone(Step),
+    /// To the heart container and A through its text until it's taken and Link stands.
+    TakeHeart(Step),
+    /// Until the blue warp (`Door_Warp1` 0) has grown in, then into it until it takes Link
+    /// (`DoorWarp1_ChildWarpOut`).
+    IntoWarp(Step),
+    /// Idle until the scene changes.
+    WarpOut(Step),
+    /// Kokiri Forest's arrival: idle as Link falls (`Step::Arrived` once he's landed), A through
+    /// the cutscene's texts (the first choice), until its terminator starts the transition (once
+    /// the script has run).
+    EmeraldPart1(Step),
     /// At the push block (from beside it, lower down) until Link stands on its top.
     ClimbBlock(Step),
 }
@@ -928,6 +1047,8 @@ pub struct Playthrough {
     items_page: u16,
     /// The file `Task::Reset` asks the runner to load.
     reset: Option<usize>,
+    /// A cap on the run's length: its routes' caps added up.
+    max_frames: usize,
 }
 
 impl Default for Playthrough {
@@ -1016,6 +1137,17 @@ impl Playthrough {
                 Task::WaitPauseState(oot_game::kaleido::PAUSE_STATE_OFF, Step::MenuClosed),
                 Task::Reset(SAVE_FILE, Step::Loaded),
             ],
+            Route::Gohma => vec![
+                Task::GohmaIntro,
+                Task::GohmaLook(Step::GohmaLookedAt),
+                Task::GohmaWaitBattle(Step::GohmaBattle),
+                Task::GohmaFight(Step::GohmaDefeated),
+                Task::GohmaWaitGone(Step::GohmaGone),
+                Task::TakeHeart(Step::HeartTaken),
+            ],
+            Route::BlueWarp => vec![Task::IntoWarp(Step::WarpEntered), Task::WarpOut(Step::WarpedOut), Task::EmeraldPart1(Step::EmeraldPart1Over)],
+            // Room 11 has no actors: its floor past the door is the exit.
+            Route::BossRoom => vec![Task::OpenSlidingDoor(ROOM9_DOOR, ROOM9_DOOR_FRONT, Step::DoorOpened), Task::Exit("ENTR_DEKU_TREE_BOSS_0", Some(Step::BossRoom))],
             Route::Push => vec![
                 Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
                 Task::PushBlock(PUSH_BLOCK_HOME, PUSH_BLOCK_FLAG, Step::BlockInPit),
@@ -1048,7 +1180,19 @@ impl Playthrough {
             last_rupees: 0,
             items_page: 0,
             reset: None,
+            max_frames: route.max_frames(),
         }
+    }
+
+    /// `routes`' tasks one after another, as one run from where the first starts (the first
+    /// route's name in messages).
+    pub fn for_routes(routes: &[Route]) -> Playthrough {
+        let mut run = Self::for_route(routes[0]);
+        for &r in &routes[1..] {
+            run.tasks.extend(Self::for_route(r).tasks);
+            run.max_frames += r.max_frames();
+        }
+        run
     }
 
     /// The Kokiri Sword run's tasks; with `rupees`, room 2's two blue rupees picked up on the way
@@ -1290,7 +1434,7 @@ impl Playthrough {
         if self.failure.is_some() || self.finished() {
             return None;
         }
-        if self.frame >= self.route.max_frames() {
+        if self.frame >= self.max_frames {
             self.failure = Some(format!("out of frames in {}", self.at()));
             return None;
         }
@@ -1804,6 +1948,30 @@ impl Playthrough {
                 }
                 Some(self.press(BTN_A))
             }
+            Task::GohmaIntro => self.gohma_intro(w),
+            Task::GohmaLook(step) => self.gohma_look(w, step),
+            Task::GohmaWaitBattle(step) => self.gohma_wait_battle(w, step),
+            Task::GohmaFight(step) => self.gohma_fight(w, step),
+            Task::GohmaWaitGone(step) => self.gohma_wait_gone(w, step),
+            Task::TakeHeart(step) => self.take_heart(w, step),
+            Task::IntoWarp(step) => self.into_warp(w, step),
+            Task::WarpOut(step) => {
+                if self.sub == 0 {
+                    self.scene_changes = w.scene_changes;
+                    self.sub = 1;
+                }
+                if w.scene_changes > self.scene_changes {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some("the blue warp never left the room".into());
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::EmeraldPart1(step) => self.emerald_part1(w, step),
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -2270,6 +2438,336 @@ impl Playthrough {
                 self.tries += 1;
                 if self.tries > 40 {
                     self.sub = 0;
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// Queen Gohma, if she's in the room.
+    fn gohma(w: &PlayState) -> Option<&crate::boss_goma::BossGoma> {
+        w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::boss_goma::BossGoma>(h).filter(|g| !g.actor.killed))
+    }
+
+    /// `step` noted as done on this frame, once, without ending the task.
+    fn mark(&mut self, step: Step) {
+        if !self.steps.iter().any(|(s, _)| *s == step) {
+            self.steps.push((step, self.frame));
+            self.done = Some(step);
+        }
+    }
+
+    /// The slingshot drawn (C-Right held) and aimed in first person at `target`, as `Task::Shoot`
+    /// aims: the pad, and whether the seed in hand points within 64 of it.
+    fn aim_slingshot(w: &PlayState, target: Vec3) -> (PadState, bool) {
+        let p = w.player();
+        let held = PadState { button: eng_input::pad::BTN_CRIGHT, ..Default::default() };
+        let Some(seed) = p.held_actor.and_then(|h| w.actors.actor(h)) else { return (held, false) };
+        if p.unk_836 <= 0 || p.unk_6AD != 2 {
+            return (held, false);
+        }
+        let d = target - seed.world_pos;
+        let want_yaw = eng_math::vec3f_yaw(seed.world_pos, target);
+        let want_pitch = eng_math::atan2_s((d.x * d.x + d.z * d.z).sqrt(), -d.y);
+        let (ey, ep) = (want_yaw.wrapping_sub(seed.world_rot.y) as i32, want_pitch.wrapping_sub(seed.world_rot.x) as i32);
+        let stick = |err: i32| -> i8 {
+            let s = (1..=60).rev().find(|&s: &i32| ((1.0 - eng_math::cos_s((s * 200) as i16)) * 1500.0) as i32 <= err.abs() * 3 / 4).unwrap_or(0);
+            if s == 0 { 0 } else { ((s + 7) * err.signum()) as i8 }
+        };
+        (PadState { button: eng_input::pad::BTN_CRIGHT, stick_x: -stick(ey), stick_y: stick(ep) }, ey.abs() < 64 && ep.abs() < 64)
+    }
+
+    /// `Task::GohmaIntro`'s phases in `sub`: 0 to the room's entrance (her trigger) until she
+    /// holds Link and her intro starts; 1 idle until its first part is over (state 3: Link free).
+    fn gohma_intro(&mut self, w: &PlayState) -> Option<PadState> {
+        let idle = PadState::default();
+        let Some(g) = Self::gohma(w) else {
+            self.wait += 1;
+            if self.wait > 60 {
+                self.failure = Some("no Boss_Goma in the room".into());
+                return None;
+            }
+            return Some(idle);
+        };
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("Gohma's intro stalled in phase {} (state {}, Link at {})", self.sub, g.action_state, w.player().actor.world_pos));
+            return None;
+        }
+        match self.sub {
+            0 => {
+                if g.action_state >= 1 {
+                    self.mark(Step::GohmaEntered);
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                // At full tilt: the corridor's mouth rises 16, which a slow walk stops at.
+                Some(stick_towards(w, GOHMA_ENTRANCE, FULL))
+            }
+            _ => {
+                if g.action_state == 3 {
+                    self.finish(Some(Step::GohmaWaiting));
+                    return None;
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// `Task::GohmaLook`.
+    fn gohma_look(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let Some(g) = Self::gohma(w) else {
+            self.failure = Some("Gohma gone before she was looked at".into());
+            return None;
+        };
+        if g.action_state != 3 {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("Gohma never noticed (state 3: projected {}, Link at {})", g.actor.projected_pos, w.player().actor.world_pos));
+            return None;
+        }
+        // In from the entrance first: from there she's at the edge of the 800 her check allows.
+        if self.sub == 0 {
+            if Self::xz_dist(w.player().actor.world_pos, GOHMA_LOOK_FROM) > 30.0 {
+                return Some(stick_towards(w, GOHMA_LOOK_FROM, FULL));
+            }
+            self.sub = 1;
+        }
+        Some(Self::aim_slingshot(w, g.actor.focus_pos).0)
+    }
+
+    /// `Task::GohmaWaitBattle`.
+    fn gohma_wait_battle(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use crate::boss_goma::Action as GA;
+        let Some(g) = Self::gohma(w) else {
+            self.failure = Some("Gohma gone in her intro".into());
+            return None;
+        };
+        if g.action == GA::FloorMain && w.active_cam_id == oot_game::camera::CAM_ID_MAIN {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("Gohma's intro never ended (state {})", g.action_state));
+            return None;
+        }
+        // C-Right kept until first person is over, so letting it go shoots nothing.
+        Some(if w.player().unk_6AD == 2 { PadState { button: eng_input::pad::BTN_CRIGHT, ..Default::default() } } else { PadState::default() })
+    }
+
+    /// `Task::GohmaFight`, keyed on her action each frame:
+    /// - on the floor and patient (`patienceTimer`), or rearing up to attack: locked on (Z) and the
+    ///   slingshot drawn (C-Right held: aimed at her by the lock-on), a seed let go only while her
+    ///   eye is red and open (her posture, prepare and attack: `EYESTATE_IRIS_FOLLOW_NO_IFRAMES`, so
+    ///   the shot doesn't close it), then 25 frames for it to fly;
+    /// - stunned (`BossGoma_FloorStunned`, `_FloorDamaged`): locked on, the sword out (B), at her
+    ///   eye, a jump slash (A) within 60 of it while she can be hurt, 30 frames apart;
+    /// - on the ceiling or on her way to it: locked on, the slingshot drawn as on the floor; with
+    ///   the lock lost (out of its range), from under the ceiling's centre on the entrance's side,
+    ///   the slingshot aimed up at her in first person; either way a seed let go only while she
+    ///   prepares her eggs (her eye red and open);
+    /// - falling or landing: idle.
+    ///
+    /// Z is pressed only when Link isn't locked on (it toggles: "Switch" targeting).
+    /// `Step::GohmaStunned`, `GohmaHit` and `GohmaKnockedDown` are noted the first time.
+    fn gohma_fight(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use crate::boss_goma::Action as GA;
+        use eng_input::pad::{BTN_CRIGHT, BTN_Z};
+        let idle = PadState::default();
+        let Some(gh) = w.actors.all().into_iter().find(|&h| w.actors.downcast::<crate::boss_goma::BossGoma>(h).is_some_and(|g| !g.actor.killed)) else {
+            self.failure = Some("Gohma gone before her defeat".into());
+            return None;
+        };
+        let g = w.actors.downcast::<crate::boss_goma::BossGoma>(gh).expect("Gohma");
+        if g.action == GA::Defeated {
+            self.finish(Some(step));
+            return None;
+        }
+        self.wait += 1;
+        if self.wait > 4000 {
+            self.failure = Some(format!("the fight with Gohma stalled ({:?}, health {})", g.action, g.actor.col_chk_info.health));
+            return None;
+        }
+        if g.children_gohma_state.iter().any(|&c| c > 0) {
+            self.failure = Some("Gohma laid her eggs: the run doesn't fight her larvae".into());
+            return None;
+        }
+        if g.action == GA::FloorStunned {
+            self.mark(Step::GohmaStunned);
+        }
+        if g.action == GA::FallStruckDown {
+            self.mark(Step::GohmaKnockedDown);
+        }
+        if (g.actor.col_chk_info.health as i8) < 10 {
+            self.mark(Step::GohmaHit);
+        }
+        let p = w.player();
+        let eye = g.actor.focus_pos;
+        let locked = p.focus_actor == Some(gh);
+        // Z's edge, when not locked on yet.
+        let lock = |pad: &mut PadState, prev: PadState| {
+            if !locked && prev.button & BTN_Z == 0 {
+                pad.button |= BTN_Z;
+            }
+        };
+        // `tries`: the frames since the last seed or slash; `sub`: the frames C-Right has been held.
+        self.tries += 1;
+        let eye_open = g.eye_closed_timer == 0 && g.eye_lid_bottom_rot_x > -0x400;
+        let red = matches!(g.action, GA::FloorAttackPosture | GA::FloorPrepareAttack | GA::FloorAttack);
+        let ceiling = matches!(g.action, GA::CeilingMoveToCenter | GA::CeilingIdle | GA::CeilingPrepareSpawnGohmas | GA::WallClimb);
+        match g.action {
+            GA::FloorStunned | GA::FloorDamaged => {
+                self.sub = 0;
+                if p.unk_6AD != 0 {
+                    return Some(self.press(BTN_A));
+                }
+                let near = Self::xz_dist(p.actor.world_pos, eye) < 60.0;
+                let mut pad = if near { idle } else { stick_towards(w, eye, FULL) };
+                lock(&mut pad, self.prev);
+                if !locked {
+                    return Some(pad);
+                }
+                if p.held_item_id != oot_game::item::ITEM_SWORD_KOKIRI {
+                    // The sword out (a slash).
+                    return Some(self.press(BTN_B));
+                }
+                if near && g.action == GA::FloorStunned && g.invincibility_frames == 0 && self.tries > 30 {
+                    self.tries = 0;
+                    pad.button |= BTN_A;
+                }
+                Some(pad)
+            }
+            _ if red || ceiling || (g.patience_timer != 0 && matches!(g.action, GA::FloorMain | GA::FloorIdle)) => {
+                if self.tries < 25 {
+                    self.sub = 0;
+                    return Some(idle);
+                }
+                let fire_ok = if ceiling { g.action == GA::CeilingPrepareSpawnGohmas && eye_open } else { red && eye_open };
+                if p.unk_6AD == 2 {
+                    // In first person (the lock lost on the ceiling).
+                    let (pad, on) = Self::aim_slingshot(w, eye);
+                    if on && fire_ok {
+                        self.tries = 0;
+                        return Some(idle);
+                    }
+                    return Some(pad);
+                }
+                if !locked {
+                    if ceiling {
+                        let stand = GOHMA_SHOOT_UP_FROM;
+                        if Self::xz_dist(p.actor.world_pos, stand) > 20.0 {
+                            let mut pad = stick_towards(w, stand, FULL);
+                            lock(&mut pad, self.prev);
+                            return Some(pad);
+                        }
+                        // Out of the lock-on's range: first person.
+                        return Some(Self::aim_slingshot(w, eye).0);
+                    }
+                    let mut pad = idle;
+                    lock(&mut pad, self.prev);
+                    return Some(pad);
+                }
+                // Locked on: C-Right held draws the slingshot aimed at her.
+                self.sub += 1;
+                if p.held_actor.is_some() && self.sub > 10 && fire_ok {
+                    self.tries = 0;
+                    self.sub = 0;
+                    return Some(idle);
+                }
+                Some(PadState { button: BTN_CRIGHT, ..idle })
+            }
+            _ => {
+                self.sub = 0;
+                if p.unk_6AD != 0 {
+                    return Some(self.press(BTN_A));
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// `Task::IntoWarp`.
+    fn into_warp(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use crate::door_warp1::{Action as WA, DoorWarp1, WARP_DUNGEON_CHILD};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some("the blue warp never took Link".into());
+            return None;
+        }
+        let warp = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<DoorWarp1>(h).filter(|d| d.actor.params == WARP_DUNGEON_CHILD && !d.actor.killed));
+        match warp {
+            Some(d) if d.action == WA::ChildWarpOut => {
+                self.finish(Some(step));
+                None
+            }
+            Some(d) if d.action == WA::ChildWarpIdle => Some(stick_towards(w, d.actor.world_pos, SLOW)),
+            _ => Some(idle),
+        }
+    }
+
+    /// `Task::EmeraldPart1`.
+    fn emerald_part1(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 2400 {
+            self.failure = Some(format!("the emerald's part 1 never ended (cutscene frame {})", w.cs_ctx.frames));
+            return None;
+        }
+        if w.player().action != PA::BlueWarpArrive {
+            self.mark(Step::Arrived);
+        }
+        // `sub`: the script seen running (the fade in from the warp is a transition too).
+        if w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            self.sub = 1;
+        }
+        if self.sub == 1 && w.transition.trigger == oot_game::transition::TRANS_TRIGGER_START {
+            self.finish(Some(step));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+        }
+        Some(idle)
+    }
+
+    /// `Task::GohmaWaitGone`.
+    fn gohma_wait_gone(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        self.wait += 1;
+        if self.wait > 2000 {
+            self.failure = Some("Gohma's death never ended".into());
+            return None;
+        }
+        if Self::gohma(w).is_none() && w.active_cam_id == oot_game::camera::CAM_ID_MAIN && Self::settled(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        Some(PadState::default())
+    }
+
+    /// `Task::TakeHeart`: at the heart container (`Item_B_Heart`) until it's taken, A through its
+    /// text, then until Link stands.
+    fn take_heart(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 1200 {
+            self.failure = Some("the heart container was never taken".into());
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+        }
+        let heart = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::item_b_heart::ItemBHeart>(h).filter(|b| !b.actor.killed));
+        match heart {
+            Some(b) => Some(stick_towards(w, b.actor.world_pos, SLOW)),
+            None => {
+                if Self::settled(w) {
+                    self.finish(Some(step));
+                    return None;
                 }
                 Some(idle)
             }

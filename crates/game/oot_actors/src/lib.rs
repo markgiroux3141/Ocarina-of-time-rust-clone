@@ -27,12 +27,14 @@ use oot_game::spawn::Overlays;
 
 pub mod bg_haka;
 pub mod bg_spot00_hanebasi;
+pub mod boss_goma;
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
 pub mod bg_ydan_maruta;
 pub mod bg_ydan_sp;
 pub mod demo_tre_lgt;
 pub mod door_shutter;
+pub mod door_warp1;
 pub mod dummy_target;
 pub mod elf_msg;
 pub mod elf_msg2;
@@ -66,6 +68,7 @@ pub mod en_tana;
 pub mod en_viewer;
 pub mod en_wonder_item;
 pub mod en_wonder_talk2;
+pub mod item_b_heart;
 pub mod item_shield;
 pub mod obj_bombiwa;
 pub mod obj_hana;
@@ -89,7 +92,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
@@ -149,6 +152,9 @@ pub fn overlays() -> Overlays {
     o.register(obj_bombiwa::ACTOR_OBJ_BOMBIWA, obj_bombiwa::ObjBombiwa::init);
     o.register(en_arrow::ACTOR_EN_ARROW, en_arrow::EnArrow::init);
     o.register(en_m_fire1::ACTOR_EN_M_FIRE1, en_m_fire1::EnMFire1::init);
+    o.register(en_goma::ACTOR_BOSS_GOMA, boss_goma::BossGoma::init);
+    o.register(boss_goma::ACTOR_ITEM_B_HEART, item_b_heart::ItemBHeart::init);
+    o.register(boss_goma::ACTOR_DOOR_WARP1, door_warp1::DoorWarp1::init);
     o
 }
 
@@ -171,6 +177,8 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_shopnuts::bakes());
     v.extend(en_st::bakes());
     v.extend(en_goma::bakes());
+    v.extend(boss_goma::bakes());
+    v.extend(door_warp1::bakes());
     v.extend(en_sw::bakes());
     v.extend(door_shutter::bakes());
     v.extend(bg_ydan_sp::bakes());

@@ -64,6 +64,9 @@ pub struct Interpreter {
     /// The segment each TMEM address (in 8-byte words) was last loaded from, 0xFF if unknown:
     /// the provenance recorded in `TextureImage::source_segments`.
     tmem_src: Vec<u8>,
+    /// The address each TMEM word was last loaded from (`u32::MAX` if unknown): the source
+    /// recorded in `TextureImage::source_addr`.
+    tmem_addr: Vec<u32>,
     rdphalf1: u32,
     current_textures: Option<[Option<(TextureSlot, TileDescriptor)>; 2]>,
     current_material: Option<usize>,
@@ -107,6 +110,7 @@ impl Interpreter {
             timg: (0, 0, 1, 0),
             tmem: Tmem::default(),
             tmem_src: vec![0xFF; 512],
+            tmem_addr: vec![u32::MAX; 512],
             rdphalf1: 0,
             current_textures: None,
             current_material: None,
@@ -489,7 +493,7 @@ impl Interpreter {
         let Some((buf, off)) = self.resolve(addr.wrapping_add(start as u32), bytes) else { return };
         let data = buf[off..off + bytes].to_vec();
         self.tmem.write(tile.tmem as usize * 8, &data);
-        self.mark_tmem(tile.tmem as usize * 8, bytes, ((addr >> 24) & 0xF) as u8);
+        self.mark_tmem(tile.tmem as usize * 8, bytes, ((addr >> 24) & 0xF) as u8, addr.wrapping_add(start as u32));
         self.invalidate();
     }
 
@@ -507,7 +511,7 @@ impl Interpreter {
             let Some((buf, off)) = self.resolve(addr.wrapping_add(start as u32), row_bytes) else { return };
             let data = buf[off..off + row_bytes].to_vec();
             self.tmem.load_row(&tile, i, &data);
-            self.mark_tmem(tile.tmem as usize * 8 + i * Tmem::row_stride(&tile), row_bytes, ((addr >> 24) & 0xF) as u8);
+            self.mark_tmem(tile.tmem as usize * 8 + i * Tmem::row_stride(&tile), row_bytes, ((addr >> 24) & 0xF) as u8, addr.wrapping_add(start as u32));
         }
         self.invalidate();
     }
@@ -530,7 +534,11 @@ impl Interpreter {
                 let img = self.tmem.decode(&tile, tlut_mode);
                 let hash = hash_image(&img, tile.fmt, tile.siz);
                 let source_segments = self.tmem_sources(&tile);
-                let image = self.draw.intern_texture(hash, || TextureImage { image: img, fmt: tile.fmt, siz: tile.siz, hash, source_segments });
+                let source_addr = Some(self.tmem_addr[tile.tmem as usize & 511]).filter(|&a| a != u32::MAX);
+                // Interned by content and source: the same texels from two places stay two
+                // textures, so a draw can replace either (`DrawParams::texture_images`).
+                let key = hash ^ source_addr.map_or(0, |a| (a as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                let image = self.draw.intern_texture(key, || TextureImage { image: img, fmt: tile.fmt, siz: tile.siz, hash, source_segments, source_addr });
                 out[i] = Some((TextureSlot { image, wrap_s: tile.wrap_s(), wrap_t: tile.wrap_t() }, tile));
             }
         }
@@ -538,13 +546,15 @@ impl Interpreter {
         out
     }
 
-    /// Records that TMEM bytes `start..start + len` now hold data from `segment`.
-    fn mark_tmem(&mut self, start: usize, len: usize, segment: u8) {
+    /// Records that TMEM bytes `start..start + len` now hold data from `segment`, loaded from
+    /// `addr` on.
+    fn mark_tmem(&mut self, start: usize, len: usize, segment: u8, addr: u32) {
         if len == 0 {
             return;
         }
         for w in start / 8..=(start + len - 1) / 8 {
             self.tmem_src[w & 511] = segment;
+            self.tmem_addr[w & 511] = addr.wrapping_add((w * 8).saturating_sub(start) as u32);
         }
     }
 

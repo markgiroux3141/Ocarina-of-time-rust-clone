@@ -7,6 +7,10 @@
 //! 24. The importer bakes each scene's as a sprite (`bakes`), the first language's
 //! (`gSaveContext.language` is 0, English); `TitleCard_Draw` draws it centred on (x, y) with the
 //! intensity and alpha as its primitive colour.
+//!
+//! A boss's name (`TitleCard_InitBossName`, Queen Gohma's `gGohmaTitleCardTex`) is a texture in
+//! the boss's object, 128 by 40, more than 0x1000 bytes: `TitleCard_Draw` draws it in two blocks,
+//! 32 rows then the last 8, each a sprite of its own (`boss_bakes`).
 
 use crate::gbi::{Dl, setup_dl};
 use crate::sprite::{Load, Quad, Sprite, SpriteBake, TexSrc};
@@ -23,6 +27,17 @@ pub const PLACE_NAME_HEIGHT: u32 = 24;
 /// A scene's place name sprite.
 pub fn sprite_name(title_file: &str) -> String {
     format!("title/{title_file}")
+}
+
+/// The boss names `TitleCard_InitBossName` shows: the object, the texture's offset in it, its
+/// width and height (`BossGoma_Encounter`'s call: `gGohmaTitleCardTex`, 128 by 40; on PAL the
+/// texture holds the three languages one after another, English first).
+pub const BOSS_NAMES: &[(&str, u32, u8, u8)] = &[("object_goma", 0x19BA8, 128, 40)];
+
+/// The sprite of a boss name's block starting `offset` bytes into its texture (0, then 0x1000
+/// for the rest of one bigger than that).
+pub fn boss_sprite_name(object: &str, tex_offset: u32, offset: u32) -> String {
+    format!("title/boss/{object}/{tex_offset:X}+{offset:X}")
 }
 
 /// `TitleCardContext`.
@@ -67,6 +82,19 @@ impl TitleCardContext {
         self.alpha = 0;
     }
 
+    /// `TitleCard_InitBossName`: a boss's name (`BOSS_NAMES`' `object` and texture `offset`) at
+    /// (x, y), shown for 80 frames at once.
+    #[allow(clippy::too_many_arguments)]
+    pub fn init_boss_name(&mut self, object: &str, offset: u32, x: i16, y: i16, width: u8, height: u8) {
+        self.texture = Some(boss_sprite_name(object, offset, 0));
+        self.x = x;
+        self.y = y;
+        self.width = width;
+        self.height = height;
+        self.duration_timer = 80;
+        self.delay_timer = 0;
+    }
+
     /// `TitleCard_InitPlaceName`: the scene's place name (`title_file`, empty for none) at (x, y),
     /// shown for 80 frames after `delay`.
     #[allow(clippy::too_many_arguments)]
@@ -106,20 +134,31 @@ impl TitleCardContext {
 
     /// `TitleCard_Draw`: the texture rectangle centred on (x, y), `gSPTextureRectangle(x * 4 -
     /// width * 2, y * 4 - height * 2, .. + width * 4 - 4, .. + height * 4 - 1)`, its primitive
-    /// colour the intensity, grey, and the alpha. (A texture taller than 0x1000 bytes is drawn in
-    /// two blocks; the place names are 144 by 24, one.)
+    /// colour the intensity, grey, and the alpha. A texture bigger than 0x1000 bytes (a boss's
+    /// name) is drawn in two blocks: `0x1000 / width` rows, then the rest below them from 0x1000
+    /// on (the place names are 144 by 24, one block).
     pub fn draw(&self, out: &mut Vec<Sprite>) {
         if self.alpha == 0 {
             return;
         }
         let Some(tex) = &self.texture else { return };
-        let (w, h) = (self.width as i32, self.height as i32);
+        let (w, mut h) = (self.width as i32, self.height as i32);
         let x0 = self.x as i32 * 4 - w * 2;
         let y0 = self.y as i32 * 4 - h * 2;
         let x1 = w * 4 + x0 - 4;
-        let y1 = y0 + h * 4 - 1;
+        if w * h > 0x1000 {
+            h = 0x1000 / w;
+        }
+        let y2 = y0 + h * 4;
         let i = self.intensity as u8;
-        out.push(Sprite::rect(tex.clone(), x0 as f32 / 4.0, y0 as f32 / 4.0, x1 as f32 / 4.0, y1 as f32 / 4.0, Some([i, i, i, self.alpha as u8]), None));
+        let color = Some([i, i, i, self.alpha as u8]);
+        out.push(Sprite::rect(tex.clone(), x0 as f32 / 4.0, y0 as f32 / 4.0, x1 as f32 / 4.0, (y2 - 1) as f32 / 4.0, color, None));
+        let rest = self.height as i32 - h;
+        if rest > 0 {
+            // The second block's sprite: the name's, 0x1000 bytes on.
+            let second = tex.strip_suffix("+0").map(|base| format!("{base}+1000")).unwrap_or_else(|| tex.clone());
+            out.push(Sprite::rect(second, x0 as f32 / 4.0, y2 as f32 / 4.0, x1 as f32 / 4.0, (y2 + rest * 4 - 1) as f32 / 4.0, color, None));
+        }
     }
 }
 
@@ -156,4 +195,59 @@ pub fn bakes<'a>(title_files: impl IntoIterator<Item = &'a str>) -> Vec<SpriteBa
         });
     }
     v
+}
+
+/// The boss names to bake (`BOSS_NAMES`): each a block of `0x1000 / width` rows, then one of the
+/// rest, English (the texture's first language), as `TitleCard_Draw` loads them.
+pub fn boss_bakes() -> Vec<SpriteBake> {
+    let mut v = Vec::new();
+    for &(object, offset, width, height) in BOSS_NAMES {
+        let (w, h) = (width as u32, height as u32);
+        let first = if w * h > 0x1000 { 0x1000 / w } else { h };
+        for (block, rows) in [(0u32, first), (0x1000, h - first)] {
+            if rows == 0 {
+                continue;
+            }
+            v.push(SpriteBake {
+                name: boss_sprite_name(object, offset, block),
+                tex: TexSrc::File { file: object.to_string(), offset: offset + block },
+                load: Load::new(G_IM_FMT_IA, G_IM_SIZ_8B, w, rows, G_TX_WRAP),
+                setup: setup_dl_52(),
+                prim: true,
+                env: false,
+                quad: Quad::Rect { s: w, t: rows },
+            });
+        }
+    }
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_boss_name_is_drawn_in_two_blocks() {
+        // BossGoma_Encounter: TitleCard_InitBossName(gGohmaTitleCardTex, 160, 180, 128, 40): shown
+        // for 80 frames at once.
+        let mut t = TitleCardContext::default();
+        let (object, offset, w, h) = BOSS_NAMES[0];
+        t.init_boss_name(object, offset, 160, 180, w, h);
+        assert_eq!((t.duration_timer, t.delay_timer), (80, 0));
+        t.update();
+        assert_eq!((t.alpha, t.intensity), (10, 20));
+        let mut out = Vec::new();
+        t.draw(&mut out);
+        // TitleCard_Draw: 128 * 40 > 0x1000, so 0x1000 / 128 = 32 rows from (96, 160), then the
+        // other 8 from 0x1000 on, below them: x 160 * 4 - 128 * 2 = 384 (96), to 384 + 512 - 4.
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].name, boss_sprite_name(object, offset, 0));
+        assert_eq!(out[1].name, boss_sprite_name(object, offset, 0x1000));
+        assert_eq!(out[0].transform, crate::sprite::rect_transform(96.0, 160.0, 223.0, 191.75));
+        assert_eq!(out[1].transform, crate::sprite::rect_transform(96.0, 192.0, 223.0, 199.75));
+        // The sprites to bake: the two blocks, IA8, 128 by 32 and 128 by 8.
+        let b = boss_bakes();
+        assert_eq!(b.len(), 2);
+        assert_eq!((b[0].name.as_str(), b[1].name.as_str()), (out[0].name.as_str(), out[1].name.as_str()));
+    }
 }

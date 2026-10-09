@@ -24,6 +24,9 @@ use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorCont
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::cutscene::CsCmdActorCue;
 use oot_game::play_scene::{PlayIo, SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR, SCENE_SHADOW_TEMPLE, SCENE_KOKIRI_FOREST};
+/// `SCENE_LAKE_HYLIA`, `SCENE_CHAMBER_OF_THE_SAGES` (`scene_table.h`).
+const SCENE_LAKE_HYLIA: u16 = 0x57;
+const SCENE_CHAMBER_OF_THE_SAGES: u16 = 0x44;
 use oot_game::save::{RESPAWN_MODE_DOWN, RESPAWN_MODE_RETURN};
 use oot_game::scene::EntranceInfo;
 use oot_game::transition::{TRANS_TRIGGER_OFF, TRANS_TRIGGER_START, TRANS_TYPE_FADE_BLACK, TRANS_TYPE_FADE_BLACK_FAST, TRANS_TYPE_FADE_WHITE};
@@ -423,6 +426,10 @@ pub enum Action {
     Roll,
     /// `Player_Action_8084411C`: in the air (jumping or falling).
     Midair,
+    /// `Player_Action_80844AF4`: a jump slash, in the air and landing.
+    JumpSlash,
+    /// `Player_Action_BlueWarpArrive`: arriving by blue warp, falling from 800 up.
+    BlueWarpArrive,
     /// `Player_Action_8084BBE4`: hanging from a ledge.
     Hang,
     /// `Player_Action_8084BDFC`: climbing up from a hang.
@@ -580,6 +587,8 @@ impl Action {
             Action::Turn => "Player_Action_TurnInPlace",
             Action::Roll => "Player_Action_Roll",
             Action::Midair => "Player_Action_8084411C",
+            Action::JumpSlash => "Player_Action_80844AF4",
+            Action::BlueWarpArrive => "Player_Action_BlueWarpArrive",
             Action::Hang => "Player_Action_8084BBE4",
             Action::ClimbUp => "Player_Action_8084BDFC",
             Action::ClimbLedge => "Player_Action_80845668",
@@ -1300,8 +1309,22 @@ impl Player {
                     }
                 }
             }
-            // 1..=7: the Master Sword pedestal, warp songs, blue warps, the jump down into
-            // Kokiri Forest's opening and so on: not ported. Standing still.
+            // Player_StartMode_BlueWarp: falling from 800 up, the warp's arrival pose (its first 24
+            // frames at two thirds), held (PLAYER_STATE1_29); in Lake Hylia's cutscene layer
+            // (the Water Temple's warp) he waits for its frame 305.
+            2 => {
+                self.setup_action(&data, Action::BlueWarpArrive, 0);
+                if play.scene_id == SCENE_LAKE_HYLIA && play.save.scene_layer > 3 {
+                    // av1.isLakeHyliaCs.
+                    self.action_var1 = 1;
+                }
+                self.state1 |= STATE1_29;
+                let a = data.anim("link_okarina_warp_goal");
+                self.skel.change(&data, a, 2.0 / 3.0, 0.0, 24.0, ANIMMODE_ONCE, 0.0);
+                self.actor.world_pos.y += 800.0;
+            }
+            // 1, 3..=7: the Master Sword pedestal, the warp songs, the jump down into Kokiri
+            // Forest's opening and so on: not ported. Standing still.
             m => self.note(format!("start mode {m} (sStartModeFuncs) not ported: standing")),
         }
     }
@@ -1640,6 +1663,8 @@ impl Player {
             Action::Turn => self.action_turn_in_place(env),
             Action::Roll => self.action_roll(env),
             Action::Midair => self.action_8084411c(env),
+            Action::JumpSlash => self.action_80844af4(env),
+            Action::BlueWarpArrive => self.action_blue_warp_arrive(env),
             Action::Hang => self.action_8084bbe4(env),
             Action::ClimbUp => self.action_8084bdfc(env),
             Action::ClimbLedge => self.action_80845668(env),
@@ -5286,7 +5311,10 @@ impl Player {
                 self.func_8083DFE0(speed, yaw);
             }
             self.update_upper_body(env);
-            // func_8083BBA0 (the jump slash in the air) is not ported.
+            // The jump slash from the air (func_8083BBA0), but in a backflip.
+            if !((self.state2 & STATE2_19 != 0 && self.action_var1 == 2) || !self.func_8083BBA0(env)) {
+                return;
+            }
             if self.actor.velocity.y < 0.0 {
                 if self.action_var2 >= 0 {
                     if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 || self.action_var2 == 0 || self.fall_distance > 0 {
@@ -6077,7 +6105,8 @@ impl Player {
     }
 
     /// `Player_ActionHandler_10` (interrupt 10): A while targeting: a side hop or backflip away from the
-    /// stick's forward, or a roll forward (a jump slash with a sword: not ported).
+    /// stick's forward; with the stick forward or let go, a jump slash with a sword in hand that
+    /// can be used, else a roll.
     fn action_handler_10(&mut self, env: &Env) -> bool {
         let floor_effect = self.actor.floor_poly.map(|p| env.col.floor_effect(p)).unwrap_or(0);
         // Room behaviour type 1 is 0 here (not ROOM_TYPE_INDOORS).
@@ -6085,7 +6114,13 @@ impl Player {
             let sp2c = self.stick_dir();
             if sp2c <= 0 {
                 if self.is_z_targeting() {
-                    self.setup_roll(env.data);
+                    // (this->actor.category is ACTORCAT_PLAYER.)
+                    if Self::melee_weapon(self.held_item_ap) != 0 && self.can_update_items(env.data) {
+                        let start = env.data.items.mwa("JUMPSLASH_START");
+                        self.func_8083BA90(env.data, start, 5.0, 5.0);
+                    } else {
+                        self.setup_roll(env.data);
+                    }
                     return true;
                 }
             } else {
@@ -6094,6 +6129,105 @@ impl Player {
             }
         }
         false
+    }
+
+    /// `func_8083BA90`: a jump slash (`arg2`, its start) off the ground at `xz_speed` and
+    /// `y_velocity`, `NA_SE_VO_LI_SWORD_L`.
+    fn func_8083BA90(&mut self, data: &GameData, arg2: usize, xz_speed: f32, y_velocity: f32) {
+        self.func_80837948(data, arg2);
+        self.setup_action(data, Action::JumpSlash, 0);
+        self.state3 |= STATE3_1;
+        self.current_yaw = self.actor.shape_rot.y;
+        self.linear_velocity = xz_speed;
+        self.actor.velocity.y = y_velocity;
+        self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND;
+        self.hover_boots_timer = 0;
+        self.play_jumping_sfx();
+        self.play_voice_sfx(NA_SE_VO_LI_SWORD_L);
+    }
+
+    /// `func_8083BBA0`: the jump slash from the air (at 3 across and 4.5 up), off a floor that
+    /// allows it.
+    fn func_8083BBA0(&mut self, env: &Env) -> bool {
+        if self.func_8083BB20() && self.s.floor_type != FLOOR_TYPE_7 {
+            let start = env.data.items.mwa("JUMPSLASH_START");
+            self.func_8083BA90(env.data, start, 3.0, 4.5);
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_80844AF4`: the jump slash: falling at -1.2 with the slash's swing
+    /// (`func_80842DF4`, cut short against a wall); in the air steered as a jump is, then on
+    /// landing (`func_80843E64`, unless the fall killed him) its finish (the start's attack + 2),
+    /// `unk_845` 3, the landing's sound.
+    fn action_80844af4(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5;
+        self.actor.gravity = -1.2;
+        self.skel.update(data);
+        if !self.func_80842df4(env) {
+            self.func_8084285C(env, 6.0, 7.0, 99.0);
+            if !self.grounded() {
+                let (_, speed, _) = self.get_movement_speed_and_yaw(env, 0.0);
+                let yaw = self.current_yaw;
+                self.func_8083DFE0(speed, yaw);
+                return;
+            }
+            if self.func_80843E64(env) >= 0 {
+                self.melee_weapon_animation += 2;
+                let a = self.melee_weapon_animation;
+                self.func_80837948(data, a);
+                self.unk_845 = 3;
+                self.play_landing_sfx();
+            }
+        }
+    }
+
+    /// `Player_Action_BlueWarpArrive`: falling from the blue warp (held still in Lake Hylia's
+    /// cutscene until its frame 305); within 150 of the floor the pose plays, slowing the fall
+    /// towards 2 up; landed, the landing's sound and the pose to its end; then in Kokiri Forest a
+    /// pending cutscene mode takes over, else standing. In the Chamber of the Sages a pending mode
+    /// takes over at once. While a script gives Link a cue, he stays over its start (his height
+    /// his own).
+    fn action_blue_warp_arrive(&mut self, env: &Env) {
+        let data = env.data;
+        if self.action_var1 != 0 && env.cs_frames < 305 {
+            self.actor.gravity = 0.0;
+            self.actor.velocity.y = 0.0;
+        } else if self.s.floor_dist < 150.0 {
+            if self.skel.update(data) {
+                // av2.playedLandingSfx.
+                if self.action_var2 == 0 {
+                    if self.actor.bg_check_flags & BGCHECKFLAG_GROUND != 0 {
+                        self.skel.end_frame = self.skel.anim_length - 1.0;
+                        self.play_landing_sfx();
+                        self.action_var2 = 1;
+                    }
+                } else {
+                    if env.scene_id == SCENE_KOKIRI_FOREST && self.start_cs_action(data) {
+                        return;
+                    }
+                    self.func_80853080(data);
+                }
+            }
+            smooth_step_to_f(&mut self.actor.velocity.y, 2.0, 0.3, 8.0, 0.5);
+        }
+        if env.scene_id == SCENE_CHAMBER_OF_THE_SAGES && self.start_cs_action(data) {
+            return;
+        }
+        if env.cs_state != oot_game::cutscene::CS_STATE_IDLE
+            && let Some(cue) = env.cs_link_action
+        {
+            let saved_y = self.actor.world_pos.y;
+            let (x, z, teleported) = (self.actor.world_pos.x, self.actor.world_pos.z, self.actor.teleported);
+            self.func_808529D0(env, &cue);
+            self.actor.world_pos.y = saved_y;
+            // Held over the cue's start: blended as he falls unless he's moved across.
+            if (self.actor.world_pos.x, self.actor.world_pos.z) == (x, z) {
+                self.actor.teleported = teleported;
+            }
+        }
     }
 
     /// `func_8083BCD0`: hop in direction `arg2` (1 left, 2 back = backflip, 3 right).

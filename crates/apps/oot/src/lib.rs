@@ -74,6 +74,9 @@ pub struct Options {
     /// With an entrance: switch flags set after `Play_Init` (and `room`), as if pressed
     /// (`Flags_SetSwitch`; the actors see them on their next update).
     pub switches: Vec<i32>,
+    /// With an entrance: rooms set cleared after `Play_Init`, before `room` (`Flags_SetClear`:
+    /// their enemies beaten, their barred doors open).
+    pub clears: Vec<i8>,
     /// Child Link.
     pub child: bool,
     /// A pack file or loose folder to use instead of the default pack.
@@ -163,6 +166,8 @@ pub struct Assets {
     pub start_at: Option<(Vec3, i16)>,
     /// With an entrance: the switch flags to set after `Play_Init` (`--switch`).
     pub start_switches: Vec<i32>,
+    /// With an entrance: the rooms to set cleared after `Play_Init` (`--clear`).
+    pub start_clears: Vec<i8>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
     /// Open the output device (`Options::audio`), the sequence to force (`Options::music`), the
@@ -244,6 +249,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         start_room: o.room,
         start_at: None,
         start_switches: o.switches.clone(),
+        start_clears: o.clears.clone(),
         scene_name: o.scene.clone(),
         spawn_index: o.spawn,
         audio: o.audio,
@@ -482,6 +488,9 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
         match PlayState::play_init_with(g.clone(), a.data.clone(), a.rules.clone(), save, audio) {
             Ok(mut w) => {
                 w.sram = sram;
+                for &room in &a.start_clears {
+                    w.flags.set_clear(room);
+                }
                 if let Some(r) = a.start_room {
                     // Room_RequestNewRoom, a frame for it to load, then Room_FinishRoomChange.
                     if w.room_request(r) {

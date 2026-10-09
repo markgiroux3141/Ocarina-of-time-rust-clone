@@ -260,6 +260,7 @@ impl ObjectSegments {
         let mut bindings = self.bindings(file, &data);
         let mut builtin = vec![(0x0C, cull_back_builtin())];
         let mut dynamic = 0u16;
+        let mut matrices: Vec<(u8, eng_gfx::BoneId)> = Vec::new();
         for (seg, s) in &bake.segments {
             match s {
                 BakeSegment::Texture { file: f, symbol } => {
@@ -302,6 +303,10 @@ impl ObjectSegments {
                 BakeSegment::Bytes(bytes) => {
                     bindings.push(Binding { segment: *seg, buf: bytes.as_slice().into(), base: 0 });
                 }
+                BakeSegment::Matrix(bone) => {
+                    anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: a matrix segment outside display lists", bake.name);
+                    matrices.push((*seg, *bone));
+                }
             }
         }
         let prelude: Vec<u32> = bake.prelude.iter().map(|&s| (s as u32) << 24).collect();
@@ -313,6 +318,10 @@ impl ObjectSegments {
                 }
                 for (seg, s) in &builtin {
                     it.segments[*seg as usize & 0xF] = Some(s.clone());
+                }
+                // A matrix the draw sets: the list's gSPMatrix of it puts the vertices on its bone.
+                for &(seg, bone) in &matrices {
+                    it.segments[seg as usize & 0xF] = Some(Segment::Matrices(vec![bone]));
                 }
                 it.apply_setup_dl_25();
                 it.dynamic_segments = dynamic;

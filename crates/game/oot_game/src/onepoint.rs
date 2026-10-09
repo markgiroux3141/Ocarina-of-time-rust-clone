@@ -533,7 +533,7 @@ impl PlayState {
     ///
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
-    /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9806, 9908). The
+    /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
     pub fn onepoint_cutscene_set_info(&mut self, sub: i16, cs_id: i16, actor: Option<CamActor>, timer: i16) -> i32 {
@@ -695,6 +695,24 @@ impl PlayState {
                 let t = self.onepoint.table("D_801215BC");
                 self.onepoint.kf(t, 0).timer_init = timer;
                 set_cs_info(self, "D_801215BC", 1);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            9703 => {
+                // Door_Warp1's child warp: from the view, in close round Link, then up with him.
+                let t = self.onepoint.table("D_80123894");
+                {
+                    let k = self.onepoint.kf(t, 0);
+                    k.at_target_init = view.at;
+                    k.eye_target_init = view.eye;
+                    k.fov_target_init = view.fov;
+                }
+                if self.save.adult {
+                    // LINK_IS_ADULT.
+                    let k = self.onepoint.kf(t, 1);
+                    k.at_target_init.y = 60.0;
+                    k.eye_target_init.y = 52.0;
+                }
+                set_cs_info(self, "D_80123894", 3);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             3140 => {

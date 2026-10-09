@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 26;
+pub const FORMAT_VERSION: u32 = 27;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -205,6 +205,10 @@ pub enum BakeSegment {
     GrayRgba32 { file: String, offset: u32, pixels: u32 },
     /// Data the draw code builds (a skybox's `roomVtx`).
     Bytes(Vec<u8>),
+    /// A matrix the draw computes every frame (`gSPSegment(seg, MATRIX_FINALIZE(...))`, loaded by
+    /// the list's `gSPMatrix`): the vertices loaded under it follow the draw's bone `bone`
+    /// (`DrawCmd::bones`). Only for display lists (`BakeBody::DLists`).
+    Matrix(eng_gfx::BoneId),
 }
 
 /// What a bake draws.
