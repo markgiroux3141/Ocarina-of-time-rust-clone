@@ -32,6 +32,7 @@ pub const G_TX_RENDERTILE: u32 = 0;
 pub mod cc_ab {
     pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
+    pub const TEXEL1: u32 = 2;
     pub const PRIMITIVE: u32 = 3;
     pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
@@ -45,6 +46,7 @@ pub mod cc_c {
     pub const PRIMITIVE: u32 = 3;
     pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
+    pub const PRIM_LOD_FRAC: u32 = 14;
     pub const ZERO: u32 = 31;
 }
 /// The colour d slot.
@@ -178,6 +180,25 @@ impl Dl {
         self.pipe_sync();
         self.set_tile_full(fmt, siz, ((width * line_bytes) + 7) >> 3, 0, G_TX_RENDERTILE, pal, cmt, maskt, shiftt, cms, masks, shifts);
         self.set_tile_size(G_TX_RENDERTILE, 0, 0, (width - 1) << 2, (height - 1) << 2);
+    }
+    /// `gDPLoadMultiBlock(timg, tmem, rtile, fmt, siz, width, height, pal, cms, cmt, masks,
+    /// maskt, shifts, shiftt)` for an 8-, 16- or 32-bit texture: `gDPLoadTextureBlock` at `tmem`
+    /// onto tile `rtile`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn load_multi_block(&mut self, addr: u32, tmem: u32, rtile: u32, fmt: u32, siz: u32, width: u32, height: u32, pal: u32, cms: u32, cmt: u32, masks: u32, maskt: u32, shifts: u32, shiftt: u32) {
+        let (load_siz, incr, shift, bytes, line_bytes) = match siz {
+            G_IM_SIZ_8B => (G_IM_SIZ_16B, 1, 1, 1, 1),
+            G_IM_SIZ_16B => (G_IM_SIZ_16B, 0, 0, 2, 2),
+            G_IM_SIZ_32B => (G_IM_SIZ_32B, 0, 0, 4, 2),
+            _ => panic!("gDPLoadMultiBlock takes 8, 16 or 32 bits"),
+        };
+        self.set_timg(fmt, load_siz, 1, addr);
+        self.set_tile_full(fmt, load_siz, 0, tmem, G_TX_LOADTILE, 0, cmt, maskt, shiftt, cms, masks, shifts);
+        self.load_sync();
+        self.load_block(G_TX_LOADTILE, 0, 0, ((width * height + incr) >> shift) - 1, calc_dxt(width, bytes));
+        self.pipe_sync();
+        self.set_tile_full(fmt, siz, ((width * line_bytes) + 7) >> 3, tmem, rtile, pal, cmt, maskt, shiftt, cms, masks, shifts);
+        self.set_tile_size(rtile, 0, 0, (width - 1) << 2, (height - 1) << 2);
     }
     /// `gDPLoadTextureBlock_4b(timg, fmt, width, height, pal, cms, cmt, masks, maskt, shifts,
     /// shiftt)`.

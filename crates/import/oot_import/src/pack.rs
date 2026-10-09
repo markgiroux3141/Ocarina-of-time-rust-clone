@@ -252,7 +252,7 @@ fn import_tables(p: &Project, w: &PackWriter, tally: &mut Tally) -> Result<Playe
     w.put(keys::ITEM_DROPS, &crate::tables::load_item_drops(decomp).context("the item drop tables")?)?;
     w.put(keys::INTERFACE, &crate::tables::load_interface(decomp, &st).context("the interface tables")?)?;
     w.put(keys::ITEMS, &crate::tables::load_items(decomp).context("the item tables")?)?;
-    w.put(keys::MAP, &crate::map::load(decomp).context("the map tables")?)?;
+    w.put(keys::MAP, &crate::map::load(decomp, &p.rom).context("the map tables")?)?;
     import_cutscenes(p, &st, w, tally).context("the cutscenes")?;
     w.put(keys::ELF_MESSAGES, &crate::elf_message::load(decomp, &p.rom).context("the C-Up texts")?)?;
     Ok(rules)

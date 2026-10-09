@@ -3,8 +3,8 @@
 @rem
 @rem A session that builds into a new target folder, or imports a new pack format into a new
 @rem data folder, changes these two names.
-set "TARGET_NAME=game22"
-set "DATA_NAME=data21"
+set "TARGET_NAME=game23"
+set "DATA_NAME=data22"
 
 @rem The repo's root: two folders up from this file.
 for %%I in ("%~dp0..\..") do set "REPO=%%~fI"

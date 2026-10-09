@@ -384,6 +384,35 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "deku-tree-compass",
+        about: "deku-tree-inside, the Deku Tree's compass (Item_Give(ITEM_DUNGEON_COMPASS) at mapIndex 0), and its 3F, 2F and 1F visited with rooms 0, 1 and 2 (sceneFlags[0].floors, .rooms), as after a climb to the second floor's rooms: the pause menu's map page shows those floors and the chests' marks (GAME-05 milestone 5b-2)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, crate::item::ITEM_DUNGEON_COMPASS);
+            // The Deku Tree's floors 3 (3F), 4 (2F) and 5 (1F) (`sFloorID`), as Map_Update marks
+            // them; rooms 0 (the central room, on 3F to 1F), 1 and 2 (2F), as Map_InitRoomData.
+            let f = &mut s.scene_flags[0];
+            f.floors |= (1 << 3) | (1 << 4) | (1 << 5);
+            f.rooms |= (1 << 0) | (1 << 1) | (1 << 2);
+        },
+    },
+    SavePreset {
+        name: "deku-tree-quarter-heart",
+        about: "deku-tree-inside with a quarter heart left (health 4): the next hit kills Link and the game over follows (GAME-05 milestone 5b-2)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            s.health = 4;
+        },
+    },
+    SavePreset {
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {

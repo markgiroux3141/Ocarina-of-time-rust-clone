@@ -825,7 +825,7 @@ fn the_one_point_tables_are_the_roms() {
 fn the_map_tables_are_the_roms() {
     let Some(c) = ctx() else { return };
     let t = c.pack.map_tables().unwrap();
-    assert_eq!(t, oot_import::map::load(&c.p.config.decomp).unwrap());
+    assert_eq!(t, oot_import::map::load(&c.p.config.decomp, &c.p.rom).unwrap());
     let d = &t.data;
     let vc = oot_import::version::VersionConfig::load(&c.p.config.decomp).unwrap();
     let be16 = |v: &[i16]| -> Vec<u8> { v.iter().flat_map(|x| x.to_be_bytes()).collect() };
@@ -930,4 +930,72 @@ fn the_map_tables_are_the_roms() {
     assert_eq!(dt[0][1].mark_type, oot_game::map::MAP_MARK_NONE);
     assert_eq!(dt[1][0].mark_type, oot_game::map::MAP_MARK_NONE);
     assert_eq!((dt[5][0].count, dt[5][0].points[1].chest_flag), (2, 5));
+}
+
+/// The pause map's tables against the ROM: `gPauseMapMarkDataTable` in `ovl_kaleido_scope`
+/// (`PauseMapMarkData`, 0xA4 bytes: `markType` and its padding, `unk_04`, the `vtx` pointer,
+/// `vtxCount`, `count`, 12 points of `chestFlag`, padding, `x`, `y`), each `vtx` pointer at the
+/// `Vtx` array the table carries; and `map_48x85_static` as the ROM has it.
+#[test]
+fn the_pause_map_tables_are_the_roms() {
+    let Some(c) = ctx() else { return };
+    let t = c.pack.map_tables().unwrap();
+    assert_eq!(oot_import::map::pause_map_mark_data_file(&c.p.config.decomp).unwrap(), "src/overlays/misc/ovl_kaleido_scope/z_lmap_mark_data_mq.c");
+    let vc = oot_import::version::VersionConfig::load(&c.p.config.decomp).unwrap();
+    let ovl = c.p.rom.file_by_name("ovl_kaleido_scope").unwrap();
+    // The table's bytes, its pointers left out (None) to be checked after.
+    let mut bytes: Vec<Option<u8>> = Vec::new();
+    let put = |b: &[u8], bytes: &mut Vec<Option<u8>>| bytes.extend(b.iter().map(|&x| Some(x)));
+    for maps in &t.pause_marks {
+        for d in maps {
+            put(&d.mark_type.to_be_bytes(), &mut bytes);
+            put(&[0, 0], &mut bytes);
+            put(&d.unk_04.to_be_bytes(), &mut bytes);
+            bytes.extend([None; 4]);
+            put(&d.vtx_count.to_be_bytes(), &mut bytes);
+            put(&d.count.to_be_bytes(), &mut bytes);
+            for p in &d.points {
+                put(&p.chest_flag.to_be_bytes(), &mut bytes);
+                put(&[0, 0], &mut bytes);
+                put(&p.x.to_bits().to_be_bytes(), &mut bytes);
+                put(&p.y.to_bits().to_be_bytes(), &mut bytes);
+            }
+        }
+    }
+    assert_eq!(bytes.len(), t.pause_marks.len() * 3 * 0xA4);
+    // Found by its first entry's bytes after the pointer, then every byte but the pointers.
+    let anchor: Vec<u8> = bytes[0x0C..0xA4].iter().map(|b| b.unwrap()).collect();
+    let at = ovl
+        .windows(anchor.len())
+        .enumerate()
+        .filter(|(_, w)| *w == anchor.as_slice())
+        .map(|(o, _)| o - 0x0C)
+        .find(|&o| bytes.iter().enumerate().all(|(k, b)| b.is_none_or(|b| ovl.get(o + k) == Some(&b))))
+        .expect("gPauseMapMarkDataTable isn't in ovl_kaleido_scope");
+    let vtx_bytes = |v: &[oot_game::kaleido::gfx::Vtx]| -> Vec<u8> {
+        v.iter().flat_map(|v| v.ob.iter().flat_map(|x| x.to_be_bytes()).chain([0, 0]).chain(v.tc.iter().flat_map(|x| x.to_be_bytes())).chain(v.cn)).collect()
+    };
+    for (k, d) in t.pause_marks.iter().flatten().enumerate() {
+        let o = at + k * 0xA4 + 8;
+        let ptr = u32::from_be_bytes(ovl[o..o + 4].try_into().unwrap());
+        if d.vtx.is_empty() {
+            assert_eq!(ptr, 0, "entry {k}: NULL");
+        } else {
+            let v = vc.file_offset("ovl_kaleido_scope", ptr).unwrap();
+            assert_eq!(&ovl[v..v + d.vtx.len() * 16], vtx_bytes(&d.vtx).as_slice(), "entry {k}'s Vtx");
+        }
+    }
+    // The Master Quest Deku Tree's (z_lmap_mark_data_mq.c): map 0 (3F) chests 2 and 6, map 2 (1F)
+    // chest 3 at (84, -39), map 4 (B2) the boss at (55, 0); every mark's quad 8 square with its
+    // whole texture (tc 0 to 256: 8 texels).
+    let m = &t.pause_marks;
+    assert_eq!((m[0][0].mark_type, m[0][0].count, m[0][0].points[0].chest_flag, m[0][0].points[1].chest_flag), (oot_game::map::PAUSE_MAP_MARK_CHEST, 2, 2, 6));
+    assert_eq!((m[2][0].points[0].chest_flag, m[2][0].points[0].x, m[2][0].points[0].y), (3, 84.0, -39.0));
+    assert_eq!((m[4][0].mark_type, m[4][0].points[0].chest_flag, m[4][0].points[0].x), (oot_game::map::PAUSE_MAP_MARK_BOSS, -1, 55.0));
+    assert_eq!(m[0][1].mark_type, oot_game::map::PAUSE_MAP_MARK_NONE);
+    let v = &m[0][0].vtx;
+    assert_eq!((v.len(), v[0].ob, v[3].ob, v[3].tc), (4, [-4, 4, 0], [4, -4, 0], [256, 256]));
+    // map_48x85_static: 68 CI4 48x85 maps (MAP_48x85_TEX_SIZE 0x7F8), as the ROM has them.
+    assert_eq!(t.map_48x85_static.as_slice(), &*c.p.rom.file_by_name("map_48x85_static").unwrap());
+    assert_eq!(t.map_48x85_static.len() / oot_game::map::MAP_48X85_TEX_SIZE, 68);
 }

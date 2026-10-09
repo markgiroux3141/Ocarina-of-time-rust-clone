@@ -236,6 +236,18 @@ pub enum Step {
     PageTurned,
     /// The menu closed: the game resumed (`PAUSE_STATE_OFF`).
     MenuClosed,
+    /// The dungeon map page's floor changed with the stick (`dungeonMapSlot`, its room maps
+    /// loaded: `KaleidoScope_UpdateDungeonMap`).
+    FloorChanged,
+    /// Link dead: the game over started (`gameOverCtx.state` past `GAMEOVER_INACTIVE`).
+    Died,
+    /// The game over's "Would you like to save?" (`PAUSE_STATE_GAME_OVER_SAVE_PROMPT`).
+    SavePrompt,
+    /// Its "Continue playing?" (`PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT`), "No" taken at the save
+    /// prompt.
+    ContinuePrompt,
+    /// "Yes" taken: the fade, the respawn at the dungeon's entrance, Link standing.
+    Respawned,
 }
 
 impl Step {
@@ -298,6 +310,11 @@ impl Step {
             Step::ItemEquipped => "item_equipped",
             Step::PageTurned => "page_turned",
             Step::MenuClosed => "menu_closed",
+            Step::FloorChanged => "floor_changed",
+            Step::Died => "died",
+            Step::SavePrompt => "save_prompt",
+            Step::ContinuePrompt => "continue_prompt",
+            Step::Respawned => "respawned",
         }
     }
 }
@@ -353,6 +370,16 @@ pub enum Route {
     /// and the menu closed: the slingshot on C-Right (GAME-05 milestone 5b-1), from the scene's
     /// spawn with the slingshot owned and C-Right empty (`deku-tree-slingshot-owned`).
     Pause,
+    /// Inside the Deku Tree, the pause menu opened and turned to the dungeon map page (1F, Link's
+    /// floor: its rooms, the current one pulsing, chest 3's mark), the stick up to 2F (its maps
+    /// loaded, chest 1's mark), and the menu closed (GAME-05 milestone 5b-2), from the scene's
+    /// spawn with the compass and 3F to 1F visited (`deku-tree-compass`).
+    DungeonMap,
+    /// Inside the Deku Tree with a quarter heart, the top floor's Deku Baba's bite: Link dies,
+    /// the game over's "GAME OVER" and its window, "No" at "Would you like to save?", "Yes" at
+    /// "Continue playing?", and the respawn at the entrance (GAME-05 milestone 5b-2), from
+    /// `DekuBaba`'s debug start (`DEKU_BABA_START`, `deku-tree-quarter-heart`).
+    GameOver,
 }
 
 /// The `Pause` route's item: the Fairy Slingshot's slot (`SLOT_SLINGSHOT`, the grid's second row,
@@ -536,7 +563,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause | Route::DungeonMap | Route::GameOver => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -549,6 +576,8 @@ impl Route {
             Route::Stick => Some("deku-tree-sticks"),
             Route::Slingshot => Some("deku-tree-slingshot"),
             Route::Pause => Some("deku-tree-slingshot-owned"),
+            Route::DungeonMap => Some("deku-tree-compass"),
+            Route::GameOver => Some("deku-tree-quarter-heart"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -556,7 +585,7 @@ impl Route {
     /// Where Link starts instead of the entrance's spawn (a debug start), if anywhere.
     pub fn start(self) -> Option<(Vec3, i16)> {
         match self {
-            Route::DekuBaba => Some(DEKU_BABA_START),
+            Route::DekuBaba | Route::GameOver => Some(DEKU_BABA_START),
             Route::Combat => Some(COMBAT_START),
             Route::Scrub => Some(SCRUB_START),
             Route::Shutter => Some(SHUTTER_START),
@@ -652,6 +681,8 @@ impl Route {
             Route::Push => "push",
             Route::Slingshot => "slingshot",
             Route::Pause => "pause",
+            Route::DungeonMap => "dungeon-map",
+            Route::GameOver => "game-over",
         }
     }
 
@@ -668,13 +699,15 @@ impl Route {
             Route::Push => 3000,
             Route::Slingshot => 3000,
             Route::Pause => 1000,
+            Route::DungeonMap => 1000,
+            Route::GameOver => 1500,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -728,6 +761,15 @@ enum Task {
     EquipOnC(usize, Step),
     /// R until the menu has turned to the page on the right.
     TurnPageRight(Step),
+    /// The stick up (a push, then a release) until the dungeon map page shows another floor.
+    MapFloorUp(Step),
+    /// Idle until Link is dead and the game over has started.
+    WaitDeath(Step),
+    /// Idle until the pause menu is in this state.
+    WaitPauseState(u16, Step),
+    /// At a prompt, the stick to this choice (`promptChoice`: 0 yes, 4 no), then A, until the
+    /// state moves on.
+    PromptChoice(i16, Step),
     /// Start until the menu has closed.
     CloseMenu(Step),
     /// Idle until Mido has walked to his path's end.
@@ -914,6 +956,19 @@ impl Playthrough {
                 Task::EquipOnC(PAUSE_C_BUTTON, Step::ItemEquipped),
                 Task::TurnPageRight(Step::PageTurned),
                 Task::CloseMenu(Step::MenuClosed),
+            ],
+            Route::DungeonMap => vec![
+                Task::Settle(None),
+                Task::OpenMenu(Step::MenuOpened),
+                Task::TurnPageRight(Step::PageTurned),
+                Task::MapFloorUp(Step::FloorChanged),
+                Task::CloseMenu(Step::MenuClosed),
+            ],
+            Route::GameOver => vec![
+                Task::WaitDeath(Step::Died),
+                Task::WaitPauseState(oot_game::kaleido::PAUSE_STATE_GAME_OVER_SAVE_PROMPT, Step::SavePrompt),
+                Task::PromptChoice(4, Step::ContinuePrompt),
+                Task::PromptChoice(0, Step::Respawned),
             ],
             Route::Push => vec![
                 Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
@@ -1433,6 +1488,95 @@ impl Playthrough {
                     return None;
                 }
                 Some(idle)
+            }
+            Task::MapFloorUp(step) => {
+                let p = &w.pause_ctx;
+                // sub 0: off the page's left arrow (where R's turn leaves the cursor) onto the
+                // floors' column, the stick right; then the floor viewed noted, the stick up;
+                // 1: released, until the floor changes.
+                if self.sub == 0 && p.cursor_special_pos != 0 {
+                    self.wait += 1;
+                    if self.wait > 60 {
+                        self.failure = Some(format!("the cursor never left the arrow ({})", p.cursor_special_pos));
+                        return None;
+                    }
+                    return Some(if self.prev.stick_x != 0 || !menu_idle(w) { idle } else { PadState { button: 0, stick_x: 80, stick_y: 0 } });
+                }
+                if self.sub == 0 {
+                    if self.prev.stick_x != 0 {
+                        return Some(idle);
+                    }
+                    self.sub = 1;
+                    self.wait = 0;
+                    self.items_page = p.dungeon_map_slot as u16;
+                    return Some(PadState { button: 0, stick_x: 0, stick_y: 80 });
+                }
+                if menu_idle(w) && p.dungeon_map_slot as u16 != self.items_page {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 60 {
+                    self.failure = Some(format!("the map's floor never changed (slot {}, cursor {})", p.dungeon_map_slot, p.cursor_point[oot_game::kaleido::PAUSE_MAP as usize]));
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::WaitDeath(step) => {
+                if w.game_over_ctx.state != oot_game::game_over::GAMEOVER_INACTIVE {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 300 {
+                    self.failure = Some(format!("Link never died (health {})", w.save.health));
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::WaitPauseState(state, step) => {
+                if w.pause_ctx.state == state {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some(format!("the pause menu never got to state {state} (state {})", w.pause_ctx.state));
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::PromptChoice(choice, step) => {
+                use oot_game::kaleido::{PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT, PAUSE_STATE_GAME_OVER_SAVE_PROMPT};
+                let p = &w.pause_ctx;
+                // sub 0: at the prompt (the state noted); 1: A pressed, until the respawn's done
+                // or the state has moved on.
+                if self.sub == 0 {
+                    self.items_page = p.state;
+                    self.sub = 1;
+                }
+                let at_prompt = p.state == self.items_page && (p.state == PAUSE_STATE_GAME_OVER_SAVE_PROMPT || p.state == PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT);
+                self.wait += 1;
+                if self.wait > 400 {
+                    self.failure = Some(format!("the prompt never moved on (state {}, choice {})", p.state, p.prompt_choice));
+                    return None;
+                }
+                if self.items_page == PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT && !at_prompt {
+                    // Continued: the fade, the respawn, then Link standing.
+                    return self.settle(w, Some(step));
+                }
+                if !at_prompt {
+                    self.finish(Some(step));
+                    return None;
+                }
+                // The stick to the choice (a push, then a release), then A.
+                if p.prompt_choice != choice {
+                    if self.prev.stick_x != 0 {
+                        return Some(idle);
+                    }
+                    return Some(PadState { button: 0, stick_x: if choice == 0 { -80 } else { 80 }, stick_y: 0 });
+                }
+                Some(self.press(eng_input::pad::BTN_A))
             }
             Task::CloseMenu(step) => {
                 use oot_game::kaleido::PAUSE_STATE_OFF;

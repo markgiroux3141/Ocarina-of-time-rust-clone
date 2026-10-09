@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 24;
+pub const FORMAT_VERSION: u32 = 25;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -63,7 +63,8 @@ pub mod keys {
     pub const INTERFACE: &str = "table/interface";
     /// `item::ItemTables`: `sGetItemTable` and `sDrawItemTable`.
     pub const ITEMS: &str = "table/items";
-    /// `map::MapTables`: `gMapDataTable` and `gMapMarkDataTable`.
+    /// `map::MapTables`: `gMapDataTable`, `gMapMarkDataTable`, `gPauseMapMarkDataTable` and
+    /// `map_48x85_static`.
     pub const MAP: &str = "table/map";
     /// `cutscene::CutsceneTables`: `sEntranceCutsceneTable` and every script's key.
     pub const CUTSCENES: &str = "table/cutscenes";

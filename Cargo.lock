@@ -2309,6 +2309,7 @@ dependencies = [
  "eng_asset",
  "eng_audio",
  "eng_collision",
+ "eng_gbi",
  "eng_gfx",
  "eng_input",
  "eng_math",

@@ -1,12 +1,16 @@
 //! `z_kaleido_scope.c`: the menu's states (`KaleidoScope_Update`), its frame (the four pages'
-//! box and their turns, the cursor, the name and info panels: `KaleidoScope_Draw`) and the game
-//! over's states. The item page is `super::item`; the other pages' contents log (see the
-//! module's notes).
+//! box and their turns, the cursor, the name and info panels: `KaleidoScope_Draw`), the dungeon
+//! map page's loads (`KaleidoScope_LoadDungeonMap`, `_UpdateDungeonMap`,
+//! `_OverridePalIndexCI4`), and the game over's states and screens (`KaleidoScope_DrawGameOver`,
+//! the prompt page). The item page is `super::item`, the dungeon map `super::map` and
+//! `super::lmap_mark`; the other pages' contents log (see the module's notes).
 
 use glam::{Mat4, Vec3};
 
-use super::gfx::{Cc, KTex, KaleidoGfx, Vtx};
+use super::gfx::{Cc, GameOverPart, KTex, KaleidoGfx, Vtx};
+use super::map::{MAP_SEGMENT_SECOND, SCENE_TREASURE_BOX_SHOP};
 use super::*;
+use crate::map::{MAP_48X85_TEX_SIZE, MapSegment};
 use crate::audio::sfx::{NA_SE_SY_CURSOR, NA_SE_SY_DECIDE, NA_SE_SY_OCARINA_ERROR, NA_SE_SY_PIECE_OF_HEART, NA_SE_SY_TRE_BOX_APPEAR, NA_SE_SY_WIN_SCROLL_LEFT, NA_SE_SY_WIN_SCROLL_RIGHT};
 use crate::interface::{BTN_DISABLED, BTN_ENABLED, DO_ACTION_DECIDE, DO_ACTION_NONE, DO_ACTION_SAVE, HUD_VISIBILITY_NOTHING};
 use crate::item::{ITEM_NONE, ITEM_SOLD_OUT};
@@ -178,8 +182,43 @@ const QUEST_PAGE_BG: [&str; 15] = [
     "gPauseQuestStatus24Tex",
 ];
 
-/// Every page's background tiles, for the bakes.
-pub(super) const PAGE_BGS: [&[&str; 15]; 4] = [&ITEM_PAGE_BG, &EQUIP_PAGE_BG, &MAP_PAGE_BG, &QUEST_PAGE_BG];
+/// `sGameOverTexs`: the game over's prompt page.
+const GAME_OVER_PAGE_BG: [&str; 15] = [
+    "gPauseSave00Tex",
+    "gPauseSave01Tex",
+    "gPauseSave02Tex",
+    "gPauseSave03Tex",
+    "gPauseSave04Tex",
+    "gPauseGameOver10Tex",
+    "gPauseSave11Tex",
+    "gPauseSave12Tex",
+    "gPauseSave13Tex",
+    "gPauseSave14Tex",
+    "gPauseSave20Tex",
+    "gPauseSave21Tex",
+    "gPauseSave22Tex",
+    "gPauseSave23Tex",
+    "gPauseSave24Tex",
+];
+
+/// Every page's background tiles, for the bakes: the four pages and the game over's prompt.
+pub(super) const PAGE_BGS: [&[&str; 15]; 5] = [&ITEM_PAGE_BG, &EQUIP_PAGE_BG, &MAP_PAGE_BG, &QUEST_PAGE_BG, &GAME_OVER_PAGE_BG];
+
+/// `sSavePromptMessageTexs[LANGUAGE_ENG]` (IA8 152x16), `sPromptChoiceTexs[LANGUAGE_ENG]` (IA8
+/// 48x16): the prompts' labels (`icon_item_nes_static`).
+pub(super) const SAVE_PROMPT_MESSAGE: (&str, u32) = ("gPauseSavePromptENGTex", 152);
+pub(super) const PROMPT_CHOICES: [(&str, u32); 2] = [("gPauseYesENGTex", 48), ("gPauseNoENGTex", 48)];
+/// `KALEIDO_PROMPT_CURSOR_R`, `_G`, `_B` (`PLATFORM_GC`: 100, 255, 100).
+const KALEIDO_PROMPT_CURSOR: [i16; 3] = [100, 255, 100];
+/// `PROMPT_QUAD_MESSAGE`, `_CURSOR_LEFT`, `_CURSOR_RIGHT`, `_CHOICE_YES`, `_CHOICE_NO`, times 4.
+const PROMPT_QUAD_MESSAGE: usize = 0;
+const PROMPT_QUAD_CURSOR_LEFT: usize = 4;
+const PROMPT_QUAD_CURSOR_RIGHT: usize = 8;
+const PROMPT_QUAD_CHOICE_YES: usize = 12;
+const PROMPT_QUAD_CHOICE_NO: usize = 16;
+
+/// `gAreaGsFlags`: by `mapIndex`, the Gold Skulltulas flags of an area all found.
+pub(super) const AREA_GS_FLAGS: [u8; 22] = [0x0F, 0x1F, 0x0F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x07, 0x07, 0x03, 0x0F, 0x07, 0x0F, 0x0F, 0xFF, 0xFF, 0xFF, 0x1F, 0x0F, 0x03, 0x0F];
 
 /// `sScrollLeftLabels`, `sScrollRightLabels` (English), by page.
 const SCROLL_LEFT_LABELS: [&str; 4] = ["gPauseToEquipmentENGTex", "gPauseToSelectItemENGTex", "gPauseToMapENGTex", "gPauseToQuestStatusENGTex"];
@@ -722,11 +761,10 @@ impl PlayState {
         // icon_item_field_static.
         p.statics.in_dungeon_scene = crate::map::is_dungeon_or_boss(self.scene_id);
         if p.statics.in_dungeon_scene {
-            // icon_item_dungeon_static; interfaceCtx->mapPalette[28] = 6, [29] = 99;
-            // KaleidoScope_UpdateDungeonMap.
+            // (icon_item_dungeon_static.)
             self.map.map_palette[28] = 6;
             self.map.map_palette[29] = 99;
-            self.pause_ctx.log_once(0, "pause menu: the dungeon map page's contents (KaleidoScope_DrawDungeonMap, KaleidoScope_UpdateDungeonMap, PauseMapMark_Draw) aren't ported (GAME-05 5b-2)");
+            self.kaleido_scope_update_dungeon_map();
         }
         // (icon_item_field_static, icon_item_nes_static, nameSegment.)
         self.interface_set_do_action_paused(DO_ACTION_DECIDE);
@@ -861,7 +899,7 @@ impl PlayState {
     }
 
     /// `KaleidoScope_Draw`: the pages under the menu's view (`pauseCtx->eye`), then the UI
-    /// overlay under the view from (0, 0, 64); the game over's message (milestone 5b-2: logged).
+    /// overlay under the view from (0, 0, 64); the game over's message.
     pub(super) fn kaleido_scope_draw(&mut self) {
         let p = &mut self.pause_ctx;
         p.stick_adj_x = self.input.rel.stick_x as i16;
@@ -882,7 +920,7 @@ impl PlayState {
         }
         let p = &mut self.pause_ctx;
         if (PAUSE_STATE_GAME_OVER_SHOW_MESSAGE..=PAUSE_STATE_GAME_OVER_FINISH).contains(&p.state) {
-            p.log_once(3, "pause menu: the game over's message (KaleidoScope_DrawGameOver) isn't drawn yet (GAME-05 5b-2)");
+            self.kaleido_scope_draw_game_over();
         }
         // (The inventory editor's draw: L doesn't open it, see KaleidoScope_HandlePageToggles.)
         // KaleidoScope_UpdateCursorVtx, as the next frame's update runs it on these vertices
@@ -974,7 +1012,7 @@ impl PlayState {
                 p.gfx.combine(Cc::ModulateIa);
                 p.gfx.matrix(page_matrix(PAUSE_MAP, depth, y2, p.map_page_pitch));
                 draw_page_sections(&mut p.gfx, &p.map_page_vtx, &MAP_PAGE_BG);
-                self.kaleido_scope_draw_map_contents();
+                self.kaleido_scope_draw_map_contents(false);
             }
 
             // The page looked at.
@@ -989,16 +1027,7 @@ impl PlayState {
                 PAUSE_MAP => {
                     p.gfx.matrix(page_matrix(PAUSE_MAP, depth, y2, p.map_page_pitch));
                     draw_page_sections(&mut p.gfx, &p.map_page_vtx, &MAP_PAGE_BG);
-                    if p.statics.in_dungeon_scene {
-                        self.kaleido_scope_draw_map_contents();
-                        // Gfx_SetupDL_42Opa, G_CC_MODULATEIA_PRIM.
-                        self.pause_ctx.gfx.combine(Cc::ModulateIaPrim);
-                        if self.pause_ctx.cursor_special_pos == 0 {
-                            self.kaleido_scope_draw_cursor(PAUSE_MAP);
-                        }
-                    } else {
-                        self.kaleido_scope_draw_map_contents();
-                    }
+                    self.kaleido_scope_draw_map_contents(true);
                 }
                 PAUSE_QUEST => {
                     p.gfx.matrix(page_matrix(PAUSE_QUEST, depth, y2, p.quest_page_pitch));
@@ -1019,11 +1048,116 @@ impl PlayState {
             }
         }
 
-        // The prompt (the save prompt or the game over's): milestones 5b-2 and 5c.
+        // The prompt: the game over's; the save prompt's is milestone 5c's (B doesn't open it).
         let p = &mut self.pause_ctx;
         if p.state == PAUSE_STATE_SAVE_PROMPT || p.is_game_over() {
             self.kaleido_scope_update_prompt();
-            self.pause_ctx.log_once(4, "pause menu: the prompt page (KaleidoScope_DrawPages' save and game over prompt) isn't drawn yet (GAME-05 5b-2)");
+            if self.pause_ctx.is_game_over() {
+                self.kaleido_scope_draw_game_over_prompt();
+            } else {
+                self.pause_ctx.log_once(4, "pause menu: the save prompt's page (KaleidoScope_DrawPages' save prompt) is milestone 5c's");
+            }
+        }
+    }
+
+    /// `KaleidoScope_DrawPages`' prompt page in a game over: under the page looked at's matrix,
+    /// turned by `promptPitch` (the page itself turned half a turn on), the 15 tiles
+    /// (`sGameOverTexs`), then "Would you like to save?" or "Continue playing?" with the cursor
+    /// on the choice and "Yes", "No".
+    fn kaleido_scope_draw_game_over_prompt(&mut self) {
+        let p = &mut self.pause_ctx;
+        // Gfx_SetupDL_42Opa, G_CC_MODULATEIA.
+        p.gfx.combine(Cc::ModulateIa);
+        let pitch = p.prompt_pitch;
+        match p.page_index {
+            PAUSE_ITEM => p.item_page_pitch = pitch + 314.0,
+            PAUSE_MAP => p.map_page_pitch = pitch + 314.0,
+            PAUSE_QUEST => p.quest_page_pitch = pitch + 314.0,
+            _ => p.equip_page_pitch = pitch + 314.0,
+        }
+        let y2 = p.regs.pages_y_origin_2 as f32 / 100.0;
+        p.gfx.matrix(page_matrix(p.page_index, p.prompt_depth_offset / 10.0, y2, pitch));
+        draw_page_sections(&mut p.gfx, &p.prompt_page_vtx, &GAME_OVER_PAGE_BG);
+        // @bug (game): loads 32 vertices where there are 20 (the 12 after are whatever follows
+        // in the frame's memory; nothing draws with them).
+        p.gfx.vertex(&p.prompt_page_vtx[PAGE_BG_QUADS * 4..], 32, 0);
+        let message = match p.state {
+            PAUSE_STATE_GAME_OVER_SAVE_PROMPT => Some(KTex::Label(SAVE_PROMPT_MESSAGE.0, SAVE_PROMPT_MESSAGE.1)),
+            // PAUSE_STATE_GAME_OVER_SAVED: "Game saved." is !PLATFORM_GC's (sSaveConfirmationTexs).
+            PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT | PAUSE_STATE_GAME_OVER_FINISH => Some(KTex::ContinuePlaying),
+            _ => None,
+        };
+        if let Some(message) = message {
+            // KaleidoScope_QuadTextureIA8(message, 152, 16, PROMPT_QUAD_MESSAGE * 4).
+            p.gfx.quad(message, PROMPT_QUAD_MESSAGE);
+            p.gfx.combine(Cc::PrimTexelAlpha);
+            let c = KALEIDO_PROMPT_CURSOR;
+            p.gfx.prim_color(c[0], c[1], c[2], p.regs.prompt_cursor_alpha);
+            // gPromptCursorLeftDL or gPromptCursorRightDL: gPausePromptCursorTex on the quad.
+            p.gfx.quad(KTex::PromptCursor, if p.prompt_choice == 0 { PROMPT_QUAD_CURSOR_LEFT } else { PROMPT_QUAD_CURSOR_RIGHT });
+            p.gfx.combine(Cc::ModulateIa);
+            p.gfx.prim_color(255, 255, 255, p.alpha as i16);
+            p.gfx.quad(KTex::Label(PROMPT_CHOICES[0].0, PROMPT_CHOICES[0].1), PROMPT_QUAD_CHOICE_YES);
+            p.gfx.quad(KTex::Label(PROMPT_CHOICES[1].0, PROMPT_CHOICES[1].1), PROMPT_QUAD_CHOICE_NO);
+        }
+        p.gfx.combine(Cc::PrimEnvTexel);
+        if p.state != PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT && p.state != PAUSE_STATE_GAME_OVER_FINISH {
+            p.gfx.prim_color(255, 255, 0, p.alpha as i16);
+            p.gfx.env_color(0, 0, 0, 0);
+        }
+    }
+
+    /// `KaleidoScope_DrawGameOver`: "GAME OVER" in three 64x32 parts at (`VREG(87)`,
+    /// `VREG(88)`), each blended with the mask on tile 1 (`PRIM_LOD_FRAC` 80), the mask scrolling
+    /// up 2 (10.2) a frame (`VREG(89)`), coloured from env to prim (`D_8082AB8C`..).
+    fn kaleido_scope_draw_game_over(&mut self) {
+        let p = &mut self.pause_ctx;
+        // Gfx_SetupDL_39Opa, G_CYC_2CYCLE, G_RM_PASS and G_RM_XLU_SURF2, the combiner: the bakes'.
+        let c = p.statics.d_8082ab8c;
+        p.gfx.prim_color(c[0], c[1], c[2], c[3]);
+        p.gfx.env_color(c[4], c[5], c[6], 255);
+        p.regs.vreg89 = p.regs.vreg89.wrapping_sub(2);
+        let ult = (p.regs.vreg89 & 0x7F) as u16;
+        let (x, y) = (p.regs.vreg87, p.regs.vreg88);
+        p.gfx.rect(GameOverPart::P1, x, y, x + 64, y + 32, ult);
+        p.gfx.rect(GameOverPart::P2, x + 64, y, x + 128, y + 32, ult);
+        p.gfx.rect(GameOverPart::P3, x + 128, y, x + 192, y + 32, ult);
+    }
+
+    /// `KaleidoScope_LoadDungeonMap`: the floor's two room maps (`R_MAP_TEX_INDEX` and the next,
+    /// `map_48x85_static`'s) into `mapSegment`, at 0 and `ALIGN16(MAP_48x85_TEX_SIZE)`.
+    fn kaleido_scope_load_dungeon_map(&mut self) {
+        let Some(a) = self.assets.clone() else { return };
+        let src = &a.map.map_48x85_static;
+        let index = self.map.r_map_tex_index.max(0) as usize;
+        // Map_Init's GAME_STATE_ALLOC(0x1000).
+        let mut seg = std::mem::take(&mut self.map.segment);
+        seg.resize(MAP_SEGMENT_SECOND * 2, 0);
+        for (k, at) in [(0, 0), (1, MAP_SEGMENT_SECOND)] {
+            let from = (index + k) * MAP_48X85_TEX_SIZE;
+            if let Some(t) = src.get(from..from + MAP_48X85_TEX_SIZE) {
+                seg[at..at + MAP_48X85_TEX_SIZE].copy_from_slice(t);
+            }
+        }
+        self.map.segment = seg;
+        self.map.map_segment = Some(MapSegment::PauseMap { index: index as u32 });
+    }
+
+    /// `KaleidoScope_UpdateDungeonMap`: the floor's room maps loaded, the floor's palette
+    /// (`Map_SetFloorPalettesData`), and on Link's floor the current room's texels moved to
+    /// palette entry 14, the one that pulses (`KaleidoScope_DrawDungeonMap`).
+    pub(super) fn kaleido_scope_update_dungeon_map(&mut self) {
+        // (PRINTF("MAP DMA = %d", mapPaletteIndex); PLATFORM_N64's 64DD hook.)
+        self.kaleido_scope_load_dungeon_map();
+        self.map_set_floor_palettes_data(self.pause_ctx.dungeon_map_slot - 3);
+        let on_links_floor = self.map.floor == self.pause_ctx.cursor_point[PAUSE_MAP as usize] - 3;
+        if self.scene_id <= SCENE_TREASURE_BOX_SHOP && on_links_floor {
+            let target = self.map.map_palette_index as i32;
+            override_pal_index_ci4(self.map.segment.get_mut(..MAP_48X85_TEX_SIZE), MAP_48X85_TEX_SIZE as i32, target, 14);
+        }
+        if self.scene_id <= SCENE_TREASURE_BOX_SHOP && on_links_floor {
+            let target = self.map.map_palette_index as i32;
+            override_pal_index_ci4(self.map.segment.get_mut(MAP_SEGMENT_SECOND..MAP_SEGMENT_SECOND + MAP_48X85_TEX_SIZE), MAP_48X85_TEX_SIZE as i32, target, 14);
         }
     }
 
@@ -1037,12 +1171,19 @@ impl PlayState {
         self.pause_ctx.log_once(6, "pause menu: the quest status page's contents (KaleidoScope_DrawQuestStatus: medallions, songs, stones, the song playback) aren't ported");
     }
 
-    /// The map page's contents: in a dungeon `KaleidoScope_DrawDungeonMap` and (with the
-    /// compass) `PauseMapMark_Draw` (milestone 5b-2), elsewhere `KaleidoScope_DrawWorldMap`:
-    /// logged.
-    fn kaleido_scope_draw_map_contents(&mut self) {
+    /// The map page's contents: in a dungeon `KaleidoScope_DrawDungeonMap`, then
+    /// (`Gfx_SetupDL_42Opa`, `G_CC_MODULATEIA_PRIM`) the cursor on the page looked at and, with
+    /// the compass, `PauseMapMark_Draw`; elsewhere `KaleidoScope_DrawWorldMap` (logged).
+    fn kaleido_scope_draw_map_contents(&mut self, looked_at: bool) {
         if self.pause_ctx.statics.in_dungeon_scene {
-            self.pause_ctx.log_once(7, "pause menu: the dungeon map page's contents (KaleidoScope_DrawDungeonMap, PauseMapMark_Draw) aren't drawn yet (GAME-05 5b-2)");
+            self.kaleido_scope_draw_dungeon_map();
+            self.pause_ctx.gfx.combine(Cc::ModulateIaPrim);
+            if looked_at && self.pause_ctx.cursor_special_pos == 0 {
+                self.kaleido_scope_draw_cursor(PAUSE_MAP);
+            }
+            if crate::map::check_dungeon_item(&self.save, crate::map::DUNGEON_COMPASS, self.save.map_index) {
+                self.pause_map_mark_draw();
+            }
         } else {
             self.pause_ctx.log_once(8, "pause menu: the world map's contents (KaleidoScope_DrawWorldMap) aren't ported");
         }
@@ -1487,7 +1628,7 @@ impl PlayState {
                 // (The icon files' DMA: icon_item_gameover_static.)
                 p.statics.d_8082ab8c = [255, 130, 0, 0, 30, 0, 0];
                 p.statics.d_8082b260 = 30;
-                // VREG(88) = 98: the message's y (drawn in 5b-2).
+                p.regs.vreg88 = 98;
                 p.prompt_choice = 0;
                 p.state += 1;
             }
@@ -1514,11 +1655,26 @@ impl PlayState {
                 }
             }
             PAUSE_STATE_GAME_OVER_SHOW_WINDOW => {
-                // (The pages' pitches, the panels, the buttons and the alphas turn with it.)
+                // The window turns in, the pages with it, the message rising 3 a frame.
                 let p = &mut self.pause_ctx;
-                p.prompt_pitch -= 160.0 / p.regs.ui_anims_duration as f32;
+                let d = p.regs.ui_anims_duration;
+                p.prompt_pitch -= 160.0 / d as f32;
+                let pitch = p.prompt_pitch;
+                (p.item_page_pitch, p.equip_page_pitch, p.map_page_pitch, p.quest_page_pitch) = (pitch, pitch, pitch, pitch);
+                p.info_panel_offset_y += 40 / d;
+                self.interface_ctx.start_alpha += 255 / d;
+                let r = &mut p.regs;
+                r.vreg88 -= 3;
+                r.button_left_x += r.button_left_move_offset_x / d;
+                r.button_right_x += r.button_right_move_offset_x / d;
+                r.xreg5 += 150 / d;
+                p.alpha = p.alpha.wrapping_add((255 / (d + r.wreg4)) as u16);
                 if p.prompt_pitch < -628.0 {
                     p.prompt_pitch = -628.0;
+                    self.interface_ctx.start_alpha = 255;
+                    p.regs.vreg88 = 66;
+                    p.regs.pages_y_origin_2 = 0;
+                    p.alpha = 255;
                     p.state = PAUSE_STATE_GAME_OVER_SAVE_PROMPT;
                     self.save.deaths += 1;
                     if self.save.deaths > 999 {
@@ -1624,6 +1780,26 @@ impl PlayState {
                 return;
             }
         }
+    }
+}
+
+/// `KaleidoScope_OverridePalIndexCI4`: in `size` bytes of a CI4 texture, every texel of
+/// `targetIndex` (its low four bits) becomes `newIndex`; nothing when they're the same, the size
+/// 0 or no texture.
+pub fn override_pal_index_ci4(texture: Option<&mut [u8]>, size: i32, target_index: i32, new_index: i32) {
+    let target_index = target_index & 0xF;
+    let new_index = new_index & 0xF;
+    let Some(texture) = texture.filter(|_| size != 0 && target_index != new_index) else { return };
+    for b in texture.iter_mut().take(size.max(0) as usize) {
+        let mut index1 = (*b as i32 >> 4) & 0xF;
+        let mut index2 = *b as i32 & 0xF;
+        if index1 == target_index {
+            index1 = new_index;
+        }
+        if index2 == target_index {
+            index2 = new_index;
+        }
+        *b = ((index1 << 4) | index2) as u8;
     }
 }
 

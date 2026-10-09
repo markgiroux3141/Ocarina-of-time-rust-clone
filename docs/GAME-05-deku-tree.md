@@ -12,7 +12,7 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | 3a | Combat basics: Player's guard with the shield (blocking, deflecting); `Camera_Battle1`; the effects (`EffectSs`, `z_effect.c`), `En_Dekubaba`'s included; `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5); drops on death | done |
 | 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | done |
 | 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`); room-to-room travel. Split in three: 4a doors, switches, torches and webs; 4b the Deku Stick (pulled forward from 5) and the props; 4c pushing and Master Quest's extras | done |
-| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`). Split in three: 5a the slingshot and nuts; 5b the pause menu; 5c saving | 5a done |
+| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`). Split in three: 5a the slingshot and nuts; 5b the pause menu; 5c saving | 5a, 5b done |
 | 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
 
 The working rules are the same as for the earlier phases:
@@ -2317,7 +2317,7 @@ The pack is format 24, in `out/data21`. Decisions are in
 - `sandbox-pause.bat`: the exit run headless, its trace and screenshots.
 
 **Status of the plan:** 5b's split as agreed (2026-10-07, above); 5b-2 (the dungeon map page and
-the game over drawn) is next.
+the game over drawn) followed, below.
 
 ### What was built
 
@@ -2468,3 +2468,188 @@ C-Down, C-Right), R is R, Q is Z, T is L, E is B, Space A.
 - **What to report:** the opening and closing's speed and swing, the page turns, the cursor's feel
   (the repeat's delay and speed), the icon's flight, the panel's name and prompt, the HUD's look in
   the menu, and anything drawn wrong (a texture, a colour, a page edge).
+
+## Milestone 5b-2: the dungeon map page and the game over drawn
+
+**Answer:** done. In a dungeon the pause menu's map page is the C's: the dungeon's title, the
+boss key, compass and map owned, the visited floors' buttons (every floor's with the map), Link's
+head at his floor, the boss's skull with the compass, the Gold Skulltula icon, and the viewed
+floor's two room maps with the visited rooms in colour and the room Link is in pulsing on his
+floor; the compass marks the floor's unopened chests. The cursor moves over the floors (each
+loads its maps) and the dungeon items. The game over draws "GAME OVER" fading in from orange to
+dark red over the scene, then the window turning in with "Would you like to save?" and
+"Continue playing?", their cursor and "Yes", "No". Both exits hold; their runs are the goldens
+`dungeon_map` (with `dungeon_map_1f`, `dungeon_map_2f`) and `game_over` (with
+`game_over_message`, `game_over_save`, `game_over_continue`).
+
+The pack is format 25, in `out/data22`. Decisions are in
+[ADR 0048](adr/0048-the-pause-map-and-the-game-over.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 71 to 75):
+- `test-dungeon-map.bat`: the milestone's tests (then 5b-1's pause tests);
+- `game-dungeon-map.bat`: the game inside the Deku Tree with the compass and 3F to 1F visited
+  (`deku-tree-compass`): Enter, then R, opens the map page;
+- `sandbox-dungeon-map.bat`: the map exit's run headless, its trace and screenshots;
+- `game-game-over.bat`: the game on the top floor by a Deku Baba with a quarter heart
+  (`deku-tree-quarter-heart`): its bite, then the game over;
+- `sandbox-game-over.bat`: the game over's run headless, its trace and screenshots.
+
+**Status of the plan:** 5b is done (5b-1 and 5b-2, as split on 2026-10-07); 5c (saving) is next.
+
+### What was built
+
+**The palette design** (the user chose a per-draw image of three, 2026-10-09; ADR 0048):
+- the room maps are drawn from the game's own texels: `interfaceCtx->mapSegment` is bytes
+  (`MapState::segment`), `KaleidoScope_LoadDungeonMap` copies `map_48x85_static`'s two maps in
+  from the pack, `KaleidoScope_OverridePalIndexCI4` runs on them as written, and the recorder
+  decodes the CI4 texels through the palette `gDPLoadTLUT_pal16` loaded
+  (`KaleidoGfx::quad_ci4`, `eng_gbi`'s decoder, the importer's);
+- **the engine:** `eng_gfx::DrawParams::image` (`DrawImage`, RGBA8) replaces a draw's texture
+  slot 0; the renderer gives the mesh's instance its own texture and bind groups (the mesh's
+  samplers kept), uploading when the texels change.
+
+**The dungeon map page** (`oot_game::kaleido::map`, `z_kaleido_map.c`):
+`KaleidoScope_DrawDungeonMap` whole: the cursor over the floors' column (visited floors, or all
+with the map) and the items' column, the arrows, the floor's button under the cursor enlarged,
+the title, the items, the buttons, Link's head (`VREG(30)`), the skull (`sSkullFloorIconY`), the
+Gold Skulltula icon (`gAreaGsFlags`), the current room's pulse (`mapBgPulse*`, palette entry 14),
+the room maps point sampled.
+
+**The loads** (`z_kaleido_scope.c`): `KaleidoScope_LoadDungeonMap`, `_UpdateDungeonMap`
+(`Map_SetFloorPalettesData`, the current room on index 14 on Link's floor),
+`_OverridePalIndexCI4`; `INIT`'s call.
+
+**The marks** (`oot_game::kaleido::lmap_mark`, `z_lmap_mark.c`): `PauseMapMark_Init`, `_Clear`,
+`_DrawForDungeon` (the viewed floor's chests until opened, the boss's mark with its pulse in the
+boss scenes, `GREG(92)`, `GREG(93)`), `_Draw`; `gBossMarkState`, `gBossMarkScale` on the
+`PauseContext`.
+
+**The game over** (`z_kaleido_scope.c`): `KaleidoScope_DrawGameOver` (three screen-space
+rectangles, `KRect`, at the end of the pause list, the mask on tile 1 scrolling by `VREG(89)`);
+`KaleidoScope_DrawPages`' prompt page in a game over (its 15 tiles, `sGameOverTexs`, the message,
+the cursor, "Yes", "No"); `INIT`'s `VREG(88)` and `SHOW_WINDOW`'s pitches, panel, START alpha,
+message, buttons, `XREG(5)` and alpha, which ADR 0032 had left to the draw.
+
+**The bakes:** 61 more (the titles, floor buttons, head, skull, dungeon items, Gold
+Skulltula, room map, marks under both combiners, the prompt page's tiles and labels, the prompt
+cursor); `sprite::Tile1`, a sprite bake's second texture on tile 1 with a dynamic tile size, for
+"GAME OVER"'s three parts. The pause list draws screen-space commands (`DrawParams::screen`).
+
+**The pack** (format 25): `table/map` gains `gPauseMapMarkDataTable` (from
+`z_lmap_mark_data_mq.c`, each entry with its `Vtx` array) and `map_48x85_static`'s bytes.
+
+**The debug starts and runs:** the presets `deku-tree-compass` and `deku-tree-quarter-heart`;
+`Route::DungeonMap` (`--script dungeon-map`: Start, R, the stick right onto the floors and up,
+Start) and `Route::GameOver` (`--script game-over`: the Deku Baba's bite at `DEKU_BABA_START`, No
+at the save prompt, Yes at the continue prompt, the respawn).
+
+**Still logged:** the world map's contents, the equipment and quest pages' contents, the save
+prompt's page (5c's).
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game23`, `OOT_DATA_DIR=out/data22`):
+683 passed, 0 failed, 1 ignored; 15 are new, with their expectations from the C:
+- **`oot_actors --test dungeon_map`** (8): the menu's `INIT` loading maps 4 and 5 (1F) with room
+  0's palette index 10 moved to 14 and 1F's palette; the pulse's steps, its two colours, and the
+  room maps drawn texel by texel through the palette; the floors' column (2F: maps 2 and 3, rooms
+  0 to 2's palettes, no recolouring; 3F; the unvisited floors skipped, B1 and B2 below), the
+  buttons' colours and the enlarged one; the items' column and the arrows; the title, the
+  compass, Link's head (-21), the skull (-47), the Gold Skulltula icon only with all five; the
+  marks on 1F, 2F and 3F at their points, hidden once opened, under the cursor's combiner or
+  `G_CC_MODULATEIA_PRIM`; every quad baked and covering its texture; the exit's run.
+- **`--test game_over_screens`** (4): "GAME OVER"'s rectangles from (64, 98), the mask's scroll
+  and the colours' 30 steps; the window's turn (the pitches, the panel, the message rising 3 a
+  frame, the buttons, the alpha) and its end values; the save prompt's tiles, message, cursor and
+  choices where the C puts them, No, then "Continue playing?"; every quad and rectangle baked;
+  the exit's run.
+- **`oot_import --test pack`** (1): `gPauseMapMarkDataTable` found in `ovl_kaleido_scope` with
+  its `Vtx` pointers, and `map_48x85_static` as the ROM has it (68 maps).
+- **`oot_game` `kaleido::tests`** (2): `KaleidoScope_OverridePalIndexCI4`, the game over's bakes
+  (the dynamic prim with its LOD fraction 80, tile 1's size).
+- Changed: `the_menus_bakes_are_unique_and_cover_the_pages` (75 page tiles: the game over's 15).
+
+**The exit runs:**
+- `Route::DungeonMap` (`deku-tree-compass`): `menu_opened` 52, `page_turned` 68,
+  `floor_changed` 71, `menu_closed` 82.
+- `Route::GameOver` (`deku-tree-quarter-heart`): `died` 31, `save_prompt` 190,
+  `continue_prompt` 192, `respawned` 269.
+
+**The goldens.** Against 5b-1's build (`target/game22`, on data21: 96/96 identical, its outputs in
+`out/golden_base5b2`): `pause_item` and `pause_map` differ only where the map page now draws its
+contents (the title, 1F, Link's head, room 0), proven by not drawing them (the baseline's
+bytes); every other case the same bytes. New: `dungeon_map`, `dungeon_map_1f` (frame 70),
+`dungeon_map_2f` (72), `game_over`, `game_over_message` (170), `game_over_save` (191),
+`game_over_continue` (193), each the same bytes over two runs. Logged in
+[golden/README.md](../golden/README.md): 105 hashes, 78 cases.
+
+### Decisions
+
+- **[ADR 0048](adr/0048-the-pause-map-and-the-game-over.md):** the room maps from the game's own
+  texels on a per-draw image; the marks' table and `map_48x85_static` in the pack (format 25);
+  the late-read vertices; the marks under whatever combiner is set; "GAME OVER" as screen-space
+  rectangles with a two-texture sprite bake; the game over's states' draw fields; the faithful
+  bugs; the debug starts.
+- **The map run's floor change** pushes the stick right first: R's turn leaves the cursor on the
+  map page's left arrow (`KaleidoScope_SetupPageSwitch`), as on the console.
+
+### Known gaps
+
+- **Logged:** the world map's contents (outside dungeons), the equipment and quest pages'
+  contents, the Link portrait, the debug inventory editor (L), the save prompt and its page (B,
+  5c). "No" at "Continue playing?" still respawns (the title screen isn't ported, ADR 0032).
+- **The room maps' texels and palette** are read when the menu's frame is recorded; the RDP reads
+  them a frame later. Nothing writes them in between.
+- **The boss mark's pulse** runs only in the boss rooms, which have no marks to draw: untested
+  until a boss room is reached (milestone 6).
+
+### Fixes found while building
+
+- **The marks didn't draw on the page looked at:** `KaleidoScope_DrawCursor` leaves its combiner
+  set and `PauseMapMark_Draw` sets none, so the marks there are under the cursor's combiner,
+  which wasn't baked for them; both combiners are baked now (and the bake-coverage test covers
+  the map page).
+- **"GAME OVER" came out plain white:** the bake's cycle type was written unshifted (1, not
+  `G_CYC_2CYCLE`), so it baked one-cycle without its colours.
+- **The mask's texture didn't resolve:** segment 0x0C is the importer's culling list; it's on
+  0x0F.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-dungeon-map.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-dungeon-map.bat
+scripts\run\sandbox-game-over.bat
+```
+
+### By hand
+
+Enter is Start, WASD the stick, R is R, Space A.
+
+`game-dungeon-map.bat` (or menu 72):
+1. **The map page:** Enter, then R. The page shows "Inside the Deku Tree", the compass, the 3F, 2F
+   and 1F buttons (1F in blue), Link's head beside 1F, a skull lower down (the boss's floor), and
+   1F's map: the central room in a colour that slowly pulses between blue and green, and a small
+   chest mark on it.
+2. **The floors:** the cursor arrives on the L arrow; D puts it on 1F (the button grows). W: 2F,
+   its maps (the central room and the rooms beside it in blue, not pulsing), its chest mark; W
+   again: 3F (two marks); W once more does nothing; S back down to 1F, and S below it does
+   nothing (B1 and B2 aren't visited). Each move clicks.
+3. **The items:** D from a floor goes to the compass (its name in the panel); D again to the R
+   arrow; holding D there turns the page, as on the other pages.
+- **What to report:** the pulse's look and speed, the maps' and marks' places and colours, the
+  cursor's feel on the floors and items, anything drawn wrong.
+
+`game-game-over.bat` (or menu 74):
+1. **Dying:** stand still: the Deku Baba bites and Link falls.
+2. **"GAME OVER":** fades in over the scene, dark red letters with a flickering orange edge.
+3. **The window:** turns in with "Would you like to save?", a green glow on Yes; D moves it to No,
+   Space takes it: "Continue playing?"; Space on Yes: the screen goes black and Link starts again
+   at the entrance with three hearts. (Yes at the save prompt "saves" without writing anything:
+   5c.)
+- **What to report:** the message's fade and flicker, the window's turn and speed, the prompts'
+  look, the cursor's glow.

@@ -116,8 +116,47 @@ fn the_menus_bakes_are_unique_and_cover_the_pages() {
     names.sort();
     names.dedup();
     assert_eq!(names.len(), n, "a bake listed twice");
-    // Four pages of 15 tiles, the 123 names, the 59 icons up to the bows with magic arrows.
-    assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::PageBg(_))).count(), 60);
+    // Four pages and the game over's prompt (sGameOverTexs) of 15 tiles, the 123 names, the 59
+    // icons up to the bows with magic arrows.
+    assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::PageBg(_))).count(), 75);
     assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::ItemName(_))).count(), 123);
     assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::ItemIcon(_))).count(), 0x3B);
+}
+
+#[test]
+fn override_pal_index_ci4_moves_one_index_in_both_nibbles() {
+    use super::scope::override_pal_index_ci4;
+    // KaleidoScope_OverridePalIndexCI4: each byte's two texels, (b >> 4) & 0xF and b & 0xF, the
+    // target's become the new index; the indices are masked to 4 bits first.
+    let mut t = vec![0xA1, 0x1A, 0xAA, 0x00, 0xEA];
+    override_pal_index_ci4(Some(&mut t), 5, 10, 14);
+    assert_eq!(t, vec![0xE1, 0x1E, 0xEE, 0x00, 0xEE]);
+    let mut t = vec![0xA1, 0x1A];
+    override_pal_index_ci4(Some(&mut t), 2, 10 + 16, 14 + 32);
+    assert_eq!(t, vec![0xE1, 0x1E]);
+    // Only `size` bytes; nothing when the indices are the same or the size is 0.
+    let mut t = vec![0xAA, 0xAA];
+    override_pal_index_ci4(Some(&mut t), 1, 10, 14);
+    assert_eq!(t, vec![0xEE, 0xAA]);
+    override_pal_index_ci4(Some(&mut t), 2, 10, 10);
+    override_pal_index_ci4(Some(&mut t), 0, 10, 14);
+    assert_eq!(t, vec![0xEE, 0xAA]);
+    override_pal_index_ci4(None, 2, 10, 14);
+}
+
+#[test]
+fn the_game_overs_message_bakes_two_textures_and_scrolls_tile_1() {
+    use crate::pack::BakeSegment;
+    let bakes = gfx::game_over_bakes();
+    assert_eq!(bakes.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), vec!["kaleido/game_over/P1", "kaleido/game_over/P2", "kaleido/game_over/P3"]);
+    for b in &bakes {
+        // gDPSetPrimColor(0, 80, ...): dynamic, its LOD fraction baked; env dynamic.
+        let colour = b.segments.iter().find(|(s, _)| *s == crate::sprite::SEG_COLOR).map(|(_, s)| s.clone());
+        assert_eq!(colour, Some(BakeSegment::Dynamic(vec![(0xFA00_0050, 0xFF), (0xFB00_0000, 0xFF), (0xDF00_0000, 0)])));
+        // gDPSetTileSize(1, 0, ult, 63 << 2, (31 << 2) + ult): the first frame's ult 0, dynamic.
+        let tile = b.segments.iter().find(|(s, _)| *s == crate::sprite::SEG_TILE).map(|(_, s)| s.clone());
+        assert_eq!(tile, Some(BakeSegment::Dynamic(vec![(0xF200_0000, 0x0100_0000 | ((63 << 2) << 12) | (31 << 2)), (0xDF00_0000, 0)])));
+        // The mask, gGameOverMaskTex, in its own segment.
+        assert!(b.segments.iter().any(|(_, s)| *s == BakeSegment::Texture { file: "icon_item_gameover_static".into(), symbol: "gGameOverMaskTex".into() }));
+    }
 }

@@ -23,11 +23,25 @@ pub struct GpuModel {
     pub(crate) material_buf: wgpu::Buffer,
     pub(crate) material_bg: wgpu::BindGroup,
     pub(crate) texture_bgs: Vec<wgpu::BindGroup>,
+    /// Each texture bind group's slots and filter, and the mesh's texture views: what
+    /// `Renderer::set_image` rebuilds them from.
+    tex_keys: Vec<([Option<TextureSlot>; 2], bool)>,
+    views: Vec<wgpu::TextureView>,
+    /// The draw's own texels in texture slot 0 (`eng_gfx::DrawParams::image`), if it has them.
+    image: Option<ImageOverride>,
     /// (vertex start, count, material index, texture bind group index, pipeline key)
     pub(crate) draws: Vec<(u32, u32, u32, usize, PipelineKey)>,
     pub(crate) base: Vec<GpuVertex>,
     pub(crate) bones: Vec<u16>,
     pub(crate) skinned: Vec<GpuVertex>,
+}
+
+/// A draw's own image (`eng_gfx::DrawParams::image`): its texture, and the model's texture bind
+/// groups with it in slot 0.
+struct ImageOverride {
+    size: (u32, u32),
+    texture: wgpu::Texture,
+    bgs: Vec<wgpu::BindGroup>,
 }
 
 impl Renderer {
@@ -81,6 +95,7 @@ impl Renderer {
         });
 
         let mut texture_bgs = Vec::new();
+        let mut tex_keys = Vec::new();
         let mut tex_lookup: HashMap<([Option<TextureSlot>; 2], bool), usize> = HashMap::new();
         let mut draws = Vec::new();
         let mut base = Vec::new();
@@ -91,25 +106,9 @@ impl Renderer {
             let tbg = match tex_lookup.get(&key) {
                 Some(&i) => i,
                 None => {
-                    let slot = |i: usize, this: &mut Self| -> (wgpu::TextureView, wgpu::Sampler) {
-                        match mat.textures[i] {
-                            Some(s) => (views[s.image].clone(), this.sampler(device, s.wrap_s, s.wrap_t, mat.bilinear)),
-                            None => (this.white.clone(), this.sampler(device, WrapMode::Clamp, WrapMode::Clamp, false)),
-                        }
-                    };
-                    let (v0, s0) = slot(0, self);
-                    let (v1, s1) = slot(1, self);
-                    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("textures"),
-                        layout: &self.texture_layout,
-                        entries: &[
-                            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&v0) },
-                            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&s0) },
-                            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&v1) },
-                            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&s1) },
-                        ],
-                    });
+                    let bg = self.texture_bind_group(device, &views, key, None);
                     texture_bgs.push(bg);
+                    tex_keys.push(key);
                     tex_lookup.insert(key, texture_bgs.len() - 1);
                     texture_bgs.len() - 1
                 }
@@ -149,6 +148,9 @@ impl Renderer {
             material_buf,
             material_bg,
             texture_bgs,
+            tex_keys,
+            views,
+            image: None,
             draws,
             skinned: base.clone(),
             base,
@@ -157,7 +159,75 @@ impl Renderer {
     }
 }
 
+impl Renderer {
+    /// A texture bind group: the slots' views and samplers (`image`'s view in place of slot 0's
+    /// when it has one).
+    fn texture_bind_group(&mut self, device: &wgpu::Device, views: &[wgpu::TextureView], key: ([Option<TextureSlot>; 2], bool), image: Option<&wgpu::TextureView>) -> wgpu::BindGroup {
+        let (textures, bilinear) = key;
+        let slot = |i: usize, this: &mut Self| -> (wgpu::TextureView, wgpu::Sampler) {
+            match textures[i] {
+                Some(s) => {
+                    let view = match image {
+                        Some(v) if i == 0 => v.clone(),
+                        _ => views[s.image].clone(),
+                    };
+                    (view, this.sampler(device, s.wrap_s, s.wrap_t, bilinear))
+                }
+                None => (this.white.clone(), this.sampler(device, WrapMode::Clamp, WrapMode::Clamp, false)),
+            }
+        };
+        let (v0, s0) = slot(0, self);
+        let (v1, s1) = slot(1, self);
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("textures"),
+            layout: &self.texture_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&v0) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&s0) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&v1) },
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::Sampler(&s1) },
+            ],
+        })
+    }
+
+    /// Gives the model a draw's own texels in texture slot 0 (`eng_gfx::DrawParams::image`), or
+    /// puts its own textures back with `None`. The texture is made again only when the size
+    /// changes; the texels are written each call.
+    pub fn set_image(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, model: &mut GpuModel, image: Option<&eng_gfx::DrawImage>) {
+        let Some(img) = image else {
+            model.image = None;
+            return;
+        };
+        if model.image.as_ref().is_none_or(|o| o.size != (img.width, img.height)) {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("draw image"),
+                size: wgpu::Extent3d { width: img.width, height: img.height, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: COLOR_FORMAT,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let view = texture.create_view(&Default::default());
+            let bgs = model.tex_keys.clone().into_iter().map(|k| self.texture_bind_group(device, &model.views, k, Some(&view))).collect();
+            model.image = Some(ImageOverride { size: (img.width, img.height), texture, bgs });
+        }
+        if let Some(o) = &model.image {
+            write_texture(queue, &o.texture, img.width, img.height, &img.rgba);
+        }
+    }
+}
+
 impl GpuModel {
+    /// The bind group of texture set `i`: the draw's own image in slot 0 when it has one.
+    pub(crate) fn texture_bg(&self, i: usize) -> &wgpu::BindGroup {
+        match &self.image {
+            Some(o) => &o.bgs[i],
+            None => &self.texture_bgs[i],
+        }
+    }
+
     /// CPU skinning: every vertex follows the matrix of the bone it was loaded under. A
     /// projective `root` (a bottom row other than `0 0 0 1`, such as a perspective placed on
     /// part of the overlay) is divided by w here, so the texture is interpolated affinely

@@ -36,6 +36,7 @@ echo    59  test-sticks          GAME-05's Deku Stick and props tests: the stick
 echo    62  test-push            GAME-05's push and pull tests: the push block, the gravestones, the time blocks, the rocks, room travel
 echo    65  test-slingshot       GAME-05's slingshot and nut tests: first person, the seeds, the eye switches, room travel
 echo    68  test-pause           GAME-05's pause menu tests: opening, the item page's cursor, the equip, the pages, closing
+echo    71  test-dungeon-map     GAME-05's map page and game over tests: the floors, the room maps, the marks, the screens
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -61,6 +62,8 @@ echo    60  game-sticks          Inside the Deku Tree with Deku Sticks on C-Left
 echo    63  game-push            Inside the Deku Tree by room 3's push block, or room 7's or room 2's extras (asks where)
 echo    66  game-slingshot       Inside the Deku Tree with the slingshot (L), nuts (K) and sticks (J), by an eye switch (asks where)
 echo    69  game-pause           Inside the Deku Tree with the slingshot on no button: the pause menu (Enter) to equip it
+echo    72  game-dungeon-map     Inside the Deku Tree with the compass: the pause menu's map page (Enter, then R)
+echo    74  game-game-over       Inside the Deku Tree with a quarter heart by a Deku Baba: its bite, the game over's screens
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -80,6 +83,8 @@ echo    61  sandbox-stick        The Deku Stick run's trace and screenshots (the
 echo    64  sandbox-push         The push block run's trace and screenshots (pushed into the pit, climbed), into out\run
 echo    67  sandbox-slingshot    The slingshot run's trace and screenshots (the eye shot, the door, room 2), into out\run
 echo    70  sandbox-pause        The pause menu run's trace and screenshots (the item page, the equip, the map page), into out\run
+echo    73  sandbox-dungeon-map  The map page run's trace and screenshots (1F, then 2F), into out\run
+echo    75  sandbox-game-over    The game over run's trace and screenshots (the message, the prompts), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -159,6 +164,11 @@ if "%pick%"=="67" set "script=sandbox-slingshot"
 if "%pick%"=="68" set "script=test-pause"
 if "%pick%"=="69" set "script=game-pause"
 if "%pick%"=="70" set "script=sandbox-pause"
+if "%pick%"=="71" set "script=test-dungeon-map"
+if "%pick%"=="72" set "script=game-dungeon-map"
+if "%pick%"=="73" set "script=sandbox-dungeon-map"
+if "%pick%"=="74" set "script=game-game-over"
+if "%pick%"=="75" set "script=sandbox-game-over"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

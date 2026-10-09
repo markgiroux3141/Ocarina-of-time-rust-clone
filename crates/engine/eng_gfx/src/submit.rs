@@ -48,6 +48,18 @@ pub struct DrawParams {
     /// triangle-list vertices): vertices the game builds every frame (`GRAPH_ALLOC`'d `Vtx`
     /// with the frame's colours, `z_eff_spark.c`). Vertices past the end keep their own.
     pub vertex_colors: Option<Vec<[u8; 4]>>,
+    /// Texels the game builds at run time in place of texture slot 0's image, for every material
+    /// of the mesh that has one: a texture the draw code writes in RAM (the pause map's rooms,
+    /// colour-indexed through a palette it changes every frame). The mesh's wrap and filter stay.
+    pub image: Option<DrawImage>,
+}
+
+/// A draw's own texels (`DrawParams::image`): RGBA8, row by row from the top.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrawImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: std::sync::Arc<[u8]>,
 }
 
 /// A draw's own fog: the fog colour and the RSP's fog factor (`gSPFogFactor`'s multiplier

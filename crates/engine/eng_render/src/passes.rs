@@ -36,6 +36,10 @@ pub struct Screen<'a> {
     /// after the letterbox, before the overlay's fill.
     pub pause_models: &'a [&'a GpuModel],
     pub pause_view: Option<eng_gfx::Perspective>,
+    /// Per pause model, whether it's drawn in the orthographic projection (a screen-space
+    /// rectangle in the menu's list, `eng_gfx::DrawParams::screen`: the game over's message).
+    /// Shorter than the models (or empty): the rest are in `pause_view`.
+    pub pause_ortho: &'a [bool],
     /// The letterbox bars' height in rows of 240.
     pub letterbox_rows: f32,
     /// Per model of the 3D lists, whether it's drawn in the orthographic projection (a
@@ -212,7 +216,7 @@ impl Renderer {
             for &(start, count, mat, tbg, key) in &m.draws {
                 pass.set_pipeline(&self.pipelines[&key]);
                 pass.set_bind_group(1, &m.material_bg, &[mat * MATERIAL_STRIDE as u32]);
-                pass.set_bind_group(2, &m.texture_bgs[tbg], &[]);
+                pass.set_bind_group(2, m.texture_bg(tbg), &[]);
                 pass.draw(start..start + count, 0..1);
             }
         }
@@ -236,12 +240,18 @@ impl Renderer {
         }
         if screen.pause_view.is_some() && !screen.pause_models.is_empty() {
             pass.set_bind_group(0, &self.pause_globals_bg, &[]);
-            for m in screen.pause_models {
+            let mut in_ortho = false;
+            for (i, m) in screen.pause_models.iter().enumerate() {
+                let ortho = screen.pause_ortho.get(i).copied().unwrap_or(false);
+                if ortho != in_ortho {
+                    pass.set_bind_group(0, if ortho { &self.overlay_globals_bg } else { &self.pause_globals_bg }, &[]);
+                    in_ortho = ortho;
+                }
                 pass.set_vertex_buffer(0, m.vertex_buf.slice(..));
                 for &(start, count, mat, tbg, key) in &m.draws {
                     pass.set_pipeline(&self.pipelines[&key]);
                     pass.set_bind_group(1, &m.material_bg, &[mat * MATERIAL_STRIDE as u32]);
-                    pass.set_bind_group(2, &m.texture_bgs[tbg], &[]);
+                    pass.set_bind_group(2, m.texture_bg(tbg), &[]);
                     pass.draw(start..start + count, 0..1);
                 }
             }
@@ -254,7 +264,7 @@ impl Renderer {
                 for &(start, count, mat, tbg, key) in &m.draws {
                     pass.set_pipeline(&self.pipelines[&key]);
                     pass.set_bind_group(1, &m.material_bg, &[mat * MATERIAL_STRIDE as u32]);
-                    pass.set_bind_group(2, &m.texture_bgs[tbg], &[]);
+                    pass.set_bind_group(2, m.texture_bg(tbg), &[]);
                     pass.draw(start..start + count, 0..1);
                 }
             }

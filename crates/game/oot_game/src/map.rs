@@ -5,7 +5,9 @@
 //!   (`z_map_data.c`: the floors' heights, the rooms' palettes and compass offsets, the
 //!   floor-to-room switches, the overworld minimaps) and `gMapMarkDataTable`
 //!   (`ovl_map_mark_data`'s `z_map_mark_data_mq.c`: the chests' and the boss's marks per room's
-//!   minimap).
+//!   minimap); for the pause menu's map page, `gPauseMapMarkDataTable` (`ovl_kaleido_scope`'s
+//!   `z_lmap_mark_data_mq.c`: the marks per floor's map) and `map_48x85_static`'s bytes (the
+//!   floors' room maps, which the menu copies into `mapSegment` and recolours: `crate::kaleido`).
 //! - **The state** (`MapState`): what `z_map_exp.c` keeps in `interfaceCtx` (`mapRoomNum`,
 //!   `mapPalette`, `mapPaletteIndex`, which minimap texture `mapSegment` holds), the REGs it sets
 //!   (`R_MAP_INDEX`, `R_MAP_TEX_INDEX`, the compass's scale and offset, `VREG(30)`'s floor) and
@@ -119,12 +121,52 @@ pub struct MapMarkIconData {
     pub points: Vec<MapMarkPoint>,
 }
 
-/// `table/map`: `gMapDataTable`, and `gMapMarkDataTable` (by dungeon, then by the room's
-/// minimap: its three `MapMarkIconData`, `MapMarkData`).
+/// `PAUSE_MAP_MARK_NONE`, `PAUSE_MAP_MARK_CHEST`, `PAUSE_MAP_MARK_BOSS` (`pause.h`).
+pub const PAUSE_MAP_MARK_NONE: i16 = -1;
+pub const PAUSE_MAP_MARK_CHEST: i16 = 0;
+pub const PAUSE_MAP_MARK_BOSS: i16 = 1;
+
+/// `PauseMapMarkPoint` (`pause.h`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PauseMapMarkPoint {
+    /// `chestFlag`: a chest's mark shows until this treasure flag is set (-1 none).
+    pub chest_flag: i16,
+    /// `x`, `y`: where the mark goes on the map.
+    pub x: f32,
+    pub y: f32,
+}
+
+/// `PauseMapMarkData` (`pause.h`): `count` marks of one kind, drawn with `vtx`; a floor's list
+/// ends at `PAUSE_MAP_MARK_NONE`.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PauseMapMarkData {
+    pub mark_type: i16,
+    /// `unk_04` (23 in every entry; nothing reads it).
+    pub unk_04: i32,
+    /// The `Vtx` array `vtx` points at (`sMarkChestVtx`, `sMarkBossVtx`; none for a list's end).
+    pub vtx: Vec<crate::kaleido::gfx::Vtx>,
+    pub vtx_count: i32,
+    pub count: i32,
+    /// `points[12]`, zero-filled as the C fills them.
+    pub points: Vec<PauseMapMarkPoint>,
+}
+
+/// `map_48x85_static`'s textures: `MAP_48x85_TEX_WIDTH`, `_HEIGHT`, `MAP_48x85_TEX_SIZE`
+/// (`map.h`: a 48x85 CI4).
+pub const MAP_48X85_TEX_WIDTH: u32 = 48;
+pub const MAP_48X85_TEX_HEIGHT: u32 = 85;
+pub const MAP_48X85_TEX_SIZE: usize = (MAP_48X85_TEX_WIDTH * MAP_48X85_TEX_HEIGHT / 2) as usize;
+
+/// `table/map`: `gMapDataTable`, `gMapMarkDataTable` (by dungeon, then by the room's minimap:
+/// its three `MapMarkIconData`, `MapMarkData`), and the pause map's `gPauseMapMarkDataTable` (by
+/// floor's map, `R_MAP_TEX_INDEX >> 1`: its three `PauseMapMarkData`) and `map_48x85_static`.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapTables {
     pub data: MapData,
     pub marks: Vec<Vec<[MapMarkIconData; 3]>>,
+    pub pause_marks: Vec<[PauseMapMarkData; 3]>,
+    /// `map_48x85_static` as it is in the ROM (`MAP_48X85_TEX_SIZE` a map).
+    pub map_48x85_static: Vec<u8>,
 }
 
 /// `DUNGEON_BOSS_KEY`, `DUNGEON_COMPASS`, `DUNGEON_MAP` (`DungeonItem`, `item.h`).
@@ -147,6 +189,10 @@ pub enum MapSegment {
     /// `map_i_static`'s texture `dgnMinimapTexIndexOffset[mapIndex] + room` (`MAP_I_TEX_SIZE`
     /// each, a 96x85 I4): a dungeon room's minimap.
     Dungeon { index: u32 },
+    /// `map_48x85_static`'s textures `index` and `index + 1` (at 0 and
+    /// `ALIGN16(MAP_48x85_TEX_SIZE)`): the pause map's floor (`KaleidoScope_LoadDungeonMap`),
+    /// their bytes in `MapState::segment`.
+    PauseMap { index: u32 },
 }
 
 // The scenes z_map_exp.c's switches name, by their ids (include/tables/scene_table.h).
@@ -211,6 +257,10 @@ pub struct MapState {
     pub loaded: bool,
     /// `interfaceCtx.mapSegment`'s texture.
     pub map_segment: Option<MapSegment>,
+    /// `mapSegment`'s bytes where the port reads them: the pause map's two room maps, which the
+    /// menu recolours in place (`KaleidoScope_OverridePalIndexCI4`). The minimaps aren't drawn,
+    /// so their loads only set `map_segment`.
+    pub segment: Vec<u8>,
     /// `interfaceCtx.mapPalette[32]`: the pause map's 16-colour palette (two bytes a colour): the
     /// visited rooms' colours (2, 0xBF), and in 30..31 the map's own (0, 1 with the map).
     pub map_palette: [u8; 32],
@@ -258,6 +308,7 @@ impl Default for MapState {
         MapState {
             loaded: false,
             map_segment: None,
+            segment: Vec::new(),
             map_palette: [0; 32],
             unk_258: 0,
             unk_25a: 0,

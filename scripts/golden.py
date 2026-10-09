@@ -103,6 +103,21 @@ CASES = [
     ("pause", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot-owned", "--script", "pause", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("pause_item", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot-owned", "--script", "pause", "--frames", "60", "--screenshot", "{shot}"]),
     ("pause_map", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot-owned", "--script", "pause", "--frames", "82", "--screenshot", "{shot}"]),
+    # GAME-05 milestone 5b-2: inside the Deku Tree with the compass and 3F to 1F visited, Start, R
+    # to the dungeon map page, the stick right onto the floors and up to 2F, Start: the trace and
+    # the game resumed; then the run cut at frame 70 (1F: Link's head, room 0 pulsing, chest 3's
+    # mark) and at 72 (2F, chest 1's mark).
+    ("dungeon_map", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-compass", "--script", "dungeon-map", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("dungeon_map_1f", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-compass", "--script", "dungeon-map", "--frames", "70", "--screenshot", "{shot}"]),
+    ("dungeon_map_2f", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-compass", "--script", "dungeon-map", "--frames", "72", "--screenshot", "{shot}"]),
+    # GAME-05 milestone 5b-2: inside the Deku Tree with a quarter heart, the top floor's Deku
+    # Baba's bite kills Link: the game over, No at "Would you like to save?", Yes at "Continue
+    # playing?", the respawn: the trace and the game resumed; then the run cut at frame 170
+    # ("GAME OVER" drawn), 191 (the save prompt) and 193 (the continue prompt).
+    ("game_over", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("game_over_message", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--frames", "170", "--screenshot", "{shot}"]),
+    ("game_over_save", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--frames", "191", "--screenshot", "{shot}"]),
+    ("game_over_continue", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--frames", "193", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

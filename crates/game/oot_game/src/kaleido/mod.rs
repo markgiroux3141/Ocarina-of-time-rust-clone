@@ -15,10 +15,11 @@
 //! - **Closing** (Start): the pages turn away, then `PAUSE_STATE_RESUME_GAMEPLAY` restores the
 //!   buttons and the HUD, runs `Player_SetEquipmentData` and the game's 20 frames a second.
 //!
-//! The pages: the item page whole (`item`); the dungeon map page's and the world map's
-//! contents, the equipment and quest status pages' contents log what they'd do (GAME-05
-//! milestone 5b-1; their backgrounds are drawn). The save prompt (B) logs: saving is milestone
-//! 5c's. The game over's states are this module's too (docs/adr/0032), drawn in milestone 5b-2.
+//! The pages: the item page whole (`item`), the dungeon map page whole (`map`, with its marks:
+//! `lmap_mark`); the world map's contents and the equipment and quest status pages' contents log
+//! what they'd do (their backgrounds are drawn). The save prompt (B) logs: saving is milestone
+//! 5c's. The game over's states and screens are this module's too (docs/adr/0032,
+//! docs/adr/0048-the-pause-map-and-the-game-over.md).
 //!
 //! **Not in the C: the equipment page's stand-in.** Its A button equips swords, shields, tunics
 //! and boots (`KaleidoScope_DrawEquipment`, logged); in its place the menu's resume puts on what's
@@ -31,6 +32,8 @@
 
 pub mod gfx;
 pub mod item;
+pub mod lmap_mark;
+pub mod map;
 pub mod scope;
 #[cfg(test)]
 mod tests;
@@ -163,6 +166,14 @@ pub struct PauseRegs {
     pub wreg91: i16,
     /// `XREG(5)` (0): stepped with the opening and closing, read by nothing ported.
     pub xreg5: i16,
+    /// `VREG(87)`, `VREG(88)` (64, 66): the game over's message's top left; `VREG(89)` (0): its
+    /// mask's scroll.
+    pub vreg87: i16,
+    pub vreg88: i16,
+    pub vreg89: i16,
+    /// `GREG(92)`, `GREG(93)` (0): `DEBUG_FEATURES`' offset of the pause map's marks.
+    pub greg92: i16,
+    pub greg93: i16,
     /// `R_PAUSE_STICK_REPEAT_DELAY` (`XREG(6)`, 2), `R_PAUSE_STICK_REPEAT_DELAY_FIRST`
     /// (`XREG(8)`, 10).
     pub stick_repeat_delay: i16,
@@ -211,6 +222,11 @@ impl Default for PauseRegs {
             wreg90: 320,
             wreg91: 40,
             xreg5: 0,
+            vreg87: 64,
+            vreg88: 66,
+            vreg89: 0,
+            greg92: 0,
+            greg93: 0,
             stick_repeat_delay: 2,
             stick_repeat_delay_first: 10,
             page_switch_frame_advance_on: false,
@@ -267,6 +283,13 @@ pub struct KaleidoStatics {
     pub trade_quest_marker_bob_state: i16,
     /// `sSavedButtonStatus` (bss).
     pub saved_button_status: [u8; 5],
+    /// `KaleidoScope_DrawDungeonMap`'s `mapBgPulseR`, `_G`, `_B` (0, 200 / 8, 140 / 8),
+    /// `mapBgPulseTimer` (20) and `mapBgPulseStage`: the current room's colour.
+    pub map_bg_pulse_r: i16,
+    pub map_bg_pulse_g: i16,
+    pub map_bg_pulse_b: i16,
+    pub map_bg_pulse_timer: u16,
+    pub map_bg_pulse_stage: u16,
     /// Not in the C: which pages' unported contents were logged since the overlay loaded.
     pub logged: u32,
 }
@@ -296,6 +319,11 @@ impl Default for KaleidoStatics {
             trade_quest_marker_bob_timer: 1,
             trade_quest_marker_bob_state: 0,
             saved_button_status: [0; 5],
+            map_bg_pulse_r: 0 / 8,
+            map_bg_pulse_g: 200 / 8,
+            map_bg_pulse_b: 140 / 8,
+            map_bg_pulse_timer: 20,
+            map_bg_pulse_stage: 0,
             logged: 0,
         }
     }
@@ -358,6 +386,10 @@ pub struct PauseContext {
     pub bg_fills: Option<(Option<[u8; 4]>, Option<[u8; 4]>)>,
     pub regs: PauseRegs,
     pub statics: KaleidoStatics,
+    /// `gBossMarkState` (`z_kaleido_manager.c`), `gBossMarkScale` (`z_kaleido_scope_call.c`): the
+    /// pause map's boss mark's pulse (`PauseMapMark_Init` resets both every draw).
+    pub boss_mark_state: u8,
+    pub boss_mark_scale: f32,
     /// `gKaleidoMgrCurOvl == kaleidoScopeOvl`: the overlay is loaded.
     pub ovl_loaded: bool,
     /// The vertex arrays `KaleidoScope_SetVertices` builds each frame (`itemPageVtx` ..
@@ -430,6 +462,8 @@ impl Default for PauseContext {
             bg_fills: None,
             regs: PauseRegs::default(),
             statics: KaleidoStatics::default(),
+            boss_mark_state: 0,
+            boss_mark_scale: 0.0,
             ovl_loaded: false,
             item_page_vtx: Vec::new(),
             equip_page_vtx: Vec::new(),
@@ -718,9 +752,9 @@ impl PlayState {
     }
 
     /// The menu's draws for the frame (`DrawLists::pause`), the cursor's vertices as the RSP
-    /// reads them.
+    /// reads them; the game over's message last, in screen space.
     pub fn kaleido_draw_cmds(&self) -> Vec<eng_gfx::DrawCmd> {
         let p = &self.pause_ctx;
-        p.gfx.quads.iter().map(|q| q.draw_cmd(&p.cursor_vtx)).collect()
+        p.gfx.quads.iter().map(|q| q.draw_cmd(&p.cursor_vtx)).chain(p.gfx.rects.iter().map(|r| r.draw_cmd())).collect()
     }
 }

@@ -1,7 +1,9 @@
 //! The map's and the compass's tables (`oot_game::map`, `table/map`), read from the C:
-//! `gMapDataTable` (`src/code/z_map_data.c`) and `gMapMarkDataTable` (the file `spec` builds
-//! `ovl_map_mark_data` from for this version: `z_map_mark_data_mq.c`). The importer's tests
-//! check both against the ROM's bytes.
+//! `gMapDataTable` (`src/code/z_map_data.c`), `gMapMarkDataTable` (the file `spec` builds
+//! `ovl_map_mark_data` from for this version: `z_map_mark_data_mq.c`) and the pause map's
+//! `gPauseMapMarkDataTable` (the one `ovl_kaleido_scope` includes: `z_lmap_mark_data_mq.c`); and
+//! `map_48x85_static` from the ROM as it is (the pause map's room maps, which the menu copies and
+//! recolours at run time). The importer's tests check the tables against the ROM's bytes.
 //!
 //! Each array is read at the size it's declared with and filled as C fills an initializer: rows
 //! and elements past the ones written are zero.
@@ -9,7 +11,8 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use oot_game::map::{MAP_COMPASS_ROOMS, MAP_FLOOR_PALETTES, MAP_FLOORS, MAP_ROOM_PALETTES, MAP_SWITCHES, MapData, MapMarkIconData, MapMarkPoint, MapTables};
+use oot_game::kaleido::gfx::Vtx;
+use oot_game::map::{MAP_COMPASS_ROOMS, MAP_FLOOR_PALETTES, MAP_FLOORS, MAP_ROOM_PALETTES, MAP_SWITCHES, MapData, MapMarkIconData, MapMarkPoint, MapTables, PauseMapMarkData, PauseMapMarkPoint};
 
 use crate::csrc::{Init, Macros, find_initializer, read_c};
 
@@ -127,10 +130,27 @@ pub fn load_map_data(decomp: &Path) -> Result<MapData> {
 /// The C file `spec` builds `ovl_map_mark_data` from for this version (`z_map_mark_data.c`, or
 /// `z_map_mark_data_mq.c` for Master Quest), from its segment's `include` line.
 pub fn map_mark_data_file(decomp: &Path) -> Result<String> {
+    segment_source(decomp, "ovl_map_mark_data", "")
+}
+
+/// The C file `spec` builds `ovl_kaleido_scope`'s pause map marks from for this version
+/// (`z_lmap_mark_data.c`, or `z_lmap_mark_data_mq.c` for Master Quest).
+pub fn pause_map_mark_data_file(decomp: &Path) -> Result<String> {
+    segment_source(decomp, "ovl_kaleido_scope", "/z_lmap_mark_data")
+}
+
+/// The first C file `segment`'s `include` lines name (once the version's `#if`s are applied)
+/// whose path contains `part`.
+fn segment_source(decomp: &Path, segment: &str, part: &str) -> Result<String> {
     let spec = read_c(decomp, "spec/overlays.inc")?;
-    let seg = spec.split("beginseg").find(|s| s.contains("name \"ovl_map_mark_data\"")).context("spec: no ovl_map_mark_data segment")?;
+    let name = format!("name \"{segment}\"");
+    let seg = spec.split("beginseg").find(|s| s.contains(&name)).with_context(|| format!("spec: no {segment} segment"))?;
     let seg = seg.split("endseg").next().unwrap_or(seg);
-    let obj = seg.lines().find_map(|l| l.trim().strip_prefix("include \"$(BUILD_DIR)/").and_then(|r| r.strip_suffix(".o\""))).context("spec: ovl_map_mark_data includes nothing")?;
+    let obj = seg
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("include \"$(BUILD_DIR)/").and_then(|r| r.strip_suffix(".o\"")))
+        .find(|o| o.contains(part))
+        .with_context(|| format!("spec: {segment} includes no {part}"))?;
     Ok(format!("{obj}.c"))
 }
 
@@ -196,7 +216,69 @@ pub fn load_map_marks(decomp: &Path) -> Result<Vec<Vec<[MapMarkIconData; 3]>>> {
     Ok(out)
 }
 
-/// `table/map`.
-pub fn load(decomp: &Path) -> Result<MapTables> {
-    Ok(MapTables { data: load_map_data(decomp).context("z_map_data.c")?, marks: load_map_marks(decomp).context("gMapMarkDataTable")? })
+/// A `Vtx` array (`static const Vtx name[] = { VTX(x, y, z, s, t, r, g, b, a), ... }`).
+fn vtx_array(src: &str, m: &Macros, name: &str) -> Result<Vec<Vtx>> {
+    let mut out = Vec::new();
+    for v in find_initializer(src, name)?.list() {
+        let a = v.atom().with_context(|| format!("{name}: {v:?}"))?;
+        let args = a.trim().strip_prefix("VTX(").and_then(|r| r.strip_suffix(')')).with_context(|| format!("{name}: {a}"))?;
+        let n: Vec<i64> = args.split(',').map(|x| m.eval(x.trim()).with_context(|| format!("{name}: {x}"))).collect::<Result<_>>()?;
+        anyhow::ensure!(n.len() == 9, "{name}: VTX takes 9 values, not {}", n.len());
+        out.push(Vtx { ob: [n[0] as i16, n[1] as i16, n[2] as i16], tc: [n[3] as i16, n[4] as i16], cn: [n[5] as u8, n[6] as u8, n[7] as u8, n[8] as u8] });
+    }
+    Ok(out)
+}
+
+/// `gPauseMapMarkDataTable`: by floor's map, its three `PauseMapMarkData` (`{ markType, unk_04,
+/// vtx, vtxCount, count, { { chestFlag, x, y }, ... } }`), zero-filled, each with the `Vtx` array
+/// it points at.
+pub fn load_pause_map_marks(decomp: &Path) -> Result<Vec<[PauseMapMarkData; 3]>> {
+    let file = pause_map_mark_data_file(decomp)?;
+    let src = read_c(decomp, &file)?;
+    let m = Macros::read(decomp, &["include/pause.h"])?;
+    let int = |i: Option<&Init>| -> Result<i64> {
+        match i.and_then(|i| i.atom()) {
+            None => Ok(0),
+            Some(a) => m.eval(a).with_context(|| format!("PauseMapMarkData: {a}")),
+        }
+    };
+    let mut out = Vec::new();
+    for maps in find_initializer(&src, "gPauseMapMarkDataTable")?.list() {
+        let datas = maps.list();
+        anyhow::ensure!(datas.len() <= 3, "{} PauseMapMarkData", datas.len());
+        let mut data: [PauseMapMarkData; 3] = Default::default();
+        for (k, d) in datas.iter().enumerate() {
+            let l = d.list();
+            let vtx = match l.get(2).and_then(|i| i.atom()).map(str::trim) {
+                None | Some("NULL") | Some("0") => Vec::new(),
+                Some(name) => vtx_array(&src, &m, name)?,
+            };
+            let mut points = Vec::new();
+            if let Some(p) = l.get(5) {
+                for q in p.list().iter().filter(|q| matches!(q, Init::List(_))) {
+                    let q = q.list();
+                    let f = |k: usize| q.get(k).and_then(|i| i.atom()).map(|a| crate::csrc::eval_expr(a).with_context(|| format!("PauseMapMarkPoint: {a}"))).unwrap_or(Ok(0.0));
+                    points.push(PauseMapMarkPoint { chest_flag: int(q.first())? as i16, x: f(1)?, y: f(2)? });
+                }
+            }
+            anyhow::ensure!(points.len() <= 12, "{} points", points.len());
+            points.resize(12, PauseMapMarkPoint::default());
+            data[k] = PauseMapMarkData { mark_type: int(l.first())? as i16, unk_04: int(l.get(1))? as i32, vtx, vtx_count: int(l.get(3))? as i32, count: int(l.get(4))? as i32, points };
+        }
+        for d in data.iter_mut().skip(datas.len()) {
+            d.points = vec![PauseMapMarkPoint::default(); 12];
+        }
+        out.push(data);
+    }
+    Ok(out)
+}
+
+/// `table/map`: the tables from the C, `map_48x85_static` from the ROM.
+pub fn load(decomp: &Path, rom: &crate::rom::Rom) -> Result<MapTables> {
+    Ok(MapTables {
+        data: load_map_data(decomp).context("z_map_data.c")?,
+        marks: load_map_marks(decomp).context("gMapMarkDataTable")?,
+        pause_marks: load_pause_map_marks(decomp).context("gPauseMapMarkDataTable")?,
+        map_48x85_static: rom.file_by_name("map_48x85_static").context("map_48x85_static")?.to_vec(),
+    })
 }

@@ -30,6 +30,8 @@ struct Instance {
     fog: Option<eng_gfx::FogOverride>,
     /// The vertex colours it was last given (`DrawParams::vertex_colors`).
     vertex_colors: Option<Vec<[u8; 4]>>,
+    /// The image it was last given (`DrawParams::image`).
+    image: Option<eng_gfx::DrawImage>,
 }
 
 /// Uploaded meshes by key, with their per-frame instances.
@@ -71,7 +73,7 @@ impl MeshCache {
                 self.missing.insert(cmd.mesh.clone(), ());
                 return false;
             };
-            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None, vertex_colors: None });
+            list.push(Instance { model: r.upload(device, queue, &d), posed: None, lights: Vec::new(), fog: None, vertex_colors: None, image: None });
         }
         let inst = &mut list[n];
         if inst.posed.as_ref().is_none_or(|(t, b)| *t != cmd.transform || *b != cmd.bones) {
@@ -81,6 +83,10 @@ impl MeshCache {
         if inst.vertex_colors != cmd.params.vertex_colors {
             inst.model.set_vertex_colors(cmd.params.vertex_colors.as_deref());
             inst.vertex_colors = cmd.params.vertex_colors.clone();
+        }
+        if inst.image != cmd.params.image {
+            r.set_image(device, queue, &mut inst.model, cmd.params.image.as_ref());
+            inst.image = cmd.params.image.clone();
         }
         let lights_changed = inst.lights != cmd.params.lights;
         let fog_changed = inst.fog != cmd.params.fog;
@@ -116,6 +122,7 @@ impl Renderer {
         let mut ortho: Vec<bool> = Vec::new();
         let mut order_2d: Vec<(&MeshKey, usize)> = Vec::new();
         let mut order_pause: Vec<(&MeshKey, usize)> = Vec::new();
+        let mut ortho_pause: Vec<bool> = Vec::new();
         let mut opa_models = 0;
         let n_opa = lists.opa.len();
         // 0: the 3D lists, 1: the pause menu's, 2: the overlay's.
@@ -130,6 +137,7 @@ impl Renderer {
                     order_2d.push((&cmd.mesh, *n));
                 } else if list == 1 {
                     order_pause.push((&cmd.mesh, *n));
+                    ortho_pause.push(cmd.params.screen);
                 } else {
                     order.push((&cmd.mesh, *n));
                     ortho.push(cmd.params.screen);
@@ -148,6 +156,7 @@ impl Renderer {
             overlay_models: &models_2d,
             pause_models: &models_pause,
             pause_view: lists.pause_view,
+            pause_ortho: &ortho_pause,
             letterbox_rows: lists.letterbox_rows,
             ortho_models: &ortho,
             opa_models,

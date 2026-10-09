@@ -106,7 +106,11 @@ room travel test round rooms 1 to 8; pack format 23. 5b, the pause menu, is spli
 second, the four pages' box and turns, the cursor, the name and info panels, the item page whole
 with the equip's flight to the C button, the other pages' backgrounds, the scene behind kept,
 the HUD's START and B labels; Start's stand-in down to its equipment half, at the menu's resume;
-pack format 24. Next: 5b-2, the dungeon map page and the game over drawn.
+pack format 24. 5b-2, the dungeon map page and the game over drawn, is done
+([ADR 0048](adr/0048-the-pause-map-and-the-game-over.md)): `KaleidoScope_DrawDungeonMap` whole
+with its loads and `z_lmap_mark.c`'s marks, the room maps drawn from the game's own texels through
+their run-time palette (a per-draw image in the engine), "GAME OVER" and the game over's prompt
+page; pack format 25. Next: 5c, saving.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -115,7 +119,7 @@ the 2026-09-30 deferral: the scripted runs play the cutscenes.
 **Shortcuts the next phases have to undo:**
 - ~~A new save gives child Link the Kokiri Sword and a shield on B.~~ Undone in GAME-03 milestone 1: a new save is `Sram_InitNewSave`'s, and the presets own and wear them (ADR 0019).
 - ~~The inventory isn't kept.~~ Undone in GAME-03 milestone 1.
-- The pause menu's frame and item page are ported (ADR 0047); the equipment, quest and map pages show only their backgrounds (their contents logged), and the equipment page's equipping is a stand-in run as the menu closes: every owned piece of a type with nothing worn goes on (ADR 0019, 0047). The save prompt and the debug inventory editor log. The game over screens run undrawn (5b-2), and "Continue? No" respawns instead of going to the title screen (ADR 0032).
+- The pause menu's frame, item page and dungeon map page are ported (ADR 0047, 0048); the equipment and quest pages and the world map show only their backgrounds (their contents logged), and the equipment page's equipping is a stand-in run as the menu closes: every owned piece of a type with nothing worn goes on (ADR 0019, 0047). The save prompt and the debug inventory editor log. The game over's screens are drawn (5b-2); "Continue? No" respawns instead of going to the title screen (ADR 0032).
 - Unported actors are placeholders. Among them: Saria, the opening's nightmare (`En_Viewer`, the drawbridge), and every shopkeeper but the Kokiri one. (Mido and the Kokiri shopkeeper: ported in GAME-03 milestone 3. Navi and the other fairies: GAME-03 milestone 5.)
 - ~~There are no cutscenes: the importer skips all 73.~~ Undone in GAME-03 milestone 4 (ADR 0022): the 73 scene scripts and the 27 overlay ones are in the pack, and the Deku Tree's talk opens his mouth on a new save. The `deku-tree-open` preset stays for the shortcuts and GAME-02's run.
 - ~~The pack holds scene layers 0 to 3 only: no cutscene layers, so a new file doesn't start with Navi's wake-up.~~ Undone in GAME-03 milestone 5 (ADR 0023): every scene's cutscene layers are in the pack, and a new file plays the opening. The routes from Link's bed keep their start (`cutsceneIndex` 0).
@@ -347,9 +351,17 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
        - **Exit:** in the Deku Tree, the menu opened, the slingshot equipped on C-Right from the
          item page, the page turned and the menu closed. *(Done: `Route::Pause`, the golden
          `pause` with `pause_item` and `pause_map`.)*
-     - **5b-2, the dungeon map page and the game over:** `z_kaleido_map.c`'s dungeon map
-       whole with `z_lmap_mark.c`'s marks; the game over screens drawn through
+     - **5b-2, the dungeon map page and the game over** (done: see [GAME-05](GAME-05-deku-tree.md)
+       milestone 5b-2, [ADR 0048](adr/0048-the-pause-map-and-the-game-over.md)):
+       `z_kaleido_map.c`'s dungeon map whole with its loads and `z_lmap_mark.c`'s marks
+       (`gPauseMapMarkDataTable` and `map_48x85_static` in the pack), the room maps' run-time
+       palette through a per-draw image in the engine; the game over screens drawn through
        `KaleidoScope_Draw`.
+       - **Exit:** the map page from a debug start inside the Deku Tree (the visited floors, the
+         chests' marks with the compass, a floor changed with the stick); the game over's
+         screens in a golden. *(Done: `Route::DungeonMap`, the golden `dungeon_map` with
+         `dungeon_map_1f` and `dungeon_map_2f`; `Route::GameOver`, the golden `game_over` with
+         `game_over_message`, `game_over_save` and `game_over_continue`.)*
    - **5c, saving:** `z_sram.c`'s save and load whole, the slots on disk in the C's layout, the
      pause menu's save prompt, the game over's `Sram_WriteSave`, and a stand-in for the file
      select's load.

@@ -79,26 +79,48 @@ pub struct SpriteBake {
     pub quad: Quad,
 }
 
+/// A second texture on tile 1 (`gDPLoadMultiBlock` at TMEM `tmem`, after the sprite's own on
+/// tile 0), whose tile size the draw sets every frame (`gDPSetTileSize(1, ...)` in the dynamic
+/// segment `SEG_TILE`, `SegmentValues::tiles[SEG_TILE][1]`): the game over's scrolling mask.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tile1 {
+    pub tex: TexSrc,
+    pub load: Load,
+    pub tmem: u32,
+    /// `gDPSetPrimColor`'s LOD fraction, with the dynamic prim colour (`PRIM_LOD_FRAC`).
+    pub prim_lod_frac: u8,
+}
+
 // The bake's segments.
 const SEG_TEX: u8 = 0x08;
 const SEG_VTX: u8 = 0x09;
 const SEG_SETUP: u8 = 0x0A;
 /// The dynamic prim and env colours (`SegmentValues::prim[0x0B]`, `env[0x0B]`).
 pub const SEG_COLOR: u8 = 0x0B;
+/// `Tile1`'s texture (0x0C is the importer's culling list).
+const SEG_TEX1: u8 = 0x0F;
 const SEG_DRAW: u8 = 0x0D;
+/// `Tile1`'s tile size, set every frame (`SegmentValues::tiles[0x0E][1]`).
+pub const SEG_TILE: u8 = 0x0E;
+
+/// The segment a texture source binds, and its texels' offset in it.
+fn tex_segment(tex: &TexSrc) -> (BakeSegment, u32) {
+    match tex {
+        TexSrc::Symbol { file, symbol } => (BakeSegment::Texture { file: file.clone(), symbol: symbol.clone() }, 0),
+        TexSrc::File { file, offset } => (BakeSegment::File(file.clone()), *offset),
+        TexSrc::GrayRgba32 { file, offset, pixels } => (BakeSegment::GrayRgba32 { file: file.clone(), offset: *offset, pixels: *pixels }, 0),
+    }
+}
 
 impl SpriteBake {
     /// The mesh record: the setup, the colours, then the load and the quad.
     pub fn mesh_bake(&self) -> MeshBake {
-        let tex = match &self.tex {
-            TexSrc::Symbol { file, symbol } => BakeSegment::Texture { file: file.clone(), symbol: symbol.clone() },
-            TexSrc::File { file, .. } => BakeSegment::File(file.clone()),
-            TexSrc::GrayRgba32 { file, offset, pixels } => BakeSegment::GrayRgba32 { file: file.clone(), offset: *offset, pixels: *pixels },
-        };
-        let offset = match &self.tex {
-            TexSrc::Symbol { .. } | TexSrc::GrayRgba32 { .. } => 0,
-            TexSrc::File { offset, .. } => *offset,
-        };
+        self.mesh_bake_tile1(None)
+    }
+
+    /// The mesh record with a second texture on tile 1 (`Tile1`).
+    pub fn mesh_bake_tile1(&self, tile1: Option<&Tile1>) -> MeshBake {
+        let (tex, offset) = tex_segment(&self.tex);
         let l = self.load;
         let mut d = Dl::default();
         let addr = seg(SEG_TEX as u32, offset);
@@ -106,6 +128,19 @@ impl SpriteBake {
             d.load_texture_block_4b(addr, l.fmt, l.width, l.height, 0, l.cms, l.cmt, l.masks, l.maskt, 0, 0);
         } else {
             d.load_texture_block(addr, l.fmt, l.siz, l.width, l.height, 0, l.cms, l.cmt, l.masks, l.maskt, 0, 0);
+        }
+        let mut tile1_segments = Vec::new();
+        if let Some(t) = tile1 {
+            let (tex1, offset1) = tex_segment(&t.tex);
+            let m = t.load;
+            d.load_multi_block(seg(SEG_TEX1 as u32, offset1), t.tmem, 1, m.fmt, m.siz, m.width, m.height, 0, m.cms, m.cmt, m.masks, m.maskt, 0, 0);
+            d.display_list(seg(SEG_TILE as u32, 0));
+            // gDPSetTileSize(1, 0, 0, (width - 1) << 2, (height - 1) << 2): the first frame's.
+            let mut tile = Dl::default();
+            tile.set_tile_size(1, 0, 0, (m.width - 1) << 2, (m.height - 1) << 2);
+            tile.end();
+            tile1_segments.push((SEG_TEX1, tex1));
+            tile1_segments.push((SEG_TILE, BakeSegment::Dynamic(tile.0)));
         }
         let mut vtx = Vec::new();
         let white = [255, 255, 255, 255];
@@ -132,10 +167,20 @@ impl SpriteBake {
         setup.end();
         let mut segments = vec![(SEG_TEX, tex), (SEG_VTX, BakeSegment::Bytes(vtx)), (SEG_SETUP, BakeSegment::Commands(setup.0))];
         let mut prelude = vec![SEG_SETUP];
-        if self.prim || self.env {
+        if let Some(t) = tile1.filter(|t| t.prim_lod_frac != 0 && self.prim) {
+            // `gDPSetPrimColor(0, lodFrac, ...)`: the colour dynamic, its LOD fraction baked.
+            let mut cmds = vec![(0xFA00_0000 | t.prim_lod_frac as u32, 0x0000_00FF)];
+            if self.env {
+                cmds.push((0xFB00_0000, 0x0000_00FF));
+            }
+            cmds.push((0xDF00_0000, 0));
+            segments.push((SEG_COLOR, BakeSegment::Dynamic(cmds)));
+            prelude.push(SEG_COLOR);
+        } else if self.prim || self.env {
             segments.push((SEG_COLOR, BakeSegment::DynamicColor { env: self.env, prim: self.prim }));
             prelude.push(SEG_COLOR);
         }
+        segments.extend(tile1_segments);
         segments.push((SEG_DRAW, BakeSegment::Commands(d.0)));
         prelude.push(SEG_DRAW);
         MeshBake { name: self.name.clone(), object: "gameplay_keep".into(), segments, prelude, body: BakeBody::DLists(Vec::new()) }

@@ -9,4 +9,4 @@ pub mod submit;
 pub mod texture;
 
 pub use draw::*;
-pub use submit::{DrawCmd, DrawLists, DrawParams, FogOverride, LinePoint, MAX_POINT_LIGHTS, MeshKey, Perspective, PointLight};
+pub use submit::{DrawCmd, DrawImage, DrawLists, DrawParams, FogOverride, LinePoint, MAX_POINT_LIGHTS, MeshKey, Perspective, PointLight};

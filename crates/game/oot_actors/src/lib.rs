@@ -190,7 +190,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     // The HUD's.
     v.extend(oot_game::interface::bakes().iter().map(|b| b.mesh_bake()));
     // The pause menu's (docs/adr/0047-the-pause-menu.md).
-    v.extend(oot_game::kaleido::gfx::bakes().iter().map(|b| b.mesh_bake()));
+    v.extend(oot_game::kaleido::gfx::mesh_bakes());
     v.extend(en_arrow::bakes());
     v
 }
