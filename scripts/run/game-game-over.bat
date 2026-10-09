@@ -4,8 +4,9 @@ rem Deku Baba and facing it (the deku-tree-quarter-heart preset). Stand still: i
 rem dies. The game over follows: "GAME OVER" fading in over the scene, then the window turning in
 rem with "Would you like to save?": D (the stick right) and Space (A) for No, or Space for Yes;
 rem then "Continue playing?": Space for Yes, and Link starts again at the Deku Tree's entrance
-rem with three hearts. (Saving to the cartridge isn't ported; No at "Continue playing?" would go
-rem to the title screen, which isn't either: it continues.)
+rem with three hearts. (Yes at the save prompt saves to an SRAM in memory: a debug start's file
+rem isn't your save file. No at "Continue playing?" would go to the title screen, which isn't
+rem ported: it continues.)
 setlocal
 call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot || exit /b 1

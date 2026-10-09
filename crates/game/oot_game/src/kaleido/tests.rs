@@ -116,9 +116,11 @@ fn the_menus_bakes_are_unique_and_cover_the_pages() {
     names.sort();
     names.dedup();
     assert_eq!(names.len(), n, "a bake listed twice");
-    // Four pages and the game over's prompt (sGameOverTexs) of 15 tiles, the 123 names, the 59
-    // icons up to the bows with magic arrows.
-    assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::PageBg(_))).count(), 75);
+    // Four pages and the game over's prompt (sGameOverTexs) of 15 tiles, and the save prompt's
+    // one of its own (SAVE_TEXS: gPauseSave10ENGTex), the 123 names, the 59 icons up to the bows
+    // with magic arrows.
+    assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::PageBg(_))).count(), 76);
+    assert!(list.contains(&(gfx::KTex::PageBg("gPauseSave10ENGTex"), gfx::Cc::ModulateIa)));
     assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::ItemName(_))).count(), 123);
     assert_eq!(list.iter().filter(|(t, _)| matches!(t, gfx::KTex::ItemIcon(_))).count(), 0x3B);
 }

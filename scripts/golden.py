@@ -6,7 +6,7 @@ and records or checks the hashes.
 
 Images and traces are written to the git-ignored out/golden/ and stay local. Only the hashes
 (golden/renders.sha256) are committed. PNGs are hashed on their decoded RGBA pixels and size,
-so encoder settings don't matter; JSON traces are hashed as bytes.
+so encoder settings don't matter; JSON traces and SRAM images ({sram}) are hashed as bytes.
 
 The sandbox binary is `oot_sandbox` (spike 03-04's `oot_play` before the restructure); pass
 --sandbox oot_play to run the old one.
@@ -118,6 +118,13 @@ CASES = [
     ("game_over_message", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--frames", "170", "--screenshot", "{shot}"]),
     ("game_over_save", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--frames", "191", "--screenshot", "{shot}"]),
     ("game_over_continue", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-quarter-heart", "--script", "game-over", "--frames", "193", "--screenshot", "{shot}"]),
+    # GAME-05 milestone 5c: inside the Deku Tree, the slingshot onto C-Left from the pause menu,
+    # B's save prompt, "Yes" (the save written to file 2 of an SRAM in memory, the menu closed),
+    # then the console's reset loading file 2 back; the final SRAM image hashed ({sram}). The
+    # prompt halfway in (69) and waiting on Yes (73).
+    ("save", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-save", "--script", "save", "--trace", "{trace}", "--screenshot", "{shot}", "--sram", "{sram}"]),
+    ("save_prompt_turn", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-save", "--script", "save", "--frames", "69", "--screenshot", "{shot}"]),
+    ("save_prompt", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-save", "--script", "save", "--frames", "73", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.
@@ -157,7 +164,7 @@ def run_case(case, bins):
     name, prog, args = case
     d = OUT / name
     d.mkdir(parents=True, exist_ok=True)
-    paths = {"sheet": d / "sheet.png", "trace": d / "trace.json", "shot": d / "shot.png"}
+    paths = {"sheet": d / "sheet.png", "trace": d / "trace.json", "shot": d / "shot.png", "sram": d / "sram.sra"}
     for p in paths.values():
         if p.exists():
             p.unlink()

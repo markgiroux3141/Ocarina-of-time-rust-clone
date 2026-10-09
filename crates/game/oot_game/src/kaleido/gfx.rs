@@ -508,7 +508,12 @@ pub const ITEM_NAME_COUNT: u16 = 123;
 pub fn bake_list() -> Vec<(KTex, Cc)> {
     let mut v = Vec::new();
     for page in super::scope::PAGE_BGS {
-        v.extend(page.iter().map(|&s| (KTex::PageBg(s), Cc::ModulateIa)));
+        // The save prompt's page shares all but one tile with the game over's.
+        for &s in page.iter() {
+            if !v.contains(&(KTex::PageBg(s), Cc::ModulateIa)) {
+                v.push((KTex::PageBg(s), Cc::ModulateIa));
+            }
+        }
     }
     for item in 0..=LAST_MENU_ICON {
         v.push((KTex::ItemIcon(item), Cc::ModulateIaPrim));
@@ -537,7 +542,7 @@ pub fn bake_list() -> Vec<(KTex, Cc)> {
     for cc in [Cc::ModulateIaPrim, Cc::PrimEnvTexel] {
         v.extend([(KTex::MapMark(0), cc), (KTex::MapMark(1), cc)]);
     }
-    // The game over's prompt page (its tiles are with the pages').
+    // The game over's and the save prompt's page (their tiles are with the pages').
     let (msg, w) = super::scope::SAVE_PROMPT_MESSAGE;
     v.push((KTex::Label(msg, w), Cc::ModulateIa));
     v.push((KTex::ContinuePlaying, Cc::ModulateIa));

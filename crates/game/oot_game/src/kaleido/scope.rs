@@ -201,8 +201,29 @@ const GAME_OVER_PAGE_BG: [&str; 15] = [
     "gPauseSave24Tex",
 ];
 
-/// Every page's background tiles, for the bakes: the four pages and the game over's prompt.
-pub(super) const PAGE_BGS: [&[&str; 15]; 5] = [&ITEM_PAGE_BG, &EQUIP_PAGE_BG, &MAP_PAGE_BG, &QUEST_PAGE_BG, &GAME_OVER_PAGE_BG];
+/// `SAVE_TEXS(LANGUAGE_ENG)` (`sSavePromptBgQuadsENGTexs`): the save prompt's page, the game
+/// over's but for column 2's top tile.
+const SAVE_PAGE_BG: [&str; 15] = [
+    "gPauseSave00Tex",
+    "gPauseSave01Tex",
+    "gPauseSave02Tex",
+    "gPauseSave03Tex",
+    "gPauseSave04Tex",
+    "gPauseSave10ENGTex",
+    "gPauseSave11Tex",
+    "gPauseSave12Tex",
+    "gPauseSave13Tex",
+    "gPauseSave14Tex",
+    "gPauseSave20Tex",
+    "gPauseSave21Tex",
+    "gPauseSave22Tex",
+    "gPauseSave23Tex",
+    "gPauseSave24Tex",
+];
+
+/// Every page's background tiles, for the bakes: the four pages, the game over's prompt and the
+/// save prompt.
+pub(super) const PAGE_BGS: [&[&str; 15]; 6] = [&ITEM_PAGE_BG, &EQUIP_PAGE_BG, &MAP_PAGE_BG, &QUEST_PAGE_BG, &GAME_OVER_PAGE_BG, &SAVE_PAGE_BG];
 
 /// `sSavePromptMessageTexs[LANGUAGE_ENG]` (IA8 152x16), `sPromptChoiceTexs[LANGUAGE_ENG]` (IA8
 /// 48x16): the prompts' labels (`icon_item_nes_static`).
@@ -707,10 +728,7 @@ impl PlayState {
                 }
             }
             PAUSE_STATE_MAIN => self.kaleido_scope_update_main(),
-            PAUSE_STATE_SAVE_PROMPT => {
-                // The save prompt is milestone 5c's: B logs instead of opening it (see the main
-                // state), so this state isn't reached.
-            }
+            PAUSE_STATE_SAVE_PROMPT => self.kaleido_scope_update_save_prompt(),
             PAUSE_STATE_GAME_OVER_INIT..=PAUSE_STATE_GAME_OVER_FINISH => self.kaleido_scope_update_game_over(),
             PAUSE_STATE_CLOSING => {
                 let p = &mut self.pause_ctx;
@@ -860,10 +878,133 @@ impl PlayState {
         let _ = (NA_SE_SY_TRE_BOX_APPEAR, NA_SE_SY_OCARINA_ERROR);
     }
 
-    /// B's save prompt (`nextPageMode` 0, `promptChoice` 0, `NA_SE_SY_DECIDE`, the buttons
-    /// disabled but A, `PAUSE_STATE_SAVE_PROMPT`): milestone 5c's, logged; the menu stays.
+    /// B in `PAUSE_STATE_MAIN` (the three idle states' shared part): the save prompt opens
+    /// (`nextPageMode` 0, `promptChoice` 0 on Yes, `NA_SE_SY_DECIDE`, every button disabled but
+    /// A, `HUD_VISIBILITY_ALL`, `PAUSE_SAVE_PROMPT_STATE_APPEARING`).
     fn kaleido_scope_save_prompt(&mut self) {
-        log::info!("pause menu: B opens the save prompt (PAUSE_STATE_SAVE_PROMPT), which is milestone 5c's: the menu stays");
+        let p = &mut self.pause_ctx;
+        p.next_page_mode = 0;
+        p.prompt_choice = 0;
+        self.audio.play_sfx_centered(NA_SE_SY_DECIDE);
+        self.save.button_status[..4].fill(BTN_DISABLED);
+        self.save.button_status[4] = BTN_ENABLED;
+        self.save.hud_visibility_mode = HUD_VISIBILITY_NO_CHANGE;
+        crate::interface::change_alpha(&mut self.save, HUD_VISIBILITY_ALL);
+        self.pause_ctx.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_APPEARING;
+        self.pause_ctx.state = PAUSE_STATE_SAVE_PROMPT;
+    }
+
+    /// `KaleidoScope_Update`'s `PAUSE_STATE_SAVE_PROMPT`: the prompt page turns in under the page
+    /// looked at (`promptPitch` 314/8 a frame to -628, L and R out); A on Yes saves
+    /// (`NA_SE_SY_PIECE_OF_HEART`, `Play_SaveSceneFlags`, `savedSceneId`, `Sram_WriteSave`) and on
+    /// GameCube closes the menu 3 frames on (no "Game saved."); A on No, B or Start closes it; the
+    /// pages and the prompt turn away 160/8 a frame (`YREG(8)` + 160), then the game resumes.
+    fn kaleido_scope_update_save_prompt(&mut self) {
+        let press = self.input.press;
+        let p = &mut self.pause_ctx;
+        let d = p.regs.ui_anims_duration;
+        match p.save_prompt_state {
+            PAUSE_SAVE_PROMPT_STATE_APPEARING => {
+                p.prompt_pitch -= 314.0 / d as f32;
+                let r = &mut p.regs;
+                r.button_left_x -= r.button_left_move_offset_x / d;
+                r.button_right_x -= r.button_right_move_offset_x / d;
+                if p.prompt_pitch <= -628.0 {
+                    p.prompt_pitch = -628.0;
+                    p.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE;
+                }
+            }
+            PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE => {
+                if press.held(BTN_A) {
+                    if p.prompt_choice != 0 {
+                        self.interface_set_do_action_paused(DO_ACTION_NONE);
+                        self.save.button_status[..4].fill(BTN_ENABLED);
+                        self.save.hud_visibility_mode = HUD_VISIBILITY_NO_CHANGE;
+                        crate::interface::change_alpha(&mut self.save, HUD_VISIBILITY_ALL);
+                        let p = &mut self.pause_ctx;
+                        p.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_CLOSING;
+                        p.regs.pages_y_origin_2 = PAUSE_PAGES_Y_ORIGIN_2_LOWER;
+                        p.regs.yreg8 = p.prompt_pitch as i16;
+                        self.audio.func_800f64e0(0);
+                        // (PLATFORM_GC && OOT_NTSC: AudioOcarina_SetInstrument. Not this version.)
+                    } else {
+                        self.audio.play_sfx_centered(NA_SE_SY_PIECE_OF_HEART);
+                        self.save_scene_flags();
+                        self.save.saved_scene_id = self.scene_id;
+                        crate::sram::sram_write_save(&mut self.save, &mut self.sram);
+                        self.pause_ctx.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_SAVED;
+                        // PLATFORM_GC: 3 (90 elsewhere, with "Game saved." shown).
+                        self.pause_ctx.statics.delay_timer = 3;
+                    }
+                } else if press.held(BTN_START) || press.held(BTN_B) {
+                    self.interface_set_do_action_paused(DO_ACTION_NONE);
+                    let p = &mut self.pause_ctx;
+                    p.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_CLOSING;
+                    p.regs.pages_y_origin_2 = PAUSE_PAGES_Y_ORIGIN_2_LOWER;
+                    p.regs.yreg8 = p.prompt_pitch as i16;
+                    self.audio.func_800f64e0(0);
+                    self.save.button_status[..4].fill(BTN_ENABLED);
+                    self.save.hud_visibility_mode = HUD_VISIBILITY_NO_CHANGE;
+                    crate::interface::change_alpha(&mut self.save, HUD_VISIBILITY_ALL);
+                }
+            }
+            PAUSE_SAVE_PROMPT_STATE_SAVED => {
+                // The timer's decrement only happens when no button was pressed (`||`'s order).
+                let pressed = press.held(BTN_B) || press.held(BTN_A) || press.held(BTN_START);
+                if pressed || {
+                    p.statics.delay_timer -= 1;
+                    p.statics.delay_timer == 0
+                } {
+                    self.interface_set_do_action_paused(DO_ACTION_NONE);
+                    self.save.button_status[..4].fill(BTN_ENABLED);
+                    self.save.hud_visibility_mode = HUD_VISIBILITY_NO_CHANGE;
+                    crate::interface::change_alpha(&mut self.save, HUD_VISIBILITY_ALL);
+                    let p = &mut self.pause_ctx;
+                    p.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_CLOSING_AFTER_SAVED;
+                    p.regs.pages_y_origin_2 = PAUSE_PAGES_Y_ORIGIN_2_LOWER;
+                    p.regs.yreg8 = p.prompt_pitch as i16;
+                    self.audio.func_800f64e0(0);
+                }
+            }
+            PAUSE_SAVE_PROMPT_STATE_RETURN_TO_MENU | PAUSE_SAVE_PROMPT_STATE_RETURN_TO_MENU_2 => {
+                // Never set in this version.
+                p.prompt_pitch += 314.0 / d as f32;
+                let r = &mut p.regs;
+                r.button_left_x += r.button_left_move_offset_x / d;
+                r.button_right_x += r.button_right_move_offset_x / d;
+                if p.prompt_pitch >= -314.0 {
+                    p.state = PAUSE_STATE_MAIN;
+                    p.save_prompt_state = PAUSE_SAVE_PROMPT_STATE_APPEARING;
+                    (p.item_page_pitch, p.equip_page_pitch, p.map_page_pitch, p.quest_page_pitch) = (0.0, 0.0, 0.0, 0.0);
+                    p.prompt_pitch = -314.0;
+                }
+            }
+            PAUSE_SAVE_PROMPT_STATE_CLOSING | PAUSE_SAVE_PROMPT_STATE_CLOSING_AFTER_SAVED => {
+                let end = p.regs.yreg8 as f32 + 160.0;
+                if p.prompt_pitch != end {
+                    let pitch = p.quest_page_pitch + 160.0 / d as f32;
+                    (p.item_page_pitch, p.equip_page_pitch, p.map_page_pitch, p.quest_page_pitch) = (pitch, pitch, pitch, pitch);
+                    p.prompt_pitch += 160.0 / d as f32;
+                    p.info_panel_offset_y -= 40 / d;
+                    let r = &mut p.regs;
+                    r.button_left_x -= r.button_left_move_offset_x / d;
+                    r.button_right_x -= r.button_right_move_offset_x / d;
+                    r.xreg5 -= 150 / d;
+                    p.alpha = p.alpha.wrapping_sub((255 / d) as u16);
+                    if p.prompt_pitch == end {
+                        p.alpha = 0;
+                    }
+                } else {
+                    p.debug_state = PAUSE_DEBUG_STATE_CLOSED;
+                    p.state = PAUSE_STATE_RESUME_GAMEPLAY;
+                    (p.item_page_pitch, p.equip_page_pitch, p.map_page_pitch, p.quest_page_pitch) = (160.0, 160.0, 160.0, 160.0);
+                    p.named_item = PAUSE_ITEM_NONE;
+                    p.main_state = PAUSE_MAIN_STATE_IDLE;
+                    p.prompt_pitch = -434.0;
+                }
+            }
+            _ => {}
+        }
     }
 
     /// `KaleidoScope_Update`'s `PAUSE_STATE_RESUME_GAMEPLAY`: the game resumes at 20 frames a
@@ -1048,23 +1189,19 @@ impl PlayState {
             }
         }
 
-        // The prompt: the game over's; the save prompt's is milestone 5c's (B doesn't open it).
+        // The prompt, the save prompt's or the game over's.
         let p = &mut self.pause_ctx;
         if p.state == PAUSE_STATE_SAVE_PROMPT || p.is_game_over() {
             self.kaleido_scope_update_prompt();
-            if self.pause_ctx.is_game_over() {
-                self.kaleido_scope_draw_game_over_prompt();
-            } else {
-                self.pause_ctx.log_once(4, "pause menu: the save prompt's page (KaleidoScope_DrawPages' save prompt) is milestone 5c's");
-            }
+            self.kaleido_scope_draw_prompt();
         }
     }
 
-    /// `KaleidoScope_DrawPages`' prompt page in a game over: under the page looked at's matrix,
-    /// turned by `promptPitch` (the page itself turned half a turn on), the 15 tiles
-    /// (`sGameOverTexs`), then "Would you like to save?" or "Continue playing?" with the cursor
-    /// on the choice and "Yes", "No".
-    fn kaleido_scope_draw_game_over_prompt(&mut self) {
+    /// `KaleidoScope_DrawPages`' prompt page, the save prompt's or the game over's: under the
+    /// page looked at's matrix, turned by `promptPitch` (the page itself turned half a turn on),
+    /// the 15 tiles (`SAVE_TEXS(language)` or `sGameOverTexs`), then "Would you like to save?"
+    /// (until saved) or "Continue playing?" with the cursor on the choice and "Yes", "No".
+    fn kaleido_scope_draw_prompt(&mut self) {
         let p = &mut self.pause_ctx;
         // Gfx_SetupDL_42Opa, G_CC_MODULATEIA.
         p.gfx.combine(Cc::ModulateIa);
@@ -1077,13 +1214,16 @@ impl PlayState {
         }
         let y2 = p.regs.pages_y_origin_2 as f32 / 100.0;
         p.gfx.matrix(page_matrix(p.page_index, p.prompt_depth_offset / 10.0, y2, pitch));
-        draw_page_sections(&mut p.gfx, &p.prompt_page_vtx, &GAME_OVER_PAGE_BG);
+        let tiles = if p.is_game_over() { &GAME_OVER_PAGE_BG } else { &SAVE_PAGE_BG };
+        draw_page_sections(&mut p.gfx, &p.prompt_page_vtx, tiles);
         // @bug (game): loads 32 vertices where there are 20 (the 12 after are whatever follows
         // in the frame's memory; nothing draws with them).
         p.gfx.vertex(&p.prompt_page_vtx[PAGE_BG_QUADS * 4..], 32, 0);
         let message = match p.state {
+            PAUSE_STATE_SAVE_PROMPT if p.save_prompt_state < PAUSE_SAVE_PROMPT_STATE_SAVED => Some(KTex::Label(SAVE_PROMPT_MESSAGE.0, SAVE_PROMPT_MESSAGE.1)),
             PAUSE_STATE_GAME_OVER_SAVE_PROMPT => Some(KTex::Label(SAVE_PROMPT_MESSAGE.0, SAVE_PROMPT_MESSAGE.1)),
-            // PAUSE_STATE_GAME_OVER_SAVED: "Game saved." is !PLATFORM_GC's (sSaveConfirmationTexs).
+            // The save prompt from PAUSE_SAVE_PROMPT_STATE_SAVED on, PAUSE_STATE_GAME_OVER_SAVED:
+            // "Game saved." is !PLATFORM_GC's (sSaveConfirmationTexs).
             PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT | PAUSE_STATE_GAME_OVER_FINISH => Some(KTex::ContinuePlaying),
             _ => None,
         };
@@ -1696,7 +1836,8 @@ impl PlayState {
                         self.pause_ctx.prompt_choice = 0;
                         self.save_scene_flags();
                         self.save.saved_scene_id = self.scene_id;
-                        log::info!("game over: saved (Sram_WriteSave, the write to SRAM, isn't ported)");
+                        crate::sram::sram_write_save(&mut self.save, &mut self.sram);
+                        log::info!("game over: saved to file {}", self.save.file_num + 1);
                         self.pause_ctx.state = PAUSE_STATE_GAME_OVER_SAVED;
                         // (sDelayTimer 3 on the GameCube versions.)
                         self.pause_ctx.statics.delay_timer = 3;

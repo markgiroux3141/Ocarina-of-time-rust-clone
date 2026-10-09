@@ -33,6 +33,7 @@ use oot_game::camera::CameraKind;
 use oot_game::play::{PlayState, RenderFrame, ViewInfo};
 use oot_game::play_scene::{GameAssets, SceneState};
 use oot_game::save::SaveContext;
+use oot_game::sram::Sram;
 use oot_game::player_lib::PlayerRules;
 use oot_game::course;
 use oot_game::data::GameData;
@@ -99,6 +100,14 @@ pub struct Options {
     /// A custom level: a folder the overworld editor or `overworld build` wrote (`level.json`
     /// and `textures/`), played in Kokiri Forest's light. Reloaded whenever it's rebuilt.
     pub level: Option<PathBuf>,
+    /// Play file N (1 to 3) of the save file, as the file select loads it (`--file N`; with
+    /// `new_file`, a new file made in it). File 1 goes through this debug ROM's map select: it
+    /// enters by `entrance`.
+    pub file: Option<usize>,
+    /// The SRAM image to play on (read at the start, written back after each save): with
+    /// `file`, the save file by default (`oot_game::pack::save_path`). Without either, the SRAM
+    /// is in memory (docs/adr/0049-saving.md).
+    pub sram: Option<PathBuf>,
 }
 
 /// The pack to play from: `path` if given, else `$OOT_PACK`, else the default one
@@ -173,6 +182,9 @@ pub struct Assets {
     pub platform_col: Option<Arc<eng_collision::collision::CollisionHeader>>,
     /// A custom level's folder, and its `level.json`'s time when loaded (to reload a rebuild).
     pub level: Option<(PathBuf, Option<std::time::SystemTime>)>,
+    /// `Options::file`, and the SRAM image's file, if the SRAM isn't in memory.
+    pub file: Option<usize>,
+    pub sram_path: Option<PathBuf>,
 }
 
 pub fn parse_time(s: &str) -> Result<u16> {
@@ -245,6 +257,8 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         target_hurts: o.target_hurts,
         platform_col: None,
         level: None,
+        file: o.file,
+        sram_path: None,
         view: (o.view.len() == 6).then(|| (Vec3::new(o.view[0], o.view[1], o.view[2]), Vec3::new(o.view[3], o.view[4], o.view[5]))),
         pack,
     };
@@ -254,8 +268,25 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         SaveContext::default().apply_preset(p).map_err(anyhow::Error::msg)?;
     }
     anyhow::ensure!(!(o.new_file && o.preset.is_some()), "--new-file is the file select's new save: no --preset");
+    if let Some(n) = o.file {
+        anyhow::ensure!((1..=3).contains(&n), "--file {n}: the files are 1, 2 and 3");
+        anyhow::ensure!(o.preset.is_none(), "--file loads a save: no --preset");
+    }
+    a.sram_path = o.sram.clone().or_else(|| o.file.map(|_| oot_game::pack::save_path(&a.pack.header().source_sha1)));
+    if let Some(p) = &a.sram_path {
+        println!("save file {}", p.display());
+    }
     let new_file_entrance = o.new_file.then(|| "ENTR_LINKS_HOUSE_0".to_string());
-    if let Some(spec) = new_file_entrance.as_ref().or(o.entrance.as_ref().filter(|_| !o.new_file)) {
+    // A file loaded enters where its save says (Sram_OpenSave): an entrance only names file 1's
+    // map select pick, and Link's house stands in when none is given.
+    let given = o.entrance.as_ref().filter(|s| !s.is_empty() || o.scene.is_some());
+    anyhow::ensure!(o.file != Some(1) || o.new_file || given.is_some(), "--file 1 goes through this debug ROM's map select: it needs --entrance");
+    let file_entrance = o.file.map(|_| "ENTR_LINKS_HOUSE_0".to_string());
+    let spec = match o.file {
+        Some(_) => given.or(new_file_entrance.as_ref()).or(file_entrance.as_ref()),
+        None => new_file_entrance.as_ref().or(o.entrance.as_ref().filter(|_| !o.new_file)),
+    };
+    if let Some(spec) = spec {
         // Play_Init reads the pack's tables through its own handle.
         let g = oot_actors::game_assets(open_pack(o.pack.as_deref())?)?;
         let e = find_entrance(&g, spec, o.scene.as_deref(), o.spawn)?;
@@ -276,6 +307,19 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         a.start_at = Some(a.spawn);
     }
     anyhow::ensure!(o.room.is_none() || o.entrance.is_some(), "--room needs --entrance (it changes rooms after Play_Init)");
+    if let Some(n) = o.file {
+        // The file's load tried once up front, on a copy: an empty file (or one in use, for a new
+        // one) stops here rather than playing something else.
+        let mut probe = match &a.sram_path {
+            Some(p) => read_sram(p)?,
+            None => Sram::default(),
+        };
+        if o.new_file {
+            oot_game::file_select::new_game(&mut probe, n, a.entrance)?;
+        } else {
+            oot_game::file_select::load_game(&mut probe, n, a.entrance)?;
+        }
+    }
     let dist = o.target;
     if dist > 0.0 {
         let (pos, yaw) = a.spawn;
@@ -372,16 +416,64 @@ pub fn parse_switch_flag(s: &str) -> anyhow::Result<i32> {
     Ok(v)
 }
 
+/// The SRAM image in `path`, or a fresh one if there's no file yet (docs/adr/0049-saving.md).
+pub fn read_sram(path: &std::path::Path) -> Result<Sram> {
+    match std::fs::read(path) {
+        Ok(b) => Sram::from_bytes(b).map_err(|e| anyhow::anyhow!("{}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Sram::default()),
+        Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+    }
+}
+
+/// Writes the SRAM image to `path` whole (`eng_asset::write_file_atomic`).
+pub fn write_sram(path: &std::path::Path, sram: &Sram) -> Result<()> {
+    eng_asset::write_file_atomic(path, &sram.bytes)
+}
+
+/// The save `Play_Init` starts with, and the SRAM it plays on: file `Assets::file` loaded (or
+/// made, `new_file`) from the SRAM image (the file's, or a fresh one in memory); else a debug
+/// start (`--entrance`, a preset) or the file select's new file, file 2 of an SRAM in memory.
+fn start_save(a: &Assets, e: u16, child: bool) -> Result<(SaveContext, Sram)> {
+    let mut sram = match &a.sram_path {
+        Some(p) => read_sram(p)?,
+        None => Sram::default(),
+    };
+    let map_select = a.entrance;
+    let save = match a.file {
+        Some(n) if a.new_file => oot_game::file_select::new_game(&mut sram, n, map_select)?,
+        Some(n) => oot_game::file_select::load_game(&mut sram, n, map_select)?,
+        None if a.new_file => oot_game::file_select::new_game(&mut sram, 2, None)?,
+        None => {
+            let mut save = SaveContext::new(e, !child, a.day_time);
+            if let Some(p) = &a.preset
+                && let Err(e) = save.apply_preset(p)
+            {
+                log::error!("{e}");
+            }
+            // A debug start is file 2, as the file select made it ("ZELDAZ": Sram_InitSave), on
+            // an SRAM in memory (docs/adr/0049-saving.md).
+            save.file_num = 1;
+            save.newf = *b"ZELDAZ";
+            save
+        }
+    };
+    Ok((save, sram))
+}
+
 /// The play state: `Play_Init` at the entrance, or Player at the spawn (or `--at`) with the
 /// course's platform and the dummy targets.
 pub fn new_play(a: &Assets, child: bool) -> PlayState {
     if let (Some(g), Some(e)) = (&a.game, a.entrance) {
-        let mut save = if a.new_file { SaveContext::file_select_new() } else { SaveContext::new(e, !child, a.day_time) };
-        if let Some(p) = &a.preset
-            && let Err(e) = save.apply_preset(p)
-        {
-            log::error!("{e}");
-        }
+        let (mut save, sram) = match start_save(a, e, child) {
+            Ok(s) => s,
+            Err(err) => {
+                log::error!("{err:#}");
+                eprintln!("{err:#}");
+                // The file's image kept as it is, not a fresh one written over it.
+                let sram = a.sram_path.as_ref().and_then(|p| read_sram(p).ok()).unwrap_or_default();
+                (SaveContext::new(e, !child, a.day_time), sram)
+            }
+        };
         if let Some(m) = a.music {
             // Environment_ForcePlaySequence: the first scene plays it instead of its own.
             save.forced_seq_id = m as u16;
@@ -389,6 +481,7 @@ pub fn new_play(a: &Assets, child: bool) -> PlayState {
         let audio = oot_game::audio::GameAudio::boot_logged(g.audio.clone(), g.audio_tables.clone(), a.audio_log);
         match PlayState::play_init_with(g.clone(), a.data.clone(), a.rules.clone(), save, audio) {
             Ok(mut w) => {
+                w.sram = sram;
                 if let Some(r) = a.start_room {
                     // Room_RequestNewRoom, a frame for it to load, then Room_FinishRoomChange.
                     if w.room_request(r) {
@@ -626,6 +719,8 @@ struct App {
     audio_status: String,
     /// When a custom level's file was last checked for a rebuild.
     level_check: Instant,
+    /// The SRAM's writes already in its file (`Sram::writes`).
+    sram_written: u32,
 }
 
 impl App {
@@ -679,7 +774,38 @@ impl App {
             audio,
             audio_status,
             level_check: Instant::now(),
+            sram_written: 0,
         })
+    }
+
+    /// F5, the console's reset: with `--file N`, file N loaded again from the save file; for a
+    /// debug start, file 2 of its SRAM in memory if it has saved there, else the same start
+    /// again (docs/adr/0049-saving.md).
+    fn reset(&mut self) {
+        if self.world.assets.is_none() {
+            return;
+        }
+        let child = !self.world.player().adult;
+        let r = match (self.assets.file, &self.assets.sram_path) {
+            (Some(n), Some(p)) => match read_sram(p) {
+                Ok(sram) => {
+                    self.world.sram = sram;
+                    self.sram_written = 0;
+                    self.world.console_reset(n, self.assets.entrance)
+                }
+                Err(e) => Err(e),
+            },
+            _ if oot_game::sram::slot_occupied(&self.world.sram.bytes, 1) => self.world.console_reset(2, None),
+            _ => {
+                let sram = std::mem::take(&mut self.world.sram);
+                self.world = new_play(&self.assets, child);
+                self.world.sram = sram;
+                Ok(())
+            }
+        };
+        if let Err(e) = r {
+            log::error!("the reset: {e:#}");
+        }
     }
 }
 
@@ -716,6 +842,9 @@ impl eframe::App for App {
             if i.key_pressed(egui::Key::F4) {
                 self.world.debug.foot_ik = !self.world.debug.foot_ik;
                 self.assets.foot_ik = self.world.debug.foot_ik;
+            }
+            if i.key_pressed(egui::Key::F5) {
+                self.reset();
             }
             if i.key_pressed(egui::Key::Backspace) {
                 if self.world.assets.is_some() {
@@ -776,6 +905,17 @@ impl eframe::App for App {
             }
         });
 
+        // Sram_WriteSave wrote the cartridge: its file follows.
+        if let Some(p) = &self.assets.sram_path
+            && self.world.sram.writes != self.sram_written
+        {
+            match write_sram(p, &self.world.sram) {
+                Ok(()) => log::info!("saved to {}", p.display()),
+                Err(e) => log::error!("{e:#}"),
+            }
+            self.sram_written = self.world.sram.writes;
+        }
+
         let frame = self.world.render_frame();
         egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| {
             let avail = ui.available_size();
@@ -815,7 +955,7 @@ impl eframe::App for App {
                      action {act:?} ({dec})  anim {anim} @{frame:.1}\n\
                      pos ({x:.1}, {y:.1}, {z:.1})  speed {spd:.2}  vy {vy:.2}  {ground}\n\
                      input: {dev}\n  stick ({sx:+}, {sy:+}) [{btns}]  raw buttons held {raw:?}\n{audio}\n\
-                     WASD/arrows stick, Shift walk, Space A, E B (sword), Q Z-target, J/L C-left/right, F1 collision, F3 camera, F4 foot IK, P placeholders, Tab age, Backspace respawn/void out",
+                     WASD/arrows stick, Shift walk, Space A, E B (sword), Q Z-target, J/L C-left/right, F1 collision, F3 camera, F4 foot IK, F5 reset, P placeholders, Tab age, Backspace respawn/void out",
                     place = self.world.scene.as_ref().map(|s| s.short_name().to_string()).unwrap_or_else(|| self.assets.place.clone()),
                     cam = self.world.camera_kind,
                     age = if p.adult { "adult" } else { "child" },

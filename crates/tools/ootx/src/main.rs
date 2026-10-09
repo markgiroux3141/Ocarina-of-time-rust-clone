@@ -18,6 +18,8 @@ use oot_import::z64::{ParseLinkAnimation, ParseSkeleton, ParseStandardAnimation}
 use serde::Serialize;
 use oot_import::player::LoadPlayerRules;
 
+mod sram;
+
 #[derive(Parser)]
 #[command(about = "Validate OoT ROM decoding (skeletons, display lists, animations)")]
 struct Cli {
@@ -140,6 +142,15 @@ enum Cmd {
     },
     /// Extract assets into editable formats (PNG, glTF, WAV, JSON) in a git-ignored folder.
     /// Local development only: the output is derived from the ROM and must not be shared.
+    /// The save file (the cartridge's SRAM image, `out/saves/<ROM SHA-1>.sra` or
+    /// $OOT_SAVE_DIR): its files, or the file select's erase and copy stood in for.
+    Sram {
+        #[command(subcommand)]
+        action: Option<sram::SramAction>,
+        /// The SRAM image (default: the save file of the default pack's ROM).
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     Extract {
         /// Output directory.
         #[arg(long, default_value = "extracted")]
@@ -153,6 +164,10 @@ enum Cmd {
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli = Cli::parse();
+    if let Cmd::Sram { action, path } = &cli.cmd {
+        // The save file is user data: no ROM or decomp needed.
+        return sram::run(*action, path.clone());
+    }
     let project = Project::open_default()?;
     std::fs::create_dir_all(&cli.out)?;
     match cli.cmd {
@@ -177,6 +192,7 @@ fn main() -> Result<()> {
         Cmd::AudioWav { font, inst, drum, note, seconds, seq, raw, wav } => audio_wav(font, inst, drum, note, seconds, seq, raw, &wav),
         Cmd::ScanScenes { filter, all_layers } => scan_scenes(&project, filter.as_deref(), all_layers, &cli.out),
         Cmd::DumpRoom { scene, room, layer, png } => dump_room(&project, &scene, room, layer, png.as_deref()),
+        Cmd::Sram { .. } => unreachable!("handled above"),
     }
 }
 

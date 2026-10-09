@@ -10,7 +10,7 @@ mod common;
 use std::sync::Arc;
 
 use common::*;
-use eng_input::pad::{BTN_B, BTN_CLEFT, BTN_CRIGHT, BTN_R, BTN_START, PadState};
+use eng_input::pad::{BTN_CLEFT, BTN_CRIGHT, BTN_R, BTN_START, PadState};
 use glam::Vec3;
 use oot_actors::PlayExt;
 use oot_actors::player::Action;
@@ -376,16 +376,6 @@ fn the_equipment_stand_in_runs_as_the_menu_resumes() {
     assert_eq!(w.save.cur_equip_value(EQUIP_TYPE_SWORD), EQUIP_VALUE_SWORD_KOKIRI);
     assert_eq!(w.save.equips.button_items[0], ITEM_SWORD_KOKIRI);
     assert_eq!(w.player().current_sword_item_id, ITEM_SWORD_KOKIRI);
-}
-
-#[test]
-fn b_logs_the_save_prompt_and_the_menu_stays() {
-    let Some(a) = assets() else { return };
-    let mut w = deku_tree(&a, "deku-tree-slingshot");
-    open(&mut w);
-    press(&mut w, BTN_B);
-    idle(&mut w, 2);
-    assert_eq!((w.pause_ctx.state, w.pause_ctx.main_state), (PAUSE_STATE_MAIN, PAUSE_MAIN_STATE_IDLE));
 }
 
 #[test]

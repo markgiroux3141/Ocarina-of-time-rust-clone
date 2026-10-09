@@ -8,6 +8,7 @@ description = "Inspection and validation CLI for OoT ROM data"
 [dependencies]
 oot_import.workspace = true
 oot_game.workspace = true
+eng_asset.workspace = true
 eng_gfx.workspace = true
 eng_gbi.workspace = true
 eng_anim.workspace = true

@@ -12,7 +12,7 @@ ROM, and the decomp is upgraded first, before any dungeon work.
 | 3a | Combat basics: Player's guard with the shield (blocking, deflecting); `Camera_Battle1`; the effects (`EffectSs`, `z_effect.c`), `En_Dekubaba`'s included; `En_Firefly` (Keese, 7 placed) and `En_Karebaba` (withered Deku Baba, 5); drops on death | done |
 | 3b | The rest of the MQ Deku Tree's enemies: `En_St` (2 placed), `En_Sw` (Skullwalltula and Gold Skulltula, 7), `En_Hintnuts`, `En_Dekunuts` and `En_Shopnuts` (3, 2, 1), `En_Goma` (eggs and larvae, 28, pulled forward from milestone 6) | done |
 | 4 | Dungeon mechanics: `Door_Shutter` and small keys; switches, torches, webs; the map and compass; the `Bg_Ydan_*` actors; the crates (`Obj_Kibako2`); room-to-room travel. Split in three: 4a doors, switches, torches and webs; 4b the Deku Stick (pulled forward from 5) and the props; 4c pushing and Master Quest's extras | done |
-| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`). Split in three: 5a the slingshot and nuts; 5b the pause menu; 5c saving | 5a, 5b done |
+| 5 | Items in use: Deku nuts (the sticks pulled forward to 4b), the Fairy Slingshot; the C buttons in full; a minimal pause menu for equipping; saving (`z_sram.c`). Split in three: 5a the slingshot and nuts; 5b the pause menu; 5c saving | done |
 | 6 | Gohma: `Boss_Goma` (her larvae pulled forward to 3b); the boss room's camera and cutscenes; the heart container and the blue warp. **Exit:** a scripted run through the Deku Tree to Gohma's defeat | |
 
 The working rules are the same as for the earlier phases:
@@ -2653,3 +2653,338 @@ Enter is Start, WASD the stick, R is R, Space A.
    5c.)
 - **What to report:** the message's fade and flicker, the window's turn and speed, the prompts'
   look, the cursor's glow.
+
+## Milestone 5c: saving
+
+**Answer:** done. B in the pause menu turns the save prompt in, "Would you like to save?" with its
+cursor on Yes; Yes saves (the chime, the scene's flags, `Sram_WriteSave` to the file and its
+backup) and the menu closes, as on GameCube; No, B or Start close it unsaved. The game over's Yes
+saves too. The save is the cartridge's SRAM in the C's bytes: `out\saves\<ROM SHA-1>.sra` for
+`--file N`, an image in memory for the debug starts and the sandbox. `--file N` loads a file as the
+file select would (`Sram_OpenSave`'s entrance, three hearts at least), `--file N --new-file` makes
+one, F5 is the console's reset, and `ootx sram` lists, verifies, erases and copies. The exit holds;
+its run is the golden `save` (with its final SRAM image), with `save_prompt_turn` and
+`save_prompt`.
+
+The pack is format 26, in `out/data23`. Decisions are in [ADR 0049](adr/0049-saving.md).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 76 to 79):
+- `test-save.bat`: the milestone's tests (then 5b's pause and game over tests);
+- `game-save.bat`: the game inside the Deku Tree with two hearts and the slingshot on no button
+  (`deku-tree-save`), a debug start on an SRAM in memory: equip, save, F5;
+- `sandbox-save.bat`: the exit run headless, its trace, screenshots and SRAM image;
+- `game-file.bat`: a file of the save file (`game-file.bat 2`, `game-file.bat 2 --new-file`).
+
+**Status of the plan:** milestone 5 is done (5a, 5b-1, 5b-2 and 5c); milestone 6, Gohma, is next.
+
+**Status:** decided (2026-10-09). The user chose:
+- the save file in the repo's ignored `out\saves` (`OOT_SAVE_DIR`, which `_env.bat` sets), named by
+  the ROM's SHA-1 as the packs are;
+- `--file N` for the file select's load, `--file N --new-file` for a new file in an empty slot, the
+  debug starts on an SRAM in memory, F5 the console's reset;
+- `oot_game` never touching the disk: the SRAM an image on the play state, the apps binding it to
+  the file, the sandbox on a fresh image unless `--sram PATH`;
+- every `Save` field in `SaveContext` with the C's names, the slot's tail from the fields the port
+  has (zeros elsewhere);
+- `Sram_EraseSave` and `Sram_CopySave` ported, used by `ootx sram`;
+- one milestone, with `Route::Save` as proposed below.
+
+### The survey
+
+Line counts are the decomp's (`52a510f`), for this ROM's branches only: `gc-eu-mq-dbg`
+(`PLATFORM_GC`, `OOT_PAL`, `OOT_MQ`, `DEBUG_FEATURES`; the language is English). The iQue's
+`Sram_ReadWriteIQue` (23) and the `OOT_VERSION < PAL_1_0` and `PLATFORM_N64` branches aren't this
+ROM. "Port today" is `31a432e` (milestone 5b-2).
+
+**`z_sram.c`** (1,086 lines):
+
+| C | Lines | What | Port today |
+|---|---|---|---|
+| `gSramSlotOffsets`, `sSramDefaultHeader`, `SLOT_SIZE`, `CHECKSUM_SIZE` | 30 | Six slots (three files, then their backups) of `sizeof(SaveContext) + 0x28` (0x1450) bytes from 0x20; the 16-byte header (sound, Z-targeting, language, then the magic `98 09 10 21 "ZELDA"`) | No |
+| `sNewSave*`, `Sram_InitNewSave` | 110 + 19 | A new file | `SaveContext::new` (ADR 0019), without `horseData` (Hyrule Field, -1840, 72, 5497, -0x6AD9), `totalDays`, `bgsDayCount` |
+| `sDebugSave*`, `Sram_InitDebugSave` | 130 + 42 | The debug file | `SaveContext::debug`, without `horseData`; it takes the entrance where the C sets `ENTR_HYRULE_FIELD_0` |
+| `sDungeonEntrances`, `Sram_OpenSave` | 18 + 163 | A slot from the read buffer into `gSaveContext` (`sizeof(Save)` only), then: the entrance from `savedSceneId` (a dungeon's or boss room's entrance, Ganon's tower's for the collapse; elsewhere Link's house for a child and the Temple of Time for an adult), health raised to three hearts, the scarecrow songs copied out, Zelda's letter taken back without the lullaby, the Master Sword for an adult who lacks it (`>= NTSC_1_1`: equipped on B), spoiled trade items reverted, `magicLevel` 0 | No |
+| `Sram_WriteSave` | 46 | The checksum (the sum of `Save`'s big-endian halfwords with the checksum field 0) into the save, then `SLOT_SIZE` bytes from `&gSaveContext` to the slot and to its backup. It sums three times and keeps the first (the other two are dead) | Logs (the game over's Yes) |
+| `Sram_VerifyAndLoadAllSaves` | 183 (about 140 without the prints) | The whole SRAM read; each slot's checksum checked; a bad slot restored from its backup; a bad backup too: `entranceIndex`, `linkAge`, `cutsceneIndex`, `dayTime`, `nightFlag`, `totalDays`, `bgsDayCount` cleared, then file 1 the debug save with "ZELDAZ" (`DEBUG_FEATURES`), the others a new save, checksummed and written to the backup and the slot; then the file select's fields (deaths, names, health capacity, quest items, 64DD flag, defence, `OOT_PAL`: health) | No |
+| `Sram_InitSave` | 104 | The name entry's new file: file 1 the debug save (`DEBUG_FEATURES`), the others a new save; Link's house, child, 10:00, `cutsceneIndex` 0xFFF1 (file 1: none); the name; "ZELDAZ"; the checksum; written to the slot and its backup | In `SaveContext::file_select_new` (file 2), without the write |
+| `Sram_EraseSave`, `Sram_CopySave` | 18, 41 | The file select's erase (a new save over the slot and backup) and copy | No (no caller without the file select) |
+| `Sram_WriteSramHeader`, `Sram_InitSram` | 3, 54 | At the title screen: the header's magic checked (rewritten with the old language kept, `PLATFORM_GC && OOT_PAL`), the sound and Z-targeting settings read, the language checked; `DEBUG_FEATURES`: D-Right on controller 3 fills the SRAM with a ramp ("SRAM destruction") | `GameAudio::boot` sets stereo, as a fresh header gives; Player assumes "Switch" targeting |
+| `Sram_Alloc`, `Sram_Init` | 7 | The read buffer (`SRAM_SIZE`, 0x8000); `Sram_Init` is empty | No |
+
+New in the port: about 620 lines of C with the tables. The SRAM itself is `z_ss_sram.c`'s PI DMA
+(`SsSram_ReadWrite`, 66), which a file stands in for.
+
+**What calls it here:**
+- **The pause menu** (`z_kaleido_scope.c`): B in `PAUSE_STATE_MAIN` (three branches: idle 12, the
+  song prompt 13, the cursor on a song 13: `nextPageMode` 0, `promptChoice` 0, `NA_SE_SY_DECIDE`,
+  every button disabled but A, `HUD_VISIBILITY_ALL`, `PAUSE_STATE_SAVE_PROMPT`); today they log.
+  `PAUSE_STATE_SAVE_PROMPT` (116): `APPEARING` (the prompt page turns in by `promptPitch`, 314/8 a
+  frame to -628, L and R move out), `WAIT_CHOICE` (A on Yes: `NA_SE_SY_PIECE_OF_HEART`,
+  `Play_SaveSceneFlags`, `savedSceneId`, `Sram_WriteSave`, `SAVED` with `sDelayTimer` 3 on GameCube;
+  A on No, B or Start: `CLOSING`, the buttons back, `func_800F64E0(0)`), `SAVED` (B, A, Start or the
+  timer: `CLOSING_AFTER_SAVED`), `CLOSING`/`CLOSING_AFTER_SAVED` (every page and the prompt turn
+  away 160/8 a frame to `YREG(8)` + 160, then `RESUME_GAMEPLAY`); `RETURN_TO_MENU` is never set
+  here. On GameCube saving closes the menu: there's no "Game saved." (`sSaveConfirmationTexs` is
+  `!PLATFORM_GC`).
+- **`KaleidoScope_DrawPages`' save prompt page** (14 lines that differ from the game over's):
+  `SAVE_TEXS(language)`'s 15 tiles, then "Would you like to save?", the cursor and Yes/No while
+  `savePromptState < SAVED`, nothing after. Logged today (`log_once` bit 4).
+- **Already ported for it:** `KaleidoScope_UpdatePrompt` (the stick in `WAIT_CHOICE`),
+  `_DrawUIOverlay`'s "(A) to Decide", `_SetVertices`' lower origin while closing,
+  `KaleidoScopeCall_Update`'s state range, `Play_SaveSceneFlags`, `Interface_ChangeHudVisibilityMode`.
+- **The game over** (`PAUSE_STATE_GAME_OVER_SAVE_PROMPT`'s Yes): one line, `Sram_WriteSave`; the
+  rest is ported (ADR 0032).
+- **Loading:** `FileSelect_LoadGame` (`z_file_choose.c`, 82): `fileNum`, `Sram_OpenSave`, then the
+  resets the port already does in `SaveContext::file_select_new`. In this debug ROM file 1 goes
+  to the map select (`MapSelect_LoadGame`, `z_select.c`, 25: the save kept, the entrance chosen),
+  files 2 and 3 to `Play_Init`. The file select's own SRAM writes (its options' header bytes) aren't
+  ported with it.
+
+About 900 lines of C in all, with the byte layout and the plumbing new: a little under 5b-2's
+1,100, and no engine feature. No split proposed.
+
+**The save in the C's layout** (`save.h`; big-endian, as the cartridge holds it):
+- `Save` is 0x1354 bytes: seven words (`entranceIndex`, `linkAge`, `cutsceneIndex`, `dayTime`,
+  `nightFlag`, `totalDays`, `bgsDayCount`), then `SaveInfo` (0x1338): `playerData`, `equips`,
+  `inventory`, `sceneFlags[124]`, `fw`, `gsFlags`, `highScores`, the story flags,
+  `worldMapAreaData`, the scarecrow songs, `horseData`, and the checksum last (0x1352).
+- `SaveContext` adds 0xD4 bytes of play state (0x1354 to 0x1428); a slot is that plus 0x28 bytes
+  of whatever follows `gSaveContext` in RAM. Only `sizeof(Save)` is ever read back, and only it is
+  checksummed.
+
+What the port's `SaveContext` holds differently or lacks:
+
+| C | Port |
+|---|---|
+| `entranceIndex`, `cutsceneIndex` (s32) | `u16` (`ENTR_LOAD_OPENING`'s -1 is 0xFFFF: written sign-extended) |
+| `linkAge` (s32: 0 adult, 1 child) | `adult: bool` |
+| `nightFlag` (s32), `bgsFlag`, the `is*Acquired` (u8) | `bool` |
+| `totalDays`, `bgsDayCount`, `newf`, `n64ddFlag`, `ocarinaGameRoundNum`, `fw` (Farore's Wind), `highScores`, `worldMapAreaData`, `scarecrowLongSong*`, `scarecrowSpawnSong*`, `horseData`, `checksum`, the `unk_*` pads | Missing |
+| `sceneLayer`, `gameMode` (s32), `transFadeDuration` (u8) | `usize`, `u8`, `u16` |
+| The runtime part's `dogParams`, `nayrusLoveTimer`, the timers, the magic meter's state, `minigame*`, `soundSetting`, `zTargetSetting`, `chamberCutsceneNum`, `nextDayTime`, `skyboxTime`, `dogIsLost`, `worldMapArea`, `sunsSongState` | Missing (nothing ported reads them) |
+
+**The textures** (the page and its labels):
+- `SAVE_TEXS(LANGUAGE_ENG)` is the game over's 15 tiles but one: column 2's top tile is
+  `gPauseSave10ENGTex` (IA8 80x32, `icon_item_nes_static` 0xD280) where the game over has
+  `gPauseGameOver10Tex`. The other 14 (`gPauseSave00`..`04`, `11`..`14`, `20`..`24`) are baked
+  already (the game over's page); `gPauseSave10ENGTex` isn't: **one new bake, pack format 26**
+  (`out/data23`).
+- Baked already: `gPauseSavePromptENGTex` (`sSavePromptMessageTexs`), "Yes" and "No", the prompt
+  cursor, "(A) to Decide" and the A symbol. `sSaveConfirmationTexs` isn't drawn on GameCube.
+
+### The proposal
+
+The decisions, each with a recommendation (marked):
+
+1. **Where the save file lives, and its name per ROM:**
+   - *(recommended)* the per-user folder: `%LOCALAPPDATA%\oot-clone\saves\<ROM SHA-1>.sra`, named
+     like the packs (`GamePack::header().source_sha1`). It doesn't depend on `OOT_DATA_DIR`, so a new
+     pack folder (`data22` to `data23`) doesn't lose it; `OOT_SAVE_DIR` overrides the folder.
+   - the same folder with the version's name, `gc-eu-mq-dbg.sra`: readable, but the pack would
+     have to carry the name, and a patched ROM of that version would share it;
+   - `out\saves\` in the repo's ignored `out` folder: visible, but one per worktree and next to
+     scratch files.
+   
+   The file is the cartridge's 32 KiB SRAM image, big-endian, header and six slots where the C
+   puts them. It's written whole after each `SRAM_WRITE` (to a temporary file, then renamed, so a
+   crash can't leave half a slot).
+2. **How the game and the sandbox pick a slot** (the file select's load):
+   - *(recommended)* `--file N`: the title and the file select's load as the C does them
+     (`Sram_InitSram`, `Sram_VerifyAndLoadAllSaves`, `FileSelect_LoadGame` with `buttonIndex` N - 1,
+     `Sram_OpenSave`, `Play_Init`). Files 2 and 3 enter where `Sram_OpenSave` says; file 1 goes
+     through this ROM's map select, so it takes `--entrance` (`MapSelect_LoadGame`). Saves go back to
+     the slot. `--file N --new-file` makes a new file in an empty slot as the name entry does
+     (`Sram_InitSave`, the opening); a slot with a file is refused. The debug starts (`--entrance`
+     with or without `--preset`, `--new-file` alone) are file 2 of an SRAM in memory: their saves
+     never reach the disk (logged). In the window, F5 is the console's reset: the same start
+     again, the SRAM read again.
+   - every start bound to the save file, as the debug ROM would have it: a debug start's save
+     overwrites its slot, and `--new-file` writes file 2 at once (`Sram_InitSave` writes when the
+     name is entered), even over a file there;
+   - the first option, plus a small window of the slots before play (name, hearts, deaths; load,
+     new, erase, copy through the ported `Sram_*`): more work, and not the C's file select.
+3. **Tests and goldens independent of the user's save file:**
+   - *(recommended)* `oot_game` never touches the disk: the SRAM is a 32 KiB image on the play
+     state, carried across `Play_Init` with the save, and only the apps bind it to a file. Tests
+     build their images in memory. The sandbox starts from a fresh image unless `--sram PATH`;
+     golden cases can hash the final image as an output (`{sram}`), so the save's bytes are
+     covered. A fresh image is zeros, which every slot's checksum accepts (zero sums to zero):
+     three empty files, as an erased cartridge.
+   - the game crate writes files itself, and the test and golden scripts point `OOT_SAVE_DIR` at a
+     temporary folder (easy to forget; the tests touch the disk);
+   - as the first, but the sandbox reads the user's file (never writes it): runs would then depend
+     on it.
+4. **The port's `SaveContext` and the slot's bytes:**
+   - *(recommended)* `SaveContext` gains every `Save` field it lacks, with the C's names, and the
+     writer lays the save out field by field; the slot's tail (`SaveContext`'s play part) is
+     written from the fields the port has, zeros where it has none, and zeros for the 0x28 bytes
+     past the struct;
+   - as the first, with the whole tail zeros;
+   - the fields the port doesn't use kept as raw bytes, carried from load to save: a smaller
+     change, but the save half typed.
+5. **Erase and copy** (`Sram_EraseSave`, `Sram_CopySave`: no caller without the file select):
+   - *(recommended)* ported whole with their tests, and used by an `ootx sram` command (list the
+     slots, erase N, copy N to M, verify), a stand-in for the file select's other screens;
+   - ported whole with their tests, no caller;
+   - left out (less than the whole of `z_sram.c`).
+
+**The debug start and the exit run:** a preset `deku-tree-save` (inside the Deku Tree at its
+entrance, the slingshot owned on no button, two hearts), and `Route::Save` (`--script save`) in one
+sandbox run on an SRAM in memory: Start, the cursor to the slingshot, C-Left, B (the prompt turns
+in), A on Yes (the save, the menu closes), then the reset: file 2 loaded, and the run checks the
+state restored: entered at `ENTR_DEKU_TREE_0` (`savedSceneId` was the Deku Tree), the slingshot on
+C-Left, three hearts (`Sram_OpenSave`'s floor), the slot and its backup the same bytes with a good
+checksum. The golden `save` (trace and final image), with screenshots `save_prompt` (the prompt in,
+the cursor on Yes) and `save_prompt_turn` (the page halfway in), and the bake-coverage test
+extended to the save prompt.
+
+### What was built
+
+**`z_sram.c`** (`oot_game::sram`, ADR 0049), for this ROM's branches, function by function:
+`Sram_OpenSave` (the entrance by the saved scene, `sDungeonEntrances`; three hearts; Zelda's letter
+taken back without the lullaby; an adult's Master Sword; the spoiled trade items,
+`gSpoilingItems`), `Sram_WriteSave`, `Sram_VerifyAndLoadAllSaves` (a bad file from its backup, a
+bad backup a new save, file 1 the debug save), `Sram_InitSave`, `Sram_EraseSave`, `Sram_CopySave`,
+`Sram_WriteSramHeader`, `Sram_InitSram`, `Sram_Alloc`; `gSramSlotOffsets`, `sSramDefaultHeader`;
+`Sram_InitNewSave` and `Sram_InitDebugSave` ported in place (`SaveContext::init_new_save`,
+`init_debug_save`), under `SaveContext::new` and `debug`.
+
+**The save's bytes:** `SaveContext` gains every field of `Save` it lacked (`totalDays`,
+`bgsDayCount`, `newf`, `n64ddFlag`, `ocarinaGameRoundNum`, `fw`, `highScores`,
+`worldMapAreaData`, the scarecrow's songs, `horseData`, the checksum, the `unk_*` pads) and the
+header's `soundSetting` and `zTargetSetting`; `save_bytes`, `slot_bytes` and `read_save` lay it out
+field by field (one visitor both ways, `save.h`'s offsets checked), the slot's tail from the fields
+the port has.
+
+**The SRAM** is an image on the play state (`PlayState::sram`, carried by `reinit`); the apps bind
+it to the save file (`oot_game::pack::save_path`, `eng_asset::write_file_atomic`, written after
+each save).
+
+**The file select's load stood in for** (`oot_game::file_select`): the title's and file select's
+start (`Sram_InitSram`, `Sram_Alloc`, `Sram_VerifyAndLoadAllSaves`), `FileSelect_LoadGame`,
+`MapSelect_LoadGame` for file 1, the name entry's new file (`Sram_InitSave`, named "LINK");
+`SaveContext::file_select_new` goes through it. `PlayState::console_reset` (F5, `Task::Reset`).
+
+**The pause menu** (`z_kaleido_scope.c`): B's three branches in `PAUSE_STATE_MAIN`,
+`PAUSE_STATE_SAVE_PROMPT` whole, `KaleidoScope_DrawPages`' prompt page for both prompts (the save
+page's tiles, `SAVE_TEXS`; the message, cursor and Yes/No until saved). The game over's Yes calls
+`Sram_WriteSave`.
+
+**The bake:** `gPauseSave10ENGTex` (pack format 26).
+
+**The apps:** the game's and the sandbox's `--file N` (with `--new-file`), `--sram PATH`; the
+window's F5 and its write-through; the sandbox's `--sram` image written at the end of a run, the
+reset inside a route, the trace's save prompt fields and the reset's frame; `ootx sram` (`list`,
+`verify`, `erase N`, `copy N M`); `golden.py`'s `{sram}` output.
+
+**The debug start and run:** the preset `deku-tree-save`; the debug starts are file 2 ("ZELDAZ")
+on an SRAM in memory; `Route::Save` (`--script save`: Start, the cursor to the slingshot, C-Left,
+B, Yes, the menu closed, the reset, file 2 loaded).
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game24`, `OOT_DATA_DIR=out/data23`): 706
+passed, 0 failed, 1 ignored (683 before); 24 are new, with their expectations from the C, and
+5b-1's `b_logs_the_save_prompt_and_the_menu_stays` is gone (B opens the prompt now):
+- **`oot_game` `sram::tests`** (17): the slots' offsets and sizes; a new save's bytes at
+  `save.h`'s offsets (the name, hearts, Link's house, the equips, the keys at -1, the Water
+  Temple's switch, `infTable[29]`, Epona); `clear_info` zeroing every `SaveInfo` byte; a save read
+  back as written (both ages, -1 entrances); the checksum (its own halfword left out, wrapping);
+  `Sram_WriteSave`'s slot and backup with the tail; a fresh SRAM's three empty files; an SRAM of
+  0xFF rebuilt (file 1 the adult debug save, as `linkAge` was cleared); a bad file restored from a
+  good backup with checksum 0, put right by the next save; `Sram_OpenSave`'s entrances and fixes;
+  `Sram_InitSave` (the whole SRAM written, the tail untouched; file 1 the debug save);
+  `Sram_EraseSave` failing its checksum on the next boot, which rebuilds it; `Sram_CopySave`;
+  `Sram_InitSram`'s header, settings, language and D-Right ramp; `SLOT_OCCUPIED`'s or; the stand-ins'
+  errors, and a new file equal to `SaveContext::file_select_new`'s.
+- **`oot_actors --test save`** (7): B opening the prompt (`NA_SE_SY_DECIDE`, the buttons, the
+  pitch 39.25 a frame to -628, L and R out by 40); No, B and Start closing it unsaved (8 frames of
+  20 to -468, the resume, the buttons back); Yes saving (`NA_SE_SY_PIECE_OF_HEART`, the flags, the
+  slot and backup), 2 frames saved and the closing, A in `SAVED` closing at once; the page's tiles,
+  message, cursor and choices at `sVtxPagePromptQuadsY` (not the game over's `YREG`s), nothing
+  after saving; every quad baked; the game over's Yes writing file 1, which loads with three
+  hearts; the exit's run.
+- **`oot_game` `save::tests`**: `the_file_selects_new_file_starts_the_opening` passes unchanged
+  through the real path. **`kaleido::tests`**: the bakes count 76 page tiles.
+
+**The exit run** (`Route::Save`, `--script save`, `deku-tree-save`): `menu_opened` 52,
+`cursor_on_item` 53, `item_equipped` 64, `save_prompt` 73, `saved` 74, `menu_closed` 87, the reset
+before frame 88, `loaded` 119: Link at `ENTR_DEKU_TREE_0` with three hearts (from two) and the
+slingshot on C-Left; the SRAM's 3 writes (the file and its backup, then the reset's header).
+
+**The goldens.** Against 5b-2's build (`target/game23`, on data22: 105/105 identical, its outputs in
+`out/golden_base5c`): every hash the same bytes. New: `save` (the trace, the loaded file's
+screenshot, the final SRAM image `save/sram.sra`), `save_prompt_turn` (frame 69), `save_prompt`
+(73), each the same bytes over two runs. Logged in [golden/README.md](../golden/README.md): 110
+hashes, 81 cases.
+
+### Decisions
+
+- **[ADR 0049](adr/0049-saving.md):** `z_sram.c` on an SRAM image the play state carries, the
+  apps binding it to `out\saves\<ROM SHA-1>.sra`; every `Save` field, laid out field by field; the
+  file select's load stood in for (`--file N`, `--new-file`, file 1 through the map select), the
+  debug starts on an SRAM in memory, F5 the console's reset; the save prompt whole; `ootx sram`;
+  the faithful bugs; pack format 26.
+- **A debug start is file 2** ("ZELDAZ", `fileNum` 1), as the file select's new file is in this
+  port: file 1 is the map select's in this debug ROM, and its load skips `Sram_OpenSave`'s
+  entrance.
+- **A fresh image is zeros:** every checksum holds, three empty files.
+
+### Known gaps
+
+- **No title screen or file select** (BACKLOG #21): names are always "LINK"; the options' settings
+  can't be changed; F5 isn't quite the console's reset (BACKLOG #22).
+- **The slot's tail** has zeros where the port lacks `SaveContext`'s fields (the timers, the magic
+  meter's state, the minigames ...), and for the 0x28 bytes past it; nothing reads them back.
+- **Logged:** the scarecrow's songs copied out to the ocarina (`Sram_OpenSave`); the header's
+  settings other than stereo, "Switch" and English.
+- Still logged from 5b: the equipment and quest pages' and the world map's contents, the debug
+  inventory editor (L).
+
+### Fixes found while building
+
+- **A debug start's save loaded as an empty file:** `SaveContext::new` is `Sram_InitNewSave`,
+  whose `newf` is empty; a debug start stands for a file the file select made, so it carries
+  "ZELDAZ".
+- **`--file` with an empty file started a new save instead**, and the sandbox then wrote that over
+  the image it had read; the load is tried up front now, and a failed start keeps the image.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-save.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-save.bat
+```
+
+### By hand
+
+Enter is Start, WASD the stick, J the C-Left button, E is B, Space A, F5 the console's reset.
+
+`game-save.bat` (or menu 77), a debug start (nothing reaches your save file):
+1. **Equip:** Enter, then WASD to the slingshot, J: it flies to C-Left.
+2. **The prompt:** E: a chime, the B and C buttons dim, and the page tips back while the
+   save prompt turns up behind it, "Would you like to save?" with a green glow on Yes, "(A) to
+   Decide" below.
+3. **No:** D moves the glow to No; Space: the pages swing down and the game goes on. Try E (B) and
+   Enter at the prompt too: the same, nothing saved.
+4. **Yes:** Enter, E, Space on Yes: the heart-piece chime, and the menu closes by itself a moment
+   later.
+5. **The reset:** F5: the Deku Tree's entrance again, "Inside the Deku Tree", three hearts (you
+   had two), the slingshot on C-Left.
+
+`game-file.bat` (or menu 79), your save file (`out\saves`):
+1. **A new file:** `game-file.bat 2 --new-file` (an empty file 2): the opening plays; walk a little,
+   then Enter, E, Space on Yes.
+2. **Loading:** close the game, `game-file.bat 2`: Link's house (a save outside a dungeon starts
+   there for a child). F5 does the same without closing.
+3. **The file tools:** `ootx sram` lists the three files; `ootx sram copy 2 3`, then
+   `game-file.bat 3`.
+
+`game-game-over.bat` (or menu 74): Yes at "Would you like to save?" now saves (to the debug start's
+SRAM in memory), then "Continue playing?".
+- **What to report:** the prompt's turn in and out and its speed, the glow, the sounds, the menu
+  closing after Yes, the reset's feel, and anything a loaded file has wrong.

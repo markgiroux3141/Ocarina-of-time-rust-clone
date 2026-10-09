@@ -334,6 +334,9 @@ pub struct PlayState {
     pub view_proj: Mat4,
     /// `gSaveContext`.
     pub save: SaveContext,
+    /// The cartridge's SRAM (`Sram_WriteSave` writes the save there): carried from play state
+    /// to play state; the apps bind it to a file (docs/adr/0049-saving.md).
+    pub sram: crate::sram::Sram,
     /// The pack's tables and the ported actors, when play entered a scene from the pack
     /// (`play_init`). Without them there's no spawning by id and no scene changes.
     pub assets: Option<Arc<GameAssets>>,
@@ -511,6 +514,7 @@ impl PlayState {
             // The spikes' view of a scene (no Play_Init) plays on the map select's file, whose
             // Link has the sword and shield (docs/adr/0019-inventory-and-saves.md).
             save: SaveContext::debug(0, adult, crate::env::clock_time(10, 0) as u16),
+            sram: crate::sram::Sram::default(),
             assets: None,
             scene: None,
             scene_id: 0,

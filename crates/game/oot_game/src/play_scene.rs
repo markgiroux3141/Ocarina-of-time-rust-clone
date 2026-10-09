@@ -599,6 +599,8 @@ impl PlayState {
                 next.env_statics.weather_mode = self.env_statics.weather_mode;
                 // R_TRANS_FADE_FLASH_ALPHA_STEP is a debug register (gRegEditor's).
                 next.trans_fade_flash_alpha_step = self.trans_fade_flash_alpha_step;
+                // The cartridge's SRAM outlives the game states.
+                next.sram = std::mem::take(&mut self.sram);
                 *self = next;
             }
             Err(e) => {
@@ -606,6 +608,49 @@ impl PlayState {
                 self.audio = fallback;
                 self.audio_side = side;
                 self.transition = TransitionState::default();
+            }
+        }
+    }
+
+    /// The console's reset, as the port stands it in (the window's F5, a scripted run's
+    /// `Task::Reset`): the title screen and the file select load `file` (1 to 3; file 1 by the
+    /// map select's `map_select_entrance`) from this play state's SRAM
+    /// (`crate::file_select::load_game`), and `Play_Init` runs on it in this one's place. The
+    /// SRAM, the pad, the camera choice and the debug switches are kept; nothing is saved
+    /// (no `Play_SaveSceneFlags`: a reset isn't a scene change). The audio's game side carries
+    /// on, as `reinit` keeps it.
+    pub fn console_reset(&mut self, file: usize, map_select_entrance: Option<u16>) -> Result<()> {
+        let assets = self.assets.clone().context("the reset needs a play state entered by Play_Init")?;
+        let mut sram = std::mem::take(&mut self.sram);
+        let save = match crate::file_select::load_game(&mut sram, file, map_select_entrance) {
+            Ok(s) => s,
+            Err(e) => {
+                self.sram = sram;
+                return Err(e.into());
+            }
+        };
+        let audio = std::mem::take(&mut self.audio);
+        let fallback = audio.clone();
+        let side = self.audio_side.take();
+        match PlayState::play_init_with(assets, self.data.clone(), self.rules.clone(), save, audio) {
+            Ok(mut next) => {
+                next.pad = std::mem::take(&mut self.pad);
+                next.debug = self.debug;
+                next.scene_changes = self.scene_changes + 1;
+                if next.camera_kind != self.camera_kind {
+                    next.toggle_camera();
+                }
+                next.respawn_player = self.respawn_player;
+                next.audio_side = side;
+                next.sram = sram;
+                *self = next;
+                Ok(())
+            }
+            Err(e) => {
+                self.audio = fallback;
+                self.audio_side = side;
+                self.sram = sram;
+                Err(e)
             }
         }
     }

@@ -17,9 +17,9 @@
 //!
 //! The pages: the item page whole (`item`), the dungeon map page whole (`map`, with its marks:
 //! `lmap_mark`); the world map's contents and the equipment and quest status pages' contents log
-//! what they'd do (their backgrounds are drawn). The save prompt (B) logs: saving is milestone
-//! 5c's. The game over's states and screens are this module's too (docs/adr/0032,
-//! docs/adr/0048-the-pause-map-and-the-game-over.md).
+//! what they'd do (their backgrounds are drawn). B opens the save prompt, whose Yes writes the
+//! save to the SRAM (`crate::sram`, docs/adr/0049-saving.md). The game over's states and screens
+//! are this module's too (docs/adr/0032, docs/adr/0048-the-pause-map-and-the-game-over.md).
 //!
 //! **Not in the C: the equipment page's stand-in.** Its A button equips swords, shields, tunics
 //! and boots (`KaleidoScope_DrawEquipment`, logged); in its place the menu's resume puts on what's
@@ -93,8 +93,10 @@ pub const PAUSE_MAIN_STATE_SONG_PLAYBACK_START: u16 = 9;
 pub const PAUSE_SAVE_PROMPT_STATE_APPEARING: u16 = 0;
 pub const PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE: u16 = 1;
 pub const PAUSE_SAVE_PROMPT_STATE_CLOSING: u16 = 2;
+pub const PAUSE_SAVE_PROMPT_STATE_RETURN_TO_MENU: u16 = 3;
 pub const PAUSE_SAVE_PROMPT_STATE_SAVED: u16 = 4;
 pub const PAUSE_SAVE_PROMPT_STATE_CLOSING_AFTER_SAVED: u16 = 5;
+pub const PAUSE_SAVE_PROMPT_STATE_RETURN_TO_MENU_2: u16 = 6;
 
 // `PauseMenuPage`.
 pub const PAUSE_ITEM: u16 = 0;

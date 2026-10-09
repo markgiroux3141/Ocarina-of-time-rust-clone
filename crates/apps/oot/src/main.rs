@@ -67,6 +67,15 @@ struct Cli {
     /// Tree's narration, the nightmare, Navi sent, and her waking Link). Start skips a scene.
     #[arg(long)]
     new_file: bool,
+    /// Play file N (1 to 3) of the save file (`out/saves/<ROM SHA-1>.sra`, or $OOT_SAVE_DIR), as
+    /// the file select loads it; with --new-file, a new file made in an empty one. File 1 goes
+    /// through this debug ROM's map select: it enters by --entrance. Saves (the pause menu's B)
+    /// write it back; F5 is the console's reset.
+    #[arg(long)]
+    file: Option<usize>,
+    /// The SRAM image to play on instead of the save file.
+    #[arg(long)]
+    sram: Option<PathBuf>,
     /// A pack file or loose folder to use instead of the default pack.
     #[arg(long)]
     pack: Option<PathBuf>,
@@ -138,6 +147,8 @@ fn main() -> Result<()> {
         audio: !cli.no_audio,
         music: cli.music,
         audio_log: false,
+        file: cli.file,
+        sram: cli.sram,
         ..Default::default()
     };
     oot::run_window(&opts, "OoT clone", cli.width, cli.height)

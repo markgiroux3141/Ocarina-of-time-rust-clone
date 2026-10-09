@@ -89,6 +89,27 @@ pub struct SavedSceneFlags {
 /// `sceneFlags`' size.
 pub const SCENE_FLAGS_COUNT: usize = 124;
 
+/// `FaroresWindData`: Farore's Wind's warp point (not ported: kept as the save holds it).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FaroresWindData {
+    pub pos: [i32; 3],
+    pub yaw: i32,
+    pub player_params: i32,
+    pub entrance_index: i32,
+    pub room_index: i32,
+    pub set: i32,
+    pub temp_swch_flags: i32,
+    pub temp_collect_flags: i32,
+}
+
+/// `HorseData`: where Epona was left (not ported: kept as the save holds it).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HorseData {
+    pub scene_id: i16,
+    pub pos: [i16; 3],
+    pub angle: i16,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SaveContext {
     /// `entranceIndex`: the `gEntranceTable` row the next `Play_Init` enters by (the group's
@@ -200,6 +221,47 @@ pub struct SaveContext {
     pub prev_hud_visibility_mode: u16,
     /// `language`: English.
     pub language: u8,
+    /// `soundSetting`, `zTargetSetting`: the SRAM header's (`Sram_InitSram`); stereo and
+    /// "Switch", which a fresh header gives, are what the port plays with.
+    pub sound_setting: u8,
+    pub z_target_setting: u8,
+    // The rest of `Save` (`save.h`), which nothing ported reads: kept so that a slot read back
+    // (`Sram_OpenSave`) is written back the same (`Sram_WriteSave`, crate::sram).
+    /// `totalDays`, `bgsDayCount` (`Environment_Update`'s clock isn't ported).
+    pub total_days: i32,
+    pub bgs_day_count: i32,
+    /// `playerData.newf`: "ZELDAZ" in a file that exists (`Sram_InitSave`).
+    pub newf: [u8; 6],
+    /// `playerData.n64ddFlag`, `unk_3B` (`sNewSavePlayerData`'s `unk_1F`),
+    /// `ocarinaGameRoundNum`, `unk_54` (`unk_38`), `unk_58` (`unk_3C`).
+    pub n64dd_flag: i16,
+    pub unk_3b: u8,
+    pub ocarina_game_round_num: u8,
+    pub unk_54: u32,
+    pub unk_58: [u8; 0x0E],
+    /// `fw`.
+    pub fw: FaroresWindData,
+    /// `unk_E8C`, `unk_EB4`.
+    pub unk_e8c: [u8; 0x10],
+    pub unk_eb4: [u8; 0x4],
+    /// `highScores` (`HS_*`).
+    pub high_scores: [i32; 7],
+    /// `unk_F34`, `worldMapAreaData` ("area_arrival"), `unk_F3C`.
+    pub unk_f34: [u8; 0x4],
+    pub world_map_area_data: u32,
+    pub unk_f3c: [u8; 0x4],
+    /// `scarecrowLongSongSet`, `scarecrowLongSong`, `unk_12A1`, `scarecrowSpawnSongSet`,
+    /// `scarecrowSpawnSong`, `unk_1346` (the ocarina isn't ported).
+    pub scarecrow_long_song_set: u8,
+    pub scarecrow_long_song: [u8; 0x360],
+    pub unk_12a1: [u8; 0x24],
+    pub scarecrow_spawn_song_set: u8,
+    pub scarecrow_spawn_song: [u8; 0x80],
+    pub unk_1346: [u8; 0x2],
+    /// `horseData`.
+    pub horse_data: HorseData,
+    /// `checksum` (`Sram_WriteSave`).
+    pub checksum: u16,
 }
 
 /// `EVENTCHKINF_A8` (`save.h`): the Deku Tree's intro seen.
@@ -251,6 +313,16 @@ pub const ENTR_LOAD_OPENING: u16 = 0xFFFF;
 pub const SCENE_LINKS_HOUSE: u16 = 0x34;
 /// `MAGIC_NORMAL_METER`.
 pub const MAGIC_NORMAL_METER: i8 = 0x30;
+/// `ENTR_HYRULE_FIELD_0` (`entrance_table.h`, row 0x0CD): where `Sram_InitDebugSave` enters.
+pub const ENTR_HYRULE_FIELD_0: u16 = 0x0CD;
+/// `SCENE_WATER_TEMPLE` (`scene_table.h`, 0x05): the scene whose switch 0x1E the new saves set
+/// (the water at its lowest).
+pub const SCENE_WATER_TEMPLE: usize = 0x05;
+/// `FILENAME_SPACE` (`message.h`, `!OOT_NTSC`).
+pub const FILENAME_SPACE: u8 = 0x3E;
+/// `Sram_InitNewSave`'s and `Sram_InitDebugSave`'s Epona: Hyrule Field, (-1840, 72, 5497),
+/// facing -0x6AD9.
+pub const SRAM_HORSE_DATA: HorseData = HorseData { scene_id: crate::play_scene::SCENE_HYRULE_FIELD as i16, pos: [-1840, 72, 5497], angle: -0x6AD9 };
 
 pub use crate::item::{QUEST_KOKIRI_EMERALD, QUEST_MEDALLION_FOREST};
 
@@ -413,6 +485,19 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "deku-tree-save",
+        about: "deku-tree-inside, the Fairy Slingshot with 30 seeds owned on no button, and two hearts (health 0x20): the pause menu equips it and saves, and the file loads back with three (Sram_OpenSave) (GAME-05 milestone 5c)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_A8);
+            item_give(s, None, ITEM_SLINGSHOT);
+            s.health = 0x20;
+        },
+    },
+    SavePreset {
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {
@@ -431,7 +516,7 @@ impl Default for SaveContext {
 
 impl SaveContext {
     /// The fields play sets, around a file's contents.
-    fn blank(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
+    pub(crate) fn blank(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
         SaveContext {
             entrance_index,
             scene_layer: 0,
@@ -463,7 +548,7 @@ impl SaveContext {
             item_get_inf: [0; 4],
             inf_table: [0; 30],
             event_inf: [0; 4],
-            player_name: [0x3E; 8],
+            player_name: [FILENAME_SPACE; 8],
             deaths: 0,
             navi_timer: 0,
             health_capacity: 0,
@@ -504,107 +589,155 @@ impl SaveContext {
             hud_visibility_mode_timer: 0,
             prev_hud_visibility_mode: 0,
             language: LANGUAGE_ENG,
+            sound_setting: 0,
+            z_target_setting: 0,
+            total_days: 0,
+            bgs_day_count: 0,
+            newf: [0; 6],
+            n64dd_flag: 0,
+            unk_3b: 0,
+            ocarina_game_round_num: 0,
+            unk_54: 0,
+            unk_58: [0; 0x0E],
+            fw: FaroresWindData::default(),
+            unk_e8c: [0; 0x10],
+            unk_eb4: [0; 0x4],
+            high_scores: [0; 7],
+            unk_f34: [0; 0x4],
+            world_map_area_data: 0,
+            unk_f3c: [0; 0x4],
+            scarecrow_long_song_set: 0,
+            scarecrow_long_song: [0; 0x360],
+            unk_12a1: [0; 0x24],
+            scarecrow_spawn_song_set: 0,
+            scarecrow_spawn_song: [0; 0x80],
+            unk_1346: [0; 0x2],
+            horse_data: HorseData::default(),
+            checksum: 0,
         }
     }
 
-    /// A new file entering by `entrance_index`, Link `adult` or not, at `day_time`:
-    /// `Sram_InitNewSave` (`z_sram.c`).
-    /// - `sNewSavePlayerData`: three hearts, no rupees, the normal magic meter (level 0), both
-    ///   ages' equips empty, `savedSceneId` `SCENE_LINKS_HOUSE`;
-    /// - `sNewSaveEquips`: nothing on the buttons, equipment 0x1100 (the Kokiri tunic and boots
-    ///   worn, no sword, no shield);
-    /// - `sNewSaveInventory`: no items or ammo, the Kokiri tunic and boots owned, the dungeon
-    ///   keys at -1;
-    /// - `infTable[INFTABLE_INDEX_1DX] = 1`, `sceneFlags[5].swch = 0x40000000`.
-    ///
-    /// The name is "LINK": the file select's name entry (which would write it) isn't ported.
-    pub fn new(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
-        let mut s = SaveContext::blank(entrance_index, adult, day_time);
-        s.player_name = [0x15, 0x12, 0x17, 0x14, 0x3E, 0x3E, 0x3E, 0x3E];
-        s.health_capacity = 0x30;
-        s.health = 0x30;
-        s.magic = MAGIC_NORMAL_METER;
-        s.saved_scene_id = SCENE_LINKS_HOUSE;
-        s.equips = ItemEquips { button_items: [ITEM_NONE; 4], c_button_slots: [SLOT_NONE; 3], equipment: 0x1100 };
-        s.inventory.equipment = owned_equip_flag(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_KOKIRI) | owned_equip_flag(EQUIP_TYPE_BOOTS, EQUIP_INV_BOOTS_KOKIRI);
-        s.inventory.dungeon_keys = [-1; 19];
-        s.inf_table[INFTABLE_INDEX_1DX] = 1;
-        s.scene_flags[5].swch = 0x4000_0000;
-        s
+    /// `bzero(&gSaveContext.save.info, sizeof(SaveInfo))`: every `SaveInfo` field zero.
+    pub fn clear_info(&mut self) {
+        // SaveInfo is playerData, equips, inventory and the rest: everything from deaths to the
+        // checksum, but not Save's own words (entranceIndex .. bgsDayCount) nor the runtime part.
+        self.newf = [0; 6];
+        self.deaths = 0;
+        self.player_name = [0; 8];
+        self.n64dd_flag = 0;
+        self.health_capacity = 0;
+        self.health = 0;
+        self.magic_level = 0;
+        self.magic = 0;
+        self.rupees = 0;
+        self.sword_health = 0;
+        self.navi_timer = 0;
+        self.is_magic_acquired = false;
+        self.unk_3b = 0;
+        self.is_double_magic_acquired = false;
+        self.is_double_defense_acquired = false;
+        self.bgs_flag = false;
+        self.ocarina_game_round_num = 0;
+        self.child_equips = ItemEquips { button_items: [0; 4], c_button_slots: [0; 3], equipment: 0 };
+        self.adult_equips = self.child_equips;
+        self.unk_54 = 0;
+        self.unk_58 = [0; 0x0E];
+        self.saved_scene_id = 0;
+        self.equips = self.child_equips;
+        self.inventory = Inventory { items: [0; 24], ammo: [0; 16], equipment: 0, upgrades: 0, quest_items: 0, dungeon_items: [0; 20], dungeon_keys: [0; 19], defense_hearts: 0, gs_tokens: 0 };
+        self.scene_flags = vec![SavedSceneFlags::default(); SCENE_FLAGS_COUNT];
+        self.fw = FaroresWindData::default();
+        self.unk_e8c = [0; 0x10];
+        self.gs_flags = [0; 6];
+        self.unk_eb4 = [0; 0x4];
+        self.high_scores = [0; 7];
+        self.event_chk_inf = [0; 14];
+        self.item_get_inf = [0; 4];
+        self.inf_table = [0; 30];
+        self.unk_f34 = [0; 0x4];
+        self.world_map_area_data = 0;
+        self.unk_f3c = [0; 0x4];
+        self.scarecrow_long_song_set = 0;
+        self.scarecrow_long_song = [0; 0x360];
+        self.unk_12a1 = [0; 0x24];
+        self.scarecrow_spawn_song_set = 0;
+        self.scarecrow_spawn_song = [0; 0x80];
+        self.unk_1346 = [0; 0x2];
+        self.horse_data = HorseData::default();
+        self.checksum = 0;
     }
 
-    /// A new file as the file select starts it: file 2's `Sram_InitSave` (`z_sram.c:696`: the
-    /// first file is the map select's in this debug ROM, `FS_BTN_SELECT_FILE_1`), then
-    /// `FileSelect_LoadGame` (`z_file_choose.c:1438`).
-    /// - `Sram_InitSave`: `Sram_InitNewSave` ([`SaveContext::new`]), then `ENTR_LINKS_HOUSE_0`,
-    ///   child, 10:00 and `cutsceneIndex` 0xFFF1, the opening on Link's house's layer 5;
-    /// - `FileSelect_LoadGame`: `fileNum` 1, `GAMEMODE_NORMAL`, `respawn[RESPAWN_MODE_DOWN]`'s
-    ///   entrance `ENTR_LOAD_OPENING` (-1), `respawnFlag` 0, `showTitleCard`, the next transition,
-    ///   cutscene and trigger cleared, every button enabled, the interface's alpha types, `magic`
-    ///   and `magicLevel` 0 (the meter grows back), `naviTimer` 0.
-    /// - With no sword on B it clears the sword's equip nibble and XORs
-    ///   `OWNED_EQUIP_FLAG(EQUIP_TYPE_SWORD, swordEquipValue - 1)` into the owned equipment.
-    ///   @bug (game): on a new file the value is 0, so that reads `gBitFlags[-1]`, the word before
-    ///   the table in `code`; in this ROM it's 0 (`gBitFlags` at ROM 0xB9E2C0), and nothing
-    ///   changes.
-    pub fn file_select_new() -> SaveContext {
-        let mut s = SaveContext::new(ENTR_LINKS_HOUSE_0, false, crate::env::clock_time(10, 0) as u16);
-        s.cutscene_index = 0xFFF1;
-        s.file_num = 1;
-        s.game_mode = GAMEMODE_NORMAL;
-        s.respawn[RESPAWN_MODE_DOWN].entrance_index = ENTR_LOAD_OPENING;
-        s.respawn_flag = 0;
-        s.show_title_card = true;
-        s.next_transition_type = TRANS_NEXT_TYPE_DEFAULT;
-        s.next_cutscene_index = 0xFFEF;
-        s.cutscene_trigger = 0;
-        s.retain_weather_mode = false;
-        s.button_status = [crate::interface::BTN_ENABLED; 5];
-        s.force_rising_button_alphas = 0;
-        s.next_hud_visibility_mode = 0;
-        s.hud_visibility_mode = 0;
-        s.hud_visibility_mode_timer = 0;
-        s.prev_hud_visibility_mode = 0x32;
-        s.health_accumulator = 0;
-        s.magic_level = 0;
-        s.magic = 0;
-        s.navi_timer = 0;
-        if !matches!(s.equips.button_items[0], ITEM_SWORD_KOKIRI | ITEM_SWORD_MASTER | ITEM_SWORD_BIGGORON | ITEM_GIANTS_KNIFE) {
-            s.equips.button_items[0] = ITEM_NONE;
-            s.equips.equipment &= !EQUIP_MASKS[EQUIP_TYPE_SWORD];
-        }
-        s
+    /// `Sram_InitNewSave` (`z_sram.c`): the save's info cleared, then `sNewSavePlayerData`,
+    /// `sNewSaveEquips`, `sNewSaveInventory`, `sNewSaveChecksum` (0), Epona in Hyrule Field,
+    /// `magicLevel` 0, `infTable[INFTABLE_INDEX_1DX]` 1 and the Water Temple's switch 0x1E.
+    /// `entranceIndex`, `linkAge`, `cutsceneIndex`, `dayTime` and `nightFlag` are left as they
+    /// were.
+    pub fn init_new_save(&mut self) {
+        self.clear_info();
+        self.total_days = 0;
+        self.bgs_day_count = 0;
+        // sNewSavePlayerData: no newf, no deaths, the name all FILENAME_SPACE, three hearts, the
+        // normal meter (level 0), no rupees, both ages' equips empty, Link's house.
+        self.player_name = [FILENAME_SPACE; 8];
+        self.health_capacity = 0x30;
+        self.health = 0x30;
+        self.magic = MAGIC_NORMAL_METER;
+        self.child_equips = ItemEquips::NONE;
+        self.adult_equips = ItemEquips::NONE;
+        self.saved_scene_id = SCENE_LINKS_HOUSE;
+        // sNewSaveEquips: nothing on the buttons, the Kokiri tunic and boots worn.
+        self.equips = ItemEquips { button_items: [ITEM_NONE; 4], c_button_slots: [SLOT_NONE; 3], equipment: 0x1100 };
+        // sNewSaveInventory: no items, the Kokiri tunic and boots owned, no keys (-1).
+        self.inventory = Inventory {
+            items: [ITEM_NONE; 24],
+            ammo: [0; 16],
+            equipment: owned_equip_flag(EQUIP_TYPE_TUNIC, EQUIP_INV_TUNIC_KOKIRI) | owned_equip_flag(EQUIP_TYPE_BOOTS, EQUIP_INV_BOOTS_KOKIRI),
+            upgrades: 0,
+            quest_items: 0,
+            dungeon_items: [0; 20],
+            dungeon_keys: [-1; 19],
+            defense_hearts: 0,
+            gs_tokens: 0,
+        };
+        self.checksum = 0;
+        self.horse_data = SRAM_HORSE_DATA;
+        self.magic_level = 0;
+        self.inf_table[INFTABLE_INDEX_1DX] = 1;
+        self.scene_flags[SCENE_WATER_TEMPLE].swch = 0x4000_0000;
     }
 
-    /// The map select's file (`MapSelect_LoadGame` with `fileNum` 0xFF): `Sram_InitDebugSave`
-    /// (`z_sram.c`), then the map select's magic reset and enabled buttons.
-    /// - `sDebugSavePlayerData`: 14 hearts, 150 rupees, "LINK", `swordHealth` 8, magic acquired;
-    /// - `sDebugSaveEquips`: B the Master Sword, C the bow, bombs and the Fairy Ocarina, the
-    ///   Master Sword, Hylian Shield, Kokiri tunic and boots worn; `sDebugSaveInventory`: most
-    ///   items with ammo, every sword, shield, tunic and boots, upgrades 0x125249, quest items
-    ///   0x1E3FFFF, the first ten dungeons' items and 8 keys everywhere;
-    /// - `infTable[0] |= 0x5009`, `eventChkInf[0] |= 0x123F` (among them `EVENTCHKINF_05` and
-    ///   `EVENTCHKINF_0C`), `EVENTCHKINF_ZELDA_FLED_CASTLE`, `EVENTCHKINF_C4`, `sceneFlags[5].swch = 0x40000000`;
-    /// - a child gets the Kokiri Sword on B and, from the map select (`fileNum` 0xFF), the
-    ///   slingshot on C-left and the Deku Shield.
-    pub fn debug(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
-        let mut s = SaveContext::blank(entrance_index, adult, day_time);
-        s.player_name = [0x15, 0x12, 0x17, 0x14, 0x3E, 0x3E, 0x3E, 0x3E];
-        // Sram_InitDebugSave is the map select's (fileNum 0xFF, z_sram.c:290).
-        s.file_num = 0xFF;
-        s.health_capacity = 0xE0;
-        s.health = 0xE0;
-        s.magic = MAGIC_NORMAL_METER;
-        s.rupees = 150;
-        s.sword_health = 8;
-        s.is_magic_acquired = true;
-        s.saved_scene_id = 0x51;
-        s.equips = ItemEquips {
+    /// `Sram_InitDebugSave` (`z_sram.c`): the save's info cleared, then `sDebugSavePlayerData`
+    /// ("ZELDAZ", "LINK", 14 hearts, 150 rupees, `swordHealth` 8, magic acquired, Hyrule
+    /// Field), `sDebugSaveEquips` (B the Master Sword, C the bow, bombs and the Fairy Ocarina;
+    /// the Master Sword, Hylian Shield, Kokiri tunic and boots worn), `sDebugSaveInventory`
+    /// (most items with ammo, every sword but the broken knife, every shield, tunic and boots,
+    /// upgrades 0x125249, quest items 0x1E3FFFF, the first ten dungeons' items and 8 keys
+    /// everywhere), Epona in Hyrule Field, the story flags; a child (`LINK_AGE_IN_YEARS`, read
+    /// from `linkAge` as it stands) gets the Kokiri Sword on B and, with `fileNum` 0xFF (the map
+    /// select's), the slingshot on C-Left and the Deku Shield. Then `ENTR_HYRULE_FIELD_0`,
+    /// `magicLevel` 0 and the Water Temple's switch.
+    pub fn init_debug_save(&mut self) {
+        self.clear_info();
+        self.total_days = 0;
+        self.bgs_day_count = 0;
+        self.newf = *b"ZELDAZ";
+        // FILENAME_UPPERCASE('L'), 'I', 'N', 'K' (OOT_VERSION >= PAL_1_0), then FILENAME_SPACE.
+        self.player_name = [0x15, 0x12, 0x17, 0x14, FILENAME_SPACE, FILENAME_SPACE, FILENAME_SPACE, FILENAME_SPACE];
+        self.health_capacity = 0xE0;
+        self.health = 0xE0;
+        self.magic = MAGIC_NORMAL_METER;
+        self.rupees = 150;
+        self.sword_health = 8;
+        self.is_magic_acquired = true;
+        self.child_equips = ItemEquips::NONE;
+        self.adult_equips = ItemEquips::NONE;
+        self.saved_scene_id = crate::play_scene::SCENE_HYRULE_FIELD;
+        self.equips = ItemEquips {
             button_items: [ITEM_SWORD_MASTER, ITEM_BOW, ITEM_BOMB, ITEM_OCARINA_FAIRY],
             c_button_slots: [SLOT_BOW as u8, SLOT_BOMB as u8, SLOT_OCARINA as u8],
             equipment: (EQUIP_VALUE_SWORD_MASTER << 0) | (EQUIP_VALUE_SHIELD_HYLIAN << 4) | (EQUIP_VALUE_TUNIC_KOKIRI << 8) | (EQUIP_VALUE_BOOTS_KOKIRI << 12),
         };
-        s.inventory = Inventory {
+        self.inventory = Inventory {
             items: [
                 ITEM_DEKU_STICK,
                 ITEM_DEKU_NUT,
@@ -641,22 +774,74 @@ impl SaveContext {
             defense_hearts: 0,
             gs_tokens: 0,
         };
-        s.inf_table[0] |= 0x5009;
-        s.event_chk_inf[0] |= 0x123F;
-        s.set_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE);
-        s.set_event_chk_inf(EVENTCHKINF_C4);
-        if !adult {
-            s.equips.button_items[0] = ITEM_SWORD_KOKIRI;
-            s.inventory_change_equipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
-            // gSaveContext.fileNum == 0xFF (the map select's file).
-            s.equips.button_items[1] = ITEM_SLINGSHOT;
-            s.equips.c_button_slots[0] = SLOT_SLINGSHOT as u8;
-            s.inventory_change_equipment(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_DEKU);
+        self.checksum = 0;
+        self.horse_data = SRAM_HORSE_DATA;
+        // INFTABLE_SARIA_GREETED_LINK, _SARIA_WAS_TOLD_ABOUT_MIDO, INFTABLE_0C, INFTABLE_0E.
+        self.inf_table[0] |= 0x5009;
+        // EVENTCHKINF_00_UNUSED, _01_UNUSED, _MIDO_DENIED_DEKU_TREE_ACCESS,
+        // _SARIA_WAS_TOLD_ABOUT_MIDO, _04, _05, _09, _0C.
+        self.event_chk_inf[0] |= 0x123F;
+        self.set_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE);
+        self.set_event_chk_inf(EVENTCHKINF_C4);
+        if !self.adult {
+            self.equips.button_items[0] = ITEM_SWORD_KOKIRI;
+            self.inventory_change_equipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
+            if self.file_num == 0xFF {
+                self.equips.button_items[1] = ITEM_SLINGSHOT;
+                self.equips.c_button_slots[0] = SLOT_SLINGSHOT as u8;
+                self.inventory_change_equipment(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_DEKU);
+            }
         }
-        s.magic_level = 0;
-        s.scene_flags[5].swch = 0x4000_0000;
-        // MapSelect_LoadGame: magicCapacity, magicLevel and magic to 0 (to grow back), every
-        // button enabled, the interface's alpha types cleared.
+        self.entrance_index = ENTR_HYRULE_FIELD_0;
+        self.magic_level = 0;
+        self.scene_flags[SCENE_WATER_TEMPLE].swch = 0x4000_0000;
+    }
+
+    /// A new file entering by `entrance_index`, Link `adult` or not, at `day_time`:
+    /// `Sram_InitNewSave` (`z_sram.c`).
+    /// - `sNewSavePlayerData`: three hearts, no rupees, the normal magic meter (level 0), both
+    ///   ages' equips empty, `savedSceneId` `SCENE_LINKS_HOUSE`;
+    /// - `sNewSaveEquips`: nothing on the buttons, equipment 0x1100 (the Kokiri tunic and boots
+    ///   worn, no sword, no shield);
+    /// - `sNewSaveInventory`: no items or ammo, the Kokiri tunic and boots owned, the dungeon
+    ///   keys at -1;
+    /// - `infTable[INFTABLE_INDEX_1DX] = 1`, `sceneFlags[5].swch = 0x40000000`.
+    ///
+    /// The name is "LINK": the file select's name entry (which would write it) isn't ported.
+    pub fn new(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
+        let mut s = SaveContext::blank(entrance_index, adult, day_time);
+        s.init_new_save();
+        // FILENAME_UPPERCASE('L'), 'I', 'N', 'K': what the name entry would write.
+        s.player_name = [0x15, 0x12, 0x17, 0x14, FILENAME_SPACE, FILENAME_SPACE, FILENAME_SPACE, FILENAME_SPACE];
+        s
+    }
+
+    /// A new file as the file select starts it: file 2 (`fileNum` 1; the first file is the map
+    /// select's in this debug ROM, `FS_BTN_SELECT_FILE_1`) made on a fresh SRAM as the name
+    /// entry makes it ("LINK", `Sram_InitSave`), then loaded (`FileSelect_LoadGame`): see
+    /// [`crate::file_select::new_game`].
+    /// - `Sram_InitSave`: `Sram_InitNewSave`, then `ENTR_LINKS_HOUSE_0`, child, 10:00 and
+    ///   `cutsceneIndex` 0xFFF1, the opening on Link's house's layer 5; "ZELDAZ";
+    /// - `FileSelect_LoadGame`: `Sram_OpenSave` (Link's house from `savedSceneId`), `fileNum` 1,
+    ///   `GAMEMODE_NORMAL`, `respawn[RESPAWN_MODE_DOWN]`'s entrance `ENTR_LOAD_OPENING` (-1),
+    ///   `respawnFlag` 0, `showTitleCard`, the next transition, cutscene and trigger cleared,
+    ///   every button enabled, the interface's alpha types, `magic` and `magicLevel` 0 (the meter
+    ///   grows back), `naviTimer` 0, and the sword's equip with nothing on B.
+    pub fn file_select_new() -> SaveContext {
+        let mut sram = crate::sram::Sram::default();
+        crate::file_select::new_game(&mut sram, 2, None).expect("a fresh SRAM's file 2 is empty")
+    }
+
+    /// The map select's file (`MapSelect_LoadGame` with `fileNum` 0xFF): `Sram_InitDebugSave`
+    /// ([`Self::init_debug_save`]) with Link `adult` or not, the map select's entrance, then its
+    /// magic reset and enabled buttons.
+    pub fn debug(entrance_index: u16, adult: bool, day_time: u16) -> SaveContext {
+        let mut s = SaveContext::blank(entrance_index, adult, day_time);
+        s.file_num = 0xFF;
+        s.init_debug_save();
+        // MapSelect_LoadGame: the entrance picked; magicCapacity, magicLevel and magic to 0 (to
+        // grow back), every button enabled, the interface's alpha types cleared.
+        s.entrance_index = entrance_index;
         s.magic = 0;
         s.button_status = [crate::interface::BTN_ENABLED; 5];
         s

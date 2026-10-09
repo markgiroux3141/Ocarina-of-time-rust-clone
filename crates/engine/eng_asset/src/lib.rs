@@ -471,6 +471,19 @@ impl Assets {
     }
 }
 
+/// Writes `bytes` to `path` whole: to a file beside it, then renamed into place, so a reader (or
+/// a crash) never sees half of it. The folder is made if it's missing.
+pub fn write_file_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(d) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(d).with_context(|| format!("making {}", d.display()))?;
+    }
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, bytes).with_context(|| format!("writing {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("moving {} into place", path.display()))
+}
+
 /// The per-user data folder for `app`: `%LOCALAPPDATA%\<app>` on Windows,
 /// `$XDG_DATA_HOME/<app>` (or `~/.local/share/<app>`) elsewhere, `~/Library/Application
 /// Support/<app>` on macOS. Packs are caches that can be rebuilt, so Windows gets the local

@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 25;
+pub const FORMAT_VERSION: u32 = 26;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -36,6 +36,8 @@ pub const APP_DIR: &str = "oot-clone";
 pub const ENV_PACK: &str = "OOT_PACK";
 /// The data folder to use instead of the per-user one.
 pub const ENV_DATA_DIR: &str = "OOT_DATA_DIR";
+/// The folder of the save files (`save_path`); `out/saves` from where the game runs without it.
+pub const ENV_SAVE_DIR: &str = "OOT_SAVE_DIR";
 
 /// Record names.
 pub mod keys {
@@ -291,6 +293,15 @@ pub fn packs_dir() -> Result<PathBuf> {
 /// Where the pack for a ROM with this SHA-1 goes.
 pub fn pack_path(rom_sha1: &str) -> Result<PathBuf> {
     Ok(packs_dir()?.join(format!("{}.pak", rom_sha1.to_ascii_lowercase())))
+}
+
+/// The save file (the cartridge's SRAM image) for a ROM with this SHA-1, named like its pack:
+/// `$OOT_SAVE_DIR/<sha1>.sra`, else `out/saves/<sha1>.sra` from where the game runs (the repo's
+/// ignored `out`: a save is user data, kept out of the repo; docs/adr/0049-saving.md). Only the
+/// apps read and write it.
+pub fn save_path(rom_sha1: &str) -> PathBuf {
+    let dir = std::env::var_os(ENV_SAVE_DIR).filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("out").join("saves"));
+    dir.join(format!("{}.sra", rom_sha1.to_ascii_lowercase()))
 }
 
 /// The file naming the ROM of the pack to use (written by the last import).

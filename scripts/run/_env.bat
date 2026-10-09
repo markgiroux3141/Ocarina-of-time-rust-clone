@@ -3,14 +3,17 @@
 @rem
 @rem A session that builds into a new target folder, or imports a new pack format into a new
 @rem data folder, changes these two names.
-set "TARGET_NAME=game23"
-set "DATA_NAME=data22"
+set "TARGET_NAME=game24"
+set "DATA_NAME=data23"
 
 @rem The repo's root: two folders up from this file.
 for %%I in ("%~dp0..\..") do set "REPO=%%~fI"
 set "CARGO_TARGET_DIR=%REPO%\target\%TARGET_NAME%"
 @rem The game and the tests find the pack here (oot_game::pack::ENV_DATA_DIR).
 set "OOT_DATA_DIR=%REPO%\out\%DATA_NAME%"
+@rem The game's save file (the cartridge's SRAM) goes here (oot_game::pack::ENV_SAVE_DIR):
+@rem user data, kept out of the repo by the ignored out folder.
+set "OOT_SAVE_DIR=%REPO%\out\saves"
 set "BIN=%CARGO_TARGET_DIR%\release"
 cd /d "%REPO%"
 exit /b 0

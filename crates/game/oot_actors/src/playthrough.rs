@@ -241,13 +241,20 @@ pub enum Step {
     FloorChanged,
     /// Link dead: the game over started (`gameOverCtx.state` past `GAMEOVER_INACTIVE`).
     Died,
-    /// The game over's "Would you like to save?" (`PAUSE_STATE_GAME_OVER_SAVE_PROMPT`).
+    /// "Would you like to save?": the game over's (`PAUSE_STATE_GAME_OVER_SAVE_PROMPT`), or the
+    /// pause menu's turned in (`PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE`).
     SavePrompt,
     /// Its "Continue playing?" (`PAUSE_STATE_GAME_OVER_CONTINUE_PROMPT`), "No" taken at the save
     /// prompt.
     ContinuePrompt,
     /// "Yes" taken: the fade, the respawn at the dungeon's entrance, Link standing.
     Respawned,
+    /// The pause menu's save prompt's "Yes" taken: the save written (`Sram_WriteSave`,
+    /// `PAUSE_SAVE_PROMPT_STATE_SAVED`).
+    Saved,
+    /// After the console's reset, the file loaded (`FileSelect_LoadGame`, `Play_Init`) and Link
+    /// standing.
+    Loaded,
 }
 
 impl Step {
@@ -315,6 +322,8 @@ impl Step {
             Step::SavePrompt => "save_prompt",
             Step::ContinuePrompt => "continue_prompt",
             Step::Respawned => "respawned",
+            Step::Saved => "saved",
+            Step::Loaded => "loaded",
         }
     }
 }
@@ -380,7 +389,18 @@ pub enum Route {
     /// "Continue playing?", and the respawn at the entrance (GAME-05 milestone 5b-2), from
     /// `DekuBaba`'s debug start (`DEKU_BABA_START`, `deku-tree-quarter-heart`).
     GameOver,
+    /// Inside the Deku Tree with two hearts and the Fairy Slingshot on no button, the pause menu
+    /// opened, the slingshot onto C-Left, B's save prompt, "Yes": the save written and the menu
+    /// closed; then the console's reset loads file 2 back: Link at the Deku Tree's entrance with
+    /// three hearts and the slingshot on C-Left (GAME-05 milestone 5c), from the scene's spawn
+    /// (`deku-tree-save`, a debug start: file 2 of an SRAM in memory).
+    Save,
 }
+
+/// The `Save` route's button (C-Left), and the file the debug start saves to and the reset
+/// loads (file 2: `fileNum` 1).
+pub const SAVE_C_BUTTON: usize = 0;
+pub const SAVE_FILE: usize = 2;
 
 /// The `Pause` route's item: the Fairy Slingshot's slot (`SLOT_SLINGSHOT`, the grid's second row,
 /// first column), and its button (C-Right).
@@ -563,7 +583,7 @@ impl Route {
     /// The entrance a route starts at.
     pub fn entrance(self) -> &'static str {
         match self {
-            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause | Route::DungeonMap | Route::GameOver => "ENTR_DEKU_TREE_0",
+            Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause | Route::DungeonMap | Route::GameOver | Route::Save => "ENTR_DEKU_TREE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -578,6 +598,7 @@ impl Route {
             Route::Pause => Some("deku-tree-slingshot-owned"),
             Route::DungeonMap => Some("deku-tree-compass"),
             Route::GameOver => Some("deku-tree-quarter-heart"),
+            Route::Save => Some("deku-tree-save"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -662,6 +683,10 @@ impl Route {
         if let Some(p) = self.preset() {
             s.apply_preset(p).expect("the route's preset");
         }
+        // A debug start is file 2, as the file select made it ("ZELDAZ": Sram_InitSave)
+        // (docs/adr/0049-saving.md).
+        s.file_num = (SAVE_FILE - 1) as i32;
+        s.newf = *b"ZELDAZ";
         s
     }
 
@@ -683,6 +708,7 @@ impl Route {
             Route::Pause => "pause",
             Route::DungeonMap => "dungeon-map",
             Route::GameOver => "game-over",
+            Route::Save => "save",
         }
     }
 
@@ -701,13 +727,14 @@ impl Route {
             Route::Pause => 1000,
             Route::DungeonMap => 1000,
             Route::GameOver => 1500,
+            Route::Save => 1000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -772,6 +799,13 @@ enum Task {
     PromptChoice(i16, Step),
     /// Start until the menu has closed.
     CloseMenu(Step),
+    /// B until the pause menu's save prompt has turned in.
+    OpenSavePrompt(Step),
+    /// At the save prompt, the stick to "Yes", then A, until the save is written.
+    SaveYes(Step),
+    /// The console's reset (`Playthrough::take_reset`: the runner loads this file), then idle
+    /// until Link stands.
+    Reset(usize, Step),
     /// Idle until Mido has walked to his path's end.
     WaitMido,
     /// Towards the point until the Deku Tree's talk starts (`Bg_Treemouth`'s trigger), then A
@@ -892,6 +926,8 @@ pub struct Playthrough {
     last_rupees: i16,
     /// The menu's page when `Task::TurnPageRight` pressed R.
     items_page: u16,
+    /// The file `Task::Reset` asks the runner to load.
+    reset: Option<usize>,
 }
 
 impl Default for Playthrough {
@@ -970,6 +1006,16 @@ impl Playthrough {
                 Task::PromptChoice(4, Step::ContinuePrompt),
                 Task::PromptChoice(0, Step::Respawned),
             ],
+            Route::Save => vec![
+                Task::Settle(None),
+                Task::OpenMenu(Step::MenuOpened),
+                Task::MenuCursor(PAUSE_SLOT, Step::CursorOnItem),
+                Task::EquipOnC(SAVE_C_BUTTON, Step::ItemEquipped),
+                Task::OpenSavePrompt(Step::SavePrompt),
+                Task::SaveYes(Step::Saved),
+                Task::WaitPauseState(oot_game::kaleido::PAUSE_STATE_OFF, Step::MenuClosed),
+                Task::Reset(SAVE_FILE, Step::Loaded),
+            ],
             Route::Push => vec![
                 Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
                 Task::PushBlock(PUSH_BLOCK_HOME, PUSH_BLOCK_FLAG, Step::BlockInPit),
@@ -1001,6 +1047,7 @@ impl Playthrough {
             tries: 0,
             last_rupees: 0,
             items_page: 0,
+            reset: None,
         }
     }
 
@@ -1205,6 +1252,12 @@ impl Playthrough {
     /// The step done on the last frame, once.
     pub fn take_done(&mut self) -> Option<Step> {
         self.done.take()
+    }
+
+    /// The file `Task::Reset` wants loaded: the runner does the console's reset
+    /// (`PlayState::console_reset`) before it runs this frame.
+    pub fn take_reset(&mut self) -> Option<usize> {
+        self.reset.take()
     }
 
     /// Whether every task is done.
@@ -1594,6 +1647,46 @@ impl Playthrough {
                     return Some(self.press(BTN_START));
                 }
                 Some(idle)
+            }
+            Task::OpenSavePrompt(step) => {
+                use oot_game::kaleido::{PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE, PAUSE_STATE_SAVE_PROMPT};
+                let p = &w.pause_ctx;
+                if p.state == PAUSE_STATE_SAVE_PROMPT && p.save_prompt_state == PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 60 {
+                    self.failure = Some(format!("the save prompt never turned in (pause state {}, prompt state {})", p.state, p.save_prompt_state));
+                    return None;
+                }
+                Some(if menu_idle(w) { self.press(eng_input::pad::BTN_B) } else { idle })
+            }
+            Task::SaveYes(step) => {
+                use oot_game::kaleido::{PAUSE_SAVE_PROMPT_STATE_SAVED, PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE};
+                let p = &w.pause_ctx;
+                if p.save_prompt_state == PAUSE_SAVE_PROMPT_STATE_SAVED {
+                    self.finish(Some(step));
+                    return None;
+                }
+                self.wait += 1;
+                if self.wait > 60 || p.save_prompt_state != PAUSE_SAVE_PROMPT_STATE_WAIT_CHOICE {
+                    self.failure = Some(format!("the save prompt never saved (prompt state {}, choice {})", p.save_prompt_state, p.prompt_choice));
+                    return None;
+                }
+                // The stick to Yes (a push, then a release), then A.
+                if p.prompt_choice != 0 {
+                    return Some(if self.prev.stick_x != 0 { idle } else { PadState { button: 0, stick_x: -80, stick_y: 0 } });
+                }
+                Some(self.press(eng_input::pad::BTN_A))
+            }
+            Task::Reset(file, step) => {
+                if self.sub == 0 {
+                    self.sub = 1;
+                    self.reset = Some(file);
+                    return Some(idle);
+                }
+                self.settle(w, Some(step))
             }
             Task::WaitMido => {
                 let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnMd>(h)) else {

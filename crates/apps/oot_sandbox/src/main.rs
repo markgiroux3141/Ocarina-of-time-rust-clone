@@ -116,6 +116,15 @@ struct Cli {
     /// (`SaveContext::file_select_new`).
     #[arg(long)]
     new_file: bool,
+    /// Play file N (1 to 3) of the SRAM image (--sram; without it a fresh one, whose files are
+    /// empty), as the file select loads it; with --new-file, a new file made in it.
+    #[arg(long)]
+    file: Option<usize>,
+    /// The SRAM image to play on: read at the start (fresh if there's no file), written at the
+    /// end of a headless run, and after each save in the window. Without it the SRAM is in
+    /// memory: the sandbox never touches the game's save file.
+    #[arg(long)]
+    sram: Option<PathBuf>,
     /// Headless: also a screenshot after each of these frames, next to --screenshot
     /// (`<name>_<frame>.png`).
     #[arg(long, value_delimiter = ',')]
@@ -166,6 +175,8 @@ fn options(cli: &Cli) -> Options {
         music: cli.music,
         audio_log: cli.audio_log.is_some(),
         level: cli.level.clone(),
+        file: cli.file,
+        sram: cli.sram.clone(),
     }
 }
 
@@ -510,6 +521,7 @@ fn run_script(
     let mut trace: Vec<serde_json::Value> = Vec::new();
     let mut prev = PadState::default();
     let mut walk = HouseWalk { phase: 0, wait: 0 };
+    let mut reset: Option<usize> = None;
     // Scene changes by frame, for the trace; the house walk and its phases ends the run.
     for i in 0.. {
         let cur = if let Some(run) = &mut playthrough {
@@ -520,6 +532,11 @@ fn run_script(
             // A step is done on the state after the last frame.
             if let (Some(step), Some(t)) = (run.take_done(), trace.last_mut()) {
                 t["step"] = serde_json::json!(step.name());
+            }
+            // The console's reset (Route::Save): the file loaded before this frame runs.
+            if let Some(file) = run.take_reset() {
+                w.console_reset(file, None)?;
+                reset = Some(file);
             }
             match pad {
                 Some(p) => p,
@@ -614,6 +631,25 @@ fn run_script(
                     "c_items": &w.save.equips.button_items[1..],
                     "update_rate": w.r_update_rate,
                 });
+                // The save prompt (GAME-05 milestone 5c): its state, choice and pitch, and the
+                // SRAM's writes.
+                if pc.state == oot_game::kaleido::PAUSE_STATE_SAVE_PROMPT {
+                    t["pause"]["save"] = serde_json::json!({
+                        "prompt": pc.save_prompt_state,
+                        "choice": pc.prompt_choice,
+                        "pitch": pc.prompt_pitch,
+                        "sram_writes": w.sram.writes,
+                    });
+                }
+            }
+            // The frame after the console's reset: the file loaded, and what it holds.
+            if let Some(file) = reset.take() {
+                t["reset"] = serde_json::json!({
+                    "file": file,
+                    "health": w.save.health,
+                    "c_items": &w.save.equips.button_items[1..],
+                    "saved_scene": w.save.saved_scene_id,
+                });
             }
         }
         let snap = w.current_frame();
@@ -664,6 +700,10 @@ fn headless(cli: &Cli) -> Result<()> {
     };
     if let Some(run) = &audio {
         write_audio(cli, &w, run)?;
+    }
+    if let Some(p) = &cli.sram {
+        oot::write_sram(p, &w.sram)?;
+        println!("{} ({} writes)", p.display(), w.sram.writes);
     }
     if let Some(p) = &cli.trace {
         if let Some(d) = p.parent() {

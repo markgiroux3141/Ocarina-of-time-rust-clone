@@ -13,6 +13,7 @@ eng_collision.workspace = true
 eng_input.workspace = true
 eng_render.workspace = true
 eng_app.workspace = true
+eng_asset.workspace = true
 oot_import.workspace = true
 oot_game.workspace = true
 oot_actors.workspace = true
