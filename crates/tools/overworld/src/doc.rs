@@ -573,6 +573,166 @@ pub struct Path {
     /// steps drawn on it, its sides the stairs' profile: the theme's `steps`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look: Option<String>,
+    /// Its cross-section (`Section`): none, the ground as its line says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section: Option<Section>,
+    /// Per segment between nodes, overriding `section` (null: none), as `modes` does `mode`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<Option<Section>>,
+    /// Railings along its sides wherever they drop away (`RAIL_DROP` or more): a fence kind of the
+    /// theme's (`fence`, `lattice`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub railings: Option<String>,
+    /// Climb between its two nodes in switchbacks, solved so the slope stays walkable
+    /// (`paths::meander`): its two nodes are the ends, and the builder lays the zig-zag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub switchbacks: Option<Switchbacks>,
+}
+
+/// "Make it walkable": a path between two nodes that zig-zags across a corridor so it climbs no
+/// steeper than `grade` (`paths::meander`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Switchbacks {
+    /// How wide the corridor is that its legs cross, side to side, centred on the line between
+    /// its nodes. Else four path widths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+    /// The slope to climb at, in degrees.
+    #[serde(default = "switchback_grade")]
+    pub grade: f64,
+    /// "round": the turns are half circles climbing on with the legs; "flat": they're level
+    /// landings, the legs climbing between them.
+    #[serde(default = "round")]
+    pub turns: String,
+    /// Which side of the line between its nodes the first leg heads off to: "left" or "right".
+    #[serde(default = "left")]
+    pub first: String,
+}
+
+impl Default for Switchbacks {
+    fn default() -> Self {
+        Switchbacks { width: None, grade: switchback_grade(), turns: round(), first: left() }
+    }
+}
+
+fn switchback_grade() -> f64 {
+    20.0
+}
+
+fn round() -> String {
+    "round".into()
+}
+
+fn left() -> String {
+    "left".into()
+}
+
+impl Default for Path {
+    fn default() -> Self {
+        Path {
+            name: String::new(),
+            nodes: vec![],
+            width: path_width(),
+            mode: attached(),
+            modes: vec![],
+            edge: None,
+            shape: None,
+            look: None,
+            section: None,
+            sections: vec![],
+            railings: None,
+            switchbacks: None,
+        }
+    }
+}
+
+impl Path {
+    /// Segment k's section (`sections`, else `section`).
+    pub fn section_of(&self, k: usize) -> Option<&Section> {
+        if self.sections.is_empty() { self.section.as_ref() } else { self.sections.get(k).and_then(Option::as_ref) }
+    }
+}
+
+/// A side drops away where the ground beside it is this far below the path, or more: railings
+/// stand there (`Path::railings`).
+pub const RAIL_DROP: f64 = 40.0;
+
+/// A path's cross-section, for the whole path or a segment (`Path::section`, `sections`). The
+/// height its line gives (`paths.rs`) is still where it is; a section raises or sinks the surface
+/// from there, ramping back to the line at the path's ends and where sections change, so the ends
+/// still meet the ground (`paths::RAMP`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Section {
+    /// An embankment with a flat top, `height` above its line.
+    Causeway {
+        #[serde(default = "causeway_height")]
+        height: f64,
+    },
+    /// A lane in a cutting, `depth` below its line: walls up both sides (Kakariko's, Hyrule
+    /// Field's).
+    Sunken {
+        #[serde(default = "sunken_depth")]
+        depth: f64,
+    },
+    /// Cut along a cliff (draw it along the cliff's edge): the walls above it and the drop below
+    /// are the cliff's own, not an embankment's (Death Mountain Trail, Gerudo Valley).
+    Ledge,
+    /// A deck of planks on posts, `height` above its line, a pair of posts every `spacing`, open
+    /// underneath (Kokiri Forest's walkways). Its segments float whatever their mode.
+    Boardwalk {
+        #[serde(default = "boardwalk_height")]
+        height: f64,
+        #[serde(default = "boardwalk_spacing")]
+        spacing: f64,
+    },
+}
+
+impl Section {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Section::Causeway { .. } => "causeway",
+            Section::Sunken { .. } => "sunken",
+            Section::Ledge => "ledge",
+            Section::Boardwalk { .. } => "boardwalk",
+        }
+    }
+
+    /// How far it raises (or, negative, sinks) the surface from its line.
+    pub fn offset(&self) -> f64 {
+        match self {
+            Section::Causeway { height } | Section::Boardwalk { height, .. } => *height,
+            Section::Sunken { depth } => -depth,
+            Section::Ledge => 0.0,
+        }
+    }
+
+    /// A new section of this kind, with its defaults.
+    pub fn of_kind(kind: &str) -> Option<Section> {
+        Some(match kind {
+            "causeway" => Section::Causeway { height: causeway_height() },
+            "sunken" => Section::Sunken { depth: sunken_depth() },
+            "ledge" => Section::Ledge,
+            "boardwalk" => Section::Boardwalk { height: boardwalk_height(), spacing: boardwalk_spacing() },
+            _ => return None,
+        })
+    }
+}
+
+fn causeway_height() -> f64 {
+    60.0
+}
+
+fn sunken_depth() -> f64 {
+    120.0
+}
+
+fn boardwalk_height() -> f64 {
+    80.0
+}
+
+fn boardwalk_spacing() -> f64 {
+    200.0
 }
 
 fn path_width() -> f64 {

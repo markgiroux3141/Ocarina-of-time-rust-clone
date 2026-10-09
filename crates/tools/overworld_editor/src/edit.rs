@@ -418,14 +418,25 @@ impl Shapes {
                 (loops, Some(e))
             }
         };
-        let areas = loops.iter().map(|c: &Vec<(P2, usize)>| signed_area(&c.iter().map(|x| x.0).collect::<Vec<_>>()).abs()).collect();
+        let areas: Vec<f64> = loops.iter().map(|c: &Vec<(P2, usize)>| signed_area(&c.iter().map(|x| x.0).collect::<Vec<_>>()).abs()).collect();
+        // the floors' heights, for switchbacks' ends
+        let floors = Shapes { loops: loops.clone(), areas: areas.clone(), paths: vec![], lines: vec![], error: None };
         let paths = doc
             .paths
             .iter()
             .map(|p| {
-                let xy: Vec<P2> = p.nodes.iter().filter_map(|n| Some([n.first().copied().flatten()?, n.get(1).copied().flatten()?])).collect();
+                let mut xy: Vec<P2> = p.nodes.iter().filter_map(|n| Some([n.first().copied().flatten()?, n.get(1).copied().flatten()?])).collect();
                 if xy.len() < 2 {
                     return xy.into_iter().map(|q| (q, 0)).collect();
+                }
+                // switchbacks: the zig-zag the builder lays between its two nodes, all segment 0
+                if p.switchbacks.is_some() && xy.len() == 2 {
+                    let z = |i: usize| p.nodes[i].get(2).copied().flatten().unwrap_or_else(|| base_z(doc, &floors, xy[i]));
+                    if let Ok(Some(m)) = overworld::paths::meander(p, z(0), z(1)) {
+                        xy = m.xy;
+                        let (line, _) = centre_line(&xy, path_sampling(doc));
+                        return line.into_iter().map(|(q, _)| (q, 0)).collect();
+                    }
                 }
                 let (line, node_s) = centre_line(&xy, path_sampling(doc));
                 line.into_iter()
@@ -627,6 +638,7 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
         shape: None,
         // in Kakariko a path is stairs to start with: its ramps are
         look: (doc.settings.theme == "kakariko").then(|| "steps".into()),
+        ..Default::default()
     }
 }
 

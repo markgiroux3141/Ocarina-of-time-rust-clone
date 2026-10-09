@@ -8,7 +8,7 @@ use super::widgets::{self, field, section};
 use super::{line_colour, App, Sel, PROP_COLOUR};
 use crate::edit::{self, NodeRef};
 use eframe::egui::{self, Color32, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
-use overworld::doc::{rock_looks, stack_looks, Contour, Layers, Part, Profile, Prop, RockLook, Skyline, StackLook};
+use overworld::doc::{rock_looks, stack_looks, Contour, Layers, Part, Profile, Prop, RockLook, Section, Skyline, StackLook, Switchbacks};
 
 /// What the header card shows on the left.
 enum Tile {
@@ -346,8 +346,14 @@ impl App {
             _ => None,
         };
         let floating = self.doc.paths[k].mode == "floating";
+        let fences: Vec<String> = self.theme.fences.keys().cloned().collect();
         let p = &mut self.doc.paths[k];
-        let delete = header(ui, Tile::Icon(Icon::Path), if floating { "Path · bridge" } else { "Path · ramp" }, style::PATH, Name::Edit(&mut p.name), true);
+        let what = match p.section.as_ref() {
+            Some(s) => format!("Path · {}", section_label(Some(s)).to_lowercase()),
+            None if floating => "Path · bridge".into(),
+            None => "Path · ramp".into(),
+        };
+        let delete = header(ui, Tile::Icon(Icon::Path), &what, style::PATH, Name::Edit(&mut p.name), true);
         self.problems_for(ui, Sel::Path(k));
         if let Some(n) = node {
             self.node_section(ui, n);
@@ -375,12 +381,75 @@ impl App {
                 }
             }
         });
+        section(ui, "ins psection", "Section", None, true, |ui| {
+            field(
+                ui,
+                "Section",
+                Some("Its cross-section. Causeway: raised, its ends ramping down. Sunken lane: in a cutting, walls both sides. Ledge: cut along a cliff (draw it along the edge), its walls the cliff's own. Boardwalk: planks on posts, open underneath."),
+                |ui| section_combo(ui, "psec", &mut p.section),
+            );
+            if let Some(s) = p.section.as_mut() {
+                section_numbers(ui, s);
+            }
+            let segs = p.nodes.len().saturating_sub(1);
+            if segs > 1 {
+                let open = !p.sections.is_empty();
+                if widgets::disclosure(ui, "psecs", "Per segment", open) {
+                    let mut secs: Vec<Option<Section>> = (0..segs).map(|i| p.section_of(i).cloned()).collect();
+                    let mut changed = false;
+                    for (i, s) in secs.iter_mut().enumerate() {
+                        field(ui, &format!("  {} to {}", i, i + 1), None, |ui| changed |= section_combo(ui, &format!("psec{i}"), s));
+                        if let Some(s) = s.as_mut() {
+                            changed |= section_numbers(ui, s);
+                        }
+                    }
+                    if changed {
+                        p.sections = if secs.iter().all(|s| *s == p.section) { vec![] } else { secs };
+                    }
+                }
+            }
+            field(ui, "Railings", Some("A fence along its sides wherever they drop away (40 or more): a causeway's, a boardwalk's, a ledge's outer side"), |ui| {
+                style_combo(ui, "prail", &mut p.railings, &fences, "none")
+            });
+        });
+        section(ui, "ins pclimb", "Climb", None, true, |ui| {
+            let mut on = p.switchbacks.is_some();
+            field(
+                ui,
+                "Switchbacks",
+                Some("Make it walkable: it zig-zags between its two nodes across a corridor, with the fewest turns that keep it at the slope you give. Its two nodes stay the ends"),
+                |ui| {
+                    if widgets::segmented(ui, &mut on, &[(false, "Off"), (true, "On")]) {
+                        p.switchbacks = on.then(Switchbacks::default);
+                    }
+                },
+            );
+            if let Some(sb) = p.switchbacks.as_mut() {
+                if p.nodes.len() != 2 {
+                    widgets::hint(ui, "Switchbacks climb between two nodes: delete the ones between.");
+                }
+                let width = p.width;
+                field(ui, "    Corridor", Some("How wide the strip is that its legs cross, centred on the line between its nodes"), |ui| {
+                    let mut w = sb.width.unwrap_or(4.0 * width);
+                    if ui.add(egui::DragValue::new(&mut w).speed(2.0).range(width..=5000.0)).changed() {
+                        sb.width = Some(w);
+                    }
+                });
+                field(ui, "    Slope", Some("The slope it climbs at, in degrees (walkable is up to 35)"), |ui| ui.add(egui::DragValue::new(&mut sb.grade).speed(0.2).range(5.0..=35.0).suffix("°")));
+                field(ui, "    Turns", Some("Round: half circles that climb on. Flat: level landings, the legs steeper between"), |ui| {
+                    widgets::segmented(ui, &mut sb.turns, &[("round".to_string(), "Round"), ("flat".to_string(), "Flat")])
+                });
+                field(ui, "    First leg", Some("Which side the first leg heads off to, looking from its first node to its last"), |ui| {
+                    widgets::segmented(ui, &mut sb.first, &[("left".to_string(), "Left"), ("right".to_string(), "Right")])
+                });
+            }
+        });
         section(ui, "ins plook", "Look", None, true, |ui| {
             field(
                 ui,
                 "Surface",
-                Some("Ground, or stairs as Kakariko's are: a ramp with steps drawn on it, its sides the stairs' profile. Kakariko's are 1 in 2 (26.6°): a 160 rise over 320"),
-                |ui| widgets::segmented(ui, &mut p.look, &[(None, "Ground"), (Some("steps".to_string()), "Steps")]),
+                Some("Ground; dirt, the theme's dirt painted along it, fading out by its edges; or stairs as Kakariko's are: a ramp with steps drawn on it, its sides the stairs' profile. Kakariko's are 1 in 2 (26.6°): a 160 rise over 320"),
+                |ui| widgets::segmented(ui, &mut p.look, &[(None, "Ground"), (Some("dirt".to_string()), "Dirt"), (Some("steps".to_string()), "Steps")]),
             );
             field(ui, "Sides", Some("The wall style of its sides (stairs: the stairs' own unless you set one)"), |ui| style_combo(ui, "pedge", &mut p.edge, &styles, "theme's"));
             field(ui, "Bridge shape", Some("Under its floating segments"), |ui| widgets::segmented(ui, &mut p.shape, &[(None, "Theme's"), (Some("rock".to_string()), "Rock arch"), (Some("slab".to_string()), "Slab")]));
@@ -799,6 +868,53 @@ impl App {
 }
 
 /// Nothing selected: what you can click, and the main keys.
+/// A section's name in the inspector.
+fn section_label(s: Option<&Section>) -> &'static str {
+    match s {
+        None => "Ground",
+        Some(Section::Causeway { .. }) => "Causeway",
+        Some(Section::Sunken { .. }) => "Sunken lane",
+        Some(Section::Ledge) => "Ledge",
+        Some(Section::Boardwalk { .. }) => "Boardwalk",
+    }
+}
+
+/// Picks a section (none: the ground as its line says). A kind picked fresh takes its defaults.
+fn section_combo(ui: &mut egui::Ui, id: &str, s: &mut Option<Section>) -> bool {
+    let before = s.as_ref().map(Section::name);
+    let mut kind = before;
+    egui::ComboBox::from_id_salt(id).selected_text(section_label(s.as_ref())).width(ui.available_width()).show_ui(ui, |ui| {
+        for k in [None, Some("causeway"), Some("sunken"), Some("ledge"), Some("boardwalk")] {
+            let label = section_label(k.and_then(Section::of_kind).as_ref());
+            ui.selectable_value(&mut kind, k, label);
+        }
+    });
+    if kind == before {
+        return false;
+    }
+    *s = kind.and_then(Section::of_kind);
+    true
+}
+
+/// A section's numbers: a causeway's or boardwalk's height, a lane's depth, a boardwalk's post spacing.
+fn section_numbers(ui: &mut egui::Ui, s: &mut Section) -> bool {
+    let mut changed = false;
+    match s {
+        Section::Causeway { height } => {
+            field(ui, "    Height", Some("Above its line; its ends ramp down at 25°"), |ui| changed |= ui.add(egui::DragValue::new(height).speed(1.0).range(5.0..=1000.0)).changed());
+        }
+        Section::Sunken { depth } => {
+            field(ui, "    Depth", Some("Below its line; its ends ramp up at 25°"), |ui| changed |= ui.add(egui::DragValue::new(depth).speed(1.0).range(5.0..=1000.0)).changed());
+        }
+        Section::Ledge => {}
+        Section::Boardwalk { height, spacing } => {
+            field(ui, "    Height", Some("Its deck above its line; its ends ramp down at 25°"), |ui| changed |= ui.add(egui::DragValue::new(height).speed(1.0).range(0.0..=1000.0)).changed());
+            field(ui, "    Posts every", None, |ui| changed |= ui.add(egui::DragValue::new(spacing).speed(1.0).range(40.0..=1000.0)).changed());
+        }
+    }
+    changed
+}
+
 fn empty(ui: &mut egui::Ui) {
     egui::Frame::new().inner_margin(Margin { left: 18, right: 18, top: 20, bottom: 16 }).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;

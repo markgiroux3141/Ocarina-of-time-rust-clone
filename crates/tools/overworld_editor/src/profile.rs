@@ -1,6 +1,7 @@
 //! A path seen from the side: its height along its length over the ground under it, laid out
-//! by the builder's own `paths::layout` (so landings and interpolated heights are exactly what
-//! gets built). Nodes are dragged up and down; stretches steeper than the walkable slope are red.
+//! by the builder's own `paths::layout_all` (so landings, junctions and interpolated heights are
+//! exactly what gets built). Nodes are dragged up and down; stretches steeper than the walkable
+//! slope are red.
 
 use crate::edit::{self, Shapes};
 use eframe::egui::{self, epaint, Align2, Color32, FontId, PointerButton, Pos2, Rect, Sense, Shape, Stroke, Vec2};
@@ -16,7 +17,8 @@ pub struct Profile {
     pub node_s: Vec<f64>,
     /// Each node's height as built, and whether the document gives it.
     pub node_z: Vec<f64>,
-    /// The painted terrain under each node (built heights are the design's plus this).
+    /// The painted terrain under each node and its section's raise there (built heights are the
+    /// design's plus this).
     pub node_t: Vec<f64>,
     pub given: Vec<bool>,
     pub total: f64,
@@ -28,9 +30,14 @@ pub fn profile(doc: &Doc, shapes: &Shapes, k: usize) -> Result<Profile, String> 
     let shaped = profiled.then(|| overworld::profiles::Ground::new(doc).ok()).flatten();
     let base = |p: P2| shaped.as_ref().map_or_else(|| edit::base_z(doc, shapes, p), |g| g.at(p));
     let path = &doc.paths[k];
-    let geo = paths::layout(path, &base, edit::path_sampling(doc))?;
+    // laid out with the others, so an end joining another path shows the height it takes there
+    let geo = paths::layout_all(&doc.paths, &base, edit::path_sampling(doc)).swap_remove(k)?;
     let xy: Vec<P2> = path.nodes.iter().map(|n| [n[0].unwrap_or(0.0), n[1].unwrap_or(0.0)]).collect();
-    let (_, node_s) = paths::centre_line(&xy, edit::path_sampling(doc));
+    let (_, mut node_s) = paths::centre_line(&xy, edit::path_sampling(doc));
+    if path.switchbacks.is_some() && xy.len() == 2 {
+        // its two nodes are the zig-zag's ends
+        node_s = vec![geo.st.first().map_or(0.0, |x| x.s), geo.st.last().map_or(0.0, |x| x.s)];
+    }
     let z_at = |s: f64| -> f64 {
         for w in geo.st.windows(2) {
             if s <= w[1].s + 1e-6 {
@@ -64,6 +71,14 @@ pub fn profile(doc: &Doc, shapes: &Shapes, k: usize) -> Result<Profile, String> 
             .windows(2)
             .map(|w| ((w[1].z - w[0].z).abs() / (w[1].s - w[0].s).max(1e-9)).atan().to_degrees())
             .fold(0.0, f64::max);
+    }
+    // a section raises the surface over its line: the line is what a node's height sets
+    for (i, &s) in node_s.iter().enumerate() {
+        let raise = geo.st.windows(2).find(|w| s <= w[1].s + 1e-6).map_or(geo.st.last().map_or(0.0, |x| x.raise), |w| {
+            let t = if w[1].s - w[0].s > 1e-9 { ((s - w[0].s) / (w[1].s - w[0].s)).clamp(0.0, 1.0) } else { 0.0 };
+            w[0].raise + (w[1].raise - w[0].raise) * t
+        });
+        node_t[i] += raise;
     }
     Ok(Profile { geo, ground, node_s, node_z, node_t, given, total })
 }
@@ -272,5 +287,24 @@ impl ProfileView {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_sections_raise_is_shown_but_not_set_as_a_nodes_height() {
+        // a causeway 60 up across flat ground: its middle node shows 60, and dragging it sets the
+        // line's height (built minus the raise)
+        let doc: Doc = serde_json::from_value(serde_json::json!({
+            "outline": { "nodes": [[0, 0, 1], [3000, 0, 1], [3000, 1000, 1], [0, 1000, 1]] },
+            "paths": [ { "name": "c", "nodes": [[200, 500], [1500, 500], [2800, 500]], "section": { "kind": "causeway", "height": 60 } } ]
+        }))
+        .unwrap();
+        let pr = profile(&doc, &Shapes::new(&doc), 0).unwrap();
+        assert!((pr.node_z[1] - 60.0).abs() < 1e-6, "{:?}", pr.node_z);
+        assert!((pr.node_t[1] - 60.0).abs() < 1e-6 && pr.node_t[0].abs() < 1e-6, "{:?}", pr.node_t);
     }
 }

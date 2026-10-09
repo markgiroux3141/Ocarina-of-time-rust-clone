@@ -24,8 +24,14 @@ builder's README.
   solids standing on the finished ground; Link stands on a mesa's top and walks an arch's crown. See Rocks and arches
   in the builder's README; example `sketch_rocks.json`. Marked *built* in section 1.
 
-The order agreed for the rest: path cross-sections, "make it walkable" and junctions; the precision tools (measure, Link gauges, section cut, grid and snaps); relative heights and brush layers;
-then rivers and the scatter and array rules.
+- **2026-10-08, paths (pick 3, section 2):** cross-sections (causeway, sunken lane, cliff-side ledge, boardwalk on
+  posts; per path or per segment), railings wherever a side drops away, junctions (an end on another path takes its
+  height and section, two ends meeting cover their corner, overlapping paths blend without steps), and "make it
+  walkable": switchbacks solved from a slope and a corridor. See Sections, Junctions and Switchbacks in the builder's
+  README; example `sketch_sections.json`. Marked *built* in section 2.
+
+The order agreed for the rest: the precision tools (measure, Link gauges, section cut, grid and snaps); relative
+heights and brush layers; then rivers and the scatter and array rules.
 
 ## The aim
 
@@ -93,8 +99,10 @@ themes, not in extra tools. A document may name a style, its theme's or another'
 
 ## 2. Pathways
 
-- **Path cross-sections.** Each path segment picks a section, as it now picks attached or floating:
+- **Path cross-sections** (*built*, per path or per segment, with railings wherever a side drops away). Each path
+  segment picks a section, as it now picks attached or floating:
   - **cliff-side ledge:** cut into a wall on one side, dropping off on the other (Death Mountain Trail, Gerudo Valley);
+    *built* as a path drawn along the cliff's edge whose walls are the cliff's own;
   - **sunken lane:** a cutting with walls on both sides (Kakariko's roads);
   - **causeway:** raised, with optional railings;
   - **steps:** a step height, with the run solved from the slope (*built* as Kakariko does stairs: a path's look
@@ -102,7 +110,10 @@ themes, not in extra tools. A document may name a style, its theme's or another'
   - **boardwalk:** planks on stumps or posts at a spacing (Kokiri Forest's walkways, made parametric).
 - **"Make it walkable."** Give two endpoints and the builder adds switchbacks so the slope stays under the walkable
   35°. You choose the corridor width and turn style; it solves the zig-zag. You state the constraint, not the geometry.
-- **Junctions.** Paths that share a node merge cleanly (Y and T joins), rather than overlapping.
+  *Built*: a slope (20° unless you say), round or flat turns, and it reports a corridor too narrow for the turns.
+- **Junctions** (*built*). Paths that share a node merge cleanly (Y and T joins), rather than overlapping: an end on
+  another path takes its height there, ends meeting cover their corner, and where footprints overlap the ground is
+  blended, so there's no step. Crossroads at about one height blend too.
 - **Ledges along a wall.** A line drawn along a wall face, with a height and a width, becomes a shelf to walk or shimmy
   along (Zora's River, Gerudo Fortress).
 - **Stepping-stone lines.** Stones placed along a line at a spacing taken from Link's own jump distance, so every gap

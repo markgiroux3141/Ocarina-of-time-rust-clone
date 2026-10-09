@@ -20,7 +20,7 @@
 //! Objects: ground, water, walls, cliffs (the boundary's), bank, trees (trunks), foliage,
 //! bridges, overlays.
 
-use crate::doc::{Doc, Noise, WallTexture};
+use crate::doc::{Doc, Noise, Section, WallTexture};
 use crate::geom::*;
 use crate::map::{Map, VOID};
 use crate::mesh::Mesh;
@@ -98,6 +98,10 @@ struct Builder<'a> {
     sky: Vec<(P2, P2, bool)>,
     /// The bands added for what lies beyond the outline (`beyond.rs`).
     bands: crate::beyond::Bands,
+    /// Each path's attached runs' footprints, and the pairs of paths blended where they overlap
+    /// (`paths::blends`).
+    ribbons: Vec<Vec<Vec<P2>>>,
+    blends: std::collections::HashSet<(usize, usize)>,
 }
 
 /// A bent cliff's column: which way is out (towards the lower floor), how far into the bend it is
@@ -124,6 +128,9 @@ struct WallJob<'a> {
     over_water: bool,
     /// An overhang or ragged rock on its edge (`profiles::Wall`).
     bend: Option<Wall>,
+    /// A top-anchored wall's run's tallest height: stretched, its texture is once over that
+    /// (`emit_anchored`).
+    span: f64,
 }
 
 /// Builds a level without a kit: props are reported, not placed.
@@ -179,7 +186,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     let mut paths: Vec<PathGeo> = {
         let base = |p: P2| field.base(&pre.loop_polys, p);
         let sampling = doc.settings.detail()?.paths;
-        doc.paths.iter().map(|p| paths::layout(p, &base, sampling)).collect::<Result<_, _>>()?
+        paths::layout_all(&doc.paths, &base, sampling).into_iter().collect::<Result<_, _>>()?
     };
     // terraces' step lines cut the regions' floors into treads
     let cuts = field.cuts(&pre, curve_tol(doc.settings.detail()?.curves));
@@ -194,6 +201,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             if !theme.wall_styles.contains_key(&pt.side) {
                 return Err(format!("theme {} has no wall style {:?} for paths' sides", theme.name, pt.side));
             }
+            problems.extend(g.notes.iter().cloned());
             if g.max_slope > pt.max_slope + 1e-9 {
                 problems.push(format!("path {}: {:.0} degrees at its steepest, over the walkable {:.0}", g.name, g.max_slope, pt.max_slope));
             }
@@ -238,6 +246,28 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             k => problems.push(format!("line {i} ({}): {k} lines aren't built yet", l.name)),
         }
     }
+    // paths that look like dirt: a dirt line along each attached run, as wide as the path less the dirt's soft
+    // edge and wander, so the dirt fades out by the path's own edge
+    for (k, g) in paths.iter().enumerate().filter(|(_, g)| g.look.as_deref() == Some("dirt")) {
+        let Some(th) = theme.dirt.as_ref() else {
+            problems.push(format!("path {}: theme {} has no dirt, so it's the ground", g.name, theme.name));
+            continue;
+        };
+        // on its attached runs only: a floating run's deck isn't the ground under it
+        for r in g.runs.iter().filter(|r| !r.floating && r.i1 > r.i0) {
+            let st = &g.st[r.i0..=r.i1];
+            let w = st.iter().map(|s| s.w).fold(f64::INFINITY, f64::min);
+            let line = crate::doc::Line {
+                name: g.name.clone(),
+                kind: "dirt".into(),
+                nodes: st.iter().map(|s| vec![s.p[0], s.p[1]]).collect(),
+                width: Some((w - th.soft - 2.0 * th.wobble.abs()).max(10.0)),
+                ..Default::default()
+            };
+            let seed = doc.settings.seed.wrapping_mul(0x9E37_79B9) ^ (k as u32).wrapping_mul(104_729);
+            dirt.lines.push(DirtLine::new(&line, th, Sampling::Straight { max: 1e9 }, seed).map_err(|e| format!("path {}: {e}", g.name))?);
+        }
+    }
     let n = map.verts.len();
     let anchors = (0..map.faces.len()).map(|f| field.stepped(map.faces[f].region).then(|| anchor(&map, f))).collect();
     let mut b = Builder {
@@ -262,7 +292,11 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         bent: HashMap::new(),
         sky: vec![],
         bands,
+        ribbons: vec![],
+        blends: Default::default(),
     };
+    b.ribbons = b.paths.iter().map(|g| g.runs.iter().filter(|r| !r.floating).map(|r| g.ribbon(r)).collect()).collect();
+    b.blends = paths::blends(&b.paths);
     // the bands' far edges (nothing beyond them) and side edges (a face closing them off)
     for (j, far) in b.bands.far.iter().enumerate() {
         let l = b.bands.first + 1 + j;
@@ -402,8 +436,22 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     // kit pieces, fences and hedges stand on the finished ground, and are lit with it
     let placed = props::place(&doc.props, kit, &mut b.mesh, &mut b.problems);
     lap("props");
-    if doc.lines.iter().any(|l| theme.fences.contains_key(&l.kind) || l.kind == "bridge" || l.kind == "hedge") {
+    let railed = b.paths.iter().any(|g| g.railings.is_some());
+    if railed || doc.lines.iter().any(|l| theme.fences.contains_key(&l.kind) || l.kind == "bridge" || l.kind == "hedge") {
         let ground = props::Ground::new(&b.mesh);
+        // paths' railings, where their sides drop away
+        for g in &b.paths {
+            let Some(kind) = &g.railings else { continue };
+            match theme.fences.get(kind) {
+                Some(style) => {
+                    for l in railings(g, kind, &b.mesh, &ground) {
+                        let mut pr = crate::lines::fence(&l, style, &mut b.mesh, &ground);
+                        b.problems.append(&mut pr);
+                    }
+                }
+                None => b.problems.push(format!("path {}: theme {} has no fence {kind:?} for its railings", g.name, theme.name)),
+            }
+        }
         let max_slope = theme.paths.as_ref().map_or(35.0, |p| p.max_slope);
         for l in &doc.lines {
             if let Some(style) = theme.fences.get(&l.kind) {
@@ -428,6 +476,54 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     let collision_vertices = b.mesh.collision_vertices();
     Ok(Level { faces: b.map.faces.len(), mesh: b.mesh, problems: b.problems, rim: b.rim, props: placed, collision_vertices, tunnels: built_tunnels })
 }
+
+/// Railings stand this far in from a path's side.
+const RAIL_INSET: f64 = 8.0;
+
+/// A path's railings: fence lines of `kind` along each side, `RAIL_INSET` in, wherever the floor
+/// just outside it is `RAIL_DROP` or more below the path's own (read from the built ground, so a
+/// deck, a causeway, a ledge's drop and painted terrain are all seen as built). A railing runs
+/// unbroken through short gaps and isn't put up shorter than a few repeats.
+fn railings(g: &PathGeo, kind: &str, mesh: &Mesh, ground: &props::Ground) -> Vec<crate::doc::Line> {
+    let mut out = vec![];
+    for left in [true, false] {
+        let mut run: Vec<P2> = vec![];
+        let flush = |run: &mut Vec<P2>, out: &mut Vec<crate::doc::Line>| {
+            let len: f64 = run.windows(2).map(|w| dist(w[0], w[1])).sum();
+            if run.len() >= 2 && len >= 3.0 * crate::doc::RAIL_DROP {
+                let pts = douglas_peucker(run, 2.0);
+                out.push(crate::doc::Line { name: format!("{} railing", g.name), kind: kind.into(), nodes: pts.iter().map(|p| vec![p[0], p[1]]).collect(), ..Default::default() });
+            }
+            run.clear();
+        };
+        for i in 0..g.st.len() {
+            let (l, r) = g.sides(i);
+            let (e, c) = (if left { l } else { r }, g.st[i].p);
+            let out_dir = sub(e, c);
+            let d = (out_dir[0].hypot(out_dir[1])).max(1e-9);
+            let u = [out_dir[0] / d, out_dir[1] / d];
+            let inner = [e[0] - u[0] * RAIL_INSET, e[1] - u[1] * RAIL_INSET];
+            let beyond = [e[0] + u[0] * 12.0, e[1] + u[1] * 12.0];
+            let on = ground.at(mesh, inner).0;
+            let below = ground.at(mesh, beyond).0;
+            let drops = match (on, below) {
+                (Some(z), Some(b)) => z - b >= crate::doc::RAIL_DROP,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if drops {
+                run.push(inner);
+            } else {
+                flush(&mut run, &mut out);
+            }
+        }
+        flush(&mut run, &mut out);
+    }
+    out
+}
+
+/// A boardwalk's deck, top to underside.
+const BOARD: f64 = 12.0;
 
 /// The collision role of a pit's floor: Link falling onto it voids out (`oot_import::level`
 /// makes it floor property 12, as the game's bottomless pits).
@@ -464,6 +560,11 @@ impl<'a> Builder<'a> {
     /// with its edges' profiles.
     fn height(&self, f: usize, p: P2) -> f64 {
         let face = &self.map.faces[f];
+        match face.paths.len() {
+            0 => {}
+            1 => return self.path_z(face.paths[0], p),
+            _ => return self.surface(&face.paths, p),
+        }
         face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or_else(|| {
             let z = self.field.z(face.region, p, self.anchors[f].unwrap_or(p));
             // a rough band's (`beyond.rs`): every height there goes through here, so its walls
@@ -473,6 +574,68 @@ impl<'a> Builder<'a> {
                 None => z,
             }
         })
+    }
+
+    /// The ground at p where several paths' footprints overlap: those blended with each other
+    /// (`paths::blends`, joined or crossing at about one height) are their surfaces weighted by how
+    /// far inside each footprint p is, so the ground meets each path's own along its edge; of
+    /// those that aren't, the highest.
+    fn surface(&self, ks: &[usize], p: P2) -> f64 {
+        let mut done = vec![false; ks.len()];
+        let mut best = f64::NEG_INFINITY;
+        for i in 0..ks.len() {
+            if done[i] {
+                continue;
+            }
+            // i's group: everything blended with it, directly or through another
+            let mut group = vec![i];
+            done[i] = true;
+            let mut g = 0;
+            while g < group.len() {
+                let a = ks[group[g]];
+                for j in 0..ks.len() {
+                    if !done[j] && self.blends.contains(&(a.min(ks[j]), a.max(ks[j]))) {
+                        done[j] = true;
+                        group.push(j);
+                    }
+                }
+                g += 1;
+            }
+            let zs: Vec<f64> = group.iter().map(|&j| self.path_z(ks[j], p)).collect();
+            let ws: Vec<f64> = group.iter().map(|&j| self.inside(ks[j], p)).collect();
+            let sum: f64 = ws.iter().sum();
+            let z = if group.len() == 1 || sum < 1e-9 {
+                zs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+            } else {
+                zs.iter().zip(&ws).map(|(z, w)| z * w).sum::<f64>() / sum
+            };
+            best = best.max(z);
+        }
+        best
+    }
+
+    /// Path k's surface at p. Near a path it runs into (`PathGeo::into`), within its own width of
+    /// that path's footprint, it eases onto that path's surface, which it is on its edge: so where
+    /// a branch meets a sloping path's side, the corners meet too.
+    fn path_z(&self, k: usize, p: P2) -> f64 {
+        let g = &self.paths[k];
+        let z = g.z_at(p);
+        let mut out = z;
+        for &a in &g.into {
+            let near = self.ribbons[a].iter().map(|rb| if point_in_poly(p, rb) { 0.0 } else { dist_to_loop(p, rb) }).fold(f64::INFINITY, f64::min);
+            let reach = g.project(p).2.max(1.0);
+            if near < reach {
+                let t = near / reach;
+                let t = t * t * (3.0 - 2.0 * t);
+                out = self.paths[a].z_at(p) + (out - self.paths[a].z_at(p)) * t;
+            }
+        }
+        out
+    }
+
+    /// How far inside path k's footprint p is (0 on its edge or outside).
+    fn inside(&self, k: usize, p: P2) -> f64 {
+        self.ribbons[k].iter().filter(|rb| point_in_poly(p, rb)).map(|rb| dist_to_loop(p, rb)).fold(0.0, f64::max)
     }
 
     fn hv(&self, f: usize, v: usize) -> f64 {
@@ -751,13 +914,26 @@ impl<'a> Builder<'a> {
                     pads.push((pd, h, skirt));
                 }
             }
+            // the extra points on its edges (`ring`) are where walls meet it: their height is the
+            // edge's, linear between its ends as the walls' feet are, which a path's surface on a
+            // curve isn't quite
+            let mut on_edges: HashMap<(i64, i64), f64> = HashMap::new();
+            for &c in std::iter::once(&face.outer).chain(&face.holes) {
+                for &h in &self.map.cycles[c] {
+                    let Some(x) = self.extra.get(&h) else { continue };
+                    let (za, zb) = (self.hv(f, self.map.from(h)), self.hv(f, self.map.to(h)));
+                    for &(t, q) in x {
+                        on_edges.insert(((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64), za + (zb - za) * t);
+                    }
+                }
+            }
             let tris: Vec<[P3; 3]> = triangulate_full(&outer, &holes, steiner, &extra, &segs)
                 .into_iter()
                 .map(|t| {
                     t.map(|q| {
                         let key = ((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64);
                         let z = *cache.entry(key).or_insert_with(|| {
-                            let base = self.height(f, q);
+                            let base = on_edges.get(&key).copied().unwrap_or_else(|| self.height(f, q));
                             match noise {
                                 Some(n) => {
                                     let mut bump = self.bump(n, face.region, q, &index);
@@ -991,12 +1167,10 @@ impl<'a> Builder<'a> {
             let (Some(h), Some(c)) = (j.half, j.ws.caps.as_ref().filter(|c| c.anchor == "top")) else { continue };
             let (pp, qq) = (self.map.verts[j.p], self.map.verts[j.q]);
             let hh = [j.top[0] - j.bot[0], j.top[1] - j.bot[1]];
-            let mut d = c.top * c.tile_v;
-            while d < hh[0].max(hh[1]) {
+            for (_, d, ..) in self.anchored_bands(c, j.span, hh[0].max(hh[1])) {
                 if (hh[0] - d) * (hh[1] - d) < 0.0 {
                     pts.push((h ^ 1, lerp(pp, qq, (d - hh[0]) / (hh[1] - hh[0]))));
                 }
-                d += c.unit();
             }
         }
         for (h, p) in pts {
@@ -1012,6 +1186,14 @@ impl<'a> Builder<'a> {
         type Part = (usize, usize, [f64; 2], [f64; 2], f64, f64);
         let mut part: Vec<Option<Part>> = vec![None; nh];
         let mut style: Vec<Option<String>> = vec![None; nh];
+        // a ledge's walls are those of the highest region it's cut into
+        let ledges: Vec<Option<usize>> = (0..self.paths.len())
+            .map(|k| {
+                self.paths[k].sections.iter().any(|s| matches!(s, Some(Section::Ledge))).then(|| {
+                    self.map.faces.iter().filter(|f| f.paths.contains(&k)).map(|f| f.region).max_by(|&a, &b| self.regions[a].z.total_cmp(&self.regions[b].z)).unwrap_or(0)
+                })
+            })
+            .collect();
         for h in 0..nh {
             let (fl, fr) = (self.map.half_face[h], self.map.half_face[h ^ 1]);
             if fl == VOID || fr == VOID {
@@ -1042,7 +1224,9 @@ impl<'a> Builder<'a> {
             // a path the higher side (an embankment's side) or the lower (a cutting's); stairs' cuttings
             // are the stairs' `cutting` wall, not their sides' profile
             let top = self.top_path(fl, mp);
-            let name = match top.map(|k| (k, true)).or_else(|| self.cut_path(fr, fl, mp).map(|k| (k, false))) {
+            let on = top.map(|k| (k, true)).or_else(|| self.cut_path(fr, fl, mp).map(|k| (k, false)));
+            let ledge = on.and_then(|(k, _)| ledges[k].filter(|_| matches!(self.paths[k].section_near(mp), Some(Section::Ledge))));
+            let name = match on.filter(|_| ledge.is_none()) {
                 Some((k, embankment)) => self.paths[k]
                     .edge
                     .clone()
@@ -1050,6 +1234,8 @@ impl<'a> Builder<'a> {
                     .unwrap_or_else(|| th.paths.as_ref().map_or("cliff".into(), |t| t.side.clone())),
                 None => {
                     let (rl, rr) = (self.map.faces[fl].region, self.map.faces[fr].region);
+                    // a ledge: the region it's cut into, above it and below
+                    let (rl, rr) = ledge.map_or((rl, rr), |r| (r, r));
                     let (a, b) = (self.map.verts[p], self.map.verts[q]);
                     let tol = 2.0 * curve_tol(self.doc.settings.detail().expect("checked by the map").curves) + 2.0;
                     let stacked = self.field.wall_style(rl, a, b, tol).or_else(|| self.field.wall_style(rr, a, b, tol)).filter(|s| th.wall_styles.contains_key(s));
@@ -1088,13 +1274,17 @@ impl<'a> Builder<'a> {
                     lsum += l;
                     hsum += l * 0.5 * ((top[0] - bot[0]) + (top[1] - bot[1]));
                 }
-                let (tile, reps) = self.wall_tiling(ws, hsum / lsum.max(1e-9), same.then_some(total));
+                // top-anchored walls (an embankment's sides) stretched are sized by the run's tallest
+                // height, as a wall that tall is, so they match the cliffs beside them
+                let span = run.iter().map(|&i| part[hs[i]].unwrap()).map(|(_, _, bot, top, _, _)| (top[0] - bot[0]).max(top[1] - bot[1])).fold(0.0, f64::max);
+                let anchored = ws.caps.as_ref().is_some_and(|c| c.anchor == "top") && self.wall_texture != WallTexture::Tiled;
+                let (tile, reps) = self.wall_tiling(ws, if anchored { span } else { hsum / lsum.max(1e-9) }, same.then_some(total));
                 for &i in &run {
                     let h = hs[i];
                     let (p, q, bot, top, t0, t1) = part[h].unwrap();
                     let over_water = self.water(self.map.half_face[h ^ 1]);
                     let l = self.ulen(h);
-                    self.wall("walls", Some(h), p, q, bot, top, ws, [u_at[i] + t0 * l, u_at[i] + t1 * l], tile, reps, over_water);
+                    self.wall("walls", Some(h), p, q, bot, top, ws, [u_at[i] + t0 * l, u_at[i] + t1 * l], tile, reps, over_water, span);
                 }
             }
         }
@@ -1189,7 +1379,7 @@ impl<'a> Builder<'a> {
     /// band is zipped between the two ends on its own, so no triangle spans a jump in v; inside a
     /// band, columns are split at every height something else meets them (no T-junctions).
     #[allow(clippy::too_many_arguments)]
-    fn wall(&mut self, obj: &'static str, half: Option<usize>, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &'a WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool) {
+    fn wall(&mut self, obj: &'static str, half: Option<usize>, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &'a WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool, span: f64) {
         if (top[0] - bot[0]).max(top[1] - bot[1]) >= 0.5 {
             // a region's own cliffs (not an embankment's sides, nor the edge of the world's) may be bent
             let whole = half.is_some_and(|h| self.map.from(h) == p && self.map.to(h) == q);
@@ -1205,7 +1395,7 @@ impl<'a> Builder<'a> {
                 }
                 b => b,
             };
-            self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water, bend });
+            self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water, bend, span });
         }
     }
 
@@ -1465,16 +1655,16 @@ impl<'a> Builder<'a> {
             l.dedup_by(|a, b| (*a - *b).abs() < 0.01);
         }
         for j in &jobs {
-            self.emit_wall(j.obj, j.p, j.q, j.bot, j.top, j.ws, j.u, j.tile, j.reps, j.over_water);
+            self.emit_wall(j.obj, j.p, j.q, j.bot, j.top, j.ws, j.u, j.tile, j.reps, j.over_water, j.span);
         }
         // kept for the floors under overhangs (`undercuts`)
         self.jobs = jobs;
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn emit_wall(&mut self, obj: &str, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool) {
+    fn emit_wall(&mut self, obj: &str, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool, span: f64) {
         if ws.caps.as_ref().is_some_and(|c| c.anchor == "top") {
-            self.emit_anchored(obj, p, q, bot, top, ws, u, tile);
+            self.emit_anchored(obj, p, q, bot, top, ws, u, tile, span);
             self.overlays(p, q, bot, top, ws, u, over_water);
             return;
         }
@@ -1521,22 +1711,14 @@ impl<'a> Builder<'a> {
     /// fixed depths, each band clipped where the wall's foot cuts it. Bands are strips parallel
     /// to the top edge, so v is exact everywhere however the height changes along the wall.
     #[allow(clippy::too_many_arguments)]
-    fn emit_anchored(&mut self, obj: &str, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &WallStyle, u: [f64; 2], tile: f64) {
+    #[allow(clippy::too_many_arguments)]
+    fn emit_anchored(&mut self, obj: &str, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &WallStyle, u: [f64; 2], tile: f64, span: f64) {
         let c = ws.caps.as_ref().unwrap();
         let (pp, qq) = (self.map.verts[p], self.map.verts[q]);
         let len = dist(pp, qq).max(1e-6);
         let hh = [top[0] - bot[0], top[1] - bot[1]];
         let hmax = hh[0].max(hh[1]);
-        let (ht, unit) = (c.top * c.tile_v, c.unit());
-        let (m0, m1) = c.middle();
-        let mut bands = vec![(0.0, ht, 1.0, 1.0 - c.top)];
-        let (mut d, mut k) = (ht, 0);
-        while d < hmax {
-            let (va, vb) = if c.mirror && k % 2 == 1 { (m0, m1) } else { (m1, m0) };
-            bands.push((d, d + unit, va, vb));
-            d += unit;
-            k += 1;
-        }
+        let bands = self.anchored_bands(c, span, hmax);
         // what meets each end column, as depths below the top
         let lv: [Vec<f64>; 2] = [(p, 0), (q, 1)].map(|(v, e)| {
             self.levels[v].iter().filter(|&&z| z > bot[e] + 0.01 && z < top[e] - 0.01).map(|&z| top[e] - z).collect()
@@ -1592,6 +1774,31 @@ impl<'a> Builder<'a> {
                 self.tri_facing(obj, [vs[0].0, vs[1].0, vs[2].0], [vs[0].1, vs[1].1, vs[2].1], &ws.material, &ws.surface, want);
             }
         }
+    }
+
+    /// A top-anchored wall's texture bands, as (depth from, depth to below its top, v there, v
+    /// there), down past `hmax`. Tiled: the top cap at its size and the middle repeating down.
+    /// Stretched: the texture once over `span` (its run's tallest height), as a wall that tall
+    /// shows it; stretched middle: the caps at their size, the middle once between them over it.
+    fn anchored_bands(&self, c: &crate::theme::Caps, span: f64, hmax: f64) -> Vec<(f64, f64, f64, f64)> {
+        let (ht, unit) = (c.top * c.tile_v, c.unit());
+        let (m0, m1) = c.middle();
+        let span = span.max(hmax);
+        let hb = c.bottom * c.tile_v;
+        let mut bands = match self.wall_texture {
+            WallTexture::Stretched => vec![(0.0, span, 1.0, 0.0)],
+            WallTexture::StretchedMiddle if span > ht + hb => vec![(0.0, ht, 1.0, 1.0 - c.top), (ht, span - hb, 1.0 - c.top, c.bottom), (span - hb, span, c.bottom, 0.0)],
+            WallTexture::StretchedMiddle => vec![(0.0, span, 1.0, 0.0)],
+            WallTexture::Tiled => vec![(0.0, ht, 1.0, 1.0 - c.top)],
+        };
+        let (mut d, mut k) = (bands.last().map_or(ht, |b| b.1), 0);
+        while d < hmax {
+            let (va, vb) = if c.mirror && k % 2 == 1 { (m0, m1) } else { (m1, m0) };
+            bands.push((d, d + unit, va, vb));
+            d += unit;
+            k += 1;
+        }
+        bands
     }
 
     /// A triangle turned to face `want`.
@@ -1712,18 +1919,32 @@ impl<'a> Builder<'a> {
                 }
                 let (t0, t1) = (e0.as_ref().map_or(r.i0, |e| e.0), e1.as_ref().map_or(r.i1, |e| e.0));
                 let tt = br.top.tile;
+                // a boardwalk's deck is the hanging bridges' planks, one every `plank` along, laid across
+                let hang = self.theme.hanging.as_ref();
+                let planks = |i: usize| hang.filter(|_| matches!(g.section(i), Some(Section::Boardwalk { .. })));
+                let board_uv = |h: &crate::theme::Hanging, q: P2| {
+                    let (s, left, w) = g.project(q);
+                    [h.across * (0.5 - left / w.max(1e-9)), s / h.plank]
+                };
                 for i in t0..t1 {
                     let ((l0, r0), (l1, r1)) = (g.sides(i), g.sides(i + 1));
                     let (z0, z1) = (g.st[i].z, g.st[i + 1].z);
-                    self.mesh.quad("bridges", [p3(r0, z0), p3(r1, z1), p3(l1, z1), p3(l0, z0)],
-                                   [wuv(r0, tt), wuv(r1, tt), wuv(l1, tt), wuv(l0, tt)], &br.top.material, &br.top.surface);
+                    let quad = [p3(r0, z0), p3(r1, z1), p3(l1, z1), p3(l0, z0)];
+                    match planks(i) {
+                        Some(h) => self.mesh.quad("bridges", quad, [r0, r1, l1, l0].map(|q| board_uv(h, q)), &h.deck, &h.surface),
+                        None => self.mesh.quad("bridges", quad, [wuv(r0, tt), wuv(r1, tt), wuv(l1, tt), wuv(l0, tt)], &br.top.material, &br.top.surface),
+                    }
                 }
-                for (_, poly) in e0.iter().chain(e1.iter()) {
+                for (j, poly) in e0.iter().chain(e1.iter()) {
                     let flat: Vec<P2> = poly.iter().map(|p| [p[0], p[1]]).collect();
                     let zs: HashMap<(i64, i64), f64> = poly.iter().map(|p| (((p[0] * 1000.0).round() as i64, (p[1] * 1000.0).round() as i64), p[2])).collect();
+                    let walk = planks(*j);
                     for t in triangulate(&flat, &[], 0.0) {
                         let q = t.map(|q| [q[0], q[1], zs.get(&((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64)).copied().unwrap_or_else(|| g.z_at(q))]);
-                        self.mesh.tri("bridges", q, t.map(|q| wuv(q, tt)), &br.top.material, &br.top.surface);
+                        match walk {
+                            Some(h) => self.mesh.tri("bridges", q, t.map(|q| board_uv(h, q)), &h.deck, &h.surface),
+                            None => self.mesh.tri("bridges", q, t.map(|q| wuv(q, tt)), &br.top.material, &br.top.surface),
+                        }
                     }
                 }
                 // the body runs on into the floor it lands on (behind the cliff, under the floor)
@@ -1734,6 +1955,12 @@ impl<'a> Builder<'a> {
                     }
                     k
                 };
+                // a run that's all boardwalk: a thin deck on posts
+                if let Some(h) = hang.filter(|_| (r.i0..r.i1).all(|i| planks(i).is_some())) {
+                    let landed = [e0.as_ref().map(|e| e.0), e1.as_ref().map(|e| e.0)];
+                    self.boardwalk_body(&g, r.i0, r.i1, landed, (r.cap0, r.cap1), h);
+                    continue;
+                }
                 let rock = shape == "rock" && br.rock.is_some();
                 let abut0 = !r.land0 && !r.cap0;
                 let abut1 = !r.land1 && !r.cap1;
@@ -1750,6 +1977,69 @@ impl<'a> Builder<'a> {
                     self.rock_body(&g, b0, b1, (g.st[r.i0].s, g.st[r.i1].s), &abut, &rk, (r.cap0 && b0 == r.i0, r.cap1 && b1 == r.i1));
                 } else {
                     self.slab_body(&g, b0, b1, (r.cap0, r.cap1));
+                }
+            }
+        }
+    }
+
+    /// A boardwalk's body, stations b0..=b1 of a floating run: the deck `BOARD` thick (the planks'
+    /// ends round its edges, the planks again beneath), and a pair of posts every `spacing` from its
+    /// underside down into the ground, wherever it stands clear of it. `landed`: the stations where
+    /// it lands on a floor (its deck ends there, on the floor's edge), so the posts start past them.
+    #[allow(clippy::too_many_arguments)]
+    fn boardwalk_body(&mut self, g: &PathGeo, b0: usize, b1: usize, landed: [Option<usize>; 2], caps: (bool, bool), h: &crate::theme::Hanging) {
+        let p3 = |p: P2, z: f64| [p[0], p[1], z];
+        let th = BOARD;
+        let (u0, u1) = (landed[0].unwrap_or(b0), landed[1].unwrap_or(b1));
+        let v = |i: usize| g.st[i].s / h.plank;
+        for i in u0..u1 {
+            let ((l0, r0), (l1, r1)) = (g.sides(i), g.sides(i + 1));
+            let (z0, z1) = (g.st[i].z, g.st[i + 1].z);
+            let (v0, v1) = (v(i), v(i + 1));
+            self.mesh.quad("bridges", [p3(l0, z0 - th), p3(l1, z1 - th), p3(r1, z1 - th), p3(r0, z0 - th)],
+                           [[h.across, v0], [h.across, v1], [0.0, v1], [0.0, v0]], &h.under, "");
+            self.mesh.quad("bridges", [p3(r0, z0 - th), p3(r1, z1 - th), p3(r1, z1), p3(r0, z0)], [[0.0, v0], [0.0, v1], [0.1, v1], [0.1, v0]], &h.under, "");
+            self.mesh.quad("bridges", [p3(l1, z1 - th), p3(l0, z0 - th), p3(l0, z0), p3(l1, z1)], [[0.0, v1], [0.0, v0], [0.1, v0], [0.1, v1]], &h.under, "");
+        }
+        for (cap, i, back) in [(caps.0 && landed[0].is_none(), b0, true), (caps.1 && landed[1].is_none(), b1, false)] {
+            if cap {
+                let (l, rr) = g.sides(i);
+                let z = g.st[i].z;
+                let (a, b) = if back { (l, rr) } else { (rr, l) };
+                self.mesh.quad("bridges", [p3(a, z - th), p3(b, z - th), p3(b, z), p3(a, z)], [[0.0, 0.0], [h.across, 0.0], [h.across, 0.1], [0.0, 0.1]], &h.under, "");
+            }
+        }
+        // the posts: `spacing` apart, from the deck's underside into the ground, square, inset
+        let spacing = match g.section((b0 + b1) / 2) {
+            Some(Section::Boardwalk { spacing, .. }) => spacing.max(20.0),
+            _ => 200.0,
+        };
+        let (s0, s1) = (g.st[u0].s, g.st[u1].s);
+        let n = ((s1 - s0) / spacing).round().max(1.0) as usize;
+        let pw = 2.0 * h.post_size[0];
+        for j in 0..=n {
+            let s = s0 + (s1 - s0) * j as f64 / n as f64;
+            let i = (u0..u1).find(|&i| g.st[i + 1].s >= s).unwrap_or(u1.saturating_sub(1).max(u0));
+            let (a, b) = (&g.st[i], &g.st[(i + 1).min(g.st.len() - 1)]);
+            let t = if b.s - a.s > 1e-9 { ((s - a.s) / (b.s - a.s)).clamp(0.0, 1.0) } else { 0.0 };
+            let (c, z, w, dir) = (lerp(a.p, b.p, t), a.z + (b.z - a.z) * t - th, a.w + (b.w - a.w) * t, a.dir);
+            let across = [-dir[1], dir[0]];
+            for k in [1.0, -1.0] {
+                let o = [c[0] + across[0] * (0.5 * w - pw) * k, c[1] + across[1] * (0.5 * w - pw) * k];
+                let Some(f) = self.face_at(o) else { continue };
+                let foot = self.height(f, o);
+                if foot > z - 10.0 {
+                    continue; // on the ground already, or nearly
+                }
+                let corner = |sx: f64, sy: f64| [o[0] + (dir[0] * sx + across[0] * sy) * pw / 2.0, o[1] + (dir[1] * sx + across[1] * sy) * pw / 2.0];
+                let ring = [corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)];
+                let z0 = foot - 20.0;
+                for m in 0..4 {
+                    let (p, q) = (ring[m], ring[(m + 1) % 4]);
+                    let face = [p3(p, z0), p3(q, z0), p3(q, z), p3(p, z)];
+                    self.mesh.quad("bridges", face, [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]], &h.post, "");
+                    self.mesh.col_tri("bridges_collision", [face[0], face[1], face[2]], &h.side_surface);
+                    self.mesh.col_tri("bridges_collision", [face[0], face[2], face[3]], &h.side_surface);
                 }
             }
         }
@@ -1897,7 +2187,7 @@ impl<'a> Builder<'a> {
                 let l = self.ulen(h);
                 let f = self.map.half_face[h ^ 1];
                 let w = self.water(f);
-                self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w);
+                self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0);
                 u += l;
             }
             // the tree line and its rim heights (from the nearest cliff top)
@@ -2081,7 +2371,7 @@ impl<'a> Builder<'a> {
             let h = hs[i];
             let l = self.ulen(h);
             let w = self.water(self.map.half_face[h ^ 1]);
-            self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w);
+            self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0);
             u += l;
         }
         // the bands' side edges: a face from the band's floor down to the level's, facing out
@@ -2091,7 +2381,7 @@ impl<'a> Builder<'a> {
             let h = hs[i];
             let fl = floor(self, i);
             let low = base.min(fl[0]).min(fl[1]);
-            self.wall("cliffs", None, self.map.to(h), self.map.from(h), [low, low], [fl[1], fl[0]], cliff, [0.0, self.ulen(h)], tile, reps, false);
+            self.wall("cliffs", None, self.map.to(h), self.map.from(h), [low, low], [fl[1], fl[0]], cliff, [0.0, self.ulen(h)], tile, reps, false, 0.0);
         }
         // the tree line, kept where its nearest outer edge is forest
         let traced = tree_line(&o, bd.bank, bd.panel_tol);
@@ -2589,7 +2879,7 @@ mod tests {
         let zs: Vec<f64> = std::iter::once(0.0).chain(doc.regions.iter().map(|r| r.z)).collect();
         let field = profiles::Field::new(&doc, &map, &zs, 35.0, &mut vec![]).unwrap();
         let anchors = vec![None; map.faces.len()];
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new(), sky: vec![], bands: Default::default() };
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new(), sky: vec![], bands: Default::default(), ribbons: vec![], blends: Default::default() };
         b.regions = std::iter::once(Info { z: 0.0, water: None, pit: false, edge: None, noise: None })
             .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), pit: false, edge: None, noise: None }))
             .collect();
@@ -2664,9 +2954,7 @@ mod tests {
             width: 160.0,
             mode: "attached".into(),
             modes: modes.into_iter().map(String::from).collect(),
-            edge: None,
-            shape: None,
-            look: None,
+            ..Default::default()
         };
         let n = |x: f64, y: f64| vec![Some(x), Some(y)];
         Doc {
@@ -3969,6 +4257,170 @@ mod tests {
         // an unknown look is refused
         doc.paths[0].look = Some("cobbles".into());
         assert!(build(&doc, &th).is_err());
+    }
+
+    /// The paths level with a path of each section across the south: a causeway with railings, a
+    /// sunken lane, a boardwalk with railings, and a ledge climbing the east plateau's west edge
+    /// (the plateau's walls in the `ledge` style, so they tell from an embankment's).
+    fn sections_doc() -> Doc {
+        let mut doc = paths_doc();
+        doc.regions[0].edge = Some("ledge".into());
+        let n = |x: f64, y: f64| vec![Some(x), Some(y)];
+        let path = |name: &str, nodes: Vec<Vec<Option<f64>>>, section: Section, railings: bool| Path {
+            name: name.into(),
+            nodes,
+            section: Some(section),
+            railings: railings.then(|| "fence".into()),
+            ..Default::default()
+        };
+        doc.paths.push(path("causeway", vec![n(-1700.0, -1600.0), n(-300.0, -1600.0)], Section::Causeway { height: 60.0 }, true));
+        doc.paths.push(path("lane", vec![n(-1700.0, -1100.0), n(-300.0, -1100.0)], Section::Sunken { depth: 120.0 }, true));
+        doc.paths.push(path("walk", vec![n(100.0, -1600.0), n(1500.0, -1600.0)], Section::Boardwalk { height: 80.0, spacing: 200.0 }, true));
+        doc.paths.push(path("ledge", vec![n(600.0, 300.0), vec![Some(600.0), Some(1300.0), Some(200.0)]], Section::Ledge, false));
+        doc
+    }
+
+    #[test]
+    fn sections_raise_sink_cut_ledges_and_build_boardwalks() {
+        let lvl = build(&sections_doc(), &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        let obj = |n: &str| lvl.mesh.objects.iter().find(|o| o.name == n).unwrap_or_else(|| panic!("no {n}"));
+        let ground = obj("ground");
+        let at = |x0: f64, x1: f64, y: f64| -> Vec<f64> { ground.verts.iter().filter(|v| v[0] > x0 && v[0] < x1 && (v[1] - y).abs() < 81.0).map(|v| v[2]).collect() };
+        // the causeway's top 60 up in the middle, its ends ramping down to the ground at 25 degrees
+        let mid = at(-1100.0, -900.0, -1600.0);
+        // (the ground beside shares the sides' points, at 0)
+        assert!(mid.iter().any(|&z| (z - 60.0).abs() < 1e-6) && mid.iter().all(|&z| (z - 60.0).abs() < 1e-6 || z.abs() < 1e-6), "{mid:?}");
+        let ramp = 60.0 / crate::paths::RAMP.to_radians().tan();
+        let foot = at(-1700.0 + 0.5 * ramp - 20.0, -1700.0 + 0.5 * ramp + 20.0, -1600.0);
+        assert!(foot.iter().any(|&z| z > 10.0 && z < 50.0), "half way up its ramp: {foot:?}");
+        // the lane 120 down, walled both sides
+        let lane = at(-1100.0, -900.0, -1100.0);
+        assert!(lane.iter().any(|&z| (z + 120.0).abs() < 1e-6) && lane.iter().all(|&z| (z + 120.0).abs() < 1e-6 || z.abs() < 1e-6), "{lane:?}");
+        // the ledge's walls are the plateau's own (`ledge`, cliff_strip), not an embankment's (cliff)
+        let mats = &lvl.mesh.materials;
+        let walls = obj("walls");
+        let by_ledge: std::collections::BTreeSet<&str> = walls
+            .tris
+            .iter()
+            .zip(&walls.mat)
+            .filter(|(t, _)| t.iter().all(|&v| (walls.verts[v][0] - 600.0).abs() < 90.0 && walls.verts[v][1] > 700.0 && walls.verts[v][1] < 1200.0))
+            .map(|(_, &m)| mats[m].as_str())
+            .collect();
+        assert!(by_ledge.contains("cliff_strip") && !by_ledge.iter().any(|m| m.starts_with("cliff~") || *m == "cliff"), "{by_ledge:?}");
+        // the boardwalk: planks 80 up in the middle, on posts down into the ground
+        let br = obj("bridges");
+        let deck = mats.iter().position(|m| m == "log_side").expect("planks");
+        let tops: Vec<f64> = br.tris.iter().zip(&br.mat).filter(|(_, m)| **m == deck).flat_map(|(t, _)| t.map(|v| br.verts[v])).filter(|v| (v[0] - 800.0).abs() < 100.0).map(|v| v[2]).collect();
+        assert!(!tops.is_empty() && tops.iter().all(|&z| (z - 80.0).abs() < 1e-6), "{tops:?}");
+        let posts = obj("bridges_collision");
+        assert!(posts.verts.iter().any(|v| v[2] < -10.0) && posts.verts.iter().any(|v| (v[2] - 68.0).abs() < 1e-6));
+        // railings: along the causeway and the boardwalk, on their tops; none down in the lane
+        let rails = obj("fences");
+        let spans = |x: f64, z: f64| {
+            let near: Vec<&P3> = rails.verts.iter().filter(|v| (v[1] + 1600.0).abs() < 90.0 && (v[2] - z).abs() < 1e-6).collect();
+            near.iter().any(|v| v[0] < x - 300.0) && near.iter().any(|v| v[0] > x + 300.0)
+        };
+        assert!(spans(-1000.0, 60.0), "along the causeway's top");
+        assert!(spans(800.0, 80.0), "along the boardwalk's deck");
+        assert!(!rails.verts.iter().any(|v| (v[1] + 1100.0).abs() < 90.0), "the lane's sides go up, not down");
+    }
+
+    /// Flat ground with a main path climbing 0 to 300 west to east, a branch from the south ending on
+    /// its middle (a T), a path on from its east end north (an L) and one crossing it at x -800 at
+    /// its own height there (a crossroads).
+    fn junctions_doc() -> Doc {
+        let mut doc = paths_doc();
+        doc.regions.clear();
+        let n = |x: f64, y: f64| vec![Some(x), Some(y)];
+        let path = |name: &str, nodes: Vec<Vec<Option<f64>>>| Path { name: name.into(), nodes, ..Default::default() };
+        doc.paths = vec![
+            Path { look: Some("dirt".into()), ..path("main", vec![vec![Some(-1500.0), Some(0.0), Some(0.0)], vec![Some(1500.0), Some(0.0), Some(300.0)]]) },
+            path("branch", vec![n(0.0, -1200.0), n(0.0, 0.0)]),
+            path("corner", vec![n(1500.0, 0.0), n(1500.0, 1300.0)]),
+            path("cross", vec![n(-800.0, -1200.0), vec![Some(-800.0), Some(0.0), Some(70.0)], n(-800.0, 1200.0)]),
+        ];
+        doc
+    }
+
+    #[test]
+    fn paths_join_without_steps() {
+        let doc = junctions_doc();
+        let geos: Vec<PathGeo> = paths::layout_all(&doc.paths, &|_| 0.0, Sampling::Every(60.0)).into_iter().map(Result::unwrap).collect();
+        // the branch ends at main's height there, the corner starts at main's end height
+        assert!((geos[1].st.last().unwrap().z - 150.0).abs() < 1.0, "{}", geos[1].st.last().unwrap().z);
+        assert!((geos[2].z_at([1500.0, 100.0]) - 300.0).abs() < 30.0);
+        assert_eq!(geos[1].into, vec![0]);
+        assert!(geos[2].into == vec![0] && geos[0].into.is_empty(), "the later of two ends meeting runs into the earlier");
+        // the two ends meeting run on past their node, so the outer corner is covered
+        assert!(geos[2].st[0].p[1] < -78.0 && geos[0].st.last().unwrap().p[0] > 1578.0);
+        let bl = paths::blends(&geos);
+        assert!(bl.contains(&(0, 1)) && bl.contains(&(0, 2)) && bl.contains(&(0, 3)), "{bl:?}");
+
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        // no wall at any junction: walls stand only along the paths' outer sides, never across
+        // where they meet
+        let walls = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+        for (c, r) in [([0.0, 0.0], 79.0), ([1500.0, 0.0], 79.0), ([-800.0, 0.0], 79.0)] {
+            let inside: Vec<_> = walls.tris.iter().filter(|t| t.iter().all(|&v| dist([walls.verts[v][0], walls.verts[v][1]], c) < r)).collect();
+            assert!(inside.is_empty(), "{} wall triangles inside the junction at {c:?}", inside.len());
+        }
+        // and the ground there is continuous: the crossroads' middle at 70
+        let ground = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        let mid: Vec<f64> = ground.verts.iter().filter(|v| dist([v[0], v[1]], [-800.0, 0.0]) < 1.0).map(|v| v[2]).collect();
+        assert!(mid.iter().all(|z| (z - 70.0).abs() < 1.0), "{mid:?}");
+        // main looks like dirt: full along its middle, none past its edges
+        let blend: Vec<(P3, f64)> = ground.verts.iter().copied().zip(ground.blend.iter().copied()).collect();
+        assert!(blend.iter().any(|(v, w)| v[1].abs() < 1.0 && v[0].abs() < 1000.0 && (w - 1.0).abs() < 1e-9));
+        assert!(blend.iter().filter(|(v, _)| v[1].abs() > 81.0 && v[0].abs() < 1000.0 && (v[0] + 800.0).abs() > 81.0 && v[0].abs() > 81.0).all(|(_, w)| *w == 0.0));
+    }
+
+    #[test]
+    fn switchbacks_climb_a_cliff_at_a_walkable_slope() {
+        // the paths level's east plateau raised to 700, its ramp a switchback up to it
+        let mut doc = paths_doc();
+        doc.regions[0].z = 700.0;
+        doc.paths.truncate(1);
+        doc.paths[0].nodes = vec![vec![Some(1000.0), Some(-900.0)], vec![Some(1000.0), Some(900.0)]];
+        doc.paths[0].switchbacks = Some(Switchbacks { width: Some(800.0), ..Default::default() });
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        // the ground along it climbs from 0 to 700, and sideways it stays in its corridor
+        let ground = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        let on: Vec<&P3> = ground.verts.iter().filter(|v| (v[0] - 1000.0).abs() < 400.0 && v[1] > -950.0 && v[1] < 600.0 && v[2] > 1.0).collect();
+        assert!(on.iter().any(|v| v[2] > 300.0 && v[2] < 500.0), "half way up");
+        assert!(on.iter().all(|v| (v[0] - 1000.0).abs() <= 400.0));
+
+        // floating: the deck lands at the plateau's edge, short of its last node, and the climb
+        // still ends there (no jump to the node's height)
+        let mut fl = doc.clone();
+        fl.paths[0].mode = "floating".into();
+        let lvl = build(&fl, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        // ...and a switchback doesn't land: it climbs on to its node, a cutting in the plateau
+        let ground = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        assert!(ground.verts.iter().any(|v| v[1] > 650.0 && (v[0] - 1000.0).abs() < 400.0 && v[2] > 550.0 && v[2] < 690.0), "a cutting into the plateau");
+        assert!(lvl.mesh.objects.iter().any(|o| o.name == "bridges" && !o.tris.is_empty()), "a deck where it's clear of the ground");
+        let bad = open_edges(&lvl, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+
+        // stretched walls: its sides show their texture once over their tallest height, so they're
+        // in fewer bands than tiled, and still meet the ground vertex for vertex
+        let mut st = doc.clone();
+        st.settings.wall_texture = "stretched".into();
+        let stretched = build(&st, &Theme::kokiri()).unwrap();
+        let bad = open_edges(&stretched, &["ground", "walls", "cliffs", "bank", "trees"]);
+        assert!(bad.is_empty(), "{} open or non-manifold edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(6)]);
+        let tiled = build(&doc, &Theme::kokiri()).unwrap();
+        let walls = |l: &Level| l.mesh.objects.iter().find(|o| o.name == "walls").unwrap().tris.len();
+        assert!(walls(&stretched) < walls(&tiled), "{} vs {}", walls(&stretched), walls(&tiled));
     }
 
     #[test]

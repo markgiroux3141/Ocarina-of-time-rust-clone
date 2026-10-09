@@ -97,9 +97,14 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   ends halfway into a plateau cuts into it, and a bridge's floating end lands at the floor's edge (see the paths
   section of `../overworld/README.md`). An end exactly on an edge could take either side's height, so path clicks never snap
   to region nodes. The inspector sets width, mode per segment (attached embankment or floating bridge), surface (*Ground*,
-  or *Steps*: Kakariko's stairs, a ramp with steps drawn on it; drawn twice as long as it climbs its sides show the stairs'
+  *Dirt*: the theme's dirt painted along it, or *Steps*: Kakariko's stairs, a ramp with steps drawn on it; drawn twice as long as it climbs its sides show the stairs'
   profile, any other slope plain brick repeating along them; a new path on Kakariko's theme starts as *Steps*), side style and
-  bridge shape. A path node's height and width are optional, per node.
+  bridge shape. A path node's height and width are optional, per node. Its *Section* card picks a cross-section
+  (*Causeway*, *Sunken lane*, *Ledge*, *Boardwalk*, with their height, depth or post spacing; *Per segment* sets one
+  per segment) and *Railings* (a fence kind, put up wherever a side drops away). Its *Climb* card turns on
+  *Switchbacks*: between its two nodes it zig-zags across a *Corridor* at the *Slope* you give, with *Round* or *Flat*
+  turns, its *First leg* heading left or right; the plan draws the zig-zag. An end put on another path joins it (see
+  Junctions in `../overworld/README.md`).
 - **Brush (B):** paints the level's terrain (see Painted terrain in `../overworld/README.md`): one smooth height offset that
   everything rides on, so painting across several regions raises them all together, with their walls, paths and bridges.
   Modes: Raise, Lower, Smooth, Flatten, Bumps, Erase (keys 1-6). Ctrl turns raise into lower; Shift smooths. `[` and `]`
@@ -174,7 +179,9 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   of `../overworld/README.md`. The Heights view shows them best from above, and the 3D view or Play up close.
   Houses, stumps and hedges level the bumps under them, rebuilt with every move; a prop's inspector has *Level* to turn
   that off (or on for another kind). Only while it's on the ground.
-- **Path profile:** selecting a path opens its side view under the plan, laid out by the builder's own `paths::layout`.
+- **Path profile:** selecting a path opens its side view under the plan, laid out by the builder's own `paths::layout_all`
+  (so an end joining another path shows the height it takes there, and switchbacks show as built, their two nodes at
+  the ends).
   You see the ground under it, embankments filled down to the ground, bridges in blue, and each segment's slope, with
   anything steeper than the theme's walkable slope (35°) in red. Drag a node up or down to set its height (5-unit
   steps; Shift: 1). Right-click it for "Automatic height". ×1 shows true slopes; ×2 and ×4 exaggerate the heights. The

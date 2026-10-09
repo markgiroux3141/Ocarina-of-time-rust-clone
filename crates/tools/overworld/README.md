@@ -277,7 +277,10 @@ heights linear along it.
   part outside the outline is cut off. Where a ramp rises past the floor beside it, the wall between them changes
   sides at the crossing point. The sides, an embankment's and a cutting's, use the theme's `embankment` style (a
   path's `edge` overrides it). That style is **top-anchored**: the grass lip follows the top edge, and the rock
-  repeats down at its own size until the ground cuts it off. Test: `a_ramp_into_a_plateau_cuts_in`.
+  repeats down at its own size until the ground cuts it off. With `settings.wall_texture` stretched, it's shown once
+  over the tallest height of that run of wall instead (and stretched-middle: its caps at their size, its middle once
+  between them), anchored at the top the same way: the size a cliff that tall is drawn, so a ramp's sides match the
+  cliff they climb (`Builder::anchored_bands`, which the floors' edge points follow too). Test: `a_ramp_into_a_plateau_cuts_in`.
 - **Floating** segments are bridges. The deck's top is world-projected. Where it lands, its end follows the floor's
   own edge: the deck's sides are passed to the map as probes, so their crossings become floor vertices, and the end
   shares them. Below the deck is the theme's (or the path's `shape`) body:
@@ -291,6 +294,10 @@ heights linear along it.
   - `slab`: an underside and edge strips over the deck's `thickness`.
 
   There is an end face only where an end is free.
+- **Buried stretches are cuttings.** Wherever a floating stretch is below the ground under it anywhere across its width
+  (it runs on into a higher floor, below its top), it's attached there instead: a cutting, as an attached path's is.
+  It changes at the exact point, so the cutting covers the higher floor's edge where it crosses, and the deck starts
+  clear of it, abutting the cutting (2026-10-08).
 - Slopes steeper than the theme's `max_slope` (35°) are reported. A footprint that folds over itself (too tight
   a turn for its width) is refused.
 
@@ -322,7 +329,81 @@ Walls of different styles meeting at a corner split their columns at each other'
 it used to be 0.5, which left gaps where two styles' cap lines fall a fraction apart).
 Collision is the ramp, as in the game. Test: `stairs_are_a_ramp_with_steps_drawn_on_it`.
 
-Not yet: railings, and supports under long bridges.
+**Dirt** (`"look": "dirt"`, 2026-10-08). A path on the ground at the ground's height *is* the ground, so it shows only
+where it climbs, sinks or has a section. With the look `dirt` the theme's dirt is painted along it, as a dirt line is
+(see Dirt paths): one along its laid-out centre line, as wide as the path less the dirt's soft edge and wander, so it
+fades out by the path's own edge. Junctions then show as dirt meeting dirt.
+
+**Sections** (`"section": {"kind": ...}`, or per segment `"sections": [...]` as `modes` is to `mode`, 2026-10-08). A
+path's cross-section, `doc::Section`:
+
+| Kind | What it is | Numbers |
+|---|---|---|
+| `causeway` | an embankment with a flat top, raised above its line | `height` (60) |
+| `sunken` | a lane in a cutting, sunk below its line, walls up both sides | `depth` (120) |
+| `ledge` | cut along a cliff: draw it along the cliff's edge, half in and half out. Its walls, the one above it and the drop below, are the cliff's own (the highest region it's cut into: its `edge`, its stack's part there, else the theme's rules), not the embankment style | none |
+| `boardwalk` | planks on posts, raised above its line, open underneath. Its segments float whatever their mode | `height` (80), `spacing` (200) |
+
+The height the line gives is still where it was: a section raises or sinks the surface from there by the same amount
+all along its segments, ramping back at `paths::RAMP` (25°) at the path's ends (inside the end segment, so the end
+still meets the ground as drawn) and where one segment's section meets the next's (centred on their node). A ramp
+keeps to the half of each segment beside it, so on a short segment it's steeper, and reported if past walkable.
+A boardwalk's deck is the theme's hanging-bridge planks (`hanging.deck`, one every `plank` along, `across` repeats
+over the width, colliding as `planks`), 12 thick (`BOARD`), the logs' ends round its edges and under it; a pair of
+posts (`hanging.post`, twice the rope bridge's post size) every `spacing`, from its underside to 20 into the ground,
+wherever it stands more than 10 clear of it. Where it lands on a floor, the deck ends on the floor's edge as a
+bridge's does.
+
+**Railings** (`"railings": "fence"`, any fence kind of the theme's). Along both sides, 8 in, wherever the floor
+just outside the side is 40 or more (`doc::RAIL_DROP`) below the path's own, read off the built ground: a causeway's
+and a boardwalk's sides, a ledge's drop, a high ramp's sides, never a sunken lane's. Runs shorter than 120 aren't
+put up. Each is a fence line (`lines::fence`), so it stands on the surface and collides as fences do.
+
+Test: `sections_raise_sink_cut_ledges_and_build_boardwalks`; example `sketch_sections.json` (a ledge with railings
+climbing a mesa's cliff, a causeway over a marsh, a sunken lane, a boardwalk).
+
+**Junctions** (`paths::layout_all`, 2026-10-08). Paths meet without steps:
+- **An end on another path joins it.** An attached end whose node lies on another path's attached footprint (within
+  its half width of the centre line) takes, unless its node gives a height, the other's line height there, and its
+  section ramps to the other's raise there: a plain path climbs onto a causeway, a causeway joining a causeway stays
+  level. Draw the end anywhere on the other path; on its centre line is tidiest.
+- **Two ends meeting** (an L, or one path carrying on from another: each end on the other's footprint) both run on
+  past their node, flat, by the other's half width less 1, so the outer corner is covered. (Exactly the half width
+  would put each end on the other's far edge, and the map doesn't take coincident edges.) The earlier path keeps its
+  section to its end; the later one ramps to it.
+- **Where they overlap**, the ground is the paths' surfaces weighted by how far inside each footprint the point is
+  (`Builder::surface`), so it meets each path's own surface along that path's edge. That holds for joined paths and
+  for paths whose centre lines cross within `paths::JOIN_DZ` (40) of each other's height (a crossroads). Further
+  apart, the higher is the ground, as before (a ramp over another's cutting).
+- **A path running into another eases onto it** within its own width of the other's footprint (`Builder::path_z`),
+  so where a branch meets a sloping path's side the corners meet too, and no sliver of wall is left.
+
+**Switchbacks** ("make it walkable", `"switchbacks": {"width": 700, "grade": 20, "turns": "round", "first": "left"}`,
+`paths::meander`, 2026-10-08). A path of two nodes climbs between them in a zig-zag the builder solves: you give the
+slope, not the geometry. Its turns are evenly spaced along the line between the nodes, each a half circle out to the
+side of a corridor `width` wide (else four path widths) centred on that line, the legs straight between them,
+alternating sides (`first`: which side the first leg heads to). It takes the fewest turns that keep the climb at
+`grade` (20°) or under. Adjacent legs stay `paths::LEG_SPACING` (1.25) path widths apart, centre to centre, which
+caps how many turns fit; if they aren't enough it takes them all and the build says how wide the corridor would have
+to be. A corridor narrower than 2.25 path widths can't turn at all (the half circle's inside would fold): it's
+reported and the path goes straight. `round` turns climb with the legs (one slope all along); `flat` turns are level
+landings, the legs steeper between them. Heights run by the distance climbed between the ends (`layout_inner`'s
+`climbs`), not node by node, so a floating switchback that lands on the plateau's edge before its last node finishes
+its climb at the landing. A switchback's floating ends don't land at all, though: its climb carries on to its end node, as
+an attached one's does, and the stretch inside the higher floor is a cutting (below). Its section, look and railings apply all along it; its ends join other
+paths as any end does. The editor draws the zig-zag in the plan, and the side profile shows it, the two nodes at its
+ends. Tests: `switchbacks_zig_zag_to_keep_the_climb_walkable`, `switchbacks_climb_a_cliff_at_a_walkable_slope`.
+
+Floors take the points where walls meet them on their edges at the edge's own height, linear between its ends as the
+walls' feet are (`floors`, `on_edges`): a path's surface along a tight curve isn't quite linear, and the two used to
+miss each other by a few hundredths.
+
+Layout goes round until nothing changes, so a path joining one that joins a third gets its final height. The
+editor's side profile is laid out the same way. Test: `paths_join_without_steps` (a T onto a sloping path, an L off
+its end, a crossroads); `sketch_sections.json` has a plain spur climbing onto the causeway, a road on from the
+ledge's top, a crossroads, and a branch ramping down into the sunken lane, all dirt.
+
+Not yet: supports under long bridges.
 
 ## Props and the kit (`kit/kokiri.json`, `src/pieces.rs`, `src/props.rs`, ADR 0036)
 
@@ -811,7 +892,8 @@ bank are bridged by the forest. Trunks stand on the bank's outer edge, so nothin
    cliff texture automatically, and a steepness overlay in the editor.
 2. **Soft edges**: done, and more (Edge profiles): slopes, terraces, overhangs, ragged rock and stacks per edge, pits,
    and ground beyond the outline instead of the forest.
-3. **Paths**: done (see above). Next for them: railings and supports.
+3. **Paths**: done (see above), with sections, railings, junctions and switchbacks. Next for them: supports under long
+   bridges.
 4. **Checks.** Child Link reachability in the crate: which floors connect, and ledges, vines and swim-outs.
    The game's own movement can now test them too (`oot_sandbox --level` with `--script`/`--trace`).
 5. **Props and blocks**: done (ADR 0036): houses, stumps and stones on floors, dirt paths, fences, hanging bridges and
