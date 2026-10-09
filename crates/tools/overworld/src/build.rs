@@ -131,6 +131,9 @@ struct WallJob<'a> {
     /// A top-anchored wall's run's tallest height: stretched, its texture is once over that
     /// (`emit_anchored`).
     span: f64,
+    /// Where its texture starts, per end: its foot, or lower where the floor below buries it (a
+    /// stack's wall, `profiles::Field::stack_wall`), so the part that shows is the top of it.
+    foot: [f64; 2],
 }
 
 /// Builds a level without a kit: props are reported, not placed.
@@ -566,11 +569,15 @@ impl<'a> Builder<'a> {
             _ => return self.surface(&face.paths, p),
         }
         face.paths.iter().map(|&k| self.paths[k].z_at(p)).reduce(f64::max).unwrap_or_else(|| {
-            let z = self.field.z(face.region, p, self.anchors[f].unwrap_or(p));
+            let anchor = self.anchors[f].unwrap_or(p);
+            let z = self.field.z(face.region, p, anchor);
             // a rough band's (`beyond.rs`): every height there goes through here, so its walls
-            // and floors still meet
+            // and floors still meet; no lower than a floor beside it that buries its foot
             match self.bands.rough.get(&face.region) {
-                Some(r) => self.rough_z(face.region, r, p, z),
+                Some(r) => {
+                    let z = self.rough_z(face.region, r, p, z);
+                    self.field.buried_to(face.region, p, anchor).map_or(z, |b| z.max(b))
+                }
                 None => z,
             }
         })
@@ -1186,6 +1193,8 @@ impl<'a> Builder<'a> {
         type Part = (usize, usize, [f64; 2], [f64; 2], f64, f64);
         let mut part: Vec<Option<Part>> = vec![None; nh];
         let mut style: Vec<Option<String>> = vec![None; nh];
+        // a buried stack wall's foot (`WallJob::foot`)
+        let mut foot: Vec<Option<f64>> = vec![None; nh];
         // a ledge's walls are those of the highest region it's cut into
         let ledges: Vec<Option<usize>> = (0..self.paths.len())
             .map(|k| {
@@ -1238,7 +1247,11 @@ impl<'a> Builder<'a> {
                     let (rl, rr) = ledge.map_or((rl, rr), |r| (r, r));
                     let (a, b) = (self.map.verts[p], self.map.verts[q]);
                     let tol = 2.0 * curve_tol(self.doc.settings.detail().expect("checked by the map").curves) + 2.0;
-                    let stacked = self.field.wall_style(rl, a, b, tol).or_else(|| self.field.wall_style(rr, a, b, tol)).filter(|s| th.wall_styles.contains_key(s));
+                    let sw = [rl, rr].into_iter().filter_map(|r| self.field.stack_wall(r, a, b, tol)).find(|w| w.0.is_some());
+                    let stacked = sw.as_ref().and_then(|w| w.0.clone()).filter(|s| th.wall_styles.contains_key(s));
+                    if stacked.is_some() {
+                        foot[h] = sw.and_then(|w| w.1);
+                    }
                     let own = self.regions[rl].edge.clone();
                     let hgt = 0.5 * ((pr.3[0] - pr.2[0]) + (pr.3[1] - pr.2[1]));
                     stacked.or(own).unwrap_or_else(|| th.wall_style(hgt, self.water(fr)).to_string())
@@ -1268,8 +1281,14 @@ impl<'a> Builder<'a> {
                     continue;
                 };
                 let (mut lsum, mut hsum) = (0.0, 0.0);
+                // each wall's texture from its foot, or lower where it's buried
+                let from = |i: usize| {
+                    let (_, _, bot, _, _, _) = part[hs[i]].unwrap();
+                    foot[hs[i]].map_or(bot, |z| [z.min(bot[0]), z.min(bot[1])])
+                };
                 for &i in &run {
-                    let (_, _, bot, top, t0, t1) = part[hs[i]].unwrap();
+                    let (_, _, _, top, t0, t1) = part[hs[i]].unwrap();
+                    let bot = from(i);
                     let l = self.map.len(hs[i]) * (t1 - t0);
                     lsum += l;
                     hsum += l * 0.5 * ((top[0] - bot[0]) + (top[1] - bot[1]));
@@ -1284,7 +1303,7 @@ impl<'a> Builder<'a> {
                     let (p, q, bot, top, t0, t1) = part[h].unwrap();
                     let over_water = self.water(self.map.half_face[h ^ 1]);
                     let l = self.ulen(h);
-                    self.wall("walls", Some(h), p, q, bot, top, ws, [u_at[i] + t0 * l, u_at[i] + t1 * l], tile, reps, over_water, span);
+                    self.wall("walls", Some(h), p, q, bot, top, ws, [u_at[i] + t0 * l, u_at[i] + t1 * l], tile, reps, over_water, span, from(i));
                 }
             }
         }
@@ -1375,11 +1394,27 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// As `bands`, for a wall whose texture starts at `from`, below its foot b where it's buried:
+    /// the bands from there, cut off at b (those wholly below it left empty, at b, so both ends
+    /// of a wall keep the same bands).
+    fn bands_from(ws: &WallStyle, reps: usize, from: f64, b: f64, t: f64, walls3: bool, fold: bool) -> Vec<(f64, f64, f64, f64, bool)> {
+        let mut out = Self::bands(ws, reps, from.min(b), t, walls3, fold);
+        if from < b - 1e-9 {
+            for x in out.iter_mut() {
+                let (z0, z1, v0, v1, middle) = *x;
+                let v = |z: f64| if z1 - z0 > 1e-9 { v0 + (v1 - v0) * (z - z0) / (z1 - z0) } else { v0 };
+                let (c0, c1) = (z0.max(b), z1.max(b));
+                *x = (c0, c1, v(c0), v(c1), middle);
+            }
+        }
+        out
+    }
+
     /// A wall over p -> q facing the right of p -> q, from `bot` to `top` (per end). Each texture
     /// band is zipped between the two ends on its own, so no triangle spans a jump in v; inside a
     /// band, columns are split at every height something else meets them (no T-junctions).
     #[allow(clippy::too_many_arguments)]
-    fn wall(&mut self, obj: &'static str, half: Option<usize>, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &'a WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool, span: f64) {
+    fn wall(&mut self, obj: &'static str, half: Option<usize>, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &'a WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool, span: f64, foot: [f64; 2]) {
         if (top[0] - bot[0]).max(top[1] - bot[1]) >= 0.5 {
             // a region's own cliffs (not an embankment's sides, nor the edge of the world's) may be bent
             let whole = half.is_some_and(|h| self.map.from(h) == p && self.map.to(h) == q);
@@ -1395,7 +1430,7 @@ impl<'a> Builder<'a> {
                 }
                 b => b,
             };
-            self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water, bend, span });
+            self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water, bend, span, foot });
         }
     }
 
@@ -1632,7 +1667,7 @@ impl<'a> Builder<'a> {
     fn emit_walls(&mut self) {
         let jobs = std::mem::take(&mut self.jobs);
         for j in &jobs {
-            for (v, b, t) in [(j.p, j.bot[0], j.top[0]), (j.q, j.bot[1], j.top[1])] {
+            for (v, b, t, from) in [(j.p, j.bot[0], j.top[0], j.foot[0]), (j.q, j.bot[1], j.top[1], j.foot[1])] {
                 if let Some(c) = j.ws.caps.as_ref().filter(|c| c.anchor == "top") {
                     // band edges at fixed depths below the top
                     self.levels[v].push(b);
@@ -1643,7 +1678,7 @@ impl<'a> Builder<'a> {
                     }
                     self.levels[v].push(t);
                 } else {
-                    for (z0, z1, ..) in Self::bands(j.ws, j.reps, b, t, self.walls3, self.fold()) {
+                    for (z0, z1, ..) in Self::bands_from(j.ws, j.reps, from, b, t, self.walls3, self.fold()) {
                         self.levels[v].push(z0);
                         self.levels[v].push(z1);
                     }
@@ -1655,21 +1690,21 @@ impl<'a> Builder<'a> {
             l.dedup_by(|a, b| (*a - *b).abs() < 0.01);
         }
         for j in &jobs {
-            self.emit_wall(j.obj, j.p, j.q, j.bot, j.top, j.ws, j.u, j.tile, j.reps, j.over_water, j.span);
+            self.emit_wall(j.obj, j.p, j.q, j.bot, j.top, j.ws, j.u, j.tile, j.reps, j.over_water, j.span, j.foot);
         }
         // kept for the floors under overhangs (`undercuts`)
         self.jobs = jobs;
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn emit_wall(&mut self, obj: &str, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool, span: f64) {
+    fn emit_wall(&mut self, obj: &str, p: usize, q: usize, bot: [f64; 2], top: [f64; 2], ws: &WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool, span: f64, foot: [f64; 2]) {
         if ws.caps.as_ref().is_some_and(|c| c.anchor == "top") {
             self.emit_anchored(obj, p, q, bot, top, ws, u, tile, span);
             self.overlays(p, q, bot, top, ws, u, over_water);
             return;
         }
         let fold = self.fold();
-        let (bp, bq) = (Self::bands(ws, reps, bot[0], top[0], self.walls3, fold), Self::bands(ws, reps, bot[1], top[1], self.walls3, fold));
+        let (bp, bq) = (Self::bands_from(ws, reps, foot[0], bot[0], top[0], self.walls3, fold), Self::bands_from(ws, reps, foot[1], bot[1], top[1], self.walls3, fold));
         let mid = format!("{}~mid", ws.material);
         let (pp, qq) = (self.map.verts[p], self.map.verts[q]);
         let (up, uq) = (u[0] / tile, u[1] / tile);
@@ -2187,7 +2222,7 @@ impl<'a> Builder<'a> {
                 let l = self.ulen(h);
                 let f = self.map.half_face[h ^ 1];
                 let w = self.water(f);
-                self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0);
+                self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0, floor(self, i));
                 u += l;
             }
             // the tree line and its rim heights (from the nearest cliff top)
@@ -2371,7 +2406,7 @@ impl<'a> Builder<'a> {
             let h = hs[i];
             let l = self.ulen(h);
             let w = self.water(self.map.half_face[h ^ 1]);
-            self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0);
+            self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0, floor(self, i));
             u += l;
         }
         // the bands' side edges: a face from the band's floor down to the level's, facing out
@@ -2381,7 +2416,7 @@ impl<'a> Builder<'a> {
             let h = hs[i];
             let fl = floor(self, i);
             let low = base.min(fl[0]).min(fl[1]);
-            self.wall("cliffs", None, self.map.to(h), self.map.from(h), [low, low], [fl[1], fl[0]], cliff, [0.0, self.ulen(h)], tile, reps, false, 0.0);
+            self.wall("cliffs", None, self.map.to(h), self.map.from(h), [low, low], [fl[1], fl[0]], cliff, [0.0, self.ulen(h)], tile, reps, false, 0.0, [low, low]);
         }
         // the tree line, kept where its nearest outer edge is forest
         let traced = tree_line(&o, bd.bank, bd.panel_tol);
@@ -4134,6 +4169,80 @@ mod tests {
             assert!(bad.len() <= 6, "{detail}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(8)]);
             let ends = bad.iter().filter(|(a, b)| a.0 == b.0 && a.1 == b.1).count();
             assert_eq!(ends, 2, "{detail}: the trunks' two ends: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_region_raised_against_a_rock_face_buries_its_foot() {
+        // a square 4000 across, Kakariko's rock face beyond its north edge, and a floor drawn
+        // against the west half of that edge: the face's walls and ledges stay at one height all
+        // along, the floor just hides the bottom of them, with no slanted ledge or grass where it ends
+        let looks = crate::doc::stack_looks();
+        let rock = looks.iter().find(|l| l.name == "Rock face").unwrap();
+        let n = |x: f64, y: f64| vec![x, y, 1.0];
+        for z in [280.0, 400.0] {
+            let doc = Doc {
+                name: "buried".into(),
+                outline: Outline {
+                    nodes: vec![n(-2000.0, -2000.0), n(2000.0, -2000.0), n(2000.0, 2000.0), n(0.0, 2000.0), n(-2000.0, 2000.0)],
+                    z: 0.0,
+                    noise: None,
+                    beyond: vec![None, None, Some(rock.beyond(0.0)), Some(rock.beyond(0.0)), None],
+                },
+                regions: vec![Region {
+                    name: "fill".into(),
+                    nodes: vec![n(0.0, 2000.0), n(-2000.0, 2000.0), n(-1800.0, 1400.0), n(0.0, 1400.0)],
+                    z,
+                    kind: "floor".into(),
+                    surface: None,
+                    edge: None,
+                    noise: None,
+                    profile: None,
+                    profiles: vec![],
+                }],
+                paths: vec![],
+                boundary: BoundaryDesign::default(),
+                settings: Settings { theme: "kakariko".into(), edges: "hard".into(), ..Settings::default() },
+                terrain: None,
+                props: vec![],
+                lines: vec![],
+            };
+            let th = Theme::for_doc(&doc, None).unwrap();
+            let lvl = build(&doc, &th).unwrap();
+            let problems: Vec<_> = lvl.problems.iter().filter(|p| !p.contains("degrees")).collect();
+            assert!(problems.is_empty(), "{z}: {problems:?}");
+            let obj = |n: &str| lvl.mesh.objects.iter().find(|o| o.name == n).unwrap();
+            // the ledge on the brick wall: at the brick's top (320) all along, but flush with the
+            // floor where that buries the brick whole
+            let g = obj("ground");
+            for v in g.verts.iter().filter(|v| v[1] > 2001.0 && v[1] < 2011.0 && v[0].abs() > 200.0 && v[0].abs() < 1800.0) {
+                let want = if v[0] < 0.0 { z.max(320.0) } else { 320.0 };
+                assert!((v[2] - want).abs() < 1e-6, "{z}: the ledge at {v:?}, not {want}");
+            }
+            // nothing in the face round the floor's end drawn steep as the floor's ground
+            let floor = lvl.mesh.materials.iter().position(|m| *m == th.floor.material).unwrap();
+            for t in (0..g.tris.len()).filter(|&t| g.mat[t] == floor) {
+                let p = g.tris[t].map(|i| g.verts[i]);
+                if !p.iter().all(|v| v[1] > 2000.5 && v[1] < 2300.0 && v[0].abs() < 400.0) {
+                    continue;
+                }
+                let (a, b) = ([p[1][0] - p[0][0], p[1][1] - p[0][1], p[1][2] - p[0][2]], [p[2][0] - p[0][0], p[2][1] - p[0][1], p[2][2] - p[0][2]]);
+                let nn = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+                let up = nn[2].abs() / (nn[0] * nn[0] + nn[1] * nn[1] + nn[2] * nn[2]).sqrt().max(1e-12);
+                assert!(up > 0.5, "{z}: steep floor ground at {p:?}");
+            }
+            // above the floor at 280, the top 40 of the brick wall: its top, not its foot
+            if z < 320.0 {
+                let w = obj("walls");
+                let ws = &th.wall_styles["kakariko:brick"];
+                let brick = lvl.mesh.materials.iter().position(|m| *m == ws.material).unwrap();
+                let over: Vec<usize> = (0..w.tris.len()).filter(|&t| w.mat[t] == brick && w.tris[t].iter().all(|&i| (w.verts[i][1] - 2000.0).abs() < 1.0 && w.verts[i][0] < -200.0)).collect();
+                assert!(!over.is_empty(), "{z}: the brick over the floor");
+                for &t in &over {
+                    assert!(w.tris[t].iter().all(|&i| w.verts[i][2] >= z - 1e-6 && w.verts[i][2] <= 320.0 + 1e-6), "{z}: brick from the floor to its top");
+                    assert!(w.uvs[t].iter().all(|uv| uv[1] >= ws.caps.as_ref().unwrap().bottom - 1e-6), "{z}: the brick's foot shows: {:?}", w.uvs[t]);
+                }
+            }
         }
     }
 

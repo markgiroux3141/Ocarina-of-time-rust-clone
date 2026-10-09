@@ -325,6 +325,17 @@ stairs cut into higher ground, the walls above them are the steps' `cutting` sty
 top-anchored (`brick_top`), so the grass follows the higher floor's edge. A theme without stairs (Kokiri) borrows
 Kakariko's.
 
+Round a bend (2026-10-09) the steps fan, as a winding stair's do: the tread is mapped across the footprint's own
+cross-sections (`PathGeo::along`, each quad between two stations mapped back exactly), the corner's cross-section along
+the bisector, and the stair has a station each side of a bend of 15° or more (`STAIR_TURN`) where its steps are square
+again, 3 times as far from the corner as its mitre reaches along the line at the sides (`FAN`), so the stretches
+between bends stay square and the fan is a quad of its own. Its height is level along those cross-sections too
+(`PathGeo::z_at`), so each step is level across; the inside of a fan climbs 1.5 times as steeply as the line. It used to
+measure from the nearest point on the line, which smeared one step over the outside of a bend and jumped on the inside.
+Every path's sides are mitred at a bend (`PathGeo::sides`: along the bisector, longer by 1 / cos of half the turn, at
+most twice), so a sharp corner keeps its width; they used to pinch in, a stair 17% narrower at a 67° bend. Test:
+`a_stair_turning_a_corner_keeps_its_width_and_its_steps_level`.
+
 Walls of different styles meeting at a corner split their columns at each other's heights however close (within 0.01;
 it used to be 0.5, which left gaps where two styles' cap lines fall a fraction apart).
 Collision is the ramp, as in the game. Test: `stairs_are_a_ramp_with_steps_drawn_on_it`.
@@ -755,6 +766,21 @@ its part's style on the edge or along its step line (`Field::wall_style`); a slo
 (`Field::look`): u along its foot, v up the face, the middle rows repeating for a capped style, a band style by its band,
 any other stretched once over the slope (the mossy wall's cut-out top stays at the top). Tests:
 `a_stack_climbs_wall_then_slope_and_cuts_its_inner_walls`, `stacked_edges_build_walls_and_slopes_and_stay_watertight`.
+
+**One base, buried by higher floors** (2026-10-09). A region's stacked edges all climb from one base (`Foot::base`): the
+lowest floor beside its raised ones (the highest beside its sunken ones), so its walls and ledges are at one height all
+along. A floor beside that's higher buries the stack's foot there: a floor raised to 280 against the rock face shows
+the top 40 of the brick wall, then the ledge at 320 and the rock as everywhere else; raised past 320, the ground beyond
+is flush with it until the stack climbs out (`Field::z` keeps each face to the floor beside its nearest foot, and a
+rough band's roughness never takes it lower: `Field::buried_to`). Where the floor beside steps up between two feet and
+buries the stack on one side only, a line runs in from their joint along the bisector to the far side
+(`RegionField::bury`), a wall where it's buried and nothing further in; it goes through the step lines' own points
+where it passes close to them, and the map takes points two cuts share exactly as one. A buried wall keeps its texture
+from its true foot (`WallJob::foot`), so the part that shows is its top, cap and all. A floor beside past every set
+part (another band's crest beside a band's side) keeps the old way: the stack from that floor, a cliff if it doesn't
+fit. Each edge used to build its own stack from the floor beside it, so a raised floor lifted the whole stack (brick
+280 to 600) and left a slanted ledge, drawn as stretched grass, where the floor ended. Test:
+`a_region_raised_against_a_rock_face_buries_its_foot`.
 
 Not yet: a profile per stretch shorter than an edge, overhangs over water, and two stacks of different sizes meeting in
 one corner of a region (where a face can take one's segment for the other's).

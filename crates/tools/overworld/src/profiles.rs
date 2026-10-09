@@ -68,6 +68,9 @@ struct Piece {
 /// wall): a ledge this deep, so each is a wall of its own.
 const LEDGE: f64 = 12.0;
 
+/// A line where a stack is buried on one side (`RegionField::bury`) has a point at least this often.
+const BURY_STEP: f64 = 100.0;
+
 /// A stacked profile for one drop (`Profile::Stack`): its segments, the floor between walls.
 #[derive(Clone, Debug)]
 struct Stack {
@@ -75,8 +78,9 @@ struct Stack {
     segs: Vec<(f64, Vec<Piece>)>,
     /// The walls past the edge (distances in, ascending): segment k runs from cut k - 1 to cut k.
     cuts: Vec<f64>,
-    /// Every wall, the edge's (at 0) too: its distance in and its style.
-    walls: Vec<(f64, Option<String>)>,
+    /// Every wall, the edge's (at 0) too: its distance in, its style and its foot's height up from
+    /// the stack's.
+    walls: Vec<(f64, Option<String>, f64)>,
     reach: f64,
 }
 
@@ -97,7 +101,7 @@ impl Stack {
         let (mut d, mut h) = (0.0, rest);
         let mut wall_here = rest > 0.0;
         if rest > 0.0 {
-            st.walls.push((0.0, None));
+            st.walls.push((0.0, None, 0.0));
         }
         for p in parts {
             let r = p.rise.map_or(share, |r| r.max(0.0));
@@ -109,6 +113,7 @@ impl Stack {
                     st.segs.last_mut().unwrap().1.push(Piece { d0: d, d1: d + LEDGE, h0: h, h1: h, round: 0.0, look: Look::Floor });
                     d += LEDGE;
                 }
+                st.walls.push((d, p.style.clone(), h));
                 h += r;
                 if d > 0.0 {
                     st.cuts.push(d);
@@ -116,7 +121,6 @@ impl Stack {
                 } else {
                     st.segs[0].0 = h;
                 }
-                st.walls.push((d, p.style.clone()));
                 wall_here = true;
             } else {
                 let round = p.round.clamp(0.0, 1.0);
@@ -171,6 +175,13 @@ struct Foot {
     a: P2,
     b: P2,
     n: f64,
+    /// Where its profile climbs from: `n`, but a stack's is the region's (the lowest floor beside
+    /// any of its raised stacked edges, or the highest beside its sunken ones), so its walls and
+    /// ledges are at the same heights all along, and a floor beside that is higher just buries
+    /// its foot (a region raised against a band's rock face hides the bottom of its brick wall)
+    /// rather than lifting the whole stack and leaving a step where it ends. A floor beside past
+    /// all the stack's set parts keeps its own (`n`).
+    base: f64,
     kind: Kind,
     /// Mitred distances (hard or faceted edges): at each end, the tangent half way between this
     /// piece's and the next profiled piece's (the joint's bisector), or None at a free end.
@@ -291,6 +302,10 @@ struct RegionField {
     reach: [f64; 3],
     /// Whether a stack has walls past the edge (step lines: faces are read at their anchors).
     stack_cuts: bool,
+    /// Lines in from where the floor beside a raised stack steps up and buries it on one side
+    /// (`Foot::base`), unclipped: each runs from the joint to past the region's far side. Faces
+    /// are then read at their anchors, the floor beside them the nearest foot's there.
+    bury: Vec<Vec<P2>>,
 }
 
 impl RegionField {
@@ -369,6 +384,10 @@ impl Field {
             // which profile each foot is (the same one gives the same kind for the same floor beside)
             let mut keys: Vec<*const Profile> = vec![];
             let mut steep = 0.0f64;
+            // the region's stacks climb from one base (`Foot::base`): the lowest floor beside its
+            // raised stacked edges, the highest beside its sunken ones
+            let (mut base_up, mut base_down) = (f64::INFINITY, f64::NEG_INFINITY);
+            let mut cands = vec![];
             for m in 0..lp.len() {
                 let Some(p) = prof[l][m] else { continue };
                 let (u, v) = (lp[m], lp[(m + 1) % lp.len()]);
@@ -388,10 +407,31 @@ impl Field {
                     (true, Some(&(n, _))) => n,
                     (true, None) => continue,
                 };
-                let drop = (top - n).abs();
-                if drop < 0.5 {
+                if (top - n).abs() < 0.5 {
                     continue;
                 }
+                if matches!(p, Profile::Stack { .. }) {
+                    if n < top {
+                        base_up = base_up.min(n);
+                    } else {
+                        base_down = base_down.max(n);
+                    }
+                }
+                cands.push((m, u, v, n, fout, p));
+            }
+            // one stack per profile, way (up or down) and base, shared by its feet
+            // (profile, raised, base's bits) -> its stack and reach, or none: a cliff
+            type Key = (*const Profile, bool, u64);
+            let mut shared: HashMap<Key, Option<(usize, f64)>> = HashMap::new();
+            for (m, u, v, n, fout, p) in cands {
+                let drop = (top - n).abs();
+                let base = if n < top { base_up } else { base_down };
+                // a floor beside past the stack's set parts (another band's crest beside a band's
+                // side) would bury all of them: there the stack climbs from that floor, as its own
+                let base = match p {
+                    Profile::Stack { parts } if (n - base).abs() >= Stack::fixed(parts) - 0.5 => n,
+                    _ => base,
+                };
                 let kind = match *p {
                     Profile::Overhang { depth } => {
                         walls.push((map.verts[u], map.verts[v], Wall::Overhang { depth }));
@@ -410,17 +450,22 @@ impl Field {
                         Kind::Slope { run: drop / angle.to_radians().tan() * (1.0 + 0.5 * round), round }
                     }
                     Profile::Terraces { steps, rise, depth } => Kind::Steps { steps, rise: rise.unwrap_or(drop / steps as f64), depth },
-                    // a stack taller than the drop (a short side of a stacked ridge) is a cliff there
-                    Profile::Stack { ref parts } if Stack::fixed(parts) > drop + 0.5 => continue,
                     Profile::Stack { ref parts } => {
-                        let st = Stack::new(parts, drop);
-                        let reach = st.reach;
-                        stacks.push(st);
-                        Kind::Stack { id: stacks.len() - 1, reach }
+                        let entry = shared.entry((p as *const Profile, n < top, base.to_bits())).or_insert_with(|| {
+                            // a stack taller than the drop (a short side of a stacked ridge) is a cliff
+                            let drop = (top - base).abs();
+                            (Stack::fixed(parts) <= drop + 0.5).then(|| {
+                                stacks.push(Stack::new(parts, drop));
+                                (stacks.len() - 1, stacks[stacks.len() - 1].reach)
+                            })
+                        });
+                        let Some((id, reach)) = *entry else { continue };
+                        Kind::Stack { id, reach }
                     }
                     Profile::Cliff => continue,
                 };
-                feet.push(Foot { a: map.verts[u], b: map.verts[v], n, kind, mitre: None, m, m_end: m, end: fout == VOID });
+                let base = if matches!(kind, Kind::Stack { .. }) { base } else { n };
+                feet.push(Foot { a: map.verts[u], b: map.verts[v], n, base, kind, mitre: None, m, m_end: m, end: fout == VOID });
                 keys.push(p as *const Profile);
             }
             if feet.is_empty() {
@@ -479,6 +524,53 @@ impl Field {
             let reach = |class: usize| feet.iter().filter(|f| f.class() == class).map(Foot::reach).fold(0.0, f64::max);
             let reach = [reach(0), reach(1), reach(2)];
             let stack_cuts = feet.iter().filter_map(Foot::stack).any(|id| !stacks[id].cuts.is_empty());
+            // where the floor beside a raised stack steps up between two feet and buries the stack
+            // on one side only, a line in from their joint along its bisector, to the far side: the
+            // wall between those floors carried on into the region where it's buried (and nothing,
+            // no taller than 0, further in)
+            let mut bury = vec![];
+            let first: HashMap<usize, usize> = feet.iter().enumerate().map(|(i, f)| (f.m, i)).collect();
+            let bb = map.loop_polys[l].iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]);
+            for f in &feet {
+                let Some(g) = first.get(&((f.m_end + 1) % lp.len())).map(|&j| &feet[j]) else { continue };
+                let (Some(fid), Some(gid)) = (f.stack(), g.stack()) else { continue };
+                if f.base >= top || g.base != f.base || (f.n - g.n).abs() < 0.5 {
+                    continue;
+                }
+                let (hi, st) = if f.n > g.n { (f.n, &stacks[fid]) } else { (g.n, &stacks[gid]) };
+                // buried at the edge at all: the stack starts below the higher floor
+                if f.base + st.height(0, 0.0) >= hi - 0.5 {
+                    continue;
+                }
+                let inward = |x: &Foot| {
+                    let t = sub(x.b, x.a);
+                    let l = t[0].hypot(t[1]).max(1e-9);
+                    if ccw { [-t[1] / l, t[0] / l] } else { [t[1] / l, -t[0] / l] }
+                };
+                let (a, b) = (inward(f), inward(g));
+                let m = [a[0] + b[0], a[1] + b[1]];
+                let ml = m[0].hypot(m[1]);
+                if ml < 1e-6 {
+                    continue;
+                }
+                let (m, span) = ([m[0] / ml, m[1] / ml], (bb[2] - bb[0]).hypot(bb[3] - bb[1]) + 1.0);
+                // a point wherever the stack's slopes bend and every `BURY_STEP`, so the floors
+                // either side follow them; none where its walls are (the line crosses their step
+                // lines there, and the map puts its own point there: one of ours close by makes
+                // slivers)
+                let k = (m[0] * a[0] + m[1] * a[1]).max(0.2);
+                let walls = |t: f64| st.cuts.iter().any(|c| (c / k - t).abs() < 2.0 * LEDGE);
+                let mut ts: Vec<f64> = st.segs.iter().flat_map(|s| &s.1).flat_map(|pc| [pc.d0 / k, pc.d1 / k]).filter(|&t| t > 0.5 && t < span && !walls(t)).collect();
+                ts.extend([0.0, span]);
+                ts.sort_by(f64::total_cmp);
+                ts.dedup_by(|x, y| (*x - *y).abs() < 0.5);
+                let mut line = vec![f.b];
+                for w in ts.windows(2) {
+                    let n = ((w[1] - w[0]) / BURY_STEP).ceil().max(1.0) as usize;
+                    line.extend((1..=n).map(|i| w[0] + (w[1] - w[0]) * i as f64 / n as f64).map(|t| [f.b[0] + m[0] * t, f.b[1] + m[1] * t]));
+                }
+                bury.push(line);
+            }
             let cell = reach[0].max(reach[1]).max(reach[2]).max(20.0);
             let mut buckets: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
             for (k, f) in feet.iter().enumerate() {
@@ -490,8 +582,7 @@ impl Field {
                     }
                 }
             }
-            let bb = map.loop_polys[l].iter().fold([f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY], |b, q| [b[0].min(q[0]), b[1].min(q[1]), b[2].max(q[0]), b[3].max(q[1])]);
-            regions[l] = Some(RegionField { top, feet, cell, buckets, bb, reach, stack_cuts });
+            regions[l] = Some(RegionField { top, feet, cell, buckets, bb, reach, stack_cuts, bury });
         }
         let loop_areas = map.loop_polys.iter().map(|p| signed_area(p).abs()).collect();
         let mut wall_buckets: HashMap<(i64, i64), Vec<u32>> = HashMap::new();
@@ -521,7 +612,7 @@ impl Field {
     /// Whether region r's floor has step lines (terraces' treads, a stack's walls past its edge):
     /// its faces are then read at their anchors (see `z`).
     pub fn stepped(&self, r: usize) -> bool {
-        self.regions.get(r).and_then(|x| x.as_ref()).is_some_and(|f| f.reach[1] > 0.0 || f.stack_cuts)
+        self.regions.get(r).and_then(|x| x.as_ref()).is_some_and(|f| f.reach[1] > 0.0 || f.stack_cuts || !f.bury.is_empty())
     }
 
     /// Region r's floor height at p. Terraces are read at `anchor` (a point well inside p's face:
@@ -543,24 +634,56 @@ impl Field {
                 up = up.max(dev);
             }
         }
-        // stacks: the segment the face is in (at its anchor), the height at p within it
+        // stacks: the segment the face is in (at its anchor), the height at p within it; raised and
+        // sunken apart, each kept to the floor beside its nearest foot (`Foot::base`: that floor
+        // buries a raised stack's foot, cuts off a sunken one's top)
         if rf.reach[2] > 0.0 {
-            let seg = rf.stack_cuts.then(|| self.segment_at(rf, anchor)).flatten();
-            for f in rf.near(p) {
-                let Some(id) = f.stack() else { continue };
-                let st = &self.stacks[id];
-                let d = f.dist(p);
-                // an anchor with no stacked foot near it is past every wall
-                let k = if st.cuts.is_empty() { 0 } else { seg.map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
-                if d >= st.reach && k + 1 >= st.segs.len() {
-                    continue;
-                }
-                let dev = f.n + (rf.top - f.n).signum() * st.height(k, d) - rf.top;
-                down = down.min(dev);
-                up = up.max(dev);
+            let ways = self.stack_ways(rf, p, anchor);
+            if let Some((dev, _, beside)) = ways[0] {
+                down = down.min(dev.max(beside));
+            }
+            if let Some((dev, _, beside)) = ways[1] {
+                up = up.max(dev.min(beside));
             }
         }
         rf.top + down + up
+    }
+
+    /// Region r's stacks at p, raised and sunken: (the lowest raised or highest sunken height,
+    /// the nearest foot's distance, the floor beside it), all less the region's height. Nearest
+    /// p, or the face's anchor where lines split the floor where it's buried (`RegionField::bury`).
+    fn stack_ways(&self, rf: &RegionField, p: P2, anchor: P2) -> [Option<(f64, f64, f64)>; 2] {
+        let seg = rf.stack_cuts.then(|| self.segment_at(rf, anchor)).flatten();
+        let mut ways: [Option<(f64, f64, f64)>; 2] = [None, None];
+        let owner = if rf.bury.is_empty() { p } else { anchor };
+        for f in rf.near(p) {
+            let Some(id) = f.stack() else { continue };
+            let st = &self.stacks[id];
+            let d = f.dist(p);
+            // an anchor with no stacked foot near it is past every wall
+            let k = if st.cuts.is_empty() { 0 } else { seg.map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
+            if d >= st.reach && k + 1 >= st.segs.len() {
+                continue;
+            }
+            let raised = f.base < rf.top;
+            let dev = f.base + if raised { 1.0 } else { -1.0 } * st.height(k, d) - rf.top;
+            let w = &mut ways[usize::from(!raised)];
+            let od = if rf.bury.is_empty() { d } else { f.dist(owner) };
+            let x = w.get_or_insert((dev, od, f.n - rf.top));
+            x.0 = if raised { x.0.min(dev) } else { x.0.max(dev) };
+            if od < x.1 {
+                (x.1, x.2) = (od, f.n - rf.top);
+            }
+        }
+        ways
+    }
+
+    /// The floor beside region r's raised stack nearest p (in the face whose anchor is `anchor`),
+    /// which may bury its foot: the ground there is no lower, whatever's done to it after (a rough
+    /// band's).
+    pub fn buried_to(&self, r: usize, p: P2, anchor: P2) -> Option<f64> {
+        let rf = self.regions.get(r)?.as_ref().filter(|f| f.reach[2] > 0.0)?;
+        Some(rf.top + self.stack_ways(rf, p, anchor)[0]?.2)
     }
 
     /// Which segment of its stack the anchor of a face is in: by the stacked foot nearest it (a long
@@ -588,8 +711,8 @@ impl Field {
         };
         if let Some((f, st, d)) = self.stack_at(r, p) {
             let k = if st.cuts.is_empty() { st.segment(d) } else { self.segment_at(rf, anchor).map_or(st.segs.len() - 1, |k| k.min(st.segs.len() - 1)) };
-            let z = |h: f64| f.n + (rf.top - f.n).signum() * h;
-            // the stack sets the floor here (not a band's end, lower)
+            let z = |h: f64| f.base + (rf.top - f.base).signum() * h;
+            // the stack sets the floor here (not a band's end, lower, nor the floor beside burying it)
             if (here - z(st.height(k, d))).abs() <= 0.5 {
                 let pc = st.piece(k, d)?;
                 if pc.look == Look::Floor || (pc.h1 - pc.h0).abs() < 1e-9 {
@@ -612,17 +735,25 @@ impl Field {
     /// style: on a stacked edge (a wall at the edge), or along one of its step lines (`tol`: how far
     /// off the line its ends may be, the traced lines' tolerance).
     pub fn wall_style(&self, r: usize, p: P2, q: P2, tol: f64) -> Option<String> {
+        self.stack_wall(r, p, q, tol)?.0
+    }
+
+    /// The stack's wall p -> q in region r, if it's one (as `wall_style`): its style, and where a
+    /// raised stack's wall stands as tall as the stack makes it, its foot's height (lower than the
+    /// floor below it where that buries it: `Foot::base`).
+    pub fn stack_wall(&self, r: usize, p: P2, q: P2, tol: f64) -> Option<(Option<String>, Option<f64>)> {
         let rf = self.regions.get(r)?.as_ref().filter(|f| f.reach[2] > 0.0)?;
         let m = lerp(p, q, 0.5);
+        let foot = |f: &Foot, below: f64| (f.base < rf.top).then_some(f.base + below);
         // on the edge: on a stacked loop piece (p -> q is it, or part of it)
         if let Some(f) = rf.near(m).find(|f| f.stack().is_some() && dist_to_seg(m, f.a, f.b).0 < 1e-6) {
-            return self.stacks[f.stack()?].walls.iter().find(|w| w.0 == 0.0).and_then(|w| w.1.clone());
+            return self.stacks[f.stack()?].walls.iter().find(|w| w.0 == 0.0).map(|w| (w.1.clone(), foot(f, w.2)));
         }
         // along a step line: both ends that far in from the nearest stacked foot
         let nearest = |x: P2| rf.near(x).filter(|f| f.stack().is_some()).map(|f| (f.dist(x), f)).min_by(|a, b| a.0.total_cmp(&b.0));
         let (_, f) = nearest(m)?;
         let (dp, dq) = (nearest(p)?.0, nearest(q)?.0);
-        self.stacks[f.stack()?].walls.iter().filter(|w| w.0 > 0.0).find(|w| (dp - w.0).abs() <= tol && (dq - w.0).abs() <= tol).and_then(|w| w.1.clone())
+        self.stacks[f.stack()?].walls.iter().filter(|w| w.0 > 0.0).find(|w| (dp - w.0).abs() <= tol && (dq - w.0).abs() <= tol).map(|w| (w.1.clone(), foot(f, w.2)))
     }
 
     /// The floor's height at p under the document's loops alone: the innermost loop's (its
@@ -696,6 +827,8 @@ impl Field {
     pub fn cuts(&self, map: &Map, tol: f64) -> Vec<Vec<P2>> {
         let edges = Edges::new(&map.loop_polys);
         let mut out = vec![];
+        // each region's stacks' step lines' points, for the lines where it's buried to go through
+        let mut steps: Vec<Vec<P2>> = vec![vec![]; self.regions.len()];
         // stacks' walls past the edge: lines that far in from their feet
         for (r, rf) in self.regions.iter().enumerate() {
             let Some(rf) = rf.as_ref().filter(|f| f.stack_cuts) else { continue };
@@ -714,8 +847,21 @@ impl Field {
                     if self.mitre {
                         line = sharpen(&line, 2.5 * cell);
                     }
-                    out.extend(clip(&line, &edges, &map.loop_polys, &self.loop_areas, r));
+                    for piece in clip(&line, &edges, &map.loop_polys, &self.loop_areas, r) {
+                        steps[r].extend_from_slice(&piece);
+                        out.push(piece);
+                    }
                 }
+            }
+        }
+        // where a raised stack is buried on one side of a joint: from the joint to the far side,
+        // through the step lines' own points where it passes close to them (their corners lie on
+        // its bisector: crossing a step line a hair from its point would make slivers the map
+        // can't tell apart)
+        for (r, rf) in self.regions.iter().enumerate() {
+            for line in rf.iter().flat_map(|f| &f.bury) {
+                let line = through(line, &steps[r], 0.5 * LEDGE);
+                out.extend(clip(&line, &edges, &map.loop_polys, &self.loop_areas, r).into_iter().filter(|c| dist(c[0], line[0]) < 1e-6).take(1));
             }
         }
         for (r, rf) in self.regions.iter().enumerate() {
@@ -851,6 +997,26 @@ pub fn check(p: &Profile) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// The line, bent to go through each of `pts` within `tol` of it (its own points that close to one
+/// left out, but its first).
+fn through(line: &[P2], pts: &[P2], tol: f64) -> Vec<P2> {
+    // (where along the line, as segment index + fraction, the point)
+    let mut on: Vec<(f64, P2)> = vec![];
+    for &q in pts {
+        let best = line.windows(2).enumerate().map(|(i, w)| (dist_to_seg(q, w[0], w[1]), i)).min_by(|a, b| (a.0).0.total_cmp(&(b.0).0));
+        if let Some(((_, t), i)) = best.filter(|x| (x.0).0 < tol) {
+            on.push((i as f64 + t, q));
+        }
+    }
+    if on.is_empty() {
+        return line.to_vec();
+    }
+    let mut all: Vec<(f64, P2)> = line.iter().enumerate().skip(1).filter(|(_, p)| on.iter().all(|x| dist(x.1, **p) >= tol)).map(|(i, p)| (i as f64, *p)).collect();
+    all.extend(on.into_iter().filter(|x| dist(x.1, line[0]) >= 1e-6));
+    all.sort_by(|a, b| a.0.total_cmp(&b.0));
+    std::iter::once(line[0]).chain(all.into_iter().map(|x| x.1)).collect()
 }
 
 /// The loops' pieces in buckets, for finding where a line crosses them.
@@ -1142,7 +1308,7 @@ mod tests {
         let (_, f) = field(&d);
         assert!(f.is_empty());
         let st = Stack::new(&[Part::slope(30.0, Some(100.0), None)], 400.0);
-        assert_eq!(st.walls, vec![(0.0, None)]);
+        assert_eq!(st.walls, vec![(0.0, None, 0.0)]);
         assert!((st.segs[0].0 - 300.0).abs() < 1e-9 && (st.height(0, 1e9) - 400.0).abs() < 1e-9);
         // nonsense refused
         let d = doc(Profile::Stack { parts: vec![] }, 200.0);
