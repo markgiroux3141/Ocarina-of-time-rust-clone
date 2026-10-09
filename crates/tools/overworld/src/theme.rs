@@ -7,9 +7,58 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// The built-in themes, in the order the editor lists them; each draws from its scene's texture
-/// library (`kit::SCENES`).
-pub const BUILTIN: [&str; 2] = ["kokiri", "kakariko"];
+/// The built-in themes, one per region, in the order the editor lists them (`kit::REGIONS`'; Lon
+/// Lon Ranch's buildings, interiors, have none); each draws from its region's texture library
+/// (`kit::scenes`) and may borrow others' textures by name.
+pub const BUILTIN: [&str; 19] = [
+    "kokiri",
+    "lost_woods",
+    "sacred_meadow",
+    "hyrule_field",
+    "lon_lon",
+    "hyrule_castle",
+    "kakariko",
+    "graveyard",
+    "dm_trail",
+    "dm_crater",
+    "goron_city",
+    "zora_river",
+    "zora_domain",
+    "zora_fountain",
+    "lake_hylia",
+    "gerudo_valley",
+    "gerudo_fortress",
+    "wasteland",
+    "colossus",
+];
+
+const BUILTIN_JSON: [(&str, &str); 19] = [
+    ("kokiri", include_str!("../themes/kokiri.json")),
+    ("lost_woods", include_str!("../themes/lost_woods.json")),
+    ("sacred_meadow", include_str!("../themes/sacred_meadow.json")),
+    ("hyrule_field", include_str!("../themes/hyrule_field.json")),
+    ("lon_lon", include_str!("../themes/lon_lon.json")),
+    ("hyrule_castle", include_str!("../themes/hyrule_castle.json")),
+    ("kakariko", include_str!("../themes/kakariko.json")),
+    ("graveyard", include_str!("../themes/graveyard.json")),
+    ("dm_trail", include_str!("../themes/dm_trail.json")),
+    ("dm_crater", include_str!("../themes/dm_crater.json")),
+    ("goron_city", include_str!("../themes/goron_city.json")),
+    ("zora_river", include_str!("../themes/zora_river.json")),
+    ("zora_domain", include_str!("../themes/zora_domain.json")),
+    ("zora_fountain", include_str!("../themes/zora_fountain.json")),
+    ("lake_hylia", include_str!("../themes/lake_hylia.json")),
+    ("gerudo_valley", include_str!("../themes/gerudo_valley.json")),
+    ("gerudo_fortress", include_str!("../themes/gerudo_fortress.json")),
+    ("wasteland", include_str!("../themes/wasteland.json")),
+    ("colossus", include_str!("../themes/colossus.json")),
+];
+
+/// Every built-in theme, parsed once.
+fn builtins() -> &'static [Theme] {
+    static THEMES: std::sync::OnceLock<Vec<Theme>> = std::sync::OnceLock::new();
+    THEMES.get_or_init(|| BUILTIN_JSON.iter().map(|(n, j)| serde_json::from_str(j).unwrap_or_else(|e| panic!("built-in {n} theme: {e}"))).collect())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Theme {
@@ -422,20 +471,16 @@ impl Theme {
     }
 
     pub fn kokiri() -> Theme {
-        serde_json::from_str(include_str!("../themes/kokiri.json")).expect("built-in kokiri theme")
+        Theme::builtin("kokiri").expect("built-in kokiri theme")
     }
 
     pub fn kakariko() -> Theme {
-        serde_json::from_str(include_str!("../themes/kakariko.json")).expect("built-in kakariko theme")
+        Theme::builtin("kakariko").expect("built-in kakariko theme")
     }
 
     /// A built-in theme by name (`BUILTIN`).
     pub fn builtin(name: &str) -> Option<Theme> {
-        match name {
-            "kokiri" => Some(Theme::kokiri()),
-            "kakariko" => Some(Theme::kakariko()),
-            _ => None,
-        }
+        BUILTIN.iter().position(|n| *n == name).map(|i| builtins()[i].clone())
     }
 
     /// The theme a document builds with: its `settings.theme` (or `main`, a theme file's, if
@@ -446,8 +491,7 @@ impl Theme {
             None => Theme::builtin(&doc.settings.theme)
                 .ok_or_else(|| format!("no theme {:?} (themes: {})", doc.settings.theme, BUILTIN.join(", ")))?,
         };
-        let others: Vec<Theme> = BUILTIN.iter().filter_map(|n| Theme::builtin(n)).collect();
-        Ok(main.with_others(&others))
+        Ok(main.with_others(builtins()))
     }
 
     /// This theme, plus every theme's wall styles under `<theme>:<style>` (its own too, so a style
@@ -466,9 +510,11 @@ impl Theme {
                 self.wall_styles.insert(q(k), ws);
             }
         }
-        // stairs: a theme without its own borrows the first other theme's
+        // stairs: a theme without its own borrows Kakariko's (else the first other theme's)
         if self.steps.is_none() {
-            if let Some((o, st)) = others.iter().find_map(|o| Some((o, o.steps.as_ref()?))) {
+            let with_steps = |o: &'_ Theme| o.steps.is_some();
+            let from = others.iter().find(|o| o.name == "kakariko" && with_steps(o)).or_else(|| others.iter().find(|o| with_steps(o)));
+            if let Some((o, st)) = from.and_then(|o| Some((o, o.steps.as_ref()?))) {
                 let tread = format!("{}:{}", o.name, st.tread);
                 self.textures.insert(tread.clone(), o.texture_name(&st.tread));
                 let q = |t: &String| format!("{}:{t}", o.name);

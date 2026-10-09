@@ -27,6 +27,10 @@ pub struct Object {
     /// multiplied into each vertex's shade. Empty for everything else.
     pub normals: Vec<P3>,
     pub tints: Vec<[f64; 3]>,
+    /// Kit pieces' vertex colours (0-1) where their scene shades them so instead of lighting
+    /// them: the shade is the colour (times the tint), whatever the lights. Empty, or one per
+    /// vertex (None: lit).
+    pub fixed: Vec<Option<[f64; 3]>>,
     /// Collision only, never drawn (kit pieces' collision meshes): `mat` is unused.
     pub collision_only: bool,
     /// Per vertex, how much of a blend material's second texture shows (0-1): the dirt under a
@@ -112,20 +116,35 @@ impl Mesh {
     /// collision. Corners weld only where position, normal and tint all agree, so a piece's
     /// sharp edges stay sharp. Use it only for objects made this way.
     pub fn tri_lit(&mut self, obj: &str, p: [P3; 3], n: [P3; 3], uv: [UV; 3], mat: &str, tint: [f64; 3]) {
+        self.tri_shaded(obj, p, n, None, uv, mat, tint);
+    }
+
+    /// `tri_lit`, or with `colors` the corners' fixed shades instead of their lighting (a kit
+    /// piece's vertex colours).
+    #[allow(clippy::too_many_arguments)]
+    pub fn tri_shaded(&mut self, obj: &str, p: [P3; 3], n: [P3; 3], colors: Option<[[f64; 3]; 3]>, uv: [UV; 3], mat: &str, tint: [f64; 3]) {
         let m = id(&mut self.materials, mat);
         let oi = self.object(obj, false);
         let o = &mut self.objects[oi];
         let mut ids = [0; 3];
         for k in 0..3 {
             let (q, nk) = (p[k], n[k]);
+            let ck = colors.map(|c| c[k]);
             let key = ((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64, (q[2] * 1000.0).round() as i64);
             let nkey = (nk[0] * 1000.0).round() as i64 * 1_000_003 + (nk[1] * 1000.0).round() as i64 * 1009 + (nk[2] * 1000.0).round() as i64;
             let tkey = (tint[0] * 255.0).round() as i64 * 65536 + (tint[1] * 255.0).round() as i64 * 256 + (tint[2] * 255.0).round() as i64;
-            let full = (key.0, key.1, key.2 ^ nkey.wrapping_mul(31) ^ tkey.wrapping_mul(7919));
+            let ckey = ck.map_or(-1, |c| (c[0] * 255.0).round() as i64 * 65536 + (c[1] * 255.0).round() as i64 * 256 + (c[2] * 255.0).round() as i64);
+            let full = (key.0, key.1, key.2 ^ nkey.wrapping_mul(31) ^ tkey.wrapping_mul(7919) ^ ckey.wrapping_mul(104_729));
             ids[k] = *o.index.entry(full).or_insert_with(|| {
                 o.verts.push(q);
                 o.normals.push(nk);
                 o.tints.push(tint);
+                if ck.is_some() && o.fixed.len() < o.verts.len() - 1 {
+                    o.fixed.resize(o.verts.len() - 1, None);
+                }
+                if ck.is_some() || !o.fixed.is_empty() {
+                    o.fixed.push(ck);
+                }
                 o.verts.len() - 1
             });
         }
@@ -216,11 +235,15 @@ impl Mesh {
                     }
                 }
             }
-            let verts = &o.verts;
+            let (verts, fixed) = (&o.verts, &o.fixed);
             o.colors = nrm
                 .iter()
                 .enumerate()
                 .map(|(vi, n)| {
+                    if let Some(Some(c)) = fixed.get(vi) {
+                        let t = o.tints.get(vi).copied().unwrap_or([1.0; 3]);
+                        return [0, 1, 2].map(|i| (c[i] * t[i] * 255.0).round().clamp(0.0, 255.0) as u8);
+                    }
                     let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-9);
                     let mut c = light.ambient;
                     for (d, col) in &dirs {

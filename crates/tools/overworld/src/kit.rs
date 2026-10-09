@@ -1,115 +1,200 @@
-//! The texture libraries, one per theme, made from the clone's extracted scenes
+//! The texture libraries, one per region, made from the clone's extracted scenes
 //! (`extracted/scenes/overworld/<scene>/<scene>.glb`, written by `oot_extract`): each render
 //! material's image as `<prefix><role>.png`, and `textures.json` with its wrap per axis (the glb's
 //! samplers), alpha (`n64_blend`), translucent opacity (`baseColorFactor[3]`) and culling
-//! (`n64_cull`). The decomp's scene XMLs name no textures, so the glb is the only source. Kokiri
-//! Forest (spot04) is `kf_`, Kakariko Village (spot01) `kak_`, so the libraries never clash and a
-//! level can draw from several.
+//! (`n64_cull`). The decomp's scene XMLs name no textures, so the glb is the only source. Each
+//! region has its own prefix (Kokiri Forest `kf_`, Kakariko `kak_`...), so the libraries never
+//! clash and a level can draw from several.
 //!
-//! Materials are named `room_<r>_<opa|xlu>_mat<N>`; N picks the role from the scene's `roles`, which
-//! were read off the textures and where the scene uses them. N follows the extractor's order, so
-//! the roles a theme uses are checked against their known size and wrap: if a new extraction
-//! reorders them, the export fails instead of mixing textures up.
+//! The regions (`REGIONS`) are the overworld scenes, each described by its kit manifest
+//! (`kit/<region>.json`): its label, its source, its pieces (`pieces.rs`) and its `textures`:
+//! materials are named `room_<r>_<opa|xlu>_mat<N>`; N picks the role from `roles`, which were read
+//! off the textures and where the scene uses them (a material without one is `mat<N>`). N follows
+//! the extractor's order, so the roles a theme uses are `checked` against their known size and
+//! wrap: if a new extraction reorders them, the export fails instead of mixing textures up.
+//! The Market Entrance (`entra`) has no region: it's drawn from prerendered backgrounds.
 
 use crate::textures::TexInfo;
+use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-/// spot04's material N -> what its texture is. The dirt path is decals (45 to 47, and 51 in the
-/// training area): white blotches with soft alpha, tinted yellow-brown by the combiner's prim.
-pub const KOKIRI_ROLES: [&str; 52] = [
-    "house_bark", "house_door_dark", "stump_top", "door_curtain", "porch_floor", "porch_trim", "porch_under",
-    "hanging_vines", "porch_rail", "ladder", "ladder_back", "mushroom", "door_frame", "mido_bark", "log_bark",
-    "tunnel_mouth", "ground", "forest_trunks", "forest_foliage", "cliff", "cliff_strip", "cliff_strip_dark",
-    "grass_skirt", "hedge_top", "fence", "fence_post", "log_end", "log_side", "roof_leaf", "hanging_roots",
-    "tunnel_ring", "stone_top", "stone_side", "post_bark", "saria_bark", "shop_bark", "shop_sign", "deku_bark",
-    "deku_leaves", "shadow", "shadow_link", "graffiti_a", "graffiti_b", "graffiti_c", "water", "dirt_end",
-    "dirt_strip", "dirt_junction", "vines", "deku_face", "shadow_deku", "dirt_patch",
+/// The overworld regions, in the order the editor lists them: each a kit manifest
+/// `kit/<region>.json` (its scene is the manifest's source).
+pub const REGIONS: [&str; 20] = [
+    "kokiri",
+    "lost_woods",
+    "sacred_meadow",
+    "hyrule_field",
+    "lon_lon",
+    "lon_lon_buildings",
+    "hyrule_castle",
+    "kakariko",
+    "graveyard",
+    "dm_trail",
+    "dm_crater",
+    "goron_city",
+    "zora_river",
+    "zora_domain",
+    "zora_fountain",
+    "lake_hylia",
+    "gerudo_valley",
+    "gerudo_fortress",
+    "wasteland",
+    "colossus",
 ];
 
-/// spot01's material N -> what its texture is (2026-10-08, from the textures and where Kakariko
-/// draws them). `ground` is most of the village and its slopes, `ground_light` the lower west (the
-/// entrance road): each the camo mixed half and half with a finer detail texture, as Kokiri's
-/// ground. `cliff` is the rock and dirt with a grass lip under the west wing's slopes, `brick` and
-/// `brick_b` the retaining walls, `rock` the striated rock under Death Mountain Trail, `mountain`
-/// the mossy wall along the south edge (cut out at the top: the skyline), `stone` and `stone_dark`
-/// the big blocks in the east. `backdrop_a` and `_b` are the far Death Mountain cards; the well's
-/// shaft (`well_shaft`) is mixed with moss by vertex alpha, which the library doesn't bake.
-pub const KAKARIKO_ROLES: [&str; 46] = [
-    "post_wood", "sign", "ground_light", "ground", "house_plaster", "house_tin", "house_stone", "house_plaster_b",
-    "house_shade_a", "house_stone_b", "roof_red", "roof_blue", "house_shade_b", "house_shade_c", "house_shade_d",
-    "house_shade_e", "house_shade_f", "scaffold", "cliff", "steps", "steps_side", "brick", "brick_b", "trim",
-    "backdrop_a", "backdrop_b", "fence", "ladder", "ladder_b", "mountain", "dirt", "rock", "gate", "shutter",
-    "forest_trunks", "forest_foliage", "steps_b", "stone", "stone_dark", "stone_c", "trim_b", "well_rim",
-    "well_shaft", "well_rail", "tower_post", "pebbles",
-];
-
-/// A scene's texture library: where it comes from, its prefix, its material roles, the roles its
-/// theme draws with (role, width, height, wrap u, wrap v), checked on every export, and the roles
-/// drawn as the camo mixed with a finer detail texture (baked into one, `ground_with_detail`).
-pub struct SceneTextures {
-    pub theme: &'static str,
-    pub label: &'static str,
-    pub glb: &'static str,
-    pub prefix: &'static str,
-    pub roles: &'static [&'static str],
-    pub checked: &'static [(&'static str, u32, u32, &'static str, &'static str)],
-    pub detailed: &'static [&'static str],
+/// Where the kit manifests are.
+pub fn manifest_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("kit")
 }
 
-pub const KOKIRI: SceneTextures = SceneTextures {
-    theme: "kokiri",
-    label: "Kokiri Forest",
-    glb: "extracted/scenes/overworld/spot04/spot04.glb",
-    prefix: "kf_",
-    roles: &KOKIRI_ROLES,
-    checked: &[
-        ("ground", 32, 32, "repeat", "repeat"),
-        ("forest_trunks", 64, 64, "repeat", "clamp"),
-        ("forest_foliage", 32, 32, "repeat", "clamp"),
-        ("cliff", 32, 32, "repeat", "repeat"),
-        ("cliff_strip", 32, 16, "repeat", "repeat"),
-        ("cliff_strip_dark", 32, 16, "repeat", "repeat"),
-        ("grass_skirt", 64, 16, "repeat", "clamp"),
-        ("hanging_roots", 64, 32, "repeat", "clamp"),
-        ("water", 32, 32, "repeat", "repeat"),
-        ("dirt_strip", 64, 64, "clamp", "repeat"),
-    ],
-    detailed: &["ground"],
-};
+/// A region's kit manifest.
+pub fn manifest_path(region: &str) -> PathBuf {
+    manifest_dir().join(format!("{region}.json"))
+}
 
-pub const KAKARIKO: SceneTextures = SceneTextures {
-    theme: "kakariko",
-    label: "Kakariko Village",
-    glb: "extracted/scenes/overworld/spot01/spot01.glb",
-    prefix: "kak_",
-    roles: &KAKARIKO_ROLES,
-    checked: &[
-        ("ground", 32, 32, "repeat", "repeat"),
-        ("ground_light", 32, 32, "repeat", "repeat"),
-        ("cliff", 32, 32, "repeat", "clamp"),
-        ("steps", 64, 16, "mirror", "repeat"),
-        ("brick", 32, 32, "repeat", "clamp"),
-        ("brick_b", 32, 32, "repeat", "clamp"),
-        ("fence", 64, 64, "repeat", "clamp"),
-        ("mountain", 64, 64, "repeat", "clamp"),
-        ("dirt", 64, 64, "repeat", "repeat"),
-        ("rock", 64, 64, "repeat", "repeat"),
-        ("forest_trunks", 64, 64, "repeat", "clamp"),
-        ("forest_foliage", 32, 32, "repeat", "clamp"),
-        ("stone", 64, 64, "repeat", "repeat"),
-        ("stone_dark", 64, 64, "repeat", "repeat"),
-    ],
-    detailed: &["ground", "ground_light"],
-};
+/// A region's texture library: where it comes from, its prefix, its material roles, the roles its
+/// theme draws with (role, width, height, wrap u, wrap v), checked on every export, and the roles
+/// drawn as the camo mixed with a finer detail texture (baked into one, `ground_with_detail`).
+#[derive(Debug, Clone)]
+pub struct SceneTextures {
+    /// The region (and its theme's name).
+    pub theme: String,
+    pub label: String,
+    pub glb: String,
+    pub prefix: String,
+    pub roles: Vec<String>,
+    pub checked: Vec<(String, u32, u32, String, String)>,
+    pub detailed: Vec<String>,
+    /// Roles drawn opaque whatever the scene's blend says: intensity-alpha textures whose alpha
+    /// is their brightness, which the extract marks cut-out (Hyrule Castle's bricks).
+    pub opaque: Vec<String>,
+}
 
-/// Every scene with a texture library, in the order the editor lists their themes.
-pub const SCENES: [&SceneTextures; 2] = [&KOKIRI, &KAKARIKO];
+#[derive(Deserialize)]
+struct ManifestHead {
+    name: String,
+    label: String,
+    source: crate::pieces::Source,
+    textures: TexturesDef,
+}
 
-/// The scene whose library a theme draws from.
+/// A manifest's `textures`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TexturesDef {
+    pub prefix: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub checked: Vec<(String, u32, u32, String, String)>,
+    #[serde(default)]
+    pub detailed: Vec<String>,
+    #[serde(default)]
+    pub opaque: Vec<String>,
+}
+
+impl SceneTextures {
+    /// Material N's role: its name in `roles`, or `mat<N>`.
+    pub fn role(&self, n: usize) -> String {
+        match self.roles.get(n).filter(|r| !r.is_empty()) {
+            Some(r) => r.clone(),
+            None => format!("mat{n}"),
+        }
+    }
+
+    /// The library's name for a role.
+    pub fn texture(&self, role: &str) -> String {
+        format!("{}{role}", self.prefix)
+    }
+}
+
+/// A region's texture library, read from its manifest now (`scenes` reads them once).
+pub fn load_scene(region: &str) -> Result<SceneTextures, String> {
+    let p = manifest_path(region);
+    let s = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    let m: ManifestHead = serde_json::from_str(&s).map_err(|e| format!("{}: {e}", p.display()))?;
+    if m.name != region {
+        return Err(format!("{}: its name is {:?}", p.display(), m.name));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for r in m.textures.roles.iter().filter(|r| !r.is_empty()) {
+        if !seen.insert(r) {
+            return Err(format!("{}: role {r:?} is given to two materials", p.display()));
+        }
+    }
+    Ok(SceneTextures {
+        theme: m.name,
+        label: m.label,
+        glb: m.source.glb,
+        prefix: m.textures.prefix,
+        roles: m.textures.roles,
+        checked: m.textures.checked,
+        detailed: m.textures.detailed,
+        opaque: m.textures.opaque,
+    })
+}
+
+/// Every region whose manifest reads, in `REGIONS` order (read once; one that doesn't read is
+/// left out, with a message on stderr).
+pub fn scenes() -> &'static [SceneTextures] {
+    static SCENES: OnceLock<Vec<SceneTextures>> = OnceLock::new();
+    SCENES.get_or_init(|| {
+        REGIONS
+            .iter()
+            .filter_map(|r| match load_scene(r) {
+                Ok(sc) => Some(sc),
+                Err(e) => {
+                    eprintln!("warning: region {r}: {e}");
+                    None
+                }
+            })
+            .collect()
+    })
+}
+
+/// The region whose library a theme draws from.
 pub fn scene(theme: &str) -> Option<&'static SceneTextures> {
-    SCENES.into_iter().find(|s| s.theme == theme)
+    scenes().iter().find(|s| s.theme == theme)
+}
+
+/// A region's label ("Kakariko Village"), or the region's own name if its manifest doesn't read.
+pub fn label(region: &str) -> String {
+    scene(region).map_or(region.to_string(), |s| s.label.clone())
+}
+
+/// The collision role a scene's surface type has unless its manifest says otherwise: an exit
+/// (doorways too: a manifest calls a house's `door`), a wall type's (ladders, vines, crawlspaces,
+/// ledges Link may not grab), a pit (FLOOR_PROPERTY_12), else its footstep sound's.
+pub fn default_role(st: &Value) -> &'static str {
+    let n = |k: &str| st[k].as_u64().unwrap_or(0);
+    if n("exit_index") > 0 {
+        return "exit";
+    }
+    match n("wall_type") {
+        1 => return "wall_nograb",
+        2 => return "ladder",
+        3 => return "ladder_top",
+        4 => return "vines",
+        5 => return "crawl",
+        _ => {}
+    }
+    if n("floor_property") == 12 {
+        return "void";
+    }
+    // SURFACE_SFX_OFFSET_*: dirt, sand, stone, jabu, shallow water, deep water, tall grass, lava,
+    // grass, bridge, wood, soft dirt, ice, carpet
+    match n("sfx_type") {
+        0 | 7 | 11 => "dirt",
+        1 => "sand",
+        2 | 3 | 12 => "stone",
+        6 => "tall_grass",
+        9 => "planks",
+        10 | 13 => "wood",
+        _ => "ground",
+    }
 }
 
 /// A glb's JSON and binary chunk.
@@ -141,11 +226,6 @@ fn wrap(code: Option<u64>) -> &'static str {
     }
 }
 
-/// Writes the Kokiri library into `out` from spot04's glb. Returns the number of textures.
-pub fn export_kokiri(glb: &Path, out: &Path) -> Result<usize, String> {
-    export(&KOKIRI, glb, out)
-}
-
 /// Writes a scene's library into `out` from its glb. Returns the number of textures.
 pub fn export(sc: &SceneTextures, glb: &Path, out: &Path) -> Result<usize, String> {
     let bytes = std::fs::read(glb).map_err(|e| format!("{}: {e}", glb.display()))?;
@@ -159,7 +239,7 @@ pub fn export(sc: &SceneTextures, glb: &Path, out: &Path) -> Result<usize, Strin
         let Some(blend) = ex["n64_blend"].as_str() else { continue }; // collision materials have none
         let name = m["name"].as_str().unwrap_or("");
         let Some(n) = name.rsplit("mat").next().and_then(|s| s.parse::<usize>().ok()) else { continue };
-        let Some(role) = sc.roles.get(n) else { continue };
+        let role = sc.role(n);
         let pbr = &m["pbrMetallicRoughness"];
         let Some(ti) = pbr["baseColorTexture"]["index"].as_u64() else { continue };
         let t = &texs[ti as usize];
@@ -172,7 +252,10 @@ pub fn export(sc: &SceneTextures, glb: &Path, out: &Path) -> Result<usize, Strin
             return Err(format!("{name}: image isn't a PNG"));
         }
         let (w, h) = (u32::from_be_bytes([png[16], png[17], png[18], png[19]]), u32::from_be_bytes([png[20], png[21], png[22], png[23]]));
-        let alpha = if blend.starts_with("Cutout") {
+        let forced = sc.opaque.contains(&role);
+        let alpha = if forced {
+            "opaque"
+        } else if blend.starts_with("Cutout") {
             "cutout"
         } else if blend == "Translucent" {
             "blend"
@@ -190,24 +273,41 @@ pub fn export(sc: &SceneTextures, glb: &Path, out: &Path) -> Result<usize, Strin
             cull: if ex["n64_cull"].as_str() == Some("None") { "none".into() } else { "back".into() },
             decal: ex["n64_decal"].as_bool() == Some(true),
         };
-        std::fs::write(out.join(&info.file), png).map_err(|e| format!("{}: {e}", out.display()))?;
+        // forced opaque: the alpha goes too, so nothing that reads the PNG cuts it out
+        let bytes = match forced.then(|| crate::textures::decode_png(png)).flatten() {
+            Some((w, h, mut px)) => {
+                px.chunks_mut(4).for_each(|c| c[3] = 255);
+                crate::textures::encode_png(w, h, &px)
+            }
+            None => png.to_vec(),
+        };
+        std::fs::write(out.join(&info.file), bytes).map_err(|e| format!("{}: {e}", out.display()))?;
         lib.insert(format!("{}{role}", sc.prefix), info);
     }
-    for &(role, w, h, wu, wv) in sc.checked {
-        let p = sc.prefix;
+    for (role, w, h, wu, wv) in &sc.checked {
+        let (role, w, h) = (role.as_str(), *w, *h);
+        let p = &sc.prefix;
         let t = lib.get(&format!("{p}{role}")).ok_or(format!("{} has no material for {role}: has the extraction changed?", sc.glb))?;
-        if t.size != [w, h] || t.wrap_u != wu || t.wrap_v != wv {
+        if t.size != [w, h] || &t.wrap_u != wu || &t.wrap_v != wv {
             return Err(format!(
                 "{p}{role} is {:?} {}/{}, expected [{w}, {h}] {wu}/{wv}: the extraction's material order changed, so the {} roles need updating",
                 t.size, t.wrap_u, t.wrap_v, sc.theme
             ));
         }
     }
-    for role in sc.detailed {
+    for role in &sc.detailed {
         ground_with_detail(sc, role, &j, bin, &mats, &texs, &images, &views, out, &mut lib)?;
     }
     let json = serde_json::to_string_pretty(&lib).map_err(|e| e.to_string())?;
     std::fs::write(out.join("textures.json"), json).map_err(|e| format!("{}: {e}", out.display()))?;
+    // textures of roles since renamed
+    let files: std::collections::BTreeSet<&str> = lib.values().map(|t| t.file.as_str()).collect();
+    for e in std::fs::read_dir(out).map_err(|e| format!("{}: {e}", out.display()))?.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with(sc.prefix.as_str()) && name.ends_with(".png") && !files.contains(name.as_str()) {
+            let _ = std::fs::remove_file(e.path());
+        }
+    }
     Ok(lib.len())
 }
 
@@ -231,7 +331,7 @@ fn ground_with_detail(
     lib: &mut BTreeMap<String, TexInfo>,
 ) -> Result<(), String> {
     let Some((mi, m)) = mats.iter().enumerate().find(|(_, m)| {
-        m["name"].as_str().and_then(|n| n.rsplit("mat").next()).and_then(|s| s.parse::<usize>().ok()).and_then(|n| sc.roles.get(n)) == Some(&role)
+        m["name"].as_str().and_then(|n| n.rsplit("mat").next()).and_then(|s| s.parse::<usize>().ok()).map(|n| sc.role(n)).as_deref() == Some(role)
     }) else {
         return Err(format!("{} has no {role} material", sc.glb));
     };
@@ -311,6 +411,16 @@ mod tests {
 
     /// Needs the clone's extract (git-ignored ROM data): skipped without it.
     #[test]
+    fn every_region_manifest_reads() {
+        for r in REGIONS {
+            let sc = load_scene(r).unwrap_or_else(|e| panic!("{e}"));
+            assert!(sc.prefix.ends_with('_') && !sc.label.is_empty(), "{r}");
+        }
+        let prefixes: std::collections::BTreeSet<&str> = scenes().iter().map(|s| s.prefix.as_str()).collect();
+        assert_eq!(prefixes.len(), REGIONS.len(), "two regions share a prefix");
+    }
+
+    #[test]
     fn the_kokiri_library_comes_out_of_the_extracted_scene() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let glb = root.join("extracted/scenes/overworld/spot04/spot04.glb");
@@ -319,8 +429,9 @@ mod tests {
             return;
         }
         let out = std::env::temp_dir().join(format!("ow_kit_test_{}", std::process::id()));
-        let n = export_kokiri(&glb, &out).unwrap();
-        assert_eq!(n, KOKIRI_ROLES.len());
+        let sc = load_scene("kokiri").unwrap();
+        let n = export(&sc, &glb, &out).unwrap();
+        assert_eq!(n, sc.roles.len());
         let lib = crate::textures::Library::load(&out).unwrap();
         assert_eq!(lib.get("kf_water").alpha, "blend");
         assert!((lib.get("kf_water").opacity - 0.3882).abs() < 1e-3);
@@ -339,14 +450,15 @@ mod tests {
     #[test]
     fn the_kakariko_library_comes_out_of_the_extracted_scene() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        let glb = root.join(KAKARIKO.glb);
+        let sc = load_scene("kakariko").unwrap();
+        let glb = root.join(&sc.glb);
         if !glb.exists() {
             eprintln!("skipping: no {}", glb.display());
             return;
         }
         let out = std::env::temp_dir().join(format!("ow_kit_kak_test_{}", std::process::id()));
-        let n = export(&KAKARIKO, &glb, &out).unwrap();
-        assert_eq!(n, KAKARIKO_ROLES.len());
+        let n = export(&sc, &glb, &out).unwrap();
+        assert_eq!(n, sc.roles.len());
         let lib = crate::textures::Library::load(&out).unwrap();
         // the mountain wall's grassy top is cut out: the skyline
         assert_eq!(lib.get("kak_mountain").alpha, "cutout");

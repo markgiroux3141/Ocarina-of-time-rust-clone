@@ -1,0 +1,115 @@
+{
+  "name": "hyrule_castle",
+  "label": "Hyrule Castle",
+  "about": "Pieces and textures cut from Hyrule Castle (spot15). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot15/spot15.glb",
+    "collision": "extracted/scenes/overworld/spot15/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09). `ground` is the hill's grass (a plain camo stretched huge, about 3400 a repeat), `path` the pale road up the hill (grass at its edges), `cliff` and `cliff_b` the rock walls of the road's cutting (grass lips top and bottom), `brick` the white castle walls and towers (cut out at the battlements), `battlement` and `battlement_b` their tops, `roof_green` the slate spires, `paving` and `paving_b` the bridge and ledges, `stone_*` the moat's stonework, `railing` the green iron railings along the moat. `gate_door`, `dark` and `window_grate` dress the closed castle gate; `statue_*` is the stone bird on the bridge over the road; `backdrop_*` are the far cards; `plain`, `plain_b` and `underside` have no texture.",
+    "prefix": "hc_",
+    "roles": [
+      "plain", "path", "paving", "stone_dark", "statue_wing", "statue_wing_b", "statue_head", "statue_wing_c",
+      "statue_wing_d", "ground", "backdrop_hills", "backdrop_town", "backdrop_wall", "backdrop_tower", "ladder_back", "ladder",
+      "brick", "stone_light", "stair_side", "stair_riser", "chain_hook", "stone_rough", "stone_rough_b", "stone_block",
+      "stair_tread", "grass_tuft", "flowers", "flowers_b", "window_grate", "gate_door", "dark", "brick_shaded",
+      "paving_shaded", "underside", "paving_b", "cliff", "dirt", "cliff_b", "railing", "railing_b",
+      "railing_c", "stone_rough_c", "gate_door_dark", "stone_slab", "stone_slab_b", "rock_brown", "roof_green", "crest",
+      "gate_door_green", "plain_b", "vines_dark", "vines", "battlement", "battlement_b", "wall_crack", "light_bar",
+      "fade", "backdrop_mountain", "grate", "grate_b", "grate_c", "dirt_path", "dirt_patch", "water",
+      "water_b", "grate_d"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["path", 32, 64, "repeat", "repeat"],
+      ["brick", 64, 64, "repeat", "repeat"],
+      ["cliff", 32, 64, "repeat", "repeat"],
+      ["paving", 32, 32, "repeat", "repeat"],
+      ["stone_block", 32, 32, "repeat", "repeat"],
+      ["stone_light", 32, 32, "mirror", "repeat"],
+      ["stone_dark", 32, 32, "repeat", "repeat"],
+      ["paving_b", 32, 32, "repeat", "repeat"],
+      ["dirt", 32, 32, "mirror", "mirror"],
+      ["railing", 32, 64, "repeat", "clamp"],
+      ["railing_b", 32, 64, "repeat", "clamp"],
+      ["water", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": [],
+    "opaque": ["brick", "brick_shaded"]
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "hc_moat_bridge", "label": "Castle moat bridge", "kind": "bridge",
+      "take": { "box": [[-405, -1190, 1455], [-165, -665, 1690]], "materials": ["path", "stair_side", "stair_riser", "stone_rough", "stone_rough_b", "stair_tread", "brick", "chain_hook", "stone_block", "paving_b", "roof_green"] },
+      "collision": { "box": [[-405, -1190, 1455], [-165, -665, 1690]] },
+      "origin": "base", "facing": [0, 1],
+      "about": "The stone bridge over the castle moat: steps up 110 from the road, then a deck 190 wide and 300 long to the wall, two posts with green finials at its head. Locked: sized for Link."
+    },
+    {
+      "name": "hc_castle_gate", "label": "Castle gate (closed)", "kind": "wall",
+      "take": { "box": [[-600, -470, 1600], [30, -300, 2160]] },
+      "collision": { "box": [[-600, -470, 1600], [30, -300, 2160]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "The castle's front gate: barred doors in a dark recess between two buttresses, a pediment over them and a green lantern on each buttress. It never opens: set it on a wall's face. Locked."
+    },
+    {
+      "name": "hc_drain", "label": "Moat drain (crawlspace exit)", "kind": "opening",
+      "take": { "box": [[470, 260, 1440], [680, 360, 1700]], "materials": ["stone_block", "gate_door", "stone_rough_c", "gate_door_dark", "stone_slab", "stone_slab_b", "plain_b", "water", "water_b"] },
+      "collision": { "box": [[470, 260, 1600], [680, 360, 1700]] },
+      "origin": [620, 309, 1617], "facing": [1, 0],
+      "opening": { "exit": 2, "min_depth": 144 },
+      "about": "The drain in the castle's moat wall that Link crawls through into the courtyard (exit 2, ENTR_HAIRAL_NIWA_0): a hole 32 wide and 24 high (wall type crawl) with water spilling from it down the wall. The origin is the hole's foot on the wall's face. Locked: sized for Link."
+    },
+    {
+      "name": "hc_stone_steps", "label": "Stone steps", "kind": "platform",
+      "take": { "box": [[715, 245, 1445], [805, 515, 1545]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "Three stone blocks stepping up 90 out of the moat below the drain. Locked: sized for Link."
+    },
+    {
+      "name": "hc_tower", "label": "Wall tower", "kind": "tower",
+      "take": { "box": [[400, -510, 1430], [728, -155, 2220]] },
+      "origin": "base", "facing": [-1, -1],
+      "scale": { "min": [1, 1, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A round white tower 740 tall with battlements, standing at a corner of the castle's outer wall (its back, inside the wall, is open)."
+    },
+    {
+      "name": "hc_vines", "label": "Climbing vines", "kind": "wall",
+      "take": { "box": [[70, -3475, 975], [95, -3340, 1370]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [2, 1, 2] },
+      "about": "Vines 360 tall up the side of the road's cutting; Link can climb the middle strand (wall type vines)."
+    },
+    {
+      "name": "hc_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[1220, -3240, 1120], [1265, -3230, 1465]] },
+      "origin": "base", "facing": "normal",
+      "about": "A wooden ladder 330 tall up the side of the road's cutting (wall types ladder and ladder_top). Locked: sized for Link."
+    },
+    {
+      "name": "hc_bird_statue", "label": "Stone bird", "kind": "decor",
+      "take": { "box": [[1005, -2985, 1350], [1075, -2855, 1455]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [3, 3, 3], "uniform": true },
+      "about": "A small stone bird with spread wings, perched above the road. No collision."
+    },
+    {
+      "name": "hc_flowers", "label": "Yellow flowers", "kind": "plant",
+      "take": { "box": [[-650, -2415, 1415], [-485, -2265, 1490]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] },
+      "about": "A clump of yellow flowers (three cut-out cards) from the hill's grass. No collision."
+    },
+    {
+      "name": "hc_flowers_orange", "label": "Orange flowers", "kind": "plant",
+      "take": { "box": [[1620, -2050, 1355], [1770, -1835, 1430]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] },
+      "about": "A clump of orange flowers (three cut-out cards) from the hill's grass. No collision."
+    }
+  ]
+}

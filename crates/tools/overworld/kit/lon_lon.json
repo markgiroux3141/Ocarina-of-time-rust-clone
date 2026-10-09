@@ -1,0 +1,87 @@
+{
+  "name": "lon_lon",
+  "label": "Lon Lon Ranch",
+  "about": "Pieces and textures cut from Lon Lon Ranch (spot20). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot20/spot20.glb",
+    "collision": "extracted/scenes/overworld/spot20/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where spot20 draws them). `ground` is the grass camo over the whole ranch, `dirt_track` the translucent track round the pasture (with `dirt_patch` and `dirt_streak` blotches), `fence` the pasture's rope fence, `palisade` the spiked fence along the outer edges, `cliff` the mossy wall round it all. The house is `house_plaster` under `roof_tile` with `gable` ends and `shutter` windows; the stable `stable_wall` under `roof_logs`; the tower `tower_brick`.",
+    "prefix": "llr_",
+    "roles": [
+      "ground", "sign", "post_bark", "sign_post", "shutter", "house_plaster", "gable", "roof_tile",
+      "door_shade", "shop_sign", "barn_door", "stable_wall", "roof_logs", "dark", "tower_brick", "door_shade_b",
+      "door_floor", "cliff", "palisade", "fence", "dirt_patch", "dirt_track", "dirt_streak"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["cliff", 64, 64, "repeat", "clamp"],
+      ["fence", 64, 64, "repeat", "mirror"],
+      ["palisade", 16, 64, "repeat", "clamp"],
+      ["dirt_track", 64, 64, "clamp", "repeat"],
+      ["tower_brick", 64, 64, "repeat", "clamp"],
+      ["house_plaster", 32, 64, "mirror", "clamp"],
+      ["roof_tile", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong. The doorways' floors carry their exits: they collide as doors.",
+    "10": "door", "11": "door", "14": "door"
+  },
+  "pieces": [
+    {
+      "name": "llr_house", "label": "Ranch house", "kind": "house",
+      "take": { "box": [[950, 2385, -2], [1405, 3405, 445]], "materials": ["house_plaster", "gable", "roof_tile", "shutter", "door_shade", "shop_sign"] },
+      "origin": "door", "facing": [-1, 0],
+      "door": { "exit": 5, "entrance": "ENTR_SOUKO_0" },
+      "close_sides": { "material": "house_plaster", "tile": 100, "collide": "wall" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "Talon and Malon's house, 1000 long, with a taller middle under a cross roof; its door is on the west under a hanging sign. In spot20 its back and north end stood against the cliff, so the kit closes them under the eaves (colliding as walls)."
+    },
+    {
+      "name": "llr_stable", "label": "Stable", "kind": "house",
+      "take": { "box": [[-5, 2375, -2], [805, 3365, 245]], "materials": ["stable_wall", "barn_door", "roof_logs", "door_shade"] },
+      "origin": "door", "facing": [0, 1],
+      "door": { "exit": 6, "entrance": "ENTR_MALON_STABLE_0" },
+      "close_sides": { "material": "stable_wall", "tile": 80, "collide": "wall" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "Malon's stable: an L of louvred plank walls round a pen, under a slatted log roof, 800 by 980. Its door is in the north wall of its front block; the closed barn doors on the south are scenery. In spot20 its west and north sides were the cliff, so the kit closes them under the roof's edges (colliding as walls); the dark plane spot20 draws inside under the slats is left out."
+    },
+    {
+      "name": "llr_yard_gate", "label": "Ranch yard gate", "kind": "decor",
+      "take": { "box": [[795, 2395, -2], [1005, 2425, 265]], "materials": ["post_bark", "sign"] },
+      "origin": "base", "facing": [0, -1],
+      "about": "Two bark posts 260 tall with the ranch's name board across their tops, at the way into the yard between the house and the stable. Link walks under it."
+    },
+    {
+      "name": "llr_sign", "label": "Pasture sign", "kind": "decor",
+      "take": { "box": [[-330, 1500, -2], [-115, 1530, 200]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "An arched name board on two carved posts, 192 tall, at the pasture's north gate."
+    },
+    {
+      "name": "llr_shelter", "label": "Shelter", "kind": "building",
+      "take": { "box": [[578, -330, -2], [908, -140, 165]] },
+      "origin": "base", "facing": [0, 1],
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A slatted roof on four posts over a louvred back wall, 320 long and 160 tall, set in the pasture fence's south side."
+    },
+    {
+      "name": "llr_fence", "label": "Pasture fence", "kind": "decor",
+      "take": { "box": [[-990, -320, -5], [590, -308, 105]], "materials": ["fence"] },
+      "collision": { "box": [[-990, -330, -5], [590, -298, 205]] },
+      "origin": "base", "tiles": true,
+      "scale": { "min": [0.05, 1, 1], "max": [1.5, 1, 1] },
+      "about": "A straight run of the pasture's rope fence, 1566 long and 100 tall, colliding 200 tall (horses don't jump it); its posts repeat as it's shortened or lengthened (x scale)."
+    },
+    {
+      "name": "llr_palisade", "label": "Spiked palisade", "kind": "decor",
+      "take": { "box": [[-2410, -5, -5], [-2390, 605, 125]], "materials": ["palisade"] },
+      "origin": "base", "facing": [1, 0], "tiles": true,
+      "scale": { "min": [0.1, 1, 1], "max": [3, 1, 1] },
+      "about": "A plank fence with spiked tops, 600 long and 120 tall, from the ranch's outer edge (one-sided, colliding 72 tall as a wall Link can't climb); its planks repeat with its length (x scale)."
+    }
+  ]
+}

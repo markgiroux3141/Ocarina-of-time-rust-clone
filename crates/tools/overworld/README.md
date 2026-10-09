@@ -48,6 +48,10 @@ Done:
   `src/props.rs`). They stand on the finished ground, with their collision, and are counted against the game's 8192
   collision vertices. Example: `examples/sketch/sketch_village.json`.
 
+- **Every overworld region** (2026-10-09): each overworld scene is a region with its own manifest
+  (`kit/<region>.json`): its textures as a named library, its reusable structures as kit pieces (201 in all), and,
+  for 19 of them, a theme (`themes/<region>.json`). See Regions.
+
 - **Dirt paths** (2026-10-05, `lines` of kind `dirt`, `src/lines.rs`): painted into the floor, not laid on it. The floors
   take points on rings round the path, and the ground blends from grass to dirt by vertex weight, as Kokiri's ground
   combiner blends its two textures.
@@ -87,9 +91,11 @@ From the repo root:
 ```
 cargo run --release -p overworld_editor -- crates/tools/overworld/examples/sketch/sketch_paths.json
 cargo test --release -p overworld -p overworld_editor
-target/release/overworld kit-textures       # the extracted scenes (spot04, spot01) -> out/overworld/textures/<theme>
-target/release/overworld kit-pieces         # kit/kokiri.json + the extract -> out/overworld/kit/kokiri/pieces.json
-target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau [--kit out/overworld/kit/kokiri]
+target/release/overworld kit-textures [region...]   # the extracted scenes -> out/overworld/textures/<region>
+target/release/overworld kit-pieces [region...]     # kit/<region>.json + the extract -> out/overworld/kit/<region>/pieces.json, thumbs/
+target/release/overworld kit-survey <region> [--box x0 y0 x1 y1] [--below z]   # what a scene is made of -> out/overworld/survey/<region>
+target/release/overworld preview <level.json> <out.png> [--theme <theme.json>]  # a level drawn from the south-west and above
+target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau [--kit <dir>]...
 target/release/oot_sandbox --level out/overworld/sketch_plateau --child   # play it (reloads on rebuild; --at x,y,z,yaw places Link)
 python crates/tools/overworld/tools/trace_sketch.py sketch.png level.json --scale 8 --region blue:z=120 --region red:kind=water,z=-100,surface=-20
 python crates/tools/overworld/tools/plan.py <out>/level.json plan.png --doc level.json   # floors by height, bank, walls, tree line
@@ -459,6 +465,78 @@ the log tunnel's opening, the crawlspace; skipped without the extract), `props_s
 Openings and wall pieces (kinds `opening` and `wall`: the log tunnel, the crawlspace, the vine patch, the waterfall) aren't
 stood on the ground but fitted to the nearest wall: see Wall openings.
 
+## Regions (`kit/<region>.json`, `src/kit.rs`, `src/pieces.rs`, `src/survey.rs`)
+
+Every overworld scene is a region (`kit::REGIONS`, the editor's order), each with a manifest giving its label, its
+source (glb and collision.json), its texture library (`textures`), its collision overrides (`surfaces`) and its pieces.
+The manifests are read when the tools run (`kit::scenes`, `kit::load_scene`); the themes are built in.
+
+| Region | Scene | Prefix | Pieces | Theme |
+|---|---|---|---|---|
+| Kokiri Forest | spot04 | `kf_` | 16 | yes |
+| Lost Woods | spot10 | `lw_` | 14 | yes |
+| Sacred Forest Meadow | spot05 | `sfm_` | 7 | yes |
+| Hyrule Field | spot00 | `hf_` | 9 | yes |
+| Lon Lon Ranch | spot20 | `llr_` | 7 | yes |
+| Lon Lon Ranch buildings | souko | `llb_` | 11 | no: interiors (furniture, carts, hay) |
+| Hyrule Castle | spot15 | `hc_` | 10 | yes |
+| Kakariko Village | spot01 | `kak_` | 14 | yes |
+| Kakariko Graveyard | spot02 | `gy_` | 5 | yes |
+| Death Mountain Trail | spot16 | `dmt_` | 9 | yes |
+| Death Mountain Crater | spot17 | `dmc_` | 10 | yes (lava as its water) |
+| Goron City | spot18 | `gc_` | 21 | yes (lava as its water) |
+| Zora's River | spot03 | `zr_` | 18 | yes |
+| Zora's Domain | spot07 | `zd_` | 9 | yes |
+| Zora's Fountain | spot08 | `zf_` | 7 | yes |
+| Lake Hylia | spot06 | `lh_` | 12 | yes |
+| Gerudo Valley | spot09 | `gv_` | 6 | yes |
+| Gerudo's Fortress | spot12 | `gf_` | 9 | yes |
+| Haunted Wasteland | spot13 | `hw_` | 2 | yes |
+| Desert Colossus | spot11 | `dc_` | 5 | yes |
+
+The Market Entrance (`entra`) has no region: it's drawn from prerendered backgrounds, so its extract has no textures.
+Only scene geometry can be cut: actors (the windmill's blades, the drawbridge, most gravestones, the Gerudo gate, the
+lake's water...) aren't in the glbs. Each manifest's pieces' `about`s say where they came from.
+
+**Textures.** `textures.roles[N]` names material N (`room_<r>_<opa|xlu>_mat<N>`); unnamed ones export as `mat<N>`, and
+every texture is `<prefix><role>.png`. `checked` (role, width, height, wraps) guards the roles a theme uses against a
+re-extraction reordering materials; `detailed` grounds bake in their detail texture; `opaque` roles export solid
+(intensity-alpha textures whose alpha is their brightness, which the extract marks cut-out: Hyrule Castle's bricks).
+
+**Pieces.** Names are unique across every region (`Kit::load_all` refuses two alike), each carrying its region's prefix
+(Kokiri's are older). Kinds: `house` (has a door), `building`, `tower`, `bridge`, `platform`, `stone`, `rock`, `plant`,
+`decor`, `opening`, `wall`; houses, buildings and posts level the ground under them. Besides Kokiri's fields:
+- `take.exclude`: boxes of triangles to leave out. A triangle drawn twice (a scene drawing one thing in two rooms,
+  as spot17 and spot18 do) is taken once.
+- `collision`: `box`, `none` (drawn only: waterfalls), `skip` (surface types), `floors_above` (drops the floor at a
+  structure's foot), `exclude` (boxes: the wall a door actor stood in).
+- Surface types a manifest doesn't map get a role from what they say (`kit::default_role`): exits, wall types
+  (ladder, vines, crawl, no grab), voids, else their footstep sound (dirt, sand, stone, planks, wood, tall grass,
+  ground). `oot_import::level::ROLES` gained `sand`.
+- `close_sides` takes `collide` (a role: the bands collide; the hedge's don't), and an edge counts as covered when a
+  face below it reaches under its ends and middle (a wall longer than its eave).
+- `fill_down` (`collide` optional): upright faces' free bottom edges carried down to the base, their texture running
+  on (buildings set into slopes).
+- Materials a scene shades by vertex colour (Zora's Domain, Goron City, the crater, souko) keep their colours
+  (`Piece::colors`, `PieceMaterial::vertex_colors`): the level gives those vertices their colour instead of lighting
+  (`Mesh::tri_shaded`). Link's house's mushrooms are such: full-bright, as in the game.
+
+`kit-pieces` writes each piece's thumbnail (`thumbs/<piece>.png`, `src/thumb.rs`: the editor's thumbnails come from the
+same software rasteriser).
+
+**The survey** (`overworld kit-survey <region>`, written for cutting the regions) puts in `out/overworld/survey/<region>`:
+every texture labelled `N role` (`textures.png`); per material its size, wraps, rooms, how much faces up, sideways and
+down, and the units one repeat covers along u and v (`materials.txt`: a theme's tiles); a plan from above with every
+connected piece of mesh under 3000 across outlined and numbered (`plan.png`; `--box` zooms, `--below` drops ceilings)
+and a list of them with the collision in their bounds (`components.txt`); each material's connected islands
+(`islands.txt`: houses welded into the terrain, as Kakariko's, are cut by `take.materials` in a box); and each
+piece's picture (`comps/<n>.png`).
+
+Tests: `every_region_manifest_reads`, `kits_merge_but_never_share_a_name`, `surface_types_say_their_role`,
+`walls_that_stop_short_are_carried_down_to_the_base`, `sides_are_closed_only_where_nothing_hangs`,
+`vertex_coloured_materials_keep_their_colours_whatever_the_light`, and `tests/themes.rs` (every built-in theme
+builds four examples with no texture missing from the libraries; skipped without them).
+
 ## Dirt paths (`lines` of kind `dirt`, `src/lines.rs`, the theme's `dirt`)
 
 Kokiri Forest's yellow paths are 22 decal quads: strips, junctions and end caps, whose textures are white blotches with
@@ -824,7 +902,8 @@ and is put back after the fade to black.
 
 ## Themes (`themes/*.json`, `settings.theme`)
 
-A level's `settings.theme` is `kokiri` (the default) or `kakariko` (2026-10-08). The document names styles, never
+A level's `settings.theme` is any built-in theme (`theme::BUILTIN`): `kokiri` (the default), `kakariko` (2026-10-08),
+or since 2026-10-09 any region's but Lon Lon's buildings (Regions). The document names styles, never
 textures, so switching the theme reskins the level. `Theme::for_doc` makes the theme a level builds with: the
 level's own, plus every built-in theme's wall styles as `<theme>:<style>` (`Theme::with_others`; their materials
 become `<theme>:<role>`, resolving to that theme's textures). A region's `edge` or a path's `edge` can name either,
@@ -832,9 +911,11 @@ so a level mixes themes: `"edge": "kokiri:cliff"` keeps Kokiri's cliff in a Kaka
 plain style the theme doesn't have falls back to the theme's own walls, reported. Test:
 `themes_switch_and_mix_and_stay_watertight`.
 
-**The libraries** (`kit::SCENES`): each theme's textures come from its scene, `kf_` from Kokiri Forest (spot04), `kak_`
-from Kakariko Village (spot01), each with its material role table and a size and wrap check on the roles its theme
-draws with. Both scenes' grounds mix the camo with a finer detail texture, baked into one (`ground_with_detail`). The
+**The libraries** (`kit::scenes`): each theme's textures come from its region's scene, `kf_` from Kokiri Forest
+(spot04), `kak_` from Kakariko Village (spot01) and so on, each with its material role table and a size and wrap check
+on the roles its theme draws with. A texture name can transform a library texture whole: `<tex>@swap` swaps u and v
+(the desert's sandstone, its strata running along v, laid along a wall), `<tex>@t<nx>x<ny>` repeats it (a 2:1 ground
+made square for a floor's single `tile`). A theme without its own stairs borrows Kakariko's. Both scenes' grounds mix the camo with a finer detail texture, baked into one (`ground_with_detail`). The
 library loads every theme's folder as one (`Library::load_all`), and a theme can borrow another's texture by name:
 Kakariko has no water, hedge or rope textures, so it uses Kokiri's.
 
@@ -855,7 +936,7 @@ Kakariko has no water, hedge or rope textures, so it uses Kokiri's.
 | Stairs (`steps`) | Kakariko's step tread; `steps_side`, the stairs' profile under a stone wall | See Stairs (Paths) |
 
 Water, hedges, lattices, hanging bridges and dirt paths borrow Kokiri's textures; a tunnel's walls are the rock.
-Kakariko's houses aren't in the kit yet.
+Kakariko's houses, windmill tower, watchtower and well are in its kit (Regions).
 
 ## Automatic texturing (`themes/kokiri.json`)
 

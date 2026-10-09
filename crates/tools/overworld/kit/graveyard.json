@@ -1,0 +1,77 @@
+{
+  "name": "graveyard",
+  "label": "Kakariko Graveyard",
+  "about": "Pieces and textures cut from Kakariko Graveyard (spot02). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot02/spot02.glb",
+    "collision": "extracted/scenes/overworld/spot02/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where spot02 draws them). Room 1 is the graveyard: `ground` its grass camo, `cliff` the dirt walls round it (a grass lip at the top), `grass_band` the bushy band above them, `flagstones` the translucent paving of the grave rows, `fence` the rope fences, `palisade` the plank walls by the gate. Room 0 is the cave to the Shadow Temple: `dirt` its floor, `cave_rock` its walls, `cave_ceiling` its roof, `shadow_brick` the temple's blue brick, `steps` the ramp down into it, `emblem` the Sheikah eye on its floor. Dampé's hut is `hut_wall`, `roof_planks`, `stove`, `chimney`.",
+    "prefix": "gy_",
+    "roles": [
+      "shadow_brick", "shadow_fade", "dirt", "cave_ceiling", "cave_rock", "railing", "pedestal_top", "pedestal_side",
+      "steps", "emblem", "windmill_far", "palisade", "hanging_vines", "hanging_vines_b", "sign", "post_bark",
+      "post_wood", "sign_b", "bushes", "planks", "roof_planks", "hut_wall", "door_dark", "hut_wall_b",
+      "door_shade", "stove", "stove_door", "window", "chimney", "chimney_top", "grave_stone", "tablet_crest",
+      "cliff", "grass_band", "railing_top", "fence", "grave_text", "ground", "tablet_crest_b", "door_floor",
+      "hole_floor", "grave_plot", "forest_trunks", "mountain", "backdrop", "dirt_patch", "dirt_patch_b", "flagstones",
+      "porch_dirt", "hole_shade"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["cliff", 32, 64, "repeat", "clamp"],
+      ["grass_band", 32, 16, "repeat", "clamp"],
+      ["flagstones", 64, 64, "repeat", "repeat"],
+      ["dirt", 32, 32, "repeat", "repeat"],
+      ["cave_rock", 64, 64, "repeat", "repeat"],
+      ["shadow_brick", 32, 32, "repeat", "repeat"],
+      ["mountain", 64, 64, "repeat", "clamp"],
+      ["forest_trunks", 64, 64, "repeat", "repeat"],
+      ["bushes", 64, 32, "repeat", "clamp"],
+      ["fence", 64, 64, "repeat", "clamp"],
+      ["palisade", 64, 64, "repeat", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong. Dampé's doorway floor carries its exit: it collides as a door.",
+    "26": "door"
+  },
+  "pieces": [
+    {
+      "name": "gy_dampe_hut", "label": "Dampé's hut", "kind": "house",
+      "take": { "box": [[-910, -805, -2], [-685, -545, 140]] },
+      "origin": "door", "facing": [1, 0],
+      "door": { "exit": 3, "entrance": "ENTR_HUT_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The gravekeeper's plank hut in spot02's south-west corner, with a lean-to porch over a stove and its chimney on the east, by the door."
+    },
+    {
+      "name": "gy_entrance_gate", "label": "Graveyard gate", "kind": "decor",
+      "take": { "box": [[-1030, -460, -2], [-980, -70, 215]] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "The gateway from Kakariko: two pairs of wooden posts with a crossbeam and a name board, hung with vines. 200 tall, 280 between the posts."
+    },
+    {
+      "name": "gy_gravestone", "label": "Gravestone", "kind": "decor",
+      "take": { "box": [[-800, -325, -2], [-768, -200, 72]] },
+      "origin": "base", "facing": [-1, 0],
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The wide inscribed tablet by Dampé's hut (68 tall), the one gravestone drawn as scene geometry; the rows' gravestones are actors."
+    },
+    {
+      "name": "gy_royal_tablet", "label": "Royal tomb tablet", "kind": "decor",
+      "take": { "box": [[618, 62, 175], [698, 140, 232]] },
+      "origin": "base", "facing": [-1, 0],
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A low stone block with the royal crest carved on its sloping top, one of the pair either side of the Royal Family's tomb (its gravestone is an actor)."
+    },
+    {
+      "name": "gy_shadow_dais", "label": "Shadow Temple dais", "kind": "platform",
+      "take": { "box": [[1910, -305, 95], [2365, 145, 130]], "rooms": ["room_0_opa", "room_0_xlu"] },
+      "origin": "base",
+      "about": "The Sheikah eye painted on the floor before the Shadow Temple (translucent, 437 across) with the low pedestal in its middle, 24 tall. Its ring of torches are actors."
+    }
+  ]
+}

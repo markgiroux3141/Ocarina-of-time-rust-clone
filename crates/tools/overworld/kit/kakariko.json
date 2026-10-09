@@ -1,0 +1,148 @@
+{
+  "name": "kakariko",
+  "label": "Kakariko Village",
+  "about": "Pieces and textures cut from Kakariko Village (spot01). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot01/spot01.glb",
+    "collision": "extracted/scenes/overworld/spot01/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-08, from the textures and where Kakariko draws them). `ground` is most of the village and its slopes, `ground_light` the lower west (the entrance road): each the camo mixed half and half with a finer detail texture, as Kokiri's ground. `cliff` is the rock and dirt with a grass lip under the west wing's slopes, `brick` and `brick_b` the retaining walls, `rock` the striated rock under Death Mountain Trail, `mountain` the mossy wall along the south edge (cut out at the top: the skyline), `stone` and `stone_dark` the big blocks in the east. `backdrop_a` and `_b` are the far Death Mountain cards; the well's shaft (`well_shaft`) is mixed with moss by vertex alpha, which the library doesn't bake.",
+    "prefix": "kak_",
+    "roles": [
+      "post_wood", "sign", "ground_light", "ground", "house_plaster", "house_tin", "house_stone", "house_plaster_b",
+      "house_shade_a", "house_stone_b", "roof_red", "roof_blue", "house_shade_b", "house_shade_c", "house_shade_d",
+      "house_shade_e", "house_shade_f", "scaffold", "cliff", "steps", "steps_side", "brick", "brick_b", "trim",
+      "backdrop_a", "backdrop_b", "fence", "ladder", "ladder_b", "mountain", "dirt", "rock", "gate", "shutter",
+      "forest_trunks", "forest_foliage", "steps_b", "stone", "stone_dark", "stone_c", "trim_b", "well_rim",
+      "well_shaft", "well_rail", "tower_post", "pebbles"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["ground_light", 32, 32, "repeat", "repeat"],
+      ["cliff", 32, 32, "repeat", "clamp"],
+      ["steps", 64, 16, "mirror", "repeat"],
+      ["brick", 32, 32, "repeat", "clamp"],
+      ["brick_b", 32, 32, "repeat", "clamp"],
+      ["fence", 64, 64, "repeat", "clamp"],
+      ["mountain", 64, 64, "repeat", "clamp"],
+      ["dirt", 64, 64, "repeat", "repeat"],
+      ["rock", 64, 64, "repeat", "repeat"],
+      ["forest_trunks", 64, 64, "repeat", "clamp"],
+      ["forest_foliage", 32, 32, "repeat", "clamp"],
+      ["stone", 64, 64, "repeat", "repeat"],
+      ["stone_dark", 64, 64, "repeat", "repeat"]
+    ],
+    "detailed": ["ground", "ground_light"]
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong. The houses' front doorways' floors carry their exits: they collide as doors. The potion shop's back door (14) and the opening in Impa's house's east wall (10) stay exits.",
+    "12": "door", "13": "door", "15": "door", "16": "door", "17": "door", "19": "door", "21": "door"
+  },
+  "pieces": [
+    {
+      "name": "kak_skulltula_house", "label": "House of Skulltula", "kind": "house",
+      "take": { "box": [[-705, -1125, 75], [-295, -715, 385]], "materials": ["house_stone", "roof_red", "house_shade_d", "shutter"] },
+      "origin": "door", "facing": [1, 0],
+      "door": { "exit": 12, "entrance": "ENTR_KINSUTA_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A stone house with a red roof (spot01's south-west), its door on the east side."
+    },
+    {
+      "name": "kak_impa_house", "label": "Impa's house", "kind": "house",
+      "take": { "box": [[-370, -1805, 235], [256, -1385, 595]], "materials": ["house_plaster_b", "house_shade_a", "roof_red", "shutter"] },
+      "origin": "door", "facing": [-1, 0],
+      "door": { "exit": 6, "entrance": "ENTR_LABO_0" },
+      "close_sides": { "material": "house_plaster_b", "tile": 100, "collide": "wall" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The big plaster house with an attic dormer (spot01's south edge). Its door is on the west; the opening in the east wall, where the cow looks out, is an exit too (14, ENTR_LABO_1). Its south side stood on the edge of the village, so the kit closes it under the eaves (colliding as walls)."
+    },
+    {
+      "name": "kak_bazaar", "label": "Bazaar", "kind": "house",
+      "take": { "box": [[-700, 370, 315], [-155, 910, 625]], "materials": ["house_stone_b", "house_tin", "house_shade_b", "house_shade_f", "shutter"] },
+      "origin": "door", "facing": [0.921, -0.391],
+      "door": { "exit": 4, "entrance": "ENTR_SHOP1_0" },
+      "close_sides": { "material": "house_stone_b", "tile": 100, "collide": "wall" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A stone house with a tin roof (spot01's north-west terrace), turned 23 degrees in the scene. Its back gable end was the cliff, so the kit closes it (colliding as walls)."
+    },
+    {
+      "name": "kak_potion_shop", "label": "Potion shop", "kind": "house",
+      "take": { "box": [[85, 310, 315], [618, 845, 625]], "materials": ["house_plaster", "roof_red", "house_shade_d", "house_shade_f", "shutter"] },
+      "collision": { "floors_above": 320.5 },
+      "origin": "door", "facing": [-0.934, 0.358],
+      "door": { "exit": 10, "entrance": "ENTR_DRAG_0" },
+      "close_sides": { "material": "house_plaster", "tile": 100, "collide": "wall" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A plaster house with a red roof (spot01's north terrace). Its back door, opposite the front, is an exit too (13, ENTR_DRAG_2). One side was the terrace wall behind it, so the kit closes it under the eaves (colliding as walls)."
+    },
+    {
+      "name": "kak_boss_house", "label": "Carpenter boss's house", "kind": "house",
+      "take": { "box": [[-50, -340, -5], [366, 80, 305]], "materials": ["house_plaster", "roof_red", "house_shade_d", "shutter"] },
+      "origin": "door", "facing": [-1, 0],
+      "door": { "exit": 7, "entrance": "ENTR_KAKARIKO_0" },
+      "close_sides": { "material": "house_plaster", "tile": 100, "collide": "wall" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A plaster house with a red roof (the middle of spot01, under the watchtower), with one door in its gable end. In spot01 two sides and its back were the terrace wall and the next house, so the kit closes them under the eaves (colliding as walls)."
+    },
+    {
+      "name": "kak_granny_shop", "label": "Granny's potion shop", "kind": "house",
+      "take": { "box": [[340, -330, 195], [770, 80, 505]], "materials": ["house_tin", "roof_blue", "house_shade_c"] },
+      "origin": "door", "facing": [1, 0],
+      "door": { "exit": 8, "entrance": "ENTR_MAHOUYA_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A tin house with a blue roof, on the terrace behind the carpenter boss's house."
+    },
+    {
+      "name": "kak_windmill", "label": "Windmill tower", "kind": "building",
+      "take": { "box": [[1195, -730, 390], [1605, -320, 1125]], "materials": ["stone", "stone_dark", "stone_c", "steps_b", "trim_b"] },
+      "origin": "base",
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The windmill's stone tower, 730 tall, with stairs up inside its open top. Its blades are an actor; its door (exit 9) is in the terrace wall below it, whose triangles run on along the terrace, so it isn't part of the piece."
+    },
+    {
+      "name": "kak_watchtower", "label": "Watchtower", "kind": "tower",
+      "take": { "box": [[-40, 70, 195], [50, 165, 780]], "materials": ["gate", "scaffold"] },
+      "origin": "base",
+      "about": "The lookout tower, 577 tall, with a climbable ladder up its north side (wall types 2 and 3). Locked: the ladder is sized for Link."
+    },
+    {
+      "name": "kak_well", "label": "Well", "kind": "decor",
+      "take": { "box": [[665, -635, -85], [860, -415, 115]], "materials": ["well_rim"] },
+      "origin": [761.5, -524.5, 80],
+      "about": "The hexagonal well's stone rim, 30 above the ground; its shaft (below the ground in the piece) is left out, so on flat ground it looks filled in. The well's water and its pillar are actors."
+    },
+    {
+      "name": "kak_entrance_gate", "label": "Village gate sign", "kind": "decor",
+      "take": { "box": [[-2150, -1265, 130], [-2120, -845, 300]] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "Two wooden palisades with the village's name board hung between them, over the road at the top of the stairs from Hyrule Field."
+    },
+    {
+      "name": "kak_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[590, 455, 75], [635, 480, 340]] },
+      "origin": "base", "facing": "normal", "tiles": true,
+      "about": "A climbable ladder (wall types 2 and 3) set against a wall, from the floor to its top: its rungs repeat with its height. Spot01 has three, up the terraces and the watchtower."
+    },
+    {
+      "name": "kak_fence", "label": "Fence", "kind": "decor",
+      "take": { "box": [[1000, -930, 255], [1020, -320, 325]] },
+      "origin": "base", "facing": [1, 0], "tiles": true,
+      "scale": { "min": [0.1, 1, 1], "max": [3, 1, 1] },
+      "about": "A straight wooden fence, 600 long and 60 tall (along the windmill's terrace); its posts repeat as it's lengthened (x scale)."
+    },
+    {
+      "name": "kak_woodpile", "label": "Woodpile", "kind": "decor",
+      "take": { "box": [[235, -1805, 75], [320, -1675, 150]] },
+      "origin": "base", "facing": [1, 0],
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5] },
+      "about": "An L-shaped stack of logs, 65 tall, beside Impa's house."
+    },
+    {
+      "name": "kak_dm_gateposts", "label": "Death Mountain gateposts", "kind": "building",
+      "take": { "box": [[-225, 1295, 395], [265, 1425, 565]], "materials": ["brick_b", "trim"] },
+      "origin": "base", "facing": [0, -1],
+      "about": "The two brick piers either side of the gate to Death Mountain Trail, 160 tall. The gate itself is an actor."
+    }
+  ]
+}

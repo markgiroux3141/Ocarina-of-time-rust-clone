@@ -1,0 +1,90 @@
+{
+  "name": "sacred_meadow",
+  "label": "Sacred Forest Meadow",
+  "about": "Pieces and textures cut from Sacred Forest Meadow (spot05). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot05/spot05.glb",
+    "collision": "extracted/scenes/overworld/spot05/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09). `ground` is the maze and the meadow (a plain camo, no detail texture), `forest_wall` the hedge walls of the maze and the narrow ramp, `forest_trunks` and `forest_foliage` the cards of the canopy over the maze. Round the Forest Temple's courtyard: `brick` the walls, `ledge_stone` and `ledge_stone_b` the bands at the upper ledge's edge, `stone_crack` the courses above, `pillar`, `frieze`, `trim` and the `column` shades the doorway, `stone_*` the broken stairs (one stone texture under several shades); `tree_bark` the leaning dead tree, `post_side` and `post_top` the stone posts at the top of the maze.",
+    "prefix": "sfm_",
+    "roles": [
+      "ladder", "ladder_back", "brick", "tunnel_mouth", "ledge_stone", "pillar", "ledge_stone_b", "stone_crack",
+      "stone_floor", "stone_dark", "frieze", "trim", "column_dark", "ledge_grass", "column_dark_b", "stone_light",
+      "column_dark_c", "stone_shade_a", "stone_crack_b", "stone_shade_b", "stone_shade_c", "stone_crack_c", "stone_shade_d", "stone_shade_e",
+      "column", "stone_floor_b", "column_b", "stone_crack_d", "tunnel_ring", "log_bark", "hanging_vines", "stump_top",
+      "tree_bark", "post_side", "post_top", "ground", "forest_wall", "grass_skirt", "hedge_top", "forest_foliage",
+      "forest_trunks", "doorway_fade", "water"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["forest_wall", 32, 64, "repeat", "clamp"],
+      ["brick", 64, 64, "repeat", "repeat"],
+      ["stone_crack", 32, 32, "mirror", "mirror"],
+      ["grass_skirt", 64, 16, "repeat", "clamp"],
+      ["hedge_top", 32, 32, "repeat", "repeat"],
+      ["forest_foliage", 32, 32, "repeat", "clamp"],
+      ["forest_trunks", 64, 64, "repeat", "clamp"],
+      ["log_bark", 32, 32, "repeat", "repeat"],
+      ["water", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "sfm_temple_door", "label": "Forest Temple doorway (exit)", "kind": "opening",
+      "take": { "box": [[-125, 3150, 675], [125, 3410, 1045]], "materials": ["ground", "pillar", "stone_crack_d", "tunnel_mouth", "frieze", "column", "stone_floor_b", "stone_dark", "doorway_fade"] },
+      "collision": { "box": [[-125, 3150, 675], [125, 3410, 1045]] },
+      "origin": [0, 3206, 680], "facing": [0, -1],
+      "opening": { "exit": 2, "min_depth": 200 },
+      "about": "The Forest Temple's entrance: a dark doorway 160 wide and 160 high between two stone pillars 360 tall, under a carved lintel (exit 2, ENTR_BMORI1_0). The origin is the doorway's foot on the wall's face; the exit floor starts at the face. Locked: sized for Link."
+    },
+    {
+      "name": "sfm_temple_walkway", "label": "Broken stone walkway", "kind": "platform",
+      "take": { "box": [[-112, 2950, 475], [101, 3207, 705]], "materials": ["ground", "ledge_stone", "ledge_grass", "column_dark", "column_dark_b", "column_dark_c", "stone_light", "stone_shade_a", "stone_crack_b", "stone_shade_b", "stone_shade_c", "stone_crack_c", "stone_shade_d", "stone_shade_e", "stone_dark"] },
+      "collision": { "box": [[-112, 2950, 475], [101, 3207, 705]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "The stone causeway 160 wide running from the Forest Temple's doorway out over its courtyard, 200 up, on a block (120) Link climbs onto; its front is broken off, a stub of pillar standing below it. Its back (north) end meets the wall under the doorway. Locked: sized for Link."
+    },
+    {
+      "name": "sfm_dead_tree", "label": "Leaning dead tree", "kind": "plant",
+      "take": { "box": [[-255, 2950, 475], [20, 3095, 825]], "materials": ["tree_bark", "stump_top", "hanging_vines"] },
+      "collision": { "skip": [2, 3] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A dead trunk 340 tall leaning over the broken causeway in the Forest Temple's courtyard, a vine hanging from it. Its crown rests on the causeway: Link can walk up the trunk onto it."
+    },
+    {
+      "name": "sfm_stump", "label": "Saria's stump", "kind": "tower",
+      "take": { "box": [[60, 2920, 475], [170, 3015, 505]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "The low stump (20) in front of the Forest Temple's stairs, where Saria sits to teach Saria's Song."
+    },
+    {
+      "name": "sfm_stone_post", "label": "Stone post", "kind": "tower",
+      "take": { "box": [[45, 172, -5], [95, 222, 165]], "materials": ["post_side", "post_top"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [1.5, 1.5, 2] },
+      "about": "A square stone post 160 tall with a carved cap; a pair of them stood at the top of the maze, where the path to the temple begins."
+    },
+    {
+      "name": "sfm_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[-20, 75, -5], [20, 85, 140]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "A wooden ladder 135 tall up the maze's walls (wall types ladder and ladder_top). Locked: sized for Link."
+    },
+    {
+      "name": "sfm_vines", "label": "Hanging vines", "kind": "wall",
+      "take": { "box": [[-400, 3018, 735], [-240, 3226, 885]] },
+      "collision": { "none": true },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [3, 1, 2] },
+      "about": "Vines hanging over the edge of the Forest Temple's upper ledge (cut-out cards, no collision: not climbable)."
+    }
+  ]
+}

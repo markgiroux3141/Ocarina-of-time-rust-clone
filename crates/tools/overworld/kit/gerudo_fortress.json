@@ -1,0 +1,101 @@
+{
+  "name": "gerudo_fortress",
+  "label": "Gerudo's Fortress",
+  "about": "Pieces and textures cut from Gerudo's Fortress (spot12). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot12/spot12.glb",
+    "collision": "extracted/scenes/overworld/spot12/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where the fortress draws them). `ground` is the sandy floor round the fortress (dirt footsteps), `sand` the rippled dunes outside the wall in the west, `cliff` the rock walls, `sandstone` the striated canyon walls and slopes (its stripes run along v, so the scene turns it sideways). The fortress is `fortress_wall` (windows) under `stone` tops, its doors `doorway` (brick fading to black) over `doorway_floor`/`doorway_sand`; the lookout on top is `stone_dark` (`_b`). `brick` (`_b`, `_c`) are the perimeter walls, `stone_brick` the gate towers, `beam` the gate's crossbeam. In the horseback archery range: `post_wood`, the `target` rings, `platform_top`/`platform_side` (the hexagonal stands), `canopy` (the awning) and `fence`; `dust` (`_b`) is the translucent haze over its track. `backdrop_rock` is a cut-out rock card far in the west.",
+    "prefix": "gf_",
+    "roles": [
+      "sandstone", "cliff", "ground", "brick", "steps", "brick_b", "brick_c", "sand_edge", "wall_top", "stone_brick",
+      "beam", "railing", "ladder", "post_tip", "backdrop_rock", "emblem", "rope", "planks", "stone_dark", "doorway",
+      "railing_b", "stone", "fortress_wall", "doorway_floor", "doorway_sand", "doorway_floor_b", "stone_dark_b", "sand",
+      "emblem_b", "sandstone_fade", "railing_c", "shade", "vines", "shade_b", "post_wood", "canopy", "target",
+      "platform_side", "platform_top", "target_b", "target_c", "fence", "dust", "dust_b"
+    ],
+    "checked": [
+      ["ground", 64, 32, "repeat", "repeat"],
+      ["sand", 32, 32, "repeat", "repeat"],
+      ["cliff", 64, 32, "repeat", "repeat"],
+      ["sandstone", 32, 128, "repeat", "mirror"],
+      ["brick", 32, 64, "repeat", "clamp"],
+      ["stone_brick", 32, 32, "repeat", "mirror"],
+      ["stone", 32, 32, "repeat", "repeat"],
+      ["fortress_wall", 64, 32, "repeat", "repeat"],
+      ["stone_dark", 64, 32, "repeat", "repeat"],
+      ["planks", 32, 32, "repeat", "repeat"],
+      ["post_wood", 32, 32, "repeat", "repeat"],
+      ["fence", 32, 64, "repeat", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "gf_fortress", "label": "Gerudo's Fortress", "kind": "building",
+      "take": { "box": [[70, 580, 330], [1710, 2775, 1090]], "materials": ["fortress_wall", "stone", "doorway", "doorway_floor", "doorway_sand", "doorway_floor_b", "vines", "emblem_b", "shade_b", "stone_brick"] },
+      "collision": { "skip": [5] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "The fortress's stacked blocks, as one building: its 13 doorways (exits 2 to 12 and 14 into the fortress's corridors, ENTR_GERUDOWAY_*; exit 15 into the Gerudo Training Ground, ENTR_MEN_0) keep their exit floors, and the vines on its east face are climbable. Locked: sized for Link."
+    },
+    {
+      "name": "gf_lookout", "label": "Fortress lookout", "kind": "building",
+      "take": { "box": [[-10, 2600, 720], [440, 3075, 1300]], "materials": ["stone_dark", "stone_dark_b", "planks", "railing", "railing_b", "brick_b"] },
+      "collision": { "skip": [38] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "The dark stone lookout high on the fortress's north-west corner: a pillar under a wider top with a railed balcony and a plank floor. Its passage east into the cliff (exit 13) is left out. Locked."
+    },
+    {
+      "name": "gf_gate", "label": "Gate towers", "kind": "building",
+      "take": { "box": [[-1400, 2800, 90], [-800, 3420, 760]], "materials": ["stone_brick", "beam", "railing", "ladder", "post_tip", "brick", "railing_c", "shade"] },
+      "collision": { "skip": [1, 5] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "The two towers either side of the gate to the Haunted Wasteland, joined by a beam; the east tower has a ladder (wall types: ladder, ladder top) up to its railed top. The gate itself is an actor (Bg_Spot12_Gate), so the opening is empty. Locked."
+    },
+    {
+      "name": "gf_wall", "label": "Fortress wall", "kind": "decor",
+      "take": { "box": [[-3070, 3220, 0], [-1020, 4000, 420]], "materials": ["brick", "brick_c"] },
+      "origin": "base",
+      "about": "A stretch of the brick wall round the fortress's sandy west side, 400 tall, with a bend."
+    },
+    {
+      "name": "gf_stairs", "label": "Stone stairs", "kind": "platform",
+      "take": { "box": [[-670, 1495, 40], [-370, 1750, 340]], "materials": ["steps"] },
+      "origin": "base", "facing": [0, -1],
+      "about": "The stairs up from the lower yard to the fortress's courtyard (283 high over 241): a ramp drawn with steps, colliding as stone. Locked: sized for Link."
+    },
+    {
+      "name": "gf_banner", "label": "Gerudo banner", "kind": "wall",
+      "take": { "box": [[1090, 280, 860], [1100, 575, 990]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [3, 1, 2] },
+      "about": "A Gerudo emblem hanging from a rope, as over the fortress's doorways. No collision."
+    },
+    {
+      "name": "gf_archery_target", "label": "Archery target", "kind": "decor",
+      "take": { "box": [[4380, 2125, 1405], [4655, 2470, 1870]] },
+      "origin": "base", "facing": [1, 0],
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2], "uniform": true },
+      "about": "The largest of the three targets beside the horseback archery track: a wooden ring on two legs, 454 tall."
+    },
+    {
+      "name": "gf_target_stand", "label": "Target platform", "kind": "platform",
+      "take": { "box": [[3165, -675, 1405], [3575, -318, 1800]] },
+      "origin": "base", "facing": [0, 1],
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The hexagonal stand at the archery track's south end, with a target on a pole."
+    },
+    {
+      "name": "gf_canopy", "label": "Canopy", "kind": "decor",
+      "take": { "box": [[3655, 400, 1400], [3795, 620, 1545]] },
+      "origin": "base", "facing": [1, 0],
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [2, 2, 2], "uniform": true },
+      "about": "The cloth awning on four posts by the archery track's start, 130 tall."
+    }
+  ]
+}

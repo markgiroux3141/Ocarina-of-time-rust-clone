@@ -117,7 +117,7 @@ pub struct Options {
     pub doc: Option<PathBuf>,
     pub theme: Option<PathBuf>,
     pub textures: Option<PathBuf>,
-    /// The kit props come from (`pieces.json`); by default out/overworld/kit/kokiri.
+    /// The kit props come from (`pieces.json`); by default every region's in out/overworld/kit.
     pub kit: Option<PathBuf>,
     /// A region or path to select at the start, by name.
     pub select: Option<String>,
@@ -183,9 +183,10 @@ pub struct App {
     place_yaw: f64,
     /// What new regions, paths and lines start as (the palette's choices).
     new: NewThings,
-    /// The palette's kit search and category, and the pieces chosen most recently.
+    /// The palette's kit search, category and region, and the pieces chosen most recently.
     kit_query: String,
     kit_cat: String,
+    kit_region: String,
     recent: Vec<String>,
     /// The outliner's filter.
     filter: String,
@@ -298,14 +299,14 @@ impl App {
             status = e;
             Theme::kokiri().with_others(&[Theme::kakariko()])
         });
-        // every theme's library, each made from its extracted scene the first time
+        // every region's library, each made from its extracted scene the first time
         let tex_dirs: Vec<PathBuf> = match &opts.textures {
             Some(d) => vec![d.clone()],
-            None => overworld::kit::SCENES
+            None => overworld::kit::scenes()
                 .iter()
                 .filter_map(|sc| {
-                    let d = Path::new(ROOT).join("out/overworld/textures").join(sc.theme);
-                    let glb = Path::new(ROOT).join(sc.glb);
+                    let d = Path::new(ROOT).join("out/overworld/textures").join(&sc.theme);
+                    let glb = Path::new(ROOT).join(&sc.glb);
                     if !d.join("textures.json").exists() && glb.exists() {
                         match overworld::kit::export(sc, &glb, &d) {
                             Ok(n) => status = format!("made the {} texture library ({n} textures) in {}", sc.label, d.display()),
@@ -323,21 +324,33 @@ impl App {
                 None
             }
         });
-        // the Kokiri kit, cut from the extracted scene the first time (and again when its
-        // manifest changes)
-        let kit_dir = opts.kit.clone().unwrap_or(Path::new(ROOT).join("out/overworld/kit/kokiri"));
-        if opts.kit.is_none() {
-            let manifest = overworld::pieces::kokiri_manifest();
-            let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
-            let stale = modified(&kit_dir.join("pieces.json")).is_none_or(|k| modified(manifest).is_some_and(|m| m > k));
-            if stale && Path::new(ROOT).join("extracted/scenes/overworld/spot04/spot04.glb").exists() {
-                match overworld::pieces::export(manifest, Path::new(ROOT), &kit_dir) {
-                    Ok(k) => status = format!("cut the Kokiri kit ({} pieces) into {}", k.pieces.len(), kit_dir.display()),
-                    Err(e) => status = format!("Kokiri kit: {e}"),
+        // every region's kit, each cut from its extracted scene the first time (and again when
+        // its manifest changes)
+        let kit = match &opts.kit {
+            Some(d) => Kit::load(d).ok().map(Arc::new),
+            None => {
+                let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+                for sc in overworld::kit::scenes() {
+                    let manifest = overworld::kit::manifest_path(&sc.theme);
+                    let kit_dir = overworld::pieces::kit_dir(Path::new(ROOT), &sc.theme);
+                    let stale = modified(&kit_dir.join("pieces.json")).is_none_or(|k| modified(&manifest).is_some_and(|m| m > k));
+                    if stale && Path::new(ROOT).join(&sc.glb).exists() {
+                        match overworld::pieces::export(&manifest, Path::new(ROOT), &kit_dir) {
+                            Ok(k) if !k.pieces.is_empty() => status = format!("cut the {} kit ({} pieces) into {}", sc.label, k.pieces.len(), kit_dir.display()),
+                            Ok(_) => {}
+                            Err(e) => status = format!("{} kit: {e}", sc.label),
+                        }
+                    }
+                }
+                match overworld::pieces::load_regions(Path::new(ROOT)) {
+                    Ok(k) => Some(Arc::new(k)),
+                    Err(e) => {
+                        status = e;
+                        None
+                    }
                 }
             }
-        }
-        let kit = Kit::load(&kit_dir).ok().map(Arc::new);
+        };
         let piece = kit.as_ref().and_then(|k| k.pieces.first()).map(|p| p.name.clone()).unwrap_or_default();
         let out_dir = out_dir_for(&doc);
         let sel = match &opts.select {
@@ -414,6 +427,7 @@ impl App {
             new: NewThings::default(),
             kit_query: String::new(),
             kit_cat: "all".into(),
+            kit_region: "all".into(),
             recent: vec![],
             filter: String::new(),
             pickable: Pickable { regions: true, edges: true, paths: true, lines: true, props: true },

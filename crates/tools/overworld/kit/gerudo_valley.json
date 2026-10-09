@@ -1,0 +1,83 @@
+{
+  "name": "gerudo_valley",
+  "label": "Gerudo Valley",
+  "about": "Pieces and textures cut from Gerudo Valley (spot09). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot09/spot09.glb",
+    "collision": "extracted/scenes/overworld/spot09/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where Gerudo Valley draws them). `ground` is the canyon floor (dirt footsteps), `sand` the sandy road to the fortress in the west, `cliff` (and `cliff_b`, the same image repeating) the canyon walls, `rock` and `cliff_c` the darker rock faces, `bank` (`_b`, `_c`: the same streaked earth, clamped) the low walls under the rims and ledges, `ledge_top` the rims' sandy lip with its dark drips, `sandstone` the striated walls of the passage to the fortress (its stripes run along v, so the scene turns it sideways), `riverbed` the mossy stone under the river, `stone` the block at the top of the ladder and the river's west shelf. `ridge` and `ridge_b` are cut-out crag silhouettes along the rims. The water, waterfalls and foam are translucent.",
+    "prefix": "gv_",
+    "roles": [
+      "cliff_c", "cliff_b", "ridge_b", "ledge_top", "ground", "sand", "bank_c", "stone", "ladder", "ladder_top",
+      "log_top", "log_bark", "bank_b", "riverbed", "cliff", "bank", "ridge", "rock", "sandstone", "rock_edge",
+      "waterfall_shade", "splash", "waterfall", "water_edge", "foam", "foam_side", "water_b", "water", "waterfall_b"
+    ],
+    "checked": [
+      ["ground", 32, 64, "repeat", "repeat"],
+      ["sand", 64, 32, "repeat", "repeat"],
+      ["cliff", 64, 32, "repeat", "repeat"],
+      ["rock", 32, 64, "repeat", "clamp"],
+      ["cliff_c", 32, 64, "repeat", "clamp"],
+      ["bank", 64, 32, "repeat", "clamp"],
+      ["riverbed", 32, 32, "repeat", "repeat"],
+      ["stone", 64, 32, "repeat", "repeat"],
+      ["water", 32, 32, "repeat", "repeat"],
+      ["ridge", 128, 16, "repeat", "clamp"],
+      ["log_top", 32, 32, "clamp", "repeat"],
+      ["log_bark", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "gv_log_bridge", "label": "Log bridge", "kind": "bridge",
+      "take": { "box": [[1250, -230, -130], [2095, 230, 50]], "materials": ["log_top", "log_bark"] },
+      "origin": "base", "facing": [0.906, -0.424],
+      "scale": { "min": [0.75, 0.5, 0.75], "max": [2, 2, 2] },
+      "about": "The log over the stream by the Hyrule Field entrance, sloping 150 from end to end; its top collides as wood. The rope bridge over the canyon is an actor (Bg_Spot09_Obj), so it isn't here."
+    },
+    {
+      "name": "gv_waterfall", "label": "Waterfall", "kind": "wall",
+      "take": { "box": [[-400, 2420, -2210], [650, 2910, -1020]], "rooms": ["room_0_xlu"] },
+      "collision": { "none": true },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.3, 1, 0.2], "max": [2, 1, 2] },
+      "about": "The tall fall at the canyon's north end, curling over its lip. Translucent, no collision; the game scrolls its texture, the kit doesn't yet."
+    },
+    {
+      "name": "gv_waterfall_small", "label": "Small waterfall", "kind": "wall",
+      "take": { "box": [[1540, 105, -170], [1845, 345, 320]], "rooms": ["room_0_xlu"] },
+      "collision": { "none": true },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.3], "max": [3, 1, 3] },
+      "about": "The trickle into the pool by the Hyrule Field entrance: the stream, the wet streak on the rock behind it and its splash. Translucent, no collision."
+    },
+    {
+      "name": "gv_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[15, 2685, -2250], [60, 2700, -1600]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [1, 1, 0.1], "max": [1, 1, 3] },
+      "tiles": true,
+      "about": "The ladder up from the river to the ledge with the Piece of Heart (wall types: ladder, and ladder top over it). Placed on a wall's face it reaches from the floor to the wall's top; only its height scales."
+    },
+    {
+      "name": "gv_ledge", "label": "Stone ledge", "kind": "platform",
+      "take": { "box": [[-30, 2690, -1635], [95, 2840, -1505]], "materials": ["stone"] },
+      "collision": { "box": [[-30, 2694, -1635], [95, 2840, -1505]] },
+      "origin": "base",
+      "about": "The stone block jutting from the cliff at the top of the ladder (120 wide, 140 deep, 120 tall), where the Piece of Heart lies; a strip of ladder-top wall on its front lets a ladder below lead onto it. Locked: sized for Link."
+    },
+    {
+      "name": "gv_rock_shelf", "label": "Rock shelf", "kind": "platform",
+      "take": { "box": [[195, -1615, -880], [370, -600, -550]], "materials": ["ledge_top", "bank_b"] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] },
+      "about": "The shelf on the canyon's east wall under the bridge, where the grotto is: a stone floor 160 wide and 1000 long, with earth sides 320 deep."
+    }
+  ]
+}

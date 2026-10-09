@@ -1,0 +1,102 @@
+{
+  "name": "lon_lon_buildings",
+  "label": "Lon Lon Ranch buildings",
+  "about": "Pieces and textures cut from Lon Lon Ranch buildings (souko). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/souko/souko.glb",
+    "collision": "extracted/scenes/overworld/souko/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where souko draws them). Souko is three interiors: the tower's cow barn (room 0: `brick` and `plaster` walls, `wood` lofts, `hay`, `milk_can`s), the ranch house's ground floor (room 1: Talon's `bed_wood` bed, the `trough` of `water`, `lantern`s) and its upstairs (room 2: `chair_wood` stools, a table with a `rug`, a vase of `flower`s). `wood` is nearly everything wooden. No theme: these are interiors.",
+    "prefix": "llb_",
+    "roles": [
+      "rock", "metal_b", "wood_b", "wood", "wood_end", "stall_frame", "stone_light", "tiles",
+      "wood_c", "crate", "stone_wall", "milk_can", "plaster", "brick", "hay", "hay_b",
+      "light_beam", "light_beam_b", "crate_b", "dark", "bed_wood", "bed_end", "floor_wood", "lantern",
+      "crate_label", "rug", "water", "lamp_glow", "handle", "handle_b", "trim_red", "trim_red_b",
+      "shutter", "flower", "chair_wood", "wood_dark", "wood_dark_end"
+    ],
+    "checked": [
+      ["wood", 64, 32, "repeat", "repeat"],
+      ["plaster", 32, 32, "repeat", "repeat"],
+      ["brick", 64, 64, "repeat", "repeat"],
+      ["hay", 32, 64, "repeat", "repeat"],
+      ["hay_b", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "llb_hay", "label": "Hay pile", "kind": "decor",
+      "take": { "box": [[-140, 79, -2], [62, 201, 50]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] },
+      "about": "A low heap of hay, 200 across and 48 high, from the cow barn in the tower; Link wades through it (tall-grass footsteps)."
+    },
+    {
+      "name": "llb_hay_small", "label": "Small hay pile", "kind": "decor",
+      "take": { "box": [[-403, 458, -11], [-288, 541, 12]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] },
+      "about": "A flat drift of hay, 113 across, from the tunnel into the cow barn."
+    },
+    {
+      "name": "llb_milk_cans", "label": "Milk cans", "kind": "decor",
+      "take": { "box": [[-95, 160, 186], [-4, 197, 234]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "Two milk cans on a plank, from a shelf in the cow barn."
+    },
+    {
+      "name": "llb_barrel", "label": "Barrel", "kind": "decor",
+      "take": { "box": [[-399, -146, -2], [-347, -87, 42]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "An eight-sided wooden barrel, 40 tall, from the cow barn (there are two)."
+    },
+    {
+      "name": "llb_cart", "label": "Handcart", "kind": "decor",
+      "take": { "box": [[-70, -60, -2], [1, 25, 145]] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "A two-wheeled wooden handcart standing on its end against the cow barn's wall, 142 tall."
+    },
+    {
+      "name": "llb_trough", "label": "Water trough", "kind": "decor",
+      "take": { "box": [[685, -195, -2], [740, -165, 22]] },
+      "origin": "base", "facing": [0, 1],
+      "about": "A small slatted wooden trough with water in it (translucent), 51 long, from the ranch house's floor. Drawn only: it has no collision in souko."
+    },
+    {
+      "name": "llb_bench", "label": "Bench", "kind": "decor",
+      "take": { "box": [[1013, 37, -2], [1081, 202, 42]] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "A long low bench of yellow planks, 161 long and 40 high, from the ranch house's ground floor."
+    },
+    {
+      "name": "llb_lantern", "label": "Wall lantern", "kind": "decor",
+      "take": { "box": [[705, 165, 130], [745, 197, 199]] },
+      "origin": [725, 190, 0], "facing": [0, -1],
+      "about": "An iron lantern on a bracket and chain, its flame glowing. Its origin is on the floor under the wall it hangs from: set against a wall, it hangs where it did in the ranch house (133 to 196 up). Drawn only."
+    },
+    {
+      "name": "llb_table", "label": "Round table", "kind": "decor",
+      "take": { "box": [[1463, -157, 138], [1577, -43, 200]] },
+      "origin": "base",
+      "about": "An eight-sided table with a cloth on it and a vase of red flowers, 110 across, from upstairs in the ranch house."
+    },
+    {
+      "name": "llb_chair", "label": "Chair", "kind": "decor",
+      "take": { "box": [[1543, -183, 138], [1581, -147, 195]] },
+      "origin": "base", "facing": [-0.6, 0.8],
+      "about": "A high-backed wooden chair, 53 tall, beside the table upstairs (there are two)."
+    },
+    {
+      "name": "llb_cabinet", "label": "Cabinet", "kind": "decor",
+      "take": { "box": [[1238, 90, 138], [1273, 182, 245]] },
+      "origin": "base", "facing": [1, 0],
+      "about": "A tall wooden cupboard with carved doors and a drawer, 103 tall, against the west wall upstairs. Its back is open: set it against a wall."
+    }
+  ]
+}

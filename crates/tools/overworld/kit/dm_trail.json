@@ -1,0 +1,112 @@
+{
+  "name": "dm_trail",
+  "label": "Death Mountain Trail",
+  "about": "Pieces and textures cut from Death Mountain Trail (spot16). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot16/spot16.glb",
+    "collision": "extracted/scenes/overworld/spot16/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where the trail draws them). The trail's floors are `ground_rough` (and `_b`), `sand` and the streaky `ground` family (which doesn't tile seamlessly across u), the big outer slopes `dirt`; its walls `cliff` (mottled rock and dirt), `cliff_band` (low ledges), `rock` (the layered strata of the big west walls) and `rock_wall` (dark streaked rock round the Goron City approach). `mountain*` are the coarse striated peaks, `climb_wall` the stakes on the climbable wall below the summit, `gate_wall`/`gate_floor`/`banner`/`palisade` the Goron City gate, `tunnel_*`, `cave_*` and `dark_*` the cave mouths and their fades to black, `lava`/`lava_glow` the crater passage (vertex-coloured), `backdrop_*` the far mountains and Kakariko cards. No floor has a detail texture.",
+    "prefix": "dmt_",
+    "roles": [
+      "grass_lip", "cliff", "ground", "grass", "rock", "tunnel_wall", "tunnel_ceiling", "black",
+      "dirt", "sand", "cliff_band", "cliff_band_b", "ground_b", "ground_rough", "mountain", "mountain_dark",
+      "sand_b", "ground_c", "ground_rough_b", "cave_wall", "cave_ceiling", "dark_fade", "mountain_b", "mountain_edge",
+      "cliff_b", "climb_wall", "planks", "cave_ceiling_b", "cave_wall_b", "dark_strip", "dark_strip_b", "dark_strip_c",
+      "lava_glow", "lava", "backdrop_a", "rock_wall", "rock_wall_b", "overhang", "gate_floor", "gate_wall",
+      "banner", "palisade", "planks_b", "backdrop_ground", "backdrop_cliff", "backdrop_b", "fence_post", "post_top",
+      "dark_fade_b", "shadow", "rope_fence", "dark_fade_c", "backdrop_village_a", "backdrop_village_b"
+    ],
+    "checked": [
+      ["ground_rough", 64, 32, "repeat", "repeat"],
+      ["cliff", 64, 64, "repeat", "repeat"],
+      ["cliff_band", 64, 32, "repeat", "repeat"],
+      ["rock", 128, 64, "repeat", "repeat"],
+      ["rock_wall", 64, 64, "repeat", "repeat"],
+      ["mountain_b", 32, 32, "repeat", "repeat"],
+      ["climb_wall", 64, 32, "repeat", "repeat"],
+      ["gate_wall", 64, 32, "repeat", "repeat"],
+      ["overhang", 64, 64, "repeat", "repeat"],
+      ["backdrop_a", 128, 32, "repeat", "clamp"],
+      ["rope_fence", 64, 64, "repeat", "clamp"],
+      ["fence_post", 32, 64, "repeat", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "dmt_goron_gate", "label": "Goron City gate", "kind": "opening",
+      "take": { "box": [[-620, 1820, 1095], [-200, 3140, 1450]], "materials": ["gate_wall", "gate_floor", "banner", "palisade", "planks_b", "cave_ceiling", "dark_fade_c"] },
+      "collision": { "box": [[-620, 1890, 1095], [-200, 3140, 1450]] },
+      "origin": [-410, 1899, 1182], "facing": [0, -1],
+      "opening": { "exit": 2, "min_depth": 500 },
+      "scale": { "min": [1, 0.4, 1], "max": [1, 1, 1] },
+      "about": "The stone-framed passage to Goron City, with Goron banners over its mouth and its palisade gates open inside; exit 2's floor starts 40 in. The origin is the wall's face at the sill, facing out; the tunnel runs 1237 back and may be shortened (y scale)."
+    },
+    {
+      "name": "dmt_dodongo_cave", "label": "Dodongo's Cavern mouth", "kind": "opening",
+      "take": { "box": [[-1850, 660, 670], [-1440, 2610, 900]], "materials": ["ground", "tunnel_wall", "tunnel_ceiling", "black", "dark_fade_b"] },
+      "collision": { "box": [[-1810, 690, 670], [-1500, 2610, 900]] },
+      "origin": [-1655, 700, 677], "facing": [0, -1],
+      "opening": { "exit": 4, "min_depth": 500 },
+      "scale": { "min": [1, 0.3, 1], "max": [1, 1, 1] },
+      "about": "The long, dark tunnel to Dodongo's Cavern (low on the trail's west side; a bombable boulder, an actor, blocks it in the game). The origin is the mouth's floor on the wall's face, facing out; exit 4's floor starts 340 in, and the tunnel may be shortened (y scale)."
+    },
+    {
+      "name": "dmt_fairy_cave", "label": "Great Fairy cave mouth", "kind": "opening",
+      "take": { "box": [[-525, 4425, 3300], [-175, 4995, 3470]], "materials": ["cave_wall", "cave_ceiling", "dark_fade"] },
+      "collision": { "box": [[-525, 4425, 3300], [-175, 4995, 3470]] },
+      "origin": [-350, 4431, 3311], "facing": [0, -1],
+      "opening": { "exit": 5, "min_depth": 300 },
+      "scale": { "min": [1, 0.5, 1], "max": [1, 1, 1] },
+      "about": "The cave at the summit leading to the Great Fairy's fountain (a bombable wall, an actor, hides it in the game). The origin is its mouth's floor, facing out; exit 5's floor starts about 90 in."
+    },
+    {
+      "name": "dmt_crater_passage", "label": "Crater passage", "kind": "opening",
+      "take": { "box": [[60, 4505, 2900], [1040, 6610, 3540]], "materials": ["planks", "cave_ceiling_b", "cave_wall_b", "dark_strip", "dark_strip_b", "dark_strip_c", "lava_glow", "lava"] },
+      "collision": { "box": [[60, 4505, 2900], [1040, 6610, 3540]] },
+      "origin": [290, 4511, 3327], "facing": [0, -1],
+      "opening": { "exit": 3, "min_depth": 500 },
+      "about": "The summit's way into Death Mountain Crater: a plank threshold, then a rock tunnel lit red by the lava beyond (the lava glow is vertex-coloured). The origin is the mouth's floor, facing out; exit 3's floors start 240 in. Locked size."
+    },
+    {
+      "name": "dmt_climb_wall", "label": "Stake climbing wall", "kind": "wall",
+      "take": { "box": [[-325, 3975, 2415], [170, 3990, 3205]], "materials": ["climb_wall"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.3, 1, 0.1], "max": [10, 1, 10] },
+      "tiles": true,
+      "about": "The wall of stakes driven into the rock below the summit: climbable (wall type 4). Placed on a wall's face; its texture repeats as it grows."
+    },
+    {
+      "name": "dmt_stone_block", "label": "Stone block", "kind": "platform",
+      "take": { "box": [[-490, 1100, 1320], [-280, 1310, 1390]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [3, 3, 3] },
+      "about": "A stone-walled block with a dirt top, 200 square and 61 tall, in front of the Goron City gate."
+    },
+    {
+      "name": "dmt_palisade", "label": "Palisade gate leaf", "kind": "decor",
+      "take": { "box": [[-520, 1935, 1195], [-505, 2055, 1375]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [3, 3, 2] },
+      "about": "One leaf of the Goron City gate's palisade (a single card, 110 wide and 168 tall), as it stands open inside the passage."
+    },
+    {
+      "name": "dmt_rope_fence", "label": "Rope fence", "kind": "decor",
+      "take": { "box": [[-140, 400, 1325], [0, 1300, 1565]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.3, 1, 0.5], "max": [3, 1, 2] },
+      "about": "A translucent lashed-rope fence, 900 long, along the trail's edge below the Goron City gate; it climbs 228 over its length, so it fits a slope. Collides (wood)."
+    },
+    {
+      "name": "dmt_post_fence", "label": "Post fence pen", "kind": "decor",
+      "take": { "box": [[-1465, 405, 1400], [-1225, 980, 1510]], "materials": ["fence_post", "post_top"] },
+      "origin": "base",
+      "about": "A little fenced pen of wooden post cards on the ledge above Dodongo's Cavern, with fence runs leading off both ways; its top collides as wood."
+    }
+  ]
+}

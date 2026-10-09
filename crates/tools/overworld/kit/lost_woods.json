@@ -1,0 +1,139 @@
+{
+  "name": "lost_woods",
+  "label": "Lost Woods",
+  "about": "Pieces and textures cut from Lost Woods (spot10). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot10/spot10.glb",
+    "collision": "extracted/scenes/overworld/spot10/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09). `ground` is every clearing's floor (a plain camo, no detail texture), `forest_wall` the dark hedge walls round each clearing (a grass lip at the foot), `log_bark`, `tunnel_ring` and `tunnel_dark` the log tunnels and their fading interiors. `stump_bark` and `stump_top` are the vertex-shaded stumps, `hedge_top` and `grass_skirt` the tall grass, `stone_pillar`, `stone_floor` and `stone_wall` the stone-lined passages (Goron City, Zora's River), `bridge_log` and `bridge_rope` the bridge to Kokiri Forest; `light_shaft` and `light_pool` are the translucent sunbeams.",
+    "prefix": "lw_",
+    "roles": [
+      "ground", "forest_wall", "log_bark", "tunnel_dark", "tunnel_ring", "forest_foliage", "forest_trunks", "stump_top_b",
+      "log_ring", "rope", "stump_bark", "stump_top", "hedge_top", "grass_skirt", "ladder_back", "ladder",
+      "hanging_vines", "light_shaft", "light_pool", "stone_pillar", "stone_floor", "stone_wall", "water", "post_top",
+      "bridge_log", "bridge_rope"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["forest_wall", 32, 64, "repeat", "clamp"],
+      ["log_bark", 32, 32, "repeat", "repeat"],
+      ["forest_foliage", 32, 32, "repeat", "clamp"],
+      ["forest_trunks", 64, 64, "repeat", "clamp"],
+      ["hedge_top", 32, 32, "repeat", "repeat"],
+      ["grass_skirt", 64, 16, "repeat", "clamp"],
+      ["water", 32, 32, "repeat", "repeat"],
+      ["bridge_log", 64, 32, "mirror", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "lw_log_tunnel", "label": "Log tunnel (exit)", "kind": "opening",
+      "take": { "box": [[-125, -810, -5], [125, -120, 215]], "materials": ["log_bark", "tunnel_ring", "tunnel_dark"] },
+      "collision": { "box": [[-125, -810, -5], [125, -125, 215]] },
+      "origin": [0, -200, 0], "facing": [0, 1],
+      "opening": { "exit": 1, "min_depth": 300 },
+      "scale": { "min": [1, 0.5, 1], "max": [1, 1, 1] },
+      "about": "A hollow log through the hedge wall, fading to black: the clearings' dead ends (exit 1 sent Link back to Kokiri Forest). The origin is on the wall's face at the tunnel's floor, facing out; it runs 600 into the wall (y scale shortens it), the exit floor starting 200 in."
+    },
+    {
+      "name": "lw_goron_passage", "label": "Stone passage (exit)", "kind": "opening",
+      "take": { "box": [[675, 995, -85], [925, 1385, 205]], "materials": ["stone_pillar", "stone_floor", "stone_wall"] },
+      "collision": { "box": [[675, 995, -85], [925, 1385, 205]] },
+      "origin": [800, 1000, 0], "facing": [0, -1],
+      "opening": { "exit": 7, "min_depth": 380 },
+      "about": "The stone-framed doorway and its corridor sloping down (80) into the dark: the shortcut to Goron City (exit 7, ENTR_SPOT18_3), set in the north wall of its clearing. The origin is the doorway's foot on the wall's face; the exit floor starts 220 in. Locked: sized for Link."
+    },
+    {
+      "name": "lw_underwater_passage", "label": "Underwater passage (exit)", "kind": "opening",
+      "take": { "box": [[2255, 785, -265], [2385, 920, 30]], "materials": ["stone_pillar", "stone_floor", "stone_wall"] },
+      "collision": { "box": [[2255, 785, -265], [2385, 920, 30]] },
+      "origin": [2260, 853, -260], "facing": [-1, 0],
+      "opening": { "exit": 8, "min_depth": 120 },
+      "about": "A stone-framed swim tunnel 60 high at the bottom of the pond: the shortcut to Zora's River (exit 8, ENTR_SPOT03_4). Its frame rises 285 to stand clear of the water. The origin is the tunnel's foot on the pool wall's face. Locked: sized for Link."
+    },
+    {
+      "name": "lw_bridge", "label": "Log bridge", "kind": "bridge",
+      "take": { "box": [[-1405, -1712, -225], [-995, -1490, -135]], "materials": ["bridge_log", "bridge_rope"] },
+      "collision": { "box": [[-1405, -1712, -225], [-995, -1490, -135]] },
+      "origin": [-1200, -1601, -200], "facing": [1, 0],
+      "scale": { "min": [1, 0.5, 1], "max": [1, 2, 1] },
+      "about": "Logs lashed side by side, with rope rails: the bridge over the gully between Kokiri Forest and the way to Hyrule Field. 400 long and 210 wide; the origin is the deck's middle. Its length scales."
+    },
+    {
+      "name": "lw_stump_roots", "label": "Stump with roots", "kind": "tower",
+      "take": { "box": [[1050, -380, -185], [1210, -250, -135]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "A low stump (40) with its roots spread, on the Skull Kids' stage in the sunken clearing. Shaded by vertex colours; Link can stand on it."
+    },
+    {
+      "name": "lw_stump_double", "label": "Double stump", "kind": "tower",
+      "take": { "box": [[1155, -505, -185], [1320, -370, -65]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "Two stumps grown together, 86 and 108 tall, on the Skull Kids' stage."
+    },
+    {
+      "name": "lw_stump_tall", "label": "Tall stump", "kind": "tower",
+      "take": { "box": [[-1160, 100, -5], [-1105, 155, 85]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "A narrow stump 80 tall, where the Skull Kid sits by the forest's entrance."
+    },
+    {
+      "name": "lw_stump_low", "label": "Low stump", "kind": "tower",
+      "take": { "box": [[-985, -85, -5], [-920, -20, 25]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "A wide stump 20 tall, the Skull Kid's step."
+    },
+    {
+      "name": "lw_post", "label": "Log post", "kind": "tower",
+      "take": { "box": [[-1330, -1466, -365], [-1257, -1382, 55]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.25], "max": [2, 2, 1.5] },
+      "about": "A tall log post (410) standing in the gully under the bridge to Kokiri Forest."
+    },
+    {
+      "name": "lw_post_stepped", "label": "Log post, stepped top", "kind": "tower",
+      "take": { "box": [[-1170, -1241, -365], [-1114, -1185, -5]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.25], "max": [2, 2, 1.5] },
+      "about": "A log post 350 tall from the gully under the bridge."
+    },
+    {
+      "name": "lw_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[995, 120, -185], [1010, 170, 20]] },
+      "origin": "base", "facing": [1, 0],
+      "about": "A wooden ladder 195 tall up the side of the sunken clearing (wall types ladder and ladder_top). Locked: sized for Link."
+    },
+    {
+      "name": "lw_ladder_tall", "label": "Tall ladder", "kind": "wall",
+      "take": { "box": [[-1375, -1010, -365], [-1330, -995, 20]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "A wooden ladder 375 tall from the gully under the bridge up to the forest floor. Locked: sized for Link."
+    },
+    {
+      "name": "lw_tall_grass", "label": "Tall grass", "kind": "hedge",
+      "take": { "box": [[1175, -245, -185], [1365, -118, -140]], "rooms": ["room_1_opa"] },
+      "collision": { "skip": [13] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [4, 4, 2] },
+      "about": "A patch of tall grass 28 tall that Link wades through, from the sunken clearing."
+    },
+    {
+      "name": "lw_light_beam", "label": "Sunbeam", "kind": "decor",
+      "take": { "box": [[-1180, 85, 25], [-1100, 175, 835]], "rooms": ["room_9_xlu"] },
+      "collision": { "none": true },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.25], "max": [4, 4, 1.5] },
+      "about": "A translucent shaft of light 800 tall falling through the canopy onto the Skull Kid's stump. No collision."
+    }
+  ]
+}

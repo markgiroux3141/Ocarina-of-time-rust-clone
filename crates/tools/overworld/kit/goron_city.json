@@ -1,0 +1,191 @@
+{
+  "name": "goron_city",
+  "label": "Goron City",
+  "about": "Pieces and textures cut from Goron City (spot18). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot18/spot18.glb",
+    "collision": "extracted/scenes/overworld/spot18/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09; every material is shaded by vertex colours). Spot18 draws the city several times over, once per room: room 3 (the view from the floor) has all of it and its materials get the plain names; rooms 0 and 2 (the upper tiers' views) repeat most of them, named `_up`. `ground` is the tiers' floors, `ledge_top` and `cobbles_edge*` the floors along their edges (a hay fringe), `tiles` the city floor, `cave_wall*` and `cliff` the walls (`wall_drawing` with a red Goron), `ceiling` the rock overhead, `steps` the ramp-stairs, `lava` the east lava pool, `gate_wall` the tunnel to the trail; `post_*` the banded railing posts, `rope_fence*` the railings, `rope*` the ropes over the centre, `hole*`, `mural_*` the translucent cave paintings; `carpet*`, `table_wood*`, `banner_b`, `pennant*` and `emblem` are Darunia's chamber (room 1). No floor has a detail texture.",
+    "prefix": "gc_",
+    "roles": [
+      "hole", "cave_wall_b_up", "cave_wall_up", "cliff_up", "ledge_top_up", "cave_wall_c_up", "wall_drawing_up", "banner_up",
+      "cobbles_edge_up", "wood_ring_up", "wood_up", "ceiling_up", "ground_up", "steps_up", "rope_fence_up", "rope_fence_b",
+      "rope_up", "stump_top_up", "wood_end_up", "post_blue_up", "post_green_up", "hole_double", "hole_b", "mural_dodongo",
+      "mural_flames", "mural_goron", "mural_triangles", "carpet", "banner_b", "pennant", "table_wood", "table_wood_b",
+      "carpet_edge", "pennant_b", "emblem", "brick", "blue_rock", "eye_stone", "eye_stone_b", "lava",
+      "stump_top", "post_green", "post_blue", "cave_wall_b", "cave_wall", "cliff", "ledge_top", "ceiling",
+      "cave_wall_c", "wall_drawing", "cobbles_edge", "cobbles_edge_b", "rope_fence", "ground", "post_olive", "post_red",
+      "banner", "wood", "wood_ring", "gate_wall", "tiles", "steps", "wood_end", "rope",
+      "carpet_b", "dark_fade"
+    ],
+    "checked": [
+      ["ground", 64, 32, "repeat", "repeat"],
+      ["lava", 16, 16, "mirror", "mirror"],
+      ["cliff", 32, 64, "repeat", "repeat"],
+      ["cave_wall", 32, 64, "repeat", "clamp"],
+      ["cave_wall_c", 32, 64, "repeat", "clamp"],
+      ["wall_drawing", 32, 64, "repeat", "clamp"],
+      ["gate_wall", 64, 32, "repeat", "repeat"],
+      ["ceiling", 64, 32, "repeat", "repeat"],
+      ["rope_fence", 64, 64, "repeat", "clamp"],
+      ["post_red", 16, 32, "repeat", "repeat"],
+      ["steps", 64, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "gc_trail_gate", "label": "Gate to the trail", "kind": "opening",
+      "take": { "box": [[-45, -1660, 595], [165, -995, 925]], "rooms": ["room_3_opa", "room_3_xlu"], "materials": ["gate_wall", "ground", "ceiling", "dark_fade"] },
+      "origin": [60, -1000, 600], "facing": [0, 1],
+      "opening": { "exit": 1, "min_depth": 300 },
+      "about": "The tunnel up to Death Mountain Trail from the city's top tier: stone walls with pilasters (as the trail's Goron City gate), its floor rising to the exit (exit 1, about 210 in), fading to dark. The origin is the mouth's floor, facing out. Locked."
+    },
+    {
+      "name": "gc_woods_tunnel", "label": "Tunnel to the Lost Woods", "kind": "opening",
+      "take": { "box": [[200, -1640, 190], [645, -485, 360]], "rooms": ["room_3_opa", "room_3_xlu"], "materials": ["cave_wall", "ledge_top", "ceiling"] },
+      "origin": [285, -510, 196], "facing": [-0.243, 0.970],
+      "opening": { "exit": 4, "min_depth": 300 },
+      "about": "The long straight tunnel to the Lost Woods from the second tier (exit 4's floor starts about 770 in). The origin is the mouth's floor, facing out. Locked."
+    },
+    {
+      "name": "gc_shop_door", "label": "Shop doorway", "kind": "opening",
+      "take": { "box": [[-620, -140, -10], [-190, 75, 160]], "rooms": ["room_3_opa", "room_3_xlu"], "materials": ["cave_wall", "ceiling", "tiles"] },
+      "origin": [-212, 12, -3], "facing": [0.976, 0.217],
+      "opening": { "exit": 3, "min_depth": 150 },
+      "about": "The low doorway to the Goron shop on the city's floor: a short tunnel whose whole floor is exit 3 (ENTR_GOLON_0). The origin is the mouth's floor, facing out. Locked."
+    },
+    {
+      "name": "gc_hub", "label": "Hub platform", "kind": "platform",
+      "take": { "box": [[-90, -320, 430], [92, -160, 560]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 2] },
+      "about": "A log-slice platform with a smaller stump on it, from the city's centre (the ropes that hold it are left out); wood footing, its stump's sides don't let Link grab."
+    },
+    {
+      "name": "gc_wood_ramp", "label": "Wooden ramp", "kind": "platform",
+      "take": { "box": [[-10, -785, 555], [45, -610, 602]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 3, 2] },
+      "about": "A wedge of wood, 167 long and 42 high: a short ramp between ledges. There are three in the city."
+    },
+    {
+      "name": "gc_rope_railing", "label": "Rope railing", "kind": "decor",
+      "take": { "box": [[245, -535, 390], [445, 172, 460]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [3, 1, 2] },
+      "about": "A lashed-rope railing (translucent lattice) with a corner, 700 long, along a tier's edge; collides."
+    },
+    {
+      "name": "gc_post_red", "label": "Banded post, red", "kind": "tower",
+      "take": { "box": [[-250, -537, 185], [-227, -513, 280]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "A wooden post with two red bands and a cut top, 88 tall, at the ends of the city's railings. The city also has green, blue and olive ones."
+    },
+    {
+      "name": "gc_post_blue", "label": "Banded post, blue", "kind": "tower",
+      "take": { "box": [[797, -431, 588], [819, -406, 684]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 3] },
+      "about": "The blue-banded version of the railing post."
+    },
+    {
+      "name": "gc_mural_dodongo", "label": "Dodongo mural", "kind": "wall",
+      "take": { "box": [[-135, -35, 595], [595, 380, 912]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [2, 1, 2], "uniform": true },
+      "about": "A cave painting of a Dodongo, translucent, drawn over two faces of the wall above the shop."
+    },
+    {
+      "name": "gc_mural_flames", "label": "Flame mural", "kind": "wall",
+      "take": { "box": [[-610, 375, 595], [-127, 430, 805]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [2, 1, 2], "uniform": true },
+      "about": "A cave painting of flames, translucent."
+    },
+    {
+      "name": "gc_mural_gorons", "label": "Dancing Gorons mural", "kind": "wall",
+      "take": { "box": [[-408, -447, 190], [-365, 86, 360]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [2, 1, 2] },
+      "tiles": true,
+      "about": "A cave painting of a line of dancing Gorons, translucent; its texture repeats as it grows."
+    },
+    {
+      "name": "gc_mural_goron", "label": "Goron mural", "kind": "wall",
+      "take": { "box": [[-82, -601, 192], [50, -563, 365]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [2, 1, 2], "uniform": true },
+      "about": "A cave painting of one dancing Goron, translucent."
+    },
+    {
+      "name": "gc_banners", "label": "Banner row", "kind": "wall",
+      "take": { "box": [[-830, 38, 715], [-822, 164, 765]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [4, 1, 2] },
+      "tiles": true,
+      "about": "A row of four Goron banners (the triforce-and-spark crest), 120 wide; its texture repeats as it grows."
+    },
+    {
+      "name": "gc_hole", "label": "Cave hole", "kind": "wall",
+      "take": { "box": [[195, 203, 292], [265, 278, 350]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [3, 1, 3], "uniform": true },
+      "about": "A dark cave hole painted on the wall (translucent): the city's look of Goron dwellings."
+    },
+    {
+      "name": "gc_hole_double", "label": "Double cave hole", "kind": "wall",
+      "take": { "box": [[205, -172, 72], [215, 26, 165]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [3, 1, 3], "uniform": true },
+      "about": "A double cave hole painted on the wall (translucent)."
+    },
+    {
+      "name": "gc_carpet", "label": "Carpet", "kind": "decor",
+      "take": { "box": [[-140, 286, -8], [-2, 375, 2]], "rooms": ["room_3_opa", "room_3_xlu"] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 1], "max": [3, 3, 1] },
+      "about": "The patterned rug by the shop on the city's floor (translucent)."
+    },
+    {
+      "name": "gc_low_table", "label": "Low table", "kind": "decor",
+      "take": { "box": [[238, 1190, 35], [291, 1276, 72]], "rooms": ["room_1_opa"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [2, 2, 1.5] },
+      "about": "A low plank table on four legs, from Darunia's chamber (it has three)."
+    },
+    {
+      "name": "gc_banner_row_b", "label": "Banner row, pale", "kind": "wall",
+      "take": { "box": [[-88, 1272, 168], [268, 1284, 262]], "rooms": ["room_1_opa"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [3, 1, 2] },
+      "about": "A sagging line of pale banners strung along a wall of Darunia's chamber."
+    },
+    {
+      "name": "gc_emblem", "label": "Darunia's emblem", "kind": "wall",
+      "take": { "box": [[-108, 1175, 58], [-100, 1425, 186]], "rooms": ["room_1_xlu"] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.5], "max": [2, 1, 2], "uniform": true },
+      "about": "The black spiral emblem on the walls of Darunia's chamber (translucent)."
+    },
+    {
+      "name": "gc_stairs_low", "label": "Ramp stairs, low", "kind": "platform",
+      "take": { "box": [[-530, -920, -10], [10, -420, 200]], "rooms": ["room_3_opa", "room_3_xlu"], "materials": ["steps", "ground", "cave_wall"] },
+      "origin": "base",
+      "about": "A switchback ramp-stair from the city's floor to the first tier (200 up): two flights with steps drawn on them and a landing, walled on its inner side. Locked: sized for Link."
+    },
+    {
+      "name": "gc_stove", "label": "Brick stove", "kind": "decor",
+      "take": { "box": [[-855, -1210, 395], [-780, -1110, 580]], "rooms": ["room_2_opa"], "materials": ["brick", "blue_rock"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [2, 2, 2], "uniform": true },
+      "about": "A brick stove with a bent blue-stone chimney, in an alcove of the upper tier."
+    }
+  ]
+}

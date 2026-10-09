@@ -1,0 +1,99 @@
+{
+  "name": "zora_domain",
+  "label": "Zora's Domain",
+  "about": "Pieces and textures cut from Zora's Domain (spot07). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot07/spot07.glb",
+    "collision": "extracted/scenes/overworld/spot07/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where Zora's Domain draws them). Every surface is shaded by vertex colours, which the library doesn't bake: the textures are beige, the game tints them blue-grey. `ground`, `_b` and `_c` are the rock floors (64x32, no detail texture), the `cliff` letters the streaked rock walls of the cavern (mostly clamped in v: stretched once up a wall), the `ceiling` letters the overhangs' undersides, `brick` and `brick_b` the layered stone of the throne room, `steps` the stairs. `railing`, `railing_post`, `shell_trim`, `emblem` and the `carpet` roles dress King Zora's dais; `door_frame` and `tunnel_floor` are the shop's doorway, `post_gold` the posts by the Lake Hylia passage, `mist` the light at the entrances. The domain has no water texture: its pool is an actor.",
+    "prefix": "zd_",
+    "roles": [
+      "ground", "cliff", "cliff_b", "ceiling", "ceiling_b", "brick", "steps", "ceiling_c", "cliff_c", "brick_b",
+      "ceiling_d", "ground_b", "railing", "shell_trim", "railing_post", "carpet_blue", "carpet_red", "cliff_d",
+      "ceiling_e", "ceiling_f", "cliff_e", "ceiling_g", "steps_b", "mist", "emblem", "cliff_f", "ceiling_h",
+      "ground_c", "ladder", "ladder_top", "railing_b", "shell_trim_b", "ceiling_i", "cliff_g", "cliff_h", "cliff_i",
+      "cliff_j", "cliff_k", "cliff_l", "ceiling_j", "ceiling_k", "door_frame", "tunnel_floor", "ledge_trim", "rock",
+      "post_gold", "shadow", "carpet_blue_b"
+    ],
+    "checked": [
+      ["ground", 64, 32, "repeat", "repeat"],
+      ["ground_c", 64, 32, "repeat", "repeat"],
+      ["cliff", 64, 32, "repeat", "clamp"],
+      ["cliff_b", 64, 32, "repeat", "clamp"],
+      ["cliff_c", 64, 32, "repeat", "clamp"],
+      ["cliff_g", 64, 32, "repeat", "clamp"],
+      ["cliff_l", 64, 32, "repeat", "clamp"],
+      ["brick", 64, 32, "repeat", "repeat"],
+      ["brick_b", 64, 32, "repeat", "repeat"],
+      ["ceiling", 64, 32, "repeat", "clamp"],
+      ["railing", 32, 64, "mirror", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "zd_throne", "label": "King Zora's dais", "kind": "platform",
+      "take": { "box": [[440, 1720, 850], [810, 1900, 1262]], "materials": ["brick_b", "carpet_blue", "carpet_red", "railing", "railing_post", "ground"] },
+      "collision": { "box": [[440, 1720, 850], [810, 1900, 1020]] },
+      "origin": "base", "facing": [0, -1],
+      "about": "The dais King Zora sits on (he's an actor): a stone platform 360 wide and 140 high, its front sloping back, with blue and red carpets down its face and two ornate railings at its back. Its railings don't collide here (they stood against the wall)."
+    },
+    {
+      "name": "zd_dais_steps", "label": "Stepped landing", "kind": "platform",
+      "take": { "box": [[560, 1368, 850], [690, 1550, 950]], "materials": ["steps", "brick", "brick_b"] },
+      "origin": "base", "facing": [0, -1],
+      "about": "A block of layered stone 120 wide: steps rising 55 to a landing 90 high, in front of King Zora's dais. Locked: the steps are sized for Link."
+    },
+    {
+      "name": "zd_stairs", "label": "Covered stairway", "kind": "platform",
+      "take": { "box": [[435, 50, 395], [735, 1230, 1050]], "materials": ["steps", "steps_b", "cliff_c", "cliff_d", "ceiling_c", "ceiling_e"] },
+      "origin": "base", "facing": [0, -1],
+      "about": "The long stairway up the east side of the domain to King Zora's chamber, roofed over: a landing, then 210 wide, rising 485 over 1026, with rock walls and a ceiling 160 above the steps. Locked."
+    },
+    {
+      "name": "zd_shop_door", "label": "Zora Shop entrance (exit)", "kind": "opening",
+      "take": { "box": [[200, -300, 40], [560, 70, 220]], "materials": ["door_frame", "tunnel_floor", "ceiling_k"] },
+      "origin": [508.5, -235.5, 53], "facing": [1, -1],
+      "opening": { "exit": 3, "min_depth": 414 },
+      "about": "The shop's doorway on the lower ledge: a mouth 120 wide and 160 high whose passage narrows to a point 414 back, rising 104 (the shop is a separate scene). The exit floor starts 80 in."
+    },
+    {
+      "name": "zd_alcove", "label": "Alcove", "kind": "opening",
+      "take": { "box": [[-340, 960, -5], [-60, 1130, 165]], "materials": ["cliff_f", "ceiling_h", "ground_c"] },
+      "origin": [-199, 966, 0], "facing": [0, -1],
+      "opening": { "min_depth": 160 },
+      "about": "The recess behind the waterfall where the torches and the chest stand (actors): 266 wide at its mouth, 130 to 160 high and 160 deep."
+    },
+    {
+      "name": "zd_rock_pillar", "label": "Rock pillar", "kind": "rock",
+      "take": { "box": [[-110, 515, -125], [135, 790, 165]], "materials": ["cliff", "ground_b"] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 3] },
+      "about": "A tapering spire of rock 280 tall, flaring out at its foot, with a small flat top (67 by 76): it stands in the domain's pool, its foot under water."
+    },
+    {
+      "name": "zd_post", "label": "Pool post", "kind": "tower",
+      "take": { "box": [[-230, 175, -225], [-197, 208, -125]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [3, 3, 4] },
+      "about": "A banded post 25 square and 92 tall; two flank the underwater passage to Lake Hylia at the bottom of the pool."
+    },
+    {
+      "name": "zd_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[-1060, 285, -50], [-1028, 303, 230]] },
+      "origin": "base", "facing": "normal",
+      "about": "A ladder 275 tall up from the pool to the west ledge. Climbable; locked."
+    },
+    {
+      "name": "zd_railing", "label": "Ornate railing", "kind": "decor",
+      "take": { "box": [[440, 1815, 990], [592, 1858, 1160]], "rooms": ["room_0_opa"] },
+      "origin": "base",
+      "about": "A panel of knotted rails 142 wide and 160 high with a ball-topped post, from behind King Zora's dais. Cut out, drawn from both sides."
+    }
+  ]
+}

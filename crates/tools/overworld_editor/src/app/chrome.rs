@@ -622,12 +622,21 @@ impl App {
     fn level_settings(&mut self, ui: &mut egui::Ui) {
         section(ui, "level", "Level", None, true, |ui| {
             field(ui, "Name", Some("Also the export folder's name"), |ui| ui.add(egui::TextEdit::singleline(&mut self.doc.name).desired_width(ui.available_width())));
-            let themes: Vec<(String, &str)> = overworld::theme::BUILTIN.iter().map(|&t| (t.to_string(), overworld::kit::scene(t).map_or(t, |sc| sc.label))).collect();
+            let themes: Vec<(String, String)> = overworld::theme::BUILTIN.iter().map(|&t| (t.to_string(), overworld::kit::label(t))).collect();
+            let label = |t: &str| themes.iter().find(|x| x.0 == t).map_or(t.to_string(), |x| x.1.clone());
             if field(
                 ui,
                 "Theme",
                 Some("How the level looks: every wall, floor and tree not pinned to another theme's style. Styles of other themes stay pinned when you switch."),
-                |ui| widgets::segmented(ui, &mut self.doc.settings.theme, &themes),
+                |ui| {
+                    let before = self.doc.settings.theme.clone();
+                    egui::ComboBox::from_id_salt("level theme").selected_text(label(&before)).width(ui.available_width()).show_ui(ui, |ui| {
+                        for (t, name) in &themes {
+                            ui.selectable_value(&mut self.doc.settings.theme, t.clone(), name);
+                        }
+                    });
+                    self.doc.settings.theme != before
+                },
             ) {
                 // a theme file loaded by hand gives way to the one chosen here
                 self.theme_file = None;

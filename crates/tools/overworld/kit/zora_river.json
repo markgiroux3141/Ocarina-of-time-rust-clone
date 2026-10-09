@@ -1,0 +1,166 @@
+{
+  "name": "zora_river",
+  "label": "Zora's River",
+  "about": "Pieces and textures cut from Zora's River (spot03). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot03/spot03.glb",
+    "collision": "extracted/scenes/overworld/spot03/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where Zora's River draws them). `ground` is the grass camo of every bank and top (no detail texture), `riverbed`, `_b` and `_c` the dark rock under the water, `water` the river (`water_b` its rapids, `water_c` the waterfall pool). `cliff` is the gorge's big rock face with grass at its top and foot (cut out at the top: its skyline), `cliff_b` the low banks with a grass lip, `cliff_moss` the faces with moss hanging from their lip; the `cliff_side` textures are the same rock turned on its side (the lip runs along u). `stone_post` is the mossy block of the posts and walls, `bridge_log` and `bridge_post` the log bridge, `fence` the rope fence, `iron_fence` the spiked railing, `plaque` the lullaby slab, `tunnel_wall` the passage to Zora's Domain.",
+    "prefix": "zr_",
+    "roles": [
+      "ladder_back", "ladder", "ground", "stone_post", "iron_fence", "hanging_vines", "log_bark", "fence",
+      "cliff_side", "cliff", "cliff_b", "cliff_moss", "cliff_side_b", "cliff_side_c", "riverbed", "riverbed_b",
+      "log_bark_b", "log_end", "log_end_b", "bridge_post", "bridge_log", "pebbles", "water", "water_b",
+      "riverbed_c", "stone_trim", "plaque", "tunnel_wall", "cave_wall", "tunnel_wall_b", "stone_pillar",
+      "tunnel_beams", "spire", "water_c"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["cliff", 64, 64, "repeat", "clamp"],
+      ["cliff_b", 32, 32, "repeat", "clamp"],
+      ["cliff_moss", 32, 64, "repeat", "clamp"],
+      ["riverbed", 32, 32, "repeat", "repeat"],
+      ["water", 32, 32, "repeat", "repeat"],
+      ["stone_post", 16, 64, "repeat", "clamp"],
+      ["fence", 64, 64, "repeat", "clamp"],
+      ["iron_fence", 16, 64, "repeat", "clamp"],
+      ["bridge_log", 32, 16, "mirror", "repeat"],
+      ["bridge_post", 16, 32, "repeat", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+    "pieces": [
+    {
+      "name": "zr_log_bridge", "label": "Log bridge", "kind": "bridge",
+      "take": { "box": [[2840, 885, 540], [2972, 1300, 625]], "materials": ["bridge_post", "bridge_log"] },
+      "collision": { "box": [[2840, 885, 545], [2972, 1300, 625]] },
+      "origin": "base", "facing": [0, 1],
+      "scale": { "min": [1, 0.6, 1], "max": [1, 1.6, 1] },
+      "about": "Twelve lashed logs (120 wide, 380 long) dipping 30 between pointed posts, over the river where the upper gorge begins. Its floor is planks; low invisible sides keep Link on it."
+    },
+    {
+      "name": "zr_mossy_log", "label": "Mossy log bridge", "kind": "bridge",
+      "take": { "box": [[830, 728, 480], [885, 927, 572]] },
+      "origin": "base", "facing": [0, 1],
+      "scale": { "min": [1, 0.7, 1], "max": [1.5, 2, 1] },
+      "about": "A narrow log (45 wide, 190 long) with moss hanging under it, from the ledge to the Gossip Stone pillar's top."
+    },
+    {
+      "name": "zr_gossip_pillar", "label": "Gossip Stone pillar", "kind": "platform",
+      "take": { "box": [[620, 910, 125], [992, 1234, 576]] },
+      "collision": { "box": [[620, 910, 449], [992, 1234, 576]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [1.5, 1.5, 1.5] },
+      "about": "A mushroom of rock: a grassy top 360 across, 440 up on a slim stem, where the Gossip Stone stands (an actor, not included). In the game only the top collides; the stem doesn't."
+    },
+    {
+      "name": "zr_pillar_tall", "label": "Grassy pillar, tall", "kind": "tower",
+      "take": { "box": [[314, 1177, 135], [437, 1300, 465]] },
+      "collision": { "box": [[314, 1177, 139], [437, 1300, 465]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 2] },
+      "about": "A square column of rock 320 tall with a grassy top, standing in the upper river (a Piece of Heart sat on it)."
+    },
+    {
+      "name": "zr_pillar", "label": "Grassy pillar", "kind": "tower",
+      "take": { "box": [[547, 1081, 135], [727, 1261, 365]] },
+      "collision": { "box": [[547, 1081, 139], [727, 1261, 365]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 2] },
+      "about": "A wide square column of rock 220 tall with a grassy top, standing in the upper river."
+    },
+    {
+      "name": "zr_pillar_low", "label": "Grassy block", "kind": "stone",
+      "take": { "box": [[36, 1010, 135], [215, 1190, 200]] },
+      "collision": { "box": [[36, 1010, 139], [215, 1190, 200]] },
+      "origin": "top",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 4] },
+      "about": "A grass-topped block 170 square standing 55 out of the riverbed: a stepping stone."
+    },
+    {
+      "name": "zr_frog_logs", "label": "Frogs' logs", "kind": "platform",
+      "take": { "box": [[930, 958, 135], [1195, 1402, 240]] },
+      "collision": { "box": [[930, 958, 139], [1195, 1402, 240]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "Three fallen logs lying in the shallow upper river, where the frogs sing (the frogs are actors). Link can stand on them."
+    },
+    {
+      "name": "zr_stone_post", "label": "Stone post", "kind": "tower",
+      "take": { "box": [[-655, 147, 95], [-613, 187, 225]] },
+      "collision": { "box": [[-655, 147, 99], [-613, 187, 225]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.3], "max": [3, 3, 3] },
+      "about": "A mossy stone block post, 30 square and 120 tall."
+    },
+    {
+      "name": "zr_iron_fence", "label": "Iron fence with post", "kind": "decor",
+      "take": { "box": [[-660, 145, 95], [-610, 390, 225]], "materials": ["iron_fence", "stone_post"] },
+      "origin": "base", "facing": [1, 0],
+      "about": "A stone post (120 tall) with a spiked iron fence (64 tall, 200 long) running from it, by the bean seller; a second one guards the ledge south of the Gossip Stone pillar. Its sides don't let Link grab them."
+    },
+    {
+      "name": "zr_stone_wall", "label": "Stone wall corner", "kind": "building",
+      "take": { "box": [[-1820, -690, 95], [-1605, -395, 265]], "materials": ["stone_post"] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 1.5] },
+      "about": "An L of mossy stone blocks 160 tall (200 by 280, 40 thick) at the river's mouth, beside the bombable boulders."
+    },
+    {
+      "name": "zr_fence", "label": "Rope fence", "kind": "decor",
+      "take": { "box": [[2848, 1340, 575], [3450, 1447, 725]], "rooms": ["room_0_opa"] },
+      "origin": "base",
+      "about": "Posts and rope 593 long along the upper gorge's north bank, climbing 140 at its east end. Room 1 has a copy."
+    },
+    {
+      "name": "zr_fence_corner", "label": "Rope fence, corner", "kind": "decor",
+      "take": { "box": [[2869, 647, 540], [3091, 817, 645]], "rooms": ["room_0_opa"] },
+      "origin": "base",
+      "about": "Posts and rope round a corner (160 and 120 long), on the south bank by the log bridge."
+    },
+    {
+      "name": "zr_fence_short", "label": "Rope fence, short", "kind": "decor",
+      "take": { "box": [[761, 777, 275], [891, 947, 352]] },
+      "origin": "base",
+      "about": "A short bent run of posts and rope (120 and 160 long), on the ledge below the Gossip Stone pillar."
+    },
+    {
+      "name": "zr_ladder", "label": "Ladder, tall", "kind": "wall",
+      "take": { "box": [[604, 66, 190], [642, 97, 590]] },
+      "origin": "base", "facing": "normal",
+      "about": "A wooden ladder 390 tall up the cliff by the river's first bend. Climbable (wall type ladder); locked at its size."
+    },
+    {
+      "name": "zr_ladder_short", "label": "Ladder, short", "kind": "wall",
+      "take": { "box": [[3711, 1591, 555], [3745, 1625, 730]], "rooms": ["room_1_opa"] },
+      "origin": "base", "facing": "normal",
+      "about": "A wooden ladder 165 tall from the waterfall's pool to the ledge above; its top is a ladder-top wall. Locked at its size."
+    },
+    {
+      "name": "zr_spire", "label": "Rock spire", "kind": "rock",
+      "take": { "box": [[3592, 1156, 555], [3653, 1216, 715]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [3, 3, 3] },
+      "about": "A three-sided spike of rock 150 tall, one of three in the waterfall's pool."
+    },
+    {
+      "name": "zr_plaque", "label": "Lullaby plaque", "kind": "decor",
+      "take": { "box": [[4040, 1316, 915], [4152, 1488, 925]], "materials": ["plaque"] },
+      "origin": "base", "facing": [-1, 0],
+      "about": "The stone slab (100 by 160) on the ledge before the waterfall where Link plays Zelda's Lullaby. Flat: it lies on the ground, with a floor of its own."
+    },
+    {
+      "name": "zr_domain_passage", "label": "Passage to Zora's Domain (exit)", "kind": "opening",
+      "take": { "box": [[4240, 1295, 895], [4630, 1510, 1085]], "materials": ["tunnel_wall", "stone_trim", "stone_post"] },
+      "collision": { "box": [[4240, 1295, 895], [4630, 1510, 1085]] },
+      "origin": [4246, 1402, 920], "facing": [-1, 0],
+      "opening": { "exit": 3, "min_depth": 380 },
+      "about": "The passage behind the waterfall (the waterfall is an actor): a stone doorway 120 wide and 120 high, then a mossy corridor 380 deep. The exit floor starts 260 in."
+    }
+  ]
+}

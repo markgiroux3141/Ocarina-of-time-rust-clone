@@ -18,9 +18,11 @@ pub mod pieces;
 pub mod profiles;
 pub mod props;
 pub mod rocks;
+pub mod survey;
 pub mod terrain;
 pub mod textures;
 pub mod theme;
+pub mod thumb;
 pub mod tunnels;
 
 pub use build::{build, build_with, Level};

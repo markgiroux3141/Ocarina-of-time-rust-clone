@@ -11,8 +11,27 @@ use eframe::egui::{self, text::LayoutJob, Align2, Color32, FontId, Margin, Pos2,
 use overworld::pieces::Piece;
 use overworld::terrain::Mode;
 
-/// The kit's kinds, as the palette's categories (hedges are drawn with the Hedge tool).
-const CATS: [(&str, &str); 6] = [("all", "All"), ("house", "Houses"), ("tower", "Stumps"), ("stone", "Stones"), ("opening", "Openings"), ("wall", "On walls")];
+/// The kit's kinds, as the palette's categories, in this order (hedges are drawn with the Hedge
+/// tool; a kind not listed shows as itself, after these).
+const CATS: [(&str, &str); 12] = [
+    ("all", "All"),
+    ("house", "Houses"),
+    ("building", "Buildings"),
+    ("tower", "Posts"),
+    ("bridge", "Bridges"),
+    ("platform", "Platforms"),
+    ("stone", "Stones"),
+    ("rock", "Rocks"),
+    ("plant", "Plants"),
+    ("decor", "Decor"),
+    ("opening", "Openings"),
+    ("wall", "On walls"),
+];
+
+/// A kind's name in the palette.
+fn cat_name(kind: &str) -> &str {
+    CATS.iter().find(|c| c.0 == kind).map_or(kind, |c| c.1)
+}
 
 impl App {
     pub(super) fn palette(&mut self, ui: &mut egui::Ui) {
@@ -186,28 +205,52 @@ impl App {
     fn kit_palette(&mut self, ui: &mut egui::Ui) {
         let Some(kit) = self.kit.clone() else {
             egui::Frame::new().inner_margin(Margin::symmetric(14, 0)).show(ui, |ui| {
-                widgets::callout(ui, "No kit. It's cut from the extracted Kokiri Forest (extracted/scenes/overworld/spot04) by `overworld kit-pieces`, into out/overworld/kit/kokiri.", WARN);
+                widgets::callout(ui, "No kit. Each region's is cut from its extracted scene (extracted/scenes/overworld) by `overworld kit-pieces`, into out/overworld/kit/<region>.", WARN);
             });
             return;
         };
-        let pieces: Vec<&Piece> = kit.pieces.iter().filter(|p| p.kind != "hedge").collect();
+        let all: Vec<&Piece> = kit.pieces.iter().filter(|p| p.kind != "hedge").collect();
+        let regions = kit.regions();
+        if self.kit_region != "all" && !regions.contains(&self.kit_region.as_str()) {
+            self.kit_region = "all".into();
+        }
+        // the region first, then the kinds it has
+        let pieces: Vec<&Piece> = all.iter().filter(|p| self.kit_region == "all" || p.region == self.kit_region).copied().collect();
+        let mut kinds: Vec<&str> = CATS.iter().map(|c| c.0).filter(|&k| k == "all" || pieces.iter().any(|p| p.kind == k)).collect();
+        for p in &pieces {
+            if !kinds.contains(&p.kind.as_str()) {
+                kinds.push(&p.kind);
+            }
+        }
+        if !kinds.contains(&self.kit_cat.as_str()) {
+            self.kit_cat = "all".into();
+        }
         egui::Frame::new().inner_margin(Margin { left: 14, right: 14, top: 0, bottom: 12 }).show(ui, |ui| {
-            widgets::search(ui, &mut self.kit_query, &format!("Search the {} kit", self.theme.name));
+            widgets::search(ui, &mut self.kit_query, "Search props");
             ui.add_space(2.0);
+            if regions.len() > 1 {
+                let label = |r: &str| if r == "all" { format!("All regions ({})", all.len()) } else { format!("{} ({})", overworld::kit::label(r), all.iter().filter(|p| p.region == r).count()) };
+                field(ui, "Region", Some("Where the pieces were cut from"), |ui| {
+                    egui::ComboBox::from_id_salt("kit region").selected_text(label(&self.kit_region)).width(ui.available_width()).show_ui(ui, |ui| {
+                        for r in std::iter::once("all").chain(regions.iter().copied()) {
+                            ui.selectable_value(&mut self.kit_region, r.to_string(), label(r));
+                        }
+                    })
+                    .response
+                });
+                ui.add_space(4.0);
+            }
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
-                for (k, name) in CATS {
-                    let n = pieces.iter().filter(|p| k == "all" || p.kind == k).count();
-                    if n == 0 {
-                        continue;
-                    }
-                    if widgets::chip(ui, name, Some(&n.to_string()), self.kit_cat == k).clicked() {
-                        self.kit_cat = k.into();
+                for k in &kinds {
+                    let n = pieces.iter().filter(|p| *k == "all" || p.kind == *k).count();
+                    if widgets::chip(ui, cat_name(k), Some(&n.to_string()), self.kit_cat == *k).clicked() {
+                        self.kit_cat = k.to_string();
                     }
                 }
             });
         });
-        let recent: Vec<&Piece> = self.recent.iter().filter_map(|n| pieces.iter().find(|p| &p.name == n).copied()).collect();
+        let recent: Vec<&Piece> = self.recent.iter().filter_map(|n| all.iter().find(|p| &p.name == n).copied()).collect();
         if !recent.is_empty() {
             section(ui, "pal recent", "Recent", None, true, |ui| {
                 let w = (ui.available_width() - 6.0 * 3.0) / 4.0;
@@ -222,11 +265,15 @@ impl App {
             });
         }
         let q = self.kit_query.to_lowercase();
-        let shown: Vec<&Piece> = pieces.iter().filter(|p| (self.kit_cat == "all" || p.kind == self.kit_cat) && (q.is_empty() || p.label.to_lowercase().contains(&q) || p.name.contains(&q))).copied().collect();
-        let title = CATS.iter().find(|c| c.0 == self.kit_cat).map_or("Kit", |c| if c.0 == "all" { "Kit" } else { c.1 });
-        section(ui, "pal kit", title, Some(shown.len().to_string()), true, |ui| {
+        let shown: Vec<&Piece> = pieces
+            .iter()
+            .filter(|p| (self.kit_cat == "all" || p.kind == self.kit_cat) && (q.is_empty() || p.label.to_lowercase().contains(&q) || p.name.contains(&q) || overworld::kit::label(&p.region).to_lowercase().contains(&q)))
+            .copied()
+            .collect();
+        let title = if self.kit_cat == "all" { "Props".to_string() } else { cat_name(&self.kit_cat).to_string() };
+        section(ui, "pal kit", &title, Some(shown.len().to_string()), true, |ui| {
             if shown.is_empty() {
-                widgets::hint(ui, format!("Nothing in the kit matches “{}”.", self.kit_query));
+                widgets::hint(ui, format!("Nothing here matches “{}”.", self.kit_query));
             }
             let w = (ui.available_width() - 6.0 * 2.0) / 3.0;
             for row in shown.chunks(3) {
@@ -292,6 +339,7 @@ impl App {
         resp.on_hover_ui(|ui| {
             ui.set_max_width(260.0);
             ui.label(RichText::new(&piece.label).font(style::semibold(13.5)).color(TEXT));
+            ui.label(RichText::new(format!("{} · {}", overworld::kit::label(&piece.region), cat_name(&piece.kind))).size(11.5).color(MUTED));
             ui.label(
                 RichText::new(format!("{:.0} × {:.0} × {:.0} · {} triangles · {} collision vertices{}", size[0], size[1], size[2], piece.tris.len(), piece.collision_vertices(), if piece.scale.locked() { " · fixed size" } else { "" }))
                     .monospace()

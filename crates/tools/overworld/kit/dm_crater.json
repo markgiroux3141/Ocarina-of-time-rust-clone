@@ -1,0 +1,110 @@
+{
+  "name": "dm_crater",
+  "label": "Death Mountain Crater",
+  "about": "Pieces and textures cut from Death Mountain Crater (spot17). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot17/spot17.glb",
+    "collision": "extracted/scenes/overworld/spot17/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where the crater draws them; nearly all are shaded by vertex colours). `ground` is the crater's floors, `lava` the lava sea, `cliff` its big rock walls, `rock` the central rock mass and low walls, `rock_brick` the climbable south wall, `cliff_streak*` the dark walls by the passage, `rim`/`rim_b` the pale outer rim and `haze` the dark fade over it. The Fire Temple gatehouse is `column*`, `temple_*`, `goron_face`, `goron_ring`, `gate_*`, `mural`, `gold_relief`, its shaft `untextured` (vertex colour only) and `tunnel_rock`; the bridges are `plank*`, `post_wood*`, `post_top*`, `beam*` and `wood*`; the passage to the trail `passage_*` and `stairs` (translucent). No floor has a detail texture.",
+    "prefix": "dmc_",
+    "roles": [
+      "column", "lintel_under", "column_b", "temple_floor", "tunnel_rock", "untextured", "sand", "goron_face",
+      "goron_ring", "ladder", "ladder_top", "gold_relief", "temple_tile", "temple_tile_b", "mural", "pillar",
+      "rock", "cliff", "rock_brick", "cliff_streak", "ceiling", "ground", "ceiling_b", "cliff_streak_b",
+      "brick", "cobbles", "rim", "eye_stone", "rim_b", "brick_b", "eye_stone_b", "beam",
+      "plank", "gate_top", "gate_lintel", "gate_bars", "rock_arch", "wood", "post_wood", "lava",
+      "post_top", "post_wood_b", "beam_b", "wood_b", "post_top_b", "plank_b", "rock_b", "wood_c",
+      "plank_c", "passage_floor", "passage_wall", "passage_ceiling", "stairs", "block_rim", "haze"
+    ],
+    "checked": [
+      ["ground", 64, 32, "repeat", "repeat"],
+      ["lava", 32, 32, "repeat", "repeat"],
+      ["cliff", 64, 64, "repeat", "repeat"],
+      ["rock", 64, 32, "repeat", "repeat"],
+      ["rock_brick", 64, 32, "repeat", "repeat"],
+      ["cliff_streak_b", 32, 64, "repeat", "repeat"],
+      ["brick_b", 32, 32, "repeat", "repeat"],
+      ["tunnel_rock", 32, 32, "repeat", "repeat"],
+      ["plank", 64, 32, "mirror", "repeat"],
+      ["post_wood", 32, 32, "repeat", "mirror"],
+      ["haze", 16, 16, "clamp", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong. Type 5 is the Fire Temple's doorway floor (exit 3), at the foot of its shaft.",
+    "5": "door"
+  },
+  "pieces": [
+    {
+      "name": "dmc_fire_temple", "label": "Fire Temple entrance", "kind": "house",
+      "take": { "box": [[-435, 1040, -355], [435, 1950, 1060]], "materials": ["column", "lintel_under", "column_b", "temple_floor", "tunnel_rock", "untextured", "goron_face", "goron_ring", "ladder", "ladder_top", "gold_relief", "temple_tile", "temple_tile_b", "mural", "gate_top", "gate_lintel", "gate_bars", "rock_arch", "brick", "cobbles", "brick_b"] },
+      "origin": [13, 1138, 515], "facing": [0, -1],
+      "door": { "exit": 3, "entrance": "ENTR_HIDAN_0" },
+      "about": "The Goron-carved gatehouse on the crater's central rock: a barred gate under a rock arch, a corridor to a hall, and in it a shaft whose ladder (wall types 2 and 3) climbs 865 down to a tunnel and the Fire Temple's doorway floor (exit 3, mapped to door). The origin is the gate's floor; the shaft and tunnel hang below it, so it wants a high place or a pit. Spot17 draws its front in both rooms, so some triangles are doubled. Locked: the ladder is sized for Link."
+    },
+    {
+      "name": "dmc_trail_passage", "label": "Passage to the trail", "kind": "opening",
+      "take": { "box": [[-2340, -2870, 1355], [-630, -1720, 1835]], "rooms": ["room_1_opa", "room_1_xlu"], "materials": ["ground", "cliff_streak_b", "ceiling_b", "untextured", "passage_floor", "passage_wall", "passage_ceiling", "stairs"] },
+      "origin": [-704, -1845, 1360], "facing": [0.866, 0.5],
+      "opening": { "exit": 1, "min_depth": 600 },
+      "about": "The passage up to Death Mountain Trail: a short rock tunnel from the crater, then translucent stairs fading to dark (exit 1's floors start about 460 in). The origin is the mouth's floor, facing out. Locked."
+    },
+    {
+      "name": "dmc_plank_bridge", "label": "Plank bridge", "kind": "bridge",
+      "take": { "box": [[-1075, 180, 470], [-390, 445, 700]] },
+      "origin": "base", "facing": [1, 0],
+      "scale": { "min": [1, 0.5, 1], "max": [1, 2, 1] },
+      "about": "The plank walkway across the lava in the west, with log crosspieces under it and a short climbable plank face (wall type 4) at its west end. Its width is locked; its length (y) may change."
+    },
+    {
+      "name": "dmc_plank_ladder", "label": "Plank ladder", "kind": "wall",
+      "take": { "box": [[-1390, 285, 570], [-1320, 395, 785]] },
+      "origin": "base", "facing": "normal",
+      "about": "A ladder of logs nailed between two posts (climbable as vines), 150 tall, up to the west ledge. Locked."
+    },
+    {
+      "name": "dmc_rope_bridge", "label": "Rope bridge", "kind": "bridge",
+      "take": { "box": [[-1490, -705, 720], [-1130, -265, 895]] },
+      "origin": "base", "facing": [0.594, -0.805],
+      "scale": { "min": [1, 0.5, 1], "max": [1, 2, 1] },
+      "about": "The slack plank bridge with a post at each corner, in the crater's west. Its width is locked; its length (y) may change."
+    },
+    {
+      "name": "dmc_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[-650, -1175, 765], [-615, -1150, 1165]] },
+      "origin": "base", "facing": "normal",
+      "about": "A plain ladder (wall type 2) 395 tall, on the cliff below the crater's south rim. Locked."
+    },
+    {
+      "name": "dmc_pillar", "label": "Wooden pillar", "kind": "tower",
+      "take": { "box": [[90, 910, 215], [190, 1010, 730]], "rooms": ["room_1_opa"] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.3], "max": [2, 2, 2] },
+      "about": "A tall pillar of stacked logs, 508 tall, standing in the lava by the Fire Temple's approach; its top is a small floor."
+    },
+    {
+      "name": "dmc_stone_platform", "label": "Stone platform", "kind": "platform",
+      "take": { "box": [[535, 575, 250], [815, 858, 485]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2], "uniform": true },
+      "about": "A tiled brick block standing in the lava, with a little carved marker stone on one corner."
+    },
+    {
+      "name": "dmc_rock_block", "label": "Rock block", "kind": "platform",
+      "take": { "box": [[1005, 80, 255], [1230, 305, 385]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 3] },
+      "about": "A block of rock standing in the lava, its top edged with a translucent glowing rim."
+    },
+    {
+      "name": "dmc_plank_ramp", "label": "Plank ramp", "kind": "platform",
+      "take": { "box": [[715, 310, 255], [1010, 675, 410]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] },
+      "about": "A plank leaning from a small block down to the ground: a ramp onto a platform."
+    }
+  ]
+}

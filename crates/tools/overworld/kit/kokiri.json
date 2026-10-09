@@ -1,9 +1,36 @@
 {
   "name": "kokiri",
+  "label": "Kokiri Forest",
   "about": "Pieces cut from Kokiri Forest (spot04) by `overworld kit-pieces`, and the measurements of the pieces the builder generates in its textures. Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
   "source": {
     "glb": "extracted/scenes/overworld/spot04/spot04.glb",
     "collision": "extracted/scenes/overworld/spot04/collision.json"
+  },
+  "textures": {
+    "about": "Material N (room_<r>_<opa|xlu>_mat<N>, the extractor's order) -> role: the library's texture is <prefix><role>.png. The dirt path is decals (45 to 47, and 51 in the training area): white blotches with soft alpha, tinted yellow-brown by the combiner's prim. `checked` (role, width, height, wrap u, wrap v) is verified on every export, so a re-extraction that reorders materials fails instead of mixing textures up; `detailed` grounds are the camo mixed with a finer detail texture, baked into one (kit::ground_with_detail).",
+    "prefix": "kf_",
+    "roles": [
+      "house_bark", "house_door_dark", "stump_top", "door_curtain", "porch_floor", "porch_trim", "porch_under",
+      "hanging_vines", "porch_rail", "ladder", "ladder_back", "mushroom", "door_frame", "mido_bark", "log_bark",
+      "tunnel_mouth", "ground", "forest_trunks", "forest_foliage", "cliff", "cliff_strip", "cliff_strip_dark",
+      "grass_skirt", "hedge_top", "fence", "fence_post", "log_end", "log_side", "roof_leaf", "hanging_roots",
+      "tunnel_ring", "stone_top", "stone_side", "post_bark", "saria_bark", "shop_bark", "shop_sign", "deku_bark",
+      "deku_leaves", "shadow", "shadow_link", "graffiti_a", "graffiti_b", "graffiti_c", "water", "dirt_end",
+      "dirt_strip", "dirt_junction", "vines", "deku_face", "shadow_deku", "dirt_patch"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["forest_trunks", 64, 64, "repeat", "clamp"],
+      ["forest_foliage", 32, 32, "repeat", "clamp"],
+      ["cliff", 32, 32, "repeat", "repeat"],
+      ["cliff_strip", 32, 16, "repeat", "repeat"],
+      ["cliff_strip_dark", 32, 16, "repeat", "repeat"],
+      ["grass_skirt", 64, 16, "repeat", "clamp"],
+      ["hanging_roots", 64, 32, "repeat", "clamp"],
+      ["water", 32, 32, "repeat", "repeat"],
+      ["dirt_strip", 64, 64, "clamp", "repeat"]
+    ],
+    "detailed": ["ground"]
   },
   "surfaces": {
     "about": "spot04 surface type -> collision role (oot_import::level::ROLES). Floors keep their footstep sound; exits and doors collide as plain floor until levels load through Play_Init.",

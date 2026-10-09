@@ -1,0 +1,72 @@
+{
+  "name": "colossus",
+  "label": "Desert Colossus",
+  "about": "Pieces and textures cut from Desert Colossus (spot11). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot11/spot11.glb",
+    "collision": "extracted/scenes/overworld/spot11/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where Desert Colossus draws them). `sand` is the rippled desert floor (sand footsteps), `sand_bank` the sides of the raised sand shelves (sand at top and foot, stone between), `rock` (`_b`, `_c`) the mottled rock of the temple's mass and the arch. The Spirit Temple's carved front is the rest: `stone_plain` and the `stone_*` faces, `robe`, `relief*`, `frieze`, `ornament`, `cobble`, `carving`, `marble` (the statue and its niche), `jamb*` and `wings` round its doorway (`doorway` has no texture: black), `tiles` (`_shade`) and `steps` the plaza before it, `ridge` the cut-out crest along its top. The oasis is `oasis_bed` and `grass_rim`; the palms `palm_trunk`, `palm_leaves` and `coconut`. `backdrop_rock` is a far rock card.",
+    "prefix": "dc_",
+    "roles": [
+      "backdrop_rock", "sand", "carving", "cobble", "frieze", "relief", "ornament", "relief_b", "stone", "stone_b",
+      "stone_rough", "stone_rough_b", "stone_plain", "stone_rough_c", "robe", "relief_c", "marble", "jamb", "jamb_shade",
+      "doorway", "steps", "tiles", "tiles_shade", "jamb_carved", "wings", "stone_c", "shade", "ridge", "rock", "rock_b",
+      "rock_c", "shade_b", "sand_bank", "palm_trunk", "coconut", "oasis_bed", "shade_c", "palm_leaves", "grass_rim",
+      "sand_xlu"
+    ],
+    "checked": [
+      ["sand", 32, 32, "repeat", "repeat"],
+      ["sand_bank", 32, 64, "repeat", "clamp"],
+      ["rock", 32, 32, "repeat", "repeat"],
+      ["stone_plain", 32, 32, "repeat", "repeat"],
+      ["relief", 32, 32, "repeat", "mirror"],
+      ["tiles", 32, 32, "repeat", "repeat"],
+      ["ridge", 128, 16, "mirror", "clamp"],
+      ["oasis_bed", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong. 14 and 15 are the Spirit Temple's doorway floor (exit 2).",
+    "14": "door", "15": "door"
+  },
+  "pieces": [
+    {
+      "name": "dc_spirit_temple", "label": "Spirit Temple", "kind": "house",
+      "take": { "box": [[-3200, -1400, -100], [-940, 1400, 2300]], "materials": ["carving", "cobble", "frieze", "relief", "ornament", "relief_b", "stone", "stone_b", "stone_rough", "stone_rough_b", "stone_plain", "stone_rough_c", "robe", "relief_c", "marble", "jamb", "jamb_shade", "doorway", "steps", "tiles", "tiles_shade", "jamb_carved", "wings", "stone_c", "shade", "ridge", "rock", "rock_b", "rock_c", "shade_b"] },
+      "collision": { "box": [[-3200, -1400, 5], [-940, 1400, 2300]] },
+      "origin": "base", "facing": "door",
+      "door": { "exit": 2, "entrance": "ENTR_JYASINZOU_0" },
+      "about": "The Spirit Temple: the Colossus statue carved into a rock mass 2300 tall, on a tiled plaza with steps. Its doorway (exit 2, ENTR_JYASINZOU_0) is its door; the statue's hands keep their exits (3 and 4, into the temple's upper floors). Drawn from the front and sides only (the scene never shows its back), so set it against a cliff or the boundary. Locked: sized for Link."
+    },
+    {
+      "name": "dc_stone_arch", "label": "Stone arch", "kind": "rock",
+      "take": { "box": [[-810, -420, -40], [-470, 445, 510]] },
+      "origin": "base", "facing": [1, 0],
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [2, 2, 2], "uniform": true },
+      "about": "The rock arch standing on the sand before the temple: two legs under a lintel 500 high, 850 long."
+    },
+    {
+      "name": "dc_palm", "label": "Palm tree", "kind": "plant",
+      "take": { "box": [[330, -2445, 35], [590, -2190, 420]] },
+      "origin": "base",
+      "scale": { "min": [0.6, 0.6, 0.6], "max": [1.6, 1.6, 2] },
+      "about": "One of the oasis's palm trees: a trunk 270 tall under translucent fronds; only the trunk collides."
+    },
+    {
+      "name": "dc_oasis", "label": "Oasis basin", "kind": "platform",
+      "take": { "box": [[475, -2615, -110], [1175, -1790, 60]], "materials": ["oasis_bed", "grass_rim"] },
+      "origin": "base",
+      "about": "The oasis's hexagonal basin with its grassy rim, dry: its water is an actor (Bg_Spot11_Oasis) that rises when the Song of Storms is played, so fill it with a water region."
+    },
+    {
+      "name": "dc_dais", "label": "Stone dais", "kind": "platform",
+      "take": { "box": [[1065, -2070, 40], [1300, -1830, 90]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 2] },
+      "about": "The low rock mound beside the oasis, drifted with sand, where the Song of Storms is played (38 tall); collides as stone."
+    }
+  ]
+}

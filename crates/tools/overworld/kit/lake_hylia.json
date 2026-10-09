@@ -1,0 +1,128 @@
+{
+  "name": "lake_hylia",
+  "label": "Lake Hylia",
+  "about": "Pieces and textures cut from Lake Hylia (spot06). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot06/spot06.glb",
+    "collision": "extracted/scenes/overworld/spot06/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where Lake Hylia draws them). `ground` is the grass camo of the shores and islands (no detail texture), `lakebed` the rippled floor under the lake (the water itself is an actor, so the lake has no surface texture), `sand` a patch on the island. `cliff_c` is the tall rock face with grass at its top and foot (cut out at the top: its skyline), `cliff` the bouldered shore walls, `cliff_b` the low banks, `grass_lip` the grassy edge laid along bank tops, `backdrop_a` and `_b` the far cards. `lab_wall`, `roof_tiles`, `roof_tiles_b`, `roof_top`, `brick`, `tower_slats`, `chimney`, `ladder` and `railing` build the Lakeside Laboratory; `gate_wall`, `door_shade_b`, `door_floor` and `sign` the Fishing Pond's front; `bridge_plank`, `bridge_rope` and `bridge_post` the bridges; `deck`, `deck_side` and `fence` the scarecrows' deck; `stone_pillar`, `stone_top`, `stone_tiles`, `pedestal`, `tablet` and `tablet_b` the stonework in the lake; `temple_fall`, `temple_fall_b` and `temple_door` the Water Temple's doorway; `rock` the withered tree's bark.",
+    "prefix": "lh_",
+    "roles": [
+      "lakebed", "ground", "deck", "deck_side", "fence", "bridge_plank", "bridge_rope", "bridge_post", "lab_wall",
+      "door_shade", "roof_top", "roof_tiles", "brick", "tower_slats", "roof_tiles_b", "chimney", "ladder_back", "ladder",
+      "railing", "cliff", "cliff_b", "grass_lip", "cliff_c", "backdrop_a", "backdrop_b", "stone_pillar", "stone_top",
+      "stone_tiles", "temple_fall", "pedestal", "tablet", "tablet_b", "temple_fall_b", "temple_door", "forest_card",
+      "door_shade_b", "gate_wall", "door_floor", "sign", "rock", "sand", "ripple"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["lakebed", 32, 32, "repeat", "repeat"],
+      ["cliff", 32, 64, "repeat", "clamp"],
+      ["cliff_b", 32, 32, "repeat", "clamp"],
+      ["cliff_c", 64, 64, "repeat", "clamp"],
+      ["brick", 64, 64, "repeat", "repeat"],
+      ["deck", 16, 32, "repeat", "mirror"],
+      ["deck_side", 32, 16, "repeat", "clamp"],
+      ["fence", 32, 32, "repeat", "clamp"],
+      ["bridge_plank", 32, 16, "mirror", "repeat"],
+      ["bridge_post", 16, 32, "repeat", "clamp"],
+      ["bridge_rope", 32, 32, "repeat", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong. The Lakeside Laboratory's and the Fishing Pond's doorway floors are doors.",
+    "27": "door", "28": "door", "35": "door"
+  },
+  "pieces": [
+    {
+      "name": "lh_lab", "label": "Lakeside Laboratory", "kind": "house",
+      "take": { "box": [[-3045, -4120, -1035], [-2320, -3550, -235]], "materials": ["lab_wall", "door_shade", "roof_top", "roof_tiles", "brick", "tower_slats", "roof_tiles_b", "chimney", "ladder_back", "ladder", "railing"] },
+      "collision": { "box": [[-2970, -4120, -1035], [-2320, -3550, -235]], "skip": [16], "exclude": [[[-2457, -3889, -1035], [-2453, -3825, -931]]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 5, "entrance": "ENTR_HYLIA_LABO_0" },
+      "about": "The professor's laboratory on the lake's north shore: a plastered house 560 by 360 under a purple tiled roof, a square stone tower at its back, and a slatted lookout tower with a railed platform 775 up (where a Piece of Heart sat), reached by a ladder 510 tall. Locked at its size (the ladder). Its chimneys don't collide; the wall the game's door actor stood in is left out, so Link reaches the door floor."
+    },
+    {
+      "name": "lh_fishing_house", "label": "Fishing Pond entrance", "kind": "house",
+      "take": { "box": [[1335, -4105, -1225], [1435, -3636, -995]], "materials": ["gate_wall", "door_shade_b", "door_floor", "sign"] },
+      "collision": { "box": [[1335, -4105, -1225], [1435, -3636, -995]], "exclude": [[[1357, -3903, -1220], [1361, -3839, -1116]]] },
+      "origin": "door", "facing": "door",
+      "door": { "exit": 6, "entrance": "ENTR_TURIBORI_0" },
+      "scale": { "min": [1, 1, 1], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The front of the Fishing Pond on the lake's east shore: a stone wall 459 long and up to 214 high with ivy along its top, a doorway 60 wide and 100 high going 80 deep, and the pond's sign beside it. Only the front exists; the forest card behind it stood for the rest. The wall the game's door actor stood in is left out, so Link reaches the door floor."
+    },
+    {
+      "name": "lh_bridge", "label": "Rope bridge", "kind": "bridge",
+      "take": { "box": [[-3120, -5960, -1120], [-2970, -3955, -990]] },
+      "origin": "base", "facing": [0, 1],
+      "scale": { "min": [1, 0.3, 1], "max": [1, 1.5, 1] },
+      "about": "The plank bridge from the laboratory to the first island: 120 wide and 1960 long, sagging 80, with rope rails on posts at its ends. Its rails' tops collide as floors. The bridge on to the main island is the same build, at an angle."
+    },
+    {
+      "name": "lh_pillar", "label": "Carved pillar", "kind": "tower",
+      "take": { "box": [[-1070, -3680, -1340], [-1002, -3614, -1090]], "materials": ["stone_pillar", "ground"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.3], "max": [2, 2, 2] },
+      "about": "A carved stone pillar 60 square and 240 tall with a grassy top, one of the row standing in the lake south of the shore."
+    },
+    {
+      "name": "lh_sun_platform", "label": "Islet with tablets", "kind": "platform",
+      "take": { "box": [[565, -7405, -1320], [855, -7114, -1173]], "materials": ["pedestal", "tablet", "ground"] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 2] },
+      "about": "The little grassy islet in the lake's south-east, 280 square and 15 above the water, with two inscribed stone posts at its east edge; from here Link shot the sun."
+    },
+    {
+      "name": "lh_dead_tree", "label": "Withered tree", "kind": "plant",
+      "take": { "box": [[-1100, -7645, -1250], [-455, -7025, -645]], "materials": ["rock", "sand"] },
+      "collision": { "box": [[-1100, -7645, -1250], [-455, -7025, -645]], "skip": [12, 13] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "The great withered tree on the main island: a trunk 593 tall leaning out over the lake with a bare limb; Link can climb its sloping trunk."
+    },
+    {
+      "name": "lh_stone_slab", "label": "Inscribed slab", "kind": "decor",
+      "take": { "box": [[-615, -7305, -1250], [-445, -7214, -1213]] },
+      "origin": "base",
+      "about": "A low stone slab 160 by 80 and 25 high, half of it carved with writing, lying on the main island."
+    },
+    {
+      "name": "lh_deck", "label": "Wooden deck", "kind": "platform",
+      "take": { "box": [[-360, -3110, -1300], [175, -2530, -1250]], "materials": ["deck", "deck_side", "stone_tiles"] },
+      "collision": { "box": [[-360, -3110, -1300], [175, -2530, -1250]], "skip": [16] },
+      "origin": "base",
+      "about": "The plank floor where the scarecrows stand (actors), on the north shore: two overlapping decks, the upper 40 higher, about 520 by 570 in all."
+    },
+    {
+      "name": "lh_fence", "label": "White fence", "kind": "decor",
+      "take": { "box": [[-360, -2847, -1258], [-150, -2763, -1208]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 1, 1], "max": [3, 1, 2] },
+      "about": "A painted two-rail fence 200 long and 40 high, round the scarecrows' deck. Drawn only: it never collided."
+    },
+    {
+      "name": "lh_temple_entrance", "label": "Water Temple entrance (exit)", "kind": "opening",
+      "take": { "box": [[-1010, -6742, -2405], [-820, -6370, -2095]], "materials": ["temple_fall_b", "temple_door"] },
+      "origin": [-916, -6437, -2401], "facing": [0, 1],
+      "opening": { "exit": 3, "min_depth": 300 },
+      "about": "The doorway at the bottom of the lake: a dark passage 120 wide and 120 high under a pitched roof, running 300 back, with the temple's crest above its mouth. The gate that closed it is an actor. The exit floor fills the passage."
+    },
+    {
+      "name": "lh_domain_tunnel", "label": "Underwater passage to Zora's Domain (exit)", "kind": "opening",
+      "take": { "box": [[-950, -3680, -1556], [-882, -3554, -1478]], "materials": ["temple_fall"] },
+      "origin": [-916, -3557, -1553], "facing": [0, 1],
+      "opening": { "exit": 7, "min_depth": 120 },
+      "about": "A small dark tunnel 60 wide and 52 to 72 high on the lake bed below the pillars, running 120 back: the dive to Zora's Domain."
+    },
+    {
+      "name": "lh_fishing_sign", "label": "Fishing sign", "kind": "decor",
+      "take": { "box": [[1336, -3825, -1203], [1346, -3735, -1113]] },
+      "collision": { "none": true },
+      "origin": "base", "facing": [-1, 0],
+      "about": "The Fishing Pond's painted board, 80 square, with a fisherman on it; it hung on the pond's wall. Drawn only."
+    }
+  ]
+}

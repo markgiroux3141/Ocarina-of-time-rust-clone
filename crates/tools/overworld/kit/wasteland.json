@@ -1,0 +1,51 @@
+{
+  "name": "wasteland",
+  "label": "Haunted Wasteland",
+  "about": "Pieces and textures cut from Haunted Wasteland (spot13). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot13/spot13.glb",
+    "collision": "extracted/scenes/overworld/spot13/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where the Wasteland draws them). `sand` (`_b`, `_c`, `sand_dark`) are the rippled dunes (sand footsteps), `quicksand` the translucent flowing sand of the river, `cliff` the rock in the east, `sandstone` the striated walls by the fortress (its stripes run along v, so the scene turns it sideways). The guide's stone hut is `hut_stone_b` and `stone_sand_b`/`_c` (stone sinking into sand), with `slab`, `plinth` and `inscription` on its top; its cellar (room 0) is `hut_stone`, `cellar_floor` and `bars`. The footbridge is `deck`, `post_wood` and `plank_end`. `brick`, `stone_brick`, `beam`, `railing` and `ground` are the fortress's walls and gate as seen from outside.",
+    "prefix": "hw_",
+    "roles": [
+      "hut_stone", "cellar_floor", "bars", "stone_sand", "brick_b", "stone_dark", "railing", "sandstone", "cliff",
+      "brick", "stone_brick", "beam", "railing_b", "post_tip", "ground", "brick_c", "sand_edge", "sand", "sand_dark",
+      "sand_b", "plank_end", "post_wood", "deck", "sand_lip", "sand_c", "slab", "plinth", "hut_stone_b", "stone_sand_b",
+      "stone_sand_c", "bars_b", "quicksand", "inscription"
+    ],
+    "checked": [
+      ["sand", 32, 32, "repeat", "repeat"],
+      ["sand_dark", 32, 32, "repeat", "repeat"],
+      ["cliff", 64, 32, "repeat", "repeat"],
+      ["stone_sand", 32, 64, "repeat", "clamp"],
+      ["brick", 32, 64, "repeat", "clamp"],
+      ["stone_brick", 32, 32, "repeat", "mirror"],
+      ["hut_stone_b", 64, 32, "repeat", "repeat"],
+      ["deck", 64, 32, "mirror", "repeat"],
+      ["post_wood", 32, 32, "repeat", "repeat"],
+      ["quicksand", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "hw_guide_hut", "label": "Stone hut", "kind": "building",
+      "take": { "box": [[380, 1890, 75], [915, 2400, 290]], "rooms": ["room_1_opa", "room_1_xlu"], "materials": ["hut_stone_b", "stone_sand_b", "stone_sand_c", "slab", "plinth", "inscription"] },
+      "collision": { "skip": [25] },
+      "origin": "base",
+      "about": "The squat octagonal stone hut in the middle of the Wasteland, where the Poe guide waits on its roof by the inscribed plinth; sand drifts against its foot. Its cellar (room 0, through the hole in its north side) is left out. Locked: sized for Link."
+    },
+    {
+      "name": "hw_footbridge", "label": "Wooden footbridge", "kind": "bridge",
+      "take": { "box": [[1600, -3300, -560], [1980, -2760, -340]] },
+      "collision": { "box": [[1600, -3300, -539], [1980, -2760, -340]] },
+      "origin": "base", "facing": [0.576, 0.817],
+      "about": "The plank walkway on posts across a gully by the sand pit, sloping 20 from end to end, planks colliding as wood and its sandy landing as sand. The posts' feet (in the gully) don't collide. Locked."
+    }
+  ]
+}

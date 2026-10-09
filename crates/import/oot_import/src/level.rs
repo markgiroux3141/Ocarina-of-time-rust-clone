@@ -41,7 +41,7 @@ use std::sync::Arc;
 /// with the bg camera index cleared: custom levels have no bg cameras). Word 1's low nibble is
 /// the footstep sound (SURFACE_SFX_TYPE: 0 dirt, 2 stone, 8 grass, 9 bridge, 10 wood); bit 17
 /// lets the hookshot hold.
-pub const ROLES: [(&str, u32, u32); 17] = [
+pub const ROLES: [(&str, u32, u32); 18] = [
     // spot04 surface 10: grass footsteps
     ("ground", 0x0000_0000, 0x0000_0FC8),
     // ledges Link may grab
@@ -55,6 +55,8 @@ pub const ROLES: [(&str, u32, u32); 17] = [
     ("dirt", 0x0000_0000, 0x0000_0FC0),
     // 27: the stepping stones
     ("stone", 0x0000_0000, 0x0000_0FC2),
+    // sand footsteps (the desert's, Gerudo's): kit pieces from those regions
+    ("sand", 0x0000_0000, 0x0000_0FC1),
     // 20: the floor inside the hedge's tall grass (tall-grass footsteps)
     ("tall_grass", 0x0000_0000, 0x0000_0FC6),
     // 28: the log walkways' planks

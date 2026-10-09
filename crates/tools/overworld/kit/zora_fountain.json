@@ -1,0 +1,89 @@
+{
+  "name": "zora_fountain",
+  "label": "Zora's Fountain",
+  "about": "Pieces and textures cut from Zora's Fountain (spot08). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot08/spot08.glb",
+    "collision": "extracted/scenes/overworld/spot08/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09, from the textures and where Zora's Fountain draws them). `cliff` is the wide band of rock round the fountain, `cliff_b` the big blocky rock of its upper walls, `rock` the streaked rock of the east ledge, `ground_rock` the cobbled ground by the Ice Cavern, `ceiling` an overhang's underside. `water` (and `water_b`) is the fountain's surface, `lakebed` and `lakebed_wall` the floor and walls seen through it (no detail textures anywhere). `altar_tiles`, `altar_pillar`, `altar_trim` and `balustrade` build Jabu-Jabu's altar; `log_bark`, `log_bark_b` and `log_end` the dead trees; `pole` the stake fence; `vines` the climbable strip. `forest_trunks`, `forest_foliage` and `foliage_edge` are the forest cards beyond the walls, `backdrop` the skyline, `shadow` the darkness in cave mouths, `foam` the outflow's foam.",
+    "prefix": "zf_",
+    "roles": [
+      "cliff", "rock", "ceiling", "ground_rock", "cliff_b", "vines", "forest_trunks", "forest_foliage",
+      "foliage_edge", "lakebed_wall", "lakebed", "altar_tiles", "altar_pillar", "altar_trim", "balustrade", "pole",
+      "log_bark", "log_bark_b", "log_end", "backdrop", "shadow", "foam", "water", "water_b"
+    ],
+    "checked": [
+      ["ground_rock", 64, 64, "repeat", "repeat"],
+      ["rock", 32, 32, "repeat", "repeat"],
+      ["cliff", 128, 32, "repeat", "clamp"],
+      ["cliff_b", 64, 64, "repeat", "repeat"],
+      ["lakebed", 32, 32, "repeat", "repeat"],
+      ["lakebed_wall", 32, 32, "repeat", "repeat"],
+      ["water", 32, 32, "repeat", "repeat"],
+      ["altar_tiles", 64, 64, "repeat", "repeat"],
+      ["ceiling", 64, 32, "repeat", "repeat"],
+      ["balustrade", 32, 64, "repeat", "clamp"],
+      ["pole", 16, 128, "repeat", "clamp"],
+      ["forest_trunks", 64, 64, "repeat", "repeat"],
+      ["forest_foliage", 64, 32, "repeat", "clamp"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "zf_jabu_altar", "label": "Jabu-Jabu's altar", "kind": "platform",
+      "take": { "box": [[-1855, -250, -245], [-1340, 355, 280]], "materials": ["altar_tiles", "altar_pillar", "altar_trim", "balustrade", "pole"] },
+      "collision": { "box": [[-1855, -250, -241], [-1340, 355, 280]] },
+      "origin": "base", "facing": [1, 0],
+      "about": "The stone platform where Jabu-Jabu lies (an actor): a slab 400 by 560 standing 292 above the pool's floor with its top 32 above the water, with a ramp up out of the water on its west side, balustrades, and four carved pillars at its corners (the west pair 352 tall). Its east edge's floor is exit 2 (into Jabu-Jabu's belly, ENTR_BDAN_0), where his mouth was."
+    },
+    {
+      "name": "zf_pillar", "label": "Carved pillar", "kind": "tower",
+      "take": { "box": [[-1774, 263, -85], [-1684, 353, 277]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [2, 2, 2] },
+      "about": "A square pillar of carved stone, 80 across and 352 tall, with a flat cap Link can stand on; from the corners of Jabu-Jabu's altar. Its sides don't let Link grab them."
+    },
+    {
+      "name": "zf_balustrade", "label": "Balustrade", "kind": "decor",
+      "take": { "box": [[-1694, -222, 47], [-1424, -212, 105]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 1, 1], "max": [3, 1, 1.5] },
+      "about": "A stone balustrade 260 long and 48 high (one baluster every 20), from the sides of Jabu-Jabu's altar. Cut out; its top rail collides as a floor."
+    },
+    {
+      "name": "zf_sunken_tree", "label": "Sunken tree", "kind": "plant",
+      "take": { "box": [[-1855, -1970, -200], [-1080, -1130, 260]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A dead tree fallen into the fountain, its trunk sloping 450 up out of the water and three bare limbs reaching down; Link can walk up it (wood)."
+    },
+    {
+      "name": "zf_dead_tree", "label": "Dead tree", "kind": "plant",
+      "take": { "box": [[-625, -2440, -340], [-230, -2120, 595]] },
+      "origin": "base",
+      "scale": { "min": [0.5, 0.5, 0.5], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A bare dead tree 920 tall with a crown of thin branches, standing in the fountain's south shallows (one of two; the other is much the same)."
+    },
+    {
+      "name": "zf_stake_fence", "label": "Stake fence", "kind": "decor",
+      "take": { "box": [[-2650, -570, -5], [-2630, 382, 205]] },
+      "origin": "base", "facing": [1, 0],
+      "scale": { "min": [1, 0.2, 0.5], "max": [1, 2, 1.5] },
+      "about": "A row of sharpened stakes 942 long and 200 high (one every 36), cut out on one card; it fenced off the fountain's outflow on the west. It collides as a wood wall."
+    },
+    {
+      "name": "zf_vines", "label": "Vine wall", "kind": "wall",
+      "take": { "box": [[1168, -1922, 90], [1298, -1912, 910]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.2], "max": [4, 1, 1.5] },
+      "tiles": true,
+      "about": "A climbable strip of vines 120 wide and 810 tall up the east cliff to the high ledge. Placed on a wall's face."
+    }
+  ]
+}

@@ -173,7 +173,7 @@ fn anchor(piece: &Piece, prop: &Prop) -> P2 {
 
 /// Kinds that level the bumps under them unless told otherwise (`Prop::level`).
 pub fn levels_by_default(kind: &str) -> bool {
-    matches!(kind, "house" | "tower" | "hedge")
+    matches!(kind, "house" | "building" | "tower" | "hedge")
 }
 
 /// Where a prop levels the bumps under it: its base outline (`Piece::base_outline`, with its
@@ -347,7 +347,8 @@ pub fn place(props: &[Prop], kit: Option<&Kit>, mesh: &mut Mesh, problems: &mut 
             let p = tri.map(|v| transform(piece.verts[v as usize], origin, prop.yaw, scale));
             let n = tri.map(|v| normal(piece.normals[v as usize], prop.yaw, scale));
             let uv = if piece.tiles { tiled_uvs(piece, t, scale) } else { piece.uvs[t] };
-            mesh.tri_lit("props", p, n, uv, &m.texture, m.tint);
+            let colors = (m.vertex_colors && !piece.colors.is_empty()).then(|| tri.map(|v| piece.colors[v as usize]));
+            mesh.tri_shaded("props", p, n, colors, uv, &m.texture, m.tint);
         }
         // a crawlspace's floor calls for its own camera: the line through it, 22 past each mouth
         // and 12 up, as spot04's (Camera_Subj4 carries Link along it)
@@ -421,7 +422,7 @@ mod tests {
             name: "box".into(),
             label: "Box".into(),
             kind: kind.into(),
-            materials: vec![PieceMaterial { texture: "kf_house_bark".into(), tint: [1.0, 0.5, 1.0] }],
+            materials: vec![PieceMaterial { texture: "kf_house_bark".into(), tint: [1.0, 0.5, 1.0], vertex_colors: false }],
             normals: vec![[0.0, 0.0, 1.0]; 8],
             verts: verts.clone(),
             tris: vec![[4, 5, 6], [4, 6, 7]],
@@ -476,6 +477,36 @@ mod tests {
         assert!(problems.iter().any(|p| p.contains("falls")), "{problems:?}");
         assert_eq!(pick(&placed, [200.0, 90.0]), Some(0));
         assert_eq!(pick(&placed, [200.0, 110.0]), None);
+    }
+
+    #[test]
+    fn vertex_coloured_materials_keep_their_colours_whatever_the_light() {
+        // the box's top in two materials: one lit, one shaded by its vertex colours
+        let mut piece = test_piece("tower");
+        piece.materials.push(PieceMaterial { texture: "gc_rock".into(), tint: [1.0; 3], vertex_colors: true });
+        piece.mat = vec![0, 1];
+        piece.colors = vec![[0.25, 0.5, 1.0]; 8];
+        let kit = Kit { pieces: vec![piece], ..Default::default() };
+        let mut m = slope_mesh();
+        let props = vec![Prop { level: None, piece: "box".into(), at: [0.0, 0.0], z: None, yaw: 0.0, scale: [1.0; 3] }];
+        place(&props, Some(&kit), &mut m, &mut vec![]);
+        let light = crate::theme::Light { ambient: [10.0; 3], lights: vec![crate::theme::DirLight { dir: [0.0, 0.0, 1.0], color: [100.0; 3] }] };
+        m.shade(&light, None);
+        let o = m.objects.iter().find(|o| o.name == "props").unwrap();
+        let (mut lit, mut fixed) = (0, 0);
+        for (t, tri) in o.tris.iter().enumerate() {
+            for &v in tri {
+                if m.materials[o.mat[t]] == "gc_rock" {
+                    fixed += 1;
+                    assert_eq!(o.colors[v], [64, 128, 255]);
+                } else {
+                    lit += 1;
+                    // ambient + the light straight down onto the top, times the tint
+                    assert_eq!(o.colors[v], [110, 55, 110]);
+                }
+            }
+        }
+        assert_eq!((lit, fixed), (3, 3));
     }
 
     #[test]

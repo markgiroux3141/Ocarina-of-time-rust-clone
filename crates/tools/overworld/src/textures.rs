@@ -129,6 +129,25 @@ pub fn derived_name(base: &str, r0: u32, r1: u32, mirror: bool) -> String {
     format!("{base}@{r0}-{r1}{}", if mirror { "m" } else { "" })
 }
 
+/// A texture transformed whole: `<base>@swap` has u and v swapped (a texture whose stripes run
+/// along v, laid sideways as a wall: the desert's canyon walls), `<base>@t<nx>x<ny>` repeats it
+/// nx times across and ny down (a 2:1 texture made square, for a `Surface`'s single tile).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Transform {
+    Swap,
+    Tile(u32, u32),
+}
+
+fn parse_transform(name: &str) -> Option<(&str, Transform)> {
+    let (base, rest) = name.rsplit_once('@')?;
+    if rest == "swap" {
+        return Some((base, Transform::Swap));
+    }
+    let (a, b) = rest.strip_prefix('t')?.split_once('x')?;
+    let (a, b) = (a.parse().ok()?, b.parse().ok()?);
+    ((1..=8).contains(&a) && (1..=8).contains(&b)).then_some((base, Transform::Tile(a, b)))
+}
+
 fn parse_derived(name: &str) -> Option<(&str, u32, u32, bool)> {
     let (base, rest) = name.rsplit_once('@')?;
     let mirror = rest.ends_with('m');
@@ -225,6 +244,16 @@ impl Library {
                 ..b
             };
         }
+        if let Some((base, tr)) = parse_transform(name) {
+            let b = self.get(base);
+            let stem = b.file.strip_suffix(".png").unwrap_or(&b.file).to_string();
+            let tag = name.rsplit_once('@').map_or("", |x| x.1);
+            let (w, h) = (b.size.first().copied().unwrap_or(0), b.size.get(1).copied().unwrap_or(0));
+            return match tr {
+                Transform::Swap => TexInfo { file: format!("{stem}-{tag}.png"), size: vec![h, w], wrap_u: b.wrap_v.clone(), wrap_v: b.wrap_u.clone(), ..b },
+                Transform::Tile(nx, ny) => TexInfo { file: format!("{stem}-{tag}.png"), size: vec![w * nx, h * ny], ..b },
+            };
+        }
         if let Some((base, r0, r1, mirror)) = parse_derived(name) {
             let b = self.get(base);
             let stem = b.file.strip_suffix(".png").unwrap_or(&b.file).to_string();
@@ -267,6 +296,20 @@ impl Library {
             }
             return Some((w, h, out));
         }
+        if let Some((base, tr)) = parse_transform(name) {
+            let (w, h, px) = self.rgba(base)?;
+            let (nw, nh, at): (u32, u32, Box<dyn Fn(u32, u32) -> usize>) = match tr {
+                Transform::Swap => (h, w, Box::new(move |x, y| ((x * w + y) * 4) as usize)),
+                Transform::Tile(nx, ny) => (w * nx, h * ny, Box::new(move |x, y| (((y % h) * w + x % w) * 4) as usize)),
+            };
+            let mut out = Vec::with_capacity((nw * nh * 4) as usize);
+            for y in 0..nh {
+                for x in 0..nw {
+                    out.extend_from_slice(&px[at(x, y)..at(x, y) + 4]);
+                }
+            }
+            return Some((nw, nh, out));
+        }
         if let Some((base, r0, r1, _)) = parse_derived(name) {
             let (w, h, px) = self.rgba(base)?;
             let (r0, r1) = (r0.min(h), r1.min(h));
@@ -280,7 +323,7 @@ impl Library {
 
     /// A texture as PNG bytes, to go next to a level: the library's file, or a derived one made.
     pub fn png(&self, name: &str) -> Option<Vec<u8>> {
-        if parse_composite(name).is_some() || parse_derived(name).is_some() {
+        if parse_composite(name).is_some() || parse_transform(name).is_some() || parse_derived(name).is_some() {
             let (w, h, px) = self.rgba(name)?;
             return Some(encode_png(w, h, &px));
         }
@@ -291,6 +334,29 @@ impl Library {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transforms_swap_and_tile_whole_textures() {
+        let dir = std::env::temp_dir().join(format!("ow_tex_tr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 2 wide, 1 tall: red then green; clamped across, repeating down
+        std::fs::write(dir.join("s.png"), encode_png(2, 1, &[255, 0, 0, 255, 0, 255, 0, 255])).unwrap();
+        let info = r#"{"s": {"file": "s.png", "size": [2, 1], "wrap_u": "clamp", "wrap_v": "repeat", "alpha": "opaque", "opacity": 1.0, "cull": "back"}}"#;
+        std::fs::write(dir.join("textures.json"), info).unwrap();
+        let lib = Library::load(&dir).unwrap();
+        let (w, h, px) = lib.rgba("s@swap").unwrap();
+        assert_eq!((w, h), (1, 2));
+        assert_eq!((&px[0..3], &px[4..7]), (&[255u8, 0, 0][..], &[0u8, 255, 0][..]), "red above green");
+        let i = lib.get("s@swap");
+        assert_eq!((i.size.clone(), i.wrap_u.as_str(), i.wrap_v.as_str()), (vec![1, 2], "repeat", "clamp"));
+        let (w, h, px) = lib.rgba("s@t1x2").unwrap();
+        assert_eq!((w, h, px.len()), (2, 2, 16));
+        assert_eq!(&px[8..11], &[255, 0, 0], "the second row repeats the first");
+        assert_eq!(lib.get("s@t1x2").file, "s-t1x2.png");
+        // a wall's middle rows of a swapped texture
+        assert_eq!(lib.rgba("s@swap@1-2").unwrap().1, 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn composites_are_the_base_with_the_overlay_drawn_over_it() {

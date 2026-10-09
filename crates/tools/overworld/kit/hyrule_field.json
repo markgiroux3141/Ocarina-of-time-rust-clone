@@ -1,0 +1,110 @@
+{
+  "name": "hyrule_field",
+  "label": "Hyrule Field",
+  "about": "Pieces and textures cut from Hyrule Field (spot00). Definitions only: the meshes come from the extract (ROM data) into out/. Coordinates are the builder's: x east, y north, z up (glTF's (x, -z, y)). See ADR 0036.",
+  "source": {
+    "glb": "extracted/scenes/overworld/spot00/spot00.glb",
+    "collision": "extracted/scenes/overworld/spot00/collision.json"
+  },
+  "textures": {
+    "about": "Material N -> role (2026-10-09). `ground` is the field's grass (a plain camo at about 960 a repeat, no detail texture), `riverbank` the sloping banks of the river and the moat, `cliff` the grassy cliffs round the field (a grass lip top and bottom, cut out at the top), `cliff_b` the rockier walls of the terraces, `rock`, `rock_b` to `_d` and `dirt` the Gerudo Valley approach. Round Castle Town: `town_wall` the white walls, `tower_front` and `tower_stone` the gate's towers, `crest` the royal crest over the gate, `brick_dark` the moat's walls, `moat_floor` its bed, `stone_wall` the stone retaining walls. `fence` (white rails), `picket` (iron pickets) and `barbed_post` are fence cards; `dirt_path` and its variants are the translucent path decals (white, tinted by the scene); `backdrop_*` are the far cards (Death Mountain, the castle, the town).",
+    "prefix": "hf_",
+    "roles": [
+      "cliff", "banners", "ranch_wall", "ranch_roof", "ranch_beam", "stone_block", "iron_post", "banner_pole",
+      "ground", "riverbank", "grate_bar", "stone_wall", "town_wall", "ledge_stone", "wall_cap", "fence",
+      "grate_bar_b", "chain_anchor", "window", "steps", "brick_dark", "tower_wall", "roof_tile", "spire",
+      "cliff_b", "barbed_post", "dirt", "rock", "rock_b", "rock_c", "rock_d", "shadow",
+      "barbed_post_b", "post_side", "post_cap", "tunnel_ring", "tree_bark", "picket", "ladder", "bridge_deck",
+      "balustrade", "forest_trunks", "forest_foliage", "tower_stone", "moat_floor", "tower_front", "crest", "backdrop_castle",
+      "backdrop_town", "dirt_path", "dirt_path_b", "dirt_patch", "paving", "water", "foam", "backdrop_mountain",
+      "backdrop_hills"
+    ],
+    "checked": [
+      ["ground", 32, 32, "repeat", "repeat"],
+      ["cliff", 64, 64, "repeat", "clamp"],
+      ["cliff_b", 32, 64, "repeat", "clamp"],
+      ["stone_wall", 32, 32, "repeat", "repeat"],
+      ["brick_dark", 32, 32, "repeat", "repeat"],
+      ["town_wall", 64, 64, "repeat", "clamp"],
+      ["moat_floor", 32, 32, "repeat", "repeat"],
+      ["ledge_stone", 64, 16, "repeat", "clamp"],
+      ["steps", 64, 16, "mirror", "repeat"],
+      ["fence", 32, 32, "repeat", "clamp"],
+      ["picket", 16, 64, "repeat", "clamp"],
+      ["barbed_post", 32, 32, "repeat", "clamp"],
+      ["rock_c", 32, 32, "repeat", "clamp"],
+      ["forest_trunks", 64, 64, "repeat", "clamp"],
+      ["forest_foliage", 32, 32, "repeat", "clamp"],
+      ["water", 32, 32, "repeat", "repeat"]
+    ],
+    "detailed": []
+  },
+  "surfaces": {
+    "about": "Surface type -> collision role (oot_import::level::ROLES), where the default read off the type (kit::default_role) is wrong."
+  },
+  "pieces": [
+    {
+      "name": "hf_market_gate", "label": "Castle Town gate (exit)", "kind": "opening",
+      "take": { "box": [[-345, -715, -5], [345, -355, 625]], "materials": ["town_wall", "tower_front", "tower_stone", "crest", "chain_anchor"] },
+      "collision": { "box": [[-345, -715, -5], [345, -355, 625]] },
+      "origin": [0, -680, 0], "facing": [0, -1],
+      "opening": { "exit": 8, "min_depth": 320 },
+      "about": "The gatehouse into Castle Town: two white towers 620 tall either side of a passage 360 wide, the royal crest over it and the drawbridge's chain anchors on the towers' faces (the drawbridge itself is an actor). Set into a town wall: its outer sides are the wall's. The origin is the passage's foot on the towers' face; the exit floor (exit 8) starts 100 in. Locked: sized for Link."
+    },
+    {
+      "name": "hf_stone_bridge", "label": "Stone footbridge", "kind": "bridge",
+      "take": { "box": [[1760, -990, -35], [2100, -650, 45]], "materials": ["bridge_deck", "balustrade"] },
+      "collision": { "box": [[1760, -990, -35], [2100, -650, 45]] },
+      "origin": "base", "facing": [1, 1],
+      "about": "A low stone footbridge with balustrades over the river east of the moat, 250 long and 200 wide between its rails. Locked: sized for Link."
+    },
+    {
+      "name": "hf_gate_post", "label": "Stone gate post", "kind": "tower",
+      "take": { "box": [[-5115, -13552, -705], [-5025, -13462, -495]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.5], "max": [1.5, 1.5, 2] },
+      "about": "A square stone post 200 tall with a cap: a pair of them flank the way to Lake Hylia."
+    },
+    {
+      "name": "hf_stone_wall", "label": "Low stone wall", "kind": "building",
+      "take": { "box": [[-5020, -6558, -190], [-4414, -6510, 50]] },
+      "origin": "base", "facing": [0, -1],
+      "scale": { "min": [0.25, 1, 0.5], "max": [2, 1.5, 1.5] },
+      "about": "A stone wall 600 long, 40 thick and 232 tall with a capped top, from beside Lon Lon Ranch."
+    },
+    {
+      "name": "hf_tree_stump", "label": "Gnarled stump", "kind": "plant",
+      "take": { "box": [[4040, -8000, -170], [4305, -7700, 140]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [2, 2, 2] },
+      "about": "A broad old trunk 300 tall with spreading roots, by the way to the Lost Woods."
+    },
+    {
+      "name": "hf_banner_pole", "label": "Banner pole", "kind": "decor",
+      "take": { "box": [[-1665, -6220, 95], [-1600, -5840, 505]] },
+      "origin": "base",
+      "scale": { "min": [0.75, 0.75, 0.75], "max": [1.5, 1.5, 1.5], "uniform": true },
+      "about": "A lattice pole 400 tall with a string of pennants, at the gate of Lon Lon Ranch."
+    },
+    {
+      "name": "hf_ladder", "label": "Ladder", "kind": "wall",
+      "take": { "box": [[-5605, -14415, -705], [-5570, -14390, -480]] },
+      "origin": "base", "facing": "normal",
+      "about": "A wooden ladder 210 tall up the terraces on the way to Lake Hylia (wall types ladder and ladder_top). Locked: sized for Link."
+    },
+    {
+      "name": "hf_waterfall", "label": "Waterfall", "kind": "wall",
+      "take": { "box": [[-2875, 500, -320], [-2610, 765, 5]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.5, 1, 0.3], "max": [3, 1, 2] },
+      "about": "The moat's overflow falling 315 into the river. Translucent; no collision."
+    },
+    {
+      "name": "hf_window", "label": "Arrow slit", "kind": "wall",
+      "take": { "box": [[240, -700, 45], [280, -690, 108]] },
+      "origin": "base", "facing": "normal",
+      "scale": { "min": [0.75, 1, 0.75], "max": [2, 1, 2], "uniform": true },
+      "about": "A narrow stone-framed window, drawn on the town wall beside the gate. Flat: no collision."
+    }
+  ]
+}

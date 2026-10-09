@@ -13,9 +13,10 @@ target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_vi
 `--select` selects a region or path by name, a prop by `prop:N`, a line by `line:N`, a region's edge by `edge:<region>:<k>` or an outline edge by `edge:outline:<k>`, at the
 start (handy for screenshots: the profile shows for a path).
 
-The texture library is `out/overworld/textures/kokiri`, made on first start from the extracted Kokiri Forest scene
-(`overworld kit-textures`; ROM data, never committed). So is the kit of pieces, `out/overworld/kit/kokiri`, cut from the same
-extract by `overworld kit-pieces` (and again whenever `../overworld/kit/kokiri.json` changes). Play needs `target/release/oot_sandbox` and the game's pack (its
+The texture libraries are `out/overworld/textures/<region>`, one per overworld region, made on first start from the
+extracted scenes (`overworld kit-textures`; ROM data, never committed). So are the kits of pieces,
+`out/overworld/kit/<region>`, cut from the same extracts by `overworld kit-pieces` (and again whenever a region's
+manifest, `../overworld/kit/<region>.json`, changes); the editor loads them all as one kit. Play needs `target/release/oot_sandbox` and the game's pack (its
 first run imports it from the ROM in `oot.toml`). The build goes to `out/overworld/<level name>/`, which you can change
 in the File menu.
 
@@ -110,8 +111,10 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   Modes: Raise, Lower, Smooth, Flatten, Bumps, Erase (keys 1-6). Ctrl turns raise into lower; Shift smooths. `[` and `]`
   size it; *Hard core* is the share of the radius at full strength. Paint in the plan or in 3D (there, Alt-drag or
   middle-drag orbits). Each stroke is one undo step. The rebuild follows a few times a second while you paint.
-- **Prop (K):** the palette shows the kit's pieces as thumbnails by kind (houses, stumps, stepping stones, openings,
-  wall pieces); hover one for its size, triangles, collision vertices and what Link can use it for. Click in the plan or 3D to place the chosen piece; it
+- **Prop (K):** the palette shows every region's pieces as thumbnails (about 200, from Kokiri Forest to the Desert
+  Colossus). *Region* narrows them to one region's; the chips below narrow them to a kind (houses, buildings, posts,
+  bridges, platforms, stones, rocks, plants, decor, openings, on walls: only the kinds there are), and the search
+  matches names and regions. Hover one for its region, size, triangles, collision vertices and what Link can use it for. Click in the plan or 3D to place the chosen piece; it
   stands on the ground (a house on its doorway, a stone in water). Drag a prop to move it, in either view. In the plan,
   the selected prop has a handle on its facing arrow (drag: turn, in 15° steps) and one on its corner (drag: scale,
   within the piece's limits). Alt: no snapping. Q / E turn it 15° (Shift: 1°), PgUp/PgDn raise or sink it (it then
@@ -159,7 +162,7 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   parallel walls: draw it with sharp corners (S), or with Hard edges. Vines and the waterfall always reach from the floor
   to the wall's top; the inspector's *Width* sets how wide they are, up to the flat face they're on (it says how wide that
   is). The vines' texture repeats as they grow.
-- **Themes:** Level settings' *Theme* switches the level between Kokiri Forest and Kakariko Village: every floor, wall
+- **Themes:** Level settings' *Theme* (a list of the 19 regions with themes) switches the level's look: every floor, wall
   and tree that isn't pinned to a style follows. A region's *Edge* and a path's *Sides* list the level's theme's styles
   first, then the other themes' (`kakariko:brick`, `kokiri:cliff`), which stay as they are when the theme changes. A
   style the theme doesn't have falls back to its own walls, with a problem saying so. The texture libraries of every

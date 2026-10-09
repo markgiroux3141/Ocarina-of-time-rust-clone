@@ -1,0 +1,301 @@
+{
+  "name": "goron_city",
+  "textures": {
+    "ground": "gc_ground@t1x2",
+    "lava": "gc_lava",
+    "cliff": "gc_cliff",
+    "cave_wall": "gc_cave_wall",
+    "cave_wall_c": "gc_cave_wall_c",
+    "wall_drawing": "gc_wall_drawing",
+    "gate_wall": "gc_gate_wall",
+    "ceiling": "gc_ceiling",
+    "rope_fence": "gc_rope_fence",
+    "post_red": "gc_post_red",
+    "steps": "gc_steps",
+    "dirt_strip": "kf_dirt_strip",
+    "fence_post": "kf_fence_post",
+    "hedge_top": "kf_hedge_top",
+    "grass_skirt": "kf_grass_skirt",
+    "log_side": "kf_log_side",
+    "log_end": "kf_log_end",
+    "rope": "kf_fence@1-8"
+  },
+  "floor": {
+    "material": "ground",
+    "tile": 280,
+    "surface": "dirt"
+  },
+  "water": {
+    "material": "lava",
+    "tile": 160,
+    "surface": "water",
+    "bed": {
+      "material": "ground",
+      "tile": 280,
+      "surface": "dirt"
+    }
+  },
+  "bank": {
+    "material": "ground",
+    "tile": 280,
+    "surface": "dirt"
+  },
+  "wall_styles": {
+    "cliff": {
+      "material": "cliff",
+      "tile_u": 200,
+      "band": 200,
+      "surface": "wall"
+    },
+    "ledge": {
+      "material": "cave_wall",
+      "tile_u": 200,
+      "surface": "wall"
+    },
+    "shore": {
+      "material": "cave_wall_c",
+      "tile_u": 200,
+      "surface": "wall"
+    },
+    "vines": {
+      "material": "cliff",
+      "tile_u": 200,
+      "band": 200,
+      "surface": "vines"
+    },
+    "boundary_cliff": {
+      "material": "cliff",
+      "tile_u": 200,
+      "band": 200,
+      "surface": "wall_nograb"
+    },
+    "embankment": {
+      "material": "cliff",
+      "tile_u": 200,
+      "band": 200,
+      "surface": "wall"
+    },
+    "cave_wall": {
+      "material": "cave_wall",
+      "tile_u": 200,
+      "surface": "wall"
+    },
+    "drawing": {
+      "material": "wall_drawing",
+      "tile_u": 200,
+      "surface": "wall"
+    },
+    "gate": {
+      "material": "gate_wall",
+      "tile_u": 304,
+      "band": 162,
+      "surface": "wall"
+    },
+    "rock": {
+      "material": "ceiling",
+      "tile_u": 400,
+      "band": 280,
+      "surface": "wall"
+    }
+  },
+  "wall_rules": [
+    {
+      "over_water": true,
+      "style": "shore"
+    },
+    {
+      "max_height": 220,
+      "style": "ledge"
+    },
+    {
+      "style": "cliff"
+    }
+  ],
+  "boundary_style": "boundary_cliff",
+  "trees": {
+    "trunks": 400,
+    "trunk_material": "cliff",
+    "trunk_tile": 200,
+    "foliage": 200,
+    "foliage_material": "ceiling",
+    "foliage_tile": 400,
+    "overlap": 40,
+    "foliage_in": 20,
+    "surface": "wall_nograb"
+  },
+  "light": {
+    "ambient": [
+      80,
+      70,
+      58
+    ],
+    "lights": [
+      {
+        "dir": [
+          73,
+          -73,
+          73
+        ],
+        "color": [
+          230,
+          200,
+          160
+        ]
+      },
+      {
+        "dir": [
+          -73,
+          73,
+          -73
+        ],
+        "color": [
+          60,
+          50,
+          45
+        ]
+      }
+    ]
+  },
+  "variation": {
+    "u_speed": 0.3,
+    "u_scale": 450,
+    "shade": 0.22,
+    "shade_scale": 380,
+    "seed": 18
+  },
+  "dirt": {
+    "texture": "dirt_strip",
+    "tint": [
+      140,
+      115,
+      70
+    ],
+    "opacity": 0.6,
+    "repeats": 1,
+    "columns": [
+      16,
+      48
+    ],
+    "width": 160,
+    "soft": 50,
+    "wobble": 14,
+    "surface": "dirt"
+  },
+  "fences": {
+    "fence": {
+      "material": "rope_fence",
+      "height": 60,
+      "tile": 61,
+      "surface": "fence"
+    },
+    "lattice": {
+      "material": "fence_post",
+      "height": 120,
+      "tile": 30,
+      "surface": "wall_nograb"
+    }
+  },
+  "hedge": {
+    "top": "hedge_top",
+    "top_tile": 80,
+    "side": "grass_skirt",
+    "side_tile": 140,
+    "height": 28,
+    "spacing": 100,
+    "surface": "tall_grass"
+  },
+  "tunnel": {
+    "width": 160,
+    "height": 160,
+    "floor": {
+      "material": "ground",
+      "tile": 280,
+      "surface": "dirt"
+    },
+    "wall": "cave_wall",
+    "tile_u": 200,
+    "tile_v": 200,
+    "wall_surface": "wall_nograb",
+    "dark": 0.35,
+    "dark_depth": 300
+  },
+  "hanging": {
+    "deck": "log_side",
+    "under": "log_end",
+    "width": 80,
+    "across": 2,
+    "plank": 20,
+    "sag": 0.06,
+    "rope": "rope",
+    "rope_width": 6,
+    "rail": 50,
+    "spacing": 60,
+    "post": "post_red",
+    "post_size": [
+      17,
+      88
+    ],
+    "surface": "planks",
+    "side_surface": "wall_nograb",
+    "side": 70
+  },
+  "rocks": {
+    "style": "cliff",
+    "top": {
+      "material": "ground",
+      "tile": 280,
+      "surface": "dirt"
+    },
+    "lumps": 14,
+    "lump_scale": 140,
+    "arch": {
+      "width": 200,
+      "height": 560,
+      "depth": 110,
+      "lip": 14,
+      "bulge": 0.18,
+      "foot": 2.4
+    }
+  },
+  "paths": {
+    "side": "embankment",
+    "max_slope": 35,
+    "bridge": {
+      "thickness": 40,
+      "top": {
+        "material": "ground",
+        "tile": 280,
+        "surface": "dirt"
+      },
+      "side": {
+        "material": "cave_wall",
+        "tile_u": 200,
+        "surface": "wall"
+      },
+      "under": {
+        "material": "ceiling",
+        "tile": 300,
+        "surface": ""
+      },
+      "shape": "rock",
+      "rock": {
+        "depth_mid": 70,
+        "depth_end": 260,
+        "bulge": 0.15,
+        "lip": 14,
+        "lumps": 14,
+        "lump_scale": 140,
+        "style": "embankment"
+      }
+    }
+  },
+  "steps": {
+    "tread": "steps",
+    "across": 1,
+    "step": 45,
+    "side": "ledge",
+    "tiled": "cliff",
+    "cutting": "cliff",
+    "surface": "stone"
+  }
+}
