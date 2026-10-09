@@ -58,6 +58,20 @@ pub struct End {
 /// side of where it is, so a short segment ramps more steeply (and is reported if too steep).
 pub const RAMP: f64 = 25.0;
 
+/// A path's sides at a bend are mitred (`PathGeo::sides`) at most this far out: a turn of up to 120
+/// degrees keeps its full width.
+const MITRE_MAX: f64 = 2.0;
+
+/// Round a bend, how far from it the measure across a path turns (`PathGeo::cross_sections`): this
+/// many times as far as the mitre reaches along the line at the sides. A stair's steps stay level
+/// as they fan round, so its inner side climbs this over this less 1 times as steeply as its line
+/// (1: the steps would all meet at the inner corner).
+const FAN: f64 = 3.0;
+
+/// Stairs bending by this many degrees or more at a point of their line get stations where their
+/// steps are square again either side (`layout`), for the fan between to be drawn as one.
+const STAIR_TURN: f64 = 15.0;
+
 #[derive(Debug, Clone)]
 pub struct Station {
     pub p: P2,
@@ -87,6 +101,11 @@ pub struct Run {
     pub land0: bool,
     pub land1: bool,
 }
+
+/// Where a point is along a path (`PathGeo::along`): the run's index, how far along it is
+/// (horizontally), how far along its surface, how far to the left of the line, how far from it,
+/// and the path's width there.
+pub type Along = (usize, f64, f64, f64, f64, f64);
 
 #[derive(Debug, Clone)]
 pub struct PathGeo {
@@ -125,10 +144,19 @@ impl PathGeo {
         self.section(i)
     }
 
-    /// The path's height at the centre-line point nearest p.
+    /// The path's height at p: inside its footprint, level along its cross-sections (`in_footprint`),
+    /// so round a bend a stair's steps stay level; outside, at the centre-line point nearest p.
     pub fn z_at(&self, p: P2) -> f64 {
         let (mut best, mut z) = (f64::INFINITY, self.st[0].z);
-        for w in self.st.windows(2) {
+        let mut inside = f64::INFINITY;
+        for (i, w) in self.st.windows(2).enumerate() {
+            if let Some((t, l)) = self.in_footprint(p, i).filter(|x| x.1.abs() < inside) {
+                inside = l.abs();
+                z = w[0].z + (w[1].z - w[0].z) * t;
+            }
+            if inside.is_finite() {
+                continue;
+            }
             let (d, t) = dist_to_seg(p, w[0].p, w[1].p);
             if d < best {
                 best = d;
@@ -138,26 +166,58 @@ impl PathGeo {
         z
     }
 
+    /// Where p is in the footprint's quads between stations i and i + 1 (`cross_sections`), if it's
+    /// in one: (t from 0 at i to 1, from -1 on the right side to 1 on the left).
+    fn in_footprint(&self, p: P2, i: usize) -> Option<(f64, f64)> {
+        let (a, b) = (&self.st[i], &self.st[i + 1]);
+        // every corner is within the longer half cross-section of the line between: so is the quad
+        let reach = [self.half(i), self.half(i + 1)].iter().map(|m| m[0].hypot(m[1])).fold(0.0, f64::max);
+        if dist_to_seg(p, a.p, b.p).0 > reach + 1e-6 {
+            return None;
+        }
+        self.cross_sections(i)
+            .windows(2)
+            .flat_map(|w| {
+                let ((t0, l0, r0), (t1, l1, r1)) = (w[0], w[1]);
+                in_quad(p, [l0, r0], [l1, r1]).into_iter().flatten().map(move |(u, l)| (t0 + (t1 - t0) * u, l))
+            })
+            .filter(|x| x.1.abs() <= 1.0 + 1e-3)
+            .min_by(|x, y| x.1.abs().total_cmp(&y.1.abs()))
+    }
+
     /// Where p is along the attached runs' centre line: the run's index, how far along it is (the
     /// station's `s`, horizontal) and how far along the surface (its slope included), how far to
     /// the left of the line, how far from it, and the path's width there.
-    pub fn along(&self, p: P2) -> Option<(usize, f64, f64, f64, f64, f64)> {
-        let mut best: Option<(usize, f64, f64, f64, f64, f64)> = None;
+    ///
+    /// Inside the footprint it's measured across the footprint's own cross-sections (`sides`): each
+    /// quad between two stations is mapped back exactly, so where the line bends the measure fans
+    /// round the corner and stays continuous (stairs' steps fan as a winding stair's do, rather than
+    /// smearing over the outside of the bend and jumping on the inside). Outside, the nearest point
+    /// on the line.
+    pub fn along(&self, p: P2) -> Option<Along> {
+        let mut nearest: Option<Along> = None;
+        // in the footprint: how far from the line (in half widths), and where
+        let mut inside: Option<(f64, Along)> = None;
         for (k, r) in self.runs.iter().enumerate().filter(|(_, r)| !r.floating) {
             let mut s3 = 0.0;
             for i in r.i0..r.i1 {
                 let (a, b) = (&self.st[i], &self.st[i + 1]);
                 let l3 = (b.s - a.s).hypot(b.z - a.z);
                 let (d, t) = dist_to_seg(p, a.p, b.p);
-                if best.is_none_or(|x| d < x.4) {
+                if nearest.is_none_or(|x| d < x.4) {
                     let q = sub(p, lerp(a.p, b.p, t));
                     let left = a.dir[0] * q[1] - a.dir[1] * q[0];
-                    best = Some((k, a.s + (b.s - a.s) * t, s3 + l3 * t, left, d, a.w + (b.w - a.w) * t));
+                    nearest = Some((k, a.s + (b.s - a.s) * t, s3 + l3 * t, left, d, a.w + (b.w - a.w) * t));
+                }
+                if let Some((t, l)) = self.in_footprint(p, i).filter(|x| inside.is_none_or(|y| x.1.abs() < y.0)) {
+                    let w = a.w + (b.w - a.w) * t;
+                    let left = l.clamp(-1.0, 1.0) * 0.5 * w;
+                    inside = Some((l.abs(), (k, a.s + (b.s - a.s) * t, s3 + l3 * t, left, left.abs(), w)));
                 }
                 s3 += l3;
             }
         }
-        best
+        inside.map(|x| x.1).or(nearest)
     }
 
     /// The line's height and the section's raise at the centre-line point nearest p.
@@ -204,9 +264,71 @@ impl PathGeo {
 
     /// The left and right edge points at station i.
     pub fn sides(&self, i: usize) -> (P2, P2) {
-        let s = &self.st[i];
-        let n = [-s.dir[1] * s.w * 0.5, s.dir[0] * s.w * 0.5];
+        let (s, n) = (&self.st[i], self.half(i));
         ([s.p[0] + n[0], s.p[1] + n[1]], [s.p[0] - n[0], s.p[1] - n[1]])
+    }
+
+    /// The footprint's cross-sections between stations i and i + 1, (t from 0 at i to 1, left edge
+    /// point, right): the stations' own, and where a station's is mitred, one square to the line
+    /// `FAN` times as far from it as the mitre reaches along the line at the sides. Between a mitre
+    /// and that one the measure across turns (`along`), round the bend; on past it, it's square.
+    fn cross_sections(&self, i: usize) -> Vec<(f64, P2, P2)> {
+        let (a, b) = (&self.st[i], &self.st[i + 1]);
+        let ((la, ra), (lb, rb)) = (self.sides(i), self.sides(i + 1));
+        let mut out = vec![(0.0, la, ra)];
+        let len = dist(a.p, b.p);
+        if len > 1e-9 {
+            let u = [(b.p[0] - a.p[0]) / len, (b.p[1] - a.p[1]) / len];
+            let dot = |v: P2| v[0] * u[0] + v[1] * u[1];
+            // how far along the line each end's mitre reaches at the sides, and where to square up
+            let (ra_, rb_) = (dot(sub(la, a.p)).abs(), dot(sub(lb, b.p)).abs());
+            let (mut xa, mut xb) = (FAN * ra_, FAN * rb_);
+            if xa + xb > len {
+                let k = len / (xa + xb);
+                (xa, xb) = (xa * k, xb * k);
+            }
+            // square cross-sections only where they don't cross a mitre inside the footprint
+            if xa + 1e-6 >= ra_ && xb + 1e-6 >= rb_ {
+                // the square cross-section at t meets the sides where they cross it
+                let at = |t: f64| {
+                    let c = lerp(a.p, b.p, t);
+                    let meet = |p0: P2, p1: P2| lerp(p0, p1, dot(sub(c, p0)) / dot(sub(p1, p0)).max(1e-9));
+                    (t, meet(la, lb), meet(ra, rb))
+                };
+                // (none on a station: a stairs' are there already, `layout`)
+                let (ta, tb) = (xa / len, 1.0 - xb / len);
+                if xa > 1e-6 && ta < 1.0 - 1e-9 {
+                    out.push(at(ta));
+                }
+                if xb > 1e-6 && tb > 1e-9 && tb > ta + 1e-9 {
+                    out.push(at(tb));
+                }
+            }
+        }
+        out.push((1.0, lb, rb));
+        out
+    }
+
+    /// From station i to its left edge point: half the width across the line, mitred where the line
+    /// bends (along the bisector, longer by 1 / cos of half the turn, at most `MITRE_MAX` times), so
+    /// the sides stay half the width from the line either side of a sharp corner rather than
+    /// pinching in to it.
+    fn half(&self, i: usize) -> P2 {
+        let s = &self.st[i];
+        let unit = |v: P2| {
+            let l = v[0].hypot(v[1]);
+            (l > 1e-9).then(|| [v[0] / l, v[1] / l])
+        };
+        let (mut d, mut k) = (s.dir, 1.0);
+        if i > 0
+            && i + 1 < self.st.len()
+            && let (Some(a), Some(b)) = (unit(sub(s.p, self.st[i - 1].p)), unit(sub(self.st[i + 1].p, s.p)))
+            && let Some(m) = unit([a[0] + b[0], a[1] + b[1]])
+        {
+            d = m;
+            k = 1.0 / (m[0] * a[0] + m[1] * a[1]).max(1.0 / MITRE_MAX);
+        }
+        [-d[1] * s.w * 0.5 * k, d[0] * s.w * 0.5 * k]
     }
 
     /// A run's footprint, counter-clockwise: the right side forwards, the left side back.
@@ -215,6 +337,38 @@ impl PathGeo {
         out.extend((r.i0..=r.i1).rev().map(|i| self.sides(i).0));
         out
     }
+}
+
+/// Where p is in the quad between cross-sections `a` and `b` (each [left, right]): p = c(t) + l m(t),
+/// with c(t) running between their middles and m(t) between their halves, both linear in t; so
+/// cross(p - c(t), m(t)) = 0, a quadratic in t. Each (t, l) with t in 0 to 1 (l -1 on the right,
+/// 1 on the left).
+fn in_quad(p: P2, a: [P2; 2], b: [P2; 2]) -> [Option<(f64, f64)>; 2] {
+    let cr = |x: P2, y: P2| x[0] * y[1] - x[1] * y[0];
+    let mid = |s: [P2; 2]| lerp(s[0], s[1], 0.5);
+    let half = |s: [P2; 2]| [(s[0][0] - s[1][0]) * 0.5, (s[0][1] - s[1][1]) * 0.5];
+    let (ca, ma, mb) = (mid(a), half(a), half(b));
+    let (e, f, g) = (sub(p, ca), sub(ca, mid(b)), sub(mb, ma));
+    let (c0, c1, c2) = (cr(e, ma), cr(e, g) + cr(f, ma), cr(f, g));
+    let mut ts = [f64::NAN; 2];
+    if c2.abs() <= 1e-9 * (c1.abs() + c0.abs()) {
+        if c1.abs() > 1e-12 {
+            ts[0] = -c0 / c1;
+        }
+    } else {
+        let disc = c1 * c1 - 4.0 * c2 * c0;
+        if disc >= 0.0 {
+            let h = -0.5 * (c1 + c1.signum() * disc.sqrt());
+            ts = [h / c2, if h != 0.0 { c0 / h } else { f64::NAN }];
+        }
+    }
+    ts.map(|t| {
+        (-1e-6..=1.0 + 1e-6).contains(&t).then(|| {
+            let t = t.clamp(0.0, 1.0);
+            let (q, m) = ([e[0] + t * f[0], e[1] + t * f[1]], [ma[0] + t * g[0], ma[1] + t * g[1]]);
+            (t, (q[0] * m[0] + q[1] * m[1]) / (m[0] * m[0] + m[1] * m[1]).max(1e-12))
+        })
+    })
 }
 
 fn point_at(st: &[(P2, f64)], s: f64) -> P2 {
@@ -721,6 +875,31 @@ fn layout_inner(path: &Path, base: &dyn Fn(P2) -> f64, sampling: Sampling, ends:
         }
         cuts.push(0.5 * (a + b));
     }
+    // stairs: a station each side of a sharp bend where the steps are square to the line again
+    // (`PathGeo::cross_sections`), so the fan round the bend is a quad of its own and the stretch
+    // on is square
+    if path.look.as_deref() == Some("steps") {
+        let unit = |v: P2| {
+            let l = v[0].hypot(v[1]);
+            (l > 1e-9).then(|| [v[0] / l, v[1] / l])
+        };
+        for j in 1..line.len().saturating_sub(1) {
+            let (p, s) = line[j];
+            let (Some(a), Some(b)) = (unit(sub(p, line[j - 1].0)), unit(sub(line[j + 1].0, p))) else { continue };
+            let turn = (a[0] * b[0] + a[1] * b[1]).clamp(-1.0, 1.0).acos();
+            if turn < STAIR_TURN.to_radians() {
+                continue;
+            }
+            // how far along the line the mitre reaches at the sides (`PathGeo::half`)
+            let reach = 0.5 * w_of(s) * (0.5 * turn).sin() / (0.5 * turn).cos().max(1.0 / MITRE_MAX);
+            for (room, dir) in [(s - line[j - 1].1, -1.0), (line[j + 1].1 - s, 1.0)] {
+                let x = (FAN * reach).min(0.5 * room);
+                if x >= reach {
+                    cuts.push(s + dir * x);
+                }
+            }
+        }
+    }
     // the stations, with the landing points and those added
     cuts.sort_by(f64::total_cmp);
     let mut st_s: Vec<(P2, f64)> = vec![];
@@ -849,6 +1028,38 @@ mod tests {
         assert!((g.z_at([650.0, 0.0]) - 100.0).abs() < 1.0);
         assert!((g.z_at([1000.0, 0.0]) - 200.0 * 1000.0 / 1300.0).abs() < 1.0, "{}", g.z_at([1000.0, 0.0]));
         assert_eq!(g.runs.len(), 1);
+    }
+
+    #[test]
+    fn a_stair_turning_a_corner_keeps_its_width_and_its_steps_level() {
+        // stairs 100 wide climbing 0 to 200, turning 90 degrees at (600, 0)
+        let mut p = path(vec![vec![Some(0.0), Some(0.0), Some(0.0)], vec![Some(600.0), Some(0.0)], vec![Some(600.0), Some(600.0), Some(200.0)]], vec![]);
+        p.look = Some("steps".into());
+        let g = layout(&p, &|_| 0.0, Sampling::Straight { max: 1000.0 }).unwrap();
+        let c = g.st.iter().position(|s| dist(s.p, [600.0, 0.0]) < 1e-6).unwrap();
+        // mitred: the corner's sides half the width from both legs' lines (not pinched in)
+        let (l, r) = g.sides(c);
+        for q in [l, r] {
+            assert!((q[1].abs() - 50.0).abs() < 1e-6 && ((q[0] - 600.0).abs() - 50.0).abs() < 1e-6, "{q:?}");
+        }
+        // square to the line again either side of the bend, where the steps' fan ends
+        for q in [[600.0 - FAN * 50.0, 0.0], [600.0, FAN * 50.0]] {
+            assert!(g.st.iter().any(|s| dist(s.p, q) < 1e-6), "a station at {q:?}");
+        }
+        // each step level across the stair: the corner's sides at its height
+        for q in [l, r] {
+            assert!((g.z_at(q) - g.st[c].z).abs() < 1e-6, "{q:?}: {} not {}", g.z_at(q), g.st[c].z);
+        }
+        // and the measure along it continuous through the bend, on the inside and the outside
+        // (round a corner a step's inner end is narrower: up to about twice as much per unit there)
+        let tangent = [0.5f64.sqrt(), 0.5f64.sqrt()];
+        for t in [0.05, 0.5, 0.95] {
+            let m = lerp(r, l, t);
+            let at = |k: f64| g.along([m[0] + k * tangent[0], m[1] + k * tangent[1]]).unwrap();
+            let (a, b) = (at(-0.5), at(0.5));
+            assert!(b.2 > a.2 && b.2 - a.2 < 4.0, "{t}: {} to {}", a.2, b.2);
+            assert!((b.3 - a.3).abs() < 1.0, "{t}: across {} to {}", a.3, b.3);
+        }
     }
 
     #[test]

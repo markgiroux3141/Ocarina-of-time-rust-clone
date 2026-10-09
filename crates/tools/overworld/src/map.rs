@@ -236,6 +236,8 @@ impl Map {
         // cuts (their ends welded to the loops' vertices), ribbons, then every crossing split
         let loop_verts = verts.len();
         let near = |verts: &Vec<P2>, p: P2| (0..loop_verts).find(|&v| dist(verts[v], p) < 1e-4);
+        // a point two cuts share exactly (one crossing another at its vertex) is one vertex
+        let mut shared: HashMap<(u64, u64), usize> = HashMap::new();
         for c in cuts {
             let closed = c.len() > 2 && dist(c[0], c[c.len() - 1]) < 1e-9;
             let pts = if closed { &c[..c.len() - 1] } else { &c[..] };
@@ -243,8 +245,10 @@ impl Map {
                 .iter()
                 .map(|&p| {
                     near(&verts, p).unwrap_or_else(|| {
-                        verts.push(p);
-                        verts.len() - 1
+                        *shared.entry((p[0].to_bits(), p[1].to_bits())).or_insert_with(|| {
+                            verts.push(p);
+                            verts.len() - 1
+                        })
                     })
                 })
                 .collect();
