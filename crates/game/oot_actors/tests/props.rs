@@ -63,9 +63,14 @@ fn kokiri_forest_props_initialise_as_their_c_does() {
     }
 
     // En_Ishi: 4 small rocks (params 0x0200: type 0, snapped to the floor, yOffset 58, scale 0.1,
-    // gravity -1.2), with the hard body the sword bounces off.
+    // gravity -1.2), with the hard body the sword bounces off; and Obj_Mure2's circle of 8
+    // (params 0x0202: MURE2_CIRCLE_ROCKS, `D_80B9A818[2]`), out with Link within its range.
     let ishi = all::<EnIshi>(&w);
-    assert_eq!(ishi.len(), placed(oot_actors::en_ishi::ACTOR_EN_ISHI));
+    let mure2 = all::<oot_actors::obj_mure2::ObjMure2>(&w);
+    assert_eq!(mure2.len(), 1);
+    let circle = mure2[0].spawned.iter().flatten().count();
+    assert_eq!(circle, 8);
+    assert_eq!(ishi.len(), placed(oot_actors::en_ishi::ACTOR_EN_ISHI) + circle);
     for i in &ishi {
         assert!(!i.actor.killed);
         assert_eq!((i.actor.scale.x, i.actor.shape_y_offset, i.actor.gravity), (0.1, 58.0, -1.2));

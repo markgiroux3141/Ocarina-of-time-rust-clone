@@ -53,8 +53,8 @@ pub fn fog_far(s: &SceneState) -> f32 {
     s.lights.fog_far as f32
 }
 
-/// Background: with no skybox drawn (`SKYBOX_UNSET_1D`, or skyboxes not ported),
-/// `Environment_DrawSkyboxFilters` fills the screen with the fog colour.
+/// The spikes' views' background (no `Play_Draw`): the fog's colour, as
+/// `Environment_DrawSkyboxFilters` fills the screen with it under `SKYBOX_UNSET_1D`.
 pub fn clear_color(s: &SceneState) -> [f64; 4] {
     let f = s.lights.fog_color;
     [f[0] as f64 / 255.0, f[1] as f64 / 255.0, f[2] as f64 / 255.0, 1.0]
@@ -115,6 +115,26 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
         }
     }
     drawn
+}
+
+/// `Play_Draw`'s sky before the rooms (`Skybox_Draw` of the 128 skies: the normal sky, the
+/// cutscene map's, the overcast sunset), around the eye: unless the scene has none, or the room
+/// disables it; blended by `envCtx.skyboxBlend` (the normal sky's and the cutscene map's) or 0.
+pub fn submit_sky(play: &PlayState, s: &SceneState, eye: Vec3, out: &mut DrawLists) -> bool {
+    use oot_game::skybox::{SEG_BLEND, SKYBOX_CUTSCENE_MAP, SKYBOX_NONE, SKYBOX_NORMAL_SKY, SKYBOX_UNSET_1D};
+    let sky = &play.skybox_ctx;
+    let disabled = play.scene.as_ref().and_then(|s| s.room(play.room_ctx.cur.num)).is_some_and(|r| r.skybox_disabled);
+    if s.all_rooms || sky.skybox_id == SKYBOX_NONE || sky.skybox_id == SKYBOX_UNSET_1D || disabled {
+        return false;
+    }
+    let Some(name) = sky.bake_128_name() else { return false };
+    let blend = if sky.skybox_id == SKYBOX_NORMAL_SKY || sky.skybox_id == SKYBOX_CUTSCENE_MAP { play.env_ctx.skybox_blend } else { 0 };
+    let mut cmd = DrawCmd::new(MeshKey::named(oot_game::pack::keys::bake(&name)), sky.draw_matrix(eye));
+    let mut sv = eng_gfx::SegmentValues::default();
+    sv.prim[SEG_BLEND as usize] = Some([0, 0, 0, blend]);
+    cmd.params.segments = Some(sv);
+    out.opa.push(cmd);
+    true
 }
 
 /// `Play_Draw`'s room skybox (`skyboxCtx.drawType != 0`: the houses' and shops' 360° images),

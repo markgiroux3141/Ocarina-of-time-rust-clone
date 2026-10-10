@@ -655,6 +655,21 @@ impl PlayState {
                 self.camera_set_fov(sub, cc.fov);
                 self.play_set_camera_roll(sub, cc.roll);
             }
+            // The owl's talk (En_Owl's EnOwl_CheckInitTalk): D_80122E44[timer & 1], its first
+            // at raised by the owl's height over Link, its sixth the main camera's at.
+            8700 => {
+                let Some(a) = actor.map(|a| a.focus_pos) else { return 0 };
+                let Some(pf) = self.player_view().map(|p| p.focus_pos) else { return 0 };
+                let t = self.onepoint.table("D_80122E44");
+                let base = (timer & 1) as usize * 7;
+                self.onepoint.kf(t, base).at_target_init.y = ((a.y - pf.y) / 10.0) + 90.0;
+                self.onepoint.kf(t, base + 5).at_target_init = main.at;
+                if let Some(c) = self.camera_mut(sub) {
+                    c.cs_info.key_frames = Some(KeyFramesRef { table: t, start: base });
+                    c.cs_info.key_frame_cnt = 7;
+                }
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
             9601 | 9602 => {
                 self.camera_change_setting(sub, CAM_SET_CS_3);
                 let prev = main.prev_setting;

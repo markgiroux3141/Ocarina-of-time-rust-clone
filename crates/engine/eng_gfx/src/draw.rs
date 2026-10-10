@@ -171,6 +171,10 @@ pub struct Batch {
     pub material: usize,
     /// Triangle list: every three vertices form one triangle.
     pub vertices: Vec<Vertex>,
+    /// The segmented address each vertex was loaded from (its `Vtx`), vertex by vertex, when the
+    /// interpreter tracked them (`eng_gbi::Interpreter::track_vertex_sources`); else empty. What
+    /// a draw needs to rebuild the colours of vertices the game writes in its object's RAM.
+    pub sources: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -107,7 +107,7 @@ pub fn mesh(img: DecodedImage, fmt: u8, siz: u8) -> DrawList {
     let (x0, x1, y0, y1) = (-w / 2.0, w / 2.0, h / 2.0, -h / 2.0);
     let v = |x: f32, y: f32, u: f32, t: f32| Vertex { bone: NO_BONE, pos: Vec3::new(x, y, 0.0), normal: Vec3::Z, color: [255; 4], uv: [Vec2::new(u, t), Vec2::ZERO] };
     let (tl, tr, br, bl) = (v(x0, y0, 0.0, 0.0), v(x1, y0, 1.0, 0.0), v(x1, y1, 1.0, 1.0), v(x0, y1, 0.0, 1.0));
-    d.batches.push(Batch { material, vertices: vec![tl, bl, br, tl, br, tr] });
+    d.batches.push(Batch { material, vertices: vec![tl, bl, br, tl, br, tr], sources: Vec::new() });
     d.stats.triangles = 2;
     d
 }

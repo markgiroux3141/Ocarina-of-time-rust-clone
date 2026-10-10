@@ -56,6 +56,7 @@ pub const ITEM_ZELDAS_LETTER: u8 = 0x23;
 pub const ITEM_MASK_KEATON: u8 = 0x24;
 pub const ITEM_SOLD_OUT: u8 = 0x2C;
 pub const ITEM_POCKET_EGG: u8 = 0x2D;
+pub const ITEM_POCKET_CUCCO: u8 = 0x2E;
 pub const ITEM_POACHERS_SAW: u8 = 0x32;
 pub const ITEM_CLAIM_CHECK: u8 = 0x37;
 pub const ITEM_BOW_FIRE: u8 = 0x38;
@@ -874,6 +875,19 @@ pub fn item_check_obtainability(save: &SaveContext, item: u8) -> u8 {
 }
 
 /// `OWNED_EQUIP_FLAG(equip, value)`: `gBitFlags[value] << gEquipShifts[equip]`.
+/// `Inventory_ReplaceItem` (`z_parameter.c`): the first `old_item` in the inventory becomes
+/// `new_item`, on the first C button holding it too. True if one was there.
+/// (`Interface_LoadItemIcon1`: the icons are drawn from the items.)
+pub fn inventory_replace_item(save: &mut SaveContext, old_item: u8, new_item: u8) -> bool {
+    let Some(i) = save.inventory.items.iter().position(|&it| it == old_item) else { return false };
+    save.inventory.items[i] = new_item;
+    log::debug!("Item Purge ({i})");
+    if let Some(b) = (1..4).find(|&b| save.equips.button_items[b] == old_item) {
+        save.equips.button_items[b] = new_item;
+    }
+    true
+}
+
 /// `Inventory_HasEmptyBottle` (`z_parameter.c`): an empty bottle in one of the four bottle slots.
 pub fn inventory_has_empty_bottle(save: &SaveContext) -> bool {
     (0..4).any(|i| save.inventory.items.get(SLOT_BOTTLE_1 + i).copied() == Some(ITEM_BOTTLE_EMPTY))

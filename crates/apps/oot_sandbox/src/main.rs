@@ -116,6 +116,10 @@ struct Cli {
     /// (`SaveContext::file_select_new`).
     #[arg(long)]
     new_file: bool,
+    /// With --entrance: the save's cutscene index (0xFFF0 is layer 4, ...), as this debug ROM's
+    /// map select can start a scene's cutscene layer.
+    #[arg(long)]
+    cutscene: Option<String>,
     /// Play file N (1 to 3) of the SRAM image (--sram; without it a fresh one, whose files are
     /// empty), as the file select loads it; with --new-file, a new file made in it.
     #[arg(long)]
@@ -178,6 +182,7 @@ fn options(cli: &Cli) -> Options {
         level: cli.level.clone(),
         file: cli.file,
         sram: cli.sram.clone(),
+        cutscene: cli.cutscene.as_deref().map(|s| oot::parse_cutscene(s).expect("--cutscene")),
     }
 }
 
@@ -456,13 +461,20 @@ impl HouseWalk {
 fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
     let route = oot_actors::playthrough::Route::from_script(&cli.script);
     if let Some(r) = route
-        && (a.entrance.is_none() || cli.preset.as_deref() != r.preset() || !cli.child || cli.new_file != r.new_file())
+        && (a.entrance.is_none()
+            || cli.preset.as_deref() != r.preset()
+            || !cli.child
+            || cli.new_file != r.new_file()
+            || cli.cutscene.as_deref().map(|c| oot::parse_cutscene(c).ok()).flatten() != r.cutscene()
+            || (!r.new_file() && a.day_time != r.day_time()))
     {
         if r.new_file() {
             anyhow::bail!("the {} script needs --new-file --child", r.script());
         }
         let preset = r.preset().map(|p| format!(" --preset {p}")).unwrap_or_default();
-        anyhow::bail!("the {} script needs --entrance {} --child{preset}", r.script(), r.entrance());
+        let cutscene = r.cutscene().map(|c| format!(" --cutscene 0x{c:04X}")).unwrap_or_default();
+        let time = r.time().map(|(h, m)| format!(" --time {h:02}:{m:02}")).unwrap_or_default();
+        anyhow::bail!("the {} script needs --entrance {} --child{preset}{cutscene}{time}", r.script(), r.entrance());
     }
     let start = if cli.script == "house" || route.is_some() { None } else { script(&cli.script)?.1 };
     let mut w = new_play(a, cli.child);
@@ -509,7 +521,7 @@ fn run_script(
     mut w: PlayState,
     cli: &Cli,
     mut audio: Option<&mut RunAudio>,
-    on_frame: &mut dyn FnMut(&PlayState, usize, &RenderFrame) -> Result<()>,
+    on_frame: &mut dyn FnMut(&mut PlayState, usize, &RenderFrame) -> Result<()>,
 ) -> Result<(PlayState, Vec<RenderFrame>, Vec<serde_json::Value>)> {
     let house = cli.script == "house";
     // The playthroughs steer themselves (oot_actors::playthrough) and mark each step in the trace.
@@ -604,6 +616,10 @@ fn run_script(
             t["camera"]["mode"] = serde_json::json!(c.mode);
             t["camera"]["bg_cam"] = serde_json::json!(c.bg_cam_index);
             t["viewpoint"] = serde_json::json!(w.viewpoint);
+            // While time passes (GAME-06 milestone 3): the time and the sky's, and nightFlag.
+            if w.env_statics.time_speed != 0 {
+                t["clock"] = serde_json::json!([w.save.day_time, w.save.skybox_time, w.save.night_flag]);
+            }
             // While a script runs or Link is in a cutscene mode (GAME-03 milestone 4): the
             // script, its state and frame, the active camera and Player's csMode.
             if w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE || p.cs_mode != 0 {
@@ -654,11 +670,19 @@ fn run_script(
             }
         }
         let snap = w.current_frame();
-        on_frame(&w, i + 1, &snap)?;
+        on_frame(&mut w, i + 1, &snap)?;
         snaps.push(snap);
     }
     if let Some(run) = &playthrough {
         if let Some(f) = &run.failure {
+            // The trace so far, to see where it stopped.
+            if let Some(p) = &cli.trace {
+                if let Some(d) = p.parent() {
+                    std::fs::create_dir_all(d)?;
+                }
+                std::fs::write(p, serde_json::to_string_pretty(&serde_json::json!({ "script": cli.script, "failure": f, "frames": trace }))?)?;
+                println!("{} ({} frames, stopped)", p.display(), trace.len());
+            }
             anyhow::bail!("the playthrough stopped: {f}");
         }
         let steps: Vec<String> = run.steps.iter().map(|(s, f)| format!("{} at frame {f}", s.name())).collect();
@@ -685,9 +709,18 @@ fn headless(cli: &Cli) -> Result<()> {
     } else {
         None
     };
+    // The sun's depth (Environment_GraphCallback) for the screenshots' lens flares: a frame
+    // whose flares read it is drawn small for the depth alone (the flares are draws only: the
+    // run's trace is the same without).
+    let shooting = cli.screenshot.is_some();
+    let probe_target = Target::new(&device, 320, 240);
     let (w, snaps, trace) = {
         let w = script_play(&a, cli)?;
         run_script(w, cli, audio.as_mut(), &mut |w, frame, snap| {
+            if shooting && !w.env_draw.lens_flares.is_empty() {
+                let depth = draw_frame(&mut r, &device, &queue, &probe_target, &mut a, &mut scene, w, snap, false);
+                w.environment_graph_callback(depth);
+            }
             if let Some(k) = shots.iter().position(|(f, _)| *f == frame) {
                 let (_, p) = shots.remove(k);
                 let t = Target::new(&device, cli.width, cli.height);

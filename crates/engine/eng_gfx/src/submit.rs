@@ -156,6 +156,10 @@ pub struct DrawLists {
     pub opa_fill: Option<[u8; 4]>,
     pub xlu_fill: Option<[u8; 4]>,
     pub overlay_fill: Option<[u8; 4]>,
+    /// A pixel of the 320x240 screen (x right, y down; a wider target widens about its
+    /// centre) whose depth the renderer reads back once the frame is drawn
+    /// (`Renderer::read_depth_probe`): the game's `Environment_GraphCallback`.
+    pub depth_probe: Option<[i32; 2]>,
 }
 
 impl DrawLists {

@@ -64,6 +64,9 @@ pub struct TargetCtx {
     pub active_category: usize,
     /// `forcedLockOnActor`: an actor Navi is sent to for one frame (none of the ported actors sets it).
     pub forced_lock_on_actor: Option<ActorHandle>,
+    /// `bgmEnemy`: the nearest hostile enemy within 500 (`Attention_FindActorInCategory`): Player
+    /// plays the enemy music while there is one.
+    pub bgm_enemy: Option<ActorHandle>,
     /// What `Attention_Draw` draws this frame (`None`: nothing).
     pub reticle: Option<ReticleDraw>,
 }
@@ -181,6 +184,7 @@ impl TargetCtx {
         self.targeted = None;
         self.navi_move_progress_factor = 0.0;
         self.forced_lock_on_actor = None;
+        self.bgm_enemy = None;
         self.reticle_spin_counter = 0;
         self.cur_reticle = 0;
         self.set_navi_to_actor(actor, actor.category);
@@ -312,9 +316,19 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
         // Attention_FindActor → Attention_FindActorInCategory over the actors, in list order.
         let mut best = f32::MAX;
         let mut best_prio: Option<(u8, ActorHandle)> = None;
+        // sBgmEnemyDistSq: the nearest hostile enemy within 500, the locked one too.
+        ctx.bgm_enemy = None;
+        let mut bgm_enemy_dist_sq = f32::MAX;
         for h in actors.all() {
             let Some(a) = actors.actor(h) else { continue };
-            if h == f.player || a.killed || a.flags & ACTOR_FLAG_ATTENTION_ENABLED == 0 || Some(h) == f.player_target {
+            if h == f.player || a.killed || a.flags & ACTOR_FLAG_ATTENTION_ENABLED == 0 {
+                continue;
+            }
+            if a.category == crate::actor_ctx::ACTORCAT_ENEMY && a.flags & ACTOR_FLAG_HOSTILE != 0 && a.xyz_dist_to_player_sq < 500.0 * 500.0 && a.xyz_dist_to_player_sq < bgm_enemy_dist_sq {
+                ctx.bgm_enemy = Some(h);
+                bgm_enemy_dist_sq = a.xyz_dist_to_player_sq;
+            }
+            if Some(h) == f.player_target {
                 continue;
             }
             let var = weighted_dist(a, f.player_target.is_some(), f.player_shape_yaw);

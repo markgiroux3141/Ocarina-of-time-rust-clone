@@ -408,3 +408,57 @@ mod tests {
         assert_eq!(hits, vec![2]);
     }
 }
+
+/// What an `OverrideLimbDraw` does with a limb (`SkelAnime_DrawLimbOpa`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LimbDraw {
+    /// It returns false: the limb's `Matrix_TranslateRotateZYX` (after the override's own
+    /// `Matrix_*` calls, this matrix) and its list.
+    Default(glam::Mat4),
+    /// It returns true, having drawn the list itself at this matrix (relative to the parent's):
+    /// the limb's transform isn't applied, and its children hang from the parent's matrix.
+    Drawn(glam::Mat4),
+}
+
+/// `SkelAnime_DrawOpa`'s matrices: every limb's (the matrix its list is drawn with, in the
+/// model's space), walking the skeleton as `SkelAnime_DrawLimbOpa` does. `override_limb` gets
+/// the limb's 1-based index, its position and rotation to change, and says what it did;
+/// `post_limb` gets the limb's 1-based index and the matrix the stack holds after it (the
+/// limb's, or the parent's for a limb the override drew).
+pub fn draw_opa_pose(
+    skeleton: &eng_anim::skeleton::Skeleton,
+    joints: &[[i16; 3]],
+    mut override_limb: impl FnMut(usize, &mut glam::Vec3, &mut [i16; 3]) -> LimbDraw,
+    mut post_limb: impl FnMut(usize, glam::Mat4),
+) -> Vec<glam::Mat4> {
+    use glam::{Mat4, Vec3};
+    let n = skeleton.limbs.len();
+    let mut draw = vec![Mat4::IDENTITY; n];
+    // The matrix each limb's children start from.
+    let mut stack = vec![Mat4::IDENTITY; n];
+    for &l in &skeleton.draw_order {
+        let l = l as usize;
+        let limb = &skeleton.limbs[l];
+        let parent = skeleton.parents[l].map(|p| stack[p as usize]).unwrap_or(Mat4::IDENTITY);
+        let mut pos = if l == 0 {
+            let r = joints.first().copied().unwrap_or([0; 3]);
+            Vec3::new(r[0] as f32, r[1] as f32, r[2] as f32)
+        } else {
+            Vec3::new(limb.joint_pos[0] as f32, limb.joint_pos[1] as f32, limb.joint_pos[2] as f32)
+        };
+        let mut rot = joints.get(l + 1).copied().unwrap_or([0; 3]);
+        match override_limb(l + 1, &mut pos, &mut rot) {
+            LimbDraw::Default(pre) => {
+                let m = parent * pre * eng_anim::skeleton::local_transform(pos, rot);
+                draw[l] = m;
+                stack[l] = m;
+            }
+            LimbDraw::Drawn(m) => {
+                draw[l] = parent * m;
+                stack[l] = parent;
+            }
+        }
+        post_limb(l + 1, stack[l]);
+    }
+    draw
+}

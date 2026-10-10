@@ -285,6 +285,60 @@ pub enum Step {
     EmeraldPart1Over,
     /// In Queen Gohma's room (`ENTR_DEKU_TREE_BOSS_0`) by room 11's floor (exit 2), standing.
     BossRoom,
+    /// The Kokiri Emerald drawn over Link (`Demo_Effect`'s jewel on its cue 2).
+    EmeraldShown,
+    /// The Deku Tree's death started (`CS_MISC_DEKU_TREE_DEATH`, the script's frame 782).
+    TreeDeath,
+    /// The emerald's last part over: its terminator's transition started.
+    EmeraldOver,
+    /// Kokiri Forest at `ENTR_KOKIRI_FOREST_11`: the scene changed, the fade over, Link standing.
+    Forest11,
+    /// The chain's parts, each on its scene's `Play_Init` in its cutscene layer: the castle town's
+    /// cutscene map, layer 5 (Ganondorf on his horse); layer 4 (the goddesses); Gerudo Valley,
+    /// layer 5 (Din) and 4 (the valley); Death Mountain Trail, layer 4 (Nayru); Kokiri Forest,
+    /// layer 4 (Farore); the cutscene map, layer 6 (the Triforce); Kokiri Forest, layer 6 (the
+    /// emerald).
+    Ganondorf,
+    Goddesses,
+    Din,
+    Valley,
+    Nayru,
+    Farore,
+    Triforce,
+    EmeraldPart9,
+    /// Kokiri Forest's exit to the Lost Woods' bridge taken (the transition started).
+    ForestLeft,
+    /// The Lost Woods' layer 4 (`gLostWoodsFairyOcarinaCs`), entered: Saria's goodbye.
+    Bridge,
+    /// The Fairy Ocarina owned (`Cutscene_HandleConditionalTriggers`'s `Item_Give`) and its text
+    /// (0x004A) shown.
+    FairyOcarina,
+    /// Hyrule Field entered at `ENTR_HYRULE_FIELD_3` (the bridge's terminator).
+    Field,
+    /// The field's intro (`gHyruleFieldIntroCs`) over: Link standing in Hyrule Field.
+    FieldIntroOver,
+    /// The owl's talk started (`En_Owl`, text 0x2064).
+    OwlTalk,
+    /// The owl flown off (gone, Link free).
+    OwlFlown,
+    /// The day's music stopped (`Environment_PlayTimeBasedSequence` past 17:10).
+    MusicFaded,
+    /// Night (`nightFlag`: past 18:00).
+    Night,
+    /// The drawbridge raised for the night (`Bg_Spot00_Hanebasi` at -0x4000).
+    BridgeRaised,
+    /// The night's critters (`TIMESEQ_NIGHT_CRITTERS` done: past 19:00).
+    NightCritters,
+    /// The Peahat killed (`EnPeehat_Adult_StateDie` at no health, then its explosion: gone).
+    PeahatKilled,
+    /// Castle Town's entrance entered over the drawbridge.
+    CastleTown,
+    /// The Stalchildren killed (`EnSkb_SetupDeath`), as many as the task asks.
+    StalchildrenKilled,
+    /// Kakariko Village entered up its stairs.
+    Kakariko,
+    /// The Stalchildren that followed Link killed or sunk: none left near him.
+    StalchildrenGone,
 }
 
 impl Step {
@@ -369,6 +423,34 @@ impl Step {
             Step::Arrived => "arrived",
             Step::EmeraldPart1Over => "emerald_part1_over",
             Step::BossRoom => "boss_room",
+            Step::EmeraldShown => "emerald_shown",
+            Step::TreeDeath => "tree_death",
+            Step::EmeraldOver => "emerald_over",
+            Step::Forest11 => "forest_11",
+            Step::Ganondorf => "ganondorf",
+            Step::Goddesses => "goddesses",
+            Step::Din => "din",
+            Step::Valley => "valley",
+            Step::Nayru => "nayru",
+            Step::Farore => "farore",
+            Step::Triforce => "triforce",
+            Step::EmeraldPart9 => "emerald_part9",
+            Step::ForestLeft => "forest_left",
+            Step::Bridge => "bridge",
+            Step::FairyOcarina => "fairy_ocarina",
+            Step::Field => "field",
+            Step::FieldIntroOver => "field_intro_over",
+            Step::OwlTalk => "owl_talk",
+            Step::OwlFlown => "owl_flown",
+            Step::MusicFaded => "music_faded",
+            Step::Night => "night",
+            Step::BridgeRaised => "bridge_raised",
+            Step::NightCritters => "night_critters",
+            Step::PeahatKilled => "peahat_killed",
+            Step::CastleTown => "castle_town",
+            Step::StalchildrenKilled => "stalchildren_killed",
+            Step::Kakariko => "kakariko",
+            Step::StalchildrenGone => "stalchildren_gone",
         }
     }
 }
@@ -457,7 +539,47 @@ pub enum Route {
     /// respawn point set, a void out), and into Queen Gohma's room, standing (GAME-05 milestone 6c),
     /// from room 9's debug start.
     BossRoom,
+    /// Kokiri Forest's cutscene layer 6 (`gKokiriForestKokiriEmeraldPart9Cs`), the Kokiri
+    /// Emerald's last part, from its start (cutscene index 0xFFF2 on the `deku-tree-dead` preset):
+    /// the emerald shown and floating over Link, the Deku Tree's texts and his death, A through
+    /// the texts, to the terminator's `ENTR_KOKIRI_FOREST_11` (GAME-06 milestone 1a).
+    Emerald,
+    /// The emerald's cutscene chain from its part 2 (the castle town's cutscene map, layer 5:
+    /// cutscene index 0xFFF1 on the `deku-tree-dead` preset) through the world's creation, the
+    /// Triforce and the emerald to `ENTR_KOKIRI_FOREST_11`, A through every text (GAME-06
+    /// milestone 1b).
+    Creation,
+    /// Out of the forest (GAME-06 milestone 2): from `ENTR_KOKIRI_FOREST_11` on the `deku-tree-dead`
+    /// preset (where the chain leaves Link) to the Lost Woods' exit; Saria's goodbye on the bridge
+    /// and the Fairy Ocarina; Hyrule Field's intro; the owl's talk and his flight.
+    Farewell,
+    /// Hyrule Field at dusk (GAME-06 milestone 3): from 17:00 in front of the drawbridge
+    /// (`ENTR_HYRULE_FIELD_0`, `deku-tree-dead`), facing the sunset while the day's music stops,
+    /// then round to the castle as night falls and the drawbridge rises, until the night's
+    /// critters (past 19:00).
+    Dusk,
+    /// Hyrule Field by day (GAME-06 milestone 4): a grounded Peahat (`En_Peehat` -1, west of the
+    /// castle) fought from a debug start 600 east of it, then east to the drawbridge and into
+    /// Castle Town's entrance.
+    Field,
+    /// Hyrule Field at 20:00 (GAME-06 milestone 4): two Stalchildren (`En_Encount1`'s `En_Skb`)
+    /// fought on the open field north of Lon Lon Ranch, then east to Kakariko's stairs and up
+    /// them into the village.
+    FieldNight,
 }
+
+/// The emerald's cutscene chain after part 1 (`Cutscene_Command_Destination`'s terminators): each
+/// part's scene (`scene_table.h`), its cutscene layer, its step.
+pub const CHAIN: [(u16, usize, Step); 8] = [
+    (0x47, 5, Step::Ganondorf),
+    (0x47, 4, Step::Goddesses),
+    (0x5A, 5, Step::Din),
+    (0x5A, 4, Step::Valley),
+    (0x60, 4, Step::Nayru),
+    (0x55, 4, Step::Farore),
+    (0x47, 6, Step::Triforce),
+    (0x55, 6, Step::EmeraldPart9),
+];
 
 /// The `BossRoom` route's door: room 9's to room 11 (transition 4), and in front of it on room
 /// 9's side (it faces room 9, rot y 0x105B).
@@ -653,6 +775,15 @@ pub const COMBAT_KAREBABA_HOME: Vec3 = Vec3::new(-88.0, 0.0, -363.0);
 /// the room's middle, facing it (yaw 0x8000: -z).
 pub const COMBAT_START: (Vec3, i16) = (Vec3::new(-54.0, 0.0, -247.0), -0x8000);
 
+/// The `Field` route's Peahat: the grounded one (params -1) west of the castle.
+pub const FIELD_PEAHAT_HOME: Vec3 = Vec3::new(-4858.0, -300.0, -216.0);
+/// Where the `Field` route starts Link: 600 east of it, facing it (yaw -0x4000: -x).
+pub const FIELD_START: (Vec3, i16) = (Vec3::new(-4258.0, -300.0, -216.0), -0x4000);
+/// Where the `FieldNight` route starts Link: on the grass north of Lon Lon Ranch, away from the
+/// river's water box (`EnEncount1_SpawnStalchildOrWolfos` spawns nothing where the floor is under
+/// a water box's surface), facing east.
+pub const FIELD_NIGHT_START: (Vec3, i16) = (Vec3::new(1500.0, 0.0, 2000.0), 0x4000);
+
 /// The Deku Baba the `DekuBaba` route fights: room 0's `En_Dekubaba` (params 0) on the top floor.
 pub const DEKU_BABA_HOME: Vec3 = Vec3::new(-195.0, 800.0, -195.0);
 /// Where the `DekuBaba` route starts Link: 85 from the Deku Baba, on the floor outwards of it,
@@ -666,6 +797,10 @@ impl Route {
             Route::DekuBaba | Route::Combat | Route::Scrub | Route::Shutter | Route::Stick | Route::Push | Route::Slingshot | Route::Pause | Route::DungeonMap | Route::GameOver | Route::Save => "ENTR_DEKU_TREE_0",
             Route::Gohma | Route::BlueWarp => "ENTR_DEKU_TREE_BOSS_0",
             Route::BossRoom => "ENTR_DEKU_TREE_0",
+            Route::Emerald => "ENTR_KOKIRI_FOREST_0",
+            Route::Creation => "ENTR_CUTSCENE_MAP_0",
+            Route::Farewell => "ENTR_KOKIRI_FOREST_11",
+            Route::Dusk | Route::Field | Route::FieldNight => "ENTR_HYRULE_FIELD_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -684,6 +819,7 @@ impl Route {
             Route::Gohma => Some("deku-tree-gohma"),
             Route::BlueWarp => Some("deku-tree-gohma-cleared"),
             Route::BossRoom => Some("deku-tree-slingshot"),
+            Route::Emerald | Route::Creation | Route::Farewell | Route::Dusk | Route::Field | Route::FieldNight => Some("deku-tree-dead"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -700,6 +836,8 @@ impl Route {
             Route::Slingshot => Some(SLINGSHOT_START),
             Route::BlueWarp => Some(BLUE_WARP_START),
             Route::BossRoom => Some((Vec3::new(-660.0, -1880.0, -620.0), -0x8000)),
+            Route::Field => Some(FIELD_START),
+            Route::FieldNight => Some(FIELD_NIGHT_START),
             _ => None,
         }
     }
@@ -756,10 +894,37 @@ impl Route {
         }
     }
 
+    /// The cutscene index its debug start enters with (`cutsceneIndex`: a cutscene layer), if any.
+    pub fn cutscene(self) -> Option<u16> {
+        match self {
+            // CS_INDEX_2: Kokiri Forest's layer 6.
+            Route::Emerald => Some(0xFFF2),
+            // CS_INDEX_1: the cutscene map's layer 5 (CS_DEST_CUTSCENE_MAP_GANON_HORSE's).
+            Route::Creation => Some(0xFFF1),
+            _ => None,
+        }
+    }
+
     /// Whether it starts on the file select's new file (`SaveContext::file_select_new`, the
     /// opening) instead of `SaveContext::new` at the entrance.
     pub fn new_file(self) -> bool {
         self == Route::NewFileDekuTree
+    }
+
+    /// The time of day it starts at (hour, minute: the sandbox's `--time`) when it isn't a new
+    /// save's 10:00 (`Sram_InitNewSave`).
+    pub fn time(self) -> Option<(i32, i32)> {
+        match self {
+            Route::Dusk => Some((17, 0)),
+            Route::FieldNight => Some((20, 0)),
+            _ => None,
+        }
+    }
+
+    /// `time()` as `dayTime`.
+    pub fn day_time(self) -> u16 {
+        let (h, m) = self.time().unwrap_or((10, 0));
+        oot_game::env::clock_time(h, m) as u16
     }
 
     /// The save it starts with, entering by `entrance_index` (its entrance's).
@@ -768,7 +933,7 @@ impl Route {
         if self.new_file() {
             return SaveContext::file_select_new();
         }
-        let mut s = SaveContext::new(entrance_index, false, oot_game::env::clock_time(10, 0) as u16);
+        let mut s = SaveContext::new(entrance_index, false, self.day_time());
         if let Some(p) = self.preset() {
             s.apply_preset(p).expect("the route's preset");
         }
@@ -776,6 +941,9 @@ impl Route {
         // (docs/adr/0049-saving.md).
         s.file_num = (SAVE_FILE - 1) as i32;
         s.newf = *b"ZELDAZ";
+        if let Some(c) = self.cutscene() {
+            s.cutscene_index = c;
+        }
         s
     }
 
@@ -801,6 +969,12 @@ impl Route {
             Route::Gohma => "gohma",
             Route::BlueWarp => "blue-warp",
             Route::BossRoom => "boss-room",
+            Route::Emerald => "emerald",
+            Route::Creation => "creation",
+            Route::Farewell => "farewell",
+            Route::Dusk => "dusk",
+            Route::Field => "field",
+            Route::FieldNight => "field-night",
         }
     }
 
@@ -823,13 +997,19 @@ impl Route {
             Route::Gohma => 6000,
             Route::BlueWarp => 3000,
             Route::BossRoom => 1000,
+            Route::Emerald => 2500,
+            Route::Creation => 9000,
+            Route::Farewell => 6000,
+            Route::Dusk => 1500,
+            Route::Field => 4000,
+            Route::FieldNight => 4000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -982,8 +1162,62 @@ enum Task {
     /// the cutscene's texts (the first choice), until its terminator starts the transition (once
     /// the script has run).
     EmeraldPart1(Step),
+    /// Kokiri Forest's layer 6: `Step::EmeraldShown` once the emerald is drawn,
+    /// `Step::TreeDeath` at the death's frame, A through the texts, until the terminator starts
+    /// the transition.
+    Emerald(Step),
+    /// Idle until the scene changes (a transition already started), then until Link stands in
+    /// the new one with the fade over (`settle`).
+    NewScene(Step),
+    /// The emerald's cutscene chain: each part's step as its scene's cutscene layer is entered
+    /// (`CHAIN`), A through the texts, until Link stands at `ENTR_KOKIRI_FOREST_11` (`step`).
+    Chain(Step),
+    /// Steer into the floor of the exit to the entrance until the transition starts (`step`); the
+    /// next task waits for the scene.
+    ExitInto(&'static str, Step),
+    /// The bridge and the field's intro: `Step::Bridge` in the Lost Woods' layer 4,
+    /// `Step::FairyOcarina` at its text, `Step::Field` in Hyrule Field, A through the texts,
+    /// until Link stands in the field with no cutscene running (`step`).
+    Farewell(Step),
+    /// The owl (`En_Owl`): towards him until his talk takes Link (`Step::OwlTalk`), A through
+    /// his texts, his question answered "OK" (choice 1: 0 hears it again), until he has flown
+    /// off and Link stands (`step`).
+    Owl(Step),
     /// At the push block (from beside it, lower down) until Link stands on its top.
     ClimbBlock(Step),
+    /// Idle until the condition holds.
+    WaitFor(Cond, Step),
+    /// The grounded Peahat whose home is here: locked on (Z), guarding (R) its blades, the
+    /// sword (B) at its root whenever it's within 70, seeking or recoiling, until it's gone.
+    FightPeahat(Vec3, Step),
+    /// Stalchildren as they rise: locked on, at the nearest (in to 50), the sword within 55,
+    /// guarding otherwise, until this many have died (0: until none is left but sinking ones).
+    FightStalchildren(usize, Step),
+}
+
+/// What `Task::WaitFor` waits for.
+#[derive(Debug, Clone, Copy)]
+enum Cond {
+    /// The time-based music past `TIMESEQ_FADE_DAY_BGM` (its stop sent).
+    MusicFaded,
+    /// `nightFlag`.
+    Night,
+    /// The drawbridge (`Bg_Spot00_Hanebasi`, `DT_DRAWBRIDGE`) at -0x4000.
+    BridgeRaised,
+    /// The time-based music at `TIMESEQ_DAY_BEGIN_SFX` (the night's critters set).
+    NightCritters,
+}
+
+impl Cond {
+    fn holds(self, w: &PlayState) -> bool {
+        use oot_game::audio::scene::{TIMESEQ_DAY_BEGIN_SFX, TIMESEQ_NIGHT_BEGIN_SFX};
+        match self {
+            Cond::MusicFaded => w.time_seq_state >= TIMESEQ_NIGHT_BEGIN_SFX && w.time_seq_state != oot_game::audio::scene::TIMESEQ_DISABLED,
+            Cond::Night => w.save.night_flag,
+            Cond::BridgeRaised => w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_spot00_hanebasi::BgSpot00Hanebasi>(h)).any(|b| b.actor.params == crate::bg_spot00_hanebasi::DT_DRAWBRIDGE && b.actor.shape_rot.x == -0x4000),
+            Cond::NightCritters => w.time_seq_state == TIMESEQ_DAY_BEGIN_SFX,
+        }
+    }
 }
 
 /// The pause menu open and idle (`PAUSE_STATE_MAIN`, `PAUSE_MAIN_STATE_IDLE`).
@@ -1047,6 +1281,8 @@ pub struct Playthrough {
     items_page: u16,
     /// The file `Task::Reset` asks the runner to load.
     reset: Option<usize>,
+    /// The owl `Task::Owl` talks to (the nearest when it started).
+    owl: Option<ActorHandle>,
     /// A cap on the run's length: its routes' caps added up.
     max_frames: usize,
 }
@@ -1148,6 +1384,53 @@ impl Playthrough {
             Route::BlueWarp => vec![Task::IntoWarp(Step::WarpEntered), Task::WarpOut(Step::WarpedOut), Task::EmeraldPart1(Step::EmeraldPart1Over)],
             // Room 11 has no actors: its floor past the door is the exit.
             Route::BossRoom => vec![Task::OpenSlidingDoor(ROOM9_DOOR, ROOM9_DOOR_FRONT, Step::DoorOpened), Task::Exit("ENTR_DEKU_TREE_BOSS_0", Some(Step::BossRoom))],
+            Route::Emerald => vec![Task::Emerald(Step::EmeraldOver), Task::NewScene(Step::Forest11)],
+            Route::Creation => vec![Task::Chain(Step::Forest11)],
+            Route::Dusk => vec![
+                Task::Settle(None),
+                // West a little: the camera behind Link looks into the sunset.
+                Task::Walk(vec![Vec3::new(40.0, 0.0, 1430.0)]),
+                Task::WaitFor(Cond::MusicFaded, Step::MusicFaded),
+                Task::WaitFor(Cond::Night, Step::Night),
+                // Round to the castle: the drawbridge rising.
+                Task::Walk(vec![Vec3::new(40.0, 0.0, 1330.0)]),
+                Task::WaitFor(Cond::BridgeRaised, Step::BridgeRaised),
+                Task::WaitFor(Cond::NightCritters, Step::NightCritters),
+            ],
+            Route::Field => vec![
+                Task::FightPeahat(FIELD_PEAHAT_HOME, Step::PeahatKilled),
+                // South over the stream through the west lowland, east up its slope onto the
+                // castle's side (south of z 2450 the only way: a cliff north of it), and north to
+                // the drawbridge and over it.
+                Task::Walk(vec![Vec3::new(-3200.0, -300.0, 1600.0), Vec3::new(-2900.0, -300.0, 2650.0), Vec3::new(-1300.0, 0.0, 2650.0), Vec3::new(-500.0, 0.0, 1800.0), Vec3::new(0.0, 0.0, 1300.0)]),
+                Task::Exit("ENTR_MARKET_ENTRANCE_DAY_1", Some(Step::CastleTown)),
+            ],
+            Route::FieldNight => vec![
+                Task::FightStalchildren(2, Step::StalchildrenKilled),
+                // East over the dry stream bed where its banks are gentle (z 1680), north along its
+                // east bank to the owl's tree at the stairs' foot (he takes Link within 480): his
+                // talk (OWL_KAKARIKO, text 0x206C) and his flight; then up the stairs.
+                Task::Walk(vec![Vec3::new(2600.0, -50.0, 1680.0), Vec3::new(3350.0, -50.0, 1680.0)]),
+                // (More rise round him there: frozen through the talk, PLAYER_STATE1_TALKING; the
+                // owl's task fights them while he flies off.)
+                Task::Owl(Step::OwlFlown),
+                Task::FightStalchildren(0, Step::StalchildrenGone),
+                Task::Exit("ENTR_KAKARIKO_VILLAGE_0", Some(Step::Kakariko)),
+            ],
+            Route::Farewell => vec![
+                Task::Settle(None),
+                // Mido blocks the path out of the meadow (EnMd_BlockPath: with the emerald, until he's
+                // talked to); he walks off along his path, the box held, and is gone at its end.
+                Task::Talk(Who::Mido, Vec3::new(1680.0, 0.0, 120.0), Step::Mido),
+                // West out of the path, over the ford, past the shop and Mido's house.
+                Task::Walk(vec![Vec3::new(1520.0, 0.0, 120.0), Vec3::new(1420.0, 0.0, 230.0), Vec3::new(1375.0, 0.0, 380.0), Vec3::new(1250.0, 0.0, 410.0), Vec3::new(900.0, 0.0, 430.0), Vec3::new(850.0, 0.0, 200.0), Vec3::new(548.0, 3.0, -158.0), Vec3::new(188.0, 3.0, -198.0), Vec3::new(-150.0, 0.0, -350.0), Vec3::new(-445.0, 0.0, -400.0)]),
+                Task::ExitInto("ENTR_LOST_WOODS_9", Step::ForestLeft),
+                Task::Farewell(Step::FieldIntroOver),
+                // West to the mouth of the hollow under the owl's perch; the owl's task goes on up
+                // it (he takes Link within 360).
+                Task::Walk(vec![Vec3::new(4440.0, -160.0, 8450.0)]),
+                Task::Owl(Step::OwlFlown),
+            ],
             Route::Push => vec![
                 Task::GrabBlock(PUSH_BLOCK_HOME, Step::BlockGrabbed),
                 Task::PushBlock(PUSH_BLOCK_HOME, PUSH_BLOCK_FLAG, Step::BlockInPit),
@@ -1180,6 +1463,7 @@ impl Playthrough {
             last_rupees: 0,
             items_page: 0,
             reset: None,
+            owl: None,
             max_frames: route.max_frames(),
         }
     }
@@ -1294,8 +1578,8 @@ impl Playthrough {
             // The free multitag's two tag points (En_Wonder_Item 0x0FE0 at (188, 3, -198) and
             // (548, 3, -158)), within 80 frames of each other: a blue rupee, collected at once.
             Task::Hurry(vec![Vec3::new(188.0, 3.0, -198.0), Vec3::new(548.0, 3.0, -158.0)]),
-            // The shop's door.
-            Task::Walk(vec![Vec3::new(854.0, 0.0, -250.0)]),
+            // The shop's door, round the sign in front of it (En_A_Obj 0x1E0A at (728, 0, -195)).
+            Task::Walk(vec![Vec3::new(690.0, 0.0, -260.0), Vec3::new(854.0, 0.0, -250.0)]),
             Task::Exit("ENTR_KOKIRI_SHOP_0", Some(Step::Shop)),
             // The shop's own rupee (En_Wonder_Item 0x1250 at (146, 0, -97): a proximity drop, a
             // blue rupee), within 50 of it past the counter's right end (the walk stops 30 short
@@ -1879,6 +2163,12 @@ impl Playthrough {
             }
             Task::Talk(who, from, step) => {
                 let Some(h) = Self::find(w, who) else {
+                    // Gone as the talk ended (Mido with the emerald: EnMd_Walk's Actor_Kill as he
+                    // closes the box).
+                    if self.sub >= 3 && w.message_state() == TEXT_STATE_NONE {
+                        self.finish(Some(step));
+                        return None;
+                    }
                     self.failure = Some(format!("no {who:?} to talk to"));
                     return None;
                 };
@@ -1911,13 +2201,15 @@ impl Playthrough {
                         }
                         Some(self.press(BTN_A))
                     }
-                    // A whenever a box waits, until it's closed and Link stands.
+                    // A whenever a box waits (an event text too: the actor's `Message_ShouldAdvance`),
+                    // until it's closed and Link stands.
                     _ => {
                         if w.message_state() == TEXT_STATE_NONE && !matches!(p.action, PA::Talk | PA::ItemPutAway) {
                             self.finish(Some(step));
                             return None;
                         }
-                        Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
+                        let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+                        Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
                     }
                 }
             }
@@ -1966,12 +2258,57 @@ impl Playthrough {
                 }
                 self.wait += 1;
                 if self.wait > 600 {
-                    self.failure = Some("the blue warp never left the room".into());
+                    self.failure = Some("the scene never changed (the blue warp's or a cutscene's way out)".into());
                     return None;
                 }
                 Some(idle)
             }
             Task::EmeraldPart1(step) => self.emerald_part1(w, step),
+            Task::Emerald(step) => self.emerald(w, step),
+            Task::Chain(step) => self.chain(w, step),
+            Task::ExitInto(name, step) => {
+                if w.transition.trigger != TRANS_TRIGGER_OFF {
+                    self.finish(Some(step));
+                    return None;
+                }
+                let Some((_, c)) = exit_to(w, name) else {
+                    self.failure = Some(format!("no exit to {name} in scene {}", w.scene_id));
+                    return None;
+                };
+                Some(stick_towards(w, c, RUN))
+            }
+            Task::Farewell(step) => self.farewell(w, step),
+            Task::Owl(step) => self.owl(w, step),
+            Task::FightPeahat(home, step) => self.fight_peahat(w, home, step),
+            Task::FightStalchildren(count, step) => self.fight_stalchildren(w, count, step),
+            Task::WaitFor(cond, step) => {
+                if cond.holds(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::NewScene(step) => match self.sub {
+                0 => {
+                    self.scene_changes = w.scene_changes;
+                    self.sub = 1;
+                    Some(idle)
+                }
+                1 => {
+                    if w.scene_changes > self.scene_changes {
+                        self.sub = 2;
+                        self.wait = 0;
+                    } else {
+                        self.wait += 1;
+                        if self.wait > 600 {
+                            self.failure = Some("the scene never changed".into());
+                            return None;
+                        }
+                    }
+                    Some(idle)
+                }
+                _ => self.settle(w, Some(step)),
+            },
             Task::Opening => self.opening(w),
             Task::TalkNavi => self.talk_navi(w),
             Task::TreeTalk(towards) => {
@@ -2735,6 +3072,137 @@ impl Playthrough {
         Some(idle)
     }
 
+    /// `Task::Emerald`.
+    fn emerald(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use crate::demo_effect::{DEMO_EFFECT_JEWEL_KOKIRI, DemoEffect};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 2400 {
+            self.failure = Some(format!("the emerald's last part never ended (cutscene frame {})", w.cs_ctx.frames));
+            return None;
+        }
+        let running = w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE;
+        let jewel_drawn = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<DemoEffect>(h)).any(|d| d.effect_type() == DEMO_EFFECT_JEWEL_KOKIRI && d.draw.is_some() && !d.actor.killed && w.cs_ctx.npc_actions[1].is_some_and(|c| c.action != 1));
+        if running && jewel_drawn {
+            self.mark(Step::EmeraldShown);
+        }
+        if running && w.cs_ctx.frames >= 782 {
+            self.mark(Step::TreeDeath);
+        }
+        if running {
+            self.sub = 1;
+        }
+        if self.sub == 1 && w.transition.trigger == oot_game::transition::TRANS_TRIGGER_START {
+            self.finish(Some(step));
+            return None;
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle });
+        }
+        Some(idle)
+    }
+
+    /// `Task::Chain`.
+    fn chain(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 8500 {
+            self.failure = Some(format!("the chain didn't end: scene {:#x} layer {}, cutscene frame {}", w.scene_id, w.save.scene_layer, w.cs_ctx.frames));
+            return None;
+        }
+        if let Some(&(_, _, part)) = CHAIN.iter().find(|&&(scene, layer, _)| w.scene_id == scene && w.save.scene_layer == layer) {
+            self.mark(part);
+        }
+        if w.entrance_by_name("ENTR_KOKIRI_FOREST_11") == Some(w.save.entrance_index) && w.save.scene_layer < 4 {
+            return self.settle(w, Some(step));
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) && (w.message_state() != TEXT_STATE_CHOICE || w.msg_ctx.choice_index == 0) { self.press(BTN_A) } else { idle });
+        }
+        Some(idle)
+    }
+
+    /// `Task::Farewell`: the scene and the texts mark the steps; A through every text (the first
+    /// choice), until Link stands in Hyrule Field with no cutscene running or waiting.
+    fn farewell(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use oot_game::cutscene::CS_STATE_IDLE;
+        /// `SCENE_LOST_WOODS`, `SCENE_HYRULE_FIELD` (`scene_table.h`).
+        const SCENE_LOST_WOODS: u16 = 0x5B;
+        const SCENE_HYRULE_FIELD: u16 = 0x51;
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 4000 {
+            self.failure = Some(format!("the farewell didn't end: scene {:#x} layer {}, cutscene frame {}", w.scene_id, w.save.scene_layer, w.cs_ctx.frames));
+            return None;
+        }
+        if w.scene_id == SCENE_LOST_WOODS && w.save.scene_layer == 4 {
+            self.mark(Step::Bridge);
+        }
+        if w.message_state() != TEXT_STATE_NONE && w.msg_ctx.text_id == 0x004A {
+            self.mark(Step::FairyOcarina);
+        }
+        if w.scene_id == SCENE_HYRULE_FIELD {
+            self.mark(Step::Field);
+            if w.cs_ctx.state == CS_STATE_IDLE && w.save.cutscene_trigger == 0 && w.message_state() == TEXT_STATE_NONE {
+                return self.settle(w, Some(step));
+            }
+        }
+        if w.message_state() != TEXT_STATE_NONE {
+            return Some(if Self::text_waits(w) && (w.message_state() != TEXT_STATE_CHOICE || w.msg_ctx.choice_index == 0) { self.press(BTN_A) } else { idle });
+        }
+        Some(idle)
+    }
+
+    /// `Task::Owl`.
+    fn owl(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use oot_game::message::TEXT_STATE_EVENT;
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 3000 {
+            self.failure = Some("the owl's talk and flight didn't end".into());
+            return None;
+        }
+        // The nearest owl (the field has four), kept once chosen.
+        if self.owl.is_none() {
+            let link = w.player().actor.world_pos;
+            self.owl = w
+                .actors
+                .all()
+                .into_iter()
+                .filter(|&h| w.actors.downcast::<crate::en_owl::EnOwl>(h).is_some_and(|o| !o.actor.killed))
+                .min_by(|&a, &b| w.actors.actor(a).unwrap().world_pos.distance(link).total_cmp(&w.actors.actor(b).unwrap().world_pos.distance(link)));
+        }
+        let owl = self.owl.and_then(|h| w.actors.downcast::<crate::en_owl::EnOwl>(h)).filter(|o| !o.actor.killed);
+        let st = w.message_state();
+        if st != TEXT_STATE_NONE {
+            // His first text (0x2064 outside the forest, 0x206C at Kakariko's stairs).
+            if w.msg_ctx.text_id == 0x2064 || w.msg_ctx.text_id == 0x206C {
+                self.mark(Step::OwlTalk);
+            }
+            if st == TEXT_STATE_CHOICE {
+                // OWL_OK is the second choice: the stick down (a push, then a release), then A.
+                if w.msg_ctx.choice_index != 1 {
+                    return Some(if self.prev.stick_y != 0 { idle } else { PadState { stick_y: -60, ..idle } });
+                }
+                return Some(self.press(BTN_A));
+            }
+            return Some(if Self::text_waits(w) || st == TEXT_STATE_EVENT { self.press(BTN_A) } else { idle });
+        }
+        match owl {
+            // Before his talk: towards him (he takes Link within 360).
+            Some(o) if !self.steps.iter().any(|(s, _)| *s == Step::OwlTalk) => Some(stick_towards(w, o.actor.world_pos, RUN)),
+            // Flying off: Link's free (the Stalchildren too, at night).
+            Some(_) => Some(self.stalchild_fight_pad(w).unwrap_or(idle)),
+            None => {
+                if !self.steps.iter().any(|(s, _)| *s == Step::OwlTalk) {
+                    self.failure = Some("no owl to talk to".into());
+                    return None;
+                }
+                self.settle(w, Some(step))
+            }
+        }
+    }
+
     /// `Task::GohmaWaitGone`.
     fn gohma_wait_gone(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
         self.wait += 1;
@@ -3064,6 +3532,102 @@ impl Playthrough {
     /// - 3: until its head is the stick (`EnKarebaba_DeadItemDrop`), then onto it, A while it
     ///   offers (Player's `getItemId`), until Link has it;
     /// - 4: A through the item's text until the box closes and Link stands (`Step::StickTaken`).
+    /// `Task::FightPeahat`.
+    fn fight_peahat(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
+        use crate::en_peehat::{EnPeehat, PEAHAT_STATE_ATTACK_RECOIL, PEAHAT_STATE_SEEK_PLAYER};
+        use eng_input::pad::{BTN_R, BTN_Z};
+        let idle = PadState::default();
+        self.wait += 1;
+        let Some(p) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnPeehat>(h).filter(|p| p.actor.home_pos.distance(home) < 1.0)) else {
+            // Its room's actors spawn in the first frames; once seen, gone is killed.
+            if self.sub > 0 {
+                self.finish(Some(step));
+                return None;
+            }
+            if self.wait > 60 {
+                self.failure = Some(format!("no Peahat at {home}"));
+                return None;
+            }
+            return Some(idle);
+        };
+        if self.wait > 1500 {
+            self.failure = Some(format!("the Peahat fight stalled (state {}, health {})", p.state, p.actor.col_chk_info.health));
+            return None;
+        }
+        // Z pressed once, then held (a release on the next two frames: the lock's edge).
+        self.sub += 1;
+        let mut pad = PadState { button: if (2..4).contains(&self.sub) { 0 } else { BTN_Z }, ..idle };
+        if self.tries > 0 {
+            self.tries -= 1;
+        } else if p.actor.xz_dist_to_player < 70.0 && (p.state == PEAHAT_STATE_SEEK_PLAYER || p.state == PEAHAT_STATE_ATTACK_RECOIL) {
+            pad.button |= BTN_B;
+            self.tries = 12;
+        } else {
+            pad.button |= BTN_R;
+        }
+        Some(pad)
+    }
+
+    /// `Task::FightStalchildren`.
+    fn fight_stalchildren(&mut self, w: &PlayState, count: usize, step: Step) -> Option<PadState> {
+        use crate::en_skb::{Action as SA, EnSkb};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 2500 {
+            self.failure = Some(format!("the Stalchildren fight stalled ({} of {count} killed)", self.items.len()));
+            return None;
+        }
+        let skbs: Vec<(ActorHandle, &EnSkb)> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnSkb>(h).map(|s| (h, s))).collect();
+        for (h, s) in &skbs {
+            if s.action == SA::Death && !self.items.contains(h) {
+                self.items.push(*h);
+            }
+        }
+        let left = skbs.iter().filter(|(_, s)| !s.actor.killed && !matches!(s.action, SA::Death | SA::Despawn)).count();
+        if (count > 0 && self.items.len() >= count) || (count == 0 && left == 0) {
+            self.items.clear();
+            self.finish(Some(step));
+            return None;
+        }
+        Some(self.stalchild_fight_pad(w).unwrap_or(idle))
+    }
+
+    /// `Task::FightStalchildren`'s input against the nearest risen Stalchild, if there's one.
+    fn stalchild_fight_pad(&mut self, w: &PlayState) -> Option<PadState> {
+        use crate::en_skb::{EnSkb, SKB_BEHAVIOR_ATTACKING};
+        use eng_input::pad::{BTN_R, BTN_Z};
+        let idle = PadState::default();
+        let link = w.player().actor.world_pos;
+        let target = w
+            .actors
+            .all()
+            .into_iter()
+            .filter_map(|h| w.actors.downcast::<EnSkb>(h))
+            .filter(|s| !s.actor.killed && s.action_state >= SKB_BEHAVIOR_ATTACKING)
+            .min_by(|a, b| Self::xz_dist(a.actor.world_pos, link).total_cmp(&Self::xz_dist(b.actor.world_pos, link)));
+        let Some(s) = target else {
+            self.sub = 0;
+            return None;
+        };
+        self.sub += 1;
+        let z = if (2..4).contains(&self.sub) { 0 } else { BTN_Z };
+        let d = Self::xz_dist(s.actor.world_pos, link);
+        if self.tries > 0 {
+            self.tries -= 1;
+            return Some(PadState { button: z, ..idle });
+        }
+        if d > 50.0 {
+            let mut p = stick_towards(w, s.actor.world_pos, RUN);
+            p.button |= z;
+            return Some(p);
+        }
+        if d < 55.0 {
+            self.tries = 12;
+            return Some(PadState { button: z | BTN_B, ..idle });
+        }
+        Some(PadState { button: z | BTN_R, ..idle })
+    }
+
     fn fight_karebaba(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
         use crate::en_karebaba::{Action as KA, EnKarebaba};
         use eng_input::pad::BTN_Z;

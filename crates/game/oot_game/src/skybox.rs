@@ -12,6 +12,15 @@
 //!
 //! Which skybox uses which files and how many faces (`Skybox_Setup`) is read from the C by the
 //! importer, which bakes `bake(...)` for each (`RoomSkybox`).
+//!
+//! The outdoor skies (`SKYBOX_DRAW_128`: `SKYBOX_NORMAL_SKY`, `SKYBOX_CUTSCENE_MAP`,
+//! `SKYBOX_OVERCAST_SUNSET`) are 128x64 side faces and a 128x128 top (and, in the cutscene map, a
+//! bottom), two CI8 textures blended by the primitive alpha (`SETUPDL_40`'s combiner), their two
+//! palettes in the halves of one 256-colour TLUT (`Skybox_CalculateFace128`, `Skybox_Draw`). They
+//! are drawn first, before the rooms, around the eye, turned by `skyboxCtx.rot`. The normal sky
+//! has a bake per pair of `gNormalSkyFiles` its time-based configs show together (`bake_128`,
+//! `normal_sky_pairs`); which pair is loaded follows `Skybox_Setup` and `Environment_UpdateSkybox`'s
+//! loads (`SkyboxContext`), its blend `envCtx.skyboxBlend` (docs/adr/0054).
 
 use crate::gbi::{Dl, seg};
 use crate::pack::{BakeBody, BakeSegment, MeshBake};
@@ -29,7 +38,14 @@ pub struct RoomSkybox {
     pub pal_file: String,
 }
 
-// SKYBOX_* (z64.h) the face counts compare against.
+// SKYBOX_* (skybox.h).
+pub const SKYBOX_NONE: u8 = 0x00;
+pub const SKYBOX_NORMAL_SKY: u8 = 0x01;
+pub const SKYBOX_OVERCAST_SUNSET: u8 = 0x03;
+pub const SKYBOX_CUTSCENE_MAP: u8 = 0x05;
+pub const SKYBOX_UNSET_1D: u8 = 0x1D;
+/// `SKYBOX_DRAW_128` (`skyboxCtx.drawType`).
+pub const SKYBOX_DRAW_128: u8 = 0;
 pub const SKYBOX_BAZAAR: u8 = 0x02;
 pub const SKYBOX_HOUSE_KAKARIKO: u8 = 0x10;
 pub const SKYBOX_BOMBCHU_SHOP: u8 = 0x18;
@@ -218,6 +234,278 @@ pub fn bake(s: &RoomSkybox) -> MeshBake {
     }
 }
 
+/// `skyboxCtx`: what the port keeps of `SkyboxContext`: its draw type, its turn, and for the
+/// 128 skies which of `gNormalSkyFiles` are in `staticSegments[0]`, `[1]` and which palettes in the
+/// two halves of `palettes` (the cutscene map's and the overcast sunset's are fixed files).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SkyboxContext {
+    pub skybox_id: u8,
+    /// `drawType` (`SKYBOX_DRAW_*`).
+    pub draw_type: u8,
+    /// `rot`.
+    pub rot: [f32; 3],
+    /// The normal sky's textures in `staticSegments[0]`, `[1]`.
+    pub textures: [u8; 2],
+    /// The normal sky's palettes in the first and second halves of `palettes`.
+    pub palettes: [u8; 2],
+}
+
+impl SkyboxContext {
+    /// `Skybox_Init` for the 128 skies (`Skybox_Setup`'s `SKYBOX_NORMAL_SKY` case: the pair the
+    /// time-based config (1 in a retained storm outside cutscene layers, else 0) shows at
+    /// `skybox_time`, the palettes by the parity of the first; it also sets `envCtx`'s indices and
+    /// blend, which `Environment_Init` then resets but for the blend). `draw_type` is a room
+    /// skybox's (`RoomSkybox::draw_type`), or `SKYBOX_DRAW_128`. Returns the blend it set.
+    pub fn init(skybox_id: u8, draw_type: u8, tables: &crate::env::EnvTables, skybox_time: u16, storm: bool) -> (SkyboxContext, Option<u8>) {
+        let mut ctx = SkyboxContext { skybox_id, draw_type, ..Default::default() };
+        let mut blend = None;
+        if skybox_id == SKYBOX_NORMAL_SKY {
+            let config = if storm { 1 } else { 0 };
+            if let Some((_, e)) = tables.skybox_entry(config, skybox_time) {
+                blend = Some(if e.change_skybox { (crate::env::lerp_weight(e.end_time, e.start_time, skybox_time) * 255.0) as u8 } else { 0 });
+                ctx.textures = [e.skybox1_index, e.skybox2_index];
+                ctx.palettes = if palette_half(e.skybox1_index) == 0 { [e.skybox1_index, e.skybox2_index] } else { [e.skybox2_index, e.skybox1_index] };
+            }
+        }
+        (ctx, blend)
+    }
+
+    /// A load of `Environment_UpdateSkybox`'s, received.
+    pub fn receive(&mut self, d: crate::env::SkyboxDma) {
+        match d {
+            crate::env::SkyboxDma::Texture(n, i) => self.textures[n & 1] = i,
+            crate::env::SkyboxDma::Palette(n, i) => self.palettes[n & 1] = i,
+        }
+    }
+
+    /// `Environment_Update`'s turn of the sky (not while paused): the normal sky by 0.001 a
+    /// frame, the cutscene map's by 0.005.
+    pub fn turn(&mut self) {
+        if self.skybox_id == SKYBOX_NORMAL_SKY {
+            self.rot[1] -= 0.001;
+        } else if self.skybox_id == SKYBOX_CUTSCENE_MAP {
+            self.rot[1] -= 0.005;
+        }
+    }
+
+    /// The bake `Skybox_Draw` draws this frame for a 128 sky, if it has one: the normal sky's
+    /// loaded pair, or the fixed skies'.
+    pub fn bake_128_name(&self) -> Option<String> {
+        if self.draw_type != SKYBOX_DRAW_128 {
+            return None;
+        }
+        match self.skybox_id {
+            SKYBOX_NORMAL_SKY => Some(normal_sky_bake_name(self.textures[0], self.textures[1])),
+            SKYBOX_CUTSCENE_MAP => Some(bake_name("SKYBOX_CUTSCENE_MAP")),
+            SKYBOX_OVERCAST_SUNSET => Some(bake_name("SKYBOX_OVERCAST_SUNSET")),
+            _ => None,
+        }
+    }
+
+    /// `Skybox_Draw`'s matrix: at the eye, turned by `rot` (x, then y, then z).
+    pub fn draw_matrix(&self, eye: glam::Vec3) -> glam::Mat4 {
+        glam::Mat4::from_translation(eye) * glam::Mat4::from_rotation_x(self.rot[0]) * glam::Mat4::from_rotation_y(self.rot[1]) * glam::Mat4::from_rotation_z(self.rot[2])
+    }
+}
+
+/// The palette half a normal sky's texture `i` reads (`(i & 1) ^ ((i & 4) >> 2)`: 0 the first).
+pub fn palette_half(i: u8) -> usize {
+    if ((i & 1) ^ ((i & 4) >> 2)) != 0 { 0 } else { 1 }
+}
+
+/// The normal sky's bake for textures `a` and `b` of `gNormalSkyFiles`.
+pub fn normal_sky_bake_name(a: u8, b: u8) -> String {
+    bake_name(&format!("SKYBOX_NORMAL_SKY/{a}_{b}"))
+}
+
+/// The pairs of `gNormalSkyFiles` the normal sky can show together: any first texture of the
+/// clear and stormy configs' entries (0 to 2) with any second. `Environment_UpdateSkybox` loads
+/// the first a call before the second, so between two entries (or after a time jump: the Sun's
+/// Song, a debug start) the sky holds the new first with the old second for a few frames; a
+/// weather change pairs one config's first with the other's second.
+pub fn normal_sky_pairs(tables: &crate::env::EnvTables) -> Vec<(u8, u8)> {
+    let entries = || tables.skybox_configs.iter().take(3).flatten();
+    let mut firsts: Vec<u8> = entries().map(|e| e.skybox1_index).collect();
+    let mut seconds: Vec<u8> = entries().map(|e| e.skybox2_index).collect();
+    firsts.sort_unstable();
+    firsts.dedup();
+    seconds.sort_unstable();
+    seconds.dedup();
+    firsts.iter().flat_map(|&a| seconds.iter().map(move |&b| (a, b))).collect()
+}
+
+/// `sSkybox128TexOffsets`: each face's texture in a `staticSegments`' file.
+const S_SKYBOX128_TEX_OFFSETS: [u32; 6] = [0, 128 * 64, 128 * 64 * 2, 128 * 64 * 3, 128 * 64 * 4, 128 * 64 * 4 + 128 * 128];
+/// `sSkybox128VtxBufIndices`.
+const S_SKYBOX128_VTX_BUF_INDICES: [u16; 32] = [0, 2, 10, 12, 2, 4, 12, 14, 10, 12, 20, 22, 12, 14, 22, 24, 1, 3, 5, 6, 7, 8, 9, 11, 13, 15, 16, 17, 18, 19, 21, 23];
+/// `sSkybox128TexSCoords`, `sSkybox128TexTCoordsXZ`, `sSkybox128TexTCoords` (s10.5: `TC(62 * n)`).
+const S_SKYBOX128_TEX_S_COORDS: [i32; 5] = [0, 62 * 32, 124 * 32, 186 * 32, 248 * 32];
+const S_SKYBOX128_TEX_T_COORDS_XZ: [i32; 5] = [0, 62 * 32, 124 * 32, 186 * 32, 248 * 32];
+const S_SKYBOX128_TEX_T_COORDS: [i32; 5] = [0, 62 * 32, 124 * 32, 62 * 32, 0];
+/// `sSkybox128VtxIndices` (the same as the 256 skies').
+const S_SKYBOX128_VTX_INDICES: [u32; 0x40] = S_SKYBOX256_VTX_INDICES;
+/// `sSkybox128FaceParams`: `xStart`, `yStart`, `zStart`, `outerIncrVal`, `innerIncrVal`.
+const S_SKYBOX128_FACE_PARAMS: [[i32; 5]; 6] = [[-64, 64, -64, 32, -32], [64, 64, 64, -32, -32], [-64, 64, 64, -32, -32], [64, 64, -64, 32, -32], [-64, 64, 64, 32, -32], [-64, -64, -64, 32, 32]];
+/// The 128 skies' second texture's segment (`Skybox_Draw`'s `gSPSegment(0x8, staticSegments[1])`).
+const SEG_STATIC2: u32 = 0x08;
+/// The blend (`gDPSetPrimColor(0, 0, 0, 0, 0, blend)`), a segment the draw sets.
+pub const SEG_BLEND: u8 = 0x0F;
+
+/// `Skybox_CalculateFace128`: face `face`'s list (`dListBuf[2 * face]`) and its 32 vertices,
+/// appended at vertex `v`. Returns the next vertex index.
+#[allow(clippy::too_many_arguments)]
+fn calculate_face128(vtx: &mut Vec<u8>, dls: &mut [Dl; 12], mut v: u32, x_start: i32, y_start: i32, z_start: i32, inner_incr_val: i32, outer_incr_val: i32, face: usize) -> u32 {
+    let mut grid = [([0i32; 3], [0i32; 2]); 25];
+    let mut k = 0;
+    let mut outer = if face == 4 || face == 5 { z_start } else { y_start };
+    for i in 0..5 {
+        let mut inner = if face == 2 || face == 3 { z_start } else { x_start };
+        for j in 0..5 {
+            let (ob, t) = match face {
+                // xy plane.
+                0 | 1 => ([inner, outer, z_start], S_SKYBOX128_TEX_T_COORDS[i]),
+                // yz plane.
+                2 | 3 => ([x_start, outer, inner], S_SKYBOX128_TEX_T_COORDS[i]),
+                // xz plane.
+                _ => ([inner, y_start, outer], S_SKYBOX128_TEX_T_COORDS_XZ[i]),
+            };
+            grid[k] = (ob, [S_SKYBOX128_TEX_S_COORDS[j], t]);
+            inner += inner_incr_val;
+            k += 1;
+        }
+        outer += outer_incr_val;
+    }
+    let dl = &mut dls[2 * face];
+    for &index in &S_SKYBOX128_VTX_BUF_INDICES {
+        let (ob, tc) = grid[index as usize];
+        push_vtx(vtx, ob, tc);
+    }
+    dl.vertex(seg(SEG_ROOM_VTX, v * 16), 32, 0);
+    v += 32;
+    dl.cull_dl(0, 15);
+    let offset = S_SKYBOX128_TEX_OFFSETS[face];
+    let quad = |dl: &mut Dl, vtx_idx: usize, uls: u32, ult: u32| {
+        dl.load_multi_tile_ci8(seg(SEG_STATIC, offset), 0, 0, 128, uls, ult, uls + 31, ult + 31);
+        dl.load_multi_tile_ci8(seg(SEG_STATIC2, offset), 0x80, 1, 128, uls, ult, uls + 31, ult + 31);
+        let q = &S_SKYBOX128_VTX_INDICES[vtx_idx..vtx_idx + 4];
+        dl.quad3(q[1], q[2], q[3], q[0]);
+    };
+    let mut vtx_idx = 0;
+    if face == 4 || face == 5 {
+        // The top and bottom: 128x128, 4x4 tiles.
+        let mut ult = 0;
+        for _ in 0..4 {
+            let mut uls = 0;
+            for _ in 0..4 {
+                quad(dl, vtx_idx, uls, ult);
+                uls += 31;
+                vtx_idx += 4;
+            }
+            ult += 31;
+        }
+    } else {
+        // The sides: 128x64, its rows down, then back up (the T coordinates mirror).
+        let mut ult: i32 = 0;
+        for _ in 0..2 {
+            let mut uls = 0;
+            for _ in 0..4 {
+                quad(dl, vtx_idx, uls, ult as u32);
+                uls += 31;
+                vtx_idx += 4;
+            }
+            ult += 31;
+        }
+        ult -= 31;
+        for _ in 0..2 {
+            let mut uls = 0;
+            for _ in 0..4 {
+                quad(dl, vtx_idx, uls, ult as u32);
+                uls += 31;
+                vtx_idx += 4;
+            }
+            ult -= 31;
+        }
+    }
+    dl.end();
+    v
+}
+
+/// A 128 sky as a bake: `Skybox_Calculate128` (`faces` 5, or 6 for the cutscene map), then
+/// `Skybox_Draw`'s 128 path after `SETUPDL_40`: `textures` on segments 7 and 8, `palettes`
+/// (the first half's file, then the second's) on 9, the blend dynamic (`SEG_BLEND`).
+pub fn bake_128(name: &str, textures: [&str; 2], palettes: [&str; 2], faces: usize) -> MeshBake {
+    let mut vtx = Vec::new();
+    let mut dls: [Dl; 12] = Default::default();
+    let mut v = 0;
+    for (i, f) in S_SKYBOX128_FACE_PARAMS.iter().enumerate().take(faces) {
+        v = calculate_face128(&mut vtx, &mut dls, v, f[0], f[1], f[2], f[3], f[4], i);
+    }
+    let mut buf = Vec::new();
+    let mut offsets = [0u32; 12];
+    for (i, d) in dls.iter().enumerate() {
+        offsets[i] = buf.len() as u32 * 8;
+        buf.extend_from_slice(&d.0);
+    }
+    let mut d = Dl::default();
+    // gSPTexture(0x8000, 0x8000, 0, G_TX_RENDERTILE, G_ON); (gSPMatrix: the draw's transform.)
+    d.0.push((0xD700_0002, 0x8000_8000));
+    // gDPSetColorDither(G_CD_MAGICSQ), gDPSetTextureFilter(G_TF_BILERP).
+    d.othermode_h(6, 2, 0);
+    d.othermode_h(12, 2, 2 << 12);
+    d.load_tlut_pal256(seg(SEG_PALETTES, 0));
+    // gDPSetTextureLUT(G_TT_RGBA16), gDPSetTextureConvert(G_TC_FILT).
+    d.othermode_h(14, 2, 2 << 14);
+    d.othermode_h(9, 3, 6 << 9);
+    let list = |i: usize| seg(SEG_DLIST_BUF, offsets[i]);
+    // -z, +z, -x, +x, +y; -y only in the cutscene map.
+    for i in [0, 2, 4, 6, 8] {
+        d.display_list(list(i));
+    }
+    if faces == 6 {
+        d.display_list(list(10));
+    }
+    d.pipe_sync();
+    d.end();
+    let cc = eng_gfx::combiner::encode([2, 1, 10, 1, 2, 1, 3, 1], [15, 15, 31, 0, 7, 7, 7, 0]);
+    let setup_dl_40 = vec![(0xE700_0000, 0), (0xD700_0002, 0xFFFF_FFFF), (0xFC00_0000 | (cc >> 32) as u32, cc as u32), (0xEF18_2C10, 0x0F0A_4000), (0xD900_0000, 0x0020_0204)];
+    let mut vbytes = vtx;
+    vbytes.resize(vbytes.len().max(16), 0);
+    MeshBake {
+        name: name.to_string(),
+        object: "gameplay_keep".into(),
+        segments: vec![
+            (SEG_STATIC as u8, BakeSegment::File(textures[0].into())),
+            (SEG_STATIC2 as u8, BakeSegment::File(textures[1].into())),
+            (SEG_PALETTES as u8, BakeSegment::Files(vec![palettes[0].into(), palettes[1].into()])),
+            (SEG_ROOM_VTX as u8, BakeSegment::Bytes(vbytes)),
+            (SEG_DLIST_BUF as u8, BakeSegment::Commands(buf)),
+            (SEG_SETUP_DL, BakeSegment::Commands(setup_dl_40)),
+            // gDPSetPrimColor(0, 0, 0, 0, 0, blend).
+            (SEG_BLEND, BakeSegment::Dynamic(vec![(0xFA00_0000, 0x0000_00FF), (0xDF00_0000, 0)])),
+            (SEG_DRAW, BakeSegment::Commands(d.0)),
+        ],
+        prelude: vec![SEG_SETUP_DL, SEG_BLEND, SEG_DRAW],
+        body: BakeBody::DLists(Vec::new()),
+    }
+}
+
+/// Every 128 sky's bake: the cutscene map's (`vr_holy0`, `vr_holy1`, six faces), the overcast
+/// sunset's (`vr_cloud2` twice), and the normal sky's pairs (`gNormalSkyFiles`), their palettes
+/// in the halves their parity picks.
+pub fn bakes_128(tables: &crate::env::EnvTables) -> Vec<MeshBake> {
+    let mut v = vec![
+        bake_128(&bake_name("SKYBOX_CUTSCENE_MAP"), ["vr_holy0_static", "vr_holy1_static"], ["vr_holy0_pal_static", "vr_holy1_pal_static"], 6),
+        bake_128(&bake_name("SKYBOX_OVERCAST_SUNSET"), ["vr_cloud2_static", "vr_cloud2_static"], ["vr_cloud2_pal_static", "vr_cloud2_pal_static"], 5),
+    ];
+    let files = &tables.normal_sky_files;
+    for (a, b) in normal_sky_pairs(tables) {
+        let (Some(fa), Some(fb)) = (files.get(a as usize), files.get(b as usize)) else { continue };
+        let pals = if palette_half(a) == 0 { [fa.1.as_str(), fb.1.as_str()] } else { [fb.1.as_str(), fa.1.as_str()] };
+        v.push(bake_128(&normal_sky_bake_name(a, b), [&fa.0, &fb.0], pals, 5));
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,5 +541,29 @@ mod tests {
         assert_eq!(load_tiles.len(), 128);
         assert_eq!(&load_tiles[..4], &[0, 0, 0, 0]);
         assert_eq!(load_tiles[16], 124);
+    }
+
+    #[test]
+    fn the_128_skies_faces_tiles_and_palette_halves() {
+        // Five faces of 32 vertices; six in the cutscene map.
+        let b = bake_128("x", ["a", "b"], ["pa", "pb"], 5);
+        let BakeSegment::Bytes(v) = &b.segments[3].1 else { panic!() };
+        assert_eq!(v.len(), 5 * 32 * 16);
+        let b6 = bake_128("x", ["a", "b"], ["pa", "pb"], 6);
+        let BakeSegment::Bytes(v6) = &b6.segments[3].1 else { panic!() };
+        assert_eq!(v6.len(), 6 * 32 * 16);
+        // Face 0's first vertex: grid point 0, (-64, 64, -64), tc (0, 0).
+        assert_eq!(&v[..10], &[0xFF, 0xC0, 0x00, 0x40, 0xFF, 0xC0, 0, 0, 0, 0]);
+        // The sides 4x2 tiles down and back up (8 + 8), the top 4x4: 4 x 16 + 16 quads, each
+        // loading two tiles (tile 0 at TMEM 0, tile 1 at 0x80).
+        let BakeSegment::Commands(buf) = &b.segments[4].1 else { panic!() };
+        let loads: Vec<u32> = buf.iter().filter(|c| c.0 >> 24 == 0xF4).map(|c| (c.0 & 0xFFF) >> 2).collect();
+        assert_eq!(loads.len(), (4 * 16 + 16) * 2);
+        // A side's rows: t 0, 31, then 31, 0 again.
+        let side_rows: Vec<u32> = loads.iter().step_by(2).take(16).copied().collect();
+        assert_eq!(side_rows, vec![0, 0, 0, 0, 31, 31, 31, 31, 31, 31, 31, 31, 0, 0, 0, 0]);
+        // The palettes: `vr_fine0` (index 0, bits 0 and 2 alike) reads the second half,
+        // `vr_fine1` (1) the first, `vr_cloud0` (4) the first, `vr_cloud1` (5) the second.
+        assert_eq!([palette_half(0), palette_half(1), palette_half(4), palette_half(5)], [1, 0, 0, 1]);
     }
 }

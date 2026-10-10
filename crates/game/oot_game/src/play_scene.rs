@@ -383,6 +383,11 @@ impl PlayState {
         if save.cutscene_index == 0xFFFD {
             save.cutscene_index = 0;
         }
+        // A new day or night (the Sun's Song's, crate::clock): its time.
+        if save.next_day_time != crate::clock::NEXT_TIME_NONE {
+            save.day_time = save.next_day_time;
+            save.skybox_time = save.next_day_time;
+        }
         save.night_flag = save.day_time > env::clock_time(18, 0) as u16 || save.day_time < env::clock_time(6, 30) as u16;
         crate::cutscene::handle_conditional_triggers(&assets, &mut save);
         if save.game_mode != crate::save::GAMEMODE_NORMAL || save.cutscene_index >= 0xFFF0 {
@@ -393,13 +398,17 @@ impl PlayState {
         }
         let base_layer = save.scene_layer;
         let base = t.entrances.get(save.entrance_index as usize).with_context(|| format!("no entrance {:#x}", save.entrance_index))?;
-        // Play_Init's special cases (no Spiritual Stones, EVENTCHKINF_48 unset), outside the
-        // cutscene layers (!IS_CUTSCENE_LAYER).
+        // Play_Init's special cases, outside the cutscene layers (!IS_CUTSCENE_LAYER): a child in
+        // Hyrule Field gets layer 1 with the three Spiritual Stones, else 0 (whatever the time);
+        // an adult in Kokiri Forest 3 with EVENTCHKINF_48, else 2.
         let cutscene_layer = save.scene_layer > 3;
         if base.scene == SCENE_HYRULE_FIELD && !save.adult && !cutscene_layer {
-            save.scene_layer = 0;
+            use crate::item::{QUEST_GORON_RUBY, QUEST_KOKIRI_EMERALD, QUEST_ZORA_SAPPHIRE};
+            let stones = save.check_quest_item(QUEST_KOKIRI_EMERALD) && save.check_quest_item(QUEST_GORON_RUBY) && save.check_quest_item(QUEST_ZORA_SAPPHIRE);
+            save.scene_layer = if stones { 1 } else { 0 };
         } else if base.scene == SCENE_KOKIRI_FOREST && save.adult && !cutscene_layer {
-            save.scene_layer = 2;
+            // EVENTCHKINF_48 (save.h: 0x48).
+            save.scene_layer = if save.get_event_chk_inf(0x48) { 3 } else { 2 };
         }
         let entr = t.entrances.get(save.entrance_index as usize + save.scene_layer).with_context(|| format!("entrance {:#x} has no layer {}", save.entrance_index, save.scene_layer))?;
         let (scene_id, spawn) = (entr.scene, entr.spawn as usize);
@@ -465,10 +474,31 @@ impl PlayState {
         // cues.
         play.save.cutscene_transition_control = 0;
         play.demo.use_cutscene_cam = 1;
-        // The rest of Environment_Init: envCtx (the lights at the scene's time, as
-        // SceneState::load computed them), the lightning reset, gVisMonoColor's alpha (Play_Init).
-        let (day, sky, _) = env::scene_times(play.save.day_time, play.scene.as_ref().and_then(|s| s.rooms.first()).and_then(|r| r.time));
-        play.env_ctx = env::EnvCtx::init(ld.skybox.light_mode, day, sky, play.save.day_time);
+        // The rest of Environment_Init: envCtx, the lightning reset, gVisMonoColor's alpha
+        // (Play_Init). The room's time settings come with its header (crate::clock).
+        // Skybox_Init (Play_InitEnvironment, before Environment_Init): the room skyboxes' draw
+        // type, the 128 skies' first textures by the sky's time so far (the last scene's, the
+        // room's isn't in yet); a storm kept from the last scene (outside the cutscene layers)
+        // picks the stormy config.
+        let sky = play.save.skybox_time;
+        let storm = play.save.retain_weather_mode && play.save.scene_layer < 4 && play.env_statics.weather_mode > env::WEATHER_MODE_CLEAR && play.env_statics.weather_mode <= env::WEATHER_MODE_HEAVY_RAIN;
+        let draw_type = assets.scenes.room_skybox(ld.skybox.skybox_id).map_or(crate::skybox::SKYBOX_DRAW_128, |r| r.draw_type);
+        let (skybox_ctx, setup_blend) = crate::skybox::SkyboxContext::init(ld.skybox.skybox_id, draw_type, &assets.env, sky, storm);
+        play.skybox_ctx = skybox_ctx;
+        play.env_ctx = env::EnvCtx::init(ld.skybox.light_mode, play.save.day_time);
+        // Environment_Init: the Sun's Song off, nightFlag by the time, gTimeSpeed 0 (the scene's
+        // time speed, 0 until the room's header).
+        play.save.suns_song_state = crate::clock::SUNSSONG_INACTIVE;
+        play.save.night_flag = play.save.day_time > env::clock_time(18, 0) as u16 || play.save.day_time < env::clock_time(6, 30) as u16;
+        play.env_statics.time_speed = 0;
+        // Scene_CommandSkyboxSettings: skyboxConfig and changeSkyboxNextConfig (Environment_Init
+        // keeps them, but a retained storm's: 1).
+        play.env_ctx.skybox_config = if storm { 1 } else { ld.skybox.config };
+        play.env_ctx.change_skybox_next_config = play.env_ctx.skybox_config;
+        // Skybox_Setup's blend stays (Environment_Init resets the indices only).
+        if let Some(b) = setup_blend {
+            play.env_ctx.skybox_blend = b;
+        }
         play.env_statics.init();
         play.vis_mono_color[3] = 0;
         // Play_Init, after Letterbox_Init: the flash (TransitionFade_Init, _SetType(FADE_FLASH),
@@ -487,6 +517,8 @@ impl PlayState {
         play.interface_ctx = crate::interface::InterfaceContext::init(&mut play.save, &assets.interface, scene_id);
         // Interface_Init's Map_Init (Room_SetupFirstRoom has set roomCtx.curRoom.num).
         play.map_init();
+        // After Interface_Init: a new day's count, or the night's (crate::clock).
+        play.play_init_next_day_time();
 
         // Actor_InitContext: the scene's saved flags, then Player.
         let saved = play.save.scene_flags(scene_id);
@@ -693,6 +725,12 @@ impl PlayState {
         cur.behavior_type1 = room.behavior[0];
         cur.behavior_type2 = room.behavior[1];
         cur.echo = room.echo;
+        // SCENE_CMD_ID_SKYBOX_DISABLES, _TIME_SETTINGS (crate::clock).
+        self.env_ctx.skybox_disabled = room.skybox_disabled;
+        self.env_ctx.sun_moon_disabled = room.sun_moon_disabled;
+        if let Some(t) = room.time {
+            self.scene_command_time_settings(t);
+        }
         // SCENE_CMD_ID_ACTOR_LIST: spawned by the next Actor_UpdateAll.
         self.setup_actors = room.actors.clone();
         // SCENE_CMD_ID_OBJECT_LIST.

@@ -28,10 +28,15 @@ use oot_game::spawn::Overlays;
 pub mod bg_haka;
 pub mod bg_spot00_hanebasi;
 pub mod boss_goma;
+pub mod bg_spot09_obj;
+pub mod bg_spot16_doughnut;
 pub mod bg_treemouth;
 pub mod bg_ydan_hasi;
 pub mod bg_ydan_maruta;
 pub mod bg_ydan_sp;
+pub mod demo_effect;
+pub mod demo_kankyo;
+pub mod demo_sa;
 pub mod demo_tre_lgt;
 pub mod door_shutter;
 pub mod door_warp1;
@@ -58,6 +63,15 @@ pub mod en_ko;
 pub mod en_kusa;
 pub mod en_md;
 pub mod en_nutsball;
+pub mod en_owl;
+pub mod en_wood02;
+pub mod obj_mure2;
+pub mod en_a_obj;
+pub mod door_ana;
+pub mod en_encount1;
+pub mod en_part;
+pub mod en_skb;
+pub mod en_peehat;
 pub mod en_ossan;
 pub mod en_shopnuts;
 pub mod en_river_sound;
@@ -70,6 +84,7 @@ pub mod en_wonder_item;
 pub mod en_wonder_talk2;
 pub mod item_b_heart;
 pub mod item_shield;
+pub mod obj_bean;
 pub mod obj_bombiwa;
 pub mod obj_hana;
 pub mod obj_kibako2;
@@ -92,7 +107,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
@@ -155,6 +170,21 @@ pub fn overlays() -> Overlays {
     o.register(en_goma::ACTOR_BOSS_GOMA, boss_goma::BossGoma::init);
     o.register(boss_goma::ACTOR_ITEM_B_HEART, item_b_heart::ItemBHeart::init);
     o.register(boss_goma::ACTOR_DOOR_WARP1, door_warp1::DoorWarp1::init);
+    o.register(demo_effect::ACTOR_DEMO_EFFECT, demo_effect::DemoEffect::init);
+    o.register(demo_kankyo::ACTOR_DEMO_KANKYO, demo_kankyo::DemoKankyo::init);
+    o.register(bg_spot09_obj::ACTOR_BG_SPOT09_OBJ, bg_spot09_obj::BgSpot09Obj::init);
+    o.register(bg_spot16_doughnut::ACTOR_BG_SPOT16_DOUGHNUT, bg_spot16_doughnut::BgSpot16Doughnut::init);
+    o.register(demo_sa::ACTOR_DEMO_SA, demo_sa::DemoSa::init);
+    o.register(obj_bean::ACTOR_OBJ_BEAN, obj_bean::ObjBean::init);
+    o.register(en_owl::ACTOR_EN_OWL, en_owl::EnOwl::init);
+    o.register(en_wood02::ACTOR_EN_WOOD02, en_wood02::EnWood02::init);
+    o.register(obj_mure2::ACTOR_OBJ_MURE2, obj_mure2::ObjMure2::init);
+    o.register(en_a_obj::ACTOR_EN_A_OBJ, en_a_obj::EnAObj::init);
+    o.register(door_ana::ACTOR_DOOR_ANA, door_ana::DoorAna::init);
+    o.register(en_encount1::ACTOR_EN_ENCOUNT1, en_encount1::EnEncount1::init);
+    o.register(en_part::ACTOR_EN_PART, en_part::EnPart::init);
+    o.register(en_skb::ACTOR_EN_SKB, en_skb::EnSkb::init);
+    o.register(en_peehat::ACTOR_EN_PEEHAT, en_peehat::EnPeehat::init);
     o
 }
 
@@ -179,6 +209,16 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_goma::bakes());
     v.extend(boss_goma::bakes());
     v.extend(door_warp1::bakes());
+    v.extend(demo_effect::bakes());
+    v.extend(demo_kankyo::bakes());
+    v.extend(bg_spot16_doughnut::bakes());
+    v.extend(demo_sa::bakes());
+    v.extend(en_owl::bakes());
+    v.extend(en_wood02::bakes());
+    v.extend(en_a_obj::bakes());
+    v.extend(en_part::bakes());
+    v.extend(en_skb::bakes());
+    v.extend(en_peehat::bakes());
     v.extend(en_sw::bakes());
     v.extend(door_shutter::bakes());
     v.extend(bg_ydan_sp::bakes());
@@ -189,6 +229,7 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(obj_timeblock::bakes());
     // z_kankyo.c's rain and lightning bolts.
     v.extend(oot_game::weather::bakes());
+    v.extend(oot_game::env_draw::bakes());
     // The effects (z_effect_soft_sprite.c's overlays and z_effect.c's).
     v.extend(oot_game::effect::bakes());
     // z_actor.c's target reticle.

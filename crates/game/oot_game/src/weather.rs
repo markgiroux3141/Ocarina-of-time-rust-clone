@@ -8,9 +8,9 @@
 //! `gEffShockwaveDL` after `Gfx_SetupDL_25Xlu`, `gEffLightningDL` after `Gfx_SetupDL_61Xlu`
 //! with each of the eight bolt textures on segment 8).
 //!
-//! Not drawn: the lightning's flash (`Environment_DrawLightningFlash`: a fill at the start of
-//! `POLY_OPA_DISP`, under the rooms and the skybox, so only the background would show it; its
-//! ambient light is in `crate::env`), the snow, the sandstorm.
+//! The lightning's flash (`Environment_DrawLightningFlash`: a fill under the rooms, so only the
+//! sky shows it; its ambient light is in `crate::env`) is drawn with the skybox filters
+//! (`crate::env_draw`). Not drawn: the snow, the sandstorm.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::atan2_s;

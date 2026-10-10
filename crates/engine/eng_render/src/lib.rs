@@ -9,6 +9,7 @@
 //! - `model`: uploaded meshes (`GpuModel`), posing and per-frame segment values.
 //! - `passes`: recording a frame (the 3D, the letterbox, the orthographic overlay).
 //! - `lists`: drawing submitted OPA/XLU lists, with the mesh cache.
+//! - `probe`: one pixel of a frame's depth read back (`eng_gfx::DrawLists::depth_probe`).
 
 use std::collections::HashMap;
 
@@ -20,6 +21,7 @@ mod materials;
 mod model;
 mod passes;
 mod pipelines;
+mod probe;
 mod view;
 
 pub use device::{COLOR_FORMAT, NON_FEATURES, SAMPLES, Target, headless_device};
@@ -51,4 +53,14 @@ pub struct Renderer {
     pub(crate) pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     pub(crate) samplers: HashMap<(WrapMode, WrapMode, bool), wgpu::Sampler>,
     pub(crate) white: wgpu::TextureView,
+    pub(crate) probe: probe::DepthProbe,
+}
+
+impl Renderer {
+    /// The depth the last frame's `depth_probe` read (1 is the far plane: nothing drawn there;
+    /// 0 for a pixel off the target), once that frame's commands are submitted. `None` when the
+    /// frame asked for none.
+    pub fn read_depth_probe(&mut self, device: &wgpu::Device) -> Option<f32> {
+        self.probe.read(device)
+    }
 }

@@ -6,9 +6,10 @@
 //! `update` is the lights a scene starts with (`SceneState::load`); `EnvCtx` is
 //! `play->envCtx` across frames (GAME-04b milestone 4): the light-setting override and its
 //! blend, a time-based config's change, the `adj*` adjustments, the rain's drops, and with
-//! `EnvStatics` the lightning (`gLightningStrike`, `sLightningBolts`). Not modelled: the weather's
-//! light configs at `Play_Init` (`retainWeatherMode`), time passing, and the debug register
-//! overrides (`R_ENV_DISABLE_DBG` is true, so the computed values are used).
+//! `EnvStatics` the lightning (`gLightningStrike`, `sLightningBolts`). The time the lights read
+//! is the save's (`dayTime`, `skyboxTime`), which `crate::clock` advances (GAME-06 milestone 3).
+//! Not modelled: the weather's light configs at `Play_Init` (`retainWeatherMode`), and the debug
+//! register overrides (`R_ENV_DISABLE_DBG` is true, so the computed values are used).
 
 use eng_math::{cos_s, sin_s};
 
@@ -32,10 +33,31 @@ pub struct TimeBasedLightEntry {
     pub next_light_setting: u8,
 }
 
-/// `sTimeBasedLightConfigs[][7]` from `z_kankyo.c` (read by `oot_import::tables`).
+/// `TimeBasedSkyboxEntry`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TimeBasedSkyboxEntry {
+    pub start_time: u16,
+    pub end_time: u16,
+    pub change_skybox: bool,
+    pub skybox1_index: u8,
+    pub skybox2_index: u8,
+}
+
+/// `sTimeBasedLightConfigs[][7]`, `gTimeBasedSkyboxConfigs[][9]` and `gNormalSkyFiles` (each sky's
+/// texture and palette files) from `z_kankyo.c` (read by `oot_import::tables`).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EnvTables {
     pub time_based: Vec<Vec<TimeBasedLightEntry>>,
+    pub skybox_configs: Vec<Vec<TimeBasedSkyboxEntry>>,
+    pub normal_sky_files: Vec<(String, String)>,
+}
+
+impl EnvTables {
+    /// The entry of `gTimeBasedSkyboxConfigs[config]` holding `skybox_time` (`startTime <= time <
+    /// endTime`, or an `endTime` of 0xFFFF), and its index.
+    pub fn skybox_entry(&self, config: usize, skybox_time: u16) -> Option<(usize, TimeBasedSkyboxEntry)> {
+        self.skybox_configs.get(config)?.iter().copied().enumerate().find(|(_, e)| skybox_time >= e.start_time && (skybox_time < e.end_time || e.end_time == 0xFFFF))
+    }
 }
 
 /// `Environment_LerpWeight(max, min, val)`.
@@ -204,12 +226,38 @@ pub const LIGHTNING_BOLT_START: u8 = 0;
 pub const LIGHTNING_BOLT_WAIT: u8 = 1;
 pub const LIGHTNING_BOLT_DRAW: u8 = 2;
 pub const LIGHTNING_BOLT_INACTIVE: u8 = 0xFF;
-/// `STORM_REQUEST_*`, `CHANGE_SKYBOX_REQUESTED`, `SANDSTORM_FILL`.
+/// `STORM_REQUEST_*`, `CHANGE_SKYBOX_*`, `STORM_STATE_*`, `SANDSTORM_FILL`.
 pub const STORM_REQUEST_NONE: u8 = 0;
 pub const STORM_REQUEST_START: u8 = 1;
 pub const STORM_REQUEST_STOP: u8 = 2;
+pub const CHANGE_SKYBOX_INACTIVE: u8 = 0;
 pub const CHANGE_SKYBOX_REQUESTED: u8 = 1;
+pub const CHANGE_SKYBOX_ACTIVE: u8 = 3;
+pub const STORM_STATE_OFF: u8 = 0;
+pub const STORM_STATE_ON: u8 = 1;
 pub const SANDSTORM_FILL: u8 = 1;
+/// `SKYBOX_DMA_*` (`environment.h`).
+pub const SKYBOX_DMA_INACTIVE: u8 = 0;
+pub const SKYBOX_DMA_TEXTURE1_START: u8 = 1;
+pub const SKYBOX_DMA_TEXTURE1_DONE: u8 = 2;
+pub const SKYBOX_DMA_TLUT1_START: u8 = 3;
+pub const SKYBOX_DMA_TEXTURE2_START: u8 = 11;
+pub const SKYBOX_DMA_TEXTURE2_DONE: u8 = 12;
+pub const SKYBOX_DMA_TLUT2_START: u8 = 13;
+/// `WEATHER_MODE_*` (`environment.h`).
+pub const WEATHER_MODE_CLEAR: u8 = 0;
+pub const WEATHER_MODE_HEAVY_RAIN: u8 = 5;
+
+/// A load `Environment_UpdateSkybox` started (`DMA_REQUEST_ASYNC`): where its bytes go and
+/// which of `gNormalSkyFiles` they're from. It completes by the next call, whose
+/// `osRecvMesg(OS_MESG_NOBLOCK)` then succeeds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkyboxDma {
+    /// `skyboxCtx->staticSegments[n]` gets file `i`'s texture.
+    Texture(usize, u8),
+    /// `skyboxCtx->palettes`' half `n` gets file `i`'s palette.
+    Palette(usize, u8),
+}
 
 /// `play->envCtx`: what the port keeps of `EnvironmentContext`, from `Environment_Init`.
 #[derive(Debug, Clone, PartialEq)]
@@ -252,18 +300,35 @@ pub struct EnvCtx {
     pub wind_direction: [i16; 3],
     pub lightning_state: u8,
     pub sandstorm_state: u8,
-    /// `gSaveContext.save.dayTime` and `skyboxTime` as the lights read them (the scene's time settings
-    /// applied at `Play_Init`, then the save's when a cutscene changes it).
-    pub day_time: u16,
-    pub skybox_time: u16,
-    /// The save's `dayTime` last seen (a change is a cutscene's).
-    pub save_day_time: u16,
+    /// `sceneTimeSpeed`: the room's time speed (`Scene_CommandTimeSettings`), `gTimeSpeed`'s
+    /// unless the Sun's Song runs.
+    pub scene_time_speed: u8,
+    /// `sunPos`: the sun from the eye (`crate::clock::sun_pos`; the moon is opposite).
+    pub sun_pos: glam::Vec3,
+    /// `glareAlpha`, `lensFlareAlphaScale`: the sun's glare and lens flare, eased in and out
+    /// (`Environment_DrawLensFlare`).
+    pub glare_alpha: f32,
+    pub lens_flare_alpha_scale: f32,
+    /// `customSkyboxFilter`, `skyboxFilterColor`: a second fill over the sky.
+    pub custom_skybox_filter: bool,
+    pub skybox_filter_color: [u8; 4],
+    /// `skyboxDisabled`, `sunMoonDisabled` (`Scene_CommandSkyboxDisables`, the room's header).
+    pub skybox_disabled: bool,
+    pub sun_moon_disabled: bool,
+    /// `skybox1Index`, `skybox2Index`, `skyboxBlend`, `skyboxDmaState`, `stormState`; `dmaRequest`
+    /// (the load in flight, `None` once received).
+    pub skybox1_index: u8,
+    pub skybox2_index: u8,
+    pub skybox_blend: u8,
+    pub skybox_dma_state: u8,
+    pub storm_state: u8,
+    pub skybox_dma: Option<SkyboxDma>,
 }
 
 impl EnvCtx {
-    /// `Environment_Init`'s values, for a scene with `light_mode`, entered at `day_time` (after
-    /// `Scene_CommandTimeSettings`), its sky at `skybox_time`.
-    pub fn init(light_mode: u8, day_time: u16, skybox_time: u16, save_day_time: u16) -> EnvCtx {
+    /// `Environment_Init`'s values, for a scene with `light_mode`, entered at `day_time` (the
+    /// sun's place; the room's time settings come later, `crate::clock`).
+    pub fn init(light_mode: u8, day_time: u16) -> EnvCtx {
         EnvCtx {
             light_mode,
             light_config: 0,
@@ -293,10 +358,166 @@ impl EnvCtx {
             wind_direction: [80, 80, 80],
             lightning_state: LIGHTNING_OFF,
             sandstorm_state: 0,
-            day_time,
-            skybox_time,
-            save_day_time,
+            // Environment_Init: sceneTimeSpeed 0, the sun by the time, no glare or lens flare, no
+            // custom filter. (The disables are the room's: zeroed with the play state.)
+            scene_time_speed: 0,
+            sun_pos: crate::clock::sun_pos(day_time),
+            glare_alpha: 0.0,
+            lens_flare_alpha_scale: 0.0,
+            custom_skybox_filter: false,
+            skybox_filter_color: [0; 4],
+            skybox_disabled: false,
+            sun_moon_disabled: false,
+            // Environment_Init: 99 (none loaded by the environment yet), the load idle.
+            skybox1_index: 99,
+            skybox2_index: 99,
+            skybox_blend: 0,
+            skybox_dma_state: SKYBOX_DMA_INACTIVE,
+            storm_state: STORM_STATE_OFF,
+            skybox_dma: None,
         }
+    }
+
+    /// `Environment_UpdateStorm`: a storm requested starts the change to the rainy sky and
+    /// lights (configs 1 and 2) over 100 frames, once the sky isn't between two of its textures;
+    /// a stop changes back and clears the weather.
+    pub fn update_storm(&mut self, statics: &mut EnvStatics) {
+        if self.storm_request == STORM_REQUEST_NONE {
+            return;
+        }
+        match self.storm_state {
+            STORM_STATE_OFF => {
+                if self.storm_request == STORM_REQUEST_START && !statics.skybox_is_changing {
+                    self.change_skybox_state = CHANGE_SKYBOX_REQUESTED;
+                    self.skybox_config = 0;
+                    self.change_skybox_next_config = 1;
+                    self.change_skybox_timer = 100;
+                    self.change_light_enabled = true;
+                    self.light_config = 0;
+                    self.change_light_next_config = 2;
+                    statics.light_config_after_underwater = 2;
+                    self.change_light_timer = 100;
+                    self.change_duration = 100;
+                    self.storm_state += 1;
+                }
+            }
+            STORM_STATE_ON => {
+                if !statics.skybox_is_changing && self.storm_request == STORM_REQUEST_STOP {
+                    statics.weather_mode = WEATHER_MODE_CLEAR;
+                    self.change_skybox_state = CHANGE_SKYBOX_REQUESTED;
+                    self.skybox_config = 1;
+                    self.change_skybox_next_config = 0;
+                    self.change_skybox_timer = 100;
+                    self.change_light_enabled = true;
+                    self.light_config = 2;
+                    self.change_light_next_config = 0;
+                    statics.light_config_after_underwater = 0;
+                    self.change_light_timer = 100;
+                    self.change_duration = 100;
+                    self.precipitation[PRECIP_RAIN_MAX] = 0;
+                    self.storm_request = STORM_REQUEST_NONE;
+                    self.storm_state = STORM_STATE_OFF;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `Environment_UpdateSkybox`, at `Play_Draw`: the cutscene map's blend (config 3) by
+    /// `skyboxTime`; the normal sky's pair of textures and their blend by `skyboxTime` (a
+    /// changing entry blends across it; a steady one shows one texture: 255 under the entry's
+    /// half, 0 from it), a weather change's blend over its duration, and the loads of a new
+    /// texture and its palette (into the half its index's parity picks), one step a frame.
+    pub fn update_skybox(&mut self, tables: &EnvTables, skybox_id: u8, sky: &mut crate::skybox::SkyboxContext, statics: &mut EnvStatics, skybox_disabled: bool, skybox_time: u16) {
+        use crate::skybox::{SKYBOX_CUTSCENE_MAP, SKYBOX_NORMAL_SKY};
+        let time = skybox_time;
+        if skybox_id == SKYBOX_CUTSCENE_MAP {
+            self.skybox_config = 3;
+            if let Some((_, e)) = tables.skybox_entry(3, time) {
+                self.skybox_blend = if e.change_skybox { (lerp_weight(e.end_time, e.start_time, time) * 255.0) as u8 } else { 0 };
+            }
+            return;
+        }
+        if skybox_id != SKYBOX_NORMAL_SKY || skybox_disabled {
+            return;
+        }
+        let (mut new1, mut new2, mut blend) = (0xFFu8, 0xFFu8, 0u8);
+        let found = tables.skybox_entry(self.skybox_config as usize, time);
+        if let Some((_, e)) = found {
+            new1 = e.skybox1_index;
+            new2 = e.skybox2_index;
+            statics.skybox_is_changing = e.change_skybox;
+            let w = (lerp_weight(e.end_time, e.start_time, time) * 255.0) as u8;
+            if e.change_skybox {
+                blend = w;
+            } else {
+                blend = if w < 128 { 255 } else { 0 };
+                if self.change_skybox_state != CHANGE_SKYBOX_INACTIVE && self.change_skybox_state < CHANGE_SKYBOX_ACTIVE {
+                    self.change_skybox_state += 1;
+                    blend = 0;
+                }
+            }
+        }
+        self.update_storm(statics);
+        if self.change_skybox_state >= CHANGE_SKYBOX_ACTIVE {
+            // `i` as the loop left it: the entry found (or the end of the list).
+            let i = found.map_or(tables.skybox_configs.get(self.skybox_config as usize).map_or(0, |c| c.len()), |(i, _)| i);
+            let entry = |config: u8| tables.skybox_configs.get(config as usize).and_then(|c| c.get(i)).copied();
+            if let (Some(a), Some(b)) = (entry(self.skybox_config), entry(self.change_skybox_next_config)) {
+                new1 = a.skybox1_index;
+                new2 = b.skybox2_index;
+            }
+            blend = ((self.change_duration as f32 - self.change_skybox_timer as f32) / self.change_duration as f32 * 255.0) as u8;
+            self.change_skybox_timer = self.change_skybox_timer.wrapping_sub(1);
+            if self.change_skybox_timer as i16 <= 0 {
+                self.change_skybox_state = CHANGE_SKYBOX_INACTIVE;
+                self.skybox_config = self.change_skybox_next_config;
+            }
+        }
+        if new1 == 0xFF {
+            log::warn!("Environment VR data acquisition failed! Report to Sasaki!");
+        }
+        // A palette's half: the first for an index whose bits 0 and 2 differ, else the second.
+        let half = |i: u8| if ((i & 1) ^ ((i & 4) >> 2)) != 0 { 0 } else { 1 };
+        // A load started in this call isn't received in it (the DMA is still running); one
+        // started in the last call is (osRecvMesg(OS_MESG_NOBLOCK) succeeds).
+        let mut started = false;
+        if self.skybox1_index != new1 && self.skybox_dma_state == SKYBOX_DMA_INACTIVE {
+            self.skybox_dma_state = SKYBOX_DMA_TEXTURE1_START;
+            self.skybox_dma = Some(SkyboxDma::Texture(0, new1));
+            self.skybox1_index = new1;
+            started = true;
+        }
+        if self.skybox2_index != new2 && self.skybox_dma_state == SKYBOX_DMA_INACTIVE {
+            self.skybox_dma_state = SKYBOX_DMA_TEXTURE2_START;
+            self.skybox_dma = Some(SkyboxDma::Texture(1, new2));
+            self.skybox2_index = new2;
+            started = true;
+        }
+        if self.skybox_dma_state == SKYBOX_DMA_TEXTURE1_DONE {
+            self.skybox_dma_state = SKYBOX_DMA_TLUT1_START;
+            self.skybox_dma = Some(SkyboxDma::Palette(half(new1), new1));
+            started = true;
+        }
+        if self.skybox_dma_state == SKYBOX_DMA_TEXTURE2_DONE {
+            self.skybox_dma_state = SKYBOX_DMA_TLUT2_START;
+            self.skybox_dma = Some(SkyboxDma::Palette(half(new2), new2));
+            started = true;
+        }
+        if self.skybox_dma_state == SKYBOX_DMA_TEXTURE1_START || self.skybox_dma_state == SKYBOX_DMA_TEXTURE2_START {
+            if !started {
+                if let Some(d) = self.skybox_dma.take() {
+                    sky.receive(d);
+                }
+                self.skybox_dma_state += 1;
+            }
+        } else if self.skybox_dma_state >= SKYBOX_DMA_TEXTURE1_DONE && !started {
+            if let Some(d) = self.skybox_dma.take() {
+                sky.receive(d);
+            }
+            self.skybox_dma_state = SKYBOX_DMA_INACTIVE;
+        }
+        self.skybox_blend = blend;
     }
 
     /// `Environment_UpdateRain`: the rain's drops towards the larger of its two maximums, by 2
@@ -313,19 +534,11 @@ impl EnvCtx {
         }
     }
 
-    /// `Environment_Update`'s time (with time stopped: the save's `dayTime` when a cutscene
-    /// changes it, and `skyboxTime` following it in a cutscene layer) and its lights: the
-    /// setting override, the time-based blend (with a config change's), the settings' blend,
-    /// then the adjustments, into what `LightContext` and the two directional lights get.
-    pub fn update_lights(&mut self, tables: &EnvTables, list: &[EnvLightSettings], save_day_time: u16, scene_layer: usize) -> EnvLights {
-        if save_day_time != self.save_day_time {
-            self.save_day_time = save_day_time;
-            self.day_time = save_day_time;
-        }
-        // (gTimeSpeed is 0.)
-        if (scene_layer >= 5 && self.day_time > self.skybox_time) || self.day_time < clock_time(1, 0) as u16 {
-            self.skybox_time = self.day_time;
-        }
+    /// `Environment_Update`'s lights, after the clock (`crate::clock`) at the save's `day_time`
+    /// and `skybox_time`: the setting override, the time-based blend (with a config change's),
+    /// the settings' blend, then the adjustments, into what `LightContext` and the two
+    /// directional lights get (a light with no direction pointing along x).
+    pub fn update_lights(&mut self, tables: &EnvTables, list: &[EnvLightSettings], day_time: u16, skybox_time: u16) -> EnvLights {
         let zero = EnvLightSettings { ambient: [0; 3], light1_dir: [0; 3], light1_color: [0; 3], light2_dir: [0; 3], light2_color: [0; 3], fog_color: [0; 3], fog_near_raw: 0, fog_far: 0 };
         let get = |i: usize| list.get(i).copied().unwrap_or(zero);
         if self.light_setting_override != LIGHT_SETTING_OVERRIDE_NONE
@@ -343,10 +556,10 @@ impl EnvCtx {
                 let n = tables.time_based.get(self.light_config).map(|c| c.len()).unwrap_or(0);
                 for i in 0..n {
                     let e = tables.time_based[self.light_config][i];
-                    if !(self.skybox_time >= e.start && (self.skybox_time < e.end || e.end == 0xFFFF)) {
+                    if !(skybox_time >= e.start && (skybox_time < e.end || e.end == 0xFFFF)) {
                         continue;
                     }
-                    let sp8c = lerp_weight(e.end, e.start, self.skybox_time);
+                    let sp8c = lerp_weight(e.end, e.start, skybox_time);
                     let mut sp88 = 0.0;
                     if self.change_light_enabled {
                         sp88 = (self.change_duration as f32 - self.change_light_timer as f32) / self.change_duration as f32;
@@ -369,7 +582,7 @@ impl EnvCtx {
                     let ls = &mut self.light_settings;
                     ls.ambient = blend(|s| s.ambient);
                     // The sun's direction; the moon's is the opposite.
-                    let t = self.day_time.wrapping_sub(clock_time(12, 0) as u16) as i16;
+                    let t = day_time.wrapping_sub(clock_time(12, 0) as u16) as i16;
                     ls.light1_dir = [(-(sin_s(t) * 120.0)) as i8, (cos_s(t) * 120.0) as i8, (cos_s(t) * 20.0) as i8];
                     ls.light2_dir = ls.light1_dir.map(|v| v.wrapping_neg());
                     ls.light1_color = blend(|s| s.light1_color);
@@ -425,11 +638,13 @@ impl EnvCtx {
         let ls = self.light_settings;
         let near = ls.fog_near_raw as i16 as i32 + self.adj_fog_near as i32;
         let far = ls.fog_far as i32 + self.adj_fog_far as i32;
+        // A light with no direction gets x 1.
+        let dir = |d: [i8; 3]| if d == [0; 3] { [1, 0, 0] } else { d };
         EnvLights {
             ambient: [0, 1, 2].map(|j| adj(ls.ambient[j], self.adj_ambient_color[j])),
-            light1_dir: ls.light1_dir,
+            light1_dir: dir(ls.light1_dir),
             light1_color: [0, 1, 2].map(|j| adj(ls.light1_color[j], self.adj_light1_color[j])),
-            light2_dir: ls.light2_dir,
+            light2_dir: dir(ls.light2_dir),
             light2_color: [0, 1, 2].map(|j| adj(ls.light2_color[j], self.adj_light1_color[j])),
             fog_color: [0, 1, 2].map(|j| adj(ls.fog_color[j], self.adj_fog_color[j])),
             fog_near: if near <= 996 { near as i16 } else { 996 },
@@ -476,6 +691,10 @@ impl Default for LightningBolt {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EnvStatics {
     pub weather_mode: u8,
+    /// `gSkyboxIsChanging`: the normal sky's current entry blends between two textures.
+    pub skybox_is_changing: bool,
+    /// `gLightConfigAfterUnderwater`.
+    pub light_config_after_underwater: u8,
     pub lightning_strike: LightningStrike,
     pub lightning_bolts: [LightningBolt; 3],
     /// `sGameOverLightsIntensity`, and the two game over lights' nodes (`sNGameOverLightNode`,
@@ -484,6 +703,16 @@ pub struct EnvStatics {
     pub game_over_lights_intensity: u8,
     pub n_game_over_light_node: Option<crate::lights::LightNode>,
     pub s_game_over_light_node: Option<crate::lights::LightNode>,
+    /// `gTimeSpeed` (`crate::clock`).
+    pub time_speed: u16,
+    /// `z_parameter.c`'s `sPrevTimeSpeed` and `D_80125B60` (the Sun's Song played by day).
+    pub prev_time_speed: u16,
+    pub suns_song_from_day: bool,
+    /// `sSunDepthTestX`, `sSunDepthTestY`: the pixel under the sun the next depth read is at
+    /// (`Environment_DrawLensFlare`); `sSunScreenDepth`: the depth read there after the frame
+    /// (`Environment_GraphCallback`, crate::env_draw).
+    pub sun_depth_test: [i16; 2],
+    pub sun_screen_depth: u16,
 }
 
 impl EnvStatics {
@@ -565,10 +794,10 @@ impl crate::play::PlayState {
     /// directional lights, which the renderer reads).
     pub fn environment_update_lights(&mut self) {
         let Some(assets) = self.assets.clone() else { return };
-        let (save_day, layer) = (self.save.day_time, self.save.scene_layer);
+        let (day_time, skybox_time) = (self.save.day_time, self.save.skybox_time);
         if let Some(sc) = self.scene.as_mut() {
             let list = sc.layer_data().light_settings.clone();
-            sc.lights = self.env_ctx.update_lights(&assets.env, &list, save_day, layer);
+            sc.lights = self.env_ctx.update_lights(&assets.env, &list, day_time, skybox_time);
         }
     }
 

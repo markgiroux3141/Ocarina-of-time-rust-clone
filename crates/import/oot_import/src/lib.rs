@@ -10,6 +10,7 @@
 pub mod audio;
 pub mod background;
 pub mod csrc;
+pub mod curve;
 pub mod cutscene;
 pub mod drawcfg;
 pub mod elf_message;

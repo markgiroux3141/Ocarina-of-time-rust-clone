@@ -38,6 +38,11 @@ pub struct DrawConfigState {
     pub room_draw_params: [i16; 2],
     /// `GET_EVENTCHKINF(EVENTCHKINF_07)`.
     pub event_chk_inf_07: bool,
+    /// `INV_CONTENT(ITEM_COJIRO) == ITEM_COJIRO`.
+    pub cojiro: bool,
+    /// Out: the Lost Woods' config asked for `Player_PlaySfx(NA_SE_EV_CHICKEN_CRY_M)` this
+    /// frame (the caller plays it and clears this).
+    pub chicken_cry: bool,
 }
 
 impl DrawConfigState {
@@ -180,6 +185,59 @@ fn draw_config_ydan(st: &mut DrawConfigState, b: &mut Buffers) {
     b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - (f % 128), f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
 }
 
+/// `Scene_DrawConfigGerudoValley` (Gerudo Valley): the river and the waterfalls' scrolls on
+/// segments 8 to 0xD (0xB in the OPA buffer).
+fn draw_config_spot09(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f.wrapping_mul(3) % 1024, 32, 256, 1, 0, f.wrapping_mul(3) % 1024, 32, 256));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f % 256, 64, 64, 1, 0, f % 256, 64, 64));
+    b.xlu.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f.wrapping_mul(2) % 128, 32, 32, 1, 0, f.wrapping_mul(2) % 128, 32, 32));
+    b.opa.insert(0x0B, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 0, 32, 32, 1, 0, 127 - f.wrapping_mul(3) % 128, 32, 32));
+    b.xlu.insert(0x0C, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f % 128, 32, 32, 1, 0, f % 128, 32, 32));
+    b.xlu.insert(0x0D, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f % 64, 16, 16, 1, 0, f % 64, 16, 16));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigLostWoods` (the Lost Woods): the water's scrolls on segments 8 and 9; with
+/// Cojiro owned, once, 50 frames in, his cry (`roomCtx.drawParams[0]` set when it's done,
+/// `drawParams[1]` the frames).
+fn draw_config_spot10(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, f % 128, 0, 32, 16, 1, f % 128, 0, 32, 16));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
+    // gDPSetEnvColor(POLY_XLU_DISP / POLY_OPA_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+    if st.room_draw_params[0] == 0 && st.cojiro {
+        if st.room_draw_params[1] == 50 {
+            st.chicken_cry = true;
+            st.room_draw_params[0] = 1;
+        }
+        st.room_draw_params[1] = st.room_draw_params[1].wrapping_add(1);
+    }
+}
+
+/// `Scene_DrawConfigDeathMountainTrail` (Death Mountain Trail): at night (from 18:00 to 7:00)
+/// a display list on segment 8 that fades the lit overlay (`spot16_room_0DL_00AA48`) in with
+/// `roomCtx.drawParams[0]` as its prim alpha (out again from 6:00).
+fn draw_config_spot16(st: &mut DrawConfigState, b: &mut Buffers) {
+    let t = st.day_time as i32;
+    let dl = if t > clock_time(7, 0) && t <= clock_time(18, 0) {
+        vec![g_sp_end_display_list()]
+    } else {
+        if t > clock_time(18, 0) {
+            if st.room_draw_params[0] != 255 {
+                step_to_s(&mut st.room_draw_params[0], 255, 5);
+            }
+        } else if t >= clock_time(6, 0) && st.room_draw_params[0] != 0 {
+            step_to_s(&mut st.room_draw_params[0], 0, 10);
+        }
+        // The gSPDisplayList(spot16_room_0DL_00AA48) draws geometry that is in the meshes.
+        vec![g_dp_set_prim_color(0, 0, 255, 255, 255, st.room_draw_params[0] as u32), (0xDE00_0000, 0), g_sp_end_display_list()]
+    };
+    b.xlu.insert(0x08, dl);
+}
+
 type DrawConfigFn = fn(&mut DrawConfigState, &mut Buffers);
 
 /// The ported draw configs, by `SDC_*` name.
@@ -188,6 +246,9 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_HYRULE_FIELD", draw_config_spot00),
     ("SDC_KOKIRI_FOREST", draw_config_spot04),
     ("SDC_DEKU_TREE", draw_config_ydan),
+    ("SDC_GERUDO_VALLEY", draw_config_spot09),
+    ("SDC_DEATH_MOUNTAIN_TRAIL", draw_config_spot16),
+    ("SDC_LOST_WOODS", draw_config_spot10),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

@@ -111,6 +111,9 @@ pub struct Options {
     /// `file`, the save file by default (`oot_game::pack::save_path`). Without either, the SRAM
     /// is in memory (docs/adr/0049-saving.md).
     pub sram: Option<PathBuf>,
+    /// With an entrance (a debug start): the save's `cutsceneIndex` (`--cutscene 0xFFF2`), so
+    /// `Play_Init` enters that cutscene layer, as this debug ROM's map select can.
+    pub cutscene: Option<u16>,
 }
 
 /// The pack to play from: `path` if given, else `$OOT_PACK`, else the default one
@@ -168,6 +171,8 @@ pub struct Assets {
     pub start_switches: Vec<i32>,
     /// With an entrance: the rooms to set cleared after `Play_Init` (`--clear`).
     pub start_clears: Vec<i8>,
+    /// With an entrance: the debug start's `cutsceneIndex` (`--cutscene`).
+    pub start_cutscene: Option<u16>,
     pub scene_name: Option<String>,
     pub spawn_index: usize,
     /// Open the output device (`Options::audio`), the sequence to force (`Options::music`), the
@@ -190,6 +195,16 @@ pub struct Assets {
     /// `Options::file`, and the SRAM image's file, if the SRAM isn't in memory.
     pub file: Option<usize>,
     pub sram_path: Option<PathBuf>,
+}
+
+/// A cutscene index (`--cutscene`): hex (`0xFFF2`) or decimal; 0xFFF0 and up are the cutscene
+/// layers 4 and on (`CS_INDEX_0`...).
+pub fn parse_cutscene(s: &str) -> Result<u16> {
+    let n = match s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        Some(h) => u16::from_str_radix(h, 16)?,
+        None => s.parse()?,
+    };
+    Ok(n)
 }
 
 pub fn parse_time(s: &str) -> Result<u16> {
@@ -250,6 +265,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         start_at: None,
         start_switches: o.switches.clone(),
         start_clears: o.clears.clone(),
+        start_cutscene: o.cutscene,
         scene_name: o.scene.clone(),
         spawn_index: o.spawn,
         audio: o.audio,
@@ -274,6 +290,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         SaveContext::default().apply_preset(p).map_err(anyhow::Error::msg)?;
     }
     anyhow::ensure!(!(o.new_file && o.preset.is_some()), "--new-file is the file select's new save: no --preset");
+    anyhow::ensure!(o.cutscene.is_none() || (o.entrance.is_some() && !o.new_file && o.file.is_none()), "--cutscene is a debug start's: it needs --entrance (and no --new-file or --file)");
     if let Some(n) = o.file {
         anyhow::ensure!((1..=3).contains(&n), "--file {n}: the files are 1, 2 and 3");
         anyhow::ensure!(o.preset.is_none(), "--file loads a save: no --preset");
@@ -460,6 +477,9 @@ fn start_save(a: &Assets, e: u16, child: bool) -> Result<(SaveContext, Sram)> {
             // an SRAM in memory (docs/adr/0049-saving.md).
             save.file_num = 1;
             save.newf = *b"ZELDAZ";
+            if let Some(c) = a.start_cutscene {
+                save.cutscene_index = c;
+            }
             save
         }
     };
@@ -650,9 +670,14 @@ impl MeshSource for Meshes<'_> {
     }
 }
 
-/// Draws one frame: `Play_Draw`'s OPA buffer (rooms, then actors), then its XLU buffer (rooms,
-/// then actors' translucent parts such as the circle shadow). On the course there are no
-/// rooms: the course's collision mesh draws first and its water boxes last.
+/// Draws one frame: `Play_Draw`'s OPA buffer (the sky, the sun and the moon and the skybox
+/// filters, the rooms, then actors), then its XLU buffer (rooms, then actors' translucent parts
+/// such as the circle shadow, then the lens flare). On the course there are no rooms: the
+/// course's collision mesh draws first and its water boxes last. A play state's frame starts
+/// black (`Gfx_SetupFrame(gfxCtx, 0, 0, 0)`); the spikes' views keep the fog's colour.
+///
+/// Returns the depth read at the frame's `depth_probe` once it's drawn (for
+/// `PlayState::environment_graph_callback`).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_frame(
     r: &mut Renderer,
@@ -664,7 +689,7 @@ pub fn draw_frame(
     play: &PlayState,
     frame: &RenderFrame,
     show_wire: bool,
-) {
+) -> Option<f32> {
     let mut cam = camera_of(frame, &play.col, play.scene.as_ref(), play.camera_kind);
     if let Some((eye, at)) = assets.view {
         let d = eye - at;
@@ -679,13 +704,19 @@ pub fn draw_frame(
     }
     let lines = if show_wire { scene.wire.clone() } else { Vec::new() };
     let (light, clear) = match &play.scene {
-        Some(s) => (rooms::lighting(s), rooms::clear_color(s)),
+        Some(s) if s.all_rooms => (rooms::lighting(s), rooms::clear_color(s)),
+        Some(s) => (rooms::lighting(s), [0.0, 0.0, 0.0, 1.0]),
         None => (Lighting::default(), CLEAR),
     };
     let mut lists = DrawLists::default();
     match play.scene.as_ref().filter(|_| !assets.show_collision) {
         // Room_Draw, with the draw config's segment values for this frame.
         Some(s) => {
+            rooms::submit_sky(play, s, cam.eye(), &mut lists);
+            // Environment_DrawSunAndMoon, _DrawSkyboxFilters, the lightning's flash.
+            if !s.all_rooms {
+                play.draw_environment(&ViewInfo::new(cam.eye(), cam.view()), &mut lists);
+            }
             scene.drawn_entries = rooms::submit_rooms(play, s, cam.view(), &mut lists);
             rooms::submit_room_skybox(play, s, cam.eye(), &mut lists);
         }
@@ -700,6 +731,7 @@ pub fn draw_frame(
     let mut meshes = Meshes { a: assets, scene: play.scene.as_ref(), col: &play.col };
     r.render_lists(device, queue, &mut enc, target, &lists, &mut scene.cache, &mut meshes, &cam, &light, &lines, clear);
     queue.submit([enc.finish()]);
+    r.read_depth_probe(device)
 }
 
 // ---------------------------------------------------------------------------------------
@@ -932,7 +964,11 @@ impl eframe::App for App {
             let (w, h) = (((avail.x * ppp) as u32).max(1), ((avail.y * ppp) as u32).max(1));
             let id = self.target.ensure(&self.device, &self.render_state, w, h);
             let target = self.target.target();
-            draw_frame(&mut self.renderer, &self.device, &self.queue, target, &mut self.assets, &mut self.scene, &self.world, &frame, self.show_wire);
+            let depth = draw_frame(&mut self.renderer, &self.device, &self.queue, target, &mut self.assets, &mut self.scene, &self.world, &frame, self.show_wire);
+            // Environment_GraphCallback: the depth under the sun, for the next game frame.
+            if depth.is_some() {
+                self.world.environment_graph_callback(depth);
+            }
             // The fills are in the frame (PlayState::draw_fills), under the HUD and messages.
             let rect = ui.add(egui::Image::new((id, avail))).rect;
 

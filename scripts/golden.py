@@ -146,6 +146,38 @@ CASES = [
     # room 11).
     ("boss_room", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot", "--script", "boss-room", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("boss_room_door", S, ["--entrance", "ENTR_DEKU_TREE_0", "--child", "--preset", "deku-tree-slingshot", "--script", "boss-room", "--frames", "265", "--screenshot", "{shot}"]),
+    # GAME-06 milestone 1a: Demo_Effect, Kokiri Forest's cutscene layers 6 (the emerald) and 4 (Farore).
+    ("emerald", S, ["--entrance", "ENTR_KOKIRI_FOREST_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF2", "--script", "emerald", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("emerald_light", S, ["--entrance", "ENTR_KOKIRI_FOREST_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF2", "--script", "emerald", "--frames", "885", "--screenshot", "{shot}"]),
+    ("emerald_floats", S, ["--entrance", "ENTR_KOKIRI_FOREST_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF2", "--script", "emerald", "--frames", "1100", "--screenshot", "{shot}"]),
+    ("farore", S, ["--entrance", "ENTR_KOKIRI_FOREST_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF0", "--script", "idle", "--frames", "30", "--screenshot", "{shot}"]),
+    # GAME-06 milestone 1b: the creation, the chain's parts 2 to 9 from the cutscene map's layer 5
+    # to Kokiri Forest's entrance 11: the trace and the end; then three parts from their debug
+    # starts: the goddesses' blue rain (the cutscene map's layer 4, frame 210), Din's rocks
+    # (Gerudo Valley's layer 5, frame 75), Nayru's light rings (Death Mountain Trail's layer 4,
+    # frame 107).
+    ("creation", S, ["--entrance", "ENTR_CUTSCENE_MAP_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF1", "--script", "creation", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("creation_rain", S, ["--entrance", "ENTR_CUTSCENE_MAP_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF0", "--script", "idle", "--frames", "210", "--screenshot", "{shot}"]),
+    ("creation_rocks", S, ["--entrance", "ENTR_GERUDO_VALLEY_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF1", "--script", "idle", "--frames", "75", "--screenshot", "{shot}"]),
+    ("creation_nayru", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_0", "--child", "--preset", "deku-tree-dead", "--cutscene", "0xFFF0", "--script", "idle", "--frames", "107", "--screenshot", "{shot}"]),
+    # GAME-06 milestone 2: out of the forest, from ENTR_KOKIRI_FOREST_11 (where the chain leaves
+    # Link): Mido's talk, the Lost Woods' bridge (Saria, the Fairy Ocarina), Hyrule Field's intro,
+    # the owl's talk and flight: the trace and the end; then the run cut at frame 1800 (Saria and
+    # Link on the bridge), 2000 (the ocarina held out) and 3800 (the owl talking).
+    ("farewell", S, ["--entrance", "ENTR_KOKIRI_FOREST_11", "--child", "--preset", "deku-tree-dead", "--script", "farewell", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("farewell_bridge", S, ["--entrance", "ENTR_KOKIRI_FOREST_11", "--child", "--preset", "deku-tree-dead", "--script", "farewell", "--frames", "1800", "--screenshot", "{shot}"]),
+    ("farewell_ocarina", S, ["--entrance", "ENTR_KOKIRI_FOREST_11", "--child", "--preset", "deku-tree-dead", "--script", "farewell", "--frames", "2000", "--screenshot", "{shot}"]),
+    ("farewell_owl", S, ["--entrance", "ENTR_KOKIRI_FOREST_11", "--child", "--preset", "deku-tree-dead", "--script", "farewell", "--frames", "3800", "--screenshot", "{shot}"]),
+    # GAME-06 milestone 3: the clock, Hyrule Field from 17:00 to the night.
+    ("dusk", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "17:00", "--script", "dusk", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("dusk_sunset", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "17:00", "--script", "dusk", "--frames", "150", "--screenshot", "{shot}"]),
+    ("dusk_bridge", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "17:00", "--script", "dusk", "--frames", "350", "--screenshot", "{shot}"]),
+    # GAME-06 milestone 4: Hyrule Field by day (a Peahat fought, Castle Town's entrance) and at
+    # 20:00 (Stalchildren fought, the owl at Kakariko's stairs, the village).
+    ("field", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--script", "field", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("field_peahat", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--script", "field", "--frames", "330", "--screenshot", "{shot}"]),
+    ("field_night", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "20:00", "--script", "field-night", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("field_night_fight", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "20:00", "--script", "field-night", "--frames", "80", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

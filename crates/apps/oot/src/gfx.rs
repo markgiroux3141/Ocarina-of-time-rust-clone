@@ -79,7 +79,7 @@ pub fn collision_draw_list(h: &CollisionHeader) -> DrawList {
     }
     let mut d = DrawList::default();
     d.materials.push(shade_material(BlendMode::Opaque));
-    d.batches.push(Batch { material: 0, vertices: verts });
+    d.batches.push(Batch { material: 0, vertices: verts, sources: Vec::new() });
     d
 }
 
@@ -137,7 +137,7 @@ fn box_draw_list(h: f32, r: f32, rgb: [u8; 3]) -> DrawList {
     let mut m = shade_material(BlendMode::Opaque);
     m.cull = CullMode::Back;
     d.materials.push(m);
-    d.batches.push(Batch { material: 0, vertices: verts });
+    d.batches.push(Batch { material: 0, vertices: verts, sources: Vec::new() });
     d
 }
 
@@ -156,7 +156,7 @@ pub fn water_draw_list(h: &CollisionHeader) -> DrawList {
     }
     let mut d = DrawList::default();
     d.materials.push(shade_material(BlendMode::Translucent));
-    d.batches.push(Batch { material: 0, vertices: verts });
+    d.batches.push(Batch { material: 0, vertices: verts, sources: Vec::new() });
     d
 }
 
@@ -174,7 +174,7 @@ pub fn shadow_draw_list() -> DrawList {
     }
     let mut d = DrawList::default();
     d.materials.push(shade_material(BlendMode::Translucent));
-    d.batches.push(Batch { material: 0, vertices: verts });
+    d.batches.push(Batch { material: 0, vertices: verts, sources: Vec::new() });
     d
 }
 

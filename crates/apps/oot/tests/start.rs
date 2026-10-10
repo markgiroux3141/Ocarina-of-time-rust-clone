@@ -50,3 +50,25 @@ fn clear_starts_room_9_with_its_door_open() {
     let (cleared, bars) = door(Vec::new());
     assert!(!cleared && bars > 0.0, "{bars}");
 }
+
+/// `--cutscene 0xFFF2` (`game-emerald.bat`): the debug start enters Kokiri Forest's cutscene
+/// layer 6 (`CS_INDEX_2`), its script running: the Kokiri Emerald's last part.
+#[test]
+fn cutscene_starts_kokiri_forest_in_its_layer_6() {
+    if !oot_game::pack::default_pack_path().is_ok_and(|p| oot_game::pack::is_current(&p, None)) {
+        return;
+    }
+    let o = Options { entrance: Some("ENTR_KOKIRI_FOREST_0".into()), preset: Some("deku-tree-dead".into()), cutscene: Some(0xFFF2), time: "10:00".into(), child: true, ..Default::default() };
+    let a = oot::load_assets(&o).expect("the assets");
+    let mut w = oot::new_play(&a, true);
+    let none = PadState::default();
+    for _ in 0..3 {
+        w.tick_with(scripted_input(none, none));
+    }
+    assert_eq!(w.save.scene_layer, 6);
+    assert_eq!(w.cs_ctx.segment.as_ref().map(|s| s.name.as_str()), Some("gKokiriForestKokiriEmeraldPart9Cs"));
+    assert_ne!(w.cs_ctx.state, oot_game::cutscene::CS_STATE_IDLE);
+    // Without --entrance, it's refused.
+    let o = Options { cutscene: Some(0xFFF2), ..Default::default() };
+    assert!(oot::load_assets(&o).is_err());
+}

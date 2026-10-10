@@ -126,11 +126,12 @@ pub fn file_select_load_game(save: &mut SaveContext, sram_ctx: &SramContext, but
     save.health_accumulator = 0;
     // (magicState, prevMagicState: the meter isn't ported.)
     save.forced_seq_id = crate::audio::NA_BGM_GENERAL_SFX;
-    // (skyboxTime: not ported.)
+    save.skybox_time = crate::env::clock_time(0, 0) as u16;
     save.next_transition_type = TRANS_NEXT_TYPE_DEFAULT;
     save.next_cutscene_index = NEXT_CS_INDEX_NONE;
     save.cutscene_trigger = 0;
-    // (chamberCutsceneNum, nextDayTime: not ported.)
+    // (chamberCutsceneNum: not ported.)
+    save.next_day_time = crate::clock::NEXT_TIME_NONE;
     save.retain_weather_mode = false;
     save.button_status = [crate::interface::BTN_ENABLED; 5];
     save.force_rising_button_alphas = 0;

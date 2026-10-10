@@ -293,6 +293,13 @@ impl ObjectSegments {
                     let buf = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
                     bindings.push(Binding { segment: *seg, buf, base: 0 });
                 }
+                BakeSegment::Files(names) => {
+                    let mut all = Vec::new();
+                    for name in names {
+                        all.extend_from_slice(&files.get(name).with_context(|| format!("{name} not in the ROM"))?);
+                    }
+                    bindings.push(Binding { segment: *seg, buf: all.as_slice().into(), base: 0 });
+                }
                 BakeSegment::GrayRgba32 { file: name, offset, pixels } => {
                     let buf = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
                     let (start, len) = (*offset as usize, *pixels as usize * 4);
@@ -325,6 +332,9 @@ impl ObjectSegments {
                 }
                 it.apply_setup_dl_25();
                 it.dynamic_segments = dynamic;
+                // Where each vertex came from: what a draw rebuilds the colours of the vertices
+                // the game writes in its object's RAM from (`Demo_Effect`'s time warp).
+                it.track_vertex_sources = true;
                 for &dl in &prelude {
                     it.run(dl);
                 }

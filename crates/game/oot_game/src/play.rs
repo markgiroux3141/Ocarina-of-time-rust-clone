@@ -395,12 +395,17 @@ pub struct PlayState {
     /// (`gWeatherMode`, the lightning).
     pub env_ctx: crate::env::EnvCtx,
     pub env_statics: crate::env::EnvStatics,
+    /// `skyboxCtx` (`crate::skybox::SkyboxContext`): `Skybox_Init`'s, its turn and its loads.
+    pub skybox_ctx: crate::skybox::SkyboxContext,
     /// The lightning bolts `Environment_DrawLightning` draws this frame, and the lightning's
     /// flash (`Environment_DrawLightningFlash`: its colour and alpha), for the renderer.
     pub lightning_bolts: Vec<crate::env::LightningBolt>,
     pub lightning_flash: Option<[u8; 4]>,
     /// `Environment_DrawRain`'s drops and rings this frame (`crate::weather`).
     pub rain: crate::weather::RainDraw,
+    /// What `Play_Draw` draws of the environment this frame: the sun and the moon, the skybox
+    /// filters, the lens flare (`crate::env_draw`).
+    pub env_draw: crate::env_draw::EnvDraw,
     /// `gVisMonoColor` (`z_play.c`): the screen's monochrome tint (`VisMono`) a cutscene sets.
     pub vis_mono_color: [u8; 4],
     /// `transitionFadeFlash`: the screen's flash (a Deku Nut's), a `TransitionFade` of the flash
@@ -538,11 +543,13 @@ impl PlayState {
             env_flags: [0; 20],
             c_up_elf_msgs: None,
             light_ctx: Default::default(),
-            env_ctx: crate::env::EnvCtx::init(crate::env::LIGHT_MODE_TIME, 0, 0, 0),
+            env_ctx: crate::env::EnvCtx::init(crate::env::LIGHT_MODE_TIME, 0),
             env_statics: Default::default(),
+            skybox_ctx: Default::default(),
             lightning_bolts: Vec::new(),
             lightning_flash: None,
             rain: Default::default(),
+            env_draw: Default::default(),
             vis_mono_color: [0; 4],
             transition_fade_flash: Default::default(),
             trans_fade_flash_alpha_step: 0,
@@ -851,19 +858,37 @@ impl PlayState {
             self.camera_update(input);
         }
         // Environment_Update: its body only with no pause menu (z_kankyo.c: pauseCtx->state
-        // PAUSE_STATE_OFF): the rain, the time of day's music, the lights (time doesn't pass).
+        // PAUSE_STATE_OFF): the rain, the time of day's music, the clock (crate::clock), the
+        // lights.
         if self.assets.is_some() && self.pause_ctx.state == crate::kaleido::PAUSE_STATE_OFF {
+            // The sky's turn (not while paused: the pause menu's state is off here).
+            self.skybox_ctx.turn();
             self.env_ctx.update_rain(self.gameplay_frames);
             self.environment_play_time_based_sequence();
+            self.environment_update_clock();
             self.environment_update_lights();
         }
         // Play_Draw: once the pause menu's background is saved (R_PAUSE_BG_PRERENDER_STATE
         // PROCESS on), the saved frame is restored and the scene isn't drawn: none of its
         // draw-time state moves (kaleido: the port redraws the same lists).
         let draw_scene = !self.pause_bg_ready();
-        // Play_Draw's environment, before the rooms and the actors: the lightning's strike and
-        // its bolts (Environment_UpdateLightningStrike, Environment_DrawLightning).
+        // Play_Draw's sky: Environment_UpdateSkybox for the normal sky and the cutscene map's
+        // (the draw is the app's, before the rooms).
+        if let Some(assets) = self.assets.clone()
+            && draw_scene
+        {
+            let id = self.skybox_ctx.skybox_id;
+            let disabled = self.scene.as_ref().and_then(|s| s.room(self.room_ctx.cur.num)).is_some_and(|r| r.skybox_disabled);
+            if id != crate::skybox::SKYBOX_NONE && id != crate::skybox::SKYBOX_UNSET_1D && !disabled && (id == crate::skybox::SKYBOX_NORMAL_SKY || id == crate::skybox::SKYBOX_CUTSCENE_MAP) {
+                let skybox_time = self.save.skybox_time;
+                self.env_ctx.update_skybox(&assets.env, id, &mut self.skybox_ctx, &mut self.env_statics, disabled, skybox_time);
+            }
+        }
+        // Play_Draw's environment, before the rooms and the actors: the sun and the moon, the
+        // skybox filters (crate::env_draw), the lightning's strike and its bolts
+        // (Environment_UpdateLightningStrike, Environment_DrawLightning).
         if self.assets.is_some() && draw_scene {
+            self.environment_draw_update();
             self.environment_update_lightning_strike();
             let (eye, at) = (self.view.eye, self.view.at);
             self.lightning_bolts = self.env_statics.update_lightning_bolts(eye, at, &mut self.rand);
@@ -884,11 +909,27 @@ impl PlayState {
             self.flush_effect_ss_stops();
             // The end of Actor_DrawAll: Effect_DrawAll, then EffectSs_DrawAll.
             self.effect_draw_all();
+            // After Actor_DrawAll: the sun's lens flare (crate::env_draw).
+            if self.assets.is_some() {
+                self.environment_draw_lens_flares_update();
+            }
             let frames = self.gameplay_frames;
             let tree_dead = self.save.get_event_chk_inf(crate::save::EVENTCHKINF_07);
+            // INV_CONTENT(ITEM_COJIRO) == ITEM_COJIRO (item.h: 0x2F).
+            let cojiro = self.save.inv_content(0x2F) == 0x2F;
+            let (day_time, night) = (self.save.day_time, self.save.night_flag);
+            let mut chicken_cry = false;
             if let Some(s) = &mut self.scene {
                 s.draw.event_chk_inf_07 = tree_dead;
+                s.draw.cojiro = cojiro;
+                s.draw.day_time = day_time;
+                s.draw.night = night;
                 s.run_draw_config(frames);
+                chicken_cry = std::mem::take(&mut s.draw.chicken_cry);
+            }
+            // Scene_DrawConfigLostWoods's Player_PlaySfx(GET_PLAYER(play), NA_SE_EV_CHICKEN_CRY_M).
+            if chicken_cry && let Some(h) = self.player {
+                crate::actor_ctx::audio_play_actor_sfx_at(self, h, crate::audio::sfx::NA_SE_EV_CHICKEN_CRY_M);
             }
         }
         // The end of Play_Draw: a camera that asked for it (view.unk_124) updates again.
@@ -1128,6 +1169,23 @@ impl PlayState {
         if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut(usize::try_from(id - CAM_ID_SUB_FIRST).ok()?)?.as_mut() }
     }
 
+    /// `Camera_SetFinishedFlag`: the camera `id` told it's done (`CAM_STATE_EXTERNAL_FINISHED`);
+    /// the main camera's also tells the active camera when another is active (a one-point
+    /// cutscene's, which holds on it). Returns the camera told last.
+    pub fn camera_set_finished_flag(&mut self, id: i16) -> i16 {
+        if let Some(c) = self.camera_mut(id) {
+            c.set_finished_flag();
+        }
+        if id == CAM_ID_MAIN && self.active_cam_id != CAM_ID_MAIN {
+            let active = self.active_cam_id;
+            if let Some(c) = self.camera_mut(active) {
+                c.set_finished_flag();
+            }
+            return active;
+        }
+        id
+    }
+
     /// `GET_ACTIVE_CAM(play)`.
     pub fn active_camera(&self) -> &GameCamera {
         self.camera(self.active_cam_id).unwrap_or(&self.game_camera)
@@ -1277,6 +1335,8 @@ impl PlayState {
         // accumulator (neither reads the other's state).
         if self.interface_ctx.initialised {
             self.map_update();
+            // The end of Interface_Update: the Sun's Song (crate::clock).
+            self.interface_update_suns_song();
         }
     }
 
@@ -1596,6 +1656,13 @@ impl PlayState {
         // TitleCard_Draw.
         out.opa.extend(self.effect_draws.opa.iter().cloned());
         out.xlu.extend(self.effect_draws.xlu.iter().cloned());
+        // After Actor_DrawAll: the lens flare (crate::env_draw); and the pixel under the sun
+        // whose depth Environment_GraphCallback reads once the frame is drawn.
+        if self.assets.is_some() && !self.pause_bg_ready() {
+            self.draw_lens_flares(view, out);
+            let [x, y] = self.env_statics.sun_depth_test;
+            out.depth_probe = Some([x as i32, y as i32]);
+        }
         let draw_scene = !self.pause_bg_ready();
         if draw_scene {
             let mut title = Vec::new();

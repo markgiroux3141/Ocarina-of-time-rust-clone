@@ -163,6 +163,12 @@ pub struct Actor {
     /// `Actor_DrawAll` sets it every frame (the sound effects are positioned by it).
     pub projected_pos: Vec3,
     pub projected_w: f32,
+    /// `cullingVolumeDistance`, `cullingVolumeScale`, `cullingVolumeDownward`: the actor's
+    /// culling volume, in projected space (`Actor_Init`: 1000, 350, 700). (`Actor_CullingVolumeTest`
+    /// isn't run on the actors: every one counts as in view.)
+    pub culling_volume_distance: f32,
+    pub culling_volume_scale: f32,
+    pub culling_volume_downward: f32,
     /// `sfx`: a sound the actor asks `Actor_DrawAll` to play this frame (`Actor_PlaySfx_Flagged2` and
     /// the rest, `Actor_UpdateFlaggedAudio`); `Actor_UpdateAll` clears it first.
     pub sfx: u16,
@@ -234,6 +240,9 @@ impl Actor {
             teleported: true,
             projected_pos: Vec3::ZERO,
             projected_w: 0.0,
+            culling_volume_distance: 1000.0,
+            culling_volume_scale: 350.0,
+            culling_volume_downward: 700.0,
             sfx: 0,
             color_filter_params: 0,
             color_filter_timer: 0,

@@ -20,7 +20,6 @@
 //!
 //! **Not ported:** the draws, milestone 5's (`Minimap_Draw` in `Interface_Draw`,
 //! `Minimap_DrawCompassIcons`, `MapMark_Draw`, and the pause menu's map in `z_kaleido_map.c`);
-//! the Sun's Song (`sunsSongState`, which `Map_InitRoomData` and `Map_Update` reset);
 //! `Message_LoadItemIcon`'s `mapPalette[30]`, `[31]` = -1 for `ITEM_DUNGEON_MAP` (in the ten
 //! dungeons `Map_Update` writes both again the same frame); the debug prints.
 //!
@@ -447,7 +446,10 @@ impl PlayState {
         } else {
             self.map.map_room_num = 0;
         }
-        // (gSaveContext.sunsSongState: the Sun's Song isn't ported.)
+        // The Sun's Song ends here, unless it's speeding the time (crate::clock).
+        if self.save.suns_song_state != crate::clock::SUNSSONG_SPEED_TIME {
+            self.save.suns_song_state = crate::clock::SUNSSONG_INACTIVE;
+        }
     }
 
     /// `Map_Destroy` (`MapMark_ClearPointers`: the marks are the pack's).
@@ -536,7 +538,7 @@ impl PlayState {
                     self.map.map_room_num = to_room as i16;
                     let room = self.map.map_room_num;
                     self.map_init_data(room);
-                    // (gSaveContext.sunsSongState = SUNSSONG_INACTIVE.)
+                    self.save.suns_song_state = crate::clock::SUNSSONG_INACTIVE;
                     self.map_save_player_initial_info();
                 }
             }

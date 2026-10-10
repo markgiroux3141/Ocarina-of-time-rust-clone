@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 27;
+pub const FORMAT_VERSION: u32 = 28;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -101,6 +101,14 @@ pub mod keys {
     /// `skin::SkinSkeleton`: a skeleton of skin limbs (the horses').
     pub fn skin(file: &str, symbol: &str) -> String {
         format!("skin/{file}/{symbol}")
+    }
+    /// `skel_curve::CurveSkeleton`: a curve skeleton's limbs (`Demo_Effect`'s time warp).
+    pub fn curve_skeleton(file: &str, symbol: &str) -> String {
+        format!("curve/{file}/{symbol}")
+    }
+    /// `skel_curve::CurveAnimation`: a curve skeleton's animation.
+    pub fn curve_anim(file: &str, symbol: &str) -> String {
+        format!("curve_anim/{file}/{symbol}")
     }
     /// `StandardAnimation`, or `LinkAnimation` for `gameplay_keep`'s `gPlayerAnim_*`.
     pub fn anim(file: &str, symbol: &str) -> String {
@@ -200,6 +208,8 @@ pub enum BakeSegment {
     Dynamic(Vec<(u32, u32)>),
     /// A whole ROM file (a skybox's `vr_*_static` textures and palettes).
     File(String),
+    /// Whole ROM files one after another (a 128 sky's two palettes in one buffer).
+    Files(Vec<String>),
     /// An RGBA32 image of a ROM file (`pixels` long at `offset`), greyed by
     /// `crate::kaleido::gray_out_texture_rgba32` (the pause menu's wrong-age item icons).
     GrayRgba32 { file: String, offset: u32, pixels: u32 },
@@ -457,6 +467,19 @@ impl GamePack {
 
     pub fn skeleton(&self, file: &str, symbol: &str) -> Result<Skeleton> {
         self.assets.get(&keys::skeleton(file, symbol))
+    }
+
+    pub fn curve_skeleton(&self, file: &str, symbol: &str) -> Result<crate::skel_curve::CurveSkeleton> {
+        self.assets.get(&keys::curve_skeleton(file, symbol))
+    }
+
+    pub fn curve_animation(&self, file: &str, symbol: &str) -> Result<crate::skel_curve::CurveAnimation> {
+        self.assets.get(&keys::curve_anim(file, symbol))
+    }
+
+    /// An actor's bake (`MeshBake`, `keys::bake`): its draw list, with the vertices' sources.
+    pub fn bake(&self, name: &str) -> Result<DrawList> {
+        self.assets.get(&keys::bake(name))
     }
 
     pub fn standard_animation(&self, file: &str, symbol: &str) -> Result<StandardAnimation> {

@@ -41,6 +41,11 @@ echo    76  test-save            GAME-05's saving tests: z_sram.c, the save prom
 echo    80  test-gohma           GAME-05's Gohma tests: her intro, her eye's hits, her eggs, her death and decay, the heart
 echo    83  test-blue-warp       GAME-05's blue warp tests: the warp, the float, the way out, the arrival by blue warp
 echo    86  test-boss-room       GAME-05's last tests: room 9 into Gohma's room, the whole Deku Tree from one start
+echo    89  test-emerald         GAME-06's Demo_Effect tests: the lights, the Triforce, the jewels, the time warp, the run
+echo    92  test-creation        GAME-06's creation tests: Demo_Kankyo, the valley's bridges, the cloud ring, the sky, the chain
+echo    95  test-farewell        GAME-06's farewell tests: Saria on the bridge, the soft soil, the owl, the run
+echo    98  test-dusk            GAME-06's clock tests: time passing, the music, the sun, the lens flare, the run
+echo   101  test-field           GAME-06's Hyrule Field tests: the Peahat, the Stalchildren, the enemy music, the runs
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -73,6 +78,11 @@ echo    79  game-file            File 2 of your save file (out\saves): game-file
 echo    81  game-gohma           Queen Gohma's room: her intro, the fight (asks: first try or again)
 echo    84  game-blue-warp       Queen Gohma's room after her defeat, before the blue warp: into it, out to the Deku Tree
 echo    87  game-boss-room       The Deku Tree's room 9, cleared: through room 11 into Gohma's room, the fight, the warp
+echo    90  game-emerald         Kokiri Forest's cutscene layer 6: the emerald, the tree's death (asks: or Farore's)
+echo    93  game-creation        The creation from the cutscene map, part by part to the emerald (asks: or one part)
+echo    96  game-farewell        Kokiri Forest after the emerald: Mido, the bridge, Saria, Hyrule Field, the owl (asks: or later)
+echo    99  game-dusk            Hyrule Field at 17:00: the sunset, nightfall, the drawbridge (asks: or night, or dawn)
+echo   102  game-field           Hyrule Field by day by a Peahat (asks: or night, the Stalchildren)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -98,6 +108,11 @@ echo    78  sandbox-save         The save run's trace, screenshots and SRAM imag
 echo    82  sandbox-gohma        The Gohma run's trace and screenshots (the card, the stun, her decay, the heart), into out\run
 echo    85  sandbox-blue-warp    The blue warp run's trace and screenshots (the warp, the float, the arrival), into out\run
 echo    88  sandbox-boss-room    The room 9 to Gohma's room run's trace and screenshots, into out\run
+echo    91  sandbox-emerald      The emerald run's trace and screenshots (the light, the emerald over Link), into out\run
+echo    94  sandbox-creation     The creation run's trace and screenshots (the rain, the rocks, the rings), into out\run
+echo    97  sandbox-farewell     The farewell run's trace and screenshots (Saria, the ocarina, the owl), into out\run
+echo   100  sandbox-dusk         The dusk run's trace and screenshots (the sunset, the bridge, the night), into out\run
+echo   103  sandbox-field        The field runs' traces and screenshots (the Peahat, the Stalchildren), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -195,11 +210,66 @@ if "%pick%"=="85" set "script=sandbox-blue-warp"
 if "%pick%"=="86" set "script=test-boss-room"
 if "%pick%"=="87" set "script=game-boss-room"
 if "%pick%"=="88" set "script=sandbox-boss-room"
+if "%pick%"=="89" set "script=test-emerald"
+if "%pick%"=="90" goto emerald
+if "%pick%"=="91" set "script=sandbox-emerald"
+if "%pick%"=="92" set "script=test-creation"
+if "%pick%"=="93" goto creation
+if "%pick%"=="94" set "script=sandbox-creation"
+if "%pick%"=="95" set "script=test-farewell"
+if "%pick%"=="96" goto farewell
+if "%pick%"=="97" set "script=sandbox-farewell"
+if "%pick%"=="98" set "script=test-dusk"
+if "%pick%"=="99" goto dusk
+if "%pick%"=="100" set "script=sandbox-dusk"
+if "%pick%"=="101" set "script=test-field"
+if "%pick%"=="102" goto field
+if "%pick%"=="103" set "script=sandbox-field"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
 echo.
 echo %script% finished (exit code %errorlevel%).
+pause
+goto menu
+
+:field
+set "which="
+set /p "which=Which (empty: by day, by the Peahat; night): "
+call "%~dp0game-field.bat" %which%
+echo game-field finished (exit code %errorlevel%).
+pause
+goto menu
+
+:dusk
+set "which="
+set /p "which=Which (empty: 17:00; night or dawn): "
+call "%~dp0game-dusk.bat" %which%
+echo game-dusk finished (exit code %errorlevel%).
+pause
+goto menu
+
+:farewell
+set "which="
+set /p "which=Which (empty: Kokiri Forest after the emerald; bridge or field): "
+call "%~dp0game-farewell.bat" %which%
+echo game-farewell finished (exit code %errorlevel%).
+pause
+goto menu
+
+:creation
+set "which="
+set /p "which=Which (empty: from the start; goddesses, din, valley, nayru or triforce): "
+call "%~dp0game-creation.bat" %which%
+echo game-creation finished (exit code %errorlevel%).
+pause
+goto menu
+
+:emerald
+set "which="
+set /p "which=Which (empty: the emerald, layer 6; farore: layer 4): "
+call "%~dp0game-emerald.bat" %which%
+echo game-emerald finished (exit code %errorlevel%).
 pause
 goto menu
 

@@ -52,6 +52,11 @@ struct Cli {
     /// enemies or puzzles were beaten (a debug start, e.g. room 9's door to room 11 open).
     #[arg(long, value_delimiter = ',')]
     clear: Vec<i8>,
+    /// With --entrance: start in a cutscene layer, as this debug ROM's map select can: the save's
+    /// cutscene index (0xFFF0 is layer 4, 0xFFF1 layer 5, ...; e.g. --entrance
+    /// ENTR_KOKIRI_FOREST_0 --cutscene 0xFFF2: the Kokiri Emerald and the Deku Tree's death).
+    #[arg(long)]
+    cutscene: Option<String>,
     /// A dummy target (the sandbox's stand-in enemy) this many units in front of --at.
     #[arg(long, default_value_t = 0.0)]
     target: f32,
@@ -147,6 +152,7 @@ fn main() -> Result<()> {
         at: cli.at,
         switches: cli.switch.iter().map(|s| oot::parse_switch_flag(s)).collect::<anyhow::Result<_>>()?,
         clears: cli.clear.clone(),
+        cutscene: cli.cutscene.as_deref().map(oot::parse_cutscene).transpose()?,
         target: cli.target,
         target_hurts: cli.target_hurts.as_deref().map(oot::parse_hit_effect).transpose()?,
         audio: !cli.no_audio,

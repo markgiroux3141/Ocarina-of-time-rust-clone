@@ -114,7 +114,8 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
         let found = w.actors.all().into_iter().filter_map(|h| w.actors.actor(h)).any(|a| {
             let at_pos = if ported { a.home_pos.x == pos.x && a.home_pos.z == pos.z } else { a.home_pos == pos };
             // EnSw_Init converts a placed Gold Skulltula's (en_sw::init_params).
-            let params = if e.id == oot_actors::en_item00::ACTOR_EN_ITEM00 {
+            // EnAObj_Init keeps the text id apart: `params &= 0xFF`.
+            let params = if e.id == oot_actors::en_item00::ACTOR_EN_ITEM00 || e.id == oot_actors::en_a_obj::ACTOR_EN_A_OBJ {
                 e.params & 0xFF
             } else if e.id == oot_actors::en_sw::ACTOR_EN_SW {
                 oot_actors::en_sw::init_params(e.params)

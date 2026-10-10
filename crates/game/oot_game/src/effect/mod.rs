@@ -43,6 +43,7 @@
 
 pub mod blast;
 pub mod dead_db;
+pub mod dead_sound;
 pub mod dust;
 pub mod en_fire;
 pub mod en_ice;
@@ -84,6 +85,7 @@ pub const EFFECT_SS_FIRE_TAIL: u8 = 0x1C;
 pub const EFFECT_SS_EN_FIRE: u8 = 0x1D;
 pub const EFFECT_SS_FCIRCLE: u8 = 0x1F;
 pub const EFFECT_SS_DEAD_DB: u8 = 0x20;
+pub const EFFECT_SS_DEAD_SOUND: u8 = 0x23;
 pub const EFFECT_SS_TYPE_MAX: u8 = 0x25;
 
 /// `EffectSs_InitInfo(this, 0x55)` (`Play_Init`): the table's size.
@@ -110,6 +112,8 @@ pub enum SsUpdate {
     EnIceFlying,
     /// `EffectSsDeadDb_Update`.
     DeadDb,
+    /// `EffectSsDeadSound_Update`.
+    DeadSound,
     /// `EffectSsFireTail_Update`.
     FireTail,
     /// `EffectSsFhgFlash_UpdateShock`.
@@ -254,6 +258,7 @@ pub enum SsInit {
     EnFire(en_fire::EnFireInit),
     EnIce(en_ice::EnIceInit),
     DeadDb(dead_db::DeadDbInit),
+    DeadSound(dead_sound::DeadSoundInit),
     FireTail(fire_tail::FireTailInit),
     FhgFlash(fhg_flash::FhgFlashInit),
     Fcircle(fcircle::FcircleInit),
@@ -344,6 +349,7 @@ impl SsSpawn<'_> {
             SsInit::EnFire(p) => en_fire::init(self, &mut e, &p),
             SsInit::EnIce(p) => en_ice::init(self, &mut e, &p),
             SsInit::DeadDb(p) => dead_db::init(&mut e, &p),
+            SsInit::DeadSound(p) => dead_sound::init(&mut e, &p),
             SsInit::FireTail(p) => fire_tail::init(&mut e, &p),
             SsInit::FhgFlash(p) => fhg_flash::init(self, &mut e, &p),
             SsInit::Fcircle(p) => fcircle::init(&mut e, &p),
@@ -599,6 +605,18 @@ impl SsSpawn<'_> {
         self.spawn(EFFECT_SS_DEAD_DB, 120, SsInit::DeadDb(p));
     }
 
+    /// `EffectSsDeadSound_Spawn`: priority 100, or 127 lower.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dead_sound_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, sfx_id: u16, lower_priority: i16, repeat_mode: i16, life: i32) {
+        let p = dead_sound::DeadSoundInit { pos, velocity, accel, sfx_id, lower_priority, repeat_mode, life };
+        self.spawn(EFFECT_SS_DEAD_SOUND, if lower_priority == 0 { 100 } else { 127 }, SsInit::DeadSound(p));
+    }
+
+    /// `EffectSsDeadSound_SpawnStationary`.
+    pub fn dead_sound_spawn_stationary(&mut self, pos: Vec3, sfx_id: u16, lower_priority: i16, repeat_mode: i16, life: i32) {
+        self.dead_sound_spawn(pos, Vec3::ZERO, Vec3::ZERO, sfx_id, lower_priority, repeat_mode, life);
+    }
+
     /// `EffectSsFireTail_Spawn`.
     #[allow(clippy::too_many_arguments)]
     pub fn fire_tail_spawn(&mut self, actor: Option<ActorHandle>, pos: Vec3, scale: f32, arg4: Vec3, arg5: i16, prim: [u8; 4], env: [u8; 4], ty: i16, body_part: i16, life: i32) {
@@ -830,6 +848,7 @@ impl PlayState {
             SsUpdate::EnIce => en_ice::update(&mut e),
             SsUpdate::EnIceFlying => en_ice::update_flying(self, &mut e),
             SsUpdate::DeadDb => dead_db::update(self, i, &mut e),
+            SsUpdate::DeadSound => dead_sound::update(self, i, &mut e),
             SsUpdate::FireTail => fire_tail::update(&mut e),
             SsUpdate::FhgFlashShock => fhg_flash::update_shock(self, &mut e),
             SsUpdate::FhgFlashLightBall => fhg_flash::update_light_ball(self, &mut e),

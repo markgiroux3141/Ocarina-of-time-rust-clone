@@ -111,6 +111,7 @@ fn draw_config_states() -> Vec<DrawConfigState> {
                     day_time: time as u16,
                     room_draw_params: [0, 0],
                     event_chk_inf_07: event,
+                    ..Default::default()
                 });
             }
         }
@@ -122,7 +123,7 @@ fn draw_config_states() -> Vec<DrawConfigState> {
 fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
-    let scenes: BTreeMap<&str, &str> = [("SDC_KOKIRI_FOREST", "spot04_scene"), ("SDC_HYRULE_FIELD", "spot00_scene"), ("SDC_DEKU_TREE", "ydan_scene"), ("SDC_DEFAULT", "ganon_scene")].into_iter().collect();
+    let scenes: BTreeMap<&str, &str> = [("SDC_KOKIRI_FOREST", "spot04_scene"), ("SDC_HYRULE_FIELD", "spot00_scene"), ("SDC_DEKU_TREE", "ydan_scene"), ("SDC_DEFAULT", "ganon_scene"), ("SDC_GERUDO_VALLEY", "spot09_scene"), ("SDC_DEATH_MOUNTAIN_TRAIL", "spot16_scene"), ("SDC_LOST_WOODS", "spot10_scene")].into_iter().collect();
     for sdc in scene_table::ported() {
         let file = scenes[sdc];
         let def = c.tables.scene(file).unwrap();
@@ -151,6 +152,12 @@ fn ported_draw_configs_match_the_c_interpreter() {
                     assert_eq!(want[1].prim[0xA], Some([255, 255, 255, 0]));
                     assert_eq!(got[1].prim[0xA], Some([255, 255, 255, 5]), "frame {f}");
                     want[1].prim[0xA] = got[1].prim[0xA];
+                }
+                // Scene_DrawConfigDeathMountainTrail the same after 18:00, on segment 8.
+                if sdc == "SDC_DEATH_MOUNTAIN_TRAIL" && st.day_time as i32 > clock_time(18, 0) {
+                    assert_eq!(want[1].prim[0x8], Some([255, 255, 255, 0]));
+                    assert_eq!(got[1].prim[0x8], Some([255, 255, 255, 5]), "frame {f}");
+                    want[1].prim[0x8] = got[1].prim[0x8];
                 }
                 assert_eq!(got, want, "{sdc}: frame {f}, state {st:?}");
                 compared += 1;
@@ -296,9 +303,11 @@ fn the_import_covers_the_xmls_and_the_scans() {
     // `*_scene_unused`).
     assert_eq!(m.counts["Scene"], (121, 110));
     assert_eq!(m.skipped["Scene"]["a header no layer uses"], 11);
-    // The skin skeletons (the horses', GAME-04b milestone 6) are read too; the 3 left out are
-    // Curve limbs and an overlay's.
-    assert_eq!(m.counts["Skeleton"], (194, 191));
+    // The skin skeletons (the horses', GAME-04b milestone 6) and the curve skeletons (the time
+    // warp's and the chest light's, GAME-06 milestone 1a) are read too; the one left out is an
+    // overlay's. The curve animations: the 4 listed but an overlay's.
+    assert_eq!(m.counts["Skeleton"], (194, 193));
+    assert_eq!(m.counts["CurveAnimation"], (4, 3));
     // `ootx scan-scenes --all-layers`: 141 distinct headers, 456 rooms, 2533 entries in the game
     // layers; the 106 cutscene layers of 30 scenes add 106 headers, 199 rooms and 1489 entries
     // (docs/adr/0023); 168,566 triangles in the main headers, 0 unknown opcodes, the 4 unresolved

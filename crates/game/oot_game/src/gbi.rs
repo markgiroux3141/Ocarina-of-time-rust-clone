@@ -43,9 +43,11 @@ pub mod cc_ab {
 pub mod cc_c {
     pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
+    pub const TEXEL1: u32 = 2;
     pub const PRIMITIVE: u32 = 3;
     pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
+    pub const ENV_ALPHA: u32 = 12;
     pub const PRIM_LOD_FRAC: u32 = 14;
     pub const ZERO: u32 = 31;
 }
@@ -53,6 +55,7 @@ pub mod cc_c {
 pub mod cc_d {
     pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
+    pub const TEXEL1: u32 = 2;
     pub const PRIMITIVE: u32 = 3;
     pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
@@ -63,6 +66,7 @@ pub mod cc_d {
 pub mod ac {
     pub const COMBINED: u32 = 0;
     pub const TEXEL0: u32 = 1;
+    pub const TEXEL1: u32 = 2;
     pub const PRIMITIVE: u32 = 3;
     pub const SHADE: u32 = 4;
     pub const ENVIRONMENT: u32 = 5;
@@ -161,6 +165,22 @@ impl Dl {
         self.set_tile(fmt, siz, line, 0, 0, 0);
         // gDPSetTileSize(G_TX_RENDERTILE, ...).
         self.0.push((0xF200_0000 | ((uls << 2) << 12) | (ult << 2), ((lrs << 2) << 12) | (lrt << 2)));
+    }
+    /// `gDPLoadMultiTile(timg, tmem, rtile, G_IM_FMT_CI, G_IM_SIZ_8b, width, 0, uls, ult, lrs,
+    /// lrt, 0, G_TX_NOMIRROR | G_TX_WRAP, same, G_TX_NOMASK, same, G_TX_NOLOD, same)`: a tile of a
+    /// CI8 texture at `tmem`, onto tile `rtile` (the 128 skyboxes' two textures).
+    #[allow(clippy::too_many_arguments)]
+    pub fn load_multi_tile_ci8(&mut self, addr: u32, tmem: u32, rtile: u32, width: u32, uls: u32, ult: u32, lrs: u32, lrt: u32) {
+        let (fmt, siz) = (G_IM_FMT_CI, G_IM_SIZ_8B);
+        let line = ((lrs - uls + 1) + 7) >> 3;
+        self.set_timg(fmt, siz, width, addr);
+        self.set_tile(fmt, siz, line, tmem, G_TX_LOADTILE, 0);
+        self.load_sync();
+        // gDPLoadTile(G_TX_LOADTILE, uls << 2, ult << 2, lrs << 2, lrt << 2).
+        self.0.push((0xF400_0000 | ((uls << 2) << 12) | (ult << 2), (G_TX_LOADTILE << 24) | ((lrs << 2) << 12) | (lrt << 2)));
+        self.pipe_sync();
+        self.set_tile(fmt, siz, line, tmem, rtile, 0);
+        self.0.push((0xF200_0000 | ((uls << 2) << 12) | (ult << 2), (rtile << 24) | ((lrs << 2) << 12) | (lrt << 2)));
     }
     /// `gDPLoadTextureBlock(timg, fmt, siz, width, height, pal, cms, cmt, masks, maskt,
     /// shifts, shiftt)` for an 8-, 16- or 32-bit texture.
@@ -500,6 +520,82 @@ pub mod setup_dl {
         d.combine_lerp(PRIM_ENV_TEXEL0, PRIM_ENV_TEXEL0);
         d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0050_4B50));
         d.0.push((0xD900_0000, G_ZBUFFER | G_SHADE | G_CULL_BACK | G_SHADING_SMOOTH));
+        d
+    }
+
+    /// `G_AD_DISABLE | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE |
+    /// G_TD_CLAMP | G_TP_NONE | G_PM_NPRIMITIVE` (the cycle type apart).
+    const OTHERMODE_H_AD_DISABLE: u32 = 0x30 | (6 << 9) | (2 << 12);
+    /// `G_RM_CLD_SURF | G_RM_CLD_SURF2`: `IM_RD | CVG_DST_SAVE | FORCE_BL | ZMODE_XLU |
+    /// GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA)` and its `GBL_c2`.
+    const G_RM_CLD_SURF_BOTH: u32 = 0x0050_4B40;
+    /// `G_RM_XLU_SURF | G_RM_XLU_SURF2`: `IM_RD | CVG_DST_FULL | FORCE_BL | ZMODE_OPA |
+    /// GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA)` and its `GBL_c2`.
+    const G_RM_XLU_SURF_BOTH: u32 = 0x0050_4240;
+    /// `G_RM_XLU_SURF2` alone.
+    const G_RM_XLU_SURF2: u32 = 0x0010_4240;
+    /// `G_AC_THRESHOLD`.
+    const G_AC_THRESHOLD: u32 = 1;
+
+    /// `SETUPDL_51` (`z_rcp.c`): `gsSPTexture(.., G_ON)`, `gsDPSetCombineMode(G_CC_MODULATEIA_PRIM,
+    /// G_CC_MODULATEIA_PRIM)`, `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP
+    /// | G_CYC_1CYCLE | G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL | G_RM_XLU_SURF | G_RM_XLU_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_CULL_BACK)`: the moon's.
+    pub fn setup_dl_51() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        d.combine_lerp(MODULATEIA_PRIM, MODULATEIA_PRIM);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, G_RM_XLU_SURF_BOTH));
+        d.0.push((0xD900_0000, G_CULL_BACK));
+        d
+    }
+
+    /// `SETUPDL_54`: `gsSPTexture(.., G_ON)`, `gsDPSetCombineLERP(TEXEL1, TEXEL0, ENV_ALPHA, TEXEL0,
+    /// TEXEL1, TEXEL0, ENVIRONMENT, TEXEL0, PRIMITIVE, ENVIRONMENT, COMBINED, ENVIRONMENT, COMBINED,
+    /// 0, PRIMITIVE, 0)`, `gsDPSetOtherMode(G_AD_DISABLE | G_CD_MAGICSQ | .. | G_TP_NONE |
+    /// G_CYC_2CYCLE | G_PM_NPRIMITIVE, G_AC_THRESHOLD | G_ZS_PIXEL | G_RM_PASS | G_RM_XLU_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_CULL_BACK)`: the sun's.
+    pub fn setup_dl_54() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        let c0 = [cc_ab::TEXEL1, cc_ab::TEXEL0, cc_c::ENV_ALPHA, cc_d::TEXEL0, ac::TEXEL1, ac::TEXEL0, ac::ENVIRONMENT, ac::TEXEL0];
+        let c1 = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::COMBINED, cc_d::ENVIRONMENT, ac::COMBINED, ac::ZERO, ac::PRIMITIVE, ac::ZERO];
+        d.combine_lerp(c0, c1);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_AD_DISABLE | G_CYC_2CYCLE, G_AC_THRESHOLD | G_RM_PASS | G_RM_XLU_SURF2));
+        d.0.push((0xD900_0000, G_CULL_BACK));
+        d
+    }
+
+    /// `SETUPDL_57`: `gsSPTexture(.., G_OFF)`, `gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE)`,
+    /// `gsDPSetOtherMode(G_AD_DISABLE | G_CD_MAGICSQ | .. | G_TP_NONE | G_CYC_1CYCLE |
+    /// G_PM_NPRIMITIVE, G_AC_THRESHOLD | G_ZS_PIXEL | G_RM_CLD_SURF | G_RM_CLD_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_SHADING_SMOOTH)`: the screen's fills.
+    pub fn setup_dl_57() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(false);
+        // G_CC_PRIMITIVE: 0, 0, 0, PRIMITIVE, 0, 0, 0, PRIMITIVE.
+        let prim = [cc_ab::ZERO, cc_ab::ZERO, cc_c::ZERO, cc_d::PRIMITIVE, ac::ZERO, ac::ZERO, ac::ZERO, ac::PRIMITIVE];
+        d.combine_lerp(prim, prim);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_AD_DISABLE, G_AC_THRESHOLD | G_RM_CLD_SURF_BOTH));
+        d.0.push((0xD900_0000, G_SHADING_SMOOTH));
+        d
+    }
+
+    /// `SETUPDL_65`: `gsSPTexture(.., G_ON)`, `gsDPSetCombineMode(G_CC_MODULATEIA_PRIM,
+    /// G_CC_MODULATEIA_PRIM)`, `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP
+    /// | G_CYC_1CYCLE | G_PM_NPRIMITIVE, G_AC_THRESHOLD | G_ZS_PIXEL | G_RM_CLD_SURF |
+    /// G_RM_CLD_SURF2)`, `gsSPLoadGeometryMode(G_SHADE | G_SHADING_SMOOTH)`: the lens flare's
+    /// (`func_800947AC`).
+    pub fn setup_dl_65() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(true);
+        d.combine_lerp(MODULATEIA_PRIM, MODULATEIA_PRIM);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, G_AC_THRESHOLD | G_RM_CLD_SURF_BOTH));
+        d.0.push((0xD900_0000, G_SHADE | G_SHADING_SMOOTH));
         d
     }
 

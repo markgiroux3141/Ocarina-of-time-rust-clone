@@ -161,6 +161,9 @@ pub enum PlayRequest {
     SetParent(ActorHandle),
     /// `chest->unk_1F4 = v`: Player opens the chest, with the long (1) or short (-1) animation.
     ChestOpen { chest: ActorHandle, unk_1f4: i16 },
+    /// Player_Action_Roll's bonk: a tree's `home.rot.y = 1` (`En_Wood02`: drop and sway), or a
+    /// large crate's `home.rot.z = 1` (`Obj_Kibako2`: break).
+    Bonk { actor: ActorHandle, rot_z: bool },
     /// `Camera_SetCameraData(Play_GetCamera(play, CAM_ID_MAIN), 4, NULL, NULL, data2, 0, 0)`.
     SetCameraData { data2: i16 },
     /// `Item_DropCollectible(play, &pos, params)` (`func_8083E4C4`).
@@ -430,6 +433,8 @@ pub enum Action {
     JumpSlash,
     /// `Player_Action_BlueWarpArrive`: arriving by blue warp, falling from 800 up.
     BlueWarpArrive,
+    /// `Player_Action_ExitGrotto`: launched up out of a grotto's hole.
+    ExitGrotto,
     /// `Player_Action_8084BBE4`: hanging from a ledge.
     Hang,
     /// `Player_Action_8084BDFC`: climbing up from a hang.
@@ -589,6 +594,7 @@ impl Action {
             Action::Midair => "Player_Action_8084411C",
             Action::JumpSlash => "Player_Action_80844AF4",
             Action::BlueWarpArrive => "Player_Action_BlueWarpArrive",
+            Action::ExitGrotto => "Player_Action_ExitGrotto",
             Action::Hang => "Player_Action_8084BBE4",
             Action::ClimbUp => "Player_Action_8084BDFC",
             Action::ClimbLedge => "Player_Action_80845668",
@@ -839,6 +845,13 @@ pub struct Player {
     /// `modelGroup`, `nextModelGroup` (PLAYER_MODELGROUP_*).
     pub model_group: usize,
     pub next_model_group: usize,
+    /// The hands and sheath `Player_SetModels` last set when it was given another group than
+    /// `modelGroup` (a cutscene's ocarina in hand, `func_80851D2C`); the next
+    /// `Player_SetModelGroup` puts `modelGroup`'s back.
+    pub models_group: Option<usize>,
+    /// `rightHandType == PLAYER_MODELTYPE_RH_FF` (a cutscene's: the shield collider off, the right
+    /// hand's matrix kept), set by `func_808526EC`, cleared with the models.
+    pub right_hand_ff: bool,
     /// `currentShield` (`PLAYER_SHIELD_*`: 0 none, 1 Deku, 2 Hylian, 3 Mirror), `currentTunic`,
     /// `currentBoots`, `currentSwordItemId` (`B_BTN_ITEM`): from the save's equipment
     /// (`Player_SetEquipmentData`).
@@ -1108,6 +1121,8 @@ impl Player {
             current_mask: 0,
             model_group: data.items.model_group("DEFAULT"),
             next_model_group: data.items.model_group("DEFAULT"),
+            models_group: None,
+            right_hand_ff: false,
             // A plain start is the map select's file's (SaveContext::debug): the Kokiri Sword and
             // the Deku Shield for the child, the Master Sword and the Hylian Shield for the adult,
             // the Kokiri tunic and boots. Player_Init takes the save's (set_equipment_data).
@@ -1323,7 +1338,17 @@ impl Player {
                 self.skel.change(&data, a, 2.0 / 3.0, 0.0, 24.0, ANIMMODE_ONCE, 0.0);
                 self.actor.world_pos.y += 800.0;
             }
-            // 1, 3..=7: the Master Sword pedestal, the warp songs, the jump down into Kokiri
+            // Player_StartMode_Grotto: out of a grotto's hole, the jump at 12 (func_808389E8), held
+            // (PLAYER_STATE1_29), the fall measured from here, one-point cutscene 5110 for 40.
+            4 => {
+                let a = data.anim("link_normal_jump");
+                self.func_80838940(&data, Some(a), 12.0, NA_SE_VO_LI_SWORD_N);
+                self.setup_action(&data, Action::ExitGrotto, 0);
+                self.state1 |= STATE1_29;
+                self.fall_start_height = self.actor.world_pos.y as i16;
+                self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 5110, timer: 40, player: true, parent: CAM_ID_MAIN });
+            }
+            // 1, 3, 5..=7: the Master Sword pedestal, the warp songs, the jump down into Kokiri
             // Forest's opening and so on: not ported. Standing still.
             m => self.note(format!("start mode {m} (sStartModeFuncs) not ported: standing")),
         }
@@ -1665,6 +1690,7 @@ impl Player {
             Action::Midair => self.action_8084411c(env),
             Action::JumpSlash => self.action_80844af4(env),
             Action::BlueWarpArrive => self.action_blue_warp_arrive(env),
+            Action::ExitGrotto => self.action_exit_grotto(env),
             Action::Hang => self.action_8084bbe4(env),
             Action::ClimbUp => self.action_8084bdfc(env),
             Action::ClimbLedge => self.action_80845668(env),
@@ -5192,11 +5218,24 @@ impl Player {
                 self.func_8083A060(data);
             }
         } else {
-            if self.linear_velocity >= 7.0
-                && self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0
-                && self.s.wall_move_diff < 0x2000
-            {
-                // Bonk.
+            // Must have a speed of 7 or above to bonk into something: a wall faced, or a tree
+            // (En_Wood02) its cylinder touched head on.
+            let wall = self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0 && self.s.wall_move_diff < 0x2000;
+            let tree = (!wall && self.cylinder.base.oc_flags1 & cc::OC1_HIT != 0)
+                .then_some(self.cylinder.base.oc)
+                .flatten()
+                .filter(|&h| env.actors.actor(h).is_some_and(|a| a.id == crate::en_wood02::ACTOR_EN_WOOD02 && (self.actor.world_rot.y.wrapping_sub(a.yaw_towards_player) as i32).abs() > 0x6000));
+            if self.linear_velocity >= 7.0 && (wall || tree.is_some()) {
+                if let Some(t) = tree {
+                    // En_Wood02 takes home.rot.y as the bonk: it tries to drop.
+                    self.play_requests.push(PlayRequest::Bonk { actor: t, rot_z: false });
+                } else if let Some(bg) = self.actor.wall_poly.map(|p| p.bg).filter(|&bg| bg != eng_collision::bgcheck::BGCHECK_SCENE)
+                    && let Some(h) = oot_game::actor_ctx::dyna_poly_get_actor(env.actors, env.col, bg)
+                    && env.actors.actor(h).is_some_and(|a| a.id == crate::obj_kibako2::ACTOR_OBJ_KIBAKO2)
+                {
+                    // Obj_Kibako2 takes home.rot.z as the bonk: it breaks.
+                    self.play_requests.push(PlayRequest::Bonk { actor: h, rot_z: true });
+                }
                 let a = self.anim(data, group::ROLL_BONK);
                 self.skel.play_once(data, a);
                 self.linear_velocity = -self.linear_velocity;
@@ -6184,6 +6223,19 @@ impl Player {
         }
     }
 
+    /// `Player_Action_ExitGrotto`: rising out of the hole (gravity -1); falling, it's the fall
+    /// (`func_80837B9C`); under 6 up, the speed eases to 3.
+    fn action_exit_grotto(&mut self, env: &Env) {
+        let data = env.data;
+        self.actor.gravity = -1.0;
+        self.skel.update(data);
+        if self.actor.velocity.y < 0.0 {
+            self.func_80837B9C(data);
+        } else if self.actor.velocity.y < 6.0 {
+            step_to_f(&mut self.linear_velocity, 3.0, 0.5);
+        }
+    }
+
     /// `Player_Action_BlueWarpArrive`: falling from the blue warp (held still in Lake Hylia's
     /// cutscene until its frame 305); within 150 of the floor the pose plays, slowing the fall
     /// towards 2 up; landed, the landing's sound and the pose to its end; then in Kokiri Forest a
@@ -7102,6 +7154,8 @@ impl Player {
     /// `Player_SetModelGroup`: the model group decides the animation type.
     fn player_set_model_group(&mut self, data: &GameData, mg: usize) {
         self.model_group = mg;
+        self.models_group = None;
+        self.right_hand_ff = false;
         let it = &data.items;
         let mut t = if mg == it.model_group("CHILD_HYLIAN_SHIELD") { 0 } else { it.model_group_anim_type[mg] };
         if t < 3 && self.current_shield == 0 {
@@ -7995,8 +8049,11 @@ impl Player {
                 io.transition.ty = TRANS_TYPE_FADE_BLACK_FAST;
                 self.sfx(PlayerSfx::NoPos(NA_SE_OC_ABYSS));
             } else {
+                // Into a grotto (Door_Ana): the fade, and nothing recorded as playing.
                 io.transition.ty = TRANS_TYPE_FADE_BLACK;
                 io.save.next_transition_type = TRANS_TYPE_FADE_BLACK;
+                io.save.seq_id = oot_game::audio::NA_BGM_DISABLED as u8;
+                io.save.nature_ambience_id = 0xFF;
             }
             io.transition.trigger = TRANS_TRIGGER_START;
         }
@@ -8613,6 +8670,30 @@ impl Player {
                     }
                     let t = env.audio.player_anim_sfx("D_808551B4").to_vec();
                     self.process_anim_sfx_list(&t);
+                }
+            }
+            // The Fairy Ocarina taken out (the Lost Woods' bridge): the start of the ocarina's
+            // animation, the ocarina as the item (func_8084B498: the Fairy Ocarina if owned, else
+            // the Ocarina of Time) and in hand (Player_SetModels with its group; modelGroup kept).
+            "func_80851D2C" => {
+                self.anim_change_once_morph_adjusted_zero_root_yaw_speed(data, data.anim("link_normal_okarina_start"));
+                let fairy = env.io.borrow().save.inv_content(oot_game::item::ITEM_OCARINA_FAIRY) == oot_game::item::ITEM_OCARINA_FAIRY;
+                self.item_ap = if fairy { data.items.ap("OCARINA_FAIRY") } else { data.items.ap("OCARINA_OF_TIME") };
+                self.models_group = Some(self.action_to_model_group(data, self.item_ap));
+            }
+            // The ocarina held up (gPlayerAnim_L_okarina_get, a child's; om_get an adult's), from the
+            // second frame with sparkles about the right hand (rightHandType RH_FF: the shield's
+            // matrix kept for them). EffectSsKiraKira_SpawnDispersed isn't ported: its position's
+            // three Rand_CenteredFloat and its own three Rand calls are made.
+            "func_808526EC" => {
+                let a = if self.adult { data.anim("om_get") } else { data.anim("L_okarina_get") };
+                self.func_80851294(data, a);
+                if !self.right_hand_ff {
+                    self.right_hand_ff = true;
+                    return;
+                }
+                for _ in 0..6 {
+                    self.rand_zero_one();
                 }
             }
             "func_80851CA4" => {
@@ -10144,11 +10225,18 @@ impl ActorImpl for Player {
             play.game_camera.change_mode(&play.data.camera, mode);
             play.camera_sfx();
         }
-        // Then its sequence mode (targetCtx.bgmEnemy is never set: no enemies yet), outside
-        // the fishing pond.
-        if self.actor.category == ACTORCAT_PLAYER && play.scene_id != oot_game::play_scene::SCENE_FISHING_POND {
-            let m = self.seq_mode();
-            play.audio.set_sequence_mode(m);
+        // Then its sequence mode: the enemy music with a hostile enemy near (attention.bgmEnemy,
+        // Audio_SetBgmEnemyVolume by its distance), outside the fishing pond.
+        if self.actor.category == ACTORCAT_PLAYER {
+            let mut m = self.seq_mode();
+            if let Some(enemy) = play.target_ctx.bgm_enemy.and_then(|h| play.actors.actor(h)) {
+                m = oot_game::audio::SEQ_MODE_ENEMY;
+                let dist = enemy.xyz_dist_to_player_sq.sqrt();
+                play.audio.set_bgm_enemy_volume(dist);
+            }
+            if play.scene_id != oot_game::play_scene::SCENE_FISHING_POND {
+                play.audio.set_sequence_mode(m);
+            }
         }
         self.update_colliders(play);
     }
@@ -10241,7 +10329,7 @@ impl ActorImpl for Player {
         switches[rs::DEKU_STICK] = (self.item_ap == PLAYER_IA_DEKU_STICK) as u32;
         switches[rs::UNK_6AD] = self.unk_6AD as u32;
         switches[rs::FACE] = self.face as u32;
-        switches[rs::MODEL_GROUP] = self.model_group as u32;
+        switches[rs::MODEL_GROUP] = self.models_group.unwrap_or(self.model_group) as u32;
         switches[rs::SHIELD] = self.current_shield as u32;
         switches[rs::UNK_862] = self.unk_862 as u16 as u32;
         switches[rs::EXCHANGE] = (self.exchange_item_id != 0) as u32;
@@ -10442,6 +10530,12 @@ impl PlayerIface for Player {
         self.target_actor_distance = distance;
         self.exchange_item_id = exchange_item;
     }
+    fn action_var1(&self) -> i16 {
+        self.action_var1 as i16
+    }
+    fn exchange_item_id(&self) -> u8 {
+        self.exchange_item_id
+    }
     fn clear_talk_actor(&mut self) {
         self.target_actor = None;
     }
@@ -10526,7 +10620,9 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::DoorCam { door, bg_cam_index, timers } => {
             play.game_camera.change_door_cam(&d.camera, &play.col, Some(door), bg_cam_index, timers[0], timers[1], timers[2]);
         }
-        PlayRequest::CamDone => play.game_camera.set_finished_flag(),
+        PlayRequest::CamDone => {
+            play.camera_set_finished_flag(oot_game::camera::CAM_ID_MAIN);
+        }
         PlayRequest::RoomLoad(n) => {
             play.room_request(n);
         }
@@ -10568,6 +10664,15 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             let me = play.player;
             if let Some(a) = play.actors.actor_mut(h) {
                 a.parent = me;
+            }
+        }
+        PlayRequest::Bonk { actor, rot_z } => {
+            if let Some(a) = play.actors.actor_mut(actor) {
+                if rot_z {
+                    a.home_rot.z = 1;
+                } else {
+                    a.home_rot.y = 1;
+                }
             }
         }
         PlayRequest::ChestOpen { chest, unk_1f4 } => {

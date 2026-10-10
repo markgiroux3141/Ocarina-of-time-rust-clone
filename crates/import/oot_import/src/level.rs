@@ -288,7 +288,7 @@ pub fn load(dir: &Path) -> Result<Level> {
         let vertices = batches.remove(&k).unwrap();
         let d = if k.0 { &mut xlu } else { &mut opa };
         d.stats.triangles += vertices.len() / 3;
-        d.batches.push(Batch { material: k.1, vertices });
+        d.batches.push(Batch { material: k.1, vertices, sources: Vec::new() });
     }
     // ponds: each connected patch of water surface is a water box at its height
     for (bl, bh, y) in water_patches(&water) {

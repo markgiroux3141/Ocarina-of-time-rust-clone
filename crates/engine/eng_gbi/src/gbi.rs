@@ -38,6 +38,8 @@ struct RawVertex {
     normal: Vec3,
     color: [u8; 4],
     st: [i16; 2],
+    /// The segmented address it was loaded from.
+    source: u32,
 }
 
 pub struct Interpreter {
@@ -83,6 +85,8 @@ pub struct Interpreter {
     /// current matrix's (OoT's skin limbs, whose vertices the game rewrites every frame, each
     /// group to its own point: `z_skin.c`).
     pub vertex_bones: [Option<Arc<[BoneId]>>; 16],
+    /// Record each triangle vertex's source address in its batch (`Batch::sources`).
+    pub track_vertex_sources: bool,
 }
 
 
@@ -121,6 +125,7 @@ impl Interpreter {
             env_dyn: None,
             prim_dyn: None,
             vertex_bones: Default::default(),
+            track_vertex_sources: false,
         }
     }
 
@@ -401,6 +406,7 @@ impl Interpreter {
                 normal: normal_mat.transform_vector3(nrm).normalize_or_zero(),
                 color: [buf[o + 12], buf[o + 13], buf[o + 14], buf[o + 15]],
                 st: [rd(8), rd(10)],
+                source: w1.wrapping_add(i as u32 * 16),
             };
         }
         self.draw.stats.vertices_loaded += n;
@@ -672,9 +678,13 @@ impl Interpreter {
             return;
         }
         let verts = [make(&self.vtx[a]), make(&self.vtx[b]), make(&self.vtx[c])];
+        let sources = if self.track_vertex_sources { vec![self.vtx[a].source, self.vtx[b].source, self.vtx[c].source] } else { Vec::new() };
         match self.draw.batches.last_mut() {
-            Some(batch) if batch.material == mat => batch.vertices.extend_from_slice(&verts),
-            _ => self.draw.batches.push(Batch { material: mat, vertices: verts.to_vec() }),
+            Some(batch) if batch.material == mat => {
+                batch.vertices.extend_from_slice(&verts);
+                batch.sources.extend(sources);
+            }
+            _ => self.draw.batches.push(Batch { material: mat, vertices: verts.to_vec(), sources }),
         }
         self.draw.stats.triangles += 1;
     }

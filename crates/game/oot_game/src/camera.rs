@@ -3073,7 +3073,9 @@ impl GameCamera {
         -1
     }
 
-    /// `Camera_SetFinishedFlag`: tells a door or exit camera that Player is through (`stateFlags |= 8`).
+    /// `Camera_SetFinishedFlag`'s write to this camera (`CAM_STATE_EXTERNAL_FINISHED`: a door or exit
+    /// camera told Player is through, a one-point cutscene that its hold is over); the whole
+    /// function is `PlayState::camera_set_finished_flag`.
     pub fn set_finished_flag(&mut self) {
         self.state_flags |= 0x8;
     }

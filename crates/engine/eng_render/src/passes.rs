@@ -53,6 +53,9 @@ pub struct Screen<'a> {
     pub opa_fill: Option<[u8; 4]>,
     pub xlu_fill: Option<[u8; 4]>,
     pub overlay_fill: Option<[u8; 4]>,
+    /// `eng_gfx::DrawLists::depth_probe`: the screen pixel whose depth is read back once the
+    /// frame is drawn (crate::probe).
+    pub depth_probe: Option<[i32; 2]>,
 }
 
 impl Renderer {
@@ -185,7 +188,11 @@ impl Renderer {
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: &target.depth,
-                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                // Kept for the depth probe.
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: if screen.depth_probe.is_some() { wgpu::StoreOp::Store } else { wgpu::StoreOp::Discard },
+                }),
                 stencil_ops: None,
             }),
             timestamp_writes: None,
@@ -274,6 +281,10 @@ impl Renderer {
             pass.set_bind_group(0, &self.globals_bg, &[]);
             pass.set_vertex_buffer(0, b.slice(..));
             pass.draw(0..overlay_lines.len() as u32, 0..1);
+        }
+        drop(pass);
+        if let Some(p) = screen.depth_probe {
+            self.probe.encode(device, queue, encoder, target, p);
         }
     }
 }

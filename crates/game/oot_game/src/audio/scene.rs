@@ -103,13 +103,12 @@ impl PlayState {
     }
 
     /// `Environment_PlayTimeBasedSequence`: the day's music fading at dusk, the night's
-    /// critters, the morning's. (Time doesn't pass yet, `Environment_Update`'s clock not being
-    /// ported, so a scene stays in the state it started in. No weather either: the
-    /// precipitation checks always pass.)
+    /// critters, the morning's (and with it a new day's count and the eggs hatching), as the
+    /// clock passes (crate::clock); the music and the critters only with no rain.
     pub fn environment_play_time_based_sequence(&mut self) {
+        use crate::env::{PRECIP_RAIN_MAX, PRECIP_SOS_MAX};
         let day_time = self.save.day_time as i32;
-        // envCtx.precipitation[PRECIP_RAIN_MAX] and [PRECIP_SOS_MAX]: no weather.
-        let no_rain = true;
+        let no_rain = self.env_ctx.precipitation[PRECIP_RAIN_MAX] == 0 && self.env_ctx.precipitation[PRECIP_SOS_MAX] == 0;
         let nature = self.sequence_ctx.nature_ambience_id;
         match self.time_seq_state {
             TIMESEQ_DAY_BGM => {
@@ -156,9 +155,17 @@ impl PlayState {
             }
             TIMESEQ_DAY_BEGIN_SFX => {
                 if day_time <= clock_time(19, 0) && day_time > clock_time(6, 30) {
-                    // The day's count (totalDays, bgsDayCount, dogIsLost) and the egg hatching
-                    // (Inventory_ReplaceItem, text 0x3066) come with time passing.
+                    use crate::item::{ITEM_CHICKEN, ITEM_POCKET_CUCCO, ITEM_POCKET_EGG, ITEM_WEIRD_EGG, inventory_replace_item};
+                    self.save.total_days += 1;
+                    self.save.bgs_day_count += 1;
+                    self.save.dog_is_lost = true;
                     self.audio.play_sfx_centered(super::sfx::NA_SE_EV_CHICKEN_CRY_M);
+                    if (inventory_replace_item(&mut self.save, ITEM_WEIRD_EGG, ITEM_CHICKEN) || inventory_replace_item(&mut self.save, ITEM_POCKET_EGG, ITEM_POCKET_CUCCO))
+                        && self.cs_ctx.state == crate::cutscene::CS_STATE_IDLE
+                        && !self.player_in_cs_mode()
+                    {
+                        self.start_textbox(0x3066, None);
+                    }
                     self.time_seq_state += 1;
                 }
             }

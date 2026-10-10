@@ -127,6 +127,29 @@ cutscene to its terminator. 6c, the run through the Deku Tree, is done: room 9 i
 room as a short golden, and the travel test carried on through her fight and the warp, the whole
 Deku Tree from one `Play_Init`. Milestone 6 is done, and with it Phase 6 (GAME-05).
 
+Now Phase 7, the road out of the forest (GAME-06,
+[GAME-06-out-of-the-forest.md](GAME-06-out-of-the-forest.md)): surveyed and proposed
+(2026-10-09); the split decided the same day (Kakariko and Castle Town moved to Phase 8).
+Milestone 1a, the emerald and Farore's light, is done
+([ADR 0053](adr/0053-demo-effect-curve-skeletons-and-vertices-by-source.md)): `Demo_Effect`
+whole, curve skeletons (`z_fcurve_data_skelanime.c`), bakes that know their vertices' sources so
+a draw rebuilds what the game writes into them, `--cutscene` for a debug start; Kokiri Forest's
+cutscene layers 4 and 6 play whole (the emerald over Link, the Deku Tree's death); pack format 28.
+Milestone 1b, the creation, is done ([ADR 0054](adr/0054-the-128-skies-and-demo-kankyo.md)):
+`Demo_Kankyo` whole, `Bg_Spot09_Obj`, `Bg_Spot16_Doughnut`, two scene draw configs, the outdoor
+skies (`SKYBOX_DRAW_128`, loaded as `Environment_UpdateSkybox` loads them) and a hidden room; the
+whole chain plays from the blue warp to `ENTR_KOKIRI_FOREST_11`, and closes BACKLOG #23.
+Milestone 2, leaving the forest, is done ([ADR 0055](adr/0055-leaving-the-forest.md)): Mido's
+talk, Saria's goodbye on the bridge and the Fairy Ocarina (`Demo_Sa`'s bridge), the soft soil,
+Hyrule Field's intro, and the owl whole with his one-point cutscene. Milestone 3, the clock, is
+done ([ADR 0056](adr/0056-the-clock.md)): time passes from the rooms' settings, on the save, with
+the sun and the moon, the skybox filters, the lens flare (its occlusion read back by a depth
+probe), the music by the time and the drawbridge's night. Milestone 4, Hyrule Field, is done
+([ADR 0057](adr/0057-hyrule-fields-actors.md)): its trees, bush and rock circles, signs and
+grottos' holes, its Peahats by day and its Stalchildren by night (breaking into their bones), the
+enemy music; its two exit runs reach Castle Town's entrance by day and Kakariko at 20:00. Phase 7
+is done; Phase 8 (Kakariko, Castle Town, Hyrule Castle) is next, to be planned.
+
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
 the 2026-09-30 deferral: the scripted runs play the cutscenes.
@@ -413,14 +436,67 @@ On decomp `2f4c25d`'s names, migrated to main's in GAME-05 milestone 1. See
        `Route::BossRoom`, the golden `boss_room` with `boss_room_door`; the whole Deku Tree in
        `travel.rs`.)*
 
+## Phase 7: the road out of the forest (GAME-06)
+
+**Goal:** from the Deku Tree's death into Hyrule Field: the Kokiri Emerald's cutscene chain
+played to its end (BACKLOG #23), Saria's goodbye on the bridge, and Hyrule Field with its clock,
+its owl and its enemies. See [GAME-06](GAME-06-out-of-the-forest.md)'s survey. Decided
+(2026-10-09): the split below; `Demo_Effect`, `Demo_Kankyo` and `En_Owl` whole, the parts of
+`Demo_Sa` and `Obj_Bean` this phase reaches; the lens flare's occlusion through an engine depth
+probe. And:
+- **Kakariko and Castle Town move to Phase 8:** about 52,000 lines of actors with Hyrule Castle.
+  Phase 7 ends with Hyrule Field's exits into them working, their actors placeholders.
+- **The day and night debt** (cross-cutting, "World") is milestone 3, before the field's enemies.
+
+1. **The cutscene chain after part 1,** in two:
+   - **1a, the emerald and Farore's light** (done: see [GAME-06](GAME-06-out-of-the-forest.md)
+     milestone 1a, [ADR 0053](adr/0053-demo-effect-curve-skeletons-and-vertices-by-source.md)):
+     `Demo_Effect` (2,092 lines) whole with the curve skeletons its time warps draw, Kokiri
+     Forest's cutscene layers 4 and 6; a debug start by cutscene index.
+     - **Exit:** the emerald over Link through the Deku Tree's death to `ENTR_KOKIRI_FOREST_11`.
+       *(Done: `Route::Emerald`, the golden `emerald` with `emerald_light`, `emerald_floats` and
+       `farore`.)*
+   - **1b, the creation** (done: see [GAME-06](GAME-06-out-of-the-forest.md) milestone 1b,
+     [ADR 0054](adr/0054-the-128-skies-and-demo-kankyo.md)): `Demo_Kankyo` (1,015 lines) whole,
+     `Bg_Spot09_Obj`, `Bg_Spot16_Doughnut`, Gerudo Valley's and Death Mountain Trail's draw
+     configs, the outdoor skies (the cutscene map's, the overcast sunset's, and the normal sky at
+     the scene's time).
+     - **Exit:** the whole chain, part 1 to `ENTR_KOKIRI_FOREST_11`, as a test; short goldens.
+       *(Done: `Route::BlueWarp` carried on by `Route::Creation` in a test; the golden `creation`
+       with `creation_rain`, `creation_rocks` and `creation_nayru`.)*
+2. **Leaving the forest** (done: see [GAME-06](GAME-06-out-of-the-forest.md) milestone 2,
+   [ADR 0055](adr/0055-leaving-the-forest.md)): Kokiri Forest after the emerald, the Lost Woods
+   bridge (`Demo_Sa`'s bridge, `Obj_Bean`'s soft soil), the Fairy Ocarina, Hyrule Field's intro,
+   `En_Owl` (1,437) whole.
+   - **Exit:** out of the forest, Saria's goodbye, the field's intro, the owl's talk.
+     *(Done: `Route::Farewell`, the golden `farewell` with `farewell_bridge`, `farewell_ocarina`
+     and `farewell_owl`.)*
+3. **The clock, day and night** (done: see [GAME-06](GAME-06-out-of-the-forest.md) milestone 3,
+   [ADR 0056](adr/0056-the-clock.md)): time passing (`Environment_Update`), the sky by the time of
+   day (`SKYBOX_NORMAL_SKY`), the sun and the moon, the lens flare; the lights and the music by
+   time.
+   - **Exit:** Hyrule Field from dusk into night.
+     *(Done: `Route::Dusk`, the golden `dusk` with `dusk_sunset` and `dusk_bridge`.)*
+4. **Hyrule Field** (done: see [GAME-06](GAME-06-out-of-the-forest.md) milestone 4,
+   [ADR 0057](adr/0057-hyrule-fields-actors.md)): its props (`En_Wood02`, `Obj_Mure2`,
+   `En_A_Obj`, `Door_Ana`) and enemies (`En_Peehat`; `En_Encount1` and `En_Skb`, the
+   Stalchildren; `En_Part` and `BodyBreak`), each whole; the enemy music.
+   - **Exit:** a Peahat by day, Stalchildren by night, the way to Castle Town and Kakariko.
+     *(Done, in two runs: `Route::Field`, the golden `field` with `field_peahat`;
+     `Route::FieldNight`, the golden `field_night` with `field_night_fight`.)*
+
+BACKLOG #24 stays open: none of milestone 1's lists read `LOD_FRACTION`; #21 and #22 (the title
+screen and the file select, about 6,400 lines) can follow milestone 3, as the menus' own
+milestone; #1 goes with Phase 8's prerendered houses and shops.
+
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:
 - **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), but the camera's roll isn't
   drawn (the renderer keeps Y up), and the shake isn't applied to the prerendered backgrounds
   and the skybox.
-- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
-- **World:** time passing (`Environment_Update`'s clock), day/night, weather.
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
+- **World:** ~~time passing, day/night~~ (GAME-06 milestone 3); weather.
 - **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; the ocarina modes.
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.
 - **Tools:** the `oot_extract::text` refactor onto `oot_import::text`.
@@ -429,7 +505,8 @@ Pick these up when a milestone touches them, or as filler:
 ## Beyond
 
 The plan's later items, roughly in order:
-- Hyrule Field and Kakariko (Epona waits for her own phase);
+- ~~Hyrule Field~~ (Phase 7) and Kakariko, with Castle Town and Hyrule Castle (Phase 8,
+  decided 2026-10-09; Epona waits for her own phase);
 - the other dungeons;
 - the full message system (choices with items, the ocarina);
 - the pause menu in full.

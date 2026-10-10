@@ -102,6 +102,10 @@ pub trait PlayerIface {
     fn talk_target(&self) -> (Option<ActorHandle>, f32);
     /// `Actor_OfferTalkExchange`'s write: `targetActor`, `targetActorDistance`, `exchangeItemId`.
     fn set_talk_target(&mut self, actor: ActorHandle, distance: f32, exchange_item: u8);
+    /// `exchangeItemId` (`Actor_GetPlayerExchangeItemId`).
+    fn exchange_item_id(&self) -> u8 {
+        0
+    }
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;
@@ -163,6 +167,10 @@ pub trait PlayerIface {
     /// An outside write of `stateFlags1`: `set` bits on, then `clear` bits off (`Camera_Finish`
     /// and `Camera_Demo5`'s `PLAYER_STATE1_29`).
     fn change_state_flags1(&mut self, _set: u32, _clear: u32) {}
+    /// `av1.actionVar1` (`Door_Ana` reads it: 0 while falling into its hole).
+    fn action_var1(&self) -> i16 {
+        0
+    }
     /// `meleeWeaponState` (0 none, 1 swinging, -1 the swing's end).
     fn melee_weapon_state(&self) -> i8 {
         0
@@ -493,10 +501,10 @@ pub fn func_8002ddf4(play: &PlayState) -> bool {
 
 /// `Math_SinF` and `Math_CosF` (`sys_math.c`): the angle in radians as a binary angle
 /// (`(s16)(angle * (0x7FFF / M_PI))`, in double precision) through `sins` and `coss`.
-fn math_sin_f(angle: f32) -> f32 {
+pub fn math_sin_f(angle: f32) -> f32 {
     eng_math::sin_s((angle as f64 * (32767.0 / std::f64::consts::PI)) as i32 as i16)
 }
-fn math_cos_f(angle: f32) -> f32 {
+pub fn math_cos_f(angle: f32) -> f32 {
     eng_math::cos_s((angle as f64 * (32767.0 / std::f64::consts::PI)) as i32 as i16)
 }
 

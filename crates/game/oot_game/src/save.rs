@@ -119,9 +119,17 @@ pub struct SaveContext {
     pub scene_layer: usize,
     /// `linkAge == LINK_AGE_ADULT`.
     pub adult: bool,
-    /// `dayTime` (`CLOCK_TIME`), and `nightFlag` as `Play_Init` sets it.
+    /// `dayTime` (`CLOCK_TIME`), and `nightFlag` (`Play_Init`, `Environment_Init` and
+    /// `Environment_Update` set it: crate::clock).
     pub day_time: u16,
     pub night_flag: bool,
+    /// `skyboxTime`: the time the sky and the lights show (crate::clock); `nextDayTime` (the
+    /// Sun's Song's next noon or midnight, then the countdown to its sound,
+    /// `crate::clock::NEXT_TIME_*`); `sunsSongState` (`crate::clock::SUNSSONG_*`); `dogIsLost`.
+    pub skybox_time: u16,
+    pub next_day_time: u16,
+    pub suns_song_state: i16,
+    pub dog_is_lost: bool,
     /// `respawn[RESPAWN_MODE_MAX]` and `respawnFlag` (0: a normal entrance; 1..3: respawn from
     /// that mode + 1; negative: the last entrance).
     pub respawn: [RespawnData; 3],
@@ -227,7 +235,7 @@ pub struct SaveContext {
     pub z_target_setting: u8,
     // The rest of `Save` (`save.h`), which nothing ported reads: kept so that a slot read back
     // (`Sram_OpenSave`) is written back the same (`Sram_WriteSave`, crate::sram).
-    /// `totalDays`, `bgsDayCount` (`Environment_Update`'s clock isn't ported).
+    /// `totalDays`, `bgsDayCount`: the days passed (crate::clock).
     pub total_days: i32,
     pub bgs_day_count: i32,
     /// `playerData.newf`: "ZELDAZ" in a file that exists (`Sram_InitSave`).
@@ -584,6 +592,12 @@ impl SaveContext {
             adult,
             day_time,
             night_flag: false,
+            // SaveContext_Init (z_common_data.c): skyboxTime 0, nextDayTime NEXT_TIME_NONE,
+            // dogIsLost true; z_construct.c: sunsSongState SUNSSONG_INACTIVE.
+            skybox_time: 0,
+            next_day_time: crate::clock::NEXT_TIME_NONE,
+            suns_song_state: crate::clock::SUNSSONG_INACTIVE,
+            dog_is_lost: true,
             respawn: [RespawnData::default(); 3],
             respawn_flag: 0,
             entrance_speed: 0.0,

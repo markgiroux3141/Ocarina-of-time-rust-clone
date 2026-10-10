@@ -16,7 +16,7 @@ use glam::Vec3;
 use oot_game::actor_table::{ACTOROVL_ALLOC_ABSOLUTE, ACTOROVL_ALLOC_NORMAL, ACTOROVL_ALLOC_PERSISTENT, ActorInfo, ActorInitInfo, ActorTable};
 use oot_game::camera::{CamModeData, CamSettingData, CameraData, OnePointCsFull, OnePointData};
 use oot_game::data::{AgeProperties, Anim, AnimId, AttackAnim, BOOTS_KOKIRI, BOOTS_KOKIRI_CHILD, CsModeEntry, GameData, ItemTables, Regs};
-use oot_game::env::{EnvTables, TimeBasedLightEntry, clock_time};
+use oot_game::env::{EnvTables, TimeBasedLightEntry, TimeBasedSkyboxEntry, clock_time};
 use oot_game::footik::{FootIkData, Rig};
 use oot_game::player_lib::Age;
 
@@ -664,7 +664,45 @@ impl LoadEnvTables for EnvTables {
             .map(|cfg| cfg.list().iter().map(entry).collect::<Option<Vec<_>>>())
             .collect::<Option<Vec<_>>>()
             .context("sTimeBasedLightConfigs: unexpected entry")?;
-        Ok(EnvTables { time_based })
+        // gTimeBasedSkyboxConfigs: { startTime, endTime, changeSkybox, skybox1Index, skybox2Index }.
+        let init = find_initializer(&src, "gTimeBasedSkyboxConfigs")?;
+        let sky = |e: &Init| -> Option<TimeBasedSkyboxEntry> {
+            let f = e.list();
+            let flag = f.get(2)?.atom()?;
+            Some(TimeBasedSkyboxEntry {
+                start_time: eval_time(f.first()?.atom()?)? as u16,
+                end_time: eval_time(f.get(1)?.atom()?)? as u16,
+                change_skybox: match flag {
+                    "true" => true,
+                    "false" => false,
+                    n => n.parse::<i32>().ok()? != 0,
+                },
+                skybox1_index: f.get(3)?.as_int()? as u8,
+                skybox2_index: f.get(4)?.as_int()? as u8,
+            })
+        };
+        let skybox_configs = init
+            .list()
+            .iter()
+            .map(|cfg| cfg.list().iter().map(sky).collect::<Option<Vec<_>>>())
+            .collect::<Option<Vec<_>>>()
+            .context("gTimeBasedSkyboxConfigs: unexpected entry")?;
+        // gNormalSkyFiles: { ROM_FILE(vr_*_static), ROM_FILE(vr_*_pal_static) }.
+        let init = find_initializer(&src, "gNormalSkyFiles")?;
+        let rom_file = |e: &Init| -> Option<String> {
+            let a = e.atom()?;
+            Some(a.strip_prefix("ROM_FILE(")?.strip_suffix(')')?.trim().to_string())
+        };
+        let normal_sky_files = init
+            .list()
+            .iter()
+            .map(|f| {
+                let l = f.list();
+                Some((rom_file(l.first()?)?, rom_file(l.get(1)?)?))
+            })
+            .collect::<Option<Vec<_>>>()
+            .context("gNormalSkyFiles: unexpected entry")?;
+        Ok(EnvTables { time_based, skybox_configs, normal_sky_files })
     }
 }
 

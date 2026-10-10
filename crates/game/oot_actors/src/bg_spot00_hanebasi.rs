@@ -15,8 +15,10 @@
 //! it changes them: that part runs at `Play_Draw`'s time (`draw_update`). The torches' flames
 //! are `gEffFire1DL` turned to face the camera with a scroll on segment 8 (a bake).
 //!
-//! Not modelled: the glow sprites of the point lights (`Lights_GlowCheck`, `Lights_DrawGlow`)
-//! and the time speed in scene layer 5 (`gTimeSpeed`: time doesn't pass in this port).
+//! In scene layer 5 the bridge also runs the clock: `gTimeSpeed` set from 50 to reach 20:00 in
+//! 350 frames, and stopped between 4:00 and 4:30 (crate::clock in `oot_game`).
+//!
+//! Not modelled: the glow sprites of the point lights (`Lights_GlowCheck`, `Lights_DrawGlow`).
 
 use std::sync::Arc;
 
@@ -304,6 +306,24 @@ impl BgSpot00Hanebasi {
         }
     }
 
+    /// `BgSpot00Hanebasi_Update` in scene layer 5: a time speed of 50 becomes the one that
+    /// reaches `CLOCK_TIME(20, 0) + 1` (the next day's if past it) in 350 frames; between 4:00
+    /// and 4:30 the time stops.
+    fn layer_5_time_speed(play: &mut PlayState) {
+        use oot_game::env::clock_time;
+        if play.env_statics.time_speed == 50 {
+            let mut tmp = clock_time(20, 0) + 1;
+            if play.save.day_time as i32 > clock_time(20, 0) + 1 {
+                tmp = clock_time(20, 0) + 1 + 0x10000;
+            }
+            play.env_statics.time_speed = ((tmp - play.save.day_time as i32) as f32 * (1.0 / 350.0)) as u16;
+        }
+        let t = play.save.day_time as i32;
+        if t > clock_time(4, 0) && t < clock_time(4, 30) && play.save.scene_layer == 5 {
+            play.env_statics.time_speed = 0;
+        }
+    }
+
     /// The torches' flame scale `BgSpot00Hanebasi_DrawTorches` sets: 0.008 in a cutscene layer,
     /// else by how far the bridge is raised; 0 when the torches aren't drawn.
     fn torch_flame_scale(play: &PlayState, rot_x: i16) -> Option<f32> {
@@ -336,6 +356,9 @@ impl ActorImpl for BgSpot00Hanebasi {
         }
         if self.actor.params == DT_DRAWBRIDGE {
             self.drawbridge_field(play);
+            if play.save.scene_layer == 5 {
+                Self::layer_5_time_speed(play);
+            }
         }
         play.col.dyna.set_source(self.bg, source(&self.actor));
     }

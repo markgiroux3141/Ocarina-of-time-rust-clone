@@ -759,6 +759,9 @@ fn spawned_gold_skulltulas_jump_out_or_wait_for_the_night() {
     let s = sw(&w, h2);
     assert_eq!((s.action, s.actor.scale.x), (Action::GoldIdle, 0.0));
     assert_eq!((s.collider.elements[0].info.ac_elem_flags, s.collider.elements[0].info.at_elem_flags), (oot_game::collision_check::ACELEM_NONE, oot_game::collision_check::ATELEM_NONE));
+    // Night: 20:00 (Environment_Update keeps nightFlag by the time), nightFlag set for this frame's
+    // actors (the clock runs after them).
+    w.save.day_time = oot_game::env::clock_time(20, 0) as u16;
     w.save.night_flag = true;
     let mut scale = 0.0f32;
     for _ in 0..6 {

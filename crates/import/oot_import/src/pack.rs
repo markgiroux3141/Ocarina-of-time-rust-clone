@@ -422,6 +422,21 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
             }
             continue;
         }
+        if s.attr("LimbType") == Some("Curve") {
+            // A curve skeleton (oot_game::skel_curve): the runtime's record; actors bake its
+            // limbs' lists.
+            match crate::curve::parse_skeleton(&data, seg, s.offset as usize) {
+                Ok(sk) => {
+                    w.put(&keys::curve_skeleton(&f.name, &s.name), &sk)?;
+                    t.ok("Skeleton");
+                }
+                Err(e) => {
+                    t.skip("Skeleton", "decode error");
+                    t.notes.push(format!("{} / {}: {e:#}", f.name, s.name));
+                }
+            }
+            continue;
+        }
         if let Some(why) = objects::unsupported_limb_type(s) {
             t.skip("Skeleton", why);
             continue;
@@ -484,6 +499,30 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         }
     }
 
+    // Curve animations, for the curve skeleton at their `SkelOffset` (its limb count).
+    for a in f.of_kind("CurveAnimation") {
+        if is_overlay {
+            t.skip("CurveAnimation", "in an overlay (relocated code pointers)");
+            continue;
+        }
+        let parsed = a
+            .attr("SkelOffset")
+            .and_then(|o| u32::from_str_radix(o.trim_start_matches("0x"), 16).ok())
+            .context("no SkelOffset")
+            .and_then(|o| crate::curve::parse_skeleton(&data, seg, o as usize))
+            .and_then(|sk| crate::curve::parse_animation(&data, seg, a.offset as usize, sk.limbs.len()));
+        match parsed {
+            Ok(anim) => {
+                w.put(&keys::curve_anim(&f.name, &a.name), &anim)?;
+                t.ok("CurveAnimation");
+            }
+            Err(e) => {
+                t.skip("CurveAnimation", "decode error");
+                t.notes.push(format!("{} / {}: {e:#}", f.name, a.name));
+            }
+        }
+    }
+
     // A scene's cutscene scripts, each through its CS_END_OF_SCRIPT (docs/adr/0022-cutscenes.md).
     for s in f.of_kind("Cutscene") {
         if !is_scene {
@@ -525,7 +564,7 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
     // Kinds the pack doesn't hold (yet), and the ones that live inside other records.
     for s in &f.symbols {
         let why = match s.kind.as_str() {
-            "Texture" | "Collision" | "Skeleton" | "Animation" | "DList" | "PlayerAnimation" | "Scene" | "Room" | "Cutscene" => continue,
+            "Texture" | "Collision" | "Skeleton" | "Animation" | "CurveAnimation" | "DList" | "PlayerAnimation" | "Scene" | "Room" | "Cutscene" => continue,
             "Limb" | "LimbTable" => "stored in its skeleton",
             "PlayerAnimationData" => "stored in its PlayerAnimation",
             "Path" => "in the scene's layers (LayerData.paths)",
@@ -585,6 +624,16 @@ fn import_bakes(p: &Project, segs: &ObjectSegments, files: &Files, w: &PackWrite
         anyhow::ensure!(d.stats.unknown_opcodes.is_empty(), "bake {}: unknown opcodes {:?}", b.name, d.stats.unknown_opcodes);
         w.put(&keys::bake(&b.name), &d)?;
         tally.ok("GetItemBake");
+    }
+    // The 128 skies (oot_game::skybox): the cutscene map's, the overcast sunset's, the normal
+    // sky's pairs of textures.
+    let env = EnvTables::load(&p.config.decomp).context("EnvTables")?;
+    for b in oot_game::skybox::bakes_128(&env) {
+        let d = segs.bake_mesh(p, files, &b).with_context(|| format!("bake {}", b.name))?;
+        anyhow::ensure!(d.stats.unresolved_addresses.is_empty(), "bake {}: unresolved {:?}", b.name, d.stats.unresolved_addresses.keys().collect::<Vec<_>>());
+        anyhow::ensure!(d.stats.unknown_opcodes.is_empty(), "bake {}: unknown opcodes {:?}", b.name, d.stats.unknown_opcodes);
+        w.put(&keys::bake(&b.name), &d)?;
+        tally.ok("SkyboxBake");
     }
     // The room skyboxes (oot_game::skybox), drawn around the eye in houses and shops.
     for s in crate::room::load_room_skyboxes(&p.config.decomp)? {

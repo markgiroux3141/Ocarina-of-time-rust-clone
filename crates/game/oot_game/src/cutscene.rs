@@ -874,7 +874,8 @@ impl PlayState {
                 self.vis_mono_color = [255, 180, 100, (255.0 * temp) as u8];
                 not_ported("the screen's monochrome tint (VisMono) drawn");
             }
-            24 => not_ported("roomCtx.curRoom.segment = NULL"),
+            // CS_MISC_HIDE_ROOM: roomCtx.curRoom.segment = NULL (the room isn't drawn).
+            24 => self.room_ctx.cur.loaded = false,
             25 => {
                 self.save.day_time = self.save.day_time.wrapping_add(30);
                 if self.save.day_time >= crate::env::clock_time(19, 0) as u16 {
@@ -922,9 +923,14 @@ impl PlayState {
                 not_ported("the sandstorm drawn");
                 self.audio.play_sfx_centered2(crate::audio::sfx::NA_SE_EV_SAND_STORM - crate::audio::sfx::SFX_FLAG);
             }
-            33 => not_ported("the Sun's Song"),
-            // gSaveContext.save.dayTime -= gTimeSpeed (twice by night): time is stopped, gTimeSpeed 0.
-            34 => {}
+            // CS_MISC_SUNSSONG_START (crate::clock).
+            33 => self.save.suns_song_state = crate::clock::SUNSSONG_START,
+            // CS_MISC_FREEZE_TIME: the time taken back (twice that by night).
+            34 => {
+                let speed = self.env_statics.time_speed;
+                let step = if self.save.is_day() { speed } else { speed.wrapping_mul(2) };
+                self.save.day_time = self.save.day_time.wrapping_sub(step);
+            }
             35 => not_ported("the scarecrow's song after the credits"),
             _ => {}
         }
@@ -967,13 +973,14 @@ impl PlayState {
         }
     }
 
-    /// Command 0x8C, `CutsceneCmd_SetTime`: the time of day (`skyboxTime` isn't kept apart here).
+    /// Command 0x8C, `CutsceneCmd_SetTime`: the time of day, and the sky's.
     fn cutscene_cmd_set_time(&mut self, d: &[u8], o: usize) {
         if self.cs_ctx.frames == be_u16(d, o + 2) {
             let (hour, minute) = (d[o + 6], d[o + 7]);
             let temp1 = ((hour as f32 * 60.0) / (360.0 / 0x4000 as f32)) as i32 as i16;
             let temp2 = ((minute as i32 + 1) as f32 / (360.0 / 0x4000 as f32)) as i32 as i16;
             self.save.day_time = temp1.wrapping_add(temp2) as u16;
+            self.save.skybox_time = temp1.wrapping_add(temp2) as u16;
         }
     }
 
@@ -1190,6 +1197,7 @@ impl PlayState {
             }
             119 => {
                 self.save.day_time = crate::env::clock_time(12, 0) as u16;
+                self.save.skybox_time = crate::env::clock_time(12, 0) as u16;
                 go(self, "ENTR_CASTLE_COURTYARD_ZELDA_1", None, TRANS_TYPE_FADE_WHITE, None);
             }
             _ => {}

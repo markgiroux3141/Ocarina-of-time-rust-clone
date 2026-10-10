@@ -17,9 +17,9 @@
 //! the conversation's state each frame (`EnKo_UpdateTalkState`): the flag a text sets once it's been
 //! read, and the answers to its questions.
 //!
-//! Not ported: Fado's saw trade in the Lost Woods,
-//! paths (child 3 with the emerald moves to its path's last point: paths aren't in the pack),
-//! and the fairy each child has (`En_Elf` params 3: a placeholder).
+//! Child 3, with the emerald, stands at its path's last point (`Path_CopyLastPoint`, GAME-06
+//! milestone 2). Not ported: Fado's saw trade in the Lost Woods, and the fairy each child has
+//! (`En_Elf` params 3: a placeholder).
 
 use std::sync::Arc;
 
@@ -552,7 +552,9 @@ impl EnKo {
         self.look_dist = look + self.collider.dim.radius as f32;
         self.appear_dist = appear;
         self.model_alpha = 0.0;
-        // Path_GetByIndex(play, ENKO_PATH, 0xFF): paths aren't in the pack.
+        // Path_GetByIndex(play, ENKO_PATH, 0xFF): ENKO_PATH (params' high byte) 0xFF is none.
+        let path_index = (self.actor.params >> 8) & 0xFF;
+        let path = (path_index != 0xFF).then(|| play.setup_path_list().get(path_index as usize).cloned()).flatten();
         let pos = self.actor.world_pos;
         if let Err(e) = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_ELF, pos, [0; 3], 3) {
             log::debug!("En_Ko's fairy: {e:?}");
@@ -563,7 +565,10 @@ impl EnKo {
                 self.action = Action::Guard;
                 return;
             }
-            // Path_CopyLastPoint(this->path, &world.pos): no paths yet.
+            // Path_CopyLastPoint(this->path, &world.pos).
+            if let Some(p) = path.filter(|p| p.count() > 0) {
+                self.actor.world_pos = p.point(p.count() - 1);
+            }
         }
         self.action = Action::Idle;
     }

@@ -21,7 +21,8 @@
 //! The Master Quest Deku Tree's: room 2's four and room 7's five, 0x39FF (flag 0x3F, `unk_177` 0,
 //! small, range 300, hidden: no collision), and room 5's one, 0xB9FF (shown), standing on the
 //! purple rupee's chest. The ocarina isn't ported (`Message_StartOcarina` logs and the block
-//! still waits for the song, as the C does) and `Demo_Effect` stays a placeholder; the tests set
+//! still waits for the song, as the C does); `Demo_Effect`'s time warp is (GAME-06 milestone 1a,
+//! before it a placeholder). The tests set
 //! `msgCtx.lastPlayedSong` and Player's `PLAYER_STATE2_24` as the ocarina would. The whole overlay
 //! is ported; the cull zone isn't, for any actor.
 
@@ -42,8 +43,8 @@ pub const OBJECT_TIMEBLOCK: i16 = 0x0190;
 const COLLISION: &str = "gSongOfTimeBlockCol";
 const DL: &str = "gSongOfTimeBlockDL";
 
-/// `ACTOR_DEMO_EFFECT` (`actor_table.h`: 0x008B): the song's sparkles, not ported (a placeholder).
-pub const ACTOR_DEMO_EFFECT: i16 = 0x008B;
+/// `ACTOR_DEMO_EFFECT`: the song's time warp (`DEMO_EFFECT_TIMEWARP_TIMEBLOCK_*`).
+pub use crate::demo_effect::ACTOR_DEMO_EFFECT;
 /// `PLAYER_STATE2_23` (`player.h`: 1 << 23): an ocarina spot nearby (the prompt).
 pub const PLAYER_STATE2_23: u32 = 1 << 23;
 /// `PLAYER_STATE2_24` (`player.h`: 1 << 24): the ocarina out.

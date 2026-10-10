@@ -193,6 +193,7 @@ impl Renderer {
         write_texture(queue, &white_tex, 1, 1, &[255, 255, 255, 255]);
 
         Renderer {
+            probe: crate::probe::DepthProbe::new(device),
             white: white_tex.create_view(&Default::default()),
             shader,
             globals_buf,
@@ -252,8 +253,12 @@ impl Renderer {
                     depth_write_enabled: Some(key.depth_write),
                     depth_compare: Some(if key.depth_test { wgpu::CompareFunction::LessEqual } else { wgpu::CompareFunction::Always }),
                     stencil: Default::default(),
+                    // A decal (`ZMODE_DEC`) pulled towards the eye, the slope's part clamped: the
+                    // RDP draws it only where it meets the depth already there, and a huge decal
+                    // triangle seen at a grazing angle (Hyrule Field's paths) would otherwise be
+                    // pulled in front of what stands on it.
                     bias: if key.decal {
-                        wgpu::DepthBiasState { constant: -2, slope_scale: -1.0, clamp: 0.0 }
+                        wgpu::DepthBiasState { constant: -2, slope_scale: -1.0, clamp: -2.0e-3 }
                     } else {
                         Default::default()
                     },

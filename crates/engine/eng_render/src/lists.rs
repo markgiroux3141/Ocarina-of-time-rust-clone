@@ -166,6 +166,7 @@ impl Renderer {
             opa_fill: lists.opa_fill,
             xlu_fill: lists.xlu_fill,
             overlay_fill: lists.overlay_fill,
+            depth_probe: lists.depth_probe,
         };
         self.render_screen(device, queue, encoder, target, &models, camera, light, world_lines, &overlay, clear, &screen);
     }
