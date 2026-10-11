@@ -6,7 +6,9 @@
 //! device's callback drains the queue at the device's rate, resampling linearly, and nudges its
 //! rate by up to half a percent to keep the queue near its target: the device's clock and the
 //! system's drift apart. It starts once the queue holds its target, and if the queue ever runs
-//! dry it waits for the target again. What the game's frames do arrive as `GameOp`s and are applied
+//! dry it waits for the target again; if it ever holds more than twice its target (the device
+//! started late, or stalled), the oldest frames are dropped back to the target, so the sound is
+//! never more than that behind the game. What the game's frames do arrive as `GameOp`s and are applied
 //! before the next retrace; after each retrace the thread publishes what the game reads
 //! (`AudioView`), with the queues' messages kept until the game takes them
 //! (docs/adr/0025-audio-mixer.md, docs/adr/0026-the-games-audio.md).
@@ -32,9 +34,11 @@ enum Msg {
 }
 
 /// The frames queued for the device: the target fill (about 64 ms at 32 kHz) and the most it
-/// holds before dropping (the device stalled).
+/// holds before the oldest are dropped back to the target (about 128 ms: the device started late
+/// or stalled). The rate nudge alone takes minutes to work off a backlog, and every sound would
+/// be heard that much late: a sword swing's after the swing.
 const TARGET_FILL: usize = 2048;
-const MAX_FILL: usize = 16384;
+const MAX_FILL: usize = 2 * TARGET_FILL;
 
 struct Shared {
     frames: VecDeque<[i16; 2]>,
@@ -43,6 +47,8 @@ struct Shared {
     primed: bool,
     /// Times the queue ran dry while playing.
     underruns: u64,
+    /// Times the queue overfilled and was cut back to its target.
+    dropped: u64,
 }
 
 /// The device's side: plays until dropped.
@@ -125,7 +131,7 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
     let ai_rate = ctx.audio_buffer_parameters.ai_sampling_frequency as f64;
     let refresh = ctx.refresh_rate.max(1) as f64;
 
-    let shared = Arc::new(Mutex::new(Shared { frames: VecDeque::with_capacity(MAX_FILL), primed: false, underruns: 0 }));
+    let shared = Arc::new(Mutex::new(Shared { frames: VecDeque::with_capacity(MAX_FILL + 1024), primed: false, underruns: 0, dropped: 0 }));
     let host = cpal::default_host();
     let device = host.default_output_device().context("no audio output device")?;
     let supported = device.default_output_config().context("the output device's configuration")?;
@@ -173,15 +179,17 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
             for f in out.chunks(2) {
                 s.frames.push_back([f[0], f[1]]);
             }
-            while s.frames.len() > MAX_FILL {
-                s.frames.pop_front();
+            if s.frames.len() > MAX_FILL {
+                let excess = s.frames.len() - TARGET_FILL;
+                s.frames.drain(..excess);
+                s.dropped += 1;
             }
         }
         retraces += 1;
         if retraces % 300 == 0 {
             let s = shared.lock().unwrap();
             let playing: Vec<String> = ctx.seq_players.iter().map(|p| if p.enabled { format!("{:02X}", p.seq_id) } else { "--".into() }).collect();
-            log::info!("audio output: {retraces} retraces, {} frames queued, ran dry {} times; players {}", s.frames.len(), s.underruns, playing.join(" "));
+            log::info!("audio output: {retraces} retraces, {} frames queued, ran dry {} times, cut back {} times; players {}", s.frames.len(), s.underruns, s.dropped, playing.join(" "));
         }
         let next = start + period.mul_f64(retraces as f64);
         let now = Instant::now();
