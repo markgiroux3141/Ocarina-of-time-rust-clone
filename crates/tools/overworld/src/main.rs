@@ -133,6 +133,25 @@ fn main() {
         }
         return;
     }
+    if args.get(1).map(String::as_str) == Some("kit-shades") {
+        // how each region's scene shades its textures: JSON, texture -> [r, g, b, area, vertex-coloured share]
+        let list: Vec<String> = if args.len() > 2 { args[2..].to_vec() } else { overworld::kit::REGIONS.iter().map(|s| s.to_string()).collect() };
+        let mut all = serde_json::Map::new();
+        for r in &list {
+            match overworld::survey::shades(r, Path::new(".")) {
+                Ok(v) => {
+                    let m: serde_json::Map<String, serde_json::Value> = v
+                        .iter()
+                        .map(|s| (s.texture.clone(), serde_json::json!([s.rgb[0], s.rgb[1], s.rgb[2], s.area.round(), s.coloured / s.area.max(1e-9)])))
+                        .collect();
+                    all.insert(r.clone(), m.into());
+                }
+                Err(e) => eprintln!("{r}: {e}"),
+            }
+        }
+        println!("{}", serde_json::to_string_pretty(&serde_json::Value::Object(all)).unwrap());
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("preview") {
         let (Some(level), Some(png)) = (args.get(2), args.get(3)) else { fail("preview <level.json> <out.png> [--theme <theme.json>]") };
         let run = || -> Result<String, String> {

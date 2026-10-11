@@ -1,6 +1,7 @@
 {
   "name": "lon_lon",
   "textures": {
+    "ceiling_rock": "zr_riverbed_b",
     "ground": "llr_ground",
     "cliff": "llr_cliff",
     "tower_brick": "llr_tower_brick",
@@ -18,6 +19,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -169,6 +176,15 @@
     "overlap": 180,
     "foliage_in": 40,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot20",
+    "color": [100, 100, 120],
+    "near": 996,
+    "far": 12800
+  },
+  "shades": {
+    "llr_shutter": [0.700, 0.700, 0.700]
   },
   "light": {
     "ambient": [

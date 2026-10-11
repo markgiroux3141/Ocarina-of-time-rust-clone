@@ -104,6 +104,43 @@ pub struct Theme {
     /// Freestanding rocks and arches (needed by levels with rock or arch lines).
     #[serde(default)]
     pub rocks: Option<Rocks>,
+    /// Ceilings (`ceilings.rs`): a uniform rock that tiles seamlessly both ways, never a wall's
+    /// texture (a wall's has grass along its top, caps, bands).
+    #[serde(default)]
+    pub ceiling: Option<CeilingLook>,
+    /// How bright its scene draws each vertex-coloured texture (`overworld kit-shades`: the mean
+    /// vertex colour's brightness over the triangles using it, 0-1, as a grey), by texture name.
+    /// Those textures are shaded with it instead of `light` (`Mesh::shade_with`). No hue: a
+    /// texture's comes from where the scene happens to use it, and a place's colour is its fog
+    /// and water (Zora's Domain's teal). Lit scenes' textures have none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub shades: BTreeMap<String, [f64; 3]>,
+    /// Its scene's fog, as the game sets it for child Link at 10:00 (read from the game:
+    /// `oot_sandbox --scene <scene>` prints it). The game plays a level in its scene's environment
+    /// itself (`level.json`'s `scene`); this is for the editor's 3D view, to look the same.
+    #[serde(default)]
+    pub fog: Option<FogLook>,
+}
+
+/// A scene's fog: its colour, where it starts (`near`, 0-1000 of the depth range, as
+/// `gSPFogPosition` takes it) and the far plane, which it reaches (`far`, units).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FogLook {
+    pub scene: String,
+    pub color: [u8; 3],
+    pub near: i32,
+    pub far: f64,
+}
+
+/// A ceiling's texture, world-projected: `tile` units a repeat across (x), `tile_v` along (y; by
+/// default `tile`), and its collision surface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CeilingLook {
+    pub material: String,
+    pub tile: f64,
+    #[serde(default)]
+    pub tile_v: Option<f64>,
+    pub surface: String,
 }
 
 /// Freestanding rocks and arches (`rocks.rs`): their sides are the wall style `style` (a line's own
@@ -510,6 +547,12 @@ impl Theme {
                 self.wall_styles.insert(q(k), ws);
             }
         }
+        // the shades of the textures it borrows (texture names are unique across regions)
+        for o in others {
+            for (k, v) in &o.shades {
+                self.shades.entry(k.clone()).or_insert(*v);
+            }
+        }
         // stairs: a theme without its own borrows Kakariko's (else the first other theme's)
         if self.steps.is_none() {
             let with_steps = |o: &'_ Theme| o.steps.is_some();
@@ -538,6 +581,15 @@ impl Theme {
     /// The style of a wall `height` tall, over water or not.
     /// The texture a material role uses. A role `<material>~mid` is the middle rows of the
     /// texture that capped walls of that material use (`Detail::walls3`).
+    /// The shade the game draws material `role`'s texture with, if its scene vertex-colours it.
+    pub fn shade_of(&self, role: &str) -> Option<[f64; 3]> {
+        if self.shades.is_empty() {
+            return None;
+        }
+        let name = self.texture_name(role);
+        self.shades.get(name.split('@').next().unwrap_or(&name)).copied()
+    }
+
     pub fn texture_name(&self, role: &str) -> String {
         // a blend (the ground under a dirt path) draws its base as texture 0
         if let Some((base, _)) = role.split_once('+') {

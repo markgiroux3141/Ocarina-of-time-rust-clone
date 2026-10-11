@@ -259,6 +259,7 @@ pub fn expand(doc: &Doc) -> Result<(Cow<'_, Doc>, Bands), String> {
             noise: None,
             profile: Some(b.profile.clone()),
             profiles,
+            ceiling: None,
         });
     }
     Ok((Cow::Owned(d), Bands { first, far, sides, ends, rough, skylines }))

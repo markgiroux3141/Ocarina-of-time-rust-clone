@@ -36,27 +36,35 @@ pub struct Placed {
 /// The game indexes collision vertices in 13 bits (`oot_import::level`).
 pub const MAX_COLLISION_VERTICES: usize = 1 << 13;
 
+/// What a `Ground` triangle is.
+const FLOOR: u8 = 0;
+const WATER: u8 = 1;
+const LID: u8 = 2;
+
 /// spot04's stepping stones' tops stand this far above the pond's surface.
 const STONE_ABOVE_WATER: f64 = 15.0;
 
-/// The highest floor and the water surface at points of the level, from the built mesh.
+/// The ground and the water surface at points of the level, from the built mesh: the highest
+/// floor, but under a ceiling (`ceilings.rs`) the highest floor below it, so what's put in a cave
+/// stands in it, not on the hill over it.
 pub struct Ground {
     cell: f64,
     origin: P2,
     w: usize,
     h: usize,
-    /// Per cell: floor triangles (object, triangle) touching it.
-    cells: Vec<Vec<(usize, usize, bool)>>,
+    /// Per cell: floor triangles (object, triangle, kind: `FLOOR`, `WATER` or `LID`) touching it.
+    cells: Vec<Vec<(usize, usize, u8)>>,
 }
 
 impl Ground {
     pub fn new(mesh: &Mesh) -> Ground {
         let water = mesh.surfaces.iter().position(|s| s == "water").map(|i| i as i64);
-        let mut items: Vec<(usize, usize, bool, [f64; 4])> = vec![];
+        let mut items: Vec<(usize, usize, u8, [f64; 4])> = vec![];
         for (oi, o) in mesh.objects.iter().enumerate() {
             if o.collision_only {
                 continue;
             }
+            let lid = o.name == "ceilings";
             for (t, tri) in o.tris.iter().enumerate() {
                 let s = o.surf[t];
                 let is_water = s >= 0 && Some(s) == water;
@@ -65,15 +73,21 @@ impl Ground {
                 }
                 let [a, b, c] = tri.map(|v| o.verts[v]);
                 let n = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-                if n <= 1e-6 {
-                    continue; // walls, ceilings
+                let kind = match (lid, is_water) {
+                    (true, _) if n < -1e-6 => LID,
+                    (false, true) => WATER,
+                    (false, false) => FLOOR,
+                    _ => continue,
+                };
+                if kind != LID && n <= 1e-6 {
+                    continue; // walls, and what faces down
                 }
                 let bb = [a[0].min(b[0]).min(c[0]), a[1].min(b[1]).min(c[1]), a[0].max(b[0]).max(c[0]), a[1].max(b[1]).max(c[1])];
-                items.push((oi, t, is_water, bb));
+                items.push((oi, t, kind, bb));
             }
         }
         let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
-        for i in &items {
+        for i in items.iter().filter(|i| i.2 != LID) {
             lo = [lo[0].min(i.3[0]), lo[1].min(i.3[1])];
             hi = [hi[0].max(i.3[2]), hi[1].max(i.3[3])];
         }
@@ -84,8 +98,8 @@ impl Ground {
         let (w, h) = (((hi[0] - lo[0]) / cell) as usize + 1, ((hi[1] - lo[1]) / cell) as usize + 1);
         let mut cells = vec![vec![]; w * h];
         for (oi, t, wt, bb) in items {
-            let (x0, y0) = (((bb[0] - lo[0]) / cell) as usize, ((bb[1] - lo[1]) / cell) as usize);
-            let (x1, y1) = ((((bb[2] - lo[0]) / cell) as usize).min(w - 1), (((bb[3] - lo[1]) / cell) as usize).min(h - 1));
+            let (x0, y0) = ((((bb[0] - lo[0]) / cell).max(0.0) as usize).min(w - 1), (((bb[1] - lo[1]) / cell).max(0.0) as usize).min(h - 1));
+            let (x1, y1) = ((((bb[2] - lo[0]) / cell).max(0.0) as usize).min(w - 1), (((bb[3] - lo[1]) / cell).max(0.0) as usize).min(h - 1));
             for y in y0..=y1 {
                 for x in x0..=x1 {
                     cells[y * w + x].push((oi, t, wt));
@@ -95,13 +109,15 @@ impl Ground {
         Ground { cell, origin: lo, w, h, cells }
     }
 
-    /// (highest floor, water surface) at p.
+    /// (the ground, the water surface) at p: the highest floor, or under a ceiling the highest
+    /// below the lowest ceiling.
     pub fn at(&self, mesh: &Mesh, p: P2) -> (Option<f64>, Option<f64>) {
         let (fx, fy) = ((p[0] - self.origin[0]) / self.cell, (p[1] - self.origin[1]) / self.cell);
         if fx < 0.0 || fy < 0.0 || fx as usize >= self.w || fy as usize >= self.h {
             return (None, None);
         }
         let (mut floor, mut water) = (None::<f64>, None::<f64>);
+        let (mut floors, mut lid) = (vec![], None::<f64>);
         for &(oi, t, wt) in &self.cells[fy as usize * self.w + fx as usize] {
             // (a wall cut since, by an opening or a tunnel, has other triangles: never floors)
             let Some(tri) = mesh.objects.get(oi).and_then(|o| o.tris.get(t)) else { continue };
@@ -118,8 +134,19 @@ impl Ground {
                 continue;
             }
             let z = l1 * a[2] + l2 * b[2] + l3 * c[2];
-            let slot = if wt { &mut water } else { &mut floor };
-            *slot = Some(slot.map_or(z, |m| m.max(z)));
+            match wt {
+                LID => lid = Some(lid.map_or(z, |m| m.min(z))),
+                WATER => water = Some(water.map_or(z, |m| m.max(z))),
+                _ => {
+                    floor = Some(floor.map_or(z, |m| m.max(z)));
+                    floors.push(z);
+                }
+            }
+        }
+        if let Some(l) = lid {
+            if let Some(under) = floors.iter().copied().filter(|&z| z < l).reduce(f64::max) {
+                floor = Some(under);
+            }
         }
         (floor, water)
     }

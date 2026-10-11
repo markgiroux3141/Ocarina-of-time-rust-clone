@@ -205,6 +205,9 @@ struct NewThings {
     pit_depth: f64,
     /// A new floor's height above the ground it's drawn on.
     rise: f64,
+    /// A new floor starts level with the floor it's drawn on (the region it's inside), not `rise`
+    /// above it: to sink it into a hill as a cave, or cover it, from there.
+    level: bool,
     /// A new pond's depth, from its surface (20 below the ground) to its bed.
     depth: f64,
     edge: Option<String>,
@@ -231,6 +234,7 @@ impl Default for NewThings {
             region_kind: "floor".into(),
             pit_depth: 600.0,
             rise: 120.0,
+            level: false,
             depth: 80.0,
             edge: None,
             path_mode: "attached".into(),
@@ -628,6 +632,7 @@ impl App {
                     let t_scene = t.elapsed().as_secs_f64() * 1000.0;
                     if let Some(v) = &mut self.v3 {
                         v.set_level(&l, &scene.mats, self.lib.as_deref());
+                        v.fog = self.theme.fog.clone();
                         if !v.framed {
                             v.cam.frame(scene.bounds, self.doc.outline.z, v.aspect);
                             v.framed = true;
@@ -1169,7 +1174,7 @@ impl App {
                     ground - 20.0 - self.new.depth
                 } else if pit {
                     ground - self.new.pit_depth
-                } else if area {
+                } else if area || self.new.level {
                     ground
                 } else {
                     ground + self.new.rise
@@ -1185,6 +1190,8 @@ impl App {
                 }
                 self.status = if area {
                     format!("{} added: a new area at the ground's height ({z:.0}), with an edge of the world of its own. Join it to the rest with a tunnel (U)", r.name)
+                } else if self.new.level && !water && !pit {
+                    format!("{} added level with the floor it's in ({z:.0}): PageUp/PageDown raise and sink it", r.name)
                 } else {
                     format!("{} added at height {z:.0}: PageUp/PageDown raise and sink it", r.name)
                 };
@@ -2253,7 +2260,19 @@ impl App {
             if sel_loop(l) {
                 painter.add(Shape::closed_line(pts.clone(), Stroke::new(7.0, Color32::from_black_alpha(110))));
             }
-            painter.add(Shape::closed_line(pts, Stroke::new(width, col)));
+            painter.add(Shape::closed_line(pts.clone(), Stroke::new(width, col)));
+            // covered (`ceilings.rs`): a dashed ring just inside (a region's ceiling is said under its name);
+            // an enclosed level's ceiling at its top
+            let ceiling = if l == 0 { self.doc.outline.ceiling.as_ref() } else { self.doc.regions[l - 1].ceiling.as_ref() };
+            if let Some(overworld::doc::Ceiling::Closed(cv)) = ceiling {
+                let mid = pts.iter().fold(Vec2::ZERO, |a, p| a + p.to_vec2()) / pts.len() as f32;
+                let inner: Vec<Pos2> = pts.iter().map(|p| *p + (mid - p.to_vec2()).normalized() * 5.0).collect();
+                painter.extend(Shape::dashed_line(&[inner.clone(), vec![inner[0]]].concat(), Stroke::new(1.2, CEILING_COLOUR), 6.0, 4.0));
+                if l == 0 {
+                    let top = pts.iter().fold(pts[0], |a, p| if p.y < a.y { *p } else { a });
+                    label(top + Vec2::new(0.0, 16.0), &format!("enclosed · ceiling {:.0}", cv.height), CEILING_COLOUR);
+                }
+            }
         }
         self.paint_edges(painter, hover);
         // props: footprints, which way they face, and the selected one's handles
@@ -2347,6 +2366,14 @@ impl App {
                 let m = [c.iter().map(|x| x.0[0]).sum::<f64>() / n, c.iter().map(|x| x.0[1]).sum::<f64>() / n];
                 let r = &self.doc.regions[l - 1];
                 label(v.to_screen(m), &format!("{}  {:.0}", edit::loop_name(&self.doc, l), r.z), Color32::WHITE);
+                let over = match &r.ceiling {
+                    Some(overworld::doc::Ceiling::Closed(cv)) => Some(format!("ceiling {:.0}", r.z + cv.height)),
+                    Some(overworld::doc::Ceiling::Sky) => Some("open to the sky".to_string()),
+                    None => None,
+                };
+                if let Some(t) = over {
+                    label(v.to_screen(m) + Vec2::new(0.0, 14.0), &t, CEILING_COLOUR);
+                }
             }
             for (k, c) in self.shapes.paths.iter().enumerate() {
                 if let Some(m) = c.get(c.len() / 2) {
@@ -2531,6 +2558,8 @@ impl App {
 }
 
 const PROP_COLOUR: Color32 = Color32::from_rgb(90, 235, 170);
+/// Ceilings in the plan: a covered region's inner ring and its label.
+const CEILING_COLOUR: Color32 = Color32::from_rgb(150, 200, 235);
 
 fn line_colour(kind: &str) -> Color32 {
     match kind {

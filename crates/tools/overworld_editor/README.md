@@ -93,6 +93,18 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   starts at the ground's height, with an edge of the world of its own (see Areas in `../overworld/README.md`); join it to
   the rest with a tunnel. A *Pit* (palette) is a drop into the void, its walls going down the palette's depth (600) below
   the ground round it: Link falling in voids out (see Pits in `../overworld/README.md`).
+- **Level with what it's in** (palette, New regions, for floors; off by default): a new region starts at the height of
+  the floor it's drawn on, the region it's inside, instead of Rise above it.
+- **Ceilings**: a region's inspector has a Ceiling section: Inherit (under the ceiling of the region it's in), Open (a
+  skylight) or Covered, with its height over the floor, a dome or vault (and how far in it rises), rough rock, the roof
+  (automatic: the floor round it) and the style of the walls it adds (the ceiling is always the theme's ceiling rock). The outline's Ceiling section makes the whole level enclosed. In the
+  plan a covered region has a dashed ring just inside its edge and its ceiling's height under its name, and the plan
+  shows the floors under ceilings and roofs. In 3D ceilings only face down, so from above you see into the rooms under
+  them; the **Roofs** button (top right, when the level has a ceiling) cuts the roofs over them away too, to see into
+  caves dug into hills (see Ceilings in `../overworld/README.md`).
+- **Fog**: the 3D view draws the theme's scene's fog as the game does (Zora's Domain's teal, Kokiri Forest's warm haze),
+  into its colour, measured as if you stood 250 units in front of what the view orbits, so that spot looks as it does
+  in play, zoomed out or not. The **Fog** button (top right) switches back to a light haze into a blue sky.
 - **Path (P):** click points, then double-click or press Enter to finish. Put each end *inside* the floor it starts or
   finishes on, not on its edge: an end takes the floor's height. A ramp slopes all the way to its end, so one that
   ends halfway into a plateau cuts into it, and a bridge's floating end lands at the floor's edge (see the paths

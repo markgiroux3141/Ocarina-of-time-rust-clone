@@ -1,6 +1,7 @@
 {
   "name": "zora_fountain",
   "textures": {
+    "ceiling_rock": "zf_ceiling",
     "ground_rock": "zf_ground_rock",
     "rock": "zf_rock",
     "cliff": "zf_cliff@0-32m",
@@ -21,6 +22,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground_rock",
@@ -116,6 +123,12 @@
     "overlap": 150,
     "foliage_in": 40,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot08",
+    "color": [250, 250, 200],
+    "near": 994,
+    "far": 12800
   },
   "light": {
     "ambient": [

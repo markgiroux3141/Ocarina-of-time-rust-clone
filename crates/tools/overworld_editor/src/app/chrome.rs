@@ -581,6 +581,26 @@ impl App {
                         self.layout = l;
                     }
                 }
+                // ceilings and roofs in 3D: ceilings are see-through from above anyway; cut the roofs
+                // over them away to see into caves
+                let covered = self.doc.outline.ceiling.is_some() || self.doc.regions.iter().any(|r| matches!(r.ceiling, Some(overworld::doc::Ceiling::Closed(_))));
+                // the theme's scene's fog, as in play
+                if let (true, Some(v)) = (self.layout != Layout::Plan, self.v3.as_mut()) {
+                    if v.fog.is_some() {
+                        ui.add_space(6.0);
+                        let r = glass_button(ui, "Fog", v.game_fog, true).on_hover_text("The theme's scene's fog in 3D, as the game draws it (measured as if you stood near what the view orbits). Off: a light haze into a blue sky");
+                        if r.clicked() {
+                            v.game_fog = !v.game_fog;
+                        }
+                    }
+                }
+                if let (true, true, Some(v)) = (covered, self.layout != Layout::Plan, self.v3.as_mut()) {
+                    ui.add_space(6.0);
+                    let r = glass_button(ui, "Roofs", !v.hide_covers, true).on_hover_text("Show ceilings and the roofs over them in 3D. Off: cut them away to see into caves from above (ceilings are see-through from above anyway: they only face down)");
+                    if r.clicked() {
+                        v.hide_covers = !v.hide_covers;
+                    }
+                }
             });
         });
     }

@@ -1,6 +1,7 @@
 {
   "name": "wasteland",
   "textures": {
+    "ceiling_rock": "hw_cliff",
     "sand": "hw_sand",
     "sand_dark": "hw_sand_dark",
     "cliff": "hw_cliff",
@@ -17,6 +18,12 @@
     "dirt_strip": "kf_dirt_strip",
     "fence_post": "kf_fence_post",
     "rope": "kf_fence@1-8"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "sand",
@@ -126,6 +133,12 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot13",
+    "color": [170, 140, 100],
+    "near": 980,
+    "far": 4000
   },
   "light": {
     "ambient": [

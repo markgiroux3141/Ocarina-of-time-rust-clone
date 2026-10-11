@@ -93,6 +93,9 @@ pub struct Level {
     pub spawn: (Vec3, i16),
     pub triangles: usize,
     pub notes: Vec<String>,
+    /// The game scene its theme was cut from (spot07 for Zora's Domain), whose environment (lights
+    /// and fog) it's played in.
+    pub scene: Option<String>,
 }
 
 fn game(p: [f32; 3]) -> Vec3 {
@@ -376,7 +379,8 @@ pub fn load(dir: &Path) -> Result<Level> {
         }],
         backgrounds: vec![],
     };
-    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes })
+    let scene = j["scene"].as_str().map(str::to_string);
+    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene })
 }
 
 /// Connected patches of water triangles (sharing corners): their (x, z) bounds and surface height.

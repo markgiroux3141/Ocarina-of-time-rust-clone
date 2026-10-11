@@ -1,6 +1,7 @@
 {
   "name": "zora_river",
   "textures": {
+    "ceiling_rock": "zr_riverbed_c",
     "ground": "zr_ground",
     "cliff": "zr_cliff@5-64",
     "cliff_b": "zr_cliff_b",
@@ -19,6 +20,12 @@
     "hedge_top": "kf_hedge_top",
     "grass_skirt": "kf_grass_skirt",
     "rope": "kf_fence@1-8"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -181,6 +188,12 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot03",
+    "color": [100, 100, 120],
+    "near": 996,
+    "far": 12800
   },
   "light": {
     "ambient": [

@@ -20,7 +20,8 @@
 //! Objects: ground, water, walls, cliffs (the boundary's), bank, trees (trunks), foliage,
 //! bridges, overlays.
 
-use crate::doc::{Doc, Noise, Section, WallTexture};
+use crate::ceilings::{self, Ceilings};
+use crate::doc::{Ceiling, Doc, Noise, Section, WallTexture};
 use crate::geom::*;
 use crate::map::{Map, VOID};
 use crate::mesh::Mesh;
@@ -102,6 +103,8 @@ struct Builder<'a> {
     /// (`paths::blends`).
     ribbons: Vec<Vec<Vec<P2>>>,
     blends: std::collections::HashSet<(usize, usize)>,
+    /// What's over each face (`ceilings.rs`).
+    ceil: Ceilings,
 }
 
 /// A bent cliff's column: which way is out (towards the lower floor), how far into the bend it is
@@ -152,10 +155,21 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             clock = std::time::Instant::now();
         }
     };
+    // an enclosed level has nothing beyond its outline
+    let mut problems = vec![];
+    let unbounded;
+    let doc = if matches!(doc.outline.ceiling, Some(Ceiling::Closed(_))) && doc.outline.beyond.iter().any(Option::is_some) {
+        problems.push("the outline has a ceiling, so nothing lies beyond its edges".to_string());
+        let mut d = doc.clone();
+        d.outline.beyond.clear();
+        unbounded = d;
+        &unbounded
+    } else {
+        doc
+    };
     // what lies beyond the outline's edges: bands, regions outside it (`beyond.rs`)
     let (expanded, bands) = crate::beyond::expand(doc)?;
     let doc: &Doc = &expanded;
-    let mut problems = vec![];
     let mut regions = vec![Info { z: doc.outline.z, water: None, pit: false, edge: None, noise: doc.outline.noise.clone() }];
     for (i, r) in doc.regions.iter().enumerate() {
         let water = match r.kind.as_str() {
@@ -271,6 +285,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
             dirt.lines.push(DirtLine::new(&line, th, Sampling::Straight { max: 1e9 }, seed).map_err(|e| format!("path {}: {e}", g.name))?);
         }
     }
+    let ceil = Ceilings::new(doc, &map, &zs, &mut problems);
     let n = map.verts.len();
     let anchors = (0..map.faces.len()).map(|f| field.stepped(map.faces[f].region).then(|| anchor(&map, f))).collect();
     let mut b = Builder {
@@ -297,6 +312,7 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         bands,
         ribbons: vec![],
         blends: Default::default(),
+        ceil,
     };
     b.ribbons = b.paths.iter().map(|g| g.runs.iter().filter(|r| !r.floating).map(|r| g.ribbon(r)).collect()).collect();
     b.blends = paths::blends(&b.paths);
@@ -332,6 +348,10 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
     b.boundary(&rims);
     b.skylines();
     lap("boundary");
+    b.ceiling_walls();
+    if b.ceil.enclosed {
+        b.rim = (b.ceil.top, b.ceil.top);
+    }
     b.bends();
     b.edge_points();
     lap("edge_points");
@@ -471,9 +491,12 @@ pub fn build_with(doc: &Doc, theme: &Theme, kit: Option<&Kit>) -> Result<Level, 
         lap("fences, bridges and hedges");
     }
     b.pit_tints();
+    b.cover_tints();
     if let Some(l) = &theme.light {
         let seed = b.seed();
-        b.mesh.shade(l, theme.variation.as_ref().map(|v| (v, seed)));
+        // textures the game's scene vertex-colours take its colour (`Theme::shades`)
+        let shades: Vec<Option<[f64; 3]>> = b.mesh.materials.iter().map(|m| theme.shade_of(m)).collect();
+        b.mesh.shade_with(l, theme.variation.as_ref().map(|v| (v, seed)), &shades);
     }
     lap("lighting");
     let collision_vertices = b.mesh.collision_vertices();
@@ -744,6 +767,9 @@ impl<'a> Builder<'a> {
     fn rim_profiles(&mut self) -> Vec<(Vec<usize>, Vec<f64>)> {
         let bd = &self.doc.boundary;
         let mut out = vec![];
+        if self.ceil.enclosed {
+            return out;
+        }
         for hs in self.map.void_cycles.clone() {
             let n = hs.len();
             let mut s = vec![0.0; n];
@@ -824,6 +850,8 @@ impl<'a> Builder<'a> {
                 Some(n) => detail.steiner.min((n.scale / detail.bumps).max(40.0)),
                 None => detail.steiner,
             };
+            // a ceiling with a shape takes the floor's points: they need to be close enough to show it
+            let steiner = self.ceil.over(face.region).and_then(ceilings::Own::spacing).map_or(steiner, |s| steiner.min(s));
             let mut rings = vec![outer.clone()];
             rings.extend(holes.iter().cloned());
             let ring_refs: Vec<&[P2]> = rings.iter().map(|r| r.as_slice()).collect();
@@ -962,6 +990,14 @@ impl<'a> Builder<'a> {
             let anchor = self.anchors[f].unwrap_or(outer[0]);
             let (fregion, bare) = (face.region, face.paths.is_empty());
             let face_paths = face.paths.clone();
+            if self.ceil.over(fregion).is_some() {
+                // over the face's own vertices, not the extra points walls need on its edges (only
+                // the floor on one side of an edge has those): the ceilings either side meet
+                let outer = self.map.cycle_pts(face.outer);
+                let holes: Vec<Vec<P2>> = face.holes.iter().map(|&c| self.map.cycle_pts(c)).collect();
+                let bare: Vec<[P3; 3]> = triangulate_full(&outer, &holes, steiner, &extra, &segs).into_iter().map(|t| t.map(|q| [q[0], q[1], self.height(f, q)])).collect();
+                self.cover_surfaces(fregion, &bare);
+            }
             for p in tris {
                 // stairs: the step texture along the path's surface, one step every `step`
                 let c = [(p[0][0] + p[1][0] + p[2][0]) / 3.0, (p[0][1] + p[1][1] + p[2][1]) / 3.0];
@@ -1226,6 +1262,16 @@ impl<'a> Builder<'a> {
                     (m, q, [zm, hr[1]], [zm, hl[1]], t, 1.0)
                 }
             };
+            // facing a covered floor, up to its ceiling (`ceiling_walls` adds what's above)
+            let mut pr = pr;
+            if self.ceil.any {
+                let rr = self.map.faces[fr].region;
+                for (e, v) in [(0, pr.0), (1, pr.1)] {
+                    if let Some(c) = self.ceil.ceiling(rr, self.map.verts[v]) {
+                        pr.3[e] = pr.3[e].min(c).max(pr.2[e]);
+                    }
+                }
+            }
             let mp = lerp(self.map.verts[p], self.map.verts[q], 0.5 * (pr.4 + pr.5));
             // an embankment's sides (the higher ground a path's) and a cutting's (the lower) are
             // the path's: a cutting's sides shrink to nothing, where the region's rules would
@@ -1431,6 +1477,195 @@ impl<'a> Builder<'a> {
                 b => b,
             };
             self.jobs.push(WallJob { obj, half, p, q, bot, top, ws, u, tile, reps, over_water, bend, span, foot });
+        }
+    }
+
+    /// The wall style of the cover over loop l: its own (if the theme has it), the theme's rock,
+    /// or its tallest walls'.
+    fn cover_style(&mut self, l: usize) -> &'a WallStyle {
+        let th = self.theme;
+        let own = self.ceil.over(l).and_then(|o| o.style.clone());
+        if let Some(s) = &own {
+            if let Some(ws) = th.wall_styles.get(s) {
+                return ws;
+            }
+            let msg = format!("theme {} has no wall style {s:?} for a ceiling, so it's the theme's rock", th.name);
+            if !self.problems.contains(&msg) {
+                self.problems.push(msg);
+            }
+        }
+        th.rocks.as_ref().and_then(|r| th.wall_styles.get(&r.style)).unwrap_or_else(|| th.wall_styles.get(th.wall_style(f64::INFINITY, false)).expect("the theme's own style"))
+    }
+
+    /// A covered face's ceilings and roofs, over its own triangulation (`ceilings.rs`): each
+    /// interval of air's finite top is a ceiling facing down, and the bottom of each after the
+    /// first a roof facing up (the ground's look, in its own object so the editor can cut it away).
+    fn cover_surfaces(&mut self, l: usize, tris: &[[P3; 3]]) {
+        let th = self.theme;
+        // the theme's ceiling rock; a theme without one, its rock style's texture (reported)
+        let (mat, surface, tu, tv) = match &th.ceiling {
+            Some(c) => (c.material.clone(), c.surface.clone(), c.tile.max(1.0), c.tile_v.unwrap_or(c.tile).max(1.0)),
+            None => {
+                let msg = format!("theme {} has no ceiling, so ceilings take its rock's wall texture", th.name);
+                if !self.problems.contains(&msg) {
+                    self.problems.push(msg);
+                }
+                let ws = self.cover_style(l);
+                (ws.material.clone(), ws.surface.clone(), ws.tile_u.max(1.0), ws.band.unwrap_or(ws.tile_u).max(1.0))
+            }
+        };
+        let key = |q: P3| ((q[0] * 1000.0).round() as i64, (q[1] * 1000.0).round() as i64, (q[2] * 1000.0).round() as i64);
+        let mut cache: HashMap<(i64, i64, i64), Vec<(f64, f64)>> = HashMap::new();
+        for t in tris {
+            let cols: Vec<Vec<(f64, f64)>> = t.iter().map(|&q| cache.entry(key(q)).or_insert_with(|| self.ceil.column(l, q[2], [q[0], q[1]])).clone()).collect();
+            let n = cols.iter().map(Vec::len).min().unwrap_or(0);
+            for i in 0..n {
+                let at = |k: usize, z: f64| [t[k][0], t[k][1], z];
+                if (0..3).all(|k| cols[k][i].0 > t[k][2] + 1e-6) {
+                    let p = [at(0, cols[0][i].0), at(1, cols[1][i].0), at(2, cols[2][i].0)];
+                    let uv = p.map(|q| [q[0] / th.floor.tile, q[1] / th.floor.tile]);
+                    self.mesh.tri("roofs", p, uv, &th.floor.material, &th.floor.surface);
+                }
+                if (0..3).all(|k| cols[k][i].1 < ceilings::INF) {
+                    let p = [at(0, cols[0][i].1), at(2, cols[2][i].1), at(1, cols[1][i].1)];
+                    let uv = p.map(|q| [q[0] / tu, q[1] / tv]);
+                    self.mesh.tri("ceilings", p, uv, &mat, &surface);
+                }
+            }
+        }
+    }
+
+    /// The walls covers add (`ceilings.rs`): on each edge, the wall facing a side is its air
+    /// minus the other side's, less the floor-to-floor piece `walls` made (clipped there at the
+    /// ceiling). On an enclosed level the outline's edges are walls up to the ceiling: outside is
+    /// solid. The columns' heights go into each corner's levels, so the walls, ceilings and roofs
+    /// meeting there share their points.
+    fn ceiling_walls(&mut self) {
+        if !self.ceil.any {
+            return;
+        }
+        let top = self.ceil.top;
+        for c in 0..self.map.cycles.len() {
+            let hs = self.map.cycles[c].clone();
+            let mut u = 0.0;
+            for &h in &hs {
+                let l = self.ulen(h);
+                let u0 = u;
+                u += l;
+                let (fl, fr) = (self.map.half_face[h], self.map.half_face[h ^ 1]);
+                if fr == VOID || (fl == VOID && !self.ceil.enclosed) {
+                    continue;
+                }
+                let rr = self.map.faces[fr].region;
+                let rl = (fl != VOID).then(|| self.map.faces[fl].region);
+                if self.ceil.owner[rr].is_none() && rl.is_none_or(|r| self.ceil.owner[r].is_none()) {
+                    continue;
+                }
+                let (p, q) = (self.map.from(h), self.map.to(h));
+                let col = |b: &Self, f: usize, v: usize| -> Vec<(f64, f64)> {
+                    b.ceil.column(b.map.faces[f].region, b.hv(f, v), b.map.verts[v]).into_iter().map(|(x, y)| (x, y.min(top))).filter(|(x, y)| y > x).collect()
+                };
+                let rc = [col(self, fr, p), col(self, fr, q)];
+                let lc = if fl == VOID { [vec![], vec![]] } else { [col(self, fl, p), col(self, fl, q)] };
+                for (v, e) in [(p, 0), (q, 1)] {
+                    for &(x, y) in rc[e].iter().chain(lc[e].iter()) {
+                        for z in [x, y] {
+                            if z.is_finite() {
+                                self.levels[v].push(z);
+                            }
+                        }
+                    }
+                }
+                let mut d = [ceilings::minus(&rc[0], &lc[0]), ceilings::minus(&rc[1], &lc[1])];
+                // the floor-to-floor piece facing the lower floor is `walls`'s
+                if fl != VOID {
+                    let (zr, zl) = ([self.hv(fr, p), self.hv(fr, q)], [self.hv(fl, p), self.hv(fl, q)]);
+                    if (zl[0] - zr[0]).max(zl[1] - zr[1]) > 0.5 {
+                        for e in 0..2 {
+                            if d[e].first().is_some_and(|x| (x.0 - zr[e]).abs() < 1e-6) {
+                                d[e].remove(0);
+                            }
+                        }
+                    }
+                }
+                if d[0].is_empty() && d[1].is_empty() {
+                    continue;
+                }
+                let owner = if self.ceil.owner[rr].is_some() { rr } else { rl.unwrap_or(rr) };
+                let ws = self.cover_style(owner);
+                for [a, b] in ceilings::pair(&d[0], &d[1]) {
+                    let (bot, tp) = ([a.0, b.0], [a.1, b.1]);
+                    let (tile, reps) = self.wall_tiling(ws, 0.5 * ((tp[0] - bot[0]) + (tp[1] - bot[1])), None);
+                    self.wall("walls", None, p, q, bot, tp, ws, [u0, u0 + l], tile, reps, false, 0.0, bot);
+                }
+            }
+        }
+    }
+
+    /// The edge of the world's cliff beside a covered floor: only where there's air, up to the
+    /// ceiling and from the roof up to the rim.
+    #[allow(clippy::too_many_arguments)]
+    fn covered_cliff(&mut self, h: usize, floor: [f64; 2], top: [f64; 2], cliff: &'a WallStyle, u: [f64; 2], tile: f64, reps: usize, over_water: bool) {
+        let f = self.map.half_face[h ^ 1];
+        let reg = self.map.faces[f].region;
+        let (p, q) = (self.map.from(h), self.map.to(h));
+        let mut cols = [vec![], vec![]];
+        for (v, e) in [(p, 0), (q, 1)] {
+            for (x, y) in self.ceil.column(reg, floor[e], self.map.verts[v]) {
+                for z in [x, y] {
+                    if z.is_finite() {
+                        self.levels[v].push(z);
+                    }
+                }
+                if x > top[e] + 0.5 {
+                    let m = self.map.verts[v];
+                    let msg = format!("a roof near ({:.0}, {:.0}) stands above the edge of the world's rim: keep covered regions' roofs under it", m[0], m[1]);
+                    if !self.problems.contains(&msg) {
+                        self.problems.push(msg);
+                    }
+                }
+                let (x, y) = (x.max(floor[e]), y.min(top[e]));
+                if y > x + 1e-6 {
+                    cols[e].push((x, y));
+                }
+            }
+        }
+        for [a, b] in ceilings::pair(&cols[0], &cols[1]) {
+            self.wall("cliffs", Some(h), p, q, [a.0, b.0], [a.1, b.1], cliff, u, tile, reps, over_water, 0.0, [a.0, b.0]);
+        }
+    }
+
+    /// Under a ceiling it's darker: every vertex on or below one is shaded `ceilings::DARK`.
+    fn cover_tints(&mut self) {
+        if !self.ceil.any {
+            return;
+        }
+        // textures the scene vertex-colours (`Theme::shades`) keep the game's colour, which is already
+        // a cave's where it's a cave (Zora's Domain): only lit ones darken
+        let shaded: Vec<bool> = self.mesh.materials.iter().map(|m| self.theme.shade_of(m).is_some()).collect();
+        let ceil = &self.ceil;
+        for o in self.mesh.objects.iter_mut().filter(|o| !o.collision_only) {
+            let mut lit = vec![(0usize, 0usize); o.verts.len()];
+            for (t, tri) in o.tris.iter().enumerate() {
+                for &v in tri {
+                    lit[v].1 += 1;
+                    if !shaded.get(o.mat[t]).copied().unwrap_or(false) {
+                        lit[v].0 += 1;
+                    }
+                }
+            }
+            let dark: Vec<bool> = o.verts.iter().zip(&lit).map(|(&v, &(l, n))| 2 * l > n && ceil.covered(v)).collect();
+            if !dark.iter().any(|&d| d) {
+                continue;
+            }
+            if o.tints.len() != o.verts.len() {
+                o.tints = vec![[1.0; 3]; o.verts.len()];
+            }
+            for (t, d) in o.tints.iter_mut().zip(dark) {
+                if d {
+                    *t = t.map(|x| x * ceilings::DARK);
+                }
+            }
         }
     }
 
@@ -2184,6 +2419,9 @@ impl<'a> Builder<'a> {
     }
 
     fn boundary(&mut self, rims: &[(Vec<usize>, Vec<f64>)]) {
+        if self.ceil.enclosed {
+            return;
+        }
         let th = self.theme;
         let bd = &self.doc.boundary;
         let Some(cliff) = th.wall_styles.get(&th.boundary_style) else {
@@ -2222,7 +2460,11 @@ impl<'a> Builder<'a> {
                 let l = self.ulen(h);
                 let f = self.map.half_face[h ^ 1];
                 let w = self.water(f);
-                self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0, floor(self, i));
+                if self.ceil.over(self.map.faces[f].region).is_some() {
+                    self.covered_cliff(h, floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w);
+                } else {
+                    self.wall("cliffs", Some(h), self.map.from(h), self.map.to(h), floor(self, i), [top[i], top[(i + 1) % n]], cliff, [u, u + l], tile, reps, w, 0.0, floor(self, i));
+                }
                 u += l;
             }
             // the tree line and its rim heights (from the nearest cliff top)
@@ -2862,11 +3104,11 @@ mod tests {
         };
         Doc {
             name: "test".into(),
-            outline: Outline { nodes: outline, z: 0.0, noise: None, beyond: vec![] },
+            outline: Outline { nodes: outline, z: 0.0, noise: None, beyond: vec![], ceiling: None },
             regions: vec![
-                Region { name: "north".into(), nodes: north, z: 160.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
-                Region { name: "island".into(), nodes: ring(-500.0, -300.0, 300.0), z: 120.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
-                Region { name: "pond".into(), nodes: ring(500.0, -400.0, 280.0), z: -100.0, kind: "water".into(), surface: Some(-20.0), edge: None, noise: None, profile: None, profiles: vec![] },
+                Region { name: "north".into(), nodes: north, z: 160.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None },
+                Region { name: "island".into(), nodes: ring(-500.0, -300.0, 300.0), z: 120.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None },
+                Region { name: "pond".into(), nodes: ring(500.0, -400.0, 280.0), z: -100.0, kind: "water".into(), surface: Some(-20.0), edge: None, noise: None, profile: None, profiles: vec![], ceiling: None },
             ],
             paths: vec![],
             boundary: BoundaryDesign::default(),
@@ -2914,7 +3156,8 @@ mod tests {
         let zs: Vec<f64> = std::iter::once(0.0).chain(doc.regions.iter().map(|r| r.z)).collect();
         let field = profiles::Field::new(&doc, &map, &zs, 35.0, &mut vec![]).unwrap();
         let anchors = vec![None; map.faces.len()];
-        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new(), sky: vec![], bands: Default::default(), ribbons: vec![], blends: Default::default() };
+        let ceil = Ceilings::new(&doc, &map, &zs, &mut vec![]);
+        let mut b = Builder { doc: &doc, theme: &Theme::kokiri(), regions: vec![], paths: vec![], mesh: Mesh::default(), problems: vec![], levels: vec![vec![]; map.verts.len()], rim: (0.0, 0.0), jobs: vec![], mids: HashMap::new(), extra: HashMap::new(), walls3: false, wall_texture: WallTexture::Tiled, dirt: DirtPaths::default(), pads: vec![], map, field, anchors, bent: HashMap::new(), sky: vec![], ceil, bands: Default::default(), ribbons: vec![], blends: Default::default() };
         b.regions = std::iter::once(Info { z: 0.0, water: None, pit: false, edge: None, noise: None })
             .chain(doc.regions.iter().map(|r| Info { z: r.z, water: (r.kind == "water").then_some(-20.0), pit: false, edge: None, noise: None }))
             .collect();
@@ -2994,10 +3237,10 @@ mod tests {
         let n = |x: f64, y: f64| vec![Some(x), Some(y)];
         Doc {
             name: "paths".into(),
-            outline: Outline { nodes: sq(-2000.0, -2000.0, 4000.0, 4000.0), z: 0.0, noise: None, beyond: vec![] },
+            outline: Outline { nodes: sq(-2000.0, -2000.0, 4000.0, 4000.0), z: 0.0, noise: None, beyond: vec![], ceiling: None },
             regions: vec![
-                Region { name: "east".into(), nodes: sq(600.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
-                Region { name: "west".into(), nodes: sq(-1400.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] },
+                Region { name: "east".into(), nodes: sq(600.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None },
+                Region { name: "west".into(), nodes: sq(-1400.0, 600.0, 800.0, 800.0), z: 240.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None },
             ],
             paths: vec![
                 path("ramp", vec![n(1000.0, -300.0), n(1000.0, 900.0)], vec![]),
@@ -3318,6 +3561,7 @@ mod tests {
             noise: None,
             profile: None,
             profiles: vec![],
+            ceiling: None,
         }];
         let mut most_u = vec![];
         for (mode, detail) in [("tiled", "high"), ("stretched", "high"), ("stretched", "low"), ("stretched_middle", "high")] {
@@ -3576,7 +3820,7 @@ mod tests {
                 vec![300.0 + 200.0 * a.cos(), 300.0 + 200.0 * a.sin()]
             })
             .collect();
-        doc.regions.push(Region { name: "chasm".into(), nodes: ring, z: -600.0, kind: "pit".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
+        doc.regions.push(Region { name: "chasm".into(), nodes: ring, z: -600.0, kind: "pit".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None });
         let lvl = build(&doc, &th).unwrap();
         assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
         let bad = open_edges(&lvl, &["ground", "pits", "walls", "cliffs", "bank", "trees"]);
@@ -3722,7 +3966,7 @@ mod tests {
     fn tunnel_doc(z: f64) -> Doc {
         let sq = |x0: f64, y0: f64, x1: f64, y1: f64| vec![vec![x0, y0, 1.0], vec![x1, y0, 1.0], vec![x1, y1, 1.0], vec![x0, y1, 1.0]];
         let mut doc: Doc = serde_json::from_value(serde_json::json!({ "name": "tunnel", "outline": { "nodes": sq(0.0, 0.0, 3000.0, 2000.0) } })).unwrap();
-        doc.regions.push(Region { name: "plateau".into(), nodes: sq(1000.0, 500.0, 2000.0, 1500.0), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
+        doc.regions.push(Region { name: "plateau".into(), nodes: sq(1000.0, 500.0, 2000.0, 1500.0), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None });
         doc.lines.push(Line { name: "cave".into(), kind: "tunnel".into(), nodes: vec![vec![500.0, 1000.0], vec![1500.0, 1150.0], vec![2500.0, 1000.0]], width: None, closed: false, height: None, noise: None, ..Default::default() });
         doc
     }
@@ -3777,7 +4021,7 @@ mod tests {
         assert!(lvl.problems.iter().any(|p| p.starts_with("two areas' edges of the world run into each other")), "{:?}", lvl.problems);
         // too little ground over it (a dip in the plateau): built, and reported
         let mut doc = tunnel_doc(300.0);
-        doc.regions.push(Region { name: "dip".into(), nodes: vec![vec![1350.0, 800.0, 1.0], vec![1650.0, 800.0, 1.0], vec![1650.0, 1400.0, 1.0], vec![1350.0, 1400.0, 1.0]], z: 150.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] });
+        doc.regions.push(Region { name: "dip".into(), nodes: vec![vec![1350.0, 800.0, 1.0], vec![1650.0, 800.0, 1.0], vec![1650.0, 1400.0, 1.0], vec![1350.0, 1400.0, 1.0]], z: 150.0, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None });
         let lvl = build(&doc, &theme).unwrap();
         assert!(lvl.problems.iter().any(|p| p.starts_with("line 0 (cave): it comes out of the ground")), "{:?}", lvl.problems);
         // a wall too low for it: not built, and why
@@ -4188,6 +4432,7 @@ mod tests {
                     z: 0.0,
                     noise: None,
                     beyond: vec![None, None, Some(rock.beyond(0.0)), Some(rock.beyond(0.0)), None],
+                    ceiling: None,
                 },
                 regions: vec![Region {
                     name: "fill".into(),
@@ -4199,6 +4444,7 @@ mod tests {
                     noise: None,
                     profile: None,
                     profiles: vec![],
+                    ceiling: None,
                 }],
                 paths: vec![],
                 boundary: BoundaryDesign::default(),
@@ -4540,5 +4786,185 @@ mod tests {
         let used: std::collections::BTreeSet<&str> = walls.mat.iter().map(|&m| mats[m].as_str()).collect();
         // 120 and 160 tall cliffs, and the pond's shore
         assert!(used.contains("cliff") && used.contains("cliff_strip_dark"), "{used:?}");
+    }
+
+    /// A hill at 600 with a cave dug into its south face (its edge partly on the hill's), a
+    /// domed chamber behind it with a skylight over a pool, and a platform in the chamber.
+    fn caves_doc() -> Doc {
+        serde_json::from_value(serde_json::json!({
+            "name": "caves",
+            "outline": { "nodes": [[-3400, -2200, 1], [3200, -2200, 1], [3200, 2700, 1], [-3400, 2700, 1]] },
+            "regions": [
+                { "name": "hill", "nodes": [[-2600, 300, 1], [-1700, 300, 1], [-1100, 300, 1], [2400, 300, 1], [2400, 1900, 1], [-2600, 1900, 1]], "z": 600 },
+                { "name": "cave", "nodes": [[-1100, 300, 1], [-1700, 300, 1], [-1800, 800, 1], [-1500, 1000, 1], [-1000, 800, 1]], "z": 0,
+                  "ceiling": { "kind": "closed", "height": 260, "rise": 90, "noise": { "amplitude": 25, "scale": 260, "edge": 120 } } },
+                { "name": "chamber", "nodes": [[-1800, 800, 1], [-1500, 1000, 1], [-1000, 800, 1], [-200, 700, 1], [700, 900, 1], [900, 1300, 1], [400, 1650, 1], [-700, 1700, 1], [-1500, 1500, 1], [-2000, 1150, 1]], "z": -40,
+                  "ceiling": { "kind": "closed", "height": 380, "rise": 160 } },
+                { "name": "platform", "nodes": [[300, 1150, 1], [650, 1150, 1], [650, 1450, 1], [300, 1450, 1]], "z": 100 },
+                { "name": "skylight pool", "nodes": [[-270, 1250], [-500, 1480], [-730, 1250], [-500, 1020]], "z": -140, "kind": "water", "surface": -70, "ceiling": { "kind": "sky" } }
+            ],
+            "settings": { "edges": "hard" }
+        }))
+        .unwrap()
+    }
+
+    /// The heights of the triangles of `objs` over p.
+    fn heights_at(lvl: &Level, objs: &[&str], p: P2) -> Vec<f64> {
+        let mut out: Vec<f64> = vec![];
+        for o in lvl.mesh.objects.iter().filter(|o| objs.contains(&o.name.as_str())) {
+            for t in &o.tris {
+                let [a, b, c] = t.map(|i| o.verts[i]);
+                let d = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+                if d.abs() < 1e-9 {
+                    continue;
+                }
+                let u = ((p[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (p[1] - a[1])) / d;
+                let v = ((b[0] - a[0]) * (p[1] - a[1]) - (p[0] - a[0]) * (b[1] - a[1])) / d;
+                if u >= -1e-9 && v >= -1e-9 && u + v <= 1.0 + 1e-9 {
+                    let z = a[2] + u * (b[2] - a[2]) + v * (c[2] - a[2]);
+                    if !out.iter().any(|&x| (x - z).abs() < 1e-6) {
+                        out.push(z);
+                    }
+                }
+            }
+        }
+        out.sort_by(f64::total_cmp);
+        out
+    }
+
+    /// The walls standing on the line y = p.y across x = p.x: each one's lowest and highest point.
+    fn walls_across(lvl: &Level, p: P2) -> Vec<(f64, f64)> {
+        let o = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+        o.tris
+            .iter()
+            .map(|t| t.map(|i| o.verts[i]))
+            .filter(|t| t.iter().all(|v| (v[1] - p[1]).abs() < 1e-6) && t.iter().any(|v| v[0] <= p[0]) && t.iter().any(|v| v[0] >= p[0]))
+            .map(|t| (t.iter().map(|v| v[2]).fold(f64::INFINITY, f64::min), t.iter().map(|v| v[2]).fold(f64::NEG_INFINITY, f64::max)))
+            .collect()
+    }
+
+    #[test]
+    fn a_cave_dug_into_a_hill_is_closed_opens_at_its_mouth_and_keeps_the_hill_over_it() {
+        let solid = ["ground", "roofs", "walls", "cliffs", "bank", "trees", "ceilings"];
+        for detail in ["high", "low"] {
+            let mut doc = caves_doc();
+            doc.settings.detail = detail.into();
+            let lvl = build(&doc, &Theme::kokiri()).unwrap();
+            assert!(lvl.problems.is_empty(), "{detail}: {:?}", lvl.problems);
+            // closed: the skylight's shaft opens onto the hill's ground
+            let bad = open_edges(&lvl, &solid);
+            assert!(bad.is_empty(), "{detail}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+            // in the cave: its floor, its ceiling over it, and the hill's ground over that
+            let p = [-1400.0, 600.0];
+            assert_eq!(heights_at(&lvl, &["ground", "roofs"], p), vec![0.0, 600.0], "{detail}");
+            let c = heights_at(&lvl, &["ceilings"], p);
+            assert!(c.len() == 1 && c[0] > 260.0 - 25.0 && c[0] < 260.0 + 90.0 + 25.0, "{detail}: {c:?}");
+            // the mouth: nothing across it below the ceiling, the lintel above
+            let mouth = walls_across(&lvl, [-1400.0, 300.0]);
+            assert!(!mouth.is_empty() && mouth.iter().all(|&(lo, hi)| lo >= 260.0 - 1e-6 && hi <= 600.0 + 1e-6), "{detail}: {mouth:?}");
+            // beside it, the hill's own cliff, whole
+            let beside = walls_across(&lvl, [-2000.0, 300.0]);
+            assert!(beside.iter().any(|&(lo, _)| lo.abs() < 1e-6) && beside.iter().any(|&(_, hi)| (hi - 600.0).abs() < 1e-6), "{detail}: {beside:?}");
+            // the skylight: open to the sky over its pool
+            assert!(heights_at(&lvl, &["ceilings"], [-500.0, 1250.0]).is_empty(), "{detail}");
+            assert_eq!(heights_at(&lvl, &["ground", "roofs"], [-500.0, 1250.0]).len(), 1, "{detail}");
+            // the platform is under the chamber's ceiling, with the hill over it
+            assert_eq!(heights_at(&lvl, &["ground", "roofs"], [450.0, 1300.0]), vec![100.0, 600.0], "{detail}");
+            assert_eq!(heights_at(&lvl, &["ceilings"], [450.0, 1300.0]).len(), 1, "{detail}");
+            // dark inside, not outside
+            let g = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+            let k = |p: P3| g.verts.iter().position(|v| (v[0] - p[0]).abs() < 1e-6 && (v[1] - p[1]).abs() < 1e-6 && (v[2] - p[2]).abs() < 1e-6).map(|i| g.tints[i][0]);
+            assert_eq!(k([-1800.0, 800.0, 0.0]), Some(ceilings::DARK), "{detail}");
+            assert_eq!(k([2400.0, 1900.0, 600.0]), Some(1.0), "{detail}");
+        }
+    }
+
+    #[test]
+    fn an_enclosed_level_is_walled_up_to_its_ceiling_and_a_skylight_opens_it() {
+        let mut doc: Doc = serde_json::from_value(serde_json::json!({
+            "name": "cavern",
+            "outline": { "nodes": [[-2000, -2000, 1], [2000, -2000, 1], [2000, 2000, 1], [-2000, 2000, 1]], "z": 400,
+                         "ceiling": { "kind": "closed", "height": 700, "rise": 600, "noise": { "amplitude": 45, "scale": 500, "edge": 250 } } },
+            "regions": [
+                { "name": "tier", "nodes": [[-1200, -1200], [1200, -1200], [1200, 1200], [-1200, 1200]], "z": 200 },
+                { "name": "pool", "nodes": [[-600, -600], [600, -600], [600, 600], [-600, 600]], "z": -120, "kind": "water", "surface": 120 },
+                { "name": "skylight", "nodes": [[1400, 1400, 1], [1800, 1400, 1], [1800, 1800, 1], [1400, 1800, 1]], "z": 400, "ceiling": { "kind": "sky" } }
+            ],
+            "paths": [ { "name": "ramp", "nodes": [[0, -1000], [0, -1700]], "width": 220 } ]
+        }))
+        .unwrap();
+        for detail in ["high", "low"] {
+            doc.settings.detail = detail.into();
+            let lvl = build(&doc, &Theme::kokiri()).unwrap();
+            assert!(lvl.problems.is_empty(), "{detail}: {:?}", lvl.problems);
+            // no edge of the world: no rim, bank or trees
+            assert!(!lvl.mesh.objects.iter().any(|o| ["bank", "trees", "foliage", "cliffs"].contains(&o.name.as_str()) && !o.tris.is_empty()), "{detail}");
+            // closed, but for the skylight's shaft's top, open to the sky
+            let top = (lvl.rim.1 * 100.0).round() as i64;
+            let bad: Vec<_> = open_edges(&lvl, &["ground", "roofs", "walls", "ceilings"]).into_iter().filter(|e| !(e.0 .2 >= top - 1 && e.1 .2 >= top - 1)).collect();
+            assert!(bad.is_empty(), "{detail}: {} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+            // the ceiling is a dome: 1100 at the walls, up to 1700 (and its roughness) in the middle
+            let c = heights_at(&lvl, &["ceilings"], [0.0, 0.0]);
+            assert!(c.len() == 1 && c[0] > 1600.0 && c[0] < 1750.0, "{detail}: {c:?}");
+            let o = lvl.mesh.objects.iter().find(|o| o.name == "ceilings").unwrap();
+            let edge: Vec<f64> = o.verts.iter().filter(|v| (v[0].abs() - 2000.0).abs() < 1e-6 || (v[1].abs() - 2000.0).abs() < 1e-6).map(|v| v[2]).collect();
+            assert!(!edge.is_empty() && edge.iter().all(|&z| (z - 1100.0).abs() < 1e-6), "{detail}");
+            // the skylight's shaft goes up to the level's top
+            assert!(heights_at(&lvl, &["ceilings"], [1600.0, 1600.0]).is_empty(), "{detail}");
+            let w = lvl.mesh.objects.iter().find(|o| o.name == "walls").unwrap();
+            assert!(w.verts.iter().any(|v| (v[0] - 1400.0).abs() < 1e-6 && (v[2] - lvl.rim.1).abs() < 1e-6), "{detail}");
+        }
+    }
+
+    #[test]
+    fn a_cover_on_open_ground_is_a_canopy_and_a_cover_inside_a_cover_a_hut() {
+        let solid = ["ground", "roofs", "walls", "cliffs", "bank", "trees", "ceilings"];
+        // on open ground: open on every side, a slab over it with its edge showing
+        let mut doc = caves_doc();
+        doc.regions.truncate(1);
+        doc.regions.push(serde_json::from_value(serde_json::json!({ "name": "canopy", "nodes": [[-1000, -1500, 1], [0, -1500, 1], [0, -800, 1], [-1000, -800, 1]], "z": 0, "ceiling": { "kind": "closed", "height": 250 } })).unwrap());
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        assert_eq!(heights_at(&lvl, &["ground", "roofs"], [-500.0, -1100.0]), vec![0.0, 250.0 + crate::doc::ROOF_MIN]);
+        let bad = open_edges(&lvl, &solid);
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+        // a hut in the chamber: its own ceiling and roof, the chamber's ceiling over that
+        let mut doc = caves_doc();
+        doc.regions.push(serde_json::from_value(serde_json::json!({ "name": "hut", "nodes": [[-1300, 1150, 1], [-1000, 1150, 1], [-1000, 1400, 1], [-1300, 1400, 1]], "z": -40, "ceiling": { "kind": "closed", "height": 150 } })).unwrap());
+        let lvl = build(&doc, &Theme::kokiri()).unwrap();
+        assert!(lvl.problems.is_empty(), "{:?}", lvl.problems);
+        assert_eq!(heights_at(&lvl, &["ground", "roofs"], [-1150.0, 1275.0]), vec![-40.0, 150.0, 600.0]);
+        assert_eq!(heights_at(&lvl, &["ceilings"], [-1150.0, 1275.0]).len(), 2);
+        let bad = open_edges(&lvl, &solid);
+        assert!(bad.is_empty(), "{} open edges, e.g. {:?}", bad.len(), &bad[..bad.len().min(4)]);
+    }
+
+    #[test]
+    fn vertex_coloured_scenes_shade_their_textures_with_the_games_colours() {
+        // Zora's Domain's scene shades everything by its vertex colours (darker than a lit floor, no
+        // hue: its colour is its fog and water); Kokiri Forest is lit
+        let mean = |lvl: &Level, obj: &str| {
+            let o = lvl.mesh.objects.iter().find(|o| o.name == obj).unwrap();
+            let n = o.colors.len() as f64;
+            [0, 1, 2].map(|k| o.colors.iter().map(|c| c[k] as f64).sum::<f64>() / n)
+        };
+        let mut doc = sample_doc();
+        doc.settings.theme = "zora_domain".into();
+        let zd = Theme::for_doc(&doc, None).unwrap();
+        assert!(zd.shade_of("ground").is_some());
+        let lvl = build(&doc, &zd).unwrap();
+        let g = mean(&lvl, "ground");
+        let want = zd.shade_of("ground").unwrap().map(|x| x * 255.0);
+        assert!(want[0] == want[1] && want[1] == want[2], "a shade is a brightness: {want:?}");
+        assert!((0..3).all(|k| (g[k] - want[k]).abs() < 0.25 * want[k]), "{g:?} vs {want:?}");
+        // a lit theme is shaded by its light alone
+        assert!(Theme::kokiri().shade_of("ground").is_none());
+        // under a ceiling, the game's colour isn't darkened again
+        let mut doc = caves_doc();
+        doc.settings.theme = "zora_domain".into();
+        let lvl = build(&doc, &Theme::for_doc(&doc, None).unwrap()).unwrap();
+        let o = lvl.mesh.objects.iter().find(|o| o.name == "ground").unwrap();
+        let i = o.verts.iter().position(|v| (v[0] + 1800.0).abs() < 1e-6 && (v[1] - 800.0).abs() < 1e-6 && v[2].abs() < 1e-6).unwrap();
+        assert_eq!(o.tints.get(i).map_or(1.0, |t| t[0]), 1.0);
     }
 }

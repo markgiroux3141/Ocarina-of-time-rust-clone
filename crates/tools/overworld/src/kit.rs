@@ -109,6 +109,11 @@ impl SceneTextures {
     pub fn texture(&self, role: &str) -> String {
         format!("{}{role}", self.prefix)
     }
+
+    /// The game's scene it was cut from (its glb's name: spot07 for Zora's Domain).
+    pub fn game_scene(&self) -> Option<String> {
+        Path::new(&self.glb).file_stem().map(|s| s.to_string_lossy().into_owned())
+    }
 }
 
 /// A region's texture library, read from its manifest now (`scenes` reads them once).

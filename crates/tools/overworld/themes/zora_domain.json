@@ -1,6 +1,7 @@
 {
   "name": "zora_domain",
   "textures": {
+    "ceiling_rock": "zd_rock",
     "ground": "zd_ground@t1x2",
     "ground_c": "zd_ground_c@t1x2",
     "cliff": "zd_cliff@0-32m",
@@ -20,6 +21,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -131,6 +138,62 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot07",
+    "color": [25, 100, 100],
+    "near": 990,
+    "far": 12800
+  },
+  "shades": {
+    "zd_brick": [0.414, 0.414, 0.414],
+    "zd_brick_b": [0.590, 0.590, 0.590],
+    "zd_carpet_blue": [0.590, 0.590, 0.590],
+    "zd_carpet_blue_b": [0.590, 0.590, 0.590],
+    "zd_carpet_red": [0.590, 0.590, 0.590],
+    "zd_ceiling": [0.295, 0.295, 0.295],
+    "zd_ceiling_b": [0.295, 0.295, 0.295],
+    "zd_ceiling_c": [0.339, 0.339, 0.339],
+    "zd_ceiling_d": [0.295, 0.295, 0.295],
+    "zd_ceiling_e": [0.306, 0.306, 0.306],
+    "zd_ceiling_f": [0.295, 0.295, 0.295],
+    "zd_ceiling_g": [0.295, 0.295, 0.295],
+    "zd_ceiling_h": [0.457, 0.457, 0.457],
+    "zd_ceiling_i": [0.295, 0.295, 0.295],
+    "zd_ceiling_j": [0.430, 0.430, 0.430],
+    "zd_ceiling_k": [0.295, 0.295, 0.295],
+    "zd_cliff": [0.590, 0.590, 0.590],
+    "zd_cliff_b": [0.303, 0.303, 0.303],
+    "zd_cliff_c": [0.353, 0.353, 0.353],
+    "zd_cliff_d": [0.295, 0.295, 0.295],
+    "zd_cliff_e": [0.316, 0.316, 0.316],
+    "zd_cliff_f": [0.434, 0.434, 0.434],
+    "zd_cliff_g": [0.552, 0.552, 0.552],
+    "zd_cliff_h": [0.295, 0.295, 0.295],
+    "zd_cliff_i": [0.590, 0.590, 0.590],
+    "zd_cliff_j": [0.343, 0.343, 0.343],
+    "zd_cliff_k": [0.363, 0.363, 0.363],
+    "zd_cliff_l": [0.330, 0.330, 0.330],
+    "zd_door_frame": [0.329, 0.329, 0.329],
+    "zd_emblem": [0.489, 0.489, 0.489],
+    "zd_ground": [0.385, 0.385, 0.385],
+    "zd_ground_b": [0.431, 0.431, 0.431],
+    "zd_ground_c": [0.590, 0.590, 0.590],
+    "zd_ladder": [0.541, 0.541, 0.541],
+    "zd_ladder_top": [0.361, 0.361, 0.361],
+    "zd_ledge_trim": [0.590, 0.590, 0.590],
+    "zd_mist": [0.590, 0.590, 0.590],
+    "zd_post_gold": [0.383, 0.383, 0.383],
+    "zd_railing": [0.585, 0.585, 0.585],
+    "zd_railing_b": [0.585, 0.585, 0.585],
+    "zd_railing_post": [0.585, 0.585, 0.585],
+    "zd_rock": [0.295, 0.295, 0.295],
+    "zd_shadow": [0.590, 0.590, 0.590],
+    "zd_shell_trim": [0.428, 0.428, 0.428],
+    "zd_shell_trim_b": [0.428, 0.428, 0.428],
+    "zd_steps": [0.295, 0.295, 0.295],
+    "zd_steps_b": [0.295, 0.295, 0.295],
+    "zd_tunnel_floor": [0.295, 0.295, 0.295]
   },
   "light": {
     "ambient": [

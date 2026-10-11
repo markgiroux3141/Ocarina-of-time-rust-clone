@@ -108,6 +108,29 @@ struct Globals {
     /// Fog start and end distances.
     fog: [f32; 4],
     sky: [f32; 4],
+    /// The game's fog (`view3d.wgsl`): multiplier, offset, far plane (0: off), and how much nearer
+    /// than the eye it's measured from.
+    game: [f32; 4],
+}
+
+/// How far behind what it looks at the game's camera usually is: the 3D view measures the game's
+/// fog from this far in front of its orbit target, so what it orbits looks as it does in play,
+/// zoomed out or not.
+const GAME_EYE: f32 = 250.0;
+
+/// `gSPFogPosition(near, 1000)`'s (multiplier, offset), as `oot_game::env::fog_factor` makes them.
+fn fog_factor(near: i32, far: i32) -> (f32, f32) {
+    let far = if far == near { far + 1 } else { far };
+    let (m, o) = if near >= 1000 {
+        (0, 0)
+    } else if near >= 997 {
+        (0x7FFF, 0x8100u16 as i16 as i32)
+    } else if near < 0 {
+        (0, 255)
+    } else {
+        (128000 / (far - near), (500 - near) * 256 / (far - near))
+    };
+    (m as i16 as f32, o as i16 as f32)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -124,6 +147,9 @@ struct Batch {
     kind: Kind,
     cull: bool,
     decal: bool,
+    /// Ceilings or roofs (`ceilings.rs`), hidden with `hide_covers`. Ceilings are always culled
+    /// from behind, so from above you see into the rooms under them.
+    cover: bool,
 }
 
 struct Target {
@@ -147,6 +173,11 @@ pub struct View3d {
     white: wgpu::TextureView,
     target: Option<(Target, egui::TextureId)>,
     pub cam: Camera,
+    /// Don't draw ceilings or the roofs over them: a cutaway, to see into caves from above.
+    pub hide_covers: bool,
+    /// The theme's scene's fog (`Theme::fog`), drawn as the game draws it while `game_fog` is on.
+    pub fog: Option<overworld::theme::FogLook>,
+    pub game_fog: bool,
     pub framed: bool,
     /// The last rendered view's width / height.
     pub aspect: f32,
@@ -229,6 +260,9 @@ impl View3d {
             white,
             target: None,
             cam: Camera { target: Vec3::ZERO, yaw: -90f32.to_radians(), pitch: 0.7, dist: 4000.0 },
+            hide_covers: false,
+            fog: None,
+            game_fog: true,
             framed: false,
             aspect: 1.0,
         }
@@ -288,12 +322,19 @@ impl View3d {
         self.pipelines.insert((kind, cull, decal), p);
     }
 
-    /// Uploads a built level: one batch per material.
+    /// Uploads a built level: one batch per material, and one per material the ceilings and the
+    /// roofs use.
     pub fn set_level(&mut self, lvl: &Level, mats: &[Mat], lib: Option<&Library>) {
-        let mut verts: Vec<Vec<Vertex>> = vec![vec![]; mats.len()];
+        let mut verts: Vec<Vec<Vertex>> = vec![vec![]; 3 * mats.len()];
         for o in lvl.mesh.objects.iter().filter(|o| !o.collision_only) {
+            let k = match o.name.as_str() {
+                "ceilings" => 1,
+                "roofs" => 2,
+                _ => 0,
+            };
             for (t, tri) in o.tris.iter().enumerate() {
                 let m = o.mat[t];
+                let slot = m + k * mats.len();
                 let alpha = if mats[m].info.alpha == "blend" { (mats[m].info.opacity * 255.0) as u8 } else { 255 };
                 for c in 0..3 {
                     let v = o.verts[tri[c]];
@@ -305,7 +346,7 @@ impl View3d {
                         (Some(_), None) => 0,
                         _ => alpha,
                     };
-                    verts[m].push(Vertex {
+                    verts[slot].push(Vertex {
                         pos: [v[0] as f32, v[1] as f32, v[2] as f32],
                         uv: [uv[0] as f32, 1.0 - uv[1] as f32],
                         color: [col[0], col[1], col[2], a],
@@ -316,10 +357,12 @@ impl View3d {
         let device = self.rs.device.clone();
         let queue = self.rs.queue.clone();
         self.batches.clear();
-        for (m, vs) in verts.into_iter().enumerate() {
+        for (slot, vs) in verts.into_iter().enumerate() {
             if vs.is_empty() {
                 continue;
             }
+            let (m, k) = (slot % mats.len(), slot / mats.len());
+            let (ceiling, cover) = (k == 1, k > 0);
             let info = &mats[m].info;
             let name = &mats[m].name;
             for n in std::iter::once(name).chain(mats[m].overlay.as_ref()) {
@@ -367,9 +410,9 @@ impl View3d {
                 "blend" => Kind::Blend,
                 _ => Kind::Opaque,
             };
-            let cull = info.cull != "none";
+            let cull = info.cull != "none" || ceiling;
             self.pipeline(kind, cull, info.decal);
-            self.batches.push(Batch { vbuf, count: vs.len() as u32, bind, kind, cull, decal: info.decal });
+            self.batches.push(Batch { vbuf, count: vs.len() as u32, bind, kind, cull, decal: info.decal, cover });
         }
         // opaque, then cutouts, then blended (water) last
         self.batches.sort_by_key(|b| b.kind as u8);
@@ -393,11 +436,20 @@ impl View3d {
             self.target = Some((t, id));
         }
         let eye = self.cam.eye();
+        // the game's fog, into its colour (the sandbox clears to it too), or the editor's haze into the sky
+        let (sky, game) = match self.fog.as_ref().filter(|_| self.game_fog) {
+            Some(f) => {
+                let (m, o) = fog_factor(f.near, 1000);
+                (f.color.map(|c| c as f64 / 255.0), [m, o, f.far as f32, (self.cam.dist - GAME_EYE).max(0.0)])
+            }
+            None => (SKY, [0.0; 4]),
+        };
         let g = Globals {
             view_proj: self.cam.view_proj(w as f32 / h as f32).to_cols_array_2d(),
             eye: [eye.x, eye.y, eye.z, 1.0],
             fog: [self.cam.dist * 1.6 + 2000.0, self.cam.dist * 5.0 + 9000.0, 0.0, 0.0],
-            sky: [SKY[0] as f32, SKY[1] as f32, SKY[2] as f32, 1.0],
+            sky: [sky[0] as f32, sky[1] as f32, sky[2] as f32, 1.0],
+            game,
         };
         self.rs.queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&g));
         let (t, id) = self.target.as_ref().unwrap();
@@ -410,7 +462,7 @@ impl View3d {
                     depth_slice: None,
                     resolve_target: Some(&t.resolve),
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r: SKY[0], g: SKY[1], b: SKY[2], a: 1.0 }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: sky[0], g: sky[1], b: sky[2], a: 1.0 }),
                         store: wgpu::StoreOp::Discard,
                     },
                 })],
@@ -424,7 +476,7 @@ impl View3d {
                 multiview_mask: None,
             });
             pass.set_bind_group(0, &self.globals_bg, &[]);
-            for b in &self.batches {
+            for b in self.batches.iter().filter(|b| !(b.cover && self.hide_covers)) {
                 pass.set_pipeline(&self.pipelines[&(b.kind, b.cull, b.decal)]);
                 pass.set_bind_group(1, &b.bind, &[]);
                 pass.set_vertex_buffer(0, b.vbuf.slice(..));

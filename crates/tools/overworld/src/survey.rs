@@ -392,3 +392,44 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn len(a: [f64; 3]) -> f64 {
     (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
 }
+
+/// How a scene shades one texture, measured over every room triangle drawn with it.
+#[derive(Debug, Clone)]
+pub struct Shade {
+    pub texture: String,
+    /// The mean colour it's drawn with (0-1): its vertex colours where the scene shades it by
+    /// them, times its material's colour (the combiner's primitive colour); weighted by area.
+    pub rgb: [f64; 3],
+    /// The area drawn with it, and how much of that is vertex-coloured.
+    pub area: f64,
+    pub coloured: f64,
+}
+
+/// Every texture's shade in a region's scene (`kit-shades`), most used first.
+pub fn shades(region: &str, root: &Path) -> Result<Vec<Shade>, String> {
+    let manifest = crate::pieces::Manifest::load(&crate::kit::manifest_path(region))?;
+    let sc = manifest.scene();
+    let glb_path = root.join(&sc.glb);
+    let glb = std::fs::read(&glb_path).map_err(|e| format!("{}: {e}", glb_path.display()))?;
+    let (tris, tints) = scene_tris(&glb, &sc)?;
+    let mut acc: BTreeMap<String, ([f64; 3], f64, f64)> = BTreeMap::new();
+    for t in &tris {
+        let a = len(cross(sub(t.p[1], t.p[0]), sub(t.p[2], t.p[0]))) / 2.0;
+        if a < 1e-6 {
+            continue;
+        }
+        let vc = t.c.map_or([1.0; 3], |c| [0, 1, 2].map(|k| (c[0][k] + c[1][k] + c[2][k]) / 3.0));
+        let tint = tints.get(t.mat).copied().unwrap_or([1.0; 3]);
+        let e = acc.entry(sc.texture(&t.role)).or_insert(([0.0; 3], 0.0, 0.0));
+        for k in 0..3 {
+            e.0[k] += vc[k] * tint[k] * a;
+        }
+        e.1 += a;
+        if t.c.is_some() {
+            e.2 += a;
+        }
+    }
+    let mut out: Vec<Shade> = acc.into_iter().map(|(texture, (s, a, c))| Shade { texture, rgb: s.map(|x| x / a), area: a, coloured: c }).collect();
+    out.sort_by(|a, b| b.area.total_cmp(&a.area));
+    Ok(out)
+}

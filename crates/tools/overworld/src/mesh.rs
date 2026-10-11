@@ -11,6 +11,11 @@ use std::fmt::Write as _;
 
 pub type UV = [f64; 2];
 
+/// How much of the light's relief (a wall darker than a floor) a shaded texture keeps
+/// (`Mesh::shade_with`): its shade is the game's mean colour for it on a floor, times
+/// 1 + SHADE_RELIEF x (the light here / the light on a floor - 1).
+pub const SHADE_RELIEF: f64 = 0.35;
+
 #[derive(Default, Clone)]
 pub struct Object {
     pub name: String,
@@ -211,6 +216,15 @@ impl Mesh {
     /// With `var`, each vertex's shade is also multiplied by 1 +- var.shade of smooth noise
     /// (not on water, whose surface is a flat sheet).
     pub fn shade(&mut self, light: &Light, var: Option<(&Variation, u32)>) {
+        self.shade_with(light, var, &[]);
+    }
+
+    /// As `shade`, but triangles whose material has a shade in `shades` (by material id: the
+    /// colour the game's scene draws that texture with, `Theme::shades`) take that colour instead
+    /// of the light's, keeping a little of the light's relief (`SHADE_RELIEF`) so their shapes still
+    /// read. A vertex between shaded and lit triangles mixes the two by how many of each it has.
+    pub fn shade_with(&mut self, light: &Light, var: Option<(&Variation, u32)>, shades: &[Option<[f64; 3]>]) {
+        let lum = |c: [f64; 3]| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
         let dirs: Vec<([f64; 3], [f64; 3])> = light
             .lights
             .iter()
@@ -235,6 +249,29 @@ impl Mesh {
                     }
                 }
             }
+            // per vertex: the sum of its shaded triangles' shades, how many, and how many triangles in all
+            let mut sh = vec![([0.0f64; 3], 0usize, 0usize); o.verts.len()];
+            if !shades.is_empty() {
+                for (t, tri) in o.tris.iter().enumerate() {
+                    let s = shades.get(o.mat[t]).copied().flatten();
+                    for &v in tri {
+                        sh[v].2 += 1;
+                        if let Some(s) = s {
+                            sh[v].1 += 1;
+                            for k in 0..3 {
+                                sh[v].0[k] += s[k];
+                            }
+                        }
+                    }
+                }
+            }
+            // the light on a floor, which a shade is relative to
+            let mut up = light.ambient;
+            for (d, col) in &dirs {
+                for i in 0..3 {
+                    up[i] += d[2].max(0.0) * col[i];
+                }
+            }
             let (verts, fixed) = (&o.verts, &o.fixed);
             o.colors = nrm
                 .iter()
@@ -250,6 +287,13 @@ impl Mesh {
                         let k = ((n[0] * d[0] + n[1] * d[1] + n[2] * d[2]) / l).max(0.0);
                         for i in 0..3 {
                             c[i] += k * col[i];
+                        }
+                    }
+                    if let Some(&(s, ns, n)) = sh.get(vi).filter(|x| x.1 > 0) {
+                        let relief = 1.0 + SHADE_RELIEF * (lum(c) / lum(up).max(1e-9) - 1.0);
+                        let w = ns as f64 / n as f64;
+                        for i in 0..3 {
+                            c[i] = s[i] / ns as f64 * 255.0 * relief * w + c[i] * (1.0 - w);
                         }
                     }
                     if let Some((v, seed)) = vary {

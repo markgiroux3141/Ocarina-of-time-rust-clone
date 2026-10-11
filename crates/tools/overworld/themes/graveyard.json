@@ -1,6 +1,7 @@
 {
   "name": "graveyard",
   "textures": {
+    "ceiling_rock": "gy_stove",
     "ground": "gy_ground",
     "cliff": "gy_cliff",
     "grass_band": "gy_grass_band",
@@ -22,6 +23,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 160,
+    "tile_v": 160,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -161,6 +168,23 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot02",
+    "color": [130, 140, 140],
+    "near": 996,
+    "far": 12800
+  },
+  "shades": {
+    "gy_cave_ceiling": [0.245, 0.245, 0.245],
+    "gy_cave_rock": [0.245, 0.245, 0.245],
+    "gy_dirt": [0.276, 0.276, 0.276],
+    "gy_emblem": [0.477, 0.477, 0.477],
+    "gy_pedestal_side": [0.490, 0.490, 0.490],
+    "gy_pedestal_top": [0.490, 0.490, 0.490],
+    "gy_shadow_brick": [0.444, 0.444, 0.444],
+    "gy_shadow_fade": [0.490, 0.490, 0.490],
+    "gy_steps": [0.245, 0.245, 0.245]
   },
   "light": {
     "ambient": [

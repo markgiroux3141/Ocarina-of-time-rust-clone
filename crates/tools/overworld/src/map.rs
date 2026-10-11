@@ -178,7 +178,7 @@ impl Map {
     }
 
     /// A point just left of half-edge h's middle: inside the face it bounds.
-    fn left_point(&self, h: usize) -> P2 {
+    pub fn left_point(&self, h: usize) -> P2 {
         let (a, b) = (self.verts[self.from(h)], self.verts[self.to(h)]);
         let m = lerp(a, b, 0.5);
         let d = sub(b, a);
@@ -493,10 +493,10 @@ mod tests {
     fn doc(outline: Vec<Vec<f64>>, regions: Vec<(Vec<Vec<f64>>, f64)>) -> Doc {
         Doc {
             name: "t".into(),
-            outline: Outline { nodes: outline, z: 0.0, noise: None, beyond: vec![] },
+            outline: Outline { nodes: outline, z: 0.0, noise: None, beyond: vec![], ceiling: None },
             regions: regions
                 .into_iter()
-                .map(|(nodes, z)| Region { name: String::new(), nodes, z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] })
+                .map(|(nodes, z)| Region { name: String::new(), nodes, z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None })
                 .collect(),
             paths: vec![],
             boundary: BoundaryDesign::default(),

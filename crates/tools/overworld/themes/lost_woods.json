@@ -1,6 +1,7 @@
 {
   "name": "lost_woods",
   "textures": {
+    "ceiling_rock": "sfm_stone_shade_a",
     "ground": "lw_ground",
     "forest_wall": "lw_forest_wall",
     "log_bark": "lw_log_bark",
@@ -17,6 +18,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -108,6 +115,18 @@
     "overlap": 80,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot10",
+    "color": [140, 140, 100],
+    "near": 977,
+    "far": 5800
+  },
+  "shades": {
+    "lw_light_pool": [0.975, 0.975, 0.975],
+    "lw_light_shaft": [0.975, 0.975, 0.975],
+    "lw_stump_bark": [0.767, 0.767, 0.767],
+    "lw_stump_top": [1.000, 1.000, 1.000]
   },
   "light": {
     "ambient": [

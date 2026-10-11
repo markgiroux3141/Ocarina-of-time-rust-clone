@@ -1,6 +1,7 @@
 {
   "name": "kakariko",
   "textures": {
+    "ceiling_rock": "dmt_dirt",
     "ground": "kak_ground",
     "ground_light": "kak_ground_light",
     "dirt": "kak_dirt",
@@ -27,6 +28,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -206,6 +213,16 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot01",
+    "color": [100, 100, 120],
+    "near": 996,
+    "far": 12800
+  },
+  "shades": {
+    "kak_shutter": [0.649, 0.649, 0.649],
+    "kak_well_shaft": [0.401, 0.401, 0.401]
   },
   "light": {
     "ambient": [

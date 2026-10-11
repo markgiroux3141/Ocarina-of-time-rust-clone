@@ -1,6 +1,7 @@
 {
   "name": "gerudo_fortress",
   "textures": {
+    "ceiling_rock": "gf_cliff",
     "ground": "gf_ground@t1x2",
     "sandstone": "gf_sandstone@swap",
     "sand": "gf_sand",
@@ -18,6 +19,12 @@
     "dirt_strip": "kf_dirt_strip",
     "fence_post": "kf_fence_post",
     "rope": "kf_fence@1-8"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -135,6 +142,12 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot12",
+    "color": [110, 105, 85],
+    "near": 995,
+    "far": 12800
   },
   "light": {
     "ambient": [

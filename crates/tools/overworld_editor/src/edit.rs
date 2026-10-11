@@ -622,7 +622,7 @@ pub fn base_z(doc: &Doc, shapes: &Shapes, p: P2) -> f64 {
 pub fn new_region(doc: &Doc, nodes: Vec<P2>, z: f64) -> Region {
     let names: Vec<&str> = doc.regions.iter().map(|r| r.name.as_str()).collect();
     let name = (1..).map(|i| format!("region {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
-    Region { name, nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![] }
+    Region { name, nodes: nodes.into_iter().map(|p| vec![p[0], p[1]]).collect(), z, kind: "floor".into(), surface: None, edge: None, noise: None, profile: None, profiles: vec![], ceiling: None }
 }
 
 pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {

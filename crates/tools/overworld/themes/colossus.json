@@ -1,6 +1,7 @@
 {
   "name": "colossus",
   "textures": {
+    "ceiling_rock": "dc_stone_rough",
     "sand": "dc_sand",
     "sand_bank": "dc_sand_bank",
     "rock": "dc_rock",
@@ -16,6 +17,12 @@
     "dirt_strip": "kf_dirt_strip",
     "fence_post": "kf_fence_post",
     "rope": "kf_fence@1-8"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "sand",
@@ -148,6 +155,12 @@
     "overlap": 100,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot11",
+    "color": [115, 110, 85],
+    "near": 996,
+    "far": 12800
   },
   "light": {
     "ambient": [

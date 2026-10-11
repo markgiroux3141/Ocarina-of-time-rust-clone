@@ -358,12 +358,23 @@ pub fn level_stamp(dir: &std::path::Path) -> Option<std::time::SystemTime> {
 }
 
 /// Loads a custom level (`oot_import::level`): its room and collision, Link at its middle (or
-/// `--at`), in Kokiri Forest's light at the time of day (the overworld theme is Kokiri's).
+/// `--at`), in its theme's scene's environment (lights and fog) at the time of day: Zora's Domain's
+/// for a level themed as Zora's Domain. Kokiri Forest's if it names none (or that scene won't load).
 pub fn load_level(a: &mut Assets, dir: &std::path::Path, child: bool) -> Result<()> {
     let t0 = Instant::now();
     let stamp = level_stamp(dir);
     let l = oot_import::level::load(dir)?;
-    let lights = rooms::load_all_rooms(&a.pack, &a.env_tables, "spot04", child, a.day_time).context("Kokiri Forest's lights")?.lights;
+    let own = l.scene.as_deref().filter(|s| *s != "spot04").and_then(|s| match rooms::load_all_rooms(&a.pack, &a.env_tables, s, child, a.day_time) {
+        Ok(r) => Some(r.lights),
+        Err(e) => {
+            println!("  note: {s}'s lights won't load ({e:#}), so it's Kokiri Forest's");
+            None
+        }
+    });
+    let lights = match own {
+        Some(l) => l,
+        None => rooms::load_all_rooms(&a.pack, &a.env_tables, "spot04", child, a.day_time).context("Kokiri Forest's lights")?.lights,
+    };
     println!(
         "level {} from {}: {} triangles, {} collision polys ({} vertices), {} water boxes; spawn at {} ({:.0} ms)",
         l.name,

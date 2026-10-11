@@ -122,9 +122,14 @@ impl App {
             } else if n.region_kind == "pit" {
                 field(ui, "Depth", Some("How far its walls go down below the ground round it: Link voids out falling in"), |ui| ui.add(egui::DragValue::new(&mut n.pit_depth).speed(5.0).range(220.0..=5000.0)));
             } else {
-                field(ui, "Rise", Some("How far above the ground it's drawn on a new region starts. Change it later in the inspector (PgUp / PgDn)."), |ui| {
-                    ui.add(egui::DragValue::new(&mut n.rise).speed(1.0).range(-2000.0..=2000.0))
-                });
+                widgets::toggle(ui, &mut n.level, "Level with what it's in").on_hover_text(
+                    "On: a new region starts at the height of the floor it's drawn on (the region it's inside), instead of Rise above it. Then sink it into a hill and cover it for a cave, say.",
+                );
+                if !n.level {
+                    field(ui, "Rise", Some("How far above the ground it's drawn on a new region starts. Change it later in the inspector (PgUp / PgDn)."), |ui| {
+                        ui.add(egui::DragValue::new(&mut n.rise).speed(1.0).range(-2000.0..=2000.0))
+                    });
+                }
             }
             field(ui, "Edge", Some("The wall style of its own walls (where it's the higher side)"), |ui| style_combo(ui, "new edge", &mut n.edge, &styles, "theme rules"));
             widgets::hint(ui, "Click points; click the first one or press Enter to close it. A click on a node or an edge shares it.");

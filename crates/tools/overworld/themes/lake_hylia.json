@@ -1,6 +1,7 @@
 {
   "name": "lake_hylia",
   "textures": {
+    "ceiling_rock": "lh_rock",
     "ground": "lh_ground",
     "lakebed": "lh_lakebed",
     "cliff": "lh_cliff",
@@ -20,6 +21,12 @@
     "fence_post": "kf_fence_post",
     "hedge_top": "kf_hedge_top",
     "grass_skirt": "kf_grass_skirt"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -173,6 +180,12 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot06",
+    "color": [100, 100, 120],
+    "near": 996,
+    "far": 12800
   },
   "light": {
     "ambient": [

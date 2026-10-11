@@ -8,7 +8,7 @@ use super::widgets::{self, field, section};
 use super::{line_colour, App, Sel, PROP_COLOUR};
 use crate::edit::{self, NodeRef};
 use eframe::egui::{self, Color32, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
-use overworld::doc::{rock_looks, stack_looks, Contour, Layers, Part, Profile, Prop, RockLook, Section, Skyline, StackLook, Switchbacks};
+use overworld::doc::{rock_looks, stack_looks, Ceiling, Contour, Cover, Layers, Noise, Part, Profile, Prop, RockLook, Section, Skyline, StackLook, Switchbacks};
 
 /// What the header card shows on the left.
 enum Tile {
@@ -159,6 +159,9 @@ impl App {
                 field(ui, "Height", Some("The ground outside every region"), |ui| ui.add(egui::DragValue::new(&mut o.z).speed(1.0)));
                 noise_ui(ui, &mut o.noise);
             });
+            section(ui, "ins ceiling", "Ceiling", o.ceiling.is_some().then(|| "enclosed".to_string()), false, |ui| {
+                ceiling_ui(ui, &mut o.ceiling, false, &styles);
+            });
             let n = o.nodes.len();
             section(ui, "ins shape", "Shape", None, true, |ui| {
                 chips(ui, &[(Some(n.to_string()), "nodes"), (None, "double-click its edge to add one")]);
@@ -213,6 +216,14 @@ impl App {
         section(ui, "ins look", "Look", None, true, |ui| {
             field(ui, "Edge", Some("The wall style of this region's own walls (where it's the higher side)"), |ui| style_combo(ui, "edge", &mut r.edge, &styles, "theme rules"));
             noise_ui(ui, &mut r.noise);
+        });
+        let over = match &r.ceiling {
+            None => None,
+            Some(Ceiling::Sky) => Some("open".to_string()),
+            Some(Ceiling::Closed(c)) => Some(format!("{:.0}", c.height)),
+        };
+        section(ui, "ins ceiling", "Ceiling", over, r.ceiling.is_some(), |ui| {
+            ceiling_ui(ui, &mut r.ceiling, true, &styles);
         });
         let own = r.profiles.iter().filter(|p| p.is_some()).count();
         let drop = (r.z - beside).abs();
@@ -944,6 +955,58 @@ fn noise_ui(ui: &mut egui::Ui, noise: &mut Option<overworld::doc::Noise>) {
         field(ui, "  Edge fade", Some("Bumps fade out over this distance from the floor's edges, which keep its height"), |ui| ui.add(egui::DragValue::new(&mut n.edge).speed(2.0).range(1.0..=3000.0)));
         field(ui, "  Seed", Some("Another pattern"), |ui| ui.add(egui::DragValue::new(&mut n.seed)));
     }
+}
+
+/// What's over a region (`region`) or the whole level: inherited, open or covered, and a cover's
+/// height, shape, roof and style. Returns whether it changed.
+fn ceiling_ui(ui: &mut egui::Ui, c: &mut Option<Ceiling>, region: bool, styles: &[String]) -> bool {
+    let before = c.clone();
+    let mut kind = match c {
+        None => "inherit",
+        Some(Ceiling::Sky) => "sky",
+        Some(Ceiling::Closed(_)) => "closed",
+    };
+    if region {
+        field(ui, "Over it", Some("Inherit: under the ceiling of the region it's in, if that has one. Open: open to the sky (a skylight in a covered region). Covered: a ceiling of its own, with solid over it up to its roof."), |ui| {
+            widgets::segmented(ui, &mut kind, &[("inherit", "Inherit"), ("sky", "Open"), ("closed", "Covered")])
+        });
+    } else {
+        let mut on = kind == "closed";
+        if widgets::toggle(ui, &mut on, "Enclosed").on_hover_text("A ceiling over the whole level (a cave, a cavern, an interior): its edges are walls up to the ceiling instead of the edge of the world").changed() {
+            kind = if on { "closed" } else { "inherit" };
+        }
+    }
+    match (kind, &*c) {
+        ("inherit", Some(_)) => *c = None,
+        ("sky", s) if *s != Some(Ceiling::Sky) => *c = Some(Ceiling::Sky),
+        ("closed", s) if !matches!(s, Some(Ceiling::Closed(_))) => *c = Some(Ceiling::Closed(Cover::default())),
+        _ => {}
+    }
+    if let Some(Ceiling::Closed(cv)) = c {
+        field(ui, "Height", Some("How far over the floor (moves with it)"), |ui| ui.add(egui::DragValue::new(&mut cv.height).speed(1.0).range(40.0..=5000.0)));
+        field(ui, "Dome", Some("How much higher it rises away from its edges: a vault along a narrow region, a dome over a round one"), |ui| ui.add(egui::DragValue::new(&mut cv.rise).speed(1.0).range(-2000.0..=5000.0)));
+        if cv.rise != 0.0 {
+            field(ui, "  Reach", Some("How far from the edges it takes to rise; level beyond (0: all the way to its middle)"), |ui| ui.add(egui::DragValue::new(&mut cv.reach).speed(2.0).range(0.0..=10000.0)));
+        }
+        let mut rough = cv.noise.is_some();
+        if widgets::toggle(ui, &mut rough, "Rough").on_hover_text("Lumpy cave rock, fading out towards its edges").changed() {
+            cv.noise = rough.then_some(Noise { amplitude: 30.0, scale: 300.0, edge: 150.0, seed: 0 });
+        }
+        if let Some(n) = &mut cv.noise {
+            field(ui, "  How much", Some("Up or down by up to this"), |ui| ui.add(egui::DragValue::new(&mut n.amplitude).speed(0.5).range(0.0..=500.0)));
+            field(ui, "  Size", Some("About how far apart the lumps are"), |ui| ui.add(egui::DragValue::new(&mut n.scale).speed(5.0).range(50.0..=5000.0)));
+            field(ui, "  Edge fade", Some("Lumps fade out over this distance from its edges, where the walls meet it"), |ui| ui.add(egui::DragValue::new(&mut n.edge).speed(2.0).range(1.0..=3000.0)));
+            field(ui, "  Seed", Some("Another pattern"), |ui| ui.add(egui::DragValue::new(&mut n.seed)));
+        }
+        let (tip, what) = if region {
+            ("The top of the solid over it. Automatic: the floor round it (a cave dug into a hill keeps the hill), at least a little over the ceiling", "auto")
+        } else {
+            ("Where a skylight's shaft ends, open to the sky. Automatic: a way over the highest ceiling", "auto")
+        };
+        field(ui, "Roof", Some(tip), |ui| own_num(ui, &mut cv.roof, cv.height, 1.0, -5000.0..=10000.0, what));
+        field(ui, "Walls", Some("The wall style of the walls it adds (round a skylight, over a cave's mouth). The ceiling itself is always the theme's ceiling rock"), |ui| style_combo(ui, "ceiling style", &mut cv.style, styles, "theme's rock"));
+    }
+    *c != before
 }
 
 /// A tunnel's rough walls: a switch, and their settings when on.

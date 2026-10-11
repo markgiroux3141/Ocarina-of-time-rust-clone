@@ -81,6 +81,11 @@ Done:
   (boulders, mesas, spires, mushrooms, pillars, leaning rocks, with lumps and layers), and natural rock arches standing
   on the ground between two points. Example: `examples/sketch/sketch_rocks.json`.
 
+- **Ceilings** (2026-10-10, `src/ceilings.rs`): a region, or the whole level, can be covered: caves dug into hills with
+  their mouths where they meet lower ground, domed and rough chambers, skylights, and enclosed levels walled up to
+  their ceiling instead of the edge of the world (Ceilings). Examples: `examples/sketch/sketch_caves.json`,
+  `examples/sketch/sketch_cavern.json`. The plan for roofs, storeys and dungeons: `docs/EDITOR-ROOFS-STOREYS-DUNGEONS.md`.
+
 Not yet: exits and doors that lead somewhere (they wait for levels to load through `Play_Init`).
 See the roadmap.
 
@@ -93,6 +98,7 @@ cargo run --release -p overworld_editor -- crates/tools/overworld/examples/sketc
 cargo test --release -p overworld -p overworld_editor
 target/release/overworld kit-textures [region...]   # the extracted scenes -> out/overworld/textures/<region>
 target/release/overworld kit-pieces [region...]     # kit/<region>.json + the extract -> out/overworld/kit/<region>/pieces.json, thumbs/
+target/release/overworld kit-shades [region...]      # how each scene colours its textures (vertex colours) -> JSON, for themes' shades
 target/release/overworld kit-survey <region> [--box x0 y0 x1 y1] [--below z]   # what a scene is made of -> out/overworld/survey/<region>
 target/release/overworld preview <level.json> <out.png> [--theme <theme.json>]  # a level drawn from the south-west and above
 target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau [--kit <dir>]...
@@ -106,7 +112,8 @@ python crates/tools/overworld/tools/plan.py <out>/level.json plan.png --doc leve
 (`geom::SegIndex`, `row_crossings`) instead of testing every outline segment, which took the edge of the world from
 about 200 ms to 12, with byte-identical output.
 
-Output (`<out>/`): `level.json` holds objects (ground, water, walls, boundary, trees, foliage, overlays)
+Output (`<out>/`): `level.json` names the game scene its theme was cut from (`"scene": "spot07"` for Zora's Domain,
+from the region's manifest), whose environment (lights and fog, at the time of day) the game plays it in, and holds objects (ground, water, walls, boundary, trees, foliage, overlays)
 with vertices, triangles, per-corner UVs, a material role and a collision surface role per triangle.
 `level.obj` and `level.mtl` are for any tool (OBJ is y-up), with the textures the level uses copied
 into `textures/` from the texture libraries (`--textures`, as often as needed; by default every theme's). A library is
@@ -926,7 +933,81 @@ dark going down (vertex tints). A pit can have profiles like any region: a slope
 chasm. Test: `pits_drop_into_a_dark_void`. In the game, Link runs off the chasm's edge in `sketch_profiles`, falls,
 and is put back after the fade to black.
 
+## Ceilings (`ceiling` on a region or the outline, `src/ceilings.rs`)
+
+```json
+{ "name": "cave", "nodes": [...], "z": 0,
+  "ceiling": { "kind": "closed", "height": 260, "rise": 90, "reach": 0, "noise": { "amplitude": 25, "scale": 260, "edge": 120 },
+               "roof": 600, "style": "rock" } }
+```
+
+- `ceiling` is none (the region is under its parent's ceiling, if that has one: a ledge in a cave), `{ "kind": "sky" }`
+  (open: a skylight in a covered region) or `{ "kind": "closed", ... }`:
+  - `height` over the region's floor (its `z`), so it moves with the floor;
+  - `rise`: how much higher it gets away from its edges, along a quarter ellipse (steep off the walls, level in the
+    middle): a vault along a narrow region, a dome over a round one; over `reach` from the edge and level beyond, or
+    (0) all the way to the middle;
+  - `noise`: rough rock, fading out within `edge` of its edges, as floor bumps do;
+  - `roof`: the top of the solid over it. By default the floor of the region round it, so a cave dug into a hill keeps
+    the hill over it, and never less than `ROOF_MIN` (40) over the ceiling (a cover on open ground is a slab: a canopy);
+  - `style`: the wall style of the walls it adds; by default the theme's rock.
+- The ceiling itself is always the theme's `ceiling`: a uniform rock that tiles seamlessly both ways
+  (`{ "material": "ceiling_rock", "tile": 320, "tile_v": 320, "surface": "wall" }`, about 10 units a texel), never a
+  wall's texture, which has grass along its top, caps or bands. Each built-in theme has one, from its own region's
+  textures or a neighbour's where it has no plain rock: Kokiri Forest, the Lost Woods and the Sacred Forest Meadow
+  `sfm_stone_shade_a`, Kakariko and Death Mountain Trail `dmt_dirt`, Goron City its own `gc_ceiling`, Zora's Domain
+  `zd_rock`, Zora's Fountain `zf_ceiling`, and so on (`themes/*.json`; test
+  `every_builtin_theme_has_a_ceiling_that_tiles_both_ways`).
+- **The column model.** Each face is a column of open air, bottom to top: `[floor, ceiling]`, then `[roof, ∞)` over the
+  solid (more where covers nest: a hut in a cavern). Each interval's bottom is a floor (the first the face's own, the
+  others roofs, object `roofs`), each finite top a ceiling facing down (object `ceilings`). On each edge, the wall
+  facing a side is that side's air minus the other's: with no ceilings that's the floor-to-floor wall as before (older
+  levels build byte for byte the same), with them a cave's walls, the lintel over its mouth (where the cave's edge lies
+  on lower ground's, the lower ground's air covers the cave's, so there's no wall below the ceiling), a skylight's
+  shaft, a mound where the roof stands above the ground round it. The floor-to-floor piece keeps today's styles and
+  profiles, clipped at the lower side's ceiling; the pieces above are the cover's style.
+- A ceiling's shape is a field over its **owner**'s whole loop (the region whose ceiling it is), not over each face, so
+  regions inside it share one continuous ceiling, and walls meet it at its flat height at the owner's edge.
+- Ceilings and roofs have their own triangulation over the face's own vertices (not the extra points walls need on a
+  floor's edges, which only one side of an edge has), with points as close as their shape needs.
+- **An enclosed level** (the outline's ceiling): no rim, bank or trees; the outline's edges are walls up to the ceiling,
+  outside is solid. Nothing lies beyond it (`beyond` is ignored, with a problem). A skylight's shaft goes up to the
+  outline's `roof` (by default 600 over the highest ceiling), open to the sky there.
+- On an open level, the edge of the world's cliff beside a covered floor stands only where there's air (up to the
+  ceiling, and from the roof to the rim).
+- Under a ceiling everything is shaded darker (`ceilings::DARK`, 0.55, as vertex tints), but for textures the theme's
+  scene vertex-colours (see Themes: shades), whose colour is already a cave's where the scene is one.
+- What stands on the ground (props, fences, rocks, tunnels' mouths) stands on the highest floor below the lowest ceiling
+  where there is one (`props::Ground`): in a cave, not on the hill over it.
+- Problems: a floor up to its ceiling; a ceiling under 40 over its floor; a roof above the edge of the world's rim.
+- Not yet: paths, rocks and props poking through a ceiling aren't checked; edge profiles under a ceiling climb straight
+  through it (reported); the brush can't shape a ceiling (painted terrain moves the whole column).
+- Tests: `a_cave_dug_into_a_hill_is_closed_opens_at_its_mouth_and_keeps_the_hill_over_it`,
+  `an_enclosed_level_is_walled_up_to_its_ceiling_and_a_skylight_opens_it`,
+  `a_cover_on_open_ground_is_a_canopy_and_a_cover_inside_a_cover_a_hut` (each watertight), `ceilings::intervals_subtract`.
+  In the game, Link runs in through the cave's mouth in `sketch_caves` and down the ramp in `sketch_cavern`.
+
 ## Themes (`themes/*.json`, `settings.theme`)
+
+**Fog** (2026-10-11, `fog` in a theme): its scene's fog as the game sets it for child Link at 10:00 (`{ "scene": "spot07",
+"color": [25, 100, 100], "near": 990, "far": 12800 }`, read from the game: `oot_sandbox --scene spot07` prints it). The
+game plays a level in its theme's scene's environment by itself (`level.json`'s `scene`); the theme's copy is for the
+editor's 3D view, which draws it with the game's formula. Test: `every_builtin_theme_has_its_scenes_fog`.
+
+**Shades** (2026-10-11, `shades` in a theme, `overworld kit-shades`). Most overworld scenes are lit: the game shades them
+by their lights, which the theme's `light` stands in for. A few colour their geometry with vertex colours instead
+(the combiner is texture × shade): all of Zora's Domain (its teal) and Goron City, most of the crater, and odd textures
+elsewhere (Kakariko's well shaft, the graveyard's cave rock, Hyrule Castle's moat). `overworld kit-shades [region...]`
+measures, per texture, the scene's mean vertex colour (times its material's colour) over the triangles drawn with it,
+area-weighted, and the themes keep the brightness of mostly vertex-coloured textures, as a grey, held within 0.8 to 1.6
+times the scene's mean (a texture the scene uses only in a dark nook, like Zora's Domain's `zd_rock`, doesn't carry the
+nook everywhere). No hue: a texture's comes from where the scene happens to use it (`zd_rock` came out strongly teal,
+the wall rock nearly grey, and side by side they clashed), and a place's colour is its fog and water: Zora's Domain's
+teal is its fog (the theme's `fog`, and the game's own in play). A triangle drawn with such a texture is shaded with that instead
+of the light, keeping a third of the light's relief (`mesh::SHADE_RELIEF`) so walls still differ from floors
+(`Mesh::shade_with`; a vertex between shaded and lit triangles mixes the two). Kokiri Forest's and Kakariko's levels
+are unchanged. Test: `vertex_coloured_scenes_shade_their_textures_with_the_games_colours`.
+
 
 A level's `settings.theme` is any built-in theme (`theme::BUILTIN`): `kokiri` (the default), `kakariko` (2026-10-08),
 or since 2026-10-09 any region's but Lon Lon's buildings (Regions). The document names styles, never

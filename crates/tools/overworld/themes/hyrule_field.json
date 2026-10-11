@@ -1,6 +1,7 @@
 {
   "name": "hyrule_field",
   "textures": {
+    "ceiling_rock": "zr_riverbed_b",
     "ground": "hf_ground",
     "cliff": "hf_cliff",
     "cliff_b": "hf_cliff_b",
@@ -26,6 +27,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -179,6 +186,12 @@
     "overlap": 100,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot00",
+    "color": [100, 100, 120],
+    "near": 996,
+    "far": 12800
   },
   "light": {
     "ambient": [

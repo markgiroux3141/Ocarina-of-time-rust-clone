@@ -1,6 +1,7 @@
 {
   "name": "gerudo_valley",
   "textures": {
+    "ceiling_rock": "gv_cliff",
     "ground": "gv_ground@t2x1",
     "sand": "gv_sand@t1x2",
     "sandstone": "gv_sandstone@swap",
@@ -19,6 +20,12 @@
     "fence_post": "kf_fence_post",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -128,6 +135,12 @@
     "overlap": 120,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot09",
+    "color": [115, 108, 83],
+    "near": 996,
+    "far": 12800
   },
   "light": {
     "ambient": [

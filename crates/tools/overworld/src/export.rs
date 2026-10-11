@@ -69,6 +69,10 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
     j["theme"] = theme.name.clone().into();
     j["problems"] = problems.clone().into();
     j["rim"] = vec![lvl.rim.0, lvl.rim.1].into();
+    // the game lights the level with its theme's scene's environment (its lights and fog)
+    if let Some(s) = crate::kit::scene(&theme.name).and_then(|s| s.game_scene()) {
+        j["scene"] = s.into();
+    }
     let (obj, mtl) = lvl.mesh.to_obj("level.mtl", &tex);
     // the MTL first and the OBJ last: a viewer reloads on the OBJ
     put(&out.join("level.json"), serde_json::to_string(&j).unwrap())?;

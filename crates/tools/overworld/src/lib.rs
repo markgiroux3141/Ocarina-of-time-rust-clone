@@ -4,6 +4,7 @@
 
 pub mod beyond;
 pub mod build;
+pub mod ceilings;
 pub mod doc;
 pub mod export;
 pub mod geom;

@@ -1,6 +1,7 @@
 {
   "name": "kokiri",
   "textures": {
+    "ceiling_rock": "sfm_stone_shade_a",
     "ground": "kf_ground",
     "cliff": "kf_cliff",
     "cliff_strip": "kf_cliff_strip",
@@ -18,6 +19,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -124,6 +131,15 @@
     "overlap": 180,
     "foliage_in": 40,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot04",
+    "color": [200, 200, 150],
+    "near": 994,
+    "far": 5800
+  },
+  "shades": {
+    "kf_mushroom": [1.000, 1.000, 1.000]
   },
   "light": {
     "ambient": [

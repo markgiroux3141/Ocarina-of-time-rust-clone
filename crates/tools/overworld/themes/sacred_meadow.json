@@ -1,6 +1,7 @@
 {
   "name": "sacred_meadow",
   "textures": {
+    "ceiling_rock": "sfm_stone_shade_a",
     "ground": "sfm_ground",
     "forest_wall": "sfm_forest_wall",
     "brick": "sfm_brick",
@@ -17,6 +18,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -114,6 +121,12 @@
     "overlap": 60,
     "foliage_in": 30,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot05",
+    "color": [140, 140, 100],
+    "near": 977,
+    "far": 5800
   },
   "light": {
     "ambient": [

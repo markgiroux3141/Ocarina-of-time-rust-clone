@@ -1,6 +1,7 @@
 {
   "name": "hyrule_castle",
   "textures": {
+    "ceiling_rock": "hc_stone_rough",
     "ground": "hc_ground",
     "path": "hc_path@swap",
     "cliff": "hc_cliff",
@@ -21,6 +22,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 320,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -149,6 +156,22 @@
     "overlap": 180,
     "foliage_in": 40,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot15",
+    "color": [100, 100, 100],
+    "near": 995,
+    "far": 12800
+  },
+  "shades": {
+    "hc_brick_shaded": [0.638, 0.638, 0.638],
+    "hc_fade": [1.000, 1.000, 1.000],
+    "hc_grate": [0.748, 0.748, 0.748],
+    "hc_paving_shaded": [0.638, 0.638, 0.638],
+    "hc_plain": [0.638, 0.638, 0.638],
+    "hc_plain_b": [0.638, 0.638, 0.638],
+    "hc_water": [0.918, 0.918, 0.918],
+    "hc_water_b": [0.918, 0.918, 0.918]
   },
   "light": {
     "ambient": [

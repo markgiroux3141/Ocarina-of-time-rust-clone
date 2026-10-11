@@ -1,6 +1,7 @@
 {
   "name": "dm_crater",
   "textures": {
+    "ceiling_rock": "dmc_rock",
     "ground": "dmc_ground@t1x2",
     "lava": "dmc_lava",
     "cliff": "dmc_cliff",
@@ -18,6 +19,12 @@
     "hedge_top": "kf_hedge_top",
     "grass_skirt": "kf_grass_skirt",
     "rope": "kf_fence@1-8"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -124,6 +131,62 @@
     "overlap": 100,
     "foliage_in": 20,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot17",
+    "color": [0, 65, 65],
+    "near": 995,
+    "far": 12800
+  },
+  "shades": {
+    "dmc_beam": [0.650, 0.650, 0.650],
+    "dmc_beam_b": [0.687, 0.687, 0.687],
+    "dmc_block_rim": [0.687, 0.687, 0.687],
+    "dmc_brick": [0.687, 0.687, 0.687],
+    "dmc_brick_b": [0.687, 0.687, 0.687],
+    "dmc_ceiling": [0.687, 0.687, 0.687],
+    "dmc_ceiling_b": [0.346, 0.346, 0.346],
+    "dmc_cliff": [0.411, 0.411, 0.411],
+    "dmc_cliff_streak": [0.687, 0.687, 0.687],
+    "dmc_cliff_streak_b": [0.344, 0.344, 0.344],
+    "dmc_cobbles": [0.536, 0.536, 0.536],
+    "dmc_column": [0.687, 0.687, 0.687],
+    "dmc_column_b": [0.344, 0.344, 0.344],
+    "dmc_eye_stone": [0.545, 0.545, 0.545],
+    "dmc_eye_stone_b": [0.687, 0.687, 0.687],
+    "dmc_gate_bars": [0.687, 0.687, 0.687],
+    "dmc_gate_lintel": [0.687, 0.687, 0.687],
+    "dmc_gate_top": [0.344, 0.344, 0.344],
+    "dmc_gold_relief": [0.582, 0.582, 0.582],
+    "dmc_goron_face": [0.344, 0.344, 0.344],
+    "dmc_goron_ring": [0.344, 0.344, 0.344],
+    "dmc_ground": [0.427, 0.427, 0.427],
+    "dmc_ladder": [0.385, 0.385, 0.385],
+    "dmc_ladder_top": [0.687, 0.687, 0.687],
+    "dmc_lava": [0.392, 0.392, 0.392],
+    "dmc_lintel_under": [0.584, 0.584, 0.584],
+    "dmc_mural": [0.659, 0.659, 0.659],
+    "dmc_pillar": [0.687, 0.687, 0.687],
+    "dmc_plank": [0.631, 0.631, 0.631],
+    "dmc_plank_b": [0.687, 0.687, 0.687],
+    "dmc_plank_c": [0.687, 0.687, 0.687],
+    "dmc_post_top": [0.463, 0.463, 0.463],
+    "dmc_post_top_b": [0.687, 0.687, 0.687],
+    "dmc_post_wood": [0.687, 0.687, 0.687],
+    "dmc_post_wood_b": [0.687, 0.687, 0.687],
+    "dmc_rock": [0.563, 0.563, 0.563],
+    "dmc_rock_arch": [0.687, 0.687, 0.687],
+    "dmc_rock_b": [0.486, 0.486, 0.486],
+    "dmc_rock_brick": [0.687, 0.687, 0.687],
+    "dmc_sand": [0.344, 0.344, 0.344],
+    "dmc_temple_floor": [0.344, 0.344, 0.344],
+    "dmc_temple_tile": [0.344, 0.344, 0.344],
+    "dmc_temple_tile_b": [0.357, 0.357, 0.357],
+    "dmc_tunnel_rock": [0.344, 0.344, 0.344],
+    "dmc_untextured": [0.344, 0.344, 0.344],
+    "dmc_wood": [0.545, 0.545, 0.545],
+    "dmc_wood_b": [0.588, 0.588, 0.588],
+    "dmc_wood_c": [0.588, 0.588, 0.588]
   },
   "light": {
     "ambient": [

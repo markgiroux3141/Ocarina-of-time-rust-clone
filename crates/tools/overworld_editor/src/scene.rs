@@ -122,7 +122,8 @@ impl Scene {
         let mut cells: std::collections::HashMap<(i32, i32), Vec<u32>> = Default::default();
         let mut bounds = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
         let mut zr = (f32::INFINITY, f32::NEG_INFINITY);
-        for o in &lvl.mesh.objects {
+        // the plan shows what's under ceilings and roofs (`ceilings.rs`): the floors you edit
+        for o in lvl.mesh.objects.iter().filter(|o| o.name != "ceilings" && o.name != "roofs") {
             for (t, tri) in o.tris.iter().enumerate() {
                 let p = tri.map(|v| o.verts[v]);
                 let a = [p[1][0] - p[0][0], p[1][1] - p[0][1]];

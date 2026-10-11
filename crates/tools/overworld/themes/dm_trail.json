@@ -1,6 +1,7 @@
 {
   "name": "dm_trail",
   "textures": {
+    "ceiling_rock": "dmt_dirt",
     "ground": "dmt_ground_rough@t1x2",
     "cliff": "dmt_cliff",
     "cliff_band": "dmt_cliff_band",
@@ -21,6 +22,12 @@
     "log_end": "kf_log_end",
     "rope": "kf_fence@1-8",
     "post_bark": "kf_post_bark"
+  },
+  "ceiling": {
+    "material": "ceiling_rock",
+    "tile": 640,
+    "tile_v": 320,
+    "surface": "wall"
   },
   "floor": {
     "material": "ground",
@@ -138,6 +145,16 @@
     "overlap": 40,
     "foliage_in": 20,
     "surface": "wall_nograb"
+  },
+  "fog": {
+    "scene": "spot16",
+    "color": [130, 130, 140],
+    "near": 996,
+    "far": 12800
+  },
+  "shades": {
+    "dmt_lava": [0.390, 0.390, 0.390],
+    "dmt_lava_glow": [0.283, 0.283, 0.283]
   },
   "light": {
     "ambient": [

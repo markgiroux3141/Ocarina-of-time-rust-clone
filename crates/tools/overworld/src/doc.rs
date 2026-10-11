@@ -239,6 +239,11 @@ pub struct Outline {
     /// (null). See `beyond.rs`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub beyond: Vec<Option<Beyond>>,
+    /// A ceiling over the whole level: an enclosed level (a cave, a cavern, an interior), walled
+    /// up to its ceiling instead of the edge of the world. Its `roof` is where a skylight's shaft
+    /// ends, open to the sky. See `ceilings.rs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ceiling: Option<Ceiling>,
 }
 
 /// What lies beyond an outline edge, instead of the forest: ground climbing from the edge to a
@@ -311,7 +316,59 @@ pub struct Region {
     /// Per edge (edge k runs from node k to the next), overriding `profile`; null keeps it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<Option<Profile>>,
+    /// What's over it: none inherits its parent's (a ledge in a cave is under the cave's ceiling),
+    /// `sky` opens it (a skylight in a covered parent), `closed` covers it. See `ceilings.rs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ceiling: Option<Ceiling>,
 }
+
+/// What's over a region or the whole level (`ceilings.rs`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Ceiling {
+    /// Open to the sky, though its parent is covered: a skylight.
+    Sky,
+    /// Covered.
+    Closed(Cover),
+}
+
+/// A ceiling: `height` over the floor (the region's z, so it moves with the floor), rising by up
+/// to `rise` away from its edges (a dome, or over `reach` from the edge and level beyond it: a
+/// vault), rough by `noise` (fading out at its edges, as floor bumps do). The solid over it goes
+/// up to `roof`: by default the floor round it (a cave dug into a hill keeps the hill), never less
+/// than `ROOF_MIN` over the ceiling.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Cover {
+    #[serde(default = "cover_height")]
+    pub height: f64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rise: f64,
+    /// How far from its edges a ceiling takes to rise (0: all the way to its middle).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub reach: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub noise: Option<Noise>,
+    /// The solid's top (absolute), instead of the floor round it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roof: Option<f64>,
+    /// The wall style of the walls the cover adds (the theme's rock by default). The ceiling itself
+    /// is always the theme's ceiling rock (`theme::CeilingLook`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+}
+
+impl Default for Cover {
+    fn default() -> Self {
+        Cover { height: cover_height(), rise: 0.0, reach: 0.0, noise: None, roof: None, style: None }
+    }
+}
+
+fn cover_height() -> f64 {
+    300.0
+}
+
+/// The least solid between a ceiling and its roof.
+pub const ROOF_MIN: f64 = 40.0;
 
 impl Region {
     /// Edge k's profile: its own, else the region's (None: a cliff).

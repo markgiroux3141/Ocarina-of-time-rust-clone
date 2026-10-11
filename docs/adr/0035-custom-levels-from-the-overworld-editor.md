@@ -55,7 +55,9 @@ are. Four things needed a decision:
     Link starts on the highest floor at the level's middle, facing north (−z), unless the editor
     passes `--at`.
   - **Light:** Kokiri Forest's own environment at the time of day (`load_all_rooms("spot04")`'s
-    lights), since the overworld theme is Kokiri's.
+    lights), since the overworld theme is Kokiri's. (2026-10-11: since themes cover every
+    overworld region, `level.json` names its theme's scene and the game uses that scene's lights
+    and fog; Kokiri Forest's when it names none.)
   - **Live reload:** the app checks `level.json` twice a second and, when it changes, rebuilds
     the scene and collision with Link where he stands. The editor's ▶ Play button exports, runs
     the sandbox from the repo root (so it finds `oot.toml`'s pad settings and the pack), and
