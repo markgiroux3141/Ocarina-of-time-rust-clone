@@ -627,7 +627,8 @@ pub struct Path {
     #[serde(default)]
     pub shape: Option<String>,
     /// How its attached runs look: none, the ground; "steps", stairs as Kakariko's are (a ramp with
-    /// steps drawn on it, its sides the stairs' profile: the theme's `steps`).
+    /// steps drawn on it, its sides the stairs' profile: the theme's `steps`). Stairs are one
+    /// straight flight between two nodes, as all of Kakariko's are (`Path::is_stairs`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub look: Option<String>,
     /// Its cross-section (`Section`): none, the ground as its line says.
@@ -704,6 +705,11 @@ impl Default for Path {
 }
 
 impl Path {
+    /// Whether it's stairs (`look` "steps"): one straight flight between its two nodes.
+    pub fn is_stairs(&self) -> bool {
+        self.look.as_deref() == Some("steps")
+    }
+
     /// Segment k's section (`sections`, else `section`).
     pub fn section_of(&self, k: usize) -> Option<&Section> {
         if self.sections.is_empty() { self.section.as_ref() } else { self.sections.get(k).and_then(Option::as_ref) }

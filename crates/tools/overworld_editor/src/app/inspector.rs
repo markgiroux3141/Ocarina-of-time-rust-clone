@@ -358,6 +358,7 @@ impl App {
         };
         let floating = self.doc.paths[k].mode == "floating";
         let fences: Vec<String> = self.theme.fences.keys().cloned().collect();
+        let kakariko = self.doc.settings.theme == "kakariko";
         let p = &mut self.doc.paths[k];
         let what = match p.section.as_ref() {
             Some(s) => format!("Path · {}", section_label(Some(s)).to_lowercase()),
@@ -460,8 +461,18 @@ impl App {
                 ui,
                 "Surface",
                 Some("Ground; dirt, the theme's dirt painted along it, fading out by its edges; or stairs as Kakariko's are: a ramp with steps drawn on it, its sides the stairs' profile. Kakariko's are 1 in 2 (26.6°): a 160 rise over 320"),
-                |ui| widgets::segmented(ui, &mut p.look, &[(None, "Ground"), (Some("dirt".to_string()), "Dirt"), (Some("steps".to_string()), "Steps")]),
+                |ui| {
+                    let was = p.look.clone();
+                    widgets::segmented(ui, &mut p.look, &[(None, "Ground"), (Some("dirt".to_string()), "Dirt"), (Some("steps".to_string()), "Steps")]);
+                    // stairs are one straight flight: not with nodes between
+                    if p.is_stairs() && p.nodes.len() != 2 && was != p.look {
+                        p.look = was;
+                    }
+                },
             );
+            if p.nodes.len() != 2 && (p.is_stairs() || kakariko) {
+                widgets::hint(ui, if p.is_stairs() { "Stairs are one straight flight between two nodes: delete the nodes between." } else { "Steps need two nodes: stairs are one straight flight." });
+            }
             field(ui, "Sides", Some("The wall style of its sides (stairs: the stairs' own unless you set one)"), |ui| style_combo(ui, "pedge", &mut p.edge, &styles, "theme's"));
             field(ui, "Bridge shape", Some("Under its floating segments"), |ui| widgets::segmented(ui, &mut p.shape, &[(None, "Theme's"), (Some("rock".to_string()), "Rock arch"), (Some("slab".to_string()), "Slab")]));
         });

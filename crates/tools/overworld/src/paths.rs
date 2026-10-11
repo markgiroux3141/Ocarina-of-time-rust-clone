@@ -985,7 +985,10 @@ fn layout_inner(path: &Path, base: &dyn Fn(P2) -> f64, sampling: Sampling, ends:
         railings: path.railings.clone(),
         joins: vec![],
         into: vec![],
-        notes: vec![],
+        notes: (path.is_stairs() && path.switchbacks.is_none() && n > 2)
+            .then(|| format!("path {name}: stairs are one straight flight between two nodes, and it has {n}: delete the ones between, or make it two paths"))
+            .into_iter()
+            .collect(),
     };
     // a footprint that folds over itself turns too tightly for its width
     for r in geo.runs.iter().filter(|r| !r.floating) {
@@ -1060,6 +1063,17 @@ mod tests {
             assert!(b.2 > a.2 && b.2 - a.2 < 4.0, "{t}: {} to {}", a.2, b.2);
             assert!((b.3 - a.3).abs() < 1.0, "{t}: across {} to {}", a.3, b.3);
         }
+    }
+
+    #[test]
+    fn stairs_with_more_than_two_nodes_are_reported() {
+        let mut p = path(vec![vec![Some(0.0), Some(0.0), Some(0.0)], vec![Some(600.0), Some(0.0)], vec![Some(600.0), Some(600.0), Some(200.0)]], vec![]);
+        assert!(layout(&p, &|_| 0.0, Sampling::Every(30.0)).unwrap().notes.is_empty());
+        p.look = Some("steps".into());
+        let g = layout(&p, &|_| 0.0, Sampling::Every(30.0)).unwrap();
+        assert!(g.notes.len() == 1 && g.notes[0].contains("two nodes"), "{:?}", g.notes);
+        p.nodes.remove(1);
+        assert!(layout(&p, &|_| 0.0, Sampling::Every(30.0)).unwrap().notes.is_empty());
     }
 
     #[test]

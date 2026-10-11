@@ -628,6 +628,7 @@ pub fn new_region(doc: &Doc, nodes: Vec<P2>, z: f64) -> Region {
 pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
     let names: Vec<&str> = doc.paths.iter().map(|r| r.name.as_str()).collect();
     let name = (1..).map(|i| format!("path {i}")).find(|n| !names.contains(&n.as_str())).unwrap();
+    let stairs = doc.settings.theme == "kakariko" && nodes.len() == 2;
     Path {
         name,
         nodes: nodes.into_iter().map(|p| vec![Some(p[0]), Some(p[1])]).collect(),
@@ -636,8 +637,9 @@ pub fn new_path(doc: &Doc, nodes: Vec<P2>) -> Path {
         modes: vec![],
         edge: None,
         shape: None,
-        // in Kakariko a path is stairs to start with: its ramps are
-        look: (doc.settings.theme == "kakariko").then(|| "steps".into()),
+        // in Kakariko a path between two nodes is stairs to start with: its ramps are (stairs are
+        // one straight flight, so one with more is the ground)
+        look: stairs.then(|| "steps".into()),
         ..Default::default()
     }
 }

@@ -1031,6 +1031,10 @@ impl App {
             return true;
         }
         if let Some((k, i, q)) = self.shapes.path_near(&self.doc, w, tol, false) {
+            if self.doc.paths[k].is_stairs() {
+                self.status = format!("{} is stairs: one straight flight between two nodes. Set its surface to Ground to give it more", self.doc.paths[k].name);
+                return true;
+            }
             self.sel = Sel::Node(edit::insert_path_node(&mut self.doc, k, i, q));
             return true;
         }
@@ -1204,7 +1208,11 @@ impl App {
                 p.width = self.new.path_width;
                 p.mode = self.new.path_mode.clone();
                 p.shape = self.new.path_shape.clone();
-                self.status = format!("{} added: its ends take the floor's height", p.name);
+                self.status = if self.doc.settings.theme == "kakariko" && !p.is_stairs() {
+                    format!("{} added as ground: stairs are one straight flight between two nodes", p.name)
+                } else {
+                    format!("{} added: its ends take the floor's height", p.name)
+                };
                 self.doc.paths.push(p);
                 self.sel = Sel::Path(self.doc.paths.len() - 1);
                 self.tool = Tool::Select;
