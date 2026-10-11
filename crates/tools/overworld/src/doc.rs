@@ -39,6 +39,40 @@ pub struct Doc {
     /// Things drawn along lines of nodes: dirt paths, fences, hanging bridges (`lines.rs`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lines: Vec<Line>,
+    /// How the level plays in the game: the region it starts from, and changes to it.
+    #[serde(default, skip_serializing_if = "Game::is_default")]
+    pub game: Game,
+}
+
+/// How the level plays in the game (docs/EDITOR-PLAY-IN-THE-GAME.md). The theme chooses the look
+/// (and with it the lights, fog and sky); this chooses the game's dynamics: the region whose
+/// scene's header and first room the level plays with (the music and nature ambience, the HUD's
+/// rules, Navi's hints, the keep object, the camera type, the room's hazards and clock), and
+/// changes to it. Empty or `None` takes the start's.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Game {
+    /// The region it starts from (a theme's name: "dm_crater"); empty for the theme's own.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub start_from: String,
+    /// Another region's music and nature ambience, or "none" for silence; empty for the start's.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub music: String,
+    /// A hot room: the heat timer runs, as in Death Mountain Crater (`ROOM_ENV_HOT`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hot: Option<bool>,
+    /// The sky drawn (the room's skybox on or off).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sky: Option<bool>,
+    /// The clock running (the room's time speed), or stopped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clock: Option<bool>,
+}
+
+impl Game {
+    pub fn is_default(&self) -> bool {
+        *self == Game::default()
+    }
 }
 
 /// A line of nodes `[x, y]` (or `[x, y, z]` for a bridge's anchors) that the builder draws

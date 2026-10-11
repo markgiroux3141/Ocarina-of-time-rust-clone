@@ -4,7 +4,8 @@ The geometry core of a future standalone overworld level editor: Kokiri Forest-s
 from an outline, regions raised or sunk inside it, and an edge of the world that builds itself.
 Pure Rust with no engine and no Blender. A level document (JSON) and a theme (JSON) go in;
 textured, watertight meshes come out. The editor (`../overworld_editor`) draws and edits documents, and
-the game plays the export with child Link (`oot_sandbox --level`, `oot_import::level`, ADR 0035).
+the game plays the export as a scene of its own (`oot --level`, `oot_import::level`, ADR 0035,
+`docs/EDITOR-PLAY-IN-THE-GAME.md`).
 
 This crate started in the Blender MCP for level generation repo (pd-walk walking, Blender previews) and
 moved here on 2026-10-05; its history up to the move is there (commit `21216d9`).
@@ -31,7 +32,7 @@ Done:
 
 - **The editor** (2026-10-05, `../overworld_editor`, see its README): draw and edit the outline, regions and paths over a
   plan of the built level, with a 3D view beside it and a side profile for paths, where heights are set by dragging. It
-  rebuilds in the background on every edit, and **▶ Play** plays the level in the game with child Link and the pad, which
+  rebuilds in the background on every edit, and **▶ Play** plays the level in the game with the pad, which
   reloads each rebuild.
 
 - **Bumps** (2026-10-05): smooth noise on the ground and on any region's floor, fading out towards each floor's edges.
@@ -102,7 +103,8 @@ target/release/overworld kit-shades [region...]      # how each scene colours it
 target/release/overworld kit-survey <region> [--box x0 y0 x1 y1] [--below z]   # what a scene is made of -> out/overworld/survey/<region>
 target/release/overworld preview <level.json> <out.png> [--theme <theme.json>]  # a level drawn from the south-west and above
 target/release/overworld build crates/tools/overworld/examples/sketch/sketch_plateau.json out/overworld/sketch_plateau [--kit <dir>]...
-target/release/oot_sandbox --level out/overworld/sketch_plateau --child   # play it (reloads on rebuild; --at x,y,z,yaw places Link)
+target/release/oot --level out/overworld/sketch_plateau   # play it (reloads on rebuild; --at x,y,z,yaw places its spawn)
+target/release/oot_sandbox --level out/overworld/sketch_plateau --child [--in-game]   # the spikes' view (or Play_Init), for scripted runs
 python crates/tools/overworld/tools/trace_sketch.py sketch.png level.json --scale 8 --region blue:z=120 --region red:kind=water,z=-100,surface=-20
 python crates/tools/overworld/tools/plan.py <out>/level.json plan.png --doc level.json   # floors by height, bank, walls, tree line
 ```

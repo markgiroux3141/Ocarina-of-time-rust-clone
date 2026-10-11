@@ -64,6 +64,10 @@ struct Cli {
     /// level.json and textures/. Reloaded whenever it's rebuilt; --at places Link.
     #[arg(long)]
     level: Option<PathBuf>,
+    /// With --level: enter it by Play_Init as a scene of its own (as the game's --level does),
+    /// not in the spikes' view.
+    #[arg(long)]
+    in_game: bool,
     /// Headless: run a built-in script and write a contact sheet PNG.
     #[arg(long)]
     sheet: Option<PathBuf>,
@@ -180,6 +184,7 @@ fn options(cli: &Cli) -> Options {
         music: cli.music,
         audio_log: cli.audio_log.is_some(),
         level: cli.level.clone(),
+        level_in_game: cli.in_game,
         file: cli.file,
         sram: cli.sram.clone(),
         cutscene: cli.cutscene.as_deref().map(|s| oot::parse_cutscene(s).expect("--cutscene")),

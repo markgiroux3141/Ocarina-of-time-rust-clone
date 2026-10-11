@@ -7,6 +7,8 @@
 //!   the pack.
 //! - **Layering** (`Assets`): several sources looked up by name, later ones first, so a mod
 //!   pack overrides the base pack's records of the same name.
+//! - **In memory** (`MemSource`): records put by the program itself, replaceable while layered
+//!   (a custom level the editor rebuilds as it's played).
 //!
 //! The header says what built the pack (`importer`, `importer_version`), from what
 //! (`source_sha1`) and in which layout (`format_version`). `PackHeader::is_current` is how a
@@ -18,7 +20,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -407,6 +409,49 @@ impl Source for LooseDir {
     }
 }
 
+/// Records in memory, put by the program: a clone shares them, so the program keeps one to
+/// replace records while another is layered in an `Assets` (the next `get` reads the new ones).
+#[derive(Clone)]
+pub struct MemSource {
+    header: PackHeader,
+    records: Arc<RwLock<HashMap<String, Vec<u8>>>>,
+}
+
+impl MemSource {
+    pub fn new(header: PackHeader) -> MemSource {
+        MemSource { header, records: Default::default() }
+    }
+
+    /// Puts (or replaces) record `name`.
+    pub fn put<T: Serialize + ?Sized>(&self, name: &str, value: &T) -> Result<()> {
+        let bytes = encode(value).with_context(|| format!("encoding {name}"))?;
+        self.records.write().unwrap().insert(name.to_string(), bytes);
+        Ok(())
+    }
+
+    /// Removes every record.
+    pub fn clear(&self) {
+        self.records.write().unwrap().clear();
+    }
+}
+
+impl Source for MemSource {
+    fn header(&self) -> &PackHeader {
+        &self.header
+    }
+    fn read(&self, name: &str) -> Result<Option<Vec<u8>>> {
+        Ok(self.records.read().unwrap().get(name).cloned())
+    }
+    fn names(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.records.read().unwrap().keys().cloned().collect();
+        v.sort();
+        v
+    }
+    fn location(&self) -> String {
+        "(in memory)".to_string()
+    }
+}
+
 /// Sources layered by name: `get` looks in the last-added source first.
 pub struct Assets {
     sources: Vec<Box<dyn Source>>,
@@ -506,6 +551,26 @@ mod tests {
 
     fn header() -> PackHeader {
         PackHeader { format_version: 3, importer: "test".into(), importer_version: 7, source_sha1: "ab".into(), info: BTreeMap::new() }
+    }
+
+    #[test]
+    fn a_memory_source_layers_and_its_records_can_be_replaced() {
+        let dir = std::env::temp_dir().join(format!("eng_asset_mem_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let w = PackWriter::new(header());
+        w.put("a/one", &1u32).unwrap();
+        w.put("a/two", &2u32).unwrap();
+        w.write(&dir.join("p.pak")).unwrap();
+        let mut a = Assets::open(&dir.join("p.pak")).unwrap();
+        let m = MemSource::new(header());
+        a.layer(Box::new(m.clone()));
+        m.put("a/one", &10u32).unwrap();
+        assert_eq!((a.get::<u32>("a/one").unwrap(), a.get::<u32>("a/two").unwrap()), (10, 2));
+        m.put("a/one", &11u32).unwrap();
+        assert_eq!(a.get::<u32>("a/one").unwrap(), 11);
+        m.clear();
+        assert_eq!(a.get::<u32>("a/one").unwrap(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The editor window: a plan view of the level with its outline, regions, paths and props drawn
 //! over the built level, tools to draw and edit them, and panels for their properties. Every edit
 //! is rebuilt in the background; with live export on, the build is also written out for the game
-//! (`oot_sandbox --level`), which reloads it.
+//! (`oot --level`), which reloads it.
 
 use crate::edit::{self, NodeRef, Shapes};
 use crate::profile::ProfileView;
@@ -160,6 +160,10 @@ pub struct App {
     out_dir: PathBuf,
     live: bool,
     walker: Option<Child>,
+    /// The arguments the running game was started with (a change starts it again).
+    walker_args: Vec<String>,
+    /// How ▶ Play starts the game: Link's age, the time of day and the save.
+    play_opts: PlayOptions,
     status: String,
     cursor: Option<P2>,
     title: String,
@@ -196,6 +200,34 @@ pub struct App {
     show_keys: bool,
     show_level: bool,
 }
+
+/// How ▶ Play starts the game (the menu beside it): Link's age, the time of day (`--time`), and a
+/// debug save preset (`--preset`, `oot_game::save::SAVE_PRESETS`) for something to play with.
+#[derive(Clone, PartialEq)]
+pub(crate) struct PlayOptions {
+    pub adult: bool,
+    pub time: &'static str,
+    pub preset: Option<&'static str>,
+}
+
+impl Default for PlayOptions {
+    fn default() -> Self {
+        // a new save's time
+        PlayOptions { adult: false, time: "10:00", preset: None }
+    }
+}
+
+/// The play menu's times of day: the label and `--time`.
+pub(crate) const PLAY_TIMES: [(&str, &str); 4] = [("Morning (6:30)", "06:30"), ("Day (10:00)", "10:00"), ("Evening (17:30)", "17:30"), ("Night (22:00)", "22:00")];
+
+/// The play menu's saves: the label and the game's `--preset` (the Deku Tree's presets, for their
+/// items: the flags they set mean nothing in a custom level).
+pub(crate) const PLAY_SAVES: [(&str, Option<&str>); 4] = [
+    ("A new save", None),
+    ("Sword and shield", Some("deku-tree-open")),
+    ("…and Deku Sticks", Some("deku-tree-sticks")),
+    ("…and the slingshot and nuts", Some("deku-tree-slingshot")),
+];
 
 /// What the drawing tools make: the palette sets these before you draw.
 struct NewThings {
@@ -412,6 +444,8 @@ impl App {
             out_dir,
             live: false,
             walker: None,
+            walker_args: Vec::new(),
+            play_opts: PlayOptions::default(),
             status,
             cursor: None,
             title: String::new(),
@@ -658,13 +692,15 @@ impl App {
         self.sent.as_ref().map(|s| &s.0) != self.built.as_ref()
     }
 
-    /// Writes the last good build and plays it in the clone (`oot_sandbox --level`) with child
-    /// Link, at `at` facing north if given. Live export then keeps it up to date, and the game
-    /// reloads each rebuild with Link where he stands.
+    /// Writes the last good build and plays it in the game (`oot --level`): entered by `Play_Init`
+    /// as a scene of its own, in its theme's scene's music, sky and light, with Link (child or
+    /// adult), the time and the save of the play menu, at `at` facing north if given (its spawn
+    /// there). Live export then keeps it up to date, and the game reloads each rebuild with Link
+    /// where he stands.
     fn play(&mut self, at: Option<P2>) {
-        let exe = Path::new(ROOT).join(if cfg!(windows) { "target/release/oot_sandbox.exe" } else { "target/release/oot_sandbox" });
+        let exe = Path::new(ROOT).join(if cfg!(windows) { "target/release/oot.exe" } else { "target/release/oot" });
         if !exe.exists() {
-            self.status = "the game isn't built: run cargo build --release -p oot_sandbox".into();
+            self.status = "the game isn't built: run cargo build --release -p oot".into();
             return;
         }
         let (Some(level), Some(doc)) = (&self.level, &self.built) else {
@@ -676,23 +712,30 @@ impl App {
             return;
         }
         self.live = true;
+        let o = &self.play_opts;
+        let mut args = vec!["--level".to_string(), self.out_dir.display().to_string(), "--time".into(), o.time.into()];
+        if o.adult {
+            args.push("--adult".into());
+        }
+        if let Some(p) = o.preset {
+            args.extend(["--preset".into(), p.into()]);
+        }
         let running = self.walker.as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)));
-        if running && at.is_none() {
+        if running && at.is_none() && args == self.walker_args {
             self.status = "the game is open: it reloads the level by itself".into();
             return;
         }
         if let Some(mut c) = self.walker.take() {
             let _ = c.kill();
         }
-        // from the repo root, so the game finds oot.toml (the pad's settings) and its pack
-        let mut cmd = Command::new(&exe);
-        cmd.arg("--level").arg(&self.out_dir).arg("--child").current_dir(ROOT);
+        self.walker_args = args.clone();
         if let Some(p) = at {
             // the game's axes are (x, z up, -y); binary angle 0x8000 faces -z, which is north
             let z = self.scene.as_ref().and_then(|s| s.floor_z(p)).unwrap_or_else(|| edit::base_z(&self.doc, &self.shapes, p));
-            cmd.arg(format!("--at={:.0},{:.0},{:.0},-32768", p[0], z + 2.0, -p[1]));
+            args.push(format!("--at={:.0},{:.0},{:.0},-32768", p[0], z + 2.0, -p[1]));
         }
-        match cmd.spawn() {
+        // from the repo root, so the game finds oot.toml (the pad's settings) and its pack
+        match Command::new(&exe).args(&args).current_dir(ROOT).spawn() {
             Ok(c) => {
                 self.walker = Some(c);
                 self.status = format!("playing {} (pad or keyboard: WASD, Space A, E B, Q Z-target)", self.out_dir.display());

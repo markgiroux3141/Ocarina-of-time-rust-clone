@@ -504,6 +504,7 @@ mod tests {
             terrain: None,
             props: vec![],
             lines: vec![],
+            game: Default::default(),
         }
     }
 

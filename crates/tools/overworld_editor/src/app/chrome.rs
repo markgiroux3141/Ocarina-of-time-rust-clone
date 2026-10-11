@@ -170,7 +170,7 @@ impl App {
                 .on_hover_text(if dirty { "Unsaved changes (Ctrl+S saves)" } else { "Saved" });
             vsep(ui);
             ui.menu_button("File", |ui| self.file_menu(ui));
-            if ui.add(egui::Button::selectable(self.show_level, "Level settings…")).on_hover_text("Detail, edges, walls, the edge of the world and sampling").clicked() {
+            if ui.add(egui::Button::selectable(self.show_level, "Level settings…")).on_hover_text("Detail, edges, walls, how it plays in the game, the edge of the world and sampling").clicked() {
                 self.show_level = !self.show_level;
             }
             let can_undo = !self.undo.is_empty() || self.doc != self.committed;
@@ -183,9 +183,10 @@ impl App {
             }
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if play_button(ui).on_hover_text("Play the level in the game with child Link (W plays from the cursor; right-click: play from here)").clicked() {
+                if play_button(ui).on_hover_text("Play the level in the game (W plays from the cursor; right-click: play from here)").clicked() {
                     self.play(None);
                 }
+                ui.menu_button("▾", |ui| self.play_menu(ui)).response.on_hover_text("How Play starts the game: Link, the time of day, the save");
                 if widgets::icon_button(ui, Icon::Keys, 28.0, self.show_keys).on_hover_text("All keys (?)").clicked() {
                     self.show_keys = !self.show_keys;
                 }
@@ -195,6 +196,25 @@ impl App {
                 self.build_pill(ui);
             });
         });
+    }
+
+    /// How ▶ Play starts the game; a change takes effect at the next Play (which restarts the game).
+    fn play_menu(&mut self, ui: &mut egui::Ui) {
+        ui.set_min_width(220.0);
+        let o = &mut self.play_opts;
+        ui.label(RichText::new("LINK").size(10.5).color(FAINT));
+        ui.radio_value(&mut o.adult, false, "Child");
+        ui.radio_value(&mut o.adult, true, "Adult");
+        ui.separator();
+        ui.label(RichText::new("TIME OF DAY").size(10.5).color(FAINT));
+        for (label, t) in super::PLAY_TIMES {
+            ui.radio_value(&mut o.time, t, label);
+        }
+        ui.separator();
+        ui.label(RichText::new("SAVE").size(10.5).color(FAINT));
+        for (label, p) in super::PLAY_SAVES {
+            ui.radio_value(&mut o.preset, p, label);
+        }
     }
 
     fn file_menu(&mut self, ui: &mut egui::Ui) {
@@ -687,6 +707,45 @@ impl App {
             ) {
                 s.wall_texture = walls;
             }
+        });
+        section(ui, "game", "In the game", None, true, |ui| {
+            // the regions with a game scene: what a level can play as, and whose music it can take
+            let regions: Vec<(String, String)> = overworld::kit::scenes().iter().filter(|s| s.game_scene().is_some()).map(|s| (s.theme.clone(), s.label.clone())).collect();
+            let name = |r: &str| regions.iter().find(|x| x.0 == r).map_or(r.to_string(), |x| x.1.clone());
+            let theme = name(&self.doc.settings.theme);
+            let g = &mut self.doc.game;
+            field(
+                ui,
+                "Start from",
+                Some("The region whose game dynamics the level plays with: its music and ambience, the HUD's rules (which buttons and items work), Navi's hints, the camera, and its room's hazards and clock. The theme still sets the look (the lights, fog and sky)."),
+                |ui| {
+                    let shown = if g.start_from.is_empty() { format!("The theme's ({theme})") } else { name(&g.start_from) };
+                    egui::ComboBox::from_id_salt("game start").selected_text(shown).width(ui.available_width()).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut g.start_from, String::new(), format!("The theme's ({theme})"));
+                        for (r, label) in &regions {
+                            ui.selectable_value(&mut g.start_from, r.clone(), label);
+                        }
+                    });
+                },
+            );
+            field(ui, "Music", Some("Another region's music and nature ambience, or silence"), |ui| {
+                let shown = match g.music.as_str() {
+                    "" => "The start's".to_string(),
+                    "none" => "None".to_string(),
+                    r => name(r),
+                };
+                egui::ComboBox::from_id_salt("game music").selected_text(shown).width(ui.available_width()).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut g.music, String::new(), "The start's");
+                    ui.selectable_value(&mut g.music, "none".to_string(), "None");
+                    for (r, label) in &regions {
+                        ui.selectable_value(&mut g.music, r.clone(), label);
+                    }
+                });
+            });
+            let tri = [(None, "Start's"), (Some(true), "On"), (Some(false), "Off")];
+            field(ui, "Hot", Some("The heat timer runs, as in Death Mountain Crater"), |ui| widgets::segmented(ui, &mut g.hot, &tri));
+            field(ui, "Sky", Some("The sky drawn (off for a cave)"), |ui| widgets::segmented(ui, &mut g.sky, &tri));
+            field(ui, "Clock", Some("The time of day passing, or standing still"), |ui| widgets::segmented(ui, &mut g.clock, &tri));
         });
         section(ui, "boundary", "Edge of the world", None, true, |ui| {
             let b = &mut self.doc.boundary;

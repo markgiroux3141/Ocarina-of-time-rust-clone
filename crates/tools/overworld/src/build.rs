@@ -3116,6 +3116,7 @@ mod tests {
             terrain: None,
             props: vec![],
             lines: vec![],
+            game: Default::default(),
         }
     }
 
@@ -3252,6 +3253,7 @@ mod tests {
             terrain: None,
             props: vec![],
             lines: vec![],
+            game: Default::default(),
         }
     }
 
@@ -4452,6 +4454,7 @@ mod tests {
                 terrain: None,
                 props: vec![],
                 lines: vec![],
+                game: Default::default(),
             };
             let th = Theme::for_doc(&doc, None).unwrap();
             let lvl = build(&doc, &th).unwrap();

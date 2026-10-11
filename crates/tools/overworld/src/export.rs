@@ -73,6 +73,32 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
     if let Some(s) = crate::kit::scene(&theme.name).and_then(|s| s.game_scene()) {
         j["scene"] = s.into();
     }
+    // how it plays: the regions as their game scenes (oot_import::level::write_scene)
+    let g = &doc.game;
+    if !g.is_default() {
+        let region = |r: &str| crate::kit::scene(r).and_then(|s| s.game_scene());
+        let mut jg = serde_json::json!({});
+        if let Some(s) = (!g.start_from.is_empty()).then(|| region(&g.start_from)).flatten() {
+            jg["start_from"] = s.into();
+        } else if !g.start_from.is_empty() {
+            problems.push(format!("game: no region {:?} to start from", g.start_from));
+        }
+        match g.music.as_str() {
+            "" => {}
+            "none" => jg["music"] = "none".into(),
+            r => match region(r) {
+                Some(s) => jg["music"] = s.into(),
+                None => problems.push(format!("game: no region {r:?} for the music")),
+            },
+        }
+        for (k, v) in [("hot", g.hot), ("sky", g.sky), ("clock", g.clock)] {
+            if let Some(v) = v {
+                jg[k] = v.into();
+            }
+        }
+        j["game"] = jg;
+        j["problems"] = problems.clone().into();
+    }
     let (obj, mtl) = lvl.mesh.to_obj("level.mtl", &tex);
     // the MTL first and the OBJ last: a viewer reloads on the OBJ
     put(&out.join("level.json"), serde_json::to_string(&j).unwrap())?;

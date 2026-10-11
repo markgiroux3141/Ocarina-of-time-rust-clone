@@ -101,8 +101,12 @@ pub struct Options {
     /// Log what the game's side does to the audio from the start (`GameAudio::log`).
     pub audio_log: bool,
     /// A custom level: a folder the overworld editor or `overworld build` wrote (`level.json`
-    /// and `textures/`), played in Kokiri Forest's light. Reloaded whenever it's rebuilt.
+    /// and `textures/`), played in its theme's scene's light. Reloaded whenever it's rebuilt.
     pub level: Option<PathBuf>,
+    /// Enter `level` by `Play_Init`, as a scene of its own (`oot_import::level::add_scene`): the
+    /// game's way, with the music, the HUD, Navi, the sky and the clock. Without it, the spikes'
+    /// view (`load_level`).
+    pub level_in_game: bool,
     /// Play file N (1 to 3) of the save file, as the file select loads it (`--file N`; with
     /// `new_file`, a new file made in it). File 1 goes through this debug ROM's map select: it
     /// enters by `entrance`.
@@ -192,6 +196,9 @@ pub struct Assets {
     pub platform_col: Option<Arc<eng_collision::collision::CollisionHeader>>,
     /// A custom level's folder, and its `level.json`'s time when loaded (to reload a rebuild).
     pub level: Option<(PathBuf, Option<std::time::SystemTime>)>,
+    /// A custom level entered by `Play_Init`: the records it's written into (layered over the
+    /// game's pack), its entrance, and where its spawn is.
+    pub level_game: Option<LevelGame>,
     /// `Options::file`, and the SRAM image's file, if the SRAM isn't in memory.
     pub file: Option<usize>,
     pub sram_path: Option<PathBuf>,
@@ -279,6 +286,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         target_hurts: o.target_hurts,
         platform_col: None,
         level: None,
+        level_game: None,
         file: o.file,
         sram_path: None,
         view: (o.view.len() == 6).then(|| (Vec3::new(o.view[0], o.view[1], o.view[2]), Vec3::new(o.view[3], o.view[4], o.view[5]))),
@@ -286,7 +294,7 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
     };
     if let Some(p) = &o.preset {
         // Checked up front: a preset only applies to a save, so it needs an entrance.
-        anyhow::ensure!(o.entrance.is_some(), "--preset needs --entrance (it sets the save Play_Init enters with)");
+        anyhow::ensure!(o.entrance.is_some() || o.level_in_game, "--preset needs --entrance (it sets the save Play_Init enters with)");
         SaveContext::default().apply_preset(p).map_err(anyhow::Error::msg)?;
     }
     anyhow::ensure!(!(o.new_file && o.preset.is_some()), "--new-file is the file select's new save: no --preset");
@@ -309,7 +317,11 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
         Some(_) => given.or(new_file_entrance.as_ref()).or(file_entrance.as_ref()),
         None => new_file_entrance.as_ref().or(o.entrance.as_ref().filter(|_| !o.new_file)),
     };
-    if let Some(spec) = spec {
+    let at = <[f32; 4]>::try_from(&o.at[..]).ok().map(|[x, y, z, yaw]| (Vec3::new(x, y, z), yaw as i32 as i16));
+    if let (Some(dir), true) = (&o.level, o.level_in_game) {
+        anyhow::ensure!(o.file.is_none() && !o.new_file && o.cutscene.is_none() && o.room.is_none(), "a level entered by Play_Init starts a debug save: no --file, --new-file, --cutscene or --room");
+        enter_level(&mut a, o.pack.as_deref(), dir, at)?;
+    } else if let Some(spec) = spec {
         // Play_Init reads the pack's tables through its own handle.
         let g = oot_actors::game_assets(open_pack(o.pack.as_deref())?)?;
         let e = find_entrance(&g, spec, o.scene.as_deref(), o.spawn)?;
@@ -325,9 +337,12 @@ pub fn load_assets(o: &Options) -> Result<Assets> {
     } else {
         load_scene(&mut a, o.child)?;
     }
-    if let [x, y, z, yaw] = o.at[..] {
-        a.spawn = (Vec3::new(x, y, z), yaw as i32 as i16);
-        a.start_at = Some(a.spawn);
+    if let Some(p) = at
+        && a.level_game.is_none()
+    {
+        // (A level entered by Play_Init has its spawn there instead.)
+        a.spawn = p;
+        a.start_at = Some(p);
     }
     anyhow::ensure!(o.room.is_none() || o.entrance.is_some(), "--room needs --entrance (it changes rooms after Play_Init)");
     if let Some(n) = o.file {
@@ -396,6 +411,77 @@ pub fn load_level(a: &mut Assets, dir: &std::path::Path, child: bool) -> Result<
     a.marks = Vec::new();
     a.scene_name = None;
     a.level = Some((dir.to_path_buf(), stamp));
+    Ok(())
+}
+
+/// A custom level entered by `Play_Init` (`Options::level_in_game`).
+pub struct LevelGame {
+    /// The pack it's layered over (`Options::pack`), and `--at`: kept for the reloads.
+    pub pack: Option<PathBuf>,
+    pub at: Option<(Vec3, i16)>,
+    pub entered: oot_import::level::Entered,
+    /// Where Link starts: the level's spawn, or `--at` (the editor's "Play from here").
+    pub spawn: (Vec3, i16),
+}
+
+/// Loads a custom level as a scene of its own for `Play_Init` (`Options::level_in_game`): the
+/// game's tables from the pack, with the level's records layered over it in memory
+/// (`oot_import::level::write_scene`) and its scene, entrances and HUD restrictions added
+/// (`oot_import::level::add_scene`). Link starts at `at`, or at the level's spawn. Run again for
+/// each rebuild (`reload_level`): the tables take some 30 ms, and so its rules change with it.
+pub fn enter_level(a: &mut Assets, pack: Option<&std::path::Path>, dir: &std::path::Path, at: Option<(Vec3, i16)>) -> Result<()> {
+    let t0 = Instant::now();
+    let stamp = level_stamp(dir);
+    let l = oot_import::level::load(dir)?;
+    let mut p = open_pack(pack)?;
+    let records = eng_asset::MemSource::new(p.header().clone());
+    p.assets.layer(Box::new(records.clone()));
+    let spawn = at.unwrap_or(l.spawn);
+    oot_import::level::write_scene(&l, &p, &records, spawn)?;
+    let mut g = oot_game::play_scene::GameAssets::load(p, oot_actors::overlays())?;
+    let entered = oot_import::level::add_scene(&mut g, &l)?;
+    let theme = l.scene.as_deref().unwrap_or(oot_import::level::DEFAULT_THEME);
+    println!(
+        "level {} from {}: {} triangles, {} collision polys ({} vertices), {} water boxes; scene {:#x} looking as {theme}{}, entrance {:#x}, spawn at {} ({:.0} ms)",
+        l.name,
+        dir.display(),
+        l.triangles,
+        l.collision.polys.len(),
+        l.collision.vertices.len(),
+        l.collision.water_boxes.len(),
+        entered.scene_id,
+        l.game.start_from.as_ref().map_or(String::new(), |s| format!(", playing as {s}")),
+        entered.entrance,
+        spawn.0,
+        t0.elapsed().as_secs_f64() * 1000.0
+    );
+    for n in &l.notes {
+        println!("  note: {n}");
+    }
+    a.game = Some(Arc::new(g));
+    a.entrance = Some(entered.entrance);
+    a.place = l.name;
+    a.marks = Vec::new();
+    a.scene_name = None;
+    a.level = Some((dir.to_path_buf(), stamp));
+    a.level_game = Some(LevelGame { pack: pack.map(|p| p.to_path_buf()), at, entered, spawn });
+    Ok(())
+}
+
+/// The overworld editor's live reload of a custom level entered by `Play_Init`: loaded again
+/// from its folder (`enter_level`), then `Play_Init` again in `w`'s place
+/// (`PlayState::reload_scene`: the save and the music kept) with Link where he stood.
+pub fn reload_level(a: &mut Assets, w: &mut PlayState) -> Result<()> {
+    let (Some((dir, _)), Some(lg)) = (a.level.clone(), &a.level_game) else { return Ok(()) };
+    let (pack, at) = (lg.pack.clone(), lg.at);
+    enter_level(a, pack.as_deref(), &dir, at)?;
+    let p = w.player();
+    let (pos, yaw) = (p.actor.world_pos, p.actor.shape_rot.y);
+    w.assets = a.game.clone();
+    if let Some(e) = a.entrance {
+        w.reload_scene(e);
+    }
+    w.place_player(pos, yaw);
     Ok(())
 }
 
@@ -928,7 +1014,21 @@ impl eframe::App for App {
             && self.level_check.elapsed().as_secs_f32() >= 0.5
         {
             self.level_check = Instant::now();
-            if level_stamp(&dir) != stamp {
+            if level_stamp(&dir) != stamp && self.assets.level_game.is_some() {
+                // Entered by Play_Init: Play_Init again on the rebuilt level, Link where he
+                // stands (not while the pause menu is open: the next check after it).
+                if self.world.pause_ctx.state == oot_game::kaleido::PAUSE_STATE_OFF {
+                    match reload_level(&mut self.assets, &mut self.world) {
+                        Ok(()) => self.scene = SceneGfx::new(&self.assets),
+                        Err(e) => {
+                            log::error!("reloading the level: {e:#}");
+                            if let Some(l) = &mut self.assets.level {
+                                l.1 = level_stamp(&dir);
+                            }
+                        }
+                    }
+                }
+            } else if level_stamp(&dir) != stamp {
                 let p = self.world.player();
                 let (child, pos, yaw) = (!p.adult, p.actor.world_pos, p.actor.shape_rot.y);
                 match load_level(&mut self.assets, &dir, child) {

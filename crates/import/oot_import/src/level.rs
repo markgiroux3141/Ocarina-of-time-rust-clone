@@ -19,6 +19,11 @@
 //!   vertices' weights (the object's `alpha`), two cycles as Kokiri's own ground:
 //!   (TEXEL1 - TEXEL0) x SHADE_ALPHA + TEXEL0, then x SHADE.
 //!
+//! Played two ways: in the spikes' view (`scene`: the room, collision and spawn handed to a play
+//! state directly), or by `Play_Init` as a scene of its own (`add_scene` gives it a new scene id
+//! and entrances in the game's tables, `write_scene` its records over the pack, in its theme's
+//! scene's header: docs/EDITOR-PLAY-IN-THE-GAME.md).
+//!
 //! The collision header indexes vertices in 13 bits, so a level's collision may have at most
 //! 8192 vertices; bigger levels are refused with a hint (build at a lower detail).
 
@@ -96,7 +101,40 @@ pub struct Level {
     /// The game scene its theme was cut from (spot07 for Zora's Domain), whose environment (lights
     /// and fog) it's played in.
     pub scene: Option<String>,
+    /// How it plays when entered by `Play_Init` (`write_scene`).
+    pub game: Dynamics,
 }
+
+/// How a level plays when entered by `Play_Init` (`level.json`'s `game`, the editor's Level
+/// settings): the scene whose header and first room it plays with, and changes to them. `None`
+/// takes the start's.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Dynamics {
+    /// The scene file (spot17) it starts from; its theme's scene if `None`.
+    pub start_from: Option<String>,
+    /// Another scene's music and nature ambience, or "none" for silence.
+    pub music: Option<String>,
+    /// A hot room (`ROOM_ENV_HOT`: the heat timer), or not.
+    pub hot: Option<bool>,
+    /// The sky drawn (the room's skybox on), or not.
+    pub sky: Option<bool>,
+    /// The clock running (the room's time speed), or stopped.
+    pub clock: Option<bool>,
+}
+
+impl Dynamics {
+    fn read(j: &Value) -> Dynamics {
+        let s = |k: &str| j[k].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+        Dynamics { start_from: s("start_from"), music: s("music"), hot: j["hot"].as_bool(), sky: j["sky"].as_bool(), clock: j["clock"].as_bool() }
+    }
+}
+
+/// `ROOM_ENV_HOT` (`room.h`): a hot room's `environmentType` (`behaviorType2`).
+pub const ROOM_ENV_HOT: u8 = 3;
+
+/// The time speed a running clock gets where its start's stands still: the overworld's
+/// (Kokiri Forest's room header, `SCENE_CMD_TIME_SETTINGS(0xFF, 0xFF, 10)`).
+const CLOCK_SPEED: u8 = 10;
 
 fn game(p: [f32; 3]) -> Vec3 {
     Vec3::new(p[0], p[2], -p[1])
@@ -380,7 +418,8 @@ pub fn load(dir: &Path) -> Result<Level> {
         backgrounds: vec![],
     };
     let scene = j["scene"].as_str().map(str::to_string);
-    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene })
+    let game = Dynamics::read(&j["game"]);
+    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene, game })
 }
 
 /// Connected patches of water triangles (sharing corners): their (x, z) bounds and surface height.
@@ -476,6 +515,162 @@ pub fn scene(level: &Level, lights: EnvLights, child: bool) -> SceneState {
         segments: None,
         all_rooms: true,
     }
+}
+
+/// The scene file a custom level is entered as by `Play_Init` (`add_scene`, `write_scene`).
+pub const SCENE_FILE: &str = "custom_level_scene";
+
+/// The scene a level that names none is played as: Kokiri Forest, the first theme's.
+pub const DEFAULT_THEME: &str = "spot04";
+
+/// `PLAYER_PARAMS(PLAYER_START_MODE_IDLE, PLAYER_START_BG_CAM_DEFAULT)`: Link standing at the
+/// spawn, as the void-out respawn puts him.
+const SPAWN_PARAMS: i16 = 0x0DFF;
+
+/// A custom level as the game has it: its own scene id after the table's last, and the entrance
+/// to its spawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Entered {
+    pub scene_id: u16,
+    pub entrance: u16,
+}
+
+/// Adds a custom level to the game's tables as a scene of its own, for `Play_Init` to enter: a
+/// scene entry with a new id after the table's last (`SCENE_FILE`, the default draw config, no
+/// title card), four entrance rows to its spawn (one per game layer: child day and night, adult
+/// day and night), and the HUD's restrictions copied from the scene it starts from (its
+/// `Dynamics::start_from`, else its theme's; Kokiri Forest's if that isn't in the table). The
+/// scene's header and room come from `write_scene`.
+pub fn add_scene(g: &mut oot_game::play_scene::GameAssets, level: &Level) -> Result<Entered> {
+    let theme = level.game.start_from.as_deref().or(level.scene.as_deref()).unwrap_or(DEFAULT_THEME);
+    use oot_game::scene::{EntranceInfo, SceneEntry};
+    use oot_game::transition::TRANS_TYPE_FADE_BLACK;
+    let t = &mut g.scenes;
+    ensure!(t.by_file(SCENE_FILE).is_none(), "a custom level is already in the scene table");
+    let scene_id = t.scenes.len() as u16;
+    // the save keeps scene flags for the first 124 ids (sceneFlags[124])
+    ensure!((scene_id as usize) < oot_game::save::SCENE_FLAGS_COUNT, "the scene table has no room for a custom level (id {scene_id:#x})");
+    t.scenes.push(SceneEntry {
+        id: scene_id,
+        file: SCENE_FILE.to_string(),
+        enum_name: "SCENE_CUSTOM_LEVEL".to_string(),
+        draw_config: "SDC_DEFAULT".to_string(),
+        title_file: String::new(),
+    });
+    let entrance = t.entrances.len() as u16;
+    for layer in 0..4 {
+        t.entrances.push(EntranceInfo {
+            name: format!("ENTR_CUSTOM_LEVEL_{layer}"),
+            scene: scene_id,
+            spawn: 0,
+            continue_bgm: false,
+            title_card: false,
+            end_trans_type: TRANS_TYPE_FADE_BLACK,
+            start_trans_type: TRANS_TYPE_FADE_BLACK,
+        });
+    }
+    let theme_id = t.by_file(&format!("{theme}_scene")).or_else(|| t.by_file(&format!("{DEFAULT_THEME}_scene"))).map(|s| s.id);
+    let r = &mut g.interface.restrictions;
+    let row = theme_id.and_then(|id| r.iter().take_while(|e| e[0] != 0xFF).find(|e| e[0] as u16 == id).copied());
+    if let Some([_, f1, f2, f3]) = row {
+        let end = r.iter().position(|e| e[0] == 0xFF).unwrap_or(r.len());
+        r.insert(end, [scene_id as u8, f1, f2, f3]);
+    }
+    Ok(Entered { scene_id, entrance })
+}
+
+/// Writes `level` into `src` (layered over the pack) as `add_scene`'s scene. For each game
+/// layer, the header of the scene it starts from (`Dynamics::start_from`, else its theme's): the
+/// music and nature ambience, the keep object, Navi's C-Up texts, the scene camera type; with its
+/// theme's scene's look (the environment's lights and fog, the skybox and light mode), the level's
+/// spawn at `spawn`, its collision and one room. The room's header (its behaviour, such as a hot
+/// room's, the echo, the time settings, skybox and sun off) is the start's first room's. Then the
+/// level's changes (`Dynamics`): another scene's music or none, hot or not, the sky, the clock.
+/// A scene that won't load gives way to Kokiri Forest. Rewritten each time the level is rebuilt;
+/// `Play_Init` reads the new records.
+pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_asset::MemSource, spawn: (Vec3, i16)) -> Result<()> {
+    use oot_game::audio::{NA_BGM_NO_MUSIC, NATURE_ID_NONE};
+    use oot_game::pack::keys;
+    use oot_game::scene::SoundSettings;
+    let load = |name: &str| match pack.scene(name) {
+        Ok(t) => Ok(t),
+        Err(e) if name != DEFAULT_THEME => {
+            log::warn!("{name} won't load ({e:#}): Kokiri Forest's instead");
+            pack.scene(DEFAULT_THEME)
+        }
+        Err(e) => Err(e),
+    };
+    let g = &level.game;
+    let look = load(level.scene.as_deref().unwrap_or(DEFAULT_THEME))?;
+    let start = match &g.start_from {
+        Some(s) => load(s)?,
+        None => look.clone(),
+    };
+    let music = match g.music.as_deref() {
+        None => None,
+        Some("none") => Some(None),
+        Some(m) => Some(Some(load(m)?)),
+    };
+    let (pos, yaw) = spawn;
+    let collision = keys::scene_collision(SCENE_FILE, 0);
+    let room_key = keys::room(SCENE_FILE, 0, 0);
+    let mut layers = Vec::new();
+    for l in 0..4 {
+        let (_, sl) = start.layer(l);
+        let (_, ll) = look.layer(l);
+        let sound = match &music {
+            None => sl.sound,
+            Some(Some(m)) => m.layer(l).1.sound,
+            Some(None) => Some(SoundSettings { spec_id: sl.sound.map_or(0, |s| s.spec_id), nature_ambience_id: NATURE_ID_NONE, seq_id: NA_BGM_NO_MUSIC as u8 }),
+        };
+        layers.push(LayerData {
+            header_offset: 0,
+            collision: collision.clone(),
+            spawns: vec![ActorEntry { id: 0, pos: [pos.x.round() as i16, pos.y.round() as i16, pos.z.round() as i16], rot: [0, yaw, 0], params: SPAWN_PARAMS }],
+            light_settings: ll.light_settings.clone(),
+            skybox: ll.skybox,
+            entrances: vec![Spawn { spawn: 0, room: 0 }],
+            exits: vec![],
+            transition_actors: vec![],
+            paths: vec![],
+            sound,
+            cutscene: None,
+            rooms: vec![room_key.clone()],
+            notes: level.notes.clone(),
+            ..sl.clone()
+        });
+    }
+    let first = start.layers[0].rooms.first().map(|k| pack.room(k)).transpose()?;
+    let mut room = RoomData { file: format!("{SCENE_FILE}_room_0"), ..level.room.clone() };
+    if let Some(r) = first {
+        room.behavior = r.behavior;
+        room.echo = r.echo;
+        room.time = r.time;
+        room.skybox_disabled = r.skybox_disabled;
+        room.sun_moon_disabled = r.sun_moon_disabled;
+    }
+    if let Some(hot) = g.hot {
+        room.behavior[1] = if hot {
+            ROOM_ENV_HOT
+        } else if room.behavior[1] == ROOM_ENV_HOT {
+            0
+        } else {
+            room.behavior[1]
+        };
+    }
+    if let Some(sky) = g.sky {
+        room.skybox_disabled = !sky;
+    }
+    if let Some(clock) = g.clock {
+        let [h, m, speed] = room.time.unwrap_or([0xFF, 0xFF, 0]);
+        let running = speed != 0 && speed != 0xFF;
+        room.time = Some([h, m, if !clock { 0 } else if running { speed } else { CLOCK_SPEED }]);
+    }
+    let scene = SceneData { name: SCENE_FILE.to_string(), id: 0, draw_config: "SDC_DEFAULT".to_string(), layers };
+    src.put(&keys::scene(SCENE_FILE), &scene)?;
+    src.put(&room_key, &room)?;
+    src.put(&collision, &level.collision)?;
+    Ok(())
 }
 
 #[cfg(test)]

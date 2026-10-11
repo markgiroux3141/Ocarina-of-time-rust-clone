@@ -82,3 +82,8 @@ are. Four things needed a decision:
   - exits between custom levels and the game's scenes;
   - rooms for big levels, which also lifts the 8192-vertex limit per header.
 - `oot_import` gains the `image` dependency, for the levels' textures.
+
+**2026-10-11:** the first next step is built: a level is entered by `Play_Init` as a scene of its own (a new id after
+the table's last, its records in memory over the pack), in its theme's look and the game dynamics of the region it
+starts from, and the editor's ▶ Play runs the game (`oot --level`). The spikes' view stays in `oot_sandbox --level`.
+See [EDITOR-PLAY-IN-THE-GAME.md](../EDITOR-PLAY-IN-THE-GAME.md).

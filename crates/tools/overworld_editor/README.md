@@ -2,11 +2,12 @@
 
 The standalone editor around the `overworld` crate (roadmap item 6 in `../overworld/README.md`). Draw a level's outline, regions
 and paths and place Kokiri's houses and features over a plan of the built level, set heights in a 3D view beside it and in a path's side profile. Every edit is
-rebuilt in the background (under 0.1 s for the sketch levels), and **▶ Play** plays the build in the game with child Link
-and the pad (`oot_sandbox --level`, ADR 0035), which reloads it whenever the editor writes a new one.
+rebuilt in the background (under 0.1 s for the sketch levels), and **▶ Play** plays the build in the game as a scene of
+its own, with the pad (`oot --level`, ADR 0035 and `docs/EDITOR-PLAY-IN-THE-GAME.md`), which reloads it whenever the editor
+writes a new one.
 
 ```
-cargo build --release -p overworld_editor -p oot_sandbox
+cargo build --release -p overworld_editor -p oot
 target/release/overworld_editor crates/tools/overworld/examples/sketch/sketch_village.json [--theme <theme.json>] [--textures <dir>] [--kit <dir>] [--select <name>]
 ```
 
@@ -16,17 +17,17 @@ start (handy for screenshots: the profile shows for a path).
 The texture libraries are `out/overworld/textures/<region>`, one per overworld region, made on first start from the
 extracted scenes (`overworld kit-textures`; ROM data, never committed). So are the kits of pieces,
 `out/overworld/kit/<region>`, cut from the same extracts by `overworld kit-pieces` (and again whenever a region's
-manifest, `../overworld/kit/<region>.json`, changes); the editor loads them all as one kit. Play needs `target/release/oot_sandbox` and the game's pack (its
+manifest, `../overworld/kit/<region>.json`, changes); the editor loads them all as one kit. Play needs `target/release/oot` and the game's pack (its
 first run imports it from the ROM in `oot.toml`). The build goes to `out/overworld/<level name>/`, which you can change
 in the File menu.
 
 ## The window
 
 - **Top bar:** the File menu (new, open, save, export, live export, and the theme, texture library and export folder),
-  *Level settings…* (a window: name, theme, detail, edges, walls, the edge of the world, sampling), undo and redo. On the
+  *Level settings…* (a window: name, theme, detail, edges, walls, in the game, the edge of the world, sampling), undo and redo. On the
   right: the build's status (click it for the triangles by object), the **collision meter** (vertices of the game's
   8192), the **⚠ problems** (click one to select and frame what it's about), the keys sheet (also `?` or F1), and
-  ▶ **Play**.
+  ▶ **Play** with its ▾ menu (Link, the time of day, the save).
 - **Tool rail** (far left): the tools as icons with their keys, grouped: select · region, path · brush · props ·
   rock, arch · dirt, fence, bridge, hedge, tunnel.
 - **Palette** (left): what the current tool adds, and how. Select: which kinds a click in the plan picks (turn props
@@ -183,6 +184,12 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   every edge is still just that, the forest again; `edit::theme_switched`). See Themes in `../overworld/README.md`.
 - **New levels** start at Low detail, Hard edges and Stretched walls (File → New, and the editor with no file). A level
   without these settings in its file keeps High, Smooth and Tiled.
+- **In the game:** Level settings' *In the game* (the document's `game`, exported into `level.json`): how the level
+  plays when ▶ Play enters it. *Start from* picks the region whose game dynamics it plays with (its music and nature
+  ambience, the HUD's rules, Navi's hints, the camera type, and its first room's hazards and clock); by default the
+  theme's. The theme still sets the look: the lights, fog and sky. Then changes to it: *Music* (another region's, or
+  none), *Hot* (the heat timer, as in the crater), *Sky* and *Clock*, each *Start's*, *On* or *Off*. A change while the
+  game is open reloads the level with it, rules and all. Nothing set, the document saves as before.
 - **Edges:** Level settings' *Edges* (next to *Detail*) sets how every outline, region and path runs between its
   nodes: *Smooth* curves, *Faceted* (the curves in a few flat panels) or *Hard* (straight node to node, so the
   nodes you place are the corners). See Edges in `../overworld/README.md`. *Walls* switches the cliffs between
@@ -208,10 +215,16 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   drawn in orange over the view: a region round its edge, a path along it, a rock as a cage of its footprint and contours,
   an arch along its top, any other line along the ground, a prop as a box, a node as a post standing on it. F frames
   both views.
-- **Play:** ▶ Play exports the build and starts the game (`oot_sandbox --level <out dir> --child`) with child Link: the USB
-  N64 pad, or the keyboard (WASD, Space A, E B, Q Z-target). W plays from the cursor, and so does the right-click menu's
-  "Play from here", facing north. While the game is open, every rebuild is exported and it reloads the level with Link
-  where he stands. The level has Kokiri Forest's light, its surface types (grass, no-grab cliffs, vines) and a water
+- **Play:** ▶ Play exports the build and starts the game (`oot --level <out dir>`): the USB N64 pad, or the keyboard
+  (WASD, Space A, E B, Q Z-target). The level is entered by `Play_Init` as a scene of its own (a new scene id after the
+  game's), with its theme's scene's header: its music and nature ambience, sky, lights and fog, keep object, Navi's
+  hints and HUD restrictions, and its first room's behaviour (a crater-themed level is hot: the heat timer runs). So it
+  plays as the game does, with the HUD, Navi, the clock, the pause menu, effects and void-outs. The ▾ menu beside Play
+  sets child or adult Link, the time of day and the save (a new one, or the sword and shield, sticks, the slingshot and
+  nuts); a change restarts the game at the next Play. W plays from the cursor, and so does the right-click menu's "Play
+  from here", facing north (the spawn goes there, so a void-out returns there). While the game is open, every rebuild is
+  exported and it reloads the level with Link where he stands (`Play_Init` again: the music carries on, the actors start
+  over; not while the pause menu is open). The level has its surface types (grass, no-grab cliffs, vines) and a water
   box for each pond. A level whose collision needs more than 8192 vertices is refused: build it at Medium or Low.
 - Undo/redo: Ctrl+Z / Ctrl+Y. Each drag or each field edit is one step. Save writes the document with each node on one line.
 

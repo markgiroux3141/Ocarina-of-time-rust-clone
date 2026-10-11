@@ -92,6 +92,12 @@ struct Cli {
     /// Kokiri Forest, 30 = the title theme): `Environment_ForcePlaySequence`.
     #[arg(long)]
     music: Option<u8>,
+    /// Play a custom level instead: a folder the overworld editor (or `overworld build`) wrote,
+    /// with level.json and textures/, entered by Play_Init as a scene of its own (in its theme's
+    /// scene's music, sky and light). Reloaded whenever it's rebuilt, Link staying where he is;
+    /// --at puts its spawn there.
+    #[arg(long)]
+    level: Option<PathBuf>,
     /// No sound.
     #[arg(long)]
     no_audio: bool,
@@ -160,6 +166,8 @@ fn main() -> Result<()> {
         audio_log: false,
         file: cli.file,
         sram: cli.sram,
+        level_in_game: cli.level.is_some(),
+        level: cli.level,
         ..Default::default()
     };
     oot::run_window(&opts, "OoT clone", cli.width, cli.height)

@@ -644,6 +644,18 @@ impl PlayState {
         }
     }
 
+    /// The overworld editor's live reload of a custom level entered by `Play_Init`: its records
+    /// were just rewritten, so `Play_Init` runs again for `entrance` in this play state's place,
+    /// as `reinit` does for a scene change (the save, the audio and its sequence, the pad and the
+    /// debug switches kept), with no transition and no respawn. The actors start over.
+    pub fn reload_scene(&mut self, entrance: u16) {
+        self.save.entrance_index = entrance;
+        self.save.respawn_flag = 0;
+        self.save.next_transition_type = crate::transition::TRANS_TYPE_INSTANT;
+        self.transition = TransitionState::default();
+        self.reinit();
+    }
+
     /// The console's reset, as the port stands it in (the window's F5, a scripted run's
     /// `Task::Reset`): the title screen and the file select load `file` (1 to 3; file 1 by the
     /// map select's `map_select_entrance`) from this play state's SRAM
