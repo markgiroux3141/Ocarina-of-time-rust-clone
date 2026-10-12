@@ -326,6 +326,17 @@ pub struct EnvCtx {
 }
 
 impl EnvCtx {
+    /// `Environment_ChangeLightSetting`: blend to `light_setting` (one past the last, or more,
+    /// is 0), unless a blend is under way or the setting is overridden.
+    pub fn change_light_setting(&mut self, light_setting: u32) {
+        if self.light_setting as u32 != light_setting && self.light_blend >= 1.0 && self.light_setting_override == LIGHT_SETTING_OVERRIDE_NONE {
+            let light_setting = if light_setting >= LIGHT_SETTING_MAX as u32 { 0 } else { light_setting };
+            self.light_blend = 0.0;
+            self.prev_light_setting = self.light_setting;
+            self.light_setting = light_setting as usize;
+        }
+    }
+
     /// `Environment_Init`'s values, for a scene with `light_mode`, entered at `day_time` (the
     /// sun's place; the room's time settings come later, `crate::clock`).
     pub fn init(light_mode: u8, day_time: u16) -> EnvCtx {

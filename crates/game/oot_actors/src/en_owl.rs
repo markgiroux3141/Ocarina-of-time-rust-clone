@@ -249,8 +249,12 @@ impl EnOwl {
             unk_410: OwlFunc::Once,
             drawn: true,
         };
-        // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 25) and the culling volume.
+        // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 25); cullingVolumeDistance 1400,
+        // cullingVolumeScale 2000, cullingVolumeDownward 2400.
         this.actor.scale = Vec3::splat(0.025);
+        this.actor.culling_volume_distance = 1400.0;
+        this.actor.culling_volume_scale = 2000.0;
+        this.actor.culling_volume_downward = 2400.0;
         // ActorShape_Init(0, ActorShadow_DrawCircle, 36).
         this.actor.shape_y_offset = 0.0;
         if let Some(a) = play.assets.clone() {
@@ -292,6 +296,7 @@ impl EnOwl {
         match owl_type {
             OWL_DEFAULT => {
                 this.action = Action::WaitDefault;
+                this.actor.culling_volume_distance = 4000.0;
                 this.unk_40a = 0;
             }
             OWL_OUTSIDE_KOKIRI => this.action = Action::WaitOutsideKokiri,

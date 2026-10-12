@@ -26,8 +26,8 @@
 //!
 //! The whole overlay is ported. Not reached yet: the Deku Stick (Link holds none until GAME-05
 //! milestone 4b) and arrows (`En_Arrow` isn't ported: the id check stays, and the arrow's
-//! collider is written through a marked hook). The light's glow sprite (`Lights_GlowCheck`) and
-//! the cull zone (`cullingVolume*`) aren't ported for any actor.
+//! collider is written through a marked hook). The light's glow sprite (`Lights_GlowCheck`)
+//! isn't ported for any actor.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -228,8 +228,11 @@ impl ObjSyokudai {
         let params = actor.params;
         let torch_type = torch_type(params);
         // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 1000); cullingVolumeDistance 4000,
-        // cullingVolumeScale 800, cullingVolumeDownward 800 (the cull zone isn't ported).
+        // cullingVolumeScale 800, cullingVolumeDownward 800.
         actor.scale = Vec3::ONE;
+        actor.culling_volume_distance = 4000.0;
+        actor.culling_volume_scale = 800.0;
+        actor.culling_volume_downward = 800.0;
         // ActorShape_Init(&shape, 0, NULL, 0).
         actor.shape_y_offset = 0.0;
         let mut stand_collider = ColliderCylinder::new(&CYL_INIT_STAND);

@@ -321,3 +321,63 @@ pub fn actor_update_fidget_tables(play: &PlayState, a: &mut [i16], b: &mut [i16]
         b[i] = ((0x940 + 50 * i as u32).wrapping_mul(frames)) as i16;
     }
 }
+
+/// `Actor_TrackNone`: the head and torso turned back towards straight ahead.
+pub fn actor_track_none(head_rot: &mut [i16; 3], torso_rot: &mut [i16; 3]) -> bool {
+    use eng_math::smooth_step_to_s;
+    smooth_step_to_s(&mut head_rot[1], 0, 6, 6200, 100);
+    smooth_step_to_s(&mut head_rot[0], 0, 6, 6200, 100);
+    smooth_step_to_s(&mut torso_rot[1], 0, 6, 6200, 100);
+    smooth_step_to_s(&mut torso_rot[0], 0, 6, 6200, 100);
+    true
+}
+
+/// `Actor_TrackPoint`: the head turned towards `target` from the actor's focus (pitch within ±6000,
+/// yaw within ±8000), and once the head's yaw has settled or is at its limit, the torso turned for
+/// the rest (within ±12000). True when the torso turned.
+pub fn actor_track_point(actor: &Actor, target: Vec3, head_rot: &mut [i16; 3], torso_rot: &mut [i16; 3]) -> bool {
+    use eng_math::smooth_step_to_s;
+    let pitch = pitch_to(actor.focus_pos, target);
+    let yaw = yaw_to(actor.focus_pos, target).wrapping_sub(actor.world_rot.y);
+    smooth_step_to_s(&mut head_rot[0], pitch, 6, 2000, 1);
+    head_rot[0] = head_rot[0].clamp(-6000, 6000);
+    let yaw_diff = smooth_step_to_s(&mut head_rot[1], yaw, 6, 2000, 1);
+    head_rot[1] = head_rot[1].clamp(-8000, 8000);
+    if yaw_diff != 0 && (head_rot[1] as i32).abs() < 8000 {
+        return false;
+    }
+    smooth_step_to_s(&mut torso_rot[1], yaw.wrapping_sub(head_rot[1]), 4, 2000, 1);
+    torso_rot[1] = torso_rot[1].clamp(-12000, 12000);
+    true
+}
+
+/// `Actor_TrackPlayer`: the focus at `focus_pos`, and the head and torso turned to Player's focus
+/// (`actor_track_point`), unless Player is more than `0x4300` off the actor's facing (then turned
+/// back: `actor_track_none`). In a cutscene at `ENTR_KOKIRI_FOREST_0` (`entrance_kokiri_0`) the
+/// target is the view's eye and the facing isn't checked.
+pub fn actor_track_player(play: &PlayState, actor: &mut Actor, head_rot: &mut [i16; 3], torso_rot: &mut [i16; 3], focus_pos: Vec3) -> bool {
+    actor.focus_pos = focus_pos;
+    actor_track_player_impl(play, actor, head_rot, torso_rot)
+}
+
+/// `Actor_TrackPlayerSetFocusHeight`: as `actor_track_player`, the focus `focus_height` above the
+/// actor's position.
+pub fn actor_track_player_set_focus_height(play: &PlayState, actor: &mut Actor, head_rot: &mut [i16; 3], torso_rot: &mut [i16; 3], focus_height: f32) -> bool {
+    actor.focus_pos = actor.world_pos + Vec3::Y * focus_height;
+    actor_track_player_impl(play, actor, head_rot, torso_rot)
+}
+
+fn actor_track_player_impl(play: &PlayState, actor: &Actor, head_rot: &mut [i16; 3], torso_rot: &mut [i16; 3]) -> bool {
+    // gDebugCamEnabled is never set (no debug camera).
+    let kokiri_0 = play.cs_ctx.state != crate::cutscene::CS_STATE_IDLE && play.entrance_by_name("ENTR_KOKIRI_FOREST_0") == Some(play.save.entrance_index);
+    if !kokiri_0 {
+        let yaw = (actor.yaw_towards_player.wrapping_sub(actor.shape_rot.y) as i32).abs();
+        if yaw >= 0x4300 {
+            actor_track_none(head_rot, torso_rot);
+            return false;
+        }
+    }
+    let target = if kokiri_0 { play.view.eye } else { play.player.and_then(|h| play.actors.actor(h)).map(|a| a.focus_pos).unwrap_or(actor.focus_pos) };
+    actor_track_point(actor, target, head_rot, torso_rot);
+    true
+}

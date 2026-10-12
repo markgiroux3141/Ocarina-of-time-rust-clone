@@ -59,8 +59,12 @@ impl ObjBean {
 
     /// `ObjBean_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 100) and the culling volume.
+        // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 100); cullingVolumeDistance 2000,
+        // cullingVolumeScale 200, cullingVolumeDownward 1600.
         actor.scale = Vec3::splat(0.1);
+        actor.culling_volume_distance = 2000.0;
+        actor.culling_volume_scale = 200.0;
+        actor.culling_volume_downward = 1600.0;
         let mut this = ObjBean { actor, action: Action::NotPorted, timer: 0, state_flags: 0 };
         let flag = play.flags.get_switch(this.switch_flag());
         if play.save.adult {

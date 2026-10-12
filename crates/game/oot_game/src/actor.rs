@@ -164,11 +164,14 @@ pub struct Actor {
     pub projected_pos: Vec3,
     pub projected_w: f32,
     /// `cullingVolumeDistance`, `cullingVolumeScale`, `cullingVolumeDownward`: the actor's
-    /// culling volume, in projected space (`Actor_Init`: 1000, 350, 700). (`Actor_CullingVolumeTest`
-    /// isn't run on the actors: every one counts as in view.)
+    /// culling volume, in projected space (`Actor_Init`: 1000, 350, 700), which
+    /// `Actor_CullingVolumeTest` checks each frame (`Actor_DrawAll`).
     pub culling_volume_distance: f32,
     pub culling_volume_scale: f32,
     pub culling_volume_downward: f32,
+    /// `isDrawn`: `Actor_DrawAll` drew it this frame (its init done, and in its culling volume or
+    /// `ACTOR_FLAG_DRAW_CULLING_DISABLED`).
+    pub is_drawn: bool,
     /// `sfx`: a sound the actor asks `Actor_DrawAll` to play this frame (`Actor_PlaySfx_Flagged2` and
     /// the rest, `Actor_UpdateFlaggedAudio`); `Actor_UpdateAll` clears it first.
     pub sfx: u16,
@@ -243,6 +246,7 @@ impl Actor {
             culling_volume_distance: 1000.0,
             culling_volume_scale: 350.0,
             culling_volume_downward: 700.0,
+            is_drawn: false,
             sfx: 0,
             color_filter_params: 0,
             color_filter_timer: 0,

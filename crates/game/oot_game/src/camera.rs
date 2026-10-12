@@ -189,6 +189,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_KEEP1",
     "CAM_FUNC_KEEP3",
     "CAM_FUNC_KEEP0",
+    "CAM_FUNC_FIXD1",
     "CAM_FUNC_FIXD2",
     "CAM_FUNC_FIXD3",
     "CAM_FUNC_FIXD4",
@@ -988,9 +989,17 @@ struct Keep1Rw {
     unk_16: i16,
 }
 
-/// The fixed and data cameras' `paramData` (`Fixed2`..`Fixed4`, `Data4`; `camera.h`).
+/// The fixed and data cameras' `paramData` (`Fixed1`..`Fixed4`, `Data4`; `camera.h`).
 #[derive(Debug, Clone, Copy, Default)]
 struct FixedData {
+    // Fixed1ReadOnlyData / Fixed1ReadWriteData.
+    fixd1_unk_00: f32,
+    fixd1_lerp_step: f32,
+    fixd1_fov: f32,
+    fixd1_interface_field: i16,
+    fixd1_eye_pos_target: Vec3,
+    fixd1_eye_rot_target: [i16; 3],
+    fixd1_rw_fov: i16,
     // Fixed2ReadOnlyData / Fixed2ReadWriteData.
     fixd2_y_offset: f32,
     fixd2_eye_step_scale: f32,
@@ -3146,6 +3155,7 @@ impl GameCamera {
                 Some("CAM_FUNC_KEEP1") => self.keep_on1(d, col, p, f.target_focus),
                 Some("CAM_FUNC_KEEP3") => self.keep_on3(d, col, p, f),
                 Some("CAM_FUNC_KEEP0") => self.keep_on0(d, col, f.target_focus),
+                Some("CAM_FUNC_FIXD1") => self.fixed1(d, col, p),
                 Some("CAM_FUNC_FIXD2") => self.fixed2(d, col, p),
                 Some("CAM_FUNC_FIXD3") => self.fixed3(d, col),
                 Some("CAM_FUNC_FIXD4") => self.fixed4(d, col, p),
@@ -5308,6 +5318,59 @@ impl GameCamera {
         self.roll = 0;
         self.at_lerp_step_scale = 0.0;
         true
+    }
+
+    /// `Camera_Fixed1`: the eye eases to the bg camera's position and turns from there towards
+    /// the bg camera's rotation; `at` is set along that turn (the market's balcony views).
+    fn fixed1(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let key = self.cur();
+            let v = |i: usize| d.value(key, i);
+            let b = self.bg_cam_data(col);
+            let f = &mut self.fixd;
+            f.fixd1_eye_pos_target = b.pos_f();
+            f.fixd1_eye_rot_target = b.rot;
+            f.fixd1_rw_fov = b.fov;
+            // GET_NEXT_SCALED_RO_DATA, GET_NEXT_RO_DATA.
+            f.fixd1_unk_00 = v(0) as f32 * 0.01 * player_height;
+            f.fixd1_lerp_step = v(1) as f32 * 0.01;
+            f.fixd1_fov = v(2) as f32;
+            f.fixd1_interface_field = v(3);
+        }
+        let f = &mut self.fixd;
+        if f.fixd1_rw_fov == -1 {
+            f.fixd1_rw_fov = (f.fixd1_fov * 100.0) as i16;
+        } else if f.fixd1_rw_fov <= 360 {
+            f.fixd1_rw_fov = f.fixd1_rw_fov.wrapping_mul(100);
+        }
+        self.interface_flags = self.fixd.fixd1_interface_field;
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+            self.func_80043b60(d);
+            if self.fixd.fixd1_rw_fov != -1 {
+                // CAM_DATA_SCALED.
+                self.fixd.fixd1_fov = self.fixd.fixd1_rw_fov as f32 * 0.01;
+            }
+        }
+        let f = self.fixd;
+        let eye_at_offset = diff_to_sph_geo(self.eye, self.at);
+        let mut eye = self.eye;
+        lerp_ceil_vec3(f.fixd1_eye_pos_target, &mut eye, 0.1, 0.1, 0.2);
+        self.eye = eye;
+        let adjusted_pos = self.player_pos + Vec3::new(0.0, player_height, 0.0);
+        self.dist = adjusted_pos.distance(self.eye);
+        let eye_offset = VecSphGeo {
+            r: self.dist,
+            pitch: lerp_ceil_s(f.fixd1_eye_rot_target[0].wrapping_neg(), eye_at_offset.pitch, f.fixd1_lerp_step, 5),
+            yaw: lerp_ceil_s(f.fixd1_eye_rot_target[1], eye_at_offset.yaw, f.fixd1_lerp_step, 5),
+        };
+        self.at = sph_geo_add(self.eye, eye_offset);
+        self.eye_next = self.eye;
+        self.fov = lerp_ceil_f(f.fixd1_fov, self.fov, f.fixd1_lerp_step, 0.01);
+        self.roll = 0;
+        self.at_lerp_step_scale = 0.0;
+        self.pos_offset = self.at - self.player_pos;
     }
 
     /// `Camera_Fixed2`: the eye eases to the bg camera's position, `at` follows Player

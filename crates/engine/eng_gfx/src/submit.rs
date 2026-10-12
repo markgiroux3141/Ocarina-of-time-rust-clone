@@ -142,6 +142,10 @@ pub struct DrawLists {
     /// The letterbox bars' height in rows of the 240-row frame (`Letterbox_GetSize`): black
     /// over the 3D lists, under `overlay_2d`.
     pub letterbox_rows: f32,
+    /// Black over the 3D lists and the pause menu outside the middle 4:3 of a wider target, and
+    /// the fills kept inside it: the game's frame is 4:3, and what lies beyond it (a prerendered
+    /// room's own geometry, actors culled by the game's 4:3 view) mustn't show (ADR 0014, 0059).
+    pub pillarbox: bool,
     /// The pause menu (`KaleidoScope_Draw` into `POLY_OPA_DISP`, over the saved frame): drawn
     /// after the 3D lists, their fills and the letterbox, before the overlay's fill and
     /// `overlay_2d`, in `pause_view`'s perspective. Each command's transform is the view and the

@@ -275,6 +275,13 @@ fn an_explosion_in_reach_breaks_a_boulder() {
     let (home, params) = ROCKS[1];
     let h = rock_at(&w, home);
     let pos = home + Vec3::new(0.0, 20.0, 0.0);
+    // Link on the floor below the row (480), 250 in from the boulder and facing it: in view, in
+    // its culling volume, it updates.
+    let from = home - Vec3::new(1.0, 0.0, 1.0).normalize() * 250.0 + Vec3::Y * 50.0;
+    let (y, _) = w.col.entity_raycast_down(from);
+    assert_eq!(y, 480.0);
+    w.place_player(Vec3::new(from.x, y, from.z), 0x2000);
+    idle(&mut w, 2);
     // func_80033684: an explosive with params 1 within rot.z × 10 + 80 of the boulder's position
     // (20 above its home). One 81 off (out from the row of boulders, over 110 from the other two)
     // with rot.z 0 is out of reach; one with params 0 (a bomb not exploding) never counts.

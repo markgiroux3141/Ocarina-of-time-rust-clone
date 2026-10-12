@@ -19,8 +19,7 @@
 //! there Link climbs onto them and the pull is reached only by injection (`func_8002DFA4`); a
 //! stone flush with the floor, as the graveyard places them, is pulled by Player
 //! (`oot_actors --test push`). Category BG: it updates before Player, so the `unk_150` it reads is
-//! the one Player wrote last frame. The whole overlay is ported; the cull zone isn't, for any
-//! actor.
+//! the one Player wrote last frame. The whole overlay is ported.
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, MeshKey};

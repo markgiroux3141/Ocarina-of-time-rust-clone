@@ -13,7 +13,7 @@
 //! (`func_80033480`), `NA_SE_EV_BOX_BREAK`, its flag set, gone.
 //!
 //! The Master Quest Deku Tree's is in room 2, params 0x0080 at (-1214, 390, 1208): size 0,
-//! flag 0x20, no wait. The whole overlay is ported; the cull zone isn't, for any actor.
+//! flag 0x20, no wait. The whole overlay is ported.
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_INTERACT_PLAYER_ON_TOP, DYNA_TRANSFORM_POS};
 use eng_math::{cos_s, sin_s};
@@ -115,9 +115,12 @@ impl ObjLift {
         // Actor_SetScale(sScales[size]).
         l.actor.scale = Vec3::splat(SCALES[l.size()]);
         // sInitChain: gravity -0.6, minVelocityY -15; cullingVolumeDistance 2000,
-        // cullingVolumeScale 500, cullingVolumeDownward 2000 (the cull zone isn't ported).
+        // cullingVolumeScale 500, cullingVolumeDownward 2000.
         l.actor.gravity = -0.6;
         l.actor.min_velocity_y = -15.0;
+        l.actor.culling_volume_distance = 2000.0;
+        l.actor.culling_volume_scale = 500.0;
+        l.actor.culling_volume_downward = 2000.0;
         for i in 0..3 {
             l.shake_orientation[i] = (play.rand.zero_one() * 65535.5) as i32 as i16;
         }

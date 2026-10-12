@@ -136,10 +136,14 @@ impl EnGoroiwa {
 
     /// `EnGoroiwa_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: gravity -0.86, minVelocityY -15, scale 0.1 (the cull zone isn't ported).
+        // sInitChain: gravity -0.86, minVelocityY -15, scale 0.1; cullingVolumeDistance 1500,
+        // cullingVolumeScale 150, cullingVolumeDownward 1500.
         actor.gravity = -0.86;
         actor.min_velocity_y = -15.0;
         actor.scale = Vec3::splat(0.1);
+        actor.culling_volume_distance = 1500.0;
+        actor.culling_volume_scale = 150.0;
+        actor.culling_volume_downward = 1500.0;
         let mut this = EnGoroiwa {
             // EnGoroiwa_InitCollider.
             collider: ColliderJntSph::new(&JNT_SPH_INIT, &JNT_SPH_ELEMENTS),

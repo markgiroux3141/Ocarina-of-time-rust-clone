@@ -40,7 +40,12 @@ impl ItemBHeart {
         if play.flags.get_collectible(COLLECTIBLE_FLAG) {
             actor.kill();
         } else {
+            // sInitChain: scale 0; cullingVolumeDistance 4000, cullingVolumeScale 800,
+            // cullingVolumeDownward 800.
             actor.scale = Vec3::ZERO;
+            actor.culling_volume_distance = 4000.0;
+            actor.culling_volume_scale = 800.0;
+            actor.culling_volume_downward = 800.0;
             // ActorShape_Init(&shape, 0, NULL, 0.8).
             actor.shape_y_offset = 0.0;
         }

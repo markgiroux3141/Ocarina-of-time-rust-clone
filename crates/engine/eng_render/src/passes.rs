@@ -42,6 +42,9 @@ pub struct Screen<'a> {
     pub pause_ortho: &'a [bool],
     /// The letterbox bars' height in rows of 240.
     pub letterbox_rows: f32,
+    /// `eng_gfx::DrawLists::pillarbox`: black bars beside the middle 4:3, over the 3D lists and the
+    /// pause menu, under the overlay's fill and models; the fills kept inside it.
+    pub pillarbox: bool,
     /// Per model of the 3D lists, whether it's drawn in the orthographic projection (a
     /// screen-space draw in the middle of the list, `eng_gfx::DrawParams::screen`). Shorter
     /// than the models (or empty): the rest are 3D.
@@ -150,22 +153,28 @@ impl Renderer {
         let overlay_buf = line_buf(overlay_lines);
         // The letterbox: black bars `rows` of 240 high at the top and bottom, in clip space.
         let rows = screen.letterbox_rows.clamp(0.0, 120.0);
-        let bars: Vec<LineVertex> = if rows > 0.0 {
+        let black = [0.0, 0.0, 0.0, 1.0];
+        let quad = |x0: f32, x1: f32, y0: f32, y1: f32| [[x0, y0], [x1, y0], [x1, y1], [x0, y0], [x1, y1], [x0, y1]].map(|[x, y]| LineVertex { pos: [x, y, 0.0], color: black });
+        let mut bars: Vec<LineVertex> = Vec::new();
+        if rows > 0.0 {
             let h = 2.0 * rows / 240.0;
-            let black = [0.0, 0.0, 0.0, 1.0];
-            let quad = |y0: f32, y1: f32| {
-                [[-1.0, y0], [1.0, y0], [1.0, y1], [-1.0, y0], [1.0, y1], [-1.0, y1]].map(|[x, y]| LineVertex { pos: [x, y, 0.0], color: black })
-            };
-            quad(1.0 - h, 1.0).into_iter().chain(quad(-1.0, -1.0 + h)).collect()
-        } else {
-            Vec::new()
-        };
+            bars.extend(quad(-1.0, 1.0, 1.0 - h, 1.0));
+            bars.extend(quad(-1.0, 1.0, -1.0, -1.0 + h));
+        }
+        // The pillarbox: beside the middle 4:3, whose half-width is (4/3) / aspect of clip space.
+        let aspect = target.size.0 as f32 / target.size.1 as f32;
+        let pillar_w = if screen.pillarbox && aspect > 4.0 / 3.0 { (4.0 / 3.0) / aspect } else { 1.0 };
         let bars_buf = line_buf(&bars);
-        // The fills: a clip-space quad each.
+        // Drawn after the pause menu too (its neighbouring pages lie beyond the 4:3 frame).
+        let pillars: Vec<LineVertex> = if pillar_w < 1.0 { quad(-1.0, -pillar_w, -1.0, 1.0).into_iter().chain(quad(pillar_w, 1.0, -1.0, 1.0)).collect() } else { Vec::new() };
+        let pillars_buf = line_buf(&pillars);
+        // The fills: a clip-space quad each, over the game's frame (the middle 4:3 with the
+        // pillarbox: a fade doesn't colour the bars).
         let fill_quad = |c: Option<[u8; 4]>| {
             c.filter(|c| c[3] > 0).map(|c| {
                 let color = c.map(|v| v as f32 / 255.0);
-                [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]].map(|[x, y]| LineVertex { pos: [x, y, 0.0], color })
+                let w = pillar_w;
+                [[-w, -1.0], [w, -1.0], [w, 1.0], [-w, -1.0], [w, 1.0], [-w, 1.0]].map(|[x, y]| LineVertex { pos: [x, y, 0.0], color })
             })
         };
         let fill_bufs = [screen.opa_fill, screen.xlu_fill, screen.overlay_fill].map(|f| fill_quad(f).and_then(|q| line_buf(&q)));
@@ -262,6 +271,12 @@ impl Renderer {
                     pass.draw(start..start + count, 0..1);
                 }
             }
+        }
+        if let Some(b) = &pillars_buf {
+            pass.set_pipeline(&self.fill_pipeline);
+            pass.set_bind_group(0, &self.globals_bg, &[]);
+            pass.set_vertex_buffer(0, b.slice(..));
+            pass.draw(0..pillars.len() as u32, 0..1);
         }
         draw_fill(&mut pass, 2);
         if !screen.overlay_models.is_empty() {

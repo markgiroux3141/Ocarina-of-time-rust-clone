@@ -63,7 +63,11 @@ impl ObjHana {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let ty = (actor.params & 3).min(2) as usize;
         let p = &HANA_PARAMS[ty];
-        // sInitChain: scale 0.01 (overwritten), the cull zone (culling isn't ported).
+        // sInitChain: scale 0.01 (overwritten); cullingVolumeDistance 900, cullingVolumeScale 60,
+        // cullingVolumeDownward 800.
+        actor.culling_volume_distance = 900.0;
+        actor.culling_volume_scale = 60.0;
+        actor.culling_volume_downward = 800.0;
         actor.scale = glam::Vec3::splat(p.scale);
         actor.shape_y_offset = p.y_offset;
         let mut collider = ColliderCylinder::default();

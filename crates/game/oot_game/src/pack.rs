@@ -224,7 +224,8 @@ pub enum BakeSegment {
 /// What a bake draws.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BakeBody {
-    /// Display lists `(file, symbol)` run in order.
+    /// Display lists `(file, symbol)` run in order; `symbol+0x50` runs from that many bytes in
+    /// (`&DL[10]`).
     DLists(Vec<(String, String)>),
     /// A skeleton's mesh as `SkelAnime_DrawFlex*` draws it, with limbs' lists replaced
     /// (`OverrideLimbDraw` setting `*dList`).

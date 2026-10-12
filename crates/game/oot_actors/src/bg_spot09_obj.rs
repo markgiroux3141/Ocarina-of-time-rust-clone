@@ -6,7 +6,7 @@
 //!
 //! Ported whole (GAME-06 milestone 1b): `func_808B1C70`'s three checks (`func_808B1AE0` whether
 //! this one is here, `func_808B1BA0` its scale, `func_808B1BEC` its collision), then its culling
-//! volume (`func_808B1D44`: not used, as for every actor).
+//! volume (`func_808B1D44`).
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, MeshKey};
@@ -110,9 +110,13 @@ impl BgSpot09Obj {
             log::error!("Error : Spot 09 object arg_data cannot be determined (arg_data {:#06x})", actor.params);
         }
         let mut this = BgSpot09Obj { actor, bg: BG_ACTOR_MAX };
-        // func_808B1D44 (the culling volume) always returns true.
         if !this.func_808b1c70(play) {
             this.actor.kill();
+        } else {
+            // func_808B1D44 (always true): the tent's culling volume (sInitChain2: distance 7200,
+            // scale 800, downward 1500), the others' (sInitChain1: 7200, 3000, 7200).
+            let (d, s, dn) = if this.actor.params == BG_SPOT09_OBJ_TENT { (7200.0, 800.0, 1500.0) } else { (7200.0, 3000.0, 7200.0) };
+            (this.actor.culling_volume_distance, this.actor.culling_volume_scale, this.actor.culling_volume_downward) = (d, s, dn);
         }
         Box::new(this)
     }

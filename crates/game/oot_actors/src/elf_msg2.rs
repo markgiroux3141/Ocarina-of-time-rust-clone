@@ -65,9 +65,9 @@ impl ElfMsg2 {
             if a.world_rot.x > 0 && a.world_rot.x < 8 {
                 a.target_mode = (a.world_rot.x - 1) as u8;
             }
-            // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 200), cullingVolumeDistance 1000 (the cull
-            // zone isn't ported).
+            // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 200), cullingVolumeDistance 1000.
             a.scale = Vec3::splat(0.2);
+            a.culling_volume_distance = 1000.0;
             if a.world_rot.y >= 0x41 {
                 m.action = Action::WaitUntilActivated;
             } else {

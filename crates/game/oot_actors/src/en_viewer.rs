@@ -402,7 +402,8 @@ fn anim(play: &PlayState, file: &str, symbol: &str) -> Option<Anim> {
 impl EnViewer {
     /// `EnViewer_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: the cull zone (not ported).
+        // sInitChain: cullingVolumeScale 300.
+        actor.culling_volume_scale = 300.0;
         play.overlay_static::<Statics>(ACTOR_EN_VIEWER).horse_sfx_played = false;
         let ty = (actor.params >> 8) as u8;
         if matches!(ty, ENVIEWER_TYPE_3_GANONDORF | ENVIEWER_TYPE_5_GANONDORF | ENVIEWER_TYPE_7_GANONDORF | ENVIEWER_TYPE_8_GANONDORF | ENVIEWER_TYPE_9_GANONDORF) {
@@ -544,8 +545,11 @@ impl EnViewer {
                 }
             }
         } else if ty == ENVIEWER_TYPE_7_GANONDORF {
-            // Actor_SetScale(0.3), the cull zones 10000.
+            // Actor_SetScale(0.3), the culling volume 10000 every way.
             self.actor.scale = Vec3::splat(0.3);
+            self.actor.culling_volume_distance = 10000.0;
+            self.actor.culling_volume_scale = 10000.0;
+            self.actor.culling_volume_downward = 10000.0;
         } else if ty == ENVIEWER_TYPE_3_GANONDORF {
             if layer == 4 && matches!(frames, 20 | 59 | 71 | 129 | 140 | 219 | 280 | 320 | 380 | 409 | 438) {
                 Self::sfx_default(play, NA_SE_SY_DEMO_CUT);

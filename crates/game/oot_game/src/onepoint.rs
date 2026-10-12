@@ -820,6 +820,13 @@ impl PlayState {
                 // Play_InitCameraDataUsingPlayer with the actor as Player.
                 self.play_init_camera_data_using_player(sub, actor.map(|a| a.handle), CAM_SET_CS_C);
             }
+            2290 => {
+                // The cuccos' attack (En_Niw). Player's rideActor's freezeTimer = 180: no horse is
+                // ported, so Player rides nothing.
+                self.player_set_cs_action_with_halted_actors(None, 8);
+                set_cs_info(self, "D_80121224", 6);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
             5120 => {
                 self.player_set_cs_action_with_halted_actors(None, 8);
                 set_cs_info(self, "D_80121314", 1);

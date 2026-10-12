@@ -111,6 +111,15 @@ fn vec3f_pitch(a: Vec3, b: Vec3) -> i16 {
 
 /// A projectile of kind `params` as Player's shot leaves it: at `pos`, its pitch and yaw
 /// (`world.rot`) `rot`, no parent; for a shot (`a73`) Player's `unk_A73` 4.
+/// Link stood on the floor under `from`, facing `yaw`, and 10 frames for the camera to settle
+/// behind him: what he shoots at is in view, so in its culling volume (`Actor_CullingVolumeTest`),
+/// and it updates.
+fn face(w: &mut PlayState, from: Vec3, yaw: i16) {
+    let (y, _) = w.col.entity_raycast_down(from);
+    w.place_player(Vec3::new(from.x, y, from.z), yaw);
+    idle(w, 10);
+}
+
 fn spawn_shot(w: &mut PlayState, params: i16, pos: Vec3, pitch: i16, yaw: i16, a73: u8) -> ActorHandle {
     w.player_mut().unk_A73 = a73;
     w.actor_spawn(en_arrow::ACTOR_EN_ARROW, pos, [pitch, yaw, 0], params).expect("En_Arrow")
@@ -362,13 +371,15 @@ fn a_nut_thrown_free_flies_whatever_unk_a73() {
 /// the alpha `Math_StepToS(.., 255, 255)` to 255, the step 150; then each frame the step towards 20
 /// by 60 (90, 30, 20, 20 ...) and the alpha down by it: 165, 135, 115, 95, 75, 55, 35, 15, then
 /// 0, where the step goes back to 0 and the flash is done. Grey (`RGBA8(160, 160, 160, 255)`),
-/// over the screen. `En_M_Fire1`: its timer 0.2, 0.4, 0.6, 0.8 (`Math_StepToF` by 0.2 to 1), the
-/// cylinder at the hit (truncated) attacking each of those frames, killed at the fifth.
+/// over the screen. `En_M_Fire1` updates from the next frame (its culling test first): its timer
+/// 0.2, 0.4, 0.6, 0.8 (`Math_StepToF` by 0.2 to 1), the cylinder at the hit (truncated) attacking
+/// each of those frames, killed at the fifth.
 #[test]
 fn a_nut_into_a_wall_flashes_and_stuns() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree(&a, 3);
     let (start, yaw) = (ROOM3_OPEN, 0x5000);
+    face(&mut w, start, yaw);
     let path = flight(start, 0, yaw);
     let (k_hit, hit) = first_poly(&w, start, &path).expect("a wall");
     assert_eq!(w.transition_fade_flash.fade_type, 2);
@@ -385,10 +396,10 @@ fn a_nut_into_a_wall_flashes_and_stuns() {
     let fire = fires[0];
     let f = w.actors.downcast::<EnMFire1>(fire).unwrap();
     assert_eq!((f.actor.world_pos, f.actor.category, f.actor.params), (hit, oot_game::actor_ctx::ACTORCAT_MISC, 0));
-    assert!((f.timer - 0.2).abs() < 1e-6);
-    assert_eq!(f.collider.dim.pos, [hit.x as i16, hit.y as i16, hit.z as i16]);
-    assert_eq!((f.collider.dim.radius, f.collider.dim.height, f.collider.info.at_dmg_info.dmg_flags), (200, 200, cc::DMG_DEKU_NUT));
-    assert!(w.col_chk.col_at.contains(&cc::ColliderRef { actor: fire, id: 0 }));
+    // Spawned this frame with no flags (`FLAGS` 0): it waits for Actor_DrawAll's culling test
+    // (ACTOR_FLAG_INSIDE_CULLING_VOLUME) before its first update.
+    assert_eq!(f.timer, 0.0);
+    assert!(!w.col_chk.col_at.contains(&cc::ColliderRef { actor: fire, id: 0 }));
     let deku = sfx_at(&w, en_arrow::NA_SE_IT_DEKU);
     assert_eq!(deku.len(), 1);
     let (fr, SfxPos::Source(i)) = deku[0] else { panic!("{deku:?}") };
@@ -403,14 +414,18 @@ fn a_nut_into_a_wall_flashes_and_stuns() {
         idle(&mut w, 1);
         assert_eq!((w.trans_fade_flash_alpha_step, w.transition_fade_flash.color[3]), (step, alpha), "flash frame {}", k + 1);
         assert_eq!(w.transition_fade_flash.is_done, alpha == 0);
-        // En_M_Fire1: 0.4, 0.6, 0.8 attacking, then killed (the fifth), then gone.
+        // En_M_Fire1: 0.2, 0.4, 0.6, 0.8 attacking, then killed (the fifth), then gone.
         match k {
-            0..=2 => {
+            0..=3 => {
                 let f = w.actors.downcast::<EnMFire1>(fire).unwrap();
-                assert!((f.timer - 0.2 * (k as f32 + 2.0)).abs() < 1e-5, "{}", f.timer);
+                assert!((f.timer - 0.2 * (k as f32 + 1.0)).abs() < 1e-5, "{}", f.timer);
                 assert!(!f.actor.killed && w.col_chk.col_at.contains(&cc::ColliderRef { actor: fire, id: 0 }));
+                if k == 0 {
+                    assert_eq!(f.collider.dim.pos, [hit.x as i16, hit.y as i16, hit.z as i16]);
+                    assert_eq!((f.collider.dim.radius, f.collider.dim.height, f.collider.info.at_dmg_info.dmg_flags), (200, 200, cc::DMG_DEKU_NUT));
+                }
             }
-            3 => {
+            4 => {
                 let f = w.actors.downcast::<EnMFire1>(fire).unwrap();
                 assert!(f.actor.killed && f.timer == 1.0);
                 assert!(!w.col_chk.col_at.contains(&cc::ColliderRef { actor: fire, id: 0 }));
@@ -455,7 +470,8 @@ fn skulltula_on_the_ground(a: &Arc<GameAssets>) -> (PlayState, ActorHandle) {
 
 /// A nut thrown down at the floor 40 west of room 5's Skulltula on the ground (from 60 further
 /// west and 100 up, aimed there: `Math_Vec3f_Pitch`, `Math_Vec3f_Yaw`). It bursts there and its
-/// `En_M_Fire1` (200 round, 200 up) attacks with `DMG_DEKU_NUT`: the next frame
+/// `En_M_Fire1` (200 round, 200 up) attacks with `DMG_DEKU_NUT` from its first update (the frame
+/// after it's spawned: its culling test first); the frame after that
 /// (`CollisionCheck_AT`) the Skulltula's body cylinder (`colliderCylinders[0]`, the one that takes
 /// nuts) is hit, `CollisionCheck_Damage` gives its table's `DMG_ENTRY(0, 1)`, and its update
 /// (`EnSt_CheckHitBackside`, damage reaction 1): `NA_SE_EN_GOMA_JR_FREEZE`, `stunTimer` 120, blue
@@ -479,6 +495,9 @@ fn a_nuts_en_m_fire1_stuns_a_skulltula() {
     assert!(arrow(&w, h).actor.killed);
     let fire = w.actors.all().into_iter().find(|&f| w.actors.downcast::<EnMFire1>(f).is_some()).expect("En_M_Fire1");
     assert_eq!(w.actors.downcast::<EnMFire1>(fire).unwrap().actor.world_pos, hit);
+    assert_eq!(w.actors.downcast::<EnSt>(st).unwrap().stun_timer, 0);
+    // The fire's first update (after its culling test) sets its attack.
+    idle(&mut w, 1);
     assert_eq!(w.actors.downcast::<EnSt>(st).unwrap().stun_timer, 0);
     idle(&mut w, 1);
     let s = w.actors.downcast::<EnSt>(st).unwrap();
@@ -505,6 +524,7 @@ fn switch_with(w: &PlayState, params: i16) -> ActorHandle {
 /// (`touchedPoly` too).
 fn shoot_at(w: &mut PlayState, start: Vec3, target: Vec3, by: ActorHandle, reacted: impl Fn(&PlayState) -> bool) -> (ActorHandle, usize, Vec3) {
     let (pitch, yaw) = (vec3f_pitch(start, target), vec3f_yaw(start, target));
+    face(w, start, yaw);
     let h = spawn_shot(w, ARROW_SEED, start, pitch, yaw, 4);
     idle(w, 1);
     for n in 1..=15 {

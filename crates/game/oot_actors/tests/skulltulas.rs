@@ -627,6 +627,10 @@ fn link_takes_a_gold_skulltula_token_and_its_skulltula_isnt_spawned_again() {
     // EnSi_Init: scale 0.025, shape.yOffset 42, func_80AFB768.
     let tk = token(&w, t);
     assert_eq!((tk.actor.scale.x, tk.actor.shape_y_offset, tk.action), (0.025, 42.0, TokenAction::Spin));
+    // Spawned this frame without ACTOR_FLAG_UPDATE_CULLING_DISABLED, it waits for its first culling
+    // test (Actor_DrawAll) before it updates.
+    idle(&mut w, 1);
+    assert_eq!(token(&w, t).actor.scale.x, 0.025);
     // func_80AFB768: Math_SmoothStepToF(&scale.x, 0.25, 0.4, 1, 0) (0.025 + 0.225 × 0.4 = 0.115,
     // ...), turning 0x400 a frame; Actor_SetFocus 16 up.
     let mut scale = 0.025f32;

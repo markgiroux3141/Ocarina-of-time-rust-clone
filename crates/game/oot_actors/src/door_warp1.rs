@@ -129,9 +129,12 @@ impl DoorWarp1 {
     /// `DoorWarp1_Init`: its two lights (but for the Sages', the blue crystal, the yellow warp and
     /// the destination), then `DoorWarp1_ChooseInitialAction`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: scale 1 (then the update's Actor_SetScale), the culling volumes (no actor
-        // culls). ActorShape_Init(&shape, 0, NULL, 0).
+        // sInitChain: scale 1 (then the update's Actor_SetScale); cullingVolumeDistance 4000,
+        // cullingVolumeScale 800, cullingVolumeDownward 4000. ActorShape_Init(&shape, 0, NULL, 0).
         actor.scale = Vec3::ONE;
+        actor.culling_volume_distance = 4000.0;
+        actor.culling_volume_scale = 800.0;
+        actor.culling_volume_downward = 4000.0;
         actor.shape_y_offset = 0.0;
         log::debug!("BOSSWARP arg_data=[{}]", actor.params);
         let mut w = DoorWarp1 {

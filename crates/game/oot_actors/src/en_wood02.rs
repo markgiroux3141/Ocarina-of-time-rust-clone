@@ -16,8 +16,8 @@
 //! - **Bushes**: walked through, they drop from their table once and sway.
 //! - **Leaves**: drift down, swaying, for 75 frames.
 //!
-//! The whole overlay is ported. The culling isn't (`Actor_CullingVolumeTest`: every actor is in
-//! view), so a spawned tree, once in, stays.
+//! The whole overlay is ported. A spawned tree leaves once out of its culling volume
+//! (`ACTOR_FLAG_INSIDE_CULLING_VOLUME` clear, ADR 0058).
 
 use eng_collision::bgcheck::BGCHECK_Y_MIN;
 use eng_collision::math3d::Cylinder16;

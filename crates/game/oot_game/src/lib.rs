@@ -43,6 +43,7 @@ pub mod npc;
 pub mod object_ctx;
 pub mod onepoint;
 pub mod pack;
+pub mod path;
 pub mod play;
 pub mod play_scene;
 pub mod player_lib;

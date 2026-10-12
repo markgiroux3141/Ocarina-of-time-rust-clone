@@ -131,7 +131,11 @@ fn the_ordered_multitag_ends_on_a_point_out_of_order() {
     let h = wonder_item(&w, home).expect("room 0's ordered multitag");
     let i = w.actors.downcast::<EnWonderItem>(h).unwrap();
     assert_eq!((i.wonder_mode, i.item_drop, i.switch_flag, i.num_tag_points), (WONDERITEM_MULTITAG_ORDERED, 9, 0x23, 2));
+    // Placed at point 1 out of order, facing the tag: the camera comes round over the first frame
+    // (the tag outside its culling volume until then), the tag sees him on the second and is
+    // deleted on the third.
     w.place_player(Vec3::new(1074.0, 0.0, -80.0), 0);
+    tick(&mut w);
     tick(&mut w);
     tick(&mut w);
     assert!(gone(&w, h));
@@ -155,7 +159,10 @@ fn the_ordered_multitag_ends_on_a_point_out_of_order() {
     // In order but too slowly: the timer runs out (timer == 1) and it goes.
     let Some(mut w) = kokiri(&a, false) else { return };
     let h = wonder_item(&w, home).unwrap();
+    // Two frames at point 0: the tag is in its culling volume from the second (the camera has come
+    // round), and sees him there.
     w.place_player(Vec3::new(1069.0, 0.0, 406.0), 0);
+    tick(&mut w);
     tick(&mut w);
     w.place_player(Vec3::new(900.0, 0.0, 178.0), 0);
     for _ in 0..81 {

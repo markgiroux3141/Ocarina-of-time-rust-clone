@@ -179,8 +179,9 @@ pub struct EnDoor {
 impl EnDoor {
     /// `EnDoor_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: targetMode 0 (uncullZoneForward 4000: culling isn't ported).
+        // sInitChain: targetMode 0, cullingVolumeDistance 4000.
         actor.target_mode = 0;
+        actor.culling_volume_distance = 4000.0;
         let anims: Vec<Anim> = match play.assets.clone() {
             Some(a) => DOOR_ANIMS.iter().filter_map(|n| a.animation("gameplay_keep", n).map_err(|e| log::error!("En_Door: {e:#}")).ok()).collect(),
             None => Vec::new(),

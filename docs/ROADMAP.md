@@ -148,7 +148,17 @@ probe), the music by the time and the drawbridge's night. Milestone 4, Hyrule Fi
 ([ADR 0057](adr/0057-hyrule-fields-actors.md)): its trees, bush and rock circles, signs and
 grottos' holes, its Peahats by day and its Stalchildren by night (breaking into their bones), the
 enemy music; its two exit runs reach Castle Town's entrance by day and Kakariko at 20:00. Phase 7
-is done; Phase 8 (Kakariko, Castle Town, Hyrule Castle) is next, to be planned.
+is done.
+
+Now Phase 8, Castle Town, Hyrule Castle and Kakariko (GAME-07,
+[GAME-07-castle-town-and-kakariko.md](GAME-07-castle-town-and-kakariko.md)): surveyed, proposed
+and decided (2026-10-11): six milestones in the story's order, the ocarina before Zelda, the
+culling volume first. Milestone 1, Castle Town, is done
+([ADR 0058](adr/0058-the-culling-volume.md), [ADR 0059](adr/0059-castle-towns-actors.md)): the
+culling volume; the market's people (the townsfolk, Malon, the haggling pair, the dancing couple,
+the cucco girl and her cucco, the dogs, the guards, the butterflies), the gossip stones, the
+Temple's altar, windows and warp pad; `Camera_Fixed1`; the game's 4:3 frame shown at 16:9,
+black beside it (BACKLOG #1). Its exit run goes from the entrance through the market to the castle's road.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -488,6 +498,42 @@ probe. And:
 BACKLOG #24 stays open: none of milestone 1's lists read `LOD_FRACTION`; #21 and #22 (the title
 screen and the file select, about 6,400 lines) can follow milestone 3, as the menus' own
 milestone; #1 goes with Phase 8's prerendered houses and shops.
+
+## Phase 8: Castle Town, Hyrule Castle and Kakariko (GAME-07)
+
+**Goal:** child Link's first pass beyond Hyrule Field: Castle Town by day and night, Hyrule Castle
+(Malon, Talon and the crates, the guards, Zelda, her letter, Impa's escort and Zelda's Lullaby),
+Kakariko and its graveyard by day and night, and the ocarina. See
+[GAME-07](GAME-07-castle-town-and-kakariko.md)'s survey. Decided (2026-10-11): the split below;
+every actor whole except `En_Ta` (the castle's and Kakariko's parts), `Demo_Im` (types 3 to 5),
+the actors killed for a child (`En_Xc`, `Demo_6K`, `Bg_Toki_Swd`, `En_Go2`: their inits' checks)
+and the ocarina's scarecrow, memory game and frogs; the shops and games left out; the culling
+volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
+
+1. **Castle Town:** the culling volume; the entrance, the market, the back alley, the Temple of
+   Time's outside by day and night, the Temple's altar; `En_Hy`, `En_Heishi4`, `En_Dog`, `En_Ma1`,
+   `En_Mu`, `En_Niw_Girl`, `En_Tg`, `En_Gs`, `Obj_Mure`; `Camera_Fixed1`; BACKLOG #1.
+   - **Exit:** from the entrance by day through the market to the castle's road and its intro.
+   - **Done** (2026-10-11, ADR 0058, ADR 0059): with `En_Niw`, `En_Butte`, `En_Wonder_Talk`,
+     `Bg_Toki_Hikari`, `Bg_Mjin`; the Temple's room 0 (behind the Door of Time, `En_Xc`,
+     `Demo_6K`, `Bg_Toki_Swd`) left for the door (BACKLOG #37). `Route::Market`, the `market`
+     golden.
+2. **Hyrule Castle's grounds:** the Weird Egg and its hatch at dawn, Player's exchange items,
+   `En_Ta`, `Bg_Spot15_Rrbox`, `Bg_Spot15_Saku`, `En_Heishi2`, `En_Heishi3`, `Obj_Tsubo`,
+   `En_Light`, `TransitionCircle`, `Camera_Jump3`.
+   - **Exit:** Talon woken with the Cucco, the crates pushed into the moat, through the drain.
+3. **The ocarina:** Player's ocarina, the message system's ocarina modes, `AudioOcarina`, the
+   songs' effects (`Oceff_*`), `Shot_Sun` (BACKLOG #36), the Sun's Song's time, the cutscenes'
+   ocarina text.
+   - **Exit:** in Hyrule Field with the songs: Saria's Song, the Sun's Song, a fairy at `Shot_Sun`.
+4. **The guards' courtyard and Zelda:** `Camera_Special6`, `En_Heishi1`, `En_Zl4`, the legend,
+   the letter, `Demo_Im`, the lullaby taught, Hyrule Field's layer 12.
+   - **Exit:** past the guards, Zelda's talk to the letter, Impa's lullaby and goodbye.
+5. **Kakariko:** Player's lift, carry and throw, `En_Niw`, `En_Niw_Lady`, the gate, the people,
+   the interiors.
+   - **Exit:** cuccos into Anju's pen, the letter to the guard, the gate opened.
+6. **The graveyard:** Dampé's dig, the royal tomb, the ReDeads, the Sun's Song.
+   - **Exit:** a dig at 18:00, the lullaby at the tomb, the Sun's Song learned.
 
 ## Cross-cutting debts
 

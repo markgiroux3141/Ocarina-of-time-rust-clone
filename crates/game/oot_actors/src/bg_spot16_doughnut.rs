@@ -5,7 +5,7 @@
 //! creation's), which grow, fade and go.
 //!
 //! Ported whole (GAME-06 milestone 1b). The draws are bakes (ADR 0006), the env alpha and the
-//! fiery scroll dynamic. The culling volume isn't used, as for every actor.
+//! fiery scroll dynamic.
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::Vec3;
@@ -46,7 +46,10 @@ pub struct BgSpot16Doughnut {
 impl BgSpot16Doughnut {
     /// `BgSpot16Doughnut_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: the culling volume only.
+        // sInitChain: cullingVolumeDistance 5500, cullingVolumeScale 5000, cullingVolumeDownward 5000.
+        actor.culling_volume_distance = 5500.0;
+        actor.culling_volume_scale = 5000.0;
+        actor.culling_volume_downward = 5000.0;
         actor.scale = Vec3::splat(0.1);
         let mut this = BgSpot16Doughnut { actor, fire_flag: 0, env_color_alpha: 255, expanding: false };
         let params = this.actor.params;

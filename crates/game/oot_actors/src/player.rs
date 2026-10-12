@@ -166,6 +166,8 @@ pub enum PlayRequest {
     Bonk { actor: ActorHandle, rot_z: bool },
     /// `Camera_SetCameraData(Play_GetCamera(play, CAM_ID_MAIN), 4, NULL, NULL, data2, 0, 0)`.
     SetCameraData { data2: i16 },
+    /// `Environment_ChangeLightSetting(play, lightSetting)`: the floor's light setting.
+    ChangeLightSetting(u32),
     /// `Item_DropCollectible(play, &pos, params)` (`func_8083E4C4`).
     DropCollectible { pos: Vec3, params: i16 },
     /// `Item_Give(play, item)`, in its place among the requests (after `Message_StartTextbox`,
@@ -1272,6 +1274,10 @@ impl Player {
                 Ok(h) => p.navi_actor = Some(h),
                 Err(e) => log::debug!("Navi: {e:?}"),
             }
+            // A dog following Link comes along: Player_Update spawns it behind him.
+            if play.save.dog_params != 0 {
+                play.save.dog_params |= 0x8000u16 as i16;
+            }
         }
         Box::new(p)
     }
@@ -1844,7 +1850,8 @@ impl Player {
             if self.actor.category == ACTORCAT_PLAYER {
                 self.sfx(PlayerSfx::CodeReverb(col.echo(fp) as i8));
                 if self.actor.floor_bg_id == eng_collision::bgcheck::BGCHECK_SCENE {
-                    // (Environment_ChangeLightSetting: not ported here.)
+                    // Environment_ChangeLightSetting(play, SurfaceType_GetLightSetting(..)).
+                    self.play_requests.push(PlayRequest::ChangeLightSetting(col.light_setting(fp)));
                 } else {
                     col.dyna.set_interact_flag(self.actor.floor_bg_id, eng_collision::dyna::DYNA_INTERACT_PLAYER_ABOVE);
                 }
@@ -10159,6 +10166,27 @@ impl ActorImpl for Player {
         if self.inert {
             return;
         }
+        // Player_Update: a dog following Link (gSaveContext.dogParams, bit 15 set by Player_Init)
+        // spawned 30 behind him, if the scene has the dog's object.
+        if play.save.dog_params < 0 {
+            /// `OBJECT_DOG` (`object_table.h`: 0x016B).
+            const OBJECT_DOG: i16 = 0x016B;
+            if play.object_ctx.get_index(OBJECT_DOG).is_none() {
+                play.save.dog_params = 0;
+            } else {
+                play.save.dog_params &= 0x7FFF;
+                let pos = self.get_relative_position(self.actor.world_pos, Vec3::new(0.0, 0.0, -30.0));
+                let dog_params = play.save.dog_params;
+                match play.actor_spawn(crate::en_dog::ACTOR_EN_DOG, pos, [0, self.actor.shape_rot.y, 0], dog_params | 0x8000u16 as i16) {
+                    Ok(h) => {
+                        if let Some(a) = play.actors.actor_mut(h) {
+                            a.room = 0;
+                        }
+                    }
+                    Err(e) => log::debug!("the following dog: {e:?}"),
+                }
+            }
+        }
         let io = RefCell::new(play.take_io());
         let assets = play.assets.clone();
         let audio_tables = play.audio.tables.clone();
@@ -10490,6 +10518,12 @@ impl PlayerIface for Player {
     fn melee_weapon_state(&self) -> i8 {
         self.melee_weapon_state as i8
     }
+    fn held_item_action(&self) -> i32 {
+        self.held_item_ap
+    }
+    fn melee_weapon_tip(&self) -> Vec3 {
+        self.melee_weapon_info[0].tip
+    }
     fn shield_mf(&self) -> oot_game::sys_matrix::MtxF {
         oot_game::sys_matrix::MtxF::from_mat4(self.shield_mf)
     }
@@ -10535,6 +10569,9 @@ impl PlayerIface for Player {
     }
     fn exchange_item_id(&self) -> u8 {
         self.exchange_item_id
+    }
+    fn set_exchange_item_id(&mut self, id: u8) {
+        self.exchange_item_id = id;
     }
     fn clear_talk_actor(&mut self) {
         self.target_actor = None;
@@ -10666,6 +10703,7 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
                 a.parent = me;
             }
         }
+        PlayRequest::ChangeLightSetting(s) => play.env_ctx.change_light_setting(s),
         PlayRequest::Bonk { actor, rot_z } => {
             if let Some(a) = play.actors.actor_mut(actor) {
                 if rot_z {

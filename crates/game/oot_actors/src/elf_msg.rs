@@ -110,9 +110,9 @@ impl ElfMsg {
         }
         if !kill_check(&mut m.actor, play) {
             let a = &mut m.actor;
-            // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 1000), cullingVolumeDistance 1000 (the cull
-            // zone isn't ported).
+            // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 1000), cullingVolumeDistance 1000.
             a.scale = Vec3::ONE;
+            a.culling_volume_distance = 1000.0;
             if a.world_rot.x == 0 {
                 a.scale.z = 0.4;
                 a.scale.x = 0.4;

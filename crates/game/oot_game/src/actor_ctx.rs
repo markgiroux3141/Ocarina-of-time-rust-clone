@@ -106,6 +106,13 @@ pub trait PlayerIface {
     fn exchange_item_id(&self) -> u8 {
         0
     }
+    /// `player->exchangeItemId = id` (what an NPC's text expects to be shown: the beggar's
+    /// bottles).
+    fn set_exchange_item_id(&mut self, _id: u8) {}
+    /// `Player_GetMask`: the mask worn (`PLAYER_MASK_NONE`, 0: the masks aren't ported).
+    fn current_mask(&self) -> u8 {
+        0
+    }
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;
@@ -174,6 +181,14 @@ pub trait PlayerIface {
     /// `meleeWeaponState` (0 none, 1 swinging, -1 the swing's end).
     fn melee_weapon_state(&self) -> i8 {
         0
+    }
+    /// `heldItemAction` (`PLAYER_IA_*`).
+    fn held_item_action(&self) -> i32 {
+        0
+    }
+    /// `MELEE_WEAPON_INFO_TIP(&meleeWeaponInfo[0])`: the sword's tip, from the last frame.
+    fn melee_weapon_tip(&self) -> Vec3 {
+        Vec3::ZERO
     }
     /// `currentShield` (`PLAYER_SHIELD_*`).
     fn current_shield(&self) -> u8 {

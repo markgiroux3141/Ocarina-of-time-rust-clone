@@ -808,6 +808,83 @@ impl GameAudio {
         self.malon_singing_disabled = 0;
     }
 
+    /// `Audio_UpdateMalonSinging`: Malon's singing louder as the camera nears her (`dist` from its
+    /// eye across the ground): with the Lon Lon sequence playing, its channels 0 and 1 (her voice)
+    /// up and channel 13 (the melody) down; with the nature ambience, the Lon Lon sequence started
+    /// on the sub player with only her two channels, their volume by the distance.
+    pub fn update_malon_singing(&mut self, dist: f32, seq_id: u16) {
+        if self.malon_singing_disabled != 0 {
+            return;
+        }
+        let cur_seq_id = (self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) & 0xFF) as u8 as i8 as i16;
+        let melody_volume = |dist: f32| -> i8 {
+            if dist > 2000.0 {
+                127
+            } else if dist < 200.0 {
+                0
+            } else {
+                (((dist - 200.0) * 127.0) / 1800.0) as i32 as i8
+            }
+        };
+        if cur_seq_id == (seq_id & 0xFF) as i16 {
+            if (seq_id & 0xFF) == NA_BGM_LONLON {
+                // Malon is singing along with the Lon Lon sequence.
+                let v = melody_volume(dist);
+                self.queue_seq_cmd(seq_cmd6(SEQ_PLAYER_BGM_MAIN, 3, 0, (127 - v) as u8));
+                self.queue_seq_cmd(seq_cmd6(SEQ_PLAYER_BGM_MAIN, 3, 1, (127 - v) as u8));
+                self.queue_seq_cmd(seq_cmd6(SEQ_PLAYER_BGM_MAIN, 3, 13, v as u8));
+                if self.malon_singing_timer == 0 {
+                    self.malon_singing_timer += 1;
+                }
+            }
+        } else if cur_seq_id == NA_BGM_NATURE_AMBIENCE as i16 && (seq_id & 0xFF) == NA_BGM_LONLON {
+            // Malon is singing along with the ambience.
+            let cur_sub = (self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB) & 0xFF) as u8 as i8 as i16;
+            if cur_sub != (seq_id & 0xFF) as i16 && self.malon_singing_timer < 10 {
+                self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_SUB, NA_BGM_LONLON, 0, 0, 0);
+                // Only her two channels: 2 to 15 disabled.
+                self.queue_seq_cmd(seq_cmd_a(SEQ_PLAYER_BGM_SUB, 0xFFFC));
+                self.malon_singing_timer = 10;
+            }
+            let v = melody_volume(dist);
+            self.queue_seq_cmd(seq_cmd6(SEQ_PLAYER_BGM_SUB, 3, 0, (127 - v) as u8));
+            self.queue_seq_cmd(seq_cmd6(SEQ_PLAYER_BGM_SUB, 3, 1, (127 - v) as u8));
+        }
+        if self.malon_singing_timer < 10 {
+            self.malon_singing_timer += 1;
+        }
+    }
+
+    /// `Audio_ToggleMalonSinging`: her singing off (her channels' volume 0) or back on.
+    pub fn toggle_malon_singing(&mut self, malon_singing_disabled: bool) {
+        self.malon_singing_disabled = malon_singing_disabled as u8;
+        let (player, channel_mask_disable) = if (self.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) & 0xFF) == NA_BGM_LONLON {
+            // With the Lon Lon sequence: every channel kept.
+            (SEQ_PLAYER_BGM_MAIN, 0u16)
+        } else if (self.audio_get_active_seq_id(SEQ_PLAYER_BGM_SUB) & 0xFF) as u8 as u16 == NA_BGM_LONLON {
+            // With the ambience: channels 2 to 15 disabled.
+            (SEQ_PLAYER_BGM_SUB, 0xFFFC)
+        } else {
+            return;
+        };
+        if malon_singing_disabled {
+            self.queue_seq_cmd(seq_cmd6(player, 1, 0, 0));
+            self.queue_seq_cmd(seq_cmd6(player, 1, 1, 0));
+            if player == SEQ_PLAYER_BGM_SUB {
+                self.queue_seq_cmd(seq_cmd_a(player, channel_mask_disable | 3));
+            }
+        } else {
+            if player == SEQ_PLAYER_BGM_SUB {
+                self.audio_play_sequence_with_seq_player_io(SEQ_PLAYER_BGM_SUB, NA_BGM_LONLON, 0, 0, 0);
+            }
+            self.queue_seq_cmd(seq_cmd6(player, 1, 0, 0x7F));
+            self.queue_seq_cmd(seq_cmd6(player, 1, 1, 0x7F));
+            if player == SEQ_PLAYER_BGM_SUB {
+                self.queue_seq_cmd(seq_cmd_a(player, channel_mask_disable));
+            }
+        }
+    }
+
     /// `Audio_ResetSfxChannelState`.
     pub fn reset_sfx_channel_state(&mut self) {
         for s in self.sfx_channel_state.iter_mut() {

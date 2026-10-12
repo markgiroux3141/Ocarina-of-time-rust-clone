@@ -62,6 +62,16 @@ fn room_7(a: &Arc<GameAssets>) -> PlayState {
     w
 }
 
+/// Link 150 on the +z side of the stone at `home`, facing it (-z), and two frames for the camera
+/// to come round behind him: the stone is in view, in its culling volume, and updates (as it would
+/// with Link at it).
+fn face(w: &mut PlayState, home: Vec3) {
+    let from = home + Vec3::new(0.0, 50.0, 150.0);
+    let (y, _) = w.col.entity_raycast_down(from);
+    w.place_player(Vec3::new(from.x, y, from.z), i16::MIN);
+    idle(w, 2);
+}
+
 fn sfx_on(w: &PlayState, frame: u32, id: u16) -> bool {
     w.audio.log.as_ref().unwrap().sfx.iter().any(|&(f, s, _)| f == frame && s == id)
 }
@@ -151,6 +161,7 @@ fn a_pull_slides_a_gravestone_60_back_frame_by_frame() {
     let mut w = room_7(&a);
     let (home, _) = STONES[2];
     let h = stone_at(&w, home);
+    face(&mut w, home);
     let bg = haka(&w, h).bg;
     // Link holds on (PLAYER_STATE2_4, as Player sets it pulling).
     set_player_state2(&mut w, PLAYER_STATE2_4, 0);
@@ -220,6 +231,7 @@ fn a_push_is_refused() {
     let Some(a) = assets() else { return };
     let mut w = room_7(&a);
     let h = stone_at(&w, STONES[3].0);
+    face(&mut w, STONES[3].0);
     let bg = haka(&w, h).bg;
     set_player_state2(&mut w, PLAYER_STATE2_4, 0);
     // Player's push: func_8002DFA4(bg, 2.0, yaw). BgHaka_IdleClosed: 0 < unk_150: zeroed, Link let
@@ -353,6 +365,7 @@ fn the_earth_stays_put_as_the_stone_slides() {
     let mut w = room_7(&a);
     let (home, _) = STONES[2];
     let h = stone_at(&w, home);
+    face(&mut w, home);
     let draw = |w: &PlayState| {
         let s = haka(w, h);
         let mut out = DrawOut::default();

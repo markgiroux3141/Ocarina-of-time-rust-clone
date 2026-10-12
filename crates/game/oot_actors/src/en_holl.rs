@@ -64,8 +64,12 @@ pub struct EnHoll {
 }
 
 impl EnHoll {
-    /// `EnHoll_Init` (the init chain only sets the cull zone, which isn't ported).
-    pub fn init(actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
+    /// `EnHoll_Init`: `sInitChain` (the culling volume), then the type's action.
+    pub fn init(mut actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
+        // sInitChain: cullingVolumeDistance 4000, cullingVolumeScale 400, cullingVolumeDownward 400.
+        actor.culling_volume_distance = 4000.0;
+        actor.culling_volume_scale = 400.0;
+        actor.culling_volume_downward = 400.0;
         let mut h = EnHoll { actor, plane_alpha: 0, side: 0, reset_bg_cover_alpha: 0, action: Action::Horizontal };
         h.choose_action();
         Box::new(h)

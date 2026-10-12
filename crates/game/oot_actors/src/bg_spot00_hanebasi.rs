@@ -147,7 +147,11 @@ fn stones_before_escape(play: &PlayState) -> bool {
 impl BgSpot00Hanebasi {
     /// `BgSpot00Hanebasi_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: the cull zone (not ported) and ICHAIN_VEC3F_DIV1000(scale, 1000).
+        // sInitChain: cullingVolumeScale 550, cullingVolumeDownward 2000, cullingVolumeDistance 5000,
+        // ICHAIN_VEC3F_DIV1000(scale, 1000).
+        actor.culling_volume_distance = 5000.0;
+        actor.culling_volume_scale = 550.0;
+        actor.culling_volume_downward = 2000.0;
         actor.scale = Vec3::ONE;
         let params = actor.params;
         // DynaPolyActor_Init(DYNA_TRANSFORM_POS), the collision by type, DynaPoly_SetBgActor.

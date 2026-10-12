@@ -46,6 +46,7 @@ echo    92  test-creation        GAME-06's creation tests: Demo_Kankyo, the vall
 echo    95  test-farewell        GAME-06's farewell tests: Saria on the bridge, the soft soil, the owl, the run
 echo    98  test-dusk            GAME-06's clock tests: time passing, the music, the sun, the lens flare, the run
 echo   101  test-field           GAME-06's Hyrule Field tests: the Peahat, the Stalchildren, the enemy music, the runs
+echo   104  test-market          GAME-07's Castle Town tests: Malon, the townsfolk, the cucco girl, the stones, the run
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -83,6 +84,7 @@ echo    93  game-creation        The creation from the cutscene map, part by par
 echo    96  game-farewell        Kokiri Forest after the emerald: Mido, the bridge, Saria, Hyrule Field, the owl (asks: or later)
 echo    99  game-dusk            Hyrule Field at 17:00: the sunset, nightfall, the drawbridge (asks: or night, or dawn)
 echo   102  game-field           Hyrule Field by day by a Peahat (asks: or night, the Stalchildren)
+echo   105  game-market          Castle Town's entrance by day (asks: or night, the temple, the altar, the alley)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -113,6 +115,7 @@ echo    94  sandbox-creation     The creation run's trace and screenshots (the r
 echo    97  sandbox-farewell     The farewell run's trace and screenshots (Saria, the ocarina, the owl), into out\run
 echo   100  sandbox-dusk         The dusk run's trace and screenshots (the sunset, the bridge, the night), into out\run
 echo   103  sandbox-field        The field runs' traces and screenshots (the Peahat, the Stalchildren), into out\run
+echo   106  sandbox-market       The market run's trace and screenshots (the townsman, Malon, the castle), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -225,11 +228,22 @@ if "%pick%"=="100" set "script=sandbox-dusk"
 if "%pick%"=="101" set "script=test-field"
 if "%pick%"=="102" goto field
 if "%pick%"=="103" set "script=sandbox-field"
+if "%pick%"=="104" set "script=test-market"
+if "%pick%"=="105" goto market
+if "%pick%"=="106" set "script=sandbox-market"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
 echo.
 echo %script% finished (exit code %errorlevel%).
+pause
+goto menu
+
+:market
+set "which="
+set /p "which=Which (empty: the entrance by day; night, temple, altar or alley): "
+call "%~dp0game-market.bat" %which%
+echo game-market finished (exit code %errorlevel%).
 pause
 goto menu
 

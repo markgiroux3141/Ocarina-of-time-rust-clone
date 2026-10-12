@@ -292,7 +292,10 @@ fn a_perched_keese_dives_at_link_then_flies_about() {
     let at_registered = |w: &PlayState| w.col_chk.col_at.iter().any(|r| r.actor == h);
     assert!(at_registered(&w));
     // 50 frames of it (timer to 0), then EnFirefly_SetupIdle: timer Rand_S16Offset(70, 100),
-    // speed 1.5 to 3.
+    // speed 1.5 to 3. Diving, it has no ACTOR_FLAG_UPDATE_CULLING_DISABLED and swoops over the
+    // camera out of its culling volume, where it would hold still (and stay held, the camera not
+    // moving): the test lets it update anywhere to follow the dive.
+    w.actors.actor_mut(h).unwrap().flags |= oot_game::actor::ACTOR_FLAG_UPDATE_CULLING_DISABLED;
     for i in 1..50 {
         idle(&mut w, 1);
         if keese(&w, h).action != KeeseAction::AttackFromPerched {

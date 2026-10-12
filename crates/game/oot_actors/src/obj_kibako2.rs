@@ -15,8 +15,7 @@
 //! Gold Skulltula placed inside it on its own (`En_Sw` 0x8102 at (278, 360, 332)); room 10's
 //! two at (-805, 720, -2) and (-805, 720, -62), 0xFFFF. Each drops a green rupee (`rot.x` 0,
 //! flag 0). Link has no hammer or bombs yet (GAME-05 milestone 4b): the tests inject the hit
-//! and the explosion. The whole overlay is ported; the cull zone (`cullingVolume*`) isn't, for
-//! any actor.
+//! and the explosion. The whole overlay is ported.
 
 use std::sync::Arc;
 
@@ -97,8 +96,11 @@ impl ObjKibako2 {
     /// then `rot.x` and `rot.z` zeroed (`home.rot.x`, the collectible, kept).
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 100); cullingVolumeDistance 3000,
-        // cullingVolumeScale 500, cullingVolumeDownward 1000 (the cull zone isn't ported).
+        // cullingVolumeScale 500, cullingVolumeDownward 1000.
         actor.scale = Vec3::splat(0.1);
+        actor.culling_volume_distance = 3000.0;
+        actor.culling_volume_scale = 500.0;
+        actor.culling_volume_downward = 1000.0;
         // ObjKibako2_InitCollider.
         let mut collider = ColliderCylinder::new(&CYLINDER_INIT);
         collider.update(&actor);

@@ -13,8 +13,7 @@
 //!
 //! The Master Quest Deku Tree's are room 2's three, params 3, 4 and 8 (flags 3, 4, 8; no chime)
 //! at y 656, turned -24576 (so no `Rand`). Link has no bombs or hammer yet (GAME-05 milestone
-//! 4c): the tests inject the explosion and the hit. The whole overlay is ported; the cull zone
-//! isn't, for any actor.
+//! 4c): the tests inject the explosion and the hit. The whole overlay is ported.
 
 use glam::Vec3;
 use oot_game::actor::Actor;
@@ -78,8 +77,11 @@ impl ObjBombiwa {
     /// if it has none, `shape.yOffset` -200, 20 up.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 100); cullingVolumeDistance 2000,
-        // cullingVolumeScale 350, cullingVolumeDownward 1000 (the cull zone isn't ported).
+        // cullingVolumeScale 350, cullingVolumeDownward 1000.
         actor.scale = Vec3::splat(0.1);
+        actor.culling_volume_distance = 2000.0;
+        actor.culling_volume_scale = 350.0;
+        actor.culling_volume_downward = 1000.0;
         // ObjBombiwa_InitCollision: Collider_InitCylinder, Collider_SetCylinder,
         // Collider_UpdateCylinder (before the 20 up: the cylinder stays there, never updated).
         let mut collider = ColliderCylinder::new(&CYLINDER_INIT);

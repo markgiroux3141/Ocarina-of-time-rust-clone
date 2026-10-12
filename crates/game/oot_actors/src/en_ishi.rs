@@ -30,9 +30,11 @@ const ROCK_LARGE: usize = 1;
 const ROCK_SCALES: [f32; 2] = [0.1, 0.4];
 const Y_OFFSETS: [f32; 2] = [58.0, 80.0];
 
-/// `sInitChains[type]`: gravity and `minVelocityY` (the cull zone isn't ported).
+/// `sInitChains[type]`: gravity, `minVelocityY`, and the culling volume (distance, scale,
+/// downward: 1200, 150, 400 for the small rocks; 2000, 250, 500 for the boulders).
 const GRAVITY: [f32; 2] = [-1.2, -2.5];
 const MIN_VELOCITY_Y: f32 = -20.0;
+const CULLING_VOLUMES: [(f32, f32, f32); 2] = [(1200.0, 150.0, 400.0), (2000.0, 250.0, 500.0)];
 
 /// `sCylinderInits`.
 const CYLINDER_INITS: [ColliderCylinderInit; 2] = [
@@ -90,6 +92,10 @@ impl EnIshi {
         let ty = (actor.params & 1) as usize;
         actor.gravity = GRAVITY[ty];
         actor.min_velocity_y = MIN_VELOCITY_Y;
+        (actor.culling_volume_distance, actor.culling_volume_scale, actor.culling_volume_downward) = CULLING_VOLUMES[ty];
+        if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            actor.culling_volume_distance += 1000.0;
+        }
         if actor.shape_rot.y == 0 {
             let r = play.rand.zero_float(65536.0) as i32 as i16;
             actor.shape_rot.y = r;

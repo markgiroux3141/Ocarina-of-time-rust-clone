@@ -264,6 +264,12 @@ fn a_seed_drops_room_2s_ladder() {
     let tris_before = tri_vertices(maruta(&w, h));
     let player = w.player.unwrap();
     assert!(!w.flags.get_switch(0x21));
+    // Link 200 out on the room's side (-1, 0, 1), facing the ladder (yaw 0x6000), as he'd shoot
+    // it: in view, it's in its culling volume and updates.
+    let from = LADDER_HOME + Vec3::new(-1.0, 0.0, 1.0).normalize() * 200.0 + Vec3::Y * 50.0;
+    let (y, _) = w.col.entity_raycast_down(from);
+    w.place_player(Vec3::new(from.x, y, from.z), 0x6000);
+    idle(&mut w, 2);
     shoot(&mut w, h, player);
     idle(&mut w, 1);
     let hit = w.audio.frames;

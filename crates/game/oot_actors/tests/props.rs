@@ -65,9 +65,19 @@ fn kokiri_forest_props_initialise_as_their_c_does() {
     // En_Ishi: 4 small rocks (params 0x0200: type 0, snapped to the floor, yOffset 58, scale 0.1,
     // gravity -1.2), with the hard body the sword bounces off; and Obj_Mure2's circle of 8
     // (params 0x0202: MURE2_CIRCLE_ROCKS, `D_80B9A818[2]`), out with Link within its range.
-    let ishi = all::<EnIshi>(&w);
+    // From this entrance the circle is behind and below the camera: outside its culling volume
+    // (downward only 100), so it hasn't updated. Facing it, Link brings its rocks out.
     let mure2 = all::<oot_actors::obj_mure2::ObjMure2>(&w);
     assert_eq!(mure2.len(), 1);
+    let (circle_pos, circle_flags) = (mure2[0].actor.world_pos, mure2[0].actor.flags);
+    assert_eq!(circle_flags & oot_game::actor::ACTOR_FLAG_INSIDE_CULLING_VOLUME, 0);
+    assert_eq!(mure2[0].spawned.iter().flatten().count(), 0);
+    let from = circle_pos + Vec3::new(0.0, 50.0, 300.0);
+    let (y, _) = w.col.entity_raycast_down(from);
+    w.place_player(Vec3::new(from.x, y, from.z), -0x8000);
+    frames(&mut w, 10);
+    let ishi = all::<EnIshi>(&w);
+    let mure2 = all::<oot_actors::obj_mure2::ObjMure2>(&w);
     let circle = mure2[0].spawned.iter().flatten().count();
     assert_eq!(circle, 8);
     assert_eq!(ishi.len(), placed(oot_actors::en_ishi::ACTOR_EN_ISHI) + circle);

@@ -178,6 +178,14 @@ CASES = [
     ("field_peahat", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--script", "field", "--frames", "330", "--screenshot", "{shot}"]),
     ("field_night", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "20:00", "--script", "field-night", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("field_night_fight", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "deku-tree-dead", "--time", "20:00", "--script", "field-night", "--frames", "80", "--screenshot", "{shot}"]),
+    # GAME-07 milestone 1: Castle Town by day, from its entrance into the market, a townsman's
+    # and Malon's talks, out to the castle's road and its intro (gHyruleCastleIntroCs): the trace
+    # and the end; then the run cut at frame 380 (the townsman's text), 860 (Malon's) and 1120
+    # (the castle's intro).
+    ("market", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("market_townsman", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--frames", "380", "--screenshot", "{shot}"]),
+    ("market_malon", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--frames", "860", "--screenshot", "{shot}"]),
+    ("market_castle", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--frames", "1120", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

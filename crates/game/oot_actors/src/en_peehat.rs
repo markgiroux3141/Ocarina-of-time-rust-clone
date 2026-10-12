@@ -21,8 +21,7 @@
 //!   and drops three from table 4.
 //!
 //! The whole overlay is ported. `En_Bom` isn't: its explosion spawns a placeholder (logged).
-//! `Actor_CullingVolumeTest` isn't ported: every actor counts as inside its culling volume, so
-//! the blades dig wherever it is. The circle shadow isn't drawn (`shadowScale` kept).
+//! Its blades dig only while it's in its culling volume (ADR 0058). The circle shadow isn't drawn (`shadowScale` kept).
 
 use std::sync::Arc;
 

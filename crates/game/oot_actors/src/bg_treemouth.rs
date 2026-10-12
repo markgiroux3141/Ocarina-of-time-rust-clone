@@ -20,7 +20,7 @@
 //! (`gDekuTreeAskAgainCs`) says 0x1018.
 //!
 //! Also not ported: the scene layer 6 cutscene's falling bark (`EffectSsHahen_SpawnBurst`; its
-//! `Rand_ZeroOne` calls are made), and the cull zone.
+//! `Rand_ZeroOne` calls are made).
 //!
 //! The draw is `gDekuTreeMouthDL` with an env alpha of 500 or, with `EVENTCHKINF_07` (the tree
 //! dead), 2150, times 0.1. The list's combiner blends its two textures by that alpha
@@ -55,8 +55,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TREEMOUTH, name: "
 /// `DynaPolyActor_Init`'s flags: 0, no `DYNA_TRANSFORM_*` (the mouth carries nothing standing on it).
 const TRANSFORM_FLAGS: u32 = 0;
 
-/// `sInitChain`: `ICHAIN_U8(targetMode, 5)`, `ICHAIN_VEC3F(scale, 1)` (the cull zone isn't
-/// ported).
+/// `sInitChain`: `ICHAIN_U8(targetMode, 5)`, `ICHAIN_VEC3F(scale, 1)` and the culling volume.
 const TARGET_MODE: u8 = 5;
 
 /// `BgTreemouth_Update`: the mouth's place at `unk_168` 0, and the way it moves to 1.
@@ -165,9 +164,13 @@ pub fn actor_is_facing_and_near_player(actor: &Actor, range: f32, max_angle: i16
 impl BgTreemouth {
     /// `BgTreemouth_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // Actor_ProcessInitChain(sInitChain).
+        // Actor_ProcessInitChain(sInitChain): with cullingVolumeDistance 8000, cullingVolumeScale 300,
+        // cullingVolumeDownward 300.
         actor.target_mode = TARGET_MODE;
         actor.scale = Vec3::ONE;
+        actor.culling_volume_distance = 8000.0;
+        actor.culling_volume_scale = 300.0;
+        actor.culling_volume_downward = 300.0;
         // DynaPolyActor_Init(0), CollisionHeader_GetVirtual(&gDekuTreeMouthCol),
         // DynaPoly_SetBgActor.
         let bg = match load_collision(play) {

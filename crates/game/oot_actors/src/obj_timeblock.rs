@@ -24,7 +24,7 @@
 //! still waits for the song, as the C does); `Demo_Effect`'s time warp is (GAME-06 milestone 1a,
 //! before it a placeholder). The tests set
 //! `msgCtx.lastPlayedSong` and Player's `PLAYER_STATE2_24` as the ocarina would. The whole overlay
-//! is ported; the cull zone isn't, for any actor.
+//! is ported.
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_INTERACT_PLAYER_ABOVE};
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -236,8 +236,11 @@ impl ObjTimeblock {
             None => BG_ACTOR_MAX,
         };
         // sInitChain: attentionRangeType ATTENTION_RANGE_2; cullingVolumeDistance 1800,
-        // cullingVolumeScale 300, cullingVolumeDownward 1500 (the cull zone isn't ported).
+        // cullingVolumeScale 300, cullingVolumeDownward 1500.
         actor.target_mode = ATTENTION_RANGE_2;
+        actor.culling_volume_distance = 1800.0;
+        actor.culling_volume_scale = 300.0;
+        actor.culling_volume_downward = 1500.0;
         let mut t = ObjTimeblock {
             actor,
             bg,

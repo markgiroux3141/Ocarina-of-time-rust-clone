@@ -113,9 +113,10 @@ fn the_kokiri_sword_chest_on_a_new_save() {
     assert_eq!(w.save.equips.button_items[0], ITEM_NONE);
 
     // In front of it (it faces +z; Link at -z of it, facing +z). The chest's collision pushes
-    // Link out to his wall radius.
+    // Link out to his wall radius. The camera comes round behind him over the first frame: the
+    // chest is in its culling volume from the second, and Player sees its offer on the third.
     w.place_player(CHEST_POS - Vec3::Z * 30.0, 0);
-    frames(&mut w, &mut prev, NONE, 2);
+    frames(&mut w, &mut prev, NONE, 3);
     w.audio.log = Some(Default::default());
     // EnBox_WaitOpen: Actor_OfferGetItemNearby(&this->dyna.actor, play, -(params >> 5 & 0x7F)) while
     // Link is in front (Actor_WorldToActorCoords: within 20 of its axis, -50 < z < 0 in its space) and

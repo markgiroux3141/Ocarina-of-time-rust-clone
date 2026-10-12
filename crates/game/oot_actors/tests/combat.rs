@@ -1,6 +1,6 @@
 //! GAME-05 milestone 3a's exit (`Route::Combat`, the `combat` script's run, also a golden
-//! trace): inside the Deku Tree, Link kills a withered Deku Baba and picks up its Deku Stick,
-//! blocks a Keese's dive with the shield and kills the Keese, with the battle camera
+//! trace): inside the Deku Tree, Link blocks a Keese's dive with the shield and kills the Keese,
+//! then kills a withered Deku Baba and picks up its Deku Stick, with the battle camera
 //! (`Camera_Battle1`) on while he's locked on; the kills show their effects and leave their
 //! drops.
 
@@ -72,7 +72,7 @@ fn exit_link_fights_a_withered_deku_baba_and_a_keese_and_blocks_with_the_shield(
     }
     assert!(run.failure.is_none(), "{:?}", run.failure);
     let steps: Vec<Step> = run.steps.iter().map(|s| s.0).collect();
-    assert_eq!(steps, vec![Step::KarebabaKilled, Step::StickTaken, Step::Blocked, Step::KeeseKilled]);
+    assert_eq!(steps, vec![Step::Blocked, Step::KeeseKilled, Step::KarebabaKilled, Step::StickTaken]);
     eprintln!("steps {:?}; battle camera {battle_frames} frames; {hit_marks} hit marks, {fragments} fragments, {dust} dust; the Keese's drop {:?}", run.steps, run.drop);
     // Locked on to both enemies: the battle camera ran.
     assert!(battle_frames > 30, "{battle_frames}");

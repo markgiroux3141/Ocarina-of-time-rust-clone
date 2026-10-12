@@ -22,8 +22,7 @@
 //! waits for the camera to look at it (`func_8005B198`: the switch category) or 100 frames before
 //! it moves (`cooldownOn`, `cooldownTimer`).
 //!
-//! The whole overlay is ported. Not ported: the rumble (`Rumble_Request`, for no actor), the cull
-//! zone (`cullingVolume*`: every actor counts as in view), and `Obj_Ice_Poly`, which a frozen
+//! The whole overlay is ported. Not ported: the rumble (`Rumble_Request`, for no actor), and `Obj_Ice_Poly`, which a frozen
 //! switch spawns as a placeholder: the ice would hold the switch (its parent's `freezeTimer` at
 //! 40 a frame) until it melts, so here a frozen switch goes off on its second frame (the frozen
 //! flag reads as a hit). The crystal's highlight (`func_8002ED80` with 0: only the
@@ -512,9 +511,12 @@ impl ObjSwitch {
         if this.is_floor() {
             this.init_dyna_poly(play, DYNA_TRANSFORM_POS);
         }
-        // Actor_ProcessInitChain(sInitChain): ICHAIN_VEC3F_DIV1000(scale, 100) (the cull zone
-        // isn't ported).
+        // Actor_ProcessInitChain(sInitChain): ICHAIN_VEC3F_DIV1000(scale, 100), cullingVolumeDistance
+        // 2000, cullingVolumeScale 400, cullingVolumeDownward 2000.
         this.actor.scale = Vec3::splat(0.1);
+        this.actor.culling_volume_distance = 2000.0;
+        this.actor.culling_volume_scale = 400.0;
+        this.actor.culling_volume_downward = 2000.0;
         if this.is_floor() {
             this.actor.world_pos.y = this.actor.home_pos.y + 1.0;
         }

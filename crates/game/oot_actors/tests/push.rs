@@ -477,6 +477,10 @@ fn a_block_on_a_block_rides_along() {
     }
     let t = get(&w, top);
     assert_eq!((t.actor.world_pos, t.action, t.floor_bg_ids[t.highest_floor as usize]), (Vec3::new(-605.0, -760.0, -290.0), Some(BA::OnActor), bg));
+    // The top block rides from its draw (ObjOshihiki_MoveWithBlockUnder in ObjOshihiki_Draw): Link
+    // west of the blocks, facing them (+x), so the camera has them in view.
+    w.place_player(Vec3::new(-760.0, -810.0, -290.0), 0x4000);
+    idle(&mut w, 5);
     w.col.dyna.func_8002DFA4(bg, 2.0, 0x4000);
     let mut xs = Vec::new();
     // ObjOshihiki_SetupPush, then the twelve frames of the slide to 20.

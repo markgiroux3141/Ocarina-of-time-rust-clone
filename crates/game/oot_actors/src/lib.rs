@@ -100,6 +100,20 @@ pub mod playthrough;
 pub mod script;
 pub mod en_arrow;
 pub mod en_m_fire1;
+pub mod bg_mjin;
+pub mod bg_toki_hikari;
+pub mod en_wonder_talk;
+pub mod obj_mure;
+pub mod en_butte;
+pub mod en_gs;
+pub mod en_niw_girl;
+pub mod en_niw;
+pub mod en_tg;
+pub mod en_mu;
+pub mod en_ma1;
+pub mod en_dog;
+pub mod en_heishi4;
+pub mod en_hy;
 
 use bg_ydan_hasi::BgYdanHasi;
 use dummy_target::DummyTarget;
@@ -107,7 +121,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
@@ -185,6 +199,20 @@ pub fn overlays() -> Overlays {
     o.register(en_part::ACTOR_EN_PART, en_part::EnPart::init);
     o.register(en_skb::ACTOR_EN_SKB, en_skb::EnSkb::init);
     o.register(en_peehat::ACTOR_EN_PEEHAT, en_peehat::EnPeehat::init);
+    o.register(en_hy::ACTOR_EN_HY, en_hy::EnHy::init);
+    o.register(en_heishi4::ACTOR_EN_HEISHI4, en_heishi4::EnHeishi4::init);
+    o.register(en_dog::ACTOR_EN_DOG, en_dog::EnDog::init);
+    o.register(en_ma1::ACTOR_EN_MA1, en_ma1::EnMa1::init);
+    o.register(en_mu::ACTOR_EN_MU, en_mu::EnMu::init);
+    o.register(en_tg::ACTOR_EN_TG, en_tg::EnTg::init);
+    o.register(en_niw::ACTOR_EN_NIW, en_niw::EnNiw::init);
+    o.register(en_niw_girl::ACTOR_EN_NIW_GIRL, en_niw_girl::EnNiwGirl::init);
+    o.register(en_gs::ACTOR_EN_GS, en_gs::EnGs::init);
+    o.register(en_butte::ACTOR_EN_BUTTE, en_butte::EnButte::init);
+    o.register(obj_mure::ACTOR_OBJ_MURE, obj_mure::ObjMure::init);
+    o.register(en_wonder_talk::ACTOR_EN_WONDER_TALK, en_wonder_talk::EnWonderTalk::init);
+    o.register(bg_toki_hikari::ACTOR_BG_TOKI_HIKARI, bg_toki_hikari::BgTokiHikari::init);
+    o.register(bg_mjin::ACTOR_BG_MJIN, bg_mjin::BgMjin::init);
     o
 }
 
@@ -241,6 +269,18 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     // The pause menu's (docs/adr/0047-the-pause-menu.md).
     v.extend(oot_game::kaleido::gfx::mesh_bakes());
     v.extend(en_arrow::bakes());
+    v.extend(en_hy::bakes());
+    v.extend(en_heishi4::bakes());
+    v.extend(en_dog::bakes());
+    v.extend(en_ma1::bakes());
+    v.extend(en_mu::bakes());
+    v.extend(en_tg::bakes());
+    v.extend(en_niw::bakes());
+    v.extend(en_niw_girl::bakes());
+    v.extend(en_gs::bakes());
+    v.extend(en_butte::bakes());
+    v.extend(bg_toki_hikari::bakes());
+    v.extend(bg_mjin::bakes());
     v
 }
 

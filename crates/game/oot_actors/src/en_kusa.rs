@@ -108,10 +108,17 @@ impl EnKusa {
 
     /// `EnKusa_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: scale 0.4, gravity -3.2, minVelocityY -17 (the cull zone isn't ported).
+        // sInitChain: scale 0.4, gravity -3.2, minVelocityY -17; cullingVolumeDistance 1200,
+        // cullingVolumeScale 100, cullingVolumeDownward 120 (a thousand further in a cutscene).
         actor.scale = Vec3::splat(0.4);
         actor.gravity = -3.2;
         actor.min_velocity_y = -17.0;
+        actor.culling_volume_distance = 1200.0;
+        actor.culling_volume_scale = 100.0;
+        actor.culling_volume_downward = 120.0;
+        if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE {
+            actor.culling_volume_distance += 1000.0;
+        }
         // EnKusa_InitCollider.
         let mut collider = ColliderCylinder::new(&CYLINDER_INIT);
         collider.update(&actor);

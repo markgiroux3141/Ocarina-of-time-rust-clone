@@ -1,8 +1,8 @@
 //! The actor system (`oot_game::actor_ctx`, `PlayState`'s `Actor_UpdateAll`) against the rules
 //! of `z_actor.c`: generational handles, category lists newest first (`Actor_AddToCategory`),
 //! the category order of `Actor_UpdateAll`, an actor taken out of its slot while it updates,
-//! spawns waiting for the next frame, `Actor_Kill` then deletion, `freezeTimer` (`DECR`), and
-//! render blending. The `PlayState` tests need the asset pack (for `GameData`); the arena tests
+//! spawns waiting for the next frame, `Actor_Kill` then deletion, `freezeTimer` (`DECR`), the
+//! culling volume (`Actor_CullingVolumeTest`), and render blending. The `PlayState` tests need the asset pack (for `GameData`); the arena tests
 //! don't.
 
 use std::sync::{Arc, Mutex, OnceLock};
@@ -43,6 +43,9 @@ impl Probe {
     fn boxed(tag: &str, cat: usize, log: &Log, does: Does) -> Box<Probe> {
         let mut actor = Actor::new(Vec3::ZERO, 0);
         actor.category = cat;
+        // Updated wherever it is: these tests are about the order, not the culling volume (a
+        // spawned actor is only in it once Actor_DrawAll has tested it).
+        actor.flags |= oot_game::actor::ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         Box::new(Probe { actor, tag: tag.into(), log: log.clone(), does, me: None })
     }
 }
@@ -163,6 +166,57 @@ fn update_all_runs_categories_in_order_and_spawns_wait_a_frame() {
     frame(&mut p);
     // Now the new actor updates, at the head of the NPC list.
     assert_eq!(*log.lock().unwrap(), vec!["bg@2", "npc-child@2", "npc@2", "enemy@2"]);
+}
+
+/// `Actor_CullingVolumeTest` with `Actor_Init`'s volume (distance 1000, scale 350, downward 700):
+/// the frustum's sides at `|x| - 350 < w` (and `y`'s at `-700` and `+350`), its depth from `-350`
+/// to `1350`, and `w` clamped to 1 behind the eye (the box).
+#[test]
+fn the_culling_volume_is_a_frustum_with_a_box_behind() {
+    use oot_game::play::actor_culling_volume_test as test;
+    let a = Actor::new(Vec3::ZERO, 0);
+    assert!(test(&a, Vec3::new(0.0, 0.0, 500.0), 500.0));
+    // The depth: projPos.z > -scale and < distance + scale.
+    assert!(test(&a, Vec3::new(0.0, 0.0, -349.0), 0.5));
+    assert!(!test(&a, Vec3::new(0.0, 0.0, -351.0), 0.5));
+    assert!(test(&a, Vec3::new(0.0, 0.0, 1349.0), 100.0));
+    assert!(!test(&a, Vec3::new(0.0, 0.0, 1351.0), 100.0));
+    // The sides: (|x| - 350) / w < 1.
+    assert!(test(&a, Vec3::new(449.0, 0.0, 500.0), 100.0));
+    assert!(!test(&a, Vec3::new(-451.0, 0.0, 500.0), 100.0));
+    // Below: (y + 700) / w > -1; above: (y - 350) / w < 1.
+    assert!(test(&a, Vec3::new(0.0, -799.0, 500.0), 100.0));
+    assert!(!test(&a, Vec3::new(0.0, -801.0, 500.0), 100.0));
+    assert!(test(&a, Vec3::new(0.0, 449.0, 500.0), 100.0));
+    assert!(!test(&a, Vec3::new(0.0, 451.0, 500.0), 100.0));
+    // Behind the eye w < 1 counts as 1: a box 350 wide either side.
+    assert!(test(&a, Vec3::new(350.5, 0.0, -100.0), -100.0));
+    assert!(!test(&a, Vec3::new(351.5, 0.0, -100.0), -100.0));
+}
+
+/// An actor updates only once `Actor_DrawAll` has found it in its culling volume
+/// (`ACTOR_FLAG_INSIDE_CULLING_VOLUME`), or with `ACTOR_FLAG_UPDATE_CULLING_DISABLED`: one in front
+/// of the camera (behind Link, looking along +z) updates from the second frame, one far behind
+/// it never does, and neither is drawn until tested.
+#[test]
+fn actors_outside_their_culling_volume_dont_update() {
+    use oot_game::actor::ACTOR_FLAG_INSIDE_CULLING_VOLUME;
+    let Some(mut p) = play() else { return };
+    let log: Log = Default::default();
+    let mut ahead = Probe::boxed("ahead", ACTORCAT_NPC, &log, Does::Nothing);
+    let mut behind = Probe::boxed("behind", ACTORCAT_NPC, &log, Does::Nothing);
+    for (probe, z) in [(&mut ahead, 300.0), (&mut behind, -3000.0)] {
+        probe.actor.flags &= !oot_game::actor::ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+        probe.actor.world_pos = Vec3::new(0.0, 20.0, z);
+    }
+    let (ahead, behind) = (p.spawn(ahead).unwrap(), p.spawn(behind).unwrap());
+    frame(&mut p);
+    assert!(log.lock().unwrap().is_empty(), "not tested yet: {:?}", log.lock().unwrap());
+    let flags = |p: &PlayState, h| p.actors.actor(h).unwrap().flags & ACTOR_FLAG_INSIDE_CULLING_VOLUME != 0;
+    assert!(flags(&p, ahead) && !flags(&p, behind));
+    assert!(p.actors.actor(ahead).unwrap().is_drawn && !p.actors.actor(behind).unwrap().is_drawn);
+    frame(&mut p);
+    assert_eq!(*log.lock().unwrap(), vec!["ahead@2"]);
 }
 
 #[test]

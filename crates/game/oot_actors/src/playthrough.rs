@@ -60,17 +60,15 @@
 //! the ground floor of room 0 (`COMBAT_START`), by the withered Deku Baba at (-88, 0, -363) and
 //! the Keese perched on the wall 48 from it at (-54, 262, -397). (The ground floor, not the top
 //! one: a withered Deku Baba's head flies back from where it faced as it dies, and on the top
-//! floor it falls down the middle.) Link walks up to the Deku Baba until it springs, locks on
-//! (Z: the battle camera, `Camera_Battle1`), slashes it while it's upright
-//! (`Step::KarebabaKilled`), and picks up the Deku Stick it leaves (`Step::StickTaken`); the
-//! Keese dives at him meanwhile (within 120 of its perch). The Deku Baba first: while it's up, Z
-//! would lock on to it rather than the Keese (the nearer, in front), and nowhere within reach of
-//! the Keese has it outside the 60 degrees `Attention_WeightedDistToPlayerSq` looks in. Then Link
-//! locks on to the Keese and holds the shield up (R on the lock-on: `func_80834758`) until it
+//! floor it falls down the middle.) The Keese first (since GAME-07 milestone 1's culling volume:
+//! fighting the Deku Baba under its perch sets it diving, and it pulls up over Link out of the
+//! camera's view, where it holds still). Link walks at it until it dives (within 120 of its
+//! perch), locks on to it and holds the shield up (R on the lock-on: `func_80834758`) until it
 //! blocks a dive (`Step::Blocked`); the Keese hovers after (`EnFirefly_Stay`) and he slashes it
 //! (B) until it dies; it shrinks away and drops from table 14 (`Step::KeeseKilled`, the drop in
-//! `drop` if any, picked up). Between the two, Link walks back to the start: the Deku Baba grows
-//! back where he picked up its stick, and bites within reach of its home.
+//! `drop` if any, picked up). Then the Deku Baba, up by then: Z let go, Link turns to it, locks on
+//! (Z: the battle camera, `Camera_Battle1`), slashes it while it's upright
+//! (`Step::KarebabaKilled`), and picks up the Deku Stick it leaves (`Step::StickTaken`).
 //!
 //! **A Mad Scrub** (GAME-05 milestone 3b, `Route::Scrub`, the `scrub` test and script) runs
 //! inside the Deku Tree on the `deku-tree-inside` preset, from a debug start in room 4
@@ -339,6 +337,15 @@ pub enum Step {
     Kakariko,
     /// The Stalchildren that followed Link killed or sunk: none left near him.
     StalchildrenGone,
+    /// The market (`ENTR_MARKET_DAY_0`) entered from Castle Town's entrance, settled.
+    Market,
+    /// A townsman's text (`En_Hy`) read to the end and closed.
+    Townsman,
+    /// Malon's text (`En_Ma1`) read to the end and closed.
+    Malon,
+    /// The castle's road (`ENTR_HYRULE_CASTLE_0`) entered, its intro (`gHyruleCastleIntroCs`)
+    /// over, settled.
+    CastleRoad,
 }
 
 impl Step {
@@ -451,6 +458,10 @@ impl Step {
             Step::StalchildrenKilled => "stalchildren_killed",
             Step::Kakariko => "kakariko",
             Step::StalchildrenGone => "stalchildren_gone",
+            Step::Market => "market",
+            Step::Townsman => "townsman",
+            Step::Malon => "malon",
+            Step::CastleRoad => "castle_road",
         }
     }
 }
@@ -566,6 +577,10 @@ pub enum Route {
     /// fought on the open field north of Lon Lon Ranch, then east to Kakariko's stairs and up
     /// them into the village.
     FieldNight,
+    /// Castle Town by day (GAME-07 milestone 1): from its entrance (`ENTR_MARKET_ENTRANCE_DAY_0`,
+    /// `deku-tree-dead`) into the market, a townsman (`En_Hy` type 9) and Malon (`En_Ma1`)
+    /// talked to, and out north to the castle's road, where its intro plays.
+    Market,
 }
 
 /// The emerald's cutscene chain after part 1 (`Cutscene_Command_Destination`'s terminators): each
@@ -801,6 +816,7 @@ impl Route {
             Route::Creation => "ENTR_CUTSCENE_MAP_0",
             Route::Farewell => "ENTR_KOKIRI_FOREST_11",
             Route::Dusk | Route::Field | Route::FieldNight => "ENTR_HYRULE_FIELD_0",
+            Route::Market => "ENTR_MARKET_ENTRANCE_DAY_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -819,7 +835,7 @@ impl Route {
             Route::Gohma => Some("deku-tree-gohma"),
             Route::BlueWarp => Some("deku-tree-gohma-cleared"),
             Route::BossRoom => Some("deku-tree-slingshot"),
-            Route::Emerald | Route::Creation | Route::Farewell | Route::Dusk | Route::Field | Route::FieldNight => Some("deku-tree-dead"),
+            Route::Emerald | Route::Creation | Route::Farewell | Route::Dusk | Route::Field | Route::FieldNight | Route::Market => Some("deku-tree-dead"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -975,6 +991,7 @@ impl Route {
             Route::Dusk => "dusk",
             Route::Field => "field",
             Route::FieldNight => "field-night",
+            Route::Market => "market",
         }
     }
 
@@ -1003,13 +1020,14 @@ impl Route {
             Route::Dusk => 1500,
             Route::Field => 4000,
             Route::FieldNight => 4000,
+            Route::Market => 4000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1234,6 +1252,10 @@ enum Who {
     Kokiri(i16),
     /// Mido (`En_Md`).
     Mido,
+    /// The `En_Hy` of this type (`params & 0x7F`).
+    Hylian(i16),
+    /// Malon (`En_Ma1`).
+    Malon,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -1315,7 +1337,7 @@ impl Playthrough {
             Route::DekuBaba => vec![Task::FightBaba(DEKU_BABA_HOME)],
             // Back to the start between the fights: the Deku Baba grows back where Link picked up
             // its stick, and its head bites within reach of its home.
-            Route::Combat => vec![Task::FightKarebaba(COMBAT_KAREBABA_HOME), Task::Walk(vec![COMBAT_START.0]), Task::BlockKeese(COMBAT_KEESE_HOME), Task::KillKeese(COMBAT_KEESE_HOME)],
+            Route::Combat => vec![Task::BlockKeese(COMBAT_KEESE_HOME), Task::KillKeese(COMBAT_KEESE_HOME), Task::FightKarebaba(COMBAT_KAREBABA_HOME)],
             Route::Scrub => vec![Task::BounceNut(SCRUB_HOME), Task::CatchScrub(SCRUB_HOME)],
             Route::Shutter => vec![
                 Task::PressSwitch(SHUTTER_SWITCH_HOME, SHUTTER_SWITCH_FLAG, Step::SwitchPressed),
@@ -1416,6 +1438,20 @@ impl Playthrough {
                 Task::Owl(Step::OwlFlown),
                 Task::FightStalchildren(0, Step::StalchildrenGone),
                 Task::Exit("ENTR_KAKARIKO_VILLAGE_0", Some(Step::Kakariko)),
+            ],
+            Route::Market => vec![
+                Task::Settle(None),
+                Task::Exit("ENTR_MARKET_DAY_0", Some(Step::Market)),
+                // North-west from the entrance's spawn (-4, 718): the townsman in the red shirt
+                // (type 9, at (-72, 245), in front of the blue shirt's (-85, 204)) from south of him.
+                Task::Walk(vec![Vec3::new(-120.0, 0.0, 450.0)]),
+                Task::Talk(Who::Hylian(crate::en_hy::ENHY_TYPE_MAN_2_MUSTACHE_RED_SHIRT), Vec3::new(-100.0, 0.0, 320.0), Step::Townsman),
+                // West of the fountain to Malon (-3, -181), from her west.
+                Task::Walk(vec![Vec3::new(-220.0, 0.0, 150.0), Vec3::new(-220.0, 0.0, -150.0)]),
+                Task::Talk(Who::Malon, Vec3::new(-90.0, 0.0, -190.0), Step::Malon),
+                // North out of the market up the road to the castle.
+                Task::Walk(vec![Vec3::new(-60.0, 0.0, -400.0)]),
+                Task::Exit("ENTR_HYRULE_CASTLE_0", Some(Step::CastleRoad)),
             ],
             Route::Farewell => vec![
                 Task::Settle(None),
@@ -3653,13 +3689,31 @@ impl Playthrough {
         };
         match self.sub {
             0 => {
-                if b.action == KA::Awaken {
+                // Z let go (held from the Keese's fight), so the next press locks on.
+                if self.prev.button & BTN_Z != 0 {
+                    return Some(idle);
+                }
+                // Woken by Link coming near (or already up: the Keese's fight is beside it).
+                if matches!(b.action, KA::Awaken | KA::Upright | KA::Spin) {
                     self.sub = 1;
                     return Some(z(idle));
                 }
                 Some(stick_towards(w, home, RUN))
             }
             1 => {
+                // Not locked on and it's off to the side (Link faces where the Keese died): turned
+                // to it in place first, no Z (a light tilt, as for the Keese).
+                let off = eng_math::vec3f_yaw(link, home).wrapping_sub(w.player().actor.shape_rot.y);
+                if w.player().focus_actor != Some(h) && (off as i32).abs() > 0x1000 {
+                    return Some(stick_towards(w, home, 25.0));
+                }
+                // Not locked on yet (Z went down out of range): Z again every other frame.
+                let z = |mut p: PadState| {
+                    if w.player().focus_actor == Some(h) || self.prev.button & BTN_Z == 0 {
+                        p.button |= BTN_Z;
+                    }
+                    p
+                };
                 if matches!(b.action, KA::Upright | KA::Spin) && Self::xz_dist(link, home) < 40.0 {
                     self.sub = 2;
                     self.tries = 0;
@@ -4132,6 +4186,8 @@ impl Playthrough {
             Who::Sign(home) => w.actors.downcast::<EnKanban>(h).is_some_and(|k| Self::xz_dist(k.actor.home_pos, home) < 1.0),
             Who::Kokiri(ty) => w.actors.downcast::<EnKo>(h).is_some_and(|k| k.actor.params & 0xFF == ty),
             Who::Mido => w.actors.downcast::<EnMd>(h).is_some(),
+            Who::Hylian(ty) => w.actors.downcast::<crate::en_hy::EnHy>(h).is_some_and(|a| a.actor.params & 0x7F == ty),
+            Who::Malon => w.actors.downcast::<crate::en_ma1::EnMa1>(h).is_some_and(|a| !a.actor.killed),
         })
     }
 

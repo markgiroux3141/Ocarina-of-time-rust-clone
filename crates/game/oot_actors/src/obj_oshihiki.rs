@@ -18,8 +18,7 @@
 //! `draw_update`, ADR 0037), and presses a switch it rests on (`DynaPolyActor_SetSwitchPressed`).
 //!
 //! The Master Quest Deku Tree's is room 3's, spawned by `Obj_Makeoshihiki` (params 0xFFC0: small,
-//! colour 3, no flag). The whole overlay is ported; the cull zone (`cullingVolume*`) isn't, for
-//! any actor.
+//! colour 3, no flag). The whole overlay is ported.
 
 use eng_collision::bgcheck::{BGCHECK_Y_MIN, PolyId};
 use eng_collision::dyna::{BG_ACTOR_MAX, BGCHECK_SCENE, BgActorSource, DYNA_INTERACT_ACTOR_ON_TOP, DYNA_INTERACT_ACTOR_SWITCH_PRESSED, DYNA_TRANSFORM_POS};
@@ -262,7 +261,10 @@ impl ObjOshihiki {
         this.set_scale();
         this.set_texture();
         // sInitChain: cullingVolumeDistance 1800, cullingVolumeScale 500, cullingVolumeDownward
-        // 1500 (the cull zone isn't ported).
+        // 1500.
+        this.actor.culling_volume_distance = 1800.0;
+        this.actor.culling_volume_scale = 500.0;
+        this.actor.culling_volume_downward = 1500.0;
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         this.set_color(play);
         this.reset_floors();

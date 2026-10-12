@@ -72,10 +72,13 @@ fn the_drawbridge_lowers_on_the_scripts_flag() {
         n += 1;
         assert!(n < 600);
     }
-    // In a cutscene layer the torches burn at 0.008: the lights' radius 0.008 * 37500 and
-    // height 5000 * 0.008 + 128, their red and green 128 to 254 (Rand_ZeroOne).
+    // The camera looks away from the castle here: the bridge (ACTOR_FLAG_UPDATE_CULLING_DISABLED)
+    // updates but isn't drawn, and sTorchFlameScale, which only its draw sets, is still 0: the
+    // lights' radius 0 and height 128.
+    let drawbridge = w.actors.all().into_iter().find(|&h| w.actors.downcast::<BgSpot00Hanebasi>(h).is_some_and(|b| b.actor.params == DT_DRAWBRIDGE)).unwrap();
+    assert!(!w.actors.actor(drawbridge).unwrap().is_drawn);
     let torches: Vec<_> = w.light_ctx.lights().filter(|l| l.z == 690).collect();
-    assert!(torches.iter().all(|l| l.radius == 300 && l.y == 168 && (128..=254).contains(&l.color[0]) && l.color[0] == l.color[1]));
+    assert!(torches.iter().all(|l| l.radius == 0 && l.y == 128));
     // The next update sees the flag (DrawbridgeWait switches to DrawbridgeRiseAndFall and
     // returns); the one after starts lowering it: Math_ScaledStepToS by 80 (120 a frame at
     // R_UPDATE_RATE 3); once past -0x27D8 the chains follow by (s16)(80 * 0.4f) = 32 (48 a
@@ -104,6 +107,18 @@ fn the_drawbridge_lowers_on_the_scripts_flag() {
     ));
     assert!((p[1].2 - m.transform_point3(Vec3::new(158.0, 10.0, 400.0))).length() < 1e-3);
     assert!((p[2].2 - m.transform_point3(Vec3::new(-158.0, 10.0, 400.0))).length() < 1e-3);
+    // Once the bridge is drawn, the torches burn at 0.008 (a cutscene layer): from the next update
+    // the lights' radius 0.008 * 37500 and height 5000 * 0.008 + 128, their red and green 128 to
+    // 254 (Rand_ZeroOne).
+    let mut n = 0;
+    while !w.actors.actor(drawbridge).unwrap().is_drawn {
+        tick(&mut w);
+        n += 1;
+        assert!(n < 600, "the bridge is never in view");
+    }
+    tick(&mut w);
+    let torches: Vec<_> = w.light_ctx.lights().filter(|l| l.z == 690).collect();
+    assert!(torches.iter().all(|l| l.radius == 300 && l.y == 168 && (128..=254).contains(&l.color[0]) && l.color[0] == l.color[1]));
 }
 
 #[test]

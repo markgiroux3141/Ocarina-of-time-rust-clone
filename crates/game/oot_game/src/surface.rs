@@ -26,6 +26,8 @@ pub const COLPOLY_IGNORE_PROJECTILES: u16 = 1 << 2;
 pub trait SurfaceType {
     /// `SurfaceType_GetBgCamIndex`.
     fn bg_cam_index(&self, id: PolyId) -> u32;
+    /// `SurfaceType_GetLightSetting`: the light setting the floor asks for (31 for none).
+    fn light_setting(&self, id: PolyId) -> u32;
     /// `SurfaceType_GetExitIndex`: 1-based into the scene's exit list, 0 for none.
     fn exit_index(&self, id: PolyId) -> u32;
     /// `SurfaceType_GetFloorType`.
@@ -56,6 +58,9 @@ pub trait SurfaceType {
 impl SurfaceType for CollisionContext {
     fn bg_cam_index(&self, id: PolyId) -> u32 {
         self.surface_word(id, 0) & 0xFF
+    }
+    fn light_setting(&self, id: PolyId) -> u32 {
+        self.surface_word(id, 1) >> 6 & 0x1F
     }
     fn exit_index(&self, id: PolyId) -> u32 {
         self.surface_word(id, 0) >> 8 & 0x1F

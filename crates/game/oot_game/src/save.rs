@@ -130,6 +130,10 @@ pub struct SaveContext {
     pub next_day_time: u16,
     pub suns_song_state: i16,
     pub dog_is_lost: bool,
+    /// `dogParams`: the params of the dog following Link (`En_Dog`), 0 for none; Player respawns
+    /// it behind him on the next scene (bits 8 to 11 the dog's index, bit 15 its ability to
+    /// follow).
+    pub dog_params: i16,
     /// `respawn[RESPAWN_MODE_MAX]` and `respawnFlag` (0: a normal entrance; 1..3: respawn from
     /// that mode + 1; negative: the last entrance).
     pub respawn: [RespawnData; 3],
@@ -598,6 +602,7 @@ impl SaveContext {
             next_day_time: crate::clock::NEXT_TIME_NONE,
             suns_song_state: crate::clock::SUNSSONG_INACTIVE,
             dog_is_lost: true,
+            dog_params: 0,
             respawn: [RespawnData::default(); 3],
             respawn_flag: 0,
             entrance_speed: 0.0,
@@ -1076,6 +1081,17 @@ impl SaveContext {
         })?;
         (p.apply)(self);
         Ok(())
+    }
+
+    /// `GET_EVENTINF`, `SET_EVENTINF`, `CLEAR_EVENTINF`.
+    pub fn get_event_inf(&self, flag: u16) -> bool {
+        self.event_inf[(flag >> 4) as usize] & (1 << (flag & 0xF)) != 0
+    }
+    pub fn set_event_inf(&mut self, flag: u16) {
+        self.event_inf[(flag >> 4) as usize] |= 1 << (flag & 0xF);
+    }
+    pub fn clear_event_inf(&mut self, flag: u16) {
+        self.event_inf[(flag >> 4) as usize] &= !(1 << (flag & 0xF));
     }
 
     /// `GET_INFTABLE`, `SET_INFTABLE`.

@@ -339,17 +339,23 @@ impl ObjectSegments {
                     it.run(dl);
                 }
                 for (f, symbol) in lists {
+                    // `symbol+0x50`: the list from that many bytes in (`&DL[10]`).
+                    let (symbol, extra) = match symbol.split_once('+') {
+                        Some((s, off)) => (s, u32::from_str_radix(off.trim_start_matches("0x"), 16).with_context(|| format!("bake {}: bad offset in {symbol}", bake.name))?),
+                        None => (symbol.as_str(), 0),
+                    };
                     let (sym_file, sym) = symbol_in(p, f, symbol)?;
+                    let offset = sym.offset + extra;
                     if sym_file.segment.is_none() && sym_file.name.starts_with("ovl_") {
                         // A list in an overlay (`z_eff_ss_fhg_flash.c`'s `sShockDL`): its
                         // pointers are the overlay's link-time KSEG0 addresses, so the overlay
                         // goes on segment 0 where it links (`segments.csv`), as `code` does.
                         let (img, vram) = overlay_ram_image(p, files, &sym_file.name)?;
                         it.segments[0] = Some(Segment::Data { buf: img, base: 0 });
-                        it.run(vram + sym.offset);
+                        it.run(vram + offset);
                         continue;
                     }
-                    it.run(((sym_file.segment.unwrap_or(6) as u32) << 24) | sym.offset);
+                    it.run(((sym_file.segment.unwrap_or(6) as u32) << 24) | offset);
                 }
                 Ok(it.draw)
             }

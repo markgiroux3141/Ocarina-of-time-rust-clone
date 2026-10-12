@@ -73,6 +73,17 @@ fn find(w: &PlayState, flag: u8) -> Option<ActorHandle> {
     w.actors.all().into_iter().find(|&h| w.actors.downcast::<BgYdanSp>(h).is_some_and(|s| s.is_destroyed_switch_flag == flag && !s.actor.killed))
 }
 
+/// Link on the floor `dist` in front of the wall web `h` (along its facing), facing it, and two
+/// frames for the camera to come round: the web is in view, in its culling volume, and updates.
+fn face_web(w: &mut PlayState, h: ActorHandle, dist: f32) {
+    let a = &web(w, h).actor;
+    let (pos, yaw) = (a.world_pos, a.shape_rot.y);
+    let from = pos + Vec3::new(sin_s(yaw), 0.0, cos_s(yaw)) * dist;
+    let (y, _) = w.col.entity_raycast_down(from + Vec3::Y * 50.0);
+    w.place_player(Vec3::new(from.x, y, from.z), yaw.wrapping_add(i16::MIN));
+    idle(w, 2);
+}
+
 fn web(w: &PlayState, h: ActorHandle) -> &BgYdanSp {
     w.actors.downcast::<BgYdanSp>(h).expect("Bg_Ydan_Sp")
 }
@@ -343,6 +354,8 @@ fn the_switch_flag_burns_the_wall_web() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree_room(&a, 0);
     let h = find(&w, 0x0A).unwrap();
+    // On the top floor (y 800), in front of the door.
+    face_web(&mut w, h, 150.0);
     idle(&mut w, 1);
     assert_eq!(web(&w, h).action, Action::WallWebIdle);
     w.flags.set_switch(0x27);
@@ -391,6 +404,7 @@ fn a_burning_stick_burns_the_wall_web() {
     let Some(a) = assets() else { return };
     let mut w = deku_tree_room(&a, 0);
     let h = find(&w, 0x16).unwrap();
+    face_web(&mut w, h, 150.0);
     let p = web(&w, h).actor.world_pos;
     let (s, c) = (sin_s(0x6000), cos_s(0x6000));
     // Actor_WorldToActorCoords inverted: dx = x c + z s, dz = z c - x s.

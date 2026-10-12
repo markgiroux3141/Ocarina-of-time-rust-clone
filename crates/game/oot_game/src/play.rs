@@ -736,9 +736,7 @@ impl PlayState {
             base.update_distances(pp);
         }
         base.flags &= !crate::actor::ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
-        // Culling (Actor_CullingVolumeTest, which sets ACTOR_FLAG_INSIDE_CULLING_VOLUME for actors in view) isn't ported:
-        // every actor counts as in view.
-        base.flags |= ACTOR_FLAG_INSIDE_CULLING_VOLUME;
+        // ACTOR_FLAG_INSIDE_CULLING_VOLUME is the last Actor_DrawAll's culling test.
         let due = if base.freeze_timer > 0 {
             base.freeze_timer -= 1;
             base.freeze_timer == 0
@@ -895,14 +893,22 @@ impl PlayState {
             // After the rooms and the skybox: Environment_DrawRain.
             self.rain = self.environment_draw_rain();
         }
-        // Play_Draw: the actors' draw-time state (Player's foot IK), and the view it sets up
-        // (play->viewProjectionMtxF), which the next frame's target context reads.
+        // Play_Draw: Actor_DrawAll with the view Play_Draw set up (View_Apply's
+        // play->viewProjectionMtxF): each actor's projectedPos and projectedW, its culling test
+        // (Actor_CullingCheck), and the draw-time state of those it draws (Player's foot IK).
+        // View_Apply: play->viewProjectionMtxF, whatever the pause background's state.
+        let vp = self.camera_view_proj();
+        self.view_proj = vp;
         if draw_scene {
             for h in self.actors.all() {
                 if let Some(mut a) = self.actors.take(h) {
-                    self.cur_actor = Some(h);
-                    a.draw_update(self);
-                    self.cur_actor = None;
+                    let drawn = actor_draw_all_cull(a.base_mut(), vp) && a.as_any().downcast_ref::<Uninit>().is_none();
+                    a.base_mut().is_drawn = drawn;
+                    if drawn {
+                        self.cur_actor = Some(h);
+                        a.draw_update(self);
+                        self.cur_actor = None;
+                    }
                     self.actors.put_back(h, a);
                 }
             }
@@ -940,9 +946,7 @@ impl PlayState {
         }
         // Camera_Finish(GET_ACTIVE_CAM(this)): a one-point cutscene's camera whose timer ran out.
         self.camera_finish(self.active_cam_id);
-        self.view_proj = self.camera_view_proj();
-        // Actor_DrawAll: each actor's projectedPos through the frame's
-        // viewProjectionMtxF, then the sound it asked for (Actor_UpdateFlaggedAudio).
+        // Actor_DrawAll's sounds (Actor_UpdateFlaggedAudio), at the projectedPos its pass set.
         if draw_scene {
             self.actor_draw_all_sfx();
         }
@@ -1003,19 +1007,14 @@ impl PlayState {
         });
     }
 
-    /// `Actor_DrawAll`'s sound part (`Actor_DrawAll`): every actor's `projectedPos` and
-    /// `projectedW` (`SkinMatrix_Vec3fMtxFMultXYZW` on `viewProjectionMtxF`), and the sound in
-    /// its `sfx` (`Actor_UpdateFlaggedAudio`).
+    /// `Actor_DrawAll`'s sound part: the sound in each actor's `sfx` (`Actor_UpdateFlaggedAudio`),
+    /// at the `projectedPos` the draw's culling pass set, then the sounds of the draws.
     fn actor_draw_all_sfx(&mut self) {
         use crate::actor::{ACTOR_FLAG_SFX_ACTOR_POS_2, ACTOR_AUDIO_FLAG_SFX_CENTERED_1, ACTOR_AUDIO_FLAG_SFX_CENTERED_2, ACTOR_FLAG_SFX_TIMER};
         use crate::audio::sfx::{SfxF32, SfxPos, SfxS8, SFX_FLAG};
-        let vp = self.view_proj;
         for h in self.actors.all() {
             let Some(a) = self.actors.actor_mut(h) else { continue };
-            let c = vp * a.world_pos.extend(1.0);
-            a.projected_pos = c.truncate();
-            a.projected_w = c.w;
-            let (sfx, flags) = (a.sfx, a.flags);
+            let (sfx, flags, drawn) = (a.sfx, a.flags, a.is_drawn);
             if sfx != 0 {
                 // Actor_UpdateFlaggedAudio.
                 let au = &mut self.audio;
@@ -1031,8 +1030,8 @@ impl PlayState {
                     au.play_sfx_at_pos(SfxPos::Actor(h), sfx);
                 }
             }
-            // The actor's draw (an actor in the arena is drawn: init done, culling not ported).
-            if let Some(mut a) = self.actors.take(h) {
+            // The actor's draw, if Actor_DrawAll draws it (isDrawn).
+            if drawn && let Some(mut a) = self.actors.take(h) {
                 self.cur_actor = Some(h);
                 a.draw_sfx(self);
                 self.cur_actor = None;
@@ -1532,7 +1531,8 @@ impl PlayState {
         }
     }
 
-    /// `play->viewProjectionMtxF` for the active camera: the game's 320x240 view, `zNear` 10.
+    /// `play->viewProjectionMtxF` for the active camera: the game's 320x240 view, `zNear` 10, `zFar`
+    /// `lightCtx.zFar` (`View_SetPerspective` in `Play_Draw`; 12800 without a scene).
     pub(crate) fn camera_view_proj(&self) -> Mat4 {
         let (eye, at, fov) = match self.camera_kind {
             CameraKind::Game => {
@@ -1541,14 +1541,18 @@ impl PlayState {
             }
             CameraKind::Follow => (self.follow_camera.eye(), self.follow_camera.at, 50.0),
         };
-        eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, 12800.0) * glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y)
+        let z_far = self.scene.as_ref().map_or(12800.0, |s| s.lights.fog_far as f32);
+        eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, z_far) * glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y)
     }
 
     /// The render state of every actor and the camera now.
     fn capture(&mut self) -> RenderFrame {
         let mut actors = Vec::new();
         for h in self.actors.all() {
-            if let Some(a) = self.actors.get_mut(h) {
+            // Only what Actor_DrawAll drew this frame (isDrawn).
+            if let Some(a) = self.actors.get_mut(h)
+                && a.base().is_drawn
+            {
                 let mut rs = a.render_state();
                 rs.color_filter = (a.base().color_filter_params, a.base().color_filter_timer);
                 actors.push((h, rs));
@@ -1691,6 +1695,10 @@ impl PlayState {
         }
         self.msg_ctx.draw(out);
         out.letterbox_rows = frame.letterbox;
+        // The game's frame is 4:3: its culling (`Actor_CullingVolumeTest` through the 4:3
+        // `viewProjectionMtxF`) and its prerendered pictures stop at its edges, so a wider target
+        // shows that middle and black beside it (ADR 0059).
+        out.pillarbox = true;
         // The fills, where Play_Draw draws them (the transition's under the overlay's HUD and
         // message box); over the saved pause background, the ones it was saved with.
         let (env, fade) = match self.pause_ctx.bg_fills {
@@ -1704,6 +1712,37 @@ impl PlayState {
         let unk_244 = self.interface_ctx.unk_244;
         out.overlay_fill = if unk_244 > 0 { Some(match fade { Some(f) => crate::play_scene::compose_fill(f, [0, 0, 0, unk_244 as u8]), None => [0, 0, 0, unk_244 as u8] }) } else { fade };
     }
+}
+
+/// `Actor_CullingVolumeTest` (`z_actor.c`): whether `projected` (with `w`) is inside the actor's
+/// culling volume: a frustum from the eye to `cullingVolumeDistance`, with a box behind it (`w`
+/// clamped to 1), widened by `cullingVolumeScale` and reaching `cullingVolumeDownward` below.
+pub fn actor_culling_volume_test(a: &Actor, projected: Vec3, w: f32) -> bool {
+    if projected.z > -a.culling_volume_scale && projected.z < a.culling_volume_distance + a.culling_volume_scale {
+        let inv_w = if w < 1.0 { 1.0 } else { 1.0 / w };
+        if (projected.x.abs() - a.culling_volume_scale) * inv_w < 1.0 && (projected.y + a.culling_volume_downward) * inv_w > -1.0 && (projected.y - a.culling_volume_scale) * inv_w < 1.0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// `Actor_DrawAll`'s pass over one actor before its draw: `projectedPos` and `projectedW`
+/// (`SkinMatrix_Vec3fMtxFMultXYZW` on `viewProjectionMtxF`), `ACTOR_FLAG_INSIDE_CULLING_VOLUME` from
+/// `Actor_CullingCheck`. Returns whether it's drawn by its culling (in the volume, or
+/// `ACTOR_FLAG_DRAW_CULLING_DISABLED`); the caller checks `init == NULL`.
+pub fn actor_draw_all_cull(a: &mut Actor, view_proj: Mat4) -> bool {
+    use crate::actor::ACTOR_FLAG_DRAW_CULLING_DISABLED;
+    let c = view_proj * a.world_pos.extend(1.0);
+    a.projected_pos = c.truncate();
+    a.projected_w = c.w;
+    if actor_culling_volume_test(a, a.projected_pos, a.projected_w) {
+        a.flags |= ACTOR_FLAG_INSIDE_CULLING_VOLUME;
+    } else {
+        a.flags &= !ACTOR_FLAG_INSIDE_CULLING_VOLUME;
+    }
+    // Killed (draw == NULL): not drawn.
+    !a.killed && a.flags & (ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_INSIDE_CULLING_VOLUME) != 0
 }
 
 /// `Actor_Draw`'s colour filter (`colorFilterParams`, `colorFilterTimer`): the colour (grey,

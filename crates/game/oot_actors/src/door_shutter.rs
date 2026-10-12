@@ -365,8 +365,12 @@ pub struct DoorShutter {
 impl DoorShutter {
     /// `DoorShutter_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // sInitChain: scale 1 (the culling volume isn't ported).
+        // sInitChain: scale 1; cullingVolumeDistance 4000, cullingVolumeScale 100,
+        // cullingVolumeDownward 400.
         actor.scale = Vec3::ONE;
+        actor.culling_volume_distance = 4000.0;
+        actor.culling_volume_scale = 100.0;
+        actor.culling_volume_downward = 400.0;
         // Unused: shape.yOffset is still 0 here.
         actor.home_pos.z = actor.shape_y_offset;
         // DynaPolyActor_Init(&this->dyna, 0): bgId -1.
@@ -415,8 +419,9 @@ impl DoorShutter {
             }
             d.actor.set_focus(60.0);
         } else if style_type == DOORSHUTTER_STYLE_JABU_JABU {
-            // Actor_SetScale(0.1); cullingVolumeScale 200 (not ported).
+            // Actor_SetScale(0.1); cullingVolumeScale 200.
             d.actor.scale = Vec3::splat(0.1);
+            d.actor.culling_volume_scale = 200.0;
             d.jabu_door_closed_amount = 100;
             d.actor.set_focus(0.0);
         } else {

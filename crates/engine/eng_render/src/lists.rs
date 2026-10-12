@@ -161,6 +161,7 @@ impl Renderer {
             pause_view: lists.pause_view,
             pause_ortho: &ortho_pause,
             letterbox_rows: lists.letterbox_rows,
+            pillarbox: lists.pillarbox,
             ortho_models: &ortho,
             opa_models,
             opa_fill: lists.opa_fill,

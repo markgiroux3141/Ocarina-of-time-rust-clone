@@ -971,3 +971,8 @@ mod tests {
         assert_eq!(item_check_obtainability(&s, ITEM_DEKU_NUTS_5), ITEM_DEKU_NUT);
     }
 }
+
+/// `Inventory_HasSpecificBottle`: whether a bottle slot holds `bottle_item`.
+pub fn inventory_has_specific_bottle(save: &SaveContext, bottle_item: u8) -> bool {
+    (SLOT_BOTTLE_1..=SLOT_BOTTLE_1 + 3).any(|slot| save.inventory.items[slot] == bottle_item)
+}
