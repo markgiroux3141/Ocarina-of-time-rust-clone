@@ -170,6 +170,8 @@ pub trait PlayerIface {
     fn set_navi_text_id(&mut self, id: i16);
     /// `naviActor`: the fairy `Player_Init` spawned.
     fn navi_actor(&self) -> Option<ActorHandle>;
+    /// `player->unk_6A8 = actor`: the ocarina's listener (`En_Okarina_Tag`, `En_Ma1`).
+    fn set_unk_6a8(&mut self, _actor: Option<ActorHandle>) {}
     /// `floorSfxOffset`: the floor's footstep (`SurfaceType_GetSfxOffset`'s offset), which the crawl's
     /// camera plays.
     fn unk_89e(&self) -> u16 {
@@ -300,6 +302,8 @@ pub struct ActorContext {
 
 /// `PLAYER_STATE1_*` (`player.h`) that freeze actors' updates (`sCategoryFreezeMasks`).
 pub const PLAYER_STATE1_TALKING: u32 = 1 << 6;
+/// `PLAYER_STATE2_USING_OCARINA` (`player.h`): playing the ocarina (or warping out by a song).
+pub const PLAYER_STATE2_USING_OCARINA: u32 = 1 << 27;
 pub const PLAYER_STATE1_DEAD: u32 = 1 << 7;
 pub const PLAYER_STATE1_10: u32 = 1 << 10;
 pub const PLAYER_STATE1_28: u32 = 1 << 28;

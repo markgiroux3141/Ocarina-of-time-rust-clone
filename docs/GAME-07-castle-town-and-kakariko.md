@@ -18,7 +18,7 @@ taught.
 |---|---|---|
 | 1 | Castle Town: the culling volume, the entrance, the market, the back alley and the Temple of Time's outside by day and by night, the Temple's altar, the townsfolk, the dogs, Malon | done (2026-10-11) |
 | 2 | Hyrule Castle's grounds: the Weird Egg and its hatch, Player's exchange items, Talon, the crates, the guards and the throw-out, the circle wipe | done (2026-10-12) |
-| 3 | The ocarina: Player's, the message modes, the audio, the songs' effects, `Shot_Sun`, the Sun's Song | |
+| 3 | The ocarina: Player's, the message modes, the audio, the songs' effects, `Shot_Sun`, the Sun's Song | done (2026-10-12) |
 | 4 | The guards' courtyard and Zelda: `Camera_Special6`, the patrols, Zelda, the legend, the letter, Impa's lullaby and escort | |
 | 5 | Kakariko: lifting and the cuccos, Anju, the gate, the people, the interiors | |
 | 6 | The graveyard: Dampé, the royal tomb, the ReDeads, the Sun's Song | |
@@ -783,3 +783,212 @@ shield, J C-Left.
 - **What to report:** Talon's face and wake-up, the crates' push and fall, the circles' shape and
   speed, the swimming camera, and anything standing where it shouldn't (a placeholder marker means
   an actor not ported).
+
+## Milestone 3: The ocarina
+
+**Answer:** done. Link plays the Fairy Ocarina:
+- C-Left takes it out: the staff and its treble clef come up, B reads "Stop", and each note
+  (A and the C buttons; R and Z a semitone, the stick a bend) sounds and goes on the staff;
+- a song he knows flashes its notes, its light plays (Zelda's Lullaby's and the Song of Time's
+  wipes, Epona's, Saria's leaves, the Sun's Song's column, the storm's whirl), the song plays back
+  and "You played ..." comes up;
+- Saria's Song calls Navi, and through her Saria talks;
+- the Sun's Song runs the clock at 400 a frame to dawn (or to dusk by day);
+- the Song of Storms brings 20 seconds of rain and thunder, and at Hyrule Field's fairy spot by the
+  river a big fairy;
+- the listeners hear their songs: a song spot (`En_Okarina_Tag`) its check, Mido his Saria's
+  Song check, a gossip stone a fairy, a song chest its song, the time blocks the Song of Time, a
+  cut sign Zelda's Lullaby; the teachers' lessons and playbacks run (Malon's Epona's Song, the
+  cutscenes' ocarina texts).
+
+The exit holds. Its run is the golden `ocarina`, with `ocarina_staff`, `ocarina_saria`,
+`ocarina_sun` and `ocarina_storm`.
+
+The pack is still format 28 in `out/data25`, re-imported for the new bakes and the song tables;
+builds in `target/game26`. Decisions are in [ADR 0061](adr/0061-the-ocarina.md). The user's calls
+(2026-10-12): one milestone, built in steps; `Environment_AdjustLights` wired for both
+`Oceff_Spot` and `En_Elf`; `Oceff_Wipe4` ported.
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 110 to 112):
+- `test-ocarina.bat`: the milestone's tests (with `Obj_Timeblock`'s and the audio's unit tests);
+- `game-ocarina.bat`: Hyrule Field at 18:30 with the ocarina and six songs (`ocarina-songs`),
+  300 north of the fairy spot; `day` (10:00), `night` (22:00) or `fairy` (on the spot's rim);
+- `sandbox-ocarina.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestones 1 to 3 are done; 4 (the guards' courtyard and Zelda) is next.
+
+### What was built
+
+**The audio** (`oot_game::audio::ocarina`): `AudioOcarina_*` whole but the scarecrows' recording
+and the memory game (their calls log): the pad read at `Audio_Update`, the notes by button with R,
+Z, the bend and the vibrato, `NA_SE_OC_OCARINA` on `SFX_CHANNEL_OCARINA` with its IO ports, the
+songs' recognition with and without the staff, the teachers' playback timed by the audio side's
+tasks, the staffs the box reads. The song tables come from the pack (the importer reads them from
+`general.c`).
+
+**The message box** (`oot_game::message`): `Message_StartOcarinaImpl` and its wrappers,
+`Message_HandleOcarina`, `Message_DrawMain`'s ocarina modes (free play, the checks, the lessons,
+the playbacks, the effects' spawn, the fanfares, "You played ...", the warp prompt), the staff (the
+clef, the notes, their flash and fall), B's "Stop", `Message_Update`'s closing (Navi's call,
+`ocarinaMode`). The scarecrows', the memory game's and the frogs' modes log once.
+
+**Player:** `Player_ActionHandler_13`'s ocarina (`okarina_start`, the turn-around camera),
+`Player_Action_8084E3C4` (free play or the listener's check; the end: a talk, Navi, or away),
+`func_8084B4D4`, the listener protocol (`PLAYER_STATE2_23` to `_25`, `unk_6A8`), the warp songs'
+leave and arrival (start mode 5); `Actor_UpdateAll`'s freeze while it's played.
+
+**The actors:** `Oceff_Wipe`, `Oceff_Wipe2`, `Oceff_Wipe3`, `Oceff_Wipe4`, `Oceff_Spot` (with
+`Environment_AdjustLights`), `Oceff_Storm`, `En_Okarina_Effect` (with the storm's ambience),
+`Shot_Sun` (the fairy spots, Lake Hylia's sun), `En_Okarina_Tag` (every type). Wired: `En_Ma1`,
+`En_Md`, `En_Gs`, `En_Box`, `Obj_Timeblock`, `En_Kanban`, `En_Elf` (the light's dimming), the
+pause menu's song states, `CutsceneCmd_Text`'s ocarina actions.
+
+**Elsewhere:**
+- the importer: the song tables into `AudioGameTables`; a bake list can call a segment between two
+  lists (`pack::SEGMENT_CALL`);
+- the preset `ocarina-songs` (`deku-tree-dead`, the Fairy Ocarina on C-Left, Zelda's Lullaby,
+  Epona's Song, Saria's Song, the Sun's Song, the Song of Time, the Song of Storms);
+- `Route::Ocarina` (`--script ocarina`), with the tasks `Ocarina`, `TalkThrough`, `WaitDawn` and
+  `WaitFairy`; the sandbox runs the audio side offline for it.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game26`, `OOT_DATA_DIR=out/data25`): 869
+passed, 0 failed, 1 ignored.
+New, with their expectations from the C:
+- **`oot_actors --test ocarina`** (8):
+  - The ocarina out: `Player_Action_8084E3C4` with `PLAYER_STATE2_USING_OCARINA`, free play's
+    0x86E, `OCARINA_MODE_01`, the Fairy Ocarina's instrument; a note's button on the staff the
+    frame after its position moves (Audio_Update runs after the draw), `OCARINA_BTN_INVALID` the
+    next; B: `OCARINA_MODE_04`, the instrument off, the ocarina away.
+  - Saria's Song in free play: the song's buttons from the pack, `lastPlayedSong` and `unk_E3F2`
+    6, `MSGMODE_SONG_PLAYED`'s 10 frames, the fanfare `NA_BGM_OCA_SARIA` (0x44),
+    `OCARINA_ACTION_FREE_PLAY_DONE`, `Oceff_Wipe3` (params 0) killed after 100 updates and
+    deleted the next frame, the modes in order, `MSGMODE_DISPLAY_SONG_PLAYED_TEXT`'s 20 frames,
+    Navi's 0xE0.
+  - The Sun's Song at 19:00: 0x89C, `NA_BGM_OCA_SUNS` (0x47), `Oceff_Spot`; at its end
+    `SUNSSONG_SPEED_TIME`, `gTimeSpeed` 400, `OCARINA_MODE_04`; at 06:30 `SUNSSONG_INACTIVE` and
+    the speed it was.
+  - The Song of Storms: 0x89E, `NA_BGM_OCA_STORM` (0x49), `Oceff_Storm`, `En_Okarina_Effect`
+    (`ManageStorm`, rain 20, `STORM_REQUEST_START`, `LIGHTNING_ON`, the storm state on); at its
+    end (250 frames or more) the rain's maximum 0, the storm stopped and cleared the same frame
+    (`STORM_REQUEST_NONE`, `STORM_STATE_OFF`), `LIGHTNING_LAST`.
+  - `Shot_Sun` 0x41 with Link 80 from it: the ocarina out, `SPAWNER_OCARINA_PLAYING`; Epona's Song
+    sets it back; the Song of Storms: `ShotSun_SpawnFairy` with timer 50 and the sparkles at home,
+    50 frames counted down, `FAIRY_HEAL_BIG` at home the next, the spot deleted the frame after.
+  - `En_Okarina_Tag` 0x1C10 (type 7, Saria's Song, flag 0x10): Link's `unk_6A8`, the ocarina out
+    to it (`PLAYER_STATE2_25`, `OCARINA_ACTION_CHECK_SARIA`); eight A notes: `MSGMODE_OCARINA_FAIL`
+    10 frames, the notes dropped, `MSGMODE_OCARINA_STARTING` again; Saria's Song:
+    `MSGMODE_OCARINA_CORRECT_PLAYBACK` 20 frames, `MSGMODE_SONG_PLAYED` 1, the flag, `OCARINA_MODE_04`,
+    the tag waiting again, and Navi's call all the same.
+  - `gMeadowSariasSongCs` in the Sacred Forest Meadow, Saria's Song not known:
+    `OCARINA_ACTION_TEACH_SARIA` (20 frames choosing the instrument: the default), the
+    demonstration to `TEXT_STATE_SONG_DEMO_DONE`; `PLAYBACK_SARIA`: a wrong note
+    (`MSGMODE_SONG_PLAYBACK_FAIL` 10 frames, 0x88B, `MSGMODE_OCARINA_AWAIT_INPUT`, `TEXT_STATE_9`:
+    the script's text continues with its 0x088B and starts the playback again), then the song:
+    `Item_Give` (the quest bit), `MSGMODE_SONG_PLAYBACK_SUCCESS` 20 frames, "You played",
+    `OCARINA_MODE_03`; the script runs to its end.
+  - The exit run (below).
+- **`oot_actors --test timeblocks`**: the Song of Time played on the pad (it had set
+  `lastPlayedSong`).
+- Unit tests (`oot_game::audio::ocarina`, 5): free play recognising Saria's Song, R and Z's
+  semitones, the starting button playing no note, the playback's steps, the bend's clamp.
+
+**The exit run** (`Route::Ocarina`, `--script ocarina`, `ENTR_HYRULE_FIELD_0`, `ocarina-songs`,
+18:30, Link at (5143, -30, 4700)): `ocarina_out` 33, `sarias_song` 77, `saria_talk` 484,
+`suns_song` 529, `dawn` 718, `song_of_storms` 818, `storm_fairy` 964. Texts: 0x86E, 0x86F, 0x899,
+Navi's 0xE0 (yes), Saria's 0xE2 and 0x161, 0xE3 (no), 0x86E, 0x86F, 0x89C, 0x86E, 0x86F, 0x89E.
+After the dawn Link walks 230 south to the fairy spot's rim (within its 150) for the Song of
+Storms.
+
+**The goldens.** All 161 the same bytes (no earlier route takes the ocarina out). New: `ocarina`
+(the trace, 964 frames, and the end: the fairy's sparkles in the rain) and its frames 95 (the
+staff's notes), 140 (Saria's Song's leaves), 560 (the Sun's Song's light) and 880 (the storm);
+each the same bytes over two runs. Logged in [golden/README.md](../golden/README.md): 167 hashes,
+125 cases.
+
+### Decisions
+
+- **[ADR 0061](adr/0061-the-ocarina.md):** the audio's statics in `GameAudio`, the pad read at
+  `Audio_Update`, the playback timed by the audio side's tasks, the song tables from the pack; the
+  box's modes whole but three, its effects on the play state as requests; Player's ocarina and
+  the listeners; the freeze; the effects as bakes; the spots whole; the route.
+
+### Known gaps
+
+- **The scarecrows, the memory game, the frogs** (#47): left out (the user's scope).
+- **Lake Hylia's fire arrows** (#48): `Shot_Sun`'s sun is ported, `Item_Etcetera` a placeholder.
+- **Magic** (#49): the effects' `Magic_Reset` and Nayru's Love's restore are logged.
+- **The quest page's songs** (#50): the pause menu can't preview or prompt a song.
+- **`En_Weather_Tag` and `En_Horse`** (#51): nothing cuts a storm short; Epona's Song calls no
+  horse.
+- **A warp song's arrival** draws Link before the warp-in's script (#26). No warp song is in
+  reach yet (Minuet and the others come as an adult); the warp's leave is ported and untested by
+  a route.
+- **Saria's Song in the Sacred Forest Meadow** comes from `En_Sa`, not ported: the test starts its
+  script as `En_Sa` would.
+
+### Fixes found while building
+
+- **`En_Gs` read the wrong field**: it reads `msgCtx.unk_E3F2` (the song played), not
+  `lastPlayedSong` (reset by the box).
+- **`OCARINA_ACTION_FROGS`** was 0x2D in the port; it's 0x2F.
+- **`Shot_Sun` never heard the song:** while Link plays, `Actor_UpdateAll` holds every actor but
+  those with `ACTOR_FLAG_UPDATE_DURING_OCARINA`, and that exception was missing, so the spot was
+  held with the rest.
+
+### Fixes after the hand test
+
+The user played it (2026-10-12): everything worked but two things, both in the window's audio,
+not the game.
+- **Notes held on after their buttons (at random):** the window read the audio side's view right
+  after handing over a frame's ops, before the audio thread had run them, so every frame saw the
+  audio as it was before the last frame's commands. The frame after a note started found the
+  ocarina's channel still marked done (IO port 1 `SEQ_IO_VAL_NONE`, from the note before), and
+  `Audio_PlayActiveSfx` dropped the new note's entry; the release's `Audio_StopSfxById` then found
+  nothing to stop. Reproduced offline with the window's late view: 20 of 40 notes held on, none
+  with the console's order. Now the view is read before each frame, after a retrace has run the
+  last frame's ops (ADR 0026, amended). Tests: `a_released_note_stops` (40 notes, each silent 8
+  frames after its release) and `the_audio_hand_over_reads_the_view_before_each_frame`; 871
+  passed, 0 failed, 1 ignored; goldens 167/167 the same (they run offline).
+- **Notes late:** the device's queue held 64 ms (70 to 80 ms measured), delay the console doesn't
+  have. Its target is now 32 ms (ADR 0025, amended): about 1,240 frames queued in the window over
+  25 s, never dry.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-ocarina.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-ocarina.bat
+```
+
+### By hand
+
+`game-ocarina.bat` (or menu 111). WASD the stick (Shift walks), Space A, E B, Q Z, R R, J C-Left.
+The ocarina's notes: Space A, K C-Down, L C-Right, J C-Left, I C-Up. The songs: Saria's K L J K L J;
+the Sun's L K I L K I; Storms Space K I Space K I; Epona's I J L I J L; Zelda's Lullaby J I L J I L;
+the Song of Time L Space K L Space K.
+1. **Out and away:** J: Link lifts the ocarina, the camera swings round in front of him, the staff
+   and clef come up, B reads "Stop". Play a few notes: each sounds and goes on the staff; hold R
+   (or Q) with a note: a semitone up (down); push the stick while a note's held: it bends. E:
+   the ocarina's put away.
+2. **Saria's Song:** J, then K L J K L J: the notes flash, green leaves swirl round the screen, the
+   song plays back, "You played Saria's Song"; then Navi talks at once (0xE0): Space on the first
+   choice, and Saria's texts follow.
+3. **The Sun's Song:** at 18:30 (the default) or `game-ocarina.bat night`: J, L K I L K I: a column
+   of light round Link, the field dims; when it fades the sky races through the night to dawn and
+   stops near 06:30. `game-ocarina.bat day`: the same races to dusk (18:00).
+4. **The Song of Storms:** J, Space K I Space K I: a grey whirl round Link and a sheet of rain over
+   the screen, then about 20 seconds of rain and thunder, the sky darkened, then clear again.
+5. **The fairy spot:** `game-ocarina.bat fairy`: Link on the rim of the hollow by the river. J:
+   play Epona's Song (I J L I J L): nothing. J again: the Song of Storms: the camera turns to the
+   hollow, sparkles and a chime; about 2.5 seconds later a big fairy rises from it.
+6. **The other songs' lights:** J and Zelda's Lullaby: a pink and violet wipe; Epona's Song: an
+   orange one; the Song of Time: a blue one.
+- **What to report:** the notes' pitches and the bend, the staff's notes and their flash, the
+  songs' lights (shape, colour, timing), the clock's race, the rain, the fairy's timing, and any
+  song that isn't recognised or plays wrong.

@@ -20,11 +20,8 @@
 //!
 //! The Master Quest Deku Tree's: room 2's four and room 7's five, 0x39FF (flag 0x3F, `unk_177` 0,
 //! small, range 300, hidden: no collision), and room 5's one, 0xB9FF (shown), standing on the
-//! purple rupee's chest. The ocarina isn't ported (`Message_StartOcarina` logs and the block
-//! still waits for the song, as the C does); `Demo_Effect`'s time warp is (GAME-06 milestone 1a,
-//! before it a placeholder). The tests set
-//! `msgCtx.lastPlayedSong` and Player's `PLAYER_STATE2_24` as the ocarina would. The whole overlay
-//! is ported.
+//! purple rupee's chest. `Demo_Effect`'s time warp is ported (GAME-06 milestone 1a), and the
+//! ocarina (GAME-07 milestone 3). The whole overlay is ported.
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_INTERACT_PLAYER_ABOVE};
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -309,12 +306,12 @@ impl ObjTimeblock {
     }
 
     /// `ObjTimeblock_WaitForOcarina`: Link in range with the ocarina out starts the free play
-    /// (`Message_StartOcarina(OCARINA_ACTION_FREE_PLAY)`: not ported, logged) and the block waits
-    /// for the song; in range without it, he gets the ocarina's prompt (`PLAYER_STATE2_23`).
+    /// (`Message_StartOcarina(OCARINA_ACTION_FREE_PLAY)`) and the block waits for the song; in
+    /// range without it, he gets the ocarina's prompt (`PLAYER_STATE2_23`).
     fn wait_for_ocarina(&mut self, play: &mut PlayState) -> bool {
         if self.player_is_in_range(play) {
             if player_state2(play) & PLAYER_STATE2_24 != 0 {
-                log::info!("Obj_Timeblock: Message_StartOcarina(OCARINA_ACTION_FREE_PLAY {OCARINA_ACTION_FREE_PLAY}) isn't ported");
+                play.message_start_ocarina(OCARINA_ACTION_FREE_PLAY);
                 self.song_observer = SongObserver::WaitForSong;
             } else if let Some(p) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
                 p.change_state_flags2(PLAYER_STATE2_23, 0);

@@ -599,6 +599,23 @@ pub mod setup_dl {
         d
     }
 
+    /// `SETUPDL_64`: `gsSPTexture(.., G_OFF)`, `gsDPSetCombineMode(G_CC_DECALRGBA, G_CC_PASS2)`,
+    /// `gsDPSetOtherMode(G_AD_DISABLE | G_CD_MAGICSQ | .. | G_TP_NONE | G_CYC_2CYCLE |
+    /// G_PM_NPRIMITIVE, G_AC_THRESHOLD | G_ZS_PIXEL | G_RM_PASS | G_RM_XLU_SURF2)`,
+    /// `gsSPLoadGeometryMode(G_SHADE | G_SHADING_SMOOTH)` (`Oceff_Storm`'s screen).
+    pub fn setup_dl_64() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(false);
+        // G_CC_DECALRGBA: 0, 0, 0, TEXEL0 (colour and alpha); G_CC_PASS2: 0, 0, 0, COMBINED.
+        let decal = [cc_ab::ZERO, cc_ab::ZERO, cc_c::ZERO, cc_d::TEXEL0, ac::ZERO, ac::ZERO, ac::ZERO, ac::TEXEL0];
+        let pass2 = [cc_ab::ZERO, cc_ab::ZERO, cc_c::ZERO, cc_d::COMBINED, ac::ZERO, ac::ZERO, ac::ZERO, ac::COMBINED];
+        d.combine_lerp(decal, pass2);
+        d.0.push((0xEF00_0000 | OTHERMODE_H_AD_DISABLE | G_CYC_2CYCLE, G_AC_THRESHOLD | G_RM_PASS | G_RM_XLU_SURF2));
+        d.0.push((0xD900_0000, G_SHADE | G_SHADING_SMOOTH));
+        d
+    }
+
     /// `SETUPDL_5`: as `SETUPDL_26` with `G_RM_AA_ZB_XLU_SURF | G_RM_AA_ZB_XLU_SURF2`.
     pub fn setup_dl_5() -> Dl {
         let mut d = Dl::default();

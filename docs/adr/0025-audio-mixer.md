@@ -80,7 +80,10 @@ elsewhere. mupen64plus-rsp-hle's audio lists (`alist.c`, `alist_nead.c`,
   throughout (PAL would be 50, with `maxTempoTvTypeFactors` 20.03042).
 - **The DAC and the analog stage** aren't modelled: the output is the AI's samples; the device's
   linear resampling and its rate nudging are the port's. The latency is about two frames (the
-  console's own pipeline) plus the queue's 64 ms.
+  console's own pipeline) plus the queue's 64 ms. (Amended 2026-10-12: the queue's target is
+  now 32 ms, two retraces' worth. At 64 ms the ocarina's notes lagged noticeably behind their
+  buttons. Measured in the game window in Hyrule Field over 25 s: about 1,240 frames queued,
+  never ran dry, never cut back.)
 - **Undefined behaviour in the C** is kept where it's within the structs: a script's unchecked
   call depth (`0xE4`'s `@bug`) writes past `stack[3]` into `remLoopIters`, as the struct's bytes
   lie. A division by zero (a zero portamento time, a zero variance) is guarded.

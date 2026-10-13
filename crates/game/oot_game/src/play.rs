@@ -690,9 +690,11 @@ impl PlayState {
         self.tick_with(input);
     }
 
-    /// One actor's turn in `Actor_UpdateAll`. `can_freeze_category`: Player's state freezes this
-    /// actor's category (`sCategoryFreezeMasks`), and `exempt` the actors it doesn't freeze.
-    fn update_actor(&mut self, h: ActorHandle, player_pos: Option<Vec3>, can_freeze_category: bool, exempt: &[Option<ActorHandle>]) {
+    /// One actor's turn in `Actor_UpdateAll`. `freeze_exception`: while Link plays the ocarina,
+    /// the flag an actor needs to update (`freezeExceptionFlag`); otherwise `can_freeze_category`:
+    /// Player's state freezes this actor's category (`sCategoryFreezeMasks`), and `exempt` the
+    /// actors it doesn't freeze.
+    fn update_actor(&mut self, h: ActorHandle, player_pos: Option<Vec3>, freeze_exception: u32, can_freeze_category: bool, exempt: &[Option<ActorHandle>]) {
         let Some(mut a) = self.actors.take(h) else { return };
         let base = a.base_mut();
         if base.world_pos.y < -25000.0 {
@@ -712,9 +714,9 @@ impl PlayState {
         }
         if base_bank_dropped(a.base(), &self.object_ctx) {
             a.base_mut().kill();
-        } else if can_freeze_category && !exempt.contains(&Some(h)) {
-            // Frozen by Player's state (talking, dead, ...): only the damage is reset. (The
-            // ocarina's exception, ACTOR_FLAG_UPDATE_DURING_OCARINA, never comes up.)
+        } else if (freeze_exception != 0 && a.base().flags & freeze_exception == 0) || (freeze_exception == 0 && can_freeze_category && !exempt.contains(&Some(h))) {
+            // Frozen by the ocarina, or by Player's state (talking, dead, ...): only the damage is
+            // reset.
             a.base_mut().col_chk_info.reset_damage();
             self.actors.put_back(h, a);
             return;
@@ -998,6 +1000,8 @@ impl PlayState {
     /// `Audio_Update` with the sound effects' positions: an actor's `projectedPos`.
     fn audio_update(&mut self) {
         use crate::audio::sfx::SfxPos;
+        // AudioOcarina_ReadControllerInput's PadMgr_RequestPadData: the pad as it is now.
+        self.audio.ocarina.pad = crate::audio::ocarina::OcarinaPad::of(&self.input);
         let (actors, sources, effects) = (&self.actors, &self.sfx_sources, &self.effect_ss);
         self.audio.audio_update_with(&|p| match p {
             SfxPos::Default => Some(Vec3::ZERO),
@@ -1349,6 +1353,7 @@ impl PlayState {
         let screen_y = |h: Option<ActorHandle>| h.and_then(|h| self.actors.actor(h)).map(|a| crate::target::actor_screen_pos(self.view_proj, a).1);
         let player_screen_y = screen_y(self.player).unwrap_or(0);
         let talk_actor_screen_y = screen_y(self.msg_ctx.talk_actor);
+        let player_pos = self.player_view().map(|v| v.pos).unwrap_or_default();
         let input = self.input;
         let mut frame = MsgFrame {
             table: &table,
@@ -1362,8 +1367,28 @@ impl PlayState {
             talk_actor_screen_y,
             cs_idle: self.cs_ctx.state == crate::cutscene::CS_STATE_IDLE,
             active_cam_main: self.active_cam_id == CAM_ID_MAIN,
+            player_pos,
+            requests: Vec::new(),
         };
         f(&mut self.msg_ctx, &mut frame);
+        let requests = std::mem::take(&mut frame.requests);
+        drop(frame);
+        for r in requests {
+            match r {
+                crate::message::MsgRequest::Spawn { id, pos, params } => {
+                    let _ = self.actor_spawn(id, pos, [0, 0, 0], params);
+                }
+                crate::message::MsgRequest::NaviText(id) => {
+                    let navi = self.player.and_then(|h| self.actors.get_mut(h)).and_then(|p| p.as_player_mut()).and_then(|p| {
+                        p.set_navi_text_id(id);
+                        p.navi_actor()
+                    });
+                    if let Some(a) = navi.and_then(|h| self.actors.actor_mut(h)) {
+                        a.flags |= crate::actor::ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
+                    }
+                }
+            }
+        }
     }
 
     /// `Message_ShouldAdvance`: A, B or C-Up this frame, with the message box's sound.
@@ -1379,6 +1404,16 @@ impl PlayState {
     /// `Message_ContinueTextbox`.
     pub fn continue_textbox(&mut self, text_id: u16) {
         self.with_msg(|m, f| m.continue_textbox(f, text_id));
+    }
+
+    /// `Message_StartOcarina`.
+    pub fn message_start_ocarina(&mut self, ocarina_action_id: u16) {
+        self.with_msg(|m, f| m.start_ocarina(f, ocarina_action_id));
+    }
+
+    /// `Message_StartOcarinaSunsSongDisabled`.
+    pub fn message_start_ocarina_suns_song_disabled(&mut self, ocarina_action_id: u16) {
+        self.with_msg(|m, f| m.start_ocarina_suns_song_disabled(f, ocarina_action_id));
     }
 
     /// `Message_GetState(&play->msgCtx)`.
@@ -1464,6 +1499,9 @@ impl PlayState {
         // is Navi's, 0x6xx), Navi, what it holds (nothing here) and its children.
         let pi = self.player.and_then(|h| self.actors.get(h)).and_then(|p| p.as_player());
         let player_state1 = pi.map(|p| p.state_flags1()).unwrap_or(0);
+        // While Link plays the ocarina (PLAYER_STATE2_USING_OCARINA), only the actors that hear it
+        // update (freezeExceptionFlag).
+        let freeze_exception = if pi.map(|p| p.state_flags2()).unwrap_or(0) & crate::actor_ctx::PLAYER_STATE2_USING_OCARINA != 0 { crate::actor::ACTOR_FLAG_UPDATE_DURING_OCARINA } else { 0 };
         let talk_actor = pi.and_then(|p| p.talk_target().0);
         let navi = pi.and_then(|p| p.navi_actor());
         let player_text_id = self.player.and_then(|h| self.actors.actor(h)).map(|a| a.text_id).unwrap_or(0);
@@ -1486,7 +1524,7 @@ impl PlayState {
                 if child_of_player {
                     exempt.push(Some(h));
                 }
-                self.update_actor(h, player_pos, can_freeze_category, &exempt);
+                self.update_actor(h, player_pos, freeze_exception, can_freeze_category, &exempt);
                 // An actor that changed its category in its update (Actor_ChangeCategory: to the
                 // head of the other list) leaves the loop's `actor = actor->next` in that list:
                 // the rest of this category waits for the next frame, and the other list's
@@ -1589,18 +1627,22 @@ impl PlayState {
     /// Advances real time by `dt` seconds, running as many 20 Hz frames as are due (at most
     /// 5 per call). Returns the number of frames run.
     pub fn advance(&mut self, dt: f32) -> u32 {
-        self.advance_with(dt, |_| {})
+        self.advance_with(dt, |_| {}, |_| {})
     }
 
-    /// `advance`, with `after` run after each frame: the audio side's hand-over
-    /// (`GameAudio::take_ops`, `GameAudio::set_view`).
-    pub fn advance_with(&mut self, dt: f32, mut after: impl FnMut(&mut crate::audio::GameAudio)) -> u32 {
+    /// `advance`, with the audio side's hand-over: `before` runs before each frame (the view
+    /// back, `GameAudio::set_view`, as the audio side left it after the last frame's ops), and
+    /// `after` after it (its ops, `GameAudio::take_ops`). The view isn't taken right after the
+    /// ops: the audio side hasn't run them yet, and a frame reading a view from before them
+    /// loses sounds (docs/adr/0026-the-games-audio.md).
+    pub fn advance_with(&mut self, dt: f32, mut before: impl FnMut(&mut crate::audio::GameAudio), mut after: impl FnMut(&mut crate::audio::GameAudio)) -> u32 {
         self.acc += dt.min(0.25);
         let mut n = 0;
         // Each frame lasts its R_UPDATE_RATE retraces of 60 Hz (20 Hz in play, 30 in the pause
         // menu).
         while self.acc >= self.frame_seconds() && n < 5 {
             self.acc -= self.frame_seconds();
+            before(&mut self.audio);
             self.tick();
             after(&mut self.audio);
             n += 1;

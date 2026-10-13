@@ -368,6 +368,20 @@ pub enum Step {
     Caught,
     /// Thrown out by the gate (`ENTR_HYRULE_CASTLE_4`), the circle opened, settled.
     ThrownOut,
+    /// The ocarina out (`Player_Action_8084E3C4`).
+    OcarinaOut,
+    /// Saria's Song played: the staff knew it (`unk_E3F2`).
+    SariasSong,
+    /// Saria's talk through Navi (0xE0) read and closed.
+    SariaTalk,
+    /// The Sun's Song played.
+    SunsSong,
+    /// The Sun's Song's fast time over, by day.
+    Dawn,
+    /// The Song of Storms played.
+    SongOfStorms,
+    /// The big fairy out of the Song of Storms' spot (`Shot_Sun`).
+    StormFairy,
 }
 
 impl Step {
@@ -495,6 +509,13 @@ impl Step {
             Step::Courtyard => "courtyard",
             Step::Caught => "caught",
             Step::ThrownOut => "thrown_out",
+            Step::OcarinaOut => "ocarina_out",
+            Step::SariasSong => "sarias_song",
+            Step::SariaTalk => "saria_talk",
+            Step::SunsSong => "suns_song",
+            Step::Dawn => "dawn",
+            Step::SongOfStorms => "song_of_storms",
+            Step::StormFairy => "storm_fairy",
         }
     }
 }
@@ -623,6 +644,12 @@ pub enum Route {
     /// up the vine and into a sentry's sight; "Hey you!", the starburst circle and the throw-out by
     /// the gate (`ENTR_HYRULE_CASTLE_4`).
     CastleCaught,
+    /// The ocarina (GAME-07 milestone 3): in Hyrule Field at 18:30 with the songs
+    /// (`ocarina-songs`), from a debug start 312 north of the Song of Storms' fairy spot
+    /// (`OCARINA_START`): Saria's Song (Navi's talk: Saria's, then no more), the Sun's Song (the
+    /// night run through at 400 a frame to 06:30), then at the spot (`Shot_Sun` 0xFF41) the Song
+    /// of Storms: the storm, and a big fairy.
+    Ocarina,
 }
 
 /// The emerald's cutscene chain after part 1 (`Cutscene_Command_Destination`'s terminators): each
@@ -841,6 +868,13 @@ pub const FIELD_START: (Vec3, i16) = (Vec3::new(-4258.0, -300.0, -216.0), -0x400
 /// a water box's surface), facing east.
 pub const FIELD_NIGHT_START: (Vec3, i16) = (Vec3::new(1500.0, 0.0, 2000.0), 0x4000);
 
+/// The Song of Storms' fairy spot in Hyrule Field: `Shot_Sun` 0xFF41's home (`ootx scene-info
+/// --scene spot00`), and where the `Ocarina` route starts Link: 312 north of it (outside its 150),
+/// facing it (+z); and where he plays the Song of Storms, 80 from it.
+pub const SHOT_SUN_HOME: Vec3 = Vec3::new(5143.0, -55.0, 5012.0);
+pub const OCARINA_START: (Vec3, i16) = (Vec3::new(5143.0, -30.0, 4700.0), 0);
+pub const OCARINA_STORMS_AT: Vec3 = Vec3::new(5143.0, -60.0, 4932.0);
+
 /// The Deku Baba the `DekuBaba` route fights: room 0's `En_Dekubaba` (params 0) on the top floor.
 pub const DEKU_BABA_HOME: Vec3 = Vec3::new(-195.0, 800.0, -195.0);
 /// Where the `DekuBaba` route starts Link: 85 from the Deku Baba, on the floor outwards of it,
@@ -860,6 +894,7 @@ impl Route {
             Route::Dusk | Route::Field | Route::FieldNight => "ENTR_HYRULE_FIELD_0",
             Route::Market => "ENTR_MARKET_ENTRANCE_DAY_0",
             Route::Castle | Route::CastleCaught => "ENTR_HYRULE_CASTLE_0",
+            Route::Ocarina => "ENTR_HYRULE_FIELD_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -881,6 +916,7 @@ impl Route {
             Route::Emerald | Route::Creation | Route::Farewell | Route::Dusk | Route::Field | Route::FieldNight | Route::Market => Some("deku-tree-dead"),
             Route::Castle => Some("castle-cucco"),
             Route::CastleCaught => Some("castle-egg"),
+            Route::Ocarina => Some("ocarina-songs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -899,6 +935,7 @@ impl Route {
             Route::BossRoom => Some((Vec3::new(-660.0, -1880.0, -620.0), -0x8000)),
             Route::Field => Some(FIELD_START),
             Route::FieldNight => Some(FIELD_NIGHT_START),
+            Route::Ocarina => Some(OCARINA_START),
             _ => None,
         }
     }
@@ -978,6 +1015,7 @@ impl Route {
         match self {
             Route::Dusk => Some((17, 0)),
             Route::FieldNight => Some((20, 0)),
+            Route::Ocarina => Some((18, 30)),
             _ => None,
         }
     }
@@ -1039,6 +1077,7 @@ impl Route {
             Route::Market => "market",
             Route::Castle => "castle",
             Route::CastleCaught => "castle-caught",
+            Route::Ocarina => "ocarina",
         }
     }
 
@@ -1070,13 +1109,20 @@ impl Route {
             Route::Market => 4000,
             Route::Castle => 8000,
             Route::CastleCaught => 2000,
+            Route::Ocarina => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
+    /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
+    /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
+    pub fn needs_audio(self) -> bool {
+        self == Route::Ocarina
+    }
+
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1109,6 +1155,17 @@ enum Task {
     /// Talk to the actor: walk to the point, steer at the actor until it offers, press A, and
     /// press A through its text until the box closes.
     Talk(Who, Vec3, Step),
+    /// The ocarina out with its C button (0 C-Left) and the song played (`gOcarinaSongButtons`,
+    /// the pack's: each note held 3 frames, let go 2), the step when the staff knows it
+    /// (`unk_E3F2`); done when the ocarina is away.
+    Ocarina(usize, u8, Step),
+    /// Through the text that opens (within 120 frames): each choice answered from the list in
+    /// turn (the stick down for the second), each text on with A; done when it closes.
+    TalkThrough(Vec<u8>, Step),
+    /// Until the Sun's Song's fast time is over (`sunsSongState` inactive), by day.
+    WaitDawn(Step),
+    /// Until a big fairy (`En_Elf` `FAIRY_HEAL_BIG`) is out within 200 of the point.
+    WaitFairy(Vec3, Step),
     /// Cut the first of these bushes (home positions) that drops something, and collect it.
     CutBushes(Vec<Vec3>),
     /// Steer through the points at full tilt.
@@ -1372,6 +1429,8 @@ pub struct Playthrough {
     owl: Option<ActorHandle>,
     /// `Task::PushCrate`'s crate, kept once chosen.
     crate_handle: Option<ActorHandle>,
+    /// `Task::Ocarina`'s note frames, `Task::TalkThrough`'s choices answered.
+    notes: usize,
     /// A cap on the run's length: its routes' caps added up.
     max_frames: usize,
 }
@@ -1600,6 +1659,21 @@ impl Playthrough {
                 Task::Walk(vec![Vec3::new(940.0, 1429.0, 3390.0), Vec3::new(1120.0, 1443.0, 3210.0), Vec3::new(1200.0, 1443.0, 3000.0)]),
                 Task::Caught(Vec3::new(1200.0, 1443.0, 2600.0), Step::ThrownOut),
             ],
+            Route::Ocarina => vec![
+                Task::Settle(None),
+                // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
+                // at "talk again?" (0xE3).
+                Task::Ocarina(0, oot_game::audio::ocarina::OCARINA_SONG_SARIAS, Step::SariasSong),
+                Task::TalkThrough(vec![0, 1], Step::SariaTalk),
+                // The Sun's Song by night: the clock at 400 a frame to 06:30.
+                Task::Ocarina(0, oot_game::audio::ocarina::OCARINA_SONG_SUNS, Step::SunsSong),
+                Task::WaitDawn(Step::Dawn),
+                // South to the fairy spot (Shot_Sun hears within 150) and the Song of Storms.
+                Task::Walk(vec![OCARINA_STORMS_AT]),
+                Task::Settle(None),
+                Task::Ocarina(0, oot_game::audio::ocarina::OCARINA_SONG_STORMS, Step::SongOfStorms),
+                Task::WaitFairy(SHOT_SUN_HOME, Step::StormFairy),
+            ],
             Route::Farewell => vec![
                 Task::Settle(None),
                 // Mido blocks the path out of the meadow (EnMd_BlockPath: with the emerald, until he's
@@ -1648,6 +1722,7 @@ impl Playthrough {
             reset: None,
             owl: None,
             crate_handle: None,
+            notes: 0,
             max_frames: route.max_frames(),
         }
     }
@@ -2039,6 +2114,35 @@ impl Playthrough {
             Task::Walk(points) => self.walk(w, &points, RUN),
             Task::ClimbTo(top, step) => self.climb_to(w, top, step),
             Task::ShowItem(who, from, button, step) => self.show_item(w, who, from, button, step),
+            Task::Ocarina(button, song, step) => self.play_song(w, button, song, step),
+            Task::TalkThrough(choices, step) => self.talk_through(w, &choices, step),
+            Task::WaitDawn(step) => {
+                self.wait += 1;
+                if self.wait > 1500 {
+                    self.failure = Some("the Sun's Song's time never ended".into());
+                    return None;
+                }
+                if w.save.suns_song_state == 0 && w.save.is_day() {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(idle)
+            }
+            Task::WaitFairy(near, step) => {
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some("no fairy came".into());
+                    return None;
+                }
+                let fairy = w.actors.all().into_iter().any(|h| {
+                    w.actors.downcast::<crate::en_elf::EnElf>(h).is_some_and(|e| !e.actor.killed && e.actor.params == crate::en_elf::FAIRY_HEAL_BIG && Self::xz_dist(e.actor.world_pos, near) < 200.0)
+                });
+                if fairy {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(idle)
+            }
             Task::PushCrate(near, offset, dir, until, step) => self.push_crate(w, near, offset, dir, until, step),
             Task::Caught(to, step) => {
                 self.wait += 1;
@@ -4128,6 +4232,119 @@ impl Playthrough {
     /// `Task::ShowItem`'s phases: 0 to the point, 1 at the actor until it offers a talk (Player's
     /// `talkActor`), 2 its C button, 3 the texts (A whenever one waits) until closed and Link
     /// stands.
+    /// `Task::Ocarina`.
+    fn play_song(&mut self, w: &PlayState, button: usize, song: u8, step: Step) -> Option<PadState> {
+        use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP};
+        use oot_game::audio::ocarina::{OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_RIGHT, OCARINA_BTN_C_UP};
+        let idle = PadState::default();
+        let p = w.player();
+        self.wait += 1;
+        if self.wait > 1200 {
+            self.failure = Some(format!("song {song} never played (Link {:?}, msgMode {:#x})", p.action, w.msg_ctx.msg_mode));
+            return None;
+        }
+        match self.sub {
+            // The ocarina out.
+            0 => {
+                if p.action == PA::Ocarina {
+                    self.mark(Step::OcarinaOut);
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                if w.message_state() != TEXT_STATE_NONE {
+                    return Some(idle);
+                }
+                Some(self.press([BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT][button]))
+            }
+            // Its staff up (MSGMODE_OCARINA_PLAYING).
+            1 => {
+                if w.msg_ctx.msg_mode == oot_game::message::MSGMODE_OCARINA_PLAYING {
+                    self.sub = 2;
+                    self.notes = 0;
+                }
+                Some(idle)
+            }
+            // The notes.
+            2 => {
+                let b = w.audio.ocarina.song_buttons(song);
+                let (note, phase) = (self.notes / 5, self.notes % 5);
+                self.notes += 1;
+                if note >= b.num_buttons as usize {
+                    self.sub = 3;
+                    return Some(idle);
+                }
+                let pad = match b.buttons_index[note] {
+                    OCARINA_BTN_A => BTN_A,
+                    OCARINA_BTN_C_DOWN => BTN_CDOWN,
+                    OCARINA_BTN_C_RIGHT => BTN_CRIGHT,
+                    OCARINA_BTN_C_LEFT => BTN_CLEFT,
+                    OCARINA_BTN_C_UP => BTN_CUP,
+                    _ => 0,
+                };
+                Some(if phase < 3 { PadState { button: pad, ..Default::default() } } else { idle })
+            }
+            // Heard.
+            3 => {
+                if w.msg_ctx.unk_e3f2 == song as u16 && w.msg_ctx.msg_mode != oot_game::message::MSGMODE_OCARINA_PLAYING {
+                    self.mark(step);
+                    self.sub = 4;
+                }
+                Some(idle)
+            }
+            // The ocarina away (a talk may follow at once: Saria's Song's).
+            _ => {
+                if p.action != PA::Ocarina {
+                    self.finish(None);
+                    return None;
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// `Task::TalkThrough`.
+    fn talk_through(&mut self, w: &PlayState, choices: &[u8], step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 3000 {
+            self.failure = Some(format!("the talk never ended (text {:#x})", w.msg_ctx.text_id));
+            return None;
+        }
+        let st = w.message_state();
+        if self.sub == 0 {
+            if st != TEXT_STATE_NONE {
+                self.sub = 1;
+                self.notes = 0;
+            } else if self.wait > 120 {
+                self.failure = Some("no text opened".into());
+                return None;
+            }
+            return Some(idle);
+        }
+        if st == TEXT_STATE_NONE {
+            self.finish(Some(step));
+            return None;
+        }
+        if st == TEXT_STATE_CHOICE {
+            let c = choices.get(self.notes).copied().unwrap_or(0);
+            if c == 1 && w.msg_ctx.choice_index == 0 {
+                // The stick down to the second answer.
+                return Some(PadState { stick_y: -60, ..Default::default() });
+            }
+            if self.prev.stick_y != 0 {
+                return Some(idle);
+            }
+            let pad = self.press(BTN_A);
+            if pad.button != 0 {
+                self.notes += 1;
+            }
+            return Some(pad);
+        }
+        // (Saria's texts end in an event: A goes on from it too.)
+        let event = st == oot_game::message::TEXT_STATE_EVENT;
+        Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
+    }
+
     fn show_item(&mut self, w: &PlayState, who: Who, from: Vec3, button: usize, step: Step) -> Option<PadState> {
         let idle = PadState::default();
         let Some(h) = Self::find(w, who) else {

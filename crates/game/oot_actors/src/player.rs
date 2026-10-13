@@ -99,6 +99,12 @@ pub const STATE2_16: u32 = 1 << 16;
 pub const STATE2_18: u32 = 1 << 18;
 pub const STATE2_19: u32 = 1 << 19; // side hop / backflip
 pub const STATE2_22: u32 = 1 << 22;
+/// `PLAYER_STATE2_23`: an ocarina listener is near (an actor sets it each frame it'd hear
+/// the ocarina), `_24`: the ocarina is out for it (the listener starts the song's check),
+/// `_25`: the ocarina's turned to `unk_6A8` (`player.h`).
+pub const STATE2_23: u32 = 1 << 23;
+pub const STATE2_24: u32 = 1 << 24;
+pub const STATE2_25: u32 = 1 << 25;
 pub const STATE2_26: u32 = 1 << 26;
 pub const STATE2_27: u32 = 1 << 27;
 pub const STATE2_28: u32 = 1 << 28; // idle fidget
@@ -113,6 +119,8 @@ pub const STATE2_29: u32 = 1 << 29;
 pub const STATE3_1: u32 = 1 << 1;
 pub const STATE3_3: u32 = 1 << 3;
 pub const STATE3_4: u32 = 1 << 4;
+/// `PLAYER_STATE3_5`: the ocarina out as soon as the talk ends (`En_Skj` sets it).
+pub const STATE3_5: u32 = 1 << 5;
 pub const STATE3_7: u32 = 1 << 7;
 
 // PlayerDoorType.
@@ -224,6 +232,17 @@ pub enum PlayRequest {
     /// `Camera_RequestMode(Play_GetCamera(play, CAM_ID_MAIN), mode)` made inside Player's update
     /// (`func_8083AD4C`), which used its result already (`Player::camera_request_mode`).
     CamRequestMode(i16),
+    /// `AudioOcarina_SetInstrument(instrument)` (`Player_SetupAction` putting the ocarina away).
+    OcarinaSetInstrument(u8),
+    /// `Message_StartOcarina(play, action)`.
+    StartOcarina(u16),
+    /// `Camera_SetViewParam(Play_GetCamera(play, CAM_ID_MAIN), CAM_VIEW_TARGET, actor)`.
+    CamViewTarget(ActorHandle),
+    /// `play->mainCamera.stateFlags &= ~CAM_STATE_EXTERNAL_FINISHED`.
+    CamClearFinished,
+    /// `Actor_Spawn(ACTOR_DEMO_KANKYO, 0, 0, 0, params)`: the warp songs' sparkles, out
+    /// (`DEMOKANKYO_WARP_OUT`, `Environment_WarpSongLeave` if it can't spawn) or in.
+    WarpSparkles(i16),
 }
 
 /// `Player_UpdateBottleHeld` (`z_player_lib.c`): the bottle on the button Link used holds `item`
@@ -454,6 +473,12 @@ pub enum Action {
     JumpSlash,
     /// `Player_Action_BlueWarpArrive`: arriving by blue warp, falling from 800 up.
     BlueWarpArrive,
+    /// `Player_Action_8084E3C4`: the ocarina out and played.
+    Ocarina,
+    /// `Player_Action_StartWarpSongArrive`: the warp song's arrival's first frame.
+    StartWarpSongArrive,
+    /// `Player_Action_WaitForCutscene`: invisible after a warp song, until the warp-in's script.
+    WaitForCutscene,
     /// `Player_Action_ExitGrotto`: launched up out of a grotto's hole.
     ExitGrotto,
     /// `Player_Action_8084BBE4`: hanging from a ledge.
@@ -653,6 +678,9 @@ impl Action {
             Action::Midair => "Player_Action_8084411C",
             Action::JumpSlash => "Player_Action_80844AF4",
             Action::BlueWarpArrive => "Player_Action_BlueWarpArrive",
+            Action::Ocarina => "Player_Action_8084E3C4",
+            Action::StartWarpSongArrive => "Player_Action_StartWarpSongArrive",
+            Action::WaitForCutscene => "Player_Action_WaitForCutscene",
             Action::ExitGrotto => "Player_Action_ExitGrotto",
             Action::Hang => "Player_Action_8084BBE4",
             Action::ClimbUp => "Player_Action_8084BDFC",
@@ -796,6 +824,9 @@ pub struct Env<'a> {
     pub scene_cam_type: u8,
     /// `play->actorCtx.titleCtx.delayTimer == 0 && titleCtx.alpha == 0`: no place name showing.
     pub title_card_clear: bool,
+    /// `play->msgCtx.ocarinaMode`, `lastPlayedSong`.
+    pub ocarina_mode: u16,
+    pub last_played_song: u16,
 }
 
 impl Env<'_> {
@@ -858,6 +889,9 @@ pub struct Player {
     pub unk_6AE_rot_flags: u16,
     pub idle_type: i8,
     pub unk_6AD: u8,
+    /// `unk_6A8`: the actor the ocarina is played to (`En_Okarina_Tag`'s spots, `En_Ma1`), kept
+    /// while `PLAYER_STATE2_25`.
+    pub unk_6a8: Option<ActorHandle>,
     /// Head: z (headLimbRot.x), y (headLimbRot.y), x (headLimbRot.z). Upper body: x (upperLimbRot.x), y (upperLimbRot.y), z (upperLimbRot.z).
     pub upper_limb_yaw_secondary: i16,
     pub head_limb_rot_x: i16,
@@ -1145,6 +1179,7 @@ impl Player {
             unk_6AE_rot_flags: 0,
             idle_type: 0,
             unk_6AD: 0,
+            unk_6a8: None,
             upper_limb_yaw_secondary: 0,
             head_limb_rot_x: 0,
             head_limb_rot_y: 0,
@@ -1415,8 +1450,14 @@ impl Player {
                 self.fall_start_height = self.actor.world_pos.y as i16;
                 self.play_requests.push(PlayRequest::OnePointCutscene { cs_id: 5110, timer: 40, player: true, parent: CAM_ID_MAIN });
             }
-            // 1, 3, 5..=7: the Master Sword pedestal, the warp songs, the jump down into Kokiri
-            // Forest's opening and so on: not ported. Standing still.
+            // Player_StartMode_WarpSong: arriving by a warp song, held (PLAYER_STATE1_29) and
+            // invisible (actor.draw = NULL: Player is always drawn here, BACKLOG #26).
+            5 => {
+                self.setup_action(&data, Action::StartWarpSongArrive, 0);
+                self.state1 |= STATE1_29;
+            }
+            // 1, 3, 6, 7: the Master Sword pedestal, a door, Farore's Wind, knocked over: not
+            // ported. Standing still.
             m => self.note(format!("start mode {m} (sStartModeFuncs) not ported: standing")),
         }
     }
@@ -1757,6 +1798,9 @@ impl Player {
             Action::Midair => self.action_8084411c(env),
             Action::JumpSlash => self.action_80844af4(env),
             Action::BlueWarpArrive => self.action_blue_warp_arrive(env),
+            Action::Ocarina => self.action_8084e3c4(env),
+            Action::StartWarpSongArrive => self.action_start_warp_song_arrive(env),
+            Action::WaitForCutscene => self.action_wait_for_cutscene(env),
             Action::ExitGrotto => self.action_exit_grotto(env),
             Action::Hang => self.action_8084bbe4(env),
             Action::ClimbUp => self.action_8084bdfc(env),
@@ -3898,6 +3942,12 @@ impl Player {
     fn setup_action(&mut self, data: &GameData, action: Action, flags: i32) -> bool {
         if self.action == action {
             return false;
+        }
+        // Leaving the ocarina: it stops (Player_Action_808507F4's func_80832340, the Farore's Wind
+        // warp, isn't ported).
+        if self.action == Action::Ocarina {
+            self.play_requests.push(PlayRequest::OcarinaSetInstrument(oot_game::audio::ocarina::OCARINA_INSTRUMENT_OFF));
+            self.state2 &= !(STATE2_24 | STATE2_25);
         }
         self.action = action;
         if self.item_ap != self.held_item_ap && (flags & 1 == 0 || self.state1 & STATE1_22 == 0) {
@@ -8424,8 +8474,9 @@ impl Player {
     /// camera takes its mode (`func_8083AD4C`), with `NA_SE_SY_CAMERA_ZOOM_UP`, or the error.
     /// `unk_6AD` 4 is a cutscene item: a trade item, or a bottle's contents to show (the big Poe and
     /// Ruto's letter always; a Poe to whoever wants one, any to whoever wants blue fire), is shown
-    /// (`Player_Action_ExchangeItem`). Not ported, logged: the spells (no magic), the bottles' own
-    /// uses (drinking, releasing, catching) and the ocarina (GAME-07 milestone 3).
+    /// (`Player_Action_ExchangeItem`); the ocarina is taken out (`Player_Action_8084E3C4`, the
+    /// turn-around camera's ocarina kind, 91 when it's played to `unk_6A8`). Not ported, logged:
+    /// the spells (no magic) and the bottles' own uses (drinking, releasing, catching).
     fn action_handler_13(&mut self, env: &Env) -> bool {
         if self.unk_6AD != 0 && (self.func_808332B8() || self.grounded() || self.state1 & STATE1_23 != 0) {
             if !self.start_cs_action(env.data) {
@@ -8453,10 +8504,17 @@ impl Player {
                     }
                     if Self::action_to_bottle(env.data, item_action) >= 0 {
                         self.note("Player_ActionHandler_13: the bottles' uses (drinking, releasing, catching) aren't ported");
-                    } else {
-                        self.note("Player_ActionHandler_13: the ocarina (Player_Action_8084E3C4) isn't ported");
+                        return false;
                     }
-                    return false;
+                    self.setup_action_preserve_item_action(env.data, Action::Ocarina, 0);
+                    self.skel.play_once_set_speed(env.data, env.data.anim("link_normal_okarina_start"), 2.0 / 3.0);
+                    self.state2 |= STATE2_27;
+                    // CAM_ITEM_TYPE_91 played to unk_6A8, else CAM_ITEM_TYPE_90.
+                    self.set_turn_around_camera(if self.unk_6a8.is_some() { 91 } else { 90 });
+                    if let Some(t) = self.unk_6a8 {
+                        self.state2 |= STATE2_25;
+                        self.play_requests.push(PlayRequest::CamViewTarget(t));
+                    }
                 } else if self.func_8083ad4c(env) != oot_game::camera::CAM_MODE_NORMAL as i32 {
                     if self.state1 & STATE1_23 == 0 {
                         self.setup_action(env.data, Action::FirstPerson, 1);
@@ -8472,6 +8530,7 @@ impl Player {
                     self.sfx(PlayerSfx::NoPos(NA_SE_SY_ERROR));
                     return false;
                 }
+                self.state1 |= STATE1_28 | STATE1_29;
             }
             self.func_80832224();
             return true;
@@ -9460,6 +9519,135 @@ impl Player {
         }
     }
 
+    /// `func_8084B498`: the item action is the ocarina Link has (the fairy's, else the Ocarina of
+    /// Time).
+    fn func_8084b498(&mut self, env: &Env) {
+        let fairy = env.io.borrow().save.inventory.items.get(oot_game::item::SLOT_OCARINA).copied() == Some(oot_game::item::ITEM_OCARINA_FAIRY);
+        self.item_ap = if fairy { env.data.items.ap("OCARINA_FAIRY") } else { env.data.items.ap("OCARINA_OF_TIME") };
+    }
+
+    /// `func_8084B4D4`: with `PLAYER_STATE3_5` (set by `En_Skj`), the ocarina out as the talk
+    /// ends.
+    fn func_8084b4d4(&mut self, env: &Env) -> bool {
+        if self.state3 & STATE3_5 != 0 {
+            self.state3 &= !STATE3_5;
+            self.func_8084b498(env);
+            self.unk_6AD = 4;
+            self.action_handler_13(env);
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_8084E3C4`: the ocarina out (`link_normal_okarina_start`), then played
+    /// (`okarina_swing`): free play (`Message_StartOcarina`), unless a listener asked for it
+    /// (`PLAYER_STATE2_23`, `_25`: `PLAYER_STATE2_24` tells it to start its check). When the
+    /// ocarina's done (`OCARINA_MODE_04`), the camera's told, and Link talks to `unk_6A8`, or to
+    /// Navi (`naviTextId` negative: Saria's Song), or takes out the next cutscene item, or puts
+    /// it away (`okarina_end`). A warp song taken (`OCARINA_MODE_02`): the respawn point at its
+    /// entrance (`sWarpSongEntrances`), the cutscene action 8, the sparkles (`DEMOKANKYO_WARP_OUT`),
+    /// the music off.
+    fn action_8084e3c4(&mut self, env: &Env) {
+        use oot_game::message::{OCARINA_ACTION_FREE_PLAY, OCARINA_MODE_02, OCARINA_MODE_04};
+        let data = env.data;
+        if self.skel.update(data) {
+            self.skel.play_loop_set_speed(data, data.anim("link_normal_okarina_swing"), 2.0 / 3.0);
+            self.action_var2 = 1;
+            if self.state2 & (STATE2_23 | STATE2_25) != 0 {
+                self.state2 |= STATE2_24;
+            } else {
+                self.play_requests.push(PlayRequest::StartOcarina(OCARINA_ACTION_FREE_PLAY));
+            }
+            return;
+        }
+        if self.action_var2 == 0 {
+            return;
+        }
+        if env.ocarina_mode == OCARINA_MODE_04 {
+            self.play_requests.push(PlayRequest::CamDone);
+            if self.target_actor.is_some() && self.target_actor == self.unk_6a8 {
+                let t = self.target_actor.unwrap();
+                let text = env.actors.actor(t).map_or(0, |a| a.text_id);
+                self.start_talking(env, t, text);
+            } else if self.navi_text_id < 0 {
+                if let Some(navi) = self.navi_actor {
+                    self.target_actor = Some(navi);
+                    let text = self.navi_text_id.wrapping_neg() as u16;
+                    self.play_requests.push(PlayRequest::SetTextId { actor: navi, text_id: text });
+                    self.start_talking(env, navi, text);
+                }
+            } else if !self.action_handler_13(env) {
+                self.func_8083A098(data, data.anim("link_normal_okarina_end"));
+            }
+            self.state2 &= !(STATE2_23 | STATE2_24 | STATE2_25);
+            self.unk_6a8 = None;
+        } else if env.ocarina_mode == OCARINA_MODE_02 {
+            /// `sWarpSongEntrances`: `ENTR_SACRED_FOREST_MEADOW_2`, `ENTR_DEATH_MOUNTAIN_CRATER_4`,
+            /// `ENTR_LAKE_HYLIA_8`, `ENTR_DESERT_COLOSSUS_5`, `ENTR_GRAVEYARD_7`, `ENTR_TEMPLE_OF_TIME_7`
+            /// (`entrance_table.h`).
+            const WARP_SONG_ENTRANCES: [u16; 6] = [0x600, 0x4F6, 0x604, 0x1F1, 0x568, 0x5F4];
+            /// `PLAYER_PARAMS(PLAYER_START_MODE_WARP_SONG, PLAYER_START_BG_CAM_DEFAULT)`.
+            const WARP_SONG_PARAMS: i16 = (5 << 8) | 0xFF;
+            let song = env.last_played_song as usize;
+            {
+                let mut io = env.io.borrow_mut();
+                let r = &mut io.save.respawn[RESPAWN_MODE_RETURN];
+                // (A song past the table reads on into the next statics; only the six warp songs
+                // ask for the warp.)
+                r.entrance_index = WARP_SONG_ENTRANCES.get(song).copied().unwrap_or(0);
+                r.player_params = WARP_SONG_PARAMS;
+                r.data = song as i8;
+            }
+            self.cs_mode = 0;
+            self.state1 &= !STATE1_29;
+            self.try_cs_action(env, None, 8);
+            self.play_requests.push(PlayRequest::CamClearFinished);
+            // Player_TryCsAction's Player_SetupAction cleared them.
+            self.state1 |= STATE1_28 | STATE1_29;
+            self.state2 |= STATE2_27;
+            self.play_requests.push(PlayRequest::WarpSparkles(crate::demo_kankyo::DEMOKANKYO_WARP_OUT));
+            let mut io = env.io.borrow_mut();
+            io.save.seq_id = oot_game::audio::NA_BGM_DISABLED as u8;
+            io.save.nature_ambience_id = oot_game::audio::NATURE_ID_DISABLED;
+        }
+    }
+
+    /// `Player_TryCsAction`: unless in a blocking cutscene mode, the cutscene action `cs_action`
+    /// (about `actor`) starts.
+    fn try_cs_action(&mut self, env: &Env, actor: Option<ActorHandle>, cs_action: u8) -> bool {
+        if !self.in_blocking_cs_mode(env) {
+            self.func_80832564(env.data);
+            self.setup_action(env.data, Action::Cutscene, 0);
+            self.cs_mode = cs_action;
+            self.cs_actor = actor;
+            self.func_80832224();
+            return true;
+        }
+        false
+    }
+
+    /// `Player_Action_StartWarpSongArrive`: the wait for the warp-in's script (40 frames), and its
+    /// sparkles (`DEMOKANKYO_WARP_IN`, which start the script).
+    fn action_start_warp_song_arrive(&mut self, env: &Env) {
+        self.setup_action(env.data, Action::WaitForCutscene, 0);
+        self.action_var2 = 40;
+        self.play_requests.push(PlayRequest::WarpSparkles(crate::demo_kankyo::DEMOKANKYO_WARP_IN));
+    }
+
+    /// `Player_Action_WaitForCutscene`: once `csDelayTimer` is out and a cutscene mode waits, the
+    /// cutscene action (`func_80852280` sets Player's draw back).
+    fn action_wait_for_cutscene(&mut self, env: &Env) {
+        // DECR(this->av2.csDelayTimer).
+        let t = self.action_var2;
+        if t != 0 {
+            self.action_var2 -= 1;
+        }
+        if (if t == 0 { 0 } else { t - 1 }) == 0 && self.start_cs_action(env.data) {
+            self.setup_action(env.data, Action::Cutscene, 0);
+            self.action_cs_action(env);
+        }
+    }
+
     /// `Player_SetupTalk`: the talking action, and the message box for Player's `textId`.
     fn setup_talk(&mut self, data: &GameData) {
         self.setup_action_preserve_anim_movement(data, Action::Talk, 0);
@@ -9483,9 +9671,13 @@ impl Player {
                 self.state2 &= !STATE2_13;
             }
             self.play_requests.push(PlayRequest::CamDone);
-            // func_8084B4D4 (the ocarina after a talk) and func_8084B3CC (the shooting gallery)
-            // don't apply; Player_StartCsAction (a cutscene mode waiting) does; Player_ActionHandler_2 (an item
-            // to pick up) doesn't apply.
+            // func_8084B4D4 (the ocarina after a talk), func_8084B3CC (the shooting gallery: not
+            // reached), Player_StartCsAction (a cutscene mode waiting); Player_ActionHandler_2 (an
+            // item to pick up) doesn't apply.
+            if self.func_8084b4d4(env) {
+                self.textbox_btn_cooldown_timer = 10;
+                return;
+            }
             if self.start_cs_action(data) {
                 self.textbox_btn_cooldown_timer = 10;
                 return;
@@ -9708,15 +9900,14 @@ impl Player {
                     self.action_var2 -= 1;
                 }
                 if self.func_8084DFF4(env) && self.action_var2 == 1 {
-                    // (PLAYER_STATE3_5 never comes up.)
-                    let cond = self.target_actor.is_some() && (self.exchange_item_id as i8) < 0;
+                    let cond = (self.target_actor.is_some() && (self.exchange_item_id as i8) < 0) || self.state3 & STATE3_5 != 0;
                     let health_accumulator = env.io.borrow().save.health_accumulator;
                     if cond || health_accumulator == 0 {
                         if cond {
                             self.func_8084DF6C();
                             self.exchange_item_id = 0;
-                            // func_8084B4D4 (an ocarina after the talk) is 0.
-                            if let Some(t) = self.target_actor
+                            if !self.func_8084b4d4(env)
+                                && let Some(t) = self.target_actor
                                 && let Some(text) = env.actors.actor(t).map(|a| a.text_id)
                             {
                                 self.start_talking(env, t, text);
@@ -9856,6 +10047,11 @@ impl Player {
         }
         // (rideActor: no riding.) Navi's text is set again by her next update.
         self.navi_text_id = 0;
+        // The ocarina's listener: asked for again each frame.
+        if self.state2 & STATE2_25 == 0 {
+            self.unk_6a8 = None;
+        }
+        self.state2 &= !STATE2_23;
         let mut temp_f0 = self.actor.world_pos.y - self.actor.prev_pos.y;
         let bp = &self.body_parts_pos;
         let mut phi_f12 = (bp[BODYPART_L_FOOT].y + bp[BODYPART_R_FOOT].y) * 0.5 + temp_f0;
@@ -10457,6 +10653,8 @@ impl ActorImpl for Player {
             main_cam_mode: play.game_camera.mode,
             scene_cam_type: play.scene_cam_type,
             title_card_clear: play.title_ctx.delay_timer == 0 && play.title_ctx.alpha == 0,
+            ocarina_mode: play.msg_ctx.ocarina_mode,
+            last_played_song: play.msg_ctx.last_played_song,
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for textboxBtnCooldownTimer frames after a talk.
@@ -10888,6 +11086,9 @@ impl PlayerIface for Player {
     fn navi_actor(&self) -> Option<ActorHandle> {
         self.navi_actor
     }
+    fn set_unk_6a8(&mut self, actor: Option<ActorHandle>) {
+        self.unk_6a8 = actor;
+    }
 }
 
 /// Applies a `PlayRequest` (see there), after Player's update.
@@ -10908,6 +11109,17 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         }
         PlayRequest::CamDone => {
             play.camera_set_finished_flag(oot_game::camera::CAM_ID_MAIN);
+        }
+        PlayRequest::OcarinaSetInstrument(i) => play.audio.audio_ocarina_set_instrument(i),
+        PlayRequest::StartOcarina(a) => play.message_start_ocarina(a),
+        PlayRequest::CamViewTarget(t) => play.game_camera.set_target(t),
+        // CAM_STATE_EXTERNAL_FINISHED.
+        PlayRequest::CamClearFinished => play.game_camera.state_flags &= !0x8,
+        PlayRequest::WarpSparkles(params) => {
+            let r = play.actor_spawn(crate::demo_kankyo::ACTOR_DEMO_KANKYO, Vec3::ZERO, [0, 0, 0], params);
+            if r.is_err() && params == crate::demo_kankyo::DEMOKANKYO_WARP_OUT {
+                crate::demo_kankyo::environment_warp_song_leave(play);
+            }
         }
         PlayRequest::RoomLoad(n) => {
             play.room_request(n);

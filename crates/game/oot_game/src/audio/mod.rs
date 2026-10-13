@@ -16,6 +16,7 @@
 //! driver hands to the audio side), and the last `AudioView` the audio side gave back.
 
 pub mod bgm;
+pub mod ocarina;
 pub mod offline;
 pub mod scene;
 pub mod seqcmd;
@@ -173,6 +174,14 @@ pub struct AudioGameTables {
     /// as `D_80854A8C[i]`): the sounds `Player_ProcessAnimSfxList` plays on an animation's frames, as
     /// (`sfxId`, `field`).
     pub player_anim_sfx: Vec<(String, Vec<(u16, i16)>)>,
+    /// `sOcarinaSongNotes` (`general.c`): each song's notes, as the C lists them (the 60 Hz
+    /// lengths: not `OOT_PAL_N64`).
+    pub ocarina_song_notes: Vec<Vec<ocarina::OcarinaNote>>,
+    /// `gOcarinaSongButtons` (`general.c`).
+    pub ocarina_song_buttons: Vec<ocarina::OcarinaSongButtons>,
+    /// `sButtonToPitchMap`, `sPitchToButtonMap` (`general.c`).
+    pub button_to_pitch_map: Vec<u8>,
+    pub pitch_to_button_map: Vec<u8>,
 }
 
 impl AudioGameTables {
@@ -325,6 +334,8 @@ pub struct GameAudio {
     pub fanfare_seq_id: u16,
     /// `sSfxChannelState`.
     pub sfx_channel_state: [bgm::SfxPlayerState; 16],
+    /// The ocarina's statics (`AudioOcarina_*`).
+    pub ocarina: ocarina::Ocarina,
 
     // sfx.c
     /// `gSfxBankMuted`.
@@ -343,8 +354,10 @@ impl GameAudio {
     /// The statics as the ROM loads them (their initialisers, BSS zero).
     pub fn new(tables: Arc<AudioGameTables>, audio_tables: Arc<AudioTables>) -> GameAudio {
         let sfx = sfx::SfxStatics::new(&tables.sfx_bank_sizes);
+        let ocarina = ocarina::Ocarina::new(&tables);
         GameAudio {
             sfx,
+            ocarina,
             tables,
             audio_tables,
             view: AudioView::default(),

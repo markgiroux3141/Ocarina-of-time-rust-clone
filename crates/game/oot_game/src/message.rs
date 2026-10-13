@@ -14,18 +14,23 @@
 //!
 //! Ported: the plain textbox modes (start, grow, decode, type, await input, box breaks, next
 //! text ids, choices, fading, persistent and event ends, closing), the colours, the player's
-//! name. Not ported: the ocarina modes, item icons and textbox backgrounds (decoded, not
-//! drawn), the credits, the ocarina's sounds, and the debug message viewer (`BREG(0)` 0). `YREG(31)` is the
-//! shop's (`yreg_31`).
+//! name, the item icons; the ocarina's modes (docs/adr/0061-the-ocarina.md:
+//! `Message_StartOcarinaImpl`, `Message_HandleOcarina`, free play, the checks, the teaching and
+//! the playback, "You played", the songs' effects spawned, the treble clef and the notes). Not
+//! ported: the scarecrow's songs, the Skull Kids' memory game and the frogs' modes (the user's
+//! scope: they log), the textbox backgrounds (decoded, not drawn), the credits and the debug
+//! message viewer (`BREG(0)` 0). `YREG(31)` is the shop's (`yreg_31`).
 
 #![allow(non_snake_case)] // sMessageStartFrameCount and the unk_ fields keep the decomp's names
 
 use eng_gfx::DrawLists;
 use eng_input::pad::{BTN_A, BTN_B, BTN_CUP, Input};
+use glam::Vec3;
 
 use crate::actor_ctx::ActorHandle;
-use crate::gbi::{G_IM_FMT_I, G_IM_FMT_IA, G_IM_SIZ_4B, G_TX_CLAMP, G_TX_MIRROR, G_TX_NOMIRROR, ac, cc_ab, cc_c, cc_d, setup_dl};
-use crate::interface::{DO_ACTION_NEXT, DO_ACTION_RETURN, InterfaceContext, change_alpha};
+use crate::audio::ocarina::{self, OCARINA_BTN_A, OCARINA_BTN_INVALID, OCARINA_INSTRUMENT_DEFAULT, OCARINA_INSTRUMENT_GRIND_ORGAN, OCARINA_INSTRUMENT_HARP, OCARINA_INSTRUMENT_MALON, OCARINA_INSTRUMENT_OFF, OCARINA_INSTRUMENT_WHISTLE, StaffRef};
+use crate::gbi::{G_IM_FMT_I, G_IM_FMT_IA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_TX_CLAMP, G_TX_MIRROR, G_TX_NOMIRROR, G_TX_WRAP, ac, cc_ab, cc_c, cc_d, setup_dl};
+use crate::interface::{DO_ACTION_NEXT, DO_ACTION_RETURN, DO_ACTION_STOP, InterfaceContext, change_alpha};
 use crate::item::QUEST_HEART_PIECE_COUNT;
 use crate::save::SaveContext;
 use crate::sprite::{Load, Quad, Sprite, SpriteBake, TexSrc};
@@ -41,11 +46,37 @@ pub const MSGMODE_TEXT_DISPLAYING: u8 = 0x06;
 pub const MSGMODE_TEXT_AWAIT_INPUT: u8 = 0x07;
 pub const MSGMODE_TEXT_DELAYED_BREAK: u8 = 0x08;
 pub const MSGMODE_OCARINA_STARTING: u8 = 0x09;
+pub const MSGMODE_SONG_DEMONSTRATION_STARTING: u8 = 0x0A;
+pub const MSGMODE_SONG_PLAYBACK_STARTING: u8 = 0x0B;
 pub const MSGMODE_OCARINA_PLAYING: u8 = 0x0C;
+pub const MSGMODE_OCARINA_CORRECT_PLAYBACK: u8 = 0x0D;
+pub const MSGMODE_OCARINA_FAIL: u8 = 0x0E;
+pub const MSGMODE_OCARINA_FAIL_NO_TEXT: u8 = 0x0F;
+pub const MSGMODE_OCARINA_NOTES_DROP: u8 = 0x10;
+pub const MSGMODE_SONG_PLAYED: u8 = 0x11;
+pub const MSGMODE_SETUP_DISPLAY_SONG_PLAYED: u8 = 0x12;
+pub const MSGMODE_DISPLAY_SONG_PLAYED: u8 = 0x13;
+pub const MSGMODE_DISPLAY_SONG_PLAYED_TEXT_BEGIN: u8 = 0x14;
+pub const MSGMODE_DISPLAY_SONG_PLAYED_TEXT: u8 = 0x15;
+pub const MSGMODE_SONG_PLAYED_ACT_BEGIN: u8 = 0x16;
 pub const MSGMODE_SONG_PLAYED_ACT: u8 = 0x17;
+pub const MSGMODE_SONG_DEMONSTRATION_SELECT_INSTRUMENT: u8 = 0x18;
+pub const MSGMODE_SONG_DEMONSTRATION: u8 = 0x19;
 pub const MSGMODE_SONG_DEMONSTRATION_DONE: u8 = 0x1A;
+pub const MSGMODE_SONG_PLAYBACK: u8 = 0x1B;
+pub const MSGMODE_SONG_PLAYBACK_SUCCESS: u8 = 0x1C;
+pub const MSGMODE_SONG_PLAYBACK_FAIL: u8 = 0x1D;
+pub const MSGMODE_SONG_PLAYBACK_NOTES_DROP: u8 = 0x1E;
 pub const MSGMODE_OCARINA_AWAIT_INPUT: u8 = 0x1F;
+pub const MSGMODE_UNK_20: u8 = 0x20;
 pub const MSGMODE_SCARECROW_LONG_RECORDING_START: u8 = 0x21;
+pub const MSGMODE_SCARECROW_LONG_PLAYBACK: u8 = 0x23;
+pub const MSGMODE_SCARECROW_SPAWN_RECORDING_START: u8 = 0x24;
+pub const MSGMODE_SCARECROW_SPAWN_RECORDING_DONE: u8 = 0x27;
+pub const MSGMODE_SCARECROW_SPAWN_PLAYBACK: u8 = 0x28;
+pub const MSGMODE_MEMORY_GAME_START: u8 = 0x29;
+pub const MSGMODE_FROGS_START: u8 = 0x31;
+pub const MSGMODE_FROGS_WAITING: u8 = 0x33;
 pub const MSGMODE_TEXT_AWAIT_NEXT: u8 = 0x34;
 pub const MSGMODE_TEXT_DONE: u8 = 0x35;
 pub const MSGMODE_TEXT_CLOSING: u8 = 0x36;
@@ -63,6 +94,83 @@ pub const TEXT_STATE_SONG_DEMO_DONE: u8 = 7;
 pub const TEXT_STATE_8: u8 = 8;
 pub const TEXT_STATE_9: u8 = 9;
 pub const TEXT_STATE_AWAITING_NEXT: u8 = 10;
+
+/// `OcarinaSongActionId` (`ocarina.h`).
+pub const OCARINA_ACTION_UNK_0: u16 = 0x00;
+pub const OCARINA_ACTION_FREE_PLAY: u16 = 0x01;
+pub const OCARINA_ACTION_TEACH_MINUET: u16 = 0x02;
+pub const OCARINA_ACTION_TEACH_SARIA: u16 = 0x08;
+pub const OCARINA_ACTION_TEACH_EPONA: u16 = 0x09;
+pub const OCARINA_ACTION_TEACH_LULLABY: u16 = 0x0A;
+pub const OCARINA_ACTION_TEACH_SUNS: u16 = 0x0B;
+pub const OCARINA_ACTION_TEACH_STORMS: u16 = 0x0D;
+pub const OCARINA_ACTION_PLAYBACK_MINUET: u16 = 0x0F;
+pub const OCARINA_ACTION_PLAYBACK_SARIA: u16 = 0x15;
+pub const OCARINA_ACTION_PLAYBACK_EPONA: u16 = 0x16;
+pub const OCARINA_ACTION_PLAYBACK_LULLABY: u16 = 0x17;
+pub const OCARINA_ACTION_PLAYBACK_SUNS: u16 = 0x18;
+pub const OCARINA_ACTION_PLAYBACK_PRELUDE: u16 = 0x14;
+pub const OCARINA_ACTION_CHECK_MINUET: u16 = 0x1C;
+pub const OCARINA_ACTION_CHECK_SARIA: u16 = 0x22;
+pub const OCARINA_ACTION_CHECK_LULLABY: u16 = 0x24;
+pub const OCARINA_ACTION_CHECK_TIME: u16 = 0x26;
+pub const OCARINA_ACTION_CHECK_STORMS: u16 = 0x27;
+pub const OCARINA_ACTION_CHECK_SCARECROW_SPAWN: u16 = 0x28;
+pub const OCARINA_ACTION_FREE_PLAY_DONE: u16 = 0x29;
+pub const OCARINA_ACTION_SCARECROW_LONG_RECORDING: u16 = 0x2A;
+pub const OCARINA_ACTION_SCARECROW_LONG_PLAYBACK: u16 = 0x2B;
+pub const OCARINA_ACTION_SCARECROW_SPAWN_RECORDING: u16 = 0x2C;
+pub const OCARINA_ACTION_SCARECROW_SPAWN_PLAYBACK: u16 = 0x2D;
+pub const OCARINA_ACTION_MEMORY_GAME: u16 = 0x2E;
+pub const OCARINA_ACTION_FROGS: u16 = 0x2F;
+pub const OCARINA_ACTION_CHECK_NOWARP: u16 = 0x30;
+pub const OCARINA_ACTION_CHECK_NOWARP_DONE: u16 = 0x31;
+
+/// `OcarinaMode` (`ocarina.h`).
+pub const OCARINA_MODE_00: u16 = 0x00;
+pub const OCARINA_MODE_01: u16 = 0x01;
+pub const OCARINA_MODE_02: u16 = 0x02;
+pub const OCARINA_MODE_03: u16 = 0x03;
+pub const OCARINA_MODE_04: u16 = 0x04;
+pub const OCARINA_MODE_08: u16 = 0x08;
+pub const OCARINA_MODE_0B: u16 = 0x0B;
+pub const OCARINA_MODE_0F: u16 = 0x0F;
+
+/// `ACTOR_OCEFF_*` (`actor_table.h`): `Message_DrawMain`'s `sOcarinaEffectActorIds`.
+pub const ACTOR_OCEFF_SPOT: i16 = 0x017E;
+pub const ACTOR_OCEFF_STORM: i16 = 0x018B;
+pub const ACTOR_OCEFF_WIPE: i16 = 0x018A;
+pub const ACTOR_OCEFF_WIPE2: i16 = 0x0198;
+pub const ACTOR_OCEFF_WIPE3: i16 = 0x0199;
+pub const ACTOR_OCEFF_WIPE4: i16 = 0x01CB;
+
+/// `HUD_VISIBILITY_NOTHING`, `HUD_VISIBILITY_B_ALT`, `HUD_VISIBILITY_NO_CHANGE` (`save.h`).
+const HUD_VISIBILITY_NO_CHANGE: u16 = 0;
+const HUD_VISIBILITY_NOTHING: u16 = 1;
+const HUD_VISIBILITY_B_ALT: u16 = 10;
+
+/// `gOcarinaSongItemMap` (`z_message.c`): a song's place in the quest items, from
+/// `QUEST_SONG_MINUET`.
+pub const OCARINA_SONG_ITEM_MAP: [u8; 12] = [
+    ocarina::OCARINA_SONG_MINUET,
+    ocarina::OCARINA_SONG_BOLERO,
+    ocarina::OCARINA_SONG_SERENADE,
+    ocarina::OCARINA_SONG_REQUIEM,
+    ocarina::OCARINA_SONG_NOCTURNE,
+    ocarina::OCARINA_SONG_PRELUDE,
+    ocarina::OCARINA_SONG_LULLABY,
+    ocarina::OCARINA_SONG_EPONAS,
+    ocarina::OCARINA_SONG_SARIAS,
+    ocarina::OCARINA_SONG_SUNS,
+    ocarina::OCARINA_SONG_TIME,
+    ocarina::OCARINA_SONG_STORMS,
+];
+
+/// The note icons' colours (`z_message.c`'s `OCARINA_BUTTON_A_*`: `PLATFORM_GC`'s green A).
+const OCARINA_BUTTON_A_PRIM: [[i16; 3]; 2] = [[80, 255, 150], [100, 255, 200]];
+const OCARINA_BUTTON_A_ENV: [[i16; 3]; 2] = [[10, 10, 10], [50, 255, 50]];
+const OCARINA_BUTTON_C_PRIM: [[i16; 3]; 2] = [[255, 255, 50], [255, 255, 180]];
+const OCARINA_BUTTON_C_ENV: [[i16; 3]; 2] = [[10, 10, 10], [110, 110, 50]];
 
 // TEXTBOX_TYPE_* (message_data_static.h), TEXTBOX_POS_*.
 pub const TEXTBOX_TYPE_BLACK: u8 = 0;
@@ -268,6 +376,17 @@ pub struct TextRegs {
     /// `R_TEXT_ADJUST_COLOR_1_*`, `_2_*` (`VREG(33..38)`).
     pub text_adjust_color_1: [i16; 3],
     pub text_adjust_color_2: [i16; 3],
+    /// `R_TEXTBOX_CLEF_XPOS`, `_YPOS` (`VREG(7)`, `VREG(8)`).
+    pub textbox_clef_xpos: i16,
+    pub textbox_clef_ypos: i16,
+    /// `R_OCARINA_BUTTONS_XPOS`, `_XPOS_OFFSET` (`VREG(28)`, `VREG(29)`), `R_OCARINA_BUTTONS_YPOS(note)`
+    /// (`VREG(45 + note)`), `R_OCARINA_BUTTONS_APPEAR_ALPHA_STEP` (`VREG(50)`),
+    /// `R_OCARINA_BUTTONS_YPOS_OFFSET` (`VREG(51)`).
+    pub ocarina_buttons_xpos: i16,
+    pub ocarina_buttons_xpos_offset: i16,
+    pub ocarina_buttons_ypos: [i16; 5],
+    pub ocarina_buttons_appear_alpha_step: i16,
+    pub ocarina_buttons_ypos_offset: i16,
 }
 
 impl Default for TextRegs {
@@ -304,6 +423,13 @@ impl Default for TextRegs {
             textbox_icon_size: 0,
             text_adjust_color_1: [70, 255, 80],
             text_adjust_color_2: [70, 255, 80],
+            textbox_clef_xpos: 78,
+            textbox_clef_ypos: 166,
+            ocarina_buttons_xpos: 98,
+            ocarina_buttons_xpos_offset: 18,
+            ocarina_buttons_ypos: [190, 184, 176, 172, 170],
+            ocarina_buttons_appear_alpha_step: 30,
+            ocarina_buttons_ypos_offset: 0,
         }
     }
 }
@@ -325,6 +451,19 @@ pub struct MsgFrame<'a> {
     /// `play->csCtx.state == 0`, `play->activeCamId == CAM_ID_MAIN`.
     pub cs_idle: bool,
     pub active_cam_main: bool,
+    /// Player's `world.pos` (the songs' effects spawn there).
+    pub player_pos: Vec3,
+    /// What the message box does to the rest of play, done by the play state once it returns.
+    pub requests: Vec<MsgRequest>,
+}
+
+/// What the message box does outside itself (the play state carries it out after the call).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MsgRequest {
+    /// `Actor_Spawn(&play->actorCtx, play, id, pos, 0, 0, 0, params)`.
+    Spawn { id: i16, pos: Vec3, params: i16 },
+    /// `player->naviTextId = id; player->naviActor->flags |= ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED`.
+    NaviText(i16),
 }
 
 /// `MessageContext`, with the file's statics.
@@ -360,8 +499,8 @@ pub struct MessageContext {
     pub text_delay: u16,
     pub ocarina_mode: u16,
     pub ocarina_action: u16,
-    /// `lastPlayedSong` (`OCARINA_SONG_*`): written only by the ocarina's staff, which isn't ported,
-    /// so it keeps the zeroed play state's 0 unless a test sets it (`Obj_Timeblock` reads it).
+    /// `lastPlayedSong` (`OCARINA_SONG_*`): the playing staff's state while the ocarina is
+    /// played (0xFE, 0xFF, or the song).
     pub last_played_song: u16,
     pub textbox_background_idx: u16,
     pub textbox_background_fore_color_idx: u8,
@@ -378,6 +517,15 @@ pub struct MessageContext {
     pub textbox_color_alpha_current: i16,
     pub talk_actor: Option<ActorHandle>,
     pub last_ocarina_button_index: u8,
+    /// `ocarinaStaff`: the ocarina's staff the box reads.
+    pub ocarina_staff: StaffRef,
+    /// `unk_E3F2` ("chk_ocarina_no"): the last song played, set less often than `lastPlayedSong`.
+    pub unk_e3f2: u16,
+    /// `disableWarpSongs`, `disableSunsSong`.
+    pub disable_warp_songs: i16,
+    pub disable_suns_song: i16,
+    /// `R_EPONAS_SONG_PLAYED` (`DREG(53)`): Epona's Song played (`En_Horse` reads it; not ported).
+    pub r_eponas_song_played: bool,
     s: Statics,
     /// What `Message_Draw` drew this game frame (`draw_update`).
     pub sprites: Vec<Sprite>,
@@ -404,6 +552,25 @@ struct Statics {
     icon_flash_timer: i16,
     icon_flash_color_idx: usize,
     icon_env: [i16; 3],
+    /// `sOcarinaButtonIndexBufPos`, `sOcarinaButtonIndexBufLen`, `sHasSunsSong`,
+    /// `sOcarinaSongBitFlags`, `sOcarinaButtonIndexBuf` ("onpu_buff"), `sOcarinaButtonAlphaValues`.
+    ocarina_button_index_buf_pos: i16,
+    ocarina_button_index_buf_len: i16,
+    has_suns_song: bool,
+    ocarina_song_bit_flags: u16,
+    ocarina_button_index_buf: [u8; 12],
+    ocarina_button_alpha_values: [i16; 9],
+    /// `sOcarinaButtonAPrimR`.., `AEnv`, `CPrim`, `CEnv`.
+    ocarina_button_a_prim: [i16; 3],
+    ocarina_button_a_env: [i16; 3],
+    ocarina_button_c_prim: [i16; 3],
+    ocarina_button_c_env: [i16; 3],
+    /// `Message_DrawMain`'s `sOcarinaNoteFlashTimer`, `sOcarinaNoteFlashColorIndex`.
+    ocarina_note_flash_timer: i16,
+    ocarina_note_flash_color_index: usize,
+    /// Not in the C: an unported ocarina mode (the scarecrow's, the memory game's, the frogs')
+    /// is logged once.
+    logged_unported_mode: bool,
 }
 
 impl Default for Statics {
@@ -421,6 +588,19 @@ impl Default for Statics {
             icon_flash_timer: 12,
             icon_flash_color_idx: 0,
             icon_env: [0, 0, 0],
+            ocarina_button_index_buf_pos: 0,
+            ocarina_button_index_buf_len: 0,
+            has_suns_song: false,
+            ocarina_song_bit_flags: 0,
+            ocarina_button_index_buf: [0; 12],
+            ocarina_button_alpha_values: [0; 9],
+            ocarina_button_a_prim: [0; 3],
+            ocarina_button_a_env: [0; 3],
+            ocarina_button_c_prim: [0; 3],
+            ocarina_button_c_env: [0; 3],
+            ocarina_note_flash_timer: 12,
+            ocarina_note_flash_color_index: 1,
+            logged_unported_mode: false,
         }
     }
 }
@@ -464,6 +644,11 @@ pub fn icon_sprite(icon: u8) -> String {
 pub fn item_icon_sprite(item: u8) -> String {
     format!("message/item{item:02X}")
 }
+/// `sOcarinaNoteTextures[button]`'s sprite, and the treble clef's.
+pub fn ocarina_note_sprite(button: u8) -> String {
+    format!("message/ocarina_note{button}")
+}
+pub const TREBLE_CLEF_SPRITE: &str = "message/treble_clef";
 
 /// Where `Message_LoadItemIcon` loads an item's icon from: `(file, offset, size)`. Items below
 /// `ITEM_MEDALLION_FOREST` are `icon_item_static`'s 32x32 icons (`item * 0x1000`, up to the
@@ -523,6 +708,11 @@ impl MessageContext {
             textbox_color_alpha_current: 0,
             talk_actor: None,
             last_ocarina_button_index: 0,
+            ocarina_staff: StaffRef::Recording,
+            unk_e3f2: 0,
+            disable_warp_songs: 0,
+            disable_suns_song: 0,
+            r_eponas_song_played: false,
             s: Statics::default(),
             sprites: Vec::new(),
         }
@@ -898,7 +1088,7 @@ impl MessageContext {
                 }
                 MESSAGE_OCARINA => {
                     if i + 1 == self.text_draw_pos {
-                        // Message_HandleOcarina: the ocarina modes aren't ported.
+                        self.handle_ocarina(f);
                         return;
                     }
                 }
@@ -1267,16 +1457,19 @@ impl MessageContext {
         let c = self.textbox_color;
         let prim = [c[0] as u8, c[1] as u8, c[2] as u8, self.textbox_color_alpha_current as u8];
         out.push(Sprite::rect(box_sprite(self.text_box_type), x, y, x + r.textbox_width as f32, y + r.textbox_height as f32, Some(prim), None));
-        // (The ocarina box's treble clef isn't drawn.)
+        // The treble clef: prim (255, 100, 0, 255) through gOcarinaTrebleClefTex's intensity.
+        if self.text_box_type == TEXTBOX_TYPE_OCARINA {
+            let (cx, cy) = (r.textbox_clef_xpos as f32, r.textbox_clef_ypos as f32);
+            out.push(Sprite::rect(TREBLE_CLEF_SPRITE, cx, cy, cx + 16.0, cy + 32.0, Some([255, 100, 0, 255]), None));
+        }
     }
 
-    /// `Message_DrawMain` for the text modes (the ocarina's staff and notes aren't ported).
+    /// `Message_DrawMain`: the box, then the mode's text (the ocarina's modes in
+    /// `draw_main_ocarina`, with their notes).
     fn draw_main(&mut self, f: &mut MsgFrame, out: &mut Vec<Sprite>) {
         if self.msg_length == 0 {
             return;
         }
-        /// `OCARINA_ACTION_FROGS`.
-        const OCARINA_ACTION_FROGS: u16 = 0x2D;
         if self.ocarina_action != OCARINA_ACTION_FROGS
             && self.msg_mode != MSGMODE_SONG_PLAYED_ACT
             && self.msg_mode >= MSGMODE_TEXT_BOX_GROWING
@@ -1328,9 +1521,7 @@ impl MessageContext {
                 }
             }
             MSGMODE_TEXT_CLOSING | MSGMODE_PAUSED => {}
-            m if (MSGMODE_OCARINA_STARTING..MSGMODE_TEXT_AWAIT_NEXT).contains(&m) => {
-                // The ocarina and song modes aren't ported.
-            }
+            m if (MSGMODE_OCARINA_STARTING..MSGMODE_TEXT_AWAIT_NEXT).contains(&m) => self.draw_main_ocarina(f, out),
             _ => self.msg_mode = MSGMODE_TEXT_DISPLAYING,
         }
     }
@@ -1484,9 +1675,9 @@ impl MessageContext {
                         self.close_textbox(f.audio);
                     }
                 } else if self.textbox_end_type != TEXTBOX_ENDTYPE_PERSISTENT && self.textbox_end_type != TEXTBOX_ENDTYPE_EVENT && self.yreg_31 == 0 {
-                    if self.textbox_end_type == TEXTBOX_ENDTYPE_2_CHOICE && self.ocarina_mode == 1 {
+                    if self.textbox_end_type == TEXTBOX_ENDTYPE_2_CHOICE && self.ocarina_mode == OCARINA_MODE_01 {
                         if should_advance(f.input, f.audio) {
-                            self.ocarina_mode = if self.choice_index == 0 { 2 } else { 4 };
+                            self.ocarina_mode = if self.choice_index == 0 { OCARINA_MODE_02 } else { OCARINA_MODE_04 };
                             self.close_textbox(f.audio);
                         }
                     } else if should_advance_silent(f.input) {
@@ -1540,11 +1731,686 @@ impl MessageContext {
                     f.save.health_capacity += 0x10;
                     f.save.health += 0x10;
                 }
-                // (The Saria's Song and free-play ocarina endings aren't ported.)
+                if self.ocarina_action != OCARINA_ACTION_CHECK_NOWARP_DONE {
+                    if self.s.last_played_song == ocarina::OCARINA_SONG_SARIAS as i16 {
+                        // @bug (game): sLastPlayedSong is rarely unset: interrupted before this point
+                        // after Saria's Song, the song stays "stored" for a later textbox's close.
+                        f.requests.push(MsgRequest::NaviText(-0xE0));
+                    }
+                    if self.ocarina_action == OCARINA_ACTION_FREE_PLAY_DONE && (self.ocarina_mode == OCARINA_MODE_01 || self.ocarina_mode == OCARINA_MODE_0B) {
+                        self.ocarina_mode = OCARINA_MODE_04;
+                        if self.unk_e3f2 == ocarina::OCARINA_SONG_SUNS as u16 {
+                            self.ocarina_mode = OCARINA_MODE_01;
+                        }
+                    }
+                }
                 self.s.last_played_song = 0xFF;
+                log::debug!("OCARINA_MODE={}   chk_ocarina_no={}", self.ocarina_mode, self.unk_e3f2);
             }
             MSGMODE_PAUSED => {}
             _ => self.last_ocarina_button_index = 0xFF,
+        }
+    }
+}
+
+/// `Message_DrawMain`'s `sOcarinaEffectActorIds`, `sOcarinaEffectActorParams`: the effect each
+/// song from Saria's on spawns (`OCEFF_WIPE_ZL`, 1: the Song of Time's).
+const OCARINA_EFFECT_ACTORS: [(i16, i16); 7] =
+    [(ACTOR_OCEFF_WIPE3, 0), (ACTOR_OCEFF_WIPE2, 0), (ACTOR_OCEFF_WIPE, 0), (ACTOR_OCEFF_SPOT, 0), (ACTOR_OCEFF_WIPE, 1), (ACTOR_OCEFF_STORM, 0), (ACTOR_OCEFF_WIPE4, 0)];
+
+/// `Message_DrawMain`'s `sOcarinaSongFanfares` (`NA_BGM_OCA_*`, `sequence_table.h`).
+const OCARINA_SONG_FANFARES: [u16; 12] = [
+    0x34, // NA_BGM_OCA_MINUET
+    0x33, // NA_BGM_OCA_BOLERO
+    0x35, // NA_BGM_OCA_SERENADE
+    0x36, // NA_BGM_OCA_REQUIEM
+    0x37, // NA_BGM_OCA_NOCTURNE
+    0x25, // NA_BGM_OCA_LIGHT
+    0x44, // NA_BGM_OCA_SARIA
+    0x45, // NA_BGM_OCA_EPONA
+    0x46, // NA_BGM_OCA_ZELDA
+    0x47, // NA_BGM_OCA_SUNS
+    0x48, // NA_BGM_OCA_TIME
+    0x49, // NA_BGM_OCA_STORM
+];
+
+/// `QUEST_SONG_SUN`, `QUEST_SONG_STORMS` (`item.h`).
+const QUEST_SONG_SUN: u32 = 0x0F;
+const QUEST_SONG_STORMS: u32 = 0x11;
+/// `INGO_RACE_STATE_HORSE_RENTAL_PERIOD` (`save.h`), in `eventInf[EVENTINF_INDEX_HORSES]`'s low
+/// four bits.
+const INGO_RACE_STATE_HORSE_RENTAL_PERIOD: u16 = 1;
+
+impl MessageContext {
+    /// `msgCtx->ocarinaStaff`, read.
+    fn ocarina_staff(&self, f: &MsgFrame) -> ocarina::OcarinaStaff {
+        *f.audio.ocarina.staff(self.ocarina_staff)
+    }
+
+    /// `msgCtx->ocarinaStaff->pos = sOcarinaButtonIndexBufPos = 0`.
+    fn reset_staff_pos(&mut self, f: &mut MsgFrame) {
+        f.audio.ocarina.staff_mut(self.ocarina_staff).pos = 0;
+        self.s.ocarina_button_index_buf_pos = 0;
+    }
+
+    /// `Message_ResetOcarinaNoteState`: the notes' heights, none drawn, their colours back.
+    fn reset_ocarina_note_state(&mut self) {
+        self.regs.ocarina_buttons_ypos = [189, 184, 179, 174, 169];
+        let s = &mut self.s;
+        s.ocarina_button_index_buf[0] = OCARINA_BTN_INVALID;
+        s.ocarina_button_alpha_values = [0; 9];
+        s.ocarina_button_a_prim = OCARINA_BUTTON_A_PRIM[0];
+        s.ocarina_button_a_env = [10, 10, 10];
+        s.ocarina_button_c_prim = [255, 255, 50];
+        s.ocarina_button_c_env = [10, 10, 10];
+    }
+
+    /// `Message_HandleOcarina`: the ocarina's text reached its `MESSAGE_OCARINA`: the mode its
+    /// action starts in.
+    fn handle_ocarina(&mut self, f: &mut MsgFrame) {
+        if self.msg_mode != MSGMODE_TEXT_DISPLAYING {
+            return;
+        }
+        self.ocarina_mode = OCARINA_MODE_01;
+        let a = self.ocarina_action;
+        if a == OCARINA_ACTION_SCARECROW_LONG_RECORDING {
+            self.msg_mode = MSGMODE_SCARECROW_LONG_RECORDING_START;
+            log::debug!("Recording Start -> ");
+        } else if a == OCARINA_ACTION_SCARECROW_LONG_PLAYBACK || a == OCARINA_ACTION_SCARECROW_SPAWN_PLAYBACK {
+            let long = a == OCARINA_ACTION_SCARECROW_LONG_PLAYBACK;
+            f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+            f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+            self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+            self.reset_staff_pos(f);
+            self.s.ocarina_button_index_buf_len = 0;
+            self.reset_ocarina_note_state();
+            self.state_timer = 3;
+            self.msg_mode = if long { MSGMODE_SCARECROW_LONG_PLAYBACK } else { MSGMODE_SCARECROW_SPAWN_PLAYBACK };
+            let song = if long { ocarina::OCARINA_SONG_SCARECROW_LONG } else { ocarina::OCARINA_SONG_SCARECROW_SPAWN };
+            f.audio.audio_ocarina_set_playback_song(song as i8 + 1, 1);
+        } else if a == OCARINA_ACTION_SCARECROW_SPAWN_RECORDING {
+            self.msg_mode = MSGMODE_SCARECROW_SPAWN_RECORDING_START;
+        } else if a == OCARINA_ACTION_MEMORY_GAME {
+            self.msg_mode = MSGMODE_MEMORY_GAME_START;
+        } else if a == OCARINA_ACTION_FROGS {
+            self.msg_mode = MSGMODE_FROGS_START;
+        } else {
+            log::debug!("Ocarina ({a})");
+            if a == OCARINA_ACTION_UNK_0 || a == OCARINA_ACTION_FREE_PLAY || a >= OCARINA_ACTION_CHECK_SARIA {
+                self.msg_mode = MSGMODE_OCARINA_STARTING;
+            } else if (OCARINA_ACTION_TEACH_MINUET..=OCARINA_ACTION_TEACH_STORMS).contains(&a) {
+                self.msg_mode = MSGMODE_SONG_DEMONSTRATION_STARTING;
+            } else {
+                self.msg_mode = MSGMODE_SONG_PLAYBACK_STARTING;
+            }
+        }
+        log::debug!("msg_mode={}", self.msg_mode);
+    }
+
+    /// `Message_StartOcarinaImpl`: the songs Link knows to listen for, then the ocarina's box
+    /// for the action: "You played" (0x893 on), free play and the checks (0x86E, "B to Stop",
+    /// the B button showing "Stop"), the teaching (its own text, 0x86E on) and the playback
+    /// (0x86D).
+    pub fn start_ocarina_impl(&mut self, f: &mut MsgFrame, ocarina_action_id: u16) {
+        /// `sOcarinaSongFlagsMap`: the quest songs' bits in the ocarina's song order.
+        const OCARINA_SONG_FLAGS_MAP: [u16; 13] = [1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 8, 1 << 7, 1 << 6, 1 << 9, 1 << 10, 1 << 11, 1 << 12];
+        use crate::item::QUEST_SONG_MINUET;
+        self.s.ocarina_song_bit_flags = 0;
+        for i in 0..=(QUEST_SONG_STORMS - QUEST_SONG_MINUET) {
+            if f.save.check_quest_item(QUEST_SONG_MINUET + i) {
+                self.s.ocarina_song_bit_flags |= OCARINA_SONG_FLAGS_MAP[i as usize];
+            }
+        }
+        if f.save.scarecrow_spawn_song_set != 0 {
+            self.s.ocarina_song_bit_flags |= 1 << ocarina::OCARINA_SONG_SCARECROW_SPAWN;
+        }
+        log::debug!("ocarina_bit = {:x}", self.s.ocarina_song_bit_flags);
+        self.s.has_suns_song = f.save.check_quest_item(QUEST_SONG_SUN);
+        self.ocarina_staff = f.audio.audio_ocarina_get_recording_staff();
+        self.reset_staff_pos(f);
+        self.s.ocarina_button_index_buf_len = 0;
+        self.reset_ocarina_note_state();
+        self.s.last_played_song = 0xFF;
+        self.unk_e3f2 = 0xFF;
+        self.last_ocarina_button_index = 0xFF;
+        log::debug!("Ocarina Number = {ocarina_action_id}");
+        let mut no_stop_do_action = false;
+        if ocarina_action_id >= 0x893 {
+            // You played the [song name].
+            self.open_text(f, ocarina_action_id);
+        } else if ocarina_action_id == OCARINA_ACTION_MEMORY_GAME {
+            self.ocarina_action = ocarina_action_id;
+            // Play using [A] and [C].
+            self.open_text(f, 0x86D);
+        } else if ocarina_action_id == OCARINA_ACTION_FREE_PLAY || ocarina_action_id >= OCARINA_ACTION_CHECK_SARIA {
+            self.ocarina_action = ocarina_action_id;
+            if (OCARINA_ACTION_CHECK_SARIA..=OCARINA_ACTION_CHECK_STORMS).contains(&ocarina_action_id) {
+                f.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
+            }
+            if ocarina_action_id == OCARINA_ACTION_SCARECROW_SPAWN_PLAYBACK {
+                // Ocarina.
+                self.open_text(f, 0x86F);
+            } else {
+                // Play using [A] and [C]; [B] to Stop.
+                self.open_text(f, 0x86E);
+            }
+        } else {
+            self.ocarina_action = ocarina_action_id;
+            no_stop_do_action = true;
+            if ocarina_action_id >= OCARINA_ACTION_PLAYBACK_MINUET {
+                // Play using [A] and [C].
+                self.open_text(f, 0x86D);
+            } else {
+                // The teacher's text.
+                self.open_text(f, ocarina_action_id + 0x86E);
+            }
+        }
+        self.talk_actor = None;
+        self.text_delay_timer = 0;
+        self.ocarina_mode = OCARINA_MODE_00;
+        let r = &mut self.regs;
+        r.textbox_x = 34;
+        r.textbox_y = 142;
+        r.textbox_texwidth = 512;
+        r.textbox_texheight = 512;
+        r.textbox_width = 256;
+        r.textbox_height = 64;
+        self.state_timer = 0;
+        // YREG(12) is 0 (no register init sets it).
+        self.state_timer = 2;
+        self.msg_mode = MSGMODE_TEXT_CONTINUING;
+        self.textbox_color_alpha_current = self.textbox_color_alpha_target;
+        if !no_stop_do_action {
+            f.iface.load_action_label_b(DO_ACTION_STOP);
+            let keep = f.save.hud_visibility_mode;
+            change_alpha(f.save, HUD_VISIBILITY_B_ALT);
+            f.save.hud_visibility_mode = keep;
+        }
+        log::debug!("Music Performance Start");
+        if ocarina_action_id == OCARINA_ACTION_FREE_PLAY || ocarina_action_id == OCARINA_ACTION_CHECK_NOWARP {
+            self.msg_mode = MSGMODE_OCARINA_STARTING;
+            self.text_box_type = 0x63;
+        } else if ocarina_action_id == OCARINA_ACTION_FROGS {
+            self.msg_mode = MSGMODE_FROGS_START;
+            self.text_box_type = TEXTBOX_TYPE_BLUE;
+        } else if ocarina_action_id == OCARINA_ACTION_MEMORY_GAME {
+            change_alpha(f.save, HUD_VISIBILITY_NOTHING);
+            self.decode(f.save);
+            self.msg_mode = MSGMODE_MEMORY_GAME_START;
+        } else if ocarina_action_id == OCARINA_ACTION_SCARECROW_LONG_PLAYBACK {
+            f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+            f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+            self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+            self.reset_staff_pos(f);
+            self.s.ocarina_button_index_buf_len = 0;
+            self.reset_ocarina_note_state();
+            self.state_timer = 3;
+            self.msg_mode = MSGMODE_SCARECROW_LONG_PLAYBACK;
+            f.audio.audio_ocarina_set_playback_song(ocarina::OCARINA_SONG_SCARECROW_LONG as i8 + 1, 1);
+            f.save.hud_visibility_mode = HUD_VISIBILITY_NO_CHANGE;
+            change_alpha(f.save, HUD_VISIBILITY_NOTHING);
+        }
+        // (Font_LoadCharWide: the Japanese font's 48 spaces. Not this language.)
+    }
+
+    /// `Message_StartOcarina`: the Sun's Song works.
+    pub fn start_ocarina(&mut self, f: &mut MsgFrame, ocarina_action_id: u16) {
+        self.disable_suns_song = 0;
+        self.start_ocarina_impl(f, ocarina_action_id);
+    }
+
+    /// `Message_StartOcarinaSunsSongDisabled`.
+    pub fn start_ocarina_suns_song_disabled(&mut self, f: &mut MsgFrame, ocarina_action_id: u16) {
+        self.disable_suns_song = 1;
+        self.start_ocarina_impl(f, ocarina_action_id);
+    }
+
+    /// The staff's newest note into the note buffer (`sOcarinaButtonIndexBuf`) when its position
+    /// is one past the buffer's; `last` also keeps it in `lastOcarinaButtonIndex`.
+    fn take_staff_note(&mut self, st: ocarina::OcarinaStaff, last: bool) {
+        if st.pos != 0 && self.s.ocarina_button_index_buf_pos == st.pos as i16 - 1 {
+            let p = st.pos as usize;
+            self.s.ocarina_button_index_buf[p - 1] = st.button_index;
+            if last {
+                self.last_ocarina_button_index = st.button_index;
+            }
+            self.s.ocarina_button_index_buf[p] = OCARINA_BTN_INVALID;
+            self.s.ocarina_button_index_buf_pos += 1;
+        }
+    }
+
+    /// `Message_DrawMain`'s `MSGMODE_OCARINA_CORRECT_PLAYBACK` flash: the notes' colours step to
+    /// the flash colour's in `sOcarinaNoteFlashTimer` frames, then swap.
+    fn flash_ocarina_notes(&mut self) {
+        let s = &mut self.s;
+        let idx = s.ocarina_note_flash_color_index;
+        let t = s.ocarina_note_flash_timer;
+        let step = |cur: i16, to: i16| (cur - to).abs() / t;
+        for k in 0..3 {
+            let d = step(s.ocarina_button_a_prim[k], OCARINA_BUTTON_A_PRIM[idx][k]);
+            if s.ocarina_button_a_prim[k] >= OCARINA_BUTTON_A_PRIM[idx][k] {
+                s.ocarina_button_a_prim[k] -= d;
+            } else {
+                s.ocarina_button_a_prim[k] += d;
+            }
+        }
+        for k in 0..3 {
+            let d = step(s.ocarina_button_a_env[k], OCARINA_BUTTON_A_ENV[idx][k]);
+            // @bug (game): the A note's environment colour is stepped by the C notes' comparison.
+            if s.ocarina_button_c_env[k] >= OCARINA_BUTTON_A_ENV[idx][k] {
+                s.ocarina_button_a_env[k] -= d;
+            } else {
+                s.ocarina_button_a_env[k] += d;
+            }
+        }
+        for k in 0..3 {
+            let d = step(s.ocarina_button_c_prim[k], OCARINA_BUTTON_C_PRIM[idx][k]);
+            if s.ocarina_button_c_prim[k] >= OCARINA_BUTTON_C_PRIM[idx][k] {
+                s.ocarina_button_c_prim[k] -= d;
+            } else {
+                s.ocarina_button_c_prim[k] += d;
+            }
+        }
+        for k in 0..3 {
+            let d = step(s.ocarina_button_c_env[k], OCARINA_BUTTON_C_ENV[idx][k]);
+            if s.ocarina_button_c_env[k] >= OCARINA_BUTTON_C_ENV[idx][k] {
+                s.ocarina_button_c_env[k] -= d;
+            } else {
+                s.ocarina_button_c_env[k] += d;
+            }
+        }
+        s.ocarina_note_flash_timer -= 1;
+        if s.ocarina_note_flash_timer == 0 {
+            s.ocarina_button_a_prim = OCARINA_BUTTON_A_PRIM[idx];
+            s.ocarina_button_a_env = OCARINA_BUTTON_A_ENV[idx];
+            s.ocarina_button_c_prim = OCARINA_BUTTON_C_PRIM[idx];
+            s.ocarina_button_c_env = OCARINA_BUTTON_C_ENV[idx];
+            s.ocarina_note_flash_timer = 3;
+            s.ocarina_note_flash_color_index ^= 1;
+        }
+    }
+
+    /// `Message_DrawMain`'s ocarina modes (`MSGMODE_OCARINA_STARTING` to `MSGMODE_FROGS_WAITING`).
+    fn draw_main_ocarina(&mut self, f: &mut MsgFrame, out: &mut Vec<Sprite>) {
+        use crate::audio::sfx::{NA_SE_SY_OCARINA_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
+        use ocarina::{OCARINA_SONG_EPONAS, OCARINA_SONG_MEMORY_GAME, OCARINA_SONG_PRELUDE, OCARINA_SONG_SARIAS, OCARINA_SONG_SCARECROW_SPAWN};
+        let action = self.ocarina_action;
+        let no_text = action == OCARINA_ACTION_FREE_PLAY || action == OCARINA_ACTION_CHECK_NOWARP;
+        match self.msg_mode {
+            MSGMODE_OCARINA_STARTING | MSGMODE_SONG_DEMONSTRATION_STARTING | MSGMODE_SONG_PLAYBACK_STARTING => {
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                self.reset_staff_pos(f);
+                self.ocarina_mode = OCARINA_MODE_01;
+                self.reset_ocarina_note_state();
+                self.s.ocarina_note_flash_color_index = 1;
+                self.s.ocarina_note_flash_timer = 3;
+                if self.msg_mode == MSGMODE_OCARINA_STARTING {
+                    if action == OCARINA_ACTION_UNK_0 || action == OCARINA_ACTION_FREE_PLAY || action == OCARINA_ACTION_SCARECROW_SPAWN_RECORDING || action == OCARINA_ACTION_CHECK_NOWARP || action >= OCARINA_ACTION_CHECK_SARIA {
+                        if action == OCARINA_ACTION_FREE_PLAY || action == OCARINA_ACTION_CHECK_NOWARP {
+                            f.audio.audio_ocarina_start(self.s.ocarina_song_bit_flags.wrapping_add(0xC000));
+                        } else {
+                            log::debug!("On Stage Performance");
+                            f.audio.audio_ocarina_start(self.s.ocarina_song_bit_flags);
+                        }
+                    } else {
+                        // (1 << ocarinaAction) + 0x8000 as the u16 argument (the shift as MIPS's sllv).
+                        f.audio.audio_ocarina_start(1u32.wrapping_shl(action as u32).wrapping_add(0x8000) as u16);
+                    }
+                    self.msg_mode = MSGMODE_OCARINA_PLAYING;
+                } else if self.msg_mode == MSGMODE_SONG_DEMONSTRATION_STARTING {
+                    self.state_timer = 20;
+                    self.msg_mode = MSGMODE_SONG_DEMONSTRATION_SELECT_INSTRUMENT;
+                } else {
+                    let song = action.wrapping_sub(OCARINA_ACTION_PLAYBACK_MINUET);
+                    f.audio.audio_ocarina_start(1u32.wrapping_shl(song as u32).wrapping_add(0x8000) as u16);
+                    log::debug!("Performance Check = {song}");
+                    self.msg_mode = MSGMODE_SONG_PLAYBACK;
+                }
+                if !no_text {
+                    self.draw_text(f, out);
+                }
+            }
+            MSGMODE_OCARINA_PLAYING => {
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                let st = self.ocarina_staff(f);
+                if st.pos != 0 {
+                    // OOT_VERSION >= PAL_1_0.
+                    if st.pos == 1 && self.s.ocarina_button_index_buf_pos == 8 {
+                        self.s.ocarina_button_index_buf_pos = 0;
+                    }
+                    self.take_staff_note(st, true);
+                }
+                self.last_played_song = st.state as u16;
+                if st.state < OCARINA_SONG_MEMORY_GAME {
+                    let known = st.state == OCARINA_SONG_SCARECROW_SPAWN || f.save.check_quest_item(crate::item::QUEST_SONG_MINUET + OCARINA_SONG_ITEM_MAP[st.state as usize] as u32);
+                    if known {
+                        self.s.last_played_song = st.state as i16;
+                        self.unk_e3f2 = st.state as u16;
+                        self.last_played_song = st.state as u16;
+                        self.msg_mode = MSGMODE_OCARINA_CORRECT_PLAYBACK;
+                        self.state_timer = 20;
+                        let played = |m: &mut MessageContext, f: &mut MsgFrame| {
+                            m.continue_textbox(f, 0x86F); // Ocarina
+                            m.msg_mode = MSGMODE_SONG_PLAYED;
+                            m.text_box_type = TEXTBOX_TYPE_OCARINA;
+                            m.state_timer = 10;
+                            f.audio.play_sfx_centered(NA_SE_SY_TRE_BOX_APPEAR);
+                        };
+                        if action == OCARINA_ACTION_CHECK_NOWARP {
+                            if st.state < OCARINA_SONG_SARIAS || st.state == OCARINA_SONG_SCARECROW_SPAWN {
+                                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                                f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                                self.msg_mode = MSGMODE_OCARINA_STARTING;
+                            } else {
+                                log::debug!("Ocarina_Flog Correct Example Performance = {:x}", self.last_played_song);
+                                played(self, f);
+                                change_alpha(f.save, HUD_VISIBILITY_NOTHING);
+                            }
+                        } else if action == OCARINA_ACTION_CHECK_SCARECROW_SPAWN {
+                            if st.state < OCARINA_SONG_SCARECROW_SPAWN {
+                                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                                f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                                self.state_timer = 10;
+                                self.msg_mode = MSGMODE_OCARINA_FAIL;
+                            } else {
+                                played(self, f);
+                                change_alpha(f.save, HUD_VISIBILITY_NOTHING);
+                            }
+                        } else if action == OCARINA_ACTION_FREE_PLAY {
+                            log::debug!("Ocarina_Free Correct Example Performance = {:x}", self.last_played_song);
+                            played(self, f);
+                        } else {
+                            f.audio.play_sfx_centered(NA_SE_SY_TRE_BOX_APPEAR);
+                        }
+                        change_alpha(f.save, HUD_VISIBILITY_NOTHING);
+                    } else {
+                        f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                        f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                        self.msg_mode = MSGMODE_OCARINA_STARTING;
+                    }
+                } else if st.state == 0xFF {
+                    f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                    f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                    self.state_timer = 10;
+                    self.msg_mode = MSGMODE_OCARINA_FAIL;
+                } else if f.input.press.held(BTN_B) {
+                    f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                    self.ocarina_mode = OCARINA_MODE_04;
+                    self.close_textbox(f.audio);
+                }
+                if !no_text {
+                    self.draw_text(f, out);
+                }
+            }
+            MSGMODE_OCARINA_CORRECT_PLAYBACK | MSGMODE_SONG_PLAYBACK_SUCCESS | MSGMODE_SCARECROW_SPAWN_RECORDING_DONE => {
+                self.flash_ocarina_notes();
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                    if self.msg_mode == MSGMODE_OCARINA_CORRECT_PLAYBACK {
+                        log::debug!("Correct Example Performance = {:x}", self.last_played_song);
+                        self.continue_textbox(f, 0x86F); // Ocarina
+                        self.msg_mode = MSGMODE_SONG_PLAYED;
+                        self.text_box_type = TEXTBOX_TYPE_OCARINA;
+                        self.state_timer = 1;
+                    } else if self.msg_mode == MSGMODE_SONG_PLAYBACK_SUCCESS {
+                        if self.last_played_song >= OCARINA_SONG_SARIAS as u16 {
+                            self.continue_textbox(f, 0x86F); // Ocarina
+                            self.msg_mode = MSGMODE_SONG_PLAYED;
+                            self.text_box_type = TEXTBOX_TYPE_OCARINA;
+                            self.state_timer = 1;
+                        } else {
+                            self.close_textbox(f.audio);
+                            self.ocarina_mode = OCARINA_MODE_04;
+                        }
+                    } else {
+                        self.close_textbox(f.audio);
+                        self.ocarina_mode = OCARINA_MODE_03;
+                    }
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_OCARINA_FAIL | MSGMODE_SONG_PLAYBACK_FAIL | MSGMODE_OCARINA_FAIL_NO_TEXT => {
+                if self.msg_mode != MSGMODE_OCARINA_FAIL_NO_TEXT {
+                    self.draw_text(f, out);
+                }
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    self.regs.ocarina_buttons_ypos_offset = 1;
+                    if self.msg_mode == MSGMODE_SONG_PLAYBACK_FAIL {
+                        log::debug!("Here here here");
+                        self.continue_textbox(f, 0x88B); // red X background
+                        self.decode(f.save);
+                        self.msg_mode = MSGMODE_SONG_PLAYBACK_NOTES_DROP;
+                    } else {
+                        self.msg_mode = MSGMODE_OCARINA_NOTES_DROP;
+                    }
+                    log::debug!("Cancel");
+                }
+            }
+            MSGMODE_OCARINA_NOTES_DROP | MSGMODE_SONG_PLAYBACK_NOTES_DROP => {
+                let r = &mut self.regs;
+                for y in r.ocarina_buttons_ypos.iter_mut() {
+                    *y = y.wrapping_add(r.ocarina_buttons_ypos_offset);
+                }
+                r.ocarina_buttons_ypos_offset = r.ocarina_buttons_ypos_offset.wrapping_add(r.ocarina_buttons_ypos_offset);
+                if r.ocarina_buttons_ypos_offset >= 550 {
+                    self.s.ocarina_button_index_buf[0] = OCARINA_BTN_INVALID;
+                    self.s.ocarina_button_alpha_values = [0; 9];
+                    self.msg_mode = if self.msg_mode == MSGMODE_SONG_PLAYBACK_NOTES_DROP { MSGMODE_OCARINA_AWAIT_INPUT } else { MSGMODE_OCARINA_STARTING };
+                }
+            }
+            MSGMODE_SONG_PLAYED => {
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                    log::debug!("Na_StopOcarinaMode();");
+                    self.decode(f.save);
+                    self.msg_mode = MSGMODE_SETUP_DISPLAY_SONG_PLAYED;
+                    self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                    self.reset_staff_pos(f);
+                    self.reset_ocarina_note_state();
+                    let song = self.last_played_song;
+                    if song >= OCARINA_SONG_SARIAS as u16 && song < OCARINA_SONG_MEMORY_GAME as u16 {
+                        let (id, params) = OCARINA_EFFECT_ACTORS[(song - OCARINA_SONG_SARIAS as u16) as usize];
+                        f.requests.push(MsgRequest::Spawn { id, pos: f.player_pos, params });
+                    }
+                }
+            }
+            MSGMODE_SETUP_DISPLAY_SONG_PLAYED => {
+                self.draw_text(f, out);
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                f.audio.audio_ocarina_set_playback_song((self.last_played_song as i8).wrapping_add(1), 1);
+                if self.last_played_song != OCARINA_SONG_SCARECROW_SPAWN as u16 {
+                    if let Some(&seq) = OCARINA_SONG_FANFARES.get(self.last_played_song as usize) {
+                        f.audio.play_fanfare(seq);
+                    }
+                    f.audio.set_sfx_banks_mute(0x20);
+                }
+                self.ocarina_mode = OCARINA_MODE_01;
+                if self.ocarina_action == OCARINA_ACTION_FREE_PLAY {
+                    self.ocarina_action = OCARINA_ACTION_FREE_PLAY_DONE;
+                }
+                if self.ocarina_action == OCARINA_ACTION_CHECK_NOWARP {
+                    self.ocarina_action = OCARINA_ACTION_CHECK_NOWARP_DONE;
+                }
+                self.s.ocarina_button_index_buf_pos = 0;
+                self.msg_mode = MSGMODE_DISPLAY_SONG_PLAYED;
+            }
+            MSGMODE_SONG_DEMONSTRATION_SELECT_INSTRUMENT => {
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    // The teacher's instrument: Sheik's harp for the warp songs, Malon's voice,
+                    // Impa's whistle, the windmill man's grind organ, else the ocarina.
+                    let inst = if action < OCARINA_ACTION_TEACH_SARIA {
+                        OCARINA_INSTRUMENT_HARP
+                    } else if action == OCARINA_ACTION_TEACH_EPONA {
+                        OCARINA_INSTRUMENT_MALON
+                    } else if action == OCARINA_ACTION_TEACH_LULLABY {
+                        OCARINA_INSTRUMENT_WHISTLE
+                    } else if action == OCARINA_ACTION_TEACH_STORMS {
+                        OCARINA_INSTRUMENT_GRIND_ORGAN
+                    } else {
+                        OCARINA_INSTRUMENT_DEFAULT
+                    };
+                    f.audio.audio_ocarina_set_instrument(inst);
+                    log::debug!("Example Performance = {:x}", action - OCARINA_ACTION_TEACH_MINUET);
+                    f.audio.audio_ocarina_set_playback_song((action - OCARINA_ACTION_TEACH_MINUET + 1) as i8, 2);
+                    self.s.ocarina_button_index_buf_pos = 0;
+                    self.msg_mode = MSGMODE_SONG_DEMONSTRATION;
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_DISPLAY_SONG_PLAYED_TEXT_BEGIN => {
+                // You played [song name].
+                self.continue_textbox(f, self.last_played_song.wrapping_add(0x893));
+                self.decode(f.save);
+                self.msg_mode = MSGMODE_DISPLAY_SONG_PLAYED_TEXT;
+                self.state_timer = 20;
+                self.draw_text(f, out);
+            }
+            MSGMODE_DISPLAY_SONG_PLAYED_TEXT => {
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    self.msg_mode = MSGMODE_SONG_PLAYED_ACT_BEGIN;
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_SONG_PLAYED_ACT_BEGIN => {
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                self.reset_ocarina_note_state();
+                self.msg_mode = MSGMODE_SONG_PLAYED_ACT;
+                self.state_timer = 2;
+                self.draw_text(f, out);
+            }
+            MSGMODE_SONG_PLAYED_ACT => {
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    let song = self.last_played_song;
+                    if song <= OCARINA_SONG_PRELUDE as u16 && !(OCARINA_ACTION_PLAYBACK_MINUET..=OCARINA_ACTION_PLAYBACK_PRELUDE).contains(&action) {
+                        if self.disable_warp_songs != 0 || f.iface.restrictions.warp_songs == 3 {
+                            // "You can't warp here!"
+                            self.start_textbox(f, 0x88C, None);
+                            self.ocarina_mode = OCARINA_MODE_04;
+                        } else if f.save.event_inf[0] & 0xF != INGO_RACE_STATE_HORSE_RENTAL_PERIOD {
+                            // "Warp to [place name]?"
+                            self.start_textbox(f, song + 0x88D, None);
+                            self.ocarina_mode = OCARINA_MODE_01;
+                        } else {
+                            self.close_textbox(f.audio);
+                        }
+                    } else {
+                        self.close_textbox(f.audio);
+                        if song == OCARINA_SONG_EPONAS as u16 {
+                            self.r_eponas_song_played = true;
+                        }
+                        log::debug!("ocarina={} message->ocarina_no={}", song, action);
+                        if action == OCARINA_ACTION_FREE_PLAY_DONE {
+                            self.ocarina_mode = OCARINA_MODE_01;
+                            if song == OCARINA_SONG_SCARECROW_SPAWN as u16 {
+                                self.ocarina_mode = OCARINA_MODE_0B;
+                            }
+                        } else if action >= OCARINA_ACTION_CHECK_MINUET {
+                            self.ocarina_mode = if song == action - OCARINA_ACTION_CHECK_MINUET { OCARINA_MODE_03 } else { song.wrapping_sub(1) };
+                        } else {
+                            self.ocarina_mode = if song == action.wrapping_sub(OCARINA_ACTION_PLAYBACK_MINUET) { OCARINA_MODE_03 } else { OCARINA_MODE_04 };
+                        }
+                        log::debug!("->  OCARINA_MODE={}", self.ocarina_mode);
+                    }
+                }
+            }
+            MSGMODE_DISPLAY_SONG_PLAYED | MSGMODE_SONG_DEMONSTRATION | MSGMODE_SONG_DEMONSTRATION_DONE => {
+                if self.msg_mode != MSGMODE_SONG_DEMONSTRATION_DONE {
+                    self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+                    let st = self.ocarina_staff(f);
+                    if st.state == 0 {
+                        self.msg_mode = if self.msg_mode == MSGMODE_DISPLAY_SONG_PLAYED { MSGMODE_DISPLAY_SONG_PLAYED_TEXT_BEGIN } else { MSGMODE_SONG_DEMONSTRATION_DONE };
+                        log::debug!("onpu_buff[{}]={:x}", st.pos, self.s.ocarina_button_index_buf.get(st.pos as usize).copied().unwrap_or(0));
+                    } else {
+                        if self.s.ocarina_button_index_buf_pos != 0 && st.pos == 1 {
+                            self.s.ocarina_button_index_buf_pos = 0;
+                        }
+                        self.take_staff_note(st, true);
+                    }
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_SONG_PLAYBACK => {
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                let st = self.ocarina_staff(f);
+                self.take_staff_note(st, false);
+                if st.state < OCARINA_SONG_MEMORY_GAME {
+                    log::debug!("M_OCARINA20 : ocarina_no={:x}    status={:x}", action, st.state);
+                    self.last_played_song = st.state as u16;
+                    self.msg_mode = MSGMODE_SONG_PLAYBACK_SUCCESS;
+                    let item = crate::item::ITEM_SONG_MINUET + OCARINA_SONG_ITEM_MAP.get(st.state as usize).copied().unwrap_or(0);
+                    crate::item::item_give(f.save, Some(&mut *f.audio), item);
+                    log::debug!("z_message.c Song Acquired = {}", crate::item::ITEM_SONG_MINUET + st.state);
+                    self.state_timer = 20;
+                    f.audio.play_sfx_centered(NA_SE_SY_TRE_BOX_APPEAR);
+                } else if st.state == 0xFF {
+                    f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                    self.state_timer = 10;
+                    self.msg_mode = MSGMODE_SONG_PLAYBACK_FAIL;
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_OCARINA_AWAIT_INPUT => {
+                self.draw_text(f, out);
+                if should_advance(f.input, f.audio) {
+                    let a = self.ocarina_action;
+                    self.start_ocarina(f, a);
+                }
+            }
+            MSGMODE_UNK_20 => self.msg_mode = MSGMODE_TEXT_DISPLAYING,
+            m => {
+                // MSGMODE_SCARECROW_*, MSGMODE_MEMORY_GAME_*, MSGMODE_FROGS_*: not ported (the user's
+                // scope).
+                if !self.s.logged_unported_mode {
+                    self.s.logged_unported_mode = true;
+                    log::info!("Message_DrawMain: ocarina mode {m:#x} (the scarecrow's songs, the memory game or the frogs) isn't ported");
+                }
+            }
+        }
+
+        // The notes: the playback's song in grey, then the notes played, fading in.
+        let action = self.ocarina_action;
+        if self.msg_mode >= MSGMODE_OCARINA_PLAYING && self.msg_mode < MSGMODE_TEXT_AWAIT_NEXT && action != OCARINA_ACTION_FREE_PLAY && action != OCARINA_ACTION_CHECK_NOWARP {
+            let r = &self.regs;
+            let ypos = |b: u8| r.ocarina_buttons_ypos.get(b as usize).copied().unwrap_or(0) as f32;
+            if self.msg_mode == MSGMODE_SONG_PLAYBACK {
+                let sb = f.audio.ocarina.song_buttons(action.wrapping_sub(OCARINA_ACTION_PLAYBACK_MINUET) as u8);
+                let mut x = r.ocarina_buttons_xpos as u16;
+                for i in 0..sb.num_buttons as usize {
+                    let b = sb.buttons_index[i];
+                    let y = ypos(b);
+                    out.push(Sprite::rect(ocarina_note_sprite(b), x as f32, y, x as f32 + 16.0, y + 16.0, Some([150, 150, 150, 150]), Some([10, 10, 10, 0])));
+                    x = x.wrapping_add(r.ocarina_buttons_xpos_offset as u16);
+                }
+            }
+            if self.msg_mode != MSGMODE_SCARECROW_LONG_RECORDING_START && self.msg_mode != MSGMODE_MEMORY_GAME_START {
+                let mut x = r.ocarina_buttons_xpos as u16;
+                for i in 0..8 {
+                    let b = self.s.ocarina_button_index_buf[i];
+                    if b == OCARINA_BTN_INVALID {
+                        break;
+                    }
+                    let a = &mut self.s.ocarina_button_alpha_values[i];
+                    if *a != 255 {
+                        *a += r.ocarina_buttons_appear_alpha_step;
+                        if *a >= 255 {
+                            *a = 255;
+                        }
+                    }
+                    let alpha = *a as u8;
+                    let (p, e) = if b == OCARINA_BTN_A { (self.s.ocarina_button_a_prim, self.s.ocarina_button_a_env) } else { (self.s.ocarina_button_c_prim, self.s.ocarina_button_c_env) };
+                    let y = ypos(b);
+                    out.push(Sprite::rect(ocarina_note_sprite(b), x as f32, y, x as f32 + 16.0, y + 16.0, Some([p[0] as u8, p[1] as u8, p[2] as u8, alpha]), Some([e[0] as u8, e[1] as u8, e[2] as u8, 0])));
+                    x = x.wrapping_add(r.ocarina_buttons_xpos_offset as u16);
+                }
+            }
         }
     }
 }
@@ -1632,5 +2498,39 @@ pub fn bakes() -> Vec<SpriteBake> {
             quad: Quad::Rect { s: 16, t: 16 },
         });
     }
+    // Message_DrawMain's notes: Gfx_SetupDL_39Ptr, gDPSetCombineLERP(PRIMITIVE, ENVIRONMENT,
+    // TEXEL0, ENVIRONMENT, TEXEL0, 0, PRIMITIVE, 0, x2), sOcarinaNoteTextures (parameter_static,
+    // IA8 16x16, G_TX_NOMIRROR | G_TX_WRAP).
+    const NOTE_TEXTURES: [&str; 5] = ["gOcarinaBtnIconATex", "gOcarinaBtnIconCDownTex", "gOcarinaBtnIconCRightTex", "gOcarinaBtnIconCLeftTex", "gOcarinaBtnIconCUpTex"];
+    for (button, tex) in NOTE_TEXTURES.iter().enumerate() {
+        let mut setup = setup_dl::setup_dl_39();
+        let cc = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::TEXEL0, cc_d::ENVIRONMENT, ac::TEXEL0, ac::ZERO, ac::PRIMITIVE, ac::ZERO];
+        setup.combine_lerp(cc, cc);
+        out.push(SpriteBake {
+            name: ocarina_note_sprite(button as u8),
+            tex: TexSrc::Symbol { file: "parameter_static".into(), symbol: (*tex).into() },
+            load: Load::new(G_IM_FMT_IA, G_IM_SIZ_8B, 16, 16, G_TX_NOMIRROR | G_TX_WRAP),
+            setup,
+            prim: true,
+            env: true,
+            quad: Quad::Rect { s: 16, t: 16 },
+        });
+    }
+    // Message_DrawTextBox's treble clef, after the ocarina box (Gfx_SetupDL_39Ptr, its env colour
+    // (0, 0, 0, 255)): gDPSetCombineLERP(1, 0, PRIMITIVE, 0, TEXEL0, 0, PRIMITIVE, 0, x2),
+    // gOcarinaTrebleClefTex (I4 16x32, G_TX_MIRROR both ways).
+    let mut setup = setup_dl::setup_dl_39();
+    setup.env_color([0, 0, 0, 255]);
+    let cc = [cc_ab::ONE, cc_ab::ZERO, cc_c::PRIMITIVE, cc_d::ZERO, ac::TEXEL0, ac::ZERO, ac::PRIMITIVE, ac::ZERO];
+    setup.combine_lerp(cc, cc);
+    out.push(SpriteBake {
+        name: TREBLE_CLEF_SPRITE.into(),
+        tex: TexSrc::Symbol { file: "parameter_static".into(), symbol: "gOcarinaTrebleClefTex".into() },
+        load: Load::new(G_IM_FMT_I, G_IM_SIZ_4B, 16, 32, G_TX_MIRROR),
+        setup,
+        prim: true,
+        env: false,
+        quad: Quad::Rect { s: 16, t: 32 },
+    });
     out
 }

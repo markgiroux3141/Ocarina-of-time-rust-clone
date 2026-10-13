@@ -16,8 +16,7 @@
 //! **In his house** (`SCENE_MIDOS_HOUSE`) he's there once Link has Zelda's letter (or has
 //! said goodbye to Saria: `EVENTCHKINF_1C`), and says 0x1028 or 0x1046. **In the Lost Woods**
 //! (`SCENE_LOST_WOODS`) he blocks the way to the Sacred Forest Meadow until Link plays Saria's Song
-//! (`Message_StartOcarina(OCARINA_ACTION_CHECK_SARIA)`, `EnMd_ListenToOcarina`): there's no ocarina, so
-//! `PLAYER_STATE2_24` never comes up, and the check is logged when it would start.
+//! (`Message_StartOcarina(OCARINA_ACTION_CHECK_SARIA)`, `EnMd_ListenToOcarina`).
 //!
 //! Drawn as `EnMd_Draw` does: the skeleton with his eyes on segment 8, opaque at full alpha
 //! (`func_80034BA0`) and translucent while fading (`func_80034CC4`), with `EnMd_OverrideLimbDraw`'s
@@ -632,10 +631,13 @@ impl EnMd {
         if self.interact_info.talk_state == 0 && play.scene_id == SCENE_LOST_WOODS {
             let state2 = play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.state_flags2()).unwrap_or(0);
             if state2 & PLAYER_STATE2_24 != 0 {
-                // player->stateFlags2 |= PLAYER_STATE2_25; player->unk_6A8 = this;
-                // Message_StartOcarina(play, OCARINA_ACTION_CHECK_SARIA): the ocarina isn't ported.
-                log::info!("En_Md: Saria's Song's check (Message_StartOcarina) isn't ported");
                 self.change_player_state2(play, PLAYER_STATE2_25);
+                if let Some(me) = play.cur_actor
+                    && let Some(p) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut())
+                {
+                    p.set_unk_6a8(Some(me));
+                }
+                play.message_start_ocarina(oot_game::message::OCARINA_ACTION_CHECK_SARIA);
                 self.action = Action::Ocarina;
                 return;
             }

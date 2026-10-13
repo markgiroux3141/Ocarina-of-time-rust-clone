@@ -824,27 +824,43 @@ impl PlayState {
             }
             PAUSE_MAIN_STATE_SWITCHING_PAGE => self.kaleido_scope_update_page_switch(),
             PAUSE_MAIN_STATE_SONG_PLAYBACK => {
-                // pauseCtx->ocarinaStaff = AudioOcarina_GetPlaybackStaff(): the ocarina isn't
-                // ported; its playback's state reads 0, done.
-                self.pause_ctx.main_state = PAUSE_MAIN_STATE_SONG_PROMPT_INIT;
-                log::info!("pause menu: AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF) (the ocarina isn't ported)");
+                // pauseCtx->ocarinaStaff = AudioOcarina_GetPlaybackStaff(): the song played back.
+                let staff = self.audio.audio_ocarina_get_playback_staff();
+                if self.audio.ocarina.staff(staff).state == 0 {
+                    self.pause_ctx.main_state = PAUSE_MAIN_STATE_SONG_PROMPT_INIT;
+                    self.audio.audio_ocarina_set_instrument(crate::audio::ocarina::OCARINA_INSTRUMENT_OFF);
+                }
             }
             PAUSE_MAIN_STATE_3 => self.kaleido_scope_update_item_equip(),
             PAUSE_MAIN_STATE_SONG_PROMPT_INIT => {}
             PAUSE_MAIN_STATE_SONG_PROMPT => {
-                // AudioOcarina_GetPlayingStaff: not ported (no state: neither the song's index
-                // nor 0xFF).
+                // pauseCtx->ocarinaStaff = AudioOcarina_GetPlayingStaff(). (The quest page that
+                // starts the prompt, z_kaleido_collect.c, isn't ported.)
+                let staff = self.audio.audio_ocarina_get_playing_staff();
+                let state = self.audio.ocarina.staff(staff).state;
                 if press.held(BTN_START) {
-                    log::info!("pause menu: AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF) (the ocarina isn't ported)");
+                    self.audio.audio_ocarina_set_instrument(crate::audio::ocarina::OCARINA_INSTRUMENT_OFF);
                     self.interface_set_do_action_paused(DO_ACTION_NONE);
                     self.pause_ctx.state = PAUSE_STATE_CLOSING;
                     self.pause_ctx.regs.pages_y_origin_2 = PAUSE_PAGES_Y_ORIGIN_2_LOWER;
                     self.audio.func_800f64e0(0);
                     self.pause_ctx.main_state = PAUSE_MAIN_STATE_IDLE;
                 } else if press.held(BTN_B) {
-                    log::info!("pause menu: AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF) (the ocarina isn't ported)");
+                    self.audio.audio_ocarina_set_instrument(crate::audio::ocarina::OCARINA_INSTRUMENT_OFF);
                     self.pause_ctx.main_state = PAUSE_MAIN_STATE_IDLE;
                     self.kaleido_scope_save_prompt();
+                } else if state as i16 == self.pause_ctx.ocarina_song_idx {
+                    // The song played right.
+                    self.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
+                    self.pause_ctx.statics.main_state_after_song_player_playing_done = PAUSE_MAIN_STATE_IDLE;
+                    self.pause_ctx.statics.delay_timer = 30;
+                    self.pause_ctx.main_state = PAUSE_MAIN_STATE_SONG_PROMPT_DONE;
+                } else if state == 0xFF {
+                    // Played wrong.
+                    self.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_OCARINA_ERROR);
+                    self.pause_ctx.statics.main_state_after_song_player_playing_done = PAUSE_MAIN_STATE_SONG_PROMPT_INIT;
+                    self.pause_ctx.statics.delay_timer = 20;
+                    self.pause_ctx.main_state = PAUSE_MAIN_STATE_SONG_PROMPT_DONE;
                 }
             }
             PAUSE_MAIN_STATE_SONG_PROMPT_DONE => {
@@ -853,21 +869,21 @@ impl PlayState {
                 if p.statics.delay_timer == 0 {
                     p.main_state = p.statics.main_state_after_song_player_playing_done;
                     if p.main_state == PAUSE_MAIN_STATE_IDLE {
-                        log::info!("pause menu: AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF) (the ocarina isn't ported)");
+                        self.audio.audio_ocarina_set_instrument(crate::audio::ocarina::OCARINA_INSTRUMENT_OFF);
                     }
                 }
             }
             PAUSE_MAIN_STATE_EQUIP_CHANGED => {}
             PAUSE_MAIN_STATE_IDLE_CURSOR_ON_SONG => {
                 if press.held(BTN_START) {
-                    log::info!("pause menu: AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF) (the ocarina isn't ported)");
+                    self.audio.audio_ocarina_set_instrument(crate::audio::ocarina::OCARINA_INSTRUMENT_OFF);
                     self.interface_set_do_action_paused(DO_ACTION_NONE);
                     self.pause_ctx.state = PAUSE_STATE_CLOSING;
                     self.pause_ctx.regs.pages_y_origin_2 = PAUSE_PAGES_Y_ORIGIN_2_LOWER;
                     self.audio.func_800f64e0(0);
                     self.pause_ctx.main_state = PAUSE_MAIN_STATE_IDLE;
                 } else if press.held(BTN_B) {
-                    log::info!("pause menu: AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF) (the ocarina isn't ported)");
+                    self.audio.audio_ocarina_set_instrument(crate::audio::ocarina::OCARINA_INSTRUMENT_OFF);
                     self.pause_ctx.main_state = PAUSE_MAIN_STATE_IDLE;
                     self.kaleido_scope_save_prompt();
                 }

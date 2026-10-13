@@ -708,7 +708,10 @@ fn headless(cli: &Cli) -> Result<()> {
         Some(p.with_file_name(format!("{stem}_{frame}.png")))
     };
     let mut shots: Vec<(usize, PathBuf)> = cli.shots_at.iter().filter_map(|&f| shot_path(f).map(|p| (f, p))).collect();
-    let mut audio = if cli.audio_log.is_some() || cli.wav.is_some() {
+    // A route that hears the ocarina runs the audio side (the scene's audio spec waits for it, and
+    // the ocarina's playback counts its tasks).
+    let route_audio = oot_actors::playthrough::Route::from_script(&cli.script).is_some_and(|r| r.needs_audio());
+    let mut audio = if cli.audio_log.is_some() || cli.wav.is_some() || route_audio {
         let data = a.pack.audio_data()?;
         Some(RunAudio { offline: oot_game::audio::offline::OfflineAudio::new(&data, cli.wav.is_some()), players: Vec::new() })
     } else {

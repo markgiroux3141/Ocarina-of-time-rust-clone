@@ -339,6 +339,11 @@ impl ObjectSegments {
                     it.run(dl);
                 }
                 for (f, symbol) in lists {
+                    if f == oot_game::pack::SEGMENT_CALL {
+                        let seg = u32::from_str_radix(symbol.trim_start_matches("0x"), 16).with_context(|| format!("bake {}: bad segment {symbol}", bake.name))?;
+                        it.run(seg << 24);
+                        continue;
+                    }
                     // `symbol+0x50`: the list from that many bytes in (`&DL[10]`).
                     let (symbol, extra) = match symbol.split_once('+') {
                         Some((s, off)) => (s, u32::from_str_radix(off.trim_start_matches("0x"), 16).with_context(|| format!("bake {}: bad offset in {symbol}", bake.name))?),

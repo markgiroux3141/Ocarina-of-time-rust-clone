@@ -302,7 +302,7 @@ pub struct BakeVertices {
 
 impl BakeVertices {
     /// From the pack's bake `name`.
-    fn load(play: &PlayState, name: &str) -> Option<Arc<BakeVertices>> {
+    pub fn load(play: &PlayState, name: &str) -> Option<Arc<BakeVertices>> {
         let d = play.assets.as_ref()?.pack.bake(name).map_err(|e| log::error!("Demo_Effect: bake {name}: {e:#}")).ok()?;
         let mut v = BakeVertices::default();
         for b in &d.batches {

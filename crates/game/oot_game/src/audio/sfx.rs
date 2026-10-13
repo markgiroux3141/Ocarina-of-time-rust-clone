@@ -101,6 +101,12 @@ pub enum SfxF32 {
     WaterfallFreq,
     /// `&gPitchFrequencies[i]`.
     Pitch(u8),
+    /// The ocarina's `&sCurOcarinaBendFreq`, `&sRelativeOcarinaVolume`,
+    /// `&sRelativeNotePlaybackBend`, `&sRelativeNotePlaybackVolume`.
+    OcarinaBendFreq,
+    OcarinaVolume,
+    OcarinaPlaybackBend,
+    OcarinaPlaybackVolume,
 }
 
 /// Where a sound effect's reverb is: the `s8*` the C passes.
@@ -309,6 +315,10 @@ impl GameAudio {
             SfxF32::RiverFreq => self.river_freq_scale_lerp.value,
             SfxF32::WaterfallFreq => self.waterfall_freq_scale_lerp.value,
             SfxF32::Pitch(i) => self.audio_tables.pitch_frequencies.get(i as usize).copied().unwrap_or(1.0),
+            SfxF32::OcarinaBendFreq => self.ocarina.cur_bend_freq,
+            SfxF32::OcarinaVolume => self.ocarina.relative_volume,
+            SfxF32::OcarinaPlaybackBend => self.ocarina.relative_note_playback_bend,
+            SfxF32::OcarinaPlaybackVolume => self.ocarina.relative_note_playback_volume,
         }
     }
 
@@ -1580,6 +1590,7 @@ pub const NA_SE_SY_WHITE_OUT_S: u16 = 0x4833;
 pub const NA_SE_SY_ATTENTION_URGENCY: u16 = 0x4837;
 pub const NA_SE_SY_SET_FIRE_ARROW: u16 = 0x483E;
 pub const NA_SE_SY_SYNTH_MAGIC_ARROW: u16 = 0x4841;
+pub const NA_SE_OC_OCARINA: u16 = 0x5800;
 pub const NA_SE_OC_ABYSS: u16 = 0x5801;
 pub const NA_SE_OC_DOOR_OPEN: u16 = 0x5802;
 pub const NA_SE_OC_SECRET_WARP_IN: u16 = 0x5803;
@@ -1807,6 +1818,7 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_SY_LOCK_ON", NA_SE_SY_LOCK_ON),
     ("NA_SE_SY_GET_BOXITEM", NA_SE_SY_GET_BOXITEM),
     ("NA_SE_SY_ATTENTION_URGENCY", NA_SE_SY_ATTENTION_URGENCY),
+    ("NA_SE_OC_OCARINA", NA_SE_OC_OCARINA),
     ("NA_SE_OC_ABYSS", NA_SE_OC_ABYSS),
     ("NA_SE_OC_DOOR_OPEN", NA_SE_OC_DOOR_OPEN),
     ("NA_SE_OC_SECRET_WARP_IN", NA_SE_OC_SECRET_WARP_IN),

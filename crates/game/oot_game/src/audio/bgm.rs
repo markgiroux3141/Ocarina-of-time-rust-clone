@@ -96,7 +96,7 @@ impl GameAudio {
     pub fn audio_update_with(&mut self, pos_of: &dyn Fn(SfxPos) -> Option<glam::Vec3>) {
         if self.func_800fad34() == 0 {
             // (sAudioUpdateTaskStart, sAudioUpdateStartTime: timing for the debug screen.)
-            // AudioOcarina_Update: the ocarina isn't ported.
+            self.audio_ocarina_update();
             Self::step_freq_lerp(&mut self.river_freq_scale_lerp);
             Self::step_freq_lerp(&mut self.waterfall_freq_scale_lerp);
             self.update_river_sound_volumes();
@@ -784,8 +784,7 @@ impl GameAudio {
         self.audio_extra_filter = 0;
         self.audio_base_filter2 = 0;
         self.audio_extra_filter2 = 0;
-        // AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_OFF): the ocarina isn't ported (and no
-        // instrument is playing).
+        self.audio_ocarina_set_instrument(super::ocarina::OCARINA_INSTRUMENT_OFF);
         self.river_freq_scale_lerp.remaining_frames = 0;
         self.waterfall_freq_scale_lerp.remaining_frames = 0;
         self.river_freq_scale_lerp.value = 1.0;
@@ -980,7 +979,7 @@ impl GameAudio {
     /// `Audio_InitSound`: the game's side at boot, and the sound effects' sequence started.
     pub fn audio_init_sound(&mut self) {
         self.func_800f6c34();
-        // AudioOcarina_ResetStaffs: the ocarina isn't ported.
+        self.audio_ocarina_reset_staffs();
         self.reset_sfx_channel_state();
         self.audio_reset_active_sequences_and_volume();
         self.reset_sfx();
@@ -1000,7 +999,7 @@ impl GameAudio {
     pub fn func_800f71bc(&mut self, _arg0: i32) {
         self.d_80133418 = 1;
         self.func_800f6c34();
-        // AudioOcarina_ResetStaffs: the ocarina isn't ported.
+        self.audio_ocarina_reset_staffs();
         self.reset_sfx_channel_state();
         self.audio_reset_active_sequences();
         self.reset_sfx();

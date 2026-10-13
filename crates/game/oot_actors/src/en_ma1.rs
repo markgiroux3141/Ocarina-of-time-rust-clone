@@ -15,9 +15,7 @@
 //! neutral one: `mouthIndex` stays 0), her thighs not drawn, her head and chest turned to Link;
 //! from meshes baked per eye (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
-//! ocarina (`AudioOcarina_SetInstrument`, `Message_StartOcarina`: logged when they'd start, so the
-//! song lesson waits forever), and Player's `unk_6A8` (the ocarina's listener).
+//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
 
 use std::sync::Arc;
 
@@ -462,8 +460,12 @@ impl EnMa1 {
         self.update_anim();
         if play.save.get_event_chk_inf(EVENTCHKINF_CAN_LEARN_EPONAS_SONG) {
             if Self::player_state2(play) & PLAYER_STATE2_24 != 0 {
-                // player->unk_6A8 = this: the ocarina's listener isn't ported.
                 Self::set_player_state2(play, PLAYER_STATE2_25);
+                if let Some(me) = play.cur_actor
+                    && let Some(p) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut())
+                {
+                    p.set_unk_6a8(Some(me));
+                }
                 self.actor.text_id = 0x2061;
                 play.start_textbox(self.actor.text_id, None);
                 self.interact_info.talk_state = NPC_TALK_STATE_TALKING;
@@ -479,9 +481,8 @@ impl EnMa1 {
     fn start_teach_song(&mut self, play: &mut PlayState) {
         Self::set_player_state2(play, PLAYER_STATE2_23);
         if self.interact_info.talk_state == NPC_TALK_STATE_ACTION {
-            // AudioOcarina_SetInstrument(OCARINA_INSTRUMENT_MALON);
-            // Message_StartOcarina(play, OCARINA_ACTION_TEACH_EPONA).
-            log::info!("En_Ma1: Epona's Song's lesson (Message_StartOcarina) isn't ported");
+            play.audio.audio_ocarina_set_instrument(oot_game::audio::ocarina::OCARINA_INSTRUMENT_MALON);
+            play.message_start_ocarina(oot_game::message::OCARINA_ACTION_TEACH_EPONA);
             self.actor.flags &= !ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
             self.action = Action::TeachSong;
         }
@@ -491,8 +492,7 @@ impl EnMa1 {
     fn teach_song(&mut self, play: &mut PlayState) {
         Self::set_player_state2(play, PLAYER_STATE2_23);
         if play.message_state() == TEXT_STATE_SONG_DEMO_DONE {
-            // Message_StartOcarina(play, OCARINA_ACTION_PLAYBACK_EPONA).
-            log::info!("En_Ma1: Epona's Song's playback (Message_StartOcarina) isn't ported");
+            play.message_start_ocarina(oot_game::message::OCARINA_ACTION_PLAYBACK_EPONA);
             self.action = Action::WaitForPlayback;
         }
     }

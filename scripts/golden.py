@@ -199,6 +199,15 @@ CASES = [
     ("castle_caught", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-egg", "--script", "castle-caught", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("castle_caught_shut", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-egg", "--script", "castle-caught", "--frames", "1434", "--screenshot", "{shot}"]),
     ("castle_caught_open", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-egg", "--script", "castle-caught", "--frames", "1460", "--screenshot", "{shot}"]),
+    # GAME-07 milestone 3: the ocarina in Hyrule Field at 18:30 (ocarina-songs): Saria's Song (Navi
+    # calls, Saria talks), the Sun's Song (the clock run to dawn), and the Song of Storms at the
+    # fairy spot (Shot_Sun's fairy); then the run cut at frame 95 (the staff's notes), 140 (Saria's
+    # Song's leaves, "You played"), 560 (the Sun's Song's light) and 880 (the storm's rain).
+    ("ocarina", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ocarina_staff", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "95", "--screenshot", "{shot}"]),
+    ("ocarina_saria", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "140", "--screenshot", "{shot}"]),
+    ("ocarina_sun", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "560", "--screenshot", "{shot}"]),
+    ("ocarina_storm", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "880", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

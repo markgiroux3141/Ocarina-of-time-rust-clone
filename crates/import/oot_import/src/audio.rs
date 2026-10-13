@@ -547,7 +547,57 @@ pub fn audio_game_tables(decomp: &Path) -> Result<oot_game::audio::AudioGameTabl
         }
     }
 
+    // The ocarina's tables (general.c), with ocarina.h's enums: sOcarinaSongNotes'
+    // `{ pitch, length, volume, vibrato, bend, bFlat4Flag }` rows (FRAMERATE_CONST's 60 Hz value,
+    // `read_c`), zeroed past each song's list as the C's [OCARINA_SONG_MAX][20];
+    // gOcarinaSongButtons' `{ numButtons, { buttons } }`; the two maps.
+    let oc_macros = crate::csrc::Macros::new(&[&read_c(decomp, "include/ocarina.h")?]);
+    let oc = |a: &str| -> Result<i64> { oc_macros.eval(a).with_context(|| format!("general.c: can't evaluate {a}")) };
+    let mut ocarina_song_notes = Vec::new();
+    for song in find_initializer(&src, "sOcarinaSongNotes")?.list() {
+        let mut notes = Vec::new();
+        for note in song.list() {
+            let f = note.flatten();
+            if f.len() != 6 {
+                bail!("sOcarinaSongNotes: a note with {} fields", f.len());
+            }
+            notes.push(oot_game::audio::ocarina::OcarinaNote {
+                pitch: oc(&f[0])? as u8,
+                length: oc(&f[1])? as u16,
+                volume: oc(&f[2])? as u8,
+                vibrato: oc(&f[3])? as u8,
+                bend: oc(&f[4])? as i8,
+                b_flat4_flag: oc(&f[5])? as u8,
+            });
+        }
+        if notes.len() > oot_game::audio::ocarina::SONG_NOTES {
+            bail!("sOcarinaSongNotes: a song of {} notes", notes.len());
+        }
+        notes.resize(oot_game::audio::ocarina::SONG_NOTES, Default::default());
+        ocarina_song_notes.push(notes);
+    }
+    let mut ocarina_song_buttons = Vec::new();
+    for row in find_initializer(&src, "gOcarinaSongButtons")?.list() {
+        let f = row.list();
+        if f.len() != 2 {
+            bail!("gOcarinaSongButtons: an entry with {} fields", f.len());
+        }
+        let mut buttons_index = [0u8; 8];
+        for (i, a) in f[1].flatten().iter().enumerate().take(8) {
+            buttons_index[i] = oc(a)? as u8;
+        }
+        let num = f[0].atom().with_context(|| format!("gOcarinaSongButtons: {:?}", f[0]))?;
+        ocarina_song_buttons.push(oot_game::audio::ocarina::OcarinaSongButtons { num_buttons: oc(num)? as u8, buttons_index });
+    }
+    let oc_bytes = |name: &str| -> Result<Vec<u8>> { find_initializer(&src, name)?.flatten().iter().map(|a| oc(a).map(|v| v as u8)).collect() };
+    let button_to_pitch_map = oc_bytes("sButtonToPitchMap")?;
+    let pitch_to_button_map = oc_bytes("sPitchToButtonMap")?;
+
     for (name, n, want) in [
+        ("sOcarinaSongNotes", ocarina_song_notes.len(), 14),
+        ("gOcarinaSongButtons", ocarina_song_buttons.len(), 14),
+        ("sButtonToPitchMap", button_to_pitch_map.len(), 5),
+        ("sPitchToButtonMap", pitch_to_button_map.len(), 16),
         ("sSurfaceMaterialToSfxOffset", floor_sfx.len(), 14),
         ("sSeqFlags", seq_flags.len(), 0x6E),
         ("sSpecReverbs", spec_reverbs.len(), 20),
@@ -581,6 +631,10 @@ pub fn audio_game_tables(decomp: &Path) -> Result<oot_game::audio::AudioGameTabl
         charge_freq_scales,
         floor_sfx,
         player_anim_sfx,
+        ocarina_song_notes,
+        ocarina_song_buttons,
+        button_to_pitch_map,
+        pitch_to_button_map,
     })
 }
 

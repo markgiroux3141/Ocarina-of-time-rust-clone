@@ -1361,10 +1361,10 @@ impl PlayState {
         self.camera_set_fov(sub, eye_pt.view_angle);
     }
 
-    /// Command 0x13, `CutsceneCmd_Text`: a text opens on the first frame after its
-    /// start, and at its end frame the script waits while the box is up, answering a choice
-    /// with the branch's text, or waits for the event's end (ocarina actions: `Message_StartOcarina`,
-    /// not ported).
+    /// Command 0x13, `CutsceneCmd_Text`: a text (or an ocarina action, `CS_TEXT_OCARINA_ACTION`:
+    /// `Message_StartOcarina`) opens on the first frame after its start, and at its end frame the
+    /// script waits while the box is up, answering a choice with the branch's text, an ocarina's
+    /// failed playback with its retry text, or an event's end with the ocarina.
     fn cutscene_command_textbox(&mut self, d: &[u8], o: usize) {
         let (base, start, end, ty, text_id1, text_id2) = (be_u16(d, o), be_u16(d, o + 2), be_u16(d, o + 4), be_u16(d, o + 6), be_u16(d, o + 8), be_u16(d, o + 10));
         let frames = self.cs_ctx.frames;
@@ -1383,7 +1383,7 @@ impl PlayState {
             }
         } else if self.demo.cur_ocarina_action != base {
             self.demo.cur_ocarina_action = base;
-            log::warn!("cutscene text: ocarina action {base:#x} (Message_StartOcarina) not ported");
+            self.message_start_ocarina(base);
             return;
         }
         if frames >= end {
@@ -1407,7 +1407,7 @@ impl PlayState {
                     }
                 }
                 if st == TEXT_STATE_EVENT && self.message_should_advance() {
-                    log::warn!("cutscene text {base:#x}: the event's Message_StartOcarina not ported");
+                    self.message_start_ocarina(base);
                 }
             }
             if self.cs_ctx.frames == original {

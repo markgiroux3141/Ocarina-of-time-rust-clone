@@ -13,8 +13,8 @@
 //! starts open.
 //!
 //! Also ported: the chests that appear on a switch flag, on the room's clear flag, or fall on a
-//! switch flag. Not ported: the chests the Zelda's Lullaby and Sun's Song make appear (types 9
-//! and 10: `EnBox_AppearOnCorrectSong` waits on the ocarina, which isn't ported, so they stay hidden), the
+//! switch flag, and those Zelda's Lullaby and the Sun's Song make appear (types 9 and 10:
+//! `EnBox_AppearOnCorrectSong`, the ocarina's free play near them). Not ported: the
 //! lens-hidden chests' drawing (types 4 and 6 with `ACTOR_FLAG_REACT_TO_LENS`: the Lens of Truth isn't
 //! ported, so they aren't drawn until opened), and the effects (the
 //! falling chests' dust, the ice trap's smoke: their `Rand_ZeroOne` calls are made). The light
@@ -403,14 +403,46 @@ impl EnBox {
         }
     }
 
-    /// `EnBox_AppearOnCorrectSong`: a song chest waits for Link to play its song near it. The ocarina isn't
-    /// ported, so it never appears: within 150 it asks Player for the ocarina
-    /// (`PLAYER_STATE2_23`), which nothing answers.
+    /// `EnBox_AppearOnCorrectSong`: a song chest waits for Link to play its song near it. Within
+    /// 150 it asks for the ocarina (`PLAYER_STATE2_23`); taken out (`PLAYER_STATE2_24`) it starts
+    /// free play, and when that ends Zelda's Lullaby (type 9) or the Sun's Song (type 10) makes it
+    /// appear, with the attention camera on it.
     fn wait_song(&mut self, play: &mut PlayState) {
+        use crate::player::{STATE2_23, STATE2_24};
+        use oot_game::audio::ocarina::{OCARINA_SONG_LULLABY, OCARINA_SONG_SUNS};
+        /// `ENBOX_OCARINA_STATE_*` (`z_en_box.h`).
+        const IDLE: u8 = 0;
+        const START: u8 = 1;
+        const WAIT_SONG: u8 = 2;
         self.nearest_chest_check();
-        let Some(p) = play.player.and_then(|h| play.actors.actor(h)) else { return };
-        if self.actor.world_pos.distance_squared(p.world_pos) > 150.0 * 150.0 {
-            self.ocarina_state = 0;
+        let Some((ppos, state2)) = play.player.and_then(|h| play.actors.get(h)).and_then(|p| Some((p.base().world_pos, p.as_player()?.state_flags2()))) else { return };
+        if self.actor.world_pos.distance_squared(ppos) > 150.0 * 150.0 {
+            self.ocarina_state = IDLE;
+            return;
+        }
+        if self.ocarina_state == IDLE {
+            if state2 & STATE2_24 == 0 {
+                if let Some(p) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
+                    p.change_state_flags2(STATE2_23, 0);
+                }
+                return;
+            }
+            self.ocarina_state = START;
+        }
+        if self.ocarina_state == START {
+            play.message_start_ocarina(oot_game::message::OCARINA_ACTION_FREE_PLAY);
+            self.ocarina_state = WAIT_SONG;
+        } else if self.ocarina_state == WAIT_SONG && play.msg_ctx.ocarina_mode == oot_game::message::OCARINA_MODE_04 {
+            let song = play.msg_ctx.last_played_song;
+            if (song == OCARINA_SONG_LULLABY as u16 && self.ty == ENBOX_TYPE_LULLABY_BIG) || (song == OCARINA_SONG_SUNS as u16 && self.ty == ENBOX_TYPE_SUNS_BIG) {
+                self.actor.flags &= !ACTOR_FLAG_UPDATE_DURING_OCARINA;
+                self.action = Action::AppearInit;
+                if let Some(me) = self.cam_actor(play) {
+                    play.onepoint_attention(me);
+                }
+                self.appear_timer = 0;
+            }
+            self.ocarina_state = IDLE;
         }
     }
 

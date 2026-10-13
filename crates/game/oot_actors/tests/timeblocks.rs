@@ -11,10 +11,10 @@
 //! bit 8 set (scale 0.6, focus 40 up, `Demo_Effect` 0x19), bit 10 clear (`ObjTimeblock_Normal`),
 //! range 7 (300), bit 15 clear: hidden. 0xB9FF: the same with bit 15 set: shown.
 //!
-//! The ocarina isn't ported: the tests play the song as the ocarina would, Player's
-//! `PLAYER_STATE2_24` (the ocarina out) and `msgCtx.lastPlayedSong` (the staff's 254 while it's
-//! played, then `OCARINA_SONG_TIME`, 10). Expected values are worked out from the C in the
-//! comments.
+//! The tests play the song (GAME-07 milestone 3): Player's `PLAYER_STATE2_24` (the ocarina out)
+//! for a frame starts the block's free play, and the Song of Time's notes are played on the pad
+//! (the save has the song); `msgCtx.lastPlayedSong` is the staff's 254 while it's played, then
+//! `OCARINA_SONG_TIME` (10). Expected values are worked out from the C in the comments.
 
 mod common;
 
@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use common::*;
 use eng_collision::dyna::BGCHECK_SCENE;
-use eng_input::pad::PadState;
+use eng_input::pad::{BTN_A, BTN_CDOWN, BTN_CRIGHT, PadState};
 use glam::{Mat4, Vec3};
 use oot_actors::PlayExt;
 use oot_actors::obj_timeblock::*;
@@ -50,8 +50,12 @@ fn deku_tree_room(a: &Arc<GameAssets>, room: i8) -> PlayState {
     let e = a.scenes.entrance_index("ENTR_DEKU_TREE_0").expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
     save.apply_preset("deku-tree-inside").unwrap();
+    // The Song of Time (ITEM_SONG_TIME, 0x64): the free play takes it as played.
+    oot_game::item::item_give(&mut save, None, 0x64);
     let audio = oot_game::audio::GameAudio::boot_logged(a.audio.clone(), a.audio_tables.clone(), true);
     let mut w = PlayState::play_init_with(a.clone(), data().unwrap(), rules().unwrap(), save, audio).expect("Play_Init");
+    // The audio side (a scene's audio spec waits for it; the ocarina reads its tasks).
+    w.audio_side = Some(Box::new(oot_game::audio::offline::OfflineAudio::new(&a.pack.audio_data().unwrap(), false)));
     w.flags.set_switch(0x1F);
     idle(&mut w, 60);
     if room != 0 {
@@ -235,21 +239,46 @@ fn link_in_range_gets_the_ocarina_prompt() {
     assert!(!tb(&w, h).player_is_in_range(&w));
 }
 
-/// The song as the ocarina plays it to block `h` with Link in range: the ocarina out
-/// (`PLAYER_STATE2_24`: `ObjTimeblock_WaitForSong` the next frame; `Message_StartOcarina` logs),
-/// the staff's 254 for a frame, then `OCARINA_SONG_TIME`; returns after the frame its 110 frames
-/// start (`songEndTimer`). The ocarina's put away (`PLAYER_STATE2_24` off) after.
+/// The song played to block `h` with Link in range: the ocarina out (`PLAYER_STATE2_24` for a
+/// frame: `ObjTimeblock_WaitForSong` the next, its free play started), then the Song of Time's
+/// notes (C-Right, A, C-Down twice: each held 3 frames, let go 2); returns after the frame its
+/// 110 frames start (`songEndTimer`: the staff's 254 the frame before, `OCARINA_SONG_TIME` then).
 fn play_the_song_of_time(w: &mut PlayState, h: ActorHandle) {
     set_player_state2(w, PLAYER_STATE2_24, 0);
     idle(w, 1);
     set_player_state2(w, 0, PLAYER_STATE2_24);
     assert_eq!(tb(w, h).song_observer, SongObserver::WaitForSong);
-    w.msg_ctx.last_played_song = 254;
-    idle(w, 1);
-    assert_eq!(tb(w, h).unk_172, 254);
-    w.msg_ctx.last_played_song = OCARINA_SONG_TIME;
-    idle(w, 1);
-    assert_eq!((tb(w, h).song_end_timer, tb(w, h).unk_172), (110, OCARINA_SONG_TIME));
+    // The box's MSGMODE_OCARINA_PLAYING.
+    for _ in 0..20 {
+        if w.msg_ctx.msg_mode == oot_game::message::MSGMODE_OCARINA_PLAYING {
+            break;
+        }
+        idle(w, 1);
+    }
+    assert_eq!(w.msg_ctx.msg_mode, oot_game::message::MSGMODE_OCARINA_PLAYING);
+    for b in [BTN_CRIGHT, BTN_A, BTN_CDOWN, BTN_CRIGHT, BTN_A, BTN_CDOWN] {
+        let pad = PadState { button: b, ..Default::default() };
+        for i in 0..3 {
+            w.tick_with(scripted_input(if i == 0 { PadState::default() } else { pad }, pad));
+            if tb(w, h).song_end_timer == 110 {
+                return;
+            }
+        }
+        for i in 0..2 {
+            w.tick_with(scripted_input(if i == 0 { pad } else { PadState::default() }, PadState::default()));
+            if tb(w, h).song_end_timer == 110 {
+                return;
+            }
+        }
+    }
+    for _ in 0..10 {
+        idle(w, 1);
+        if tb(w, h).song_end_timer == 110 {
+            assert_eq!(tb(w, h).unk_172, OCARINA_SONG_TIME);
+            return;
+        }
+    }
+    panic!("the Song of Time wasn't heard: lastPlayedSong {}", w.msg_ctx.last_played_song);
 }
 
 #[test]

@@ -12,10 +12,19 @@
 //! before the next retrace; after each retrace the thread publishes what the game reads
 //! (`AudioView`), with the queues' messages kept until the game takes them
 //! (docs/adr/0025-audio-mixer.md, docs/adr/0026-the-games-audio.md).
+//!
+//! The game reads the view before its next frame, and only once a retrace has run after the
+//! last ops it sent (`take_view` waits for it): on the console the audio thread has run the
+//! game's commands by the next game frame (three retraces later), and the game reads
+//! `gAudioCtx` as they left it. A view from before them loses sounds: the sound effects'
+//! `Audio_PlayActiveSfx` takes a channel whose IO port 1 still reads `SEQ_IO_VAL_NONE` (the last
+//! sound's end) as done, and forgets the new sound, so its stop never reaches it (an ocarina
+//! note held on after its button is let go).
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -33,11 +42,13 @@ enum Msg {
     Stop,
 }
 
-/// The frames queued for the device: the target fill (about 64 ms at 32 kHz) and the most it
-/// holds before the oldest are dropped back to the target (about 128 ms: the device started late
-/// or stalled). The rate nudge alone takes minutes to work off a backlog, and every sound would
-/// be heard that much late: a sword swing's after the swing.
-const TARGET_FILL: usize = 2048;
+/// The frames queued for the device: the target fill (about 32 ms at 32 kHz, two retraces'
+/// worth) and the most it holds before the oldest are dropped back to the target (about 64 ms:
+/// the device started late or stalled). The rate nudge alone takes minutes to work off a
+/// backlog, and every sound would be heard that much late: a sword swing's after the swing. The
+/// queue is delay the console doesn't have (its AI plays the buffer the last retrace made), so
+/// it's kept short: 64 ms put the ocarina's notes noticeably behind their buttons.
+const TARGET_FILL: usize = 1024;
 const MAX_FILL: usize = 2 * TARGET_FILL;
 
 struct Shared {
@@ -51,11 +62,26 @@ struct Shared {
     dropped: u64,
 }
 
+/// What the audio thread publishes after each retrace.
+struct Published {
+    view: AudioView,
+    /// The batches of ops (`Msg::Ops`) applied before that retrace.
+    applied: u64,
+}
+
+/// The published view and its signal.
+type SharedView = Arc<(Mutex<Published>, Condvar)>;
+
+/// The longest the game waits for the audio thread's retrace (a stalled thread: carry on).
+const VIEW_WAIT: Duration = Duration::from_millis(100);
+
 /// The device's side: plays until dropped.
 pub struct AudioOutput {
     tx: Sender<Msg>,
     /// What the game reads, as of the last retrace.
-    view: Arc<Mutex<AudioView>>,
+    view: SharedView,
+    /// The batches of ops sent.
+    sent: AtomicU64,
     thread: Option<std::thread::JoinHandle<()>>,
     /// The device's name and rate, for the HUD.
     pub description: String,
@@ -66,7 +92,7 @@ impl AudioOutput {
     pub fn start(data: AudioData) -> Result<AudioOutput> {
         let (tx, rx) = channel();
         let (ready_tx, ready_rx) = channel::<Result<String>>();
-        let view = Arc::new(Mutex::new(AudioView::default()));
+        let view: SharedView = Arc::new((Mutex::new(Published { view: AudioView::default(), applied: 0 }), Condvar::new()));
         let thread_view = view.clone();
         let thread = std::thread::Builder::new()
             .name("audio".into())
@@ -77,12 +103,13 @@ impl AudioOutput {
             })
             .context("starting the audio thread")?;
         let description = ready_rx.recv().context("the audio thread stopped")??;
-        Ok(AudioOutput { tx, view, thread: Some(thread), description })
+        Ok(AudioOutput { tx, view, sent: AtomicU64::new(0), thread: Some(thread), description })
     }
 
     /// A game frame's `GameOp`s, applied before the next retrace.
     pub fn send_ops(&self, ops: Vec<GameOp>) {
         if !ops.is_empty() {
+            self.sent.fetch_add(1, Ordering::SeqCst);
             let _ = self.tx.send(Msg::Ops(ops));
         }
     }
@@ -98,12 +125,17 @@ impl AudioOutput {
     }
 
     /// What the game reads now: the state as of the last retrace, and the messages posted since
-    /// the last call.
+    /// the last call. Waits (at most `VIEW_WAIT`) for a retrace after the last ops sent.
     pub fn take_view(&self) -> AudioView {
-        let mut v = self.view.lock().unwrap();
-        let out = v.clone();
-        v.reset_msgs.clear();
-        v.external_load_msgs.clear();
+        let sent = self.sent.load(Ordering::SeqCst);
+        let (lock, signal) = &*self.view;
+        let (mut p, wait) = signal.wait_timeout_while(lock.lock().unwrap(), VIEW_WAIT, |p| p.applied < sent).unwrap();
+        if wait.timed_out() {
+            log::debug!("audio output: no retrace after the game's ops in {VIEW_WAIT:?}");
+        }
+        let out = p.view.clone();
+        p.view.reset_msgs.clear();
+        p.view.external_load_msgs.clear();
         out
     }
 
@@ -122,11 +154,12 @@ impl Drop for AudioOutput {
     }
 }
 
-fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String>>, view: Arc<Mutex<AudioView>>) -> Result<()> {
+fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String>>, view: SharedView) -> Result<()> {
     let mut ctx = AudioContext::new(&data);
     drop(data);
     // What the game reads before the first retrace: AudioLoad_Init's spec 0.
-    view.lock().unwrap().update(ctx.view());
+    view.0.lock().unwrap().view.update(ctx.view());
+    let mut applied: u64 = 0;
     let mut ai = Ai::new();
     let ai_rate = ctx.audio_buffer_parameters.ai_sampling_frequency as f64;
     let refresh = ctx.refresh_rate.max(1) as f64;
@@ -160,7 +193,10 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
         // Commands from the game, as its frames end.
         loop {
             match rx.try_recv() {
-                Ok(Msg::Ops(ops)) => ctx.apply(&ops),
+                Ok(Msg::Ops(ops)) => {
+                    ctx.apply(&ops);
+                    applied += 1;
+                }
                 Ok(Msg::Stop) | Err(std::sync::mpsc::TryRecvError::Disconnected) => return Ok(()),
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
             }
@@ -173,7 +209,12 @@ fn audio_thread(data: AudioData, rx: Receiver<Msg>, ready: &Sender<Result<String
             ai.set_next_buffer(buf);
         }
         let v = ctx.view();
-        view.lock().unwrap().update(v);
+        {
+            let mut p = view.0.lock().unwrap();
+            p.view.update(v);
+            p.applied = applied;
+        }
+        view.1.notify_all();
         {
             let mut s = shared.lock().unwrap();
             for f in out.chunks(2) {

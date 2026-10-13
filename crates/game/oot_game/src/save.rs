@@ -596,6 +596,25 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
             s.equip_item_on_c_left(crate::item::ITEM_CHICKEN);
         },
     },
+    SavePreset {
+        name: "ocarina-songs",
+        about: "deku-tree-dead, the Fairy Ocarina (ITEM_OCARINA_FAIRY) on C-Left and Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's Song, the Song of Time and the Song of Storms (ITEM_SONG_LULLABY .. ITEM_SONG_STORMS: Item_Give's quest bits) (GAME-07 milestone 3)",
+        apply: |s| {
+            kokiri_sword_and_deku_shield(s);
+            s.set_event_chk_inf(EVENTCHKINF_04);
+            s.set_event_chk_inf(EVENTCHKINF_0C);
+            s.set_event_chk_inf(EVENTCHKINF_05);
+            s.set_event_chk_inf(EVENTCHKINF_07);
+            s.set_event_chk_inf(EVENTCHKINF_09);
+            item_give(s, None, ITEM_KOKIRI_EMERALD);
+            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+            s.equip_item_on_c_left(crate::item::ITEM_OCARINA_FAIRY);
+            // ITEM_SONG_LULLABY (0x60) .. ITEM_SONG_STORMS (0x65), item.h.
+            for song in 0x60..=crate::item::ITEM_SONG_STORMS {
+                item_give(s, None, song);
+            }
+        },
+    },
 ];
 
 /// The castle's presets' common part (`castle-egg`, `castle-cucco`).

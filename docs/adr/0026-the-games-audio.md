@@ -61,7 +61,8 @@ timing, and the offline runs need an order.
     attached to the play state (`PlayState::audio_side`, carried over a scene change), which
     then hands its frames over by itself;
   - the window: `PlayState::advance_with` hands each frame's ops to the device's thread and the
-    latest view back;
+    latest view back (amended 2026-10-12: the view is read before the next frame, once a retrace
+    has run the last frame's ops; see Consequences);
   - with no audio side (the goldens, `--no-audio`), the game's side runs anyway and its ops are
     dropped (the latest 65536 are kept). `Audio_Update` then waits for the first spec change's
     reset forever, as the C would without an audio thread, so nothing past `Play_Init`'s commands
@@ -78,6 +79,17 @@ timing, and the offline runs need an order.
 - In the window, the game reads the audio side up to a game frame late, as on the console
   (where the three retraces of a frame fall anywhere in it); the commands of a frame arrive
   together, before a retrace.
+  - **Amended 2026-10-12 (GAME-07 milestone 3, found by hand):** that read was later than the
+    console's. The view was taken right after the frame's ops were sent, before the audio thread
+    had run them, so each frame read the audio state from before the last frame's commands. On
+    the console the next frame reads `gAudioCtx` after its three retraces. The stale read lost
+    sounds: `Audio_PlayActiveSfx` takes a channel whose IO port 1 still reads `SEQ_IO_VAL_NONE`
+    (the previous sound's end) as done and forgets the new sound's entry, so its
+    `Audio_StopSfxById` never reaches the channel. Ocarina notes played on for seconds after
+    their buttons were let go: 20 of 40 notes in an offline run given the window's late view, none
+    with the console's. Now `advance_with` reads the view before each frame (`before`) and sends
+    the ops after it (`after`), and `AudioOutput::take_view` waits (at most 100 ms) for a
+    retrace after the last ops sent, which only two frames run back to back ever need.
 - The approximations: the spec change's blocking wait (above); the game's reads come at frame
   boundaries rather than mid-frame; `osGetCount` stays deterministic (ADR 0025).
 - The sound effects (milestone 3) go through the same boundary: `Audio_PlaySfxGeneral`'s

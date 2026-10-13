@@ -15,9 +15,8 @@
 //! Drawn as `EnGs_Draw` does: turned and scaled by the reactions, the flash's prim colour, and
 //! the launch's flame (`gEffFire1DL`); from baked meshes (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported here: the ocarina (`Message_StartOcarina`: logged when it would start, so no song
-//! is heard), and the launch's explosion (`EffectSsBomb2_SpawnLayered`: the effect isn't ported;
-//! its sound plays).
+//! Not ported here: the launch's explosion (`EffectSsBomb2_SpawnLayered`: the effect isn't
+//! ported; its sound plays).
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -299,13 +298,13 @@ impl EnGs {
         if self.unk_19d == 0 {
             Self::set_player_state2(play, PLAYER_STATE2_23);
             if Self::player_state2(play) & PLAYER_STATE2_24 != 0 {
-                // Message_StartOcarina(play, OCARINA_ACTION_FREE_PLAY).
-                log::info!("En_Gs: the ocarina's free play (Message_StartOcarina) isn't ported");
+                play.message_start_ocarina(oot_game::message::OCARINA_ACTION_FREE_PLAY);
                 self.unk_19d |= 1;
             }
         } else if self.unk_19d & 1 != 0 {
             if play.msg_ctx.ocarina_mode == OCARINA_MODE_04 {
-                let song = play.msg_ctx.last_played_song;
+                // msgCtx->unk_E3F2: the song played (lastPlayedSong is reset by the message box).
+                let song = play.msg_ctx.unk_e3f2;
                 let pos = self.actor.world_pos + Vec3::Y * 40.0;
                 if matches!(song, OCARINA_SONG_SARIAS | OCARINA_SONG_EPONAS | OCARINA_SONG_LULLABY | OCARINA_SONG_SUNS | OCARINA_SONG_TIME) {
                     let _ = play.actor_spawn(ACTOR_EN_ELF, pos, [0; 3], FAIRY_HEAL_TIMED);

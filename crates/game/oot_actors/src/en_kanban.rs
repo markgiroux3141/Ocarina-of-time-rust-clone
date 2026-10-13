@@ -6,8 +6,11 @@
 //! The sign offers to talk (`Actor_OfferTalk`, 68 units, facing it); its text is `params | 0x300`.
 //! Once the box closes it waits 20 frames before offering again.
 //!
-//! Not ported: the ocarina repair (Zelda's Lullaby: no
-//! ocarina), the hammer's quake (`actorCtx.unk_02` is never set), the shadow (a texture the
+//! A piece at rest hears the ocarina: once it's taken out (`OCARINA_MODE_01`) and put away after
+//! Zelda's Lullaby (`unk_E3F2`), the pieces fly back to the sign (`ENKANBAN_REPAIR`) and it's
+//! whole again.
+//!
+//! Not ported: the hammer's quake (`actorCtx.unk_02` is never set), the shadow (a texture the
 //! draw builds from the parts every frame), and the dust and water effects.
 
 use eng_collision::math3d::Cylinder16;
@@ -221,6 +224,8 @@ pub struct EnKanban {
     pub z_target_timer: i16,
     pub msg_flag: bool,
     pub msg_timer: u8,
+    /// `ocarinaFlag`: the ocarina seen out (1).
+    pub ocarina_flag: u8,
     pub collider: ColliderCylinder,
 }
 
@@ -260,6 +265,7 @@ impl EnKanban {
             floor_rot: Vec3::ZERO,
             cut_type: 0,
             piece_type: 0,
+            ocarina_flag: 0,
             cut_mark_timer: 0,
             cut_mark_alpha: 0,
             z_target_timer: 0,
@@ -619,7 +625,59 @@ impl EnKanban {
                 }
             }
         }
-        // The ocarina (ocarinaFlag, Zelda's Lullaby → ENKANBAN_REPAIR): no ocarina yet.
+        log::trace!("OCARINA_MODE {}", play.msg_ctx.ocarina_mode);
+        match self.ocarina_flag {
+            0 => {
+                if play.msg_ctx.ocarina_mode == oot_game::message::OCARINA_MODE_01 {
+                    self.ocarina_flag = 1;
+                }
+            }
+            1 => {
+                if play.msg_ctx.ocarina_mode == oot_game::message::OCARINA_MODE_04 && play.msg_ctx.unk_e3f2 == oot_game::audio::ocarina::OCARINA_SONG_LULLABY as u16 {
+                    self.action_state = ENKANBAN_REPAIR;
+                    self.bounce_x = 1;
+                    play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `ENKANBAN_REPAIR`: back to its place on the sign, turning and settling level; there, the
+    /// sign has its part again (and can be talked to) and the piece goes. A sign made whole
+    /// meanwhile takes the piece away.
+    fn update_repair(&mut self, play: &mut PlayState) {
+        use eng_math::{smooth_step_to_f, smooth_step_to_s};
+        let Some(parent) = self.actor.parent else { return };
+        let Some(sign) = play.actors.downcast::<EnKanban>(parent) else { return };
+        let (sign_flags, sign_pos, sign_rot) = (sign.part_flags, sign.actor.world_pos, sign.actor.shape_rot);
+        if sign_flags == 0xFFFF {
+            self.actor.kill();
+        }
+        // Matrix_RotateY(BINANG_TO_RAD_ALT(shape.rot.y)), Matrix_MultVec3f(&sPieceOffsets[type]).
+        let offset = Mat4::from_rotation_y(binang_to_rad(sign_rot.y)).transform_point3(PIECE_OFFSETS[self.piece_type as usize]);
+        let p = &mut self.actor.world_pos;
+        let dist_x = smooth_step_to_f(&mut p.x, sign_pos.x + offset.x, 1.0, 3.0, 0.0);
+        let dist_y = smooth_step_to_f(&mut p.y, sign_pos.y + offset.y, 1.0, 3.0, 0.0);
+        let dist_z = smooth_step_to_f(&mut p.z, sign_pos.z + offset.z, 1.0, 3.0, 0.0);
+        let r = &mut self.actor.shape_rot;
+        let p_diff = smooth_step_to_s(&mut r.x, sign_rot.x, 1, 0x200, 0);
+        let y_diff = smooth_step_to_s(&mut r.y, sign_rot.y, 1, 0x200, 0);
+        let r_diff = smooth_step_to_s(&mut r.z, sign_rot.z, 1, 0x200, 0);
+        approach_s(&mut self.spin_rot[0], 0, 1, 0x200);
+        approach_s(&mut self.spin_rot[2], 0, 1, 0x200);
+        approach_zero_f(&mut self.floor_rot.x, 1.0, 0.05);
+        approach_zero_f(&mut self.floor_rot.z, 1.0, 0.05);
+        approach_zero_f(&mut self.actor.shape_y_offset, 1.0, 2.0);
+        // The s16 sums as ints.
+        let rot_sum = p_diff as i32 + y_diff as i32 + r_diff as i32 + self.spin_rot[0] as i32 + self.spin_rot[2] as i32;
+        if dist_x + dist_y + dist_z == 0.0 && rot_sum == 0 && self.floor_rot.x == 0.0 && self.floor_rot.z == 0.0 {
+            if let Some(sign) = play.actors.downcast_mut::<EnKanban>(parent) {
+                sign.part_flags |= self.part_flags;
+                sign.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+            }
+            self.actor.kill();
+        }
     }
 
     /// `ENKANBAN_WATER`: floating, pushed along by Player wading past.
@@ -706,7 +764,7 @@ impl ActorImpl for EnKanban {
                 }
             }
             ENKANBAN_GROUND | ENKANBAN_WATER => self.update_rest(play),
-            ENKANBAN_REPAIR => {}
+            ENKANBAN_REPAIR => self.update_repair(play),
             _ => {}
         }
     }

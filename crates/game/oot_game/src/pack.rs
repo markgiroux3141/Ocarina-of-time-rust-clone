@@ -221,11 +221,16 @@ pub enum BakeSegment {
     Matrix(eng_gfx::BoneId),
 }
 
+/// `BakeBody::DLists`' file for a call of a segment (its symbol the segment's number, hex).
+pub const SEGMENT_CALL: &str = "@segment";
+
 /// What a bake draws.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BakeBody {
     /// Display lists `(file, symbol)` run in order; `symbol+0x50` runs from that many bytes in
-    /// (`&DL[10]`).
+    /// (`&DL[10]`). `(SEGMENT_CALL, "8")` calls segment 8 there (the draw's own
+    /// `gSPDisplayList` of a `Gfx_TwoTexScroll` between two lists: `Oceff_Spot`'s material, its
+    /// scroll, its model).
     DLists(Vec<(String, String)>),
     /// A skeleton's mesh as `SkelAnime_DrawFlex*` draws it, with limbs' lists replaced
     /// (`OverrideLimbDraw` setting `*dList`).

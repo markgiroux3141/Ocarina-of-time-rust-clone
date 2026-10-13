@@ -15,9 +15,9 @@
 //! the env colour, in two bakes. `EnElf_OverrideLimbDraw` puts limb 8 (the glow) at its
 //! parent's origin, unrotated, at its pulsing scale.
 //!
-//! Not ported: the sparkles (`EffectSsKiraKira`: their spawn's `Rand` calls are made), the
-//! lights' effect on the draw (`crate::lights` keeps them, the renderer can't draw
-//! them), and `Environment_AdjustLights` while Navi talks.
+//! Not ported: the sparkles (`EffectSsKiraKira`: their spawn's `Rand` calls are made) and the
+//! lights' effect on the draw (`crate::lights` keeps them, the renderer can't draw them). While
+//! Navi talks the scene darkens (`Environment_AdjustLights`, GAME-07 milestone 3).
 
 use std::sync::Arc;
 
@@ -240,6 +240,11 @@ fn change_player_state2(play: &mut PlayState, set: u32, clear: u32) {
     if let Some(pi) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
         pi.change_state_flags2(set, clear);
     }
+}
+
+/// `player->actor.projectedPos.z`.
+fn player_projected_z(play: &PlayState) -> f32 {
+    play.player.and_then(|h| play.actors.actor(h)).map_or(0.0, |p| p.projected_pos.z)
 }
 
 fn set_navi_text_id(play: &mut PlayState, id: i16) {
@@ -1191,11 +1196,13 @@ impl EnElf {
     }
 
     /// `func_80A04F94`: turning to face her heading, and the scene darkening
-    /// (`Environment_AdjustLights`, not ported).
-    fn func_80a04f94(&mut self) {
+    /// (`Environment_AdjustLights` by `unk_2A4` squared, the fog pulled to 780 past Link).
+    fn func_80a04f94(&mut self, play: &mut PlayState) {
         smooth_step_to_s(&mut self.actor.shape_rot.y, self.unk_2bc, 5, 0x1000, 0x400);
         self.timer = self.timer.wrapping_add(1);
         step_to_f(&mut self.unk_2a4, 1.0, 0.05);
+        let z = player_projected_z(play);
+        play.environment_adjust_lights(self.unk_2a4 * self.unk_2a4, z + 780.0, 0.2, 0.5);
     }
 
     /// Her talk's end: back to `func_80A053F0`, mode 0, the light off Link.
@@ -1212,7 +1219,7 @@ impl EnElf {
         self.func_80a04de4(play);
         if play.message_state() == TEXT_STATE_CHOICE {
             if play.message_should_advance() {
-                // (msgCtx.unk_E3F2 = 0xFF: the ocarina's, not ported.)
+                play.msg_ctx.unk_e3f2 = 0xFF;
                 if play.msg_ctx.choice_index == 0 {
                     self.update_fn = Update::SariaText;
                     play.continue_textbox(0xE2);
@@ -1224,7 +1231,7 @@ impl EnElf {
         } else if oot_game::npc::textbox_is_closing(play) {
             self.end_talk();
         }
-        self.func_80a04f94();
+        self.func_80a04f94(play);
     }
 
     /// `func_80A05208`: "talk to Navi?": yes, her C-Up text (0x15F without one); no, the end.
@@ -1241,7 +1248,7 @@ impl EnElf {
                 self.end_talk();
             }
         }
-        self.func_80a04f94();
+        self.func_80a04f94(play);
     }
 
     /// `func_80A05188`: after 0xE2, Saria's text.
@@ -1253,7 +1260,7 @@ impl EnElf {
             play.continue_textbox(t);
             self.update_fn = Update::SariaMore;
         }
-        self.func_80a04f94();
+        self.func_80a04f94(play);
     }
 
     /// `func_80A05114`: after Saria's text, 0xE3 ("talk to her again?").
@@ -1264,7 +1271,7 @@ impl EnElf {
             play.continue_textbox(0xE3);
             self.update_fn = Update::SariaAgain;
         }
-        self.func_80a04f94();
+        self.func_80a04f94(play);
     }
 
     /// `func_80A05040`: talk to Saria again: yes, her text again; no, the end.
@@ -1281,7 +1288,7 @@ impl EnElf {
                 self.end_talk();
             }
         }
-        self.func_80a04f94();
+        self.func_80a04f94(play);
     }
 
     /// `func_80A053F0`: Navi's update. Her C-Up text while `naviTimer` allows it; Player's talk
@@ -1333,7 +1340,8 @@ impl EnElf {
         self.timer = self.timer.wrapping_add(1);
         if self.unk_2a4 > 0.0 {
             step_to_f(&mut self.unk_2a4, 0.0, 0.05);
-            // Environment_AdjustLights: not ported.
+            let z = player_projected_z(play);
+            play.environment_adjust_lights(self.unk_2a4 * self.unk_2a4 * self.unk_2a4, z + 780.0, 0.2, 0.5);
         }
         if self.unk_2c7 > 0 {
             self.unk_2c7 -= 1;

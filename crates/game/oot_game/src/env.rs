@@ -218,6 +218,7 @@ pub const PRECIP_SNOW_MAX: usize = 3;
 pub const PRECIP_SOS_MAX: usize = 4;
 /// `LIGHTNING_*` (`lightningState`), `LIGHTNING_STRIKE_*`, `LIGHTNING_BOLT_*`.
 pub const LIGHTNING_OFF: u8 = 0;
+pub const LIGHTNING_ON: u8 = 1;
 pub const LIGHTNING_LAST: u8 = 2;
 pub const LIGHTNING_STRIKE_WAIT: u8 = 0;
 pub const LIGHTNING_STRIKE_START: u8 = 1;
@@ -246,6 +247,7 @@ pub const SKYBOX_DMA_TEXTURE2_DONE: u8 = 12;
 pub const SKYBOX_DMA_TLUT2_START: u8 = 13;
 /// `WEATHER_MODE_*` (`environment.h`).
 pub const WEATHER_MODE_CLEAR: u8 = 0;
+pub const WEATHER_MODE_RAIN: u8 = 4;
 pub const WEATHER_MODE_HEAVY_RAIN: u8 = 5;
 
 /// A load `Environment_UpdateSkybox` started (`DMA_REQUEST_ASYNC`): where its bytes go and
@@ -724,6 +726,9 @@ pub struct EnvStatics {
     /// (`Environment_GraphCallback`, crate::env_draw).
     pub sun_depth_test: [i16; 2],
     pub sun_screen_depth: u16,
+    /// `gInterruptSongOfStorms`: `En_Weather_Tag` stops a Song of Storms' rain (not ported, so
+    /// never set); `Environment_Init` clears it.
+    pub interrupt_song_of_storms: bool,
 }
 
 impl EnvStatics {
@@ -737,6 +742,7 @@ impl EnvStatics {
         for b in self.lightning_bolts.iter_mut() {
             b.state = LIGHTNING_BOLT_INACTIVE;
         }
+        self.interrupt_song_of_storms = false;
     }
 
     /// `Environment_DrawLightning`'s update of the bolts (in `Play_Draw`, with its `Rand_ZeroOne`
@@ -966,6 +972,67 @@ impl crate::play::PlayState {
             e.adj_fog_near = 0;
         } else {
             self.transition.screen_fill = if intensity == 0 { None } else { Some([0, 0, 0, intensity]) };
+        }
+    }
+}
+
+/// `ROOM_TYPE_BOSS` (`room.h`: 5).
+const ROOM_TYPE_BOSS: u8 = 5;
+
+impl crate::play::PlayState {
+    /// `Environment_AdjustLights` (`z_kankyo.c`): outside a boss room, with the camera free, the
+    /// scene darkened by `arg1` (0 to 1): the fog's near plane pulled to `arg2` past `arg3`, the
+    /// fog's colour to black, and by `arg1 * arg4` the ambient and first light (the songs'
+    /// effects, Navi's talk).
+    pub fn environment_adjust_lights(&mut self, mut arg1: f32, arg2: f32, arg3: f32, arg4: f32) {
+        if self.room_ctx.cur.behavior_type1 == ROOM_TYPE_BOSS || !self.cam_is_not_fixed() {
+            return;
+        }
+        arg1 = arg1.max(0.0).min(1.0);
+        let mut temp = arg1 - arg3;
+        if arg1 < arg3 {
+            temp = 0.0;
+        }
+        let e = &mut self.env_ctx;
+        let ls = e.light_settings;
+        e.adj_fog_near = ((arg2 - ls.fog_near_raw as i16 as f32) * temp) as i16;
+        if arg1 == 0.0 {
+            e.adj_fog_color = [0; 3];
+        } else {
+            let t = (arg1 * 5.0).min(1.0);
+            for i in 0..3 {
+                e.adj_fog_color[i] = -((ls.fog_color[i] as f32 * t) as i16);
+            }
+        }
+        if arg4 <= 0.0 {
+            return;
+        }
+        arg1 *= arg4;
+        for i in 0..3 {
+            e.adj_ambient_color[i] = -((ls.ambient[i] as f32 * arg1) as i16);
+            e.adj_light1_color[i] = -((ls.light1_color[i] as f32 * arg1) as i16);
+        }
+    }
+
+    /// `Environment_PlayStormNatureAmbience`: the scene's nature ambience (the night market's
+    /// without one), its rain and lightning channels on.
+    pub fn environment_play_storm_nature_ambience(&mut self) {
+        use crate::audio::{CHANNEL_IO_PORT_1, NATURE_CHANNEL_LIGHTNING, NATURE_CHANNEL_RAIN, NATURE_ID_MARKET_NIGHT, NATURE_ID_NONE};
+        let id = self.sequence_ctx.nature_ambience_id;
+        self.audio.play_nature_ambience_sequence(if id == NATURE_ID_NONE { NATURE_ID_MARKET_NIGHT } else { id });
+        self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_RAIN, CHANNEL_IO_PORT_1, 1);
+        self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_LIGHTNING, CHANNEL_IO_PORT_1, 1);
+    }
+
+    /// `Environment_StopStormNatureAmbience`: the rain and lightning channels off; while the
+    /// ambience plays, the scene's music again from the rain's (`NA_BGM_NATURE_SFX_RAIN`).
+    pub fn environment_stop_storm_nature_ambience(&mut self) {
+        use crate::audio::{CHANNEL_IO_PORT_1, NA_BGM_NATURE_AMBIENCE, NA_BGM_NATURE_SFX_RAIN, NATURE_CHANNEL_LIGHTNING, NATURE_CHANNEL_RAIN, SEQ_PLAYER_BGM_MAIN};
+        self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_RAIN, CHANNEL_IO_PORT_1, 0);
+        self.audio.set_nature_ambience_channel_io(NATURE_CHANNEL_LIGHTNING, CHANNEL_IO_PORT_1, 0);
+        if self.audio.audio_get_active_seq_id(SEQ_PLAYER_BGM_MAIN) == NA_BGM_NATURE_AMBIENCE {
+            self.save.seq_id = NA_BGM_NATURE_SFX_RAIN as u8;
+            self.environment_play_scene_sequence();
         }
     }
 }

@@ -1045,17 +1045,23 @@ impl eframe::App for App {
                 }
             }
         }
-        // Each game frame's hand-over to the audio side: its ops, and the view back.
+        // Each game frame's hand-over to the audio side: the view back before it (once the audio
+        // thread has run the last frame's ops), its ops after it.
         let audio = &self.audio;
-        self.world.advance_with(dt, |a| match audio {
-            Some(out) => {
-                out.send_ops(a.take_ops());
-                a.set_view(out.take_view());
-            }
-            None => {
-                a.take_ops();
-            }
-        });
+        self.world.advance_with(
+            dt,
+            |a| {
+                if let Some(out) = audio {
+                    a.set_view(out.take_view());
+                }
+            },
+            |a| {
+                let ops = a.take_ops();
+                if let Some(out) = audio {
+                    out.send_ops(ops);
+                }
+            },
+        );
 
         // Sram_WriteSave wrote the cartridge: its file follows.
         if let Some(p) = &self.assets.sram_path

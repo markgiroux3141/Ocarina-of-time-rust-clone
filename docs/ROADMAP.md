@@ -165,6 +165,12 @@ milk crates, the sentries and their throw-out through the circle wipe (`Transiti
 gate guards and gates (Lon Lon's fence, Kakariko's), the pots, the torches, the moat's water
 camera (`Camera_Jump3`). Its exit run goes from the castle's road past Talon and the crates
 through the drain into the guards' courtyard; a second run is caught and thrown out.
+Milestone 3, the ocarina, is done ([ADR 0061](adr/0061-the-ocarina.md)): Player's ocarina, the
+message box's staff, notes and modes (free play, check, teach, playback), the ocarina's audio, the
+songs' effects (`Oceff_Wipe`, `_Wipe2`, `_Wipe3`, `_Wipe4`, `_Spot`, `_Storm`, `En_Okarina_Effect`),
+the Sun's Song's time, the fairy spots (`Shot_Sun`), the song spots (`En_Okarina_Tag`), and the
+cutscenes' ocarina texts. Its exit run plays Saria's Song (Navi calls, Saria talks), the Sun's Song
+(night to dawn) and the Song of Storms at the fairy spot (a fairy) in Hyrule Field.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -536,6 +542,12 @@ volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
    songs' effects (`Oceff_*`), `Shot_Sun` (BACKLOG #36), the Sun's Song's time, the cutscenes'
    ocarina text.
    - **Exit:** in Hyrule Field with the songs: Saria's Song, the Sun's Song, a fairy at `Shot_Sun`.
+   - **Done** (2026-10-12, ADR 0061): with `En_Okarina_Tag`, `Oceff_Wipe4` and the actor update's
+     ocarina freeze (`ACTOR_FLAG_UPDATE_DURING_OCARINA`); `En_Ma1`'s Epona's Song lesson, `En_Md`'s
+     check, `En_Gs`, `En_Box`'s song chests, `Obj_Timeblock` and `En_Kanban` hear the songs. The
+     scarecrows, the memory game and the frogs (BACKLOG #47), the fire arrows' item (#48), magic
+     (#49), the quest page's songs (#50), `En_Weather_Tag` and `En_Horse` (#51) left out.
+     `Route::Ocarina`, the `ocarina` golden.
 4. **The guards' courtyard and Zelda:** `Camera_Special6`, `En_Heishi1`, `En_Zl4`, the legend,
    the letter, `Demo_Im`, the lullaby taught, Hyrule Field's layer 12; the draw configs of the
    castle (its water, BACKLOG #46), the courtyards and the Temple of Time.
