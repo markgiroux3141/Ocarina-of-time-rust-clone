@@ -28,6 +28,7 @@ echo    43  test-polish          GAME-04b's polish tests: the cutscene splines, 
 echo     4  golden-check         The render and trace regression
 echo     5  import               Re-import the asset pack
 echo    44  decomp-check         GAME-05's decomp upgrade check: a loose import against the old decomp's
+echo   113  coverage             The coverage page: the game's actors by phase, against what's ported
 echo    45  test-damage          GAME-05's damage and health tests: the hit kinds, death and the game over, the Deku Baba
 echo    50  test-combat          GAME-05's combat tests: the guard, the battle camera, the effects, the Keese, the withered Deku Baba
 echo    53  test-enemies         GAME-05's other enemies' tests: the Deku Scrubs, the Skulltulas, Gohma's larvae
@@ -175,6 +176,7 @@ if "%pick%"=="41" set "script=test-title-cards"
 if "%pick%"=="42" set "script=test-nightmare"
 if "%pick%"=="43" set "script=test-polish"
 if "%pick%"=="44" set "script=decomp-check"
+if "%pick%"=="113" set "script=coverage"
 if "%pick%"=="45" set "script=test-damage"
 if "%pick%"=="46" set "script=game-deku-baba"
 if "%pick%"=="47" goto fairy

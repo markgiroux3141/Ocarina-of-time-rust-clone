@@ -2418,6 +2418,7 @@ dependencies = [
  "glam",
  "image",
  "log",
+ "oot_actors",
  "oot_extract",
  "oot_game",
  "oot_import",

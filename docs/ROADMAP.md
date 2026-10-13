@@ -12,7 +12,24 @@ The working rules don't change:
 
 Reorder freely. The dependencies are noted, and nothing here is a commitment.
 
-## Where things stand (2026-10-02)
+## The aim
+
+Decided 2026-10-13 ([ADR 0062](adr/0062-the-aim-master-quest-and-the-game-editor.md)):
+- **Replicate the whole game, and above all capture every game object and dynamic, so that we can
+  make our own version of the game with the editor.** The faithful port (the C's functions,
+  constants and bugs; tests from the C) is how the dynamics are captured exactly. What it serves
+  is a game whose every object and behaviour the editor can place, configure and play.
+- **Master Quest throughout:** every dungeon is the debug ROM's Master Quest dungeon (ADR 0028's
+  call for the Deku Tree, now for all of them).
+- **The game editor:** the overworld editor is the first mode of an editor for every part of the
+  game ("The game editor track", below).
+
+Where the plan goes from here: [The whole game](#the-whole-game-outline-2026-10-13) outlines
+Phases 9 to 20; [COVERAGE.md](COVERAGE.md) (generated) lists every scene's actors by phase against
+what's ported; [How a phase starts and how a milestone is done](#how-a-phase-starts-and-how-a-milestone-is-done)
+is the checklist every milestone follows.
+
+## Where things stand (2026-10-13)
 
 **Done:** Phases 0 to 4 (GAME-01, GAME-02 and GAME-03). Kokiri Forest plays with:
 - collisions, props, climbing, Z-targeting, doors and the prerendered interiors;
@@ -567,23 +584,96 @@ Pick these up when a milestone touches them, or as filler:
   and the skybox.
 - **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** ~~time passing, day/night~~ (GAME-06 milestone 3); weather.
-- **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; the ocarina modes.
+- **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; ~~the ocarina modes~~ (GAME-07 milestone 3).
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.
 - **Tools:** the `oot_extract::text` refactor onto `oot_import::text`.
-- **Faithfulness checks:** side-by-side captures against Project64 for each milestone's visuals, kept as a checklist in the phase doc.
+- **Faithfulness checks:** side-by-side captures against Project64 are left for a later polish pass (the user's call, 2026-10-01): milestones end with tests from the C, goldens and a hand-test list instead.
 
-## Beyond
+## The whole game (outline, 2026-10-13)
 
-The plan's later items, roughly in order:
-- ~~Hyrule Field~~ (Phase 7) and Kakariko, with Castle Town and Hyrule Castle (Phase 8,
-  decided 2026-10-09; Epona waits for her own phase);
-- the other dungeons;
-- the full message system (choices with items, the ocarina);
-- the pause menu in full.
+The rest of the game in the story's order, as phases. This is the order and the scope, not the
+split: each phase is surveyed and split into milestones when it starts (below), and the survey
+corrects the outline. [COVERAGE.md](COVERAGE.md) lists the actors each phase's scenes place, and
+which are ported; its phases come from `scripts/coverage.py`'s `SCENES` table, which changes with
+this outline. The dungeons are Master Quest's.
 
-Then breadth across the rest of the 427 actor overlays and 36 effect overlays, in the order scenes need them. And a parallel track for custom levels: glTF to a mod pack, and the decomp-free import for sharing.
+| Phase | Places | Dungeon and boss | What it brings | Exit |
+|---|---|---|---|---|
+| 8 (now) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 4 to 6 above: the courtyard's camera, Zelda and Impa, lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
+| 9 | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
+| 10 | Death Mountain Trail and summit, Goron City | Dodongo's Cavern; King Dodongo | Bombs (`En_Bom`, BACKLOG #33) and bomb flowers, the Goron's Bracelet, Darunia's dance, the summit's Great Fairy (the magic meter) | The Goron's Ruby |
+| 11 | Zora's River, Zora's Domain, Zora's Fountain, Lake Hylia | Jabu-Jabu's Belly; Barinade | Bottles (the fish, Ruto's letter), diving (the silver scale), Ruto carried, the boomerang, the frogs and the scarecrow (#47) | The Zora's Sapphire, then the Ocarina of Time at the moat |
+| 12 | The Temple of Time, the market's ruins, the Chamber of the Sages | | The Door of Time (#37), the Master Sword, adult Link throughout (models, items, the save's age), time travel back and forth, the Prelude of Light, the warp songs | Adult Link out of the Temple |
+| 13 | Lon Lon Ranch and Hyrule Field as an adult | | Riding Epona (`En_Horse` whole: the horse camera, jumps), Ingo's races | Epona won |
+| 14 | Kokiri Forest, the Lost Woods and the meadow as an adult; the graveyard (Dampé's race) | The Forest Temple; Phantom Ganon | The hookshot, the bow, the Minuet of Forest | The Forest Medallion |
+| 15 | Death Mountain Crater, Goron City as an adult | The Fire Temple; Volvagia | The Goron Tunic and heat, the Megaton Hammer, the Bolero of Fire | The Fire Medallion |
+| 16 | Zora's Domain frozen, Lake Hylia as an adult | The Ice Cavern; the Water Temple; Morpha | Iron boots, the Zora Tunic, blue fire, the longshot, the Serenade of Water, the lake's water | The Water Medallion |
+| 17 | Kakariko burning and as an adult | The Bottom of the Well (as a child); the Shadow Temple; Bongo Bongo | The Lens of Truth, hover boots, the Nocturne of Shadow | The Shadow Medallion |
+| 18 | Gerudo Valley, Gerudo's Fortress, the Haunted Wasteland, the Desert Colossus | The Gerudo Training Ground; the Spirit Temple (child and adult halves); Twinrova | The silver gauntlets, the mirror shield, the Requiem of Spirit, the carpenters freed, horseback archery | The Spirit Medallion |
+| 19 | Outside Ganon's Castle | Ganon's Castle (the six trials), the tower; Ganondorf, Ganon | The light arrows, the golden gauntlets, the collapse's escape, the ending and the credits | The credits |
+| 20 | Everywhere | | Breadth: the shops, the games (the shooting galleries, bombchu bowling, the treasure chest game, fishing, the diving game, the horse race), the Gold Skulltulas and their house, the trade sequences (the masks, Biggoron's sword), the Great Fairies' spells (magic, #49), the grottos, heart pieces, the scarecrows' songs, the pause menu in full (#50: the quest page, the world map), the minimap, the title screen and the file select | Everything optional reachable |
 
-The custom-levels track has started (ADR 0035): the overworld builder and editor (`crates/tools/overworld`,
-`crates/tools/overworld_editor`) make Kokiri Forest-style levels, and `oot_sandbox --level` plays them with child Link
-in the spikes' view. Next on it: the level as a mod pack entered by `Play_Init`, actors placed in the editor, hookshot
-targets, exits, and rooms for big levels.
+**Systems that cut across the phases** (each comes with the first phase that needs it, then grows):
+- **Link's items:** bombs (10), the boomerang and bottles (11), the Master Sword and adult items (12),
+  hookshot and bow (14), hammer (15), iron boots and longshot (16), lens and hover boots (17),
+  gauntlets and mirror shield (18), light arrows (19), magic and the spells (10, then 20).
+- **Adult Link** (12): adult Link already moves and draws (the spikes' Link was adult; his
+  meshes are the pack's `player/adult/...`), but every route so far is a child's. Adult Link's
+  items, tunics and the save's age switch come with Phase 12.
+- **Epona** (9 as a foal, 13 ridden): `En_Horse` is one of the largest actors; its camera and
+  Player's riding actions come with it.
+- **Bosses and their rooms** (Phases 10, 11 and 14 to 19, one each, two in 19): each its own milestone, as Gohma was.
+- **The pause menu and the HUD:** the equipment and quest pages, the world map, the minimap, the
+  title and file select (Phase 20, earlier where a phase needs a part).
+- **The scene draw configs** (BACKLOG #46 and its kind): each with the phase whose scenes use it.
+
+## The game editor track
+
+Alongside the phases, at the user's pace: the editor grows from the overworld builder into the
+game editor (ADR 0062). The game's phases feed it: every actor ported is one the editor can place.
+In stages:
+
+| Stage | What | Where it's planned | State |
+|---|---|---|---|
+| E1 | The overworld builder: regions, kits and themes, paths, stairs, ceilings | ADR 0035, ADR 0036, [OVERWORLD-EDITOR-IDEAS.md](OVERWORLD-EDITOR-IDEAS.md) | Built (2026-10-05 to 10-11) |
+| E2 | Play in the real game: a level is a scene of its own, entered by `Play_Init` | [EDITOR-PLAY-IN-THE-GAME.md](EDITOR-PLAY-IN-THE-GAME.md) steps 1 to 4 | Built (2026-10-11) |
+| E3 | The actors tab: any ported actor placed, its params and flags as named fields (from the Params and Flags paragraphs; the pass over the actors ported before ADR 0062, BACKLOG #52), its objects added to the room, flags handed out | EDITOR-PLAY-IN-THE-GAME.md, "Actors" | Next on the track |
+| E4 | Exits and rooms: exits between levels and the game's scenes, transition actors, levels of several rooms | EDITOR-PLAY-IN-THE-GAME.md, "outside this plan" | Planned |
+| E5 | Inside and down: seeing inside, storeys, dungeon mode (rooms and portals, the generated map), flags wiring, the completability check | [EDITOR-ROOFS-STOREYS-DUNGEONS.md](EDITOR-ROOFS-STOREYS-DUNGEONS.md) steps 2 to 5 | Step 1 built |
+| E6 | A scene's data: paths, cameras (bg cameras by polygon), water boxes, lights and the environment, the sky, the clock, music and ambience, the restrictions | To plan | |
+| E7 | Content: texts (the message table), cutscenes (a script's timeline), chests, drops and shops | To plan | |
+| E8 | The game's own scenes in the editor: Kokiri Forest (or any scene) opened as a document (its rooms as fixed meshes, with everything above editable), changed and played | To plan; the step that makes "our own version of the game" | |
+| E9 | Sharing: a project of many scenes as a mod pack, glTF in, the decomp-free import | ADR 0035 | |
+
+E6 to E9 get their plans (and ADRs) when the track reaches them; each needs the pack's records for
+its kind of data to be complete, which the phases make so.
+
+## How a phase starts and how a milestone is done
+
+**A phase starts with a survey:** the C functions and their line counts, what's already ported,
+the scenes and actors the story's route meets (COVERAGE.md's row for the phase is the start),
+the systems it needs; then a report, a proposed split into milestones, and the user's calls on
+anything that's theirs (asked, not assumed). The phase doc (`docs/GAME-NN-<name>.md`) records it.
+
+**A milestone is done when:**
+1. Its functions are ported whole (or as far as the user agreed), with the decomp's names, every
+   constant cited and faithful bugs marked `@bug (game)`; new actors registered in
+   `oot_actors/src/lib.rs`'s four places and matching the actor table.
+2. Each new actor's module docs end with its **Params** and **Flags** paragraphs (ADR 0062).
+3. Its tests have expectations from the C, and a short scripted exit run is a golden (a trace and
+   screenshots), the same over two runs. Every changed golden hash is proven by taking its cause
+   out, and logged in `golden/README.md` field by field, with the outputs saved before recording.
+4. `cargo test --release --workspace` and `cargo test -p layering` pass; the release build has no
+   warnings.
+5. Scripts `test-`, `game-` and `sandbox-<name>.bat` (CRLF) are in `scripts/run/menu.bat` with
+   rows in `scripts/run/README.md`.
+6. The docs: the phase doc's milestone section (the answer, scripts, what was built, results,
+   decisions, known gaps, fixes, how to check, by hand), ADRs for its decisions, BACKLOG rows for
+   what's left, ROADMAP's status, and COVERAGE.md refreshed (`scripts\run\coverage.bat`).
+7. It ends with the check commands and a concrete hand-test list (keys and places, no emulator
+   side-by-side), and is committed and pushed only when the user asks.
+## Beyond the game
+
+When the outline above is played through: the game editor's later stages (E6 to E9) for making
+our own version, and the decomp-free import for sharing it. The custom-levels track itself is
+under "The game editor track" above.

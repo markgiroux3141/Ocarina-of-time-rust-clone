@@ -2,7 +2,7 @@
 //! Produces statistics and JSON reports only.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -89,6 +89,11 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         layer: usize,
     },
+    /// Every scene's actors, for docs/COVERAGE.md (`scripts/coverage.py`): each scene and layer's
+    /// placed actors (rooms, transition actors) by name and count, its draw config and whether
+    /// that's ported, every actor overlay in the table, and the overlays `oot_actors` ports. Writes
+    /// `<out>/census.json`.
+    Census,
     /// The asset pack's record names that start with a prefix (e.g. `mesh/object_kusa/`); meshes
     /// with their triangle count and unresolved segment references.
     PackLs {
@@ -173,6 +178,7 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Info => info(&project),
         Cmd::SceneInfo { scene, layer } => scene_info(&scene, layer),
+        Cmd::Census => census(&cli.out),
         Cmd::PackLs { prefix } => pack_ls(&prefix),
         Cmd::Sfx { query } => sfx(&query),
         Cmd::Cutscene { name } => cutscene(name.as_deref()),
@@ -941,6 +947,57 @@ fn dl_dump(p: &Project, file: &str, symbol: &str) -> Result<()> {
             }
         }
     }
+    Ok(())
+}
+
+fn census(out: &Path) -> Result<()> {
+    let pack = oot_game::pack::GamePack::open_default()?;
+    let at = pack.actor_table()?;
+    let st = pack.scene_table()?;
+    let mut scenes = Vec::new();
+    for e in &st.scenes {
+        let sd = match pack.scene(&e.file) {
+            Ok(sd) => sd,
+            Err(err) => {
+                log::warn!("{}: {err:#}", e.file);
+                continue;
+            }
+        };
+        let mut layers = Vec::new();
+        for (li, ld) in sd.layers.iter().enumerate() {
+            let mut actors: BTreeMap<String, usize> = BTreeMap::new();
+            for t in &ld.transition_actors {
+                *actors.entry(at.name(t.id)).or_default() += 1;
+            }
+            for key in &ld.rooms {
+                let r = pack.room(key)?;
+                for a in &r.actors {
+                    *actors.entry(at.name(a.id)).or_default() += 1;
+                }
+            }
+            layers.push(serde_json::json!({ "layer": li, "actors": actors }));
+        }
+        scenes.push(serde_json::json!({
+            "id": e.id,
+            "file": e.file,
+            "enum": e.enum_name,
+            "draw_config": e.draw_config,
+            "draw_config_ported": oot_game::scene_table::is_ported(&e.draw_config),
+            "layers": layers,
+        }));
+    }
+    let overlays: Vec<serde_json::Value> = at
+        .actors
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| !a.name.is_empty())
+        .map(|(i, a)| serde_json::json!({ "id": i, "name": a.name, "enum": a.enum_name, "internal": a.internal }))
+        .collect();
+    let ported: Vec<&str> = oot_actors::PROFILES.iter().map(|p| p.name).collect();
+    let json = serde_json::json!({ "scenes": scenes, "overlays": overlays, "ported": ported });
+    let path = out.join("census.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&json)?)?;
+    println!("{}: {} scenes, {} overlays, {} ported", path.display(), scenes.len(), overlays.len(), ported.len());
     Ok(())
 }
 
