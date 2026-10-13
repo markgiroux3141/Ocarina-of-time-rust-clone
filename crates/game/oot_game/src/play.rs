@@ -1464,14 +1464,14 @@ impl PlayState {
         self.change_viewpoint_bg_cam_index();
     }
 
-    /// `Play_CamIsNotFixed`: not a prerendered room, not a fixed-camera scene (the toggle, the
-    /// fixed and the market kinds; the shop kind is covered by its rooms), and not the castle
-    /// courtyard.
     /// The loaded scene's title file (`play->loadedScene->titleFile`), empty for none.
     pub fn title_file(&self) -> String {
         self.assets.as_ref().and_then(|a| a.scenes.scenes.get(self.scene_id as usize)).map(|s| s.title_file.clone()).unwrap_or_default()
     }
 
+    /// `Play_CamIsNotFixed`: not a prerendered room, not a fixed-camera scene (the toggle, the
+    /// fixed and the market kinds; the shop kind is covered by its rooms), and not the castle
+    /// courtyard.
     pub fn cam_is_not_fixed(&self) -> bool {
         use crate::scene::*;
         /// `SCENE_CASTLE_COURTYARD_GUARDS_DAY`.

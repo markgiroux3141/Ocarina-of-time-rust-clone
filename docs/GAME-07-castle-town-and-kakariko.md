@@ -541,6 +541,11 @@ proved by the old rule giving back all 151).
   Player's floor light setting (`Environment_ChangeLightSetting`) wasn't ported: it is now, and the
   Temple of Time's inside takes its floors' settings 2 and 3 (test
   `player_takes_the_light_setting_of_the_floor_he_stands_on`; the goldens unchanged).
+  **Removed after all (2026-10-13)**: the user played the real game and there's no such haze, while
+  here Link and the gossip stones came out a third to three quarters grey against unfogged
+  pictures. A prerendered room (`ROOM_SHAPE_TYPE_IMAGE`) now draws with no fog (`rooms::lighting`),
+  a departure from `Play_Draw`'s code; draws with fog of their own (the colour filters, the hit
+  flash) keep it. Only golden `field/shot.png` changed (Castle Town's entrance).
 
 - **`En_Dog`'s colour** was baked on segment 13, which holds the skeleton's matrices: the import
   failed; now segment 12, as a prelude.
@@ -721,8 +726,8 @@ bytes over two runs. Logged in [golden/README.md](../golden/README.md): 161 hash
   ocarina from a C button** (#45; the ocarina is milestone 3), **the glows** (#31), **the splash**
   (#40), **Player's lift** (#4: the pots' lifted and thrown states wait for it), **masks** (#39:
   the Keaton Mask is sold but reactions give 0), **`En_Bom`** (#33).
-- **The fixed-camera fog** (outside the Temple of Time) looks heavy: checked against the C, kept;
-  to compare with the real game (#42).
+- ~~**The fixed-camera fog** (outside the Temple of Time) looks heavy~~: removed 2026-10-13, see
+  above (#42).
 - **The castle's water and waterfall don't move** (found by hand, 2026-10-12): its scene draw config
   (`SDC_HYRULE_CASTLE`, the scroll on segments 8 and 9) isn't ported, so its materials keep their
   import-time values. Folded into milestone 4, with the other Phase 8 configs in milestones 4 to 6

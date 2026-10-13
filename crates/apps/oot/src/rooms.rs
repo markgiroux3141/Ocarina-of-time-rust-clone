@@ -32,12 +32,20 @@ pub fn load_all_rooms(pack: &GamePack, env_tables: &EnvTables, name: &str, child
 }
 
 /// The renderer's lights and fog for the scene's environment.
-pub fn lighting(s: &SceneState) -> Lighting {
+///
+/// Departure from the game: in a prerendered room (`ROOM_SHAPE_TYPE_IMAGE`) there's no fog.
+/// `Play_Draw` sets the scene's fog there as anywhere, and those scenes' settings fog close
+/// in (the Temple of Time's outside: near 970, far 3000, light grey, so Link a few hundred
+/// units from the fixed camera is a third grey) while the pictures behind take none. That
+/// isn't what the game looks like when played, so the actors and the room's own meshes
+/// there draw unfogged, like the pictures. Draws with fog of their own (the colour filters,
+/// the hit flash) keep it.
+pub fn lighting(play: &PlayState, s: &SceneState) -> Lighting {
     let l = &s.lights;
     let c = |v: [u8; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32) / 255.0;
     let d = |v: [i8; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32);
-    // Play_SetFog: Gfx_SetFog2(fogColor, 0, fogNear, 1000).
-    let (fm, fo) = env::fog_factor(l.fog_near as i32, 1000);
+    // Play_SetFog: Gfx_SetFog2(fogColor, 0, fogNear, 1000); a zero factor is no fog.
+    let (fm, fo) = if play.cam_room().image { (0, 0) } else { env::fog_factor(l.fog_near as i32, 1000) };
     Lighting {
         dir: d(l.light1_dir),
         color: c(l.light1_color),

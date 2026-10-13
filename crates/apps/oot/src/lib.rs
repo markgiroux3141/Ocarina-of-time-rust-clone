@@ -801,8 +801,8 @@ pub fn draw_frame(
     }
     let lines = if show_wire { scene.wire.clone() } else { Vec::new() };
     let (light, clear) = match &play.scene {
-        Some(s) if s.all_rooms => (rooms::lighting(s), rooms::clear_color(s)),
-        Some(s) => (rooms::lighting(s), [0.0, 0.0, 0.0, 1.0]),
+        Some(s) if s.all_rooms => (rooms::lighting(play, s), rooms::clear_color(s)),
+        Some(s) => (rooms::lighting(play, s), [0.0, 0.0, 0.0, 1.0]),
         None => (Lighting::default(), CLEAR),
     };
     let mut lists = DrawLists::default();
