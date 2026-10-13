@@ -84,7 +84,7 @@ fn entry_key(s: &SceneState, room: usize, entry: usize, xlu: bool) -> String {
 
 /// `Room_Draw` for this view: each drawn room's entries in shape order, cullable shapes z-sorted
 /// and depth-culled (`Room_DrawCullable`), OPA and XLU, with the draw config's segment values
-/// for this frame. Returns how many entries were drawn.
+/// and segment textures for this frame. Returns how many entries were drawn.
 pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut DrawLists) -> usize {
     let far = fog_far(s);
     let vp = gu_perspective(FOVY, 4.0 / 3.0, Z_NEAR, far) * view;
@@ -105,6 +105,7 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
                 if d.as_ref().is_some_and(|d| !d.batches.is_empty()) {
                     let mut cmd = DrawCmd::new(MeshKey::named(entry_key(s, room.index, i, k == 1)), Mat4::IDENTITY);
                     cmd.params.segments = s.segments.as_ref().map(|v| v[k].clone());
+                    cmd.params.texture_images = s.segment_textures[k].clone();
                     list.push(cmd);
                 }
             }

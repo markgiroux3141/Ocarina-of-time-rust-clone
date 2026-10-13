@@ -665,3 +665,77 @@ impl SceneDraw {
         })
     }
 }
+
+/// Kakariko's windows: what segment 8 holds there (`sKakarikoWindowTextures`), the only thing the
+/// village's rooms load from it.
+const KAKARIKO_WINDOW_SOURCE: u32 = 0x0800_0000;
+
+/// A departure from the game's data (the user's call, 2026-10-13): Kakariko's window panels stand
+/// 6 to 10 units in front of their walls in its rooms, which looks like a window
+/// floating off the house. Each panel (the triangles textured from segment 8, grouped by their
+/// plane) is moved towards the wall right behind it by half the gap: near enough not to float,
+/// far enough not to fight the wall for depth. Panels with no wall behind them stay put.
+pub fn kakariko_windows_halfway(file: &str, meshes: &mut [RoomMesh]) {
+    if file != "spot01_scene" {
+        return;
+    }
+    let is_window = |d: &DrawList, material: usize| d.materials[material].textures.iter().flatten().any(|t| d.textures[t.image].source_addr == Some(KAKARIKO_WINDOW_SOURCE));
+    // The walls: every other triangle of the scene's rooms.
+    let mut walls: Vec<[Vec3; 3]> = Vec::new();
+    for m in meshes.iter() {
+        for d in m.entries.iter().flat_map(|e| [e.opa.as_ref(), e.xlu.as_ref()]).flatten() {
+            for b in d.batches.iter().filter(|b| !is_window(d, b.material)) {
+                walls.extend(b.vertices.chunks_exact(3).map(|t| [t[0].pos, t[1].pos, t[2].pos]));
+            }
+        }
+    }
+    let normal = |t: &[Vec3; 3]| (t[1] - t[0]).cross(t[2] - t[0]).normalize_or_zero();
+    // The gap from a point on a panel facing `n` to the wall behind it: the nearest wall triangle
+    // facing the same way, under the point.
+    let gap = |p: Vec3, n: Vec3| -> Option<f32> {
+        let mut best: Option<f32> = None;
+        for w in &walls {
+            let wn = normal(w);
+            if wn.dot(n) < 0.95 {
+                continue;
+            }
+            let d = (p - w[0]).dot(wn);
+            if !(0.5..30.0).contains(&d) {
+                continue;
+            }
+            let q = p - wn * d;
+            let inside = (0..3).all(|i| (w[(i + 1) % 3] - w[i]).cross(q - w[i]).dot(wn) >= -0.01);
+            if inside && best.is_none_or(|b| d < b) {
+                best = Some(d);
+            }
+        }
+        best
+    };
+    for e in meshes.iter_mut().flat_map(|m| m.entries.iter_mut()) {
+        for d in [e.opa.as_mut(), e.xlu.as_mut()].into_iter().flatten() {
+            for bi in 0..d.batches.len() {
+                if !is_window(d, d.batches[bi].material) {
+                    continue;
+                }
+                // The batch's panels by plane (the normal and the plane's offset, rounded).
+                let tris: Vec<[Vec3; 3]> = d.batches[bi].vertices.chunks_exact(3).map(|t| [t[0].pos, t[1].pos, t[2].pos]).collect();
+                let mut panels: HashMap<(i32, i32, i32, i32), Vec<usize>> = HashMap::new();
+                for (i, t) in tris.iter().enumerate() {
+                    let n = normal(t);
+                    let key = ((n.x * 100.0).round() as i32, (n.y * 100.0).round() as i32, (n.z * 100.0).round() as i32, n.dot(t[0]).round() as i32);
+                    panels.entry(key).or_default().push(i);
+                }
+                for idx in panels.values() {
+                    let n = normal(&tris[idx[0]]);
+                    let gaps: Vec<f32> = idx.iter().filter_map(|&i| gap((tris[i][0] + tris[i][1] + tris[i][2]) / 3.0, n)).collect();
+                    let Some(g) = gaps.iter().copied().reduce(f32::min) else { continue };
+                    for &i in idx {
+                        for v in &mut d.batches[bi].vertices[i * 3..i * 3 + 3] {
+                            v.pos -= n * (g * 0.5);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

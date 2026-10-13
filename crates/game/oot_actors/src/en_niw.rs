@@ -16,9 +16,11 @@
 //! (`func_80033C30`), and the feathers (`EnNiw_DrawEffects`); from baked meshes
 //! (docs/adr/0012-actor-bakes.md).
 //!
+//! Carried (`Actor_OfferCarry`, Player's lift), it flaps over Link's head and slows his fall
+//! (Player's glide, `Player_UpperAction_CarryActor`); thrown, it flutters down.
+//!
 //! Not ported here: the splash and ripples in water (`EffectSsGSplash`, `EffectSsGRipple`: the
-//! effects aren't ported), and Player's lift (`Actor_OfferCarry` offers it; Player doesn't take
-//! it yet, so it's never carried).
+//! effects aren't ported).
 
 use std::sync::Arc;
 

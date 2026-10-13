@@ -513,6 +513,8 @@ pub fn scene(level: &Level, lights: EnvLights, child: bool) -> SceneState {
         lights,
         draw: DrawConfigState { child, ..Default::default() },
         segments: None,
+        segment_textures: Default::default(),
+        texture_cache: Default::default(),
         all_rooms: true,
     }
 }

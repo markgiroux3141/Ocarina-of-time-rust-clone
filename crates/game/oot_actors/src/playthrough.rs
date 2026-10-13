@@ -394,6 +394,16 @@ pub enum Step {
     LullabyPlayed,
     /// Impa's goodbye in Hyrule Field over: Link at `ENTR_HYRULE_FIELD_17`.
     ImpaGone,
+    /// A cucco lifted and carried (Player's `heldActor`).
+    CuccoLifted,
+    /// A cucco thrown into Anju's pen.
+    CuccoPenned,
+    /// Landed from a cucco's glide.
+    Glided,
+    /// Zelda's Letter shown to Kakariko's gate guard, his texts read.
+    LetterShown,
+    /// Kakariko's gate to Death Mountain open.
+    GateOpen,
 }
 
 impl Step {
@@ -534,6 +544,11 @@ impl Step {
             Step::LullabyCs => "lullaby_cs",
             Step::LullabyPlayed => "lullaby_played",
             Step::ImpaGone => "impa_gone",
+            Step::CuccoLifted => "cucco_lifted",
+            Step::CuccoPenned => "cucco_penned",
+            Step::Glided => "glided",
+            Step::LetterShown => "letter_shown",
+            Step::GateOpen => "gate_open",
         }
     }
 }
@@ -674,6 +689,83 @@ pub enum Route {
     /// Zelda (GAME-07 milestone 4): from Zelda's courtyard's entrance (`castle-courtyard`), her talk
     /// through the legend and the window to her letter.
     ZeldaTalk,
+    /// Kakariko (GAME-07 milestone 5): from its entrance by day with Zelda's Letter
+    /// (`kakariko-letter`), its intro, three cuccos carried into Anju's pen (the third glided off a
+    /// roof), and the letter shown to the gate guard: the gate to Death Mountain opens.
+    Kakariko,
+}
+
+/// Anju's pen (`func_80ABA244`: |x - 330| < 90, |z - 1610| < 190): fenced all round (its north
+/// side at z 1400, its east at x 441), so a cucco is thrown over the north fence from just
+/// outside it.
+const PEN_FRONT: Vec3 = Vec3::new(330.0, 80.0, 1350.0);
+const PEN_THROW_AT: Vec3 = Vec3::new(330.0, 80.0, 1600.0);
+
+/// `Route::Kakariko`'s tasks. Kakariko's floors (from the collision): the way in from the west
+/// falls from 138 to the village's 0; the pen and the south are at 80; a terrace at 200 north of
+/// the middle, reached up a ramp along z -25 from x -300 west to x -700; a landing at 320 north
+/// of it (up the ramps at x -150 to -50), and the gate's stairs to 400. The low roof south of the
+/// watchtower (x 50 to 300, z -50 to 320, ridge 288) joins the terrace at its north eave (213).
+fn kakariko_tasks() -> Vec<Task> {
+    vec![
+        // Kakariko's intro (gKakarikoVillageIntroCs, EVENTCHKINF_A3): Link walks in.
+        Task::Settle(None),
+        // Down the way in to its first cucco (-1697, 80, 870: sKakarikoPosList[0]).
+        Task::Walk(vec![Vec3::new(-2000.0, 125.0, 1000.0)]),
+        Task::Lift(Vec3::new(-1697.0, 80.0, 870.0), Step::CuccoLifted),
+        // Carried down into the village, north of the house at x -700 to -400 (z 650 to 950), up
+        // the ramp at x 0 (z 1000 to 1100) to the south's 80, and east to the pen's north fence.
+        Task::Walk(vec![
+            Vec3::new(-1300.0, 30.0, 700.0),
+            Vec3::new(-800.0, 0.0, 500.0),
+            Vec3::new(0.0, 0.0, 900.0),
+            Vec3::new(0.0, 80.0, 1150.0),
+            Vec3::new(100.0, 80.0, 1260.0),
+            PEN_FRONT,
+        ]),
+        Task::Throw(PEN_THROW_AT, Step::CuccoPenned),
+        // The cucco east of the pen (796, 80, 1639: sKakarikoPosList[2]), back round to the fence.
+        Task::Lift(Vec3::new(796.0, 80.0, 1639.0), Step::CuccoLifted),
+        Task::Walk(vec![Vec3::new(560.0, 80.0, 1380.0), PEN_FRONT]),
+        Task::Throw(PEN_THROW_AT, Step::CuccoPenned),
+        // North across the village to the ramp's foot, up it west, onto the terrace, up to the
+        // landing below the gate's stairs, to the cucco there (57, 320, -673).
+        Task::Walk(vec![
+            Vec3::new(100.0, 80.0, 1250.0),
+            Vec3::new(-150.0, 0.0, 600.0),
+            Vec3::new(-300.0, 0.0, -25.0),
+            Vec3::new(-700.0, 200.0, -25.0),
+            Vec3::new(-600.0, 200.0, -200.0),
+            Vec3::new(-100.0, 200.0, -300.0),
+            Vec3::new(-100.0, 300.0, -560.0),
+        ]),
+        Task::Lift(Vec3::new(57.0, 320.0, -673.0), Step::CuccoLifted),
+        // Down onto the terrace, east of the watchtower onto the low roof, over its ridge and off
+        // its south edge: the glide down to the village, then south to the pen.
+        Task::Walk(vec![Vec3::new(-100.0, 300.0, -520.0), Vec3::new(-50.0, 200.0, -300.0), Vec3::new(170.0, 200.0, -170.0), Vec3::new(170.0, 213.0, -40.0), Vec3::new(170.0, 288.0, 120.0)]),
+        Task::Glide(vec![Vec3::new(170.0, 212.0, 300.0), Vec3::new(170.0, 0.0, 460.0)], Step::Glided),
+        Task::Walk(vec![Vec3::new(0.0, 0.0, 900.0), Vec3::new(0.0, 80.0, 1150.0), Vec3::new(100.0, 80.0, 1260.0), PEN_FRONT]),
+        Task::Throw(PEN_THROW_AT, Step::CuccoPenned),
+        // Back north, up the ramp and the terrace, the landing, and east up the gate's stairs (320
+        // to 400 between x -200 and 0) to the guard.
+        Task::Walk(vec![
+            Vec3::new(100.0, 80.0, 1250.0),
+            Vec3::new(-150.0, 0.0, 600.0),
+            Vec3::new(-300.0, 0.0, -25.0),
+            Vec3::new(-700.0, 200.0, -25.0),
+            Vec3::new(-600.0, 200.0, -200.0),
+            Vec3::new(-100.0, 200.0, -300.0),
+            Vec3::new(-100.0, 300.0, -560.0),
+            Vec3::new(-200.0, 330.0, -800.0),
+            Vec3::new(-180.0, 345.0, -900.0),
+            Vec3::new(0.0, 390.0, -960.0),
+            Vec3::new(100.0, 400.0, -1050.0),
+        ]),
+        // The guard (-30, 400, -1298) facing south-east: Zelda's Letter on C-Left, his texts, the
+        // gate's sub camera.
+        Task::ShowItem(Who::GateGuard, Vec3::new(10.0, 400.0, -1200.0), 0, Step::LetterShown),
+        Task::WaitGate(Step::GateOpen),
+    ]
 }
 
 /// The emerald's cutscene chain after part 1 (`Cutscene_Command_Destination`'s terminators): each
@@ -994,6 +1086,7 @@ impl Route {
             Route::Ocarina => "ENTR_HYRULE_FIELD_0",
             Route::Zelda => "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0",
             Route::ZeldaTalk => "ENTR_CASTLE_COURTYARD_ZELDA_0",
+            Route::Kakariko => "ENTR_KAKARIKO_VILLAGE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1017,6 +1110,7 @@ impl Route {
             Route::CastleCaught => Some("castle-egg"),
             Route::Ocarina => Some("ocarina-songs"),
             Route::Zelda | Route::ZeldaTalk => Some("castle-courtyard"),
+            Route::Kakariko => Some("kakariko-letter"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1180,6 +1274,7 @@ impl Route {
             Route::Ocarina => "ocarina",
             Route::Zelda => "zelda",
             Route::ZeldaTalk => "zelda-talk",
+            Route::Kakariko => "kakariko",
         }
     }
 
@@ -1214,6 +1309,7 @@ impl Route {
             Route::Ocarina => 3000,
             Route::Zelda => 20000,
             Route::ZeldaTalk => 12000,
+            Route::Kakariko => 8000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1226,13 +1322,24 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko].into_iter().find(|r| r.script() == name)
     }
 }
 
 /// What the run does, one task at a time.
 #[derive(Debug, Clone)]
 enum Task {
+    /// Lift the cucco (`En_Niw`) nearest the point when the task starts: towards it until it
+    /// offers itself to Link's lift (Player's `interactRangeActor`), A, until he stands carrying it.
+    Lift(Vec3, Step),
+    /// Towards the point until Link faces it, then A: what he carries is thrown (a cucco always is:
+    /// `ACTOR_FLAG_THROW_ONLY`), until his hands are free and he stands.
+    Throw(Vec3, Step),
+    /// Through the points carrying a cucco: off an edge Link glides (Player's `minVelocityY` -2,
+    /// `Player_UpperAction_CarryActor`); the step on the frame he lands, then on through the rest.
+    Glide(Vec<Vec3>, Step),
+    /// Still until Kakariko's gate (`Bg_Gate_Shutter`) has slid open and the guard's texts are read.
+    WaitGate(Step),
     /// Idle until the transition is over and Link stands, then `SETTLE_FRAMES` more.
     Settle(Option<Step>),
     /// Steer into the floor of the exit to the entrance, until the transition starts; then
@@ -1501,6 +1608,8 @@ enum Who {
     Talon,
     /// Zelda (`En_Zl4`).
     Zelda,
+    /// Kakariko's gate guard (`En_Heishi2` type 5).
+    GateGuard,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -1560,6 +1669,8 @@ pub struct Playthrough {
     owl: Option<ActorHandle>,
     /// `Task::PushCrate`'s crate, kept once chosen.
     crate_handle: Option<ActorHandle>,
+    /// The cucco `Task::Lift` took, until `Task::Throw` throws it.
+    carried: Option<ActorHandle>,
     /// `Task::Ocarina`'s note frames, `Task::TalkThrough`'s choices answered.
     notes: usize,
     /// A cap on the run's length: its routes' caps added up.
@@ -1832,6 +1943,7 @@ impl Playthrough {
             .chain(zelda_tail())
             .collect(),
             Route::ZeldaTalk => [Task::Settle(None)].into_iter().chain(zelda_tail()).collect(),
+            Route::Kakariko => kakariko_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -1896,6 +2008,7 @@ impl Playthrough {
             reset: None,
             owl: None,
             crate_handle: None,
+            carried: None,
             notes: 0,
             max_frames: route.max_frames(),
         }
@@ -2292,6 +2405,24 @@ impl Playthrough {
                 _ => self.settle(w, step),
             },
             Task::Walk(points) => self.walk(w, &points, RUN),
+            Task::Lift(near, step) => self.lift(w, near, step),
+            Task::Throw(at, step) => self.throw(w, at, step),
+            Task::Glide(points, step) => self.glide(w, &points, step),
+            Task::WaitGate(step) => {
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some("Kakariko's gate never opened".into());
+                    return None;
+                }
+                // Slid open to x -89 (`func_80878300`), the guard's INFTABLE_76 set.
+                let open = w.save.get_inf_table(crate::bg_gate_shutter::INFTABLE_76)
+                    && w.actors.all().into_iter().any(|h| w.actors.downcast::<crate::bg_gate_shutter::BgGateShutter>(h).is_some_and(|g| g.actor.world_pos.x <= -89.0));
+                if open && w.message_state() == TEXT_STATE_NONE {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(if Self::text_waits(w) { self.press(BTN_A) } else { PadState::default() })
+            }
             Task::ClimbTo(top, step) => self.climb_to(w, top, step),
             Task::ShowItem(who, from, button, step) => self.show_item(w, who, from, button, step),
             Task::Ocarina(button, song, step) => self.play_song(w, button, song, step),
@@ -4704,6 +4835,128 @@ impl Playthrough {
         Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
     }
 
+    /// `Task::Lift`.
+    fn lift(&mut self, w: &PlayState, near: Vec3, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("the cucco near {near} never lifted (Link {:?})", w.player().action));
+            return None;
+        }
+        if self.carried.is_none() {
+            self.carried = w
+                .actors
+                .all()
+                .into_iter()
+                .filter(|&h| w.actors.downcast::<crate::en_niw::EnNiw>(h).is_some_and(|c| !c.actor.killed))
+                .min_by(|&a, &b| {
+                    let d = |h| w.actors.actor(h).map_or(f32::MAX, |c| c.world_pos.distance(near));
+                    d(a).total_cmp(&d(b))
+                });
+        }
+        let Some(h) = self.carried else {
+            self.failure = Some(format!("no cucco near {near}"));
+            return None;
+        };
+        let Some(c) = w.actors.actor(h) else {
+            self.failure = Some("the cucco went".into());
+            return None;
+        };
+        let p = w.player();
+        match self.sub {
+            0 => {
+                if p.interact_range_actor == Some(h) && p.state1 & crate::player::STATE1_11 == 0 {
+                    self.sub = 1;
+                    return Some(self.press(BTN_A));
+                }
+                let mag = if Self::xz_dist(p.actor.world_pos, c.world_pos) > 80.0 { RUN } else { SLOW };
+                Some(stick_towards(w, c.world_pos, mag))
+            }
+            _ => {
+                if p.held_actor == Some(h) && p.action == PA::StandingStill {
+                    self.finish(Some(step));
+                    return None;
+                }
+                if p.state1 & crate::player::STATE1_11 == 0 && p.held_actor.is_none() {
+                    // The A went to something else (a talk): try again.
+                    self.sub = 0;
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// `Task::Throw`.
+    fn throw(&mut self, w: &PlayState, at: Vec3, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 300 {
+            self.failure = Some(format!("never threw (Link {:?})", w.player().action));
+            return None;
+        }
+        let p = w.player();
+        match self.sub {
+            0 => {
+                let link = p.actor.world_pos;
+                let yaw = eng_math::atan2_s(at.z - link.z, at.x - link.x);
+                if (yaw.wrapping_sub(p.actor.shape_rot.y) as i32).abs() < 0x400 {
+                    self.sub = 1;
+                    return Some(self.press(BTN_A));
+                }
+                Some(stick_towards(w, at, SLOW))
+            }
+            _ => {
+                if p.held_actor.is_none() && p.action != PA::Throw && p.action != PA::PutDown {
+                    self.carried = None;
+                    self.finish(Some(step));
+                    return None;
+                }
+                if p.held_actor.is_some() && !matches!(p.action, PA::Throw | PA::PutDown) {
+                    return Some(self.press(BTN_A));
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// `Task::Glide`: `sub` counts the points passed; `tries` is 1 once Link is in the air.
+    fn glide(&mut self, w: &PlayState, points: &[Vec3], step: Step) -> Option<PadState> {
+        let p = w.player();
+        self.wait += 1;
+        if self.wait > 1200 {
+            self.failure = Some("the glide never came down".into());
+            return None;
+        }
+        if !p.grounded() {
+            if self.tries == 0 && p.held_actor.is_none() {
+                self.failure = Some("off the edge without the cucco".into());
+                return None;
+            }
+            self.tries = 1;
+        } else if self.tries == 1 {
+            self.tries = 2;
+            self.mark(step);
+        }
+        let link = p.actor.world_pos;
+        while self.sub < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
+            self.sub += 1;
+        }
+        if self.sub >= points.len() {
+            if self.tries == 1 {
+                // Still in the air: on towards the last point until he lands.
+                return Some(stick_towards(w, points[points.len() - 1], RUN));
+            }
+            if self.tries != 2 {
+                self.failure = Some("the glide's way ended without a glide".into());
+                return None;
+            }
+            self.tries = 0;
+            self.finish(None);
+            return None;
+        }
+        Some(stick_towards(w, points[self.sub], RUN))
+    }
+
     fn show_item(&mut self, w: &PlayState, who: Who, from: Vec3, button: usize, step: Step) -> Option<PadState> {
         let idle = PadState::default();
         let Some(h) = Self::find(w, who) else {
@@ -4714,7 +4967,8 @@ impl Playthrough {
         let p = w.player();
         let link = p.actor.world_pos;
         self.wait += 1;
-        if self.wait > 1500 {
+        // (Kakariko's gate guard's texts on the letter run some 1,400 frames.)
+        if self.wait > 3000 {
             self.failure = Some(format!("the item never shown to {who:?} (Link {:?} at {link})", p.action));
             return None;
         }
@@ -4751,7 +5005,10 @@ impl Playthrough {
                     self.finish(Some(step));
                     return None;
                 }
-                Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
+                // A at a box that waits, or at an event's (the gate guard's letter, his
+                // `func_80A53C0C`).
+                let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+                Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
             }
         }
     }
@@ -5184,6 +5441,7 @@ impl Playthrough {
             Who::Malon => w.actors.downcast::<crate::en_ma1::EnMa1>(h).is_some_and(|a| !a.actor.killed),
             Who::Talon => w.actors.downcast::<crate::en_ta::EnTa>(h).is_some_and(|a| !a.actor.killed),
             Who::Zelda => w.actors.downcast::<crate::en_zl4::EnZl4>(h).is_some_and(|a| !a.actor.killed),
+            Who::GateGuard => w.actors.downcast::<crate::en_heishi2::EnHeishi2>(h).is_some_and(|a| !a.actor.killed && a.ty == 5),
         })
     }
 

@@ -459,15 +459,22 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         }
     }
 
+    // An overlay's animations (`ovl_En_Sth`'s dances) point at the overlay's link-time KSEG0
+    // addresses: they're read from the overlay as RAM holds it at its link address.
+    let overlay_image = if is_overlay { segs.overlay_vram.get(&f.name).map(|&vram| (objects::ram_image_at(&data, vram), vram)) } else { None };
     for a in f.of_kind("Animation") {
-        if is_overlay {
-            t.skip("Animation", "in an overlay (relocated code pointers)");
-            continue;
-        }
+        let (adata, aseg, aoff) = match (is_overlay, &overlay_image) {
+            (false, _) => (data.clone(), seg, a.offset as usize),
+            (true, Some((img, vram))) => (img.clone(), (vram >> 24) as u8, (vram & 0x00FF_FFFF) as usize + a.offset as usize),
+            (true, None) => {
+                t.skip("Animation", "in an overlay with no VRAM in segments.csv");
+                continue;
+            }
+        };
         // The joint count: from the layout (the index table right before the header), else the
         // file's skeletons, largest first. Joint j reads the j-th index entry, so decoding for
         // a bigger skeleton gives a superset: a smaller one uses the first joints.
-        let mut counts: Vec<usize> = match objects::anim_joint_count(&data, seg, a.offset as usize) {
+        let mut counts: Vec<usize> = match objects::anim_joint_count(&adata, aseg, aoff) {
             Some(j) => vec![j],
             None => parsed.iter().map(|s| s.limbs.len() + 1).chain(skin_limbs.iter().map(|n| n + 1)).collect(),
         };
@@ -480,7 +487,7 @@ fn import_file(f: &AssetFile, segs: &ObjectSegments, files: &Files, w: &PackWrit
         let mut done = false;
         let mut last_err = None;
         for (k, &joints) in counts.iter().enumerate() {
-            match objects::parse_animation(&data, seg, a, joints - 1) {
+            match objects::parse_animation_at(&adata, aseg, aoff, joints - 1) {
                 Ok(anim) => {
                     w.put(&keys::anim(&f.name, &a.name), &anim)?;
                     t.ok("Animation");
@@ -780,7 +787,9 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
     let sd = SceneDraw::load(p, tables, file, layer)?;
     let state = bake_state(layer, sd.rooms.first().and_then(|r| r.time));
     let mut notes = BTreeSet::new();
-    let meshes = sd.build(p, tables, &state, &mut notes);
+    let mut meshes = sd.build(p, tables, &state, &mut notes);
+    // Kakariko's windows halfway to their walls (a departure, the user's call).
+    crate::room::kakariko_windows_halfway(file, &mut meshes);
     let mut rooms = Vec::new();
     for (ri, r) in sd.rooms.iter().enumerate() {
         let mesh = meshes.iter().find(|m| m.index == ri);

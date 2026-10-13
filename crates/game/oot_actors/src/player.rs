@@ -226,6 +226,18 @@ pub enum PlayRequest {
     /// `heldActor->parent = NULL`: Player lets go of what he held (`Player_DetachHeldActor`,
     /// `func_808350A4`'s shot).
     ReleaseHeld(ActorHandle),
+    /// `Player_Action_80846050` (and `_80846260`) on the lift's frame: `interactRangeActor->parent =
+    /// &this->actor`, and for the plain lift its floor, wall, ceiling and water flags cleared
+    /// (`bg_check_clear`).
+    Lift { actor: ActorHandle, bg_check_clear: u16 },
+    /// `func_8084409C` and `Player_Action_80846358`: what Player carried is thrown: `world.rot.y`,
+    /// `speed` and `velocity.y` set before he lets go.
+    Throw { actor: ActorHandle, yaw: i16, speed: f32, velocity_y: f32 },
+    /// `Player_Action_808464B0`: what Player carried is put down: `velocity.y` and `speed` 0.
+    PutDown(ActorHandle),
+    /// `Player_Action_80846120`: the heavy block thrown: `speed`, `velocity.y`, `gravity` and
+    /// `minVelocityY` set before Player lets go.
+    Launch { actor: ActorHandle, speed: f32, velocity_y: f32, gravity: f32, min_velocity_y: f32 },
     /// `Actor_Spawn(&play->actorCtx, play, ACTOR_EN_ARROW, pos, rot, params)`: a Deku nut thrown
     /// (`Player_Action_8084E604`).
     SpawnArrow { pos: Vec3, rot: [i16; 3], params: i16 },
@@ -422,6 +434,10 @@ pub mod group {
     pub const PULLING: usize = 0x24;
     pub const PULL_END: usize = 0x25;
     pub const WALK: usize = 1;
+    /// `PLAYER_ANIMGROUP_carryB`, `_throw`, `_put` (`player.h`: 0x0D, 0x1D, 0x1E).
+    pub const CARRY_B: usize = 0x0D;
+    pub const THROW: usize = 0x1D;
+    pub const PUT: usize = 0x1E;
     pub const RUN: usize = 2;
     pub const DAMAGE_RUN: usize = 3;
     pub const HEAVY_RUN: usize = 4;
@@ -581,6 +597,21 @@ pub enum Action {
     ExchangeItem,
     /// `Player_Action_8084279C`: the Magic Bean held over its soil, then Player's items again.
     BeanCheckWait,
+    /// `Player_Action_80846050`: lifting what `interactRangeActor` is (`PLAYER_ANIMGROUP_carryB`),
+    /// taking it on frame 4.
+    Lift,
+    /// `Player_Action_80846120`: lifting and throwing a `Bg_Heavy_Block` (the gold gauntlets).
+    HeavyLift,
+    /// `Player_Action_80846260`: lifting a silver rock (`En_Ishi` type 1, the silver gauntlets).
+    SilverLift,
+    /// `Player_Action_80846358`: throwing the silver rock.
+    SilverThrow,
+    /// `Player_Action_80846408`: tugging at a bush or a Bomb Flower too heavy to pull up.
+    NoCarry,
+    /// `Player_Action_808464B0`: putting down what Player carries.
+    PutDown,
+    /// `Player_Action_80846578`: throwing what Player carries.
+    Throw,
 }
 
 /// `D_80854870`: the push's slips (`ANIMSFX_DATA(ANIMSFX_TYPE_FLOOR, 3)`, `-(.., 21)`).
@@ -627,6 +658,23 @@ const NA_SE_PL_PUT_OUT_ITEM: u16 = 0x0877;
 const ACTOR_BG_HEAVY_BLOCK: i16 = 0x0092;
 /// `SPEED_MODE_LINEAR` (`Player_GetMovementSpeedAndYaw`'s `speedMode`).
 const SPEED_MODE_LINEAR: f32 = 0.0;
+/// `SPEED_MODE_CURVED`.
+const SPEED_MODE_CURVED: f32 = 0.018;
+/// `ACTOR_*` (`actor_table.h`) that Player's lift tells apart.
+const ACTOR_EN_NIW: i16 = 0x0019;
+const ACTOR_EN_BOMBF: i16 = 0x004C;
+const ACTOR_BG_TOKI_SWD: i16 = 0x006C;
+const ACTOR_EN_RU1: i16 = 0x00A1;
+const ACTOR_EN_BOM_CHU: i16 = 0x00DA;
+const ACTOR_EN_KUSA: i16 = 0x0125;
+const ACTOR_EN_ISHI: i16 = 0x014E;
+/// `NA_SE_PL_THROW` (`playerbank_table.h`: 0x83A).
+const NA_SE_PL_THROW: u16 = 0x083A;
+/// The buttons that throw or put down what Player carries (`Player_ActionHandler_9`, the
+/// cucco's throw in the air): A, B, C-Left, C-Down, C-Right.
+const CARRY_RELEASE_BUTTONS: u16 = BTN_A | eng_input::pad::BTN_B | eng_input::pad::BTN_CLEFT | eng_input::pad::BTN_CDOWN | eng_input::pad::BTN_CRIGHT;
+/// The floor, wall, ceiling and water flags a lifted actor loses (`Player_Action_80846050`).
+const LIFT_BGCHECK_CLEAR: u16 = BGCHECKFLAG_GROUND | BGCHECKFLAG_GROUND_TOUCH | BGCHECKFLAG_GROUND_LEAVE | BGCHECKFLAG_WALL | BGCHECKFLAG_CEILING | BGCHECKFLAG_WATER | BGCHECKFLAG_WATER_TOUCH | BGCHECKFLAG_GROUND_STRICT;
 
 /// `func_A74`: what `Player_Action_WaitForPutAway` runs once the item is away.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -641,6 +689,8 @@ pub enum A74 {
     Crawl,
     /// `func_8083A388`: holding on to the wall to push or pull (`Player_Action_8084B78C`).
     PushWait,
+    /// `func_8083A0F4`: lifting `interactRangeActor`.
+    Lift,
 }
 
 /// Player's upper-body action (`this->upperActionFunc`), run from `Player_UpdateUpperBody`.
@@ -666,6 +716,8 @@ pub enum UpperAction {
     BowShot,
     /// `func_80835588`: lowering (`link_bow_bow_shoot_end`).
     BowLower,
+    /// `Player_UpperAction_CarryActor`: carrying an actor overhead (`link_normal_carryB_wait`).
+    Carry,
 }
 
 impl Action {
@@ -731,6 +783,13 @@ impl Action {
             Action::ThrowNut => "Player_Action_8084E604",
             Action::ExchangeItem => "Player_Action_ExchangeItem",
             Action::BeanCheckWait => "Player_Action_8084279C",
+            Action::Lift => "Player_Action_80846050",
+            Action::HeavyLift => "Player_Action_80846120",
+            Action::SilverLift => "Player_Action_80846260",
+            Action::SilverThrow => "Player_Action_80846358",
+            Action::NoCarry => "Player_Action_80846408",
+            Action::PutDown => "Player_Action_808464B0",
+            Action::Throw => "Player_Action_80846578",
         }
     }
 }
@@ -1140,8 +1199,12 @@ pub struct Player {
     /// `unk_A73`: 4 on a shot (`func_808350A4`) or a boomerang's throw, counted down by
     /// `Player_UpdateCommon`; `EnArrow_Shoot` lets a seed or an arrow fly only while it's set.
     pub unk_A73: u8,
-    /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child).
+    /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child), or what he carries.
     pub held_actor: Option<ActorHandle>,
+    /// `unk_3BC`: with nothing held, the left hand's rotation (`Player_PostLimbDrawGameplay`);
+    /// carrying, the carried actor's yaw from Link's (`.y`, set at the lift) or its pitch from the
+    /// hand's (`.x`, `ACTOR_FLAG_CARRY_X_ROT_INFLUENCE`).
+    pub unk_3bc: [i16; 3],
     /// `unk_836`: the bow's and slingshot's upper-body state (`func_808351D4`), zeroed with each
     /// upper-body action.
     pub unk_836: i8,
@@ -1343,6 +1406,7 @@ impl Player {
             unk_A87: 0,
             unk_A73: 0,
             held_actor: None,
+            unk_3bc: [0; 3],
             unk_836: 0,
             room_type_view: 0,
         };
@@ -1901,6 +1965,13 @@ impl Player {
             Action::ThrowNut => self.action_8084e604(env),
             Action::ExchangeItem => self.action_exchange_item(env),
             Action::BeanCheckWait => self.action_8084279c(env),
+            Action::Lift => self.action_80846050(env),
+            Action::HeavyLift => self.action_80846120(env),
+            Action::SilverLift => self.action_80846260(env),
+            Action::SilverThrow => self.action_80846358(env),
+            Action::NoCarry => self.action_80846408(env),
+            Action::PutDown => self.action_808464b0(env),
+            Action::Throw => self.action_80846578(env),
         }
     }
 
@@ -2463,14 +2534,16 @@ impl Player {
     fn action_wait_for_put_away(&mut self, env: &Env) {
         self.state2 |= STATE2_5 | STATE2_6;
         self.skel.update(env.data);
-        // (Holding an actor with no item to get: Player doesn't hold actors yet.)
-        if !self.update_upper_body(env) {
+        // Carrying an actor with no item to get runs the pending action at once: the carry's
+        // upper action always returns true while it holds the actor.
+        if (self.state1 & STATE1_11 != 0 && self.held_actor.is_some() && self.get_item_id == oot_game::item::GI_NONE) || !self.update_upper_body(env) {
             match self.func_a74 {
                 Some(A74::ClimbStart) => self.func_8083A3B0(env.data),
                 Some(A74::Talk) => self.setup_talk(env.data),
                 Some(A74::GetItem) => self.func_8083A434(env.data),
                 Some(A74::Crawl) => self.func_8083A40C(env.data),
                 Some(A74::PushWait) => self.func_8083A388(env.data),
+                Some(A74::Lift) => self.func_8083a0f4(env),
                 None => {}
             }
         }
@@ -4553,8 +4626,20 @@ impl Player {
         }
     }
 
-    /// `func_80832440`: drop interaction state when an action is interrupted.
+    /// `func_80832440`: drop interaction state when an action is interrupted. Carrying with
+    /// nothing in hand (a lift that hadn't taken its actor yet) ends, and the offer goes with it
+    /// unless it's an item to get.
     fn func_80832440(&mut self) {
+        if self.state1 & STATE1_11 != 0 && self.held_actor.is_none() {
+            if self.interact_range_actor.is_some() {
+                if self.get_item_id == oot_game::item::GI_NONE {
+                    self.state1 &= !STATE1_11;
+                    self.interact_range_actor = None;
+                }
+            } else {
+                self.state1 &= !STATE1_11;
+            }
+        }
         self.melee_weapon_state = 0;
         self.unk_6AD = 0;
         self.state1 &= !(STATE1_13 | STATE1_14 | STATE1_20 | STATE1_21);
@@ -4626,7 +4711,8 @@ impl Player {
 
     /// `Player_TryActionHandlerList`: the per-action list of interrupts (`sActionHandlerFuncs`). Ported: 0, 1,
     /// 2, 4 (talking), 5, 6 (`Player_ActionHandler_Roll`, roll / put the sword away on A), 7
-    /// (`Player_ActionHandler_7`, B attacks), 10 (`Player_ActionHandler_10`, hops while targeting), 11
+    /// (`Player_ActionHandler_7`, B attacks), 9 (`Player_ActionHandler_9`, throwing or putting down
+    /// what Player carries), 10 (`Player_ActionHandler_10`, hops while targeting), 11
     /// (`Player_ActionHandler_11`, the guard on R), 12 (`Player_ActionHandler_12`, climbing onto ledges) and 13;
     /// the others need other items and report "not taken".
     fn try_action_handler_list(&mut self, env: &Env, list: &[i8], arg3: bool) -> bool {
@@ -4676,6 +4762,9 @@ impl Player {
                 return true;
             }
             if idx == 13 && self.action_handler_13(env) {
+                return true;
+            }
+            if idx == 9 && self.action_handler_9(env) {
                 return true;
             }
             if e < 0 {
@@ -4916,6 +5005,10 @@ impl Player {
         self.idle_type = (self.idle_type + 1) & 1;
         let anim = if self.idle_type != 0 {
             self.state2 &= !STATE2_28;
+            self.anim(data, group::WAIT)
+        } else if self.state1 & STATE1_11 != 0 {
+            // Carrying: the plain wait, still marked a fidget.
+            self.state2 |= STATE2_28;
             self.anim(data, group::WAIT)
         } else {
             self.state2 |= STATE2_28;
@@ -5516,6 +5609,16 @@ impl Player {
         }
         let (_, speed, yaw) = self.get_movement_speed_and_yaw(env, 0.0);
         if !self.grounded() {
+            // A cucco carried can be thrown in the air (no other carried actor can).
+            if self.state1 & STATE1_11 != 0 {
+                let held = self.held_actor;
+                if !self.func_80835644(env, held)
+                    && held.and_then(|h| env.target(h)).is_some_and(|a| a.id == ACTOR_EN_NIW)
+                    && self.input.press.button & CARRY_RELEASE_BUTTONS != 0
+                {
+                    self.func_8084409c(env, self.linear_velocity + 2.0, self.actor.velocity.y + 2.0);
+                }
+            }
             self.skel.update(data);
             if self.state2 & STATE2_19 == 0 {
                 self.func_8083DFE0(speed, yaw);
@@ -6542,6 +6645,7 @@ impl Player {
             UpperAction::BowDrawn => self.func_808351d4(env),
             UpperAction::BowShot => self.func_808353d8(env),
             UpperAction::BowLower => self.func_80835588(env),
+            UpperAction::Carry => self.upper_action_carry_actor(env),
         }
     }
 
@@ -9441,8 +9545,7 @@ impl Player {
     /// surface), when nothing else is targeted.
     ///
     /// No ported actor has a `naviEnemyId`, so a target Navi speaks about is an
-    /// `ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_TALK_WITH_C_UP` one. Holding actors isn't ported (`PLAYER_STATE1_CARRYING_ACTOR` is
-    /// never set).
+    /// `ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_TALK_WITH_C_UP` one.
     fn action_handler_talk(&mut self, env: &Env) -> bool {
         let mut sp34 = self.target_actor;
         let mut sp30 = self.focus_actor;
@@ -9469,8 +9572,13 @@ impl Player {
         if !(sp30.is_none() || sp30 == sp34 || sp30 == sp2c) {
             return false;
         }
+        // Carrying, only the carried actor (or one that talks at once, or Navi's own text) is
+        // talked to.
         if self.state1 & STATE1_11 != 0 {
-            return false;
+            let auto = sp34.and_then(|h| env.actors.actor(h)).is_some_and(|a| a.flags & ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED != 0);
+            if self.held_actor.is_none() || (!sp28 && sp34 != self.held_actor && sp2c != self.held_actor && (sp34.is_none() || !auto)) {
+                return false;
+            }
         }
         if !(self.grounded() || self.state1 & STATE1_23 != 0 || (self.func_808332B8() && self.state2 & STATE2_10 == 0)) {
             return false;
@@ -9780,7 +9888,9 @@ impl Player {
     ///   and `CAM_SET_SLOW_CHEST_CS`); anything else the kick open (`link_normal_box_kick`).
     ///   Items the table marks (0x40: a blue rupee if not obtainable, 0x20: if had) become a blue
     ///   rupee.
-    /// - `GI_NONE` on A: picking up (bushes, rocks, the Master Sword): not ported.
+    /// - `GI_NONE` on A: lifting it (`func_8083A0F4` once the item is put away), unless Player
+    ///   holds something (the hookshot aside); a silver rock only with the silver gauntlets. The
+    ///   adult's Master Sword pedestal is noted.
     ///
     /// Title cards (`TitleCard_Clear`) aren't ported: there's always none to clear. `iREG(67)`'s
     /// debug item is 0.
@@ -9844,10 +9954,334 @@ impl Player {
                 }
                 return true;
             }
-            // Picking up (lifting, Bg_Toki_Swd): not ported.
-            self.note("picking up (Player_ActionHandler_2 with GI_NONE) isn't ported");
+            // Something to lift (GI_NONE). Not with something in hand, unless it's the hookshot.
+            if self.held_actor.is_none() || self.holds_hookshot(env.data) {
+                let Some(a) = env.target(ih) else { return false };
+                let (id, params) = (a.id, a.params);
+                if id == ACTOR_BG_TOKI_SWD && self.adult {
+                    // The Master Sword pulled from its pedestal: PLAYER_IA_SWORD_CS and
+                    // Player_UseItem(ITEM_SWORD_CS), for an adult only.
+                    self.note("Player_ActionHandler_2: the Master Sword's pedestal (an adult's) isn't ported");
+                    return false;
+                }
+                // A silver rock needs the silver gauntlets.
+                let strength = oot_game::player_lib::player_get_strength(&env.io.borrow().save);
+                if id == ACTOR_EN_ISHI && params & 0xF == 1 && strength < oot_game::player_lib::PLAYER_STR_SILVER_G {
+                    return false;
+                }
+                self.setup_wait_for_put_away(env.data, env, A74::Lift);
+                self.func_80832224();
+                self.state1 |= STATE1_11;
+                return true;
+            }
         }
         false
+    }
+
+    // ================================================================================
+    // Lifting, carrying, throwing and putting down (func_8083A0F4, Player_Action_80846050 to
+    // Player_Action_80846578, Player_UpperAction_CarryActor, Player_ActionHandler_9)
+
+    /// `func_8083A0D4`: something offered to lift, and nothing carried.
+    fn func_8083a0d4(&self) -> bool {
+        self.interact_range_actor.is_some() && self.held_actor.is_none()
+    }
+
+    /// `func_80835644`: with no actor (it went), Player's interaction ends (`func_80832564`) and he
+    /// stands (`func_80839F90`): true.
+    fn func_80835644(&mut self, env: &Env, actor: Option<ActorHandle>) -> bool {
+        if actor.is_none() {
+            self.func_80832564(env.data);
+            self.func_80839F90(env.data);
+            return true;
+        }
+        false
+    }
+
+    /// `func_8083A0F4` (after the item is put away): lift `interactRangeActor`. The Master
+    /// Sword's pedestal is taken in a cutscene; a `Bg_Heavy_Block` (`link_normal_heavy_carry`) and
+    /// a silver rock (`link_silver_carry`) have their own lifts; a bush or a Bomb Flower too heavy
+    /// for Link (no strength) is only tugged at, 20 from it; anything else is lifted with
+    /// `PLAYER_ANIMGROUP_carryB`. With nothing to lift, Player stands and isn't carrying.
+    fn func_8083a0f4(&mut self, env: &Env) {
+        let data = env.data;
+        let target = if self.func_8083a0d4() { self.interact_range_actor.and_then(|h| env.target(h)) } else { None };
+        let Some(a) = target else {
+            self.func_80839F90(data);
+            self.state1 &= !STATE1_11;
+            return;
+        };
+        let (id, params, yaw_to_player, pos) = (a.id, a.params, a.yaw_towards_player, a.world_pos);
+        if id == ACTOR_BG_TOKI_SWD {
+            if let Some(h) = self.interact_range_actor {
+                self.play_requests.push(PlayRequest::SetParent(h));
+            }
+            self.setup_action(data, Action::WaitForCutscene, 0);
+            self.state1 |= STATE1_29;
+            return;
+        }
+        let strength = oot_game::player_lib::player_get_strength(&env.io.borrow().save);
+        let anim = if id == ACTOR_BG_HEAVY_BLOCK {
+            self.setup_action(data, Action::HeavyLift, 0);
+            self.state1 |= STATE1_29;
+            data.anim("link_normal_heavy_carry")
+        } else if id == ACTOR_EN_ISHI && params & 0xF == 1 {
+            self.setup_action(data, Action::SilverLift, 0);
+            data.anim("link_silver_carry")
+        } else if (id == ACTOR_EN_BOMBF || id == ACTOR_EN_KUSA) && strength <= oot_game::player_lib::PLAYER_STR_NONE {
+            self.setup_action(data, Action::NoCarry, 0);
+            self.actor.world_pos.x = sin_s(yaw_to_player) * 20.0 + pos.x;
+            self.actor.world_pos.z = cos_s(yaw_to_player) * 20.0 + pos.z;
+            self.current_yaw = yaw_to_player.wrapping_add(0x8000u16 as i16);
+            self.actor.shape_rot.y = self.current_yaw;
+            data.anim("link_normal_nocarry_free")
+        } else {
+            self.setup_action(data, Action::Lift, 0);
+            data.player_anim(group::CARRY_B, self.model_anim_type)
+        };
+        self.skel.play_once(data, anim);
+    }
+
+    /// `Player_Action_80846050`: the lift. On frame 4 Player takes `interactRangeActor` (his
+    /// child, its parent; its floor, wall, ceiling and water flags cleared), turned to keep its
+    /// facing (`unk_3BC.y`, eased back to 0 by 4000 a frame after). At the end he stands
+    /// carrying it (`func_80835688`).
+    fn action_80846050(&mut self, env: &Env) {
+        let data = env.data;
+        self.decelerate_to_zero();
+        if self.skel.update(data) {
+            self.func_80839F90(data);
+            self.func_80835688(env);
+        } else if self.skel.on_frame(4.0) {
+            let ih = self.interact_range_actor;
+            if !self.func_80835644(env, ih) {
+                let h = ih.expect("checked by func_80835644");
+                self.held_actor = Some(h);
+                self.actor.child = Some(h);
+                self.play_requests.push(PlayRequest::Lift { actor: h, bg_check_clear: LIFT_BGCHECK_CLEAR });
+                let rot_y = env.target(h).map(|a| a.shape_rot.y).unwrap_or(0);
+                self.unk_3bc[1] = rot_y.wrapping_sub(self.actor.shape_rot.y);
+            }
+        } else {
+            scaled_step_to_s(&mut self.unk_3bc[1], 0, 4000);
+        }
+    }
+
+    /// `func_80835688`: carrying (`Player_UpperAction_CarryActor`, `link_normal_carryB_wait` on
+    /// the upper body), unless the actor went.
+    fn func_80835688(&mut self, env: &Env) {
+        let held = self.held_actor;
+        if !self.func_80835644(env, held) {
+            self.set_upper_action_func(UpperAction::Carry);
+            self.skel2.play_loop(env.data, env.data.anim("link_normal_carryB_wait"));
+        }
+    }
+
+    /// `Player_UpperAction_CarryActor` (the NTSC 1.1 and later order, as the debug ROM has it):
+    /// with the actor gone the upper body goes back to the item's action. The shield's check
+    /// first; then, carrying, the carry's wait loops, and a cucco held while Link falls slows
+    /// him (gravity -0.5, at most 2 a frame, the fall measured from here: no fall damage).
+    fn upper_action_carry_actor(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.held_actor.is_none() {
+            self.func_80834644(data);
+        }
+        if self.func_80834758(env) {
+            return true;
+        }
+        if self.state1 & STATE1_11 != 0 {
+            if self.skel2.update(data) {
+                self.skel2.play_loop(data, data.anim("link_normal_carryB_wait"));
+            }
+            let cucco = self.held_actor.and_then(|h| env.target(h)).is_some_and(|a| a.id == ACTOR_EN_NIW);
+            if cucco && self.actor.velocity.y <= 0.0 {
+                self.actor.min_velocity_y = -2.0;
+                self.actor.gravity = -0.5;
+                self.fall_start_height = self.actor.world_pos.y as i16;
+            }
+            return true;
+        }
+        // func_8083485C.
+        self.func_80834758(env)
+    }
+
+    /// `Player_CanThrowCarriedActor`: false (put it down) for an actor that isn't throw-only while
+    /// Link is slower than 1.1 (a Bombchu is always put down); true otherwise, and with no actor.
+    fn can_throw_carried_actor(&self, actor: Option<&Actor>) -> bool {
+        if let Some(a) = actor
+            && a.flags & ACTOR_FLAG_THROW_ONLY == 0
+            && (self.linear_velocity < 1.1 || a.id == ACTOR_EN_BOM_CHU)
+        {
+            return false;
+        }
+        true
+    }
+
+    /// `Player_ActionHandler_9` (interrupt 9): carrying, A, B, C-Left, C-Down or C-Right puts it
+    /// down (`Player_Action_808464B0`, `PLAYER_ANIMGROUP_put`) or throws it (`func_8083EA94`).
+    fn action_handler_9(&mut self, env: &Env) -> bool {
+        if self.state1 & STATE1_11 != 0 && self.held_actor.is_some() && self.input.press.button & CARRY_RELEASE_BUTTONS != 0 {
+            let held = self.held_actor;
+            if !self.func_80835644(env, held) {
+                let data = env.data;
+                if !self.can_throw_carried_actor(held.and_then(|h| env.target(h))) {
+                    self.setup_action(data, Action::PutDown, 1);
+                    self.skel.play_once(data, data.player_anim(group::PUT, self.model_anim_type));
+                } else {
+                    self.func_8083ea94(data);
+                }
+            }
+            return true;
+        }
+        false
+    }
+
+    /// `func_8083EA94`: the throw (`Player_Action_80846578`, `PLAYER_ANIMGROUP_throw`).
+    fn func_8083ea94(&mut self, data: &GameData) {
+        self.setup_action(data, Action::Throw, 1);
+        self.skel.play_once(data, data.player_anim(group::THROW, self.model_anim_type));
+    }
+
+    /// `func_8084409C`: what Player carries is thrown along his facing at `speed_xz` and
+    /// `velocity_y`, and let go (`func_80834644`), with `NA_SE_PL_THROW` and his voice.
+    fn func_8084409c(&mut self, env: &Env, speed_xz: f32, velocity_y: f32) {
+        let held = self.held_actor;
+        if !self.func_80835644(env, held) {
+            let h = held.expect("checked by func_80835644");
+            self.play_requests.push(PlayRequest::Throw { actor: h, yaw: self.actor.shape_rot.y, speed: speed_xz, velocity_y });
+            self.func_80834644(env.data);
+            self.play_sfx(NA_SE_PL_THROW);
+            self.play_voice_sfx(NA_SE_VO_LI_SWORD_N);
+        }
+    }
+
+    /// `Player_Action_80846578`: the throw: on frame 3 thrown at Link's speed plus 8 and 12 up;
+    /// standing again at the end, or from frame 8 once the stick moves.
+    fn action_80846578(&mut self, env: &Env) {
+        let data = env.data;
+        self.decelerate_to_zero();
+        if self.skel.update(data) || (self.skel.cur_frame >= 8.0 && self.get_movement_speed_and_yaw(env, SPEED_MODE_CURVED).0) {
+            self.func_80839F90(data);
+            return;
+        }
+        if self.skel.on_frame(3.0) {
+            self.func_8084409c(env, self.linear_velocity + 8.0, 12.0);
+        }
+    }
+
+    /// `Player_Action_808464B0`: putting it down: on frame 4 it stops (no speed, no fall) and is
+    /// let go; a Bombchu put down goes on to first person (`func_8083B8F4`).
+    fn action_808464b0(&mut self, env: &Env) {
+        let data = env.data;
+        self.decelerate_to_zero();
+        if self.skel.update(data) {
+            self.func_80839F90(data);
+            return;
+        }
+        if self.skel.on_frame(4.0) {
+            let held = self.held_actor;
+            if !self.func_80835644(env, held) {
+                let h = held.expect("checked by func_80835644");
+                let bombchu = env.target(h).is_some_and(|a| a.id == ACTOR_EN_BOM_CHU);
+                self.play_requests.push(PlayRequest::PutDown(h));
+                self.func_80834644(data);
+                if bombchu {
+                    self.func_8083b8f4(env);
+                }
+            }
+        }
+    }
+
+    /// `Player_Action_80846120`: a `Bg_Heavy_Block` lifted (from the 21st frame after the
+    /// animation's end, Player's items again, or `link_normal_heavy_carry_end`): taken on frame 41,
+    /// thrown on 229 (40 along its pitch, gravity -2, at most 30 a frame). `Bg_Heavy_Block` isn't
+    /// ported: its `unk_164` (the left hand in its space, `Actor_WorldToActorCoords`) is noted.
+    fn action_80846120(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) && {
+            let v = self.action_var2;
+            self.action_var2 += 1;
+            v > 20
+        } {
+            if !self.action_handler_13(env) {
+                self.func_8083A098(data, data.anim("link_normal_heavy_carry_end"));
+            }
+        } else if self.skel.on_frame(41.0) {
+            if let Some(h) = self.interact_range_actor {
+                self.held_actor = Some(h);
+                self.actor.child = Some(h);
+                self.play_requests.push(PlayRequest::Lift { actor: h, bg_check_clear: 0 });
+                self.note("Player_Action_80846120: Bg_Heavy_Block's unk_164 (Actor_WorldToActorCoords) isn't ported");
+            }
+        } else if self.skel.on_frame(229.0) {
+            if let Some(h) = self.held_actor {
+                let rot_x = env.target(h).map(|a| a.shape_rot.x).unwrap_or(0);
+                self.play_requests.push(PlayRequest::Launch { actor: h, speed: sin_s(rot_x) * 40.0, velocity_y: cos_s(rot_x) * 40.0, gravity: -2.0, min_velocity_y: -30.0 });
+            }
+            self.detach_held_actor(data);
+        } else {
+            self.process_anim_sfx_list(env.audio.player_anim_sfx("D_8085461C"));
+        }
+    }
+
+    /// `Player_Action_80846260`: a silver rock lifted on frame 27 (the voice on 25), then held
+    /// (`link_silver_wait`) until A, B, C-Left, C-Down or C-Right throws it.
+    fn action_80846260(&mut self, env: &Env) {
+        let data = env.data;
+        self.decelerate_to_zero();
+        if self.skel.update(data) {
+            self.skel.play_loop(data, data.anim("link_silver_wait"));
+            self.action_var2 = 1;
+        } else if self.action_var2 == 0 {
+            if self.skel.on_frame(27.0) {
+                if let Some(h) = self.interact_range_actor {
+                    self.held_actor = Some(h);
+                    self.actor.child = Some(h);
+                    self.play_requests.push(PlayRequest::Lift { actor: h, bg_check_clear: 0 });
+                }
+            } else if self.skel.on_frame(25.0) {
+                self.play_voice_sfx(NA_SE_VO_LI_SWORD_L);
+            }
+        } else if self.input.press.button & CARRY_RELEASE_BUTTONS != 0 {
+            self.setup_action(data, Action::SilverThrow, 1);
+            self.skel.play_once(data, data.anim("link_silver_throw"));
+        }
+    }
+
+    /// `Player_Action_80846358`: the silver rock thrown on frame 6 (10 along Link's facing, 20 up).
+    fn action_80846358(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            self.func_80839F90(data);
+            return;
+        }
+        if self.skel.on_frame(6.0) {
+            if let Some(h) = self.held_actor {
+                self.play_requests.push(PlayRequest::Throw { actor: h, yaw: self.actor.shape_rot.y, speed: 10.0, velocity_y: 20.0 });
+            }
+            self.func_80834644(data);
+            self.play_sfx(NA_SE_PL_THROW);
+            self.play_voice_sfx(NA_SE_VO_LI_SWORD_N);
+        }
+    }
+
+    /// `Player_Action_80846408`: tugging at what won't come up (`link_normal_nocarry_free_wait` for
+    /// 15 frames), then letting go (`link_normal_nocarry_free_end`), not carrying, with a grunt.
+    fn action_80846408(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            self.skel.play_loop(data, data.anim("link_normal_nocarry_free_wait"));
+            self.action_var2 = 15;
+            return;
+        }
+        if self.action_var2 != 0 {
+            self.action_var2 -= 1;
+            if self.action_var2 == 0 {
+                self.func_8083A098(data, data.anim("link_normal_nocarry_free_end"));
+                self.state1 &= !STATE1_11;
+                self.play_voice_sfx(NA_SE_VO_LI_DAMAGE_S);
+            }
+        }
     }
 
     /// `func_8083E4C4`: an item already had is given without holding it up: a drop over Link's
@@ -10016,15 +10450,23 @@ impl Player {
                 do_action = DO_ACTION_RETURN;
             } else if self.state2 & STATE2_18 == 0 {
                 let target_category = self.target_actor.and_then(|h| env.actors.actor(h)).map(|a| a.category);
-                if self.door_type != PLAYER_DOORTYPE_NONE && self.state1 & STATE1_11 == 0 {
+                let held = self.held_actor.and_then(|h| env.actors.actor(h)).map(|a| a.id);
+                if self.door_type != PLAYER_DOORTYPE_NONE && (self.state1 & STATE1_11 == 0 || held == Some(ACTOR_EN_RU1)) {
                     do_action = DO_ACTION_OPEN;
-                } else if self.state1 & STATE1_11 == 0
+                } else if (self.state1 & STATE1_11 == 0 || self.held_actor.is_none())
                     && self.interact_range_actor.is_some()
                     && ((!sp1c && self.get_item_id == oot_game::item::GI_NONE) || (self.get_item_id < 0 && self.state1 & STATE1_27 == 0))
                 {
-                    // A chest (a negative get-item id), or something to pick up (Bg_Toki_Swd's
-                    // DO_ACTION_DROP for the adult isn't ported).
-                    do_action = if self.get_item_id < 0 { DO_ACTION_OPEN } else { DO_ACTION_GRAB };
+                    // A chest (a negative get-item id), or something to pick up; the Master Sword's
+                    // pedestal for the adult.
+                    let toki_swd = self.interact_range_actor.and_then(|h| env.actors.actor(h)).is_some_and(|a| a.id == ACTOR_BG_TOKI_SWD);
+                    do_action = if self.get_item_id < 0 {
+                        DO_ACTION_OPEN
+                    } else if toki_swd && self.adult {
+                        DO_ACTION_DROP
+                    } else {
+                        DO_ACTION_GRAB
+                    };
                 } else if !sp1c && self.state2 & STATE2_0 != 0 {
                     do_action = DO_ACTION_GRAB;
                 } else if self.state2 & STATE2_2 != 0 {
@@ -10035,6 +10477,13 @@ impl Player {
                     do_action = DO_ACTION_DOWN;
                 } else if self.state2 & STATE2_16 != 0 {
                     do_action = DO_ACTION_ENTER;
+                } else if self.state1 & STATE1_11 != 0 && self.get_item_id == oot_game::item::GI_NONE && let Some(h) = self.held_actor {
+                    // Carrying: throw or put down, on the ground (a cucco in the air too).
+                    if self.grounded() || held == Some(ACTOR_EN_NIW) {
+                        do_action = if !self.can_throw_carried_actor(env.actors.actor(h)) { DO_ACTION_DROP } else { DO_ACTION_THROW };
+                    }
+                } else if self.state1 & STATE1_27 == 0 && self.func_8083a0d4() && self.get_item_id < oot_game::item::GI_MAX {
+                    do_action = DO_ACTION_GRAB;
                 } else if self.state2 & STATE2_11 != 0 {
                     // D_80854784[CUR_UPG_VALUE(UPG_SCALE)] (no scale: 120) less the depth, per 40.
                     let sp24 = ((120.0 - self.actor.y_dist_to_water) / 40.0) as i32;
@@ -10236,22 +10685,56 @@ impl Player {
             self.update_melee_weapon_info(play, hand, tips);
         }
         // (A bottle in the left hand, PLAYER_MODELTYPE_LH_BOTTLE: the bottles aren't ported.)
-        // The seed or arrow in hand, drawn back (PLAYER_STATE1_9): at D_80126128 from the hand,
-        // turned by Matrix_RotateZYX(0x69E8, -0x5708, 0x458E). (Carrying, the carried actor's
-        // turn, and mf_9E0 and unk_3BC with nothing held: carrying isn't ported.)
+        if self.actor.scale.y >= 0.0 {
+            if !self.holds_hookshot(&play.data)
+                && let Some(h) = self.held_actor
+            {
+                if self.state1 & STATE1_9 != 0 {
+                    // The seed or arrow in hand, drawn back: at D_80126128 from the hand, turned
+                    // by Matrix_RotateZYX(0x69E8, -0x5708, 0x458E).
+                    let mut mf = oot_game::sys_matrix::MtxF::from_mat4(hand);
+                    let pos = mf.mult_vec3f(Vec3::new(398.0, 1419.0, 244.0));
+                    mf.rotate_zyx(0x69E8, -0x5708, 0x458E);
+                    let r = mf.to_yxz_rot_s(false);
+                    if let Some(a) = play.actors.actor_mut(h) {
+                        a.world_pos = pos;
+                        a.world_rot = Rot { x: r[0], y: r[1], z: r[2] };
+                        a.shape_rot = a.world_rot;
+                    }
+                } else if self.state1 & STATE1_11 != 0 {
+                    // Carried: pitched with the hand (ACTOR_FLAG_CARRY_X_ROT_INFLUENCE), else
+                    // turned with Link.
+                    let r = oot_game::sys_matrix::MtxF::from_mat4(hand).to_yxz_rot_s(false);
+                    let (unk_3bc, yaw) = (self.unk_3bc, self.actor.shape_rot.y);
+                    if let Some(a) = play.actors.actor_mut(h) {
+                        if a.flags & ACTOR_FLAG_CARRY_X_ROT_INFLUENCE != 0 {
+                            a.world_rot.x = r[0].wrapping_sub(unk_3bc[0]);
+                            a.shape_rot.x = a.world_rot.x;
+                        } else {
+                            a.world_rot.y = yaw.wrapping_add(unk_3bc[1]);
+                            a.shape_rot.y = a.world_rot.y;
+                        }
+                    }
+                }
+            } else {
+                // Nothing held: the hand's rotation (mf_9E0 is only read by the carry).
+                self.unk_3bc = oot_game::sys_matrix::MtxF::from_mat4(hand).to_yxz_rot_s(false);
+            }
+        }
+    }
+
+    /// `Player_PostLimbDrawGameplay`, `PLAYER_LIMB_R_HAND`: what Player carries (or holds that
+    /// isn't the bow's, slingshot's or hookshot's) is at `sGetItemRefPos`, unless an item is held
+    /// up over his head.
+    fn post_limb_draw_r_hand_held(&mut self, play: &mut PlayState) {
         if self.actor.scale.y >= 0.0
-            && !self.holds_hookshot(&play.data)
+            && self.unk_862 == 0
+            && !self.func_8002dd6c()
             && let Some(h) = self.held_actor
-            && self.state1 & STATE1_9 != 0
         {
-            let mut mf = oot_game::sys_matrix::MtxF::from_mat4(hand);
-            let pos = mf.mult_vec3f(Vec3::new(398.0, 1419.0, 244.0));
-            mf.rotate_zyx(0x69E8, -0x5708, 0x458E);
-            let r = mf.to_yxz_rot_s(false);
+            let pos = self.get_item_ref_pos();
             if let Some(a) = play.actors.actor_mut(h) {
                 a.world_pos = pos;
-                a.world_rot = Rot { x: r[0], y: r[1], z: r[2] };
-                a.shape_rot = a.world_rot;
             }
         }
     }
@@ -10756,10 +11239,11 @@ impl ActorImpl for Player {
         // Player_PostLimbDrawGameplay, PLAYER_LIMB_L_HAND: leftHandPos.
         self.left_hand_pos = world[data.limb("L_HAND")].transform_point3(Vec3::ZERO);
         self.post_limb_draw_l_hand(play, world[data.limb("L_HAND")]);
-        // PLAYER_LIMB_R_HAND: the bow's or slingshot's string drawn back.
+        // PLAYER_LIMB_R_HAND: the bow's or slingshot's string drawn back; what Player carries.
         if self.right_hand_is_bow_slingshot(play) {
             self.post_limb_draw_r_hand_string(world[data.limb("R_HAND")]);
         }
+        self.post_limb_draw_r_hand_held(play);
         // PLAYER_LIMB_R_HAND: the shield in hand (sRightHandLimbModelShieldQuadVertices).
         let right_hand_is_shield = self.right_hand_is_shield(play);
         if self.actor.scale.y >= 0.0 && right_hand_is_shield {
@@ -11274,6 +11758,34 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::ReleaseHeld(h) => {
             if let Some(a) = play.actors.actor_mut(h) {
                 a.parent = None;
+            }
+        }
+        PlayRequest::Lift { actor, bg_check_clear } => {
+            let me = play.player;
+            if let Some(a) = play.actors.actor_mut(actor) {
+                a.parent = me;
+                a.bg_check_flags &= !bg_check_clear;
+            }
+        }
+        PlayRequest::Throw { actor, yaw, speed, velocity_y } => {
+            if let Some(a) = play.actors.actor_mut(actor) {
+                a.world_rot.y = yaw;
+                a.speed_xz = speed;
+                a.velocity.y = velocity_y;
+            }
+        }
+        PlayRequest::PutDown(h) => {
+            if let Some(a) = play.actors.actor_mut(h) {
+                a.velocity.y = 0.0;
+                a.speed_xz = 0.0;
+            }
+        }
+        PlayRequest::Launch { actor, speed, velocity_y, gravity, min_velocity_y } => {
+            if let Some(a) = play.actors.actor_mut(actor) {
+                a.speed_xz = speed;
+                a.velocity.y = velocity_y;
+                a.gravity = gravity;
+                a.min_velocity_y = min_velocity_y;
             }
         }
         PlayRequest::SpawnArrow { pos, rot, params } => {

@@ -20,7 +20,7 @@ taught.
 | 2 | Hyrule Castle's grounds: the Weird Egg and its hatch, Player's exchange items, Talon, the crates, the guards and the throw-out, the circle wipe | done (2026-10-12) |
 | 3 | The ocarina: Player's, the message modes, the audio, the songs' effects, `Shot_Sun`, the Sun's Song | done (2026-10-12) |
 | 4 | The guards' courtyard and Zelda: `Camera_Special6`, the patrols, Zelda, the legend, the letter, Impa's lullaby and escort | done (2026-10-13) |
-| 5 | Kakariko: lifting and the cuccos, Anju, the gate, the people, the interiors | |
+| 5 | Kakariko: lifting and the cuccos, Anju, the gate, the people, the interiors | done (2026-10-13) |
 | 6 | The graveyard: Dampé, the royal tomb, the ReDeads, the Sun's Song | |
 
 The working rules are the same as for the earlier phases:
@@ -230,9 +230,9 @@ with `NORMAL3` (`Camera_Jump3`, about 200 lines: not ported) and `DUNGEON1`, `NO
 By day: Anju (`En_Niw_Lady`) and her seven cuccos (`En_Niw`), the man on the roof (`En_Ani`), the
 carpenters (`En_Daiku_Kakariko`) and their boss (`En_Toryo`), the gate guard (`En_Heishi2` type 5)
 at Death Mountain's gate (`Bg_Gate_Shutter`), two guards (`En_Heishi4`), the windmill
-(`Bg_Spot01_Fusya`), the well (`Bg_Spot01_Idohashira`, `_Idomizu`), the posters and the
-unfinished gallery (`Bg_Spot01_Objects2`, which spawns a third carpenter), 11 pots, a crate
-with a cucco in it. By night: the carpenter's son (`En_Hs2`), four Gold Skulltulas (`En_Sw`,
+(`Bg_Spot01_Fusya`), the well (`Bg_Spot01_Idohashira`, `_Idomizu`), the unfinished gallery
+(`Bg_Spot01_Objects2`, which spawns a third carpenter; the posters are the adult's, corrected in
+milestone 5), 11 pots, a crate with a cucco in it. By night: the carpenter's son (`En_Hs2`), four Gold Skulltulas (`En_Sw`,
 ported), no cuccos and no Anju (she's in Impa's house).
 
 - **Anju's cuccos:** she counts the cuccos in her pen every frame (|x - 330| < 90, |z - 1610| <
@@ -249,8 +249,8 @@ ported), no cuccos and no Anju (she's in Impa's house).
   camera, `INFTABLE_76` is set (which also opens the mask shop). This needs **Player's item shown
   in a talk** (the exchange items: `Player_ActionHandler_13`'s trade items, not ported), as
   Talon's Cucco does.
-- **The man on the roof** (`En_Ani`) gives a piece of heart when Link reaches the roof behind him
-  (the watchtower, or a cucco's glide).
+- **The man on the roof** (`En_Ani`) gives a piece of heart when Link reaches the roof beside him
+  (the watchtower, or a cucco's glide). (Corrected in milestone 5: beside him, not behind.)
 
 **The graveyard** (`spot02`; `gGraveyardIntroCs` on the first entry, `EVENTCHKINF_B6`). By day:
 the graveyard kid (`En_Cs`, on a path; he buys the Spooky Mask), a gossip stone, the gravestones
@@ -1211,3 +1211,238 @@ scripts\run\sandbox-zelda.bat
 - **What to report:** the camera's slide and freeze, the guards' walks and heads, what sees Link and
   what doesn't, Zelda's and Impa's faces and animations, her camera's views, the legend's fade, the
   lullaby's lesson and playback, the field's goodbye.
+
+## Milestone 5: Kakariko
+
+**Answer:** done. Child Link lifts, carries and throws, and Kakariko is full by day and by night:
+- by a cucco, a pot or a small rock, A lifts it over his head (a bush only with a strength
+  upgrade: without one he tugs at it); A throws it, or puts it down standing still if it isn't
+  throw-only; a cucco carried off an edge slows his fall to a glide, with no fall damage;
+- Anju worries by her pen and counts the cuccos in it (each one's saved bit kept), with her
+  chime or her sigh; with all seven she gives the Empty Bottle. By night she's in Impa's house;
+- a cucco struck five to eight times crows and calls the flock, which dives at Link;
+- the carpenters run their paths, the third out of the unfinished gallery; their boss stands by
+  the house; by night the carpenter's son sits under the tree and the carpenters drink in the
+  guest house; the man on the roof talks, and gives a piece of heart to Link on the roof beside him;
+- the windmill turns, the well holds its water, and the windows light up at 18:00;
+- the gate guard takes Zelda's letter, his texts run on, and the gate to Death Mountain slides
+  open;
+- inside: Impa's house's cow gives milk for Epona's Song (with an empty bottle); the windmill man
+  talks, and the Song of Storms played there spins the windmill and drains the well; the House of
+  Skulltula's cursed family hangs and sways, the cured one rewards the tokens; the guest house's and
+  the potion shop's carpenters by their rules.
+
+The exit holds. Its run is the golden `kakariko`, with `kakariko_carry`, `kakariko_throw`,
+`kakariko_glide` and `kakariko_gate`.
+
+The pack is still format 28 in `out/data25`, re-imported for the new bakes and `ovl_En_Sth`'s
+animations; builds in `target/game26`. Decisions are in
+[ADR 0064](adr/0064-kakariko-lifting-and-the-village.md). The user's calls (2026-10-13): one
+milestone, built in steps (Player's lift, then the village and the exit, then the interiors); the
+grotto's actors left for Phase 20.
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 116 to 118):
+- `test-kakariko.bat`: the milestone's tests (with the draw configs' tests and the importer's check
+  of them against the C interpreter);
+- `game-kakariko.bat`: Kakariko's entrance by day with the letter (`kakariko-letter`), its intro
+  first; `pen`, `roof`, `gate`, `night`, `dusk`, `cow`, `windmill`, `skulltula`, `guests`, `shop`,
+  `guardhouse`;
+- `sandbox-kakariko.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestones 1 to 5 are done; 6 (the graveyard) is next.
+
+### What was built
+
+**Player** (`oot_actors::player`): `Player_ActionHandler_2`'s lift (`GI_NONE`; a silver rock only
+with the silver gauntlets), `func_8083A0F4` (the lift, the heavy block, the silver rock, the tug
+at a bush or Bomb Flower too heavy), `Player_Action_80846050`, `_80846120`, `_80846260`,
+`_80846358`, `_80846408`, `_808464B0`, `_80846578`, `func_8084409C`, `Player_UpperAction_CarryActor`
+with the cucco's glide, `Player_ActionHandler_9`, `Player_CanThrowCarriedActor`, the cucco's throw
+in the air, the do-actions (GRAB, THROW, DROP), talking while carrying, the idle while carrying,
+`func_80832440`'s carrying part, the carried actor placed between the hands at draw time
+(`unk_3BC`).
+
+**The lifted things:** `En_Ishi`'s `EnIshi_LiftedUp` and `EnIshi_Fly` (the bugs let out, the
+boulder's switch flag and quake), `En_Kusa`'s `EnKusa_LiftedUp`, `EnKusa_Fall` and
+`EnKusa_UprootedWaitRegrow`; both with Params and Flags paragraphs.
+
+**The village** (each whole, with Params and Flags paragraphs): `En_Niw_Lady` (Anju),
+`En_Attack_Niw`, `En_Daiku_Kakariko`, `En_Toryo` (Mutoh), `En_Hs2`, `En_Ani` (the man on the roof),
+`Bg_Spot01_Fusya` (the windmill's sails), `Bg_Spot01_Idohashira` (the well's crossbeam and its
+Nocturne cutscene), `Bg_Spot01_Idomizu` (the well's water), `Bg_Spot01_Objects2` (the posters and
+the gallery).
+
+**The interiors:** `En_Cow` (and its tail), `En_Fu` (the windmill man, the adult's Song of Storms
+lesson), `Bg_Relay_Objects` (the windmill's gear, Dampé's race doors), `En_Ssh` and `En_Sth` (the
+House of Skulltula's family).
+
+**Elsewhere:**
+- the scene draw configs `SDC_KAKARIKO_VILLAGE`, `SDC_GROTTOS` and `SDC_MARKET_GUARD_HOUSE`; a draw
+  config's textures by state (`scene_table::segment_textures`) swapped in the room draw by source
+  address (BACKLOG #46);
+- `Actor_CleanupContext` on a scene change: every actor's sounds stopped and its destroy run;
+- the importer: an overlay's animations and limb lists read as RAM holds the overlay;
+- `SaveContext::clear_event_chk_inf`;
+- the preset `kakariko-letter` (milestone 4's end: the letter on C-Left, the Fairy Ocarina on
+  C-Down, Zelda's Lullaby);
+- `Route::Kakariko` (`--script kakariko`), with the tasks `Lift`, `Throw`, `Glide` and `WaitGate`,
+  and `Who::GateGuard`; `Task::ShowItem` presses A at an event's box.
+
+The work was split: Player's lift, the draw configs, the scene change, the route and the docs here;
+the sixteen actors by five helpers in their own worktrees, each from the decomp with its tests,
+merged and checked here.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game26`, `OOT_DATA_DIR=out/data25`):
+945 passed, 0 failed, 1 ignored (885 before). New, with their expectations from the C:
+- **`oot_actors --test kakariko`** (6):
+  - A cucco (params -1 by the bazaar, `func_80AB6570`) offered to the lift: A, the put-away, then
+    `Player_Action_80846050`; on frame 4 Player's `heldActor`, the cucco's parent; at the end
+    standing with `Player_UpperAction_CarryActor`, the cucco over his head; A (throw-only):
+    `Player_Action_80846578`, let go along his facing.
+  - The glide: carrying a cucco 300 up, `velocity.y` -2, gravity -0.5, `fallStartHeight` following
+    him; landed with no damage, still carrying.
+  - A small rock (0x0200 by the gate): lifted (`EnIshi_SetupLiftedUp`, room -1), thrown away from
+    the cliff, flying, broken where it lands.
+  - A bush without strength: `Player_Action_80846408`, Link 20 from it, carrying cleared at the
+    end, the bush unmoved; with the bracelet: pulled up and thrown, gone where it lands.
+  - The exit's run (below).
+- **`oot_actors --test anju`** (7): Anju by scene and time; the pen's count and its bits
+  (`INFTABLE_199` to `_19F` by `unk_2AA`, the edges at < 90 and < 190); her texts 0x5036 to 0x503B
+  by the count; the chime and the sigh; seven penned: the Empty Bottle and `ITEMGETINF_0C`, then
+  0x503D; the adult's Pocket Egg and trade; a cucco struck enough calls the flock (158 to 164
+  frames, seven, one dives, Link knocked down).
+- **`oot_actors --test carpenters`** (14): their inits by age, scene and time; Jiro's and Shiro's
+  paths (the turns, the speeds, the stops at the ends); Sabooro spawned by the gallery; their texts;
+  Mutoh's texts and `INFTABLE_170` to `_172`, the saw's trade for the Broken Goron's Sword; the
+  son's text by night.
+- **`oot_actors --test kakariko_village`** (10): the sails' 100 a frame and the fast turn to 1800;
+  the well's water at 52, draining 2 a frame; the crossbeam by age and flags and in the cutscene
+  layers, its fall along its cue; the gallery's collision and its carpenter by day only; the
+  adult's posters; the man on the roof's texts and his piece of heart (`ITEMGETINF_15`).
+- **`oot_actors --test windmill`** (10): the cow and its tail, its breath; Link's house's cow for an
+  adult only; Epona's Song for milk (0x2006, 0x2007, the bottle filled) and without a bottle
+  (0x2013); the windmill man's texts; the gear's speed by the flag (its destroy slowing it); the
+  child's Song of Storms through `gWindmillSpinningFasterCs` and Kakariko's
+  `gKakarikoVillageWellDrainingCs` to `EVENTCHKINF_DRAINED_WELL`; the adult's lesson.
+- **`oot_actors --test skulltula_house`** (10): who's cursed or cured by the tokens; the cursed
+  ones' size and colliders; a cured child's object, dance and texts; the rewards (the wallets by
+  the one held) and their flags; the father's drop, landing and talk (`EVENTCHKINF_96`,
+  `INFTABLE_196`); a slash's sway; a stun's spin (and the colliders' shrinking, `@bug (game)`).
+- **`oot_game --test scene`** (1 new): Kakariko's windows and the guard house's views loaded from
+  0x08000000 and 0x09000000, baked by layer, and `segment_textures` by `nightFlag` and age.
+- **`oot_import --test pack`**: the three new draw configs against the C interpreter, their pointer
+  segments too.
+
+**The exit run** (`Route::Kakariko`, `--script kakariko`, `ENTR_KAKARIKO_VILLAGE_0`,
+`kakariko-letter`, 10:00): the intro (`gKakarikoVillageIntroCs`, `EVENTCHKINF_A3`), `cucco_lifted`
+387 (`sKakarikoPosList[0]`, by the way in), `cucco_penned` 921 (thrown over the pen's north fence),
+`cucco_lifted` 1014 (`[2]`, east of the pen), `cucco_penned` 1109, `cucco_lifted` 1858 (`[1]`, on
+the landing below the gate's stairs), `glided` 2179 (off the low roof south of the watchtower),
+`cucco_penned` 2435, `letter_shown` and `gate_open` 4787. Texts: 0x2010 (the letter, its pages;
+the gate opens), 0x2015 (the mask shop). At the end `INFTABLE_199`, `_19A`, `_19B` (Anju's count)
+and `INFTABLE_76` are set, and the gate is at x -89.
+
+**The goldens.** Against milestone 4's 175: 169 the same bytes, 6 changed, each proven by taking its
+cause out in a second build: the Kokiri runs' traces (`mido_shop`, `new_save_deku_tree`,
+`playthrough`, `sword_chest`: only their actor counts in Link's house) by `En_Cow`, killed there
+for a child; `field_night`'s trace by the carpenter the gallery spawns and its end by the windmill's
+sails. New: `kakariko` (the trace, 4787 frames, and the end at the gate) and its frames 600 (the
+first cucco carried), 908 (thrown over the fence, Anju behind), 2140 (the glide) and 4000 (the
+guard's text); each the same bytes over two runs. Logged in [golden/README.md](../golden/README.md):
+181 hashes, 137 cases.
+
+### Decisions
+
+- **[ADR 0064](adr/0064-kakariko-lifting-and-the-village.md):** lifting through Player's requests,
+  the carried actor placed at draw time; the lifted things whole; textures by state as segment
+  textures swapped by source; `Actor_CleanupContext` on a scene change; an overlay's assets as RAM
+  holds them; the actors whole; the run's cuccos thrown over the fence, one glided.
+
+### Corrections to the survey
+
+- `gKakarikoVillageIntroCs` was already playing (`sEntranceCutsceneTable`, since GAME-04b).
+- The man on the roof's piece of heart is for Link on the roof beside him (his yaw to Link in
+  -0x36AF to 0, within 150, at most 80 below him), not behind him.
+- A child sees no posters: the posters and the finished gallery are the adult's layers; the
+  child's has the unfinished gallery.
+- `En_Daiku_Kakariko`'s `INFTABLE_176` and `_178` follow texts 0x6061 and 0x6064, which are
+  `En_Daiku`'s (Gerudo Valley's carpenters): they're never set in play.
+- Kakariko's potion shop's carpenter is Ichiro (type 0, only there); the guest house has the
+  other three and Mutoh by night.
+- The House of Skulltula and Kakariko's potion shop were Phase 20's in COVERAGE's table; they're
+  Phase 8's now, as the plan had them.
+- Anju's pen is fenced all round: cuccos go in over the fence.
+
+### Known gaps
+
+- **The grotto's actors** (#58: `En_Torch`, `Obj_Comb`, `En_Fish`), **the heavy block** (#56),
+  **the adult's Master Sword** (#57), **masks** (#39: every new actor's mask texts give 0),
+  **the splash and ripples** of what's thrown into water (#40), **`Rumble_Request`**.
+- **`En_Weather_Tag`** is the graveyard's for a child (#51; Kakariko's are the adult's).
+- **Shadows** stay the circle stand-in.
+
+### Fixes found while building
+
+- **A scene change destroyed no actors:** the windmill's gear's destroy (`EVENTCHKINF_65`) never ran
+  on leaving. `Actor_CleanupContext` now runs (ADR 0064).
+- **`NA_SE_PL_PULL_UP_PLANT`** is 0x869 (first written 0x86B).
+- **`Task::ShowItem`** waited for ever at an event's box (the gate guard's).
+
+### Fixes after the hand test
+
+The user played it (2026-10-13): everything looked right but two things.
+- **The windows floated off the houses.** That's the game's data: Kakariko's window panels stand 6
+  to 10 units in front of their walls in its rooms (the ROM's `spot01_room_0`: a window's
+  vertices at z 1130 on a wall at 1120, with nothing between). Shown the data, the user chose to
+  move them halfway (not flush, against depth fighting): a departure, made at import
+  (`oot_import::room::kakariko_windows_halfway`: each panel textured from segment 8 moved towards
+  the wall behind it by half the gap; ADR 0064). Test: `kakariko_windows_stand_halfway_to_their_walls`
+  (every window 2.7 to 5 from its wall); 946 passed, 0 failed, 1 ignored. Golden `kakariko_carry`
+  re-recorded, proven by taking the move out (`golden/README.md`); 181/181.
+- **The graveyard's big headstone is missing:** the royal tomb's gravestone (`Bg_Spot02_Objects`
+  type 2), milestone 6's, is still a placeholder.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-kakariko.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-kakariko.bat
+```
+
+### By hand
+
+`game-kakariko.bat` (or menu 117). WASD the stick (Shift walks), Space A, E B, Q Z, J C-Left,
+K C-Down (the ocarina). Epona's Song: I J L I J L; the Song of Storms: Space K I Space K I.
+1. **The intro and a cucco:** from the entrance, the intro (the windmill, then Link walking in).
+   Walk to the cucco ahead on the right: "Grab" on A; A: Link lifts it over his head, wings
+   flapping; walk with it. A: thrown ahead, it flutters down.
+2. **The pen:** `game-kakariko.bat pen`: Anju by her fenced pen. Carry a cucco here and throw it over
+   the fence: Anju's chime; talk to her: her text counts the cuccos in the pen.
+3. **The glide:** `game-kakariko.bat roof`: the cucco on the landing beside Link. Lift it, walk down
+   east onto the low roof south of the watchtower (it joins the terrace) and run off its south edge:
+   Link floats down slowly and lands unhurt.
+4. **The flock:** strike a cucco with the sword five to eight times: it crows, the camera turns, and
+   cuccos fly in and dive at Link.
+5. **Things to lift:** the pots by the houses (lifted and thrown, broken), the small rocks by the
+   gate (lifted, thrown, broken), a bush (Link only tugs at it).
+6. **The gate:** `game-kakariko.bat gate`: J (the letter) to the guard: his long text, the gate
+   slides open, then his text about the mask shop.
+7. **The roof man:** he sits on the roof east of the watchtower. Try reaching that roof (from the
+   watchtower's top, up its ladder): standing on it beside him, his talk gives the piece of heart.
+   Report whether the roof can be reached at all.
+8. **Dusk and night:** `game-kakariko.bat dusk`: at 18:00 the windows light. `night`: the carpenter's
+   son under the tree, no cuccos.
+9. **Inside:** `cow` (Epona's Song by the cow: a moo, its talk; with an empty bottle, milk),
+   `windmill` (the man's text; the Song of Storms: the windmill speeds up, then the well drains in
+   Kakariko), `skulltula` (the cursed family hangs; slash one: it sways), `guests` (the carpenters
+   and Mutoh by night), `shop` (Ichiro), `guardhouse` (the pots to lift; the views outside by day).
+- **What to report:** the lift's, throw's and glide's feel, where things land, the cuccos' flutter
+  and the flock, Anju's and the people's looks and texts, the windows at dusk, the windmill and the
+  well, the cow, the House of Skulltula, and anything standing where it shouldn't (a placeholder
+  marker means an actor not ported).

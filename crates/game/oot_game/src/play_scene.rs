@@ -174,6 +174,11 @@ pub struct SceneState {
     /// (OPA, XLU), or `None` if the draw config isn't ported.
     pub draw: DrawConfigState,
     pub segments: Option<[SegmentValues; 2]>,
+    /// The textures the draw config points segments at this frame (OPA, XLU), each in place of
+    /// what the rooms loaded from that segment (`scene_table::segment_textures`).
+    pub segment_textures: [Vec<eng_gfx::SourceImage>; 2],
+    /// Every texture the draw config can point a segment at, decoded, by symbol.
+    pub texture_cache: std::collections::BTreeMap<&'static str, eng_gfx::DrawImage>,
     /// Draw every room (the spikes' view of a scene) instead of the room context's.
     pub all_rooms: bool,
 }
@@ -193,7 +198,19 @@ impl SceneState {
             &EnvState { light_mode: ld.skybox.light_mode, light_config: 0, light_setting: 0, day_time: day, skybox_time: sky },
         );
         let draw = DrawConfigState { gameplay_frames: 0, child, night, scene_layer: layer, day_time: day, scene_id: data.id, ..Default::default() };
-        Ok(SceneState { data, layer: stored, rooms, lights, draw, segments: None, all_rooms: false })
+        // The textures the draw config can point at, by age and time.
+        let mut texture_cache = std::collections::BTreeMap::new();
+        for (c, n) in [(true, false), (true, true), (false, false), (false, true)] {
+            let st = DrawConfigState { child: c, night: n, ..draw.clone() };
+            for t in scene_table::segment_textures(&data.draw_config, &st) {
+                if texture_cache.contains_key(t.symbol) {
+                    continue;
+                }
+                let tex = pack.texture(t.file, t.symbol).with_context(|| format!("{}'s {}", data.draw_config, t.symbol))?;
+                texture_cache.insert(t.symbol, eng_gfx::DrawImage { width: tex.width, height: tex.height, rgba: tex.rgba.into() });
+            }
+        }
+        Ok(SceneState { data, layer: stored, rooms, lights, draw, segments: None, segment_textures: Default::default(), texture_cache, all_rooms: false })
     }
 
     pub fn layer_data(&self) -> &LayerData {
@@ -213,6 +230,13 @@ impl SceneState {
     pub fn run_draw_config(&mut self, gameplay_frames: u32) {
         self.draw.gameplay_frames = gameplay_frames;
         self.segments = scene_table::segment_values(&self.data.draw_config, &mut self.draw);
+        let mut out: [Vec<eng_gfx::SourceImage>; 2] = Default::default();
+        for t in scene_table::segment_textures(&self.data.draw_config, &self.draw) {
+            if let Some(image) = self.texture_cache.get(t.symbol) {
+                out[t.xlu as usize].push(eng_gfx::SourceImage { source: (t.segment as u32) << 24, image: image.clone() });
+            }
+        }
+        self.segment_textures = out;
     }
 }
 
@@ -601,7 +625,16 @@ impl PlayState {
     /// the save, the pad, the camera choice and the debug switches.
     pub(crate) fn reinit(&mut self) {
         let Some(assets) = self.assets.clone() else { return };
-        // Play_Destroy → Actor_CleanupContext → Play_SaveSceneFlags.
+        // Play_Destroy → Actor_CleanupContext (func_80031C3C): every actor deleted, category by
+        // category, each list from its head (Actor_Delete: its sounds stopped, its destroy run,
+        // so a destroy's flags are kept, as Bg_Relay_Objects' EVENTCHKINF_65); then
+        // Play_SaveSceneFlags.
+        for cat in 0..crate::actor_ctx::ACTORCAT_MAX {
+            while let Some(&h) = self.actors.category(cat).first() {
+                self.audio.stop_sfx_by_pos(crate::audio::sfx::SfxPos::Actor(h));
+                self.delete_actor(h);
+            }
+        }
         self.save_scene_flags();
         // Interface_Destroy: Map_Destroy.
         self.map_destroy();

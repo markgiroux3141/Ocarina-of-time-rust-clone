@@ -188,6 +188,16 @@ songs' effects (`Oceff_Wipe`, `_Wipe2`, `_Wipe3`, `_Wipe4`, `_Spot`, `_Storm`, `
 the Sun's Song's time, the fairy spots (`Shot_Sun`), the song spots (`En_Okarina_Tag`), and the
 cutscenes' ocarina texts. Its exit run plays Saria's Song (Navi calls, Saria talks), the Sun's Song
 (night to dawn) and the Song of Storms at the fairy spot (a fairy) in Hyrule Field.
+Milestone 4, the guards' courtyard and Zelda, is done ([ADR 0063](adr/0063-the-courtyards-zelda-and-impa.md)):
+the side-scrolling courtyard and its patrols, Zelda's meeting, the legend and her letter, Impa's
+lullaby and her goodbye in Hyrule Field.
+Milestone 5, Kakariko, is done ([ADR 0064](adr/0064-kakariko-lifting-and-the-village.md)):
+Player's lift, carry and throw with the cucco's glide; Anju and her cuccos, the attack cuccos, the
+carpenters, their boss and the son, the man on the roof, the windmill, the well and the gallery;
+the cow, the windmill man (the Song of Storms drains the well), the House of Skulltula's family;
+the village's, the grottos' and the guard house's draw configs (the windows light at dusk); every
+actor destroyed on a scene change. Its exit run carries three cuccos into Anju's pen (one glided
+off a roof) and opens the gate to Death Mountain with Zelda's letter.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -577,6 +587,15 @@ volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
 5. **Kakariko:** Player's lift, carry and throw, `En_Niw`, `En_Niw_Lady`, the gate, the people,
    the interiors; the draw configs of Kakariko, the grottos and the guard house (#46).
    - **Exit:** cuccos into Anju's pen, the letter to the guard, the gate opened.
+   - **Done** (2026-10-13, ADR 0064): one milestone in steps (the user's call). Player's lift,
+     carry, throw and put-down with the cucco's glide (BACKLOG #4), `En_Ishi`'s and `En_Kusa`'s
+     lifted states; `En_Niw_Lady`, `En_Attack_Niw`, `En_Daiku_Kakariko`, `En_Toryo`, `En_Hs2`,
+     `En_Ani`, `Bg_Spot01_Fusya`, `_Idohashira`, `_Idomizu`, `_Objects2`; the interiors' `En_Cow`,
+     `En_Fu`, `Bg_Relay_Objects`, `En_Ssh`, `En_Sth` (the House of Skulltula and Kakariko's potion
+     shop moved into the phase); `Actor_CleanupContext` on a scene change; an overlay's animations
+     in the importer. Kakariko's intro was already playing. The grotto's actors (#58), the heavy
+     block (#56) and the adult's Master Sword (#57) left out. `Route::Kakariko`, the `kakariko`
+     golden.
 6. **The graveyard:** Dampé's dig, the royal tomb, the ReDeads, the Sun's Song; the draw configs
    of the graves, the royal tomb and the fairy fountain (#46).
    - **Exit:** a dig at 18:00, the lullaby at the tomb, the Sun's Song learned.

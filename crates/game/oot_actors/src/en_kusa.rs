@@ -1,19 +1,30 @@
 //! `En_Kusa` (`ovl_En_Kusa/z_en_kusa.c`): a bush. The sword cuts it (`AC_HIT`): a type-0 bush
 //! goes, types 1 and 2 stay as a stump, and type 1 grows back after 120 frames.
 //!
-//! Params: bits 0..1 the type (0 `gFieldBushDL` from `gameplay_field_keep`, 1 and 2
-//! `object_kusa`'s bush), bit 4 bugs hide in it, bits 8..11 the drop table.
-//!
 //! A cut bush scatters its leaves (`EnKusa_SpawnFragments`: eight `EffectSsKakera`) and drops
 //! from its table (`EnKusa_DropCollectible`: `Item_DropCollectibleRandom`, `crate::en_item00`).
 //!
-//! Not ported: lifting and throwing (Player can't lift yet: `Actor_HasParent` is never true, so
-//! `EnKusa_LiftedUp`, `EnKusa_Fall` and `EnKusa_UprootedWaitRegrow` aren't reached). The bugs
-//! spawn as `En_Insect` (a placeholder).
+//! Within 100 it offers itself to Player's lift (`Actor_OfferCarry`); Link pulls it up only with
+//! a strength upgrade (a child without the Goron's Bracelet tugs at it). Lifted
+//! (`EnKusa_LiftedUp`) and let go, it falls tumbling (`EnKusa_Fall`) and breaks where it lands:
+//! types 0 and 2 go, type 1 leaves its root, 9 down, which rises from frame 120 and regrows from
+//! 170 (`EnKusa_UprootedWaitRegrow`).
+//!
+//! Not ported: the splash and ripples where it falls in water (`EffectSsGSplash`,
+//! `EffectSsGRipple`). The bugs spawn as `En_Insect` (a placeholder).
+//!
+//! Params: `type` bits 0 and 1 (0 `gFieldBushDL` from `gameplay_field_keep`, gone when cut; 1
+//! `object_kusa`'s bush, regrowing; 2 `object_kusa`'s, staying a stump); `bugs` bit 4 (bugs hide
+//! in it); `drop_table` bits 8 to 11 (types 0 and 2's collectible drop table, 13 and up read as 0;
+//! type 1 drops seeds or a heart).
+//! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_THROW_ONLY, Actor};
+use oot_game::actor::{
+    ACTOR_FLAG_THROW_ONLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, BGCHECKFLAG_GROUND_TOUCH, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER, BGCHECKFLAG_WATER_TOUCH, UPDBGCHECKINFO_FLAG_0,
+    UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_7,
+};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::{KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_KEEP};
@@ -82,7 +93,30 @@ pub enum Action {
     DoNothing,
     /// `EnKusa_Regrow`.
     Regrow,
+    /// `EnKusa_LiftedUp`.
+    LiftedUp,
+    /// `EnKusa_Fall`.
+    Fall,
+    /// `EnKusa_UprootedWaitRegrow`.
+    UprootedWaitRegrow,
 }
+
+/// `rotSpeedXtarget`, `rotSpeedX`, `rotSpeedYtarget`, `rotSpeedY`: the falling bush's tumble, the
+/// overlay's statics.
+#[derive(Debug, Default)]
+pub struct Statics {
+    pub rot_speed_x_target: i16,
+    pub rot_speed_x: i16,
+    pub rot_speed_y_target: i16,
+    pub rot_speed_y: i16,
+}
+
+/// `NA_SE_PL_PULL_UP_PLANT` (`playerbank_table.h`: 0x869), `NA_SE_EV_DIVE_INTO_WATER_L`
+/// (`environmentbank_table.h`: 0x28C5).
+const NA_SE_PL_PULL_UP_PLANT: u16 = 0x0869;
+const NA_SE_EV_DIVE_INTO_WATER_L: u16 = 0x28C5;
+/// `Actor_UpdateBgCheckInfo`'s flags for the falling bush (`UPDBGCHECKINFO_FLAG_6`: no splash).
+const FALL_BGCHECK: u32 = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2 | (1 << 6) | UPDBGCHECKINFO_FLAG_7;
 
 pub struct EnKusa {
     pub actor: Actor,
@@ -215,8 +249,10 @@ impl EnKusa {
 
     /// `EnKusa_Main`.
     fn main(&mut self, play: &mut PlayState) {
-        // Actor_HasParent (lifted): Player doesn't lift things yet.
-        if self.collider.base.ac_flags & AC_HIT != 0 {
+        if self.actor.parent.is_some() {
+            self.setup_lifted_up();
+            play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, NA_SE_PL_PULL_UP_PLANT);
+        } else if self.collider.base.ac_flags & AC_HIT != 0 {
             self.collider.base.ac_flags &= !AC_HIT;
             self.spawn_fragments(play);
             self.drop_collectible(play);
@@ -239,9 +275,124 @@ impl EnKusa {
                 play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
                 if self.actor.xz_dist_to_player < 400.0 {
                     play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
-                    // < 100: Actor_OfferCarry offers the bush to Player's lift (not ported).
+                    if self.actor.xz_dist_to_player < 100.0 {
+                        let a = self.actor.clone();
+                        oot_game::get_item::offer_pick_up(play, &a);
+                    }
                 }
             }
+        }
+    }
+
+    /// `EnKusa_SetupLiftedUp`: in no room while carried, and updated off screen.
+    fn setup_lifted_up(&mut self) {
+        self.setup_action(Action::LiftedUp);
+        self.actor.room = -1;
+        self.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+    }
+
+    /// `EnKusa_UpdateVelY`: gravity, down to `minVelocityY`.
+    fn update_vel_y(&mut self) {
+        self.actor.velocity.y += self.actor.gravity;
+        if self.actor.velocity.y < self.actor.min_velocity_y {
+            self.actor.velocity.y = self.actor.min_velocity_y;
+        }
+    }
+
+    /// `EnKusa_RandScaleVecToZero`: `vec` slowed by `scale`, give or take a tenth of it.
+    fn rand_scale_vec_to_zero(vec: &mut Vec3, mut scale: f32, play: &mut PlayState) {
+        scale += ((play.rand.zero_one() * 0.2) - 0.1) * scale;
+        vec.x -= vec.x * scale;
+        vec.y -= vec.y * scale;
+        vec.z -= vec.z * scale;
+    }
+
+    /// `EnKusa_LiftedUp`: let go, it's back in the room and falls from where it is, along its yaw
+    /// at its speed (the first frame's gravity -0.1, then -3.2), with the mass of a thrown thing.
+    fn lifted_up(&mut self, play: &mut PlayState) {
+        if self.actor.parent.is_none() {
+            self.actor.room = play.room_ctx.cur.num;
+            self.setup_fall(play);
+            self.actor.velocity.x = self.actor.speed_xz * eng_math::sin_s(self.actor.world_rot.y);
+            self.actor.velocity.z = self.actor.speed_xz * eng_math::cos_s(self.actor.world_rot.y);
+            self.actor.col_chk_info.mass = 240;
+            self.actor.gravity = -0.1;
+            self.update_vel_y();
+            Self::rand_scale_vec_to_zero(&mut self.actor.velocity, 0.005, play);
+            self.actor.update_pos();
+            self.actor.update_bg_check_info(&play.col, 7.5, 35.0, 0.0, FALL_BGCHECK);
+            self.actor.gravity = -3.2;
+        }
+    }
+
+    /// `EnKusa_SetupFall`: a tumble towards -0xBB8 on x and a random spin on y.
+    fn setup_fall(&mut self, play: &mut PlayState) {
+        self.setup_action(Action::Fall);
+        let y_target = ((play.rand.zero_one() - 0.5) * 1600.0) as i16;
+        let s = play.overlay_static::<Statics>(ACTOR_EN_KUSA);
+        s.rot_speed_x_target = -0xBB8;
+        s.rot_speed_y_target = y_target;
+        s.rot_speed_x = 0;
+        s.rot_speed_y = 0;
+    }
+
+    /// `EnKusa_Fall`: landing or hitting a wall it breaks (its sound out of water, its leaves, its
+    /// drop): types 0 and 2 go, type 1 waits to regrow. Entering water it slows (a splash and
+    /// ripples in the C) and tumbles half as fast. Otherwise it falls, tumbling, slowed by the air.
+    fn fall(&mut self, play: &mut PlayState) {
+        if self.actor.bg_check_flags & (BGCHECKFLAG_GROUND | BGCHECKFLAG_GROUND_TOUCH | BGCHECKFLAG_WALL) != 0 {
+            if self.actor.bg_check_flags & BGCHECKFLAG_WATER == 0 {
+                play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, oot_game::audio::sfx::NA_SE_EV_PLANT_BROKEN);
+            }
+            self.spawn_fragments(play);
+            self.drop_collectible(play);
+            match self.ty() {
+                ENKUSA_TYPE_0 | ENKUSA_TYPE_2 => self.actor.kill(),
+                ENKUSA_TYPE_1 => self.setup_uprooted_wait_regrow(),
+                _ => {}
+            }
+            return;
+        }
+        if self.actor.bg_check_flags & BGCHECKFLAG_WATER_TOUCH != 0 {
+            // EffectSsGSplash_Spawn and three EffectSsGRipple_Spawn at the surface: not ported.
+            self.actor.min_velocity_y = -3.0;
+            let s = play.overlay_static::<Statics>(ACTOR_EN_KUSA);
+            s.rot_speed_x >>= 1;
+            s.rot_speed_x_target >>= 1;
+            s.rot_speed_y >>= 1;
+            s.rot_speed_y_target >>= 1;
+            self.actor.bg_check_flags &= !BGCHECKFLAG_WATER_TOUCH;
+            play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 40, NA_SE_EV_DIVE_INTO_WATER_L);
+        }
+        self.update_vel_y();
+        let s = play.overlay_static::<Statics>(ACTOR_EN_KUSA);
+        eng_math::step_to_s(&mut s.rot_speed_x, s.rot_speed_x_target, 0x1F4);
+        eng_math::step_to_s(&mut s.rot_speed_y, s.rot_speed_y_target, 0xAA);
+        let (rx, ry) = (s.rot_speed_x, s.rot_speed_y);
+        self.actor.shape_rot.x = self.actor.shape_rot.x.wrapping_add(rx);
+        self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(ry);
+        Self::rand_scale_vec_to_zero(&mut self.actor.velocity, 0.05, play);
+        self.actor.update_pos();
+        self.actor.update_bg_check_info(&play.col, 7.5, 35.0, 0.0, FALL_BGCHECK);
+        self.collider.update(&self.actor);
+        play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
+    }
+
+    /// `EnKusa_SetupUprootedWaitRegrow`: its root back home, 9 down, small and unturned.
+    fn setup_uprooted_wait_regrow(&mut self) {
+        self.actor.world_pos.x = self.actor.home_pos.x;
+        self.actor.world_pos.y = self.actor.home_pos.y - 9.0;
+        self.actor.world_pos.z = self.actor.home_pos.z;
+        self.set_scale_small();
+        self.actor.shape_rot = self.actor.home_rot;
+        self.setup_action(Action::UprootedWaitRegrow);
+    }
+
+    /// `EnKusa_UprootedWaitRegrow`: from frame 121 it rises 0.6 a frame home, and regrows from
+    /// frame 170 once there.
+    fn uprooted_wait_regrow(&mut self) {
+        if self.timer > 120 && eng_math::step_to_f(&mut self.actor.world_pos.y, self.actor.home_pos.y, 0.6) && self.timer >= 170 {
+            self.setup_regrow();
         }
     }
 
@@ -313,6 +464,9 @@ impl ActorImpl for EnKusa {
             }
             Action::DoNothing => {}
             Action::Regrow => self.regrow(),
+            Action::LiftedUp => self.lifted_up(play),
+            Action::Fall => self.fall(play),
+            Action::UprootedWaitRegrow => self.uprooted_wait_regrow(),
         }
         self.actor.shape_y_offset = if self.actor.flags & ACTOR_FLAG_GRASS_DESTROYED != 0 { -6.25 } else { 0.0 };
     }

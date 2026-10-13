@@ -625,6 +625,24 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "kakariko-letter",
+        about: "zeldas-letter, and Impa's lullaby over (EVENTCHKINF_59, Item_Give(ITEM_SONG_LULLABY)), as Link leaves Hyrule Field's goodbye for Kakariko with the letter for its gate guard (GAME-07 milestone 5)",
+        apply: |s| {
+            castle_preset(s);
+            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+            s.set_event_chk_inf(0x14);
+            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+            s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
+            item_give(s, None, crate::item::ITEM_ZELDAS_LETTER);
+            s.equip_item_on_c_left(crate::item::ITEM_ZELDAS_LETTER);
+            s.set_event_chk_inf(0x40);
+            // save.h: EVENTCHKINF_59 0x59 (DemoIm's lullaby script started); ITEM_SONG_LULLABY
+            // (item.h: 0x60), Item_Give's quest bit.
+            s.set_event_chk_inf(0x59);
+            item_give(s, None, 0x60);
+        },
+    },
+    SavePreset {
         name: "ocarina-songs",
         about: "deku-tree-dead, the Fairy Ocarina (ITEM_OCARINA_FAIRY) on C-Left and Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's Song, the Song of Time and the Song of Storms (ITEM_SONG_LULLABY .. ITEM_SONG_STORMS: Item_Give's quest bits) (GAME-07 milestone 3)",
         apply: |s| {
@@ -1148,6 +1166,11 @@ impl SaveContext {
     /// `SET_EVENTCHKINF` (`Flags_SetEventChkInf`).
     pub fn set_event_chk_inf(&mut self, flag: u16) {
         self.event_chk_inf[(flag >> 4) as usize] |= 1 << (flag & 0xF);
+    }
+
+    /// `CLEAR_EVENTCHKINF`.
+    pub fn clear_event_chk_inf(&mut self, flag: u16) {
+        self.event_chk_inf[(flag >> 4) as usize] &= !(1 << (flag & 0xF));
     }
 
     /// `GET_ITEMGETINF`, `SET_ITEMGETINF`.

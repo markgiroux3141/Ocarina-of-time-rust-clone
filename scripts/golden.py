@@ -220,6 +220,13 @@ CASES = [
     ("zelda_letter", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "12200", "--screenshot", "{shot}"]),
     ("zelda_lullaby", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "13300", "--screenshot", "{shot}"]),
     ("zelda_impa", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "14200", "--screenshot", "{shot}"]),
+    # GAME-07 milestone 5: Kakariko (Route::Kakariko): its intro, three cuccos carried to Anju's pen
+    # (the third glided off the low roof), the letter shown to the gate guard and the gate opened.
+    ("kakariko", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("kakariko_carry", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "600", "--screenshot", "{shot}"]),
+    ("kakariko_throw", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "908", "--screenshot", "{shot}"]),
+    ("kakariko_glide", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "2140", "--screenshot", "{shot}"]),
+    ("kakariko_gate", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "4000", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

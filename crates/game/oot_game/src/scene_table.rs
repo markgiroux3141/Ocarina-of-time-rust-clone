@@ -11,6 +11,13 @@
 //! The display lists are built with the `z_rcp.c` helpers the configs call (`Gfx_TexScroll`,
 //! `Gfx_TwoTexScroll`) and read back with `SegmentValues::read`, the same way the import-time
 //! values were.
+//!
+//! Some configs point a segment at one of two textures by the time of day
+//! (`gSPSegment(.., SEGMENTED_TO_VIRTUAL(sKakarikoWindowTextures[nightFlag]))`). The meshes are
+//! baked with the layer's choice (day for the day layers, night for the night ones), but the C
+//! changes it on the frame `nightFlag` does, inside the layer: `segment_textures` says which
+//! texture each such segment holds this frame, and the room draw puts it in place of what the
+//! mesh loaded from that segment (`DrawParams::texture_images`, by the load's source address).
 
 use std::collections::BTreeMap;
 
@@ -319,6 +326,76 @@ fn draw_config_calm_water(st: &mut DrawConfigState, b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigGrottos` (the grottos): scrolls on segments 8, 9 and 0xC in the XLU buffer,
+/// and 0xA, 0xB and 0xD in the OPA buffer.
+fn draw_config_kakusiana(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_tex_scroll(0, f % 64, 256, 16));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - (f % 128), f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
+    b.opa.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 0, 32, 32, 1, 0, 127 - f % 128, 32, 32));
+    b.opa.insert(0x0B, gfx_tex_scroll(0, f % 128, 32, 32));
+    b.xlu.insert(0x0C, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f.wrapping_mul(50) % 2048, 8, 512, 1, 0, f.wrapping_mul(60) % 2048, 8, 512));
+    b.opa.insert(0x0D, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 0, 32, 64, 1, 0, f % 128, 32, 32));
+    // gDPSetEnvColor(POLY_XLU_DISP / POLY_OPA_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigMarketGuardHouse` (the market's guard house): its two window views on
+/// segments 8 and 9 (`segment_textures`); no display lists.
+fn draw_config_miharigoya(_st: &mut DrawConfigState, _b: &mut Buffers) {
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigKakarikoVillage` (Kakariko): its windows on segment 8
+/// (`segment_textures`); no display lists.
+fn draw_config_spot01(_st: &mut DrawConfigState, _b: &mut Buffers) {
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// A texture a draw config points a segment at this frame
+/// (`gSPSegment(.., SEGMENTED_TO_VIRTUAL(texture))`): in the OPA buffer, or the XLU one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SegmentTexture {
+    pub segment: u8,
+    pub xlu: bool,
+    /// The texture's file and symbol in the pack (`keys::texture`).
+    pub file: &'static str,
+    pub symbol: &'static str,
+}
+
+/// `sKakarikoWindowTextures` (by `nightFlag`).
+const KAKARIKO_WINDOW_TEXTURES: [&str; 2] = ["gKakarikoVillageDayWindowTex", "gKakarikoVillageNightWindowTex"];
+/// `sGuardHouseView1Textures`, `sGuardHouseView2Textures` (day, night).
+const GUARD_HOUSE_VIEW1_TEXTURES: [&str; 2] = ["gGuardHouseOutSideView1DayTex", "gGuardHouseOutSideView1NightTex"];
+const GUARD_HOUSE_VIEW2_TEXTURES: [&str; 2] = ["gGuardHouseOutSideView2DayTex", "gGuardHouseOutSideView2NightTex"];
+
+/// `Scene_DrawConfigKakarikoVillage`'s segment 8: the windows lit by night.
+fn textures_spot01(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    vec![SegmentTexture { segment: 0x08, xlu: false, file: "spot01_scene", symbol: KAKARIKO_WINDOW_TEXTURES[st.night as usize] }]
+}
+
+/// `Scene_DrawConfigMarketGuardHouse`'s segments 8 (view 2) and 9 (view 1): the outside by
+/// `nightFlag` for a child, always the night's for an adult (Castle Town is ruined).
+fn textures_miharigoya(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    let var = if !st.child { 1 } else { st.night as usize };
+    vec![
+        SegmentTexture { segment: 0x08, xlu: false, file: "miharigoya_scene", symbol: GUARD_HOUSE_VIEW2_TEXTURES[var] },
+        SegmentTexture { segment: 0x09, xlu: false, file: "miharigoya_scene", symbol: GUARD_HOUSE_VIEW1_TEXTURES[var] },
+    ]
+}
+
+type TexturesFn = fn(&DrawConfigState) -> Vec<SegmentTexture>;
+
+/// The ported draw configs that point segments at textures by state.
+const TEXTURES: &[(&str, TexturesFn)] = &[("SDC_KAKARIKO_VILLAGE", textures_spot01), ("SDC_MARKET_GUARD_HOUSE", textures_miharigoya)];
+
+/// The textures the draw config `sdc` points segments at this frame (empty for the others).
+pub fn segment_textures(sdc: &str, st: &DrawConfigState) -> Vec<SegmentTexture> {
+    TEXTURES.iter().find(|(n, _)| *n == sdc).map(|(_, f)| f(st)).unwrap_or_default()
+}
+
 type DrawConfigFn = fn(&mut DrawConfigState, &mut Buffers);
 
 /// The ported draw configs, by `SDC_*` name.
@@ -334,6 +411,9 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_TEMPLE_OF_TIME", draw_config_tokinoma),
     ("SDC_CASTLE_COURTYARD_GUARDS", draw_config_hairal_niwa),
     ("SDC_CALM_WATER", draw_config_calm_water),
+    ("SDC_KAKARIKO_VILLAGE", draw_config_spot01),
+    ("SDC_GROTTOS", draw_config_kakusiana),
+    ("SDC_MARKET_GUARD_HOUSE", draw_config_miharigoya),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

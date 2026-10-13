@@ -51,6 +51,9 @@ pub const ACTOR_FLAG_SFX_TIMER: u32 = 1 << 28;
 /// `Actor_Draw` binds no point lights for it (`Lights_BindAll` with no position).
 pub const ACTOR_FLAG_IGNORE_POINT_LIGHTS: u32 = 1 << 22;
 pub const ACTOR_FLAG_THROW_ONLY: u32 = 1 << 23;
+/// `ACTOR_FLAG_CARRY_X_ROT_INFLUENCE` (`actor.h`): carried, it pitches with Player's left hand
+/// (`Bg_Heavy_Block`).
+pub const ACTOR_FLAG_CARRY_X_ROT_INFLUENCE: u32 = 1 << 17;
 pub const ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT: u32 = 1 << 24;
 pub const ACTOR_FLAG_UPDATE_DURING_OCARINA: u32 = 1 << 25;
 pub const ACTOR_FLAG_CAN_PRESS_SWITCHES: u32 = 1 << 26;

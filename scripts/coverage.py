@@ -85,6 +85,9 @@ SCENES = {
     # Kakariko and the graveyard (Kakariko's 7: the mountain's eruption).
     "spot01_scene": (8, 17, 17, {7: 15}), "kakariko_scene": (8, 17, 8), "kakariko3_scene": (8, 17, 8),
     "impa_scene": (8, 20, 8), "labo_scene": (8, 20, 8), "hut_scene": (8, 17, 8),
+    # GAME-07 milestone 5 took in the House of Skulltula (its family) and Kakariko's potion
+    # shop (a child meets a carpenter there; the shopkeeper is the adult's).
+    "kinsuta_scene": (8, 20, 8), "drag_scene": (8, 20, 8),
     # The adult graveyard and Dampé's race (the hookshot) come before the Forest Temple.
     "spot02_scene": (8, 14, 17), "hakaana_scene": (8, 17, 8), "hakaana2_scene": (8, 17, 8),
     "hakaana_ouke_scene": (8, 17, 8), "hakasitarelay_scene": (8, 14, 17),
@@ -102,10 +105,10 @@ SCENES = {
     "spot11_scene": (18, 18, 18), "tent_scene": (18, 18, 18),
     # Shops, games and side places.
     "takaraya_scene": (20, 20, 20), "shop1_scene": (20, 20, 20), "golon_scene": (20, 20, 20),
-    "zoora_scene": (20, 20, 20), "drag_scene": (20, 20, 20), "alley_shop_scene": (20, 20, 20),
+    "zoora_scene": (20, 20, 20), "alley_shop_scene": (20, 20, 20),
     "night_shop_scene": (20, 20, 20), "face_shop_scene": (20, 20, 20), "mahouya_scene": (20, 20, 20),
     "syatekijyou_scene": (20, 20, 20), "bowling_scene": (20, 20, 20), "turibori_scene": (20, 20, 20),
-    "kinsuta_scene": (20, 20, 20), "yousei_izumi_yoko_scene": (20, 20, 20),
+    "yousei_izumi_yoko_scene": (20, 20, 20),
     # The grottos: one scene for the holes all over the world, optional (heart pieces,
     # Skulltulas, fairies, scrubs).
     "kakusiana_scene": (20, 20, 20),

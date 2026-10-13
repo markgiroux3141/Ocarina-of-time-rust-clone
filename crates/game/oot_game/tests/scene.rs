@@ -240,3 +240,88 @@ fn cullable_order_follows_room_draw_cullable() {
     let order = cullable_order(&b, |p| p.z, 5800.0);
     assert_eq!(order, vec![2, 0]);
 }
+
+/// The textures a layer's rooms loaded from `source` (`G_SETTIMG`'s segmented address).
+fn room_textures_from(pack: &GamePack, scene: &str, layer: usize, source: u32) -> Vec<Vec<u8>> {
+    let s = pack.scene(scene).expect("scene");
+    let mut out = Vec::new();
+    for k in &s.layers[layer].rooms {
+        let r = pack.room(k).expect("room");
+        for e in &r.entries {
+            for d in [&e.opa, &e.xlu].into_iter().flatten() {
+                out.extend(d.textures.iter().filter(|t| t.source_addr == Some(source)).map(|t| t.image.rgba.clone()));
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn the_window_textures_are_loaded_through_the_segments_the_draw_configs_swap() {
+    let Ok(pack) = GamePack::open_default() else { return };
+    // Scene_DrawConfigKakarikoVillage: gSPSegment(POLY_OPA_DISP, 0x08,
+    // sKakarikoWindowTextures[nightFlag]). The rooms load the windows from 0x08000000, baked with
+    // the day's on layer 0 and the night's on layer 1, so a draw can put the other in place.
+    let tex = |file: &str, sym: &str| pack.texture(file, sym).expect("texture").rgba;
+    let day = tex("spot01_scene", "gKakarikoVillageDayWindowTex");
+    let night = tex("spot01_scene", "gKakarikoVillageNightWindowTex");
+    let l0 = room_textures_from(&pack, "spot01_scene", 0, 0x0800_0000);
+    let l1 = room_textures_from(&pack, "spot01_scene", 1, 0x0800_0000);
+    assert!(!l0.is_empty() && l0.iter().all(|t| *t == day), "layer 0's windows: the day's");
+    assert!(!l1.is_empty() && l1.iter().all(|t| *t == night), "layer 1's: the night's");
+    // segment_textures follows nightFlag inside a layer.
+    let st = |night| DrawConfigState { child: true, night, ..Default::default() };
+    let t = scene_table::segment_textures("SDC_KAKARIKO_VILLAGE", &st(true));
+    assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, false, "gKakarikoVillageNightWindowTex"));
+    // Scene_DrawConfigMarketGuardHouse: segment 8 sGuardHouseView2Textures[var], 9 View1's; var
+    // nightFlag for a child, 1 for an adult.
+    let v2 = room_textures_from(&pack, "miharigoya_scene", 0, 0x0800_0000);
+    let v1 = room_textures_from(&pack, "miharigoya_scene", 0, 0x0900_0000);
+    assert!(!v2.is_empty() && v2.iter().all(|t| *t == tex("miharigoya_scene", "gGuardHouseOutSideView2DayTex")));
+    assert!(!v1.is_empty() && v1.iter().all(|t| *t == tex("miharigoya_scene", "gGuardHouseOutSideView1DayTex")));
+    let adult = DrawConfigState { child: false, night: false, ..Default::default() };
+    let t = scene_table::segment_textures("SDC_MARKET_GUARD_HOUSE", &adult);
+    assert_eq!(t.iter().map(|t| (t.segment, t.symbol)).collect::<Vec<_>>(), vec![(0x08, "gGuardHouseOutSideView2NightTex"), (0x09, "gGuardHouseOutSideView1NightTex")]);
+}
+
+#[test]
+fn kakariko_windows_stand_halfway_to_their_walls() {
+    let Ok(pack) = GamePack::open_default() else { return };
+    // A departure (the user's call, 2026-10-13): the ROM's window panels (textured from segment 8)
+    // stand 6 to 10 units in front of their walls; the import moves each halfway, so every gap
+    // to the wall behind is 3 to 5.
+    for layer in [0, 1] {
+        let s = pack.scene("spot01_scene").unwrap();
+        let (mut walls, mut wins) = (Vec::new(), Vec::new());
+        for k in &s.layers[layer].rooms {
+            let r = pack.room(k).unwrap();
+            for d in r.entries.iter().flat_map(|e| [e.opa.as_ref(), e.xlu.as_ref()]).flatten() {
+                for b in &d.batches {
+                    let win = d.materials[b.material].textures.iter().flatten().any(|t| d.textures[t.image].source_addr == Some(0x0800_0000));
+                    for t in b.vertices.chunks_exact(3) {
+                        let tri = [t[0].pos, t[1].pos, t[2].pos];
+                        if win { wins.push(tri) } else { walls.push(tri) }
+                    }
+                }
+            }
+        }
+        let normal = |t: &[Vec3; 3]| (t[1] - t[0]).cross(t[2] - t[0]).normalize_or_zero();
+        assert!(!wins.is_empty());
+        for w in &wins {
+            let (n, p) = (normal(w), (w[0] + w[1] + w[2]) / 3.0);
+            let gap = walls
+                .iter()
+                .filter(|t| normal(t).dot(n) > 0.95)
+                .filter_map(|t| {
+                    let tn = normal(t);
+                    let d = (p - t[0]).dot(tn);
+                    let q = p - tn * d;
+                    let inside = (0..3).all(|i| (t[(i + 1) % 3] - t[i]).cross(q - t[i]).dot(tn) >= -0.01);
+                    (inside && (0.5..30.0).contains(&d)).then_some(d)
+                })
+                .reduce(f32::min);
+            let gap = gap.expect("a wall behind each window");
+            assert!((2.7..5.05).contains(&gap), "layer {layer}: a window at {p} (facing {n}) is {gap} from its wall");
+        }
+    }
+}

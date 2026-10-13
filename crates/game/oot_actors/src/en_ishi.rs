@@ -3,15 +3,29 @@
 //! explosion breaks a small one.
 //!
 //! A broken small rock drops from its table (`EnIshi_DropCollectible`), and breaks into pieces
-//! (`sFragmentSpawnFuncs`: `EffectSsKakera`) and dust (`sDustSpawnFuncs`: `func_80033480`); both
-//! kinds' are ported (the large rock's come from `EnIshi_Fly`).
+//! (`sFragmentSpawnFuncs`: `EffectSsKakera`) and dust (`sDustSpawnFuncs`: `func_80033480`).
 //!
-//! Not ported: lifting and throwing (Player can't lift yet, so `Actor_HasParent` is never
-//! true and the `EnIshi_LiftedUp` / `EnIshi_Fly` states are never reached).
+//! Within 90 it offers itself to Player's lift (`Actor_OfferGetItem` with `GI_NONE`: 50 across
+//! and 10 up for a small rock, 80 and 20 for a boulder, which Player lifts only with the silver
+//! gauntlets). Lifted (`EnIshi_LiftedUp`) it plays its pull-up sound and, with bugs under it,
+//! lets three out (`En_Insect`, a placeholder); thrown (`EnIshi_Fly`) it tumbles and breaks where
+//! it lands or hits a wall, a boulder setting its switch flag and shaking the camera.
+//!
+//! Not ported: the splash and ripples where it falls in water (`EffectSsGSplash`,
+//! `EffectSsGRipple`) and the boulder's rumble (`Rumble_Request`).
+//!
+//! Params: `type` bit 0 (0 a small rock, 1 a silver boulder); `bugs` bit 4 (bugs under it);
+//! `no_snap` bit 5 (1: not set on the floor at init); `drop_table` bits 8 to 11 (the small rock's
+//! collectible drop table, 13 and up read as 0); `switch_flag` bits 6 and 7 with bits 12 to 15
+//! (`ISHI_GET_SWITCH_FLAG`: `(params >> 10 & 0x3C) | (params >> 6 & 3)`).
+//! Flags: the boulder reads its switch flag at init (set: gone) and sets it when thrown.
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
-use oot_game::actor::{ACTOR_FLAG_THROW_ONLY, Actor, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL};
+use oot_game::actor::{
+    ACTOR_FLAG_THROW_ONLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER, BGCHECKFLAG_WATER_TOUCH, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2,
+    UPDBGCHECKINFO_FLAG_7,
+};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::{KAKERA_COLOR_NONE, KAKERA_COLOR_WHITE, OBJECT_GAMEPLAY_FIELD_KEEP};
@@ -74,7 +88,33 @@ const DMG_BREAKS_ROCK: u32 = DMG_HAMMER_SWING | DMG_HAMMER_JUMP | DMG_EXPLOSIVE;
 enum Action {
     /// `EnIshi_Wait`.
     Wait,
+    /// `EnIshi_LiftedUp`.
+    LiftedUp,
+    /// `EnIshi_Fly`.
+    Fly,
 }
+
+/// `sRotSpeedX`, `sRotSpeedY`: the thrown rock's tumble, the overlay's statics.
+#[derive(Debug, Default)]
+pub struct Statics {
+    pub rot_speed_x: i16,
+    pub rot_speed_y: i16,
+}
+
+/// `D_80A7FA28`: the air's drag on a thrown rock, by type.
+const D_80A7FA28: [f32; 2] = [0.0, 0.005];
+/// `liftSfxIds`: `NA_SE_PL_PULL_UP_ROCK`, `NA_SE_PL_PULL_UP_BIGROCK` (`playerbank_table.h`:
+/// 0x86A, 0x86C).
+const LIFT_SFX_IDS: [u16; 2] = [0x086A, 0x086C];
+/// `NA_SE_EV_DIVE_INTO_WATER_L` (`environmentbank_table.h`: 0x28C5).
+const NA_SE_EV_DIVE_INTO_WATER_L: u16 = 0x28C5;
+/// `ACTOR_EN_INSECT` (`actor_table.h`: 0x0020), `INSECT_TYPE_SPAWNED` (`z_en_insect.h`).
+const ACTOR_EN_INSECT: i16 = 0x0020;
+const INSECT_TYPE_SPAWNED: i16 = 1;
+/// `UPDBGCHECKINFO_FLAG_6` (`actor.h`): no splash on entering water (the port draws none).
+const UPDBGCHECKINFO_FLAG_6: u32 = 1 << 6;
+/// `Actor_UpdateBgCheckInfo`'s flags for the lifted and thrown rock.
+const FLY_BGCHECK: u32 = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_6 | UPDBGCHECKINFO_FLAG_7;
 
 pub struct EnIshi {
     pub actor: Actor,
@@ -105,8 +145,7 @@ impl EnIshi {
         // EnIshi_InitCollider.
         let mut collider = ColliderCylinder::new(&CYLINDER_INITS[ty]);
         collider.update(&actor);
-        let flag = ((actor.params as u16 >> 0xA) & 0x3C) | ((actor.params as u16 >> 6) & 3);
-        if ty == ROCK_LARGE && play.flags.get_switch(flag as i32) {
+        if ty == ROCK_LARGE && play.flags.get_switch(switch_flag(actor.params)) {
             actor.kill();
             return Box::new(EnIshi { actor, collider, action: Action::Wait });
         }
@@ -118,18 +157,59 @@ impl EnIshi {
         Box::new(EnIshi { actor, collider, action: Action::Wait })
     }
 
-    /// `EnIshi_Wait`.
-    fn wait(&mut self, play: &mut PlayState) {
-        let ty = self.ty();
-        // Actor_HasParent: Player doesn't lift things yet.
-        let hit = self.collider.base.ac_flags & AC_HIT != 0;
-        if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_elem.is_some_and(|h| h.at_dmg_info.dmg_flags & DMG_BREAKS_ROCK != 0) {
-            // EnIshi_DropCollectible.
+    /// `EnIshi_DropCollectible`: a small rock drops from its table (13 and up read as 0).
+    fn drop_collectible(&self, play: &mut PlayState) {
+        if self.ty() == ROCK_SMALL {
             let mut drop_params = (self.actor.params >> 8) & 0xF;
             if drop_params >= 0xD {
                 drop_params = 0;
             }
+            // COLLECTIBLE_DROP_RANDOM_PARAMS(dropParams, false).
             crate::en_item00::item_drop_collectible_random(play, None, self.actor.world_pos, drop_params << 4);
+        }
+    }
+
+    /// `EnIshi_Fall`: gravity, down to `minVelocityY`.
+    fn fall(&mut self) {
+        self.actor.velocity.y += self.actor.gravity;
+        if self.actor.velocity.y < self.actor.min_velocity_y {
+            self.actor.velocity.y = self.actor.min_velocity_y;
+        }
+    }
+
+    /// `func_80A7ED94`: the velocity slowed by `drag`, give or take a tenth of it at random.
+    fn func_80a7ed94(velocity: &mut Vec3, mut drag: f32, play: &mut PlayState) {
+        drag += ((play.rand.zero_one() * 0.2) - 0.1) * drag;
+        velocity.x -= velocity.x * drag;
+        velocity.y -= velocity.y * drag;
+        velocity.z -= velocity.z * drag;
+    }
+
+    /// `EnIshi_SpawnBugs`: three bugs (`En_Insect`, `INSECT_TYPE_SPAWNED`) at a random yaw, until
+    /// one can't spawn.
+    fn spawn_bugs(&self, play: &mut PlayState) {
+        for _ in 0..3 {
+            let yaw = (play.rand.zero_one() * 65535.0) as i32 as i16;
+            if play.actor_spawn(ACTOR_EN_INSECT, self.actor.world_pos, [0, yaw, 0], INSECT_TYPE_SPAWNED).is_err() {
+                break;
+            }
+        }
+    }
+
+    /// `EnIshi_Wait`: lifted (Player its parent): its pull-up sound, and its bugs let out. A small
+    /// rock hit by a hammer or an explosion breaks. Within 600 its collider takes hits, within
+    /// 400 pushes, and within 90 it offers itself to Player's lift.
+    fn wait(&mut self, play: &mut PlayState) {
+        let ty = self.ty();
+        let hit = self.collider.base.ac_flags & AC_HIT != 0;
+        if self.actor.parent.is_some() {
+            self.setup_lifted_up();
+            play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, LIFT_SFX_IDS[ty]);
+            if (self.actor.params >> 4) & 1 != 0 {
+                self.spawn_bugs(play);
+            }
+        } else if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_elem.is_some_and(|h| h.at_dmg_info.dmg_flags & DMG_BREAKS_ROCK != 0) {
+            self.drop_collectible(play);
             play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, BREAK_SFX_DURATIONS[ty], BREAK_SFX_IDS[ty]);
             self.spawn_fragments(play, ty);
             self.spawn_dust(play, ty);
@@ -140,10 +220,108 @@ impl EnIshi {
             play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
             if self.actor.xz_dist_to_player < 400.0 {
                 play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
-                // < 90: Actor_OfferGetItem offers the rock to Player's lift (not ported).
+                if self.actor.xz_dist_to_player < 90.0 {
+                    // GI_NONE in these cases allows the player to lift the actor.
+                    let a = self.actor.clone();
+                    if ty == ROCK_LARGE {
+                        oot_game::get_item::offer_get_item_range(play, &a, oot_game::item::GI_NONE, 80.0, 20.0);
+                    } else {
+                        oot_game::get_item::offer_get_item_range(play, &a, oot_game::item::GI_NONE, 50.0, 10.0);
+                    }
+                }
             }
         }
     }
+
+    /// `EnIshi_SetupLiftedUp`: in no room while carried, and updated off screen.
+    fn setup_lifted_up(&mut self) {
+        self.action = Action::LiftedUp;
+        self.actor.room = -1;
+        self.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
+    }
+
+    /// `EnIshi_LiftedUp`: let go, it's back in the room (a boulder sets its switch flag) and flies
+    /// from where it is.
+    fn lifted_up(&mut self, play: &mut PlayState) {
+        if self.actor.parent.is_none() {
+            self.actor.room = play.room_ctx.cur.num;
+            if self.ty() == ROCK_LARGE {
+                play.flags.set_switch(switch_flag(self.actor.params));
+            }
+            self.setup_fly(play);
+            self.fall();
+            let drag = D_80A7FA28[self.ty()];
+            Self::func_80a7ed94(&mut self.actor.velocity, drag, play);
+            self.actor.update_pos();
+            self.actor.update_bg_check_info(&play.col, 7.5, 35.0, 0.0, FLY_BGCHECK);
+        }
+    }
+
+    /// `EnIshi_SetupFly`: its velocity along its yaw at its speed; a random tumble (a small rock's
+    /// faster), and the mass of a thrown thing (240).
+    fn setup_fly(&mut self, play: &mut PlayState) {
+        self.actor.velocity.x = eng_math::sin_s(self.actor.world_rot.y) * self.actor.speed_xz;
+        self.actor.velocity.z = eng_math::cos_s(self.actor.world_rot.y) * self.actor.speed_xz;
+        let (x, y) = if self.ty() == ROCK_SMALL { (16000.0, 2400.0) } else { (8000.0, 1600.0) };
+        let rx = ((play.rand.zero_one() - 0.5) * x) as i16;
+        let ry = ((play.rand.zero_one() - 0.5) * y) as i16;
+        let s = play.overlay_static::<Statics>(ACTOR_EN_ISHI);
+        s.rot_speed_x = rx;
+        s.rot_speed_y = ry;
+        self.actor.col_chk_info.mass = 240;
+        self.action = Action::Fly;
+    }
+
+    /// `EnIshi_Fly`: landing or hitting a wall it breaks (its drop, its pieces, and out of water
+    /// its sound and dust; a boulder shakes the camera); entering water it slows (a splash and
+    /// ripples in the C) and tumbles a quarter as fast. Otherwise it falls, slowed by the air,
+    /// tumbling, its model's lift easing to 0.
+    fn fly(&mut self, play: &mut PlayState) {
+        let ty = self.ty();
+        if self.actor.bg_check_flags & (BGCHECKFLAG_GROUND | BGCHECKFLAG_WALL) != 0 {
+            self.drop_collectible(play);
+            self.spawn_fragments(play, ty);
+            if self.actor.bg_check_flags & BGCHECKFLAG_WATER == 0 {
+                play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, BREAK_SFX_DURATIONS[ty], BREAK_SFX_IDS[ty]);
+                self.spawn_dust(play, ty);
+            }
+            if ty == ROCK_LARGE {
+                let cam = play.active_cam_id;
+                let quake_index = play.quake_request(cam, oot_game::quake::QUAKE_TYPE_3);
+                play.quake_set_speed(quake_index, -0x3CB0);
+                play.quake_set_perturbations(quake_index, 3, 0, 0, 0);
+                play.quake_set_duration(quake_index, 7);
+                // (Rumble_Request(xyzDistToPlayerSq, 255, 20, 150) isn't ported.)
+            }
+            self.actor.kill();
+            return;
+        }
+        if self.actor.bg_check_flags & BGCHECKFLAG_WATER_TOUCH != 0 {
+            // EffectSsGSplash_Spawn and three EffectSsGRipple_Spawn at the surface: not ported.
+            self.actor.min_velocity_y = -6.0;
+            let s = play.overlay_static::<Statics>(ACTOR_EN_ISHI);
+            s.rot_speed_x >>= 2;
+            s.rot_speed_y >>= 2;
+            play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 40, NA_SE_EV_DIVE_INTO_WATER_L);
+            self.actor.bg_check_flags &= !BGCHECKFLAG_WATER_TOUCH;
+        }
+        eng_math::step_to_f(&mut self.actor.shape_y_offset, 0.0, 2.0);
+        self.fall();
+        Self::func_80a7ed94(&mut self.actor.velocity, D_80A7FA28[ty], play);
+        self.actor.update_pos();
+        let s = play.overlay_static::<Statics>(ACTOR_EN_ISHI);
+        let (rx, ry) = (s.rot_speed_x, s.rot_speed_y);
+        self.actor.shape_rot.x = self.actor.shape_rot.x.wrapping_add(rx);
+        self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(ry);
+        self.actor.update_bg_check_info(&play.col, 7.5, 35.0, 0.0, FLY_BGCHECK);
+        self.collider.update(&self.actor);
+        play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
+    }
+}
+
+/// `ISHI_GET_SWITCH_FLAG`.
+fn switch_flag(params: i16) -> i32 {
+    (((params as u16 >> 0xA) & 0x3C) | ((params as u16 >> 6) & 3)) as i32
 }
 
 /// `EnIshi_SpawnFragmentsSmall`'s `scales`.
@@ -299,6 +477,8 @@ impl ActorImpl for EnIshi {
     fn update(&mut self, play: &mut PlayState) {
         match self.action {
             Action::Wait => self.wait(play),
+            Action::LiftedUp => self.lifted_up(play),
+            Action::Fly => self.fly(play),
         }
     }
     /// `EnIshi_Draw`: `EnIshi_DrawSmall` (`Gfx_DrawDListOpa`) or `EnIshi_DrawLarge` (the

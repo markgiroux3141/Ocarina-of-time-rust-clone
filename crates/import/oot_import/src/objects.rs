@@ -142,10 +142,16 @@ fn overlay_ram_image(p: &Project, files: &Files, name: &str) -> Result<(std::syn
     let v = crate::version::VersionConfig::load(&p.config.decomp)?;
     let vram = v.segment_vram.get(name).copied().with_context(|| format!("segments.csv: no VRAM for {name}"))?;
     let data = files.get(name).with_context(|| format!("{name} not in the ROM"))?;
+    Ok((ram_image_at(&data, vram), vram))
+}
+
+/// `data` as RAM holds it at `vram`: zeros up to the address's low 24 bits, then the file, so a
+/// KSEG0 pointer into it is its offset in segment `vram >> 24` (`overlay_ram_image`).
+pub fn ram_image_at(data: &[u8], vram: u32) -> std::sync::Arc<[u8]> {
     let pad = (vram & 0x00FF_FFFF) as usize;
     let mut img = vec![0u8; pad + data.len()];
-    img[pad..].copy_from_slice(&data);
-    Ok((img.into(), vram))
+    img[pad..].copy_from_slice(data);
+    img.into()
 }
 
 pub fn symbol_in<'a>(p: &'a Project, file: &str, symbol: &str) -> Result<(&'a AssetFile, &'a Symbol)> {
@@ -208,7 +214,13 @@ pub fn anim_joint_count(data: &[u8], seg: u8, off: usize) -> Option<usize> {
 
 /// Decodes the `Animation` symbol `a` for a skeleton of `limbs` limbs.
 pub fn parse_animation(data: &[u8], seg: u8, a: &Symbol, limbs: usize) -> Result<StandardAnimation> {
-    StandardAnimation::parse(data, seg, a.offset as usize, limbs)
+    parse_animation_at(data, seg, a.offset as usize, limbs)
+}
+
+/// Decodes the animation header at `offset` in `data` (on segment `seg`) for a skeleton of
+/// `limbs` limbs.
+pub fn parse_animation_at(data: &[u8], seg: u8, offset: usize, limbs: usize) -> Result<StandardAnimation> {
+    StandardAnimation::parse(data, seg, offset, limbs)
 }
 
 /// The segments an object's display lists are interpreted with when no actor binds any:
@@ -221,14 +233,21 @@ pub struct ObjectSegments {
     pub code: Option<Arc<[u8]>>,
     pub gameplay_keep: Option<Arc<[u8]>>,
     pub field_keep: Option<Arc<[u8]>>,
+    /// Each overlay's link address (`segments.csv`'s VRAM start): an overlay's own assets point
+    /// at KSEG0 addresses in it (`ram_image_at`).
+    pub overlay_vram: HashMap<String, u32>,
 }
 
 impl ObjectSegments {
     pub fn load(p: &Project) -> ObjectSegments {
+        let overlay_vram = crate::version::VersionConfig::load(&p.config.decomp)
+            .map(|v| v.segment_vram.into_iter().filter(|(n, _)| n.starts_with("ovl_")).collect())
+            .unwrap_or_default();
         ObjectSegments {
             code: crate::room::code_ram_image(p),
             gameplay_keep: p.rom.file_by_name("gameplay_keep").ok(),
             field_keep: p.rom.file_by_name("gameplay_field_keep").ok(),
+            overlay_vram,
         }
     }
 
@@ -378,6 +397,16 @@ impl ObjectSegments {
                         continue;
                     }
                     let (lf, ls) = symbol_in(p, &l.file, &l.symbol)?;
+                    if lf.segment.is_none() && lf.name.starts_with("ovl_") {
+                        // A list in the actor's overlay (`z_en_sth.c`'s head, `D_80B0A050`): its
+                        // pointers are the overlay's link-time KSEG0 addresses, so the overlay
+                        // goes on segment 0 where it links while the limb draws (as a `DLists`
+                        // body's overlay list).
+                        let (img, vram) = overlay_ram_image(p, files, &lf.name)?;
+                        limb_dlists.push((l.limb, vram + ls.offset));
+                        limb_segments.push((l.limb, 0, Segment::Data { buf: img, base: 0 }));
+                        continue;
+                    }
                     let buf = files.get(&lf.name).with_context(|| format!("{} not in the ROM", l.file))?;
                     limb_dlists.push((l.limb, (6u32 << 24) | ls.offset));
                     limb_segments.push((l.limb, 6, Segment::Data { buf, base: 0 }));

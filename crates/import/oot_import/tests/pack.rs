@@ -124,7 +124,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
     // The guards' courtyard's config reads the scene: its day and night scenes both.
-    let scenes: [(&str, &str); 12] = [
+    let scenes: [(&str, &str); 15] = [
         ("SDC_KOKIRI_FOREST", "spot04_scene"),
         ("SDC_HYRULE_FIELD", "spot00_scene"),
         ("SDC_DEKU_TREE", "ydan_scene"),
@@ -137,6 +137,9 @@ fn ported_draw_configs_match_the_c_interpreter() {
         ("SDC_CASTLE_COURTYARD_GUARDS", "hairal_niwa_scene"),
         ("SDC_CASTLE_COURTYARD_GUARDS", "hairal_niwa_n_scene"),
         ("SDC_CALM_WATER", "nakaniwa_scene"),
+        ("SDC_KAKARIKO_VILLAGE", "spot01_scene"),
+        ("SDC_GROTTOS", "kakusiana_scene"),
+        ("SDC_MARKET_GUARD_HOUSE", "miharigoya_scene"),
     ];
     assert!(scene_table::ported().all(|sdc| scenes.iter().any(|(s, _)| *s == sdc)), "a ported draw config without a scene here");
     for (sdc, file) in scenes {
@@ -175,6 +178,22 @@ fn ported_draw_configs_match_the_c_interpreter() {
                     want[1].prim[0x8] = got[1].prim[0x8];
                 }
                 assert_eq!(got, want, "{sdc} ({file}): frame {f}, state {st:?}");
+                // The segments pointed at textures by state (Kakariko's windows, the guard
+                // house's views): the interpreter's symbol for each.
+                if sdc == "SDC_KAKARIKO_VILLAGE" || sdc == "SDC_MARKET_GUARD_HOUSE" {
+                    let s = State { gameplay_frames: f, child: st.child, night: st.night, scene_layer: st.scene_layer as i64, day_time: st.day_time };
+                    let cfg = sd.run_draw_config(&c.tables, &s);
+                    let mut want_ptrs = Vec::new();
+                    for (buf, xlu) in [(&cfg.opa, false), (&cfg.xlu, true)] {
+                        for (&seg, b) in &buf.segments {
+                            if let oot_import::drawcfg::Bind::Sym(n) = &b.bind {
+                                want_ptrs.push((seg, xlu, n.clone()));
+                            }
+                        }
+                    }
+                    let got_ptrs: Vec<_> = scene_table::segment_textures(sdc, &port).into_iter().map(|t| (t.segment, t.xlu, t.symbol.to_string())).collect();
+                    assert_eq!(got_ptrs, want_ptrs, "{sdc} ({file}): state {st:?}");
+                }
                 compared += 1;
             }
         }
