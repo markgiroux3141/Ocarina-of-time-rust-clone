@@ -192,7 +192,7 @@ impl SceneState {
             &ld.light_settings,
             &EnvState { light_mode: ld.skybox.light_mode, light_config: 0, light_setting: 0, day_time: day, skybox_time: sky },
         );
-        let draw = DrawConfigState { gameplay_frames: 0, child, night, scene_layer: layer, day_time: day, ..Default::default() };
+        let draw = DrawConfigState { gameplay_frames: 0, child, night, scene_layer: layer, day_time: day, scene_id: data.id, ..Default::default() };
         Ok(SceneState { data, layer: stored, rooms, lights, draw, segments: None, all_rooms: false })
     }
 

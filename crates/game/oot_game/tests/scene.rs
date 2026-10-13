@@ -113,6 +113,54 @@ fn kokiri_scrolling_materials_shift_uvs() {
 }
 
 #[test]
+fn the_castles_courtyards_and_water_scroll() {
+    let m = |v: u32| (v % 2048) as u16;
+    for f in [0u32, 1, 5, 127, 128, 200, 1000] {
+        // Scene_DrawConfigHyruleCastle: segment 8 at f * 10 on t, segment 9 at f * 3.
+        let [_, xlu] = scene_table::segment_values("SDC_HYRULE_CASTLE", &mut state(f)).unwrap();
+        assert_eq!(xlu.tiles[8][0], Some((m(127 - f % 128), m((f * 10) % 128))), "castle seg 8, frame {f}");
+        assert_eq!(xlu.tiles[9][1], Some((m(f % 128), m((f * 3) % 128))), "castle seg 9, frame {f}");
+        // Scene_DrawConfigCastleCourtyardGuards: segment 8 at f * 3; by day (SCENE_CASTLE_COURTYARD_GUARDS_DAY,
+        // 0x45) the fountains on segment 9, Gfx_TexScroll(0, (f * 10) % 256, 32, 64).
+        let mut day = DrawConfigState { scene_id: 0x45, ..state(f) };
+        let [_, xlu] = scene_table::segment_values("SDC_CASTLE_COURTYARD_GUARDS", &mut day).unwrap();
+        assert_eq!(xlu.tiles[8][0], Some((m(127 - f % 128), m((f * 3) % 128))), "courtyard seg 8, frame {f}");
+        assert_eq!(xlu.tiles[9][0], Some((0, m((f * 10) % 256))), "courtyard seg 9, frame {f}");
+        // By night (SCENE_CASTLE_COURTYARD_GUARDS_NIGHT, 0x46): no segment 9.
+        let mut night = DrawConfigState { scene_id: 0x46, ..state(f) };
+        let [_, xlu] = scene_table::segment_values("SDC_CASTLE_COURTYARD_GUARDS", &mut night).unwrap();
+        assert_eq!(xlu.tiles[9][0], None);
+        // Scene_DrawConfigCalmWater (Zelda's courtyard): segment 8 at f * 1.
+        let [_, xlu] = scene_table::segment_values("SDC_CALM_WATER", &mut state(f)).unwrap();
+        assert_eq!(xlu.tiles[8][1], Some((m(f % 128), m(f % 128))), "calm water, frame {f}");
+    }
+}
+
+#[test]
+fn the_temple_of_time_fades_its_colours_by_its_draw_params() {
+    // Scene_DrawConfigTempleOfTime with drawParams[0] 255 (temp 1): segment 8's prim
+    // 255 - 185, 255 - 145, 255 - 105; 9's 76 + 6, 76 + 34, 76 + 74; 0xB's grey 89 + 166 = 255; 0xC's
+    // 255 + 179 = 434, its low byte 178; the env alphas drawParams[0] (0xA to 0xC) and [1] (0xD).
+    let mut st = DrawConfigState { room_draw_params: [255, 40], ..state(0) };
+    let [opa, xlu] = scene_table::segment_values("SDC_TEMPLE_OF_TIME", &mut st).unwrap();
+    for v in [&opa, &xlu] {
+        assert_eq!(v.prim[8], Some([70, 110, 150, 255]));
+        assert_eq!(v.prim[9], Some([82, 110, 150, 255]));
+        assert_eq!(v.env[0xA], Some([0, 0, 0, 255]));
+        assert_eq!(v.prim[0xB], Some([255, 255, 255, 255]));
+        assert_eq!(v.prim[0xC], Some([178, 178, 178, 255]));
+        assert_eq!(v.env[0xD], Some([0, 0, 0, 40]));
+    }
+    assert_eq!(st.custom_lens_flare, None);
+    // On layer 5 the custom lens flare at the window: gCustomLensFlarePos (-20, 1220, -684), scale 10,
+    // colour intensity 8, glare 200.
+    let mut st = DrawConfigState { scene_layer: 5, ..state(0) };
+    scene_table::segment_values("SDC_TEMPLE_OF_TIME", &mut st).unwrap();
+    let flare = st.custom_lens_flare.expect("layer 5's lens flare");
+    assert_eq!((flare.pos, flare.scale, flare.color_intensity, flare.glare_strength), ([-20.0, 1220.0, -684.0], 10, 8.0, 200));
+}
+
+#[test]
 fn hyrule_field_fades_the_night_overlay_in() {
     // Scene_DrawConfigHyruleField after 18:30: Math_StepToS(&roomCtx.drawParams[0], 255, 5) every
     // frame, and the prim alpha of segment 0xA's display list is the result.

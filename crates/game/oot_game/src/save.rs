@@ -597,6 +597,34 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "castle-courtyard",
+        about: "castle-cucco, Talon woken and gone home (EVENTCHKINF_TALON_RETURNED_FROM_CASTLE), and the Fairy Ocarina from Saria (ITEM_OCARINA_FAIRY) on C-Down, as Link comes out of the drain into the guards' courtyard on his way to Zelda (GAME-07 milestone 4)",
+        apply: |s| {
+            castle_preset(s);
+            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+            s.equip_item_on_c_left(crate::item::ITEM_CHICKEN);
+            // save.h: EVENTCHKINF_TALON_RETURNED_FROM_CASTLE 0x14.
+            s.set_event_chk_inf(0x14);
+            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+            s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
+        },
+    },
+    SavePreset {
+        name: "zeldas-letter",
+        about: "castle-courtyard, and Zelda's talk over: Zelda's Letter (Item_Give(ITEM_ZELDAS_LETTER) in place of the Cucco, on C-Left) and EVENTCHKINF_OBTAINED_ZELDAS_LETTER: Impa waits by her courtyard's entrance (GAME-07 milestone 4)",
+        apply: |s| {
+            castle_preset(s);
+            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+            s.set_event_chk_inf(0x14);
+            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+            s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
+            item_give(s, None, crate::item::ITEM_ZELDAS_LETTER);
+            s.equip_item_on_c_left(crate::item::ITEM_ZELDAS_LETTER);
+            // save.h: EVENTCHKINF_OBTAINED_ZELDAS_LETTER 0x40.
+            s.set_event_chk_inf(0x40);
+        },
+    },
+    SavePreset {
         name: "ocarina-songs",
         about: "deku-tree-dead, the Fairy Ocarina (ITEM_OCARINA_FAIRY) on C-Left and Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's Song, the Song of Time and the Song of Storms (ITEM_SONG_LULLABY .. ITEM_SONG_STORMS: Item_Give's quest bits) (GAME-07 milestone 3)",
         apply: |s| {

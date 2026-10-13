@@ -123,16 +123,31 @@ fn draw_config_states() -> Vec<DrawConfigState> {
 fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
-    let scenes: BTreeMap<&str, &str> = [("SDC_KOKIRI_FOREST", "spot04_scene"), ("SDC_HYRULE_FIELD", "spot00_scene"), ("SDC_DEKU_TREE", "ydan_scene"), ("SDC_DEFAULT", "ganon_scene"), ("SDC_GERUDO_VALLEY", "spot09_scene"), ("SDC_DEATH_MOUNTAIN_TRAIL", "spot16_scene"), ("SDC_LOST_WOODS", "spot10_scene")].into_iter().collect();
-    for sdc in scene_table::ported() {
-        let file = scenes[sdc];
+    // The guards' courtyard's config reads the scene: its day and night scenes both.
+    let scenes: [(&str, &str); 12] = [
+        ("SDC_KOKIRI_FOREST", "spot04_scene"),
+        ("SDC_HYRULE_FIELD", "spot00_scene"),
+        ("SDC_DEKU_TREE", "ydan_scene"),
+        ("SDC_DEFAULT", "ganon_scene"),
+        ("SDC_GERUDO_VALLEY", "spot09_scene"),
+        ("SDC_DEATH_MOUNTAIN_TRAIL", "spot16_scene"),
+        ("SDC_LOST_WOODS", "spot10_scene"),
+        ("SDC_HYRULE_CASTLE", "spot15_scene"),
+        ("SDC_TEMPLE_OF_TIME", "tokinoma_scene"),
+        ("SDC_CASTLE_COURTYARD_GUARDS", "hairal_niwa_scene"),
+        ("SDC_CASTLE_COURTYARD_GUARDS", "hairal_niwa_n_scene"),
+        ("SDC_CALM_WATER", "nakaniwa_scene"),
+    ];
+    assert!(scene_table::ported().all(|sdc| scenes.iter().any(|(s, _)| *s == sdc)), "a ported draw config without a scene here");
+    for (sdc, file) in scenes {
         let def = c.tables.scene(file).unwrap();
         assert_eq!(def.draw_config, sdc, "{file}");
+        let scene_id = c.pack.scene(file).unwrap().id;
         let sd = SceneDraw::load(&c.p, &c.tables, file, 0).unwrap();
         let mut compared = 0;
         for st in draw_config_states() {
             for f in [0u32, 1, 2, 5, 40, 127, 128, 129, 300, 1000, 4095, 70000] {
-                let mut port = DrawConfigState { gameplay_frames: f, ..st.clone() };
+                let mut port = DrawConfigState { gameplay_frames: f, scene_id, ..st.clone() };
                 let got = scene_table::segment_values(sdc, &mut port).unwrap();
                 // The event flag isn't something the interpreter knows about (it reads 0), so
                 // compare only the states it can express.
@@ -159,7 +174,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
                     assert_eq!(got[1].prim[0x8], Some([255, 255, 255, 5]), "frame {f}");
                     want[1].prim[0x8] = got[1].prim[0x8];
                 }
-                assert_eq!(got, want, "{sdc}: frame {f}, state {st:?}");
+                assert_eq!(got, want, "{sdc} ({file}): frame {f}, state {st:?}");
                 compared += 1;
             }
         }

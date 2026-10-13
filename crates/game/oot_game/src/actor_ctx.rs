@@ -250,6 +250,9 @@ pub trait ActorImpl: Any {
     fn effect_fire_pos(&self, _i: usize, _vec3s: bool) -> Vec3 {
         Vec3::ZERO
     }
+    /// What `Effect_Ss_Solder_Srch_Ball` writes through its `actor` field, a pointer to the
+    /// spawner's `linkDetected` (`En_Heishi1`'s): sets it. Nothing for any other actor.
+    fn solder_srch_ball_detect(&mut self) {}
     /// `GET_PLAYER`.
     fn as_player(&self) -> Option<&dyn PlayerIface> {
         None

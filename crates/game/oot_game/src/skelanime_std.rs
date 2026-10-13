@@ -83,7 +83,18 @@ pub struct SkelAnimeStd {
     pub morph_rate: f32,
     pub taper: i8,
     update: UpdateFn,
+    /// `movementFlags` (`ANIM_FLAG_*`), and `SkelAnime_UpdateTranslation`'s `baseTransl`, `prevTransl`
+    /// and `prevRot` (never set elsewhere for an actor: zeroed with it).
+    pub movement_flags: u8,
+    pub base_transl: [i16; 3],
+    pub prev_transl: [i16; 3],
+    pub prev_rot: i16,
 }
+
+/// `ANIM_FLAG_UPDATE_XZ`, `ANIM_FLAG_UPDATE_Y`, `ANIM_FLAG_ADJUST_STARTING_POS` (`animation.h`).
+pub const ANIM_FLAG_UPDATE_XZ: u8 = 1 << 0;
+pub const ANIM_FLAG_UPDATE_Y: u8 = 1 << 1;
+pub const ANIM_FLAG_ADJUST_STARTING_POS: u8 = 1 << 4;
 
 impl SkelAnimeStd {
     /// `SkelAnime_InitFlex` for a skeleton of `limbs` limbs, playing `animation` looped if given.
@@ -104,6 +115,10 @@ impl SkelAnimeStd {
             morph_rate: 0.0,
             taper: ANIMTAPER_NONE,
             update: UpdateFn::LoopFull,
+            movement_flags: 0,
+            base_transl: [0; 3],
+            prev_transl: [0; 3],
+            prev_rot: 0,
         };
         if let Some(a) = animation {
             // Animation_PlayLoop.
@@ -111,6 +126,40 @@ impl SkelAnimeStd {
             s.change(a, 1.0, 0.0, last, ANIMMODE_LOOP, 0.0);
         }
         s
+    }
+
+    /// `SkelAnime_UpdateTranslation`: the root's move since the last call, turned by `angle` (the
+    /// actor's yaw) against the last call's; the root's x and z (and y with `ANIM_FLAG_UPDATE_Y`)
+    /// put back to `baseTransl`. `ANIM_FLAG_UPDATE_XZ` isn't checked (as in the C).
+    pub fn update_translation(&mut self, angle: i16) -> glam::Vec3 {
+        let mut diff = glam::Vec3::ZERO;
+        let root = &mut self.joint_table[0];
+        if self.movement_flags & ANIM_FLAG_ADJUST_STARTING_POS == 0 {
+            let (x, z) = (root[0] as f32, root[2] as f32);
+            let (sin, cos) = (eng_math::sin_s(angle), eng_math::cos_s(angle));
+            diff.x = x * cos + z * sin;
+            diff.z = z * cos - x * sin;
+            let (x, z) = (self.prev_transl[0] as f32, self.prev_transl[2] as f32);
+            let (sin, cos) = (eng_math::sin_s(self.prev_rot), eng_math::cos_s(self.prev_rot));
+            diff.x -= x * cos + z * sin;
+            diff.z -= z * cos - x * sin;
+        }
+        self.prev_rot = angle;
+        self.prev_transl[0] = root[0];
+        root[0] = self.base_transl[0];
+        self.prev_transl[2] = root[2];
+        root[2] = self.base_transl[2];
+        if self.movement_flags & ANIM_FLAG_UPDATE_Y != 0 {
+            if self.movement_flags & ANIM_FLAG_ADJUST_STARTING_POS == 0 {
+                diff.y = (root[1] as i32 - self.prev_transl[1] as i32) as f32;
+            }
+            self.prev_transl[1] = root[1];
+            root[1] = self.base_transl[1];
+        } else {
+            self.prev_transl[1] = root[1];
+        }
+        self.movement_flags &= !ANIM_FLAG_ADJUST_STARTING_POS;
+        diff
     }
 
     /// Whether the current animation is `name` (`skelAnime->animation == &name`).

@@ -382,6 +382,18 @@ pub enum Step {
     SongOfStorms,
     /// The big fairy out of the Song of Storms' spot (`Shot_Sun`).
     StormFairy,
+    /// In Zelda's courtyard.
+    ZeldaCourtyard,
+    /// Zelda's Letter received.
+    ZeldasLetter,
+    /// Its get-item text read.
+    LetterRead,
+    /// Impa's lullaby script started.
+    LullabyCs,
+    /// Zelda's Lullaby played back.
+    LullabyPlayed,
+    /// Impa's goodbye in Hyrule Field over: Link at `ENTR_HYRULE_FIELD_17`.
+    ImpaGone,
 }
 
 impl Step {
@@ -516,6 +528,12 @@ impl Step {
             Step::Dawn => "dawn",
             Step::SongOfStorms => "song_of_storms",
             Step::StormFairy => "storm_fairy",
+            Step::ZeldaCourtyard => "zelda_courtyard",
+            Step::ZeldasLetter => "zeldas_letter",
+            Step::LetterRead => "letter_read",
+            Step::LullabyCs => "lullaby_cs",
+            Step::LullabyPlayed => "lullaby_played",
+            Step::ImpaGone => "impa_gone",
         }
     }
 }
@@ -650,6 +668,12 @@ pub enum Route {
     /// night run through at 400 a frame to 06:30), then at the spot (`Shot_Sun` 0xFF41) the Song
     /// of Storms: the storm, and a big fairy.
     Ocarina,
+    /// Zelda (GAME-07 milestone 4): from the drain into the guards' courtyard (`castle-courtyard`),
+    /// past the patrols unseen to Zelda's courtyard, and on as `ZeldaTalk`.
+    Zelda,
+    /// Zelda (GAME-07 milestone 4): from Zelda's courtyard's entrance (`castle-courtyard`), her talk
+    /// through the legend and the window to her letter.
+    ZeldaTalk,
 }
 
 /// The emerald's cutscene chain after part 1 (`Cutscene_Command_Destination`'s terminators): each
@@ -875,6 +899,79 @@ pub const SHOT_SUN_HOME: Vec3 = Vec3::new(5143.0, -55.0, 5012.0);
 pub const OCARINA_START: (Vec3, i16) = (Vec3::new(5143.0, -30.0, 4700.0), 0);
 pub const OCARINA_STORMS_AT: Vec3 = Vec3::new(5143.0, -60.0, 4932.0);
 
+/// The `Zelda` and `ZeldaTalk` routes from Zelda's courtyard's entrance: up the courtyard to
+/// Zelda at the window; her talk (yes to each question), the legend on the cutscene map, back, the
+/// window, Ganondorf, and her letter.
+fn zelda_tail() -> Vec<Task> {
+    vec![
+        Task::Converse(Who::Zelda, Vec3::new(-425.0, 84.0, 0.0), Vec::new(), |w| w.save.get_event_chk_inf(crate::en_zl4::EVENTCHKINF_OBTAINED_ZELDAS_LETTER), Step::ZeldasLetter),
+        // The letter's get-item text read and Link free.
+        Task::Texts(|w| w.player().cs_mode == 0 && !matches!(w.player().action, PA::Talk | PA::GetItem), Step::LetterRead),
+        // East back down the courtyard to Impa by its entrance: within 130 west of her
+        // (`Demo_Im` type 5 at x 336), her lullaby's script.
+        Task::Walk(vec![Vec3::new(250.0, 44.0, 0.0)]),
+        Task::Texts(|w| w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::LullabyCs),
+        // Impa whistles it; Link plays it back: one wrong note, then right.
+        Task::Playback(oot_game::audio::ocarina::OCARINA_SONG_LULLABY, true, Step::LullabyPlayed),
+        // The script's terminator to Hyrule Field's layer 12, Impa's goodbye there, and its terminator
+        // to ENTR_HYRULE_FIELD_17.
+        Task::Texts(|w| w.save.entrance_index == ENTR_HYRULE_FIELD_17 && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && w.player().cs_mode == 0 && w.transition.trigger == TRANS_TRIGGER_OFF, Step::ImpaGone),
+    ]
+}
+
+/// `ENTR_HYRULE_FIELD_17` (`entrance_table.h`): where Impa's goodbye leaves Link.
+const ENTR_HYRULE_FIELD_17: u16 = 0x594;
+
+/// The `Zelda` route's conditions on the guards' courtyard's patrols (`Task::WaitGuards`), by the
+/// screen Link waits to cross: each guard by his path, where he's headed (`waypoint`: the corners
+/// 0 to 3 and, for types 2 and 3, the middles 4 to 7), where he is, whether he waits.
+mod courtyard {
+    use oot_game::play::PlayState;
+
+    use crate::en_heishi1::{Action, EnHeishi1};
+
+    fn guard(w: &PlayState, path: i16) -> Option<&EnHeishi1> {
+        w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnHeishi1>(h)).find(|g| !g.actor.killed && g.path == path)
+    }
+
+    fn at(w: &PlayState, path: i16, test: impl Fn(&EnHeishi1) -> bool) -> bool {
+        guard(w, path).is_some_and(test)
+    }
+
+    /// Path 0 headed up his west side (3), round to his north-east corner and his wait there.
+    pub fn screen7(w: &PlayState) -> bool {
+        at(w, 0, |g| g.waypoint == 3)
+    }
+
+    /// Path 1 headed up his west side; path 2 well up his east side (1) or along his north side (2).
+    pub fn screen2(w: &PlayState) -> bool {
+        at(w, 1, |g| g.waypoint == 3) && at(w, 2, |g| matches!(g.waypoint, 1 | 2) && g.actor.world_pos.z < 60.0)
+    }
+
+    /// Path 3 in the north half of his round (from the west middle to the east middle).
+    pub fn screen3(w: &PlayState) -> bool {
+        at(w, 3, |g| matches!(g.waypoint, 5 | 2 | 6 | 3) && g.actor.world_pos.z < 60.0)
+    }
+
+    /// Path 4 waiting at his south-west corner (2), looking west; path 6 just come to his north-east
+    /// corner (2), its wait (`waitTimer`) not half over.
+    pub fn screen4(w: &PlayState) -> bool {
+        at(w, 4, |g| g.waypoint == 2 && g.action == Action::Wait) && at(w, 6, |g| g.waypoint == 2 && g.action == Action::Wait && g.timers[1] >= 40)
+    }
+
+    /// Path 4 up his west side (6, 3), north of the box's middle.
+    pub fn screen4_west(w: &PlayState) -> bool {
+        at(w, 4, |g| matches!(g.waypoint, 6 | 3) && g.actor.world_pos.z < 60.0)
+    }
+
+    /// The plaza's two (paths 5 and 7, round the planter the same way: south down the east side,
+    /// west along the south): both in its north-east quarter, past the north side's middle and
+    /// north of the east side's.
+    pub fn plaza(w: &PlayState) -> bool {
+        [5, 7].into_iter().all(|path| at(w, path, |g| g.actor.world_pos.x > -1260.0 && g.actor.world_pos.z < -400.0))
+    }
+}
+
 /// The Deku Baba the `DekuBaba` route fights: room 0's `En_Dekubaba` (params 0) on the top floor.
 pub const DEKU_BABA_HOME: Vec3 = Vec3::new(-195.0, 800.0, -195.0);
 /// Where the `DekuBaba` route starts Link: 85 from the Deku Baba, on the floor outwards of it,
@@ -895,6 +992,8 @@ impl Route {
             Route::Market => "ENTR_MARKET_ENTRANCE_DAY_0",
             Route::Castle | Route::CastleCaught => "ENTR_HYRULE_CASTLE_0",
             Route::Ocarina => "ENTR_HYRULE_FIELD_0",
+            Route::Zelda => "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0",
+            Route::ZeldaTalk => "ENTR_CASTLE_COURTYARD_ZELDA_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -917,6 +1016,7 @@ impl Route {
             Route::Castle => Some("castle-cucco"),
             Route::CastleCaught => Some("castle-egg"),
             Route::Ocarina => Some("ocarina-songs"),
+            Route::Zelda | Route::ZeldaTalk => Some("castle-courtyard"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1078,6 +1178,8 @@ impl Route {
             Route::Castle => "castle",
             Route::CastleCaught => "castle-caught",
             Route::Ocarina => "ocarina",
+            Route::Zelda => "zelda",
+            Route::ZeldaTalk => "zelda-talk",
         }
     }
 
@@ -1110,6 +1212,8 @@ impl Route {
             Route::Castle => 8000,
             Route::CastleCaught => 2000,
             Route::Ocarina => 3000,
+            Route::Zelda => 20000,
+            Route::ZeldaTalk => 12000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1117,12 +1221,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        self == Route::Ocarina
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1166,6 +1270,23 @@ enum Task {
     WaitDawn(Step),
     /// Until a big fairy (`En_Elf` `FAIRY_HEAL_BIG`) is out within 200 of the point.
     WaitFairy(Vec3, Step),
+    /// Through the points (`Task::Walk`'s), unseen by the courtyard's guards (`En_Heishi1`): still
+    /// while the next steps would be in a guard's sight (`sneak`).
+    Sneak(Vec<Vec3>),
+    /// Still until the courtyard's guards (`En_Heishi1`) are where the condition wants them: the
+    /// phases of their rounds where they look away from the way on (`courtyard`'s conditions).
+    WaitGuards(fn(&PlayState) -> bool, &'static str),
+    /// A talk that runs on through scripts and scenes: from the point, at the actor until it offers,
+    /// A (`Task::Talk`'s start); then A at every box that waits (or an event's), each choice
+    /// answered from the list in turn (the first answer past its end), until the condition holds
+    /// with no box open (`converse`).
+    Converse(Who, Vec3, Vec<u8>, fn(&PlayState) -> bool, Step),
+    /// A through the boxes that wait (or an event's) until the condition holds with no box open.
+    Texts(fn(&PlayState) -> bool, Step),
+    /// A cutscene's ocarina playback (`MSGMODE_SONG_PLAYBACK`): one wrong note first (and A through
+    /// the failure's text) if asked, then the song's notes; A through the texts around it; done (the
+    /// step) once the playback's success is seen.
+    Playback(u8, bool, Step),
     /// Cut the first of these bushes (home positions) that drops something, and collect it.
     CutBushes(Vec<Vec3>),
     /// Steer through the points at full tilt.
@@ -1378,10 +1499,18 @@ enum Who {
     Malon,
     /// Talon (`En_Ta`).
     Talon,
+    /// Zelda (`En_Zl4`).
+    Zelda,
 }
 
 const SETTLE_FRAMES: usize = 10;
 const WAYPOINT_RADIUS: f32 = 30.0;
+/// `Task::Sneak`: how far ahead of Link a step is checked, the margin on a guard's 70, the turn
+/// past his head's widest look, and the frames ahead a flying ball is followed.
+const SNEAK_AHEAD: f32 = 40.0;
+const SNEAK_MARGIN: f32 = 20.0;
+const SNEAK_FAN: i32 = 0x800;
+const SNEAK_BALL_FRAMES: usize = 12;
 /// The stick's tilt for a run (of the pad's ±80), and for the slow approaches: a walk.
 /// (`Player_CalcSpeedAndYawFromControlStick` takes 20 off the dead-zoned magnitude, so much under 30 only turns Link.)
 const RUN: f32 = 60.0;
@@ -1413,6 +1542,8 @@ pub struct Playthrough {
     dropped: Option<ActorHandle>,
     /// Why the run stopped short, if it did.
     pub failure: Option<String>,
+    /// The answers `Task::Converse` gives in place of its own (`with_choices`).
+    choices: Option<Vec<u8>>,
     /// The frames spent waiting for the boulder, each wait.
     pub boulder_waits: Vec<usize>,
     /// The rupees Link has at each step (`gSaveContext.rupees`).
@@ -1659,6 +1790,48 @@ impl Playthrough {
                 Task::Walk(vec![Vec3::new(940.0, 1429.0, 3390.0), Vec3::new(1120.0, 1443.0, 3210.0), Vec3::new(1200.0, 1443.0, 3000.0)]),
                 Task::Caught(Vec3::new(1200.0, 1443.0, 2600.0), Step::ThrownOut),
             ],
+            Route::Zelda => vec![
+                Task::Settle(None),
+                // Out of the drain's channel onto the grass and along the south wall (the patrols'
+                // paths end 100 short of it) to the first screen's edge, where no guard looks.
+                Task::Sneak(vec![Vec3::new(2205.0, 0.0, 240.0), Vec3::new(2100.0, 0.0, 250.0), Vec3::new(1830.0, 0.0, 255.0)]),
+                // The first patrol (path 0) from when he turns north up his west side, round his
+                // north side: on along the wall into the next screen.
+                Task::WaitGuards(courtyard::screen7, "path 0 up his west side"),
+                // East of the pillar at x 960: on the second screen, out of its patrols' looks.
+                Task::Sneak(vec![Vec3::new(1100.0, 0.0, 250.0), Vec3::new(1030.0, 0.0, 140.0)]),
+                Task::WaitGuards(courtyard::screen2, "path 1 up his west side, path 2 up his east side"),
+                // On to the third screen, behind its east fence (60 high, to z 220: the middle
+                // patrol's looks under the bridge stop at it).
+                Task::Sneak(vec![Vec3::new(1030.0, 0.0, 255.0), Vec3::new(380.0, 0.0, 255.0), Vec3::new(290.0, 0.0, 215.0)]),
+                Task::WaitGuards(courtyard::screen3, "path 3 in his north half"),
+                // Under the bridge's ends (the gaps south of its fences) to behind its west fence.
+                Task::Sneak(vec![Vec3::new(230.0, 0.0, 250.0), Vec3::new(-230.0, 0.0, 250.0), Vec3::new(-290.0, 0.0, 200.0)]),
+                Task::WaitGuards(courtyard::screen4, "path 4 at his south-west corner, path 6 at his north-east"),
+                // Along the wall to behind path 4's corner, until he's gone up his west side.
+                Task::Sneak(vec![Vec3::new(-860.0, 0.0, 262.0)]),
+                Task::WaitGuards(courtyard::screen4_west, "path 4 up his west side"),
+                Task::Sneak(vec![Vec3::new(-1100.0, 0.0, 260.0)]),
+                Task::WaitGuards(courtyard::plaza, "the plaza's patrols"),
+                // East of the bench, west along the corridor between it and the corner blocks, through
+                // the gap by the south-west block, up the west side behind the patrols, across their
+                // north side to the passage north, and west along it.
+                Task::Sneak(vec![
+                    Vec3::new(-1130.0, 0.0, 50.0),
+                    Vec3::new(-1420.0, 0.0, 40.0),
+                    Vec3::new(-1420.0, 0.0, -90.0),
+                    Vec3::new(-1470.0, 0.0, -130.0),
+                    Vec3::new(-1470.0, 0.0, -580.0),
+                    Vec3::new(-1310.0, 0.0, -640.0),
+                    Vec3::new(-1310.0, 0.0, -740.0),
+                ]),
+                Task::Sneak(vec![Vec3::new(-1600.0, 0.0, -780.0)]),
+                Task::Exit("ENTR_CASTLE_COURTYARD_ZELDA_0", Some(Step::ZeldaCourtyard)),
+            ]
+            .into_iter()
+            .chain(zelda_tail())
+            .collect(),
+            Route::ZeldaTalk => [Task::Settle(None)].into_iter().chain(zelda_tail()).collect(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -1714,6 +1887,7 @@ impl Playthrough {
             items: Vec::new(),
             dropped: None,
             failure: None,
+            choices: None,
             boulder_waits: Vec::new(),
             rupees: Vec::new(),
             tries: 0,
@@ -1974,6 +2148,12 @@ impl Playthrough {
 
     /// The pad for the next frame, or `None` when the run is over: done, or stuck (then
     /// `failure` says why).
+    /// The run, with these answers in place of its talks' own (`Task::Converse`).
+    pub fn with_choices(mut self, choices: Vec<u8>) -> Playthrough {
+        self.choices = Some(choices);
+        self
+    }
+
     pub fn next(&mut self, w: &PlayState) -> Option<PadState> {
         if self.failure.is_some() || self.finished() {
             return None;
@@ -2190,6 +2370,24 @@ impl Playthrough {
                 self.settle(w, Some(step))
             }
             Task::Hurry(points) => self.walk(w, &points, FULL),
+            Task::Sneak(points) => self.sneak(w, &points),
+            Task::WaitGuards(ready, what) => {
+                self.wait += 1;
+                if self.wait > 3000 {
+                    self.failure = Some(format!("the guards never came round: {what}"));
+                    return None;
+                }
+                if w.msg_ctx.text_id == 0x702D && w.message_state() != TEXT_STATE_NONE {
+                    let at = w.player().actor.world_pos;
+                    self.failure = Some(format!("caught by a courtyard guard waiting at ({:.0}, {:.0}, {:.0})", at.x, at.y, at.z));
+                    return None;
+                }
+                if ready(w) {
+                    self.finish(None);
+                    return None;
+                }
+                Some(PadState::default())
+            }
             Task::Crawl(approach, mouth, step) => self.crawl(w, approach, mouth, step),
             Task::WaitBoulder(from, to, frac) => {
                 let Some(b) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<EnGoroiwa>(h)) else {
@@ -2498,6 +2696,24 @@ impl Playthrough {
                     }
                 }
             }
+            Task::Converse(who, from, choices, until, step) => {
+                let choices = self.choices.clone().unwrap_or(choices);
+                self.converse(w, who, from, &choices, until, step)
+            }
+            Task::Texts(until, step) => {
+                self.wait += 1;
+                if self.wait > 20000 {
+                    self.failure = Some(format!("the texts never ended (text {:#x})", w.msg_ctx.text_id));
+                    return None;
+                }
+                if w.message_state() == TEXT_STATE_NONE && until(w) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+                Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
+            }
+            Task::Playback(song, wrong_first, step) => self.playback(w, song, wrong_first, step),
             Task::Talk(who, from, step) => {
                 let Some(h) = Self::find(w, who) else {
                     // Gone as the talk ended (Mido with the emerald: EnMd_Walk's Actor_Kill as he
@@ -4345,6 +4561,149 @@ impl Playthrough {
         Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
     }
 
+    /// `Task::Playback`: `sub` 0 until the playback's staff is up (A through texts before it), 1 the
+    /// wrong note, 2 until it's back up after the failure (A through its text), 3 the song's notes
+    /// (each held 3 frames, let go 2), 4 until the success.
+    fn playback(&mut self, w: &PlayState, song: u8, wrong_first: bool, step: Step) -> Option<PadState> {
+        use eng_input::pad::{BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP};
+        use oot_game::audio::ocarina::{OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_RIGHT, OCARINA_BTN_C_UP};
+        use oot_game::message::{MSGMODE_SONG_PLAYBACK, MSGMODE_SONG_PLAYBACK_SUCCESS};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 4000 {
+            self.failure = Some(format!("song {song} never played back (msgMode {:#x}, text {:#x})", w.msg_ctx.msg_mode, w.msg_ctx.text_id));
+            return None;
+        }
+        let pad_of = |b: u8| match b {
+            OCARINA_BTN_A => BTN_A,
+            OCARINA_BTN_C_DOWN => BTN_CDOWN,
+            OCARINA_BTN_C_RIGHT => BTN_CRIGHT,
+            OCARINA_BTN_C_LEFT => BTN_CLEFT,
+            OCARINA_BTN_C_UP => BTN_CUP,
+            _ => 0,
+        };
+        let buttons = w.audio.ocarina.song_buttons(song);
+        let text_a = |s: &mut Self| {
+            let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+            if Self::text_waits(w) || event { s.press(BTN_A) } else { idle }
+        };
+        match self.sub {
+            0 | 2 => {
+                if w.msg_ctx.msg_mode == MSGMODE_SONG_PLAYBACK {
+                    self.sub = if self.sub == 0 && wrong_first { 1 } else { 3 };
+                    self.notes = 0;
+                    return Some(idle);
+                }
+                Some(text_a(self))
+            }
+            1 => {
+                // A note the song doesn't start with.
+                let first = buttons.buttons_index[0];
+                let wrong = if first == OCARINA_BTN_A { BTN_CUP } else { BTN_A };
+                let phase = self.notes;
+                self.notes += 1;
+                if phase >= 5 {
+                    self.sub = 2;
+                    return Some(idle);
+                }
+                Some(if phase < 3 { PadState { button: wrong, ..Default::default() } } else { idle })
+            }
+            3 => {
+                let (note, phase) = (self.notes / 5, self.notes % 5);
+                self.notes += 1;
+                if note >= buttons.num_buttons as usize {
+                    self.sub = 4;
+                    return Some(idle);
+                }
+                let pad = pad_of(buttons.buttons_index[note]);
+                Some(if phase < 3 { PadState { button: pad, ..Default::default() } } else { idle })
+            }
+            _ => {
+                if w.msg_ctx.msg_mode == MSGMODE_SONG_PLAYBACK_SUCCESS {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(idle)
+            }
+        }
+    }
+
+    /// `Task::Converse`: `sub` 0 to the point, 1 at the actor until it offers, 2 A until the talk
+    /// takes, 3 through the boxes.
+    fn converse(&mut self, w: &PlayState, who: Who, from: Vec3, choices: &[u8], until: fn(&PlayState) -> bool, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 20000 {
+            self.failure = Some(format!("the talk with {who:?} never ended (text {:#x})", w.msg_ctx.text_id));
+            return None;
+        }
+        let link = w.player().actor.world_pos;
+        if self.sub == 1 || self.sub == 2 {
+            let p = w.player();
+            if p.cs_mode != 0 || p.action == PA::Talk || w.message_state() != TEXT_STATE_NONE {
+                self.sub = 3;
+                self.notes = 0;
+                return Some(idle);
+            }
+        }
+        if self.sub < 3 {
+            let Some(h) = Self::find(w, who) else {
+                self.failure = Some(format!("no {who:?} to talk to"));
+                return None;
+            };
+            let at = w.actors.actor(h).unwrap().world_pos;
+            let p = w.player();
+            match self.sub {
+                0 => {
+                    if Self::xz_dist(link, from) < 10.0 {
+                        self.sub = 1;
+                    }
+                    return Some(stick_towards(w, from, SLOW));
+                }
+                1 => {
+                    if p.target_actor == Some(h) {
+                        self.sub = 2;
+                        return Some(idle);
+                    }
+                    return Some(stick_towards(w, at, SLOW));
+                }
+                _ => {
+                    if p.action == PA::Talk || p.action == PA::ItemPutAway || p.cs_mode != 0 || w.message_state() != TEXT_STATE_NONE {
+                        self.sub = 3;
+                        self.notes = 0;
+                        return Some(idle);
+                    }
+                    if p.target_actor != Some(h) {
+                        self.sub = 1;
+                        return Some(idle);
+                    }
+                    return Some(self.press(BTN_A));
+                }
+            }
+        }
+        let st = w.message_state();
+        if st == TEXT_STATE_NONE && until(w) {
+            self.finish(Some(step));
+            return None;
+        }
+        if st == TEXT_STATE_CHOICE {
+            let c = choices.get(self.notes).copied().unwrap_or(0);
+            if c == 1 && w.msg_ctx.choice_index == 0 {
+                return Some(PadState { stick_y: -60, ..Default::default() });
+            }
+            if self.prev.stick_y != 0 {
+                return Some(idle);
+            }
+            let pad = self.press(BTN_A);
+            if pad.button != 0 {
+                self.notes += 1;
+            }
+            return Some(pad);
+        }
+        let event = st == oot_game::message::TEXT_STATE_EVENT;
+        Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
+    }
+
     fn show_item(&mut self, w: &PlayState, who: Who, from: Vec3, button: usize, step: Step) -> Option<PadState> {
         let idle = PadState::default();
         let Some(h) = Self::find(w, who) else {
@@ -4414,6 +4773,80 @@ impl Playthrough {
             pad.button = self.press(BTN_A).button;
         }
         Some(pad)
+    }
+
+    /// `Task::Sneak`: `walk`, but still while the next steps (`SNEAK_AHEAD` on along the way)
+    /// would be seen and where Link stands isn't (`seen_at`); a catch fails the run.
+    fn sneak(&mut self, w: &PlayState, points: &[Vec3]) -> Option<PadState> {
+        if w.msg_ctx.text_id == 0x702D && w.message_state() != TEXT_STATE_NONE {
+            let at = w.player().actor.world_pos;
+            self.failure = Some(format!("caught by a courtyard guard at ({:.0}, {:.0}, {:.0})", at.x, at.y, at.z));
+            return None;
+        }
+        let link = w.player().actor.world_pos;
+        let mut i = self.sub;
+        while i < points.len() && Self::xz_dist(link, points[i]) < WAYPOINT_RADIUS {
+            i += 1;
+        }
+        if i < points.len() {
+            let d = points[i] - link;
+            let d = Vec3::new(d.x, 0.0, d.z).normalize_or_zero();
+            let ahead = link + d * SNEAK_AHEAD;
+            if Self::seen_at(w, ahead) && !Self::seen_at(w, link) {
+                self.wait += 1;
+                return Some(PadState::default());
+            }
+        }
+        self.walk(w, points, FULL)
+    }
+
+    /// Whether a courtyard guard (`En_Heishi1`) looking on the active camera's screen, or the
+    /// floor's at `p`, would see Link at `p`: within `70 + SNEAK_MARGIN` of the guard; or his
+    /// look's ball (`Effect_Ss_Solder_Srch_Ball`: from 60 up, 30 a frame, stopped by the first poly
+    /// a sphere of 30 touches) able to reach within `70 + SNEAK_MARGIN` of `p` in any direction his
+    /// head turns to (the body's yaw ± 0x2500, and `SNEAK_FAN` more); or a ball in flight that
+    /// will.
+    fn seen_at(w: &PlayState, p: Vec3) -> bool {
+        use oot_game::surface::SurfaceType;
+        let active = w.active_camera().bg_cam_index;
+        let floor = w.col.entity_raycast_down(p + Vec3::Y * 30.0).1.map(|id| w.col.bg_cam_index(id) as i16);
+        let reach = 70.0 + SNEAK_MARGIN;
+        let ball_reaches = |mut pos: Vec3, vel: Vec3, steps: usize| {
+            for _ in 0..steps {
+                pos += vel;
+                if w.col.sph_vs_first_poly(pos, 30.0) {
+                    return false;
+                }
+                if pos.distance(p) < reach {
+                    return true;
+                }
+            }
+            false
+        };
+        for h in w.actors.all() {
+            let Some(g) = w.actors.downcast::<crate::en_heishi1::EnHeishi1>(h) else { continue };
+            if g.actor.killed || g.ty == 5 {
+                continue;
+            }
+            let cams = crate::en_heishi1::bg_cam_indices(g.path);
+            if !cams.iter().any(|&c| c == active || Some(c) == floor) {
+                continue;
+            }
+            if Self::xz_dist(g.actor.world_pos, p) < reach {
+                return true;
+            }
+            let yaw_to = eng_math::vec3f_yaw(g.actor.world_pos, p);
+            let off = yaw_to.wrapping_sub(g.actor.shape_rot.y) as i32;
+            if off.abs() <= 0x2500 + SNEAK_FAN {
+                let head = g.actor.world_pos + Vec3::Y * 60.0;
+                let dir = Vec3::new(p.x - head.x, 0.0, p.z - head.z).normalize_or_zero() * 30.0;
+                if ball_reaches(head, dir, 100) {
+                    return true;
+                }
+            }
+        }
+        // The balls already flying.
+        w.effect_ss.table.iter().filter(|e| e.life > -1 && e.ty == oot_game::effect::EFFECT_SS_SOLDER_SRCH_BALL).any(|e| ball_reaches(e.pos, e.velocity, SNEAK_BALL_FRAMES))
     }
 
     /// `Task::Crawl`'s phases in `sub`: 0 to the approach, 1 at the mouth until "Enter", 2 A
@@ -4750,6 +5183,7 @@ impl Playthrough {
             Who::Hylian(ty) => w.actors.downcast::<crate::en_hy::EnHy>(h).is_some_and(|a| a.actor.params & 0x7F == ty),
             Who::Malon => w.actors.downcast::<crate::en_ma1::EnMa1>(h).is_some_and(|a| !a.actor.killed),
             Who::Talon => w.actors.downcast::<crate::en_ta::EnTa>(h).is_some_and(|a| !a.actor.killed),
+            Who::Zelda => w.actors.downcast::<crate::en_zl4::EnZl4>(h).is_some_and(|a| !a.actor.killed),
         })
     }
 

@@ -43,7 +43,26 @@ pub struct DrawConfigState {
     /// Out: the Lost Woods' config asked for `Player_PlaySfx(NA_SE_EV_CHICKEN_CRY_M)` this
     /// frame (the caller plays it and clears this).
     pub chicken_cry: bool,
+    /// `play->sceneId`.
+    pub scene_id: u16,
+    /// Out: the Temple of Time's config on layer 5 turned the custom lens flare on
+    /// (`gCustomLensFlareOn`, `gCustomLensFlarePos`, `gLensFlareScale`,
+    /// `gLensFlareColorIntensity`, `gLensFlareGlareStrength`). Nothing draws it yet
+    /// (`Environment_DrawCustomLensFlare` isn't ported, `crate::env_draw`).
+    pub custom_lens_flare: Option<CustomLensFlare>,
 }
+
+/// The custom lens flare's globals (`z_kankyo.c`), as a draw config sets them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CustomLensFlare {
+    pub pos: [f32; 3],
+    pub scale: i16,
+    pub color_intensity: f32,
+    pub glare_strength: i16,
+}
+
+/// `SCENE_CASTLE_COURTYARD_GUARDS_DAY` (`scene_table.h`).
+const SCENE_CASTLE_COURTYARD_GUARDS_DAY: u16 = 0x45;
 
 impl DrawConfigState {
     /// `IS_CUTSCENE_LAYER` (`macros.h`): `gSaveContext.sceneLayer > 3`.
@@ -238,6 +257,68 @@ fn draw_config_spot16(st: &mut DrawConfigState, b: &mut Buffers) {
     b.xlu.insert(0x08, dl);
 }
 
+/// `Scene_DrawConfigHyruleCastle` (Hyrule Castle's grounds): the moat's and the drain's
+/// waterfall's scrolls on segments 8 and 9.
+fn draw_config_spot15(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(10) % 128, 32, 32, 1, f % 128, f.wrapping_mul(10) % 128, 32, 32));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(3) % 128, 32, 32, 1, f % 128, f.wrapping_mul(3) % 128, 32, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `(u8)(f)` of a float: MIPS `trunc.w.s`, then the low byte (Rust's `as u8` saturates).
+fn u8_of(f: f32) -> u32 {
+    (f as i32) as u8 as u32
+}
+
+/// `Scene_DrawConfigTempleOfTime` (the Temple of Time): prim and env colours on segments 8 to
+/// 0xD in both buffers, faded by `roomCtx.drawParams[0]` (the light from the Door of Time,
+/// `CS_MISC_*` cues) and `drawParams[1]` (the Triforce's flash, `CS_MISC_TRIFORCE_FLASH`); on
+/// layer 5 the custom lens flare at the window.
+fn draw_config_tokinoma(st: &mut DrawConfigState, b: &mut Buffers) {
+    let temp = st.room_draw_params[0] as f32 / 255.0;
+    let p0 = st.room_draw_params[0] as u32;
+    let p1 = st.room_draw_params[1] as u32;
+    // Each component is an int expression; gDPSetPrimColor's _SHIFTL keeps its low byte.
+    let seg8 = vec![g_dp_set_prim_color(0, 0, 255 - u8_of(185.0 * temp), 255 - u8_of(145.0 * temp), 255 - u8_of(105.0 * temp), 255), g_sp_end_display_list()];
+    let seg9 = vec![g_dp_set_prim_color(0, 0, 76 + u8_of(6.0 * temp), 76 + u8_of(34.0 * temp), 76 + u8_of(74.0 * temp), 255), g_sp_end_display_list()];
+    let seg_a = vec![g_dp_pipe_sync(), g_dp_set_env_color(0, 0, 0, p0), g_sp_end_display_list()];
+    let grey = 89 + u8_of(166.0 * temp);
+    let seg_b = vec![g_dp_set_prim_color(0, 0, grey, grey, grey, 255), g_dp_pipe_sync(), g_dp_set_env_color(0, 0, 0, p0), g_sp_end_display_list()];
+    let white = 255 + u8_of(179.0 * temp);
+    let seg_c = vec![g_dp_set_prim_color(0, 0, white, white, white, 255), g_dp_pipe_sync(), g_dp_set_env_color(0, 0, 0, p0), g_sp_end_display_list()];
+    let seg_d = vec![g_dp_pipe_sync(), g_dp_set_env_color(0, 0, 0, p1), g_sp_end_display_list()];
+    for (s, dl) in [(0x08, seg8), (0x09, seg9), (0x0A, seg_a), (0x0B, seg_b), (0x0C, seg_c), (0x0D, seg_d)] {
+        b.opa.insert(s, dl.clone());
+        b.xlu.insert(s, dl);
+    }
+    if st.scene_layer == 5 {
+        st.custom_lens_flare = Some(CustomLensFlare { pos: [-20.0, 1220.0, -684.0], scale: 10, color_intensity: 8.0, glare_strength: 200 });
+    }
+}
+
+/// `Scene_DrawConfigCastleCourtyardGuards` (the guards' courtyard, by day and by night): the
+/// water's scroll on segment 8, and by day the fountain's on 9.
+fn draw_config_hairal_niwa(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(3) % 128, 32, 32, 1, f % 128, f.wrapping_mul(3) % 128, 32, 32));
+    if st.scene_id == SCENE_CASTLE_COURTYARD_GUARDS_DAY {
+        b.xlu.insert(0x09, gfx_tex_scroll(0, f.wrapping_mul(10) % 256, 32, 64));
+    }
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigCalmWater` (Zelda's courtyard and other still water): the water's slow
+/// scroll on segment 8.
+fn draw_config_calm_water(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
 type DrawConfigFn = fn(&mut DrawConfigState, &mut Buffers);
 
 /// The ported draw configs, by `SDC_*` name.
@@ -249,6 +330,10 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_GERUDO_VALLEY", draw_config_spot09),
     ("SDC_DEATH_MOUNTAIN_TRAIL", draw_config_spot16),
     ("SDC_LOST_WOODS", draw_config_spot10),
+    ("SDC_HYRULE_CASTLE", draw_config_spot15),
+    ("SDC_TEMPLE_OF_TIME", draw_config_tokinoma),
+    ("SDC_CASTLE_COURTYARD_GUARDS", draw_config_hairal_niwa),
+    ("SDC_CALM_WATER", draw_config_calm_water),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

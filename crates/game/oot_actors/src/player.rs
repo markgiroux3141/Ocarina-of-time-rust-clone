@@ -829,6 +829,46 @@ pub struct Env<'a> {
     pub last_played_song: u16,
 }
 
+impl<'a> Env<'a> {
+    /// The environment from the play state, `io` taken out of it (`play.take_io()`), and its
+    /// assets and audio tables (cloned out so `play` stays shared).
+    pub fn of(play: &'a PlayState, io: &'a RefCell<PlayIo>, assets: &'a Option<std::sync::Arc<oot_game::play_scene::GameAssets>>, audio_tables: &'a std::sync::Arc<oot_game::audio::AudioGameTables>) -> Self {
+        Env {
+            data: &play.data,
+            col: &play.col,
+            cam_input_yaw: play.input_dir_yaw(),
+            gameplay_frames: play.gameplay_frames,
+            actors: &play.actors,
+            target: play.target_ctx.view(),
+            io: &io,
+            exits: play.exit_list(),
+            entrances: assets.as_ref().map(|a| a.scenes.entrances.as_slice()).unwrap_or(&[]),
+            transi_actors: &play.transi_actors,
+            prev_room: play.room_ctx.prev.num,
+            cam_state_flags: play.game_camera.state_flags,
+            msg_state: play.message_state(),
+            room_behavior_type1: play.room_ctx.cur.behavior_type1,
+            me: play.player,
+            cam_dir_yaw: play.cam_dir_yaw(),
+            items: assets.as_ref().map(|a| &a.items).unwrap_or(&NO_ITEMS),
+            audio: &audio_tables,
+            cs_state: play.cs_ctx.state,
+            cs_frames: play.cs_ctx.frames,
+            cs_link_action: play.cs_ctx.link_action,
+            scene_id: play.scene_id,
+            game_over_state: play.game_over_ctx.state,
+            room_behavior_type2: play.room_ctx.cur.behavior_type2,
+            active_cam_id: play.active_cam_id,
+            main_cam_valid_modes: play.data.camera.setting_flags(play.game_camera.setting),
+            main_cam_mode: play.game_camera.mode,
+            scene_cam_type: play.scene_cam_type,
+            title_card_clear: play.title_ctx.delay_timer == 0 && play.title_ctx.alpha == 0,
+            ocarina_mode: play.msg_ctx.ocarina_mode,
+            last_played_song: play.msg_ctx.last_played_song,
+        }
+    }
+}
+
 impl Env<'_> {
     /// An actor by handle (what `focusActor` holds).
     pub fn target(&self, h: ActorHandle) -> Option<&Actor> {
@@ -1456,8 +1496,19 @@ impl Player {
                 self.setup_action(&data, Action::StartWarpSongArrive, 0);
                 self.state1 |= STATE1_29;
             }
-            // 1, 3, 6, 7: the Master Sword pedestal, a door, Farore's Wind, knocked over: not
-            // ported. Standing still.
+            // Player_StartMode_KnockedOver: thrown down backwards (the courtyard guards' catch,
+            // ENTR_HYRULE_CASTLE_3), func_80837C0C's large knockback at 2 and 2 from behind.
+            7 => {
+                let io = RefCell::new(play.take_io());
+                let assets = play.assets.clone();
+                let audio_tables = play.audio.tables.clone();
+                let env = Env::of(play, &io, &assets, &audio_tables);
+                let yaw = self.actor.shape_rot.y.wrapping_add(0x8000u16 as i16);
+                self.func_80837C0C(&env, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 2.0, 2.0, yaw, 0);
+                play.put_io(io.into_inner());
+            }
+            // 1, 3, 6: the Master Sword pedestal, a door, Farore's Wind: not ported. Standing
+            // still.
             m => self.note(format!("start mode {m} (sStartModeFuncs) not ported: standing")),
         }
     }
@@ -2398,7 +2449,7 @@ impl Player {
     }
 
     /// `Player_PutAwayHeldItem`: put a held item away (`Player_UseItem(ITEM_NONE)`).
-    fn put_away_held_item(&mut self, data: &GameData) -> bool {
+    pub(crate) fn put_away_held_item(&mut self, data: &GameData) -> bool {
         if self.held_item_ap >= data.items.ap("FISHING_POLE") {
             self.use_item(data, oot_game::item::ITEM_NONE);
             true
@@ -8984,12 +9035,13 @@ impl Player {
                 self.item_ap = if fairy { data.items.ap("OCARINA_FAIRY") } else { data.items.ap("OCARINA_OF_TIME") };
                 self.models_group = Some(self.action_to_model_group(data, self.item_ap));
             }
-            // The ocarina held up (gPlayerAnim_L_okarina_get, a child's; om_get an adult's), from the
-            // second frame with sparkles about the right hand (rightHandType RH_FF: the shield's
-            // matrix kept for them). EffectSsKiraKira_SpawnDispersed isn't ported: its position's
-            // three Rand_CenteredFloat and its own three Rand calls are made.
+            // The ocarina held up (D_80855208[linkAge]: gPlayerAnim_L_okarina_get an adult's, om_get
+            // a child's, LINK_AGE_ADULT being 0), from the second frame with sparkles about the right
+            // hand (rightHandType RH_FF: the shield's matrix kept for them).
+            // EffectSsKiraKira_SpawnDispersed isn't ported: its position's three Rand_CenteredFloat
+            // and its own three Rand calls are made.
             "func_808526EC" => {
-                let a = if self.adult { data.anim("om_get") } else { data.anim("L_okarina_get") };
+                let a = if self.adult { data.anim("L_okarina_get") } else { data.anim("om_get") };
                 self.func_80851294(data, a);
                 if !self.right_hand_ff {
                     self.right_hand_ff = true;
@@ -9473,8 +9525,11 @@ impl Player {
         self.target_actor = Some(h);
         self.exchange_item_id = 0;
         if text_id == 0xFFFF {
-            // Player_SetCsActionWithHaltedActors(play, actor, 1): a cutscene's talk, not ported.
-            self.note("a talk with text 0xFFFF (a cutscene) isn't ported");
+            // Player stands and looks at the actor with no text (Zelda's meeting runs its own):
+            // Player_SetCsActionWithHaltedActors(play, actor, PLAYER_CSACTION_1).
+            self.cs_mode = 1;
+            self.cs_actor = Some(h);
+            self.door_bg_cam_index = 1;
             self.play_requests.push(PlayRequest::TalkRequest(h));
             self.put_away_held_item(data);
             return;
@@ -10623,39 +10678,7 @@ impl ActorImpl for Player {
         let io = RefCell::new(play.take_io());
         let assets = play.assets.clone();
         let audio_tables = play.audio.tables.clone();
-        let env = Env {
-            data: &play.data,
-            col: &play.col,
-            cam_input_yaw: play.input_dir_yaw(),
-            gameplay_frames: play.gameplay_frames,
-            actors: &play.actors,
-            target: play.target_ctx.view(),
-            io: &io,
-            exits: play.exit_list(),
-            entrances: assets.as_ref().map(|a| a.scenes.entrances.as_slice()).unwrap_or(&[]),
-            transi_actors: &play.transi_actors,
-            prev_room: play.room_ctx.prev.num,
-            cam_state_flags: play.game_camera.state_flags,
-            msg_state: play.message_state(),
-            room_behavior_type1: play.room_ctx.cur.behavior_type1,
-            me: play.player,
-            cam_dir_yaw: play.cam_dir_yaw(),
-            items: assets.as_ref().map(|a| &a.items).unwrap_or(&NO_ITEMS),
-            audio: &audio_tables,
-            cs_state: play.cs_ctx.state,
-            cs_frames: play.cs_ctx.frames,
-            cs_link_action: play.cs_ctx.link_action,
-            scene_id: play.scene_id,
-            game_over_state: play.game_over_ctx.state,
-            room_behavior_type2: play.room_ctx.cur.behavior_type2,
-            active_cam_id: play.active_cam_id,
-            main_cam_valid_modes: play.data.camera.setting_flags(play.game_camera.setting),
-            main_cam_mode: play.game_camera.mode,
-            scene_cam_type: play.scene_cam_type,
-            title_card_clear: play.title_ctx.delay_timer == 0 && play.title_ctx.alpha == 0,
-            ocarina_mode: play.msg_ctx.ocarina_mode,
-            last_played_song: play.msg_ctx.last_played_song,
-        };
+        let env = Env::of(play, &io, &assets, &audio_tables);
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for textboxBtnCooldownTimer frames after a talk.
         let mut input = play.input;

@@ -213,6 +213,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_JUMP3",
     "CAM_FUNC_UNIQ1",
     "CAM_FUNC_BATT1",
+    "CAM_FUNC_SPEC6",
 ];
 
 /// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
@@ -1017,6 +1018,14 @@ struct Keep1Rw {
     unk_16: i16,
 }
 
+/// `Camera_Special6`'s `paramData` (`Special6ReadOnlyData`, `Special6ReadWriteData`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Special6 {
+    interface_field: i16,
+    initial_player_y: f32,
+    anim_timer: i16,
+}
+
 /// The fixed and data cameras' `paramData` (`Fixed1`..`Fixed4`, `Data4`; `camera.h`).
 #[derive(Debug, Clone, Copy, Default)]
 struct FixedData {
@@ -1454,6 +1463,9 @@ pub struct GameCamera {
     /// What `Camera_Subj4` wrote to `camera->player` this update: its `world.pos` and
     /// `shape.rot.y` (PlayState applies them to Player right after the update).
     pub player_write: Option<(Vec3, i16)>,
+    /// What `Camera_Special6` wrote to `camera->player->actor.freezeTimer` this update
+    /// (PlayState applies it to Player right after the update).
+    pub player_freeze: Option<u16>,
     /// The sounds the camera asked for since the play state last took them, in order
     /// (`PlayState::camera_sfx` plays them).
     pub sfx: Vec<CamSfx>,
@@ -1515,6 +1527,7 @@ pub struct GameCamera {
     subj4: Subj4,
     subj3: Subj3,
     fixd: FixedData,
+    spec6: Special6,
     uniq: UniqueData,
     update_direction: bool,
     oob_timer: u32,
@@ -1601,6 +1614,7 @@ impl GameCamera {
             interface_alpha: 0,
             interface_alpha_change: None,
             player_write: None,
+            player_freeze: None,
             sfx: Vec::new(),
             // Play_Init: Camera_ChangeStatus(&mainCamera, CAM_STAT_ACTIVE).
             status: CAM_STAT_ACTIVE,
@@ -1648,6 +1662,7 @@ impl GameCamera {
             subj4: Subj4::default(),
             subj3: Subj3::default(),
             fixd: FixedData::default(),
+            spec6: Special6::default(),
             uniq: UniqueData::default(),
             update_direction: false,
             oob_timer: 0,
@@ -1706,6 +1721,11 @@ impl GameCamera {
     /// `playerPosRot`: the position and shape yaw of Player as this camera last saw him.
     pub fn main_player_pos_rot(&self) -> (Vec3, i16) {
         (self.player_pos, self.player_rot_y)
+    }
+
+    /// `animState`.
+    pub fn anim_state(&self) -> i16 {
+        self.anim_state
     }
 
     /// `Camera_ResetAnim`.
@@ -3488,6 +3508,7 @@ impl GameCamera {
                 Some("CAM_FUNC_JUMP3") => self.jump3(d, col, p),
                 Some("CAM_FUNC_UNIQ1") => self.unique1(d, col, p, f.player_waist),
                 Some("CAM_FUNC_BATT1") => self.battle1(d, col, p, f),
+                Some("CAM_FUNC_SPEC6") => self.special6(d, col),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else if self.has_player {
@@ -5632,6 +5653,65 @@ impl GameCamera {
         self.roll = 0;
         self.at_lerp_step_scale = 0.0;
         true
+    }
+
+    /// `Camera_Special6` (`PREREND_SIDE_SCROLL`, the guards' courtyard): the eye on the bg camera's
+    /// plane, halfway along x to Player and a fifth of his climb up; `at` 100 ahead along the bg
+    /// camera's rotation. A new bg camera (a new "screen") freezes Player 12 frames
+    /// (`player_freeze`) while the eye eases over to it, the HUD down to the hearts.
+    fn special6(&mut self, d: &CameraData, col: &CollisionContext) {
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.spec6.interface_field = d.value(self.cur(), 0);
+        }
+        let b = self.bg_cam_data(col);
+        let bg_cam_pos = b.pos_f();
+        let bg_cam_rot = b.rot;
+        let mut fov = b.fov;
+        if fov == -1 {
+            fov = 6000;
+        }
+        if fov <= 360 {
+            fov = fov.wrapping_mul(100);
+        }
+        self.interface_flags = self.spec6.interface_field;
+        // CAM_HUD_VISIBILITY_MASK, CAM_HUD_VISIBILITY(CAM_HUD_VISIBILITY_HEARTS_FORCE = 3), CAM_HUD_VISIBILITY_ALL.
+        const HUD_MASK: u16 = 0x0F00;
+        const HUD_HEARTS_FORCE: u16 = 3 << 8;
+        if self.eye_next != bg_cam_pos || self.anim_state == 0 {
+            // A new screen.
+            self.player_freeze = Some(12);
+            self.interface_flags = ((self.interface_flags as u16 & !HUD_MASK) | HUD_HEARTS_FORCE) as i16;
+            self.spec6.initial_player_y = self.player_pos.y;
+            self.spec6.anim_timer = 12;
+            self.eye_next = bg_cam_pos;
+            if self.anim_state == 0 {
+                self.anim_state += 1;
+            }
+        }
+        let at_offset = VecSphGeo { r: 100.0, yaw: bg_cam_rot[1], pitch: bg_cam_rot[0].wrapping_neg() };
+        let mut eye_pos_calc = self.eye_next;
+        eye_pos_calc.x += (self.player_pos.x - eye_pos_calc.x) * 0.5;
+        eye_pos_calc.y += (self.player_pos.y - self.spec6.initial_player_y) * 0.2;
+        if self.spec6.anim_timer > 0 {
+            // Between screens.
+            let timer_f = self.spec6.anim_timer as f32;
+            let mut eye_anim = eye_pos_calc;
+            eye_anim.y = lerp_ceil_f(eye_pos_calc.y, self.eye.y, 0.5, 0.01);
+            let at_anim = sph_geo_add(eye_anim, at_offset);
+            let timer_divisor = 1.0 / timer_f;
+            self.eye += (eye_anim - self.eye) * timer_divisor;
+            self.at += (at_anim - self.at) * timer_divisor;
+            // CAM_DATA_SCALED(fov).
+            self.fov += (fov as f32 * 0.01 - self.fov) / self.spec6.anim_timer as f32;
+            self.spec6.anim_timer -= 1;
+        } else {
+            // Following Player along x.
+            self.interface_flags = (self.interface_flags as u16 & !HUD_MASK) as i16;
+            // The lerp reads the eye just set, so it lands on eyePosCalc.y.
+            self.eye = eye_pos_calc;
+            self.eye.y = lerp_ceil_f(eye_pos_calc.y, self.eye.y, 0.5, 0.01);
+            self.at = sph_geo_add(self.eye, at_offset);
+        }
     }
 
     /// `Camera_Fixed1`: the eye eases to the bg camera's position and turns from there towards

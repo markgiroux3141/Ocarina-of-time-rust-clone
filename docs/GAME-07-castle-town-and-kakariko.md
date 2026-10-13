@@ -19,7 +19,7 @@ taught.
 | 1 | Castle Town: the culling volume, the entrance, the market, the back alley and the Temple of Time's outside by day and by night, the Temple's altar, the townsfolk, the dogs, Malon | done (2026-10-11) |
 | 2 | Hyrule Castle's grounds: the Weird Egg and its hatch, Player's exchange items, Talon, the crates, the guards and the throw-out, the circle wipe | done (2026-10-12) |
 | 3 | The ocarina: Player's, the message modes, the audio, the songs' effects, `Shot_Sun`, the Sun's Song | done (2026-10-12) |
-| 4 | The guards' courtyard and Zelda: `Camera_Special6`, the patrols, Zelda, the legend, the letter, Impa's lullaby and escort | |
+| 4 | The guards' courtyard and Zelda: `Camera_Special6`, the patrols, Zelda, the legend, the letter, Impa's lullaby and escort | done (2026-10-13) |
 | 5 | Kakariko: lifting and the cuccos, Anju, the gate, the people, the interiors | |
 | 6 | The graveyard: Dampé, the royal tomb, the ReDeads, the Sun's Song | |
 
@@ -997,3 +997,217 @@ the Song of Time L Space K L Space K.
 - **What to report:** the notes' pitches and the bend, the staff's notes and their flash, the
   songs' lights (shape, colour, timing), the clock's race, the rain, the fairy's timing, and any
   song that isn't recognised or plays wrong.
+
+## Milestone 4: The guards' courtyard and Zelda
+
+**Answer:** done. From the castle's drain Link comes out into the guards' courtyard:
+- the courtyard is seen side-on, screen by screen (`Camera_Special6`): the camera slides along
+  each screen with Link, and at a new screen eases over in 12 frames while Link stands frozen;
+- eight guards walk their rounds (`En_Heishi1`), turning their heads left and right; each looks
+  along a line at head height (`Effect_Ss_Solder_Srch_Ball`, stopped by walls, hedges and fences)
+  and only while the camera shows his screen. Seen (or close): "Hey you!", the guard walks over,
+  and Link is kicked out by Talon's crates under a white starburst. By night two guards stand by
+  the drain;
+- the middle guard keeps eight rupees round him (`En_Ex_Ruppy`); the fountains and the moat flow
+  (the castle's and the courtyards' draw configs);
+- past the guards, Zelda's courtyard: Zelda at the window (`En_Zl4`). In front of her she turns,
+  surprised (the appear fanfare), and her meeting runs with her own camera: the stone, the
+  Triforce, the names (no makes her ask again), the white fade to the legend on the cutscene map
+  and back, the window and Ganondorf kneeling, her plan, and Zelda's Letter. After it she only
+  talks;
+- with the letter Impa stands by the courtyard's entrance (`Demo_Im`): near her, her lullaby's
+  script gives the song, she whistles it and Link plays it back (a wrong note brings "try again");
+  the script ends in Hyrule Field, where she says goodbye, throws a Deku Nut and is gone, leaving
+  Link at `ENTR_HYRULE_FIELD_17`.
+
+The exit holds. Its run is the golden `zelda`, with `zelda_patrols`, `zelda_talk`,
+`zelda_ganondorf`, `zelda_letter`, `zelda_lullaby` and `zelda_impa`.
+
+The pack is still format 28 in `out/data25`, re-imported for the new bakes; builds in
+`target/game26`. Decisions are in [ADR 0063](adr/0063-the-courtyards-zelda-and-impa.md). The user's
+call (2026-10-13): one milestone, built in steps (the courtyard, then Zelda, then Impa and the
+field).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 113 to 115):
+- `test-zelda.bat`: the milestone's tests (with the draw configs' tests and the importer's check
+  of them against the C interpreter);
+- `game-zelda.bat`: the guards' courtyard from the drain (`castle-courtyard`); `night` (22:00),
+  `zelda` (Zelda's courtyard), `impa` (Zelda's courtyard with the letter: `zeldas-letter`), `field`
+  (Hyrule Field's layer 12, Impa's goodbye);
+- `sandbox-zelda.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestones 1 to 4 are done; 5 (Kakariko) is next.
+
+### What was built
+
+**The guards' courtyard:** `Camera_Special6` (a new screen freezes Player through the camera's
+recorded write, applied after its update); `En_Heishi1` whole (the walkers' rounds and waits, their
+heads, the screen check, the catch and the kick to `ENTR_HYRULE_CASTLE_3`; the night guards);
+`Effect_Ss_Solder_Srch_Ball` (its guard's `linkDetected` set through
+`ActorImpl::solder_srch_ball_detect`); `En_Ex_Ruppy` (the courtyard's rupees whole; the shooting
+gallery's markers, the bombs and the diving game's drop, their missing effects and parent logged).
+
+**Zelda:** `En_Zl4` whole: her eyes and mouth, her cutscene's nine states and their texts, her
+camera's fixed views and moves (`sCamDirections`, `sCamMove`), the scene scripts she starts and
+holds, the legend's transition and her setup back from it, the letter through Link's talk, her
+idle talk, the credits' cues (`EnZl4_TheEnd`), her root motion.
+
+**Impa:** `Demo_Im` for types 3, 4 and 5: the courtyard's wait for the letter, the lullaby's
+script within 130, its cues (shown, whistling with her hand pointing, still, the whistle put down),
+her talk and the field when she's met again; Hyrule Field's cues (shown, the Deku Nut thrown, gone);
+her blink, her head and torso turns. The other types log.
+
+**Elsewhere:**
+- the scene draw configs `SDC_HYRULE_CASTLE`, `SDC_CASTLE_COURTYARD_GUARDS` (by the scene: the
+  day's fountains), `SDC_CALM_WATER` and `SDC_TEMPLE_OF_TIME` (its colours by `drawParams`, and its
+  layer 5's custom lens flare recorded); `DrawConfigState` knows the scene;
+- root motion for any actor (`SkelAnimeStd::update_translation`, applied in `animation_update`);
+- `Player_StartTalking` with text -1 holds Link (`PLAYER_CSACTION_1`) and puts his item away;
+- the camera's `anim_state()`; the effect table's `EFFECT_SS_SOLDER_SRCH_BALL`;
+- the presets `castle-courtyard` (Talon home, the Cucco on C-Left, the Fairy Ocarina on C-Down) and
+  `zeldas-letter` (and the letter);
+- `Route::Zelda` and `Route::ZeldaTalk`, with the tasks `Sneak`, `WaitGuards`, `Converse`,
+  `Texts` and `Playback`; the sandbox runs the audio side offline for them (the playback).
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game26`, `OOT_DATA_DIR=out/data25`): 885
+passed, 0 failed, 1 ignored. New, with their expectations from the C:
+- **`oot_actors --test zelda`** (12):
+  - The courtyard by day: the eight walkers by path and type, each set up to walk (its
+    `sAnimParamsInit` row's speed), the type 5s killed; the path 3 guard's eight rupees at
+    `sRupeePositions` (type 3: scale 0.02, gravity -3, green, blue or red,
+    `EnExRuppy_WaitAsCollectible`). By night (22:00, the night scene by the entrance's layer): the
+    two type 5s standing.
+  - A guard looks only on his screen: at the drain (bg camera 0) no ball is thrown; on screen 7's
+    floor only path 0's guard throws, one a frame, from 60 up at 30 a frame, its `actor` his.
+  - A search ball: life 100; thrown at the north wall it drops to life 1 within 30 of it and is
+    gone after its last frame.
+  - Seen up close (50 from path 0's guard): 0x702D, Link held (cs mode 1), `sPlayerIsCaught`; A
+    through: out to `ENTR_HYRULE_CASTLE_3` (0x4FA) with transition type 46,
+    `EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS`, the castle's grounds entered. (The move restarts the
+    screen's 12-frame freeze; the guards don't update meanwhile.)
+  - `Camera_Special6`: Player frozen at the screen change (12 frames or fewer), the setting
+    `PREREND_SIDE_SCROLL` on bg camera 7, `eyeNext` its position (2028, 270, 440), the eye at
+    `eyeNext.x + (player.x - eyeNext.x) * 0.5` and z 440, the HUD back to all.
+  - A courtyard rupee taken within 30: gone, the rupees up by its colour's value.
+  - Zelda at the window: `ZL4_ANIM_21`, `ZL4_CS_WAIT`, text -1; no talk offered from behind her, one
+    in front; taken, Link 56 in front of her, then `CAM_SET_FREE0` on her view 0 (at (-490, 120, 0),
+    eye (-440, 117, 0), fov 45).
+  - After the letter she's `EnZl4_Idle` with text 0x703C (one stone).
+  - No at each of her questions: 0x7030 0x7031 0x7030 0x7032; 0x7033 0x7034 0x7033 0x7035; 0x2077
+    0x7038 0x7037 0x2076 0x2077 0x7005; 0x2078 0x700B; 0x703A 0x7073 0x703A 0x703B.
+  - Impa (type 5): action 23 and hidden without the letter; with it action 24, drawn, her turns on;
+    140 west of her nothing, 120: the lullaby's script, `EVENTCHKINF_59`, the song given, her action
+    10.
+  - Impa in the field (type 4, layer 12 by `CS_INDEX_8`): actions 15, 16, 17; the nut
+    (`En_Arrow`'s `ARROW_CS_NUT`, made `ARROW_NUT` with `isCsNut`) out on script frame 452 to 454 (the
+    throw's last frame is 29 from cue 10's 421); gone at cue 11.
+  - The exit run (below).
+- **`oot_game --test scene`** (2 new): the castle's, the courtyards' (segment 9 by day only) and the
+  calm water's scrolls; the Temple of Time's colours at `drawParams` (255, 40) (0xC's 255 + 179 to its
+  low byte, 178) and its layer 5's lens flare.
+- **`oot_import --test pack`**: the four new draw configs (the courtyard's day and night scenes
+  both) against the C interpreter.
+
+**The exit run** (`Route::Zelda`, `--script zelda`, `ENTR_CASTLE_COURTYARD_GUARDS_DAY_0`,
+`castle-courtyard`, 10:00): `zelda_courtyard` 6214, `zeldas_letter` 12020, `letter_read` 12262,
+`lullaby_cs` 12394, `lullaby_played` 13479, `impa_gone` 15237. Texts: 0x702E, 0x702F, 0x70F9, 0x70FA,
+0x70FB, 0x7030, 0x7032, 0x70FC, 0x70FD, 0x70FE, 0x70FF, 0x2073, 0x2074, 0x2075, 0x7033, 0x7035,
+0x7036 (the legend's), 0x7037, 0x2076, 0x2077, 0x7005, 0x2078, 0x7009 (the window's script), 0x7039,
+0x2079, 0x207A, 0x207B, 0x703A, 0x703B, 0x7123, 0x207C, 0x207D, 0x69 (the letter), 0x708D, 0x7090,
+0x878 (the lesson), 0x86D, 0x88B (the wrong note), 0x86D, 0x86F, 0x89B, 0xD4, 0x708E, 0x2060,
+0x204F, 0x2062, 0x2063 (the field's goodbye). The courtyard takes 6214 frames: the run waits at
+spots no guard can see and goes when the next screen's guards are in phases of their rounds that
+look away (ADR 0063).
+
+**The goldens.** 161 of milestone 3's 167 the same bytes; 6 changed, each proven by taking its
+cause out in a second build: `castle_crate`, `castle_drain`, `castle_caught_shut` by
+`SDC_HYRULE_CASTLE` (the moat's scroll); `castle`'s trace and end and `castle_wave` by the courtyard
+(its guards, rupees, camera and water: the run ends there). New: `zelda` (the trace, 15237 frames,
+and the end in Hyrule Field) and its frames 900 (the patrols), 7100 (Zelda's talk), 10600
+(Ganondorf), 12200 (the letter), 13300 (Impa's lesson) and 14200 (Impa in the field); each the same
+bytes over two runs. Logged in [golden/README.md](../golden/README.md): 175 hashes, 132 cases.
+
+### Decisions
+
+- **[ADR 0063](adr/0063-the-courtyards-zelda-and-impa.md):** the camera's freeze of Player as a
+  recorded write; the search ball setting its guard's flag through an `ActorImpl` hook; `En_Heishi1`'s
+  profile id 0 as the C's; root motion for any actor; faces swapped by texture source on one bake;
+  Zelda's camera tables in the source; `Player_StartTalking` with text -1; Impa's types 3 to 5; the
+  run's sneak, talk and playback.
+
+### Known gaps
+
+- **Impa's other types** (#53): the Chamber of Sages, Ganon's sealing, the ending.
+- **The diving game's and the bombs' rupees** (#54): `En_Diving_Game` and four effects.
+- **The Temple of Time's lens flare** on its layer 5 (#55): recorded, not drawn.
+- **`Rumble_Request`** at Ganondorf's look: no rumble.
+- **The sneak's timing** rests on the guards' `Rand` calls (their waits, middle points, heads): a
+  change in who calls `Rand` before the courtyard can make the run wait longer, or fail where it's
+  caught (it says where).
+
+### Fixes found while building
+
+- **`Player_StartTalking` with text -1** logged instead of holding Link: Zelda's meeting needs Link
+  held (`PLAYER_CSACTION_1`) while her own talk runs.
+
+### Fixes after the hand test
+
+The user played it (2026-10-13) and reported three things:
+- **Thrown out standing:** the guards' catch put Link by Talon's crates on his feet. Hyrule
+  Castle's spawn 3 has params 0x0700, start mode 7 (`Player_StartMode_KnockedOver`), which the
+  port logged and left standing. It's ported: `func_80837C0C`'s large knockback at 2 and 2 from
+  behind, so he lands on his back facing the crawl hole (`link_normal_front_downA`), flashes red
+  and gets up. The sentries' catch by the gate (spawn 4, 0x07FF) is the same mode. Player's
+  update environment is now built by `Env::of`, for the start mode as for the update.
+- **Rising a foot after the lullaby:** `func_808526EC` held the ocarina up with the adult's
+  animation. `D_80855208[linkAge]` lists `L_okarina_get` first, for `LINK_AGE_ADULT` (0), and
+  `om_get` for the child. The adult's animation with `ANIM_FLAG_DISABLE_CHILD_ROOT_ADJUSTMENT` put
+  the child's root at 35.4 instead of about 21.6. Saria's ocarina in the farewell had the same
+  rise.
+- **The music under Impa's lesson:** kept, as in the C. The courtyard's sequence is Zelda's Theme
+  (0x29, the lullaby's tune). `gZeldasCourtyardLullabyCs` has no command that stops it; the
+  ocarina switched on (`AudioOcarina_SetInstrument`) turns both bgm players down to 0x40 of 0x7F
+  (`Audio_QueueSeqCmdMute`) until it's off. A probe of the run shows the port doing the same:
+  the volume scale at 64 from the lesson's start (cutscene frame 285) to the song's end.
+
+Test: `seen_up_close_hey_you_and_kicked_out_by_the_crates` now follows Link to the arrival:
+`Player_Action_8084377C` with `link_normal_front_downA`, facing -0x8000 and thrown along 0, and
+standing within 120 frames. 885 passed, 0 failed, 1 ignored. Goldens: 5 changed, each proven by
+taking its fix out (`golden/README.md`); 175/175 after the recording.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-zelda.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-zelda.bat
+```
+
+### By hand
+
+`game-zelda.bat` (or menu 114). WASD the stick (Shift walks), Space A, E B, Q Z, J C-Left, K C-Down
+(the ocarina). Zelda's Lullaby: J I L J I L.
+1. **The courtyard's camera:** walk west out of the channel: at each screen's edge Link stands still
+   a moment while the camera slides to the next screen; within a screen it follows him along.
+2. **Caught:** walk into a guard's sight (in front of him, or close): "Hey you!", he walks over,
+   Space through the text, and Link is out by Talon's crates under a white starburst, thrown on
+   his back facing the crawl hole, flashing red as he gets up.
+3. **Unseen:** keep to the south wall (the guards' rounds end short of it), wait where a hedge,
+   pillar or fence stands between, and go while the next screen's guards walk away; up the west
+   plaza behind its two guards. The middle guard's rupees can be taken.
+4. **Zelda** (`game-zelda.bat zelda`): up the steps, in front of her: she turns (the fanfare), her
+   talk with its camera; answer no once to see her ask again; the white fade to the legend and back;
+   the window, Ganondorf; her letter.
+5. **Impa** (`game-zelda.bat impa`): Impa by the entrance; walk past her: her lullaby, she whistles,
+   then play it back (a wrong note: "try again"); the field.
+6. **The field** (`game-zelda.bat field`): Impa's goodbye, the Deku Nut's flash, and she's gone.
+7. **By night** (`game-zelda.bat night`): two guards by the drain; within 100 of them, caught.
+8. **The castle's moat** (`game-castle.bat`): the water and the drain's waterfall now flow.
+- **What to report:** the camera's slide and freeze, the guards' walks and heads, what sees Link and
+  what doesn't, Zelda's and Impa's faces and animations, her camera's views, the legend's fade, the
+  lullaby's lesson and playback, the field's goodbye.

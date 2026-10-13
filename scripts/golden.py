@@ -208,6 +208,18 @@ CASES = [
     ("ocarina_saria", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "140", "--screenshot", "{shot}"]),
     ("ocarina_sun", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "560", "--screenshot", "{shot}"]),
     ("ocarina_storm", S, ["--entrance", "ENTR_HYRULE_FIELD_0", "--child", "--preset", "ocarina-songs", "--time", "18:30", "--script", "ocarina", "--frames", "880", "--screenshot", "{shot}"]),
+    # GAME-07 milestone 4: from the castle's drain into the guards' courtyard (castle-courtyard), past
+    # the patrols unseen, Zelda's talk through the legend and the window to her letter, Impa's
+    # lullaby (a wrong note, then right) and her goodbye in Hyrule Field (ENTR_HYRULE_FIELD_17); then
+    # the run cut at frame 900 (the patrols), 7100 (Zelda's talk), 10600 (Ganondorf at the window),
+    # 12200 (the letter), 13300 (Impa's lesson) and 14200 (Impa in the field).
+    ("zelda", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("zelda_patrols", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "900", "--screenshot", "{shot}"]),
+    ("zelda_talk", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "7100", "--screenshot", "{shot}"]),
+    ("zelda_ganondorf", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "10600", "--screenshot", "{shot}"]),
+    ("zelda_letter", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "12200", "--screenshot", "{shot}"]),
+    ("zelda_lullaby", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "13300", "--screenshot", "{shot}"]),
+    ("zelda_impa", S, ["--entrance", "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", "--child", "--preset", "castle-courtyard", "--script", "zelda", "--frames", "14200", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

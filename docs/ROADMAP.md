@@ -569,6 +569,11 @@ volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
    the letter, `Demo_Im`, the lullaby taught, Hyrule Field's layer 12; the draw configs of the
    castle (its water, BACKLOG #46), the courtyards and the Temple of Time.
    - **Exit:** past the guards, Zelda's talk to the letter, Impa's lullaby and goodbye.
+   - **Done** (2026-10-13, ADR 0063): with `En_Ex_Ruppy` (the courtyard's rupees) and
+     `SDC_CALM_WATER`; Player's talk with text -1 and root motion for any actor. `Demo_Im`'s other
+     types (#53), the diving game's rupees (#54) and the Temple of Time's lens flare (#55) logged.
+     `Route::Zelda` (from the drain, past the patrols, Zelda, the legend, the letter, the lullaby,
+     the field to `ENTR_HYRULE_FIELD_17`) and `Route::ZeldaTalk`, the `zelda` golden.
 5. **Kakariko:** Player's lift, carry and throw, `En_Niw`, `En_Niw_Lady`, the gate, the people,
    the interiors; the draw configs of Kakariko, the grottos and the guard house (#46).
    - **Exit:** cuccos into Anju's pen, the letter to the guard, the gate opened.
@@ -599,7 +604,7 @@ this outline. The dungeons are Master Quest's.
 
 | Phase | Places | Dungeon and boss | What it brings | Exit |
 |---|---|---|---|---|
-| 8 (now) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 4 to 6 above: the courtyard's camera, Zelda and Impa, lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
+| 8 (now) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 5 and 6 above: lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
 | 9 | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
 | 10 | Death Mountain Trail and summit, Goron City | Dodongo's Cavern; King Dodongo | Bombs (`En_Bom`, BACKLOG #33) and bomb flowers, the Goron's Bracelet, Darunia's dance, the summit's Great Fairy (the magic meter) | The Goron's Ruby |
 | 11 | Zora's River, Zora's Domain, Zora's Fountain, Lake Hylia | Jabu-Jabu's Belly; Barinade | Bottles (the fish, Ruto's letter), diving (the silver scale), Ruto carried, the boomerang, the frogs and the scarecrow (#47) | The Zora's Sapphire, then the Ocarina of Time at the moat |

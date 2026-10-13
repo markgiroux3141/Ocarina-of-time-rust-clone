@@ -23,7 +23,8 @@
 //! `Effect_Ss_K_Fire` and `Effect_Ss_Sibuki`; for milestone 4b's props, `Effect_Ss_Kakera` (the
 //! fragments of crates, bushes, rocks and the falling platform) and the Deku Stick's
 //! `Effect_Ss_Stick` (its broken half); for milestone 5a's Deku Seeds and Nuts,
-//! `Effect_Ss_Stone1` (where one hits). Spawning another type logs it and does nothing, as the C
+//! `Effect_Ss_Stone1` (where one hits); for GAME-07 milestone 4's courtyard guards,
+//! `Effect_Ss_Solder_Srch_Ball` (their look). Spawning another type logs it and does nothing, as the C
 //! does for a type with no init.
 //!
 //! ## `z_effect.c`
@@ -56,6 +57,7 @@ pub mod k_fire;
 pub mod kakera;
 pub mod shield_particle;
 pub mod sibuki;
+pub mod solder_srch_ball;
 pub mod spark;
 pub mod stick;
 pub mod stone1;
@@ -76,6 +78,7 @@ pub const EFFECT_SS_HAHEN: u8 = 0x0F;
 pub const EFFECT_SS_STICK: u8 = 0x10;
 pub const EFFECT_SS_SIBUKI: u8 = 0x11;
 pub const EFFECT_SS_STONE1: u8 = 0x14;
+pub const EFFECT_SS_SOLDER_SRCH_BALL: u8 = 0x18;
 pub const EFFECT_SS_HITMARK: u8 = 0x15;
 pub const EFFECT_SS_FHG_FLASH: u8 = 0x16;
 pub const EFFECT_SS_K_FIRE: u8 = 0x17;
@@ -132,6 +135,8 @@ pub enum SsUpdate {
     Kakera,
     /// `EffectSsStone1_Update`.
     Stone1,
+    /// `EffectSsSolderSrchBall_Update`.
+    SolderSrchBall,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -267,6 +272,7 @@ pub enum SsInit {
     Stick(stick::StickInit),
     Kakera(kakera::KakeraInit),
     Stone1(stone1::Stone1Init),
+    SolderSrchBall(solder_srch_ball::SolderSrchBallInit),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -358,6 +364,7 @@ impl SsSpawn<'_> {
             SsInit::Stick(p) => stick::init(self, &mut e, &p),
             SsInit::Kakera(p) => kakera::init(self, &mut e, &p),
             SsInit::Stone1(p) => stone1::init(&mut e, &p),
+            SsInit::SolderSrchBall(p) => solder_srch_ball::init(&mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -473,6 +480,13 @@ impl SsSpawn<'_> {
     /// (`freeze_fade_flash`: see `stone1::update`).
     pub fn stone1_spawn(&mut self, pos: Vec3, freeze_fade_flash: bool) {
         self.spawn(EFFECT_SS_STONE1, 128, SsInit::Stone1(stone1::Stone1Init { pos, freeze_fade_flash }));
+    }
+
+    /// `EffectSsSolderSrchBall_Spawn`: a courtyard guard's look, at priority 128
+    /// (`link_detected`: the guard whose `linkDetected` it sets).
+    pub fn solder_srch_ball_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, unused: i16, link_detected: Option<ActorHandle>) {
+        let p = solder_srch_ball::SolderSrchBallInit { pos, velocity, accel, unused, link_detected };
+        self.spawn(EFFECT_SS_SOLDER_SRCH_BALL, 128, SsInit::SolderSrchBall(p));
     }
 
     /// `EffectSsHahen_Spawn`: one fragment, `gEffFragments1DL` (the withered Deku fragment)
@@ -858,6 +872,7 @@ impl PlayState {
             SsUpdate::Stick => stick::update(&mut e),
             SsUpdate::Kakera => kakera::update(self, &mut e),
             SsUpdate::Stone1 => stone1::update(self, &mut e),
+            SsUpdate::SolderSrchBall => solder_srch_ball::update(self, &mut e),
         }
         self.effect_ss.table[i] = e;
     }

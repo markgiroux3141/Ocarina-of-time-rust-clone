@@ -1119,8 +1119,10 @@ impl PlayState {
         if cam.status == crate::camera::CAM_STAT_ACTIVE {
             self.view = cam.shaken_view();
         }
-        // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y).
+        // Camera_Subj4 moves Player (camera->player->actor.world.pos, shape.rot.y), Camera_Special6
+        // freezes him (actor.freezeTimer).
         let write = cam.player_write.take();
+        let freeze = cam.player_freeze.take();
         // Camera_UpdateInterface's Interface_ChangeHudVisibilityMode.
         let alpha = cam.interface_alpha_change.take();
         if let Some((pos, yaw)) = write
@@ -1128,6 +1130,11 @@ impl PlayState {
         {
             a.world_pos = pos;
             a.shape_rot.y = yaw;
+        }
+        if let Some(timer) = freeze
+            && let Some(a) = self.player.and_then(|h| self.actors.actor_mut(h))
+        {
+            a.freeze_timer = timer;
         }
         if let Some(alpha_type) = alpha {
             crate::interface::change_alpha(&mut self.save, alpha_type);

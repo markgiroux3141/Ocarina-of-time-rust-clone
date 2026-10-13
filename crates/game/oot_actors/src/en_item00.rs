@@ -115,7 +115,7 @@ pub(crate) fn identity_mtx() -> Vec<u8> {
 /// The segment holding `sSetupDL[SETUPDL_66]`.
 const SEG_SETUP: u8 = 0x0D;
 
-fn rupee_bake(i: usize) -> String {
+pub(crate) fn rupee_bake(i: usize) -> String {
     format!("En_Item00/rupee{i}")
 }
 fn drop_bake(i: usize) -> String {
