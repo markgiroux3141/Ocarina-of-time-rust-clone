@@ -110,6 +110,12 @@ impl SymbolIndex {
             match parse_xml(&p, a.start_offset.unwrap_or(0), &version) {
                 Ok(files) => {
                     for f in files {
+                        // Several XMLs can describe parts of one ROM file (`code`'s
+                        // `fbdemo_circle`, `_triforce`, `_wipe1`): their symbols go together.
+                        if let Some(&i) = idx.by_file.get(&f.name) {
+                            idx.files[i].symbols.extend(f.symbols);
+                            continue;
+                        }
                         idx.by_file.insert(f.name.clone(), idx.files.len());
                         idx.files.push(f);
                     }

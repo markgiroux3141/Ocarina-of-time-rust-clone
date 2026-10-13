@@ -159,6 +159,12 @@ culling volume; the market's people (the townsfolk, Malon, the haggling pair, th
 the cucco girl and her cucco, the dogs, the guards, the butterflies), the gossip stones, the
 Temple's altar, windows and warp pad; `Camera_Fixed1`; the game's 4:3 frame shown at 16:9,
 black beside it (BACKLOG #1). Its exit run goes from the entrance through the market to the castle's road.
+Milestone 2, Hyrule Castle's grounds, is done ([ADR 0060](adr/0060-hyrule-castles-grounds.md)):
+Talon asleep by the crates and woken by the Cucco (Player's exchange items), his run home, the
+milk crates, the sentries and their throw-out through the circle wipe (`TransitionCircle`), the
+gate guards and gates (Lon Lon's fence, Kakariko's), the pots, the torches, the moat's water
+camera (`Camera_Jump3`). Its exit run goes from the castle's road past Talon and the crates
+through the drain into the guards' courtyard; a second run is caught and thrown out.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -522,17 +528,23 @@ volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
    `En_Ta`, `Bg_Spot15_Rrbox`, `Bg_Spot15_Saku`, `En_Heishi2`, `En_Heishi3`, `Obj_Tsubo`,
    `En_Light`, `TransitionCircle`, `Camera_Jump3`.
    - **Exit:** Talon woken with the Cucco, the crates pushed into the moat, through the drain.
+   - **Done** (2026-10-12, ADR 0060): with `Bg_Gate_Shutter` (pulled forward from 5) and
+     `Camera_UpdateWater`'s settings half; the hatch was already ported. `En_Ta`'s ranch by day
+     (BACKLOG #44), the eye under water (#43), the bottles', spells' and ocarina's uses (#45)
+     logged. `Route::Castle` and `Route::CastleCaught`, the `castle` and `castle_caught` goldens.
 3. **The ocarina:** Player's ocarina, the message system's ocarina modes, `AudioOcarina`, the
    songs' effects (`Oceff_*`), `Shot_Sun` (BACKLOG #36), the Sun's Song's time, the cutscenes'
    ocarina text.
    - **Exit:** in Hyrule Field with the songs: Saria's Song, the Sun's Song, a fairy at `Shot_Sun`.
 4. **The guards' courtyard and Zelda:** `Camera_Special6`, `En_Heishi1`, `En_Zl4`, the legend,
-   the letter, `Demo_Im`, the lullaby taught, Hyrule Field's layer 12.
+   the letter, `Demo_Im`, the lullaby taught, Hyrule Field's layer 12; the draw configs of the
+   castle (its water, BACKLOG #46), the courtyards and the Temple of Time.
    - **Exit:** past the guards, Zelda's talk to the letter, Impa's lullaby and goodbye.
 5. **Kakariko:** Player's lift, carry and throw, `En_Niw`, `En_Niw_Lady`, the gate, the people,
-   the interiors.
+   the interiors; the draw configs of Kakariko, the grottos and the guard house (#46).
    - **Exit:** cuccos into Anju's pen, the letter to the guard, the gate opened.
-6. **The graveyard:** Dampé's dig, the royal tomb, the ReDeads, the Sun's Song.
+6. **The graveyard:** Dampé's dig, the royal tomb, the ReDeads, the Sun's Song; the draw configs
+   of the graves, the royal tomb and the fairy fountain (#46).
    - **Exit:** a dig at 18:00, the lullaby at the tomb, the Sun's Song learned.
 
 ## Cross-cutting debts
@@ -541,7 +553,7 @@ Pick these up when a milestone touches them, or as filler:
 - **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), but the camera's roll isn't
   drawn (the renderer keeps Y up), and the shake isn't applied to the prerendered backgrounds
   and the skybox.
-- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), the exit's circle wipe (`TransitionCircle`). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** ~~time passing, day/night~~ (GAME-06 milestone 3); weather.
 - **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; the ocarina modes.
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.

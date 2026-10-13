@@ -1270,7 +1270,7 @@ pub fn bake_name(skel: usize, eye: usize) -> String {
 
 /// `SETUPDL_37` (`z_rcp.c`): texture off, `PRIMITIVE * SHADE` with the prim alpha, then `COMBINED`;
 /// `SETUPDL_25`'s other modes and geometry.
-fn setup_dl_37() -> Vec<(u32, u32)> {
+pub(crate) fn setup_dl_37() -> Vec<(u32, u32)> {
     use oot_game::gbi::*;
     let mut d = Dl::default();
     d.pipe_sync();

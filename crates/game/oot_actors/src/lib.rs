@@ -114,6 +114,14 @@ pub mod en_ma1;
 pub mod en_dog;
 pub mod en_heishi4;
 pub mod en_hy;
+pub mod en_heishi3;
+pub mod en_heishi2;
+pub mod bg_spot15_saku;
+pub mod bg_gate_shutter;
+pub mod en_light;
+pub mod obj_tsubo;
+pub mod bg_spot15_rrbox;
+pub mod en_ta;
 
 use bg_ydan_hasi::BgYdanHasi;
 use dummy_target::DummyTarget;
@@ -121,7 +129,7 @@ use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE, en_heishi3::PROFILE, en_heishi2::PROFILE, bg_spot15_saku::PROFILE, bg_gate_shutter::PROFILE, en_light::PROFILE, obj_tsubo::PROFILE, bg_spot15_rrbox::PROFILE, en_ta::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
@@ -213,6 +221,14 @@ pub fn overlays() -> Overlays {
     o.register(en_wonder_talk::ACTOR_EN_WONDER_TALK, en_wonder_talk::EnWonderTalk::init);
     o.register(bg_toki_hikari::ACTOR_BG_TOKI_HIKARI, bg_toki_hikari::BgTokiHikari::init);
     o.register(bg_mjin::ACTOR_BG_MJIN, bg_mjin::BgMjin::init);
+    o.register(en_heishi3::ACTOR_EN_HEISHI3, en_heishi3::EnHeishi3::init);
+    o.register(en_heishi2::ACTOR_EN_HEISHI2, en_heishi2::EnHeishi2::init);
+    o.register(bg_spot15_saku::ACTOR_BG_SPOT15_SAKU, bg_spot15_saku::BgSpot15Saku::init);
+    o.register(bg_gate_shutter::ACTOR_BG_GATE_SHUTTER, bg_gate_shutter::BgGateShutter::init);
+    o.register(en_light::ACTOR_EN_LIGHT, en_light::EnLight::init);
+    o.register(obj_tsubo::ACTOR_OBJ_TSUBO, obj_tsubo::ObjTsubo::init);
+    o.register(bg_spot15_rrbox::ACTOR_BG_SPOT15_RRBOX, bg_spot15_rrbox::BgSpot15Rrbox::init);
+    o.register(en_ta::ACTOR_EN_TA, en_ta::EnTa::init);
     o
 }
 
@@ -260,6 +276,8 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(oot_game::env_draw::bakes());
     // The effects (z_effect_soft_sprite.c's overlays and z_effect.c's).
     v.extend(oot_game::effect::bakes());
+    // The circle transition (z_fbdemo_circle.c).
+    v.extend(oot_game::transition::bakes());
     // z_actor.c's target reticle.
     v.extend(oot_game::target::bakes());
     // The message box's sprites (docs/adr/0017-interface-sprites.md).
@@ -281,6 +299,9 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(en_butte::bakes());
     v.extend(bg_toki_hikari::bakes());
     v.extend(bg_mjin::bakes());
+    v.extend(en_heishi2::bakes());
+    v.extend(en_light::bakes());
+    v.extend(en_ta::bakes());
     v
 }
 

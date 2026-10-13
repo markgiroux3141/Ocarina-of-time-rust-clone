@@ -15,7 +15,7 @@ fn data() -> Option<CameraData> {
 }
 
 fn player() -> PlayerView {
-    PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] }
+    PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] }
 }
 
 /// One `Camera_Update` of `c` with Link as `p`, in an empty world.
@@ -48,6 +48,8 @@ fn update_with(c: &mut GameCamera, d: &CameraData, p: &PlayerView, waist: Vec3, 
         health,
         skybox_disabled: false,
         cameras: [Some((c.eye, c.at)), None, None, None],
+        scene_id: 0,
+        room: Default::default(),
     };
     let mut g = CameraGlobals::main_init();
     g.scene_init_letterbox_timer = 0;

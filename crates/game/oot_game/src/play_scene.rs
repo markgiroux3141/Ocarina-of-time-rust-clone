@@ -227,8 +227,10 @@ pub struct TransitionState {
     pub ctx_type: u8,
     /// `nextEntranceIndex`.
     pub next_entrance_index: u16,
-    /// `transitionCtx`'s instance (every instance type is a fade here).
+    /// `transitionCtx`'s instance: a circle (`TransitionCircle`, the `TRANS_TYPE_CIRCLE` types), or
+    /// a fade (every other instance type here).
     pub fade: TransitionFade,
+    pub circle: Option<crate::transition::TransitionCircle>,
     /// `sTransitionFillTimer`, and `envCtx.fillScreen` / `screenFillColor`.
     pub fill_timer: u16,
     pub screen_fill: Option<[u8; 4]>,
@@ -862,6 +864,11 @@ impl PlayState {
         match self.transition.mode {
             TRANS_MODE_INSTANCE_INIT => {
                 let ty = self.transition.ctx_type;
+                // transitionCtx.init; a circle's setType(transitionType | TC_SET_PARAMS).
+                let mut circle = crate::transition::is_circle_type(ty).then(crate::transition::TransitionCircle::init);
+                if let Some(c) = &mut circle {
+                    c.set_type(ty as i32 | crate::transition::TC_SET_PARAMS);
+                }
                 self.save.trans_wipe_speed = if ty == TRANS_TYPE_WIPE_FAST { 28 } else { 14 };
                 self.save.trans_fade_duration = match ty {
                     TRANS_TYPE_FADE_BLACK_FAST | TRANS_TYPE_FADE_WHITE_FAST => 20,
@@ -870,20 +877,35 @@ impl PlayState {
                     _ => 60,
                 };
                 let tr = &mut self.transition;
-                tr.fade = TransitionFade::default();
-                tr.fade.set_color(match ty {
+                let color = match ty {
                     TRANS_TYPE_FADE_WHITE | TRANS_TYPE_FADE_WHITE_FAST | TRANS_TYPE_FADE_WHITE_SLOW | TRANS_TYPE_FADE_WHITE_CS_DELAYED | TRANS_TYPE_FADE_WHITE_INSTANT => {
                         rgba8(160, 160, 160, 255)
                     }
                     TRANS_TYPE_FADE_GREEN => rgba8(140, 140, 100, 255),
                     TRANS_TYPE_FADE_BLUE => rgba8(70, 100, 110, 255),
                     _ => rgba8(0, 0, 0, 0),
-                });
-                tr.fade.set_type(if tr.trigger == TRANS_TRIGGER_END { 1 } else { 2 });
-                tr.fade.start();
+                };
+                tr.fade = TransitionFade::default();
+                let fill_type = if tr.trigger == TRANS_TRIGGER_END { crate::transition::TRANS_INSTANCE_TYPE_FILL_OUT } else { crate::transition::TRANS_INSTANCE_TYPE_FILL_IN };
+                let mut sfx = None;
+                if let Some(c) = &mut circle {
+                    // setColor and setUnkColor (TransitionCircle_Start picks its own colour).
+                    c.set_color(color);
+                    c.set_unk_color(color);
+                    c.set_type(fill_type);
+                    sfx = c.start();
+                } else {
+                    tr.fade.set_color(color);
+                    tr.fade.set_type(fill_type);
+                    tr.fade.start();
+                }
+                tr.circle = circle;
                 // TRANS_TYPE_FADE_WHITE_CS_DELAYED waits, covering the screen, until a script's
                 // cutsceneTransitionControl lets it run (its TRANSITION_FX 9).
                 tr.mode = if ty == TRANS_TYPE_FADE_WHITE_CS_DELAYED { TRANS_MODE_INSTANCE_WAIT } else { TRANS_MODE_INSTANCE_RUNNING };
+                if let Some(id) = sfx {
+                    self.audio.play_sfx_centered(id);
+                }
             }
             TRANS_MODE_INSTANCE_WAIT => {
                 if self.save.cutscene_transition_control != 0 {
@@ -891,13 +913,21 @@ impl PlayState {
                 }
             }
             TRANS_MODE_INSTANCE_RUNNING => {
-                if self.transition.fade.is_done {
+                let done = match &self.transition.circle {
+                    Some(c) => c.is_done,
+                    None => self.transition.fade.is_done,
+                };
+                if done {
                     if self.transition.trigger != TRANS_TRIGGER_END {
                         self.end_scene();
                     } else {
                         self.transition.mode = TRANS_MODE_OFF;
                     }
                     self.transition.trigger = TRANS_TRIGGER_OFF;
+                } else if let Some(c) = &mut self.transition.circle {
+                    if let Some(id) = c.update(R_UPDATE_RATE as i32) {
+                        self.audio.play_sfx_centered(id);
+                    }
                 } else {
                     let d = self.save.trans_fade_duration;
                     self.transition.fade.update(R_UPDATE_RATE, d, &mut self.trans_fade_flash_alpha_step);
@@ -1015,10 +1045,28 @@ impl PlayState {
     fn transition_fills(&self) -> Option<[u8; 4]> {
         let tr = &self.transition;
         let fade = (tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_INIT || tr.mode == TRANS_MODE_INSTANCE_WAIT).then(|| tr.fade.fill()).flatten();
+        // A circle is a mesh (`circle_draw_cmd`), but one shut (`texY` 0) covers the screen in its
+        // colour: what a new state shows until its first frame.
+        let fade = fade.or_else(|| tr.circle.filter(|c| c.direction == crate::transition::TRANS_CIRCLE_DIR_IN && c.is_done && c.tex_y == 0).map(|c| c.color));
         match (fade, self.transition_fade_flash.fill()) {
             (Some(f), Some(flash)) => Some(compose_fill(f, flash)),
             (f, flash) => flash.or(f),
         }
+    }
+}
+
+impl PlayState {
+    /// `TransitionCircle_Draw` (`Play_Draw`'s cover elements, while the instance runs or waits,
+    /// or for a type of 56 on): the circle's mesh in its own view, for the pause pass
+    /// (`eng_gfx::DrawLists::pause`, with `transition::CIRCLE_VIEW`).
+    pub fn circle_draw_cmd(&self) -> Option<eng_gfx::DrawCmd> {
+        let tr = &self.transition;
+        let c = tr.circle?;
+        if !(tr.mode == TRANS_MODE_INSTANCE_RUNNING || tr.mode == TRANS_MODE_INSTANCE_WAIT || tr.ctx_type >= TRANS_TYPE_MAX) {
+            return None;
+        }
+        let key = eng_gfx::MeshKey::named(crate::pack::keys::bake(&c.bake()));
+        Some(eng_gfx::DrawCmd { mesh: key, transform: crate::transition::TransitionCircle::transform(), bones: Vec::new(), params: eng_gfx::DrawParams { segments: Some(c.segment_values()), ..Default::default() } })
     }
 }
 

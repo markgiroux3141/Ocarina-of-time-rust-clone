@@ -342,7 +342,7 @@ fn data() -> Option<CameraData> {
 /// One `Camera_Update` of the main camera `c` with a child Link at the origin facing +z, in an
 /// empty world, with the quakes `q`.
 fn update(c: &mut GameCamera, d: &CameraData, q: &mut QuakeStatics, rand: &mut Rand) {
-    let p = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
+    let p = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
     let col = CollisionContext::new(Default::default());
     let oc = crate::collision_check::OcLines::default();
     let f = CamFrame {
@@ -366,6 +366,8 @@ fn update(c: &mut GameCamera, d: &CameraData, q: &mut QuakeStatics, rand: &mut R
         health: 0x30,
         skybox_disabled: false,
         cameras: [Some((c.eye, c.at)), None, None, None],
+        scene_id: 0,
+        room: Default::default(),
     };
     let mut g = CameraGlobals::main_init();
     g.scene_init_letterbox_timer = 0;
@@ -376,7 +378,7 @@ fn update(c: &mut GameCamera, d: &CameraData, q: &mut QuakeStatics, rand: &mut R
 #[test]
 fn quake_shakes_the_cameras_view() {
     let Some(d) = data() else { return };
-    let p = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
+    let p = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 550, gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
     let mut c = GameCamera::new(&d, &p);
     c.change_mode_flags(&d, CAM_MODE_NORMAL, 0);
     let mut rand = Rand::default();

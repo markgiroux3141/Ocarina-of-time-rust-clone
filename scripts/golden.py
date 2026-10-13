@@ -186,6 +186,19 @@ CASES = [
     ("market_townsman", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--frames", "380", "--screenshot", "{shot}"]),
     ("market_malon", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--frames", "860", "--screenshot", "{shot}"]),
     ("market_castle", S, ["--entrance", "ENTR_MARKET_ENTRANCE_DAY_0", "--child", "--preset", "deku-tree-dead", "--script", "market", "--frames", "1120", "--screenshot", "{shot}"]),
+    # GAME-07 milestone 2: Hyrule Castle's grounds with the Cucco (castle-cucco): Talon shown it and
+    # run home (by night now), two crates pushed into the moat, up them and through the drain into
+    # the guards' courtyard (its circle, CIRCLE(WAVE, BLACK, FAST), opening).
+    ("castle", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-cucco", "--script", "castle", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("castle_talon", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-cucco", "--script", "castle", "--frames", "3260", "--screenshot", "{shot}"]),
+    ("castle_crate", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-cucco", "--script", "castle", "--frames", "4371", "--screenshot", "{shot}"]),
+    ("castle_drain", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-cucco", "--script", "castle", "--frames", "4990", "--screenshot", "{shot}"]),
+    ("castle_wave", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-cucco", "--script", "castle", "--frames", "5127", "--screenshot", "{shot}"]),
+    # The same, caught (castle-egg): "Hey you!" (0x702D), the starburst circle shutting and the
+    # throw-out by the gate (ENTR_HYRULE_CASTLE_4) opening.
+    ("castle_caught", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-egg", "--script", "castle-caught", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("castle_caught_shut", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-egg", "--script", "castle-caught", "--frames", "1434", "--screenshot", "{shot}"]),
+    ("castle_caught_open", S, ["--entrance", "ENTR_HYRULE_CASTLE_0", "--child", "--preset", "castle-egg", "--script", "castle-caught", "--frames", "1460", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

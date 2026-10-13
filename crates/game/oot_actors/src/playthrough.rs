@@ -346,6 +346,28 @@ pub enum Step {
     /// The castle's road (`ENTR_HYRULE_CASTLE_0`) entered, its intro (`gHyruleCastleIntroCs`)
     /// over, settled.
     CastleRoad,
+    /// Up a climbable wall (a vine) onto the ground at its top, settled.
+    Vine,
+    /// Talon shown the Cucco: awake (`EVENTCHKINF_TALON_WOKEN_IN_CASTLE`), the text closed.
+    TalonWoken,
+    /// Talon talked to awake (0x702C), its event read: his run home starts.
+    TalonTalk,
+    /// Talon's run home started (`EVENTCHKINF_TALON_RETURNED_FROM_CASTLE`) and over: gone.
+    TalonGone,
+    /// A crate (`Bg_Spot15_Rrbox`) pushed off the bank and landed in the moat.
+    CrateInMoat,
+    /// Out of the moat up onto its east bank (1571).
+    MoatBank,
+    /// Up onto the crates stacked in the moat.
+    OnCrates,
+    /// Through the drain's crawlspace, out at its far end.
+    Drain,
+    /// The guards' courtyard (`ENTR_CASTLE_COURTYARD_GUARDS_DAY_0`) entered, settled.
+    Courtyard,
+    /// Seen by a castle sentry (`En_Heishi3`): "Hey you!" (0x702D).
+    Caught,
+    /// Thrown out by the gate (`ENTR_HYRULE_CASTLE_4`), the circle opened, settled.
+    ThrownOut,
 }
 
 impl Step {
@@ -462,6 +484,17 @@ impl Step {
             Step::Townsman => "townsman",
             Step::Malon => "malon",
             Step::CastleRoad => "castle_road",
+            Step::Vine => "vine",
+            Step::TalonWoken => "talon_woken",
+            Step::TalonTalk => "talon_talk",
+            Step::TalonGone => "talon_gone",
+            Step::CrateInMoat => "crate_in_moat",
+            Step::MoatBank => "moat_bank",
+            Step::OnCrates => "on_crates",
+            Step::Drain => "drain",
+            Step::Courtyard => "courtyard",
+            Step::Caught => "caught",
+            Step::ThrownOut => "thrown_out",
         }
     }
 }
@@ -581,6 +614,15 @@ pub enum Route {
     /// `deku-tree-dead`) into the market, a townsman (`En_Hy` type 9) and Malon (`En_Ma1`)
     /// talked to, and out north to the castle's road, where its intro plays.
     Market,
+    /// Hyrule Castle's grounds (GAME-07 milestone 2): from the castle's road with the Cucco
+    /// (`castle-cucco`) past the sentries to Talon by the crates; the Cucco shown, Talon woken and
+    /// run home; two crates pushed into the moat, up them and through the drain into the guards'
+    /// courtyard.
+    Castle,
+    /// Hyrule Castle's grounds, caught (GAME-07 milestone 2): from the castle's road (`castle-egg`)
+    /// up the vine and into a sentry's sight; "Hey you!", the starburst circle and the throw-out by
+    /// the gate (`ENTR_HYRULE_CASTLE_4`).
+    CastleCaught,
 }
 
 /// The emerald's cutscene chain after part 1 (`Cutscene_Command_Destination`'s terminators): each
@@ -817,6 +859,7 @@ impl Route {
             Route::Farewell => "ENTR_KOKIRI_FOREST_11",
             Route::Dusk | Route::Field | Route::FieldNight => "ENTR_HYRULE_FIELD_0",
             Route::Market => "ENTR_MARKET_ENTRANCE_DAY_0",
+            Route::Castle | Route::CastleCaught => "ENTR_HYRULE_CASTLE_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -836,6 +879,8 @@ impl Route {
             Route::BlueWarp => Some("deku-tree-gohma-cleared"),
             Route::BossRoom => Some("deku-tree-slingshot"),
             Route::Emerald | Route::Creation | Route::Farewell | Route::Dusk | Route::Field | Route::FieldNight | Route::Market => Some("deku-tree-dead"),
+            Route::Castle => Some("castle-cucco"),
+            Route::CastleCaught => Some("castle-egg"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -992,6 +1037,8 @@ impl Route {
             Route::Field => "field",
             Route::FieldNight => "field-night",
             Route::Market => "market",
+            Route::Castle => "castle",
+            Route::CastleCaught => "castle-caught",
         }
     }
 
@@ -1021,13 +1068,15 @@ impl Route {
             Route::Field => 4000,
             Route::FieldNight => 4000,
             Route::Market => 4000,
+            Route::Castle => 8000,
+            Route::CastleCaught => 2000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1041,6 +1090,20 @@ enum Task {
     Exit(&'static str, Option<Step>),
     /// Steer through the points, each passed within `WAYPOINT_RADIUS`.
     Walk(Vec<Vec3>),
+    /// Steer at the point (up a climbable wall, a ledge) until Link stands at its height, settled.
+    ClimbTo(Vec3, Step),
+    /// From the point, at the actor until it offers a talk, then its C button (0 C-Left): the item
+    /// shown (Player's exchange), its texts read to the end.
+    ShowItem(Who, Vec3, usize, Step),
+    /// Still until the actor is gone (killed), then settled.
+    WaitGone(Who, Step),
+    /// Towards the point until a castle sentry sees Link ("Hey you!", 0x702D: `Step::Caught`), A
+    /// through his text; the throw-out's scene entered and settled (the step).
+    Caught(Vec3, Step),
+    /// The milk crate (`Bg_Spot15_Rrbox`) nearest the point, grabbed (A) from the spot at the
+    /// offset from it and pushed along the axis until its position along it reaches the value, or
+    /// it falls into the moat and lands (then the step).
+    PushCrate(Vec3, Vec3, Vec3, f32, Option<Step>),
     /// From the porch onto the ladder's top, then down it.
     LadderDown,
     /// Talk to the actor: walk to the point, steer at the actor until it offers, press A, and
@@ -1256,6 +1319,8 @@ enum Who {
     Hylian(i16),
     /// Malon (`En_Ma1`).
     Malon,
+    /// Talon (`En_Ta`).
+    Talon,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -1305,6 +1370,8 @@ pub struct Playthrough {
     reset: Option<usize>,
     /// The owl `Task::Owl` talks to (the nearest when it started).
     owl: Option<ActorHandle>,
+    /// `Task::PushCrate`'s crate, kept once chosen.
+    crate_handle: Option<ActorHandle>,
     /// A cap on the run's length: its routes' caps added up.
     max_frames: usize,
 }
@@ -1453,6 +1520,86 @@ impl Playthrough {
                 Task::Walk(vec![Vec3::new(-60.0, 0.0, -400.0)]),
                 Task::Exit("ENTR_HYRULE_CASTLE_0", Some(Step::CastleRoad)),
             ],
+            Route::Castle => vec![
+                Task::Settle(None),
+                // The castle's owl (OWL_HYRULE_CASTLE, on the road's west wall) calls Link within
+                // 540: his talk (0x2068, 0x2069, the question 0x206A: OK) and his flight.
+                Task::Owl(Step::OwlFlown),
+                // East along the road to the vine by Malon (WALL_TYPE_4: x 90 to 92, z 3385 to
+                // 3408, 1091 up to 1367), up it.
+                Task::Walk(vec![Vec3::new(40.0, 1091.0, 3396.0)]),
+                Task::ClimbTo(Vec3::new(160.0, 1367.0, 3396.0), Step::Vine),
+                // East along the wall's top onto the bridge over the gate (1443), off its east side
+                // (330 down: under 400, no fall damage) onto the road past Lon Lon's fence, up that
+                // road north, then west over the field outside the sentries' sight (250 in front of
+                // each, 150 behind) to the second vine (from (-652, 1558) to (-613, 1532), 1450 up
+                // to 1606).
+                Task::Walk(vec![
+                    Vec3::new(940.0, 1429.0, 3390.0),
+                    Vec3::new(1120.0, 1443.0, 3210.0),
+                    Vec3::new(1220.0, 1443.0, 3150.0),
+                    Vec3::new(1650.0, 1113.0, 2720.0),
+                    Vec3::new(1670.0, 1224.0, 2580.0),
+                    Vec3::new(1850.0, 1302.0, 2360.0),
+                    Vec3::new(1850.0, 1330.0, 2280.0),
+                    Vec3::new(1610.0, 1375.0, 2070.0),
+                    Vec3::new(-60.0, 1393.0, 2070.0),
+                    Vec3::new(-590.0, 1450.0, 1600.0),
+                    Vec3::new(-615.0, 1450.0, 1572.0),
+                ]),
+                // The vine faces south-east (the plateau is north of it).
+                Task::ClimbTo(Vec3::new(-655.0, 1606.0, 1510.0), Step::Vine),
+                // North over the west plateau, off its edge onto the castle's lawn (1571) west of
+                // the door's two sentries (their box x -380 to -190, z 700 to 1020), into the moat
+                // and east along it under them (z 610) to its corner, where a ramp under the water
+                // rises to 1522 (the channel north is barred at z 360); up onto the east bank.
+                Task::Walk(vec![
+                    Vec3::new(-680.0, 1713.0, 1080.0),
+                    Vec3::new(-790.0, 1765.0, 970.0),
+                    Vec3::new(-760.0, 1571.0, 900.0),
+                    Vec3::new(-480.0, 1571.0, 720.0),
+                    Vec3::new(-450.0, 1510.0, 610.0),
+                    Vec3::new(500.0, 1510.0, 610.0),
+                    Vec3::new(770.0, 1520.0, 640.0),
+                ]),
+                Task::ClimbTo(Vec3::new(850.0, 1571.0, 640.0), Step::MoatBank),
+                // North along the bank to Talon, asleep by the crates.
+                Task::Walk(vec![Vec3::new(900.0, 1571.0, -170.0)]),
+                Task::ShowItem(Who::Talon, Vec3::new(950.0, 1561.0, -299.0), 0, Step::TalonWoken),
+                Task::Talk(Who::Talon, Vec3::new(950.0, 1561.0, -299.0), Step::TalonTalk),
+                Task::WaitGone(Who::Talon, Step::TalonGone),
+                // The crates, now free to go west or south by Talon's place (func_808B3AAC): the
+                // one at (950, -459) 8 pushes south to z -299, then 9 west off the bank (its edge
+                // at x 800) into the moat at x 770; the one at (910, -519) 11 south, 7 west, onto
+                // it (the chime: squarely on it).
+                // (Round the crates east to their spots: walked into, a crate's 60 is climbed.)
+                Task::Walk(vec![Vec3::new(1020.0, 1561.0, -330.0), Vec3::new(1020.0, 1561.0, -505.0)]),
+                Task::PushCrate(Vec3::new(950.0, 1561.0, -459.0), Vec3::new(15.0, 0.0, -46.0), Vec3::Z, -299.0, None),
+                Task::Walk(vec![Vec3::new(1020.0, 1561.0, -360.0), Vec3::new(1020.0, 1561.0, -300.0)]),
+                Task::PushCrate(Vec3::new(950.0, 1561.0, -299.0), Vec3::new(50.0, 0.0, 0.0), Vec3::NEG_X, -770.0, Some(Step::CrateInMoat)),
+                Task::Walk(vec![Vec3::new(1000.0, 1561.0, -420.0), Vec3::new(1000.0, 1561.0, -570.0)]),
+                Task::PushCrate(Vec3::new(910.0, 1561.0, -519.0), Vec3::new(0.0, 0.0, -46.0), Vec3::Z, -299.0, None),
+                Task::Walk(vec![Vec3::new(990.0, 1561.0, -360.0), Vec3::new(990.0, 1561.0, -300.0)]),
+                Task::PushCrate(Vec3::new(910.0, 1561.0, -299.0), Vec3::new(50.0, 0.0, 0.0), Vec3::NEG_X, -770.0, Some(Step::CrateInMoat)),
+                // Up onto the stack (its top 60 above the bank), and west off it over the moat
+                // onto the castle wall's ledge (1617) by the drain.
+                Task::ClimbTo(Vec3::new(790.0, 1621.0, -299.0), Step::OnCrates),
+                Task::Hurry(vec![Vec3::new(600.0, 1617.0, -305.0)]),
+                // Into the drain (WALL_TYPE_5 at x 560, z -293 to -325), crawling west to its end:
+                // exit 2, the guards' courtyard.
+                Task::Crawl(Vec3::new(590.0, 1617.0, -309.0), Vec3::new(540.0, 1617.0, -309.0), Step::Drain),
+                Task::Exit("ENTR_CASTLE_COURTYARD_GUARDS_DAY_0", Some(Step::Courtyard)),
+            ],
+            Route::CastleCaught => vec![
+                Task::Settle(None),
+                Task::Owl(Step::OwlFlown),
+                Task::Walk(vec![Vec3::new(40.0, 1091.0, 3396.0)]),
+                Task::ClimbTo(Vec3::new(160.0, 1367.0, 3396.0), Step::Vine),
+                // East along the wall's top onto the bridge, and north along it towards the field:
+                // the sentry at its foot (1196, 1422, 2481) faces it, 250 in front.
+                Task::Walk(vec![Vec3::new(940.0, 1429.0, 3390.0), Vec3::new(1120.0, 1443.0, 3210.0), Vec3::new(1200.0, 1443.0, 3000.0)]),
+                Task::Caught(Vec3::new(1200.0, 1443.0, 2600.0), Step::ThrownOut),
+            ],
             Route::Farewell => vec![
                 Task::Settle(None),
                 // Mido blocks the path out of the meadow (EnMd_BlockPath: with the emerald, until he's
@@ -1500,6 +1647,7 @@ impl Playthrough {
             items_page: 0,
             reset: None,
             owl: None,
+            crate_handle: None,
             max_frames: route.max_frames(),
         }
     }
@@ -1746,6 +1894,7 @@ impl Playthrough {
         self.task += 1;
         self.sub = 0;
         self.wait = 0;
+        self.crate_handle = None;
     }
 
     /// The pad for the next frame, or `None` when the run is over: done, or stuck (then
@@ -1888,6 +2037,54 @@ impl Playthrough {
                 _ => self.settle(w, step),
             },
             Task::Walk(points) => self.walk(w, &points, RUN),
+            Task::ClimbTo(top, step) => self.climb_to(w, top, step),
+            Task::ShowItem(who, from, button, step) => self.show_item(w, who, from, button, step),
+            Task::PushCrate(near, offset, dir, until, step) => self.push_crate(w, near, offset, dir, until, step),
+            Task::Caught(to, step) => {
+                self.wait += 1;
+                if self.wait > 1500 {
+                    self.failure = Some("never caught".into());
+                    return None;
+                }
+                match self.sub {
+                    0 => {
+                        if w.msg_ctx.text_id == 0x702D && w.message_state() != TEXT_STATE_NONE {
+                            self.mark(Step::Caught);
+                            self.sub = 1;
+                            return Some(idle);
+                        }
+                        Some(stick_towards(w, to, RUN))
+                    }
+                    1 => {
+                        if w.transition.trigger != TRANS_TRIGGER_OFF {
+                            self.scene_changes = w.scene_changes;
+                            self.sub = 2;
+                            return Some(idle);
+                        }
+                        let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+                        Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
+                    }
+                    2 => {
+                        if w.scene_changes > self.scene_changes {
+                            self.sub = 3;
+                        }
+                        Some(idle)
+                    }
+                    _ => self.settle(w, Some(step)),
+                }
+            }
+            Task::WaitGone(who, step) => {
+                self.wait += 1;
+                if self.wait > 1500 {
+                    self.failure = Some(format!("{who:?} never gone"));
+                    return None;
+                }
+                if Self::find(w, who).is_some() || w.message_state() != TEXT_STATE_NONE {
+                    return Some(PadState::default());
+                }
+                self.sub = 0;
+                self.settle(w, Some(step))
+            }
             Task::Hurry(points) => self.walk(w, &points, FULL),
             Task::Crawl(approach, mouth, step) => self.crawl(w, approach, mouth, step),
             Task::WaitBoulder(from, to, frac) => {
@@ -3211,8 +3408,9 @@ impl Playthrough {
         let owl = self.owl.and_then(|h| w.actors.downcast::<crate::en_owl::EnOwl>(h)).filter(|o| !o.actor.killed);
         let st = w.message_state();
         if st != TEXT_STATE_NONE {
-            // His first text (0x2064 outside the forest, 0x206C at Kakariko's stairs).
-            if w.msg_ctx.text_id == 0x2064 || w.msg_ctx.text_id == 0x206C {
+            // His first text (0x2064 outside the forest, 0x2068 on the castle's road, 0x206C at
+            // Kakariko's stairs).
+            if matches!(w.msg_ctx.text_id, 0x2064 | 0x2068 | 0x206C) {
                 self.mark(Step::OwlTalk);
             }
             if st == TEXT_STATE_CHOICE {
@@ -3841,6 +4039,147 @@ impl Playthrough {
         matches!(w.message_state(), TEXT_STATE_AWAITING_NEXT | TEXT_STATE_DONE | TEXT_STATE_DONE_HAS_NEXT | TEXT_STATE_CHOICE) || w.msg_ctx.msg_mode == MSGMODE_TEXT_AWAIT_INPUT
     }
 
+    /// `Task::ClimbTo`: the stick at `top`, full (a hang climbs up only on a full tilt:
+    /// `controlStickSpinAngles`, a magnitude of 55), until Link stands within 10 of its height,
+    /// then settled.
+    fn climb_to(&mut self, w: &PlayState, top: Vec3, step: Step) -> Option<PadState> {
+        let p = w.player();
+        if self.sub == 1 {
+            return self.settle(w, Some(step));
+        }
+        if p.grounded() && (p.actor.world_pos.y - top.y).abs() < 10.0 && matches!(p.action, PA::StandingStill | PA::Run) {
+            self.sub = 1;
+            return Some(PadState::default());
+        }
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("never up to {top} (Link {:?} at {:?})", p.action, p.actor.world_pos));
+            return None;
+        }
+        Some(stick_towards(w, top, FULL))
+    }
+
+    /// `Task::PushCrate`'s phases: 0 to the spot at the offset from the crate, 1 at it until Link
+    /// holds on (A at its wall), 2 A and the stick ahead until it's far enough or has fallen; then
+    /// Link lets go and settles.
+    fn push_crate(&mut self, w: &PlayState, near: Vec3, offset: Vec3, dir: Vec3, until: f32, step: Option<Step>) -> Option<PadState> {
+        use crate::bg_spot15_rrbox::{Action as CrateAction, BgSpot15Rrbox};
+        let idle = PadState::default();
+        if self.crate_handle.is_none() {
+            self.crate_handle = w
+                .actors
+                .all()
+                .into_iter()
+                .filter(|&h| w.actors.downcast::<BgSpot15Rrbox>(h).is_some())
+                .min_by(|&a, &b| Self::xz_dist(w.actors.actor(a).unwrap().world_pos, near).total_cmp(&Self::xz_dist(w.actors.actor(b).unwrap().world_pos, near)));
+        }
+        let Some(c) = self.crate_handle.and_then(|h| w.actors.downcast::<BgSpot15Rrbox>(h)) else {
+            self.failure = Some(format!("no crate near {near}"));
+            return None;
+        };
+        let at = c.actor.world_pos;
+        let p = w.player();
+        self.wait += 1;
+        if self.wait > 2400 {
+            self.failure = Some(format!("the crate at {at} never pushed to {until} along {dir} (Link {:?} at {:?})", p.action, p.actor.world_pos));
+            return None;
+        }
+        // Done: in the moat (fallen and landed), or far enough along and at rest.
+        let fallen = at.y < near.y - 20.0;
+        if self.sub == 3 || (c.action == CrateAction::Rest && (fallen || at.dot(dir) >= until - 0.5)) {
+            self.sub = 3;
+            if Self::holding_on(w) {
+                return Some(idle);
+            }
+            return self.settle(w, step);
+        }
+        match self.sub {
+            0 => {
+                let behind = at + offset;
+                if Self::xz_dist(p.actor.world_pos, behind) < 8.0 {
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                Some(stick_towards(w, behind, SLOW))
+            }
+            1 => {
+                if Self::holding_on(w) {
+                    self.sub = 2;
+                    return Some(idle);
+                }
+                Some(self.grab_pad(w, at))
+            }
+            _ => {
+                if !Self::holding_on(w) {
+                    if c.action == CrateAction::Fall {
+                        return Some(idle);
+                    }
+                    self.sub = 0;
+                    return Some(idle);
+                }
+                let ahead = p.actor.world_pos + dir * 100.0;
+                let mut pad = stick_towards(w, ahead, RUN);
+                pad.button = BTN_A;
+                Some(pad)
+            }
+        }
+    }
+
+    /// `Task::ShowItem`'s phases: 0 to the point, 1 at the actor until it offers a talk (Player's
+    /// `talkActor`), 2 its C button, 3 the texts (A whenever one waits) until closed and Link
+    /// stands.
+    fn show_item(&mut self, w: &PlayState, who: Who, from: Vec3, button: usize, step: Step) -> Option<PadState> {
+        let idle = PadState::default();
+        let Some(h) = Self::find(w, who) else {
+            self.failure = Some(format!("no {who:?} to show the item to"));
+            return None;
+        };
+        let at = w.actors.actor(h).unwrap().world_pos;
+        let p = w.player();
+        let link = p.actor.world_pos;
+        self.wait += 1;
+        if self.wait > 1500 {
+            self.failure = Some(format!("the item never shown to {who:?} (Link {:?} at {link})", p.action));
+            return None;
+        }
+        match self.sub {
+            0 => {
+                if Self::xz_dist(link, from) < WAYPOINT_RADIUS {
+                    self.sub = 1;
+                }
+                Some(stick_towards(w, from, RUN))
+            }
+            1 => {
+                if p.target_actor == Some(h) && p.linear_velocity == 0.0 {
+                    self.sub = 2;
+                    return Some(idle);
+                }
+                if p.target_actor == Some(h) {
+                    return Some(idle);
+                }
+                Some(stick_towards(w, at, SLOW))
+            }
+            2 => {
+                if p.action == PA::ExchangeItem || w.message_state() != TEXT_STATE_NONE {
+                    self.sub = 3;
+                    return Some(idle);
+                }
+                if p.target_actor != Some(h) {
+                    self.sub = 1;
+                    return Some(idle);
+                }
+                Some(self.press([eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT][button]))
+            }
+            _ => {
+                if w.message_state() == TEXT_STATE_NONE && !matches!(p.action, PA::ExchangeItem | PA::Talk) {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(if Self::text_waits(w) { self.press(BTN_A) } else { idle })
+            }
+        }
+    }
+
     /// Steers through `points`, each passed within `WAYPOINT_RADIUS`, at stick magnitude `mag`.
     fn walk(&mut self, w: &PlayState, points: &[Vec3], mag: f32) -> Option<PadState> {
         let link = w.player().actor.world_pos;
@@ -3895,6 +4234,11 @@ impl Playthrough {
             }
             // Player_Action_8084C760 reads the stick's tilt straight (rel.stick_y), not the camera's way.
             3 => {
+                // A crawlspace that ends in an exit (Hyrule Castle's drain): its transition ends it.
+                if w.transition.trigger != TRANS_TRIGGER_OFF {
+                    self.finish(Some(step));
+                    return None;
+                }
                 if p.action == PA::Crawl && !self.steps.iter().any(|s| s.0 == Step::Crawlspace) {
                     self.steps.push((Step::Crawlspace, self.frame));
                     self.done = Some(Step::Crawlspace);
@@ -4188,6 +4532,7 @@ impl Playthrough {
             Who::Mido => w.actors.downcast::<EnMd>(h).is_some(),
             Who::Hylian(ty) => w.actors.downcast::<crate::en_hy::EnHy>(h).is_some_and(|a| a.actor.params & 0x7F == ty),
             Who::Malon => w.actors.downcast::<crate::en_ma1::EnMa1>(h).is_some_and(|a| !a.actor.killed),
+            Who::Talon => w.actors.downcast::<crate::en_ta::EnTa>(h).is_some_and(|a| !a.actor.killed),
         })
     }
 

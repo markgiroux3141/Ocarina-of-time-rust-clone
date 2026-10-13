@@ -484,7 +484,7 @@ impl PlayState {
     /// An empty play state over `col`. Spawn Player (and the rest) with the content crate,
     /// then call `reset_blending`.
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
-        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
+        let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
         let game_camera = GameCamera::new(&data.camera, &pv);
         let view = crate::camera::CamView { eye: game_camera.eye, at: game_camera.at, fov: game_camera.fov };
         PlayState {
@@ -622,6 +622,7 @@ impl PlayState {
             gravity: a.gravity,
             climbing: pi.state_flags1() & PLAYER_STATE1_21 != 0,
             state1: pi.state_flags1(),
+            state2: pi.state_flags2(),
             iron_boots: pi.current_boots() == crate::actor_ctx::PLAYER_BOOTS_IRON,
             focus_pos: a.focus_pos,
             focus_rot: [a.focus_rot.x, a.focus_rot.y, a.focus_rot.z],
@@ -1104,6 +1105,8 @@ impl PlayState {
             health: self.save.health,
             skybox_disabled: self.scene.as_ref().and_then(|s| s.room(self.room_ctx.cur.num)).is_some_and(|r| r.skybox_disabled),
             cameras,
+            scene_id: self.scene_id,
+            room: self.cam_room(),
         };
         let cam = if id == CAM_ID_MAIN { Some(&mut self.game_camera) } else { self.sub_cameras.get_mut((id - CAM_ID_SUB_FIRST) as usize).and_then(|c| c.as_mut()) };
         let Some(cam) = cam else { return };
@@ -1678,6 +1681,17 @@ impl PlayState {
         out.pause = self.kaleido_draw_cmds();
         if !out.pause.is_empty() {
             out.pause_view = Some(crate::kaleido::gfx::PAUSE_VIEW);
+        }
+        // Play_Draw's cover elements: a circle transition (OVERLAY_DISP, after the menu's
+        // POLY_OPA_DISP, under the HUD), in the pause pass with its own view; the two never
+        // share a frame.
+        if let Some(c) = self.circle_draw_cmd() {
+            if out.pause.is_empty() {
+                out.pause_view = Some(crate::transition::CIRCLE_VIEW);
+                out.pause.push(c);
+            } else {
+                log::warn!("a circle transition under the pause menu: not drawn");
+            }
         }
         let hud_pause = self.hud_pause();
         if self.interface_ctx.initialised {

@@ -104,7 +104,7 @@ pub struct KakeraInit {
 }
 
 /// The display lists the ported callers spawn fragments with: `(file, symbol)`.
-pub const KAKERA_DLISTS: [(&str, &str); 8] = [
+pub const KAKERA_DLISTS: [(&str, &str); 10] = [
     // Obj_Kibako2.
     ("object_kibako2", "gLargeCrateFragmentDL"),
     // Obj_Lift.
@@ -119,6 +119,9 @@ pub const KAKERA_DLISTS: [(&str, &str); 8] = [
     ("gameplay_keep", "gBoulderFragmentsDL"),
     // Obj_Bombiwa.
     ("object_bombiwa", "object_bombiwa_DL_0009E0"),
+    // Obj_Tsubo.
+    ("gameplay_dangeon_keep", "gPotFragmentDL"),
+    ("object_tsubo", "object_tsubo_DL_001960"),
 ];
 
 /// A fragment list's bake.

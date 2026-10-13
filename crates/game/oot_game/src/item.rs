@@ -402,6 +402,22 @@ pub fn rupees_change_by(save: &mut SaveContext, rupee_change: i16) {
     save.rupee_accumulator += rupee_change;
 }
 
+/// `Inventory_UpdateBottleItem`: the bottle on C button `button` (1 to 3) holds `item` (a full Lon
+/// Lon Milk emptied only by half); the button's item, its icon (the HUD reads the button) and
+/// `buttonStatus` enabled. Returns the item set, for `pauseCtx.cursorItem[PAUSE_ITEM]`.
+pub fn inventory_update_bottle_item(save: &mut SaveContext, mut item: u8, button: u8) -> u8 {
+    let slot = save.equips.c_button_slots[button as usize - 1] as usize;
+    log::debug!("item_no={item:x},  c_no={button:x},  Pt={slot:x}  Item_Register={:x}", save.inventory.items[slot]);
+    // Special case to only empty half of a Lon Lon Milk Bottle.
+    if save.inventory.items[slot] == ITEM_BOTTLE_MILK_FULL && item == ITEM_BOTTLE_EMPTY {
+        item = ITEM_BOTTLE_MILK_HALF;
+    }
+    save.inventory.items[slot] = item;
+    save.equips.button_items[button as usize] = item;
+    save.button_status[button as usize] = crate::interface::BTN_ENABLED;
+    item
+}
+
 /// `Inventory_ChangeAmmo`.
 pub fn inventory_change_ammo(save: &mut SaveContext, item: u8, ammo_change: i16) {
     let (upg, clamp_low) = match item {

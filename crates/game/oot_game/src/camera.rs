@@ -210,6 +210,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_DEMO5",
     "CAM_FUNC_JUMP1",
     "CAM_FUNC_JUMP2",
+    "CAM_FUNC_JUMP3",
     "CAM_FUNC_UNIQ1",
     "CAM_FUNC_BATT1",
 ];
@@ -750,6 +751,33 @@ struct Jump2Rw {
     anim_timer: i16,
 }
 
+/// `Jump3ReadOnlyData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Jump3Ro {
+    y_offset: f32,
+    dist_min: f32,
+    dist_max: f32,
+    pitch_target: i16,
+    swing_update_rate: f32,
+    /// `unk_10`: read, unused.
+    #[allow(dead_code)]
+    unk_10: f32,
+    unk_14: f32,
+    fov_target: f32,
+    unk_1c: f32,
+    interface_field: i16,
+}
+/// `Jump3ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Jump3Rw {
+    swing: Swing,
+    /// `unk_1C`: the floor when the mode started (set, unused).
+    unk_1c: f32,
+    anim_timer: i16,
+    /// `mode`: the data's mode, `CAM_MODE_NORMAL` or (the eye under water) `CAM_MODE_AIM_BOOMERANG`.
+    mode: i16,
+}
+
 /// `Unique1ReadOnlyData`, `Unique1ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default)]
 struct Uniq1Ro {
@@ -1212,6 +1240,10 @@ pub struct CamFrame<'a> {
     /// `play->cameraPtrs`: each camera's eye and at before this update (`None`: NULL), which
     /// `Quake_Update` reads for the quakes on the other cameras (`crate::quake`).
     pub cameras: [Option<(Vec3, Vec3)>; NUM_CAMS],
+    /// `play->sceneId` (`BgCheck_GetWaterSurfaceAllHack`'s Zora's Domain box).
+    pub scene_id: u16,
+    /// The current room, as `func_80057FC4` reads it (leaving the water).
+    pub room: CamRoom,
 }
 
 /// `paramData.doorParams` (`Camera_ChangeDoorCam`): what a door camera reads. In the C it's
@@ -1290,6 +1322,8 @@ pub struct PlayerView {
     pub climbing: bool,
     /// `stateFlags1` (`Camera_Unique0` reads `PLAYER_STATE1_29`).
     pub state1: u32,
+    /// `stateFlags2` (`Camera_UpdateWater` reads `PLAYER_STATE2_11`, diving).
+    pub state2: u32,
     /// `currentBoots == PLAYER_BOOTS_IRON`.
     pub iron_boots: bool,
     /// `Actor_GetFocus`: `actor.focus.pos` and `actor.focus.rot` (`Camera_Subj3`'s first person).
@@ -1302,6 +1336,45 @@ const PLAYER_STATE1_29: u32 = 1 << 29;
 /// `PLAYER_STATE1_CARRYING_ACTOR` (holding something over his head), `PLAYER_STATE1_27` (swimming).
 const PLAYER_STATE1_CARRYING_ACTOR: u32 = 1 << 11;
 const PLAYER_STATE1_27: u32 = 1 << 27;
+/// `PLAYER_STATE2_11` (diving).
+const PLAYER_STATE2_11: u32 = 1 << 11;
+/// `CAM_STATE_*` (`camera.h`): the water's.
+const CAM_STATE_CHECK_WATER: i16 = 1 << 1;
+const CAM_STATE_CAMERA_IN_WATER: i16 = 1 << 8;
+const CAM_STATE_PLAYER_IN_WATER: i16 = 1 << 9;
+const CAM_STATE_PLAYER_DIVING: i16 = (1u16 << 15) as i16;
+/// `CAM_SET_NORMAL3`, `CAM_SET_PIVOT_WATER_SURFACE` (`camera.h`: 0x05, 0x24).
+pub const CAM_SET_NORMAL3: i16 = 0x05;
+pub const CAM_SET_PIVOT_WATER_SURFACE: i16 = 0x24;
+/// `CAM_REQUEST_SETTING_IGNORE_PRIORITY`, `_PRESERVE_BG_CAM_INDEX` (`camera.h`).
+const CAM_REQUEST_SETTING_IGNORE_PRIORITY: i16 = 1 << 0;
+const CAM_REQUEST_SETTING_PRESERVE_BG_CAM_INDEX: i16 = 1 << 2;
+/// `JUMP3_FLAG_2`, `JUMP3_FLAG_4` (`camera.h`).
+const JUMP3_FLAG_2: i16 = 1 << 2;
+const JUMP3_FLAG_4: i16 = 1 << 4;
+/// `SCENE_ZORAS_DOMAIN` (`scene_table.h`: 0x58).
+const SCENE_ZORAS_DOMAIN: u16 = 0x58;
+
+/// `BgCheck_GetWaterSurfaceAllHack`: Zora's Domain's own box (King Zora's room, finite in depth:
+/// `sZorasDomainWaterBox`, bg camera 4, its surface 877) for a point inside it, else the water box
+/// at x, z (`BgCheck_GetWaterSurface`) in the current room: its surface and its bg camera index
+/// (`WaterBox_GetBgCamIndex`).
+fn water_surface_all_hack(f: &CamFrame, x: f32, z: f32, y: f32) -> Option<(f32, u32)> {
+    if f.scene_id == SCENE_ZORAS_DOMAIN && -348.0 < x && x < 205.0 && 777.0 < y && y < 977.0 && -1746.0 < z && z < -967.0 {
+        return Some((877.0, 4));
+    }
+    let room = f.col.water_room;
+    f.col.header.water_boxes.iter().find_map(|w| {
+        let r = (w.properties >> 13) & 0x3F;
+        if (r == room || r == 0x3F) && w.properties & (1 << 19) == 0 {
+            let (x0, z0) = (w.x_min as f32, w.z_min as f32);
+            if x0 < x && x < x0 + w.x_length as f32 && z0 < z && z < z0 + w.z_length as f32 {
+                return Some((w.y_surface as f32, w.properties & 0xFF));
+            }
+        }
+        None
+    })
+}
 
 impl PlayerView {
     /// `Player_GetHeight` (not riding Epona).
@@ -1413,6 +1486,16 @@ pub struct GameCamera {
     jump1_rw: Jump1Rw,
     jump2_ro: Jump2Ro,
     jump2_rw: Jump2Rw,
+    jump3_ro: Jump3Ro,
+    jump3_rw: Jump3Rw,
+    /// `waterYPos`: the water's surface Player swims in (or the eye is under).
+    pub water_y_pos: f32,
+    /// `waterCamSetting`: the setting the water gave, for after a dive.
+    pub water_cam_setting: i16,
+    /// `bgCamIndexBeforeUnderwater`.
+    pub bg_cam_index_before_underwater: i16,
+    /// `waterQuakeIndex` (the quake while the eye is under water: not ported).
+    pub water_quake_index: i16,
     uniq1_ro: Uniq1Ro,
     uniq1_rw: Uniq1Rw,
     ro: Norm1Ro,
@@ -1540,6 +1623,12 @@ impl GameCamera {
             jump1_rw: Jump1Rw::default(),
             jump2_ro: Jump2Ro::default(),
             jump2_rw: Jump2Rw::default(),
+            jump3_ro: Jump3Ro::default(),
+            jump3_rw: Jump3Rw::default(),
+            water_y_pos: 0.0,
+            water_cam_setting: 0,
+            bg_cam_index_before_underwater: 0,
+            water_quake_index: 0,
             uniq1_ro: Uniq1Ro::default(),
             uniq1_rw: Uniq1Rw::default(),
             ro: Norm1Ro::default(),
@@ -1584,7 +1673,7 @@ impl GameCamera {
     /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
     /// origin, `CAM_SET_FREE0`, `CAM_STAT_CUT` until made active.
     pub fn init_sub(d: &CameraData, g: &mut CameraGlobals, cam_id: i16) -> GameCamera {
-        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
+        let origin = PlayerView { pos: Vec3::ZERO, shape_yaw: 0, shape_pitch: 0, world_yaw: 0, adult: false, run_speed_limit: 0, gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
         let mut c = GameCamera::new(d, &origin);
         let uid = g.camera_init();
         c.eye = Vec3::ZERO;
@@ -2760,6 +2849,222 @@ impl GameCamera {
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
     }
 
+    /// `Camera_Jump3` (`NORMAL3`: swimming): `Camera_Normal1`'s follow with its swing round walls,
+    /// on the NORMAL mode's data, or AIM_BOOMERANG's once the eye is more than `OREG(45)` under the
+    /// water (back to NORMAL within `OREG(44)`); off the ground (10 or more) with his head 50 or
+    /// more from the surface the pitch holds (`pitchUpdateRateInv` 100).
+    fn jump3(&mut self, d: &CameraData, col: &CollisionContext, p: &PlayerView) {
+        let player_height = p.height();
+        let playerhead = p.focus_pos;
+        let mut mode_switch = false;
+        if (self.water_y_pos - self.eye.y) < d.oreg(44) as f32 || self.anim_state == 0 {
+            if self.jump3_rw.mode != CAM_MODE_NORMAL {
+                self.jump3_rw.mode = CAM_MODE_NORMAL;
+                mode_switch = true;
+            }
+        } else if (self.water_y_pos - self.eye.y) > d.oreg(45) as f32 && self.jump3_rw.mode != CAM_MODE_AIM_BOOMERANG {
+            self.jump3_rw.mode = CAM_MODE_AIM_BOOMERANG;
+            mode_switch = true;
+        }
+        let eye_at_offset = diff_to_sph_geo(self.at, self.eye);
+        let eye_next_at_offset = diff_to_sph_geo(self.at, self.eye_next);
+        // RELOAD_PARAMS, or the mode switched (R_RELOAD_CAM_PARAMS is 0).
+        if matches!(self.anim_state, 0 | 10 | 20) || mode_switch {
+            let key = (self.setting, self.jump3_rw.mode);
+            let v = |i: usize| d.value(key, i) as f32;
+            let y_normal = Self::y_normal(d, player_height);
+            let t2 = (player_height * 0.01) * y_normal;
+            self.jump3_ro = Jump3Ro {
+                y_offset: v(0) * t2,
+                dist_min: v(1) * t2,
+                dist_max: v(2) * t2,
+                pitch_target: cam_deg_to_binang(v(3)),
+                swing_update_rate: v(4),
+                unk_10: v(5),
+                unk_14: v(6) * 0.01,
+                fov_target: v(7),
+                unk_1c: v(8) * 0.01,
+                interface_field: d.value(key, 9),
+            };
+        }
+        let ro = self.jump3_ro;
+        self.interface_flags = ro.interface_field;
+        match self.anim_state {
+            0 | 10 | 20 | 25 => {
+                let rw = &mut self.jump3_rw;
+                rw.swing.at_eye_poly = None;
+                rw.unk_1c = self.player_ground_y;
+                rw.swing.unk_16 = 0;
+                rw.swing.unk_14 = 0;
+                rw.swing.unk_18 = 0;
+                rw.anim_timer = 10;
+                rw.swing.swing_update_rate = ro.swing_update_rate;
+                self.anim_state += 1;
+                rw.swing.swing_update_rate_timer = 0;
+            }
+            _ => {
+                if self.jump3_rw.anim_timer != 0 {
+                    self.jump3_rw.anim_timer -= 1;
+                }
+            }
+        }
+        let spc4 = d.oreg_s(25) * self.speed_ratio;
+        let spc0 = self.speed_ratio * d.oreg_s(26);
+        let mut spbc = if self.jump3_rw.swing.unk_18 != 0 { d.oreg_s(25) } else { spc4 };
+        if self.jump3_rw.swing.swing_update_rate_timer != 0 {
+            let t = self.jump3_rw.swing.swing_update_rate_timer as f32 * 2.0;
+            self.yaw_update_rate_inv = lerp_ceil_f(self.jump3_rw.swing.swing_update_rate + t, self.yaw_update_rate_inv, spc4, 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(t + 40.0, self.pitch_update_rate_inv, spc0, 0.1);
+            self.jump3_rw.swing.swing_update_rate_timer -= 1;
+        } else {
+            self.yaw_update_rate_inv = lerp_ceil_f(self.jump3_rw.swing.swing_update_rate, self.yaw_update_rate_inv, spbc, 0.1);
+            self.pitch_update_rate_inv = lerp_ceil_f(40.0, self.pitch_update_rate_inv, spc0, 0.1);
+        }
+        self.xz_offset_update_rate = lerp_ceil_f(d.oreg_s(2), self.xz_offset_update_rate, spc4, 0.1);
+        self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, spc0, 0.1);
+        // @bug (game): eased from yOffsetUpdateRate, not fovUpdateRate.
+        self.fov_update_rate = lerp_ceil_f(d.oreg_s(4), self.y_offset_update_rate, self.speed_ratio * 0.05, 0.1);
+        // (calcSlopeYAdj is the interface field, as an s16.)
+        self.calc_at_default(d, &eye_next_at_offset, ro.y_offset, ro.interface_field != 0, p);
+        let mut eye_diff_geo = diff_to_sph_geo(self.at, self.eye_next);
+        self.dist = self.clamp_dist(d, eye_diff_geo.r, ro.dist_min, ro.dist_max, self.jump3_rw.anim_timer);
+        eye_diff_geo.r = self.dist;
+        let phi_f0 = (self.player_pos.y - self.player_ground_y).abs();
+        if !(phi_f0 < 10.0) {
+            let phi_f2 = (playerhead.y - self.water_y_pos).abs();
+            if !(phi_f2 < 50.0) {
+                self.pitch_update_rate_inv = 100.0;
+            }
+        }
+        if self.jump3_rw.swing.unk_18 != 0 {
+            eye_diff_geo.yaw = lerp_ceil_s(self.jump3_rw.swing.unk_16, eye_next_at_offset.yaw, 1.0 / self.yaw_update_rate_inv, 0xA);
+            eye_diff_geo.pitch = lerp_ceil_s(self.jump3_rw.swing.unk_14, eye_next_at_offset.pitch, 1.0 / self.yaw_update_rate_inv, 0xA);
+        } else {
+            eye_diff_geo.yaw = self.calc_default_yaw(d, eye_next_at_offset.yaw, self.player_rot_y, ro.unk_14, 0.0);
+            eye_diff_geo.pitch = self.calc_default_pitch(d, eye_next_at_offset.pitch, ro.pitch_target, 0);
+        }
+        // CAM_MAX_PITCH, CAM_MIN_PITCH_1 (R_CAM_MIN_PITCH_1: OREG(34)).
+        if eye_diff_geo.pitch > d.oreg(R_CAM_MAX_PITCH) {
+            eye_diff_geo.pitch = d.oreg(R_CAM_MAX_PITCH);
+        }
+        if eye_diff_geo.pitch < d.oreg(34) {
+            eye_diff_geo.pitch = d.oreg(34);
+        }
+        self.eye_next = sph_geo_add(self.at, eye_diff_geo);
+        if self.status == CAM_STAT_ACTIVE && ro.interface_field & JUMP3_FLAG_4 == 0 {
+            let mut anim = self.jump3_rw.swing;
+            self.swing_anim(d, col, &eye_diff_geo, ro.dist_min, ro.swing_update_rate, &mut spbc, &mut anim);
+            self.jump3_rw.swing = anim;
+            if ro.interface_field & JUMP3_FLAG_2 != 0 {
+                self.input_dir = [eye_at_offset.pitch.wrapping_neg(), eye_at_offset.yaw.wrapping_sub(0x7FFF), 0];
+            } else {
+                let e = diff_to_sph_geo(self.eye, self.at);
+                self.input_dir = [e.pitch, e.yaw, 0];
+            }
+            if self.jump3_rw.swing.unk_18 != 0 {
+                let target = self.input_dir[1].wrapping_add(self.jump3_rw.swing.unk_16.wrapping_sub(0x7FFF).wrapping_sub(self.input_dir[1]));
+                self.input_dir[1] = lerp_ceil_s(target, self.input_dir[1], 1.0 - 0.99 * spbc, 0xA);
+            }
+        } else {
+            self.jump3_rw.swing.swing_update_rate = ro.swing_update_rate;
+            self.jump3_rw.swing.unk_18 = 0;
+            self.update_direction = false;
+            self.eye = self.eye_next;
+        }
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, self.fov_update_rate, 1.0);
+        self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.unk_1c);
+    }
+
+    /// `Camera_UpdateWater`'s settings (the main camera's, and only with
+    /// `CAM_STATE_CHECK_WATER`, outside settings flagged 0x40000000): diving from the surface
+    /// (`PLAYER_STATE2_11`) `PIVOT_WATER_SURFACE`, back to the water's setting after; swimming
+    /// (`PLAYER_STATE1_27`) in a water box, its bg camera (`NORMAL3` for a box without one), the
+    /// surface kept in `waterYPos`; leaving the water, the bg camera from before, or the room's.
+    /// The eye under the water sets `waterYPos` and `CAM_STATE_CAMERA_IN_WATER`; what comes with it
+    /// isn't ported (BACKLOG #43: `Environment_EnableUnderwaterLights`, the quake `QUAKE_TYPE_5`,
+    /// the distortion, `Audio_SetExtraFilter`).
+    fn update_water(&mut self, d: &CameraData, f: &CamFrame) {
+        if self.state_flags & CAM_STATE_CHECK_WATER == 0 || d.setting_flags(self.setting) & 0x4000_0000 != 0 {
+            return;
+        }
+        let p = &f.player;
+        let col = f.col;
+        // Process player diving in water.
+        if self.state_flags & CAM_STATE_PLAYER_IN_WATER != 0 {
+            if p.state2 & PLAYER_STATE2_11 != 0 {
+                self.change_setting_flags(d, CAM_SET_PIVOT_WATER_SURFACE, CAM_REQUEST_SETTING_PRESERVE_BG_CAM_INDEX | CAM_REQUEST_SETTING_IGNORE_PRIORITY);
+                self.state_flags |= CAM_STATE_PLAYER_DIVING;
+            } else if self.state_flags & CAM_STATE_PLAYER_DIVING != 0 {
+                let s = self.water_cam_setting;
+                self.change_setting_flags(d, s, CAM_REQUEST_SETTING_PRESERVE_BG_CAM_INDEX | CAM_REQUEST_SETTING_IGNORE_PRIORITY);
+                self.state_flags &= !CAM_STATE_PLAYER_DIVING;
+            }
+        }
+        // Process player swimming in water (`Camera_GetWaterBoxBgCamIndex`: -1 not in a box or
+        // not swimming, -2 a box without a bg camera; `@bug (game)`: index 0 counts as none).
+        if self.state_flags & CAM_STATE_PLAYER_DIVING == 0 {
+            let (water_bg_cam_index, water_y) = match water_surface_all_hack(f, p.pos.x, p.pos.z, p.pos.y) {
+                Some((y, idx)) if p.state1 & PLAYER_STATE1_27 != 0 => {
+                    if idx == 0 || bg_cam_setting(col, idx as i32) <= CAM_SET_NONE { (-2, y) } else { (idx as i32, y) }
+                }
+                _ => (-1, bgcheck::BGCHECK_Y_MIN),
+            };
+            if water_bg_cam_index == -2 {
+                if self.state_flags & CAM_STATE_PLAYER_IN_WATER == 0 {
+                    self.state_flags |= CAM_STATE_PLAYER_IN_WATER;
+                    self.water_y_pos = water_y;
+                    self.bg_cam_index_before_underwater = self.bg_cam_index;
+                    self.water_quake_index = -1;
+                }
+                if self.player_ground_y != self.player_pos.y {
+                    // (camera->bgId set to the scene's for the request and back: the port keeps no bgId.)
+                    self.change_setting_flags(d, CAM_SET_NORMAL3, CAM_REQUEST_SETTING_IGNORE_PRIORITY);
+                    self.water_cam_setting = self.setting;
+                    self.bg_cam_index = -2;
+                }
+            } else if water_bg_cam_index != -1 {
+                if self.state_flags & CAM_STATE_PLAYER_IN_WATER == 0 {
+                    self.state_flags |= CAM_STATE_PLAYER_IN_WATER;
+                    self.water_y_pos = water_y;
+                    self.bg_cam_index_before_underwater = self.bg_cam_index;
+                    self.water_quake_index = -1;
+                }
+                if self.player_ground_y != self.player_pos.y {
+                    self.change_bg_cam_index(d, col, water_bg_cam_index);
+                    self.water_cam_setting = self.setting;
+                }
+            } else if self.state_flags & CAM_STATE_PLAYER_IN_WATER != 0 {
+                log::debug!("camera: water: off");
+                self.state_flags &= !CAM_STATE_PLAYER_IN_WATER;
+                if self.bg_cam_index_before_underwater < 0 {
+                    self.func_80057fc4(f.room);
+                    self.bg_cam_index = -1;
+                } else {
+                    let i = self.bg_cam_index_before_underwater as i32;
+                    self.change_bg_cam_index(d, col, i);
+                }
+            }
+        }
+        // Process camera in water (Camera_GetWaterSurface at the eye, its y Player's to start).
+        match water_surface_all_hack(f, self.eye.x, self.eye.z, p.pos.y).filter(|&(y, _)| self.eye.y <= y) {
+            Some((water_y, _)) => {
+                self.water_y_pos = water_y;
+                if self.state_flags & CAM_STATE_CAMERA_IN_WATER == 0 {
+                    self.state_flags |= CAM_STATE_CAMERA_IN_WATER;
+                    log::info!("camera: the eye under water: Environment_EnableUnderwaterLights, the quake (QUAKE_TYPE_5), the distortion and Audio_SetExtraFilter(0x20) aren't ported");
+                }
+            }
+            None => {
+                if self.state_flags & CAM_STATE_CAMERA_IN_WATER != 0 {
+                    self.state_flags &= !CAM_STATE_CAMERA_IN_WATER;
+                    log::debug!("kankyo changed water off, sound off");
+                }
+            }
+        }
+    }
+
+
     /// `Camera_Unique1` (HANG, HANGZ: hanging from a ledge): the at above Player
     /// (`Camera_CalcAtDefault` with the slope), the eye at `pitchTarget`, turning over
     /// `R_CAM_DEFAULT_ANIM_TIME` towards his waist's side when it's far off (`yawTargetAdj`).
@@ -3180,6 +3485,7 @@ impl GameCamera {
                 Some("CAM_FUNC_DEMO5") => self.demo5(d, f, op, rand, letterbox),
                 Some("CAM_FUNC_JUMP1") => self.jump1(d, col, p),
                 Some("CAM_FUNC_JUMP2") => self.jump2(d, col, p),
+                Some("CAM_FUNC_JUMP3") => self.jump3(d, col, p),
                 Some("CAM_FUNC_UNIQ1") => self.unique1(d, col, p, f.player_waist),
                 Some("CAM_FUNC_BATT1") => self.battle1(d, col, p, f),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
@@ -3264,13 +3570,21 @@ impl GameCamera {
         self.player_rot_y = p.shape_yaw;
 
         if self.oob_timer < 200 {
-            // (Camera_UpdateWater and Camera_UpdateHotRoom aren't ported.)
+            if self.status == CAM_STAT_ACTIVE {
+                self.update_water(d, f);
+                // (Camera_UpdateHotRoom: the hot room's distortion isn't ported.)
+            }
             if self.state_flags & 4 == 0 {
                 self.next_bg_cam_index = -1;
             }
-            // The floor's bg camera (bit 0x200, underwater, is never set here; the iron boots
-            // exception with it doesn't arise).
-            if self.state_flags & 1 != 0 && self.state_flags & 4 != 0 && self.state_flags & 0x400 == 0 && self.state_flags & 0x200 == 0 && self.state_flags as u16 & 0x8000 == 0 && ground != bgcheck::BGCHECK_Y_MIN
+            // The floor's bg camera: not while Player swims (CAM_STATE_PLAYER_IN_WATER) unless
+            // in the iron boots, nor while he dives.
+            if self.state_flags & 1 != 0
+                && self.state_flags & 4 != 0
+                && self.state_flags & 0x400 == 0
+                && (self.state_flags & CAM_STATE_PLAYER_IN_WATER == 0 || p.iron_boots)
+                && self.state_flags & CAM_STATE_PLAYER_DIVING == 0
+                && ground != bgcheck::BGCHECK_Y_MIN
                 && let Some(id) = poly
             {
                 // Camera_GetBgCamIndex: -1 when the index's setting is CAM_SET_NONE. Only a
@@ -3281,7 +3595,7 @@ impl GameCamera {
                     self.next_bg_cam_index = idx as i16;
                 }
             }
-            if self.next_bg_cam_index != -1 && (cur.y - ground).abs() < 2.0 && self.state_flags & 0x200 == 0 {
+            if self.next_bg_cam_index != -1 && (cur.y - ground).abs() < 2.0 && (self.state_flags & CAM_STATE_PLAYER_IN_WATER == 0 || p.iron_boots) {
                 let next = self.next_bg_cam_index as i32;
                 self.change_bg_cam_index(d, col, next);
                 self.next_bg_cam_index = -1;

@@ -17,7 +17,7 @@ taught.
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Castle Town: the culling volume, the entrance, the market, the back alley and the Temple of Time's outside by day and by night, the Temple's altar, the townsfolk, the dogs, Malon | done (2026-10-11) |
-| 2 | Hyrule Castle's grounds: the Weird Egg and its hatch, Player's exchange items, Talon, the crates, the guards and the throw-out, the circle wipe | |
+| 2 | Hyrule Castle's grounds: the Weird Egg and its hatch, Player's exchange items, Talon, the crates, the guards and the throw-out, the circle wipe | done (2026-10-12) |
 | 3 | The ocarina: Player's, the message modes, the audio, the songs' effects, `Shot_Sun`, the Sun's Song | |
 | 4 | The guards' courtyard and Zelda: `Camera_Special6`, the patrols, Zelda, the legend, the letter, Impa's lullaby and escort | |
 | 5 | Kakariko: lifting and the cuccos, Anju, the gate, the people, the interiors | |
@@ -150,8 +150,8 @@ with the place name, stopped at frame 125). Then:
    (`z_kankyo.c` 2218) counts the day (`totalDays`, `bgsDayCount`, `dogIsLost`), crows
    (`NA_SE_EV_CHICKEN_CRY_M`) and swaps the egg for the Cucco (`Inventory_ReplaceItem`, ported),
    with text 0x3066. `Play_Init` does the same when the Sun's Song moves to day
-   (`NEXT_TIME_DAY`). The port's clock has the music's half of it (GAME-06 milestone 3); the
-   counters and the swap are left.
+   (`NEXT_TIME_DAY`). (Corrected in milestone 2: both were already ported in GAME-06 milestone 3,
+   the counters and the swap with the music; "left" was wrong.)
 5. **Talon** (`En_Ta`, castle part about 150 lines plus 46 shared with Kakariko) sleeps by the
    crates (0x702A). Shown the Cucco (`EXCH_ITEM_CHICKEN`), he wakes (0x702B, `NA_SE_VO_TA_SURPRISE`),
    talks, and on 0x702C's event runs off to the ranch on one-point cutscene 4175
@@ -350,21 +350,26 @@ the message box's states, which the port has for texts and choices.
    text.
 4. **The guards' courtyard and Zelda:** `Camera_Special6`, `En_Heishi1` with its search balls,
    `En_Zl4`, the legend's cutscene map, the letter, `Demo_Im` (the courtyard, the whistle, the
-   field), Zelda's Lullaby taught and played back, Hyrule Field's layer 12. About 4,000 lines.
+   field), Zelda's Lullaby taught and played back, Hyrule Field's layer 12; the scene draw configs
+   `SDC_HYRULE_CASTLE` (the moat's water and the drain's waterfall, BACKLOG #46),
+   `SDC_CASTLE_COURTYARD_GUARDS`, `SDC_CALM_WATER` and `SDC_TEMPLE_OF_TIME`. About 4,000 lines.
    **Exit:** from the guards' courtyard's drain (a preset after Talon), past the guards, Zelda's
    talk through the legend and the window to the letter, Impa's lullaby (one wrong note, then
    right), the field's goodbye to `ENTR_HYRULE_FIELD_17`: `Route::Zelda`.
 5. **Kakariko:** the village by day and by night, Player's lift, carry and throw with the cucco's
    glide, `En_Niw` with `En_Attack_Niw`, `En_Niw_Lady`, `En_Ani`, `En_Daiku_Kakariko`, `En_Toryo`,
    `En_Hs2`, the gate (`Bg_Gate_Shutter`, the guard taking the letter), the windmill and the well,
-   and the interiors: Impa's house (`En_Cow`), the guest house, the potion shop, the House of
+   the scene draw configs `SDC_KAKARIKO_VILLAGE`, `SDC_GROTTOS` and `SDC_MARKET_GUARD_HOUSE`
+   (BACKLOG #46), and the interiors: Impa's house (`En_Cow`), the guest house, the potion shop, the House of
    Skulltula (`En_Ssh`, `En_Sth`), the windmill (`En_Fu`, `Bg_Relay_Objects`). About 7,000 lines.
    **Exit:** from Kakariko's entrance by day with the letter (a preset): three cuccos carried into
    Anju's pen (one glided off a roof), the letter shown to the guard and the gate opened:
    `Route::Kakariko`.
 6. **The graveyard:** `En_Cs`, `En_Tk` and `En_It` (Dampé's dig at night), `Obj_Makekinsuta`, the
    royal tomb (`En_Okarina_Tag`, `Bg_Spot02_Objects`, the opening cutscene), its ReDeads (`En_Rd`)
-   and the Sun's Song taught, the graves (`Bg_Breakwall`). About 3,500 lines.
+   and the Sun's Song taught, the graves (`Bg_Breakwall`); the scene draw configs
+   `SDC_GRAVE_EXIT_LIGHT_SHINING`, `SDC_ROYAL_FAMILYS_TOMB` and `SDC_FAIRYS_FOUNTAIN` (BACKLOG #46).
+   About 3,500 lines.
    **Exit:** at 18:00 with the lullaby (a preset): a dig with Dampé, the lullaby at the royal
    tomb, past the ReDeads (frozen by the Sun's Song after it's learned) to the song's wall:
    `Route::Graveyard`.
@@ -575,3 +580,206 @@ scripts\run\sandbox-market.bat
 - **What to report:** Malon's look (her eyes, her mouth, her song), the cucco's flight and
   feathers, the butterflies, the stones' reactions, the windows' light, and whether anything
   stands where it shouldn't (a placeholder marker means an actor not ported).
+
+## Milestone 2: Hyrule Castle's grounds
+
+**Answer:** done. The castle's story step plays from the Weird Egg to the drain:
+- shown the Cucco (C-Left), Talon wakes by the crates, talks, and runs home on his one-point
+  camera;
+- the milk crates refuse to go west or south by his place until he's gone; then two pushed off the
+  bank fall into the moat and stack, and up them Link reaches the drain's crawlspace and the
+  guards' courtyard, which opens with the wave circle;
+- the sentries watch the grounds: one that sees Link calls "Hey you!", a white starburst shuts the
+  screen, and Link is put out by the gate;
+- the gate guard takes his bribe and opens Lon Lon's fence; Kakariko's gate guard and gate are
+  in, and Kakariko's pots break; the road's torch burns;
+- swimming in the moat (and in Kokiri Forest's stream, Hyrule Field's river, the Deku Tree's
+  basement) the camera takes the water's setting (`Camera_Jump3`).
+
+The exit holds. Its runs are the goldens `castle` (with `castle_talon`, `castle_crate`,
+`castle_drain`, `castle_wave`) and `castle_caught` (with `castle_caught_shut`,
+`castle_caught_open`).
+
+The pack is still format 28 in `out/data25`, re-imported for the new bakes; builds in
+`target/game26`. Decisions are in [ADR 0060](adr/0060-hyrule-castles-grounds.md). The user's calls
+(2026-10-12): Player's exchange items only (the bottles' uses and the spells logged);
+`Bg_Gate_Shutter` pulled forward from milestone 5, so `En_Heishi2` is whole; one milestone; a
+second short run for the throw-out; `Camera_UpdateWater`'s settings half only (the eye under water
+logged).
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 107 to 109):
+- `test-castle.bat`: the milestone's tests;
+- `game-castle.bat`: the castle's road with the Cucco (`castle-cucco`); `talon` (starting by
+  Talon), `egg` (`castle-egg`), `night` (the egg at 22:00), `dawn` (Hyrule Field at 06:25 with the
+  egg) or `kakariko`;
+- `sandbox-castle.bat`: both runs headless, their traces and screenshots.
+
+**Status of the plan:** milestones 1 and 2 are done; 3 (the ocarina) is next.
+
+### What was built
+
+**The castle's people:**
+- `En_Ta` (`oot_actors::en_ta`): the castle's Talon (asleep, woken by `EXCH_ITEM_CHICKEN`, the run
+  home with one-point 4175 and `EVENTCHKINF_TALON_RETURNED_FROM_CASTLE`), Kakariko's (the Pocket
+  Cucco, Epona), the ranch's at night; his eyes as three bakes; the ranch by day a placeholder
+  (BACKLOG #44);
+- `En_Heishi3`: the grounds' seven sentries and the castle door's pair, the catch (`sPlayerCaught`),
+  the walk over and the throw-out (`ENTR_HYRULE_CASTLE_4`, `TRANS_TYPE_CIRCLE(STARBURST, WHITE,
+  FAST)`, `EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS`);
+- `En_Heishi2`, whole: the castle's gate guard (the bribe, the fence's sub camera), Kakariko's
+  (Zelda's letter, the Keaton Mask, worn once sold), the window's guards, the bomb-throwing type 9
+  (its `En_Bom` a placeholder, #33).
+
+**The places:** `Bg_Spot15_Rrbox` (the crates: the push, the 20-unit slide, the fall, the stack,
+`func_800435D8`), `Bg_Spot15_Saku` (Lon Lon's fence), `Bg_Gate_Shutter` (Kakariko's gate),
+`Obj_Tsubo` (the pots: broken by a sword, a roll or water; lifted and thrown once Player lifts,
+#4), `En_Light` (the fires and candles, their glow light).
+
+**Player:** the exchange branch of `Player_ActionHandler_13`, `Player_Action_ExchangeItem`,
+`Player_Action_8084279C`; `Player_UpdateBottleHeld` with `Inventory_UpdateBottleItem` (BACKLOG #41
+fixed: the beggar's bottle empties). The bottles' uses, the spells and the ocarina are noted when
+reached (#45).
+
+**Elsewhere:**
+- `TransitionCircle` (`oot_game::transition`): its types, start, update and draw (`sTransCircleDL`
+  from `code`, in its own view through the pause pass); `TransitionState` runs it;
+- `Camera_UpdateWater`'s settings (swimming, diving) and `Camera_Jump3` (`oot_game::camera`);
+  one-point camera 4175;
+- the importer: XMLs naming the same ROM file merged; `code`'s lists on segment 0 at their link
+  address;
+- the presets `castle-egg` (Malon met at the castle, the Weird Egg on C-Left, 20 rupees) and
+  `castle-cucco` (the egg hatched);
+- `Route::Castle` (`--script castle`) and `Route::CastleCaught` (`--script castle-caught`), with
+  `Who::Talon` and the tasks `ClimbTo`, `ShowItem`, `WaitGone`, `PushCrate` and `Caught`.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game26`, `OOT_DATA_DIR=out/data25`): 856
+passed, 0 failed, 1 ignored. New, with their expectations from the C:
+- **`oot_actors --test castle`** (19):
+  - Talon asleep (`gTalonSleepAnim`, eyes closed, scale 0.01, attention range 6), awake with
+    `EVENTCHKINF_TALON_WOKEN_IN_CASTLE`, gone with `_RETURNED_FROM_CASTLE`.
+  - The Cucco shown from 70 in front (C-Left): Player's exchange, his text 0x702B, Talon's
+    `EnTa_WakeUp` with 40 frames, then `TalkWakingUp1` (`gTalonWakeUpAnim`, three quick blinks).
+  - The run home: `RunAwayStart` 1, `RunSouth` 5, `TurnWest` 70, `RunWest` 75, `TurnTowardsGate`
+    140, `RunOutOfGate` 145, killed on update 205.
+  - A crate by Talon's place: pushed west or south (yaw -0x6000 to 0x2000), still without the flag
+    (the push dropped), 20 that way with it (12 frames of the slide's 0.5 steps to 2); east and
+    north without it.
+  - The crates with their switch flag (4): stacked at (770, 1490, -299) and (770, 1550, -299),
+    `Stuck`.
+  - A sentry's sight: 240 in front seen, 260 not; behind 140 and 160; by night 190 and 210, 90 and
+    110.
+  - The castle door's pair: `unk_278` 1 and 2 by x -290; each catches only on its half of the box.
+  - The throw-out's type: `TRANS_TYPE_CIRCLE(STARBURST, WHITE, FAST)` = 46, `ENTR_HYRULE_CASTLE_4`
+    0x47E.
+  - The gate guard's text: 0x7029 without the egg, 0x7071 with it, 0x7002 by night.
+  - Lon Lon's fence: open on the call, 2 a frame from the third update, 2659 on the 132nd, waiting
+    again on the 162nd; placed open with `INFTABLE_71`.
+  - Kakariko's gate (91, 400, -1350) and guard (type 5, 0x200E); opening to x -91 on the 93rd
+    update; placed open with `INFTABLE_76`.
+  - The pots: none at the castle (no `object_tsubo`), Kakariko's eleven with theirs.
+  - The torch (0x03F5): scale 0.0075, the light 40 above, radius 300, its colour at half to full.
+  - An item shown to nobody: `ExchangeItem`, text 0xCF.
+  - `Player_UpdateBottleHeld`: full milk to half, half to empty; the button and the cursor item.
+  - The Weird Egg hatching at dawn (06:25 in Hyrule Field: the crow, the Cucco, 0x3066).
+  - Swimming in the moat: `CAM_SET_NORMAL3`; back on land, not.
+  - The two exits' runs (below).
+- Unit tests (`oot_game::transition`, 4): the circle types and `SetType`; the speeds (25 frames
+  fast, 50 slow, 7 special); the ripple's sounds; the texture's scroll.
+
+**The exit run** (`Route::Castle`, `--script castle`, `ENTR_HYRULE_CASTLE_0`, `castle-cucco`):
+`owl_talk` 84, `owl_flown` 922, `vine` 1094 and 2444, `moat_bank` 3002, `talon_woken` 3288,
+`talon_talk` 3701, `talon_gone` 3855, `crate_in_moat` 4371 and 4956, `on_crates` 4998,
+`crawlspace` 5050, `drain` 5104, `courtyard` 5150. Texts: the owl's 0x2068 to 0x206B, 0x702B,
+0x702C. The way: east up the road's vine, along the plateau's east edge clear of the sentries'
+sight, up the second vine, west round the castle door's box, into the moat and up its corner to
+the east bank, north to Talon. By the end the clock has run from 10:00 to night (as the console's
+would). **The second run** (`Route::CastleCaught`, `castle-egg`): `vine` 1094, `caught` 1396, the
+starburst shutting from 1421 to 1446 and opening from 1448 to 1474, `thrown_out` 1479 at
+`ENTR_HYRULE_CASTLE_4` (spawn (913, 1109, 2937)).
+
+**The goldens.** Against the 4:3 frame's 151: 139 the same bytes. The water camera changed 10
+traces and a render (every route that swims; the night field run, 36 frames longer, now reaches
+Kakariko just after 06:30, by day); the castle road's pots (killed: no object) and torch (a `Rand`
+call before the rocks' yaws) changed `market`'s trace and end. Each was proved by taking its cause
+out. New: `castle` and `castle_caught` (each the trace and the end) and six frames; each the same
+bytes over two runs. Logged in [golden/README.md](../golden/README.md): 161 hashes, 120 cases.
+
+### Decisions
+
+- **[ADR 0060](adr/0060-hyrule-castles-grounds.md):** the exchange items whole, the other uses
+  noted; `En_Ta`'s parts; the circle wipe in its own view through the pause pass, `code`'s lists
+  baked; the water camera's settings half and `Camera_Jump3`; the gate pulled forward; the pots,
+  the torches; the two routes.
+
+### Known gaps
+
+- **The guards' courtyard** is milestone 4's: its patrols (`En_Heishi1`) are placeholders and its
+  side-scrolling camera (`Camera_Special6`) isn't ported.
+- **The eye under water** (#43), **the ranch's Talon by day** (#44), **the bottles, spells and
+  ocarina from a C button** (#45; the ocarina is milestone 3), **the glows** (#31), **the splash**
+  (#40), **Player's lift** (#4: the pots' lifted and thrown states wait for it), **masks** (#39:
+  the Keaton Mask is sold but reactions give 0), **`En_Bom`** (#33).
+- **The fixed-camera fog** (outside the Temple of Time) looks heavy: checked against the C, kept;
+  to compare with the real game (#42).
+- **The castle's water and waterfall don't move** (found by hand, 2026-10-12): its scene draw config
+  (`SDC_HYRULE_CASTLE`, the scroll on segments 8 and 9) isn't ported, so its materials keep their
+  import-time values. Folded into milestone 4, with the other Phase 8 configs in milestones 4 to 6
+  (#46).
+- **Kakariko's unfinished gallery** (`Bg_Spot01_Objects2` type 3) is a placeholder, so its door
+  (`En_Door`) stands alone: milestone 5.
+
+### Fixes found while building
+
+- **The castle's owl** stops Link on the road (`OWL_HYRULE_CASTLE`, 0x2068); the runs talk to him
+  first.
+- **A hang climbs up only on a full tilt** (`controlStickSpinAngles`, magnitude 55): the runs climb
+  vines at the stick's full 80.
+- **`dl-dump code sTransCircleDL`** failed: a second XML naming `code` shadowed the first; the
+  importer now merges them.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-castle.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-castle.bat
+```
+
+### By hand
+
+`game-castle.bat` (or menu 108). WASD the stick (Shift walks), Space A, E the sword, Q Z, R the
+shield, J C-Left.
+1. **Talon:** `game-castle.bat talon`: Link at (950, 1561, -299) facing Talon asleep on the moat's
+   east bank (eyes shut, snoring). Press J: Link holds the Cucco up, it crows, and Talon starts awake
+   (half-open eyes, then three quick blinks). Read his texts with Space; talk again (Space): at
+   0x702C's end he jumps up and runs south, west and out of the gate, the camera following him.
+2. **The crates:** two stand north of where Talon lay (at z -459 and -519; north is -z here). With
+   Talon gone, go round to the north side of the nearer one, hold Space against it and push with W:
+   20 units a push, a thud at the end. Push it south until it's level with his spot (8 pushes),
+   then from its east side west until it drops into the moat. Push the second the same way: it
+   lands on the first with a chime. (Before Talon leaves, a crate by his place won't go west or
+   south.)
+3. **The drain:** from the bank walk up onto the stacked crates, run west off them at full speed
+   (Link jumps to the drain's ledge), press Space at the crawlspace and crawl through: the guards'
+   courtyard opens with a black wave circle (its guards are placeholders).
+4. **The moat:** jump into it from the bank: the camera rises behind Link while he swims
+   (`NORMAL3`) and goes back once he's out.
+5. **Caught:** `game-castle.bat egg`: up the vine north-east of the start (at x 90, z 3396: W held
+   fully into the wall), then east along the top and on towards the sentry ahead: "Hey you!", a
+   white starburst shuts the screen and opens on the gate.
+6. **The gate guard:** `game-castle.bat egg`: east along the road to the guard by Lon Lon's fence
+   (at x 1062, z 2783): the bribe (0x7071); pay 10 rupees: his spear slams and the fence slides
+   open under his camera. `game-castle.bat night`: "kids should be asleep" (0x7002).
+7. **The egg:** `game-castle.bat dawn`: Hyrule Field at 06:25; within a few seconds the cock crows,
+   the egg hatches (0x3066), and J is the Cucco.
+8. **Kakariko:** `game-castle.bat kakariko`: the gate to Death Mountain at the top of the village's
+   north path (x 91, z -1350) with its guard beside it (0x200E without Zelda's letter); the pots
+   by the houses break into pieces with the sword.
+- **What to report:** Talon's face and wake-up, the crates' push and fall, the circles' shape and
+  speed, the swimming camera, and anything standing where it shouldn't (a placeholder marker means
+  an actor not ported).

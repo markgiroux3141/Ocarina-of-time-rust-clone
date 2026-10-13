@@ -346,10 +346,11 @@ impl ObjectSegments {
                     };
                     let (sym_file, sym) = symbol_in(p, f, symbol)?;
                     let offset = sym.offset + extra;
-                    if sym_file.segment.is_none() && sym_file.name.starts_with("ovl_") {
-                        // A list in an overlay (`z_eff_ss_fhg_flash.c`'s `sShockDL`): its
-                        // pointers are the overlay's link-time KSEG0 addresses, so the overlay
-                        // goes on segment 0 where it links (`segments.csv`), as `code` does.
+                    if sym_file.segment.is_none() && (sym_file.name.starts_with("ovl_") || sym_file.name == "code") {
+                        // A list in an overlay (`z_eff_ss_fhg_flash.c`'s `sShockDL`) or in `code`
+                        // (`z_fbdemo_circle.c`'s `sTransCircleDL`): its pointers are the file's
+                        // link-time KSEG0 addresses, so the file goes on segment 0 where it links
+                        // (`segments.csv`).
                         let (img, vram) = overlay_ram_image(p, files, &sym_file.name)?;
                         it.segments[0] = Some(Segment::Data { buf: img, base: 0 });
                         it.run(vram + offset);

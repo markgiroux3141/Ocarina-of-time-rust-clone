@@ -25,8 +25,7 @@
 //! (`EnHy_PostLimbDraw`); from meshes baked per type and eye (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
-//! circle shadow's size (`shadowScale` kept), and `Player_UpdateBottleHeld` (the beggar's bottle
-//! emptied in Link's hand: Player's bottles aren't ported; logged).
+//! circle shadow's size (`shadowScale` kept).
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -40,7 +39,7 @@ use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_F
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
-use oot_game::item::{GI_HEART_PIECE, ITEM_BOTTLE_BLUE_FIRE, rupees_change_by};
+use oot_game::item::{GI_HEART_PIECE, ITEM_BOTTLE_BLUE_FIRE, ITEM_BOTTLE_EMPTY, rupees_change_by};
 use oot_game::message::*;
 use oot_game::npc::{NpcTrack, actor_update_fidget_tables, talk_update, track_point};
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
@@ -1200,14 +1199,15 @@ fn en_hy_update_talk_state(play: &mut PlayState, actor: &mut Actor, played_sfx: 
             NPC_TALK_STATE_TALKING
         }
         TEXT_STATE_CLOSING => {
+            if (0x70F0..=0x70F3).contains(&actor.text_id) {
+                rupees_change_by(&mut play.save, BEGGAR_REWARDS[(actor.text_id - 0x70F0) as usize]);
+                *anim = Some(ENHY_ANIM_17);
+                let ia_bottle = play.data.items.ap("BOTTLE");
+                crate::player::player_update_bottle_held(play, ITEM_BOTTLE_EMPTY, ia_bottle);
+            }
             let s = &mut play.save;
             match actor.text_id {
-                0x70F0..=0x70F3 => {
-                    rupees_change_by(s, BEGGAR_REWARDS[(actor.text_id - 0x70F0) as usize]);
-                    *anim = Some(ENHY_ANIM_17);
-                    // Player_UpdateBottleHeld(play, player, ITEM_BOTTLE_EMPTY, PLAYER_IA_BOTTLE).
-                    log::info!("En_Hy: Player_UpdateBottleHeld (the beggar's bottle emptied) isn't ported");
-                }
+                0x70F0..=0x70F3 => {}
                 0x7016 => s.set_inf_table(INFTABLE_C0),
                 0x7045 => s.set_inf_table(INFTABLE_C1),
                 0x701B => s.set_inf_table(INFTABLE_C2),

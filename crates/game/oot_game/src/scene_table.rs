@@ -80,14 +80,14 @@ const G_TX_RENDERTILE: u32 = 0;
 fn g_dp_pipe_sync() -> (u32, u32) {
     (0xE700_0000, 0)
 }
-fn g_dp_tile_sync() -> (u32, u32) {
+pub(crate) fn g_dp_tile_sync() -> (u32, u32) {
     (0xE800_0000, 0)
 }
-fn g_sp_end_display_list() -> (u32, u32) {
+pub(crate) fn g_sp_end_display_list() -> (u32, u32) {
     (0xDF00_0000, 0)
 }
 /// `gDPSetTileSize` (`gbi.h`: `G_SETTILESIZE`, 12-bit fields).
-fn g_dp_set_tile_size(tile: u32, uls: u32, ult: u32, lrs: u32, lrt: u32) -> (u32, u32) {
+pub(crate) fn g_dp_set_tile_size(tile: u32, uls: u32, ult: u32, lrs: u32, lrt: u32) -> (u32, u32) {
     (0xF200_0000 | ((uls & 0xFFF) << 12) | (ult & 0xFFF), ((tile & 7) << 24) | ((lrs & 0xFFF) << 12) | (lrt & 0xFFF))
 }
 /// `gDPSetEnvColor`: each component through `_SHIFTL(v, s, 8)`, i.e. `(u32)v & 0xFF`.

@@ -90,6 +90,12 @@ pub fn actor_set_text_with_prefix(scene_id: u16, actor: &mut Actor, base_text_id
     actor.text_id = (prefix | base_text_id) as u16;
 }
 
+/// `Actor_GetPlayerExchangeItemId`: the item Player showed (`exchangeItemId`), `EXCH_ITEM_NONE` for
+/// a plain talk.
+pub fn get_player_exchange_item_id(play: &PlayState) -> u8 {
+    play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.exchange_item_id()).unwrap_or(EXCH_ITEM_NONE)
+}
+
 /// `Actor_TextboxIsClosing`: the message box is on its closing frame (`TEXT_STATE_CLOSING`).
 pub fn textbox_is_closing(play: &PlayState) -> bool {
     play.message_state() == crate::message::TEXT_STATE_CLOSING

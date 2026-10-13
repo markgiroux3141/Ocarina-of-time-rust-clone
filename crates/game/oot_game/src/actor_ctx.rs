@@ -113,6 +113,14 @@ pub trait PlayerIface {
     fn current_mask(&self) -> u8 {
         0
     }
+    /// `Player_UnsetMask`: `currentMask = PLAYER_MASK_NONE`.
+    fn unset_mask(&mut self) {}
+    /// `Player_UpdateBottleHeld`'s Player half: unless `item` is the empty bottle, the item in hand
+    /// becomes it (`heldItemId`, `heldItemAction`); `itemAction` becomes `item_action`. Returns
+    /// `heldItemButton`, the button `Inventory_UpdateBottleItem` updates.
+    fn update_bottle_held(&mut self, _item: u8, _item_action: i32) -> i8 {
+        0
+    }
     /// Player's part of `Player_InCsMode` (`Player_InBlockingCsMode` without the transition
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;

@@ -827,6 +827,12 @@ impl PlayState {
                 set_cs_info(self, "D_80121224", 6);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
+            4175 => {
+                // Talon runs home from the castle (En_Ta): four keyframes, Player held
+                // (PLAYER_CSACTION_1, then 8) by their init fields.
+                set_cs_info(self, "D_8012147C", 4);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
             5120 => {
                 self.player_set_cs_action_with_halted_actors(None, 8);
                 set_cs_info(self, "D_80121314", 1);
@@ -853,6 +859,7 @@ impl PlayState {
             gravity: a.gravity,
             climbing: false,
             state1: 0,
+            state2: 0,
             iron_boots: false,
             focus_pos: a.focus_pos,
             focus_rot: [a.focus_rot.x, a.focus_rot.y, a.focus_rot.z],

@@ -579,7 +579,45 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
             s.rupees = 40;
         },
     },
+    SavePreset {
+        name: "castle-egg",
+        about: "deku-tree-dead, the castle's intro seen (EVENTCHKINF_A5), Malon met in the market and at the castle (INFTABLE_TALKED_TO_MALON_FIRST_TIME, EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME, INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE) and the Weird Egg from her (EVENTCHKINF_RECEIVED_WEIRD_EGG, ITEM_WEIRD_EGG) on C-Left, 20 rupees (GAME-07 milestone 2)",
+        apply: |s| {
+            castle_preset(s);
+            s.equip_item_on_c_left(crate::item::ITEM_WEIRD_EGG);
+        },
+    },
+    SavePreset {
+        name: "castle-cucco",
+        about: "castle-egg, the egg hatched at dawn (Inventory_ReplaceItem: ITEM_CHICKEN on C-Left), as the Cucco to wake Talon by the castle's crates (GAME-07 milestone 2)",
+        apply: |s| {
+            castle_preset(s);
+            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+            s.equip_item_on_c_left(crate::item::ITEM_CHICKEN);
+        },
+    },
 ];
+
+/// The castle's presets' common part (`castle-egg`, `castle-cucco`).
+fn castle_preset(s: &mut SaveContext) {
+    // EVENTCHKINF_A5 (sEntranceCutsceneTable's flag for ENTR_HYRULE_CASTLE_0); the Malon flags
+    // (save.h: INFTABLE_TALKED_TO_MALON_FIRST_TIME 0x84, INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE
+    // 0x8B, EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME 0x10, EVENTCHKINF_RECEIVED_WEIRD_EGG 0x12).
+    kokiri_sword_and_deku_shield(s);
+    s.set_event_chk_inf(EVENTCHKINF_04);
+    s.set_event_chk_inf(EVENTCHKINF_0C);
+    s.set_event_chk_inf(EVENTCHKINF_05);
+    s.set_event_chk_inf(EVENTCHKINF_07);
+    s.set_event_chk_inf(EVENTCHKINF_09);
+    item_give(s, None, ITEM_KOKIRI_EMERALD);
+    s.set_event_chk_inf(0xA5);
+    s.set_inf_table(0x84);
+    s.set_inf_table(0x8B);
+    s.set_event_chk_inf(0x10);
+    s.set_event_chk_inf(0x12);
+    item_give(s, None, crate::item::ITEM_WEIRD_EGG);
+    s.rupees = 20;
+}
 
 impl Default for SaveContext {
     fn default() -> SaveContext {

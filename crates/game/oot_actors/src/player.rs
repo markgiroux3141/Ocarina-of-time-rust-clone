@@ -226,6 +226,21 @@ pub enum PlayRequest {
     CamRequestMode(i16),
 }
 
+/// `Player_UpdateBottleHeld` (`z_player_lib.c`): the bottle on the button Link used holds `item`
+/// (`Inventory_UpdateBottleItem`, with the pause menu's cursor item), and Player's item in hand
+/// and item action follow (an emptied bottle stays the one in hand).
+pub fn player_update_bottle_held(play: &mut PlayState, item: u8, item_action: i32) {
+    let Some(p) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) else { return };
+    let button = p.update_bottle_held(item, item_action);
+    if !(1..=3).contains(&button) {
+        // cButtonSlots[button - 1]: the C reads out of the array for B.
+        log::warn!("Player_UpdateBottleHeld: heldItemButton {button} isn't a C button");
+        return;
+    }
+    let set = oot_game::item::inventory_update_bottle_item(&mut play.save, item, button as u8);
+    play.pause_ctx.cursor_item[oot_game::kaleido::PAUSE_ITEM as usize] = set as u16;
+}
+
 /// The audio calls of Player's death and revival.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlayerAudio {
@@ -398,6 +413,10 @@ pub mod group {
     pub const END_WALK_A: usize = 18;
     pub const END_WALK_B: usize = 19;
     pub const TURN: usize = 26;
+    /// `PLAYER_ANIMGROUP_check`, `_check_wait`, `_check_end` (`player.h`: 0x20 to 0x22).
+    pub const CHECK: usize = 0x20;
+    pub const CHECK_WAIT: usize = 0x21;
+    pub const CHECK_END: usize = 0x22;
     pub const TARGET_EXIT_R: usize = 27;
     pub const TARGET_EXIT_L: usize = 28;
     pub const PARALLEL_BACKWALK: usize = 31;
@@ -533,6 +552,10 @@ pub enum Action {
     FirstPerson,
     /// `Player_Action_8084E604`: throwing a Deku nut.
     ThrowNut,
+    /// `Player_Action_ExchangeItem`: an item shown (a trade item, a bottle's contents), its text.
+    ExchangeItem,
+    /// `Player_Action_8084279C`: the Magic Bean held over its soil, then Player's items again.
+    BeanCheckWait,
 }
 
 /// `D_80854870`: the push's slips (`ANIMSFX_DATA(ANIMSFX_TYPE_FLOOR, 3)`, `-(.., 21)`).
@@ -541,6 +564,40 @@ const D_80854870: [(u16, i16); 2] = [(NA_SE_PL_SLIP, 0x1000 | 3), (NA_SE_PL_SLIP
 const D_80854878: [(u16, i16); 2] = [(NA_SE_PL_SLIP, 0x1000 | 4), (NA_SE_PL_SLIP, -(0x1000 | 24))];
 /// `D_80854880`: where the pull looks for the floor behind Link: 26 up, 40 back.
 const D_80854880: Vec3 = Vec3::new(0.0, 26.0, -40.0);
+/// `D_80854528`: each exchange item's get-item (`GI_*`, `item.h`), by `EXCH_ITEM_*` less one.
+const D_80854528: [i16; 29] = [
+    0x0B, // GI_ZELDAS_LETTER
+    0x47, // GI_WEIRD_EGG
+    0x19, // GI_CHICKEN
+    0x16, // GI_MAGIC_BEAN
+    0x1D, // GI_POCKET_EGG
+    0x1E, // GI_POCKET_CUCCO
+    0x0E, // GI_COJIRO
+    0x1F, // GI_ODD_MUSHROOM
+    0x20, // GI_ODD_POTION
+    0x21, // GI_POACHERS_SAW
+    0x22, // GI_BROKEN_GORONS_SWORD
+    0x23, // GI_PRESCRIPTION
+    0x24, // GI_EYEBALL_FROG
+    0x25, // GI_EYE_DROPS
+    0x26, // GI_CLAIM_CHECK
+    0x17, // GI_MASK_SKULL
+    0x18, // GI_MASK_SPOOKY
+    0x1A, // GI_MASK_KEATON
+    0x1B, // GI_MASK_BUNNY_HOOD
+    0x1C, // GI_MASK_TRUTH
+    0x51, // GI_MASK_GORON
+    0x52, // GI_MASK_ZORA
+    0x53, // GI_MASK_GERUDO
+    0x15, 0x15, 0x15, 0x15, 0x15, 0x15, // GI_BOTTLE_RUTOS_LETTER (the bottles)
+];
+/// `EXCH_ITEM_*` (`item.h`).
+const EXCH_ITEM_MAGIC_BEAN: u8 = 0x04;
+const EXCH_ITEM_BOTTLE_BLUE_FIRE: u8 = 0x19;
+const EXCH_ITEM_BOTTLE_POE: u8 = 0x1B;
+const EXCH_ITEM_BOTTLE_RUTOS_LETTER: u8 = 0x1D;
+/// `NA_SE_PL_PUT_OUT_ITEM` (`playerbank_table.h`: 0x0877).
+const NA_SE_PL_PUT_OUT_ITEM: u16 = 0x0877;
 /// `ACTOR_BG_HEAVY_BLOCK` (`actor_table.h`: 0x0092).
 const ACTOR_BG_HEAVY_BLOCK: i16 = 0x0092;
 /// `SPEED_MODE_LINEAR` (`Player_GetMovementSpeedAndYaw`'s `speedMode`).
@@ -644,6 +701,8 @@ impl Action {
             Action::Pull => "Player_Action_8084B9E4",
             Action::FirstPerson => "Player_Action_8084B1D8",
             Action::ThrowNut => "Player_Action_8084E604",
+            Action::ExchangeItem => "Player_Action_ExchangeItem",
+            Action::BeanCheckWait => "Player_Action_8084279C",
         }
     }
 }
@@ -735,6 +794,8 @@ pub struct Env<'a> {
     pub main_cam_mode: i16,
     /// `R_SCENE_CAM_TYPE`.
     pub scene_cam_type: u8,
+    /// `play->actorCtx.titleCtx.delayTimer == 0 && titleCtx.alpha == 0`: no place name showing.
+    pub title_card_clear: bool,
 }
 
 impl Env<'_> {
@@ -1743,6 +1804,8 @@ impl Player {
             Action::Pull => self.action_8084b9e4(env),
             Action::FirstPerson => self.action_8084b1d8(env),
             Action::ThrowNut => self.action_8084e604(env),
+            Action::ExchangeItem => self.action_exchange_item(env),
+            Action::BeanCheckWait => self.action_8084279c(env),
         }
     }
 
@@ -8358,14 +8421,41 @@ impl Player {
     /// `Player_ActionHandler_13` (interrupt 13, and the actions that check it first): with `unk_6AD` set
     /// and Link on the ground, swimming or riding, a cutscene mode takes over
     /// (`Player_StartCsAction`); else first person (`unk_6AD` 1 the look, 2 the aim) if the main
-    /// camera takes its mode (`func_8083AD4C`), with `NA_SE_SY_CAMERA_ZOOM_UP`, or the error. The
-    /// cutscene items and spells (`unk_6AD` 4: the trade items, bottles, the ocarina and magic)
-    /// aren't ported: they log.
+    /// camera takes its mode (`func_8083AD4C`), with `NA_SE_SY_CAMERA_ZOOM_UP`, or the error.
+    /// `unk_6AD` 4 is a cutscene item: a trade item, or a bottle's contents to show (the big Poe and
+    /// Ruto's letter always; a Poe to whoever wants one, any to whoever wants blue fire), is shown
+    /// (`Player_Action_ExchangeItem`). Not ported, logged: the spells (no magic), the bottles' own
+    /// uses (drinking, releasing, catching) and the ocarina (GAME-07 milestone 3).
     fn action_handler_13(&mut self, env: &Env) -> bool {
         if self.unk_6AD != 0 && (self.func_808332B8() || self.grounded() || self.state1 & STATE1_23 != 0) {
             if !self.start_cs_action(env.data) {
                 if self.unk_6AD == 4 {
-                    self.note("Player_ActionHandler_13 with unk_6AD 4: the spells, trade items, bottles and the ocarina aren't ported");
+                    let it = &env.data.items;
+                    let item_action = self.item_ap;
+                    if Self::action_to_magic_spell(env.data, item_action) >= 0 {
+                        self.note("Player_ActionHandler_13: the spells (func_8083AF44, the magic meter) aren't ported");
+                        return false;
+                    }
+                    let sp2c = item_action - it.ap("ZELDAS_LETTER");
+                    let mut sp28 = -1;
+                    let shown = sp2c >= 0 || {
+                        sp28 = Self::action_to_bottle(env.data, item_action) - 1;
+                        (0..6).contains(&sp28)
+                            && (item_action > it.ap("BOTTLE_POE")
+                                || (self.target_actor.is_some()
+                                    && ((item_action == it.ap("BOTTLE_POE") && self.exchange_item_id == EXCH_ITEM_BOTTLE_POE) || self.exchange_item_id == EXCH_ITEM_BOTTLE_BLUE_FIRE)))
+                    };
+                    if shown {
+                        if env.title_card_clear {
+                            self.start_exchange_item(env, sp2c, sp28);
+                        }
+                        return true;
+                    }
+                    if Self::action_to_bottle(env.data, item_action) >= 0 {
+                        self.note("Player_ActionHandler_13: the bottles' uses (drinking, releasing, catching) aren't ported");
+                    } else {
+                        self.note("Player_ActionHandler_13: the ocarina (Player_Action_8084E3C4) isn't ported");
+                    }
                     return false;
                 } else if self.func_8083ad4c(env) != oot_game::camera::CAM_MODE_NORMAL as i32 {
                     if self.state1 & STATE1_23 == 0 {
@@ -8387,6 +8477,153 @@ impl Player {
             return true;
         }
         false
+    }
+
+    /// `Player_ActionToBottle`: the bottle's index (0 the empty one, to 12 the fairy), else -1.
+    fn action_to_bottle(data: &GameData, item_action: i32) -> i32 {
+        let bottle = item_action - data.items.ap("BOTTLE");
+        if (0..13).contains(&bottle) { bottle } else { -1 }
+    }
+
+    /// `Player_SetupActionPreserveItemAction`: `Player_SetupAction` with the item in hand kept
+    /// (`itemAction` set to `heldItemAction` over the call, so `func_8008EC70` doesn't run), then
+    /// the item's models (`Player_SetModels`).
+    fn setup_action_preserve_item_action(&mut self, data: &GameData, action: Action, flags: i32) {
+        if self.item_ap >= 0 {
+            let saved = self.item_ap;
+            self.item_ap = self.held_item_ap;
+            self.setup_action(data, action, flags);
+            self.item_ap = saved;
+            self.models_group = Some(self.action_to_model_group(data, self.item_ap));
+        }
+    }
+
+    /// `Player_ActionHandler_13`'s showing of an item (`sp2C` the trade item's index from Zelda's
+    /// letter, else `sp28` the bottle's less one): the item's object loads (`func_8083AE40`: the pack
+    /// has every get-item model), Link talks (`PLAYER_STATE1_TALKING`, held); to the actor offering a
+    /// talk for it (or wanting blue fire, or a Poe for a big Poe; the bean only for the bean) it's
+    /// handed over, the actor's talk accepted (a bean first waits over its soil); else Link reads
+    /// Ruto's letter (0x4005) or looks at the item (0xCF) with the turn-around camera.
+    fn start_exchange_item(&mut self, env: &Env, sp2c: i32, sp28: i32) {
+        let data = env.data;
+        let it = &data.items;
+        let item_action = self.item_ap;
+        self.setup_action_preserve_item_action(data, Action::ExchangeItem, 0);
+        self.state1 |= STATE1_6 | STATE1_28 | STATE1_29;
+        let exch = if sp2c >= 0 { sp2c + 1 } else { sp28 + 0x18 } as u8;
+        let talk_actor = self.target_actor;
+        let x = self.exchange_item_id;
+        let wanted = talk_actor.is_some()
+            && (x == exch || x == EXCH_ITEM_BOTTLE_BLUE_FIRE || (x == EXCH_ITEM_BOTTLE_POE && item_action == it.ap("BOTTLE_BIG_POE")) || (x == EXCH_ITEM_MAGIC_BEAN && item_action == it.ap("BOTTLE_BUG")))
+            && (x != EXCH_ITEM_MAGIC_BEAN || item_action == it.ap("MAGIC_BEAN"));
+        if wanted {
+            if x == EXCH_ITEM_MAGIC_BEAN {
+                self.change_ammo(env, oot_game::item::ITEM_MAGIC_BEAN, -1);
+                self.setup_action_preserve_item_action(data, Action::BeanCheckWait, 0);
+                self.state1 |= STATE1_29;
+                self.action_var2 = 0x50;
+                self.action_var1 = -1;
+            }
+            if let Some(t) = talk_actor {
+                self.play_requests.push(PlayRequest::TalkRequest(t));
+            }
+            self.focus_actor = talk_actor;
+        } else if exch == EXCH_ITEM_BOTTLE_RUTOS_LETTER {
+            self.action_var1 = 1;
+            self.actor.text_id = 0x4005;
+            self.set_turn_around_camera(1);
+        } else {
+            self.action_var1 = 2;
+            self.actor.text_id = 0xCF;
+            self.set_turn_around_camera(4);
+        }
+        self.actor.flags |= ACTOR_FLAG_TALK;
+        self.exchange_item_id = exch;
+        if self.action_var1 < 0 {
+            let a = self.anim(data, group::CHECK);
+            self.anim_change_once_morph(data, a);
+        } else {
+            // D_80854548: the hand over, Ruto's letter read, the item taken out.
+            const D_80854548: [&str; 3] = ["link_normal_give_other", "link_bottle_read", "link_normal_take_out"];
+            self.skel.play_once(data, data.anim(D_80854548[self.action_var1 as usize]));
+        }
+        self.func_80832224();
+    }
+
+    /// `Player_Action_ExchangeItem`: at the animation's end, the item held up (`unk_862`, the trade
+    /// items only) and Player's text (`textId`, which the actor set when it took the talk), the
+    /// Cucco's crow; when the text closes, Link stands (after rolling Ruto's letter up), the camera
+    /// told it's over. With nothing to show (`EXCH_ITEM_NONE`), a talk with the actor. Facing the
+    /// actor the item went to.
+    fn action_exchange_item(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5;
+        if self.skel.update(data) {
+            if self.action_var2 < 0 {
+                self.func_8083C0E8(data);
+            } else if self.exchange_item_id == oot_game::npc::EXCH_ITEM_NONE {
+                self.unk_862 = 0;
+                if let Some(t) = self.target_actor {
+                    let text_id = env.actors.actor(t).map_or(0, |a| a.text_id);
+                    if text_id != 0xFFFF {
+                        self.actor.flags |= ACTOR_FLAG_TALK;
+                    }
+                    self.start_talking(env, t, text_id);
+                }
+            } else {
+                let gi = D_80854528[self.exchange_item_id as usize - 1];
+                if self.item_ap >= data.items.ap("ZELDAS_LETTER")
+                    && let Some(e) = env.items.get_item(gi)
+                {
+                    self.unk_862 = (e.gi as i16).abs();
+                }
+                if self.action_var2 == 0 {
+                    self.play_requests.push(PlayRequest::StartTextbox { text_id: self.actor.text_id, actor: env.me });
+                    if self.item_ap == data.items.ap("CHICKEN") || self.item_ap == data.items.ap("POCKET_CUCCO") {
+                        self.sfx(PlayerSfx::Actor(oot_game::audio::sfx::NA_SE_EV_CHICKEN_CRY_M));
+                    }
+                    self.action_var2 = 1;
+                } else if env.msg_state == oot_game::message::TEXT_STATE_CLOSING {
+                    self.actor.flags &= !ACTOR_FLAG_TALK;
+                    self.unk_862 = 0;
+                    if self.action_var1 == 1 {
+                        self.skel.play_once(data, data.anim("link_bottle_read_end"));
+                        self.action_var2 = -1;
+                    } else {
+                        self.func_8083C0E8(data);
+                    }
+                    self.play_requests.push(PlayRequest::CamDone);
+                }
+            }
+        } else if self.action_var2 >= 0 {
+            // D_80854A3C: NA_SE_PL_PUT_OUT_ITEM, -ANIMSFX_DATA(ANIMSFX_TYPE_GENERAL, 30).
+            self.process_anim_sfx_list(&[(NA_SE_PL_PUT_OUT_ITEM, -(0x800 | 30))]);
+        }
+        if self.action_var1 == 0 && self.focus_actor.is_some() {
+            let y = self.func_8083DB98(env, false);
+            self.current_yaw = y;
+            self.actor.shape_rot.y = y;
+        }
+    }
+
+    /// `Player_Action_8084279C`: the bean held over its soil (`check_wait`) for `actionVar2` frames,
+    /// then another item's use or `check_end`; the talk and the camera done.
+    fn action_8084279c(&mut self, env: &Env) {
+        let data = env.data;
+        // func_80832CB0.
+        if self.skel.update(data) {
+            let a = self.anim(data, group::CHECK_WAIT);
+            self.skel.play_loop(data, a);
+        }
+        self.action_var2 -= 1;
+        if self.action_var2 == 0 {
+            if !self.action_handler_13(env) {
+                let a = self.anim(data, group::CHECK_END);
+                self.func_8083A098(data, a);
+            }
+            self.actor.flags &= !ACTOR_FLAG_TALK;
+            self.play_requests.push(PlayRequest::CamDone);
+        }
     }
 
     /// `Player_ActionHandler_0` (interrupt 0): a cutscene mode (or an item) waiting (`unk_6AD`) takes
@@ -10219,6 +10456,7 @@ impl ActorImpl for Player {
             main_cam_valid_modes: play.data.camera.setting_flags(play.game_camera.setting),
             main_cam_mode: play.game_camera.mode,
             scene_cam_type: play.scene_cam_type,
+            title_card_clear: play.title_ctx.delay_timer == 0 && play.title_ctx.alpha == 0,
         };
         // Player_Update: no input while talking or in a cutscene's hold (PLAYER_STATE1_5,
         // _29), and no A, B or C-Up for textboxBtnCooldownTimer frames after a talk.
@@ -10572,6 +10810,17 @@ impl PlayerIface for Player {
     }
     fn set_exchange_item_id(&mut self, id: u8) {
         self.exchange_item_id = id;
+    }
+    fn unset_mask(&mut self) {
+        self.current_mask = PLAYER_MASK_NONE;
+    }
+    fn update_bottle_held(&mut self, item: u8, item_action: i32) -> i8 {
+        if item != oot_game::item::ITEM_BOTTLE_EMPTY {
+            self.held_item_id = item;
+            self.held_item_ap = item_action;
+        }
+        self.item_ap = item_action;
+        self.held_item_button
     }
     fn clear_talk_actor(&mut self) {
         self.target_actor = None;

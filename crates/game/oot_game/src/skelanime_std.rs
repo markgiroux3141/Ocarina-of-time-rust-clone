@@ -296,6 +296,12 @@ impl SkelAnimeStd {
         self.change_impl(animation, play_speed, start_frame, end_frame, mode, morph_frames, ANIMTAPER_NONE);
     }
 
+    /// `Animation_PlayOnce`: from its first frame to its last, once, no morph.
+    pub fn play_once(&mut self, animation: Anim) {
+        let last = animation.last_frame();
+        self.change(animation, 1.0, 0.0, last, ANIMMODE_ONCE, 0.0);
+    }
+
     /// `Animation_ChangeByInfo`.
     pub fn change_by_info(&mut self, info: &AnimationInfo) {
         let frame_count = if info.frame_count > 0.0 { info.frame_count } else { info.animation.last_frame() };
