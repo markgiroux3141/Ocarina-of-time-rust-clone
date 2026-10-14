@@ -1,6 +1,6 @@
 //! `En_Encount1` (`ovl_En_Encount1/z_en_encount1.c`): an enemy spawner (GAME-06 milestone 4).
 //!
-//! Params: bits 11..15 the kind (`SPAWNER_LEEVER`, `_TEKTITE`, `_STALCHILDREN`, `_WOLFOS`),
+//! Its params: bits 11..15 the kind (`SPAWNER_LEEVER`, `_TEKTITE`, `_STALCHILDREN`, `_WOLFOS`),
 //! bits 6..10 how many at once, bits 0..5 how many in all; `world.rot.z` widens its range (120
 //! plus 40 each).
 //!
@@ -17,10 +17,17 @@
 //! The whole overlay is ported. Its Leevers (`En_Reeba`), Tektites (`En_Tite`) and Wolfos
 //! (`En_Wf`) aren't: they spawn as placeholders (a Leever's `aimType` and the big one aren't
 //! kept). The debug display (`BREG(0)`) isn't drawn.
+//!
+//! Params: `spawnType` bits 11 to 15 (`EnEncount1type`: 0 Leevers, 1 Tektites, 2 Stalchildren, 3
+//! Wolfos); `maxCurSpawns` bits 6 to 10 (how many at once); `maxTotalSpawns` bits 0 to 5 (how
+//! many in all; Hyrule Field doesn't count); the whole params 0 or negative: killed at init.
+//! `world.rot.z`: the range, 120 plus 40 a unit. The params are printed at init.
+//! Flags: none.
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_LOCK_ON_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, Source};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::surface::SurfaceType;
 
@@ -30,7 +37,25 @@ pub const ACTOR_EN_ENCOUNT1: i16 = 0x00A7;
 /// `En_Encount1_Profile`: `ACTORCAT_PROP`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED |
 /// ACTOR_FLAG_LOCK_ON_DISABLED`, `OBJECT_GAMEPLAY_KEEP`, no draw.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_ENCOUNT1, name: "En_Encount1", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_LOCK_ON_DISABLED, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_EN_ENCOUNT1, name: "En_Encount1", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_LOCK_ON_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: `maxTotalSpawns`.
+pub const MAX_TOTAL_SPAWNS: Field = Field::params("maxTotalSpawns", 0, 6, Kind::Range(0, 63), "how many it spawns in all (not counted in Hyrule Field)");
+/// `PARAMS_GET_U(params, 6, 5)`: `maxCurSpawns`.
+pub const MAX_CUR_SPAWNS: Field = Field::params("maxCurSpawns", 6, 5, Kind::Range(0, 31), "how many at once");
+/// `PARAMS_GET_U(params, 11, 5)`: `spawnType` (bit 15 set: the params negative, killed at init).
+pub const SPAWN_TYPE: Field = Field::params(
+    "spawnType",
+    11,
+    5,
+    Kind::Named(&[(0, "SPAWNER_LEEVER"), (1, "SPAWNER_TEKTITE"), (2, "SPAWNER_STALCHILDREN"), (3, "SPAWNER_WOLFOS")]),
+    "what it spawns",
+);
+/// `world.rot.z`: `spawnRange = 120 + 40 * rot.z`.
+pub const SPAWN_RANGE: Field = Field::rot("world.rot.z", Source::RotZ, 0, 16, Kind::Range(-0x8000, 0x7FFF), "its range, 120 plus 40 a unit");
+
+/// En_Encount1's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[MAX_TOTAL_SPAWNS, MAX_CUR_SPAWNS, SPAWN_TYPE, SPAWN_RANGE], flags: &[], todo: false };
 
 /// `EnEncount1type`.
 pub const SPAWNER_LEEVER: i16 = 0;
@@ -100,18 +125,19 @@ impl EnEncount1 {
             spawn_range: 0.0,
             big_leever: None,
         };
-        if actor.params <= 0 {
-            log::error!("En_Encount1: Input error death! (params {:#06x})", actor.params);
+        if actor.params <= 0 { // schema: the whole params, 0 or negative: an input error
+            log::error!("En_Encount1: Input error death! (params {:#06x})", actor.params); // schema: printed
             actor.kill();
             this.actor = actor;
             return Box::new(this);
         }
-        let p = actor.params as u16;
-        this.spawn_type = ((p >> 11) & 0x1F) as i16;
-        this.max_cur_spawns = ((p >> 6) & 0x1F) as i16;
-        this.max_total_spawns = (p & 0x3F) as i16;
-        this.spawn_range = 120.0 + (40.0 * actor.world_rot.z as f32);
+        this.spawn_type = SPAWN_TYPE.get(actor.params);
+        this.max_cur_spawns = MAX_CUR_SPAWNS.get(actor.params);
+        this.max_total_spawns = MAX_TOTAL_SPAWNS.get(actor.params);
+        this.spawn_range = 120.0 + (40.0 * SPAWN_RANGE.get(actor.world_rot.z) as f32);
+        // schema: printed
         log::debug!("It's an enemy spawner! {:x}: type {}, at once {}, in all {}, range {}", actor.params, this.spawn_type, this.max_cur_spawns, this.max_total_spawns, this.spawn_range);
+
         this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         match this.spawn_type {
             SPAWNER_LEEVER => {

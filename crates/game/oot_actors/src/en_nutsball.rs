@@ -16,12 +16,18 @@
 //!
 //! The whole overlay is ported. The circle shadow (`ActorShadow_DrawCircle`, 13) isn't ported for
 //! any actor.
+//!
+//! Params: `type` the whole params (`NUTSBALL_GET_TYPE`, `EnNutsballType`: 0 `En_Dekunuts`'s, 1
+//! `En_Hintnuts`'s, 2 `En_Shopnuts`'s, 3 `En_Dns`'s (spawned by none), 4 `En_Dnt_Nomal`'s
+//! (`object_dnk`)), set by the scrub that spawns it; it indexes `sObjectIds` and `sDLists`.
+//! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, PLAYER_STATE1_28, PLAYER_STATE1_29, PLAYER_STATE1_DEAD, PLAYER_STATE1_TALKING};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::NA_SE_EN_OCTAROCK_ROCK;
 use oot_game::collision_check::*;
 use oot_game::effect::hahen::HAHEN_OBJECT_DEFAULT;
@@ -32,7 +38,23 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matri
 pub const ACTOR_EN_NUTSBALL: i16 = 0x0193;
 
 /// `En_Nutsball_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_NUTSBALL, name: "En_Nutsball", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_NUTSBALL, name: "En_Nutsball", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `NUTSBALL_GET_TYPE(thisx)`: `(thisx)->params`, the scrub that fired it.
+pub const TYPE: Field = Field::whole(
+    "type",
+    Kind::Named(&[
+        (0, "EN_NUTSBALL_TYPE_DEKUNUTS"),
+        (1, "EN_NUTSBALL_TYPE_HINTNUTS"),
+        (2, "EN_NUTSBALL_TYPE_SHOPNUTS"),
+        (3, "EN_NUTSBALL_TYPE_DNS"),
+        (4, "EN_NUTSBALL_TYPE_DNK"),
+    ]),
+    "the scrub that fired it: its object and its nut",
+);
+
+/// En_Nutsball's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 /// `EnNutsballType`.
 pub const EN_NUTSBALL_TYPE_DEKUNUTS: i16 = 0;
@@ -94,7 +116,7 @@ pub struct EnNutsball {
 
 impl EnNutsball {
     fn kind(&self) -> usize {
-        (self.actor.params as usize).min(4)
+        (TYPE.get(self.actor.params) as usize).min(4)
     }
 
     /// `EnNutsball_Init`.
@@ -102,7 +124,7 @@ impl EnNutsball {
         // ActorShape_Init(&shape, 400, ActorShadow_DrawCircle, 13): the circle shadow isn't ported.
         actor.shape_y_offset = 400.0;
         let collider = ColliderCylinder::new(&CYLINDER_INIT);
-        let kind = (actor.params as usize).min(4);
+        let kind = (TYPE.get(actor.params) as usize).min(4);
         let required_object_slot = play.object_ctx.get_index(OBJECT_IDS[kind]);
         if required_object_slot.is_none() {
             actor.kill();

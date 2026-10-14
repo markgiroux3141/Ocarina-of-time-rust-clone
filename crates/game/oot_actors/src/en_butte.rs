@@ -10,6 +10,11 @@
 //! Drawn as `EnButte_Draw` does: the skeleton from `gameplay_field_keep`, its sphere moved to it
 //! (`Collider_UpdateSpheres`), and the transformation's flash
 //! (`EnButte_DrawTransformationEffect`); from baked meshes (docs/adr/0012-actor-bakes.md).
+//!
+//! Params: `PARAMS_GET_U(params, 0, 1)` bit 0 (1: it turns into a fairy for a Deku Stick); a
+//! params of -1 is made 0 first (a plain butterfly). Only spawned, by `Obj_Mure` (-1, or 1 for a
+//! group's first).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -20,6 +25,7 @@ use eng_math::{binang_to_rad, scaled_step_to_s, sin_s, smooth_step_to_f, step_to
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -32,7 +38,14 @@ pub const ACTOR_EN_BUTTE: i16 = 0x001E;
 pub const OBJECT: &str = "gameplay_field_keep";
 
 /// `En_Butte_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_BUTTE, name: "En_Butte", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_BUTTE, name: "En_Butte", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 1)`: the fairy one.
+pub const FAIRY: Field =
+    Field::params("PARAMS_GET_U(params, 0, 1)", 0, 1, Kind::Named(&[(0, "a butterfly"), (1, "turns into a fairy for a Deku Stick")]), "whether it turns into a fairy (a params of -1: made 0, a butterfly)");
+
+/// En_Butte's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[FAIRY], flags: &[], todo: false };
 
 /// `NA_SE_EV_BUTTERFRY_TO_FAIRY` (`sfx/environmentbank_table.h`: 0x28E7).
 const NA_SE_EV_BUTTERFRY_TO_FAIRY: u16 = 0x28E7;
@@ -184,6 +197,7 @@ impl EnButte {
             actor,
         };
         let a = &mut this.actor;
+        // schema: the whole params, -1 (Obj_Mure's plain butterfly) made 0
         if a.params == -1 {
             a.params = 0;
         }
@@ -192,7 +206,7 @@ impl EnButte {
         a.culling_volume_distance = 700.0;
         a.culling_volume_scale = 20.0;
         a.culling_volume_downward = 600.0;
-        if a.params & 1 == 1 {
+        if FAIRY.get(a.params) == 1 {
             a.culling_volume_scale = 200.0;
         }
         a.col_chk_info.mass = 0;
@@ -203,12 +217,13 @@ impl EnButte {
         this.setup_fly_around(play);
         this.actor.shape_rot.x = this.actor.shape_rot.x.wrapping_sub(0x2320);
         this.draw_skel_anime = true;
+        // schema: printed
         log::debug!("En_Butte: (field keep butterfly)(arg_data {:#06x})", this.actor.params);
         Box::new(this)
     }
 
     fn fairy(&self) -> bool {
-        self.actor.params & 1 == 1
+        FAIRY.get(self.actor.params) == 1
     }
 
     /// `EnButte_SelectFlightParams`: the next spell, still or flying, and its length.

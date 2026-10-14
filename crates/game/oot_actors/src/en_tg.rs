@@ -8,6 +8,10 @@
 //! `EnTg_PostLimbDraw`). From a baked mesh (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
+//!
+//! Params: none (the data places 0; the market's texts flip bit 0, `params ^= 1`, and nothing
+//! reads it).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -29,7 +33,7 @@ pub const ACTOR_EN_TG: i16 = 0x01AC;
 pub const OBJECT: &str = "object_mu";
 
 /// `En_Tg_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TG, name: "En_Tg", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TG, name: "En_Tg", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &oot_game::actor_schema::ActorSchema::NONE };
 
 /// `SCENE_KAKARIKO_VILLAGE` (`scene_table.h`: 0x52).
 const SCENE_KAKARIKO_VILLAGE: u16 = 0x52;

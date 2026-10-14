@@ -20,10 +20,22 @@
 //!
 //! The whole overlay is ported. Its draw (`ElfMsg_Draw`, debug builds only) shows the shape only
 //! with `R_NAVI_MSG_REGION_ALPHA` set: that register is 0 in the game, so it draws nothing.
+//!
+//! Params: `text` bits 0 to 7 (`PARAMS_GET_U(params, 0, 8)`: the text, 0x100 plus it);
+//! `switchFlag` bits 8 to 13 (set when it's done; set, it's gone; 0x3F: none); `cuboid` bit 14
+//! (`PARAMS_GET_NOSHIFT(params, 14, 1)`: 1 a cuboid, 0 a cylinder); `cUpHint` bit 15 (1: a C-Up
+//! hint, a positive `naviTextId`; 0: Navi calls at once). `world.rot.x` (`rotX`): the radius or
+//! half width, 4 a unit (0: 40). `world.rot.y` (`rotY`): 1 to 0x40 gone once switch flag
+//! `rotY - 1` is set; -1 gone once the room is cleared; 0x42 to 0x80 active once switch flag
+//! `rotY - 0x41` is set; else always active. `world.rot.z` (`rotZ`): the height, 4 a unit (0: 40).
+//! Flags: reads switch flag `switchFlag` (set: gone) and sets it when Navi's talk is accepted or
+//! the kill check kills it; reads switch flag `rotY - 1` (`rotY` 1 to 0x40), switch flag
+//! `rotY - 0x41` (`rotY` 0x42 to 0x80) and the room's clear flag (`rotY` -1).
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 use crate::en_elf::EnElf;
@@ -33,7 +45,42 @@ use crate::player::Player;
 pub const ACTOR_ELF_MSG: i16 = 0x011B;
 
 /// `Elf_Msg_Profile` (`OBJECT_GAMEPLAY_KEEP`).
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ELF_MSG, name: "Elf_Msg", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ELF_MSG, name: "Elf_Msg", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 8)`: the text (`ElfMsg_GetMessageId`).
+pub const TEXT: Field = Field::params("text", 0, 8, Kind::Range(0, 0xFF), "the text, 0x100 plus it");
+/// `PARAMS_GET_U(params, 8, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 8, 6, Kind::SwitchFlag, "set when it's done; set, it's gone (0x3F: none)");
+/// `PARAMS_GET_NOSHIFT(params, 14, 1)`: the shape.
+pub const CUBOID: Field = Field::params("cuboid", 14, 1, Kind::Named(&[(0, "a cylinder"), (1, "a cuboid")]), "the region's shape");
+/// `PARAMS_GET_NOSHIFT(params, 15, 1)`: the text's sign (`ElfMsg_GetMessageId`).
+pub const C_UP_HINT: Field =
+    Field::params("cUpHint", 15, 1, Kind::Named(&[(0, "Navi calls at once (a negative naviTextId)"), (1, "a C-Up hint (a positive naviTextId)")]), "how Navi gives the text");
+/// `world.rot.x`: the size across.
+pub const ROT_X: Field = Field::rot("rotX", Source::RotX, 0, 16, Kind::Range(0, 0x7FFF), "the radius (the cuboid's half width), 4 a unit (0: 40)");
+/// `world.rot.y`: when it's there.
+pub const ROT_Y: Field = Field::rot(
+    "rotY",
+    Source::RotY,
+    0,
+    16,
+    Kind::Range(-0x8000, 0x7FFF),
+    "1 to 0x40: gone once switch flag rotY - 1 is set; -1: gone once the room is cleared; 0x42 to 0x80: active once switch flag rotY - 0x41 is set; else always active",
+);
+/// `world.rot.z`: the height.
+pub const ROT_Z: Field = Field::rot("rotZ", Source::RotZ, 0, 16, Kind::Range(0, 0x7FFF), "the height up from it, 4 a unit (0: 40)");
+
+/// Elf_Msg's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TEXT, SWITCH_FLAG, CUBOID, C_UP_HINT, ROT_X, ROT_Y, ROT_Z],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone; set when Navi's talk is accepted or the kill check kills it"),
+        FlagUse::new(Flag::Switch("rotY - 1")).reads().note("rotY 1 to 0x40: set, it's gone"),
+        FlagUse::new(Flag::Switch("rotY - 0x41")).reads().note("rotY 0x42 to 0x80: active once set"),
+        FlagUse::new(Flag::Clear).reads().note("rotY -1: the room cleared, it's gone"),
+    ],
+    todo: false,
+};
 
 /// `R_NAVI_MSG_REGION_ALPHA` (`regs.h`: `nREG(87)`), a debug register: 0 in the game.
 pub const R_NAVI_MSG_REGION_ALPHA: i16 = 0;
@@ -54,11 +101,6 @@ impl Action {
     }
 }
 
-/// `PARAMS_GET_U(params, 8, 6)`: the switch flag (0x3F: none).
-fn params_switch_flag(params: i16) -> i32 {
-    (params as i32 >> 8) & 0x3F
-}
-
 /// `ElfMsg_WithinXZDistance`.
 fn within_xz_distance(pos1: Vec3, pos2: Vec3, distance: f32) -> bool {
     (pos2.x - pos1.x) * (pos2.x - pos1.x) + (pos2.z - pos1.z) * (pos2.z - pos1.z) < distance * distance
@@ -66,10 +108,11 @@ fn within_xz_distance(pos1: Vec3, pos2: Vec3, distance: f32) -> bool {
 
 /// `ElfMsg_KillCheck` (`ElfMsg2_KillCheck` is the same): gone (setting its own switch flag, if
 /// any) once switch flag `rot.y - 1` is set (`rot.y` 1 to 0x40) or, with `rot.y` -1, its room
-/// cleared; else gone once its own flag is set. True when it's killed.
+/// cleared; else gone once its own flag is set. True when it's killed. Elf_Msg2's `switchFlag`
+/// and `rotY` are Elf_Msg's.
 pub(crate) fn kill_check(actor: &mut Actor, play: &mut PlayState) -> bool {
-    let rot_y = actor.world_rot.y;
-    let flag = params_switch_flag(actor.params);
+    let rot_y = ROT_Y.get(actor.world_rot.y);
+    let flag = SWITCH_FLAG.get(actor.params) as i32;
     if rot_y > 0 && rot_y < 0x41 && play.flags.get_switch(rot_y as i32 - 1) {
         log::debug!("{}: mutual destruction", if actor.id == ACTOR_ELF_MSG { "Elf_Msg" } else { "Elf_Msg2" });
         if flag != 0x3F {
@@ -104,28 +147,28 @@ impl ElfMsg {
     /// (`* 0.04`, 0 for 0.4), the cuboid or the cylinder by params bit 14, the shape unrotated.
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut m = ElfMsg { actor, action: Action::CallNaviCylinder };
-        log::debug!("Elf_Msg: conditions for disappearing {}", params_switch_flag(m.actor.params));
-        if m.actor.shape_rot.y >= 0x41 {
-            log::debug!("Elf_Msg: conditions for appearing {}", m.actor.shape_rot.y - 0x41);
+        log::debug!("Elf_Msg: conditions for disappearing {}", SWITCH_FLAG.get(m.actor.params));
+        if ROT_Y.get(m.actor.shape_rot.y) >= 0x41 {
+            log::debug!("Elf_Msg: conditions for appearing {}", ROT_Y.get(m.actor.shape_rot.y) - 0x41);
         }
         if !kill_check(&mut m.actor, play) {
             let a = &mut m.actor;
             // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 1000), cullingVolumeDistance 1000.
             a.scale = Vec3::ONE;
             a.culling_volume_distance = 1000.0;
-            if a.world_rot.x == 0 {
+            if ROT_X.get(a.world_rot.x) == 0 {
                 a.scale.z = 0.4;
                 a.scale.x = 0.4;
             } else {
-                a.scale.x = a.world_rot.x as f32 * 0.04;
+                a.scale.x = ROT_X.get(a.world_rot.x) as f32 * 0.04;
                 a.scale.z = a.scale.x;
             }
-            if a.world_rot.z == 0 {
+            if ROT_Z.get(a.world_rot.z) == 0 {
                 a.scale.y = 0.4;
             } else {
-                a.scale.y = a.world_rot.z as f32 * 0.04;
+                a.scale.y = ROT_Z.get(a.world_rot.z) as f32 * 0.04;
             }
-            m.action = if a.params & 0x4000 != 0 { Action::CallNaviCuboid } else { Action::CallNaviCylinder };
+            m.action = if CUBOID.get(a.params) != 0 { Action::CallNaviCuboid } else { Action::CallNaviCylinder };
             a.shape_rot.x = 0;
             a.shape_rot.y = 0;
             a.shape_rot.z = 0;
@@ -136,8 +179,8 @@ impl ElfMsg {
     /// `ElfMsg_GetMessageId`: 0x100 plus the low byte; negative (Navi calls at once) without
     /// params bit 15.
     pub fn get_message_id(&self) -> i16 {
-        let id = (self.actor.params as i32 & 0xFF) + 0x100;
-        if self.actor.params as u16 & 0x8000 != 0 { id as i16 } else { -id as i16 }
+        let id = TEXT.get(self.actor.params) as i32 + 0x100;
+        if C_UP_HINT.get(self.actor.params) != 0 { id as i16 } else { -id as i16 }
     }
 
     /// `player->naviTextId = ElfMsg_GetMessageId(this); navi->elfMsg = this`.
@@ -195,7 +238,7 @@ impl ActorImpl for ElfMsg {
             return;
         }
         if oot_game::npc::process_talk_request(&mut self.actor) {
-            let flag = params_switch_flag(self.actor.params);
+            let flag = SWITCH_FLAG.get(self.actor.params) as i32;
             if flag != 0x3F {
                 play.flags.set_switch(flag);
             }
@@ -203,7 +246,7 @@ impl ActorImpl for ElfMsg {
             return;
         }
         // @bug (game): `<= 0x41` keeps rot.y 0x41 (switch flag 0) always active.
-        let rot_y = self.actor.world_rot.y;
+        let rot_y = ROT_Y.get(self.actor.world_rot.y);
         if rot_y <= 0x41 || rot_y > 0x80 || play.flags.get_switch(rot_y as i32 - 0x41) {
             match self.action {
                 Action::CallNaviCuboid => self.call_navi_cuboid(play),

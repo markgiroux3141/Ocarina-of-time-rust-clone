@@ -2,10 +2,6 @@
 //! flower that pops up to spit Deku nuts (`En_Nutsball`) at Link; its own nut bounced back off his
 //! shield knocks it out of the ground, and it runs; caught and hit, it dies.
 //!
-//! Params: the low byte 10 is the flower (`DEKUNUTS_FLOWER`, spawned by the scrub as its child,
-//! drawn at its home); else the high byte is how many nuts it spits a round (`shotsPerRound`,
-//! 0 and 0xFF count as 1). The Deku Tree's two are 0xFF00.
-//!
 //! - **Waiting** in the flower (`EnDekunuts_Wait`): the "up" animation held at speed 0 for
 //!   100 to 150 frames (`Rand_S16Offset`), sped up to 1 with Link between 160 and 480 across and
 //!   within 120 up or down; up, its collider grows from 5 (frame 9 on: `AC_ON`). Link within 120,
@@ -24,6 +20,12 @@
 //!
 //! The whole overlay is ported. Not ported: the circle shadow (`ActorShadow_DrawCircle`, 35),
 //! not ported for any actor.
+//!
+//! Params: `params` bits 0 to 7 (10, `DEKUNUTS_FLOWER`: the flower, spawned by the scrub as its
+//! child with the whole params 10 and drawn at its home; any other a scrub; init checks the whole
+//! params against 10, then a scrub keeps only these bits); `shotsPerRound` bits 8 to 15 (a
+//! scrub's nuts a round; 0 and 0xFF count as 1). The Deku Tree's two are 0xFF00.
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -34,6 +36,7 @@ use eng_math::{approach_f, approach_s, cos_s, sin_s, smooth_step_to_s, step_to_f
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2, enemy_start_finishing_blow};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::hahen::HAHEN_OBJECT_DEFAULT;
@@ -46,7 +49,16 @@ pub const ACTOR_EN_DEKUNUTS: i16 = 0x0060;
 const OBJECT: &str = "object_dekunuts";
 
 /// `En_Dekunuts_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DEKUNUTS, name: "En_Dekunuts", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DEKUNUTS, name: "En_Dekunuts", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT, schema: &SCHEMA };
+
+/// `thisx->params` (`== DEKUNUTS_FLOWER`; a scrub's `params &= 0xFF` at init): the flower or a
+/// scrub.
+pub const PARAMS: Field = Field::params("params", 0, 8, Kind::Named(&[(0, "a Mad Scrub"), (10, "DEKUNUTS_FLOWER")]), "the scrub, or its flower (10, spawned by it)");
+/// `PARAMS_GET_U(thisx->params, 8, 8)`: `shotsPerRound`.
+pub const SHOTS_PER_ROUND: Field = Field::params("shotsPerRound", 8, 8, Kind::Range(0, 0xFF), "the nuts it spits a round (0 and 0xFF: 1)");
+
+/// En_Dekunuts' configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS, SHOTS_PER_ROUND], flags: &[], todo: false };
 
 /// `DEKUNUTS_FLOWER`: the flower's params.
 pub const DEKUNUTS_FLOWER: i16 = 10;
@@ -238,7 +250,8 @@ impl EnDekunuts {
         actor.gravity = -1.0;
         actor.target_arrow_offset = 2600.0;
         let collider = ColliderCylinder::new(&CYLINDER_INIT);
-        if actor.params == DEKUNUTS_FLOWER {
+        // `thisx->params == DEKUNUTS_FLOWER`: the whole params.
+        if PARAMS.get(actor.params) == DEKUNUTS_FLOWER && SHOTS_PER_ROUND.get(actor.params) == 0 {
             actor.flags &= !(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
             return Box::new(EnDekunuts {
                 actor,
@@ -262,7 +275,7 @@ impl EnDekunuts {
         let limbs = skeleton.as_ref().map(|s| s.limbs.len()).unwrap_or(24);
         let skel = SkelAnimeStd::init_flex(limbs, anims.as_ref().map(|a| a.stand.clone()));
         actor.col_chk_info.set_info(Some(&S_DAMAGE_TABLE), &COL_CHK_INFO_INIT);
-        let mut shots_per_round = ((actor.params as u16 >> 8) & 0xFF) as i16;
+        let mut shots_per_round = SHOTS_PER_ROUND.get(actor.params);
         actor.params &= 0xFF;
         if shots_per_round == 0xFF || shots_per_round == 0 {
             shots_per_round = 1;
@@ -277,7 +290,7 @@ impl EnDekunuts {
     }
 
     fn is_flower(&self) -> bool {
-        self.actor.params == DEKUNUTS_FLOWER
+        PARAMS.get(self.actor.params) == DEKUNUTS_FLOWER
     }
 
     fn anim(&self, f: impl Fn(&Anims) -> &Anim) -> Option<Anim> {

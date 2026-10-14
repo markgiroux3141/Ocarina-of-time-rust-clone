@@ -14,6 +14,15 @@
 //!
 //! Drawn with its colour as the env colour (`gDPSetEnvColor`), from a bake per colour
 //! (docs/adr/0012-actor-bakes.md).
+//!
+//! Params: `color` bits 0 to 3 (`colors`: 0 cream, 1 brown); `path` bits 4 to 7 (15: none);
+//! `index` bits 8 to 11 (the dog's number, placed from 0 and made 1-based at init: placed 0 is
+//! Richard, the dog lady's; a placed dog whose number is the following dog's is killed at init);
+//! `following` bit 15 (1: the dog Player respawns behind Link, `dogParams` with bit 15; never
+//! placed). Bits 0 to 14 become `gSaveContext.dogParams` when it starts to follow.
+//! Flags: sets and clears EVENTINF_30 (the dog lady's dog near her, market by day); reads, sets
+//! and clears `gSaveContext.dogParams` (the following dog); reads `gSaveContext.dogIsLost`
+//! (Richard in the market by night, or sitting at home).
 
 use std::sync::Arc;
 
@@ -24,6 +33,8 @@ use eng_math::{approach_f, smooth_step_to_f, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::event_inf;
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::path::{path_get_by_index, path_orient_and_get_dist_sq};
@@ -35,7 +46,28 @@ pub const ACTOR_EN_DOG: i16 = 0x019B;
 pub const OBJECT: &str = "object_dog";
 
 /// `En_Dog_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOG, name: "En_Dog", category: ACTORCAT_NPC, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOG, name: "En_Dog", category: ACTORCAT_NPC, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_S(params, 0, 4)` (`EnDog_Draw`'s `colors[...]`).
+pub const COLOR: Field = Field::params("color", 0, 4, Kind::Named(&[(0, "cream"), (1, "brown")]), "its coat's colour (the env colour)");
+/// `PARAMS_GET_S(params, 4, 4)` (`Path_GetByIndex(play, ..., 0xF)`).
+pub const PATH: Field = Field::params("path", 4, 4, Kind::PathIndex, "the path it walks and runs (15: none)");
+/// `PARAMS_GET_S(params, 8, 4)`: the dog's number (`followingDog` compares it with `dogParams`).
+pub const INDEX: Field = Field::params("index", 8, 4, Kind::Range(0, 14), "the dog's number, placed from 0 (made 1-based at init; placed 0: Richard)");
+/// `PARAMS_GET_NOSHIFT(params, 15, 1)`: the dog following Link, respawned by Player.
+pub const FOLLOWING: Field =
+    Field::params("following", 15, 1, Kind::Named(&[(0, "a placed dog"), (1, "the dog following Link (Player's respawn)")]), "whether it's the dog Player respawns behind Link");
+
+/// En_Dog's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[COLOR, PATH, INDEX, FOLLOWING],
+    flags: &[
+        FlagUse::new(event_inf!(EVENTINF_30)).sets().clears().note("the market by day: the dog lady's dog near her on its path"),
+        FlagUse::new(Flag::Other("gSaveContext.dogParams")).reads().sets().clears().note("the dog following Link: its params, bits 0 to 14; cleared beyond 400"),
+        FlagUse::new(Flag::Other("gSaveContext.dogIsLost")).reads().note("Richard (1): in the market by night only while lost; sitting at home once found"),
+    ],
+    todo: false,
+};
 
 // `SCENE_*` (`scene_table.h`).
 const SCENE_MARKET_DAY: u16 = 0x20;
@@ -183,14 +215,14 @@ impl EnDog {
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 24).
         this.actor.shape_y_offset = 0.0;
         this.change_anim(0);
-        let following = this.actor.params & (1 << 15) != 0;
+        let following = FOLLOWING.get(this.actor.params) != 0;
         if !following {
             // The placed dogs' index made 1-based.
-            let index = (this.actor.params >> 8) & 0xF;
-            this.actor.params = (this.actor.params & !(0xF << 8)) | ((index + 1) << 8);
+            let index = INDEX.get(this.actor.params);
+            this.actor.params = (this.actor.params & !(0xF << 8)) | ((index + 1) << 8); // schema: the C's write
         }
-        let following_dog = (play.save.dog_params & 0x0F00) >> 8;
-        if following_dog == (this.actor.params >> 8) & 0xF && !following {
+        let following_dog = INDEX.get(play.save.dog_params);
+        if following_dog == INDEX.get(this.actor.params) && !following {
             this.actor.kill();
             return Box::new(this);
         }
@@ -198,8 +230,8 @@ impl EnDog {
         this.actor.scale = Vec3::splat(0.0075);
         this.waypoint = 0;
         this.actor.gravity = -1.0;
-        this.path = path_get_by_index(play.setup_path_list(), (this.actor.params >> 4) & 0xF, 0xF);
-        let index = (this.actor.params >> 8) & 0xF;
+        this.path = path_get_by_index(play.setup_path_list(), PATH.get(this.actor.params), 0xF);
+        let index = INDEX.get(this.actor.params);
         match play.scene_id {
             SCENE_MARKET_NIGHT => {
                 if !play.save.dog_is_lost && index == 1 {
@@ -306,7 +338,7 @@ impl EnDog {
             if play.save.dog_params != 0 {
                 return 0;
             }
-            play.save.dog_params = self.actor.params & 0x7FFF;
+            play.save.dog_params = self.actor.params & 0x7FFF; // schema: PARAMS_GET_S(params, 0, 15), kept for Player and En_Hy
             return 1;
         }
         0
@@ -506,7 +538,7 @@ impl ActorImpl for EnDog {
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         // @bug (game): a colour index past 1 reads past `colors`; none is placed.
-        let color = (self.actor.params & 0xF) as usize;
+        let color = COLOR.get(self.actor.params) as usize;
         let bones = self.skeleton.pose(joints);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(color.min(COLORS.len() - 1)))), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
         // ActorShadow_DrawCircle (shadowScale 24): the circle shadow's stand-in.

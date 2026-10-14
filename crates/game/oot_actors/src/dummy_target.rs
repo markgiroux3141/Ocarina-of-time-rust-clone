@@ -12,6 +12,9 @@
 //!   hurts Link, half a heart, with
 //!   a hit special effect (`HIT_SPECIAL_EFFECT_*`: fire sets him burning, ice freezes him, electric
 //!   shocks him, knockback knocks him down).
+//!
+//! Params: none (not a game actor, no C: the sandbox places it with params 0 and reads nothing).
+//! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
@@ -27,6 +30,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ENEMY,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE,
     object: "gameplay_keep",
+    schema: &oot_game::actor_schema::ActorSchema::NONE,
 };
 
 /// The health it starts with and goes back to.

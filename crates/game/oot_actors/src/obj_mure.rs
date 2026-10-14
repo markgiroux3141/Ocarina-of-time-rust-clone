@@ -9,10 +9,19 @@
 //! `actor.child`. The first of a butterfly group is the one that turns into a fairy (params 1).
 //!
 //! Its children: `En_Butte` (ported), `En_Fish` and `En_Insect` (not ported: placeholders).
+//!
+//! Params: `type` bits 0 to 4 (`ObjMureType`: 2 fish, `En_Fish`; 3 bugs, `En_Insect`; 4
+//! butterflies, `En_Butte`; 0 grass and 1 nothing get no culling and are killed, as is 5 and up);
+//! `svNum` bits 5 and 6 (0: the dead stay dead when it respawns them, `ObjMure_SpawnActors0`; 1: all
+//! respawned, `ObjMure_SpawnActors1`; 2, 3: none); `ptn` bits 8 to 10 (the pattern: its count when
+//! `chNum` is 0, `sMaxChildSpawns` 12, 9, 8, 0; 4 and up killed); `chNum` bits 12 to 15 (the count;
+//! 0 the pattern's).
+//! Flags: none.
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 use crate::en_butte::ACTOR_EN_BUTTE;
@@ -25,7 +34,31 @@ const ACTOR_EN_INSECT: i16 = 0x0020;
 const ACTOR_EN_FISH: i16 = 0x0021;
 
 /// `Obj_Mure_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MURE, name: "Obj_Mure", category: ACTORCAT_ITEMACTION, flags: 0, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MURE, name: "Obj_Mure", category: ACTORCAT_ITEMACTION, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(thisx->params, 0, 5)`: what it spawns.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    5,
+    Kind::Named(&[(0, "OBJMURE_TYPE_GRASS"), (1, "OBJMURE_TYPE_UNDEFINED"), (2, "OBJMURE_TYPE_FISH"), (3, "OBJMURE_TYPE_BUGS"), (4, "OBJMURE_TYPE_BUTTERFLY")]),
+    "fish, bugs or butterflies (grass and 1 get no culling: killed)",
+);
+/// `PARAMS_GET_U(thisx->params, 5, 2)`: how it respawns them.
+pub const SV_NUM: Field = Field::params(
+    "svNum",
+    5,
+    2,
+    Kind::Named(&[(0, "the dead stay dead (ObjMure_SpawnActors0)"), (1, "all respawned (ObjMure_SpawnActors1)"), (2, "none spawned"), (3, "none spawned")]),
+    "how it spawns its group",
+);
+/// `PARAMS_GET_U(thisx->params, 8, 3)`: the pattern.
+pub const PTN: Field = Field::params("ptn", 8, 3, Kind::Range(0, 3), "the pattern: its count when chNum is 0 (sMaxChildSpawns: 12, 9, 8, 0); 4 and up killed");
+/// `PARAMS_GET_U(thisx->params, 12, 4)`: the count.
+pub const CH_NUM: Field = Field::params("chNum", 12, 4, Kind::Range(0, 15), "how many (0: the pattern's)");
+
+/// Obj_Mure's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, SV_NUM, PTN, CH_NUM], flags: &[], todo: false };
 
 /// `OBJMURE_MAX_SPAWNS`.
 pub const OBJMURE_MAX_SPAWNS: usize = 15;
@@ -78,12 +111,13 @@ pub struct ObjMure {
 impl ObjMure {
     /// `ObjMure_Init`.
     pub fn init(actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
+        // schema: printed
         let p = actor.params as u16;
         let mut this = ObjMure {
-            ch_num: ((p >> 12) & 0xF) as i16,
-            ptn: ((p >> 8) & 0x7) as i16,
-            sv_num: ((p >> 5) & 0x3) as i16,
-            ty: (p & 0x1F) as i16,
+            ch_num: CH_NUM.get(actor.params),
+            ptn: PTN.get(actor.params),
+            sv_num: SV_NUM.get(actor.params),
+            ty: TYPE.get(actor.params),
             action: Action::InitialAction,
             children: [None; OBJMURE_MAX_SPAWNS],
             children_states: [0; OBJMURE_MAX_SPAWNS],
@@ -119,6 +153,7 @@ impl ObjMure {
                 true
             }
             _ => {
+                // schema: printed
                 log::warn!("Obj_Mure: error, culling is not set (arg_data {:#06x})", self.actor.params);
                 false
             }
@@ -149,6 +184,7 @@ impl ObjMure {
     fn spawn_actors0(&mut self, play: &mut PlayState) {
         for i in 0..self.get_max_child_spawns() as usize {
             if self.children[i].is_some() {
+                // schema: printed
                 log::warn!("Obj_Mure: error, I already have a child (arg_data {:#06x})", self.actor.params);
             }
             match self.children_states[i] {
@@ -175,6 +211,7 @@ impl ObjMure {
     fn spawn_actors1(&mut self, play: &mut PlayState) {
         for i in 0..self.get_max_child_spawns() as usize {
             if self.children[i].is_some() {
+                // schema: printed
                 log::warn!("Obj_Mure: error, I already have a child (arg_data {:#06x})", self.actor.params);
             }
             let params = if self.ty == 4 && i == 0 { 1 } else { SPAWN_PARAMS[self.ty as usize] };

@@ -1,9 +1,6 @@
 //! `En_Dekubaba` (`ovl_En_Dekubaba/z_en_dekubaba.c`): the Deku Baba, a carnivorous plant on a
 //! three-part stem that lies hidden in its leaves, rises and lunges at Link.
 //!
-//! Params: `EN_DEKUBABA_TYPE_NORMAL` (0) or `EN_DEKUBABA_TYPE_BIG` (1, two and a half times the
-//! size, with 4 health).
-//!
 //! - **Waiting** (`EnDekubaba_WaitPlayerNear`): hidden, its collider hard (`AC_HARD`, nothing
 //!   hurts it), until Link comes within 200 across and 30 up or down.
 //! - **Rising** (`EnDekubaba_ExitGround`), then **lunging**: it draws back
@@ -26,6 +23,11 @@
 //! at the world's origin, the C's own bug). Not ported: the generic circle shadow
 //! (`ActorShadow_DrawCircle`, not ported for any actor; its own floor shadow,
 //! `EnDekubaba_DrawShadow`, is drawn).
+//!
+//! Params: `params` the whole params (`EnDekubabaType`: 0 `EN_DEKUBABA_TYPE_NORMAL`; 1
+//! `EN_DEKUBABA_TYPE_BIG`, two and a half times the size, with 4 health, its own damage table,
+//! sounds and drops).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -37,6 +39,7 @@ use eng_math::{approach_s, cos_s, scaled_step_to_s, sin_s, smooth_step_to_s, ste
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_MISC, ActorImpl, ActorProfile, audio_play_actor_sfx2, enemy_start_finishing_blow};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::pack::keys;
@@ -48,7 +51,13 @@ pub const ACTOR_EN_DEKUBABA: i16 = 0x0055;
 const OBJECT: &str = "object_dekubaba";
 
 /// `En_Dekubaba_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DEKUBABA, name: "En_Dekubaba", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DEKUBABA, name: "En_Dekubaba", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params`: an `EnDekubabaType`.
+pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "EN_DEKUBABA_TYPE_NORMAL"), (1, "EN_DEKUBABA_TYPE_BIG")]), "a Deku Baba or a big one");
+
+/// En_Dekubaba's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 /// `EnDekubabaType`.
 pub const EN_DEKUBABA_TYPE_NORMAL: i16 = 0;
@@ -272,7 +281,7 @@ impl EnDekubaba {
         let mut collider = ColliderJntSph::new(&JNT_SPH_INIT, &elements);
         let adult = play.save.adult;
         let mut b = EnDekubaba { actor, skel, skeleton, chomp, idle, action: Action::WaitPlayerNear, action_state: 0, wobble_target: 0, stem_parts_rot: [0; 3], scale_fac: 1.0, floor_poly: None, collider: ColliderJntSph::default() };
-        if b.actor.params == EN_DEKUBABA_TYPE_BIG {
+        if TYPE.get(b.actor.params) == EN_DEKUBABA_TYPE_BIG {
             b.scale_fac = 2.50;
             for (e, init) in collider.elements.iter_mut().zip(elements.iter()) {
                 let r = (init.model_sphere.radius as f32 * 2.5) as i16;
@@ -631,7 +640,7 @@ impl EnDekubaba {
         let player_pos = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or_default();
         self.skel.update();
         if self.skel.on_frame(0.0) || self.skel.on_frame(12.0) {
-            audio_play_actor_sfx2(play, if self.actor.params == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_MOUTH } else { NA_SE_EN_DEKU_JR_MOUTH });
+            audio_play_actor_sfx2(play, if TYPE.get(self.actor.params) == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_MOUTH } else { NA_SE_EN_DEKU_JR_MOUTH });
         }
         if self.action_state != 0 {
             self.action_state -= 1;
@@ -670,7 +679,7 @@ impl EnDekubaba {
         self.skel.update();
         if self.action_state == 0 {
             if self.skel.on_frame(1.0) {
-                audio_play_actor_sfx2(play, if self.actor.params == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_ATTACK } else { NA_SE_EN_DEKU_JR_ATTACK });
+                audio_play_actor_sfx2(play, if TYPE.get(self.actor.params) == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_ATTACK } else { NA_SE_EN_DEKU_JR_ATTACK });
             }
             scaled_step_to_s(&mut self.actor.shape_rot.x, 0, 0x222);
             let step_base = (self.skel.cur_frame * 10.0) as i16;
@@ -701,7 +710,7 @@ impl EnDekubaba {
                 approach_s(&mut self.actor.shape_rot.y, self.actor.yaw_towards_player, 15, 0x71C);
             }
             if self.skel.on_frame(0.0) || self.skel.on_frame(12.0) {
-                audio_play_actor_sfx2(play, if self.actor.params == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_MOUTH } else { NA_SE_EN_DEKU_JR_MOUTH });
+                audio_play_actor_sfx2(play, if TYPE.get(self.actor.params) == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_MOUTH } else { NA_SE_EN_DEKU_JR_MOUTH });
             }
         }
         self.compute_head_pos();
@@ -950,7 +959,7 @@ impl EnDekubaba {
             let pos = self.actor.world_pos;
             if self.actor.drop_flag == 0 {
                 crate::en_item00::item_drop_collectible(play, pos, ITEM00_NUTS);
-                if self.actor.params == EN_DEKUBABA_TYPE_BIG {
+                if TYPE.get(self.actor.params) == EN_DEKUBABA_TYPE_BIG {
                     crate::en_item00::item_drop_collectible(play, pos, ITEM00_NUTS);
                     crate::en_item00::item_drop_collectible(play, pos, ITEM00_NUTS);
                 }
@@ -1049,7 +1058,7 @@ impl EnDekubaba {
             }
         } else {
             enemy_start_finishing_blow(play, &self.actor);
-            audio_play_actor_sfx2(play, if self.actor.params == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_DEAD } else { NA_SE_EN_DEKU_JR_DEAD });
+            audio_play_actor_sfx2(play, if TYPE.get(self.actor.params) == EN_DEKUBABA_TYPE_BIG { NA_SE_EN_DEKU_DEAD } else { NA_SE_EN_DEKU_JR_DEAD });
         }
     }
 

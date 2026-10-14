@@ -1,5 +1,5 @@
-//! `En_Ossan` (`ovl_En_Ossan/z_en_ossan.c`): a shopkeeper. `params` is the shop
-//! (`OssanType`); the Kokiri shop's (`OSSAN_TYPE_KOKIRI`, 0) is the one ported.
+//! `En_Ossan` (`ovl_En_Ossan/z_en_ossan.c`): a shopkeeper. The Kokiri shop's
+//! (`OSSAN_TYPE_KOKIRI`, 0) is the one ported.
 //!
 //! **The Kokiri shopkeeper** stands behind the counter (33 in front of his placement) until
 //! Link talks to him (within 100: `Actor_OfferTalk`). Then:
@@ -28,6 +28,23 @@
 //! stand as placeholders (`EnOssan_InitPotionShopkeeper`, `_BombchuShopkeeper`,
 //! `_BazaarShopkeeper`, `_ZoraShopkeeper`, `_GoronShopkeeper`, `_HappyMaskShopkeeper` and their
 //! draws). Left out: the prints, and the unused collider.
+//!
+//! Params: the whole `params` the shop (`OssanType`: 0 `OSSAN_TYPE_KOKIRI`, 1
+//! `OSSAN_TYPE_KAKARIKO_POTION` (an adult's only), 2 `OSSAN_TYPE_BOMBCHUS` (once Dodongo's Cavern
+//! is done), 3 `OSSAN_TYPE_MARKET_POTION`, 4 `OSSAN_TYPE_BAZAAR`, 5 `OSSAN_TYPE_ADULT`, 6
+//! `OSSAN_TYPE_TALON` (written over with 9 `OSSAN_TYPE_INGO` for an adult), 7 `OSSAN_TYPE_ZORA`, 8
+//! `OSSAN_TYPE_GORON`, 10 `OSSAN_TYPE_MASK` (once Zelda's letter is shown in Kakariko); `@bug` the
+//! init's range check is never true). It picks the shopkeeper, its objects, its place and its
+//! shelves' items (`sShopkeeperStores`: the `En_GirlA` params it spawns).
+//! Flags: reads EVENTCHKINF_25 (Dodongo's Cavern done: the bombchu shop, the Goron's texts) and
+//! INFTABLE_76 (the mask shop open; the Hylian Shield's discount); reads INFTABLE_FC (the Goron
+//! shop's bomb talk had) and sets it; the Happy Mask Shop reads ITEMGETINF_38, ITEMGETINF_39,
+//! ITEMGETINF_3A and ITEMGETINF_3B (each mask sold: the next on the shelf, its texts), reads and
+//! sets ITEMGETINF_23 and ITEMGETINF_24 and sets ITEMGETINF_25 and ITEMGETINF_26 (a mask
+//! borrowed), reads and sets ITEMGETINF_3F (the Mask of Truth got: the last three masks), sets
+//! ITEMGETINF_2A (the Mask of Truth lent), and reads and sets EVENTCHKINF_PAID_BACK_KEATON_MASK,
+//! EVENTCHKINF_PAID_BACK_SKULL_MASK, EVENTCHKINF_PAID_BACK_SPOOKY_MASK and
+//! EVENTCHKINF_PAID_BACK_BUNNY_HOOD (a mask paid for).
 
 use std::sync::Arc;
 
@@ -37,6 +54,8 @@ use eng_math::{approach_f, step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::audio::sfx::{NA_SE_SY_CURSOR, NA_SE_SY_DECIDE, NA_SE_SY_ERROR, NA_SE_SY_MESSAGE_PASS};
 use oot_game::collision_check::MASS_IMMOVABLE;
 use oot_game::gbi::{G_IM_FMT_IA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_TX_MIRROR, G_TX_NOMASK, G_TX_WRAP, setup_dl};
@@ -57,7 +76,7 @@ const ACTOR_EN_ELF: i16 = 0x0018;
 const FAIRY_KOKIRI: i16 = 3;
 
 /// `En_Ossan_Profile` (no draw until the shopkeeper's init sets one).
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_OSSAN, name: "En_Ossan", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_OSSAN, name: "En_Ossan", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
 
 // `OssanType`.
 pub const OSSAN_TYPE_KOKIRI: i16 = 0;
@@ -71,6 +90,50 @@ pub const OSSAN_TYPE_ZORA: i16 = 7;
 pub const OSSAN_TYPE_GORON: i16 = 8;
 pub const OSSAN_TYPE_INGO: i16 = 9;
 pub const OSSAN_TYPE_MASK: i16 = 10;
+
+/// `this->actor.params`: the shop, an index into the shopkeeper tables.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "OSSAN_TYPE_KOKIRI"),
+        (1, "OSSAN_TYPE_KAKARIKO_POTION"),
+        (2, "OSSAN_TYPE_BOMBCHUS"),
+        (3, "OSSAN_TYPE_MARKET_POTION"),
+        (4, "OSSAN_TYPE_BAZAAR"),
+        (5, "OSSAN_TYPE_ADULT"),
+        (6, "OSSAN_TYPE_TALON"),
+        (7, "OSSAN_TYPE_ZORA"),
+        (8, "OSSAN_TYPE_GORON"),
+        (9, "OSSAN_TYPE_INGO"),
+        (10, "OSSAN_TYPE_MASK"),
+    ]),
+    "which shop: its shopkeeper, place and shelves",
+);
+
+/// En_Ossan's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_25)).reads().note("Dodongo's Cavern done: the bombchu shop, the Goron's texts"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_PAID_BACK_KEATON_MASK)).reads().sets().note("the mask shop: the Keaton Mask paid for").indirect("read from EnOssan_SetupHelloDialog's table"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_PAID_BACK_SKULL_MASK)).reads().sets().note("the mask shop: the Skull Mask paid for").indirect("read from EnOssan_SetupHelloDialog's table"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_PAID_BACK_SPOOKY_MASK)).reads().sets().note("the mask shop: the Spooky Mask paid for").indirect("read from EnOssan_SetupHelloDialog's table"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_PAID_BACK_BUNNY_HOOD)).reads().sets().note("the mask shop: the Bunny Hood paid for").indirect("read from EnOssan_SetupHelloDialog's table"),
+        FlagUse::new(inf_table!(INFTABLE_76)).reads().note("Zelda's letter shown in Kakariko: the mask shop open, the Hylian Shield's discount"),
+        FlagUse::new(inf_table!(INFTABLE_FC)).reads().sets().note("the Goron shop's bomb talk had"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_23)).reads().sets().note("the Keaton Mask borrowed").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_24)).reads().sets().note("the Skull Mask borrowed").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_25)).sets().note("the Spooky Mask borrowed").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_26)).sets().note("the Bunny Hood borrowed").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_2A)).sets().note("the Mask of Truth lent"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_38)).reads().note("the Keaton Mask sold: the Skull Mask shelved").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_39)).reads().note("the Skull Mask sold: the Spooky Mask shelved").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_3A)).reads().note("the Spooky Mask sold: the Bunny Hood shelved").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_3B)).reads().note("the Bunny Hood sold: all four sold").indirect("the masks' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_3F)).reads().sets().note("the Mask of Truth got: the Zora, Goron and Gerudo masks shelved"),
+    ],
+    todo: false,
+};
 
 /// `sShopkeeperPrintName`'s English: the shops, for the log.
 const SHOPKEEPER_NAMES: [&str; 11] =
@@ -321,6 +384,7 @@ fn shop_item_disp(v: i16, s: &oot_game::save::SaveContext) -> i16 {
         _ => None,
     };
     match needs {
+        // schema: ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3F
         Some(f) if !s.get_item_get_inf(f) => -1,
         _ => v,
     }
@@ -517,7 +581,7 @@ fn with_item<R>(play: &mut PlayState, h: Option<ActorHandle>, f: impl FnOnce(&mu
 
 impl EnOssan {
     fn ty(&self) -> usize {
-        self.actor.params as usize
+        TYPE.get(self.actor.params) as usize
     }
 
     /// `EnOssan_Init`.
@@ -565,27 +629,27 @@ impl EnOssan {
             camera_face_angle: 0.0,
         };
         let s = &play.save;
-        if o.actor.params == OSSAN_TYPE_TALON && s.adult {
+        if TYPE.get(o.actor.params) == OSSAN_TYPE_TALON && s.adult {
             o.actor.params = OSSAN_TYPE_INGO;
         }
         // @bug (game): `params > OSSAN_TYPE_MASK && params < OSSAN_TYPE_KOKIRI` is never true
         // (it should be `||`), so a bad params indexes past the tables. The port kills it.
-        if !(OSSAN_TYPE_KOKIRI..=OSSAN_TYPE_MASK).contains(&o.actor.params) {
-            log::error!("En_Ossan: bad params {} (arg_data)", o.actor.params);
+        if !(OSSAN_TYPE_KOKIRI..=OSSAN_TYPE_MASK).contains(&TYPE.get(o.actor.params)) {
+            log::error!("En_Ossan: bad params {} (arg_data)", TYPE.get(o.actor.params));
             o.actor.kill();
             return Box::new(o);
         }
         // The Happy Mask Shop opens once Zelda's letter has been shown in Kakariko.
-        if o.actor.params == OSSAN_TYPE_MASK && !s.get_inf_table(INFTABLE_76) {
+        if TYPE.get(o.actor.params) == OSSAN_TYPE_MASK && !s.get_inf_table(INFTABLE_76) {
             o.actor.kill();
             return Box::new(o);
         }
-        if o.actor.params == OSSAN_TYPE_KAKARIKO_POTION && !s.adult {
+        if TYPE.get(o.actor.params) == OSSAN_TYPE_KAKARIKO_POTION && !s.adult {
             o.actor.kill();
             return Box::new(o);
         }
         // Dodongo's Cavern done.
-        if o.actor.params == OSSAN_TYPE_BOMBCHUS && !s.get_event_chk_inf(EVENTCHKINF_25) {
+        if TYPE.get(o.actor.params) == OSSAN_TYPE_BOMBCHUS && !s.get_event_chk_inf(EVENTCHKINF_25) {
             o.actor.kill();
             return Box::new(o);
         }
@@ -603,8 +667,8 @@ impl EnOssan {
             o.actor.kill();
             return Box::new(o);
         }
-        if o.actor.params != OSSAN_TYPE_KOKIRI {
-            log::info!("En_Ossan: the {} shopkeeper (type {}) isn't ported: a placeholder", SHOPKEEPER_NAMES[o.ty()], o.actor.params);
+        if TYPE.get(o.actor.params) != OSSAN_TYPE_KOKIRI {
+            log::info!("En_Ossan: the {} shopkeeper (type {}) isn't ported: a placeholder", SHOPKEEPER_NAMES[o.ty()], TYPE.get(o.actor.params));
             return oot_game::spawn::Placeholder::init(o.actor, play);
         }
         // Actor_ProcessInitChain: targetMode 2, targetArrowOffset 500.
@@ -742,7 +806,7 @@ impl EnOssan {
 
     /// `EnOssan_UpdateShopOfferings`: the Happy Mask Shop's newly unlocked masks.
     fn update_shop_offerings(&mut self, play: &mut PlayState) {
-        if self.actor.params != OSSAN_TYPE_MASK {
+        if TYPE.get(self.actor.params) != OSSAN_TYPE_MASK {
             return;
         }
         let Some((pos, rot)) = self.shelves.and_then(|h| play.actors.actor(h)).map(|a| (a.world_pos, a.shape_rot)) else { return };
@@ -761,7 +825,7 @@ impl EnOssan {
     /// (`EnOssan_TalkKokiriShopkeeper` and the rest).
     fn talk_owner(&self, play: &mut PlayState) {
         let s = &play.save;
-        let text = match self.actor.params {
+        let text = match TYPE.get(self.actor.params) {
             OSSAN_TYPE_KOKIRI => 0x10BA,
             OSSAN_TYPE_KAKARIKO_POTION => {
                 if play.cur_spawn == 0 {
@@ -802,6 +866,7 @@ impl EnOssan {
                 }
             }
             OSSAN_TYPE_MASK => {
+                // schema: ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3B
                 if [ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3B].iter().all(|&f| s.get_item_get_inf(f)) {
                     0x70AE
                 } else {
@@ -914,9 +979,10 @@ impl EnOssan {
     /// `EnOssan_StartShopping`: facing the shopkeeper, 0x83's choice with both prompts.
     fn start_shopping(&mut self, play: &mut PlayState) {
         self.state_flag = OSSAN_STATE_FACING_SHOPKEEPER;
-        if self.actor.params == OSSAN_TYPE_MASK {
+        if TYPE.get(self.actor.params) == OSSAN_TYPE_MASK {
             // All masks sold: the Mask of Truth can be asked about.
             let s = &play.save;
+            // schema: ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3B
             if [ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3B].iter().all(|&f| s.get_item_get_inf(f)) {
                 play.continue_textbox(0x70AD);
             } else {
@@ -1051,7 +1117,7 @@ impl EnOssan {
     /// `EnOssan_State_StartConversation`: after the hello's A, shopping starts.
     fn state_start_conversation(&mut self, play: &mut PlayState) {
         let dialog_state = play.message_state();
-        if self.actor.params == OSSAN_TYPE_MASK && dialog_state == TEXT_STATE_CHOICE {
+        if TYPE.get(self.actor.params) == OSSAN_TYPE_MASK && dialog_state == TEXT_STATE_CHOICE {
             if !self.test_end_interaction(play) && play.message_should_advance() {
                 match play.msg_ctx.choice_index {
                     0 => self.start_shopping(play),
@@ -1206,7 +1272,7 @@ impl EnOssan {
             return true;
         }
         if play.message_should_advance() {
-            let Some((params, invisible, prompt)) = self.slot_item(play, self.cursor_index).map(|g| (g.actor.params, g.is_invisible, g.item_buy_prompt_text_id)) else {
+            let Some((params, invisible, prompt)) = self.slot_item(play, self.cursor_index).map(|g| (crate::en_girla::TYPE.get(g.actor.params), g.is_invisible, g.item_buy_prompt_text_id)) else {
                 return true;
             };
             if params != SI_SOLD_OUT && !invisible {
@@ -1343,7 +1409,7 @@ impl EnOssan {
     }
 
     fn selected_can_buy(&self, play: &PlayState) -> Option<(i32, i16)> {
-        self.slot_item(play, self.cursor_index).map(|g| (g.can_buy(&play.save), g.actor.params))
+        self.slot_item(play, self.cursor_index).map(|g| (g.can_buy(&play.save), crate::en_girla::TYPE.get(g.actor.params)))
     }
 
     fn selected_give(&self, play: &mut PlayState) {
@@ -1527,7 +1593,7 @@ impl EnOssan {
         if !self.take_item_off_shelf(play) {
             return;
         }
-        if self.actor.params != OSSAN_TYPE_GORON {
+        if TYPE.get(self.actor.params) != OSSAN_TYPE_GORON {
             self.buy_prompt(play, Self::handle_can_buy_item);
             return;
         }
@@ -1549,7 +1615,7 @@ impl EnOssan {
         } else if talk_state == TEXT_STATE_CHOICE && !self.test_cancel_option(play) && play.message_should_advance() {
             match play.msg_ctx.choice_index {
                 0 => {
-                    let flag = match self.slot_item(play, self.cursor_index).map(|g| g.actor.params) {
+                    let flag = match self.slot_item(play, self.cursor_index).map(|g| crate::en_girla::TYPE.get(g.actor.params)) {
                         Some(SI_KEATON_MASK) => Some(ITEMGETINF_23),
                         Some(SI_SPOOKY_MASK) => Some(ITEMGETINF_25),
                         Some(SI_SKULL_MASK) => Some(ITEMGETINF_24),
@@ -1557,6 +1623,7 @@ impl EnOssan {
                         _ => None,
                     };
                     if let Some(f) = flag {
+                        // schema: ITEMGETINF_23 to ITEMGETINF_26
                         play.save.set_item_get_inf(f);
                     }
                     self.give_item_with_fanfare(play);
@@ -1613,8 +1680,8 @@ impl EnOssan {
     /// 0x6B, "anything else?".
     fn state_item_purchased(&mut self, play: &mut PlayState) {
         if play.message_state() == TEXT_STATE_DONE && play.message_should_advance() {
-            if self.actor.params == OSSAN_TYPE_MASK {
-                let temp_params = self.slot_item(play, self.cursor_index).map(|g| g.actor.params);
+            if TYPE.get(self.actor.params) == OSSAN_TYPE_MASK {
+                let temp_params = self.slot_item(play, self.cursor_index).map(|g| crate::en_girla::TYPE.get(g.actor.params));
                 self.reset_item_position(play);
                 self.selected_restock(play);
                 if temp_params == Some(SI_MASK_OF_TRUTH) && !play.save.get_item_get_inf(ITEMGETINF_3F) {
@@ -1899,9 +1966,11 @@ impl EnOssan {
     /// `EnOssan_SetupHelloDialog`: 0x9E, or the Happy Mask Shop's text for the masks' state.
     fn setup_hello_dialog(&mut self, play: &PlayState) -> u16 {
         self.happy_mask_shop_state = OSSAN_HAPPY_STATE_NONE;
-        if self.actor.params == OSSAN_TYPE_MASK {
+        if TYPE.get(self.actor.params) == OSSAN_TYPE_MASK {
             let s = &play.save;
+            // schema: the masks' ITEMGETINF_* flags
             let g = |f: u16| s.get_item_get_inf(f);
+            // schema: EVENTCHKINF_PAID_BACK_*
             let e = |f: u16| s.get_event_chk_inf(f);
             if s.inv_content(oot_game::item::ITEM_MASK_KEATON) == oot_game::item::ITEM_SOLD_OUT {
                 for (sold, paid, state, text) in [

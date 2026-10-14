@@ -7,6 +7,11 @@
 //! Zelda's letter (`INFTABLE_76`) or after the Master Sword it starts open, in Kakariko.
 //!
 //! The whole overlay is ported.
+//!
+//! Params: `params` whole unused (0xFFFF in the data).
+//! Flags: reads INFTABLE_76 (the guard has the letter: open from the start in Kakariko, and
+//! `openingState` 1 ignored) and EVENTCHKINF_OBTAINED_MASTER_SWORD (open from the start in
+//! Kakariko).
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, MeshKey};
@@ -14,6 +19,8 @@ use eng_math::approach_f;
 use glam::Vec3;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::audio::sfx::SFX_FLAG;
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -25,7 +32,7 @@ pub const ACTOR_BG_GATE_SHUTTER: i16 = 0x0100;
 pub const OBJECT: &str = "object_spot01_matoyab";
 
 /// `Bg_Gate_Shutter_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_GATE_SHUTTER, name: "Bg_Gate_Shutter", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_GATE_SHUTTER, name: "Bg_Gate_Shutter", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT, schema: &SCHEMA };
 
 /// `INFTABLE_76` (`save.h`: 0x76): the guard has taken Zelda's letter.
 pub const INFTABLE_76: u16 = 0x76;
@@ -33,6 +40,19 @@ pub const INFTABLE_76: u16 = 0x76;
 const EVENTCHKINF_OBTAINED_MASTER_SWORD: u16 = 0x45;
 /// `SCENE_KAKARIKO_VILLAGE` (`scene_table.h`: 0x52).
 const SCENE_KAKARIKO_VILLAGE: u16 = 0x52;
+
+/// The whole params: 0xFFFF in the game's data, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "0xFFFF in the data; read by nothing");
+
+/// Bg_Gate_Shutter's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(inf_table!(INFTABLE_76)).reads().note("the guard has the letter: open from the start"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_MASTER_SWORD)).reads().note("open from the start"),
+    ],
+    todo: false,
+};
 
 /// `actionFunc`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

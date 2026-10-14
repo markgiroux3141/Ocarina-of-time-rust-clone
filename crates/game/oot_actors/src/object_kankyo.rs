@@ -27,15 +27,17 @@
 //! `ObjectKankyo_InitBeams`, `_WaitForBeamObject`, `_Beams`, `_DrawBeams`; logged at init, it
 //! does nothing).
 //!
-//! Params: the kind (0 the fairy dust, 2 the lightning, 3 the snow, 4 the Sun's Song grave's
-//! spark, 5 Ganon's castle's beams: not ported).
-//! Flags: none (params 5 would read EVENTCHKINF_AD and EVENTCHKINF_BB to _BF).
+//! Params: `params` the whole params (0 the fairy dust, 2 the lightning, 3 the snow, 4 the Sun's
+//! Song grave's spark, 5 Ganon's castle's beams: not ported; any other does nothing).
+//! Flags: params 5 (not ported) reads EVENTCHKINF_BB to EVENTCHKINF_BF and EVENTCHKINF_AD, the
+//! trials' beams (in the schema, marked indirect while it isn't ported).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{cos_s, sin_s, smooth_step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_EV_NAVY_CRASH, NA_SE_EV_NAVY_FLY, NA_SE_VO_NA_HELLO_2, NA_SE_VO_NA_HELLO_3, NA_SE_VO_RT_THROW, SFX_FLAG, SfxPos};
 use oot_game::env::PRECIP_SNOW_MAX;
 use oot_game::gbi::setup_dl;
@@ -47,7 +49,28 @@ pub const ACTOR_OBJECT_KANKYO: i16 = 0x0097;
 
 /// `Object_Kankyo_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OBJECT_KANKYO, name: "Object_Kankyo", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OBJECT_KANKYO, name: "Object_Kankyo", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params` (`ObjectKankyo_Init`'s and `ObjectKankyo_Draw`'s switches): the effect.
+pub const PARAMS: Field = Field::whole(
+    "params",
+    Kind::Named(&[(0, "the fairy dust"), (2, "the lightning"), (3, "the snow"), (4, "the Sun's Song grave's spark"), (5, "Ganon's castle's beams")]),
+    "which effect",
+);
+
+/// Object_Kankyo's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_BB", 0xBB)).reads().note("params 5: the forest trial's beam gone").indirect("params 5 isn't ported"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_BC", 0xBC)).reads().note("params 5: the water trial's beam gone").indirect("params 5 isn't ported"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_BD", 0xBD)).reads().note("params 5: the shadow trial's beam gone").indirect("params 5 isn't ported"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_BE", 0xBE)).reads().note("params 5: the fire trial's beam gone").indirect("params 5 isn't ported"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_BF", 0xBF)).reads().note("params 5: the light trial's beam gone").indirect("params 5 isn't ported"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_AD", 0xAD)).reads().note("params 5: the spirit trial's beam gone").indirect("params 5 isn't ported"),
+    ],
+    todo: false,
+};
 
 /// `SCENE_KOKIRI_FOREST` (Kokiri Forest), `ENTR_KOKIRI_FOREST_0`.
 const SCENE_KOKIRI_FOREST: u16 = 0x55;
@@ -212,7 +235,7 @@ impl ObjectKankyo {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         actor.room = -1;
         let mut action = Action::None;
-        match actor.params {
+        match PARAMS.get(actor.params) {
             0 => {
                 let st = play.overlay_static::<Statics>(ACTOR_OBJECT_KANKYO);
                 if !st.is_spawned {
@@ -584,7 +607,7 @@ impl ActorImpl for ObjectKankyo {
     /// 0x100`.
     fn draw_update(&mut self, play: &mut PlayState) {
         self.drawn.clear();
-        self.cue_draw = match self.actor.params {
+        self.cue_draw = match PARAMS.get(self.actor.params) {
             2 => self.draw_lightning(play),
             4 => self.draw_sun_grave_spark(play),
             _ => None,

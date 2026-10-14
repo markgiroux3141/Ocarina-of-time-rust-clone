@@ -13,10 +13,12 @@
 //! Not ported: the splash and ripples where it falls in water (`EffectSsGSplash`,
 //! `EffectSsGRipple`). The bugs spawn as `En_Insect` (a placeholder).
 //!
-//! Params: `type` bits 0 and 1 (0 `gFieldBushDL` from `gameplay_field_keep`, gone when cut; 1
-//! `object_kusa`'s bush, regrowing; 2 `object_kusa`'s, staying a stump); `bugs` bit 4 (bugs hide
-//! in it); `drop_table` bits 8 to 11 (types 0 and 2's collectible drop table, 13 and up read as 0;
-//! type 1 drops seeds or a heart).
+//! Params: `type` bits 0 and 1 (`EnKusaType`: 0 `ENKUSA_TYPE_0`, `gFieldBushDL` from
+//! `gameplay_field_keep`, gone when cut; 1 `ENKUSA_TYPE_1`, `object_kusa`'s bush, regrowing; 2
+//! `ENKUSA_TYPE_2`, `object_kusa`'s, staying a stump); `bugs` bit 4 (1: bugs hide in it);
+//! `dropParams` bits 8 to 11 (types 0 and 2's collectible drop table, 13 and up read as 0; type 1
+//! drops seeds or a heart); bits 12 to 15 unused (the data writes some drops as 0xFF, the C reads
+//! four bits).
 //! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
@@ -26,6 +28,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_7,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::{KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_KEEP};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -38,7 +41,25 @@ const INSECT_TYPE_SPAWNED: i16 = 1;
 pub const ACTOR_FLAG_GRASS_DESTROYED: u32 = 1 << 11;
 
 /// `En_Kusa_Profile` (no draw until its object is in: `EnKusa_WaitForObject` sets it).
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KUSA, name: "En_Kusa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KUSA, name: "En_Kusa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 2)`: the bush.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    2,
+    Kind::Named(&[(0, "ENKUSA_TYPE_0: gone when cut"), (1, "ENKUSA_TYPE_1: regrows"), (2, "ENKUSA_TYPE_2: stays a stump")]),
+    "which bush, and what cutting it leaves",
+);
+/// `PARAMS_GET_U(this->actor.params, 4, 1)`: bugs in it.
+pub const BUGS: Field = Field::params("bugs", 4, 1, Kind::Named(&[(0, "no bugs"), (1, "bugs hide in it")]), "three bugs let out when it's cut or lifted");
+/// `PARAMS_GET_U(this->actor.params, 8, 4)`: the drop table.
+pub const DROP_TABLE: Field = Field::params("dropParams", 8, 4, Kind::Range(0, 15), "types 0 and 2's collectible drop table (13 and up: table 0)");
+/// Bits 12 to 15: the game's data writes some drops as 0xFF; the C reads four bits.
+pub const DROP_HIGH: Field = Field::params("dropParams bits 4 to 7", 12, 4, Kind::Unused, "0xF where the data writes a drop of 0xFF; read by nothing");
+
+/// En_Kusa's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, BUGS, DROP_TABLE, DROP_HIGH], flags: &[], todo: false };
 
 /// `OBJECT_GAMEPLAY_FIELD_KEEP`, `OBJECT_KUSA` (`object_table.h`).
 const OBJECT_GAMEPLAY_FIELD_KEEP: i16 = 0x0002;
@@ -131,7 +152,7 @@ pub struct EnKusa {
 
 impl EnKusa {
     fn ty(&self) -> i16 {
-        self.actor.params & 3
+        TYPE.get(self.actor.params)
     }
 
     /// `EnKusa_SetupAction`.
@@ -168,10 +189,11 @@ impl EnKusa {
             k.actor.kill();
             return Box::new(k);
         }
-        let ty = (k.actor.params & 3) as usize;
+        let ty = TYPE.get(k.actor.params) as usize;
         k.obj_bank = OBJECT_IDS.get(ty).and_then(|&o| play.object_ctx.get_index(o));
         if k.obj_bank.is_none() {
             // "Bank danger!"
+            // schema: printed
             log::debug!("En_Kusa {:#06x}: its object isn't in a bank", k.actor.params);
             k.actor.kill();
             return Box::new(k);
@@ -205,7 +227,7 @@ impl EnKusa {
                 item_drop_collectible(play, pos, id);
             }
             _ => {
-                let mut drop_params = (self.actor.params >> 8) & 0xF;
+                let mut drop_params = DROP_TABLE.get(self.actor.params);
                 if drop_params >= 0xD {
                     drop_params = 0;
                 }
@@ -257,7 +279,7 @@ impl EnKusa {
             self.spawn_fragments(play);
             self.drop_collectible(play);
             play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, oot_game::audio::sfx::NA_SE_EV_PLANT_BROKEN);
-            if (self.actor.params >> 4) & 1 != 0 {
+            if BUGS.get(self.actor.params) != 0 {
                 self.spawn_bugs(play);
             }
             if self.ty() == ENKUSA_TYPE_0 {

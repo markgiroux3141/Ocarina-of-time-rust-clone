@@ -11,6 +11,18 @@
 //! Naming: fields keep the decomp's `unk_XXX` names where the decomp has no name yet, so the
 //! port can be diffed against the C. File-scope statics (`sControlStickMagnitude` ...) live in
 //! `PlayerStatics`.
+//!
+//! Params (`PLAYER_PARAMS`, the scene's spawn list or a respawn's `playerParams`): `startBgCamIndex`
+//! bits 0 to 7 (`PLAYER_GET_START_BG_CAM_INDEX`: the scene's camera setting to start with, read by
+//! `Play_Init`; 0xFF none); `startMode` bits 8 to 11 (`PLAYER_GET_START_MODE`, `PlayerStartMode`:
+//! 0 nothing, 1 time travel, 2 blue warp, 3 a door, 4 a grotto, 5 a warp song, 6 Farore's Wind,
+//! 7 knocked over, 8 to 12 as 14, 13 idle, 14 a few slow steps, 15 a few steps at the exit's
+//! speed); bits 12 to 15 unused (0xF in the debug `depth_test_scene`). Init sets
+//! `respawn[RESPAWN_MODE_DOWN].playerParams` to idle with the same camera.
+//! Flags: `Player_Init` sets the scene's bit in `infTable[INFTABLE_INDEX_1AX]` (the scenes
+//! visited, for the pause map; not ported) and reads EVENTCHKINF_B0 and EVENTCHKINF_25 for the
+//! title card (ported in `oot_game::play_scene`); dismounting reads EVENTCHKINF_EPONA_OBTAINED (not
+//! ported); the debug fly mode's L and D-left sets the room's temp clear flag (not ported).
 
 #![allow(non_snake_case)] // fields keep the decomp's unk_XXX names
 
@@ -21,6 +33,7 @@ use eng_math::*;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PLAYER_BODYPART_WAIST, PlayerIface};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::cutscene::CsCmdActorCue;
 use oot_game::play_scene::{PlayIo, SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR, SCENE_SHADOW_TEMPLE, SCENE_KOKIRI_FOREST};
@@ -1461,14 +1474,14 @@ impl Player {
             let mut io = play.take_io();
             io.setup_respawn_point(RESPAWN_MODE_DOWN, 0xDFF, pos, yaw);
             io.save.respawn[RESPAWN_MODE_DOWN].data = 0;
-            io.save.respawn[RESPAWN_MODE_DOWN].player_params = (p.actor.params & 0xFF) | 0xD00;
+            io.save.respawn[RESPAWN_MODE_DOWN].player_params = START_MODE.put(START_BG_CAM_INDEX.get(p.actor.params), 13);
             play.put_io(io);
         } else {
             play.save.respawn[RESPAWN_MODE_DOWN].data = 0;
         }
         play.save.respawn[RESPAWN_MODE_DOWN].data = 1;
         p.unk_A84 = p.actor.world_pos.y as i16;
-        let mut init_mode = ((p.actor.params as u16 & 0xF00) >> 8) as u8;
+        let mut init_mode = START_MODE.get(p.actor.params) as u8;
         // The warp songs' and blue warps' starts are mode 13 in a cutscene layer.
         if (init_mode == 5 || init_mode == 6) && play.save.cutscene_index >= 0xFFF0 {
             init_mode = 13;
@@ -8464,6 +8477,7 @@ impl Player {
         }
         let mut door_direction = self.door_direction as i32;
         let (sp78, sp74) = (cos_s(door.shape_rot.y), sin_s(door.shape_rot.y));
+        // schema: the transition actor's index, put in the params' top bits at spawn
         let (door_params, door_category) = (door.params, door.category);
         let entry = env.transi_actors.get((door_params as u16 >> oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize).copied();
         if self.door_type == PLAYER_DOORTYPE_SLIDING {
@@ -8541,6 +8555,7 @@ impl Player {
         };
         let data = env.data;
         let anim = self.anim(data, group);
+        // schema: En_Door's params, read through its type field below
         let (door_pos, door_yaw, door_parent, door_params) = (door.world_pos, door.shape_rot.y, door.parent, door.params);
         self.setup_action(data, Action::DoorOpen, 0);
         self.put_away_held_item(data);
@@ -8566,7 +8581,7 @@ impl Player {
         self.state1 |= STATE1_29;
         // (Actor_DisableLens: there's no lens.)
         let side = if door_direction > 0 { 0 } else { 1 };
-        if (door_params as u16 >> 7) & 7 == DOOR_SCENEEXIT {
+        if crate::en_door::TYPE.get(door_params) as u16 == DOOR_SCENEEXIT {
             let check = Vec3::new(door_pos.x - sp6c * sp74, door_pos.y + 10.0, door_pos.z - sp6c * sp78);
             // BgCheck_EntityRaycastDown1. @bug (game): the poly's bgId is taken as BGCHECK_SCENE.
             let (_, ground_poly) = env.col.entity_raycast_down(check);
@@ -10005,6 +10020,8 @@ impl Player {
             // Something to lift (GI_NONE). Not with something in hand, unless it's the hookshot.
             if self.held_actor.is_none() || self.holds_hookshot(env.data) {
                 let Some(a) = env.target(ih) else { return false };
+                // schema: En_Ishi's params as the C reads them here, PARAMS_GET_U(params, 0, 4) (its own
+                // type field is bit 0; bits 1 to 3 are placed 0)
                 let (id, params) = (a.id, a.params);
                 if id == ACTOR_BG_TOKI_SWD && self.adult {
                     // The Master Sword pulled from its pedestal: PLAYER_IA_SWORD_CS and
@@ -10059,6 +10076,7 @@ impl Player {
             self.state1 &= !STATE1_11;
             return;
         };
+        // schema: En_Ishi's params as the C reads them here, PARAMS_GET_U(params, 0, 4)
         let (id, params, yaw_to_player, pos) = (a.id, a.params, a.yaw_towards_player, a.world_pos);
         if id == ACTOR_BG_TOKI_SWD {
             if let Some(h) = self.interact_range_actor {
@@ -11024,6 +11042,51 @@ pub const PROFILE: oot_game::actor_ctx::ActorProfile = oot_game::actor_ctx::Acto
     category: ACTORCAT_PLAYER,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA | ACTOR_FLAG_CAN_PRESS_SWITCHES,
     object: "gameplay_keep",
+    schema: &SCHEMA,
+};
+
+/// `PLAYER_GET_START_BG_CAM_INDEX`: `PARAMS_GET_S(params, 0, 8)`.
+pub const START_BG_CAM_INDEX: Field =
+    Field::params("startBgCamIndex", 0, 8, Kind::Range(0, 0xFF), "the scene's camera setting (bgCamList index) to start with, 0xFF none");
+/// `PLAYER_GET_START_MODE`: `PARAMS_GET_S(params, 8, 4)`.
+pub const START_MODE: Field = Field::params(
+    "startMode",
+    8,
+    4,
+    Kind::Named(&[
+        (0, "PLAYER_START_MODE_NOTHING"),
+        (1, "PLAYER_START_MODE_TIME_TRAVEL"),
+        (2, "PLAYER_START_MODE_BLUE_WARP"),
+        (3, "PLAYER_START_MODE_DOOR"),
+        (4, "PLAYER_START_MODE_GROTTO"),
+        (5, "PLAYER_START_MODE_WARP_SONG"),
+        (6, "PLAYER_START_MODE_FARORES_WIND"),
+        (7, "PLAYER_START_MODE_KNOCKED_OVER"),
+        (8, "PLAYER_START_MODE_UNUSED_8"),
+        (9, "PLAYER_START_MODE_UNUSED_9"),
+        (10, "PLAYER_START_MODE_UNUSED_10"),
+        (11, "PLAYER_START_MODE_UNUSED_11"),
+        (12, "PLAYER_START_MODE_UNUSED_12"),
+        (13, "PLAYER_START_MODE_IDLE"),
+        (14, "PLAYER_START_MODE_MOVE_FORWARD_SLOW"),
+        (15, "PLAYER_START_MODE_MOVE_FORWARD"),
+    ]),
+    "how Link comes in",
+);
+/// Bits 12 to 15: read by nothing (0xF in the debug `depth_test_scene`'s spawn).
+pub const BITS_12_15: Field = Field::params("params bits 12 to 15", 12, 4, Kind::Unused, "read by nothing (0xF in the debug depth_test_scene)");
+
+/// Player's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[START_BG_CAM_INDEX, START_MODE, BITS_12_15],
+    flags: &[
+        FlagUse::new(Flag::Other("infTable[INFTABLE_INDEX_1AX]")).sets().note("the scene's bit: the scenes visited, for the pause map (not ported)"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_B0", 0xB0)).reads().note("Dodongo's Cavern's title card").indirect("ported in oot_game::play_scene"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_25", 0x25)).reads().note("the Bombchu Shop's title card").indirect("ported in oot_game::play_scene"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_EPONA_OBTAINED", 0x18)).reads().note("dismounting: Epona's place kept").indirect("the horse isn't ported"),
+        FlagUse::new(Flag::TempClear).sets().note("debug: the fly mode's L and D-left").indirect("debug, not ported"),
+    ],
+    todo: false,
 };
 
 /// Indices into Player's `RenderState` extras.

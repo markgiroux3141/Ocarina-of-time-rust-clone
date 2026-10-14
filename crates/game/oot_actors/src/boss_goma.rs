@@ -30,6 +30,11 @@
 //!
 //! Not ported: the circle shadow (`ActorShadow_DrawCircle`, for no actor), the rumble
 //! (`Rumble_Override`, logged).
+//!
+//! Params: unused (the data's 0xFFFF).
+//! Flags: reads EVENTCHKINF_BEGAN_GOHMA_BATTLE (set: a second try, the intro cut short) and sets
+//! it as the fight starts; reads the room's clear flag (set: beaten, the warp and the heart
+//! container at once) and sets it at her death.
 
 use std::sync::Arc;
 
@@ -40,6 +45,8 @@ use eng_math::{approach_f, approach_s, approach_zero_f, atan2_s, cos_s, sin_s, s
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BOSS, ActorImpl, ActorProfile, actor_spawn_floor_dust_ring, audio_play_actor_sfx2, enemy_start_finishing_blow};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::audio::bgm::{seq_cmd1, start_seq};
 use oot_game::audio::sfx::*;
 use oot_game::audio::{NA_BGM_BOSS, NA_BGM_BOSS_CLEAR, SEQ_PLAYER_BGM_MAIN};
@@ -68,6 +75,20 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_BOSS,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// `params`: 0xFFFF in the data, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "0xFFFF in the data; read by nothing");
+
+/// Boss_Goma's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_BEGAN_GOHMA_BATTLE)).reads().sets().note("the fight begun: a second try skips the door and the look-at"),
+        FlagUse::new(Flag::Clear).reads().sets().note("beaten: the warp and the heart container at once; set at her death"),
+    ],
+    todo: false,
 };
 
 /// `WARP_DUNGEON_CHILD` (`DoorWarp1Type`).

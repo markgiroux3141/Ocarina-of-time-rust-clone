@@ -1,4 +1,4 @@
-//! `En_Niw` (`ovl_En_Niw/z_en_niw.c`): the cucco. `params` is its kind:
+//! `En_Niw` (`ovl_En_Niw/z_en_niw.c`): the cucco. Its params are its kind:
 //! - 0: the usual cucco, wandering about its home (`func_80AB6570`), carried and thrown;
 //! - 1, 3: the ranch's before and after Talon's return; 5, 7: before and after Epona; 2: at night;
 //! - 4: a cucco to pick up (`Actor_OfferGetItem` with `GI_NONE`), floating until then;
@@ -21,6 +21,17 @@
 //!
 //! Not ported here: the splash and ripples in water (`EffectSsGSplash`, `EffectSsGRipple`: the
 //! effects aren't ported).
+//!
+//! Params: `params` whole, the kind (negative: 0 at init; 0, 6 and 9 the usual cucco, 8 one that
+//! wanders nearer home; 1, 3 the ranch's before and after Talon's return; 5, 7 before and after
+//! Epona; 2 by night only; 4 to pick up, 0 once picked; 0xA the market girl's (`En_Niw_Girl`'s,
+//! never carried); 0xB, 0xC Zora's River's two; 0xD Talon's (`En_Ta`'s), flying off when let go; 0xE the ranch's that
+//! comes back; 0xA, 0xD and 0xE gone from Link's house until the cow is unlocked). In Kakariko a
+//! cucco placed at one of `sKakarikoPosList`'s seven places, brought back, starts by the pen as
+//! kind 0. The init's last params are printed.
+//! Flags: reads EVENTCHKINF_TALON_RETURNED_FROM_CASTLE (kinds 1, 3), EVENTCHKINF_EPONA_OBTAINED
+//! (5, 7), EVENTCHKINF_HORSE_RACE_COW_UNLOCK (0xA, 0xD, 0xE in Link's house) and INFTABLE_199 to
+//! INFTABLE_19F (Kakariko's cuccos brought back, `sKakarikoFlagList`).
 
 use std::sync::Arc;
 
@@ -35,6 +46,8 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_1, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, actor_set_player_knockback_large, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::camera::{CAM_ID_MAIN, f_atan2f};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range, offer_pick_up};
@@ -51,7 +64,59 @@ pub const ACTOR_EN_ATTACK_NIW: i16 = 0x0144;
 pub const OBJECT: &str = "object_niw";
 
 /// `En_Niw_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_NIW, name: "En_Niw", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_NIW, name: "En_Niw", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params`: the kind (negative: made 0 at init).
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (-1, "the usual cucco (made 0 at init)"),
+        (0x0, "the usual cucco"),
+        (0x1, "the ranch's, before Talon's return"),
+        (0x2, "by night only"),
+        (0x3, "the ranch's, after Talon's return"),
+        (0x4, "to pick up, floating till then"),
+        (0x5, "before Epona"),
+        (0x6, "the usual cucco"),
+        (0x7, "after Epona"),
+        (0x8, "wanders nearer home"),
+        (0x9, "the usual cucco"),
+        (0xA, "the market girl's, running her path"),
+        (0xB, "Zora's River's lower one"),
+        (0xC, "Zora's River's upper one"),
+        (0xD, "Talon's super cucco (En_Ta's): flies off when let go"),
+        (0xE, "the ranch's that comes back"),
+    ]),
+    "which cucco: where and when it's there, how it moves",
+);
+
+/// `INFTABLE_19A` to `INFTABLE_19F` (`save.h`).
+const INFTABLE_19A: u16 = 0x19A;
+const INFTABLE_19B: u16 = 0x19B;
+const INFTABLE_19C: u16 = 0x19C;
+const INFTABLE_19D: u16 = 0x19D;
+const INFTABLE_19E: u16 = 0x19E;
+const INFTABLE_19F: u16 = 0x19F;
+const KAKARIKO_FLAGS: &str = "sKakarikoFlagList[i], INFTABLE_199 + i";
+
+/// En_Niw's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("kind 1 gone after it, kind 3 before"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_EPONA_OBTAINED)).reads().note("kind 5 gone after it, kind 7 before"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_HORSE_RACE_COW_UNLOCK)).reads().note("kinds 0xA, 0xD, 0xE in Link's house: gone before it"),
+        FlagUse::new(inf_table!(INFTABLE_199)).reads().note("Kakariko's cucco 0 brought back").indirect(KAKARIKO_FLAGS),
+        FlagUse::new(inf_table!(INFTABLE_19A)).reads().note("Kakariko's cucco 1 brought back").indirect(KAKARIKO_FLAGS),
+        FlagUse::new(inf_table!(INFTABLE_19B)).reads().note("Kakariko's cucco 2 brought back").indirect(KAKARIKO_FLAGS),
+        FlagUse::new(inf_table!(INFTABLE_19C)).reads().note("Kakariko's cucco 3 brought back").indirect(KAKARIKO_FLAGS),
+        FlagUse::new(inf_table!(INFTABLE_19D)).reads().note("Kakariko's cucco 4 brought back").indirect(KAKARIKO_FLAGS),
+        FlagUse::new(inf_table!(INFTABLE_19E)).reads().note("Kakariko's cucco 5 brought back").indirect(KAKARIKO_FLAGS),
+        FlagUse::new(inf_table!(INFTABLE_19F)).reads().note("Kakariko's cucco 6 brought back").indirect(KAKARIKO_FLAGS),
+    ],
+    todo: false,
+};
+
 
 // `SCENE_*` (`scene_table.h`).
 const SCENE_LINKS_HOUSE: u16 = 0x34;
@@ -341,12 +406,12 @@ impl EnNiw {
             actor,
         };
         let a = &mut this.actor;
-        if a.params < 0 {
+        if TYPE.get(a.params) < 0 {
             a.params = 0;
         }
 
         // The cucco at the very beginning of Zora's River.
-        if a.params == 0xB {
+        if TYPE.get(a.params) == 0xB {
             let s = play.overlay_static::<Statics>(ACTOR_EN_NIW);
             if s.lower_river_spawned {
                 a.kill();
@@ -358,7 +423,7 @@ impl EnNiw {
         }
 
         // The cucco on the tall platform in Zora's River's first room.
-        if a.params == 0xC {
+        if TYPE.get(a.params) == 0xC {
             let s = play.overlay_static::<Statics>(ACTOR_EN_NIW);
             if s.upper_river_spawned {
                 a.kill();
@@ -382,7 +447,7 @@ impl EnNiw {
                 if (a.world_pos.x - p.x).abs() < 40.0 && (a.world_pos.z - p.z).abs() < 40.0 {
                     this.unk_2aa = i as i16;
                     log::debug!("En_Niw: normal chicken index {i}");
-                    if play.save.get_inf_table(INFTABLE_199 + i as u16) {
+                    if play.save.get_inf_table(INFTABLE_199 + i as u16) { // schema: sKakarikoFlagList[i]
                         a.world_pos = Vec3::new(300.0, 100.0, 1530.0);
                         a.params = 0;
                     }
@@ -400,7 +465,7 @@ impl EnNiw {
         }
 
         let s = &play.save;
-        match a.params {
+        match TYPE.get(a.params) {
             2 => {
                 if s.is_day() {
                     a.kill();
@@ -427,7 +492,7 @@ impl EnNiw {
                 }
             }
             0xD | 0xE => {
-                if a.params == 0xD {
+                if TYPE.get(a.params) == 0xD {
                     a.gravity = 0.0;
                 }
                 a.col_chk_info.mass = 0;
@@ -437,9 +502,9 @@ impl EnNiw {
             _ => {}
         }
 
-        match a.params {
+        match TYPE.get(a.params) {
             0xA | 0xD | 0xE => {
-                if a.params == 0xA {
+                if TYPE.get(a.params) == 0xA {
                     a.col_chk_info.mass = MASS_IMMOVABLE;
                 }
                 this.collider = ColliderCylinder::new(&CYLINDER_INIT2);
@@ -450,7 +515,7 @@ impl EnNiw {
             _ => this.collider = ColliderCylinder::new(&CYLINDER_INIT1),
         }
 
-        log::debug!("En_Niw: what kind of guy? {}", a.params);
+        log::debug!("En_Niw: what kind of guy? {}", a.params); // schema: printed
         this.action = Action::ResetAction;
         Box::new(this)
     }
@@ -463,7 +528,7 @@ impl EnNiw {
     /// `func_80AB5BF8`: the head, wings and tail's flapping, by `arg2` (0 still, 1 pecking, 2
     /// flapping, 3 to 5 the calling's).
     fn func_80ab5bf8(&mut self, play: &mut PlayState, arg2: i16) {
-        let factor = if self.actor.params == 0xD { 2.0 } else { 1.0 };
+        let factor = if TYPE.get(self.actor.params) == 0xD { 2.0 } else { 1.0 };
         if self.timer1 == 0 {
             self.unk_26c[0] = if arg2 == 0 { 0.0 } else { -10000.0 * factor };
             self.unk_298 = self.unk_298.wrapping_add(1);
@@ -636,7 +701,7 @@ impl EnNiw {
     /// `EnNiw_ResetAction`.
     fn reset_action(&mut self) {
         self.change_anim();
-        self.action = match self.actor.params {
+        self.action = match TYPE.get(self.actor.params) {
             4 => Action::Func80AB6450,
             0xD => Action::Func80AB6324,
             _ => Action::Func80AB6570,
@@ -686,7 +751,7 @@ impl EnNiw {
         let mut pos_y = play.rand.centered_float(100.0);
         let mut pos_z = play.rand.centered_float(100.0);
 
-        if self.actor.params != 0xA {
+        if TYPE.get(self.actor.params) != 0xA {
             if actor_has_parent(&self.actor) {
                 self.grabbed(play);
                 return;
@@ -722,7 +787,7 @@ impl EnNiw {
             if self.unk_29e >= 8 {
                 self.timer5 = play.rand.zero_float(30.0) as i16;
                 self.unk_29e = play.rand.zero_float(3.99) as i16;
-                if self.actor.params != 0xA && self.actor.params != 8 {
+                if TYPE.get(self.actor.params) != 0xA && TYPE.get(self.actor.params) != 8 {
                     pos_y += if pos_y < 0.0 { -100.0 } else { 100.0 };
                     pos_z += if pos_z < 0.0 { -100.0 } else { 100.0 };
                 } else {
@@ -805,7 +870,7 @@ impl EnNiw {
         self.actor.shape_rot.z = play.rand.centered_float(5000.0) as i16;
         // Actor_HasNoParent.
         if !actor_has_parent(&self.actor) {
-            if self.actor.params == 0xD {
+            if TYPE.get(self.actor.params) == 0xD {
                 self.sfx_timer1 = 0;
                 self.unk_2a6 = 1;
                 self.action = Action::Func80AB6EB4;
@@ -827,7 +892,7 @@ impl EnNiw {
             if self.actor.bg_check_flags & BGCHECKFLAG_GROUND == 0 {
                 return;
             }
-            if self.actor.params == 0xE {
+            if TYPE.get(self.actor.params) == 0xE {
                 self.reset_home();
                 self.action = Action::ResetAction;
                 return;
@@ -985,7 +1050,7 @@ impl EnNiw {
     fn func_80ab7328(&mut self, play: &mut PlayState) {
         if self.timer6 == 0 {
             self.reset_home();
-            if self.actor.params == 4 {
+            if TYPE.get(self.actor.params) == 4 {
                 self.actor.params = 0;
             }
             self.action = Action::ResetAction;
@@ -1007,7 +1072,7 @@ impl EnNiw {
 
     /// `func_80AB747C`: struck: a cry, feathers, a strike counted, and away from Link.
     fn func_80ab747c(&mut self, play: &mut PlayState) {
-        if self.unk_2a8 == 0 && self.actor.params != 0xA && self.action != Action::Func80AB6450 && self.collider.base.ac_flags & AC_HIT != 0 {
+        if self.unk_2a8 == 0 && TYPE.get(self.actor.params) != 0xA && self.action != Action::Func80AB6450 && self.collider.base.ac_flags & AC_HIT != 0 {
             self.collider.base.ac_flags &= !AC_HIT;
             self.sfx_timer1 = 30;
             if self.unk_2a4 > 0 && Self::statics(play).d_80ab85e0 == 0 {
@@ -1222,7 +1287,7 @@ impl ActorImpl for EnNiw {
             return;
         }
 
-        let params = self.actor.params;
+        let params = TYPE.get(self.actor.params);
         if self.actor.bg_check_flags & BGCHECKFLAG_WATER != 0 && self.actor.y_dist_to_water > 15.0 && self.action != Action::Func80AB6F04 && params != 0xD && params != 0xE && params != 0xA {
             self.actor.velocity.y = 0.0;
             self.actor.gravity = 0.0;
@@ -1282,7 +1347,7 @@ impl ActorImpl for EnNiw {
         }
         if self.unk_2a8 == 0 {
             self.collider.update(&self.actor);
-            let params = self.actor.params;
+            let params = TYPE.get(self.actor.params);
             if params != 0xA && params != 0xD && params != 0xE && params != 4 {
                 play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
             }

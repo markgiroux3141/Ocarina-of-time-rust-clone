@@ -9,13 +9,23 @@
 //!   when Link comes within range, holding Link (`Player_SetCsActionWithHaltedActors` mode 8) until it's read;
 //! - 3 (lock only): nothing, but it can be targeted.
 //!
-//! `rot.z` gives the range: `rot.z % 10` times 40, and `rot.z / 10` the `targetMode`.
+//! `rot.z` gives the range: past each 10 the next `targetMode` (`D_80B3A8E0`), and what's left
+//! (1 to 10) times 40 the trigger range.
 //!
 //! A forced text holds Link in Player's cutscene mode 8 (`Player_SetCsActionWithHaltedActors`) until it's read, then
 //! mode 7 lets him go.
+//!
+//! Params: `switchFlag` bits 0 to 5 (0x3F: none; set: gone);
+//! `baseMsgId` bits 6 to 13 (the text, `0x200 | baseMsgId`); `talkMode` bits 14 and 15 (0 talk,
+//! 1 a forced text, 4 in the Gerudo Training Ground but for flags 0x08, 0x16 and 0x2F; 2 talk
+//! without the flag; 3 only targetable). `world.rot.z`: the range (0 and below: none), past each 10
+//! the next `targetMode` (`D_80B3A8E0`: 6, 0 to 5; past 70 back to 6), the rest (1 to 10) times 40.
+//! Flags: reads switch flag `switchFlag` (set: gone, or no more talk) and sets it once its text
+//! is read (not in mode 2, nor the Gerudo Training Ground's mode 4).
 
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT, TEXT_STATE_NONE};
 use oot_game::npc::{EXCH_ITEM_NONE, offer_talk_range, process_talk_request};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -23,7 +33,41 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 pub const ACTOR_EN_WONDER_TALK2: i16 = 0x0185;
 
 /// `En_Wonder_Talk2_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_TALK2, name: "En_Wonder_Talk2", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_LOCK_ON_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_TALK2, name: "En_Wonder_Talk2", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_LOCK_ON_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set once its text is read (not in modes 2 and 4); set at init, it's gone (0x3F: none)");
+/// `PARAMS_GET_U(this->actor.params, 6, 8)`: the text, `0x200 | baseMsgId`.
+pub const BASE_MSG_ID: Field = Field::params("baseMsgId", 6, 8, Kind::Range(0, 0xFF), "its text, 0x200 | this");
+/// `PARAMS_GET_U(this->actor.params, 14, 2)`: how it talks.
+pub const TALK_MODE: Field = Field::params(
+    "talkMode",
+    14,
+    2,
+    Kind::Named(&[
+        (0, "talk: Link checks it, the flag set"),
+        (1, "forced: the text opens as Link comes near (mode 4 in the Gerudo Training Ground)"),
+        (2, "talk, the flag not set"),
+        (3, "nothing: only targetable"),
+    ]),
+    "how its text opens",
+);
+/// `this->actor.world.rot.z`: the range.
+pub const RANGE: Field = Field::rot(
+    "world.rot.z",
+    Source::RotZ,
+    0,
+    16,
+    Kind::Range(-0x8000, 0x7FFF),
+    "the range: past each 10 the next targetMode, the rest (1 to 10) times 40 (0 and below: none)",
+);
+
+/// En_Wonder_Talk2's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, BASE_MSG_ID, TALK_MODE, RANGE],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone; set once its text is read (not in modes 2 and 4)")],
+    todo: false,
+};
 
 /// `SCENE_GERUDO_TRAINING_GROUND` (the Gerudo Training Ground).
 const SCENE_GERUDO_TRAINING_GROUND: u16 = 0x0B;
@@ -62,11 +106,11 @@ pub struct EnWonderTalk2 {
 impl EnWonderTalk2 {
     /// `EnWonderTalk2_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let base_msg_id = (actor.params >> 6) & 0xFF;
+        let base_msg_id = BASE_MSG_ID.get(actor.params);
         let mut trigger_range = 0.0;
-        if actor.world_rot.z > 0 {
+        if RANGE.get(actor.world_rot.z) > 0 {
             let mut range_index = 0;
-            let mut rot_z_mod10 = actor.world_rot.z;
+            let mut rot_z_mod10 = RANGE.get(actor.world_rot.z);
             while rot_z_mod10 > 10 {
                 rot_z_mod10 -= 10;
                 range_index += 1;
@@ -78,8 +122,8 @@ impl EnWonderTalk2 {
             actor.target_mode = D_80B3A8E0[range_index];
         }
         let init_pos = actor.world_pos;
-        let mut switch_flag = actor.params & 0x3F;
-        let mut talk_mode = (actor.params >> 0xE) & 3;
+        let mut switch_flag = SWITCH_FLAG.get(actor.params);
+        let mut talk_mode = TALK_MODE.get(actor.params);
         if switch_flag == 0x3F {
             switch_flag = -1;
         }

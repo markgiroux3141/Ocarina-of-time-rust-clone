@@ -1,5 +1,4 @@
-//! `En_Ko` (`ovl_En_Ko/z_en_ko.c`): the Kokiri children, and Fado. `params & 0xFF` is the child
-//! (`ENKO_TYPE_CHILD_0` .. `_11`, `_FADO` 12); `params >> 8` a path.
+//! `En_Ko` (`ovl_En_Ko/z_en_ko.c`): the Kokiri children, and Fado.
 //!
 //! A child waits for its objects (the skeleton of `object_km1` for a boy or `object_kw1` for a
 //! girl, Fado's head in `object_fa`, and the animations in `object_os_anime`), then stands and
@@ -20,6 +19,18 @@
 //! Child 3, with the emerald, stands at its path's last point (`Path_CopyLastPoint`, GAME-06
 //! milestone 2). Not ported: Fado's saw trade in the Lost Woods, and the fairy each child has
 //! (`En_Elf` params 3: a placeholder).
+//!
+//! Params: `ENKO_TYPE` bits 0 to 7 (the child: `ENKO_TYPE_CHILD_0` to `_11`, 5 the shop's awning
+//! one, `ENKO_TYPE_CHILD_FADO` 12; 13 and up killed; with the scene it also says where the child
+//! is at each point of the story, `EnKo_CanSpawn`); `ENKO_PATH` bits 8 to 15 (`Path_GetByIndex`,
+//! 0xFF none: child 3's path, at whose last point it stands once Link has the Kokiri Emerald; the
+//! others' unused). `shape.rot.z` (child 7): 1 there only for adult Link before the Forest
+//! Medallion, 0 only otherwise (others killed).
+//! Flags: reads EVENTCHKINF_OBTAINED_ZELDAS_LETTER (the story's progress); reads INFTABLE_1E,
+//! INFTABLE_22, INFTABLE_24, INFTABLE_26, INFTABLE_28, INFTABLE_41, INFTABLE_47, INFTABLE_51,
+//! INFTABLE_59, INFTABLE_61 and INFTABLE_B7 (a child's first text read: the second one) and sets
+//! each once its text is read; Fado's saw trade (not ported) reads and sets INFTABLE_BC and sets
+//! ITEMGETINF_31 (the saw given).
 
 use std::sync::Arc;
 
@@ -30,6 +41,8 @@ use eng_math::{binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, Source};
+use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::collision_check::*;
 use oot_game::npc::{NpcTrack, track_point, actor_update_fidget_tables};
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
@@ -42,7 +55,68 @@ pub const ACTOR_EN_KO: i16 = 0x0163;
 const ACTOR_EN_ELF: i16 = 0x0018;
 
 /// `En_Ko_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KO, name: "En_Ko", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KO, name: "En_Ko", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `ENKO_TYPE`: `PARAMS_GET_S(this->actor.params, 0, 8)`.
+pub const TYPE: Field = Field::params(
+    "ENKO_TYPE",
+    0,
+    8,
+    Kind::Named(&[
+        (0, "ENKO_TYPE_CHILD_0"),
+        (1, "ENKO_TYPE_CHILD_1"),
+        (2, "ENKO_TYPE_CHILD_2"),
+        (3, "ENKO_TYPE_CHILD_3"),
+        (4, "ENKO_TYPE_CHILD_4"),
+        (5, "ENKO_TYPE_CHILD_5"),
+        (6, "ENKO_TYPE_CHILD_6"),
+        (7, "ENKO_TYPE_CHILD_7"),
+        (8, "ENKO_TYPE_CHILD_8"),
+        (9, "ENKO_TYPE_CHILD_9"),
+        (10, "ENKO_TYPE_CHILD_10"),
+        (11, "ENKO_TYPE_CHILD_11"),
+        (12, "ENKO_TYPE_CHILD_FADO"),
+    ]),
+    "which Kokiri: their look, texts and where they are in the story",
+);
+/// `ENKO_PATH`: `PARAMS_GET_S(this->actor.params, 8, 8)`, child 3's.
+pub const PATH: Field =
+    Field::params("ENKO_PATH", 8, 8, Kind::PathIndex, "child 3's path: with the Kokiri Emerald it stands at its last point (0xFF: none)").when("ENKO_TYPE", &[3]);
+/// `ENKO_PATH` for the others: read (`Path_GetByIndex`), never used.
+pub const PATH_UNUSED: Field = Field::params("ENKO_PATH (not child 3)", 8, 8, Kind::Unused, "read as the path, used by child 3 only; 0xFF in the data (0xD3 once)")
+    .when("ENKO_TYPE", &[0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+/// `this->actor.shape.rot.z`, child 7's: when it's there.
+pub const ROT_Z: Field = Field::rot(
+    "shape.rot.z",
+    Source::RotZ,
+    0,
+    16,
+    Kind::Named(&[(0, "child Link, or adult Link with the Forest Medallion"), (1, "adult Link before the Forest Medallion"), (2, "never (killed)")]),
+    "child 7: when it's there",
+)
+.when("ENKO_TYPE", &[7]);
+
+/// En_Ko's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, PATH, PATH_UNUSED, ROT_Z],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().note("the story's progress: the texts, the animations"),
+        FlagUse::new(inf_table!(INFTABLE_1E)).reads().sets().note("child 1's first text read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_22)).reads().sets().note("child 3's first text read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_24)).reads().sets().note("child 4's first text read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_26)).reads().sets().note("child 5's first text read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_28)).reads().sets().note("child 6's first text read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_41)).reads().sets().note("child 0's first text to adult Link read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_47)).reads().sets().note("child 2's first text to adult Link read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_51)).reads().sets().note("child 6's first text to adult Link read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_59)).reads().sets().note("child 8's first text to adult Link read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_61)).reads().sets().note("child 11's first text to adult Link read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_B7)).reads().sets().note("Fado's first text read").indirect("set from EnKo_UpdateTalkState's text table"),
+        FlagUse::new(inf_table!(INFTABLE_BC)).reads().sets().note("Fado's saw trade: the odd potion shown").indirect("the trade isn't ported; the set is a literal"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_31)).sets().note("Fado's saw given").indirect("the trade isn't ported"),
+    ],
+    todo: false,
+};
 
 // `OBJECT_*` (`object_table.h`).
 const OBJECT_OS_ANIME: i16 = 0x00C5;
@@ -99,6 +173,9 @@ const INFTABLE_51: u16 = 0x51;
 const INFTABLE_59: u16 = 0x59;
 const INFTABLE_61: u16 = 0x61;
 const INFTABLE_B7: u16 = 0xB7;
+const INFTABLE_BC: u16 = 0xBC;
+/// `ITEMGETINF_31` (`save.h`): Fado's saw given.
+const ITEMGETINF_31: u16 = 0x31;
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -361,7 +438,7 @@ pub struct EnKo {
 
 impl EnKo {
     fn ty(&self) -> u8 {
-        (self.actor.params & 0xFF) as u8
+        TYPE.get(self.actor.params) as u8
     }
 
     fn model(&self) -> &'static ModelInfo {
@@ -535,7 +612,7 @@ impl EnKo {
         if ty == ENKO_TYPE_CHILD_7 {
             let medallion = play.save.check_quest_item(QUEST_MEDALLION_FOREST);
             let want = if play.save.adult && !medallion { 1 } else { 0 };
-            if self.actor.shape_rot.z != want {
+            if ROT_Z.get(self.actor.shape_rot.z) != want {
                 self.actor.kill();
                 return;
             }
@@ -553,7 +630,7 @@ impl EnKo {
         self.appear_dist = appear;
         self.model_alpha = 0.0;
         // Path_GetByIndex(play, ENKO_PATH, 0xFF): ENKO_PATH (params' high byte) 0xFF is none.
-        let path_index = (self.actor.params >> 8) & 0xFF;
+        let path_index = PATH.get(self.actor.params);
         let path = (path_index != 0xFF).then(|| play.setup_path_list().get(path_index as usize).cloned()).flatten();
         let pos = self.actor.world_pos;
         if let Err(e) = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_ELF, pos, [0; 3], 3) {
@@ -1033,6 +1110,7 @@ fn update_talk_state(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16)
                 0x10BA => return 1,
                 _ => return 0,
             };
+            // schema: INFTABLE_* by the text read (the schema's flags)
             play.save.set_inf_table(flag);
             0
         }
@@ -1052,6 +1130,7 @@ fn update_talk_state(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16)
                     0x103E => Some(if ci == 0 { 0x103F } else { 0x1040 }),
                     0x10B7 | 0x10B8 => {
                         if actor.text_id == 0x10B7 {
+                            // schema: INFTABLE_BC
                             play.save.set_inf_table(0xBC);
                         }
                         actor.text_id = if ci == 0 { 0x10BA } else { 0x10B9 };

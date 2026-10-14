@@ -82,6 +82,10 @@ marked "debug". The paragraphs are prose that a script can lift: `name` bits a t
   offer.
 - The actors ported before this ADR have their configuration in prose. One pass with the actors
   tab writes their Params and Flags paragraphs (BACKLOG #52).
+  - **Since [ADR 0066](0066-the-actor-schema.md) (2026-10-14):** the configuration is also data,
+    a schema per actor that its code reads through and a test checks against the code and the
+    game's data. Each new actor comes with both the paragraphs and the schema, and #52's pass
+    was done for all 131 actors then, ahead of the actors tab.
 - The outline will be wrong in places (a story beat's actor first met earlier than planned, a
   system bigger than it looks). The survey at each phase's start corrects it, and the corrections
   go into the `SCENES` table and the outline together.

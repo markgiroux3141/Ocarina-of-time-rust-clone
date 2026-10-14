@@ -43,13 +43,14 @@
 //! Not ported here: `Rumble_Request` (no rumble); the circle shadow (`func_80033C30`, 0.25) is the
 //! usual stand-in (its alpha not applied).
 //!
-//! Params: bits 0 to 7 the type (`EnRdType`, bit 7 its sign: -3 a Gibdo rising out of its coffin,
-//! -2 a Gibdo, -1 a ReDead that never mourns, 0 one that doesn't mourn while walking, 1 a ReDead,
-//! 2 one crying, 3 an invisible one (`ACTOR_FLAG_REACT_TO_LENS`)); -1 and up use `gRedeadSkel`, the
-//! Gibdos `gGibdoSkel`. Bits 8 to 15 `rdFlags`: bit 15 (0x80) no scream's freeze; bits 8 to 14 the
-//! switch flag set at its death (0x7F in the royal tomb).
-//! Flags: sets switch flag `rdFlags & 0x7F` once dead (a flag of 0x40 and up lands on a temp flag
-//! by the shift's wrap: 0x7F sets 0x3F); reads and clears `gSaveContext.sunsSongState`.
+//! Params: `type` bits 0 to 7, signed (`EnRdType`: -3 a Gibdo rising out of its coffin, -2 a
+//! Gibdo, -1 a ReDead that never mourns, 0 one that doesn't mourn while walking, 1 a ReDead, 2 one
+//! crying, 3 an invisible one (`ACTOR_FLAG_REACT_TO_LENS`)); -1 and up use `gRedeadSkel`, the
+//! Gibdos `gGibdoSkel`; init writes the type over the whole params. `rdFlags` bits 8 to 15
+//! (`REDEAD_GET_RDFLAGS`): bit 15 (0x80) no scream's freeze; bits 8 to 14 the switch flag set at
+//! its death (0x7F in the royal tomb).
+//! Flags: reads and sets switch flag `rdFlags & 0x7F` once dead (a flag of 0x40 and up lands on a
+//! temp flag by the shift's wrap: 0x7F sets 0x3F); reads and clears `gSaveContext.sunsSongState`.
 
 use std::sync::Arc;
 
@@ -60,6 +61,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx_at, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::NA_SE_VO_LI_DAMAGE_S;
 use oot_game::clock::SUNSSONG_INACTIVE;
 use oot_game::collision_check::*;
@@ -89,6 +91,43 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ENEMY,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// The type: params bits 0 to 7 as an `s8` (`EnRd_Init` sign-extends them over the params).
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    8,
+    Kind::Named(&[
+        (-3, "REDEAD_TYPE_GIBDO_RISING_OUT_OF_COFFIN"),
+        (-2, "REDEAD_TYPE_GIBDO"),
+        (-1, "REDEAD_TYPE_DOES_NOT_MOURN"),
+        (0, "REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING"),
+        (1, "REDEAD_TYPE_REGULAR"),
+        (2, "REDEAD_TYPE_CRYING"),
+        (3, "REDEAD_TYPE_INVISIBLE"),
+    ]),
+    "which mummy, and whether it mourns, cries or hides from the lens",
+)
+.signed();
+/// `REDEAD_GET_RDFLAGS`: `PARAMS_GET_S(params, 8, 8)`.
+pub const RD_FLAGS: Field = Field::params("rdFlags", 8, 8, Kind::Range(0, 0xFF), "its scream's freeze (bit 15) and its death's switch flag (bits 8 to 14)");
+/// `rdFlags & 0x80`.
+pub const NO_FREEZE: Field =
+    Field::params("rdFlags & 0x80", 15, 1, Kind::Named(&[(0, "its scream freezes Link"), (1, "its scream doesn't")]), "whether its scream freezes Link").part_of("rdFlags");
+/// `rdFlags & 0x7F`.
+pub const SWITCH_FLAG: Field =
+    Field::params("rdFlags & 0x7F", 8, 7, Kind::SwitchFlag, "set once it's dead (0x40 and up land on a temp flag: 0x7F sets 0x3F)").part_of("rdFlags");
+
+/// En_Rd's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, RD_FLAGS, NO_FREEZE, SWITCH_FLAG],
+    flags: &[
+        FlagUse::new(Flag::Switch("rdFlags & 0x7F")).reads().sets().note("once dead"),
+        FlagUse::new(Flag::Other("gSaveContext.sunsSongState")).reads().clears().note("the Sun's Song stuns it"),
+    ],
+    todo: false,
 };
 
 // The sounds (`include/tables/sfx/enemybank_table.h`; none in `oot_game::audio::sfx` yet).
@@ -423,14 +462,11 @@ impl EnRd {
         actor.focus_pos.y += 50.0;
         actor.col_chk_info.mass = MASS_HEAVY;
         actor.col_chk_info.health = 8;
-        // REDEAD_GET_RDFLAGS: PARAMS_GET_S(params, 8, 8).
-        let rd_flags = (actor.params >> 8) & 0xFF;
-        if actor.params & 0x80 != 0 {
-            actor.params = (actor.params as u16 | 0xFF00) as i16;
-        } else {
-            actor.params &= 0xFF;
-        }
-        let gibdo = actor.params < REDEAD_TYPE_DOES_NOT_MOURN;
+        let rd_flags = RD_FLAGS.get(actor.params);
+        // PARAMS_GET_NOSHIFT(params, 7, 1): params |= 0xFF00, else params &= 0xFF; the type
+        // sign-extended.
+        actor.params = TYPE.get(actor.params);
+        let gibdo = TYPE.get(actor.params) < REDEAD_TYPE_DOES_NOT_MOURN;
         let skel_name = if gibdo { SKEL_GIBDO } else { SKEL_REDEAD };
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, skel_name).map_err(|e| log::error!("En_Rd: {e:#}")).ok());
         let anims = Anims::load(play);
@@ -463,13 +499,13 @@ impl EnRd {
             collider: ColliderCylinder::new(&CYLINDER_INIT),
             gibdo,
         };
-        if this.actor.params >= REDEAD_TYPE_GIBDO {
+        if TYPE.get(this.actor.params) >= REDEAD_TYPE_GIBDO {
             this.setup_idle(play);
         } else {
             this.setup_rise_from_coffin();
         }
         this.skel.update();
-        if this.actor.params == REDEAD_TYPE_INVISIBLE {
+        if TYPE.get(this.actor.params) == REDEAD_TYPE_INVISIBLE {
             this.actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
         }
         Box::new(this)
@@ -485,7 +521,7 @@ impl EnRd {
                 continue;
             }
             let Some(a) = play.actors.actor_mut(h) else { continue };
-            if a.id != ACTOR_EN_RD || a.params < REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING {
+            if a.id != ACTOR_EN_RD || TYPE.get(a.params) < REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING {
                 continue;
             }
             if should_mourn {
@@ -498,7 +534,7 @@ impl EnRd {
 
     /// `EnRd_SetupIdle`.
     fn setup_idle(&mut self, play: &mut PlayState) {
-        if self.actor.params != REDEAD_TYPE_CRYING {
+        if TYPE.get(self.actor.params) != REDEAD_TYPE_CRYING {
             // Animation_MorphToLoop(gGibdoRedeadIdleAnim, -6).
             if let Some(a) = self.anim(|a| &a.idle) {
                 self.skel.change(a, 1.0, 0.0, 0.0, ANIMMODE_LOOP, -6.0);
@@ -519,7 +555,7 @@ impl EnRd {
         self.skel.update();
         smooth_step_to_s(&mut self.head_y_rotation, 0, 1, 0x64, 0);
         smooth_step_to_s(&mut self.upper_body_y_rotation, 0, 1, 0x64, 0);
-        if self.actor.params == REDEAD_TYPE_CRYING && self.skel.cur_frame == 0.0 {
+        if TYPE.get(self.actor.params) == REDEAD_TYPE_CRYING && self.skel.cur_frame == 0.0 {
             let pick = if play.rand.zero_one() >= 0.5 { self.anim(|a| &a.sobbing) } else { self.anim(|a| &a.wiping_tears) };
             if let Some(a) = pick {
                 let last = a.last_frame();
@@ -535,7 +571,7 @@ impl EnRd {
         }
         if self.actor.parent.is_some() {
             if !self.is_mourning {
-                if self.actor.params != REDEAD_TYPE_CRYING {
+                if TYPE.get(self.actor.params) != REDEAD_TYPE_CRYING {
                     self.setup_walk_to_parent();
                 } else {
                     self.setup_stand_up();
@@ -543,7 +579,7 @@ impl EnRd {
             }
         } else {
             if self.is_mourning {
-                if self.actor.params != REDEAD_TYPE_CRYING {
+                if TYPE.get(self.actor.params) != REDEAD_TYPE_CRYING {
                     self.setup_attempt_player_freeze();
                 } else {
                     self.setup_stand_up();
@@ -553,7 +589,7 @@ impl EnRd {
             // func_8002DDE4: Player made a noise this frame (PLAYER_STATE2_3).
             let noisy = player_view(play).is_some_and(|p| p.state2 & player::STATE2_3 != 0);
             if self.actor.xz_dist_to_player <= 150.0 && noisy {
-                if self.actor.params != REDEAD_TYPE_CRYING && !self.is_mourning {
+                if TYPE.get(self.actor.params) != REDEAD_TYPE_CRYING && !self.is_mourning {
                     self.setup_attempt_player_freeze();
                 } else {
                     self.setup_stand_up();
@@ -676,7 +712,7 @@ impl EnRd {
                 self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 self.setup_grab();
             }
-        } else if self.actor.params > REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING {
+        } else if TYPE.get(self.actor.params) > REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING {
             if self.actor.parent.is_some() {
                 self.setup_walk_to_parent();
             } else {
@@ -704,7 +740,7 @@ impl EnRd {
         } else {
             self.actor.speed_xz = 0.0;
             if smooth_step_to_s(&mut self.actor.shape_rot.y, self.actor.home_rot.y, 1, 0x1C2, 0) == 0 {
-                if self.actor.params != REDEAD_TYPE_CRYING {
+                if TYPE.get(self.actor.params) != REDEAD_TYPE_CRYING {
                     self.setup_idle(play);
                 } else {
                     self.setup_crouch();
@@ -719,7 +755,7 @@ impl EnRd {
         if reachable {
             self.actor.target_mode = 0; // ATTENTION_RANGE_0
             self.setup_walk_to_player();
-        } else if self.actor.params > REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING {
+        } else if TYPE.get(self.actor.params) > REDEAD_TYPE_DOES_NOT_MOURN_IF_WALKING {
             if self.actor.parent.is_some() {
                 self.setup_walk_to_parent();
             } else {
@@ -751,7 +787,7 @@ impl EnRd {
                 self.actor.speed_xz = 0.4;
             } else {
                 self.actor.speed_xz = 0.0;
-                if self.actor.params != REDEAD_TYPE_CRYING {
+                if TYPE.get(self.actor.params) != REDEAD_TYPE_CRYING {
                     self.setup_idle(play);
                 } else {
                     self.setup_crouch();

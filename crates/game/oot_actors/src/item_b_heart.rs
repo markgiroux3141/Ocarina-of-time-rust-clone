@@ -6,12 +6,16 @@
 //! further from the camera than it (the warp's rays seen through it).
 //!
 //! Not ported: the culling volume (`cullingVolumeDistance` and the rest: no actor culls).
+//!
+//! Params: none (the bosses spawn it with 0).
+//! Flags: reads collectible flag 0x1F (set: gone at init) and sets it when Link takes it.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{approach_f, sin_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ACTORCAT_MISC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Flag, FlagUse};
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::item::GI_HEART_CONTAINER_2;
 use oot_game::pack::keys;
@@ -20,7 +24,11 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use crate::boss_goma::{ACTOR_DOOR_WARP1, ACTOR_ITEM_B_HEART};
 
 /// `Item_B_Heart_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ITEM_B_HEART, name: "Item_B_Heart", category: ACTORCAT_MISC, flags: 0, object: "object_gi_hearts" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ITEM_B_HEART, name: "Item_B_Heart", category: ACTORCAT_MISC, flags: 0, object: "object_gi_hearts", schema: &SCHEMA };
+
+/// Item_B_Heart's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema =
+    ActorSchema { fields: &[], flags: &[FlagUse::new(Flag::Collectible("0x1F")).reads().sets().note("the heart container taken: not spawned again")], todo: false };
 
 /// The room's collectible flag a heart container taken sets.
 const COLLECTIBLE_FLAG: i32 = 0x1F;

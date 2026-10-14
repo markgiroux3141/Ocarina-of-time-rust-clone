@@ -1,10 +1,15 @@
 //! `Obj_Hana` (`ovl_Obj_Hana/z_obj_hana.c`): a flower, a small rock or a bush from
 //! `gameplay_field_keep`, by `params & 3`. The rock and the bush have a body that Link bumps
-//! into (OC, `MASS_IMMOVABLE`).
+//! into (OC, `MASS_IMMOVABLE`). The bush is gone once Zelda's letter is had.
+//!
+//! Params: `type` bits 0 to 1 (`sHanaParams`: 0 a flower, 1 a small rock, 2 a bush).
+//! Flags: reads EVENTCHKINF_OBTAINED_ZELDAS_LETTER (type 2: the bush is gone).
 
 use eng_collision::math3d::Cylinder16;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::collision_check::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::save::EVENTCHKINF_OBTAINED_ZELDAS_LETTER;
@@ -12,7 +17,17 @@ use oot_game::save::EVENTCHKINF_OBTAINED_ZELDAS_LETTER;
 pub const ACTOR_OBJ_HANA: i16 = 0x014F;
 
 /// `Obj_Hana_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_HANA, name: "Obj_Hana", category: ACTORCAT_PROP, flags: 0, object: "gameplay_field_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_HANA, name: "Obj_Hana", category: ACTORCAT_PROP, flags: 0, object: "gameplay_field_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 2)`: which, an index into `sHanaParams`.
+pub const TYPE: Field = Field::params("type", 0, 2, Kind::Named(&[(0, "a flower"), (1, "a small rock"), (2, "a bush")]), "a flower, a small rock or a bush");
+
+/// Obj_Hana's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().note("type 2: the bush is gone")],
+    todo: false,
+};
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -56,12 +71,12 @@ pub struct ObjHana {
 impl ObjHana {
     fn params(&self) -> &'static HanaParams {
         // `params & 3`: 3 would read past the table.
-        &HANA_PARAMS[(self.actor.params & 3).min(2) as usize]
+        &HANA_PARAMS[TYPE.get(self.actor.params).min(2) as usize]
     }
 
     /// `ObjHana_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let ty = (actor.params & 3).min(2) as usize;
+        let ty = TYPE.get(actor.params).min(2) as usize;
         let p = &HANA_PARAMS[ty];
         // sInitChain: scale 0.01 (overwritten); cullingVolumeDistance 900, cullingVolumeScale 60,
         // cullingVolumeDownward 800.

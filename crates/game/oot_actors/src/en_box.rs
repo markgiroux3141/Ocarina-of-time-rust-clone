@@ -1,8 +1,6 @@
 //! `En_Box` (`ovl_En_Box/z_en_box.c`): the treasure chests.
 //!
-//! `params`: bits 12..15 the type (`EnBoxType`), bits 5..11 the get-item id, bits 0..4 the
-//! scene's treasure flag; `world.rot.z` is the switch flag (for the types that appear or fall
-//! on one). A chest is a DynaPoly actor (`gTreasureChestCol`, no ceiling) with a skeleton whose
+//! A chest is a DynaPoly actor (`gTreasureChestCol`, no ceiling) with a skeleton whose
 //! front (limb 1) and side-and-lid (limb 3) lists `EnBox_PostLimbDraw` adds.
 //!
 //! Waiting (`EnBox_WaitOpen`), it offers its item to a Link standing in front of it and facing
@@ -20,6 +18,20 @@
 //! falling chests' dust, the ice trap's smoke: their `Rand_ZeroOne` calls are made). The light
 //! (`Demo_Tre_Lgt`, `crate::demo_tre_lgt`) is ported but its draw; the sparkles (`Demo_Kankyo`)
 //! spawn as a placeholder.
+//!
+//! Params: `treasureFlag` bits 0 to 4 (`ENBOX_GET_TREASURE_FLAG`: the scene's treasure flag, set
+//! once opened; set at init, it starts open; 20 to 31 tell Player the nearest chest,
+//! `Actor_SetClosestSecretDistance`); `getItemId` bits 5 to 11 (`ENBOX_GET_GET_ITEM_ID`, a `GI_*`);
+//! `type` bits 12 to 15 (`ENBOX_GET_TYPE`, `EnBoxType`: 0 `ENBOX_TYPE_BIG_DEFAULT`, 1
+//! `ENBOX_TYPE_ROOM_CLEAR_BIG`, 2 `ENBOX_TYPE_DECORATED_BIG`, 3 `ENBOX_TYPE_SWITCH_FLAG_FALL_BIG`, 4
+//! `ENBOX_TYPE_4`, 5 `ENBOX_TYPE_SMALL`, 6 `ENBOX_TYPE_6`, 7 `ENBOX_TYPE_ROOM_CLEAR_SMALL`, 8
+//! `ENBOX_TYPE_SWITCH_FLAG_FALL_SMALL`, 9 `ENBOX_TYPE_LULLABY_BIG`, 10 `ENBOX_TYPE_SUNS_BIG`, 11
+//! `ENBOX_TYPE_SWITCH_FLAG_BIG`; 4 and 6 hidden from all but the lens). `world.rot.z` bits 0 to 7
+//! (`switchFlag`, a `u8`): types 3, 8 and 11's switch flag (it falls or appears once it's set);
+//! the others' unused (one placement sets 1). Init zeroes `rot.z`.
+//! Flags: reads and sets treasure flag `treasureFlag`; reads switch flag `switchFlag` (types 3, 8,
+//! 11); reads the room's temporary clear flag and the room's clear flag, setting the clear flag
+//! (types 1 and 7: they appear once the room's cleared).
 
 use std::sync::Arc;
 
@@ -29,6 +41,7 @@ use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_CHEST, ActorImpl, ActorProfile, cur_sfx_pos};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::*;
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::get_item::offer_get_item;
@@ -48,7 +61,51 @@ const COLLISION: &str = "gTreasureChestCol";
 const SKELETON: &str = "gTreasureChestSkel";
 
 /// `En_Box_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_BOX, name: "En_Box", category: ACTORCAT_CHEST, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_BOX, name: "En_Box", category: ACTORCAT_CHEST, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `ENBOX_GET_TREASURE_FLAG`: `PARAMS_GET_U(params, 0, 5)`.
+pub const TREASURE_FLAG: Field = Field::params("treasureFlag", 0, 5, Kind::ChestFlag, "set once opened; set at init, it starts open (20 to 31: the nearest is told)");
+/// `ENBOX_GET_GET_ITEM_ID`: `PARAMS_GET_U(params, 5, 7)`.
+pub const GET_ITEM_ID: Field = Field::params("getItemId", 5, 7, Kind::ItemId, "what's in it");
+/// `ENBOX_GET_TYPE`: `PARAMS_GET_U(params, 12, 4)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    12,
+    4,
+    Kind::Named(&[
+        (0, "ENBOX_TYPE_BIG_DEFAULT"),
+        (1, "ENBOX_TYPE_ROOM_CLEAR_BIG"),
+        (2, "ENBOX_TYPE_DECORATED_BIG"),
+        (3, "ENBOX_TYPE_SWITCH_FLAG_FALL_BIG"),
+        (4, "ENBOX_TYPE_4"),
+        (5, "ENBOX_TYPE_SMALL"),
+        (6, "ENBOX_TYPE_6"),
+        (7, "ENBOX_TYPE_ROOM_CLEAR_SMALL"),
+        (8, "ENBOX_TYPE_SWITCH_FLAG_FALL_SMALL"),
+        (9, "ENBOX_TYPE_LULLABY_BIG"),
+        (10, "ENBOX_TYPE_SUNS_BIG"),
+        (11, "ENBOX_TYPE_SWITCH_FLAG_BIG"),
+    ]),
+    "big or small, its look, and what makes it appear",
+);
+/// `this->switchFlag = this->dyna.actor.world.rot.z` (a `u8`).
+pub const SWITCH_FLAG: Field =
+    Field::rot("switchFlag", Source::RotZ, 0, 8, Kind::SwitchFlag, "it falls or appears once it's set").when("type", &[3, 8, 11]);
+/// `world.rot.z` of the other types: read into `switchFlag`, never used.
+pub const ROT_Z_UNUSED: Field = Field::rot("switchFlag (unused)", Source::RotZ, 0, 8, Kind::Unused, "read into switchFlag, used by types 3, 8 and 11 only; one placement sets 1")
+    .when("type", &[0, 1, 2, 4, 5, 6, 7, 9, 10]);
+
+/// En_Box's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TREASURE_FLAG, GET_ITEM_ID, TYPE, SWITCH_FLAG, ROT_Z_UNUSED],
+    flags: &[
+        FlagUse::new(Flag::Chest("treasureFlag")).reads().sets().note("set once opened; set, it starts open"),
+        FlagUse::new(Flag::Switch("switchFlag")).reads().note("types 3, 8 and 11: it falls or appears once it's set"),
+        FlagUse::new(Flag::Clear).reads().sets().note("types 1 and 7: cleared, it's there; the temporary clear made the room's"),
+        FlagUse::new(Flag::TempClear).reads().note("types 1 and 7: it appears once the room's cleared"),
+    ],
+    todo: false,
+};
 
 /// `EnBoxType`.
 pub const ENBOX_TYPE_BIG_DEFAULT: u8 = 0;
@@ -197,12 +254,12 @@ pub struct EnBox {
 
 impl EnBox {
     fn treasure_flag(&self) -> i32 {
-        (self.actor.params & 0x1F) as i32
+        TREASURE_FLAG.get(self.actor.params) as i32
     }
 
     /// The get-item id the chest holds (`params >> 5 & 0x7F`).
     pub fn get_item_id(&self) -> i16 {
-        (self.actor.params >> 5) & 0x7F
+        GET_ITEM_ID.get(self.actor.params)
     }
 
     /// The chest as the one-point cutscenes read it (it's out of the arena in its update).
@@ -239,8 +296,8 @@ impl EnBox {
         };
         play.col.dyna.disable_ceiling_collision(bg);
         let mut b = EnBox {
-            ty: ((actor.params >> 12) & 0xF) as u8,
-            switch_flag: actor.world_rot.z as u8,
+            ty: TYPE.get(actor.params) as u8,
+            switch_flag: SWITCH_FLAG.get(actor.world_rot.z) as u8,
             actor,
             bg,
             skel: None,
@@ -384,7 +441,7 @@ impl EnBox {
     /// The treasure chest shop's chests tell Player which is nearest (`Actor_SetClosestSecretDistance`: not
     /// ported, the chest game isn't).
     fn nearest_chest_check(&self) {
-        let f = self.actor.params & 0x1F;
+        let f = TREASURE_FLAG.get(self.actor.params);
         let _ = (ENBOX_TREASURE_FLAG_UNK_MIN..ENBOX_TREASURE_FLAG_UNK_MAX).contains(&f);
     }
 

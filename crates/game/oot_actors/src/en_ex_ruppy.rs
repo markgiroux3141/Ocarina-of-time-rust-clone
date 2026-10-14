@@ -10,18 +10,19 @@
 //! drop and sparkle (`Effect_Ss_KiraKira`, logged); the parent's sinking, collecting and ending
 //! (`EnExRuppy_EnterWater`, `_Sink`, `_WaitInGame`, `_Kill`) come with it.
 //!
-//! **Params:** the type (`EnExRuppyType`): 0 the diving game's (`world.rot.z` the throw's
-//! distance), 1 and 2 the large and small bomb rupees, 3 the courtyard's, 4 the shooting
-//! gallery's progress markers.
-//!
-//! **Flags:** reads `EVENTCHKINF_OBTAINED_SILVER_SCALE` (the diving game's rupees: 5 each until the
-//! scale is won).
+//! Params: `type` whole (`EnExRuppyType`: 0 the diving game's, 1 and 2 the large and small bomb
+//! rupees, 3 the courtyard's, 4 the shooting gallery's progress markers); spawned by
+//! `En_Diving_Game` (0), `En_Dnt_Nomal` and `En_Heishi1` (3), `En_Syateki_Itm` (4).
+//! `world.rot.z`: the throw's distance (type 0, `throwDistance`; init zeroes it).
+//! Flags: reads EVENTCHKINF_OBTAINED_SILVER_SCALE (type 0: 5 rupees each until the scale is won).
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::approach_f;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, Source};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_SY_GET_RUPY, SFX_FLAG};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -32,7 +33,7 @@ use crate::en_item00::{ITEM00_RUPEE_BLUE, ITEM00_RUPEE_GREEN, ITEM00_RUPEE_ORANG
 pub const ACTOR_EN_EX_RUPPY: i16 = 0x0131;
 
 /// `En_Ex_Ruppy_Profile`: `FLAGS` `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_EX_RUPPY, name: "En_Ex_Ruppy", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_EX_RUPPY, name: "En_Ex_Ruppy", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
 
 // EnExRuppyType.
 pub const ENEXRUPPY_TYPE_DIVING_GAME: i16 = 0;
@@ -43,6 +44,29 @@ pub const ENEXRUPPY_TYPE_SHOOTING_GALLERY_PROGRESS: i16 = 4;
 
 /// `EVENTCHKINF_OBTAINED_SILVER_SCALE` (`save.h`: 0x38).
 const EVENTCHKINF_OBTAINED_SILVER_SCALE: u16 = 0x38;
+
+/// `this->type = this->actor.params`.
+pub const TYPE: Field = Field::whole(
+    "type",
+    Kind::Named(&[
+        (0, "ENEXRUPPY_TYPE_DIVING_GAME"),
+        (1, "ENEXRUPPY_TYPE_BOMB_LARGE"),
+        (2, "ENEXRUPPY_TYPE_BOMB_SMALL"),
+        (3, "ENEXRUPPY_TYPE_HYRULE_COURTYARD"),
+        (4, "ENEXRUPPY_TYPE_SHOOTING_GALLERY_PROGRESS"),
+    ]),
+    "which rupee",
+);
+/// `this->throwDistance = this->actor.world.rot.z`.
+pub const THROW_DISTANCE: Field =
+    Field::rot("throwDistance", Source::RotZ, 0, 16, Kind::Range(-0x8000, 0x7FFF), "the diving game's throw: where it lands, 50 back a unit (En_Diving_Game's rupees left)").when("type", &[0]);
+
+/// En_Ex_Ruppy's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, THROW_DISTANCE],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_SILVER_SCALE)).reads().note("type 0: 5 rupees each until it's won")],
+    todo: false,
+};
 /// `NA_SE_EV_RAINBOW_SHOWER` (`environmentbank_table.h`: 0x28BC).
 const NA_SE_EV_RAINBOW_SHOWER: u16 = 0x28BC;
 /// `NA_SE_IT_BOMB_EXPLOSION` (`itembank_table.h`: 0x180E).
@@ -80,7 +104,7 @@ pub struct EnExRuppy {
 impl EnExRuppy {
     /// `EnExRuppy_Init`.
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let mut this = EnExRuppy { action: Action::None, color_idx: 0, ty: actor.params, invisible: 0, timer: 0, rupee_value: 0, throw_distance: 0, gallery_flag: 0, scale: 0.0, actor };
+        let mut this = EnExRuppy { action: Action::None, color_idx: 0, ty: TYPE.get(actor.params), invisible: 0, timer: 0, rupee_value: 0, throw_distance: 0, gallery_flag: 0, scale: 0.0, actor };
         log::debug!("☆☆☆☆☆ Index ☆☆☆☆☆ {:x}", this.ty);
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 25): no shadow drawn.
         this.actor.shape_y_offset = 0.0;
@@ -114,7 +138,7 @@ impl EnExRuppy {
                     this.color_idx = color;
                 }
                 this.actor.shape_y_offset = 700.0;
-                this.throw_distance = this.actor.world_rot.z;
+                this.throw_distance = THROW_DISTANCE.get(this.actor.world_rot.z);
                 this.actor.world_rot.z = 0;
                 this.timer = 30;
                 this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;

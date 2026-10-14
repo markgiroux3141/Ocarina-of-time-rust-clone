@@ -17,6 +17,12 @@
 //!
 //! The launched stone's explosion against a wall or ceiling is `EffectSsBomb2_SpawnLayered`
 //! (GAME-07 milestone 6).
+//!
+//! Params: `textId - 0x400` bits 0 to 7 (its hint: text 0x400 + it, with the Mask of Truth);
+//! `switchFlag` bits 8 to 13 (set by the song's fairy: no more fairies; the data's are temp flags,
+//! 0x38 and up).
+//! Flags: reads the switch flag `switchFlag` (set: a song gives nothing) and sets it as the fairy
+//! comes.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -27,6 +33,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_1,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_EN_STALKID_ATTACK, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_DONE;
@@ -43,7 +50,19 @@ pub const OBJECT: &str = "object_gs";
 
 /// `En_Gs_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_GS, name: "En_Gs", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: OBJECT };
+    ActorProfile { id: ACTOR_EN_GS, name: "En_Gs", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 8)`: the hint, `textId` 0x400 + it.
+pub const HINT: Field = Field::params("textId - 0x400", 0, 8, Kind::Range(0, 0xFF), "its hint: text 0x400 + it (with the Mask of Truth)");
+/// `PARAMS_GET_U(this->actor.params, 8, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 8, 6, Kind::SwitchFlag, "set as a song's fairy comes: no more fairies");
+
+/// En_Gs's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[HINT, SWITCH_FLAG],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as the fairy comes: no more")],
+    todo: false,
+};
 
 // Sound effects (`sfx/*_table.h`).
 const NA_SE_EV_BUTTERFRY_TO_FAIRY: u16 = 0x28E7;
@@ -261,7 +280,7 @@ impl EnGs {
     }
 
     fn switch_flag(&self) -> i32 {
-        ((self.actor.params >> 8) & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `func_80A4E3EC`: the talk's next state: 0 done, 1 on to the hint (the Mask of Truth's
@@ -271,7 +290,7 @@ impl EnGs {
         if play.message_state() == TEXT_STATE_DONE && play.message_should_advance() {
             match self.actor.text_id {
                 0x2054 => {
-                    self.actor.text_id = (self.actor.params & 0xFF) as u16 + 0x400;
+                    self.actor.text_id = HINT.get(self.actor.params) as u16 + 0x400;
                     ret = 1;
                 }
                 _ => ret = 0,

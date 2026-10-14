@@ -1,10 +1,6 @@
 //! `En_St` (`ovl_En_St/z_en_st.c`): the Skulltula, a big spider hanging from the ceiling on its
 //! thread that drops in front of Link, armoured in front and soft on its back.
 //!
-//! Params: 0 the normal one, 1 the big one (1.4 times the size: its scale, colliders and
-//! hover height), 2 the invisible one (`ACTOR_FLAG_REACT_TO_LENS`). The Deku Tree's two (MQ:
-//! room 2 at (-1257, 748, 1249), room 5 at (-1347, -806, 1079)) are both 0.
-//!
 //! - **On the ceiling** (`EnSt_WaitOnCeiling`): bobbing (`EnSt_Bob`: up and down by 0.5 as
 //!   `play->state.frames & 8` says), until Link is within 160 across, below it (up to 400) and
 //!   not below its floor; then it **drops** (`EnSt_MoveToGround`) at 10 a frame,
@@ -48,6 +44,12 @@
 //! `TOTAL_EFFECT_COUNT`, `Effect_GetByIndex` gives NULL and the trail's calls do nothing, as
 //! they do in the C with no slot free. The generic circle shadow (`ActorShadow_DrawCircle`)
 //! isn't ported for any actor.
+//!
+//! Params: `params` the whole params (0 the normal one; 1 the big one, 1.4 times the size: its
+//! scale, colliders and hover height, and Navi's `NAVI_ENEMY_BIG_SKULLTULA`; 2 the invisible one,
+//! `ACTOR_FLAG_REACT_TO_LENS`). The Deku Tree's two (MQ: room 2 at (-1257, 748, 1249), room 5 at
+//! (-1347, -806, 1079)) are both 0.
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -58,6 +60,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx_at, audio_play_actor_sfx2, enemy_start_finishing_blow};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
@@ -81,7 +84,14 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ENEMY,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
 };
+
+/// `this->actor.params`: which Skulltula.
+pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "a Skulltula"), (1, "a big Skulltula"), (2, "an invisible Skulltula")]), "the normal, big or invisible one");
+
+/// En_St's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 /// `NAVI_ENEMY_SKULLTULA`, `NAVI_ENEMY_BIG_SKULLTULA` (`actor.h`).
 const NAVI_ENEMY_SKULLTULA: u8 = 0x04;
@@ -384,10 +394,10 @@ impl EnSt {
         s.change_by_info(ENST_ANIM_0);
         s.blure_idx = Self::create_blure_effect(play);
         s.init_colliders();
-        if s.actor.params == 2 {
+        if TYPE.get(s.actor.params) == 2 {
             s.actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
         }
-        s.actor.navi_enemy_id = if s.actor.params == 1 { NAVI_ENEMY_BIG_SKULLTULA } else { NAVI_ENEMY_SKULLTULA };
+        s.actor.navi_enemy_id = if TYPE.get(s.actor.params) == 1 { NAVI_ENEMY_BIG_SKULLTULA } else { NAVI_ENEMY_SKULLTULA };
         s.check_ceiling_pos(play);
         s.actor.flags |= ACTOR_FLAG_CAN_ATTACH_TO_ARROW;
         s.actor.flags |= ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT;
@@ -729,7 +739,7 @@ impl EnSt {
     /// cylinder's shift, radius and height, the scale (0.04) and the hover height (32).
     fn set_collider_scale(&mut self) {
         let mut scale_amount = 1.0f32;
-        if self.actor.params == 1 {
+        if TYPE.get(self.actor.params) == 1 {
             scale_amount = 1.4;
         }
         let e = &mut self.collider_jnt_sph.elements[0];

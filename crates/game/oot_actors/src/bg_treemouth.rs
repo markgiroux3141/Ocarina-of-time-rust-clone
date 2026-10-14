@@ -27,6 +27,11 @@
 //! (`(TEXEL1 - TEXEL0) * ENV_ALPHA + TEXEL0`), as the scene draw config's segment 0x0B does
 //! for the tree. It's a bake with the env colour on dynamic segment 0x0B
 //! (docs/adr/0018-bg-treemouth.md).
+//!
+//! Params: none read (the data places 0xFFFF).
+//! Flags: reads EVENTCHKINF_0C (the first talk had: Z-targeting asks again) and sets it at the
+//! first talk; reads EVENTCHKINF_05 (the mouth open) and sets it on yes; reads EVENTCHKINF_07 (the
+//! tree dead: the draw's alpha).
 
 use std::sync::Arc;
 
@@ -37,6 +42,8 @@ use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::cutscene::{CS_STATE_IDLE, CS_STATE_RUN, CS_STATE_STOP};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -50,7 +57,21 @@ pub const COLLISION: &str = "gDekuTreeMouthCol";
 pub const DISPLAY_LIST: &str = "gDekuTreeMouthDL";
 
 /// `Bg_Treemouth_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TREEMOUTH, name: "Bg_Treemouth", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TREEMOUTH, name: "Bg_Treemouth", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// The params: read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "0xFFFF in the data; read by nothing");
+
+/// Bg_Treemouth's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_05)).reads().sets().note("the mouth open: set when Link answers yes"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_07)).reads().note("the tree dead: the draw's alpha"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_0C)).reads().sets().note("the first talk had: Z-targeting the tree asks again"),
+    ],
+    todo: false,
+};
 
 /// `DynaPolyActor_Init`'s flags: 0, no `DYNA_TRANSFORM_*` (the mouth carries nothing standing on it).
 const TRANSFORM_FLAGS: u32 = 0;

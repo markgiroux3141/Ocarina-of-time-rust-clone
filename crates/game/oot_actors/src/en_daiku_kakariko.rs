@@ -31,9 +31,11 @@
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
 //!
 //! Params: `type` bits 0 to 1 (`ENDAIKUKAKARIKO_GET_TYPE`: 0 Ichiro, 1 Sabooro, 2 Jiro, 3 Shiro:
-//! the trousers' colour, the head, `initFlags`, the texts); `path index` bits 8 to 15
-//! (`ENDAIKUKAKARIKO_GET_PATH_INDEX`: the scene path a runner runs).
-//! Flags: sets INFTABLE_176 (after text 0x6061) and INFTABLE_178 (after 0x6064), never reached.
+//! the trousers' colour, the head, `initFlags`, the texts); `pathIndex` bits 8 to 15
+//! (`ENDAIKUKAKARIKO_GET_PATH_INDEX`: the scene path a runner runs, types 1 to 3 in Kakariko by
+//! day). `Bg_Spot01_Objects2` spawns Sabooro with `(path << 8) + 1`.
+//! Flags: sets INFTABLE_176 (after text 0x6061) and INFTABLE_178 (after 0x6064), texts that
+//! aren't his: never reached.
 
 use std::sync::Arc;
 
@@ -44,7 +46,9 @@ use eng_math::{smooth_step_to_f, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::collision_check::*;
+use oot_game::inf_table;
 use oot_game::message::TEXT_STATE_DONE;
 use oot_game::npc::{NpcTrack, offer_talk, process_talk_request, track_point};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -64,6 +68,28 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_NPC,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// `ENDAIKUKAKARIKO_GET_TYPE`: `PARAMS_GET_U(params, 0, 2)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    2,
+    Kind::Named(&[(0, "CARPENTER_ICHIRO"), (1, "CARPENTER_SABOORO"), (2, "CARPENTER_JIRO"), (3, "CARPENTER_SHIRO")]),
+    "which carpenter: his trousers, head, behaviour and texts",
+);
+/// `ENDAIKUKAKARIKO_GET_PATH_INDEX`: `PARAMS_GET_U(params, 8, 8)`.
+pub const PATH_INDEX: Field = Field::params("pathIndex", 8, 8, Kind::PathIndex, "the path a runner runs (types 1 to 3, in Kakariko by day)");
+
+/// En_Daiku_Kakariko's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, PATH_INDEX],
+    flags: &[
+        FlagUse::new(inf_table!(INFTABLE_176)).sets().note("after text 0x6061, which isn't his: never"),
+        FlagUse::new(inf_table!(INFTABLE_178)).sets().note("after text 0x6064, which isn't his: never"),
+    ],
+    todo: false,
 };
 
 // `KakarikoCarpenterType`.
@@ -222,12 +248,12 @@ pub struct EnDaikuKakariko {
 impl EnDaikuKakariko {
     /// `ENDAIKUKAKARIKO_GET_TYPE`.
     pub fn ty(&self) -> i16 {
-        self.actor.params & 3
+        TYPE.get(self.actor.params)
     }
 
     /// `ENDAIKUKAKARIKO_GET_PATH_INDEX`.
     pub fn path_index(&self) -> usize {
-        ((self.actor.params as u16 >> 8) & 0xFF) as usize
+        PATH_INDEX.get(self.actor.params) as usize
     }
 
     /// `EnDaikuKakariko_Init`.

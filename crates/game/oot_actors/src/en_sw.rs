@@ -2,10 +2,8 @@
 //! then and dashes at Link while he climbs near it, and the Gold Skulltula, which walks its wall
 //! or floor turning on the spot and leaves a Gold Skulltula Token (`En_Si`) when killed.
 //!
-//! Params (after `EnSw_Init`'s conversion): bits 13..15 the type, 8..12 the Gold Skulltula
-//! flags' index (`GET_GS_FLAGS`), 0..7 its flag. A placed Gold Skulltula has 0x8000 set: its
-//! type becomes 1 more than bits 13..15 and its index 1 less than bits 8..12 (the scene's
-//! number + 1). Types:
+//! Its params (after `EnSw_Init`'s conversion; see Params below): bits 13..15 the type, 8..12
+//! the Gold Skulltula flags' index (`GET_GS_FLAGS`), 0..7 its flag. Types:
 //! - **0, the Skullwalltula** (an enemy): it finds its wall 60 behind it (`func_80B0DFFC`) and
 //!   **turns** on it by 0x2EE0 to 0x7C00 at random, waiting 10 to 40 frames between turns
 //!   (`func_80B0E5E0`). With Link climbing (`PLAYER_STATE1_21`) within 130, in its sight
@@ -29,6 +27,19 @@
 //! on the Gold Skulltula's texgen limbs is lit from the camera's view, not from the eye towards
 //! the actor); limb 4's env colour (`unk_1F4`, never written: black, which none of the limbs'
 //! combiners reads). `sAnimationInfo`'s other three entries are never played.
+//!
+//! Params: `type` bits 13 to 15 (`PARAMS_GET_S(params, 13, 3)`: 0 a Skullwalltula; with bit 15 set
+//! (0x8000, as placed and as `Obj_Kibako2`, `Obj_Makekinsuta` and `En_Wood02` spawn them) a Gold
+//! Skulltula, whose type init makes bits 13 and 14 plus 1: 4 type 1, walking its surface; 5 type
+//! 2, out only at night; 6 type 3 and 7 type 4, jumping out with the chime); `gsIndex` bits 8 to
+//! 12 (`PARAMS_GET_S(params, 8, 5)`: its token's `GET_GS_FLAGS` index, the scene's; a Gold
+//! Skulltula's is placed 1 more, and init takes 1 off); `gsFlag` bits 0 to 7 (`PARAMS_GET_S(params,
+//! 0, 8)`: its token's flag, a bit of that byte). Init writes the converted type and index over
+//! the params; the token (`En_Si`) gets them whole. `world.rot.x` and `.z` are placed (0x4000 on a
+//! wall) but only a rotation: a Skullwalltula's are zeroed at init, a Gold Skulltula's replaced by
+//! its surface's once it finds one.
+//! Flags: reads its token's Gold Skulltula flag (`GET_GS_FLAGS(gsIndex) & gsFlag`: set, it isn't
+//! spawned); the token sets it.
 
 use std::sync::Arc;
 
@@ -39,6 +50,7 @@ use eng_gfx::{DrawCmd, DrawParams, MeshKey};
 use eng_math::{approach_f, atan2_s, cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile, actor_spawn_floor_dust_ring, audio_play_actor_sfx2, enemy_start_finishing_blow, func_8002ddf4};
 use oot_game::audio::sfx::*;
 use oot_game::camera::f_atan2f;
@@ -63,6 +75,40 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: oot_game::actor_ctx::ACTORCAT_NPC,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// `PARAMS_GET_S(thisx->params, 0, 8)`: its token's flag.
+pub const GS_FLAG: Field = Field::params("gsFlag", 0, 8, Kind::Range(0, 0xFF), "its token's flag, a bit of GET_GS_FLAGS(gsIndex) (set: it isn't spawned)");
+/// `PARAMS_GET_S(thisx->params, 8, 5)`: its token's `GET_GS_FLAGS` index.
+pub const GS_INDEX: Field = Field::params("gsIndex", 8, 5, Kind::Range(0, 0x1F), "its token's GS flags index, the scene's (a Gold Skulltula's placed 1 more)");
+/// `PARAMS_GET_S(thisx->params, 13, 3)`: the type (`PARAMS_GET_NOSHIFT(thisx->params, 15, 1)`, its
+/// top bit, set: a Gold Skulltula, its type bits 13 and 14 plus 1).
+pub const TYPE: Field = Field::params(
+    "type",
+    13,
+    3,
+    Kind::Named(&[
+        (0, "a Skullwalltula"),
+        (4, "a Gold Skulltula (type 1)"),
+        (5, "a Gold Skulltula out only at night (type 2)"),
+        (6, "a Gold Skulltula jumping out (type 3)"),
+        (7, "a Gold Skulltula jumping out at once (type 4)"),
+    ]),
+    "a Skullwalltula or a Gold Skulltula (0x8000), and how it appears",
+);
+
+/// `world.rot.x`: placed (0x4000, on a wall) but a rotation: a Skullwalltula's is zeroed at init,
+/// a Gold Skulltula's is replaced by its surface's (`func_80B0BE20`) once it finds one.
+pub const ROT_X: Field = Field::rot("world.rot.x", Source::RotX, 0, 16, Kind::Rotation, "its pitch (0x4000 on a wall), replaced at init by its surface's (a Skullwalltula's zeroed)");
+/// `world.rot.z`: the same (one Gold Skulltula in the Water Temple has it).
+pub const ROT_Z: Field = Field::rot("world.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "its roll, replaced at init by its surface's (a Skullwalltula's zeroed)");
+
+/// En_Sw's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[GS_FLAG, GS_INDEX, TYPE, ROT_X, ROT_Z],
+    flags: &[FlagUse::new(Flag::Other("GET_GS_FLAGS(gsIndex) & gsFlag")).reads().note("its token taken: it isn't spawned (the token, En_Si, sets it)")],
+    todo: false,
 };
 
 /// `ACTOR_EN_SI` (`actor_table.h`).
@@ -223,7 +269,7 @@ impl Action {
 
 /// `PARAMS_GET_S(params, 13, 3)`: the type.
 pub fn sw_type(params: i16) -> i32 {
-    (params as i32 >> 13) & 7
+    TYPE.get(params) as i32
 }
 
 /// `EnSw_Init`'s params: a placed Gold Skulltula's (0x8000 set) type one more than its bits
@@ -233,16 +279,17 @@ pub fn sw_type(params: i16) -> i32 {
 /// too (7). No placement has one.
 pub fn init_params(params: i16) -> i16 {
     let mut params = params;
-    let p = params as i32;
-    if p & 0x8000 != 0 {
-        // PARAMS_GET_S(thisx->params - 0x8000, 13, 3) + 1.
-        let phi_v0 = ((p - 0x8000) >> 13 & 7) + 1;
-        params = ((p & 0x1FFF) | (phi_v0 << 0xD)) as i16;
+    // PARAMS_GET_NOSHIFT(thisx->params, 15, 1): the type's top bit.
+    if TYPE.get(params) & 4 != 0 {
+        // PARAMS_GET_S(thisx->params - 0x8000, 13, 3) + 1: bits 13 and 14, plus 1, written as
+        // the type (PARAMS_GET_S(thisx->params, 0, 13) | (phi_v0 << 0xD)).
+        let phi_v0 = (TYPE.get(params) as i32 - 4) + 1;
+        params = TYPE.put(params, phi_v0);
     }
     if sw_type(params) > 0 {
-        let p = params as i32;
-        let phi_v0 = ((p >> 8) & 0x1F) - 1;
-        params = ((p & !(0x1F << 8)) | (phi_v0 << 8)) as i16;
+        let phi_v0 = GS_INDEX.get(params) as i32 - 1;
+        // schema: the write (an index of 0 makes -1, whose << 8 sets every bit from 8 up)
+        params = ((params as i32 & !(0x1F << 8)) | (phi_v0 << 8)) as i16;
     }
     params
 }
@@ -352,15 +399,16 @@ pub struct EnSw {
 impl EnSw {
     /// `PARAMS_GET_S(params, 13, 3)`.
     fn ty(&self) -> i32 {
-        sw_type(self.actor.params)
+        TYPE.get(self.actor.params) as i32
     }
 
     /// `EnSw_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
+        // schema: init's conversion, through the fields in `init_params`
         actor.params = init_params(actor.params);
         // Check to see if this gold skull token has already been retrieved.
-        let p = actor.params as i32;
-        let gs_index = (p >> 8) & 0x1F;
+        let gs_index = GS_INDEX.get(actor.params) as i32;
+        let gs_flag = GS_FLAG.get(actor.params) as u32;
         let anim_0 = play.assets.clone().and_then(|a| a.animation(OBJECT, ANIM_0).map_err(|e| log::error!("En_Sw: {e:#}")).ok());
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, SKELETON).map_err(|e| log::error!("En_Sw: {e:#}")).ok());
         let limbs = skeleton.as_ref().map(|s| s.limbs.len()).unwrap_or(29);
@@ -401,7 +449,7 @@ impl EnSw {
             unk_478: Vec3::ZERO,
             unk_484: Vec3::ZERO,
         };
-        if play.save.get_gs_flags(gs_index) & (p & 0xFF) as u32 != 0 {
+        if play.save.get_gs_flags(gs_index) & gs_flag != 0 {
             s.actor.kill();
             return Box::new(s);
         }
@@ -804,6 +852,7 @@ impl EnSw {
             let y = self.unk_364.y * 10.0;
             let z = self.unk_364.z * 10.0;
             let p = self.actor.world_pos;
+            // schema: the whole params, handed to its token (En_Si)
             let params = self.actor.params;
             if let Ok(h) = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_SI, Vec3::new(p.x + x, p.y + y, p.z + z), [0, 0, 0], params)
                 && let Some(t) = play.actors.actor_mut(h)

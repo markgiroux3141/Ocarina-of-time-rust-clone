@@ -16,6 +16,13 @@
 //! two at (-805, 720, -2) and (-805, 720, -62), 0xFFFF. Each drops a green rupee (`rot.x` 0,
 //! flag 0). Link has no hammer or bombs yet (GAME-05 milestone 4b): the tests inject the hit
 //! and the explosion. The whole overlay is ported.
+//!
+//! Params: `noGoldSkulltula` bit 15 (`PARAMS_GET_NOSHIFT(params, 15, 1)`: 0 a Gold Skulltula
+//! inside, 1 none); with it 0, `goldSkulltulaParams` bits 0 to 14 (`En_Sw`'s params, spawned
+//! `params | 0x8000`); with it 1, bits 0 to 14 unused (0x7FFF in the data). `home.rot.x`: `itemDropped`, the
+//! collectible it drops (`ITEM00_*`; outside 0 to `ITEM00_MAX` none). `home.rot.z` bits 0 to 5:
+//! `collectibleFlag`, the drop's collectible flag.
+//! Flags: none itself; the `En_Item00` it drops reads and sets collectible flag `collectibleFlag`.
 
 use std::sync::Arc;
 
@@ -25,6 +32,7 @@ use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, func_80033480, func_80033684};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::KAKERA_COLOR_NONE;
 use oot_game::pack::keys;
@@ -43,7 +51,27 @@ pub const NA_SE_EV_WOODBOX_BREAK: u16 = 0x28AA;
 const ITEM00_MAX: i16 = 0x1A;
 
 /// `Obj_Kibako2_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_KIBAKO2, name: "Obj_Kibako2", category: ACTORCAT_BG, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_KIBAKO2, name: "Obj_Kibako2", category: ACTORCAT_BG, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `this->dyna.actor.params` bits 0 to 14: the Gold Skulltula's params, handed on.
+pub const SKULLTULA_PARAMS: Field =
+    Field::params("goldSkulltulaParams", 0, 15, Kind::Range(0, 0x7FFF), "the Gold Skulltula's params (En_Sw's, spawned with bit 15 set)").when("noGoldSkulltula", &[0]);
+/// Bits 0 to 14 with no Gold Skulltula.
+pub const UNUSED_PARAMS: Field = Field::params("unusedParams", 0, 15, Kind::Unused, "0x7FFF in the data; read by nothing").when("noGoldSkulltula", &[1]);
+/// `PARAMS_GET_NOSHIFT(params, 15, 1)`: no Gold Skulltula.
+pub const NO_SKULLTULA: Field =
+    Field::params("noGoldSkulltula", 15, 1, Kind::Named(&[(0, "a Gold Skulltula inside"), (1, "no Gold Skulltula")]), "whether a Gold Skulltula comes out as it breaks");
+/// `home.rot.x`: `itemDropped`.
+pub const ITEM_DROPPED: Field = Field::rot("itemDropped", Source::RotX, 0, 16, Kind::Drop, "the collectible it drops (outside 0 to ITEM00_MAX: none)");
+/// `home.rot.z & 0x3F`: `collectibleFlag`.
+pub const COLLECTIBLE_FLAG: Field = Field::rot("collectibleFlag", Source::RotZ, 0, 6, Kind::CollectibleFlag, "the drop's collectible flag");
+
+/// Obj_Kibako2's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SKULLTULA_PARAMS, UNUSED_PARAMS, NO_SKULLTULA, ITEM_DROPPED, COLLECTIBLE_FLAG],
+    flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().indirect("by the En_Item00 it drops")],
+    todo: false,
+};
 
 /// `sCylinderInit`: 31 by 48, hit only by `0x40000040` (`DMG_HAMMER_JUMP | DMG_HAMMER_SWING`).
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -108,13 +136,14 @@ impl ObjKibako2 {
             Some(h) => play.col.dyna.set_bg_actor(h, source(&actor), 0),
             None => BG_ACTOR_MAX,
         };
-        let collectible_flag = actor.home_rot.z & 0x3F;
+        let collectible_flag = COLLECTIBLE_FLAG.get(actor.home_rot.z);
         actor.home_rot.z = 0;
         actor.world_rot.z = 0;
         actor.shape_rot.z = 0;
         actor.world_rot.x = 0;
         actor.shape_rot.x = 0;
-        log::debug!("Wooden box (stationary)(arg {:04x}H)(item {:04x}H {})", actor.params, collectible_flag, actor.home_rot.x);
+        // schema: the whole params printed.
+        log::debug!("Wooden box (stationary)(arg {:04x}H)(item {:04x}H {})", actor.params, collectible_flag, ITEM_DROPPED.get(actor.home_rot.x));
         Box::new(ObjKibako2 { actor, bg, collider, action: Action::Idle, collectible_flag, drawn: true })
     }
 
@@ -152,7 +181,7 @@ impl ObjKibako2 {
     /// `ObjKibako2_SpawnCollectible`: `home.rot.x` with the collectible flag, if it's an item.
     fn spawn_collectible(&self, play: &mut PlayState) {
         let collectible_flag_temp = self.collectible_flag;
-        let item_dropped = self.actor.home_rot.x;
+        let item_dropped = ITEM_DROPPED.get(self.actor.home_rot.x);
         if (0..ITEM00_MAX).contains(&item_dropped) {
             crate::en_item00::item_drop_collectible(play, self.actor.world_pos, item_dropped | (collectible_flag_temp << 8));
         }
@@ -177,10 +206,10 @@ impl ObjKibako2 {
     /// `ObjKibako2_Kill`: the Gold Skulltula (`En_Sw`, `params | 0x8000`, turned as the crate)
     /// unless params bit 15 is set, the collectible, and it's gone.
     fn kill(&mut self, play: &mut PlayState) {
-        let params = self.actor.params;
-        if params as u16 & 0x8000 == 0 {
+        let params = self.actor.params; // schema: read through its fields below.
+        if NO_SKULLTULA.get(params) == 0 {
             let p = self.actor.world_pos;
-            let _ = play.actor_spawn(crate::en_sw::ACTOR_EN_SW, p, [0, self.actor.shape_rot.y, 0], (params as u16 | 0x8000) as i16);
+            let _ = play.actor_spawn(crate::en_sw::ACTOR_EN_SW, p, [0, self.actor.shape_rot.y, 0], (SKULLTULA_PARAMS.get(params) as u16 | 0x8000) as i16);
         }
         self.spawn_collectible(play);
         self.actor.kill();

@@ -6,6 +6,11 @@
 //! It waits for its object (`func_808A0850`), then is a DynaPoly actor of its collision
 //! (`gWarpPadCol`, `gOcarinaWarpPadCol`) and drawn (`BgMjin_Draw`), from baked meshes
 //! (docs/adr/0012-actor-bakes.md).
+//!
+//! Params: `params` whole (0: the ocarina's pad, `object_mjin_oka`; 1 to 6: a medallion's pad,
+//! its texture `sObjectIds[params - 1]`: 1 the Light Medallion's, 2 Shadow, 3 Fire, 4 Water, 5
+//! Spirit, 6 Forest).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -15,6 +20,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
@@ -22,7 +28,25 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 pub const ACTOR_BG_MJIN: i16 = 0x006E;
 
 /// `Bg_Mjin_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_MJIN, name: "Bg_Mjin", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_MJIN, name: "Bg_Mjin", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `thisx->params`: which pad (`sObjectIds[params - 1]` for a medallion's).
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "the ocarina's pad"),
+        (1, "the Light Medallion's pad"),
+        (2, "the Shadow Medallion's pad"),
+        (3, "the Fire Medallion's pad"),
+        (4, "the Water Medallion's pad"),
+        (5, "the Spirit Medallion's pad"),
+        (6, "the Forest Medallion's pad"),
+    ]),
+    "which warp pad",
+);
+
+/// Bg_Mjin's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 /// `OBJECT_MJIN`, `OBJECT_MJIN_OKA` (`object_table.h`: 0x0061, 0x0068).
 const OBJECT_MJIN: i16 = 0x0061;
@@ -104,7 +128,7 @@ impl BgMjin {
         this.actor.culling_volume_distance = 4000.0;
         this.actor.culling_volume_scale = 400.0;
         this.actor.culling_volume_downward = 400.0;
-        let object = if this.actor.params != 0 { OBJECT_MJIN } else { OBJECT_MJIN_OKA };
+        let object = if TYPE.get(this.actor.params) != 0 { OBJECT_MJIN } else { OBJECT_MJIN_OKA };
         this.required_object_slot = play.object_ctx.get_index(object);
         if this.required_object_slot.is_none() {
             this.actor.kill();
@@ -125,7 +149,7 @@ impl BgMjin {
             // Actor_SetObjectDependency.
             self.actor.obj_bank_index = Some(slot);
             // DynaPolyActor_Init(&this->dyna, 0).
-            if let Some(h) = Self::load_collision(play, self.actor.params) {
+            if let Some(h) = Self::load_collision(play, TYPE.get(self.actor.params)) {
                 self.bg = play.col.dyna.set_bg_actor(h, source(&self.actor), 0);
             }
             self.action = Action::DoNothing;
@@ -166,9 +190,9 @@ impl ActorImpl for BgMjin {
         if !self.drawn {
             return;
         }
-        let bake = if self.actor.params != 0 {
+        let bake = if TYPE.get(self.actor.params) != 0 {
             // gSegments[6] = the medallion's object when it's loaded; segment 8 its D_06000000.
-            let medallion = (self.actor.params - 1) as usize;
+            let medallion = (TYPE.get(self.actor.params) - 1) as usize;
             match OBJECT_IDS.get(medallion) {
                 Some(&(id, _, _)) if play.object_ctx.get_index(id).is_some() => bake_name(medallion),
                 _ => NO_MEDALLION_BAKE.into(),

@@ -13,6 +13,13 @@
 //! (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
+//!
+//! Params: `type` bits 0 to 7 (`Heishi4Type`: 0 Kakariko's entrance, 4 Impa's house, 7 the dying
+//! guard, 8 Castle Town by night; any other has no action); bits 8 to 15 unused (`unk_27C`, read
+//! and never used; the debug print shows bits 8 to 11; the data places 0xFF).
+//! Flags: reads EVENTCHKINF_ZELDA_FLED_CASTLE and EVENTCHKINF_OBTAINED_MASTER_SWORD (Kakariko's
+//! texts; the dying guard is there between the two); reads and sets INFTABLE_6C (the dying
+//! guard's last words heard).
 
 use std::sync::Arc;
 
@@ -22,6 +29,8 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT};
 use oot_game::npc::{NpcTrack, actor_track_player, offer_talk, offer_talk_default, process_talk_request, track_point};
@@ -34,7 +43,29 @@ pub const ACTOR_EN_HEISHI4: i16 = 0x0178;
 pub const OBJECT: &str = "object_sd";
 
 /// `En_Heishi4_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HEISHI4, name: "En_Heishi4", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HEISHI4, name: "En_Heishi4", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 8)`: `type`.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    8,
+    Kind::Named(&[(0, "HEISHI4_AT_KAKARIKO_ENTRANCE"), (4, "HEISHI4_AT_IMPAS_HOUSE"), (7, "HEISHI4_AT_MARKET_DYING"), (8, "HEISHI4_AT_MARKET_NIGHT")]),
+    "which guard: Kakariko's two, the dying one, Castle Town's by night",
+);
+/// `PARAMS_GET_U(params, 8, 8)`: `unk_27C`, which nothing reads.
+pub const UNK_27C: Field = Field::params("unk_27C", 8, 8, Kind::Unused, "a message number, kept and never read (placed 0xFF)");
+
+/// En_Heishi4's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, UNK_27C],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_MASTER_SWORD)).reads().note("Kakariko's text 0x5068; the dying guard gone"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("Kakariko's text 0x5065; the dying guard's words"),
+        FlagUse::new(inf_table!(INFTABLE_6C)).reads().sets().note("the dying guard's last words heard (0x7007, then 0x7008)"),
+    ],
+    todo: false,
+};
 
 // `Heishi4Type`.
 pub const HEISHI4_AT_KAKARIKO_ENTRANCE: i16 = 0;
@@ -175,7 +206,7 @@ impl EnHeishi4 {
                 return oot_game::spawn::Placeholder::init(a, play);
             }
         };
-        let ty = actor.params & 0xFF;
+        let ty = TYPE.get(actor.params);
         let dying = ty == HEISHI4_AT_MARKET_DYING;
         let mut this = EnHeishi4 {
             // SkelAnime_Init(.., 17), playing the dying guard's or the idle animation.
@@ -217,7 +248,8 @@ impl EnHeishi4 {
             // Any other type keeps actionFunc NULL: the update would jump to address 0.
             _ => log::warn!("En_Heishi4: type {ty} has no action (actionFunc NULL)"),
         }
-        this.unk_27c = (this.actor.params as u16 >> 8) as i16;
+        this.unk_27c = UNK_27C.get(this.actor.params);
+
         Box::new(this)
     }
 

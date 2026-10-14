@@ -8,9 +8,18 @@
 //! 0x7072. It offers to talk within `unk_15C` when Link is in front of it (`func_80B3943C`).
 //!
 //! Not ported here: the debug display (`BREG(0)`, off).
+//!
+//! Params: `unk_150` bits 11 to 15 (the kind: 1 the altar's slate, 2 the diary, 3 and 5 a Poe's
+//! spot, 4 the royal tomb's hint, any other 0x7072); `unk_152` bits 6 to 10 unused (0x1F in the
+//! data; stored, never read); `switchFlag` bits 0 to 5 (set once read: gone; 0x3F none).
+//! `world.rot.z`: debug (printed as the "specified range").
+//! Flags: reads the switch flag `switchFlag` (set: gone) and sets it once the text is read; reads
+//! EVENTCHKINF_1D (kind 4: gone once the royal tomb is open).
 
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::event_chk_inf;
 use oot_game::message::{TEXT_STATE_CHOICE, TEXT_STATE_DONE, TEXT_STATE_EVENT};
 use oot_game::npc::{offer_talk, process_talk_request};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -27,12 +36,45 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_PROP,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_LOCK_ON_DISABLED,
     object: "gameplay_keep",
+    schema: &SCHEMA,
 };
 
 /// `ATTENTION_RANGE_1`.
 const ATTENTION_RANGE_1: u8 = 1;
 /// `EVENTCHKINF_1D` (`save.h`).
 const EVENTCHKINF_1D: u16 = 0x1D;
+
+/// `PARAMS_GET_U(this->actor.params, 6, 5)` into `unk_152`, which nothing reads.
+pub const UNK_152: Field = Field::params("unk_152", 6, 5, Kind::Unused, "0x1F in the data; stored, never read");
+/// `PARAMS_GET_U(this->actor.params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set once the text is read: gone (0x3F: none)");
+/// `PARAMS_GET_U(this->actor.params, 11, 5)`: the kind.
+pub const KIND: Field = Field::params(
+    "unk_150",
+    11,
+    5,
+    Kind::Named(&[
+        (0, "0x7072"),
+        (1, "the Temple of Time's slate (0x7040 a child, 0x7088 an adult)"),
+        (2, "the diary (0x5002, a choice)"),
+        (3, "a Poe's spot (0x501E: En_Poh type 2)"),
+        (4, "the royal tomb's hint (0x5020; gone with EVENTCHKINF_1D)"),
+        (5, "a Poe's spot (0x501F: En_Poh type 3)"),
+    ]),
+    "what it says (any other: 0x7072)",
+);
+/// `this->actor.world.rot.z`: printed only ("specified range").
+pub const RANGE: Field = Field::rot("world.rot.z", Source::RotZ, 0, 16, Kind::Debug, "printed as the \"specified range\"; nothing else reads it");
+
+/// En_Wonder_Talk's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, UNK_152, KIND, RANGE],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set once read: gone"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_1D)).reads().note("kind 4: gone once the royal tomb is open"),
+    ],
+    todo: false,
+};
 
 /// `actionFunc`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,12 +107,12 @@ pub struct EnWonderTalk {
 impl EnWonderTalk {
     /// `EnWonderTalk_Init`.
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
+        // schema: printed
         log::debug!("En_Wonder_Talk: special conversation {:#x}", actor.params);
-        let p = actor.params as u16;
         let mut this = EnWonderTalk {
-            unk_150: ((p >> 11) & 0x1F) as i16,
-            unk_152: ((p >> 6) & 0x1F) as i16,
-            switch_flag: (p & 0x3F) as i16,
+            unk_150: KIND.get(actor.params),
+            unk_152: UNK_152.get(actor.params),
+            switch_flag: SWITCH_FLAG.get(actor.params),
             action: Action::SetText,
             unk_156: 0,
             unk_158: 0,
@@ -172,7 +214,7 @@ impl EnWonderTalk {
             let yaw_diff = (yaw_diff_temp as i32).abs();
             if yaw_diff < 0x4000 {
                 if self.unk_15a >= 2 {
-                    log::trace!("En_Wonder_Talk: switch {} kind {} text {:#x} range {}", self.switch_flag, self.unk_150, self.actor.text_id, self.actor.world_rot.z);
+                    log::trace!("En_Wonder_Talk: switch {} kind {} text {:#x} range {}", self.switch_flag, self.unk_150, self.actor.text_id, RANGE.get(self.actor.world_rot.z));
                 }
                 self.unk_15a = 0;
                 let a = self.actor.clone();

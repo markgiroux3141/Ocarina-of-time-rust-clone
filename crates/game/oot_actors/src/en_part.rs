@@ -2,10 +2,10 @@
 //! and fading in a puff; and `z_actor.c`'s `BodyBreak`, which takes an enemy's limbs' matrices
 //! and lists as it's drawn and spawns them as parts (GAME-06 milestone 4).
 //!
-//! Params: the kind. 0 drifts and falls; 1, 4, 9, 10, 14 fly up and puff out (14 on fire); 2 flies
-//! up; 3 and 11 jump out (11 on fire); 5 to 8 an Iron Knuckle's armour sliding off; 12 and 13 fall
-//! and stay (13 till its maker goes); a part spawned by `Actor_SpawnPartsOnDeath`-like callers
-//! with action 2 is a shock wave (`func_80ACE5C8`) or a Stalfos' head (`func_80ACE7E8`).
+//! Its params are the kind. 0 drifts and falls; 1, 4, 9, 10, 14 fly up and puff out (14 on fire);
+//! 2 flies up; 3 and 11 jump out (11 on fire); 5 to 8 an Iron Knuckle's armour sliding off; 12 and
+//! 13 fall and stay (13 till its maker goes); a part spawned by `Actor_SpawnPartsOnDeath`-like
+//! callers with action 2 is a shock wave (`func_80ACE5C8`) or a Stalfos' head (`func_80ACE7E8`).
 //!
 //! The whole overlay is ported. `EffectSsDtBubble` (kind 4's bubbles) isn't: its `Rand` calls
 //! are made. The Iron Knuckle's and the Tektite's segment colours and textures (kinds 5 to 7, 9
@@ -13,12 +13,21 @@
 //! `func_8002EBCC` (the lists' shine) isn't, as for every actor. A part's list is a limb's, which
 //! the pack keeps only in its skeleton's mesh: every ported enemy's breakable limbs are baked on
 //! their own (`bakes`).
+//!
+//! Params: `params` whole, the kind (`BodyBreak_SpawnParts`' `type`: -1 `En_Mb`'s, bouncing; 0
+//! drifts and falls; 1 the Stalchild's, 2, 4, 9 and 10 (the blue and red Tektites') fly up, all
+//! but 2 puffing out; 3 and 11 the Bubble's, jumping out, 11 on fire; 5 to 8 the Iron Knuckles'
+//! armour; 12 and 13 fall and stay, 13 till its maker goes; 14 flies up on fire). Never placed:
+//! the enemies spawn it as they die. `rot.z` at its spawn is the object slot its list is drawn
+//! from (`Actor_Spawn` takes it for `ACTOR_EN_PART` alone and zeroes it).
+//! Flags: none.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::smooth_step_to_f;
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::{BakeBody, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::sys_matrix::MtxF;
@@ -27,7 +36,35 @@ use oot_game::sys_matrix::MtxF;
 pub const ACTOR_EN_PART: i16 = 0x0007;
 
 /// `En_Part_Profile`: `ACTORCAT_ITEMACTION`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_PART, name: "En_Part", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_PART, name: "En_Part", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params`: the kind, as its maker passes it.
+pub const KIND: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (-1, "En_Mb's: bounces (func_800358DC, action 2)"),
+        (0, "drifts and falls"),
+        (1, "flies up and puffs out (the Stalchild's)"),
+        (2, "flies up"),
+        (3, "jumps out (the Bubble's)"),
+        (4, "flies up and puffs out (Nabooru's Iron Knuckle)"),
+        (5, "armour sliding off (the silver Iron Knuckle's)"),
+        (6, "armour sliding off (the black Iron Knuckle's)"),
+        (7, "armour sliding off (the white Iron Knuckle's)"),
+        (8, "armour sliding off"),
+        (9, "flies up and puffs out (the blue Tektite's)"),
+        (10, "flies up and puffs out (the red Tektite's)"),
+        (11, "jumps out on fire (the Bubble's)"),
+        (12, "falls and stays"),
+        (13, "falls and stays till its maker goes"),
+        (14, "flies up on fire and puffs out"),
+    ]),
+    "how the piece is thrown off and goes",
+);
+
+/// En_Part's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[KIND], flags: &[], todo: false };
+
 
 /// `NA_SE_EN_MONBLIN_GNDWAVE`, `NA_SE_EN_STAL_DAMAGE` (`enemybank_table.h`).
 const NA_SE_EN_MONBLIN_GNDWAVE: u16 = 0x38E0;
@@ -81,7 +118,7 @@ impl EnPart {
         self.action = 1;
         self.actor.world_rot.y = (play.rand.zero_one() * 20000.0) as i32 as i16;
         let a = &mut self.actor;
-        match a.params {
+        match KIND.get(a.params) {
             0 => {
                 a.velocity.y = 0.0;
                 a.gravity = -0.3 - play.rand.zero_one() * 0.5;
@@ -90,7 +127,7 @@ impl EnPart {
                 self.actor.speed_xz = (play.rand.zero_one() - 0.5) * 2.0;
             }
             12 | 13 => {
-                if self.actor.params == 13 {
+                if KIND.get(self.actor.params) == 13 {
                     self.timer = 400;
                 }
                 let a = &mut self.actor;
@@ -103,7 +140,7 @@ impl EnPart {
                 self.rot_z_speed = 0.15;
             }
             14 | 1 | 4 | 9 | 10 | 2 => {
-                if a.params == 14 {
+                if KIND.get(a.params) == 14 {
                     let pos = a.world_pos;
                     if let Some(me) = play.cur_actor {
                         let r = self.actor.shape_rot;
@@ -111,7 +148,7 @@ impl EnPart {
                         play.with_ss(|s| s.en_fire_spawn_vec3f(Some(actor), pos, 40, 0x8001u16 as i16, 0, -1));
                     }
                 }
-                if self.actor.params != 2 {
+                if KIND.get(self.actor.params) != 2 {
                     self.timer += (play.rand.zero_one() * 17.0) as i16 + 5;
                 }
                 let a = &mut self.actor;
@@ -120,7 +157,7 @@ impl EnPart {
                 self.rot_z_speed = 0.15;
             }
             11 | 3 => {
-                if a.params == 11 {
+                if KIND.get(a.params) == 11 {
                     let pos = a.world_pos;
                     if let Some(me) = play.cur_actor {
                         let r = self.actor.shape_rot;
@@ -160,7 +197,7 @@ impl EnPart {
     /// time out, puff out (white with green or blue, or bubbles, or five blue puffs) and go.
     fn func_80ace13c(&mut self, play: &mut PlayState) {
         let zero = Vec3::ZERO;
-        let p = self.actor.params;
+        let p = KIND.get(self.actor.params);
         if p == 12 || p == 13 {
             let flags = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4;
             self.actor.update_bg_check_info(&play.col, 5.0, 15.0, 0.0, flags);
@@ -295,7 +332,7 @@ impl ActorImpl for EnPart {
     /// (the armour slowing), then the action (`sActionFuncs`).
     fn update(&mut self, play: &mut PlayState) {
         self.actor.move_forward();
-        let p = self.actor.params;
+        let p = KIND.get(self.actor.params);
         if (p > 4 && p < 9) || p < 0 {
             self.actor.update_bg_check_info(&play.col, 5.0, 15.0, 0.0, UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2);
             if p >= 0 {
@@ -328,7 +365,7 @@ impl ActorImpl for EnPart {
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some((file, symbol)) = self.display_list else { return };
         let mut m = actor_draw_matrix(rs);
-        if self.actor.params > 0 {
+        if KIND.get(self.actor.params) > 0 {
             m *= Mat4::from_rotation_z(rs.values.first().copied().unwrap_or(0.0));
         }
         out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&part_bake_name(file, symbol))), m));

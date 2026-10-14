@@ -2,18 +2,33 @@
 //! Link comes near, or hits it, or touches a set of tag points, it drops an item and sets its
 //! switch flag.
 //!
-//! Params: bits 11..15 the mode (`wonderMode`), bits 6..10 the drop (`itemDrop`,
-//! `WONDERITEM_DROP_*`), bits 0..5 the switch flag (0x3F for none); `rot.z` is the mode's
-//! number (drops, tag points, or the tag index). Kokiri Forest's training area has two of
-//! 0x123F with `rot.z` 1: `WONDERITEM_PROXIMITY_DROP`, a green rupee, no switch flag, one drop.
+//! Kokiri Forest's training area has two of 0x123F with `rot.z` 1: `WONDERITEM_PROXIMITY_DROP`,
+//! a green rupee, no switch flag, one drop.
 //!
 //! The whole overlay is ported. `EnWonderItem_BombSoldier`'s soldier (`En_Heishi2`) spawns as
 //! a placeholder; the debug arrows (`BREG(0)`) aren't ported.
+//!
+//! Params: `switchFlag` bits 0 to 5 (0x3F: none); `itemDrop` bits 6 to 10 (`EnWonderItemDrop`: 0
+//! to 0xB `dropTable`'s collectibles, nuts to `ITEM00_FLEXIBLE`; 0xC `WONDERITEM_DROP_RANDOM` and
+//! up a random drop, `Item_DropCollectibleRandom` with `itemDrop - 0xC`: an offset into
+//! `sItemDropIds`, 16 to a table); `wonderMode` bits 11 to 15 (`EnWonderItemMode`: 0
+//! `WONDERITEM_MULTITAG_FREE`, 1 `WONDERITEM_TAG_POINT_FREE`, 2 `WONDERITEM_PROXIMITY_DROP`, 3
+//! `WONDERITEM_INTERACT_SWITCH`, 4 `WONDERITEM_UNUSED`, 5 `WONDERITEM_MULTITAG_ORDERED`, 6
+//! `WONDERITEM_TAG_POINT_ORDERED`, 7 `WONDERITEM_PROXIMITY_SWITCH`, 8 `WONDERITEM_BOMB_SOLDIER`, 9
+//! `WONDERITEM_ROLL_DROP`; others are killed). `world.rot.z` by mode: 0 and 5 the tag points to
+//! touch (its ones) and the time for each (its tens, 20 frames a ten, 81 more); 1 and 6
+//! `tagIndex` (bits 0 to 7, which tag point, 0 to 8); 2 and 9 `dropCount` (bits 0 to 7, 0 one);
+//! 3 `colTypeIndex` (bits 0 to 7, `damageFlags`: 0 the sword or a stick, 1 an arrow, 2 the
+//! hammer, 3 an explosion, 4 the slingshot, 5 the boomerang, 6 the hookshot). `world.rot.x`:
+//! debug (the arrow `BREG(0)` draws; one placement sets it).
+//! Flags: reads switch flag `switchFlag` at init (set: gone) and sets it when it drops (mode 7:
+//! when Link comes near; mode 8: the soldier's hit).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::collision_check::*;
 use oot_game::play::PlayState;
 
@@ -27,7 +42,112 @@ pub const ACTOR_EN_WONDER_ITEM: i16 = 0x0112;
 const ACTOR_EN_HEISHI2: i16 = 0x00B3;
 
 /// `En_Wonder_Item_Profile`: `FLAGS` 0, no draw.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_ITEM, name: "En_Wonder_Item", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WONDER_ITEM, name: "En_Wonder_Item", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set when it drops or is triggered; set at init, it's gone (0x3F: none)");
+/// `PARAMS_GET_U(this->actor.params, 6, 5)`: the drop.
+pub const ITEM_DROP: Field = Field::params(
+    "itemDrop",
+    6,
+    5,
+    Kind::Named(&[
+        (0x0, "WONDERITEM_DROP_NUTS"),
+        (0x1, "WONDERITEM_DROP_HEART_PIECE"),
+        (0x2, "WONDERITEM_DROP_MAGIC_LARGE"),
+        (0x3, "WONDERITEM_DROP_MAGIC_SMALL"),
+        (0x4, "WONDERITEM_DROP_HEART"),
+        (0x5, "WONDERITEM_DROP_ARROWS_SMALL"),
+        (0x6, "WONDERITEM_DROP_ARROWS_MEDIUM"),
+        (0x7, "WONDERITEM_DROP_ARROWS_LARGE"),
+        (0x8, "WONDERITEM_DROP_GREEN_RUPEE"),
+        (0x9, "WONDERITEM_DROP_BLUE_RUPEE"),
+        (0xA, "WONDERITEM_DROP_RED_RUPEE"),
+        (0xB, "WONDERITEM_DROP_FLEXIBLE"),
+        (0xC, "WONDERITEM_DROP_RANDOM: a random drop from sItemDropIds[0..]"),
+        (0xD, "WONDERITEM_DROP_RANDOM + 1: a random drop from sItemDropIds[1..]"),
+        (0xE, "WONDERITEM_DROP_RANDOM + 2: a random drop from sItemDropIds[2..]"),
+        (0xF, "WONDERITEM_DROP_RANDOM + 3: a random drop from sItemDropIds[3..]"),
+        (0x10, "WONDERITEM_DROP_RANDOM + 4: a random drop from sItemDropIds[4..]"),
+        (0x11, "WONDERITEM_DROP_RANDOM + 5: a random drop from sItemDropIds[5..]"),
+        (0x12, "WONDERITEM_DROP_RANDOM + 6: a random drop from sItemDropIds[6..]"),
+        (0x13, "WONDERITEM_DROP_RANDOM + 7: a random drop from sItemDropIds[7..]"),
+        (0x14, "WONDERITEM_DROP_RANDOM + 8: a random drop from sItemDropIds[8..]"),
+        (0x15, "WONDERITEM_DROP_RANDOM + 9: a random drop from sItemDropIds[9..]"),
+        (0x16, "WONDERITEM_DROP_RANDOM + 10: a random drop from sItemDropIds[10..]"),
+        (0x17, "WONDERITEM_DROP_RANDOM + 11: a random drop from sItemDropIds[11..]"),
+        (0x18, "WONDERITEM_DROP_RANDOM + 12: a random drop from sItemDropIds[12..]"),
+        (0x19, "WONDERITEM_DROP_RANDOM + 13: a random drop from sItemDropIds[13..]"),
+        (0x1A, "WONDERITEM_DROP_RANDOM + 14: a random drop from sItemDropIds[14..]"),
+        (0x1B, "WONDERITEM_DROP_RANDOM + 15: a random drop from sItemDropIds[15..]"),
+        (0x1C, "WONDERITEM_DROP_RANDOM + 16: a random drop from sItemDropIds[16..]"),
+        (0x1D, "WONDERITEM_DROP_RANDOM + 17: a random drop from sItemDropIds[17..]"),
+        (0x1E, "WONDERITEM_DROP_RANDOM + 18: a random drop from sItemDropIds[18..]"),
+        (0x1F, "WONDERITEM_DROP_RANDOM + 19: a random drop from sItemDropIds[19..]"),
+    ]),
+    "what it drops (0xC and up: a random drop from that offset in sItemDropIds, 16 to a table)",
+);
+/// `PARAMS_GET_U(this->actor.params, 11, 5)`: the mode.
+pub const WONDER_MODE: Field = Field::params(
+    "wonderMode",
+    11,
+    5,
+    Kind::Named(&[
+        (0, "WONDERITEM_MULTITAG_FREE"),
+        (1, "WONDERITEM_TAG_POINT_FREE"),
+        (2, "WONDERITEM_PROXIMITY_DROP"),
+        (3, "WONDERITEM_INTERACT_SWITCH"),
+        (4, "WONDERITEM_UNUSED"),
+        (5, "WONDERITEM_MULTITAG_ORDERED"),
+        (6, "WONDERITEM_TAG_POINT_ORDERED"),
+        (7, "WONDERITEM_PROXIMITY_SWITCH"),
+        (8, "WONDERITEM_BOMB_SOLDIER"),
+        (9, "WONDERITEM_ROLL_DROP"),
+    ]),
+    "what makes it drop: tag points touched, Link near, a hit, a roll",
+);
+/// `this->actor.world.rot.x`: read only by the debug arrow.
+pub const ROT_X: Field = Field::rot("world.rot.x", Source::RotX, 0, 16, Kind::Debug, "the debug arrow's (BREG(0)) rotation; one placement sets it");
+/// `this->actor.world.rot.z` in modes 0 and 5: `numTagPoints` (its ones) and `timerMod` (its tens).
+pub const TAG_POINTS: Field = Field::rot(
+    "world.rot.z",
+    Source::RotZ,
+    0,
+    16,
+    Kind::Range(-0x8000, 0x7FFF),
+    "the tag points to touch (its ones) and the time for each (its tens, 20 frames a ten, 81 more)",
+)
+.when("wonderMode", &[0, 5]);
+/// `this->actor.world.rot.z & 0xFF` in modes 1 and 6: which tag point.
+pub const TAG_INDEX: Field = Field::rot("tagIndex", Source::RotZ, 0, 8, Kind::Range(0, 8), "which tag point it is (sTagPointsFree, sTagPointsOrdered)").when("wonderMode", &[1, 6]);
+/// `this->actor.world.rot.z & 0xFF` in modes 2 and 9: how many it drops.
+pub const DROP_COUNT: Field = Field::rot("dropCount", Source::RotZ, 0, 8, Kind::Range(0, 0xFF), "how many it drops (0: one)").when("wonderMode", &[2, 9]);
+/// `this->actor.world.rot.z & 0xFF` in mode 3: what hits it, an index into `damageFlags`.
+pub const COL_TYPE_INDEX: Field = Field::rot(
+    "colTypeIndex",
+    Source::RotZ,
+    0,
+    8,
+    Kind::Named(&[
+        (0, "the sword or a stick"),
+        (1, "an arrow"),
+        (2, "the hammer"),
+        (3, "an explosion"),
+        (4, "the slingshot"),
+        (5, "the boomerang"),
+        (6, "the hookshot"),
+        (7, "past damageFlags: what follows it (the port: nothing)"),
+    ]),
+    "what hits it",
+)
+.when("wonderMode", &[3]);
+
+/// En_Wonder_Item's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, ITEM_DROP, WONDER_MODE, ROT_X, TAG_POINTS, TAG_INDEX, DROP_COUNT, COL_TYPE_INDEX],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone; set when it drops or is triggered")],
+    todo: false,
+};
 
 /// `EnWonderItemMode`.
 pub const WONDERITEM_MULTITAG_FREE: i16 = 0;
@@ -135,11 +255,10 @@ impl EnWonderItem {
     /// `EnWonderItem_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
-        let params = actor.params as u16;
         let mut this = EnWonderItem {
-            wonder_mode: ((params >> 0xB) & 0x1F) as i16,
-            item_drop: ((params >> 6) & 0x1F) as i16,
-            switch_flag: (params & 0x3F) as i16,
+            wonder_mode: WONDER_MODE.get(actor.params),
+            item_drop: ITEM_DROP.get(actor.params),
+            switch_flag: SWITCH_FLAG.get(actor.params),
             update: Update::None,
             unk_height: 0.0,
             num_tag_points: 0,
@@ -162,10 +281,10 @@ impl EnWonderItem {
             this.actor.kill();
             return Box::new(this);
         }
-        let rot_z = this.actor.world_rot.z;
         match this.wonder_mode {
             WONDERITEM_MULTITAG_FREE | WONDERITEM_MULTITAG_ORDERED => {
                 // timerMod = rot.z / 10 seconds, numTagPoints = rot.z % 10.
+                let rot_z = TAG_POINTS.get(this.actor.world_rot.z);
                 let mut rot_z_over_10 = 0;
                 if rot_z >= 10 {
                     rot_z_over_10 = rot_z / 10;
@@ -175,7 +294,7 @@ impl EnWonderItem {
                 this.update = if this.wonder_mode == WONDERITEM_MULTITAG_FREE { Update::MultitagFree } else { Update::MultitagOrdered };
             }
             WONDERITEM_TAG_POINT_FREE | WONDERITEM_TAG_POINT_ORDERED => {
-                let tag_index = (rot_z & 0xFF) as usize;
+                let tag_index = TAG_INDEX.get(this.actor.world_rot.z) as usize;
                 let pos = this.actor.world_pos;
                 let points = play.overlay_static::<TagPoints>(ACTOR_EN_WONDER_ITEM);
                 // (Indices past 8 write past the arrays in the C.)
@@ -186,11 +305,11 @@ impl EnWonderItem {
                 this.actor.kill();
             }
             WONDERITEM_PROXIMITY_DROP => {
-                this.drop_count = rot_z & 0xFF;
+                this.drop_count = DROP_COUNT.get(this.actor.world_rot.z);
                 this.update = Update::ProximityDrop;
             }
             WONDERITEM_INTERACT_SWITCH => {
-                let col_type_index = (rot_z & 0xFF) as usize;
+                let col_type_index = COL_TYPE_INDEX.get(this.actor.world_rot.z) as usize;
                 this.collider = ColliderCylinder::new(&CYLINDER_INIT);
                 // (An index past the table reads past it in the C.)
                 this.collider.info.ac_dmg_info.dmg_flags = DAMAGE_FLAGS.get(col_type_index).copied().unwrap_or(0);
@@ -209,7 +328,7 @@ impl EnWonderItem {
                 this.update = Update::BombSoldier;
             }
             WONDERITEM_ROLL_DROP => {
-                this.drop_count = rot_z & 0xFF;
+                this.drop_count = DROP_COUNT.get(this.actor.world_rot.z);
                 this.update = Update::RollDrop;
             }
             _ => this.actor.kill(),

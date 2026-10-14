@@ -10,6 +10,10 @@
 //! Drawn as `EnNiwGirl_Draw` does: her eyes on segment 8, her torso and head turned
 //! (`EnNiwGirlOverrideLimbDraw`), and a circle shadow (`func_80033C30`, 0.2); from meshes baked
 //! per eye (docs/adr/0012-actor-bakes.md).
+//!
+//! Params: `path` bits 8 to 15 (her path, given to her cucco as `path + 1`; a negative params,
+//! a path of 0x80 and up, is made 0 first).
+//! Flags: reads EVENTCHKINF_ZELDA_FLED_CASTLE (her text: 0x70EA).
 
 use std::sync::Arc;
 
@@ -20,6 +24,8 @@ use eng_math::{approach_f, approach_zero_f, binang_to_rad, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::camera::f_atan2f;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_NONE;
@@ -37,10 +43,20 @@ pub const OBJECT: &str = "object_gr";
 
 /// `En_Niw_Girl_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_NIW_GIRL, name: "En_Niw_Girl", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+    ActorProfile { id: ACTOR_EN_NIW_GIRL, name: "En_Niw_Girl", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
 
 /// `EVENTCHKINF_ZELDA_FLED_CASTLE` (`save.h`: 0x80).
 const EVENTCHKINF_ZELDA_FLED_CASTLE: u16 = 0x80;
+
+/// `PARAMS_GET_U(this->actor.params, 8, 8)`: her path.
+pub const PATH: Field = Field::params("path", 8, 8, Kind::PathIndex, "the path her cucco runs (0x80 and up: the params made 0, path 0)");
+
+/// En_Niw_Girl's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PATH],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("her text")],
+    todo: false,
+};
 /// `ATTENTION_RANGE_6`.
 const ATTENTION_RANGE_6: u8 = 6;
 /// `NPC_TRACKING_FULL_BODY`.
@@ -175,10 +191,11 @@ impl EnNiwGirl {
             actor,
         };
         this.actor.target_mode = ATTENTION_RANGE_6;
+        // schema: the whole params' sign (`path` 0x80 and up)
         if this.actor.params < 0 {
             this.actor.params = 0;
         }
-        this.path = (this.actor.params >> 8) & 0xFF;
+        this.path = PATH.get(this.actor.params);
         this.actor.gravity = -3.0;
         // Matrix_RotateY(shape.rot.y), Matrix_MultVec3f((0, 0, 50)).
         let r = binang_to_rad(this.actor.shape_rot.y);
@@ -187,12 +204,14 @@ impl EnNiwGirl {
         let rot = [0, this.actor.world_rot.y, 0];
         match play.actor_spawn_as_child(&mut this.actor, ACTOR_EN_NIW, pos, rot, 0xA) {
             Ok(h) => {
+                // schema: printed
                 log::debug!("En_Niw_Girl: That's so mean! Punpun {}; Kyahahahaha, wait {}", this.actor.params, this.path);
                 this.chased_en_niw = Some(h);
                 this.actor.col_chk_info.mass = MASS_IMMOVABLE;
                 this.action = Action::Talk;
             }
             Err(_) => {
+                // schema: printed
                 log::debug!("En_Niw_Girl: for some reason, I can't set it up {}", this.actor.params);
                 this.actor.kill();
             }

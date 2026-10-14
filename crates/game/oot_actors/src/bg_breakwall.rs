@@ -25,10 +25,9 @@
 //! no bombs yet (`En_Bom` isn't ported): it stands. The whole overlay is ported.
 //!
 //! Params: `switchFlag` bits 0 to 5 (set when it breaks; set at init, the wall's gone; the lava
-//! cover doesn't read it); bits 6 to 12 unused; `type` bits 13 to 14 (`BombableWallType`: 0 the
-//! cavern's entrance, 1 a wall, 2 King Dodongo's floor, 3 the lava cover); bit 15 the chime when
-//! it breaks (`params < 0`).
-//!
+//! cover doesn't read it); bits 6 to 12 unused; `wallType` bits 13 to 14 (`BombableWallType`: 0
+//! the cavern's entrance, 1 a wall, 2 King Dodongo's floor, 3 the lava cover, which
+//! `Boss_Dodongo` spawns with 0x6000); bit 15 the chime when it breaks (`params < 0`).
 //! Flags: reads and sets switch flag `switchFlag`; type 0 reads and sets `EVENTCHKINF_B0` (0xB0,
 //! the cavern's opening seen).
 
@@ -41,8 +40,10 @@ use eng_math::step_to_f;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_80033480};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_EV_WALL_BROKEN, NA_SE_SY_CORRECT_CHIME, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
+use oot_game::event_chk_inf;
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::sys_matrix::MtxF;
@@ -71,7 +72,30 @@ pub const BWALL_KD_FLOOR: i32 = 2;
 pub const BWALL_KD_LAVA_COVER: i32 = 3;
 
 /// `Bg_Breakwall_Profile`: `ACTORCAT_BG`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED`, `gameplay_keep`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_BREAKWALL, name: "Bg_Breakwall", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_BREAKWALL, name: "Bg_Breakwall", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set when it breaks; set at init, it's gone (the lava cover doesn't read it)");
+/// `(u8)PARAMS_GET_U(params, 13, 2)`: `wallType`.
+pub const WALL_TYPE: Field = Field::params(
+    "wallType",
+    13,
+    2,
+    Kind::Named(&[(0, "BWALL_DC_ENTRANCE"), (1, "BWALL_WALL"), (2, "BWALL_KD_FLOOR"), (3, "BWALL_KD_LAVA_COVER")]),
+    "which wall: its object, display list and collision (`sBombableWallInfo`)",
+);
+/// `this->dyna.actor.params < 0`: bit 15.
+pub const CHIME: Field = Field::params("params < 0", 15, 1, Kind::Named(&[(0, "no chime"), (1, "the secret's chime")]), "the secret's chime as it breaks");
+
+/// Bg_Breakwall's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, WALL_TYPE, CHIME],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as it breaks; set at init, it's gone"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_B0)).reads().sets().note("type 0: Dodongo's Cavern's opening seen"),
+    ],
+    todo: false,
+};
 
 /// `BombableWallInfo`: the object (file), `colHeader`, `dList` and `colType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,12 +168,12 @@ fn source(a: &Actor) -> BgActorSource {
 impl BgBreakwall {
     /// `(u8)PARAMS_GET_U(params, 13, 2)`: the wall's type.
     pub fn wall_type(&self) -> i32 {
-        ((self.actor.params >> 13) & 3) as i32
+        WALL_TYPE.get(self.actor.params) as i32
     }
 
     /// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
     pub fn switch_flag(&self) -> i32 {
-        (self.actor.params & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `BgBreakwall_Init`: scale 0.1 and the culling volume (`sInitChain`); its type's list and
@@ -329,7 +353,7 @@ impl BgBreakwall {
             play.audio.play_sfx_centered(NA_SE_SY_CORRECT_CHIME);
             play.player_set_cs_action_with_halted_actors(None, PLAYER_CSACTION_49);
         }
-        if self.actor.params < 0 {
+        if CHIME.get(self.actor.params) != 0 {
             play.audio.play_sfx_centered(NA_SE_SY_TRE_BOX_APPEAR);
         }
         self.actor.kill();

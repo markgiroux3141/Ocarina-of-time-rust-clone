@@ -24,10 +24,18 @@
 //! switch flag too, lighting one sets its flag with the attention cutscene, and a timed torch put
 //! out by water keeps its flag.
 //!
-//! The whole overlay is ported. Not reached yet: the Deku Stick (Link holds none until GAME-05
-//! milestone 4b) and arrows (`En_Arrow` isn't ported: the id check stays, and the arrow's
-//! collider is written through a marked hook). The light's glow sprite (`Lights_GlowCheck`)
-//! isn't ported for any actor.
+//! The whole overlay is ported. Not reached yet: a normal arrow through the flame (`En_Arrow` is
+//! ported, but a child shoots only seeds; the bow comes with Phase 14). The light's glow sprite
+//! (`Lights_GlowCheck`) isn't ported for any actor.
+//!
+//! Params: `switchFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`); `torchCount` bits 6 to 9
+//! (`PARAMS_GET_U(params, 6, 4)`: 0 a lone torch; else the timed torches lit at once that set the
+//! flag, 10 meaning 24, and the lit time `50 * torchCount + 110`); `alwaysLit` bit 10
+//! (`PARAMS_GET_NOSHIFT(params, 10, 1)`); `torchType` bits 12 to 15 (0 golden, 1 timed, 2
+//! wooden; the C compares them unshifted). `shape.rot.x` and `shape.rot.z`: a tilt.
+//! Flags: reads switch flag `switchFlag` (set: lit; cleared, a lit one burns out), sets it when
+//! the torch (or the `torchCount`th timed one) is lit; would clear it when water puts out a timed
+//! torch (never: `@bug (game)`).
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -35,6 +43,7 @@ use eng_math::binang_to_rad;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::{NA_SE_EV_FLAME_IGNITION, NA_SE_EV_TORCH, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::lights::{LightInfo, LightNode};
@@ -55,7 +64,27 @@ const ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER: u32 = 1 << 10;
 
 /// `Obj_Syokudai_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OBJ_SYOKUDAI, name: "Obj_Syokudai", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER, object: OBJECT };
+    ActorProfile { id: ACTOR_OBJ_SYOKUDAI, name: "Obj_Syokudai", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: `switchFlag`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set: lit; set when it (or the torchCount-th timed torch) is lit");
+/// `PARAMS_GET_U(params, 6, 4)`: `torchCount`.
+pub const TORCH_COUNT: Field =
+    Field::params("torchCount", 6, 4, Kind::Range(0, 15), "0: a lone torch; else how many timed torches lit at once set the flag (10: 24), and the lit time, 50 a unit + 110");
+/// `PARAMS_GET_NOSHIFT(params, 10, 1)`: always lit.
+pub const ALWAYS_LIT: Field = Field::params("alwaysLit", 10, 1, Kind::Named(&[(0, "lit by its flag or by fire"), (1, "always lit")]), "whether it's always lit");
+/// `PARAMS_GET_NOSHIFT(params, 12, 4)`: `torchType` (the C keeps it unshifted).
+pub const TORCH_TYPE: Field = Field::params("torchType", 12, 4, Kind::Named(&[(0, "golden"), (1, "timed"), (2, "wooden")]), "the torch, its stand's material and its draw");
+/// `shape.rot.x`, `shape.rot.z`: a tilt (Jabu-Jabu's, the Fire and Water Temples' tilted torches).
+pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the torch's tilt");
+pub const ROT_Z: Field = Field::rot("shape.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the torch's tilt");
+
+/// Obj_Syokudai's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, TORCH_COUNT, ALWAYS_LIT, TORCH_TYPE, ROT_X, ROT_Z],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("set: lit; set when lit; cleared by water (torchType 1, never reached: @bug (game))")],
+    todo: false,
+};
 
 /// The types (the params' high 4 bits, `(u16)params >> 12`).
 pub const TORCH_GOLDEN: usize = 0;
@@ -158,17 +187,17 @@ pub fn lit_torch_count(play: &mut PlayState) -> &mut i32 {
 
 /// `PARAMS_GET_NOSHIFT(params, 12, 4)`: the type's bits, unshifted (0, 0x1000, 0x2000).
 fn torch_type(params: i16) -> i32 {
-    params as i32 & 0xF000
+    (TORCH_TYPE.get(params) as i32) << 12
 }
 
 /// `PARAMS_GET_U(params, 6, 4)`: the count.
 fn torch_count(params: i16) -> i32 {
-    (params as i32 >> 6) & 0xF
+    TORCH_COUNT.get(params) as i32
 }
 
 /// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
 fn switch_flag(params: i16) -> i32 {
-    params as i32 & 0x3F
+    SWITCH_FLAG.get(params) as i32
 }
 
 /// What the torch reads of Player (`GET_PLAYER(play)`): `heldItemAction`, the melee weapon's tip
@@ -192,8 +221,8 @@ fn set_player_unk_860(play: &mut PlayState, v: i16) {
 }
 
 /// `arrow->actor.params = 0; arrow->collider.elem.atDmgInfo.dmgFlags = DMG_ARROW_FIRE`: a normal
-/// arrow through a lit flame becomes a fire arrow. `En_Arrow` isn't ported: no actor has its id,
-/// so this isn't reached; its `collider` (a quad) would be its collider 0.
+/// arrow through a lit flame becomes a fire arrow. `En_Arrow`'s `collider` (a quad) is its
+/// collider 0. Not reached until the bow (a child's seeds aren't arrows).
 fn en_arrow_set_fire(play: &mut PlayState, h: ActorHandle) {
     let Some(a) = play.actors.get_mut(h) else { return };
     a.base_mut().params = 0;
@@ -225,7 +254,7 @@ impl ObjSyokudai {
     /// its switch flag is set (`@bug (game)`: `torchType != 2` always holds, so a wooden torch
     /// too); the flame's scroll from `Rand`, `sLitTorchCount` reset, the focus 60 up.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let params = actor.params;
+        let params = actor.params; // schema: read through its fields.
         let torch_type = torch_type(params);
         // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 1000); cullingVolumeDistance 4000,
         // cullingVolumeScale 800, cullingVolumeDownward 800.
@@ -237,7 +266,7 @@ impl ObjSyokudai {
         actor.shape_y_offset = 0.0;
         let mut stand_collider = ColliderCylinder::new(&CYL_INIT_STAND);
         // sColMaterialsStand[PARAMS_GET_NOMASK(params, 12)].
-        if let Some(&m) = COL_MATERIALS_STAND.get((params >> 12) as usize) {
+        if let Some(&m) = COL_MATERIALS_STAND.get(TORCH_TYPE.get(params) as usize) {
             stand_collider.base.col_type = m;
         }
         let flame_collider = ColliderCylinder::new(&CYL_INIT_FLAME);
@@ -246,7 +275,7 @@ impl ObjSyokudai {
         let light_info = LightInfo::point_glow(p.x as i16, (p.y + 70.0) as i16, p.z as i16, [255, 255, 180], -1);
         let light_node = play.light_ctx.insert_light(light_info);
         let mut t = ObjSyokudai { actor, stand_collider, flame_collider, lit_timer: 0, flame_tex_scroll: 0, light_node, light_info };
-        if params & 0x400 != 0 || (torch_type != 2 && play.flags.get_switch(switch_flag(params))) {
+        if ALWAYS_LIT.get(params) != 0 || (torch_type != 2 && play.flags.get_switch(switch_flag(params))) {
             t.lit_timer = -1;
         }
         t.flame_tex_scroll = (play.rand.zero_one() * 20.0) as i32 as u8;
@@ -264,7 +293,7 @@ impl ObjSyokudai {
 
     /// The type's index (`(u16)params >> 12`) for the draw.
     pub fn type_index(&self) -> usize {
-        (self.actor.params as u16 >> 12) as usize
+        TORCH_TYPE.get(self.actor.params) as usize
     }
 }
 
@@ -285,7 +314,7 @@ impl ActorImpl for ObjSyokudai {
     /// the light (200, shrinking over the last 20 frames) at a brightness from `Rand`, and the
     /// crackle.
     fn update(&mut self, play: &mut PlayState) {
-        let params = self.actor.params;
+        let params = self.actor.params; // schema: read through its fields.
         let mut torch_count = torch_count(params);
         let switch_flag = switch_flag(params);
         let torch_type = torch_type(params);
@@ -312,7 +341,7 @@ impl ActorImpl for ObjSyokudai {
             // (No Player: as one holding nothing.)
             let pl = player(play).unwrap_or(PlayerSnap { held_item_action: 0, tip: Vec3::ZERO, unk_860: 0 });
             let mut interaction_type = 0;
-            if params & 0x400 != 0 {
+            if ALWAYS_LIT.get(params) != 0 {
                 self.lit_timer = -1;
             }
             if torch_count != 0 {
@@ -433,7 +462,7 @@ impl ActorImpl for ObjSyokudai {
         if lit_timer == 0 {
             return;
         }
-        let timer_max = torch_count(self.actor.params) * 50 + 100;
+        let timer_max = TORCH_COUNT.get(self.actor.params) as i32 * 50 + 100;
         let mut flame_scale = 1.0;
         if lit_timer > timer_max {
             flame_scale = (timer_max - lit_timer + 10) as f32 / 10.0;

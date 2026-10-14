@@ -2,9 +2,6 @@
 //! that swoops at Link; Fire and Ice Keese burn or freeze him, and a normal one catches fire by
 //! a lit torch (`Obj_Syokudai`).
 //!
-//! Params (`EnFireflyType`, 0x8000: seen only with the Lens of Truth): 0 and 1 fire (1 perches
-//! once its fire's out), 2 normal, 3 normal and perched, 4 ice. The Deku Tree's seven are 3.
-//!
 //! - **Perched** (`EnFirefly_Perched`): hanging still, flapping now and then, until Link is
 //!   within 120 across; then it **attacks from its perch** (`EnFirefly_AttackFromPerched`) for 50
 //!   frames, diving at him, before flying about.
@@ -31,6 +28,13 @@
 //! draw's env colour (alpha 0 for a fire body, 255 else) doesn't reach the skeleton's mesh, whose
 //! combiner doesn't read it. The generic circle shadow (`ActorShadow_DrawCircle`) isn't ported for
 //! any actor.
+//!
+//! Params: `params` bits 0 to 14 (`EnFireflyType`: 0 fire, 1 fire, perching once its fire's out,
+//! 2 normal, 3 normal and perched, 4 ice; its fire lit or put out, the type moves between 0 and 2,
+//! 1 and 3, 4 and 0); bit 15 (`PARAMS_GET_NOSHIFT(params, 15, 1)`: seen only with the Lens of
+//! Truth, `ACTOR_FLAG_REACT_TO_LENS`; init clears it). The Deku Tree's seven are 3. `shape.rot.x`
+//! is placed (0x4000) but only a rotation: a perched one's pitch until it flies.
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -41,6 +45,7 @@ use eng_math::{atan2_s, cos_s, scaled_step_to_s, sin_s, smooth_step_to_s, step_t
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2, enemy_start_finishing_blow};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, Source};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::pack::keys;
@@ -51,6 +56,30 @@ use oot_game::sys_matrix::MtxF;
 use crate::obj_syokudai::ACTOR_OBJ_SYOKUDAI;
 
 pub const ACTOR_EN_FIREFLY: i16 = 0x0013;
+
+/// `this->actor.params` (bit 15 cleared at init): an `EnFireflyType`.
+pub const TYPE: Field = Field::params(
+    "params",
+    0,
+    15,
+    Kind::Named(&[
+        (0, "EN_FIREFLY_TYPE_FIRE"),
+        (1, "EN_FIREFLY_TYPE_FIRE_CAN_PERCH"),
+        (2, "EN_FIREFLY_TYPE_NORMAL"),
+        (3, "EN_FIREFLY_TYPE_NORMAL_PERCHED"),
+        (4, "EN_FIREFLY_TYPE_ICE"),
+    ]),
+    "a fire, normal or ice Keese, perched or not",
+);
+/// `PARAMS_GET_NOSHIFT(this->actor.params, 15, 1)`: invisible but to the Lens of Truth.
+pub const INVISIBLE: Field = Field::params("params & 0x8000", 15, 1, Kind::Named(&[(0, "visible"), (1, "seen only with the Lens of Truth")]), "whether only the Lens of Truth shows it");
+
+/// `shape.rot.x`: placed (0x4000, the Deku Tree's perched ones) and kept as its pitch until it
+/// attacks from its perch (`EnFirefly_SetupAttackFromPerched`: 0x1554); a fire one's is set at init.
+pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "its pitch on its perch (0x4000), until it flies");
+
+/// En_Firefly's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, INVISIBLE, ROT_X], flags: &[], todo: false };
 const OBJECT: &str = "object_firefly";
 
 /// `ACTOR_FLAG_IGNORE_QUAKE`, `ACTOR_FLAG_CAN_ATTACH_TO_ARROW`, `ACTOR_FLAG_ATTACHED_TO_ARROW`
@@ -66,6 +95,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ENEMY,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_IGNORE_QUAKE | ACTOR_FLAG_CAN_ATTACH_TO_ARROW,
     object: OBJECT,
+    schema: &SCHEMA,
 };
 
 /// `EnFireflyType`.
@@ -280,12 +310,12 @@ impl EnFirefly {
             collider,
             draw_xlu: false,
         };
-        if f.actor.params as u16 & 0x8000 != 0 {
+        if INVISIBLE.get(f.actor.params) != 0 {
             f.actor.flags |= ACTOR_FLAG_REACT_TO_LENS;
             f.draw_xlu = true;
             f.actor.params &= 0x7FFF;
         }
-        f.body_elemental_type = if f.actor.params <= EN_FIREFLY_TYPE_FIRE_CAN_PERCH { EN_FIREFLY_BODY_ELEMENTAL_TYPE_FIRE } else { EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL };
+        f.body_elemental_type = if TYPE.get(f.actor.params) <= EN_FIREFLY_TYPE_FIRE_CAN_PERCH { EN_FIREFLY_BODY_ELEMENTAL_TYPE_FIRE } else { EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL };
         if f.body_elemental_type != EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL {
             f.action = Action::Idle;
             f.timer = play.rand.s16_offset(20, 60);
@@ -294,8 +324,8 @@ impl EnFirefly {
             f.actor.navi_enemy_id = NAVI_ENEMY_FIRE_KEESE;
             f.home_y = f.actor.home_pos.y;
         } else {
-            f.action = if f.actor.params == EN_FIREFLY_TYPE_NORMAL_PERCHED { Action::Perched } else { Action::Idle };
-            if f.actor.params == EN_FIREFLY_TYPE_ICE {
+            f.action = if TYPE.get(f.actor.params) == EN_FIREFLY_TYPE_NORMAL_PERCHED { Action::Perched } else { Action::Idle };
+            if TYPE.get(f.actor.params) == EN_FIREFLY_TYPE_ICE {
                 f.collider.elements[0].info.at_dmg_info.hit_special_effect = HIT_SPECIAL_EFFECT_ICE;
                 f.actor.navi_enemy_id = NAVI_ENEMY_ICE_KEESE;
             } else {
@@ -303,7 +333,7 @@ impl EnFirefly {
                 f.actor.navi_enemy_id = NAVI_ENEMY_KEESE;
             }
             f.home_y = f.actor.home_pos.y + 100.0;
-            f.effects_elemental_type = if f.actor.params == EN_FIREFLY_TYPE_ICE { EN_FIREFLY_EFFECTS_ELEMENTAL_TYPE_ICE } else { EN_FIREFLY_EFFECTS_ELEMENTAL_TYPE_NONE };
+            f.effects_elemental_type = if TYPE.get(f.actor.params) == EN_FIREFLY_TYPE_ICE { EN_FIREFLY_EFFECTS_ELEMENTAL_TYPE_ICE } else { EN_FIREFLY_EFFECTS_ELEMENTAL_TYPE_NONE };
         }
         f.collider.elements[0].dim.world_sphere.radius = f.collider.elements[0].dim.model_sphere.radius;
         Box::new(f)
@@ -320,7 +350,7 @@ impl EnFirefly {
 
     /// `EnFirefly_SetElementFire`: alight (an ice one becomes type 0, the normal ones 0 and 1).
     fn set_element_fire(&mut self) {
-        if self.actor.params == EN_FIREFLY_TYPE_ICE {
+        if TYPE.get(self.actor.params) == EN_FIREFLY_TYPE_ICE {
             self.actor.params = EN_FIREFLY_TYPE_FIRE;
         } else {
             self.actor.params -= 2;
@@ -444,7 +474,7 @@ impl EnFirefly {
     /// `EnFirefly_ApproachPerchSpot`: a perching one with Link over 300 from its perch flies
     /// back to it (slowing within 20), perching within 5. True while it does.
     fn approach_perch_spot(&mut self, play: &PlayState) -> bool {
-        if self.actor.params != EN_FIREFLY_TYPE_NORMAL_PERCHED {
+        if TYPE.get(self.actor.params) != EN_FIREFLY_TYPE_NORMAL_PERCHED {
             return false;
         }
         let player_pos = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or_default();
@@ -503,7 +533,7 @@ impl EnFirefly {
         }
         let anim_looped = self.skel.on_frame(0.0);
         self.actor.speed_xz = (play.rand.zero_one() * 1.5) + 1.5;
-        if self.body_elemental_type != EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL || self.actor.params == EN_FIREFLY_TYPE_ICE || (!self.approach_perch_spot(play) && !self.approach_lit_torch(play)) {
+        if self.body_elemental_type != EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL || TYPE.get(self.actor.params) == EN_FIREFLY_TYPE_ICE || (!self.approach_perch_spot(play) && !self.approach_lit_torch(play)) {
             if anim_looped {
                 let f = play.rand.zero_one();
                 if f < 0.5 {
@@ -674,7 +704,7 @@ impl EnFirefly {
         if self.timer == 0 {
             if self.body_elemental_type != EN_FIREFLY_BODY_ELEMENTAL_TYPE_NORMAL {
                 self.effects_elemental_type = EN_FIREFLY_EFFECTS_ELEMENTAL_TYPE_FIRE;
-            } else if self.actor.params == EN_FIREFLY_TYPE_ICE {
+            } else if TYPE.get(self.actor.params) == EN_FIREFLY_TYPE_ICE {
                 self.effects_elemental_type = EN_FIREFLY_EFFECTS_ELEMENTAL_TYPE_ICE;
             }
             self.setup_idle(play);
@@ -758,7 +788,7 @@ impl EnFirefly {
             self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         }
         if reaction == EN_FIREFLY_DMG_REACT_DINS_FIRE {
-            if self.actor.params == EN_FIREFLY_TYPE_ICE {
+            if TYPE.get(self.actor.params) == EN_FIREFLY_TYPE_ICE {
                 self.actor.col_chk_info.health = 0;
                 enemy_start_finishing_blow(play, &self.actor);
                 self.ice_melt(play);
@@ -770,7 +800,7 @@ impl EnFirefly {
                 }
             }
         } else if reaction == EN_FIREFLY_DMG_REACT_ICE {
-            if self.actor.params == EN_FIREFLY_TYPE_ICE {
+            if TYPE.get(self.actor.params) == EN_FIREFLY_TYPE_ICE {
                 self.setup_die(play);
             } else {
                 self.setup_die_frozen(play);
@@ -780,7 +810,7 @@ impl EnFirefly {
                 self.setup_stunned(play);
             }
         } else {
-            if reaction == EN_FIREFLY_DMG_REACT_FIRE_ARROW && self.actor.params == EN_FIREFLY_TYPE_ICE {
+            if reaction == EN_FIREFLY_DMG_REACT_FIRE_ARROW && TYPE.get(self.actor.params) == EN_FIREFLY_TYPE_ICE {
                 self.ice_melt(play);
             }
             self.setup_die(play);

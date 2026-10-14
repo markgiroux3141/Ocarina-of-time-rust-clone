@@ -11,14 +11,16 @@
 //!
 //! The whole overlay is ported.
 //!
-//! Params: none (Kakariko places it with 0xFFFF).
+//! Params: none read (Kakariko places it with 0xFFFF, unused).
 //! Flags: reads EVENTCHKINF_65 (the fast turn); clears it outside a cutscene layer.
 
 use eng_math::approach_f;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::{SFX_FLAG, SfxPos};
+use oot_game::event_chk_inf;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 /// `ACTOR_BG_SPOT01_FUSYA` (`actor_table.h`: 0x0102).
@@ -27,7 +29,17 @@ pub const ACTOR_BG_SPOT01_FUSYA: i16 = 0x0102;
 pub const OBJECT: &str = "object_spot01_objects";
 
 /// `Bg_Spot01_Fusya_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_FUSYA, name: "Bg_Spot01_Fusya", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_FUSYA, name: "Bg_Spot01_Fusya", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// The placed params, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
+
+/// Bg_Spot01_Fusya's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_65)).reads().clears().note("the fast turn; cleared at init outside a cutscene layer")],
+    todo: false,
+};
 
 /// `EVENTCHKINF_65` (`save.h`: 0x65): the sails' fast turn.
 pub const EVENTCHKINF_65: u16 = 0x65;

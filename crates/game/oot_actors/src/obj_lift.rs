@@ -14,12 +14,20 @@
 //!
 //! The Master Quest Deku Tree's is in room 2, params 0x0080 at (-1214, 390, 1208): size 0,
 //! flag 0x20, no wait. The whole overlay is ported.
+//!
+//! Params: the size bit 1 (`PARAMS_GET_U(params, 1, 1)`: 0 scale 0.1, 1 scale 0.05); the switch
+//! flag bits 2 to 7 (`PARAMS_GET_U(params, 2, 6)`: set when it breaks; set at init, it's gone);
+//! the wait bits 8 to 10 (`PARAMS_GET_U(params, 8, 3)`, an index into `sFallTimerDurations`: 0
+//! to 6 the frames stood on before it shakes, 7 falls at once without shaking); bits 11 to 15
+//! unused (the Water Temple's 0xFFFC). `home.rot.x` and `home.rot.z`: a tilt.
+//! Flags: reads switch flag `switchFlag` (set: gone at init) and sets it when it breaks.
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_INTERACT_PLAYER_ON_TOP, DYNA_TRANSFORM_POS};
 use eng_math::{cos_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, func_80033480};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::camera::CAM_ID_NONE;
 use oot_game::effect::kakera::KAKERA_COLOR_NONE;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -37,7 +45,32 @@ pub const NA_SE_EV_BLOCK_SHAKE: u16 = 0x2838;
 pub const NA_SE_EV_BOX_BREAK: u16 = 0x2839;
 
 /// `Obj_Lift_Profile`: `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_LIFT, name: "Obj_Lift", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_LIFT, name: "Obj_Lift", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 1, 1)`: the size, an index into `sScales` and `sMaxFallDistances`.
+pub const SIZE: Field = Field::params("size", 1, 1, Kind::Named(&[(0, "large (scale 0.1)"), (1, "small (scale 0.05)")]), "the platform's size");
+/// `PARAMS_GET_U(params, 2, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 2, 6, Kind::SwitchFlag, "set when it breaks; set at init, it's gone");
+/// `PARAMS_GET_U(params, 8, 3)`: the wait, an index into `sFallTimerDurations`.
+pub const FALL_TIMER: Field = Field::params(
+    "fallTimer",
+    8,
+    3,
+    Kind::Named(&[(0, "0 frames"), (1, "10 frames"), (2, "20 frames"), (3, "30 frames"), (4, "40 frames"), (5, "50 frames"), (6, "60 frames"), (7, "falls at once, no shake")]),
+    "how long Link stands on it before it shakes",
+);
+/// Bits 11 to 15: the Water Temple's 0xFFFC sets them.
+pub const HIGH_BITS: Field = Field::params("bits 11 to 15", 11, 5, Kind::Unused, "set in the Water Temple's 0xFFFC; read by nothing");
+/// `home.rot.x`, `home.rot.z`: the platform's tilt (the shake swings about it).
+pub const ROT_X: Field = Field::rot("home.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the platform's tilt");
+pub const ROT_Z: Field = Field::rot("home.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the platform's tilt");
+
+/// Obj_Lift's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SIZE, SWITCH_FLAG, FALL_TIMER, HIGH_BITS, ROT_X, ROT_Z],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken, gone at init; set when it breaks")],
+    todo: false,
+};
 
 /// `sFallTimerDurations`.
 pub const FALL_TIMER_DURATIONS: [i16; 7] = [0, 10, 20, 30, 40, 50, 60];
@@ -53,7 +86,7 @@ pub const MAX_FALL_DISTANCES: [f32; 2] = [-18.0, -9.0];
 /// next static's first value (`sFragmentScales[0].x`, 120); 7 skips the shake and the wait is
 /// reset to that while Link is off.
 pub fn fall_timer_duration(params: i16) -> i16 {
-    let i = ((params as u16 >> 8) & 7) as usize;
+    let i = FALL_TIMER.get(params) as usize;
     FALL_TIMER_DURATIONS.get(i).copied().unwrap_or(FRAGMENT_SCALES[0].0)
 }
 
@@ -86,12 +119,12 @@ fn source(a: &Actor) -> BgActorSource {
 impl ObjLift {
     /// `PARAMS_GET_U(params, 1, 1)`: the size.
     fn size(&self) -> usize {
-        ((self.actor.params as u16 >> 1) & 1) as usize
+        SIZE.get(self.actor.params) as usize
     }
 
     /// `PARAMS_GET_U(params, 2, 6)`: the switch flag.
     pub fn switch_flag(&self) -> i32 {
-        ((self.actor.params as u16 >> 2) & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `ObjLift_Init`: the collision (`ObjLift_InitDynaPoly`, `DYNA_TRANSFORM_POS`); gone if its
@@ -105,6 +138,7 @@ impl ObjLift {
             None => BG_ACTOR_MAX,
         };
         if bg == BG_ACTOR_MAX {
+            // schema: the whole params printed.
             log::warn!("Warning : move BG registration failed (../z_obj_lift.c 188)(name {})(arg_data 0x{:04x})", actor.id, actor.params);
         }
         let mut l = ObjLift { actor, bg, action: Action::Wait, shake_orientation: [0; 3], timer: 0 };
@@ -125,6 +159,7 @@ impl ObjLift {
             l.shake_orientation[i] = (play.rand.zero_one() * 65535.5) as i32 as i16;
         }
         l.setup_wait();
+        // schema: the whole params printed.
         log::debug!("(Dungeon Lift)(arg_data 0x{:04x})", l.actor.params);
         play.col.dyna.set_source(l.bg, source(&l.actor));
         Box::new(l)
@@ -132,7 +167,7 @@ impl ObjLift {
 
     /// `ObjLift_SetupWait`.
     fn setup_wait(&mut self) {
-        self.timer = fall_timer_duration(self.actor.params);
+        self.timer = fall_timer_duration(self.actor.params); // schema: read through FALL_TIMER.
         self.action = Action::Wait;
     }
 
@@ -142,7 +177,7 @@ impl ObjLift {
     fn wait(&mut self, play: &mut PlayState) {
         if play.col.dyna.interact_flag(self.bg, DYNA_INTERACT_PLAYER_ON_TOP) {
             if self.timer <= 0 {
-                if (self.actor.params as u16 >> 8) & 7 == 7 {
+                if FALL_TIMER.get(self.actor.params) == 7 {
                     self.setup_fall();
                 } else {
                     let quake_index = play.quake_request(CAM_ID_NONE, QUAKE_TYPE_1);
@@ -153,7 +188,7 @@ impl ObjLift {
                 }
             }
         } else {
-            self.timer = fall_timer_duration(self.actor.params);
+            self.timer = fall_timer_duration(self.actor.params); // schema: read through FALL_TIMER. // schema: read through FALL_TIMER.
         }
     }
 

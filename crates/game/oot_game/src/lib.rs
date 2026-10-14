@@ -14,6 +14,7 @@
 
 pub mod actor;
 pub mod actor_ctx;
+pub mod actor_schema;
 pub mod actor_table;
 pub mod audio;
 pub mod camera;

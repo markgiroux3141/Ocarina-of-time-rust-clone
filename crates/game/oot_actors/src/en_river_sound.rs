@@ -10,10 +10,19 @@
 //!
 //! The whole overlay is ported. The sounds are its draw's (`EnRiverSound_Draw`), made where
 //! `Actor_DrawAll` makes them (`ActorImpl::draw_sfx`), and not on the first frame.
+//!
+//! Params: `params` bits 0 to 7 (`RiverSoundType`: 0, 4, 5 a river, low, medium and high; 1 to 3
+//! and 6 to 0x15 a place's sound or music (0x0B lowers the main bgm; 0x0C Saria's Song in the
+//! Lost Woods, only with Zelda's Lullaby and not Saria's Song known; 0x0D, 0x13 Goron City's
+//! Saria's Song, the Great Fairy's music); 0xF7 the Kokiri nature ambience, 0xF8 to 0xFF Ganon's
+//! Tower's music level, both at init and gone); init writes it over the whole params.
+//! `pathIndex` bits 8 to 15 (`PARAMS_GET_U(params, 8, 8)`): the river's path (rivers only).
+//! Flags: reads the room's clear flag (in `SCENE_DODONGOS_CAVERN_BOSS`: cleared, it's gone).
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorContext, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::bgm::SariaPos;
 use oot_game::audio::sfx::*;
 use oot_game::audio::{NA_BGM_GREAT_FAIRY, NA_BGM_SARIA_THEME, NATURE_ID_KOKIRI_REGION};
@@ -25,7 +34,58 @@ use oot_game::surface::SurfaceType;
 pub const ACTOR_EN_RIVER_SOUND: i16 = 0x003B;
 
 /// `En_River_Sound_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_RIVER_SOUND, name: "En_River_Sound", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_RIVER_SOUND, name: "En_River_Sound", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 8)`: the kind (`EnRiverSound_Init` writes it over the
+/// params).
+pub const TYPE: Field = Field::params(
+    "params",
+    0,
+    8,
+    Kind::Named(&[
+        (0x00, "RS_RIVER_DEFAULT_LOW_FREQ"),
+        (0x01, "RS_SMALL_WATERFALL"),
+        (0x02, "RS_LAVA_BUBBLES_1"),
+        (0x03, "RS_LARGE_WATERFALL"),
+        (0x04, "RS_RIVER_DEFAULT_MEDIUM_FREQ"),
+        (0x05, "RS_RIVER_DEFAULT_HIGH_FREQ"),
+        (0x06, "RS_LAVA_BUBBLES_2"),
+        (0x07, "RS_LAVA_BUBBLES_3"),
+        (0x08, "RS_DRIPPING_WATER"),
+        (0x09, "RS_FOUNTAIN_WATER"),
+        (0x0A, "RS_MARKET_CROWD"),
+        (0x0B, "RS_LOWER_MAIN_BGM_VOLUME"),
+        (0x0C, "RS_LOST_WOODS_SARIAS_SONG"),
+        (0x0D, "RS_GORON_CITY_SARIAS_SONG"),
+        (0x0E, "RS_SANDSTORM"),
+        (0x0F, "RS_LAKESIDE_LAB_TANK"),
+        (0x10, "RS_CHAMBER_OF_SAGES_1"),
+        (0x11, "RS_CHAMBER_OF_SAGES_2"),
+        (0x12, "RS_RUMBLING"),
+        (0x13, "RS_GREAT_FAIRY"),
+        (0x14, "RS_TORCH_CRACKLING"),
+        (0x15, "RS_COW_MOOING"),
+        (0xF7, "RS_NATURE_AMBIENCE"),
+        (0xF8, "RS_GANON_TOWER_0"),
+        (0xF9, "RS_GANON_TOWER_1"),
+        (0xFA, "RS_GANON_TOWER_2"),
+        (0xFB, "RS_GANON_TOWER_3"),
+        (0xFC, "RS_GANON_TOWER_4"),
+        (0xFD, "RS_GANON_TOWER_5"),
+        (0xFE, "RS_GANON_TOWER_6"),
+        (0xFF, "RS_GANON_TOWER_7"),
+    ]),
+    "the sound or music it makes",
+);
+/// `PARAMS_GET_U(this->actor.params, 8, 8)`: `pathIndex`, the river's path.
+pub const PATH_INDEX: Field = Field::params("pathIndex", 8, 8, Kind::PathIndex, "the river's path, its sound following Link along it").when("params", &[0x00, 0x04, 0x05]);
+
+/// En_River_Sound's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, PATH_INDEX],
+    flags: &[FlagUse::new(Flag::Clear).reads().note("in Dodongo's Cavern's boss room: cleared, it's gone")],
+    todo: false,
+};
 
 /// `RiverSoundType` (`z_en_river_sound.h`).
 pub const RS_RIVER_DEFAULT_LOW_FREQ: i16 = 0x00;
@@ -92,16 +152,16 @@ pub struct EnRiverSound {
 impl EnRiverSound {
     /// `EnRiverSound_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let path_index = (actor.params >> 8) & 0xFF;
+        let path_index = PATH_INDEX.get(actor.params);
         actor.params &= 0xFF;
-        if actor.params >= RS_GANON_TOWER_0 {
+        if TYPE.get(actor.params) >= RS_GANON_TOWER_0 {
             // Each room of the climb plays NA_BGM_GANON_TOWER louder.
-            play.audio.set_ganons_tower_bgm_volume_level((actor.params - RS_GANON_TOWER_0) as u8);
+            play.audio.set_ganons_tower_bgm_volume_level((TYPE.get(actor.params) - RS_GANON_TOWER_0) as u8);
             actor.kill();
-        } else if actor.params == RS_NATURE_AMBIENCE {
+        } else if TYPE.get(actor.params) == RS_NATURE_AMBIENCE {
             play.audio.play_nature_ambience_sequence(NATURE_ID_KOKIRI_REGION);
             actor.kill();
-        } else if actor.params == RS_LOST_WOODS_SARIAS_SONG {
+        } else if TYPE.get(actor.params) == RS_LOST_WOODS_SARIAS_SONG {
             let quest = play.save.inventory.quest_items;
             if quest & (1 << QUEST_SONG_LULLABY) == 0 || quest & (1 << QUEST_SONG_SARIA) != 0 {
                 actor.kill();
@@ -111,7 +171,7 @@ impl EnRiverSound {
     }
 
     fn is_river(&self) -> bool {
-        matches!(self.actor.params, RS_RIVER_DEFAULT_LOW_FREQ | RS_RIVER_DEFAULT_MEDIUM_FREQ | RS_RIVER_DEFAULT_HIGH_FREQ)
+        matches!(TYPE.get(self.actor.params), RS_RIVER_DEFAULT_LOW_FREQ | RS_RIVER_DEFAULT_MEDIUM_FREQ | RS_RIVER_DEFAULT_HIGH_FREQ)
     }
 }
 
@@ -204,7 +264,7 @@ impl ActorImpl for EnRiverSound {
                     _ => CONVEYOR_SPEED_DISABLED,
                 };
                 if self.sfx_freq_index == CONVEYOR_SPEED_DISABLED {
-                    self.sfx_freq_index = match self.actor.params {
+                    self.sfx_freq_index = match TYPE.get(self.actor.params) {
                         RS_RIVER_DEFAULT_MEDIUM_FREQ => 0,
                         RS_RIVER_DEFAULT_LOW_FREQ => 1,
                         _ => 2,
@@ -213,7 +273,7 @@ impl ActorImpl for EnRiverSound {
                     self.sfx_freq_index = self.sfx_freq_index.wrapping_sub(1).min(CONVEYOR_SPEED_MAX - 2);
                 }
             }
-        } else if self.actor.params == RS_GORON_CITY_SARIAS_SONG || self.actor.params == RS_GREAT_FAIRY {
+        } else if TYPE.get(self.actor.params) == RS_GORON_CITY_SARIAS_SONG || TYPE.get(self.actor.params) == RS_GREAT_FAIRY {
             self.actor.home_pos = player.world_to_actor_coords(self.actor.world_pos);
         } else if play.scene_id == SCENE_DODONGOS_CAVERN_BOSS && play.flags.get_clear(self.actor.room) {
             self.actor.kill();
@@ -232,7 +292,7 @@ impl ActorImpl for EnRiverSound {
         self.me = play.cur_actor;
         let me = self.me;
         let own = (self.actor.projected_pos, self.actor.home_pos);
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             _ if self.is_river() => {
                 let pos = me.map(SfxPos::Actor).unwrap_or(SfxPos::Default);
                 play.audio.play_sfx_river(pos, SFX_FREQS[(self.sfx_freq_index as usize).min(SFX_FREQS.len() - 1)]);
@@ -247,12 +307,12 @@ impl ActorImpl for EnRiverSound {
             }
             RS_GORON_CITY_SARIAS_SONG | RS_GREAT_FAIRY => {
                 let Some(h) = me else { return };
-                let (seq_id, dist_max) = if self.actor.params == RS_GORON_CITY_SARIAS_SONG { (NA_BGM_SARIA_THEME, 1000) } else { (NA_BGM_GREAT_FAIRY, 800) };
+                let (seq_id, dist_max) = if TYPE.get(self.actor.params) == RS_GORON_CITY_SARIAS_SONG { (NA_BGM_SARIA_THEME, 1000) } else { (NA_BGM_GREAT_FAIRY, 800) };
                 let read = read_saria(&play.actors, me, own);
                 play.audio.play_saria_bgm(SariaPos::Home(h), seq_id, dist_max, &read);
             }
             RS_SANDSTORM | RS_CHAMBER_OF_SAGES_1 | RS_CHAMBER_OF_SAGES_2 | RS_RUMBLING => {
-                play.audio.play_sfx_centered2(SOUND_EFFECTS.get(self.actor.params as usize).copied().unwrap_or(0));
+                play.audio.play_sfx_centered2(SOUND_EFFECTS.get(TYPE.get(self.actor.params) as usize).copied().unwrap_or(0));
             }
             p => audio_play_actor_sfx2(play, SOUND_EFFECTS.get(p as usize).copied().unwrap_or(0)),
         }
@@ -260,11 +320,11 @@ impl ActorImpl for EnRiverSound {
 
     /// `EnRiverSound_Destroy`: the music it played lets go of it.
     fn destroy(&mut self, play: &mut PlayState) {
-        if self.actor.params == RS_LOST_WOODS_SARIAS_SONG {
+        if TYPE.get(self.actor.params) == RS_LOST_WOODS_SARIAS_SONG {
             if let Some(h) = self.me {
                 play.audio.clear_saria_bgm_at_pos(SariaPos::Projected(h));
             }
-        } else if self.actor.params == RS_GORON_CITY_SARIAS_SONG {
+        } else if TYPE.get(self.actor.params) == RS_GORON_CITY_SARIAS_SONG {
             play.audio.clear_saria_bgm2();
         }
     }

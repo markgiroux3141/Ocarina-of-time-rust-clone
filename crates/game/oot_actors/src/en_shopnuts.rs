@@ -3,9 +3,6 @@
 //! anything (its own nut bounced back), it pops out and becomes the salesman (`En_Dns`) with its
 //! params, the item he sells.
 //!
-//! Params: `SHOPNUTS_GET_TYPE`, an `EnDnsType` (the Deku Tree's one in room 3 is 4, the Deku
-//! Shield). One selling the piece of heart or a capacity upgrade already bought isn't there.
-//!
 //! - **Idle** in the ground (`EnShopnuts_Idle`): its first animation held at speed 0 for 100 to
 //!   150 frames, sped up to 1 with Link between 160 and 480 across and within 120 up or down;
 //!   up, its collider grows from 5 (frame 9 on: `AC_ON`). Link within 120, it **burrows**
@@ -20,6 +17,12 @@
 //! The whole overlay is ported. It never moves: its gravity is set but there's no
 //! `Actor_MoveXZGravity`, and its collider stays where its init put it. Not ported: the circle
 //! shadow (`ActorShadow_DrawCircle`, 35), not ported for any actor.
+//!
+//! Params: `type` the whole params (`SHOPNUTS_GET_TYPE`, an `EnDnsType`: what its salesman
+//! sells, 0 Deku Nuts to 10 the Deku Nut upgrade, see `En_Dns`; handed to the `En_Dns` it
+//! becomes). The Deku Tree's one in room 3 is 4, the Deku Shield.
+//! Flags: reads ITEMGETINF_DEKU_HEART_PIECE (type 2), INFTABLE_HAS_DEKU_STICK_UPGRADE (type 9)
+//! and INFTABLE_HAS_DEKU_NUT_UPGRADE (type 10): set, the item's bought and it isn't there.
 
 use std::sync::Arc;
 
@@ -30,6 +33,8 @@ use eng_math::{approach_s, cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{inf_table, item_get_inf};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
@@ -44,7 +49,21 @@ pub const ACTOR_EN_SHOPNUTS: i16 = 0x0195;
 pub(crate) const OBJECT: &str = "object_shopnuts";
 
 /// `En_Shopnuts_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_SHOPNUTS, name: "En_Shopnuts", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_SHOPNUTS, name: "En_Shopnuts", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT, schema: &SCHEMA };
+
+/// `SHOPNUTS_GET_TYPE(thisx)`: `(thisx)->params`, an `EnDnsType`.
+pub const TYPE: Field = Field::whole("type", Kind::Named(crate::en_dns::DNS_TYPE_NAMES), "what its salesman (En_Dns) sells");
+
+/// En_Shopnuts' configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(item_get_inf!(ITEMGETINF_DEKU_HEART_PIECE)).reads().note("type 2: bought, it isn't there"),
+        FlagUse::new(inf_table!(INFTABLE_HAS_DEKU_STICK_UPGRADE)).reads().note("type 9: bought, it isn't there"),
+        FlagUse::new(inf_table!(INFTABLE_HAS_DEKU_NUT_UPGRADE)).reads().note("type 10: bought, it isn't there"),
+    ],
+    todo: false,
+};
 
 /// `NAVI_ENEMY_BUSINESS_SCRUB` (`actor.h`).
 pub(crate) const NAVI_ENEMY_BUSINESS_SCRUB: u8 = 0x4E;
@@ -166,7 +185,7 @@ impl EnShopnuts {
         actor.col_chk_info.set_info(None, &COL_CHK_INFO_INIT);
         collider.update(&actor);
         let mut n = EnShopnuts { actor, skel, skeleton, anims, action: Action::Idle, anim_flag_and_timer: 0, collider };
-        let ty = n.actor.params;
+        let ty = TYPE.get(n.actor.params);
         let s = &play.save;
         if (ty == DNS_TYPE_HEART_PIECE && s.get_item_get_inf(ITEMGETINF_DEKU_HEART_PIECE))
             || (ty == DNS_TYPE_DEKU_STICK_UPGRADE && s.get_inf_table(INFTABLE_HAS_DEKU_STICK_UPGRADE))
@@ -332,7 +351,7 @@ impl EnShopnuts {
         if self.skel.update() {
             let r = self.actor.shape_rot;
             let pos = self.actor.world_pos;
-            if let Err(e) = play.actor_spawn(crate::en_dns::ACTOR_EN_DNS, pos, [r.x, r.y, r.z], self.actor.params) {
+            if let Err(e) = play.actor_spawn(crate::en_dns::ACTOR_EN_DNS, pos, [r.x, r.y, r.z], TYPE.get(self.actor.params)) {
                 log::debug!("En_Shopnuts: the salesman: {e:?}");
             }
             self.actor.kill();

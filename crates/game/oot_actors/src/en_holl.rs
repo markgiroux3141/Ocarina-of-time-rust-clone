@@ -2,26 +2,61 @@
 //! actor: it spawns from the scene's transition-actor list with its list index in the params'
 //! top bits, and loads the room on the side Player is heading into.
 //!
-//! Params: bits 6..8 the kind (`sActionFuncs`), bits 0..5 a switch flag (kind 3).
+//! Its types (`EnHollType`, `sActionFuncs`):
 //! - 0: a horizontal plane that fades as Player passes (`EnHoll_HorizontalVisibleNarrow`), the only kind drawn;
 //! - 1, 5: vertical planes (Player falls or climbs through; `EnHoll_VerticalDownBgCoverLarge`, `EnHoll_VerticalBgCover`);
 //! - 2: a vertical plane without the dimming (`EnHoll_VerticalInvisible`);
 //! - 3: a horizontal plane that only works once its switch flag is set (`EnHoll_HorizontalBgCoverSwitchFlag`);
-//! - 4, 6: horizontal planes 200 / 100 wide (`EnHoll_HorizontalInvisible`), Kokiri Forest's.
+//! - 4, 6: horizontal planes 400 / 200 wide (`EnHoll_HorizontalInvisible`), Kokiri Forest's.
 //!
-//! The plane mesh (`sPlaneDL`, in the overlay) isn't in the asset pack, so kind 0 is not
+//! The plane mesh (`sPlaneDL`, in the overlay) isn't in the asset pack, so type 0 is not
 //! drawn; its `planeAlpha` is still computed.
+//!
+//! Params: `type` bits 6 to 8 (`ENHOLL_GET_TYPE`, `EnHollType`: 0 `ENHOLL_H_VISIBLE_NARROW`, 1
+//! `ENHOLL_V_DOWN_BGCOVER_LARGE`, 2 `ENHOLL_V_INVISIBLE`, 3 `ENHOLL_H_BGCOVER_SWITCHFLAG`, 4
+//! `ENHOLL_H_INVISIBLE`, 5 `ENHOLL_V_BGCOVER`, 6 `ENHOLL_H_INVISIBLE_NARROW`); `switchFlag` bits 0
+//! to 5 (`ENHOLL_GET_SWITCH_FLAG`, type 3: the plane works once it's set; the others place 0x3F).
+//! Bits 10 to 15 are the transition actor's index (`GET_TRANSITION_ACTOR_INDEX`), added at spawn,
+//! not the placement's.
+//! Flags: reads the switch flag `switchFlag` (type 3).
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::play::PlayState;
 use oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT;
 
 pub const ACTOR_EN_HOLL: i16 = 0x0023;
 
 /// `En_Holl_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HOLL, name: "En_Holl", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HOLL, name: "En_Holl", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `ENHOLL_GET_SWITCH_FLAG`: `PARAMS_GET_U(params, 0, 6)`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "type 3: the plane works once it's set (the others: 0x3F, unread)");
+/// `ENHOLL_GET_TYPE`: `PARAMS_GET_U(params, 6, 3)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    6,
+    3,
+    Kind::Named(&[
+        (0, "ENHOLL_H_VISIBLE_NARROW"),
+        (1, "ENHOLL_V_DOWN_BGCOVER_LARGE"),
+        (2, "ENHOLL_V_INVISIBLE"),
+        (3, "ENHOLL_H_BGCOVER_SWITCHFLAG"),
+        (4, "ENHOLL_H_INVISIBLE"),
+        (5, "ENHOLL_V_BGCOVER"),
+        (6, "ENHOLL_H_INVISIBLE_NARROW"),
+    ]),
+    "horizontal or vertical, its size, and how the room behind fades",
+);
+
+/// En_Holl's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, TYPE],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("type 3: the plane works once it's set")],
+    todo: false,
+};
 
 /// `ENHOLL_H_Y_MIN`, `ENHOLL_H_Y_MAX`, `ENHOLL_H_HALFWIDTH_NARROW`, `ENHOLL_H_HALFWIDTH`.
 const ENHOLL_H_Y_MIN: f32 = -50.0;
@@ -76,11 +111,12 @@ impl EnHoll {
     }
 
     fn kind(&self) -> u16 {
-        (self.actor.params as u16 >> 6) & 7
+        TYPE.get(self.actor.params) as u16
     }
 
     /// `GET_TRANSITION_ACTOR_INDEX`.
     fn transition_index(&self) -> usize {
+        // schema: GET_TRANSITION_ACTOR_INDEX, added at spawn (Actor_SpawnTransitionActors)
         (self.actor.params as u16 >> TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize
     }
 
@@ -236,7 +272,7 @@ impl EnHoll {
 
     /// `EnHoll_HorizontalBgCoverSwitchFlag`.
     fn horizontal_switch(&mut self, play: &mut PlayState) {
-        if !play.flags.get_switch((self.actor.params & 0x3F) as i32) {
+        if !play.flags.get_switch(SWITCH_FLAG.get(self.actor.params) as i32) {
             if self.reset_bg_cover_alpha != 0 {
                 play.bg_cover_alpha = 0;
                 self.reset_bg_cover_alpha = 0;

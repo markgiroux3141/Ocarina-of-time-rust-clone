@@ -27,6 +27,15 @@
 //! 40 a frame) until it melts, so here a frozen switch goes off on its second frame (the frozen
 //! flag reads as a hit). The crystal's highlight (`func_8002ED80` with 0: only the
 //! look-at for the texgen, which the renderer takes from the view) is the renderer's.
+//!
+//! Params: `type` bits 0 to 2 (`OBJSWITCH_TYPE`, `ObjSwitchType`: 0 floor, 1 rusty floor, 2 eye,
+//! 3 crystal, 4 targetable crystal); `subType` bits 4 to 6 (`OBJSWITCH_SUBTYPE`,
+//! `ObjSwitchSubType`: 0 once, 1 toggle, 2 hold, 3 hold inverted, 4 sync); `isFrozen` bit 7
+//! (`OBJSWITCH_FROZEN`: in ice; the code clears it once thawed); `switchFlag` bits 8 to 13
+//! (`OBJSWITCH_SWITCH_FLAG`). `shape.rot.x` and `shape.rot.z`: a tilt.
+//! Flags: reads switch flag `switchFlag` (set: on at init, and the crystals and hold switches
+//! follow it), sets it when pressed or hit, and clears it when a toggle, hold or sync switch goes
+//! off.
 
 use std::sync::Arc;
 
@@ -38,6 +47,7 @@ use eng_math::{cos_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_SWITCH, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -58,7 +68,50 @@ pub const NA_SE_EV_FOOT_SWITCH: u16 = 0x2815;
 pub const NA_SE_EV_DIAMOND_SWITCH: u16 = 0x28BA;
 
 /// `Obj_Switch_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_SWITCH, name: "Obj_Switch", category: ACTORCAT_SWITCH, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_SWITCH, name: "Obj_Switch", category: ACTORCAT_SWITCH, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `OBJSWITCH_TYPE`: `PARAMS_GET_U(params, 0, 3)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    3,
+    Kind::Named(&[
+        (0, "OBJSWITCH_TYPE_FLOOR"),
+        (1, "OBJSWITCH_TYPE_FLOOR_RUSTY"),
+        (2, "OBJSWITCH_TYPE_EYE"),
+        (3, "OBJSWITCH_TYPE_CRYSTAL"),
+        (4, "OBJSWITCH_TYPE_CRYSTAL_TARGETABLE"),
+    ]),
+    "the switch: floor, rusty floor, eye, crystal, targetable crystal",
+);
+/// `OBJSWITCH_SUBTYPE`: `PARAMS_GET_U(params, 4, 3)`.
+pub const SUB_TYPE: Field = Field::params(
+    "subType",
+    4,
+    3,
+    Kind::Named(&[
+        (0, "OBJSWITCH_SUBTYPE_ONCE"),
+        (1, "OBJSWITCH_SUBTYPE_TOGGLE"),
+        (2, "OBJSWITCH_SUBTYPE_HOLD"),
+        (3, "OBJSWITCH_SUBTYPE_HOLD_INVERTED"),
+        (4, "OBJSWITCH_SUBTYPE_SYNC"),
+    ]),
+    "how it works its flag: once, toggle, hold (floor), hold inverted (floor), sync (crystal)",
+);
+/// `OBJSWITCH_FROZEN`: `PARAMS_GET_U(params, 7, 1)`.
+pub const IS_FROZEN: Field = Field::params("isFrozen", 7, 1, Kind::Named(&[(0, "not frozen"), (1, "frozen in ice (Obj_Ice_Poly)")]), "whether it starts in ice");
+/// `OBJSWITCH_SWITCH_FLAG`: `PARAMS_GET_U(params, 8, 6)`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 8, 6, Kind::SwitchFlag, "set when it's pressed or hit; cleared when it goes off");
+/// `shape.rot.x`, `shape.rot.z`: a tilt (the crystals placed on walls and ceilings).
+pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the switch's tilt");
+pub const ROT_Z: Field = Field::rot("shape.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the switch's tilt");
+
+/// Obj_Switch's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, SUB_TYPE, IS_FROZEN, SWITCH_FLAG, ROT_X, ROT_Z],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("set when pressed or hit; cleared when a toggle, hold or sync switch goes off")],
+    todo: false,
+};
 
 /// `ObjSwitchType`.
 pub const OBJSWITCH_TYPE_FLOOR: i16 = 0;
@@ -84,22 +137,22 @@ pub const fn objswitch_params(ty: i16, sub_type: i16, switch_flag: i16) -> i16 {
 
 /// `OBJSWITCH_TYPE`: `PARAMS_GET_U(params, 0, 3)`.
 pub fn objswitch_type(a: &Actor) -> i16 {
-    a.params & 7
+    TYPE.get(a.params)
 }
 
 /// `OBJSWITCH_SUBTYPE`: `PARAMS_GET_U(params, 4, 3)`.
 pub fn objswitch_subtype(a: &Actor) -> i16 {
-    (a.params >> 4) & 7
+    SUB_TYPE.get(a.params)
 }
 
 /// `OBJSWITCH_SWITCH_FLAG`: `PARAMS_GET_U(params, 8, 6)`.
 pub fn objswitch_switch_flag(a: &Actor) -> i32 {
-    ((a.params >> 8) & 0x3F) as i32
+    SWITCH_FLAG.get(a.params) as i32
 }
 
 /// `OBJSWITCH_FROZEN`: `PARAMS_GET_U(params, 7, 1)`.
 pub fn objswitch_frozen(a: &Actor) -> bool {
-    (a.params >> 7) & 1 != 0
+    IS_FROZEN.get(a.params) != 0
 }
 
 /// `sFocusHeights`, by type.
@@ -409,6 +462,7 @@ impl ObjSwitch {
             }
         };
         if self.bg == BG_ACTOR_MAX {
+            // schema: the whole params printed.
             log::warn!("Warning : move BG registration failed (../z_obj_switch.c 531)(name {})(arg_data {:#06x})", self.actor.id, self.actor.params);
         }
     }
@@ -561,6 +615,7 @@ impl ObjSwitch {
                 this.crystal_off_init();
             }
         }
+        // schema: the whole params printed.
         log::debug!("(Dungeon switch)(arg_data {:#06x})", this.actor.params);
         if this.bg != BG_ACTOR_MAX {
             play.col.dyna.set_source(this.bg, source(&this.actor));

@@ -5,10 +5,15 @@
 //!
 //! `EnTana_Init`'s print of `sShelfTypes[params]` reads past its two names for kind 2
 //! (`@bug (game)`, a print only: not ported).
+//!
+//! Params: the whole `params` the shelves (`sDrawFuncs`, `sShelfDLists`: 0 wooden, 1 and 2 stone
+//! with `sStoneTextures`' first and second texture).
+//! Flags: none.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 
@@ -16,7 +21,17 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matri
 pub const ACTOR_EN_TANA: i16 = 0x00C2;
 
 /// `En_Tana_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TANA, name: "En_Tana", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: "object_shop_dungen" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TANA, name: "En_Tana", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: "object_shop_dungen", schema: &SCHEMA };
+
+/// `thisx->params` (`sDrawFuncs[thisx->params]`): the shelves.
+pub const KIND: Field = Field::whole(
+    "params",
+    Kind::Named(&[(0, "wooden shelves"), (1, "stone shelves, the first stone texture"), (2, "stone shelves, the second stone texture")]),
+    "which shelves",
+);
+
+/// En_Tana's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[KIND], flags: &[], todo: false };
 
 /// `sShelfDLists`.
 const SHELF_DLISTS: [&str; 3] = ["gShopDungenWoodenShelvesDL", "gShopDungenStoneShelvesDL", "gShopDungenStoneShelvesDL"];
@@ -55,7 +70,7 @@ impl EnTana {
     }
 
     fn kind(&self) -> usize {
-        (self.actor.params as usize).min(2)
+        (KIND.get(self.actor.params) as usize).min(2)
     }
 }
 

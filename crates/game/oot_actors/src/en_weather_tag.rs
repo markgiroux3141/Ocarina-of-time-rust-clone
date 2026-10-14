@@ -29,17 +29,19 @@
 //! skybox change itself is kept in the environment's state, not drawn (`oot_game::env`).
 //!
 //! Params: `type` bits 0 to 3 (`EnWeatherTagType`, 0 to 7 as listed above); bits 4 to 7 unused;
-//! `range` bits 8 to 15 (the range in hundreds of units across, `WEATHER_TAG_RANGE100`; the
-//! graveyard's 0x0607 is 600).
-//!
+//! `WEATHER_TAG_RANGE100` bits 8 to 15, signed (the range in hundreds of units across; the
+//! graveyard's 0x0607 is 600; below 1 never in range).
 //! Flags: reads `EVENTCHKINF_EPONA_OBTAINED` (0x18; type 1 gone), `EVENTCHKINF_48`, `_49`, `_4A`
-//! (types 2 to 5) and the Shadow Medallion (`QUEST_MEDALLION_SHADOW`, type 5); sets none.
+//! (types 2 to 5) and the Shadow Medallion (`QUEST_MEDALLION_SHADOW`, type 5); sets and clears
+//! `gInterruptSongOfStorms` (set while its weather change waits).
 
 use eng_math::smooth_step_to_s;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::env::{CHANGE_SKYBOX_REQUESTED, LIGHT_MODE_TIME, LIGHTNING_LAST, LIGHTNING_ON, PRECIP_RAIN_CUR, PRECIP_RAIN_MAX, PRECIP_SNOW_MAX, STORM_REQUEST_NONE, WEATHER_MODE_CLEAR, WEATHER_MODE_HEAVY_RAIN, WEATHER_MODE_RAIN};
+use oot_game::event_chk_inf;
 use oot_game::play::PlayState;
 use oot_game::skybox::SKYBOX_NORMAL_SKY;
 
@@ -47,7 +49,40 @@ use oot_game::skybox::SKYBOX_NORMAL_SKY;
 pub const ACTOR_EN_WEATHER_TAG: i16 = 0x0165;
 
 /// `En_Weather_Tag_Profile`: `ACTORCAT_PROP`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED`, `gameplay_keep`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WEATHER_TAG, name: "En_Weather_Tag", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WEATHER_TAG, name: "En_Weather_Tag", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 4)`: the type.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    4,
+    Kind::Named(&[
+        (0, "EN_WEATHER_TAG_TYPE_CLOUDY_MARKET"),
+        (1, "EN_WEATHER_TAG_TYPE_CLOUDY_LON_LON_RANCH"),
+        (2, "EN_WEATHER_TAG_TYPE_SNOW_ZORAS_DOMAIN"),
+        (3, "EN_WEATHER_TAG_TYPE_RAIN_LAKE_HYLIA"),
+        (4, "EN_WEATHER_TAG_TYPE_CLOUDY_DEATH_MOUNTAIN"),
+        (5, "EN_WEATHER_TAG_TYPE_THUNDERSTORM_KAKARIKO"),
+        (6, "EN_WEATHER_TAG_TYPE_SANDSTORM_INTENSITY"),
+        (7, "EN_WEATHER_TAG_TYPE_THUNDERSTORM_GRAVEYARD"),
+    ]),
+    "which weather, and when it's gone",
+);
+/// `WEATHER_TAG_RANGE100(params)`: `(params >> 8) * 100.0f`, an arithmetic shift of the `s16`.
+pub const RANGE: Field = Field::params("WEATHER_TAG_RANGE100", 8, 8, Kind::Range(-128, 127), "its range across, in hundreds of units (below 1: never in range)").signed();
+
+/// En_Weather_Tag's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, RANGE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_EPONA_OBTAINED)).reads().note("type 1: gone once Epona is Link's"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_48)).reads().note("type 5: the storm needs it"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_49)).reads().note("type 4: gone once set; type 5: the storm needs it"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_4A)).reads().note("types 2 and 3: gone once set; type 5: the storm needs it"),
+        FlagUse::new(Flag::Other("gInterruptSongOfStorms")).sets().clears().note("set while its weather change waits, cleared once it goes through"),
+    ],
+    todo: false,
+};
 
 /// `EnWeatherTagType` (`z_en_weather_tag.h`).
 pub const EN_WEATHER_TAG_TYPE_CLOUDY_MARKET: i16 = 0;
@@ -105,12 +140,12 @@ pub struct EnWeatherTag {
 impl EnWeatherTag {
     /// `PARAMS_GET_U(params, 0, 4)`: the type.
     pub fn ty(&self) -> i16 {
-        self.actor.params & 0xF
+        TYPE.get(self.actor.params)
     }
 
     /// `WEATHER_TAG_RANGE100(params)`: `(params >> 8) * 100.0f` (an arithmetic shift of the s16).
     pub fn range(&self) -> f32 {
-        (self.actor.params >> 8) as f32 * 100.0
+        RANGE.get(self.actor.params) as f32 * 100.0
     }
 
     /// `EnWeatherTag_Init`: not targetable; the type's kill check and first action.

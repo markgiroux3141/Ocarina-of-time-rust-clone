@@ -1,6 +1,5 @@
 //! `En_Item00` (`src/code/z_en_item00.c`): the collectibles: rupees, recovery hearts, heart
-//! pieces and containers, ammo, magic, keys. `params & 0xFF` is the `Item00Type`, bits 8..13 a
-//! collectible flag, bit 15 "collected at once".
+//! pieces and containers, ammo, magic, keys.
 //!
 //! A drop (`Item_DropCollectible`, `Item_DropCollectibleRandom`, from bushes and rocks) pops
 //! up, falls and bounces (`func_8001E304`, `func_8001E1C8`), then spins where it lands
@@ -19,12 +18,23 @@
 //!
 //! Not ported: the circle shadow, the sparkles (`EffectSsKiraKira`, whose random numbers are
 //! still drawn), and the healing fairy's sound (`EffectSsDeadSound`, an effect).
+//!
+//! Params: bits 0 to 7 the item (`Item00Type`, `ITEM00_*`; the init leaves them alone in
+//! `params`); `collectibleFlag` bits 8 to 13 (`PARAMS_GET_S(params, 8, 6)`: set once collected; set
+//! at init, it's gone); bit 14 unused (the data sets it with a flag byte of 0xFF; the droppers'
+//! own 0x4000 never reaches it); `spawnParam8000` bit 15 (`PARAMS_GET_NOSHIFT(params, 15, 1)`: 1
+//! collected at once, as it spawns; the droppers pass their 0x8000 on). `shape.rot.z`: the roll it
+//! lies at (the data rolls two; a drop's spin resets it). Mostly spawned by
+//! `Item_DropCollectible`, `Item_DropCollectible2` and `Item_DropCollectibleRandom` (below), with
+//! the dropper's collectible flag in bits 8 to 13.
+//! Flags: reads collectible flag `collectibleFlag` at init (set: gone) and sets it once collected.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_MISC, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item, offer_get_item_range};
 use oot_game::item::*;
@@ -37,7 +47,26 @@ const ACTOR_EN_ELF: i16 = 0x0018;
 const FAIRY_HEAL_TIMED: i16 = 0x02;
 
 /// `En_Item00_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ITEM00, name: "En_Item00", category: ACTORCAT_MISC, flags: 0, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ITEM00, name: "En_Item00", category: ACTORCAT_MISC, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params &= 0xFF`: the item, left alone in `params`.
+pub const TYPE: Field = Field::params("params", 0, 8, Kind::Named(oot_game::actor_schema::ITEM00_NAMES), "the collectible");
+/// `PARAMS_GET_S(this->actor.params, 8, 6)`: the collectible flag.
+pub const COLLECTIBLE_FLAG: Field = Field::params("collectibleFlag", 8, 6, Kind::CollectibleFlag, "set once collected; set at init, it's gone");
+/// Bit 14: set in the data, read by nothing here.
+pub const BIT_14: Field = Field::params("params bit 14", 14, 1, Kind::Unused, "set with a flag byte of 0xFF in the data; read by nothing");
+/// `PARAMS_GET_NOSHIFT(this->actor.params, 15, 1)`: collected at once.
+pub const SPAWN_PARAM_8000: Field =
+    Field::params("spawnParam8000", 15, 1, Kind::Named(&[(0, "lies there until Link takes it"), (1, "collected at once, as it spawns")]), "whether it's given at once");
+/// `shape.rot.z`: the roll it's drawn at.
+pub const ROT_Z: Field = Field::rot("shape.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the roll it lies at (a drop's spin resets it)");
+
+/// En_Item00's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, COLLECTIBLE_FLAG, BIT_14, SPAWN_PARAM_8000, ROT_Z],
+    flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().note("set: gone; set once collected")],
+    todo: false,
+};
 
 // `Item00Type` (actor.h).
 pub const ITEM00_RUPEE_GREEN: i16 = 0x00;
@@ -211,8 +240,8 @@ impl EnItem00 {
     /// `EnItem00_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut y_offset = 980.0;
-        let spawn_param_8000 = actor.params as u16 & 0x8000 != 0;
-        let collectible_flag = (actor.params & 0x3F00) >> 8;
+        let spawn_param_8000 = SPAWN_PARAM_8000.get(actor.params) != 0;
+        let collectible_flag = COLLECTIBLE_FLAG.get(actor.params);
         actor.params &= 0xFF;
         let mut e = EnItem00 {
             actor,
@@ -237,7 +266,7 @@ impl EnItem00 {
             e.actor.scale = Vec3::splat(s);
             e.scale = s;
         };
-        match e.actor.params {
+        match TYPE.get(e.actor.params) {
             ITEM00_RUPEE_GREEN | ITEM00_RUPEE_BLUE | ITEM00_RUPEE_RED => {
                 set_scale(&mut e, 0.015);
                 y_offset = 750.0;
@@ -294,7 +323,7 @@ impl EnItem00 {
                 // objBankIndex = Object_GetSlot(OBJECT_GI_SHIELD_1 / _2 / OBJECT_GI_CLOTHES),
                 // Actor_SetObjectDependency. Without the object the index is -1 and
                 // Actor_UpdateAll kills the item (here at once).
-                let file = match e.actor.params {
+                let file = match TYPE.get(e.actor.params) {
                     ITEM00_SHIELD_DEKU => OBJECT_GI_SHIELD_1,
                     ITEM00_SHIELD_HYLIAN => OBJECT_GI_SHIELD_2,
                     _ => OBJECT_GI_CLOTHES,
@@ -328,7 +357,7 @@ impl EnItem00 {
         e.actor.velocity.y = 0.0;
         e.actor.gravity = 0.0;
         let mut get_item_id = GI_NONE;
-        match e.actor.params {
+        match TYPE.get(e.actor.params) {
             ITEM00_RUPEE_GREEN => {
                 item_give(&mut play.save, Some(&mut play.audio), ITEM_RUPEE_GREEN);
             }
@@ -393,7 +422,7 @@ impl EnItem00 {
 
     /// `func_8001DFC8`: resting: rupees and hearts spin, and the despawn timer ends it.
     fn func_8001dfc8(&mut self) {
-        let p = self.actor.params;
+        let p = TYPE.get(self.actor.params);
         if p <= ITEM00_RUPEE_RED || (p == ITEM00_RECOVERY_HEART && self.despawn_timer < 0) || p == ITEM00_HEART_PIECE {
             self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(960);
         } else if p >= ITEM00_SHIELD_DEKU && p != ITEM00_BOMBS_SPECIAL {
@@ -424,7 +453,7 @@ impl EnItem00 {
 
     /// `func_8001E1C8`: bounce until the fall is slower than 2.
     fn func_8001e1c8(&mut self, play: &mut PlayState) {
-        if self.actor.params <= ITEM00_RUPEE_RED {
+        if TYPE.get(self.actor.params) <= ITEM00_RUPEE_RED {
             self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(960);
         }
         if play.gameplay_frames & 1 != 0 {
@@ -448,7 +477,7 @@ impl EnItem00 {
     /// `func_8001E304`: popping out and falling (a recovery heart floats down, swaying).
     fn func_8001e304(&mut self, play: &mut PlayState) {
         self.despawn_timer += 1;
-        if self.actor.params == ITEM00_RECOVERY_HEART && self.actor.velocity.y < 0.0 {
+        if TYPE.get(self.actor.params) == ITEM00_RECOVERY_HEART && self.actor.velocity.y < 0.0 {
             self.actor.speed_xz = 0.0;
             self.actor.gravity = -0.4;
             if self.actor.velocity.y < -1.5 {
@@ -458,9 +487,9 @@ impl EnItem00 {
             self.actor.world_pos.x += cos_s(self.actor.yaw_towards_player) * (-3.0 * cos_s(self.actor.home_rot.z));
             self.actor.world_pos.z += sin_s(self.actor.yaw_towards_player) * (-3.0 * cos_s(self.actor.home_rot.z));
         }
-        if self.actor.params <= ITEM00_RUPEE_RED {
+        if TYPE.get(self.actor.params) <= ITEM00_RUPEE_RED {
             self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(960);
-        } else if self.actor.params >= ITEM00_SHIELD_DEKU && self.actor.params != ITEM00_BOMBS_SPECIAL {
+        } else if TYPE.get(self.actor.params) >= ITEM00_SHIELD_DEKU && TYPE.get(self.actor.params) != ITEM00_BOMBS_SPECIAL {
             self.actor.world_rot.x = self.actor.world_rot.x.wrapping_sub(700);
             self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(400);
             self.actor.shape_rot.x = self.actor.world_rot.x.wrapping_sub(0x4000);
@@ -504,9 +533,9 @@ impl EnItem00 {
         }
         let Some(p) = play.player.and_then(|h| play.actors.actor(h)) else { return };
         self.actor.world_pos = p.world_pos;
-        if self.actor.params <= ITEM00_RUPEE_RED {
+        if TYPE.get(self.actor.params) <= ITEM00_RUPEE_RED {
             self.actor.shape_rot.y = self.actor.shape_rot.y.wrapping_add(960);
-        } else if self.actor.params == ITEM00_RECOVERY_HEART {
+        } else if TYPE.get(self.actor.params) == ITEM00_RECOVERY_HEART {
             self.actor.shape_rot.y = 0;
         }
         self.actor.world_pos.y += 40.0 + sin_s((self.despawn_timer as i32 * 15000) as i16) * (self.despawn_timer as f32 * 0.3);
@@ -571,7 +600,7 @@ impl ActorImpl for EnItem00 {
         }
         self.collider.update(&self.actor);
         play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
-        let p = self.actor.params;
+        let p = TYPE.get(self.actor.params);
         if matches!(p, ITEM00_SHIELD_DEKU | ITEM00_SHIELD_HYLIAN | ITEM00_TUNIC_ZORA | ITEM00_TUNIC_GORON) {
             self.actor.shape_y_offset = (cos_s(self.actor.shape_rot.x) * 37.0).abs();
         }
@@ -689,7 +718,7 @@ impl ActorImpl for EnItem00 {
     /// `EnItem00_Draw`'s state change: a placed recovery heart waits for `OBJECT_GI_HEART`
     /// (`despawnTimer` -1), then depends on it (-2) and is drawn with `GetItem_Draw`.
     fn draw_update(&mut self, play: &mut PlayState) {
-        if self.actor.params == ITEM00_RECOVERY_HEART && self.despawn_timer == -1 && self.unk_156 & self.unk_158 == 0 {
+        if TYPE.get(self.actor.params) == ITEM00_RECOVERY_HEART && self.despawn_timer == -1 && self.unk_156 & self.unk_158 == 0 {
             if let Some(bank) = object_bank(play, OBJECT_GI_HEART)
                 && play.object_ctx.is_loaded(bank)
             {
@@ -713,7 +742,7 @@ impl ActorImpl for EnItem00 {
             return;
         }
         let m = actor_draw_matrix(rs);
-        let p = self.actor.params;
+        let p = TYPE.get(self.actor.params);
         let placed = rs.switches.get(1).copied().unwrap_or(0) != 0;
         let heart_ready = rs.switches.get(2).copied().unwrap_or(0) != 0;
         let get_item_draw = |out: &mut DrawOut, draw_id: i16, m: glam::Mat4| {
@@ -817,7 +846,7 @@ fn setup_pop(play: &mut PlayState, h: ActorHandle, vy: f32, yaw: i16) {
         e.actor.scale = Vec3::ZERO;
         e.action = Action::Pop;
         e.despawn_timer = 220;
-        if !matches!(e.actor.params, ITEM00_SMALL_KEY | ITEM00_HEART_PIECE | ITEM00_HEART_CONTAINER) {
+        if !matches!(TYPE.get(e.actor.params), ITEM00_SMALL_KEY | ITEM00_HEART_PIECE | ITEM00_HEART_CONTAINER) {
             e.actor.room = -1;
         }
         e.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;

@@ -20,6 +20,13 @@
 //!
 //! The whole overlay is ported. Link has no slingshot yet (GAME-05 milestone 5): the ladder's
 //! seed is injected by the tests.
+//!
+//! Params: `switchFlag` bits 0 to 7 (`PARAMS_GET_U(params, 0, 8)`: the ladder's, set when a seed
+//! hits it; set at init, it's down; the log's 0xFF is read by nothing); the type bits 8 to 15
+//! (`PARAMS_GET_U(params, 8, 8)`: 0 the spiked log, 1 the ladder), which the init writes over the
+//! whole params.
+//! Flags: the ladder reads switch flag `switchFlag` (set: down already) and sets it when a seed
+//! hits it.
 
 use std::sync::Arc;
 
@@ -30,6 +37,7 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::Vec3;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, SFX_FLAG};
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::collision_check::*;
@@ -45,7 +53,19 @@ pub const LOG_DISPLAY_LIST: &str = "gDTRollingSpikeTrapDL";
 pub const LADDER_DISPLAY_LIST: &str = "gDTFallingLadderDL";
 
 /// `Bg_Ydan_Maruta_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_YDAN_MARUTA, name: "Bg_Ydan_Maruta", category: ACTORCAT_PROP, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_YDAN_MARUTA, name: "Bg_Ydan_Maruta", category: ACTORCAT_PROP, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 8)`: `switchFlag`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 8, Kind::SwitchFlag, "the ladder's: set when a seed hits it; set at init, it's down");
+/// `PARAMS_GET_U(params, 8, 8)`: the type, written over the whole params at init.
+pub const TYPE: Field = Field::params("type", 8, 8, Kind::Named(&[(0, "the spiked log"), (1, "the ladder")]), "which of the two");
+
+/// Bg_Ydan_Maruta's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, TYPE],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("the ladder: set, it's down; set when a seed hits it")],
+    todo: false,
+};
 
 /// The kinds (the params' high byte).
 pub const MARUTA_LOG: i16 = 0;
@@ -134,7 +154,7 @@ impl BgYdanMaruta {
     /// `BgYdanMaruta_Init` from `Actor_Spawn`: the ladder's `gDTFallingLadderCol` from the pack
     /// (`CollisionHeader_GetVirtual`), then [`BgYdanMaruta::init_with`].
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let header = if (actor.params as u16 >> 8) as i16 == MARUTA_LOG {
+        let header = if TYPE.get(actor.params) == MARUTA_LOG {
             None
         } else {
             play.assets.as_ref().and_then(|a| a.pack.collision(&keys::collision(OBJECT, LADDER_COLLISION)).map(Arc::new).map_err(|e| log::error!("Bg_Ydan_Maruta: {e:#}")).ok())
@@ -153,13 +173,13 @@ impl BgYdanMaruta {
         actor.scale = Vec3::splat(0.1);
         let tri_inits = tris_elements_init();
         let mut collider = ColliderTris::new(&TRIS_INIT, &tri_inits);
-        let params = actor.params as u16;
         // PARAMS_GET_U(params, 0, 8), PARAMS_GET_U(params, 8, 8).
-        let switch_flag = (params & 0xFF) as u8;
-        actor.params = ((params >> 8) & 0xFF) as i16;
+        let switch_flag = SWITCH_FLAG.get(actor.params) as u8;
+        actor.params = TYPE.get(actor.params);
         let mut bg = BG_ACTOR_MAX;
         let tri_init;
         let action;
+        // schema: the type, which the init wrote over the params.
         if actor.params == MARUTA_LOG {
             tri_init = &tri_inits[0];
             action = Action::Spin;
@@ -282,6 +302,7 @@ impl ActorImpl for BgYdanMaruta {
 
     /// `BgYdanMaruta_Destroy`: the ladder's bg actor (the collider is the actor's own).
     fn destroy(&mut self, play: &mut PlayState) {
+        // schema: the type, which the init wrote over the params.
         if self.actor.params == MARUTA_LADDER {
             play.col.dyna.delete_bg_actor(self.bg);
         }
@@ -294,6 +315,7 @@ impl ActorImpl for BgYdanMaruta {
 
     /// `BgYdanMaruta_Draw`: `Gfx_DrawDListOpa` of the log's list (kind 0) or the ladder's.
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+        // schema: the type, which the init wrote over the params.
         let dl = if self.actor.params == MARUTA_LOG { LOG_DISPLAY_LIST } else { LADDER_DISPLAY_LIST };
         out.opa.push(DrawCmd::new(MeshKey::named(keys::mesh(OBJECT, dl)), actor_draw_matrix(rs)));
     }

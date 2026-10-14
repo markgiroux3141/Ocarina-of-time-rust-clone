@@ -22,7 +22,7 @@
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
 //!
-//! Params: none (placed as 0xFFFF).
+//! Params: none read (placed as 0xFFFF, unused).
 //! Flags: reads EVENTCHKINF_CARPENTER_0_RESCUED to _3_RESCUED (all four: the adult's text);
 //! reads and sets INFTABLE_170 (after 0x606A), INFTABLE_171 (after 0x606F), INFTABLE_172 (after
 //! 0x5028).
@@ -35,6 +35,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR;
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -43,6 +44,7 @@ use oot_game::npc::{EXCH_ITEM_NONE, NpcTrack, get_player_exchange_item_id, offer
 use oot_game::pack::{BakeBody, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::*;
+use oot_game::{event_chk_inf, inf_table};
 
 /// `ACTOR_EN_TORYO` (`actor_table.h`: 0x0132).
 pub const ACTOR_EN_TORYO: i16 = 0x0132;
@@ -50,7 +52,25 @@ pub const ACTOR_EN_TORYO: i16 = 0x0132;
 pub const OBJECT: &str = "object_toryo";
 
 /// `En_Toryo_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TORYO, name: "En_Toryo", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TORYO, name: "En_Toryo", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// The placed params, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
+
+/// En_Toryo's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_CARPENTER_0_RESCUED)).reads().note("all four rescued: the adult's text").indirect("GET_EVENTCHKINF_CARPENTERS_ALL_RESCUED, a list of the four"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_CARPENTER_1_RESCUED)).reads().note("all four rescued: the adult's text").indirect("GET_EVENTCHKINF_CARPENTERS_ALL_RESCUED, a list of the four"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_CARPENTER_2_RESCUED)).reads().note("all four rescued: the adult's text").indirect("GET_EVENTCHKINF_CARPENTERS_ALL_RESCUED, a list of the four"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_CARPENTER_3_RESCUED)).reads().note("all four rescued: the adult's text").indirect("GET_EVENTCHKINF_CARPENTERS_ALL_RESCUED, a list of the four"),
+        FlagUse::new(inf_table!(INFTABLE_170)).reads().sets().note("after text 0x606A"),
+        FlagUse::new(inf_table!(INFTABLE_171)).reads().sets().note("after text 0x606F"),
+        FlagUse::new(inf_table!(INFTABLE_172)).reads().sets().note("after text 0x5028"),
+    ],
+    todo: false,
+};
 
 // `SCENE_*` (`scene_table.h`).
 /// `SCENE_KAKARIKO_CENTER_GUEST_HOUSE` (0x2A, `kakariko_scene`).
@@ -293,7 +313,7 @@ impl EnToryo {
         let text_id = 0;
         let s = &play.save;
         if self.state_flags & 1 != 0 {
-            // GET_EVENTCHKINF_CARPENTERS_ALL_RESCUED.
+            // GET_EVENTCHKINF_CARPENTERS_ALL_RESCUED. schema: the four flags from a list
             let all_rescued = [EVENTCHKINF_CARPENTER_0_RESCUED, EVENTCHKINF_CARPENTER_1_RESCUED, EVENTCHKINF_CARPENTER_2_RESCUED, EVENTCHKINF_CARPENTER_3_RESCUED].iter().all(|&f| s.get_event_chk_inf(f));
             if all_rescued {
                 0x606C

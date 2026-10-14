@@ -13,9 +13,19 @@
 //!   (`gSunSongGraveSunSongTeachCs`) until it's known.
 //!
 //! The whole overlay is ported (the debug display aside: `BREG(0)` 0).
+//!
+//! Params: `type` bits 10 to 15 (1, 2, 4, 6: a song's cutscene, 2 not for an adult; 5: the royal
+//! tomb's wall; 7: a song's check; any other is killed at init); `ocarinaSong` bits 6 to 9 (0 to
+//! 5 Saria's Song to the Song of Storms, 6 the scarecrow's, 0xF any); `switchFlag` bits 0 to 5
+//! (0x3F: none). `world.rot.z`: the range, 40 a unit (0 and below: none).
+//! Flags: reads the switch flag `switchFlag` (set: gone) and sets it when the song is right;
+//! reads EVENTCHKINF_OPENED_DOOR_OF_TIME (type 4) and EVENTCHKINF_1D (type 6), sets EVENTCHKINF_39
+//! (type 1) and EVENTCHKINF_1D (type 6); reads `scarecrowSpawnSongSet` (song 6).
 
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME;
 use oot_game::message::{
     MSGMODE_PAUSED, OCARINA_ACTION_CHECK_LULLABY, OCARINA_ACTION_CHECK_SARIA, OCARINA_ACTION_CHECK_STORMS, OCARINA_ACTION_CHECK_TIME, OCARINA_MODE_01, OCARINA_MODE_03, OCARINA_MODE_04,
@@ -30,7 +40,57 @@ pub const ACTOR_EN_OKARINA_TAG: i16 = 0x012E;
 
 /// `En_Okarina_Tag_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_OKARINA_TAG, name: "En_Okarina_Tag", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_EN_OKARINA_TAG, name: "En_Okarina_Tag", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 10, 6)`: what playing here does.
+pub const TYPE: Field = Field::params(
+    "type",
+    10,
+    6,
+    Kind::Named(&[
+        (1, "Zelda's Lullaby: its cutscene (EVENTCHKINF_39)"),
+        (2, "the Song of Storms: the windmill (a child's only)"),
+        (4, "the Song of Time: the Door of Time"),
+        (5, "the royal tomb's wall: the Sun's Song taught"),
+        (6, "Zelda's Lullaby: the royal tomb's opening"),
+        (7, "a song's check: the switch flag set when it's right"),
+    ]),
+    "what playing here does",
+);
+/// `PARAMS_GET_U(params, 6, 4)`: the song.
+pub const OCARINA_SONG: Field = Field::params(
+    "ocarinaSong",
+    6,
+    4,
+    Kind::Named(&[
+        (0, "Saria's Song"),
+        (1, "Epona's Song"),
+        (2, "Zelda's Lullaby"),
+        (3, "the Sun's Song"),
+        (4, "the Song of Time"),
+        (5, "the Song of Storms"),
+        (6, "the scarecrow's song"),
+        (0xF, "any song"),
+    ]),
+    "the song a check takes (type 7); 6 waits for the scarecrow's song to be set",
+);
+/// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set when the song is right; set at init, the spot is gone (0x3F: none)");
+/// `world.rot.z`: the range.
+pub const RANGE: Field = Field::rot("interactRange", Source::RotZ, 0, 16, Kind::Range(-0x8000, 0x7FFF), "the spot's range, 40 a unit (0 and below: none)");
+
+/// En_Okarina_Tag's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, OCARINA_SONG, SWITCH_FLAG, RANGE],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets(),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OPENED_DOOR_OF_TIME)).reads().note("type 4: the Door of Time open, no song"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_1D)).reads().sets().note("type 6: the royal tomb opened"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_39)).sets().note("type 1: Zelda's Lullaby's cutscene"),
+        FlagUse::new(Flag::Other("scarecrowSpawnSongSet")).reads().note("song 6: no check until it's set"),
+    ],
+    todo: false,
+};
 
 /// `OcarinaMode`s past `OCARINA_MODE_04` (`ocarina.h`): a wrong song's (5 to 13), and 0xE.
 const OCARINA_MODE_05: u16 = 0x05;
@@ -99,10 +159,9 @@ impl EnOkarinaTag {
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut this = EnOkarinaTag { actor, type_: 0, ocarina_song: 0, switch_flag: -1, unk_158: 0, unk_15a: 0, interact_range: 0.0, action: Action::Func80abf28c };
         this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
-        let p = this.actor.params as u16;
-        this.type_ = ((p >> 10) & 0x3F) as i16;
-        this.ocarina_song = ((p >> 6) & 0xF) as i16;
-        this.switch_flag = (p & 0x3F) as i32;
+        this.type_ = TYPE.get(this.actor.params);
+        this.ocarina_song = OCARINA_SONG.get(this.actor.params);
+        this.switch_flag = SWITCH_FLAG.get(this.actor.params) as i32;
         if this.switch_flag == 0x3F {
             this.switch_flag = -1;
         }
@@ -111,12 +170,13 @@ impl EnOkarinaTag {
             this.unk_158 = 1;
         }
         this.actor.target_mode = ATTENTION_RANGE_1;
-        if this.actor.world_rot.z > 0 {
-            this.interact_range = this.actor.world_rot.z as f32 * 40.0;
+        if RANGE.get(this.actor.world_rot.z) > 0 {
+            this.interact_range = RANGE.get(this.actor.world_rot.z) as f32 * 40.0;
         }
         log::debug!(
             "Ocarina tag spawn {:x}: save {} type {} song {} range {} ({}) hit? {}",
-            p,
+            // schema: printed
+            this.actor.params as u16,
             this.switch_flag,
             this.type_,
             this.ocarina_song,

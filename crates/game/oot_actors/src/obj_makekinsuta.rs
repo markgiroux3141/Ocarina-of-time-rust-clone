@@ -8,14 +8,16 @@
 //! The whole overlay is ported. Nothing sets `unk_152` yet: the bugs (`En_Insect`,
 //! `z_en_insect.c`'s `EnInsect_Update`) aren't ported.
 //!
-//! Params: `params` bits 13 to 14 (`PARAMS_GET_NOSHIFT(params, 13, 2)`: 0x4000 a Gold Skulltula
-//! soil, anything else logs "Invalid Argument", nothing more); the whole value, with 0x8000, is
-//! the Gold Skulltula's params (bits 8 to 12 its flags' index plus 1, bits 0 to 7 its flag: the
-//! graveyard's, 0x5101, index 0x11, flag 1).
+//! Params: `params` whole, the Gold Skulltula's params (spawned with 0x8000 set): bits 0 to 7 its
+//! flag (its bit in `gsFlags`), bits 8 to 12 its `gsFlags` index plus 1, bits 13 and 14
+//! (`PARAMS_GET_NOSHIFT(params, 13, 2)`) 0x4000 for a Gold Skulltula soil (`En_Sw`'s type 3);
+//! any other value there only logs "Invalid Argument". The graveyard's is 0x5101 (index 0x10,
+//! flag 1).
 //! Flags: none (the Gold Skulltula reads its own).
 
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::play::PlayState;
 
 use crate::en_sw::ACTOR_EN_SW;
@@ -27,7 +29,27 @@ pub const ACTOR_OBJ_MAKEKINSUTA: i16 = 0x01CF;
 pub const OBJECT: &str = "gameplay_keep";
 
 /// `Obj_Makekinsuta_Profile`: `ACTOR_FLAG_UPDATE_CULLING_DISABLED`; no draw.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MAKEKINSUTA, name: "Obj_Makekinsuta", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MAKEKINSUTA, name: "Obj_Makekinsuta", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params | 0x8000`: the whole params, the Gold Skulltula's (`En_Sw`).
+pub const PARAMS: Field = Field::whole("params", Kind::Range(-0x8000, 0x7FFF), "the Gold Skulltula's params, spawned with 0x8000 set");
+/// `PARAMS_GET_NOSHIFT(params, 13, 2) == 0x4000`.
+pub const SOIL: Field = Field::params(
+    "PARAMS_GET_NOSHIFT(params, 13, 2)",
+    13,
+    2,
+    Kind::Named(&[(2, "0x4000: a Gold Skulltula soil (En_Sw's type 3, which jumps out)")]),
+    "a Gold Skulltula soil; any other value only prints \"Invalid Argument\"",
+)
+.part_of("params");
+/// `PARAMS_GET_S(params, 8, 5)` in `EnSw_Init`.
+pub const GS_FLAGS_INDEX: Field =
+    Field::params("PARAMS_GET_S(params, 8, 5)", 8, 5, Kind::Range(1, 31), "the Gold Skulltula's `gsFlags` index plus 1 (En_Sw takes 1 off)").part_of("params");
+/// `PARAMS_GET_S(params, 0, 8)` in `EnSw_Init`.
+pub const GS_FLAG: Field = Field::params("PARAMS_GET_S(params, 0, 8)", 0, 8, Kind::Range(0, 0xFF), "the Gold Skulltula's flag: its bit in `gsFlags`").part_of("params");
+
+/// Obj_Makekinsuta's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS, GS_FLAG, GS_FLAGS_INDEX, SOIL], flags: &[], todo: false };
 
 /// The frames `func_80B98320` counts once a bug is in.
 pub const SPAWN_DELAY: i16 = 60;
@@ -64,9 +86,11 @@ pub fn func_8002deec(play: &PlayState) -> bool {
 impl ObjMakekinsuta {
     /// `ObjMakekinsuta_Init`.
     pub fn init(actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
-        if actor.params & 0x6000 == 0x4000 {
+        if SOIL.get(actor.params) == 2 {
+            // schema: printed
             log::debug!("Obj_Makekinsuta: Gold Star Enemy(arg_data {:x})", actor.params);
         } else {
+            // schema: printed
             log::warn!("Obj_Makekinsuta: Invalid Argument (arg_data {:x})(../z_obj_makekinsuta.c 119)", actor.params);
         }
         Box::new(ObjMakekinsuta { actor, action: Action::Func80B98320, timer: 0, unk_152: 0 })
@@ -77,7 +101,7 @@ impl ObjMakekinsuta {
         if self.unk_152 != 0 {
             if self.timer >= SPAWN_DELAY && !func_8002deec(play) {
                 let pos = self.actor.world_pos;
-                let params = (self.actor.params as u16 | 0x8000) as i16;
+                let params = (PARAMS.get(self.actor.params) as u16 | 0x8000) as i16;
                 if let Err(e) = play.actor_spawn(ACTOR_EN_SW, pos, [0, self.actor.shape_rot.y, 0], params) {
                     log::warn!("Obj_Makekinsuta: En_Sw not spawned: {e:?}");
                 }

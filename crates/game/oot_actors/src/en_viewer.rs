@@ -20,6 +20,14 @@
 //! `EnViewer_UpdateGanondorfCape` writes for type 5 into `En_Ganon_Mant` (its neck position is
 //! kept), and the fire of type 5 (`EnViewer_DrawFireEffects`, run from its update: its state and
 //! its `Rand_ZeroOne` calls are, its flames aren't drawn).
+//!
+//! Params: `type` bits 8 to 15 (`PARAMS_GET_NOMASK(params, 8)`, `EnViewerType`: 0 Zelda's horse, 1
+//! Impa, 2 Zelda, 3 Ganondorf on horseback, 4 Ganondorf's horse rearing, 5 Ganondorf riding, 6
+//! Ganondorf's horse galloping, 7 Ganondorf giant (arms crossed, scale 0.3), 8 Ganondorf walking,
+//! 9 the adult Ganondorf floating; it picks `sInitData`'s row, and 3, 5, 7, 8 and 9 spawn the cape,
+//! `En_Ganon_Mant`). Bits 0 to 7 unused (the data sets the type again, 0x0202, or 0xFF). What
+//! it does also hangs on the scene layer (`gSaveContext.sceneLayer`) and the cutscene's frame.
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -30,6 +38,7 @@ use eng_math::{smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::SEQ_PLAYER_FANFARE;
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
@@ -47,7 +56,33 @@ const ACTOR_ITEM_OCARINA: i16 = 0x00F1;
 const ACTOR_DEMO_6K: i16 = 0x00F5;
 
 /// `En_Viewer_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_VIEWER, name: "En_Viewer", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_VIEWER, name: "En_Viewer", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// Bits 0 to 7: the data sets them (the type again, or 0xFF); nothing reads them.
+pub const LOW_BYTE: Field = Field::params("params & 0xFF", 0, 8, Kind::Unused, "set in the data (the type again, or 0xFF); read by nothing");
+/// `PARAMS_GET_NOMASK(this->actor.params, 8)`: the rider, a row of `sInitData`.
+pub const TYPE: Field = Field::params(
+    "type",
+    8,
+    8,
+    Kind::Named(&[
+        (0, "ENVIEWER_TYPE_0_HORSE_ZELDA"),
+        (1, "ENVIEWER_TYPE_1_IMPA"),
+        (2, "ENVIEWER_TYPE_2_ZELDA"),
+        (3, "ENVIEWER_TYPE_3_GANONDORF"),
+        (4, "ENVIEWER_TYPE_4_HORSE_GANONDORF"),
+        (5, "ENVIEWER_TYPE_5_GANONDORF"),
+        (6, "ENVIEWER_TYPE_6_HORSE_GANONDORF"),
+        (7, "ENVIEWER_TYPE_7_GANONDORF"),
+        (8, "ENVIEWER_TYPE_8_GANONDORF"),
+        (9, "ENVIEWER_TYPE_9_GANONDORF"),
+    ]),
+    "who it is in the cutscene: its skeleton, animation and cue",
+)
+.signed();
+
+/// En_Viewer's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[LOW_BYTE, TYPE], flags: &[], todo: false };
 
 /// `EnViewerType`.
 pub const ENVIEWER_TYPE_0_HORSE_ZELDA: u8 = 0;
@@ -405,7 +440,7 @@ impl EnViewer {
         // sInitChain: cullingVolumeScale 300.
         actor.culling_volume_scale = 300.0;
         play.overlay_static::<Statics>(ACTOR_EN_VIEWER).horse_sfx_played = false;
-        let ty = (actor.params >> 8) as u8;
+        let ty = TYPE.get(actor.params) as u8;
         if matches!(ty, ENVIEWER_TYPE_3_GANONDORF | ENVIEWER_TYPE_5_GANONDORF | ENVIEWER_TYPE_7_GANONDORF | ENVIEWER_TYPE_8_GANONDORF | ENVIEWER_TYPE_9_GANONDORF) {
             // sGanondorfCape = Actor_SpawnAsChild(.., ACTOR_EN_GANON_MANT, 0, 0, 0, 0, 0, 0, 35).
             if let Err(e) = play.actor_spawn_as_child(&mut actor, ACTOR_EN_GANON_MANT, Vec3::ZERO, [0; 3], 35) {

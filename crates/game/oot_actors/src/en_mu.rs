@@ -10,6 +10,11 @@
 //! (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
+//!
+//! Params: `params` whole (0 or 1: the colour set, `colors[params]`; also the mask reactions' set,
+//! `MASK_REACTION_SET_HAGGLING_TOWNSPEOPLE_1 + params`).
+//! Flags: reads, clears and sets EVENTINF_HAGGLING_TOWNSFOLK_MESG_0 to _4 (the five texts heard,
+//! shared by both; all five heard, they start again).
 
 use std::sync::Arc;
 
@@ -20,6 +25,8 @@ use eng_math::{cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_inf;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_CLOSING;
 use oot_game::npc::{actor_update_fidget_tables, talk_update};
@@ -32,7 +39,31 @@ pub const ACTOR_EN_MU: i16 = 0x01AD;
 pub const OBJECT: &str = "object_mu";
 
 /// `En_Mu_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_MU, name: "En_Mu", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_MU, name: "En_Mu", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params`: the colour set (`colors[params]`).
+pub const COLORS_INDEX: Field = Field::whole("params", Kind::Named(&[(0, "the first colour set"), (1, "the second colour set")]), "which of the two colour sets they wear");
+
+/// `EVENTINF_HAGGLING_TOWNSFOLK_MESG_0` to `_4` (`save.h`: 0x20 to 0x24): the five texts heard.
+const EVENTINF_HAGGLING_TOWNSFOLK_MESG_0: u16 = 0x20;
+const EVENTINF_HAGGLING_TOWNSFOLK_MESG_1: u16 = 0x21;
+const EVENTINF_HAGGLING_TOWNSFOLK_MESG_2: u16 = 0x22;
+const EVENTINF_HAGGLING_TOWNSFOLK_MESG_3: u16 = 0x23;
+const EVENTINF_HAGGLING_TOWNSFOLK_MESG_4: u16 = 0x24;
+const TALK_FLAGS: &str = "the talk flags, read, cleared and set together through the eventInf word";
+
+/// En_Mu's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[COLORS_INDEX],
+    flags: &[
+        FlagUse::new(event_inf!(EVENTINF_HAGGLING_TOWNSFOLK_MESG_0)).reads().sets().clears().note("text 0x7042 heard").indirect(TALK_FLAGS),
+        FlagUse::new(event_inf!(EVENTINF_HAGGLING_TOWNSFOLK_MESG_1)).reads().sets().clears().note("text 0x7043 heard").indirect(TALK_FLAGS),
+        FlagUse::new(event_inf!(EVENTINF_HAGGLING_TOWNSFOLK_MESG_2)).reads().sets().clears().note("text 0x703F heard").indirect(TALK_FLAGS),
+        FlagUse::new(event_inf!(EVENTINF_HAGGLING_TOWNSFOLK_MESG_3)).reads().sets().clears().note("text 0x7041 heard").indirect(TALK_FLAGS),
+        FlagUse::new(event_inf!(EVENTINF_HAGGLING_TOWNSFOLK_MESG_4)).reads().sets().clears().note("text 0x703E heard").indirect(TALK_FLAGS),
+    ],
+    todo: false,
+};
 
 /// `EVENTINF_INDEX_HAGGLING_TOWNSFOLK` (`save.h`: 0x2).
 const EVENTINF_INDEX_HAGGLING_TOWNSFOLK: usize = 0x2;
@@ -153,6 +184,7 @@ impl EnMu {
     /// `EnMu_Interact`: the next text, the first not yet heard from a random start; when all five
     /// have been, they start again, though never with the one just heard.
     pub fn interact(&mut self, play: &mut PlayState) {
+        // schema: GET_EVENTINF_ENMU_TALK_FLAGS, RESET_EVENTINF_ENMU_TALK_FLAGS
         let inf = &mut play.save.event_inf[EVENTINF_INDEX_HAGGLING_TOWNSFOLK];
         let mut talk_flags = (*inf & EVENTINF_HAGGLING_TOWNSFOLK_MASK) as u8;
         *inf &= !EVENTINF_HAGGLING_TOWNSFOLK_MASK;
@@ -183,7 +215,7 @@ impl EnMu {
 
         talk_flags |= BITMASK[random_index as usize];
         self.default_text_id = TEXT_ID_OFFSET[random_index as usize] as u16 | 0x7000;
-        play.save.event_inf[EVENTINF_INDEX_HAGGLING_TOWNSFOLK] |= talk_flags as u16;
+        play.save.event_inf[EVENTINF_INDEX_HAGGLING_TOWNSFOLK] |= talk_flags as u16; // schema: SET_EVENTINF_ENMU_TALK_FLAGS
     }
 
     /// The limb matrices `EnMu_Draw` draws with: `EnMu_OverrideLimbDraw`'s sway.
@@ -265,7 +297,7 @@ impl ActorImpl for EnMu {
         }
         let bones = Self::pose(&self.skeleton, &joints.rot, &ty, &tz);
         let m = oot_game::play::actor_draw_matrix(rs) * Mat4::from_translation(MODEL_OFFSET);
-        let colors = (self.actor.params as usize).min(COLORS.len() - 1);
+        let colors = (COLORS_INDEX.get(self.actor.params) as usize).min(COLORS.len() - 1);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(colors))), transform: m, bones, params: Default::default() });
         // ActorShadow_DrawCircle (shadowScale 160): the circle shadow's stand-in.
         let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);

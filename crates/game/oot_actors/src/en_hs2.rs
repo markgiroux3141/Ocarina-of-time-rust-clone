@@ -13,7 +13,7 @@
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
 //!
-//! Params: none (placed as 0xFFFF).
+//! Params: none read (placed as 0xFFFF, unused).
 //! Flags: none.
 
 use std::sync::Arc;
@@ -25,6 +25,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::npc::{actor_track_player, offer_talk, process_talk_request, textbox_is_closing};
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
@@ -37,7 +38,13 @@ pub const ACTOR_EN_HS2: i16 = 0x01A6;
 pub const OBJECT: &str = "object_hs";
 
 /// `En_Hs2_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HS2, name: "En_Hs2", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HS2, name: "En_Hs2", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// The placed params, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
+
+/// En_Hs2's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 /// `ENHS2_TRACKING_PLAYER`.
 pub const ENHS2_TRACKING_PLAYER: u16 = 1 << 0;

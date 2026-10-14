@@ -8,13 +8,14 @@
 //!
 //! Ported whole.
 //!
-//! Params: none read (placed as 0; `EnIt_Init` sets them to 0x0D05, which `EnTk_CheckNextSpot`
-//! returns, 0 or more meaning "a spot").
+//! Params: none read: placed as 0xFFFF, unused (`EnIt_Init` writes 0x0D05 over them, which
+//! `EnTk_CheckNextSpot` returns, 0 or more meaning "a spot").
 //! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::play::PlayState;
 
@@ -22,7 +23,13 @@ use oot_game::play::PlayState;
 pub const ACTOR_EN_IT: i16 = 0x0196;
 
 /// `En_It_Profile`: `ACTORCAT_PROP`, no flags, `OBJECT_GAMEPLAY_KEEP` (`object_table.h`: 0x0001).
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_IT, name: "En_It", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_IT, name: "En_It", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
+
+/// The placed params: `EnIt_Init` writes 0x0D05 over them unread.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; EnIt_Init writes 0x0D05 over it unread");
+
+/// En_It's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 /// The params `EnIt_Init` sets.
 pub const EN_IT_PARAMS: i16 = 0x0D05;

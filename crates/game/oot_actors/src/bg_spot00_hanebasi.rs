@@ -19,6 +19,13 @@
 //! 350 frames, and stopped between 4:00 and 4:30 (crate::clock in `oot_game`).
 //!
 //! Not modelled: the glow sprites of the point lights (`Lights_GlowCheck`, `Lights_DrawGlow`).
+//!
+//! Params: `params` the whole params (`DrawbridgeType`: -1 `DT_DRAWBRIDGE`, the placed one; 0
+//! `DT_CHAIN_1` and 1 `DT_CHAIN_2`, the chains it spawns). The bridge's `shape.rot.x` is set at
+//! init (raised or lowered), not taken from the placement.
+//! Flags: reads EVENTCHKINF_ZELDA_FLED_CASTLE (with the three stones and not set: raised, and the
+//! storm and Zelda's escape when Link comes near); sets it and EVENTCHKINF_82 as the escape
+//! starts; reads the cutscene's flag 0 (`CutsceneFlags_Get(play, 0)`: the bridge lowers).
 
 use std::sync::Arc;
 
@@ -30,6 +37,8 @@ use eng_math::{binang_to_rad, cos_s, scaled_step_to_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_EV_BRIDGE_CLOSE, NA_SE_EV_BRIDGE_CLOSE_STOP, NA_SE_EV_BRIDGE_OPEN, NA_SE_EV_BRIDGE_OPEN_STOP, SFX_FLAG};
 use oot_game::env::STORM_REQUEST_START;
 use oot_game::item::{QUEST_GORON_RUBY, QUEST_KOKIRI_EMERALD, QUEST_ZORA_SAPPHIRE};
@@ -52,7 +61,25 @@ const DRAWBRIDGE_DL: &str = "gHyruleFieldCastleDrawbridgeDL";
 const CHAINS_DL: &str = "gHyruleFieldCastleDrawbridgeChainsDL";
 
 /// `Bg_Spot00_Hanebasi_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT00_HANEBASI, name: "Bg_Spot00_Hanebasi", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT00_HANEBASI, name: "Bg_Spot00_Hanebasi", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `this->dyna.actor.params`: the part, a `DrawbridgeType`.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[(-1, "DT_DRAWBRIDGE"), (0, "DT_CHAIN_1"), (1, "DT_CHAIN_2")]),
+    "the drawbridge (placed) or one of its chains (spawned)",
+);
+
+/// Bg_Spot00_Hanebasi's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().sets().note("the stones and not set: raised; set as Zelda's escape starts"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_82)).sets().note("as Zelda's escape starts"),
+        FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 0)")).reads().note("the cutscene lowers the bridge"),
+    ],
+    todo: false,
+};
 
 /// `DrawbridgeType`.
 pub const DT_DRAWBRIDGE: i16 = -1;
@@ -153,7 +180,7 @@ impl BgSpot00Hanebasi {
         actor.culling_volume_scale = 550.0;
         actor.culling_volume_downward = 2000.0;
         actor.scale = Vec3::ONE;
-        let params = actor.params;
+        let params = TYPE.get(actor.params);
         // DynaPolyActor_Init(DYNA_TRANSFORM_POS), the collision by type, DynaPoly_SetBgActor.
         let symbol = if params == DT_DRAWBRIDGE { DRAWBRIDGE_COL } else { CHAINS_COL };
         let mut bg = BG_ACTOR_MAX;
@@ -284,7 +311,7 @@ impl BgSpot00Hanebasi {
         let scale = play.overlay_static::<Statics>(ACTOR_BG_SPOT00_HANEBASI).torch_flame_scale;
         let y = ((5000.0 * scale) + 128.0) as i16;
         let radius = (scale * 37500.0) as i16;
-        play.light_ctx.set_info(self.light_node, LightInfo::point_glow(Self::torch_x(self.actor.params), y, 690, [light_color, light_color, 0], radius));
+        play.light_ctx.set_info(self.light_node, LightInfo::point_glow(Self::torch_x(TYPE.get(self.actor.params)), y, 690, [light_color, light_color, 0], radius));
     }
 
     /// The child-only part of the drawbridge's update in Hyrule Field: with the three stones
@@ -358,7 +385,7 @@ impl ActorImpl for BgSpot00Hanebasi {
             Action::SetTorchLightInfo => self.set_torch_light_info(play),
             Action::DoNothing => {}
         }
-        if self.actor.params == DT_DRAWBRIDGE {
+        if TYPE.get(self.actor.params) == DT_DRAWBRIDGE {
             self.drawbridge_field(play);
             if play.save.scene_layer == 5 {
                 Self::layer_5_time_speed(play);
@@ -370,7 +397,7 @@ impl ActorImpl for BgSpot00Hanebasi {
     /// `BgSpot00Hanebasi_Draw`'s changes: the chains to the bridge's ends (`(±158, 10, 400)`
     /// through its matrix), and `sTorchFlameScale`.
     fn draw_update(&mut self, play: &mut PlayState) {
-        if self.actor.params != DT_DRAWBRIDGE {
+        if TYPE.get(self.actor.params) != DT_DRAWBRIDGE {
             return;
         }
         let m = actor_draw_matrix(&RenderState::of(&self.actor));
@@ -390,9 +417,9 @@ impl ActorImpl for BgSpot00Hanebasi {
 
     /// `BgSpot00Hanebasi_Draw`: the bridge or a chain, and the bridge's torches.
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
-        let dl = if self.actor.params == DT_DRAWBRIDGE { DRAWBRIDGE_DL } else { CHAINS_DL };
+        let dl = if TYPE.get(self.actor.params) == DT_DRAWBRIDGE { DRAWBRIDGE_DL } else { CHAINS_DL };
         out.opa.push(DrawCmd::new(MeshKey::named(keys::mesh(OBJECT, dl)), actor_draw_matrix(rs)));
-        if self.actor.params != DT_DRAWBRIDGE {
+        if TYPE.get(self.actor.params) != DT_DRAWBRIDGE {
             return;
         }
         // BgSpot00Hanebasi_DrawTorches: two flames at (±260, 128, 690), turned to face the
@@ -411,7 +438,7 @@ impl ActorImpl for BgSpot00Hanebasi {
     /// `BgSpot00Hanebasi_Destroy`.
     fn destroy(&mut self, play: &mut PlayState) {
         play.col.dyna.delete_bg_actor(self.bg);
-        if self.actor.params >= DT_CHAIN_1 {
+        if TYPE.get(self.actor.params) >= DT_CHAIN_1 {
             play.light_ctx.remove_light(self.light_node);
         }
     }

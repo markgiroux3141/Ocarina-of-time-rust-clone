@@ -11,12 +11,17 @@
 //! (0.13671875 a pixel, t falling); `SETUPDL_64` turns texturing off for the triangles it doesn't
 //! draw, so the quad's commands turn it on (`gSPTexture`), as the rectangle is textured
 //! regardless. `Magic_Reset` and Nayru's Love's restore aren't (no magic, no spells).
+//!
+//! Params: `params` whole (1: only the screen of rain, forever; any other: the storm, its
+//! `En_Okarina_Effect` spawned); `Message_DrawMain` spawns it with 0.
+//! Flags: none.
 
 use std::sync::Arc;
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::gbi::{Dl, push_vtx, setup_dl};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, SEGMENT_CALL, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -34,7 +39,14 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ITEMACTION,
     flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA,
     object: "gameplay_keep",
+    schema: &SCHEMA,
 };
+
+/// `this->actor.params == 1`: only the screen of rain.
+pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "the storm"), (1, "only the screen of rain (never ends)")]), "the storm, or only its screen of rain (1)");
+
+/// Oceff_Storm's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 /// `ACTOR_EN_OKARINA_EFFECT` (`actor_table.h`: 0x0170).
 const ACTOR_EN_OKARINA_EFFECT: i16 = 0x0170;
@@ -145,7 +157,7 @@ impl OceffStorm {
         };
         this.actor.scale = glam::Vec3::ZERO;
         this.pos_y_off = this.pos_y_off_add;
-        if this.actor.params == 1 {
+        if TYPE.get(this.actor.params) == 1 {
             this.action = Action::Unk;
             this.draw_screen_only = true;
         } else {

@@ -17,7 +17,7 @@
 //!
 //! The whole overlay is ported.
 //!
-//! Params: none (Kakariko places it with 0xFFFF).
+//! Params: none read (Kakariko places it with 0xFFFF, unused).
 //! Flags: reads EVENTCHKINF_54 (gone for an adult).
 
 use std::sync::Arc;
@@ -27,11 +27,13 @@ use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::SfxPos;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
 use oot_game::effect::EffectInit;
 use oot_game::effect::spark::EffectSparkInit;
 use oot_game::env::lerp_weight;
+use oot_game::event_chk_inf;
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 
@@ -41,7 +43,17 @@ pub const ACTOR_BG_SPOT01_IDOHASHIRA: i16 = 0x0103;
 pub const OBJECT: &str = "object_spot01_objects";
 
 /// `Bg_Spot01_Idohashira_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_IDOHASHIRA, name: "Bg_Spot01_Idohashira", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_IDOHASHIRA, name: "Bg_Spot01_Idohashira", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// The placed params, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
+
+/// Bg_Spot01_Idohashira's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_54)).reads().note("gone for an adult once set")],
+    todo: false,
+};
 
 /// `EVENTCHKINF_54` (`save.h`: 0x54): the Nocturne of Shadow's cutscene seen.
 pub const EVENTCHKINF_54: u16 = 0x54;

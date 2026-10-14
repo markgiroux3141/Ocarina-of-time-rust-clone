@@ -6,11 +6,18 @@
 //!
 //! Ported whole (GAME-06 milestone 1b). The draws are bakes (ADR 0006), the env alpha and the
 //! fiery scroll dynamic.
+//!
+//! Params: `params` whole (1 to 4: an expanding ring, its starting scale `sScales[params]`,
+//! spawned by `Demo_Gt` with 2, 3 and 4; any other: the turning ring, its size by the scene; the
+//! data places -1). Printed at init.
+//! Flags: reads EVENTCHKINF_2F (the turning ring, for an adult: set, white; clear, fiery).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::Vec3;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::cutscene::CS_STATE_IDLE;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -21,7 +28,27 @@ pub const ACTOR_BG_SPOT16_DOUGHNUT: i16 = 0x00E5;
 pub const OBJECT: &str = "object_efc_doughnut";
 
 /// `Bg_Spot16_Doughnut_Profile`: `ACTORCAT_PROP`, `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT16_DOUGHNUT, name: "Bg_Spot16_Doughnut", category: ACTORCAT_PROP, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT16_DOUGHNUT, name: "Bg_Spot16_Doughnut", category: ACTORCAT_PROP, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params` (`params == 1 || ... == 4`): which ring.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (-1, "the turning ring"),
+        (1, "an expanding ring from scale 0"),
+        (2, "an expanding ring from scale 70"),
+        (3, "an expanding ring from scale 210"),
+        (4, "an expanding ring from scale 300"),
+    ]),
+    "the turning ring (any but 1 to 4), or an expanding one",
+);
+
+/// Bg_Spot16_Doughnut's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_2F)).reads().note("the turning ring, for an adult: set, white; clear, fiery")],
+    todo: false,
+};
 
 /// `sScales`: the expanding rings' starting scales (× 1e-4).
 const S_SCALES: [i16; 5] = [0, 0, 70, 210, 300];
@@ -52,7 +79,7 @@ impl BgSpot16Doughnut {
         actor.culling_volume_downward = 5000.0;
         actor.scale = Vec3::splat(0.1);
         let mut this = BgSpot16Doughnut { actor, fire_flag: 0, env_color_alpha: 255, expanding: false };
-        let params = this.actor.params;
+        let params = TYPE.get(this.actor.params);
         if (1..=4).contains(&params) {
             this.actor.scale = Vec3::splat(S_SCALES[params as usize] as f32 * 1.0e-4);
             this.expanding = true;

@@ -25,10 +25,11 @@
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
 //! debug count override (`BREG(7)`, 0).
 //!
-//! Params: none (her scene and Link's age decide).
-//! Flags: reads and sets `INFTABLE_199` to `INFTABLE_19F` (the cuccos penned) and
-//! `ITEMGETINF_0C` (the bottle); reads and sets `ITEMGETINF_2C` (the Pocket Egg) and
-//! `ITEMGETINF_2E` (Cojiro), reads `EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO` (adult).
+//! Params: none read (placed as 0xFFFF, unused: her scene and Link's age decide).
+//! Flags: sets and clears `INFTABLE_199` to `INFTABLE_19F` (the cuccos penned, a bit each in
+//! `infTable[25]`, all cleared once seven are in; read only by its debug prints); reads and sets
+//! `ITEMGETINF_0C` (the bottle), `ITEMGETINF_2C` (the Pocket Egg) and `ITEMGETINF_2E` (Cojiro);
+//! reads `EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO` (an adult's texts, the Pocket Cucco's trade).
 
 use std::sync::Arc;
 
@@ -39,6 +40,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_SY_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -48,6 +50,7 @@ use oot_game::npc::{EXCH_ITEM_NONE, NpcTrack, get_player_exchange_item_id, offer
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::*;
+use oot_game::{event_chk_inf, inf_table, item_get_inf};
 
 use crate::en_niw::{self, EnNiw};
 
@@ -62,7 +65,29 @@ const OS_ANIME: &str = "object_os_anime";
 
 /// `En_Niw_Lady_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_NIW_LADY, name: "En_Niw_Lady", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+    ActorProfile { id: ACTOR_EN_NIW_LADY, name: "En_Niw_Lady", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// The placed params, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
+
+/// En_Niw_Lady's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(inf_table!(INFTABLE_199)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(inf_table!(INFTABLE_19A)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(inf_table!(INFTABLE_19B)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(inf_table!(INFTABLE_19C)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(inf_table!(INFTABLE_19D)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(inf_table!(INFTABLE_19E)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(inf_table!(INFTABLE_19F)).sets().clears().note("a cucco in the pen (D_80ABB3B4's bit); all cleared once seven are in").indirect("the infTable word, by D_80ABB3B4's masks"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_0C)).reads().sets().note("the Empty Bottle given"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_2C)).reads().sets().note("the Pocket Egg given"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_2E)).reads().sets().note("Cojiro given"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO)).reads().note("an adult's texts and the Pocket Cucco's trade"),
+    ],
+    todo: false,
+};
 
 /// `SCENE_IMPAS_HOUSE` (`scene_table.h`: 0x37, `labo_scene`).
 pub const SCENE_IMPAS_HOUSE: u16 = 0x37;
@@ -70,6 +95,12 @@ pub const SCENE_IMPAS_HOUSE: u16 = 0x37;
 // `INFTABLE_*`, `ITEMGETINF_*`, `EVENTCHKINF_*` (`save.h`).
 /// `INFTABLE_199` (to `INFTABLE_19F`: `INFTABLE_INDEX_199_19A_19B_19C_19D_19E_19F`, 25).
 pub const INFTABLE_199: u16 = 0x199;
+pub const INFTABLE_19A: u16 = 0x19A;
+pub const INFTABLE_19B: u16 = 0x19B;
+pub const INFTABLE_19C: u16 = 0x19C;
+pub const INFTABLE_19D: u16 = 0x19D;
+pub const INFTABLE_19E: u16 = 0x19E;
+pub const INFTABLE_19F: u16 = 0x19F;
 /// `INFTABLE_INDEX_199_19A_19B_19C_19D_19E_19F`.
 const INFTABLE_INDEX_199_19A_19B_19C_19D_19E_19F: usize = 25;
 /// `ITEMGETINF_0C`: the Empty Bottle got from Anju.
@@ -432,6 +463,7 @@ impl EnNiwLady {
             // D_80ABB3B4[unk_2AA]: an index past the table reads the next statics; unk_2AA is 0
             // to 6 (Kakariko's) or 0.
             let mask = D_80ABB3B4.get(idx).copied().unwrap_or(0);
+            // schema: INFTABLE_199 to INFTABLE_19F, by the cucco's mask
             let inf = &mut play.save.inf_table[INFTABLE_INDEX_199_19A_19B_19C_19D_19E_19F];
             if Self::in_pen(pos) {
                 if self.unk_26c == 0 {
@@ -491,6 +523,7 @@ impl EnNiwLady {
                     self.unk_26c = 1;
                     self.unk_262 = TEXT_STATE_EVENT;
                     self.unk_26a = self.cuccos_in_pen;
+                    // schema: INFTABLE_199 to INFTABLE_19F, all cleared
                     let inf = &mut play.save.inf_table[INFTABLE_INDEX_199_19A_19B_19C_19D_19E_19F];
                     log::debug!("En_Niw_Lady: before changing the fence BIT {inf:x}");
                     *inf &= !D_80ABB3B4.iter().fold(0, |a, b| a | b);

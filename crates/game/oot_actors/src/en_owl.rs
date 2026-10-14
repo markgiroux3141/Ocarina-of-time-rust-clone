@@ -17,6 +17,18 @@
 //! Ported whole (GAME-06 milestone 2; the carrying owls' `gTimeSpeed = 0` with the clock in
 //! milestone 3). Not modelled: the perched animation on the flying skeleton
 //! (`func_80ACBAB8`'s cue 2: @bug (game), its missing joints read as zero).
+//!
+//! Params: `switchFlag` bits 0 to 5 (0x20 and up: none; set as he flies off; set at init, he's
+//! gone, but for type 0); `owlType` bits 6 to 11 (`EnOwlType`: 0 the cutscenes', 1 outside Kokiri,
+//! 2 Hyrule Castle, 3 Kakariko, 4 Hylia to Gerudo, 5 Lake Hylia (carries Link), 6 Zora's River, 7
+//! the Lake Hylia shortcut, 8 and 9 Death Mountain (carries Link), 0xA the Desert Colossus, 0xB and
+//! 0xC the Lost Woods before and after Saria's Song; any other: unfinished, as outside Kokiri). The
+//! whole params 0xFFF is the owl outside Kokiri with switch flag 0x20 (never set).
+//! Flags: reads switch flag `switchFlag` (set: gone) and sets it as he flies off (under 0x20);
+//! clears switch flag 0x23 (type 7's init) and sets it as type 7's talk ends; reads
+//! EVENTCHKINF_OBTAINED_ZELDAS_LETTER (Kakariko's gone with it, Zora's River's there only with it;
+//! a text), EVENTCHKINF_43 (Hylia to Gerudo's gone) and EVENTCHKINF_39 (Zora's River's gone); sets
+//! EVENTCHKINF_6F (the Lost Woods' talk); reads and sets INFTABLE_195 (the shortcut's text heard).
 
 use std::sync::Arc;
 
@@ -26,6 +38,8 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::audio::SEQ_PLAYER_FANFARE;
 use oot_game::audio::bgm::seq_cmd1;
 use oot_game::audio::sfx::{NA_SE_EN_OWL_FLUTTER, NA_SE_EV_FLYING_AIR, NA_SE_EV_PASS_AIR, NA_SE_SY_TRE_BOX_APPEAR, SFX_FLAG, SfxPos};
@@ -44,7 +58,48 @@ pub const OBJECT: &str = "object_owl";
 /// `En_Owl_Profile`: `ACTORCAT_NPC`, `ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY |
 /// ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_OWL, name: "En_Owl", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+    ActorProfile { id: ACTOR_EN_OWL, name: "En_Owl", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_S(params, 0, 6)`: `switchFlag`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set as he flies off; set at init, he's gone (but type 0); 0x20 and up: none");
+/// `PARAMS_GET_S(params, 6, 6)`: `owlType`.
+pub const OWL_TYPE: Field = Field::params(
+    "owlType",
+    6,
+    6,
+    Kind::Named(&[
+        (0x00, "OWL_DEFAULT"),
+        (0x01, "OWL_OUTSIDE_KOKIRI"),
+        (0x02, "OWL_HYRULE_CASTLE"),
+        (0x03, "OWL_KAKARIKO"),
+        (0x04, "OWL_HYLIA_GERUDO"),
+        (0x05, "OWL_LAKE_HYLIA"),
+        (0x06, "OWL_ZORA_RIVER"),
+        (0x07, "OWL_HYLIA_SHORTCUT"),
+        (0x08, "OWL_DEATH_MOUNTAIN"),
+        (0x09, "OWL_DEATH_MOUNTAIN2"),
+        (0x0A, "OWL_DESERT_COLOSSUS"),
+        (0x0B, "OWL_LOST_WOODS_PRESARIA"),
+        (0x0C, "OWL_LOST_WOODS_POSTSARIA"),
+        (0x3F, "with switch flag 0x3F (params 0xFFF): OWL_OUTSIDE_KOKIRI, switch flag 0x20"),
+    ]),
+    "which owl: where he waits and what he says",
+);
+
+/// En_Owl's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, OWL_TYPE],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone (but type 0); set as he flies off"),
+        FlagUse::new(Flag::Switch("0x23")).sets().clears().note("type 7: cleared at init, set as his talk ends"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().note("type 3 gone with it, type 6 there only with it; a text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_43)).reads().note("type 4 gone"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_39)).reads().note("type 6 gone"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_6F)).sets().note("the Lost Woods' talk"),
+        FlagUse::new(inf_table!(INFTABLE_195)).reads().sets().note("type 7's text heard"),
+    ],
+    todo: false,
+};
 
 /// `EnOwlType`.
 pub const OWL_DEFAULT: i16 = 0x00;
@@ -203,7 +258,7 @@ pub struct EnOwl {
 
 impl EnOwl {
     fn owl_type(&self) -> i16 {
-        (self.actor.params >> 6) & 0x3F
+        OWL_TYPE.get(self.actor.params)
     }
 
     fn anim(play: &PlayState, name: &str) -> Option<Anim> {
@@ -279,12 +334,12 @@ impl EnOwl {
         this.unk_407 = 0;
         this.unk_408 = 4;
         let mut owl_type = this.owl_type();
-        let mut switch_flag = (this.actor.params & 0x3F) as i32;
-        if this.actor.params == 0xFFF {
+        let mut switch_flag = SWITCH_FLAG.get(this.actor.params) as i32;
+        if this.actor.params == 0xFFF { // schema: the whole params 0xFFF, the owl outside Kokiri
             owl_type = OWL_OUTSIDE_KOKIRI;
             switch_flag = 0x20;
         }
-        log::debug!(" conversation owl {:4x} no = {owl_type}, sv = {switch_flag}", this.actor.params);
+        log::debug!(" conversation owl {:4x} no = {owl_type}, sv = {switch_flag}", this.actor.params); // schema: printed
         if owl_type != OWL_DEFAULT && switch_flag < 0x20 && play.flags.get_switch(switch_flag) {
             log::debug!("Save owl with savebit");
             this.actor.kill();
@@ -382,7 +437,7 @@ impl EnOwl {
     /// the text set and, within `target_dist`, the talk offered to be taken at once.
     fn check_init_talk(&mut self, play: &mut PlayState, text_id: u16, target_dist: f32, flags: u16) -> bool {
         if oot_game::npc::process_talk_request(&mut self.actor) {
-            let timer = if self.actor.params == 0xFFF {
+            let timer = if self.actor.params == 0xFFF { // schema: the whole params 0xFFF, the owl outside Kokiri
                 self.action_flags |= 0x40;
                 -100
             } else if play.rand.zero_one() < 0.5 {
@@ -430,7 +485,8 @@ impl EnOwl {
 
     /// `func_80ACA62C`: his flag set, then away.
     fn func_80aca62c(&mut self, play: &mut PlayState) {
-        let switch_flag = (self.actor.params & 0x3F) as i32;
+        let switch_flag = SWITCH_FLAG.get(self.actor.params) as i32;
+
         if switch_flag < 0x20 {
             play.flags.set_switch(switch_flag);
             log::debug!(" Actor_Environment_sw = {}", play.flags.get_switch(switch_flag));

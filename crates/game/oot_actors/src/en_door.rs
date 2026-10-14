@@ -3,9 +3,6 @@
 //! opens it (`Player_ActionHandler_1`), which loads the room behind it or, for a scene-exit door, starts
 //! the exit under it.
 //!
-//! Params: the type in bits 7..9 (`EnDoorType`), a double door in bit 6, a switch flag (locked
-//! doors) or a text id - 0x200 (checkable doors) in bits 0..5.
-//!
 //! The door waits for its scene's object (`sDoorInfo`: the Fire and Water Temples', the Shadow
 //! Temple's, else `gameplay_keep`, or `gameplay_field_keep`'s door where that's loaded), then
 //! idles: with Player within 20 across and 50 through it, and facing it within 0x3000, it
@@ -23,11 +20,26 @@
 //! A locked door's chains and lock are drawn (`Actor_DrawDoorLock`). Not ported: opening it
 //! with a small key (no En_Door is locked in the ported scenes), and the bubbles of a door
 //! opened underwater (`EffectSsBubble`, with their count's `Rand_ZeroOne`).
+//!
+//! Params: `type` bits 7 to 9 (`ENDOOR_GET_TYPE`, `EnDoorType`: 0 `DOOR_ROOMLOAD`, 1
+//! `DOOR_LOCKED`, 2 `DOOR_ROOMLOAD2`, 3 `DOOR_SCENEEXIT`, 4 `DOOR_AJAR`, 5 `DOOR_CHECKABLE`, 6
+//! `DOOR_EVENING` (a scene exit from 18:00 to 21:00, else checkable), 7 `DOOR_ROOMLOAD7`; the
+//! type it becomes is written back over it); `isDoubleDoor` bit 6 (`ENDOOR_GET_IS_DOUBLE_DOOR`:
+//! the other half spawned as its child, 30 to the side); bits 0 to 5 the locked door's
+//! `switchFlag` (`ENDOOR_GET_LOCKED_SWITCH_FLAG`, type 1: set, unlocked) or the checkable door's
+//! text (`ENDOOR_GET_CHECKABLE_TEXT_ID`, types 5 and 6: `0x0200 +` it), unused by the others (the
+//! data writes 0x3F). Bits 10 to 15 are the transition actor's index
+//! (`GET_TRANSITION_ACTOR_INDEX`), added at spawn, not the placement's.
+//! Flags: reads switch flag `switchFlag` (type 1: set, unlocked) and sets it when a key opens it;
+//! reads EVENTCHKINF_TALON_RETURNED_FROM_CASTLE (text 0x0229, Talon's house: not yet, the door
+//! opens).
 
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_EV_CHAIN_KEY_UNLOCK, NA_SE_EV_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_OPEN, NA_SE_OC_DOOR_OPEN};
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -39,7 +51,44 @@ use crate::player::{PLAYER_DOORTYPE_AJAR, PLAYER_DOORTYPE_HANDLE, Player, STATE1
 pub const ACTOR_EN_DOOR: i16 = 0x0009;
 
 /// `En_Door_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOOR, name: "En_Door", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOOR, name: "En_Door", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `ENDOOR_GET_LOCKED_SWITCH_FLAG`: `PARAMS_GET_U(params, 0, 6)`, a locked door's.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set: unlocked (set when a key opens it)").when("type", &[1]);
+/// `ENDOOR_GET_CHECKABLE_TEXT_ID`: `PARAMS_GET_U(params, 0, 6)`, a checkable door's text, `+ 0x0200`.
+pub const CHECKABLE_TEXT_ID: Field = Field::params("checkableTextId", 0, 6, Kind::Range(0, 0x3F), "its text, 0x0200 + this").when("type", &[5, 6]);
+/// Bits 0 to 5 of the other types: read by nothing.
+pub const NO_DATA: Field = Field::params("data", 0, 6, Kind::Unused, "0x3F in the data (ENDOOR_PARAMS_NODATA); read by nothing").when("type", &[0, 2, 3, 4, 7]);
+/// `ENDOOR_GET_IS_DOUBLE_DOOR`: `PARAMS_GET_NOSHIFT(params, 6, 1)`.
+pub const IS_DOUBLE_DOOR: Field =
+    Field::params("isDoubleDoor", 6, 1, Kind::Named(&[(0, "a single door"), (1, "a double door: the other half spawned as its child")]), "a double door");
+/// `ENDOOR_GET_TYPE`: `PARAMS_GET_U(params, 7, 3)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    7,
+    3,
+    Kind::Named(&[
+        (0, "DOOR_ROOMLOAD"),
+        (1, "DOOR_LOCKED"),
+        (2, "DOOR_ROOMLOAD2"),
+        (3, "DOOR_SCENEEXIT"),
+        (4, "DOOR_AJAR"),
+        (5, "DOOR_CHECKABLE"),
+        (6, "DOOR_EVENING"),
+        (7, "DOOR_ROOMLOAD7"),
+    ]),
+    "loads a room, locked, a scene exit, ajar, or checkable (text)",
+);
+
+/// En_Door's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, CHECKABLE_TEXT_ID, NO_DATA, IS_DOUBLE_DOOR, TYPE],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("type 1: set, unlocked; set when a key opens it"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("text 0x0229, Talon's house: not yet, the door opens"),
+    ],
+    todo: false,
+};
 
 /// `DOOR_AJAR_SLAM_RANGE`, `DOOR_AJAR_OPEN_RANGE`.
 const DOOR_AJAR_SLAM_RANGE: f32 = 120.0;
@@ -210,11 +259,12 @@ impl EnDoor {
             d.action = Action::SetupType;
         }
         // Double doors: the other half, 30 to the side, turned round.
-        if d.actor.params & DOUBLE_DOOR_FLAG != 0 {
+        if IS_DOUBLE_DOOR.get(d.actor.params) != 0 {
             let (c, s) = (eng_math::cos_s(d.actor.shape_rot.y), eng_math::sin_s(d.actor.shape_rot.y));
             let (x_offset, z_offset) = (c * 30.0, s * 30.0);
             let pos = Vec3::new(d.actor.world_pos.x + x_offset, d.actor.world_pos.y, d.actor.world_pos.z - z_offset);
             let rot = [0, d.actor.shape_rot.y.wrapping_add(-0x8000i32 as i16), 0];
+            // schema: the other half's params, this door's without isDoubleDoor
             let params = d.actor.params & !DOUBLE_DOOR_FLAG;
             match play.actor_spawn_as_child(&mut d.actor, ACTOR_EN_DOOR, pos, rot, params) {
                 Ok(h) => {
@@ -234,11 +284,12 @@ impl EnDoor {
 
     /// `ENDOOR_GET_TYPE`.
     pub fn door_type(&self) -> u16 {
-        (self.actor.params as u16 >> TYPE_SHIFT) & 7
+        TYPE.get(self.actor.params) as u16
     }
 
     /// `GET_TRANSITION_ACTOR_INDEX`.
     pub fn transition_index(&self) -> usize {
+        // schema: GET_TRANSITION_ACTOR_INDEX, added at spawn (Actor_SpawnTransitionActors)
         (self.actor.params as u16 >> TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize
     }
 
@@ -255,7 +306,7 @@ impl EnDoor {
         }
         self.actor.world_rot.y = 0;
         if door_type == DOOR_LOCKED {
-            if !play.flags.get_switch((self.actor.params & 0x3F) as i32) {
+            if !play.flags.get_switch(SWITCH_FLAG.get(self.actor.params) as i32) {
                 self.lock_timer = 10;
             }
         } else if door_type == DOOR_AJAR {
@@ -265,7 +316,7 @@ impl EnDoor {
                 self.actor.world_rot.y = -0x1800;
             }
         } else if door_type == DOOR_CHECKABLE {
-            self.actor.text_id = (self.actor.params & 0x3F) as u16 + 0x0200;
+            self.actor.text_id = CHECKABLE_TEXT_ID.get(self.actor.params) as u16 + 0x0200;
             if self.actor.text_id == 0x0229 && !play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) {
                 // Talon's house door: openable at any time until Talon's woken at the castle.
                 door_type = DOOR_SCENEEXIT;
@@ -275,6 +326,7 @@ impl EnDoor {
             }
         }
         // The type it was loaded with gives way to the new one.
+        // schema: the C's write, the type replaced
         self.actor.params = (self.actor.params & !TYPE_MASK) | ((door_type as i16) << TYPE_SHIFT);
     }
 
@@ -299,7 +351,7 @@ impl EnDoor {
             self.skel.change(anim, if swimming { 0.75 } else { 1.5 }, 0.0, last, oot_game::skelanime_std::ANIMMODE_ONCE, 0.0);
             if self.lock_timer != 0 {
                 // dungeonKeys[mapIndex]--: no keys yet (Player never opens a locked door here).
-                play.flags.set_switch((self.actor.params & 0x3F) as i32);
+                play.flags.set_switch(SWITCH_FLAG.get(self.actor.params) as i32);
                 audio_play_actor_sfx2(play, NA_SE_EV_CHAIN_KEY_UNLOCK);
             }
         } else if !play.player_in_cs_mode() {

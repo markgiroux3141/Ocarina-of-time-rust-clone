@@ -18,7 +18,8 @@
 //! Not ported here: the splash in water (`EffectSsGSplash_Spawn`: the effect isn't ported; it still
 //! flies off).
 //!
-//! Params: none (negative ones are made 0, never read).
+//! Params: `params` whole, as an `s16`: made 0 if negative, then read by nothing (`En_Niw`
+//! spawns it with 0).
 //! Flags: none.
 
 use std::sync::Arc;
@@ -33,6 +34,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4,
 };
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile, actor_set_player_knockback_large, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::*;
@@ -46,7 +48,13 @@ pub const ACTOR_EN_ATTACK_NIW: i16 = en_niw::ACTOR_EN_ATTACK_NIW;
 pub const OBJECT: &str = en_niw::OBJECT;
 
 /// `En_Attack_Niw_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ATTACK_NIW, name: "En_Attack_Niw", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ATTACK_NIW, name: "En_Attack_Niw", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params < 0`: the whole params as an `s16`.
+pub const PARAMS: Field = Field::whole("params", Kind::Range(-0x8000, 0x7FFF), "made 0 if negative, then read by nothing (En_Niw spawns it with 0)");
+
+/// En_Attack_Niw's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 /// `ATTENTION_RANGE_1`.
 const ATTENTION_RANGE_1: u8 = 1;
@@ -179,7 +187,7 @@ impl EnAttackNiw {
         a.target_arrow_offset = 0.0;
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 25).
         a.shape_y_offset = 0.0;
-        if a.params < 0 {
+        if PARAMS.get(a.params) < 0 {
             a.params = 0;
         }
         a.scale = Vec3::splat(0.01);

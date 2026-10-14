@@ -20,12 +20,25 @@
 //! take away: logged), `Interface_SetSubTimerToFinalSecond` (no sub-timer runs in the port: a
 //! no-op). The Door of Time's child is `Door_Toki`, a placeholder until the Temple of Time
 //! (Phase 8).
+//!
+//! Params: `params` whole, the type (`DemoKankyoType`: 0 and 1 the blue rain, 2 to 6 Din's rocks
+//! on cue channels 0 to 4, 7 the clouds, 8 to 0xC removed, 0xD the Door of Time, 0xE the light
+//! plane, 0xF the warp-out sparkles and 0x10 the warp-in ones (Player's, never placed), 0x11 the
+//! sparkles (`En_Box`'s, `Shot_Sun`'s)); `sObjectIds[params]` its object.
+//! Flags: reads EVENTCHKINF_OPENED_DOOR_OF_TIME (the Door of Time: clear, its `Door_Toki`; set, the
+//! door gone) and sets it as the door finishes opening; reads `CutsceneFlags_Get(play, 2)` (the
+//! door opens) and `CutsceneFlags_Get(play, 1)` (the Temple of Time's rain shown); the warp-out's
+//! `Environment_WarpSongLeave` (`z_kankyo.c`) sets the arrival's EVENTCHKINF_B9, EVENTCHKINF_B1,
+//! EVENTCHKINF_B8, EVENTCHKINF_B6 or EVENTCHKINF_A7 by its entrance. The warp's sparkles take
+//! their colour from `gSaveContext.respawn[RESPAWN_MODE_RETURN].data` (the song).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{cos_s, sin_s, smooth_step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::*;
 use oot_game::camera::{func_800bb2b4, sph_geo_to_vec3, vec3_to_sph_geo};
 use oot_game::cutscene::{CS_CAM_STOP, CS_STATE_IDLE, CsCmdActorCue, CutsceneCameraPoint};
@@ -46,7 +59,50 @@ const ACTOR_DOOR_TOKI: i16 = 0x0070;
 /// `Demo_Kankyo_Profile`: `ACTORCAT_BG`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED |
 /// ACTOR_FLAG_DRAW_CULLING_DISABLED`, `OBJECT_GAMEPLAY_KEEP` (each type waits for its own).
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_DEMO_KANKYO, name: "Demo_Kankyo", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_DEMO_KANKYO, name: "Demo_Kankyo", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params`: the type (`DemoKankyoType`).
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0x00, "DEMOKANKYO_BLUE_RAIN"),
+        (0x01, "DEMOKANKYO_BLUE_RAIN_2"),
+        (0x02, "DEMOKANKYO_ROCK_1"),
+        (0x03, "DEMOKANKYO_ROCK_2"),
+        (0x04, "DEMOKANKYO_ROCK_3"),
+        (0x05, "DEMOKANKYO_ROCK_4"),
+        (0x06, "DEMOKANKYO_ROCK_5"),
+        (0x07, "DEMOKANKYO_CLOUDS"),
+        (0x08, "DEMOKANKYO_8 (removed: nothing)"),
+        (0x09, "DEMOKANKYO_9 (removed: nothing)"),
+        (0x0A, "DEMOKANKYO_A (removed: nothing)"),
+        (0x0B, "DEMOKANKYO_B (removed: nothing)"),
+        (0x0C, "DEMOKANKYO_C (removed: nothing)"),
+        (0x0D, "DEMOKANKYO_DOOR_OF_TIME"),
+        (0x0E, "DEMOKANKYO_LIGHT_PLANE"),
+        (0x0F, "DEMOKANKYO_WARP_OUT"),
+        (0x10, "DEMOKANKYO_WARP_IN"),
+        (0x11, "DEMOKANKYO_SPARKLES"),
+    ]),
+    "which surrounding: rain, rocks, clouds, the Door of Time, the light plane, sparkles",
+);
+
+/// Demo_Kankyo's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OPENED_DOOR_OF_TIME)).reads().sets().note("the Door of Time (0xD): set as it finishes opening"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_A7)).sets().note("the warp-out (0xF): arriving at the Temple of Time (Environment_WarpSongLeave)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_B1)).sets().note("the warp-out (0xF): arriving at Lake Hylia (Environment_WarpSongLeave)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_B6)).sets().note("the warp-out (0xF): arriving at the graveyard (Environment_WarpSongLeave)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_B8)).sets().note("the warp-out (0xF): arriving at the Desert Colossus (Environment_WarpSongLeave)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_B9)).sets().note("the warp-out (0xF): arriving at Death Mountain Crater (Environment_WarpSongLeave)"),
+        FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 1)")).reads().note("the blue rain in the Temple of Time: shown"),
+        FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 2)")).reads().note("the Door of Time (0xD): opens"),
+    ],
+    todo: false,
+};
+
 
 /// `DemoKankyoType`.
 pub const DEMOKANKYO_BLUE_RAIN: i16 = 0x00;
@@ -308,7 +364,7 @@ pub struct DemoKankyo {
 
 impl DemoKankyo {
     pub fn params(&self) -> i16 {
-        self.actor.params
+        TYPE.get(self.actor.params)
     }
 
     /// `DemoKankyo_Init`.
@@ -326,7 +382,7 @@ impl DemoKankyo {
             sparkles: Vec::new(),
             warp_in_sfx: 0,
         };
-        let params = this.actor.params;
+        let params = TYPE.get(this.actor.params);
         let object = usize::try_from(params).ok().and_then(|p| S_OBJECT_IDS.get(p)).copied();
         let slot = object.and_then(|o| play.object_ctx.get_index(o));
         log::debug!("bank_ID = {slot:?}");
@@ -417,7 +473,7 @@ impl DemoKankyo {
         if self.actor.obj_bank_index != self.required_object_slot {
             return;
         }
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             DEMOKANKYO_ROCK_1..=DEMOKANKYO_ROCK_5 => self.action = Action::UpdateRock,
             DEMOKANKYO_CLOUDS => self.action = Action::UpdateClouds,
             DEMOKANKYO_DOOR_OF_TIME => {
@@ -489,7 +545,7 @@ impl DemoKankyo {
 
     /// `DemoKankyo_UpdateRock`: moved by its cue (channel `params - ROCK_1`), tumbling.
     fn update_rock(&mut self, play: &PlayState) {
-        let channel = (self.actor.params - DEMOKANKYO_ROCK_1) as usize;
+        let channel = (TYPE.get(self.actor.params) - DEMOKANKYO_ROCK_1) as usize;
         if play.cs_ctx.state != CS_STATE_IDLE
             && let Some(cue) = play.cs_ctx.npc_actions.get(channel).copied().flatten()
         {
@@ -657,7 +713,7 @@ impl DemoKankyo {
             self.sparkle_counter += 2;
         }
         let player = play.player.and_then(|h| play.actors.actor(h)).map(|a| (a.world_pos, a.world_rot.y)).unwrap_or((Vec3::ZERO, 0));
-        let params = self.actor.params;
+        let params = TYPE.get(self.actor.params);
         let mut i = self.sparkle_counter as i32 - 1;
         while i >= 0 {
             let iu = i as usize;
@@ -1030,7 +1086,7 @@ impl ActorImpl for DemoKankyo {
             return;
         }
         if self.actor.obj_bank_index == self.required_object_slot {
-            match self.actor.params {
+            match TYPE.get(self.actor.params) {
                 DEMOKANKYO_BLUE_RAIN | DEMOKANKYO_BLUE_RAIN_2 => {
                     if self.temple_rain_shown(play) {
                         self.draw_rain_update(play);
@@ -1066,7 +1122,7 @@ impl ActorImpl for DemoKankyo {
         if !self.drawn {
             return;
         }
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             DEMOKANKYO_BLUE_RAIN | DEMOKANKYO_BLUE_RAIN_2 => self.draw_rain(out),
             DEMOKANKYO_ROCK_1..=DEMOKANKYO_ROCK_5 => self.draw_rock(rs, out),
             DEMOKANKYO_CLOUDS => self.draw_clouds(view, out),

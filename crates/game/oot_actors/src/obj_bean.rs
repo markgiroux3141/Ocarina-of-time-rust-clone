@@ -7,11 +7,19 @@
 //! the magic bean, text 0x2F). Planting a bean (`func_80B8FE00` on), the watering and the leaves
 //! (`ObjBean_SetupWaitForWater` on), and the adult's lift (its path, its flight, its DynaPoly)
 //! are logged: their actor stands and draws nothing.
+//!
+//! Params: `switchFlag` bits 0 to 5 (set once a bean is planted: a child's plant waits for water,
+//! an adult's lift is there; clear, an adult's is gone); `path` bits 8 to 12 (the adult's lift's
+//! path; 0x1F: none, killed). `home.rot.z & 3`: the lift's speed (`sBeanSpeeds`: 0 and 3 slow, 1
+//! fast, 2 fastest); rot.z is zeroed at init. The lift isn't ported: the path and speed are only
+//! logged.
+//! Flags: reads switch flag `switchFlag`, and sets it as a bean is planted.
 
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_IGNORE_POINT_LIGHTS, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::sys_matrix::binang_to_rad;
@@ -21,7 +29,28 @@ pub const ACTOR_OBJ_BEAN: i16 = 0x0126;
 pub const OBJECT: &str = "object_mamenoki";
 
 /// `Obj_Bean_Profile`: `ACTORCAT_BG`, `ACTOR_FLAG_IGNORE_POINT_LIGHTS`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_BEAN, name: "Obj_Bean", category: ACTORCAT_BG, flags: ACTOR_FLAG_IGNORE_POINT_LIGHTS, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_BEAN, name: "Obj_Bean", category: ACTORCAT_BG, flags: ACTOR_FLAG_IGNORE_POINT_LIGHTS, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set once a bean is planted (an adult's lift there only then)");
+/// `PARAMS_GET_U(params, 8, 5)`: the adult's lift's path.
+pub const PATH: Field = Field::params("path", 8, 5, Kind::PathIndex, "the adult's beanstalk lift's path (0x1F: none, killed; under 3 points: killed)");
+/// `home.rot.z & 3` (`unk_1F6`): an index into `sBeanSpeeds`.
+pub const SPEED: Field = Field::rot(
+    "home.rot.z & 3",
+    Source::RotZ,
+    0,
+    2,
+    Kind::Named(&[(0, "slow (3, 0.3)"), (1, "fast (10, 0.5)"), (2, "fastest (30, 0.5)"), (3, "slow (3, 0.3)")]),
+    "the adult's lift's speed and acceleration (`sBeanSpeeds`)",
+);
+
+/// Obj_Bean's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, PATH, SPEED],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as a bean is planted")],
+    todo: false,
+};
 
 /// `BEAN_STATE_*`.
 pub const BEAN_STATE_DRAW_LEAVES: u8 = 1 << 0;
@@ -54,7 +83,7 @@ pub struct ObjBean {
 impl ObjBean {
     /// The switch flag: `PARAMS_GET_U(params, 0, 6)`.
     fn switch_flag(&self) -> i32 {
-        (self.actor.params & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `ObjBean_Init`.
@@ -69,7 +98,8 @@ impl ObjBean {
         let flag = play.flags.get_switch(this.switch_flag());
         if play.save.adult {
             if flag {
-                log::warn!("Obj_Bean: the adult's beanstalk lift (its path, ObjBean_SetupWaitForPlayer) isn't ported");
+                let (path, speed) = (PATH.get(this.actor.params), SPEED.get(this.actor.home_rot.z));
+                log::warn!("Obj_Bean: the adult's beanstalk lift (path {path}, speed {speed}, ObjBean_SetupWaitForPlayer) isn't ported");
             } else {
                 this.actor.kill();
                 return Box::new(this);
@@ -82,7 +112,8 @@ impl ObjBean {
         this.actor.world_rot.z = 0;
         this.actor.home_rot.z = 0;
         this.actor.shape_rot.z = 0;
-        log::debug!("(Magic beanstalk lift)(arg_data {:#06x})", this.actor.params);
+        log::debug!("(Magic beanstalk lift)(arg_data {:#06x})", this.actor.params); // schema: printed
+
         Box::new(this)
     }
 

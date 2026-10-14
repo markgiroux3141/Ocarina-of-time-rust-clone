@@ -27,6 +27,13 @@
 //! `Effect_Add`, `Effect_Delete` and `EffectBlure_AddVertex` keep their checks and log what they'd
 //! do; the magic arrows' children (`Arrow_Fire`, `Arrow_Ice`, `Arrow_Light`) are logged, not
 //! spawned; `Player_InBlockingCsMode`'s magic part isn't (magic isn't ported).
+//!
+//! Params (none placed: Player shoots it or throws a nut, `En_Arow_Trap` shoots silent arrows,
+//! the cutscenes' Impa (`Demo_Im`) and Sheik (`En_Xc`) throw nuts): `params` the whole (`ArrowType`: -10 `ARROW_CS_NUT`, -1 `ARROW_NORMAL_SILENT`, 0
+//! `ARROW_NORMAL_LIT`, 1 `ARROW_NORMAL_HORSE`, 2 `ARROW_NORMAL`, 3 `ARROW_FIRE`, 4 `ARROW_ICE`, 5
+//! `ARROW_LIGHT`, 6 `ARROW_0C`, 7 `ARROW_0D`, 8 `ARROW_0E`, 9 `ARROW_SEED`, 10 `ARROW_NUT`); the
+//! init turns -10 into 10. `world.rot.x`: the pitch it flies at, a rotation.
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -36,6 +43,7 @@ use eng_math::{cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_8002f9ec, player_play_sfx};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
@@ -54,7 +62,31 @@ pub const ACTOR_ARROW_LIGHT: i16 = 0x010C;
 
 /// `En_Arrow_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_ARROW, name: "En_Arrow", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_EN_ARROW, name: "En_Arrow", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params`: the kind (`ArrowType`).
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (-10, "ARROW_CS_NUT"),
+        (-1, "ARROW_NORMAL_SILENT"),
+        (0, "ARROW_NORMAL_LIT"),
+        (1, "ARROW_NORMAL_HORSE"),
+        (2, "ARROW_NORMAL"),
+        (3, "ARROW_FIRE"),
+        (4, "ARROW_ICE"),
+        (5, "ARROW_LIGHT"),
+        (6, "ARROW_0C"),
+        (7, "ARROW_0D"),
+        (8, "ARROW_0E"),
+        (9, "ARROW_SEED"),
+        (10, "ARROW_NUT"),
+    ]),
+    "the arrow, the Deku Seed or the Deku Nut (ARROW_CS_NUT: a cutscene's nut)",
+);
+
+/// En_Arrow's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 /// `ArrowType` (`z_en_arrow.h`).
 pub const ARROW_CS_NUT: i16 = -10;
@@ -232,7 +264,7 @@ pub fn bakes() -> Vec<MeshBake> {
 
 impl EnArrow {
     fn params(&self) -> i16 {
-        self.actor.params
+        TYPE.get(self.actor.params)
     }
 
     /// `EnArrow_Init`.
@@ -240,11 +272,11 @@ impl EnArrow {
         // Actor_ProcessInitChain: ICHAIN_F32(minVelocityY, -150).
         actor.min_velocity_y = -150.0;
         let mut is_cs_nut = false;
-        if actor.params == ARROW_CS_NUT {
+        if TYPE.get(actor.params) == ARROW_CS_NUT {
             is_cs_nut = true;
             actor.params = ARROW_NUT;
         }
-        let params = actor.params;
+        let params = TYPE.get(actor.params);
         let mut s = EnArrow {
             actor,
             skel: None,

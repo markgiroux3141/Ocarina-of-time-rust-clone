@@ -38,6 +38,14 @@
 //!
 //! The whole overlay is ported. Link can't hold a Deku Stick yet (GAME-05 milestone 4b), so the
 //! stick's checks are reached only by the tests, which set what Player holds.
+//!
+//! Params: `isDestroyedSwitchFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`: set when it's
+//! destroyed; set at init, it's gone); `burnSwitchFlag` bits 6 to 11 (`PARAMS_GET_U(params, 6,
+//! 6)`: a wall web burns once it's set); the type bits 12 to 15 (`PARAMS_GET_U(params, 12, 4)`:
+//! 0 `WEB_FLOOR`, 1 `WEB_WALL`), which the init writes over the whole params. `shape.rot.x` and
+//! `shape.rot.z`: a wall web's tilt.
+//! Flags: reads switch flag `isDestroyedSwitchFlag` (set: gone at init) and sets it when the web
+//! burns or breaks; reads switch flag `burnSwitchFlag` (a wall web).
 
 use std::f64::consts::PI;
 use std::sync::Arc;
@@ -49,6 +57,7 @@ use eng_math::{approach_zero_f, cos_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME;
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::collision_check::*;
@@ -65,7 +74,27 @@ const FLOOR_COLLISION: &str = "gDTWebFloorCol";
 const WALL_COLLISION: &str = "gDTWebWallCol";
 
 /// `Bg_Ydan_Sp_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_YDAN_SP, name: "Bg_Ydan_Sp", category: ACTORCAT_BG, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_YDAN_SP, name: "Bg_Ydan_Sp", category: ACTORCAT_BG, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: `isDestroyedSwitchFlag`.
+pub const IS_DESTROYED_SWITCH_FLAG: Field = Field::params("isDestroyedSwitchFlag", 0, 6, Kind::SwitchFlag, "set when it burns or breaks; set at init, it's gone");
+/// `PARAMS_GET_U(params, 6, 6)`: `burnSwitchFlag`.
+pub const BURN_SWITCH_FLAG: Field = Field::params("burnSwitchFlag", 6, 6, Kind::SwitchFlag, "a wall web burns once it's set");
+/// `PARAMS_GET_U(params, 12, 4)`: the type (`BgYdanSpType`), written over the whole params.
+pub const TYPE: Field = Field::params("type", 12, 4, Kind::Named(&[(0, "WEB_FLOOR"), (1, "WEB_WALL")]), "a floor web or a wall web");
+/// `shape.rot.x`, `shape.rot.z`: a wall web's tilt (its tris are turned by `shape.rot.x` too).
+pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the web's tilt");
+pub const ROT_Z: Field = Field::rot("shape.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the web's tilt");
+
+/// Bg_Ydan_Sp's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[IS_DESTROYED_SWITCH_FLAG, BURN_SWITCH_FLAG, TYPE, ROT_X, ROT_Z],
+    flags: &[
+        FlagUse::new(Flag::Switch("isDestroyedSwitchFlag")).reads().sets().note("set: gone; set when it burns or breaks"),
+        FlagUse::new(Flag::Switch("burnSwitchFlag")).reads().note("WEB_WALL: set, it burns"),
+    ],
+    todo: false,
+};
 
 /// `BgYdanSpType`.
 pub const WEB_FLOOR: i16 = 0;
@@ -186,15 +215,15 @@ impl BgYdanSp {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // ICHAIN_VEC3F_DIV1000(scale, 100).
         actor.scale = Vec3::splat(0.1);
-        let params = actor.params as u16;
-        let is_destroyed_switch_flag = (params & 0x3F) as u8;
-        let burn_switch_flag = ((params >> 6) & 0x3F) as u8;
-        actor.params = ((params >> 12) & 0xF) as i16;
+        let is_destroyed_switch_flag = IS_DESTROYED_SWITCH_FLAG.get(actor.params) as u8;
+        let burn_switch_flag = BURN_SWITCH_FLAG.get(actor.params) as u8;
+        actor.params = TYPE.get(actor.params);
         let tri_inits = tris_elements_init();
         let mut collider_tris = ColliderTris::new(&TRIS_INIT, &tri_inits);
         let pos = actor.world_pos;
         let col_header;
         let action;
+        // schema: the type, which the init wrote over the params.
         if actor.params == WEB_FLOOR {
             col_header = Self::floor_web_col(play);
             action = Action::FloorWebIdle;
@@ -282,6 +311,7 @@ impl BgYdanSp {
         self.timer = 30;
         play.audio.play_sfx_centered(NA_SE_SY_CORRECT_CHIME);
         play.flags.set_switch(self.is_destroyed_switch_flag as i32);
+        // schema: the type, which the init wrote over the params.
         self.action = if self.actor.params == WEB_FLOOR { Action::BurnFloorWeb } else { Action::BurnWallWeb };
     }
 
@@ -544,6 +574,7 @@ impl ActorImpl for BgYdanSp {
         let mut mtx_f = MtxF::set_translate_rotate_yxz(rs.pos.x, rs.pos.y + rs.y_offset * rs.scale.y, rs.pos.z, rs.rot);
         mtx_f.scale(rs.scale.x, rs.scale.y, rs.scale.z);
         let push = |out: &mut DrawOut, name: &str, m: &MtxF| out.xlu.push(DrawCmd::new(MeshKey::named(keys::bake(name)), m.to_mat4()));
+        // schema: the type, which the init wrote over the params.
         if self.actor.params == WEB_WALL {
             push(out, BAKE_WALL, &mtx_f);
         } else if *broken != 0 {

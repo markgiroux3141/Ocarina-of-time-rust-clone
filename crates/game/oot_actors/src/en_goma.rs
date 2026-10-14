@@ -1,11 +1,6 @@
 //! `En_Goma` (`ovl_En_Goma/z_en_goma.c`): Gohma's eggs and larvae (the Gohma Larvae, "Gohma
 //! Jr."), the eggs' hatching debris, and the pieces Queen Gohma falls apart into.
 //!
-//! Params: 0 to 2 an egg Queen Gohma lays (`Boss_Goma` is its parent, and the egg's index in its
-//! `childrenGohmaState`); 6 and 7 an egg on the floor, 8 and 9 one on the ceiling (the Deku
-//! Tree's are 6 to 9); 10 to 24 the hatching debris; 100 and up a piece of Queen Gohma
-//! (`bossLimbDL` set by `Boss_Goma`).
-//!
 //! - **An egg** (`EnGoma_Egg`): squishing slowly, now and then shedding fragments
 //!   (`EffectSsHahen`); Link within 100 in x and z for 10 frames, it **falls**
 //!   (`EnGoma_EggFallToGround`) and on the ground **hatches** (`EnGoma_SetupHatch`): half size,
@@ -31,6 +26,13 @@
 //! has them (erased as she dies). `En_Goma_Profile`'s id is `ACTOR_BOSS_GOMA` (@bug (game)): every En_Goma gets
 //! that id, as `Actor_Spawn` copies it (`PROFILE`). Not ported: the generic circle shadow
 //! (`ActorShadow_DrawCircle`, for no actor).
+//!
+//! Params: `params` the whole params (0 to 2 an egg Queen Gohma lays, `Boss_Goma` its parent and
+//! the params its index in her `childrenGohmaState`; 3 to 5 an egg with no action (@bug (game):
+//! NULL); 6 and 7 an egg on the floor, 8 and 9 one on the ceiling (6 and 8 take a `spawnNum`),
+//! the Deku Tree's; 10 to 24 the hatching debris an egg spawns; 100 and up a piece of Queen Gohma
+//! as she dies, the params 100 plus its limb's lifetime (`sDeadLimbLifetime`), its timer 150 more).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -41,6 +43,7 @@ use eng_math::{approach_f, approach_s, approach_zero_f, atan2_s, smooth_step_to_
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BOSS, ACTORCAT_ENEMY, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2, enemy_start_finishing_blow};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::hahen::HAHEN_OBJECT_DEFAULT;
@@ -62,7 +65,18 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ENEMY,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
 };
+
+/// `this->actor.params`: an egg, its debris or a piece of Queen Gohma.
+pub const PARAMS: Field = Field::whole(
+    "params",
+    Kind::Range(0, 153),
+    "0 to 2 Queen Gohma's eggs (her children's index); 6, 7 an egg on the floor, 8, 9 on the ceiling; 10 to 24 hatching debris; 100 and up her pieces (100 + the limb's lifetime)",
+);
+
+/// En_Goma's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 /// `GomaType`.
 pub const ENGOMA_NORMAL: i16 = 0;
@@ -254,7 +268,7 @@ impl EnGoma {
         actor.gravity = 0.0;
         actor.target_arrow_offset = 20.0;
         actor.scale = Vec3::splat(0.01);
-        let params = actor.params;
+        let params = PARAMS.get(actor.params);
         let mut g = EnGoma {
             actor,
             skel: SkelAnimeStd::init_flex(GOMA_LIMB_MAX - 1, None),
@@ -296,7 +310,7 @@ impl EnGoma {
             g.goma_type = ENGOMA_BOSSLIMB;
             // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0): the circle shadow isn't ported.
             g.actor.shape_y_offset = 0.0;
-            g.action_timer = g.actor.params.wrapping_add(150);
+            g.action_timer = PARAMS.get(g.actor.params).wrapping_add(150);
             g.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         } else if params >= 10 {
             // Debris when hatching.
@@ -335,21 +349,21 @@ impl EnGoma {
             let limbs = g.skeleton.as_ref().map(|s| s.limbs.len()).unwrap_or(GOMA_LIMB_MAX - 1);
             g.skel = SkelAnimeStd::init_flex(limbs, g.anims.stand.clone());
             g.actor.col_chk_info.health = 2;
-            if g.actor.params < 3 {
+            if PARAMS.get(g.actor.params) < 3 {
                 // Spawned by the boss.
                 g.action = Action::EggFallToGround;
                 g.invincibility_timer = 10;
                 g.actor.speed_xz = 1.5;
-            } else if g.actor.params == 8 || g.actor.params == 6 {
+            } else if PARAMS.get(g.actor.params) == 8 || PARAMS.get(g.actor.params) == 6 {
                 g.action = Action::Egg;
                 let s = play.overlay_static::<Statics>(ACTOR_EN_GOMA);
                 g.spawn_num = s.spawn_num as i16;
                 s.spawn_num = s.spawn_num.wrapping_add(1);
-            } else if g.actor.params == 9 || g.actor.params == 7 {
+            } else if PARAMS.get(g.actor.params) == 9 || PARAMS.get(g.actor.params) == 7 {
                 g.action = Action::Egg;
             }
             // On the ceiling from 8.
-            g.egg_y_offset = if g.actor.params >= 8 { -1500.0 } else { 1500.0 };
+            g.egg_y_offset = if PARAMS.get(g.actor.params) >= 8 { -1500.0 } else { 1500.0 };
             g.goma_type = ENGOMA_EGG;
             g.egg_scale = 1.0;
             g.egg_squish_angle = play.rand.zero_one() * 1000.0;
@@ -362,7 +376,7 @@ impl EnGoma {
     /// The `params < 6` choice the C makes for every sound: Queen Gohma's larvae (`BJR`) or the
     /// placed ones (`JR`).
     fn sfx(&self, bjr: u16, jr: u16) -> u16 {
-        if self.actor.params < 6 { bjr } else { jr }
+        if PARAMS.get(self.actor.params) < 6 { bjr } else { jr }
     }
 
     /// `Animation_Change(&skelanime, anim, speed, 0, Animation_GetLastFrame(anim), mode, morph)`.
@@ -417,7 +431,7 @@ impl EnGoma {
             0 => {
                 if self.actor.bg_check_flags & BGCHECKFLAG_GROUND != 0 {
                     audio_play_actor_sfx2(play, self.sfx(NA_SE_EN_GOMA_BJR_EGG1, NA_SE_EN_GOMA_EGG1));
-                    if self.actor.params > 5 {
+                    if PARAMS.get(self.actor.params) > 5 {
                         self.setup_hatch(play);
                     } else {
                         self.hatch_state = 1;
@@ -589,8 +603,8 @@ impl EnGoma {
             play.with_ss(|ss| ss.k_fire_spawn(pos, S_DEAD_EFFECT_VEL, accel, 40, 0));
         }
         if self.action_timer == 0 && smooth_step_to_f(&mut self.actor.scale.y, 0.0, 0.5, 0.00225, 0.00001) <= 0.001 {
-            if self.actor.params < 6 {
-                boss_goma_set_child_state(play, self.actor.parent, self.actor.params, -1);
+            if PARAMS.get(self.actor.params) < 6 {
+                boss_goma_set_child_state(play, self.actor.parent, PARAMS.get(self.actor.params), -1);
             }
             // SFX_PLAY_AT_POS(&this->actor.projectedPos, NA_SE_EN_EXTINCT).
             audio_play_actor_sfx2(play, NA_SE_EN_EXTINCT);
@@ -816,10 +830,10 @@ impl EnGoma {
                 }
             } else {
                 // Die if still an egg.
-                if self.actor.params <= 5 {
+                if PARAMS.get(self.actor.params) <= 5 {
                     // @bug (game): "BossGoma only has 3 children" (the C's `//!`): params 3 to
                     // 5 would write past `childrenGohmaState` (none is placed).
-                    boss_goma_set_child_state(play, self.actor.parent, self.actor.params, -1);
+                    boss_goma_set_child_state(play, self.actor.parent, PARAMS.get(self.actor.params), -1);
                 }
                 self.spawn_hatch_debris(play);
                 self.actor.kill();
@@ -1074,14 +1088,14 @@ impl ActorImpl for EnGoma {
             Action::Stunned => self.stunned(play),
             Action::Debris => self.debris(),
             Action::BossLimb => self.boss_limb(play),
-            Action::None => log::warn!("En_Goma: params {} has no actionFunc (the C jumps to NULL)", self.actor.params),
+            Action::None => log::warn!("En_Goma: params {} has no actionFunc (the C jumps to NULL)", PARAMS.get(self.actor.params)),
         }
         self.actor.move_forward();
         self.actor.world_pos.x += self.shield_knockback_vel.x;
         self.actor.world_pos.z += self.shield_knockback_vel.z;
         approach_zero_f(&mut self.shield_knockback_vel.x, 1.0, 3.0);
         approach_zero_f(&mut self.shield_knockback_vel.z, 1.0, 3.0);
-        if self.actor.params < 10 {
+        if PARAMS.get(self.actor.params) < 10 {
             self.egg_timer = self.egg_timer.wrapping_add(1);
             smooth_step_to_f(&mut self.actor.scale.x, 0.01, 0.5, 0.00075, 0.000001);
             smooth_step_to_f(&mut self.actor.scale.y, 0.01, 0.5, 0.00075, 0.000001);

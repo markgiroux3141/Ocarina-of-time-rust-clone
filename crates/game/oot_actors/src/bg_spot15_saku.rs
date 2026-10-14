@@ -6,12 +6,17 @@
 //! (set only by a legacy text handler) it starts open at z 2659 and the guard's call does nothing.
 //!
 //! The whole overlay is ported.
+//!
+//! Params: `params` whole unused (0xFFFF in the data).
+//! Flags: reads INFTABLE_71 (set: open from the start, the guard's call ignored).
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::inf_table;
 use oot_game::audio::sfx::SFX_FLAG;
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -21,10 +26,17 @@ pub const ACTOR_BG_SPOT15_SAKU: i16 = 0x00F8;
 pub const OBJECT: &str = "object_spot15_obj";
 
 /// `Bg_Spot15_Saku_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT15_SAKU, name: "Bg_Spot15_Saku", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT15_SAKU, name: "Bg_Spot15_Saku", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT, schema: &SCHEMA };
 
 /// `INFTABLE_71` (`save.h`: 0x71).
 pub const INFTABLE_71: u16 = 0x71;
+
+/// The whole params: 0xFFFF in the game's data, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "0xFFFF in the data; read by nothing");
+
+/// Bg_Spot15_Saku's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema =
+    ActorSchema { fields: &[PARAMS], flags: &[FlagUse::new(inf_table!(INFTABLE_71)).reads().note("open from the start")], todo: false };
 /// `NA_SE_EV_METALGATE_OPEN`, `NA_SE_EV_BRIDGE_OPEN_STOP` (`environmentbank_table.h`: 0x2867,
 /// 0x280E).
 pub const NA_SE_EV_METALGATE_OPEN: u16 = 0x2867;

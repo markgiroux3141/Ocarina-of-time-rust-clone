@@ -28,10 +28,9 @@
 //! segments (`DrawParams::texture_images`); the head and torso turns as `OverrideLimbDraw`'s
 //! matrices.
 //!
-//! **Params:** none read.
-//!
-//! **Flags:** sets `EVENTCHKINF_OBTAINED_ZELDAS_LETTER` with the letter; reads it at init (then she
-//! only talks).
+//! Params: none (what she does is the scene layer's, the entrance's and the letter's).
+//! Flags: reads EVENTCHKINF_OBTAINED_ZELDAS_LETTER at init (then she only talks) and sets it with
+//! the letter.
 
 use std::sync::Arc;
 
@@ -41,6 +40,8 @@ use eng_gfx::{DrawCmd, DrawImage, DrawParams, MeshKey, SourceImage};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK, ACTOR_FLAG_TALK_WITH_C_UP, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, FlagUse};
+use oot_game::event_chk_inf;
 use oot_game::camera::{CAM_SET_CS_0, CAM_SET_FREE0, CAM_SET_NORMAL0};
 use oot_game::collision_check::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CS_STATE_STOP, CutsceneCameraPoint};
@@ -61,10 +62,17 @@ pub const OBJECT: &str = "object_zl4";
 
 /// `En_Zl4_Profile`: `FLAGS` `ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY |
 /// ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ZL4, name: "En_Zl4", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ZL4, name: "En_Zl4", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
 
 /// `EVENTCHKINF_OBTAINED_ZELDAS_LETTER` (`save.h`: 0x40).
 pub const EVENTCHKINF_OBTAINED_ZELDAS_LETTER: u16 = 0x40;
+
+/// En_Zl4's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().sets().note("the letter given: she only talks")],
+    todo: false,
+};
 /// `ENTR_CUTSCENE_MAP_0` (0x0A0), `ENTR_CASTLE_COURTYARD_ZELDA_1` (0x5F0) (`entrance_table.h`).
 const ENTR_CUTSCENE_MAP_0: u16 = 0x0A0;
 pub const ENTR_CASTLE_COURTYARD_ZELDA_1: u16 = 0x5F0;

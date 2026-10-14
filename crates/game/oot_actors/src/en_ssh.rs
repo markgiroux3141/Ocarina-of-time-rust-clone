@@ -49,9 +49,9 @@
 //! (`ActorShadow_DrawCircle`, 30), as for every actor. Not reached: a burning Deku Stick
 //! (Player's `unk_860` stays 0), the hammer's shock wave.
 //!
-//! Params: the family member, 0 to 5 (0 the father, `ENSSH_FATHER`: gone at 100 tokens, 0.75 the
-//! size, his own face and legs, his texts; 1 to 5 a child, gone at `params × 10` tokens, half the
-//! size, text 0x22).
+//! Params: `params` whole, the family member, 0 to 5 (0 the father, `ENSSH_FATHER`: gone at 100
+//! tokens, 0.75 the size, his own face and legs, his texts; 1 to 5 a child, gone at `params × 10`
+//! tokens, half the size, text 0x22).
 //! Flags: reads `gsTokens`; sets EVENTCHKINF_96 (the father, talked to); reads and sets
 //! INFTABLE_196 (texts 0x26, 0x27) and INFTABLE_197 (texts 0x24, 0x25).
 
@@ -64,6 +64,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
@@ -72,6 +73,7 @@ use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::{ANIMMODE_LOOP_INTERP, Anim, SkelAnimeStd};
 use oot_game::sys_matrix::{MtxF, binang_to_rad};
+use oot_game::{event_chk_inf, inf_table};
 
 /// `ACTOR_EN_SSH` (`actor_table.h`: 0x0188).
 pub const ACTOR_EN_SSH: i16 = 0x0188;
@@ -85,6 +87,32 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_NPC,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// `this->actor.params`, whole: the family member.
+pub const MEMBER: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "ENSSH_FATHER: gone at 100 tokens"),
+        (1, "a child: gone at 10 tokens"),
+        (2, "a child: gone at 20 tokens"),
+        (3, "a child: gone at 30 tokens"),
+        (4, "a child: gone at 40 tokens"),
+        (5, "a child: gone at 50 tokens"),
+    ]),
+    "which of the cursed family: the father (bigger, his own face, legs and texts) or a child, gone from params × 10 tokens",
+);
+
+/// En_Ssh's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[MEMBER],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_96)).sets().note("the father, talked to"),
+        FlagUse::new(inf_table!(INFTABLE_196)).reads().sets().note("the father's texts 0x26, 0x27"),
+        FlagUse::new(inf_table!(INFTABLE_197)).reads().sets().note("the father's texts 0x24, 0x25"),
+    ],
+    todo: false,
 };
 
 /// `ENSSH_FATHER`.
@@ -304,7 +332,7 @@ pub struct EnSsh {
 
 impl EnSsh {
     fn is_father(&self) -> bool {
-        self.actor.params == ENSSH_FATHER
+        MEMBER.get(self.actor.params) == ENSSH_FATHER
     }
 
     /// `EnSsh_Init`.
@@ -346,12 +374,12 @@ impl EnSsh {
             blink_timer: 0,
         };
         let tokens = play.save.inventory.gs_tokens;
-        if s.actor.params == ENSSH_FATHER {
+        if MEMBER.get(s.actor.params) == ENSSH_FATHER {
             if tokens >= 100 {
                 s.actor.kill();
                 return Box::new(s);
             }
-        } else if tokens >= s.actor.params.wrapping_mul(10) {
+        } else if tokens >= MEMBER.get(s.actor.params).wrapping_mul(10) {
             s.actor.kill();
             return Box::new(s);
         }
@@ -368,7 +396,7 @@ impl EnSsh {
         s.state_flags = 0;
         s.hit_count = 0;
         s.check_ceiling_pos(play);
-        if s.actor.params != ENSSH_FATHER {
+        if MEMBER.get(s.actor.params) != ENSSH_FATHER {
             s.set_collider_scale(0.5, 1.0);
         } else {
             s.set_collider_scale(0.75, 1.0);
@@ -864,7 +892,7 @@ impl EnSsh {
     fn idle(&mut self, play: &mut PlayState) {
         if process_talk_request(&mut self.actor) {
             self.action = Action::Talk;
-            if self.actor.params == ENSSH_FATHER {
+            if MEMBER.get(self.actor.params) == ENSSH_FATHER {
                 play.save.set_event_chk_inf(EVENTCHKINF_96);
             }
             if self.actor.text_id == 0x26 || self.actor.text_id == 0x27 {
@@ -890,7 +918,7 @@ impl EnSsh {
                 }
                 self.bob(play);
                 if self.unk_timer == 0 && self.anim_timer == 0 {
-                    self.actor.text_id = Self::text_id(play, self.actor.params);
+                    self.actor.text_id = Self::text_id(play, MEMBER.get(self.actor.params));
                     let a = self.actor.clone();
                     offer_talk(play, &a, 100.0);
                 }
@@ -954,7 +982,7 @@ impl EnSsh {
     /// `EnSsh_UpdateColliderScale`: a spin's start doubles the radius; its end halves it back (and
     /// both shrink the rest: `set_collider_scale`'s bug).
     fn update_collider_scale(&mut self) {
-        let scale = if self.actor.params != ENSSH_FATHER { 0.5 } else { 0.75 };
+        let scale = if MEMBER.get(self.actor.params) != ENSSH_FATHER { 0.5 } else { 0.75 };
         if self.state_flags & SSH_STATE_SPIN != 0 {
             if self.spin_timer == 0 {
                 self.state_flags &= !SSH_STATE_SPIN;

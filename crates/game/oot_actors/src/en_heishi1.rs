@@ -15,13 +15,13 @@
 //! The whole overlay is ported. The guard's skeleton is `En_Heishi4`'s bake; the circle shadow
 //! (`func_80033C30`) is the shadow stand-in.
 //!
-//! **Params:** `(params >> 8) & 0xFF` the type (0 to 3: the animation parameters
-//! `sAnimParamsInit`, 2 and 3 using the middle points; 5 the night guards, whose parameters are
-//! read past the table, `@bug (game)`); `params & 0xFF` the path (the scene's; 3 also spawns the
-//! courtyard's eight rupees, `En_Ex_Ruppy` type 3, round the guard).
-//!
-//! **Flags:** sets `EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS` when he kicks Link out; reads
-//! `EVENTCHKINF_ZELDA_FLED_CASTLE` at init.
+//! Params: `type` bits 8 to 15 (0 to 3: a day patrol, its animation parameters
+//! `sAnimParamsInit`, 2 and 3 using the middle points; 5: a night guard, whose parameters are read
+//! past the table, `@bug (game)`); `path` bits 0 to 7 (the scene's path, 0 to 7 for its screens in
+//! `sBgCamIndices`; 3 also spawns the courtyard's eight rupees, `En_Ex_Ruppy` type 3; 0xFF for the
+//! night guards).
+//! Flags: sets EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS when he kicks Link out (read by nothing); reads
+//! EVENTCHKINF_ZELDA_FLED_CASTLE at init (day patrols gone, night guards there).
 
 use std::sync::Arc;
 
@@ -31,6 +31,8 @@ use eng_math::{approach_f, approach_zero_f, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::env::clock_time;
 use oot_game::interface::DO_ACTION_STOP;
 use oot_game::message::TEXT_STATE_EVENT;
@@ -49,12 +51,39 @@ pub const OBJECT: &str = "object_sd";
 
 /// `En_Heishi1_Profile`: `FLAGS` `ACTOR_FLAG_UPDATE_CULLING_DISABLED`. Its id is 0, not
 /// `ACTOR_EN_HEISHI1` (the decomp's `/**/ 0,`): the guards' `actor.id` is Player's.
-pub const PROFILE: ActorProfile = ActorProfile { id: 0, name: "En_Heishi1", category: ACTORCAT_NPC, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: 0, name: "En_Heishi1", category: ACTORCAT_NPC, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
 
 /// `ENTR_HYRULE_CASTLE_3` (`entrance_table.h`: 0x4FA): by Talon's crates.
 pub const ENTR_HYRULE_CASTLE_3: u16 = 0x4FA;
 /// `EVENTCHKINF_ZELDA_FLED_CASTLE` (`save.h`: 0x80).
 pub const EVENTCHKINF_ZELDA_FLED_CASTLE: u16 = 0x80;
+
+/// `PARAMS_GET_U(this->actor.params, 0, 8)`: the path.
+pub const PATH: Field = Field::params("path", 0, 8, Kind::PathIndex, "the path he patrols, 0 to 7 (sBgCamIndices: his screens); 3 spawns the rupees; 0xFF for a night guard");
+/// `PARAMS_GET_U(this->actor.params, 8, 8)`: the type.
+pub const TYPE: Field = Field::params(
+    "type",
+    8,
+    8,
+    Kind::Named(&[
+        (0, "a day patrol, slow, the corners"),
+        (1, "a day patrol, quick, the corners"),
+        (2, "a day patrol, slow, the corners and middles"),
+        (3, "a day patrol, quick, the corners and middles"),
+        (5, "a night guard by the drain, standing"),
+    ]),
+    "his patrol (sAnimParamsInit), or a night guard",
+);
+
+/// En_Heishi1's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PATH, TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS)).sets().note("Link caught (read by nothing)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("day patrols gone, night guards there"),
+    ],
+    todo: false,
+};
 
 /// `PLAYER_CSACTION_1`: Link stands still.
 const PLAYER_CSACTION_1: u8 = 1;
@@ -181,8 +210,8 @@ impl EnHeishi1 {
                 return oot_game::spawn::Placeholder::init(a, play);
             }
         };
-        let ty = (actor.params >> 8) & 0xFF;
-        let path = actor.params & 0xFF;
+        let ty = TYPE.get(actor.params);
+        let path = PATH.get(actor.params);
         let mut this = EnHeishi1 {
             // SkelAnime_Init(.., gEnHeishiSkel, gEnHeishiIdleAnim, .., 17).
             skel: SkelAnimeStd::init_flex(skeleton.limbs.len(), Some(idle.clone())),

@@ -53,8 +53,8 @@
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId(play, MASK_REACTION_SET_DAMPE)`:
 //! no masks yet, so none; BACKLOG #39).
 //!
-//! Params: `path` (the whole params, as `EnTk_Orient` reads it: below 0 he never turns; else he
-//! walks the scene's path 0 whatever the value). Placed as 0.
+//! Params: `params` whole, as an `s16` (`EnTk_Orient`: below 0 he never turns to his path; 0 and
+//! up he walks the scene's path 0, whatever the value). Placed as 0.
 //! Flags: reads and sets INFTABLE_D9 (heard the offer: 0x5019 instead of 0x5018); sets
 //! INFTABLE_D8 only for text 0x5028, which isn't his (so never); reads and sets ITEMGETINF_1C (the
 //! piece of heart dug up).
@@ -68,6 +68,7 @@ use eng_math::{sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, NA_SE_SY_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::gbi::setup_dl;
@@ -78,6 +79,7 @@ use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, Rand, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::skelanime_std::*;
 use oot_game::sys_matrix::MtxF;
+use oot_game::{inf_table, item_get_inf};
 
 use crate::en_it::ACTOR_EN_IT;
 use crate::en_item00::{ITEM00_HEART_PIECE, ITEM00_RUPEE_BLUE, ITEM00_RUPEE_GREEN, ITEM00_RUPEE_PURPLE, ITEM00_RUPEE_RED, item_drop_collectible};
@@ -88,7 +90,21 @@ pub const ACTOR_EN_TK: i16 = 0x0085;
 pub const OBJECT: &str = "object_tk";
 
 /// `En_Tk_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TK, name: "En_Tk", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TK, name: "En_Tk", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params < 0` (`EnTk_Orient`): the whole params as an `s16`.
+pub const PARAMS: Field = Field::whole("params", Kind::Range(-0x8000, 0x7FFF), "below 0: he never turns to his path; 0 and up: he walks the scene's path 0");
+
+/// En_Tk's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[
+        FlagUse::new(inf_table!(INFTABLE_D9)).reads().sets().note("heard his offer: 0x5019 instead of 0x5018"),
+        FlagUse::new(inf_table!(INFTABLE_D8)).sets().note("text 0x5028 only, which isn't his: never"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_1C)).reads().sets().note("the piece of heart dug up"),
+    ],
+    todo: false,
+};
 
 /// `SCENE_GRAVEYARD` (`scene_table.h`: 0x53).
 pub const SCENE_GRAVEYARD: u16 = 0x53;
@@ -434,6 +450,7 @@ impl EnTk {
                 continue;
             }
             self.current_spot = Some(h);
+            // schema: En_It's params, which its init sets to 0x0D05 (no placement field)
             return prop.params as i32;
         }
         -1
@@ -475,7 +492,7 @@ impl EnTk {
 
     /// `EnTk_Orient`: turned towards path 0's current point; on to the next within √10 (false).
     fn orient(&mut self, play: &PlayState) -> bool {
-        if self.actor.params < 0 {
+        if PARAMS.get(self.actor.params) < 0 {
             return true;
         }
         let Some(path) = play.setup_path_list().first() else {

@@ -14,11 +14,14 @@
 //! Not ported: the splash and ripples where it falls in water (`EffectSsGSplash`,
 //! `EffectSsGRipple`) and the boulder's rumble (`Rumble_Request`).
 //!
-//! Params: `type` bit 0 (0 a small rock, 1 a silver boulder); `bugs` bit 4 (bugs under it);
-//! `no_snap` bit 5 (1: not set on the floor at init); `drop_table` bits 8 to 11 (the small rock's
-//! collectible drop table, 13 and up read as 0); `switch_flag` bits 6 and 7 with bits 12 to 15
-//! (`ISHI_GET_SWITCH_FLAG`: `(params >> 10 & 0x3C) | (params >> 6 & 3)`).
-//! Flags: the boulder reads its switch flag at init (set: gone) and sets it when thrown.
+//! Params: `type` bit 0 (`EnIshiType`: 0 `ROCK_SMALL`, 1 `ROCK_LARGE`, a silver boulder); `bugs`
+//! bit 4 (1: bugs under it, three let out when lifted); `noSnapToFloor` bit 5 (1: not set on the
+//! floor at init); `switchFlagLower` bits 6 and 7 and `switchFlagUpper` bits 12 to 15 (the
+//! boulder's switch flag's low two and high four bits, `ISHI_GET_SWITCH_FLAG_LOWER` and
+//! `_UPPER`, which `ISHI_GET_SWITCH_FLAG` puts together); `dropParams` bits 8 to 11 (the small
+//! rock's collectible drop table, 13 and up read as 0; the boulders' unread, 0xF in the data).
+//! Flags: the boulder reads its switch flag `ISHI_GET_SWITCH_FLAG` at init (set: gone) and sets it
+//! when thrown.
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
@@ -27,6 +30,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_7,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::{KAKERA_COLOR_NONE, KAKERA_COLOR_WHITE, OBJECT_GAMEPLAY_FIELD_KEEP};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -34,7 +38,32 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 pub const ACTOR_EN_ISHI: i16 = 0x014E;
 
 /// `En_Ishi_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ISHI, name: "En_Ishi", category: ACTORCAT_PROP, flags: ACTOR_FLAG_THROW_ONLY, object: "gameplay_field_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ISHI, name: "En_Ishi", category: ACTORCAT_PROP, flags: ACTOR_FLAG_THROW_ONLY, object: "gameplay_field_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 1)`: the rock.
+pub const TYPE: Field = Field::params("type", 0, 1, Kind::Named(&[(0, "ROCK_SMALL"), (1, "ROCK_LARGE")]), "a small rock or a silver boulder");
+/// `PARAMS_GET_U(this->actor.params, 4, 1)`: bugs under it.
+pub const BUGS: Field = Field::params("bugs", 4, 1, Kind::Named(&[(0, "no bugs"), (1, "bugs under it")]), "three bugs let out when it's lifted");
+/// `PARAMS_GET_U(this->actor.params, 5, 1)`: not snapped to the floor.
+pub const NO_SNAP: Field =
+    Field::params("noSnapToFloor", 5, 1, Kind::Named(&[(0, "set on the floor below (gone with none)"), (1, "stays where placed")]), "whether init sets it on the floor");
+/// `ISHI_GET_SWITCH_FLAG_LOWER`: `PARAMS_GET_U(params, 6, 2)`, the switch flag's bits 0 and 1.
+pub const SWITCH_FLAG_LOWER: Field =
+    Field::params("switchFlagLower", 6, 2, Kind::Range(0, 3), "the boulder's switch flag's low two bits").when("type", &[1]);
+/// `PARAMS_GET_U(this->actor.params, 8, 4)`: the drop table.
+pub const DROP_TABLE: Field =
+    Field::params("dropParams", 8, 4, Kind::Range(0, 15), "the small rock's collectible drop table (13 and up: table 0; the boulder's unread, 0xF in the data)");
+/// `ISHI_GET_SWITCH_FLAG_UPPER`: `(params >> (12 - 2)) & (NBITS_TO_MASK(4) << 2)`, the switch
+/// flag's bits 2 to 5.
+pub const SWITCH_FLAG_UPPER: Field =
+    Field::params("switchFlagUpper", 12, 4, Kind::Range(0, 15), "the boulder's switch flag's high four bits").when("type", &[1]);
+
+/// En_Ishi's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, BUGS, NO_SNAP, SWITCH_FLAG_LOWER, DROP_TABLE, SWITCH_FLAG_UPPER],
+    flags: &[FlagUse::new(Flag::Switch("switchFlagUpper << 2 | switchFlagLower")).reads().sets().note("the boulder: read at init (set: gone), set when thrown")],
+    todo: false,
+};
 
 /// `ROCK_SMALL`, `ROCK_LARGE`.
 const ROCK_SMALL: usize = 0;
@@ -124,12 +153,12 @@ pub struct EnIshi {
 
 impl EnIshi {
     fn ty(&self) -> usize {
-        (self.actor.params & 1) as usize
+        TYPE.get(self.actor.params) as usize
     }
 
     /// `EnIshi_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let ty = (actor.params & 1) as usize;
+        let ty = TYPE.get(actor.params) as usize;
         actor.gravity = GRAVITY[ty];
         actor.min_velocity_y = MIN_VELOCITY_Y;
         (actor.culling_volume_distance, actor.culling_volume_scale, actor.culling_volume_downward) = CULLING_VOLUMES[ty];
@@ -145,13 +174,13 @@ impl EnIshi {
         // EnIshi_InitCollider.
         let mut collider = ColliderCylinder::new(&CYLINDER_INITS[ty]);
         collider.update(&actor);
-        if ty == ROCK_LARGE && play.flags.get_switch(switch_flag(actor.params)) {
+        if ty == ROCK_LARGE && play.flags.get_switch(switch_flag(&actor)) {
             actor.kill();
             return Box::new(EnIshi { actor, collider, action: Action::Wait });
         }
         actor.col_chk_info.set_info(None, &COL_CHK_INFO_INIT);
         actor.shape_y_offset = Y_OFFSETS[ty];
-        if (actor.params >> 5) & 1 == 0 && !snap_to_floor(&mut actor, play, 0.0) {
+        if NO_SNAP.get(actor.params) == 0 && !snap_to_floor(&mut actor, play, 0.0) {
             actor.kill();
         }
         Box::new(EnIshi { actor, collider, action: Action::Wait })
@@ -160,7 +189,7 @@ impl EnIshi {
     /// `EnIshi_DropCollectible`: a small rock drops from its table (13 and up read as 0).
     fn drop_collectible(&self, play: &mut PlayState) {
         if self.ty() == ROCK_SMALL {
-            let mut drop_params = (self.actor.params >> 8) & 0xF;
+            let mut drop_params = DROP_TABLE.get(self.actor.params);
             if drop_params >= 0xD {
                 drop_params = 0;
             }
@@ -205,7 +234,7 @@ impl EnIshi {
         if self.actor.parent.is_some() {
             self.setup_lifted_up();
             play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 20, LIFT_SFX_IDS[ty]);
-            if (self.actor.params >> 4) & 1 != 0 {
+            if BUGS.get(self.actor.params) != 0 {
                 self.spawn_bugs(play);
             }
         } else if hit && ty == ROCK_SMALL && self.collider.info.ac_hit_elem.is_some_and(|h| h.at_dmg_info.dmg_flags & DMG_BREAKS_ROCK != 0) {
@@ -246,7 +275,7 @@ impl EnIshi {
         if self.actor.parent.is_none() {
             self.actor.room = play.room_ctx.cur.num;
             if self.ty() == ROCK_LARGE {
-                play.flags.set_switch(switch_flag(self.actor.params));
+                play.flags.set_switch(switch_flag(&self.actor));
             }
             self.setup_fly(play);
             self.fall();
@@ -320,8 +349,8 @@ impl EnIshi {
 }
 
 /// `ISHI_GET_SWITCH_FLAG`.
-fn switch_flag(params: i16) -> i32 {
-    (((params as u16 >> 0xA) & 0x3C) | ((params as u16 >> 6) & 3)) as i32
+fn switch_flag(actor: &Actor) -> i32 {
+    ((SWITCH_FLAG_UPPER.get(actor.params) << 2) | SWITCH_FLAG_LOWER.get(actor.params)) as i32
 }
 
 /// `EnIshi_SpawnFragmentsSmall`'s `scales`.

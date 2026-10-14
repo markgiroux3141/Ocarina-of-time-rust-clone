@@ -3,9 +3,6 @@
 //! its head round on its stem; any sword or boomerang hit while it's up kills it, leaving a Deku
 //! Stick; it grows back.
 //!
-//! Params: 0 starts by growing (`EnKarebaba_Grow`), anything else already grown
-//! (`EnKarebaba_Idle`); `params` is then its timer.
-//!
 //! - **Idle**: small (scale 0.005) in its leaves until Link is within 200 across and 30 up or
 //!   down.
 //! - **Awaken** (`NA_SE_EN_DUMMY482`): rising 60 at 5 a frame, spinning, throwing dirt
@@ -24,6 +21,11 @@
 //!
 //! The whole overlay is ported. Not ported: the generic circle shadow (`ActorShadow_DrawCircle`,
 //! not ported for any actor; its own shadow at home, `EnKarebaba_DrawCenterShadow`, is drawn).
+//!
+//! Params: `params` the whole params (0: it starts by growing, `EnKarebaba_Grow`; any other:
+//! already grown, `EnKarebaba_Idle`); from then on the params are its timer (the C's own use),
+//! read through the same field.
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -37,6 +39,7 @@ use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_MISC, ActorImpl, ActorProfile, audio_play_actor_sfx2, enemy_start_finishing_blow};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::{ANIMMODE_LOOP, ANIMMODE_ONCE, Anim, SkelAnimeStd};
@@ -46,7 +49,13 @@ pub const ACTOR_EN_KAREBABA: i16 = 0x00C7;
 const OBJECT: &str = "object_dekubaba";
 
 /// `En_Karebaba_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KAREBABA, name: "En_Karebaba", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KAREBABA, name: "En_Karebaba", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params`: 0 grows first, else already grown; then its timer.
+pub const PARAMS: Field = Field::whole("params", Kind::Named(&[(0, "grows first"), (1, "already grown")]), "whether it starts by growing (0) or already grown; then its timer");
+
+/// En_Karebaba's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 /// `NAVI_ENEMY_WITHERED_DEKU_BABA` (`actor.h`).
 const NAVI_ENEMY_WITHERED_DEKU_BABA: u8 = 0x09;
@@ -201,7 +210,7 @@ impl EnKarebaba {
         head_collider.update(&actor);
         actor.col_chk_info.set_info(Some(&S_DAMAGE_TABLE_PRESET_1), &COL_CHECK_INFO_INIT);
         let mut b = EnKarebaba { actor, skel, skeleton, chomp, action: Action::Idle, bound_floor: None, body_collider, head_collider };
-        if b.actor.params == 0 {
+        if PARAMS.get(b.actor.params) == 0 {
             b.setup_grow();
         } else {
             b.setup_idle();
@@ -336,10 +345,10 @@ impl EnKarebaba {
     /// `EnKarebaba_Grow`: 20 frames growing to the idle size.
     fn grow(&mut self) {
         self.actor.params += 1;
-        let scale = self.actor.params as f32 * 0.05;
+        let scale = PARAMS.get(self.actor.params) as f32 * 0.05;
         self.actor.scale = Vec3::splat(0.005 * scale);
         self.actor.world_pos.y = self.actor.home_pos.y + (14.0 * scale);
-        if self.actor.params == 20 {
+        if PARAMS.get(self.actor.params) == 20 {
             self.setup_idle();
         }
     }
@@ -376,7 +385,7 @@ impl EnKarebaba {
     fn upright(&mut self, play: &mut PlayState) {
         let player_pos = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or_default();
         self.skel.update();
-        if self.actor.params != 0 {
+        if PARAMS.get(self.actor.params) != 0 {
             self.actor.params -= 1;
         }
         if self.skel.on_frame(0.0) || self.skel.on_frame(12.0) {
@@ -387,7 +396,7 @@ impl EnKarebaba {
             enemy_start_finishing_blow(play, &self.actor);
         } else if dist_xz(self.actor.home_pos, player_pos) > 240.0 {
             self.setup_retract();
-        } else if self.actor.params == 0 {
+        } else if PARAMS.get(self.actor.params) == 0 {
             self.setup_spin();
         }
     }
@@ -396,14 +405,14 @@ impl EnKarebaba {
     /// from upright, the bite 4 + 2 × that wide) and round (up to 10 × 0x2C0 a frame); hit, it
     /// dies; then upright again.
     fn spin(&mut self, play: &mut PlayState) {
-        if self.actor.params != 0 {
+        if PARAMS.get(self.actor.params) != 0 {
             self.actor.params -= 1;
         }
         self.skel.update();
         if self.skel.on_frame(0.0) || self.skel.on_frame(12.0) {
             audio_play_actor_sfx2(play, NA_SE_EN_DEKU_JR_MOUTH);
         }
-        let mut value = 20 - self.actor.params as i32;
+        let mut value = 20 - PARAMS.get(self.actor.params) as i32;
         value = 20 - value.abs();
         if value > 10 {
             value = 10;
@@ -418,7 +427,7 @@ impl EnKarebaba {
         if self.body_collider.base.ac_flags & AC_HIT != 0 {
             self.setup_dying(play);
             enemy_start_finishing_blow(play, &self.actor);
-        } else if self.actor.params == 0 {
+        } else if PARAMS.get(self.actor.params) == 0 {
             self.setup_upright(play);
         }
     }
@@ -428,7 +437,7 @@ impl EnKarebaba {
     /// next frame dust along the fallen stem and at home, and the stick.
     fn dying(&mut self, play: &mut PlayState) {
         step_to_f(&mut self.actor.speed_xz, 0.0, 0.1);
-        if self.actor.params == 0 {
+        if PARAMS.get(self.actor.params) == 0 {
             scaled_step_to_s(&mut self.actor.shape_rot.x, 0x4800, 0x71C);
             Self::hahen_burst(play, self.actor.world_pos, 1);
             if self.actor.scale.x > 0.005 && (self.actor.bg_check_flags & BGCHECKFLAG_GROUND_TOUCH != 0 || self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0) {
@@ -441,7 +450,7 @@ impl EnKarebaba {
                 audio_play_actor_sfx2(play, NA_SE_EN_DODO_M_GND);
                 self.actor.params = 1;
             }
-        } else if self.actor.params == 1 {
+        } else if PARAMS.get(self.actor.params) == 1 {
             let mut position = self.actor.world_pos;
             let r = self.actor.shape_rot;
             // rotation: the stem's step, z its height.
@@ -465,10 +474,10 @@ impl EnKarebaba {
     /// `EnKarebaba_DeadItemDrop`: the stick offered (`GI_DEKU_STICKS_1`) until taken or its 200
     /// frames run out.
     fn dead_item_drop(&mut self, play: &mut PlayState) {
-        if self.actor.params != 0 {
+        if PARAMS.get(self.actor.params) != 0 {
             self.actor.params -= 1;
         }
-        if oot_game::get_item::actor_has_parent(&self.actor) || self.actor.params == 0 {
+        if oot_game::get_item::actor_has_parent(&self.actor) || PARAMS.get(self.actor.params) == 0 {
             self.setup_dead();
         } else {
             let a = self.actor.clone();
@@ -493,10 +502,10 @@ impl EnKarebaba {
     /// `EnKarebaba_Dead`.
     fn dead(&mut self) {
         self.skel.update();
-        if self.actor.params != 0 {
+        if PARAMS.get(self.actor.params) != 0 {
             self.actor.params -= 1;
         }
-        if self.actor.params == 0 {
+        if PARAMS.get(self.actor.params) == 0 {
             self.setup_regrow();
         }
     }
@@ -504,10 +513,10 @@ impl EnKarebaba {
     /// `EnKarebaba_Regrow`: 20 frames growing; then an enemy again, idle.
     fn regrow(&mut self, play: &mut PlayState) {
         self.actor.params += 1;
-        let scale_factor = self.actor.params as f32 * 0.05;
+        let scale_factor = PARAMS.get(self.actor.params) as f32 * 0.05;
         self.actor.scale = Vec3::splat(0.005 * scale_factor);
         self.actor.world_pos.y = self.actor.home_pos.y + (14.0 * scale_factor);
-        if self.actor.params == 20 {
+        if PARAMS.get(self.actor.params) == 20 {
             self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
             self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE;
             self.actor.category = ACTORCAT_ENEMY;
@@ -536,7 +545,7 @@ impl EnKarebaba {
 
     /// The stem's scale: `params × 0.0005` while growing, else 0.01.
     fn stem_scale(&self) -> f32 {
-        if self.action == Action::Regrow || self.action == Action::Grow { self.actor.params as f32 * 0.0005 } else { 0.01 }
+        if self.action == Action::Regrow || self.action == Action::Grow { PARAMS.get(self.actor.params) as f32 * 0.0005 } else { 0.01 }
     }
 }
 
@@ -618,7 +627,7 @@ impl ActorImpl for EnKarebaba {
             Action::Grow => 4,
             _ => 0,
         };
-        rs.switches = vec![action, self.actor.params as u16 as u32];
+        rs.switches = vec![action, PARAMS.get(self.actor.params) as u16 as u32];
         rs
     }
 

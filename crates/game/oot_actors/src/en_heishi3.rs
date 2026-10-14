@@ -8,6 +8,10 @@
 //! `sPlayerCaught`, the overlay's static, cleared by every guard's init.
 //!
 //! The whole overlay is ported. The guard's skeleton is `En_Heishi4`'s bake.
+//!
+//! Params: `params` whole, signed (0 and below, -1 in the data: a grounds sentry, `unk_278` 0;
+//! above 0, 1 in the data: a door guard, `unk_278` 1 or 2 by his x).
+//! Flags: sets EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS (Link caught; read by nothing).
 
 use std::sync::Arc;
 
@@ -17,6 +21,8 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{Actor, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_EVENT;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -30,12 +36,26 @@ pub const ACTOR_EN_HEISHI3: i16 = 0x0142;
 pub const OBJECT: &str = "object_sd";
 
 /// `En_Heishi3_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HEISHI3, name: "En_Heishi3", category: ACTORCAT_NPC, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HEISHI3, name: "En_Heishi3", category: ACTORCAT_NPC, flags: 0, object: OBJECT, schema: &SCHEMA };
 
 /// `ENTR_HYRULE_CASTLE_4` (`entrance_table.h`: 0x47E): by the gate guard.
 pub const ENTR_HYRULE_CASTLE_4: u16 = 0x47E;
 /// `EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS` (`save.h`: 0x4E, set but unused).
 pub const EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS: u16 = 0x4E;
+
+/// `this->actor.params <= 0`: which guard.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[(-1, "a grounds sentry"), (0, "a grounds sentry"), (1, "a door guard (unk_278 1 east of x -290, 2 west)")]),
+    "a grounds sentry (0 and below) or a door guard (above 0)",
+);
+
+/// En_Heishi3's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS)).sets().note("Link caught (read by nothing)")],
+    todo: false,
+};
 /// `TRANS_TYPE_CIRCLE(TCA_STARBURST, TCC_WHITE, TCS_FAST)`.
 pub const TRANS_TYPE_CAUGHT: u8 = trans_type_circle(TCA_STARBURST, TCC_WHITE, TCS_FAST);
 
@@ -128,7 +148,7 @@ impl EnHeishi3 {
             }
         };
         play.overlay_static::<Statics>(ACTOR_EN_HEISHI3).player_caught = 0;
-        let unk_278 = if actor.params <= 0 {
+        let unk_278 = if TYPE.get(actor.params) <= 0 {
             0
         } else if actor.world_pos.x < -290.0 {
             2

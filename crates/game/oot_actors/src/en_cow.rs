@@ -26,8 +26,8 @@
 //!
 //! The whole overlay is ported.
 //!
-//! Params: `type` (`COW_GET_TYPE`), the whole params (0: the body, `COW_TYPE_BODY`; 1: its tail,
-//! `COW_TYPE_TAIL`, spawned by the body).
+//! Params: `type` whole (`COW_GET_TYPE`: 0 `COW_TYPE_BODY` the cow; 1 `COW_TYPE_TAIL` its tail,
+//! spawned by the body). `world.rot.x` and `.z`: a rotation (Jabu-Jabu's cows lean on its walls).
 //! Flags: reads EVENTCHKINF_HORSE_RACE_COW_UNLOCK (in Link's house); reads and clears
 //! `R_EPONAS_SONG_PLAYED` (the message box's Epona's Song played).
 
@@ -40,6 +40,8 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::event_chk_inf;
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::message::{OCARINA_MODE_00, OCARINA_MODE_04, TEXT_STATE_EVENT};
@@ -55,11 +57,17 @@ pub const ACTOR_EN_COW: i16 = 0x01C6;
 pub const OBJECT: &str = "object_cow";
 
 /// `En_Cow_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_COW, name: "En_Cow", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_COW, name: "En_Cow", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
 
 /// `CowType` (`z_en_cow.h`).
 pub const COW_TYPE_BODY: i16 = 0;
 pub const COW_TYPE_TAIL: i16 = 1;
+/// `COW_GET_TYPE`: `actor.params`.
+pub const TYPE: Field = Field::whole("type", Kind::Named(&[(0, "COW_TYPE_BODY"), (1, "COW_TYPE_TAIL")]), "the cow, or its tail (spawned by the cow)");
+/// `shape.rot.x`: the placement's pitch, drawn.
+pub const ROT_X: Field = Field::rot("rot.x", Source::RotX, 0, 16, Kind::Rotation, "its pitch (Jabu-Jabu's cows)");
+/// `shape.rot.z`: the placement's roll, drawn.
+pub const ROT_Z: Field = Field::rot("rot.z", Source::RotZ, 0, 16, Kind::Rotation, "its roll (Jabu-Jabu's cows)");
 /// `COW_FLAG_PLAYER_NEARBY`, `COW_FLAG_FAILED_TO_GIVE_MILK` (`z_en_cow.h`).
 pub const COW_FLAG_PLAYER_NEARBY: u16 = 1 << 1;
 pub const COW_FLAG_FAILED_TO_GIVE_MILK: u16 = 1 << 2;
@@ -68,6 +76,17 @@ pub const COW_FLAG_FAILED_TO_GIVE_MILK: u16 = 1 << 2;
 const SCENE_LINKS_HOUSE: u16 = 0x34;
 /// `EVENTCHKINF_HORSE_RACE_COW_UNLOCK` (`save.h`: 0x1E).
 pub const EVENTCHKINF_HORSE_RACE_COW_UNLOCK: u16 = 0x1E;
+
+/// En_Cow's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, ROT_X, ROT_Z],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_HORSE_RACE_COW_UNLOCK)).reads().note("Link's house: there only for an adult with it"),
+        FlagUse::new(Flag::Other("R_EPONAS_SONG_PLAYED")).reads().clears().note("Epona's Song played: milk"),
+    ],
+    todo: false,
+};
+
 /// `GI_MILK` (`item.h`: 0x50).
 pub const GI_MILK: i16 = 0x50;
 /// `NA_SE_EV_COW_CRY` (`environmentbank_table.h`: 0x28DF).
@@ -166,7 +185,7 @@ fn rotate_y(vec: &mut Vec3, rot_y: i16) {
 
 impl EnCow {
     fn is_tail(&self) -> bool {
-        self.actor.params == COW_TYPE_TAIL
+        TYPE.get(self.actor.params) == COW_TYPE_TAIL
     }
 
     /// `EnCow_Init`.
@@ -176,7 +195,7 @@ impl EnCow {
             a.kill();
             return oot_game::spawn::Placeholder::init(a, play);
         };
-        let tail = actor.params == COW_TYPE_TAIL;
+        let tail = TYPE.get(actor.params) == COW_TYPE_TAIL;
         let (skel_name, anim_names) = if tail { (TAIL_SKEL, [TAIL_IDLE_ANIM, TAIL_SWISH_ANIM]) } else { (BODY_SKEL, [CHEW_ANIM, MOVE_HEAD_ANIM]) };
         let loaded = (|| -> anyhow::Result<_> { Ok((assets.skeleton(OBJECT, skel_name)?, assets.animation(OBJECT, anim_names[0])?, assets.animation(OBJECT, anim_names[1])?)) })();
         let (skeleton, a0, a1) = match loaded {
@@ -204,7 +223,7 @@ impl EnCow {
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 72).
         this.actor.shape_y_offset = 0.0;
 
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             COW_TYPE_BODY => {
                 this.set_collider_pos();
                 this.action = Action::Idle;

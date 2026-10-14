@@ -21,8 +21,10 @@
 //! (`gSaveContext.timerState = TIMER_STATE_UP_FREEZE` as the last door shuts in room 4: no
 //! timers; logged).
 //!
-//! Params: `switchFlag` bits 0 to 5 (the door's switch flag); the type bits 8 to 15 (0:
-//! `WINDMILL_ROTATING_GEAR`; 1: `WINDMILL_DAMPE_STONE_DOOR`), kept as `params`.
+//! Params: `switchFlag` bits 0 to 5 (a door's switch flag; in room 0, less 0x33, the room it's
+//! for; the gear doesn't read it); bits 6 and 7 unused (set in the gear's 0xFF); `type` bits 8
+//! to 15 (`WindmillSetpiecesMode`: 0 `WINDMILL_ROTATING_GEAR`, 1 `WINDMILL_DAMPE_STONE_DOOR`),
+//! which the init writes over the params.
 //! Flags: reads and sets EVENTCHKINF_65 (the gear: set by the cutscene flag 5, cleared on its
 //! destroy outside a cutscene); the doors read, set and clear their switch flag `switchFlag`.
 
@@ -34,7 +36,9 @@ use eng_math::{scaled_step_to_s, step_to_f};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_EV_SLIDE_DOOR_CLOSE, NA_SE_EV_SLIDE_DOOR_OPEN, NA_SE_EV_STONE_BOUND, NA_SE_OC_ABYSS, SFX_FLAG};
+use oot_game::event_chk_inf;
 use oot_game::item::{ITEM_HOOKSHOT, ITEM_NONE};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -45,7 +49,26 @@ pub const ACTOR_BG_RELAY_OBJECTS: i16 = 0x0123;
 pub const OBJECT: &str = "object_relay_objects";
 
 /// `Bg_Relay_Objects_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_RELAY_OBJECTS, name: "Bg_Relay_Objects", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_RELAY_OBJECTS, name: "Bg_Relay_Objects", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(thisx->params, 0, 6)`: `switchFlag`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "a door's: set while it's open (in room 0, less 0x33, the room it's for); the gear's unread");
+/// Bits 6 and 7: the gear's 0xFF sets them; read by nothing.
+pub const UNUSED_6: Field = Field::params("params bits 6 and 7", 6, 2, Kind::Unused, "set in the gear's 0xFF; read by nothing");
+/// `PARAMS_GET_U(thisx->params, 8, 8)`: the type (`WindmillSetpiecesMode`), written over the
+/// params at init.
+pub const TYPE: Field =
+    Field::params("type", 8, 8, Kind::Named(&[(0, "WINDMILL_ROTATING_GEAR"), (1, "WINDMILL_DAMPE_STONE_DOOR")]), "the windmill's turning gear or a stone door of Dampé's race");
+
+/// Bg_Relay_Objects's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, UNUSED_6, TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_65)).reads().sets().clears().note("the gear: set by the cutscene flag 5, cleared on its destroy outside a cutscene"),
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("the doors: open while set"),
+    ],
+    todo: false,
+};
 
 /// `WindmillSetpiecesMode`.
 pub const WINDMILL_ROTATING_GEAR: i16 = 0;
@@ -110,11 +133,12 @@ impl BgRelayObjects {
         // sInitChain: gravity 5, ICHAIN_VEC3F_DIV1000(scale, 100).
         actor.gravity = 5.0;
         actor.scale = Vec3::splat(0.1);
-        let switch_flag = (actor.params as u16 & 0x3F) as u8;
-        actor.params = ((actor.params as u16 >> 8) & 0xFF) as i16;
+        let switch_flag = SWITCH_FLAG.get(actor.params) as u8;
+        actor.params = TYPE.get(actor.params);
         let mut this = BgRelayObjects { actor, bg: BG_ACTOR_MAX, action: Action::DoNothing, switch_flag, unk_169: 0, timer: 0 };
         // DynaPolyActor_Init(DYNA_TRANSFORM_POS | DYNA_TRANSFORM_ROT_Y).
         let symbol;
+        // schema: the type, written over the params above
         if this.actor.params == WINDMILL_ROTATING_GEAR {
             symbol = "gWindmillRotatingPlatformCol";
             this.actor.world_rot.y = if play.save.get_event_chk_inf(EVENTCHKINF_65) { 0x400 } else { 0x80 };
@@ -270,6 +294,7 @@ impl ActorImpl for BgRelayObjects {
     /// `BgRelayObjects_Destroy`: the gear, out of a cutscene's entrance, slows the windmill again.
     fn destroy(&mut self, play: &mut PlayState) {
         play.col.dyna.delete_bg_actor(self.bg);
+        // schema: the type, written over the params at init
         if self.actor.params == WINDMILL_ROTATING_GEAR && play.save.cutscene_index < CS_INDEX_0 {
             play.save.clear_event_chk_inf(EVENTCHKINF_65);
         }
@@ -282,6 +307,7 @@ impl ActorImpl for BgRelayObjects {
     }
     /// `BgRelayObjects_Draw`.
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+        // schema: the type, written over the params at init
         let symbol = if self.actor.params == WINDMILL_ROTATING_GEAR { "gWindmillRotatingPlatformDL" } else { "gDampeRaceDoorDL" };
         crate::gfx_draw_dlist_opa(out, OBJECT, symbol, rs);
     }

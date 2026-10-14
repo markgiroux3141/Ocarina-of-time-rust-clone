@@ -1,7 +1,7 @@
 //! `En_A_Obj` (`code/z_en_a_keep.c`): the signposts, and a handful of plain props and blocks
 //! from `gameplay_keep` (GAME-06 milestone 4).
 //!
-//! Params: the low byte is the type (`AObjType`), the high byte a signpost's text (`0x300 |
+//! Its params: the low byte is the type (`AObjType`), the high byte a signpost's text (`0x300 |
 //! it`). Only the signposts (`A_OBJ_SIGNPOST_OBLONG`, `_ARROW`) are placed in rooms.
 //!
 //! - **Signposts:** read from the front (within 0x2800 of their facing; an arrow from behind
@@ -15,6 +15,12 @@
 //! The whole file is ported. `A_OBJ_UNKNOWN_6` reads `object_d_hsblock`'s hookshot post, which
 //! the actor doesn't load (@bug (game), never placed): logged and dropped. The circle shadow
 //! (`ActorShadow_DrawCircle`) isn't drawn, as for the other ported actors.
+//!
+//! Params: `params` bits 0 to 7, the type (`AObjType`: 0 to 4 the blocks, 5 a small cube, 6
+//! unknown, 7 a grass clump, 8 a tree stump, 9 and 0xA the signposts, 0xB a boulder's fragment
+//! (`Bg_Breakwall`'s, `Bg_Mizu_Bwall`'s, their tumble in `world.rot.x` and `.z`)); init masks the
+//! params to them. `textId` bits 8 to 15 (a signpost's text, `0x300 | textId`).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -26,6 +32,7 @@ use eng_math::smooth_step_to_f;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::{NA_SE_EV_ROCK_SLIDE, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -36,7 +43,35 @@ pub const ACTOR_EN_A_OBJ: i16 = 0x0039;
 const KEEP: &str = "gameplay_keep";
 
 /// `En_A_Obj_Profile`: `ACTORCAT_PROP`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_A_OBJ, name: "En_A_Obj", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: KEEP };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_A_OBJ, name: "En_A_Obj", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: KEEP, schema: &SCHEMA };
+
+/// `thisx->params` after init's `params &= 0xFF`: the type.
+pub const TYPE: Field = Field::params(
+    "params",
+    0,
+    8,
+    Kind::Named(&[
+        (0x00, "A_OBJ_BLOCK_SMALL"),
+        (0x01, "A_OBJ_BLOCK_LARGE"),
+        (0x02, "A_OBJ_BLOCK_HUGE"),
+        (0x03, "A_OBJ_BLOCK_SMALL_ROT"),
+        (0x04, "A_OBJ_BLOCK_LARGE_ROT"),
+        (0x05, "A_OBJ_CUBE_SMALL"),
+        (0x06, "A_OBJ_UNKNOWN_6"),
+        (0x07, "A_OBJ_GRASS_CLUMP"),
+        (0x08, "A_OBJ_TREE_STUMP"),
+        (0x09, "A_OBJ_SIGNPOST_OBLONG"),
+        (0x0A, "A_OBJ_SIGNPOST_ARROW"),
+        (0x0B, "A_OBJ_BOULDER_FRAGMENT"),
+    ]),
+    "which prop: a block, a signpost, a boulder's fragment",
+);
+/// `PARAMS_GET_U(params, 8, 8)`: `textId`, added to 0x300.
+pub const TEXT_ID: Field = Field::params("textId", 8, 8, Kind::Range(0, 0xFF), "a signpost's text, 0x300 | it");
+
+/// En_A_Obj's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, TEXT_ID], flags: &[], todo: false };
+
 
 /// `AObjType`.
 pub const A_OBJ_BLOCK_SMALL: i16 = 0x00;
@@ -143,14 +178,14 @@ fn load_collision(play: &PlayState, symbol: &str) -> anyhow::Result<Arc<Collisio
 
 impl EnAObj {
     fn is_signpost(&self) -> bool {
-        matches!(self.actor.params, A_OBJ_SIGNPOST_OBLONG | A_OBJ_SIGNPOST_ARROW)
+        matches!(TYPE.get(self.actor.params), A_OBJ_SIGNPOST_OBLONG | A_OBJ_SIGNPOST_ARROW)
     }
 
     /// `EnAObj_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let text_id = (actor.params >> 8) & 0xFF;
+        let text_id = TEXT_ID.get(actor.params);
         actor.params &= 0xFF;
-        let scale = match actor.params {
+        let scale = match TYPE.get(actor.params) {
             A_OBJ_BLOCK_SMALL => 0.025,
             A_OBJ_BLOCK_LARGE => 0.05,
             A_OBJ_BLOCK_HUGE | A_OBJ_CUBE_SMALL | A_OBJ_UNKNOWN_6 => 0.1,
@@ -179,7 +214,7 @@ impl EnAObj {
         };
         // BGACTOR_NEG_ONE: none.
         let mut bg_index: Option<usize> = None;
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             A_OBJ_BLOCK_LARGE | A_OBJ_BLOCK_HUGE => {
                 bg_index = Some(1);
                 this.change_category(play, ACTORCAT_BG);
@@ -222,7 +257,7 @@ impl EnAObj {
                 this.action = Action::WaitTalk;
             }
         }
-        if this.actor.params <= A_OBJ_BLOCK_LARGE_ROT {
+        if TYPE.get(this.actor.params) <= A_OBJ_BLOCK_LARGE_ROT {
             this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         }
         if let Some(i) = bg_index {
@@ -251,7 +286,7 @@ impl EnAObj {
     fn wait_talk(&mut self, play: &mut PlayState) {
         if self.actor.text_id != 0 {
             let rel = self.actor.yaw_towards_player.wrapping_sub(self.actor.shape_rot.y);
-            if (rel as i32).abs() < 0x2800 || (self.actor.params == A_OBJ_SIGNPOST_ARROW && (rel as i32).abs() > 0x5800) {
+            if (rel as i32).abs() < 0x2800 || (TYPE.get(self.actor.params) == A_OBJ_SIGNPOST_ARROW && (rel as i32).abs() > 0x5800) {
                 if oot_game::npc::process_talk_request(&mut self.actor) {
                     self.action = Action::WaitFinishedTalking;
                 } else {
@@ -367,7 +402,7 @@ impl ActorImpl for EnAObj {
         self.actor.move_forward();
         if self.actor.gravity != 0.0 {
             let flags = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_3 | UPDBGCHECKINFO_FLAG_4;
-            let radius = if self.actor.params != A_OBJ_BOULDER_FRAGMENT { 40.0 } else { 20.0 };
+            let radius = if TYPE.get(self.actor.params) != A_OBJ_BOULDER_FRAGMENT { 40.0 } else { 20.0 };
             self.actor.update_bg_check_info_of(&play.col, 5.0, radius, 0.0, flags, (self.bg != BG_ACTOR_MAX).then_some(self.bg));
         }
         self.actor.focus_pos = self.actor.world_pos;
@@ -384,12 +419,12 @@ impl ActorImpl for EnAObj {
     /// `EnAObj_Draw`: its type's list after `Gfx_SetupDL_25Opa` (a boulder fragment's prim
     /// colour first).
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
-        let mut ty = self.actor.params;
+        let mut ty = TYPE.get(self.actor.params);
         if ty >= A_OBJ_MAX {
             ty = A_OBJ_BOULDER_FRAGMENT;
         }
         let m = actor_draw_matrix(rs);
-        if self.actor.params == A_OBJ_BOULDER_FRAGMENT {
+        if TYPE.get(self.actor.params) == A_OBJ_BOULDER_FRAGMENT {
             out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(FRAGMENT_BAKE)), m));
             return;
         }

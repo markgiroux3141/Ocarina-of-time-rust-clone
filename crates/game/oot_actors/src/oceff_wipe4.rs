@@ -6,6 +6,11 @@
 //!
 //! The whole overlay is ported. `Magic_Reset` isn't (no magic). @bug (game): unlike the other
 //! effects, its destroy doesn't restore Nayru's Love.
+//!
+//! Params: `params` whole (`OceffWipe4Type`: 1 `OCEFF_WIPE4_UNUSED` the other material, any other
+//! `OCEFF_WIPE4_SCARECROWS`); `Message_DrawMain` spawns it with 0 for the Scarecrow's Song,
+//! `En_Zl3` with 1 (`func_80B57754`).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -14,6 +19,7 @@ use eng_math::sin_s;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::MeshBake;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::scene_table::gfx_two_tex_scroll;
@@ -25,11 +31,18 @@ pub const ACTOR_OCEFF_WIPE4: i16 = 0x01CB;
 
 /// `Oceff_Wipe4_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OCEFF_WIPE4, name: "Oceff_Wipe4", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OCEFF_WIPE4, name: "Oceff_Wipe4", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &SCHEMA };
 
 /// `OceffWipe4Type` (`z_oceff_wipe4.h`).
 pub const OCEFF_WIPE4_SCARECROWS: i16 = 0;
 pub const OCEFF_WIPE4_UNUSED: i16 = 1;
+
+/// `this->actor.params == OCEFF_WIPE4_UNUSED`: which material.
+pub const TYPE: Field =
+    Field::whole("params", Kind::Named(&[(0, "OCEFF_WIPE4_SCARECROWS"), (1, "OCEFF_WIPE4_UNUSED")]), "the Scarecrow's Song's material, or the other one (1, En_Zl3's)");
+
+/// Oceff_Wipe4's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 pub const BAKE: &str = "Oceff_Wipe4/frustum";
 pub const BAKE_UNUSED: &str = "Oceff_Wipe4/frustum_unused";
@@ -61,10 +74,11 @@ pub struct OceffWipe4 {
 impl OceffWipe4 {
     /// `OceffWipe4_Init`: a tenth the size, at the active camera's eye.
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let bake = if actor.params == OCEFF_WIPE4_UNUSED { BAKE_UNUSED } else { BAKE };
+        let bake = if TYPE.get(actor.params) == OCEFF_WIPE4_UNUSED { BAKE_UNUSED } else { BAKE };
         let mut this = OceffWipe4 { actor, timer: 0, vertices: FrustumVertices::load(play, bake) };
         this.actor.scale = Vec3::splat(0.1);
         this.actor.world_pos = play.active_camera().eye;
+        // schema: printed
         log::debug!(" WIPE4 arg_data = {}", this.actor.params);
         Box::new(this)
     }
@@ -108,7 +122,7 @@ impl ActorImpl for OceffWipe4 {
         let vertex_colors = self.vertices.as_ref().map(|v| v.with_alphas(|i| ALPHA_VERTICES.contains(&i).then_some(alpha)));
         let mut sv = SegmentValues::default();
         sv.read(SEG_SCROLL, &scroll(frames));
-        out.xlu.push(wipe_cmd(if self.actor.params == OCEFF_WIPE4_UNUSED { BAKE_UNUSED } else { BAKE }, wipe_matrix(view, z), sv, vertex_colors));
+        out.xlu.push(wipe_cmd(if TYPE.get(self.actor.params) == OCEFF_WIPE4_UNUSED { BAKE_UNUSED } else { BAKE }, wipe_matrix(view, z), sv, vertex_colors));
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

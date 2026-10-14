@@ -2279,6 +2279,7 @@ dependencies = [
  "glam",
  "log",
  "oot_game",
+ "regex",
  "serde",
  "serde_json",
 ]

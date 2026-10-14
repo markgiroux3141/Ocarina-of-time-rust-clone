@@ -42,9 +42,11 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR;
 use oot_game::collision_check::*;
 use oot_game::item::{ITEM_SOLD_OUT, item_give, rupees_change_by};
+use oot_game::item_get_inf;
 use oot_game::message::{TEXT_STATE_CHOICE, TEXT_STATE_DONE};
 use oot_game::npc::{NpcTrack, offer_talk, process_talk_request, track_point};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -60,7 +62,17 @@ pub const OBJECT: &str = "object_cs";
 const OBJECT_LINK_CHILD: i16 = 0x0015;
 
 /// `En_Cs_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_CS, name: "En_Cs", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_CS, name: "En_Cs", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 8)`: `path`.
+pub const PATH: Field = Field::params("path", 0, 8, Kind::PathIndex, "the scene path he walks");
+
+/// En_Cs's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PATH],
+    flags: &[FlagUse::new(item_get_inf!(ITEMGETINF_3A)).reads().sets().note("the Spooky Mask sold to him")],
+    todo: false,
+};
 
 /// `ITEMGETINF_3A` (`save.h`: 0x3A): the Spooky Mask sold to the graveyard kid.
 pub const ITEMGETINF_3A: u16 = 0x3A;
@@ -271,7 +283,7 @@ impl EnCs {
         let last = a0.last_frame();
         this.skel.change(a0, speed, 0.0, last, mode, morph);
         this.actor.target_mode = ATTENTION_RANGE_6;
-        this.path = (this.actor.params as u16 & 0xFF) as i32;
+        this.path = PATH.get(this.actor.params) as i32;
         this.unk_1ec = 0;
         this.talk_state = 0;
         this.current_anim_index = -1;

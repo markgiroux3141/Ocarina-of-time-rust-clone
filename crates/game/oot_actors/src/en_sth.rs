@@ -35,10 +35,10 @@
 //! though unused, as in the C: `unk_2B2` (bit 2 would skip a limb's fidget; never set) and the
 //! blink timer `unk_2B6` / index `unk_2B4` (no eyes are swapped).
 //!
-//! Params: the family member, 0 to 5 (0 the father at 100 tokens; 1 to 5 the children at
-//! `params × 10` tokens): its object, skeleton, dance, shirt, reward and reward bit.
+//! Params: `params` whole, the family member, 0 to 5 (0 the father at 100 tokens; 1 to 5 the
+//! children at `params × 10` tokens): its object, skeleton, dance, shirt, reward and reward bit.
 //! Flags: reads `gsTokens`; reads and sets EVENTCHKINF_SKULLTULA_REWARD_10, _20, _30, _40, _50
-//! (params 1 to 5; the father none).
+//! (params 1 to 5, by `sEventFlags[params]` in `eventChkInf[0xD]`; the father none).
 
 use std::sync::Arc;
 
@@ -49,7 +49,9 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::collision_check::*;
+use oot_game::event_chk_inf;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::item::{GI_HEART_PIECE, GI_RUPEE_GOLD, UPG_WALLET};
 use oot_game::message::TEXT_STATE_EVENT;
@@ -63,7 +65,34 @@ pub const ACTOR_EN_STH: i16 = 0x0189;
 
 /// `En_Sth_Profile`: `OBJECT_GAMEPLAY_KEEP`; it loads its own object.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_STH, name: "En_Sth", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_EN_STH, name: "En_Sth", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params`, whole: the family member.
+pub const MEMBER: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "the father: 100 tokens, the gold rupee"),
+        (1, "10 tokens: the Adult's Wallet"),
+        (2, "20 tokens: the Stone of Agony"),
+        (3, "30 tokens: the Giant's Wallet"),
+        (4, "40 tokens: the bombchus"),
+        (5, "50 tokens: the piece of heart"),
+    ]),
+    "which of the cursed family: its object, skeleton, dance, shirt, reward and reward's flag; there from params × 10 tokens (the father 100)",
+);
+
+/// En_Sth's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[MEMBER],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_SKULLTULA_REWARD_10)).reads().sets().note("params 1: its reward given").indirect("sEventFlags[params], a mask of eventChkInf[EVENTCHKINF_INDEX_SKULLTULA_REWARD]"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_SKULLTULA_REWARD_20)).reads().sets().note("params 2: its reward given").indirect("sEventFlags[params], a mask of eventChkInf[EVENTCHKINF_INDEX_SKULLTULA_REWARD]"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_SKULLTULA_REWARD_30)).reads().sets().note("params 3: its reward given").indirect("sEventFlags[params], a mask of eventChkInf[EVENTCHKINF_INDEX_SKULLTULA_REWARD]"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_SKULLTULA_REWARD_40)).reads().sets().note("params 4: its reward given").indirect("sEventFlags[params], a mask of eventChkInf[EVENTCHKINF_INDEX_SKULLTULA_REWARD]"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_SKULLTULA_REWARD_50)).reads().sets().note("params 5: its reward given").indirect("sEventFlags[params], a mask of eventChkInf[EVENTCHKINF_INDEX_SKULLTULA_REWARD]"),
+    ],
+    todo: false,
+};
 
 /// `OBJECT_AHG` (`object_table.h`: 0x0107), `OBJECT_BOJ` (0x0111).
 pub const OBJECT_AHG: i16 = 0x0107;
@@ -258,7 +287,7 @@ pub struct EnSth {
 
 impl EnSth {
     fn params(&self) -> usize {
-        self.actor.params as usize
+        MEMBER.get(self.actor.params) as usize
     }
 
     /// `EnSth_Init`.
@@ -279,7 +308,7 @@ impl EnSth {
             unk_2b6: 0,
             action: Action::WaitForObject,
         };
-        let params = this.actor.params;
+        let params = MEMBER.get(this.actor.params);
         log::debug!("Gold Skulltula Shop no = {params}");
         let tokens = play.save.inventory.gs_tokens;
         if params == 0 {
@@ -346,6 +375,7 @@ impl EnSth {
             }
         }
         self.event_flag = S_EVENT_FLAGS[p];
+        // schema: EVENTCHKINF_SKULLTULA_REWARD_10 to _50, by sEventFlags[params]
         if play.save.event_chk_inf[EVENTCHKINF_INDEX_SKULLTULA_REWARD] & self.event_flag != 0 {
             self.action = S_REWARD_OBTAINED_WAIT_ACTIONS[p];
         } else {
@@ -400,7 +430,7 @@ impl EnSth {
     /// `EnSth_RewardObtainedTalk`: the box closing, back to its rewarded wait.
     fn reward_obtained_talk(&mut self, play: &PlayState) {
         if textbox_is_closing(play) {
-            self.action = if self.actor.params == 0 { Action::ParentRewardObtainedWait } else { Action::ChildRewardObtainedWait };
+            self.action = if MEMBER.get(self.actor.params) == 0 { Action::ParentRewardObtainedWait } else { Action::ChildRewardObtainedWait };
         }
         self.face_player(play);
     }
@@ -423,7 +453,7 @@ impl EnSth {
     /// across and 50 up or down.
     fn give_player_item(&self, play: &mut PlayState) {
         let mut get_item_id = S_GET_ITEM_IDS[self.params()];
-        if matches!(self.actor.params, 1 | 3) {
+        if matches!(MEMBER.get(self.actor.params), 1 | 3) {
             match play.save.cur_upg_value(UPG_WALLET) {
                 0 => get_item_id = GI_WALLET_ADULT,
                 1 => get_item_id = GI_WALLET_GIANT,
@@ -439,6 +469,7 @@ impl EnSth {
         if actor_has_parent(&self.actor) {
             self.actor.parent = None;
             self.action = Action::RewardObtainedTalk;
+            // schema: EVENTCHKINF_SKULLTULA_REWARD_10 to _50, by sEventFlags[params]
             play.save.event_chk_inf[EVENTCHKINF_INDEX_SKULLTULA_REWARD] |= self.event_flag;
         } else {
             self.give_player_item(play);
@@ -461,7 +492,7 @@ impl EnSth {
         if process_talk_request(&mut self.actor) {
             self.action = Action::RewardUnobtainedTalk;
         } else {
-            self.actor.text_id = if self.actor.params == 0 { 0x28 } else { 0x21 };
+            self.actor.text_id = if MEMBER.get(self.actor.params) == 0 { 0x28 } else { 0x21 };
             if self.actor.xz_dist_to_player < 100.0 {
                 let a = self.actor.clone();
                 offer_talk(play, &a, 100.0);
@@ -592,12 +623,12 @@ impl ActorImpl for EnSth {
         let (Some(skeleton), Some(joints), [hx, hy]) = (&self.skeleton, &rs.joints, rs.angles.as_slice()) else { return };
         let bones = Self::pose(skeleton, &joints.rot, [*hx, *hy], play.state_frames, self.unk_2b2);
         let m = oot_game::play::actor_draw_matrix(rs);
-        if self.actor.params != 0
+        if MEMBER.get(self.actor.params) != 0
             && let Some(head) = bones.get(HEAD_LIMB - 1)
         {
             out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(HAIR_BAKE)), m * *head));
         }
-        out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(self.actor.params))), transform: m, bones, params: Default::default() });
+        out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(MEMBER.get(self.actor.params)))), transform: m, bones, params: Default::default() });
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

@@ -19,6 +19,14 @@
 //!
 //! The Master Quest Deku Tree's is room 3's, spawned by `Obj_Makeoshihiki` (params 0xFFC0: small,
 //! colour 3, no flag). The whole overlay is ported.
+//!
+//! Params: the type bits 0 to 3 (`PARAMS_GET_U(params, 0, 4)`, `PushBlockType`: 0 to 3 small,
+//! medium, large, huge "start on", 4 to 7 the same "start off"); `paramsColorIdx` bits 6 and 7
+//! (the colour's column in `sColors`); `flagByte` bits 8 to 15 (`PARAMS_GET_U(params, 8, 8)`: 0
+//! to 0x3F the switch flag, `switchFlag` bits 8 to 13: set, the "start on" kinds are gone; clear,
+//! the "start off" ones; 0x40 and up none).
+//! Flags: reads switch flag `switchFlag` (at init, and on a floor switch of the same flag, held
+//! down or up by it).
 
 use eng_collision::bgcheck::{BGCHECK_Y_MIN, PolyId};
 use eng_collision::dyna::{BG_ACTOR_MAX, BGCHECK_SCENE, BgActorSource, DYNA_INTERACT_ACTOR_ON_TOP, DYNA_INTERACT_ACTOR_SWITCH_PRESSED, DYNA_TRANSFORM_POS};
@@ -27,6 +35,7 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2, dyna_poly_get_actor};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_PL_WALK_GROUND, SFX_FLAG};
 use oot_game::collision_check::MASS_IMMOVABLE;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -50,7 +59,39 @@ const ACTOR_OBJ_SWITCH: i16 = 0x012A;
 const PLAYER_STATE2_4: u32 = 1 << 4;
 
 /// `Obj_Oshihiki_Profile`: `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_OSHIHIKI, name: "Obj_Oshihiki", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_OSHIHIKI, name: "Obj_Oshihiki", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 4)`: the type (`PushBlockType`).
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    4,
+    Kind::Named(&[
+        (0, "PUSHBLOCK_SMALL_START_ON"),
+        (1, "PUSHBLOCK_MEDIUM_START_ON"),
+        (2, "PUSHBLOCK_LARGE_START_ON"),
+        (3, "PUSHBLOCK_HUGE_START_ON"),
+        (4, "PUSHBLOCK_SMALL_START_OFF"),
+        (5, "PUSHBLOCK_MEDIUM_START_OFF"),
+        (6, "PUSHBLOCK_LARGE_START_OFF"),
+        (7, "PUSHBLOCK_HUGE_START_OFF"),
+    ]),
+    "the block's size, and whether its flag set takes it away (start on) or brings it (start off)",
+);
+/// `PARAMS_GET_U(params, 6, 2)`: `paramsColorIdx`.
+pub const COLOR_IDX: Field = Field::params("paramsColorIdx", 6, 2, Kind::Range(0, 3), "the colour's column in sColors (the row is the scene's)");
+/// `PARAMS_GET_U(params, 8, 8)`: the flag's byte.
+pub const FLAG_BYTE: Field = Field::params("flagByte", 8, 8, Kind::Range(0, 0xFF), "0 to 0x3F: switchFlag; 0x40 and up: no flag");
+/// `PARAMS_GET_U(params, 8, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field =
+    Field::params("switchFlag", 8, 6, Kind::SwitchFlag, "set: the start-on kinds are gone; clear: the start-off ones (with flagByte 0x3F or under)").part_of("flagByte");
+
+/// Obj_Oshihiki's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, COLOR_IDX, FLAG_BYTE, SWITCH_FLAG],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("at init: gone or there; on a floor switch of the same flag, held down (or up)")],
+    todo: false,
+};
 
 /// `PushBlockType` (`z_obj_oshihiki.h`).
 pub const PUSHBLOCK_SMALL_START_ON: i16 = 0;
@@ -207,12 +248,12 @@ fn clear_player_state2_4(play: &mut PlayState) {
 impl ObjOshihiki {
     /// `PARAMS_GET_U(params, 0, 4)`: the type.
     pub fn block_type(&self) -> i16 {
-        (self.actor.params as u16 & 0xF) as i16
+        TYPE.get(self.actor.params)
     }
 
     /// `PARAMS_GET_U(params, 8, 6)`: the switch flag.
     fn switch_flag(&self) -> i32 {
-        ((self.actor.params as u16 >> 8) & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `ObjOshihiki_Init`: its collision for a known type (`ObjOshihiki_CheckType`); gone for a
@@ -246,7 +287,7 @@ impl ObjOshihiki {
             moved_with_under: false,
         };
         this.check_type(play);
-        let flag_param = (this.actor.params as u16 >> 8) & 0xFF;
+        let flag_param = FLAG_BYTE.get(this.actor.params);
         if flag_param <= 0x3F {
             if play.flags.get_switch(this.switch_flag()) {
                 if matches!(this.block_type(), PUSHBLOCK_SMALL_START_ON | PUSHBLOCK_MEDIUM_START_ON | PUSHBLOCK_LARGE_START_ON | PUSHBLOCK_HUGE_START_ON) {
@@ -269,6 +310,7 @@ impl ObjOshihiki {
         this.set_color(play);
         this.reset_floors();
         this.setup_on_actor();
+        // schema: the whole params printed.
         log::debug!("(dungeon keep push/pull block)(arg_data 0x{:04x})", this.actor.params);
         play.col.dyna.set_source(this.bg, source(&this.actor));
         Box::new(this)
@@ -284,9 +326,11 @@ impl ObjOshihiki {
                 None => BG_ACTOR_MAX,
             };
             if self.bg == BG_ACTOR_MAX {
+                // schema: the whole params printed.
                 log::warn!("Warning : move BG registration failed (../z_obj_oshihiki.c 280)(name {})(arg_data 0x{:04x})", self.actor.id, self.actor.params);
             }
         } else {
+            // schema: the whole params printed.
             log::error!("Error : type cannot be determined (../z_obj_oshihiki.c 444)(arg_data 0x{:04x})", self.actor.params);
         }
     }
@@ -319,7 +363,7 @@ impl ObjOshihiki {
 
     /// `ObjOshihiki_SetColor`: `sColors[scene][params bits 6..7]`, white in a scene not listed.
     fn set_color(&mut self, play: &PlayState) {
-        let idx = ((self.actor.params as u16 >> 6) & 3) as usize;
+        let idx = COLOR_IDX.get(self.actor.params) as usize;
         match SCENE_IDS.iter().position(|&s| s == play.scene_id) {
             Some(i) => self.color = COLORS[i][idx],
             None => {
@@ -390,8 +434,9 @@ impl ObjOshihiki {
     fn no_switch_press(&self, dyna: Option<ActorHandle>, play: &PlayState) -> bool {
         let Some(d) = dyna.and_then(|h| play.actors.actor(h)) else { return true };
         if d.id == ACTOR_OBJ_SWITCH {
-            let dyna_switch_flag = ((d.params as u16 >> 8) & 0x3F) as i32;
-            match d.params & 0x33 {
+            let dyna_switch_flag = crate::obj_switch::SWITCH_FLAG.get(d.params) as i32;
+            // `dyna->actor.params & 0x33`: Obj_Switch's type and subtype, their low two bits each.
+            match (crate::obj_switch::TYPE.get(d.params) & 3) | ((crate::obj_switch::SUB_TYPE.get(d.params) & 3) << 4) {
                 // Normal blue switch.
                 0x20 => {
                     if dyna_switch_flag == self.switch_flag() && play.flags.get_switch(dyna_switch_flag) {
@@ -463,6 +508,7 @@ impl ObjOshihiki {
     /// on the floor `SetGround` found.
     fn check_ground(&mut self) -> bool {
         if self.actor.world_pos.y <= BGCHECK_Y_MIN + 10.0 {
+            // schema: the whole params printed.
             log::warn!("Warning : Push/pull block fell too much (../z_obj_oshihiki.c 809)(arg_data 0x{:04x})", self.actor.params);
             self.actor.kill();
             return false;

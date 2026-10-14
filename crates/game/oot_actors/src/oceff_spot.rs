@@ -9,12 +9,18 @@
 //!
 //! The whole overlay is ported. `Magic_Reset` and Nayru's Love's restore aren't (no magic, no
 //! spells).
+//!
+//! Params: none (`Message_DrawMain` spawns it with 0).
+//! Flags: sets `gSaveContext.sunsSongState` (`SUNSSONG_START`) as it goes; reads the Ingo race's
+//! state (`GET_EVENTINF_INGO_RACE_STATE`, `eventInf[0]` bits 0 to 3: no Sun's Song while Epona's
+//! rented).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{cos_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Flag, FlagUse};
 use oot_game::lights::{LightInfo, LightNode};
 use oot_game::message::{OCARINA_ACTION_CHECK_NOWARP_DONE, OCARINA_MODE_04, OCARINA_MODE_08};
 use oot_game::pack::{MeshBake, keys};
@@ -28,7 +34,17 @@ pub const ACTOR_OCEFF_SPOT: i16 = 0x017E;
 
 /// `Oceff_Spot_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OCEFF_SPOT, name: "Oceff_Spot", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OCEFF_SPOT, name: "Oceff_Spot", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &SCHEMA };
+
+/// Oceff_Spot's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[],
+    flags: &[
+        FlagUse::new(Flag::Other("gSaveContext.sunsSongState")).sets().note("SUNSSONG_START as it ends: the Sun's Song acts"),
+        FlagUse::new(Flag::Other("GET_EVENTINF_INGO_RACE_STATE()")).reads().note("Epona rented: no Sun's Song"),
+    ],
+    todo: false,
+};
 
 pub const BAKE: &str = "Oceff_Spot/cylinder";
 
@@ -91,6 +107,7 @@ impl OceffSpot {
             return;
         }
         self.actor.kill();
+        // schema: GET_EVENTINF_INGO_RACE_STATE(), a flag of the schema's
         let renting = play.save.event_inf[0] & 0xF == INGO_RACE_STATE_HORSE_RENTAL_PERIOD;
         if play.env_statics.time_speed != 400 && play.msg_ctx.disable_suns_song == 0 && !renting {
             if play.msg_ctx.ocarina_action != OCARINA_ACTION_CHECK_NOWARP_DONE || play.msg_ctx.ocarina_mode != OCARINA_MODE_08 {

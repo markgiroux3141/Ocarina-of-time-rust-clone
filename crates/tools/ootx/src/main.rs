@@ -94,6 +94,10 @@ enum Cmd {
     /// that's ported, every actor overlay in the table, and the overlays `oot_actors` ports. Writes
     /// `<out>/census.json`.
     Census,
+    /// Every ported actor's schema (docs/adr/0066-the-actor-schema.md): its params' and
+    /// rotation's fields and the flags it uses, as the game editor reads them. Writes
+    /// `<out>/actor_schemas.json`.
+    ActorSchemas,
     /// The asset pack's record names that start with a prefix (e.g. `mesh/object_kusa/`); meshes
     /// with their triangle count and unresolved segment references.
     PackLs {
@@ -179,6 +183,7 @@ fn main() -> Result<()> {
         Cmd::Info => info(&project),
         Cmd::SceneInfo { scene, layer } => scene_info(&scene, layer),
         Cmd::Census => census(&cli.out),
+        Cmd::ActorSchemas => actor_schemas(&cli.out),
         Cmd::PackLs { prefix } => pack_ls(&prefix),
         Cmd::Sfx { query } => sfx(&query),
         Cmd::Cutscene { name } => cutscene(name.as_deref()),
@@ -1001,6 +1006,19 @@ fn census(out: &Path) -> Result<()> {
     Ok(())
 }
 
+fn actor_schemas(out: &Path) -> Result<()> {
+    let actors: Vec<serde_json::Value> = oot_actors::PROFILES
+        .iter()
+        .map(|p| serde_json::json!({ "id": p.id, "name": p.name, "object": p.object, "schema": p.schema }))
+        .collect();
+    let path = out.join("actor_schemas.json");
+    std::fs::create_dir_all(out)?;
+    std::fs::write(&path, serde_json::to_string_pretty(&actors)?)?;
+    let todo = oot_actors::PROFILES.iter().filter(|p| p.schema.todo).count();
+    println!("{}: {} actors, {todo} without a schema yet", path.display(), actors.len());
+    Ok(())
+}
+
 fn scene_info(scene: &str, layer: usize) -> Result<()> {
     let pack = oot_game::pack::GamePack::open_default()?;
     let at = pack.actor_table()?;
@@ -1014,6 +1032,9 @@ fn scene_info(scene: &str, layer: usize) -> Result<()> {
     match ld.sound {
         Some(s) => println!("  sound settings: spec {}, nature ambience {:#04x}, sequence {:#04x}", s.spec_id, s.nature_ambience_id, s.seq_id),
         None => println!("  no sound settings"),
+    }
+    if let Some(cs) = &ld.cutscene {
+        println!("  cutscene: {cs}");
     }
     for (i, e) in ld.spawns.iter().enumerate() {
         println!("  spawn {i}: {} pos {:?} rot {:?} params {:#06x}", at.name(e.id), e.pos, e.rot, e.params as u16);

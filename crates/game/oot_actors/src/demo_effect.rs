@@ -24,6 +24,17 @@
 //! (`EffectSsKiraKira_SpawnDispersed`, whose and whose callers' `Rand` calls are made), the
 //! look-at the jewels' and the Triforce's texgen read (`func_8002EBCC`, `func_8002ED80`: the
 //! renderer's texgen reads the view).
+//!
+//! Params: `effectType` bits 0 to 7 (`PARAMS_GET_S(params, 0, 8)`, `DemoEffectType`: 0 to 0x19);
+//! for `DEMO_EFFECT_LIGHT` (0x12), `isLargeSize` bits 8 to 11 (`PARAMS_GET_S(params, 8, 4)`: 0
+//! small, else large) and `lightEffect` bits 12 to 15 (`PARAMS_GET_S(params, 12, 4)`,
+//! `DemoEffectLightColor`: 0 red, 1 blue, 2 green, 3 orange, 4 yellow, 5 purple, 6 green 2); for
+//! the other types bits 8 to 15 unused (the data's 0x1015, 0xFF0F). A jewel keeps its whole
+//! params as its sound's id (`sSfxJewelId`).
+//! Flags: reads INFTABLE_RUTO_HAS_SAPPHIRE (the Zora jewel in Jabu-Jabu: gone); reads
+//! EVENTCHKINF_C9 (the time warp at the Temple of Time's entrance 4) and sets it as the warp ends;
+//! reads EVENTCHKINF_OPENED_DOOR_OF_TIME (the jewels at the Door of Time) and sets it; reads
+//! cutscene flag 1 (`CutsceneFlags_Get`: the Master Sword's time warp grows and is drawn).
 
 use std::sync::Arc;
 
@@ -32,8 +43,10 @@ use eng_math::smooth_step_to_f;
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_BOSS, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::play_scene::SCENE_KOKIRI_FOREST;
@@ -47,7 +60,79 @@ pub const ACTOR_DEMO_EFFECT: i16 = 0x008B;
 /// `Demo_Effect_Profile`: `ACTORCAT_BG`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED |
 /// ACTOR_FLAG_DRAW_CULLING_DISABLED`, `OBJECT_GAMEPLAY_KEEP` (each type waits for its own).
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_DEMO_EFFECT, name: "Demo_Effect", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_DEMO_EFFECT, name: "Demo_Effect", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_S(params, 0, 8)`: `effectType`.
+pub const EFFECT_TYPE: Field = Field::params(
+    "effectType",
+    0,
+    8,
+    Kind::Named(&[
+        (0x00, "DEMO_EFFECT_CRYSTAL_LIGHT"),
+        (0x01, "DEMO_EFFECT_FIRE_BALL"),
+        (0x02, "DEMO_EFFECT_BLUE_ORB"),
+        (0x03, "DEMO_EFFECT_LGT_SHOWER"),
+        (0x04, "DEMO_EFFECT_GOD_LGT_DIN"),
+        (0x05, "DEMO_EFFECT_GOD_LGT_NAYRU"),
+        (0x06, "DEMO_EFFECT_GOD_LGT_FARORE"),
+        (0x07, "DEMO_EFFECT_LIGHTRING_EXPANDING"),
+        (0x08, "DEMO_EFFECT_TRIFORCE_SPOT"),
+        (0x09, "DEMO_EFFECT_MEDAL_FIRE"),
+        (0x0A, "DEMO_EFFECT_MEDAL_WATER"),
+        (0x0B, "DEMO_EFFECT_MEDAL_FOREST"),
+        (0x0C, "DEMO_EFFECT_MEDAL_SPIRIT"),
+        (0x0D, "DEMO_EFFECT_MEDAL_SHADOW"),
+        (0x0E, "DEMO_EFFECT_MEDAL_LIGHT"),
+        (0x0F, "DEMO_EFFECT_TIMEWARP_MASTERSWORD"),
+        (0x10, "DEMO_EFFECT_LIGHTRING_SHRINKING"),
+        (0x11, "DEMO_EFFECT_LIGHTRING_TRIFORCE"),
+        (0x12, "DEMO_EFFECT_LIGHT"),
+        (0x13, "DEMO_EFFECT_JEWEL_KOKIRI"),
+        (0x14, "DEMO_EFFECT_JEWEL_GORON"),
+        (0x15, "DEMO_EFFECT_JEWEL_ZORA"),
+        (0x16, "DEMO_EFFECT_DUST"),
+        (0x17, "DEMO_EFFECT_LIGHTARROW"),
+        (0x18, "DEMO_EFFECT_TIMEWARP_TIMEBLOCK_LARGE"),
+        (0x19, "DEMO_EFFECT_TIMEWARP_TIMEBLOCK_SMALL"),
+    ]),
+    "the light or set piece",
+);
+/// `PARAMS_GET_S(params, 8, 4)`: `isLargeSize`.
+pub const IS_LARGE_SIZE: Field =
+    Field::params("isLargeSize", 8, 4, Kind::Range(0, 15), "the light's size: 0 small, else large").when("effectType", &[0x12]);
+/// `PARAMS_GET_S(params, 12, 4)`: `lightEffect`.
+pub const LIGHT_EFFECT: Field = Field::params(
+    "lightEffect",
+    12,
+    4,
+    Kind::Named(&[
+        (0, "DEMO_EFFECT_LIGHT_RED"),
+        (1, "DEMO_EFFECT_LIGHT_BLUE"),
+        (2, "DEMO_EFFECT_LIGHT_GREEN"),
+        (3, "DEMO_EFFECT_LIGHT_ORANGE"),
+        (4, "DEMO_EFFECT_LIGHT_YELLOW"),
+        (5, "DEMO_EFFECT_LIGHT_PURPLE"),
+        (6, "DEMO_EFFECT_LIGHT_GREEN2"),
+    ]),
+    "the light's colour",
+)
+.when("effectType", &[0x12]);
+/// Bits 8 to 15 for every type but the light: set in the data (Jabu-Jabu's Zora jewel 0x1015, the
+/// Temple of Time's time warp 0xFF0F), read by nothing.
+pub const UNUSED_HIGH: Field = Field::params("bits 8 to 15", 8, 8, Kind::Unused, "set in the data for some types; read by nothing but the light's")
+    .when("effectType", &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19]);
+
+/// Demo_Effect's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[EFFECT_TYPE, IS_LARGE_SIZE, LIGHT_EFFECT, UNUSED_HIGH],
+    flags: &[
+        FlagUse::new(inf_table!(INFTABLE_RUTO_HAS_SAPPHIRE)).reads().note("the Zora jewel in Jabu-Jabu: gone once Ruto has it"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_C9)).reads().sets().note("the time warp at the Temple of Time's entrance 4: shrinks, then set"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OPENED_DOOR_OF_TIME)).reads().sets().note("the jewels at the Door of Time"),
+        FlagUse::new(Flag::Other("CutsceneFlags 1")).reads().note("the Master Sword's time warp grows and is drawn"),
+    ],
+    todo: false,
+};
 
 /// `DemoEffectType`.
 pub const DEMO_EFFECT_CRYSTAL_LIGHT: u8 = 0x00;
@@ -383,14 +468,9 @@ pub struct DemoEffect {
     draw_skipped: bool,
 }
 
-/// The type: `PARAMS_GET_S(params, 0, 8)`.
-fn effect_type(params: i16) -> u8 {
-    (params & 0xFF) as u8
-}
-
 impl DemoEffect {
     pub fn effect_type(&self) -> u8 {
-        effect_type(self.actor.params)
+        EFFECT_TYPE.get(self.actor.params) as u8
     }
 
     /// The cue on this actor's channel while a cutscene runs.
@@ -449,7 +529,7 @@ impl DemoEffect {
         };
         let ty = this.effect_type();
         // PARAMS_GET_S(params, 12, 4).
-        let light_effect = ((this.actor.params >> 12) & 0xF) as u8;
+        let light_effect = LIGHT_EFFECT.get(this.actor.params) as u8;
         log::debug!(" no = {ty}");
         let Some(&object) = S_EFFECT_TYPE_OBJECTS.get(ty as usize) else {
             log::error!("Demo_Effect: type {ty:#x} out of range (ASSERT in z_demo_effect.c)");
@@ -1050,7 +1130,7 @@ impl DemoEffect {
     /// large one) and turns it, cue 3 shrinks it away; its scenes' sounds.
     fn update_light_effect(&mut self, play: &mut PlayState) {
         // PARAMS_GET_S(params, 8, 4).
-        let is_large_size = (self.actor.params >> 8) & 0xF != 0;
+        let is_large_size = IS_LARGE_SIZE.get(self.actor.params) != 0;
         let Some(cue) = self.cue(play) else { return };
         self.set_pos_rot_from_cue(play, &cue, false);
         match cue.action {
@@ -1305,7 +1385,7 @@ impl DemoEffect {
     /// unless on cue 1.
     fn play_jewel_sfx(&mut self, play: &mut PlayState) {
         if !self.check_for_cue(play, 1) {
-            let params = self.actor.params;
+            let params = self.actor.params; // schema: the whole params, the jewel's sound's id.
             let st = statics(play);
             if params == st.sfx_jewel_id {
                 self.actor.play_sfx_flagged(NA_SE_EV_SPIRIT_STONE - SFX_FLAG);

@@ -2,12 +2,6 @@
 //! scene's paths (`play->pathList[params & 0xFF]`), knocking Link down when it runs into
 //! him.
 //!
-//! Params: bits 0..7 the path, bits 8..9 the loop mode (`ENGOROIWA_LOOPMODE_*`: 0 round the
-//! path and back to its start, 1 the same with the break's fragments at the ends, 3 there and
-//! back), bit 10 whether it falls with gravity and its floor check (1) or keeps to the path's
-//! heights (0, climbing and dropping between points). `home.rot.z & 1`: after hitting Link,
-//! 50 frames without colliding, and a short wait.
-//!
 //! Kokiri Forest's training area has one: params 0x0C02, `rot.z` 1. Path 2 is a loop of five
 //! points round the corridors' block; loop mode 0, gravity (bit 10), so `EnGoroiwa_MoveAndFall`
 //! and `EnGoroiwa_SetupMoveAndFallToGround` on a hit, at `R_EN_GOROIWA_SPEED` 920 (9.2 a frame).
@@ -18,10 +12,22 @@
 //! fragments (`EffectSsKakera`) and dust. Not ported: the splashes and ripples (the effects;
 //! their `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
 //! (`ActorShadow_DrawCircle`).
+//!
+//! Params: `pathIdx` bits 0 to 7 (the path, `play->pathList`; 0xFF, or a path of fewer than 2
+//! points: killed); `loopMode` bits 8 and 9 (`ENGOROIWA_LOOPMODE_ONEWAY` 0, round the path and
+//! back to its start; `ENGOROIWA_LOOPMODE_ONEWAY_BREAK` 1, the same with the break's fragments at
+//! the ends; `ENGOROIWA_LOOPMODE_ROUNDTRIP` 3, there and back with a wait at each end); `bgc` bit
+//! 10 (1: falls with gravity and its floor check, `EnGoroiwa_MoveAndFall`; 0: keeps to the path's
+//! heights, climbing and dropping between points, `EnGoroiwa_Move`); bit 11 unused (the data sets
+//! it with `bgc`). `home.rot.z` bit 0 (`hit`):
+//! 1, after hitting Link 50 frames without colliding, and the shorter wait (and, without `bgc`,
+//! it doesn't turn back).
+//! Flags: none.
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, actor_set_player_knockback_large, audio_play_actor_sfx2, func_80033480, player_play_sfx};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, Source};
 use oot_game::audio::sfx::{NA_SE_EV_BIGBALL_ROLL, NA_SE_PL_BODY_HIT, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::KAKERA_COLOR_NONE;
@@ -32,7 +38,40 @@ pub const ACTOR_EN_GOROIWA: i16 = 0x0130;
 const OBJECT: &str = "object_goroiwa";
 
 /// `En_Goroiwa_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GOROIWA, name: "En_Goroiwa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GOROIWA, name: "En_Goroiwa", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 8)`: the path.
+pub const PATH_IDX: Field = Field::params("pathIdx", 0, 8, Kind::PathIndex, "the path it rolls along (0xFF: none, killed)");
+/// `PARAMS_GET_U(this->actor.params, 8, 2)`: what it does at the path's ends.
+pub const LOOP_MODE: Field = Field::params(
+    "loopMode",
+    8,
+    2,
+    Kind::Named(&[(0, "ENGOROIWA_LOOPMODE_ONEWAY"), (1, "ENGOROIWA_LOOPMODE_ONEWAY_BREAK"), (3, "ENGOROIWA_LOOPMODE_ROUNDTRIP")]),
+    "round and back to its start, the same breaking at the ends, or there and back",
+);
+/// `PARAMS_GET_U(this->actor.params, 10, 1)` (printed as `bgc`): gravity and the floor check.
+pub const BGC: Field = Field::params(
+    "bgc",
+    10,
+    1,
+    Kind::Named(&[(0, "keeps to the path's heights (EnGoroiwa_Move)"), (1, "falls with gravity (EnGoroiwa_MoveAndFall)")]),
+    "whether it falls with gravity or keeps to the path's heights",
+);
+/// Bit 11: set with `bgc` in the data, read by nothing.
+pub const BIT_11: Field = Field::params("params bit 11", 11, 1, Kind::Unused, "set (with bgc) in the data; read by nothing");
+/// `this->actor.home.rot.z & 1` (printed as `hit`).
+pub const HIT: Field = Field::rot(
+    "hit",
+    Source::RotZ,
+    0,
+    1,
+    Kind::Named(&[(0, "turns back on hitting Link, the long wait"), (1, "50 frames without colliding after a hit, the short wait")]),
+    "what it does after hitting Link",
+);
+
+/// En_Goroiwa's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PATH_IDX, LOOP_MODE, BGC, BIT_11, HIT], flags: &[], todo: false };
 
 /// `stateFlags`.
 pub const ENGOROIWA_ENABLE_AT: u8 = 1 << 0;
@@ -118,20 +157,20 @@ pub struct EnGoroiwa {
 impl EnGoroiwa {
     /// `(params >> 10) & 1`: gravity and the floor check.
     fn bgc(&self) -> usize {
-        ((self.actor.params >> 10) & 1) as usize
+        BGC.get(self.actor.params) as usize
     }
 
     fn loop_mode(&self) -> i16 {
-        (self.actor.params >> 8) & 3
+        LOOP_MODE.get(self.actor.params)
     }
 
     fn rot_z_bit(&self) -> bool {
-        self.actor.home_rot.z & 1 == 1
+        HIT.get(self.actor.home_rot.z) == 1
     }
 
     /// `play->pathList[params & 0xFF]`'s point `i`.
     fn point(&self, play: &PlayState, i: i16) -> Vec3 {
-        play.setup_path_list()[(self.actor.params & 0xFF) as usize].point(i as usize)
+        play.setup_path_list()[PATH_IDX.get(self.actor.params) as usize].point(i as usize)
     }
 
     /// `EnGoroiwa_Init`.
@@ -165,8 +204,9 @@ impl EnGoroiwa {
         };
         this.update_collider();
         this.collider.elements[0].dim.world_sphere.radius = 58;
-        let path_idx = (this.actor.params & 0xFF) as usize;
+        let path_idx = PATH_IDX.get(this.actor.params) as usize;
         if path_idx == 0xFF {
+            // schema: printed
             log::warn!("En_Goroiwa: arg_data 0x{:04x} is invalid", this.actor.params);
             this.actor.kill();
             return Box::new(this);
@@ -193,7 +233,7 @@ impl EnGoroiwa {
     fn update_collider(&mut self) {
         let s = &mut self.collider.elements[0].dim.world_sphere;
         let p = self.actor.world_pos;
-        s.center = [p.x as i16, (p.y + Y_OFFSETS[((self.actor.params >> 10) & 1) as usize]) as i16, p.z as i16];
+        s.center = [p.x as i16, (p.y + Y_OFFSETS[BGC.get(self.actor.params) as usize]) as i16, p.z as i16];
     }
 
     /// `EnGoroiwa_UpdateFlags`.
@@ -267,7 +307,7 @@ impl EnGoroiwa {
 
     /// `EnGoroiwa_InitPath`.
     fn init_path(&mut self, play: &PlayState) {
-        self.end_waypoint = play.setup_path_list()[(self.actor.params & 0xFF) as usize].count() as i16 - 1;
+        self.end_waypoint = play.setup_path_list()[PATH_IDX.get(self.actor.params) as usize].count() as i16 - 1;
         self.current_waypoint = 0;
         self.next_waypoint = 1;
         self.path_direction = 1;
@@ -291,6 +331,7 @@ impl EnGoroiwa {
         let cur = self.point(play, self.current_waypoint);
         if next.x == cur.x && next.z == cur.z {
             if next.y == cur.y {
+                // schema: printed
                 log::warn!("En_Goroiwa: invalid path data (points overlap), arg_data 0x{:04x}", self.actor.params);
             }
             return if next.y > cur.y { 1 } else { -1 };
@@ -470,7 +511,7 @@ impl EnGoroiwa {
     /// fragments' object isn't checked.
     pub fn spawn_fragments(&self, play: &mut PlayState) {
         let this_pos = self.actor.world_pos;
-        let y_offset = Y_OFFSETS[((self.actor.params >> 10) & 1) as usize];
+        let y_offset = Y_OFFSETS[BGC.get(self.actor.params) as usize];
         play.with_ss(|ss| {
             let mut angle1: i16 = 0;
             for _ in 0..16 {
@@ -593,7 +634,7 @@ impl EnGoroiwa {
         self.action = Action::Wait;
         self.actor.speed_xz = 0.0;
         self.update_flags(ENGOROIWA_ENABLE_OC);
-        self.wait_timer = WAIT_DURATIONS[(self.actor.home_rot.z & 1) as usize];
+        self.wait_timer = WAIT_DURATIONS[HIT.get(self.actor.home_rot.z) as usize];
         self.roll_rot_speed = 0.0;
     }
 

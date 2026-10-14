@@ -44,6 +44,8 @@ use oot_game::actor::{
     ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_2,
 };
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, FlagUse};
+use oot_game::event_chk_inf;
 use oot_game::audio::ocarina::OCARINA_INSTRUMENT_HARP;
 use oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME;
 use oot_game::collision_check::*;
@@ -69,6 +71,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_NPC,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA,
     object: OBJECT,
+    schema: &SCHEMA,
 };
 
 /// `FU_RESET_LOOK_ANGLE`, `FU_WAIT` (`z_en_fu.c`).
@@ -82,6 +85,17 @@ pub const FU_FACE_MAD: u16 = 1;
 pub const EVENTCHKINF_5B: u16 = 0x5B;
 pub const EVENTCHKINF_65: u16 = 0x65;
 pub const EVENTCHKINF_DRAINED_WELL: u16 = 0x67;
+
+/// En_Fu's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_DRAINED_WELL)).reads().note("the child's text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_5B)).reads().sets().note("the Song of Storms' lesson done"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_65)).sets().note("the windmill faster, with the lesson's song"),
+    ],
+    todo: false,
+};
 /// `OCARINA_ACTION_PLAYBACK_STORMS` (`ocarina.h`: 0x1A).
 pub const OCARINA_ACTION_PLAYBACK_STORMS: u16 = 0x1A;
 /// `ATTENTION_RANGE_6`.

@@ -18,7 +18,7 @@
 //!
 //! Params: `type` bits 0 to 2 (0 to 2: a poster, 3: the unfinished gallery, 4: the finished
 //! gallery; 5 to 7 have no object, `objectId` left 0, and are killed); `path` bits 8 to 15 (type
-//! 3: the carpenter's path).
+//! 3: the carpenter's path; the other types' are unused, 0xFF for the finished gallery).
 //! Flags: none.
 
 use std::sync::Arc;
@@ -28,6 +28,7 @@ use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_TRANSFORM_POS};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
@@ -42,7 +43,29 @@ pub const OBJECT_SPOT01_MATOYA: i16 = 0x0180;
 pub const OBJECT_SPOT01_MATOYAB: i16 = 0x0181;
 
 /// `Bg_Spot01_Objects2_Profile`: no draw until the object is in.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_OBJECTS2, name: "Bg_Spot01_Objects2", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_OBJECTS2, name: "Bg_Spot01_Objects2", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 3)`: the type.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    3,
+    Kind::Named(&[
+        (0, "the potion shop's poster"),
+        (1, "the shooting gallery's poster"),
+        (2, "the bazaar's poster"),
+        (3, "the unfinished shooting gallery (a carpenter by day)"),
+        (4, "the finished shooting gallery"),
+    ]),
+    "which set piece (5 to 7: no object, killed)",
+);
+/// `PARAMS_GET_U((s32)params, 8, 8)`: the carpenter's path.
+pub const PATH: Field = Field::params("path", 8, 8, Kind::PathIndex, "the carpenter's path: he starts at its first point").when("type", &[3]);
+/// Bits 8 to 15 of the other types: read by nothing.
+pub const UNUSED_8: Field = Field::params("params bits 8 to 15", 8, 8, Kind::Unused, "the finished gallery's 0xFF, the posters' 0; read by nothing").when("type", &[0, 1, 2, 4]);
+
+/// Bg_Spot01_Objects2's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, PATH, UNUSED_8], flags: &[], todo: false };
 
 /// The types (`PARAMS_GET_U(params, 0, 3)`).
 pub const TYPE_POTION_SHOP_POSTER: i16 = 0;
@@ -95,12 +118,12 @@ fn load_collision(play: &PlayState, file: &str, symbol: &str) -> anyhow::Result<
 impl BgSpot01Objects2 {
     /// `PARAMS_GET_U(params, 0, 3)`.
     pub fn ty(&self) -> i16 {
-        self.actor.params & 7
+        TYPE.get(self.actor.params)
     }
 
     /// `PARAMS_GET_U((s32)params, 8, 8)`: the carpenter's path.
     pub fn path(&self) -> i16 {
-        (self.actor.params >> 8) & 0xFF
+        PATH.get(self.actor.params)
     }
 
     /// `BgSpot01Objects2_Init`.

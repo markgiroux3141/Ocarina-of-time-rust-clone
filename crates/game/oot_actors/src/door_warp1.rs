@@ -25,17 +25,30 @@
 //! (`DoorWarp1_SetupAdultDungeonWarp` and its actions), the blue and purple crystals, the clear
 //! flag's warp, Ruto's warp, `WARP_UNK_7`, `func_809998A4` (the Sages' and the yellow warp's fade),
 //! the other bosses' rooms in `DoorWarp1_ChildWarpOut`.
+//!
+//! Params (placed as `WARP_DESTINATION` at the blue warps' arrivals; the bosses, the Sages, Ruto
+//! and Zelda spawn the others): `params` the whole (`DoorWarp1Type`: -2 `WARP_BLUE_CRYSTAL`, -1
+//! `WARP_DUNGEON_ADULT`, 0 `WARP_DUNGEON_CHILD`, 1 `WARP_CLEAR_FLAG`, 2 `WARP_SAGES`, 3
+//! `WARP_PURPLE_CRYSTAL`, 4 `WARP_YELLOW`, 5 `WARP_BLUE_RUTO`, 6 `WARP_DESTINATION`, 7
+//! `WARP_UNK_7`, 8 `WARP_ORANGE`, 9 `WARP_GREEN`, 10 `WARP_RED`).
+//! Flags: reads and sets EVENTCHKINF_07 and sets EVENTCHKINF_09 (Queen Gohma's warp, the first
+//! time). Not ported: `WARP_CLEAR_FLAG`'s read of the temp clear flag; King Dodongo's
+//! EVENTCHKINF_25 (read and set), Ruto's warp's EVENTCHKINF_37 (set), the adult dungeons'
+//! EVENTCHKINF_48, `_49` and `_4A` (read and set).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{smooth_step_to_f, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::camera::CAM_ID_MAIN;
+use oot_game::event_chk_inf;
 use oot_game::lights::{LightInfo, LightNode};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
+use oot_game::save::{EVENTCHKINF_07, EVENTCHKINF_09};
 use oot_game::sys_matrix::MtxF;
 
 use crate::boss_goma::ACTOR_DOOR_WARP1;
@@ -43,7 +56,44 @@ use crate::boss_goma::ACTOR_DOOR_WARP1;
 const OBJECT: &str = "object_warp1";
 
 /// `Door_Warp1_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DOOR_WARP1, name: "Door_Warp1", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DOOR_WARP1, name: "Door_Warp1", category: ACTORCAT_ITEMACTION, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params`: the warp's type (`DoorWarp1Type`).
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (-2, "WARP_BLUE_CRYSTAL"),
+        (-1, "WARP_DUNGEON_ADULT"),
+        (0, "WARP_DUNGEON_CHILD"),
+        (1, "WARP_CLEAR_FLAG"),
+        (2, "WARP_SAGES"),
+        (3, "WARP_PURPLE_CRYSTAL"),
+        (4, "WARP_YELLOW"),
+        (5, "WARP_BLUE_RUTO"),
+        (6, "WARP_DESTINATION"),
+        (7, "WARP_UNK_7"),
+        (8, "WARP_ORANGE"),
+        (9, "WARP_GREEN"),
+        (10, "WARP_RED"),
+    ]),
+    "the warp: a boss's blue warp, the adult dungeons' crystal, the Sages', Ruto's, an arrival, the coloured set pieces",
+);
+
+/// Door_Warp1's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_07)).reads().sets().note("Queen Gohma's warp: the first time"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_09)).sets().note("Queen Gohma's warp: the first time"),
+        FlagUse::new(Flag::TempClear).reads().note("WARP_CLEAR_FLAG: appears once the room is cleared").indirect("not ported: DoorWarp1_AwaitClearFlag"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_25", 0x25)).reads().sets().note("King Dodongo's warp").indirect("not ported: Dodongo's Cavern's boss room"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_37", 0x37)).sets().note("Barinade's warp").indirect("not ported: Jabu-Jabu's boss room"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_48", 0x48)).reads().sets().note("Phantom Ganon's warp").indirect("not ported: the Forest Temple's boss room"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_49", 0x49)).reads().sets().note("Volvagia's warp").indirect("not ported: the Fire Temple's boss room"),
+        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_4A", 0x4A)).reads().sets().note("Morpha's warp").indirect("not ported: the Water Temple's boss room"),
+    ],
+    todo: false,
+};
 
 /// `DoorWarp1Type`.
 pub const WARP_BLUE_CRYSTAL: i16 = -2;
@@ -136,7 +186,7 @@ impl DoorWarp1 {
         actor.culling_volume_scale = 800.0;
         actor.culling_volume_downward = 4000.0;
         actor.shape_y_offset = 0.0;
-        log::debug!("BOSSWARP arg_data=[{}]", actor.params);
+        log::debug!("BOSSWARP arg_data=[{}]", TYPE.get(actor.params));
         let mut w = DoorWarp1 {
             actor,
             action: Action::DoNothing,
@@ -157,7 +207,7 @@ impl DoorWarp1 {
             upper_light: None,
             lower_light: None,
         };
-        let p = w.actor.params;
+        let p = TYPE.get(w.actor.params);
         if p != WARP_SAGES && p != WARP_BLUE_CRYSTAL && p != WARP_YELLOW && p != WARP_DESTINATION {
             let info = w.light_at(0, 0, 0, 0);
             w.upper_light = play.light_ctx.insert_light(info);
@@ -179,7 +229,7 @@ impl DoorWarp1 {
 
     /// `DoorWarp1_ChooseInitialAction`.
     fn choose_initial_action(&mut self, play: &mut PlayState) {
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             WARP_DUNGEON_CHILD | WARP_CLEAR_FLAG | WARP_SAGES | WARP_YELLOW | WARP_BLUE_RUTO | WARP_DESTINATION | WARP_UNK_7 | WARP_ORANGE | WARP_GREEN | WARP_RED => self.setup_warp(play),
             WARP_DUNGEON_ADULT => self.not_ported("DoorWarp1_SetupAdultDungeonWarp"),
             WARP_BLUE_CRYSTAL => self.not_ported("DoorWarp1_SetupBlueCrystal"),
@@ -191,7 +241,7 @@ impl DoorWarp1 {
     /// A warp's setup or action this ROM's Deku Tree never reaches: logged, and the warp does
     /// nothing.
     fn not_ported(&mut self, name: &'static str) {
-        log::warn!("Door_Warp1 params {}: {name} isn't ported (not this ROM's Deku Tree)", self.actor.params);
+        log::warn!("Door_Warp1 params {}: {name} isn't ported (not this ROM's Deku Tree)", TYPE.get(self.actor.params));
         self.action = Action::NotPorted(name);
     }
 
@@ -205,7 +255,7 @@ impl DoorWarp1 {
         self.light_ray_alpha = 0.0;
         self.warp_alpha = 0.0;
         self.crystal_alpha = 0.0;
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             WARP_YELLOW | WARP_ORANGE | WARP_GREEN | WARP_RED => {
                 self.unk_194 = 0.23;
                 self.unk_198 = 0.6;
@@ -229,7 +279,7 @@ impl DoorWarp1 {
         self.unk_19c = 0.0;
         self.actor.shape_y_offset = 1.0;
         self.warp_timer = 0;
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             WARP_CLEAR_FLAG | WARP_SAGES | WARP_YELLOW | WARP_DESTINATION | WARP_ORANGE | WARP_GREEN | WARP_RED => {}
             _ => {
                 let info = self.light_at(200, 255, 255, 255);
@@ -237,7 +287,7 @@ impl DoorWarp1 {
                 play.light_ctx.set_info(self.lower_light, info);
             }
         }
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             WARP_CLEAR_FLAG => self.not_ported("DoorWarp1_AwaitClearFlag"),
             WARP_DESTINATION => {
                 let entrance = play.save.entrance_index;
@@ -245,7 +295,8 @@ impl DoorWarp1 {
                 let cutscene_layer = play.save.scene_layer >= 4;
                 let player = play.player.and_then(|h| play.actors.actor(h));
                 // PARAMS_GET_NOSHIFT(GET_PLAYER(play)->actor.params, 8, 4): Link's start mode.
-                let blue_warp = player.is_some_and(|p| (p.params as u16 & 0xF00) == 0x200);
+                // PLAYER_GET_START_MODE == PLAYER_START_MODE_BLUE_WARP.
+                let blue_warp = player.is_some_and(|p| crate::player::START_MODE.get(p.params) == 2);
                 if (!arrival && !cutscene_layer) || !blue_warp {
                     self.actor.kill();
                 }
@@ -269,7 +320,7 @@ impl DoorWarp1 {
         audio_play_actor_sfx2(play, NA_SE_EV_WARP_HOLE - SFX_FLAG);
         smooth_step_to_f(&mut self.light_ray_alpha, 255.0, 0.4, 10.0, 0.01);
         smooth_step_to_f(&mut self.warp_alpha, 255.0, 0.4, 10.0, 0.01);
-        let p = self.actor.params;
+        let p = TYPE.get(self.actor.params);
         if p != WARP_YELLOW && p != WARP_ORANGE && p != WARP_GREEN && p != WARP_RED {
             if self.scale < 100 {
                 self.scale += 2;
@@ -346,9 +397,9 @@ impl DoorWarp1 {
         if (target as i32) < self.warp_timer as i32 && play.save.next_cutscene_index == NEXT_CS_INDEX_NONE {
             log::debug!("The time has come, so it's over. fade_direction=[{}]", play.transition.trigger);
             if play.scene_id == SCENE_DEKU_TREE_BOSS {
-                if !play.save.get_event_chk_inf(oot_game::save::EVENTCHKINF_07) {
-                    play.save.set_event_chk_inf(oot_game::save::EVENTCHKINF_07);
-                    play.save.set_event_chk_inf(oot_game::save::EVENTCHKINF_09);
+                if !play.save.get_event_chk_inf(EVENTCHKINF_07) {
+                    play.save.set_event_chk_inf(EVENTCHKINF_07);
+                    play.save.set_event_chk_inf(EVENTCHKINF_09);
                     oot_game::item::item_give(&mut play.save, Some(&mut play.audio), ITEM_KOKIRI_EMERALD);
                     self.go(play, "ENTR_KOKIRI_FOREST_0");
                     play.save.next_cutscene_index = CS_INDEX_1;
@@ -465,7 +516,7 @@ impl ActorImpl for DoorWarp1 {
             Action::Destination => self.destination(play),
             Action::DoNothing | Action::NotPorted(_) => {}
         }
-        if self.actor.params != WARP_PURPLE_CRYSTAL {
+        if TYPE.get(self.actor.params) != WARP_PURPLE_CRYSTAL {
             self.actor.scale = Vec3::splat(self.scale as f32 / 100.0);
         }
     }
@@ -489,7 +540,7 @@ impl ActorImpl for DoorWarp1 {
         if self.actor.killed || matches!(self.action, Action::NotPorted(_)) {
             return;
         }
-        let p = self.actor.params;
+        let p = TYPE.get(self.actor.params);
         let temp_f0 = 1.0 - (2.0 - self.unk_194) / 1.7;
         if p != WARP_YELLOW && p != WARP_DESTINATION && p != WARP_ORANGE && p != WARP_GREEN && p != WARP_RED {
             self.unk_19c += (temp_f0 * 15.0) as i16 as f32;
@@ -502,7 +553,7 @@ impl ActorImpl for DoorWarp1 {
     fn render_state(&self) -> RenderState {
         let mut r = RenderState::of(&self.actor);
         r.values = vec![self.unk_194, self.unk_198, self.unk_19c, self.light_ray_alpha, self.warp_alpha];
-        r.switches = vec![self.actor.params as u16 as u32, self.unk_1ae as u16 as u32, self.unk_1b0 as u16 as u32, matches!(self.action, Action::NotPorted(_)) as u32];
+        r.switches = vec![TYPE.get(self.actor.params) as u16 as u32, self.unk_1ae as u16 as u32, self.unk_1b0 as u16 as u32, matches!(self.action, Action::NotPorted(_)) as u32];
         r
     }
 

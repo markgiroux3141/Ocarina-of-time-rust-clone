@@ -11,7 +11,7 @@
 //!
 //! The whole overlay is ported.
 //!
-//! Params: none (Kakariko places it with 0xFFFF).
+//! Params: none read (Kakariko places it with 0xFFFF, unused).
 //! Flags: reads EVENTCHKINF_DRAINED_WELL.
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -19,8 +19,10 @@ use eng_math::approach_f;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::SFX_FLAG;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
+use oot_game::event_chk_inf;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::scene_table::gfx_two_tex_scroll;
 
@@ -30,7 +32,17 @@ pub const ACTOR_BG_SPOT01_IDOMIZU: i16 = 0x0104;
 pub const OBJECT: &str = "object_spot01_objects";
 
 /// `Bg_Spot01_Idomizu_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_IDOMIZU, name: "Bg_Spot01_Idomizu", category: ACTORCAT_BG, flags: ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT01_IDOMIZU, name: "Bg_Spot01_Idomizu", category: ACTORCAT_BG, flags: ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// The placed params, read by nothing.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
+
+/// Bg_Spot01_Idomizu's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_DRAINED_WELL)).reads().note("the well drained: the water low")],
+    todo: false,
+};
 
 /// `EVENTCHKINF_DRAINED_WELL` (`save.h`: 0x67).
 pub const EVENTCHKINF_DRAINED_WELL: u16 = 0x67;

@@ -22,6 +22,14 @@
 //!
 //! The whole overlay is ported. Not ported: the circle shadow (`ActorShadow_DrawCircle`, 35),
 //! not ported for any actor.
+//!
+//! Params: `type` the whole params (`DNS_GET_TYPE`, `EnDnsType`: 0 Deku Nuts, 1 a Deku Stick, 2
+//! the piece of heart, 3 Deku Seeds, 4 the Deku Shield, 5 bombs, 6 arrows (Deku Seeds for a
+//! child: init writes 3 over it), 7 a red potion, 8 a green potion, 9 the Deku Stick upgrade, 10
+//! the Deku Nut upgrade; it indexes `sStartingTextIds` and `sItemEntries`; below 0 he's killed at
+//! init), handed on by the `En_Shopnuts` that spawns him.
+//! Flags: sets ITEMGETINF_DEKU_HEART_PIECE (type 2), INFTABLE_HAS_DEKU_STICK_UPGRADE (type 9) and
+//! INFTABLE_HAS_DEKU_NUT_UPGRADE (type 10) as he's paid.
 
 use std::sync::Arc;
 
@@ -32,6 +40,8 @@ use eng_math::smooth_step_to_s;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, PLAYER_STATE1_10, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{inf_table, item_get_inf};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::item::*;
@@ -47,7 +57,36 @@ use crate::en_shopnuts::{NAVI_ENEMY_BUSINESS_SCRUB, OBJECT};
 pub const ACTOR_EN_DNS: i16 = 0x011A;
 
 /// `En_Dns_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DNS, name: "En_Dns", category: ACTORCAT_BG, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DNS, name: "En_Dns", category: ACTORCAT_BG, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// `EnDnsType`'s names, for `En_Dns`'s and `En_Shopnuts`' type.
+pub const DNS_TYPE_NAMES: &[(i32, &str)] = &[
+    (0, "DNS_TYPE_DEKU_NUTS_5"),
+    (1, "DNS_TYPE_DEKU_STICKS_1"),
+    (2, "DNS_TYPE_HEART_PIECE"),
+    (3, "DNS_TYPE_DEKU_SEEDS_30"),
+    (4, "DNS_TYPE_DEKU_SHIELD"),
+    (5, "DNS_TYPE_BOMBS_5"),
+    (6, "DNS_TYPE_ARROWS_30"),
+    (7, "DNS_TYPE_RED_POTION"),
+    (8, "DNS_TYPE_GREEN_POTION"),
+    (9, "DNS_TYPE_DEKU_STICK_UPGRADE"),
+    (10, "DNS_TYPE_DEKU_NUT_UPGRADE"),
+];
+
+/// `DNS_GET_TYPE(thisx)`: `(thisx)->params`, what he sells.
+pub const TYPE: Field = Field::whole("type", Kind::Named(DNS_TYPE_NAMES), "what he sells (sItemEntries): its price, item and text");
+
+/// En_Dns' configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(item_get_inf!(ITEMGETINF_DEKU_HEART_PIECE)).sets().note("type 2, as he's paid"),
+        FlagUse::new(inf_table!(INFTABLE_HAS_DEKU_STICK_UPGRADE)).sets().note("type 9, as he's paid"),
+        FlagUse::new(inf_table!(INFTABLE_HAS_DEKU_NUT_UPGRADE)).sets().note("type 10, as he's paid"),
+    ],
+    todo: false,
+};
 
 /// `EnDnsType`.
 pub const DNS_TYPE_DEKU_NUTS_5: i16 = 0;
@@ -250,17 +289,17 @@ impl EnDns {
             dns_item_entry: S_ITEM_ENTRIES[0],
             y_init_pos: 0.0,
         };
-        if actor.params < 0 {
-            log::debug!("Argument error (selling nuts) [ arg_data = {} ]", actor.params);
+        if TYPE.get(actor.params) < 0 {
+            log::debug!("Argument error (selling nuts) [ arg_data = {} ]", TYPE.get(actor.params));
             actor.kill();
             n.actor = actor;
             return Box::new(n);
         }
         // Sell Seeds instead of Arrows if Link is child (LINK_AGE_IN_YEARS == YEARS_CHILD).
-        if actor.params == DNS_TYPE_ARROWS_30 && !play.save.adult {
+        if TYPE.get(actor.params) == DNS_TYPE_ARROWS_30 && !play.save.adult {
             actor.params = DNS_TYPE_DEKU_SEEDS_30;
         }
-        let ty = (actor.params as usize).min(S_ITEM_ENTRIES.len() - 1);
+        let ty = (TYPE.get(actor.params) as usize).min(S_ITEM_ENTRIES.len() - 1);
         log::debug!("Selling nuts: {}", S_ITEM_DEBUG_TXT[ty]);
         // sInitChain: NAVI_ENEMY_BUSINESS_SCRUB, ATTENTION_RANGE_2, lockOnArrowOffset 30.
         actor.navi_enemy_id = NAVI_ENEMY_BUSINESS_SCRUB;
@@ -292,7 +331,7 @@ impl EnDns {
 
     /// `DNS_GET_TYPE`.
     fn ty(&self) -> usize {
-        (self.actor.params as usize).min(S_ITEM_ENTRIES.len() - 1)
+        (TYPE.get(self.actor.params) as usize).min(S_ITEM_ENTRIES.len() - 1)
     }
 
     /// `EnDns_ChangeAnim`.
@@ -483,7 +522,7 @@ impl EnDns {
     /// `EnDns_OfferSaleItem`: the upgrades by the current level, else his item; within 130 by
     /// 100.
     fn offer_sale_item(&self, play: &mut PlayState) {
-        let ty = self.actor.params;
+        let ty = TYPE.get(self.actor.params);
         let gi = if ty == DNS_TYPE_DEKU_STICK_UPGRADE {
             if play.save.cur_upg_value(UPG_DEKU_STICKS) < 2 { GI_DEKU_STICK_UPGRADE_20 } else { GI_DEKU_STICK_UPGRADE_30 }
         } else if ty == DNS_TYPE_DEKU_NUT_UPGRADE {

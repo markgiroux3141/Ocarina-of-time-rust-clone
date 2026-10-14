@@ -14,10 +14,16 @@
 //! The Master Quest Deku Tree's are room 2's three, params 3, 4 and 8 (flags 3, 4, 8; no chime)
 //! at y 656, turned -24576 (so no `Rand`). Link has no bombs or hammer yet (GAME-05 milestone
 //! 4c): the tests inject the explosion and the hit. The whole overlay is ported.
+//!
+//! Params: `switchFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`: set when it breaks; set at
+//! init, it's gone); bits 6 and 7 unused (the data's 0xFF); `chime` bit 15
+//! (`PARAMS_GET_U(params, 15, 1)`: 1 the chime as it breaks).
+//! Flags: reads switch flag `switchFlag` (set: gone at init) and sets it when it breaks.
 
 use glam::Vec3;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480, func_80033684};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::{NA_SE_EV_WALL_BROKEN, NA_SE_SY_CORRECT_CHIME};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::KAKERA_COLOR_NONE;
@@ -32,7 +38,21 @@ pub const OBJECT_BOMBIWA: i16 = 0x0163;
 pub const DL: &str = "object_bombiwa_DL_0009E0";
 
 /// `Obj_Bombiwa_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_BOMBIWA, name: "Obj_Bombiwa", category: ACTORCAT_PROP, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_BOMBIWA, name: "Obj_Bombiwa", category: ACTORCAT_PROP, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set when it breaks; set at init, it's gone");
+/// Bits 6 and 7: the data's 0xFF (flag 0x3F) sets them.
+pub const SWITCH_FLAG_HIGH: Field = Field::params("switchFlag bits 6 and 7", 6, 2, Kind::Unused, "set with a switch flag of 0x3F (0xFF) in the data; read by nothing");
+/// `PARAMS_GET_U(params, 15, 1)`: the chime.
+pub const CHIME: Field = Field::params("chime", 15, 1, Kind::Named(&[(0, "no chime"), (1, "the chime (NA_SE_SY_CORRECT_CHIME)")]), "whether the chime plays as it breaks");
+
+/// Obj_Bombiwa's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, SWITCH_FLAG_HIGH, CHIME],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken, not spawned again")],
+    todo: false,
+};
 
 /// `sCylinderInit`: 55 by 70, hard, hit by `0x4FC1FFFE`, pushing (OC) every type.
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -69,7 +89,7 @@ pub struct ObjBombiwa {
 impl ObjBombiwa {
     /// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
     pub fn switch_flag(&self) -> i32 {
-        (self.actor.params as u16 & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `ObjBombiwa_Init`: scale 0.1 (`sInitChain`), the cylinder at its placement
@@ -146,7 +166,7 @@ impl ActorImpl for ObjBombiwa {
             self.break_(play);
             play.flags.set_switch(self.switch_flag());
             play.sfx_source_play_sfx_at_fixed_world_pos(self.actor.world_pos, 80, NA_SE_EV_WALL_BROKEN);
-            if self.actor.params as u16 >> 15 != 0 {
+            if CHIME.get(self.actor.params) != 0 {
                 play.audio.play_sfx_centered(NA_SE_SY_CORRECT_CHIME);
             }
             self.actor.kill();

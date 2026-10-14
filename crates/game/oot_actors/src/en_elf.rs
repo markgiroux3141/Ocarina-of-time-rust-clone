@@ -18,6 +18,13 @@
 //! Not ported: the sparkles (`EffectSsKiraKira`: their spawn's `Rand` calls are made) and the
 //! lights' effect on the draw (`crate::lights` keeps them, the renderer can't draw them). While
 //! Navi talks the scene darkens (`Environment_AdjustLights`, GAME-07 milestone 3).
+//!
+//! Params: the whole `params` the type (`FairyType`: 0 `FAIRY_NAVI`, 1 `FAIRY_REVIVE_BOTTLE`, 2
+//! `FAIRY_HEAL_TIMED`, 3 `FAIRY_KOKIRI`, 4 `FAIRY_SPAWNER` (eight `FAIRY_HEAL`s spawned), 5
+//! `FAIRY_REVIVE_DEATH`, 6 `FAIRY_HEAL`, 7 `FAIRY_HEAL_BIG`; others assert). Most are spawned:
+//! Navi by Player, the Kokiri's by their Kokiri, the healing ones by drops and fountains; the
+//! game's data places only spawners (Ganon's Castle).
+//! Flags: none (Navi's C-Up hint keeps to `naviTimer`, a timer in the save).
 
 use std::sync::Arc;
 
@@ -27,6 +34,7 @@ use eng_math::{atan2_s, cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, step_t
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_ITEMACTION, ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, PLAYER_BODYPART_HAT, PLAYER_BODYPART_HEAD, PLAYER_BODYPART_WAIST, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::CS_STATE_IDLE;
 use oot_game::lights::{LightInfo, LightNode};
@@ -37,7 +45,26 @@ use oot_game::skelanime_std::SkelAnimeStd;
 pub const ACTOR_EN_ELF: i16 = 0x0018;
 
 /// `En_Elf_Profile`: `ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA`, `ACTORCAT_ITEMACTION`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ELF, name: "En_Elf", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ELF, name: "En_Elf", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `thisx->params`: the type.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "FAIRY_NAVI"),
+        (1, "FAIRY_REVIVE_BOTTLE"),
+        (2, "FAIRY_HEAL_TIMED"),
+        (3, "FAIRY_KOKIRI"),
+        (4, "FAIRY_SPAWNER"),
+        (5, "FAIRY_REVIVE_DEATH"),
+        (6, "FAIRY_HEAL"),
+        (7, "FAIRY_HEAL_BIG"),
+    ]),
+    "which fairy: Navi, a Kokiri's, a healing or reviving one, or a spawner of eight",
+);
+
+/// En_Elf's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 // `FairyType`.
 pub const FAIRY_NAVI: i16 = 0;
@@ -327,7 +354,7 @@ impl EnElf {
         e.unk_2a4 = 0.0;
         let mut color_config: i32 = 0;
         let pl = player(play);
-        match e.actor.params {
+        match TYPE.get(e.actor.params) {
             FAIRY_NAVI => {
                 e.actor.room = -1;
                 e.action = Action::Navi;
@@ -364,11 +391,11 @@ impl EnElf {
                 e.unk_2b4 = 7.0;
             }
             FAIRY_HEAL_BIG | FAIRY_HEAL_TIMED | FAIRY_HEAL => {
-                if e.actor.params == FAIRY_HEAL_BIG {
+                if TYPE.get(e.actor.params) == FAIRY_HEAL_BIG {
                     // (shape.shadowDraw = ActorShadow_DrawWhiteCircle: shadows aren't drawn.)
                     e.fairy_flags |= FAIRY_FLAG_BIG;
                 }
-                if e.actor.params != FAIRY_HEAL {
+                if TYPE.get(e.actor.params) != FAIRY_HEAL {
                     e.fairy_flags |= FAIRY_FLAG_TIMED;
                 }
                 color_config = -1;
@@ -398,7 +425,7 @@ impl EnElf {
                     let _ = play.actor_spawn(ACTOR_EN_ELF, Vec3::new(p.x, p.y - 30.0, p.z), [0; 3], FAIRY_HEAL);
                 }
             }
-            _ => log::error!("En_Elf: unknown type {} (ASSERT)", e.actor.params),
+            _ => log::error!("En_Elf: unknown type {} (ASSERT)", TYPE.get(e.actor.params)),
         }
         e.unk_2a0 = 3.0;
         e.inner_color = INNER_COLORS[0];

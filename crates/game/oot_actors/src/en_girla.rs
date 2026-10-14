@@ -1,5 +1,5 @@
-//! `En_GirlA` (`ovl_En_GirlA/z_en_girla.c`): an item on a shop's shelf. `params` is the item
-//! (`EnGirlAShopItem`, `SI_*`), an index into `sShopItemEntries`: its object, its get-item model
+//! `En_GirlA` (`ovl_En_GirlA/z_en_girla.c`): an item on a shop's shelf. Its item
+//! (`EnGirlAShopItem`, `SI_*`) is an index into `sShopItemEntries`: its object, its get-item model
 //! (`GetItem_Draw`), its price and count, its two texts (the description while browsing and the
 //! buy prompt), what Link gets, and the three functions the shopkeeper calls (`canBuyFunc`,
 //! `itemGiveFunc`, `buyEventFunc`).
@@ -15,10 +15,22 @@
 //! The whole overlay is ported. Left out: the items' highlight setup (`hiliteFunc`:
 //! `func_8002EBCC`, `func_8002ED80`, `func_80A3C498`), kept as data but not drawn, as for
 //! `En_Item00`'s rupees; the prints.
+//!
+//! Params: the whole `params` the item (`EnGirlAShopItem`: 0x00 `SI_DEKU_NUTS_5` to 0x31
+//! `SI_RED_POTION_R50`, 0x26 `SI_SOLD_OUT`; `@bug` the init's range check is never true, an item
+//! past the table reads past it). Only `En_Ossan` spawns them, from its shop's tables
+//! (`sShopkeeperStores`). `EnGirlA_TryChangeShopItem` writes it over: the milk becomes
+//! `SI_RECOVERY_HEART` once Talon's bottle is got, a bombchu pack bought `SI_SOLD_OUT`.
+//! Flags: reads ITEMGETINF_TALON_BOTTLE (the milk: a heart instead); reads ITEMGETINF_03 to
+//! ITEMGETINF_0A (a bombchu pack bought: sold out) and sets each when its pack is bought; reads
+//! ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A and ITEMGETINF_3B (a mask sold: lent free, its
+//! own text); reads INFTABLE_76 (the Hylian Shield's discount).
 
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{inf_table, item_get_inf};
 use oot_game::item::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::save::SaveContext;
@@ -27,7 +39,87 @@ use oot_game::save::SaveContext;
 pub const ACTOR_EN_GIRLA: i16 = 0x0004;
 
 /// `En_GirlA_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GIRLA, name: "En_GirlA", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_GIRLA, name: "En_GirlA", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params`: the item, an index into `sShopItemEntries`.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0x00, "SI_DEKU_NUTS_5"),
+        (0x01, "SI_ARROWS_30"),
+        (0x02, "SI_ARROWS_50"),
+        (0x03, "SI_BOMBS_5_R25"),
+        (0x04, "SI_DEKU_NUTS_10"),
+        (0x05, "SI_DEKU_STICK"),
+        (0x06, "SI_BOMBS_10"),
+        (0x07, "SI_FISH"),
+        (0x08, "SI_RED_POTION_R30"),
+        (0x09, "SI_GREEN_POTION"),
+        (0x0A, "SI_BLUE_POTION"),
+        (0x0B, "SI_LONGSWORD"),
+        (0x0C, "SI_HYLIAN_SHIELD"),
+        (0x0D, "SI_DEKU_SHIELD"),
+        (0x0E, "SI_GORON_TUNIC"),
+        (0x0F, "SI_ZORA_TUNIC"),
+        (0x10, "SI_RECOVERY_HEART"),
+        (0x11, "SI_MILK_BOTTLE"),
+        (0x12, "SI_WEIRD_EGG"),
+        (0x13, "SI_19"),
+        (0x14, "SI_20"),
+        (0x15, "SI_BOMBCHU_10_1"),
+        (0x16, "SI_BOMBCHU_20_1"),
+        (0x17, "SI_BOMBCHU_20_2"),
+        (0x18, "SI_BOMBCHU_10_2"),
+        (0x19, "SI_BOMBCHU_10_3"),
+        (0x1A, "SI_BOMBCHU_20_3"),
+        (0x1B, "SI_BOMBCHU_20_4"),
+        (0x1C, "SI_BOMBCHU_10_4"),
+        (0x1D, "SI_DEKU_SEEDS_30"),
+        (0x1E, "SI_KEATON_MASK"),
+        (0x1F, "SI_SPOOKY_MASK"),
+        (0x20, "SI_SKULL_MASK"),
+        (0x21, "SI_BUNNY_HOOD"),
+        (0x22, "SI_MASK_OF_TRUTH"),
+        (0x23, "SI_ZORA_MASK"),
+        (0x24, "SI_GORON_MASK"),
+        (0x25, "SI_GERUDO_MASK"),
+        (0x26, "SI_SOLD_OUT"),
+        (0x27, "SI_BLUE_FIRE"),
+        (0x28, "SI_BUGS"),
+        (0x29, "SI_BIG_POE"),
+        (0x2A, "SI_POE"),
+        (0x2B, "SI_FAIRY"),
+        (0x2C, "SI_ARROWS_10"),
+        (0x2D, "SI_BOMBS_20"),
+        (0x2E, "SI_BOMBS_30"),
+        (0x2F, "SI_BOMBS_5_R35"),
+        (0x30, "SI_RED_POTION_R40"),
+        (0x31, "SI_RED_POTION_R50"),
+    ]),
+    "the shop item: its look, price, texts and what Link gets",
+);
+
+/// En_GirlA's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(item_get_inf!(ITEMGETINF_TALON_BOTTLE)).reads().note("SI_MILK_BOTTLE: a recovery heart instead").indirect("EnGirlA_TryChangeShopItem's table"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_03)).reads().sets().note("SI_BOMBCHU_10_1 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_04)).reads().sets().note("SI_BOMBCHU_20_1 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_05)).reads().sets().note("SI_BOMBCHU_20_2 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_06)).reads().sets().note("SI_BOMBCHU_10_2 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_07)).reads().sets().note("SI_BOMBCHU_10_3 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_08)).reads().sets().note("SI_BOMBCHU_20_3 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_09)).reads().sets().note("SI_BOMBCHU_20_4 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_0A)).reads().sets().note("SI_BOMBCHU_10_4 bought: sold out").indirect("the bombchu packs' tables"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_38)).reads().note("the Keaton Mask sold: lent free"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_39)).reads().note("the Skull Mask sold: lent free"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_3A)).reads().note("the Spooky Mask sold: lent free"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_3B)).reads().note("the Bunny Hood sold: it and the Mask of Truth lent free"),
+        FlagUse::new(inf_table!(INFTABLE_76)).reads().note("SI_HYLIAN_SHIELD: a random discount"),
+    ],
+    todo: false,
+};
 
 // `EnGirlAShopItem` (`z_en_girla.h`).
 pub const SI_DEKU_NUTS_5: i16 = 0x00;
@@ -399,13 +491,13 @@ impl EnGirlA {
 
     /// The item's `sShopItemEntries` row.
     pub fn entry(&self) -> Option<&'static ShopItemEntry> {
-        usize::try_from(self.actor.params).ok().and_then(|i| SHOP_ITEM_ENTRIES.get(i))
+        usize::try_from(TYPE.get(self.actor.params)).ok().and_then(|i| SHOP_ITEM_ENTRIES.get(i))
     }
 
     /// `EnGirlA_TryChangeShopItem`: the milk becomes a recovery heart once got, and a bombchu
     /// pack bought is sold out.
     fn try_change_shop_item(&mut self, s: &SaveContext) -> bool {
-        let (flag, to) = match self.actor.params {
+        let (flag, to) = match TYPE.get(self.actor.params) {
             SI_MILK_BOTTLE => (ITEMGETINF_TALON_BOTTLE, SI_RECOVERY_HEART),
             SI_BOMBCHU_10_2 => (ITEMGETINF_06, SI_SOLD_OUT),
             SI_BOMBCHU_10_3 => (ITEMGETINF_07, SI_SOLD_OUT),
@@ -417,6 +509,7 @@ impl EnGirlA {
             SI_BOMBCHU_20_2 => (ITEMGETINF_05, SI_SOLD_OUT),
             _ => return false,
         };
+        // schema: ITEMGETINF_TALON_BOTTLE, ITEMGETINF_03 to ITEMGETINF_0A
         if s.get_item_get_inf(flag) {
             self.actor.params = to;
             return true;
@@ -426,7 +519,7 @@ impl EnGirlA {
 
     /// `EnGirlA_InitItem`: the item's object, then `EnGirlA_WaitForObject`.
     fn init_item(&mut self, play: &PlayState) {
-        let params = self.actor.params;
+        let params = TYPE.get(self.actor.params);
         // @bug (game): `(params >= SI_MAX) && (params < 0)` is never true; an item past the
         // table reads past it. The port kills it.
         let Some(entry) = self.entry() else {
@@ -448,7 +541,7 @@ impl EnGirlA {
     /// and drawn again.
     fn set_item_description(&mut self, s: &SaveContext) {
         let Some(tmp) = self.entry() else { return };
-        let params = self.actor.params;
+        let params = TYPE.get(self.actor.params);
         if (SI_KEATON_MASK..=SI_MASK_OF_TRUTH).contains(&params) {
             let mask_id = (params - SI_KEATON_MASK) as usize;
             let free = match params {
@@ -471,7 +564,7 @@ impl EnGirlA {
     pub fn set_item_out_of_stock(&mut self) {
         self.is_invisible = true;
         self.drawn = false;
-        if (SI_KEATON_MASK..=SI_GERUDO_MASK).contains(&self.actor.params) {
+        if (SI_KEATON_MASK..=SI_GERUDO_MASK).contains(&TYPE.get(self.actor.params)) {
             self.actor.text_id = 0xBD;
         }
     }
@@ -492,7 +585,7 @@ impl EnGirlA {
 
     /// `EnGirlA_TrySetMaskItemDescription`: a mask Link holds is out of stock.
     fn try_set_mask_item_description(&mut self, s: &SaveContext) -> bool {
-        let params = self.actor.params;
+        let params = TYPE.get(self.actor.params);
         if (SI_KEATON_MASK..=SI_GERUDO_MASK).contains(&params) {
             if s.inv_content(ITEM_MASK_KEATON) == MASK_SHOP_ITEMS[(params - SI_KEATON_MASK) as usize] {
                 self.set_item_out_of_stock();
@@ -515,7 +608,7 @@ impl EnGirlA {
         let s = &play.save;
         self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         self.actor.obj_bank_index = Some(bank);
-        let (text, prompt) = match self.actor.params {
+        let (text, prompt) = match TYPE.get(self.actor.params) {
             SI_KEATON_MASK => (if s.get_item_get_inf(ITEMGETINF_38) { 0x70B6 } else { entry.item_desc_text_id }, entry.item_buy_prompt_text_id),
             SI_SPOOKY_MASK => (if s.get_item_get_inf(ITEMGETINF_3A) { 0x70B5 } else { entry.item_desc_text_id }, entry.item_buy_prompt_text_id),
             SI_SKULL_MASK => (if s.get_item_get_inf(ITEMGETINF_39) { 0x70B4 } else { entry.item_desc_text_id }, entry.item_buy_prompt_text_id),
@@ -564,7 +657,7 @@ impl EnGirlA {
         // actionFunc: EnGirlA_Noop.
         self.actor.set_focus(5.0);
         self.actor.shape_rot.x = 0;
-        if self.actor.params != SI_SOLD_OUT {
+        if TYPE.get(self.actor.params) != SI_SOLD_OUT {
             if self.is_selected {
                 self.y_rotation = self.y_rotation.wrapping_add(0x1F4);
             } else {
@@ -858,7 +951,7 @@ fn item_give_deku_seeds(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn item_give_bottled_item(play: &mut PlayState, g: &EnGirlA) {
-    let item = match g.actor.params {
+    let item = match TYPE.get(g.actor.params) {
         SI_FISH => Some(ITEM_BOTTLE_FISH),
         SI_RED_POTION_R30 => Some(ITEM_BOTTLE_POTION_RED),
         SI_GREEN_POTION => Some(ITEM_BOTTLE_POTION_GREEN),
@@ -881,7 +974,7 @@ fn item_give_bottled_item(play: &mut PlayState, g: &EnGirlA) {
 /// `EnGirlA_BuyEvent_ShieldDiscount`: the price, less a random discount for the Hylian Shield
 /// once Zelda's letter has been shown in Kakariko.
 fn buy_event_shield_discount(play: &mut PlayState, g: &EnGirlA) {
-    if g.actor.params == SI_HYLIAN_SHIELD && play.save.get_inf_table(INFTABLE_76) {
+    if TYPE.get(g.actor.params) == SI_HYLIAN_SHIELD && play.save.get_inf_table(INFTABLE_76) {
         let i = play.rand.zero_float(7.9) as i32 as usize;
         rupees_change_by(&mut play.save, -(g.base_price - SHIELD_DISCOUNTS[i]));
         return;
@@ -898,7 +991,7 @@ fn buy_event_zora_tunic(play: &mut PlayState, g: &EnGirlA) {
 }
 
 fn buy_event_obtain_bombchu_pack(play: &mut PlayState, g: &EnGirlA) {
-    let flag = match g.actor.params {
+    let flag = match TYPE.get(g.actor.params) {
         SI_BOMBCHU_10_2 => Some(ITEMGETINF_06),
         SI_BOMBCHU_10_3 => Some(ITEMGETINF_07),
         SI_BOMBCHU_20_3 => Some(ITEMGETINF_08),
@@ -910,6 +1003,7 @@ fn buy_event_obtain_bombchu_pack(play: &mut PlayState, g: &EnGirlA) {
         _ => None,
     };
     if let Some(f) = flag {
+        // schema: ITEMGETINF_03 to ITEMGETINF_0A
         play.save.set_item_get_inf(f);
     }
     pay(play, g);

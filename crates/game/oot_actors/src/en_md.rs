@@ -1,4 +1,4 @@
-//! `En_Md` (`ovl_En_Md/z_en_md.c`): Mido. `params >> 8` is his path (0xFF for none).
+//! `En_Md` (`ovl_En_Md/z_en_md.c`): Mido.
 //!
 //! **In Kokiri Forest** (`SCENE_KOKIRI_FOREST`, room 0's 0x0100 at (1522, 0, 105)) he blocks the way to
 //! the Deku Tree until Link wears the Kokiri Sword and the Deku Shield:
@@ -24,6 +24,15 @@
 //! (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported: his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder), the circle shadow's alpha.
+//!
+//! Params: `ENMD_GET_PATH_INDEX` bits 8 to 15 (his path, walked away along and stood at the end
+//! of; 0xFF `ENMD_PATH_NONE`). Where he is and what he does is the scene's (Kokiri Forest, his
+//! house, the Lost Woods) and the story's.
+//! Flags: reads EVENTCHKINF_04 (Kokiri Forest: let Link by) and sets it, EVENTCHKINF_0A (the Lost
+//! Woods: let Link by) and sets it, EVENTCHKINF_1C (said goodbye to Saria) and sets it (he goes),
+//! EVENTCHKINF_OBTAINED_ZELDAS_LETTER and EVENTCHKINF_48 (texts); sets EVENTCHKINF_0F (0x1028
+//! read) and EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS (0x102F read); reads INFTABLE_0C, INFTABLE_15
+//! and INFTABLE_19 (his first texts read: the next ones) and sets each once its text is read.
 
 use std::sync::Arc;
 
@@ -34,6 +43,8 @@ use eng_math::{binang_to_rad, cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::item::{EQUIP_TYPE_SHIELD, EQUIP_TYPE_SWORD, EQUIP_VALUE_SHIELD_DEKU, EQUIP_VALUE_SWORD_KOKIRI};
 use oot_game::message::*;
@@ -49,8 +60,29 @@ pub const ACTOR_EN_MD: i16 = 0x016D;
 const ACTOR_EN_ELF: i16 = 0x0018;
 const FAIRY_KOKIRI: i16 = 3;
 
+/// `ENMD_GET_PATH_INDEX`: `PARAMS_GET_S(this->actor.params, 8, 8)`.
+pub const PATH_INDEX: Field = Field::params("ENMD_GET_PATH_INDEX", 8, 8, Kind::PathIndex, "the path he walks away along, standing at its end (0xFF: ENMD_PATH_NONE)");
+
+/// En_Md's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PATH_INDEX],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_MIDO_DENIED_DEKU_TREE_ACCESS)).sets().note("0x102F read"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_04)).reads().sets().note("Kokiri Forest: he's let Link by"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_0A)).reads().sets().note("the Lost Woods: he's let Link by"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_0F)).sets().note("0x1028 read (his house)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_1C)).reads().sets().note("said goodbye to Saria: he goes from Kokiri Forest to his house"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_48)).reads().note("the Lost Woods' texts"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().note("where he is, his house's text"),
+        FlagUse::new(inf_table!(INFTABLE_0C)).reads().sets().note("0x102F read: 0x1030 next"),
+        FlagUse::new(inf_table!(INFTABLE_15)).reads().sets().note("0x1060 read: 0x1061 next"),
+        FlagUse::new(inf_table!(INFTABLE_19)).reads().sets().note("0x1070 read: 0x1071 next"),
+    ],
+    todo: false,
+};
+
 /// `En_Md_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_MD, name: "En_Md", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "object_md" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_MD, name: "En_Md", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "object_md", schema: &SCHEMA };
 
 // `SCENE_*` (`scene_table.h`).
 pub const SCENE_MIDOS_HOUSE: u16 = 0x28;
@@ -533,10 +565,10 @@ impl EnMd {
     /// `EnMd_FollowPath`: turns towards the next point of his path; true when he's within 10 of
     /// it (the next point is then the one after, back to 0 after the last).
     fn follow_path(&mut self, play: &PlayState) -> bool {
-        if (self.actor.params as u16 & 0xFF00) == 0xFF00 {
+        if PATH_INDEX.get(self.actor.params) == 0xFF {
             return false;
         }
-        let Some(path) = play.setup_path_list().get(((self.actor.params as u16 & 0xFF00) >> 8) as usize) else { return false };
+        let Some(path) = play.setup_path_list().get(PATH_INDEX.get(self.actor.params) as usize) else { return false };
         let p = path.point(self.waypoint as usize);
         let dx = p.x - self.actor.world_pos.x;
         let dz = p.z - self.actor.world_pos.z;
@@ -556,10 +588,10 @@ impl EnMd {
 
     /// `EnMd_SetMovedPos`: at his path's last point.
     fn set_moved_pos(&mut self, play: &PlayState) -> bool {
-        if (self.actor.params as u16 & 0xFF00) == 0xFF00 {
+        if PATH_INDEX.get(self.actor.params) == 0xFF {
             return false;
         }
-        let Some(path) = play.setup_path_list().get(((self.actor.params as u16 & 0xFF00) >> 8) as usize) else { return false };
+        let Some(path) = play.setup_path_list().get(PATH_INDEX.get(self.actor.params) as usize) else { return false };
         self.actor.world_pos = path.point(path.points.len() - 1);
         true
     }

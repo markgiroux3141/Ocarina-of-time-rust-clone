@@ -16,6 +16,17 @@
 //! from meshes baked per eye (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
+//!
+//! Params: `params` unused (placed -1, read by nothing). `shape.rot.z`: 3 the ranch's Malon (by
+//! day after Talon's return, and in the ranch's layer 5); else 0.
+//! Flags: reads EVENTCHKINF_TALON_RETURNED_FROM_CASTLE (where she is, and the song taught);
+//! reads and sets INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE (her first spawn at the castle sets it
+//! and goes); her texts read EVENTCHKINF_CAN_LEARN_EPONAS_SONG,
+//! EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH, INFTABLE_TOLD_EPONA_IS_SCARED,
+//! EVENTCHKINF_RECEIVED_WEIRD_EGG and INFTABLE_TALKED_TO_MALON_FIRST_TIME, and their closing sets
+//! them (0x2041 INFTABLE_TALKED_TO_MALON_FIRST_TIME and EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME,
+//! 0x2047 EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH, 0x2048 INFTABLE_TOLD_EPONA_IS_SCARED, 0x2049
+//! EVENTCHKINF_CAN_LEARN_EPONAS_SONG); the Weird Egg given sets EVENTCHKINF_RECEIVED_WEIRD_EGG.
 
 use std::sync::Arc;
 
@@ -29,6 +40,8 @@ use oot_game::actor::{
     Actor, UPDBGCHECKINFO_FLAG_2,
 };
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, Source};
+use oot_game::{event_chk_inf, inf_table};
 use oot_game::audio::NA_BGM_LONLON;
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -49,6 +62,35 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_NPC,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// `this->actor.params`: placed -1 everywhere; nothing reads it.
+pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed -1; read by nothing");
+/// `this->actor.shape.rot.z == 3` (`EnMa1_ShouldSpawn`): the ranch's Malon.
+pub const RANCH: Field = Field::rot(
+    "shape.rot.z",
+    Source::RotZ,
+    0,
+    16,
+    Kind::Named(&[(0, "the market's, the castle's or the ranch house's Malon"), (3, "the ranch's Malon (by day after Talon's return, and in layer 5)")]),
+    "3: the ranch's Malon",
+);
+
+/// En_Ma1's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS, RANCH],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME)).sets().note("text 0x2041 closed"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_RECEIVED_WEIRD_EGG)).reads().sets().note("the Weird Egg given"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("where she is; the song taught at the ranch"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH)).reads().sets().note("text 0x2047 closed"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_CAN_LEARN_EPONAS_SONG)).reads().sets().note("text 0x2049 closed"),
+        FlagUse::new(inf_table!(INFTABLE_TALKED_TO_MALON_FIRST_TIME)).reads().sets().note("text 0x2041 closed"),
+        FlagUse::new(inf_table!(INFTABLE_TOLD_EPONA_IS_SCARED)).reads().sets().note("text 0x2048 closed"),
+        FlagUse::new(inf_table!(INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE)).reads().sets().note("set by her first spawn at the castle, which doesn't stay"),
+    ],
+    todo: false,
 };
 
 // `SCENE_*` (`scene_table.h`).
@@ -319,7 +361,7 @@ impl EnMa1 {
     /// `EnMa1_ShouldSpawn`. At the castle the first time it sets
     /// `INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE` and doesn't spawn: she's there from the second.
     fn should_spawn(&self, play: &mut PlayState) -> bool {
-        if self.actor.shape_rot.z == 3 && play.save.scene_layer == 5 {
+        if RANCH.get(self.actor.shape_rot.z) == 3 && play.save.scene_layer == 5 {
             return true;
         }
         if play.save.adult {
@@ -343,7 +385,7 @@ impl EnMa1 {
         if scene != SCENE_LON_LON_RANCH {
             return false;
         }
-        self.actor.shape_rot.z == 3 && play.save.is_day() && talon_back
+        RANCH.get(self.actor.shape_rot.z) == 3 && play.save.is_day() && talon_back
     }
 
     /// `EnMa1_UpdateEyes`.

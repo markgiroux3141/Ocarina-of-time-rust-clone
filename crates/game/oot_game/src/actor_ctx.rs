@@ -52,6 +52,8 @@ pub struct ActorProfile {
     pub flags: u32,
     /// The object file its assets are in (`OBJECT_*`).
     pub object: &'static str,
+    /// What it takes from its placement and the flags it uses (`crate::actor_schema`; not the C's).
+    pub schema: &'static crate::actor_schema::ActorSchema,
 }
 
 impl ActorProfile {

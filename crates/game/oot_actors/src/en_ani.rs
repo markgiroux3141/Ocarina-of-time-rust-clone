@@ -39,6 +39,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, FlagUse};
 use oot_game::collision_check::*;
 use oot_game::cutscene::CS_STATE_IDLE;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -47,6 +48,7 @@ use oot_game::npc::{actor_track_player, offer_talk, process_talk_request, textbo
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::*;
+use oot_game::{event_chk_inf, item_get_inf};
 
 /// `ACTOR_EN_ANI` (`actor_table.h`: 0x0167).
 pub const ACTOR_EN_ANI: i16 = 0x0167;
@@ -54,7 +56,17 @@ pub const ACTOR_EN_ANI: i16 = 0x0167;
 pub const OBJECT: &str = "object_ani";
 
 /// `En_Ani_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ANI, name: "En_Ani", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ANI, name: "En_Ani", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// En_Ani's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[],
+    flags: &[
+        FlagUse::new(item_get_inf!(ITEMGETINF_15)).reads().sets().note("his piece of heart given"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_2F)).reads().note("an adult's text"),
+    ],
+    todo: false,
+};
 
 /// `ITEMGETINF_15` (`save.h`: 0x15): the roof man's piece of heart given.
 pub const ITEMGETINF_15: u16 = 0x15;

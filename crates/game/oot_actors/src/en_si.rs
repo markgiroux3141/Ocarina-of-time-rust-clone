@@ -15,12 +15,19 @@
 //! (`GetItem_DrawSkullToken`, baked with the get-item models); `func_8002ED80` and
 //! `func_8002EBCC` only set the look-at for the texgen shine, which the renderer takes from the
 //! view. The hookshot isn't ported, so `ACTOR_FLAG_HOOKSHOT_ATTACHED` is never set.
+//!
+//! Params (none placed: `En_Sw` spawns it with its own params, after its init's conversion):
+//! `value` bits 0 to 7 (`PARAMS_GET_S(params, 0, 8)`: the flag's bits); `index` bits 8 to 12
+//! (`PARAMS_GET_S(params, 8, 5)`: the Gold Skulltula flags' index, 0 to 0x17); bits 13 to 15
+//! unused (the Gold Skulltula's type, handed on).
+//! Flags: sets `gSaveContext.save.info.gsFlags` (`SET_GS_FLAGS(index, value)`) once collected.
 
 use eng_collision::math3d::Cylinder16;
 use eng_math::smooth_step_to_f;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::NA_BGM_SMALL_ITEM_GET;
 use oot_game::collision_check::*;
 use oot_game::item::{ITEM_SKULL_TOKEN, item_give};
@@ -35,7 +42,21 @@ const ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR: u32 = 1 << 9;
 const ACTOR_FLAG_HOOKSHOT_ATTACHED: u32 = 1 << 13;
 
 /// `En_Si_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_SI, name: "En_Si", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_SI, name: "En_Si", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_S(params, 8, 5)`: `SET_GS_FLAGS`'s `index`.
+pub const GS_FLAGS_INDEX: Field = Field::params("index", 8, 5, Kind::Range(0, 0x17), "the Gold Skulltula flags' index (`gsFlags`' bytes)");
+/// `PARAMS_GET_S(params, 0, 8)`: `SET_GS_FLAGS`'s `value`.
+pub const GS_FLAGS_VALUE: Field = Field::params("value", 0, 8, Kind::Range(0, 0xFF), "the Gold Skulltula's flag: its bits in the index's byte");
+/// Bits 13 to 15: `En_Sw`'s type, in the params it hands on.
+pub const SW_TYPE: Field = Field::params("En_Sw's type", 13, 3, Kind::Unused, "the Gold Skulltula's type, handed on by En_Sw; read by nothing");
+
+/// En_Si's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[GS_FLAGS_VALUE, GS_FLAGS_INDEX, SW_TYPE],
+    flags: &[FlagUse::new(Flag::Other("gSaveContext.save.info.gsFlags")).sets().note("once collected: its Gold Skulltula is gone for good")],
+    todo: false,
+};
 
 /// `GID_SKULL_TOKEN_2` (`item.h`): the token in `object_st` (`gSkulltulaTokenDL`,
 /// `gSkulltulaTokenFlameDL`).
@@ -169,8 +190,7 @@ impl EnSi {
         if play.message_state() != TEXT_STATE_CLOSING {
             freeze_player(play);
         } else {
-            let p = self.actor.params as i32;
-            play.save.set_gs_flags((p >> 8) & 0x1F, p & 0xFF);
+            play.save.set_gs_flags(GS_FLAGS_INDEX.get(self.actor.params) as i32, GS_FLAGS_VALUE.get(self.actor.params) as i32);
             self.actor.kill();
         }
     }

@@ -1,9 +1,6 @@
 //! `Bg_Ydan_Hasi` (`ovl_Bg_Ydan_Hasi/z_bg_ydan_hasi.c`): the Deku Tree's puzzle pieces of
 //! `object_ydan_objects`, DynaPoly actors but the water.
 //!
-//! Params: bits 0..7 the kind (`HasiType`, which the init leaves in `params`), bits 8..13 the
-//! switch flag (`type`).
-//!
 //! - **`HASI_WATER_BLOCK` (0), the floating block** (`gDTSlidingPlatformCol`, scaled 0.15 across):
 //!   slides ±165 along its facing over 256 `gameplayFrames` and bobs ±2 on a 50-frame timer, 20
 //!   above the scene's `waterBoxes[1]` (`BgYdanHasi_UpdateFloatingBlock`). Master Quest's room 5
@@ -26,6 +23,12 @@
 //!
 //! The sandbox's course places a floating block in its channel (`PlayExt::spawn_platform`); the
 //! course's `waterBoxes[1]` is that channel's water.
+//!
+//! Params: `params` bits 0 to 7 (`HasiType`: 0 `HASI_WATER_BLOCK`, 1 `HASI_WATER`, 2
+//! `HASI_THREE_BLOCKS`; the init leaves it alone in `params`); `type` bits 8 to 13 (the switch
+//! flag, stored in `type`: the water sinks, the platforms rise); bits 14 and 15 unused (the data
+//! writes 0xFF for the flag byte).
+//! Flags: reads switch flag `type` (the water and the platforms) and clears it when they're back.
 
 use std::f64::consts::PI;
 use std::sync::Arc;
@@ -38,6 +41,7 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTOR_BG_YDAN_HASI, ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::SFX_FLAG;
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::pack::{BakeBody, BakeSegment, GamePack, MeshBake, keys};
@@ -103,6 +107,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_BG,
     flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
 };
 
 /// `actionFunc`.
@@ -165,11 +170,31 @@ fn set_water_surface(play: &mut PlayState, y: f32) {
     }
 }
 
+/// `PARAMS_GET_U(thisx->params, 0, 8)`: the piece, left alone in `params` by the init.
+pub const KIND: Field = Field::params(
+    "params",
+    0,
+    8,
+    Kind::Named(&[(0, "HASI_WATER_BLOCK"), (1, "HASI_WATER"), (2, "HASI_THREE_BLOCKS")]),
+    "the floating block, the water it floats on, or room 10's rising platforms",
+);
+/// `PARAMS_GET_U(thisx->params, 8, 6)`: the switch flag, in `this->type`.
+pub const SWITCH_FLAG: Field = Field::params("type", 8, 6, Kind::SwitchFlag, "the switch flag: the water sinks, the platforms rise (unset when they're back)");
+/// Bits 14 and 15: the data writes the flag byte as 0xFF; the C reads six bits.
+pub const UNUSED_14: Field = Field::params("params bits 14 and 15", 14, 2, Kind::Unused, "set where the data writes 0xFF for the flag byte; read by nothing");
+
+/// Bg_Ydan_Hasi's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[KIND, SWITCH_FLAG, UNUSED_14],
+    flags: &[FlagUse::new(Flag::Switch("type")).reads().clears().note("the water sinks, the platforms rise; unset when they're back")],
+    todo: false,
+};
+
 impl BgYdanHasi {
     /// `BgYdanHasi_Init` from `Actor_Spawn`: the kind's collision from the pack
     /// (`CollisionHeader_GetVirtual`), then [`BgYdanHasi::init_with`].
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let symbol = match (actor.params as u16 & 0xFF) as i16 {
+        let symbol = match KIND.get(actor.params) {
             HASI_WATER => None,
             HASI_WATER_BLOCK => Some(COLLISION),
             _ => Some(RISING_COLLISION),
@@ -189,21 +214,20 @@ impl BgYdanHasi {
     pub fn init_with(mut actor: Actor, play: &mut PlayState, col_header: Option<Arc<CollisionHeader>>) -> BgYdanHasi {
         // ICHAIN_VEC3F_DIV1000(scale, 100).
         actor.scale = Vec3::splat(0.1);
-        let params = actor.params as u16;
         // PARAMS_GET_U(params, 8, 6), PARAMS_GET_U(params, 0, 8).
-        let ty = ((params >> 8) & 0x3F) as u8;
-        actor.params = (params & 0xFF) as i16;
+        let ty = SWITCH_FLAG.get(actor.params) as u8;
+        actor.params = KIND.get(actor.params);
         let mut drawn = true;
         let mut bg = BG_ACTOR_MAX;
         let action;
-        if actor.params == HASI_WATER {
+        if KIND.get(actor.params) == HASI_WATER {
             // waterBox->ySurface = world.pos.y = home.pos.y += -5.0f.
             actor.home_pos.y += -5.0;
             actor.world_pos.y = actor.home_pos.y;
             set_water_surface(play, actor.world_pos.y);
             action = Action::InitWater;
         } else {
-            if actor.params == HASI_WATER_BLOCK {
+            if KIND.get(actor.params) == HASI_WATER_BLOCK {
                 actor.scale.z = 0.15;
                 actor.scale.x = 0.15;
                 if let Some(y) = water_surface(play) {
@@ -380,9 +404,9 @@ impl ActorImpl for BgYdanHasi {
         if rs.switches.first() != Some(&1) {
             return;
         }
-        match self.actor.params {
+        match KIND.get(self.actor.params) {
             HASI_WATER_BLOCK | HASI_THREE_BLOCKS => {
-                let dl = if self.actor.params == HASI_WATER_BLOCK { DISPLAY_LIST } else { RISING_DISPLAY_LIST };
+                let dl = if KIND.get(self.actor.params) == HASI_WATER_BLOCK { DISPLAY_LIST } else { RISING_DISPLAY_LIST };
                 let t = ScaleRotPos { scale: rs.scale, rot: rs.rot, pos: rs.pos };
                 out.opa.push(DrawCmd::new(MeshKey::named(keys::mesh(OBJECT, dl)), srt_matrix(&t)));
             }

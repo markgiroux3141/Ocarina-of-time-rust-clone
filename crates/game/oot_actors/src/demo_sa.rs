@@ -12,6 +12,13 @@
 //! `_GetCue`, `_CheckForCue`, `_CheckForNoCue`, `_SetStartPosRotFromCue`, `_AnimationChange`,
 //! `_OverrideLimbDraw`, `_DrawOpa`, `_DrawXlu`). The other four uses are logged and draw nothing.
 //! The draws are bakes, one per face, pass and hand the bridge shows (ADR 0012).
+//!
+//! Params: `params` whole (2: the sages' magic, the trials and sealing Ganon; 3: unused; 4: the
+//! credits; 5: the Lost Woods' bridge; any other, 0 placed: the Chamber of Sages' Forest
+//! Medallion). Only 5 is ported. `shape.rot.x`: a rotation (Ganon's Castle's sage, type 2, is
+//! placed tilted 0x2000).
+//! Flags: none ported; the Chamber of Sages' types read `gSaveContext.chamberCutsceneNum`
+//! (CHAMBER_CS_FOREST outside a cutscene layer: the Forest Medallion's cutscene).
 
 use std::sync::Arc;
 
@@ -19,6 +26,7 @@ use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
 use oot_game::gbi::Dl;
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
@@ -33,7 +41,32 @@ const ACTOR_EN_ELF: i16 = 0x0018;
 const FAIRY_KOKIRI: i16 = 3;
 
 /// `Demo_Sa_Profile`: `ACTORCAT_NPC`, `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_SA, name: "Demo_Sa", category: ACTORCAT_NPC, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_SA, name: "Demo_Sa", category: ACTORCAT_NPC, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params` (`DemoSa_Init`'s switch; `func_8098E554`'s `params == 2`): which use.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "the Chamber of Sages: the Forest Medallion (DemoSa_InitChamberOfSages)"),
+        (1, "the Chamber of Sages, as 0 (the switch's default)"),
+        (2, "the sages' magic: the trials, sealing Ganon (DemoSa_InitTrialOrSealingGanon)"),
+        (3, "unused (DemoSa_InitUnused)"),
+        (4, "the credits (DemoSa_InitCredits)"),
+        (5, "the Lost Woods' bridge (DemoSa_InitBridge)"),
+    ]),
+    "which cutscene she is in (any but 2 to 5: the Chamber of Sages)",
+);
+/// `shape.rot.x`: Ganon's Castle's sage (type 2) is placed tilted (0x2000), drawn so.
+pub const TILT: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "her tilt, drawn as placed");
+
+/// Demo_Sa's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, TILT],
+    flags: &[FlagUse::new(Flag::Other("gSaveContext.chamberCutsceneNum"))
+        .reads()
+        .note("types 0 and 1: CHAMBER_CS_FOREST (not in a cutscene layer) plays the Forest Medallion's cutscene; not ported")],
+    todo: false,
+};
 
 /// `SariaEyes`.
 pub const SARIA_EYE_OPEN: i16 = 0;
@@ -181,7 +214,7 @@ impl DemoSa {
             shadow_alpha: 255,
         };
         this.actor.shape_y_offset = 0.0;
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             5 => this.init_bridge(play),
             p => log::warn!("Demo_Sa: params {p} (the Chamber of Sages, the sages' magic, the credits, the unused one) isn't ported: drawn as nothing"),
         }

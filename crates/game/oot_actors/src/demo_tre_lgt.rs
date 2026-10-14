@@ -7,6 +7,9 @@
 //! Its logic is ported; its draw isn't (a curve skeleton, `SkelCurve_Draw`, with
 //! `gTreasureChestCurveSkel`): the frame count the draw would read is kept (`SkelCurve_Update`'s
 //! `curFrame`), the curves' joints aren't evaluated.
+//!
+//! Params: none (`En_Box` spawns it with 0xFFFF, read by nothing).
+//! Flags: none.
 
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, cur_sfx_pos};
@@ -20,7 +23,7 @@ use crate::en_box::EnBox;
 pub const ACTOR_DEMO_TRE_LGT: i16 = 0x00AA;
 
 /// `Demo_Tre_Lgt_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_TRE_LGT, name: "Demo_Tre_Lgt", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "object_box" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_TRE_LGT, name: "Demo_Tre_Lgt", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "object_box", schema: &oot_game::actor_schema::ActorSchema::NONE };
 
 /// `DemoTreLgtInfo` (`sDemoTreLgtInfo`, by `linkAge`): `startFrame`, `endFrame`, `unk_08`,
 /// `unk_0C`.

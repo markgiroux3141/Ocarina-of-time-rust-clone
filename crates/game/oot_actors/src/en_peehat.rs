@@ -1,7 +1,7 @@
 //! `En_Peehat` (`ovl_En_Peehat/z_en_peehat.c`): the Peahat, Hyrule Field's flying plant, and its
 //! larvae (GAME-06 milestone 4).
 //!
-//! Params (`PeahatType`): -1 grounded (the field's), 0 flying (spawns larvae), 1 a larva.
+//! Its params (`PeahatType`): -1 grounded (the field's), 0 flying (spawns larvae), 1 a larva.
 //!
 //! - **Grounded** by day: it rises when Link is within 740 (`EnPeehat_Ground_StateRise`), hovers
 //!   (`_StateHover`), seeks him spinning its blades at him for 600 frames within 1,200 of home
@@ -22,6 +22,11 @@
 //!
 //! The whole overlay is ported. `En_Bom` isn't: its explosion spawns a placeholder (logged).
 //! Its blades dig only while it's in its culling volume (ADR 0058). The circle shadow isn't drawn (`shadowScale` kept).
+//!
+//! Params: `params` whole, the type (`PeahatType`: -1 `PEAHAT_TYPE_GROUNDED`, 0
+//! `PEAHAT_TYPE_FLYING`, 1 `PEAHAT_TYPE_LARVA`, spawned by the other two; any other gets no
+//! action at init).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -32,6 +37,7 @@ use eng_math::{sin_s, smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_80033480, math_cos_f, math_sin_f};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::hahen::HAHEN_OBJECT_DEFAULT;
@@ -52,7 +58,19 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ENEMY,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_SFX_FOR_PLAYER_BODY_HIT,
     object: OBJECT,
+    schema: &SCHEMA,
 };
+
+/// `this->actor.params`: the type (`PeahatType`).
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[(-1, "PEAHAT_TYPE_GROUNDED"), (0, "PEAHAT_TYPE_FLYING"), (1, "PEAHAT_TYPE_LARVA")]),
+    "grounded (rises by day), flying (spawns larvae), or a larva",
+);
+
+/// En_Peehat's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+
 
 /// `ACTOR_EN_BOM` (`actor_table.h`: 0x0010), the bomb its death spawns (not ported).
 const ACTOR_EN_BOM: i16 = 0x0010;
@@ -409,7 +427,7 @@ impl EnPeehat {
             collider_quad,
             shadow_scale: 27.0,
         };
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             PEAHAT_TYPE_GROUNDED => this.ground_set_state_ground(),
             PEAHAT_TYPE_FLYING => {
                 this.actor.culling_volume_distance = 4200.0;
@@ -934,12 +952,12 @@ impl EnPeehat {
         self.skel.update();
         self.actor.speed_xz += 0.5;
         if self.actor.speed_xz == 0.0 {
-            if self.actor.params > 0 {
+            if TYPE.get(self.actor.params) > 0 {
                 self.larva_puffs(play);
                 self.actor.kill();
             } else {
                 self.ground_set_state_seek_player();
-                if self.actor.params < 0 {
+                if TYPE.get(self.actor.params) < 0 {
                     self.unk_2fa = if self.unk_2fa != 0 { 0 } else { 1 };
                 }
             }
@@ -1023,7 +1041,7 @@ impl EnPeehat {
             if self.unk_2d4 <= 0 {
                 if self.actor.col_chk_info.health == 0 {
                     self.set_state_explode();
-                } else if self.actor.params < 0 {
+                } else if TYPE.get(self.actor.params) < 0 {
                     self.ground_set_state_hover(play);
                     self.rise_delay_timer = 60;
                 } else {
@@ -1174,7 +1192,7 @@ impl ActorImpl for EnPeehat {
 
     /// `EnPeehat_Update`.
     fn update(&mut self, play: &mut PlayState) {
-        if self.actor.params <= 0 {
+        if TYPE.get(self.actor.params) <= 0 {
             self.adult_collision_check(play);
         }
         if self.actor.col_chk_info.damage_reaction != PEAHAT_DMG_REACT_LIGHT_ICE_ARROW {
@@ -1204,7 +1222,7 @@ impl ActorImpl for EnPeehat {
             }
             self.jiggle_rot += self.jiggle_rot_inc;
         }
-        if self.actor.params < 0 {
+        if TYPE.get(self.actor.params) < 0 {
             // The lock-on's point on its weak point.
             let c = self.collider_jnt_sph.elements[0].dim.world_sphere.center;
             self.actor.focus_pos = Vec3::new(c[0] as f32, c[1] as f32, c[2] as f32);
@@ -1218,14 +1236,14 @@ impl ActorImpl for EnPeehat {
         }
         self.collider_cylinder.update(&self.actor);
         if self.actor.col_chk_info.health > 0 {
-            if self.actor.params <= 0 {
+            if TYPE.get(self.actor.params) <= 0 {
                 play.collision_check_set_oc(&self.actor, COL_CYLINDER, &mut self.collider_cylinder);
                 play.collision_check_set_oc(&self.actor, COL_JNT_SPH, &mut self.collider_jnt_sph);
                 if (self.actor.color_filter_timer == 0 || self.actor.color_filter_params & 0x4000 == 0) && self.state != PEAHAT_STATE_EXPLODE {
                     play.collision_check_set_ac(&self.actor, COL_JNT_SPH, &mut self.collider_jnt_sph);
                 }
             }
-            if self.actor.params != PEAHAT_TYPE_FLYING && self.collider_quad.base.at_flags & AT_HIT != 0 {
+            if TYPE.get(self.actor.params) != PEAHAT_TYPE_FLYING && self.collider_quad.base.at_flags & AT_HIT != 0 {
                 self.collider_quad.base.at_flags &= !AT_HIT;
                 if play.player.is_some() && self.collider_quad.base.at == play.player {
                     self.set_state_attack_recoil();
@@ -1233,11 +1251,11 @@ impl ActorImpl for EnPeehat {
             }
         }
         if matches!(self.state, PEAHAT_STATE_15 | PEAHAT_STATE_SEEK_PLAYER | PEAHAT_STATE_FLY | PEAHAT_STATE_RETURN_HOME | PEAHAT_STATE_EXPLODE) {
-            if self.actor.params != PEAHAT_TYPE_FLYING {
+            if TYPE.get(self.actor.params) != PEAHAT_TYPE_FLYING {
                 play.collision_check_set_at(&self.actor, COL_QUAD, &mut self.collider_quad);
                 play.collision_check_set_ac(&self.actor, COL_QUAD, &mut self.collider_quad);
             }
-            if self.actor.params < 0 && self.actor.flags & ACTOR_FLAG_INSIDE_CULLING_VOLUME != 0 {
+            if TYPE.get(self.actor.params) < 0 && self.actor.flags & ACTOR_FLAG_INSIDE_CULLING_VOLUME != 0 {
                 for i in (0..2).rev() {
                     // BgCheck_EntityLineTest1(world.pos, bladeTip[i], wall, floor, no ceiling, one face).
                     if let Some((pos_result, _)) = play.col.entity_line_test(self.actor.world_pos, self.blade_tip[i], true, true, false, true) {
@@ -1245,7 +1263,7 @@ impl ActorImpl for EnPeehat {
                         self.spawn_dust(play, pos_result, 0.0, 3, 1.05, 1.5);
                     }
                 }
-            } else if self.actor.params != PEAHAT_TYPE_FLYING {
+            } else if TYPE.get(self.actor.params) != PEAHAT_TYPE_FLYING {
                 play.collision_check_set_ac(&self.actor, COL_CYLINDER, &mut self.collider_cylinder);
             }
         } else {
@@ -1264,7 +1282,7 @@ impl ActorImpl for EnPeehat {
         let pose = Self::pose(&skeleton, &self.skel.joint_table, self.blade_rot, self.jiggle_rot, self.scale_shift, self.state);
         let blades = model * pose.blades_stack;
         self.blade_tip = [blades.transform_point3(PEAHAT_BLADE_TIP[0]), blades.transform_point3(PEAHAT_BLADE_TIP[1])];
-        if self.actor.params <= 0 {
+        if TYPE.get(self.actor.params) <= 0 {
             let (sphere, _) = Self::weak_point_matrix(pose.body_stack, (self.actor.color_filter_params, self.actor.color_filter_timer));
             self.collider_jnt_sph.update_spheres(0, &(model * sphere));
         }
@@ -1296,7 +1314,7 @@ impl ActorImpl for EnPeehat {
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE)), transform: model, bones: pose.limbs, params: DrawParams::default() });
         out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(BAKE_BODY)), body));
         out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(BAKE_TOP)), top));
-        if self.actor.params <= 0 {
+        if TYPE.get(self.actor.params) <= 0 {
             let (_, weak_point) = Self::weak_point_matrix(pose.body_stack, rs.color_filter);
             out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(BAKE_BODY)), model * weak_point));
         }
@@ -1304,7 +1322,7 @@ impl ActorImpl for EnPeehat {
 
     /// `EnPeehat_Destroy`: a larva counted off its parent.
     fn destroy(&mut self, play: &mut PlayState) {
-        if self.actor.params > 0
+        if TYPE.get(self.actor.params) > 0
             && let Some(parent) = self.actor.parent.and_then(|h| play.actors.downcast_mut::<EnPeehat>(h))
             && !parent.actor.killed
         {

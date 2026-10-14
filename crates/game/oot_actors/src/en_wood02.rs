@@ -1,9 +1,9 @@
 //! `En_Wood02` (`ovl_En_Wood02/z_en_wood02.c`): the trees and bushes of the fields, and their
 //! falling leaves (GAME-06 milestone 4).
 //!
-//! Params: the low byte is the type (`WoodType`: trees 0 to 10, bushes 11 to 22, leaves 23 and
-//! 24), the high byte the drop table (`unk_14C`; 0x80 and up none). A tree with `home.rot.z` set
-//! holds a Gold Skulltula (`home.rot.z << 8 | drop`), which it drops when bumped.
+//! Its params: the low byte is the type (`WoodType`: trees 0 to 10, bushes 11 to 22, leaves 23
+//! and 24), the high byte the drop table (`unk_14C`; 0x80 and up none). A tree with `home.rot.z`
+//! set holds a Gold Skulltula (`home.rot.z << 8 | drop`), which it drops when bumped.
 //!
 //! - **Spawners** (types 3, 6, 8, 13, 15, 19, 21): a group of five more of their kind around
 //!   their home (`sSpawnDistance`, `sSpawnAngle`), each spawned as their child once its place
@@ -18,6 +18,15 @@
 //!
 //! The whole overlay is ported. A spawned tree leaves once out of its culling volume
 //! (`ACTOR_FLAG_INSIDE_CULLING_VOLUME` clear, ADR 0058).
+//!
+//! Params: `params` bits 0 to 7, the type (`WoodType`: 0 to 10 trees, 11 to 22 bushes, 23 and 24
+//! leaves; a spawner's offspring are its type + 1 with its drop table's low four bits, or 0xFF
+//! once that slot's child gave its drop); init masks the params to them. `unk_14C` bits 8 to 15
+//! (the drop table, `COLLECTIBLE_DROP_RANDOM_PARAMS`, under 0x64; 0x64 to 0x7F drop nothing; 0x80
+//! and up none). `home.rot.z`: non-zero, a tree holds a Gold Skulltula, `En_Sw` with params
+//! `(rot.z << 8 | unk_14C) & 0x1FFF | 0xE000` (rot.z's bits 0 to 4 its `GET_GS_FLAGS` group,
+//! `unk_14C` its token's bit), and drops nothing else; zeroed in `world.rot` and `shape.rot`.
+//! Flags: none (the Gold Skulltula's `En_Sw` has its own).
 
 use eng_collision::bgcheck::BGCHECK_Y_MIN;
 use eng_collision::math3d::Cylinder16;
@@ -26,6 +35,7 @@ use eng_math::{approach_f, cos_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_INSIDE_CULLING_VOLUME, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, Source};
 use oot_game::audio::sfx::{NA_SE_EV_TREE_SWING, NA_SE_IT_REFLECTION_WOOD};
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -36,7 +46,52 @@ pub const ACTOR_EN_WOOD02: i16 = 0x0077;
 pub const OBJECT: &str = "object_wood02";
 
 /// `En_Wood02_Profile`: `ACTORCAT_PROP`, no flags.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WOOD02, name: "En_Wood02", category: ACTORCAT_PROP, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_WOOD02, name: "En_Wood02", category: ACTORCAT_PROP, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params` after init's `params &= 0xFF`: the type (`WoodType`).
+pub const TYPE: Field = Field::params(
+    "params",
+    0,
+    8,
+    Kind::Named(&[
+        (0x00, "WOOD_TREE_CONICAL_LARGE"),
+        (0x01, "WOOD_TREE_CONICAL_MEDIUM"),
+        (0x02, "WOOD_TREE_CONICAL_SMALL"),
+        (0x03, "WOOD_TREE_CONICAL_SPAWNER"),
+        (0x04, "WOOD_TREE_CONICAL_SPAWNED"),
+        (0x05, "WOOD_TREE_OVAL_GREEN"),
+        (0x06, "WOOD_TREE_OVAL_YELLOW_SPAWNER"),
+        (0x07, "WOOD_TREE_OVAL_YELLOW_SPAWNED"),
+        (0x08, "WOOD_TREE_OVAL_GREEN_SPAWNER"),
+        (0x09, "WOOD_TREE_OVAL_GREEN_SPAWNED"),
+        (0x0A, "WOOD_TREE_KAKARIKO_ADULT"),
+        (0x0B, "WOOD_BUSH_GREEN_SMALL"),
+        (0x0C, "WOOD_BUSH_GREEN_LARGE"),
+        (0x0D, "WOOD_BUSH_GREEN_SMALL_SPAWNER"),
+        (0x0E, "WOOD_BUSH_GREEN_SMALL_SPAWNED"),
+        (0x0F, "WOOD_BUSH_GREEN_LARGE_SPAWNER"),
+        (0x10, "WOOD_BUSH_GREEN_LARGE_SPAWNED"),
+        (0x11, "WOOD_BUSH_BLACK_SMALL"),
+        (0x12, "WOOD_BUSH_BLACK_LARGE"),
+        (0x13, "WOOD_BUSH_BLACK_SMALL_SPAWNER"),
+        (0x14, "WOOD_BUSH_BLACK_SMALL_SPAWNED"),
+        (0x15, "WOOD_BUSH_BLACK_LARGE_SPAWNER"),
+        (0x16, "WOOD_BUSH_BLACK_LARGE_SPAWNED"),
+        (0x17, "WOOD_LEAF_GREEN"),
+        (0x18, "WOOD_LEAF_YELLOW"),
+    ]),
+    "which tree, bush or leaf; a spawner sets five more of the next type round it",
+);
+/// `PARAMS_GET_U(params, 8, 8)`: `unk_14C`, the drop table.
+pub const DROP_TABLE: Field = Field::params("unk_14C", 8, 8, Kind::Range(0, 0xFF), "its drop table (under 0x64; 0x80 and up: none); with a Gold Skulltula, its token's bit");
+/// `home.rot.z`: non-zero, the tree holds a Gold Skulltula (`En_Sw`).
+pub const SKULLTULA: Field =
+    Field::rot("home.rot.z", Source::RotZ, 0, 16, Kind::Range(-0x8000, 0x7FFF), "non-zero: a tree's Gold Skulltula, its GET_GS_FLAGS group from bits 0 to 4");
+
+
+/// En_Wood02's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, DROP_TABLE, SKULLTULA], flags: &[], todo: false };
+
 
 /// `WoodType`.
 pub const WOOD_TREE_CONICAL_LARGE: i16 = 0x00;
@@ -185,14 +240,14 @@ impl EnWood02 {
             if self.unk_14e[i] & 0x7F != 0 {
                 continue;
             }
-            let extra_rot: i16 = if self.actor.params == WOOD_BUSH_GREEN_LARGE_SPAWNER { 0x4000 } else { 0 };
+            let extra_rot: i16 = if TYPE.get(self.actor.params) == WOOD_BUSH_GREEN_LARGE_SPAWNER { 0x4000 } else { 0 };
             let angle = (SPAWN_ANGLE[i] as i16).wrapping_add(self.actor.world_rot.y).wrapping_add(extra_rot);
             let (c, s) = (cos_s(angle), sin_s(angle));
             let pos = Vec3::new(SPAWN_DISTANCE[i] * s + self.actor.home_pos.x, self.actor.home_pos.y, SPAWN_DISTANCE[i] * c + self.actor.home_pos.z);
             if !self.spawn_zone_check(play, pos) {
                 continue;
             }
-            let params = if self.unk_14e[i] & 0x80 != 0 { (0xFF00u16 as i16) | (self.actor.params + 1) } else { (((self.draw_type & 0xF0) as i16) << 4) | (self.actor.params + 1) };
+            let params = if self.unk_14e[i] & 0x80 != 0 { (0xFF00u16 as i16) | (TYPE.get(self.actor.params) + 1) } else { (((self.draw_type & 0xF0) as i16) << 4) | (TYPE.get(self.actor.params) + 1) };
             let rot = [self.actor.world_rot.x, SPAWN_ANGLE[i] as i16, 0];
             match play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_WOOD02, pos, rot, params) {
                 Ok(h) => {
@@ -215,9 +270,9 @@ impl EnWood02 {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut spawn_type = WOOD_SPAWN_NORMAL;
         let mut actor_scale = 1.0;
-        let mut unk_14c = ((actor.params as u16 >> 8) & 0xFF) as i16;
-        if actor.home_rot.z != 0 {
-            actor.home_rot.z = (actor.home_rot.z << 8) | unk_14c;
+        let mut unk_14c = DROP_TABLE.get(actor.params);
+        if SKULLTULA.get(actor.home_rot.z) != 0 {
+            actor.home_rot.z = (SKULLTULA.get(actor.home_rot.z) << 8) | unk_14c;
             unk_14c = -1;
             actor.world_rot.z = 0;
             actor.shape_rot.z = 0;
@@ -240,7 +295,7 @@ impl EnWood02 {
             a.culling_volume_scale = 800.0;
             a.culling_volume_downward = 1800.0;
         };
-        match a.params {
+        match TYPE.get(a.params) {
             WOOD_BUSH_GREEN_LARGE_SPAWNER | WOOD_BUSH_BLACK_LARGE_SPAWNER => {
                 spawn_type = 2;
                 actor_scale = 1.5;
@@ -280,7 +335,7 @@ impl EnWood02 {
             }
             _ => {}
         }
-        let p = this.actor.params;
+        let p = TYPE.get(this.actor.params);
         this.draw_type = if p <= WOOD_TREE_CONICAL_SPAWNED {
             WOOD_DRAW_TREE_CONICAL
         } else if p <= WOOD_TREE_OVAL_GREEN_SPAWNED {
@@ -298,7 +353,7 @@ impl EnWood02 {
         this.actor.scale = Vec3::splat(actor_scale);
         this.spawn_type = spawn_type;
         if spawn_type != WOOD_SPAWN_NORMAL {
-            let extra_rot: i16 = if this.actor.params == WOOD_BUSH_GREEN_LARGE_SPAWNER { 0x4000 } else { 0 };
+            let extra_rot: i16 = if TYPE.get(this.actor.params) == WOOD_BUSH_GREEN_LARGE_SPAWNER { 0x4000 } else { 0 };
             if spawn_type == WOOD_SPAWN_SPAWNER {
                 this.draw_type |= (this.unk_14c << 4) as u8;
                 this.spawn_offspring(play);
@@ -327,7 +382,7 @@ impl EnWood02 {
     }
 
     fn is_tree(&self) -> bool {
-        self.actor.params <= WOOD_TREE_KAKARIKO_ADULT
+        TYPE.get(self.actor.params) <= WOOD_TREE_KAKARIKO_ADULT
     }
 }
 
@@ -382,7 +437,7 @@ impl ActorImpl for EnWood02 {
                 }
                 // The falling leaves.
                 if self.unk_14c >= -1 {
-                    let leaves = if self.actor.params == WOOD_TREE_OVAL_YELLOW_SPAWNER || self.actor.params == WOOD_TREE_OVAL_YELLOW_SPAWNED { WOOD_LEAF_YELLOW } else { WOOD_LEAF_GREEN };
+                    let leaves = if TYPE.get(self.actor.params) == WOOD_TREE_OVAL_YELLOW_SPAWNER || TYPE.get(self.actor.params) == WOOD_TREE_OVAL_YELLOW_SPAWNED { WOOD_LEAF_YELLOW } else { WOOD_LEAF_GREEN };
                     audio_play_actor_sfx2(play, NA_SE_EV_TREE_SWING);
                     for _ in 0..4 {
                         let yaw = play.rand.centered_float(65535.0) as i32 as i16;
@@ -399,7 +454,7 @@ impl ActorImpl for EnWood02 {
                 play.collision_check_set_ac(&self.actor, 0, &mut self.collider);
                 play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
             }
-        } else if self.actor.params < 0x17 {
+        } else if TYPE.get(self.actor.params) < 0x17 {
             // A bush: Link walking through it (on foot within 20, or riding within 60).
             if self.unk_14c >= -1 {
                 let speed = play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).map(|p| p.speed_xz()).unwrap_or(0.0);
@@ -445,7 +500,7 @@ impl ActorImpl for EnWood02 {
     /// for the yellow ones, else white; a leaf after its prim colour; a tree's trunk opaque and
     /// its leaves translucent after the env colour; a bush translucent.
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
-        let ty = self.actor.params;
+        let ty = TYPE.get(self.actor.params);
         let [r, g, b] = if matches!(ty, WOOD_TREE_OVAL_GREEN_SPAWNER | WOOD_TREE_OVAL_GREEN_SPAWNED | WOOD_TREE_OVAL_GREEN | WOOD_LEAF_GREEN) {
             [50, 170, 70]
         } else if matches!(ty, WOOD_TREE_OVAL_YELLOW_SPAWNER | WOOD_TREE_OVAL_YELLOW_SPAWNED | WOOD_LEAF_YELLOW) {

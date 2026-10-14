@@ -24,6 +24,18 @@
 //!
 //! The Gohma slab's fall writes `Boss_Goma`'s sub camera, which isn't ported: its quake uses the
 //! main camera (logged). Rumble (`Rumble_Request`, `Rumble_Override`) isn't ported.
+//!
+//! Params (the transition actor list's; the spawn adds the entry's index in bits 10 to 15,
+//! `GET_TRANSITION_ACTOR_INDEX`): `switchFlag` bits 0 to 5 (`DOORSHUTTER_GET_SWITCH_FLAG`: the
+//! switch-barred door's, set to open it; the locked and boss doors', set once unlocked); `type`
+//! bits 6 to 9 (`DOORSHUTTER_GET_TYPE`, `DoorShutterType`: 0 `SHUTTER`, 1
+//! `SHUTTER_FRONT_CLEAR`, 2 `SHUTTER_FRONT_SWITCH`, 3 `SHUTTER_BACK_LOCKED`, 4
+//! `SHUTTER_PG_BARS`, 5 `SHUTTER_BOSS`, 6 `SHUTTER_GOHMA_BLOCK`, 7
+//! `SHUTTER_FRONT_SWITCH_BACK_CLEAR`, 11 `SHUTTER_KEY_LOCKED`).
+//! Flags: reads switch flag `switchFlag` (the switch-barred, locked and boss doors) and sets it
+//! when a locked or boss door is unlocked; reads the room's clear flag and temp clear flag (the
+//! clear-barred doors) and sets the clear flag; reads EVENTCHKINF_BEGAN_GOHMA_BATTLE (Gohma's
+//! slab).
 
 use std::f32::consts::PI;
 use std::sync::Arc;
@@ -33,8 +45,10 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile, DOORLOCK_BOSS, DOORLOCK_NORMAL, DOORLOCK_NORMAL_SPIRIT, actor_draw_door_lock, actor_spawn_floor_dust_ring, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::camera::CAM_ID_MAIN;
+use oot_game::event_chk_inf;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::quake::QUAKE_TYPE_3;
@@ -47,7 +61,40 @@ use crate::player::{PLAYER_DOORTYPE_SLIDING, Player, STATE1_6, STATE1_7, STATE1_
 pub const ACTOR_DOOR_SHUTTER: i16 = 0x002E;
 
 /// `Door_Shutter_Profile`: `FLAGS` `ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DOOR_SHUTTER, name: "Door_Shutter", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DOOR_SHUTTER, name: "Door_Shutter", category: ACTORCAT_DOOR, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `DOORSHUTTER_GET_SWITCH_FLAG`: `PARAMS_GET_U(params, 0, 6)`.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "the switch-barred door opens once it's set; a locked or boss door sets it when unlocked");
+/// `DOORSHUTTER_GET_TYPE`: `PARAMS_GET_U(params, 6, 4)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    6,
+    4,
+    Kind::Named(&[
+        (0x00, "SHUTTER"),
+        (0x01, "SHUTTER_FRONT_CLEAR"),
+        (0x02, "SHUTTER_FRONT_SWITCH"),
+        (0x03, "SHUTTER_BACK_LOCKED"),
+        (0x04, "SHUTTER_PG_BARS"),
+        (0x05, "SHUTTER_BOSS"),
+        (0x06, "SHUTTER_GOHMA_BLOCK"),
+        (0x07, "SHUTTER_FRONT_SWITCH_BACK_CLEAR"),
+        (0x0B, "SHUTTER_KEY_LOCKED"),
+    ]),
+    "the door (DoorShutterType): plain, barred till clear or a switch, locked, the boss door, Phantom Ganon's bars, Gohma's slab",
+);
+
+/// Door_Shutter's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, TYPE],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("barred till set (types 2, 7); set when a locked or boss door is unlocked (types 5, 11)"),
+        FlagUse::new(Flag::Clear).reads().sets().note("types 1, 7: barred till the room is cleared; set from the temp clear flag"),
+        FlagUse::new(Flag::TempClear).reads().note("types 1, 7: the room cleared"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_BEGAN_GOHMA_BATTLE)).reads().note("type 6: Gohma's slab falls once"),
+    ],
+    todo: false,
+};
 
 // `DoorShutterType`.
 pub const SHUTTER: u8 = 0x00;
@@ -374,7 +421,7 @@ impl DoorShutter {
         // Unused: shape.yOffset is still 0 here.
         actor.home_pos.z = actor.shape_y_offset;
         // DynaPolyActor_Init(&this->dyna, 0): bgId -1.
-        let door_type = ((actor.params as u16 >> 6) & 0xF) as u8;
+        let door_type = TYPE.get(actor.params) as u8;
         let mut d = DoorShutter {
             actor,
             bg: BG_ACTOR_MAX,
@@ -432,11 +479,12 @@ impl DoorShutter {
 
     /// `DOORSHUTTER_GET_SWITCH_FLAG`.
     pub fn switch_flag(&self) -> i32 {
-        (self.actor.params & 0x3F) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `GET_TRANSITION_ACTOR_INDEX`.
     pub fn transition_index(&self) -> usize {
+        // schema: the transition actor's index, which the spawn adds (not the placement's).
         (self.actor.params as u16 >> TRANSITION_ACTOR_PARAMS_INDEX_SHIFT) as usize
     }
 

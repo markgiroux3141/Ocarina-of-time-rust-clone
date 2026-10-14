@@ -12,6 +12,11 @@
 //!
 //! Not ported: the hammer's quake (`actorCtx.unk_02` is never set), the shadow (a texture the
 //! draw builds from the parts every frame), and the dust and water effects.
+//!
+//! Params: the whole `params` the sign's text, `params | 0x300` (`ENKANBAN_FISHING` 0x300: the
+//! fishing pond's, 0x409D for a child, 0x4090 for an adult); `ENKANBAN_PIECE` (0xFFDD) is a
+//! cut-off piece, spawned by the sign.
+//! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
@@ -19,6 +24,7 @@ use eng_math::{approach_f, approach_s, approach_zero_f, binang_to_rad, cos_s, si
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER_TOUCH};
 use oot_game::actor_ctx::{ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::{NA_SE_EV_BOMB_DROP_WATER, NA_SE_EV_WOODPLATE_BOUND, NA_SE_IT_SWORD_STRIKE};
 use oot_game::camera::f_atan2f;
 use oot_game::collision_check::*;
@@ -28,7 +34,17 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 pub const ACTOR_EN_KANBAN: i16 = 0x0141;
 
 /// `En_Kanban_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KANBAN, name: "En_Kanban", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "object_kanban" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KANBAN, name: "En_Kanban", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "object_kanban", schema: &SCHEMA };
+
+/// `this->actor.params`: the text, or a piece.
+pub const PARAMS: Field = Field::whole(
+    "params",
+    Kind::Range(-0x8000, 0x7FFF),
+    "its text, params | 0x300 (0x300 ENKANBAN_FISHING: the fishing pond's; 0xFFDD ENKANBAN_PIECE: a cut-off piece, spawned)",
+);
+
+/// En_Kanban's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 /// `ENKANBAN_PIECE`, `ENKANBAN_FISHING`.
 pub const ENKANBAN_PIECE: i16 = 0xFFDD_u16 as i16;
@@ -279,14 +295,14 @@ impl EnKanban {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         actor.scale = Vec3::splat(0.01);
         let mut k = EnKanban::new(actor);
-        if k.actor.params != ENKANBAN_PIECE {
+        if PARAMS.get(k.actor.params) != ENKANBAN_PIECE {
             k.actor.target_mode = 0;
             k.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
             k.collider = ColliderCylinder::new(&CYLINDER_INIT);
-            k.actor.text_id = if k.actor.params == ENKANBAN_FISHING {
+            k.actor.text_id = if PARAMS.get(k.actor.params) == ENKANBAN_FISHING {
                 if play.save.adult { 0x4090 } else { 0x409D }
             } else {
-                (k.actor.params as u16) | 0x300
+                (PARAMS.get(k.actor.params) as u16) | 0x300
             };
             k.bounce_x = 1;
             k.part_flags = 0xFFFF;
@@ -597,7 +613,7 @@ impl EnKanban {
             let bombs: Vec<ActorHandle> = play.actors.category(ACTORCAT_EXPLOSIVE).to_vec();
             for b in bombs {
                 let Some(bomb) = play.actors.actor(b) else { continue };
-                if bomb.params != 1 {
+                if bomb.params != 1 { // schema: En_Bom's params
                     continue;
                 }
                 let d = self.actor.world_pos - bomb.world_pos;
@@ -818,7 +834,7 @@ impl ActorImpl for EnKanban {
     }
     /// `EnKanban_Destroy`: the sign's collider.
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
-        (id == 0 && self.action_state == ENKANBAN_SIGN && self.actor.params != ENKANBAN_PIECE).then_some(ColliderMut::Cylinder(&mut self.collider))
+        (id == 0 && self.action_state == ENKANBAN_SIGN && PARAMS.get(self.actor.params) != ENKANBAN_PIECE).then_some(ColliderMut::Cylinder(&mut self.collider))
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

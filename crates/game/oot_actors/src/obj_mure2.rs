@@ -1,7 +1,7 @@
 //! `Obj_Mure2` (`ovl_Obj_Mure2/z_obj_mure2.c`): a group of bushes or rocks spawned when the
 //! camera comes near and taken away when it leaves (GAME-06 milestone 4).
 //!
-//! Params: bits 0..1 the kind (0 a circle of nine bushes, 1 twelve scattered bushes, 2 a circle
+//! Its params: bits 0..1 the kind (0 a circle of nine bushes, 1 twelve scattered bushes, 2 a circle
 //! of eight rocks: `En_Kusa`, `En_Kusa`, `En_Ishi`), bits 8..11 their drop table (13 and up: 0).
 //!
 //! Waiting, it spawns its group once its `projectedPos` (`Actor_DrawAll`'s) is within 1,600 across
@@ -9,17 +9,44 @@
 //! left when that passes 1,705. A member lifted (`Actor_HasParent`) or destroyed stays gone.
 //!
 //! The whole overlay is ported.
+//!
+//! Params: `actorNum` bits 0 to 1 (0 a circle of nine bushes, 1 twelve scattered bushes, 2 a circle
+//! of eight rocks); `dropTable` bits 8 to 11 (the members' drop table, their params' bits 8 to 11;
+//! 13 and up: 0); bits 12 to 15 unused (the data places 0xF). `world.rot.x` and `world.rot.z`:
+//! rotations, handed to the members.
+//! Flags: none.
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, Source};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 /// `ACTOR_OBJ_MURE2` (`actor_table.h`: 0x0151).
 pub const ACTOR_OBJ_MURE2: i16 = 0x0151;
 
 /// `Obj_Mure2_Profile`: `ACTORCAT_PROP`, no flags, `OBJECT_GAMEPLAY_KEEP`, no draw.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MURE2, name: "Obj_Mure2", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MURE2, name: "Obj_Mure2", category: ACTORCAT_PROP, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 2)`: `actorNum`, the kind of group.
+pub const ACTOR_NUM: Field = Field::params(
+    "actorNum",
+    0,
+    2,
+    Kind::Named(&[(0, "a circle of nine bushes (En_Kusa)"), (1, "twelve scattered bushes (En_Kusa)"), (2, "a circle of eight rocks (En_Ishi)")]),
+    "which group it spawns",
+);
+/// `PARAMS_GET_U(params, 8, 4)`: `dropTable`.
+pub const DROP_TABLE: Field = Field::params("dropTable", 8, 4, Kind::Range(0, 15), "the members' drop table (13 and up: 0)");
+/// Bits 12 to 15: the data places 0xF with drop table 0xF; nothing reads them.
+pub const BITS_12_15: Field = Field::params("params bits 12 to 15", 12, 4, Kind::Unused, "placed 0xF in some groups; read by nothing");
+/// `world.rot.x`: handed to each member as its own.
+pub const ROT_X: Field = Field::rot("world.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the members' rotation about x");
+/// `world.rot.z`: handed to each member as its own.
+pub const ROT_Z: Field = Field::rot("world.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the members' rotation about z");
+
+/// Obj_Mure2's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[ACTOR_NUM, DROP_TABLE, BITS_12_15, ROT_X, ROT_Z], flags: &[], todo: false };
 
 /// `sDistSquared1`, `sDistSquared2`: the squared distances to spawn within and to take back past.
 const DIST_SQUARED1: [f32; 3] = [1600.0 * 1600.0; 3];
@@ -57,7 +84,7 @@ pub struct ObjMure2 {
 
 impl ObjMure2 {
     fn kind(&self) -> usize {
-        (self.actor.params & 3) as usize
+        ACTOR_NUM.get(self.actor.params) as usize
     }
 
     /// `ObjMure2_Init`: its culling volume (100, 2100, 100; 1200 further in a cutscene), waiting.
@@ -92,7 +119,7 @@ impl ObjMure2 {
 
     /// `ObjMure2_SetActorSpawnParams`: `actorSpawnParams` (all 0) with the drop table in bits 8..11.
     fn spawn_params(&self) -> i16 {
-        let mut drop_table = (self.actor.params >> 8) & 0xF;
+        let mut drop_table = DROP_TABLE.get(self.actor.params);
         if drop_table >= 13 {
             drop_table = 0;
         }
@@ -107,7 +134,8 @@ impl ObjMure2 {
         let params = self.spawn_params();
         for (i, p) in pos.iter().enumerate() {
             if self.spawned[i].is_some() {
-                log::warn!("Warning : I already have a child (../z_obj_mure2.c 269)(arg_data {:#06x})", self.actor.params);
+                log::warn!("Warning : I already have a child (../z_obj_mure2.c 269)(arg_data {:#06x})", self.actor.params); // schema: printed
+
                 continue;
             }
             if (self.current_actor_num >> i) & 1 == 0 {

@@ -4,11 +4,17 @@
 //! growing once the room's `drawParams[1]` is set (`func_808BA22C`) and fading (`func_808BA274`).
 //!
 //! Drawn from baked meshes (docs/adr/0012-actor-bakes.md).
+//!
+//! Params: `params` whole (0: the windows; 1: the Door of Time's beam; any other has no action and
+//! draws nothing).
+//! Flags: reads EVENTCHKINF_OPENED_DOOR_OF_TIME (type 1: gone once the door is open).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::scene_table::{gfx_tex_scroll, gfx_two_tex_scroll};
@@ -18,10 +24,20 @@ pub const ACTOR_BG_TOKI_HIKARI: i16 = 0x006A;
 pub const OBJECT: &str = "object_toki_objects";
 
 /// `Bg_Toki_Hikari_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TOKI_HIKARI, name: "Bg_Toki_Hikari", category: ACTORCAT_BG, flags: ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_TOKI_HIKARI, name: "Bg_Toki_Hikari", category: ACTORCAT_BG, flags: ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
 
 /// `EVENTCHKINF_OPENED_DOOR_OF_TIME` (`save.h`: 0x4B).
 const EVENTCHKINF_OPENED_DOOR_OF_TIME: u16 = 0x4B;
+
+/// `switch (this->actor.params)`: what it is.
+pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "the windows"), (1, "the Door of Time's beam of light")]), "the windows, or the beam when the Door of Time opens");
+
+/// Bg_Toki_Hikari's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OPENED_DOOR_OF_TIME)).reads().note("type 1: gone once the door is open")],
+    todo: false,
+};
 
 /// The windows: the adult's (`object_toki_objects_DL_008190`), the child's
 /// (`object_toki_objects_DL_007E20`) and the child's light (`object_toki_objects_DL_007EE0`,
@@ -96,7 +112,7 @@ impl BgTokiHikari {
     /// `BgTokiHikari_Init`.
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut this = BgTokiHikari { actor, unk_14c: 0.0, action: Action::DoNothing };
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             0 => {
                 // sInitChain: ICHAIN_VEC3F_DIV1000(scale, 1000).
                 this.actor.scale = Vec3::ONE;
@@ -171,7 +187,7 @@ impl ActorImpl for BgTokiHikari {
     /// `BgTokiHikari_Draw`.
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let frames = play.gameplay_frames;
-        match self.actor.params {
+        match TYPE.get(self.actor.params) {
             0 => {
                 // func_808BA018.
                 let m = oot_game::play::actor_draw_matrix(rs);

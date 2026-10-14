@@ -11,11 +11,16 @@
 //!   large magic jar that stays 6000 frames.
 //!
 //! The whole overlay is ported. `Item_Etcetera` (the fire arrows) isn't: a placeholder.
+//!
+//! Params: `params` bits 0 to 7 (0x40: a fairy for the Sun's Song; 0x41: a fairy for the Song
+//! of Storms; any other, 1 in the data: Lake Hylia's sun); bits 8 to 15 unused (0xFF in the data).
+//! Flags: none (the fire arrows owned is the inventory's).
 
 use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_LOCK_ON_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, PLAYER_BODYPART_HEAD};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::ocarina::{OCARINA_SONG_STORMS, OCARINA_SONG_SUNS};
 use oot_game::audio::sfx::{NA_SE_EV_TRE_BOX_APPEAR, NA_SE_SY_CORRECT_CHIME, SfxPos};
 use oot_game::collision_check::*;
@@ -29,7 +34,21 @@ use crate::player::{STATE2_23, STATE2_24};
 pub const ACTOR_SHOT_SUN: i16 = 0x0183;
 
 /// `Shot_Sun_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_SHOT_SUN, name: "Shot_Sun", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_SHOT_SUN, name: "Shot_Sun", category: ACTORCAT_PROP, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(this->actor.params, 0, 8)`: what it is.
+pub const TYPE: Field = Field::params(
+    "params",
+    0,
+    8,
+    Kind::Named(&[(0x01, "Lake Hylia's sun (any but 0x40, 0x41)"), (0x40, "a fairy's spot: the Sun's Song"), (0x41, "a fairy's spot: the Song of Storms")]),
+    "a fairy's spot and its song, or Lake Hylia's sun",
+);
+/// Bits 8 to 15: 0xFF in the game's data, read by nothing.
+pub const HIGH_BYTE: Field = Field::params("params bits 8 to 15", 8, 8, Kind::Unused, "0xFF in the data; read by nothing");
+
+/// Shot_Sun's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, HIGH_BYTE], flags: &[], todo: false };
 
 /// `ACTOR_ITEM_ETCETERA` (`actor_table.h`: 0x010F).
 const ACTOR_ITEM_ETCETERA: i16 = 0x010F;
@@ -74,9 +93,10 @@ pub struct ShotSun {
 impl ShotSun {
     /// `ShotSun_Init`.
     pub fn init(actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
+        // schema: printed
         log::debug!("{} ---- Ocarina secret spawn!!!!!!!!!!!!!", actor.params);
         let mut this = ShotSun { actor, collider: None, hitbox_pos: [0; 3], timer: 0, fairy_spawner_state: SPAWNER_OUT_OF_RANGE, action: Action::UpdateHyliaSun };
-        let params = this.actor.params & 0xFF;
+        let params = TYPE.get(this.actor.params);
         if params == 0x40 || params == 0x41 {
             this.fairy_spawner_state = SPAWNER_OUT_OF_RANGE;
             this.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
@@ -123,7 +143,7 @@ impl ShotSun {
     /// `ShotSun_UpdateFairySpawner`.
     fn update_fairy_spawner(&mut self, play: &mut PlayState) {
         let Some((ppos, state2)) = play.player.and_then(|h| play.actors.get(h)).and_then(|p| Some((p.base().world_pos, p.as_player()?.state_flags2()))) else { return };
-        let params = self.actor.params & 0xFF;
+        let params = TYPE.get(self.actor.params);
         if self.actor.world_pos.distance_squared(ppos) > 150.0 * 150.0 {
             self.fairy_spawner_state = SPAWNER_OUT_OF_RANGE;
             return;

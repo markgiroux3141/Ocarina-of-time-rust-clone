@@ -35,10 +35,11 @@
 //! (`DynaPolyActor_Init(0)`, scale 0.1). The whole overlay is ported.
 //!
 //! Params: `type` bits 0 to 7 (0 the Shadow Temple's gate, 1 Dampé's grave's stone, 2 the royal
-//! tomb's gravestone, 3 the lightning, 4 the light beam); `unk_16B` bits 8 to 15 (type 0's switch
-//! flag; the graveyard places the gate with 0x1F).
-//! Flags: type 0 reads its switch flag; type 2 reads and sets EVENTCHKINF_1D (the royal tomb
-//! open); type 3 reads EVENTCHKINF_1D.
+//! tomb's gravestone, 3 the lightning, 4 the light beam), which the init writes over the params;
+//! `unk_16B` bits 8 to 15 (type 0's switch flag; the graveyard places the gate with 0x1F).
+//! `rot.x` and `rot.z`: a rotation (the desert colossus's gravestones, type 2, are placed tilted).
+//! Flags: type 0 reads its switch flag `unk_16B`; type 2 reads and sets EVENTCHKINF_1D (the royal
+//! tomb open); type 3 reads EVENTCHKINF_1D.
 
 use std::sync::Arc;
 
@@ -49,9 +50,11 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_IGNORE_POINT_LIGHTS, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2, player_play_sfx};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::{NA_SE_EV_STONEDOOR_STOP, SFX_FLAG};
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
 use oot_game::env::lerp_weight;
+use oot_game::event_chk_inf;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::scene_table::gfx_two_tex_scroll;
@@ -63,7 +66,39 @@ pub const OBJECT: &str = "object_spot02_objects";
 pub const OBJECT_SPOT02_OBJECTS: i16 = 0x00A1;
 
 /// `Bg_Spot02_Objects_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT02_OBJECTS, name: "Bg_Spot02_Objects", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT02_OBJECTS, name: "Bg_Spot02_Objects", category: ACTORCAT_BG, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(thisx->params, 0, 8)`: the type, written over the params at init.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    8,
+    Kind::Named(&[
+        (0, "the Shadow Temple's gate"),
+        (1, "Dampé's grave's stone (gone for an adult)"),
+        (2, "the royal tomb's gravestone"),
+        (3, "the lightning that blows the gravestone up"),
+        (4, "the light beam"),
+    ]),
+    "which set piece",
+);
+/// `(u16)PARAMS_GET_NOMASK(thisx->params, 8)`, kept in the `u8` `unk_16B`.
+pub const UNK_16B: Field = Field::params("unk_16B", 8, 8, Kind::SwitchFlag, "the gate's switch flag: set, it's open").when("type", &[0]);
+
+/// `shape.rot.x`: placed tilted (the desert's gravestones), drawn and collided so.
+pub const ROT_X: Field = Field::rot("rot.x", Source::RotX, 0, 16, Kind::Rotation, "its tilt about x");
+/// `shape.rot.z`: likewise.
+pub const ROT_Z: Field = Field::rot("rot.z", Source::RotZ, 0, 16, Kind::Rotation, "its tilt about z");
+
+/// Bg_Spot02_Objects's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, UNK_16B, ROT_X, ROT_Z],
+    flags: &[
+        FlagUse::new(Flag::Switch("unk_16B")).reads().note("type 0: the gate open"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_1D)).reads().sets().note("type 2: set as the gravestone blows up, gone once set; type 3: gone once set"),
+    ],
+    todo: false,
+};
 
 /// `EVENTCHKINF_1D` (`save.h`: 0x1D): the royal tomb opened.
 pub const EVENTCHKINF_1D: u16 = 0x1D;
@@ -271,9 +306,10 @@ impl BgSpot02Objects {
     /// `BgSpot02Objects_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // DynaPolyActor_Init(&this->dyna, 0).
-        let unk_16b = ((actor.params as u16) >> 8) as u8;
-        actor.params = (actor.params as u16 & 0xFF) as i16;
+        let unk_16b = UNK_16B.get(actor.params) as u8;
+        actor.params = TYPE.get(actor.params);
         let mut this = BgSpot02Objects { actor, bg: BG_ACTOR_MAX, action: Action::Idle, draw_fn: DrawFn::Default, timer: 0, unk_16a: 0, unk_16b, unk_170: 0, unk_172: 0, cue_draw: None };
+        // schema: the type, written over the params above
         let ty = this.actor.params;
         match ty {
             TYPE_SHADOW_GATE | TYPE_DAMPE_STONE | TYPE_TOMB_STONE => {
@@ -504,6 +540,7 @@ impl ActorImpl for BgSpot02Objects {
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         match self.draw_fn {
             DrawFn::Default => {
+                // schema: the type, written over the params at init
                 if let Some(dl) = DLISTS.get(self.actor.params as usize) {
                     crate::gfx_draw_dlist_opa(out, OBJECT, dl, rs);
                 }

@@ -22,12 +22,23 @@
 //! small, range 300, hidden: no collision), and room 5's one, 0xB9FF (shown), standing on the
 //! purple rupee's chest. `Demo_Effect`'s time warp is ported (GAME-06 milestone 1a), and the
 //! ocarina (GAME-07 milestone 3). The whole overlay is ported.
+//!
+//! Params: `switchFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`; 0x38 and up: the same for
+//! both ages); `ownState` bit 6 (`PARAMS_GET_U(params, 6, 1)`: 1 the block's state is bit 15,
+//! `unk_177` 0; 0 the switch flag's); bit 7 unused (the data's 0x39FF); `size` bit 8
+//! (`sSizeOptions`: 0 large, 1 small); `altBehavior` bit 10 (`PARAMS_GET_U(params, 10, 1)`: the
+//! song toggles the flag and the flag shows it); `range` bits 11 to 13 (`sRanges`: 60 to 300, 40
+//! a step); `unk_175` bit 15 (`PARAMS_GET_U(params, 15, 1)`: 1 shown, or inverted; the song flips
+//! it). `home.rot.z & 7` (`primColor`): its colour (`sPrimColors`).
+//! Flags: reads switch flag `switchFlag` and toggles it (sets or clears) when the song is played
+//! to an alt block.
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_INTERACT_PLAYER_ABOVE};
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_LOCK_ON_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -63,6 +74,49 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ITEMACTION,
     flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA | ACTOR_FLAG_LOCK_ON_DISABLED,
     object: OBJECT,
+    schema: &SCHEMA,
+};
+
+/// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "the block's state (with ownState 0) or the alt block's; 0x38 and up the same for both ages");
+/// `PARAMS_GET_U(params, 6, 1)`: `unk_177` 0.
+pub const OWN_STATE: Field = Field::params(
+    "ownState",
+    6,
+    1,
+    Kind::Named(&[(0, "from the switch flag (unk_177 1, or 2 below 0x38: inverted for a child)"), (1, "its own, unk_175 (unk_177 0)")]),
+    "where a normal block's state comes from",
+);
+/// Bit 7: set in the data's 0x39FF.
+pub const BIT_7: Field = Field::params("bit 7", 7, 1, Kind::Unused, "set in the data (0x39FF); read by nothing");
+/// `PARAMS_GET_U(params, 8, 1)`: the size, an index into `sSizeOptions`.
+pub const SIZE: Field = Field::params("size", 8, 1, Kind::Named(&[(0, "large (scale 1, Demo_Effect 0x18)"), (1, "small (scale 0.6, Demo_Effect 0x19)")]), "the block's size");
+/// `PARAMS_GET_U(params, 10, 1)`: the alt behaviour.
+pub const ALT_BEHAVIOR: Field = Field::params(
+    "altBehavior",
+    10,
+    1,
+    Kind::Named(&[(0, "normal: the song flips it"), (1, "alt: the song toggles the switch flag, and the flag shows or hides it")]),
+    "how the song works it",
+);
+/// `PARAMS_GET_U(params, 11, 3)`: the range, an index into `sRanges`.
+pub const RANGE: Field = Field::params(
+    "range",
+    11,
+    3,
+    Kind::Named(&[(0, "60"), (1, "100"), (2, "140"), (3, "180"), (4, "220"), (5, "260"), (6, "300"), (7, "300")]),
+    "how far Link can be to play the song to it",
+);
+/// `PARAMS_GET_U(params, 15, 1)`: `unk_175`.
+pub const UNK_175: Field = Field::params("unk_175", 15, 1, Kind::Named(&[(0, "hidden (or not inverted)"), (1, "shown (or inverted)")]), "its start state; the song flips it");
+/// `home.rot.z & 7`: the colour, an index into `sPrimColors`.
+pub const PRIM_COLOR: Field = Field::rot("primColor", Source::RotZ, 0, 3, Kind::Range(0, 7), "its colour (sPrimColors)");
+
+/// Obj_Timeblock's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, OWN_STATE, BIT_7, SIZE, ALT_BEHAVIOR, RANGE, UNK_175, PRIM_COLOR],
+    flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("its state; toggled by the song (altBehavior 1)")],
+    todo: false,
 };
 
 /// `ObjTimeblockSizeOptions`.
@@ -150,11 +204,6 @@ fn source(a: &Actor) -> BgActorSource {
     BgActorSource { pos: a.world_pos, shape_rot: [r.x, r.y, r.z], scale: a.scale, shape_y_offset: a.shape_y_offset }
 }
 
-/// `PARAMS_GET_U(params, shift, n)`.
-fn params_get(params: i16, shift: u32, n: u32) -> u16 {
-    (params as u16 >> shift) & ((1 << n) - 1)
-}
-
 /// `player->stateFlags2`.
 fn player_state2(play: &PlayState) -> u32 {
     play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).map_or(0, |p| p.state_flags2())
@@ -163,23 +212,23 @@ fn player_state2(play: &PlayState) -> u32 {
 impl ObjTimeblock {
     /// `PARAMS_GET_U(params, 0, 6)`: the switch flag.
     pub fn switch_flag(&self) -> i32 {
-        params_get(self.actor.params, 0, 6) as i32
+        SWITCH_FLAG.get(self.actor.params) as i32
     }
 
     /// `sSizeOptions[PARAMS_GET_U(params, 8, 1)]`.
     pub fn size_options(&self) -> SizeOptions {
-        SIZE_OPTIONS[params_get(self.actor.params, 8, 1) as usize]
+        SIZE_OPTIONS[SIZE.get(self.actor.params) as usize]
     }
 
     /// `PARAMS_GET_U(params, 15, 1) ? true : false`.
     fn bit_15(&self) -> bool {
-        params_get(self.actor.params, 15, 1) != 0
+        UNK_175.get(self.actor.params) != 0
     }
 
     /// `ObjTimeblock_CalculateIsVisible`: normal blocks: `unk_175` (`unk_177` 0), or the switch
     /// flag xor params bit 15 (1), xor child Link too (2); the alt ones: bit 15 xor the flag.
     pub fn calculate_is_visible(&self, play: &PlayState) -> bool {
-        if params_get(self.actor.params, 10, 1) == 0 {
+        if ALT_BEHAVIOR.get(self.actor.params) == 0 {
             if self.unk_177 == 0 {
                 self.unk_175
             } else {
@@ -255,9 +304,9 @@ impl ObjTimeblock {
         };
         let size = t.size_options();
         t.actor.scale = Vec3::splat(size.scale);
-        t.unk_177 = if params_get(t.actor.params, 6, 1) != 0 {
+        t.unk_177 = if OWN_STATE.get(t.actor.params) != 0 {
             0
-        } else if params_get(t.actor.params, 0, 6) < 0x38 {
+        } else if SWITCH_FLAG.get(t.actor.params) < 0x38 {
             2
         } else {
             1
@@ -267,7 +316,7 @@ impl ObjTimeblock {
         t.unk_174 = play.flags.get_switch(t.switch_flag());
         t.unk_175 = t.bit_15();
         t.is_visible = t.calculate_is_visible(play);
-        t.action = if params_get(t.actor.params, 10, 1) == 0 {
+        t.action = if ALT_BEHAVIOR.get(t.actor.params) == 0 {
             Action::Normal
         } else if t.is_visible {
             Action::AltBehaviorVisible
@@ -276,11 +325,11 @@ impl ObjTimeblock {
         };
         log::debug!(
             "Time Block (<arg> {:04x}H <type> save:{} color:{} range:{} move:{})",
-            t.actor.params as u16,
+            t.actor.params as u16, // schema: the whole params printed.
             t.unk_177,
-            t.actor.home_rot.z & 7,
-            params_get(t.actor.params, 11, 3),
-            params_get(t.actor.params, 10, 1)
+            PRIM_COLOR.get(t.actor.home_rot.z),
+            RANGE.get(t.actor.params),
+            ALT_BEHAVIOR.get(t.actor.params)
         );
         play.col.dyna.set_source(t.bg, source(&t.actor));
         Box::new(t)
@@ -293,7 +342,7 @@ impl ObjTimeblock {
         if self.is_visible && play.col.dyna.interact_flag(self.bg, DYNA_INTERACT_PLAYER_ABOVE) {
             return false;
         }
-        if self.actor.xz_dist_to_player <= RANGES[params_get(self.actor.params, 11, 3) as usize] {
+        if self.actor.xz_dist_to_player <= RANGES[RANGE.get(self.actor.params) as usize] {
             let Some(player_pos) = play.player.and_then(|h| play.actors.actor(h)).map(|p| p.world_pos) else { return false };
             let player_relative_pos = self.actor.world_to_actor_coords(player_pos);
             let block_size = self.actor.scale.x * 50.0 + 6.0;
@@ -485,7 +534,7 @@ impl ActorImpl for ObjTimeblock {
     /// Shown, and the colour (`home.rot.z & 7`).
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
-        rs.switches = vec![self.is_visible as u32, (self.actor.home_rot.z & 7) as u32];
+        rs.switches = vec![self.is_visible as u32, PRIM_COLOR.get(self.actor.home_rot.z) as u32];
         rs
     }
 

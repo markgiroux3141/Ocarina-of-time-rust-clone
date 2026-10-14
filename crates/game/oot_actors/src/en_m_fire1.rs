@@ -5,10 +5,15 @@
 //! rather than a misc actor.
 //!
 //! The whole overlay is ported. It has no draw.
+//!
+//! Params (none placed: `EnArrow_Fly` spawns it with 0): `params < 0` bit 15 (1: an item action);
+//! bits 0 to 14 read by nothing.
+//! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ACTORCAT_MISC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::play::PlayState;
 
@@ -16,7 +21,13 @@ use oot_game::play::PlayState;
 pub const ACTOR_EN_M_FIRE1: i16 = 0x0056;
 
 /// `En_M_Fire1_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_M_FIRE1, name: "En_M_Fire1", category: ACTORCAT_MISC, flags: 0, object: "gameplay_keep" };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_M_FIRE1, name: "En_M_Fire1", category: ACTORCAT_MISC, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `this->actor.params < 0`: the sign bit.
+pub const ITEM_ACTION: Field = Field::params("params < 0", 15, 1, Kind::Named(&[(0, "a misc actor"), (1, "an item action (ACTORCAT_ITEMACTION)")]), "its actor category");
+
+/// En_M_Fire1's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[ITEM_ACTION], flags: &[], todo: false };
 
 /// `sCylinderInit`.
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -41,7 +52,7 @@ pub struct EnMFire1 {
 impl EnMFire1 {
     /// `EnMFire1_Init`.
     pub fn init(mut actor: Actor, _play: &mut PlayState) -> Box<dyn ActorImpl> {
-        if actor.params < 0 {
+        if ITEM_ACTION.get(actor.params) != 0 {
             // Actor_ChangeCategory(.., ACTORCAT_ITEMACTION) (Actor_Spawn moves it to the list).
             actor.category = ACTORCAT_ITEMACTION;
         }

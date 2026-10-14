@@ -13,6 +13,10 @@
 //!   and shrinks away over frames 24 to 8 of its 70, then it's gone.
 //!
 //! The whole overlay is ported.
+//!
+//! Params: `params` the whole params (0 a shield lying about, offered to Link; 1 the burnt
+//! shield, spawned by Player as his Deku Shield burns; any other has no action).
+//! Flags: none.
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
@@ -20,6 +24,7 @@ use eng_math::{atan2_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::item::GI_SHIELD_DEKU;
@@ -30,7 +35,13 @@ use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matri
 pub const ACTOR_ITEM_SHIELD: i16 = 0x00EE;
 
 /// `Item_Shield_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ITEM_SHIELD, name: "Item_Shield", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ITEM_SHIELD, name: "Item_Shield", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params` (`ItemShield_Init`'s switch): which shield.
+pub const PARAMS: Field = Field::whole("params", Kind::Named(&[(0, "a shield lying about"), (1, "Link's burnt shield")]), "which shield: lying about or burning");
+
+/// Item_Shield's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
 
 const OBJECT: &str = "object_link_child";
 
@@ -93,7 +104,7 @@ impl ItemShield {
             unk_1a8: [Vec3::ZERO; 8],
             action: Action::Lying,
         };
-        match actor.params {
+        match PARAMS.get(actor.params) {
             0 => {
                 // ActorShape_Init(&shape, 1400, NULL, 0).
                 actor.shape_y_offset = 1400.0;

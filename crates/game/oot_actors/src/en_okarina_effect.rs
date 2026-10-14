@@ -9,9 +9,14 @@
 //!
 //! The whole overlay is ported. `gInterruptSongOfStorms` (set by `En_Weather_Tag` near a place's
 //! own weather) cuts it short; `FrameAdvance_IsEnabled` is false.
+//!
+//! Params: none (`Oceff_Storm` spawns it with 1; nothing reads them).
+//! Flags: clears cutscene flag 5 every frame of the storm and sets it at 308 (`CutsceneFlags_Set`:
+//! a magic bean's sprout grows); reads `gInterruptSongOfStorms` (the storm cut short).
 
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Flag, FlagUse};
 use oot_game::audio::{CHANNEL_IO_PORT_1, NA_BGM_NATURE_AMBIENCE, NATURE_CHANNEL_LIGHTNING, NATURE_CHANNEL_RAIN, SEQ_PLAYER_BGM_MAIN};
 use oot_game::env::{
     LIGHT_MODE_TIME, LIGHTNING_LAST, LIGHTNING_ON, PRECIP_RAIN_CUR, PRECIP_SOS_MAX, STORM_REQUEST_NONE, STORM_REQUEST_START, STORM_REQUEST_STOP, STORM_STATE_OFF, STORM_STATE_ON, WEATHER_MODE_CLEAR,
@@ -29,6 +34,17 @@ pub const PROFILE: ActorProfile = ActorProfile {
     category: ACTORCAT_ITEMACTION,
     flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA,
     object: "gameplay_keep",
+    schema: &SCHEMA,
+};
+
+/// En_Okarina_Effect's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[],
+    flags: &[
+        FlagUse::new(Flag::Other("CutsceneFlags 5")).sets().clears().note("set at 308: a magic bean's sprout grows"),
+        FlagUse::new(Flag::Other("gInterruptSongOfStorms")).reads().note("set: the storm ends at once"),
+    ],
+    todo: false,
 };
 
 /// `PAUSE_STATE_OFF`, `GAMEOVER_INACTIVE`, `TRANS_MODE_OFF`, `GAMEMODE_NORMAL`, `CS_STATE_IDLE`.

@@ -1,8 +1,8 @@
 //! `Door_Ana` (`ovl_Door_Ana/z_door_ana.c`): a grotto's hole (GAME-06 milestone 4).
 //!
-//! Params: bits 12..14 the destination (`sGrottoEntrances[n - 1]`: the fairy fountain or one of
-//! the fourteen grottos; 0 takes `home.rot.z + 1`), bits 8 and 9 hidden (8 opened by the Song of
-//! Storms, 9 by an explosion or the hammer, its cylinder 50 by 10 taking only those), the low
+//! Its params: bits 12..14 the destination (`sGrottoEntrances[n - 1]`: the fairy fountain or one
+//! of the fourteen grottos; 0 takes `home.rot.z + 1`), bits 8 and 9 hidden (8 opened by the Song
+//! of Storms, 9 by an explosion or the hammer, its cylinder 50 by 10 taking only those), the low
 //! byte the grotto's own data (the return point's `data`).
 //!
 //! Open, the hole grows to its size (0.01) and, with Link standing within 15 of its middle (and
@@ -14,6 +14,16 @@
 //!
 //! The whole overlay is ported (`Actor_SetClosestSecretDistance`, the Stone of Agony's rumble,
 //! isn't: no rumble).
+//!
+//! Params: `data` bits 0 to 7 (the grotto's own data, stored in the return point's `data`, an
+//! `s8`: the grotto's chest and its flag for `En_Torch`, the song for `Demo_Kankyo`); `hidden` bits
+//! 8 to 9 (0 open; 1 opened by the Song of Storms; 2 or 3 by an explosion or the hammer, bit 9 its
+//! cylinder; cleared as it opens); `destination` bits 12 to 14 (`sGrottoEntrances[n - 1]`: 1
+//! the fairy fountain, 2 to 7 grottos 0 to 5; 0 takes `home.rot.z`). `home.rot.z`: with
+//! destination 0, the grotto (`sGrottoEntrances[rot.z + 1]`: 0 to 13 grottos 0 to 13); zeroed in
+//! `shape.rot` at init.
+//! Flags: reads `CutsceneFlags_Get(play, 5)` (the Song of Storms played: a hidden hole of type 1
+//! opens within 200).
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
@@ -21,6 +31,7 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME;
 use oot_game::collision_check::*;
 use oot_game::pack::keys;
@@ -31,7 +42,68 @@ pub const ACTOR_DOOR_ANA: i16 = 0x009B;
 const FIELD_KEEP: &str = "gameplay_field_keep";
 
 /// `Door_Ana_Profile`: `ACTORCAT_ITEMACTION`, `ACTOR_FLAG_UPDATE_DURING_OCARINA`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DOOR_ANA, name: "Door_Ana", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_DURING_OCARINA, object: FIELD_KEEP };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DOOR_ANA, name: "Door_Ana", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_DURING_OCARINA, object: FIELD_KEEP, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 16)` into the return point's `data`, an `s8`: the low byte.
+pub const DATA: Field = Field::params("respawn data", 0, 8, Kind::Range(0, 0xFF), "the grotto's own data (its chest, its song), kept in the return point");
+/// `PARAMS_GET_NOSHIFT(params, 8, 2)`: hidden.
+pub const HIDDEN: Field = Field::params(
+    "hidden",
+    8,
+    2,
+    Kind::Named(&[(0, "open"), (1, "hidden: the Song of Storms opens it"), (2, "hidden: an explosion or the hammer opens it"), (3, "hidden: an explosion or the hammer opens it")]),
+    "whether it's hidden, and what opens it",
+);
+/// `PARAMS_GET_NOSHIFT(params, 9, 1)`: opened by an explosion or the hammer (its cylinder).
+pub const BOMBABLE: Field = Field::params("hidden & 0x200", 9, 1, Kind::Named(&[(0, "not"), (1, "an explosion or the hammer opens it")]), "its cylinder: opened by a hit").part_of("hidden");
+/// `PARAMS_GET_U(params, 12, 3)`: `destinationIdx + 1`.
+pub const DESTINATION: Field = Field::params(
+    "destinationIdx",
+    12,
+    3,
+    Kind::Named(&[
+        (0, "home.rot.z's grotto"),
+        (1, "ENTR_FAIRYS_FOUNTAIN_0"),
+        (2, "ENTR_GROTTOS_0"),
+        (3, "ENTR_GROTTOS_1"),
+        (4, "ENTR_GROTTOS_2"),
+        (5, "ENTR_GROTTOS_3"),
+        (6, "ENTR_GROTTOS_4"),
+        (7, "ENTR_GROTTOS_5"),
+    ]),
+    "where it leads (sGrottoEntrances[n - 1]; 0: by home.rot.z)",
+);
+/// `home.rot.z`: the grotto with destination 0 (`sGrottoEntrances[rot.z + 1]`).
+pub const GROTTO: Field = Field::rot(
+    "home.rot.z",
+    Source::RotZ,
+    0,
+    16,
+    Kind::Named(&[
+        (0, "ENTR_GROTTOS_0"),
+        (1, "ENTR_GROTTOS_1"),
+        (2, "ENTR_GROTTOS_2"),
+        (3, "ENTR_GROTTOS_3"),
+        (4, "ENTR_GROTTOS_4"),
+        (5, "ENTR_GROTTOS_5"),
+        (6, "ENTR_GROTTOS_6"),
+        (7, "ENTR_GROTTOS_7"),
+        (8, "ENTR_GROTTOS_8"),
+        (9, "ENTR_GROTTOS_9"),
+        (10, "ENTR_GROTTOS_10"),
+        (11, "ENTR_GROTTOS_11"),
+        (12, "ENTR_GROTTOS_12"),
+        (13, "ENTR_GROTTOS_13"),
+    ]),
+    "the grotto it leads to with destination 0",
+);
+
+/// Door_Ana's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[DATA, HIDDEN, BOMBABLE, DESTINATION, GROTTO],
+    flags: &[FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 5)")).reads().note("the Song of Storms played: a hole hidden for it (1) opens within 200")],
+    todo: false,
+};
 
 /// `sCylinderInit`: a bombable hole's, 50 by 10, hit by explosions and the hammer (0x48).
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -94,7 +166,7 @@ pub struct DoorAna {
 
 impl DoorAna {
     fn bombable(&self) -> bool {
-        self.actor.params & 0x0200 != 0
+        BOMBABLE.get(self.actor.params) != 0
     }
 
     /// `DoorAna_Init`: facing nowhere; hidden ones at scale 0 (a bombable one with its cylinder,
@@ -104,8 +176,8 @@ impl DoorAna {
         actor.shape_rot.y = 0;
         let collider = ColliderCylinder::new(&CYLINDER_INIT);
         let mut action = Action::WaitOpen;
-        if actor.params & 0x0300 != 0 {
-            if actor.params & 0x0200 == 0 {
+        if HIDDEN.get(actor.params) != 0 {
+            if BOMBABLE.get(actor.params) == 0 {
                 actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
             }
             actor.scale = Vec3::ZERO;
@@ -147,14 +219,15 @@ impl DoorAna {
         let (state1, action_var1) = play.actors.get(ph).and_then(|p| p.as_player()).map(|p| (p.state_flags1(), p.action_var1())).unwrap_or((0, 0));
         if step_to_f(&mut self.actor.scale.x, 0.01, 0.001) {
             if self.actor.target_mode != 0 && play.transition.trigger == oot_game::transition::TRANS_TRIGGER_OFF && state1 & PLAYER_STATE1_31 != 0 && action_var1 == 0 {
-                let mut destination = ((self.actor.params >> 12) & 7) - 1;
+                let mut destination = DESTINATION.get(self.actor.params) - 1;
                 play.setup_respawn_point(RESPAWN_MODE_RETURN, GROTTO_PLAYER_PARAMS);
                 let r = &mut play.save.respawn[RESPAWN_MODE_RETURN];
                 r.pos.y = self.actor.world_pos.y;
                 r.yaw = self.actor.home_rot.y;
-                r.data = self.actor.params as i8;
+                r.data = DATA.get(self.actor.params) as i8;
                 if destination < 0 {
-                    destination = self.actor.home_rot.z + 1;
+                    destination = GROTTO.get(self.actor.home_rot.z) + 1;
+
                 }
                 let name = GROTTO_ENTRANCES.get(destination as usize).copied().unwrap_or(GROTTO_ENTRANCES[0]);
                 match play.assets.as_ref().and_then(|a| a.scenes.entrance_index(name)) {

@@ -20,6 +20,16 @@
 //! **Not ported** (the user's scope, GAME-07): the ranch's house by day, the cucco game and the milk
 //! (`EnTa_SetTextForTalkInLonLonHouse` to `EnTa_IdleAfterCuccoGameFinished`, about 600 lines): that
 //! Talon is a placeholder.
+//!
+//! Params: `params` whole (`EnTaType`: -1 `ENTA_CHILD_ERA` the child's Talon, at Hyrule Castle or
+//! in the ranch's house by the scene, and anything else not below; 1 `ENTA_IN_KAKARIKO` the adult's
+//! in Kakariko; 2 `ENTA_RETURNED_FROM_KAKARIKO` the adult's back at the ranch, by day in the stable).
+//! Flags: reads and sets EVENTCHKINF_TALON_WOKEN_IN_CASTLE, EVENTCHKINF_TALON_RETURNED_FROM_CASTLE
+//! (type -1), EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO and EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO (types
+//! 1 and 2); reads EVENTCHKINF_EPONA_OBTAINED (type 1 awake: 0x5017, then back to the ranch). The
+//! ranch house's cucco game (not ported) reads, sets and clears EVENTINF_CUCCO_GAME_FINISHED and
+//! EVENTINF_CUCCO_GAME_WON, reads and sets ITEMGETINF_TALON_BOTTLE and
+//! INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE.
 
 use std::sync::Arc;
 
@@ -30,6 +40,8 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_80033480};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, event_inf, inf_table, item_get_inf};
 use oot_game::audio::sfx::NA_SE_PL_WALK_GROUND;
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::collision_check::*;
@@ -44,7 +56,7 @@ pub const ACTOR_EN_TA: i16 = 0x0084;
 pub const OBJECT: &str = "object_ta";
 
 /// `En_Ta_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TA, name: "En_Ta", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TA, name: "En_Ta", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
 
 /// `EnTaType`.
 pub const ENTA_CHILD_ERA: i16 = -1;
@@ -81,6 +93,37 @@ pub const EVENTCHKINF_TALON_RETURNED_FROM_CASTLE: u16 = 0x14;
 const EVENTCHKINF_EPONA_OBTAINED: u16 = 0x18;
 const EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO: u16 = 0x6A;
 const EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO: u16 = 0x6B;
+/// The cucco game's (`save.h`; not ported): `EVENTINF_CUCCO_GAME_WON` (`EVENTINF_HORSES_08`),
+/// `EVENTINF_CUCCO_GAME_FINISHED` (`EVENTINF_HORSES_0A`), `ITEMGETINF_TALON_BOTTLE`,
+/// `INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE`.
+const EVENTINF_CUCCO_GAME_WON: u16 = 0x08;
+const EVENTINF_CUCCO_GAME_FINISHED: u16 = 0x0A;
+const ITEMGETINF_TALON_BOTTLE: u16 = 0x02;
+const INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE: u16 = 0x7E;
+
+/// `switch (this->actor.params)`: which Talon.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[(-1, "ENTA_CHILD_ERA"), (1, "ENTA_IN_KAKARIKO"), (2, "ENTA_RETURNED_FROM_KAKARIKO")]),
+    "the child's Talon (castle or ranch house, by the scene), or the adult's in Kakariko or back at the ranch",
+);
+
+/// En_Ta's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_WOKEN_IN_CASTLE)).reads().sets().note("type -1: woken by the Cucco"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().sets().note("type -1: gone home to the ranch"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO)).reads().sets().note("type 1: woken by the Pocket Cucco"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO)).reads().sets().note("types 1 and 2: back at the ranch"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_EPONA_OBTAINED)).reads().note("type 1 awake: 0x5017, then back to the ranch"),
+        FlagUse::new(event_inf!(EVENTINF_CUCCO_GAME_FINISHED)).reads().sets().clears().note("the ranch house's cucco game").indirect("not ported: the ranch house by day"),
+        FlagUse::new(event_inf!(EVENTINF_CUCCO_GAME_WON)).reads().sets().clears().note("the ranch house's cucco game").indirect("not ported: the ranch house by day"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_TALON_BOTTLE)).reads().sets().note("the cucco game's bottle won").indirect("not ported: the ranch house by day"),
+        FlagUse::new(inf_table!(INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE)).reads().sets().note("the ranch house's first talk").indirect("not ported: the ranch house by day"),
+    ],
+    todo: false,
+};
 
 /// `EXCH_ITEM_CHICKEN`, `EXCH_ITEM_POCKET_CUCCO` (`item.h`: 0x03, 0x06).
 pub const EXCH_ITEM_CHICKEN: u8 = 0x03;
@@ -276,13 +319,12 @@ impl EnTa {
         this.actor.min_velocity_y = -4.0;
         this.actor.gravity = -1.0;
         let adult = play.save.adult;
-        let ev = |f: u16| play.save.get_event_chk_inf(f);
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             ENTA_IN_KAKARIKO => {
                 log::debug!(" Exile Talon ");
-                if ev(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO) || !adult {
+                if play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO) || !adult {
                     this.actor.kill();
-                } else if ev(EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO) {
+                } else if play.save.get_event_chk_inf(EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO) {
                     this.setup_awake_standing(Action::IdleAwakeInKakariko);
                 } else {
                     this.setup_asleep(Action::IdleAsleepInKakariko);
@@ -290,7 +332,7 @@ impl EnTa {
             }
             ENTA_RETURNED_FROM_KAKARIKO => {
                 log::debug!(" Return Talon ");
-                if !ev(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO) || !adult {
+                if !play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO) || !adult {
                     this.actor.kill();
                 } else if play.scene_id == SCENE_STABLE && !play.save.is_day() {
                     this.actor.kill();
@@ -302,16 +344,16 @@ impl EnTa {
             _ => {
                 log::debug!(" Other Talon ");
                 if play.scene_id == SCENE_HYRULE_CASTLE {
-                    if ev(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) {
+                    if play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) {
                         this.actor.kill();
-                    } else if ev(EVENTCHKINF_TALON_WOKEN_IN_CASTLE) {
+                    } else if play.save.get_event_chk_inf(EVENTCHKINF_TALON_WOKEN_IN_CASTLE) {
                         this.setup_awake_standing(Action::IdleAwakeInCastle);
                     } else {
                         this.setup_asleep(Action::IdleAsleepInCastle);
                     }
                 } else if play.scene_id == SCENE_LON_LON_BUILDINGS {
                     log::debug!(" Talon in the warehouse at Lon Lon Ranch");
-                    if !ev(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) || adult {
+                    if !play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) || adult {
                         this.actor.kill();
                     } else if play.save.is_day() {
                         // The super cuccos, the cucco game and the milk (EnTa_SetTextForTalkInLonLonHouse,
@@ -840,7 +882,7 @@ impl ActorImpl for EnTa {
     /// `EnTa_Destroy`: the ranch's timer off (the ranch's Talon), the music back
     /// (`TALON_STATE_FLAG_RESTORE_BGM_ON_DESTROY`, set only by the cucco game).
     fn destroy(&mut self, play: &mut PlayState) {
-        if self.actor.params != ENTA_IN_KAKARIKO && self.actor.params != ENTA_RETURNED_FROM_KAKARIKO && play.scene_id == SCENE_LON_LON_BUILDINGS {
+        if TYPE.get(self.actor.params) != ENTA_IN_KAKARIKO && TYPE.get(self.actor.params) != ENTA_RETURNED_FROM_KAKARIKO && play.scene_id == SCENE_LON_LON_BUILDINGS {
             log::debug!("En_Ta: gSaveContext.timerState = TIMER_STATE_OFF (the cucco game's timer isn't ported)");
         }
         if self.state_flags & TALON_STATE_FLAG_RESTORE_BGM_ON_DESTROY != 0 {

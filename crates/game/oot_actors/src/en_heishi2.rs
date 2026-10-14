@@ -20,6 +20,15 @@
 //!
 //! Each turns his head to Link (`Actor_TrackPlayer`) and offers to talk within 120 in front of him.
 //! The mask reactions give 0 (no masks yet: BACKLOG #39). The whole overlay is ported.
+//!
+//! Params: `type` bits 0 to 7 (2: Hyrule Castle's gate guard; 5: Kakariko's gate guard; 6: the
+//! guards through Zelda's window; 9: the bomb soldier `En_Wonder_Item` spawns; any other has no
+//! action); `unk_2F0` bits 8 to 15 unused (0xFF in the data; kept, never read; its low four
+//! printed as the "message").
+//! Flags: type 2 reads EVENTCHKINF_09, EVENTCHKINF_25 and EVENTCHKINF_37 (the three stones: his
+//! night text) and EVENTCHKINF_RECEIVED_WEIRD_EGG (the bribe); type 5 reads and sets INFTABLE_76
+//! (the letter shown: the gate open) and INFTABLE_77 (the Keaton Mask sold, worn), and sets
+//! ITEMGETINF_38 with the sale.
 
 use std::sync::Arc;
 
@@ -32,6 +41,8 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4,
 };
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::camera::{CAM_ID_MAIN, CAM_STAT_ACTIVE, CAM_STAT_WAIT};
 use oot_game::collision_check::*;
@@ -51,7 +62,7 @@ pub const ACTOR_EN_HEISHI2: i16 = 0x00B3;
 pub const OBJECT: &str = "object_sd";
 
 /// `En_Heishi2_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HEISHI2, name: "En_Heishi2", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HEISHI2, name: "En_Heishi2", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
 
 /// `ACTOR_EN_BOM` (`actor_table.h`: 0x0010).
 const ACTOR_EN_BOM: i16 = 0x0010;
@@ -65,6 +76,37 @@ const EVENTCHKINF_25: u16 = 0x25;
 const EVENTCHKINF_37: u16 = 0x37;
 pub const INFTABLE_77: u16 = 0x77;
 const ITEMGETINF_38: u16 = 0x38;
+
+/// `PARAMS_GET_U(this->actor.params, 0, 8)`: the type.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    8,
+    Kind::Named(&[
+        (2, "Hyrule Castle's gate guard"),
+        (5, "Kakariko's gate guard"),
+        (6, "the guards through Zelda's window (EnHeishi2_DrawKingGuard)"),
+        (9, "the bomb soldier (En_Wonder_Item's)"),
+    ]),
+    "which guard (any other has no action)",
+);
+/// `PARAMS_GET_U(this->actor.params, 8, 8)` into `unk_2F0`, which nothing reads.
+pub const UNK_2F0: Field = Field::params("unk_2F0", 8, 8, Kind::Unused, "0xFF in the data; kept, never read (its low four printed as the message)");
+
+/// En_Heishi2's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, UNK_2F0],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_09)).reads().note("type 2: the three stones, his night text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_25)).reads().note("type 2: the three stones, his night text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_37)).reads().note("type 2: the three stones, his night text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_RECEIVED_WEIRD_EGG)).reads().note("type 2: the bribe offered"),
+        FlagUse::new(inf_table!(INFTABLE_76)).reads().sets().note("type 5: the letter shown, the gate open"),
+        FlagUse::new(inf_table!(INFTABLE_77)).reads().sets().note("type 5: the Keaton Mask sold, worn"),
+        FlagUse::new(item_get_inf!(ITEMGETINF_38)).sets().note("type 5: the Keaton Mask sold"),
+    ],
+    todo: false,
+};
 
 /// `EXCH_ITEM_ZELDAS_LETTER` (`item.h`: 0x01).
 pub const EXCH_ITEM_ZELDAS_LETTER: u8 = 0x01;
@@ -249,7 +291,7 @@ impl EnHeishi2 {
             unk_2f0: 0,
             unk_2f2: [0; 5],
             unk_2fc: 0,
-            ty: actor.params & 0xFF,
+            ty: TYPE.get(actor.params),
             unk_300: 0,
             audio_flag: 0,
             unk_309: 0,
@@ -329,7 +371,8 @@ impl EnHeishi2 {
             // actionFunc NULL: the update would jump to address 0.
             t => log::warn!("En_Heishi2: type {t} has no action (actionFunc NULL)"),
         }
-        this.unk_2f0 = this.actor.params as u16 >> 8;
+        this.unk_2f0 = UNK_2F0.get(this.actor.params) as u16;
+        // schema: printed
         log::debug!(" ☆☆☆☆☆ Soldier Set 2 Completed!  ☆☆☆☆☆ {}", this.actor.params);
         Box::new(this)
     }

@@ -1,8 +1,8 @@
 //! `En_Skb` (`ovl_En_Skb/z_en_skb.c`): the Stalchild, the skeleton that rises out of Hyrule
 //! Field by night (GAME-06 milestone 4).
 //!
-//! Params: its size (`(params × 0.1 + 1) × 0.01`; its spheres 10 + params and 20 + 2 params).
-//! `En_Encount1` spawns them around Link; each one's death counts down its spawner.
+//! Its params are its size (`(params × 0.1 + 1) × 0.01`; its spheres 10 + params and 20 + 2
+//! params). `En_Encount1` spawns them around Link; each one's death counts down its spawner.
 //!
 //! - **Rising** (`EnSkb_RiseFromGround`): from 8,000 under (its `shape.yOffset`), turning to Link
 //!   for its first 4 frames, debris and dust every other frame; then it decides
@@ -21,6 +21,11 @@
 //! The whole overlay is ported. Its limb draws are one skeleton (its head's pulsing env colour
 //! for all its limbs: the C's sets it before the head, and no other limb reads it), with and
 //! without the head and jaw. The circle shadow isn't drawn (`shadowScale` kept).
+//!
+//! Params: `params` whole (its size: scale `(params × 0.1 + 1) × 0.01`, spheres 10 + params and 20
+//! + 2 params, its attack's reach 60 + 6 params; `En_Encount1` spawns 0, and every tenth after the
+//! tenth `killCount / 10 × 5`; never placed).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -31,6 +36,7 @@ use eng_math::{smooth_step_to_f, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile, audio_play_actor_sfx2, math_cos_f, math_sin_f};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::hahen::HAHEN_OBJECT_DEFAULT;
@@ -47,7 +53,13 @@ const SKEL: &str = "gStalchildSkel";
 
 /// `En_Skb_Profile`: `ACTORCAT_ENEMY`, attention-enabled, hostile, always updating.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_SKB, name: "En_Skb", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+    ActorProfile { id: ACTOR_EN_SKB, name: "En_Skb", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params`: its size.
+pub const SIZE: Field = Field::whole("params", Kind::Range(0, 0x7FFF), "its size: scale (params × 0.1 + 1) × 0.01, larger spheres and reach");
+
+/// En_Skb's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[SIZE], flags: &[], todo: false };
 
 /// `NAVI_ENEMY_STALCHILD` (`actor.h`: 0x55).
 const NAVI_ENEMY_STALCHILD: u8 = 0x55;
@@ -277,7 +289,8 @@ impl EnSkb {
         actor.navi_enemy_id = NAVI_ENEMY_STALCHILD;
         let elements = jnt_sph_elements();
         let mut collider = ColliderJntSph::new(&JNT_SPH_INIT, &elements);
-        let p = actor.params;
+        let p = SIZE.get(actor.params);
+
         actor.scale = Vec3::splat(((p as f32 * 0.1) + 1.0) * 0.01);
         let r0 = (10 + p) as i16;
         let r1 = (20 + (p * 2)) as i16;
@@ -325,7 +338,7 @@ impl EnSkb {
     fn decide_next_action(&mut self, play: &mut PlayState) {
         if play.save.is_day() {
             self.setup_despawn(play);
-        } else if self.facing_player(0x11C7) && self.actor.xz_dist_to_player < 60.0 + (self.actor.params as f32 * 6.0) {
+        } else if self.facing_player(0x11C7) && self.actor.xz_dist_to_player < 60.0 + (SIZE.get(self.actor.params) as f32 * 6.0) {
             self.setup_attack();
         } else {
             self.setup_walk_forward();
@@ -424,7 +437,7 @@ impl EnSkb {
         let (dx, dz) = (player_pos.x - self.actor.home_pos.x, player_pos.z - self.actor.home_pos.z);
         if (dx * dx + dz * dz).sqrt() > 800.0 || play.save.is_day() {
             self.setup_despawn(play);
-        } else if self.facing_player(0x11C7) && self.actor.xz_dist_to_player < 60.0 + (self.actor.params as f32 * 6.0) {
+        } else if self.facing_player(0x11C7) && self.actor.xz_dist_to_player < 60.0 + (SIZE.get(self.actor.params) as f32 * 6.0) {
             self.setup_attack();
         }
     }

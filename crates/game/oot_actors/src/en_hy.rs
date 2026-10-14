@@ -26,6 +26,18 @@
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
 //! circle shadow's size (`shadowScale` kept).
+//!
+//! Params: `type` bits 0 to 6 (`EnHyType`, 0 to 20: the dog lady, the beggar (5), the bald man
+//! with his bag (3), the old man (7), ...); `pathIndex` bits 7 to 10 (the path the bald man walks
+//! or the old man paces; 15: none); bits 11 to 15 unused (one placement, 0x7007, sets 12 to 14).
+//! Flags: reads EVENTCHKINF_ZELDA_FLED_CASTLE, EVENTCHKINF_TALON_RETURNED_FROM_CASTLE,
+//! EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME, EVENTCHKINF_AA, INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE
+//! (their texts) and EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO (the guest house's, its word copied
+//! at init, `talonEventChkInf`); reads EVENTCHKINF_OBTAINED_MASTER_SWORD (the back alley's bearded
+//! man); reads and sets INFTABLE_C0 to INFTABLE_CD and INFTABLE_160 to INFTABLE_164 (a first text
+//! heard, set as it closes); the dog lady reads EVENTINF_30, `gSaveContext.dogIsLost` and
+//! `dogParams` (clearing both as she takes a dog) and reads and sets INFTABLE_191 (her reward
+//! given).
 
 use std::cell::Cell;
 use std::sync::Arc;
@@ -37,6 +49,8 @@ use eng_math::{binang_to_rad, cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::{event_chk_inf, event_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::item::{GI_HEART_PIECE, ITEM_BOTTLE_BLUE_FIRE, ITEM_BOTTLE_EMPTY, rupees_change_by};
@@ -52,7 +66,7 @@ pub const ACTOR_EN_HY: i16 = 0x016E;
 
 /// `En_Hy_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_EN_HY, name: "En_Hy", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_EN_HY, name: "En_Hy", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: "gameplay_keep", schema: &SCHEMA };
 
 // `EnHyType`.
 pub const ENHY_TYPE_DOG_LADY: i16 = 0;
@@ -153,6 +167,84 @@ const INFTABLE_191: u16 = 0x191;
 pub const EVENTINF_30: u16 = 0x30;
 /// `QUEST_MEDALLION_SHADOW` (`item.h`).
 const QUEST_MEDALLION_SHADOW: u32 = 0x04;
+
+/// `ENHY_GET_TYPE`: `PARAMS_GET_S(params, 0, 7)`.
+pub const TYPE: Field = Field::params(
+    "type",
+    0,
+    7,
+    Kind::Named(&[
+        (0, "ENHY_TYPE_DOG_LADY"),
+        (1, "ENHY_TYPE_WOMAN_3"),
+        (2, "ENHY_TYPE_MAN_1_BEARD"),
+        (3, "ENHY_TYPE_MAN_2_BALD"),
+        (4, "ENHY_TYPE_MAN_1_SHAVED_BLACK_SHIRT"),
+        (5, "ENHY_TYPE_BEGGAR"),
+        (6, "ENHY_TYPE_OLD_WOMAN"),
+        (7, "ENHY_TYPE_OLD_MAN"),
+        (8, "ENHY_TYPE_YOUNG_WOMAN_BROWN_HAIR"),
+        (9, "ENHY_TYPE_MAN_2_MUSTACHE_RED_SHIRT"),
+        (10, "ENHY_TYPE_MAN_2_MUSTACHE_BLUE_SHIRT"),
+        (11, "ENHY_TYPE_YOUNG_WOMAN_ORANGE_HAIR"),
+        (12, "ENHY_TYPE_MAN_2_ALT_MUSTACHE"),
+        (13, "ENHY_TYPE_MAN_1_BOWL_CUT_PURPLE_SHIRT"),
+        (14, "ENHY_TYPE_MAN_2_BEARD"),
+        (15, "ENHY_TYPE_OLD_MAN_BALD_BROWN_ROBE"),
+        (16, "ENHY_TYPE_MAN_2_MUSTACHE_WHITE_SHIRT"),
+        (17, "ENHY_TYPE_MAN_1_SHAVED_GREEN_SHIRT"),
+        (18, "ENHY_TYPE_WOMAN_2"),
+        (19, "ENHY_TYPE_OLD_MAN_BALD_PURPLE_ROBE"),
+        (20, "ENHY_TYPE_MAN_1_BOWL_CUT_GREEN_SHIRT"),
+    ]),
+    "which townsperson: head, body, animation, texts",
+);
+/// `ENHY_GET_PATH_INDEX`: `PARAMS_GET_S(params, 7, 4)`. A range, not a `PathIndex`: Kakariko's layer 7
+/// places 0 in a layer with no paths.
+pub const PATH_INDEX: Field =
+    Field::params("pathIndex", 7, 4, Kind::Range(0, 15), "the path the bald man (3) walks or the old man (7) paces (15: none)");
+/// Bits 11 to 15: Kakariko's layer 7 old man sets bits 12 to 14 (0x7007).
+pub const BITS_11_15: Field = Field::params("params bits 11 to 15", 11, 5, Kind::Unused, "set in one placement (0x7007); read by nothing");
+
+/// En_Hy's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, PATH_INDEX, BITS_11_15],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME)).reads().note("the young woman's (8) text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("the young woman's (8) text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_MASTER_SWORD)).reads().note("the back alley's bearded man (14): gone by day between Zelda's escape and the Master Sword"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO))
+            .reads()
+            .note("the guest house's texts, from its word read at init")
+            .indirect("`talonEventChkInf`: its eventChkInf word copied at init, the bit tested later"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("the texts after Zelda's escape; the back alley's bearded man (14)"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_AA)).reads().note("the guest house's (9) and Impa's house's (10) texts"),
+        FlagUse::new(inf_table!(INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE)).reads().note("the orange-haired young woman's (11) text"),
+        FlagUse::new(inf_table!(INFTABLE_C0)).reads().sets().note("text 0x7016 heard"),
+        FlagUse::new(inf_table!(INFTABLE_C1)).reads().sets().note("text 0x7045 heard"),
+        FlagUse::new(inf_table!(INFTABLE_C2)).reads().sets().note("text 0x701B heard"),
+        FlagUse::new(inf_table!(INFTABLE_C3)).reads().sets().note("text 0x7047 heard"),
+        FlagUse::new(inf_table!(INFTABLE_C4)).reads().sets().note("text 0x70EB heard"),
+        FlagUse::new(inf_table!(INFTABLE_C5)).reads().sets().note("text 0x7023 heard"),
+        FlagUse::new(inf_table!(INFTABLE_C6)).reads().sets().note("text 0x7021 heard"),
+        FlagUse::new(inf_table!(INFTABLE_C7)).reads().sets().note("text 0x7027 heard"),
+        FlagUse::new(inf_table!(INFTABLE_C8)).reads().sets().note("text 0x701D heard"),
+        FlagUse::new(inf_table!(INFTABLE_C9)).reads().sets().note("text 0x7048 heard"),
+        FlagUse::new(inf_table!(INFTABLE_CA)).reads().sets().note("text 0x701F heard"),
+        FlagUse::new(inf_table!(INFTABLE_CB)).reads().sets().note("text 0x508B heard (before NTSC 1.1, 0x7018 too)"),
+        FlagUse::new(inf_table!(INFTABLE_CC)).reads().sets().note("text 0x70A4 heard"),
+        FlagUse::new(inf_table!(INFTABLE_CD)).reads().sets().note("text 0x7018 heard (NTSC 1.1 and up)"),
+        FlagUse::new(inf_table!(INFTABLE_160)).reads().sets().note("text 0x5057 heard"),
+        FlagUse::new(inf_table!(INFTABLE_161)).reads().sets().note("text 0x5059 heard"),
+        FlagUse::new(inf_table!(INFTABLE_162)).reads().sets().note("text 0x505B heard"),
+        FlagUse::new(inf_table!(INFTABLE_163)).reads().sets().note("text 0x505D heard"),
+        FlagUse::new(inf_table!(INFTABLE_164)).reads().sets().note("text 0x5060 heard"),
+        FlagUse::new(inf_table!(INFTABLE_191)).reads().sets().note("the dog lady's reward: a piece of heart, then a blue rupee"),
+        FlagUse::new(event_inf!(EVENTINF_30)).reads().note("the dog lady (0): Richard is out in the market"),
+        FlagUse::new(Flag::Other("gSaveContext.dogIsLost")).reads().clears().note("the dog lady (0): a dog following Link; cleared as she takes Richard"),
+        FlagUse::new(Flag::Other("gSaveContext.dogParams")).reads().clears().note("the dog lady (0): which dog follows Link; cleared as she takes one"),
+    ],
+    todo: false,
+};
 
 // `EXCH_ITEM_*` (`item.h`: 0x18 to 0x1D).
 const EXCH_ITEM_BOTTLE_FISH: u8 = 0x18;
@@ -513,7 +605,7 @@ pub struct EnHy {
 
 impl EnHy {
     fn ty(&self) -> i16 {
-        self.actor.params & 0x7F
+        TYPE.get(self.actor.params)
     }
 
     fn model(&self) -> &'static ModelInfo {
@@ -858,11 +950,11 @@ impl EnHy {
             self.actor.culling_volume_scale = 0.0;
         }
         if play.scene_id == SCENE_KAKARIKO_CENTER_GUEST_HOUSE {
-            // eventChkInf[EVENTCHKINF_INDEX_TALON_RETURNED_FROM_KAKARIKO].
+            // schema: eventChkInf[EVENTCHKINF_INDEX_TALON_RETURNED_FROM_KAKARIKO], its word.
             self.talon_event_chk_inf = play.save.event_chk_inf[(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO >> 4) as usize];
         }
         self.init_set_properties();
-        self.path = path_get_by_index(play.setup_path_list(), (self.actor.params >> 7) & 0xF, 15);
+        self.path = path_get_by_index(play.setup_path_list(), PATH_INDEX.get(self.actor.params), 15);
         self.action = match ty {
             ENHY_TYPE_MAN_2_BALD => {
                 if self.path.is_some() {
@@ -1064,7 +1156,7 @@ fn en_hy_get_text_id(play: &PlayState, ty: i16, talon_event_chk_inf: u16) -> (u1
             } else if play.scene_id == SCENE_MARKET_DAY {
                 t(s.get_event_inf(EVENTINF_30), 0x709B, 0x709C)
             } else if s.dog_is_lost {
-                let following_dog = (s.dog_params & 0xF00) >> 8;
+                let following_dog = crate::en_dog::INDEX.get(s.dog_params);
                 if following_dog != 0 {
                     return (t(following_dog == 1, 0x709F, 0x709E), true, false);
                 }

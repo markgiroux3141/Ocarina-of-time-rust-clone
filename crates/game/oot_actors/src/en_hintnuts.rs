@@ -3,11 +3,6 @@
 //! knocked out by it, one runs, and caught it gives a hint. Three of them (room 9, before the boss)
 //! are a puzzle: knocked out in the order of their params (1, 2, 3), the third runs to talk.
 //!
-//! Params: the low byte 10 is the flower (spawned by the scrub as its child); else the low byte
-//! is its place in the puzzle (0: on its own, talks when knocked out), the high byte its text
-//! (`Actor_SetTextWithPrefix`: 0x1000 in the Deku Tree). Room 9's are 0x0001, 0x0002 and
-//! 0x9C03 (text 0x109C; the first two's 0x1000 is never shown).
-//!
 //! - **Waiting**, **looking around**, **standing**, **spitting** (`ACTOR_EN_NUTSBALL` 1) and
 //!   **burrowing** as `En_Dekunuts` does, but a round is one nut and Link within 120 always
 //!   sends it down. A hit by anything but a nut (`EnHintnuts_ColliderCheck`) only sends it down.
@@ -28,6 +23,15 @@
 //!
 //! The whole overlay is ported. Not ported: the circle shadow (`ActorShadow_DrawCircle`, 35),
 //! not ported for any actor.
+//!
+//! Params: `params` bits 0 to 7 (0xA: the flower, spawned by the scrub as its child with the
+//! whole params 0xA; else its place in the puzzle: 0 on its own, talks when knocked out; 1 to 3
+//! the order; init checks the whole params against 0xA, then a scrub keeps only these bits);
+//! `baseTextId` bits 8 to 15 (its text, `Actor_SetTextWithPrefix`: the scene's prefix, 0x1000 in
+//! the Deku Tree, plus this). Room 9's are 0x0001, 0x0002 and 0x9C03 (text 0x109C; the first
+//! two's 0x1000 is never shown).
+//! Flags: reads the clear flag of room 9 (text 0x109B: set, it's gone); the third of the puzzle
+//! sets its room's clear flag.
 
 use std::sync::Arc;
 
@@ -38,6 +42,7 @@ use eng_math::{approach_f, approach_s, cos_s, scaled_step_to_s, sin_s, smooth_st
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_ENEMY, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_EVENT;
@@ -52,7 +57,26 @@ pub const ACTOR_EN_HINTNUTS: i16 = 0x0192;
 const OBJECT: &str = "object_hintnuts";
 
 /// `En_Hintnuts_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HINTNUTS, name: "En_Hintnuts", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HINTNUTS, name: "En_Hintnuts", category: ACTORCAT_ENEMY, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE, object: OBJECT, schema: &SCHEMA };
+
+/// `this->actor.params` (`== 0xA`; a scrub's `params &= 0xFF` at init): the flower, or the
+/// scrub's place in the puzzle.
+pub const PARAMS: Field = Field::params(
+    "params",
+    0,
+    8,
+    Kind::Named(&[(0, "on its own: talks when knocked out"), (1, "the puzzle's first"), (2, "the puzzle's second"), (3, "the puzzle's third: talks"), (0xA, "the flower")]),
+    "its place in the puzzle, or the flower (0xA, spawned by it)",
+);
+/// `PARAMS_GET_U(this->actor.params, 8, 8)`: `Actor_SetTextWithPrefix`'s `baseTextId`.
+pub const BASE_TEXT_ID: Field = Field::params("baseTextId", 8, 8, Kind::Range(0, 0xFF), "its text, added to the scene's prefix (0x1000 in the Deku Tree)");
+
+/// En_Hintnuts' configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS, BASE_TEXT_ID],
+    flags: &[FlagUse::new(Flag::Clear).reads().sets().note("reads room 9's (text 0x109B: gone); the puzzle's third sets its room's")],
+    todo: false,
+};
 
 /// The flower's params (`0xA` in the C).
 pub const HINTNUTS_FLOWER: i16 = 0xA;
@@ -186,7 +210,8 @@ impl EnHintnuts {
         actor.navi_enemy_id = NAVI_ENEMY_DEKU_SCRUB;
         actor.target_arrow_offset = 2600.0;
         let collider = ColliderCylinder::new(&CYLINDER_INIT);
-        if actor.params == HINTNUTS_FLOWER {
+        // `this->actor.params == 0xA`: the whole params.
+        if PARAMS.get(actor.params) == HINTNUTS_FLOWER && BASE_TEXT_ID.get(actor.params) == 0 {
             actor.flags &= !(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
             return Box::new(EnHintnuts {
                 actor,
@@ -208,7 +233,7 @@ impl EnHintnuts {
         let limbs = skeleton.as_ref().map(|s| s.limbs.len()).unwrap_or(9);
         let skel = SkelAnimeStd::init_flex(limbs, anims.as_ref().map(|a| a.stand.clone()));
         actor.col_chk_info.set_info(None, &COL_CHK_INFO_INIT);
-        let base_text = ((actor.params as u16 >> 8) & 0xFF) as i16;
+        let base_text = BASE_TEXT_ID.get(actor.params);
         oot_game::npc::actor_set_text_with_prefix(play.scene_id, &mut actor, base_text);
         let text_id_copy = actor.text_id;
         actor.params &= 0xFF;
@@ -227,7 +252,7 @@ impl EnHintnuts {
     }
 
     fn is_flower(&self) -> bool {
-        self.actor.params == HINTNUTS_FLOWER
+        PARAMS.get(self.actor.params) == HINTNUTS_FLOWER
     }
 
     fn anim(&self, f: impl Fn(&Anims) -> &Anim) -> Option<Anim> {
@@ -250,7 +275,7 @@ impl EnHintnuts {
     /// the puzzle at 2) still an enemy becomes friendly, a `ACTORCAT_BG` actor.
     fn hit_by_scrub_projectile1(&mut self, play: &mut PlayState) {
         let counter = *puzzle_counter(play);
-        if self.actor.text_id != 0 && self.actor.category == ACTORCAT_ENEMY && (self.actor.params == 0 || counter == 2) {
+        if self.actor.text_id != 0 && self.actor.category == ACTORCAT_ENEMY && (PARAMS.get(self.actor.params) == 0 || counter == 2) {
             self.actor.flags &= !(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
             self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY;
             self.actor.category = ACTORCAT_BG;
@@ -305,8 +330,8 @@ impl EnHintnuts {
         self.collider.dim.height = 37;
         audio_play_actor_sfx2(play, NA_SE_EN_NUTS_DAMAGE);
         self.collider.base.ac_flags &= !AC_ON;
-        if self.actor.params > 0 && self.actor.params < 4 && self.actor.category == ACTORCAT_ENEMY {
-            let params = self.actor.params;
+        if PARAMS.get(self.actor.params) > 0 && PARAMS.get(self.actor.params) < 4 && self.actor.category == ACTORCAT_ENEMY {
+            let params = PARAMS.get(self.actor.params);
             let c = puzzle_counter(play);
             if *c == -4 {
                 *c = 0;
@@ -578,7 +603,7 @@ impl EnHintnuts {
         self.actor.world_rot.y = self.actor.shape_rot.y;
         if self.anim_flag_and_timer == 0 || self.actor.projected_pos.z < 0.0 {
             play.with_msg(|m, f| m.close_textbox(f.audio));
-            if self.actor.params == 3 {
+            if PARAMS.get(self.actor.params) == 3 {
                 let room = self.actor.room;
                 play.flags.set_clear(room);
                 *puzzle_counter(play) = 3;

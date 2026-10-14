@@ -12,6 +12,11 @@
 //!
 //! The whole overlay is ported. Player doesn't lift yet (BACKLOG #4), so the lifted and thrown
 //! states aren't reached; the splash (`EffectSsGSplash`) isn't ported (BACKLOG #40).
+//!
+//! Params: `dropParams` bits 0 to 4 (the collectible dropped as it breaks, `ITEM00_*`; 0x1A and
+//! up none); bit 5 unused (the data writes "no drop" as 0x3F, six bits); bits 6 and 7 unused; bit 8 the pot (`sObjectIds`: 0 `gameplay_dangeon_keep`'s, 1
+//! `object_tsubo`'s); bits 9 to 14 the drop's collectible flag; bit 15 unused.
+//! Flags: none itself; the `En_Item00` it drops reads and sets collectible flag bits 9 to 14.
 
 use eng_collision::math3d::Cylinder16;
 use eng_math::{cos_s, sin_s, step_to_s};
@@ -21,6 +26,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_7,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480, player_play_sfx};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::KAKERA_COLOR_NONE;
 use oot_game::item::GI_NONE;
@@ -31,7 +37,24 @@ pub const ACTOR_OBJ_TSUBO: i16 = 0x0111;
 
 /// `Obj_Tsubo_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OBJ_TSUBO, name: "Obj_Tsubo", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OBJ_TSUBO, name: "Obj_Tsubo", category: ACTORCAT_PROP, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_THROW_ONLY, object: "gameplay_keep", schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 5)`: the drop.
+pub const DROP: Field = Field::params("dropParams", 0, 5, Kind::Drop, "the collectible it drops as it breaks (0x1A and up: none)");
+/// Bit 5: the game's data writes "no drop" as 0x3F; the C reads five bits.
+pub const DROP_BIT_5: Field = Field::params("dropParams bit 5", 5, 1, Kind::Unused, "set with a drop of 0x3F (none) in the data; read by nothing");
+/// `PARAMS_GET_U(params, 8, 1)`: the pot, an index into `sObjectIds`.
+pub const OBJECT_INDEX: Field =
+    Field::params("objectIndex", 8, 1, Kind::Named(&[(0, "gameplay_dangeon_keep's pot"), (1, "object_tsubo's pot")]), "which pot, by its object");
+/// `PARAMS_GET_U(params, 9, 6)`: the drop's collectible flag.
+pub const COLLECTIBLE_FLAG: Field = Field::params("collectibleFlag", 9, 6, Kind::CollectibleFlag, "the drop's collectible flag");
+
+/// Obj_Tsubo's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[DROP, DROP_BIT_5, OBJECT_INDEX, COLLECTIBLE_FLAG],
+    flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().indirect("by the En_Item00 it drops")],
+    todo: false,
+};
 
 /// `sObjectIds`: `OBJECT_GAMEPLAY_DANGEON_KEEP`, `OBJECT_TSUBO` (`object_table.h`: 0x0003, 0x012C),
 /// with their files.
@@ -104,7 +127,7 @@ pub struct ObjTsubo {
 impl ObjTsubo {
     /// `PARAMS_GET_U(params, 8, 1)`: the kind.
     fn kind(&self) -> usize {
-        ((self.actor.params >> 8) & 1) as usize
+        OBJECT_INDEX.get(self.actor.params) as usize
     }
 
     /// `ObjTsubo_Init`.
@@ -127,20 +150,20 @@ impl ObjTsubo {
         let (id, _) = OBJECT_IDS[this.kind()];
         this.required_object_slot = play.object_ctx.get_index(id);
         if this.required_object_slot.is_none() {
-            log::debug!("Error : Bank danger! (arg_data 0x{:04x})(../z_obj_tsubo.c 410)", this.actor.params);
+            log::debug!("Error : Bank danger! (arg_data 0x{:04x})(../z_obj_tsubo.c 410)", this.actor.params); // schema: printed
             this.actor.kill();
         } else {
             this.action = Action::WaitForObject;
-            log::debug!("(dungeon keep pot)(arg_data 0x{:04x})", this.actor.params);
+            log::debug!("(dungeon keep pot)(arg_data 0x{:04x})", this.actor.params); // schema: printed
         }
         Box::new(this)
     }
 
     /// `ObjTsubo_SpawnCollectible`: the drop in bits 0..4 with the flag in bits 9..14.
     fn spawn_collectible(&self, play: &mut PlayState) {
-        let drop_params = self.actor.params & 0x1F;
+        let drop_params = DROP.get(self.actor.params);
         if (0..ITEM00_MAX).contains(&drop_params) {
-            crate::en_item00::item_drop_collectible(play, self.actor.world_pos, drop_params | (((self.actor.params >> 9) & 0x3F) << 8));
+            crate::en_item00::item_drop_collectible(play, self.actor.world_pos, drop_params | (COLLECTIBLE_FLAG.get(self.actor.params) << 8));
         }
     }
 

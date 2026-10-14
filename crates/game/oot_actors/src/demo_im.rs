@@ -18,11 +18,14 @@
 //! Ganon's sealing, the ending: `Door_Warp1`'s sages' warp, `Demo_6K`, the translucent draw); they
 //! log and stay hidden.
 //!
-//! **Params:** the type (above).
-//!
-//! **Flags:** type 5 sets `EVENTCHKINF_59` (the lullaby's cutscene seen) and reads it,
-//! `EVENTCHKINF_OBTAINED_ZELDAS_LETTER` and `EVENTCHKINF_ZELDA_FLED_CASTLE`; an unreachable branch
-//! sets `EVENTCHKINF_4C`.
+//! Params: `params` whole, the type (0 and any other not below: the Chamber of Sages, the Shadow
+//! Medallion's; 2: Ganon's sealing and the Shadow trial's barrier, `Demo_6K`'s light ball; 3: the
+//! lullaby's whistle; 4: Hyrule Field's Deku Nut; 5: Zelda's courtyard; 6: the ending).
+//! `world.rot.x`: a rotation (Ganon's Castle's, 0x2000).
+//! Flags: type 5 sets EVENTCHKINF_59 (the lullaby's cutscene seen) and reads it,
+//! EVENTCHKINF_OBTAINED_ZELDAS_LETTER and EVENTCHKINF_ZELDA_FLED_CASTLE; an unreachable branch sets
+//! EVENTCHKINF_4C (after reading the letter's flag). Type 0 reads `gSaveContext.chamberCutsceneNum`
+//! (`CHAMBER_CS_SHADOW`: the Shadow Medallion's cutscene; not ported).
 
 use std::sync::Arc;
 
@@ -33,6 +36,8 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_INSIDE_CULLING_VOLUME, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_PL_WALK_GROUND, SfxPos};
 use oot_game::collision_check::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
@@ -45,17 +50,48 @@ use oot_game::surface::SurfaceType;
 use oot_game::transition::{TCA_STARBURST, TCC_BLACK, TCS_FAST, TRANS_TRIGGER_START, trans_type_circle};
 
 use crate::en_arrow::{ACTOR_EN_ARROW, ARROW_CS_NUT};
+use crate::en_heishi1::EVENTCHKINF_ZELDA_FLED_CASTLE;
+use crate::en_zl4::EVENTCHKINF_OBTAINED_ZELDAS_LETTER;
 
 /// `ACTOR_DEMO_IM` (`actor_table.h`: 0x00A9).
 pub const ACTOR_DEMO_IM: i16 = 0x00A9;
 pub const OBJECT: &str = "object_im";
 
 /// `Demo_Im_Profile`: `FLAGS` `ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_IM, name: "Demo_Im", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_DEMO_IM, name: "Demo_Im", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_UPDATE_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
 
 /// `EVENTCHKINF_4C`, `EVENTCHKINF_59` (`save.h`).
 const EVENTCHKINF_4C: u16 = 0x4C;
 pub const EVENTCHKINF_59: u16 = 0x59;
+
+/// `switch (this->actor.params)`: the type.
+pub const TYPE: Field = Field::whole(
+    "params",
+    Kind::Named(&[
+        (0, "the Chamber of Sages: the Shadow Medallion (any other not listed too)"),
+        (2, "Ganon's sealing; the Shadow trial's barrier"),
+        (3, "the lullaby's whistle"),
+        (4, "Hyrule Field: the Deku Nut"),
+        (5, "Zelda's courtyard: the lullaby"),
+        (6, "the ending"),
+    ]),
+    "which of Impa's scenes",
+);
+/// `world.rot.x`: the placement's pitch (`focus.rot` copies it), a rotation.
+pub const ROT_X: Field = Field::rot("world.rot.x", Source::RotX, 0, 16, Kind::Rotation, "her pitch (Ganon's Castle's)");
+
+/// Demo_Im's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, ROT_X],
+    flags: &[
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().note("type 5: shown once Link has the letter"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_59)).reads().sets().note("type 5: the lullaby's cutscene seen"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("type 5: gone once Zelda has fled"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_4C)).sets().note("an unreachable branch"),
+        FlagUse::new(Flag::Other("gSaveContext.chamberCutsceneNum")).reads().note("type 0: CHAMBER_CS_SHADOW, the Shadow Medallion's (not ported)"),
+    ],
+    todo: false,
+};
 /// `ITEM_SONG_LULLABY` (`item.h`).
 const ITEM_SONG_LULLABY: u8 = 0x60;
 /// `ENTR_HYRULE_FIELD_0` (`entrance_table.h`).
@@ -225,7 +261,7 @@ impl DemoIm {
         this.shadow_alpha = 255;
         this.collider.update(&this.actor);
         this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
-        match this.actor.params {
+        match TYPE.get(this.actor.params) {
             3 => this.func_80985e60(),
             4 => this.func_8098652c(),
             5 => this.func_809869b0(),
@@ -588,7 +624,7 @@ impl DemoIm {
 
     /// `func_80986BF8`: shown once Link has the letter.
     fn func_80986bf8(&mut self, play: &PlayState) {
-        if play.save.get_event_chk_inf(crate::en_zl4::EVENTCHKINF_OBTAINED_ZELDAS_LETTER) {
+        if play.save.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER) {
             self.action = 24;
             self.draw_config = 1;
             self.unk_280 = 1;
@@ -609,7 +645,7 @@ impl DemoIm {
 
     /// `func_80986CC8`.
     fn func_80986cc8(&mut self, play: &PlayState) {
-        if play.save.get_event_chk_inf(crate::en_zl4::EVENTCHKINF_OBTAINED_ZELDAS_LETTER) {
+        if play.save.get_event_chk_inf(EVENTCHKINF_OBTAINED_ZELDAS_LETTER) {
             self.action = 26;
             self.draw_config = 1;
             self.unk_280 = 1;
@@ -634,7 +670,7 @@ impl DemoIm {
             self.draw_config = 1;
             return;
         }
-        if play.save.get_event_chk_inf(crate::en_heishi1::EVENTCHKINF_ZELDA_FLED_CASTLE) {
+        if play.save.get_event_chk_inf(EVENTCHKINF_ZELDA_FLED_CASTLE) {
             self.actor.kill();
         } else if !play.save.get_event_chk_inf(EVENTCHKINF_59) {
             self.action = 23;

@@ -11,6 +11,11 @@
 //!
 //! The whole overlay is ported. `Magic_Reset` (no magic yet) and Nayru's Love's restore (no
 //! spells) are logged.
+//!
+//! Params: `params` whole (`OceffWipeType`: 0 `OCEFF_WIPE_ZL` Zelda's Lullaby's colours, any other
+//! `OCEFF_WIPE_SOT`'s, the Song of Time's); only spawned, by `Message_DrawMain`
+//! (`sOcarinaEffectActorParams`: 0 for the lullaby, 1 for the Song of Time).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -19,6 +24,7 @@ use eng_math::sin_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, SEGMENT_CALL, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::scene_table::gfx_two_tex_scroll;
@@ -30,11 +36,17 @@ pub const ACTOR_OCEFF_WIPE: i16 = 0x018A;
 
 /// `Oceff_Wipe_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OCEFF_WIPE, name: "Oceff_Wipe", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OCEFF_WIPE, name: "Oceff_Wipe", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &SCHEMA };
 
 /// `OceffWipeType` (`z_oceff_wipe.h`).
 pub const OCEFF_WIPE_ZL: i16 = 0;
 pub const OCEFF_WIPE_SOT: i16 = 1;
+
+/// `this->actor.params != OCEFF_WIPE_ZL`: whose colours.
+pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "OCEFF_WIPE_ZL"), (1, "OCEFF_WIPE_SOT")]), "Zelda's Lullaby's colours (0) or the Song of Time's (any other)");
+
+/// Oceff_Wipe's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 pub const BAKE: &str = "Oceff_Wipe/frustum";
 /// The draw's segments: the colours (`gDPSetPrimColor`, `gDPSetEnvColor` before the material) and
@@ -129,6 +141,7 @@ impl OceffWipe {
         let mut this = OceffWipe { actor, timer: 0, vertices: FrustumVertices::load(play, BAKE) };
         this.actor.scale = Vec3::splat(0.1);
         this.actor.world_pos = play.active_camera().eye;
+        // schema: printed
         log::debug!(" WIPE arg_data = {}", this.actor.params);
         Box::new(this)
     }
@@ -176,7 +189,7 @@ impl ActorImpl for OceffWipe {
             })
         });
         let mut sv = SegmentValues::default();
-        let (prim, env) = if self.actor.params != OCEFF_WIPE_ZL { ([170, 255, 255, 255], [0, 150, 255, 128]) } else { ([255, 255, 200, 255], [100, 0, 255, 128]) };
+        let (prim, env) = if TYPE.get(self.actor.params) != OCEFF_WIPE_ZL { ([170, 255, 255, 255], [0, 150, 255, 128]) } else { ([255, 255, 200, 255], [100, 0, 255, 128]) };
         sv.prim[SEG_COLOR as usize] = Some(prim);
         sv.env[SEG_COLOR as usize] = Some(env);
         sv.read(SEG_SCROLL, &scroll(frames));

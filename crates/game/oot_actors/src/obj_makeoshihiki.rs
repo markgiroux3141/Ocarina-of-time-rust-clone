@@ -11,10 +11,20 @@
 //! The Master Quest Deku Tree's is room 3's, params 0xFF10 at `home.rot.z` 1: the first flag 0x10,
 //! the second none (but the draw still writes it: flag 0x3F is cleared while the block rests, as
 //! the C does). The whole overlay is ported.
+//!
+//! Params: `switchFlag1` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`: set, the block starts at
+//! place 1); `noSwitchFlag1` bit 6 (1: no first flag to read); `switchFlag2` bits 8 to 13
+//! (`PARAMS_GET_U(params, 8, 6)`: set, place 2); `noSwitchFlag2` bit 14 (1: no second flag to
+//! read); bit 15 unused (the data's 0xFF10). `home.rot.z & 1` (`block`): the puzzle (`sBlocks`:
+//! 0 the large block, 1 the Deku Tree's room 3 small block).
+//! Flags: reads switch flags `switchFlag1` and `switchFlag2` (unless their bit 6 or 14 is set) at
+//! init and in the draw; the draw sets and clears both as the block's resting place says, even
+//! a flag its bit marks as none.
 
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR;
 use oot_game::play::PlayState;
 
@@ -25,7 +35,30 @@ pub const ACTOR_OBJ_MAKEOSHIHIKI: i16 = 0x017D;
 pub const OBJECT: &str = "gameplay_dangeon_keep";
 
 /// `Obj_Makeoshihiki_Profile`: `ACTOR_FLAG_DRAW_CULLING_DISABLED`; its update is `Actor_Noop`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MAKEOSHIHIKI, name: "Obj_Makeoshihiki", category: ACTORCAT_PROP, flags: ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MAKEOSHIHIKI, name: "Obj_Makeoshihiki", category: ACTORCAT_PROP, flags: ACTOR_FLAG_DRAW_CULLING_DISABLED, object: OBJECT, schema: &SCHEMA };
+
+/// `PARAMS_GET_U(params, 0, 6)`: the first flag.
+pub const SWITCH_FLAG_1: Field = Field::params("switchFlag1", 0, 6, Kind::SwitchFlag, "set: the block starts at place 1; set or cleared by where it rests");
+/// `PARAMS_GET_U(params, 6, 1)`: no first flag.
+pub const NO_SWITCH_FLAG_1: Field = Field::params("noSwitchFlag1", 6, 1, Kind::Named(&[(0, "switchFlag1 read"), (1, "switchFlag1 not read")]), "whether the first flag is read");
+/// `PARAMS_GET_U(params, 8, 6)`: the second flag.
+pub const SWITCH_FLAG_2: Field = Field::params("switchFlag2", 8, 6, Kind::SwitchFlag, "set: the block starts at place 2; set or cleared by where it rests");
+/// `PARAMS_GET_U(params, 14, 1)`: no second flag.
+pub const NO_SWITCH_FLAG_2: Field = Field::params("noSwitchFlag2", 14, 1, Kind::Named(&[(0, "switchFlag2 read"), (1, "switchFlag2 not read")]), "whether the second flag is read");
+/// Bit 15: set in the data's 0xFF10.
+pub const BIT_15: Field = Field::params("bit 15", 15, 1, Kind::Unused, "set in the data (0xFF10); read by nothing");
+/// `home.rot.z & 1`: the puzzle, an index into `sBlocks`.
+pub const BLOCK: Field = Field::rot("block", Source::RotZ, 0, 1, Kind::Named(&[(0, "the large block"), (1, "the Deku Tree's room 3 small block")]), "which puzzle (sBlocks)");
+
+/// Obj_Makeoshihiki's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG_1, NO_SWITCH_FLAG_1, SWITCH_FLAG_2, NO_SWITCH_FLAG_2, BIT_15, BLOCK],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag1")).reads().sets().clears().note("read unless noSwitchFlag1; set and cleared by where the block rests"),
+        FlagUse::new(Flag::Switch("switchFlag2")).reads().sets().clears().note("read unless noSwitchFlag2; set and cleared by where the block rests"),
+    ],
+    todo: false,
+};
 
 /// `BlockConfig`: the block's three places, what each does (`unk_24`: bit 0 the chime when the
 /// flags change there, bit 1 the block can't be moved any more), its colour, type and yaw.
@@ -67,13 +100,12 @@ pub struct ObjMakeoshihiki {
 impl ObjMakeoshihiki {
     /// `sBlocks[home.rot.z & 1]`.
     pub fn block(&self) -> &'static BlockConfig {
-        &BLOCKS[(self.actor.home_rot.z & 1) as usize]
+        &BLOCKS[BLOCK.get(self.actor.home_rot.z) as usize]
     }
 
     /// `PARAMS_GET_U(params, 0, 6)`, `PARAMS_GET_U(params, 8, 6)`.
     pub fn flags(&self) -> (i32, i32) {
-        let p = self.actor.params as u16;
-        ((p & 0x3F) as i32, ((p >> 8) & 0x3F) as i32)
+        (SWITCH_FLAG_1.get(self.actor.params) as i32, SWITCH_FLAG_2.get(self.actor.params) as i32)
     }
 
     /// `ObjMakeoshihiki_Init`: the block at its first place whose flag is set (the first flag:
@@ -81,11 +113,10 @@ impl ObjMakeoshihiki {
     /// the colour, type and no flag: `| 0xFF00`); a place with `unk_24` bit 1 makes it immovable.
     /// No block, and it's gone. `rot.z` zeroed.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        let block = &BLOCKS[(actor.home_rot.z & 1) as usize];
-        let p = actor.params as u16;
-        let type_idx = if p & (1 << 6) == 0 && play.flags.get_switch((p & 0x3F) as i32) {
+        let block = &BLOCKS[BLOCK.get(actor.home_rot.z) as usize];
+        let type_idx = if NO_SWITCH_FLAG_1.get(actor.params) == 0 && play.flags.get_switch(SWITCH_FLAG_1.get(actor.params) as i32) {
             1
-        } else if p & (1 << 14) == 0 && play.flags.get_switch(((p >> 8) & 0x3F) as i32) {
+        } else if NO_SWITCH_FLAG_2.get(actor.params) == 0 && play.flags.get_switch(SWITCH_FLAG_2.get(actor.params) as i32) {
             2
         } else {
             0
@@ -107,6 +138,7 @@ impl ObjMakeoshihiki {
         }
         actor.world_rot.z = 0;
         actor.shape_rot.z = 0;
+        // schema: the whole params printed.
         log::debug!("(../z_obj_makeoshihiki.c)(arg_data {:04x}F)(angleZ {})", actor.params, actor.home_rot.z);
         Box::new(ObjMakeoshihiki { actor })
     }
@@ -140,13 +172,13 @@ impl ActorImpl for ObjMakeoshihiki {
         };
         let block = self.block();
         let (flag1, flag2) = self.flags();
-        let p = self.actor.params as u16;
+        let (no_flag1, no_flag2) = (NO_SWITCH_FLAG_1.get(self.actor.params) != 0, NO_SWITCH_FLAG_2.get(self.actor.params) != 0);
         for i in 0..3 {
             // Math3D_Vec3fDistSq.
             if child_pos.distance_squared(block.pos_vecs[i]) < 0.001 {
                 if block.unk_24[i] & 1 != 0 {
-                    let sfx_cond1 = if p & (1 << 6) != 0 { false } else { (FLAGS[i][0] ^ play.flags.get_switch(flag1) as u32) != 0 };
-                    let sfx_cond2 = if p & (1 << 14) != 0 { false } else { (FLAGS[i][1] ^ play.flags.get_switch(flag2) as u32) != 0 };
+                    let sfx_cond1 = if no_flag1 { false } else { (FLAGS[i][0] ^ play.flags.get_switch(flag1) as u32) != 0 };
+                    let sfx_cond2 = if no_flag2 { false } else { (FLAGS[i][1] ^ play.flags.get_switch(flag2) as u32) != 0 };
                     if sfx_cond1 || sfx_cond2 {
                         play.audio.play_sfx_centered(NA_SE_SY_TRE_BOX_APPEAR);
                     }

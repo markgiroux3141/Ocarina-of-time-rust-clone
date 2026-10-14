@@ -18,6 +18,11 @@
 //! next of two places) and never moves; nothing in the game sets the castle crates' flag.
 //!
 //! The whole overlay is ported.
+//!
+//! Params: `switchFlag` bits 0 to 5 (set: starts stacked in the moat; no "none" value, 0x3F is a
+//! temp flag); bits 6 and 7 unused (3 in the Spirit Temple's).
+//! Flags: reads the switch flag `switchFlag`; reads EVENTCHKINF_TALON_RETURNED_FROM_CASTLE (by Talon:
+//! the way to the moat open).
 
 use eng_collision::bgcheck::BGCHECK_Y_MIN;
 use eng_collision::dyna::{BG_ACTOR_MAX, BGCHECK_SCENE, BgActorSource};
@@ -26,6 +31,8 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::Vec3;
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, audio_play_actor_sfx2, dyna_poly_get_actor};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, SFX_FLAG};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -37,12 +44,27 @@ pub const ACTOR_BG_SPOT15_RRBOX: i16 = 0x0107;
 pub const OBJECT: &str = "object_spot15_obj";
 
 /// `Bg_Spot15_Rrbox_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT15_RRBOX, name: "Bg_Spot15_Rrbox", category: ACTORCAT_BG, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_SPOT15_RRBOX, name: "Bg_Spot15_Rrbox", category: ACTORCAT_BG, flags: 0, object: OBJECT, schema: &SCHEMA };
 
 /// `NA_SE_EV_WOOD_BOUND` (`environmentbank_table.h`: 0x28C9).
 pub const NA_SE_EV_WOOD_BOUND: u16 = 0x28C9;
 /// `EVENTCHKINF_TALON_RETURNED_FROM_CASTLE` (`save.h`: 0x14).
 pub const EVENTCHKINF_TALON_RETURNED_FROM_CASTLE: u16 = 0x14;
+
+/// `PARAMS_GET_U(this->dyna.actor.params, 0, 6)`: the switch flag.
+pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set: starts stacked in the moat and never moves (no none: 0x3F is a temp flag)");
+/// Bits 6 and 7: 3 in the Spirit Temple's data, read by nothing.
+pub const BITS_6_7: Field = Field::params("params bits 6 and 7", 6, 2, Kind::Unused, "3 in the Spirit Temple's data; read by nothing");
+
+/// Bg_Spot15_Rrbox's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[SWITCH_FLAG, BITS_6_7],
+    flags: &[
+        FlagUse::new(Flag::Switch("switchFlag")).reads().note("set: starts in the moat"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("by Talon: the way to the moat open"),
+    ],
+    todo: false,
+};
 /// `SCENE_LON_LON_BUILDINGS` (`scene_table.h`: 0x4C).
 const SCENE_LON_LON_BUILDINGS: u16 = 0x4C;
 /// `PLAYER_STATE2_4` (pushing or pulling).
@@ -114,6 +136,7 @@ impl BgSpot15Rrbox {
             this.bg = play.col.dyna.set_bg_actor(h, source(&this.actor), 0);
         }
         if this.bg == BG_ACTOR_MAX {
+            // schema: printed
             log::warn!("Warning : move BG registration failed (../z_bg_spot15_rrbox.c 171)(name {})(arg_data 0x{:04x})", this.actor.id, this.actor.params);
         }
         // sInitChain.
@@ -122,7 +145,7 @@ impl BgSpot15Rrbox {
         this.actor.culling_volume_scale = 500.0;
         this.actor.culling_volume_downward = 1000.0;
         this.func_808b3a34();
-        if play.flags.get_switch((this.actor.params & 0x3F) as i32) {
+        if play.flags.get_switch(SWITCH_FLAG.get(this.actor.params) as i32) {
             this.action = Action::Stuck;
             let s = play.overlay_static::<Statics>(ACTOR_BG_SPOT15_RRBOX);
             // D_808B45C4[D_808B4590]: a third would read past the table (only two crates).
@@ -131,6 +154,7 @@ impl BgSpot15Rrbox {
         } else {
             this.func_808b4084();
         }
+        // schema: printed
         log::debug!("(spot15 Lon Lon Wooden Box)(arg_data 0x{:04x})", this.actor.params);
         play.col.dyna.set_source(this.bg, source(&this.actor));
         Box::new(this)
@@ -311,6 +335,7 @@ impl BgSpot15Rrbox {
         }
         self.actor.move_forward();
         if self.actor.world_pos.y <= BGCHECK_Y_MIN + 10.0 {
+            // schema: printed
             log::warn!("Warning : Lon Lon Wooden Box fell too far (../z_bg_spot15_rrbox.c 599)(arg_data 0x{:04x})", self.actor.params);
             self.actor.kill();
             return;

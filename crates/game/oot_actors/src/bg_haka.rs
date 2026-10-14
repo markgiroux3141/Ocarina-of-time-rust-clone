@@ -20,6 +20,11 @@
 //! stone flush with the floor, as the graveyard places them, is pulled by Player
 //! (`oot_actors --test push`). Category BG: it updates before Player, so the `unk_150` it reads is
 //! the one Player wrote last frame. The whole overlay is ported.
+//!
+//! Params: `params` the whole (1: the chime when it's pulled open; else none). The graveyard's
+//! warning reuses it as its cooldown (100 down to 0), so a stone that warned has lost its chime.
+//! `shape.rot.x`: a tilt (Dodongo's Cavern's two), a rotation.
+//! Flags: reads switch flag 0x23 (at Lake Hylia a child can't pull it before it's set).
 
 use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource};
 use eng_gfx::{DrawCmd, MeshKey};
@@ -27,6 +32,7 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, SFX_FLAG};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -55,7 +61,19 @@ pub const PLAYER_STATE2_FORCE_SAND_FLOOR_SOUND: u32 = 1 << 9;
 pub const TEXT_GRAVEYARD_BOY_WARNING: u16 = 0x5073;
 
 /// `Bg_Haka_Profile`: `FLAGS` 0.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_HAKA, name: "Bg_Haka", category: ACTORCAT_BG, flags: 0, object: OBJECT };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_BG_HAKA, name: "Bg_Haka", category: ACTORCAT_BG, flags: 0, object: OBJECT, schema: &SCHEMA };
+
+/// `this->dyna.actor.params == 1`: the chime.
+pub const CHIME: Field = Field::whole("params", Kind::Named(&[(0, "no chime"), (1, "the chime when it's pulled open")]), "whether the chime plays when it's pulled open");
+/// `shape.rot.x`: the stone's tilt (Dodongo's Cavern's two lie tilted).
+pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the stone's tilt");
+
+/// Bg_Haka's configuration (docs/adr/0066-the-actor-schema.md).
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[CHIME, ROT_X],
+    flags: &[FlagUse::new(Flag::Switch("0x23")).reads().note("at Lake Hylia, a child can't pull it before it's set")],
+    todo: false,
+};
 
 /// `actionFunc`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -167,7 +185,7 @@ impl BgHaka {
         a.world_pos.z = cos_s(a.world_rot.y) * a.min_velocity_y + a.home_pos.z;
         if reached_max_pull_dist {
             self.release(play);
-            if self.actor.params == 1 {
+            if CHIME.get(self.actor.params) == 1 {
                 play.audio.play_sfx_centered(NA_SE_SY_CORRECT_CHIME);
             } else if !play.save.is_day() && play.scene_id == SCENE_GRAVEYARD {
                 let h = self.actor.home_pos;
@@ -189,12 +207,14 @@ impl BgHaka {
     /// `BgHaka_IdleLockedClosed`: the warning's cooldown down; any push or pull refused; back to
     /// `BgHaka_IdleClosed` at 0. Then the dirt patch.
     fn idle_locked_closed(&mut self, play: &mut PlayState) {
+        // schema: the warning's cooldown, kept in params.
         if self.actor.params != 0 {
             self.actor.params -= 1;
         }
         if self.unk_150(play) != 0.0 {
             self.release(play);
         }
+        // schema: the warning's cooldown, kept in params.
         if self.actor.params == 0 {
             self.action = Action::IdleClosed;
         }

@@ -5,6 +5,9 @@
 //!
 //! The whole overlay is ported. `Magic_Reset` and Nayru's Love's restore aren't (no magic, no
 //! spells). Its init prints "WIPE2" (sic).
+//!
+//! Params: none (`Message_DrawMain` spawns it with 0 for Saria's Song; its init only prints them).
+//! Flags: none.
 
 use std::sync::Arc;
 
@@ -24,7 +27,7 @@ pub const ACTOR_OCEFF_WIPE3: i16 = 0x0199;
 
 /// `Oceff_Wipe3_Profile`.
 pub const PROFILE: ActorProfile =
-    ActorProfile { id: ACTOR_OCEFF_WIPE3, name: "Oceff_Wipe3", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep" };
+    ActorProfile { id: ACTOR_OCEFF_WIPE3, name: "Oceff_Wipe3", category: ACTORCAT_ITEMACTION, flags: ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA, object: "gameplay_keep", schema: &oot_game::actor_schema::ActorSchema::NONE };
 
 pub const BAKE: &str = "Oceff_Wipe3/frustum";
 
@@ -65,6 +68,7 @@ impl OceffWipe3 {
         let mut this = OceffWipe3 { actor, counter: 0, vertices: FrustumVertices::load(play, bake) };
         this.actor.scale = Vec3::splat(0.1);
         this.actor.world_pos = play.active_camera().eye;
+        // schema: printed
         log::debug!(" WIPE2 arg_data = {}", this.actor.params);
         Box::new(this)
     }
