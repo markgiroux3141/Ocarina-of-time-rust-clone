@@ -243,6 +243,15 @@ CASES = [
     ("meadow_wolfos", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "2600", "--screenshot", "{shot}"]),
     ("meadow_scrub", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "3850", "--screenshot", "{shot}"]),
     ("meadow_saria", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "5700", "--screenshot", "{shot}"]),
+    # GAME-08 milestone 2: the Lost Woods' Skull Kids and target scrub (Route::LostWoods) with Saria's
+    # Song and the slingshot: Saria's Song on room 9's stump (his "You know Saria's Song"), the
+    # target's bullseye (the score's 100), the target scrub up in its camera (4140), the memory
+    # game's staff with the two Skull Kids on their stumps, and the third round's heart piece.
+    ("lost_woods", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "meadow-saria", "--script", "lost-woods", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("lost_woods_stump", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "meadow-saria", "--script", "lost-woods", "--frames", "480", "--screenshot", "{shot}"]),
+    ("lost_woods_target", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "meadow-saria", "--script", "lost-woods", "--frames", "1090", "--screenshot", "{shot}"]),
+    ("lost_woods_scrub", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "meadow-saria", "--script", "lost-woods", "--frames", "1320", "--screenshot", "{shot}"]),
+    ("lost_woods_game", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "meadow-saria", "--script", "lost-woods", "--frames", "2000", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

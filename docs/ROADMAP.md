@@ -636,6 +636,11 @@ actor schema (ADR 0066, BACKLOG #52) for all ported actors.
 2. **The Lost Woods' Skull Kids and scrubs:** `En_Skj` with `En_Skjneedle`, the ocarina's memory
    game (BACKLOG #47's Skull Kid part), `En_Dnt_Nomal` with `En_Ex_Item`, `EffectSsExtra` and
    one-point cutscene 4140.
+   - **Done** (2026-10-14, ADR 0069): the four actors whole (the Skull Mask trade waiting on masks),
+     the memory game in the ocarina and the message box, `meadow-saria` (milestone 1's end, with
+     the slingshot). `Route::LostWoods` (Saria's Song on the stump, three bullseyes, the memory
+     game's three rounds), the `lost_woods` goldens; `En_Okuta` moved to Phase 11 (it never spawns
+     in the woods).
 3. **Lon Lon Ranch:** Epona's Song's cutscene end (destination 94), the two draw configs,
    `En_Horse_Link_Child`, `En_Horse_Normal`, `En_In` (the child's part), `En_Crow`, `En_Ma2`'s
    init, `En_Ta`'s ranch house with the milk and the Super Cucco game, the HUD timer (#44).

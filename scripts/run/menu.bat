@@ -54,6 +54,7 @@ echo   113  test-zelda           GAME-07's courtyard and Zelda tests: the patrol
 echo   116  test-kakariko        GAME-07's Kakariko tests: the lift and carry, Anju, the people, the windmill, the run
 echo   119  test-graveyard       GAME-07's graveyard tests: the ReDeads, Dampe, the kid, the tomb, the weather, the run
 echo   122  test-meadow          GAME-08's meadow tests: Saria, the Wolfos, the gate, the run, the actor schemas
+echo   126  test-lost-woods      GAME-08's Lost Woods tests: the Skull Kids, the memory game, the target scrub, the run
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -98,6 +99,7 @@ echo   114  game-zelda           The guards' courtyard from the drain (asks: or 
 echo   117  game-kakariko        Kakariko by day with the letter (asks: or the pen, the roof, the gate, night, an interior)
 echo   120  game-graveyard       The graveyard at 18:30 with the lullaby (asks: or day, Dampe, the tomb, inside, the ReDeads, a grave)
 echo   123  game-meadow          The Lost Woods to the meadow with the letter (asks: or the meadow, Saria, a new save's greeting)
+echo   127  game-lost-woods      The Lost Woods' Skull Kids and target with Saria's Song (asks: or the stump, the target, the game)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -136,6 +138,7 @@ echo   118  sandbox-kakariko     The Kakariko run's trace and screenshots (the c
 echo   121  sandbox-graveyard    The graveyard run's trace and screenshots (Dampe, the tomb, the Keese, the Sun's Song), into out\run
 echo   124  sandbox-meadow       The meadow run's trace and screenshots (the woods, the Wolfos, the scrubs, Saria), into out\run
 echo   125  export-glb           The game's characters as .glb files for Blender, T-posed, into out\glb\characters
+echo   128  sandbox-lost-woods   The Lost Woods run's trace and screenshots (the stump, the target, the memory game), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -271,6 +274,9 @@ if "%pick%"=="122" set "script=test-meadow"
 if "%pick%"=="123" goto meadow
 if "%pick%"=="124" set "script=sandbox-meadow"
 if "%pick%"=="125" set "script=export-glb"
+if "%pick%"=="126" set "script=test-lost-woods"
+if "%pick%"=="127" goto lostwoods
+if "%pick%"=="128" set "script=sandbox-lost-woods"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -284,6 +290,14 @@ set "which="
 set /p "which=Which (empty: the entrance by day; pen, roof, gate, night, dusk, cow, windmill, skulltula, guests, shop or guardhouse): "
 call "%~dp0game-kakariko.bat" %which%
 echo game-kakariko finished (exit code %errorlevel%).
+pause
+goto menu
+
+:lostwoods
+set "which="
+set /p "which=Which (empty: the Lost Woods from Kokiri Forest; stump, target or game): "
+call "%~dp0game-lost-woods.bat" %which%
+echo game-lost-woods finished (exit code %errorlevel%).
 pause
 goto menu
 

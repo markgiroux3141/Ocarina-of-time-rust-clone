@@ -16,8 +16,9 @@
 //! text ids, choices, fading, persistent and event ends, closing), the colours, the player's
 //! name, the item icons; the ocarina's modes (docs/adr/0061-the-ocarina.md:
 //! `Message_StartOcarinaImpl`, `Message_HandleOcarina`, free play, the checks, the teaching and
-//! the playback, "You played", the songs' effects spawned, the treble clef and the notes). Not
-//! ported: the scarecrow's songs, the Skull Kids' memory game and the frogs' modes (the user's
+//! the playback, "You played", the songs' effects spawned, the treble clef and the notes), and
+//! the Skull Kids' memory game (`MSGMODE_MEMORY_GAME_*`, `Message_UpdateOcarinaMemoryGame`,
+//! GAME-08 milestone 2). Not ported: the scarecrow's songs and the frogs' modes (the user's
 //! scope: they log), the textbox backgrounds (decoded, not drawn), the credits and the debug
 //! message viewer (`BREG(0)` 0). `YREG(31)` is the shop's (`yreg_31`).
 
@@ -28,7 +29,7 @@ use eng_input::pad::{BTN_A, BTN_B, BTN_CUP, Input};
 use glam::Vec3;
 
 use crate::actor_ctx::ActorHandle;
-use crate::audio::ocarina::{self, OCARINA_BTN_A, OCARINA_BTN_INVALID, OCARINA_INSTRUMENT_DEFAULT, OCARINA_INSTRUMENT_GRIND_ORGAN, OCARINA_INSTRUMENT_HARP, OCARINA_INSTRUMENT_MALON, OCARINA_INSTRUMENT_OFF, OCARINA_INSTRUMENT_WHISTLE, StaffRef};
+use crate::audio::ocarina::{self, OCARINA_BTN_A, OCARINA_BTN_INVALID, OCARINA_INSTRUMENT_DEFAULT, OCARINA_INSTRUMENT_FLUTE, OCARINA_INSTRUMENT_GRIND_ORGAN, OCARINA_INSTRUMENT_HARP, OCARINA_INSTRUMENT_MALON, OCARINA_INSTRUMENT_OFF, OCARINA_INSTRUMENT_WHISTLE, StaffRef};
 use crate::gbi::{G_IM_FMT_I, G_IM_FMT_IA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_TX_CLAMP, G_TX_MIRROR, G_TX_NOMIRROR, G_TX_WRAP, ac, cc_ab, cc_c, cc_d, setup_dl};
 use crate::interface::{DO_ACTION_NEXT, DO_ACTION_RETURN, DO_ACTION_STOP, InterfaceContext, change_alpha};
 use crate::item::QUEST_HEART_PIECE_COUNT;
@@ -75,6 +76,13 @@ pub const MSGMODE_SCARECROW_SPAWN_RECORDING_START: u8 = 0x24;
 pub const MSGMODE_SCARECROW_SPAWN_RECORDING_DONE: u8 = 0x27;
 pub const MSGMODE_SCARECROW_SPAWN_PLAYBACK: u8 = 0x28;
 pub const MSGMODE_MEMORY_GAME_START: u8 = 0x29;
+pub const MSGMODE_MEMORY_GAME_LEFT_SKULLKID_PLAYING: u8 = 0x2A;
+pub const MSGMODE_MEMORY_GAME_LEFT_SKULLKID_WAIT: u8 = 0x2B;
+pub const MSGMODE_MEMORY_GAME_RIGHT_SKULLKID_PLAYING: u8 = 0x2C;
+pub const MSGMODE_MEMORY_GAME_RIGHT_SKULLKID_WAIT: u8 = 0x2D;
+pub const MSGMODE_MEMORY_GAME_PLAYER_PLAYING: u8 = 0x2E;
+pub const MSGMODE_MEMORY_GAME_ROUND_SUCCESS: u8 = 0x2F;
+pub const MSGMODE_MEMORY_GAME_START_NEXT_ROUND: u8 = 0x30;
 pub const MSGMODE_FROGS_START: u8 = 0x31;
 pub const MSGMODE_FROGS_WAITING: u8 = 0x33;
 pub const MSGMODE_TEXT_AWAIT_NEXT: u8 = 0x34;
@@ -568,7 +576,7 @@ struct Statics {
     /// `Message_DrawMain`'s `sOcarinaNoteFlashTimer`, `sOcarinaNoteFlashColorIndex`.
     ocarina_note_flash_timer: i16,
     ocarina_note_flash_color_index: usize,
-    /// Not in the C: an unported ocarina mode (the scarecrow's, the memory game's, the frogs')
+    /// Not in the C: an unported ocarina mode (the scarecrow's, the frogs')
     /// is logged once.
     logged_unported_mode: bool,
 }
@@ -1965,6 +1973,27 @@ impl MessageContext {
         self.start_ocarina_impl(f, ocarina_action_id);
     }
 
+    /// `Message_UpdateOcarinaMemoryGame` (called by the memory game's stump, `En_Skj`): the next
+    /// mode; Link's turn listens for the memory game's song with the ocarina's own sound, the
+    /// right Skull Kid's plays it on the flute; the notes cleared.
+    pub fn update_ocarina_memory_game(&mut self, f: &mut MsgFrame) {
+        self.msg_mode += 1;
+        if self.msg_mode == MSGMODE_MEMORY_GAME_PLAYER_PLAYING {
+            f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+            self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+            self.reset_staff_pos(f);
+            f.audio.audio_ocarina_start((1u16 << ocarina::OCARINA_SONG_MEMORY_GAME) + 0x8000);
+            self.text_draw_pos = self.decoded_text_len;
+        } else if self.msg_mode == MSGMODE_MEMORY_GAME_RIGHT_SKULLKID_PLAYING {
+            f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_FLUTE);
+            self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+            self.reset_staff_pos(f);
+            f.audio.audio_ocarina_set_playback_song(ocarina::OCARINA_SONG_MEMORY_GAME as i8 + 1, 1);
+            self.state_timer = 2;
+        }
+        self.reset_ocarina_note_state();
+    }
+
     /// The staff's newest note into the note buffer (`sOcarinaButtonIndexBuf`) when its position
     /// is one past the buffer's; `last` also keeps it in `lastOcarinaButtonIndex`.
     fn take_staff_note(&mut self, st: ocarina::OcarinaStaff, last: bool) {
@@ -2365,12 +2394,95 @@ impl MessageContext {
                 }
             }
             MSGMODE_UNK_20 => self.msg_mode = MSGMODE_TEXT_DISPLAYING,
+            MSGMODE_MEMORY_GAME_START => {
+                // The memory game (`En_Skj`'s stump): the round's first notes, played by the left
+                // Skull Kid.
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_DEFAULT);
+                f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_FLUTE);
+                f.audio.audio_ocarina_memory_game_init(f.save.ocarina_game_round_num);
+                self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+                self.reset_staff_pos(f);
+                self.reset_ocarina_note_state();
+                f.audio.audio_ocarina_set_playback_song(OCARINA_SONG_MEMORY_GAME as i8 + 1, 1);
+                self.msg_mode = MSGMODE_MEMORY_GAME_LEFT_SKULLKID_PLAYING;
+                self.state_timer = 2;
+            }
+            MSGMODE_MEMORY_GAME_LEFT_SKULLKID_PLAYING | MSGMODE_MEMORY_GAME_RIGHT_SKULLKID_PLAYING => {
+                use crate::audio::sfx::{NA_SE_SY_METRONOME, NA_SE_SY_METRONOME_2, NA_SE_SY_METRONOME_LV, SFX_FLAG};
+                f.audio.play_sfx_centered(NA_SE_SY_METRONOME_LV - SFX_FLAG);
+                self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+                let st = self.ocarina_staff(f);
+                self.take_staff_note(st, false);
+                if self.state_timer == 0 {
+                    if st.state == 0 {
+                        if self.msg_mode == MSGMODE_MEMORY_GAME_LEFT_SKULLKID_PLAYING {
+                            f.audio.play_sfx_centered(NA_SE_SY_METRONOME);
+                        } else {
+                            f.audio.play_sfx_centered(NA_SE_SY_METRONOME_2);
+                        }
+                        self.msg_mode += 1;
+                    }
+                } else {
+                    self.state_timer -= 1;
+                }
+            }
+            MSGMODE_MEMORY_GAME_LEFT_SKULLKID_WAIT | MSGMODE_MEMORY_GAME_RIGHT_SKULLKID_WAIT => {
+                self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+                let st = self.ocarina_staff(f);
+                self.take_staff_note(st, false);
+            }
+            MSGMODE_MEMORY_GAME_PLAYER_PLAYING => {
+                use crate::audio::sfx::{NA_SE_SY_GET_ITEM, NA_SE_SY_METRONOME_LV, SFX_FLAG};
+                f.audio.play_sfx_centered(NA_SE_SY_METRONOME_LV - SFX_FLAG);
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                let st = self.ocarina_staff(f);
+                self.take_staff_note(st, false);
+                if st.state == 0xFF {
+                    log::debug!("Musical round failed!!!!!!!!!");
+                    f.audio.audio_ocarina_set_instrument(OCARINA_INSTRUMENT_OFF);
+                    f.audio.play_sfx_centered(NA_SE_SY_OCARINA_ERROR);
+                    self.state_timer = 10;
+                    self.ocarina_mode = OCARINA_MODE_03;
+                } else if st.state == OCARINA_SONG_MEMORY_GAME {
+                    log::debug!("Musical round succeeded!!!!!!!!!");
+                    f.audio.play_sfx_centered(NA_SE_SY_GET_ITEM);
+                    self.msg_mode = MSGMODE_MEMORY_GAME_ROUND_SUCCESS;
+                    self.state_timer = 30;
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_MEMORY_GAME_ROUND_SUCCESS => {
+                use crate::audio::sfx::NA_SE_SY_METRONOME;
+                self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                let st = self.ocarina_staff(f);
+                self.take_staff_note(st, false);
+                self.state_timer = self.state_timer.wrapping_sub(1);
+                if self.state_timer == 0 {
+                    if f.audio.audio_ocarina_memory_game_next_note() != 1 {
+                        f.audio.play_sfx_centered(NA_SE_SY_METRONOME);
+                        self.ocarina_staff = f.audio.audio_ocarina_get_playing_staff();
+                        self.reset_staff_pos(f);
+                        self.reset_ocarina_note_state();
+                        self.msg_mode = MSGMODE_MEMORY_GAME_START_NEXT_ROUND;
+                    } else {
+                        self.ocarina_mode = OCARINA_MODE_0F;
+                    }
+                }
+                self.draw_text(f, out);
+            }
+            MSGMODE_MEMORY_GAME_START_NEXT_ROUND => {
+                if !f.audio.is_sfx_playing(crate::audio::sfx::NA_SE_SY_METRONOME) {
+                    self.ocarina_staff = f.audio.audio_ocarina_get_playback_staff();
+                    self.reset_staff_pos(f);
+                    self.reset_ocarina_note_state();
+                    f.audio.audio_ocarina_set_playback_song(OCARINA_SONG_MEMORY_GAME as i8 + 1, 1);
+                }
+            }
             m => {
-                // MSGMODE_SCARECROW_*, MSGMODE_MEMORY_GAME_*, MSGMODE_FROGS_*: not ported (the user's
-                // scope).
+                // MSGMODE_SCARECROW_*, MSGMODE_FROGS_*: not ported (the user's scope).
                 if !self.s.logged_unported_mode {
                     self.s.logged_unported_mode = true;
-                    log::info!("Message_DrawMain: ocarina mode {m:#x} (the scarecrow's songs, the memory game or the frogs) isn't ported");
+                    log::info!("Message_DrawMain: ocarina mode {m:#x} (the scarecrow's songs or the frogs) isn't ported");
                 }
             }
         }

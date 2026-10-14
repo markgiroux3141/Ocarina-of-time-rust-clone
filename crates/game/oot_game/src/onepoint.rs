@@ -827,6 +827,15 @@ impl PlayState {
                 set_cs_info(self, "D_80121224", 6);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
+            4140 => {
+                // The Lost Woods' target scrub comes up (En_Dnt_Nomal): six keyframes in world
+                // space, then the main camera back to normal.
+                set_cs_info(self, "D_801227B4", 6);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                let d = self.data.clone();
+                self.game_camera.change_mode(&d.camera, CAM_MODE_NORMAL);
+                self.camera_sfx();
+            }
             4175 => {
                 // Talon runs home from the castle (En_Ta): four keyframes, Player held
                 // (PLAYER_CSACTION_1, then 8) by their init fields.

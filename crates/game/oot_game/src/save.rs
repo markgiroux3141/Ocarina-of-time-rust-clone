@@ -676,26 +676,20 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     SavePreset {
         name: "graveyard-sun",
         about: "graveyard-lullaby, and milestone 6's run over: the graveyard's intro seen (EVENTCHKINF_B6), the royal tomb open (EVENTCHKINF_1D), the Sun's Song taught (Item_Give(ITEM_SONG_SUN), EVENTCHKINF_5A: its last part seen) (GAME-07 milestone 6)",
+        apply: graveyard_sun,
+    },
+    SavePreset {
+        name: "meadow-saria",
+        about: "graveyard-sun, and GAME-08 milestone 1's run over: the Lost Woods' owl met (its switch flag 7), the meadow's Wolfos killed (switch flag 0x1F, its gate down), Saria's Song taught (Item_Give(ITEM_SONG_SARIA)); and the Fairy Slingshot with its 30 seeds (from the Deku Tree, which the castle's presets leave out) on C-Right (GAME-08 milestone 2)",
         apply: |s| {
-            castle_preset(s);
-            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
-            s.set_event_chk_inf(0x14);
-            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
-            s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
-            item_give(s, None, crate::item::ITEM_ZELDAS_LETTER);
-            s.equip_item_on_c_left(crate::item::ITEM_ZELDAS_LETTER);
-            s.set_event_chk_inf(0x40);
-            s.set_event_chk_inf(0x59);
-            item_give(s, None, 0x60);
-            s.set_event_chk_inf(0xA3);
-            s.set_inf_table(0x76);
-            // save.h: EVENTCHKINF_B6 (sEntranceCutsceneTable's flag for ENTR_GRAVEYARD_0),
-            // EVENTCHKINF_1D (the tomb opened), EVENTCHKINF_5A (ENTR_ROYAL_FAMILYS_TOMB_1's part 3
-            // seen); ITEM_SONG_SUN (item.h: 0x63).
-            s.set_event_chk_inf(0xB6);
-            s.set_event_chk_inf(0x1D);
-            s.set_event_chk_inf(0x5A);
-            item_give(s, None, 0x63);
+            graveyard_sun(s);
+            // SCENE_LOST_WOODS (0x5B): En_Owl 0x02C7's switch flag; SCENE_SACRED_FOREST_MEADOW
+            // (0x56): En_Wf 0x1F00's. ITEM_SONG_SARIA (item.h: 0x62).
+            s.scene_flags[0x5B].swch |= 1 << 7;
+            s.scene_flags[0x56].swch |= 1 << 0x1F;
+            item_give(s, None, 0x62);
+            item_give(s, None, ITEM_SLINGSHOT);
+            s.equip_item_on_c(2, ITEM_SLINGSHOT);
         },
     },
     SavePreset {
@@ -718,6 +712,29 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
 ];
+
+/// `graveyard-sun`'s save (`meadow-saria` builds on it).
+fn graveyard_sun(s: &mut SaveContext) {
+    castle_preset(s);
+    crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+    s.set_event_chk_inf(0x14);
+    item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+    s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
+    item_give(s, None, crate::item::ITEM_ZELDAS_LETTER);
+    s.equip_item_on_c_left(crate::item::ITEM_ZELDAS_LETTER);
+    s.set_event_chk_inf(0x40);
+    s.set_event_chk_inf(0x59);
+    item_give(s, None, 0x60);
+    s.set_event_chk_inf(0xA3);
+    s.set_inf_table(0x76);
+    // save.h: EVENTCHKINF_B6 (sEntranceCutsceneTable's flag for ENTR_GRAVEYARD_0),
+    // EVENTCHKINF_1D (the tomb opened), EVENTCHKINF_5A (ENTR_ROYAL_FAMILYS_TOMB_1's part 3
+    // seen); ITEM_SONG_SUN (item.h: 0x63).
+    s.set_event_chk_inf(0xB6);
+    s.set_event_chk_inf(0x1D);
+    s.set_event_chk_inf(0x5A);
+    item_give(s, None, 0x63);
+}
 
 /// The castle's presets' common part (`castle-egg`, `castle-cucco`).
 fn castle_preset(s: &mut SaveContext) {

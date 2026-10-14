@@ -437,6 +437,23 @@ pub enum Step {
     SariasSongLearned,
     /// Out of the Lost Woods into the Sacred Forest Meadow (`ENTR_SACRED_FOREST_MEADOW_0`), settled.
     MeadowEntered,
+    /// On the small stump in the Lost Woods' room 9 (`En_Skj` type 5), Saria's Song played to the
+    /// Skull Kid on his stump (the staff knows it).
+    SkullKidSong,
+    /// His piece of heart taken and its text read (`ITEMGETINF_16`), Link free.
+    SkullKidHeart,
+    /// A slingshot seed in the target's bullseye (room 1, `En_Dnt_Nomal`): one per hit in a row.
+    Bullseye,
+    /// The bigger seed bag taken and its text read (`ITEMGETINF_1D`), Link free.
+    BulletBag,
+    /// On the memory game's stump (`En_Skj` type 6) with the ocarina out: the Skull Kids' first
+    /// notes (`MSGMODE_MEMORY_GAME_START`).
+    MemoryGame,
+    /// A turn of the memory game played back (`MSGMODE_MEMORY_GAME_ROUND_SUCCESS`): one a turn.
+    /// Each round starts at three notes and adds one a turn to 5, 6 and 8: three turns, four, six.
+    MemoryRound,
+    /// The third round's prize taken and its text read (`ITEMGETINF_17`), Link free.
+    MemoryGameWon,
 }
 
 impl Step {
@@ -597,6 +614,13 @@ impl Step {
             Step::SariasSongPlayed => "sarias_song_played",
             Step::SariasSongLearned => "sarias_song_learned",
             Step::MeadowEntered => "meadow_entered",
+            Step::SkullKidSong => "skull_kid_song",
+            Step::SkullKidHeart => "skull_kid_heart",
+            Step::Bullseye => "bullseye",
+            Step::BulletBag => "bullet_bag",
+            Step::MemoryGame => "memory_game",
+            Step::MemoryRound => "memory_round",
+            Step::MemoryGameWon => "memory_game_won",
         }
     }
 }
@@ -750,6 +774,12 @@ pub enum Route {
     /// turns to the meadow, the Wolfos killed and its gate down, the maze, and Saria's lesson:
     /// Saria's Song learned.
     Meadow,
+    /// The Lost Woods' Skull Kids and target scrub (GAME-08 milestone 2): from the woods' entrance
+    /// with Saria's Song and the slingshot (`meadow-saria`), Saria's Song to the Skull Kid on his
+    /// stump in room 9 (a piece of heart), the target's three bullseyes in room 1 (the bigger seed
+    /// bag), and the memory game on the stump in room 1's hollow, three rounds won (a piece of
+    /// heart).
+    LostWoods,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -831,6 +861,57 @@ fn meadow_tasks() -> Vec<Task> {
             |w| w.save.check_quest_item(oot_game::item::QUEST_SONG_SARIA) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && w.player().cs_mode == 0,
             Step::SariasSongLearned,
         ),
+    ]
+}
+
+/// Where `Route::LostWoods` aims the slingshot: the target's centre.
+const TARGET_AIM: Vec3 = Vec3::new(1340.0, 50.0, -30.0);
+
+/// The target scrub's (`En_Dnt_Nomal`) bullseyes in a row, if it's there.
+fn target_hits(w: &PlayState) -> i16 {
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::en_dnt_nomal::EnDntNomal>(h)).map(|d| d.hit_counter).unwrap_or(0)
+}
+
+/// `Route::LostWoods`'s tasks. Room 9 is west of room 0 (its plane at (-400, 0, 0)): a flat
+/// clearing with the Skull Kid (`En_Skj` type 0) on a stump 80 high at (-1132, 80, -128), and the
+/// small stump Link stands on (type 5) 20 high at (-951, 20, 52), 255 from him (before
+/// `ITEMGETINF_16` he flees from Link within 200). Room 1, east of room 0: a clearing at 0 to
+/// x 1000, then a hollow 180 below it holding the memory game's stumps (type 6, Link's, at
+/// (1123, -140, 340), with the two Skull Kids' beside it); the target scrub's ledge (80 high) and
+/// its target past the hollow's north-east.
+fn lost_woods_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_SARIAS;
+    vec![
+        Task::Settle(None),
+        // West into room 9 and onto the small stump, keeping 200 from the Skull Kid.
+        Task::Walk(vec![Vec3::new(0.0, 0.0, 0.0), Vec3::new(-400.0, 0.0, 0.0), Vec3::new(-800.0, 0.0, 30.0), Vec3::new(-920.0, 0.0, 50.0), Vec3::new(-951.0, 20.0, 52.0)]),
+        // On it (EnSkj_RangeCheck: within 26, not below), the ocarina out: Link centred on the
+        // stump and the check (OCARINA_ACTION_CHECK_SARIA); Saria's Song: 0x10BB and the heart.
+        Task::Ocarina(1, OCARINA_SONG_SARIAS, Step::SkullKidSong),
+        Task::Texts(|w| w.save.get_item_get_inf(crate::en_skj::ITEMGETINF_16), Step::SkullKidHeart),
+        // Back east through room 0 into room 1, to its clearing's edge over the hollow.
+        Task::Walk(vec![Vec3::new(-800.0, 0.0, 0.0), Vec3::new(-400.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), Vec3::new(400.0, 0.0, 0.0), Vec3::new(800.0, 0.0, 0.0), Vec3::new(960.0, 0.0, -30.0)]),
+        // The target (EnDntNomal_TargetWait's quad at (1340, 50, -30), ±24) across the hollow:
+        // three seeds within 8 of its centre in a row, from the clearing's edge (a shot almost
+        // level: from the hollow's floor, aimed up, a seed's edge crosses it about 12 low). The
+        // third starts the scrub's
+        // camera (4140) with Link held; up comes the scrub, says 0x10AF and spits the bag
+        // (En_Ex_Item), which flies at the camera and is offered: the bigger seed bag.
+        Task::DrawSlingshot(Step::SlingshotDrawn),
+        Task::ShootUntil(TARGET_AIM, |w| target_hits(w) >= 1, Step::Bullseye),
+        Task::ShootUntil(TARGET_AIM, |w| target_hits(w) >= 2, Step::Bullseye),
+        Task::ShootUntil(TARGET_AIM, |w| target_hits(w) >= 3, Step::Bullseye),
+        Task::Texts(|w| w.save.get_item_get_inf(crate::en_dnt_nomal::ITEMGETINF_1D), Step::BulletBag),
+        Task::Walk(vec![Vec3::new(960.0, 0.0, -175.0)]),
+        // Down into the hollow: the clearing's east edge at x 1000 has a wall 25 high from z -150
+        // to 200, but none at its north end; across the hollow's floor (-180) to the memory
+        // game's stump (40 high).
+        Task::Hurry(vec![Vec3::new(1050.0, -180.0, -175.0)]),
+        Task::Walk(vec![Vec3::new(1060.0, -180.0, 250.0), Vec3::new(1100.0, -180.0, 340.0)]),
+        Task::ClimbTo(Vec3::new(1123.0, -140.0, 340.0), Step::MemoryGame),
+        // Its middle: EnSkj_RangeCheck wants Link within 26 of the stump's centre, not below it.
+        Task::Walk(vec![Vec3::new(1123.0, -140.0, 340.0)]),
+        Task::MemoryGame(Step::MemoryGameWon),
     ]
 }
 
@@ -1337,7 +1418,7 @@ impl Route {
             Route::ZeldaTalk => "ENTR_CASTLE_COURTYARD_ZELDA_0",
             Route::Kakariko => "ENTR_KAKARIKO_VILLAGE_0",
             Route::Graveyard => "ENTR_GRAVEYARD_0",
-            Route::Meadow => "ENTR_LOST_WOODS_0",
+            Route::Meadow | Route::LostWoods => "ENTR_LOST_WOODS_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1364,6 +1445,7 @@ impl Route {
             Route::Kakariko => Some("kakariko-letter"),
             Route::Graveyard => Some("graveyard-lullaby"),
             Route::Meadow => Some("graveyard-sun"),
+            Route::LostWoods => Some("meadow-saria"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1532,6 +1614,7 @@ impl Route {
             Route::Kakariko => "kakariko",
             Route::Graveyard => "graveyard",
             Route::Meadow => "meadow",
+            Route::LostWoods => "lost-woods",
         }
     }
 
@@ -1569,6 +1652,7 @@ impl Route {
             Route::Kakariko => 8000,
             Route::Graveyard => 30000,
             Route::Meadow => 30000,
+            Route::LostWoods => 30000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1576,12 +1660,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1772,6 +1856,8 @@ enum Task {
     /// C-Right still held, the stick steering the aim until the seed in hand points at this
     /// position, then let go, until this switch flag is set (a miss draws again).
     Shoot(Vec3, i32, Step),
+    /// `Task::Shoot` until the condition holds instead of a switch flag.
+    ShootUntil(Vec3, fn(&PlayState) -> bool, Step),
     /// A until first person is over.
     LeaveFirstPerson,
     /// To the boss room's entrance until Queen Gohma's intro starts (`Step::GohmaEntered`), then
@@ -1823,6 +1909,12 @@ enum Task {
     ClimbBlock(Step),
     /// Idle until the condition holds.
     WaitFor(Cond, Step),
+    /// On the memory game's stump: the ocarina out (C-Down) whenever nothing runs, A through the
+    /// texts (yes to another round), each round's notes played back as the Skull Kids played them
+    /// (`OCARINA_SONG_MEMORY_GAME`'s notes so far, each held 3 frames, let go 2), until
+    /// `ITEMGETINF_17` is set and the box is closed (the step); `Step::MemoryGame` and
+    /// `Step::MemoryRound` on the way.
+    MemoryGame(Step),
     /// The grounded Peahat whose home is here: locked on (Z), guarding (R) its blades, the
     /// sword (B) at its root whenever it's within 70, seeking or recoiling, until it's gone.
     FightPeahat(Vec3, Step),
@@ -2220,6 +2312,7 @@ impl Playthrough {
             Route::Kakariko => kakariko_tasks(),
             Route::Graveyard => graveyard_tasks(),
             Route::Meadow => meadow_tasks(),
+            Route::LostWoods => lost_woods_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -3211,7 +3304,9 @@ impl Playthrough {
             Task::PushBlock(home, flag, step) => self.push_block(w, home, flag, step),
             Task::ClimbBlock(step) => self.climb_block(w, step),
             Task::DrawSlingshot(step) => self.draw_slingshot(w, step),
-            Task::Shoot(target, flag, step) => self.shoot(w, target, flag, step),
+            Task::Shoot(target, flag, step) => self.shoot(w, target, |w| w.flags.get_switch(flag), step),
+            Task::ShootUntil(target, until, step) => self.shoot(w, target, until, step),
+            Task::MemoryGame(step) => self.memory_game(w, step),
             Task::LeaveFirstPerson => {
                 if w.player().unk_6AD == 0 {
                     self.finish(None);
@@ -3762,15 +3857,15 @@ impl Playthrough {
     /// steered at `target` with the stick (`func_8084ABD8`: each frame `(1 - cos(stick * 200)) *
     /// 1500`; the stick's magnitude the largest whose step is within the error), then C-Right let
     /// go within 64 of it, and idle until the flag is set. A seed that misses: drawn again.
-    fn shoot(&mut self, w: &PlayState, target: Vec3, flag: i32, step: Step) -> Option<PadState> {
+    fn shoot(&mut self, w: &PlayState, target: Vec3, done: impl Fn(&PlayState) -> bool, step: Step) -> Option<PadState> {
         let idle = PadState::default();
-        if w.flags.get_switch(flag) {
+        if done(w) {
             self.finish(Some(step));
             return None;
         }
         self.wait += 1;
         if self.wait > 600 {
-            self.failure = Some(format!("no seed hit flag {flag:#x}'s eye at {target}"));
+            self.failure = Some(format!("no seed hit the target at {target} ({step:?})"));
             return None;
         }
         let p = w.player();
@@ -3813,6 +3908,78 @@ impl Playthrough {
                 Some(idle)
             }
         }
+    }
+
+    /// `Task::MemoryGame`: `sub` 0 outside the Link's turn, 1 in it (`notes` counting his
+    /// frames), 2 after a round's success until the next turn.
+    fn memory_game(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use eng_input::pad::{BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP};
+        use oot_game::audio::ocarina::{OCARINA_BTN_A, OCARINA_BTN_C_DOWN, OCARINA_BTN_C_LEFT, OCARINA_BTN_C_RIGHT, OCARINA_BTN_C_UP, OCARINA_SONG_MEMORY_GAME};
+        use oot_game::message::{MSGMODE_MEMORY_GAME_PLAYER_PLAYING, MSGMODE_MEMORY_GAME_ROUND_SUCCESS, MSGMODE_MEMORY_GAME_START, MSGMODE_NONE};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 12000 {
+            self.failure = Some(format!("the memory game never ended (msgMode {:#x}, text {:#x}, round {})", w.msg_ctx.msg_mode, w.msg_ctx.text_id, w.save.ocarina_game_round_num));
+            return None;
+        }
+        let mode = w.msg_ctx.msg_mode;
+        let st = w.message_state();
+        // ITEMGETINF_17 (save.h): the third round's prize.
+        if w.save.get_item_get_inf(0x17) && st == TEXT_STATE_NONE && w.player().cs_mode == 0 && w.player().action != PA::Talk {
+            self.finish(Some(step));
+            return None;
+        }
+        if mode == MSGMODE_MEMORY_GAME_START {
+            self.mark(Step::MemoryGame);
+        }
+        if mode == MSGMODE_MEMORY_GAME_ROUND_SUCCESS && self.sub != 2 {
+            self.sub = 2;
+            self.steps.push((Step::MemoryRound, self.frame));
+        }
+        if mode == MSGMODE_MEMORY_GAME_PLAYER_PLAYING {
+            if self.sub != 1 {
+                self.sub = 1;
+                self.notes = 0;
+            }
+            let o = &w.audio.ocarina;
+            let (note, phase) = (self.notes / 5, self.notes % 5);
+            if note >= o.memory_game_append_pos as usize {
+                return Some(idle);
+            }
+            self.notes += 1;
+            let pitch = o.song_note(OCARINA_SONG_MEMORY_GAME, note as i32).pitch;
+            let pad = match o.pitch_to_button_map.get(pitch as usize).copied() {
+                Some(OCARINA_BTN_A) => BTN_A,
+                Some(OCARINA_BTN_C_DOWN) => BTN_CDOWN,
+                Some(OCARINA_BTN_C_RIGHT) => BTN_CRIGHT,
+                Some(OCARINA_BTN_C_LEFT) => BTN_CLEFT,
+                Some(OCARINA_BTN_C_UP) => BTN_CUP,
+                _ => 0,
+            };
+            return Some(if phase < 3 { PadState { button: pad, ..Default::default() } } else { idle });
+        }
+        // The ocarina out somewhere else (free play, not the game's): B puts it away.
+        if mode == oot_game::message::MSGMODE_OCARINA_PLAYING && w.msg_ctx.ocarina_action == oot_game::message::OCARINA_ACTION_FREE_PLAY {
+            self.tries = 0;
+            return Some(self.press(BTN_B));
+        }
+        if st == TEXT_STATE_CHOICE || Self::text_waits(w) || st == oot_game::message::TEXT_STATE_EVENT {
+            // (A on a choice: its first answer, yes.)
+            self.tries = 0;
+            return Some(self.press(BTN_A));
+        }
+        // Nothing running for 20 frames (a prize is offered the frame after its text): the
+        // ocarina out (C-Down), again every 30 frames.
+        let p = w.player();
+        if mode == MSGMODE_NONE && st == TEXT_STATE_NONE && p.cs_mode == 0 && matches!(p.action, PA::StandingStill) {
+            self.tries += 1;
+            if self.tries % 30 == 20 {
+                return Some(PadState { button: BTN_CDOWN, ..Default::default() });
+            }
+        } else {
+            self.tries = 0;
+        }
+        Some(idle)
     }
 
     /// Queen Gohma, if she's in the room.

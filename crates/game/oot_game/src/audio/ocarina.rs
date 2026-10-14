@@ -13,11 +13,11 @@
 //! `sPitchToButtonMap`) are the pack's (`AudioGameTables`), read from the C; `sOcarinaSongNotes`
 //! is copied into the statics at boot, as the scarecrow's songs and the memory game write it.
 //!
-//! Left out (the user's scope, GAME-07 milestone 3): the scarecrow's recording
-//! (`AudioOcarina_SetRecordingSong`, `_SetRecordingState`, `_RecordSong`), the Skull Kids' memory
-//! game (`AudioOcarina_MemoryGameInit`, `_MemoryGameNextNote`) and the long scarecrow's song
-//! after the credits (`AudioOcarina_PlayLongScarecrowSong`). Their state is kept (recording
-//! off), and the calls log.
+//! The Skull Kids' memory game (`AudioOcarina_MemoryGameInit`, `_MemoryGameNextNote`) came with
+//! GAME-08 milestone 2. Left out (the user's scope, GAME-07 milestone 3): the scarecrow's recording
+//! (`AudioOcarina_SetRecordingSong`, `_SetRecordingState`, `_RecordSong`) and the long
+//! scarecrow's song after the credits (`AudioOcarina_PlayLongScarecrowSong`). Their state is kept
+//! (recording off), and the calls log.
 
 use eng_input::pad::{BTN_A, BTN_B, BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT, BTN_CUP, BTN_L, BTN_R, BTN_Z, Input};
 
@@ -215,6 +215,10 @@ pub struct Ocarina {
     pub music_staff_cur_held_length: [u16; OCARINA_SONG_MAX as usize],
     pub music_staff_expected_length: [u16; OCARINA_SONG_MAX as usize],
     pub music_staff_expected_pitch: [u8; OCARINA_SONG_MAX as usize],
+    /// `sOcaMemoryGameAppendPos`, `sOcaMemoryGameEndPos`: the memory game's notes so far and its
+    /// round's last.
+    pub memory_game_append_pos: u8,
+    pub memory_game_end_pos: u8,
     /// Not in the C: the pad `PadMgr_RequestPadData` would give at this `Audio_Update`.
     pub pad: OcarinaPad,
 }
@@ -296,6 +300,8 @@ impl Ocarina {
             music_staff_cur_held_length: [0; OCARINA_SONG_MAX as usize],
             music_staff_expected_length: [0; OCARINA_SONG_MAX as usize],
             music_staff_expected_pitch: [0; OCARINA_SONG_MAX as usize],
+            memory_game_append_pos: 0,
+            memory_game_end_pos: 0,
             pad: OcarinaPad::default(),
         }
     }
@@ -957,16 +963,50 @@ impl GameAudio {
         }
     }
 
-    /// `AudioOcarina_MemoryGameInit`: the Skull Kids' memory game isn't ported (the user's
-    /// scope).
+    /// `AudioOcarina_MemoryGameInit`: the Skull Kids' memory game's round (0 to 2, past 2 the
+    /// last) ends at `sOcaMemoryGameNumNotes[round]` notes; it starts with three.
     pub fn audio_ocarina_memory_game_init(&mut self, minigame_round: u8) {
-        log::info!("AudioOcarina_MemoryGameInit({minigame_round}): the memory game isn't ported");
+        /// `sOcaMemoryGameNumNotes`.
+        const MEMORY_GAME_NUM_NOTES: [u8; 3] = [5, 6, 8];
+        let minigame_round = minigame_round.min(2);
+        self.ocarina.memory_game_append_pos = 0;
+        self.ocarina.memory_game_end_pos = MEMORY_GAME_NUM_NOTES[minigame_round as usize];
+        for _ in 0..3 {
+            self.audio_ocarina_memory_game_next_note();
+        }
     }
 
-    /// `AudioOcarina_MemoryGameNextNote`: not ported; 1 (the game won) so nothing waits on it.
+    /// `AudioOcarina_MemoryGameNextNote`: 1 when the round's notes are all there; else a random
+    /// note appended to `OCARINA_SONG_MEMORY_GAME` (not the same as the one before), the song
+    /// ended after it, and 0.
     pub fn audio_ocarina_memory_game_next_note(&mut self) -> i32 {
-        log::info!("AudioOcarina_MemoryGameNextNote: the memory game isn't ported");
-        1
+        if self.ocarina.memory_game_append_pos == self.ocarina.memory_game_end_pos {
+            return 1;
+        }
+        let random_button_index = self.next_random();
+        let o = &mut self.ocarina;
+        let mut random_pitch = o.button_to_pitch((random_button_index % 5) as u8);
+        let pos = o.memory_game_append_pos as i32;
+        // @bug (game): the first note compares with sOcarinaSongNotes[OCARINA_SONG_MEMORY_GAME][-1],
+        // the scarecrow's spawn song's last entry.
+        if o.song_note(OCARINA_SONG_MEMORY_GAME, pos - 1).pitch == random_pitch {
+            random_pitch = o.button_to_pitch((random_button_index.wrapping_add(1) % 5) as u8);
+        }
+        let base = OCARINA_SONG_MEMORY_GAME as usize * SONG_NOTES;
+        let i = base + pos as usize;
+        o.song_notes[i].pitch = random_pitch;
+        // FRAMERATE_CONST(45, 38): not a 50 Hz N64 PAL version.
+        o.song_notes[i].length = 45;
+        o.song_notes[i].volume = 0x50;
+        o.song_notes[i].vibrato = 0;
+        o.song_notes[i].bend = 0;
+        o.memory_game_append_pos += 1;
+        let i = base + o.memory_game_append_pos as usize;
+        o.song_notes[i].pitch = OCARINA_PITCH_NONE;
+        o.song_notes[i].length = 0;
+        o.song_notes[i + 1].pitch = OCARINA_PITCH_NONE;
+        o.song_notes[i + 1].length = 0;
+        0
     }
 
     /// `AudioOcarina_Update`, the start of `Audio_Update`: the pad read and played, the songs
@@ -1146,5 +1186,39 @@ mod tests {
         assert_eq!(a.audio_ocarina_bend_pitch_two_semitones(65), 255.0);
         assert_eq!(a.audio_ocarina_bend_pitch_two_semitones(-65), 0.0);
         assert_eq!(a.audio_ocarina_bend_pitch_two_semitones(32), (128 + 63) as f32);
+    }
+
+    // AudioOcarina_MemoryGameInit(0): three notes of the round's five; each further note until
+    // the fifth gives 0, then 1. With the audio side's random state all zero, every draw is
+    // button 0 (sButtonToPitchMap[0], D4), and a note the same as the one before takes the next
+    // button's (F4): D4 F4 D4 F4 D4. Each is 45 frames (FRAMERATE_CONST(45, 38)) at volume 0x50,
+    // and the song ends after the last (two OCARINA_PITCH_NONE entries).
+    #[test]
+    fn the_memory_game_appends_a_note_a_round() {
+        let mut a = audio();
+        a.audio_ocarina_memory_game_init(0);
+        assert_eq!((a.ocarina.memory_game_append_pos, a.ocarina.memory_game_end_pos), (3, 5));
+        assert_eq!(a.audio_ocarina_memory_game_next_note(), 0);
+        assert_eq!(a.audio_ocarina_memory_game_next_note(), 0);
+        assert_eq!(a.audio_ocarina_memory_game_next_note(), 1);
+        let notes: Vec<OcarinaNote> = (0..7).map(|i| a.ocarina.song_note(OCARINA_SONG_MEMORY_GAME, i)).collect();
+        let pitches: Vec<u8> = notes.iter().map(|n| n.pitch).collect();
+        assert_eq!(pitches, vec![OCARINA_PITCH_D4, OCARINA_PITCH_F4, OCARINA_PITCH_D4, OCARINA_PITCH_F4, OCARINA_PITCH_D4, OCARINA_PITCH_NONE, OCARINA_PITCH_NONE]);
+        assert!(notes[..5].iter().all(|n| n.length == 45 && n.volume == 0x50 && n.vibrato == 0 && n.bend == 0));
+        assert_eq!((notes[5].length, notes[6].length), (0, 0));
+        // Rounds past the third play the third's eight.
+        a.audio_ocarina_memory_game_init(5);
+        assert_eq!(a.ocarina.memory_game_end_pos, 8);
+    }
+
+    // @bug (game): the first note compares with sOcarinaSongNotes[OCARINA_SONG_MEMORY_GAME][-1],
+    // the scarecrow's spawn song's last entry: a D4 there makes the first note F4.
+    #[test]
+    fn the_memory_games_first_note_reads_the_song_before() {
+        let mut a = audio();
+        let i = OCARINA_SONG_MEMORY_GAME as usize * SONG_NOTES - 1;
+        a.ocarina.song_notes[i].pitch = OCARINA_PITCH_D4;
+        a.audio_ocarina_memory_game_init(0);
+        assert_eq!(a.ocarina.song_note(OCARINA_SONG_MEMORY_GAME, 0).pitch, OCARINA_PITCH_F4);
     }
 }

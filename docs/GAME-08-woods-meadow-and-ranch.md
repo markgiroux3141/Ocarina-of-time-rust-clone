@@ -15,7 +15,7 @@ Epona's Song and the child's Epona, Ingo, and Talon's house. Exit: Saria's Song 
 | # | Milestone | Status |
 |---|---|---|
 | 1 | The meadow and Saria's Song: `En_Sa` (with Kokiri Forest's greeting), `En_Wf`, `Bg_Spot05_Soko`, the woods' maze walked | done (2026-10-14) |
-| 2 | The Lost Woods' Skull Kids and scrubs: `En_Skj`, the memory game, the target scrub | planned |
+| 2 | The Lost Woods' Skull Kids and scrubs: `En_Skj`, the memory game, the target scrub | done (2026-10-14) |
 | 3 | Lon Lon Ranch: Epona's Song's end, the foal and the horses, Ingo, the Guays, Talon's house and the cucco game | planned |
 
 Before the phase, part A of the same piece of work: the actor schema ([ADR 0066](adr/0066-the-actor-schema.md),
@@ -289,3 +289,110 @@ scripts\run\sandbox-meadow.bat
    ("Hi, Link!"), then stands by the ladder. In her house later (Kokiri Forest's north-west), she
    stands inside with the ocarina.
 
+
+## Milestone 2: The Lost Woods' Skull Kids and scrubs
+
+**The answer:** child Link with Saria's Song and the slingshot plays the song to the Skull Kid on
+his stump (a piece of heart), shoots the target scrub's bullseye three times in a row (the bigger
+seed bag), and wins the Skull Kids' memory game three rounds running (a green rupee, a blue
+rupee, a piece of heart). Scripts: `scripts\run\test-lost-woods.bat`, `game-lost-woods.bat`,
+`sandbox-lost-woods.bat` (menu 126 to 128; 125 is the glb export's, ADR 0068).
+
+### What was built
+
+- **Shared code** (ADR 0069): the ocarina's memory game (`AudioOcarina_MemoryGameInit`,
+  `_MemoryGameNextNote`, with the C's read of the song before it as an @bug), the message box's
+  `MSGMODE_MEMORY_GAME_*` modes and `Message_UpdateOcarinaMemoryGame`, the metronome's sounds;
+  one-point cutscene 4140; `Effect_Ss_Extra` (the score) and `interfaceCtx.unk_23C`;
+  `SETUPDL_41` (moved from the helper into `gbi::setup_dl`).
+- **`En_Skj`** and **`En_Skjneedle`** whole (a helper): the stump Skull Kid (his flight before
+  `ITEMGETINF_16`, Saria's Song on the small stump and its heart piece, his texts after, the
+  Skull Mask trade, the fight: needles, hits, the backflip, death and its orange rupee), the
+  memory game's two Skull Kids and its stump (the rounds, `sOcarinaGameRewards`, the failures,
+  `ITEMGETINF_17`), the adult Skull Kids' init; two bakes (opaque and fading).
+- **`En_Dnt_Nomal`** and **`En_Ex_Item`** whole (a helper): the target scrub (the bullseye and
+  the ring, the count, the camera, its walk, talk and spit, its burrow back) and the mask
+  contest's audience (driven by `En_Dnt_Demo`'s signals, Phase 20); every prize of `En_Ex_Item`
+  (the bowling alley's, the treasure chest game's rupees and key, the Great Fairy's magic, the seed
+  bag); five bakes.
+- **The `meadow-saria` preset**, from a diff of the save over milestone 1's run.
+- **`Route::LostWoods`** with the tasks `ShootUntil` and `MemoryGame`, the steps `SkullKidSong`,
+  `SkullKidHeart`, `Bullseye`, `BulletBag`, `MemoryGame`, `MemoryRound`, `MemoryGameWon`.
+- **Coverage:** `En_Okuta` to Phase 11; the glb export's characters gain the Skull Kid and the
+  two scrubs (`Deku Scrub`, `Deku Scrub (theatre)`).
+
+### Results
+
+- `tests/lost_woods.rs`, the exit's run: 5,736 frames. Saria's Song on the stump at frame 319,
+  the heart at 664; the bullseyes at 1,085, 1,099 and 1,113, the seed bag at 1,625; the memory
+  game from 1,812, its 13 turns (3 to 5 notes, 3 to 6, 3 to 8), won at 5,736. Link ends with two
+  more pieces of heart, the 40 seed bag full and six more rupees, and takes no hit.
+- `tests/en_skj.rs` (16), `tests/en_dnt_nomal.rs` (8), `tests/en_ex_item.rs` (9), and two unit
+  tests of the memory game's notes in `oot_game`.
+- 1,054 tests (one ignored) pass; `cargo test -p layering` passes; no warnings.
+- Goldens: the five `meadow` hashes changed, proven (`golden/README.md`): the target scrub's
+  blinks call `Rand` from the scene's start, and the owl's camera in room 2 picks the other of its
+  two. Five new cases (`lost_woods`, `_stump`, `_target`, `_scrub`, `_game`). 199 hashes, 152
+  cases (`out/golden_base20`).
+
+### Decisions
+
+- The route takes the woods' rooms in the order that ends in the hollow: room 9's stump, the
+  target from room 1's clearing, then down into the hollow for the memory game.
+- The preset adds the slingshot (a player has it after the Deku Tree); the earlier presets stay
+  as they are.
+- `En_Okuta` is left out, as the survey found; the coverage table moves it to Zora's River's phase.
+
+### Corrections to the survey
+
+- The memory game's turns: each round restarts at three notes, so the rounds are three, four and
+  six turns, not one each.
+- Room 1's clearing isn't open onto the hollow: a wall 25 high runs along its edge but at its
+  north end, where Link drops down. The memory game's stump stands 40 above the hollow's floor.
+- `func_80033C30` (the stage scrub's draw) is a circle shadow, not dust; `object_dnk` is loaded in
+  every Lost Woods room (the stage scrub's object), though only the grotto places it.
+- `Effect_Ss_Extra` is effect 0x1E (I first wrote 0x24, `Ice_Smoke`'s; checked against
+  `effect_ss_table.h`).
+
+### Known gaps
+
+- No masks (BACKLOG #39): the Skull Mask trade is reached only in a test.
+- A fading Skull Kid draws as one translucent pass (BACKLOG #67).
+- `En_Ex_Item`'s highlights (`func_8002EBCC`, `func_8002ED80`) aren't drawn, as for the shop's
+  items (the roadmap's rendering debt).
+- The stage scrubs wait on `En_Dnt_Demo` (Phase 20).
+- The sandbox has no `--room` (BACKLOG #65); `RAD_TO_BINANG`'s precision (#66).
+
+### Fixes found while building
+
+- The preset first gave Epona's Song (item 0x61) for Saria's (0x62): the route's song check on
+  the stump never matched. Checked against `item.h`.
+- `Task::Shoot` now ends on a condition (`ShootUntil`), the switch flag being one.
+
+### How to check
+
+```
+scripts\run\test-lost-woods.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-lost-woods.bat
+```
+
+### By hand
+
+1. `game-lost-woods`: go left at the first fork (west). The Skull Kid on his stump backflips away if
+   you come within 200 of him; stand on the small stump in front of him instead, take out the
+   ocarina (K) and play Saria's Song (K L J K L J): he plays along on his flute, says "You know
+   Saria's Song", and gives a piece of heart. Talk to him again after.
+2. Back east through the first room and right (east) at the fork: the target across the hollow.
+   C-Right (L) for the slingshot, aim at the target's middle and let go: "100" over the scrub's
+   flower on a bullseye, "30" on the ring (which starts the count again). Three bullseyes in a
+   row: the camera turns to the scrub, it comes up, walks over, talks, spits a seed bag at you.
+3. `game-lost-woods target`: the same from the clearing's edge.
+4. In the clearing, its north-east corner: drop into the hollow and climb onto the stump between
+   the two Skull Kids (they fade in). Take out the ocarina: they play notes (a metronome ticks),
+   then it's your turn: play them back. A wrong note or too slow (160 frames): he says so and offers another try.
+   Three rounds: a green rupee, a blue rupee, then a piece of heart.
+5. `game-lost-woods game`: on the memory game's stump at once.
+6. Hit the stump Skull Kid with the sword after his heart piece: he backflips away.

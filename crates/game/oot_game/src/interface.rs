@@ -178,6 +178,9 @@ pub struct InterfaceContext {
     /// `sEnvHazard`: the hazard less the tunic that protects from it (the hot room's and
     /// underwater timers that read it aren't ported).
     pub env_hazard: u8,
+    /// `unk_23C`: the score a mini-game's points last showed (`Effect_Ss_Extra`; the horseback
+    /// archery reads it).
+    pub unk_23c: u16,
     /// `unk_244`: a black fill over the screen at this alpha (`Interface_Draw`'s last rectangle),
     /// which the game over menu raises to 255 before the respawn.
     pub unk_244: i16,
@@ -221,6 +224,7 @@ impl Default for InterfaceContext {
             env_hazard: 0,
             c_up_invisible: 0,
             c_up_timer: 0,
+            unk_23c: 0,
             unk_244: 0,
         }
     }

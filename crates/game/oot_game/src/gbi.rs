@@ -646,6 +646,24 @@ pub mod setup_dl {
         d.0.push(GEOMETRY_LIT);
         d
     }
+
+    /// `SETUPDL_41` (`Gfx_SetupDL_41Opa`): `gsSPTexture(0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON)`,
+    /// `gsDPSetCombineMode(G_CC_MODULATEIA, G_CC_MODULATEIA)`, the 1-cycle perspective other
+    /// mode with `G_AC_NONE | G_ZS_PIXEL | G_RM_ZB_XLU_SURF | G_RM_ZB_XLU_SURF2`,
+    /// `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_41() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.0.push((0xD700_0002, 0xFFFF_FFFF));
+        // G_CC_MODULATEIA: TEXEL0, 0, SHADE, 0, TEXEL0, 0, SHADE, 0.
+        let c = [cc_ab::TEXEL0, cc_ab::ZERO, cc_c::SHADE, cc_d::ZERO, ac::TEXEL0, ac::ZERO, ac::SHADE, ac::ZERO];
+        d.combine_lerp(c, c);
+        // G_RM_ZB_XLU_SURF: Z_CMP | IM_RD | CVG_DST_FULL | FORCE_BL | ZMODE_XLU |
+        // GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA), and _SURF2.
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP, 0x0050_4A50));
+        d.0.push((0xD900_0000, 0x0020_0005));
+        d
+    }
 }
 
 #[cfg(test)]

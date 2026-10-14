@@ -129,6 +129,8 @@ ACTORS = {
     # the Forest Medallion (ObjDekujr_Init)
     "En_Po_Relay": 14,  # Dampé's race: in Dampé's grave (hakasitarelay room 0), which a child
     # can't open (Bg_Spot02_Objects type 1 seals it for him); the child's layers place it anyway
+    "En_Okuta": 11,  # the Octorok: the Lost Woods' (spot10 room 3) never spawns, since object_okuta
+    # is in none of its rooms' object lists (Actor_Spawn refuses it); first met in Zora's River
 }
 
 # What a ported actor's module docs say when it leaves something out.

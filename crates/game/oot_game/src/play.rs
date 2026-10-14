@@ -1423,6 +1423,11 @@ impl PlayState {
         self.with_msg(|m, f| m.start_ocarina_suns_song_disabled(f, ocarina_action_id));
     }
 
+    /// `Message_UpdateOcarinaMemoryGame`.
+    pub fn message_update_ocarina_memory_game(&mut self) {
+        self.with_msg(|m, f| m.update_ocarina_memory_game(f));
+    }
+
     /// `Message_GetState(&play->msgCtx)`.
     pub fn message_state(&self) -> u8 {
         self.msg_ctx.get_state()
