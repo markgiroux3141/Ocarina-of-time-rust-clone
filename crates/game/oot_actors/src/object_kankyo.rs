@@ -5,8 +5,31 @@
 //! Navi's flight: the wing hum by the camera's speed, her calls, and her crash into the fence
 //! (cutscene frames 473, 583, 763, 771).
 //!
-//! The other kinds (2 the lightning, 3 the snow, 4 the Sun's Song grave's spark, 5 Ganon's
-//! castle's beams) aren't ported: they do nothing.
+//! Params 2 is the lightning of the royal tomb's opening (`ObjectKankyo_Lightning`): when the
+//! cutscene cues channel 0 with id 2 it strikes, 7 frames of `sEffLightningTextures` (from the
+//! first) at the cue's start position, tilted 20 degrees about x and z, scaled 2, 5, 2 and facing
+//! the camera (`gEffLightningDL` after `Gfx_SetupDL_61Xlu`, prim `(255, 255, 255, 128)`, env
+//! `(0, 255, 255, 128)`: `ObjectKankyo_DrawLightning`); then it waits for a cue of id 1 to strike
+//! again.
+//!
+//! Params 4 is the spark over the Sun's Song grave in the same cutscene
+//! (`ObjectKankyo_SunGraveSparkInit`, `_WaitForSunGraveSparkObject`, `_SunGraveSpark`): once
+//! `object_spot02_objects` is loaded, size 7; while channel 1's cue is id 2,
+//! `NA_SE_EN_BIRI_SPARK` each frame, its alpha 20 more (to 255) and its size smoothed towards 1.8
+//! (`Math_SmoothStepToF(.., 0.5, 0.28, 0.01)`). Its draw (`ObjectKankyo_DrawSunGraveSpark`, which
+//! also moves its brightness up and down by a seventh a frame and steps through `D_80BA5900`'s 8
+//! textures) puts `object_spot02_objects_DL_009620` facing the camera on the cue's line, lerped
+//! across the cue's frames, its colours from the brightness. It moves to the ITEMACTION category
+//! (already its profile's).
+//!
+//! Not ported here: 3 (the snow: `ObjectKankyo_Snow` does nothing, and `ObjectKankyo_DrawSnow`
+//! isn't drawn; it takes the one place params 0 takes too), 5 (Ganon's castle's beams:
+//! `ObjectKankyo_InitBeams`, `_WaitForBeamObject`, `_Beams`, `_DrawBeams`; logged at init, it
+//! does nothing).
+//!
+//! Params: the kind (0 the fairy dust, 2 the lightning, 3 the snow, 4 the Sun's Song grave's
+//! spark, 5 Ganon's castle's beams: not ported).
+//! Flags: none (params 5 would read EVENTCHKINF_AD and EVENTCHKINF_BB to _BF).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{cos_s, sin_s, smooth_step_to_f};
@@ -35,12 +58,13 @@ const SEG_SETUP: u8 = 0x0D;
 const SEG_COLOR: u8 = 0x0E;
 
 /// `ObjectKankyo_DrawFairies`' mote: `Gfx_SetupDL(SETUPDL_20)`, `gSun1Tex` on segment 8,
-/// `gKokiriDustMoteMaterialDL`, then the mote's colours and `gKokiriDustMoteModelDL`.
+/// `gKokiriDustMoteMaterialDL`, then the mote's colours and `gKokiriDustMoteModelDL`; the
+/// lightning's, one per texture; the spark's, one per texture.
 pub fn bakes() -> Vec<MeshBake> {
     let keep = "gameplay_keep";
     let mut setup = setup_dl::setup_dl_20();
     setup.end();
-    vec![MeshBake {
+    let mut v = vec![MeshBake {
         name: BAKE.into(),
         object: keep.into(),
         segments: vec![
@@ -50,7 +74,78 @@ pub fn bakes() -> Vec<MeshBake> {
         ],
         prelude: vec![SEG_SETUP, SEG_COLOR],
         body: BakeBody::DLists(vec![(keep.into(), "gKokiriDustMoteMaterialDL".into()), (keep.into(), "gKokiriDustMoteModelDL".into())]),
-    }]
+    }];
+    // ObjectKankyo_DrawLightning: its colours (gDPSetPrimColor(.., 255, 255, 255, 128),
+    // gDPSetEnvColor(.., 0, 255, 255, 128)), Gfx_SetupDL_61Xlu, the texture on segment 8,
+    // gEffLightningDL.
+    let mut setup61 = setup_dl::setup_dl_61();
+    setup61.end();
+    // G_SETPRIMCOLOR (0xFA), G_SETENVCOLOR (0xFB), G_ENDDL (0xDF).
+    let colors = vec![(0xFA00_0000u32, u32::from_be_bytes([255, 255, 255, 128])), (0xFB00_0000u32, u32::from_be_bytes([0, 255, 255, 128])), (0xDF00_0000u32, 0u32)];
+    for (i, tex) in S_EFF_LIGHTNING_TEXTURES.iter().enumerate() {
+        v.push(MeshBake {
+            name: lightning_bake(i),
+            object: keep.into(),
+            segments: vec![
+                (SEG_COLOR, BakeSegment::Commands(colors.clone())),
+                (SEG_SETUP, BakeSegment::Commands(setup61.0.clone())),
+                (0x08, BakeSegment::Texture { file: keep.into(), symbol: (*tex).into() }),
+            ],
+            prelude: vec![SEG_COLOR, SEG_SETUP],
+            body: BakeBody::DLists(vec![(keep.into(), "gEffLightningDL".into())]),
+        });
+    }
+    // ObjectKankyo_DrawSunGraveSpark: Gfx_SetupDL_25Xlu (the bake's start), the colours,
+    // D_80BA5900's texture on segment 8, object_spot02_objects_DL_009620.
+    for (i, tex) in D_80BA5900.iter().enumerate() {
+        v.push(MeshBake {
+            name: spark_bake(i),
+            object: SPOT02_OBJECTS.into(),
+            segments: vec![(SEG_COLOR, BakeSegment::DynamicColor { env: true, prim: true }), (0x08, BakeSegment::Texture { file: SPOT02_OBJECTS.into(), symbol: (*tex).into() })],
+            prelude: vec![SEG_COLOR],
+            body: BakeBody::DLists(vec![(SPOT02_OBJECTS.into(), "object_spot02_objects_DL_009620".into())]),
+        });
+    }
+    v
+}
+
+/// `sEffLightningTextures`.
+const S_EFF_LIGHTNING_TEXTURES: [&str; 8] = ["gEffLightning1Tex", "gEffLightning2Tex", "gEffLightning3Tex", "gEffLightning4Tex", "gEffLightning5Tex", "gEffLightning6Tex", "gEffLightning7Tex", "gEffLightning8Tex"];
+
+/// `D_80BA5900`: the spark's textures (in `object_spot02_objects`).
+const D_80BA5900: [&str; 8] = ["gEffSunGraveSpark1Tex", "gEffSunGraveSpark2Tex", "gEffSunGraveSpark3Tex", "gEffSunGraveSpark4Tex", "gEffSunGraveSpark5Tex", "gEffSunGraveSpark6Tex", "gEffSunGraveSpark7Tex", "gEffSunGraveSpark8Tex"];
+
+/// `OBJECT_SPOT02_OBJECTS` (`object_table.h`: 0x00A1).
+pub const OBJECT_SPOT02_OBJECTS: i16 = 0x00A1;
+const SPOT02_OBJECTS: &str = "object_spot02_objects";
+/// `NA_SE_EN_BIRI_SPARK` (`enemybank_table.h`: 0x389A).
+pub const NA_SE_EN_BIRI_SPARK: u16 = 0x389A;
+
+/// The cue channels: the lightning's, the spark's.
+pub const CUE_LIGHTNING: usize = 0;
+pub const CUE_SPARK: usize = 1;
+
+fn lightning_bake(i: usize) -> String {
+    format!("Object_Kankyo/lightning/{i}")
+}
+
+fn spark_bake(i: usize) -> String {
+    format!("Object_Kankyo/sun_grave_spark/{i}")
+}
+
+/// What the lightning's or the spark's draw draws this frame: the bake, its matrix (the
+/// billboard to be multiplied in), its colours (the spark's).
+#[derive(Debug, Clone, PartialEq)]
+pub struct CueDraw {
+    pub bake: String,
+    pub mtx: Mat4,
+    pub prim: [u8; 4],
+    pub env: [u8; 4],
+}
+
+/// `play->csCtx.actorCues[channel]` while a cutscene runs.
+fn cue(play: &PlayState, channel: usize) -> Option<oot_game::cutscene::CsCmdActorCue> {
+    if play.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE { play.cs_ctx.npc_actions[channel] } else { None }
 }
 
 /// The overlay's statics: `sIsSpawned`, `sTrailingFairies`.
@@ -85,7 +180,15 @@ pub struct Effect {
 pub enum Action {
     /// `ObjectKankyo_Fairies`.
     Fairies,
-    /// The kinds not ported.
+    /// `ObjectKankyo_Lightning`.
+    Lightning,
+    /// `ObjectKankyo_SunGraveSparkInit`.
+    SunGraveSparkInit,
+    /// `ObjectKankyo_WaitForSunGraveSparkObject`.
+    WaitForSunGraveSparkObject,
+    /// `ObjectKankyo_SunGraveSpark`.
+    SunGraveSpark,
+    /// `ObjectKankyo_Snow` (nothing), and the kinds not ported.
     None,
 }
 
@@ -95,8 +198,13 @@ pub struct ObjectKankyo {
     pub effects: [Effect; 64],
     /// `prevEyePos`.
     pub prev_eye_pos: Vec3,
+    /// `requiredObjectSlot`, `requiredObjectLoaded` (params 4: `object_spot02_objects`).
+    pub required_object_slot: Option<usize>,
+    pub required_object_loaded: bool,
     /// What the last draw drew: each mote's place, scale and alpha.
     drawn: Vec<(Vec3, f32, u8)>,
+    /// The lightning's or the spark's draw this frame (`draw_update`).
+    pub cue_draw: Option<CueDraw>,
 }
 
 impl ObjectKankyo {
@@ -123,9 +231,135 @@ impl ObjectKankyo {
                     actor.kill();
                 }
             }
-            p => log::debug!("Object_Kankyo params {p}: not ported"),
+            2 => action = Action::Lightning,
+            4 => {
+                // effects[0].alpha = 0, .amplitude = 0 (as Effect::default leaves them);
+                // Actor_ChangeCategory(.., ACTORCAT_ITEMACTION): the spawn files it there.
+                actor.category = ACTORCAT_ITEMACTION;
+                action = Action::SunGraveSparkInit;
+            }
+            5 => log::warn!("Object_Kankyo params 5 (Ganon's castle's beams): not ported"),
+            p => log::debug!("Object_Kankyo params {p}: nothing (the C's default)"),
         }
-        Box::new(ObjectKankyo { actor, action, effects: [Effect::default(); 64], prev_eye_pos: Vec3::ZERO, drawn: Vec::new() })
+        Box::new(ObjectKankyo { actor, action, effects: [Effect::default(); 64], prev_eye_pos: Vec3::ZERO, required_object_slot: None, required_object_loaded: false, drawn: Vec::new(), cue_draw: None })
+    }
+
+    /// `ObjectKankyo_Lightning`: with channel 0's cue, state 0 waits for its id 2 (the timer at
+    /// 0), 1 counts 7 frames, 2 waits for its id 1 to start over.
+    fn lightning(&mut self, play: &PlayState) {
+        let Some(c) = cue(play, CUE_LIGHTNING) else { return };
+        let e = &mut self.effects[0];
+        match e.state {
+            0 => {
+                e.timer = 0;
+                if c.action == 2 {
+                    e.state += 1;
+                }
+            }
+            1 => {
+                e.timer += 1;
+                if e.timer >= 7 {
+                    e.state += 1;
+                }
+            }
+            2 => {
+                if c.action == 1 {
+                    e.state = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `ObjectKankyo_SunGraveSparkInit`: `object_spot02_objects`' slot (the C asserts it's
+    /// there).
+    fn sun_grave_spark_init(&mut self, play: &PlayState) {
+        match play.object_ctx.get_index(OBJECT_SPOT02_OBJECTS) {
+            Some(slot) => self.required_object_slot = Some(slot),
+            None => log::error!("Object_Kankyo: object_spot02_objects isn't loaded (the C's ASSERT)"),
+        }
+        self.action = Action::WaitForSunGraveSparkObject;
+    }
+
+    /// `ObjectKankyo_WaitForSunGraveSparkObject`: once it's loaded, the spark at alpha 0, size 7.
+    fn wait_for_sun_grave_spark_object(&mut self, play: &PlayState) {
+        if self.required_object_slot.is_some_and(|s| play.object_ctx.is_loaded(s)) {
+            self.required_object_loaded = true;
+            self.effects[0].alpha = 0;
+            // this->actor.objectSlot = this->requiredObjectSlot: the bakes draw with the object.
+            self.effects[0].size = 7.0;
+            self.action = Action::SunGraveSpark;
+        }
+    }
+
+    /// `ObjectKankyo_SunGraveSpark`: while channel 1's cue is id 2, its sound, its alpha 20 more
+    /// (to 255), its size smoothed towards 1.8.
+    fn sun_grave_spark(&mut self, play: &mut PlayState) {
+        if cue(play, CUE_SPARK).is_some_and(|c| c.action == 2) {
+            self.actor.play_sfx_flagged(NA_SE_EN_BIRI_SPARK - SFX_FLAG);
+            let e = &mut self.effects[0];
+            if e.alpha as i16 + 20 > 255 {
+                e.alpha = 255;
+            } else {
+                e.alpha += 20;
+            }
+            smooth_step_to_f(&mut e.size, 1.8, 0.5, 0.28, 0.01);
+        }
+    }
+
+    /// `ObjectKankyo_DrawLightning`: in state 1, `sEffLightningTextures[timer]` at channel 0's
+    /// cue's start, turned 20 degrees about x then z, scaled 2, 5, 2 (then the billboard, segment
+    /// 1's matrix).
+    fn draw_lightning(&self, play: &PlayState) -> Option<CueDraw> {
+        let e = &self.effects[0];
+        if e.state != 1 {
+            return None;
+        }
+        // The C reads actorCues[0] without a check.
+        let c = play.cs_ctx.npc_actions[CUE_LIGHTNING]?;
+        let p = c.start_pos;
+        let mtx = Mat4::from_translation(Vec3::new(p.x as f32, p.y as f32, p.z as f32)) * Mat4::from_rotation_x(20f32.to_radians()) * Mat4::from_rotation_z(20f32.to_radians()) * Mat4::from_scale(Vec3::new(2.0, 5.0, 2.0));
+        Some(CueDraw { bake: lightning_bake((e.timer as usize).min(S_EFF_LIGHTNING_TEXTURES.len() - 1)), mtx, prim: [255, 255, 255, 128], env: [0, 255, 255, 128] })
+    }
+
+    /// `ObjectKankyo_DrawSunGraveSpark`: while channel 1's cue is id 2 (and the object's loaded),
+    /// the brightness (`amplitude`) up a seventh a frame to 1 (state 0), then down to 0 below 0.1
+    /// (state 1); the texture on to the next (`timer`, past 7 back to 0); the spark at the cue's
+    /// line lerped across its frames, scaled `size`, facing the camera; prim `(105a + 150, 255,
+    /// 105a + 150, alpha)`, env `(155a + 100, 255a, 255 - 255a, alpha)`.
+    fn draw_sun_grave_spark(&mut self, play: &PlayState) -> Option<CueDraw> {
+        let c = cue(play, CUE_SPARK)?;
+        if c.action != 2 || !self.required_object_loaded {
+            return None;
+        }
+        let e = &mut self.effects[0];
+        if e.state == 0 {
+            e.amplitude += 1.0 / 7.0;
+            if e.amplitude >= 1.0 {
+                e.amplitude = 1.0;
+                e.state += 1;
+            }
+        } else {
+            e.amplitude -= 1.0 / 7.0;
+            if e.amplitude <= 0.1 {
+                e.amplitude = 0.0;
+                e.state = 0;
+            }
+        }
+        e.timer += 1;
+        if e.timer > 7 {
+            e.timer = 0;
+        }
+        let start = Vec3::new(c.start_pos.x as f32, c.start_pos.y as f32, c.start_pos.z as f32);
+        let end = Vec3::new(c.end_pos.x as f32, c.end_pos.y as f32, c.end_pos.z as f32);
+        let weight = oot_game::env::lerp_weight(c.end_frame, c.start_frame, play.cs_ctx.frames);
+        // LERP(start, end, weight).
+        let pos = Vec3::new(start.x + (end.x - start.x) * weight, start.y + (end.y - start.y) * weight, start.z + (end.z - start.z) * weight);
+        let mtx = Mat4::from_translation(pos) * Mat4::from_scale(Vec3::splat(e.size));
+        let a = e.amplitude;
+        let prim = [((105.0 * a) as i32 as u8).wrapping_add(150), 255, ((105.0 * a) as i32 as u8).wrapping_add(150), e.alpha];
+        let env = [((155.0 * a) as i32 as u8).wrapping_add(100), (255.0 * a) as i32 as u8, 255u8.wrapping_sub((255.0 * a) as i32 as u8), e.alpha];
+        Some(CueDraw { bake: spark_bake(e.timer as usize & 7), mtx, prim, env })
     }
 
     /// `ObjectKankyo_Fairies`.
@@ -333,16 +567,28 @@ impl ActorImpl for ObjectKankyo {
 
     /// `ObjectKankyo_Update`.
     fn update(&mut self, play: &mut PlayState) {
-        if self.action == Action::Fairies {
-            self.fairies(play);
+        match self.action {
+            Action::Fairies => self.fairies(play),
+            Action::Lightning => self.lightning(play),
+            Action::SunGraveSparkInit => self.sun_grave_spark_init(play),
+            Action::WaitForSunGraveSparkObject => self.wait_for_sun_grave_spark_object(play),
+            Action::SunGraveSpark => self.sun_grave_spark(play),
+            Action::None => {}
         }
     }
 
-    /// `ObjectKankyo_DrawFairies`' changes: each mote's scale by its alpha (before this frame's
-    /// change), then the alpha fading (the first 32 in while circling, out otherwise; the rest
-    /// blinking by `alphaTimer`). Skipped with the main camera's `stateFlags & 0x100`.
+    /// `ObjectKankyo_Draw` by params: the lightning's (2) and the spark's (4) draws, which
+    /// change the spark; `ObjectKankyo_DrawFairies`' changes (0): each mote's scale by its alpha
+    /// (before this frame's change), then the alpha fading (the first 32 in while circling, out
+    /// otherwise; the rest blinking by `alphaTimer`). Skipped with the main camera's `stateFlags &
+    /// 0x100`.
     fn draw_update(&mut self, play: &mut PlayState) {
         self.drawn.clear();
+        self.cue_draw = match self.actor.params {
+            2 => self.draw_lightning(play),
+            4 => self.draw_sun_grave_spark(play),
+            _ => None,
+        };
         if self.action != Action::Fairies || play.game_camera.state_flags & 0x100 != 0 {
             return;
         }
@@ -388,6 +634,15 @@ impl ActorImpl for ObjectKankyo {
             sv.prim[SEG_COLOR as usize] = Some(prim);
             sv.env[SEG_COLOR as usize] = Some(env);
             out.xlu.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE)), transform: m, bones: Vec::new(), params: DrawParams { segments: Some(sv), ..Default::default() } });
+        }
+        // ObjectKankyo_DrawLightning, ObjectKankyo_DrawSunGraveSpark: their matrices times the
+        // billboard (the lightning's gSPMatrix(&D_01000000, G_MTX_MUL), the spark's
+        // Matrix_Mult(&play->billboardMtxF)).
+        if let Some(d) = &self.cue_draw {
+            let mut sv = SegmentValues::default();
+            sv.prim[SEG_COLOR as usize] = Some(d.prim);
+            sv.env[SEG_COLOR as usize] = Some(d.env);
+            out.xlu.push(DrawCmd { mesh: MeshKey::named(keys::bake(&d.bake)), transform: d.mtx * view.billboard, bones: Vec::new(), params: DrawParams { segments: Some(sv), ..Default::default() } });
         }
     }
 

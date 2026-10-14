@@ -340,6 +340,37 @@ fn draw_config_kakusiana(st: &mut DrawConfigState, b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigGraveExitLightShining` (the ReDead grave, the windmill and Dampé's grave):
+/// the exit's light, a scroll on segment 8 in the XLU buffer.
+fn draw_config_grave_exit_light_shining(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_tex_scroll(0, f % 64, 256, 16));
+    // gDPSetEnvColor(POLY_XLU_DISP / POLY_OPA_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigFairysFountain` (the fairy fountains, the shield grave): the water's scroll
+/// on segment 8 and the exit's light on segment 9, both in the XLU buffer.
+fn draw_config_fairys_fountain(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(3) % 128, 32, 32, 1, f % 128, f.wrapping_mul(3) % 128, 32, 32));
+    b.xlu.insert(0x09, gfx_tex_scroll(0, f % 64, 256, 16));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigRoyalFamilysTomb` (the royal tomb): the exit's light on segment 8, two tall
+/// scrolls on segments 9 and 0xB (XLU), and the water's on segment 0xA (OPA).
+fn draw_config_royal_familys_tomb(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_tex_scroll(0, f % 64, 256, 16));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f.wrapping_mul(60) % 2048, 8, 512, 1, 0, f.wrapping_mul(50) % 2048, 8, 512));
+    b.opa.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, 0, 32, 32, 1, f % 128, 0, 32, 32));
+    b.xlu.insert(0x0B, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 1023 - f.wrapping_mul(6) % 1024, 16, 256, 1, 0, 1023 - f.wrapping_mul(3) % 1024, 16, 256));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
 /// `Scene_DrawConfigMarketGuardHouse` (the market's guard house): its two window views on
 /// segments 8 and 9 (`segment_textures`); no display lists.
 fn draw_config_miharigoya(_st: &mut DrawConfigState, _b: &mut Buffers) {
@@ -414,6 +445,9 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_KAKARIKO_VILLAGE", draw_config_spot01),
     ("SDC_GROTTOS", draw_config_kakusiana),
     ("SDC_MARKET_GUARD_HOUSE", draw_config_miharigoya),
+    ("SDC_GRAVE_EXIT_LIGHT_SHINING", draw_config_grave_exit_light_shining),
+    ("SDC_FAIRYS_FOUNTAIN", draw_config_fairys_fountain),
+    ("SDC_ROYAL_FAMILYS_TOMB", draw_config_royal_familys_tomb),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

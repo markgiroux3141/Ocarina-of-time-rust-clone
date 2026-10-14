@@ -198,6 +198,14 @@ the cow, the windmill man (the Song of Storms drains the well), the House of Sku
 the village's, the grottos' and the guard house's draw configs (the windows light at dusk); every
 actor destroyed on a scene change. Its exit run carries three cuccos into Anju's pen (one glided
 off a roof) and opens the gate to Death Mountain with Zelda's letter.
+Milestone 6, the graveyard, is done ([ADR 0065](adr/0065-the-graveyard-the-royal-tomb-and-the-suns-song.md)):
+Player's grab and auto lock-on; the graveyard kid, Dampé and his dig, the royal tomb's gravestone
+and its opening (the blast, `EffectSsBomb2`), the thunderstorm by the tomb, the ReDeads, the
+graves' walls, the soft soil's Gold Skulltula; the graves' and the tomb's draw configs. Its exit
+run digs with Dampé at 18:30, opens the royal tomb with Zelda's Lullaby, clears its Keese, passes
+its ReDeads, learns the Sun's Song at its wall and stuns the ReDeads with it.
+**Phase 8 is done**, but for the Temple of Time's room 0 (BACKLOG #37: `Bg_Toki_Swd`, `Demo_6K`,
+`En_Xc`), which waits for the Door of Time. Phase 9 starts with its survey.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -599,6 +607,13 @@ volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
 6. **The graveyard:** Dampé's dig, the royal tomb, the ReDeads, the Sun's Song; the draw configs
    of the graves, the royal tomb and the fairy fountain (#46).
    - **Exit:** a dig at 18:00, the lullaby at the tomb, the Sun's Song learned.
+   - **Done** (2026-10-13, ADR 0065): one milestone in steps (the user's call). Player's grab and
+     auto lock-on; `En_Cs`, `En_Tk`, `En_It`, `Bg_Spot02_Objects`, `En_Rd`, `Bg_Breakwall`,
+     `En_Weather_Tag` (BACKLOG #51), `Obj_Makekinsuta`, `Object_Kankyo`'s types 2 and 4,
+     `EffectSsBomb2` (#40); the switch flags' wrap past 0x3F. The intro and the Sun's Song's chain
+     were already playing; Dampé is out only after 18:00, so the run starts at 18:30.
+     `En_Po_Relay` left for Phase 14 (a child can't open Dampé's grave). The masks (#39), the bugs
+     (#59) and the lens (#60) left out. `Route::Graveyard`, the `graveyard` golden.
 
 ## Cross-cutting debts
 
@@ -623,7 +638,7 @@ this outline. The dungeons are Master Quest's.
 
 | Phase | Places | Dungeon and boss | What it brings | Exit |
 |---|---|---|---|---|
-| 8 (now) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 5 and 6 above: lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
+| 8 (done) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 5 and 6 above: lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
 | 9 | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
 | 10 | Death Mountain Trail and summit, Goron City | Dodongo's Cavern; King Dodongo | Bombs (`En_Bom`, BACKLOG #33) and bomb flowers, the Goron's Bracelet, Darunia's dance, the summit's Great Fairy (the magic meter) | The Goron's Ruby |
 | 11 | Zora's River, Zora's Domain, Zora's Fountain, Lake Hylia | Jabu-Jabu's Belly; Barinade | Bottles (the fish, Ruto's letter), diving (the silver scale), Ruto carried, the boomerang, the frogs and the scarecrow (#47) | The Zora's Sapphire, then the Ocarina of Time at the moat |

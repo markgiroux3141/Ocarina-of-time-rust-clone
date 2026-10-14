@@ -5,7 +5,7 @@
 //!
 //! Ported: the courtyard's type, the shooting gallery's progress markers (raised by their
 //! `galleryFlag`, which `En_Syateki_Man` sets: not ported), the bomb rupees (unused in the game:
-//! the explosion's `Effect_Ss_Bomb2` is logged) and the diving game's init and drop. The diving
+//! their explosion, `Effect_Ss_Bomb2`) and the diving game's init and drop. The diving
 //! game's rupees (`En_Diving_Game`, not ported) are its children: without that parent they only
 //! drop and sparkle (`Effect_Ss_KiraKira`, logged); the parent's sinking, collecting and ending
 //! (`EnExRuppy_EnterWater`, `_Sink`, `_WaitInGame`, `_Kill`) come with it.
@@ -195,7 +195,9 @@ impl EnExRuppy {
             }
             log::debug!("☆☆☆☆☆ Stupid! ☆☆☆☆☆");
             let (scale, step) = if self.ty == ENEXRUPPY_TYPE_BOMB_SMALL { (20, 6) } else { (100, 30) };
-            log::info!("En_Ex_Ruppy: EffectSsBomb2_SpawnLayered (scale {scale}, step {step}): Effect_Ss_Bomb2 isn't ported");
+            let pos = self.actor.world_pos;
+            // EnExRuppy_WaitToBlowUp's `accel` { 0, 0.1, 0 }, `velocity` 0.
+            play.with_ss(|s| s.bomb2_spawn_layered(pos, Vec3::ZERO, Vec3::new(0.0, 0.1, 0.0), scale, step));
             actor_set_player_knockback_large_no_damage(play, 2.0, self.actor.yaw_towards_player, 0.0);
             audio_play_actor_sfx2(play, NA_SE_IT_BOMB_EXPLOSION);
             self.actor.kill();

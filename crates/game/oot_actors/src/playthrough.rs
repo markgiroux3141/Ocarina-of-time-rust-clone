@@ -404,6 +404,27 @@ pub enum Step {
     LetterShown,
     /// Kakariko's gate to Death Mountain open.
     GateOpen,
+    /// The royal tomb's opening over (`gGraveyardTombOpeningChildCs`: its gravestone blown up,
+    /// `EVENTCHKINF_1D`), Link free.
+    TombOpened,
+    /// Into the royal tomb (`ENTR_ROYAL_FAMILYS_TOMB_0`), settled.
+    TombEntered,
+    /// Up the steps to the royal tomb's door to room 1.
+    DoorSteps,
+    /// Dampé paid (10 rupees: `EnTk_UpdateTalkState`) and his dig on a spot over (`EnTk_Dig`'s
+    /// last frame), its text closed.
+    Dug,
+    /// What a dig turned up, picked up.
+    DugUp,
+    /// The Sun's Song played by the ReDeads: all three stunned (`EnRd_SetupStunned`).
+    ReDeadsStunned,
+    /// The royal tomb's wall talked to: the Sun's Song's lesson (`gSunSongGraveSunSongTeachCs`).
+    SunsSongLesson,
+    /// The Sun's Song played back to the wall.
+    SunsSongPlayed,
+    /// The lesson's chain over (the graveyard's part 2, the tomb's part 3 at
+    /// `ENTR_ROYAL_FAMILYS_TOMB_1`), Link free by the wall.
+    SunsSongTaught,
 }
 
 impl Step {
@@ -549,6 +570,15 @@ impl Step {
             Step::Glided => "glided",
             Step::LetterShown => "letter_shown",
             Step::GateOpen => "gate_open",
+            Step::TombOpened => "tomb_opened",
+            Step::TombEntered => "tomb_entered",
+            Step::DoorSteps => "door_steps",
+            Step::Dug => "dug",
+            Step::DugUp => "dug_up",
+            Step::ReDeadsStunned => "redeads_stunned",
+            Step::SunsSongLesson => "suns_song_lesson",
+            Step::SunsSongPlayed => "suns_song_played",
+            Step::SunsSongTaught => "suns_song_taught",
         }
     }
 }
@@ -693,6 +723,10 @@ pub enum Route {
     /// (`kakariko-letter`), its intro, three cuccos carried into Anju's pen (the third glided off a
     /// roof), and the letter shown to the gate guard: the gate to Death Mountain opens.
     Kakariko,
+    /// The graveyard (GAME-07 milestone 6): from its entrance at 18:30 with Zelda's Lullaby
+    /// (`graveyard-lullaby`), its intro, the lullaby at the royal tomb (its gravestone blown up),
+    /// and into the tomb.
+    Graveyard,
 }
 
 /// Anju's pen (`func_80ABA244`: |x - 330| < 90, |z - 1610| < 190): fenced all round (its north
@@ -700,6 +734,116 @@ pub enum Route {
 /// outside it.
 const PEN_FRONT: Vec3 = Vec3::new(330.0, 80.0, 1350.0);
 const PEN_THROW_AT: Vec3 = Vec3::new(330.0, 80.0, 1600.0);
+
+/// `Route::Graveyard`'s tasks. The graveyard's floors (from the collision): the way in from the
+/// west at 0, a ramp up at x -700 to -550 to the first rows of graves at 60 (a wall at x -562
+/// south of z 150), another at x -150 to 0 to the second at 120, walled at x -42 from z -180 to
+/// 520 (60 high), and a third at x 300 to 400 to the royal tomb's terrace at 180 (to x 850). The
+/// rows' gravestones stand 120 apart along z; the way keeps between them.
+fn graveyard_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_LULLABY;
+    vec![
+        // The graveyard's intro (gGraveyardIntroCs, EVENTCHKINF_B6).
+        Task::Settle(None),
+        // Dampé's round (path 0) starts south of Link's way: on it, north of the dig spot at
+        // (-473, 60, 202), Link waits for him; he stops about 100 short of Link (EnTk_Rest), on
+        // the spot. Talked to: 0x5018, 0x5019's choice yes (10 rupees), and he digs there.
+        Task::Walk(vec![Vec3::new(-700.0, 3.0, 119.0), Vec3::new(-520.0, 61.0, 119.0)]),
+        // The paid text stays open (MSGMODE_PAUSED) through the dig and closes at its end: a dig
+        // on a spot has drawn a prize (EnTk_ChooseReward's counts).
+        Task::Converse(Who::Dampe, Vec3::new(-474.0, 60.0, 122.0), vec![0], |w| dampe(w).is_some_and(|d| d.reward_count.iter().any(|&c| c != 0)), Step::Dug),
+        Task::PickNearest(Step::DugUp),
+        // East between the first row's gravestones at z 59 and 179 (x -348), south round the
+        // wall's end, up between the second row's at z 579 and 699 (x 155), up the ramp to the
+        // tomb's terrace, to the lullaby's spot (En_Okarina_Tag type 6 at (602, 181, 80)).
+        Task::Walk(vec![
+            Vec3::new(-348.0, 60.0, 119.0),
+            Vec3::new(-200.0, 60.0, 119.0),
+            Vec3::new(-200.0, 60.0, 639.0),
+            Vec3::new(0.0, 120.0, 639.0),
+            Vec3::new(155.0, 120.0, 639.0),
+            Vec3::new(300.0, 120.0, 500.0),
+            Vec3::new(420.0, 180.0, 200.0),
+            Vec3::new(500.0, 181.0, 80.0),
+            Vec3::new(580.0, 181.0, 80.0),
+        ]),
+        // Zelda's Lullaby (C-Down), within 50 of the spot (where it calls Link's ocarina to it,
+        // PLAYER_STATE2_23): the tomb's opening (gGraveyardTombOpeningChildCs).
+        Task::Ocarina(1, OCARINA_SONG_LULLABY, Step::LullabyPlayed),
+        Task::Texts(|w| w.save.get_event_chk_inf(0x1D) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE, Step::TombOpened),
+        Task::Settle(None),
+        // Into the hole where the gravestone stood (exit 7: ENTR_ROYAL_FAMILYS_TOMB_0).
+        Task::Exit("ENTR_ROYAL_FAMILYS_TOMB_0", Some(Step::TombEntered)),
+        // The tomb's room 0: down its slope, and its four perched Keese (En_Firefly 3) each
+        // approached until it dives, blocked, and killed: the room cleared, its door to room 1
+        // (Door_Shutter SHUTTER_FRONT_CLEAR, Link behind it) unbars.
+        Task::BlockKeese(TOMB_KEESE[0]),
+        Task::KillKeese(TOMB_KEESE[0]),
+        Task::BlockKeese(TOMB_KEESE[1]),
+        Task::KillKeese(TOMB_KEESE[1]),
+        Task::BlockKeese(TOMB_KEESE[2]),
+        Task::KillKeese(TOMB_KEESE[2]),
+        Task::BlockKeese(TOMB_KEESE[3]),
+        Task::KillKeese(TOMB_KEESE[3]),
+        // The door stands on a block 120 high, reached up a notch in its middle: a ledge of 60
+        // (climbed), then steps to 90 and 120.
+        Task::ClimbTo(Vec3::new(5.0, 60.0, 1222.0), Step::DoorSteps),
+        Task::ClimbTo(Vec3::new(5.0, 90.0, 1192.0), Step::DoorSteps),
+        Task::ClimbTo(Vec3::new(5.0, 120.0, 1160.0), Step::DoorSteps),
+        Task::OpenSlidingDoor(1, Vec3::new(0.0, 120.0, 1150.0), Step::DoorOpened),
+        // Down the corridor (x 0, from 120 at z 1100 to 0 at z 750) into room 1, and through it
+        // clear of the ReDeads' screams (within 150 in front of one): (130, 177) faces west across
+        // the way, (-196, 428) east, (215, 446) south.
+        Task::Walk(vec![
+            Vec3::new(0.0, 60.0, 900.0),
+            Vec3::new(0.0, 5.0, 720.0),
+            Vec3::new(40.0, 0.0, 560.0),
+            Vec3::new(40.0, 0.0, 400.0),
+            Vec3::new(-60.0, 0.0, 250.0),
+            Vec3::new(-60.0, 0.0, 60.0),
+            Vec3::new(0.0, 0.0, -150.0),
+            // The corridor to room 2 (its En_Holl at z -420) and up its step (10 to 40 at z -1025).
+            Vec3::new(0.0, 0.0, -500.0),
+            Vec3::new(0.0, -10.0, -900.0),
+        ]),
+        Task::ClimbTo(Vec3::new(0.0, 40.0, -1080.0), Step::DoorSteps),
+        // The wall's talk (En_Okarina_Tag type 5, within 120 facing it): at its event the lesson.
+        Task::Converse(Who::SongWall, Vec3::new(0.0, 40.0, -1090.0), Vec::new(), |w| w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::SunsSongLesson),
+        // The lesson's text and the song shown (TEACH 0x0B), then played back (PLAYBACK 0x18).
+        Task::Playback(oot_game::audio::ocarina::OCARINA_SONG_SUNS, false, Step::SunsSongPlayed),
+        // Its terminator to the graveyard's layer 5 (gGraveyardSunsSongPart2Cs: CS_DEST 105), and
+        // that one's to ENTR_ROYAL_FAMILYS_TOMB_1, where the entrance table plays part 3
+        // (gSunSongGraveSunSongTeachPart2Cs, EVENTCHKINF_5A).
+        Task::Texts(
+            |w| w.save.entrance_index == ENTR_ROYAL_FAMILYS_TOMB_1 && w.save.get_event_chk_inf(0x5A) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && w.player().cs_mode == 0 && w.transition.trigger == TRANS_TRIGGER_OFF,
+            Step::SunsSongTaught,
+        ),
+        Task::Settle(None),
+        // Back down to room 1, and the Sun's Song there: every ReDead updating is stunned
+        // (EnRd_UpdateDamage: no distance check), grey for 600 frames.
+        Task::Walk(vec![Vec3::new(0.0, 10.0, -1000.0), Vec3::new(0.0, 0.0, -500.0), Vec3::new(0.0, 0.0, -200.0)]),
+        Task::Ocarina(1, oot_game::audio::ocarina::OCARINA_SONG_SUNS, Step::SunsSong),
+        Task::Texts(
+            |w| {
+                let rd: Vec<_> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_rd::EnRd>(h)).collect();
+                rd.len() == 3 && rd.iter().all(|r| r.stunned_by_suns_song)
+            },
+            Step::ReDeadsStunned,
+        ),
+    ]
+}
+
+/// `ENTR_ROYAL_FAMILYS_TOMB_1` (`entrance_table.h`: 0x574): by the tomb's wall, where the Sun's
+/// Song's lesson's part 3 plays.
+const ENTR_ROYAL_FAMILYS_TOMB_1: u16 = 0x574;
+
+/// Dampé (`En_Tk`), if he's out.
+fn dampe(w: &PlayState) -> Option<&crate::en_tk::EnTk> {
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::en_tk::EnTk>(h).filter(|d| !d.actor.killed))
+}
+
+/// The royal tomb's room 0's Keese (`En_Firefly` 3), by their homes, in the run's order.
+const TOMB_KEESE: [Vec3; 4] = [Vec3::new(22.0, 146.0, 1757.0), Vec3::new(281.0, 81.0, 1496.0), Vec3::new(54.0, 73.0, 1253.0), Vec3::new(-63.0, 27.0, 1256.0)];
 
 /// `Route::Kakariko`'s tasks. Kakariko's floors (from the collision): the way in from the west
 /// falls from 138 to the village's 0; the pen and the south are at 80; a terrace at 200 north of
@@ -1087,6 +1231,7 @@ impl Route {
             Route::Zelda => "ENTR_CASTLE_COURTYARD_GUARDS_DAY_0",
             Route::ZeldaTalk => "ENTR_CASTLE_COURTYARD_ZELDA_0",
             Route::Kakariko => "ENTR_KAKARIKO_VILLAGE_0",
+            Route::Graveyard => "ENTR_GRAVEYARD_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1111,6 +1256,7 @@ impl Route {
             Route::Ocarina => Some("ocarina-songs"),
             Route::Zelda | Route::ZeldaTalk => Some("castle-courtyard"),
             Route::Kakariko => Some("kakariko-letter"),
+            Route::Graveyard => Some("graveyard-lullaby"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1210,6 +1356,8 @@ impl Route {
             Route::Dusk => Some((17, 0)),
             Route::FieldNight => Some((20, 0)),
             Route::Ocarina => Some((18, 30)),
+            // Dampé is out only after 18:00 (EnTk_Init: dayTime <= CLOCK_TIME(18, 0) kills him).
+            Route::Graveyard => Some((18, 30)),
             _ => None,
         }
     }
@@ -1275,6 +1423,7 @@ impl Route {
             Route::Zelda => "zelda",
             Route::ZeldaTalk => "zelda-talk",
             Route::Kakariko => "kakariko",
+            Route::Graveyard => "graveyard",
         }
     }
 
@@ -1310,6 +1459,7 @@ impl Route {
             Route::Zelda => 20000,
             Route::ZeldaTalk => 12000,
             Route::Kakariko => 8000,
+            Route::Graveyard => 30000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1317,12 +1467,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1375,6 +1525,9 @@ enum Task {
     TalkThrough(Vec<u8>, Step),
     /// Until the Sun's Song's fast time is over (`sunsSongState` inactive), by day.
     WaitDawn(Step),
+    /// Onto the item (`En_Item00`) nearest Link when the task starts, until it's collected; then
+    /// the step. Nothing within 200: the step at once.
+    PickNearest(Step),
     /// Until a big fairy (`En_Elf` `FAIRY_HEAL_BIG`) is out within 200 of the point.
     WaitFairy(Vec3, Step),
     /// Through the points (`Task::Walk`'s), unseen by the courtyard's guards (`En_Heishi1`): still
@@ -1610,6 +1763,10 @@ enum Who {
     Zelda,
     /// Kakariko's gate guard (`En_Heishi2` type 5).
     GateGuard,
+    /// The royal tomb's wall (`En_Okarina_Tag` type 5).
+    SongWall,
+    /// Dampé (`En_Tk`).
+    Dampe,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -1944,6 +2101,7 @@ impl Playthrough {
             .collect(),
             Route::ZeldaTalk => [Task::Settle(None)].into_iter().chain(zelda_tail()).collect(),
             Route::Kakariko => kakariko_tasks(),
+            Route::Graveyard => graveyard_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -2539,6 +2697,7 @@ impl Playthrough {
             }
             Task::OpenChest(home, step) => self.open_chest(w, home, step),
             Task::Pick(home) => self.pick(w, home),
+            Task::PickNearest(step) => self.pick_nearest(w, step),
             Task::SlashSwitch(from, at) => self.slash_switch(w, from, at),
             Task::BuyShield => self.buy_shield(w),
             Task::Equip(step) => {
@@ -5219,6 +5378,29 @@ impl Playthrough {
 
     /// `Task::Pick`: onto the item until it's collected (gone, or `EnItem00_Collected`), at a
     /// walk for the last 40.
+    fn pick_nearest(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        let link = w.player().actor.world_pos;
+        if self.sub == 0 {
+            self.sub = 1;
+            self.dropped = Self::drops(w)
+                .into_iter()
+                .filter(|&h| w.actors.downcast::<EnItem00>(h).is_some_and(|e| e.action != ItemAction::Collected && Self::xz_dist(e.actor.world_pos, link) < 200.0))
+                .min_by(|&a, &b| Self::xz_dist(w.actors.actor(a).unwrap().world_pos, link).total_cmp(&Self::xz_dist(w.actors.actor(b).unwrap().world_pos, link)));
+            self.drop = self.dropped.and_then(|h| w.actors.actor(h)).map(|a| a.params);
+        }
+        let Some(e) = self.dropped.and_then(|h| w.actors.downcast::<EnItem00>(h)).filter(|e| e.action != ItemAction::Collected) else {
+            self.finish(Some(step));
+            return None;
+        };
+        self.wait += 1;
+        if self.wait > 400 {
+            self.failure = Some(format!("the item at {} wasn't picked up", e.actor.world_pos));
+            return None;
+        }
+        let at = e.actor.world_pos;
+        Some(stick_towards(w, at, if Self::xz_dist(link, at) < 40.0 { SLOW } else { RUN }))
+    }
+
     fn pick(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
         let link = w.player().actor.world_pos;
         let item = match self.dropped {
@@ -5442,6 +5624,8 @@ impl Playthrough {
             Who::Talon => w.actors.downcast::<crate::en_ta::EnTa>(h).is_some_and(|a| !a.actor.killed),
             Who::Zelda => w.actors.downcast::<crate::en_zl4::EnZl4>(h).is_some_and(|a| !a.actor.killed),
             Who::GateGuard => w.actors.downcast::<crate::en_heishi2::EnHeishi2>(h).is_some_and(|a| !a.actor.killed && a.ty == 5),
+            Who::Dampe => w.actors.downcast::<crate::en_tk::EnTk>(h).is_some_and(|a| !a.actor.killed),
+            Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }
 

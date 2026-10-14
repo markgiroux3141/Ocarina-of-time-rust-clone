@@ -124,7 +124,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
     // The guards' courtyard's config reads the scene: its day and night scenes both.
-    let scenes: [(&str, &str); 15] = [
+    let scenes: [(&str, &str); 19] = [
         ("SDC_KOKIRI_FOREST", "spot04_scene"),
         ("SDC_HYRULE_FIELD", "spot00_scene"),
         ("SDC_DEKU_TREE", "ydan_scene"),
@@ -140,6 +140,10 @@ fn ported_draw_configs_match_the_c_interpreter() {
         ("SDC_KAKARIKO_VILLAGE", "spot01_scene"),
         ("SDC_GROTTOS", "kakusiana_scene"),
         ("SDC_MARKET_GUARD_HOUSE", "miharigoya_scene"),
+        ("SDC_GRAVE_EXIT_LIGHT_SHINING", "hakaana_scene"),
+        ("SDC_GRAVE_EXIT_LIGHT_SHINING", "hakasitarelay_scene"),
+        ("SDC_FAIRYS_FOUNTAIN", "hakaana2_scene"),
+        ("SDC_ROYAL_FAMILYS_TOMB", "hakaana_ouke_scene"),
     ];
     assert!(scene_table::ported().all(|sdc| scenes.iter().any(|(s, _)| *s == sdc)), "a ported draw config without a scene here");
     for (sdc, file) in scenes {

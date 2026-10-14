@@ -52,6 +52,7 @@ echo   107  test-castle          GAME-07's castle grounds tests: Talon, the crat
 echo   110  test-ocarina         GAME-07's ocarina tests: free play, the songs' effects, the fairy spot, a check, a lesson, the run
 echo   113  test-zelda           GAME-07's courtyard and Zelda tests: the patrols, their look, Zelda, Impa, the run
 echo   116  test-kakariko        GAME-07's Kakariko tests: the lift and carry, Anju, the people, the windmill, the run
+echo   119  test-graveyard       GAME-07's graveyard tests: the ReDeads, Dampe, the kid, the tomb, the weather, the run
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -94,6 +95,7 @@ echo   108  game-castle          Hyrule Castle's road with the Cucco (asks: or b
 echo   111  game-ocarina         Hyrule Field at 18:30 with the ocarina and six songs (asks: or by day, night, the fairy spot)
 echo   114  game-zelda           The guards' courtyard from the drain (asks: or night, Zelda's courtyard, Impa, the field)
 echo   117  game-kakariko        Kakariko by day with the letter (asks: or the pen, the roof, the gate, night, an interior)
+echo   120  game-graveyard       The graveyard at 18:30 with the lullaby (asks: or day, Dampe, the tomb, inside, the ReDeads, a grave)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -129,6 +131,7 @@ echo   109  sandbox-castle       The castle runs' traces and screenshots (Talon,
 echo   112  sandbox-ocarina      The ocarina run's trace and screenshots (the staff, Saria's, the sun, the storm), into out\run
 echo   115  sandbox-zelda        The Zelda run's trace and screenshots (the patrols, Zelda, Ganondorf, Impa), into out\run
 echo   118  sandbox-kakariko     The Kakariko run's trace and screenshots (the cuccos, the glide, the gate), into out\run
+echo   121  sandbox-graveyard    The graveyard run's trace and screenshots (Dampe, the tomb, the Keese, the Sun's Song), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -257,6 +260,9 @@ if "%pick%"=="115" set "script=sandbox-zelda"
 if "%pick%"=="116" set "script=test-kakariko"
 if "%pick%"=="117" goto kakariko
 if "%pick%"=="118" set "script=sandbox-kakariko"
+if "%pick%"=="119" set "script=test-graveyard"
+if "%pick%"=="120" goto graveyard
+if "%pick%"=="121" set "script=sandbox-graveyard"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -270,6 +276,14 @@ set "which="
 set /p "which=Which (empty: the entrance by day; pen, roof, gate, night, dusk, cow, windmill, skulltula, guests, shop or guardhouse): "
 call "%~dp0game-kakariko.bat" %which%
 echo game-kakariko finished (exit code %errorlevel%).
+pause
+goto menu
+
+:graveyard
+set "which="
+set /p "which=Which (empty: the entrance at 18:30; day, dampe, tomb, inside, redeads, redead, shield or hut): "
+call "%~dp0game-graveyard.bat" %which%
+echo game-graveyard finished (exit code %errorlevel%).
 pause
 goto menu
 

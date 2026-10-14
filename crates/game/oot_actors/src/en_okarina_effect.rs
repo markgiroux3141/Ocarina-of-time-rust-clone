@@ -7,8 +7,8 @@
 //! at 308 it sets cutscene flag 5 (a magic bean's sprout grows). Then the rain stops, the
 //! ambience's channels go quiet, and the storm stops (clear weather) or is forgotten.
 //!
-//! The whole overlay is ported. `gInterruptSongOfStorms` (set by `En_Weather_Tag`, not ported)
-//! never cuts it short here; `FrameAdvance_IsEnabled` is false.
+//! The whole overlay is ported. `gInterruptSongOfStorms` (set by `En_Weather_Tag` near a place's
+//! own weather) cuts it short; `FrameAdvance_IsEnabled` is false.
 
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};

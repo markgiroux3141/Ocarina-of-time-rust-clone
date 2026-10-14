@@ -15,8 +15,8 @@
 //! Drawn as `EnGs_Draw` does: turned and scaled by the reactions, the flash's prim colour, and
 //! the launch's flame (`gEffFire1DL`); from baked meshes (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported here: the launch's explosion (`EffectSsBomb2_SpawnLayered`: the effect isn't
-//! ported; its sound plays).
+//! The launched stone's explosion against a wall or ceiling is `EffectSsBomb2_SpawnLayered`
+//! (GAME-07 milestone 6).
 
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -508,9 +508,8 @@ impl EnGs {
             self.actor.update_bg_check_info(&play.col, 20.0, 20.0, 60.0, UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_1);
             if self.actor.bg_check_flags & (BGCHECKFLAG_WALL | BGCHECKFLAG_CEILING) != 0 {
                 audio_play_actor_sfx2(play, NA_SE_IT_BOMB_EXPLOSION);
-                // EffectSsBomb2_SpawnLayered(play, &pos, &zero, &zero, 100, 20): the effect isn't
-                // ported.
-                log::info!("En_Gs: EffectSsBomb2 (the launched stone's explosion) isn't ported");
+                let pos = self.actor.world_pos;
+                play.with_ss(|s| s.bomb2_spawn_layered(pos, Vec3::ZERO, Vec3::ZERO, 100, 20));
                 self.unk_200 = 10;
                 self.unk_19e |= 8;
                 self.action = Action::Func80A4F700;

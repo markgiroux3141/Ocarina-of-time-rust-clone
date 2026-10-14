@@ -643,6 +643,51 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "graveyard-lullaby",
+        about: "kakariko-letter, and milestone 5's run over: Kakariko's intro seen (EVENTCHKINF_A3) and the letter shown at the gate (INFTABLE_76), 20 rupees: Link with Zelda's Lullaby on his way to the graveyard (GAME-07 milestone 6)",
+        apply: |s| {
+            castle_preset(s);
+            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+            s.set_event_chk_inf(0x14);
+            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+            s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
+            item_give(s, None, crate::item::ITEM_ZELDAS_LETTER);
+            s.equip_item_on_c_left(crate::item::ITEM_ZELDAS_LETTER);
+            s.set_event_chk_inf(0x40);
+            s.set_event_chk_inf(0x59);
+            item_give(s, None, 0x60);
+            // save.h: EVENTCHKINF_A3 (sEntranceCutsceneTable's flag for ENTR_KAKARIKO_VILLAGE_0),
+            // INFTABLE_76 (En_Heishi2's gate opened with the letter).
+            s.set_event_chk_inf(0xA3);
+            s.set_inf_table(0x76);
+        },
+    },
+    SavePreset {
+        name: "graveyard-sun",
+        about: "graveyard-lullaby, and milestone 6's run over: the graveyard's intro seen (EVENTCHKINF_B6), the royal tomb open (EVENTCHKINF_1D), the Sun's Song taught (Item_Give(ITEM_SONG_SUN), EVENTCHKINF_5A: its last part seen) (GAME-07 milestone 6)",
+        apply: |s| {
+            castle_preset(s);
+            crate::item::inventory_replace_item(s, crate::item::ITEM_WEIRD_EGG, crate::item::ITEM_CHICKEN);
+            s.set_event_chk_inf(0x14);
+            item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
+            s.equip_item_on_c(1, crate::item::ITEM_OCARINA_FAIRY);
+            item_give(s, None, crate::item::ITEM_ZELDAS_LETTER);
+            s.equip_item_on_c_left(crate::item::ITEM_ZELDAS_LETTER);
+            s.set_event_chk_inf(0x40);
+            s.set_event_chk_inf(0x59);
+            item_give(s, None, 0x60);
+            s.set_event_chk_inf(0xA3);
+            s.set_inf_table(0x76);
+            // save.h: EVENTCHKINF_B6 (sEntranceCutsceneTable's flag for ENTR_GRAVEYARD_0),
+            // EVENTCHKINF_1D (the tomb opened), EVENTCHKINF_5A (ENTR_ROYAL_FAMILYS_TOMB_1's part 3
+            // seen); ITEM_SONG_SUN (item.h: 0x63).
+            s.set_event_chk_inf(0xB6);
+            s.set_event_chk_inf(0x1D);
+            s.set_event_chk_inf(0x5A);
+            item_give(s, None, 0x63);
+        },
+    },
+    SavePreset {
         name: "ocarina-songs",
         about: "deku-tree-dead, the Fairy Ocarina (ITEM_OCARINA_FAIRY) on C-Left and Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's Song, the Song of Time and the Song of Storms (ITEM_SONG_LULLABY .. ITEM_SONG_STORMS: Item_Give's quest bits) (GAME-07 milestone 3)",
         apply: |s| {

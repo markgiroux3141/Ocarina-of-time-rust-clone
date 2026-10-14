@@ -29,7 +29,7 @@ PHASES = {
     4: ("The road to the Deku Tree (GAME-03)", "done"),
     6: ("The Deku Tree (GAME-05)", "done"),
     7: ("The road out of the forest (GAME-06)", "done"),
-    8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "in progress"),
+    8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "done"),
     9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch", "planned"),
     10: ("Death Mountain and Dodongo's Cavern", "planned"),
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu", "planned"),
@@ -124,7 +124,8 @@ ACTORS = {
     "Item_Ocarina": 11,  # the Ocarina of Time in the moat, after the third stone
     "En_Mm": 20,  # the running man (the mask trade)
     "En_Cow": 9,  # Link's house's (Malon's prize) and the ranch's
-    "Obj_Makekinsuta": 20,  # the soft soil's Gold Skulltula
+    "En_Po_Relay": 14,  # Dampé's race: in Dampé's grave (hakasitarelay room 0), which a child
+    # can't open (Bg_Spot02_Objects type 1 seals it for him); the child's layers place it anyway
 }
 
 # What a ported actor's module docs say when it leaves something out.

@@ -570,6 +570,8 @@ pub enum Action {
     Frozen,
     /// `Player_Action_8084FBF4`: electrified (`PLAYER_HIT_RESPONSE_ELECTRIFIED`).
     Electrified,
+    /// `Player_Action_8084F308`: held by a ReDead (`play->grabPlayer`), struggling free.
+    Grabbed,
     /// `Player_Action_8084E30C`: hit while swimming.
     SwimDamaged,
     /// `Player_Action_80843CEC`: dying (or revived) on the ground.
@@ -769,6 +771,7 @@ impl Action {
             Action::GetUp => "Player_Action_80843A38",
             Action::Cutscene => "Player_Action_CsAction",
             Action::Frozen => "Player_Action_8084FB10",
+            Action::Grabbed => "Player_Action_8084F308",
             Action::Electrified => "Player_Action_8084FBF4",
             Action::SwimDamaged => "Player_Action_8084E30C",
             Action::Dying => "Player_Action_80843CEC",
@@ -1017,6 +1020,10 @@ pub struct Player {
     pub melee_weapon_state: i8,
     /// `focusActor`: the targeted actor.
     pub focus_actor: Option<ActorHandle>,
+    /// `autoLockOnActor`: an actor that locked Link on to itself this frame
+    /// (`Player_SetAutoLockOnActor`: a ReDead's scream), kept while it's set and cleared at the
+    /// end of every update.
+    pub auto_lock_on_actor: Option<ActorHandle>,
     /// What `Player_UpdateCamAndSeqModes` asked of the camera this update (applied by
     /// `ActorImpl::update`, which has the play state).
     pub cam_request: Option<(i16, Option<ActorHandle>)>,
@@ -1307,6 +1314,7 @@ impl Player {
             pushed_yaw: 0,
             melee_weapon_state: 0,
             focus_actor: None,
+            auto_lock_on_actor: None,
             cam_request: None,
             legs: None,
             z_target_active_timer: 0,
@@ -1951,6 +1959,7 @@ impl Player {
             Action::Down => self.action_80843954(env),
             Action::GetUp => self.action_80843a38(env),
             Action::Frozen => self.action_8084fb10(env),
+            Action::Grabbed => self.action_8084f308(env),
             Action::Electrified => self.action_8084fbf4(env),
             Action::SwimDamaged => self.action_8084e30c(env),
             Action::Dying => self.action_80843cec(env),
@@ -3525,6 +3534,39 @@ impl Player {
             self.func_80839F90(env.data);
             self.set_invulnerability(-20);
         }
+    }
+
+    /// `Player_Action_8084F308`: held by a ReDead. The grab's loop after its start, until Link
+    /// struggles free (`func_80832594`: the stick's spin and A or B, past 100), then standing
+    /// (`func_80839F90`) with `PLAYER_STATE2_7` off.
+    fn action_8084f308(&mut self, env: &Env) {
+        self.state2 |= STATE2_5 | STATE2_6;
+        if self.skel.update(env.data) {
+            self.skel.play_loop(env.data, env.data.anim("link_normal_re_dead_attack_wait"));
+        }
+        if self.func_80832594(0, 100) {
+            self.func_80839F90(env.data);
+            self.state2 &= !STATE2_7;
+        }
+    }
+
+    /// `func_80852F38` (`play->grabPlayer`, set by `Player_Init`): unless in a blocking
+    /// cutscene mode, invincible from a roll (`invincibilityTimer` < 0), holding the hookshot with
+    /// no hook out (`func_8008F128`) or flying with it (`PLAYER_STATE3_FLYING_WITH_HOOKSHOT`: the
+    /// hookshot isn't ported), Link is held: `Player_Action_8084F308` with the grab's start, his
+    /// cry. True when he's held.
+    fn func_80852f38(&mut self, data: &GameData, trigger_start: bool) -> bool {
+        let blocking = self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || trigger_start || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0;
+        if !blocking && self.invincibility_timer >= 0 && !self.func_8008f128(data) {
+            self.func_80832564(data);
+            self.setup_action(data, Action::Grabbed, 0);
+            self.skel.play_once(data, data.anim("link_normal_re_dead_attack"));
+            self.state2 |= STATE2_7;
+            self.func_80832224();
+            self.play_voice_sfx(NA_SE_VO_LI_HELD);
+            return true;
+        }
+        false
     }
 
     /// `Player_Action_8084FBF4`: electrified for 20 frames, a quarter heart off at the start of
@@ -5756,7 +5798,7 @@ impl Player {
         }
         if self.state1 & (STATE1_7 | STATE1_29) != 0 || self.state3 & STATE3_7 != 0 {
             self.z_target_active_timer = 0;
-        } else if z || self.state2 & STATE2_13 != 0 {
+        } else if z || self.state2 & STATE2_13 != 0 || self.auto_lock_on_actor.is_some() {
             if self.z_target_active_timer <= 5 {
                 self.z_target_active_timer = 5;
             } else {
@@ -5801,10 +5843,16 @@ impl Player {
                     }
                 }
                 if let Some(t) = self.focus_actor {
-                    if env.target(t).is_none_or(|a| oot_game::target::lost(&env.data.target_ranges, a, true, self.actor.shape_rot.y, sp1c)) {
+                    // The actor that locked Link on to itself isn't let go by its distance.
+                    if Some(t) != self.auto_lock_on_actor
+                        && env.target(t).is_none_or(|a| oot_game::target::lost(&env.data.target_ranges, a, true, self.actor.shape_rot.y, sp1c))
+                    {
                         self.release_lock_on();
                         self.state1 |= STATE1_30;
                     }
+                } else if let Some(t) = self.auto_lock_on_actor {
+                    // Set by Player_SetAutoLockOnActor, which released any lock-on first.
+                    self.focus_actor = Some(t);
                 }
             }
             if let Some(t) = self.focus_actor {
@@ -10535,6 +10583,7 @@ impl Player {
         use cc::ColliderShape;
         self.door_type = PLAYER_DOORTYPE_NONE;
         self.knockback_type = 0;
+        self.auto_lock_on_actor = None;
         // The talk offers of this frame end here (they're made again next frame), unless one
         // was accepted (ACTOR_FLAG_TALK).
         if self.actor.flags & ACTOR_FLAG_TALK == ACTOR_FLAG_TALK {
@@ -11101,6 +11150,40 @@ pub fn play_damage_player(play: &mut PlayState, damage: i32) -> bool {
         p.state2 &= !STATE2_7;
     }
     true
+}
+
+/// `play->grabPlayer(play, GET_PLAYER(play))` from another actor's update (a ReDead's,
+/// `EnRd_WalkToPlayer`), Player in the actor arena: `func_80852F38`, its calls made in place
+/// (Player's requests applied at once). True when Link is held.
+pub fn play_grab_player(play: &mut PlayState) -> bool {
+    let trigger_start = play.transition.trigger == TRANS_TRIGGER_START;
+    let Some(h) = play.player else { return false };
+    let data = play.data.clone();
+    let Some(p) = play.actors.downcast_mut::<Player>(h) else { return false };
+    let held = p.func_80852f38(&data, trigger_start);
+    let requests = std::mem::take(&mut p.play_requests);
+    for r in requests {
+        apply_play_request(play, r);
+    }
+    held
+}
+
+/// `Player_SetAutoLockOnActor` (`z_player_lib.c`), from another actor's update: Player's
+/// Z-targeting cleared (`Player_ClearZTargeting`), `focusActor` and `autoLockOnActor` the actor,
+/// `PLAYER_STATE1_FRIENDLY_ACTOR_FOCUS`, and the main camera's target the actor in
+/// `CAM_MODE_Z_TARGET_FRIENDLY`.
+pub fn player_set_auto_lock_on_actor(play: &mut PlayState, actor: ActorHandle) {
+    let Some(h) = play.player else { return };
+    let Some(p) = play.actors.downcast_mut::<Player>(h) else { return };
+    p.clear_z_targeting();
+    p.focus_actor = Some(actor);
+    p.auto_lock_on_actor = Some(actor);
+    p.state1 |= STATE1_16;
+    // Camera_SetViewParam(CAM_VIEW_TARGET), then Camera_RequestMode.
+    let d = play.data.clone();
+    play.game_camera.set_target(actor);
+    play.game_camera.change_mode(&d.camera, oot_game::camera::CAM_MODE_Z_TARGET_FRIENDLY);
+    play.camera_sfx();
 }
 
 /// `PLAYER_IA_DEKU_STICK` (`player.h`: 6), as `heldItemAction` (`held_item_ap`).

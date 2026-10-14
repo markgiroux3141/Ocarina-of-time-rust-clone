@@ -431,7 +431,7 @@ fn zeldas_questions_come_again_on_no() {
 fn impa_waits_for_the_letter_then_her_lullaby_starts_within_130() {
     let Some(a) = assets() else { return };
     // Demo_Im type 5 (func_809869B0): action 18, then (no EVENTCHKINF_59) 23: hidden until the letter.
-    let mut w = zeldas(&a, |_| {});
+    let w = zeldas(&a, |_| {});
     let h = one::<DemoIm>(&w);
     let im = w.actors.downcast::<DemoIm>(h).unwrap();
     assert_eq!((im.actor.params, im.action, im.draw_config), (5, 23, 0));

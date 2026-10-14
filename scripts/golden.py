@@ -227,6 +227,14 @@ CASES = [
     ("kakariko_throw", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "908", "--screenshot", "{shot}"]),
     ("kakariko_glide", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "2140", "--screenshot", "{shot}"]),
     ("kakariko_gate", S, ["--entrance", "ENTR_KAKARIKO_VILLAGE_0", "--child", "--preset", "kakariko-letter", "--script", "kakariko", "--frames", "4000", "--screenshot", "{shot}"]),
+    # GAME-07 milestone 6: the graveyard (Route::Graveyard) at 18:30: its intro, a dig with Dampé, the
+    # lullaby at the royal tomb (its gravestone blown up), the tomb's Keese and door, past the ReDeads
+    # to the wall, the Sun's Song taught and its chain back, the song at the ReDeads.
+    ("graveyard", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("graveyard_dig", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "880", "--screenshot", "{shot}"]),
+    ("graveyard_tomb", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "1950", "--screenshot", "{shot}"]),
+    ("graveyard_keese", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "3300", "--screenshot", "{shot}"]),
+    ("graveyard_lesson", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "5600", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

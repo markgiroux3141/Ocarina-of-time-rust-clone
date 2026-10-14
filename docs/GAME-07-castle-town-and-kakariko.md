@@ -21,7 +21,7 @@ taught.
 | 3 | The ocarina: Player's, the message modes, the audio, the songs' effects, `Shot_Sun`, the Sun's Song | done (2026-10-12) |
 | 4 | The guards' courtyard and Zelda: `Camera_Special6`, the patrols, Zelda, the legend, the letter, Impa's lullaby and escort | done (2026-10-13) |
 | 5 | Kakariko: lifting and the cuccos, Anju, the gate, the people, the interiors | done (2026-10-13) |
-| 6 | The graveyard: Dampé, the royal tomb, the ReDeads, the Sun's Song | |
+| 6 | The graveyard: Dampé, the royal tomb, the ReDeads, the Sun's Song | done (2026-10-13) |
 
 The working rules are the same as for the earlier phases:
 - no game data in the repo;
@@ -1446,3 +1446,219 @@ K C-Down (the ocarina). Epona's Song: I J L I J L; the Song of Storms: Space K I
   and the flock, Anju's and the people's looks and texts, the windows at dusk, the windmill and the
   well, the cow, the House of Skulltula, and anything standing where it shouldn't (a placeholder
   marker means an actor not ported).
+
+## Milestone 6: The graveyard
+
+**Answer:** done. Child Link's graveyard is full by day and by night, the royal tomb opens to
+Zelda's Lullaby, and its wall teaches the Sun's Song:
+- by day the graveyard kid walks his round of the graves (his Spooky Mask trade waits for the
+  masks); by night (after 18:00, until 21:00) Dampé walks it, and for 10 rupees digs where he
+  stands: on one of his eight spots a prize (greens, blues, reds, a purple, the piece of heart on
+  the first grand prize), elsewhere nothing;
+- the rain and thunder start within 600 of the royal tomb (`En_Weather_Tag`);
+- Zelda's Lullaby on the spot before the tomb's gravestone plays its opening: the lightning, the
+  spark, the beam, the gravestone blown up (`EffectSsBomb2` and its fragments), Link's cry;
+- inside, four Keese guard a barred door that opens once they're dead; three ReDeads sleep in the
+  next room, wake to Link's noise within 150, scream (Link frozen and locked on), walk at him and
+  grab him (he struggles free with the stick and A), and mourn their dead; the Sun's Song stuns
+  them all for 600 frames;
+- the wall teaches the Sun's Song: its lesson, the playback, the graveyard's part 2 and the tomb's
+  part 3;
+- the ReDead grave and the shield grave (its wall stands: no bombs yet), the soft soil's Gold
+  Skulltula (when a bug is let out there: the bugs aren't ported), the Shadow Temple's gate.
+
+The exit holds. Its run is the golden `graveyard`, with `graveyard_dig`, `graveyard_tomb`,
+`graveyard_keese` and `graveyard_lesson`.
+
+The pack is still format 28 in `out/data25`, re-imported for the new bakes; builds in
+`target/game26`. Decisions are in
+[ADR 0065](adr/0065-the-graveyard-the-royal-tomb-and-the-suns-song.md). The user's calls
+(2026-10-13): one milestone, built in steps; `Obj_Makekinsuta` ported now; `En_Po_Relay` left for
+Phase 14; `EffectSsBomb2` ported now.
+
+**Scripts** (`scripts\run`, also in `menu.bat`, 119 to 121):
+- `test-graveyard.bat`: the milestone's tests (with the draw configs' check against the C
+  interpreter);
+- `game-graveyard.bat`: the graveyard's entrance at 18:30 with Zelda's Lullaby
+  (`graveyard-lullaby`), its intro first; `day`, `dampe`, `tomb`, `inside`, `redeads`, `redead`,
+  `shield`, `hut`;
+- `sandbox-graveyard.bat`: the exit run headless, its trace and screenshots.
+
+**Status of the plan:** milestones 1 to 6 are done: Phase 8 is done, but for the Temple of Time's
+room 0 (BACKLOG #37), which waits for the Door of Time.
+
+### The survey
+
+Checked against the decomp (`52a510f`) and the pack before the proposal:
+- **Already working:** the graveyard's intro (`gGraveyardIntroCs`, `EVENTCHKINF_B6`, through the
+  entrance table: its trace shows it from frame 1); the Sun's Song's chain (the lesson's
+  terminator `CS_DEST_GRAVEYARD_SUNS_SONG_PART_2` to the graveyard's layer 5,
+  `gGraveyardSunsSongPart2Cs`, whose terminator enters `ENTR_ROYAL_FAMILYS_TOMB_1`, where the
+  entrance table plays `gSunSongGraveSunSongTeachPart2Cs`, `EVENTCHKINF_5A`); the cutscenes' rain
+  and lightning; `En_Okarina_Tag`'s tomb (type 6) and wall (type 5).
+- **To port** (whole files): `En_Rd` 1,037 (and Player's grab and auto lock-on, about 80 in
+  `z_player.c` and `z_player_lib.c`), `En_Tk` 754 and `En_It` 73, `En_Cs` 536,
+  `Bg_Spot02_Objects` 343, `Object_Kankyo`'s types 2 and 4 (about 150), `EffectSsBomb2` 205,
+  `En_Weather_Tag` 351, `Bg_Breakwall` 333, `Obj_Makekinsuta` 72, three draw configs (about 60):
+  about 4,000 lines (the plan said 3,500).
+
+### What was built
+
+**Player** (`oot_actors::player`): `func_80852F38` (`play->grabPlayer`, as `play_grab_player`),
+`Player_Action_8084F308` (`Action::Grabbed`), `Player_SetAutoLockOnActor`
+(`player_set_auto_lock_on_actor`) with `autoLockOnActor` in `Player_UpdateZTargeting` and its
+clearing; `NA_SE_VO_LI_HELD`.
+
+**The graveyard** (each whole, with Params and Flags paragraphs): `En_Cs` (the kid), `En_Tk`
+(Dampé, his dirt and his shovel) and `En_It` (his spots), `Bg_Spot02_Objects` (the Shadow Temple's
+gate, the stone over Dampé's grave, the royal tomb's gravestone, the opening's lightning and beam),
+`En_Weather_Tag` (every type), `Obj_Makekinsuta`; `Object_Kankyo`'s lightning (type 2) and the
+tomb's spark (type 4).
+
+**The tomb and the graves:** `En_Rd` (the ReDeads and the Gibdos), `Bg_Breakwall` (every wall,
+King Dodongo's floor and lava cover too).
+
+**Elsewhere:**
+- `EffectSsBomb2` (`oot_game::effect::bomb2`), now also spawned by `En_Gs`'s launched stone and
+  `En_Ex_Ruppy`'s bomb rupees (BACKLOG #40, #54);
+- the scene draw configs `SDC_GRAVE_EXIT_LIGHT_SHINING`, `SDC_FAIRYS_FOUNTAIN` and
+  `SDC_ROYAL_FAMILYS_TOMB` (BACKLOG #46);
+- `Flags_GetSwitch`, `_SetSwitch` and `_UnsetSwitch` wrap a flag of 0x40 and up as the C's shift
+  does (@bug (game));
+- the presets `graveyard-lullaby` (milestone 5's end) and `graveyard-sun` (this run's end);
+- `Route::Graveyard` (`--script graveyard`), with the task `PickNearest` and `Who::Dampe`,
+  `Who::SongWall`;
+- COVERAGE: `Obj_Makekinsuta` counted in Phase 8, `En_Po_Relay` in Phase 14; Phase 8 done.
+
+The work was split as milestone 5's: Player's grab, the draw configs, the route, the scripts and
+the docs here; the actors by five helpers in their own worktrees, each from the decomp with its
+tests, merged and checked here.
+
+### Results
+
+**Tests.** `cargo test --release --workspace` (`target/game26`, `OOT_DATA_DIR=out/data25`):
+990 passed, 0 failed, 1 ignored (946 before). New, with their expectations from the C:
+- **`oot_actors --test redead`** (9): the inits by params (the skeletons, health 8, the Gibdo
+  rising from its coffin, the crying and invisible types); the wake by Player's noise and the
+  scream (Player's freeze 60, his focus and auto lock-on); the repeated screams, the grab within
+  45, the bites (8 at the grab's start, then every 20), the struggle free (the 21st A), the
+  release; damage and death (the mourners walking to the dead one, the fade, the temp flag 0x3F);
+  Din's Fire's flames; a mourner screaming across the room; the walk home; the Sun's Song played
+  for real (all three stunned 600 frames, then hurt); the song's state cleared.
+- **`oot_actors --test dampe`** (7): Dampé by age, scene and time (18:00 and 21:00 gone); his
+  round, his stop before Link on a spot and the dig there; his texts by `INFTABLE_D9` and the
+  rupees; the piece of heart first (`ITEMGETINF_1C`), then a purple rupee; a dig off the spots;
+  the prizes' rounds of 8, 4, 2 and 1.
+- **`oot_actors --test graveyard_kid`** (9): the kid by day only; his round (speeds, turns,
+  waypoints over three laps); his waits, steps and eyes; his texts (the masks forced); the Spooky
+  Mask sold and kept; the mask drawn on his face; the soft soil's Gold Skulltula on the 61st frame
+  after a bug, and its wait while Link is busy.
+- **`oot_actors --test royal_tomb`** (5): `Bg_Spot02_Objects`' inits by type, age and
+  `EVENTCHKINF_1D`; the opening cutscene frame by frame (the explosion at cutscene frame 393, the
+  stone's draw gone 5 later and the actor 25 later, Link's cry at 402, the lightning's 12 frames,
+  the beam, the spark); the blast's 24 frames and the fragments; the lullaby at the spot opening
+  it; the Shadow Temple's gate rising on its flag.
+- **`oot_actors --test graves`** (12): the weather tags' inits by flags; the graveyard's storm
+  within 600, off past 610 (both layers); the ruined market's sky change; the Song of Storms'
+  interruption; the sandstorm's fog; the shield grave's wall standing and blocking Link, gone with
+  its flag, broken by an explosion's hit (its 16 fragments as the C throws them); the Dodongo's
+  Cavern wall's opening; King Dodongo's floor and lava cover.
+- **`oot_actors --test graveyard`** (2): the exit's run (below); the presets.
+- **`oot_import --test pack`**: the three new draw configs against the C interpreter.
+
+**The exit run** (`Route::Graveyard`, `--script graveyard`, `ENTR_GRAVEYARD_0`,
+`graveyard-lullaby`, 18:30): the intro; `dug` 862 (Dampé paid on his path north of the spot at
+(-473, 60, 202), his prize at frame 32 of the dig), `dug_up` 886; `lullaby_played` 1313 on the
+spot; `tomb_opened` 2057; `tomb_entered` 2174; the four Keese `keese_killed` 2809, 3613, 4289,
+4629; `door_opened` 4815; through room 1 clear of the ReDeads; `suns_song_lesson` 5344,
+`suns_song_played` 5782, `suns_song_taught` 6254 (the graveyard's part 2 and the tomb's part 3);
+`suns_song` 6464 in room 1 and `redeads_stunned` 6575. Texts: 0x5018, 0x5019 (Dampé), 0x86E,
+0x86F, 0x89B (the lullaby), 0x5021, 0x5009, 0x500B, 0x879, 0x86D, 0x86F, 0x89C (the wall and the
+lesson), 0xD3, 0x500A (parts 2 and 3), 0x86E, 0x86F, 0x89C (the song at the ReDeads). At the end
+`EVENTCHKINF_B6`, `_1D`, `_5A` and `INFTABLE_D9` are set, the Sun's Song is Link's, and the three
+ReDeads are stunned.
+
+**The goldens.** Against milestone 5's 181: all the same bytes (out/golden_base16 before,
+out/golden_base17 after). New: `graveyard` (the trace, 6575 frames, and the end: Link playing in
+room 1) and its frames 880 (Dampé's dig), 1950 (the opened tomb in the rain), 3300 (a Keese
+fight) and 5600 (the lesson's staff); each the same bytes over two runs. Logged in
+[golden/README.md](../golden/README.md): 187 hashes, 142 cases.
+
+### Decisions
+
+- **[ADR 0065](adr/0065-the-graveyard-the-royal-tomb-and-the-suns-song.md):** the scope; Player's
+  grab and auto lock-on from another actor's update; the actors and `EffectSsBomb2` whole; the
+  switch flags' wrap; the weather tag's interruption of the Song of Storms (BACKLOG #51); the draw
+  configs; the exit's run.
+
+### Corrections to the survey
+
+- `gGraveyardIntroCs` and the Sun's Song's chain were already playing.
+- Dampé is out only after 18:00 (`EnTk_Init`: `dayTime <= CLOCK_TIME(18, 0)` kills him), so the
+  run starts at 18:30. He doesn't follow Link: he walks the scene's path 0, stops before Link
+  (within 100, in front of his face), and digs where he stands once paid.
+- The tomb's first door is `SHUTTER_FRONT_CLEAR`: its four Keese have to die.
+- A child never meets `En_Po_Relay` (Dampé's grave is sealed for him): Phase 14's.
+- The idle ReDeads don't see Link: they hear him (`PLAYER_STATE2_3`: a footstep at a speed over
+  4, a swing, the sword drawn or put away, an item changed) within 150 across. Once awake they
+  scream at him within 150 in front.
+- Bombable walls break into `En_A_Obj` boulder fragments, not `EffectSsKakera`.
+
+### Known gaps
+
+- **The masks** (#39): the kid's Spooky Mask trade, his and Dampé's mask reactions.
+- **The bombs** (#33): the shield grave's wall, the gossip stone's launch.
+- **The bugs** (`En_Insect`): the soft soil's Gold Skulltula is never made in play.
+- **The Lens of Truth**: the invisible ReDead (type 3) is hidden.
+- **`Rumble_Request`**, the circle shadow's alpha.
+- **`Object_Kankyo`'s snow (type 3) and Ganon's castle's beams (type 5).**
+- **`En_Po_Relay`** (Phase 14) and the Temple of Time's room 0 (#37).
+
+### Fixes found while building
+
+- **`Flags_*Switch` dropped flags of 0x40 and up:** the C's shift wraps them onto temp flags; the
+  tomb's ReDeads set 0x3F.
+- **The bomb rupees' and the launched gossip stone's blasts** were logged; they're spawned now.
+- **A warning in `tests/zelda.rs`** (an unneeded `mut`) is gone.
+
+### How to check
+
+```bat
+scripts\run\build.bat
+scripts\run\import.bat
+scripts\run\test-graveyard.bat
+scripts\run\test.bat
+scripts\run\golden-check.bat
+scripts\run\sandbox-graveyard.bat
+```
+
+### By hand
+
+`game-graveyard.bat` (or menu 120). WASD the stick (Shift walks), Space A, E B, Q Z, R R (the
+shield), J C-Left, K C-Down (the ocarina). Zelda's Lullaby: J I L J I L. The Sun's Song: L K I L K I.
+1. **The intro and Dampé:** from the entrance at 18:30, the intro, then up the ramp east. Dampé
+   walks his round south of the first row of graves, his shovel on his shoulder. Stand in front of him on
+   his path: he stops. Talk (Space): his two texts, "Yes" for 10 rupees: he digs where he stands.
+   On one of his spots something pops out (the first grand prize is a piece of heart); elsewhere
+   "Nothing here".
+2. **The way east:** between the first row's gravestones, south round the low wall's end, up
+   between the second row's, up the ramp onto the tomb's terrace: the rain and thunder start.
+   `game-graveyard.bat tomb` starts there.
+3. **The tomb:** on the spot before the big gravestone, the ocarina (K) and Zelda's Lullaby: the
+   chime, then the opening (the lightning, the spark, the beam, the gravestone blown up, Link's cry). Walk into
+   the hole.
+4. **Inside** (`inside` starts there): down the slope; four Keese perched in the first room. Kill
+   them (Z, B): the barred door at the top of the notched steps opens. Climb the ledge and the
+   steps, through the door, down into the ReDeads' room.
+5. **The ReDeads:** walk (Shift) or keep 150 away: they sleep. Run or swing near one: it wakes and
+   screams (Link frozen, the camera locks on), walks at him, grabs him (the stick round and A to
+   get free). Kill one: the others walk to it and mourn.
+6. **The wall:** through to the last room, talk to the wall: the lesson, the song shown, play it
+   back (L K I L K I), then the graveyard's part 2 and back by the wall.
+7. **The Sun's Song at the ReDeads:** `redeads` starts by the wall with the song learned: back into
+   their room, play it: they all turn grey and stand still.
+8. **Day and the graves:** `day` (the kid on his round, his talk), `redead` (the ReDead grave),
+   `shield` (the shield grave: its wall stands, the chest), `hut` (Dampé's hut).
+- **What to report:** Dampé's look, his walk and his dig, the rain, the tomb's opening (the
+  lightning, the blast), the Keese, the ReDeads' look, scream and grab, the lesson, and anything
+  standing where it shouldn't (a placeholder marker means an actor not ported).

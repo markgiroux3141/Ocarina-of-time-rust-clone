@@ -1606,6 +1606,7 @@ pub const NA_SE_VO_LI_FALL_L: u16 = 0x6808;
 pub const NA_SE_VO_LI_BREATH_DRINK: u16 = 0x680A;
 pub const NA_SE_VO_LI_DOWN: u16 = 0x680B;
 pub const NA_SE_VO_LI_TAKEN_AWAY: u16 = 0x680C;
+pub const NA_SE_VO_LI_HELD: u16 = 0x680D;
 pub const NA_SE_VO_LI_SNEEZE: u16 = 0x680E;
 pub const NA_SE_VO_LI_SWEAT: u16 = 0x680F;
 pub const NA_SE_VO_LI_RELAX: u16 = 0x6811;
@@ -1833,6 +1834,7 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_VO_LI_FALL_L", NA_SE_VO_LI_FALL_L),
     ("NA_SE_VO_LI_BREATH_DRINK", NA_SE_VO_LI_BREATH_DRINK),
     ("NA_SE_VO_LI_TAKEN_AWAY", NA_SE_VO_LI_TAKEN_AWAY),
+    ("NA_SE_VO_LI_HELD", NA_SE_VO_LI_HELD),
     ("NA_SE_VO_LI_SNEEZE", NA_SE_VO_LI_SNEEZE),
     ("NA_SE_VO_LI_SWEAT", NA_SE_VO_LI_SWEAT),
     ("NA_SE_VO_LI_RELAX", NA_SE_VO_LI_RELAX),

@@ -24,7 +24,8 @@
 //! fragments of crates, bushes, rocks and the falling platform) and the Deku Stick's
 //! `Effect_Ss_Stick` (its broken half); for milestone 5a's Deku Seeds and Nuts,
 //! `Effect_Ss_Stone1` (where one hits); for GAME-07 milestone 4's courtyard guards,
-//! `Effect_Ss_Solder_Srch_Ball` (their look). Spawning another type logs it and does nothing, as the C
+//! `Effect_Ss_Solder_Srch_Ball` (their look); for milestone 6's royal tomb, `Effect_Ss_Bomb2`
+//! (the gravestone's explosion). Spawning another type logs it and does nothing, as the C
 //! does for a type with no init.
 //!
 //! ## `z_effect.c`
@@ -43,6 +44,7 @@
 //! segment values.
 
 pub mod blast;
+pub mod bomb2;
 pub mod dead_db;
 pub mod dead_sound;
 pub mod dust;
@@ -73,6 +75,7 @@ use crate::play::{PlayState, Rand};
 
 // EffectSsType (`tables/effect_ss_table.h`): the ported ones, and the table's end.
 pub const EFFECT_SS_DUST: u8 = 0x00;
+pub const EFFECT_SS_BOMB2: u8 = 0x03;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
 pub const EFFECT_SS_STICK: u8 = 0x10;
@@ -137,6 +140,8 @@ pub enum SsUpdate {
     Stone1,
     /// `EffectSsSolderSrchBall_Update`.
     SolderSrchBall,
+    /// `EffectSsBomb2_Update`.
+    Bomb2,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -174,6 +179,10 @@ pub enum SsDraw {
     Kakera,
     /// `EffectSsStone1_Draw`.
     Stone1,
+    /// `EffectSsBomb2_DrawFade`.
+    Bomb2Fade,
+    /// `EffectSsBomb2_DrawLayered`.
+    Bomb2Layered,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -273,6 +282,7 @@ pub enum SsInit {
     Kakera(kakera::KakeraInit),
     Stone1(stone1::Stone1Init),
     SolderSrchBall(solder_srch_ball::SolderSrchBallInit),
+    Bomb2(bomb2::Bomb2Init),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -365,6 +375,7 @@ impl SsSpawn<'_> {
             SsInit::Kakera(p) => kakera::init(self, &mut e, &p),
             SsInit::Stone1(p) => stone1::init(&mut e, &p),
             SsInit::SolderSrchBall(p) => solder_srch_ball::init(&mut e, &p),
+            SsInit::Bomb2(p) => bomb2::init(&mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -468,6 +479,19 @@ impl SsSpawn<'_> {
     /// `EffectSsBlast_SpawnWhiteShockwave`: white, quickly spreading, for 10 frames.
     pub fn blast_spawn_white_shockwave(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3) {
         self.blast_spawn_shockwave_set_color(pos, velocity, accel, [255, 255, 255, 255], [200, 200, 200, 0], 10);
+    }
+
+    /// `EffectSsBomb2_SpawnFade` (unused in the game): scale 100, no growth, drawn as the one
+    /// quad, at priority 10.
+    pub fn bomb2_spawn_fade(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3) {
+        let p = bomb2::Bomb2Init { pos, velocity, accel, scale: 100, scale_step: 0, draw_mode: bomb2::BOMB2_DRAW_FADE };
+        self.spawn(EFFECT_SS_BOMB2, 10, SsInit::Bomb2(p));
+    }
+
+    /// `EffectSsBomb2_SpawnLayered`: drawn with its two layers behind, at priority 10.
+    pub fn bomb2_spawn_layered(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16) {
+        let p = bomb2::Bomb2Init { pos, velocity, accel, scale, scale_step, draw_mode: bomb2::BOMB2_DRAW_LAYERED };
+        self.spawn(EFFECT_SS_BOMB2, 10, SsInit::Bomb2(p));
     }
 
     /// `EffectSsStick_Spawn`: a broken stick's (or blade's) half flying off from `pos` along
@@ -775,6 +799,7 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(shield_particle::bakes());
     v.extend(kakera::bakes());
     v.extend(stone1::bakes());
+    v.extend(bomb2::bakes());
     v
 }
 
@@ -873,6 +898,7 @@ impl PlayState {
             SsUpdate::Kakera => kakera::update(self, &mut e),
             SsUpdate::Stone1 => stone1::update(self, &mut e),
             SsUpdate::SolderSrchBall => solder_srch_ball::update(self, &mut e),
+            SsUpdate::Bomb2 => bomb2::update(&mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -938,6 +964,8 @@ impl PlayState {
                 SsDraw::Stick => stick::draw(e, ctx.state_frames, &mut out),
                 SsDraw::Kakera => kakera::draw(e, &mut out),
                 SsDraw::Stone1 => stone1::draw(e, &ctx, &mut out),
+                SsDraw::Bomb2Fade => bomb2::draw_fade(e, &ctx, &mut out),
+                SsDraw::Bomb2Layered => bomb2::draw_layered(e, &ctx, &mut out),
             }
         }
         for i in deleted {

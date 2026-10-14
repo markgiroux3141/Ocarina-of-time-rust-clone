@@ -324,28 +324,32 @@ pub struct SceneFlags {
 
 impl SceneFlags {
     /// `Flags_GetSwitch`.
+    ///
+    /// @bug (game): for a flag of 0x40 and up the C's `1 << (flag - 0x20)` shifts by the low 5
+    /// bits only (MIPS `sllv`), so it lands on a temp flag (0x7F on 0x3F: the royal tomb's
+    /// ReDeads). A negative flag does nothing here (the port's callers' "none").
     pub fn get_switch(&self, flag: i32) -> bool {
         match flag {
             0..=0x1F => self.swch & (1 << flag) != 0,
-            0x20..=0x3F => self.temp_swch & (1 << (flag - 0x20)) != 0,
+            0x20.. => self.temp_swch & (1 << ((flag - 0x20) & 0x1F)) != 0,
             _ => false,
         }
     }
 
-    /// `Flags_SetSwitch`.
+    /// `Flags_SetSwitch` (a flag of 0x40 and up wraps: `get_switch`).
     pub fn set_switch(&mut self, flag: i32) {
         match flag {
             0..=0x1F => self.swch |= 1 << flag,
-            0x20..=0x3F => self.temp_swch |= 1 << (flag - 0x20),
+            0x20.. => self.temp_swch |= 1 << ((flag - 0x20) & 0x1F),
             _ => {}
         }
     }
 
-    /// `Flags_UnsetSwitch`.
+    /// `Flags_UnsetSwitch` (a flag of 0x40 and up wraps: `get_switch`).
     pub fn unset_switch(&mut self, flag: i32) {
         match flag {
             0..=0x1F => self.swch &= !(1 << flag),
-            0x20..=0x3F => self.temp_swch &= !(1 << (flag - 0x20)),
+            0x20.. => self.temp_swch &= !(1 << ((flag - 0x20) & 0x1F)),
             _ => {}
         }
     }

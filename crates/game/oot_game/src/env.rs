@@ -726,8 +726,8 @@ pub struct EnvStatics {
     /// (`Environment_GraphCallback`, crate::env_draw).
     pub sun_depth_test: [i16; 2],
     pub sun_screen_depth: u16,
-    /// `gInterruptSongOfStorms`: `En_Weather_Tag` stops a Song of Storms' rain (not ported, so
-    /// never set); `Environment_Init` clears it.
+    /// `gInterruptSongOfStorms`: `En_Weather_Tag` stops a Song of Storms' rain where the
+    /// place's weather takes over; `Environment_Init` clears it.
     pub interrupt_song_of_storms: bool,
 }
 
