@@ -135,6 +135,7 @@ echo   115  sandbox-zelda        The Zelda run's trace and screenshots (the patr
 echo   118  sandbox-kakariko     The Kakariko run's trace and screenshots (the cuccos, the glide, the gate), into out\run
 echo   121  sandbox-graveyard    The graveyard run's trace and screenshots (Dampe, the tomb, the Keese, the Sun's Song), into out\run
 echo   124  sandbox-meadow       The meadow run's trace and screenshots (the woods, the Wolfos, the scrubs, Saria), into out\run
+echo   125  export-glb           The game's characters as .glb files for Blender, T-posed, into out\glb\characters
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -269,6 +270,7 @@ if "%pick%"=="121" set "script=sandbox-graveyard"
 if "%pick%"=="122" set "script=test-meadow"
 if "%pick%"=="123" goto meadow
 if "%pick%"=="124" set "script=sandbox-meadow"
+if "%pick%"=="125" set "script=export-glb"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

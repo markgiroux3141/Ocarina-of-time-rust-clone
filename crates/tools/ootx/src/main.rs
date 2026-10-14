@@ -18,6 +18,7 @@ use oot_import::z64::{ParseLinkAnimation, ParseSkeleton, ParseStandardAnimation}
 use serde::Serialize;
 use oot_import::player::LoadPlayerRules;
 
+mod glb;
 mod sram;
 
 #[derive(Parser)]
@@ -98,6 +99,25 @@ enum Cmd {
     /// rotation's fields and the flags it uses, as the game editor reads them. Writes
     /// `<out>/actor_schemas.json`.
     ActorSchemas,
+    /// The pack's characters as .glb files for Blender or the game editor
+    /// (docs/adr/0068-glb-export.md): each character by name in a T-pose (`characters\<Name>.glb`),
+    /// or with `--all` every skeleton, actor bake of a skeleton's mesh, Link variant and skin
+    /// skeleton as the pack has it; skinned, with its textures. Derived from the ROM: local only.
+    ExportGlb {
+        /// The folder to write into (`characters\<Name>.glb`; with `--all`, `all\<file>\<symbol>.glb`,
+        /// `all\bake\<actor>\<bake>.glb`, `all\player\<age>\<lists>.glb`); keep it under the ignored `out`.
+        #[arg(long, default_value = "out/glb")]
+        out: PathBuf,
+        /// Only the files whose path under the folder contains this (`Saria`, `all/bake/En_Sa`).
+        #[arg(long)]
+        filter: Option<String>,
+        /// Also each object's standard animations (Player's on the default loadout's Link), 20 fps.
+        #[arg(long)]
+        anims: bool,
+        /// Everything the pack has, in the skeletons' zero pose, instead of the characters.
+        #[arg(long)]
+        all: bool,
+    },
     /// The asset pack's record names that start with a prefix (e.g. `mesh/object_kusa/`); meshes
     /// with their triangle count and unresolved segment references.
     PackLs {
@@ -173,6 +193,10 @@ enum Cmd {
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli = Cli::parse();
+    if let Cmd::ExportGlb { out, filter, anims, all } = &cli.cmd {
+        // The pack's records; the decomp project only names them, when it opens.
+        return glb::run(&glb::Options { out: out.clone(), filter: filter.clone(), anims: *anims, all: *all });
+    }
     if let Cmd::Sram { action, path } = &cli.cmd {
         // The save file is user data: no ROM or decomp needed.
         return sram::run(*action, path.clone());
@@ -203,7 +227,7 @@ fn main() -> Result<()> {
         Cmd::AudioWav { font, inst, drum, note, seconds, seq, raw, wav } => audio_wav(font, inst, drum, note, seconds, seq, raw, &wav),
         Cmd::ScanScenes { filter, all_layers } => scan_scenes(&project, filter.as_deref(), all_layers, &cli.out),
         Cmd::DumpRoom { scene, room, layer, png } => dump_room(&project, &scene, room, layer, png.as_deref()),
-        Cmd::Sram { .. } => unreachable!("handled above"),
+        Cmd::Sram { .. } | Cmd::ExportGlb { .. } => unreachable!("handled above"),
     }
 }
 

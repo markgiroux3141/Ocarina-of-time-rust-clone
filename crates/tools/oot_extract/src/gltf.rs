@@ -34,6 +34,10 @@ pub struct Gltf {
     skins: Vec<Value>,
     animations: Vec<Value>,
     pub extras: Option<Value>,
+    /// Names for a draw list's textures by `TextureImage::hash` (their decomp symbols): they
+    /// name the images, and the materials that sample them.
+    pub texture_names: HashMap<u64, String>,
+    material_names: HashMap<String, usize>,
     texture_cache: HashMap<(u64, u32, u32, bool), usize>,
     image_cache: HashMap<u64, usize>,
     sampler_cache: HashMap<(u32, u32, bool), usize>,
@@ -149,6 +153,7 @@ impl Gltf {
         // raw texture is used with the combiner's constant tint as the colour factor.
         let bakeable = m.textures[0].is_some() && m.textures[1].is_none();
         let mut tex_index = [None, None];
+        let mut tex_names = Vec::new();
         for (i, slot) in m.textures.iter().enumerate() {
             if let Some(slot) = slot {
                 let ti = &draw.textures[slot.image];
@@ -158,7 +163,13 @@ impl Gltf {
                 } else {
                     (ti.image.clone(), ti.hash)
                 };
-                let name = format!("{name_hint}_tex{hash:016x}");
+                let name = match self.texture_names.get(&ti.hash) {
+                    Some(n) => {
+                        tex_names.push(n.clone());
+                        n.clone()
+                    }
+                    None => format!("{name_hint}_tex{hash:016x}"),
+                };
                 let img = self.image(&img, hash, &name);
                 tex_index[i] = Some(self.texture(img, hash, slot.wrap_s, slot.wrap_t, m.bilinear));
             }
@@ -192,7 +203,16 @@ impl Gltf {
         if let Some(&i) = self.material_cache.get(&key) {
             return i;
         }
-        mat["name"] = json!(format!("{name_hint}_mat{}", self.materials.len()));
+        let name = if tex_names.is_empty() {
+            format!("{name_hint}_mat{}", self.materials.len())
+        } else {
+            // Named by its textures' symbols; another material on the same ones gets a suffix.
+            let base = tex_names.join("+");
+            let n = self.material_names.entry(base.clone()).or_insert(0);
+            *n += 1;
+            if *n == 1 { base } else { format!("{base}_{}", *n - 1) }
+        };
+        mat["name"] = json!(name);
         self.materials.push(mat);
         self.material_cache.insert(key, self.materials.len() - 1);
         self.materials.len() - 1

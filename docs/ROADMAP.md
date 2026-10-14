@@ -712,6 +712,9 @@ In stages:
 E6 to E9 get their plans (and ADRs) when the track reaches them; each needs the pack's records for
 its kind of data to be complete, which the phases make so.
 
+glTF out, E9's "glTF in" the other way: `ootx export-glb` writes the game's characters by name as
+skinned, T-posed .glb files into `out\glb\characters` (ADR 0068, built 2026-10-14).
+
 ## How a phase starts and how a milestone is done
 
 **A phase starts with a survey:** the C functions and their line counts, what's already ported,

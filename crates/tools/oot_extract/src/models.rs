@@ -31,7 +31,9 @@ fn be32(b: &[u8], o: usize) -> u32 {
     u32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
 }
 
-fn limb_quat(r: [i16; 3]) -> Quat {
+/// A joint table's rotation for a limb as a quaternion (`Matrix_TranslateRotateZYX`'s order: Z,
+/// then Y, then X, the s16s as binary angles).
+pub fn limb_quat(r: [i16; 3]) -> Quat {
     Quat::from_rotation_z(binang_to_rad(r[2])) * Quat::from_rotation_y(binang_to_rad(r[1])) * Quat::from_rotation_x(binang_to_rad(r[0]))
 }
 
@@ -40,6 +42,9 @@ pub struct NamedAnim {
     pub name: String,
     pub frames: Vec<JointTable>,
 }
+
+/// Per-vertex skin joints and weights (up to 4).
+pub type VertexWeights<'a> = &'a dyn Fn(&eng_gbi::gbi::Vertex) -> ([u16; 4], [f32; 4]);
 
 /// Writes a skinned glTF of `skel` with `draw` (vertices in bone-local space) and animations.
 pub fn write_skinned(
@@ -51,56 +56,116 @@ pub fn write_skinned(
     anims: &[NamedAnim],
     root_scale: f32,
     extras: serde_json::Value,
-    weights: Option<&dyn Fn(&eng_gbi::gbi::Vertex) -> ([u16; 4], [f32; 4])>,
+    weights: Option<VertexWeights>,
 ) -> Result<usize> {
-    let mut g = Gltf::new();
-    let bind = skel.bind_pose();
-    let armature = g.node(json!({ "name": name, "scale": [ACTOR_SCALE, ACTOR_SCALE, ACTOR_SCALE] }));
-    let first_joint = g.nodes.len();
-    for (i, limb) in skel.limbs.iter().enumerate() {
-        let t = limb.joint_pos.map(|c| c as f32);
-        let n = limb_names.get(i).cloned().unwrap_or_else(|| format!("limb_{i:02}"));
-        g.node(json!({ "name": n, "translation": t }));
-    }
-    for (i, p) in skel.parents.iter().enumerate() {
-        match p {
-            Some(p) => g.add_child(first_joint + *p as usize, first_joint + i),
-            None => g.add_child(armature, first_joint + i),
+    SkinnedModel { name, skel, limb_names, draw, rest: None, bones: None, weights, anims, root_scale, texture_names: HashMap::new(), extras }.write(path)
+}
+
+/// A skinned model for `SkinnedModel::write`: a node per limb in the rest pose, a skin whose
+/// joints are the limbs, the mesh moved to model space for the rest pose, and the animations as
+/// channels on the limbs at 20 frames a second. Everything is scaled by `ACTOR_SCALE` in the data
+/// rather than by a scaled node, which Blender's importer turns into bones hundreds of metres long.
+pub struct SkinnedModel<'a> {
+    pub name: &'a str,
+    pub skel: &'a Skeleton,
+    /// The limbs' node names (`limb_NN` past the end).
+    pub limb_names: &'a [String],
+    /// Vertices in their bone's space.
+    pub draw: &'a DrawList,
+    /// Each limb's local translation and rotation in the rest pose; else the bind pose (each limb
+    /// at its joint position, unrotated: `Skeleton::bind_pose`).
+    pub rest: Option<&'a [(Vec3, Quat)]>,
+    /// The bones' matrices in the rest pose, when the draw has bones past the limbs (a skin
+    /// skeleton's vertex groups); else the limbs' in the rest pose.
+    pub bones: Option<&'a [Mat4]>,
+    /// Each vertex's joints and weights; else its bone, weight 1.
+    pub weights: Option<VertexWeights<'a>>,
+    pub anims: &'a [NamedAnim],
+    /// Scales the root's animated translation (child Link's 0.64).
+    pub root_scale: f32,
+    /// The textures' names by `TextureImage::hash` (`Gltf::texture_names`).
+    pub texture_names: HashMap<u64, String>,
+    pub extras: serde_json::Value,
+}
+
+impl SkinnedModel<'_> {
+    /// Writes the .glb; returns its triangle count.
+    pub fn write(self, path: &Path) -> Result<usize> {
+        let SkinnedModel { name, skel, limb_names, draw, rest, bones, weights, anims, root_scale, texture_names, extras } = self;
+        let mut g = Gltf::new();
+        g.texture_names = texture_names;
+        let s = ACTOR_SCALE;
+        let local: Vec<(Vec3, Quat)> = match rest {
+            Some(r) => r.to_vec(),
+            None => skel.limbs.iter().map(|l| (Vec3::from(l.joint_pos.map(|c| c as f32)), Quat::IDENTITY)).collect(),
+        };
+        let pose = rest_pose(skel, &local);
+        let armature = g.node(json!({ "name": name }));
+        let first_joint = g.nodes.len();
+        for (i, (t, q)) in local.iter().enumerate() {
+            let n = limb_names.get(i).cloned().unwrap_or_else(|| format!("limb_{i:02}"));
+            let mut node = json!({ "name": n, "translation": (*t * s).to_array() });
+            if *q != Quat::IDENTITY {
+                node["rotation"] = json!(q.to_array());
+            }
+            g.node(node);
         }
+        for (i, p) in skel.parents.iter().enumerate() {
+            match p {
+                Some(p) => g.add_child(first_joint + *p as usize, first_joint + i),
+                None => g.add_child(armature, first_joint + i),
+            }
+        }
+        let joints: Vec<usize> = (0..skel.limbs.len()).map(|i| first_joint + i).collect();
+        let map: Vec<u16> = (0..skel.limbs.len() as u16).collect();
+        // The joints' rest matrices with their translations scaled; the vertices scaled with them.
+        let scale = Mat4::from_scale(Vec3::splat(s));
+        let inverse: Vec<Mat4> = pose.iter().map(|m| (scale * *m * scale.inverse()).inverse()).collect();
+        let skin = g.skin(name, &joints, &inverse, first_joint);
+        let bone_mats: Vec<Mat4> = bones.unwrap_or(&pose).iter().map(|m| scale * *m).collect();
+        let mesh = match weights {
+            Some(w) => g.add_draw_list_weighted(draw, name, Some(&bone_mats), Some(w)),
+            None => g.add_draw_list(draw, name, Some(&bone_mats), Some(&map)),
+        };
+        if let Some(mesh) = mesh {
+            let n = g.node(json!({ "name": format!("{name}_mesh"), "mesh": mesh, "skin": skin }));
+            g.add_child(armature, n);
+        }
+        for a in anims {
+            let tracks: Vec<_> = (0..skel.limbs.len())
+                .map(|l| {
+                    let rot = Some(a.frames.iter().map(|f| limb_quat(f.rot.get(l + 1).copied().unwrap_or([0; 3]))).collect());
+                    let trans = (l == 0).then(|| {
+                        a.frames
+                            .iter()
+                            .map(|f| {
+                                let r = f.rot.first().copied().unwrap_or([0; 3]);
+                                Vec3::new(r[0] as f32, r[1] as f32, r[2] as f32) * root_scale * s
+                            })
+                            .collect()
+                    });
+                    (first_joint + l, trans, rot)
+                })
+                .collect();
+            g.animation(&a.name, 20.0, a.frames.len(), &tracks);
+        }
+        g.extras = Some(extras);
+        g.write_glb(path, &[armature])?;
+        Ok(draw.triangle_count())
     }
-    let joints: Vec<usize> = (0..skel.limbs.len()).map(|i| first_joint + i).collect();
-    let map: Vec<u16> = (0..skel.limbs.len() as u16).collect();
-    let inverse: Vec<Mat4> = bind.iter().map(|m| m.inverse()).collect();
-    let skin = g.skin(name, &joints, &inverse, first_joint);
-    let mesh = match weights {
-        Some(w) => g.add_draw_list_weighted(draw, name, Some(&bind), Some(w)),
-        None => g.add_draw_list(draw, name, Some(&bind), Some(&map)),
-    };
-    if let Some(mesh) = mesh {
-        let n = g.node(json!({ "name": format!("{name}_mesh"), "mesh": mesh, "skin": skin }));
-        g.add_child(armature, n);
+}
+
+/// Each limb's model-space matrix for local translations and rotations (in draw order, each
+/// times its parent's).
+pub fn rest_pose(skel: &Skeleton, local: &[(Vec3, Quat)]) -> Vec<Mat4> {
+    let mut out = vec![Mat4::IDENTITY; skel.limbs.len()];
+    for &l in &skel.draw_order {
+        let l = l as usize;
+        let parent = skel.parents[l].map(|p| out[p as usize]).unwrap_or(Mat4::IDENTITY);
+        let (t, q) = local.get(l).copied().unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+        out[l] = parent * Mat4::from_rotation_translation(q, t);
     }
-    for a in anims {
-        let tracks: Vec<_> = (0..skel.limbs.len())
-            .map(|l| {
-                let rot = Some(a.frames.iter().map(|f| limb_quat(f.rot.get(l + 1).copied().unwrap_or([0; 3]))).collect());
-                let trans = (l == 0).then(|| {
-                    a.frames
-                        .iter()
-                        .map(|f| {
-                            let r = f.rot.first().copied().unwrap_or([0; 3]);
-                            Vec3::new(r[0] as f32, r[1] as f32, r[2] as f32) * root_scale
-                        })
-                        .collect()
-                });
-                (first_joint + l, trans, rot)
-            })
-            .collect();
-        g.animation(&a.name, 20.0, a.frames.len(), &tracks);
-    }
-    g.extras = Some(extras);
-    g.write_glb(path, &[armature])?;
-    Ok(draw.triangle_count())
+    out
 }
 
 struct Keeps {
@@ -168,7 +233,8 @@ fn build_with_faces(skel: &Skeleton, mut opts: BuildOptions, file: &AssetFile, d
     }
 }
 
-fn limb_names(file: &AssetFile, data: &[u8], skel_off: usize, count: usize) -> Vec<String> {
+/// The limbs' symbols from the skeleton's limb table (`limb_NN` for a limb the XML doesn't name).
+pub fn limb_names(file: &AssetFile, data: &[u8], skel_off: usize, count: usize) -> Vec<String> {
     let by_off: HashMap<u32, &str> = file.of_kind("Limb").map(|s| (s.offset, s.name.as_str())).collect();
     let table = (be32(data, skel_off) & 0xFF_FFFF) as usize;
     (0..count)
