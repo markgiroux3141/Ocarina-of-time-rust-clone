@@ -364,7 +364,17 @@ pub const EQUIP_AGE_REQS: [[u8; 4]; 4] = [[0, 1, 0, 0], [9, 1, 9, 0], [0, 9, 0, 
 pub const LINK_AGE_ADULT: u8 = 0;
 pub const LINK_AGE_CHILD: u8 = 1;
 
+/// `INFTABLE_SARIA_GREETED_LINK` (`save.h`: 0x00): set when Saria's greeting
+/// (`gKokiriForestSariaGreetingCs`, `EnSa_BecomeIdle`) ends, the first time Link leaves his house.
+pub const INFTABLE_SARIA_GREETED_LINK: u16 = 0x00;
+
+/// Every preset past Link's first walk out of his house: Saria's greeting over.
+pub fn left_the_house(s: &mut SaveContext) {
+    s.set_inf_table(INFTABLE_SARIA_GREETED_LINK);
+}
+
 pub fn kokiri_sword_and_deku_shield(s: &mut SaveContext) {
+    left_the_house(s);
     item_give(s, None, ITEM_SWORD_KOKIRI);
     item_give(s, None, ITEM_SHIELD_DEKU);
     s.equip_from_pause_menu(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
@@ -574,6 +584,7 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         name: "sword-and-40-rupees",
         about: "the Kokiri Sword owned and worn and 40 rupees, what a new save has on its way to the Kokiri shop (GAME-03 milestone 3); no shield, Mido still blocking",
         apply: |s| {
+            left_the_house(s);
             item_give(s, None, ITEM_SWORD_KOKIRI);
             s.equip_from_pause_menu(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
             s.rupees = 40;

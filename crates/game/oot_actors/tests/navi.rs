@@ -34,9 +34,11 @@ fn assets() -> Option<Arc<GameAssets>> {
     Some(oot_actors::game_assets(pack).expect("the pack's tables"))
 }
 
+/// Play entering by `entrance` on a new save after Saria's greeting (Link out of his house).
 fn enter(a: &Arc<GameAssets>, entrance: &str) -> Option<PlayState> {
     let e = a.scenes.entrance_index(entrance).expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     Some(oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init"))
 }
 
@@ -160,7 +162,10 @@ fn the_kokiri_fairies_bob_above_their_children() {
     let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_3") else { return };
     idle(&mut w, 80);
     let fairies: Vec<&EnElf> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnElf>(h)).filter(|e| e.actor.params == FAIRY_KOKIRI).collect();
-    assert_eq!(fairies.len(), 9, "the 8 children's and Mido's");
+    // EnKo's func_80A99048, EnMd_Init and EnSa_Init each spawn one (FAIRY_KOKIRI) as their child;
+    // EnSa_Init for every type but SARIA_TYPE_NONE, and in Kokiri Forest without the Kokiri
+    // Emerald she's there (SARIA_TYPE_STANDING once she's greeted Link, EnSa_GetType).
+    assert_eq!(fairies.len(), 10, "the 8 children's, Mido's and Saria's");
     for f in fairies {
         let parent = f.actor.parent.and_then(|h| w.actors.actor(h)).expect("its child");
         // func_80A0353C: towards the parent's position raised 1500 × scale.y + 40, plus the

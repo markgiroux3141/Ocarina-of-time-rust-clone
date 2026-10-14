@@ -2207,3 +2207,103 @@ pub fn player_update_weapon_info(play: &mut crate::play::PlayState, owner: &Acto
         true
     }
 }
+
+/// `CollisionCheck_CylSideVsLineSeg`: where the segment from `item_pos` to `item_proj_pos` meets the
+/// side of a cylinder of `radius` and `height` standing `offset` above `actor_pos`. Returns the
+/// count of crossings (1 or 2, in `out1` and `out2`), 3 if either end is inside, or 0.
+#[allow(clippy::too_many_arguments)]
+pub fn cyl_side_vs_line_seg(radius: f32, height: f32, offset: f32, actor_pos: Vec3, item_pos: Vec3, item_proj_pos: Vec3, out1: &mut Vec3, out2: &mut Vec3) -> i32 {
+    let sqxz = |v: Vec3| v.x * v.x + v.z * v.z;
+    let actor_to_item = Vec3::new(item_pos.x - actor_pos.x, item_pos.y - actor_pos.y - offset, item_pos.z - actor_pos.z);
+    let actor_to_item_proj = Vec3::new(item_proj_pos.x - actor_pos.x, item_proj_pos.y - actor_pos.y - offset, item_proj_pos.z - actor_pos.z);
+    let item_step = actor_to_item_proj - actor_to_item;
+    if actor_to_item.y > 0.0 && actor_to_item.y < height && sqxz(actor_to_item).sqrt() < radius {
+        return 3;
+    }
+    if actor_to_item_proj.y > 0.0 && actor_to_item_proj.y < height && sqxz(actor_to_item_proj).sqrt() < radius {
+        return 3;
+    }
+    let rad_sq_diff = sqxz(actor_to_item) - radius * radius;
+    let (mut intersect1, mut intersect2);
+    let (mut frac1, mut frac2) = (0.0f32, 0.0f32);
+    if !eng_math::is_zero(sqxz(item_step)) {
+        let actor_dot_item_xz = (2.0 * item_step.x * actor_to_item.x) + (2.0 * item_step.z * actor_to_item.z);
+        if actor_dot_item_xz * actor_dot_item_xz < 4.0 * sqxz(item_step) * rad_sq_diff {
+            return 0;
+        }
+        if actor_dot_item_xz * actor_dot_item_xz - (4.0 * sqxz(item_step) * rad_sq_diff) > 0.0 {
+            intersect1 = true;
+            intersect2 = true;
+        } else {
+            intersect1 = true;
+            intersect2 = false;
+        }
+        let close_dist = (actor_dot_item_xz * actor_dot_item_xz - (4.0 * sqxz(item_step) * rad_sq_diff)).sqrt();
+        if intersect1 {
+            frac1 = (close_dist - actor_dot_item_xz) / (2.0 * sqxz(item_step));
+        }
+        if intersect2 {
+            frac2 = (-actor_dot_item_xz - close_dist) / (2.0 * sqxz(item_step));
+        }
+    } else if !eng_math::is_zero((2.0 * item_step.x * actor_to_item.x) + (2.0 * item_step.z * actor_to_item.z)) {
+        intersect1 = true;
+        intersect2 = false;
+        frac1 = -rad_sq_diff / ((2.0 * item_step.x * actor_to_item.x) + (2.0 * item_step.z * actor_to_item.z));
+    } else {
+        if rad_sq_diff <= 0.0 {
+            let test1 = 0.0 < actor_to_item.y && actor_to_item.y < height;
+            let test2 = 0.0 < actor_to_item_proj.y && actor_to_item_proj.y < height;
+            if test1 && test2 {
+                *out1 = actor_to_item;
+                *out2 = actor_to_item_proj;
+                return 2;
+            }
+            if test1 {
+                *out1 = actor_to_item;
+                return 1;
+            }
+            if test2 {
+                *out1 = actor_to_item_proj;
+                return 1;
+            }
+        }
+        return 0;
+    }
+    if !intersect2 {
+        if frac1 < 0.0 || 1.0 < frac1 {
+            return 0;
+        }
+    } else {
+        let test1 = frac1 < 0.0 || 1.0 < frac1;
+        let test2 = frac2 < 0.0 || 1.0 < frac2;
+        if test1 && test2 {
+            return 0;
+        }
+        if test1 {
+            intersect1 = false;
+        }
+        if test2 {
+            intersect2 = false;
+        }
+    }
+    if intersect1 && (frac1 * item_step.y + actor_to_item.y < 0.0 || height < frac1 * item_step.y + actor_to_item.y) {
+        intersect1 = false;
+    }
+    if intersect2 && (frac2 * item_step.y + actor_to_item.y < 0.0 || height < frac2 * item_step.y + actor_to_item.y) {
+        intersect2 = false;
+    }
+    let at = |f: f32| item_step * f + actor_to_item + actor_pos;
+    if !intersect1 && !intersect2 {
+        0
+    } else if intersect1 && intersect2 {
+        *out1 = at(frac1);
+        *out2 = at(frac2);
+        2
+    } else if intersect1 {
+        *out1 = at(frac1);
+        1
+    } else {
+        *out1 = at(frac2);
+        1
+    }
+}

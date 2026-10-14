@@ -235,6 +235,14 @@ CASES = [
     ("graveyard_tomb", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "1950", "--screenshot", "{shot}"]),
     ("graveyard_keese", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "3300", "--screenshot", "{shot}"]),
     ("graveyard_lesson", S, ["--entrance", "ENTR_GRAVEYARD_0", "--child", "--preset", "graveyard-lullaby", "--time", "18:30", "--script", "graveyard", "--frames", "5600", "--screenshot", "{shot}"]),
+    # GAME-08 milestone 1: the meadow (Route::Meadow) from the Lost Woods' entrance with the letter: the
+    # owl, the woods' right turns, the Wolfos killed and its gate sunk, three Mad Scrubs bounced and
+    # killed, the maze and the ramp, Saria's lesson and Saria's Song.
+    ("meadow", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("meadow_woods", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "1300", "--screenshot", "{shot}"]),
+    ("meadow_wolfos", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "2600", "--screenshot", "{shot}"]),
+    ("meadow_scrub", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "3850", "--screenshot", "{shot}"]),
+    ("meadow_saria", S, ["--entrance", "ENTR_LOST_WOODS_0", "--child", "--preset", "graveyard-sun", "--script", "meadow", "--frames", "5700", "--screenshot", "{shot}"]),
     # GAME-03 milestone 4: a new save on past Mido into the meadow, the Deku Tree's talk
     # (cutscenes gDekuTreeMeetingCs, gDekuTreeMouthOpeningCs) answered yes, and into his mouth and the Deku Tree's
     # intro (gDekuTreeIntroCs). No preset.

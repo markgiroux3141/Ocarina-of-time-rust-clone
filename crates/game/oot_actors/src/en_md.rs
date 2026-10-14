@@ -489,8 +489,7 @@ impl EnMd {
         if play.scene_id != SCENE_MIDOS_HOUSE {
             let s = &play.save;
             let temp = if s.check_quest_item(QUEST_KOKIRI_EMERALD) && !s.get_event_chk_inf(EVENTCHKINF_1C) && play.scene_id == SCENE_KOKIRI_FOREST { 100.0 } else { 400.0 };
-            let pp = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(self.actor.world_pos);
-            self.alpha = actor_update_alpha_by_distance(&mut self.actor, pp, self.alpha, temp);
+            self.alpha = actor_update_alpha_by_distance(&mut self.actor, play, self.alpha, temp);
         } else {
             self.alpha = 255;
         }

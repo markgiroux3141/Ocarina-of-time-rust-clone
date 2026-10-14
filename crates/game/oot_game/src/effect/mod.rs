@@ -57,6 +57,7 @@ pub mod hahen;
 pub mod hitmark;
 pub mod k_fire;
 pub mod kakera;
+pub mod kirakira;
 pub mod shield_particle;
 pub mod sibuki;
 pub mod solder_srch_ball;
@@ -75,6 +76,7 @@ use crate::play::{PlayState, Rand};
 
 // EffectSsType (`tables/effect_ss_table.h`): the ported ones, and the table's end.
 pub const EFFECT_SS_DUST: u8 = 0x00;
+pub const EFFECT_SS_KIRAKIRA: u8 = 0x01;
 pub const EFFECT_SS_BOMB2: u8 = 0x03;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
@@ -118,6 +120,12 @@ pub enum SsUpdate {
     EnIceFlying,
     /// `EffectSsDeadDb_Update`.
     DeadDb,
+    /// `func_809AABF0` (`Effect_Ss_KiraKira`'s update mode 0).
+    KiraKira,
+    /// `func_809AACAC` (update mode 1).
+    KiraKiraFocused,
+    /// `func_809AAD6C` (a negative life).
+    KiraKiraGrow,
     /// `EffectSsDeadSound_Update`.
     DeadSound,
     /// `EffectSsFireTail_Update`.
@@ -163,6 +171,8 @@ pub enum SsDraw {
     EnIce,
     /// `EffectSsDeadDb_Draw`.
     DeadDb,
+    /// `EffectSsKiraKira_Draw`.
+    KiraKira,
     /// `EffectSsFireTail_Draw`.
     FireTail,
     /// `EffectSsFhgFlash_DrawShock`.
@@ -272,6 +282,7 @@ pub enum SsInit {
     EnFire(en_fire::EnFireInit),
     EnIce(en_ice::EnIceInit),
     DeadDb(dead_db::DeadDbInit),
+    KiraKira(kirakira::KiraKiraInit),
     DeadSound(dead_sound::DeadSoundInit),
     FireTail(fire_tail::FireTailInit),
     FhgFlash(fhg_flash::FhgFlashInit),
@@ -365,6 +376,7 @@ impl SsSpawn<'_> {
             SsInit::EnFire(p) => en_fire::init(self, &mut e, &p),
             SsInit::EnIce(p) => en_ice::init(self, &mut e, &p),
             SsInit::DeadDb(p) => dead_db::init(&mut e, &p),
+            SsInit::KiraKira(p) => kirakira::init(&mut e, &p),
             SsInit::DeadSound(p) => dead_sound::init(&mut e, &p),
             SsInit::FireTail(p) => fire_tail::init(&mut e, &p),
             SsInit::FhgFlash(p) => fhg_flash::init(self, &mut e, &p),
@@ -792,6 +804,7 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(en_fire::bakes());
     v.extend(en_ice::bakes());
     v.extend(dead_db::bakes());
+    v.extend(kirakira::bakes());
     v.extend(fhg_flash::bakes());
     v.extend(fcircle::bakes());
     v.extend(sibuki::bakes());
@@ -887,6 +900,9 @@ impl PlayState {
             SsUpdate::EnIce => en_ice::update(&mut e),
             SsUpdate::EnIceFlying => en_ice::update_flying(self, &mut e),
             SsUpdate::DeadDb => dead_db::update(self, i, &mut e),
+            SsUpdate::KiraKira => kirakira::update(self, &mut e),
+            SsUpdate::KiraKiraFocused => kirakira::update_focused(self, &mut e),
+            SsUpdate::KiraKiraGrow => kirakira::update_grow(&mut e),
             SsUpdate::DeadSound => dead_sound::update(self, i, &mut e),
             SsUpdate::FireTail => fire_tail::update(&mut e),
             SsUpdate::FhgFlashShock => fhg_flash::update_shock(self, &mut e),
@@ -956,6 +972,7 @@ impl PlayState {
                 SsDraw::EnFire => en_fire::draw(e, &ctx, &mut out),
                 SsDraw::EnIce => en_ice::draw(e, &ctx, &mut out),
                 SsDraw::DeadDb => dead_db::draw(e, ctx.billboard, &mut out),
+                SsDraw::KiraKira => kirakira::draw(e, ctx.billboard, &mut out),
                 SsDraw::FireTail => fire_tail::draw(e, &ctx, &mut out),
                 SsDraw::FhgFlashShock => fhg_flash::draw_shock(e, ctx.billboard, &mut out),
                 SsDraw::Fcircle => fcircle::draw(e, ctx.gameplay_frames, &mut out),

@@ -456,12 +456,13 @@ fn room_10s_timed_torch_lit_from_its_wooden_one_drops_the_chest() {
     assert_eq!(falling_chest(&w), Some(BoxAction::Fall));
 }
 
-/// Kokiri Forest with ten Deku Sticks on C-Left (`deku-tree-sticks`), Link on the bank of its
-/// water at (950, 0, -100) facing it (+x): the floor slopes down under the water (surface -12)
-/// to -60 by x 1150, deep enough for child Link to swim (`unk_2C` 32).
+/// Kokiri Forest after Saria's greeting, with ten Deku Sticks on C-Left (`deku-tree-sticks`),
+/// Link on the bank of its water at (950, 0, -100) facing it (+x): the floor slopes down under the
+/// water (surface -12) to -60 by x 1150, deep enough for child Link to swim (`unk_2C` 32).
 fn kokiri_forest_bank(a: &Arc<GameAssets>) -> PlayState {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     save.apply_preset("deku-tree-sticks").unwrap();
     let audio = oot_game::audio::GameAudio::boot_logged(a.audio.clone(), a.audio_tables.clone(), true);
     let mut w = PlayState::play_init_with(a.clone(), data().unwrap(), rules().unwrap(), save, audio).expect("Play_Init");

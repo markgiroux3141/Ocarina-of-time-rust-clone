@@ -130,7 +130,8 @@ fn assets() -> Option<Arc<GameAssets>> {
 fn kokiri_forest() -> Option<PlayState> {
     let a = assets()?;
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_3").expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     Some(oot_actors::play_entrance(a, data()?, rules()?, save).expect("Play_Init"))
 }
 
@@ -221,8 +222,29 @@ fn placeholders_are_never_targets() {
     for _ in 0..4 {
         frame(&mut w, &mut prev, stick(0, 0));
     }
+    // Saria (En_Sa) was room 0's last unported placement: spawn placeholders of three unported
+    // actors whose profile says targetable and whose object is loaded, in front of Link.
+    let a = w.assets.clone().unwrap();
+    let ov = oot_actors::overlays();
+    let ids: Vec<i16> = (0..a.actors.actors.len() as i16)
+        .filter(|&id| !ov.is_ported(id))
+        .filter(|&id| {
+            a.actors.get(id).and_then(|r| r.init.as_ref()).is_some_and(|i| {
+                i.id == id && i.flags & ACTOR_FLAG_ATTENTION_ENABLED != 0 && w.object_ctx.get_index(i.object_id).is_some_and(|b| w.object_ctx.is_loaded(b))
+            })
+        })
+        .take(3)
+        .collect();
+    assert_eq!(ids.len(), 3, "unported targetable actors with a loaded object");
+    let at = w.player().actor.world_pos;
+    for (i, &id) in ids.iter().enumerate() {
+        let h = w.actor_spawn(id, at + Vec3::new(-60.0 + 60.0 * i as f32, 0.0, -100.0), [0; 3], 0).expect("Actor_Spawn");
+        let p = w.actors.downcast::<oot_game::spawn::Placeholder>(h).expect("a placeholder");
+        assert_ne!(p.profile_flags & ACTOR_FLAG_ATTENTION_ENABLED, 0, "its profile says targetable");
+    }
+    frame(&mut w, &mut prev, stick(0, 0));
     let placeholders: Vec<_> = w.actors.all().into_iter().filter(|&h| w.actors.get(h).is_some_and(|a| a.name() == "Placeholder")).collect();
-    assert!(!placeholders.is_empty());
+    assert!(placeholders.len() >= 3);
     // Actor_Spawn gives a placeholder its profile's flags without ACTOR_FLAG_ATTENTION_ENABLED.
     for &h in &placeholders {
         assert_eq!(w.actors.actor(h).unwrap().flags & ACTOR_FLAG_ATTENTION_ENABLED, 0);

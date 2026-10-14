@@ -302,14 +302,19 @@ pub fn get_tracking_preset_max_player_yaw(preset: usize) -> i16 {
     S_NPC_TRACKING_PRESETS[preset].2
 }
 
-/// `Actor_UpdateAlphaByDistance`: an NPC fading in within `dist` of Link and out beyond it (targetable only
-/// while near: `ACTOR_FLAG_ATTENTION_ENABLED`); returns the new alpha. (In a cutscene the distance would be a
-/// quarter of the camera's: no cutscenes.)
-pub fn actor_update_alpha_by_distance(actor: &mut Actor, player_pos: Vec3, alpha: i16, dist: f32) -> i16 {
+/// `Actor_UpdateAlphaByDistance`: an NPC fading in within `radius` of Link and out beyond it
+/// (targetable only while near: `ACTOR_FLAG_ATTENTION_ENABLED`); returns the new alpha. In a
+/// cutscene the distance is a quarter of the view's eye's (`gDebugCamEnabled` is never set).
+pub fn actor_update_alpha_by_distance(actor: &mut Actor, play: &PlayState, alpha: i16, radius: f32) -> i16 {
     use crate::actor::ACTOR_FLAG_ATTENTION_ENABLED;
     let mut alpha = alpha;
-    let var = actor.world_pos.distance(player_pos);
-    if dist < var {
+    let var = if play.cs_ctx.state != crate::cutscene::CS_STATE_IDLE {
+        actor.world_pos.distance(play.view.eye) * 0.25
+    } else {
+        let player_pos = play.player.and_then(|h| play.actors.actor(h)).map(|a| a.world_pos).unwrap_or(actor.world_pos);
+        actor.world_pos.distance(player_pos)
+    };
+    if radius < var {
         actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         eng_math::smooth_step_to_s(&mut alpha, 0, 6, 0x14, 1);
     } else {

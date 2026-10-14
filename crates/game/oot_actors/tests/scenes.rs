@@ -33,11 +33,12 @@ fn assets() -> Option<Arc<GameAssets>> {
     Some(oot_actors::game_assets(pack).expect("the pack's tables"))
 }
 
-/// Play entering by `entrance` (an `ENTR_*` name), child Link, 10:00.
+/// Play entering by `entrance` (an `ENTR_*` name), child Link, 10:00, after Saria's greeting.
 fn enter(entrance: &str) -> Option<PlayState> {
     let a = assets()?;
     let e = a.scenes.entrance_index(entrance).expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     Some(oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init"))
 }
 
@@ -94,14 +95,20 @@ fn kokiri_forest_spawns_every_placement_or_a_placeholder() {
     }
     let (waiting, placeholders, ported) = count(&w);
     assert_eq!(waiting, 0, "every object is loaded two frames after the room");
-    // Navi (Player_SpawnFairy), and the fairy each Kokiri child and Mido spawn as their child
-    // (En_Elf params 3, FAIRY_KOKIRI: EnKo's func_80A99048, EnMd_Init): all ported.
-    let fairies = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_ko::EnKo>(h).is_some() || w.actors.downcast::<oot_actors::en_md::EnMd>(h).is_some()).count();
-    assert_eq!(fairies, 9);
+    // Navi (Player_SpawnFairy), and the fairy each Kokiri child, Mido and Saria spawn as their
+    // child (En_Elf params 3, FAIRY_KOKIRI: EnKo's func_80A99048, EnMd_Init, EnSa_Init): all
+    // ported. EnSa_Init spawns hers for every type but SARIA_TYPE_NONE (which returns before
+    // it); here, without the Kokiri Emerald, EnSa_GetType gives SARIA_TYPE_STANDING (the
+    // greeting's flag set): 8 children, Mido and Saria, 10 fairies.
+    let saria = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_sa::EnSa>(h).is_some()).count();
+    assert_eq!(saria, 1, "Saria stands in room 0");
+    let fairies = w.actors.all().into_iter().filter(|&h| w.actors.downcast::<oot_actors::en_ko::EnKo>(h).is_some() || w.actors.downcast::<oot_actors::en_md::EnMd>(h).is_some()).count() + saria;
+    assert_eq!(fairies, 10);
     let elves: Vec<i16> = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<oot_actors::en_elf::EnElf>(h)).map(|e| e.actor.params).collect();
     assert_eq!((elves.iter().filter(|&&p| p == oot_actors::en_elf::FAIRY_NAVI).count(), elves.iter().filter(|&&p| p == oot_actors::en_elf::FAIRY_KOKIRI).count()), (1, fairies));
     assert_eq!(placeholders, room0.actors.len() - tag_points - ported_placed);
-    // (None of the other ported placements kills itself for child Link at 10:00 on a new save.)
+    // (None of the other ported placements kills itself for child Link at 10:00 on a new save
+    // after Saria's greeting.)
     assert_eq!(ported, ported_placed + 3 + 1 + fairies);
     // Each placement is where the room's actor list puts it, in its category and room. Ported
     // props may have moved in their init (snapped to the floor, `En_Kanban` lowered for child

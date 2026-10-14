@@ -41,6 +41,7 @@ fn enter_with(entrance: &str, f: impl FnOnce(&mut SaveContext)) -> Option<PlaySt
     let a = assets()?;
     let e = a.scenes.entrance_index(entrance).expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     f(&mut save);
     Some(oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init"))
 }

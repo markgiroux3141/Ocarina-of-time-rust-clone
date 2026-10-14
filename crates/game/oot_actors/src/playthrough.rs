@@ -425,6 +425,18 @@ pub enum Step {
     /// The lesson's chain over (the graveyard's part 2, the tomb's part 3 at
     /// `ENTR_ROYAL_FAMILYS_TOMB_1`), Link free by the wall.
     SunsSongTaught,
+    /// Kaepora Gaebora's talk read to the end (no, not again).
+    Owl,
+    /// The meadow's Wolfos killed: its switch flag (0x1F) set, the gate sinking.
+    WolfosKilled,
+    /// Past z -2220 on Saria's plateau: her lesson's cutscene started.
+    SariasSongLesson,
+    /// Saria's Song played back in the lesson.
+    SariasSongPlayed,
+    /// The lesson over, the song given (`QUEST_SONG_SARIA`), Link free.
+    SariasSongLearned,
+    /// Out of the Lost Woods into the Sacred Forest Meadow (`ENTR_SACRED_FOREST_MEADOW_0`), settled.
+    MeadowEntered,
 }
 
 impl Step {
@@ -579,6 +591,12 @@ impl Step {
             Step::SunsSongLesson => "suns_song_lesson",
             Step::SunsSongPlayed => "suns_song_played",
             Step::SunsSongTaught => "suns_song_taught",
+            Step::Owl => "owl",
+            Step::WolfosKilled => "wolfos_killed",
+            Step::SariasSongLesson => "sarias_song_lesson",
+            Step::SariasSongPlayed => "sarias_song_played",
+            Step::SariasSongLearned => "sarias_song_learned",
+            Step::MeadowEntered => "meadow_entered",
         }
     }
 }
@@ -727,6 +745,93 @@ pub enum Route {
     /// (`graveyard-lullaby`), its intro, the lullaby at the royal tomb (its gravestone blown up),
     /// and into the tomb.
     Graveyard,
+    /// The Sacred Forest Meadow (GAME-08 milestone 1): from the Lost Woods' entrance from Kokiri
+    /// Forest with Zelda's Letter and the Sun's Song (`graveyard-sun`), through the woods' right
+    /// turns to the meadow, the Wolfos killed and its gate down, the maze, and Saria's lesson:
+    /// Saria's Song learned.
+    Meadow,
+}
+
+/// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
+/// 800, joined by corridors under hollow logs, with each room's `En_Holl` plane half way along
+/// its corridor; a wrong turn's corridor ends in exit 1 (back to Kokiri Forest). The way to the
+/// meadow (from the scene's planes): room 0 at (0, 0), east to room 1 (800, 0), north to room 2
+/// (800, -800), east to room 3 (1600, -800), north to room 4 (1600, -1600) and room 7 (1600,
+/// -2400), west to room 8 (800, -2400), and north out of it (exit 2: `ENTR_SACRED_FOREST_MEADOW_0`).
+/// The meadow's Mad Scrubs (`En_Dekunuts`) along the way, in the order Link meets them (homes).
+const MEADOW_SCRUBS: [Vec3; 6] = [
+    Vec3::new(289.0, 0.0, 1183.0),
+    Vec3::new(-402.0, 0.0, 1177.0),
+    Vec3::new(374.0, 0.0, 578.0),
+    Vec3::new(-303.0, 0.0, 316.0),
+    Vec3::new(24.0, 160.0, -947.0),
+    Vec3::new(-38.0, 160.0, -1255.0),
+];
+
+fn meadow_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(400.0, 0.0, 0.0),
+            Vec3::new(800.0, 0.0, 0.0),
+            Vec3::new(800.0, 0.0, -400.0),
+            Vec3::new(830.0, 0.0, -700.0),
+        ]),
+        // Room 2's owl (En_Owl at (955, 210, -798)) calls Link as he comes in: 0x10C0, then 0x10C1
+        // ("hear it again?"): no.
+        Task::TalkThrough(vec![1], Step::Owl),
+        Task::Walk(vec![
+            Vec3::new(800.0, 0.0, -800.0),
+            Vec3::new(1200.0, 0.0, -800.0),
+            Vec3::new(1600.0, 0.0, -800.0),
+            Vec3::new(1600.0, 0.0, -1200.0),
+            Vec3::new(1600.0, 0.0, -1600.0),
+            Vec3::new(1600.0, 0.0, -2000.0),
+            Vec3::new(1600.0, 0.0, -2400.0),
+            Vec3::new(1200.0, 0.0, -2400.0),
+            Vec3::new(800.0, 0.0, -2400.0),
+        ]),
+        Task::Exit("ENTR_SACRED_FOREST_MEADOW_0", Some(Step::MeadowEntered)),
+        // The Wolfos (En_Wf 0x1F00) by the entrance, buried until Link is within 240.
+        Task::FightWolfos(Vec3::new(-345.0, 0.0, 1658.0), 0x1F, Step::WolfosKilled),
+        // The gate (Bg_Spot05_Soko 1 at (-200, 0, 1613)) sinks with its attention camera; then the
+        // maze's way (its hedges stand 120 high on a floor at 0): north through the gate, the
+        // zigzag to the foot of the ramp at x 0, and up it (to 470 at z -2200).
+        Task::Settle(None),
+        // The maze's six Mad Scrubs (En_Dekunuts) spit at Link 160 to 480 away: at each Link stops
+        // facing it, the shield up until its nut bounces back off it (EnDekunuts_BeginRun); it
+        // runs off, and he runs after it and kills it.
+        Task::Walk(vec![Vec3::new(-200.0, 0.0, 1475.0), Vec3::new(300.0, 0.0, 1475.0), Vec3::new(300.0, 0.0, 1420.0)]),
+        Task::BounceNut(MEADOW_SCRUBS[0]),
+        Task::ChaseScrub(MEADOW_SCRUBS[0]),
+        Task::Walk(vec![Vec3::new(300.0, 0.0, 1175.0), Vec3::new(-60.0, 0.0, 1175.0)]),
+        Task::BounceNut(MEADOW_SCRUBS[1]),
+        Task::ChaseScrub(MEADOW_SCRUBS[1]),
+        Task::Walk(vec![Vec3::new(-400.0, 0.0, 1175.0), Vec3::new(-400.0, 0.0, 875.0), Vec3::new(100.0, 0.0, 875.0), Vec3::new(100.0, 0.0, 578.0), Vec3::new(170.0, 0.0, 578.0)]),
+        Task::BounceNut(MEADOW_SCRUBS[2]),
+        Task::ChaseScrub(MEADOW_SCRUBS[2]),
+        // (The chase ends south of the corridor at z 575, in the one along x 400.)
+        // The fourth stands at (-303, 0, 316) down the corridor along x -300, whose north end is a
+        // dip 23 deep (a Bg_Spot05_Soko block's place): its nut breaks on the dip's edge and never
+        // comes back, so Link runs past it (within 120 it burrows, and only rises 100 to 150 frames
+        // later).
+        Task::Hurry(vec![Vec3::new(400.0, 0.0, 575.0), Vec3::new(-300.0, 0.0, 575.0), Vec3::new(-300.0, 0.0, -125.0)]),
+        // East to the foot of the ramp along x 0, and up it at a run past the last two scrubs (on its
+        // slope their nuts don't come back off the shield; they hit three times).
+        Task::Hurry(vec![Vec3::new(0.0, 0.0, -125.0), Vec3::new(0.0, 100.0, -620.0), Vec3::new(0.0, 160.0, -1300.0), Vec3::new(0.0, 420.0, -2100.0)]),
+        // On, north of z -2220, Saria (En_Sa, waiting with the letter and without her song) starts
+        // her lesson (gMeadowSariasSongCs: EnSa_AwaitTeachingSariasSong).
+        Task::Hurry(vec![Vec3::new(0.0, 480.0, -2260.0)]),
+        Task::Texts(|w| w.cs_ctx.state != oot_game::cutscene::CS_STATE_IDLE, Step::SariasSongLesson),
+        // Her texts, the song shown (TEACH), then played back (PLAYBACK).
+        Task::Playback(oot_game::audio::ocarina::OCARINA_SONG_SARIAS, false, Step::SariasSongPlayed),
+        // The script's end (its MISC 0x0C): EnSa_BecomeIdle gives the song (Item_Give(ITEM_SONG_SARIA)).
+        Task::Texts(
+            |w| w.save.check_quest_item(oot_game::item::QUEST_SONG_SARIA) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && w.player().cs_mode == 0,
+            Step::SariasSongLearned,
+        ),
+    ]
 }
 
 /// Anju's pen (`func_80ABA244`: |x - 330| < 90, |z - 1610| < 190): fenced all round (its north
@@ -1232,6 +1337,7 @@ impl Route {
             Route::ZeldaTalk => "ENTR_CASTLE_COURTYARD_ZELDA_0",
             Route::Kakariko => "ENTR_KAKARIKO_VILLAGE_0",
             Route::Graveyard => "ENTR_GRAVEYARD_0",
+            Route::Meadow => "ENTR_LOST_WOODS_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1257,6 +1363,7 @@ impl Route {
             Route::Zelda | Route::ZeldaTalk => Some("castle-courtyard"),
             Route::Kakariko => Some("kakariko-letter"),
             Route::Graveyard => Some("graveyard-lullaby"),
+            Route::Meadow => Some("graveyard-sun"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1424,6 +1531,7 @@ impl Route {
             Route::ZeldaTalk => "zelda-talk",
             Route::Kakariko => "kakariko",
             Route::Graveyard => "graveyard",
+            Route::Meadow => "meadow",
         }
     }
 
@@ -1460,6 +1568,7 @@ impl Route {
             Route::ZeldaTalk => 12000,
             Route::Kakariko => 8000,
             Route::Graveyard => 30000,
+            Route::Meadow => 30000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1467,12 +1576,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1618,6 +1727,11 @@ enum Task {
     BlockKeese(Vec3),
     /// Kill that Keese and pick up its drop (`kill_keese`).
     KillKeese(Vec3),
+    /// Kill the Wolfos (`En_Wf`) whose home is here: at it while it's buried (it rises within 240);
+    /// turned to it and locked on (Z); in at it from beyond 75, the shield up, and the sword (B,
+    /// every other frame) when it's open (its slash's spin from frame 20, bounced off, hurt or
+    /// stunned) within 90; done when it's gone and its switch flag is set (the step).
+    FightWolfos(Vec3, i32, Step),
     /// Kill the withered Deku Baba whose home is here and pick up its stick (`fight_karebaba`).
     FightKarebaba(Vec3),
     /// The guard up until the Mad Scrub whose home is here is knocked out by its own nut
@@ -1625,6 +1739,9 @@ enum Task {
     BounceNut(Vec3),
     /// Catch that Mad Scrub and kill it, and pick up its drop (`catch_scrub`).
     CatchScrub(Vec3),
+    /// After that Mad Scrub at a run (it freezes where the camera doesn't see it) until it's within
+    /// 150, then `CatchScrub`.
+    ChaseScrub(Vec3),
     /// Onto the floor switch whose home is here until its flag is set.
     PressSwitch(Vec3, i32, Step),
     /// Idle until the web whose home is here has burnt away and Link is free.
@@ -2102,6 +2219,7 @@ impl Playthrough {
             Route::ZeldaTalk => [Task::Settle(None)].into_iter().chain(zelda_tail()).collect(),
             Route::Kakariko => kakariko_tasks(),
             Route::Graveyard => graveyard_tasks(),
+            Route::Meadow => meadow_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -2560,6 +2678,9 @@ impl Playthrough {
                     }
                     Some(idle)
                 }
+                // A through a text that waits meanwhile: on a new save, Saria's greeting
+                // (gKokiriForestSariaGreetingCs) plays on the porch as Kokiri Forest's room 0 loads.
+                _ if Self::text_waits(w) => Some(self.press(BTN_A)),
                 _ => self.settle(w, step),
             },
             Task::Walk(points) => self.walk(w, &points, RUN),
@@ -3060,6 +3181,21 @@ impl Playthrough {
             Task::FightBaba(home) => self.fight_baba(w, home),
             Task::BlockKeese(home) => self.block_keese(w, home),
             Task::KillKeese(home) => self.kill_keese(w, home),
+            Task::ChaseScrub(home) => {
+                if self.sub == 0
+                    && let Some((_, n)) = Self::mad_scrub_at(w, home)
+                    && n.actor.world_pos.distance(w.player().actor.world_pos) > 150.0
+                {
+                    self.wait += 1;
+                    if self.wait > 2400 {
+                        self.failure = Some("the Mad Scrub's chase never closed in".into());
+                        return None;
+                    }
+                    return Some(stick_towards(w, n.actor.world_pos, RUN));
+                }
+                self.catch_scrub(w, home)
+            }
+            Task::FightWolfos(home, flag, step) => self.fight_wolfos(w, home, flag, step),
             Task::FightKarebaba(home) => self.fight_karebaba(w, home),
             Task::BounceNut(home) => self.bounce_nut(w, home),
             Task::CatchScrub(home) => self.catch_scrub(w, home),
@@ -3358,6 +3494,61 @@ impl Playthrough {
     /// - 4: Z held through the slash; killed (`EnFirefly_Die`): 2; else back to 1;
     /// - 2: until it's gone (`EnFirefly_Disappear` over), noting the drop (`Item_DropCollectibleRandom`);
     /// - 3: onto the drop until it's collected, then `Step::KeeseKilled`.
+    fn fight_wolfos(&mut self, w: &PlayState, home: Vec3, flag: i32, step: Step) -> Option<PadState> {
+        use crate::en_wf::{EnWf, Func};
+        use eng_input::pad::{BTN_B, BTN_R, BTN_Z};
+        self.wait += 1;
+        if self.wait > 6000 {
+            self.failure = Some("the Wolfos fight stalled".into());
+            return None;
+        }
+        let wolfos = w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<EnWf>(h).map(|r| (h, r))).find(|(_, r)| r.actor.home_pos.distance(home) < 50.0);
+        let Some((h, r)) = wolfos.filter(|(_, r)| !r.actor.killed) else {
+            if w.flags.get_switch(flag) {
+                self.finish(Some(step));
+                return None;
+            }
+            return Some(PadState::default());
+        };
+        let pos = r.actor.world_pos;
+        let dist = r.actor.xz_dist_to_player;
+        let open = match r.func {
+            Func::AttackBouncedOff | Func::Damaged | Func::Stunned => true,
+            Func::Attack => r.skel.cur_frame >= 20.0,
+            _ => false,
+        };
+        let p = w.player();
+        let locked = p.focus_actor == Some(h);
+        let mut pad = PadState::default();
+        if r.func == Func::WaitAppear {
+            pad = stick_towards(w, pos, 80.0);
+        } else if r.func == Func::Die {
+            // Its howl, then its flag and gone.
+        } else if !locked {
+            // Turned to it (and at it), then Z (a new press) once it's in front.
+            let off = eng_math::vec3f_yaw(p.actor.world_pos, pos).wrapping_sub(p.actor.shape_rot.y);
+            if (off as i32).abs() < 0x2000 && self.prev.button & BTN_Z == 0 {
+                pad.button |= BTN_Z;
+            } else {
+                pad = stick_towards(w, pos, if dist > 75.0 { 60.0 } else { 20.0 });
+            }
+        } else {
+            pad.button |= BTN_Z;
+            if dist > 75.0 {
+                let s = stick_towards(w, pos, 60.0);
+                (pad.stick_x, pad.stick_y) = (s.stick_x, s.stick_y);
+            }
+            if open && dist < 90.0 {
+                if self.prev.button & BTN_B == 0 {
+                    pad.button |= BTN_B;
+                }
+            } else {
+                pad.button |= BTN_R;
+            }
+        }
+        Some(pad)
+    }
+
     fn kill_keese(&mut self, w: &PlayState, home: Vec3) -> Option<PadState> {
         use crate::en_firefly::Action as KA;
         use eng_input::pad::{BTN_R, BTN_Z};

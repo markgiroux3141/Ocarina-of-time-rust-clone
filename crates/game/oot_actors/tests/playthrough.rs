@@ -41,7 +41,6 @@ use oot_game::actor_ctx::ActorHandle;
 use oot_game::play::{PlayState, scripted_input};
 use oot_game::play_scene::GameAssets;
 use oot_game::save::{EVENTCHKINF_0C, EVENTCHKINF_05, EVENTCHKINF_07, SaveContext};
-use oot_game::spawn::Placeholder;
 use oot_game::surface::SurfaceType;
 
 const SCENE_DEKU_TREE: u16 = 0x00;
@@ -61,10 +60,6 @@ fn enter(a: &Arc<GameAssets>, entrance: &str, preset: Option<&str>) -> Option<Pl
         save.apply_preset(p).expect("the preset");
     }
     Some(oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init"))
-}
-
-fn placeholder_of(w: &PlayState, id: i16) -> Option<ActorHandle> {
-    w.actors.all().into_iter().find(|&h| w.actors.get(h).is_some_and(|a| a.base().id == id && a.as_any().is::<Placeholder>()))
 }
 
 fn treemouth(w: &PlayState) -> Option<&BgTreemouth> {
@@ -142,9 +137,8 @@ fn kokiri_forest_to_the_deku_tree() {
     let mut run = Playthrough::new();
     let mut prev = PadState::default();
     let mut talked_to = Vec::new();
-    // How near Link came to Mido (En_Md) and to Saria's placeholder.
+    // How near Link came to Mido (En_Md) and to Saria (En_Sa).
     let (mut near_mido, mut near_saria) = (f32::MAX, f32::MAX);
-    let sa = a.actors.id("ACTOR_EN_SA").unwrap();
     let mut seen = Vec::new();
     loop {
         // A step is done on the state before the next frame's input.
@@ -163,8 +157,8 @@ fn kokiri_forest_to_the_deku_tree() {
         }
         let link = w.player().actor.world_pos;
         if w.scene_id == SCENE_KOKIRI_FOREST {
-            if let Some(h) = placeholder_of(&w, sa) {
-                let p = w.actors.actor(h).unwrap().world_pos;
+            if let Some(s) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<oot_actors::en_sa::EnSa>(h)) {
+                let p = s.actor.world_pos;
                 near_saria = near_saria.min(Vec3::new(link.x - p.x, 0.0, link.z - p.z).length());
             }
             if let Some(m) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<oot_actors::en_md::EnMd>(h)) {
@@ -179,7 +173,7 @@ fn kokiri_forest_to_the_deku_tree() {
     assert_eq!(run.failure, None, "the run stopped at {}", run.at());
     assert_eq!(seen, [Step::House, Step::OutDoor, Step::Ladder, Step::Sign, Step::Kokiri, Step::Bush, Step::Tree, Step::Mouth, Step::DekuTree]);
     // Link passed Mido where he stands aside (his collider, 36, and Link's kept them apart), and
-    // Saria's placeholder, which has no collider.
+    // Saria by his house (SARIA_TYPE_STANDING with the preset's greeting over: her cylinder, 20).
     assert!(near_mido < 80.0, "Mido: {near_mido}");
     assert!(near_saria < 60.0, "Saria: {near_saria}");
 }
@@ -344,8 +338,9 @@ fn check_sword(step: Step, w: &PlayState, run: &Playthrough, saw_enter: bool, sa
         Step::Chest => {
             // func_8084DFF4: text 0xA4 and Item_Give(ITEM_SWORD_KOKIRI), which only owns it
             // (equipment bit 0): B stays empty until the pause menu (its stand-in). The chest's
-            // treasure flag 0.
-            assert_eq!(run.texts, [0xA4]);
+            // treasure flag 0. Before it, on the porch, Saria's greeting's 0x1001
+            // (gKokiriForestSariaGreetingCs: a new save's first walk out of the house).
+            assert_eq!(run.texts, [0x1001, 0xA4]);
             assert_eq!(w.save.inventory.equipment, 0x1101);
             assert_eq!(w.save.equips.button_items[0], oot_game::save::ITEM_NONE);
             assert!(w.flags.get_treasure(0));
@@ -488,7 +483,8 @@ fn a_new_save_into_the_deku_tree() {
     assert_eq!(run.failure, None, "the run stopped at {}", run.at());
     let tail = [Step::MidoAside, Step::PastMido, Step::TreeTalk, Step::Tree, Step::Mouth, Step::DekuTree];
     assert_eq!(&seen[seen.len() - tail.len()..], tail);
-    assert_eq!(scripts, ["gDekuTreeMeetingCs", "gDekuTreeMouthOpeningCs", "gDekuTreeIntroCs"]);
+    // Saria's greeting on the porch (EnSa_Init on a new save), then the Deku Tree's.
+    assert_eq!(scripts, ["gKokiriForestSariaGreetingCs", "gDekuTreeMeetingCs", "gDekuTreeMouthOpeningCs", "gDekuTreeIntroCs"]);
     assert!(sub_camera);
     for t in [0x107D, 0x1015, 0x1016, 0x1017] {
         assert!(run.texts.contains(&t), "text {t:#x}: {:x?}", run.texts);
@@ -648,6 +644,7 @@ fn a_new_file_into_the_deku_tree() {
     let navi = seen.iter().position(|&s| s == Step::Navi).expect("the talk to Navi");
     assert_eq!(seen[navi + 1], Step::Crawlspace);
     assert_eq!(seen.last(), Some(&Step::DekuTree));
-    // The opening's scripts (by their offsets: no XML names them), then the Deku Tree's.
-    assert_eq!(scripts, ["link_home_scene/gLinkHouseIntroSleepCs", "spot00_scene/gHyruleFieldIntroNightmareCs", "spot04_scene/gKokiriForestIntroNaviFlyingCs", "link_home_scene/gLinkHouseIntroWakeUpCs", "ovl_Bg_Treemouth/gDekuTreeMeetingCs", "ovl_Bg_Treemouth/gDekuTreeMouthOpeningCs", "ydan_scene/gDekuTreeIntroCs"]);
+    // The opening's scripts (by their offsets: no XML names them), Saria's greeting on the porch,
+    // then the Deku Tree's.
+    assert_eq!(scripts, ["link_home_scene/gLinkHouseIntroSleepCs", "spot00_scene/gHyruleFieldIntroNightmareCs", "spot04_scene/gKokiriForestIntroNaviFlyingCs", "link_home_scene/gLinkHouseIntroWakeUpCs", "spot04_scene/gKokiriForestSariaGreetingCs", "ovl_Bg_Treemouth/gDekuTreeMeetingCs", "ovl_Bg_Treemouth/gDekuTreeMouthOpeningCs", "ydan_scene/gDekuTreeIntroCs"]);
 }

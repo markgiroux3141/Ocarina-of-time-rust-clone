@@ -30,11 +30,12 @@ fn assets() -> Option<Arc<GameAssets>> {
     Some(oot_actors::game_assets(pack).expect("the pack's tables"))
 }
 
-/// Kokiri Forest (`ENTR_KOKIRI_FOREST_0`) on a new save, `adult` or not, with Link placed in front of
-/// the crawlspace's mouth at `at`, facing +z.
+/// Kokiri Forest (`ENTR_KOKIRI_FOREST_0`) on a new save after Saria's greeting, `adult` or not,
+/// with Link placed in front of the crawlspace's mouth at `at`, facing +z.
 fn at_the_mouth(a: &Arc<GameAssets>, adult: bool, at: Vec3) -> Option<(PlayState, PadState)> {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
-    let save = SaveContext::new(e, adult, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, adult, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     let mut w = oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init");
     let mut prev = PadState::default();
     for _ in 0..20 {

@@ -25,9 +25,10 @@ fn assets() -> Option<Arc<GameAssets>> {
 fn enter(entrance: &str) -> Option<PlayState> {
     let a = assets()?;
     let e = a.scenes.entrance_index(entrance).expect("entrance");
-    // A new file with the Kokiri Sword on B and the Deku Shield worn (the sword cuts the bush
-    // and the sign).
+    // A new file after Saria's greeting, with the Kokiri Sword on B and the Deku Shield worn (the
+    // sword cuts the bush and the sign).
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     oot_game::save::kokiri_sword_and_deku_shield(&mut save);
     Some(oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init"))
 }

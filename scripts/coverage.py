@@ -30,7 +30,7 @@ PHASES = {
     6: ("The Deku Tree (GAME-05)", "done"),
     7: ("The road out of the forest (GAME-06)", "done"),
     8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "done"),
-    9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch", "planned"),
+    9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "in progress"),
     10: ("Death Mountain and Dodongo's Cavern", "planned"),
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu", "planned"),
     12: ("The Temple of Time and the adult world", "planned"),
@@ -62,8 +62,9 @@ SCENES = {
     "ganontika_scene": (19, 19, 19), "ganon_scene": (19, 19, 19), "ganon_boss_scene": (19, 19, 19),
     "ganon_sonogo_scene": (19, 19, 19), "ganontikasonogo_scene": (19, 19, 19),
     "ganon_final_scene": (19, 19, 19), "ganon_demo_scene": (19, 19, 19), "ganon_tou_scene": (19, 19, 19),
-    # Kokiri Forest and its houses.
-    "spot04_scene": (3, 12, 3), "link_home_scene": (3, 12, 3),
+    # Kokiri Forest and its houses. Kokiri Forest's 10 and 11 are the credits', 12 and 13 the Deku
+    # Sprout's after the Forest Temple (8 and 9 hold unused cutscenes).
+    "spot04_scene": (3, 12, 3, {10: 19, 11: 19, 12: 14, 13: 14}), "link_home_scene": (3, 12, 3),
     "kokiri_home_scene": (3, 12, 3), "kokiri_home3_scene": (3, 12, 3), "kokiri_home4_scene": (3, 12, 3),
     "kokiri_home5_scene": (3, 12, 3), "kokiri_shop_scene": (4, 20, 4),
     # Hyrule Field, the cutscene map, the forest's neighbours.
@@ -98,8 +99,8 @@ SCENES = {
     # Zora's waters.
     "spot03_scene": (11, 16, 11), "spot07_scene": (11, 16, 16), "spot08_scene": (11, 16, 11),
     "spot06_scene": (11, 16, 16), "hylia_labo_scene": (11, 16, 11),
-    # Lon Lon Ranch: 4 Ingo's race, 5 and 6 the child's Epona, 7 on the ending's.
-    "spot20_scene": (9, 13, 19, {4: 13, 5: 9, 6: 9}), "malon_stable_scene": (9, 13, 9), "souko_scene": (9, 13, 9),
+    # Lon Lon Ranch: 4 Ingo's race, 5 Epona's Song (the child's), 6 on the credits'.
+    "spot20_scene": (9, 13, 19, {4: 13, 5: 9}), "malon_stable_scene": (9, 13, 9), "souko_scene": (9, 13, 9),
     # The desert.
     "spot09_scene": (18, 18, 7, {6: 18}), "spot12_scene": (18, 18, 18), "spot13_scene": (18, 18, 18),
     "spot11_scene": (18, 18, 18), "tent_scene": (18, 18, 18),
@@ -124,6 +125,8 @@ ACTORS = {
     "Item_Ocarina": 11,  # the Ocarina of Time in the moat, after the third stone
     "En_Mm": 20,  # the running man (the mask trade)
     "En_Cow": 9,  # Link's house's (Malon's prize) and the ranch's
+    "Obj_Dekujr": 14,  # the Deku Sprout: killed for a child outside a cutscene layer, and without
+    # the Forest Medallion (ObjDekujr_Init)
     "En_Po_Relay": 14,  # Dampé's race: in Dampé's grave (hakasitarelay room 0), which a child
     # can't open (Bg_Spot02_Objects type 1 seals it for him); the child's layers place it anyway
 }

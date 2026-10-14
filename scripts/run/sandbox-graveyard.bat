@@ -10,5 +10,5 @@ call "%~dp0_env.bat"
 call "%~dp0_need.bat" oot_sandbox || exit /b 1
 if not exist out\run mkdir out\run
 "%BIN%\oot_sandbox.exe" --entrance ENTR_GRAVEYARD_0 --child --preset graveyard-lullaby --time 18:30 --script graveyard ^
-    --trace out\run\graveyard.json --screenshot out\run\graveyard.png --shots-at SHOTS %*
+    --trace out\run\graveyard.json --screenshot out\run\graveyard.png --shots-at 870,1300,2000,2780,5350,6500 %*
 exit /b %errorlevel%

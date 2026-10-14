@@ -540,6 +540,87 @@ pub fn math_cos_f(angle: f32) -> f32 {
     eng_math::cos_s((angle as f64 * (32767.0 / std::f64::consts::PI)) as i32 as i16)
 }
 
+/// `PLAYER_STATE1_HOSTILE_LOCK_ON` (`player.h`: 1 << 4).
+const PLAYER_STATE1_HOSTILE_LOCK_ON: u32 = 1 << 4;
+
+/// Player's `stateFlags1`, `meleeWeaponState` and `shape.rot.y`, as another actor's update reads
+/// them (Player is in the arena then).
+fn player_state(play: &PlayState) -> Option<(u32, i8, i16)> {
+    let p = play.actors.get(play.player?)?;
+    let pi = p.as_player()?;
+    Some((pi.state_flags1(), pi.melee_weapon_state(), p.base().shape_rot.y))
+}
+
+/// `Actor_FindNearby`: the first actor in `category`'s list (newest first) other than `me`, of
+/// `actor_id` (-1: any), within `range` of `ref_actor` (`Actor_WorldDistXYZToActor`).
+pub fn actor_find_nearby(play: &PlayState, ref_actor: &Actor, me: Option<ActorHandle>, actor_id: i16, category: usize, range: f32) -> Option<ActorHandle> {
+    play.actors.category(category).iter().copied().find(|&h| {
+        if Some(h) == me {
+            return false;
+        }
+        let Some(a) = play.actors.actor(h) else { return false };
+        (actor_id == -1 || a.id == actor_id) && ref_actor.world_pos.distance(a.world_pos) <= range
+    })
+}
+
+/// `Actor_IsLockedOn`: Player locked on to a hostile target, and that's `actor`.
+pub fn actor_is_locked_on(play: &PlayState, actor: &Actor) -> bool {
+    player_state(play).is_some_and(|(s1, _, _)| s1 & PLAYER_STATE1_HOSTILE_LOCK_ON != 0) && actor.is_targeted
+}
+
+/// `Actor_OtherIsLockedOn`: Player locked on to a hostile target that isn't `actor`.
+pub fn actor_other_is_locked_on(play: &PlayState, actor: &Actor) -> bool {
+    player_state(play).is_some_and(|(s1, _, _)| s1 & PLAYER_STATE1_HOSTILE_LOCK_ON != 0) && !actor.is_targeted
+}
+
+/// `Actor_TestFloorInDirection`: whether there's ground `distance` from the actor towards
+/// `angle` (`Actor_UpdateBgCheckInfo` there with `UPDBGCHECKINFO_FLAG_2`, then its position and
+/// flags put back); the `BGCHECKFLAG_GROUND` bit.
+pub fn actor_test_floor_in_direction(actor: &mut Actor, play: &PlayState, distance: f32, angle: i16) -> u16 {
+    let prev_pos = actor.world_pos;
+    let prev_flags = actor.bg_check_flags;
+    actor.world_pos.x += distance * eng_math::sin_s(angle);
+    actor.world_pos.z += distance * eng_math::cos_s(angle);
+    actor.update_bg_check_info(&play.col, 0.0, 0.0, 0.0, crate::actor::UPDBGCHECKINFO_FLAG_2);
+    actor.world_pos = prev_pos;
+    let ret = actor.bg_check_flags & crate::actor::BGCHECKFLAG_GROUND;
+    actor.bg_check_flags = prev_flags;
+    ret
+}
+
+/// `func_800354B4`: Link within `range`, swinging his sword (`meleeWeaponState`), facing the actor
+/// within `arg4` (his yaw against the actor's yaw to him, turned round) and the actor facing him
+/// within `arg3` of `arg5`.
+pub fn func_800354b4(play: &PlayState, actor: &Actor, range: f32, arg3: i16, arg4: i16, arg5: i16) -> bool {
+    let Some((_, melee, player_yaw)) = player_state(play) else { return false };
+    let var1 = actor.yaw_towards_player.wrapping_add(-0x8000i32 as i16).wrapping_sub(player_yaw);
+    let var2 = actor.yaw_towards_player.wrapping_sub(arg5);
+    actor.xz_dist_to_player <= range && melee != 0 && arg4 as i32 >= (var1 as i32).abs() && arg3 as i32 >= (var2 as i32).abs()
+}
+
+/// `func_800355B8`: `func_8003555C`'s small sparkle at `pos` (`EffectSsKiraKira_SpawnSmall`,
+/// prim (200, 160, 120) and env (130, 90, 50), falling: velocity (0, -1.5, 0), acceleration (0,
+/// -0.2, 0) (`D_80116268`, `D_80116274`). @bug (game): the colours' alphas aren't set; they're
+/// stack garbage in the C, 0 here.
+pub fn func_800355b8(play: &mut PlayState, pos: Vec3) {
+    play.with_ss(|ss| ss.kirakira_spawn_small(pos, Vec3::new(0.0, -1.5, 0.0), Vec3::new(0.0, -0.2, 0.0), [200, 160, 120, 0], [130, 90, 50, 0]));
+}
+
+/// `func_800359B8`: the actor's pitch (`x`) and roll (`z`) to lie along its floor's slope, facing
+/// `arg1`; nothing without a floor.
+pub fn func_800359b8(actor: &Actor, play: &PlayState, arg1: i16, rot: &mut crate::actor::Rot) {
+    let Some(floor_poly) = actor.floor_poly else { return };
+    let n = play.col.poly_normal(floor_poly);
+    let rad_to_binang = |r: f32| (r as f64 * (32768.0 / std::f64::consts::PI)) as i32 as i16;
+    let (sp38, sp34) = (eng_math::sin_s(arg1), eng_math::cos_s(arg1));
+    let sp28 = -(n.x * sp38) - (n.z * sp34);
+    rot.x = rad_to_binang((sp28 * n.y).atan2(1.0)).wrapping_neg();
+    let a = arg1.wrapping_sub(16375);
+    let (sp2c, sp30) = (eng_math::sin_s(a), eng_math::cos_s(a));
+    let sp24 = -(n.x * sp2c) - (n.z * sp30);
+    rot.z = rad_to_binang((sp24 * n.y).atan2(1.0)).wrapping_neg();
+}
+
 /// `Actor_SpawnFloorDustRing`: `amount_minus_one + 1` clouds of brown dust on the actor's floor
 /// height in a ring of `radius` round `pos_xz`, drifting up (a random 0.3 ± 0.1) and out at
 /// random up to `rand_accel_weight / 2`: `func_8002857C` with `scale` 0, else lit

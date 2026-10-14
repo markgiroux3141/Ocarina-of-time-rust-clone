@@ -34,10 +34,12 @@ fn tick(w: &mut PlayState) {
     w.tick_with(scripted_input(PadState::default(), PadState::default()));
 }
 
-/// Kokiri Forest on a new save, 20 frames in (room 0 loaded), room 2 too if `room2`.
+/// Kokiri Forest on a new save after Saria's greeting, 20 frames in (room 0 loaded), room 2 too
+/// if `room2`.
 fn kokiri(a: &Arc<GameAssets>, room2: bool) -> Option<PlayState> {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     let mut w = oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init");
     for _ in 0..20 {
         tick(&mut w);

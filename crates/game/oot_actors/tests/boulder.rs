@@ -35,11 +35,12 @@ fn tick(w: &mut PlayState) {
     w.tick_with(scripted_input(PadState::default(), PadState::default()));
 }
 
-/// Kokiri Forest on a new save with room 2 loaded and Link placed at `link`, facing `yaw`;
-/// returns once the boulder has spawned (its object loads with the room).
+/// Kokiri Forest on a new save after Saria's greeting with room 2 loaded and Link placed at
+/// `link`, facing `yaw`; returns once the boulder has spawned (its object loads with the room).
 fn room2(a: &Arc<GameAssets>, link: Vec3, yaw: i16) -> Option<(PlayState, ActorHandle)> {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     let mut w = oot_actors::play_entrance(a.clone(), common::data()?, common::rules()?, save).expect("Play_Init");
     for _ in 0..20 {
         tick(&mut w);

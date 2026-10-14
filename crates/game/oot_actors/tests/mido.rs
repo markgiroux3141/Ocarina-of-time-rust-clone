@@ -37,11 +37,12 @@ fn assets() -> Option<Arc<GameAssets>> {
     Some(oot_actors::game_assets(pack).expect("the pack's tables"))
 }
 
-/// Kokiri Forest on a new save changed by `f`, a few frames in.
+/// Kokiri Forest on a new save after Saria's greeting, changed by `f`, a few frames in.
 fn forest(f: impl FnOnce(&mut SaveContext)) -> Option<(PlayState, PadState)> {
     let a = assets()?;
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").unwrap();
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     f(&mut save);
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
     let mut prev = PadState::default();

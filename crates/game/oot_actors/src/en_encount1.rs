@@ -14,9 +14,9 @@
 //!   big one after ten kills.
 //! - **Tektites** (`EnEncount1_SpawnTektites`): red ones within its range, every 10 frames.
 //!
-//! The whole overlay is ported. Its Leevers (`En_Reeba`), Tektites (`En_Tite`) and Wolfos
-//! (`En_Wf`) aren't: they spawn as placeholders (a Leever's `aimType` and the big one aren't
-//! kept). The debug display (`BREG(0)`) isn't drawn.
+//! The whole overlay is ported. Its Leevers (`En_Reeba`) and Tektites (`En_Tite`) aren't: they
+//! spawn as placeholders (a Leever's `aimType` and the big one aren't kept); its Wolfos are
+//! `En_Wf` (GAME-08). The debug display (`BREG(0)`) isn't drawn.
 //!
 //! Params: `spawnType` bits 11 to 15 (`EnEncount1type`: 0 Leevers, 1 Tektites, 2 Stalchildren, 3
 //! Wolfos); `maxCurSpawns` bits 6 to 10 (how many at once); `maxTotalSpawns` bits 0 to 5 (how

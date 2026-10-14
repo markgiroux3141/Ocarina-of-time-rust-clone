@@ -9,8 +9,9 @@
 //! - 3: a horizontal plane that only works once its switch flag is set (`EnHoll_HorizontalBgCoverSwitchFlag`);
 //! - 4, 6: horizontal planes 400 / 200 wide (`EnHoll_HorizontalInvisible`), Kokiri Forest's.
 //!
-//! The plane mesh (`sPlaneDL`, in the overlay) isn't in the asset pack, so type 0 is not
-//! drawn; its `planeAlpha` is still computed.
+//! Type 0 draws its plane (`EnHoll_Draw`): `sPlaneDL` (the overlay's), black, opaque at
+//! `planeAlpha` 255 and translucent below (fading as Player passes through it: the Lost Woods'
+//! dark log openings), turned half round on side 0.
 //!
 //! Params: `type` bits 6 to 8 (`ENHOLL_GET_TYPE`, `EnHollType`: 0 `ENHOLL_H_VISIBLE_NARROW`, 1
 //! `ENHOLL_V_DOWN_BGCOVER_LARGE`, 2 `ENHOLL_V_INVISIBLE`, 3 `ENHOLL_H_BGCOVER_SWITCHFLAG`, 4
@@ -20,11 +21,14 @@
 //! not the placement's.
 //! Flags: reads the switch flag `switchFlag` (type 3).
 
-use glam::Vec3;
+use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
+use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
+use oot_game::gbi::setup_dl;
+use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
-use oot_game::play::PlayState;
+use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::scene::TRANSITION_ACTOR_PARAMS_INDEX_SHIFT;
 
 pub const ACTOR_EN_HOLL: i16 = 0x0023;
@@ -310,6 +314,25 @@ impl EnHoll {
     }
 }
 
+/// The plane's bakes: `sPlaneDL` (`ovl_En_Holl`) after `SETUPDL_37` (opaque) or `SETUPDL_0`
+/// (translucent), its prim colour dynamic.
+const BAKE_PLANE: [&str; 2] = ["EnHoll/plane_opa", "EnHoll/plane_xlu"];
+const SEG_SETUP: u8 = 0x0D;
+const SEG_COLOR: u8 = 0x0E;
+
+pub fn bakes() -> Vec<MeshBake> {
+    [(BAKE_PLANE[0], setup_dl::setup_dl_37()), (BAKE_PLANE[1], setup_dl::setup_dl_0())]
+        .into_iter()
+        .map(|(name, setup)| MeshBake {
+            name: name.into(),
+            object: "gameplay_keep".into(),
+            segments: vec![(SEG_SETUP, BakeSegment::Commands(setup.0)), (SEG_COLOR, BakeSegment::DynamicColor { env: false, prim: true })],
+            prelude: vec![SEG_SETUP, SEG_COLOR],
+            body: BakeBody::DLists(vec![("ovl_En_Holl".into(), "sPlaneDL".into())]),
+        })
+        .collect()
+}
+
 impl ActorImpl for EnHoll {
     fn name(&self) -> &'static str {
         PROFILE.name
@@ -338,6 +361,29 @@ impl ActorImpl for EnHoll {
         if let Some(t) = play.transi_actors.get_mut(i) {
             t.id = -t.id;
         }
+    }
+    fn render_state(&self) -> RenderState {
+        let mut rs = RenderState::of(&self.actor);
+        rs.switches = vec![self.plane_alpha as u32, self.side as u32];
+        rs
+    }
+    /// `EnHoll_Draw`: the plane unless `planeAlpha` is 0: opaque (`SETUPDL_37`) at 255, else
+    /// translucent (`SETUPDL_0`); turned half round (`Matrix_RotateY(M_PI)`) on side 0; prim
+    /// (0, 0, 0, `planeAlpha`).
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+        let &[alpha, side] = rs.switches.as_slice() else { return };
+        if alpha == 0 {
+            return;
+        }
+        let mut m = actor_draw_matrix(rs);
+        if side == 0 {
+            m *= Mat4::from_rotation_y(std::f32::consts::PI);
+        }
+        let mut sv = SegmentValues::default();
+        sv.prim[SEG_COLOR as usize] = Some([0, 0, 0, alpha as u8]);
+        let opaque = alpha == 255;
+        let cmd = DrawCmd { mesh: MeshKey::named(keys::bake(BAKE_PLANE[usize::from(!opaque)])), transform: m, bones: Vec::new(), params: DrawParams { segments: Some(sv), ..Default::default() } };
+        if opaque { out.opa.push(cmd) } else { out.xlu.push(cmd) }
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

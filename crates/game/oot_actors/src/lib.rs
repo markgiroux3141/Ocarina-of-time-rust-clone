@@ -159,13 +159,16 @@ pub mod bg_breakwall;
 pub mod en_tk;
 pub mod en_it;
 pub mod en_rd;
+pub mod bg_spot05_soko;
+pub mod en_wf;
+pub mod en_sa;
 use bg_ydan_hasi::BgYdanHasi;
 use dummy_target::DummyTarget;
 use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE, en_heishi3::PROFILE, en_heishi2::PROFILE, bg_spot15_saku::PROFILE, bg_gate_shutter::PROFILE, en_light::PROFILE, obj_tsubo::PROFILE, bg_spot15_rrbox::PROFILE, en_ta::PROFILE, oceff_wipe::PROFILE, oceff_wipe2::PROFILE, oceff_wipe3::PROFILE, oceff_wipe4::PROFILE, oceff_spot::PROFILE, oceff_storm::PROFILE, en_okarina_effect::PROFILE, shot_sun::PROFILE, en_okarina_tag::PROFILE, en_heishi1::PROFILE, en_ex_ruppy::PROFILE, en_zl4::PROFILE, demo_im::PROFILE, en_cow::PROFILE, en_fu::PROFILE, bg_relay_objects::PROFILE, en_niw_lady::PROFILE, en_attack_niw::PROFILE, en_daiku_kakariko::PROFILE, en_toryo::PROFILE, en_hs2::PROFILE, en_ani::PROFILE, bg_spot01_fusya::PROFILE, bg_spot01_idohashira::PROFILE, bg_spot01_idomizu::PROFILE, bg_spot01_objects2::PROFILE, en_ssh::PROFILE, en_sth::PROFILE, en_cs::PROFILE, obj_makekinsuta::PROFILE, bg_spot02_objects::PROFILE, en_weather_tag::PROFILE, bg_breakwall::PROFILE, en_tk::PROFILE, en_it::PROFILE, en_rd::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE, en_heishi3::PROFILE, en_heishi2::PROFILE, bg_spot15_saku::PROFILE, bg_gate_shutter::PROFILE, en_light::PROFILE, obj_tsubo::PROFILE, bg_spot15_rrbox::PROFILE, en_ta::PROFILE, oceff_wipe::PROFILE, oceff_wipe2::PROFILE, oceff_wipe3::PROFILE, oceff_wipe4::PROFILE, oceff_spot::PROFILE, oceff_storm::PROFILE, en_okarina_effect::PROFILE, shot_sun::PROFILE, en_okarina_tag::PROFILE, en_heishi1::PROFILE, en_ex_ruppy::PROFILE, en_zl4::PROFILE, demo_im::PROFILE, en_cow::PROFILE, en_fu::PROFILE, bg_relay_objects::PROFILE, en_niw_lady::PROFILE, en_attack_niw::PROFILE, en_daiku_kakariko::PROFILE, en_toryo::PROFILE, en_hs2::PROFILE, en_ani::PROFILE, bg_spot01_fusya::PROFILE, bg_spot01_idohashira::PROFILE, bg_spot01_idomizu::PROFILE, bg_spot01_objects2::PROFILE, en_ssh::PROFILE, en_sth::PROFILE, en_cs::PROFILE, obj_makekinsuta::PROFILE, bg_spot02_objects::PROFILE, en_weather_tag::PROFILE, bg_breakwall::PROFILE, en_tk::PROFILE, en_it::PROFILE, en_rd::PROFILE, bg_spot05_soko::PROFILE, en_wf::PROFILE, en_sa::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
@@ -301,6 +304,9 @@ pub fn overlays() -> Overlays {
     o.register(en_tk::ACTOR_EN_TK, en_tk::EnTk::init);
     o.register(en_it::ACTOR_EN_IT, en_it::EnIt::init);
     o.register(en_rd::ACTOR_EN_RD, en_rd::EnRd::init);
+    o.register(bg_spot05_soko::ACTOR_BG_SPOT05_SOKO, bg_spot05_soko::BgSpot05Soko::init);
+    o.register(en_wf::ACTOR_EN_WF, en_wf::EnWf::init);
+    o.register(en_sa::ACTOR_EN_SA, en_sa::EnSa::init);
     o
 }
 
@@ -396,7 +402,46 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(bg_spot02_objects::bakes());
     v.extend(en_tk::bakes());
     v.extend(en_rd::bakes());
+    v.extend(en_wf::bakes());
+    v.extend(en_sa::bakes());
+    v.extend(en_holl::bakes());
     v
+}
+
+/// `ACTOR_ARMS_HOOK` (`actor_table.h`: 0x0066): the hookshot's tip (not ported).
+pub const ACTOR_ARMS_HOOK: i16 = 0x0066;
+
+/// `Actor_GetProjectileActor`: the first hookshot tip or arrow in the item-action list (newest
+/// first) other than `me`, within `radius` of `ref_actor`, still flying, whose next ten frames'
+/// path (`speed × 10` along its yaw, `velocity.y + gravity × 10` up) crosses `ref_actor`'s
+/// cylinder (`colChkInfo`'s radius and height: `CollisionCheck_CylSideVsLineSeg`). @bug (game):
+/// the "still flying" check reads every projectile as a hookshot (`ArmsHook`'s `timer`, at 0x210);
+/// for an arrow that's the top half of `unk_210.x`, so an arrow at x 0 (to 16 bits) is skipped.
+pub fn actor_get_projectile_actor(play: &PlayState, ref_actor: &Actor, me: Option<ActorHandle>, radius: f32) -> Option<ActorHandle> {
+    use eng_math::{cos_s, sin_s};
+    use oot_game::actor_ctx::ACTORCAT_ITEMACTION;
+    play.actors.category(ACTORCAT_ITEMACTION).iter().copied().find(|&h| {
+        if Some(h) == me {
+            return false;
+        }
+        let Some(a) = play.actors.get(h) else { return false };
+        let p = a.base();
+        if p.id != ACTOR_ARMS_HOOK && p.id != en_arrow::ACTOR_EN_ARROW {
+            return false;
+        }
+        // ((ArmsHook*)actor)->timer == 0: no hookshot is ported (its placeholder reads 0).
+        let timer_zero = match a.as_any().downcast_ref::<en_arrow::EnArrow>() {
+            Some(arrow) => arrow.unk_210.x.to_bits() >> 16 == 0,
+            None => true,
+        };
+        if ref_actor.world_pos.distance(p.world_pos) > radius || timer_zero {
+            return false;
+        }
+        let delta = Vec3::new((p.speed_xz * 10.0) * sin_s(p.world_rot.y), p.velocity.y + (p.gravity * 10.0), (p.speed_xz * 10.0) * cos_s(p.world_rot.y));
+        let (mut sp90, mut sp84) = (Vec3::ZERO, Vec3::ZERO);
+        let c = &ref_actor.col_chk_info;
+        oot_game::collision_check::cyl_side_vs_line_seg(c.cyl_radius as f32, c.cyl_height as f32, 0.0, ref_actor.world_pos, p.world_pos, p.world_pos + delta, &mut sp90, &mut sp84) != 0
+    })
 }
 
 /// `Gfx_DrawDListOpa`: `file`'s display list `symbol` (baked with `Gfx_SetupDL_25Opa` in the

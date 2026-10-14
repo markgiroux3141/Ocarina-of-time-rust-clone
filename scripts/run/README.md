@@ -137,52 +137,6 @@ Most scripts pass extra arguments on to the program they run.
 | `test-graveyard.bat` | GAME-07 milestone 6's tests: Player's grab and the ReDeads (the scream, the grab, the mourning, the Sun's Song's stun), Dampé and his dig, the graveyard kid and the soft soil, the royal tomb's gravestone and its opening (the lightning, the spark, the beam, the blast), the weather tags and the graves' walls, the exit's run (`Route::Graveyard`), and the graves' and the tomb's draw configs against the C interpreter |
 | `game-graveyard.bat` | The graveyard at 18:30 from its entrance with Zelda's Lullaby (`graveyard-lullaby`), its intro first. `day`: 10:00 by Dampé's hut (the kid); `dampe`: 18:30 by Dampé's hut; `tomb`: on the royal tomb's terrace (play the lullaby on the spot before the gravestone: J I L J I L); `inside`: the royal tomb; `redeads`: by the tomb's wall with the Sun's Song learned (`graveyard-sun`; L K I L K I by the ReDeads); `redead`: the ReDead grave; `shield`: the shield grave; `hut`: Dampé's hut |
 | `sandbox-graveyard.bat` | Headless: GAME-07 milestone 6's run (from the graveyard's entrance at 18:30 with the lullaby: its intro, a dig with Dampé, the lullaby at the royal tomb, the Keese and the door, past the ReDeads, the Sun's Song taught, the song at the ReDeads), its trace and screenshots into `out\run` |
-| `game-crawlspace.bat` | A shortcut: Link in front of the crawlspace on the way to the Kokiri Sword (`--entrance ENTR_KOKIRI_FOREST_0 --at ...`). W up to it, Space (A) when it says Enter, W through it: climbing out at the far end plays its one-point cutscene (9601: the camera's spline up and out, then the normal camera without a jump); backing out the way in (S) plays 9602 |
-| `sandbox.bat` | The dev sandbox, with any flags |
-| `sandbox-playthrough.bat` | Headless: the playthrough's trace and screenshots, into `out\run\` |
-| `sandbox-sword-chest.bat` | Headless: the Kokiri Sword run's trace and screenshots, into `out\run\` |
-| `sandbox-mido-shop.bat` | Headless: the shop and Mido run's trace and screenshots, into `out\run\` |
-| `sandbox-new-save-deku-tree.bat` | Headless: the new save's run into the Deku Tree (the talk's cutscenes, the mouth, the intro): its trace and screenshots, into `out\run\` |
-| `sandbox-new-file-deku-tree.bat` | Headless: Phase 4's exit run, the new file's opening, C-Up to Navi and on into the Deku Tree: its trace and screenshots, into `out\run\` |
-| `sandbox-audio-log.bat` | Headless: the new file's run (Phase 4's exit run) with the audio library offline alongside: the sequence commands and the library's commands by frame, and what each player played, into `out\run\new_file_deku_tree_audio.json`; the run's sound (about 10 minutes) as `out\run\new_file_deku_tree.wav`, then opens it. The log lists the sound effects asked for, with their names and where they are; the cutscenes play their own music and sounds |
-| `sandbox-mido-shop-audio.bat` | Headless: the Mido and shop run (Phase 5's exit run) with the audio offline: its audio log into `out\run\mido_shop_audio.json` (the `mido_shop_audio` golden) and its sound as `out\run\mido_shop.wav` (about 5 minutes), then opens it |
-| `ootx-sfx.bat` | Looks a sound effect up in the pack's tables (`ootx sfx`): by id (`0x2800`), name (`NA_SE_EV_DOOR_OPEN`) or part of one (`DOOR`), with its importance, parameters and the constant to paste; asks when given nothing |
-| `audio-wav.bat` | Offline WAVs from the audio library (`ootx audio-wav`), into `out\audio\`: Kokiri Forest's music (75 s, past its loop), an instrument's note at C4 and C3, a drum, and the instrument's sample as stored; then opens the music. With arguments, `ootx audio-wav <args>` (`--seq`, `--font --inst --note`, `--font --drum`, `--raw`, `--seconds`, `--wav`) |
-
-Game keys: WASD to move, Space = A, E = B, Q = Z, I/J/K/L = C, F5 the console's reset, P shows the placeholders,
-F1 the collision, Backspace respawns. At a crawlspace's mouth A says Enter; W crawls, S backs
-out. Enter (Start) opens the pause menu (GAME-05 milestone 5b-1), as `KaleidoSetup_Update`
-reads Start in the play frame, so not while a message box is up: WASD moves the item page's
-cursor, J/K/L equip on C-Left/Down/Right, R and Q (R and Z) turn the pages; in a dungeon the
-map page's floors and items take WASD too (5b-2), Enter closes it.
-Closing it equips every owned piece of a type with nothing worn (the sword also goes on B), the
-stand-in for the equipment page. In a shop, the stick left or right browses a shelf, A chooses, B leaves. In a cutscene, A
-reads its texts and answers a question (the stick picks the answer); Link is held meanwhile.
-In the opening, Enter (Start) skips to the next scene (its terminator). I (C-Up) talks to Navi
-when she calls (after about 30 s in one scene); otherwise it's the viewpoint in houses.
-Sound: the window opens your default output device (`--no-audio` doesn't), and each scene plays
-its own music, or by night its nature ambience (`--time 20:00`); `--music <n>` forces sequence n
-in place of the first scene's. Link, the message box, the HUD (rupees counting, the low-health
-alarm), the targeting, the chests, doors, Navi, bushes, rocks, signs, rupees and the other
-ported actors have their sounds (GAME-04 milestone 3); cutscenes play their scripts' music, and
-Link's cutscene voices and sounds (GAME-04b milestone 3).
-
-## Adding a script
-
-Each session adds scripts for what it built. Copy one that's close to the new one:
-
-```bat
-@echo off
-rem What it runs, and what to look at.
-setlocal
-call "%~dp0_env.bat"
-call "%~dp0_need.bat" oot || exit /b 1
-"%BIN%\oot.exe" --entrance ENTR_... %*
-exit /b %errorlevel%
-```
-
-`%BIN%` is the build's `release` folder. `_need.bat <binary>` stops with a hint if that
-binary isn't built yet. Then add a line for the new script to the table above, and to
-`menu.bat` if it's one to run often.
-
-The files are CRLF (`.gitattributes`), since `cmd` can misread labels in LF batch files.
+| `test-meadow.bat` | GAME-08 milestone 1's tests: Saria (`En_Sa`: her types, her texts, Kokiri Forest's greeting on a new save, the meadow's lesson and the song given), the Wolfos (`En_Wf`: its rise within 240, its damage, its switch flag, a child's fight), the meadow's gate and blocks (`Bg_Spot05_Soko`), the exit's run (`Route::Meadow`), and the actor schemas (ADR 0066) |
+| `game-meadow.bat` | The Lost Woods from Kokiri Forest with Zelda's Letter and the Sun's Song (`graveyard-sun`): the right turns to the meadow, the Wolfos, the maze's scrubs, Saria's lesson. `meadow`: the meadow's entrance; `saria`: on Saria's plateau (her lesson starts at once); `kokiri`: a new save in Link's house (Saria's greeting as he walks out) |
+| `sandbox-meadow.bat` | Headless: GAME-08 milestone 1's run (from the Lost Woods' entrance with the letter: the owl, the right turns, the Wolfos killed, three Mad Scrubs bounced and killed, the maze and the ramp, Saria's lesson and Saria's Song), its trace and screenshots into `out\run` |

@@ -362,7 +362,8 @@ fn entering_the_deku_tree_the_first_time_plays_its_intro() {
 fn a_forced_text_holds_link_until_it_is_read() {
     let Some(a) = assets() else { return };
     // Out of the Kokiri shop: its forced En_Wonder_Talk2 (text 0x218) is by the door.
-    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_4", |_| {}) else { return };
+    // (After Saria's greeting: on a new save it would start as Link comes out.)
+    let Some(mut w) = enter(&a, "ENTR_KOKIRI_FOREST_4", common::after_sarias_greeting) else { return };
     let mut d = Driver { prev: PadState::default(), no: false };
     for _ in 0..40 {
         w.tick_with(scripted_input(PadState::default(), PadState::default()));

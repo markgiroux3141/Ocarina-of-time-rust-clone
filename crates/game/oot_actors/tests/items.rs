@@ -24,7 +24,8 @@ fn assets() -> Option<Arc<GameAssets>> {
 fn enter() -> Option<PlayState> {
     let a = assets()?;
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
     frames(&mut w, 30);
     Some(w)

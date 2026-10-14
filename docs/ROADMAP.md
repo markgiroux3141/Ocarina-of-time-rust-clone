@@ -615,6 +615,31 @@ volume (BACKLOG #32) first, `En_Bom` (#33) with the bombs.
      `En_Po_Relay` left for Phase 14 (a child can't open Dampé's grave). The masks (#39), the bugs
      (#59) and the lens (#60) left out. `Route::Graveyard`, the `graveyard` golden.
 
+## Phase 9: the Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)
+
+**Goal:** child Link with Zelda's letter through the Lost Woods to the meadow, its Wolfos and
+maze, and Saria's Song; the woods' Skull Kids and scrubs; Lon Lon Ranch's Epona's Song, the young
+Epona, Ingo and Talon's house. Exit: Saria's Song learned. See
+[GAME-08](GAME-08-woods-meadow-and-ranch.md)'s survey. Decided (2026-10-14): the split below, the
+exit first; every game and shop of the phase's scenes in (the Skull Kids' memory game, the target
+scrub, Talon's milk and Super Cucco game with the HUD timer); GAME-07's scope rule (every actor
+whole, a child-killed one its init's checks); the coverage table's corrections. Before it, the
+actor schema (ADR 0066, BACKLOG #52) for all ported actors.
+
+1. **The meadow and Saria's Song:** `En_Sa` (with Kokiri Forest's greeting), `En_Wf`,
+   `Bg_Spot05_Soko`; the woods' maze walked.
+   - **Exit:** from the Lost Woods' entrance with the letter to Saria's Song learned.
+   - **Done** (2026-10-14, ADR 0067): with the `z_actor.c` helpers the Wolfos calls,
+     `CollisionCheck_CylSideVsLineSeg`, `EffectSsKiraKira`; Saria's greeting now plays on every
+     new save (the routes, tests and presets brought up to date). `Route::Meadow`, the `meadow`
+     goldens.
+2. **The Lost Woods' Skull Kids and scrubs:** `En_Skj` with `En_Skjneedle`, the ocarina's memory
+   game (BACKLOG #47's Skull Kid part), `En_Dnt_Nomal` with `En_Ex_Item`, `EffectSsExtra` and
+   one-point cutscene 4140.
+3. **Lon Lon Ranch:** Epona's Song's cutscene end (destination 94), the two draw configs,
+   `En_Horse_Link_Child`, `En_Horse_Normal`, `En_In` (the child's part), `En_Crow`, `En_Ma2`'s
+   init, `En_Ta`'s ranch house with the milk and the Super Cucco game, the HUD timer (#44).
+
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:
@@ -639,7 +664,7 @@ this outline. The dungeons are Master Quest's.
 | Phase | Places | Dungeon and boss | What it brings | Exit |
 |---|---|---|---|---|
 | 8 (done) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 5 and 6 above: lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
-| 9 | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
+| 9 (in progress) | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
 | 10 | Death Mountain Trail and summit, Goron City | Dodongo's Cavern; King Dodongo | Bombs (`En_Bom`, BACKLOG #33) and bomb flowers, the Goron's Bracelet, Darunia's dance, the summit's Great Fairy (the magic meter) | The Goron's Ruby |
 | 11 | Zora's River, Zora's Domain, Zora's Fountain, Lake Hylia | Jabu-Jabu's Belly; Barinade | Bottles (the fish, Ruto's letter), diving (the silver scale), Ruto carried, the boomerang, the frogs and the scarecrow (#47) | The Zora's Sapphire, then the Ocarina of Time at the moat |
 | 12 | The Temple of Time, the market's ruins, the Chamber of the Sages | | The Door of Time (#37), the Master Sword, adult Link throughout (models, items, the save's age), time travel back and forth, the Prelude of Light, the warp songs | Adult Link out of the Temple |

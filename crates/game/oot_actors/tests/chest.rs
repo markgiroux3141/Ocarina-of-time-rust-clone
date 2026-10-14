@@ -51,10 +51,11 @@ fn chest(w: &PlayState) -> Option<ActorHandle> {
     w.actors.all().into_iter().find(|&h| w.actors.downcast::<EnBox>(h).is_some_and(|b| b.actor.home_pos.distance(CHEST_POS) < 1.0))
 }
 
-/// Kokiri Forest on a new save, room 2 loaded with its chest initialised.
+/// Kokiri Forest on a new save after Saria's greeting, room 2 loaded with its chest initialised.
 fn room2(a: Arc<GameAssets>) -> Option<(PlayState, PadState)> {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     let sound = a.pack.audio_data().expect("the pack's audio data");
     let mut w = oot_actors::play_entrance(a, common::data()?, common::rules()?, save).expect("Play_Init");
     // The audio library offline beside it, for the fanfares.
@@ -218,6 +219,7 @@ fn a_piece_of_heart() {
     let Some(a) = assets() else { return };
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     // One piece already (questItems' top four bits).
     save.inventory.quest_items |= 1 << QUEST_HEART_PIECE_COUNT;
     let Some((data, rules)) = common::data().zip(common::rules()) else { return };

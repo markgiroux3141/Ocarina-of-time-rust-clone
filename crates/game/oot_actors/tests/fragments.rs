@@ -46,11 +46,12 @@ fn sfx_on(w: &PlayState, frame: u32, id: u16) -> bool {
     w.audio.log.as_ref().unwrap().sfx.iter().any(|&(f, s, _)| f == frame && s == id)
 }
 
-/// Kokiri Forest's village on a new file with the Kokiri Sword and the Deku Shield, the sound log
-/// on, 4 frames in (room 0's props initialised).
+/// Kokiri Forest's village on a new file after Saria's greeting with the Kokiri Sword and the
+/// Deku Shield, the sound log on, 4 frames in (room 0's props initialised).
 fn village(a: &Arc<GameAssets>) -> PlayState {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_3").expect("entrance");
     let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     oot_game::save::kokiri_sword_and_deku_shield(&mut save);
     let audio = oot_game::audio::GameAudio::boot_logged(a.audio.clone(), a.audio_tables.clone(), true);
     let mut w = PlayState::play_init_with(a.clone(), data().unwrap(), rules().unwrap(), save, audio).expect("Play_Init");

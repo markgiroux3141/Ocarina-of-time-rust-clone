@@ -55,6 +55,14 @@ pub fn world() -> Option<PlayState> {
     world_at(c.spawn, c.spawn_yaw)
 }
 
+/// The save as it is once Saria's greeting (`gKokiriForestSariaGreetingCs`, `EnSa_GetType`) has
+/// played: `INFTABLE_SARIA_GREETED_LINK`. On a new save her init in Kokiri Forest starts the
+/// greeting at once; a test about something else there starts from a player's save as it is once
+/// he's left his house.
+pub fn after_sarias_greeting(save: &mut oot_game::save::SaveContext) {
+    save.set_inf_table(oot_actors::en_sa::INFTABLE_SARIA_GREETED_LINK);
+}
+
 /// One frame's record of what the tests check.
 #[derive(Debug, Clone)]
 pub struct Frame {

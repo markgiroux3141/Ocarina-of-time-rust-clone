@@ -31,7 +31,8 @@ fn assets() -> Option<(Arc<GameAssets>, eng_audio::AudioData)> {
 /// Kokiri Forest at 10:00 with the audio offline beside it and the log on.
 fn forest(a: &Arc<GameAssets>, data: &eng_audio::AudioData) -> Option<PlayState> {
     let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_0").expect("entrance");
-    let save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    common::after_sarias_greeting(&mut save);
     let audio = oot_game::audio::GameAudio::boot_logged(a.audio.clone(), a.audio_tables.clone(), true);
     let mut w = PlayState::play_init_with(a.clone(), common::data()?, common::rules()?, save, audio).expect("Play_Init");
     w.audio_side = Some(Box::new(OfflineAudio::new(data, false)));

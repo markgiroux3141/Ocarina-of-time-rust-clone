@@ -477,6 +477,24 @@ pub mod setup_dl {
         d
     }
 
+    /// `SETUPDL_37`: `gsSPTexture(.., G_OFF)`, `gsDPSetCombineLERP(PRIMITIVE, 0, SHADE, 0, 0, 0, 0,
+    /// PRIMITIVE, 0, 0, 0, COMBINED, 0, 0, 0, COMBINED)`, `gsDPSetOtherMode(G_AD_NOTPATTERN |
+    /// G_CD_MAGICSQ | .. | G_TP_PERSP | G_CYC_2CYCLE | G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL |
+    /// G_RM_FOG_SHADE_A | G_RM_AA_ZB_OPA_SURF2)`, `gsSPLoadGeometryMode(G_ZBUFFER | G_SHADE |
+    /// G_CULL_BACK | G_FOG | G_LIGHTING | G_SHADING_SMOOTH)`.
+    pub fn setup_dl_37() -> Dl {
+        let mut d = Dl::default();
+        d.pipe_sync();
+        d.texture_on(false);
+        let c1 = [cc_ab::PRIMITIVE, cc_ab::ZERO, cc_c::SHADE, cc_d::ZERO, ac::ZERO, ac::ZERO, ac::ZERO, ac::PRIMITIVE];
+        d.combine_lerp(c1, PASS2);
+        // G_RM_AA_ZB_OPA_SURF2: AA_EN | Z_CMP | Z_UPD | IM_RD | CVG_DST_CLAMP | ZMODE_OPA |
+        // ALPHA_CVG_SEL | GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_A_MEM).
+        d.0.push((0xEF00_0000 | OTHERMODE_H_1CYCLE_PERSP | G_CYC_2CYCLE, G_RM_FOG_SHADE_A | 0x0011_2078));
+        d.0.push((0xD900_0000, G_ZBUFFER | G_SHADE | G_CULL_BACK | G_FOG | G_LIGHTING | G_SHADING_SMOOTH));
+        d
+    }
+
     /// `SETUPDL_38`: `gsSPTexture(.., G_OFF)`, `gsDPSetCombineMode(G_CC_SHADE, G_CC_SHADE)`,
     /// `gsDPSetOtherMode(G_AD_NOTPATTERN | G_CD_MAGICSQ | .. | G_TP_PERSP | G_CYC_1CYCLE |
     /// G_PM_NPRIMITIVE, G_AC_NONE | G_ZS_PIXEL | G_RM_AA_ZB_XLU_SURF | G_RM_AA_ZB_XLU_SURF2)`,

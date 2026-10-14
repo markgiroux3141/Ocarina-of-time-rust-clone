@@ -296,7 +296,9 @@ fn the_mido_and_shop_run_sounds_as_the_c() {
     for (i, o) in obs.iter().enumerate().skip(1) {
         let p = &obs[i - 1];
         let want = match (p.navi, o.navi) {
-            (Some((h0, before, _)), Some((h, after, silenced))) if h0 == h && before == 0 && after == 7 && silenced == 0 => vec![SfxPos::Actor(h)],
+            // The sound is decided before `unk_2c7` counts down (func_80A0461C's end): the frame
+            // after a cutscene (Saria's greeting) it's still 1, and silent.
+            (Some((h0, before, silenced)), Some((h, after, _))) if h0 == h && before == 0 && after == 7 && silenced == 0 => vec![SfxPos::Actor(h)],
             _ => vec![],
         };
         vanished += want.len();
