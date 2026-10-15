@@ -4,7 +4,7 @@
 through the Sacred Forest Meadow's maze to Saria and her song, and at Lon Lon Ranch for Malon,
 Epona's Song and the child's Epona, Ingo, and Talon's house. Exit: Saria's Song learned.
 
-**Status:** decided (2026-10-14). The user chose:
+**Status:** done (2026-10-15; its exit review at the end). Decided 2026-10-14; the user chose:
 - the three milestones below, the exit first;
 - every game and shop the phase's scenes hold: the Skull Kids' memory game, the Lost Woods' target
   scrub and its seed bag, Talon's milk and Super Cucco game (with the HUD timer);
@@ -608,3 +608,66 @@ scripts\run\sandbox-ranch.bat
    bottle of milk.
    Talk again: 0x208B (milk for 30 rupees with an empty bottle, or play again).
 4. Lost: 0x2085, a retry for 5 rupees.
+
+
+## Phase 9's end (the exit review, 2026-10-15)
+
+**The exit, met:** Saria's Song learned (milestone 1, `Route::Meadow`). The phase's other places
+are played through too: the Lost Woods' Skull Kids and scrubs (milestone 2), Lon Lon Ranch, its
+foal and Talon's house (milestone 3). Commits: the actor schema (part A, 05f4f0e), 12c0d60, da59e44,
+bd4bbf5 and 53fda8c; the glb export (9f413b4) between milestones 1 and 2.
+
+### What the phase built
+
+- **Actors, whole:** `En_Sa`, `En_Wf`, `Bg_Spot05_Soko`, `En_Skj`, `En_Skjneedle`, `En_Dnt_Nomal`,
+  `En_Ex_Item`, `En_Horse_Link_Child`, `En_Horse_Normal`, `En_Crow`, and `En_Ta`'s ranch house
+  (the actor whole now); the child's `En_In` (the adult's race a placeholder, Phase 13) and
+  `En_Ma2`'s init. 131 ported actors at the phase's start, 143 at its end; every one of the
+  phase's scenes' actors that a child meets is ported (COVERAGE: 10 of 10).
+- **Systems:** the actor schema for every actor (ADR 0066); the `z_actor.c` helpers the Wolfos
+  needed, `EffectSsKiraKira` (ADR 0067); the ocarina's memory game, `Effect_Ss_Extra`, one-point
+  cutscene 4140 (ADR 0069); the first live skin skeletons, the ranch's draw configs (ADR 0070); the
+  HUD's timers whole and `play->damagePlayer` (ADR 0071); the characters as .glb (ADR 0068).
+- **Runs:** `Route::Meadow` (6,853 frames), `Route::LostWoods` (5,736), `Route::Ranch` (5,792),
+  each from the last one's end state as a preset: `graveyard-sun`, `meadow-saria`,
+  `lost-woods-games`, and now `ranch-epona` (below).
+- **Numbers:** 996 tests at the phase's start (after the schema), 1,106 at its end (one ignored);
+  goldens 187 hashes and 142 cases, then 210 and 161 (`out/golden_base22`). Menu entries 122 to
+  131.
+
+### Phase 10's start: the `ranch-epona` preset
+
+The save at `Route::Ranch`'s end, found by diffing it over the run, as each milestone did:
+`lost-woods-games` and the ranch's intro (`EVENTCHKINF_B4`), Malon's flags
+(`EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH`, `_CAN_LEARN_EPONAS_SONG`,
+`INFTABLE_TOLD_EPONA_IS_SCARED`), Epona's Song, Talon's flags (`INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE`,
+`ITEMGETINF_TALON_BOTTLE`) and the bottle of milk in the first bottle's slot, 16 rupees. No scene
+flags change; the clock doesn't move (the ranch's and the house's rooms set no time speed: the
+ROM's headers). `tests/ranch.rs` checks the preset against the run's end: the same flags,
+inventory, buttons, rupees and every scene's flags.
+
+With it, Link has the Kokiri Sword and Deku Shield, the Kokiri Emerald, three hearts and two
+pieces of heart, the Fairy
+Ocarina with Zelda's Lullaby, Epona's Song, Saria's Song and the Sun's Song, the slingshot with
+the 40 seed bag, Zelda's Letter (shown at Kakariko's gate: the way to Death Mountain is open), and
+the bottle of milk.
+
+### Left for later (all in BACKLOG or the phases' scopes)
+
+- **Masks** (#39): the Skull Kid's Skull Mask trade, every mask reaction; the shared helpers'
+  private copies (#69) with them.
+- **The adult's** (Phase 13): Ingo's race and rental, adult Malon, `En_Horse` (#51).
+- **The ocarina's** scarecrow songs and frogs (#47, Phase 11); `En_Okuta` (Phase 11).
+- **The Deku theatre** (`En_Dnt_Demo`, Phase 20); the stage scrubs wait on it.
+- **Fidelity checks:** a Mad Scrub's nut on the meadow's ramp (#64), `RAD_TO_BINANG`'s precision
+  (#66), a fading Skull Kid's draw (#67), the horses' sound positions (#68).
+- **Tools:** the sandbox's `--room` (#65).
+- **Rendering debt** (ROADMAP's cross-cutting): the shadows (`ActorShadow_DrawHorse` and the
+  circle's alpha), `En_Ex_Item`'s highlights.
+
+### Checked
+
+- ROADMAP (Phase 9 done, its milestones' entries), COVERAGE (Phase 9 done, 10 of 10), the ADR
+  index (0066 to 0071), BACKLOG (#44 struck; #63 to #69 open) agree with this doc.
+- `cargo test --release --workspace` passes (1,106), `cargo test -p layering` passes, the goldens
+  check (210 of 210).

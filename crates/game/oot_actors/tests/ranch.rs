@@ -73,6 +73,16 @@ fn malons_lesson_and_the_foal() {
     assert_eq!(s.inventory.items[0x12], 0x1A);
     assert_eq!(s.rupees + s.rupee_accumulator, start.rupees - 10);
     assert_eq!(s.timer_state, oot_game::save::TIMER_STATE_OFF);
+    // The run's end is the `ranch-epona` preset (Phase 9's end, Phase 10's start): the same flags,
+    // inventory and rupees.
+    let mut p = oot_game::save::SaveContext::new(e, false, route.day_time());
+    p.apply_preset("ranch-epona").unwrap();
+    assert_eq!((&p.event_chk_inf, &p.inf_table, &p.item_get_inf, &p.event_inf), (&s.event_chk_inf, &s.inf_table, &s.item_get_inf, &s.event_inf));
+    assert_eq!((&p.inventory.items, &p.inventory.ammo, p.inventory.upgrades, p.inventory.quest_items), (&s.inventory.items, &s.inventory.ammo, s.inventory.upgrades, s.inventory.quest_items));
+    assert_eq!((p.rupees, p.ocarina_game_round_num, &p.equips.button_items), (s.rupees + s.rupee_accumulator, s.ocarina_game_round_num, &s.equips.button_items));
+    for (i, (a, b)) in p.scene_flags.iter().zip(s.scene_flags.iter()).enumerate() {
+        assert_eq!(format!("{a:?}"), format!("{b:?}"), "scene {i:#x}'s flags");
+    }
     // The ranch's intro seen (sEntranceCutsceneTable's EVENTCHKINF_B4).
     assert!(s.get_event_chk_inf(0xB4));
     assert_eq!(s.health, start.health);

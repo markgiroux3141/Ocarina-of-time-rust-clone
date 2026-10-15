@@ -653,7 +653,9 @@ actor schema (ADR 0066, BACKLOG #52) for all ported actors.
      and the water's, their draw), `En_Ta`'s ranch house (the milk, the Super Cucco game; #44
      closed); `Route::Ranch` on into Talon's house, the game won and the bottle of milk.
 
-**Phase 9 done** (2026-10-15): its three milestones built; its exit review next.
+**Phase 9 done** (2026-10-15): its three milestones built, and its exit review (GAME-08's last
+section): the `ranch-epona` preset (Phase 10's start), what's left and where. Phase 10 starts
+with its survey.
 
 ## Cross-cutting debts
 
