@@ -55,6 +55,7 @@ echo   116  test-kakariko        GAME-07's Kakariko tests: the lift and carry, A
 echo   119  test-graveyard       GAME-07's graveyard tests: the ReDeads, Dampe, the kid, the tomb, the weather, the run
 echo   122  test-meadow          GAME-08's meadow tests: Saria, the Wolfos, the gate, the run, the actor schemas
 echo   126  test-lost-woods      GAME-08's Lost Woods tests: the Skull Kids, the memory game, the target scrub, the run
+echo   129  test-ranch           GAME-08's ranch tests: the foal, the horses, Ingo, the Guays, the run
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -100,6 +101,7 @@ echo   117  game-kakariko        Kakariko by day with the letter (asks: or the p
 echo   120  game-graveyard       The graveyard at 18:30 with the lullaby (asks: or day, Dampe, the tomb, inside, the ReDeads, a grave)
 echo   123  game-meadow          The Lost Woods to the meadow with the letter (asks: or the meadow, Saria, a new save's greeting)
 echo   127  game-lost-woods      The Lost Woods' Skull Kids and target with Saria's Song (asks: or the stump, the target, the game)
+echo   130  game-ranch           Lon Lon Ranch: Malon's lesson and the foal (asks: or Malon, night, the stable, Ingo)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -139,6 +141,7 @@ echo   121  sandbox-graveyard    The graveyard run's trace and screenshots (Damp
 echo   124  sandbox-meadow       The meadow run's trace and screenshots (the woods, the Wolfos, the scrubs, Saria), into out\run
 echo   125  export-glb           The game's characters as .glb files for Blender, T-posed, into out\glb\characters
 echo   128  sandbox-lost-woods   The Lost Woods run's trace and screenshots (the stump, the target, the memory game), into out\run
+echo   131  sandbox-ranch        The ranch run's trace and screenshots (Malon, the song's scene, the foal), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -277,6 +280,9 @@ if "%pick%"=="125" set "script=export-glb"
 if "%pick%"=="126" set "script=test-lost-woods"
 if "%pick%"=="127" goto lostwoods
 if "%pick%"=="128" set "script=sandbox-lost-woods"
+if "%pick%"=="129" set "script=test-ranch"
+if "%pick%"=="130" goto ranch
+if "%pick%"=="131" set "script=sandbox-ranch"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -290,6 +296,14 @@ set "which="
 set /p "which=Which (empty: the entrance by day; pen, roof, gate, night, dusk, cow, windmill, skulltula, guests, shop or guardhouse): "
 call "%~dp0game-kakariko.bat" %which%
 echo game-kakariko finished (exit code %errorlevel%).
+pause
+goto menu
+
+:ranch
+set "which="
+set /p "which=Which (empty: the ranch's gate; malon, night, stable, stable-night or ingo): "
+call "%~dp0game-ranch.bat" %which%
+echo game-ranch finished (exit code %errorlevel%).
 pause
 goto menu
 

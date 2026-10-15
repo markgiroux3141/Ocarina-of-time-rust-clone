@@ -330,6 +330,14 @@ pub fn skin_draw(skel: &SkinSkeleton, joints: &[[i16; 3]], place: &SkinPlace, se
     (to_mat4(&skin_mtx), skin_bones(skel, &mats, false))
 }
 
+/// `Skin_GetLimbPos`: the point `offset` in limb `limb`'s space, in the world: through the
+/// skin's matrix (`skin->mtx`) times the limb's (`gSkinLimbMatrices[limbIndex]`), both as the
+/// last `Skin_ApplyAnimTransformations` left them (`apply_anim_transformations`' pair; the
+/// horses call it from their post-draw, after the draw's).
+pub fn get_limb_pos(skin_mtx: &MtxF, mats: &[MtxF], limb: usize, offset: Vec3) -> Vec3 {
+    mult_xyz(&mult(skin_mtx, &mats[limb]), offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +372,15 @@ mod tests {
         assert_eq!(o(1), Vec3::new(0.0, 110.0, 0.0));
         assert_eq!(o(2), o(1));
         assert_eq!(o(3), Vec3::new(50.0, 10.0, 0.0));
+    }
+
+    #[test]
+    fn limb_pos_is_the_skin_times_the_limb() {
+        let skin = set_translate_rotate_yxz_scale(0.01, 0.01, 0.01, 0, 0x4000, 0, 100.0, 0.0, -50.0);
+        let mats = [set_translate(0.0, 0.0, 0.0), set_translate(0.0, 1000.0, 2000.0)];
+        let p = get_limb_pos(&skin, &mats, 1, Vec3::new(0.0, 0.0, 500.0));
+        // (0, 1000, 2500) scaled by 0.01 and turned a quarter about y: z goes to x.
+        assert!((p - Vec3::new(125.0, 10.0, -50.0)).length() < 1e-3, "{p}");
     }
 
     #[test]

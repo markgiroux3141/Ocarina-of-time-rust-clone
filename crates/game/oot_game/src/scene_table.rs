@@ -385,6 +385,20 @@ fn draw_config_spot01(_st: &mut DrawConfigState, _b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigLonLonRanch` (Lon Lon Ranch): its windows on segment 8 (`segment_textures`);
+/// no display lists.
+fn draw_config_spot20(_st: &mut DrawConfigState, _b: &mut Buffers) {
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigLonLonBuildings` (Talon's house, `souko`): its entrance on segment 8
+/// (`segment_textures`); no display lists.
+fn draw_config_souko(_st: &mut DrawConfigState, _b: &mut Buffers) {
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
 /// A texture a draw config points a segment at this frame
 /// (`gSPSegment(.., SEGMENTED_TO_VIRTUAL(texture))`): in the OPA buffer, or the XLU one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -417,10 +431,31 @@ fn textures_miharigoya(st: &DrawConfigState) -> Vec<SegmentTexture> {
     ]
 }
 
+/// `sLonLonRanchWindowTextures` (by `nightFlag`; the C's names, `Range` and `Windows` theirs).
+const LON_LON_RANCH_WINDOW_TEXTURES: [&str; 2] = ["gLonLonRanchDayWindowTex", "gLonLonRangeNightWindowsTex"];
+/// `sLonLonHouseEntranceTextures` (by `nightFlag`).
+const LON_LON_HOUSE_ENTRANCE_TEXTURES: [&str; 2] = ["gLonLonHouseDayEntranceTex", "gLonLonHouseNightEntranceTex"];
+
+/// `Scene_DrawConfigLonLonRanch`'s segment 8 (OPA): the windows lit by night.
+fn textures_spot20(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    vec![SegmentTexture { segment: 0x08, xlu: false, file: "spot20_scene", symbol: LON_LON_RANCH_WINDOW_TEXTURES[st.night as usize] }]
+}
+
+/// `Scene_DrawConfigLonLonBuildings`' segment 8 (XLU): Talon's house's entrance, the light
+/// through it by `nightFlag`.
+fn textures_souko(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    vec![SegmentTexture { segment: 0x08, xlu: true, file: "souko_scene", symbol: LON_LON_HOUSE_ENTRANCE_TEXTURES[st.night as usize] }]
+}
+
 type TexturesFn = fn(&DrawConfigState) -> Vec<SegmentTexture>;
 
 /// The ported draw configs that point segments at textures by state.
-const TEXTURES: &[(&str, TexturesFn)] = &[("SDC_KAKARIKO_VILLAGE", textures_spot01), ("SDC_MARKET_GUARD_HOUSE", textures_miharigoya)];
+const TEXTURES: &[(&str, TexturesFn)] = &[
+    ("SDC_KAKARIKO_VILLAGE", textures_spot01),
+    ("SDC_MARKET_GUARD_HOUSE", textures_miharigoya),
+    ("SDC_LON_LON_RANCH", textures_spot20),
+    ("SDC_LON_LON_BUILDINGS", textures_souko),
+];
 
 /// The textures the draw config `sdc` points segments at this frame (empty for the others).
 pub fn segment_textures(sdc: &str, st: &DrawConfigState) -> Vec<SegmentTexture> {
@@ -448,6 +483,8 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_GRAVE_EXIT_LIGHT_SHINING", draw_config_grave_exit_light_shining),
     ("SDC_FAIRYS_FOUNTAIN", draw_config_fairys_fountain),
     ("SDC_ROYAL_FAMILYS_TOMB", draw_config_royal_familys_tomb),
+    ("SDC_LON_LON_RANCH", draw_config_spot20),
+    ("SDC_LON_LON_BUILDINGS", draw_config_souko),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

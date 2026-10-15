@@ -282,6 +282,21 @@ fn the_window_textures_are_loaded_through_the_segments_the_draw_configs_swap() {
     let adult = DrawConfigState { child: false, night: false, ..Default::default() };
     let t = scene_table::segment_textures("SDC_MARKET_GUARD_HOUSE", &adult);
     assert_eq!(t.iter().map(|t| (t.segment, t.symbol)).collect::<Vec<_>>(), vec![(0x08, "gGuardHouseOutSideView2NightTex"), (0x09, "gGuardHouseOutSideView1NightTex")]);
+    // Scene_DrawConfigLonLonRanch: segment 8 (OPA) sLonLonRanchWindowTextures[nightFlag], the
+    // day's on layer 0 and the night's on layer 1. The windows' material also sets a second tile
+    // of one texel (4-bit) at the same address: left out here.
+    let windows = |layer| room_textures_from(&pack, "spot20_scene", layer, 0x0800_0000).into_iter().filter(|t| t.len() > 4).collect::<Vec<_>>();
+    let (r0, r1) = (windows(0), windows(1));
+    assert!(!r0.is_empty() && r0.iter().all(|t| *t == tex("spot20_scene", "gLonLonRanchDayWindowTex")), "the ranch's day windows");
+    assert!(!r1.is_empty() && r1.iter().all(|t| *t == tex("spot20_scene", "gLonLonRangeNightWindowsTex")), "the ranch's night windows");
+    let t = scene_table::segment_textures("SDC_LON_LON_RANCH", &st(true));
+    assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, false, "gLonLonRangeNightWindowsTex"));
+    // Scene_DrawConfigLonLonBuildings: segment 8 (XLU) sLonLonHouseEntranceTextures[nightFlag].
+    // Talon's house has one header, baked by day.
+    let h0 = room_textures_from(&pack, "souko_scene", 0, 0x0800_0000);
+    assert!(!h0.is_empty() && h0.iter().all(|t| *t == tex("souko_scene", "gLonLonHouseDayEntranceTex")), "Talon's house's entrance");
+    let t = scene_table::segment_textures("SDC_LON_LON_BUILDINGS", &st(true));
+    assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, true, "gLonLonHouseNightEntranceTex"));
 }
 
 #[test]

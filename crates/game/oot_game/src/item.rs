@@ -213,6 +213,7 @@ pub const UPG_DEKU_NUTS: usize = 7;
 pub const QUEST_MEDALLION_FOREST: u32 = 0x00;
 pub const QUEST_SONG_MINUET: u32 = 0x06;
 pub const QUEST_SONG_LULLABY: u32 = 0x0C;
+pub const QUEST_SONG_EPONA: u32 = 0x0D;
 pub const QUEST_SONG_SARIA: u32 = 0x0E;
 pub const QUEST_KOKIRI_EMERALD: u32 = 0x12;
 pub const QUEST_GORON_RUBY: u32 = 0x13;

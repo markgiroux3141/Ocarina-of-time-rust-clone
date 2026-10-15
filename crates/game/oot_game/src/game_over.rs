@@ -67,7 +67,8 @@ impl PlayState {
         match self.game_over_ctx.state {
             GAMEOVER_DEATH_START => {
                 self.with_msg(|m, f| m.close_textbox(f.audio));
-                // (gSaveContext.timerState, subTimerState: no timers are ported.)
+                self.save.timer_state = crate::save::TIMER_STATE_OFF;
+                self.save.sub_timer_state = crate::save::SUBTIMER_STATE_OFF;
                 // CLEAR_EVENTINF(EVENTINF_MARATHON_ACTIVE): eventInf is cleared whole below.
                 let save = &mut self.save;
                 // The spoiling trade items go back, and so do the C buttons holding them.

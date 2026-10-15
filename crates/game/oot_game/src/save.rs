@@ -110,6 +110,38 @@ pub struct HorseData {
     pub angle: i16,
 }
 
+/// `TimerState` (`save.h`): `timerState`'s values.
+pub const TIMER_STATE_OFF: i16 = 0;
+pub const TIMER_STATE_ENV_HAZARD_INIT: i16 = 1;
+pub const TIMER_STATE_ENV_HAZARD_PREVIEW: i16 = 2;
+pub const TIMER_STATE_ENV_HAZARD_MOVE: i16 = 3;
+pub const TIMER_STATE_ENV_HAZARD_TICK: i16 = 4;
+pub const TIMER_STATE_DOWN_INIT: i16 = 5;
+pub const TIMER_STATE_DOWN_PREVIEW: i16 = 6;
+pub const TIMER_STATE_DOWN_MOVE: i16 = 7;
+pub const TIMER_STATE_DOWN_TICK: i16 = 8;
+pub const TIMER_STATE_STOP: i16 = 10;
+pub const TIMER_STATE_UP_INIT: i16 = 11;
+pub const TIMER_STATE_UP_PREVIEW: i16 = 12;
+pub const TIMER_STATE_UP_MOVE: i16 = 13;
+pub const TIMER_STATE_UP_TICK: i16 = 14;
+pub const TIMER_STATE_UP_FREEZE: i16 = 15;
+/// `SubTimerState` (`save.h`): `subTimerState`'s values.
+pub const SUBTIMER_STATE_OFF: i16 = 0;
+pub const SUBTIMER_STATE_DOWN_INIT: i16 = 1;
+pub const SUBTIMER_STATE_DOWN_PREVIEW: i16 = 2;
+pub const SUBTIMER_STATE_DOWN_MOVE: i16 = 3;
+pub const SUBTIMER_STATE_DOWN_TICK: i16 = 4;
+pub const SUBTIMER_STATE_RESPAWN: i16 = 5;
+pub const SUBTIMER_STATE_STOP: i16 = 6;
+pub const SUBTIMER_STATE_UP_INIT: i16 = 7;
+pub const SUBTIMER_STATE_UP_PREVIEW: i16 = 8;
+pub const SUBTIMER_STATE_UP_MOVE: i16 = 9;
+pub const SUBTIMER_STATE_UP_TICK: i16 = 10;
+/// `TimerId` (`save.h`): the index of `timerX` and `timerY`.
+pub const TIMER_ID_MAIN: usize = 0;
+pub const TIMER_ID_SUB: usize = 1;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SaveContext {
     /// `entranceIndex`: the `gEntranceTable` row the next `Play_Init` enters by (the group's
@@ -200,6 +232,15 @@ pub struct SaveContext {
     /// `rupees`, `rupeeAccumulator` (rupees still to add or take).
     pub rupees: i16,
     pub rupee_accumulator: i16,
+    /// `timerState` (`TIMER_STATE_*`), `timerSeconds`, `subTimerState` (`SUBTIMER_STATE_*`),
+    /// `subTimerSeconds`, `timerX`, `timerY` (by `TIMER_ID_MAIN`, `TIMER_ID_SUB`): the HUD's
+    /// timers (`Interface_SetTimer`, `Interface_SetSubTimer`).
+    pub timer_state: i16,
+    pub timer_seconds: i16,
+    pub sub_timer_state: i16,
+    pub sub_timer_seconds: i16,
+    pub timer_x: [i16; 2],
+    pub timer_y: [i16; 2],
     /// `swordHealth` (Biggoron's Sword), `bgsFlag`.
     pub sword_health: u16,
     pub bgs_flag: bool,
@@ -681,15 +722,25 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     SavePreset {
         name: "meadow-saria",
         about: "graveyard-sun, and GAME-08 milestone 1's run over: the Lost Woods' owl met (its switch flag 7), the meadow's Wolfos killed (switch flag 0x1F, its gate down), Saria's Song taught (Item_Give(ITEM_SONG_SARIA)); and the Fairy Slingshot with its 30 seeds (from the Deku Tree, which the castle's presets leave out) on C-Right (GAME-08 milestone 2)",
+        apply: meadow_saria,
+    },
+    SavePreset {
+        name: "lost-woods-games",
+        about: "meadow-saria, and GAME-08 milestone 2's run over: the stump Skull Kid's piece of heart (ITEMGETINF_16), the memory game won (ITEMGETINF_17, its piece of heart, ocarinaGameRoundNum 3) and the target scrub's 40 seed bag (ITEMGETINF_1D, Item_Give(ITEM_BULLET_BAG_40): full), 26 rupees (GAME-08 milestone 3)",
         apply: |s| {
-            graveyard_sun(s);
-            // SCENE_LOST_WOODS (0x5B): En_Owl 0x02C7's switch flag; SCENE_SACRED_FOREST_MEADOW
-            // (0x56): En_Wf 0x1F00's. ITEM_SONG_SARIA (item.h: 0x62).
-            s.scene_flags[0x5B].swch |= 1 << 7;
-            s.scene_flags[0x56].swch |= 1 << 0x1F;
-            item_give(s, None, 0x62);
-            item_give(s, None, ITEM_SLINGSHOT);
-            s.equip_item_on_c(2, ITEM_SLINGSHOT);
+            meadow_saria(s);
+            // save.h: ITEMGETINF_16 (En_Skj's heart piece), ITEMGETINF_17 (the memory game's),
+            // ITEMGETINF_1D (En_Dnt_Nomal's seed bag). item.h: ITEM_HEART_PIECE 0x73 (Item_Give
+            // adds one to questItems' count), ITEM_BULLET_BAG_40 0x48 (the upgrade and its 40
+            // seeds). sOcarinaGameRewards' green and blue rupees: 20 + 1 + 5.
+            s.set_item_get_inf(0x16);
+            s.set_item_get_inf(0x17);
+            s.set_item_get_inf(0x1D);
+            item_give(s, None, crate::item::ITEM_HEART_PIECE);
+            item_give(s, None, crate::item::ITEM_HEART_PIECE);
+            item_give(s, None, crate::item::ITEM_BULLET_BAG_40);
+            s.ocarina_game_round_num = 3;
+            s.rupees += 1 + 5;
         },
     },
     SavePreset {
@@ -734,6 +785,18 @@ fn graveyard_sun(s: &mut SaveContext) {
     s.set_event_chk_inf(0x1D);
     s.set_event_chk_inf(0x5A);
     item_give(s, None, 0x63);
+}
+
+/// `meadow-saria`'s save (`lost-woods-games` builds on it).
+fn meadow_saria(s: &mut SaveContext) {
+    graveyard_sun(s);
+    // SCENE_LOST_WOODS (0x5B): En_Owl 0x02C7's switch flag; SCENE_SACRED_FOREST_MEADOW
+    // (0x56): En_Wf 0x1F00's. ITEM_SONG_SARIA (item.h: 0x62).
+    s.scene_flags[0x5B].swch |= 1 << 7;
+    s.scene_flags[0x56].swch |= 1 << 0x1F;
+    item_give(s, None, 0x62);
+    item_give(s, None, ITEM_SLINGSHOT);
+    s.equip_item_on_c(2, ITEM_SLINGSHOT);
 }
 
 /// The castle's presets' common part (`castle-egg`, `castle-cucco`).
@@ -817,6 +880,12 @@ impl SaveContext {
             is_double_defense_acquired: false,
             rupees: 0,
             rupee_accumulator: 0,
+            timer_state: TIMER_STATE_OFF,
+            timer_seconds: 0,
+            sub_timer_state: SUBTIMER_STATE_OFF,
+            sub_timer_seconds: 0,
+            timer_x: [0; 2],
+            timer_y: [0; 2],
             sword_health: 0,
             bgs_flag: false,
             child_equips: ItemEquips::NONE,

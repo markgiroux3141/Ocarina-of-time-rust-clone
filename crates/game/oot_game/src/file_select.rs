@@ -119,7 +119,9 @@ pub fn file_select_load_game(save: &mut SaveContext, sram_ctx: &SramContext, but
     save.seq_id = crate::audio::NA_BGM_DISABLED as u8;
     save.nature_ambience_id = crate::audio::NATURE_ID_DISABLED;
     save.show_title_card = true;
-    // (dogParams, timerState, subTimerState: not ported.)
+    // (dogParams: not ported.)
+    save.timer_state = crate::save::TIMER_STATE_OFF;
+    save.sub_timer_state = crate::save::SUBTIMER_STATE_OFF;
     save.event_inf = [0; 4];
     save.prev_hud_visibility_mode = HUD_VISIBILITY_ALL;
     // (nayrusLoveTimer: not ported.)

@@ -454,6 +454,21 @@ pub enum Step {
     MemoryRound,
     /// The third round's prize taken and its text read (`ITEMGETINF_17`), Link free.
     MemoryGameWon,
+    /// Epona's Song played back in Malon's lesson (`En_Ma1`, `OCARINA_ACTION_PLAYBACK_EPONA`).
+    EponasSongPlayed,
+    /// Lon Lon Ranch's layer 5 (`gLonLonRanchEponasSongCs`) entered: the playback's reload
+    /// (`CS_INDEX_1`).
+    EponasSongCs,
+    /// Back at the ranch by `ENTR_LON_LON_RANCH_1` (the cutscene's destination 94), settled.
+    RanchFromSong,
+    /// The foal (`En_Horse_Link_Child`) come to Link, following him.
+    FoalCame,
+    /// The foal back home after her 300 frames, facing Link (`func_80A6A5A4`).
+    FoalHome,
+    /// Epona's Song played (the staff knows it).
+    EponasSong,
+    /// The foal, called by the song from her home, come to Link.
+    FoalCalled,
 }
 
 impl Step {
@@ -621,6 +636,13 @@ impl Step {
             Step::MemoryGame => "memory_game",
             Step::MemoryRound => "memory_round",
             Step::MemoryGameWon => "memory_game_won",
+            Step::EponasSongPlayed => "eponas_song_played",
+            Step::EponasSongCs => "eponas_song_cs",
+            Step::RanchFromSong => "ranch_from_song",
+            Step::FoalCame => "foal_came",
+            Step::FoalHome => "foal_home",
+            Step::EponasSong => "eponas_song",
+            Step::FoalCalled => "foal_called",
         }
     }
 }
@@ -780,6 +802,11 @@ pub enum Route {
     /// bag), and the memory game on the stump in room 1's hollow, three rounds won (a piece of
     /// heart).
     LostWoods,
+    /// Lon Lon Ranch (GAME-08 milestone 3): from its gate with the Lost Woods' games won
+    /// (`lost-woods-games`), its intro, Malon's three talks and her lesson: Epona's Song played
+    /// back, `gLonLonRanchEponasSongCs` and back to the ranch (destination 94); the foal comes to
+    /// Link, and from her home, called with the song.
+    Ranch,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -914,6 +941,60 @@ fn lost_woods_tasks() -> Vec<Task> {
         Task::MemoryGame(Step::MemoryGameWon),
     ]
 }
+
+/// `Route::Ranch`'s tasks. The ranch (from the collision): its gate's lane runs south from the
+/// spawn (1107, 0, -3740) between Talon's house and the stable (x 950 to 1050), out onto the
+/// field at z -2400; the corral's fence is an oval round the middle (path 0, the galloping
+/// horse's, runs inside it), its gate on the north side at x -300 to -150. Malon (`En_Ma1`
+/// rot.z 3) stands at (64, 0, -567) by the foal (-4, 0, -572).
+fn ranch_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_EPONAS;
+    vec![
+        // The ranch's intro (gLonLonRanchIntroCs, EVENTCHKINF_B4).
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(975.0, 0.0, -3625.0), Vec3::new(975.0, 0.0, -2550.0), Vec3::new(800.0, 0.0, -2375.0), Vec3::new(700.0, 0.0, -2375.0), Vec3::new(-150.0, 0.0, -1525.0), Vec3::new(-150.0, 0.0, -875.0)]),
+        // Malon's three texts (EnMa1_GetTextId at the ranch after Talon's return): 0x2047 (sets
+        // EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH), 0x2048 (INFTABLE_TOLD_EPONA_IS_SCARED), 0x2049
+        // (EVENTCHKINF_CAN_LEARN_EPONAS_SONG).
+        Task::Talk(Who::Malon, Vec3::new(75.0, 0.0, -650.0), Step::Malon),
+        Task::Talk(Who::Malon, Vec3::new(75.0, 0.0, -650.0), Step::Malon),
+        Task::Talk(Who::Malon, Vec3::new(75.0, 0.0, -650.0), Step::Malon),
+        // The ocarina out by her (EnMa1_IdleTeachSong: within 30 + her collider's radius she sets
+        // PLAYER_STATE2_23, and with it out PLAYER_STATE2_24): 0x2061, then she plays the song
+        // (OCARINA_ACTION_TEACH_EPONA) and Link plays it back (_PLAYBACK_EPONA).
+        Task::OcarinaOut(1, Step::OcarinaOut),
+        Task::Playback(OCARINA_SONG_EPONAS, false, Step::EponasSongPlayed),
+        // EnMa1_WaitForPlayback: OCARINA_MODE_03 reloads the ranch with CS_INDEX_1 (layer 5).
+        Task::Texts(|w| w.scene_id == SCENE_LON_LON_RANCH && w.save.scene_layer == 5, Step::EponasSongCs),
+        // Its terminator, destination 94: ENTR_LON_LON_RANCH_1, a white fade.
+        Task::Texts(|w| w.scene_id == SCENE_LON_LON_RANCH && w.save.scene_layer != 5 && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF, Step::RanchFromSong),
+        Task::Settle(None),
+        // EnHorseLinkChild entered by ENTR_LON_LON_RANCH_1: a neigh, and she comes to Link
+        // (func_80A6A724, action 4) for 300 frames.
+        Task::Texts(|w| foal_near(w, 4), Step::FoalCame),
+        // Away from her home (more than 250: she doesn't run from him), until she has gone home
+        // and faces him there (func_80A6A4DC, action 5).
+        Task::Walk(vec![Vec3::new(-150.0, 0.0, -875.0), Vec3::new(-150.0, 0.0, -1100.0)]),
+        Task::Texts(|w| foal(w).is_some_and(|f| f.action == 5), Step::FoalHome),
+        // Epona's Song (R_EPONAS_SONG_PLAYED): she neighs and comes again.
+        Task::Ocarina(1, OCARINA_SONG_EPONAS, Step::EponasSong),
+        Task::Texts(|w| foal_near(w, 4), Step::FoalCalled),
+    ]
+}
+
+/// The foal (`En_Horse_Link_Child`), if she's there.
+fn foal(w: &PlayState) -> Option<&crate::en_horse_link_child::EnHorseLinkChild> {
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::en_horse_link_child::EnHorseLinkChild>(h))
+}
+
+/// The foal in `action`, within 150 of Link (her walk's pace: `func_80A6A7D0`).
+fn foal_near(w: &PlayState, action: i32) -> bool {
+    let link = w.player().actor.world_pos;
+    foal(w).is_some_and(|f| f.action == action && Vec3::new(f.actor.world_pos.x - link.x, 0.0, f.actor.world_pos.z - link.z).length() < 150.0)
+}
+
+/// `SCENE_LON_LON_RANCH` (`scene_table.h`: 0x63).
+const SCENE_LON_LON_RANCH: u16 = 0x63;
 
 /// Anju's pen (`func_80ABA244`: |x - 330| < 90, |z - 1610| < 190): fenced all round (its north
 /// side at z 1400, its east at x 441), so a cucco is thrown over the north fence from just
@@ -1419,6 +1500,7 @@ impl Route {
             Route::Kakariko => "ENTR_KAKARIKO_VILLAGE_0",
             Route::Graveyard => "ENTR_GRAVEYARD_0",
             Route::Meadow | Route::LostWoods => "ENTR_LOST_WOODS_0",
+            Route::Ranch => "ENTR_LON_LON_RANCH_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1446,6 +1528,7 @@ impl Route {
             Route::Graveyard => Some("graveyard-lullaby"),
             Route::Meadow => Some("graveyard-sun"),
             Route::LostWoods => Some("meadow-saria"),
+            Route::Ranch => Some("lost-woods-games"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1615,6 +1698,7 @@ impl Route {
             Route::Graveyard => "graveyard",
             Route::Meadow => "meadow",
             Route::LostWoods => "lost-woods",
+            Route::Ranch => "ranch",
         }
     }
 
@@ -1653,6 +1737,7 @@ impl Route {
             Route::Graveyard => 30000,
             Route::Meadow => 30000,
             Route::LostWoods => 30000,
+            Route::Ranch => 20000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1660,12 +1745,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1915,6 +2000,9 @@ enum Task {
     /// `ITEMGETINF_17` is set and the box is closed (the step); `Step::MemoryGame` and
     /// `Step::MemoryRound` on the way.
     MemoryGame(Step),
+    /// The ocarina out with its C button (0 C-Left), no song: until a text opens (an actor
+    /// waiting for it, Malon's lesson: `PLAYER_STATE2_24`), then the step.
+    OcarinaOut(usize, Step),
     /// The grounded Peahat whose home is here: locked on (Z), guarding (R) its blades, the
     /// sword (B) at its root whenever it's within 70, seeking or recoiling, until it's gone.
     FightPeahat(Vec3, Step),
@@ -2313,6 +2401,7 @@ impl Playthrough {
             Route::Graveyard => graveyard_tasks(),
             Route::Meadow => meadow_tasks(),
             Route::LostWoods => lost_woods_tasks(),
+            Route::Ranch => ranch_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -3307,6 +3396,19 @@ impl Playthrough {
             Task::Shoot(target, flag, step) => self.shoot(w, target, |w| w.flags.get_switch(flag), step),
             Task::ShootUntil(target, until, step) => self.shoot(w, target, until, step),
             Task::MemoryGame(step) => self.memory_game(w, step),
+            Task::OcarinaOut(button, step) => {
+                use eng_input::pad::{BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT};
+                self.wait += 1;
+                if self.wait > 600 {
+                    self.failure = Some(format!("no text with the ocarina out (Link {:?})", w.player().action));
+                    return None;
+                }
+                if w.message_state() != TEXT_STATE_NONE {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(if w.player().action == PA::Ocarina { idle } else { self.press([BTN_CLEFT, BTN_CDOWN, BTN_CRIGHT][button]) })
+            }
             Task::LeaveFirstPerson => {
                 if w.player().unk_6AD == 0 {
                     self.finish(None);

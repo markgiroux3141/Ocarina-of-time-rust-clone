@@ -453,8 +453,15 @@ impl SaveContext {
         // nayrusLoveTimer, unk_13CA.
         io.pad(4);
         io.i16(&mut self.rupee_accumulator);
-        // timerState, timerSeconds, subTimerState, subTimerSeconds, timerX, timerY, unk_13DE.
-        io.pad(0x12);
+        io.i16(&mut self.timer_state);
+        io.i16(&mut self.timer_seconds);
+        io.i16(&mut self.sub_timer_state);
+        io.i16(&mut self.sub_timer_seconds);
+        for v in self.timer_x.iter_mut().chain(self.timer_y.iter_mut()) {
+            io.i16(v);
+        }
+        // unk_13DE.
+        io.pad(2);
         io.check(0x13E0);
         io.u8(&mut self.seq_id);
         io.u8(&mut self.nature_ambience_id);

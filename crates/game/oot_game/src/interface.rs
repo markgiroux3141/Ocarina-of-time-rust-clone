@@ -235,6 +235,17 @@ pub const HUD_VISIBILITY_NOTHING: u16 = 1;
 /// `HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS` (`save.h`).
 pub const HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS: u16 = 7;
 
+/// `Interface_SetTimer`: the main timer at (140, 80), counting down from `seconds`
+/// (`TIMER_STATE_DOWN_INIT`), or up from 0 when `seconds` is 0 (`TIMER_STATE_UP_INIT`). (It also
+/// clears `sEnvHazardActive`, the hot rooms' and the water's timer, which isn't ported.)
+pub fn interface_set_timer(save: &mut SaveContext, seconds: i16) {
+    use crate::save::{TIMER_ID_MAIN, TIMER_STATE_DOWN_INIT, TIMER_STATE_UP_INIT};
+    save.timer_x[TIMER_ID_MAIN] = 140;
+    save.timer_y[TIMER_ID_MAIN] = 80;
+    save.timer_seconds = seconds;
+    save.timer_state = if seconds != 0 { TIMER_STATE_DOWN_INIT } else { TIMER_STATE_UP_INIT };
+}
+
 /// `func_80084BF4(play, 1)` (the pause menu's opening, `KaleidoScope_UpdateOpening`): B's item
 /// back from `buttonStatus[0]` where a slingshot, bow, bombchu or fishing rod stood in for it
 /// (or B was empty with `infTable[INFTABLE_INDEX_1DX]` clear), the buttons enabled, the HUD to

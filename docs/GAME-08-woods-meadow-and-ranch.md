@@ -16,7 +16,7 @@ Epona's Song and the child's Epona, Ingo, and Talon's house. Exit: Saria's Song 
 |---|---|---|
 | 1 | The meadow and Saria's Song: `En_Sa` (with Kokiri Forest's greeting), `En_Wf`, `Bg_Spot05_Soko`, the woods' maze walked | done (2026-10-14) |
 | 2 | The Lost Woods' Skull Kids and scrubs: `En_Skj`, the memory game, the target scrub | done (2026-10-14) |
-| 3 | Lon Lon Ranch: Epona's Song's end, the foal and the horses, Ingo, the Guays, Talon's house and the cucco game | planned |
+| 3 | Lon Lon Ranch: Epona's Song's end, the foal and the horses, Ingo, the Guays, Talon's house and the cucco game | step (a) done (2026-10-14); step (b), Talon's house, next |
 
 Before the phase, part A of the same piece of work: the actor schema ([ADR 0066](adr/0066-the-actor-schema.md),
 BACKLOG #52), built and checked for all 131 ported actors (committed as 05f4f0e).
@@ -396,3 +396,120 @@ scripts\run\sandbox-lost-woods.bat
    Three rounds: a green rupee, a blue rupee, then a piece of heart.
 5. `game-lost-woods game`: on the memory game's stump at once.
 6. Hit the stump Skull Kid with the sword after his heart piece: he backflips away.
+
+
+## Milestone 3: Lon Lon Ranch
+
+The user's call (2026-10-14): two steps. (a) The ranch's story: Epona's Song's end, the draw
+configs, the foal, the horses, Ingo, the Guays, adult Malon's init. (b) Talon's house: the milk,
+the Super Cucco game, the HUD timer. Each with its own section here, goldens and commit.
+
+### Step (a): the ranch's story
+
+**The answer:** child Link with the Lost Woods' games won comes into Lon Lon Ranch by its gate
+(its intro plays), walks through the corral's gate to Malon by the foal, talks to her three
+times, takes out the ocarina and plays Epona's Song back; the song's scene plays and ends back
+at the ranch, where the foal comes to him. He walks off; once she has gone home, Epona's Song
+calls her to him again. Scripts: `scripts\run\test-ranch.bat`, `game-ranch.bat`,
+`sandbox-ranch.bat` (menu 129 to 131).
+
+#### What was built
+
+- **Shared code** (ADR 0070): `oot_game::horse` (`Horse_RotateToPoint`); `skin::get_limb_pos`
+  (`Skin_GetLimbPos`); the draw configs `SDC_LON_LON_RANCH` (the ranch's windows, segment 8, OPA)
+  and `SDC_LON_LON_BUILDINGS` (Talon's house's entrance, segment 8, XLU) by `nightFlag`; the HUD
+  timers' save fields and `Interface_SetTimer` (the countdown and the draw are step (b)'s);
+  `QUEST_SONG_EPONA`.
+- **`En_Horse_Link_Child`** and **`En_Horse_Normal`** whole (a helper): the foal (killed before
+  Talon's return; idling, then running from Link or home; turning to Link on Epona's Song and
+  coming to him; her eyes, sounds, colliders) and the horses (the paddock's by rot.z, age, day and
+  flags, the galloper round path 0, the wanderers, the stable's by night with their clones and the
+  clones' shadows; the Gerudo Fortress's). Three bakes.
+- **`En_In`** (a helper): the child's Ingo whole (working in the ranch by day before Talon's
+  return, in the stable after it by day and by night, his texts 0x203F/0x2040 and 0x2045/0x2046
+  and their flags, his head and chest turned to Link, the basket and pitchfork), the adult's start
+  modes decided whole; the adult's race and rental a placeholder (Phase 13). Ten bakes.
+- **`En_Ma2`**: `EnMa2_GetSpawnIndex` whole (killed for a child), a placeholder for the adult's.
+- **`En_Crow`** whole (a helper): the Guays' flight, dive, the turn-away from a nut, death,
+  drops and respawn, the tenth death back big with a red rupee. One bake.
+- **The `lost-woods-games` preset**, from a diff of the save over milestone 2's run.
+- **`Route::Ranch`** with the task `OcarinaOut` (the ocarina out, no song) and the steps
+  `EponasSongPlayed`, `EponasSongCs`, `RanchFromSong`, `FoalCame`, `FoalHome`, `EponasSong`,
+  `FoalCalled`.
+- **The glb export:** Ingo and the Guay (`characters.rs`); the horses were there.
+- **Coverage:** Phase 9's ten actors all ported; the ranch's and Talon's house's draw configs.
+
+#### Results
+
+- `tests/ranch.rs`, the exit's run: 3,073 frames. Malon's texts at 890, 1,233 and 1,325, the
+  lesson's 0x2061 at 1,422, the playback done at 1,760, layer 5 at 1,928 (its terminator at its
+  frame 300), back by `ENTR_LON_LON_RANCH_1` at 2,272, the foal at Link at 2,282; home at 2,793,
+  the song at 2,838, at Link again at 3,073. Epona's Song given, the intro's `EVENTCHKINF_B4` and
+  Malon's three flags set, no hit taken.
+- `tests/en_horse_link_child.rs` (8), `en_horse_normal.rs` (6), `en_in.rs` (8), `en_ma2.rs` (2),
+  `en_crow.rs` (8); unit tests of `Horse_RotateToPoint`, `Skin_GetLimbPos` and two of `En_In`'s;
+  the draw configs against the C interpreter and the rooms' textures.
+- 1,091 tests (one ignored) pass; `cargo test -p layering` passes; no warnings.
+- Goldens: none changed (199 of 199); 7 new cases (`ranch`, `_malon`, `_song`, `_foal`, `_guays`,
+  `_ingo`, `stable_night`). 208 hashes, 159 cases (`out/golden_base21`).
+
+#### Decisions
+
+- Ingo's adult part is a placeholder chosen in his init (the C chooses on his first update), as
+  `En_Ta`'s ranch house was (ADR 0070).
+- The foal's eyes are swapped per draw, not baked per eye: the skin's animated limb loads its
+  vertices through the eye's segment first.
+- The route answers "the foal called with the song" from her home: after the cutscene she comes by
+  herself (`ENTR_LON_LON_RANCH_1`), so Link waits out her 300 frames and plays it from 450 away.
+
+#### Corrections to the survey
+
+- Destination 94 was already in the port's terminator (`TERMINATOR_DESTINATIONS`): nothing to add.
+- The stable is `SDC_DEFAULT`; only the ranch and Talon's house have the two configs.
+- The Guays' sphere grows to 59, not 60 (`20 × 0.03f × 100.0f` truncates), and it's the Guay that
+  dies tenth that comes back big, not the next to die.
+- The foal circles Link near her home: `func_80A69F5C` turns by Link's facing ± 0x4000, not by the
+  difference from her own yaw (@bug (game)).
+- `En_In`'s adult-era head is never drawn (its override skips the head); the obedient Ingo with
+  Epona keeps the child-era clothes (only `params > 0` swaps them).
+- The ranch's night layer places no horses; the Gerudo Fortress's horses are on cutscene layers only.
+
+#### Known gaps
+
+- Talon's house by day (the milk, the Super Cucco game, the timers' countdown and draw): step (b),
+  BACKLOG #44.
+- The horses' sounds at their own points (#68); `ActorShadow_DrawHorse` (the shadows' debt).
+- The adult's Ingo, Malon and race (Phase 13); masks (#39).
+
+#### Fixes found while building
+
+- None outside the new code.
+
+#### How to check
+
+```
+scripts\run\test-ranch.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-ranch.bat
+```
+
+#### By hand
+
+1. `game-ranch`: the ranch's intro, then south down the lane between the house and the stable. In
+   the open, the corral: its gate is in the near fence, to the right. Inside, Malon sings by
+   the foal; the horses wander and one gallops round the track.
+2. Talk to Malon three times (0x2047, 0x2048, 0x2049). Take out the ocarina by her (K): she plays
+   Epona's Song; play it back (I J L I J L). The song's scene (the camera rises over the corral),
+   then back by the foal: she comes to you and follows you about (she may nudge you along).
+3. Walk away across the corral; after about 15 seconds she trots home. Play Epona's Song: she
+   neighs and comes to you.
+4. Near her home she runs circles round you: the game's own (the C turns her by your facing).
+5. `game-ranch night`: the Guays circle overhead and dive at you within 300 (half a heart). Cut one
+   down: it falls, shrinks, drops something, and is back 15 seconds later. Every tenth kill comes
+   back three times the size and drops a red rupee.
+6. `game-ranch stable`: Ingo working (pitchfork, basket); talk to him (0x2045, then 0x2046).
+   `game-ranch stable-night`: two horses in their stalls and two more opposite (the clones), the
+   rails hiding their middles as the painted rails do.
+7. `game-ranch ingo`: before Talon's return, Ingo working by the gate; 0x203F then 0x2040.

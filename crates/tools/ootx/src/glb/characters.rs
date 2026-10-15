@@ -140,6 +140,8 @@ pub const CHARACTERS: &[Character] = &[
     c("Talon", "En_Ta/eye0", Some(("object_ta", "gTalonStandAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Malon (child)", "En_Ma1/eye0", Some(("object_ma1", "gMalonChildSingAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Cow", "En_Cow/body", Some(("object_cow", "gCowBodyChewAnim")), &[], &[], &[]),
+    c("Ingo", "En_In/eye0", Some(("object_in", "gIngoStandingAnim")), &[], &[9, 10, 11], &[12, 13, 14]),
+    c("Guay", "En_Crow/skel", Some(("object_crow", "gGuayFlyAnim")), &[], &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

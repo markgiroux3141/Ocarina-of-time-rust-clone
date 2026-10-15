@@ -644,6 +644,12 @@ actor schema (ADR 0066, BACKLOG #52) for all ported actors.
 3. **Lon Lon Ranch:** Epona's Song's cutscene end (destination 94), the two draw configs,
    `En_Horse_Link_Child`, `En_Horse_Normal`, `En_In` (the child's part), `En_Crow`, `En_Ma2`'s
    init, `En_Ta`'s ranch house with the milk and the Super Cucco game, the HUD timer (#44).
+   - Split in two steps (the user's call, 2026-10-14). **Step (a) done** (2026-10-14, ADR 0070):
+     the foal and the horses (the first live skin skeletons), the child's Ingo (the adult's race a
+     placeholder), `En_Ma2`'s init, the Guays, the two draw configs, `Interface_SetTimer` and the
+     timers' state; `lost-woods-games` (milestone 2's end). `Route::Ranch` (Malon's lesson, the
+     song's scene and back by destination 94, the foal called), the `ranch` goldens. Step (b):
+     `En_Ta`'s ranch house, the milk, the Super Cucco game, the timers' countdown and draw (#44).
 
 ## Cross-cutting debts
 

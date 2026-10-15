@@ -33,6 +33,7 @@ pub mod footik;
 pub mod game_over;
 pub mod get_item;
 pub mod gbi;
+pub mod horse;
 pub mod interface;
 pub mod item;
 pub mod kaleido;
