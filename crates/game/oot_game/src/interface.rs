@@ -20,7 +20,7 @@
 //! - **The pause menu's part** (docs/adr/0047-the-pause-menu.md): the START button and its label
 //!   while paused, the B button's label (`Interface_LoadActionLabelB`: "SAVE" in the menu), the
 //!   item page's icon flying to its C button (`HudPause`).
-//! - **Not ported:** the magic meter (no magic), the minimap, the timers, the C-Up Navi prompt,
+//! - **Not ported:** the magic meter (no magic), the minimap, the C-Up Navi prompt,
 //!   the B button's ammo count (only while riding or in a minigame), double defence's hearts.
 //!   `func_80083108`'s
 //!   riding, minigame, fishing, water and horse-race cases, and its item-type restrictions, are

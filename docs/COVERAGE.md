@@ -7,7 +7,7 @@ are [ROADMAP.md](ROADMAP.md)'s; each scene's layers are assigned in the script's
 first phase whose scenes place it. "Gaps noted": its module docs say something is left out
 (a placeholder spawned, a part not ported, a call logged); BACKLOG.md has the details.
 
-**Actor overlays:** 429 in the table, 143 ported (33%). Placed in the game's scenes: 341, 119 of them ported. Only spawned (by actors, items, songs, cutscenes): 88, 23 ported.
+**Actor overlays:** 429 in the table, 145 ported (33%). Placed in the game's scenes: 341, 120 of them ported. Only spawned (by actors, items, songs, cutscenes): 88, 24 ported.
 
 ## By phase
 
@@ -19,7 +19,7 @@ first phase whose scenes place it. "Gaps noted": its module docs say something i
 | 7: The road out of the forest (GAME-06) | done | 11 | 11 | - |
 | 8: Castle Town, Hyrule Castle and Kakariko (GAME-07) | done | 48 | 45 | `Bg_Toki_Swd`, `Demo_6K`, `En_Xc` |
 | 9: The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08) | done | 10 | 10 | - |
-| 10: Death Mountain and Dodongo's Cavern | planned | 32 | 1 | `Bg_Bombwall`, `Bg_Ddan_Jd`, `Bg_Ddan_Kd`, `Bg_Dodoago`, `Bg_Dy_Yoseizo`, `Bg_Gnd_Darkmeiro`, `Bg_Hidan_Curtain`, `Bg_Spot16_Bombstone`, `Bg_Spot18_Basket`, `Bg_Spot18_Obj`, `Bg_Spot18_Shutter`, `Boss_Dodongo`, `Demo_Du`, `Demo_Go`, `En_Am`, `En_Bombf`, `En_Dodojr`, `En_Dodongo`, `En_Du`, `En_Encount2`, `En_G_Switch`, `En_Gm`, `En_Go2`, `En_Hata`, `En_Poh`, `En_Tite`, `En_Vm`, `En_Zf`, `Obj_Elevator`, `Obj_Hamishi`, `Obj_Hsblock` |
+| 10: Death Mountain, Goron City and Dodongo's Cavern (GAME-09) | in progress | 33 | 2 | `Bg_Bombwall`, `Bg_Ddan_Jd`, `Bg_Ddan_Kd`, `Bg_Dodoago`, `Bg_Dy_Yoseizo`, `Bg_Gnd_Darkmeiro`, `Bg_Hidan_Curtain`, `Bg_Spot16_Bombstone`, `Bg_Spot18_Basket`, `Bg_Spot18_Obj`, `Bg_Spot18_Shutter`, `Boss_Dodongo`, `Demo_Du`, `Demo_Go`, `En_Am`, `En_Dodojr`, `En_Dodongo`, `En_Du`, `En_Encount2`, `En_Fire_Rock`, `En_G_Switch`, `En_Gm`, `En_Go2`, `En_Hata`, `En_Poh`, `En_Tite`, `En_Vm`, `En_Zf`, `Obj_Elevator`, `Obj_Hamishi`, `Obj_Hsblock` |
 | 11: Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu | planned | 36 | 0 | `Bg_Bdan_Objects`, `Bg_Bdan_Switch`, `Bg_Spot03_Taki`, `Bg_Spot06_Objects`, `Bg_Spot07_Taki`, `Bg_Spot08_Bakudankabe`, `Bg_Spot08_Iceblock`, `Boss_Va`, `En_Ba`, `En_Bili`, `En_Brob`, `En_Bubble`, `En_Bx`, `En_Diving_Game`, `En_Eiyer`, `En_Fish`, `En_Fr`, `En_Jj`, `En_Kakasi`, `En_Kakasi3`, `En_Kz`, `En_Mk`, `En_Ms`, `En_Okuta`, `En_Rr`, `En_Ru1`, `En_Siofuki`, `En_Tp`, `En_Vali`, `En_Weiyer`, `En_Zo`, `Item_Etcetera`, `Item_Ocarina`, `Obj_Comb`, `Obj_Kibako`, `Obj_Roomtimer` |
 | 12: The Temple of Time and the adult world | planned | 4 | 0 | `En_Nb`, `En_Rl`, `En_Ru2`, `Obj_Mure3` |
 | 13: Epona and the adult Hyrule Field | planned | 7 | 0 | `Bg_Ingate`, `Bg_Spot00_Break`, `Bg_Umajump`, `En_Horse`, `En_Horse_Game_Check`, `En_Ma3`, `En_Po_Field` |
@@ -28,12 +28,12 @@ first phase whose scenes place it. "Gaps noted": its module docs say something i
 | 16: The Ice Cavern and the Water Temple | planned | 16 | 0 | `Bg_Haka_Sgami`, `Bg_Ice_Objects`, `Bg_Ice_Shelter`, `Bg_Ice_Shutter`, `Bg_Ice_Turara`, `Bg_Mizu_Movebg`, `Bg_Mizu_Shutter`, `Bg_Mizu_Uzu`, `Bg_Mizu_Water`, `Boss_Mo`, `En_Blkobj`, `En_Fz`, `En_Ice_Hono`, `En_Ny`, `En_Stream`, `En_Trap` |
 | 17: Kakariko's shadow: the Bottom of the Well and the Shadow Temple | planned | 17 | 0 | `Bg_Haka_Gate`, `Bg_Haka_Huta`, `Bg_Haka_Megane`, `Bg_Haka_MeganeBG`, `Bg_Haka_Ship`, `Bg_Haka_Trap`, `Bg_Haka_Tubo`, `Bg_Haka_Water`, `Bg_Haka_Zou`, `Bg_Spot01_Idosoko`, `Boss_Sst`, `Demo_Shd`, `En_Dh`, `En_Dha`, `En_Honotrap`, `En_Syateki_Niw`, `En_Tubo_Trap` |
 | 18: The desert: Gerudo Valley, the fortress, the Spirit Temple | planned | 32 | 0 | `Bg_Hidan_Sekizou`, `Bg_Jya_Amishutter`, `Bg_Jya_Bigmirror`, `Bg_Jya_Block`, `Bg_Jya_Bombchuiwa`, `Bg_Jya_Kanaami`, `Bg_Jya_Lift`, `Bg_Jya_Megami`, `Bg_Jya_Zurerukabe`, `Bg_Menkuri_Eye`, `Bg_Menkuri_Kaiten`, `Bg_Menkuri_Nisekabe`, `Bg_Spot11_Bakudankabe`, `Bg_Spot11_Oasis`, `Bg_Spot12_Gate`, `Bg_Spot12_Saku`, `Boss_Tw`, `Demo_Ext`, `Demo_Ik`, `Door_Gerudo`, `En_Anubice_Tag`, `En_Daiku`, `En_Ge1`, `En_Ge2`, `En_GeldB`, `En_Js`, `En_Po_Desert`, `En_Sb`, `En_Tr`, `En_Yabusame_Mark`, `Mir_Ray`, `Obj_Lightswitch` |
-| 19: Ganon's Castle and the ending | planned | 22 | 0 | `Bg_Ganon_Otyuka`, `Bg_Gjyo_Bridge`, `Bg_Gnd_Iceblock`, `Bg_Gnd_Nisekabe`, `Bg_Gnd_Soulmeiro`, `Bg_Heavy_Block`, `Bg_Zg`, `Boss_Ganon`, `Boss_Ganon2`, `Demo_Ec`, `Demo_Geff`, `Demo_Gj`, `Demo_Gt`, `Demo_Kekkai`, `En_Bom_Bowl_Man`, `En_Ds`, `En_Eg`, `En_Fire_Rock`, `En_Zl1`, `En_Zl2`, `En_Zl3`, `End_Title` |
+| 19: Ganon's Castle and the ending | planned | 21 | 0 | `Bg_Ganon_Otyuka`, `Bg_Gjyo_Bridge`, `Bg_Gnd_Iceblock`, `Bg_Gnd_Nisekabe`, `Bg_Gnd_Soulmeiro`, `Bg_Heavy_Block`, `Bg_Zg`, `Boss_Ganon`, `Boss_Ganon2`, `Demo_Ec`, `Demo_Geff`, `Demo_Gj`, `Demo_Gt`, `Demo_Kekkai`, `En_Bom_Bowl_Man`, `En_Ds`, `En_Eg`, `En_Zl1`, `En_Zl2`, `En_Zl3`, `End_Title` |
 | 20: Breadth: shops, games, side quests, the pause menu in full | planned | 12 | 0 | `Bg_Bom_Guard`, `Bg_Bowl_Wall`, `En_Changer`, `En_Dnt_Demo`, `En_Gb`, `En_Guest`, `En_Mag`, `En_Mm`, `En_Syateki_Itm`, `En_Takara_Man`, `En_Torch`, `Fishing` |
 
 ## Ported with gaps noted
 
-`Bg_Breakwall`, `Bg_Haka`, `Bg_Relay_Objects`, `Bg_Treemouth`, `Boss_Goma`, `Demo_Im`, `Demo_Kankyo`, `Demo_Sa`, `Door_Shutter`, `Door_Warp1`, `En_A_Obj`, `En_Ani`, `En_Arrow`, `En_Attack_Niw`, `En_Box`, `En_Cs`, `En_Daiku_Kakariko`, `En_Dekubaba`, `En_Dekunuts`, `En_Dns`, `En_Dnt_Nomal`, `En_Door`, `En_Elf`, `En_Encount1`, `En_Ex_Item`, `En_Ex_Ruppy`, `En_Firefly`, `En_Fu`, `En_GirlA`, `En_Goma`, `En_Goroiwa`, `En_Heishi2`, `En_Heishi4`, `En_Hintnuts`, `En_Horse_Link_Child`, `En_Horse_Normal`, `En_Hs2`, `En_Hy`, `En_In`, `En_Ishi`, `En_Item00`, `En_Kanban`, `En_Karebaba`, `En_Ko`, `En_Kusa`, `En_Light`, `En_Ma1`, `En_Ma2`, `En_Md`, `En_Mu`, `En_Niw`, `En_Niw_Lady`, `En_Nutsball`, `En_Ossan`, `En_Part`, `En_Peehat`, `En_Rd`, `En_Shopnuts`, `En_Si`, `En_Skb`, `En_Ssh`, `En_St`, `En_Sth`, `En_Sw`, `En_Tana`, `En_Tg`, `En_Tk`, `En_Toryo`, `En_Viewer`, `En_Weather_Tag`, `En_Wf`, `En_Wonder_Item`, `En_Wonder_Talk`, `Item_B_Heart`, `Obj_Bean`, `Obj_Makekinsuta`, `Obj_Mure`, `Obj_Switch`, `Obj_Syokudai`, `Obj_Tsubo`, `Object_Kankyo`, `Oceff_Wipe`, `Player`, `Shot_Sun`
+`Bg_Haka`, `Bg_Relay_Objects`, `Bg_Treemouth`, `Boss_Goma`, `Demo_Im`, `Demo_Kankyo`, `Demo_Sa`, `Door_Shutter`, `Door_Warp1`, `En_A_Obj`, `En_Ani`, `En_Arrow`, `En_Attack_Niw`, `En_Bom`, `En_Bombf`, `En_Box`, `En_Cs`, `En_Daiku_Kakariko`, `En_Dekubaba`, `En_Dekunuts`, `En_Dns`, `En_Dnt_Nomal`, `En_Door`, `En_Elf`, `En_Encount1`, `En_Ex_Item`, `En_Ex_Ruppy`, `En_Firefly`, `En_Fu`, `En_GirlA`, `En_Goma`, `En_Goroiwa`, `En_Heishi4`, `En_Hintnuts`, `En_Horse_Link_Child`, `En_Horse_Normal`, `En_Hs2`, `En_Hy`, `En_In`, `En_Ishi`, `En_Item00`, `En_Kanban`, `En_Karebaba`, `En_Ko`, `En_Kusa`, `En_Light`, `En_Ma1`, `En_Ma2`, `En_Md`, `En_Mu`, `En_Niw`, `En_Niw_Lady`, `En_Nutsball`, `En_Ossan`, `En_Part`, `En_Peehat`, `En_Rd`, `En_Shopnuts`, `En_Si`, `En_Skb`, `En_Ssh`, `En_St`, `En_Sth`, `En_Sw`, `En_Tana`, `En_Tg`, `En_Tk`, `En_Toryo`, `En_Viewer`, `En_Weather_Tag`, `En_Wf`, `En_Wonder_Item`, `En_Wonder_Talk`, `Item_B_Heart`, `Obj_Bean`, `Obj_Bombiwa`, `Obj_Kibako2`, `Obj_Makekinsuta`, `Obj_Mure`, `Obj_Switch`, `Obj_Syokudai`, `Obj_Tsubo`, `Object_Kankyo`, `Oceff_Wipe`, `Player`, `Shot_Sun`
 
 ## Only spawned
 
@@ -72,7 +72,7 @@ each comes with its spawner.
 | `En_Bdfire` | not yet |
 | `En_Bigokuta` | not yet |
 | `En_Bird` | not yet |
-| `En_Bom` | not yet |
+| `En_Bom` | ported, gaps noted |
 | `En_Bom_Bowl_Pit` | not yet |
 | `En_Bom_Chu` | not yet |
 | `En_Boom` | not yet |
@@ -148,7 +148,7 @@ each comes with its spawner.
 | `spot00` (HYRULE_FIELD) | 7, 8, 13, 19, 20 | `SDC_HYRULE_FIELD (ported)` | 25 | 17 |
 | `spot09` (GERUDO_VALLEY) | 7, 18 | `SDC_GERUDO_VALLEY (ported)` | 28 | 23 |
 | `spot10` (LOST_WOODS) | 7, 9, 14 | `SDC_LOST_WOODS (ported)` | 25 | 22 |
-| `spot16` (DEATH_MOUNTAIN_TRAIL) | 7, 10, 15, 19 | `SDC_DEATH_MOUNTAIN_TRAIL (ported)` | 35 | 22 |
+| `spot16` (DEATH_MOUNTAIN_TRAIL) | 7, 10, 15, 19 | `SDC_DEATH_MOUNTAIN_TRAIL (ported)` | 35 | 23 |
 | `entra` (MARKET_ENTRANCE_DAY) | 8, 12 | `SDC_DEFAULT (ported)` | 3 | 3 |
 | `entra_n` (MARKET_ENTRANCE_NIGHT) | 8, 12 | `SDC_DEFAULT (ported)` | 3 | 3 |
 | `market_alley` (BACK_ALLEY_DAY) | 8 | `SDC_DEFAULT (ported)` | 4 | 4 |
@@ -181,10 +181,10 @@ each comes with its spawner.
 | `souko` (LON_LON_BUILDINGS) | 9, 13 | `SDC_LON_LON_BUILDINGS (ported)` | 8 | 8 |
 | `spot05` (SACRED_FOREST_MEADOW) | 9, 14 | `SDC_CALM_WATER (ported)` | 16 | 13 |
 | `spot20` (LON_LON_RANCH) | 9, 13, 19 | `SDC_LON_LON_RANCH (ported)` | 37 | 24 |
-| `ddan` (DODONGOS_CAVERN) | 10 | `SDC_DODONGOS_CAVERN` | 41 | 27 |
-| `ddan_boss` (DODONGOS_CAVERN_BOSS) | 10 | `SDC_DEFAULT (ported)` | 6 | 4 |
-| `daiyousei_izumi` (GREAT_FAIRYS_FOUNTAIN_MAGIC) | 10, 15 | `SDC_GREAT_FAIRYS_FOUNTAIN` | 4 | 3 |
-| `spot18` (GORON_CITY) | 10, 15 | `SDC_GORON_CITY` | 27 | 18 |
+| `ddan` (DODONGOS_CAVERN) | 10 | `SDC_DODONGOS_CAVERN` | 41 | 28 |
+| `ddan_boss` (DODONGOS_CAVERN_BOSS) | 10 | `SDC_DEFAULT (ported)` | 6 | 5 |
+| `daiyousei_izumi` (GREAT_FAIRYS_FOUNTAIN_MAGIC) | 10, 15, 19 | `SDC_GREAT_FAIRYS_FOUNTAIN` | 4 | 3 |
+| `spot18` (GORON_CITY) | 10, 15, 19 | `SDC_GORON_CITY` | 27 | 19 |
 | `bdan` (JABU_JABU) | 11 | `SDC_JABU_JABU` | 37 | 18 |
 | `bdan_boss` (JABU_JABU_BOSS) | 11 | `SDC_JABU_JABU` | 3 | 2 |
 | `hylia_labo` (LAKESIDE_LABORATORY) | 11, 16 | `SDC_LAKESIDE_LABORATORY` | 5 | 4 |
@@ -204,7 +204,7 @@ each comes with its spawner.
 | `MIZUsin` (WATER_TEMPLE) | 16 | `SDC_WATER_TEMPLE` | 37 | 19 |
 | `ice_doukutu` (ICE_CAVERN) | 16 | `SDC_ICE_CAVERN` | 27 | 15 |
 | `MIZUsin_bs` (WATER_TEMPLE_BOSS) | 16 | `SDC_WATER_TEMPLE_BOSS` | 2 | 1 |
-| `HAKAdan` (SHADOW_TEMPLE) | 17 | `SDC_SHADOW_TEMPLE_AND_WELL` | 46 | 21 |
+| `HAKAdan` (SHADOW_TEMPLE) | 17 | `SDC_SHADOW_TEMPLE_AND_WELL` | 46 | 22 |
 | `HAKAdanCH` (BOTTOM_OF_THE_WELL) | 17 | `SDC_SHADOW_TEMPLE_AND_WELL` | 33 | 23 |
 | `HAKAdan_bs` (SHADOW_TEMPLE_BOSS) | 17 | `SDC_SHADOW_TEMPLE_AND_WELL` | 3 | 2 |
 | `jyasinzou` (SPIRIT_TEMPLE) | 18 | `SDC_SPIRIT_TEMPLE` | 66 | 26 |
@@ -216,7 +216,7 @@ each comes with its spawner.
 | `spot12` (GERUDOS_FORTRESS) | 18 | `SDC_GERUDOS_FORTRESS` | 20 | 10 |
 | `spot13` (HAUNTED_WASTELAND) | 18 | `SDC_HAUNTED_WASTELAND` | 14 | 11 |
 | `ganon` (GANONS_TOWER) | 19 | `SDC_DEFAULT (ported)` | 12 | 7 |
-| `ganontika` (INSIDE_GANONS_CASTLE) | 19 | `SDC_INSIDE_GANONS_CASTLE` | 55 | 19 |
+| `ganontika` (INSIDE_GANONS_CASTLE) | 19 | `SDC_INSIDE_GANONS_CASTLE` | 55 | 20 |
 | `ganon_sonogo` (GANONS_TOWER_COLLAPSE_INTERIOR) | 19 | `SDC_GANONS_TOWER_COLLAPSE_INTERIOR` | 9 | 4 |
 | `ganontikasonogo` (INSIDE_GANONS_CASTLE_COLLAPSE) | 19 | `SDC_INSIDE_GANONS_CASTLE_COLLAPSE` | 8 | 4 |
 | `ganon_boss` (GANONDORF_BOSS) | 19 | `SDC_DEFAULT (ported)` | 5 | 3 |

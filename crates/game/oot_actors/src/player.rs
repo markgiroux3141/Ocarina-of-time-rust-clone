@@ -236,6 +236,13 @@ pub enum PlayRequest {
     /// world.pos, 0, shape.rot.y, 0, params)` (`func_8083442C`): the seed or arrow held, Player's
     /// child. Applied by Player's update, which sets `heldActor`.
     SpawnHeldArrow { pos: Vec3, yaw: i16, params: i16 },
+    /// `Player_InitExplosiveIA`'s `Actor_SpawnAsChild(&play->actorCtx, &this->actor, play,
+    /// explosiveInfo->actorId, world.pos, 0, shape.rot.y, 0, 0)` and what follows it: the bomb (or
+    /// Bombchu) in hand, Player's child, `Inventory_ChangeAmmo(explosiveInfo->itemId, -1)`.
+    /// Player holds `expected` (the handle the spawn gives, `ActorContext::next_handle`) from the
+    /// call on, as the C holds the actor; applied by Player's update, which puts the real handle
+    /// in its place, or undoes the hold if the spawn failed (the C's NULL).
+    SpawnHeldExplosive { id: i16, item: u8, pos: Vec3, yaw: i16, expected: ActorHandle },
     /// `heldActor->parent = NULL`: Player lets go of what he held (`Player_DetachHeldActor`,
     /// `func_808350A4`'s shot).
     ReleaseHeld(ActorHandle),
@@ -675,7 +682,8 @@ const ACTOR_BG_HEAVY_BLOCK: i16 = 0x0092;
 const SPEED_MODE_LINEAR: f32 = 0.0;
 /// `SPEED_MODE_CURVED`.
 const SPEED_MODE_CURVED: f32 = 0.018;
-/// `ACTOR_*` (`actor_table.h`) that Player's lift tells apart.
+/// `ACTOR_*` (`actor_table.h`) that Player's lift tells apart, and the explosives he spawns.
+const ACTOR_EN_BOM: i16 = 0x0010;
 const ACTOR_EN_NIW: i16 = 0x0019;
 const ACTOR_EN_BOMBF: i16 = 0x004C;
 const ACTOR_BG_TOKI_SWD: i16 = 0x006C;
@@ -1221,6 +1229,9 @@ pub struct Player {
     pub unk_A73: u8,
     /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child), or what he carries.
     pub held_actor: Option<ActorHandle>,
+    /// The handle the next spawn gets, as this update began (`ActorContext::next_handle`): what
+    /// Player holds from `Player_InitExplosiveIA` until its spawn runs at the update's end.
+    next_spawn_handle: Option<ActorHandle>,
     /// `unk_3BC`: with nothing held, the left hand's rotation (`Player_PostLimbDrawGameplay`);
     /// carrying, the carried actor's yaw from Link's (`.y`, set at the lift) or its pitch from the
     /// hand's (`.x`, `ACTOR_FLAG_CARRY_X_ROT_INFLUENCE`).
@@ -1427,6 +1438,7 @@ impl Player {
             unk_A87: 0,
             unk_A73: 0,
             held_actor: None,
+            next_spawn_handle: None,
             unk_3bc: [0; 3],
             unk_836: 0,
             room_type_view: 0,
@@ -1664,6 +1676,8 @@ impl Player {
         self.input = input;
         self.ammo_view = env.io.borrow().save.inventory.ammo;
         self.explosive_count = env.actors.category(oot_game::actor_ctx::ACTORCAT_EXPLOSIVE).len();
+        // The handle an explosive spawned in hand this update gets (Player_InitExplosiveIA).
+        self.next_spawn_handle = Some(env.actors.next_handle());
         self.room_type_view = env.room_behavior_type1;
         self.s.cam_mode = None;
         let data = env.data;
@@ -6712,15 +6726,16 @@ impl Player {
         }
     }
 
-    /// `sItemActionUpdateFuncs[actionParam]`: the upper-body action for a held item.
-    /// The bombs' `Player_UpperAction_CarryActor` (carrying isn't ported: Player holds no bomb) and the
-    /// boomerang's `func_80835800` (not ported) run `func_8083485C`'s default here.
+    /// `sItemActionUpdateFuncs[actionParam]`: the upper-body action for a held item. The
+    /// boomerang's `func_80835800` (not ported) runs `func_8083485C`'s default here.
     fn upper_for(&self, data: &GameData, ap: i32) -> UpperAction {
         let it = &data.items;
         if (it.ap("SWORD_MASTER")..=it.ap("SWORD_BIGGORON")).contains(&ap) {
             UpperAction::Sword
         } else if (it.ap("BOW")..=it.ap("LONGSHOT")).contains(&ap) {
             UpperAction::Bow
+        } else if ap == it.ap("BOMB") || ap == it.ap("BOMBCHU") {
+            UpperAction::Carry
         } else {
             UpperAction::Default
         }
@@ -7332,8 +7347,8 @@ impl Player {
         if (0..3).contains(&sword) { sword } else { -1 }
     }
 
-    /// `Player_DetachHeldActor`: what Player holds (the seed or arrow in hand; carrying isn't
-    /// ported) is let go, unless it's the hookshot's hook: no child, no `heldActor`, its
+    /// `Player_DetachHeldActor`: what Player holds (the seed or arrow in hand, what he carries) is
+    /// let go, unless it's the hookshot's hook: no child, no `heldActor`, its
     /// `parent` cleared (`PlayRequest::ReleaseHeld`), `PLAYER_STATE1_CARRYING_ACTOR` off. And an
     /// explosive in hand goes: no item action, `heldItemId` `ITEM_NONE_FE` (the NTSC 1.1 and
     /// later order, as the debug ROM has it).
@@ -7475,19 +7490,37 @@ impl Player {
             self.unk_860 = -3;
             self.note("Player_InitHookshotIA: Arms_Hook isn't ported");
         } else if ap == it.ap("BOMB") || ap == it.ap("BOMBCHU") {
-            // Player_InitExplosiveIA: carrying something, the item goes back; else the bomb
-            // (En_Bom, En_Bom_Chu) would be spawned in hand and its ammo spent.
-            if self.state1 & STATE1_11 != 0 {
-                self.put_away_held_item(data);
-            } else {
-                self.note("Player_InitExplosiveIA: En_Bom and En_Bom_Chu aren't ported");
-            }
+            self.init_explosive_ia(data);
         } else if ap == it.ap("BOOMERANG") {
             // Player_InitBoomerangIA.
             self.state1 |= STATE1_24;
         }
         // Player_InitDefaultIA and Player_InitHammerIA: nothing.
         self.player_set_model_group(data, self.model_group);
+    }
+
+    /// `Player_InitExplosiveIA`: carrying something, the item goes back (`Player_PutAwayHeldItem`);
+    /// else the explosive in hand (`sExplosiveInfos[Player_GetExplosiveHeld]`: `En_Bom` for a bomb,
+    /// `En_Bom_Chu` for a Bombchu) spawned as Player's child at his feet facing his way
+    /// (`PlayRequest::SpawnHeldExplosive`, which spends its ammo: `play->bombchuBowlingStatus` is
+    /// 0, the bowling alley isn't ported), held (`interactRangeActor`, `heldActor`), nothing to
+    /// get, its yaw from Link's 0 (`unk_3BC.y`: it's spawned at his), carrying.
+    fn init_explosive_ia(&mut self, data: &GameData) {
+        use oot_game::item::{ITEM_BOMB, ITEM_BOMBCHU};
+        if self.state1 & STATE1_11 != 0 {
+            self.put_away_held_item(data);
+            return;
+        }
+        // sExplosiveInfos.
+        const EXPLOSIVE_INFOS: [(u8, i16); 2] = [(ITEM_BOMB, ACTOR_EN_BOM), (ITEM_BOMBCHU, ACTOR_EN_BOM_CHU)];
+        let (item, id) = EXPLOSIVE_INFOS[Self::action_to_explosive(data, self.held_item_ap) as usize];
+        let Some(expected) = self.next_spawn_handle else { return };
+        self.play_requests.push(PlayRequest::SpawnHeldExplosive { id, item, pos: self.actor.world_pos, yaw: self.actor.shape_rot.y, expected });
+        self.interact_range_actor = Some(expected);
+        self.held_actor = Some(expected);
+        self.get_item_id = oot_game::item::GI_NONE;
+        self.unk_3bc[1] = 0;
+        self.state1 |= STATE1_11;
     }
 
     /// `Player_SetModelGroup`: the model group decides the animation type.
@@ -11332,6 +11365,33 @@ impl ActorImpl for Player {
                 self.held_actor = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_ARROW, pos, [0, yaw, 0], params).map_err(|e| log::debug!("En_Arrow: {e:?}")).ok();
                 continue;
             }
+            if let PlayRequest::SpawnHeldExplosive { id, item, pos, yaw, expected } = r {
+                match play.actor_spawn_as_child(&mut self.actor, id, pos, [0, yaw, 0], 0) {
+                    Ok(h) => {
+                        // Inventory_ChangeAmmo(explosiveInfo->itemId, -1), then the handle held.
+                        oot_game::item::inventory_change_ammo(&mut play.save, item, -1);
+                        self.ammo_view = play.save.inventory.ammo;
+                        if self.held_actor == Some(expected) {
+                            self.held_actor = Some(h);
+                        }
+                        if self.interact_range_actor == Some(expected) {
+                            self.interact_range_actor = Some(h);
+                        }
+                    }
+                    Err(e) => {
+                        // The spawn's NULL: none of Player_InitExplosiveIA's writes.
+                        log::debug!("Player_InitExplosiveIA: {e:?}");
+                        if self.held_actor == Some(expected) {
+                            self.held_actor = None;
+                            self.state1 &= !STATE1_11;
+                        }
+                        if self.interact_range_actor == Some(expected) {
+                            self.interact_range_actor = None;
+                        }
+                    }
+                }
+                continue;
+            }
             apply_play_request(play, r);
         }
         play.player_out_of_arena = None;
@@ -11695,7 +11755,20 @@ impl PlayerIface for Player {
     }
     /// Player holds no actors here (lifting isn't ported).
     fn holds_actor(&self) -> bool {
-        false
+        self.held_actor.is_some()
+    }
+    fn held_actor(&self) -> Option<ActorHandle> {
+        self.held_actor
+    }
+    fn hand_over_held_actor(&mut self, actor: ActorHandle) {
+        self.held_actor = Some(actor);
+        self.interact_range_actor = Some(actor);
+    }
+    fn clear_carried(&mut self) {
+        self.actor.child = None;
+        self.held_actor = None;
+        self.interact_range_actor = None;
+        self.state1 &= !STATE1_11;
     }
     fn get_item_direction(&self) -> i16 {
         self.get_item_direction
@@ -11903,7 +11976,7 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             play.title_ctx.clear();
         }
         // Handled by Player's update, which keeps the handle.
-        PlayRequest::SpawnHeldArrow { .. } => {}
+        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldExplosive { .. } => {}
         PlayRequest::ReleaseHeld(h) => {
             if let Some(a) = play.actors.actor_mut(h) {
                 a.parent = None;

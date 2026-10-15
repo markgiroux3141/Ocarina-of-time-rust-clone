@@ -207,6 +207,17 @@ its ReDeads, learns the Sun's Song at its wall and stuns the ReDeads with it.
 **Phase 8 is done**, but for the Temple of Time's room 0 (BACKLOG #37: `Bg_Toki_Swd`, `Demo_6K`,
 `En_Xc`), which waits for the Door of Time. Phase 9 starts with its survey.
 
+Phase 9 (GAME-08, [GAME-08-woods-meadow-and-ranch.md](GAME-08-woods-meadow-and-ranch.md)) is done:
+the meadow and Saria's Song, the Lost Woods' Skull Kids and scrubs, Lon Lon Ranch and Talon's house.
+
+Now Phase 10, Death Mountain, Goron City and Dodongo's Cavern (GAME-09,
+[GAME-09-death-mountain-and-dodongos-cavern.md](GAME-09-death-mountain-and-dodongos-cavern.md)):
+surveyed, proposed and decided (2026-10-15): six milestones, the critical path to the Goron's Ruby
+first. Milestone 1, bombs, is done ([ADR 0072](adr/0072-bombs-and-bomb-flowers.md)): `En_Bom`,
+`En_Bombf`, the fuse's sparks, Player's explosive in hand and the Bomb Flower's hand-over;
+BACKLOG #33 closed. Its run puts a Bomb Flower down at Dodongo's Cavern's entrance wall (the
+cavern's opening) and a bomb from the bag by the other flower.
+
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
 the 2026-09-30 deferral: the scripted runs play the cutscenes.
@@ -656,6 +667,36 @@ actor schema (ADR 0066, BACKLOG #52) for all ported actors.
 **Phase 9 done** (2026-10-15): its three milestones built, and its exit review (GAME-08's last
 section): the `ranch-epona` preset (Phase 10's start), what's left and where. Phase 10 starts
 with its survey.
+
+## Phase 10: Death Mountain, Goron City and Dodongo's Cavern (GAME-09)
+
+**Goal:** child Link up Death Mountain Trail to Goron City, Darunia's dance and the Goron's
+Bracelet, the bomb flower that opens Dodongo's Cavern (Master Quest), the cavern, King Dodongo and
+the Goron's Ruby; the summit's Great Fairy and the magic meter. Exit: the Goron's Ruby. See
+[GAME-09](GAME-09-death-mountain-and-dodongos-cavern.md)'s survey. Decided (2026-10-15, the
+recommendations taken): the split below, the critical path first and the exit at milestone 4;
+`En_Go2`'s adult types and `Demo_Du`'s other cutscenes placeholders chosen at init, `En_Gm` whole;
+`En_M_Thunder` with the magic meter; `EffectBlure` with `En_Zf`; the coverage table's corrections.
+
+1. **Bombs:** `En_Bom`, `En_Bombf`, `Effect_Ss_G_Spk`, Player's explosives, BACKLOG #33.
+   - **Done** (2026-10-15, ADR 0072): with Player's explosive in hand through a predicted handle,
+     `func_8002F5C4`, `holds_actor` and a square-on item offer fixed; the `cavern-bombs` preset (a
+     debug start). `Route::Bombs` (the west flower put down at the cavern's entrance wall, its
+     opening; a bomb from the bag by the east flower), the `bombs` goldens.
+2. **The trail and Goron City to the bracelet, and the cavern's mouth:** `En_Go2`, `En_Du`,
+   `Bg_Spot18_*`, `En_Gm`, `Obj_Hamishi`, `Obj_Hsblock`, `En_Tite`, `Bg_Bombwall`,
+   `Bg_Spot16_Bombstone`, `En_Hata` and the scene's wind, `SDC_GORON_CITY`, one-points 4180, 4210,
+   4220, the child's bracelet drawn.
+3. **Dodongo's Cavern's route:** `SDC_DODONGOS_CAVERN`, `Bg_Dodoago`, `Bg_Ddan_Jd`, `En_Dodojr` and
+   what the way the collision search finds needs; one-points 3060, 3065, 3380.
+4. **King Dodongo and the Goron's Ruby:** `Boss_Dodongo`, `En_Bdfire`, the magma effects, the room
+   texture's write, `Play_SetCameraAtEyeUp`, `MREG(64)`; `Door_Warp1`'s branch, `Demo_Du`, `Demo_Go`.
+   The phase's exit.
+5. **The rest of the cavern:** `En_Zf` (with `EffectBlure`), `En_Am`, `En_Poh`, `En_Dodongo`,
+   `En_Vm`, `En_G_Switch`, `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro`, `Bg_Ddan_Kd`, `Obj_Elevator`.
+6. **The summit:** the magic meter, `Bg_Dy_Yoseizo`, `En_Dy_Extra`, `En_M_Thunder`,
+   `SDC_GREAT_FAIRYS_FOUNTAIN`, the return entrances, `En_Encount2`, `En_Fire_Rock`; the owl's
+   flight to Kakariko.
 
 ## Cross-cutting debts
 

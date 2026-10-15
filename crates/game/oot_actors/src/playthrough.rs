@@ -480,6 +480,17 @@ pub enum Step {
     /// The first win's bottle of milk taken and its text read (`ITEMGETINF_TALON_BOTTLE`), Link
     /// free.
     MilkBottle,
+    /// A Bomb Flower lifted: Link stands holding the bomb it handed him (`func_8002F5C4`).
+    FlowerLifted,
+    /// What Link carried put down (`Player_Action_808464B0`) and let go.
+    PutDown,
+    /// Dodongo's Cavern's opening over: its entrance wall broken (`EVENTCHKINF_B0`), the cutscene's
+    /// end, Link free.
+    DcOpening,
+    /// A bomb out of the bag in Link's hand (`Player_InitExplosiveIA`).
+    BombOut,
+    /// A Bomb Flower set off by a blast (its bomb spawned, the flower regrowing).
+    FlowerSetOff,
 }
 
 impl Step {
@@ -659,6 +670,11 @@ impl Step {
             Step::SuperCucco => "super_cucco",
             Step::CuccoGameOver => "cucco_game_over",
             Step::MilkBottle => "milk_bottle",
+            Step::FlowerLifted => "flower_lifted",
+            Step::PutDown => "put_down",
+            Step::DcOpening => "dc_opening",
+            Step::BombOut => "bomb_out",
+            Step::FlowerSetOff => "flower_set_off",
         }
     }
 }
@@ -823,6 +839,11 @@ pub enum Route {
     /// back, `gLonLonRanchEponasSongCs` and back to the ranch (destination 94); the foal comes to
     /// Link, and from her home, called with the song.
     Ranch,
+    /// Dodongo's Cavern's entrance (GAME-09 milestone 1), from its spawn with the Goron's Bracelet
+    /// and the 20 bomb bag (`cavern-bombs`): the west Bomb Flower lifted and put down at the
+    /// entrance wall, which its blast breaks (the cavern's opening, `gDcOpeningCs`); a bomb out of
+    /// the bag put down by the east flower, which its blast sets off.
+    Bombs,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1023,6 +1044,40 @@ fn ranch_tasks() -> Vec<Task> {
 
 /// `ITEMGETINF_TALON_BOTTLE` (`save.h`: 0x02).
 const ITEMGETINF_TALON_BOTTLE: u16 = 0x02;
+
+/// Dodongo's Cavern's lobby's two Bomb Flowers by its spawn (`ddan` room 0, on the strips 20 up
+/// either side of the entrance).
+const DC_WEST_FLOWER: Vec3 = Vec3::new(-293.0, 20.0, 307.0);
+const DC_EAST_FLOWER: Vec3 = Vec3::new(290.0, 20.0, 307.0);
+
+fn bombs_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        // The west flower lifted (the bracelet: Player_GetStrength); its bomb, 140 on the fuse,
+        // in Link's hands.
+        Task::LiftBombFlower(DC_WEST_FLOWER, Step::FlowerLifted),
+        // Carried north up the middle to the entrance wall (Bg_Breakwall 0x0007 at (0, 0, 20)) and
+        // put down 55 from it, then back south, beyond the blast (80 at its tenth frame).
+        Task::PutDown(vec![Vec3::new(-150.0, 0.0, 250.0), Vec3::new(0.0, 0.0, 160.0), Vec3::new(0.0, 0.0, 75.0)], Vec3::new(0.0, 0.0, 20.0), Step::PutDown),
+        Task::Walk(vec![Vec3::new(0.0, 0.0, 330.0)]),
+        // BgBreakwall_Wait: the explosion's hit, the first time: EVENTCHKINF_B0, gDcOpeningCs (its
+        // title card), to its stop.
+        Task::Texts(|w| w.save.get_event_chk_inf(crate::bg_breakwall::EVENTCHKINF_B0) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && !w.player_in_cs_mode(), Step::DcOpening),
+        Task::Settle(None),
+        // To the east flower's strip, a bomb out (C-Right), put down short of the flower, and away
+        // west: its blast sets the flower off (EnBombf_GrowBomb: a hit, a bomb at once).
+        Task::Walk(vec![Vec3::new(150.0, 0.0, 380.0), Vec3::new(260.0, 20.0, 380.0)]),
+        Task::TakeBomb(2, Step::BombOut),
+        Task::PutDown(vec![], DC_EAST_FLOWER, Step::PutDown),
+        Task::Walk(vec![Vec3::new(150.0, 0.0, 380.0), Vec3::new(-100.0, 0.0, 380.0)]),
+        Task::Texts(|w| flower_near(w, DC_EAST_FLOWER).is_some_and(|f| f.flower_bomb_scale < 1.0), Step::FlowerSetOff),
+    ]
+}
+
+/// The Bomb Flower placed at `home`.
+fn flower_near(w: &PlayState, home: Vec3) -> Option<&crate::en_bombf::EnBombf> {
+    w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_bombf::EnBombf>(h)).find(|f| f.actor.params < 0 && f.actor.home_pos.distance(home) < 1.0)
+}
 
 /// The foal (`En_Horse_Link_Child`), if she's there.
 fn foal(w: &PlayState) -> Option<&crate::en_horse_link_child::EnHorseLinkChild> {
@@ -1543,6 +1598,7 @@ impl Route {
             Route::Graveyard => "ENTR_GRAVEYARD_0",
             Route::Meadow | Route::LostWoods => "ENTR_LOST_WOODS_0",
             Route::Ranch => "ENTR_LON_LON_RANCH_0",
+            Route::Bombs => "ENTR_DODONGOS_CAVERN_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1571,6 +1627,7 @@ impl Route {
             Route::Meadow => Some("graveyard-sun"),
             Route::LostWoods => Some("meadow-saria"),
             Route::Ranch => Some("lost-woods-games"),
+            Route::Bombs => Some("cavern-bombs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1741,6 +1798,7 @@ impl Route {
             Route::Meadow => "meadow",
             Route::LostWoods => "lost-woods",
             Route::Ranch => "ranch",
+            Route::Bombs => "bombs",
         }
     }
 
@@ -1780,6 +1838,7 @@ impl Route {
             Route::Meadow => 30000,
             Route::LostWoods => 30000,
             Route::Ranch => 20000,
+            Route::Bombs => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1792,7 +1851,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1805,6 +1864,15 @@ enum Task {
     /// Towards the point until Link faces it, then A: what he carries is thrown (a cucco always is:
     /// `ACTOR_FLAG_THROW_ONLY`), until his hands are free and he stands.
     Throw(Vec3, Step),
+    /// Lift the Bomb Flower placed nearest the point: towards it until it offers its bomb (Player's
+    /// `interactRangeActor`), A, until Link stands holding the bomb it hands him.
+    LiftBombFlower(Vec3, Step),
+    /// Carrying, through the points (`Task::Walk`'s), then turned towards the second point (within
+    /// 0x1000) and still (slower than 1.1: `Player_CanThrowCarriedActor` puts it down), A, until
+    /// his hands are free and he stands.
+    PutDown(Vec<Vec3>, Vec3, Step),
+    /// This C button (0 C-Left) once, until Link stands holding a bomb (`En_Bom`).
+    TakeBomb(usize, Step),
     /// Through the points carrying a cucco: off an edge Link glides (Player's `minVelocityY` -2,
     /// `Player_UpperAction_CarryActor`); the step on the frame he lands, then on through the rest.
     Glide(Vec<Vec3>, Step),
@@ -2453,6 +2521,7 @@ impl Playthrough {
             Route::Meadow => meadow_tasks(),
             Route::LostWoods => lost_woods_tasks(),
             Route::Ranch => ranch_tasks(),
+            Route::Bombs => bombs_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -2918,6 +2987,9 @@ impl Playthrough {
             },
             Task::Walk(points) => self.walk(w, &points, RUN),
             Task::Lift(near, step) => self.lift(w, near, step),
+            Task::LiftBombFlower(near, step) => self.lift_bomb_flower(w, near, step),
+            Task::PutDown(points, face, step) => self.put_down(w, &points, face, step),
+            Task::TakeBomb(c, step) => self.take_bomb(w, c, step),
             Task::Throw(at, step) => self.throw(w, at, step),
             Task::Glide(points, step) => self.glide(w, &points, step),
             Task::WaitGate(step) => {
@@ -5669,6 +5741,108 @@ impl Playthrough {
                 Some(idle)
             }
         }
+    }
+
+    /// `Task::LiftBombFlower`.
+    fn lift_bomb_flower(&mut self, w: &PlayState, near: Vec3, step: Step) -> Option<PadState> {
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("the Bomb Flower near {near} never lifted (Link {:?})", w.player().action));
+            return None;
+        }
+        let flowers = || w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::en_bombf::EnBombf>(h).map(|f| (h, f)));
+        let Some((h, f)) = flowers().filter(|(_, f)| f.actor.params < 0).min_by(|a, b| a.1.actor.home_pos.distance(near).total_cmp(&b.1.actor.home_pos.distance(near))) else {
+            self.failure = Some(format!("no Bomb Flower near {near}"));
+            return None;
+        };
+        let p = w.player();
+        let holds_bomb = p.held_actor.is_some_and(|b| w.actors.downcast::<crate::en_bombf::EnBombf>(b).is_some_and(|b| b.actor.params == 0));
+        if holds_bomb && p.action == PA::StandingStill {
+            self.finish(Some(step));
+            return None;
+        }
+        if self.sub == 0 {
+            if p.interact_range_actor == Some(h) && p.state1 & crate::player::STATE1_11 == 0 {
+                self.sub = 1;
+                return Some(self.press(BTN_A));
+            }
+            // At a run until on the flower's level and close: up a slope a slower stick leaves
+            // Link standing (his speed less the slope's).
+            let near_level = (p.actor.world_pos.y - f.actor.world_pos.y).abs() < 1.0;
+            let mag = if Self::xz_dist(p.actor.world_pos, f.actor.world_pos) > 80.0 || !near_level { RUN } else { SLOW };
+            return Some(stick_towards(w, f.actor.world_pos, mag));
+        }
+        if p.state1 & crate::player::STATE1_11 == 0 && p.held_actor.is_none() && p.action == PA::StandingStill {
+            // The A went to something else: try again.
+            self.sub = 0;
+        }
+        Some(PadState::default())
+    }
+
+    /// `Task::PutDown`: `sub` counts the points passed, then 1000 turning, 1001 stopping, 1002 the
+    /// A pressed.
+    fn put_down(&mut self, w: &PlayState, points: &[Vec3], face: Vec3, step: Step) -> Option<PadState> {
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("never put it down (Link {:?})", w.player().action));
+            return None;
+        }
+        let p = w.player();
+        if self.sub < 1000 {
+            let link = p.actor.world_pos;
+            while self.sub < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
+                self.sub += 1;
+            }
+            if self.sub < points.len() {
+                return Some(stick_towards(w, points[self.sub], RUN));
+            }
+            self.sub = 1000;
+        }
+        let link = p.actor.world_pos;
+        let yaw = eng_math::atan2_s(face.z - link.z, face.x - link.x);
+        match self.sub {
+            1000 => {
+                if (yaw.wrapping_sub(p.actor.shape_rot.y) as i32).abs() < 0x1000 {
+                    self.sub = 1001;
+                    return Some(PadState::default());
+                }
+                Some(stick_towards(w, face, SLOW))
+            }
+            1001 => {
+                if p.linear_velocity == 0.0 && p.action == PA::StandingStill {
+                    self.sub = 1002;
+                    return Some(self.press(BTN_A));
+                }
+                Some(PadState::default())
+            }
+            _ => {
+                if p.held_actor.is_none() && p.action == PA::StandingStill {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(PadState::default())
+            }
+        }
+    }
+
+    /// `Task::TakeBomb`.
+    fn take_bomb(&mut self, w: &PlayState, c: usize, step: Step) -> Option<PadState> {
+        self.wait += 1;
+        let p = w.player();
+        if p.held_actor.is_some_and(|b| w.actors.downcast::<crate::en_bom::EnBom>(b).is_some()) && p.action == PA::StandingStill && p.upper != crate::player::UpperAction::Change {
+            self.finish(Some(step));
+            return None;
+        }
+        if self.wait > 120 {
+            self.failure = Some(format!("no bomb out (held {}, bombs {})", p.held_item_ap, w.save.ammo(oot_game::item::ITEM_BOMB)));
+            return None;
+        }
+        if self.sub == 0 {
+            self.sub = 1;
+            const C_BUTTONS: [u16; 3] = [eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT];
+            return Some(self.press(C_BUTTONS[c]));
+        }
+        Some(PadState::default())
     }
 
     /// `Task::Glide`: `sub` counts the points passed; `tries` is 1 once Link is in the air.

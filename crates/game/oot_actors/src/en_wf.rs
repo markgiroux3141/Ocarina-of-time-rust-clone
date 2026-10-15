@@ -33,8 +33,9 @@
 //! head and eyes turned (`EnWf_OverrideLimbDraw`); `EnWf_PostLimbDraw` (in `draw_update`) puts its
 //! spheres on their limbs, the tail cylinder 1200 along the tail, and the ten body parts' places
 //! for the flames. The circle shadow (`ActorShadow_DrawCircle`, `shape.shadowScale`) is the usual
-//! stand-in. Not ported: `En_Bom` and `En_Bom_Chu` (so `Actor_FindNearby` finds no bomb), the
-//! hookshot (`Actor_GetProjectileActor` sees arrows only).
+//! stand-in. From a bomb or a Bomb Flower's within 80 (`Actor_FindNearby`, `ACTORCAT_EXPLOSIVE`) it
+//! backflips away (or circles Link, with a wall behind it); `En_Bom_Chu` isn't ported. Not ported: the hookshot (`Actor_GetProjectileActor` sees
+//! arrows only).
 //!
 //! Params: `type` bits 0 to 7 (`params != 0` is a White Wolfos: `gWolfosWhiteSkel`, scale 0.01,
 //! 8 damage, the mini-boss music; 0 gray, `gWolfosGraySkel`, 0.0075); init writes the type over

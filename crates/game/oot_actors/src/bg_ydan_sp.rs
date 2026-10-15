@@ -36,8 +36,8 @@
 //!   (`BgYdanSp_BurnFloorWeb`, `BgYdanSp_BurnWallWeb`), and it's gone. A floor web burns from a
 //!   fire hit or a burning stick under it (`Player_IsBurningStickInRange`).
 //!
-//! The whole overlay is ported. Link can't hold a Deku Stick yet (GAME-05 milestone 4b), so the
-//! stick's checks are reached only by the tests, which set what Player holds.
+//! The whole overlay is ported. A burning Deku Stick in Link's hand burns it (GAME-05 milestone
+//! 4b's stick).
 //!
 //! Params: `isDestroyedSwitchFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`: set when it's
 //! destroyed; set at init, it's gone); `burnSwitchFlag` bits 6 to 11 (`PARAMS_GET_U(params, 6,

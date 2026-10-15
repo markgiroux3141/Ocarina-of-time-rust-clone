@@ -732,22 +732,17 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     SavePreset {
         name: "ranch-epona",
         about: "lost-woods-games, and GAME-08 milestone 3's run over (Phase 9's end): the ranch's intro seen (EVENTCHKINF_B4), Malon's talks (EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH, _CAN_LEARN_EPONAS_SONG, INFTABLE_TOLD_EPONA_IS_SCARED), Epona's Song (Item_Give(ITEM_SONG_EPONA)), Talon's Super Cucco game won (INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE, ITEMGETINF_TALON_BOTTLE, Item_Give(ITEM_BOTTLE_MILK_FULL)), 16 rupees (Phase 10)",
+        apply: ranch_epona,
+    },
+    SavePreset {
+        name: "cavern-bombs",
+        about: "ranch-epona, the Goron's Bracelet (Item_Give(ITEM_STRENGTH_GORONS_BRACELET)) and the 20 bomb bag (Item_Give(ITEM_BOMB_BAG_20): 20 bombs) with the bombs on C-Right: a debug start at Dodongo's Cavern's entrance for GAME-09 milestone 1's run (the story gives the bracelet in milestone 2's Goron City, the bag in the cavern)",
         apply: |s| {
-            lost_woods_games(s);
-            // save.h: EVENTCHKINF_B4 (sEntranceCutsceneTable's flag for ENTR_LON_LON_RANCH_0),
-            // EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH 0x15, EVENTCHKINF_CAN_LEARN_EPONAS_SONG 0x16,
-            // INFTABLE_TOLD_EPONA_IS_SCARED 0x85, INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE 0x7E,
-            // ITEMGETINF_TALON_BOTTLE 0x02. item.h: ITEM_SONG_EPONA 0x61, ITEM_BOTTLE_MILK_FULL 0x1A
-            // (into the first bottle's slot). The cucco game's 10 rupees.
-            s.set_event_chk_inf(0xB4);
-            s.set_event_chk_inf(0x15);
-            s.set_event_chk_inf(0x16);
-            s.set_inf_table(0x85);
-            s.set_inf_table(0x7E);
-            s.set_item_get_inf(0x02);
-            item_give(s, None, 0x61);
-            item_give(s, None, 0x1A);
-            s.rupees -= 10;
+            ranch_epona(s);
+            item_give(s, None, crate::item::ITEM_STRENGTH_GORONS_BRACELET);
+            item_give(s, None, crate::item::ITEM_BOMB_BAG_20);
+            s.equips.button_items[3] = crate::item::ITEM_BOMB;
+            s.equips.c_button_slots[2] = crate::item::SLOT_BOMB as u8;
         },
     },
     SavePreset {
@@ -792,6 +787,25 @@ fn graveyard_sun(s: &mut SaveContext) {
     s.set_event_chk_inf(0x1D);
     s.set_event_chk_inf(0x5A);
     item_give(s, None, 0x63);
+}
+
+/// `ranch-epona`'s save (`cavern-bombs` builds on it).
+fn ranch_epona(s: &mut SaveContext) {
+    lost_woods_games(s);
+    // save.h: EVENTCHKINF_B4 (sEntranceCutsceneTable's flag for ENTR_LON_LON_RANCH_0),
+    // EVENTCHKINF_TALKED_TO_CHILD_MALON_AT_RANCH 0x15, EVENTCHKINF_CAN_LEARN_EPONAS_SONG 0x16,
+    // INFTABLE_TOLD_EPONA_IS_SCARED 0x85, INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE 0x7E,
+    // ITEMGETINF_TALON_BOTTLE 0x02. item.h: ITEM_SONG_EPONA 0x61, ITEM_BOTTLE_MILK_FULL 0x1A
+    // (into the first bottle's slot). The cucco game's 10 rupees.
+    s.set_event_chk_inf(0xB4);
+    s.set_event_chk_inf(0x15);
+    s.set_event_chk_inf(0x16);
+    s.set_inf_table(0x85);
+    s.set_inf_table(0x7E);
+    s.set_item_get_inf(0x02);
+    item_give(s, None, 0x61);
+    item_give(s, None, 0x1A);
+    s.rupees -= 10;
 }
 
 /// `lost-woods-games`' save (`ranch-epona` builds on it).

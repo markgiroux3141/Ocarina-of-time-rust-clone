@@ -142,6 +142,17 @@ pub trait PlayerIface {
     }
     /// `heldActor != NULL`.
     fn holds_actor(&self) -> bool;
+    /// `heldActor`.
+    fn held_actor(&self) -> Option<ActorHandle> {
+        None
+    }
+    /// `func_8002F5C4`'s write when the parent is Player (a Bomb Flower handing the carry on to
+    /// its bomb): `heldActor` and `interactRangeActor` become `actor`.
+    fn hand_over_held_actor(&mut self, _actor: ActorHandle) {}
+    /// An explosive's write when it goes in Link's hand (`EnBom_Explode`, `EnBombf_Explode`,
+    /// `EnBombf_GrowBomb`): `actor.child`, `heldActor` and `interactRangeActor` cleared,
+    /// `PLAYER_STATE1_CARRYING_ACTOR` off.
+    fn clear_carried(&mut self) {}
     /// `getItemDirection`: how squarely the last `GI_NONE` offer this frame faced Link.
     fn get_item_direction(&self) -> i16;
     /// `Actor_OfferGetItem`'s write: `getItemId`, `interactRangeActor`, `getItemDirection`.
@@ -385,6 +396,16 @@ impl ActorContext {
         self.lists[category.min(ACTORCAT_MAX - 1)].insert(0, h);
     }
 
+    /// The handle the next `insert` gives: what an actor that spawns one in the middle of its
+    /// update (Player's bomb in hand, `Player_InitExplosiveIA`) holds until the spawn runs at the
+    /// end of it.
+    pub fn next_handle(&self) -> ActorHandle {
+        match self.free.last() {
+            Some(&i) => ActorHandle { index: i, generation: self.slots[i as usize].generation + 1 },
+            None => ActorHandle { index: self.slots.len() as u32, generation: 0 },
+        }
+    }
+
     fn slot(&self, h: ActorHandle) -> Option<&Slot> {
         self.slots.get(h.index as usize).filter(|s| s.live && s.generation == h.generation)
     }
@@ -482,6 +503,26 @@ pub fn actor_set_player_knockback(play: &mut PlayState, speed: f32, yaw: i16, vy
     if let Some(pi) = play.player.and_then(|h| play.actors.get_mut(h)).and_then(|p| p.as_player_mut()) {
         pi.set_knockback(damage, kind, yaw, speed, vy);
     }
+}
+
+/// `func_8002F5C4`: what holds `actor_a` (the updating actor, its `parent`) holds `actor_b`
+/// instead: Player's `heldActor` and `interactRangeActor` when the parent is Player, the parent's
+/// `child`, `actor_b`'s `parent`; `actor_a` let go (a Bomb Flower handing the carry on to its
+/// bomb). The C reads through the parent, which its caller has (`Actor_HasParent`).
+pub fn func_8002f5c4(play: &mut PlayState, actor_a: &mut Actor, actor_b: ActorHandle) {
+    let Some(parent) = actor_a.parent else { return };
+    if play.actors.actor(parent).is_some_and(|p| p.id == ACTOR_PLAYER)
+        && let Some(pi) = play.actors.get_mut(parent).and_then(|p| p.as_player_mut())
+    {
+        pi.hand_over_held_actor(actor_b);
+    }
+    if let Some(p) = play.actors.actor_mut(parent) {
+        p.child = Some(actor_b);
+    }
+    if let Some(b) = play.actors.actor_mut(actor_b) {
+        b.parent = Some(parent);
+    }
+    actor_a.parent = None;
 }
 
 /// `Actor_SetPlayerKnockbackLarge`: a knockdown (kind 2).

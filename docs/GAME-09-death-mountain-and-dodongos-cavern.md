@@ -10,8 +10,8 @@ The phase starts from the `ranch-epona` preset (GAME-08's exit review).
 
 | # | Milestone | Status |
 |---|---|---|
-| 1 | Bombs: `En_Bom`, `En_Bombf`, Player's explosives, BACKLOG #33 | next |
-| 2 | The trail and Goron City to the bracelet, and the cavern's mouth | |
+| 1 | Bombs: `En_Bom`, `En_Bombf`, Player's explosives, BACKLOG #33 | done (2026-10-15) |
+| 2 | The trail and Goron City to the bracelet, and the cavern's mouth | next |
 | 3 | Dodongo's Cavern's route | |
 | 4 | King Dodongo and the Goron's Ruby (the phase's exit) | |
 | 5 | The rest of the cavern | |
@@ -280,3 +280,129 @@ checks, then a placeholder).
 
 The scope rule stays: every actor whole, except those a child's init kills, and the adult's parts
 above.
+
+## Milestone 1: Bombs
+
+**The answer:** at Dodongo's Cavern's entrance with the Goron's Bracelet and the 20 bomb bag (a
+debug start, `cavern-bombs`), child Link lifts the west Bomb Flower, carries it to the entrance
+wall, puts it down and walks off: its blast breaks the wall, and the cavern's opening plays
+(`gDcOpeningCs`, the title card, `EVENTCHKINF_B0`). Then a bomb out of the bag (C-Right), put down
+by the east flower: its blast sets the flower off. Scripts: `scripts\run\test-bombs.bat`,
+`game-bombs.bat`, `sandbox-bombs.bat` (menu 132 to 134).
+
+### What was built
+
+- **`En_Bom`** whole (ADR 0072): its fuse (70 frames, appearing at 67, sparks and smoke under 63,
+  the flash quickening at 40, 20 and 3), held, put down, thrown (the wall's rebound, the bounce,
+  offered again on the ground), set off by a hit or an enemy's touch, put out by deep water; the
+  blast (`Effect_Ss_Bomb2` layered, the shockwave, the light flash, the quake) and ten frames of a
+  `DMG_EXPLOSIVE` sphere growing by 8 and `shape.rot.z`'s low byte, its damage raised by the high
+  byte; letting go of Link when it goes in his hand. Two bakes.
+- **`En_Bombf`** whole: the flower (offering its bomb, the hand-over to the bomb it spawns when
+  lifted, a hit's bomb that blows at once but from a boss, a burning stick's with 100 on the fuse,
+  the regrowth, letting go of Link), and its bomb (a fuse of 140, the green flash quickening at
+  70, 50, 30 and 3, its own blast and sphere); its wall and ceiling flowers' tilt in the schema.
+  Two bakes (the bomb's spark on segment 8's billboarded matrix).
+- **`Effect_Ss_G_Spk`** whole: the fuse's sparks following their explosive (and its unused update
+  mode and spawners).
+- **Player:** `Player_InitExplosiveIA` (the bomb spawned in hand through a predicted handle,
+  `PlayRequest::SpawnHeldExplosive`), the bombs' upper body (`Player_UpperAction_CarryActor`);
+  `PlayerIface::held_actor`, `hand_over_held_actor` (`func_8002F5C4`, in `oot_game::actor_ctx`),
+  `clear_carried`; `Actor_OfferGetItem`'s `Player_GetExplosiveHeld` check;
+  `ActorContext::next_handle`.
+- **The callers:** the Peahat's death spawns a bomb with no fuse, the courtyard guard throws a
+  bomb (BACKLOG #33 closed).
+- **The `cavern-bombs` preset** (`ranch-epona`, the bracelet, the 20 bomb bag on C-Right), and
+  **`Route::Bombs`** with the tasks `LiftBombFlower`, `PutDown`, `TakeBomb` and the steps
+  `FlowerLifted`, `PutDown`, `DcOpening`, `BombOut`, `FlowerSetOff`.
+- **Coverage:** the `SCENES` and `ACTORS` corrections (the user's call); Phase 10 in progress, 33
+  actors placed (with `En_Fire_Rock`), 2 ported.
+
+### Results
+
+- `tests/bombs.rs` (8): a bomb taken out in hand, its fuse frame by frame from the C (69 at the end
+  of its spawn's frame, the scale at 67, the sparks under 63, the flash's halvings, 0.014 at 1),
+  its blast in hand (the light 250 then 225, Bomb2 and the shockwave, the sphere 8 then 72, the
+  release, the hit on Link, the bombs put away); a bomb put down and offered again; the entrance
+  wall's opening from a blast; the lobby's boulders (flag 0x15) and the flower between them; the
+  flower's tug without the bracelet; its lift, the hand-over and the regrowth (180 frames, then 20
+  steps of 0.05); the spark following its bomb; the exit's run. `tests/field.rs`'s Peahat test goes
+  on through its bomb (damage 14, growth 2: the sphere 10 a frame).
+- The exit's run: 572 frames. The flower lifted at 105, put down at 190, the opening over at 425;
+  the bomb out at 494, put down at 508, the east flower set off at 572. One bomb spent, no hit.
+- 1,115 tests (one ignored) pass; `cargo test -p layering` passes; no warnings.
+- Goldens: `field`'s trace changed (proven below), 209 the same; 5 new cases (`bombs`,
+  `bombs_carry`, `bombs_blast`, `bombs_opening`, `bombs_bomb`). 216 hashes, 166 cases
+  (`out/golden_base23`).
+
+### Decisions
+
+- Player's explosive in hand goes through a predicted handle (ADR 0072): the rest of his update
+  reads `heldActor` as the C's does, and the bomb still updates the same frame after him.
+- The explosion's sphere is centred where the bomb last drew, as the C's: `Collider_UpdateSpheres`
+  in `draw_update`.
+- The run is a debug start at the cavern's entrance (the user's split put the bracelet in milestone
+  2 and the bag in 3).
+
+### Corrections to the survey
+
+- The proposal's run ("a debug start with a bomb bag breaks a wall, a rock and a crate"): from the
+  cavern's entrance the lobby's other walls, its boulders and crates are past the pit (a search over
+  the collision finds no walk to the side wings: milestone 3's pillars). The run uses the
+  entrance's two flowers instead; the lobby's boulders are a test. The Peahat's death is a test too,
+  and `Route::Field` already killed one (its trace changed).
+- The cavern's wall and ceiling flowers are tilted by `rot.x` (0x4000, 0x8000): the schema names
+  it.
+- The survey's "no `PlayerIface` write" for an explosive's release is three methods; the hand-over
+  needed Player's `heldActor` from outside his update too.
+
+### Known gaps
+
+- Bombchus (`En_Bom_Chu`, BACKLOG #70); the rumble (#60); the circle shadows and the bomb's shine
+  (`func_8002EBCC`: the rendering debt).
+- A soft stick up the cavern's entrance ramps leaves Link standing (#71: to check by hand).
+- Link's bracelet isn't drawn on him (milestone 2); the cavern's draw config (its lava, the
+  skull's eyes) is milestone 3's: the lobby's materials are their import-time values.
+
+### Fixes found while building
+
+- `PlayerIface::holds_actor` was always false: an item offered while Link carried something was
+  refused (`Actor_OfferGetItem`'s `heldActor != NULL`).
+- An offer straight in front of Link (a yaw difference of 0x8000) was refused: the C's
+  `ABS(yawDiff)` is 32768 in an `s32`, the port's was -32768 in an `i16`.
+- Stale docs: `Bg_Ydan_Sp` (Link holds a Deku Stick since GAME-05), `interface.rs` (the timers are
+  ported), `Bg_Breakwall`, `Obj_Bombiwa`, `Obj_Kibako2`, `En_Wf`, `En_Peehat`, `En_Heishi2` (bombs).
+- `scripts/__pycache__` is ignored (a `.pyc` had been committed with the exit review).
+
+### Golden proof
+
+- `field`'s trace: only `actors` differs, from frame 398 (the Peahat's death) to the end, one fewer:
+  the old placeholder bomb stayed, the real one explodes and is gone ten frames on. **A**, this
+  code with `En_Bom` unregistered (its spawn a placeholder again, `target/game26proof`): all six
+  `field` hashes back (`out/golden_proof_g9m1_A.txt`).
+
+### How to check
+
+```
+scripts\run\test-bombs.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-bombs.bat
+```
+
+### By hand
+
+1. `game-bombs`: Dodongo's Cavern's entrance. Walk west up the ramp to the Bomb Flower on the
+   raised strip; A by it: Link lifts its bomb (it fizzes, a spark at its top, flashing red as the
+   fuse runs down) and the flower grows a new one. Carry it to the wall ahead, stand still, A: it's
+   put down. Walk away: it explodes, the wall breaks, the camera looks up into the cavern
+   ("Dodongo's Cavern").
+2. C-Right (L): a bomb in Link's hands (19 left). A or L standing: put down; while running: thrown.
+   It flashes faster and explodes about two seconds after it came out.
+3. Hold a bomb until it explodes: half a heart off, Link knocked about, his hands empty.
+4. A bomb put down next to the east flower: its blast sets the flower off a moment later.
+5. Pick a lying bomb up again (A by it) before it explodes.
+6. Walk slowly (Shift) up a ramp to a flower strip: does Link stop halfway? (#71)
+7. `game-bombs field`: Hyrule Field by day. Kill a Peahat (Z and slash it when it lands, or its
+   root): it shrinks rising and explodes, three drops.

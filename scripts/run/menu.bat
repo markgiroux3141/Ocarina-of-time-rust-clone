@@ -56,6 +56,7 @@ echo   119  test-graveyard       GAME-07's graveyard tests: the ReDeads, Dampe, 
 echo   122  test-meadow          GAME-08's meadow tests: Saria, the Wolfos, the gate, the run, the actor schemas
 echo   126  test-lost-woods      GAME-08's Lost Woods tests: the Skull Kids, the memory game, the target scrub, the run
 echo   129  test-ranch           GAME-08's ranch tests: the foal, the horses, Ingo, the Guays, Talon, the timers, the run
+echo   132  test-bombs           GAME-09's bomb tests: the bomb, the Bomb Flower, the sparks, the blasts, the run
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -102,6 +103,7 @@ echo   120  game-graveyard       The graveyard at 18:30 with the lullaby (asks: 
 echo   123  game-meadow          The Lost Woods to the meadow with the letter (asks: or the meadow, Saria, a new save's greeting)
 echo   127  game-lost-woods      The Lost Woods' Skull Kids and target with Saria's Song (asks: or the stump, the target, the game)
 echo   130  game-ranch           Lon Lon Ranch: Malon, the foal, Talon's cucco game (asks: or Malon, night, the stable, Ingo, the house)
+echo   133  game-bombs           Dodongo's Cavern's entrance with the bracelet and bombs (asks: or Hyrule Field)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -142,6 +144,7 @@ echo   124  sandbox-meadow       The meadow run's trace and screenshots (the woo
 echo   125  export-glb           The game's characters as .glb files for Blender, T-posed, into out\glb\characters
 echo   128  sandbox-lost-woods   The Lost Woods run's trace and screenshots (the stump, the target, the memory game), into out\run
 echo   131  sandbox-ranch        The ranch run's trace and screenshots (Malon, the foal, the cucco game), into out\run
+echo   134  sandbox-bombs        The bombs run's trace and screenshots (the flower, the wall, the bomb), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -283,6 +286,9 @@ if "%pick%"=="128" set "script=sandbox-lost-woods"
 if "%pick%"=="129" set "script=test-ranch"
 if "%pick%"=="130" goto ranch
 if "%pick%"=="131" set "script=sandbox-ranch"
+if "%pick%"=="132" set "script=test-bombs"
+if "%pick%"=="133" goto bombs
+if "%pick%"=="134" set "script=sandbox-bombs"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -296,6 +302,14 @@ set "which="
 set /p "which=Which (empty: the entrance by day; pen, roof, gate, night, dusk, cow, windmill, skulltula, guests, shop or guardhouse): "
 call "%~dp0game-kakariko.bat" %which%
 echo game-kakariko finished (exit code %errorlevel%).
+pause
+goto menu
+
+:bombs
+set "which="
+set /p "which=Which (empty: Dodongo's Cavern's entrance; field): "
+call "%~dp0game-bombs.bat" %which%
+echo game-bombs finished (exit code %errorlevel%).
 pause
 goto menu
 

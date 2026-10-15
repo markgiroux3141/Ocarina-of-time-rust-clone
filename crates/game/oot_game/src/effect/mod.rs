@@ -26,7 +26,7 @@
 //! `Effect_Ss_Stone1` (where one hits); for GAME-07 milestone 4's courtyard guards,
 //! `Effect_Ss_Solder_Srch_Ball` (their look); for milestone 6's royal tomb, `Effect_Ss_Bomb2`
 //! (the gravestone's explosion); for GAME-08 milestone 2's target scrub, `Effect_Ss_Extra` (a
-//! mini-game's score). Spawning another type logs it and does nothing, as the C
+//! mini-game's score); for GAME-09 milestone 1's bombs, `Effect_Ss_G_Spk` (the fuse's sparks). Spawning another type logs it and does nothing, as the C
 //! does for a type with no init.
 //!
 //! ## `z_effect.c`
@@ -55,6 +55,7 @@ pub mod extra;
 pub mod fcircle;
 pub mod fhg_flash;
 pub mod fire_tail;
+pub mod g_spk;
 pub mod hahen;
 pub mod hitmark;
 pub mod k_fire;
@@ -81,6 +82,7 @@ pub const EFFECT_SS_DUST: u8 = 0x00;
 pub const EFFECT_SS_KIRAKIRA: u8 = 0x01;
 pub const EFFECT_SS_BOMB2: u8 = 0x03;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
+pub const EFFECT_SS_G_SPK: u8 = 0x05;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
 pub const EFFECT_SS_STICK: u8 = 0x10;
 pub const EFFECT_SS_SIBUKI: u8 = 0x11;
@@ -155,6 +157,10 @@ pub enum SsUpdate {
     Bomb2,
     /// `EffectSsExtra_Update`.
     Extra,
+    /// `EffectSsGSpk_Update`.
+    GSpk,
+    /// `EffectSsGSpk_UpdateNoAccel` (unused in the game).
+    GSpkNoAccel,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -200,6 +206,8 @@ pub enum SsDraw {
     Bomb2Layered,
     /// `EffectSsExtra_Draw`.
     Extra,
+    /// `EffectSsGSpk_Draw`.
+    GSpk,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -302,6 +310,7 @@ pub enum SsInit {
     SolderSrchBall(solder_srch_ball::SolderSrchBallInit),
     Bomb2(bomb2::Bomb2Init),
     Extra(extra::ExtraInit),
+    GSpk(g_spk::GSpkInit),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -397,6 +406,7 @@ impl SsSpawn<'_> {
             SsInit::SolderSrchBall(p) => solder_srch_ball::init(&mut e, &p),
             SsInit::Bomb2(p) => bomb2::init(&mut e, &p),
             SsInit::Extra(p) => extra::init(self, &mut e, &p),
+            SsInit::GSpk(p) => g_spk::init(&mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -829,6 +839,7 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(stone1::bakes());
     v.extend(bomb2::bakes());
     v.extend(extra::bakes());
+    v.extend(g_spk::bakes());
     v
 }
 
@@ -932,6 +943,8 @@ impl PlayState {
             SsUpdate::SolderSrchBall => solder_srch_ball::update(self, &mut e),
             SsUpdate::Bomb2 => bomb2::update(&mut e),
             SsUpdate::Extra => extra::update(self, &mut e),
+            SsUpdate::GSpk => g_spk::update(self, &mut e),
+            SsUpdate::GSpkNoAccel => g_spk::update_no_accel(self, &mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -1001,6 +1014,7 @@ impl PlayState {
                 SsDraw::Bomb2Fade => bomb2::draw_fade(e, &ctx, &mut out),
                 SsDraw::Bomb2Layered => bomb2::draw_layered(e, &ctx, &mut out),
                 SsDraw::Extra => extra::draw(e, ctx.billboard, &mut out),
+                SsDraw::GSpk => g_spk::draw(e, ctx.billboard, &mut out),
             }
         }
         for i in deleted {

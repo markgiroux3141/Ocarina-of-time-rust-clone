@@ -16,7 +16,7 @@
 //! - **Type 6**: the guards seen through Zelda's courtyard's window, a static list
 //!   (`EnHeishi2_DrawKingGuard`, `gHeishiKingGuardDL`).
 //! - **Type 9** (not placed): a guard lying on his side who rolls over, says 0x708F and throws a
-//!   bomb (`En_Bom`, a placeholder: BACKLOG #33), and is gone.
+//!   bomb (`En_Bom`), and is gone.
 //!
 //! Each turns his head to Link (`Actor_TrackPlayer`) and offers to talk within 120 in front of him.
 //! The mask reactions give 0 (no masks yet: BACKLOG #39). The whole overlay is ported.
@@ -837,7 +837,6 @@ impl EnHeishi2 {
                         b.speed_xz = speed;
                         b.velocity.y = vy;
                     }
-                    log::info!("En_Heishi2: its bomb (En_Bom) is a placeholder (BACKLOG #33)");
                 }
                 Err(e) => log::debug!("En_Heishi2: no bomb: {e:?}"),
             }

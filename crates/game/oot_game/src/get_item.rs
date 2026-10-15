@@ -34,8 +34,10 @@ pub fn offer_get_item_range(play: &mut PlayState, actor: &Actor, get_item_id: i1
     let Some(player_yaw) = play.actors.actor(ph).map(|a| a.shape_rot.y) else { return false };
     let Some(pi) = play.actors.get_mut(ph).and_then(|p| p.as_player_mut()) else { return false };
     let s1 = pi.state_flags1();
-    // (Player_GetExplosiveHeld: Player holds no bombs here.)
-    if s1 & (STATE1_7 | STATE1_12 | STATE1_13 | STATE1_14 | STATE1_18 | STATE1_19 | STATE1_20 | STATE1_21) != 0 {
+    // Player_GetExplosiveHeld(player) < 0: no bomb or Bombchu in hand (Player_ActionToExplosive:
+    // heldItemAction from PLAYER_IA_BOMB, 0 or 1).
+    let explosive = pi.held_item_action() - play.data.items.ap("BOMB");
+    if s1 & (STATE1_7 | STATE1_12 | STATE1_13 | STATE1_14 | STATE1_18 | STATE1_19 | STATE1_20 | STATE1_21) != 0 || (0..2).contains(&explosive) {
         return false;
     }
     let (target, _) = pi.talk_target();
@@ -44,9 +46,11 @@ pub fn offer_get_item_range(play: &mut PlayState, actor: &Actor, get_item_id: i1
         return false;
     }
     if actor.xz_dist_to_player < xz_range && actor.y_dist_to_player.abs() < y_range {
-        let abs_yaw_diff = (actor.yaw_towards_player.wrapping_sub(player_yaw) as i32).abs() as i16;
-        if get_item_id != GI_NONE || pi.get_item_direction() < abs_yaw_diff {
-            pi.set_get_item(me, get_item_id, abs_yaw_diff);
+        // s32 absYawDiff = ABS(yawDiff): 32768 for an actor straight in front (the yaw difference
+        // 0x8000), compared as an s32 and stored back into the s16 getItemDirection.
+        let abs_yaw_diff = (actor.yaw_towards_player.wrapping_sub(player_yaw) as i32).abs();
+        if get_item_id != GI_NONE || (pi.get_item_direction() as i32) < abs_yaw_diff {
+            pi.set_get_item(me, get_item_id, abs_yaw_diff as i16);
             return true;
         }
     }

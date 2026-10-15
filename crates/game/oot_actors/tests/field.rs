@@ -184,8 +184,8 @@ fn a_peahat_reacts_to_hits_by_its_damage_table() {
     assert_eq!((p.actor.col_chk_info.health, p.actor.color_filter_params), (5, COLORFILTER_COLORFLAG_RED | (255 & 0xF8) << 5 | 8));
     // The hookshot: no health at once, EnPeehat_Adult_SetStateDie (state 0); in the same update
     // EnPeehat_Adult_StateDie's first pass (health 0: the recoil, 6 up, unk_2D4 14); 14 updates
-    // more to EnPeehat_SetStateExplode (state 1); its first update spawns the bomb (En_Bom: a
-    // placeholder), and it's killed when animTimer reaches 0, five updates in.
+    // more to EnPeehat_SetStateExplode (state 1); its first update spawns the bomb (En_Bom with
+    // timer 0), and it's killed when animTimer reaches 0, five updates in.
     hit(&mut w, PEAHAT_DMG_REACT_HOOKSHOT, 2);
     idle(&mut w, 1);
     let p = peahat(&w, h);
@@ -198,7 +198,18 @@ fn a_peahat_reacts_to_hits_by_its_damage_table() {
     assert_eq!(bombs(&w), 0);
     idle(&mut w, 1);
     assert_eq!(bombs(&w), 1, "En_Bom (rot.z 0x602) at its place");
-    idle(&mut w, 3);
+    // EnBom_Init with rot.z 0x602: the explosion's damage 8 + 6, rot.z its low byte 2. Spawned in
+    // the Peahat's (ENEMY) turn, after the explosives', it blows on its first update, the next
+    // frame: params 1, ten frames; then its sphere grows by 2 + 8 a frame.
+    let b = w.actors.all().into_iter().find(|&b| w.actors.actor(b).is_some_and(|a| a.id == 0x0010)).unwrap();
+    let bomb = w.actors.downcast::<oot_actors::en_bom::EnBom>(b).unwrap();
+    assert_eq!((bomb.explosion_collider.elements[0].info.at_dmg_info.damage, bomb.actor.shape_rot.z, bomb.timer), (14, 2, 0));
+    idle(&mut w, 1);
+    let bomb = w.actors.downcast::<oot_actors::en_bom::EnBom>(b).unwrap();
+    assert_eq!((bomb.actor.params, bomb.timer), (1, 10));
+    idle(&mut w, 1);
+    assert_eq!(w.actors.downcast::<oot_actors::en_bom::EnBom>(b).unwrap().explosion_collider.elements[0].dim.world_sphere.radius, 10);
+    idle(&mut w, 1);
     assert!(w.actors.exists(h));
     idle(&mut w, 2);
     assert!(!w.actors.exists(h), "Actor_Kill when animTimer reaches 0");

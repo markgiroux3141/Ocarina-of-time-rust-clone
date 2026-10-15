@@ -14,8 +14,8 @@
 //! The Master Quest Deku Tree's: room 0's middle floor (279, 360, 333), params 0xFFFF, with its
 //! Gold Skulltula placed inside it on its own (`En_Sw` 0x8102 at (278, 360, 332)); room 10's
 //! two at (-805, 720, -2) and (-805, 720, -62), 0xFFFF. Each drops a green rupee (`rot.x` 0,
-//! flag 0). Link has no hammer or bombs yet (GAME-05 milestone 4b): the tests inject the hit
-//! and the explosion. The whole overlay is ported.
+//! flag 0). A bomb's or a Bomb Flower's blast breaks them (GAME-09 milestone 1); the hammer isn't
+//! ported (the tests inject its hit). The whole overlay is ported.
 //!
 //! Params: `noGoldSkulltula` bit 15 (`PARAMS_GET_NOSHIFT(params, 15, 1)`: 0 a Gold Skulltula
 //! inside, 1 none); with it 0, `goldSkulltulaParams` bits 0 to 14 (`En_Sw`'s params, spawned

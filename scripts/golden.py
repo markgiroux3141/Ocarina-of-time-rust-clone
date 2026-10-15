@@ -260,6 +260,14 @@ CASES = [
     # GAME-08 milestone 3, step (b): Talon's house.
     ("ranch_cucco_game", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "4700", "--screenshot", "{shot}"]),
     ("ranch_milk", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "5600", "--screenshot", "{shot}"]),
+    # GAME-09 milestone 1: Dodongo's Cavern's entrance with the bracelet and bombs (cavern-bombs):
+    # the west Bomb Flower carried to the entrance wall, its blast, the cavern's opening; a bomb
+    # out of the bag by the east flower.
+    ("bombs", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("bombs_carry", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "150", "--screenshot", "{shot}"]),
+    ("bombs_blast", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "250", "--screenshot", "{shot}"]),
+    ("bombs_opening", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "330", "--screenshot", "{shot}"]),
+    ("bombs_bomb", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "505", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ranch_ingo", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "castle-egg", "--at=760,0,-2040,-12000", "--script", "still", "--frames", "300", "--screenshot", "{shot}"]),
     ("stable_night", S, ["--entrance", "ENTR_STABLE_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=300,0,60,-32768", "--script", "still", "--frames", "90", "--screenshot", "{shot}"]),

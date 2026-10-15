@@ -12,8 +12,9 @@
 //! flag, `NA_SE_EV_WALL_BROKEN`, the chime for bit 15, gone.
 //!
 //! The Master Quest Deku Tree's are room 2's three, params 3, 4 and 8 (flags 3, 4, 8; no chime)
-//! at y 656, turned -24576 (so no `Rand`). Link has no bombs or hammer yet (GAME-05 milestone
-//! 4c): the tests inject the explosion and the hit. The whole overlay is ported.
+//! at y 656, turned -24576 (so no `Rand`). A bomb's or a Bomb Flower's blast breaks them
+//! (GAME-09 milestone 1); the hammer isn't ported (the tests inject its hit). The whole overlay is
+//! ported.
 //!
 //! Params: `switchFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`: set when it breaks; set at
 //! init, it's gone); bits 6 and 7 unused (the data's 0xFF); `chime` bit 15

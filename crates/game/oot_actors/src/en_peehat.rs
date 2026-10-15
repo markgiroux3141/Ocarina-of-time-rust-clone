@@ -20,7 +20,7 @@
 //!   dies (`EnPeehat_Adult_StateDie`): it shrinks rising, then explodes (an `En_Bom` with no fuse)
 //!   and drops three from table 4.
 //!
-//! The whole overlay is ported. `En_Bom` isn't: its explosion spawns a placeholder (logged).
+//! The whole overlay is ported (its explosion's `En_Bom` since GAME-09 milestone 1, BACKLOG #33).
 //! Its blades dig only while it's in its culling volume (ADR 0058). The circle shadow isn't drawn (`shadowScale` kept).
 //!
 //! Params: `params` whole, the type (`PeahatType`: -1 `PEAHAT_TYPE_GROUNDED`, 0
@@ -72,7 +72,7 @@ pub const TYPE: Field = Field::whole(
 pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
 
 
-/// `ACTOR_EN_BOM` (`actor_table.h`: 0x0010), the bomb its death spawns (not ported).
+/// `ACTOR_EN_BOM` (`actor_table.h`: 0x0010), the bomb its death spawns.
 const ACTOR_EN_BOM: i16 = 0x0010;
 
 /// `PeahatType`.
@@ -1065,8 +1065,11 @@ impl EnPeehat {
     fn state_explode(&mut self, play: &mut PlayState) {
         if self.anim_timer == 5 {
             match play.actor_spawn(ACTOR_EN_BOM, self.actor.world_pos, [0, 0, 0x602], 0) {
-                // The bomb's timer = 0: En_Bom isn't ported (its placeholder has no timer).
-                Ok(_) => log::info!("En_Peehat: its explosion (En_Bom) is a placeholder"),
+                Ok(h) => {
+                    if let Some(bomb) = play.actors.downcast_mut::<crate::en_bom::EnBom>(h) {
+                        bomb.timer = 0;
+                    }
+                }
                 Err(e) => log::debug!("En_Peehat: no bomb: {e:?}"),
             }
         }

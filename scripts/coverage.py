@@ -31,7 +31,7 @@ PHASES = {
     7: ("The road out of the forest (GAME-06)", "done"),
     8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "done"),
     9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "done"),
-    10: ("Death Mountain and Dodongo's Cavern", "planned"),
+    10: ("Death Mountain, Goron City and Dodongo's Cavern (GAME-09)", "in progress"),
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu", "planned"),
     12: ("The Temple of Time and the adult world", "planned"),
     13: ("Epona and the adult Hyrule Field", "planned"),
@@ -93,9 +93,13 @@ SCENES = {
     "spot02_scene": (8, 14, 17), "hakaana_scene": (8, 17, 8), "hakaana2_scene": (8, 17, 8),
     "hakaana_ouke_scene": (8, 17, 8), "hakasitarelay_scene": (8, 14, 17),
     "yousei_izumi_tate_scene": (8, 20, 8),
-    # Death Mountain: the trail's 4 the creation's, 8 the sages' (the ending's).
-    "spot16_scene": (10, 15, 10, {4: 7, 8: 19}), "spot18_scene": (10, 15, 10), "spot17_scene": (15, 15, 15),
-    "daiyousei_izumi_scene": (10, 15, 10),
+    # Death Mountain: the trail's 4 the creation's, 5 the Goron's Ruby's, 6 unused (the map select's
+    # only), 7 and 8 the credits'; Goron City's 4 Darunia's dance (the map select's only: in play
+    # En_Du starts its scripts on layer 0), 5 the credits'; the fountain's 4 to 6 the three rewards'
+    # scripts (in play Bg_Dy_Yoseizo starts them itself): 5 double magic (the crater's fountain, an
+    # adult), 6 double defence (outside Ganon's Castle).
+    "spot16_scene": (10, 15, 10, {4: 7, 6: None, 7: 19, 8: 19}), "spot18_scene": (10, 15, 10, {5: 19}), "spot17_scene": (15, 15, 15),
+    "daiyousei_izumi_scene": (10, 15, 10, {5: 15, 6: 19}),
     # Zora's waters.
     "spot03_scene": (11, 16, 11), "spot07_scene": (11, 16, 16), "spot08_scene": (11, 16, 11),
     "spot06_scene": (11, 16, 16), "hylia_labo_scene": (11, 16, 11),
@@ -131,6 +135,8 @@ ACTORS = {
     # can't open (Bg_Spot02_Objects type 1 seals it for him); the child's layers place it anyway
     "En_Okuta": 11,  # the Octorok: the Lost Woods' (spot10 room 3) never spawns, since object_okuta
     # is in none of its rooms' object lists (Actor_Spawn refuses it); first met in Zora's River
+    "En_Fire_Rock": 10,  # Death Mountain Trail's falling rocks: En_Encount2 spawns them for a child
+    # too (only an adult with EVENTCHKINF_49 kills the spawner); placed only in Ganon's Castle
 }
 
 # What a ported actor's module docs say when it leaves something out.

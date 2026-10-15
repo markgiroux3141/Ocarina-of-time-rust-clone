@@ -21,8 +21,8 @@
 //! secret's chime (`NA_SE_SY_TRE_BOX_APPEAR`).
 //!
 //! In the child's game: the shield grave (`hakaana2_scene` room 0) has one, params 0xA001 at
-//! (-28, 20, 386): a wall (type 1), flag 1, with the chime; it hides the fairy fountain. Link has
-//! no bombs yet (`En_Bom` isn't ported): it stands. The whole overlay is ported.
+//! (-28, 20, 386): a wall (type 1), flag 1, with the chime; it hides the fairy fountain. A bomb
+//! (`En_Bom`) or a Bomb Flower's (`En_Bombf`) breaks it. The whole overlay is ported.
 //!
 //! Params: `switchFlag` bits 0 to 5 (set when it breaks; set at init, the wall's gone; the lava
 //! cover doesn't read it); bits 6 to 12 unused; `wallType` bits 13 to 14 (`BombableWallType`: 0
