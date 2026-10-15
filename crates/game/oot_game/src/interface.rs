@@ -175,9 +175,12 @@ pub struct InterfaceContext {
     pub navi_calling: bool,
     pub c_up_invisible: i16,
     pub c_up_timer: i16,
-    /// `sEnvHazard`: the hazard less the tunic that protects from it (the hot room's and
-    /// underwater timers that read it aren't ported).
+    /// `sEnvHazard`: the hazard less the tunic that protects from it (the hot room's and the
+    /// water's timer: `crate::timer`).
     pub env_hazard: u8,
+    /// `Interface_Draw`'s timer statics and `sEnvHazardActive` (`crate::timer`): they outlive
+    /// the play state (`PlayState::reinit` carries them over).
+    pub timers: crate::timer::TimerStatics,
     /// `unk_23C`: the score a mini-game's points last showed (`Effect_Ss_Extra`; the horseback
     /// archery reads it).
     pub unk_23c: u16,
@@ -222,6 +225,7 @@ impl Default for InterfaceContext {
             restrictions: Restrictions::default(),
             navi_calling: false,
             env_hazard: 0,
+            timers: Default::default(),
             c_up_invisible: 0,
             c_up_timer: 0,
             unk_23c: 0,
@@ -234,17 +238,6 @@ impl Default for InterfaceContext {
 pub const HUD_VISIBILITY_NOTHING: u16 = 1;
 /// `HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS` (`save.h`).
 pub const HUD_VISIBILITY_ALL_NO_MINIMAP_BY_BTN_STATUS: u16 = 7;
-
-/// `Interface_SetTimer`: the main timer at (140, 80), counting down from `seconds`
-/// (`TIMER_STATE_DOWN_INIT`), or up from 0 when `seconds` is 0 (`TIMER_STATE_UP_INIT`). (It also
-/// clears `sEnvHazardActive`, the hot rooms' and the water's timer, which isn't ported.)
-pub fn interface_set_timer(save: &mut SaveContext, seconds: i16) {
-    use crate::save::{TIMER_ID_MAIN, TIMER_STATE_DOWN_INIT, TIMER_STATE_UP_INIT};
-    save.timer_x[TIMER_ID_MAIN] = 140;
-    save.timer_y[TIMER_ID_MAIN] = 80;
-    save.timer_seconds = seconds;
-    save.timer_state = if seconds != 0 { TIMER_STATE_DOWN_INIT } else { TIMER_STATE_UP_INIT };
-}
 
 /// `func_80084BF4(play, 1)` (the pause menu's opening, `KaleidoScope_UpdateOpening`): B's item
 /// back from `buttonStatus[0]` where a slingshot, bow, bombchu or fishing rod stood in for it
@@ -859,7 +852,25 @@ impl InterfaceContext {
             }
             _ => {}
         }
-        // (Magic, timers, the minigame score and the Sun's Song aren't ported.)
+        // (Magic_Update: no magic.) The hot room's and the water's timer: started while Link
+        // has health to lose (half his health in seconds, crate::timer), stopped once he's out
+        // of it (or swimming) while it's the hazard's.
+        {
+            use crate::play::{PLAYER_ENV_HAZARD_HOTROOM, PLAYER_ENV_HAZARD_NONE, PLAYER_ENV_HAZARD_SWIMMING, PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, PLAYER_ENV_HAZARD_UNDERWATER_FREE};
+            use crate::save::{TIMER_ID_MAIN, TIMER_STATE_ENV_HAZARD_INIT, TIMER_STATE_ENV_HAZARD_TICK, TIMER_STATE_OFF};
+            let h = self.env_hazard;
+            if save.timer_state == TIMER_STATE_OFF {
+                if (h == PLAYER_ENV_HAZARD_HOTROOM || h == PLAYER_ENV_HAZARD_UNDERWATER_FLOOR || h == PLAYER_ENV_HAZARD_UNDERWATER_FREE) && (save.health >> 1) != 0 {
+                    save.timer_state = TIMER_STATE_ENV_HAZARD_INIT;
+                    save.timer_x[TIMER_ID_MAIN] = 140;
+                    save.timer_y[TIMER_ID_MAIN] = 80;
+                    self.timers.env_hazard_active = true;
+                }
+            } else if (h == PLAYER_ENV_HAZARD_NONE || h == PLAYER_ENV_HAZARD_SWIMMING) && save.timer_state <= TIMER_STATE_ENV_HAZARD_TICK {
+                save.timer_state = TIMER_STATE_OFF;
+            }
+        }
+        // (The minigame score: no horseback archery. The Sun's Song: PlayState's.)
     }
 
     /// `Interface_Draw` up to the Z-target reticle (`Attention_Draw` is drawn between the two
@@ -1139,6 +1150,8 @@ fn a_button_view(top: f32, bottom: f32, left: f32, right: f32) -> Mat4 {
 
 // The HUD's sprites.
 const RUPEE_ICON: &str = "hud/rupee_icon";
+/// The timers' clock (`gClockIconTex`).
+pub(crate) const CLOCK_ICON: &str = "hud/clock_icon";
 const SMALL_KEY_ICON: &str = "hud/small_key_icon";
 
 /// The scenes `Interface_Draw`'s `switch` shows the small key counter in (`scene_table.h`'s ids):
@@ -1178,7 +1191,7 @@ fn heart_sprite(i: usize) -> String {
 fn beating_heart_sprite(i: usize) -> String {
     format!("hud/heart_beat{i}")
 }
-fn digit_sprite(d: usize) -> String {
+pub(crate) fn digit_sprite(d: usize) -> String {
     format!("hud/digit{d}")
 }
 fn item_icon_sprite(item: u8) -> String {
@@ -1248,13 +1261,16 @@ pub fn bakes() -> Vec<SpriteBake> {
     v.push(SpriteBake { name: RUPEE_ICON.into(), tex: param("gRupeeCounterIconTex"), load: ia8(16, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: 16, t: 16 } });
     // The small key icon, the same way.
     v.push(SpriteBake { name: SMALL_KEY_ICON.into(), tex: param("gSmallKeyCounterIconTex"), load: ia8(16, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: 16, t: 16 } });
-    // The counter digits: Gfx_TextureI8 after the prim-alpha combiner.
-    for d in 0..10 {
+    // The timers' clock, the same way.
+    v.push(SpriteBake { name: CLOCK_ICON.into(), tex: param("gClockIconTex"), load: ia8(16, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: 16, t: 16 } });
+    // The counter digits: Gfx_TextureI8 after the prim-alpha combiner (10: the timers' colon,
+    // gCounterColonTex, the eleventh in the row).
+    for d in 0..=10 {
         let mut setup = setup_dl::setup_dl_39();
         setup.combine_lerp(PRIM_BY_TEXEL_ALPHA, PRIM_BY_TEXEL_ALPHA);
         v.push(SpriteBake {
             name: digit_sprite(d),
-            tex: param(&format!("gCounterDigit{d}Tex")),
+            tex: param(&if d == 10 { "gCounterColonTex".to_string() } else { format!("gCounterDigit{d}Tex") }),
             load: Load::new(G_IM_FMT_I, G_IM_SIZ_8B, 8, 16, G_TX_WRAP),
             setup,
             prim: true,

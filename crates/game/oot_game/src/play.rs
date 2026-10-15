@@ -473,6 +473,9 @@ pub struct PlayState {
     /// `play->state.frames`: the game state's frames run (`GameState_Update` counts them after
     /// each one).
     pub state_frames: u32,
+    /// `play->damagePlayer`: `Player_InflictDamage`, which `Player_Init` sets (the actors' crate
+    /// has it); `None` until a Player is spawned.
+    pub damage_player: Option<fn(&mut PlayState, i32) -> bool>,
     /// `R_UPDATE_RATE` (`SREG(30)`): the VI retraces a game frame lasts (`graph.c` gives it to
     /// the frame buffer's `updateRate`). 3 in play (20 frames a second); the pause menu sets 2
     /// (30 a second) from Start until it resumes the game (`KaleidoSetup_Update`,
@@ -580,6 +583,7 @@ impl PlayState {
             effect_ctx: Default::default(),
             effect_draws: Default::default(),
             state_frames: 0,
+            damage_player: None,
         }
     }
 
@@ -966,6 +970,10 @@ impl PlayState {
         // Play_DrawOverlayElements (not on the frame the pause background is saved): the pause
         // menu's draw, then Message_Draw, then GameOver_FadeInLights.
         if !self.kaleido_scope_draw_update() {
+            // Interface_Draw's timers (crate::timer), before Message_Draw.
+            if self.interface_ctx.initialised {
+                self.interface_draw_timers();
+            }
             self.with_msg(|m, f| m.draw_update(f));
             if self.game_over_ctx.state != crate::game_over::GAMEOVER_INACTIVE {
                 self.game_over_fade_in_lights();
@@ -1759,6 +1767,8 @@ impl PlayState {
         if self.interface_ctx.initialised {
             let mut sprites = Vec::new();
             self.interface_ctx.draw_hud_2(&self.save, &hud_pause, &mut sprites);
+            // The end of Interface_Draw: the timer.
+            self.interface_ctx.timers.draw(&self.save, &mut sprites);
             out.overlay_2d.extend(sprites.iter().map(|s| s.draw_cmd()));
         }
         self.msg_ctx.draw(out);

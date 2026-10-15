@@ -257,6 +257,9 @@ CASES = [
     ("ranch_malon", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "880", "--screenshot", "{shot}"]),
     ("ranch_song", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "2000", "--screenshot", "{shot}"]),
     ("ranch_foal", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "2290", "--screenshot", "{shot}"]),
+    # GAME-08 milestone 3, step (b): Talon's house.
+    ("ranch_cucco_game", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "4700", "--screenshot", "{shot}"]),
+    ("ranch_milk", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--script", "ranch", "--frames", "5600", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ranch_ingo", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "castle-egg", "--at=760,0,-2040,-12000", "--script", "still", "--frames", "300", "--screenshot", "{shot}"]),
     ("stable_night", S, ["--entrance", "ENTR_STABLE_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=300,0,60,-32768", "--script", "still", "--frames", "90", "--screenshot", "{shot}"]),

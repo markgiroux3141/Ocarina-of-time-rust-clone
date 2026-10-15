@@ -66,6 +66,7 @@ pub mod sprite;
 pub mod surface;
 pub mod sys_matrix;
 pub mod target;
+pub mod timer;
 pub mod title_card;
 pub mod weather;
 pub mod transition;

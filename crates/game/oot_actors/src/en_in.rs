@@ -877,7 +877,7 @@ impl EnIn {
                         self.actor.target_mode = ATTENTION_RANGE_3;
                         self.change_anim(ENIN_ANIM_STANDING_FOOT_FORWARD);
                         self.action = Action::RentalPeriod;
-                        oot_game::interface::interface_set_timer(&mut play.save, 60);
+                        play.interface_set_timer(60);
                     }
                     INGO_RACE_STATE_PLAYER_LOSE => {
                         self.change_anim(ENIN_ANIM_GLOATING);

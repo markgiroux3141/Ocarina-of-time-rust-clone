@@ -469,6 +469,17 @@ pub enum Step {
     EponasSong,
     /// The foal, called by the song from her home, come to Link.
     FoalCalled,
+    /// Into Talon's house (`souko`) by its door, settled.
+    TalonsHouse,
+    /// The Super Cucco game begun: Talon has thrown his three cuccos and the timer runs.
+    CuccoGame,
+    /// A super cucco held long enough for Talon (`superCuccoTimers`), his text read: one a cucco.
+    SuperCucco,
+    /// The game's end: back in the house at `ENTR_LON_LON_BUILDINGS_2`.
+    CuccoGameOver,
+    /// The first win's bottle of milk taken and its text read (`ITEMGETINF_TALON_BOTTLE`), Link
+    /// free.
+    MilkBottle,
 }
 
 impl Step {
@@ -643,6 +654,11 @@ impl Step {
             Step::FoalHome => "foal_home",
             Step::EponasSong => "eponas_song",
             Step::FoalCalled => "foal_called",
+            Step::TalonsHouse => "talons_house",
+            Step::CuccoGame => "cucco_game",
+            Step::SuperCucco => "super_cucco",
+            Step::CuccoGameOver => "cucco_game_over",
+            Step::MilkBottle => "milk_bottle",
         }
     }
 }
@@ -979,8 +995,34 @@ fn ranch_tasks() -> Vec<Task> {
         // Epona's Song (R_EPONAS_SONG_PLAYED): she neighs and comes again.
         Task::Ocarina(1, OCARINA_SONG_EPONAS, Step::EponasSong),
         Task::Texts(|w| foal_near(w, 4), Step::FoalCalled),
+        // Back out of the corral by its gate, north to the gate's lane, and up it to Talon's
+        // house's door (En_Door at (1020, 0, -3100), facing -x: DOOR_SCENEEXIT, the floor
+        // behind it exit 5, ENTR_LON_LON_BUILDINGS_0).
+        Task::Walk(vec![Vec3::new(-150.0, 0.0, -1525.0), Vec3::new(700.0, 0.0, -2375.0), Vec3::new(800.0, 0.0, -2375.0), Vec3::new(975.0, 0.0, -2550.0), Vec3::new(975.0, 0.0, -3000.0)]),
+        Task::OpenDoor(Vec3::new(985.0, 0.0, -3100.0), Vec3::new(1020.0, 0.0, -3100.0), None),
+        Task::NewScene(Step::TalonsHouse),
+        // Talon (En_Ta at (1054, 0, -29), sitting asleep at his table): 0x207E the first time
+        // (EnTa_IdleSittingInLonLonHouse), its choice yes (EnTa_WaitForPlayCuccoGameResponse:
+        // 10 rupees), 0x2080 (EnTa_StartCuccoGame): he throws his three super cuccos, and the
+        // timer starts at 30 (EnTa_StartingCuccoGame3: Interface_SetTimer(30)).
+        Task::Converse(Who::Talon, Vec3::new(1050.0, 0.0, 60.0), vec![0], |w| w.save.timer_state != oot_game::save::TIMER_STATE_OFF && w.player().cs_mode == 0, Step::CuccoGame),
+        // Each held 7 frames: 0x2082, 0x2083, and the last 0x2084 (EnTa_RunCuccoGame:
+        // EVENTINF_CUCCO_GAME_WON), whose event sends Link to ENTR_LON_LON_BUILDINGS_2.
+        Task::CatchSuperCucco(Step::SuperCucco),
+        Task::CatchSuperCucco(Step::SuperCucco),
+        Task::CatchSuperCucco(Step::SuperCucco),
+        // Back at ENTR_LON_LON_BUILDINGS_2 (by Talon), his room loaded: he speaks while the fade
+        // is still on.
+        Task::Texts(|w| w.entrance_by_name("ENTR_LON_LON_BUILDINGS_2") == Some(w.save.entrance_index) && w.actors.all().into_iter().any(|h| w.actors.downcast::<crate::en_ta::EnTa>(h).is_some()), Step::CuccoGameOver),
+        // EnTa_IdleAfterCuccoGameFinished: he talks to Link at once (0x2086), the choice (either:
+        // EnTa_WaitForMarryMalonResponse), 0x2087, and the bottle of milk (GI_BOTTLE_MILK_FULL,
+        // ITEMGETINF_TALON_BOTTLE).
+        Task::Converse(Who::Talon, Vec3::new(1050.0, 0.0, 12.0), vec![0], |w| w.save.get_item_get_inf(ITEMGETINF_TALON_BOTTLE) && w.player().action == PA::StandingStill, Step::MilkBottle),
     ]
 }
+
+/// `ITEMGETINF_TALON_BOTTLE` (`save.h`: 0x02).
+const ITEMGETINF_TALON_BOTTLE: u16 = 0x02;
 
 /// The foal (`En_Horse_Link_Child`), if she's there.
 fn foal(w: &PlayState) -> Option<&crate::en_horse_link_child::EnHorseLinkChild> {
@@ -2000,6 +2042,15 @@ enum Task {
     /// `ITEMGETINF_17` is set and the box is closed (the step); `Step::MemoryGame` and
     /// `Step::MemoryRound` on the way.
     MemoryGame(Step),
+    /// Talon's Super Cucco game: after the nearest super cucco (`En_Niw` 0xD) Talon still counts
+    /// (gravity at or under 0: a found one floats off with 0.1), lift it (A once Player is offered
+    /// it), hold it until Talon's text opens, A through it; done when the box is closed and Link's
+    /// hands are free, or the game's end has started its transition.
+    CatchSuperCucco(Step),
+    /// Open the door (`En_Door`) by this point: to the point, at the door slowly until Player is
+    /// offered it (`PLAYER_DOORTYPE_HANDLE`), A; done when a scene exit's transition starts (the
+    /// next task waits for the scene).
+    OpenDoor(Vec3, Vec3, Option<Step>),
     /// The ocarina out with its C button (0 C-Left), no song: until a text opens (an actor
     /// waiting for it, Malon's lesson: `PLAYER_STATE2_24`), then the step.
     OcarinaOut(usize, Step),
@@ -3384,6 +3435,88 @@ impl Playthrough {
             Task::PressSwitch(home, flag, step) => self.press_switch(w, home, flag, step),
             Task::WaitWebBurnt(home, step) => self.wait_web_burnt(w, home, step),
             Task::OpenSlidingDoor(index, front, step) => self.open_sliding_door(w, index, front, step),
+            Task::CatchSuperCucco(step) => {
+                self.wait += 1;
+                if self.wait > 1200 {
+                    self.failure = Some(format!("no super cucco caught (Link {:?}, sub {})", w.player().action, self.sub));
+                    return None;
+                }
+                let p = w.player();
+                let event = w.message_state() == oot_game::message::TEXT_STATE_EVENT;
+                match self.sub {
+                    0 => {
+                        let link = p.actor.world_pos;
+                        let target = w
+                            .actors
+                            .all()
+                            .into_iter()
+                            .filter(|&h| w.actors.downcast::<crate::en_niw::EnNiw>(h).is_some_and(|c| !c.actor.killed && crate::en_niw::TYPE.get(c.actor.params) == 0xD && c.actor.gravity <= 0.0))
+                            .min_by(|&a, &b| {
+                                let d = |h| w.actors.actor(h).map_or(f32::MAX, |c| c.world_pos.distance(link));
+                                d(a).total_cmp(&d(b))
+                            });
+                        let Some(h) = target else {
+                            self.failure = Some("no super cucco left".into());
+                            return None;
+                        };
+                        if p.interact_range_actor == Some(h) && p.state1 & crate::player::STATE1_11 == 0 {
+                            self.sub = 1;
+                            self.carried = Some(h);
+                            return Some(self.press(BTN_A));
+                        }
+                        let c = w.actors.actor(h).unwrap().world_pos;
+                        let mag = if Self::xz_dist(link, c) > 80.0 { RUN } else { SLOW };
+                        Some(stick_towards(w, c, mag))
+                    }
+                    1 => {
+                        if w.message_state() != TEXT_STATE_NONE {
+                            self.sub = 2;
+                            return Some(idle);
+                        }
+                        // The A went elsewhere, or the cucco got away: after another.
+                        if p.state1 & crate::player::STATE1_11 == 0 && p.held_actor.is_none() {
+                            self.sub = 0;
+                            self.carried = None;
+                        }
+                        Some(idle)
+                    }
+                    _ => {
+                        if w.transition.trigger != TRANS_TRIGGER_OFF || (w.message_state() == TEXT_STATE_NONE && p.held_actor.is_none()) {
+                            self.carried = None;
+                            self.finish(Some(step));
+                            return None;
+                        }
+                        Some(if Self::text_waits(w) || event { self.press(BTN_A) } else { idle })
+                    }
+                }
+            }
+            Task::OpenDoor(front, door, step) => {
+                self.wait += 1;
+                if self.wait > 900 {
+                    self.failure = Some(format!("the door at {door:?} never opened (sub {})", self.sub));
+                    return None;
+                }
+                let p = w.player();
+                if w.transition.trigger != TRANS_TRIGGER_OFF {
+                    self.finish(step);
+                    return None;
+                }
+                match self.sub {
+                    0 => {
+                        if Self::xz_dist(p.actor.world_pos, front) < 8.0 {
+                            self.sub = 1;
+                            return Some(idle);
+                        }
+                        Some(stick_towards(w, front, SLOW))
+                    }
+                    _ => {
+                        if p.door_type == crate::player::PLAYER_DOORTYPE_HANDLE {
+                            return Some(self.press(BTN_A));
+                        }
+                        Some(stick_towards(w, door, 30.0))
+                    }
+                }
+            }
             Task::WaitDoorShut(index, step) => self.wait_door_shut(w, index, step),
             Task::WaitCameras => self.wait_cameras(w),
             Task::TakeStick(step) => self.take_stick(w, step),

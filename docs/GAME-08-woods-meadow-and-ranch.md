@@ -16,7 +16,7 @@ Epona's Song and the child's Epona, Ingo, and Talon's house. Exit: Saria's Song 
 |---|---|---|
 | 1 | The meadow and Saria's Song: `En_Sa` (with Kokiri Forest's greeting), `En_Wf`, `Bg_Spot05_Soko`, the woods' maze walked | done (2026-10-14) |
 | 2 | The Lost Woods' Skull Kids and scrubs: `En_Skj`, the memory game, the target scrub | done (2026-10-14) |
-| 3 | Lon Lon Ranch: Epona's Song's end, the foal and the horses, Ingo, the Guays, Talon's house and the cucco game | step (a) done (2026-10-14); step (b), Talon's house, next |
+| 3 | Lon Lon Ranch: Epona's Song's end, the foal and the horses, Ingo, the Guays, Talon's house and the cucco game | done (step (a) 2026-10-14, step (b) 2026-10-15) |
 
 Before the phase, part A of the same piece of work: the actor schema ([ADR 0066](adr/0066-the-actor-schema.md),
 BACKLOG #52), built and checked for all 131 ported actors (committed as 05f4f0e).
@@ -513,3 +513,98 @@ scripts\run\sandbox-ranch.bat
    `game-ranch stable-night`: two horses in their stalls and two more opposite (the clones), the
    rails hiding their middles as the painted rails do.
 7. `game-ranch ingo`: before Talon's return, Ingo working by the gate; 0x203F then 0x2040.
+
+### Step (b): Talon's house
+
+**The answer:** after the foal, Link walks back out of the corral and up the gate's lane to
+Talon's house, talks to Talon at his table and plays the Super Cucco game: Talon throws his three
+cuccos among the house's ten, the timer counts down from 30 at the top left, and Link brings each
+super cucco to him; won, he sends Link back in by a white starburst and gives him a bottle of milk.
+The scripts are step (a)'s, with Talon's and the timers' tests and a `house` start.
+
+#### What was built
+
+- **The HUD's timers** (ADR 0071, `oot_game::timer`): `Interface_SetTimer`, `_SetSubTimer`,
+  `_SetSubTimerToFinalSecond`; `Interface_Draw`'s state machine for the main timer (down, up, the
+  hot rooms' and the water's, the stop and the freeze) and the sub timer (the trade quest's respawn,
+  the marathon), the beeps, the digits and the draw (the clock, five digits, red under 10 seconds);
+  `Interface_Update`'s hazard timer; `play->damagePlayer` as a hook `Player_Init` sets. The callers
+  brought up to date: Player's item buttons, `Bg_Relay_Objects`, `Demo_Kankyo`, Ingo.
+- **`En_Ta`'s ranch house** whole (a helper): the day's init with the three super cuccos, the talks
+  (0x207E, 0x207F, 0x208B) and their choices, the milk (30 rupees, an empty bottle), the Super Cucco
+  game (the throw, the timer and its music, the hunt with the 7-frame hold, 0x2082, 0x2083, 0x2084
+  won, 0x2081 time's up with the floor camera), the starburst back to `ENTR_LON_LON_BUILDINGS_2`,
+  the prizes (0x2086 and the bottle of milk the first time, 0x2088 and milk after, 0x2085 a retry for
+  5 rupees), the destroy. BACKLOG #44 closed.
+- **`Route::Ranch` goes on:** `Task::OpenDoor` (an `En_Door` opened: the first route through one),
+  `Task::CatchSuperCucco`, and the steps `TalonsHouse`, `CuccoGame`, `SuperCucco`, `CuccoGameOver`,
+  `MilkBottle`.
+- **Sounds:** `NA_SE_SY_MESSAGE_WOMAN`, `_WARNING_COUNT_N`, `_WARNING_COUNT_E`, `_FOUND` in
+  `audio::sfx`; the HUD's clock and the colon's sprites.
+
+#### Results
+
+- `tests/ranch.rs`, the whole run: 5,792 frames. Step (a)'s run to frame 3,073 (unchanged, frame for frame); into Talon's house
+  at 3,585; the game begun at 4,490 (0x207E answered yes, 0x2080, the throw), the three super
+  cuccos at 4,621, 4,810 and 4,981 (0x2082, 0x2083, 0x2084: won; the timer read 00:25 at frame 4,700), back by
+  Talon at 5,010, 0x2086, 0x2087 and the bottle of milk (0x98) at 5,792. Ten rupees paid,
+  `ITEMGETINF_TALON_BOTTLE`, the milk in the first bottle's slot, the game's flags cleared again.
+- `tests/en_ta_house.rs` (10: by day and night, before Talon's return, the talks and their
+  choices, the game won through the real lifts and the reload, a first win set up directly, later
+  wins and the milk, a loss's retry, time running out with the floor camera); `tests/timer.rs` (4:
+  the countdown's frames, the stop, counting up and the sub timer, the hazard timer); a unit test of
+  the slide.
+- 1,106 tests (one ignored) pass; `cargo test -p layering` passes; no warnings.
+- Goldens: `ranch`'s trace and shot changed (the route goes on; its first 3,073 frames equal step
+  (a)'s), 206 the same; 2 new cases (`ranch_cucco_game`, `ranch_milk`). 210 hashes, 161 cases
+  (`out/golden_base22`).
+
+#### Decisions
+
+- The timers' state machine runs in the game frame where `Play_Draw` would run `Interface_Draw`,
+  and their statics outlive the play state (ADR 0071).
+- `play->damagePlayer` is a hook on the play state, as in the C, rather than a call across crates.
+- The route catches the super cuccos nearest first, picking them by gravity (a found one floats off
+  with 0.1), not by Talon's own list.
+
+#### Corrections to the survey
+
+- `Interface_Draw`'s timer block is the state machine as well as the draw; the timer is hidden
+  whenever a text is open (the draw is inside the same checks).
+- The digits' rectangle is `VREG(42)` (250) tall; with no mask the tile clamps, so only the digit's
+  16 rows show (scaled by 880/1024).
+- `ENTR_LON_LON_BUILDINGS_0` is the door into Talon's room (room 1); `_1` is the cows' room.
+
+#### Known gaps
+
+- The mask texts (0x7178 to 0x717B: no masks, #39); the shared helpers' private copies (#69).
+- `minigameState` and `shootingGalleryStatus` read 0 (the horseback archery and the shooting
+  galleries aren't ported).
+
+#### Fixes found while building
+
+- None outside the new code.
+
+#### How to check
+
+```
+scripts\run\test-ranch.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-ranch.bat
+```
+
+#### By hand
+
+1. `game-ranch house`: Talon dozes at his table, two cuccos on it and one at his feet. Talk to him:
+   0x207E, answer yes (10 rupees). He throws his three cuccos; the timer shows 00:30 in the
+   middle, slides under the hearts and counts down.
+2. Find his three among the cuccos (they look the same: they're the ones he threw), lift one (A),
+   and keep holding it: Talon speaks (0x2082) and it flies off; then 0x2083; the third ends the
+   game (0x2084, a fanfare, a white starburst). At 10 seconds the music speeds up; at 0, 0x2081
+   with the camera on the floor, and a black starburst.
+3. Won: Talon speaks at once (0x2086 and its question, either answer, then 0x2087), then gives a
+   bottle of milk.
+   Talk again: 0x208B (milk for 30 rupees with an empty bottle, or play again).
+4. Lost: 0x2085, a retry for 5 rupees.

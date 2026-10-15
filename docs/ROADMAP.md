@@ -648,8 +648,12 @@ actor schema (ADR 0066, BACKLOG #52) for all ported actors.
      the foal and the horses (the first live skin skeletons), the child's Ingo (the adult's race a
      placeholder), `En_Ma2`'s init, the Guays, the two draw configs, `Interface_SetTimer` and the
      timers' state; `lost-woods-games` (milestone 2's end). `Route::Ranch` (Malon's lesson, the
-     song's scene and back by destination 94, the foal called), the `ranch` goldens. Step (b):
-     `En_Ta`'s ranch house, the milk, the Super Cucco game, the timers' countdown and draw (#44).
+     song's scene and back by destination 94, the foal called), the `ranch` goldens. **Step (b)
+     done** (2026-10-15, ADR 0071): the HUD's timers whole (the main and sub timers, the hot rooms'
+     and the water's, their draw), `En_Ta`'s ranch house (the milk, the Super Cucco game; #44
+     closed); `Route::Ranch` on into Talon's house, the game won and the bottle of milk.
+
+**Phase 9 done** (2026-10-15): its three milestones built; its exit review next.
 
 ## Cross-cutting debts
 
@@ -675,7 +679,7 @@ this outline. The dungeons are Master Quest's.
 | Phase | Places | Dungeon and boss | What it brings | Exit |
 |---|---|---|---|---|
 | 8 (done) | Castle Town, Hyrule Castle, Kakariko, the graveyard | | Milestones 5 and 6 above: lifting and throwing, the cuccos, Dampé, the royal tomb | The Sun's Song learned |
-| 9 (in progress) | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
+| 9 (done) | The Lost Woods, the Sacred Forest Meadow, Lon Lon Ranch | | Saria in her meadow and Saria's Song (Darunia needs it), the Lost Woods' maze and the Skull Kids' memory game (#47), Malon and Epona's Song, the child's Epona, Talon's ranch (#44) | Saria's Song learned |
 | 10 | Death Mountain Trail and summit, Goron City | Dodongo's Cavern; King Dodongo | Bombs (`En_Bom`, BACKLOG #33) and bomb flowers, the Goron's Bracelet, Darunia's dance, the summit's Great Fairy (the magic meter) | The Goron's Ruby |
 | 11 | Zora's River, Zora's Domain, Zora's Fountain, Lake Hylia | Jabu-Jabu's Belly; Barinade | Bottles (the fish, Ruto's letter), diving (the silver scale), Ruto carried, the boomerang, the frogs and the scarecrow (#47) | The Zora's Sapphire, then the Ocarina of Time at the moat |
 | 12 | The Temple of Time, the market's ruins, the Chamber of the Sages | | The Door of Time (#37), the Master Sword, adult Link throughout (models, items, the save's age), time travel back and forth, the Prelude of Light, the warp songs | Adult Link out of the Temple |

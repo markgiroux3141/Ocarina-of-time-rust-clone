@@ -40,8 +40,8 @@ pub struct GameOverContext {
 /// `gSpoilingItems` and `gSpoilingItemReverts` (`z_parameter.c`): the adult trade items that
 /// spoil when Link dies, and what they go back to (`ITEM_ODD_MUSHROOM` 0x30, `ITEM_EYEBALL_FROG`
 /// 0x35, `ITEM_EYE_DROPS` 0x36; `ITEM_COJIRO` 0x2F, `ITEM_PRESCRIPTION` 0x34, `item.h`).
-const G_SPOILING_ITEMS: [u8; 3] = [0x30, 0x35, 0x36];
-const G_SPOILING_ITEM_REVERTS: [u8; 3] = [0x2F, 0x34, 0x34];
+pub(crate) const G_SPOILING_ITEMS: [u8; 3] = [0x30, 0x35, 0x36];
+pub(crate) const G_SPOILING_ITEM_REVERTS: [u8; 3] = [0x2F, 0x34, 0x34];
 
 /// `BTN_ENABLED` (`save.h`).
 const BTN_ENABLED: u8 = 0;

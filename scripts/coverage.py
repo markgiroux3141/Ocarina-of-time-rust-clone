@@ -30,7 +30,7 @@ PHASES = {
     6: ("The Deku Tree (GAME-05)", "done"),
     7: ("The road out of the forest (GAME-06)", "done"),
     8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "done"),
-    9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "in progress"),
+    9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "done"),
     10: ("Death Mountain and Dodongo's Cavern", "planned"),
     11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu", "planned"),
     12: ("The Temple of Time and the adult world", "planned"),

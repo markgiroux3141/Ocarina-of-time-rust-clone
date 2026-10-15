@@ -1439,6 +1439,8 @@ impl Player {
     /// `Player_Init` for a spawn from the scene's spawn list: the respawn point, then the
     /// start mode in `params` bits 8..11 (`sStartModeFuncs`).
     pub fn init(base: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
+        // Player_Init: play->damagePlayer = Player_InflictDamage.
+        play.damage_player = Some(play_damage_player);
         let adult = play.save.adult;
         let data = play.data.clone();
         let mut p = Player::new(&data, adult, base.world_pos, base.shape_rot.y);
@@ -6742,12 +6744,12 @@ impl Player {
     /// `Player_UpdateItems`: the item buttons (`Player_ProcessItemButtons`) while Player may use
     /// them: Player's own category, no change starting, the held item the one in use (or the
     /// shield up), alive, no cutscene, no cutscene action, the main camera active, no exit
-    /// starting; then a change pending starts. (`shootingGalleryStatus` is 0 and
-    /// `timerState` never `TIMER_STATE_STOP`: no shooting gallery or timer is ported.)
+    /// starting, the timer not just run out (`TIMER_STATE_STOP`); then a change pending starts.
+    /// (`shootingGalleryStatus` is 0: no shooting gallery is ported.)
     fn update_items(&mut self, env: &Env) {
-        let (health, trigger) = {
+        let (health, trigger, timer_state) = {
             let io = env.io.borrow();
-            (io.save.health, io.transition.trigger)
+            (io.save.health, io.transition.trigger, io.save.timer_state)
         };
         if self.actor.category == ACTORCAT_PLAYER
             && self.state1 & STATE1_8 == 0
@@ -6757,6 +6759,7 @@ impl Player {
             && self.cs_mode == 0
             && env.active_cam_id == CAM_ID_MAIN
             && trigger != TRANS_TRIGGER_START
+            && timer_state != oot_game::save::TIMER_STATE_STOP
         {
             self.process_item_buttons(env);
         }

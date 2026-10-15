@@ -17,9 +17,10 @@
 //! once Link is in its room; any of room 6 or later (the one placed again in the windmill) does
 //! nothing.
 //!
-//! Not ported here: `Rumble_Request` (no rumble), the race's timer
-//! (`gSaveContext.timerState = TIMER_STATE_UP_FREEZE` as the last door shuts in room 4: no
-//! timers; logged).
+//! As the last door shuts in room 4 the race's timer stops (`gSaveContext.timerState =
+//! TIMER_STATE_UP_FREEZE`; `En_Po_Relay`, Dampé, starts it: Phase 14).
+//!
+//! Not ported here: `Rumble_Request` (no rumble).
 //!
 //! Params: `switchFlag` bits 0 to 5 (a door's switch flag; in room 0, less 0x33, the room it's
 //! for; the gear doesn't read it); bits 6 and 7 unused (set in the gear's 0xFF); `type` bits 8
@@ -237,7 +238,7 @@ impl BgRelayObjects {
             play.flags.unset_switch(self.switch_flag as i32);
             self.actor.flags &= !ACTOR_FLAG_UPDATE_CULLING_DISABLED;
             if cur_room == 4 {
-                log::debug!("Bg_Relay_Objects: gSaveContext.timerState = TIMER_STATE_UP_FREEZE (the race's timer isn't ported)");
+                play.save.timer_state = oot_game::save::TIMER_STATE_UP_FREEZE;
             }
             self.action = Action::DoNothing;
         }

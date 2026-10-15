@@ -17,8 +17,7 @@
 //! for `draw`; the warp-in sparkles' sound is played in `draw_sfx`.
 //!
 //! Not ported: `player->actor.draw = NULL` at the warp-out's white-out (Player has no draw to
-//! take away: logged), `Interface_SetSubTimerToFinalSecond` (no sub-timer runs in the port: a
-//! no-op). The Door of Time's child is `Door_Toki`, a placeholder until the Temple of Time
+//! take away: logged). The Door of Time's child is `Door_Toki`, a placeholder until the Temple of Time
 //! (Phase 8).
 //!
 //! Params: `params` whole, the type (`DemoKankyoType`: 0 and 1 the blue rain, 2 to 6 Din's rocks
@@ -761,7 +760,7 @@ impl DemoKankyo {
                             self.unk_150[iu].unk_22 += 1;
                         }
                     } else if i + 1 == self.sparkle_counter as i32 && play.cs_ctx.state == CS_STATE_IDLE {
-                        // Interface_SetSubTimerToFinalSecond: no sub-timer runs.
+                        play.interface_set_sub_timer_to_final_second();
                         self.actor.kill();
                     }
                 }

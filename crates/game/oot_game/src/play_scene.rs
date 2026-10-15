@@ -666,6 +666,8 @@ impl PlayState {
                 next.env_statics.weather_mode = self.env_statics.weather_mode;
                 // R_TRANS_FADE_FLASH_ALPHA_STEP is a debug register (gRegEditor's).
                 next.trans_fade_flash_alpha_step = self.trans_fade_flash_alpha_step;
+                // Interface_Draw's timer statics and sEnvHazardActive are z_parameter.c's.
+                next.interface_ctx.timers = self.interface_ctx.timers;
                 // The cartridge's SRAM outlives the game states.
                 next.sram = std::mem::take(&mut self.sram);
                 *self = next;
