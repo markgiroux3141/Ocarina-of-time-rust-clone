@@ -780,6 +780,11 @@ impl PlayState {
         if let Some(t) = room.time {
             self.scene_command_time_settings(t);
         }
+        // SCENE_CMD_ID_WIND_SETTINGS (Scene_CommandWindSettings).
+        if let Some((dir, speed)) = room.wind {
+            self.env_ctx.wind_direction = dir.map(|d| d as i16);
+            self.env_ctx.wind_speed = speed as f32;
+        }
         // SCENE_CMD_ID_ACTOR_LIST: spawned by the next Actor_UpdateAll.
         self.setup_actors = room.actors.clone();
         // SCENE_CMD_ID_OBJECT_LIST.

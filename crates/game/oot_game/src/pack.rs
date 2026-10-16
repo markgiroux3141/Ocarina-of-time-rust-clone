@@ -25,7 +25,7 @@ use crate::player_lib::{Age, LinkFaces, LinkVariant, PlayerRules};
 use crate::scene::{RoomData, SceneData, SceneTable};
 
 /// Bumped whenever a record type or the set of records changes.
-pub const FORMAT_VERSION: u32 = 28;
+pub const FORMAT_VERSION: u32 = 29;
 /// The importer that writes game packs, and the version of its output.
 pub const IMPORTER: &str = "oot_import";
 pub const IMPORTER_VERSION: u32 = 1;
@@ -219,6 +219,11 @@ pub enum BakeSegment {
     /// the list's `gSPMatrix`): the vertices loaded under it follow the draw's bone `bone`
     /// (`DrawCmd::bones`). Only for display lists (`BakeBody::DLists`).
     Matrix(eng_gfx::BoneId),
+    /// The matrices `SkelAnime_DrawFlex*` of skeleton `symbol` (in `file`) leaves on the segment,
+    /// one per limb with a list in draw order: a list drawn after the skeleton that loads one of
+    /// them (Link's bracelet, `gLinkChildGoronBraceletDL`) follows that limb's bone, the
+    /// skeleton's (`DrawCmd::bones` its pose). Only for display lists.
+    SkeletonMatrices { file: String, symbol: String },
 }
 
 /// `BakeBody::DLists`' file for a call of a segment (its symbol the segment's number, hex).

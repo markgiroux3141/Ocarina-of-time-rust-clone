@@ -268,6 +268,16 @@ CASES = [
     ("bombs_blast", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "250", "--screenshot", "{shot}"]),
     ("bombs_opening", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "330", "--screenshot", "{shot}"]),
     ("bombs_bomb", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bombs", "--script", "bombs", "--frames", "505", "--screenshot", "{shot}"]),
+    # GAME-09 milestone 2: Darunia (ranch-epona, Goron City's bottom floor): the lullaby at his
+    # door, the door rising, Saria's Song and his dance, the bracelet; the boulder (goron-bracelet,
+    # a debug start on the cliff above Dodongo's Cavern): the Bomb Flower thrown down onto it
+    # (one-point 4180), its blast.
+    ("darunia", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "ranch-epona", "--script", "darunia", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("darunia_door", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "ranch-epona", "--script", "darunia", "--frames", "300", "--screenshot", "{shot}"]),
+    ("darunia_dance", S, ["--entrance", "ENTR_GORON_CITY_2", "--child", "--preset", "ranch-epona", "--script", "darunia", "--frames", "1300", "--screenshot", "{shot}"]),
+    ("boulder", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_1", "--child", "--preset", "goron-bracelet", "--script", "boulder", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("boulder_throw", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_1", "--child", "--preset", "goron-bracelet", "--script", "boulder", "--frames", "110", "--screenshot", "{shot}"]),
+    ("boulder_blast", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_1", "--child", "--preset", "goron-bracelet", "--script", "boulder", "--frames", "200", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ranch_ingo", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "castle-egg", "--at=760,0,-2040,-12000", "--script", "still", "--frames", "300", "--screenshot", "{shot}"]),
     ("stable_night", S, ["--entrance", "ENTR_STABLE_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=300,0,60,-32768", "--script", "still", "--frames", "90", "--screenshot", "{shot}"]),

@@ -317,6 +317,8 @@ pub struct Room {
     pub echo: u8,
     /// `SCENE_CMD_ID_TIME_SETTINGS`: hour, minute, time speed (0xFF = keep).
     pub time: Option<[u8; 3]>,
+    /// `SCENE_CMD_ID_WIND_SETTINGS`: the direction's x, y, z (`s8`) and the speed.
+    pub wind: Option<([i8; 3], u8)>,
     pub skybox_disabled: bool,
     pub sun_moon_disabled: bool,
     pub actors: Vec<ActorEntry>,
@@ -343,6 +345,11 @@ impl Room {
             let b = c.data2.to_be_bytes();
             [b[0], b[1], b[2]]
         });
+        // SCENE_CMD_WIND_SETTINGS(xDir, yDir, zDir, strength): CMD_BBBB in the second word.
+        let wind = find(scene::CMD_WIND_SETTINGS).map(|c| {
+            let b = c.data2.to_be_bytes();
+            ([b[0] as i8, b[1] as i8, b[2] as i8], b[3])
+        });
         let (skybox_disabled, sun_moon_disabled) = find(scene::CMD_SKYBOX_DISABLES)
             .map(|c| {
                 let b = c.data2.to_be_bytes();
@@ -356,7 +363,7 @@ impl Room {
                 (0..c.data1 as usize).filter_map(|i| be16(&data, o + i * 2).map(|v| v as i16)).collect()
             })
             .unwrap_or_default();
-        Ok(Room { index, file_name, data, header, shape, behavior, echo, time, skybox_disabled, sun_moon_disabled, actors, objects })
+        Ok(Room { index, file_name, data, header, shape, behavior, echo, time, wind, skybox_disabled, sun_moon_disabled, actors, objects })
     }
 }
 

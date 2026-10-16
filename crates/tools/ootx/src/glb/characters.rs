@@ -142,6 +142,12 @@ pub const CHARACTERS: &[Character] = &[
     c("Cow", "En_Cow/body", Some(("object_cow", "gCowBodyChewAnim")), &[], &[], &[]),
     c("Ingo", "En_In/eye0", Some(("object_in", "gIngoStandingAnim")), &[], &[9, 10, 11], &[12, 13, 14]),
     c("Guay", "En_Crow/skel", Some(("object_crow", "gGuayFlyAnim")), &[], &[], &[]),
+    // GAME-09 milestone 2.
+    c("Goron", "En_Go2/eye1_mouth0", Some(("object_oF1d_map", "gGoronAnim_0021D0")), &[], &[10, 11, 12], &[13, 14, 15]),
+    c("Darunia", "En_Du/skel", Some(("object_du", "gDaruniaIdleAnim")), &[], &[9, 10, 11], &[12, 13, 14]),
+    c("Medigoron", "En_Gm/eye0", Some(("object_gm", "object_gm_Anim_0002B8")), &[], &[10, 11, 12], &[13, 14, 15]),
+    c("Red Tektite", "En_Tite/red", Some(("object_tite", "object_tite_Anim_0012E4")), &[], &[], &[]),
+    c("Blue Tektite", "En_Tite/blue", Some(("object_tite", "object_tite_Anim_0012E4")), &[], &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

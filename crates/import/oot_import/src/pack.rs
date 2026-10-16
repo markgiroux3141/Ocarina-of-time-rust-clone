@@ -799,6 +799,7 @@ pub fn layer_records(p: &Project, tables: &SceneTables, file: &str, layer: usize
             behavior: r.behavior,
             echo: r.echo,
             time: r.time,
+            wind: r.wind,
             skybox_disabled: r.skybox_disabled,
             sun_moon_disabled: r.sun_moon_disabled,
             actors: r.actors.clone(),

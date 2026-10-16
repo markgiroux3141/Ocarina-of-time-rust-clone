@@ -133,11 +133,21 @@ fn answer_until(w: &mut PlayState, max: usize, what: &str, texts: &mut Vec<u16>,
     panic!("{what}: not after {max} frames (msgMode {:#x}, text {:#x}, texts {texts:x?})", w.msg_ctx.msg_mode, w.msg_ctx.text_id);
 }
 
-/// Link 60 in front of Talon, facing him, and A until a text opens (`EnTa_RequestTalk`: within
-/// 100, Link within 0x4300 of his facing).
+/// Link 60 in front of Talon, facing him, idle until Talon offers the talk (Player's `talkActor`:
+/// `EnTa_RequestTalk`, within 100, Link within 0x4300 of his facing) with no cucco in Link's lift
+/// reach (the house's cuccos wander by `Rand`, and A lifts one in reach before it talks), the
+/// message box idle and Link standing; then A until a text opens.
 fn talk_to_talon(w: &mut PlayState) {
     w.place_player(TALON_POS + Vec3::new(0.0, 0.0, 69.0), -0x7E00);
     idle(w, 2);
+    let h = talon(w);
+    for _ in 0..600 {
+        let p = w.player();
+        if p.target_actor == Some(h) && p.interact_range_actor.is_none() && w.msg_ctx.msg_mode == 0 && p.action == oot_actors::player::Action::StandingStill {
+            break;
+        }
+        idle(w, 1);
+    }
     for _ in 0..10 {
         press_a(w);
         if w.message_state() != TEXT_STATE_NONE {

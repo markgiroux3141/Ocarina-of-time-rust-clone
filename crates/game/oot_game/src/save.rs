@@ -746,6 +746,22 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "goron-bracelet",
+        about: "ranch-epona, and GAME-09 milestone 2's Darunia run over: Darunia's door open (Goron City's switch 0x1B, Zelda's Lullaby at its spot), the Goron's Bracelet (Item_Give(ITEM_STRENGTH_GORONS_BRACELET)); and the trail's and the city's intros seen (EVENTCHKINF_A1, EVENTCHKINF_A6) as on the way there (GAME-09 milestone 2's boulder run)",
+        apply: goron_bracelet,
+    },
+    SavePreset {
+        name: "cavern-open",
+        about: "goron-bracelet, and GAME-09 milestone 2's boulder run over: the boulder at Dodongo's Cavern's mouth blown up (the trail's switch 4, EVENTCHKINF_23) (GAME-09 milestone 3)",
+        apply: |s| {
+            goron_bracelet(s);
+            // SCENE_DEATH_MOUNTAIN_TRAIL (scene_table.h: 0x60): Bg_Spot16_Bombstone 0x04FF's
+            // switch flag; save.h: EVENTCHKINF_23.
+            s.scene_flags[0x60].swch |= 1 << 4;
+            s.set_event_chk_inf(0x23);
+        },
+    },
+    SavePreset {
         name: "ocarina-songs",
         about: "deku-tree-dead, the Fairy Ocarina (ITEM_OCARINA_FAIRY) on C-Left and Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's Song, the Song of Time and the Song of Storms (ITEM_SONG_LULLABY .. ITEM_SONG_STORMS: Item_Give's quest bits) (GAME-07 milestone 3)",
         apply: |s| {
@@ -787,6 +803,18 @@ fn graveyard_sun(s: &mut SaveContext) {
     s.set_event_chk_inf(0x1D);
     s.set_event_chk_inf(0x5A);
     item_give(s, None, 0x63);
+}
+
+/// `goron-bracelet`'s save (`cavern-open` builds on it).
+fn goron_bracelet(s: &mut SaveContext) {
+    ranch_epona(s);
+    // save.h: EVENTCHKINF_A1, EVENTCHKINF_A6 (sEntranceCutsceneTable's flags for
+    // ENTR_DEATH_MOUNTAIN_TRAIL_0 and ENTR_GORON_CITY_0). SCENE_GORON_CITY (scene_table.h: 0x62):
+    // Bg_Spot18_Shutter 0x001B's switch flag, which En_Okarina_Tag 0x1C9B sets.
+    s.set_event_chk_inf(0xA1);
+    s.set_event_chk_inf(0xA6);
+    s.scene_flags[0x62].swch |= 1 << 0x1B;
+    item_give(s, None, crate::item::ITEM_STRENGTH_GORONS_BRACELET);
 }
 
 /// `ranch-epona`'s save (`cavern-bombs` builds on it).

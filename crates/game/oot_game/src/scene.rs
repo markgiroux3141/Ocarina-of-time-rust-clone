@@ -276,6 +276,8 @@ pub struct RoomData {
     pub echo: u8,
     /// `SCENE_CMD_ID_TIME_SETTINGS`: hour, minute, time speed (0xFF = keep).
     pub time: Option<[u8; 3]>,
+    /// `SCENE_CMD_ID_WIND_SETTINGS`: the direction's x, y, z (`s8`) and the speed.
+    pub wind: Option<([i8; 3], u8)>,
     pub skybox_disabled: bool,
     pub sun_moon_disabled: bool,
     pub actors: Vec<ActorEntry>,

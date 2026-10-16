@@ -374,16 +374,29 @@ fn ice_scroll(gameplay_frames: u32) -> Vec<(u32, u32)> {
     oot_game::scene_table::gfx_two_tex_scroll(0, 0, y1, 32, 32, 1, 0, y2, 32, 32)
 }
 
-/// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice.
+/// The child's Goron's Bracelet (`Player_DrawImpl`: `gLinkChildGoronBraceletDL` after the
+/// skeleton, its `gSPMatrix` of segment 0x0D's limb matrices putting it on the left forearm).
+const BRACELET_BAKE: &str = "Player/bracelet";
+
+/// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice, the child's bracelet.
 pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     use oot_game::pack::{BakeBody, BakeSegment, MeshBake};
-    vec![MeshBake {
-        name: ICE_BAKE.into(),
-        object: "gameplay_keep".into(),
-        segments: vec![(SEG_ICE_ENV, BakeSegment::Commands(vec![(0xFB00_0000, 0x0032_64FF), (0xDF00_0000, 0)])), (SEG_ICE_SCROLL, BakeSegment::Dynamic(ice_scroll(0)))],
-        prelude: vec![SEG_ICE_ENV],
-        body: BakeBody::DLists(vec![("gameplay_keep".into(), "gEffIceFragment3DL".into())]),
-    }]
+    vec![
+        MeshBake {
+            name: ICE_BAKE.into(),
+            object: "gameplay_keep".into(),
+            segments: vec![(SEG_ICE_ENV, BakeSegment::Commands(vec![(0xFB00_0000, 0x0032_64FF), (0xDF00_0000, 0)])), (SEG_ICE_SCROLL, BakeSegment::Dynamic(ice_scroll(0)))],
+            prelude: vec![SEG_ICE_ENV],
+            body: BakeBody::DLists(vec![("gameplay_keep".into(), "gEffIceFragment3DL".into())]),
+        },
+        MeshBake {
+            name: BRACELET_BAKE.into(),
+            object: "object_link_child".into(),
+            segments: vec![(0x0D, BakeSegment::SkeletonMatrices { file: "object_link_child".into(), symbol: "gLinkChildSkel".into() })],
+            prelude: vec![],
+            body: BakeBody::DLists(vec![("object_link_child".into(), "gLinkChildGoronBraceletDL".into())]),
+        },
+    ]
 }
 
 /// Player's sounds: what its `Player_PlaySfx`-style calls ask the audio for, at Player
@@ -5072,7 +5085,7 @@ impl Player {
 
     /// `Player_ChooseNextIdleAnim`: the next idle animation: the plain wait every other time, otherwise
     /// a random fidget from `sFidgetAnimations`.
-    fn choose_next_idle_anim(&mut self, data: &GameData) {
+    fn choose_next_idle_anim(&mut self, data: &GameData, room_environment_type: u8) {
         self.idle_type = (self.idle_type + 1) & 1;
         let anim = if self.idle_type != 0 {
             self.state2 &= !STATE2_28;
@@ -5083,8 +5096,10 @@ impl Player {
             self.anim(data, group::WAIT)
         } else {
             self.state2 |= STATE2_28;
-            // Room behaviour type 2 is 0 (normal); health not critical.
-            let mut sp38 = 0usize;
+            // fidgetType: the room's environmentType (FIDGET_COLD, _WARM, _HOT, _STRETCH_1 to 3 by
+            // ROOM_ENV_*: Goron City's rooms are ROOM_ENV_UNK_STRETCH_1), unless a common one is
+            // taken below. Health not critical.
+            let mut sp38 = room_environment_type as usize;
             let sp34 = (self.rand_zero_one() * 5.0) as i32;
             // Right hand is open (nothing held), so only variants 1 and 2 qualify.
             if sp34 < 4 && sp34 != 0 && sp34 != 3 {
@@ -5469,7 +5484,7 @@ impl Player {
                 self.skel.joint[0][1] = self.skel.joint[0][1].wrapping_add(((self.action_var2 & 1) * 0x50) - 0x28);
             } else {
                 self.finish_anim_movement();
-                self.choose_next_idle_anim(data);
+                self.choose_next_idle_anim(data, env.room_behavior_type2);
             }
         }
         self.decelerate_to_zero();
@@ -11609,7 +11624,17 @@ impl ActorImpl for Player {
                 let stick = MeshKey::named(oot_game::pack::keys::mesh("object_link_child", "gLinkChildLinkDekuStickDL"));
                 out.opa.push(DrawCmd { mesh: stick, transform: m, bones: Vec::new(), params: eng_gfx::DrawParams { fog, ..Default::default() } });
             }
+            // Player_DrawImpl after the skeleton, with the default limb draw (not first person,
+            // nor crawling behind the camera; the credits' game mode isn't ported): a child with
+            // strength (Player_GetStrength) wears the Goron's Bracelet, on the limbs' matrices.
+            let crawling_behind = unk_6ad == 0 && st.switches[rs::CRAWLING] != 0 && projected_z < 0.0;
+            let bracelet = !self.adult && !first_person && !crawling_behind && oot_game::player_lib::player_get_strength(&play.save) > oot_game::player_lib::PLAYER_STR_NONE;
+            let bracelet_bones = bracelet.then(|| bones.clone());
             out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
+            if let Some(bones) = bracelet_bones {
+                let mesh = MeshKey::named(oot_game::pack::keys::bake(BRACELET_BAKE));
+                out.opa.push(DrawCmd { mesh, transform: root, bones, params: eng_gfx::DrawParams { fog, ..Default::default() } });
+            }
         }
         // Frozen (PLAYER_STATE2_14): the ice, at Actor_Draw's matrix scaled by
         // (actionVar1 >> 1) * 22, in the XLU list.

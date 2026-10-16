@@ -12,11 +12,13 @@
 //!   tenth Stalchild after the tenth is bigger (`killCount / 10 * 5`).
 //! - **Leevers** (`EnEncount1_SpawnLeevers`): around Link on sand, five places by his facing, a
 //!   big one after ten kills.
-//! - **Tektites** (`EnEncount1_SpawnTektites`): red ones within its range, every 10 frames.
+//! - **Tektites** (`EnEncount1_SpawnTektites`): red ones within its range, every 10 frames, two
+//!   at once (only the test scene `sasatest`'s layer 3 places this kind).
 //!
-//! The whole overlay is ported. Its Leevers (`En_Reeba`) and Tektites (`En_Tite`) aren't: they
-//! spawn as placeholders (a Leever's `aimType` and the big one aren't kept); its Wolfos are
-//! `En_Wf` (GAME-08). The debug display (`BREG(0)`) isn't drawn.
+//! The whole overlay is ported. Its Leevers (`En_Reeba`) aren't: they spawn as placeholders (a
+//! Leever's `aimType` and the big one aren't kept); its Wolfos are `En_Wf` (GAME-08), its
+//! Tektites `En_Tite` (GAME-09), each counting itself off at its destroy. The debug display
+//! (`BREG(0)`) isn't drawn.
 //!
 //! Params: `spawnType` bits 11 to 15 (`EnEncount1type`: 0 Leevers, 1 Tektites, 2 Stalchildren, 3
 //! Wolfos); `maxCurSpawns` bits 6 to 10 (how many at once); `maxTotalSpawns` bits 0 to 5 (how
@@ -65,13 +67,13 @@ pub const SPAWNER_WOLFOS: i16 = 3;
 
 /// `ACTOR_EN_REEBA`, `ACTOR_EN_TITE`, `ACTOR_EN_WF`, `ACTOR_EN_SKB` (`actor_table.h`).
 const ACTOR_EN_REEBA: i16 = 0x001C;
-const ACTOR_EN_TITE: i16 = 0x001B;
+const ACTOR_EN_TITE: i16 = crate::en_tite::ACTOR_EN_TITE;
 const ACTOR_EN_WF: i16 = 0x01AF;
 const ACTOR_EN_SKB: i16 = crate::en_skb::ACTOR_EN_SKB;
 /// `LEEVER_TYPE_SMALL`, `LEEVER_TYPE_BIG` (`z_en_reeba.h`); `TEKTITE_RED` (`z_en_tite.h`).
 const LEEVER_TYPE_SMALL: i16 = 0;
 const LEEVER_TYPE_BIG: i16 = 2;
-const TEKTITE_RED: i16 = -1;
+const TEKTITE_RED: i16 = crate::en_tite::TEKTITE_RED;
 /// `SCENE_HYRULE_FIELD`, `SCENE_HAUNTED_WASTELAND` (`scene_table.h`).
 const SCENE_HYRULE_FIELD: u16 = 0x51;
 const SCENE_HAUNTED_WASTELAND: u16 = 0x5E;

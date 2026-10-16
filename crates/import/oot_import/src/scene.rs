@@ -16,6 +16,7 @@ pub const CMD_SPAWN_LIST: u8 = 0x00;
 pub const CMD_ACTOR_LIST: u8 = 0x01;
 pub const CMD_COLLISION_HEADER: u8 = 0x03;
 pub const CMD_ROOM_LIST: u8 = 0x04;
+pub const CMD_WIND_SETTINGS: u8 = 0x05;
 pub const CMD_ENTRANCE_LIST: u8 = 0x06;
 pub const CMD_SPECIAL_FILES: u8 = 0x07;
 pub const CMD_ROOM_BEHAVIOR: u8 = 0x08;

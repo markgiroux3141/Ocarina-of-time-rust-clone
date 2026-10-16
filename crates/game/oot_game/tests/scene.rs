@@ -297,6 +297,13 @@ fn the_window_textures_are_loaded_through_the_segments_the_draw_configs_swap() {
     assert!(!h0.is_empty() && h0.iter().all(|t| *t == tex("souko_scene", "gLonLonHouseDayEntranceTex")), "Talon's house's entrance");
     let t = scene_table::segment_textures("SDC_LON_LON_BUILDINGS", &st(true));
     assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, true, "gLonLonHouseNightEntranceTex"));
+    // Scene_DrawConfigGoronCity: segment 8 (XLU) sGoronCityEntranceTextures[nightFlag] (its OPA
+    // segment 8 is a scroll), the day's on layer 0 and the night's on layer 1.
+    let (g0, g1) = (room_textures_from(&pack, "spot18_scene", 0, 0x0800_0000), room_textures_from(&pack, "spot18_scene", 1, 0x0800_0000));
+    assert!(!g0.is_empty() && g0.iter().all(|t| *t == tex("spot18_scene", "gGoronCityDayEntranceTex")), "Goron City's day entrance");
+    assert!(!g1.is_empty() && g1.iter().all(|t| *t == tex("spot18_scene", "gGoronCityNightEntranceTex")), "Goron City's night entrance");
+    let t = scene_table::segment_textures("SDC_GORON_CITY", &st(true));
+    assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, true, "gGoronCityNightEntranceTex"));
 }
 
 #[test]
@@ -339,4 +346,15 @@ fn kakariko_windows_stand_halfway_to_their_walls() {
             assert!((2.7..5.05).contains(&gap), "layer {layer}: a window at {p} (facing {n}) is {gap} from its wall");
         }
     }
+}
+
+#[test]
+fn rooms_carry_their_wind_settings() {
+    let Ok(pack) = GamePack::open_default() else { return };
+    // spot16_room_0: SCENE_CMD_WIND_SETTINGS(-100, -1, 20, 130) (the pack's bytes, read as the
+    // C's s8 x, y, z and its speed); Goron City's rooms have none (windSpeed stays 0, the
+    // zeroed play state's: Environment_Init doesn't set it).
+    let room = |scene: &str, layer: usize, i: usize| pack.room(&pack.scene(scene).expect("scene").layers[layer].rooms[i]).expect("room");
+    assert_eq!(room("spot16_scene", 0, 0).wind, Some(([-100, -1, 20], 130)));
+    assert!((0..4).all(|i| room("spot18_scene", 0, i).wind.is_none()));
 }

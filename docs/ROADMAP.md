@@ -687,6 +687,13 @@ recommendations taken): the split below, the critical path first and the exit at
    `Bg_Spot18_*`, `En_Gm`, `Obj_Hamishi`, `Obj_Hsblock`, `En_Tite`, `Bg_Bombwall`,
    `Bg_Spot16_Bombstone`, `En_Hata` and the scene's wind, `SDC_GORON_CITY`, one-points 4180, 4210,
    4220, the child's bracelet drawn.
+   - **Done** (2026-10-15, ADR 0073), in one step: the thirteen overlays whole (the adult's Gorons
+     placeholders chosen in `En_Go2`'s init), the room's wind (pack format 29), one-points 4180,
+     4210, 4220 and 4221, `SDC_GORON_CITY`, the bracelet on Link, Player's fidget by the room's
+     environment. Two short runs from debug starts (`Route::Darunia`: the lullaby at his door,
+     Saria's Song, the bracelet; `Route::Boulder`: the cliff's Bomb Flower thrown onto the
+     boulder) with the `darunia` and `boulder` goldens; the presets `goron-bracelet` and
+     `cavern-open` (milestone 3's start). The story chain up the trail is hand-tested.
 3. **Dodongo's Cavern's route:** `SDC_DODONGOS_CAVERN`, `Bg_Dodoago`, `Bg_Ddan_Jd`, `En_Dodojr` and
    what the way the collision search finds needs; one-points 3060, 3065, 3380.
 4. **King Dodongo and the Goron's Ruby:** `Boss_Dodongo`, `En_Bdfire`, the magma effects, the room

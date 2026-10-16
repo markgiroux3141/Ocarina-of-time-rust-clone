@@ -399,6 +399,15 @@ fn draw_config_souko(_st: &mut DrawConfigState, _b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigGoronCity` (Goron City): a scroll on segment 8 in the OPA buffer, and its
+/// entrance on segment 8 in the XLU buffer (`segment_textures`).
+fn draw_config_spot18(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.opa.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 127 - f % 128, 32, 32, 1, f % 128, 0, 32, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
 /// A texture a draw config points a segment at this frame
 /// (`gSPSegment(.., SEGMENTED_TO_VIRTUAL(texture))`): in the OPA buffer, or the XLU one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -447,6 +456,15 @@ fn textures_souko(st: &DrawConfigState) -> Vec<SegmentTexture> {
     vec![SegmentTexture { segment: 0x08, xlu: true, file: "souko_scene", symbol: LON_LON_HOUSE_ENTRANCE_TEXTURES[st.night as usize] }]
 }
 
+/// `sGoronCityEntranceTextures` (by `nightFlag`).
+const GORON_CITY_ENTRANCE_TEXTURES: [&str; 2] = ["gGoronCityDayEntranceTex", "gGoronCityNightEntranceTex"];
+
+/// `Scene_DrawConfigGoronCity`'s segment 8 (XLU): the city's entrance, the light through it by
+/// `nightFlag`.
+fn textures_spot18(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    vec![SegmentTexture { segment: 0x08, xlu: true, file: "spot18_scene", symbol: GORON_CITY_ENTRANCE_TEXTURES[st.night as usize] }]
+}
+
 type TexturesFn = fn(&DrawConfigState) -> Vec<SegmentTexture>;
 
 /// The ported draw configs that point segments at textures by state.
@@ -455,6 +473,7 @@ const TEXTURES: &[(&str, TexturesFn)] = &[
     ("SDC_MARKET_GUARD_HOUSE", textures_miharigoya),
     ("SDC_LON_LON_RANCH", textures_spot20),
     ("SDC_LON_LON_BUILDINGS", textures_souko),
+    ("SDC_GORON_CITY", textures_spot18),
 ];
 
 /// The textures the draw config `sdc` points segments at this frame (empty for the others).
@@ -485,6 +504,7 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_ROYAL_FAMILYS_TOMB", draw_config_royal_familys_tomb),
     ("SDC_LON_LON_RANCH", draw_config_spot20),
     ("SDC_LON_LON_BUILDINGS", draw_config_souko),
+    ("SDC_GORON_CITY", draw_config_spot18),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

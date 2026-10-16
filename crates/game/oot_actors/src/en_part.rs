@@ -8,11 +8,13 @@
 //! callers with action 2 is a shock wave (`func_80ACE5C8`) or a Stalfos' head (`func_80ACE7E8`).
 //!
 //! The whole overlay is ported. `EffectSsDtBubble` (kind 4's bubbles) isn't: its `Rand` calls
-//! are made. The Iron Knuckle's and the Tektite's segment colours and textures (kinds 5 to 7, 9
-//! and 10 with `object_ik`'s and `object_tite`'s lists) aren't set: their actors aren't ported.
-//! `func_8002EBCC` (the lists' shine) isn't, as for every actor. A part's list is a limb's, which
-//! the pack keeps only in its skeleton's mesh: every ported enemy's breakable limbs are baked on
-//! their own (`bakes`).
+//! are made. The Iron Knuckle's segment colours (kinds 5 to 7 with `object_ik`'s lists) aren't
+//! set: its actor isn't ported. The Tektite's body (`object_tite_DL_002FF0`, the one list of
+//! `object_tite` on segments 8 to 10) gets the blue's textures as kind 9 and the red's as kind 10
+//! (a bake of each); another kind leaves the segments as the last draw set them, which the bake
+//! can't keep: it draws the red's (logged). `func_8002EBCC` (the lists' shine) isn't, as for
+//! every actor. A part's list is a limb's, which the pack keeps only in its skeleton's mesh: every
+//! ported enemy's breakable limbs are baked on their own (`bakes`).
 //!
 //! Params: `params` whole, the kind (`BodyBreak_SpawnParts`' `type`: -1 `En_Mb`'s, bouncing; 0
 //! drifts and falls; 1 the Stalchild's, 2, 4, 9 and 10 (the blue and red Tektites') fly up, all
@@ -81,19 +83,36 @@ pub fn part_bake_name(file: &str, symbol: &str) -> String {
     format!("En_Part/{file}/{symbol}")
 }
 
-/// The parts the ported enemies break into: the Stalchild's limbs.
+/// `object_tite_DL_002FF0`: the Tektite's body, its list on segments 8 to 10.
+pub const OBJECT_TITE_DL_002FF0: DList = (crate::en_tite::OBJECT, "object_tite_DL_002FF0");
+
+/// The bake of the Tektite's body as kind 9 (the blue's textures, `blue`) or 10 (the red's).
+pub fn tite_body_bake_name(blue: bool) -> String {
+    format!("{}/{}", part_bake_name(OBJECT_TITE_DL_002FF0.0, OBJECT_TITE_DL_002FF0.1), if blue { "blue" } else { "red" })
+}
+
+/// The parts the ported enemies break into: the Stalchild's limbs, the Tektite's (its body twice,
+/// with the blue's and the red's textures).
 pub fn bakes() -> Vec<MeshBake> {
-    crate::en_skb::LIMB_DLISTS
-        .iter()
-        .flatten()
-        .map(|sym| MeshBake {
-            name: part_bake_name(crate::en_skb::OBJECT, sym),
-            object: crate::en_skb::OBJECT.into(),
-            segments: Vec::new(),
+    let dl = |file: &str, sym: &str| MeshBake {
+        name: part_bake_name(file, sym),
+        object: file.into(),
+        segments: Vec::new(),
+        prelude: Vec::new(),
+        body: BakeBody::DLists(vec![(file.into(), sym.into())]),
+    };
+    let mut v: Vec<MeshBake> = crate::en_skb::LIMB_DLISTS.iter().flatten().map(|sym| dl(crate::en_skb::OBJECT, sym)).collect();
+    v.extend(crate::en_tite::DLISTS.iter().filter(|&&s| s != OBJECT_TITE_DL_002FF0.1).map(|sym| dl(crate::en_tite::OBJECT, sym)));
+    for blue in [true, false] {
+        v.push(MeshBake {
+            name: tite_body_bake_name(blue),
+            object: crate::en_tite::OBJECT.into(),
+            segments: crate::en_tite::texture_segments(blue),
             prelude: Vec::new(),
-            body: BakeBody::DLists(vec![(crate::en_skb::OBJECT.into(), (*sym).into())]),
-        })
-        .collect()
+            body: BakeBody::DLists(vec![(OBJECT_TITE_DL_002FF0.0.into(), OBJECT_TITE_DL_002FF0.1.into())]),
+        });
+    }
+    v
 }
 
 pub struct EnPart {
@@ -361,14 +380,24 @@ impl ActorImpl for EnPart {
     }
 
     /// `EnPart_Draw`: its list at its matrix, turned by `rotZ` (kinds above 0), after
-    /// `Gfx_SetupDL_25Opa`.
+    /// `Gfx_SetupDL_25Opa`; the Tektite's body with the blue's textures on segments 8 to 10 as
+    /// kind 9, the red's as kind 10.
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some((file, symbol)) = self.display_list else { return };
         let mut m = actor_draw_matrix(rs);
-        if KIND.get(self.actor.params) > 0 {
+        let kind = KIND.get(self.actor.params);
+        if kind > 0 {
             m *= Mat4::from_rotation_z(rs.values.first().copied().unwrap_or(0.0));
         }
-        out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&part_bake_name(file, symbol))), m));
+        let bake = if (file, symbol) == OBJECT_TITE_DL_002FF0 {
+            if kind != 9 && kind != 10 {
+                log::debug!("En_Part: kind {kind} draws object_tite_DL_002FF0 with whatever segments 8 to 10 hold (drawn red)");
+            }
+            tite_body_bake_name(kind == 9)
+        } else {
+            part_bake_name(file, symbol)
+        };
+        out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&bake)), m));
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

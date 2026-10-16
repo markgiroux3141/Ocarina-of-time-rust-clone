@@ -1562,6 +1562,7 @@ impl PlayState {
             }
         }
         // Attention_Update with the actor Player keeps targeted, against the last frame's view.
+        let player_in_cs_mode = self.player_in_cs_mode();
         if let Some(ph) = self.player
             && let Some(pi) = self.actors.get(ph).and_then(|p| p.as_player())
         {
@@ -1576,6 +1577,7 @@ impl PlayState {
                 player_focus: pi.focus(),
                 view_proj: self.view_proj,
                 view_eye: self.view_eye(),
+                player_in_cs_mode,
             };
             crate::target::update(&mut self.target_ctx, &self.actors, &frame, &mut self.audio);
         }

@@ -300,6 +300,10 @@ pub struct EnvCtx {
     pub storm_request: u8,
     /// `windDirection` (`Environment_Init`: 80 on each axis).
     pub wind_direction: [i16; 3],
+    /// `windSpeed`: the room's (`Scene_CommandWindSettings`). @bug (game) `Environment_Init`
+    /// doesn't set it (`z_kankyo.c:375`): a room without the command keeps the play state's
+    /// zeroed value.
+    pub wind_speed: f32,
     pub lightning_state: u8,
     pub sandstorm_state: u8,
     /// `sceneTimeSpeed`: the room's time speed (`Scene_CommandTimeSettings`), `gTimeSpeed`'s
@@ -369,6 +373,7 @@ impl EnvCtx {
             precipitation: [0; 5],
             storm_request: STORM_REQUEST_NONE,
             wind_direction: [80, 80, 80],
+            wind_speed: 0.0,
             lightning_state: LIGHTNING_OFF,
             sandstorm_state: 0,
             // Environment_Init: sceneTimeSpeed 0, the sun by the time, no glare or lens flare, no

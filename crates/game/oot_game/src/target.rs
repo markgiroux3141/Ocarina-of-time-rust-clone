@@ -241,6 +241,8 @@ pub struct TargetFrame<'a> {
     pub view_proj: Mat4,
     /// `play->view.eye`.
     pub view_eye: Vec3,
+    /// `Player_InCsMode(play)`: `Attention_FindActor` searches nothing then.
+    pub player_in_cs_mode: bool,
 }
 
 /// `Attention_ActorIsInRange`.
@@ -313,13 +315,17 @@ pub fn update(ctx: &mut TargetCtx, actors: &ActorContext, f: &TargetFrame, audio
     }
     let mut candidate = None;
     if !(f.player_target.is_some() && f.player_stick_dir == 2) {
-        // Attention_FindActor → Attention_FindActorInCategory over the actors, in list order.
+        // Attention_FindActor → Attention_FindActorInCategory over the actors, in list order; in
+        // a cutscene mode (Player_InCsMode) it searches nothing (no arrow, Navi over no actor) and
+        // leaves bgmEnemy as it was.
         let mut best = f32::MAX;
         let mut best_prio: Option<(u8, ActorHandle)> = None;
         // sBgmEnemyDistSq: the nearest hostile enemy within 500, the locked one too.
-        ctx.bgm_enemy = None;
+        if !f.player_in_cs_mode {
+            ctx.bgm_enemy = None;
+        }
         let mut bgm_enemy_dist_sq = f32::MAX;
-        for h in actors.all() {
+        for h in actors.all().into_iter().filter(|_| !f.player_in_cs_mode) {
             let Some(a) = actors.actor(h) else { continue };
             if h == f.player || a.killed || a.flags & ACTOR_FLAG_ATTENTION_ENABLED == 0 {
                 continue;

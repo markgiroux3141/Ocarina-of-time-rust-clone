@@ -405,6 +405,7 @@ pub fn load(dir: &Path) -> Result<Level> {
         behavior: [0, 0],
         echo: 0,
         time: None,
+        wind: None,
         skybox_disabled: false,
         sun_moon_disabled: false,
         actors: vec![],
@@ -648,6 +649,7 @@ pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_ass
         room.behavior = r.behavior;
         room.echo = r.echo;
         room.time = r.time;
+        room.wind = r.wind;
         room.skybox_disabled = r.skybox_disabled;
         room.sun_moon_disabled = r.sun_moon_disabled;
     }

@@ -491,6 +491,15 @@ pub enum Step {
     BombOut,
     /// A Bomb Flower set off by a blast (its bomb spawned, the flower regrowing).
     FlowerSetOff,
+    /// Darunia's door (`Bg_Spot18_Shutter`) risen open (switch 0x1B: the lullaby at its spot).
+    DaruniaDoor,
+    /// The Goron's Bracelet taken from Darunia and its text read (the strength upgrade), Link free.
+    Bracelet,
+    /// What Link carried thrown (`Player_Action_808464B0`'s throw: at a run), his hands free.
+    Thrown,
+    /// The boulder at Dodongo's Cavern's mouth (`Bg_Spot16_Bombstone`) blown up: switch 4 and
+    /// `EVENTCHKINF_23` set, its one-point cutscenes over, Link free.
+    BoulderBlown,
 }
 
 impl Step {
@@ -675,6 +684,10 @@ impl Step {
             Step::DcOpening => "dc_opening",
             Step::BombOut => "bomb_out",
             Step::FlowerSetOff => "flower_set_off",
+            Step::DaruniaDoor => "darunia_door",
+            Step::Bracelet => "bracelet",
+            Step::Thrown => "thrown",
+            Step::BoulderBlown => "boulder_blown",
         }
     }
 }
@@ -844,6 +857,14 @@ pub enum Route {
     /// entrance wall, which its blast breaks (the cavern's opening, `gDcOpeningCs`); a bomb out of
     /// the bag put down by the east flower, which its blast sets off.
     Bombs,
+    /// Darunia (GAME-09 milestone 2), from Goron City's bottom floor (`ranch-epona`): Zelda's
+    /// Lullaby at his door, Saria's Song to him (`gGoronCityDaruniaCorrectSongCs`), the Goron's
+    /// Bracelet.
+    Darunia,
+    /// The boulder at Dodongo's Cavern's mouth (GAME-09 milestone 2), from a debug start on the
+    /// cliff above it with the bracelet (`goron-bracelet`): the cliff's Bomb Flower lifted and
+    /// thrown down onto it (one-point 4180), the boulder blown up.
+    Boulder,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1073,6 +1094,49 @@ fn bombs_tasks() -> Vec<Task> {
         Task::Texts(|w| flower_near(w, DC_EAST_FLOWER).is_some_and(|f| f.flower_bomb_scale < 1.0), Step::FlowerSetOff),
     ]
 }
+
+/// `Route::Darunia`'s tasks: from Goron City's bottom floor (`ENTR_GORON_CITY_2`, no intro) to the
+/// lullaby's spot by Darunia's door, the door, Darunia and the bracelet. The ways are a search over
+/// the collision (a 25 grid, floors by `BgCheck_EntityRaycastDown`, walls tested 20 and 45 up).
+fn darunia_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::{OCARINA_SONG_LULLABY, OCARINA_SONG_SARIAS};
+    vec![
+        Task::Settle(None),
+        // South to the lullaby's spot (En_Okarina_Tag 0x1C9B at (-71, -2, -333), range 40: the
+        // ocarina within 90 across and 40 up or down turns to it).
+        Task::Walk(vec![Vec3::new(-94.0, -3.0, -200.0), Vec3::new(-71.0, -3.0, -300.0)]),
+        Task::Ocarina(1, OCARINA_SONG_LULLABY, Step::LullabyPlayed),
+        Task::WaitFor(Cond::DaruniaDoorOpen, Step::DaruniaDoor),
+        // Through the door (En_Holl 0x003F at (-69, 31, -589), rooms 3 and 1) to Darunia (En_Du at
+        // (91, 41, -1462)): within 136 he wants the ocarina.
+        Task::Walk(vec![Vec3::new(-94.0, -3.0, -496.0), Vec3::new(-94.0, -3.0, -696.0), Vec3::new(-94.0, 40.0, -1096.0), Vec3::new(-94.0, 40.0, -1296.0), Vec3::new(40.0, 40.0, -1380.0)]),
+        // Saria's Song: gGoronCityDaruniaCorrectSongCs, then 0x301C and the bracelet
+        // (Actor_OfferGetItem(GI_GORONS_BRACELET)), A through the texts.
+        Task::Ocarina(1, OCARINA_SONG_SARIAS, Step::SariasSong),
+        Task::Texts(|w| oot_game::player_lib::player_get_strength(&w.save) > oot_game::player_lib::PLAYER_STR_NONE && !w.player_in_cs_mode(), Step::Bracelet),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::Boulder`'s tasks, from its debug start on the cliff above Dodongo's Cavern's mouth
+/// (`goron-bracelet`): the cliff's Bomb Flower lifted with the bracelet (`Player_GetStrength`) and
+/// thrown at a run off the ledge; its blast breaks the boulder.
+fn boulder_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::LiftBombFlower(DMT_CLIFF_FLOWER, Step::FlowerLifted),
+        // Back east, then at a run west off the ledge's edge (x about -1440): thrown from x -1413 it
+        // falls below y 1400 inside the boulder's watch (Bg_Spot16_Bombstone func_808B57E0: within
+        // 400 of (-1579, -790)), one-point 4180 for its fuse and 20, and lands by the boulder.
+        Task::ThrowAtRun(vec![Vec3::new(-1300.0, 1409.0, -646.0), Vec3::new(-1600.0, 1408.0, -646.0)], Vec3::new(-1413.0, 1408.0, -646.0), Step::Thrown),
+        // Its blast breaks the boulder (switch 4, EVENTCHKINF_23, a second 4180).
+        Task::Texts(|w| w.flags.get_switch(4) && w.save.get_event_chk_inf(crate::bg_spot16_bombstone::EVENTCHKINF_23) && !w.player_in_cs_mode() && w.active_cam_id == oot_game::camera::CAM_ID_MAIN, Step::BoulderBlown),
+        Task::Settle(None),
+    ]
+}
+
+/// The Bomb Flower on the cliff above Dodongo's Cavern's mouth (spot16 room 0).
+const DMT_CLIFF_FLOWER: Vec3 = Vec3::new(-1397.0, 1408.0, -646.0);
 
 /// The Bomb Flower placed at `home`.
 fn flower_near(w: &PlayState, home: Vec3) -> Option<&crate::en_bombf::EnBombf> {
@@ -1599,6 +1663,10 @@ impl Route {
             Route::Meadow | Route::LostWoods => "ENTR_LOST_WOODS_0",
             Route::Ranch => "ENTR_LON_LON_RANCH_0",
             Route::Bombs => "ENTR_DODONGOS_CAVERN_0",
+            // Goron City's spawn 2, the bottom floor (sEntranceCutsceneTable's intro is for _0).
+            Route::Darunia => "ENTR_GORON_CITY_2",
+            // The trail's spawn 1, by Goron City's door (the intro is for _0).
+            Route::Boulder => "ENTR_DEATH_MOUNTAIN_TRAIL_1",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1628,6 +1696,8 @@ impl Route {
             Route::LostWoods => Some("meadow-saria"),
             Route::Ranch => Some("lost-woods-games"),
             Route::Bombs => Some("cavern-bombs"),
+            Route::Darunia => Some("ranch-epona"),
+            Route::Boulder => Some("goron-bracelet"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1647,6 +1717,8 @@ impl Route {
             Route::Field => Some(FIELD_START),
             Route::FieldNight => Some(FIELD_NIGHT_START),
             Route::Ocarina => Some(OCARINA_START),
+            // On the cliff above the cavern, east of its Bomb Flower, facing west.
+            Route::Boulder => Some((Vec3::new(-1307.0, 1409.0, -660.0), -0x4000)),
             _ => None,
         }
     }
@@ -1799,6 +1871,8 @@ impl Route {
             Route::LostWoods => "lost-woods",
             Route::Ranch => "ranch",
             Route::Bombs => "bombs",
+            Route::Darunia => "darunia",
+            Route::Boulder => "boulder",
         }
     }
 
@@ -1839,6 +1913,8 @@ impl Route {
             Route::LostWoods => 30000,
             Route::Ranch => 20000,
             Route::Bombs => 3000,
+            Route::Darunia => 4000,
+            Route::Boulder => 1500,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1846,12 +1922,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -1873,6 +1949,10 @@ enum Task {
     PutDown(Vec<Vec3>, Vec3, Step),
     /// This C button (0 C-Left) once, until Link stands holding a bomb (`En_Bom`).
     TakeBomb(usize, Step),
+    /// Carrying, through the points at a run (`Task::Walk`'s), then on towards the last; within 20
+    /// of the release point (the second `Vec3`), running (faster than 1.1: Player throws rather
+    /// than puts down), A, until his hands are free.
+    ThrowAtRun(Vec<Vec3>, Vec3, Step),
     /// Through the points carrying a cucco: off an edge Link glides (Player's `minVelocityY` -2,
     /// `Player_UpperAction_CarryActor`); the step on the frame he lands, then on through the rest.
     Glide(Vec<Vec3>, Step),
@@ -2141,6 +2221,8 @@ enum Cond {
     BridgeRaised,
     /// The time-based music at `TIMESEQ_DAY_BEGIN_SFX` (the night's critters set).
     NightCritters,
+    /// Darunia's door (`Bg_Spot18_Shutter`) risen its 180 (`func_808B9698` done), Link free.
+    DaruniaDoorOpen,
 }
 
 impl Cond {
@@ -2151,6 +2233,9 @@ impl Cond {
             Cond::Night => w.save.night_flag,
             Cond::BridgeRaised => w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_spot00_hanebasi::BgSpot00Hanebasi>(h)).any(|b| b.actor.params == crate::bg_spot00_hanebasi::DT_DRAWBRIDGE && b.actor.shape_rot.x == -0x4000),
             Cond::NightCritters => w.time_seq_state == TIMESEQ_DAY_BEGIN_SFX,
+            Cond::DaruniaDoorOpen => {
+                w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_spot18_shutter::BgSpot18Shutter>(h)).any(|d| d.actor.world_pos.y >= d.actor.home_pos.y + 180.0) && !w.player_in_cs_mode()
+            }
         }
     }
 }
@@ -2522,6 +2607,8 @@ impl Playthrough {
             Route::LostWoods => lost_woods_tasks(),
             Route::Ranch => ranch_tasks(),
             Route::Bombs => bombs_tasks(),
+            Route::Darunia => darunia_tasks(),
+            Route::Boulder => boulder_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -2990,6 +3077,7 @@ impl Playthrough {
             Task::LiftBombFlower(near, step) => self.lift_bomb_flower(w, near, step),
             Task::PutDown(points, face, step) => self.put_down(w, &points, face, step),
             Task::TakeBomb(c, step) => self.take_bomb(w, c, step),
+            Task::ThrowAtRun(points, release, step) => self.throw_at_run(w, &points, release, step),
             Task::Throw(at, step) => self.throw(w, at, step),
             Task::Glide(points, step) => self.glide(w, &points, step),
             Task::WaitGate(step) => {
@@ -5741,6 +5829,34 @@ impl Playthrough {
                 Some(idle)
             }
         }
+    }
+
+    /// `Task::ThrowAtRun`: `sub` counts the points passed, then 1000 the A pressed.
+    fn throw_at_run(&mut self, w: &PlayState, points: &[Vec3], release: Vec3, step: Step) -> Option<PadState> {
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("never threw (Link {:?})", w.player().action));
+            return None;
+        }
+        let p = w.player();
+        if self.sub >= 1000 {
+            if p.held_actor.is_none() && !matches!(p.action, PA::Throw | PA::PutDown) {
+                self.finish(Some(step));
+                return None;
+            }
+            return Some(PadState::default());
+        }
+        let link = p.actor.world_pos;
+        while self.sub < points.len() && Self::xz_dist(link, points[self.sub]) < WAYPOINT_RADIUS {
+            self.sub += 1;
+        }
+        let target = points[self.sub.min(points.len() - 1)];
+        let mut pad = stick_towards(w, target, RUN);
+        if self.sub + 1 >= points.len() && Self::xz_dist(link, release) < 20.0 && p.actor.speed_xz > 1.1 {
+            pad.button |= BTN_A;
+            self.sub = 1000;
+        }
+        Some(pad)
     }
 
     /// `Task::LiftBombFlower`.

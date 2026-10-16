@@ -11,8 +11,8 @@ The phase starts from the `ranch-epona` preset (GAME-08's exit review).
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Bombs: `En_Bom`, `En_Bombf`, Player's explosives, BACKLOG #33 | done (2026-10-15) |
-| 2 | The trail and Goron City to the bracelet, and the cavern's mouth | next |
-| 3 | Dodongo's Cavern's route | |
+| 2 | The trail and Goron City to the bracelet, and the cavern's mouth | done (2026-10-15) |
+| 3 | Dodongo's Cavern's route | next |
 | 4 | King Dodongo and the Goron's Ruby (the phase's exit) | |
 | 5 | The rest of the cavern | |
 | 6 | The summit: the Great Fairy and magic | |
@@ -406,3 +406,208 @@ scripts\run\sandbox-bombs.bat
 6. Walk slowly (Shift) up a ramp to a flower strip: does Link stop halfway? (#71)
 7. `game-bombs field`: Hyrule Field by day. Kill a Peahat (Z and slash it when it lands, or its
    root): it shrinks rising and explodes, three drops.
+
+## Milestone 2: The trail and Goron City to the bracelet, and the cavern's mouth
+
+**The answer:** in one step (the user asked for the milestone whole with one hand test; the
+cavern's mouth is small and needs the city's bracelet anyway). Two short scripted runs from
+debug starts, no enemies on the way (the user's standing preference, re-stated during the
+milestone): **Darunia** (`Route::Darunia`, from Goron City's bottom floor on `ranch-epona`):
+Zelda's Lullaby at the spot by his door, the door rising, Saria's Song to him, his dance
+(`gGoronCityDaruniaCorrectSongCs`) and the Goron's Bracelet; **the boulder** (`Route::Boulder`,
+from the cliff above Dodongo's Cavern on `goron-bracelet`): the cliff's Bomb Flower lifted and
+thrown at a run off the ledge, the boulder's watch starting one-point 4180 as it falls, its blast
+breaking the boulder (switch 4, `EVENTCHKINF_23`). The whole chain (Kakariko's gate, the trail's
+Tektites, the city, back up to the cliff, into the cavern) is the hand test's. Scripts:
+`scripts\run\test-goron.bat`, `game-goron.bat`, `sandbox-goron.bat` (menu 135 to 137).
+
+### What was built
+
+- **`En_Go2`** (ADR 0073): every child Goron (the trail's 4, 5, 6 and 0xC, the city's 0 and 7 to
+  0xB) and the bazaar's 0xD, whole: texts and flags, waking and curling, the dust, the rolling
+  states (the trail's roller and his bomb at his path's end; the city's big roller stopped by a
+  blast, his 30 or 40 bomb bag), the get item, the draw (eyes and mouth, curled and rolling
+  lists). The adult's types 1, 2 and 3 are placeholders chosen in its init (the user's call), after
+  the init's own kills. 16 bakes.
+- **`En_Du`** whole: his talk (0x301A, 0x301B, `INFTABLE_113`; 0x301D with the bracelet, 0x301E
+  with the Ruby), the ocarina asked for within 136, Saria's Song's and another song's cutscenes
+  started in place, his dance on cue channel 2, 0x301C and `Actor_OfferGetItem(GI_GORONS_BRACELET)`,
+  the layer-4 dance, the Fire Temple's meeting (one-point 3330 logs). `Bg_Spot18_Shutter` (the
+  child's rising door on switch 0x1B, the adult's sliding one with one-point 4221) and
+  `Bg_Spot18_Obj` (the statue and the child's spear; the adult's pull) whole.
+- **`En_Tite`** whole (red and blue: the blue's water walking; the ripples log); `En_Part`'s
+  Tektite pieces with their textures; `En_Encount1`'s Tektites real.
+- **`Bg_Spot16_Bombstone`** (the boulder, its debris, the push, the watch of a carried Bomb
+  Flower, 4180), **`Bg_Bombwall`** (the trail's three walls), **`En_Hata`** (the flag in the
+  room's wind) whole.
+- **`Bg_Spot18_Basket`** and **`Bg_Spot18_Futa`** (the urn: 4220 on the torches' switch 0x1C,
+  4210 for a bomb in its mouth, its three prizes), **`En_Gm`** (Medigoron, the knife's sale
+  included; his animation decoded on `gGoronSkel`, `foreign_anims`), **`Obj_Hamishi`**,
+  **`Obj_Hsblock`** whole.
+- **Systems:** the room's wind command (`RoomData::wind`, pack format 29, `envCtx.windSpeed`);
+  one-point cutscenes 4180, 4210, 4220, 4221; `SDC_GORON_CITY`; the child's bracelet drawn on
+  Link (`BakeSegment::SkeletonMatrices`); Player's idle fidget from the room's environment type
+  (Goron City's rooms are `ROOM_ENV_UNK_STRETCH_1`).
+- **The runs:** `Route::Darunia`, `Route::Boulder`, `Task::ThrowAtRun` (a carried actor thrown at
+  a run from a point), `Cond::DaruniaDoorOpen`; the presets **`goron-bracelet`** (the Darunia
+  run's end: the door's switch, the bracelet, and the two intros) and **`cavern-open`** (the
+  boulder run's end: milestone 3's start), each checked against its run.
+- **The characters** (`export-glb`): Goron, Darunia, Medigoron, Red Tektite, Blue Tektite.
+- Five helpers ported the overlays in worktrees (removed); BACKLOG #34's Tektites and Wolfos parts
+  struck (the Leevers remain).
+
+### Results
+
+- Tests from the C: `tests/en_go2.rs` (12), `en_du.rs` (13), `en_tite.rs` (12),
+  `bg_spot16_bombstone.rs` (4), `bg_bombwall.rs` (3), `en_hata.rs` (2), `bg_spot18_basket.rs` (10),
+  `en_gm.rs` (6), `obj_hamishi.rs` (6), `obj_hsblock.rs` (4), `goron_city.rs` (2: the runs);
+  `oot_game`'s scene tests (the wind, Goron City's entrance textures), the import's draw-config
+  check (`SDC_GORON_CITY`).
+- The runs: Darunia 2,609 frames (the ocarina turned to the song spot at 81, the lullaby at 117,
+  the door open at 399, Saria's Song at 743, the bracelet's text read at 2,609); the boulder 258
+  frames (the flower lifted at 57, thrown at 97, the boulder blown and the cameras back at 258). No
+  hit taken in either.
+- Goldens: 208 of milestone 1's 216 the same; 8 differ (proven below): the bracelet on child Link
+  in 7 images, the fidget in the ranch's trace. 8 new cases (`darunia`, `darunia_door`,
+  `darunia_dance`, `boulder`, `boulder_throw`, `boulder_blast`). 224 hashes, 172 cases
+  (`out/golden_base24`), the same over two runs. After the hand test's fix (below), 34
+  re-recorded: `out/golden_base25`.
+- 1,200 tests (one ignored) pass; `cargo test -p layering` passes; no warnings. The pack
+  is format 29 (`out/data26`; `scripts/run/_env.bat` points there).
+
+### Decisions
+
+- One step, two short runs from debug starts (above); the story chain is hand-tested.
+- The adult's Gorons are placeholders chosen in `En_Go2`'s init; `En_Du`'s, `Bg_Spot18_Shutter`'s
+  and `Bg_Spot18_Obj`'s adult parts and `En_Gm`'s sale are ported whole (the user's calls).
+- The bracelet's list follows Link's bones through the skeleton's matrix order baked into a new
+  segment kind rather than a Link variant (it's drawn after the skeleton, as in the C).
+- `windSpeed` stays 0 in a room without the wind command (`Environment_Init` doesn't set it:
+  `@bug (game)`).
+
+### The questions the survey left open
+
+- **The wrong song's text 0x3020 doesn't set `EVENTCHKINF_22`:** Darunia's talk state stays idle
+  through the cutscene, so `Npc_UpdateTalking` never runs `EnDu_UpdateTalkState`; the script's
+  0x3020 is a cutscene text, and his `textId` stays 0x301A or 0x301B. (`z_actor.c`'s older text
+  handler sets it for 0x3020, but `En_Du` doesn't use it.) A test checks it.
+- **Goron City's Lost Woods passage** (to exit 4, its floor north of z 1240) is sealed by all three
+  boulders together: `Obj_Bombiwa` 0x0008 (367, 196, 1078), 0x800C (416, 196, 1049, the chime)
+  and 0x000B (470, 196, 1031), cylinders of radius 55 across a passage about 160 wide there (a
+  walk north stops at z 982 to 1024). The Bomb Flowers in front, (371, 196, 1020) and (438, 196,
+  999), and the wall ones at (339, 258, 1057) and (491, 256, 1003), are what blow them.
+- **The bomb-flower Goron's walk** (type 4, path 0): after 0x300B he aims for his own first point
+  (`EnGo2_UpdateWaypoint` wraps at `count - 1`), walks two frames (0.25 units) and sits again; with
+  `INFTABLE_EB` his next init puts him at the path's last point, (-1263, 1412, -730). Neither spot
+  covers the cliff's Bomb Flower (152 and 158 from it).
+- **No hot rooms for a child:** the trail's room is `ROOM_ENV_DEFAULT`; Goron City's four rooms are
+  `ROOM_ENV_UNK_STRETCH_1` (Link's stretching fidgets, ported with this milestone).
+- **Entrances** checked against `ootx scene-info` and the entrance table: the trail's 0 (the
+  intro), 1 (Goron City's door), 3 (before the cavern); the city's 0 (its intro), 2 (the bottom,
+  no intro), 3 (the Lost Woods).
+
+### Corrections to the survey
+
+- The trail's rolling Goron stops at his path's second-to-last point (7), not its end: the
+  waypoint wraps at `count - 1`; his bomb blows at about (-1526, 1056, 1224), 255 frames after Link
+  comes within 1000. He and the other Gorons of types 3 to 0xD are update-culled: he rolls only
+  while the camera sees him. Rolling speeds are 1.5 times their value a frame (`Actor_UpdatePos`).
+- The big rolling Goron's 6 after his gift eases back to 3.6 (`EnGo2_SlowRolling`).
+- The Gorons' first texts run on into their repeat texts in one box (the message data's next-text
+  codes): 0x3008 to 0x302A, 0x3014 to 0x3015, and so on; the flags key on the first.
+- Medigoron's 0x3049 is effectively never seen: his talk reach is past the inner wall, whose
+  breaking sets his flag 6. A child reaches room 2 only with explosives (four walls on the way,
+  flags 2, 4, 5, 6).
+- The urn's torches are lit from Darunia's room's torches (the y-196 floor's two start unlit
+  unless switch flag 0 is set); the urn's bomb prize drops nothing without a bomb bag.
+- `Bg_Bombwall` breaks two updates after the hit; the boulder's watch is a fixed area of the world
+  (400 round (-1579, -790), below y 1400), and a thrown flower from x -1413 enters it 17 frames on.
+- `En_Hata`'s placements: the trail and spot11/12/13; the trail's wind is (-100, -1, 20) at 130.
+
+### The hand test
+
+- The user saw the blue attention arrow over Darunia through his dance. Not the game's: the C's
+  `Attention_FindActor` searches nothing while `Player_InCsMode` (`z_actor.c`), so in a cutscene
+  or a talk there's no arrow and Navi hovers over no actor (but a locked one). The port searched
+  on. Fixed in `oot_game::target::update` (and `bgmEnemy` is left as it was then, as in the C);
+  `tests/goron_city.rs` checks the dance (an arrow over him before it, none in it), and fails
+  without the fix (frame 868). Pre-existing since the attention arrows were ported: every
+  cutscene with something targetable in reach had it.
+- Its knock-on: Navi flies differently in cutscenes and talks, and her `Rand` calls move the
+  random sequence after. Talon's house's tests talked to him with a cucco wandering into Link's
+  lift reach, which an A lifts before a talk: they now wait for none in reach (the test's
+  luck, not the game).
+- Found on the way, logged (#79): the C searches the boss, enemy and Bg categories before the
+  others (`sAttentionCategorySearchOrder`); the port takes the nearest of all.
+
+### Known gaps
+
+- The adult's Gorons (#72), Darunia's 3330 (#73), the blue Tektite's ripples (#74),
+  `Obj_Ice_Poly` (#75), the hammer's floor hit (#76), an offered item taken a frame late after a
+  talk (#77), mask reactions (#78).
+- The summit (`En_Encount2`, `En_Fire_Rock`, the fairy) is milestone 6's; the cavern milestone 3's.
+- Player's idle fidget is still the port's reduced form for the common types (only the open-hand
+  ones; the critical-health fidgets aren't chosen).
+
+### Fixes found while building
+
+- Player's idle fidget ignored the room's environment type (always the default room's).
+- A Goron test set the torches' switch and then talked at once: the urn's 4220 holds Link (the
+  C's behaviour); the test waits it out.
+
+### Golden proof
+
+- The bracelet: `bombs`, `bombs_carry`, `bombs_bomb` (shots), `course_run-roll_child`,
+  `course_sword_child`, `spot04_child_forward`, `spot04_tread` (sheets) differ by a few hundred
+  pixels on child Link's left forearm: `cavern-bombs` gives the bracelet, and the spikes' debug
+  save's upgrades (0x125249, `Sram_InitDebugSave`'s) hold strength 1, which `Player_DrawImpl` draws.
+- The fidget: `ranch`'s trace differs only in `anim` and `root_joint`, frames 2680 to 3073 (Link
+  waiting for the foal): `link_waitF_typeD_20f` by the ranch's room environment, where the default
+  room's `link_normal_waitF_typeA_20f` was.
+- **A**, this code with the bracelet's draw off (`target/game26proof`): every changed hash back but
+  the ranch's trace. **B**, with the fidget's room environment 0: the ranch's trace back, the seven
+  images still changed (`out/golden_proof_g9m2.txt`).
+- The hand test's fix (no attention search in a cutscene mode): 34 hashes of base24 differ, each
+  explained in `golden/README.md`. **C**, this code with the search back in cutscene mode: all 224
+  of base24's hashes back (`out/golden_proof_g9m2_C.txt`).
+
+### How to check
+
+```
+scripts\run\test-goron.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-goron.bat
+```
+
+### By hand
+
+1. `game-goron` (the trail's foot, `ranch-epona`): the trail's intro (the title card). Walk up the
+   west side: four red Tektites crouch, hop at Link and lunge; two sword hits kill one (it falls to
+   pieces, a drop). Past the cavern's terrace, up the switchback east of it and on up the road:
+   the rolling Goron comes down the road once he's on screen (touching him: a quarter heart and a
+   knock-down), stops near the bend, a bomb goes off where he stops, and he curls up; wake him
+   (walk up in front) and talk. The flag on the way streams west in the wind. At the top, Goron
+   City's door (north).
+2. Goron City (from 1, or `game-goron city`): its intro. The Gorons sit curled; in front of one
+   within reach he uncurls; A to talk; walk away and he curls again. The big one rolls round the
+   middle ring (y 400). The city's walls are lit as by day (the entrance's light at the top).
+3. `game-goron darunia` (the bottom floor): south to the floor before Darunia's door (by the
+   text spot), C-Down for the ocarina, Zelda's Lullaby: the door rises (about 6 seconds). In, up
+   to Darunia: he asks for a song. Saria's Song: the music changes, he dances, then gives the
+   Goron's Bracelet. Look at Link's left forearm: the bracelet. Talk to him again (0x301D). Also:
+   another song to him first (the lullaby): a short "wrong" cutscene, and he waits again.
+4. `game-goron cliff` (by Goron City's door with the bracelet): north-west up the road to the
+   cliff above the cavern (the Goron sitting there talks about the flower). A by the Bomb Flower
+   lifts it; run west off the ledge's edge and A: thrown. The camera cuts to the cavern's mouth
+   (a fixed shot) as it falls; the blast breaks the boulder, pieces and dust, a chime. Then down
+   the road to the cavern (or `game-goron cavern`) and in.
+5. `game-goron bombs` (Goron City's top with bombs): a bomb (C-Right) put in the big rolling
+   Goron's way on the middle ring: he stops; talk (between the city's north-east and east points
+   he gives the 30 bomb bag). The two walls on the top floor's west corridor and two in the
+   room behind: bombs break them; Medigoron talks. In the bottom floor, a bomb dropped into the
+   urn's mouth (from the ring above) spins it wild and it gives a prize (only after the four
+   torches are lit with a burning Deku Stick from Darunia's room: hard; skip if so).
+6. Anything that looks off: the Gorons' or Darunia's faces, the Tektites' colours, the flag, the
+   urn, the bracelet's look on Link. Also #71 (a slow walk up a ramp) on the trail's slopes.

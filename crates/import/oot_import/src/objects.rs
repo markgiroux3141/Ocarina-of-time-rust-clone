@@ -279,7 +279,7 @@ impl ObjectSegments {
         let mut bindings = self.bindings(file, &data);
         let mut builtin = vec![(0x0C, cull_back_builtin())];
         let mut dynamic = 0u16;
-        let mut matrices: Vec<(u8, eng_gfx::BoneId)> = Vec::new();
+        let mut matrices: Vec<(u8, Vec<eng_gfx::BoneId>)> = Vec::new();
         for (seg, s) in &bake.segments {
             match s {
                 BakeSegment::Texture { file: f, symbol } => {
@@ -331,7 +331,14 @@ impl ObjectSegments {
                 }
                 BakeSegment::Matrix(bone) => {
                     anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: a matrix segment outside display lists", bake.name);
-                    matrices.push((*seg, *bone));
+                    matrices.push((*seg, vec![*bone]));
+                }
+                BakeSegment::SkeletonMatrices { file: sf, symbol } => {
+                    anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: a matrix segment outside display lists", bake.name);
+                    let (skel_file, sym) = symbol_in(p, sf, symbol)?;
+                    let skel_data = files.get(&skel_file.name).with_context(|| format!("{sf} not in the ROM"))?;
+                    let skel = parse_skeleton(&skel_data, skel_file.segment.unwrap_or(6), sym)?;
+                    matrices.push((*seg, skel.flex_matrix_map(0)));
                 }
             }
         }
@@ -346,8 +353,8 @@ impl ObjectSegments {
                     it.segments[*seg as usize & 0xF] = Some(s.clone());
                 }
                 // A matrix the draw sets: the list's gSPMatrix of it puts the vertices on its bone.
-                for &(seg, bone) in &matrices {
-                    it.segments[seg as usize & 0xF] = Some(Segment::Matrices(vec![bone]));
+                for (seg, bones) in &matrices {
+                    it.segments[*seg as usize & 0xF] = Some(Segment::Matrices(bones.clone()));
                 }
                 it.apply_setup_dl_25();
                 it.dynamic_segments = dynamic;

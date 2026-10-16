@@ -533,7 +533,8 @@ impl PlayState {
     ///
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
-    /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908). The
+    /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908;
+    /// Phase 10's 4180, 4210, 4220, 4221). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
     pub fn onepoint_cutscene_set_info(&mut self, sub: i16, cs_id: i16, actor: Option<CamActor>, timer: i16) -> i32 {
@@ -845,6 +846,52 @@ impl PlayState {
             5120 => {
                 self.player_set_cs_action_with_halted_actors(None, 8);
                 set_cs_info(self, "D_80121314", 1);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            4180 => {
+                // The Death Mountain Trail boulder (Bg_Spot16_Bombstone): a fixed shot of the
+                // cavern's mouth, Player held (PLAYER_CSACTION_8).
+                let sp_c0 = Vec3::new(-1881.0, 766.0, -330.0);
+                let sp_b4 = Vec3::new(-1979.0, 703.0, -269.0);
+                self.camera_change_setting(sub, CAM_SET_FREE2);
+                self.camera_set_at_eye(sub, sp_c0, sp_b4);
+                if let Some(c) = self.camera_mut(sub) {
+                    c.roll = 6;
+                    c.fov = 75.0;
+                }
+                self.player_set_cs_action_with_halted_actors(None, 8);
+            }
+            4210 => {
+                // Goron City's urn spinning wild (Bg_Spot18_Basket): Player frozen for the
+                // cutscene, one keyframe, a quake on the sub camera to its last 80 frames.
+                if let Some(a) = player.and_then(|h| self.actors.actor_mut(h)) {
+                    a.freeze_timer = timer as u16;
+                }
+                set_cs_info(self, "D_80122C14", 1);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                let i = self.quake_request(sub, crate::quake::QUAKE_TYPE_3);
+                self.quake_set_speed(i, 12000);
+                self.quake_set_perturbations(i, 0, 1, 100, 0);
+                self.quake_set_duration(i, timer - 80);
+            }
+            4220 => {
+                // Goron City's urn starts turning (Bg_Spot18_Basket): one keyframe from the side
+                // Link is on (z < -15: D_80122C3C, else D_80122C64), Player held
+                // (PLAYER_CSACTION_1), a quake on the sub camera.
+                let z = self.player_view().map(|p| p.pos.z).unwrap_or(0.0);
+                set_cs_info(self, if z < -15.0 { "D_80122C3C" } else { "D_80122C64" }, 1);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                self.player_set_cs_action(player, 1);
+                let i = self.quake_request(sub, crate::quake::QUAKE_TYPE_3);
+                self.quake_set_speed(i, 12000);
+                self.quake_set_perturbations(i, 0, 1, 10, 0);
+                self.quake_set_duration(i, timer - 10);
+            }
+            4221 => {
+                // Darunia's door sliding aside for an adult (Bg_Spot18_Shutter): one keyframe,
+                // Player held (PLAYER_CSACTION_8).
+                set_cs_info(self, "D_80122C8C", 1);
+                self.player_set_cs_action_with_halted_actors(None, 8);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             _ => log::warn!("onepointdemo camera: demo number not found !! ({cs_id}): not ported"),
