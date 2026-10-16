@@ -101,6 +101,8 @@ const fn link(name: &'static str, age: Age) -> Character {
 
 /// The alpha `func_80034BA0` and the like set on segment 0x0E at full opacity.
 const OPAQUE_0E: (u8, Color, [u8; 4]) = (0x0E, Env, [0, 0, 0, 255]);
+/// A Poe's `lightColor` at rest (`func_80AE067C`'s default: up to 255, 255, 210), opaque.
+const POE_LIGHT: [u8; 4] = [255, 255, 210, 255];
 /// Queen Gohma's and her larvae's eye colour in their default state (`targetEyeEnvColors`).
 const GOHMA_RED: [u8; 4] = [255, 17, 0, 255];
 
@@ -148,6 +150,14 @@ pub const CHARACTERS: &[Character] = &[
     c("Medigoron", "En_Gm/eye0", Some(("object_gm", "object_gm_Anim_0002B8")), &[], &[10, 11, 12], &[13, 14, 15]),
     c("Red Tektite", "En_Tite/red", Some(("object_tite", "object_tite_Anim_0012E4")), &[], &[], &[]),
     c("Blue Tektite", "En_Tite/blue", Some(("object_tite", "object_tite_Anim_0012E4")), &[], &[], &[]),
+    // GAME-09 milestone 3: Dodongo's Cavern (Master Quest).
+    c("Lizalfos", "En_Zf/lizalfos_opa", Some(("object_zf", "gZfIdleAnim")), &[OPAQUE_0E], &[], &[]),
+    c("Dinolfos", "En_Zf/dinolfos_opa", Some(("object_zf", "gZfIdleAnim")), &[OPAQUE_0E], &[], &[]),
+    c("Poe", "En_Poh/poe_opa", Some(("object_poh", "gPoeFloatAnim")), &[(0x0E, Env, POE_LIGHT)], &[], &[]),
+    c("Poe Composer (Sharp)", "En_Poh/sharp_opa", Some(("object_po_composer", "gPoeComposerFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [75, 20, 25, 255]), (0x0B, Env, [90, 85, 50, 255])], &[], &[]),
+    c("Poe Composer (Flat)", "En_Poh/flat_opa", Some(("object_po_composer", "gPoeComposerFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [80, 110, 90, 255]), (0x0B, Env, [100, 90, 100, 255])], &[], &[]),
+    c("Armos", "En_Am/skel", Some(("object_am", "gArmosRicochetAnim")), &[(0x0B, Env, [0, 0, 0, 0])], &[], &[]),
+    skel("Baby Dodongo", "object_dodojr", "object_dodojr_Skel_0020E0", Some(("object_dodojr", "object_dodojr_Anim_0009D4")), &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

@@ -216,7 +216,11 @@ surveyed, proposed and decided (2026-10-15): six milestones, the critical path t
 first. Milestone 1, bombs, is done ([ADR 0072](adr/0072-bombs-and-bomb-flowers.md)): `En_Bom`,
 `En_Bombf`, the fuse's sparks, Player's explosive in hand and the Bomb Flower's hand-over;
 BACKLOG #33 closed. Its run puts a Bomb Flower down at Dodongo's Cavern's entrance wall (the
-cavern's opening) and a bomb from the bag by the other flower.
+cavern's opening) and a bomb from the bag by the other flower. Milestone 2 (the trail and Goron
+City to the bracelet, [ADR 0073](adr/0073-death-mountain-trail-goron-city-and-the-bracelet.md)) and
+milestone 3 (the cavern's route, [ADR 0074](adr/0074-dodongos-cavern-route-the-skull-and-effect-blure.md):
+the loop to the skull's bridge, the skull, `EffectBlure`) are built; milestone 3 waits on the
+user's hand test (and the question of fire for room 10's web).
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -696,11 +700,21 @@ recommendations taken): the split below, the critical path first and the exit at
      `cavern-open` (milestone 3's start). The story chain up the trail is hand-tested.
 3. **Dodongo's Cavern's route:** `SDC_DODONGOS_CAVERN`, `Bg_Dodoago`, `Bg_Ddan_Jd`, `En_Dodojr` and
    what the way the collision search finds needs; one-points 3060, 3065, 3380.
+   - **Built** (2026-10-16, ADR 0074), route B (the user's call): the collision search's way (the
+     shortcut pillar is the only way up; room 3's levels apart; the bag from room 4), and with it
+     `En_Zf` (with `EffectBlure`, wired to Link's sword, the Skulltulas and the arrows), `En_Poh`,
+     `En_Am`, `Obj_Elevator`, `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` from milestone 5. Four short
+     runs from debug starts (the pillar, the bag, the skull's eyes and jaw, the gravestone and
+     the fall; the fights are hand-tested) with their goldens; the presets `cavern-upper`,
+     `cavern-bomb-bag`, `cavern-jaw` and `cavern-boss` (milestone 4's start) checked against them.
+     Open: no way found for a child to bring fire to room 10's web (GAME-09's milestone 3
+     section; `cavern-web` starts past it). The loop is hand-tested.
 4. **King Dodongo and the Goron's Ruby:** `Boss_Dodongo`, `En_Bdfire`, the magma effects, the room
    texture's write, `Play_SetCameraAtEyeUp`, `MREG(64)`; `Door_Warp1`'s branch, `Demo_Du`, `Demo_Go`.
    The phase's exit.
-5. **The rest of the cavern:** `En_Zf` (with `EffectBlure`), `En_Am`, `En_Poh`, `En_Dodongo`,
-   `En_Vm`, `En_G_Switch`, `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro`, `Bg_Ddan_Kd`, `Obj_Elevator`.
+5. **The rest of the cavern:** `En_Dodongo`, `En_Vm`, `En_G_Switch`, `Bg_Ddan_Kd`; `D_Fire`,
+   `Dead_Dd`, `Dead_Ds`; one-point 3050; rooms 2, 5, 6, 13, 14 and 15 (`En_Zf`, `En_Am`, `En_Poh`,
+   `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` and `Obj_Elevator` came in milestone 3).
 6. **The summit:** the magic meter, `Bg_Dy_Yoseizo`, `En_Dy_Extra`, `En_M_Thunder`,
    `SDC_GREAT_FAIRYS_FOUNTAIN`, the return entrances, `En_Encount2`, `En_Fire_Rock`; the owl's
    flight to Kakariko.
@@ -711,7 +725,7 @@ Pick these up when a milestone touches them, or as filler:
 - **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), but the camera's roll isn't
   drawn (the renderer keeps Y up), and the shake isn't applied to the prerendered backgrounds
   and the skybox.
-- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); next to want: the sword's and the Skulltula's trails (`EffectBlure`); the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); ~~the sword's and the Skulltula's trails (`EffectBlure`)~~ (GAME-09 milestone 3); next to want: the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** ~~time passing, day/night~~ (GAME-06 milestone 3); weather.
 - **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; ~~the ocarina modes~~ (GAME-07 milestone 3).
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.

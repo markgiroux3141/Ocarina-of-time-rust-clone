@@ -9,7 +9,7 @@
 //! Hylia as a child before switch flag 0x23; else a pull starts `BgHaka_Pull`: it slides away
 //! from its face (`world.rot.y = shape.rot.y + 0x8000`) 60 from home, at 0.05 a frame faster each
 //! frame up to 1.5, `NA_SE_EV_ROCK_SLIDE` all the way. At 60 it lets go of Link; params 1 plays
-//! the chime, and at night in the graveyard a Poe (`En_Poh`, a placeholder) rises from the hole.
+//! the chime, and at night in the graveyard a Poe (`En_Poh`) rises from the hole.
 //! `minVelocityY` keeps the distance pulled. Link standing on the dirt patch behind it (in the
 //! closed actions) walks on sand's sound (`PLAYER_STATE2_FORCE_SAND_FLOOR_SOUND`, Player's
 //! `STATE2_9`).
@@ -46,7 +46,7 @@ const COLLISION: &str = "gGravestoneCol";
 const STONE_DL: &str = "gGravestoneStoneDL";
 const EARTH_DL: &str = "gGravestoneEarthDL";
 
-/// `ACTOR_EN_POH` (`actor_table.h`: 0x000D), the Poe: not ported (a placeholder spawns).
+/// `ACTOR_EN_POH` (`actor_table.h`: 0x000D), the Poe (`crate::en_poh`).
 pub const ACTOR_EN_POH: i16 = 0x000D;
 /// `NA_SE_EV_ROCK_SLIDE` (`environmentbank_table.h`: 0x280A).
 pub const NA_SE_EV_ROCK_SLIDE: u16 = 0x280A;

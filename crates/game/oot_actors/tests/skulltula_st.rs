@@ -167,8 +167,10 @@ fn init_its_colliders_scale_and_ceiling() {
     // (unusedPos).
     assert_eq!(s.ceiling_pos, Vec3::new(HOME5.x, -560.0, HOME5.z));
     assert_eq!(s.unused_pos, HOME5 - Vec3::Y * 100.0);
-    // The trail: Effect_Add finds no EffectBlure slot (TOTAL_EFFECT_COUNT, 3 + 25 + 3).
-    assert_eq!(s.blure_idx, 31);
+    // The trail (EnSt_CreateBlureEffect): an EffectBlure slot (index SPARK_COUNT + slot), white
+    // from alpha 75 to 0, elemDuration 6, calcMode 3, no edges yet.
+    let b = w.effect_ctx.blures[s.blure_idx - oot_game::effect::SPARK_COUNT].as_ref().expect("the trail's slot");
+    assert_eq!((b.p1_start_color, b.p2_end_color, b.elem_duration, b.calc_mode, b.num_elements), ([255, 255, 255, 75], [255, 255, 255, 0], 6, 3, 0));
     // initialYaw, no gravity.
     assert_eq!((s.initial_yaw, s.actor.gravity), (16384, 0.0));
     // EnSt_StartOnCeilingOrGround (74 above its floor: not close to it): rotAwayTimer 60 and
@@ -629,7 +631,19 @@ fn touching_link_hurts_him_and_knocks_him_down() {
     // The spin: 0x2000 a frame while gaveDamageSpinTimer runs (no OC meanwhile:
     // EnSt_SetCylinderOC waits for it).
     let r = s.actor.shape_rot.y;
+    let trail = |w: &PlayState| w.effect_ctx.blures[st(w, h).blure_idx - oot_game::effect::SPARK_COUNT].as_ref().unwrap().clone();
+    let before = trail(&w).num_elements;
     idle(&mut w, 1);
     let s = st(&w, h);
     assert_eq!((s.gave_damage_spin_timer, s.actor.shape_rot.y), (28, r.wrapping_add(0x2000)));
+    // EnSt_Draw while it spins (gaveDamageSpinTimer 2 and up, not swaying): an edge a frame
+    // (EnSt_AddBlurVertex, limb 1's two points), each kept six frames.
+    let t = trail(&w);
+    assert_eq!(t.num_elements, before + 1);
+    assert_eq!(t.elements[t.num_elements as usize - 1].state, 1);
+    for _ in 0..10 {
+        idle(&mut w, 1);
+    }
+    let t = trail(&w);
+    assert!(t.num_elements >= 6 && t.elements[..t.num_elements as usize].iter().all(|e| e.state == 1 && e.timer <= 6), "{t:?}");
 }

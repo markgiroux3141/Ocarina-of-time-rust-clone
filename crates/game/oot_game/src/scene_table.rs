@@ -408,6 +408,27 @@ fn draw_config_spot18(st: &mut DrawConfigState, b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigDodongosCavern` (Dodongo's Cavern): a scroll on segment 9 in the XLU buffer
+/// and on 0xA in the OPA one; the skull's eyes' env colours on 0xB and 0xC, their alpha
+/// `roomCtx.drawParams[BGDODOAGO_EYE_LEFT]` and `[BGDODOAGO_EYE_RIGHT]` (which `Bg_Dodoago`
+/// raises as each eye lights). The entrance by `nightFlag` on segment 8 and the lava floor's
+/// eight frames on segment 9 (OPA) are `segment_textures`'.
+fn draw_config_ddan(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, f % 256, 0, 64, 32, 1, 0, f % 128, 64, 32));
+    b.opa.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f % 128, 32, 32, 1, 0, f.wrapping_mul(2) % 128, 32, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+    for (seg, eye) in [(0x0B, BGDODOAGO_EYE_LEFT), (0x0C, BGDODOAGO_EYE_RIGHT)] {
+        // gDPSetEnvColor's alpha through _SHIFTL(a, 0, 8): the s16's low byte.
+        b.opa.insert(seg, vec![g_dp_pipe_sync(), g_dp_set_env_color(255, 255, 255, st.room_draw_params[eye] as u32), g_sp_end_display_list()]);
+    }
+}
+
+/// `BgDodoagoEye` (`z_bg_dodoago.h`): the index of each eye's glow in `roomCtx.drawParams`.
+pub const BGDODOAGO_EYE_LEFT: usize = 0;
+pub const BGDODOAGO_EYE_RIGHT: usize = 1;
+
 /// A texture a draw config points a segment at this frame
 /// (`gSPSegment(.., SEGMENTED_TO_VIRTUAL(texture))`): in the OPA buffer, or the XLU one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -465,6 +486,22 @@ fn textures_spot18(st: &DrawConfigState) -> Vec<SegmentTexture> {
     vec![SegmentTexture { segment: 0x08, xlu: true, file: "spot18_scene", symbol: GORON_CITY_ENTRANCE_TEXTURES[st.night as usize] }]
 }
 
+/// `gDCEntranceTextures` (by `nightFlag`).
+const DC_ENTRANCE_TEXTURES: [&str; 2] = ["gDCDayEntranceTex", "gDCNightEntranceTex"];
+/// `sDCLavaFloorTextures`.
+const DC_LAVA_FLOOR_TEXTURES: [&str; 8] =
+    ["gDCLavaFloor1Tex", "gDCLavaFloor2Tex", "gDCLavaFloor3Tex", "gDCLavaFloor4Tex", "gDCLavaFloor5Tex", "gDCLavaFloor6Tex", "gDCLavaFloor7Tex", "gDCLavaFloor8Tex"];
+
+/// `Scene_DrawConfigDodongosCavern`'s segment 8 (OPA): the entrance, the light through it by
+/// `nightFlag`; segment 9 (OPA): the lava floor, a frame of eight every two
+/// (`(gameplayFrames & 14) >> 1`).
+fn textures_ddan(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    vec![
+        SegmentTexture { segment: 0x08, xlu: false, file: "ddan_scene", symbol: DC_ENTRANCE_TEXTURES[st.night as usize] },
+        SegmentTexture { segment: 0x09, xlu: false, file: "ddan_scene", symbol: DC_LAVA_FLOOR_TEXTURES[((st.gameplay_frames & 14) >> 1) as usize] },
+    ]
+}
+
 type TexturesFn = fn(&DrawConfigState) -> Vec<SegmentTexture>;
 
 /// The ported draw configs that point segments at textures by state.
@@ -474,6 +511,7 @@ const TEXTURES: &[(&str, TexturesFn)] = &[
     ("SDC_LON_LON_RANCH", textures_spot20),
     ("SDC_LON_LON_BUILDINGS", textures_souko),
     ("SDC_GORON_CITY", textures_spot18),
+    ("SDC_DODONGOS_CAVERN", textures_ddan),
 ];
 
 /// The textures the draw config `sdc` points segments at this frame (empty for the others).
@@ -505,6 +543,7 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_LON_LON_RANCH", draw_config_spot20),
     ("SDC_LON_LON_BUILDINGS", draw_config_souko),
     ("SDC_GORON_CITY", draw_config_spot18),
+    ("SDC_DODONGOS_CAVERN", draw_config_ddan),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

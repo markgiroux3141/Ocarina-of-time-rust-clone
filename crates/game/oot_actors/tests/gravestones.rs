@@ -321,7 +321,7 @@ fn the_graveyard_and_lake_hylia_paths_follow_the_c() {
     w.flags.unset_switch(0x23);
 
     // The graveyard at night (no warning: IS_DAY false): the pull; at 60, params 0 and not day in
-    // the graveyard: a Poe (En_Poh, a placeholder) at home, turned as the stone, params 1. The
+    // the graveyard: a Poe (En_Poh) at home, turned as the stone, params 1. The
     // graveyard's object_poh put in a bank for it.
     let h2 = stone_at(&w, STONES[0].0);
     let bg2 = haka(&w, h2).bg;

@@ -752,14 +752,50 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     },
     SavePreset {
         name: "cavern-open",
-        about: "goron-bracelet, and GAME-09 milestone 2's boulder run over: the boulder at Dodongo's Cavern's mouth blown up (the trail's switch 4, EVENTCHKINF_23) (GAME-09 milestone 3)",
+        about: "goron-bracelet, and GAME-09 milestone 2's boulder run over: the boulder at Dodongo's Cavern's mouth blown up (the trail's switch 4, EVENTCHKINF_23); and the Hylian Shield worn, from the graveyard's shield grave (its chest's treasure flag 0, Item_Give(ITEM_SHIELD_HYLIAN)), which the story chain's presets never opened (GAME-09 milestone 3)",
+        apply: cavern_open,
+    },
+    SavePreset {
+        name: "cavern-lobby",
+        about: "cavern-open, and Dodongo's Cavern's entrance wall broken (switch 7, EVENTCHKINF_B0, its Wonder Items' 0x18) and Navi's lava text read (0x0C): the lobby before its pit (GAME-09 milestone 3's pillar run)",
+        apply: cavern_lobby,
+    },
+    SavePreset {
+        name: "cavern-upper",
+        about: "cavern-lobby, and GAME-09 milestone 3's pillar run over: the pit's boulder blown (Obj_Bombiwa 0x000E's flag) and the shortcut pillar's switch pressed (0x0A); the upper level on the map (floor 6)",
+        apply: cavern_upper,
+    },
+    SavePreset {
+        name: "cavern-web",
+        about: "cavern-upper, and room 10's web burned (Bg_Ydan_Sp 0x1FD4's flag 0x14): a debug start past it for the hand test (GAME-09 milestone 3: no way found for a child to bring fire to it)",
         apply: |s| {
-            goron_bracelet(s);
-            // SCENE_DEATH_MOUNTAIN_TRAIL (scene_table.h: 0x60): Bg_Spot16_Bombstone 0x04FF's
-            // switch flag; save.h: EVENTCHKINF_23.
-            s.scene_flags[0x60].swch |= 1 << 4;
-            s.set_event_chk_inf(0x23);
+            cavern_upper(s);
+            s.scene_flags[0x01].swch |= 1 << 0x14;
         },
+    },
+    SavePreset {
+        name: "cavern-loop",
+        about: "cavern-open, and Dodongo's Cavern's loop up to the bomb bag done by hand: the entrance wall (switch 7, EVENTCHKINF_B0, its Wonder Items' 0x18), Navi's lava text (0x0C), the pit's boulder and the shortcut pillar's switch (0x0E, 0x0A), the upper level's three boulders (0x15), room 10's web (0x14), the upper Lizalfos (0x06), room 12's boulder (0x04), room 1's wall and eye-switch boulder (0x1F, 0x12), the lower Lizalfos (0x05), room 4's Wonder Item for door 22 (0x1B) (GAME-09 milestone 3's debug start)",
+        apply: cavern_loop,
+    },
+    SavePreset {
+        name: "cavern-bomb-bag",
+        about: "cavern-loop, and GAME-09 milestone 3's bomb bag run over: the lobby's big chest (treasure flag 4) and the 20 bomb bag (Item_Give(ITEM_BOMB_BAG_20))",
+        apply: cavern_bomb_bag,
+    },
+    SavePreset {
+        name: "cavern-boss",
+        about: "cavern-jaw, and GAME-09 milestone 3's gravestone run over: room 7's gravestone pulled off switch 0x20, door 20, the fall into room 16's pit to King Dodongo's room (room 7 on the map) (GAME-09 milestone 4's start, at ENTR_DODONGOS_CAVERN_BOSS_0)",
+        apply: |s| {
+            cavern_jaw(s);
+            // Map_InitRoomData: room 7 entered (room 16 is only fallen through).
+            s.scene_flags[0x01].rooms |= 1 << 7;
+        },
+    },
+    SavePreset {
+        name: "cavern-jaw",
+        about: "cavern-bomb-bag, and GAME-09 milestone 3's skull run over: the bombs on C-Right, two of them dropped through the bridge's holes (18 left), both of the skull's eyes lit and its jaw open (Bg_Dodoago 0x001A's switch flag)",
+        apply: cavern_jaw,
     },
     SavePreset {
         name: "ocarina-songs",
@@ -803,6 +839,81 @@ fn graveyard_sun(s: &mut SaveContext) {
     s.set_event_chk_inf(0x1D);
     s.set_event_chk_inf(0x5A);
     item_give(s, None, 0x63);
+}
+
+/// `cavern-open`'s save (`cavern-loop` builds on it).
+fn cavern_open(s: &mut SaveContext) {
+    goron_bracelet(s);
+    // SCENE_DEATH_MOUNTAIN_TRAIL (scene_table.h: 0x60): Bg_Spot16_Bombstone 0x04FF's switch flag;
+    // save.h: EVENTCHKINF_23.
+    s.scene_flags[0x60].swch |= 1 << 4;
+    s.set_event_chk_inf(0x23);
+    // SCENE_GRAVE_WITH_FAIRYS_FOUNTAIN (scene_table.h: 0x40, the shield grave): En_Box 0x5540
+    // (GI_SHIELD_HYLIAN 0x2A, treasure flag 0). Worn as the pause menu's equipment page puts it on.
+    s.scene_flags[0x40].chest |= 1 << 0;
+    item_give(s, None, crate::item::ITEM_SHIELD_HYLIAN);
+    s.equip_from_pause_menu(crate::item::EQUIP_TYPE_SHIELD, crate::item::EQUIP_VALUE_SHIELD_HYLIAN);
+}
+
+/// `cavern-lobby`'s save: the cavern's entrance wall broken (Bg_Breakwall 0x0007's switch 7 and
+/// EVENTCHKINF_B0; En_Wonder_Item 0x3FD8's 0x18, walked through) and Navi's text read (Elf_Msg
+/// 0x0C15's 0x0C); room 0 on the map (floor 7).
+fn cavern_lobby(s: &mut SaveContext) {
+    cavern_open(s);
+    let f = &mut s.scene_flags[0x01];
+    for flag in [0x07, 0x18, 0x0C] {
+        f.swch |= 1 << flag;
+    }
+    f.floors |= 1 << 7;
+    f.rooms |= 1 << 0;
+    s.set_event_chk_inf(0xB0);
+}
+
+/// `cavern-upper`'s save: the pit's boulder (Obj_Bombiwa 0x000E) and the shortcut pillar's switch
+/// (Obj_Switch 0x0A00: 0x0A); the upper level on the map (floor 6, above y 280: `sFloorCoordY`).
+fn cavern_upper(s: &mut SaveContext) {
+    cavern_lobby(s);
+    let f = &mut s.scene_flags[0x01];
+    f.swch |= (1 << 0x0E) | (1 << 0x0A);
+    f.floors |= 1 << 6;
+}
+
+/// `cavern-loop`'s save: Dodongo's Cavern's switch flags as the loop to the bomb bag leaves them
+/// (`ddan_scene`'s placements: Bg_Breakwall 0x0007, En_Wonder_Item 0x3FD8, Elf_Msg 0x0C15,
+/// Obj_Bombiwa 0x000E and 0x0015, Obj_Switch 0x0A00, Bg_Ydan_Sp 0x1FD4, En_Zf 0x0600 and 0x0500,
+/// Obj_Bombiwa 0x8004, Bg_Breakwall 0xA01F, Obj_Bombiwa 0x8012, En_Wonder_Item 0x18DB) and
+/// EVENTCHKINF_B0 (Bg_Breakwall's first break).
+fn cavern_loop(s: &mut SaveContext) {
+    cavern_open(s);
+    let f = &mut s.scene_flags[0x01];
+    for flag in [0x07, 0x18, 0x0C, 0x0E, 0x0A, 0x15, 0x14, 0x06, 0x04, 0x1F, 0x12, 0x05, 0x1B] {
+        f.swch |= 1 << flag;
+    }
+    // The map's (Map_Update, Map_InitRoomData): floors 6 (above y 280) and 7 (z_map_data.c's
+    // sFloorCoordY[1]), rooms 0, 1, 3, 4, 9, 10 and 12 entered.
+    f.floors |= (1 << 6) | (1 << 7);
+    for room in [0, 1, 3, 4, 9, 10, 12] {
+        f.rooms |= 1 << room;
+    }
+    s.set_event_chk_inf(0xB0);
+}
+
+/// `cavern-bomb-bag`'s save (`cavern-jaw` builds on it).
+fn cavern_bomb_bag(s: &mut SaveContext) {
+    cavern_loop(s);
+    // SCENE_DODONGOS_CAVERN (scene_table.h: 0x01): En_Box 0x0644's treasure flag.
+    s.scene_flags[0x01].chest |= 1 << 4;
+    item_give(s, None, crate::item::ITEM_BOMB_BAG_20);
+}
+
+/// `cavern-jaw`'s save (`cavern-boss` builds on it): the bombs on C-Right (the pause menu's
+/// item page), two spent, Bg_Dodoago 0x001A's flag.
+fn cavern_jaw(s: &mut SaveContext) {
+    cavern_bomb_bag(s);
+    s.equips.button_items[3] = crate::item::ITEM_BOMB;
+    s.equips.c_button_slots[2] = crate::item::SLOT_BOMB as u8;
+    s.inventory.ammo[crate::item::SLOT_BOMB] = 18;
+    s.scene_flags[0x01].swch |= 1 << 0x1A;
 }
 
 /// `goron-bracelet`'s save (`cavern-open` builds on it).

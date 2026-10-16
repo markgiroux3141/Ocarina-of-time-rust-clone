@@ -611,3 +611,276 @@ scripts\run\sandbox-goron.bat
    torches are lit with a burning Deku Stick from Darunia's room: hard; skip if so).
 6. Anything that looks off: the Gorons' or Darunia's faces, the Tektites' colours, the flag, the
    urn, the bracelet's look on Link. Also #71 (a slow walk up a ramp) on the trail's slopes.
+
+## Milestone 3: Dodongo's Cavern's route (Master Quest)
+
+**The answer:** route B, the loop to the skull's bridge (the user's call), as the search over the
+collision found it. Four short scripted runs from debug starts of its moments (no fights: those
+are the hand test's, the user's standing rule): **the shortcut pillar** (`Route::Pillar`, the lobby's island: the island's
+Bomb Flower thrown at the pit's boulder, the switch, one-point 3060, the ladder, the pillar to its
+top and the ledge grab onto the upper level), **the bomb bag** (`Route::BombBag`, the east
+corridor on `cavern-loop`), **the skull** (`Route::Skull`, the bridge on `cavern-bomb-bag`: bombs
+onto C-Right in the pause menu, one put down through each hole, the eyes, 3065, the jaw, 3380) and
+**the gravestone** (`Route::Gravestone`, room 7's alcove on `cavern-jaw`: the gravestone pulled
+off switch 0x20, door 20, the fall to King Dodongo's room). The whole loop is the hand test's.
+From `cavern-open` on, Link wears the Hylian Shield (the user's note: it matters in the cavern): the
+graveyard's shield grave's chest (`hakaana2`'s `En_Box` 0x5540, `GI_SHIELD_HYLIAN`), ported in
+GAME-07 but never opened by the story chain's presets.
+Scripts: `scripts\run\test-cavern.bat`, `game-cavern.bat`, `sandbox-cavern.bat` (menu 138 to
+140). **One open question for the hand test:** how a child brings fire to room 10's web (below).
+
+### The way a child goes (settled at the milestone's start)
+
+The survey left the climbs open (`ootx` dumps no collision). A search over the cavern's whole
+static collision settled them: a 25 grid, every floor of each cell (`BgCheck_EntityRaycastDown`
+from above, again and again under each one), a step to the next cell's highest floor at or under
+71 above (Player's ledge raycast from `pos.y + unk_0C`, `sAgeProperties[child]` 71): walked under
+12 (17 diagonally), climbed from 18 to 71 against a wall onto a floor flatter than `0x6D60`,
+fallen otherwise; walls tested 20 and 45 up; the ladders (wall type 2, `WALL_FLAG_1`) joined
+bottom to top; run-off jumps and mid-air ledge grabs; the pillars (`Bg_Ddan_Jd`,
+`gDodongoRisingPlatformCol` at scale 0.1: ±60, its top 40 up) as dyna at their middle and top.
+The jumps were checked with the port's Player on stand-in pillars.
+
+- **The bomb bag's corridor (y 80) is 80 above the lobby's floor**, a sheer step at x 800: a
+  child's ledge check reaches 71, an adult's 111. From the lobby it's a way down, not up; a child
+  reaches it from room 4, through door 22 (plain from room 0's side, barred from room 4's until
+  0x1B).
+- **Room 3's two levels aren't joined for a child.** The lower level is lava at y 40 (floor type
+  2, Player's hot floor) with eight platforms at 100 (`sDCPlatformPositions`' lower floor); the
+  upper is lava at 471 with platforms at 531. No ladder, no climb between them. And a paired
+  Lizalfos kills itself at init when Link is more than 100 above or below it
+  (`z_en_zf.c:411-419`): come in at the top, the lower pair is gone, and doors 8 and 9 stay
+  barred (`SHUTTER_FRONT_SWITCH` on 0x05 from room 3's side, `DoorShutter_SetupDoor`): Link would
+  be shut in below. So the lower pair is fought from below (room 1's door 9) and the upper pair
+  from above (room 10's door 10).
+- **The lobby:** the pit is lava (y -180, floor type 2) with a -160 rim; two ladders (x ±636,
+  z -1662) climb from it to the side floors (y 0); the three pillars at their middle height are
+  level with the floor, the gaps round them 120 to 130 (a child's run-off jump covers about 140:
+  tested). **The only way up to the upper level (y 531) is the shortcut pillar** 0x000A (route
+  A's pillar is route B's way up too): the island's Bomb Flower (-2, 0, -1170) carried off the
+  island's south-east corner and thrown at boulder 0x000E on the -160 shelf, the boulder blown off
+  switch 0x0A; the pillar's top (560 at its top) is 170 short of the upper level (x 650), and
+  Player's mid-air ledge grab takes Link up when he runs off it at z -1150 to -1170 (south of
+  that the upper level's face slants, z -1190 to -1250, and the grab slides off).
+- **Room 1's wall 0xA01F (820, 0, -320) can't be reached with a flower from the floor:** about
+  1,400 units from the island's flower by the pillars, against its 140-frame fuse. The upper
+  level's Bomb Flower (850, 531, -923) can: carried to the opening in the upper level at z -725 to
+  -500 (x 625 to 800) and dropped 531 (a half heart: `func_80843E64`'s impact 0), about 400 from the
+  wall. But its three boulders 0x0015 (radius 55, `z_obj_bombiwa.c:61`) seal the strip it stands
+  in (z -1000 to -850 past x 800, 150 wide), the flower just behind the west one: it's reached from
+  the strip's east end, through room 9 (in by `En_Holl` 5 from room 12, a run-off jump west over
+  room 9's 110 gap at x 1725 to 1835, out by `En_Holl` 2).
+- **Room 9's east ledge** (531, `En_Holl` 6 to room 10) is up a ladder (x 1996, z -320) whose
+  foot is at 411, 60 above the trench (351): a push block (`Obj_Oshihiki` 0xFF40, 60 tall) must
+  stand at its foot. Block 2 (1740, 351, -450), pushed east four times and north twice, does.
+- **Room 10's web** (`Bg_Ydan_Sp` 0x1FD4) takes only fire (`DMG_ARROW_FIRE`, `DMG_MAGIC_FIRE`, a
+  burning stick within reach). See the open question below.
+- **Room 7's switch alcove** (y 126, the gravestone over switch 0x20) is 110 above room 7's floor:
+  a corridor north and then east to `En_Holl` 4, entered from room 8.
+
+The way, then: the lobby's pillar to the upper level → room 9 → room 10 (the web) → room 3's
+upper pair → room 12's fire walls → room 9 → the strip's flower, the boulders, the flower again,
+dropped by wall 0xA01F → room 1 (the eye switch, its boulder 0x8012 under the flower cluster, the
+slingshot) → room 3's lower pair → room 4 (the Poes, the chain to `En_Wonder_Item` 0x18DB) → door 22
+and **the bomb bag** → down to the lobby, the pillar (shuttling now) back up → the bridge, bombs
+into its holes, the eyes and the jaw → room 7 → room 8 (Armos, a Lizalfos, fire walls, clear
+blocks) → room 7's alcove, the gravestone, switch 0x20, door 20 → room 16's pit. Room 1 and room 4
+both: so `En_Poh`, `En_Am`, `Bg_Gnd_Darkmeiro` and `Obj_Elevator` came into this milestone from
+milestone 5.
+
+### The open question: fire for room 10's web
+
+Found while writing the hand test, after the build: **I found no way for a child to bring a
+burning Deku Stick to room 10's web.** The sticks are the lobby's (its west Business Scrub,
+`En_Shopnuts` params 1); the only torch that burns from the start on that side is room 9's wooden
+one on its west ledge (`Obj_Syokudai` 0x2400, `alwaysLit`). From there the way to room 10's door is
+down into the trench and up the east ladder, and a ladder grab puts a held item away
+(`func_8083EC18`: `Player_SetupWaitForPutAway`, which `Player_PutAwayHeldItem` does for every
+item action from `PLAYER_IA_FISHING_POLE` up, the stick's 6 among them); taken out again, the
+stick is unlit (`Player_InitItemAction`: `unk_860` 0). A climb of 47 or more (the auto-jump and
+the ledge grab, `Player_Action_80845668`) doesn't put it away, but no such climb reaches the east
+ledge (the block's top is 120 below it). Room 10's torch before the web (0x10A8 at (2556, 531,
+-370)) is a timed one, unlit at the start; room 9's three timed torches and its golden one are on
+the trench's west side and its pedestal. Nothing else in the scene sets the web's flag 0x14, and a
+Bomb Flower behind the strip's boulders (the other way round, by `En_Holl` 2) takes explosions,
+arrows and fire only (`0x0003F828`), not a slingshot seed.
+
+So either the game has a way I haven't seen (the user knows the real game), or route B isn't a
+child's without something more. For the hand test: try it (`game-cavern` from the start, or
+`game-cavern upper` on the upper level); if the web stops you, `game-cavern web` starts in room 10
+past it (`cavern-web`, a debug preset with its flag set), and the rest of the loop goes on from
+there.
+
+### What was built
+
+- **`Bg_Dodoago`** (the skull): the eyes lit by blasts on either side (`Actor_GetCollidedExplosive`,
+  the yaw to the blast), one-point 3065, the glow in `roomCtx.drawParams` up 5 a frame, the jaw
+  (3380, the dust on `sTimer` 108, the sparkles, `gDodongoLowerJawCol`), the bomb catcher under the
+  bridge's holes (an `En_Bom` of params 0 held at fuse 50), the statics freed with the overlay.
+- **`Bg_Ddan_Jd`** (the pillars): idle and rising on their timers, the shortcut on its switch
+  (3060), the flag's shift masked to 5 bits as the console's (0x00FF reads flag 0x1F). **`En_Dodojr`**
+  (the Baby Dodongos): buried, surfacing within reach, the crawl, the jump at Link, eating a bomb,
+  the stun, the death's swell and blast. **`Obj_Elevator`** (room 1's lifts).
+- **`En_Zf`** (the Lizalfos and the Dinolfos): every type, the pairs' init kills and turns
+  (`sPairedActiveFleeFlag`, `sPairedInactiveType`), the platforms (`sDCPlatformPositions`), the
+  mini-boss music, the fighting, the damage table, the sword's trail (`EFFECT_BLURE1`), eight bakes.
+- **`En_Poh`** (the Poes and the composers Sharp and Flat), **`En_Am`** (the Armos: the statue, the
+  enemy, the death's bomb), **`Bg_Hidan_Curtain`** (the fire walls), **`Bg_Gnd_Darkmeiro`** (the
+  clear blocks and their switches), whole.
+- **`EffectBlure`** (`oot_game::effect::blure`, ADR 0074): both inits, the calc modes, the vertices
+  and spaces, the update, the three draws (the strip, the simple quads, the smooth Hermite strip)
+  through per-vertex matrices on a bake's segment 0x0C (`BakeSegment::Matrices`). Wired to Player's
+  sword (`D_8085470C`), `En_Zf`, `En_St`, `En_Ssh` and `En_Arrow`'s four arrows.
+- **`SDC_DODONGOS_CAVERN`** (the scrolls, the entrance's texture by night, the lava floor's eight
+  frames, the eyes' glow) and one-points **3060, 3065, 3380**.
+- **The runs:** `Route::Pillar`, `BombBag`, `Skull`, `Gravestone`; the tasks `Task::PullStone`, `Task::RunOntoPillar`, `Cond::Switch`, `Cond::Pillar`, and `Task::ClimbTo`
+  holding the stick along Link's facing while he hangs (`Player_Action_8084BBE4` climbs on it).
+- **The presets:** `cavern-lobby` and `cavern-loop` (debug starts), `cavern-upper` (the pillar run's
+  end), `cavern-bomb-bag` (the bag run's end), `cavern-jaw` (the skull run's end: bombs on
+  C-Right, 18 left, flag 0x1A), `cavern-boss` (the gravestone run's end: milestone 4's start),
+  each of the four checked against its run; `cavern-web` (room 10's web burned, for the hand test).
+- **The characters** (`export-glb`): Lizalfos, Dinolfos, Poe, Poe Composer (Sharp), Poe Composer
+  (Flat), Armos, Baby Dodongo (checked in Blender).
+- Helpers ported the overlays in worktrees (removed).
+
+### Results
+
+- Tests from the C: `tests/bg_dodoago.rs` (10), `bg_ddan_jd.rs` (6), `en_dodojr.rs` (6),
+  `en_zf.rs` (13), `en_poh.rs` (15), `en_am.rs` (8), `obj_elevator.rs` (3), `bg_hidan_curtain.rs`
+  (5), `bg_gnd_darkmeiro.rs` (5), `cavern.rs` (4: the runs); the trails in `sword.rs` and
+  `skulltula_st.rs`, the keyframes in `onepoint.rs`; `oot_game`'s scene tests (the draw config,
+  the eyes' glow) and `EffectBlure`'s own (4); the import's draw-config check.
+- The runs (frames from their debug starts): the pillar 819 (the flower lifted at 61,
+  thrown at 181 from the lava the carried run-off jump falls short into: a quarter heart; the
+  boulder at 198, the switch at 316, the ladder at 433, onto the pillar at 582, the upper level at
+  819); the bag 358; the skull 470 (the menu 52 to 74, the bombs put down at 108 and 249, the eyes
+  at 217 and 470: the first bomb caught, fuse 50; the second not, the skull still holding the
+  first blast as its parent; no hit); the gravestone 447 (pulled at 125, the switch at 222, door 20
+  at 385, the fall at 447; a Baby Dodongo by the door: half a heart).
+- Goldens: 217 of milestone 2's 224 the same; 7 differ (proven below): two traces' route input
+  on a hanging frame, and the cavern's entrance cases (the lobby's pillars' `Rand` calls, the
+  skull's jaw and the draw config in the opening's view). 8 new cases (`cavern_pillar`,
+  `cavern_pillar_ride`, `cavern_bomb_bag`, `cavern_skull`, `cavern_skull_jaw`, `cavern_gravestone`,
+  `cavern_gravestone_pull`, `course_sword_trail`). 236 hashes, 180 cases (`out/golden_base26`),
+  the same over two runs.
+- 1,281 tests (one ignored) pass; `cargo test -p layering` passes; no warnings. The pack is still
+  format 29 (`out/data26`).
+
+### Decisions
+
+- Route B by the user; within it the search's way (above). The runs are short debug starts; the
+  loop, which no run walks whole, is the hand test's.
+- The skull run puts the bombs on C-Right through the pause menu: the bag's get item equips
+  nothing (`Item_Give`).
+- `EffectBlure`'s bakes put each vertex at the origin under its own matrix, the draw setting the
+  matrices' translations: the trail's vertices move every frame.
+- No run fights: the Lizalfos pairs, the Poes and the Armos are the hand test's
+  (`game-cavern lizalfos` starts by the lower pair). The pairs' fights are checked from the C in
+  `tests/en_zf.rs`.
+- The Hylian Shield from `cavern-open` on (above), as the graveyard's chest gives it; the story
+  presets before it are as they were.
+- The small helpers the new overlays share with older ones (`decr`, `actor_setup_xlu_dl`,
+  `actor_free_overlay`) stay file-local, as the codebase keeps them.
+
+### Corrections to the survey
+
+- The bomb bag's chest is a child's from room 4 (door 22), not from the lobby (above).
+- Route B's "room 4 or room 1 into room 3": both are on the loop, room 1 into room 3's lower level
+  (door 9) and out to room 4 (door 8); room 3's upper level is entered from room 10 (door 10).
+- Route A's pillar is route B's way up too: the lobby has no other way to the upper level.
+- Beyond the survey's list, the loop meets `En_Poh`, `En_Am`, `Bg_Gnd_Darkmeiro` and
+  `Obj_Elevator` (ported here, from milestone 5's list).
+- The bomb catcher holds one bomb at a time: the first blast to light an eye becomes the skull's
+  parent with `sTimer` 50 and is let go only past 140, so a second bomb dropped in the next 90
+  frames falls on its own fuse.
+- The jaw's dust under the mouth comes only while the skull holds a parent as it opens
+  (`@bug (game)`, in the module).
+
+### Known gaps
+
+- Room 10's web (the open question above).
+- The point lights don't shade what they light (#80), the Poes' lantern fragments draw nothing
+  (#81), the Fire Temple's fire walls' one-points 3350 and 3360 (#82); the light's glow (#31), the
+  rumble and the Lens of Truth (#60: the clear blocks' path is drawn as `Actor_DrawAll` draws a
+  lens actor without it).
+- Milestone 5's: `En_Dodongo`, `En_Vm`, `En_G_Switch`, `Bg_Ddan_Kd`, the effects `D_Fire`,
+  `Dead_Dd`, `Dead_Ds`, one-point 3050, rooms 2, 5, 6, 13, 14 and 15. King Dodongo (milestone 4)
+  is a placeholder in his room.
+- #79 stays open: no NPC stands among the cavern's enemies.
+
+### Fixes found while building
+
+- Link on the course and in the sandbox had no sword trail: `Player_InitCommon`'s `Effect_Add`
+  ran only in a scene's Player init, not in `new_play`'s (and the sandbox's void-out respawn keeps
+  the trail's slot).
+- The pillar run's ledge grab slid off: `Task::ClimbTo` steered at its target while Link hung; it
+  holds the stick along his facing now, as the climb wants.
+- Two helpers' tests leaned on a quiet `Rand` (the Armos's lunge, a fire wall's flag with a
+  Lizalfos in reach): they read the state the frame before, and put Link out of reach.
+
+### Golden proof
+
+- `castle` and `graveyard`'s traces differ only in `input`, on 2 frames and 1, Link hanging on a
+  climb (his motion the same): `Task::ClimbTo` holds the stick along his facing while he hangs.
+- `bombs`' trace differs only in `actors`, one more for frames 249 to 273 (a piece of the entrance
+  wall's rubble lives a frame longer), and `bombs_blast`, `bombs_bomb`, `bombs_carry` differ: the
+  lobby's pillars (`Bg_Ddan_Jd`, real now) shuttle from the start and their dust's `Rand` calls
+  move the sequence. `bombs_opening` shows the lobby: the skull's jaw and the scene's draw config.
+- **A**, this code with the trails not drawn (`target/game26proof`): the same 7 differ, no other
+  (no case caught a trail before `course_sword_trail`). **B**, with `ClimbTo`'s hang branch off:
+  the two traces back. **C**, with `Bg_Ddan_Jd` unregistered: `bombs`' trace and three shots back.
+  **D**, C and `Bg_Dodoago` unregistered and `SDC_DODONGOS_CAVERN` out of the tables: all 7 back
+  (`out/golden_proof_g9m3_A.txt` to `_D.txt`).
+
+### How to check
+
+```
+scripts\run\test-cavern.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-cavern.bat
+```
+
+### By hand
+
+1. `game-cavern` (the cavern's entrance, `cavern-open`: the bracelet, no bombs): the west Bomb
+   Flower to the entrance wall, its blast, the cavern's opening. In the lobby, Navi's word about
+   the lava. Link wears the Hylian Shield. Buy Deku Sticks from the west Business Scrub (for room
+   10, see 4).
+2. The pit (or `game-cavern pillar`, on the island): lift the island's Bomb Flower, run off its
+   south-east corner towards the boulder on the shelf: Link falls short into the lava (a quarter
+   heart); throw at a run towards the boulder. Its blast breaks the boulder; walk onto the switch
+   under it: the camera on the pillar (3060), which then rises and falls. Out of the pit by the
+   south-east ladder, north along the floor's edge, onto the pillar when it's level with the floor
+   (a run-off jump), ride it up, and at its top run east off it at its middle: Link grabs the upper
+   level's edge and climbs.
+3. The upper level (or `game-cavern upper`): east through room 9's door. Room 9: down into the
+   trench, push the block in the middle of the trench east four times and north twice, under the
+   east ladder; onto it, up the ladder, east to room 10's door.
+4. Room 10's web needs fire: light a stick at room 9's lit torch (its west ledge, by the door you
+   came in) and try to get it to the web. If you find a way, tell me what it was; if not,
+   `game-cavern web` starts past it.
+5. Room 10: Baby Dodongos surface and jump at Link; Skulltulas drop from the ceiling (their spin
+   leaves a white trail). East to door 10: room 3's upper level, the upper Lizalfos pair drops in
+   (the mini-boss music; one fights while the other hops round the platforms; twelve hits; their
+   swords leave trails). Door 11 west to room 12: the fire walls; through to room 9's north side,
+   the jump west over the gap, out to the lobby's upper strip.
+6. The strip's Bomb Flower from its east end: its blast takes the three boulders; then carry the
+   regrown one to the opening in the upper level and drop down with it (a half heart) and on to
+   room 1's wall (east, by the door to room 1): the wall breaks.
+7. Room 1 (the lifts, the eye switch for the slingshot, the boulder under the flowers), then door
+   9 (or `game-cavern lizalfos`): room 3's lower pair. Out by door 8 to room 4: the Poes (four sword
+   hits each; their souls and lanterns), the Bomb Flower chain, the hidden switch, door 22, the
+   lobby's east corridor: the bomb bag's chest (or `game-cavern bag`).
+8. Down to the lobby, up by the pillar, onto the bridge (or `game-cavern skull`): bombs onto a C
+   button in the pause menu, one put down at each hole's edge: each eye lights red with its camera;
+   the second opens the jaw (the dust, the sparkles, the camera on the skull).
+9. In through the jaw (door 7), room 7, room 8: the Armos statues wake when touched (the Kokiri
+   Sword bounces off; a Deku Nut, then the sword, or a bomb), a single Lizalfos drops in, the fire
+   walls, the clear blocks; on to room 7's alcove (or `game-cavern gravestone`): pull the gravestone
+   (A at it, back away), onto the switch, through door 20 and into the pit: King Dodongo's room
+   (`game-cavern boss`: milestone 4's start; he isn't ported yet).
+10. Anything that looks off: the trails (Link's, the Lizalfos's, the Skulltulas'), the skull's
+    eyes, the lava's flicker and the scrolls, the Lizalfos, Poes, Armos and Baby Dodongos, the fire
+    walls. Known: no point-light shading, no glows, no rumble, no lens.

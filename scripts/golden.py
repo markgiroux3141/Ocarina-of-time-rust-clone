@@ -278,6 +278,19 @@ CASES = [
     ("boulder", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_1", "--child", "--preset", "goron-bracelet", "--script", "boulder", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("boulder_throw", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_1", "--child", "--preset", "goron-bracelet", "--script", "boulder", "--frames", "110", "--screenshot", "{shot}"]),
     ("boulder_blast", S, ["--entrance", "ENTR_DEATH_MOUNTAIN_TRAIL_1", "--child", "--preset", "goron-bracelet", "--script", "boulder", "--frames", "200", "--screenshot", "{shot}"]),
+    # GAME-09 milestone 3: Dodongo's Cavern's runs, each a debug start. The island's flower, the pit's boulder and the
+    # shortcut pillar to the upper level (cavern-lobby), the ride; the bomb bag's chest
+    # (cavern-loop); the skull's eyes and jaw from the bridge (cavern-bomb-bag), the jaw opening;
+    # the gravestone, door 20 and the fall to King Dodongo (cavern-jaw), the pull. And the sword's
+    # trail (EffectBlure) mid-slash on the course.
+    ("cavern_pillar", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-lobby", "--script", "pillar", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("cavern_pillar_ride", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-lobby", "--script", "pillar", "--frames", "700", "--screenshot", "{shot}"]),
+    ("cavern_bomb_bag", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-loop", "--script", "bomb-bag", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("cavern_skull", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bomb-bag", "--script", "skull", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("cavern_skull_jaw", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "cavern-bomb-bag", "--script", "skull", "--frames", "360", "--screenshot", "{shot}"]),
+    ("cavern_gravestone", S, ["--entrance", "ENTR_DODONGOS_CAVERN_1", "--child", "--preset", "cavern-jaw", "--script", "gravestone", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("cavern_gravestone_pull", S, ["--entrance", "ENTR_DODONGOS_CAVERN_1", "--child", "--preset", "cavern-jaw", "--script", "gravestone", "--frames", "100", "--screenshot", "{shot}"]),
+    ("course_sword_trail", S, ["--script", "sword", "--frames", "8", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ranch_ingo", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "castle-egg", "--at=760,0,-2040,-12000", "--script", "still", "--frames", "300", "--screenshot", "{shot}"]),
     ("stable_night", S, ["--entrance", "ENTR_STABLE_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=300,0,60,-32768", "--script", "still", "--frames", "90", "--screenshot", "{shot}"]),

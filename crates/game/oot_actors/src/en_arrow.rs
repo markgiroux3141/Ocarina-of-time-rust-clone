@@ -23,9 +23,8 @@
 //! - **Drawn**: an arrow as its skeleton (`SkelAnime_DrawLod`, the far model past `MREG(95)`), a
 //!   flying seed or nut as a spinning sparkle (`gEffSparklesDL`, its alpha pulsing with the timer).
 //!
-//! The whole overlay is ported, but: the trails (`EffectBlure`, `z_eff_blure.c`) aren't, so
-//! `Effect_Add`, `Effect_Delete` and `EffectBlure_AddVertex` keep their checks and log what they'd
-//! do; the magic arrows' children (`Arrow_Fire`, `Arrow_Ice`, `Arrow_Light`) are logged, not
+//! The whole overlay is ported (the trails are `oot_game::effect::blure`'s, GAME-09 milestone
+//! 3), but: the magic arrows' children (`Arrow_Fire`, `Arrow_Ice`, `Arrow_Light`) are logged, not
 //! spawned; `Player_InBlockingCsMode`'s magic part isn't (magic isn't ported).
 //!
 //! Params (none placed: Player shoots it or throws a nut, `En_Arow_Trap` shoots silent arrows,
@@ -46,6 +45,7 @@ use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorHandle, ActorImpl, ActorProf
 use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
+use oot_game::effect::blure::{EffectBlureInit, EffectBlureInit2};
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
 use oot_game::skelanime_std::{ANIMMODE_ONCE, Anim, SkelAnimeStd};
@@ -308,24 +308,39 @@ impl EnArrow {
                 let limbs = s.skeleton.as_ref().map(|k| k.limbs.len()).unwrap_or(4);
                 s.skel = Some(SkelAnimeStd::init_flex(limbs, s.anims[1].clone()));
             }
-            // The trail: Effect_Add(EFFECT_BLURE2) with the kind's init (z_eff_blure.c isn't
-            // ported: no slot).
+            // The trail: Effect_Add(EFFECT_BLURE2) with the kind's init: calcMode 0, flags 4 (the
+            // crossed copy), green-white 255 to 0 alpha, drawMode 1 (textured) with the kind's
+            // alternate colours.
+            let blure = |elem_duration: u8, alt_prim_color: [u8; 4], alt_env_color: [u8; 4]| EffectBlureInit2 {
+                calc_mode: 0,
+                flags: 4,
+                add_angle_change: 0,
+                p1_start_color: [0, 255, 200, 255],
+                p2_start_color: [0, 255, 255, 255],
+                p1_end_color: [0, 255, 200, 0],
+                p2_end_color: [0, 255, 255, 0],
+                elem_duration,
+                unk_flag: 0,
+                draw_mode: 1,
+                mode4_param: 0,
+                alt_prim_color,
+                alt_env_color,
+            };
             let blure = if params <= ARROW_NORMAL {
                 // blureNormal.elemDuration, a static the init rewrites: 4 on horseback, else 16.
                 let elem_duration = if params == ARROW_NORMAL_HORSE { 4 } else { 16 };
-                Some(format!("blureNormal (elemDuration {elem_duration})"))
+                Some(blure(elem_duration, [255, 255, 170, 255], [0, 150, 0, 0]))
             } else if params == ARROW_FIRE {
-                Some("blureFire".to_string())
+                Some(blure(16, [255, 200, 0, 255], [255, 0, 0, 0]))
             } else if params == ARROW_ICE {
-                Some("blureIce".to_string())
+                Some(blure(16, [170, 255, 255, 255], [0, 100, 255, 0]))
             } else if params == ARROW_LIGHT {
-                Some("blureLight".to_string())
+                Some(blure(16, [255, 255, 170, 255], [255, 255, 0, 0]))
             } else {
                 None
             };
             if let Some(b) = blure {
-                log::debug!("En_Arrow: Effect_Add(EFFECT_BLURE2, {b})");
-                s.effect_index = play.effect_add(EffectInit::Blure);
+                s.effect_index = play.effect_add(EffectInit::Blure(EffectBlureInit::Two(b)));
             }
             s.collider = ColliderQuad::new(&QUAD_INIT);
             if params <= ARROW_NORMAL {
@@ -590,7 +605,7 @@ impl EnArrow {
     /// `func_809B4800`: `unk_21C`, and while flying the quad's new edge (`sPosAOffset`,
     /// `sPosBOffset` through the matrix): the seed's and the arrows' attack
     /// (`Player_UpdateWeaponInfo`; while carrying an actor only compared), and the trail's vertex
-    /// for the arrows up to the light one (`EffectBlure_AddVertex`: logged).
+    /// for the arrows up to the light one (`EffectBlure_AddVertex`).
     fn func_809b4800(&mut self, play: &mut PlayState, m: &MtxF) {
         self.unk_21c = m.mult_vec3f(D_809B4EA0);
         if self.action == Action::Fly {
@@ -606,8 +621,8 @@ impl EnArrow {
                         add_blure_vertex = false;
                     }
                 }
-                if add_blure_vertex {
-                    log::debug!("En_Arrow: EffectBlure_AddVertex(effect {}, {pos_a}, {pos_b})", self.effect_index);
+                if add_blure_vertex && let Some(b) = play.effect_blure_mut(self.effect_index) {
+                    b.add_vertex(pos_a, pos_b);
                 }
             }
         }

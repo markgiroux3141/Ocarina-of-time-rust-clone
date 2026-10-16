@@ -1144,6 +1144,9 @@ pub struct Player {
     pub shield_mf: glam::Mat4,
     /// `meleeWeaponInfo`: the sword's tip and base last frame, for the blur and the two quads.
     pub melee_weapon_info: [WeaponInfo; 3],
+    /// `meleeWeaponEffectIndex`: the sword's trail (`Effect_Add(EFFECT_BLURE2, &D_8085470C)` in
+    /// `Player_InitCommon`; `TOTAL_EFFECT_COUNT` with none).
+    pub melee_weapon_effect_index: usize,
     /// `bodyPartsPos` (`PLAYER_BODYPART_*`), from the last draw.
     pub body_parts_pos: [Vec3; BODYPART_MAX],
     /// `actor.shape.feetPos`: the feet (`FOOT_LEFT`, `FOOT_RIGHT`), from the last draw
@@ -1400,6 +1403,7 @@ impl Player {
             shield_quad: ColliderQuad::new(&D_808546A0),
             shield_mf: glam::Mat4::IDENTITY,
             melee_weapon_info: [WeaponInfo::default(); 3],
+            melee_weapon_effect_index: oot_game::effect::SPARK_COUNT + oot_game::effect::BLURE_COUNT + oot_game::effect::SHIELD_PARTICLE_COUNT,
             body_parts_pos: [pos; BODYPART_MAX],
             feet_pos: [pos; 2],
             target_actor: None,
@@ -1469,6 +1473,8 @@ impl Player {
         let adult = play.save.adult;
         let data = play.data.clone();
         let mut p = Player::new(&data, adult, base.world_pos, base.shape_rot.y);
+        // Player_InitCommon: the sword's trail.
+        p.melee_weapon_effect_index = play.effect_add(oot_game::effect::EffectInit::Blure(oot_game::effect::blure::EffectBlureInit::Two(D_8085470C)));
         p.set_equipment_data(&data, &play.save);
         let flags = p.actor.flags;
         p.actor = Actor { flags, gravity: p.actor.gravity, ..base };
@@ -10895,11 +10901,17 @@ impl Player {
         [hand.transform_point3(melee_weapon_tip_offset_from_left_hand0), hand.transform_point3(melee_weapon_tip_offset_from_left_hand1), hand.transform_point3(melee_weapon_tip_offset_from_left_hand2)]
     }
 
-    /// `Player_UpdateMeleeWeaponInfo`: the first edge (the sword trail's: `EffectBlure` isn't
-    /// ported), then while the weapon swings (not a spin, unless `PLAYER_STATE2_17`) the two quads.
+    /// `Player_UpdateMeleeWeaponInfo`: the first edge, added to the sword's trail when it moved
+    /// (not while shielding), then while the weapon swings (not a spin, unless
+    /// `PLAYER_STATE2_17`) the two quads.
     fn update_melee_weapon_info(&mut self, play: &mut PlayState, hand: glam::Mat4, tips: [Vec3; 3]) {
         let bases = S_MELEE_WEAPON_BASE_OFFSET_FROM_LEFT_HAND0.map(|v| hand.transform_point3(v));
-        update_weapon_info(play, &self.actor, None, &mut self.melee_weapon_info[0], tips[0], bases[0]);
+        if update_weapon_info(play, &self.actor, None, &mut self.melee_weapon_info[0], tips[0], bases[0])
+            && self.state1 & STATE1_22 == 0
+            && let Some(b) = play.effect_blure_mut(self.melee_weapon_effect_index)
+        {
+            b.add_vertex(self.melee_weapon_info[0].tip, self.melee_weapon_info[0].base);
+        }
         let spin = play.data.items.mwa("SPIN_ATTACK_1H");
         if self.melee_weapon_state > 0 && (self.melee_weapon_animation < spin || self.state2 & STATE2_17 != 0) {
             let [q0, q1] = &mut self.melee_weapon_quads;
@@ -10995,6 +11007,24 @@ pub struct WeaponInfo {
     pub tip: Vec3,
     pub base: Vec3,
 }
+
+/// `D_8085470C` (`z_player.c`): the sword's trail, `EFFECT_BLURE2`: calcMode 0, flags 8, white
+/// from 255 (the tip) and 64 (the base) to 0 alpha over 4 frames, drawMode 2 (the smooth one).
+pub const D_8085470C: oot_game::effect::blure::EffectBlureInit2 = oot_game::effect::blure::EffectBlureInit2 {
+    calc_mode: 0,
+    flags: 8,
+    add_angle_change: 0,
+    p1_start_color: [255, 255, 255, 255],
+    p2_start_color: [255, 255, 255, 64],
+    p1_end_color: [255, 255, 255, 0],
+    p2_end_color: [255, 255, 255, 0],
+    elem_duration: 4,
+    unk_flag: 0,
+    draw_mode: 2,
+    mode4_param: 0,
+    alt_prim_color: [0, 0, 0, 0],
+    alt_env_color: [0, 0, 0, 0],
+};
 
 /// `sMeleeWeaponLengths` (`z_player_lib.c`), by `Player_ActionToMeleeWeapon`.
 const MELEE_WEAPON_LENGTHS: [f32; 6] = [0.0, 4000.0, 3000.0, 5500.0, 0.0, 2500.0];
@@ -11327,6 +11357,13 @@ impl ActorImpl for Player {
     }
     fn base_mut(&mut self) -> &mut Actor {
         &mut self.actor
+    }
+
+    /// `Player_Destroy`: the sword's trail deleted (the colliders have nothing to free;
+    /// `Magic_Reset` waits on the magic meter, and `linkAge` from `linkAgeOnLoad` on the age
+    /// change).
+    fn destroy(&mut self, play: &mut PlayState) {
+        play.effect_delete(self.melee_weapon_effect_index);
     }
 
     /// `Player_Update` (`Player_DoNothing`, which does nothing, for start mode 0).

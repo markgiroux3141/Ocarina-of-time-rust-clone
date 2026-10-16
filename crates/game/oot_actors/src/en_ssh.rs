@@ -42,10 +42,7 @@
 //! (docs/adr/0012-actor-bakes.md), one per member kind and eye.
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId` with
-//! `MASK_REACTION_SET_CURSED_SKULLTULA_MAN`: no masks yet, so 0); the spin's trail
-//! (`EnSsh_CreateBlureEffect`, `EnSsh_AddBlureVertex`, `EnSsh_AddBlureSpace`: as for `En_St`, ADR
-//! 0033 has `Effect_Add` find no `EffectBlure` slot, so `blureIdx` is `TOTAL_EFFECT_COUNT` and the
-//! trail's calls do nothing, as in the C with no slot free); the circle shadow
+//! `MASK_REACTION_SET_CURSED_SKULLTULA_MAN`: no masks yet, so 0); the circle shadow
 //! (`ActorShadow_DrawCircle`, 30), as for every actor. Not reached: a burning Deku Stick
 //! (Player's `unk_860` stays 0), the hammer's shock wave.
 //!
@@ -68,6 +65,7 @@ use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
+use oot_game::effect::blure::{EffectBlureInit, EffectBlureInit1};
 use oot_game::npc::{offer_talk, process_talk_request, textbox_is_closing};
 use oot_game::pack::{BakeBody, BakeSegment, LimbOverride, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -314,7 +312,7 @@ pub struct EnSsh {
     /// `animTimer`: the landing animation's frames left.
     pub anim_timer: i16,
     pub sway_timer: i16,
-    /// `blureIdx`: the spin's trail (`TOTAL_EFFECT_COUNT`: `EffectBlure` isn't ported).
+    /// `blureIdx`: the spin's trail (`TOTAL_EFFECT_COUNT` when `Effect_Add` found no slot).
     pub blure_idx: usize,
     /// `colliderScale`: 1.5 times its size (0.75 a child, 1.125 the father).
     pub collider_scale: f32,
@@ -416,10 +414,18 @@ impl EnSsh {
     }
 
     /// `EnSsh_CreateBlureEffect`: the spin's trail (`EFFECT_BLURE1`: white from alpha 75 to 0,
-    /// `elemDuration` 6, `calcMode` 3). `EffectBlure` isn't ported (ADR 0033): `Effect_Add` finds
-    /// no slot and gives `TOTAL_EFFECT_COUNT`.
+    /// `elemDuration` 6, `calcMode` 3), `oot_game::effect::blure`'s.
     fn create_blure_effect(play: &mut PlayState) -> usize {
-        play.effect_add(EffectInit::Blure)
+        // EFFECT_BLURE1: white, alpha 75 to 0, elemDuration 6, unkFlag 0, calcMode 3.
+        play.effect_add(EffectInit::Blure(EffectBlureInit::One(EffectBlureInit1 {
+            p1_start_color: [255, 255, 255, 75],
+            p2_start_color: [255, 255, 255, 75],
+            p1_end_color: [255, 255, 255, 0],
+            p2_end_color: [255, 255, 255, 0],
+            elem_duration: 6,
+            unk_flag: 0,
+            calc_mode: 3,
+        })))
     }
 
     /// `EnSsh_CheckCeilingPos`: the ceiling straight above (`BgCheck_EntityLineTest1`, 1000 up,
@@ -440,18 +446,21 @@ impl EnSsh {
     }
 
     /// `EnSsh_AddBlureVertex`: the trail's two points (`{834, 834, 0}` and `{834, -584, 0}` times
-    /// `colliderScale`) through the matrix `mtx`, added to the trail. With `blureIdx`
-    /// `TOTAL_EFFECT_COUNT`, `Effect_GetByIndex` gives NULL and the add does nothing.
-    fn add_blure_vertex(&self, mtx: &MtxF) {
+    /// `colliderScale`) through the matrix `mtx`, added to the trail (nothing with no slot).
+    fn add_blure_vertex(&self, play: &mut PlayState, mtx: &MtxF) {
         let s = self.collider_scale;
-        let _p1 = mtx.mult_vec3f(Vec3::new(834.0 * s, 834.0 * s, 0.0 * s));
-        let _p2 = mtx.mult_vec3f(Vec3::new(834.0 * s, -584.0 * s, 0.0 * s));
-        debug_assert_eq!(self.blure_idx, TOTAL_EFFECT_COUNT);
+        let p1 = mtx.mult_vec3f(Vec3::new(834.0 * s, 834.0 * s, 0.0 * s));
+        let p2 = mtx.mult_vec3f(Vec3::new(834.0 * s, -584.0 * s, 0.0 * s));
+        if let Some(b) = play.effect_blure_mut(self.blure_idx) {
+            b.add_vertex(p1, p2);
+        }
     }
 
-    /// `EnSsh_AddBlureSpace`: nothing with no trail (as `add_blure_vertex`).
-    fn add_blure_space(&self) {
-        debug_assert_eq!(self.blure_idx, TOTAL_EFFECT_COUNT);
+    /// `EnSsh_AddBlureSpace`.
+    fn add_blure_space(&self, play: &mut PlayState) {
+        if let Some(b) = play.effect_blure_mut(self.blure_idx) {
+            b.add_space();
+        }
     }
 
     /// `EnSsh_InitColliders`: the six cylinders (three `sCylinderInit1`, three `sCylinderInit2`),
@@ -1086,9 +1095,9 @@ impl ActorImpl for EnSsh {
         let model = self.actor_mtx();
         if self.spin_timer != 0 && self.sway_timer == 0 {
             if self.spin_timer >= 2 {
-                self.add_blure_vertex(&model);
+                self.add_blure_vertex(play, &model);
             } else {
-                self.add_blure_space();
+                self.add_blure_space(play);
             }
         }
         // SkelAnime_DrawOpa's root limb: Matrix_TranslateRotateZYX(jointTable[0], jointTable[1]).

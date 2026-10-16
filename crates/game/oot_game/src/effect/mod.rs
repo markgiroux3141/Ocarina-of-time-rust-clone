@@ -31,9 +31,9 @@
 //!
 //! ## `z_effect.c`
 //!
-//! `EffectContext`'s sparks (`EffectSpark`: the hit's blood) and shield particles
-//! (`EffectShieldParticle`: a blocked hit's streaks of light, with their point light) are
-//! ported; the sword's trails (`EffectBlure`) aren't: `Effect_Add` of one finds no slot.
+//! `EffectContext`'s sparks (`EffectSpark`: the hit's blood), trails (`EffectBlure`: a swung
+//! blade's, a spinning Skulltula's, an arrow's; GAME-09 milestone 3) and shield particles
+//! (`EffectShieldParticle`: a blocked hit's streaks of light, with their point light).
 //!
 //! ## Drawing
 //!
@@ -45,6 +45,7 @@
 //! segment values.
 
 pub mod blast;
+pub mod blure;
 pub mod bomb2;
 pub mod dead_db;
 pub mod dead_sound;
@@ -840,6 +841,7 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(bomb2::bakes());
     v.extend(extra::bakes());
     v.extend(g_spk::bakes());
+    v.extend(blure::bakes());
     v
 }
 
@@ -973,9 +975,12 @@ impl PlayState {
             actors: &self.actors,
             rand: &mut self.rand,
         };
-        // Effect_DrawAll: the sparks, the trails (not ported), the shield particles.
+        // Effect_DrawAll: the sparks, the trails, the shield particles.
         for s in self.effect_ctx.sparks.iter().flatten() {
             spark::draw(s, &mut ctx, &mut out);
+        }
+        for b in self.effect_ctx.blures.iter().flatten() {
+            blure::draw(b, &mut out);
         }
         for s in self.effect_ctx.shield_particles.iter().flatten() {
             shield_particle::draw(s, &mut out);
@@ -1024,12 +1029,13 @@ impl PlayState {
     }
 }
 
-/// `z_effect.c`'s `EffectContext`: the sparks and the shield particles (the trails aren't
-/// ported).
+/// `z_effect.c`'s `EffectContext`: the sparks, the trails and the shield particles.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct EffectContext {
     /// `sparks[SPARK_COUNT]`: `None` while inactive.
     pub sparks: [Option<spark::EffectSpark>; SPARK_COUNT],
+    /// `blures[BLURE_COUNT]`.
+    pub blures: [Option<blure::EffectBlure>; BLURE_COUNT],
     /// `shieldParticles[SHIELD_PARTICLE_COUNT]`.
     pub shield_particles: [Option<shield_particle::EffectShieldParticle>; SHIELD_PARTICLE_COUNT],
 }
@@ -1044,8 +1050,8 @@ pub const SHIELD_PARTICLE_COUNT: usize = 3;
 pub enum EffectInit {
     /// `EFFECT_SPARK`.
     Spark(spark::EffectSparkInit),
-    /// `EFFECT_BLURE1`, `EFFECT_BLURE2`: not ported.
-    Blure,
+    /// `EFFECT_BLURE1`, `EFFECT_BLURE2`.
+    Blure(blure::EffectBlureInit),
     /// `EFFECT_SHIELD_PARTICLE`.
     ShieldParticle(shield_particle::EffectShieldParticleInit),
 }
@@ -1068,9 +1074,13 @@ impl PlayState {
                 }
                 i
             }
-            EffectInit::Blure => {
-                log::debug!("Effect_Add: EffectBlure is not ported");
-                TOTAL
+            EffectInit::Blure(p) => {
+                let Some(i) = self.effect_ctx.blures.iter().position(|s| s.is_none()) else {
+                    log::debug!("EffectAdd(): I cannot secure it. Type 1");
+                    return TOTAL;
+                };
+                self.effect_ctx.blures[i] = Some(blure::init(&p));
+                i + SPARK_COUNT
             }
             EffectInit::ShieldParticle(p) => {
                 let Some(i) = self.effect_ctx.shield_particles.iter().position(|s| s.is_none()) else {
@@ -1085,8 +1095,8 @@ impl PlayState {
     }
 
     /// `Effect_Delete`: the effect at `index` (as `Effect_Add` gave it) made inactive and
-    /// destroyed. `TOTAL_EFFECT_COUNT` (what an `Effect_Add` that found no slot gives, as for
-    /// every `EffectBlure`, which isn't ported) does nothing.
+    /// destroyed. `TOTAL_EFFECT_COUNT` (what an `Effect_Add` that found no slot gives) does
+    /// nothing.
     pub fn effect_delete(&mut self, index: usize) {
         const TOTAL: usize = SPARK_COUNT + BLURE_COUNT + SHIELD_PARTICLE_COUNT;
         if index == TOTAL {
@@ -1099,7 +1109,8 @@ impl PlayState {
         }
         let index = index - SPARK_COUNT;
         if index < BLURE_COUNT {
-            // No trail is ever added (EffectBlure isn't ported).
+            // EffectBlure_Destroy does nothing.
+            self.effect_ctx.blures[index] = None;
             return;
         }
         let index = index - BLURE_COUNT;
@@ -1110,6 +1121,14 @@ impl PlayState {
         }
     }
 
+    /// `Effect_GetByIndex` for a trail: the `EffectBlure` at `index` (as `Effect_Add` gave it)
+    /// while active, else `None` (what `EffectBlure_AddVertex` and `_AddSpace` take as NULL
+    /// and skip).
+    pub fn effect_blure_mut(&mut self, index: usize) -> Option<&mut blure::EffectBlure> {
+        let i = index.checked_sub(SPARK_COUNT).filter(|&i| i < BLURE_COUNT)?;
+        self.effect_ctx.blures[i].as_mut()
+    }
+
     /// `Effect_UpdateAll`: each active one's update, deleted when it says it's done.
     pub fn effect_update_all(&mut self) {
         for i in 0..SPARK_COUNT {
@@ -1117,6 +1136,13 @@ impl PlayState {
                 && spark::update(s)
             {
                 self.effect_ctx.sparks[i] = None;
+            }
+        }
+        for i in 0..BLURE_COUNT {
+            if let Some(b) = &mut self.effect_ctx.blures[i]
+                && blure::update(b)
+            {
+                self.effect_ctx.blures[i] = None;
             }
         }
         for i in 0..SHIELD_PARTICLE_COUNT {
@@ -1133,6 +1159,7 @@ impl PlayState {
     /// `Effect_DeleteAll` (`Play_Destroy`): the shield particles' lights removed.
     pub fn effect_delete_all(&mut self) {
         self.effect_ctx.sparks = Default::default();
+        self.effect_ctx.blures = Default::default();
         for i in 0..SHIELD_PARTICLE_COUNT {
             if let Some(s) = self.effect_ctx.shield_particles[i].take() {
                 shield_particle::destroy(self, &s);

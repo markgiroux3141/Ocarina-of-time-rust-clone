@@ -203,3 +203,21 @@ fn an_attention_cutscene_on_link_himself() {
     }
     assert_eq!(w.player().cs_mode, 7);
 }
+
+#[test]
+fn the_cavern_s_skull_and_pillar_keyframes_are_the_c_s() {
+    // z_onepointdemo.c's OnePointCutscene_SetInfo: 3065 and 3380 (Bg_Dodoago) share D_801218B4,
+    // 3060 (Bg_Ddan_Jd) D_80121904, two rows each: (actionFlags, initFlags, timer, roll, fov,
+    // lerp, at, eye). ONEPOINT_CS_ACTION(id, false, false) is the id alone.
+    let Some(w) = village() else { return };
+    let row = |t: &str, i: usize| {
+        let k = w.onepoint.keyframes[w.onepoint.table(t)][i];
+        (k.action_flags, k.init_field, k.init_flags, k.timer_init, k.roll_target_init, k.fov_target_init, k.lerp_step_scale, k.at_target_init, k.eye_target_init)
+    };
+    assert_eq!(w.onepoint.len(w.onepoint.table("D_801218B4")), 2);
+    assert_eq!(row("D_801218B4", 0), (15, 0xFF, 0x0101, 60, 0, 65.0, 1.0, Vec3::new(0.0, 350.0, -1520.0), Vec3::new(0.0, 715.0, -885.0)));
+    assert_eq!(row("D_801218B4", 1), (3, 0xFF, 0x0101, 100, 0, 70.0, 0.02, Vec3::new(0.0, 75.0, -1335.0), Vec3::new(0.0, 20.0, -1190.0)));
+    assert_eq!(w.onepoint.len(w.onepoint.table("D_80121904")), 2);
+    assert_eq!(row("D_80121904", 0), (15, 0xFF, 0x0101, 50, 10, 65.0, 1.0, Vec3::new(165.0, 85.0, -920.0), Vec3::new(65.0, -30.0, -720.0)));
+    assert_eq!(row("D_80121904", 1), (17, 0xFF, 0x0000, 1, -1, -1.0, -1.0, Vec3::splat(-1.0), Vec3::splat(-1.0)));
+}

@@ -58,6 +58,7 @@ echo   126  test-lost-woods      GAME-08's Lost Woods tests: the Skull Kids, the
 echo   129  test-ranch           GAME-08's ranch tests: the foal, the horses, Ingo, the Guays, Talon, the timers, the run
 echo   132  test-bombs           GAME-09's bomb tests: the bomb, the Bomb Flower, the sparks, the blasts, the run
 echo   135  test-goron           GAME-09's trail and Goron City tests: Gorons, Darunia, Tektites, the boulder, the urn, the runs
+echo   138  test-cavern          GAME-09's cavern tests: the skull, Lizalfos, Poes, Armos, pillars, trails, the runs
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -106,6 +107,7 @@ echo   127  game-lost-woods      The Lost Woods' Skull Kids and target with Sari
 echo   130  game-ranch           Lon Lon Ranch: Malon, the foal, Talon's cucco game (asks: or Malon, night, the stable, Ingo, the house)
 echo   133  game-bombs           Dodongo's Cavern's entrance with the bracelet and bombs (asks: or Hyrule Field)
 echo   136  game-goron           Death Mountain Trail and Goron City (asks: or city, darunia, cliff, cavern, bombs)
+echo   139  game-cavern          Dodongo's Cavern, the whole loop (asks: or lizalfos, pillar, upper, web, bag, skull, gravestone, boss)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -148,6 +150,7 @@ echo   128  sandbox-lost-woods   The Lost Woods run's trace and screenshots (the
 echo   131  sandbox-ranch        The ranch run's trace and screenshots (Malon, the foal, the cucco game), into out\run
 echo   134  sandbox-bombs        The bombs run's trace and screenshots (the flower, the wall, the bomb), into out\run
 echo   137  sandbox-goron        The Darunia and boulder runs' traces and screenshots, into out\run
+echo   140  sandbox-cavern       The cavern's four runs' traces and screenshots (pillar, bag, skull, gravestone), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -295,6 +298,9 @@ if "%pick%"=="134" set "script=sandbox-bombs"
 if "%pick%"=="135" set "script=test-goron"
 if "%pick%"=="136" goto goron
 if "%pick%"=="137" set "script=sandbox-goron"
+if "%pick%"=="138" set "script=test-cavern"
+if "%pick%"=="139" goto cavern
+if "%pick%"=="140" set "script=sandbox-cavern"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -308,6 +314,14 @@ set "which="
 set /p "which=Which (empty: the entrance by day; pen, roof, gate, night, dusk, cow, windmill, skulltula, guests, shop or guardhouse): "
 call "%~dp0game-kakariko.bat" %which%
 echo game-kakariko finished (exit code %errorlevel%).
+pause
+goto menu
+
+:cavern
+set "which="
+set /p "which=Which (empty: the cavern's entrance; lizalfos, pillar, upper, web, bag, skull, gravestone or boss): "
+call "%~dp0game-cavern.bat" %which%
+echo game-cavern finished (exit code %errorlevel%).
 pause
 goto menu
 

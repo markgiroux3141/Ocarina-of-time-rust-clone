@@ -500,6 +500,30 @@ pub enum Step {
     /// The boulder at Dodongo's Cavern's mouth (`Bg_Spot16_Bombstone`) blown up: switch 4 and
     /// `EVENTCHKINF_23` set, its one-point cutscenes over, Link free.
     BoulderBlown,
+    /// Dodongo's Cavern's bomb bag chest opened, the bag's text read, Link free.
+    BombBag,
+    /// A gravestone (`Bg_Haka`) pulled its 60 (`BgHaka_IdleOpened`), Link let go.
+    StonePulled,
+    /// Dodongo's Cavern's switch 0x20 pressed (room 7's `Obj_Switch` 0x2000): door 20 unbarred.
+    BossPathOpen,
+    /// Into King Dodongo's room (`ENTR_DODONGOS_CAVERN_BOSS_0`, room 16's pit), settled.
+    BossFall,
+    /// Dodongo's Cavern's pit boulder (`Obj_Bombiwa` 0x000E) blown: its flag 0x0E.
+    PitBoulderBlown,
+    /// The floor switch under it (`Obj_Switch` 0x0A00) pressed: flag 0x0A, the shortcut pillar's.
+    PillarSwitch,
+    /// Up a ladder onto the floor at its top, standing.
+    LadderUp,
+    /// The shortcut pillar (`Bg_Ddan_Jd` 0x000A) idle at the height a task waits for.
+    PillarReady,
+    /// On the shortcut pillar (`Bg_Ddan_Jd` 0x000A), standing.
+    OnPillar,
+    /// Up on Dodongo's Cavern's upper level (y 531), standing.
+    UpperLevel,
+    /// One of the skull's eyes (`Bg_Dodoago`) lit to 255, its one-point over, Link free.
+    EyeLit,
+    /// The skull's jaw open (`Bg_Dodoago` done: its flag 0x1A), one-point 3380 over, Link free.
+    JawOpen,
 }
 
 impl Step {
@@ -688,6 +712,18 @@ impl Step {
             Step::Bracelet => "bracelet",
             Step::Thrown => "thrown",
             Step::BoulderBlown => "boulder_blown",
+            Step::BombBag => "bomb_bag",
+            Step::StonePulled => "stone_pulled",
+            Step::BossPathOpen => "boss_path_open",
+            Step::BossFall => "boss_fall",
+            Step::PitBoulderBlown => "pit_boulder_blown",
+            Step::PillarSwitch => "pillar_switch",
+            Step::LadderUp => "ladder_up",
+            Step::PillarReady => "pillar_ready",
+            Step::OnPillar => "on_pillar",
+            Step::UpperLevel => "upper_level",
+            Step::EyeLit => "eye_lit",
+            Step::JawOpen => "jaw_open",
         }
     }
 }
@@ -865,6 +901,25 @@ pub enum Route {
     /// cliff above it with the bracelet (`goron-bracelet`): the cliff's Bomb Flower lifted and
     /// thrown down onto it (one-point 4180), the boulder blown up.
     Boulder,
+    /// Dodongo's Cavern's bomb bag (GAME-09 milestone 3), from a debug start in the lobby's east
+    /// corridor (`cavern-loop`: the loop through rooms 9, 10, 3, 12, 1 and 4 done): the big chest
+    /// `En_Box` 0x0644 opened, `GI_BOMB_BAG_20`.
+    BombBag,
+    /// Dodongo's Cavern's boss path (GAME-09 milestone 3), from a debug start in room 7's alcove
+    /// corridor north of the gravestone (`cavern-jaw`: the skull's jaw open): the gravestone
+    /// (`Bg_Haka`) pulled off switch 0x20 (`Obj_Switch` 0x2000), the switch pressed, door 20, and
+    /// the fall into room 16's pit to King Dodongo's room.
+    Gravestone,
+    /// Dodongo's Cavern's shortcut pillar (GAME-09 milestone 3), from a debug start on the lobby's
+    /// island by its Bomb Flower (`cavern-lobby`: the entrance wall broken): the flower carried off the island's south-east corner onto the shelf by the pit's
+    /// boulder (`Obj_Bombiwa` 0x000E), its blast, the floor switch under it (0x0A), one-point 3060
+    /// and the pillar (`Bg_Ddan_Jd` 0x000A) shuttling to the upper level.
+    Pillar,
+    /// Dodongo's Cavern's skull (GAME-09 milestone 3), from a debug start on the bridge over it
+    /// (`cavern-bomb-bag`: the loop and the bag): bombs onto C-Right in the pause menu, a bomb put
+    /// down through each of the bridge's holes, the bomb catcher (`Bg_Dodoago`: fuse 50), each
+    /// eye lit (one-point 3065), the jaw open (3380).
+    Skull,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1137,6 +1192,122 @@ fn boulder_tasks() -> Vec<Task> {
 
 /// The Bomb Flower on the cliff above Dodongo's Cavern's mouth (spot16 room 0).
 const DMT_CLIFF_FLOWER: Vec3 = Vec3::new(-1397.0, 1408.0, -646.0);
+
+/// The bomb bag's chest (`ddan` room 0's `En_Box` 0x0644: a big chest, `GI_BOMB_BAG_20`, treasure
+/// flag 4), in the lobby's east corridor (y 80).
+pub const DC_BOMB_BAG_CHEST: Vec3 = Vec3::new(869.0, 80.0, -920.0);
+
+/// Room 7's gravestone (`ddan` room 7's `Bg_Haka` 0x0000), at the mouth of the alcove's corridor
+/// (y 126), on switch 0x20 (`Obj_Switch` 0x2000 at (-1, 126, -3220)).
+pub const DC_ROOM7_GRAVESTONE: Vec3 = Vec3::new(0.0, 126.0, -3212.0);
+/// Door 20 (the boss path's `Door_Shutter` 0x00A0, `SHUTTER_FRONT_SWITCH` on 0x20 from room 7):
+/// its transition index and its front on room 7's side (it faces +x).
+const DC_DOOR_20: usize = 20;
+const DC_DOOR_20_FRONT: Vec3 = Vec3::new(-325.0, 16.0, -2784.0);
+
+/// `Route::Gravestone`'s tasks: the stone pulled north (`BgHaka_Pull` slides it away from its
+/// face, `shape.rot.y + 0x8000`: Link holds on at its north face and backs north), past it along
+/// the corridor's east side (the stone 69 across in a corridor 100 wide) onto the switch, off the
+/// corridor's mouth to room 7's floor, door 20, room 16's pit.
+fn gravestone_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::PullStone(DC_ROOM7_GRAVESTONE, Step::StonePulled),
+        Task::Walk(vec![Vec3::new(41.0, 136.0, -3305.0), Vec3::new(41.0, 136.0, -3218.0), Vec3::new(0.0, 126.0, -3219.0)]),
+        Task::WaitFor(Cond::Switch(0x20), Step::BossPathOpen),
+        Task::Walk(vec![Vec3::new(0.0, 126.0, -3150.0), Vec3::new(0.0, 16.0, -3050.0), Vec3::new(-250.0, 16.0, -2784.0)]),
+        Task::OpenSlidingDoor(DC_DOOR_20, DC_DOOR_20_FRONT, Step::DoorOpened),
+        Task::Exit("ENTR_DODONGOS_CAVERN_BOSS_0", Some(Step::BossFall)),
+    ]
+}
+
+/// The lobby island's Bomb Flower (`ddan` room 0's `En_Bombf` 0xFFFF at (-2, 0, -1170)).
+const DC_ISLAND_FLOWER: Vec3 = Vec3::new(-2.0, 0.0, -1170.0);
+/// The pit's boulder over the shortcut pillar's switch (`Obj_Bombiwa` 0x000E; `Obj_Switch` 0x0A00
+/// at (429, -160, -1717)).
+const DC_PIT_BOULDER: Vec3 = Vec3::new(432.0, -160.0, -1719.0);
+
+/// `Route::Pillar`'s tasks: the island's flower lifted; off the island's south-east corner at a
+/// run (Player's run-off jump, carrying: short of the -160 shelf, into the lava, y -180
+/// `FLOOR_TYPE_2`), thrown from there at a run towards the boulder (`Task::ThrowAtRun`), Link
+/// back out of its blast; the blast (`func_80033684`'s reach) breaks the boulder (flag 0x0E);
+/// onto the switch (flag 0x0A); the pillar to the upper level.
+fn pillar_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::LiftBombFlower(DC_ISLAND_FLOWER, Step::FlowerLifted),
+        Task::ThrowAtRun(vec![Vec3::new(80.0, 0.0, -1300.0), Vec3::new(330.0, -160.0, -1590.0), DC_PIT_BOULDER], Vec3::new(330.0, -160.0, -1590.0), Step::Thrown),
+        Task::Walk(vec![Vec3::new(300.0, -160.0, -1600.0), Vec3::new(260.0, -160.0, -1650.0)]),
+        Task::WaitFor(Cond::Switch(0x0E), Step::PitBoulderBlown),
+        Task::Walk(vec![Vec3::new(429.0, -160.0, -1717.0)]),
+        Task::WaitFor(Cond::Switch(0x0A), Step::PillarSwitch),
+        // One-point 3060 over, the pillar shuttling (Bg_Ddan_Jd: +140 and +700 at 5, 100 frames
+        // idle at each). East along the shelf to the pit's south-east ladder (x 636, z -1662: wall
+        // type 2), up it onto the lobby's east floor (y 0).
+        Task::Walk(vec![Vec3::new(560.0, -160.0, -1690.0), Vec3::new(610.0, -160.0, -1665.0)]),
+        Task::ClimbTo(Vec3::new(670.0, 0.0, -1640.0), Step::LadderUp),
+        // North along the floor's edge to the pillar (x 360 to 480, z -1120 to -1240); at its
+        // middle (its top level with the floor), a run west off the edge onto it (120 across).
+        Task::Walk(vec![Vec3::new(640.0, 0.0, -1400.0), Vec3::new(625.0, 0.0, -1180.0)]),
+        Task::WaitFor(Cond::Pillar(DC_SHORTCUT_PILLAR, 140.0), Step::PillarReady),
+        Task::RunOntoPillar(DC_SHORTCUT_PILLAR, Step::OnPillar),
+        // Ridden to its top (y 520, its top 560), then east at a run off its edge: short of the
+        // upper level (170 across, 29 below), Player's mid-air ledge grab and the climb.
+        Task::WaitFor(Cond::Pillar(DC_SHORTCUT_PILLAR, 700.0), Step::PillarReady),
+        Task::ClimbTo(Vec3::new(720.0, 531.0, -1150.0), Step::UpperLevel),
+    ]
+}
+
+/// The shortcut pillar's home (`Bg_Ddan_Jd` 0x000A in room 0's pit).
+const DC_SHORTCUT_PILLAR: Vec3 = Vec3::new(420.0, -180.0, -1180.0);
+
+/// The middles of the holes in the bridge over the skull (y 591, z -1490 to -1585; the holes x
+/// 63 to 137 either side), over its bomb catcher's cylinders (`Bg_Dodoago`: 90 either side, 215
+/// in front of it at (0, 196, -1750)).
+const DC_HOLE_RIGHT: Vec3 = Vec3::new(100.0, 591.0, -1535.0);
+const DC_HOLE_LEFT: Vec3 = Vec3::new(-100.0, 591.0, -1535.0);
+
+/// The skull's eye's glow (`roomCtx.drawParams`, `SDC_DODONGOS_CAVERN`'s env alpha) full, its
+/// one-point over and Link free.
+fn eye_lit(w: &PlayState, eye: usize) -> bool {
+    w.scene.as_ref().is_some_and(|sc| sc.draw.room_draw_params[eye] == 255) && !w.player_in_cs_mode() && w.active_cam_id == oot_game::camera::CAM_ID_MAIN
+}
+
+/// `Route::Skull`'s tasks: bombs on C-Right (the pause menu's item page, `SLOT_BOMB`); east to the
+/// right hole's west edge, a bomb out and put down at the edge facing the hole: it falls through
+/// the catcher (fuse 50) onto the skull's head by its right eye (`BGDODOAGO_EYE_RIGHT`: the
+/// blast's yaw from the skull past its facing); west to the left hole for the other eye, the jaw.
+fn skull_tasks() -> Vec<Task> {
+    use crate::bg_dodoago::{BGDODOAGO_EYE_LEFT, BGDODOAGO_EYE_RIGHT};
+    vec![
+        Task::Settle(None),
+        Task::OpenMenu(Step::MenuOpened),
+        Task::MenuCursor(oot_game::item::SLOT_BOMB as u16, Step::CursorOnItem),
+        Task::EquipOnC(2, Step::ItemEquipped),
+        Task::CloseMenu(Step::MenuClosed),
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(62.0, 591.0, -1535.0)]),
+        Task::TakeBomb(2, Step::BombOut),
+        Task::PutDown(vec![], DC_HOLE_RIGHT, Step::PutDown),
+        Task::Texts(|w| eye_lit(w, BGDODOAGO_EYE_RIGHT), Step::EyeLit),
+        Task::Walk(vec![Vec3::new(-62.0, 591.0, -1535.0)]),
+        Task::TakeBomb(2, Step::BombOut),
+        Task::PutDown(vec![], DC_HOLE_LEFT, Step::PutDown),
+        Task::Texts(
+            |w| {
+                eye_lit(w, BGDODOAGO_EYE_LEFT)
+                    && w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_dodoago::BgDodoago>(h)).any(|s| s.action == crate::bg_dodoago::Action::DoNothing)
+            },
+            Step::JawOpen,
+        ),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::BombBag`'s tasks: to the chest's front and A, its get-item cutscene and text.
+fn bomb_bag_tasks() -> Vec<Task> {
+    vec![Task::Settle(None), Task::OpenChest(DC_BOMB_BAG_CHEST, Some(Step::BombBag)), Task::Settle(None)]
+}
 
 /// The Bomb Flower placed at `home`.
 fn flower_near(w: &PlayState, home: Vec3) -> Option<&crate::en_bombf::EnBombf> {
@@ -1667,6 +1838,11 @@ impl Route {
             Route::Darunia => "ENTR_GORON_CITY_2",
             // The trail's spawn 1, by Goron City's door (the intro is for _0).
             Route::Boulder => "ENTR_DEATH_MOUNTAIN_TRAIL_1",
+            Route::BombBag => "ENTR_DODONGOS_CAVERN_0",
+            // Spawn 1: room 7, by door 20 (the return from King Dodongo's room).
+            Route::Gravestone => "ENTR_DODONGOS_CAVERN_1",
+            Route::Pillar => "ENTR_DODONGOS_CAVERN_0",
+            Route::Skull => "ENTR_DODONGOS_CAVERN_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1698,6 +1874,10 @@ impl Route {
             Route::Bombs => Some("cavern-bombs"),
             Route::Darunia => Some("ranch-epona"),
             Route::Boulder => Some("goron-bracelet"),
+            Route::BombBag => Some("cavern-loop"),
+            Route::Gravestone => Some("cavern-jaw"),
+            Route::Pillar => Some("cavern-lobby"),
+            Route::Skull => Some("cavern-bomb-bag"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1719,6 +1899,14 @@ impl Route {
             Route::Ocarina => Some(OCARINA_START),
             // On the cliff above the cavern, east of its Bomb Flower, facing west.
             Route::Boulder => Some((Vec3::new(-1307.0, 1409.0, -660.0), -0x4000)),
+            // In the lobby's east corridor, east of the chest, facing west.
+            Route::BombBag => Some((Vec3::new(1000.0, 80.0, -920.0), -0x4000)),
+            // In room 7's alcove corridor north of the gravestone, facing it (south).
+            Route::Gravestone => Some((Vec3::new(0.0, 126.0, -3300.0), 0)),
+            // On the lobby's island, south of its Bomb Flower, facing it (north).
+            Route::Pillar => Some((Vec3::new(-2.0, 0.0, -1240.0), 0)),
+            // On the bridge over the skull, between its holes, facing east.
+            Route::Skull => Some((Vec3::new(0.0, 591.0, -1535.0), 0x4000)),
             _ => None,
         }
     }
@@ -1873,6 +2061,10 @@ impl Route {
             Route::Bombs => "bombs",
             Route::Darunia => "darunia",
             Route::Boulder => "boulder",
+            Route::BombBag => "bomb-bag",
+            Route::Gravestone => "gravestone",
+            Route::Pillar => "pillar",
+            Route::Skull => "skull",
         }
     }
 
@@ -1915,6 +2107,10 @@ impl Route {
             Route::Bombs => 3000,
             Route::Darunia => 4000,
             Route::Boulder => 1500,
+            Route::BombBag => 1500,
+            Route::Gravestone => 3000,
+            Route::Pillar => 2000,
+            Route::Skull => 2000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -1927,7 +2123,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -2199,6 +2395,13 @@ enum Task {
     /// offered it (`PLAYER_DOORTYPE_HANDLE`), A; done when a scene exit's transition starts (the
     /// next task waits for the scene).
     OpenDoor(Vec3, Vec3, Option<Step>),
+    /// The gravestone (`Bg_Haka`) whose home is here pulled: at it slowly until Link holds on
+    /// (A at its wall), then A and the stick away from it until it's pulled its 60
+    /// (`BgHaka_IdleOpened`) and Link has let go.
+    PullStone(Vec3, Step),
+    /// At a run onto the `Bg_Ddan_Jd` whose home is here (its middle), off whatever edge is in
+    /// the way: done when Link stands on its collision.
+    RunOntoPillar(Vec3, Step),
     /// The ocarina out with its C button (0 C-Left), no song: until a text opens (an actor
     /// waiting for it, Malon's lesson: `PLAYER_STATE2_24`), then the step.
     OcarinaOut(usize, Step),
@@ -2223,6 +2426,10 @@ enum Cond {
     NightCritters,
     /// Darunia's door (`Bg_Spot18_Shutter`) risen its 180 (`func_808B9698` done), Link free.
     DaruniaDoorOpen,
+    /// The switch flag set, Link free (no cutscene or text holding him).
+    Switch(i32),
+    /// The `Bg_Ddan_Jd` whose home is here idle this far above it, Link free.
+    Pillar(Vec3, f32),
 }
 
 impl Cond {
@@ -2235,6 +2442,11 @@ impl Cond {
             Cond::NightCritters => w.time_seq_state == TIMESEQ_DAY_BEGIN_SFX,
             Cond::DaruniaDoorOpen => {
                 w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_spot18_shutter::BgSpot18Shutter>(h)).any(|d| d.actor.world_pos.y >= d.actor.home_pos.y + 180.0) && !w.player_in_cs_mode()
+            }
+            Cond::Switch(flag) => w.flags.get_switch(flag) && !w.player_in_cs_mode() && w.message_state() == oot_game::message::TEXT_STATE_NONE,
+            Cond::Pillar(home, rise) => {
+                !w.player_in_cs_mode()
+                    && w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_ddan_jd::BgDdanJd>(h)).any(|p| p.actor.home_pos.distance(home) < 1.0 && p.action == crate::bg_ddan_jd::Action::Idle && p.actor.world_pos.y == home.y + rise)
             }
         }
     }
@@ -2609,6 +2821,10 @@ impl Playthrough {
             Route::Bombs => bombs_tasks(),
             Route::Darunia => darunia_tasks(),
             Route::Boulder => boulder_tasks(),
+            Route::BombBag => bomb_bag_tasks(),
+            Route::Gravestone => gravestone_tasks(),
+            Route::Pillar => pillar_tasks(),
+            Route::Skull => skull_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -3683,6 +3899,23 @@ impl Playthrough {
             Task::LightStick(home, step) => self.light_stick(w, home, step),
             Task::BurnWeb(home, step) => self.burn_web(w, home, step),
             Task::GrabBlock(home, step) => self.grab_block(w, home, step),
+            Task::PullStone(home, step) => self.pull_stone(w, home, step),
+            Task::RunOntoPillar(home, step) => {
+                self.wait += 1;
+                if self.wait > 300 {
+                    self.failure = Some(format!("never onto the pillar at {home} (Link {:?} at {:?})", w.player().action, w.player().actor.world_pos));
+                    return None;
+                }
+                let Some(pillar) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<crate::bg_ddan_jd::BgDdanJd>(h).filter(|p| p.actor.home_pos.distance(home) < 1.0)) else {
+                    self.failure = Some(format!("no pillar at {home}"));
+                    return None;
+                };
+                let p = w.player();
+                if p.grounded() && p.actor.floor_bg_id == pillar.bg {
+                    return self.settle(w, Some(step));
+                }
+                Some(stick_towards(w, pillar.actor.world_pos, FULL))
+            }
             Task::PushBlock(home, flag, step) => self.push_block(w, home, flag, step),
             Task::ClimbBlock(step) => self.climb_block(w, step),
             Task::DrawSlingshot(step) => self.draw_slingshot(w, step),
@@ -4919,6 +5152,38 @@ impl Playthrough {
         stick_towards(w, block, SLOW)
     }
 
+    /// `Task::PullStone`.
+    fn pull_stone(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
+        use crate::bg_haka::{Action as HakaAction, BgHaka};
+        self.wait += 1;
+        if self.wait > 900 {
+            let p = w.player();
+            self.failure = Some(format!("the gravestone at {home} never pulled (Link {:?} at {:?}, state2 {:#x})", p.action, p.actor.world_pos, p.state2));
+            return None;
+        }
+        let Some(stone) = w.actors.all().into_iter().find_map(|h| w.actors.downcast::<BgHaka>(h).filter(|b| b.actor.home_pos.distance(home) < 1.0)) else {
+            self.failure = Some(format!("no gravestone at {home}"));
+            return None;
+        };
+        let held = Self::holding_on(w);
+        if stone.action == HakaAction::IdleOpened {
+            if held {
+                return Some(PadState::default());
+            }
+            self.finish(Some(step));
+            return None;
+        }
+        if held {
+            let p = w.player();
+            let behind = p.actor.world_pos - Vec3::new(eng_math::sin_s(p.actor.shape_rot.y), 0.0, eng_math::cos_s(p.actor.shape_rot.y)) * 100.0;
+            let mut pad = stick_towards(w, behind, RUN);
+            pad.button = BTN_A;
+            return Some(pad);
+        }
+        let at = stone.actor.world_pos;
+        Some(self.grab_pad(w, at))
+    }
+
     /// `Task::GrabBlock`.
     fn grab_block(&mut self, w: &PlayState, home: Vec3, step: Step) -> Option<PadState> {
         if Self::holding_on(w) {
@@ -5418,6 +5683,12 @@ impl Playthrough {
         if self.wait > 900 {
             self.failure = Some(format!("never up to {top} (Link {:?} at {:?})", p.action, p.actor.world_pos));
             return None;
+        }
+        // Hanging (Player_Action_8084BBE4), the stick along Link's facing climbs up
+        // (controlStickSpinAngles >= 0): the grab turned him to face the wall's normal.
+        if p.action == PA::Hang {
+            let ahead = p.actor.world_pos + Vec3::new(eng_math::sin_s(p.actor.shape_rot.y), 0.0, eng_math::cos_s(p.actor.shape_rot.y)) * 100.0;
+            return Some(stick_towards(w, ahead, FULL));
         }
         Some(stick_towards(w, top, FULL))
     }

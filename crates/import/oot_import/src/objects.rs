@@ -333,6 +333,10 @@ impl ObjectSegments {
                     anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: a matrix segment outside display lists", bake.name);
                     matrices.push((*seg, vec![*bone]));
                 }
+                BakeSegment::Matrices(bones) => {
+                    anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: a matrix segment outside display lists", bake.name);
+                    matrices.push((*seg, bones.clone()));
+                }
                 BakeSegment::SkeletonMatrices { file: sf, symbol } => {
                     anyhow::ensure!(matches!(bake.body, BakeBody::DLists(_)), "bake {}: a matrix segment outside display lists", bake.name);
                     let (skel_file, sym) = symbol_in(p, sf, symbol)?;

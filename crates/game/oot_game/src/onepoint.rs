@@ -534,7 +534,7 @@ impl PlayState {
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
     /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908;
-    /// Phase 10's 4180, 4210, 4220, 4221). The
+    /// Phase 10's 3060, 3065, 3380, 4180, 4210, 4220, 4221). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
     pub fn onepoint_cutscene_set_info(&mut self, sub: i16, cs_id: i16, actor: Option<CamActor>, timer: i16) -> i32 {
@@ -891,6 +891,25 @@ impl PlayState {
                 // Darunia's door sliding aside for an adult (Bg_Spot18_Shutter): one keyframe,
                 // Player held (PLAYER_CSACTION_8).
                 set_cs_info(self, "D_80122C8C", 1);
+                self.player_set_cs_action_with_halted_actors(None, 8);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            3380 | 3065 => {
+                // Dodongo's Cavern's skull (Bg_Dodoago): an eye lit (3065) or the jaw opening
+                // (3380), the same two keyframes, Player held (PLAYER_CSACTION_8), a quake on
+                // the sub camera for 160 frames.
+                set_cs_info(self, "D_801218B4", 2);
+                self.player_set_cs_action_with_halted_actors(None, 8);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                let i = self.quake_request(sub, crate::quake::QUAKE_TYPE_1);
+                self.quake_set_speed(i, 24000);
+                self.quake_set_perturbations(i, 2, 0, 0, 0);
+                self.quake_set_duration(i, 160);
+            }
+            3060 => {
+                // Dodongo's Cavern's shortcut pillar rising (Bg_Ddan_Jd): two keyframes, Player
+                // held (PLAYER_CSACTION_8).
+                set_cs_info(self, "D_80121904", 2);
                 self.player_set_cs_action_with_halted_actors(None, 8);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }

@@ -304,6 +304,42 @@ fn the_window_textures_are_loaded_through_the_segments_the_draw_configs_swap() {
     assert!(!g1.is_empty() && g1.iter().all(|t| *t == tex("spot18_scene", "gGoronCityNightEntranceTex")), "Goron City's night entrance");
     let t = scene_table::segment_textures("SDC_GORON_CITY", &st(true));
     assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, true, "gGoronCityNightEntranceTex"));
+    // Scene_DrawConfigDodongosCavern: segment 8 (OPA) gDCEntranceTextures[nightFlag] and segment
+    // 9 (OPA) sDCLavaFloorTextures[(gameplayFrames & 14) >> 1]. The cavern has one set of
+    // placements on its four headers; the rooms are baked by day at frame 0 (the first frame).
+    let (e0, l0) = (room_textures_from(&pack, "ddan_scene", 0, 0x0800_0000), room_textures_from(&pack, "ddan_scene", 0, 0x0900_0000));
+    assert!(!e0.is_empty() && e0.iter().all(|t| *t == tex("ddan_scene", "gDCDayEntranceTex")), "the cavern's day entrance");
+    assert!(!l0.is_empty() && l0.iter().all(|t| *t == tex("ddan_scene", "gDCLavaFloor1Tex")), "the cavern's lava, frame 0");
+    for (f, frame) in [(0, 1), (1, 1), (2, 2), (3, 2), (13, 7), (14, 8), (15, 8), (16, 1), (31, 8)] {
+        let t = scene_table::segment_textures("SDC_DODONGOS_CAVERN", &DrawConfigState { gameplay_frames: f, ..st(true) });
+        let lava = format!("gDCLavaFloor{frame}Tex");
+        assert_eq!(
+            t.iter().map(|t| (t.segment, t.xlu, t.symbol.to_string())).collect::<Vec<_>>(),
+            vec![(0x08, false, "gDCNightEntranceTex".to_string()), (0x09, false, lava)],
+            "frame {f}"
+        );
+    }
+}
+
+#[test]
+fn the_cavern_s_skull_eyes_glow_by_the_room_s_draw_params() {
+    // Scene_DrawConfigDodongosCavern: gSPSegment(POLY_OPA_DISP, 0x0B/0x0C, a list with
+    // gDPSetEnvColor(255, 255, 255, play->roomCtx.drawParams[BGDODOAGO_EYE_LEFT/RIGHT])). Bg_Dodoago
+    // raises each by 5 a frame to 255 as its eye lights; they start at 0 (Room_Init).
+    for (left, right) in [(0, 0), (5, 0), (130, 255), (255, 255)] {
+        let mut st = DrawConfigState { room_draw_params: [left, right], ..state(0) };
+        let [opa, xlu] = scene_table::segment_values("SDC_DODONGOS_CAVERN", &mut st).unwrap();
+        assert_eq!((opa.env[0xB], opa.env[0xC]), (Some([255, 255, 255, left as u8]), Some([255, 255, 255, right as u8])));
+        assert_eq!(xlu.env[0xB], None);
+        // The config keeps no state of its own in drawParams.
+        assert_eq!(st.room_draw_params, [left, right]);
+    }
+    // The two scrolls: segment 9 (XLU) by gameplayFrames % 256 and % 128 (64 by 32), 0xA (OPA)
+    // by gameplayFrames % 128 and 2 * gameplayFrames % 128 (32 by 32): Gfx_TwoTexScroll puts them
+    // in gDPSetTileSize's uls and ult as they are.
+    let [opa, xlu] = scene_table::segment_values("SDC_DODONGOS_CAVERN", &mut state(300)).unwrap();
+    assert_eq!((xlu.tiles[9][0], xlu.tiles[9][1]), (Some((300 % 256, 0)), Some((0, 300 % 128))));
+    assert_eq!((opa.tiles[0xA][0], opa.tiles[0xA][1]), (Some((0, 300 % 128)), Some((0, 600 % 128))));
 }
 
 #[test]

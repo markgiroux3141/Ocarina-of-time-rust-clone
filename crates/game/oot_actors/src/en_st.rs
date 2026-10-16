@@ -38,12 +38,10 @@
 //! reached: the Lens of Truth (params 2 sets `ACTOR_FLAG_REACT_TO_LENS`; `Actor_DrawAll`'s lens
 //! handling isn't ported, so it's drawn as any actor; no Deku Tree placement uses it), arrows
 //! (`ACTOR_FLAG_ATTACHED_TO_ARROW` is never set, and no arrow hits it), a burning Deku Stick
-//! (Player's `unk_860` stays 0), the hammer's shock wave (`play->actorCtx.unk_02`). Not ported:
-//! the spin's trail (`EnSt_CreateBlureEffect`, `EnSt_AddBlurVertex`, `EnSt_AddBlurSpace`), as
-//! ADR 0033 has `EffectBlure`: `Effect_Add` finds no slot, so `blureIdx` is
-//! `TOTAL_EFFECT_COUNT`, `Effect_GetByIndex` gives NULL and the trail's calls do nothing, as
-//! they do in the C with no slot free. The generic circle shadow (`ActorShadow_DrawCircle`)
-//! isn't ported for any actor.
+//! (Player's `unk_860` stays 0), the hammer's shock wave (`play->actorCtx.unk_02`). The spin's
+//! trail (`EnSt_CreateBlureEffect`, `EnSt_AddBlurVertex`, `EnSt_AddBlurSpace`) is
+//! `oot_game::effect::blure`'s (GAME-09 milestone 3). The generic circle shadow
+//! (`ActorShadow_DrawCircle`) isn't ported for any actor.
 //!
 //! Params: `params` the whole params (0 the normal one; 1 the big one, 1.4 times the size: its
 //! scale, colliders and hover height, and Navi's `NAVI_ENEMY_BIG_SKULLTULA`; 2 the invisible one,
@@ -64,6 +62,7 @@ use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
+use oot_game::effect::blure::{EffectBlureInit, EffectBlureInit1};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::skelanime_std::{ANIMMODE_LOOP_INTERP, ANIMMODE_ONCE_INTERP, Anim, AnimationInfo, SkelAnimeStd};
@@ -331,7 +330,7 @@ pub struct EnSt {
     pub unused_pos: Vec3,
     /// `ceilingPos`: where its thread hangs from (the sway's pivot).
     pub ceiling_pos: Vec3,
-    /// `blureIdx`: the spin's trail (`TOTAL_EFFECT_COUNT`: `EffectBlure` isn't ported).
+    /// `blureIdx`: the spin's trail (`TOTAL_EFFECT_COUNT` when `Effect_Add` found no slot).
     pub blure_idx: usize,
     /// `colliderScale`: 1, or 1.4 for the big one.
     pub collider_scale: f32,
@@ -460,10 +459,18 @@ impl EnSt {
     }
 
     /// `EnSt_CreateBlureEffect`: the spin's trail (`EFFECT_BLURE1`: white from alpha 75 to 0,
-    /// `elemDuration` 6, `calcMode` 3). `EffectBlure` isn't ported (ADR 0033): `Effect_Add` finds
-    /// no slot and gives `TOTAL_EFFECT_COUNT`.
+    /// `elemDuration` 6, `calcMode` 3).
     fn create_blure_effect(play: &mut PlayState) -> usize {
-        play.effect_add(EffectInit::Blure)
+        // EFFECT_BLURE1: white, alpha 75 to 0, elemDuration 6, unkFlag 0, calcMode 3.
+        play.effect_add(EffectInit::Blure(EffectBlureInit::One(EffectBlureInit1 {
+            p1_start_color: [255, 255, 255, 75],
+            p2_start_color: [255, 255, 255, 75],
+            p1_end_color: [255, 255, 255, 0],
+            p2_end_color: [255, 255, 255, 0],
+            elem_duration: 6,
+            unk_flag: 0,
+            calc_mode: 3,
+        })))
     }
 
     /// `EnSt_CheckCeilingPos`: the ceiling straight above (`BgCheck_EntityLineTest1`, 1000 up,
@@ -487,21 +494,23 @@ impl EnSt {
 
     /// `EnSt_AddBlurVertex`: the trail's two points (`{834, 834, 0}` and `{834, -584, 0}` times
     /// `colliderScale`) through the matrix `mtx`, added to the trail
-    /// (`EffectBlure_AddVertex(Effect_GetByIndex(blureIdx))`). With `blureIdx`
-    /// `TOTAL_EFFECT_COUNT`, `Effect_GetByIndex` gives NULL and the add does nothing.
-    fn add_blur_vertex(&self, mtx: &MtxF) {
+    /// (`EffectBlure_AddVertex(Effect_GetByIndex(blureIdx))`; nothing with no slot).
+    fn add_blur_vertex(&self, play: &mut PlayState, mtx: &MtxF) {
         let s = self.collider_scale;
         let v1 = Vec3::new(834.0 * s, 834.0 * s, 0.0 * s);
         let v2 = Vec3::new(834.0 * s, -584.0 * s, 0.0 * s);
-        let _v1_pos = mtx.mult_vec3f(v1);
-        let _v2_pos = mtx.mult_vec3f(v2);
-        debug_assert_eq!(self.blure_idx, TOTAL_EFFECT_COUNT);
+        let v1_pos = mtx.mult_vec3f(v1);
+        let v2_pos = mtx.mult_vec3f(v2);
+        if let Some(b) = play.effect_blure_mut(self.blure_idx) {
+            b.add_vertex(v1_pos, v2_pos);
+        }
     }
 
-    /// `EnSt_AddBlurSpace`: `EffectBlure_AddSpace(Effect_GetByIndex(blureIdx))`, nothing with no
-    /// trail (as `add_blur_vertex`).
-    fn add_blur_space(&self) {
-        debug_assert_eq!(self.blure_idx, TOTAL_EFFECT_COUNT);
+    /// `EnSt_AddBlurSpace`: `EffectBlure_AddSpace(Effect_GetByIndex(blureIdx))`.
+    fn add_blur_space(&self, play: &mut PlayState) {
+        if let Some(b) = play.effect_blure_mut(self.blure_idx) {
+            b.add_space();
+        }
     }
 
     /// `EnSt_SetWaitingAnimation`.
@@ -1214,13 +1223,13 @@ impl ActorImpl for EnSt {
         }
     }
 
-    /// `ActorProfile.destroy`: `Effect_Delete` of the trail (no slot: nothing).
+    /// `ActorProfile.destroy`: `Effect_Delete` of the trail.
     fn destroy(&mut self, play: &mut PlayState) {
         play.effect_delete(self.blure_idx);
     }
 
     /// `EnSt_Draw`'s effects on the actor: the Deku Stick's target (`EnSt_CheckBodyStickHit`);
-    /// limb 1's trail point (`EnSt_OverrideLimbDraw`, at the actor's matrix: nothing, no trail);
+    /// limb 1's trail point (`EnSt_OverrideLimbDraw`, at the actor's matrix);
     /// the sphere follows limb 1 (`EnSt_PostLimbDraw`'s `Collider_UpdateSpheres`).
     fn draw_update(&mut self, play: &mut PlayState) {
         if self.actor.killed {
@@ -1230,9 +1239,9 @@ impl ActorImpl for EnSt {
         let model = self.actor_mtx();
         if self.gave_damage_spin_timer != 0 && self.sway_timer == 0 {
             if self.gave_damage_spin_timer >= 2 {
-                self.add_blur_vertex(&model);
+                self.add_blur_vertex(play, &model);
             } else {
-                self.add_blur_space();
+                self.add_blur_space(play);
             }
         }
         // SkelAnime_DrawOpa's root limb: Matrix_TranslateRotateZYX(jointTable[0], jointTable[1]).

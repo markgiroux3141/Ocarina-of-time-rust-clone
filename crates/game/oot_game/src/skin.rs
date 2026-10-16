@@ -184,6 +184,36 @@ pub fn set_rotate_yxz(x: i16, y: i16, z: i16) -> MtxF {
     mf
 }
 
+/// `SkinMatrix_SetRotateAxis`: the rotation by `angle` around the unit axis.
+pub fn set_rotate_axis(angle: i16, axis_x: f32, axis_y: f32, axis_z: f32) -> MtxF {
+    let sin_a = sin_s(angle);
+    let cos_a = cos_s(angle);
+    let xx = axis_x * axis_x;
+    let yy = axis_y * axis_y;
+    let zz = axis_z * axis_z;
+    let xy = axis_x * axis_y;
+    let yz = axis_y * axis_z;
+    let xz = axis_x * axis_z;
+    MtxF {
+        xx: (1.0 - xx) * cos_a + xx,
+        yx: (1.0 - cos_a) * xy + axis_z * sin_a,
+        zx: (1.0 - cos_a) * xz - axis_y * sin_a,
+        wx: 0.0,
+        xy: (1.0 - cos_a) * xy - axis_z * sin_a,
+        yy: (1.0 - yy) * cos_a + yy,
+        zy: (1.0 - cos_a) * yz + axis_x * sin_a,
+        wy: 0.0,
+        xz: (1.0 - cos_a) * xz + axis_y * sin_a,
+        yz: (1.0 - cos_a) * yz - axis_x * sin_a,
+        zz: (1.0 - zz) * cos_a + zz,
+        wz: 0.0,
+        xw: 0.0,
+        yw: 0.0,
+        zw: 0.0,
+        ww: 1.0,
+    }
+}
+
 /// `SkinMatrix_MtxFMtxFMult(a, b, dest)`: `a × b`, each element summed in the C's order.
 pub fn mult(a: &MtxF, b: &MtxF) -> MtxF {
     let row = |rx: f32, ry: f32, rz: f32, rw: f32| {

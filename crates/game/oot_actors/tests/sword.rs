@@ -120,3 +120,52 @@ fn a_puts_the_sword_away() {
     assert_eq!(w.player().model_group, d.items.model_group("DEFAULT"));
     assert_eq!(w.player().model_anim_type, 0);
 }
+
+/// Child Link in Kokiri Forest's village (`ENTR_KOKIRI_FOREST_3`) with the Kokiri Sword, settled.
+fn village_with_sword() -> Option<oot_game::play::PlayState> {
+    let pack = oot_game::pack::GamePack::open_default().ok()?;
+    let a = oot_actors::game_assets(pack).expect("the pack's tables");
+    let e = a.scenes.entrance_index("ENTR_KOKIRI_FOREST_3").expect("entrance");
+    let mut save = oot_game::save::SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
+    save.apply_preset("sword-and-40-rupees").unwrap();
+    let mut w = oot_actors::play_entrance(a, data()?, rules()?, save).expect("Play_Init");
+    run(&mut w, &repeat(stick(0, 0), 30));
+    Some(w)
+}
+
+#[test]
+fn a_slash_leaves_the_sword_s_trail() {
+    let Some(mut w) = village_with_sword() else { return };
+    // Player_InitCommon: Effect_Add(EFFECT_BLURE2, &D_8085470C), Player the first actor to add
+    // one: the first trail slot (index SPARK_COUNT).
+    let idx = w.player().melee_weapon_effect_index;
+    assert_eq!(idx, oot_game::effect::SPARK_COUNT);
+    let trail = |w: &oot_game::play::PlayState| w.effect_ctx.blures[0].clone().expect("the trail");
+    let t = trail(&w);
+    assert_eq!((t.flags, t.draw_mode, t.elem_duration, t.p2_start_color, t.num_elements), (8, 2, 4, [255, 255, 255, 64], 0));
+    // B: the sword out and a slash. Player_UpdateMeleeWeaponInfo adds the blade's first edge
+    // (tip, base) each draw it moved, while not shielding; each lives four frames
+    // (EffectBlure_Update drops it at timer 5).
+    let f = run(&mut w, &[b(stick(0, 0)), b(stick(0, 0))]);
+    let mut most = 0;
+    let mut drawn = 0;
+    let mut seen = false;
+    for _ in 0..30 {
+        let f = run(&mut w, &[stick(0, 0)]);
+        let t = trail(&w);
+        if f[0].action == "Attack" {
+            seen = true;
+        }
+        most = most.max(t.num_elements);
+        assert!(t.elements[..t.num_elements as usize].iter().all(|e| e.state == 1 && e.timer <= 4), "{t:?}");
+        // EffectBlure_DrawSmooth with two edges and up: one draw (the bake) into the XLU list.
+        if w.effect_draws.xlu.iter().any(|c| format!("{:?}", c.mesh).contains("blure_smooth")) {
+            assert!(t.num_elements >= 2);
+            drawn += 1;
+        }
+    }
+    let _ = f;
+    assert!(seen && most == 4 && drawn > 0, "most {most}, drawn {drawn}");
+    // After the slash the trail empties.
+    assert_eq!(trail(&w).num_elements, 0);
+}

@@ -124,7 +124,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
     // The guards' courtyard's config reads the scene: its day and night scenes both.
-    let scenes: [(&str, &str); 22] = [
+    let scenes: [(&str, &str); 23] = [
         ("SDC_KOKIRI_FOREST", "spot04_scene"),
         ("SDC_HYRULE_FIELD", "spot00_scene"),
         ("SDC_DEKU_TREE", "ydan_scene"),
@@ -147,6 +147,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
         ("SDC_LON_LON_RANCH", "spot20_scene"),
         ("SDC_LON_LON_BUILDINGS", "souko_scene"),
         ("SDC_GORON_CITY", "spot18_scene"),
+        ("SDC_DODONGOS_CAVERN", "ddan_scene"),
     ];
     assert!(scene_table::ported().all(|sdc| scenes.iter().any(|(s, _)| *s == sdc)), "a ported draw config without a scene here");
     for (sdc, file) in scenes {
@@ -188,7 +189,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
                 // The segments pointed at textures by state (Kakariko's and the ranch's windows,
                 // the guard house's views, Talon's house's entrance): the interpreter's symbol for
                 // each.
-                if ["SDC_KAKARIKO_VILLAGE", "SDC_MARKET_GUARD_HOUSE", "SDC_LON_LON_RANCH", "SDC_LON_LON_BUILDINGS", "SDC_GORON_CITY"].contains(&sdc) {
+                if ["SDC_KAKARIKO_VILLAGE", "SDC_MARKET_GUARD_HOUSE", "SDC_LON_LON_RANCH", "SDC_LON_LON_BUILDINGS", "SDC_GORON_CITY", "SDC_DODONGOS_CAVERN"].contains(&sdc) {
                     let s = State { gameplay_frames: f, child: st.child, night: st.night, scene_layer: st.scene_layer as i64, day_time: st.day_time };
                     let cfg = sd.run_draw_config(&c.tables, &s);
                     let mut want_ptrs = Vec::new();
