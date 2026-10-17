@@ -91,6 +91,8 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
     let clip_z = |p: Vec3| (vp * p.extend(1.0)).z;
     let mut drawn = 0;
     for room in drawn_rooms(play, s) {
+        // The room's own RAM the game has written (its segment 3), with the draw config's.
+        let written = play.room_ram.images(room.index as i8);
         let order: Vec<usize> = match room.shape {
             Some(ShapeKind::Cullable) => {
                 let bounds: Vec<_> = room.entries.iter().map(|e| e.bounds).collect();
@@ -105,7 +107,7 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
                 if d.as_ref().is_some_and(|d| !d.batches.is_empty()) {
                     let mut cmd = DrawCmd::new(MeshKey::named(entry_key(s, room.index, i, k == 1)), Mat4::IDENTITY);
                     cmd.params.segments = s.segments.as_ref().map(|v| v[k].clone());
-                    cmd.params.texture_images = s.segment_textures[k].clone();
+                    cmd.params.texture_images = s.segment_textures[k].iter().chain(&written).cloned().collect();
                     list.push(cmd);
                 }
             }

@@ -594,7 +594,7 @@ impl PlayState {
         // Camera_Init's and Camera_InitDataUsingPlayer' shared state (sNextUID carries over).
         play.cam_globals = crate::camera::CameraGlobals { next_uid: play.cam_globals.next_uid, ..crate::camera::CameraGlobals::main_init() };
         play.game_camera.change_mode(&play.data.camera, crate::camera::CAM_MODE_NORMAL);
-        play.view = crate::camera::CamView { eye: play.game_camera.eye, at: play.game_camera.at, fov: play.game_camera.fov };
+        play.view = crate::camera::CamView::new(play.game_camera.eye, play.game_camera.at, play.game_camera.fov);
         play.camera_sfx();
         let start_bg_cam = play.actors.actor(p).map(|a| a.params as u16 & 0xFF).unwrap_or(0xFF);
         if start_bg_cam != 0xFF {
@@ -664,8 +664,10 @@ impl PlayState {
                 // gWeatherMode and the lightning bolts are z_kankyo.c's (Environment_Init resets the
                 // strike and the bolts, which play_init_with did on next's defaults).
                 next.env_statics.weather_mode = self.env_statics.weather_mode;
-                // R_TRANS_FADE_FLASH_ALPHA_STEP is a debug register (gRegEditor's).
+                // R_TRANS_FADE_FLASH_ALPHA_STEP is a debug register (gRegEditor's), and so are
+                // MREG(64) to MREG(68).
                 next.trans_fade_flash_alpha_step = self.trans_fade_flash_alpha_step;
+                next.mreg_fill = self.mreg_fill;
                 // Interface_Draw's timer statics and sEnvHazardActive are z_parameter.c's.
                 next.interface_ctx.timers = self.interface_ctx.timers;
                 // The cartridge's SRAM outlives the game states.
@@ -761,6 +763,11 @@ impl PlayState {
         }
         self.room_ctx.status = 0;
         self.room_ctx.cur.loaded = true;
+        // The new room's file over its buffer's RAM: only the other buffer's room keeps what was
+        // written into it.
+        let other = self.room_ctx.prev.num;
+        let keep = if other != self.room_ctx.cur.num { vec![other] } else { Vec::new() };
+        self.room_ram.keep_only(&keep);
         self.execute_room_commands();
         self.spawn_transition_actors();
         true
@@ -799,6 +806,7 @@ impl PlayState {
     /// that were only in it; the transition actors of the new pair spawn.
     pub fn room_change_done(&mut self) {
         self.room_ctx.prev = Room::EMPTY;
+        self.room_ram.keep_only(&[self.room_ctx.cur.num]);
         self.kill_actors_outside_rooms();
         self.spawn_transition_actors();
         self.col.water_room = self.room_ctx.cur.num.max(0) as u32;
@@ -1055,7 +1063,7 @@ impl PlayState {
         if !self.updated && tr.trigger != TRANS_TRIGGER_OFF {
             return self.pre_update_fill;
         }
-        let env = tr.screen_fill.filter(|f| f[3] > 0);
+        let env = self.env_fills();
         let fade = self.transition_fills();
         match (env, fade) {
             (Some(e), Some(f)) => Some(compose_fill(e, f)),
@@ -1075,8 +1083,19 @@ impl PlayState {
         if !self.updated && tr.trigger != TRANS_TRIGGER_OFF {
             return (None, self.pre_update_fill);
         }
-        let env = tr.screen_fill.filter(|f| f[3] > 0);
-        (env, self.transition_fills())
+        (self.env_fills(), self.transition_fills())
+    }
+
+    /// `Play_Draw`'s fills after the actors, in the OPA and XLU lists, as one fill: `MREG(64)`'s
+    /// (`mreg_fill`), then `envCtx.fillScreen`'s over it.
+    fn env_fills(&self) -> Option<[u8; 4]> {
+        let m = self.mreg_fill;
+        let mreg = (m[0] != 0).then(|| [m[1] as u8, m[2] as u8, m[3] as u8, m[4] as u8]).filter(|f| f[3] > 0);
+        let env = self.transition.screen_fill.filter(|f| f[3] > 0);
+        match (mreg, env) {
+            (Some(b), Some(t)) => Some(compose_fill(b, t)),
+            (b, t) => t.or(b),
+        }
     }
 
     /// What `Play_Draw` draws at the start of `OVERLAY_DISP`, as one fill: the transition's fade

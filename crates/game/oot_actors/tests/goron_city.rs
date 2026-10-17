@@ -101,8 +101,9 @@ fn the_cliffs_bomb_flower_blows_the_boulder() {
     assert!(w.flags.get_switch(4) && w.save.get_event_chk_inf(0x23));
     assert!(!w.actors.all().into_iter().any(|h| w.actors.downcast::<oot_actors::bg_spot16_bombstone::BgSpot16Bombstone>(h).is_some_and(|b| b.actor.params == 0x04FF)));
     assert_eq!(w.save.health, start.health);
-    // The run's end is `cavern-open`.
-    ends_as_preset(&mut w, "cavern-open", |_| {});
+    // The run's end is `cavern-open`, but for the Hylian Shield's grave (milestone 3 put its chest
+    // in the preset: SCENE_GRAVE_WITH_FAIRYS_FOUNTAIN 0x40's treasure flag 0), which it doesn't open.
+    ends_as_preset(&mut w, "cavern-open", |s| s.scene_flags[0x40].chest |= 1);
 }
 
 #[test]

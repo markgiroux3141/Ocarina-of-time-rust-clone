@@ -56,6 +56,8 @@ pub mod extra;
 pub mod fcircle;
 pub mod fhg_flash;
 pub mod fire_tail;
+pub mod g_magma;
+pub mod g_magma2;
 pub mod g_spk;
 pub mod hahen;
 pub mod hitmark;
@@ -84,6 +86,8 @@ pub const EFFECT_SS_KIRAKIRA: u8 = 0x01;
 pub const EFFECT_SS_BOMB2: u8 = 0x03;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_G_SPK: u8 = 0x05;
+pub const EFFECT_SS_G_MAGMA: u8 = 0x0B;
+pub const EFFECT_SS_G_MAGMA2: u8 = 0x13;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
 pub const EFFECT_SS_STICK: u8 = 0x10;
 pub const EFFECT_SS_SIBUKI: u8 = 0x11;
@@ -162,6 +166,10 @@ pub enum SsUpdate {
     GSpk,
     /// `EffectSsGSpk_UpdateNoAccel` (unused in the game).
     GSpkNoAccel,
+    /// `EffectSsGMagma_Update`.
+    GMagma,
+    /// `EffectSsGMagma2_Update`.
+    GMagma2,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -209,6 +217,10 @@ pub enum SsDraw {
     Extra,
     /// `EffectSsGSpk_Draw`.
     GSpk,
+    /// `EffectSsGMagma_Draw`.
+    GMagma,
+    /// `EffectSsGMagma2_Draw`.
+    GMagma2,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -312,6 +324,8 @@ pub enum SsInit {
     Bomb2(bomb2::Bomb2Init),
     Extra(extra::ExtraInit),
     GSpk(g_spk::GSpkInit),
+    GMagma(g_magma::GMagmaInit),
+    GMagma2(g_magma2::GMagma2Init),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -408,6 +422,8 @@ impl SsSpawn<'_> {
             SsInit::Bomb2(p) => bomb2::init(&mut e, &p),
             SsInit::Extra(p) => extra::init(self, &mut e, &p),
             SsInit::GSpk(p) => g_spk::init(&mut e, &p),
+            SsInit::GMagma(p) => g_magma::init(self, &mut e, &p),
+            SsInit::GMagma2(p) => g_magma2::init(self, &mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -715,6 +731,17 @@ impl SsSpawn<'_> {
         self.spawn(EFFECT_SS_FHG_FLASH, 128, SsInit::FhgFlash(p));
     }
 
+    /// `EffectSsGMagma_Spawn`.
+    pub fn g_magma_spawn(&mut self, pos: Vec3) {
+        self.spawn(EFFECT_SS_G_MAGMA, 128, SsInit::GMagma(g_magma::GMagmaInit { pos }));
+    }
+
+    /// `EffectSsGMagma2_Spawn`.
+    pub fn g_magma2_spawn(&mut self, pos: Vec3, prim: [u8; 4], env: [u8; 4], update_rate: i16, draw_mode: i16, scale: i16) {
+        let p = g_magma2::GMagma2Init { pos, prim_color: prim, env_color: env, update_rate, draw_mode, scale };
+        self.spawn(EFFECT_SS_G_MAGMA2, 128, SsInit::GMagma2(p));
+    }
+
     /// `EffectSsFCircle_Spawn`.
     pub fn fcircle_spawn(&mut self, actor: SsActor, pos: Vec3, radius: i16, height: i16) {
         self.spawn(EFFECT_SS_FCIRCLE, 128, SsInit::Fcircle(fcircle::FcircleInit { actor, pos, radius, height }));
@@ -841,6 +868,8 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(bomb2::bakes());
     v.extend(extra::bakes());
     v.extend(g_spk::bakes());
+    v.extend(g_magma::bakes());
+    v.extend(g_magma2::bakes());
     v.extend(blure::bakes());
     v
 }
@@ -947,6 +976,8 @@ impl PlayState {
             SsUpdate::Extra => extra::update(self, &mut e),
             SsUpdate::GSpk => g_spk::update(self, &mut e),
             SsUpdate::GSpkNoAccel => g_spk::update_no_accel(self, &mut e),
+            SsUpdate::GMagma => g_magma::update(&mut e),
+            SsUpdate::GMagma2 => g_magma2::update(&mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -954,7 +985,7 @@ impl PlayState {
     /// `play->billboardMtxF` for this frame's view (`View_Apply`'s viewing matrix, rotation
     /// only, inverted).
     pub fn billboard_mtx(&self) -> Mat4 {
-        let view = glam::camera::rh::view::look_at_mat4(self.view.eye, self.view.at, Vec3::Y);
+        let view = self.view.look_at();
         Mat4::from_mat3(glam::Mat3::from_mat4(view).transpose())
     }
 
@@ -1020,6 +1051,8 @@ impl PlayState {
                 SsDraw::Bomb2Layered => bomb2::draw_layered(e, &ctx, &mut out),
                 SsDraw::Extra => extra::draw(e, ctx.billboard, &mut out),
                 SsDraw::GSpk => g_spk::draw(e, ctx.billboard, &mut out),
+                SsDraw::GMagma => g_magma::draw(e, ctx.billboard, &mut out),
+                SsDraw::GMagma2 => g_magma2::draw(e, ctx.billboard, &mut out),
             }
         }
         for i in deleted {

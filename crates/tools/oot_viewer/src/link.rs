@@ -233,6 +233,7 @@ impl Subject for Link {
             distance: h * 1.9,
             fov_y: 45f32.to_radians(),
             clip: None,
+            up: Vec3::Y,
         }
     }
 }

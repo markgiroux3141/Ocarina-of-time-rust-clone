@@ -786,11 +786,22 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     SavePreset {
         name: "cavern-boss",
         about: "cavern-jaw, and GAME-09 milestone 3's gravestone run over: room 7's gravestone pulled off switch 0x20, door 20, the fall into room 16's pit to King Dodongo's room (room 7 on the map) (GAME-09 milestone 4's start, at ENTR_DODONGOS_CAVERN_BOSS_0)",
-        apply: |s| {
-            cavern_jaw(s);
-            // Map_InitRoomData: room 7 entered (room 16 is only fallen through).
-            s.scene_flags[0x01].rooms |= 1 << 7;
-        },
+        apply: cavern_boss,
+    },
+    SavePreset {
+        name: "cavern-boss-fight",
+        about: "cavern-boss, and GAME-09 milestone 4's King Dodongo run over: a bomb on the cracked floor (Bg_Breakwall 0x4001's switch flag 1, 17 bombs left), the drop and his intro (EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE): the fight's start, beside him",
+        apply: cavern_boss_fight,
+    },
+    SavePreset {
+        name: "cavern-boss-beaten",
+        about: "cavern-boss-fight and King Dodongo beaten (the room's clear flag: his init leaves the blue warp, the heart container and the lava's cover) (GAME-09 milestone 4's Ruby run's start, a debug start)",
+        apply: cavern_boss_beaten,
+    },
+    SavePreset {
+        name: "goron-ruby",
+        about: "cavern-boss-beaten, and GAME-09 milestone 4's Ruby run over: the heart container, the blue warp (EVENTCHKINF_25, the Goron's Ruby), gDMTGoronRubyCs, at Death Mountain Trail's spawn 5 (Phase 10's exit; milestones 5 and 6 start from it)",
+        apply: goron_ruby,
     },
     SavePreset {
         name: "cavern-jaw",
@@ -914,6 +925,42 @@ fn cavern_jaw(s: &mut SaveContext) {
     s.equips.c_button_slots[2] = crate::item::SLOT_BOMB as u8;
     s.inventory.ammo[crate::item::SLOT_BOMB] = 18;
     s.scene_flags[0x01].swch |= 1 << 0x1A;
+}
+
+/// `cavern-boss`'s save.
+fn cavern_boss(s: &mut SaveContext) {
+    cavern_jaw(s);
+    // Map_InitRoomData: room 7 entered (room 16 is only fallen through).
+    s.scene_flags[0x01].rooms |= 1 << 7;
+}
+
+/// `cavern-boss-fight`'s save (`Route::KingDodongo`'s end). SCENE_DODONGOS_CAVERN_BOSS
+/// (scene_table.h: 0x12): Bg_Breakwall 0x4001's switch flag 1; save.h:
+/// EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE (0x71).
+fn cavern_boss_fight(s: &mut SaveContext) {
+    cavern_boss(s);
+    s.inventory.ammo[crate::item::SLOT_BOMB] = 17;
+    s.scene_flags[0x12].swch |= 1 << 1;
+    s.set_event_chk_inf(0x71);
+}
+
+/// `cavern-boss-beaten`'s save: King Dodongo's room (room 1) cleared (Flags_SetClear at his death).
+fn cavern_boss_beaten(s: &mut SaveContext) {
+    cavern_boss_fight(s);
+    s.scene_flags[0x12].clear |= 1 << 1;
+}
+
+/// `goron-ruby`'s save (`Route::Ruby`'s end): the heart container (its flag, Item_Give(ITEM_HEART_CONTAINER):
+/// 0x10 more capacity, the health refilled), EVENTCHKINF_25 and the Goron's Ruby
+/// (DoorWarp1_ChildWarpOut), the trail's spawn 5.
+fn goron_ruby(s: &mut SaveContext) {
+    cavern_boss_beaten(s);
+    // Item_B_Heart taken: its collectible flag 0x1F (ItemBHeart_Update's Flags_SetCollectible).
+    s.scene_flags[0x12].collect |= 1 << 0x1F;
+    s.health_capacity += 0x10;
+    s.health = s.health_capacity;
+    s.set_event_chk_inf(0x25);
+    crate::item::item_give(s, None, 0x6D);
 }
 
 /// `goron-bracelet`'s save (`cavern-open` builds on it).

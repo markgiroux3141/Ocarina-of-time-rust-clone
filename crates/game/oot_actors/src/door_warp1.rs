@@ -1,7 +1,7 @@
 //! `Door_Warp1` (`ovl_Door_Warp1/z_door_warp1.c`): the blue warp a boss leaves, and the warps
 //! of the other kinds (the adult dungeons' crystal, the Sages', Ruto's, the coloured set pieces).
 //!
-//! This ROM's Deku Tree reaches two of them:
+//! This ROM's Deku Tree and Dodongo's Cavern reach two of them:
 //! - **`WARP_DUNGEON_CHILD` (0)**, Queen Gohma's: it grows in (`DoorWarp1_WarpAppear`: the light
 //!   rays and the ring to their size, `NA_SE_EV_WARP_HOLE`), then waits (`DoorWarp1_ChildWarpIdle`)
 //!   until Link stands in it (within 60 across and 20 up or down): `NA_SE_EV_LINK_WARP`, one-point
@@ -10,7 +10,9 @@
 //!   and close in on him with its two lights, and 100 frames on: the Deku Tree's first time
 //!   `EVENTCHKINF_07` and `_09`, the Kokiri Emerald (`Item_Give`), `ENTR_KOKIRI_FOREST_0` with
 //!   cutscene 0xFFF1 (the Deku Tree's emerald, part 1); later `ENTR_KOKIRI_FOREST_11`; the slow
-//!   white fade, white in.
+//!   white fade, white in. King Dodongo's room's: the first time `EVENTCHKINF_25`, the Goron's Ruby,
+//!   `ENTR_DEATH_MOUNTAIN_TRAIL_0` with 0xFFF1 (`gDMTGoronRubyCs`); later
+//!   `ENTR_DEATH_MOUNTAIN_TRAIL_5`. (Barinade's room's, `ENTR_ZORAS_FOUNTAIN_0`, ported with it.)
 //! - **`WARP_DESTINATION` (6)**, at a blue warp's arrival (Kokiri Forest's layer 5): killed at its
 //!   init unless the entrance is an adult warp's arrival or a cutscene layer's, Link arrived by
 //!   blue warp, and he's within 100; else it fades in and out over 80 frames
@@ -24,7 +26,7 @@
 //! Not this ROM's Deku Tree, logged: the adult dungeons' warp and its crystal
 //! (`DoorWarp1_SetupAdultDungeonWarp` and its actions), the blue and purple crystals, the clear
 //! flag's warp, Ruto's warp, `WARP_UNK_7`, `func_809998A4` (the Sages' and the yellow warp's fade),
-//! the other bosses' rooms in `DoorWarp1_ChildWarpOut`.
+//! the adult bosses' rooms (`DoorWarp1_AdultWarpOut`).
 //!
 //! Params (placed as `WARP_DESTINATION` at the blue warps' arrivals; the bosses, the Sages, Ruto
 //! and Zelda spawn the others): `params` the whole (`DoorWarp1Type`: -2 `WARP_BLUE_CRYSTAL`, -1
@@ -32,8 +34,8 @@
 //! `WARP_PURPLE_CRYSTAL`, 4 `WARP_YELLOW`, 5 `WARP_BLUE_RUTO`, 6 `WARP_DESTINATION`, 7
 //! `WARP_UNK_7`, 8 `WARP_ORANGE`, 9 `WARP_GREEN`, 10 `WARP_RED`).
 //! Flags: reads and sets EVENTCHKINF_07 and sets EVENTCHKINF_09 (Queen Gohma's warp, the first
-//! time). Not ported: `WARP_CLEAR_FLAG`'s read of the temp clear flag; King Dodongo's
-//! EVENTCHKINF_25 (read and set), Ruto's warp's EVENTCHKINF_37 (set), the adult dungeons'
+//! time); reads and sets EVENTCHKINF_25 (King Dodongo's). Not ported: `WARP_CLEAR_FLAG`'s read of
+//! the temp clear flag; Ruto's warp's EVENTCHKINF_37 (set), the adult dungeons'
 //! EVENTCHKINF_48, `_49` and `_4A` (read and set).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
@@ -86,7 +88,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_07)).reads().sets().note("Queen Gohma's warp: the first time"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_09)).sets().note("Queen Gohma's warp: the first time"),
         FlagUse::new(Flag::TempClear).reads().note("WARP_CLEAR_FLAG: appears once the room is cleared").indirect("not ported: DoorWarp1_AwaitClearFlag"),
-        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_25", 0x25)).reads().sets().note("King Dodongo's warp").indirect("not ported: Dodongo's Cavern's boss room"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_25)).reads().sets().note("King Dodongo's warp: the first time the Goron's Ruby and the Ruby's cutscene"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_37", 0x37)).sets().note("Barinade's warp").indirect("not ported: Jabu-Jabu's boss room"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_48", 0x48)).reads().sets().note("Phantom Ganon's warp").indirect("not ported: the Forest Temple's boss room"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_49", 0x49)).reads().sets().note("Volvagia's warp").indirect("not ported: the Fire Temple's boss room"),
@@ -112,8 +114,14 @@ pub const WARP_RED: i16 = 10;
 
 /// `PLAYER_CSACTION_10` (`player.h`): walking to the warp's centre (`unk_450`).
 const PLAYER_CSACTION_10: u8 = 10;
-/// `SCENE_DEKU_TREE_BOSS` (`scene_table.h`).
+/// `SCENE_DEKU_TREE_BOSS`, `SCENE_DODONGOS_CAVERN_BOSS`, `SCENE_JABU_JABU_BOSS` (`scene_table.h`).
 const SCENE_DEKU_TREE_BOSS: u16 = 0x11;
+const SCENE_DODONGOS_CAVERN_BOSS: u16 = 0x12;
+const SCENE_JABU_JABU_BOSS: u16 = 0x13;
+/// `EVENTCHKINF_25` (`save.h`): King Dodongo's warp taken (the Goron's Ruby given).
+const EVENTCHKINF_25: u16 = 0x25;
+/// `ITEM_GORON_RUBY` (`item.h`).
+const ITEM_GORON_RUBY: u8 = 0x6D;
 /// `ITEM_KOKIRI_EMERALD` (`item.h`).
 const ITEM_KOKIRI_EMERALD: u8 = 0x6C;
 /// `CS_INDEX_1`, `NEXT_CS_INDEX_NONE`, `CS_INDEX_NONE` (`save.h`).
@@ -396,7 +404,17 @@ impl DoorWarp1 {
         let target = Self::statics(play).warp_timer_target;
         if (target as i32) < self.warp_timer as i32 && play.save.next_cutscene_index == NEXT_CS_INDEX_NONE {
             log::debug!("The time has come, so it's over. fade_direction=[{}]", play.transition.trigger);
-            if play.scene_id == SCENE_DEKU_TREE_BOSS {
+            if play.scene_id == SCENE_DODONGOS_CAVERN_BOSS {
+                if !play.save.get_event_chk_inf(EVENTCHKINF_25) {
+                    play.save.set_event_chk_inf(EVENTCHKINF_25);
+                    oot_game::item::item_give(&mut play.save, Some(&mut play.audio), ITEM_GORON_RUBY);
+                    self.go(play, "ENTR_DEATH_MOUNTAIN_TRAIL_0");
+                    play.save.next_cutscene_index = CS_INDEX_1;
+                } else {
+                    self.go(play, "ENTR_DEATH_MOUNTAIN_TRAIL_5");
+                    play.save.next_cutscene_index = CS_INDEX_NONE;
+                }
+            } else if play.scene_id == SCENE_DEKU_TREE_BOSS {
                 if !play.save.get_event_chk_inf(EVENTCHKINF_07) {
                     play.save.set_event_chk_inf(EVENTCHKINF_07);
                     play.save.set_event_chk_inf(EVENTCHKINF_09);
@@ -407,9 +425,9 @@ impl DoorWarp1 {
                     self.go(play, "ENTR_KOKIRI_FOREST_11");
                     play.save.next_cutscene_index = CS_INDEX_NONE;
                 }
-            } else {
-                // SCENE_DODONGOS_CAVERN_BOSS, SCENE_JABU_JABU_BOSS: not this ROM's Deku Tree.
-                log::warn!("Door_Warp1: DoorWarp1_ChildWarpOut's way out of scene {:#x} isn't ported", play.scene_id);
+            } else if play.scene_id == SCENE_JABU_JABU_BOSS {
+                self.go(play, "ENTR_ZORAS_FOUNTAIN_0");
+                play.save.next_cutscene_index = CS_INDEX_NONE;
             }
             log::debug!("The end The end");
             play.transition.trigger = oot_game::transition::TRANS_TRIGGER_START;

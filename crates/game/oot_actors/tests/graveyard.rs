@@ -65,8 +65,10 @@ fn exit_a_dig_the_royal_tomb_opened_and_the_suns_song_taught() {
     // PLAYBACK), 0x86F and 0x89C; the graveyard's part 2 (0xD3, "You've learned the Sun's Song")
     // and the tomb's part 3 (0x500A); the song again at the ReDeads (0x86E, 0x86F, 0x89C).
     assert_eq!(run.texts, vec![0x5018, 0x5019, 0x86E, 0x86F, 0x89B, 0x5021, 0x5009, 0x500B, 0x879, 0x86D, 0x86F, 0x89C, 0xD3, 0x500A, 0x86E, 0x86F, 0x89C]);
-    // 20 rupees, 10 paid to Dampé, then his prize and the Keese's drops (the run's Rand draws).
-    assert_eq!(w.save.rupees, 33);
+    // 20 rupees, 10 paid to Dampé, then his prize and the Keese's drops (the run's Rand draws:
+    // since the camera's up is in the view, a one-point camera's roll moves the culling, and the
+    // Keese die three frames earlier: GAME-09 milestone 4's golden proof).
+    assert_eq!(w.save.rupees, 31);
     // The graveyard's intro played (sEntranceCutsceneTable: EVENTCHKINF_B6); Dampé was paid
     // (EnTk_UpdateTalkState: INFTABLE_D9 with 0x5019's yes); the tomb opened (EVENTCHKINF_1D, by
     // En_Okarina_Tag and the gravestone's cue); the Sun's Song given (the playback's Item_Give)

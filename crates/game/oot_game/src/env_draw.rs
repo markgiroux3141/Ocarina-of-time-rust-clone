@@ -350,7 +350,7 @@ impl PlayState {
     /// screen (y down).
     pub fn play_get_screen_pos(&self, pos: Vec3) -> Vec3 {
         let v = self.view;
-        let view_proj = eng_math::gu_perspective(v.fov, 4.0 / 3.0, 10.0, 12800.0) * glam::camera::rh::view::look_at_mat4(v.eye, v.at, Vec3::Y);
+        let view_proj = eng_math::gu_perspective(v.fov, 4.0 / 3.0, 10.0, 12800.0) * v.look_at();
         let c = view_proj * pos.extend(1.0);
         Vec3::new(SCREEN_WIDTH / 2.0 + (c.x / c.w) * (SCREEN_WIDTH / 2.0), SCREEN_HEIGHT / 2.0 - (c.y / c.w) * (SCREEN_HEIGHT / 2.0), c.z)
     }

@@ -243,6 +243,9 @@ pub const CAM_ID_MAIN: i16 = 0;
 pub const CAM_ID_SUB_FIRST: i16 = 1;
 pub const CAM_ID_NONE: i16 = -1;
 
+/// `CAM_VIEW_UP` (camera.h): `camera->up` set by `Camera_SetViewParam`.
+pub const CAM_VIEW_UP: i16 = 1 << 2;
+
 /// `z_camera.c`'s file-scope state that every camera shares: what `Camera_Init` resets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CameraGlobals {
@@ -1682,7 +1685,8 @@ impl GameCamera {
     /// The view this camera's last update set (`View_LookAt`'s eye and at, and the fovy):
     /// its eye, at and fov with the quakes' offsets.
     pub fn shaken_view(&self) -> CamView {
-        CamView { eye: self.eye + self.view_offset, at: self.at + self.view_offset, fov: self.fov + self.view_fov_offset }
+        let (eye, at) = (self.eye + self.view_offset, self.at + self.view_offset);
+        CamView { eye, at, fov: self.fov + self.view_fov_offset, up: view_up(eye, at, self.up) }
     }
 
     /// `Camera_Init` for a sub camera (`Play_CreateSubCamera`): no player, eye and at at the
@@ -1762,6 +1766,14 @@ impl GameCamera {
         self.pos_offset = if self.has_player { at - player_pos } else { Vec3::ZERO };
         self.at_lerp_step_scale = 0.01;
         self.view_cut = true;
+    }
+
+    /// `Play_SetCameraAtEyeUp`: `Play_SetCameraAtEye`'s, and `Camera_SetViewParam(CAM_VIEW_UP)`:
+    /// the up the next update's view takes instead of its own (King Dodongo's intro tilts it).
+    pub fn set_at_eye_up(&mut self, at: Vec3, eye: Vec3, up: Vec3, player_pos: Vec3) {
+        self.set_at_eye(at, eye, player_pos);
+        self.up = up;
+        self.param_flags |= CAM_VIEW_UP;
     }
 
     /// `Camera_SetViewParam(camera, 0x20, &fov)`.
@@ -3536,7 +3548,7 @@ impl GameCamera {
 
         // Quake_Update, with this camera's eye and at as its mode function left them, and the
         // view (View_LookAt) shaken by the quakes on it, unless the setting is TURN_AROUND.
-        // (CAM_VIEW_UP, Camera_UpdateDistortion and Hyrule Field's View_SetScale aren't modelled.)
+        // (Camera_UpdateDistortion and Hyrule Field's View_SetScale aren't modelled.)
         let mut cams = f.cameras;
         if let Some(c) = usize::try_from(self.cam_id).ok().and_then(|i| cams.get_mut(i)) {
             *c = Some((self.eye, self.at));
@@ -3544,16 +3556,23 @@ impl GameCamera {
         let mut cam_shake = crate::quake::ShakeInfo::default();
         let num_quakes_applied = quake.quake_update(self.cam_id, &cams, rand, &mut cam_shake);
         let angle;
+        let view_up;
         if num_quakes_applied != 0 && self.setting != CAM_SET_TURN_AROUND {
             let view_at = self.at + cam_shake.at_offset;
             let view_eye = self.eye + cam_shake.eye_offset;
             angle = diff_to_sph_geo(view_eye, view_at);
-            self.up = calc_up(angle.pitch.wrapping_add(cam_shake.up_pitch_offset), angle.yaw.wrapping_add(cam_shake.up_yaw_offset), self.roll);
+            view_up = calc_up(angle.pitch.wrapping_add(cam_shake.up_pitch_offset), angle.yaw.wrapping_add(cam_shake.up_yaw_offset), self.roll);
             self.view_offset = cam_shake.eye_offset;
             self.view_fov_offset = cam_binang_to_deg(cam_shake.fov_offset);
         } else {
             angle = diff_to_sph_geo(self.eye, self.at);
-            self.up = calc_up(angle.pitch, angle.yaw, self.roll);
+            view_up = calc_up(angle.pitch, angle.yaw, self.roll);
+        }
+        // CAM_VIEW_UP (Play_SetCameraAtEyeUp): the up set takes the view's place, once.
+        if self.param_flags & CAM_VIEW_UP != 0 {
+            self.param_flags &= !CAM_VIEW_UP;
+        } else {
+            self.up = view_up;
         }
         self.quake_offset = cam_shake.eye_offset;
         self.cam_dir = [angle.pitch, angle.yaw, 0];
@@ -6457,7 +6476,45 @@ pub struct CamView {
     pub at: Vec3,
     /// Vertical field of view, degrees.
     pub fov: f32,
+    /// `View_LookAt`'s up (`Camera_Update`'s `viewUp`): the world's Y unless the view is rolled
+    /// (`view_up`).
+    pub up: Vec3,
 }
+
+impl CamView {
+    /// A view from `eye` to `at` with the world's Y up.
+    pub fn new(eye: Vec3, at: Vec3, fov: f32) -> CamView {
+        CamView { eye, at, fov, up: Vec3::Y }
+    }
+
+    /// `View_LookAt`'s viewing matrix (`guLookAt`).
+    pub fn look_at(&self) -> glam::Mat4 {
+        glam::camera::rh::view::look_at_mat4(self.eye, self.at, self.up)
+    }
+}
+
+/// `up` as the view from `eye` to `at` uses it (`guLookAt`): the world's Y when `up` lies in the
+/// vertical plane through the view on its upper side, which gives the same viewing matrix
+/// (`guLookAt` takes only the side vector, the view's direction across `up`, from it), else `up`
+/// itself: a roll (a camera's `roll`, a quake's up yaw, `Play_SetCameraAtEyeUp`). Kept as Y in the
+/// first case so the matrix is the one every view had before the up was modelled.
+///
+/// "In the plane" is within `VIEW_UP_ROLL_EPSILON`: `Camera_Update` makes its up from the eye-at
+/// angles as binary angles (`OLib_Vec3fDiffToVecGeo`), so the up of a view that doesn't roll sits
+/// a hair off that plane, a roll of a few thousandths of a degree the game draws too and no one
+/// sees; kept as Y.
+pub fn view_up(eye: Vec3, at: Vec3, up: Vec3) -> Vec3 {
+    let dir = (at - eye).normalize_or_zero();
+    let side = dir.cross(Vec3::Y);
+    if side.length_squared() < 1e-8 || up.length_squared() < 1e-8 {
+        return Vec3::Y;
+    }
+    let up_n = up.normalize();
+    if up_n.dot(side.normalize()).abs() < VIEW_UP_ROLL_EPSILON && up_n.y > 0.0 { Vec3::Y } else { up }
+}
+
+/// The sine of the largest roll `view_up` keeps as no roll: 0.1°.
+pub const VIEW_UP_ROLL_EPSILON: f32 = 0.001_745;
 
 #[cfg(test)]
 mod tests;

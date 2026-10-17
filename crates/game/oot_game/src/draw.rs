@@ -250,3 +250,19 @@ mod tests {
         assert_eq!(r.w_axis, m.w_axis);
     }
 }
+
+/// `ActorShadow_DrawCircle` (`ActorShadow_Draw` with `gCircleShadowDL`): with a floor, from 50 below
+/// it to 500 above, the circle at the floor's height, `shadowScale × scale` shrunk by the height
+/// (clamped to 0..150) over 350. Returns the circle's matrix (the stand-in mesh is the circle at
+/// scale 0.01 × 100: `play::builtin::SHADOW`).
+pub fn actor_shadow_circle(a: &crate::actor::Actor, shadow_scale: f32) -> Option<Mat4> {
+    a.floor_poly?;
+    let temp1 = a.world_pos.y - a.floor_height;
+    if !(-50.0..500.0).contains(&temp1) {
+        return None;
+    }
+    let temp1 = temp1.clamp(0.0, 150.0);
+    let temp2 = (1.0 - temp1 * (1.0 / 350.0)) * shadow_scale;
+    let (sx, sz) = (temp2 * a.scale.x * 100.0, temp2 * a.scale.z * 100.0);
+    Some(Mat4::from_translation(Vec3::new(a.world_pos.x, a.floor_height + 0.3, a.world_pos.z)) * Mat4::from_scale(Vec3::new(sx, 1.0, sz)))
+}

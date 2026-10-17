@@ -158,6 +158,9 @@ pub const CHARACTERS: &[Character] = &[
     c("Poe Composer (Flat)", "En_Poh/flat_opa", Some(("object_po_composer", "gPoeComposerFloatAnim")), &[(0x08, Env, POE_LIGHT), (0x0A, Env, [80, 110, 90, 255]), (0x0B, Env, [100, 90, 100, 255])], &[], &[]),
     c("Armos", "En_Am/skel", Some(("object_am", "gArmosRicochetAnim")), &[(0x0B, Env, [0, 0, 0, 0])], &[], &[]),
     skel("Baby Dodongo", "object_dodojr", "object_dodojr_Skel_0020E0", Some(("object_dodojr", "object_dodojr_Anim_0009D4")), &[], &[]),
+    // GAME-09 milestone 4: King Dodongo (Demo_Du's Darunia and Demo_Go's Gorons are En_Du's and
+    // En_Go2's bakes: the rows above).
+    c("King Dodongo", "Boss_Dodongo/skel", Some(("object_kingdodongo", "object_kingdodongo_Anim_00F0D8")), &[], &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

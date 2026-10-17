@@ -291,6 +291,15 @@ CASES = [
     ("cavern_gravestone", S, ["--entrance", "ENTR_DODONGOS_CAVERN_1", "--child", "--preset", "cavern-jaw", "--script", "gravestone", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("cavern_gravestone_pull", S, ["--entrance", "ENTR_DODONGOS_CAVERN_1", "--child", "--preset", "cavern-jaw", "--script", "gravestone", "--frames", "100", "--screenshot", "{shot}"]),
     ("course_sword_trail", S, ["--script", "sword", "--frames", "8", "--screenshot", "{shot}"]),
+    # GAME-09 milestone 4: King Dodongo's room. The floor bombed, the drop and his intro (the trace;
+    # his roar with the title card); after his defeat the heart, the warp and the Goron's Ruby's
+    # cutscene to the trail's spawn 5 (the trace; the cleared room with the warp; Darunia giving
+    # the Ruby).
+    ("kingdodongo", S, ["--entrance", "ENTR_DODONGOS_CAVERN_BOSS_0", "--child", "--preset", "cavern-boss", "--script", "kingdodongo", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("kingdodongo_title", S, ["--entrance", "ENTR_DODONGOS_CAVERN_BOSS_0", "--child", "--preset", "cavern-boss", "--script", "kingdodongo", "--frames", "680", "--screenshot", "{shot}"]),
+    ("ruby", S, ["--entrance", "ENTR_DODONGOS_CAVERN_BOSS_0", "--child", "--preset", "cavern-boss-beaten", "--script", "ruby", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("ruby_warp", S, ["--entrance", "ENTR_DODONGOS_CAVERN_BOSS_0", "--child", "--preset", "cavern-boss-beaten", "--script", "ruby", "--frames", "30", "--screenshot", "{shot}"]),
+    ("ruby_jewel", S, ["--entrance", "ENTR_DODONGOS_CAVERN_BOSS_0", "--child", "--preset", "cavern-boss-beaten", "--script", "ruby", "--frames", "2400", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("ranch_ingo", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "castle-egg", "--at=760,0,-2040,-12000", "--script", "still", "--frames", "300", "--screenshot", "{shot}"]),
     ("stable_night", S, ["--entrance", "ENTR_STABLE_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=300,0,60,-32768", "--script", "still", "--frames", "90", "--screenshot", "{shot}"]),

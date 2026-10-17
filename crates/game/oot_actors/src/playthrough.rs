@@ -524,6 +524,15 @@ pub enum Step {
     EyeLit,
     /// The skull's jaw open (`Bg_Dodoago` done: its flag 0x1A), one-point 3380 over, Link free.
     JawOpen,
+    /// King Dodongo's room's floor (`Bg_Breakwall` 0x4001) bombed open: its switch flag 1.
+    FloorBombed,
+    /// King Dodongo's intro over (`EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE`, the camera back, Link
+    /// free): the fight begins.
+    KingDodongoBattle,
+    /// The Goron's Ruby's cutscene (`gDMTGoronRubyCs`) over: its terminator's transition started.
+    RubyOver,
+    /// Death Mountain Trail's spawn 5 (`ENTR_DEATH_MOUNTAIN_TRAIL_5`), standing.
+    Trail5,
 }
 
 impl Step {
@@ -724,6 +733,10 @@ impl Step {
             Step::UpperLevel => "upper_level",
             Step::EyeLit => "eye_lit",
             Step::JawOpen => "jaw_open",
+            Step::FloorBombed => "floor_bombed",
+            Step::KingDodongoBattle => "king_dodongo_battle",
+            Step::RubyOver => "ruby_over",
+            Step::Trail5 => "trail_5",
         }
     }
 }
@@ -920,6 +933,17 @@ pub enum Route {
     /// down through each of the bridge's holes, the bomb catcher (`Bg_Dodoago`: fuse 50), each
     /// eye lit (one-point 3065), the jaw open (3380).
     Skull,
+    /// King Dodongo's room (GAME-09 milestone 4), from its spawn (`cavern-boss`): a bomb (C-Right)
+    /// put down on the cracked floor (`Bg_Breakwall` 0x4001), its blast, the drop through the hole
+    /// into the arena and King Dodongo's intro (`BossDodongo_IntroCutscene`) to the fight's start.
+    /// No fight: that's the hand test's.
+    KingDodongo,
+    /// King Dodongo's room after his defeat (GAME-09 milestone 4), from a debug start on the
+    /// arena's east rim (`cavern-boss-beaten`: his init leaves the warp, the heart container and
+    /// the lava's cover): the heart container, the blue warp, the Goron's Ruby
+    /// (`DoorWarp1_ChildWarpOut`'s `EVENTCHKINF_25`, `Item_Give`), `gDMTGoronRubyCs` on Death
+    /// Mountain Trail's layer 5 to its terminator, and the trail's spawn 5: Phase 10's exit.
+    Ruby,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1218,6 +1242,48 @@ fn gravestone_tasks() -> Vec<Task> {
         Task::Walk(vec![Vec3::new(0.0, 126.0, -3150.0), Vec3::new(0.0, 16.0, -3050.0), Vec3::new(-250.0, 16.0, -2784.0)]),
         Task::OpenSlidingDoor(DC_DOOR_20, DC_DOOR_20_FRONT, Step::DoorOpened),
         Task::Exit("ENTR_DODONGOS_CAVERN_BOSS_0", Some(Step::BossFall)),
+    ]
+}
+
+/// King Dodongo's room's cracked floor (`ddan_boss` room 1's `Bg_Breakwall` 0x4001,
+/// `BWALL_KD_FLOOR`, switch flag 1), over the arena's north side.
+pub const KD_FLOOR: Vec3 = Vec3::new(-890.0, -744.0, -2784.0);
+
+/// `Route::KingDodongo`'s tasks, from the room's spawn (-440, -744, -2781) on the ledge over the
+/// arena: west to the cracked floor, a bomb out (C-Right) put down on it, back east out of the
+/// blast; its explosion breaks the floor (switch flag 1); onto the hole: the drop below y
+/// -1223.76 starts King Dodongo's intro (the camera on his own sub camera, his walk in, the roar,
+/// the title card), until it hands the camera back and the fight begins.
+fn king_dodongo_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(-700.0, -744.0, -2784.0)]),
+        Task::TakeBomb(2, Step::BombOut),
+        // On the cracked floor (its blast's sphere reaches 72 at its tenth frame: the floor's quad is
+        // 2 across at its middle).
+        Task::PutDown(vec![Vec3::new(-855.0, -744.0, -2784.0)], KD_FLOOR, Step::PutDown),
+        Task::Walk(vec![Vec3::new(-520.0, -744.0, -2784.0)]),
+        Task::WaitFor(Cond::Switch(1), Step::FloorBombed),
+        Task::Walk(vec![KD_FLOOR]),
+        Task::Texts(
+            |w| w.save.get_event_chk_inf(crate::boss_dodongo::EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE) && !w.player_in_cs_mode() && w.active_cam_id == oot_game::camera::CAM_ID_MAIN,
+            Step::KingDodongoBattle,
+        ),
+    ]
+}
+
+/// `Route::Ruby`'s tasks, from the arena's east rim after King Dodongo's defeat: the heart
+/// container (its get-item text), the blue warp, the warp out to Death Mountain Trail
+/// (`ENTR_DEATH_MOUNTAIN_TRAIL_0`, `CS_INDEX_1`: layer 5), `gDMTGoronRubyCs` with A through its
+/// texts until its terminator (12) starts the transition, and the trail's spawn 5.
+fn ruby_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::TakeHeart(Step::HeartTaken),
+        Task::IntoWarp(Step::WarpEntered),
+        Task::WarpOut(Step::WarpedOut),
+        Task::WarpCutscene(4000, Step::RubyOver),
+        Task::NewScene(Step::Trail5),
     ]
 }
 
@@ -1843,6 +1909,7 @@ impl Route {
             Route::Gravestone => "ENTR_DODONGOS_CAVERN_1",
             Route::Pillar => "ENTR_DODONGOS_CAVERN_0",
             Route::Skull => "ENTR_DODONGOS_CAVERN_0",
+            Route::KingDodongo | Route::Ruby => "ENTR_DODONGOS_CAVERN_BOSS_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1878,6 +1945,8 @@ impl Route {
             Route::Gravestone => Some("cavern-jaw"),
             Route::Pillar => Some("cavern-lobby"),
             Route::Skull => Some("cavern-bomb-bag"),
+            Route::KingDodongo => Some("cavern-boss"),
+            Route::Ruby => Some("cavern-boss-beaten"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1907,6 +1976,9 @@ impl Route {
             Route::Pillar => Some((Vec3::new(-2.0, 0.0, -1240.0), 0)),
             // On the bridge over the skull, between its holes, facing east.
             Route::Skull => Some((Vec3::new(0.0, 591.0, -1535.0), 0x4000)),
+            // On the arena's east rim (the lava's square ends at x -530), facing the heart container
+            // (-690, -1523.76, -3304) and the warp beyond it (west).
+            Route::Ruby => Some((Vec3::new(-470.0, -1504.0, -3304.0), -0x4000)),
             _ => None,
         }
     }
@@ -2065,6 +2137,8 @@ impl Route {
             Route::Gravestone => "gravestone",
             Route::Pillar => "pillar",
             Route::Skull => "skull",
+            Route::KingDodongo => "kingdodongo",
+            Route::Ruby => "ruby",
         }
     }
 
@@ -2111,6 +2185,8 @@ impl Route {
             Route::Gravestone => 3000,
             Route::Pillar => 2000,
             Route::Skull => 2000,
+            Route::KingDodongo => 2000,
+            Route::Ruby => 5000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2123,7 +2199,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -2355,6 +2431,9 @@ enum Task {
     /// the cutscene's texts (the first choice), until its terminator starts the transition (once
     /// the script has run).
     EmeraldPart1(Step),
+    /// A blue warp's arrival cutscene (the Goron's Ruby's): `EmeraldPart1`'s, for up to this many
+    /// frames (its texts hold the script).
+    WarpCutscene(usize, Step),
     /// Kokiri Forest's layer 6: `Step::EmeraldShown` once the emerald is drawn,
     /// `Step::TreeDeath` at the death's frame, A through the texts, until the terminator starts
     /// the transition.
@@ -2825,6 +2904,8 @@ impl Playthrough {
             Route::Gravestone => gravestone_tasks(),
             Route::Pillar => pillar_tasks(),
             Route::Skull => skull_tasks(),
+            Route::KingDodongo => king_dodongo_tasks(),
+            Route::Ruby => ruby_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -3965,7 +4046,8 @@ impl Playthrough {
                 }
                 Some(idle)
             }
-            Task::EmeraldPart1(step) => self.emerald_part1(w, step),
+            Task::EmeraldPart1(step) => self.warp_cutscene(w, 2400, step),
+            Task::WarpCutscene(limit, step) => self.warp_cutscene(w, limit, step),
             Task::Emerald(step) => self.emerald(w, step),
             Task::Chain(step) => self.chain(w, step),
             Task::ExitInto(name, step) => {
@@ -4876,12 +4958,12 @@ impl Playthrough {
         }
     }
 
-    /// `Task::EmeraldPart1`.
-    fn emerald_part1(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+    /// `Task::EmeraldPart1`, `Task::WarpCutscene`.
+    fn warp_cutscene(&mut self, w: &PlayState, limit: usize, step: Step) -> Option<PadState> {
         let idle = PadState::default();
         self.wait += 1;
-        if self.wait > 2400 {
-            self.failure = Some(format!("the emerald's part 1 never ended (cutscene frame {})", w.cs_ctx.frames));
+        if self.wait > limit {
+            self.failure = Some(format!("the warp's arrival cutscene never ended (cutscene frame {})", w.cs_ctx.frames));
             return None;
         }
         if w.player().action != PA::BlueWarpArrive {

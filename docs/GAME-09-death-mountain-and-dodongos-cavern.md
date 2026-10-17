@@ -12,9 +12,9 @@ The phase starts from the `ranch-epona` preset (GAME-08's exit review).
 |---|---|---|
 | 1 | Bombs: `En_Bom`, `En_Bombf`, Player's explosives, BACKLOG #33 | done (2026-10-15) |
 | 2 | The trail and Goron City to the bracelet, and the cavern's mouth | done (2026-10-15) |
-| 3 | Dodongo's Cavern's route | next |
-| 4 | King Dodongo and the Goron's Ruby (the phase's exit) | |
-| 5 | The rest of the cavern | |
+| 3 | Dodongo's Cavern's route | done (2026-10-16) |
+| 4 | King Dodongo and the Goron's Ruby (the phase's exit) | done (2026-10-17): the exit met |
+| 5 | The rest of the cavern | next |
 | 6 | The summit: the Great Fairy and magic | |
 
 ## The survey
@@ -884,3 +884,185 @@ scripts\run\sandbox-cavern.bat
 10. Anything that looks off: the trails (Link's, the Lizalfos's, the Skulltulas'), the skull's
     eyes, the lava's flicker and the scrolls, the Lizalfos, Poes, Armos and Baby Dodongos, the fire
     walls. Known: no point-light shading, no glows, no rumble, no lens.
+
+## Milestone 4: King Dodongo and the Goron's Ruby (the phase's exit)
+
+**The answer:** the Goron's Ruby is reached; **Phase 10's exit is met.** Two short scripted runs,
+no fight (the user's rule: the fight is the hand test's): **the intro** (`Route::KingDodongo`, from
+the room's spawn on `cavern-boss`): a bomb out on C-Right and put down on the cracked floor, its
+blast breaking the floor, the drop through the hole, and King Dodongo's intro on his own sub camera
+(Link held at the arena's north side, the camera following him down, King Dodongo walking in with
+the camera tilted, his roar, the title card "Infernal Dinosaur King Dodongo", the fire boss's
+music) to the fight's start; and **the Ruby** (`Route::Ruby`, from a debug start after his defeat on
+`cavern-boss-beaten`): the heart container, the blue warp, the Goron's Ruby (`EVENTCHKINF_25`,
+`Item_Give`), `gDMTGoronRubyCs` on Death Mountain Trail's layer 5 (Darunia falls into the cavern's
+mouth, beats his chest, slaps Link, gives the Ruby; three Gorons drop in and walk off) to its
+terminator, and the trail's spawn 5. Their ends are the presets `cavern-boss-fight` and
+**`goron-ruby`** (milestones 5 and 6 start from it). Scripts: `scripts\run\test-kingdodongo.bat`,
+`game-kingdodongo.bat`, `sandbox-kingdodongo.bat` (menu 141 to 143).
+
+### Settled at the start (from the C)
+
+- **The room texture he writes** (ADR 0075): the room RAM the game writes is play state
+  (`oot_game::room::RoomRam`), by room and the region's offset in the room's file, its bytes copied
+  from the pack where the writes start and dropped when a room load takes its buffer; the room's
+  draws replace the written textures by their segment-3 source (`DrawParams::texture_images`,
+  ADR 0051's pattern for objects). His overlay's two textures (`sLavaFloorLavaTex`,
+  `sLavaFloorRockTex`) are his own state, read from the pack (an overlay's data comes with its
+  first instance; he's the only one).
+- **`Play_SetCameraAtEyeUp`: modelled, not logged.** It was small: `CAM_VIEW_UP` in
+  `Camera_Update` (the up set takes the view's place once), `CamView::up`, and the view matrices
+  (the play state's, the effects' billboard, the screen positions, the renderer's camera) using it.
+  An up within 0.1° of the view's vertical plane is kept as the world's Y (the same matrix; the
+  game's own binary-angle up is a hair off that plane for every view), so only real rolls show.
+- **`MREG(64)`'s fill** is drawn where `Play_Draw` draws it: after the actors and the lens flares,
+  just before `envCtx.fillScreen`'s, both at the end of the OPA and XLU lists, so it's composed
+  under the environment's fill (`PlayState::mreg_fill`, `draw_fills`). In this ROM it never shows
+  (below).
+- **The hot floor:** a dump of the room's collision: the lava is the 720 square round (-890, -3304)
+  at y -1524, eight polygons of `FLOOR_TYPE_3` (`func_80838144`'s second hot floor, which Player's
+  port handles with type 2), with a 16-polygon `FLOOR_TYPE_6` rim at -1504 round it (no fall
+  damage) and the upper ledge at -744.
+
+### What was built
+
+- **`Boss_Dodongo`** whole (ADR 0075): his intro (states 0 to 4: the fall's trigger below -1223.76,
+  Link's cutscene actions 1, 9, 12 and 7, the sub camera's shake with his steps and its tilt
+  through `Play_SetCameraAtEyeUp`, the roar, the title card the first time, `NA_BGM_FIRE_BOSS`,
+  `EVENTCHKINF_BEGAN_KING_DODONGO_BATTLE`; a second try starts beside Link), the walk round the
+  corners, the roll, the inhale (any `ACTORCAT_EXPLOSIVE` within 40 of his mouth eaten), the fire
+  breath, the bomb's blast inside him (2 off his 12, never the last), lying down, a sword's damage
+  on his head, a seed or the boomerang stopping the inhale, his death (the camera, the lava's
+  cover, the last roll round the corners, the sink, the decay into his object's RAM, the lava
+  cooling to rock, the heart, the camera back, the warp, the room's clear flag), his 80 particles,
+  the light and the lava's effects, the lava floor's room texture, the cleared room at init. His
+  draw: one skeleton bake, each limb's wobble, squash and his tail base's scale on its own bone
+  only, his own fog (white while hit, red while down), his tilt and roll; the particles' bake.
+- **`En_Bdfire`** whole (the flame at his mouth with its light; the fire balls rolling, turning at
+  the walls, setting Link burning), **`Effect_Ss_G_Magma`** and **`Effect_Ss_G_Magma2`** whole.
+- **`Door_Warp1`'s branch** for his room (and Barinade's): the Ruby, `ENTR_DEATH_MOUNTAIN_TRAIL_0`
+  with `CS_INDEX_1` the first time, `_5` after.
+- **`Demo_Du`** (Darunia in the cutscenes: the Ruby's part whole, its other cutscenes placeholders
+  chosen at init, the user's call) and **`Demo_Go`** (the Ruby's three Gorons) whole, by a helper
+  in a worktree (removed); `ActorShadow_DrawCircle`'s checks moved to
+  `oot_game::draw::actor_shadow_circle` for them.
+- **Systems:** `RoomRam`; the camera's up; `mreg_fill`; King Dodongo's title card in `BOSS_NAMES`;
+  King Dodongo's sounds and `NA_BGM_FIRE_BOSS`.
+- **The runs:** `Route::KingDodongo`, `Route::Ruby`, `Task::WarpCutscene` (a warp's arrival
+  cutscene, with its own limit: the Ruby's texts hold it); the steps `FloorBombed`,
+  `KingDodongoBattle`, `RubyOver`, `Trail5`. **The presets** `cavern-boss-fight` (the intro run's
+  end), `cavern-boss-beaten` (a debug start: the room cleared), `goron-ruby` (the Ruby run's end:
+  the heart container and its flag, `EVENTCHKINF_25`, the Ruby), the first and last checked
+  against their runs.
+- **The characters** (`export-glb`): King Dodongo (checked in Blender). `Demo_Du`'s Darunia and
+  `Demo_Go`'s Gorons are `En_Du`'s and `En_Go2`'s bakes (the helper compared them): their rows.
+
+### Results
+
+- Tests from the C: `tests/boss_dodongo.rs` (18: his wait, the intro and its camera's up, a second
+  try, a bomb eaten and its blast, the last bomb, the sword and the seed, his death to the warp,
+  the lava floor's wobble and its room texture, the wobble's shifts, the cleared room at init, the
+  fill, the decay table, the fire balls, the flame, the lava's effects, the warp's second time, the
+  bakes, room 1's floor texture's source), `demo_du.rs` (7), `demo_go.rs` (7), `king_dodongo.rs`
+  (2: the runs).
+- The runs: the intro 731 frames (the bomb out at 78, put down at 122, the floor broken at 177,
+  the fight's start at 731); the Ruby 3,057 frames (the heart at 289, into the warp at 395, out at
+  548, on the trail at 631, the cutscene's terminator at 3,005 after its eight texts, the trail's
+  spawn 5 at 3,057). No hit taken in either.
+- Goldens: 224 of milestone 3's 236 the same; 12 differ, all from the camera's up now in the view
+  (proven below). 5 new cases (`kingdodongo`, `kingdodongo_title`, `ruby`, `ruby_warp`,
+  `ruby_jewel`). 243 hashes, 185 cases (`out/golden_base27`), the same over two runs.
+- 1,315 tests (one ignored) pass; `cargo test -p layering` passes; no warnings. The pack is still
+  format 29 (`out/data26`), re-imported for the new bakes.
+
+### Decisions
+
+- The camera's up modelled (above) rather than logged.
+- The runs end where the hand test starts (the fight) and resume after his defeat from a debug
+  start; the fight and his death in play are the hand test's, his death's sequence checked from
+  the C in `tests/boss_dodongo.rs` (his health set to 0).
+- `Demo_Du`'s other cutscenes placeholders chosen at init (the user's call, BACKLOG #83).
+- The `actor_setup_xlu_dl` copies stay file-local (milestone 3's decision).
+
+### Corrections to the survey
+
+- **`MREG(64)`'s red flush never shows in this ROM:** `unk_244` is only stepped towards 0
+  (`BossDodongo_BlowFire` and his update), never set above it. Ported as written.
+- His overlay's lines: 1,738 and 240 of data (the survey's figure); `En_Bdfire`'s and his profile
+  ids are `@bug (game)`: `ACTOR_EN_DODONGO` and 0 (`ACTOR_PLAYER`), so his actor's `id` is the
+  Dodongo's and every fire's is Player's.
+- **The floor texture's offset in this ROM is 0x21D8** (`ddan_boss_v2.xml`, the one
+  `baseroms/gc-eu-mq-dbg/config.yml` names), not `ddan_boss.xml`'s 0x21C8.
+- `Effect_Ss_G_Magma2` faces the camera: its list loads the billboard from segment 1.
+- The decay's table has 254 entries; step 256 reads on into the overlay's padding and collider
+  data (3: a last write, `@bug (game)`; one lands on the title card's first texels, not modelled).
+- The cutscene itself (`gDMTGoronRubyCs`) needed nothing new: every command, cue and text ran
+  (the helper's run); its script runs to frame 1,515 over 2,457 game frames (its eight texts).
+
+### Known gaps
+
+- The fight is the hand test's (no run fights him).
+- No actor shadows but the cutscene actors' stand-in (#84); no rumble (#60).
+- `Demo_Du`'s other cutscenes (#83).
+- A lava floor written while another room is current (the C writes that room's buffer) logs.
+- Milestone 5's: the rest of the cavern (`En_Dodongo`, `En_Vm`, `En_G_Switch`, `Bg_Ddan_Kd`,
+  `D_Fire`, `Dead_Dd`, `Dead_Ds`, one-point 3050, rooms 2, 5, 6, 13, 14, 15); milestone 6's: the
+  summit and magic.
+
+### Fixes found while building
+
+- `Door_Warp1`'s logged branch started the transition with the last entrance; it goes where the
+  C sends it now.
+- The boulder run's check against `cavern-open` (milestone 2's `tests/goron_city.rs`) had failed
+  since milestone 3 put the Hylian Shield's chest flag into that preset: the run doesn't open the
+  grave, and the check now says so.
+- Python's text mode writes CRLF on Windows: files edited that way were put back to their own
+  line endings (the lesson: edit in binary).
+
+### Golden proof
+
+- **The camera's up:** the views now roll where the game rolls them: the one-point cutscenes'
+  camera (`CAM_SET_CS_C`, its keyframes' roll: -181, about -1°, in the castle's, the meadow's and
+  the farewell's runs) and the scripts' camera roll (-10,752 in the new file's opening). The
+  rolled view-projection moves `projectedPos` and the culling volume, and the runs follow from
+  there. Shots: `castle_caught_shut`, `creation_rain`, `farewell_owl`, `graveyard`,
+  `graveyard_keese`, `graveyard_lesson`, `meadow_wolfos`. Traces: `castle` and `castle_caught`
+  (only `current_yaw` and `shape_yaw`, frames 181 to 558: the route's steering after a rolled
+  one-point), `farewell` (only `actors`, 5 frames from 3726), `graveyard` (from frame 2806: its
+  Keese die three frames earlier and the run follows; `tests/graveyard.rs`'s rupees are 31, from
+  33), `new_file_deku_tree` (only `actors`, one frame, 2567).
+- **A**, this code with the view's up forced to the world's Y (`target/game26proof`): all 236 of
+  milestone 3's hashes back (`out/golden_proof_g9m4_A.txt`).
+- Before the 0.1° tolerance (`camera::view_up`), 34 differed: the binary-angle up of a view that
+  doesn't roll sits a few thousandths of a degree off its vertical plane (`out/golden_check_m4_1.txt`).
+
+### How to check
+
+```
+scripts\run\test-kingdodongo.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-kingdodongo.bat
+```
+
+### By hand
+
+1. `game-kingdodongo` (King Dodongo's room, `cavern-boss`: 18 bombs on C-Right): west along the
+   ledge to the cracked floor, a bomb (C-Right, A to put it down) on it, back off: the floor
+   breaks. Drop through the hole: his intro (the camera follows Link down, then King Dodongo
+   walking in from the west, the screen shaking with his steps and tilting a little; his roar,
+   "Infernal Dinosaur King Dodongo", the boss music).
+2. The fight (or `game-kingdodongo fight`: beside him, his battle begun, a short intro): he walks
+   the corners and rolls at Link; with Link ahead of him he stops and inhales: throw a bomb (or
+   lift a corner's Bomb Flower and throw it) into his mouth. He swallows it, it blows inside him,
+   he lies down red: slash his head. Getting hit by his roll or his fire hurts; the fire sets Link
+   alight. The lava (red, wobbling) burns. A seed into him while he inhales stops it.
+3. His death (the same run on): the camera on him, his throes, the lava's cover rising, a last
+   roll, he rolls into the lava and sinks, crumbling away; the lava cools to rock; the heart
+   container; the blue warp. Take the heart (or `game-kingdodongo beaten`), step into the warp.
+4. The Goron's Ruby (or `game-kingdodongo ruby`): on Death Mountain Trail, Darunia drops into the
+   cavern's mouth, beats his chest, slaps Link, gives the Ruby; three Gorons drop in and walk off;
+   Link ends at the trail's spawn 5 (or `game-kingdodongo trail`).
+5. Anything that looks off: his look and wobble, the fire, the lava's bubbles and splashes, the
+   intro's tilt, Darunia's face and the Gorons. Known: no shadows, no rumble.

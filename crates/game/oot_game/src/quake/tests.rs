@@ -359,7 +359,7 @@ fn update(c: &mut GameCamera, d: &CameraData, q: &mut QuakeStatics, rand: &mut R
         target_pos_rot: None,
         target: None,
         player_actor_info: None,
-        view: CamView { eye: c.eye, at: c.at, fov: c.fov },
+        view: CamView::new(c.eye, c.at, c.fov),
         main_player_pos_rot: c.main_player_pos_rot(),
         player_waist: Vec3::ZERO,
         player_melee_weapon_active: false,

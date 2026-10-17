@@ -10,6 +10,8 @@ pub struct Camera {
     pub fov_y: f32,
     /// Near and far planes; `None` scales them with the orbit distance (viewer default).
     pub clip: Option<(f32, f32)>,
+    /// The view's up (`View_LookAt`'s): the world's Y unless the game's camera rolls.
+    pub up: Vec3,
 }
 
 impl Camera {
@@ -18,7 +20,7 @@ impl Camera {
         self.target + dir * self.distance
     }
     pub fn view(&self) -> Mat4 {
-        glam::camera::rh::view::look_at_mat4(self.eye(), self.target, Vec3::Y)
+        glam::camera::rh::view::look_at_mat4(self.eye(), self.target, self.up)
     }
     pub fn clip_planes(&self) -> (f32, f32) {
         self.clip.unwrap_or((self.distance * 0.02, self.distance * 20.0))

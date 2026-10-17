@@ -290,7 +290,7 @@ fn the_lens_flare_eases_in_at_the_sun_and_out_when_hidden() {
     // Looking straight at the sun: lookDir and posDir the same, cosAngle 1; the target 1 (3.5
     // clamped).
     let eye = Vec3::new(0.0, 100.0, 2000.0);
-    w.view = oot_game::camera::CamView { eye, at: eye + w.env_ctx.sun_pos, fov: 60.0 };
+    w.view = oot_game::camera::CamView::new(eye, eye + w.env_ctx.sun_pos, 60.0);
     w.env_ctx.lens_flare_alpha_scale = 0.0;
     w.env_ctx.glare_alpha = 0.0;
     w.env_statics.sun_screen_depth = oot_game::env_draw::ZBUF_MAX;

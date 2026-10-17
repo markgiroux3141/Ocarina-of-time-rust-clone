@@ -219,8 +219,10 @@ BACKLOG #33 closed. Its run puts a Bomb Flower down at Dodongo's Cavern's entran
 cavern's opening) and a bomb from the bag by the other flower. Milestone 2 (the trail and Goron
 City to the bracelet, [ADR 0073](adr/0073-death-mountain-trail-goron-city-and-the-bracelet.md)) and
 milestone 3 (the cavern's route, [ADR 0074](adr/0074-dodongos-cavern-route-the-skull-and-effect-blure.md):
-the loop to the skull's bridge, the skull, `EffectBlure`) are built; milestone 3 waits on the
-user's hand test (and the question of fire for room 10's web).
+the loop to the skull's bridge, the skull, `EffectBlure`) are done, and milestone 4 (King Dodongo
+and the Goron's Ruby, [ADR 0075](adr/0075-king-dodongo-the-room-texture-the-cameras-up-and-the-ruby.md))
+is built: **the phase's exit is met** (waiting on the user's hand test). Milestones 5 (the rest of
+the cavern) and 6 (the summit and magic) start from the `goron-ruby` preset.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -712,6 +714,13 @@ recommendations taken): the split below, the critical path first and the exit at
 4. **King Dodongo and the Goron's Ruby:** `Boss_Dodongo`, `En_Bdfire`, the magma effects, the room
    texture's write, `Play_SetCameraAtEyeUp`, `MREG(64)`; `Door_Warp1`'s branch, `Demo_Du`, `Demo_Go`.
    The phase's exit.
+   - **Done** (2026-10-17, ADR 0075): **the phase's exit is met** (the Goron's Ruby). The room RAM
+     the game writes as play state (the lava floor's texture), the camera's up modelled,
+     `MREG(64)`'s fill; `Boss_Dodongo`, `En_Bdfire`, `Effect_Ss_G_Magma`, `G_Magma2`, `Demo_Du`'s
+     Ruby part (its other cutscenes placeholders) and `Demo_Go` whole; `Door_Warp1`'s branch. Two
+     short runs (`Route::KingDodongo`: the floor bombed, the drop, his intro; `Route::Ruby`: after
+     his defeat the heart, the warp and `gDMTGoronRubyCs` to the trail's spawn 5), the presets
+     `cavern-boss-fight` and `goron-ruby` (milestones 5 and 6's start). The fight is hand-tested.
 5. **The rest of the cavern:** `En_Dodongo`, `En_Vm`, `En_G_Switch`, `Bg_Ddan_Kd`; `D_Fire`,
    `Dead_Dd`, `Dead_Ds`; one-point 3050; rooms 2, 5, 6, 13, 14 and 15 (`En_Zf`, `En_Am`, `En_Poh`,
    `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` and `Obj_Elevator` came in milestone 3).
@@ -722,9 +731,9 @@ recommendations taken): the split below, the critical path first and the exit at
 ## Cross-cutting debts
 
 Pick these up when a milestone touches them, or as filler:
-- **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), but the camera's roll isn't
-  drawn (the renderer keeps Y up), and the shake isn't applied to the prerendered backgrounds
-  and the skybox.
+- **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), ~~but the camera's roll isn't
+  drawn (the renderer keeps Y up)~~ (the up modelled in GAME-09 milestone 4, ADR 0075); the shake
+  isn't applied to the prerendered backgrounds and the skybox.
 - **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); ~~the sword's and the Skulltula's trails (`EffectBlure`)~~ (GAME-09 milestone 3); next to want: the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** ~~time passing, day/night~~ (GAME-06 milestone 3); weather.
 - **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; ~~the ocarina modes~~ (GAME-07 milestone 3).

@@ -704,6 +704,7 @@ pub fn camera_of(f: &RenderFrame, col: &CollisionContext, scene: Option<&SceneSt
             distance,
             fov_y: f.view.fov.to_radians(),
             clip: Some(clip.unwrap_or((rooms::Z_NEAR, 12800.0))),
+            up: f.view.up,
         };
     }
     let mut distance = f.follow.distance;
@@ -715,7 +716,7 @@ pub fn camera_of(f: &RenderFrame, col: &CollisionContext, scene: Option<&SceneSt
         Some(sc) => (rooms::FOVY.to_radians(), Some((rooms::Z_NEAR, rooms::fog_far(sc)))),
         None => (50f32.to_radians(), None),
     };
-    Camera { target: f.follow.at, yaw: f.follow.yaw, pitch: f.follow.pitch, distance, fov_y, clip }
+    Camera { target: f.follow.at, yaw: f.follow.yaw, pitch: f.follow.pitch, distance, fov_y, clip, up: Vec3::Y }
 }
 
 /// The meshes a frame draws: the renderer's cache, and where the meshes come from.

@@ -252,6 +252,7 @@ impl RenderFrame {
                     eye: self.view.eye.lerp(next.view.eye, t),
                     at: self.view.at.lerp(next.view.at, t),
                     fov: self.view.fov + (next.view.fov - self.view.fov) * t,
+                    up: if self.view.up == next.view.up { next.view.up } else { self.view.up.lerp(next.view.up, t) },
                 }
             },
             follow,
@@ -347,6 +348,8 @@ pub struct PlayState {
     pub cur_spawn: usize,
     /// `roomCtx`, `objectCtx`.
     pub room_ctx: RoomContext,
+    /// What the game has written into the loaded rooms' RAM (`crate::room::RoomRam`).
+    pub room_ram: crate::room::RoomRam,
     pub object_ctx: ObjectContext,
     /// Link's object for his age (`Scene_CommandPlayerEntryList`).
     pub link_object_id: i16,
@@ -367,6 +370,10 @@ pub struct PlayState {
     pub viewpoint: u8,
     /// `bgCoverAlpha`: the vertical room-change planes' screen dimming.
     pub bg_cover_alpha: i16,
+    /// `MREG(64)` to `MREG(68)` (debug registers, `gRegEditor`'s): a screen fill on (64 not 0)
+    /// in the colour 65 to 67 and the alpha 68, which `Play_Draw` draws after the actors under
+    /// `envCtx.fillScreen`'s. King Dodongo's fire breath sets it.
+    pub mreg_fill: [i16; 5],
     /// `sfxSources` (`z_sfx_source.c`).
     pub sfx_sources: [crate::sfx_source::SfxSource; crate::sfx_source::NUM_SFX_SOURCES],
     /// How many scene changes led here (the renderer reloads its meshes when it changes).
@@ -489,7 +496,7 @@ impl PlayState {
     pub fn new(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionContext, spawn: (Vec3, i16), adult: bool) -> PlayState {
         let pv = PlayerView { pos: spawn.0, shape_yaw: spawn.1, shape_pitch: 0, world_yaw: spawn.1, adult, run_speed_limit: data.regs[if adult { 0 } else { 1 }].reg(45), gravity: 0.0, climbing: false, state1: 0, state2: 0, iron_boots: false, focus_pos: Vec3::ZERO, focus_rot: [0; 3] };
         let game_camera = GameCamera::new(&data.camera, &pv);
-        let view = crate::camera::CamView { eye: game_camera.eye, at: game_camera.at, fov: game_camera.fov };
+        let view = crate::camera::CamView::new(game_camera.eye, game_camera.at, game_camera.fov);
         PlayState {
             follow_camera: FollowCamera::behind(spawn.0, spawn.1, adult),
             play_init_camera: false,
@@ -528,6 +535,7 @@ impl PlayState {
             scene_id: 0,
             cur_spawn: 0,
             room_ctx: RoomContext::default(),
+            room_ram: Default::default(),
             object_ctx: ObjectContext::default(),
             link_object_id: 0,
             transi_actors: Vec::new(),
@@ -537,6 +545,7 @@ impl PlayState {
             scene_cam_type: crate::scene::SCENE_CAM_TYPE_DEFAULT,
             viewpoint: VIEWPOINT_NONE,
             bg_cover_alpha: 0,
+            mreg_fill: [0; 5],
             sfx_sources: Default::default(),
             scene_changes: 0,
             rand: Rand::default(),
@@ -1275,6 +1284,15 @@ impl PlayState {
         }
     }
 
+    /// `Play_SetCameraAtEyeUp`: `Play_SetCameraAtEye`'s, and the up the camera's next view takes
+    /// (`CAM_VIEW_UP`).
+    pub fn camera_set_at_eye_up(&mut self, id: i16, at: Vec3, eye: Vec3, up: Vec3) {
+        let player_pos = self.player.and_then(|h| self.actors.actor(h)).map(|a| a.world_pos).unwrap_or(Vec3::ZERO);
+        if let Some(c) = self.camera_mut(id) {
+            c.set_at_eye_up(at, eye, up, player_pos);
+        }
+    }
+
     /// `Play_SetCameraFov`.
     pub fn camera_set_fov(&mut self, id: i16, fov: f32) {
         if let Some(c) = self.camera_mut(id) {
@@ -1597,15 +1615,15 @@ impl PlayState {
     /// `play->viewProjectionMtxF` for the active camera: the game's 320x240 view, `zNear` 10, `zFar`
     /// `lightCtx.zFar` (`View_SetPerspective` in `Play_Draw`; 12800 without a scene).
     pub(crate) fn camera_view_proj(&self) -> Mat4 {
-        let (eye, at, fov) = match self.camera_kind {
+        let (eye, at, fov, up) = match self.camera_kind {
             CameraKind::Game => {
                 let v = self.active_camera().shaken_view();
-                (v.eye, v.at, v.fov)
+                (v.eye, v.at, v.fov, v.up)
             }
-            CameraKind::Follow => (self.follow_camera.eye(), self.follow_camera.at, 50.0),
+            CameraKind::Follow => (self.follow_camera.eye(), self.follow_camera.at, 50.0, Vec3::Y),
         };
         let z_far = self.scene.as_ref().map_or(12800.0, |s| s.lights.fog_far as f32);
-        eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, z_far) * glam::camera::rh::view::look_at_mat4(eye, at, Vec3::Y)
+        eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, z_far) * glam::camera::rh::view::look_at_mat4(eye, at, up)
     }
 
     /// The render state of every actor and the camera now.
@@ -1624,7 +1642,7 @@ impl PlayState {
         }
         let view = match self.camera_kind {
             CameraKind::Game => self.active_camera().shaken_view(),
-            CameraKind::Follow => CamView { eye: self.follow_camera.eye(), at: self.follow_camera.at, fov: 50.0 },
+            CameraKind::Follow => CamView::new(self.follow_camera.eye(), self.follow_camera.at, 50.0),
         };
         let active = self.active_cam_id;
         let mut view_cut = self.captured_cam_id != active;
@@ -1683,7 +1701,7 @@ impl PlayState {
         match (&self.prev, &self.cur) {
             (Some(p), Some(c)) => p.lerp(c, t),
             (_, Some(c)) => c.clone(),
-            _ => RenderFrame { actors: Vec::new(), view: CamView { eye: Vec3::ZERO, at: Vec3::Z, fov: 60.0 }, follow: self.follow_camera, letterbox: 0.0, view_cut: false },
+            _ => RenderFrame { actors: Vec::new(), view: CamView::new(Vec3::ZERO, Vec3::Z, 60.0), follow: self.follow_camera, letterbox: 0.0, view_cut: false },
         }
     }
 

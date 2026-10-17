@@ -30,9 +30,10 @@ pub fn sprite_name(title_file: &str) -> String {
 }
 
 /// The boss names `TitleCard_InitBossName` shows: the object, the texture's offset in it, its
-/// width and height (`BossGoma_Encounter`'s call: `gGohmaTitleCardTex`, 128 by 40; on PAL the
-/// texture holds the three languages one after another, English first).
-pub const BOSS_NAMES: &[(&str, u32, u8, u8)] = &[("object_goma", 0x19BA8, 128, 40)];
+/// width and height (`BossGoma_Encounter`'s call: `gGohmaTitleCardTex`, 128 by 40;
+/// `BossDodongo_IntroCutscene`'s: `gKingDodongoTitleCardTex`, 128 by 40 of its 128 by 120; on PAL
+/// the texture holds the three languages one after another, English first).
+pub const BOSS_NAMES: &[(&str, u32, u8, u8)] = &[("object_goma", 0x19BA8, 128, 40), ("object_kingdodongo", 0x17410, 128, 40)];
 
 /// The sprite of a boss name's block starting `offset` bytes into its texture (0, then 0x1000
 /// for the rest of one bigger than that).
@@ -245,9 +246,12 @@ mod tests {
         assert_eq!(out[1].name, boss_sprite_name(object, offset, 0x1000));
         assert_eq!(out[0].transform, crate::sprite::rect_transform(96.0, 160.0, 223.0, 191.75));
         assert_eq!(out[1].transform, crate::sprite::rect_transform(96.0, 192.0, 223.0, 199.75));
-        // The sprites to bake: the two blocks, IA8, 128 by 32 and 128 by 8.
+        // The sprites to bake: the two blocks, IA8, 128 by 32 and 128 by 8, of each boss's name
+        // (Queen Gohma's, then King Dodongo's).
         let b = boss_bakes();
-        assert_eq!(b.len(), 2);
+        assert_eq!(b.len(), 2 * BOSS_NAMES.len());
         assert_eq!((b[0].name.as_str(), b[1].name.as_str()), (out[0].name.as_str(), out[1].name.as_str()));
+        let (object, offset, _, _) = BOSS_NAMES[1];
+        assert_eq!((b[2].name.clone(), b[3].name.clone()), (boss_sprite_name(object, offset, 0), boss_sprite_name(object, offset, 0x1000)));
     }
 }

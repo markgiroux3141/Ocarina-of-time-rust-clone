@@ -87,6 +87,55 @@ impl Default for RoomContext {
     }
 }
 
+/// The room segment (`SEGMENTED_TO_VIRTUAL`'s 3): where a room's lists load its textures from.
+pub const SEGMENT_ROOM: u32 = 0x0300_0000;
+
+/// One region of a room's RAM the game has written: its bytes as they are now, and the RGBA16
+/// texture they hold (width, height), for the room's draws.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RoomRegion {
+    pub bytes: Vec<u8>,
+    pub texture: (u32, u32),
+}
+
+/// What the game has written into the loaded rooms' RAM (King Dodongo's lava floor,
+/// `gDodongosCavernBossLavaFloorTex`, through segment 3: the current room's buffer), by room and
+/// the region's offset in the room's file. The region's bytes are copied from the pack where the
+/// writes start, and lost when the room's buffer takes another room (a room load overwrites it).
+/// The room's draws show the written textures in place of their own (`images`, as
+/// `DrawParams::texture_images` by their segment-3 source; ADR 0051's pattern for objects).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RoomRam {
+    pub regions: std::collections::BTreeMap<(i8, u32), RoomRegion>,
+}
+
+impl RoomRam {
+    /// The region of room `room`'s file at `offset` (an RGBA16 texture of `texture`'s size) to
+    /// write into: `init` (the file's bytes there) the first time.
+    pub fn region_mut(&mut self, room: i8, offset: u32, texture: (u32, u32), init: impl FnOnce() -> Vec<u8>) -> &mut Vec<u8> {
+        &mut self.regions.entry((room, offset)).or_insert_with(|| RoomRegion { bytes: init(), texture }).bytes
+    }
+
+    /// The written region of `room` at `offset`, if any.
+    pub fn region(&self, room: i8, offset: u32) -> Option<&[u8]> {
+        self.regions.get(&(room, offset)).map(|r| r.bytes.as_slice())
+    }
+
+    /// Only `keep`'s regions stay (the rooms still in their buffers).
+    pub fn keep_only(&mut self, keep: &[i8]) {
+        self.regions.retain(|&(r, _), _| keep.contains(&r));
+    }
+
+    /// The images in place of `room`'s textures its RAM has written: `DrawParams::texture_images`
+    /// for its draws (empty while the room is as its file has it).
+    pub fn images(&self, room: i8) -> Vec<eng_gfx::SourceImage> {
+        self.regions
+            .range((room, 0)..=(room, u32::MAX))
+            .map(|(&(_, offset), r)| eng_gfx::SourceImage { source: SEGMENT_ROOM | offset, image: crate::object_ctx::rgba16_image(&r.bytes, r.texture.0, r.texture.1) })
+            .collect()
+    }
+}
+
 impl RoomContext {
     /// `Room_RequestNewRoom`: starts loading `num` into the current slot (the old current room becomes
     /// the previous one). False if a load is already in flight.
