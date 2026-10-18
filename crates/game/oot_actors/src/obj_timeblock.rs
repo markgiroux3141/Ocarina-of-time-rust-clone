@@ -117,6 +117,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, OWN_STATE, BIT_7, SIZE, ALT_BEHAVIOR, RANGE, UNK_175, PRIM_COLOR],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("its state; toggled by the song (altBehavior 1)")],
     todo: false,
+    objects: &[],
 };
 
 /// `ObjTimeblockSizeOptions`.

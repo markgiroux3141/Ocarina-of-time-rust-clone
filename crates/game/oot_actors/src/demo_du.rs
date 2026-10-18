@@ -110,6 +110,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         .note("params 0: CHAMBER_CS_FIRE outside a cutscene layer starts the Fire Medallion's cutscene (gFireMedallionCs) and gives the medallion")
         .indirect("not ported: DemoDu_CsFireMedallion_AdvanceTo01 (the Fire Medallion, Phase 15)")],
     todo: false,
+    objects: &[],
 };
 
 /// `CS_GORONSRUBY_SUBSCENE(x)`: `sUpdateFuncs`' index of `DemoDu_UpdateCs_GR_xx`.

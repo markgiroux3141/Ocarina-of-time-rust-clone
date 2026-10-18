@@ -110,6 +110,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("R_EPONAS_SONG_PLAYED")).reads().clears().note("Epona's Song played: she faces Link, again: she comes to him"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `NA_SE_EV_KID_HORSE_*` (`environmentbank_table.h`: 0x2842 to 0x2845).

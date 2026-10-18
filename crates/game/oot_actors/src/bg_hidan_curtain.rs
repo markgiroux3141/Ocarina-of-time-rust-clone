@@ -86,6 +86,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Switch("switchFlag")).reads().clears().note("set: out (or lit, types 4 and 5); cleared once it's back"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `NA_SE_EV_FIRE_PILLAR_S` (`environmentbank_table.h`: 0x28A3).

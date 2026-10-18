@@ -111,6 +111,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_197)).reads().sets().note("the father's texts 0x24, 0x25"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `ENSSH_FATHER`.

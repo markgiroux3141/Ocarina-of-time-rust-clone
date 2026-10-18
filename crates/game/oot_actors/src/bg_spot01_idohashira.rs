@@ -53,6 +53,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[PARAMS],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_54)).reads().note("gone for an adult once set")],
     todo: false,
+    objects: &[],
 };
 
 /// `EVENTCHKINF_54` (`save.h`: 0x54): the Nocturne of Shadow's cutscene seen.

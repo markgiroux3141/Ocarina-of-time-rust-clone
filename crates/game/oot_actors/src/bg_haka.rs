@@ -73,6 +73,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[CHIME, ROT_X],
     flags: &[FlagUse::new(Flag::Switch("0x23")).reads().note("at Lake Hylia, a child can't pull it before it's set")],
     todo: false,
+    objects: &[],
 };
 
 /// `actionFunc`.

@@ -76,6 +76,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[PARAMS, BASE_TEXT_ID],
     flags: &[FlagUse::new(Flag::Clear).reads().sets().note("reads room 9's (text 0x109B: gone); the puzzle's third sets its room's")],
     todo: false,
+    objects: &[],
 };
 
 /// The flower's params (`0xA` in the C).

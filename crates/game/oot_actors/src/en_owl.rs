@@ -99,6 +99,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_195)).reads().sets().note("type 7's text heard"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EnOwlType`.

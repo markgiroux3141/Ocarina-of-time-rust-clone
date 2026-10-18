@@ -110,6 +110,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[GS_FLAG, GS_INDEX, TYPE, ROT_X, ROT_Z],
     flags: &[FlagUse::new(Flag::Other("GET_GS_FLAGS(gsIndex) & gsFlag")).reads().note("its token taken: it isn't spawned (the token, En_Si, sets it)")],
     todo: false,
+    objects: &[],
 };
 
 /// `ACTOR_EN_SI` (`actor_table.h`).

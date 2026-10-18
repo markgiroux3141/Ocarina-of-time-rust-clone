@@ -23,11 +23,12 @@ pub struct ToolInfo {
 }
 
 /// The rail's tools, in groups.
-pub const RAIL: [&[Tool]; 6] = [
+pub const RAIL: [&[Tool]; 7] = [
     &[Tool::Select],
     &[Tool::Region, Tool::Path],
     &[Tool::Brush],
     &[Tool::Prop],
+    &[Tool::Actor],
     &[Tool::Line("rock"), Tool::Line("arch")],
     &[Tool::Line("dirt"), Tool::Line("fence"), Tool::Line("bridge"), Tool::Line("hedge"), Tool::Line("tunnel")],
 ];
@@ -69,6 +70,13 @@ pub fn tool_info(t: Tool) -> ToolInfo {
             key: "K",
             about: "Houses, stumps, stones, openings and wall pieces from the kit.",
             hint: "click: place the chosen piece · drag a prop: move · its arrow's handle: turn (Q / E) · its corner: scale · Alt: no snap · Ctrl+D: duplicate · Del: delete",
+        },
+        Tool::Actor => ToolInfo {
+            icon: Icon::Actor,
+            name: "Actors",
+            key: "C",
+            about: "The game's own actors: pots, bushes, signs, enemies, characters, chests, switches. Each set up with its own settings.",
+            hint: "click: place the palette's actor · drag one: move · its handle: turn (Q / E) · PgUp / PgDn: raise · Ctrl+D: duplicate · Del: delete",
         },
         Tool::Line("dirt") => ToolInfo { icon: Icon::Dirt, name: "Dirt path", key: "D", about: "Dirt painted into the floor, with dirt footsteps.", hint: line },
         Tool::Line("fence") => ToolInfo { icon: Icon::Fence, name: "Fence", key: "G", about: "Straight between its nodes, a post at every node.", hint: line },
@@ -774,6 +782,9 @@ impl App {
         if let Some(rest) = p.strip_prefix("prop ") {
             return index(rest).filter(|&i| i < self.doc.props.len()).map(Sel::Prop);
         }
+        if let Some(rest) = p.strip_prefix("actor ") {
+            return index(rest).filter(|&i| i < self.doc.actors.len()).map(Sel::Actor);
+        }
         if let Some(rest) = p.strip_prefix("line ") {
             return index(rest).filter(|&i| i < self.doc.lines.len()).map(Sel::Line);
         }
@@ -820,7 +831,7 @@ fn play_button(ui: &mut egui::Ui) -> egui::Response {
 /// Every key, by what it's for.
 fn keys_sheet(ui: &mut egui::Ui) {
     let groups: [(&str, &[(&str, &str)]); 6] = [
-        ("Tools", &[("V", "Select"), ("R", "Draw a region"), ("P", "Draw a path"), ("B", "Brush"), ("K", "Props"), ("D", "Dirt path"), ("G", "Fence"), ("H", "Rope bridge"), ("J", "Hedge"), ("U", "Tunnel"), ("O", "Rock"), ("A", "Arch")]),
+        ("Tools", &[("V", "Select"), ("R", "Draw a region"), ("P", "Draw a path"), ("B", "Brush"), ("K", "Props"), ("C", "Actors"), ("D", "Dirt path"), ("G", "Fence"), ("H", "Rope bridge"), ("J", "Hedge"), ("U", "Tunnel"), ("O", "Rock"), ("A", "Arch")]),
         (
             "Editing",
             &[
@@ -834,7 +845,7 @@ fn keys_sheet(ui: &mut egui::Ui) {
                 ("Ctrl Z / Y", "Undo, redo"),
             ],
         ),
-        ("Props", &[("Q E", "Turn 15° (Shift: 1°)"), ("Ctrl D", "Duplicate"), ("Drag", "Move; the arrow's handle turns, the corner scales")]),
+        ("Props and actors", &[("Q E", "Turn 15° (Shift: 1°)"), ("Ctrl D", "Duplicate"), ("Drag", "Move; the arrow's handle turns, a prop's corner scales")]),
         ("Brush", &[("Drag", "Paint"), ("Ctrl", "Lower"), ("Shift", "Smooth"), ("[ ]", "Size"), ("1–6", "Raise, lower, smooth, flatten, bumps, erase")]),
         ("View", &[("Wheel", "Zoom"), ("Right drag", "Pan"), ("F", "Fit"), ("T", "Textured, heights, lines"), ("N", "Nodes"), ("?", "This sheet")]),
         ("Files and play", &[("W", "Play from the cursor"), ("Ctrl S", "Save"), ("Ctrl O", "Open"), ("Ctrl N", "New level")]),

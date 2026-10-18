@@ -49,7 +49,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
 use oot_game::collision_check::*;
 use oot_game::event_chk_inf;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -92,6 +92,11 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_SKULLTULA_REWARD_50)).reads().sets().note("params 5: its reward given").indirect("sEventFlags[params], a mask of eventChkInf[EVENTCHKINF_INDEX_SKULLTULA_REWARD]"),
     ],
     todo: false,
+    // `sObjectIds[params]`: without it the family member is gone at once
+    objects: &[
+        ObjectNeed::new("object_ahg").when("params", &[0]).note("the father's body"),
+        ObjectNeed::new("object_boj").when("params", &[1, 2, 3, 4, 5]).note("the children's bodies"),
+    ],
 };
 
 /// `OBJECT_AHG` (`object_table.h`: 0x0107), `OBJECT_BOJ` (0x0111).

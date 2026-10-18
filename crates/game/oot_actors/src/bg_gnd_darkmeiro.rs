@@ -83,6 +83,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Switch("switchFlag + 2")).reads().clears().note("the timer: the same for its second timer"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `DarkmeiroType` (`z_bg_gnd_darkmeiro.h`).

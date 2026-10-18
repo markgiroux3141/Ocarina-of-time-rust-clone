@@ -61,7 +61,7 @@ pub const TYPE: Field = Field::whole(
 pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "the flower's tilt: on a wall (0x4000) or a ceiling (0x8000)");
 
 /// En_Bombf's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, ROT_X], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, ROT_X], flags: &[], todo: false, objects: &[] };
 
 /// `EnBombfType` (`BOMBFLOWER_FLOWER` is -1, every other value below 0 drawn as it).
 const BOMBFLOWER_BODY: i16 = 0;

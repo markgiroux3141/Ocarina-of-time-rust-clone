@@ -129,6 +129,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(item_get_inf!(ITEMGETINF_NAYRUS_LOVE)).reads().sets().note("a spell fountain's spawn 2: Nayru's Love given").indirect("set through sSpellRewardsItemGetInfMask"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC` (`scene_table.h`: 0x3B).

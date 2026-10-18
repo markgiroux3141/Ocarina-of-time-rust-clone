@@ -41,7 +41,7 @@ use eng_math::{smooth_step_to_f, smooth_step_to_s, vec3f_yaw};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, ObjectNeed};
 use oot_game::audio::SEQ_PLAYER_FANFARE;
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
@@ -85,7 +85,22 @@ pub const TYPE: Field = Field::params(
 .signed();
 
 /// En_Viewer's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[LOW_BYTE, TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[LOW_BYTE, TYPE],
+    flags: &[],
+    todo: false,
+    // `sInitData[type]`'s skeleton and animation objects: `EnViewer_InitImpl` asserts both are
+    // there, and nothing is drawn until they're loaded
+    objects: &[
+        ObjectNeed::new("object_horse_zelda").when("type", &[0]).note("Zelda's horse"),
+        ObjectNeed::new("object_im").when("type", &[1]).note("Impa"),
+        ObjectNeed::new("object_zl4").when("type", &[2]).note("Zelda"),
+        ObjectNeed::new("object_opening_demo1").when("type", &[1, 2]).note("Impa's and Zelda's animations"),
+        ObjectNeed::new("object_gndd").when("type", &[3, 5, 7, 8]).note("Ganondorf"),
+        ObjectNeed::new("object_horse_ganon").when("type", &[4, 6]).note("Ganondorf's horse"),
+        ObjectNeed::new("object_ganon").when("type", &[9]).note("Ganondorf, the Ganon's Castle model"),
+    ],
+};
 
 /// `EnViewerType`.
 pub const ENVIEWER_TYPE_0_HORSE_ZELDA: u8 = 0;

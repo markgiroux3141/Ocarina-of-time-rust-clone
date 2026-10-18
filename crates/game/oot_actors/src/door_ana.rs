@@ -103,6 +103,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[DATA, HIDDEN, BOMBABLE, DESTINATION, GROTTO],
     flags: &[FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 5)")).reads().note("the Song of Storms played: a hole hidden for it (1) opens within 200")],
     todo: false,
+    objects: &[],
 };
 
 /// `sCylinderInit`: a bombable hole's, 50 by 10, hit by explosions and the hammer (0x48).

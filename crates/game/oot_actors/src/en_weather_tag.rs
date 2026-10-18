@@ -82,6 +82,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gInterruptSongOfStorms")).sets().clears().note("set while its weather change waits, cleared once it goes through"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EnWeatherTagType` (`z_en_weather_tag.h`).

@@ -123,6 +123,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.save.cutsceneIndex")).reads().note("a cutscene layer (CS_INDEX_0 and up, not CS_INDEX_D): the greeting in Kokiri Forest, the wait in the meadow"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `SCENE_*` (`scene_table.h`).

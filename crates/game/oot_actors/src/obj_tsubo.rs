@@ -26,7 +26,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_7,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480, player_play_sfx};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::KAKERA_COLOR_NONE;
 use oot_game::item::GI_NONE;
@@ -54,6 +54,11 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[DROP, DROP_BIT_5, OBJECT_INDEX, COLLECTIBLE_FLAG],
     flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().indirect("by the En_Item00 it drops")],
     todo: false,
+    // `sObjectIds[objectIndex]`: without it the pot is gone at once
+    objects: &[
+        ObjectNeed::new("gameplay_dangeon_keep").when("objectIndex", &[0]).note("the dungeons' pot"),
+        ObjectNeed::new("object_tsubo").when("objectIndex", &[1]).note("its own pot"),
+    ],
 };
 
 /// `sObjectIds`: `OBJECT_GAMEPLAY_DANGEON_KEEP`, `OBJECT_TSUBO` (`object_table.h`: 0x0003, 0x012C),

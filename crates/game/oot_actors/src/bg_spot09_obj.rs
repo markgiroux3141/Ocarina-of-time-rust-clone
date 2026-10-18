@@ -58,6 +58,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_CARPENTER_3_RESCUED)).reads().note("all four: the repaired bridge").indirect(CARPENTERS),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `BgSpot09ObjType`.

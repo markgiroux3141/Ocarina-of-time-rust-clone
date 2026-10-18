@@ -44,7 +44,7 @@ pub const PARAMS: Field = Field::whole(
 );
 
 /// En_Kanban's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
 
 /// `ENKANBAN_PIECE`, `ENKANBAN_FISHING`.
 pub const ENKANBAN_PIECE: i16 = 0xFFDD_u16 as i16;

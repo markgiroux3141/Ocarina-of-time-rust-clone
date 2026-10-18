@@ -49,7 +49,7 @@ pub const GS_FLAGS_INDEX: Field =
 pub const GS_FLAG: Field = Field::params("PARAMS_GET_S(params, 0, 8)", 0, 8, Kind::Range(0, 0xFF), "the Gold Skulltula's flag: its bit in `gsFlags`").part_of("params");
 
 /// Obj_Makekinsuta's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS, GS_FLAG, GS_FLAGS_INDEX, SOIL], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS, GS_FLAG, GS_FLAGS_INDEX, SOIL], flags: &[], todo: false, objects: &[] };
 
 /// The frames `func_80B98320` counts once a bug is in.
 pub const SPAWN_DELAY: i16 = 60;

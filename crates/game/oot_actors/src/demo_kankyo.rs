@@ -36,7 +36,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::event_chk_inf;
 use oot_game::audio::sfx::*;
 use oot_game::camera::{func_800bb2b4, sph_geo_to_vec3, vec3_to_sph_geo};
@@ -100,6 +100,13 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 2)")).reads().note("the Door of Time (0xD): opens"),
     ],
     todo: false,
+    // `sObjectIds[params]` (the clouds, 0x7, and 0xF to 0x11 are `gameplay_keep`'s): without it
+    // nothing draws (an ASSERT in the debug build)
+    objects: &[
+        ObjectNeed::new("object_efc_star_field").when("params", &[0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06]).note("the rain and the rocks"),
+        ObjectNeed::new("object_gi_melody").when("params", &[0x08, 0x09, 0x0A, 0x0B, 0x0C]).note("the removed types' (they draw nothing)"),
+        ObjectNeed::new("object_toki_objects").when("params", &[0x0D, 0x0E]).note("the Door of Time and the light plane"),
+    ],
 };
 
 

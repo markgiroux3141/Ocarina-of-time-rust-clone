@@ -42,6 +42,9 @@ pub struct Doc {
     /// How the level plays in the game: the region it starts from, and changes to it.
     #[serde(default, skip_serializing_if = "Game::is_default")]
     pub game: Game,
+    /// The game's actors placed in it: pots, bushes, enemies, characters, switches...
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actors: Vec<Actor>,
 }
 
 /// How the level plays in the game (docs/EDITOR-PLAY-IN-THE-GAME.md). The theme chooses the look
@@ -67,6 +70,10 @@ pub struct Game {
     /// The clock running (the room's time speed), or stopped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clock: Option<bool>,
+    /// Objects the room loads besides its actors' own (`object_*` files): for an actor that spawns
+    /// others needing theirs, as the game's own rooms list them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub objects: Vec<String>,
 }
 
 impl Game {
@@ -259,6 +266,64 @@ pub struct Prop {
 
 fn one3() -> [f64; 3] {
     [1.0; 3]
+}
+
+/// One of the game's actors placed in the level (docs/EDITOR-ACTORS.md): the actor by its overlay
+/// name, with the game's own placement record, its params and rotation, as a room's actor list
+/// holds them. The editor shows them as named fields from the actor's schema (ADR 0066); what's
+/// stored is what the game reads, so nothing the schema doesn't name is lost.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Actor {
+    /// The overlay's name: "En_Kusa".
+    pub actor: String,
+    pub at: [f64; 2],
+    /// Its height; on the ground there (the highest floor, as built) if `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<f64>,
+    /// `params`, its 16 bits.
+    #[serde(default)]
+    pub params: u16,
+    /// The rotation as the game has it: binary angles (0x10000 a turn) about x, y and z. Some
+    /// actors read a component as a setting. y 0 faces the game's +z, which is south here
+    /// (`Actor::yaw`).
+    #[serde(default)]
+    pub rot: [i16; 3],
+    /// The game layers it's in: child by day, child by night, adult by day, adult by night (a
+    /// scene's first four setups). All of them if `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layers: Option<[bool; 4]>,
+    /// A name of its own, for the outliner.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+}
+
+impl Actor {
+    pub fn new(actor: &str, at: [f64; 2]) -> Actor {
+        Actor { actor: actor.to_string(), at, z: None, params: 0, rot: [0; 3], layers: None, name: String::new() }
+    }
+
+    /// Which way it faces, in degrees counter-clockwise from north (as a prop's `yaw`): the game's
+    /// y rotation less half a turn.
+    pub fn yaw(&self) -> f64 {
+        let a = self.rot[1] as f64 / 65536.0 * 360.0 - 180.0;
+        let a = ((a % 360.0) + 540.0) % 360.0 - 180.0;
+        (a * 100.0).round() / 100.0
+    }
+
+    /// Faces `yaw` degrees counter-clockwise from north.
+    pub fn set_yaw(&mut self, yaw: f64) {
+        self.rot[1] = yaw_to_rot(yaw);
+    }
+
+    /// Whether it's in game layer `l` (0 child day, 1 child night, 2 adult day, 3 adult night).
+    pub fn in_layer(&self, l: usize) -> bool {
+        self.layers.is_none_or(|ls| ls.get(l).copied().unwrap_or(false))
+    }
+}
+
+/// A yaw (degrees counter-clockwise from north) as the game's y rotation.
+pub fn yaw_to_rot(yaw: f64) -> i16 {
+    (((yaw + 180.0) / 360.0 * 65536.0).round() as i64).rem_euclid(65536) as u16 as i16
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -88,6 +88,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("text 0x0229, Talon's house: not yet, the door opens"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `DOOR_AJAR_SLAM_RANGE`, `DOOR_AJAR_OPEN_RANGE`.
@@ -243,11 +244,13 @@ impl EnDoor {
             return Box::new(d);
         }
         let mut i = DOOR_INFO[..4].iter().position(|e| e.0 == play.scene_id as i32).unwrap_or(4);
+        // schema: only asks whether the scene's keep is the field's; gameplay_keep's door otherwise
         if i >= 4 && play.object_ctx.get_index(OBJECT_GAMEPLAY_FIELD_KEEP).is_some() {
             i += 1;
         }
         let (_, dlist_index, object) = DOOR_INFO[i];
         d.dlist_index = dlist_index;
+        // schema: by the scene (the Fire, Water and Shadow Temples' and the well's doors), not the params
         let Some(bank) = play.object_ctx.get_index(object) else {
             d.actor.kill();
             return Box::new(d);

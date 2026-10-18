@@ -65,7 +65,7 @@ pub const KIND: Field = Field::whole(
 );
 
 /// En_Part's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[KIND], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[KIND], flags: &[], todo: false, objects: &[] };
 
 
 /// `NA_SE_EN_MONBLIN_GNDWAVE`, `NA_SE_EN_STAL_DAMAGE` (`enemybank_table.h`).

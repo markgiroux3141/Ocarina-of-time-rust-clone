@@ -41,7 +41,7 @@ use eng_math::{approach_f, smooth_step_to_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::NA_SE_SY_PIECE_OF_HEART;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::item::UPG_BULLET_BAG;
@@ -100,8 +100,22 @@ pub const UNUSED_PARAM: Field = Field::params("unusedParam", 8, 8, Kind::Debug, 
 pub const ITEMGETINF_1D: u16 = 0x1D;
 
 /// En_Ex_Item's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema =
-    ActorSchema { fields: &[TYPE, UNUSED_PARAM], flags: &[FlagUse::new(item_get_inf!(ITEMGETINF_1D)).sets().note("EXITEM_BULLET_BAG: its text done")], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, UNUSED_PARAM],
+    flags: &[FlagUse::new(item_get_inf!(ITEMGETINF_1D)).sets().note("EXITEM_BULLET_BAG: its text done")],
+    todo: false,
+    // `getItemObjectId` by type (`EnExItem_Init`'s switch): without it the prize is gone at once; the
+    // small key (15) draws from gameplay_keep
+    objects: &[
+        ObjectNeed::new("object_gi_bombpouch").when("type", &[0, 5]).note("the bomb bag"),
+        ObjectNeed::new("object_gi_hearts").when("type", &[1, 6]).note("the piece of heart"),
+        ObjectNeed::new("object_gi_bomb_2").when("type", &[2, 7]).note("the bombchus"),
+        ObjectNeed::new("object_gi_bomb_1").when("type", &[3, 8]).note("the bombs"),
+        ObjectNeed::new("object_gi_rupy").when("type", &[4, 9, 10, 11, 12, 13, 14]).note("the rupees"),
+        ObjectNeed::new("object_gi_goddess").when("type", &[16, 17, 18]).note("the Great Fairies' magic"),
+        ObjectNeed::new("object_gi_dekupouch").when("type", &[19]).note("the bullet bag"),
+    ],
+};
 
 // `EnExItemType` (`z_en_ex_item.h`).
 pub const EXITEM_BOMB_BAG_BOWLING: i16 = 0;

@@ -57,6 +57,14 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   Hold Alt to drag without snapping. Double-click a line to add a node: on an edge two loops share, the node goes into both.
   Delete removes the node, region or path. S makes a corner sharp or smooth again. PgUp/PgDn (or `]`/`[`) raise or sink the
   selected region by 20 (Shift: 100), or a path node's height.
+- **Actors (C):** the game's own actors (docs/EDITOR-ACTORS.md). The palette lists every actor the port has, by group,
+  with how often the game places it; pick one, and what it starts as (the game's own configurations for it), then click
+  the ground in the plan or 3D to place it. Drag a marker to move it, its handle to turn it (Q / E), PgUp/PgDn to raise
+  it, Ctrl+D to duplicate. The inspector shows its settings from its schema (named values, flags with who else holds
+  them, items, drops), the flags it uses, the layers it appears in (child or adult, day or night), the game's
+  configurations to take, and its raw params and rotation. Room objects (in the palette) counts what the actors need
+  against the room's 16. Run it with `scripts\run\editor.bat` so it reads the scripts' pack and plays the game built
+  beside it.
 - **Moving a whole thing:** drag a line (a rock or a hedge from anywhere inside its shape, an arch, fence or dirt path along
   it) to move it whole, in whole units; it's selected as you do. Select a region or a path first, then drag it by its body
   (not a node) to move it whole: a region takes the nodes it shares with the outline or other regions along, so it stays

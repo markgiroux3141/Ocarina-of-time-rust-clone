@@ -75,6 +75,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Clear).reads().note("rotY -1: the room cleared, it's gone").indirect("ElfMsg2_KillCheck: elf_msg::kill_check, the same"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `actionFunc`.

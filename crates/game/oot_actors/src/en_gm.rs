@@ -42,7 +42,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::inf_table;
@@ -91,6 +91,8 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_B1)).reads().sets().note("an adult's first offer of the knife: 0x304C, then 0x304F"),
     ],
     todo: false,
+    // `Object_GetSlot(OBJECT_GM)` at init: he waits for it (no draw) and never appears without it
+    objects: &[ObjectNeed::new(OBJECT_GM_FILE).note("his skeleton and animation")],
 };
 
 /// `GI_SWORD_KNIFE` (`item.h`: 0x28): the Giant's Knife.

@@ -67,6 +67,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.dogIsLost")).reads().note("Richard (1): in the market by night only while lost; sitting at home once found"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `SCENE_*` (`scene_table.h`).

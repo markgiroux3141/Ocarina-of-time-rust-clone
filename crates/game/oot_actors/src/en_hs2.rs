@@ -44,7 +44,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HS2, name: "En_Hs2
 pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
 
 /// En_Hs2's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
 
 /// `ENHS2_TRACKING_PLAYER`.
 pub const ENHS2_TRACKING_PLAYER: u16 = 1 << 0;

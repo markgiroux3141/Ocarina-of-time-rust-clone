@@ -74,6 +74,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_109)).reads().note("an adult's type 0 and type 1: the door opens (starts open when set)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// How far the child's door rises (`func_808B9698`) and the adult's slides (`func_808B971C`).

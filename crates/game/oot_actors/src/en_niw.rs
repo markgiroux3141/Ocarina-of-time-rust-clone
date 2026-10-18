@@ -116,6 +116,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_19F)).reads().note("Kakariko's cucco 6 brought back").indirect(KAKARIKO_FLAGS),
     ],
     todo: false,
+    objects: &[],
 };
 
 

@@ -55,7 +55,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_ATTACK_NIW, name: 
 pub const PARAMS: Field = Field::whole("params", Kind::Range(-0x8000, 0x7FFF), "made 0 if negative, then read by nothing (En_Niw spawns it with 0)");
 
 /// En_Attack_Niw's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
 
 /// `ATTENTION_RANGE_1`.
 const ATTENTION_RANGE_1: u8 = 1;

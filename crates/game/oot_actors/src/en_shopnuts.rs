@@ -63,6 +63,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_HAS_DEKU_NUT_UPGRADE)).reads().note("type 10: bought, it isn't there"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `NAVI_ENEMY_BUSINESS_SCRUB` (`actor.h`).

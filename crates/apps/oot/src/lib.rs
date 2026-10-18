@@ -437,7 +437,7 @@ pub fn enter_level(a: &mut Assets, pack: Option<&std::path::Path>, dir: &std::pa
     let records = eng_asset::MemSource::new(p.header().clone());
     p.assets.layer(Box::new(records.clone()));
     let spawn = at.unwrap_or(l.spawn);
-    oot_import::level::write_scene(&l, &p, &records, spawn)?;
+    oot_import::level::write_scene(&l, &p, &records, spawn, &level_actor_needs)?;
     let mut g = oot_game::play_scene::GameAssets::load(p, oot_actors::overlays())?;
     let entered = oot_import::level::add_scene(&mut g, &l)?;
     let theme = l.scene.as_deref().unwrap_or(oot_import::level::DEFAULT_THEME);
@@ -466,6 +466,12 @@ pub fn enter_level(a: &mut Assets, pack: Option<&std::path::Path>, dir: &std::pa
     a.level = Some((dir.to_path_buf(), stamp));
     a.level_game = Some(LevelGame { pack: pack.map(|p| p.to_path_buf()), at, entered, spawn });
     Ok(())
+}
+
+/// What a level's actor needs besides its profile's object, from its schema (ADR 0066's
+/// `ObjectNeed`s): `oot_import::level::write_scene` lists them in the room.
+fn level_actor_needs(name: &str, params: i16, rot: [i16; 3]) -> Vec<&'static str> {
+    oot_actors::PROFILES.iter().find(|p| p.name == name).map(|p| p.schema.needed_objects(params, rot)).unwrap_or_default()
 }
 
 /// The overworld editor's live reload of a custom level entered by `Play_Init`: loaded again

@@ -47,7 +47,7 @@ pub const SWITCH_FLAG_HIGH: Field = Field::params("switchFlag bits 6 and 7", 6, 
 
 /// Obj_Hamishi's configuration (docs/adr/0066-the-actor-schema.md).
 pub const SCHEMA: ActorSchema =
-    ActorSchema { fields: &[SWITCH_FLAG, SWITCH_FLAG_HIGH], flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken by the hammer, not spawned again")], todo: false };
+    ActorSchema { fields: &[SWITCH_FLAG, SWITCH_FLAG_HIGH], flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken by the hammer, not spawned again")], todo: false, objects: &[] };
 
 /// `sCylinderInit`: 50 by 70, hard, hit by `0x4FC1FFF6`, pushing (OC) every type.
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {

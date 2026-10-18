@@ -98,6 +98,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_1D)).reads().sets().note("type 2: set as the gravestone blows up, gone once set; type 3: gone once set"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EVENTCHKINF_1D` (`save.h`: 0x1D): the royal tomb opened.

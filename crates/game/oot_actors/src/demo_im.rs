@@ -91,6 +91,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.chamberCutsceneNum")).reads().note("type 0: CHAMBER_CS_SHADOW, the Shadow Medallion's (not ported)"),
     ],
     todo: false,
+    objects: &[],
 };
 /// `ITEM_SONG_LULLABY` (`item.h`).
 const ITEM_SONG_LULLABY: u8 = 0x60;

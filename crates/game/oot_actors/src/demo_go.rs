@@ -59,7 +59,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// Demo_Go's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `NA_SE_EV_OBJECT_FALL` (`environmentbank_table.h`: 0x28A0).
 pub const NA_SE_EV_OBJECT_FALL: u16 = 0x28A0;

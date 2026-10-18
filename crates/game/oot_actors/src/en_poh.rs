@@ -103,7 +103,7 @@ use eng_math::{cos_s, scaled_step_to_s, sin_s, step_to_f, vec3f_yaw};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_MISC, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos, enemy_start_finishing_blow};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::{NA_SE_EN_EXTINCT, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::gbi::Dl;
@@ -139,6 +139,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Switch("0x0B")).reads().sets().note("Sharp's answer: the texts by it; set as he leaves"),
     ],
     todo: false,
+    // `params < EN_POH_SHARP ? OBJECT_POH : OBJECT_PO_COMPOSER` (4 and up made EN_POH_NORMAL first):
+    // without it the Poe is gone at once
+    objects: &[
+        ObjectNeed::new(POH).when("params", &[0, 1]).note("a Poe's skeleton and lantern"),
+        ObjectNeed::new(PO_COMPOSER).when("params", &[2, 3]).note("Sharp's and Flat's skeleton and lantern"),
+    ],
 };
 
 /// `EnPohType`.

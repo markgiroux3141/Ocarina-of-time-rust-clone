@@ -153,3 +153,44 @@ fn the_game_block_changes_how_it_plays_and_the_theme_keeps_the_look() {
     assert_eq!(row(0x6E), row(g.scenes.by_file("spot17_scene").unwrap().id));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The editor's actors (`level.json`'s `actors`) spawn as the room's: each in the layers it's
+/// in, at its place with its params, the objects it needs loaded for it (its profile's, and what
+/// its schema needs for its params: the dungeons' pot in a field scene).
+#[test]
+fn a_levels_actors_spawn_in_their_layers_with_their_objects() {
+    if !pack_is_current() {
+        return;
+    }
+    let dir = temp_dir("actors");
+    write_level(&dir, "spot04", 0.0);
+    let path = dir.join("level.json");
+    let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    // a pot (the dungeons' kind: bit 8 clear) and a sign by day and night, a Keese by night only
+    // (positions x east, y north, z up)
+    j["actors"] = serde_json::json!([
+        {"actor": "Obj_Tsubo", "pos": [300, 200, 0], "rot": [0, 0, 0], "params": 3},
+        {"actor": "En_Kanban", "pos": [-300, 200, 0], "rot": [0, 16384, 0], "params": 0x0300},
+        {"actor": "En_Firefly", "pos": [0, 500, 100], "rot": [0, 0, 0], "params": 2, "layers": [false, true, false, true]},
+    ]);
+    std::fs::write(&path, j.to_string()).unwrap();
+    let (a, mut w) = enter(&dir);
+    idle(&mut w, 5);
+    let ids: Vec<(i16, i16, glam::Vec3)> = w.actors.all().into_iter().filter_map(|h| w.actors.actor(h)).map(|x| (x.id, x.params, x.home_pos)).collect();
+    let find = |id: i16| ids.iter().find(|x| x.0 == id).copied();
+    let pot = find(oot_actors::obj_tsubo::ACTOR_OBJ_TSUBO).expect("the pot spawned");
+    // the game's axes: (x, z up, -y)
+    assert_eq!((pot.1, pot.2), (3, glam::Vec3::new(300.0, 0.0, -200.0)));
+    assert!(find(oot_actors::en_kanban::ACTOR_EN_KANBAN).is_some(), "the sign spawned: {ids:?}");
+    assert!(find(oot_actors::en_firefly::ACTOR_EN_FIREFLY).is_none(), "no Keese by day");
+    // the sign's object in the room's list, loaded; the night layer's room has the Keese's too
+    let g = a.game.as_ref().unwrap();
+    let st = g.pack.scene_table().unwrap();
+    let day = g.pack.room(&oot_game::pack::keys::room(oot_import::level::SCENE_FILE, 0, 0)).unwrap();
+    let night = g.pack.room(&oot_game::pack::keys::room(oot_import::level::SCENE_FILE, 1, 0)).unwrap();
+    let names = |l: &[i16]| l.iter().map(|&o| st.objects[o as usize].clone()).collect::<Vec<_>>();
+    assert_eq!(names(&day.objects), vec!["gameplay_dangeon_keep", "object_kanban"]);
+    assert_eq!((night.actors.len(), names(&night.objects)), (3, vec!["gameplay_dangeon_keep".to_string(), "object_kanban".to_string(), "object_firefly".to_string()]));
+    assert!(w.object_ctx.ids().contains(&st.object_id("object_kanban").unwrap()));
+    let _ = std::fs::remove_dir_all(&dir);
+}

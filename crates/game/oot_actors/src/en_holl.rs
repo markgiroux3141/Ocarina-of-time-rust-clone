@@ -60,6 +60,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, TYPE],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("type 3: the plane works once it's set")],
     todo: false,
+    objects: &[],
 };
 
 /// `ENHOLL_H_Y_MIN`, `ENHOLL_H_Y_MAX`, `ENHOLL_H_HALFWIDTH_NARROW`, `ENHOLL_H_HALFWIDTH`.

@@ -95,6 +95,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_65)).sets().note("the windmill faster, with the lesson's song"),
     ],
     todo: false,
+    objects: &[],
 };
 /// `OCARINA_ACTION_PLAYBACK_STORMS` (`ocarina.h`: 0x1A).
 pub const OCARINA_ACTION_PLAYBACK_STORMS: u16 = 0x1A;

@@ -90,6 +90,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_178)).sets().note("after text 0x6064, which isn't his: never"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `KakarikoCarpenterType`.

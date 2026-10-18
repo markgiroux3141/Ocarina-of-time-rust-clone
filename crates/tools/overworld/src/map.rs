@@ -505,6 +505,7 @@ mod tests {
             props: vec![],
             lines: vec![],
             game: Default::default(),
+            actors: vec![],
         }
     }
 

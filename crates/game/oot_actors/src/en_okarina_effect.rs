@@ -45,6 +45,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gInterruptSongOfStorms")).reads().note("set: the storm ends at once"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `PAUSE_STATE_OFF`, `GAMEOVER_INACTIVE`, `TRANS_MODE_OFF`, `GAMEMODE_NORMAL`, `CS_STATE_IDLE`.

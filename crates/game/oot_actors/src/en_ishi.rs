@@ -63,6 +63,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, BUGS, NO_SNAP, SWITCH_FLAG_LOWER, DROP_TABLE, SWITCH_FLAG_UPPER],
     flags: &[FlagUse::new(Flag::Switch("switchFlagUpper << 2 | switchFlagLower")).reads().sets().note("the boulder: read at init (set: gone), set when thrown")],
     todo: false,
+    objects: &[],
 };
 
 /// `ROCK_SMALL`, `ROCK_LARGE`.

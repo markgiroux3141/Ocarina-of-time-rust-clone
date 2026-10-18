@@ -141,6 +141,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("R_DEBUG_FORCE_EPONA_OBTAINED")).reads().note("the debug register DREG(1): Epona's as obtained (0)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `NA_SE_EV_HORSE_WALK`, `NA_SE_EV_HORSE_RUN` (`environmentbank_table.h`: 0x2803, 0x2804).

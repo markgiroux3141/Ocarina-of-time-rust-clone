@@ -27,7 +27,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, PLAYER_STATE1_28, PLAYER_STATE1_29, PLAYER_STATE1_DEAD, PLAYER_STATE1_TALKING};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, ObjectNeed};
 use oot_game::audio::sfx::NA_SE_EN_OCTAROCK_ROCK;
 use oot_game::collision_check::*;
 use oot_game::effect::hahen::HAHEN_OBJECT_DEFAULT;
@@ -54,7 +54,20 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Nutsball's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[],
+    todo: false,
+    // `sObjectIds[type]`: the scrub's own object, for the nut's list; without it the nut is
+    // killed at once
+    objects: &[
+        ObjectNeed::new("object_dekunuts").when("type", &[0]).note("a Deku Scrub's nut"),
+        ObjectNeed::new("object_hintnuts").when("type", &[1]).note("a hint scrub's nut"),
+        ObjectNeed::new("object_shopnuts").when("type", &[2]).note("a business scrub's nut"),
+        ObjectNeed::new("object_dns").when("type", &[3]).note("object_dns's nut (no scrub fires it)"),
+        ObjectNeed::new("object_dnk").when("type", &[4]).note("the Lost Woods target game scrub's (En_Dnt_Nomal)"),
+    ],
+};
 
 /// `EnNutsballType`.
 pub const EN_NUTSBALL_TYPE_DEKUNUTS: i16 = 0;

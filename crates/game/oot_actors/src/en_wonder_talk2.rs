@@ -67,6 +67,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, BASE_MSG_ID, TALK_MODE, RANGE],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone; set once its text is read (not in modes 2 and 4)")],
     todo: false,
+    objects: &[],
 };
 
 /// `SCENE_GERUDO_TRAINING_GROUND` (the Gerudo Training Ground).

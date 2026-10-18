@@ -58,7 +58,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// Eff_Dust's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `actionFunc`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

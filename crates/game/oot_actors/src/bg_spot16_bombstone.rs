@@ -39,7 +39,7 @@ use eng_math::{cos_s, sin_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, func_80033480};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::{NA_SE_EV_ROCK_BROKEN, NA_SE_SY_CORRECT_CHIME};
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::collision_check::*;
@@ -93,6 +93,9 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_23)).sets().note("the boulder broken"),
     ],
     todo: false,
+    // `func_808B4E58`: the pieces (0 to 5) ask for OBJECT_BOMBIWA and are gone without it; the
+    // boulder (0xFF) draws from its own object, but its pieces, spawned as it breaks, need it there
+    objects: &[ObjectNeed::new("object_bombiwa").when("type", &[0, 1, 2, 3, 4, 5]).note("the pieces' model")],
 };
 
 /// `params` 0xFF: the boulder whole.

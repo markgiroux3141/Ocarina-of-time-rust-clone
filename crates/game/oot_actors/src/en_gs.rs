@@ -62,6 +62,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[HINT, SWITCH_FLAG],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as the fairy comes: no more")],
     todo: false,
+    objects: &[],
 };
 
 // Sound effects (`sfx/*_table.h`).

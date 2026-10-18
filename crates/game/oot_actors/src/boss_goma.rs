@@ -91,6 +91,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Clear).reads().sets().note("beaten: the warp and the heart container at once; set at her death"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `WARP_DUNGEON_CHILD` (`DoorWarp1Type`).

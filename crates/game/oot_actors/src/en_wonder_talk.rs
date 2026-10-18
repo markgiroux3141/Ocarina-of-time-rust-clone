@@ -74,6 +74,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_1D)).reads().note("kind 4: gone once the royal tomb is open"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `actionFunc`.

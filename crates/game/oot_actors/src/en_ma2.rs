@@ -75,6 +75,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_TALKED_TO_ADULT_MALON_AFTER_SONG)).reads().sets().note("text 0x2051 closed").indirect("not ported (the adult's)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `SCENE_*` (`scene_table.h`).

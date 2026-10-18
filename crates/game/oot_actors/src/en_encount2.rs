@@ -75,6 +75,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_49", EVENTCHKINF_49)).reads().note("the Fire Temple's blue warp used: an adult's trail has no rocks (killed at init)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `SCENE_*` (`scene_table.h`).
@@ -428,6 +429,7 @@ impl ActorImpl for EnEncount2 {
     /// `EnEncount2_Draw` (`EnEncount2_DrawEffects`): with its object in, each ember at its place,
     /// tumbled (X, Y, Z), at its scale.
     fn draw(&self, _rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+        // schema: its own profile object, object_efc_star_field
         if play.object_ctx.get_index(OBJECT_EFC_STAR_FIELD).is_none() {
             return;
         }

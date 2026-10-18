@@ -65,6 +65,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, TYPE],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("the ladder: set, it's down; set when a seed hits it")],
     todo: false,
+    objects: &[],
 };
 
 /// The kinds (the params' high byte).

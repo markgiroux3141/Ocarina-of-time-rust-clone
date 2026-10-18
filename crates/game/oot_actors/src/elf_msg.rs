@@ -80,6 +80,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Clear).reads().note("rotY -1: the room cleared, it's gone"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `R_NAVI_MSG_REGION_ALPHA` (`regs.h`: `nREG(87)`), a debug register: 0 in the game.

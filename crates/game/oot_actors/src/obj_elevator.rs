@@ -54,7 +54,7 @@ pub const SPEED: Field = Field::params("speed", 8, 4, Kind::Range(0, 15), "twice
 pub const RISE: Field = Field::params("rise", 12, 4, Kind::Range(0, 15), "how far above its home it goes, 80 a unit");
 
 /// Obj_Elevator's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[SIZE, SPEED, RISE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[SIZE, SPEED, RISE], flags: &[], todo: false, objects: &[] };
 
 /// `sScales`, by size.
 pub const SCALES: [f32; 2] = [0.1, 0.05];

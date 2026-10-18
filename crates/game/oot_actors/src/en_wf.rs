@@ -85,6 +85,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, SWITCH_FLAG],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("at init it's gone; set at its death")],
     todo: false,
+    objects: &[],
 };
 
 // The sounds (`include/tables/sfx/enemybank_table.h`).

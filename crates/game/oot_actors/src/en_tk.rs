@@ -104,6 +104,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(item_get_inf!(ITEMGETINF_1C)).reads().sets().note("the piece of heart dug up"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `SCENE_GRAVEYARD` (`scene_table.h`: 0x53).

@@ -55,6 +55,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS)).sets().note("Link caught (read by nothing)")],
     todo: false,
+    objects: &[],
 };
 /// `TRANS_TYPE_CIRCLE(TCA_STARBURST, TCC_WHITE, TCS_FAST)`.
 pub const TRANS_TYPE_CAUGHT: u8 = trans_type_circle(TCA_STARBURST, TCC_WHITE, TCS_FAST);

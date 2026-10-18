@@ -44,6 +44,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("GET_EVENTINF_INGO_RACE_STATE()")).reads().note("Epona rented: no Sun's Song"),
     ],
     todo: false,
+    objects: &[],
 };
 
 pub const BAKE: &str = "Oceff_Spot/cylinder";

@@ -41,7 +41,7 @@ pub const UNUSED: Field = Field::params("switchFlag (unused)", 8, 8, Kind::Unuse
 
 /// Bg_Spot05_Soko's configuration (docs/adr/0066-the-actor-schema.md).
 pub const SCHEMA: ActorSchema =
-    ActorSchema { fields: &[TYPE, SWITCH_FLAG, UNUSED], flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("the gate: set, it sinks")], todo: false };
+    ActorSchema { fields: &[TYPE, SWITCH_FLAG, UNUSED], flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("the gate: set, it sinks")], todo: false, objects: &[] };
 
 /// `sDLists`.
 const DLISTS: [&str; 2] = ["object_spot05_objects_DL_000840", "object_spot05_objects_DL_001190"];

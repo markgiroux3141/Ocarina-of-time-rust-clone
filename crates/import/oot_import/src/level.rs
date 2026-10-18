@@ -103,6 +103,39 @@ pub struct Level {
     pub scene: Option<String>,
     /// How it plays when entered by `Play_Init` (`write_scene`).
     pub game: Dynamics,
+    /// The game's actors placed in it (`write_scene` puts them in the room).
+    pub actors: Vec<LevelActor>,
+}
+
+/// An actor placed in a level (`level.json`'s `actors`, the editor's actors tab): by its
+/// overlay's name, at a position in the game's axes, with the game's rotation and params.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LevelActor {
+    /// The overlay: "En_Kusa".
+    pub actor: String,
+    pub pos: Vec3,
+    pub rot: [i16; 3],
+    pub params: i16,
+    /// The game layers it's in (child day, child night, adult day, adult night).
+    pub layers: [bool; 4],
+}
+
+impl LevelActor {
+    fn read(j: &Value) -> Option<LevelActor> {
+        let p = floats(j, "pos");
+        let r = ints(j, "rot");
+        let layers = match j["layers"].as_array() {
+            Some(a) => [0, 1, 2, 3].map(|l| a.get(l).and_then(Value::as_bool).unwrap_or(false)),
+            None => [true; 4],
+        };
+        Some(LevelActor {
+            actor: j["actor"].as_str()?.to_string(),
+            pos: game([*p.first()?, *p.get(1)?, *p.get(2)?]),
+            rot: [0, 1, 2].map(|k| r.get(k).copied().unwrap_or(0) as i16),
+            params: j["params"].as_i64().unwrap_or(0) as u16 as i16,
+            layers,
+        })
+    }
 }
 
 /// How a level plays when entered by `Play_Init` (`level.json`'s `game`, the editor's Level
@@ -120,12 +153,15 @@ pub struct Dynamics {
     pub sky: Option<bool>,
     /// The clock running (the room's time speed), or stopped.
     pub clock: Option<bool>,
+    /// Objects the room loads besides its actors' own, by file (`object_kusa`).
+    pub objects: Vec<String>,
 }
 
 impl Dynamics {
     fn read(j: &Value) -> Dynamics {
         let s = |k: &str| j[k].as_str().filter(|s| !s.is_empty()).map(str::to_string);
-        Dynamics { start_from: s("start_from"), music: s("music"), hot: j["hot"].as_bool(), sky: j["sky"].as_bool(), clock: j["clock"].as_bool() }
+        let objects = j["objects"].as_array().map(|a| a.iter().filter_map(|o| o.as_str().map(str::to_string)).collect()).unwrap_or_default();
+        Dynamics { start_from: s("start_from"), music: s("music"), hot: j["hot"].as_bool(), sky: j["sky"].as_bool(), clock: j["clock"].as_bool(), objects }
     }
 }
 
@@ -420,7 +456,14 @@ pub fn load(dir: &Path) -> Result<Level> {
     };
     let scene = j["scene"].as_str().map(str::to_string);
     let game = Dynamics::read(&j["game"]);
-    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene, game })
+    let mut actors = vec![];
+    for (i, a) in j["actors"].as_array().map(Vec::as_slice).unwrap_or_default().iter().enumerate() {
+        match LevelActor::read(a) {
+            Some(a) => actors.push(a),
+            None => notes.push(format!("actor {i}: no overlay name or position: left out")),
+        }
+    }
+    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene, game, actors })
 }
 
 /// Connected patches of water triangles (sharing corners): their (x, z) bounds and surface height.
@@ -582,6 +625,76 @@ pub fn add_scene(g: &mut oot_game::play_scene::GameAssets, level: &Level) -> Res
     Ok(Entered { scene_id, entrance })
 }
 
+/// How many objects a room may list: the object banks (`OBJECT_EXCHANGE_BANK_MAX`) less the
+/// ones loaded before the room's: `gameplay_keep`, the scene's keep (if it has one) and Link's.
+pub fn room_object_limit(keep: bool) -> usize {
+    oot_game::object_ctx::OBJECT_EXCHANGE_BANK_MAX - 2 - keep as usize
+}
+
+/// The objects an actor needs besides its profile's, by its overlay's name, params and rotation
+/// (its schema's `ObjectNeed`s, ADR 0066: the app hands in `oot_actors::PROFILES`' own).
+pub type Needs<'a> = &'a dyn Fn(&str, i16, [i16; 3]) -> Vec<&'static str>;
+
+/// A game layer's room actors and object list, from the level's actors in that layer (`layer`
+/// 0 to 3): each actor's id by its overlay's name (`table`), and its objects in the list (its
+/// profile's, then what it needs for its params, `needs`) unless it's `gameplay_keep` or the
+/// scene's keep (`keep`), then `extra`'s objects (`objects` is the object table's file names).
+/// An actor the table hasn't got is left out with a note; objects past the room's limit too
+/// (their actors then wait for them, never appearing).
+#[allow(clippy::too_many_arguments)]
+pub fn room_actors(
+    actors: &[LevelActor],
+    extra: &[String],
+    layer: usize,
+    table: &oot_game::actor_table::ActorTable,
+    objects: &[String],
+    keep: Option<i16>,
+    needs: Needs,
+    notes: &mut Vec<String>,
+) -> (Vec<ActorEntry>, Vec<i16>) {
+    use oot_game::object_ctx::{OBJECT_GAMEPLAY_KEEP, OBJECT_INVALID};
+    let mut entries = vec![];
+    let mut list: Vec<i16> = vec![];
+    let add = |id: i16, list: &mut Vec<i16>| {
+        if id != OBJECT_INVALID && id != OBJECT_GAMEPLAY_KEEP && Some(id) != keep && !list.contains(&id) {
+            list.push(id);
+        }
+    };
+    for (i, a) in actors.iter().enumerate().filter(|(_, a)| a.layers[layer]) {
+        let Some(id) = table.actors.iter().position(|t| !t.name.is_empty() && t.name == a.actor) else {
+            // once, in the first layer it's in
+            if a.layers.iter().position(|&x| x) == Some(layer) {
+                notes.push(format!("actor {i}: no actor {:?} in the game's table: left out", a.actor));
+            }
+            continue;
+        };
+        let p = a.pos.round().clamp(Vec3::splat(-32768.0), Vec3::splat(32767.0));
+        entries.push(ActorEntry { id: id as i16, pos: [p.x as i16, p.y as i16, p.z as i16], rot: a.rot, params: a.params });
+        if let Some(init) = &table.actors[id].init {
+            add(init.object_id, &mut list);
+        }
+        for o in needs(&a.actor, a.params, a.rot) {
+            match objects.iter().position(|f| f == o) {
+                Some(oid) => add(oid as i16, &mut list),
+                None => notes.push(format!("actor {i} ({}): no object {o:?} in the game's table", a.actor)),
+            }
+        }
+    }
+    for o in extra {
+        match objects.iter().position(|f| f == o) {
+            Some(id) => add(id as i16, &mut list),
+            None => notes.push(format!("no object {o:?} in the game's table: left out")),
+        }
+    }
+    let limit = room_object_limit(keep.is_some());
+    if list.len() > limit {
+        let names: Vec<&str> = list[limit..].iter().map(|&id| objects.get(id as usize).map_or("?", String::as_str)).collect();
+        notes.push(format!("layer {layer}: the room can load {limit} objects, not {}: {} left out, and their actors won't appear", list.len(), names.join(", ")));
+        list.truncate(limit);
+    }
+    (entries, list)
+}
+
 /// Writes `level` into `src` (layered over the pack) as `add_scene`'s scene. For each game
 /// layer, the header of the scene it starts from (`Dynamics::start_from`, else its theme's): the
 /// music and nature ambience, the keep object, Navi's C-Up texts, the scene camera type; with its
@@ -589,9 +702,10 @@ pub fn add_scene(g: &mut oot_game::play_scene::GameAssets, level: &Level) -> Res
 /// spawn at `spawn`, its collision and one room. The room's header (its behaviour, such as a hot
 /// room's, the echo, the time settings, skybox and sun off) is the start's first room's. Then the
 /// level's changes (`Dynamics`): another scene's music or none, hot or not, the sky, the clock.
+/// Each game layer has a room of its own with the level's actors in that layer (`room_actors`).
 /// A scene that won't load gives way to Kokiri Forest. Rewritten each time the level is rebuilt;
 /// `Play_Init` reads the new records.
-pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_asset::MemSource, spawn: (Vec3, i16)) -> Result<()> {
+pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_asset::MemSource, spawn: (Vec3, i16), needs: Needs) -> Result<()> {
     use oot_game::audio::{NA_BGM_NO_MUSIC, NATURE_ID_NONE};
     use oot_game::pack::keys;
     use oot_game::scene::SoundSettings;
@@ -616,7 +730,6 @@ pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_ass
     };
     let (pos, yaw) = spawn;
     let collision = keys::scene_collision(SCENE_FILE, 0);
-    let room_key = keys::room(SCENE_FILE, 0, 0);
     let mut layers = Vec::new();
     for l in 0..4 {
         let (_, sl) = start.layer(l);
@@ -638,7 +751,7 @@ pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_ass
             paths: vec![],
             sound,
             cutscene: None,
-            rooms: vec![room_key.clone()],
+            rooms: vec![keys::room(SCENE_FILE, l, 0)],
             notes: level.notes.clone(),
             ..sl.clone()
         });
@@ -670,9 +783,19 @@ pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_ass
         let running = speed != 0 && speed != 0xFF;
         room.time = Some([h, m, if !clock { 0 } else if running { speed } else { CLOCK_SPEED }]);
     }
+    let table = pack.actor_table()?;
+    let objects = pack.scene_table()?.objects;
+    for (l, layer) in layers.iter_mut().enumerate() {
+        let mut notes = vec![];
+        let (actors, list) = room_actors(&level.actors, &g.objects, l, &table, &objects, layer.keep_object_id, needs, &mut notes);
+        for n in &notes {
+            log::warn!("{n}");
+        }
+        layer.notes.extend(notes);
+        src.put(&keys::room(SCENE_FILE, l, 0), &RoomData { actors, objects: list, ..room.clone() })?;
+    }
     let scene = SceneData { name: SCENE_FILE.to_string(), id: 0, draw_config: "SDC_DEFAULT".to_string(), layers };
     src.put(&keys::scene(SCENE_FILE), &scene)?;
-    src.put(&room_key, &room)?;
     src.put(&collision, &level.collision)?;
     Ok(())
 }
@@ -749,5 +872,52 @@ mod tests {
         let s = scene(&l, EnvLights { ambient: [80; 3], light1_dir: [0; 3], light1_color: [0; 3], light2_dir: [0; 3], light2_color: [0; 3], fog_color: [0; 3], fog_near: 990, fog_far: 12800 }, true);
         assert_eq!((s.rooms.len(), s.layer_data().spawns.len()), (1, 1));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A room's actors and objects from the level's: ids by name, each actor's object once (not
+    /// the keeps), the layers, the extra objects, and the room's object limit.
+    #[test]
+    fn room_actors_take_their_ids_and_objects() {
+        use oot_game::actor_table::{ActorInfo, ActorInitInfo, ActorTable};
+        let row = |name: &str, object_id: i16| ActorInfo {
+            enum_name: format!("ACTOR_{}", name.to_uppercase()),
+            name: name.to_string(),
+            alloc: 0,
+            internal: false,
+            init: Some(ActorInitInfo { id: 0, category: 6, flags: 0, object_id, init: None, destroy: None, update: None, draw: None }),
+        };
+        // ids 0..4: Player, a pot (gameplay_keep), a sign (object 5), a rock (field keep 2), a Keese (object 6)
+        let table = ActorTable { actors: vec![row("Player", 1), row("Obj_Tsubo", 1), row("En_Kanban", 5), row("En_Ishi", 2), row("En_Firefly", 6)] };
+        let objects: Vec<String> = (0..30).map(|i| format!("object_{i}")).collect();
+        let at = |actor: &str, layers: [bool; 4]| LevelActor { actor: actor.into(), pos: Vec3::new(10.4, 0.0, -20.6), rot: [0, 0x4000, 0], params: 0x0103, layers };
+        let actors = vec![at("Obj_Tsubo", [true; 4]), at("En_Kanban", [true; 4]), at("En_Ishi", [true; 4]), at("En_Firefly", [false, true, false, true]), at("En_Kanban", [true; 4]), at("Nobody", [true; 4])];
+        // the pot needs object 7 for its params (bit 8 set, as `Obj_Tsubo`'s object_tsubo)
+        let none = |_: &str, _: i16, _: [i16; 3]| vec![];
+        let pot = |n: &str, params: i16, _: [i16; 3]| if n == "Obj_Tsubo" && params & 0x100 != 0 { vec!["object_7"] } else { vec![] };
+        let mut notes = vec![];
+        let (e, list) = room_actors(&actors, &["object_9".into(), "object_nowhere".into()], 0, &table, &objects, Some(2), &none, &mut notes);
+        assert_eq!(e.iter().map(|x| x.id).collect::<Vec<_>>(), vec![1, 2, 3, 2]);
+        assert_eq!((e[0].pos, e[0].rot, e[0].params), ([10, 0, -21], [0, 0x4000, 0], 0x0103));
+        // the sign's object once, no keeps, then the extra object
+        assert_eq!(list, vec![5, 9]);
+        assert!(notes.iter().any(|n| n.contains("Nobody")) && notes.iter().any(|n| n.contains("object_nowhere")), "{notes:?}");
+        // by night the Keese comes, with its object; the unknown actor isn't noted again
+        let mut notes = vec![];
+        let (e, list) = room_actors(&actors, &[], 1, &table, &objects, Some(2), &none, &mut notes);
+        assert_eq!((e.len(), list), (5, vec![5, 6]));
+        assert!(notes.is_empty(), "{notes:?}");
+        // a scene without a keep lists the field keep's actors' object
+        let (_, list) = room_actors(&actors, &[], 0, &table, &objects, None, &none, &mut vec![]);
+        assert_eq!(list, vec![5, 2]);
+        // what an actor needs for its params comes first after its profile's
+        let (_, list) = room_actors(&actors, &[], 0, &table, &objects, Some(2), &pot, &mut vec![]);
+        assert_eq!(list, vec![7, 5]);
+        // past the limit: cut, with a note
+        let many: Vec<String> = (10..30).map(|i| format!("object_{i}")).collect();
+        let mut notes = vec![];
+        let (_, list) = room_actors(&[], &many, 0, &table, &objects, Some(2), &none, &mut notes);
+        assert_eq!(list.len(), room_object_limit(true));
+        assert_eq!(room_object_limit(true), 16);
+        assert!(notes[0].contains("can load 16 objects, not 20"), "{notes:?}");
     }
 }

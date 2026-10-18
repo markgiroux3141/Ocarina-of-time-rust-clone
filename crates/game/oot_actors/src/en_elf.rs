@@ -64,7 +64,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Elf's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 // `FairyType`.
 pub const FAIRY_NAVI: i16 = 0;

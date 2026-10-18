@@ -125,6 +125,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Clear).reads().sets().note("beaten: the warp, the heart container and the cooled floor at once; set at his death"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `NAVI_ENEMY_KING_DODONGO` (`actor.h`).

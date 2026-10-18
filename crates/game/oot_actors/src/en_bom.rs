@@ -64,7 +64,7 @@ pub const DAMAGE_BONUS: Field = Field::rot("damageBonus", Source::RotZ, 8, 8, Ki
 pub const GROWTH: Field = Field::rot("growth", Source::RotZ, 0, 8, Kind::Range(-128, 127), "added to the explosion sphere's growth (8 a frame), and ×6 to the blast's scale step").signed();
 
 /// En_Bom's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, DAMAGE_BONUS, GROWTH], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, DAMAGE_BONUS, GROWTH], flags: &[], todo: false, objects: &[] };
 
 /// `EnBomType`.
 const BOMB_BODY: i16 = 0;

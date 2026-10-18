@@ -3,6 +3,7 @@
 //! Draw an overworld level's outline, regions, paths and props over a plan of the built level, which
 //! rebuilds in the background as you edit. Walk it in pd-walk from the editor. See README.md.
 
+mod actors;
 mod app;
 mod edit;
 mod profile;

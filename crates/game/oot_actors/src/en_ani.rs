@@ -66,6 +66,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_2F)).reads().note("an adult's text"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `ITEMGETINF_15` (`save.h`: 0x15): the roof man's piece of heart given.

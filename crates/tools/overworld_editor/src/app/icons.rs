@@ -37,6 +37,7 @@ pub enum Icon {
     Redo,
     Keys,
     Leaf,
+    Actor,
 }
 
 /// Draws `icon` into `rect` (its square middle) in `color`, `width` thick at 24 units.
@@ -262,6 +263,12 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32, width: f32) {
             cubic((4.0, 20.0), (3.0, 9.0), (11.0, 3.5), (21.0, 3.0), st);
             cubic((21.0, 3.0), (21.5, 13.5), (14.5, 21.0), (4.0, 20.0), st);
             seg((4.0, 20.0), (14.0, 10.0));
+        }
+        // a figure on a base: someone (or something) that acts
+        Icon::Actor => {
+            ring(12.0, 6.5, 3.3);
+            line(&[(6.0, 19.0), (7.5, 13.5), (16.5, 13.5), (18.0, 19.0)], st);
+            seg((4.0, 20.5), (20.0, 20.5));
         }
     }
 }

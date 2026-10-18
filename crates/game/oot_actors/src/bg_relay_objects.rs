@@ -69,6 +69,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("the doors: open while set"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `WindmillSetpiecesMode`.

@@ -28,7 +28,7 @@ use eng_collision::dyna::{BG_ACTOR_MAX, BgActorSource, DYNA_TRANSFORM_POS};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, ObjectNeed};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
@@ -65,7 +65,16 @@ pub const PATH: Field = Field::params("path", 8, 8, Kind::PathIndex, "the carpen
 pub const UNUSED_8: Field = Field::params("params bits 8 to 15", 8, 8, Kind::Unused, "the finished gallery's 0xFF, the posters' 0; read by nothing").when("type", &[0, 1, 2, 4]);
 
 /// Bg_Spot01_Objects2's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, PATH, UNUSED_8], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, PATH, UNUSED_8],
+    flags: &[],
+    todo: false,
+    // `objectId` by type (5 to 7 have none and are killed): without it the piece is gone at once
+    objects: &[
+        ObjectNeed::new("object_spot01_matoya").when("type", &[0, 1, 2, 4]).note("the posters and the finished gallery"),
+        ObjectNeed::new("object_spot01_matoyab").when("type", &[3]).note("the unfinished gallery"),
+    ],
+};
 
 /// The types (`PARAMS_GET_U(params, 0, 3)`).
 pub const TYPE_POTION_SHOP_POSTER: i16 = 0;

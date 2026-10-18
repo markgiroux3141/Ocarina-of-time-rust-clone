@@ -48,7 +48,7 @@ pub const TYPE: Field = Field::params(
 pub const HIGH_BYTE: Field = Field::params("params bits 8 to 15", 8, 8, Kind::Unused, "0xFF in the data; read by nothing");
 
 /// Shot_Sun's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, HIGH_BYTE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, HIGH_BYTE], flags: &[], todo: false, objects: &[] };
 
 /// `ACTOR_ITEM_ETCETERA` (`actor_table.h`: 0x010F).
 const ACTOR_ITEM_ETCETERA: i16 = 0x010F;

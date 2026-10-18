@@ -72,6 +72,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[PATH],
     flags: &[FlagUse::new(item_get_inf!(ITEMGETINF_3A)).reads().sets().note("the Spooky Mask sold to him")],
     todo: false,
+    objects: &[],
 };
 
 /// `ITEMGETINF_3A` (`save.h`: 0x3A): the Spooky Mask sold to the graveyard kid.
@@ -612,6 +613,7 @@ impl ActorImpl for EnCs {
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye))), transform: m, bones, params: Default::default() });
         // The Spooky Mask on his face once he has it (and object_link_child is in).
         if play.save.get_item_get_inf(ITEMGETINF_3A)
+            // schema: optional; without object_link_child he just has no mask (and only once ITEMGETINF_3A is set)
             && play.object_ctx.get_index(OBJECT_LINK_CHILD).is_some()
             && let Some(head) = head
         {

@@ -119,6 +119,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.save.cutsceneIndex")).reads().note("a cutscene layer (CS_INDEX_0 and up): the dance (gGoronCityDaruniaDancingCs)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `SCENE_*` (`scene_table.h`).

@@ -96,7 +96,15 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
                 jg[k] = v.into();
             }
         }
+        if !g.objects.is_empty() {
+            jg["objects"] = g.objects.clone().into();
+        }
         j["game"] = jg;
+        j["problems"] = problems.clone().into();
+    }
+    // the actors, each at its height as built (oot_import::level reads them into the room)
+    if !doc.actors.is_empty() {
+        j["actors"] = actors(doc, lvl, &mut problems).into();
         j["problems"] = problems.clone().into();
     }
     let (obj, mtl) = lvl.mesh.to_obj("level.mtl", &tex);
@@ -105,6 +113,41 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
     put(&out.join("level.mtl"), mtl)?;
     put(&out.join("level.obj"), obj)?;
     Ok(problems)
+}
+
+/// Where an actor stands: its own height, else the highest floor under it as built (the water's
+/// surface where there's no floor), else nowhere.
+pub fn actor_z(actor: &crate::doc::Actor, ground: &crate::props::Ground, lvl: &Level) -> Option<f64> {
+    actor.z.or_else(|| {
+        let (floor, water) = ground.at(&lvl.mesh, actor.at);
+        floor.or(water)
+    })
+}
+
+/// The actors as `level.json` has them: the overlay's name, the position (x east, y north, z up),
+/// the game's rotation and params, and the layers it's in.
+fn actors(doc: &Doc, lvl: &Level, problems: &mut Vec<String>) -> Vec<serde_json::Value> {
+    let ground = crate::props::Ground::new(&lvl.mesh);
+    doc.actors
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+            let z = actor_z(a, &ground, lvl).unwrap_or_else(|| {
+                problems.push(format!("actor {i} ({}) stands outside the level near ({:.0}, {:.0})", a.actor, a.at[0], a.at[1]));
+                0.0
+            });
+            let mut j = serde_json::json!({
+                "actor": a.actor,
+                "pos": [a.at[0], a.at[1], z],
+                "rot": a.rot,
+                "params": a.params,
+            });
+            if let Some(ls) = a.layers {
+                j["layers"] = ls.to_vec().into();
+            }
+            j
+        })
+        .collect()
 }
 
 fn put(path: &Path, text: String) -> Result<(), String> {

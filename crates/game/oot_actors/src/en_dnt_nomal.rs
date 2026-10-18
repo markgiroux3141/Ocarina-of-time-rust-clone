@@ -48,7 +48,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::*;
 use oot_game::camera::{CAM_ID_MAIN, f_atan2f};
 use oot_game::collision_check::*;
@@ -107,6 +107,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE],
     flags: &[FlagUse::new(item_get_inf!(ITEMGETINF_1D)).reads().note("the target type: set, bullseyes don't count")],
     todo: false,
+    // `type == ENDNTNOMAL_TARGET ? OBJECT_HINTNUTS : OBJECT_DNK` (below 0 is the target): without it
+    // the scrub is gone at once
+    objects: &[
+        ObjectNeed::new(HINTNUTS).when("type", &[-1, 0]).note("the target scrub's skeleton and animations"),
+        ObjectNeed::new(DNK).when("type", &[1, 2, 3, 4, 5, 6, 7, 8, 9]).note("the audience scrubs' skeleton and animations"),
+    ],
 };
 
 /// `ENDNTNOMAL_TARGET`, `ENDNTNOMAL_STAGE` (`z_en_dnt_nomal.h`).

@@ -99,3 +99,11 @@ program, and nothing kept it in step with the code.
   later is followed only through `part_of`; flags set by shared code are seen only through
   `indirect`; actors that only other actors spawn have no placements, so only their code is
   checked.
+
+## Amended (2026-10-17): object needs
+
+ADR 0077 adds `ActorSchema::objects`: the objects an actor finds slots for itself besides its
+profile's (`ObjectNeed { object, when, note }`, by field value where one decides it), for the
+editor and the importer to load into a custom room. `oot_actors/tests/schemas.rs` checks that a
+module looking up objects declares them (or notes why not) and that every room of the game
+placing the actor loads what it declares.

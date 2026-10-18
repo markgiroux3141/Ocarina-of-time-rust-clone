@@ -66,6 +66,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, BITS_2_TO_4, ICE, BITS_6_AND_7, SWITCH_FLAG, BITS_14_AND_15, ROT_X, ROT_Z],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("type 1: set, it rises")],
     todo: false,
+    objects: &[],
 };
 
 /// `D_80B940C0`: the focus's height, by type.

@@ -116,6 +116,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, SWITCH_FLAG],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("a pair: set at init, it's gone; set at the second's death")],
     todo: false,
+    objects: &[],
 };
 
 /// `EnZfType` (`z_en_zf.h`).

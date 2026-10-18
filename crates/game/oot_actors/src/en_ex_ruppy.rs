@@ -66,6 +66,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, THROW_DISTANCE],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_SILVER_SCALE)).reads().note("type 0: 5 rupees each until it's won")],
     todo: false,
+    objects: &[],
 };
 /// `NA_SE_EV_RAINBOW_SHOWER` (`environmentbank_table.h`: 0x28BC).
 const NA_SE_EV_RAINBOW_SHOWER: u16 = 0x28BC;

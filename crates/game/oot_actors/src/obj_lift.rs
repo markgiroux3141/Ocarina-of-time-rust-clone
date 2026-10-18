@@ -70,6 +70,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SIZE, SWITCH_FLAG, FALL_TIMER, HIGH_BITS, ROT_X, ROT_Z],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken, gone at init; set when it breaks")],
     todo: false,
+    objects: &[],
 };
 
 /// `sFallTimerDurations`.

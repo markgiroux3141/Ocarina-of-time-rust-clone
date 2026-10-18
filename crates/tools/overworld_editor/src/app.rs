@@ -3,6 +3,7 @@
 //! is rebuilt in the background; with live export on, the build is also written out for the game
 //! (`oot --level`), which reloads it.
 
+use crate::actors::{Catalogue, Group};
 use crate::edit::{self, NodeRef, Shapes};
 use crate::profile::ProfileView;
 use crate::scene::{self, Scene, Shading, View};
@@ -22,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::Arc;
 
+mod actor_ui;
 mod chrome;
 mod icons;
 mod inspector;
@@ -45,6 +47,8 @@ enum Tool {
     Brush,
     /// Placing kit pieces.
     Prop,
+    /// Placing the game's actors.
+    Actor,
     /// Drawing a line of a kind: "dirt", "fence", "bridge", "hedge" (a closed shape), "tunnel",
     /// "rock" (a closed shape) or "arch".
     Line(&'static str),
@@ -57,6 +61,8 @@ enum Sel {
     Path(usize),
     Node(NodeRef),
     Prop(usize),
+    /// One of `doc.actors`.
+    Actor(usize),
     Line(usize),
     /// A region's edges, to give them a profile: (loop, the edge clicked, by the node it starts
     /// from). Shift-clicked edges of the same loop are in `edge_multi`.
@@ -70,6 +76,15 @@ enum Gesture {
     Whole { start: Vec<(NodeRef, P2)>, from: P2 },
     Pan,
     Prop(PropDrag),
+    Actor(ActorDrag),
+}
+
+/// Dragging an actor in the plan: moving it (the grab point's offset), or turning it by its
+/// facing handle.
+#[derive(Clone, Copy)]
+enum ActorDrag {
+    Move { i: usize, off: P2 },
+    Turn { i: usize },
 }
 
 /// Dragging a prop in the plan: moving it (the grab point's offset from its origin), turning it by
@@ -95,6 +110,8 @@ enum Gesture3 {
     Prop { i: usize, off: P2, z: f64 },
     /// Sliding a wall piece or opening along the walls under the pointer.
     WallProp { i: usize },
+    /// Moving an actor over the plane at its height.
+    Actor { i: usize, off: P2, z: f64 },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -199,6 +216,16 @@ pub struct App {
     thumbs: thumbs::Thumbs,
     show_keys: bool,
     show_level: bool,
+    /// The actors there are to place, and how the game places them.
+    catalogue: Catalogue,
+    /// The actor the Actors tool places, and what it starts as (params, rotation): a variant the
+    /// game places it with, or all zero.
+    actor_pick: String,
+    actor_start: (u16, [i16; 3]),
+    /// The actors palette's search, group, and whether actors only others spawn are listed.
+    actor_query: String,
+    actor_group: Option<Group>,
+    actor_spawned: bool,
 }
 
 /// How ▶ Play starts the game (the menu beside it): Link's age, the time of day (`--time`), and a
@@ -294,6 +321,7 @@ struct Pickable {
     paths: bool,
     lines: bool,
     props: bool,
+    actors: bool,
 }
 
 impl Pickable {
@@ -395,6 +423,7 @@ impl App {
                 (None, Some(k)) => Sel::Path(k),
                 _ => match (n.strip_prefix("prop:").and_then(|i| i.parse::<usize>().ok()), n.strip_prefix("line:").and_then(|i| i.parse::<usize>().ok())) {
                     (Some(i), _) if i < doc.props.len() => Sel::Prop(i),
+                _ if n.strip_prefix("actor:").and_then(|i| i.parse::<usize>().ok()).is_some_and(|i| i < doc.actors.len()) => Sel::Actor(n[6..].parse().unwrap()),
                     (_, Some(k)) if k < doc.lines.len() => Sel::Line(k),
                     // edge:<region name>:<k>, or edge:outline:<k>
                     _ => n
@@ -468,10 +497,16 @@ impl App {
             kit_region: "all".into(),
             recent: vec![],
             filter: String::new(),
-            pickable: Pickable { regions: true, edges: true, paths: true, lines: true, props: true },
+            pickable: Pickable { regions: true, edges: true, paths: true, lines: true, props: true, actors: true },
             thumbs: thumbs::Thumbs::default(),
             show_keys: false,
             show_level: false,
+            catalogue: Catalogue::load(Path::new(ROOT)),
+            actor_pick: "Obj_Tsubo".into(),
+            actor_start: (0, [0; 3]),
+            actor_query: String::new(),
+            actor_group: None,
+            actor_spawned: false,
         }
     }
 
@@ -492,6 +527,7 @@ impl App {
             Sel::Node(NodeRef::Loop(l, i)) => l < edit::loop_count(&self.doc) && i < edit::loop_nodes(&self.doc, l).len(),
             Sel::Node(NodeRef::Path(p, i)) => p < self.doc.paths.len() && i < self.doc.paths[p].nodes.len(),
             Sel::Prop(i) => i < self.doc.props.len(),
+            Sel::Actor(i) => i < self.doc.actors.len(),
             Sel::Line(k) => k < self.doc.lines.len(),
             Sel::Node(NodeRef::Line(k, i)) => k < self.doc.lines.len() && i < self.doc.lines[k].nodes.len(),
             Sel::Edge(l, k) => l < edit::loop_count(&self.doc) && k < edit::loop_nodes(&self.doc, l).len(),
@@ -698,7 +734,11 @@ impl App {
     /// there). Live export then keeps it up to date, and the game reloads each rebuild with Link
     /// where he stands.
     fn play(&mut self, at: Option<P2>) {
-        let exe = Path::new(ROOT).join(if cfg!(windows) { "target/release/oot.exe" } else { "target/release/oot" });
+        // the game built beside the editor (scripts\run\editor.bat builds both into the scripts'
+        // target), else the default release build's
+        let name = if cfg!(windows) { "oot.exe" } else { "oot" };
+        let beside = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).filter(|p| p.exists());
+        let exe = beside.unwrap_or_else(|| Path::new(ROOT).join("target/release").join(name));
         if !exe.exists() {
             self.status = "the game isn't built: run cargo build --release -p oot".into();
             return;
@@ -771,6 +811,10 @@ impl App {
             }
             Sel::Prop(i) => {
                 self.doc.props.remove(i);
+                self.sel = Sel::None;
+            }
+            Sel::Actor(i) => {
+                self.doc.actors.remove(i);
                 self.sel = Sel::None;
             }
             Sel::Line(k) => {
@@ -960,6 +1004,10 @@ impl App {
                 let z = self.doc.props[i].z.or(self.prop_z(i)).unwrap_or(0.0);
                 self.doc.props[i].z = Some((z + dz).round());
             }
+            Sel::Actor(i) => {
+                let z = self.actor_z(i).unwrap_or(0.0);
+                self.doc.actors[i].z = Some((z + dz).round());
+            }
             // a rock grows taller (its contours keep their proportions), an arch's crown rises
             Sel::Line(k) if self.doc.lines[k].kind == "rock" => edit::rock_taller(&mut self.doc.lines[k], dz),
             Sel::Line(k) if self.doc.lines[k].kind == "arch" => {
@@ -1129,6 +1177,9 @@ impl App {
         if let Some(r) = edit::node_near(&self.doc, w, tol).filter(|r| self.show_nodes && pk.node(r)) {
             return Sel::Node(r);
         }
+        if let Some(i) = self.actor_at(w).filter(|_| pk.actors) {
+            return Sel::Actor(i);
+        }
         if let Some(i) = self.prop_at(w).filter(|_| pk.props) {
             return Sel::Prop(i);
         }
@@ -1294,7 +1345,7 @@ impl App {
             }
             Tool::Region => self.status = "a region needs 3 points".into(),
             Tool::Path | Tool::Line(_) => self.status = "it needs 2 points".into(),
-            Tool::Select | Tool::Brush | Tool::Prop => {}
+            Tool::Select | Tool::Brush | Tool::Prop | Tool::Actor => {}
         }
     }
 
@@ -1345,6 +1396,7 @@ impl App {
         }
         if sc(Modifiers::COMMAND, Key::D) {
             self.duplicate_prop();
+            self.duplicate_actor();
         }
         if ctx.egui_wants_keyboard_input() {
             return;
@@ -1387,6 +1439,9 @@ impl App {
         if pressed(Key::K) {
             self.set_tool(Tool::Prop);
         }
+        if pressed(Key::C) {
+            self.set_tool(Tool::Actor);
+        }
         if pressed(Key::D) {
             self.set_tool(Tool::Line("dirt"));
         }
@@ -1411,9 +1466,11 @@ impl App {
         let fine = if shift { 1.0 } else { 15.0 };
         if pressed(Key::Q) {
             self.turn_prop(fine);
+            self.turn_actor(fine);
         }
         if pressed(Key::E) {
             self.turn_prop(-fine);
+            self.turn_actor(-fine);
         }
         if self.tool == Tool::Brush {
             for (k, m) in [(Key::Num1, Mode::Raise), (Key::Num2, Mode::Lower), (Key::Num3, Mode::Smooth), (Key::Num4, Mode::Flatten), (Key::Num5, Mode::Bumps), (Key::Num6, Mode::Erase)] {
@@ -1495,13 +1552,27 @@ impl App {
         if resp.drag_started_by(PointerButton::Primary) {
             let origin = ctx.input(|i| i.pointer.press_origin()).map(|p| self.view.to_world(p));
             self.gesture = if self.tool == Tool::Brush { Gesture::None } else { Gesture::Pan };
-            if let (Tool::Select | Tool::Prop, Some(o)) = (self.tool, origin) {
-                // the selected prop's handles, then nodes, then any prop's footprint
+            let actor_handle = match self.sel {
+                Sel::Actor(i) => self.actor_handle(i).map(|h| (i, h)),
+                _ => None,
+            };
+            if let (Tool::Select | Tool::Prop | Tool::Actor, Some(o)) = (self.tool, origin) {
+                // the selected actor's handle and the actors (small, drawn on top), then the selected
+                // prop's handles, then nodes, then any prop's footprint
                 let handles = match self.sel {
                     Sel::Prop(i) => self.prop_handles(i).map(|h| (i, h)),
                     _ => None,
                 };
-                if let Some((i, _)) = handles.filter(|(_, (t, _, _))| dist(o, *t) <= tol * 1.3) {
+                let actors = (self.pickable.actors && self.tool == Tool::Select) || self.tool == Tool::Actor;
+                if let Some((i, _)) = actor_handle.filter(|(_, h)| dist(o, *h) <= tol * 1.3) {
+                    self.gesture = Gesture::Actor(ActorDrag::Turn { i });
+                } else if let Some(i) = self.actor_at(o).filter(|_| actors) {
+                    self.sel = Sel::Actor(i);
+                    let at = self.doc.actors[i].at;
+                    self.gesture = Gesture::Actor(ActorDrag::Move { i, off: [at[0] - o[0], at[1] - o[1]] });
+                } else if self.tool == Tool::Actor {
+                    // the Actors tool drags only actors: elsewhere, the plan pans
+                } else if let Some((i, _)) = handles.filter(|(_, (t, _, _))| dist(o, *t) <= tol * 1.3) {
                     self.gesture = Gesture::Prop(PropDrag::Turn { i });
                 } else if let Some((i, (_, _, d0))) = handles.filter(|(_, (_, c, _))| dist(o, *c) <= tol * 1.3) {
                     self.gesture = Gesture::Prop(PropDrag::Scale { i, start: self.doc.props[i].scale, d0 });
@@ -1540,6 +1611,13 @@ impl App {
                         self.drag_prop(*d, w, alt);
                     }
                 }
+                Gesture::Actor(d) => {
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let w = self.view.to_world(p);
+                        let alt = ctx.input(|i| i.modifiers.alt);
+                        self.drag_actor(*d, w, alt);
+                    }
+                }
                 Gesture::Whole { start, from } => {
                     if let Some(p) = resp.interact_pointer_pos() {
                         let w = self.view.to_world(p);
@@ -1572,6 +1650,10 @@ impl App {
                     Tool::Prop => match self.prop_at(w) {
                         Some(i) => self.sel = Sel::Prop(i),
                         None => self.place_prop(w),
+                    },
+                    Tool::Actor => match self.actor_at(w) {
+                        Some(i) => self.sel = Sel::Actor(i),
+                        None => self.place_actor(w),
                     },
                     Tool::Path | Tool::Line(_) if resp.double_clicked() => self.finish_drawing(),
                     _ => self.draw_click(w),
@@ -1727,9 +1809,16 @@ impl App {
         if resp.drag_started_by(PointerButton::Primary) {
             self.gesture3 = if painting { Gesture3::Paint } else { Gesture3::Orbit };
             let origin = ctx.input(|i| i.pointer.press_origin());
-            // dragging a prop moves it, over the plane at its height; a wall piece or opening
-            // slides along the walls under the pointer
-            if let (Some(o), false) = (origin, painting) {
+            // dragging an actor or a prop moves it, over the plane at its height; a wall piece or
+            // opening slides along the walls under the pointer
+            let actor = origin.filter(|_| !painting && (self.pickable.actors || self.tool == Tool::Actor)).and_then(|o| self.actor_at_3d(&cam, rect, o));
+            if let Some(i) = actor {
+                let a = &self.doc.actors[i];
+                let z = self.actor_z(i).unwrap_or(0.0);
+                let q = origin.map(|o| ray(&cam, o)).and_then(|(o, d)| (d[2].abs() > 1e-6).then(|| (z - o[2]) / d[2]).filter(|&t| t > 0.0).map(|t| [o[0] + d[0] * t, o[1] + d[1] * t])).unwrap_or(a.at);
+                self.sel = Sel::Actor(i);
+                self.gesture3 = Gesture3::Actor { i, off: [a.at[0] - q[0], a.at[1] - q[1]], z };
+            } else if let (Some(o), false) = (origin, painting) {
                 if let Some(i) = wall_spot(&cam, o).and_then(|(q, _)| self.wall_prop_near(q)) {
                     self.sel = Sel::Prop(i);
                     self.gesture3 = Gesture3::WallProp { i };
@@ -1789,6 +1878,20 @@ impl App {
                         self.doc.props[i].at = at.map(|x| x.round());
                     }
                 }
+                Gesture3::Actor { i, off, z } => {
+                    let (i, off, z) = (*i, *off, *z);
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let (o, d) = ray(&cam, p);
+                        if d[2].abs() > 1e-6 {
+                            let t = (z - o[2]) / d[2];
+                            if t > 0.0 {
+                                let w = [o[0] + d[0] * t + off[0], o[1] + d[1] * t + off[1]];
+                                let alt = ctx.input(|i| i.modifiers.alt);
+                                self.drag_actor(ActorDrag::Move { i, off: [0.0, 0.0] }, w, alt);
+                            }
+                        }
+                    }
+                }
                 Gesture3::Paint | Gesture3::None => {}
             }
         }
@@ -1805,7 +1908,9 @@ impl App {
             let hit = resp.interact_pointer_pos().and_then(|p| hit_at(&cam, p));
             let spot = resp.interact_pointer_pos().and_then(|p| wall_spot(&cam, p));
             let on_wall_prop = spot.and_then(|(q, _)| self.wall_prop_near(q));
+            let actor = resp.interact_pointer_pos().filter(|_| self.pickable.actors || self.tool == Tool::Actor).and_then(|p| self.actor_at_3d(&cam, rect, p));
             let s = match (on_wall_prop, hit) {
+                _ if actor.is_some() => Sel::Actor(actor.unwrap()),
                 (Some(i), _) => Sel::Prop(i),
                 (None, Some((_, q))) => {
                     let w = [q[0], q[1]];
@@ -1829,6 +1934,7 @@ impl App {
                     }
                 }
                 (Tool::Prop, Some((_, q)), Sel::Loop(_) | Sel::Path(_) | Sel::None) => self.place_prop([q[0], q[1]]),
+                (Tool::Actor, Some((_, q)), Sel::Loop(_) | Sel::Path(_) | Sel::Line(_) | Sel::Prop(_) | Sel::None) => self.place_actor([q[0], q[1]]),
                 _ => self.click_select(s, shift),
             }
             if resp.double_clicked() {
@@ -2026,6 +2132,7 @@ impl App {
             let r = pts.iter().map(|q| (q[0] - prop.at[0]).hypot(q[1] - prop.at[1])).fold(40.0, f64::max);
             line3(&[[prop.at[0], prop.at[1], z], [prop.at[0] + f[0] * r * 1.15, prop.at[1] + f[1] * r * 1.15, z]], false, Stroke::new(2.0, PROP_COLOUR));
         }
+        self.paint_actors_3d(&painter, &cam, rect, resp.hover_pos());
         // the ghost: where a wall piece would go (the one being put down, or dragged), or why not
         let ghost = match (&self.gesture3, resp.hover_pos()) {
             (Gesture3::WallProp { i }, _) => self.doc.props.get(*i).cloned().zip(resp.interact_pointer_pos()),
@@ -2079,6 +2186,8 @@ impl App {
                 "hover a wall: the ghost shows where it goes (red: why it can't) · click: put it there · drag one along the walls · drag elsewhere: orbit"
             } else if self.tool == Tool::Prop {
                 "click: place the Kit panel's piece · drag a prop: move it · Q / E: turn · drag elsewhere: orbit · right-drag: pan"
+            } else if self.tool == Tool::Actor {
+                "click the ground: place the palette's actor · drag an actor: move it · Q / E: turn · PgUp / PgDn: raise · drag elsewhere: orbit"
             } else {
                 "drag: orbit · right-drag: pan · wheel: zoom · double-click: orbit round that spot · drag the selected regions: raise / sink"
             },
@@ -2514,6 +2623,7 @@ impl App {
                 }
             }
         }
+        self.paint_actors(painter, hover);
         // the ghost of a wall piece about to be put down: where it fits, or why it can't
         if let (Tool::Prop, true, Some(h), Gesture::None) = (self.tool, self.chosen_on_wall(), hover, &self.gesture) {
             let probe = Prop { level: None, piece: self.piece.clone(), at: v.to_world(h), z: None, yaw: 0.0, scale: [1.0; 3] };
@@ -2649,6 +2759,9 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.receive_build();
+        if self.catalogue.poll() || self.catalogue.reading() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
         self.keys(&ctx);
         self.refresh_shapes();
 

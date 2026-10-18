@@ -61,6 +61,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[FLAME, HALF_TURN, SWITCH_FLAG, BY_SWITCH, LIT_WITH_FLAG, CANDLE, ROT_X],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("bit 10: lights it or puts it out")],
     todo: false,
+    objects: &[],
 };
 
 /// `GAMEMODE_END_CREDITS` (`save.h`: 3).

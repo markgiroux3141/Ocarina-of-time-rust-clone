@@ -7,6 +7,10 @@ description = "Overworld level editor: draw an outline, regions and paths, paint
 
 [dependencies]
 overworld.workspace = true
+# The actors it places: their profiles and schemas (ADR 0066), and the game's pack for how the
+# game's scenes place them (a tool may link the content crates, ADR 0002).
+oot_game.workspace = true
+oot_actors.workspace = true
 eframe.workspace = true
 image.workspace = true
 glam.workspace = true

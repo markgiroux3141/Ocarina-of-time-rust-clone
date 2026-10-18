@@ -71,7 +71,7 @@ pub const TYPE: Field = Field::params(
 pub const TEXT_ID: Field = Field::params("textId", 8, 8, Kind::Range(0, 0xFF), "a signpost's text, 0x300 | it");
 
 /// En_A_Obj's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, TEXT_ID], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, TEXT_ID], flags: &[], todo: false, objects: &[] };
 
 
 /// `AObjType`.

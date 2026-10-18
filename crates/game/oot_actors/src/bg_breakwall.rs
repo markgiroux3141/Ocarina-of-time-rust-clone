@@ -40,7 +40,7 @@ use eng_math::step_to_f;
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_80033480};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::{NA_SE_EV_WALL_BROKEN, NA_SE_SY_CORRECT_CHIME, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::event_chk_inf;
@@ -95,6 +95,11 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_B0)).reads().sets().note("type 0: Dodongo's Cavern's opening seen"),
     ],
     todo: false,
+    // `wallType >= BWALL_KD_FLOOR ? OBJECT_KINGDODONGO : OBJECT_BWALL`: without it the wall is gone at once
+    objects: &[
+        ObjectNeed::new(BWALL_OBJECT).when("wallType", &[0, 1]).note("the bombable wall's model and collision"),
+        ObjectNeed::new(KINGDODONGO_OBJECT).when("wallType", &[2, 3]).note("King Dodongo's floor and lava cover"),
+    ],
 };
 
 /// `BombableWallInfo`: the object (file), `colHeader`, `dList` and `colType`.

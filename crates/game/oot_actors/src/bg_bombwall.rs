@@ -53,6 +53,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, CHIME],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as it's hit; set at init, it's broken")],
     todo: false,
+    objects: &[],
 };
 
 /// One of `sTrisElementsInit`'s elements: hit by `0x40000048`.

@@ -76,7 +76,7 @@ pub const PROFILE: ActorProfile =
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(-2, "TEKTITE_BLUE"), (-1, "TEKTITE_RED")]), "blue (walks on water, 4 health) or red (2 health)");
 
 /// En_Tite's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `EnTiteType` (`z_en_tite.h`).
 pub const TEKTITE_BLUE: i16 = -2;

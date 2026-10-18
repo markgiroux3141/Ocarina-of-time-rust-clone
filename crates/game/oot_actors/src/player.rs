@@ -11577,6 +11577,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::TempClear).sets().note("debug: the fly mode's L and D-left").indirect("debug, not ported"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// Indices into Player's `RenderState` extras.
@@ -11783,6 +11784,7 @@ impl ActorImpl for Player {
         if play.save.dog_params < 0 {
             /// `OBJECT_DOG` (`object_table.h`: 0x016B).
             const OBJECT_DOG: i16 = 0x016B;
+            // schema: the dog's object, for a dog following Link from another scene: the dog's need
             if play.object_ctx.get_index(OBJECT_DOG).is_none() {
                 play.save.dog_params = 0;
             } else {

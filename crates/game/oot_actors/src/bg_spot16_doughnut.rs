@@ -48,6 +48,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_2F)).reads().note("the turning ring, for an adult: set, white; clear, fiery")],
     todo: false,
+    objects: &[],
 };
 
 /// `sScales`: the expanding rings' starting scales (× 1e-4).

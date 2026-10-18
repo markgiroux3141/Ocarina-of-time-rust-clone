@@ -56,6 +56,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[PATH],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("her text")],
     todo: false,
+    objects: &[],
 };
 /// `ATTENTION_RANGE_6`.
 const ATTENTION_RANGE_6: u8 = 6;

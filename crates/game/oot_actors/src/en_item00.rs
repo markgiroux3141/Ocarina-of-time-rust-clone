@@ -37,7 +37,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_MISC, ActorHandle, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed, Source};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item, offer_get_item_range};
 use oot_game::item::*;
@@ -69,6 +69,15 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, COLLECTIBLE_FLAG, BIT_14, SPAWN_PARAM_8000, ROT_Z],
     flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().note("set: gone; set once collected")],
     todo: false,
+    // `EnItem00_Init`'s `Object_GetSlot` + `Actor_SetObjectDependency` for the shields and tunics
+    // (killed without it), and `EnItem00_Draw`'s `OBJECT_GI_HEART` for a placed recovery heart
+    // (drawn with `GetItem_Draw` once it's loaded, nothing until then)
+    objects: &[
+        ObjectNeed::new("object_gi_shield_1").when("params", &[0x15]).note("the Deku Shield"),
+        ObjectNeed::new("object_gi_shield_2").when("params", &[0x16]).note("the Hylian Shield"),
+        ObjectNeed::new("object_gi_clothes").when("params", &[0x17, 0x18]).note("the Zora and Goron Tunics"),
+        ObjectNeed::new("object_gi_heart").when("params", &[0x03]).note("a placed recovery heart (not spawnParam8000): invisible without it"),
+    ],
 };
 
 // `Item00Type` (actor.h).

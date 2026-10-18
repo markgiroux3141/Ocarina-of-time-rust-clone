@@ -65,6 +65,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_6C)).reads().sets().note("the dying guard's last words heard (0x7007, then 0x7008)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `Heishi4Type`.

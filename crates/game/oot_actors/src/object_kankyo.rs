@@ -37,7 +37,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::{NA_SE_EV_NAVY_CRASH, NA_SE_EV_NAVY_FLY, NA_SE_VO_NA_HELLO_2, NA_SE_VO_NA_HELLO_3, NA_SE_VO_RT_THROW, SFX_FLAG, SfxPos};
 use oot_game::env::PRECIP_SNOW_MAX;
 use oot_game::gbi::setup_dl;
@@ -70,6 +70,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_AD", 0xAD)).reads().note("params 5: the spirit trial's beam gone").indirect("params 5 isn't ported"),
     ],
     todo: false,
+    // `ObjectKankyo_SunGraveSparkInit`'s `OBJECT_SPOT02_OBJECTS` and `ObjectKankyo_InitBeams`'
+    // `OBJECT_DEMO_KEKKAI`: the C asserts each is there, and nothing is drawn until it's loaded
+    objects: &[
+        ObjectNeed::new("object_spot02_objects").when("params", &[4]).note("the Sun's Song grave's spark"),
+        ObjectNeed::new("object_demo_kekkai").when("params", &[5]).note("Ganon's castle's beams (not ported)"),
+    ],
 };
 
 /// `SCENE_KOKIRI_FOREST` (Kokiri Forest), `ENTR_KOKIRI_FOREST_0`.

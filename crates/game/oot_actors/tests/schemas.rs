@@ -418,3 +418,104 @@ fn placements_decode() {
         .collect();
     assert!(errors.is_empty(), "{} actors' placements don't decode:\n{}", errors.len(), report.join("\n"));
 }
+
+/// Modules that find object slots themselves (`object_ctx.get_index`, `Object_GetSlot`) declare
+/// the objects they need (`ActorSchema::objects`), unless the call carries a `// schema:` note
+/// (its own profile's object, one only another actor's params name). Each need is well formed.
+#[test]
+fn object_lookups_are_declared() {
+    let mut errors = Vec::new();
+    for p in ported().filter(|p| !p.schema.todo) {
+        let code = read_code(p);
+        let lookups: Vec<usize> = code.lines.iter().filter(|(_, l, note)| l.contains("object_ctx.get_index(") && !note).map(|(n, _, _)| *n).collect();
+        if !lookups.is_empty() && p.schema.objects.is_empty() {
+            errors.push(format!("{}: finds object slots (lines {lookups:?}) but declares no `objects`", p.name));
+        }
+        for n in p.schema.objects {
+            if n.object.is_empty() || !(n.object.starts_with("object_") || n.object.starts_with("gameplay_")) {
+                errors.push(format!("{}: object need {:?} isn't an object file's name", p.name, n.object));
+            }
+            if n.object == p.object {
+                errors.push(format!("{}: object need {:?} is its profile's", p.name, n.object));
+            }
+            if let Some(w) = n.when {
+                match p.schema.field(w.field) {
+                    None => errors.push(format!("{}: object need {:?}: `when` names no field `{}`", p.name, n.object, w.field)),
+                    Some(g) => {
+                        for v in w.values {
+                            if !fits(g, *v) {
+                                errors.push(format!("{}: object need {:?}: `when` value {v} doesn't fit `{}`", p.name, n.object, g.name));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(errors.is_empty(), "{} problems:\n{}", errors.len(), errors.join("\n"));
+}
+
+/// Every room of the game's that places an actor loads the `objects` it needs for its params (in
+/// the room's list, or the scene's keep, or `gameplay_keep`). Placements whose profile's object
+/// isn't loaded are passed over: `Actor_Spawn` never spawns them (the game has a few: Mido in his
+/// house, some cutscene layers' actors). The game's own oversights (an actor placed where an
+/// object it needs isn't, which then kills itself or waits) are listed in `MISSING_IN_THE_GAME`.
+#[test]
+fn needed_objects_are_in_the_rooms_that_place_them() {
+    /// (actor, scene file, object): placements the game makes without an object they need.
+    const MISSING_IN_THE_GAME: &[(&str, &str, &str)] = &[
+        // "Bank danger!": pots asking for object_tsubo where the room doesn't load it, gone at once
+        ("Obj_Tsubo", "spot06_scene", "object_tsubo"),
+        ("Obj_Tsubo", "spot15_scene", "object_tsubo"),
+        // cutscene layers placing the bombable walls without object_bwall: killed at once
+        ("Bg_Breakwall", "hakaana_ouke_scene", "object_bwall"),
+        ("Bg_Breakwall", "spot18_scene", "object_bwall"),
+        // type-1 bushes where the room doesn't load object_kusa: killed at once
+        ("En_Kusa", "ddan_scene", "object_kusa"),
+        ("En_Kusa", "spot06_scene", "object_kusa"),
+        ("En_Kusa", "testroom_scene", "object_kusa"),
+        // Kokiri Forest's layers 8 and 9: a boy (0xD300) whose objects the room doesn't load
+        ("En_Ko", "spot04_scene", "object_km1"),
+        ("En_Ko", "spot04_scene", "object_os_anime"),
+        // placed recovery hearts without object_gi_heart: collectable, never drawn
+        ("En_Item00", "HAKAdanCH_scene", "object_gi_heart"),
+        ("En_Item00", "ddan_scene", "object_gi_heart"),
+    ];
+    let Ok(pack) = oot_game::pack::GamePack::open_default() else {
+        eprintln!("skipping: no pack");
+        return;
+    };
+    let a = oot_actors::game_assets(pack).expect("the pack's tables");
+    let names: HashMap<&str, &ActorProfile> = ported().map(|p| (p.name, p)).collect();
+    let mut missing: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut checked = 0;
+    let mut seen = BTreeSet::new();
+    for e in &a.scenes.scenes {
+        let Ok(sd) = a.pack.scene(&e.file) else { continue };
+        for ld in &sd.layers {
+            for key in &ld.rooms {
+                if !seen.insert((key.clone(), ld.keep_object_id)) {
+                    continue;
+                }
+                let Ok(r) = a.pack.room(key) else { continue };
+                let loaded = |o: &str| o == "gameplay_keep" || ld.keep_object.as_deref() == Some(o) || a.scenes.object_id(o).is_some_and(|id| r.objects.contains(&id));
+                for x in &r.actors {
+                    let name = a.actors.name(x.id);
+                    let Some(p) = names.get(name.as_str()) else { continue };
+                    if !loaded(p.object) {
+                        continue;
+                    }
+                    checked += 1;
+                    for o in p.schema.needed_objects(x.params, x.rot) {
+                        if !loaded(o) && !MISSING_IN_THE_GAME.contains(&(p.name, e.file.as_str(), o)) {
+                            missing.entry(format!("{} needs {o}", p.name)).or_default().insert(format!("{key} (params {:#06x})", x.params as u16));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(checked > 0, "no placements checked");
+    let report: Vec<String> = missing.iter().map(|(k, v)| format!("{k}: {} rooms: {}", v.len(), v.iter().cloned().collect::<Vec<_>>().join(", "))).collect();
+    assert!(missing.is_empty(), "{} needs not met by the rooms placing them:\n{}", missing.len(), report.join("\n"));
+}

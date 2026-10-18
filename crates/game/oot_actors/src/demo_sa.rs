@@ -66,6 +66,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         .reads()
         .note("types 0 and 1: CHAMBER_CS_FOREST (not in a cutscene layer) plays the Forest Medallion's cutscene; not ported")],
     todo: false,
+    objects: &[],
 };
 
 /// `SariaEyes`.

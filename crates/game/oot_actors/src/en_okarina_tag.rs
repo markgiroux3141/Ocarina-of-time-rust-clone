@@ -90,6 +90,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("scarecrowSpawnSongSet")).reads().note("song 6: no check until it's set"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `OcarinaMode`s past `OCARINA_MODE_04` (`ocarina.h`): a wrong song's (5 to 13), and 0xE.

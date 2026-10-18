@@ -205,23 +205,76 @@ impl FlagUse {
     }
 }
 
-/// An actor's configuration: its fields and its flags.
+/// An object an actor needs loaded besides its profile's: one it finds a slot for itself
+/// (`Object_GetSlot`) for its model, its animations or what it spawns, always or for some values
+/// of a field (`Obj_Tsubo`'s pot by bit 8). Without it the actor waits, or kills itself; a room
+/// it's placed in lists it, as the game's own rooms do (the editor puts it there).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ObjectNeed {
+    /// The object's file: "object_tsubo".
+    pub object: &'static str,
+    pub when: Option<When>,
+    /// What it's for, in a few words.
+    pub note: &'static str,
+}
+
+impl ObjectNeed {
+    pub const fn new(object: &'static str) -> Self {
+        ObjectNeed { object, when: None, note: "" }
+    }
+
+    /// Only for some values of a field.
+    pub const fn when(self, field: &'static str, values: &'static [i32]) -> Self {
+        ObjectNeed { when: Some(When { field, values }), ..self }
+    }
+
+    pub const fn note(self, note: &'static str) -> Self {
+        ObjectNeed { note, ..self }
+    }
+}
+
+/// An actor's configuration: its fields, its flags, and the objects it needs besides its
+/// profile's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct ActorSchema {
     pub fields: &'static [Field],
     pub flags: &'static [FlagUse],
     /// Not written yet (BACKLOG #52's pass); the schema test fails on it.
     pub todo: bool,
+    /// The objects it finds slots for itself, beyond its profile's (`ObjectNeed`).
+    pub objects: &'static [ObjectNeed],
 }
 
 impl ActorSchema {
     /// An actor that takes nothing from its placement and uses no flags.
-    pub const NONE: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: false };
+    pub const NONE: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: false, objects: &[] };
     /// Not written yet.
-    pub const TODO: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: true };
+    pub const TODO: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: true, objects: &[] };
 
     pub fn field(&self, name: &str) -> Option<&Field> {
         self.fields.iter().find(|f| f.name == name)
+    }
+
+    /// The value of the field `name` in a placement's params and rotation.
+    pub fn value_of(&self, name: &str, params: i16, rot: [i16; 3]) -> Option<i32> {
+        let f = self.field(name)?;
+        let v = match f.source {
+            Source::Params => params,
+            Source::RotX => rot[0],
+            Source::RotY => rot[1],
+            Source::RotZ => rot[2],
+        };
+        Some(f.value(v))
+    }
+
+    /// The objects a placement with these params and rotation needs besides the profile's: the
+    /// `objects` whose `when` holds.
+    pub fn needed_objects(&self, params: i16, rot: [i16; 3]) -> Vec<&'static str> {
+        self.objects
+            .iter()
+            .filter(|n| n.when.is_none_or(|w| self.value_of(w.field, params, rot).is_some_and(|v| w.values.contains(&v))))
+            .map(|n| n.object)
+            .collect()
     }
 }
 
@@ -285,6 +338,136 @@ pub const ITEM00_NAMES: &[(i32, &str)] = &[
     (0x17, "ITEM00_TUNIC_ZORA"),
     (0x18, "ITEM00_TUNIC_GORON"),
     (0x19, "ITEM00_BOMBS_SPECIAL"),
+];
+
+/// `GetItemID` (`include/item.h`), for `Kind::ItemId` fields: the get-item ids by name.
+pub const GI_NAMES: &[(i32, &str)] = &[
+    (0x00, "GI_NONE"),
+    (0x01, "GI_BOMBS_5"),
+    (0x02, "GI_DEKU_NUTS_5"),
+    (0x03, "GI_BOMBCHUS_10"),
+    (0x04, "GI_BOW"),
+    (0x05, "GI_SLINGSHOT"),
+    (0x06, "GI_BOOMERANG"),
+    (0x07, "GI_DEKU_STICKS_1"),
+    (0x08, "GI_HOOKSHOT"),
+    (0x09, "GI_LONGSHOT"),
+    (0x0A, "GI_LENS_OF_TRUTH"),
+    (0x0B, "GI_ZELDAS_LETTER"),
+    (0x0C, "GI_OCARINA_OF_TIME"),
+    (0x0D, "GI_HAMMER"),
+    (0x0E, "GI_COJIRO"),
+    (0x0F, "GI_BOTTLE_EMPTY"),
+    (0x10, "GI_BOTTLE_POTION_RED"),
+    (0x11, "GI_BOTTLE_POTION_GREEN"),
+    (0x12, "GI_BOTTLE_POTION_BLUE"),
+    (0x13, "GI_BOTTLE_FAIRY"),
+    (0x14, "GI_BOTTLE_MILK_FULL"),
+    (0x15, "GI_BOTTLE_RUTOS_LETTER"),
+    (0x16, "GI_MAGIC_BEAN"),
+    (0x17, "GI_MASK_SKULL"),
+    (0x18, "GI_MASK_SPOOKY"),
+    (0x19, "GI_CHICKEN"),
+    (0x1A, "GI_MASK_KEATON"),
+    (0x1B, "GI_MASK_BUNNY_HOOD"),
+    (0x1C, "GI_MASK_TRUTH"),
+    (0x1D, "GI_POCKET_EGG"),
+    (0x1E, "GI_POCKET_CUCCO"),
+    (0x1F, "GI_ODD_MUSHROOM"),
+    (0x20, "GI_ODD_POTION"),
+    (0x21, "GI_POACHERS_SAW"),
+    (0x22, "GI_BROKEN_GORONS_SWORD"),
+    (0x23, "GI_PRESCRIPTION"),
+    (0x24, "GI_EYEBALL_FROG"),
+    (0x25, "GI_EYE_DROPS"),
+    (0x26, "GI_CLAIM_CHECK"),
+    (0x27, "GI_SWORD_KOKIRI"),
+    (0x28, "GI_SWORD_KNIFE"),
+    (0x29, "GI_SHIELD_DEKU"),
+    (0x2A, "GI_SHIELD_HYLIAN"),
+    (0x2B, "GI_SHIELD_MIRROR"),
+    (0x2C, "GI_TUNIC_GORON"),
+    (0x2D, "GI_TUNIC_ZORA"),
+    (0x2E, "GI_BOOTS_IRON"),
+    (0x2F, "GI_BOOTS_HOVER"),
+    (0x30, "GI_QUIVER_40"),
+    (0x31, "GI_QUIVER_50"),
+    (0x32, "GI_BOMB_BAG_20"),
+    (0x33, "GI_BOMB_BAG_30"),
+    (0x34, "GI_BOMB_BAG_40"),
+    (0x35, "GI_SILVER_GAUNTLETS"),
+    (0x36, "GI_GOLD_GAUNTLETS"),
+    (0x37, "GI_SCALE_SILVER"),
+    (0x38, "GI_SCALE_GOLDEN"),
+    (0x39, "GI_STONE_OF_AGONY"),
+    (0x3A, "GI_GERUDOS_CARD"),
+    (0x3B, "GI_OCARINA_FAIRY"),
+    (0x3C, "GI_DEKU_SEEDS_5"),
+    (0x3D, "GI_HEART_CONTAINER"),
+    (0x3E, "GI_HEART_PIECE"),
+    (0x3F, "GI_BOSS_KEY"),
+    (0x40, "GI_COMPASS"),
+    (0x41, "GI_DUNGEON_MAP"),
+    (0x42, "GI_SMALL_KEY"),
+    (0x43, "GI_MAGIC_JAR_SMALL"),
+    (0x44, "GI_MAGIC_JAR_LARGE"),
+    (0x45, "GI_WALLET_ADULT"),
+    (0x46, "GI_WALLET_GIANT"),
+    (0x47, "GI_WEIRD_EGG"),
+    (0x48, "GI_RECOVERY_HEART"),
+    (0x49, "GI_ARROWS_5"),
+    (0x4A, "GI_ARROWS_10"),
+    (0x4B, "GI_ARROWS_30"),
+    (0x4C, "GI_RUPEE_GREEN"),
+    (0x4D, "GI_RUPEE_BLUE"),
+    (0x4E, "GI_RUPEE_RED"),
+    (0x4F, "GI_HEART_CONTAINER_2"),
+    (0x50, "GI_MILK"),
+    (0x51, "GI_MASK_GORON"),
+    (0x52, "GI_MASK_ZORA"),
+    (0x53, "GI_MASK_GERUDO"),
+    (0x54, "GI_GORONS_BRACELET"),
+    (0x55, "GI_RUPEE_PURPLE"),
+    (0x56, "GI_RUPEE_GOLD"),
+    (0x57, "GI_SWORD_BIGGORON"),
+    (0x58, "GI_ARROW_FIRE"),
+    (0x59, "GI_ARROW_ICE"),
+    (0x5A, "GI_ARROW_LIGHT"),
+    (0x5B, "GI_SKULL_TOKEN"),
+    (0x5C, "GI_DINS_FIRE"),
+    (0x5D, "GI_FARORES_WIND"),
+    (0x5E, "GI_NAYRUS_LOVE"),
+    (0x5F, "GI_BULLET_BAG_30"),
+    (0x60, "GI_BULLET_BAG_40"),
+    (0x61, "GI_DEKU_STICKS_5"),
+    (0x62, "GI_DEKU_STICKS_10"),
+    (0x63, "GI_DEKU_NUTS_5_2"),
+    (0x64, "GI_DEKU_NUTS_10"),
+    (0x65, "GI_BOMBS_1"),
+    (0x66, "GI_BOMBS_10"),
+    (0x67, "GI_BOMBS_20"),
+    (0x68, "GI_BOMBS_30"),
+    (0x69, "GI_DEKU_SEEDS_30"),
+    (0x6A, "GI_BOMBCHUS_5"),
+    (0x6B, "GI_BOMBCHUS_20"),
+    (0x6C, "GI_BOTTLE_FISH"),
+    (0x6D, "GI_BOTTLE_BUGS"),
+    (0x6E, "GI_BOTTLE_BLUE_FIRE"),
+    (0x6F, "GI_BOTTLE_POE"),
+    (0x70, "GI_BOTTLE_BIG_POE"),
+    (0x71, "GI_DOOR_KEY"),
+    (0x72, "GI_RUPEE_GREEN_LOSE"),
+    (0x73, "GI_RUPEE_BLUE_LOSE"),
+    (0x74, "GI_RUPEE_RED_LOSE"),
+    (0x75, "GI_RUPEE_PURPLE_LOSE"),
+    (0x76, "GI_HEART_PIECE_WIN"),
+    (0x77, "GI_DEKU_STICK_UPGRADE_20"),
+    (0x78, "GI_DEKU_STICK_UPGRADE_30"),
+    (0x79, "GI_DEKU_NUT_UPGRADE_30"),
+    (0x7A, "GI_DEKU_NUT_UPGRADE_40"),
+    (0x7B, "GI_BULLET_BAG_50"),
+    (0x7C, "GI_ICE_TRAP"),
+    (0x7D, "GI_TEXT_0"),
 ];
 
 #[cfg(test)]

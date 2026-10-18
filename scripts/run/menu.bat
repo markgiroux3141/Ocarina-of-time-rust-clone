@@ -112,6 +112,7 @@ echo   136  game-goron           Death Mountain Trail and Goron City (asks: or c
 echo   139  game-cavern          Dodongo's Cavern, the whole loop (asks: or lizalfos, pillar, upper, web, bag, skull, gravestone, boss)
 echo   142  game-kingdodongo     King Dodongo's room (asks: or fight, beaten, ruby, trail)
 echo   145  game-summit          Death Mountain's summit and the Great Fairy (asks: or rocks, wall, fountain, revisit, owl)
+echo   147  editor               The game editor: levels, props and the game's actors; Play runs them in the game
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -313,6 +314,7 @@ if "%pick%"=="143" set "script=sandbox-kingdodongo"
 if "%pick%"=="144" set "script=test-summit"
 if "%pick%"=="145" goto summit
 if "%pick%"=="146" set "script=sandbox-summit"
+if "%pick%"=="147" set "script=editor"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

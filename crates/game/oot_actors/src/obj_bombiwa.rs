@@ -53,6 +53,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, SWITCH_FLAG_HIGH, CHIME],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken, not spawned again")],
     todo: false,
+    objects: &[],
 };
 
 /// `sCylinderInit`: 55 by 70, hard, hit by `0x4FC1FFFE`, pushing (OC) every type.

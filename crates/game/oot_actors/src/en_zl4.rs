@@ -72,6 +72,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().sets().note("the letter given: she only talks")],
     todo: false,
+    objects: &[],
 };
 /// `ENTR_CUTSCENE_MAP_0` (0x0A0), `ENTR_CASTLE_COURTYARD_ZELDA_1` (0x5F0) (`entrance_table.h`).
 const ENTR_CUTSCENE_MAP_0: u16 = 0x0A0;

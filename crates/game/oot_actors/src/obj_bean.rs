@@ -50,6 +50,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, PATH, SPEED],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as a bean is planted")],
     todo: false,
+    objects: &[],
 };
 
 /// `BEAN_STATE_*`.

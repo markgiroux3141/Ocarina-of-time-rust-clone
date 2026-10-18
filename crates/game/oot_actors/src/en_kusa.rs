@@ -28,7 +28,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_7,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, ObjectNeed};
 use oot_game::collision_check::*;
 use oot_game::effect::kakera::{KAKERA_COLOR_NONE, OBJECT_GAMEPLAY_KEEP};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -59,7 +59,16 @@ pub const DROP_TABLE: Field = Field::params("dropParams", 8, 4, Kind::Range(0, 1
 pub const DROP_HIGH: Field = Field::params("dropParams bits 4 to 7", 12, 4, Kind::Unused, "0xF where the data writes a drop of 0xFF; read by nothing");
 
 /// En_Kusa's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, BUGS, DROP_TABLE, DROP_HIGH], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, BUGS, DROP_TABLE, DROP_HIGH],
+    flags: &[],
+    todo: false,
+    // `sObjectIds[type]`: without it the bush is gone at once ("Bank danger!")
+    objects: &[
+        ObjectNeed::new("gameplay_field_keep").when("type", &[0]).note("the field's bush"),
+        ObjectNeed::new("object_kusa").when("type", &[1, 2]).note("its own bush"),
+    ],
+};
 
 /// `OBJECT_GAMEPLAY_FIELD_KEEP`, `OBJECT_KUSA` (`object_table.h`).
 const OBJECT_GAMEPLAY_FIELD_KEEP: i16 = 0x0002;

@@ -90,7 +90,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "a Skulltula"), (1, "a big Skulltula"), (2, "an invisible Skulltula")]), "the normal, big or invisible one");
 
 /// En_St's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `NAVI_ENEMY_SKULLTULA`, `NAVI_ENEMY_BIG_SKULLTULA` (`actor.h`).
 const NAVI_ENEMY_SKULLTULA: u8 = 0x04;

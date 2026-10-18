@@ -76,6 +76,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("set (at init, or while it runs for a flag under 0x40): the shortcut, one-point 3060")],
     todo: false,
+    objects: &[],
 };
 
 /// `BgDdanJdState`.

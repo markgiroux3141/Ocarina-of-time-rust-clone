@@ -91,6 +91,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE)).reads().sets().note("set by her first spawn at the castle, which doesn't stay"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `SCENE_*` (`scene_table.h`).

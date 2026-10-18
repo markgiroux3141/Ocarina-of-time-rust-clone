@@ -100,6 +100,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_4A", 0x4A)).reads().sets().note("Morpha's warp").indirect("not ported: the Water Temple's boss room"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `DoorWarp1Type`.

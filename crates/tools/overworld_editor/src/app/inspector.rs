@@ -74,6 +74,11 @@ fn header(ui: &mut egui::Ui, tile: Tile, eyebrow: &str, col: Color32, name: Name
     delete
 }
 
+/// The header card with an icon and a fixed name (for the other panels' kinds of thing).
+pub(super) fn icon_header(ui: &mut egui::Ui, icon: Icon, eyebrow: &str, col: Color32, name: String, deletable: bool) -> bool {
+    header(ui, Tile::Icon(icon), eyebrow, col, Name::Fixed(name), deletable)
+}
+
 /// A count, and what to do with it, as chips.
 fn chips(ui: &mut egui::Ui, items: &[(Option<String>, &str)]) {
     ui.horizontal_wrapped(|ui| {
@@ -96,6 +101,7 @@ impl App {
             Sel::Path(k) | Sel::Node(NodeRef::Path(k, _)) => self.path_ui(ui, k),
             Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => self.line_ui(ui, k),
             Sel::Prop(i) => self.prop_ui(ui, i),
+            Sel::Actor(i) => self.actor_ui(ui, i),
         }
     }
 
@@ -1247,7 +1253,7 @@ fn own_num(ui: &mut egui::Ui, v: &mut Option<f64>, default: f64, speed: f64, ran
 
 /// A compass dial for a prop's turn: drag it round (15° steps; Shift: 1°). Returns whether it
 /// changed.
-fn dial(ui: &mut egui::Ui, yaw: &mut f64) -> bool {
+pub(super) fn dial(ui: &mut egui::Ui, yaw: &mut f64) -> bool {
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(56.0), Sense::click_and_drag());
     let c = rect.center();
     let rad = 26.0;

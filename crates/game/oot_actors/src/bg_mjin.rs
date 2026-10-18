@@ -20,7 +20,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, ObjectNeed};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
@@ -46,7 +46,24 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// Bg_Mjin's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[],
+    todo: false,
+    // `params != 0 ? OBJECT_MJIN : OBJECT_MJIN_OKA`: without it the pad is gone at once.
+    // `sObjectIds[params - 1]`, the medallion's, gives the pad its platform texture; drawn without
+    // it, the pad reads `object_mjin`'s own start as the texture.
+    objects: &[
+        ObjectNeed::new("object_mjin_oka").when("params", &[0]).note("the ocarina's pad"),
+        ObjectNeed::new("object_mjin").when("params", &[1, 2, 3, 4, 5, 6]).note("the medallions' pad"),
+        ObjectNeed::new("object_mjin_flash").when("params", &[1]).note("the Light Medallion's platform texture"),
+        ObjectNeed::new("object_mjin_dark").when("params", &[2]).note("the Shadow Medallion's platform texture"),
+        ObjectNeed::new("object_mjin_flame").when("params", &[3]).note("the Fire Medallion's platform texture"),
+        ObjectNeed::new("object_mjin_ice").when("params", &[4]).note("the Water Medallion's platform texture"),
+        ObjectNeed::new("object_mjin_soul").when("params", &[5]).note("the Spirit Medallion's platform texture"),
+        ObjectNeed::new("object_mjin_wind").when("params", &[6]).note("the Forest Medallion's platform texture"),
+    ],
+};
 
 /// `OBJECT_MJIN`, `OBJECT_MJIN_OKA` (`object_table.h`: 0x0061, 0x0068).
 const OBJECT_MJIN: i16 = 0x0061;

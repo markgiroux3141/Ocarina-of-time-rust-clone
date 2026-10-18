@@ -86,7 +86,7 @@ pub const PROFILE: ActorProfile =
 pub const PARAMS: Field = Field::whole("params", Kind::Unused, "read by nothing (every placement 0xFFFF)");
 
 /// En_Dodojr's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
 
 // The sounds (`include/tables/sfx/enemybank_table.h`).
 /// `NA_SE_EN_DODO_M_CRY` (0x3820).

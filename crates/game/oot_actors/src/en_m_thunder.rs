@@ -76,7 +76,7 @@ pub const WEAPON: Field = Field::params(
 pub const MAGIC: Field = Field::params("PARAMS_GET_S(params, 8, 8)", 8, 8, Kind::Range(0, 0xFF), "the magic it costs (0 the quick spin's, 2 the charged spin's)");
 
 /// En_M_Thunder's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[WEAPON, MAGIC], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[WEAPON, MAGIC], flags: &[], todo: false, objects: &[] };
 
 /// `NA_SE_IT_ROLLING_CUT` (`itembank_table.h`: 0x1823).
 pub const NA_SE_IT_ROLLING_CUT: u16 = 0x1823;

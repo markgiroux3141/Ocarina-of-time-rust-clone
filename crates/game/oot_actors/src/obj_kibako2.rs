@@ -71,6 +71,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SKULLTULA_PARAMS, UNUSED_PARAMS, NO_SKULLTULA, ITEM_DROPPED, COLLECTIBLE_FLAG],
     flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().indirect("by the En_Item00 it drops")],
     todo: false,
+    objects: &[],
 };
 
 /// `sCylinderInit`: 31 by 48, hit only by `0x40000040` (`DMG_HAMMER_JUMP | DMG_HAMMER_SWING`).

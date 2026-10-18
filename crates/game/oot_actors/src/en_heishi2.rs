@@ -106,6 +106,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(item_get_inf!(ITEMGETINF_38)).sets().note("type 5: the Keaton Mask sold"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EXCH_ITEM_ZELDAS_LETTER` (`item.h`: 0x01).
@@ -1020,6 +1021,7 @@ impl ActorImpl for EnHeishi2 {
         // (Limb 16 is bone 15: the limbs count from 1.)
         let head = bones.get(15).copied();
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(en_heishi4::BAKE)), transform: model, bones, params: Default::default() });
+        // schema: the Keaton Mask's object is Player's own as a child; without it the mask isn't drawn
         if self.ty == 5 && play.save.get_inf_table(INFTABLE_77) && play.object_ctx.get_index(OBJECT_LINK_CHILD).is_some() {
             if let Some(head) = head {
                 // Matrix_Put(&mtxf_330), Matrix_Translate(-570, 0, 0), Matrix_RotateZ(DEG_TO_RAD(70)).

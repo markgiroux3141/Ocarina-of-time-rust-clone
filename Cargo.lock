@@ -2464,6 +2464,8 @@ dependencies = [
  "eframe",
  "glam",
  "image",
+ "oot_actors",
+ "oot_game",
  "overworld",
  "rfd",
  "serde_json",

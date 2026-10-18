@@ -86,6 +86,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_HAS_DEKU_NUT_UPGRADE)).sets().note("type 10, as he's paid"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EnDnsType`.

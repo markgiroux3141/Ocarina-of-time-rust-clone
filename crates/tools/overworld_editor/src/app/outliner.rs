@@ -20,7 +20,7 @@ struct Row {
 
 impl App {
     pub(super) fn outliner(&mut self, ui: &mut egui::Ui) {
-        let total = 1 + self.doc.regions.len() + self.doc.paths.len() + self.doc.lines.len() + self.doc.props.len();
+        let total = 1 + self.doc.regions.len() + self.doc.paths.len() + self.doc.lines.len() + self.doc.props.len() + self.doc.actors.len();
         ui.horizontal(|ui| {
             ui.add_space(14.0);
             let g = ui.painter().layout_job(widgets::caps("Level contents", 10.5, MUTED));
@@ -41,6 +41,7 @@ impl App {
             Sel::Path(p) | Sel::Node(NodeRef::Path(p, _)) => Some(Sel::Path(p)),
             Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => Some(Sel::Line(k)),
             Sel::Prop(i) => Some(Sel::Prop(i)),
+            Sel::Actor(i) => Some(Sel::Actor(i)),
             Sel::None => None,
         };
         let loops = self.selected_loops();
@@ -91,6 +92,19 @@ impl App {
                 None => kinds.push((kind, vec![row])),
             }
         }
+        // actors by the palette's groups, in its order
+        let mut groups: Vec<(crate::actors::Group, Vec<Row>)> = vec![];
+        for (i, a) in self.doc.actors.iter().enumerate() {
+            let e = self.catalogue.get(&a.actor);
+            let group = e.map_or(crate::actors::Group::Object, |e| e.group);
+            let name = if a.name.is_empty() { e.map_or(a.actor.clone(), |e| e.label.clone()) } else { a.name.clone() };
+            let row = Row { sel: Sel::Actor(i), name, meta: a.actor.clone(), col: super::actor_ui::group_colour(group) };
+            match groups.iter_mut().find(|g| g.0 == group) {
+                Some(g) => g.1.push(row),
+                None => groups.push((group, vec![row])),
+            }
+        }
+        groups.sort_by_key(|g| crate::actors::Group::ALL.iter().position(|x| *x == g.0));
 
         let mut clicked: Option<(Sel, bool)> = None;
         let mut frame: Option<Sel> = None;
@@ -128,6 +142,18 @@ impl App {
                     }
                 }
             }
+            let n: usize = groups.iter().map(|g| count(&g.1)).sum();
+            if (n > 0 || q.is_empty()) && group(ui, "actors", Some(Icon::Actor), "Actors", n, 0.0, !q.is_empty()) {
+                for (g, rows) in &groups {
+                    let m = count(rows);
+                    if m == 0 {
+                        continue;
+                    }
+                    if group(ui, &format!("actors {}", g.title()), None, g.title(), m, 1.0, !q.is_empty()) {
+                        show(ui, rows, 2.0);
+                    }
+                }
+            }
             ui.add_space(8.0);
         });
         if let Some((s, shift)) = clicked {
@@ -146,6 +172,7 @@ impl App {
             Sel::Path(k) | Sel::Node(NodeRef::Path(k, _)) => self.shapes.paths.get(k).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default(),
             Sel::Line(k) | Sel::Node(NodeRef::Line(k, _)) => self.shapes.lines.get(k).map(|c| c.iter().map(|x| x.0).collect()).unwrap_or_default(),
             Sel::Prop(i) if i < self.doc.props.len() => self.prop_footprint(i),
+            Sel::Actor(i) if i < self.doc.actors.len() => vec![self.doc.actors[i].at],
             _ => vec![],
         };
         if pts.is_empty() {
@@ -161,6 +188,7 @@ impl App {
         let z = match self.sel {
             Sel::Loop(l) => edit::loop_z(&self.doc, l),
             Sel::Prop(i) => self.prop_z(i).unwrap_or(self.doc.outline.z),
+            Sel::Actor(i) => self.actor_z(i).unwrap_or(self.doc.outline.z),
             _ => self.doc.outline.z,
         };
         if let Some(v) = &mut self.v3 {

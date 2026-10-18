@@ -41,7 +41,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::{NA_SE_SY_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -88,6 +88,8 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_WOKEN_IN_KAKARIKO)).reads().note("an adult's texts and the Pocket Cucco's trade"),
     ],
     todo: false,
+    // `OBJECT_OS_ANIME`: her animations; without it she is gone at once
+    objects: &[ObjectNeed::new("object_os_anime").note("her animations")],
 };
 
 /// `SCENE_IMPAS_HOUSE` (`scene_table.h`: 0x37, `labo_scene`).
@@ -325,7 +327,7 @@ impl EnNiwLady {
             collider: ColliderCylinder::default(),
             anims: None,
         };
-        this.ane_object_slot = play.object_ctx.get_index(OBJECT_ANE);
+        this.ane_object_slot = play.object_ctx.get_index(OBJECT_ANE); // schema: her profile's object
         this.os_anime_object_slot = play.object_ctx.get_index(OBJECT_OS_ANIME);
         if this.os_anime_object_slot.is_none() || this.ane_object_slot.is_none() {
             this.actor.kill();
@@ -823,7 +825,7 @@ impl ActorImpl for EnNiwLady {
                 }
                 self.skel.update();
             }
-            self.ane_object_slot = play.object_ctx.get_index(OBJECT_ANE);
+            self.ane_object_slot = play.object_ctx.get_index(OBJECT_ANE); // schema: her profile's object
             if self.ane_object_slot.is_none() {
                 return;
             }

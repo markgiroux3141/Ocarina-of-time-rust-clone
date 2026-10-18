@@ -70,7 +70,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Peehat's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 
 /// `ACTOR_EN_BOM` (`actor_table.h`: 0x0010), the bomb its death spawns.

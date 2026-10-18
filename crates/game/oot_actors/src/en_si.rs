@@ -56,6 +56,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[GS_FLAGS_VALUE, GS_FLAGS_INDEX, SW_TYPE],
     flags: &[FlagUse::new(Flag::Other("gSaveContext.save.info.gsFlags")).sets().note("once collected: its Gold Skulltula is gone for good")],
     todo: false,
+    objects: &[],
 };
 
 /// `GID_SKULL_TOKEN_2` (`item.h`): the token in `object_st` (`gSkulltulaTokenDL`,

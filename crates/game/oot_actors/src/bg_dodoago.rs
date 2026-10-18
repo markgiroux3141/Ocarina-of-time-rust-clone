@@ -90,6 +90,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_B0)).reads().note("the entrance wall broken: the colliders registered, the jaw drawn"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `sMainColliderCylinderInit`: hit by anything but the shield and the mirror's ray

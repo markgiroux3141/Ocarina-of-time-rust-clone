@@ -114,7 +114,8 @@ in the editor (with their own palette and outliner), because they're a different
 and the objects it needs, written into the room's `actors` and `objects` lists, spawned by `Play_Init` and the room
 context, and reset on every reload. Some kit props have a game actor that does the same job with behaviour (cuttable
 grass `En_Kusa`, bushes, liftable rocks `En_Ishi`, signs, pots), so the actors' palette offers those as actors, and a
-level can use either. Placing actors is the step after this plan; nothing here needs it.
+level can use either. Placing actors is the step after this plan; nothing here needs it. Built since:
+[EDITOR-ACTORS.md](EDITOR-ACTORS.md) (ADR 0077).
 
 ## Steps
 

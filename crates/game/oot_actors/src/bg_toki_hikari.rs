@@ -37,6 +37,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OPENED_DOOR_OF_TIME)).reads().note("type 1: gone once the door is open")],
     todo: false,
+    objects: &[],
 };
 
 /// The windows: the adult's (`object_toki_objects_DL_008190`), the child's

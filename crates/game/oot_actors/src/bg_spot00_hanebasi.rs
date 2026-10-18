@@ -79,6 +79,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("CutsceneFlags_Get(play, 0)")).reads().note("the cutscene lowers the bridge"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `DrawbridgeType`.

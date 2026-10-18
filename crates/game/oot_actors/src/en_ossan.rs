@@ -54,7 +54,7 @@ use eng_math::{approach_f, step_to_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
 use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::audio::sfx::{NA_SE_SY_CURSOR, NA_SE_SY_DECIDE, NA_SE_SY_ERROR, NA_SE_SY_MESSAGE_PASS};
 use oot_game::collision_check::MASS_IMMOVABLE;
@@ -133,6 +133,22 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(item_get_inf!(ITEMGETINF_3F)).reads().sets().note("the Mask of Truth got: the Zora, Goron and Gerudo masks shelved"),
     ],
     todo: false,
+    // `sShopkeeperObjectIds[params]`: the skeleton's object, then the Kokiri head's and the
+    // animations' (`EnOssan_TryGetObjBankIndices`); without any of them it's killed ("No bank!!").
+    // The shelves' items are En_GirlA's own needs.
+    objects: &[
+        ObjectNeed::new("object_km1").when("params", &[0]).note("the Kokiri shopkeeper's skeleton"),
+        ObjectNeed::new("object_masterkokirihead").when("params", &[0]).note("the Kokiri shopkeeper's head"),
+        ObjectNeed::new("object_masterkokiri").when("params", &[0]).note("the Kokiri shopkeeper's animations"),
+        ObjectNeed::new("object_ds2").when("params", &[1, 3]).note("the potion shopkeeper"),
+        ObjectNeed::new("object_rs").when("params", &[2]).note("the bombchu shopkeeper"),
+        ObjectNeed::new("object_ossan").when("params", &[4, 5, 6, 9]).note("the bazaar's shopkeeper (and Talon's, Ingo's)"),
+        ObjectNeed::new("object_zo").when("params", &[7]).note("the Zora shopkeeper's skeleton"),
+        ObjectNeed::new("object_masterzoora").when("params", &[7]).note("the Zora shopkeeper's animations"),
+        ObjectNeed::new("object_oF1d_map").when("params", &[8]).note("the Goron shopkeeper's skeleton"),
+        ObjectNeed::new("object_mastergolon").when("params", &[8]).note("the Goron shopkeeper's animations"),
+        ObjectNeed::new("object_os").when("params", &[10]).note("the Happy Mask Salesman"),
+    ],
 };
 
 /// `sShopkeeperPrintName`'s English: the shops, for the log.

@@ -64,6 +64,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("by Talon: the way to the moat open"),
     ],
     todo: false,
+    objects: &[],
 };
 /// `SCENE_LON_LON_BUILDINGS` (`scene_table.h`: 0x4C).
 const SCENE_LON_LON_BUILDINGS: u16 = 0x4C;

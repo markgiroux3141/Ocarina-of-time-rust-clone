@@ -84,6 +84,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[SWITCH_FLAG, TORCH_COUNT, ALWAYS_LIT, TORCH_TYPE, ROT_X, ROT_Z],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("set: lit; set when lit; cleared by water (torchType 1, never reached: @bug (game))")],
     todo: false,
+    objects: &[],
 };
 
 /// The types (the params' high 4 bits, `(u16)params >> 12`).

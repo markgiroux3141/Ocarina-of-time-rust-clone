@@ -57,7 +57,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DEKUBABA, name: "E
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "EN_DEKUBABA_TYPE_NORMAL"), (1, "EN_DEKUBABA_TYPE_BIG")]), "a Deku Baba or a big one");
 
 /// En_Dekubaba's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `EnDekubabaType`.
 pub const EN_DEKUBABA_TYPE_NORMAL: i16 = 0;

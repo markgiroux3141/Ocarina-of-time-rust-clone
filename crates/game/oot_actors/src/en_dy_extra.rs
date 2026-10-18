@@ -56,7 +56,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "the magic fountain's beam (pink)"), (1, "a spell fountain's beam (cyan)")]), "whose beam: its colours");
 
 /// En_Dy_Extra's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `NA_SE_PL_SPIRAL_HEAL_BEAM` (`playerbank_table.h`: 0x08C4).
 pub const NA_SE_PL_SPIRAL_HEAL_BEAM: u16 = 0x08C4;

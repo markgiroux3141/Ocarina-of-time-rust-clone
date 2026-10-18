@@ -71,6 +71,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_0C)).reads().sets().note("the first talk had: Z-targeting the tree asks again"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `DynaPolyActor_Init`'s flags: 0, no `DYNA_TRANSFORM_*` (the mouth carries nothing standing on it).

@@ -65,6 +65,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, SWITCH_FLAG, BITS_14_15],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("the statue, an adult: set, pulled aside (starts there); set as the pull ends")],
     todo: false,
+    objects: &[],
 };
 
 /// `D_808B90F0[type][age]` (age 0 a child, 1 an adult): whether it's here.

@@ -57,6 +57,7 @@ impl App {
             Tool::Path => self.path_palette(ui),
             Tool::Brush => self.brush_palette(ui),
             Tool::Prop => self.kit_palette(ui),
+            Tool::Actor => self.actor_palette(ui),
             Tool::Line(kind) => self.line_palette(ui, kind),
         }
     }
@@ -66,7 +67,7 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
                 let p = &mut self.pickable;
-                for (on, name) in [(&mut p.regions, "Regions"), (&mut p.edges, "Edges"), (&mut p.paths, "Paths"), (&mut p.lines, "Lines"), (&mut p.props, "Props")] {
+                for (on, name) in [(&mut p.regions, "Regions"), (&mut p.edges, "Edges"), (&mut p.paths, "Paths"), (&mut p.lines, "Lines"), (&mut p.props, "Props"), (&mut p.actors, "Actors")] {
                     if widgets::chip(ui, name, None, *on).on_hover_text("Off: clicks in the plan go through it").clicked() {
                         *on = !*on;
                     }

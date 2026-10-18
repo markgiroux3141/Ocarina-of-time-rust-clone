@@ -226,6 +226,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.save.info.playerData.bgsFlag")).reads().sets().note("Biggoron's Sword given").indirect("not ported (Biggoron, Phase 15)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `QUEST_MEDALLION_FIRE` (`item.h`: 0x01).

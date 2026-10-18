@@ -81,6 +81,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_19)).reads().sets().note("0x1070 read: 0x1071 next"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `En_Md_Profile`.

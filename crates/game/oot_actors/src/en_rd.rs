@@ -130,6 +130,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.sunsSongState")).reads().clears().note("the Sun's Song stuns it"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // The sounds (`include/tables/sfx/enemybank_table.h`; none in `oot_game::audio::sfx` yet).

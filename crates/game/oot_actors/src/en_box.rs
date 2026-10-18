@@ -105,6 +105,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::TempClear).reads().note("types 1 and 7: it appears once the room's cleared"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EnBoxType`.

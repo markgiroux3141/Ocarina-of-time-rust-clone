@@ -43,7 +43,7 @@ use eng_math::smooth_step_to_f;
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_BOSS, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
 use oot_game::{event_chk_inf, inf_table};
@@ -132,6 +132,20 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("CutsceneFlags 1")).reads().note("the Master Sword's time warp grows and is drawn"),
     ],
     todo: false,
+    // `sEffectTypeObjects[effectType]` (the blue orb, 0x02, and the light, 0x12, are
+    // `gameplay_keep`'s): without it the effect never draws (an ASSERT in the debug build)
+    objects: &[
+        ObjectNeed::new("object_efc_crystal_light").when("effectType", &[0x00]).note("the crystal light"),
+        ObjectNeed::new("object_efc_fire_ball").when("effectType", &[0x01]).note("the fire ball"),
+        ObjectNeed::new("object_efc_lgt_shower").when("effectType", &[0x03]).note("the light shower"),
+        ObjectNeed::new("object_god_lgt").when("effectType", &[0x04, 0x05, 0x06]).note("the goddesses' lights"),
+        ObjectNeed::new("object_light_ring").when("effectType", &[0x07, 0x10, 0x11]).note("the light rings"),
+        ObjectNeed::new("object_triforce_spot").when("effectType", &[0x08]).note("the Triforce"),
+        ObjectNeed::new("object_gi_medal").when("effectType", &[0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E]).note("the medallions"),
+        ObjectNeed::new("object_efc_tw").when("effectType", &[0x0F, 0x18, 0x19]).note("the time warps"),
+        ObjectNeed::new("object_gi_jewel").when("effectType", &[0x13, 0x14, 0x15, 0x16]).note("the spiritual stones (and the dust)"),
+        ObjectNeed::new("object_gi_m_arrow").when("effectType", &[0x17]).note("the Light Arrow"),
+    ],
 };
 
 /// `DemoEffectType`.

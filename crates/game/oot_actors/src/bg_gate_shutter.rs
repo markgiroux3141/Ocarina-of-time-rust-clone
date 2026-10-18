@@ -52,6 +52,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_MASTER_SWORD)).reads().note("open from the start"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `actionFunc`.

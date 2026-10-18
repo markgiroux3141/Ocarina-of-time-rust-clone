@@ -58,7 +58,7 @@ pub const PARAMS: Field = Field::params("params", 0, 8, Kind::Named(&[(0, "a Mad
 pub const SHOTS_PER_ROUND: Field = Field::params("shotsPerRound", 8, 8, Kind::Range(0, 0xFF), "the nuts it spits a round (0 and 0xFF: 1)");
 
 /// En_Dekunuts' configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS, SHOTS_PER_ROUND], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS, SHOTS_PER_ROUND], flags: &[], todo: false, objects: &[] };
 
 /// `DEKUNUTS_FLOWER`: the flower's params.
 pub const DEKUNUTS_FLOWER: i16 = 10;

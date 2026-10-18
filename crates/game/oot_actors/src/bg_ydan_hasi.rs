@@ -188,6 +188,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[KIND, SWITCH_FLAG, UNUSED_14],
     flags: &[FlagUse::new(Flag::Switch("type")).reads().clears().note("the water sinks, the platforms rise; unset when they're back")],
     todo: false,
+    objects: &[],
 };
 
 impl BgYdanHasi {

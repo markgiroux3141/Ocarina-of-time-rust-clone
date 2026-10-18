@@ -76,6 +76,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Collectible("collectibleFlag")).sets().note("the piece of heart taken").indirect("the dropped piece's En_Item00 sets it when Link takes it"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `NA_SE_EV_ELEVATOR_MOVE` (`environmentbank_table.h`: 0x2824).

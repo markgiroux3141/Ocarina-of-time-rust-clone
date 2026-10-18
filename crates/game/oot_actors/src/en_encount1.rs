@@ -57,7 +57,7 @@ pub const SPAWN_TYPE: Field = Field::params(
 pub const SPAWN_RANGE: Field = Field::rot("world.rot.z", Source::RotZ, 0, 16, Kind::Range(-0x8000, 0x7FFF), "its range, 120 plus 40 a unit");
 
 /// En_Encount1's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[MAX_TOTAL_SPAWNS, MAX_CUR_SPAWNS, SPAWN_TYPE, SPAWN_RANGE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[MAX_TOTAL_SPAWNS, MAX_CUR_SPAWNS, SPAWN_TYPE, SPAWN_RANGE], flags: &[], todo: false, objects: &[] };
 
 /// `EnEncount1type`.
 pub const SPAWNER_LEEVER: i16 = 0;

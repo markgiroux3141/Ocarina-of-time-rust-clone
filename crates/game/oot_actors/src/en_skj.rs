@@ -167,6 +167,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.sunsSongState")).sets().note("type 0: SUNSSONG_INACTIVE after another song on the small stump"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `NAVI_ENEMY_SKULL_KID_ADULT`, `_SKULL_KID`, `_SKULL_KID_FRIENDLY`, `_SKULL_KID_MASK` (`actor.h`).

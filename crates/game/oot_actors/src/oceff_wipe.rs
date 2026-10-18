@@ -46,7 +46,7 @@ pub const OCEFF_WIPE_SOT: i16 = 1;
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "OCEFF_WIPE_ZL"), (1, "OCEFF_WIPE_SOT")]), "Zelda's Lullaby's colours (0) or the Song of Time's (any other)");
 
 /// Oceff_Wipe's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 pub const BAKE: &str = "Oceff_Wipe/frustum";
 /// The draw's segments: the colours (`gDPSetPrimColor`, `gDPSetEnvColor` before the material) and

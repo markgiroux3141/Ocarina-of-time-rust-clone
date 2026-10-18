@@ -86,7 +86,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Arrow's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `ArrowType` (`z_en_arrow.h`).
 pub const ARROW_CS_NUT: i16 = -10;

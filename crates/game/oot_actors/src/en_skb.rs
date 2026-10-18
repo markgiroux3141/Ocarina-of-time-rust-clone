@@ -60,7 +60,7 @@ pub const PROFILE: ActorProfile =
 pub const SIZE: Field = Field::whole("params", Kind::Range(0, 0x7FFF), "its size: scale (params × 0.1 + 1) × 0.01, larger spheres and reach");
 
 /// En_Skb's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[SIZE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[SIZE], flags: &[], todo: false, objects: &[] };
 
 /// `NAVI_ENEMY_STALCHILD` (`actor.h`: 0x55).
 const NAVI_ENEMY_STALCHILD: u8 = 0x55;

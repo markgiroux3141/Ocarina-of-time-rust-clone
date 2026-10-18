@@ -91,6 +91,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, COLOR_IDX, FLAG_BYTE, SWITCH_FLAG],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("at init: gone or there; on a floor switch of the same flag, held down (or up)")],
     todo: false,
+    objects: &[],
 };
 
 /// `PushBlockType` (`z_obj_oshihiki.h`).

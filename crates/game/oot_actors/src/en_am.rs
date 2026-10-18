@@ -88,7 +88,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Am's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
 
 /// `ArmosType` (`z_en_am.h`).
 pub const ARMOS_STATUE: i16 = 0;

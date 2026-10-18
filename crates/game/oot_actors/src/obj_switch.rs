@@ -111,6 +111,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, SUB_TYPE, IS_FROZEN, SWITCH_FLAG, ROT_X, ROT_Z],
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().clears().note("set when pressed or hit; cleared when a toggle, hold or sync switch goes off")],
     todo: false,
+    objects: &[],
 };
 
 /// `ObjSwitchType`.

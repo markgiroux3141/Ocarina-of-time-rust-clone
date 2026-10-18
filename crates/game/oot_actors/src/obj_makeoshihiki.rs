@@ -58,6 +58,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Switch("switchFlag2")).reads().sets().clears().note("read unless noSwitchFlag2; set and cleared by where the block rests"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `BlockConfig`: the block's three places, what each does (`unk_24`: bit 0 the chime when the

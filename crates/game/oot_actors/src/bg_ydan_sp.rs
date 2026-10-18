@@ -94,6 +94,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Switch("burnSwitchFlag")).reads().note("WEB_WALL: set, it burns"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `BgYdanSpType`.

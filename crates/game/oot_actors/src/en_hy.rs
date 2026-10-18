@@ -51,7 +51,7 @@ use eng_math::{binang_to_rad, cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
 use oot_game::{event_chk_inf, event_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -246,6 +246,19 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("gSaveContext.dogParams")).reads().clears().note("the dog lady (0): which dog follows Link; cleared as she takes one"),
     ],
     todo: false,
+    // `sSkeletonInfo` and `sHeadInfo` by `sModelInfo[type]` (each type's head and skeletons share
+    // an object), and `OBJECT_OS_ANIME` for every type's animations: without them it waits unseen
+    objects: &[
+        ObjectNeed::new("object_aob").when("type", &[0]).note("the dog lady's head and body"),
+        ObjectNeed::new("object_cob").when("type", &[1]).note("woman 3's head and body"),
+        ObjectNeed::new("object_ahg").when("type", &[2, 4, 13, 17, 20]).note("man 1's head and body"),
+        ObjectNeed::new("object_boj").when("type", &[3, 5, 9, 10, 12, 14, 16]).note("man 2's head and body"),
+        ObjectNeed::new("object_bba").when("type", &[6]).note("the old woman's head and body"),
+        ObjectNeed::new("object_bji").when("type", &[7, 15, 19]).note("the old man's head and body"),
+        ObjectNeed::new("object_cne").when("type", &[8, 11]).note("the young woman's head and body"),
+        ObjectNeed::new("object_bob").when("type", &[18]).note("woman 2's head and body"),
+        ObjectNeed::new("object_os_anime").note("the townspeople's animations"),
+    ],
 };
 
 // `EXCH_ITEM_*` (`item.h`: 0x18 to 0x1D).

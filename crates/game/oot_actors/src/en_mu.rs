@@ -63,6 +63,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_inf!(EVENTINF_HAGGLING_TOWNSFOLK_MESG_4)).reads().sets().clears().note("text 0x703E heard").indirect(TALK_FLAGS),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EVENTINF_INDEX_HAGGLING_TOWNSFOLK` (`save.h`: 0x2).

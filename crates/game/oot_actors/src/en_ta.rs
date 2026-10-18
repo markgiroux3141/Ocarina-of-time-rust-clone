@@ -189,6 +189,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_TALKED_TO_TALON_IN_RANCH_HOUSE)).reads().sets().note("type -1: talked to in the ranch house (0x207E once)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `EXCH_ITEM_CHICKEN`, `EXCH_ITEM_POCKET_CUCCO` (`item.h`: 0x03, 0x06).

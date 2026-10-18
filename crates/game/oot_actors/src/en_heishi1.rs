@@ -83,6 +83,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("day patrols gone, night guards there"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `PLAYER_CSACTION_1`: Link stands still.

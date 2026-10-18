@@ -46,7 +46,7 @@ pub const ROT_X: Field = Field::rot("world.rot.x", Source::RotX, 0, 16, Kind::Ro
 pub const ROT_Z: Field = Field::rot("world.rot.z", Source::RotZ, 0, 16, Kind::Rotation, "the members' rotation about z");
 
 /// Obj_Mure2's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[ACTOR_NUM, DROP_TABLE, BITS_12_15, ROT_X, ROT_Z], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[ACTOR_NUM, DROP_TABLE, BITS_12_15, ROT_X, ROT_Z], flags: &[], todo: false, objects: &[] };
 
 /// `sDistSquared1`, `sDistSquared2`: the squared distances to spawn within and to take back past.
 const DIST_SQUARED1: [f32; 3] = [1600.0 * 1600.0; 3];

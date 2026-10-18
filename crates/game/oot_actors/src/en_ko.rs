@@ -41,7 +41,7 @@ use eng_math::{binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, Source};
 use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::collision_check::*;
 use oot_game::npc::{NpcTrack, track_point, actor_update_fidget_tables};
@@ -116,6 +116,15 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(item_get_inf!(ITEMGETINF_31)).sets().note("Fado's saw given").indirect("the trade isn't ported"),
     ],
     todo: false,
+    // `EnKo_IsOsAnimeAvailable` and `EnKo_AreObjectsAvailable`: `OBJECT_OS_ANIME`, then
+    // `sSkeleton[]` (legs, body) and `sHead[]` by `sModelInfo[ENKO_TYPE]`; without any of them
+    // `EnKo_Init` kills the child
+    objects: &[
+        ObjectNeed::new("object_os_anime").note("its animations"),
+        ObjectNeed::new("object_km1").when("ENKO_TYPE", &[0, 2, 3, 4, 7, 8, 11]).note("a boy's skeleton and head"),
+        ObjectNeed::new("object_kw1").when("ENKO_TYPE", &[1, 5, 6, 9, 10, 12]).note("a girl's skeleton (and head, but Fado's)"),
+        ObjectNeed::new("object_fa").when("ENKO_TYPE", &[12]).note("Fado's head"),
+    ],
 };
 
 // `OBJECT_*` (`object_table.h`).

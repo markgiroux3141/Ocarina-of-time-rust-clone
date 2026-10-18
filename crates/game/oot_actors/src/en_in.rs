@@ -181,6 +181,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_inf!(EVENTINF_INGO_RACE_0F)).sets().clears().note("the race started or a transition out").indirect("not ported (the adult's race)"),
     ],
     todo: false,
+    objects: &[],
 };
 
 // `SCENE_*` (`scene_table.h`).
@@ -485,6 +486,7 @@ impl EnIn {
             actor,
         };
 
+        // schema: its own profile object, object_in
         this.required_object_slot = play.object_ctx.get_index(OBJECT_IN);
         if this.required_object_slot.is_none() && TYPE.get(this.actor.params) > 0 {
             this.actor.kill();

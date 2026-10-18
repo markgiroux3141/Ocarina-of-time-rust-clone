@@ -29,7 +29,7 @@
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
 use oot_game::{inf_table, item_get_inf};
 use oot_game::item::*;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -119,6 +119,42 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_76)).reads().note("SI_HYLIAN_SHIELD: a random discount"),
     ],
     todo: false,
+    // `sShopItemEntries[params].objectId` (`EnGirlA_InitItem`): without it the item is killed
+    // ("No bank!!"). `EnGirlA_TryChangeShopItem` first turns a bought bombchu pack into
+    // SI_SOLD_OUT and the milk bottle (Talon's given) into SI_RECOVERY_HEART: those need the new
+    // item's object too.
+    objects: &[
+        ObjectNeed::new("object_gi_nuts").when("params", &[0x00, 0x04]).note("Deku Nuts"),
+        ObjectNeed::new("object_gi_arrow").when("params", &[0x01, 0x02, 0x2C]).note("arrows"),
+        ObjectNeed::new("object_gi_bomb_1").when("params", &[0x03, 0x06, 0x2D, 0x2E, 0x2F]).note("bombs"),
+        ObjectNeed::new("object_gi_stick").when("params", &[0x05]).note("a Deku Stick"),
+        ObjectNeed::new("object_gi_fish").when("params", &[0x07]).note("a fish"),
+        ObjectNeed::new("object_gi_liquid").when("params", &[0x08, 0x09, 0x0A, 0x30, 0x31]).note("the potions"),
+        ObjectNeed::new("object_gi_longsword").when("params", &[0x0B]).note("the Giant's Knife"),
+        ObjectNeed::new("object_gi_shield_2").when("params", &[0x0C]).note("the Hylian Shield"),
+        ObjectNeed::new("object_gi_shield_1").when("params", &[0x0D]).note("the Deku Shield"),
+        ObjectNeed::new("object_gi_clothes").when("params", &[0x0E, 0x0F]).note("the tunics"),
+        ObjectNeed::new("object_gi_heart").when("params", &[0x10, 0x11]).note("a recovery heart (the milk bottle's, once Talon's is given)"),
+        ObjectNeed::new("object_gi_milk").when("params", &[0x11, 0x13]).note("milk"),
+        ObjectNeed::new("object_gi_egg").when("params", &[0x12, 0x14]).note("the Weird Egg"),
+        ObjectNeed::new("object_gi_bomb_2").when("params", &[0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C]).note("bombchus"),
+        ObjectNeed::new("object_gi_seed").when("params", &[0x1D]).note("Deku Seeds"),
+        ObjectNeed::new("object_gi_ki_tan_mask").when("params", &[0x1E]).note("the Keaton Mask"),
+        ObjectNeed::new("object_gi_redead_mask").when("params", &[0x1F]).note("the Spooky Mask"),
+        ObjectNeed::new("object_gi_skj_mask").when("params", &[0x20]).note("the Skull Mask"),
+        ObjectNeed::new("object_gi_rabit_mask").when("params", &[0x21]).note("the Bunny Hood"),
+        ObjectNeed::new("object_gi_truth_mask").when("params", &[0x22]).note("the Mask of Truth"),
+        ObjectNeed::new("object_gi_zoramask").when("params", &[0x23]).note("the Zora Mask"),
+        ObjectNeed::new("object_gi_golonmask").when("params", &[0x24]).note("the Goron Mask"),
+        ObjectNeed::new("object_gi_gerudomask").when("params", &[0x25]).note("the Gerudo Mask"),
+        ObjectNeed::new("object_gi_soldout")
+            .when("params", &[0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x26])
+            .note("SOLD OUT (a bombchu pack's, once bought)"),
+        ObjectNeed::new("object_gi_fire").when("params", &[0x27]).note("Blue Fire"),
+        ObjectNeed::new("object_gi_insect").when("params", &[0x28]).note("bugs"),
+        ObjectNeed::new("object_gi_ghost").when("params", &[0x29, 0x2A]).note("the Poes"),
+        ObjectNeed::new("object_gi_soul").when("params", &[0x2B]).note("a fairy"),
+    ],
 };
 
 // `EnGirlAShopItem` (`z_en_girla.h`).

@@ -71,7 +71,7 @@ pub const HIT: Field = Field::rot(
 );
 
 /// En_Goroiwa's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PATH_IDX, LOOP_MODE, BGC, BIT_11, HIT], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PATH_IDX, LOOP_MODE, BGC, BIT_11, HIT], flags: &[], todo: false, objects: &[] };
 
 /// `stateFlags`.
 pub const ENGOROIWA_ENABLE_AT: u8 = 1 << 0;

@@ -85,6 +85,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(Flag::Other("R_EPONAS_SONG_PLAYED")).reads().clears().note("Epona's Song played: milk"),
     ],
     todo: false,
+    objects: &[],
 };
 
 /// `GI_MILK` (`item.h`: 0x50).

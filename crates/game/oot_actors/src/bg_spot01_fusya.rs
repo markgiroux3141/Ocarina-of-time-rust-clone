@@ -39,6 +39,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[PARAMS],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_65)).reads().clears().note("the fast turn; cleared at init outside a cutscene layer")],
     todo: false,
+    objects: &[],
 };
 
 /// `EVENTCHKINF_65` (`save.h`: 0x65): the sails' fast turn.

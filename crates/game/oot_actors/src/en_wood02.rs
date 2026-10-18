@@ -90,7 +90,7 @@ pub const SKULLTULA: Field =
 
 
 /// En_Wood02's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, DROP_TABLE, SKULLTULA], flags: &[], todo: false };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, DROP_TABLE, SKULLTULA], flags: &[], todo: false, objects: &[] };
 
 
 /// `WoodType`.

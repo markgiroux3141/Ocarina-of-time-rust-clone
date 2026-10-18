@@ -27,6 +27,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE],
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().note("type 2: the bush is gone")],
     todo: false,
+    objects: &[],
 };
 
 /// `sCylinderInit`.
