@@ -220,8 +220,7 @@ impl EnCow {
             anims: [a0, a1],
             actor,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 72).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 72.0);
 
         match TYPE.get(this.actor.params) {
             COW_TYPE_BODY => {
@@ -527,16 +526,12 @@ impl ActorImpl for EnCow {
         rs
     }
     /// `EnCow_Draw`, `EnCow_DrawTail`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         let head = if rs.angles.len() >= 2 { [rs.angles[0], rs.angles[1]] } else { [0; 2] };
         let bones = self.pose(&joints.rot, head);
         let bake = if self.is_tail() { BAKE_TAIL } else { BAKE_BODY };
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(bake)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 72, the tail's too): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(72.0, 1.0, 72.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         if self.is_tail() {

@@ -89,7 +89,7 @@ impl PlayState {
                 if b != ITEM_SWORD_KOKIRI && b != ITEM_SWORD_MASTER && b != ITEM_SWORD_BIGGORON && b != ITEM_GIANTS_KNIFE {
                     save.equips.button_items[0] = if save.button_status[0] != BTN_ENABLED { save.button_status[0] } else { ITEM_NONE };
                 }
-                // (nayrusLoveTimer = 2000 from PAL 1.1 on: magic isn't ported.)
+                // (nayrusLoveTimer = 2000 from PAL 1.1 on: the spells aren't ported, BACKLOG #85.)
                 save.navi_timer = 0;
                 save.seq_id = crate::audio::NA_BGM_DISABLED as u8;
                 save.nature_ambience_id = crate::audio::NATURE_ID_DISABLED;

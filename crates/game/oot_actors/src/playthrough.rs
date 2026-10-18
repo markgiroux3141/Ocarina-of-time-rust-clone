@@ -533,6 +533,19 @@ pub enum Step {
     RubyOver,
     /// Death Mountain Trail's spawn 5 (`ENTR_DEATH_MOUNTAIN_TRAIL_5`), standing.
     Trail5,
+    /// The Great Fairy's wall on Death Mountain's summit (`Bg_Bombwall` 0x8003) broken: its switch
+    /// flag 3, Link free.
+    FairyWall,
+    /// In the Great Fairy's fountain (`ENTR_GREAT_FAIRYS_FOUNTAIN_MAGIC_0`), standing.
+    Fountain,
+    /// The Great Fairy's cutscene (`gGreatFairyMagicCs`) over: magic acquired, Link free.
+    Magic,
+    /// Death Mountain Trail's spawn 4 (`ENTR_DEATH_MOUNTAIN_TRAIL_4`, the fountain's return
+    /// entrance), standing.
+    Trail4,
+    /// In Kakariko at the owl's landing (`ENTR_KAKARIKO_VILLAGE_14`, `gDMTOwlCs`'s terminator 66),
+    /// standing.
+    Kakariko14,
 }
 
 impl Step {
@@ -737,6 +750,11 @@ impl Step {
             Step::KingDodongoBattle => "king_dodongo_battle",
             Step::RubyOver => "ruby_over",
             Step::Trail5 => "trail_5",
+            Step::FairyWall => "fairy_wall",
+            Step::Fountain => "fountain",
+            Step::Magic => "magic",
+            Step::Trail4 => "trail_4",
+            Step::Kakariko14 => "kakariko_14",
         }
     }
 }
@@ -944,6 +962,21 @@ pub enum Route {
     /// (`DoorWarp1_ChildWarpOut`'s `EVENTCHKINF_25`, `Item_Give`), `gDMTGoronRubyCs` on Death
     /// Mountain Trail's layer 5 to its terminator, and the trail's spawn 5: Phase 10's exit.
     Ruby,
+    /// The Great Fairy's wall on Death Mountain's summit (GAME-09 milestone 6), from a debug start
+    /// in front of it with bombs (`goron-ruby`): a bomb (C-Right) put down by the wall
+    /// (`Bg_Bombwall` 0x8003), its blast, and in through the hole (exit 5,
+    /// `ENTR_GREAT_FAIRYS_FOUNTAIN_MAGIC_0`). The falling rocks and the Skullwalltulas on the way up
+    /// are the hand test's.
+    FairyWall,
+    /// The Great Fairy's fountain (GAME-09 milestone 6), from its spawn (`fairy-fountain`: the wall
+    /// broken): Zelda's Lullaby on the Triforce (`En_Okarina_Tag` 0x1CB8, switch 0x38), her
+    /// cutscene (`gGreatFairyMagicCs`: the orange warp at Link, the magic), and out by the return
+    /// entrance (exit 0x7FFE, spawn 0: `ENTR_DEATH_MOUNTAIN_TRAIL_4`).
+    GreatFairy,
+    /// The summit's owl (GAME-09 milestone 6), from the fountain's return (`fairy-magic`: magic
+    /// acquired): his talk (0x3063), his flight (`gDMTOwlCs`) to Kakariko
+    /// (`ENTR_KAKARIKO_VILLAGE_14`).
+    SummitOwl,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1284,6 +1317,55 @@ fn ruby_tasks() -> Vec<Task> {
         Task::WarpOut(Step::WarpedOut),
         Task::WarpCutscene(4000, Step::RubyOver),
         Task::NewScene(Step::Trail5),
+    ]
+}
+
+/// The Great Fairy's wall on Death Mountain's summit (spot16 room 0's `Bg_Bombwall` 0x8003, switch
+/// flag 3); the trail's spawn 4 (-249, 3314, -4497), facing out along 5097, is where the
+/// fountain's return entrance puts Link, in its hole.
+pub const SUMMIT_WALL: Vec3 = Vec3::new(-245.0, 3305.0, -4480.0);
+/// 150 out from spawn 4 along its facing (5097: (0.469, 0.883)).
+pub const SUMMIT_WALL_FRONT: Vec3 = Vec3::new(-179.0, 3314.0, -4365.0);
+/// The summit's owl (`En_Owl` 0x0213, `OWL_DEATH_MOUNTAIN`).
+pub const SUMMIT_OWL: Vec3 = Vec3::new(-42.0, 3347.0, -4409.0);
+/// The fountain's Triforce (`En_Okarina_Tag` 0x1CB8: Zelda's Lullaby, switch 0x38).
+pub const FOUNTAIN_TRIFORCE: Vec3 = Vec3::new(-22.0, 10.0, -798.0);
+
+/// `Route::FairyWall`'s tasks: a bomb out (C-Right) and put down 40 in front of the wall, back
+/// off out of its blast; the wall breaks (switch flag 3); in through the hole (exit 5).
+fn fairy_wall_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::TakeBomb(2, Step::BombOut),
+        Task::PutDown(vec![Vec3::new(-226.0, 3314.0, -4445.0)], SUMMIT_WALL, Step::PutDown),
+        Task::Walk(vec![Vec3::new(-150.0, 3314.0, -4310.0)]),
+        Task::WaitFor(Cond::Switch(3), Step::FairyWall),
+        Task::Exit("ENTR_GREAT_FAIRYS_FOUNTAIN_MAGIC_0", Some(Step::Fountain)),
+    ]
+}
+
+/// `Route::GreatFairy`'s tasks: north from the spawn onto the Triforce, Zelda's Lullaby (the ocarina
+/// on C-Down; within 50 of the spot, `func_80ABEF2C`, it's the one the ocarina turns to); `Bg_Dy_Yoseizo` sees switch 0x38
+/// and starts `gGreatFairyMagicCs`; A through its texts until magic is Link's and he's free;
+/// then south out of the fountain by its exit (0x7FFE: spawn 0's return entrance).
+fn great_fairy_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_LULLABY;
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(-24.0, 10.0, -400.0), Vec3::new(-22.0, 10.0, -780.0)]),
+        Task::Ocarina(1, OCARINA_SONG_LULLABY, Step::LullabyPlayed),
+        Task::Texts(|w| w.save.is_magic_acquired && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && !w.player_in_cs_mode(), Step::Magic),
+        Task::Exit("ENTR_DEATH_MOUNTAIN_TRAIL_4", Some(Step::Trail4)),
+    ]
+}
+
+/// `Route::SummitOwl`'s tasks: from spawn 4 to the owl (within 120 he offers his talk: 0x3063 with
+/// magic), his texts, and his flight to Kakariko (`gDMTOwlCs`, terminator 66).
+fn summit_owl_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Converse(Who::Owl, Vec3::new(-110.0, 3314.0, -4420.0), vec![], |w| w.scene_id == 0x52, Step::OwlTalk),
+        Task::Settle(Some(Step::Kakariko14)),
     ]
 }
 
@@ -1910,6 +1992,9 @@ impl Route {
             Route::Pillar => "ENTR_DODONGOS_CAVERN_0",
             Route::Skull => "ENTR_DODONGOS_CAVERN_0",
             Route::KingDodongo | Route::Ruby => "ENTR_DODONGOS_CAVERN_BOSS_0",
+            // The summit's spawn 4 (the fountain's return entrance, at the wall).
+            Route::FairyWall | Route::SummitOwl => "ENTR_DEATH_MOUNTAIN_TRAIL_4",
+            Route::GreatFairy => "ENTR_GREAT_FAIRYS_FOUNTAIN_MAGIC_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -1947,6 +2032,9 @@ impl Route {
             Route::Skull => Some("cavern-bomb-bag"),
             Route::KingDodongo => Some("cavern-boss"),
             Route::Ruby => Some("cavern-boss-beaten"),
+            Route::FairyWall => Some("goron-ruby"),
+            Route::GreatFairy => Some("fairy-fountain"),
+            Route::SummitOwl => Some("fairy-magic"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -1979,6 +2067,9 @@ impl Route {
             // On the arena's east rim (the lava's square ends at x -530), facing the heart container
             // (-690, -1523.76, -3304) and the warp beyond it (west).
             Route::Ruby => Some((Vec3::new(-470.0, -1504.0, -3304.0), -0x4000)),
+            // On the summit 150 out from the Great Fairy's wall (spawn 4 faces out along 5097),
+            // facing it.
+            Route::FairyWall => Some((SUMMIT_WALL_FRONT, -27671)),
             _ => None,
         }
     }
@@ -2139,6 +2230,9 @@ impl Route {
             Route::Skull => "skull",
             Route::KingDodongo => "kingdodongo",
             Route::Ruby => "ruby",
+            Route::FairyWall => "fairy-wall",
+            Route::GreatFairy => "great-fairy",
+            Route::SummitOwl => "summit-owl",
         }
     }
 
@@ -2187,6 +2281,9 @@ impl Route {
             Route::Skull => 2000,
             Route::KingDodongo => 2000,
             Route::Ruby => 5000,
+            Route::FairyWall => 1500,
+            Route::GreatFairy => 5000,
+            Route::SummitOwl => 4000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2194,12 +2291,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -2559,6 +2656,8 @@ enum Who {
     SongWall,
     /// Dampé (`En_Tk`).
     Dampe,
+    /// An owl (`En_Owl`).
+    Owl,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -2906,6 +3005,9 @@ impl Playthrough {
             Route::Skull => skull_tasks(),
             Route::KingDodongo => king_dodongo_tasks(),
             Route::Ruby => ruby_tasks(),
+            Route::FairyWall => fairy_wall_tasks(),
+            Route::GreatFairy => great_fairy_tasks(),
+            Route::SummitOwl => summit_owl_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -6861,6 +6963,7 @@ impl Playthrough {
             Who::Zelda => w.actors.downcast::<crate::en_zl4::EnZl4>(h).is_some_and(|a| !a.actor.killed),
             Who::GateGuard => w.actors.downcast::<crate::en_heishi2::EnHeishi2>(h).is_some_and(|a| !a.actor.killed && a.ty == 5),
             Who::Dampe => w.actors.downcast::<crate::en_tk::EnTk>(h).is_some_and(|a| !a.actor.killed),
+            Who::Owl => w.actors.downcast::<crate::en_owl::EnOwl>(h).is_some_and(|a| !a.actor.killed),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

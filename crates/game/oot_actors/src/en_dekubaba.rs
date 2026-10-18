@@ -20,9 +20,9 @@
 //! The whole overlay is ported, with its effects (since GAME-05 milestone 3a: the dirt bursts
 //! `EffectSsHahen_SpawnBurst`, the dust `func_8002829C` and `func_800286CC`, a fire hit's flames
 //! `EffectSsEnFire_SpawnVec3f`, which follow the struct's unused `unk_14C`: zeroes, so they burn
-//! at the world's origin, the C's own bug). Not ported: the generic circle shadow
-//! (`ActorShadow_DrawCircle`, not ported for any actor; its own floor shadow,
-//! `EnDekubaba_DrawShadow`, is drawn).
+//! at the world's origin, the C's own bug). The circle shadow (22; 3 as a stick) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`); its draw puts its own shadow on its floor at home
+//! too (`EnDekubaba_DrawShadow`).
 //!
 //! Params: `params` the whole params (`EnDekubabaType`: 0 `EN_DEKUBABA_TYPE_NORMAL`; 1
 //! `EN_DEKUBABA_TYPE_BIG`, two and a half times the size, with 4 health, its own damage table,
@@ -263,8 +263,7 @@ impl EnDekubaba {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // sInitChain: ICHAIN_F32(lockOnArrowOffset, 1500).
         actor.target_arrow_offset = 1500.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 22): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 22.0);
         let (skeleton, chomp, idle) = match play.assets.clone() {
             Some(a) => {
                 let s = a.skeleton(OBJECT, "gDekubabaHeadSkel").map_err(|e| log::error!("En_Dekubaba: {e:#}")).ok();
@@ -510,7 +509,7 @@ impl EnDekubaba {
         self.actor.shape_y_offset = 1000.0;
         self.actor.gravity = 0.0;
         self.actor.velocity.y = 0.0;
-        // (shape.shadowScale = 3.)
+        self.actor.shape_shadow_scale = 3.0;
         // Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_MISC).
         self.actor.category = ACTORCAT_MISC;
         if let Some(me) = play.cur_actor {
@@ -1276,13 +1275,13 @@ impl ActorImpl for EnDekubaba {
         if *action == 2 {
             out.opa.push(DrawCmd::new(mesh(stems[2]), leaves * rot(stem[2])));
         }
-        // EnDekubaba_DrawShadow: gCircleShadowDL (a circle of radius 74 on one triangle) on the
-        // floor's plane at home (func_80038A28), scaled by 0.15; drawn as the builtin disc.
+        // EnDekubaba_DrawShadow: Gfx_SetupDL_44Xlu, prim (0, 0, 0, 255), gCircleShadowDL on the
+        // floor's plane at home (func_80038A28), scaled by scaleFac × 0.15, in POLY_XLU_DISP. (No
+        // shadow combiner: SETUPDL_44's G_CC_MODULATEIA_PRIM with the black prim is the same black.)
         if let Some(f) = self.floor_poly {
-            let n = play.col.poly(f).normal;
-            let r = 74.0 * scale_fac * 0.15;
-            let m = floor_matrix([n[0], n[1], n[2]], home) * Mat4::from_scale(Vec3::new(r, 1.0, r));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
+            let s = scale_fac * 0.15;
+            let m = oot_game::shadow::func_80038a28(play.col.poly(f).normal, home) * Mat4::from_scale(Vec3::new(s, 1.0, s));
+            out.xlu.push(oot_game::shadow::shadow_cmd(oot_game::shadow::BAKE_CIRCLE, m, [0, 0, 0], 255));
         }
     }
 
@@ -1295,30 +1294,4 @@ impl ActorImpl for EnDekubaba {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-}
-
-/// `func_80038A28` (`z_bgcheck.c`): a matrix at `t` whose y axis is the floor's normal (the
-/// normal's `s16` components over 32767, `CollisionPoly_GetNormalF`).
-pub(crate) fn floor_matrix(normal: [i16; 3], t: Vec3) -> Mat4 {
-    let (nx, ny, nz) = (normal[0] as f32 * (1.0 / 32767.0), normal[1] as f32 * (1.0 / 32767.0), normal[2] as f32 * (1.0 / 32767.0));
-    let mut xx = (1.0 - nx * nx).sqrt();
-    let (zz, yz);
-    if !eng_math::is_zero(xx) {
-        let xx_inv = 1.0 / xx;
-        zz = ny * xx_inv;
-        yz = -(nz * xx_inv);
-    } else {
-        let z = (1.0 - ny * ny).sqrt();
-        if !eng_math::is_zero(z) {
-            let zz_inv = 1.0 / z;
-            yz = nx * zz_inv;
-            xx = -(nz * zz_inv);
-        } else {
-            yz = 0.0;
-            xx = 0.0;
-        }
-        zz = z;
-    }
-    let m = MtxF { xx, yx: -nx * zz, zx: nx * yz, wx: 0.0, xy: nx, yy: ny, zy: nz, wy: 0.0, xz: 0.0, yz, zz, wz: 0.0, xw: t.x, yw: t.y, zw: t.z, ww: 1.0 };
-    m.to_mat4()
 }

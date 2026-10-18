@@ -4,7 +4,7 @@
 //! camera's eye, as `Oceff_Wipe`'s (its helpers), rushing out over 16 frames
 //! (`Math_SinS(timer * 1024) * 1330`) and fading from frame 30; gone at 50.
 //!
-//! The whole overlay is ported. `Magic_Reset` isn't (no magic). @bug (game): unlike the other
+//! The whole overlay is ported, its destroy's `Magic_Reset` too. @bug (game): unlike the other
 //! effects, its destroy doesn't restore Nayru's Love.
 //!
 //! Params: `params` whole (`OceffWipe4Type`: 1 `OCEFF_WIPE4_UNUSED` the other material, any other

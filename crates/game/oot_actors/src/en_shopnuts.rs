@@ -15,8 +15,8 @@
 //!   `En_Dns` in its place.
 //!
 //! The whole overlay is ported. It never moves: its gravity is set but there's no
-//! `Actor_MoveXZGravity`, and its collider stays where its init put it. Not ported: the circle
-//! shadow (`ActorShadow_DrawCircle`, 35), not ported for any actor.
+//! `Actor_MoveXZGravity`, and its collider stays where its init put it. The circle shadow (35) is
+//! the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Params: `type` the whole params (`SHOPNUTS_GET_TYPE`, an `EnDnsType`: what its salesman
 //! sells, 0 Deku Nuts to 10 the Deku Nut upgrade, see `En_Dns`; handed to the `En_Dns` it
@@ -174,8 +174,7 @@ impl EnShopnuts {
         actor.navi_enemy_id = NAVI_ENEMY_BUSINESS_SCRUB;
         actor.gravity = -1.0;
         actor.target_arrow_offset = 2600.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 35): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 35.0);
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, "gBusinessScrubSkel").map_err(|e| log::error!("En_Shopnuts: {e:#}")).ok());
         let anims = Anims::load(play);
         // SkelAnime_InitFlex(&gBusinessScrubSkel, &gBusinessScrubPeekAnim): BUSINESS_SCRUB_LIMB_MAX.

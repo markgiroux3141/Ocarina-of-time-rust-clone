@@ -610,9 +610,11 @@ impl PlayState {
     pub(crate) fn kaleido_setup_update(&mut self) {
         use crate::transition::{TRANS_MODE_OFF, TRANS_TRIGGER_OFF};
         use eng_input::pad::{BTN_CUP, BTN_L, BTN_START};
-        // (shootingGalleryStatus <= 1, magicState not filling: no shooting gallery or magic
-        // is ported. The Bombchu Bowling Alley's switch 0x38: its scene isn't.)
+        // (shootingGalleryStatus <= 1: no shooting gallery is ported. The Bombchu Bowling Alley's
+        // switch 0x38: its scene isn't.)
         if !(!self.pause_ctx.is_paused()
+            && self.save.magic_state != crate::magic::MAGIC_STATE_STEP_CAPACITY
+            && self.save.magic_state != crate::magic::MAGIC_STATE_FILL
             && self.game_over_ctx.state == crate::game_over::GAMEOVER_INACTIVE
             && self.transition.trigger == TRANS_TRIGGER_OFF
             && self.transition.mode == TRANS_MODE_OFF

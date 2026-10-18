@@ -66,8 +66,8 @@
 //! (`EnSkj_TranslucentDL`; @bug (game): both lists allocate one `Gfx` and write three or two,
 //! harmless here), from two bakes (opaque, translucent; docs/adr/0012-actor-bakes.md); the Skull
 //! Mask (`gSkullKidSkullMaskDL`) on limb 11 turned -0x4000 about x once it's sold
-//! (`EnSkj_PostLimbDraw`); the circle shadow's stand-in (40, `shadowAlpha`). Types 5 and 6 have
-//! no draw. The translucent pass goes in the XLU list (as `En_Md`'s), where the C draws it in
+//! (`EnSkj_PostLimbDraw`). The circle shadow (40, at `shadowAlpha`) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`). Types 5 and 6 have no draw (and no shadow). The translucent pass goes in the XLU list (as `En_Md`'s), where the C draws it in
 //! `POLY_OPA_DISP` with the translucent render mode; and the mask's `Gfx_SetupDL_25Opa`, which in
 //! the C resets the render mode for the limbs drawn after limb 11 while he fades, isn't modelled
 //! (the bake is one pass).
@@ -658,8 +658,6 @@ pub struct EnSkj {
     pub unk_2f0: f32,
     /// `posCopy`: set at init (types 1, 2), read by nothing.
     pub pos_copy: Vec3,
-    /// `shape.shadowAlpha`.
-    pub shadow_alpha: u8,
     /// Not in the C: this init's number, for the statics' handles (`resolve_statics`).
     pub init_id: u32,
 }
@@ -695,7 +693,6 @@ impl EnSkj {
             unk_2ec: 0.0,
             unk_2f0: 0.0,
             pos_copy: Vec3::ZERO,
-            shadow_alpha: 255,
             init_id: 0,
         }
     }
@@ -920,8 +917,7 @@ impl EnSkj {
                 }
                 this.actor.col_chk_info.damage_table = Some(&S_DAMAGE_TABLE);
                 this.actor.col_chk_info.health = 10;
-                // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 40).
-                this.actor.shape_y_offset = 0.0;
+                this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 40.0);
                 this.actor.scale = Vec3::splat(0.01);
                 this.text_id = 0;
                 this.actor.text_id = 0;
@@ -1070,7 +1066,7 @@ impl EnSkj {
                 alpha = 0;
             }
             self.alpha = alpha;
-            self.shadow_alpha = alpha as u8;
+            self.actor.shape_shadow_alpha = alpha as u8;
         }
         if self.actor.velocity.y <= 0.0 && self.actor.bg_check_flags & BGCHECKFLAG_GROUND_TOUCH != 0 {
             self.actor.bg_check_flags &= !BGCHECKFLAG_GROUND_TOUCH;
@@ -1265,7 +1261,7 @@ impl EnSkj {
             phi_v0 = 0;
         }
         self.alpha = phi_v0;
-        self.shadow_alpha = phi_v0 as u8;
+        self.actor.shape_shadow_alpha = phi_v0 as u8;
         let x = play.rand.centered_float(30.0) + self.actor.world_pos.x;
         let y = play.rand.centered_float(30.0) + self.actor.world_pos.y;
         let z = play.rand.centered_float(30.0) + self.actor.world_pos.z;
@@ -2079,19 +2075,18 @@ impl ActorImpl for EnSkj {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        rs.values = vec![self.alpha.min(255) as f32, self.shadow_alpha as f32];
+        rs.values = vec![self.alpha.min(255) as f32];
         rs
     }
 
     /// `EnSkj_Draw` (none for types 5 and 6): the skeleton with segment 0x0C's alpha (translucent
-    /// below 255), the Skull Mask on limb 11 once it's sold (`EnSkj_PostLimbDraw`), the circle
-    /// shadow's stand-in.
+    /// below 255), the Skull Mask on limb 11 once it's sold (`EnSkj_PostLimbDraw`).
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         if !self.has_draw {
             return;
         }
         let (Some(joints), Some(skeleton)) = (&rs.joints, &self.skeleton) else { return };
-        let [alpha, shadow_alpha] = rs.values.as_slice() else { return };
+        let [alpha] = rs.values.as_slice() else { return };
         let alpha = *alpha as u32;
         // EnSkj_OverrideLimbDraw changes nothing.
         let bones = skeleton.pose_override(&joints.rot, |_, _, _| Mat4::IDENTITY);
@@ -2112,12 +2107,6 @@ impl ActorImpl for EnSkj {
             out.xlu.push(cmd);
         } else {
             out.opa.push(cmd);
-        }
-        if *shadow_alpha > 0.0 {
-            // ActorShadow_DrawCircle (shadowScale 40): the circle shadow's stand-in.
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(40.0, 1.0, 40.0));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
         }
     }
 

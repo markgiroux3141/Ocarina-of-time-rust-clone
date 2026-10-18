@@ -132,8 +132,7 @@ impl EnHs2 {
         let last = anim.last_frame();
         skel.change(anim, 1.0, 0.0, last, ANIMMODE_LOOP, 0.0);
         let mut this = EnHs2 { collider: ColliderCylinder::new(&CYLINDER_INIT), skel, skeleton, head_rot: [0; 3], torso_rot: [0; 3], tracking_flags: 0, action: Action::Idle, actor };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 36).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 36.0);
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         this.actor.scale = Vec3::splat(0.01);
         log::debug!("En_Hs2: Chick's Shop (Children's Time)");
@@ -235,17 +234,13 @@ impl ActorImpl for EnHs2 {
         rs
     }
     /// `EnHs2_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 3 {
             return;
         }
         let bones = Self::pose(&self.skeleton, &joints.rot, [rs.angles[0], rs.angles[1], rs.angles[2]]);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 36): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(36.0, 1.0, 36.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

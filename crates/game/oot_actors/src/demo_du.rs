@@ -31,7 +31,8 @@
 //! `gDaruniaSkel` opaque, the eyes on segment 8, the mouth on 9, `gDaruniaNoseSeriousTex` on 0xA,
 //! `ACTOR_SETUP_OPA_DL` on 0xC, env alpha 255: `En_Du`'s bake, the textures swapped per draw) or
 //! `DemoDu_Draw_02` (the same translucent, `gActorSetupXluDL` on 0xC, env alpha `shadowAlpha`: this
-//! module's bake); the circle shadow (`ActorShadow_DrawCircle`, scale 30) once he has a floor.
+//! module's bake). His circle shadow (30) is the shape's (`ActorShape_Init`'s, drawn by
+//! `Actor_Draw` once he has a floor).
 //!
 //! Ported: the Goron's Ruby whole (`DemoDu_InitCs_GoronsRuby` .. `DemoDu_UpdateCs_GR_13`) and the
 //! shared functions (`DemoDu_UpdateEyes`, `_SetEyeTexIndex`, `_SetMouthTexIndex`,
@@ -60,7 +61,7 @@ use std::sync::Arc;
 
 use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, DrawImage, DrawParams, MeshKey, SegmentValues, SourceImage};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, func_80033480};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
@@ -249,8 +250,6 @@ pub struct DemoDu {
     pub shadow_alpha: i32,
     pub demo6k_spawned: i32,
     pub cue_id: i32,
-    /// `actor.shape.shadowAlpha` (255 from `ActorShape_Init`).
-    pub shape_shadow_alpha: u8,
     anims: Anims,
     /// The face textures as images: `EYE_TEXTURES`, `MOUTH_TEXTURES`, `NOSE_TEXTURE`.
     face: Vec<DrawImage>,
@@ -280,9 +279,8 @@ impl DemoDu {
     /// `DemoDu_Init`: the circle shadow (30), then the cutscene's init; the three not ported are
     /// placeholders.
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
         let mut actor = actor;
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         let what = match TYPE.get(actor.params) {
             DEMO_DU_CS_GORONS_RUBY => None,
             DEMO_DU_CS_CHAMBER_AFTER_GANON => Some("DemoDu_InitCs_AfterGanon: the Chamber of Sages after Ganon's last blow (Phase 19)"),
@@ -337,7 +335,6 @@ impl DemoDu {
             shadow_alpha: 0,
             demo6k_spawned: 0,
             cue_id: 0,
-            shape_shadow_alpha: 255,
             anims,
             face,
             not_ported_logged: false,
@@ -770,8 +767,7 @@ mod rs {
     pub const MOUTH: usize = 2;
     /// `shadowAlpha` (`DemoDu_Draw_02`'s env alpha).
     pub const ALPHA: usize = 3;
-    pub const SHADOW: usize = 4;
-    pub const SWITCHES: usize = 5;
+    pub const SWITCHES: usize = 4;
 }
 
 impl ActorImpl for DemoDu {
@@ -800,10 +796,7 @@ impl ActorImpl for DemoDu {
     fn render_state(&self) -> RenderState {
         let mut r = RenderState::of(&self.actor);
         r.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        // Actor_Draw's shadow (at shape.shadowAlpha), whatever the draw index.
-        let shadow = if self.shape_shadow_alpha != 0 { oot_game::draw::actor_shadow_circle(&self.actor, 30.0) } else { None };
-        r.switches = vec![self.draw_index as u32, self.eye_tex_index as u32, self.mouth_tex_index as u32, (self.shadow_alpha as u32) & 0xFF, shadow.is_some() as u32];
-        r.values = shadow.unwrap_or(Mat4::IDENTITY).to_cols_array().to_vec();
+        r.switches = vec![self.draw_index as u32, self.eye_tex_index as u32, self.mouth_tex_index as u32, (self.shadow_alpha as u32) & 0xFF];
         r
     }
 
@@ -813,10 +806,6 @@ impl ActorImpl for DemoDu {
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         if rs.switches.len() < rs::SWITCHES {
             return;
-        }
-        if rs.switches[rs::SHADOW] != 0 && rs.values.len() == 16 {
-            let m = Mat4::from_cols_array(&rs.values[..16].try_into().unwrap());
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
         }
         let draw_index = rs.switches[rs::DRAW_INDEX] as i32;
         if !(0..DRAW_FUNCS).contains(&draw_index) {

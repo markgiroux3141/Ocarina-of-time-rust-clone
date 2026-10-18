@@ -7,8 +7,8 @@
 //! disabled here (`Message_StartOcarinaSunsSongDisabled`) or Epona's rented for Ingo's race: then
 //! the ocarina is only put away (`OCARINA_MODE_04`).
 //!
-//! The whole overlay is ported. `Magic_Reset` and Nayru's Love's restore aren't (no magic, no
-//! spells).
+//! The whole overlay is ported, its destroy's `Magic_Reset` too; Nayru's Love's restore never
+//! applies (the spells aren't ported: `nayrusLoveTimer` stays 0).
 //!
 //! Params: none (`Message_DrawMain` spawns it with 0).
 //! Flags: sets `gSaveContext.sunsSongState` (`SUNSSONG_START`) as it goes; reads the Ingo race's

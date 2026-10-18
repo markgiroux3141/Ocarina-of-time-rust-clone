@@ -275,6 +275,12 @@ pub enum PlayRequest {
     /// `Actor_Spawn(ACTOR_DEMO_KANKYO, 0, 0, 0, params)`: the warp songs' sparkles, out
     /// (`DEMOKANKYO_WARP_OUT`, `Environment_WarpSongLeave` if it can't spawn) or in.
     WarpSparkles(i16),
+    /// `func_80837530`'s `Actor_Spawn(ACTOR_EN_M_THUNDER, bodyPartsPos[PLAYER_BODYPART_WAIST], 0, 0,
+    /// 0, Player_GetMeleeWeaponHeld(this) | arg2)`: the spin attack's effect. Its init reads
+    /// Player as he was at the call (`waist`, `shape_yaw`, `state2`: he's out of the arena when
+    /// the request runs, `crate::en_m_thunder::spawn_from_player`), and its write to his
+    /// `stateFlags2` (`PLAYER_STATE2_17` off) is applied by Player's update after the spawn.
+    SpawnMThunder { waist: Vec3, params: i16, shape_yaw: i16, state2: u32 },
 }
 
 /// `Player_UpdateBottleHeld` (`z_player_lib.c`): the bottle on the button Link used holds `item`
@@ -442,6 +448,44 @@ const FLOOR_EFFECT_2: u32 = 2;
 /// `ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS`, `ENTR_RETURN_GROTTO` (`scene.h`).
 const ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS: u16 = 0x7FF9;
 const ENTR_RETURN_GROTTO: u16 = 0x7FFF;
+/// `sReturnEntranceGroupData`: the "return entrances" an exit of `ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS`
+/// to `ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_MAGIC` (0x7FF9 to 0x7FFE) leads by, each group indexed by
+/// `play->spawn` (the spawn the scene was entered at: the way back to where Link came from).
+/// The values are `entrance_table.h`'s (`tests::return_entrances` checks each by name).
+pub const RETURN_ENTRANCE_GROUP_DATA: [u16; 14] = [
+    // ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_MAGIC
+    0x45B, // 0: ENTR_DEATH_MOUNTAIN_TRAIL_4, from the magic fairy's fountain
+    0x482, // 1: ENTR_DEATH_MOUNTAIN_CRATER_3, from the double magic fairy's fountain
+    0x340, // 2: ENTR_HYRULE_CASTLE_2, from the double defence fairy's fountain (an adult)
+    // ENTR_RETURN_2
+    0x44B, // 3: ENTR_KAKARIKO_VILLAGE_9, from Kakariko's potion shop
+    0x2A2, // 4: ENTR_MARKET_DAY_5, from the market's potion shop
+    // ENTR_RETURN_BAZAAR
+    0x201, // 5: ENTR_KAKARIKO_VILLAGE_3
+    0x3B8, // 6: ENTR_MARKET_DAY_6
+    // ENTR_RETURN_4
+    0x4EE, // 7: ENTR_KAKARIKO_VILLAGE_11, from the House of Skulltula
+    0x3C0, // 8: ENTR_BACK_ALLEY_DAY_2, from the Bombchu shop
+    // ENTR_RETURN_SHOOTING_GALLERY
+    0x463, // 9: ENTR_KAKARIKO_VILLAGE_10
+    0x1CD, // 10: ENTR_MARKET_DAY_8
+    // ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS
+    0x394, // 11: ENTR_ZORAS_FOUNTAIN_5, from Farore's Wind's fountain
+    0x340, // 12: ENTR_HYRULE_CASTLE_2, from Din's Fire's fountain (a child)
+    0x57C, // 13: ENTR_DESERT_COLOSSUS_7, from Nayru's Love's fountain
+];
+/// `sReturnEntranceGroupIndices`: where each group starts in `RETURN_ENTRANCE_GROUP_DATA`, by
+/// `nextEntranceIndex - ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS` (the spell fountains, the
+/// shooting gallery, `ENTR_RETURN_2`, the bazaar, `ENTR_RETURN_4`, the magic fountains).
+pub const RETURN_ENTRANCE_GROUP_INDICES: [u8; 6] = [11, 9, 3, 5, 7, 0];
+
+/// `Player_HandleExitsAndVoids`' return entrance: `sReturnEntranceGroupData` by the exit's group
+/// and `play->spawn`. Out of the table (a spawn past its group, read on into the next group or
+/// past the table in the C) it's `None`.
+pub fn return_entrance(next_entrance_index: u16, spawn: usize) -> Option<u16> {
+    let group = *RETURN_ENTRANCE_GROUP_INDICES.get(next_entrance_index.checked_sub(ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS)? as usize)? as usize;
+    RETURN_ENTRANCE_GROUP_DATA.get(group + spawn).copied()
+}
 const FLOOR_PROPERTY_6: u32 = 6;
 const FLOOR_PROPERTY_7: u32 = 7;
 const FLOOR_PROPERTY_8: u32 = 8;
@@ -647,6 +691,14 @@ pub enum Action {
     PutDown,
     /// `Player_Action_80846578`: throwing what Player carries.
     Throw,
+    // ---- The charged spin attack (GAME-09 m6, spin attack) ----
+    /// `Player_Action_80844E68`: charging the spin attack (B held after a slash), standing.
+    ChargeSpin,
+    /// `Player_Action_80845000`: walking forward or back while charging.
+    ChargeSpinWalk,
+    /// `Player_Action_80845308`: walking sideways while charging.
+    ChargeSpinSideWalk,
+    // ---- end of the charged spin attack ----
 }
 
 /// `D_80854870`: the push's slips (`ANIMSFX_DATA(ANIMSFX_TYPE_FLOOR, 3)`, `-(.., 21)`).
@@ -827,6 +879,10 @@ impl Action {
             Action::NoCarry => "Player_Action_80846408",
             Action::PutDown => "Player_Action_808464B0",
             Action::Throw => "Player_Action_80846578",
+            // The charged spin attack.
+            Action::ChargeSpin => "Player_Action_80844E68",
+            Action::ChargeSpinWalk => "Player_Action_80845000",
+            Action::ChargeSpinSideWalk => "Player_Action_80845308",
         }
     }
 }
@@ -907,6 +963,8 @@ pub struct Env<'a> {
     pub cs_frames: u16,
     pub cs_link_action: Option<CsCmdActorCue>,
     pub scene_id: u16,
+    /// `play->spawn`: the spawn the scene was entered at (the return entrances).
+    pub cur_spawn: usize,
     /// `play->gameOverCtx.state`, and `play->roomCtx.curRoom.environmentType` (`behaviorType2`).
     pub game_over_state: u16,
     pub room_behavior_type2: u8,
@@ -952,6 +1010,7 @@ impl<'a> Env<'a> {
             cs_frames: play.cs_ctx.frames,
             cs_link_action: play.cs_ctx.link_action,
             scene_id: play.scene_id,
+            cur_spawn: play.cur_spawn,
             game_over_state: play.game_over_ctx.state,
             room_behavior_type2: play.room_ctx.cur.behavior_type2,
             active_cam_id: play.active_cam_id,
@@ -1142,16 +1201,19 @@ pub struct Player {
     pub shield_quad: ColliderQuad,
     /// `shieldMf`: the shield's matrix from the last draw, in the right hand or on the back.
     pub shield_mf: glam::Mat4,
+    /// `mf_9E0`: the left hand's (the sword's) matrix from the last draw, while Player holds no
+    /// actor (`Player_PostLimbDrawGameplay`, `PLAYER_LIMB_L_HAND`): where `En_M_Thunder`'s
+    /// charge and `Eff_Dust`'s sparkles are drawn (the spin attack).
+    pub mf_9e0: glam::Mat4,
     /// `meleeWeaponInfo`: the sword's tip and base last frame, for the blur and the two quads.
     pub melee_weapon_info: [WeaponInfo; 3],
     /// `meleeWeaponEffectIndex`: the sword's trail (`Effect_Add(EFFECT_BLURE2, &D_8085470C)` in
     /// `Player_InitCommon`; `TOTAL_EFFECT_COUNT` with none).
     pub melee_weapon_effect_index: usize,
-    /// `bodyPartsPos` (`PLAYER_BODYPART_*`), from the last draw.
+    /// `bodyPartsPos` (`PLAYER_BODYPART_*`), from the last draw. (`actor.shape.feetPos`, the feet
+    /// from the last draw, is `actor.shape_feet_pos`: `Actor_SetFeetPos` in
+    /// `Player_PostLimbDrawGameplay`.)
     pub body_parts_pos: [Vec3; BODYPART_MAX],
-    /// `actor.shape.feetPos`: the feet (`FOOT_LEFT`, `FOOT_RIGHT`), from the last draw
-    /// (`Actor_SetFeetPos` in `Player_PostLimbDrawGameplay`).
-    pub feet_pos: [Vec3; 2],
     /// `targetActor`, `targetActorDistance`, `exchangeItemId`: who offered to talk this frame
     /// (`Actor_OfferTalkExchange`). Accepting it (the talk interrupt) comes with the message box.
     pub target_actor: Option<ActorHandle>,
@@ -1207,9 +1269,6 @@ pub struct Player {
     pub navi_text_id: i16,
     /// `naviActor`: Navi (`Player_SpawnFairy`).
     pub navi_actor: Option<ActorHandle>,
-    /// `actor.shape.shadowDraw` is `ActorShadow_DrawFeet` (`Player_Init`), not `NULL` (Link
-    /// asleep in the opening).
-    pub shadow_feet: bool,
     /// `textboxBtnCooldownTimer`: frames after a talk that A, B and C-Up are ignored.
     pub textbox_btn_cooldown_timer: u8,
     /// `putAwayCooldownTimer`: frames before "Put Away" shows on the A button.
@@ -1402,10 +1461,10 @@ impl Player {
             melee_weapon_quads: [ColliderQuad::new(&D_80854650), ColliderQuad::new(&D_80854650)],
             shield_quad: ColliderQuad::new(&D_808546A0),
             shield_mf: glam::Mat4::IDENTITY,
+            mf_9e0: glam::Mat4::IDENTITY,
             melee_weapon_info: [WeaponInfo::default(); 3],
             melee_weapon_effect_index: oot_game::effect::SPARK_COUNT + oot_game::effect::BLURE_COUNT + oot_game::effect::SHIELD_PARTICLE_COUNT,
             body_parts_pos: [pos; BODYPART_MAX],
-            feet_pos: [pos; 2],
             target_actor: None,
             target_actor_distance: f32::MAX,
             exchange_item_id: 0,
@@ -1436,7 +1495,6 @@ impl Player {
             inert: false,
             navi_text_id: 0,
             navi_actor: None,
-            shadow_feet: true,
             textbox_btn_cooldown_timer: 0,
             put_away_cooldown_timer: 0,
             invincibility_timer: 0,
@@ -1460,6 +1518,8 @@ impl Player {
             unk_836: 0,
             room_type_view: 0,
         };
+        // Player_InitCommon: ActorShape_Init(&shape, 0, ActorShadow_DrawFeet, ageProperties->unk_04).
+        p.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Feet, p.age.shadow_scale);
         // A plain start (the tests' and the sandbox's): standing still (`func_80853080`).
         p.func_80853080(data);
         p
@@ -1478,6 +1538,8 @@ impl Player {
         p.set_equipment_data(&data, &play.save);
         let flags = p.actor.flags;
         p.actor = Actor { flags, gravity: p.actor.gravity, ..base };
+        // Player_InitCommon's ActorShape_Init again (the spawn's actor replaced the one `new` set up).
+        p.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Feet, p.age.shadow_scale);
         // thisx->room = -1: Player belongs to no room.
         p.actor.room = -1;
         p.current_yaw = p.actor.world_rot.y;
@@ -1741,6 +1803,17 @@ impl Player {
             self.update_body_burn(env);
         }
 
+        // The spin attack's countdown (in the C's !PLAYER_STATE2_15 branch; nothing in the port
+        // sets PLAYER_STATE2_15): a slash's unk_844 (8) to 0, through 1 while B is held (the
+        // charge's moment, Player_ActionHandler_8), from -8 up once B is let go
+        // (func_8083C50C); at 0 the combo count (unk_845) is reset.
+        if self.unk_844 == 0 {
+            self.unk_845 = 0;
+        } else if self.unk_844 < 0 {
+            self.unk_844 += 1;
+        } else {
+            self.unk_844 -= 1;
+        }
         scaled_step_to_s(&mut self.unk_6C2, 0, 400);
         // FaceChange_UpdateBlinking(this->faceChange.face, 20, 80, 6) and the face alternation.
         let blink = self.blinker.step();
@@ -2029,6 +2102,10 @@ impl Player {
             Action::NoCarry => self.action_80846408(env),
             Action::PutDown => self.action_808464b0(env),
             Action::Throw => self.action_80846578(env),
+            // The charged spin attack.
+            Action::ChargeSpin => self.action_80844e68(env),
+            Action::ChargeSpinWalk => self.action_80845000(env),
+            Action::ChargeSpinSideWalk => self.action_80845308(env),
         }
     }
 
@@ -2976,13 +3053,16 @@ impl Player {
     // ================================================================================
     // Damage (func_808382DC) and the knockdown
 
-    /// `Player_InBlockingCsMode` (magic isn't ported).
+    /// `Player_InBlockingCsMode`: dead or in a transition's walk, a cutscene action, a transition
+    /// starting, an exit's, the hookshot's flight, or a spell cast with the meter busy.
     fn in_blocking_cs_mode(&self, env: &Env) -> bool {
+        let io = env.io.borrow();
         self.state1 & (STATE1_7 | STATE1_29) != 0
             || self.cs_mode != 0
-            || env.io.borrow().transition.trigger == TRANS_TRIGGER_START
+            || io.transition.trigger == TRANS_TRIGGER_START
             || self.state1 & STATE1_0 != 0
             || self.state3 & STATE3_7 != 0
+            || (io.save.magic_state != oot_game::magic::MAGIC_STATE_IDLE && Self::action_to_magic_spell(env.data, self.item_ap) >= 0)
     }
 
     /// `Player_SetIntangibility`: `timer` frames of invincibility, unless the roll's is running.
@@ -4730,11 +4810,15 @@ impl Player {
                 self.state1 &= !STATE1_11;
             }
         }
-        self.melee_weapon_state = 0;
+        // func_80832318: the weapon inactive, PLAYER_STATE2_17 (the spin's) off.
+        self.func_80832318();
         self.unk_6AD = 0;
         self.state1 &= !(STATE1_13 | STATE1_14 | STATE1_20 | STATE1_21);
         self.state2 &= !(STATE2_4 | (1 << 7) | STATE2_18);
         self.actor.shape_rot.x = 0;
+        // The spin attack's countdown and the combo count.
+        self.unk_845 = 0;
+        self.unk_844 = 0;
     }
 
     /// `func_80833C3C`.
@@ -4801,7 +4885,7 @@ impl Player {
 
     /// `Player_TryActionHandlerList`: the per-action list of interrupts (`sActionHandlerFuncs`). Ported: 0, 1,
     /// 2, 4 (talking), 5, 6 (`Player_ActionHandler_Roll`, roll / put the sword away on A), 7
-    /// (`Player_ActionHandler_7`, B attacks), 9 (`Player_ActionHandler_9`, throwing or putting down
+    /// (`Player_ActionHandler_7`, B attacks), 8 (`Player_ActionHandler_8`, B held: the charged spin), 9 (`Player_ActionHandler_9`, throwing or putting down
     /// what Player carries), 10 (`Player_ActionHandler_10`, hops while targeting), 11
     /// (`Player_ActionHandler_11`, the guard on R), 12 (`Player_ActionHandler_12`, climbing onto ledges) and 13;
     /// the others need other items and report "not taken".
@@ -4849,6 +4933,10 @@ impl Player {
                 return true;
             }
             if idx == 7 && self.action_handler_7(env) {
+                return true;
+            }
+            // The charged spin attack: Player_ActionHandler_8.
+            if idx == 8 && self.action_handler_8(env) {
                 return true;
             }
             if idx == 13 && self.action_handler_13(env) {
@@ -5631,7 +5719,7 @@ impl Player {
     fn func_8084269c(&mut self, env: &Env) -> bool {
         if self.floor_sfx_offset == 0 || self.floor_sfx_offset == SURFACE_MATERIAL_SAND {
             let mut io = env.io.borrow_mut();
-            let [l, r] = self.feet_pos;
+            let [l, r] = self.actor.shape_feet_pos;
             let floor = self.actor.floor_height;
             let p = func_8084260c(&mut io.rand, l, floor - l.y, 7.0, 5.0);
             io.ss().func_800286cc(p, Vec3::ZERO, Vec3::ZERO, 50, 30);
@@ -7053,12 +7141,12 @@ impl Player {
     /// `func_8083442C`: draw the string (`func_808351D4`, `PLAYER_STATE1_9`, `unk_834` 14) with its
     /// sound (`D_80854398`), a seed or arrow in hand if there's ammo (`En_Arrow`, Player's child:
     /// `PlayRequest::SpawnHeldArrow`). A magic arrow with the magic busy gives the error instead
-    /// (`gSaveContext.magicState` is idle: magic isn't ported); a magic arrow's cost
-    /// (`Magic_RequestChange`, `sMagicArrowCosts`) logs and the arrow is a plain one.
+    /// (`gSaveContext.magicState` busy: no magic arrow is held yet, BACKLOG #85); a magic arrow's
+    /// cost (`Magic_RequestChange`, `sMagicArrowCosts`) logs and the arrow is a plain one.
     fn func_8083442c(&mut self, env: &Env) -> bool {
         let data = env.data;
         // (heldItemAction BOW_FIRE..BOW_0E with gSaveContext.magicState != MAGIC_STATE_IDLE: the
-        // error. The magic meter isn't ported: always idle.)
+        // error. No magic arrow is held yet: BACKLOG #85.)
         self.set_upper_action_func(UpperAction::BowDrawn);
         self.state1 |= STATE1_9;
         self.unk_834 = 14;
@@ -7655,7 +7743,8 @@ impl Player {
             self.func_80837948(env.data, sp24);
             if sp24 >= env.data.items.mwa("SPIN_ATTACK_1H") {
                 self.state2 |= STATE2_17;
-                // func_80837530 (spin attack effects): not ported.
+                // The quick spin's effect (En_M_Thunder, no magic asked).
+                self.func_80837530(0);
             }
             return true;
         }
@@ -7854,6 +7943,305 @@ impl Player {
             self.unk_844 = -self.unk_844;
         }
     }
+
+    // ================================================================================
+    // The charged spin attack (GAME-09 m6, spin attack): Player_ActionHandler_8, func_808377DC,
+    // func_80837704, func_80837530, func_80844BE4 to func_80844E3C, func_80840058,
+    // Player_Action_80844E68, _80845000, _80845308 and their animations (D_80854350 to
+    // D_80854384).
+
+    /// `D_80854350`: the charge's start after any other attack, one-handed and two-handed.
+    const D_80854350: [&'static str; 2] = ["link_fighter_power_kiru_start", "link_fighter_Lpower_kiru_start"];
+    /// `D_80854358`: after a right slash or its combo (`PLAYER_MWA_RIGHT_SLASH_1H` to
+    /// `PLAYER_MWA_RIGHT_COMBO_2H`).
+    const D_80854358: [&'static str; 2] = ["link_fighter_power_kiru_startL", "link_fighter_Lpower_kiru_start"];
+    /// `D_80854360`: charging, standing.
+    const D_80854360: [&'static str; 2] = ["link_fighter_power_kiru_wait", "link_fighter_Lpower_kiru_wait"];
+    /// `D_80854368`: the charge let go of too early.
+    const D_80854368: [&'static str; 2] = ["link_fighter_power_kiru_wait_end", "link_fighter_Lpower_kiru_wait_end"];
+    /// `D_80854370`: walking while charging.
+    const D_80854370: [&'static str; 2] = ["link_fighter_power_kiru_walk", "link_fighter_Lpower_kiru_walk"];
+    /// `D_80854378`: walking sideways while charging.
+    const D_80854378: [&'static str; 2] = ["link_fighter_power_kiru_side_walk", "link_fighter_Lpower_kiru_side_walk"];
+
+    /// `Player_ActionHandler_8` (interrupt 8): B still held as a slash's `unk_844` counts down
+    /// to 1 (not shielding, a melee weapon but the Deku Stick in hand, the Biggoron's Sword
+    /// unbroken) starts the charge; B let go negates the countdown (`func_8083C50C`).
+    fn action_handler_8(&mut self, env: &Env) -> bool {
+        let it = &env.data.items;
+        if self.input.cur.held(eng_input::pad::BTN_B) {
+            // Player_GetMeleeWeaponHeld2 (Player_GetMeleeWeaponHeld from NTSC 1.1 on).
+            if self.state1 & STATE1_22 == 0 && Self::melee_weapon(self.held_item_ap) != 0 && self.unk_844 == 1 && self.held_item_ap != it.ap("DEKU_STICK") {
+                let sword_health = env.io.borrow().save.sword_health;
+                if self.held_item_ap != it.ap("SWORD_BIGGORON") || sword_health > 0 {
+                    self.func_808377DC(env.data);
+                    return true;
+                }
+            }
+        } else {
+            self.func_8083C50C();
+        }
+        false
+    }
+
+    /// `func_808377DC`: the charge (`Player_Action_80844E68`) from its start.
+    fn func_808377DC(&mut self, data: &GameData) {
+        self.setup_action(data, Action::ChargeSpin, 1);
+        self.func_80837704(data);
+    }
+
+    /// `func_80837704`: the charge's start animation (`D_80854358` after a right slash, else
+    /// `D_80854350`) from frame 8 to its end, blended in over 9 frames, the weapon inactive, and
+    /// the effect spawned with the charge's magic (2: `func_80837530(play, this, 0x200)`).
+    fn func_80837704(&mut self, data: &GameData) {
+        let it = &data.items;
+        let two = self.holds_two_handed_weapon(data) as usize;
+        let name = if (it.mwa("RIGHT_SLASH_1H")..=it.mwa("RIGHT_COMBO_2H")).contains(&self.melee_weapon_animation) { Self::D_80854358[two] } else { Self::D_80854350[two] };
+        let anim = data.anim(name);
+        self.func_80832318();
+        let last = data.anims[anim].last_frame();
+        self.skel.change(data, anim, 1.0, 8.0, last, ANIMMODE_ONCE, -9.0);
+        self.func_80837530(0x200);
+    }
+
+    /// `func_80837530`: the spin's charge (`unk_858`) from 0 for a charged spin (`arg2` the
+    /// magic it asks for, in the params' high byte) or 0.5 for the quick one,
+    /// `PLAYER_STATE1_CHARGING_SPIN_ATTACK`, and for Link himself (not Dark Link) the effect,
+    /// `En_M_Thunder` at his waist with `Player_GetMeleeWeaponHeld(this) | arg2`
+    /// (`PlayRequest::SpawnMThunder`, after his update: it updates this frame among the item
+    /// actions, after him, as in the C).
+    fn func_80837530(&mut self, arg2: i16) {
+        self.unk_858 = if arg2 != 0 { 0.0 } else { 0.5 };
+        self.state1 |= STATE1_12;
+        if self.actor.category == ACTORCAT_PLAYER {
+            let params = Self::melee_weapon(self.held_item_ap) as i16 | arg2;
+            self.play_requests.push(PlayRequest::SpawnMThunder { waist: self.body_parts_pos[PLAYER_BODYPART_WAIST], params, shape_yaw: self.actor.shape_rot.y, state2: self.state2 });
+        }
+    }
+
+    /// `func_80844BE4`: the charge's end. A cutscene's action takes over (`PLAYER_STATE2_17`
+    /// still set), or B let go releases the spin: the big one (`D_80854384`) at 0.85 charge or
+    /// with the stick spun (`Player_CanSpinAttack`), else the plain one (`D_80854380`),
+    /// invulnerable for 8 frames, `PLAYER_STATE2_17`, and lunging (`PLAYER_STATE2_30`) with the
+    /// stick forward. False while B stays held.
+    fn func_80844BE4(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.start_cs_action(data) {
+            self.state2 |= STATE2_17;
+        } else if !self.input.cur.held(eng_input::pad::BTN_B) {
+            let it = &data.items;
+            let two = self.holds_two_handed_weapon(data) as usize;
+            let sword_health = env.io.borrow().save.sword_health;
+            // D_80854384 (PLAYER_MWA_BIG_SPIN_1H, _2H), D_80854380 (PLAYER_MWA_SPIN_ATTACK_1H, _2H).
+            let temp = if self.unk_858 >= 0.85 || self.can_spin_attack(data, sword_health) {
+                [it.mwa("BIG_SPIN_1H"), it.mwa("BIG_SPIN_2H")][two]
+            } else {
+                [it.mwa("SPIN_ATTACK_1H"), it.mwa("SPIN_ATTACK_2H")][two]
+            };
+            self.func_80837948(data, temp);
+            self.set_invulnerability(-8);
+            self.state2 |= STATE2_17;
+            // PLAYER_STICK_DIR_FORWARD.
+            if self.stick_dir() == 0 {
+                self.state2 |= STATE2_30;
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
+    /// `func_80844CF8`: walking forward or back while charging.
+    fn func_80844CF8(&mut self, data: &GameData) {
+        self.setup_action(data, Action::ChargeSpinWalk, 1);
+    }
+
+    /// `func_80844D30`: walking sideways while charging.
+    fn func_80844D30(&mut self, data: &GameData) {
+        self.setup_action(data, Action::ChargeSpinSideWalk, 1);
+    }
+
+    /// `func_80844D68`: the charge given up (B let go below 0.1): standing, the end animation.
+    fn func_80844D68(&mut self, data: &GameData) {
+        self.func_80839FFC(data);
+        self.func_80832318();
+        let two = self.holds_two_handed_weapon(data) as usize;
+        self.anim_change_once_morph(data, data.anim(Self::D_80854368[two]));
+        self.current_yaw = self.actor.shape_rot.y;
+    }
+
+    /// `func_80844DC8`: charging standing again (from walking), the charge already on
+    /// (`av2.actionVar2` 1).
+    fn func_80844DC8(&mut self, data: &GameData) {
+        self.setup_action(data, Action::ChargeSpin, 1);
+        self.unk_868 = 0.0;
+        let two = self.holds_two_handed_weapon(data) as usize;
+        self.skel.play_loop(data, data.anim(Self::D_80854360[two]));
+        self.action_var2 = 1;
+    }
+
+    /// `func_80844E3C`: the charge, by 0.02 a frame to 1.
+    fn func_80844E3C(&mut self) {
+        step_to_f(&mut self.unk_858, 1.0, 0.02);
+    }
+
+    /// `func_80840058`: which way the stick moves Link while charging (or locked on): 0 not at
+    /// all (no speed and no turn over 400), -1 sideways (`yaw_target` 0x2000 to 0x6000 off the
+    /// camera's input yaw, or turning), else 1 (forward or back). Looks ahead
+    /// (`func_8083DC54`) first.
+    fn func_80840058(&mut self, env: &Env, speed_target: f32, yaw_target: i16) -> i32 {
+        self.func_8083DC54(env);
+        if speed_target != 0.0 || abs16(self.unk_87C) > 400 {
+            // (u16)Camera_GetInputDirYaw(GET_ACTIVE_CAM(play)).
+            let temp1 = yaw_target.wrapping_sub(env.cam_input_yaw as u16 as i16);
+            let temp2 = (abs16(temp1) - 0x2000) as u16;
+            if temp2 < 0x4000 || self.unk_87C != 0 {
+                return -1;
+            }
+            return 1;
+        }
+        0
+    }
+
+    /// `Player_Action_80844E68`: charging, standing. The start animation plays out (no charge
+    /// meanwhile, `av2.actionVar2` 0), then the charge loop (-1); from 0.1 charge (`av2` 1) B
+    /// let go releases the spin and the stick walks (`func_80840058`); B let go before 0.1
+    /// gives it up.
+    fn action_80844e68(&mut self, env: &Env) {
+        let data = env.data;
+        self.state1 |= STATE1_12;
+        if self.skel.update(data) {
+            self.finish_anim_movement();
+            self.set_parallel();
+            // PLAYER_STATE1_PARALLEL off again (Player_SetParallel's turn to a touched wall kept).
+            self.state1 &= !STATE1_17;
+            let two = self.holds_two_handed_weapon(data) as usize;
+            self.skel.play_loop(data, data.anim(Self::D_80854360[two]));
+            self.action_var2 = -1;
+        }
+        self.decelerate_to_zero();
+        if !self.func_80842964(env) && self.action_var2 != 0 {
+            self.func_80844E3C();
+            if self.action_var2 < 0 {
+                if self.unk_858 >= 0.1 {
+                    self.unk_845 = 0;
+                    self.action_var2 = 1;
+                } else if !self.input.cur.held(eng_input::pad::BTN_B) {
+                    self.func_80844D68(data);
+                }
+            } else if !self.func_80844BE4(env) {
+                let (_, speed_target, yaw_target) = self.get_movement_speed_and_yaw(env, SPEED_MODE_LINEAR);
+                let temp = self.func_80840058(env, speed_target, yaw_target);
+                if temp > 0 {
+                    self.func_80844CF8(data);
+                } else if temp < 0 {
+                    self.func_80844D30(data);
+                }
+            }
+        }
+    }
+
+    /// `Player_Action_80845000`: walking forward or back while charging, at a fifth of the
+    /// stick's speed: the charge loop blended with the walk (`D_80854370`, its phase `unk_868`
+    /// stepped backwards while facing the way he goes), turning by a tenth; a turn over a
+    /// quarter stops first; stopped, charging standing again.
+    fn action_80845000(&mut self, env: &Env) {
+        let data = env.data;
+        let temp1 = self.current_yaw.wrapping_sub(self.actor.shape_rot.y);
+        let temp2 = abs16(temp1);
+        let sp5c = self.linear_velocity.abs();
+        let mut sp58 = sp5c * 1.5;
+        self.state1 |= STATE1_12;
+        if sp58 < 1.5 {
+            sp58 = 1.5;
+        }
+        sp58 *= if temp2 < 0x4000 { -1.0 } else { 1.0 };
+        self.func_8084029C(sp58);
+        let sp58 = (sp5c * 0.5).clamp(0.5, 1.0);
+        let two = self.holds_two_handed_weapon(data) as usize;
+        let frame = self.unk_868 * (21.0 / 29.0);
+        self.skel.blend_to_joint(data, data.anim(Self::D_80854360[two]), 0.0, data.anim(Self::D_80854370[two]), frame, sp58);
+        if !self.func_80842964(env) && !self.func_80844BE4(env) {
+            self.func_80844E3C();
+            let (_, mut speed_target, mut yaw_target) = self.get_movement_speed_and_yaw(env, SPEED_MODE_LINEAR);
+            let temp4 = self.func_80840058(env, speed_target, yaw_target);
+            if temp4 < 0 {
+                self.func_80844D30(data);
+                return;
+            }
+            if temp4 == 0 {
+                speed_target = 0.0;
+                yaw_target = self.current_yaw;
+            }
+            if self.func_80845000_tail(speed_target, yaw_target) && speed_target == 0.0 && self.linear_velocity == 0.0 {
+                self.func_80844DC8(data);
+            }
+        }
+    }
+
+    /// `Player_Action_80845000`'s and `_80845308`'s shared tail: a turn over a quarter brakes
+    /// by 1 (taking the new yaw once stopped) and returns false; else the speed to a fifth of
+    /// the target (up by 1, down by 0.5) and the yaw by a tenth of the turn, true.
+    fn func_80845000_tail(&mut self, speed_target: f32, yaw_target: i16) -> bool {
+        let temp5 = yaw_target.wrapping_sub(self.current_yaw);
+        let sp44 = abs16(temp5);
+        if sp44 > 0x4000 {
+            if step_to_f(&mut self.linear_velocity, 0.0, 1.0) {
+                self.current_yaw = yaw_target;
+            }
+            return false;
+        }
+        asym_step_to_f(&mut self.linear_velocity, speed_target * 0.2, 1.0, 0.5);
+        scaled_step_to_s(&mut self.current_yaw, yaw_target, (sp44 as f32 * 0.1) as i16);
+        true
+    }
+
+    /// `Player_Action_80845308`: walking sideways while charging (`D_80854378`), as
+    /// `Player_Action_80845000`; the stick forward or back walks again, stopped (and not
+    /// turning) charges standing.
+    ///
+    /// @bug (game), kept: standing (no speed), the phase's step is meant to follow the turn
+    /// (`ABS(unk_87C) * 0.0015`), but it's dropped under 400, which an `s16`'s never reaches: 0.
+    fn action_80845308(&mut self, env: &Env) {
+        let data = env.data;
+        let mut sp5c = self.linear_velocity.abs();
+        self.state1 |= STATE1_12;
+        if sp5c == 0.0 {
+            sp5c = abs16(self.unk_87C) as f32 * 0.0015;
+            if sp5c < 400.0 {
+                sp5c = 0.0;
+            }
+            self.func_8084029C(if self.unk_87C >= 0 { 1.0 } else { -1.0 } * sp5c);
+        } else {
+            let mut sp58 = sp5c * 1.5;
+            if sp58 < 1.5 {
+                sp58 = 1.5;
+            }
+            self.func_8084029C(sp58);
+        }
+        let sp58 = (sp5c * 0.5).clamp(0.5, 1.0);
+        let two = self.holds_two_handed_weapon(data) as usize;
+        let frame = self.unk_868 * (21.0 / 29.0);
+        self.skel.blend_to_joint(data, data.anim(Self::D_80854360[two]), 0.0, data.anim(Self::D_80854378[two]), frame, sp58);
+        if !self.func_80842964(env) && !self.func_80844BE4(env) {
+            self.func_80844E3C();
+            let (_, mut speed_target, mut yaw_target) = self.get_movement_speed_and_yaw(env, SPEED_MODE_LINEAR);
+            let temp4 = self.func_80840058(env, speed_target, yaw_target);
+            if temp4 > 0 {
+                self.func_80844CF8(data);
+                return;
+            }
+            if temp4 == 0 {
+                speed_target = 0.0;
+                yaw_target = self.current_yaw;
+            }
+            if self.func_80845000_tail(speed_target, yaw_target) && speed_target == 0.0 && self.linear_velocity == 0.0 && sp5c == 0.0 {
+                self.func_80844DC8(data);
+            }
+        }
+    }
+
+    // ---- end of the charged spin attack ----
 
     /// `Player_Action_808502D0`: attacking. At the end another B press chains (`Player_ActionHandler_7`);
     /// otherwise the end animation plays into the (targeting) stance.
@@ -8320,10 +8708,18 @@ impl Player {
                     io.transition.ty = TRANS_TYPE_FADE_WHITE;
                     io.save.next_transition_type = TRANS_TYPE_FADE_WHITE;
                 } else if next >= ENTR_RETURN_GREAT_FAIRYS_FOUNTAIN_SPELLS {
-                    // sReturnEntranceGroupData (the fountains' and shops' way back): not ported.
-                    drop(io);
-                    self.note(format!("exit to ENTR_RETURN group {next:#x} not ported"));
-                    return false;
+                    // The fountains' and the shops' way back (sReturnEntranceGroupData by
+                    // play->spawn). @bug (game): a spawn past its group reads on into the next
+                    // group (or past the table); the placed exits never do.
+                    match return_entrance(next, env.cur_spawn) {
+                        Some(e) => io.transition.next_entrance_index = e,
+                        None => {
+                            drop(io);
+                            self.note(format!("return entrance {next:#x} with spawn {} is past sReturnEntranceGroupData", env.cur_spawn));
+                            return false;
+                        }
+                    }
+                    io.set_transition_for_next_entrance(env.entrances);
                 } else {
                     if poly.is_some_and(|p| col.floor_effect(p) == FLOOR_EFFECT_2) {
                         io.save.respawn[RESPAWN_MODE_DOWN].entrance_index = next;
@@ -9355,6 +9751,17 @@ impl Player {
                 2 => self.action_80843a38(env),
                 _ => {}
             },
+            // ---- The charged spin attack (GAME-09 m6, spin attack) ----
+            // PLAYER_CSACTION_89's start: the charge's start (func_80837704).
+            "func_808524B0" => self.func_80837704(data),
+            // PLAYER_CSACTION_89: charging with B pressed (sControlInput->press), then
+            // Player_Action_80844E68; PLAYER_CSACTION_90: charging.
+            "func_808524D0" => {
+                self.input.press.button |= eng_input::pad::BTN_B;
+                self.action_80844e68(env);
+            }
+            "func_80852514" => self.action_80844e68(env),
+            // ---- end of the charged spin attack ----
             n => self.note(format!("cutscene mode function {n} not ported (swimming, the ocarina, the items in hand or the effects)")),
         }
     }
@@ -9381,7 +9788,7 @@ impl Player {
     /// `func_80851F84` (mode 38's start): asleep in bed, no shadow, `clink_op3_wait1` looped
     /// (`func_80851134`: `Player_AnimReplacePlayLoop(play, this, anim, 0x9C)`).
     fn func_80851F84(&mut self, data: &GameData) {
-        self.shadow_feet = false;
+        self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::None;
         self.anim_replace_play_loop(data, data.anim("clink_op3_wait1"), 0x9C);
     }
 
@@ -9410,7 +9817,7 @@ impl Player {
             let t = env.audio.player_anim_sfx("D_808551BC").to_vec();
             self.process_anim_sfx_list(&t);
             if self.skel.on_frame(240.0) {
-                self.shadow_feet = true;
+                self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::Feet;
             }
         }
     }
@@ -10734,7 +11141,7 @@ impl Player {
         self.actor.focus_pos = world[data.limb("HEAD")].transform_point3(Vec3::new(1100.0, -700.0, 0.0));
         // Actor_SetFeetPos: sLeftRightFootLimbModelFootPos[linkAge] in each foot's space.
         let foot = if self.adult { Vec3::new(200.0, 300.0, 0.0) } else { Vec3::new(200.0, 200.0, 0.0) };
-        self.feet_pos = [world[data.limb("L_FOOT")].transform_point3(foot), world[data.limb("R_FOOT")].transform_point3(foot)];
+        self.actor.shape_feet_pos = [world[data.limb("L_FOOT")].transform_point3(foot), world[data.limb("R_FOOT")].transform_point3(foot)];
         world
     }
 
@@ -10841,7 +11248,9 @@ impl Player {
                     }
                 }
             } else {
-                // Nothing held: the hand's rotation (mf_9E0 is only read by the carry).
+                // Nothing held: the hand's matrix (mf_9E0: the spin attack's effects read it)
+                // and its rotation (the carry's unk_3BC).
+                self.mf_9e0 = hand;
                 self.unk_3bc = oot_game::sys_matrix::MtxF::from_mat4(hand).to_yxz_rot_s(false);
             }
         }
@@ -11195,23 +11604,21 @@ mod rs {
     pub const CRAWLING: usize = 5;
     /// `switches`: `PLAYER_STATE2_29` (not drawn).
     pub const HIDDEN: usize = 6;
-    /// `switches`: `shape.shadowDraw` set.
-    pub const SHADOW: usize = 7;
     /// `switches`: the hit flash's fog far plane (`Player_Draw`'s `Gfx_SetFog2`), 0 for none.
-    pub const DAMAGE_FLASH_FAR: usize = 8;
+    pub const DAMAGE_FLASH_FAR: usize = 7;
     /// `switches`: the frozen ice's scale (`PLAYER_STATE2_14`), 0 for none.
-    pub const ICE_SCALE: usize = 9;
+    pub const ICE_SCALE: usize = 8;
     /// `switches`: the shield in the right hand (`Player_SetModelsForHoldingShield`).
-    pub const HOLDING_SHIELD: usize = 10;
+    pub const HOLDING_SHIELD: usize = 9;
     /// `switches`: a Deku Stick in use (`itemAction == PLAYER_IA_DEKU_STICK`), drawn in the left
     /// hand; `values`: its length (`unk_85C`).
-    pub const DEKU_STICK: usize = 11;
+    pub const DEKU_STICK: usize = 10;
     pub const STICK_LENGTH: usize = 5;
     /// `values`: the bow's or slingshot's string stretch (`unk_858`), and `actor.focus.pos`
     /// (x, y, z); `switches`: `unk_6AD` (first person).
     pub const STRING: usize = 6;
     pub const FOCUS: usize = 7;
-    pub const UNK_6AD: usize = 12;
+    pub const UNK_6AD: usize = 11;
 }
 
 impl LookRotations {
@@ -11360,8 +11767,8 @@ impl ActorImpl for Player {
     }
 
     /// `Player_Destroy`: the sword's trail deleted (the colliders have nothing to free;
-    /// `Magic_Reset` waits on the magic meter, and `linkAge` from `linkAgeOnLoad` on the age
-    /// change).
+    /// `Magic_Reset` is for a spell cast (`unk_6AD` 4: the spells aren't ported, #85), and
+    /// `linkAge` from `linkAgeOnLoad` on the age change).
     fn destroy(&mut self, play: &mut PlayState) {
         play.effect_delete(self.melee_weapon_effect_index);
     }
@@ -11441,6 +11848,14 @@ impl ActorImpl for Player {
                             self.interact_range_actor = None;
                         }
                     }
+                }
+                continue;
+            }
+            if let PlayRequest::SpawnMThunder { waist, params, shape_yaw, state2 } = r {
+                // func_80837530's spawn (the spin attack's effect); its init's PLAYER_STATE2_17
+                // write applied here.
+                if crate::en_m_thunder::spawn_from_player(play, waist, params, shape_yaw, state2) {
+                    self.state2 &= !STATE2_17;
                 }
                 continue;
             }
@@ -11557,7 +11972,7 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 13];
+        let mut switches = vec![0u32; 12];
         switches[rs::DEKU_STICK] = (self.item_ap == PLAYER_IA_DEKU_STICK) as u32;
         switches[rs::UNK_6AD] = self.unk_6AD as u32;
         switches[rs::FACE] = self.face as u32;
@@ -11567,7 +11982,6 @@ impl ActorImpl for Player {
         switches[rs::EXCHANGE] = (self.exchange_item_id != 0) as u32;
         switches[rs::CRAWLING] = (self.state2 & STATE2_18 != 0) as u32;
         switches[rs::HIDDEN] = (self.state2 & STATE2_29 != 0) as u32;
-        switches[rs::SHADOW] = self.shadow_feet as u32;
         switches[rs::DAMAGE_FLASH_FAR] = self.damage_flash_far.map(|f| f as u32).unwrap_or(0);
         // The ice's scale while frozen: (actionVar1 >> 1) * 22.
         switches[rs::ICE_SCALE] = if self.state2 & STATE2_14 != 0 { ((self.action_var1 >> 1) as i32 * 22) as u32 } else { 0 };
@@ -11583,13 +11997,15 @@ impl ActorImpl for Player {
             switches,
             teleported: self.actor.teleported,
             color_filter: (0, 0),
+            // The shape's shadow (none with draw NULL: Actor_Draw isn't called).
+            shadow: if self.inert { None } else { RenderState::of(&self.actor).shadow },
         }
     }
 
     /// `Player_Draw`: Link (`SkelAnime_DrawFlexLod` with the model group's hands and sheath for
     /// the shield worn and, for the child, whether the Kokiri Sword is on B; the face on
-    /// segments 8 and 9, running fists), the item held up (`Player_DrawGetItem`), and the circle
-    /// shadow.
+    /// segments 8 and 9, running fists) and the item held up (`Player_DrawGetItem`). The feet's
+    /// shadow is the shape's (`ActorShape_Init`'s `ActorShadow_DrawFeet`, drawn by `Actor_Draw`).
     fn draw(&self, st: &RenderState, play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
         use eng_gfx::{DrawCmd, MeshKey};
         use glam::Mat4;
@@ -11696,16 +12112,6 @@ impl ActorImpl for Player {
             let m = Mat4::from_translation(t) * Mat4::from_rotation_y(eng_math::binang_to_rad(st.angles[rs::GET_ITEM_SPIN])) * Mat4::from_scale(Vec3::splat(0.2));
             oot_game::draw::get_item_draw(&a.items, unk_862.abs() - 1, m, play.gameplay_frames, view, out);
         }
-        // ActorShadow_DrawFeet's stand-in: a soft disc on the floor below, shrinking with height
-        // (none while shape.shadowDraw is NULL).
-        if st.switches.get(rs::SHADOW).copied().unwrap_or(1) == 0 {
-            return;
-        }
-        let (floor, _) = play.col.entity_raycast_down(st.pos + Vec3::Y * 20.0);
-        let drop = (st.pos.y - floor).max(0.0);
-        let size = if self.adult { 22.0 } else { 16.0 } * (1.0 - (drop / 400.0).min(0.7));
-        let shadow = Mat4::from_translation(Vec3::new(st.pos.x, floor + 0.3, st.pos.z)) * Mat4::from_scale(Vec3::new(size, 1.0, size));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
 
     fn as_player(&self) -> Option<&dyn PlayerIface> {
@@ -11801,11 +12207,11 @@ impl PlayerIface for Player {
     fn clear_talk_actor(&mut self) {
         self.target_actor = None;
     }
-    /// `Player_InBlockingCsMode` without `transitionTrigger` (magic isn't ported), or
-    /// `unk_6AD == 4`.
     fn env_hazard_state(&self) -> (i16, u8, u8, bool) {
         (self.underwater_timer, self.current_boots, self.current_tunic, self.grounded())
     }
+    /// `Player_InCsMode`'s part: `Player_InBlockingCsMode` without `transitionTrigger` (and without
+    /// its spell part, which needs the save: no spell is cast yet, #85), or `unk_6AD == 4`.
     fn in_cs_mode(&self) -> bool {
         self.state1 & (STATE1_7 | STATE1_29) != 0 || self.cs_mode != 0 || self.state1 & STATE1_0 != 0 || self.state3 & STATE3_7 != 0 || self.unk_6AD == 4
     }
@@ -12038,7 +12444,7 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             play.title_ctx.clear();
         }
         // Handled by Player's update, which keeps the handle.
-        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldExplosive { .. } => {}
+        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldExplosive { .. } | PlayRequest::SpawnMThunder { .. } => {}
         PlayRequest::ReleaseHeld(h) => {
             if let Some(a) = play.actors.actor_mut(h) {
                 a.parent = None;

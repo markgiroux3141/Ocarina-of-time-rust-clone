@@ -30,7 +30,7 @@ use eng_anim::skeleton::Skeleton;
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{approach_f, smooth_step_to_f, smooth_step_to_s};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
@@ -212,8 +212,7 @@ impl EnDog {
             behavior: DOG_WALK,
             animations,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 24).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 24.0);
         this.change_anim(0);
         let following = FOLLOWING.get(this.actor.params) != 0;
         if !following {
@@ -535,16 +534,12 @@ impl ActorImpl for EnDog {
         rs
     }
     /// `EnDog_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         // @bug (game): a colour index past 1 reads past `colors`; none is placed.
         let color = COLOR.get(self.actor.params) as usize;
         let bones = self.skeleton.pose(joints);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(color.min(COLORS.len() - 1)))), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 24): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(24.0, 1.0, 24.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

@@ -15,7 +15,10 @@
 //! skeletons, baked with what their draws bind: Zelda's eyes and mouth by the frame, Impa's
 //! masked head, Ganondorf's eyes and his open hand (from the nightmare's frame 400).
 //!
-//! Not ported: the horses' shadow (`ActorShadow_DrawHorse`), the adult Ganondorf's draw (type 9:
+//! The horses' shadow (`ActorShadow_DrawHorse`, 20) is the shape's (`ActorShape_Init`'s): never
+//! drawn, as nothing looks for their floor (no `Actor_UpdateBgCheckInfo`: `floorPoly` stays NULL).
+//!
+//! Not ported: the adult Ganondorf's draw (type 9:
 //! the crazed eyes on XLU and the jewel's `gGanondorfEyesDL`), and the cape's settings
 //! `EnViewer_UpdateGanondorfCape` writes for type 5 into `En_Ganon_Mant` (its neck position is
 //! kept), and the fire of type 5 (`EnViewer_DrawFireEffects`, run from its update: its state and
@@ -145,9 +148,20 @@ struct InitData {
     anim: &'static str,
 }
 
-/// `ENVIEWER_SHADOW_*`.
+/// `ENVIEWER_SHADOW_*` (`z_en_viewer.h`).
 const ENVIEWER_SHADOW_NONE: u8 = 0;
+const ENVIEWER_SHADOW_CIRCLE: u8 = 1;
 const ENVIEWER_SHADOW_HORSE: u8 = 2;
+
+/// `sShadowDrawFuncs`, by `ENVIEWER_SHADOW_*`.
+fn shadow_draw_func(ty: u8) -> oot_game::shadow::ShadowDraw {
+    use oot_game::shadow::ShadowDraw;
+    match ty {
+        ENVIEWER_SHADOW_CIRCLE => ShadowDraw::Circle,
+        ENVIEWER_SHADOW_HORSE => ShadowDraw::Horse,
+        _ => ShadowDraw::None,
+    }
+}
 
 /// `sInitData`.
 const INIT_DATA: [InitData; 10] = [
@@ -514,9 +528,7 @@ impl EnViewer {
         self.is_visible = true;
         self.actor.scale = Vec3::splat(d.scale as f32 / 100.0);
         // ActorShape_Init(yOffset * 100, sShadowDrawFuncs[shadowType], shadowScale).
-        self.actor.shape_y_offset = (d.y_offset as i32 * 100) as f32;
-        // The horses' shadow (ActorShadow_DrawHorse) isn't ported.
-        let _ = (d.shadow_type, d.shadow_scale);
+        self.actor.shape_init((d.y_offset as i32 * 100) as f32, shadow_draw_func(d.shadow_type), d.shadow_scale as f32);
         self.draw_func_index = d.draw_type;
         let first = anim(play, d.anim_object.1, d.anim);
         match d.draw_type {

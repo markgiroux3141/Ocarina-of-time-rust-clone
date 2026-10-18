@@ -31,7 +31,8 @@
 //!   ripple the water (every 8 frames each, or every frame falling).
 //!
 //! The whole overlay is ported. Its draw (`EnTite_Draw`) is `object_tite_Skel_003A20` with the red
-//! or the blue textures on segments 8 to 10 (two bakes), the circle shadow the usual stand-in;
+//! or the blue textures on segments 8 to 10 (two bakes), the circle shadow (70) the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`);
 //! `draw_update` (`EnTite_PostLimbDraw`) puts its sphere, its feet (2800 along limbs 8, 13, 18 and
 //! 23) and the body break's pieces, and spawns the ice chunks. Not ported: the water ripples
 //! (`EffectSsGRipple`, logged where the C spawns one). Nothing sets the hammer's `unk_02` yet (the
@@ -361,8 +362,6 @@ pub struct EnTite {
     pub front_right_foot_pos: Vec3,
     pub back_right_foot_pos: Vec3,
     pub back_left_foot_pos: Vec3,
-    /// `shape.shadowScale`.
-    pub shadow_scale: f32,
 }
 
 impl EnTite {
@@ -420,8 +419,7 @@ impl EnTite {
         let anims = Anims::load(play);
         // SkelAnime_Init(.., object_tite_Skel_003A20, object_tite_Anim_0012E4, .., 25): 24 limbs.
         let skel = SkelAnimeStd::init_flex(24, anims.as_ref().map(|a| a.idle.clone()));
-        // ActorShape_Init(&shape, -200, ActorShadow_DrawCircle, 70).
-        actor.shape_y_offset = -200.0;
+        actor.shape_init(-200.0, oot_game::shadow::ShadowDraw::Circle, 70.0);
         actor.col_chk_info.damage_table = Some(&S_DAMAGE_TABLE);
         actor.focus_pos = actor.world_pos;
         actor.focus_pos.y += 20.0;
@@ -447,7 +445,6 @@ impl EnTite {
             front_right_foot_pos: Vec3::ZERO,
             back_right_foot_pos: Vec3::ZERO,
             back_left_foot_pos: Vec3::ZERO,
-            shadow_scale: 70.0,
         };
         if this.blue() {
             // Don't use the actor engine's ripple spawning code.
@@ -1230,22 +1227,14 @@ impl ActorImpl for EnTite {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        rs.values = vec![self.shadow_scale * self.actor.scale.x * 100.0];
         rs.switches = vec![self.blue() as u32];
         rs
     }
 
-    /// `EnTite_Draw`: the skeleton with the red or the blue textures; the circle shadow
-    /// (`ActorShadow_DrawCircle`) under it.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// `EnTite_Draw`: the skeleton with the red or the blue textures.
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), Some(skeleton)) = (&rs.joints, &self.skeleton) else { return };
-        let ([shadow], [blue]) = (rs.values.as_slice(), rs.switches.as_slice()) else { return };
-        if *shadow > 0.0 {
-            // ActorShadow_DrawCircle (shadowScale × scale): the circle shadow's stand-in.
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(*shadow, 1.0, *shadow));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
-        }
+        let [blue] = rs.switches.as_slice() else { return };
         let bones = skeleton.pose(joints);
         let mesh = MeshKey::named(keys::bake(if *blue != 0 { BAKE_BLUE } else { BAKE_RED }));
         out.opa.push(DrawCmd { mesh, transform: actor_draw_matrix(rs), bones, params: Default::default() });

@@ -209,7 +209,7 @@ impl EnToryo {
             this.actor.kill();
         }
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 42); Actor_Init's scale 0.01.
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 42.0);
         this.actor.scale = Vec3::splat(0.01);
         this.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         this.actor.update_bg_check_info(&play.col, 0.0, 0.0, 0.0, UPDBGCHECKINFO_FLAG_2);
@@ -460,7 +460,7 @@ impl ActorImpl for EnToryo {
         rs
     }
     /// `EnToryo_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 6 {
             return;
@@ -468,10 +468,6 @@ impl ActorImpl for EnToryo {
         let a = &rs.angles;
         let bones = Self::pose(&self.skeleton, &joints.rot, [a[0], a[1], a[2]], [a[3], a[4], a[5]], self.state_flags & 8 != 0);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 42): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(42.0, 1.0, 42.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

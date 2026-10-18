@@ -20,7 +20,9 @@
 //! - **The pause menu's part** (docs/adr/0047-the-pause-menu.md): the START button and its label
 //!   while paused, the B button's label (`Interface_LoadActionLabelB`: "SAVE" in the menu), the
 //!   item page's icon flying to its C button (`HudPause`).
-//! - **Not ported:** the magic meter (no magic), the minimap, the C-Up Navi prompt,
+//! - **The magic meter** (`crate::magic`): `Magic_Update` in `Interface_Update` (and the meter's
+//!   start), `Magic_DrawMeter` after the rupee counter (`magic_draw_meter`).
+//! - **Not ported:** the minimap, the C-Up Navi prompt,
 //!   the B button's ammo count (only while riding or in a minigame), double defence's hearts.
 //!   `func_80083108`'s
 //!   riding, minigame, fishing, water and horse-race cases, and its item-type restrictions, are
@@ -33,7 +35,7 @@ use glam::{Mat4, Vec3, Vec4};
 
 use crate::audio::GameAudio;
 use crate::audio::sfx::{NA_SE_SY_HITPOINT_ALARM, NA_SE_SY_HP_RECOVER, NA_SE_SY_RUPY_COUNT, NA_SE_VO_NA_HELLO_2, NA_SE_VO_NAVY_CALL, SfxPos};
-use crate::gbi::{Dl, G_IM_FMT_I, G_IM_FMT_IA, G_IM_FMT_RGBA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_IM_SIZ_32B, G_TX_WRAP, ac, cc_ab, cc_c, cc_d, setup_dl};
+use crate::gbi::{Dl, G_IM_FMT_I, G_IM_FMT_IA, G_IM_FMT_RGBA, G_IM_SIZ_4B, G_IM_SIZ_8B, G_IM_SIZ_32B, G_TX_MIRROR, G_TX_WRAP, ac, cc_ab, cc_c, cc_d, setup_dl};
 use crate::save::SaveContext;
 use crate::sprite::{Load, Quad, Sprite, SpriteBake, TexSrc};
 
@@ -181,6 +183,11 @@ pub struct InterfaceContext {
     /// `Interface_Draw`'s timer statics and `sEnvHazardActive` (`crate::timer`): they outlive
     /// the play state (`PlayState::reinit` carries them over).
     pub timers: crate::timer::TimerStatics,
+    /// `z_parameter.c`'s magic statics (the border's flash, `crate::magic`): carried over scene
+    /// changes with the timers'.
+    pub magic: crate::magic::MagicStatics,
+    /// `lensMagicConsumptionTimer`: frames to the Lens of Truth's next point of magic.
+    pub lens_magic_consumption_timer: i16,
     /// `unk_23C`: the score a mini-game's points last showed (`Effect_Ss_Extra`; the horseback
     /// archery reads it).
     pub unk_23c: u16,
@@ -226,6 +233,8 @@ impl Default for InterfaceContext {
             navi_calling: false,
             env_hazard: 0,
             timers: Default::default(),
+            magic: Default::default(),
+            lens_magic_consumption_timer: 0,
             c_up_invisible: 0,
             c_up_timer: 0,
             unk_23c: 0,
@@ -317,6 +326,12 @@ pub struct IfaceFrame {
     pub game_over_inactive: bool,
     /// `Player_GetEnvironmentalHazard(play)` (`PLAYER_ENV_HAZARD_*`, `crate::play`).
     pub env_hazard: u8,
+    /// `play->csCtx.state == CS_STATE_IDLE`, `Player_InCsMode(play)`: the magic meter runs outside
+    /// a cutscene, or in one while Player isn't in its cutscene mode.
+    pub cs_idle: bool,
+    pub player_in_cs_mode: bool,
+    /// `gSaveContext.gameMode == GAMEMODE_NORMAL && !IS_CUTSCENE_LAYER`: the magic's fill is heard.
+    pub fill_sfx: bool,
 }
 
 /// `Health_IsCritical` (`z_lifemeter.c`): at or under a heart (two, three, or 2.75 with more
@@ -735,7 +750,7 @@ impl InterfaceContext {
     }
 
     /// `Interface_Update`.
-    pub fn update(&mut self, save: &mut SaveContext, audio: &mut GameAudio, f: &IfaceFrame) {
+    pub fn update(&mut self, save: &mut SaveContext, audio: &mut GameAudio, f: &IfaceFrame, lens_active: &mut bool) {
         if !self.initialised {
             return;
         }
@@ -852,7 +867,19 @@ impl InterfaceContext {
             }
             _ => {}
         }
-        // (Magic_Update: no magic.) The hot room's and the water's timer: started while Link
+        // The magic meter: outside the pause menu, a message, a transition and a game over, and
+        // in a cutscene only with Player out of its cutscene mode. With magic and no meter yet
+        // (a file just loaded, Bg_Dy_Yoseizo's gift): the meter's start.
+        if !f.paused && f.msg_none && f.no_transition && f.game_over_inactive && (f.cs_idle || !f.player_in_cs_mode) {
+            if save.is_magic_acquired && save.magic_level == 0 {
+                save.magic_level = save.is_double_magic_acquired as i8 + 1;
+                save.magic_state = crate::magic::MAGIC_STATE_STEP_CAPACITY;
+            }
+            let underwater = (crate::play::PLAYER_ENV_HAZARD_UNDERWATER_FLOOR..=crate::play::PLAYER_ENV_HAZARD_UNDERWATER_FREE).contains(&f.env_hazard);
+            let mf = crate::magic::MagicFrame { fill_sfx: f.fill_sfx, lens_frame: !f.in_cs_mode, underwater };
+            crate::magic::magic_update(save, &mut self.magic, audio, lens_active, &mut self.lens_magic_consumption_timer, &mf);
+        }
+        // The hot room's and the water's timer: started while Link
         // has health to lose (half his health in seconds, crate::timer), stopped once he's out
         // of it (or swimming) while it's the hazard's.
         {
@@ -929,7 +956,45 @@ impl InterfaceContext {
             let x = 42.0 + 8.0 * k as f32;
             out.push(Sprite::rect(digit_sprite(digits[FIRST[w] + k] as usize), x, 206.0, x + 8.0, 222.0, prim, None));
         }
-        // (Magic_DrawMeter: no magic; Minimap_Draw: not ported.)
+        self.magic_draw_meter(save, out);
+        // (Minimap_Draw: not ported.)
+    }
+
+    /// `Magic_DrawMeter`: with a meter (`magicLevel`), under the hearts (one row of them, or two
+    /// past ten hearts): the left end, the middle stretched to `magicCapacity`, the mirrored
+    /// right end, all in the border's colour (`crate::magic::MagicStatics`) at the magic's alpha;
+    /// then the fill in green to `magic`, or with the yellow preview of a consumption waiting
+    /// (`MAGIC_STATE_METER_FLASH_2`): yellow to `magic`, green over it to `magicTarget`.
+    pub fn magic_draw_meter(&self, save: &SaveContext, out: &mut Vec<Sprite>) {
+        if save.magic_level == 0 {
+            return;
+        }
+        let y = if save.health_capacity > 0xA0 { R_MAGIC_METER_Y_LOWER } else { R_MAGIC_METER_Y_HIGHER } as f32;
+        let a = self.magic_alpha as u8;
+        let m = &self.magic;
+        let border = Some([m.border_r as u8, m.border_g as u8, m.border_b as u8, a]);
+        let env = Some([100, 50, 50, 255]);
+        let x = R_MAGIC_METER_X as f32;
+        let cap = save.magic_capacity.clamp(0, MAGIC_METER_MAX_CAPACITY) as f32;
+        out.push(Sprite::rect(MAGIC_METER_END, x, y, x + 8.0, y + 16.0, border, env));
+        if cap > 0.0 {
+            out.push(Sprite::rect(magic_meter_mid_sprite(cap as i16), x + 8.0, y, x + 8.0 + cap, y + 16.0, border, env));
+        }
+        out.push(Sprite::rect(MAGIC_METER_END_RIGHT, x + 8.0 + cap, y, x + 16.0 + cap, y + 16.0, border, env));
+        let env = Some([0, 0, 0, 255]);
+        let fill = |w: i16, rgb: [u8; 3], out: &mut Vec<Sprite>| {
+            let w = w.clamp(0, MAGIC_METER_MAX_CAPACITY);
+            if w > 0 {
+                let x = R_MAGIC_FILL_X as f32;
+                out.push(Sprite::rect(magic_meter_fill_sprite(w), x, y + 3.0, x + w as f32, y + 10.0, Some([rgb[0], rgb[1], rgb[2], a]), env));
+            }
+        };
+        if save.magic_state == crate::magic::MAGIC_STATE_METER_FLASH_2 {
+            fill(save.magic as i16, [250, 250, 0], out);
+            fill(save.magic_target, R_MAGIC_FILL_COLOR, out);
+        } else {
+            fill(save.magic as i16, R_MAGIC_FILL_COLOR, out);
+        }
     }
 
     /// `Interface_Draw` after the reticle: the item buttons, the B item, the A button and its
@@ -1152,6 +1217,31 @@ fn a_button_view(top: f32, bottom: f32, left: f32, right: f32) -> Mat4 {
 const RUPEE_ICON: &str = "hud/rupee_icon";
 /// The timers' clock (`gClockIconTex`).
 pub(crate) const CLOCK_ICON: &str = "hud/clock_icon";
+/// The magic meter's ends (`gMagicMeterEndTex`, the right one mirrored).
+const MAGIC_METER_END: &str = "hud/magic_meter_end";
+const MAGIC_METER_END_RIGHT: &str = "hud/magic_meter_end_right";
+/// The widest the meter's middle and fill are drawn: `MAGIC_DOUBLE_METER`.
+const MAGIC_METER_MAX_CAPACITY: i16 = 2 * crate::save::MAGIC_NORMAL_METER as i16;
+
+/// The meter's middle `width` across (`gMagicMeterMidTex` over `magicCapacity`, a multiple of 8).
+fn magic_meter_mid_sprite(width: i16) -> String {
+    format!("hud/magic_meter_mid_{width}")
+}
+
+/// The meter's fill `width` across (`gMagicMeterFillTex` over `magic` or `magicTarget`).
+fn magic_meter_fill_sprite(width: i16) -> String {
+    format!("hud/magic_meter_fill_{width}")
+}
+
+/// `R_MAGIC_METER_Y_HIGHER`, `R_MAGIC_METER_X`, `R_MAGIC_METER_Y_LOWER`, `R_MAGIC_FILL_X`
+/// (`XREG(48)` to `XREG(51)`, `z_construct.c`), `R_MAGIC_FILL_COLOR` (`ZREG(0)` to `ZREG(2)`).
+const R_MAGIC_METER_Y_HIGHER: i16 = 34;
+const R_MAGIC_METER_X: i16 = 18;
+const R_MAGIC_METER_Y_LOWER: i16 = 42;
+const R_MAGIC_FILL_X: i16 = 26;
+const R_MAGIC_FILL_COLOR: [u8; 3] = [0, 200, 0];
+/// `gMagicMeterFillTex`'s offset in `parameter_static` (`parameter_static.xml`).
+const MAGIC_METER_FILL_TEX_OFFSET: u32 = 0x3AC0;
 const SMALL_KEY_ICON: &str = "hud/small_key_icon";
 
 /// The scenes `Interface_Draw`'s `switch` shows the small key counter in (`scene_table.h`'s ids):
@@ -1239,6 +1329,9 @@ fn set_cull_back(d: &mut Dl) {
 const PRIM_ENV_BY_TEXEL: [u32; 8] = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::TEXEL0, cc_d::ENVIRONMENT, ac::TEXEL0, ac::ZERO, ac::PRIMITIVE, ac::ZERO];
 /// `gDPSetCombineLERP(0, 0, 0, PRIMITIVE, TEXEL0, 0, PRIMITIVE, 0, x2)`.
 const PRIM_BY_TEXEL_ALPHA: [u32; 8] = [cc_ab::ZERO, cc_ab::ZERO, cc_c::ZERO, cc_d::PRIMITIVE, ac::TEXEL0, ac::ZERO, ac::PRIMITIVE, ac::ZERO];
+/// `gDPSetCombineLERP(PRIMITIVE, ENVIRONMENT, TEXEL0, ENVIRONMENT, 0, 0, 0, PRIMITIVE, x2)`: the
+/// magic meter's fill.
+const PRIM_ENV_BY_TEXEL_PRIM_ALPHA: [u32; 8] = [cc_ab::PRIMITIVE, cc_ab::ENVIRONMENT, cc_c::TEXEL0, cc_d::ENVIRONMENT, ac::ZERO, ac::ZERO, ac::ZERO, ac::PRIMITIVE];
 
 /// The HUD's sprites, each with the setup `Interface_Draw` and `Health_DrawMeter` draw it
 /// under.
@@ -1276,6 +1369,34 @@ pub fn bakes() -> Vec<SpriteBake> {
             prim: true,
             env: false,
             quad: Quad::Rect { s: 8, t: 16 },
+        });
+    }
+    // Magic_DrawMeter: after Gfx_SetupDL_39Overlay (G_CC_MODULATEIA_PRIM), the ends and the
+    // middle by Gfx_TextureIA8 (the middle stretched over magicCapacity: its texture's 24
+    // columns, then the last one's texels, mask 0 clamping); the right end the left one loaded
+    // mirrored (G_TX_MIRROR, mask 3) from s 8. The fill: gMagicMeterFillTex, which the C loads as
+    // I4 16x16 (gDPLoadMultiBlock_4b; the XML has it IA8 8x8), under its own combiner. It's
+    // parameter_static's last texture: 64 bytes, and the 16x16 load's lower half reads past the
+    // file's end. The fill's rectangle is 7 rows high from t 0 (mask 0 clamps s at column 15), so
+    // only rows 0 to 6 are ever sampled: the bake loads the 16x8 the file holds.
+    v.push(SpriteBake { name: MAGIC_METER_END.into(), tex: param("gMagicMeterEndTex"), load: ia8(8, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: 8, t: 16 } });
+    let mirrored = Load { cms: G_TX_MIRROR, masks: 3, ..ia8(8, 16) };
+    let vtx = [([0, 0, 0], [256, 0]), ([1, 0, 0], [512, 0]), ([0, -1, 0], [256, 512]), ([1, -1, 0], [512, 512])];
+    v.push(SpriteBake { name: MAGIC_METER_END_RIGHT.into(), tex: param("gMagicMeterEndTex"), load: mirrored, setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Vtx(vtx) });
+    for w in (8..=MAGIC_METER_MAX_CAPACITY).step_by(8) {
+        v.push(SpriteBake { name: magic_meter_mid_sprite(w), tex: param("gMagicMeterMidTex"), load: ia8(24, 16), setup: setup_dl::setup_dl_39(), prim: true, env: true, quad: Quad::Rect { s: w as u32, t: 16 } });
+    }
+    for w in 1..=MAGIC_METER_MAX_CAPACITY {
+        let mut setup = setup_dl::setup_dl_39();
+        setup.combine_lerp(PRIM_ENV_BY_TEXEL_PRIM_ALPHA, PRIM_ENV_BY_TEXEL_PRIM_ALPHA);
+        v.push(SpriteBake {
+            name: magic_meter_fill_sprite(w),
+            tex: TexSrc::File { file: "parameter_static".into(), offset: MAGIC_METER_FILL_TEX_OFFSET },
+            load: Load::new(G_IM_FMT_I, G_IM_SIZ_4B, 16, 8, G_TX_WRAP),
+            setup,
+            prim: true,
+            env: true,
+            quad: Quad::Rect { s: w as u32, t: 7 },
         });
     }
     // Interface_DrawItemButtons: G_CC_MODULATEIA_PRIM after Gfx_SetupDL_39Overlay.
@@ -1368,7 +1489,7 @@ mod tests {
 
     fn frame() -> IfaceFrame {
         // SCENE_KOKIRI_FOREST.
-        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false, paused: false, game_over_inactive: true, env_hazard: 0 }
+        IfaceFrame { scene_id: 0x55, msg_none: true, climbing: false, state2_18: false, no_transition: true, dungeon_room: false, in_cs_mode: false, paused: false, game_over_inactive: true, env_hazard: 0, cs_idle: true, player_in_cs_mode: false, fill_sfx: true }
     }
 
     #[test]
@@ -1378,7 +1499,7 @@ mod tests {
         change_alpha(&mut s, 50);
         let mut seen = Vec::new();
         for _ in 0..9 {
-            c.update(&mut s, &mut GameAudio::default(), &frame());
+            c.update(&mut s, &mut GameAudio::default(), &frame(), &mut false);
             seen.push(c.b_alpha);
         }
         // alpha1 = 255 - (255 - (hudVisibilityModeTimer << 5)): 32 a frame, 255 from the eighth.
@@ -1396,7 +1517,7 @@ mod tests {
         assert_eq!((c.unk_1ec, c.do_action_segment[1]), (1, Some(DO_ACTION_CHECK)));
         let mut angles = Vec::new();
         for _ in 0..4 {
-            c.update(&mut s, &mut GameAudio::default(), &frame());
+            c.update(&mut s, &mut GameAudio::default(), &frame(), &mut false);
             angles.push((c.unk_1ec, c.unk_1f4 as i32));
         }
         // 31400 / WREG(5) (3) a frame: 10466 → past 15700, so -15700 → -5233 → 0.
@@ -1417,17 +1538,17 @@ mod tests {
         // UNDERWATER_FREE: B and every C button disabled, the HUD to HUD_VISIBILITY_ALL (50).
         for hazard in [PLAYER_ENV_HAZARD_SWIMMING, PLAYER_ENV_HAZARD_UNDERWATER_FREE] {
             s.button_status = [BTN_ENABLED; 5];
-            c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: hazard, ..frame() });
+            c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: hazard, ..frame() }, &mut false);
             assert_eq!(s.button_status[..4], [BTN_DISABLED; 4], "{hazard}");
             assert_eq!(s.hud_visibility_mode, 50);
         }
         // On the floor in the iron boots (2): a C button with the hookshot (or longshot) enabled.
         s.button_status = [BTN_ENABLED; 5];
-        c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, ..frame() });
+        c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: PLAYER_ENV_HAZARD_UNDERWATER_FLOOR, ..frame() }, &mut false);
         assert_eq!(s.button_status[..4], [BTN_DISABLED, BTN_DISABLED, BTN_ENABLED, BTN_DISABLED]);
         // A hot room isn't in the range: the buttons by the scene's restrictions.
         s.button_status = [BTN_ENABLED; 5];
-        c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: PLAYER_ENV_HAZARD_HOTROOM, ..frame() });
+        c.update(&mut s, &mut audio, &IfaceFrame { env_hazard: PLAYER_ENV_HAZARD_HOTROOM, ..frame() }, &mut false);
         assert_eq!(s.button_status[..4], [BTN_ENABLED; 4]);
         // sEnvHazard: the hot room's, unless in the Goron Tunic.
         assert_eq!(c.env_hazard, PLAYER_ENV_HAZARD_HOTROOM);
@@ -1492,7 +1613,7 @@ mod tests {
         assert_eq!(c.restrictions.b_button, 1);
         let f = IfaceFrame { scene_id: 0x34, ..frame() };
         for _ in 0..10 {
-            c.update(&mut s, &mut GameAudio::default(), &f);
+            c.update(&mut s, &mut GameAudio::default(), &f, &mut false);
         }
         // func_80083108 disables B (the sword isn't ammo) and fades back in: B at 70.
         assert_eq!((s.button_status[0], c.b_alpha, c.a_alpha), (BTN_DISABLED, 70, 255));
@@ -1500,8 +1621,53 @@ mod tests {
         let mut s = new_save();
         let mut c = InterfaceContext::init(&mut s, &tables, 0x34);
         for _ in 0..10 {
-            c.update(&mut s, &mut GameAudio::default(), &f);
+            c.update(&mut s, &mut GameAudio::default(), &f, &mut false);
         }
         assert_eq!((s.button_status[0], s.equips.button_items[0]), (BTN_ENABLED, crate::item::ITEM_NONE));
+    }
+
+    #[test]
+    fn the_magic_meter_grows_fills_and_draws() {
+        // The map select's file: magic acquired, magicLevel and magic 0, magicFillTarget the saved
+        // 0x30. Interface_Update starts the meter (level 1, MAGIC_STATE_STEP_CAPACITY): 6 frames of
+        // +8 to 0x30, a frame to see it, 12 of +4 to 0x30.
+        let tables = InterfaceTables { restrictions: vec![[0xFF, 0, 0, 0]] };
+        let mut s = SaveContext::debug(0, false, 0);
+        assert_eq!((s.magic_fill_target, s.magic, s.magic_level), (0x30, 0, 0));
+        let mut c = InterfaceContext::init(&mut s, &tables, 0x55);
+        c.magic_alpha = 255;
+        c.update(&mut s, &mut GameAudio::default(), &frame(), &mut false);
+        assert_eq!((s.magic_level, s.magic_capacity, s.magic_state), (1, 8, crate::magic::MAGIC_STATE_STEP_CAPACITY));
+        // Not while paused, nor in a cutscene with Player in his cutscene mode.
+        c.update(&mut s, &mut GameAudio::default(), &IfaceFrame { paused: true, ..frame() }, &mut false);
+        c.update(&mut s, &mut GameAudio::default(), &IfaceFrame { cs_idle: false, player_in_cs_mode: true, ..frame() }, &mut false);
+        assert_eq!(s.magic_capacity, 8);
+        for _ in 0..18 {
+            c.update(&mut s, &mut GameAudio::default(), &frame(), &mut false);
+        }
+        assert_eq!((s.magic_capacity, s.magic, s.magic_state), (0x30, 0x30, crate::magic::MAGIC_STATE_IDLE));
+        // Magic_DrawMeter under one row of hearts (healthCapacity 0xE0 > 0xA0: the lower row, y 42):
+        // the left end at 18, the middle 0x30 across at 26, the right end at 74, the green fill
+        // (0, 200, 0) from 26 to 74, 7 high from y 45.
+        let mut out = Vec::new();
+        c.magic_draw_meter(&s, &mut out);
+        let names: Vec<&str> = out.iter().map(|x| x.name.as_str()).collect();
+        assert_eq!(names, ["hud/magic_meter_end", "hud/magic_meter_mid_48", "hud/magic_meter_end_right", "hud/magic_meter_fill_48"]);
+        assert_eq!(out[0].transform, crate::sprite::rect_transform(18.0, 42.0, 26.0, 58.0));
+        assert_eq!(out[2].transform, crate::sprite::rect_transform(74.0, 42.0, 82.0, 58.0));
+        assert_eq!(out[3].transform, crate::sprite::rect_transform(26.0, 45.0, 74.0, 52.0));
+        assert_eq!((out[0].prim, out[0].env, out[3].prim), (Some([255, 255, 255, 255]), Some([100, 50, 50, 255]), Some([0, 200, 0, 255])));
+        // A consumption waiting with the preview (MAGIC_STATE_METER_FLASH_2): yellow to magic, the
+        // green over it to magicTarget.
+        s.magic_state = crate::magic::MAGIC_STATE_METER_FLASH_2;
+        s.magic_target = 0x24;
+        out.clear();
+        c.magic_draw_meter(&s, &mut out);
+        assert_eq!((out[3].name.as_str(), out[3].prim, out[4].name.as_str(), out[4].prim), ("hud/magic_meter_fill_48", Some([250, 250, 0, 255]), "hud/magic_meter_fill_36", Some([0, 200, 0, 255])));
+        // No meter without a magic level.
+        s.magic_level = 0;
+        out.clear();
+        c.magic_draw_meter(&s, &mut out);
+        assert!(out.is_empty());
     }
 }

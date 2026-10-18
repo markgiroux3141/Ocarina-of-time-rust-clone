@@ -15,8 +15,8 @@
 //!
 //! Drawn (`func_8097D29C`) as `gGoronSkel` (`object_oF1d_map`) with its eye on segment 8
 //! (`gGoronCsEyeOpenTex`, `...HalfTex`, `...ClosedTex`) and `gGoronCsMouthSmileTex` on 9: the same
-//! skeleton and textures as `En_Go2`, so `En_Go2`'s bakes (its eyes 1 to 3, its smile); the circle
-//! shadow (`ActorShadow_DrawCircle`, scale 30) once it has a floor.
+//! skeleton and textures as `En_Go2`, so `En_Go2`'s bakes (its eyes 1 to 3, its smile). Its circle
+//! shadow (30) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw` once it has a floor).
 //!
 //! The whole overlay is ported. Placed only on Death Mountain Trail: layer 5 (the Ruby's cutscene)
 //! and layer 6 (`gDMTUnusedCs`, which has no cues: they stay hidden), params 0, 1 and 2.
@@ -29,7 +29,7 @@ use std::sync::Arc;
 
 use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, MeshKey};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, func_80033480};
 use oot_game::actor_schema::{ActorSchema, Field, Kind};
@@ -151,8 +151,7 @@ impl DemoGo {
             anim_0029a8,
             not_ported_logged: false,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         let a = this.anim_004930.clone();
         let end = a.last_frame();
         this.skel.change(a, 1.0, 0.0, end, ANIMMODE_ONCE, 0.0);
@@ -391,8 +390,7 @@ impl DemoGo {
 mod rs {
     pub const DRAW_CONFIG: usize = 0;
     pub const EYE: usize = 1;
-    pub const SHADOW: usize = 2;
-    pub const SWITCHES: usize = 3;
+    pub const SWITCHES: usize = 2;
 }
 
 impl ActorImpl for DemoGo {
@@ -421,10 +419,7 @@ impl ActorImpl for DemoGo {
     fn render_state(&self) -> RenderState {
         let mut r = RenderState::of(&self.actor);
         r.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        // Actor_Draw's shadow (shape.shadowAlpha 255), whatever the draw config.
-        let shadow = oot_game::draw::actor_shadow_circle(&self.actor, 30.0);
-        r.switches = vec![self.draw_config.max(0) as u32, self.unk_190.clamp(0, 2) as u32, shadow.is_some() as u32];
-        r.values = shadow.unwrap_or(Mat4::IDENTITY).to_cols_array().to_vec();
+        r.switches = vec![self.draw_config.max(0) as u32, self.unk_190.clamp(0, 2) as u32];
         r
     }
 
@@ -433,10 +428,6 @@ impl ActorImpl for DemoGo {
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         if rs.switches.len() < rs::SWITCHES {
             return;
-        }
-        if rs.switches[rs::SHADOW] != 0 && rs.values.len() == 16 {
-            let m = Mat4::from_cols_array(&rs.values[..16].try_into().unwrap());
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
         }
         let Some(joints) = &rs.joints else { return };
         if rs.switches[rs::DRAW_CONFIG] != 1 {

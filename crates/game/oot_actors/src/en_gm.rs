@@ -23,8 +23,9 @@
 //! His cylinder, talk point and focus (3800 in front, 100 up) are placed in his draw
 //! (`func_80A3E090`, through the model matrix): the port's `draw_update`. Drawn as `EnGm_Draw`
 //! does: his eyes on segment 8 (open, half, closed: `EnGm_UpdateEye`'s blink) and the neutral mouth
-//! on segment 9, from meshes baked per eye (docs/adr/0012-actor-bakes.md); the circle shadow (35)
-//! as the other NPCs' stand-in.
+//! on segment 9, from meshes baked per eye (docs/adr/0012-actor-bakes.md). His circle shadow (35)
+//! is the shape's (`ActorShape_Init`'s), which `Actor_Draw` never draws: nothing looks for his
+//! floor (no `Actor_UpdateBgCheckInfo`), so `floorPoly` stays NULL.
 //!
 //! The whole overlay is ported.
 //!
@@ -38,7 +39,7 @@ use std::sync::Arc;
 use eng_anim::skeleton::Skeleton;
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
@@ -268,8 +269,7 @@ impl EnGm {
         self.skel_anime = Some(skel);
         self.drawn = true;
         self.collider = ColliderCylinder::new(&CYLINDER_INIT);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 35).
-        self.actor.shape_y_offset = 0.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 35.0);
         self.actor.scale = Vec3::splat(0.05);
         self.actor.col_chk_info.mass = MASS_IMMOVABLE;
         self.eye_tex_index = 0;
@@ -501,7 +501,7 @@ impl ActorImpl for EnGm {
 
     /// `EnGm_Draw`: `Gfx_SetupDL_25Opa`, the eye on segment 8, the neutral mouth on 9, the
     /// skeleton (`SkelAnime_DrawFlexOpa`, no limb callbacks).
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         if rs.switches.first() != Some(&1) {
             return;
         }
@@ -509,10 +509,6 @@ impl ActorImpl for EnGm {
         let bones = self.skeleton.pose(joints);
         let eye = rs.switches.get(1).copied().unwrap_or(0) as usize;
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye.min(2)))), transform: actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 35): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(35.0, 1.0, 35.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
 
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {

@@ -214,6 +214,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_UNIQ1",
     "CAM_FUNC_BATT1",
     "CAM_FUNC_SPEC6",
+    "CAM_FUNC_BATT4",
 ];
 
 /// A sound the camera asks for (`z_camera.c`), played by the play state where the C plays it.
@@ -1008,6 +1009,24 @@ struct Batt1Rw {
     charge_timer: i16,
 }
 
+/// `Battle4ReadOnlyData` (`CAM_FUNCDATA_BATT4`).
+#[derive(Debug, Clone, Copy, Default)]
+struct Batt4Ro {
+    y_offset: f32,
+    r_target: f32,
+    pitch_target: i16,
+    lerp_update_rate: f32,
+    fov_target: f32,
+    at_lerp_target: f32,
+    interface_field: i16,
+}
+
+/// `Battle4ReadWriteData`.
+#[derive(Debug, Clone, Copy, Default)]
+struct Batt4Rw {
+    anim_timer: i16,
+}
+
 /// `KeepOn1ReadWriteData`.
 #[derive(Debug, Clone, Copy, Default)]
 struct Keep1Rw {
@@ -1521,6 +1540,8 @@ pub struct GameCamera {
     keep1_rw: Keep1Rw,
     batt1_ro: Batt1Ro,
     batt1_rw: Batt1Rw,
+    batt4_ro: Batt4Ro,
+    batt4_rw: Batt4Rw,
     keep3_ro: Keep3Ro,
     keep3_rw: Keep3Rw,
     keep0: Keep0,
@@ -1656,6 +1677,8 @@ impl GameCamera {
             keep1_rw: Keep1Rw::default(),
             batt1_ro: Batt1Ro::default(),
             batt1_rw: Batt1Rw::default(),
+            batt4_ro: Batt4Ro::default(),
+            batt4_rw: Batt4Rw::default(),
             keep3_ro: Keep3Ro::default(),
             keep3_rw: Keep3Rw::default(),
             keep0: Keep0::default(),
@@ -3520,6 +3543,7 @@ impl GameCamera {
                 Some("CAM_FUNC_JUMP3") => self.jump3(d, col, p),
                 Some("CAM_FUNC_UNIQ1") => self.unique1(d, col, p, f.player_waist),
                 Some("CAM_FUNC_BATT1") => self.battle1(d, col, p, f),
+                Some("CAM_FUNC_BATT4") => self.battle4(d, p),
                 Some("CAM_FUNC_SPEC6") => self.special6(d, col),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
@@ -4659,6 +4683,56 @@ impl GameCamera {
         self.fov = lerp_ceil_f(ro.unk_20, self.fov, self.fov_update_rate, 1.0);
         self.roll = lerp_ceil_s(0, self.roll, 0.5, 0xA);
         self.at_lerp_step_scale = self.clamp_lerp_scale(d, if sp80 { ro.unk_2c } else { ro.unk_24 });
+    }
+
+    /// `Camera_Battle4` (`CAM_MODE_CHARGE`: charging a spin attack, not locked on): for 50 frames
+    /// the eye holds where it is from the at (which follows Player, `Camera_CalcAtDefault`), then
+    /// eases (`lerpUpdateRate`) to `rTarget` away at `pitchTarget`, the view to `fovTarget`.
+    fn battle4(&mut self, d: &CameraData, p: &PlayerView) {
+        let player_height = p.height();
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            let y_normal = 1.0 + d.oreg_s(R_CAM_YOFFSET_NORM) - d.oreg_s(R_CAM_YOFFSET_NORM) * (68.0 / player_height);
+            let v = |i: usize| d.value(self.cur(), i);
+            self.batt4_ro = Batt4Ro {
+                y_offset: v(0) as f32 * 0.01 * player_height * y_normal,
+                r_target: v(1) as f32 * 0.01 * player_height * y_normal,
+                pitch_target: cam_deg_to_binang(v(2) as f32),
+                lerp_update_rate: v(3) as f32 * 0.01,
+                fov_target: v(4) as f32,
+                at_lerp_target: v(5) as f32 * 0.01,
+                interface_field: v(6),
+            };
+        }
+        let ro = self.batt4_ro;
+        let eye_at_offset = diff_to_sph_geo(self.at, self.eye);
+        let eye_next_at_offset = diff_to_sph_geo(self.at, self.eye_next);
+        self.interface_flags = ro.interface_field;
+        if matches!(self.anim_state, 0 | 10 | 20) {
+            self.batt4_rw.anim_timer = 50;
+            self.anim_state += 1;
+        }
+        // CAM_UPDATE_RATE_STEP_SCALE_XZ (OREG(25)), CAM_Y_OFFSET_UPDATE_RATE (OREG(3)),
+        // CAM_UPDATE_RATE_STEP_SCALE_Y (OREG(26)).
+        self.yaw_update_rate_inv = lerp_ceil_f(ro.lerp_update_rate, self.yaw_update_rate_inv, d.oreg_s(25) * self.speed_ratio, 0.1);
+        self.r_update_rate_inv = 1000.0;
+        self.pitch_update_rate_inv = 1000.0;
+        self.xz_offset_update_rate = lerp_ceil_f(0.025, self.xz_offset_update_rate, d.oreg_s(25), 0.1);
+        self.y_offset_update_rate = lerp_ceil_f(d.oreg_s(3), self.y_offset_update_rate, d.oreg_s(26) * self.speed_ratio, 0.1);
+        self.fov_update_rate = 0.0001;
+        self.calc_at_default(d, &eye_next_at_offset, ro.y_offset, true, p);
+        let mut eye_next_offset = eye_at_offset;
+        if self.batt4_rw.anim_timer != 0 {
+            self.batt4_rw.anim_timer -= 1;
+        } else {
+            eye_next_offset.pitch = lerp_ceil_s(ro.pitch_target, eye_at_offset.pitch, ro.lerp_update_rate, 2);
+            eye_next_offset.r = lerp_ceil_f(ro.r_target, eye_at_offset.r, ro.lerp_update_rate, 0.001);
+        }
+        self.eye_next = sph_geo_add(self.at, eye_next_offset);
+        self.eye = self.eye_next;
+        self.dist = eye_next_offset.r;
+        self.fov = lerp_ceil_f(ro.fov_target, self.fov, ro.lerp_update_rate, 1.0);
+        self.roll = 0;
+        self.at_lerp_step_scale = self.clamp_lerp_scale(d, ro.at_lerp_target);
     }
 
     /// `Camera_Battle1` (BATTLE, `CAM_MODE_Z_TARGET_UNFRIENDLY`): locked on to an enemy, the

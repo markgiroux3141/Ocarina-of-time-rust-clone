@@ -328,7 +328,7 @@ fn the_skull_kid_flees_within_200_before_sarias_song() {
     for _ in 0..14 {
         idle(&mut w, 1);
         let k = skj(&w, kid);
-        alphas.push((k.alpha, k.shadow_alpha));
+        alphas.push((k.alpha, k.actor.shape_shadow_alpha));
         if k.actor.killed {
             break;
         }

@@ -126,7 +126,8 @@ pub fn file_select_load_game(save: &mut SaveContext, sram_ctx: &SramContext, but
     save.prev_hud_visibility_mode = HUD_VISIBILITY_ALL;
     // (nayrusLoveTimer: not ported.)
     save.health_accumulator = 0;
-    // (magicState, prevMagicState: the meter isn't ported.)
+    save.magic_state = crate::magic::MAGIC_STATE_IDLE;
+    save.prev_magic_state = crate::magic::MAGIC_STATE_IDLE;
     save.forced_seq_id = crate::audio::NA_BGM_GENERAL_SFX;
     save.skybox_time = crate::env::clock_time(0, 0) as u16;
     save.next_transition_type = TRANS_NEXT_TYPE_DEFAULT;
@@ -140,7 +141,9 @@ pub fn file_select_load_game(save: &mut SaveContext, sram_ctx: &SramContext, but
     save.next_hud_visibility_mode = 0;
     save.hud_visibility_mode = 0;
     save.hud_visibility_mode_timer = 0;
-    // (magicCapacity 0, magicFillTarget the saved magic: the meter grows back to it.)
+    // magicCapacity 0, magicFillTarget the saved magic: the meter grows back to it.
+    save.magic_capacity = 0;
+    save.magic_fill_target = save.magic as i16;
     save.magic_level = 0;
     save.magic = 0;
     save.navi_timer = 0;

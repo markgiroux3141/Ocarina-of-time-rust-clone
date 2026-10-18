@@ -204,8 +204,7 @@ impl EnPart {
                 a.speed_xz = 6.0 * sign;
                 a.gravity = -1.2;
                 self.rot_z_speed = 0.15 * sign;
-                // ActorShape_Init(0, ActorShadow_DrawCircle, 30): the circle shadow isn't drawn.
-                a.shape_y_offset = 0.0;
+                a.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
                 self.timer = 18;
             }
             _ => {}

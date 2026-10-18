@@ -262,8 +262,7 @@ impl ObjSyokudai {
         actor.culling_volume_distance = 4000.0;
         actor.culling_volume_scale = 800.0;
         actor.culling_volume_downward = 800.0;
-        // ActorShape_Init(&shape, 0, NULL, 0).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         let mut stand_collider = ColliderCylinder::new(&CYL_INIT_STAND);
         // sColMaterialsStand[PARAMS_GET_NOMASK(params, 12)].
         if let Some(&m) = COL_MATERIALS_STAND.get(TORCH_TYPE.get(params) as usize) {

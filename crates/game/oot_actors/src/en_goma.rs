@@ -24,8 +24,8 @@
 //! write their state into her `childrenGohmaState` (`boss_goma_set_child_state`); her pieces draw
 //! her limbs' lists (`bossLimbDL`, baked by `boss_limb_bake`), with her textures as her object's RAM
 //! has them (erased as she dies). `En_Goma_Profile`'s id is `ACTOR_BOSS_GOMA` (@bug (game)): every En_Goma gets
-//! that id, as `Actor_Spawn` copies it (`PROFILE`). Not ported: the generic circle shadow
-//! (`ActorShadow_DrawCircle`, for no actor).
+//! that id, as `Actor_Spawn` copies it (`PROFILE`). The circle shadow is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`): the egg's 40, the debris's and the boss's limbs' 0.
 //!
 //! Params: `params` the whole params (0 to 2 an egg Queen Gohma lays, `Boss_Goma` its parent and
 //! the params its index in her `childrenGohmaState`; 3 to 5 an egg with no action (@bug (game):
@@ -308,8 +308,7 @@ impl EnGoma {
             g.actor.category = ACTORCAT_BOSS;
             g.action = Action::BossLimb;
             g.goma_type = ENGOMA_BOSSLIMB;
-            // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0): the circle shadow isn't ported.
-            g.actor.shape_y_offset = 0.0;
+            g.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
             g.action_timer = PARAMS.get(g.actor.params).wrapping_add(150);
             g.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         } else if params >= 10 {
@@ -326,11 +325,10 @@ impl EnGoma {
             g.actor.scale.x = play.rand.zero_one() * 0.005 + 0.01;
             g.actor.scale.y = play.rand.zero_one() * 0.005 + 0.01;
             g.actor.scale.z = play.rand.zero_one() * 0.005 + 0.01;
-            // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0).
-            g.actor.shape_y_offset = 0.0;
+            g.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
         } else {
-            // An egg. ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 40).
-            g.actor.shape_y_offset = 0.0;
+            // An egg.
+            g.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 40.0);
             // SkelAnime_Init(&gObjectGolSkel, &gObjectGolStandAnim), Animation_PlayLoop.
             if let Some(a) = play.assets.clone() {
                 let anim = |name: &str| a.animation(OBJECT, name).map_err(|e| log::error!("En_Goma: {e:#}")).ok();

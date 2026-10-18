@@ -87,7 +87,7 @@ fn saria_on_the_bridge_follows_her_cues() {
     let h = w.actor_spawn(ACTOR_DEMO_SA, Vec3::new(0.0, 0.0, 0.0), [0; 3], 5).unwrap();
     // DemoSa_InitBridge: hidden, sad, her fairy (En_Elf FAIRY_KOKIRI) as her child.
     let s = saria(&w, h);
-    assert_eq!((s.action, s.draw_config, s.shadow_alpha), (DEMOSA_ACTION_BRIDGE_INVISIBLE, DEMOSA_DRAW_NOTHING, 0));
+    assert_eq!((s.action, s.draw_config, s.actor.shape_shadow_alpha), (DEMOSA_ACTION_BRIDGE_INVISIBLE, DEMOSA_DRAW_NOTHING, 0));
     assert_eq!((s.eye_index, s.mouth_index), (SARIA_EYE_SAD, SARIA_MOUTH_CLOSED));
     assert!(s.actor.child.is_some());
     assert_eq!(w.actors.all().len(), before + 2);
@@ -108,7 +108,7 @@ fn saria_on_the_bridge_follows_her_cues() {
     }
     assert_eq!(alphas, vec![25, 51, 76, 102, 127, 153, 178, 204, 229, 255]);
     let s = saria(&w, h);
-    assert_eq!((s.action, s.draw_config, s.shadow_alpha), (DEMOSA_ACTION_BRIDGE_LOOKING_SAD, DEMOSA_DRAW_OPA, 255));
+    assert_eq!((s.action, s.draw_config, s.actor.shape_shadow_alpha), (DEMOSA_ACTION_BRIDGE_LOOKING_SAD, DEMOSA_DRAW_OPA, 255));
     // Cue 13: she clutches the ocarina, eyes shut.
     cue(&mut w, 1, 13, IVec3::ZERO, 0);
     update(&mut w, h);

@@ -330,8 +330,7 @@ impl EnHeishi2 {
             return Box::new(this);
         }
         this.unk_2e0 = 60.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         let loaded = play.assets.clone().map(|assets| -> anyhow::Result<_> {
             Ok((assets.skeleton(OBJECT, "gEnHeishiSkel")?, Anims { idle: assets.animation(OBJECT, "gEnHeishiIdleAnim")?, slam_spear: assets.animation(OBJECT, "gEnHeishiSlamSpearAnim")? }))
         });
@@ -1028,10 +1027,6 @@ impl ActorImpl for EnHeishi2 {
                 out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(KEATON_MASK_BAKE)), m));
             }
         }
-        // ActorShadow_DrawCircle (shadowScale 30): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(()).and(self.collider.as_mut()).map(ColliderMut::Cylinder)

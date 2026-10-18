@@ -9,9 +9,9 @@
 //! The whole overlay is ported, with what Kokiri Forest's boulder never reaches: the climbs and
 //! drops between points of different heights (bit 10 clear: `EnGoroiwa_MoveUp`,
 //! `EnGoroiwa_MoveDown`, with its drop's quake), the round trip and the breaking loop with its
-//! fragments (`EffectSsKakera`) and dust. Not ported: the splashes and ripples (the effects;
-//! their `Rand_ZeroOne` calls in the overlay are made), and the circle shadow
-//! (`ActorShadow_DrawCircle`).
+//! fragments (`EffectSsKakera`) and dust. Its circle shadow (9.4, alpha 200) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`). Not ported: the splashes and ripples (the
+//! effects; their `Rand_ZeroOne` calls in the overlay are made).
 //!
 //! Params: `pathIdx` bits 0 to 7 (the path, `play->pathList`; 0xFF, or a path of fewer than 2
 //! points: killed); `loopMode` bits 8 and 9 (`ENGOROIWA_LOOPMODE_ONEWAY` 0, round the path and
@@ -218,8 +218,8 @@ impl EnGoroiwa {
             return Box::new(this);
         }
         this.actor.col_chk_info.set_info(None, &COL_CHK_INFO_INIT);
-        // ActorShape_Init(&shape, yOffsets[bgc], ActorShadow_DrawCircle, 9.4f), shadowAlpha 200.
-        this.actor.shape_y_offset = SHAPE_Y_OFFSETS[this.bgc()];
+        this.actor.shape_init(SHAPE_Y_OFFSETS[this.bgc()], oot_game::shadow::ShadowDraw::Circle, 9.4);
+        this.actor.shape_shadow_alpha = 200;
         this.set_speed(play);
         this.init_path(play);
         this.teleport_to_waypoint(play, 0);

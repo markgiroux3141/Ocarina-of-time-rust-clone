@@ -83,8 +83,8 @@
 //! aren't drawn); a Poe's lantern's fragments (`EffectSsHahen` with `gPoeLanternDL`) spawn and
 //! fall but draw nothing: the importer keeps a skeleton's limb lists only in the skeleton's mesh,
 //! and `gPoeLanternDL` is limb 18's (a composer's, `gPoeComposerLanternDL`, isn't a limb's: they
-//! draw); the circle shadow
-//! (`ActorShadow_DrawCircle`, 30, `shadowAlpha`) is the shadow stand-in at full alpha.
+//! draw). The circle shadow (30, at the light's alpha) is the shape's (`ActorShape_Init`'s, drawn by
+//! `Actor_Draw`; gone with the soul).
 //!
 //! Params: `params` the whole params as an `s16` (0 `EN_POH_NORMAL`, the placed ones; 1
 //! `EN_POH_RUPEE`, `Bg_Haka`'s; 2 `EN_POH_SHARP`, 3 `EN_POH_FLAT`, `En_Wonder_Talk`'s; 4 and up
@@ -573,9 +573,6 @@ pub struct EnPoh {
     pub collider_jnt_sph: ColliderJntSph,
     /// `unk_368`: the lantern's matrix, from the last draw.
     pub unk_368: Mat4,
-    /// `shape.shadowDraw` (`ActorShadow_DrawCircle`, scale 30), and `shape.shadowAlpha`.
-    pub shadow: bool,
-    pub shadow_alpha: u8,
 }
 
 /// `Animation_PlayLoop`.
@@ -635,8 +632,7 @@ impl EnPoh {
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // sInitChain: lockOnArrowOffset 3200.
         actor.target_arrow_offset = 3200.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         let elements = jnt_sph_elements();
         let mut collider_jnt_sph = ColliderJntSph::new(&JNT_SPH_INIT, &elements);
         let p = actor.world_pos;
@@ -719,8 +715,6 @@ impl EnPoh {
             collider_cylinder,
             collider_jnt_sph,
             unk_368: Mat4::IDENTITY,
-            shadow: true,
-            shadow_alpha: 255,
         })
     }
 
@@ -872,7 +866,7 @@ impl EnPoh {
     fn setup_death(&mut self, play: &mut PlayState) {
         self.update_fn = Update::Dead;
         self.draw_fn = Draw::Soul;
-        self.shadow = false;
+        self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::None;
         self.actor.scale = Vec3::splat(0.01);
         self.actor.flags |= ACTOR_FLAG_UPDATE_CULLING_DISABLED;
         self.actor.gravity = -1.0;
@@ -1571,7 +1565,7 @@ impl EnPoh {
         self.actor.floor_height = floor;
         self.actor.floor_poly = poly;
         self.func_80ae089c(play);
-        self.shadow_alpha = self.light_color[3];
+        self.actor.shape_shadow_alpha = self.light_color[3];
     }
 
     /// `EnPoh_UpdateDead`.
@@ -1660,6 +1654,11 @@ impl ActorImpl for EnPoh {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
+        // The shape's shadow: none while draw is NULL, before the object is in (Actor_Draw isn't
+        // called).
+        if self.draw_fn == Draw::None {
+            rs.shadow = None;
+        }
         rs
     }
 
@@ -1712,13 +1711,6 @@ impl ActorImpl for EnPoh {
                 } else {
                     out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(COMPOSER_LANTERN_BAKE)), transform: lantern, bones: Vec::new(), params: env_params(env) });
                     out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(COMPOSER_LANTERN_TOP_BAKE)), transform: lantern, bones: Vec::new(), params: env_params(sp90) });
-                }
-                if self.shadow && self.shadow_alpha > 0 {
-                    // ActorShadow_DrawCircle (shadowScale 30): the circle shadow's stand-in.
-                    let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-                    let s = 30.0 * rs.scale.x * 100.0;
-                    let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(s, 1.0, s));
-                    out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
                 }
             }
             Draw::Soul => {

@@ -29,9 +29,9 @@
 //! ROM's). `@bug (game)`: the target scrub's `gHintNutsSkel` is a flex skeleton set up
 //! (`SkelAnime_Init`) and drawn (`SkelAnime_DrawOpa`) as a normal one; its limbs' lists load no
 //! matrices (no `gSPMatrix` of segment 0x0D), so it draws the same, and the port draws it as
-//! `En_Hintnuts` does. The circle shadow (`ActorShadow_DrawCircle`) has scale 0: nothing to draw.
-//! `func_80033C30`'s circle under a celebrating stage scrub is the shadow stand-in
-//! (`builtin::SHADOW`).
+//! `En_Hintnuts` does. The circle shadow is the shape's (`ActorShape_Init`'s, drawn by
+//! `Actor_Draw`), of scale 0: nothing to see. A celebrating stage scrub's draw puts a circle under
+//! it itself (`func_80033C30`, 0.25: `oot_game::shadow::func_80033c30`).
 //!
 //! Params: `type` the whole params as an s16 (below 0 read as 0: `ENDNTNOMAL_TARGET`, the Lost
 //! Woods' 0xFFFF; 1 to 9: `ENDNTNOMAL_STAGE`, `En_Dnt_Demo`'s scrubs, the type picking the leaf
@@ -501,8 +501,7 @@ impl EnDntNomal {
         let Some(slot) = self.required_object_slot else { return };
         if play.object_ctx.is_loaded(slot) {
             self.actor.obj_bank_index = Some(slot);
-            // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0): a shadow of scale 0.
-            self.actor.shape_y_offset = 0.0;
+            self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
             self.actor.gravity = -2.0;
             self.actor.scale = Vec3::splat(0.01);
             let limbs = self.skeleton.as_ref().map(|s| s.limbs.len()).unwrap_or(if self.ty == ENDNTNOMAL_TARGET { 9 } else { 10 });
@@ -1217,11 +1216,8 @@ impl ActorImpl for EnDntNomal {
                 out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&stage_bake(eye))), transform: model, bones, params: params() });
                 out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(STAGE_FLOWER_BAKE)), transform: flower, bones: Vec::new(), params: params() });
                 if celebrate != 0 {
-                    // func_80033C30(&world.pos, { 0.25, 0.25, 0.25 }, 255): gCircleShadowDL on the
-                    // floor below, at 0.25 across (the shadow stand-in, 100 units a unit).
-                    let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 1.0);
-                    let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(25.0, 1.0, 25.0));
-                    out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
+                    // func_80033C30(&world.pos, dustScale { 0.25, 0.25, 0.25 }, 255).
+                    out.opa.push(oot_game::shadow::func_80033c30(&play.col, rs.pos, Vec3::splat(0.25), 255));
                 }
             }
             _ => {}

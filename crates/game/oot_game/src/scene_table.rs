@@ -359,6 +359,17 @@ fn draw_config_fairys_fountain(st: &mut DrawConfigState, b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigGreatFairyFountain` (`SDC_GREAT_FAIRYS_FOUNTAIN`: the Great Fairies'
+/// fountains): two scrolls of the water and the light, on segments 8 (32 by 64) and 9 (32 by
+/// 32), both in the XLU buffer.
+fn draw_config_great_fairys_fountain(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.xlu.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(3) % 256, 32, 64, 1, f % 128, f.wrapping_mul(3) % 256, 32, 64));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f.wrapping_mul(3) % 128, 32, 32, 1, f % 128, f.wrapping_mul(3) % 128, 32, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
 /// `Scene_DrawConfigRoyalFamilysTomb` (the royal tomb): the exit's light on segment 8, two tall
 /// scrolls on segments 9 and 0xB (XLU), and the water's on segment 0xA (OPA).
 fn draw_config_royal_familys_tomb(st: &mut DrawConfigState, b: &mut Buffers) {
@@ -539,6 +550,7 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_MARKET_GUARD_HOUSE", draw_config_miharigoya),
     ("SDC_GRAVE_EXIT_LIGHT_SHINING", draw_config_grave_exit_light_shining),
     ("SDC_FAIRYS_FOUNTAIN", draw_config_fairys_fountain),
+    ("SDC_GREAT_FAIRYS_FOUNTAIN", draw_config_great_fairys_fountain),
     ("SDC_ROYAL_FAMILYS_TOMB", draw_config_royal_familys_tomb),
     ("SDC_LON_LON_RANCH", draw_config_spot20),
     ("SDC_LON_LON_BUILDINGS", draw_config_souko),

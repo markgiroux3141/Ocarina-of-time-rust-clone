@@ -1906,7 +1906,13 @@ impl PlayState {
                         // SEQCMD_RESET_AUDIO_HEAP(0, 10).
                         self.audio.queue_seq_cmd((0xF << 28) | 10);
                         self.save.health_accumulator = 0;
-                        // (The magic meter's refill: magic isn't ported.)
+                        // The magic meter grows back to what it held before the game over.
+                        self.save.magic_state = crate::magic::MAGIC_STATE_IDLE;
+                        self.save.prev_magic_state = crate::magic::MAGIC_STATE_IDLE;
+                        self.save.magic_capacity = 0;
+                        self.save.magic_fill_target = self.save.magic as i16;
+                        self.save.magic_level = 0;
+                        self.save.magic = 0;
                     }
                 }
             }

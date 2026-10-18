@@ -24,8 +24,10 @@
 //! segment 10, the head and torso turns and the fidget's sway, the bald man's bag after the torso
 //! (`EnHy_PostLimbDraw`); from meshes baked per type and eye (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
-//! circle shadow's size (`shadowScale` kept).
+//! The circle shadow is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`), its scale by type
+//! (`EnHy_InitSetProperties`).
+//!
+//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
 //!
 //! Params: `type` bits 0 to 6 (`EnHyType`, 0 to 20: the dog lady, the beggar (5), the bald man
 //! with his bag (3), the old man (7), ...); `pathIndex` bits 7 to 10 (the path the bald man walks
@@ -725,7 +727,8 @@ impl EnHy {
 
     /// `EnHy_InitSetProperties`.
     fn init_set_properties(&mut self) {
-        let (_shadow_scale, offset, scale, attention_range, interact_range) = INIT2_INFO[self.ty() as usize];
+        let (shadow_scale, offset, scale, attention_range, interact_range) = INIT2_INFO[self.ty() as usize];
+        self.actor.shape_shadow_scale = shadow_scale;
         self.actor.scale = Vec3::splat(scale);
         self.actor.target_mode = attention_range;
         self.model_offset = Vec3::from_array(offset);
@@ -939,8 +942,7 @@ impl EnHy {
         self.skel = SkelAnimeStd::init_flex(skeleton.limbs.len(), None);
         self.skeleton = Some(skeleton);
         self.animations = animations;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0).
-        self.actor.shape_y_offset = 0.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
         self.collider = ColliderCylinder::new(&CYLINDER_INIT);
         self.init_collider();
         self.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);

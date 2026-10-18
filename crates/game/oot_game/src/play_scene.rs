@@ -417,7 +417,8 @@ impl PlayState {
         save.night_flag = save.day_time > env::clock_time(18, 0) as u16 || save.day_time < env::clock_time(6, 30) as u16;
         crate::cutscene::handle_conditional_triggers(&assets, &mut save);
         if save.game_mode != crate::save::GAMEMODE_NORMAL || save.cutscene_index >= 0xFFF0 {
-            // (nayrusLoveTimer = 0, Magic_Reset: neither is ported.)
+            // (nayrusLoveTimer = 0: the spells aren't ported.) Magic_Reset.
+            crate::magic::magic_reset(&mut save);
             save.scene_layer = crate::scene::SCENE_LAYER_CUTSCENE_FIRST + (save.cutscene_index as usize & 0xF);
         } else {
             save.scene_layer = layer_for(!save.adult, save.night_flag);
@@ -670,6 +671,8 @@ impl PlayState {
                 next.mreg_fill = self.mreg_fill;
                 // Interface_Draw's timer statics and sEnvHazardActive are z_parameter.c's.
                 next.interface_ctx.timers = self.interface_ctx.timers;
+                // So are the magic meter's border statics.
+                next.interface_ctx.magic = self.interface_ctx.magic;
                 // The cartridge's SRAM outlives the game states.
                 next.sram = std::mem::take(&mut self.sram);
                 *self = next;

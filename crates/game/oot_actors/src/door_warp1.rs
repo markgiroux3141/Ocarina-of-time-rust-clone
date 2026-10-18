@@ -17,6 +17,12 @@
 //!   init unless the entrance is an adult warp's arrival or a cutscene layer's, Link arrived by
 //!   blue warp, and he's within 100; else it fades in and out over 80 frames
 //!   (`DoorWarp1_Destination`).
+//! - **`WARP_ORANGE` (8)**, the Great Fairy's (`Bg_Dy_Yoseizo`'s cues 19 to 21 spawn it, with
+//!   `WARP_GREEN` and `WARP_RED`, at Link): the coloured warps' setup (no lights' colour, the
+//!   rays low, `unk_194` 0.23 and `unk_198` 0.6) and `DoorWarp1_WarpAppear`'s short growth (the
+//!   ring's width from -140 by 4 to -48, the rays' from -80 by 4 to 72, their alphas up), then
+//!   `func_809998A4`: both alphas down (`Math_SmoothStepToF` by 0.1, 2 at most), the hole's sound
+//!   while the rays show. Its rays are drawn with `warpAlpha` as the C's coloured cases have it.
 //!
 //! Its draw (`DoorWarp1_DrawWarp`) is `gWarpPortalDL` twice, a ring of 13 vertices at the warp
 //! (segment 0x0A's matrix) joined to one raised and widened (segment 9's): the warp, then the
@@ -25,8 +31,7 @@
 //!
 //! Not this ROM's Deku Tree, logged: the adult dungeons' warp and its crystal
 //! (`DoorWarp1_SetupAdultDungeonWarp` and its actions), the blue and purple crystals, the clear
-//! flag's warp, Ruto's warp, `WARP_UNK_7`, `func_809998A4` (the Sages' and the yellow warp's fade),
-//! the adult bosses' rooms (`DoorWarp1_AdultWarpOut`).
+//! flag's warp, Ruto's warp, `WARP_UNK_7`, the adult bosses' rooms (`DoorWarp1_AdultWarpOut`).
 //!
 //! Params (placed as `WARP_DESTINATION` at the blue warps' arrivals; the bosses, the Sages, Ruto
 //! and Zelda spawn the others): `params` the whole (`DoorWarp1Type`: -2 `WARP_BLUE_CRYSTAL`, -1
@@ -138,6 +143,7 @@ pub enum Action {
     ChildWarpIdle,
     ChildWarpOut,
     Destination,
+    Func809998A4,
     DoNothing,
     /// An action of a warp this ROM's Deku Tree never makes (logged at its setup): nothing.
     NotPorted(&'static str),
@@ -150,6 +156,7 @@ impl Action {
             Action::ChildWarpIdle => "DoorWarp1_ChildWarpIdle",
             Action::ChildWarpOut => "DoorWarp1_ChildWarpOut",
             Action::Destination => "DoorWarp1_Destination",
+            Action::Func809998A4 => "func_809998A4",
             Action::DoNothing => "DoorWarp1_DoNothing",
             Action::NotPorted(n) => n,
         }
@@ -188,11 +195,12 @@ impl DoorWarp1 {
     /// the destination), then `DoorWarp1_ChooseInitialAction`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         // sInitChain: scale 1 (then the update's Actor_SetScale); cullingVolumeDistance 4000,
-        // cullingVolumeScale 800, cullingVolumeDownward 4000. ActorShape_Init(&shape, 0, NULL, 0).
+        // cullingVolumeScale 800, cullingVolumeDownward 4000.
         actor.scale = Vec3::ONE;
         actor.culling_volume_distance = 4000.0;
         actor.culling_volume_scale = 800.0;
         actor.culling_volume_downward = 4000.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         actor.shape_y_offset = 0.0;
         log::debug!("BOSSWARP arg_data=[{}]", TYPE.get(actor.params));
         let mut w = DoorWarp1 {
@@ -343,7 +351,7 @@ impl DoorWarp1 {
             } else if p != WARP_SAGES && p != WARP_YELLOW {
                 self.action = Action::ChildWarpIdle;
             } else {
-                self.not_ported("func_809998A4");
+                self.action = Action::Func809998A4;
             }
         } else {
             if self.unk_1ae < -50 {
@@ -352,9 +360,20 @@ impl DoorWarp1 {
             if self.unk_1b0 < 70 {
                 self.unk_1b0 += 4;
             } else {
-                self.not_ported("func_809998A4");
+                self.action = Action::Func809998A4;
             }
         }
+    }
+
+    /// `func_809998A4`: the Sages', the yellow and the coloured warps' fade once grown: the rays'
+    /// and the warp's alphas down (`Math_SmoothStepToF` by 0.1, at most 2, at least 0.01), the
+    /// hole's sound while the rays are there.
+    fn func_809998a4(&mut self, play: &mut PlayState) {
+        if self.light_ray_alpha != 0.0 {
+            audio_play_actor_sfx2(play, NA_SE_EV_WARP_HOLE - SFX_FLAG);
+        }
+        smooth_step_to_f(&mut self.light_ray_alpha, 0.0, 0.1, 2.0, 0.01);
+        smooth_step_to_f(&mut self.warp_alpha, 0.0, 0.1, 2.0, 0.01);
     }
 
     /// `DoorWarp1_PlayerInRange`: Link within 60 across, and within 20 up or down.
@@ -532,6 +551,7 @@ impl ActorImpl for DoorWarp1 {
             Action::ChildWarpIdle => self.child_warp_idle(play),
             Action::ChildWarpOut => self.child_warp_out(play),
             Action::Destination => self.destination(play),
+            Action::Func809998A4 => self.func_809998a4(play),
             Action::DoNothing | Action::NotPorted(_) => {}
         }
         if TYPE.get(self.actor.params) != WARP_PURPLE_CRYSTAL {
@@ -629,7 +649,10 @@ impl ActorImpl for DoorWarp1 {
         if ray_alpha > 0.0 {
             let sp_ec2 = sp_ec.wrapping_mul(2);
             let y2 = -((unk_19c as i32 as i16 as i32) & 511);
-            draw_ring(out, unk_198 * 60.0, unk_1b0, sp_e4, y2, sp_ec2 & 0xFF, ray_alpha);
+            // The coloured warps' rays take warpAlpha (their cases' gDPSetPrimColor), the others
+            // lightRayAlpha.
+            let alpha = if matches!(params, WARP_YELLOW | WARP_ORANGE | WARP_GREEN | WARP_RED) { warp_alpha } else { ray_alpha };
+            draw_ring(out, unk_198 * 60.0, unk_1b0, sp_e4, y2, sp_ec2 & 0xFF, alpha);
         }
     }
 

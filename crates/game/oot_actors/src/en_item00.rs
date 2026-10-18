@@ -16,8 +16,11 @@
 //! the heart piece's and container's lists, and `GetItem_Draw` (`oot_game::draw`) for the placed
 //! recovery hearts (once `OBJECT_GI_HEART` is loaded), the shields and the tunics.
 //!
-//! Not ported: the circle shadow, the sparkles (`EffectSsKiraKira`, whose random numbers are
-//! still drawn), and the healing fairy's sound (`EffectSsDeadSound`, an effect).
+//! The circle shadow (6, 0.6 for the shields and tunics; alpha 180) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`).
+//!
+//! Not ported: the sparkles (`EffectSsKiraKira`, whose random numbers are still drawn), and the
+//! healing fairy's sound (`EffectSsDeadSound`, an effect).
 //!
 //! Params: bits 0 to 7 the item (`Item00Type`, `ITEM00_*`; the init leaves them alone in
 //! `params`); `collectibleFlag` bits 8 to 13 (`PARAMS_GET_S(params, 8, 6)`: set once collected; set
@@ -240,6 +243,7 @@ impl EnItem00 {
     /// `EnItem00_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut y_offset = 980.0;
+        let mut shadow_scale = 6.0;
         let spawn_param_8000 = SPAWN_PARAM_8000.get(actor.params) != 0;
         let collectible_flag = COLLECTIBLE_FLAG.get(actor.params);
         actor.params &= 0xFF;
@@ -337,13 +341,14 @@ impl EnItem00 {
                 }
                 set_scale(&mut e, 0.5);
                 y_offset = 0.0;
+                shadow_scale = 0.6;
                 e.actor.world_rot.x = 0x4000;
             }
             _ => {}
         }
         e.unk_156 = 0;
-        // ActorShape_Init(yOffset, ActorShadow_DrawCircle, shadowScale): no shadow drawn.
-        e.actor.shape_y_offset = y_offset;
+        e.actor.shape_init(y_offset, oot_game::shadow::ShadowDraw::Circle, shadow_scale);
+        e.actor.shape_shadow_alpha = 180;
         e.actor.focus_pos = e.actor.world_pos;
         e.get_item_id = GI_NONE;
         if !spawn_param_8000 {

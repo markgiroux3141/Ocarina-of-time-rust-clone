@@ -158,8 +158,8 @@ impl ActorImpl for ObjBean {
         &mut self.actor
     }
 
-    /// `ObjBean_Update`: the timer, the action; (the plant's movement and shadow aren't reached:
-    /// `shadowDraw` NULL); `Actor_SetFocus(6)`.
+    /// `ObjBean_Update`: the timer, the action; the plant's movement and shadow aren't reached
+    /// (`BEAN_STATE_DRAW_PLANT` is never set: `shadowDraw` NULL); `Actor_SetFocus(6)`.
     fn update(&mut self, play: &mut PlayState) {
         if self.timer > 0 {
             self.timer -= 1;
@@ -168,6 +168,8 @@ impl ActorImpl for ObjBean {
             Action::WaitForBean => self.wait_for_bean(play),
             Action::NotPorted => {}
         }
+        // Not BEAN_STATE_DRAW_PLANT.
+        self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::None;
         self.actor.set_focus(6.0);
     }
 

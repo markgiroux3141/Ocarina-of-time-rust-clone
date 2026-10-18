@@ -32,8 +32,8 @@
 //!   beating harder while alive (`EnCrow_OverrideLimbDraw`); `EnCrow_PostLimbDraw` keeps its four
 //!   body parts' places (the head 2500 out, limbs 4, 6, 8; 20 down) for the fire's flames. Its
 //!   collider sphere is placed by the update (on its position, 20 × scale up while alive), not by
-//!   the draw. The circle shadow (`ActorShadow_DrawCircle`, 20) is the stand-in disc, scaled and
-//!   hidden by its height as `ActorShadow_Draw` does (its alpha's fade isn't modelled).
+//!   the draw. The circle shadow (20) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`
+//!   while `actor.draw` is set).
 //!
 //! The whole overlay is ported. Never reached here: arrows (`ACTOR_FLAG_ATTACHED_TO_ARROW` is never
 //! set: no arrow attaches) and the Skull Mask (`Player_GetMask` is `currentMask`, which nothing
@@ -189,7 +189,6 @@ const COL_CHK_INFO_INIT: CollisionCheckInfoInit = CollisionCheckInfoInit { healt
 
 /// `ActorShape_Init(&shape, 2000.0f, ActorShadow_DrawCircle, 20.0f)`.
 const SHAPE_Y_OFFSET: f32 = 2000.0;
-const SHADOW_SCALE: f32 = 20.0;
 
 /// The overlay's statics (docs/adr/0059-castle-towns-actors.md): `sDeathCount`, the normal
 /// Guays' deaths since the last init or big one.
@@ -283,8 +282,7 @@ impl EnCrow {
         let mut collider = ColliderJntSph::new(&JNT_SPH_INIT, &jnt_sph_elements());
         collider.elements[0].dim.world_sphere.radius = MODEL_RADIUS;
         actor.col_chk_info.set_info(Some(&S_DAMAGE_TABLE), &COL_CHK_INFO_INIT);
-        // ActorShape_Init(&shape, 2000, ActorShadow_DrawCircle, 20).
-        actor.shape_y_offset = SHAPE_Y_OFFSET;
+        actor.shape_init(SHAPE_Y_OFFSET, oot_game::shadow::ShadowDraw::Circle, 20.0);
         let mut this = EnCrow {
             actor,
             body_parts_pos: [Vec3::ZERO; 4],
@@ -761,27 +759,22 @@ impl ActorImpl for EnCrow {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        rs.values = vec![self.skel.cur_frame, self.actor.floor_height];
-        rs.switches = vec![self.drawn as u32, (self.actor.col_chk_info.health != 0) as u32, self.actor.floor_poly.is_some() as u32];
+        rs.values = vec![self.skel.cur_frame];
+        rs.switches = vec![self.drawn as u32, (self.actor.col_chk_info.health != 0) as u32];
+        // The shape's shadow: none with draw NULL (Actor_Draw isn't called).
+        if !self.drawn {
+            rs.shadow = None;
+        }
         rs
     }
 
-    /// `EnCrow_Draw` (`Actor_Draw` only while `actor.draw` is set): the circle shadow
-    /// (`ActorShadow_DrawCircle`: under 500 above the floor, `shadowScale` 20 shrunk by the height
-    /// up to 150 over 350), then `gGuaySkel` with its wings beating.
+    /// `EnCrow_Draw` (`Actor_Draw` only while `actor.draw` is set): `gGuaySkel` with its wings
+    /// beating.
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), Some(skeleton)) = (&rs.joints, &self.skeleton) else { return };
-        let ([cur_frame, floor_height], [drawn, alive, floor]) = (rs.values.as_slice(), rs.switches.as_slice()) else { return };
+        let ([cur_frame], [drawn, alive]) = (rs.values.as_slice(), rs.switches.as_slice()) else { return };
         if *drawn == 0 {
             return;
-        }
-        // ActorShadow_Draw: the circle shadow's stand-in.
-        let h = rs.pos.y - floor_height;
-        if *floor != 0 && (-50.0..500.0).contains(&h) {
-            let h = h.clamp(0.0, 150.0);
-            let s = (1.0 - (h * (1.0 / 350.0))) * SHADOW_SCALE * rs.scale.x * 100.0;
-            let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor_height + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(s, 1.0, s));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
         }
         let bones = skeleton.pose_override(&joints.rot, |limb, _, rot| {
             override_limb(limb, rot, *alive != 0, *cur_frame);

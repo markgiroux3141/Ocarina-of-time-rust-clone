@@ -28,8 +28,10 @@
 //! hidden; segment 8 culling back faces or not (two bakes of each). Her textures come from her
 //! object's RAM once she's erased any (`DrawParams::texture_images`), and so do her pieces'.
 //!
-//! Not ported: the circle shadow (`ActorShadow_DrawCircle`, for no actor), the rumble
-//! (`Rumble_Override`, logged).
+//! Her circle shadow is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`; her death takes
+//! its scale to 0).
+//!
+//! Not ported: the rumble (`Rumble_Override`, logged).
 //!
 //! Params: unused (the data's 0xFFFF).
 //! Flags: reads EVENTCHKINF_BEGAN_GOHMA_BATTLE (set: a second try, the intro cut short) and sets
@@ -545,8 +547,7 @@ impl BossGoma {
         actor.target_mode = 2;
         actor.navi_enemy_id = NAVI_ENEMY_GOHMA;
         actor.gravity = -2.0;
-        // ActorShape_Init(&shape, 4000, ActorShadow_DrawCircle, 150): the shadow isn't ported.
-        actor.shape_y_offset = 4000.0;
+        actor.shape_init(4000.0, oot_game::shadow::ShadowDraw::Circle, 150.0);
         let mut anims = Anims::default();
         let mut skeleton = None;
         if let Some(a) = play.assets.clone() {
@@ -708,7 +709,7 @@ impl BossGoma {
         self.action_state = 0;
         self.actor.flags &= !(ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE);
         self.actor.speed_xz = 0.0;
-        // this->actor.shape.shadowScale = 0: the shadow isn't ported.
+        self.actor.shape_shadow_scale = 0.0;
         play.audio.queue_seq_cmd(seq_cmd1(SEQ_PLAYER_BGM_MAIN, 1));
         audio_play_actor_sfx2(play, NA_SE_EN_GOMA_DEAD);
     }

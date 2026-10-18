@@ -3,8 +3,8 @@
 //! as `Oceff_Wipe`'s (its helpers), rushing out over 32 frames (`Math_SinS(timer << 9) * 1330`) and
 //! fading from frame 80; gone at 100.
 //!
-//! The whole overlay is ported. `Magic_Reset` and Nayru's Love's restore aren't (no magic, no
-//! spells).
+//! The whole overlay is ported, its destroy's `Magic_Reset` too; Nayru's Love's restore never
+//! applies (no spells).
 //!
 //! Params: none (`Message_DrawMain` spawns it with 0 for Epona's Song; its init only prints them).
 //! Flags: none.

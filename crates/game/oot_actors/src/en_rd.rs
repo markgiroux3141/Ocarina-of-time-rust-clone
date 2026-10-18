@@ -40,8 +40,10 @@
 //! `LENS_MODE_HIDE_ACTORS`, in its own room); the Lens of Truth isn't ported, so it's never seen
 //! elsewhere.
 //!
-//! Not ported here: `Rumble_Request` (no rumble); the circle shadow (`func_80033C30`, 0.25) is the
-//! usual stand-in (its alpha not applied).
+//! Its draw puts its circle shadow down itself (`func_80033C30`, 0.25, at its alpha:
+//! `oot_game::shadow::func_80033c30`); the shape has none (`ActorShape_Init(.., NULL, 0)`).
+//!
+//! Not ported here: `Rumble_Request` (no rumble).
 //!
 //! Params: `type` bits 0 to 7, signed (`EnRdType`: -3 a Gibdo rising out of its coffin, -2 a
 //! Gibdo, -1 a ReDead that never mourns, 0 one that doesn't mourn while walking, 1 a ReDead, 2 one
@@ -456,8 +458,7 @@ impl EnRd {
         actor.gravity = -3.5;
         actor.target_mode = 0; // ATTENTION_RANGE_0
         actor.col_chk_info.damage_table = Some(&S_DAMAGE_TABLE);
-        // ActorShape_Init(&shape, 0, NULL, 0).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         actor.focus_pos = actor.world_pos;
         actor.focus_pos.y += 50.0;
         actor.col_chk_info.mass = MASS_HEAVY;
@@ -1334,10 +1335,8 @@ impl ActorImpl for EnRd {
         } else {
             out.opa.push(cmd);
         }
-        // func_80033C30(&world.pos, (0.25, 0.25, 0.25), alpha): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 1.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(25.0, 1.0, 25.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
+        // func_80033C30(&world.pos, sShadowScale (0.25, 0.25, 0.25), 255 opaque or alpha).
+        out.opa.push(oot_game::shadow::func_80033c30(&play.col, rs.pos, Vec3::splat(0.25), alpha));
     }
 
     /// `EnRd_Destroy`: the Sun's Song's state cleared.

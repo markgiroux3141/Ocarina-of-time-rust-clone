@@ -32,8 +32,8 @@
 //! eye texture on segment 8 (six bakes: each skeleton with each of the three eye textures), its
 //! head and eyes turned (`EnWf_OverrideLimbDraw`); `EnWf_PostLimbDraw` (in `draw_update`) puts its
 //! spheres on their limbs, the tail cylinder 1200 along the tail, and the ten body parts' places
-//! for the flames. The circle shadow (`ActorShadow_DrawCircle`, `shape.shadowScale`) is the usual
-//! stand-in. From a bomb or a Bomb Flower's within 80 (`Actor_FindNearby`, `ACTORCAT_EXPLOSIVE`) it
+//! for the flames. The circle shadow (0, growing to 70 as it appears) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`). From a bomb or a Bomb Flower's within 80 (`Actor_FindNearby`, `ACTORCAT_EXPLOSIVE`) it
 //! backflips away (or circles Link, with a wall behind it); `En_Bom_Chu` isn't ported. Not ported: the hookshot (`Actor_GetProjectileActor` sees
 //! arrows only).
 //!
@@ -424,8 +424,6 @@ pub struct EnWf {
     pub unk_4bc: Vec3,
     pub unk_4c8: Vec3,
     pub head_rot: i16,
-    /// `shape.shadowScale`.
-    pub shadow_scale: f32,
 }
 
 impl EnWf {
@@ -452,8 +450,7 @@ impl EnWf {
         actor.target_arrow_offset = 2000.0;
         actor.gravity = -3.0;
         actor.col_chk_info.damage_table = Some(&S_DAMAGE_TABLE);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
         actor.focus_pos = actor.world_pos;
         actor.col_chk_info.mass = MASS_HEAVY;
         actor.col_chk_info.health = 8;
@@ -504,7 +501,6 @@ impl EnWf {
             unk_4bc: Vec3::ZERO,
             unk_4c8: Vec3::ZERO,
             head_rot: 0,
-            shadow_scale: 0.0,
         };
         this.setup_wait_appear();
         if this.switch_flag != 0xFF && play.flags.get_switch(this.switch_flag as i32) {
@@ -614,7 +610,7 @@ impl EnWf {
         } else if self.timer != 0 {
             self.actor.scale.y += self.actor.scale.x * (1.0 / 5.0);
             self.actor.world_pos.y += 0.5;
-            smooth_step_to_f(&mut self.shadow_scale, 70.0, 1.0, 70.0 / 5.0, 0.0);
+            smooth_step_to_f(&mut self.actor.shape_shadow_scale, 70.0, 1.0, 70.0 / 5.0, 0.0);
             self.timer -= 1;
             if self.timer == 0 {
                 audio_play_actor_sfx2(play, NA_SE_EN_WOLFOS_APPEAR);
@@ -1549,22 +1545,14 @@ impl ActorImpl for EnWf {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         rs.angles = vec![self.head_rot];
-        rs.values = vec![self.shadow_scale * self.actor.scale.x * 100.0];
         rs.switches = vec![self.white() as u32, EYE_TEXTURE[(self.eye_index & 3) as usize] as u32, self.drawn() as u32];
         rs
     }
 
-    /// `EnWf_Draw`: the skeleton with its eye texture, its head turned; the circle shadow
-    /// (`ActorShadow_DrawCircle`) under it.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// `EnWf_Draw`: the skeleton with its eye texture, its head turned.
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), Some(skeleton)) = (&rs.joints, &self.skeleton) else { return };
-        let ([head_rot], [shadow], [white, eye, drawn]) = (rs.angles.as_slice(), rs.values.as_slice(), rs.switches.as_slice()) else { return };
-        if *shadow > 0.0 {
-            // ActorShadow_DrawCircle (shadowScale × scale): the circle shadow's stand-in.
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(*shadow, 1.0, *shadow));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
-        }
+        let ([head_rot], [white, eye, drawn]) = (rs.angles.as_slice(), rs.switches.as_slice()) else { return };
         if *drawn == 0 {
             return;
         }

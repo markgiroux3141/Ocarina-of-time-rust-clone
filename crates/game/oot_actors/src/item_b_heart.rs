@@ -54,8 +54,7 @@ impl ItemBHeart {
             actor.culling_volume_distance = 4000.0;
             actor.culling_volume_scale = 800.0;
             actor.culling_volume_downward = 800.0;
-            // ActorShape_Init(&shape, 0, NULL, 0.8).
-            actor.shape_y_offset = 0.0;
+            actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.8);
         }
         Box::new(ItemBHeart { actor, unk_158: 0.0, unk_164: 0 })
     }

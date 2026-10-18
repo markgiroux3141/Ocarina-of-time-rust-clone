@@ -222,8 +222,6 @@ pub struct EnElf {
     pub drift: Drift,
     pub action: Action,
     pub update_fn: Update,
-    /// `shape.shadowAlpha` (`func_80A04D90` sets 50; only the big fairy has a shadow).
-    pub shadow_alpha: u8,
     /// `elfMsg`: the `Elf_Msg` whose place Link is in, set by its update each frame and cleared
     /// by hers; her talk accepted ends it (`ACTOR_FLAG_TALK`).
     pub elf_msg: Option<ActorHandle>,
@@ -321,7 +319,6 @@ impl EnElf {
             drift: Drift::None,
             action: Action::Spawner,
             update_fn: Update::Normal,
-            shadow_alpha: 0xFF,
             elf_msg: None,
         }
     }
@@ -342,9 +339,8 @@ impl EnElf {
             },
             None => {}
         }
-        // ActorShape_Init(&shape, 0, NULL, 15), shadowAlpha 0xFF.
-        e.actor.shape_y_offset = 0.0;
-        e.shadow_alpha = 0xFF;
+        e.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 15.0);
+        e.actor.shape_shadow_alpha = 0xFF;
         let p = e.actor.world_pos;
         let (x, y, z) = (p.x as i16, p.y as i16, p.z as i16);
         e.light_glow = play.light_ctx.insert_light(LightInfo::point_glow(x, y, z, [255, 255, 255], 0));
@@ -392,8 +388,8 @@ impl EnElf {
             }
             FAIRY_HEAL_BIG | FAIRY_HEAL_TIMED | FAIRY_HEAL => {
                 if TYPE.get(e.actor.params) == FAIRY_HEAL_BIG {
-                    // (shape.shadowDraw = ActorShadow_DrawWhiteCircle: shadows aren't drawn.)
                     e.fairy_flags |= FAIRY_FLAG_BIG;
+                    e.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::WhiteCircle;
                 }
                 if TYPE.get(e.actor.params) != FAIRY_HEAL {
                     e.fairy_flags |= FAIRY_FLAG_TIMED;
@@ -729,7 +725,7 @@ impl EnElf {
         if height_diff > 0.0 && height_diff < 60.0 && !func_80a01f90(self.actor.world_pos, pl.pos, 10.0) {
             oot_game::item::health_change_by(&mut play.save, Some(&mut play.audio), 128);
             if self.fairy_flags & FAIRY_FLAG_BIG != 0 {
-                log::warn!("En_Elf: Magic_Fill not ported (no magic meter)");
+                play.magic_fill();
             }
             self.unk_2b8 = 50.0;
             self.unk_2ac = pl.shape_yaw;
@@ -1194,7 +1190,7 @@ impl EnElf {
         let (floor, poly) = play.col.entity_raycast_down(self.actor.world_pos);
         self.actor.floor_height = floor;
         self.actor.floor_poly = poly;
-        self.shadow_alpha = 50;
+        self.actor.shape_shadow_alpha = 50;
     }
 
     /// `func_80A04DE4`: Navi flies to talk to Link: in front of his head, unless she has a

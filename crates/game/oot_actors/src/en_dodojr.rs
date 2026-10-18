@@ -36,8 +36,8 @@
 //! The whole overlay is ported. The draw (`EnDodojr_Draw`, not while buried or dropping its item)
 //! is the skeleton (`SkelAnime_DrawOpa`), its root limb scaled by `rootScale`
 //! (`EnDodojr_OverrideLimbDraw`); `draw_update` puts `headPos` (480, 620, 0 from limb 4's
-//! parent's matrix), which the eating reads. The circle shadow (`ActorShadow_DrawCircle`, 18) is
-//! the usual stand-in. Nothing sets the hammer's `unk_02` yet (the hammer isn't ported). @bug
+//! parent's matrix), which the eating reads. The circle shadow (18, off at first) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`). Nothing sets the hammer's `unk_02` yet (the hammer isn't ported). @bug
 //! (game): `EnDodojr_CheckNearbyBombs` narrows its search box to the last bomb's world position
 //! rather than its distance, so past the first bomb it finds, a nearer one may be passed over or a
 //! further one taken; the surfacing dust is at y 0 (`floorHeight` not read yet, the C's comment).
@@ -110,9 +110,6 @@ pub const NAVI_ENEMY_BABY_DODONGO: u8 = 0x0E;
 const COLLECTIBLE_DROP_TABLE_4: i16 = 4;
 /// `BOMB_BODY` (`z_en_bom.h`'s `EnBomType`).
 pub const BOMB_BODY: i16 = 0;
-
-/// `ActorShape_Init`'s `shadowScale`.
-pub const SHADOW_SCALE: f32 = 18.0;
 
 /// `sCylinderInit`: biting Link (`0xFFCFFFFF` for 8), hit by Player's (`0xFFC5FFFF`), pushing; 18
 /// by 20.
@@ -260,8 +257,6 @@ pub struct EnDodojr {
     pub crawl_sfx_timer: i16,
     /// `rootScale`: the root limb's swell.
     pub root_scale: f32,
-    /// `shape.shadowDraw` is `ActorShadow_DrawCircle` (else `NULL`).
-    pub shadow_draw: bool,
 }
 
 impl EnDodojr {
@@ -269,8 +264,7 @@ impl EnDodojr {
     /// the cylinder, `DamageTable_Get(4)`, the Baby Dodongo's Navi text, not targetable, scale
     /// 0.02, buried.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // ActorShape_Init(&shape, 0, NULL, 18).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 18.0);
         let mut anims = Anims::default();
         let mut skeleton = None;
         if let Some(a) = play.assets.clone() {
@@ -302,7 +296,6 @@ impl EnDodojr {
             timer: 0,
             crawl_sfx_timer: 0,
             root_scale: 0.0,
-            shadow_draw: false,
         })
     }
 
@@ -423,7 +416,7 @@ impl EnDodojr {
 
     /// `EnDodojr_SetupDespawn`: no shadow, not targetable, its home where it is, 30 frames.
     fn setup_despawn(&mut self) {
-        self.shadow_draw = false;
+        self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::None;
         self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         self.actor.home_pos = self.actor.world_pos;
         self.actor.speed_xz = 0.0;
@@ -539,7 +532,7 @@ impl EnDodojr {
         if play.actors.unk_02 != 0 {
             if self.action != WaitUnderground {
                 if self.action == EmergeFromGround {
-                    self.shadow_draw = true;
+                    self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::Circle;
                 }
                 self.setup_standard_death_bounce(play);
             }
@@ -550,7 +543,7 @@ impl EnDodojr {
         }
         self.collider.base.ac_flags &= !AC_HIT;
         if self.action == WaitUnderground || self.action == EmergeFromGround {
-            self.shadow_draw = true;
+            self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::Circle;
         }
         if self.actor.col_chk_info.damage_reaction == 0 && self.actor.col_chk_info.damage != 0 {
             enemy_start_finishing_blow(play, &self.actor);
@@ -616,7 +609,7 @@ impl EnDodojr {
         self.actor.world_pos.y = self.actor.home_pos.y + (60.0 * sp2c);
         self.spawn_large_dust(play, 3);
         if sp2c == 0.0 {
-            self.shadow_draw = true;
+            self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::Circle;
             self.actor.world_rot.x = self.actor.shape_rot.x;
             self.actor.speed_xz = 2.6;
             self.action = Action::CrawlTowardsTarget;
@@ -893,23 +886,15 @@ impl ActorImpl for EnDodojr {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        let shadow = if self.shadow_draw { SHADOW_SCALE * self.actor.scale.x * 100.0 } else { 0.0 };
-        rs.values = vec![self.root_scale, shadow];
+        rs.values = vec![self.root_scale];
         rs.switches = vec![self.drawn() as u32];
         rs
     }
 
     /// `EnDodojr_Draw`: not buried or dropping, `Gfx_SetupDL_25Opa` and the skeleton
-    /// (`SkelAnime_DrawOpa`) with the root's swell; the circle shadow (`ActorShadow_DrawCircle`)
-    /// under it while it's on.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
-        let ([root_scale, shadow], [drawn]) = (rs.values.as_slice(), rs.switches.as_slice()) else { return };
-        if *shadow > 0.0 {
-            // ActorShadow_DrawCircle (shadowScale × scale): the circle shadow's stand-in.
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(*shadow, 1.0, *shadow));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
-        }
+    /// (`SkelAnime_DrawOpa`) with the root's swell.
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+        let ([root_scale], [drawn]) = (rs.values.as_slice(), rs.switches.as_slice()) else { return };
         if *drawn == 0 {
             return;
         }

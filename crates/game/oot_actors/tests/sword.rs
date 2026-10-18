@@ -57,10 +57,18 @@ fn the_same_slash_three_times_is_a_combo() {
     let Some(mut w) = world() else { return };
     let d = w.data.clone();
     run(&mut w, &repeat(stick(0, 0), 2));
+    // The sword out first (its slash), and the count of repeats (unk_845) reset: Player_UpdateCommon
+    // resets it once the slash's unk_844 (8, negated as B is let go, func_8083C50C) is back to 0.
+    let mut s = vec![b(stick(0, 0))];
+    s.extend(repeat(stick(0, 0), 40));
+    run(&mut w, &s);
     let mut names = Vec::new();
     for _ in 0..3 {
+        // A press every 7 frames: the slash (5 frames) and two of its end animation, whose
+        // interrupt list (Player_Action_Idle's) takes the next press while unk_844 still counts
+        // up to 0 (-7 on the frame after the press, 0 on the eighth).
         let mut s = vec![b(stick(0, 0))];
-        s.extend(repeat(stick(0, 0), 14));
+        s.extend(repeat(stick(0, 0), 6));
         let f = run(&mut w, &s);
         if let Some(a) = f.iter().position(|x| x.action == "Attack") {
             names.push(f[a].anim.clone());

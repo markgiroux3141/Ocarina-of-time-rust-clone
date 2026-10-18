@@ -21,8 +21,8 @@
 //!   until behind the camera). The third of the puzzle sets the room cleared (`Flags_SetClear`)
 //!   and `sPuzzleCounter` 3: the frozen two sink and are gone, and every flower is a prop.
 //!
-//! The whole overlay is ported. Not ported: the circle shadow (`ActorShadow_DrawCircle`, 35),
-//! not ported for any actor.
+//! The whole overlay is ported. The circle shadow (35) is the shape's (`ActorShape_Init`'s, drawn
+//! by `Actor_Draw`).
 //!
 //! Params: `params` bits 0 to 7 (0xA: the flower, spawned by the scrub as its child with the
 //! whole params 0xA; else its place in the puzzle: 0 on its own, talks when knocked out; 1 to 3
@@ -225,8 +225,7 @@ impl EnHintnuts {
                 collider,
             });
         }
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 35): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 35.0);
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, "gHintNutsSkel").map_err(|e| log::error!("En_Hintnuts: {e:#}")).ok());
         let anims = Anims::load(play);
         // SkelAnime_Init(&gHintNutsSkel, &gHintNutsStandAnim): 10 entries.

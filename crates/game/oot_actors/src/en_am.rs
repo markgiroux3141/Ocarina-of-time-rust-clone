@@ -32,7 +32,8 @@
 //!
 //! The whole overlay is ported. The draw (`EnAm_Draw`) is `gArmosSkel` with `textureBlend` as the
 //! env alpha (the statue's and the enemy's textures blended), its colour filter Actor_Draw's; the
-//! circle shadow (48) the usual stand-in. `draw_update` puts the sword's quad on limb 1
+//! circle shadow (48) the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`). `draw_update` puts
+//! the sword's quad on limb 1
 //! (`EnAm_PostLimbDraw` → `EnAm_TransformSwordHitbox`) while it lunges and spawns the ice chunks
 //! while it's frozen (`EffectSsEnIce`).
 //!
@@ -357,8 +358,6 @@ pub struct EnAm {
     pub hurt_collider: ColliderCylinder,
     pub block_collider: ColliderCylinder,
     pub hit_collider: ColliderQuad,
-    /// `shape.shadowScale`.
-    pub shadow_scale: f32,
 }
 
 impl EnAm {
@@ -402,8 +401,7 @@ impl EnAm {
         actor.navi_enemy_id = NAVI_ENEMY_ARMOS;
         actor.gravity = -4.0;
         actor.target_arrow_offset = 5300.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 48).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 48.0);
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, SKEL).map_err(|e| log::error!("En_Am: {e:#}")).ok());
         let anims = Anims::load(play);
         // SkelAnime_Init(gArmosSkel, gArmosRicochetAnim, .., 14): 13 limbs.
@@ -432,7 +430,6 @@ impl EnAm {
             hurt_collider,
             block_collider: ColliderCylinder::default(),
             hit_collider: ColliderQuad::default(),
-            shadow_scale: 48.0,
         };
         if this.is_statue() {
             this.actor.col_chk_info.health = 1;
@@ -1139,22 +1136,14 @@ impl ActorImpl for EnAm {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
-        rs.values = vec![self.shadow_scale * self.actor.scale.x * 100.0];
         rs.switches = vec![self.texture_blend as u32];
         rs
     }
 
-    /// `EnAm_Draw`: `gArmosSkel` after `Gfx_SetupDL_25Opa` with env `(0, 0, 0, textureBlend)`;
-    /// the circle shadow (`ActorShadow_DrawCircle`) under it.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// `EnAm_Draw`: `gArmosSkel` after `Gfx_SetupDL_25Opa` with env `(0, 0, 0, textureBlend)`.
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), Some(skeleton)) = (&rs.joints, &self.skeleton) else { return };
-        let ([shadow], [blend]) = (rs.values.as_slice(), rs.switches.as_slice()) else { return };
-        if *shadow > 0.0 {
-            // ActorShadow_DrawCircle (shadowScale × scale): the circle shadow's stand-in.
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(*shadow, 1.0, *shadow));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
-        }
+        let [blend] = rs.switches.as_slice() else { return };
         let bones = skeleton.pose(joints);
         let mut sv = SegmentValues::default();
         sv.env[SEG_ENV as usize] = Some([0, 0, 0, *blend as u8]);

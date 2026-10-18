@@ -325,7 +325,7 @@ impl EnDaikuKakariko {
             this.flags |= 8;
         }
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 40); Actor_Init's scale 0.01.
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 40.0);
         this.actor.scale = Vec3::splat(0.01);
         this.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         // Animation_Change(sAnimationInfo[ENDAIKUKAKARIKO_ANIM_0]), morphing.
@@ -682,7 +682,7 @@ impl ActorImpl for EnDaikuKakariko {
         rs
     }
     /// `EnDaikuKakariko_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 7 {
             return;
@@ -696,10 +696,6 @@ impl ActorImpl for EnDaikuKakariko {
         if let Some(head) = head {
             out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(&head_bake_name(ty))), m * head));
         }
-        // ActorShadow_DrawCircle (shadowScale 40): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(40.0, 1.0, 40.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

@@ -26,8 +26,8 @@
 //! Keese is invisible: `play->actorCtx.lensActive` is never set), arrows (`ACTOR_FLAG_ATTACHED_TO_ARROW`
 //! is never set) and the Skull Mask (`Player_GetMask` is always `PLAYER_MASK_NONE`). The
 //! draw's env colour (alpha 0 for a fire body, 255 else) doesn't reach the skeleton's mesh, whose
-//! combiner doesn't read it. The generic circle shadow (`ActorShadow_DrawCircle`) isn't ported for
-//! any actor.
+//! combiner doesn't read it. The circle shadow (25) is the shape's (`ActorShape_Init`'s, drawn by
+//! `Actor_Draw`).
 //!
 //! Params: `params` bits 0 to 14 (`EnFireflyType`: 0 fire, 1 fire, perching once its fire's out,
 //! 2 normal, 3 normal and perched, 4 ice; its fire lit or put out, the type moves between 0 and 2,
@@ -279,8 +279,7 @@ impl EnFirefly {
         actor.min_velocity_y = -4.0;
         actor.target_mode = 2;
         actor.target_arrow_offset = 4000.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 25): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 25.0);
         let (skeleton, fly) = match play.assets.clone() {
             Some(a) => {
                 let s = a.skeleton(OBJECT, "gKeeseSkel").map_err(|e| log::error!("En_Firefly: {e:#}")).ok();

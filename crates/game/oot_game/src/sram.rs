@@ -416,7 +416,7 @@ impl SaveContext {
     }
 
     /// The rest of `SaveContext` after `Save` (0x1354 to 0x1428), from the fields the port has;
-    /// what it doesn't have (the timers, the magic meter's state, the minigames, the dog, the
+    /// what it doesn't have (the timers, the minigames, the dog, the
     /// Sun's Song, `nextDayTime`, `skyboxTime`, `worldMapArea` ...) is zeros. Never read back.
     fn visit_tail(&mut self, io: &mut impl Io) {
         io.check(SAVE_SIZE);
@@ -471,8 +471,11 @@ impl SaveContext {
         io.u16(&mut self.hud_visibility_mode);
         io.u16(&mut self.hud_visibility_mode_timer);
         io.u16(&mut self.prev_hud_visibility_mode);
-        // magicState, prevMagicState, magicCapacity, magicFillTarget, magicTarget.
-        io.pad(10);
+        io.i16(&mut self.magic_state);
+        io.i16(&mut self.prev_magic_state);
+        io.i16(&mut self.magic_capacity);
+        io.i16(&mut self.magic_fill_target);
+        io.i16(&mut self.magic_target);
         io.check(0x13FA);
         for v in &mut self.event_inf {
             io.u16(v);

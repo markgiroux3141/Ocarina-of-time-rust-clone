@@ -17,7 +17,8 @@
 //!
 //! **@bug (game)**, kept: its profile's id is 0 (`ACTOR_PLAYER`), so every fire's actor `id` is 0.
 //!
-//! Not ported: the circle shadow (`ActorShadow_DrawCircle`, the balls').
+//! The balls' circle shadow is the shape's (`ActorShape_Init`'s, scale 0, drawn by `Actor_Draw`
+//! with a floor: they never look for one, so it's never drawn).
 //!
 //! Params: below 0 the flame at his mouth; 0 and up a fire ball's order in the breath (not placed:
 //! spawned by `Boss_Dodongo`).
@@ -119,7 +120,7 @@ impl EnBdfire {
             this.light_node = play.light_ctx.insert_light(this.light_info_no_glow);
         } else {
             this.action = Action::Ball;
-            // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 0): the shadow isn't ported.
+            this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
             this.actor.speed_xz = 30.0;
             this.unk_154 = (25 - (params as f32 * 0.8) as i32).max(0) as i16;
             this.unk_188 = 4.2000003 - (params as f32 * 0.25 * 0.6);

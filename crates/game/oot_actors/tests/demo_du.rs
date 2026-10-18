@@ -154,17 +154,21 @@ fn the_rubys_darunia_starts_hidden_without_an_animation() {
     // DemoDu_Init: ActorShape_Init (yOffset 0, the circle shadow 30, shadowAlpha 255), Actor_Init's
     // scale 0.01; DemoDu_InitCs_GoronsRuby: SkelAnime_InitFlex without an animation, updateIndex
     // CS_GORONSRUBY_SUBSCENE(0) = 7, drawIndex 0 (nothing), the eyes and mouth 0.
-    assert_eq!((d.actor.scale, d.actor.shape_y_offset, d.shape_shadow_alpha), (Vec3::splat(0.01), 0.0, 255));
+    assert_eq!((d.actor.scale, d.actor.shape_y_offset, d.actor.shape_shadow_alpha), (Vec3::splat(0.01), 0.0, 255));
+    assert_eq!((d.actor.shape_shadow_draw, d.actor.shape_shadow_scale), (oot_game::shadow::ShadowDraw::Circle, 30.0));
     assert!(d.skel.animation.is_none());
     assert_eq!((d.update_index, d.draw_index, d.eye_tex_index, d.mouth_tex_index), (7, 0, 0, 0));
     // DemoDu_UpdateCs_GR_00: on to GR_01 (8) at once, a script or not.
     update(&mut w, h);
     assert_eq!(du(&w, h).update_index, cs_goronsruby_subscene(1));
-    // Hidden: DemoDu_Draw_NoDraw; no floor yet (no Actor_UpdateBgCheckInfo): no shadow.
+    // Hidden: DemoDu_Draw_NoDraw; no floor yet (no Actor_UpdateBgCheckInfo): Actor_Draw's shadow
+    // has none to lie on.
     let mut out = DrawOut::default();
     let d = du(&w, h);
-    d.draw(&d.render_state(), &w, &ViewInfo { eye: Vec3::ZERO, billboard: glam::Mat4::IDENTITY }, &mut out);
+    let rs = d.render_state();
+    d.draw(&rs, &w, &ViewInfo { eye: Vec3::ZERO, billboard: glam::Mat4::IDENTITY }, &mut out);
     assert!(out.opa.is_empty() && out.xlu.is_empty());
+    assert_eq!(rs.shadow.map(|s| s.floor_poly), Some(None));
 }
 
 #[test]
@@ -384,7 +388,8 @@ fn draw_01_is_en_dus_skeleton_opaque_and_draw_02_translucent() {
         (t.width, t.height, t.rgba.clone())
     };
     // DemoDu_Draw_01: sEyeTextures[eye] on 8, sMouthTextures[mouth] on 9, gDaruniaNoseSeriousTex on
-    // 0xA, env (0, 0, 0, 255), the skeleton opaque: En_Du's bake. The circle shadow (it has a floor).
+    // 0xA, env (0, 0, 0, 255), the skeleton opaque: En_Du's bake. The circle shadow is Actor_Draw's
+    // (the render state's, with the floor found).
     {
         let d = w.actors.downcast_mut::<DemoDu>(h).unwrap();
         d.eye_tex_index = 3;
@@ -392,7 +397,9 @@ fn draw_01_is_en_dus_skeleton_opaque_and_draw_02_translucent() {
     }
     let out = draws(&w);
     assert_eq!(out.opa.len(), 1);
-    assert_eq!(out.xlu.len(), 1, "the shadow");
+    assert!(out.xlu.is_empty());
+    let s = du(&w, h).render_state().shadow.expect("the shape's shadow");
+    assert_eq!((s.draw, s.scale, s.alpha, s.floor_poly.is_some()), (oot_game::shadow::ShadowDraw::Circle, 30.0, 255, true));
     let c = &out.opa[0];
     assert_eq!(c.mesh, eng_gfx::MeshKey::named(oot_game::pack::keys::bake(oot_actors::en_du::BAKE)));
     let imgs = &c.params.texture_images;

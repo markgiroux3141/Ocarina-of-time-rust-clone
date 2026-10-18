@@ -124,6 +124,13 @@ pub struct Actor {
     pub y_dist_to_water: f32,
     /// `shape.yOffset`: model offset along y, in model units (× `scale.y` when drawn).
     pub shape_y_offset: f32,
+    /// `shape.shadowDraw`, `shape.shadowScale`, `shape.shadowAlpha` (`ActorShape_Init`'s; drawn by
+    /// `Actor_Draw` after the actor: `crate::shadow`).
+    pub shape_shadow_draw: crate::shadow::ShadowDraw,
+    pub shape_shadow_scale: f32,
+    pub shape_shadow_alpha: u8,
+    /// `shape.feetPos` (`Actor_SetFeetPos`): the feet shadow's left and right foot.
+    pub shape_feet_pos: [Vec3; 2],
     /// `room`: the room the actor belongs to (the current room when it spawned), or -1 for
     /// none (Player, doors): a room change deletes actors of other rooms (`func_80031B14`).
     pub room: i8,
@@ -194,6 +201,15 @@ pub struct Actor {
 pub const NAVI_ENEMY_NONE: u8 = 0xFF;
 
 impl Actor {
+    /// `ActorShape_Init(&shape, yOffset, shadowDraw, shadowScale)`: the model's offset and the shadow,
+    /// at full alpha.
+    pub fn shape_init(&mut self, y_offset: f32, shadow: crate::shadow::ShadowDraw, shadow_scale: f32) {
+        self.shape_y_offset = y_offset;
+        self.shape_shadow_draw = shadow;
+        self.shape_shadow_scale = shadow_scale;
+        self.shape_shadow_alpha = 255;
+    }
+
     /// A spawned actor as `Actor_Spawn` + `Actor_Init` set it up before the actor's own init:
     /// home = world = `pos`, shape rotation = world rotation, focus at the position, scale 0.01,
     /// `targetMode` 3, `minVelocityY` -20, `xyzDistToPlayerSq` `MAXFLOAT`, and
@@ -225,6 +241,10 @@ impl Actor {
             wall_yaw: 0,
             y_dist_to_water: BGCHECK_Y_MIN,
             shape_y_offset: 0.0,
+            shape_shadow_draw: crate::shadow::ShadowDraw::None,
+            shape_shadow_scale: 0.0,
+            shape_shadow_alpha: 255,
+            shape_feet_pos: [pos; 2],
             room: 0,
             home_rot: rot,
             obj_bank_index: None,

@@ -201,8 +201,7 @@ impl BgBreakwall {
                 this.actor.kill();
                 return Box::new(this);
             }
-            // ActorShape_Init(&shape, 0.0f, NULL, 0.0f).
-            this.actor.shape_y_offset = 0.0;
+            this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
             // Collider_InitQuad, Collider_SetQuad.
             this.collider = ColliderQuad::new(&QUAD_INIT);
         } else {

@@ -51,7 +51,7 @@ use std::sync::Arc;
 use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{approach_f, step_to_s};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
 use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
@@ -719,8 +719,7 @@ impl EnOssan {
         }
         let off = SHOPKEEPER_POSITION_OFFSETS[self.ty()];
         self.actor.world_pos += Vec3::from(off);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 20).
-        self.actor.shape_y_offset = 0.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 20.0);
         if !self.init_kokiri_shopkeeper(play) {
             return;
         }
@@ -2103,7 +2102,7 @@ impl ActorImpl for EnOssan {
     }
     /// `EnOssan_DrawKokiriShopkeeper`: the shopkeeper, then the cursor and the stick prompts
     /// (`EnOssan_DrawCursor`, `EnOssan_DrawStickDirectionPrompts`) into the overlay.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(skeleton), Some(joints)) = (&self.skeleton, &rs.joints) else { return };
         if rs.switches.len() < 4 || rs.values.len() < rs::PROMPTS + 2 * rs::PROMPT_LEN {
             return;
@@ -2111,10 +2110,6 @@ impl ActorImpl for EnOssan {
         let bones = skeleton.pose(&eng_anim::anim::JointTable { rot: joints.rot.clone(), face: 0 });
         let m = oot_game::play::actor_draw_matrix(rs);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&kokiri_bake(rs.switches[rs::EYE] as usize))), transform: m, bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 20): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(20.0, 1.0, 20.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
         let v = &rs.values;
         let color = |i: usize| [v[i] as u8, v[i + 1] as u8, v[i + 2] as u8, v[i + 3] as u8];
         // EnOssan_DrawCursor: 16 * z either side, the IA4 cursor mirrored across 32 texels

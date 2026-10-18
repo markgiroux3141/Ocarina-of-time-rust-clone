@@ -13,7 +13,8 @@
 //!
 //! Drawn as `EnAttackNiw_Draw` does: `En_Niw`'s skeleton held at `gCuccoAnim`'s first frame (its
 //! skeleton is never updated), the head, tail and wings turned (`func_809B5F98`); from En_Niw's
-//! baked mesh (docs/adr/0012-actor-bakes.md), with the circle shadow's stand-in.
+//! baked mesh (docs/adr/0012-actor-bakes.md). The circle shadow is the shape's (`ActorShape_Init`'s,
+//! drawn by `Actor_Draw`).
 //!
 //! Not ported here: the splash in water (`EffectSsGSplash_Spawn`: the effect isn't ported; it still
 //! flies off).
@@ -116,8 +117,6 @@ pub struct EnAttackNiw {
     pub unk_2e0: f32,
     /// `unk_2E4`: the focus's height (never set: 0).
     pub unk_2e4: f32,
-    /// `shape.shadowScale`.
-    pub shadow_scale: f32,
 }
 
 /// `(s16)f`: a float to `s16` as the MIPS does it (truncated to `s32`, the low 16 bits).
@@ -177,7 +176,6 @@ impl EnAttackNiw {
             unk_2dc: 0.0,
             unk_2e0: 0.0,
             unk_2e4: 0.0,
-            shadow_scale: 25.0,
             actor,
         };
         let a = &mut this.actor;
@@ -185,8 +183,7 @@ impl EnAttackNiw {
         a.target_mode = ATTENTION_RANGE_1;
         a.gravity = -2.0;
         a.target_arrow_offset = 0.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 25).
-        a.shape_y_offset = 0.0;
+        a.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 25.0);
         if PARAMS.get(a.params) < 0 {
             a.params = 0;
         }
@@ -486,7 +483,7 @@ impl ActorImpl for EnAttackNiw {
         }
 
         self.actor.shape_rot = self.actor.world_rot;
-        self.shadow_scale = 15.0;
+        self.actor.shape_shadow_scale = 15.0;
         self.run_action(play);
         if self.actor.killed {
             return;
@@ -554,20 +551,14 @@ impl ActorImpl for EnAttackNiw {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         rs.angles = self.turns().to_vec();
-        rs.switches = vec![self.shadow_scale.to_bits()];
         rs
     }
     /// `EnAttackNiw_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
-        let (Ok(t), [shadow]) = (<[i16; 8]>::try_from(rs.angles.as_slice()), rs.switches.as_slice()) else { return };
+        let Ok(t) = <[i16; 8]>::try_from(rs.angles.as_slice()) else { return };
         let bones = Self::pose(&self.skeleton, &joints.rot, t);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(en_niw::BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale): the circle shadow's stand-in.
-        let s = f32::from_bits(*shadow);
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(s, 1.0, s));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

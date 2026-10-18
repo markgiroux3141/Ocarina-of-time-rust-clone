@@ -31,8 +31,8 @@
 //! From baked meshes (docs/adr/0012-actor-bakes.md; the overlay's head and dances are read from
 //! the overlay at its link address).
 //!
-//! Not ported here: the circle shadow (`ActorShadow_DrawCircle`, 36), as for every actor. Kept
-//! though unused, as in the C: `unk_2B2` (bit 2 would skip a limb's fidget; never set) and the
+//! The circle shadow (36) is the shape's (`EnSth_SetupShapeColliderUpdate2AndDraw`'s
+//! `ActorShape_Init`, drawn by `Actor_Draw`). Kept though unused, as in the C: `unk_2B2` (bit 2 would skip a limb's fidget; never set) and the
 //! blink timer `unk_2B6` / index `unk_2B4` (no eyes are swapped).
 //!
 //! Params: `params` whole, the family member, 0 to 5 (0 the father at 100 tokens; 1 to 5 the
@@ -349,8 +349,7 @@ impl EnSth {
     /// `EnSth_SetupShapeColliderUpdate2AndDraw`: the shadow (a circle, 36), the collider,
     /// immovable, `EnSth_Update2`, and drawn.
     fn setup_shape_collider_update2_and_draw(&mut self) {
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 36).
-        self.actor.shape_y_offset = 0.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 36.0);
         self.collider = ColliderCylinder::new(&CYLINDER_INIT);
         self.actor.col_chk_info.mass = MASS_IMMOVABLE;
         self.update2 = true;

@@ -22,8 +22,8 @@
 //! (`EnCs_OverrideLimbDraw`), the focus 500 along and 800 up his head, and once he has bought it
 //! (`ITEMGETINF_3A`) the Spooky Mask on his face: `gLinkChildSpookyMaskDL` (from
 //! `object_link_child`) placed by the matrix `EnCs_PostLimbDraw` keeps (his head's, 200 down it,
-//! turned 100 degrees about z); from meshes baked per eye (docs/adr/0012-actor-bakes.md), with
-//! the circle shadow's stand-in (scale 19).
+//! turned 100 degrees about z); from meshes baked per eye (docs/adr/0012-actor-bakes.md). The
+//! circle shadow (19) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Not ported here: the masks themselves (Player's `currentMask` is always `PLAYER_MASK_NONE`,
 //! so 0x2023 and the trade aren't reached in play; BACKLOG #39), and the mask reactions
@@ -273,7 +273,7 @@ impl EnCs {
             return Box::new(this);
         }
         // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 19); Actor_Init's scale 0.01.
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 19.0);
         this.actor.scale = Vec3::splat(0.01);
         this.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         this.actor.update_bg_check_info(&play.col, 0.0, 0.0, 0.0, UPDBGCHECKINFO_FLAG_2);
@@ -617,10 +617,6 @@ impl ActorImpl for EnCs {
         {
             out.opa.push(DrawCmd::new(MeshKey::named(keys::bake(SPOOKY_MASK_BAKE)), m * Self::spooky_mask_mtx(head)));
         }
-        // ActorShadow_DrawCircle (shadowScale 19): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(19.0, 1.0, 19.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

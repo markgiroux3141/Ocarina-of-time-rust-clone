@@ -36,8 +36,9 @@
 //! (`EnGo2_DrawRolling`) or the skeleton `gGoronSkel` with the eyes on segment 8 and the mouth on 9
 //! (`EnGo2_OverrideLimbDraw`'s head and chest turns and the sway of limbs 10, 11 and 14;
 //! `EnGo2_PostLimbDraw`'s focus), from meshes baked per eye and mouth
-//! (docs/adr/0012-actor-bakes.md). The circle shadow is the stand-in disc, while `shadowAlpha`
-//! isn't 0 (`func_80A45360`: none while curled).
+//! (docs/adr/0012-actor-bakes.md). The circle shadow is the shape's (`ActorShape_Init`'s, drawn by
+//! `Actor_Draw`), its scale by type (`EnGo2_SetShape`), its alpha faded by `func_80A45360` (none
+//! while curled).
 //!
 //! **Ported:** the init (every type's kills), the data tables, the dust, the talk dispatch and
 //! every child's type's texts and flags (`EnGo2_GetTextId*`, `EnGo2_UpdateTalkState*`), the bazaar's,
@@ -583,10 +584,6 @@ pub struct EnGo2 {
     pub sub_cam_id: i16,
     /// `unk_59C`: the bounces left (`EnGo2_IsRollingOnGround`).
     pub unk_59c: i16,
-    /// `shape.shadowScale`, `shape.shadowAlpha`, `shape.shadowDraw != NULL`.
-    pub shadow_scale: f32,
-    pub shadow_alpha: u8,
-    pub shadow_draw: bool,
     /// `EnGo2_DrawRolling`'s spin (`play->state.frames * ((s16)speedXZ * 1400)`), at the last draw.
     pub roll_angle: i16,
     animations: Vec<AnimationInfo>,
@@ -920,15 +917,10 @@ impl EnGo2 {
             get_item_id: 0,
             sub_cam_id: 0,
             unk_59c: 0,
-            shadow_scale: 0.0,
-            shadow_alpha: 0,
-            shadow_draw: true,
             roll_angle: 0,
             animations,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 28).
-        this.actor.shape_y_offset = 0.0;
-        this.shadow_scale = 28.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 28.0);
         // Collider_InitCylinder, Collider_SetCylinder: above.
         this.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
 
@@ -943,7 +935,7 @@ impl EnGo2 {
         this.change_anim(ENGO2_ANIM_0);
         this.actor.gravity = -1.0;
         this.alpha = 0.0;
-        this.shadow_alpha = 0;
+        this.actor.shape_shadow_alpha = 0;
         this.reverse = 0;
         this.is_awake = false;
         this.unk_211 = false;
@@ -983,6 +975,7 @@ impl EnGo2 {
                 return oot_game::spawn::Placeholder::init(this.actor, play);
             }
             GORON_DMT_BIGGORON => {
+                this.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::None;
                 log::info!("En_Go2: Biggoron (GORON_DMT_BIGGORON: his texts, the eye drops and his sword, Phase 15) isn't ported: a placeholder");
                 return oot_game::spawn::Placeholder::init(this.actor, play);
             }
@@ -1147,7 +1140,7 @@ impl EnGo2 {
     /// `EnGo2_SetShape`.
     fn set_shape(&mut self) {
         let index = self.ty() as usize;
-        self.shadow_scale = D_80A481F8[index].shape_unk_10;
+        self.actor.shape_shadow_scale = D_80A481F8[index].shape_unk_10;
         // Actor_SetScale.
         self.actor.scale = Vec3::splat(D_80A481F8[index].scale);
         self.actor.target_mode = D_80A481F8[index].actor_unk_1f as u8;
@@ -1323,7 +1316,7 @@ impl EnGo2 {
     fn func_80a45360(&mut self) {
         let alpha_target = if self.skel.is(ANIM_004930) && self.skel.cur_frame <= 32.0 { 0.0 } else { 255.0 };
         approach_f(&mut self.alpha, alpha_target, 0.4, 100.0);
-        self.shadow_alpha = self.alpha as u32 as u8;
+        self.actor.shape_shadow_alpha = self.alpha as u32 as u8;
     }
 
     /// `EnGo2_RollForward`: moving (but spinning in place), held still while talking.
@@ -1888,13 +1881,11 @@ mod rs {
     pub const SWAY: usize = 4;
     pub const ROLL: usize = 10;
     pub const ANGLES: usize = 11;
-    /// `switches`: the draw, the eye, the mouth, the shadow's alpha, the shadow's scale.
+    /// `switches`: the draw, the eye, the mouth.
     pub const MODE: usize = 0;
     pub const EYE: usize = 1;
     pub const MOUTH: usize = 2;
-    pub const SHADOW_ALPHA: usize = 3;
-    pub const SHADOW_SCALE: usize = 4;
-    pub const SWITCHES: usize = 5;
+    pub const SWITCHES: usize = 3;
     /// The draws.
     pub const SKELETON: u32 = 0;
     pub const CURLED: u32 = 1;
@@ -1968,13 +1959,12 @@ impl ActorImpl for EnGo2 {
         let t = &self.interact_info;
         let sway = Self::sway_of(&self.fidget_table_y, &self.fidget_table_z);
         rs.angles = vec![t.head[0], t.head[1], t.torso[0], t.torso[1], sway[0].1, sway[0].2, sway[1].1, sway[1].2, sway[2].1, sway[2].2, self.roll_angle];
-        let shadow_alpha = if self.shadow_draw { self.shadow_alpha as u32 } else { 0 };
-        rs.switches = vec![self.draw_mode(), (self.eye_tex_index as u32).min(3), (self.mouth_tex_index as u32).min(1), shadow_alpha, self.shadow_scale.to_bits()];
+        rs.switches = vec![self.draw_mode(), (self.eye_tex_index as u32).min(3), (self.mouth_tex_index as u32).min(1)];
         rs
     }
     /// `EnGo2_Draw`: the dust, then curled, rolling or the skeleton (`Gfx_SetupDL_25Opa`, the eyes
-    /// on 8, the mouth on 9); `Actor_Draw`'s circle shadow.
-    fn draw(&self, rs: &RenderState, play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
+    /// on 8, the mouth on 9).
+    fn draw(&self, rs: &RenderState, _play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
         self.draw_effects(view, out);
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < rs::ANGLES || rs.switches.len() < rs::SWITCHES {
@@ -1995,14 +1985,6 @@ impl ActorImpl for EnGo2 {
                 let key = MeshKey::named(keys::bake(&bake_name(rs.switches[rs::EYE] as usize, rs.switches[rs::MOUTH] as usize)));
                 out.opa.push(DrawCmd { mesh: key, transform: m, bones, params: Default::default() });
             }
-        }
-        // ActorShadow_DrawCircle (shape.shadowScale, while shape.shadowAlpha isn't 0): the circle
-        // shadow's stand-in.
-        if rs.switches[rs::SHADOW_ALPHA] != 0 {
-            let s = f32::from_bits(rs.switches[rs::SHADOW_SCALE]) * rs.scale.x * 100.0;
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(s, 1.0, s));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
         }
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {

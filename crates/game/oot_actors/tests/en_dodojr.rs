@@ -137,7 +137,7 @@ fn buried_until_link_comes_within_320_then_it_surfaces_and_crawls() {
         let d = dodojr(&w, h);
         assert_eq!((d.action, d.actor.scale.x, d.actor.navi_enemy_id, d.actor.col_chk_info.health), (Action::WaitUnderground, 0.02, NAVI_ENEMY_BABY_DODONGO, 1));
         assert_eq!(d.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED, 0);
-        assert!(!d.shadow_draw);
+        assert_eq!(d.actor.shape_shadow_draw, oot_game::shadow::ShadowDraw::None);
     }
     assert!(!drawn(&w).iter().any(|m| m == SKEL_MESH));
     // Link 270 from the east one (321 from the west one): only the east one wakes:
@@ -158,7 +158,7 @@ fn buried_until_link_comes_within_320_then_it_surfaces_and_crawls() {
     assert_eq!(n, emerge_frames());
     let d = dodojr(&w, east);
     assert_eq!((d.actor.shape_rot.x, d.actor.world_rot.x, d.actor.speed_xz), (0, 0, 2.6));
-    assert!(d.shadow_draw);
+    assert_eq!(d.actor.shape_shadow_draw, oot_game::shadow::ShadowDraw::Circle);
     assert!((d.actor.world_pos.y - 16.0).abs() < 1.0, "{}", d.actor.world_pos);
     // Drawn now.
     assert!(drawn(&w).iter().any(|m| m == SKEL_MESH));
@@ -356,7 +356,7 @@ fn a_wall_sends_it_back_underground() {
     w.place_player(Vec3::new(-300.0, 16.0, -2750.0), i16::MIN);
     until(&mut w, h, 120, |d| d.action == Action::Despawn);
     let d = dodojr(&w, h);
-    assert_eq!((d.timer, d.shadow_draw, d.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED), (30, false, 0));
+    assert_eq!((d.timer, d.actor.shape_shadow_draw, d.actor.flags & ACTOR_FLAG_ATTENTION_ENABLED), (30, oot_game::shadow::ShadowDraw::None, 0));
     assert_eq!(sfx_frames(&w, NA_SE_EN_DODO_M_DOWN).len(), 1);
     let home_y = d.actor.home_pos.y;
     idle(&mut w, 15);

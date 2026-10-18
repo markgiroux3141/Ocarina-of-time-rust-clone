@@ -5,15 +5,14 @@
 //! it to 100; 0 at init, so a needle nothing set goes at its first update).
 //!
 //! The whole overlay is ported. Drawn as `EnSkjneedle_Draw` does: `gSkullKidNeedleDL` after
-//! `Gfx_SetupDL_25Opa` (the pack's mesh of it); the circle shadow (`ActorShadow_DrawCircle`, 20)
-//! is the usual stand-in.
+//! `Gfx_SetupDL_25Opa` (the pack's mesh of it). The circle shadow (20) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Params: none (spawned with 0).
 //! Flags: none.
 
-use eng_gfx::{DrawCmd, MeshKey};
 use eng_collision::math3d::Cylinder16;
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_HOSTILE, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_1, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ActorImpl, ActorProfile};
 use oot_game::actor_schema::ActorSchema;
@@ -75,8 +74,7 @@ impl EnSkjneedle {
         // sInitChain: attentionRangeType ATTENTION_RANGE_2, lockOnArrowOffset 30.
         actor.target_mode = ATTENTION_RANGE_2;
         actor.target_arrow_offset = 30.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 20).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 20.0);
         actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         actor.scale = Vec3::splat(0.01);
         Box::new(EnSkjneedle { actor, collider: ColliderCylinder::new(&CYLINDER_INIT), unused_timer1: 0, kill_timer: 0 })
@@ -122,12 +120,9 @@ impl ActorImpl for EnSkjneedle {
         }
     }
 
-    /// `EnSkjneedle_Draw`: `gSkullKidNeedleDL`; the circle shadow's stand-in (20).
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// `EnSkjneedle_Draw`: `gSkullKidNeedleDL`.
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         crate::gfx_draw_dlist_opa(out, OBJECT, "gSkullKidNeedleDL", rs);
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let m = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(20.0, 1.0, 20.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
     }
 
     /// `EnSkjneedle_Destroy`: `Collider_DestroyCylinder` (nothing to free here).

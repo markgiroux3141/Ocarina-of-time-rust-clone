@@ -42,8 +42,8 @@
 //! (docs/adr/0012-actor-bakes.md), one per member kind and eye.
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId` with
-//! `MASK_REACTION_SET_CURSED_SKULLTULA_MAN`: no masks yet, so 0); the circle shadow
-//! (`ActorShadow_DrawCircle`, 30), as for every actor. Not reached: a burning Deku Stick
+//! `MASK_REACTION_SET_CURSED_SKULLTULA_MAN`: no masks yet, so 0). The circle shadow (30) is the
+//! shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`). Not reached: a burning Deku Stick
 //! (Player's `unk_860` stays 0), the hammer's shock wave.
 //!
 //! Params: `params` whole, the family member, 0 to 5 (0 the father, `ENSSH_FATHER`: gone at 100
@@ -381,8 +381,7 @@ impl EnSsh {
             s.actor.kill();
             return Box::new(s);
         }
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30): the circle shadow isn't ported.
-        s.actor.shape_y_offset = 0.0;
+        s.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         // SkelAnime_Init(&object_ssh_Skel_0052E0, NULL, .., 30); Animation_Change(&object_ssh_Anim_000304,
         // 1, 0, its last frame, ANIMMODE_LOOP_INTERP, 0).
         if let Some(anim) = s.anims[1].clone() {

@@ -18,8 +18,8 @@
 //!   (`EffectSsDeadDb`), 15 fragments (`EffectSsHahen_SpawnBurst`), a drop from table 3, and its
 //!   flower becomes a prop. Fire sets it in a ring of fire (`EffectSsFCircle_Spawn`).
 //!
-//! The whole overlay is ported. Not ported: the circle shadow (`ActorShadow_DrawCircle`, 35),
-//! not ported for any actor.
+//! The whole overlay is ported. The circle shadow (35) is the shape's (`ActorShape_Init`'s, drawn
+//! by `Actor_Draw`).
 //!
 //! Params: `params` bits 0 to 7 (10, `DEKUNUTS_FLOWER`: the flower, spawned by the scrub as its
 //! child with the whole params 10 and drawn at its home; any other a scrub; init checks the whole
@@ -267,8 +267,7 @@ impl EnDekunuts {
                 collider,
             });
         }
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 35): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 35.0);
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, "gDekuNutsSkel").map_err(|e| log::error!("En_Dekunuts: {e:#}")).ok());
         let anims = Anims::load(play);
         // SkelAnime_Init(&gDekuNutsSkel, &gDekuNutsStandAnim): 25 entries.

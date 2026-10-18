@@ -20,7 +20,8 @@
 //! Drawn as `EnNiwLady_Draw` does: env (0, 0, 0, 255), the eyes on segment 8, an empty list on
 //! 0x0C, the skeleton with the head and torso turns and, while fidgeting (`unk_275`), the sway of
 //! limbs 8, 10 and 13 (`EnNiwLady_OverrideLimbDraw`); from meshes baked per eye
-//! (docs/adr/0012-actor-bakes.md), with the circle shadow's stand-in (scale 20).
+//! (docs/adr/0012-actor-bakes.md). The circle shadow (20) is the shape's (`ActorShape_Init`'s,
+//! drawn by `Actor_Draw`).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
 //! debug count override (`BREG(7)`, 0).
@@ -413,8 +414,7 @@ impl EnNiwLady {
         self.unk_27e = 1;
         self.actor.gravity = -3.0;
         self.actor.scale = Vec3::splat(0.01);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 20).
-        self.actor.shape_y_offset = 0.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 20.0);
         self.collider = ColliderCylinder::new(&CYLINDER_INIT);
         self.unk_272 = 0;
         self.actor.target_mode = ATTENTION_RANGE_6;
@@ -870,10 +870,6 @@ impl ActorImpl for EnNiwLady {
         let bones = Self::pose(skeleton, &joints.rot, [*h0, *h1, *h2], [*t0, *t1, *t2], *fidget != 0, play.state_frames);
         let eye = (*eye as usize).min(EYE_TEXTURES.len() - 1);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye))), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 20): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(20.0, 1.0, 20.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

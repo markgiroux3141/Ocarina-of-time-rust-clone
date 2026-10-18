@@ -20,8 +20,8 @@
 //!   then down through the floor (no floor check, gravity -1), spinning by 0x2000, dust every 4
 //!   frames (`func_80028990`); 400 down, gone.
 //!
-//! The whole overlay is ported. Not ported: the circle shadow (`ActorShadow_DrawCircle`, 35),
-//! not ported for any actor.
+//! The whole overlay is ported. The circle shadow (35) is the shape's (`ActorShape_Init`'s, drawn
+//! by `Actor_Draw`).
 //!
 //! Params: `type` the whole params (`DNS_GET_TYPE`, `EnDnsType`: 0 Deku Nuts, 1 a Deku Stick, 2
 //! the piece of heart, 3 Deku Seeds, 4 the Deku Shield, 5 bombs, 6 arrows (Deku Seeds for a
@@ -312,8 +312,7 @@ impl EnDns {
         n.skel = SkelAnimeStd::init_flex(limbs, anims.as_ref().map(|a| a.0[2].0.clone()));
         n.skeleton = skeleton;
         n.anims = anims;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 35): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 35.0);
         actor.text_id = S_STARTING_TEXT_IDS[ty];
         actor.scale = Vec3::splat(0.01);
         actor.col_chk_info.mass = MASS_IMMOVABLE;

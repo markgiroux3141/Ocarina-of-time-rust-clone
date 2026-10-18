@@ -14,8 +14,8 @@
 //!   turns around, flying back the way the shield faces (`shieldMf`'s yaw + 0x8000) as Link's
 //!   attack (`AT_TYPE_PLAYER`, `DMG_DEKU_STICK`), for another 30 frames before falling.
 //!
-//! The whole overlay is ported. The circle shadow (`ActorShadow_DrawCircle`, 13) isn't ported for
-//! any actor.
+//! The whole overlay is ported. The circle shadow (13) is the shape's (`ActorShape_Init`'s, drawn
+//! by `Actor_Draw` once its draw is set).
 //!
 //! Params: `type` the whole params (`NUTSBALL_GET_TYPE`, `EnNutsballType`: 0 `En_Dekunuts`'s, 1
 //! `En_Hintnuts`'s, 2 `En_Shopnuts`'s, 3 `En_Dns`'s (spawned by none), 4 `En_Dnt_Nomal`'s
@@ -121,8 +121,7 @@ impl EnNutsball {
 
     /// `EnNutsball_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // ActorShape_Init(&shape, 400, ActorShadow_DrawCircle, 13): the circle shadow isn't ported.
-        actor.shape_y_offset = 400.0;
+        actor.shape_init(400.0, oot_game::shadow::ShadowDraw::Circle, 13.0);
         let collider = ColliderCylinder::new(&CYLINDER_INIT);
         let kind = (TYPE.get(actor.params) as usize).min(4);
         let required_object_slot = play.object_ctx.get_index(OBJECT_IDS[kind]);
@@ -217,6 +216,10 @@ impl ActorImpl for EnNutsball {
     fn render_state(&self) -> RenderState {
         let mut rs = RenderState::of(&self.actor);
         rs.angles = vec![self.actor.home_rot.z];
+        // The shape's shadow: none while draw is NULL (Actor_Draw isn't called).
+        if !self.visible {
+            rs.shadow = None;
+        }
         rs
     }
     /// `EnNutsball_Draw`: the nut facing the camera (`billboardMtxF`), turned by `home.rot.z`

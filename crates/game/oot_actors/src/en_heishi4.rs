@@ -232,8 +232,9 @@ impl EnHeishi4 {
         this.actor.scale = Vec3::splat(0.01);
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         this.actor.target_mode = ATTENTION_RANGE_6;
-        // ActorShape_Init(&shape, 0, the dying guard no shadow, others ActorShadow_DrawCircle, 30).
-        this.actor.shape_y_offset = 0.0;
+        // ActorShape_Init(&shape, 0, the dying guard NULL, others ActorShadow_DrawCircle, 30).
+        let shadow = if ty == HEISHI4_AT_MARKET_DYING { oot_game::shadow::ShadowDraw::None } else { oot_game::shadow::ShadowDraw::Circle };
+        this.actor.shape_init(0.0, shadow, 30.0);
         this.collider.dim.y_shift = 0;
         this.collider.dim.radius = 15;
         this.collider.dim.height = 70;
@@ -522,7 +523,7 @@ impl ActorImpl for EnHeishi4 {
         rs
     }
     /// `EnHeishi4_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 6 {
             return;
@@ -530,13 +531,6 @@ impl ActorImpl for EnHeishi4 {
         let a = &rs.angles;
         let bones = Self::pose(&self.skeleton, &joints.rot, [a[0], a[1], a[2]], [a[3], a[4], a[5]]);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 30): the circle shadow's stand-in; the dying guard
-        // has none.
-        if self.ty != HEISHI4_AT_MARKET_DYING {
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
-        }
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

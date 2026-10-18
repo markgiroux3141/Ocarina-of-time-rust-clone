@@ -14,8 +14,8 @@ The phase starts from the `ranch-epona` preset (GAME-08's exit review).
 | 2 | The trail and Goron City to the bracelet, and the cavern's mouth | done (2026-10-15) |
 | 3 | Dodongo's Cavern's route | done (2026-10-16) |
 | 4 | King Dodongo and the Goron's Ruby (the phase's exit) | done (2026-10-17): the exit met |
-| 5 | The rest of the cavern | next |
-| 6 | The summit: the Great Fairy and magic | |
+| 5 | The rest of the cavern | next (from `fairy-magic`) |
+| 6 | The summit: the Great Fairy and magic | done (2026-10-17), before 5 |
 
 ## The survey
 
@@ -1066,3 +1066,236 @@ scripts\run\sandbox-kingdodongo.bat
    Link ends at the trail's spawn 5 (or `game-kingdodongo trail`).
 5. Anything that looks off: his look and wobble, the fire, the lava's bubbles and splashes, the
    intro's tilt, Darunia's face and the Gorons. Known: no shadows, no rumble.
+
+## Milestone 6: The summit, the Great Fairy and magic
+
+**The answer:** taken before milestone 5 (the user's order: the magic meter and `En_M_Thunder` are
+systems every later phase leans on, and the fountain's return entrance was a dead end). Child Link
+with the Ruby and bombs breaks the Great Fairy's wall on the summit, plays Zelda's Lullaby on her
+Triforce, gets magic from her cutscene (`gGreatFairyMagicCs`: the orange warp at Link, the meter
+granted), leaves by the return entrance to the trail's spawn 4, and with magic the owl flies him to
+Kakariko. Three short scripted runs from debug starts, no enemies (the user's rule): **the wall**
+(`Route::FairyWall`, in front of it on `goron-ruby`), **the fountain** (`Route::GreatFairy`, its
+spawn on `fairy-fountain`) and **the owl** (`Route::SummitOwl`, the summit on `fairy-magic`). The
+climb through the falling rocks and past the Skullwalltulas is the hand test's. Scripts:
+`scripts\run\test-summit.bat`, `game-summit.bat`, `sandbox-summit.bat` (menu 144 to 146).
+
+### Settled at the start (from the C)
+
+- **Where the magic state lives:** as in the C, `gSaveContext`'s five fields outside the save
+  (`SaveContext::magic_state`, `prev_magic_state`, `magic_capacity`, `magic_fill_target`,
+  `magic_target`); `Magic_Fill`, `_Reset`, `_RequestChange`, `_Update` in `oot_game::magic`;
+  `Interface_Update` runs the meter in the C's place (after the A button's flip, before the hazard
+  timer) under its conditions, with its start (`magicLevel` from 0 with magic:
+  `MAGIC_STATE_STEP_CAPACITY`); `Magic_DrawMeter` after the rupee counter, before the minimap and
+  the reticle (`Interface_Draw`'s order); `z_parameter.c`'s border statics carried over scene
+  changes with the timers' (ADR 0071's pattern).
+- **`Bg_Dy_Yoseizo`'s other rewards: whole.** The C has no split by reward to stand a placeholder
+  in: the same action functions branch on the scene (the magic fountains or the spells') and on
+  `play->spawn` in a few switch arms (the script, the new-acquire checks, the save's writes, the
+  light's colour, the `En_Ex_Item`); the other cutscenes are data the cutscene system plays, and
+  `En_Ex_Item` and `Demo_Effect` were ported. `Demo_Du`'s cutscenes were separate code paths.
+- **The return entrances are Player's:** `sReturnEntranceGroupData` and its indices only
+  `Player_HandleExitsAndVoids` reads, by `play->spawn`; the whole table is in `player.rs`, then the
+  existing `Scene_SetTransitionForNextEntrance`.
+- **`En_M_Thunder` needed Player's charged spin**, which wasn't ported at all (hold B after a
+  slash), and `func_80837530`'s spawn after his update (ADR 0072's pattern) from a snapshot of him;
+  `Eff_Dust` (its sparkles) with it.
+
+### What was built
+
+- **The magic meter** (ADR 0076): the state and `oot_game::magic`; `Interface_Update`'s part and
+  `Magic_DrawMeter` (the ends, the middle by capacity, the green fill and the yellow preview of a
+  waiting consumption, the border's flash); the file select's, the map select's and the game
+  over's fill target (the meter grows back to the saved magic); the magic jars in `Item_Give`;
+  `En_Elf`'s big fairy's `Magic_Fill`; `Play_Init`'s `Magic_Reset` in a cutscene layer; the pause
+  menu not opening while the meter grows or fills; the songs' destroys' `Magic_Reset` (BACKLOG #49
+  closed); `ActorContext::lens_active` and `lensMagicConsumptionTimer` (the lens isn't ported).
+- **`Bg_Dy_Yoseizo`** (the Great Fairies) whole, both fountains and every reward: the wait for the
+  Triforce's switch 0x38, the new-acquire choice, her cutscenes started herself, every cue (2 to 21:
+  her appearing, the homing lights, the orange, green and red warps at Link, the rewards, the
+  spells' `Demo_Effect` light and `En_Ex_Item`, the disappear), the revisit (one-point **8603**, her
+  talk, the refill, `En_Dy_Extra`'s beam), her 200 particles, her draw (three eyes by two mouths),
+  her sounds. One-points **8603** and **8604**. **`En_Dy_Extra`** whole. **`Door_Warp1`'s orange
+  warp** (`func_809998A4`, the fade) and the coloured warps' rays at `warpAlpha` as the C draws them.
+- **The return entrances:** `sReturnEntranceGroupData` whole (the magic and spell fountains, the
+  potion shops, the bazaars, the House of Skulltula, the Bombchu shop, the shooting galleries).
+- **The spin attack:** Player's charged spin (`Player_ActionHandler_8`, `func_808377DC`,
+  `func_80837704`, `func_80837530`, the charging actions `80844E68`, `80845000`, `80845308`, the
+  release `func_80844BE4` and the big spin from 0.85, `func_80840058`, their animation tables and
+  three cutscene cues), the combo window (`unk_844`'s countdown in `Player_UpdateCommon` and
+  `func_80832440`'s reset, both missing), Player's `mf_9E0`; **`En_M_Thunder`** whole (its magic,
+  the charge's glow and darkening, the weak and strong spins' trails and colliders, the light) and
+  **`Eff_Dust`** whole; `Camera_Battle4` (the charge's camera).
+- **The falling rocks:** **`En_Encount2`** (the summit's spawner: its area, the rounds, the quake,
+  the darkening, the embers) and **`En_Fire_Rock`** (every type: the falling rocks and their pieces,
+  the Ganon's Castle collapse's ceiling and floor rocks) whole.
+- **`SDC_GREAT_FAIRYS_FOUNTAIN`**.
+- **The runs:** `Route::FairyWall`, `Route::GreatFairy`, `Route::SummitOwl`; the steps `FairyWall`,
+  `Fountain`, `Magic`, `Trail4`, `Kakariko14`; `Who::Owl`; the scripted exits follow return
+  entrances (`script::exit_to`). **The presets** `fairy-fountain` (the wall's run's end) and
+  **`fairy-magic`** (the fountain run's end: milestone 5 and Phase 11 start from it), each checked
+  against its run. The sandbox's `spin` script (B held through a charge).
+- **The character** (`export-glb`): Great Fairy (checked in Blender: `out/fairy_34.png`).
+- Three helpers ported the overlays in worktrees (removed).
+
+### Results
+
+- Tests from the C: `tests/bg_dy_yoseizo.rs` (11: her init by spawn and fountain, the wait, the
+  six rewards' choice, the scripts by reward, her appear, the magic fountain's cues and the spells',
+  the orange warp frame by frame, `En_Dy_Extra`, the magic cutscene from the switch to her exit, a
+  revisit), `spin_attack.rs` (10: the charge's start and its step, without magic, released early,
+  with magic and its consumption, the sparkles' end, the adult's big spin, walking while charging,
+  the quick spin with and without magic, `Eff_Dust`'s types), `en_encount2.rs` (13: the spawner's
+  kill, its area, its rounds and limits, the darkening, the embers, the rocks' fall, landing,
+  pieces, hit on Link, shield bounce, the collapse's ceiling and floor rocks), `return_entrances.rs`
+  (2), `summit.rs` (4: the three runs, the owl without magic); `oot_game`'s `magic` (3) and the
+  meter's draw; the import's draw-config check (`SDC_GREAT_FAIRYS_FOUNTAIN`); `sword.rs`'s combo
+  test corrected (below).
+- The runs: the wall 215 frames (the bomb out at 35, put down at 66, the wall broken at 107, in the
+  fountain at 215); the fountain 2,157 (the ocarina at 169, the lullaby at 205, the magic at 1,942,
+  out at the trail's spawn 4 at 2,157, the meter grown and full); the owl 983 (his texts, the flight,
+  Kakariko's spawn 14 at 983). No hit taken.
+- Goldens: 227 of milestone 4's 243 the same; 16 differ, all from the combo window (proven below).
+  11 new cases (`fairy_wall`, `fairy_wall_blast`, `great_fairy`, `great_fairy_appear`,
+  `great_fairy_warp`, `great_fairy_meter`, `summit_owl`, `summit_owl_flight`, `summit_spin`,
+  `summit_spin_charge`, `summit_spin_trail`). 258 hashes, 196 cases (`out/golden_base28`), the same
+  over two runs.
+- 1,359 tests (one ignored) pass; `cargo test -p layering` passes; no warnings. The pack is still format 29
+  (`out/data26`), re-imported for the new bakes.
+
+### Decisions
+
+- The magic state on the save context, the meter run and drawn where the C does (above, ADR 0076).
+- `Bg_Dy_Yoseizo` whole, no placeholders (above).
+- The meter's fill bake loads the 16×8 `parameter_static` holds: the C's I4 16×16 load reads past
+  the file's end, but the 7-row rectangle samples rows 0 to 6 only.
+- `func_80837530`'s spawn is a request after Player's update carrying his snapshot (his waist, yaw,
+  `stateFlags2`), which `En_M_Thunder`'s init reads; its `PLAYER_STATE2_17` clear handed back.
+- The runs are three short debug starts; the climb through the rocks and the fights are the hand
+  test's. The fountain run gets the audio side (the ocarina's), as the Darunia run does.
+
+### Corrections to the survey
+
+- Her cue channel in `gGreatFairyMagicCs` has more than 2, 3, 0x13 and 0x0A: 1, 2, 3, 4 (the
+  homing lights), 0x13, 0x0A, 7 (the sparkles), 0x0D (the disappear at 890). Cues 19 to 21 are the
+  orange, green and red warps. The script's music 0x25 is `NA_BGM_HEART_GET`, a fanfare.
+- **En_Fire_Rock has no crater rocks:** `En_Encount2` is placed only on the trail (params 5) and in
+  `ganon_final`; `En_Fire_Rock` only in Ganon's Castle's collapse (`ganon_sonogo`,
+  `ganontikasonogo`: its ceiling and floor types). The trail's rocks are the spawner's.
+- **The rocks' area** is x -700 to 100, z -1290 to -3600 (-3860 while a round runs), above y 1500:
+  from spawn 4 (the fountain's way out) Link walks down into it; the spawner sits at (-199, 2032,
+  -3060).
+- The Triforce's song spot (`En_Okarina_Tag` 0x1CB8) is the ocarina's only within 50 of it
+  (`func_80ABEF2C`): the fountain run stands on the Triforce.
+- **Player's charged spin wasn't ported** (the survey said only `func_80837530` was logged), nor the
+  combo window: slashes 15 frames apart comboed, where the C resets the count 8 frames after B is
+  let go. `CAM_MODE_CHARGE`'s `Camera_Battle4` wasn't either.
+- `Eff_Dust` is `ACTORCAT_NPC`: it updates before its parent, a frame behind it, as in the C.
+
+### Known gaps
+
+- The spells and the magic arrows' cost (#85); the lens (#60); the charge's rumble (#60).
+- `En_M_Thunder` with the hammer or a cutscene's Deku Stick reads past its tables: modelled, the
+  data's order not checked (#86).
+- The tests' audio never plays a cutscene's fanfare (#87, the harness's).
+- `En_Encount2`'s `collapseSpawnerInactive` is set by `En_Zl3` (Phase 19, not ported).
+- Milestone 5's: the rest of the cavern.
+
+### Fixes found while building
+
+- Player's combo window (`unk_844`'s countdown, `func_80832440`'s reset): a third slash 15 frames
+  after the second was a combo finisher; it's a first slash, as in the C. `tests/sword.rs`'s combo
+  test pressed 15 frames apart and passed only for the missing countdown: it presses every 7 frames
+  now, and the sandbox's `sword` script's comment says what its slashes are.
+- `Camera_Battle4` was missing: the charge's camera fell back to `Normal1` and ran out past 500,000
+  units within 20 frames.
+- `Door_Warp1`'s coloured warps drew their rays at `lightRayAlpha`; the C uses `warpAlpha`.
+
+### Golden proof
+
+- **The combo window:** the 16 hashes that differ are the runs and course cases that slash three
+  times with B pressed more than 8 frames after its release: `combat`, `course_sword`,
+  `course_sword_child`, `field`, `field_night`, `graveyard`, `meadow` (traces) and
+  `course_sword` and `course_sword_child` (sheets), `field_night`, `field_peahat`,
+  `graveyard_lesson`, `meadow`, `meadow_saria`, `meadow_scrub`, `meadow_wolfos` (shots). Each trace
+  first differs at that slash: `anim` `link_fighter_*_kiru_finsh` becomes `link_fighter_*_kiru` (the
+  combo count reset), and `pos`, `root_joint`, `root_rot`, `camera` follow from the frame on
+  (course 32, combat 521, field 251, field night 96, graveyard 3598, meadow 2568); the routes'
+  fights run longer and the rest moves (frames: field 1815 to 1808, field night 2011 to 1954,
+  graveyard 6772 to 6508, meadow 6852 to 8096). No golden held B long enough to charge.
+- **A2**, this code with the combo window as it was (no `unk_844` countdown, `func_80832440`
+  without its `func_80832318` and its reset; `target/game26proof`): all 243 of milestone 4's hashes
+  back (`out/golden_proof_g9m6_A2.txt`). (**A**, the countdown alone off, left
+  `func_80832440`'s reset changing three cases and two runs failing: `out/golden_proof_g9m6_A.txt`.)
+
+### The hand test
+
+The user (2026-10-17): everything good but two things, both the port's (the C does otherwise):
+
+- **The owl's chest was black and white.** His torso's texture (`object_owl_009DA8_Tex`, 16 by
+  16) is loaded clamped with a 16-texel mask on a tile 640 by 192 texels: the RDP clamps to the
+  tile, then masks, so the texture repeats across the chest. The port's decoder
+  (`eng_gbi::texture`) made the image as wide as the tile and read 640 texels a row out of TMEM,
+  past the texture. It masks a clamped axis now and reads only the mask's texels (a test in
+  `eng_gbi`). The same fix changes every mesh with such a tile: Link's own (a dark patch at his
+  collar), the course's, the viewer's Link.
+- **The shadows looked broken up** (the falling rocks', the owl's while he waits). The port drew a
+  stand-in: a soft disc in each actor's draw, laid flat at the floor's height, so on a slope the
+  ground cut through it. The C draws the ROM's `gCircleShadowDL` on the floor polygon's plane
+  (`func_80038A28`), from `Actor_Draw`, for the shadow the actor's `ActorShape_Init` chose. Now so
+  (`oot_game::shadow`, ADR 0076): the circle, white circle, horse and feet shadows; every ported
+  actor's `ActorShape_Init` and shadow writes (93 modules; the stand-in gone, BACKLOG #84 closed).
+  Link has his feet shadows (one per foot per light shining down), and the actors the port drew
+  none for have theirs (King Dodongo, Queen Gohma, the scrubs, the Keese, the Skulltulas, bombs,
+  dropped items, the horses).
+
+Results after the fixes: 1,364 tests (one ignored) pass, `tests/shadows.rs` (3) new; goldens: 97 of
+258 the same, 161 images differ (no trace: neither fix moves the game), re-recorded
+(`out/golden_base29`, the same over two runs).
+
+Golden proof: three builds, each image's change put down to its cause by comparing it with them
+(`out/golden_proof_g9m6_classify.txt`): **D**, this code with a pack imported by the old decoder
+(`out/data26proofD`); **S**, this code with `Actor_Draw`'s shadow off; **DS**, both. 54 images change
+with the decoder only (those of Link and the course: `course_*`, `spot04_*`, `ocarina_*`,
+`farewell_owl`, `zelda_talk` ...), 17 with the shadows only, 86 with both; the 4 viewer images change
+with neither build's pack (the viewer decodes Link's textures itself, with the new decoder). DS
+against milestone 6's first base (`out/golden_base28`) differs only where a stand-in disc was drawn
+(`out/golden_proof_g9m6_D.txt`, `_S.txt`, `_DS.txt`).
+
+### How to check
+
+```
+scripts\run\test-summit.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-summit.bat
+```
+
+### By hand
+
+1. `game-summit` (the trail by Goron City's door, `goron-ruby`: the Ruby, bombs on C-Right): up
+   the road to the summit. Above y 1500 (from where the road turns up the mountain's face,
+   or `game-summit rocks`) the mountain rumbles, the screen darkens a little and embers fall;
+   flaming rocks drop near Link, at most two at a time, in rounds of 200 frames (about ten seconds) with 100
+   between; one that hits takes half a heart (a shield held up bounces it); they burst into
+   pieces on landing. Past them the three Skullwalltulas on the wall (`En_Sw`): Z and slash them.
+2. `game-summit wall` (the summit in front of the Great Fairy's wall): a bomb (C-Right) put down
+   by the cracked wall, back off: it breaks; in through the hole.
+3. `game-summit fountain` (the fountain, the wall broken): walk up onto the Triforce (a text
+   there), the ocarina (C-Down), Zelda's Lullaby: she rises from the fountain spinning,
+   her texts, the lights round her, a warp of light round Link, the magic: the green meter grows
+   under the hearts and fills. The texts about the spin attack. Then walk out south: Link comes out
+   of the wall on the summit.
+4. With magic, the spin attack: hold B (the sword out) until the blade glows blue, then orange; let
+   go: the big spin with its orange trail. While charging the meter shows in yellow the 2 the
+   spin will spend, and its border flashes; the magic goes on the release. A quick spin (the stick round, B): the smaller blue trail.
+5. `game-summit revisit` (the fountain with magic): the Triforce, the lullaby: she appears again
+   (a short camera), talks, and refills health and magic with a beam of light.
+6. `game-summit owl` (the summit with magic): talk to the owl perched by the fountain's wall; his text offers
+   the flight: hold on, he flies Link down over the mountain to Kakariko. Without magic (from
+   `game-summit wall`, before the fountain) he only talks (0x3062).
+7. Anything that looks off: the Great Fairy's face, hair and particles, the fountain's water and
+   light scrolls, the meter's look (its ends and colours), the spin's trails and glow, the rocks
+   and the darkening, the owl's talk camera. Known: no rumble, no spells.

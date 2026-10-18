@@ -22,8 +22,9 @@
 //!   `NA_SE_SY_KINSTA_MARK_APPEAR` and its token 10 off its surface. One whose flag is set
 //!   (its token taken) isn't spawned.
 //!
-//! The whole overlay is ported. Not ported: the circle shadow of a falling Skullwalltula
-//! (`ActorShadow_DrawCircle`, not ported for any actor); `func_8002EBCC`'s look-at (the shine
+//! The whole overlay is ported. A falling Skullwalltula's circle shadow (16) is the shape's (none
+//! from `ActorShape_Init`, the circle from its fall; drawn by `Actor_Draw`). Not ported:
+//! `func_8002EBCC`'s look-at (the shine
 //! on the Gold Skulltula's texgen limbs is lit from the camera's view, not from the eye towards
 //! the actor); limb 4's env colour (`unk_1F4`, never written: black, which none of the limbs'
 //! combiners reads). `sAnimationInfo`'s other three entries are never played.
@@ -457,8 +458,7 @@ impl EnSw {
         if let Some(a) = s.anim_0.clone() {
             s.skel.change_by_info(&AnimationInfo { animation: a, play_speed: 1.0, start_frame: 0.0, frame_count: -1.0, mode: ANIMMODE_LOOP_INTERP, morph_frames: 0.0 });
         }
-        // ActorShape_Init(&shape, 0, NULL, 0).
-        s.actor.shape_y_offset = 0.0;
+        s.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         s.actor.col_chk_info.set_info2(Some(&S_DAMAGE_TABLE_PRESET_14), &COL_CHK_INFO_INIT);
         s.actor.scale.x = 0.02;
         if s.ty() == 0 {
@@ -629,8 +629,10 @@ impl EnSw {
                 self.unk_420 *= 4.0;
                 self.action = Action::GoldDie;
             } else {
-                // shape.shadowDraw = ActorShadow_DrawCircle, alpha 255, scale 16: not ported.
+                self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::Circle;
+                self.actor.shape_shadow_alpha = 255;
                 self.unk_38a = 2;
+                self.actor.shape_shadow_scale = 16.0;
                 self.actor.gravity = -1.0;
                 self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 self.action = Action::Fall;

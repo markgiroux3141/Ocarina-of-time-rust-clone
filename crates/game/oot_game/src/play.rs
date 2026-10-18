@@ -112,8 +112,6 @@ pub type DrawOut = DrawLists;
 
 /// Meshes the app builds itself rather than loading from the pack.
 pub mod builtin {
-    /// A soft dark disc of radius 1 (the circle shadow's stand-in).
-    pub const SHADOW: &str = "builtin/shadow";
     /// The sandbox's dummy target: a box 30 wide and 60 high.
     pub const TARGET_BOX: &str = "builtin/target_box";
     /// An actor that isn't ported yet (`spawn::Placeholder`, with `Debug::placeholders`).
@@ -158,6 +156,8 @@ pub struct RenderState {
     pub teleported: bool,
     /// `colorFilterParams` and `colorFilterTimer` (`Actor_Draw`'s tint), as the frame left them.
     pub color_filter: (u16, u8),
+    /// The shape's shadow (`crate::shadow`), when it has one.
+    pub shadow: Option<crate::shadow::ShadowRs>,
 }
 
 /// `a` to `b` by `t`, the short way round.
@@ -174,6 +174,14 @@ impl RenderState {
             scale: a.scale,
             y_offset: a.shape_y_offset,
             teleported: a.teleported,
+            shadow: (a.shape_shadow_draw != crate::shadow::ShadowDraw::None).then_some(crate::shadow::ShadowRs {
+                draw: a.shape_shadow_draw,
+                scale: a.shape_shadow_scale,
+                alpha: a.shape_shadow_alpha,
+                floor_height: a.floor_height,
+                floor_poly: a.floor_poly,
+                feet_pos: a.shape_feet_pos,
+            }),
             ..Default::default()
         }
     }
@@ -206,6 +214,10 @@ impl RenderState {
             switches: if t < 0.5 && self.switches.len() == next.switches.len() { self.switches.clone() } else { next.switches.clone() },
             teleported: false,
             color_filter: next.color_filter,
+            shadow: match (&self.shadow, &next.shadow) {
+                (Some(a), Some(b)) => Some(a.lerp(b, t)),
+                (_, b) => *b,
+            },
         }
     }
 }
@@ -1364,12 +1376,15 @@ impl PlayState {
             paused: self.pause_ctx.is_paused(),
             game_over_inactive: self.game_over_ctx.state == crate::game_over::GAMEOVER_INACTIVE,
             env_hazard: PLAYER_ENV_HAZARD_NONE,
+            cs_idle: self.cs_ctx.state == crate::cutscene::CS_STATE_IDLE,
+            player_in_cs_mode: self.player_in_cs_mode(),
+            fill_sfx: self.save.game_mode == crate::save::GAMEMODE_NORMAL && !self.is_cutscene_layer(),
         };
         // Player_GetEnvironmentalHazard, which Interface_Update calls (func_80083108 first, under
         // its message check, then for sEnvHazard every frame): its text opens on its first call,
         // after func_80083108 has read the message box.
         let f = crate::interface::IfaceFrame { env_hazard: if self.interface_ctx.initialised { self.player_get_environmental_hazard() } else { PLAYER_ENV_HAZARD_NONE }, ..f };
-        self.interface_ctx.update(&mut self.save, &mut self.audio, &f);
+        self.interface_ctx.update(&mut self.save, &mut self.audio, &f, &mut self.actors.lens_active);
         // Map_Update, which Interface_Update calls between the HUD's fade and the health
         // accumulator (neither reads the other's state).
         if self.interface_ctx.initialised {
@@ -1732,7 +1747,17 @@ impl PlayState {
                     }
                 }
                 let at = (a.base().flags & crate::actor::ACTOR_FLAG_IGNORE_POINT_LIGHTS == 0).then_some(rs.pos);
-                let lights: Vec<eng_gfx::PointLight> = self.light_ctx.bind_all(at).into_iter().map(|l| eng_gfx::PointLight { dir: l.dir, color: l.color }).collect();
+                let bound = self.light_ctx.bind_all(at);
+                // Then the shape's shadow (Actor_Draw's shadowDraw), from the actor's lights: the
+                // bound point lights, then the environment's two directional lights.
+                if let Some(s) = &rs.shadow {
+                    let ls = &self.env_ctx.light_settings;
+                    let mut feet: Vec<crate::shadow::FootLight> = bound.iter().map(|l| crate::shadow::FootLight { dir: l.dir, color: l.color }).collect();
+                    feet.push(crate::shadow::FootLight { dir: ls.light1_dir, color: ls.light1_color });
+                    feet.push(crate::shadow::FootLight { dir: ls.light2_dir, color: ls.light2_color });
+                    crate::shadow::draw(s, rs.pos, rs.scale, rs.rot[1], &self.col, &feet, &mut out.opa);
+                }
+                let lights: Vec<eng_gfx::PointLight> = bound.into_iter().map(|l| eng_gfx::PointLight { dir: l.dir, color: l.color }).collect();
                 if !lights.is_empty() {
                     for c in out.opa[opa..].iter_mut().chain(out.xlu[xlu..].iter_mut()) {
                         c.params.lights = lights.clone();

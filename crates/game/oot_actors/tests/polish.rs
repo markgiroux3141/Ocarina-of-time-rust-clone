@@ -262,7 +262,7 @@ fn links_poses_follow_the_cutscene_mode_tables() {
             if let Some(name) = by_function {
                 assert_eq!(data.anim_name(p.skel.animation), name, "scene {:#x}, cue {:#x}, mode {mode}", w.scene_id, p.cue_id);
                 if mode == 38 {
-                    assert!(!p.shadow_feet);
+                    assert!(p.actor.shape_shadow_draw == oot_game::shadow::ShadowDraw::None);
                 }
                 checked.push(mode);
             }

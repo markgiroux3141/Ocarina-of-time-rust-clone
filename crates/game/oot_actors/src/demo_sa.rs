@@ -23,7 +23,7 @@
 use std::sync::Arc;
 
 use eng_gfx::{DrawCmd, MeshKey, SegmentValues};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
@@ -120,8 +120,6 @@ pub struct DemoSa {
     pub is_light_ball: bool,
     pub cue_id: i32,
     pub is_holding_ocarina: bool,
-    /// `actor.shape.shadowAlpha`.
-    pub shadow_alpha: u8,
 }
 
 /// The faces, passes and hands the bridge shows, each a bake: (eye, mouth, translucent, holding
@@ -186,7 +184,6 @@ mod rs {
     pub const MOUTH: usize = 2;
     pub const OCARINA: usize = 3;
     pub const ALPHA: usize = 0;
-    pub const SHADOW_ALPHA: usize = 1;
 }
 
 impl DemoSa {
@@ -211,9 +208,8 @@ impl DemoSa {
             is_light_ball: false,
             cue_id: 0,
             is_holding_ocarina: false,
-            shadow_alpha: 255,
         };
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         match TYPE.get(this.actor.params) {
             5 => this.init_bridge(play),
             p => log::warn!("Demo_Sa: params {p} (the Chamber of Sages, the sages' magic, the credits, the unused one) isn't ported: drawn as nothing"),
@@ -239,7 +235,7 @@ impl DemoSa {
         }
         self.action = DEMOSA_ACTION_BRIDGE_INVISIBLE;
         self.draw_config = DEMOSA_DRAW_NOTHING;
-        self.shadow_alpha = 0;
+        self.actor.shape_shadow_alpha = 0;
         self.set_eyes(SARIA_EYE_SAD);
         self.set_mouth(SARIA_MOUTH_CLOSED);
     }
@@ -319,14 +315,14 @@ impl DemoSa {
         let fade_duration = KREG_17 + 10.0;
         let a = if fade_duration <= self.fade_timer { 255 } else { ((self.fade_timer / fade_duration) * 255.0) as i32 };
         self.alpha = a;
-        self.shadow_alpha = a as u8;
+        self.actor.shape_shadow_alpha = a as u8;
     }
 
     /// `DemoSa_CsBridge_StillHidden`.
     fn cs_bridge_still_hidden(&mut self) {
         self.action = DEMOSA_ACTION_BRIDGE_INVISIBLE;
         self.draw_config = DEMOSA_DRAW_NOTHING;
-        self.shadow_alpha = 0;
+        self.actor.shape_shadow_alpha = 0;
     }
 
     /// `DemoSa_CsBridge_LookAtLink`: from hidden (the last cue 4), placed by the cue and faded in;
@@ -337,13 +333,13 @@ impl DemoSa {
             self.action = DEMOSA_ACTION_BRIDGE_FADE_IN;
             self.draw_config = DEMOSA_DRAW_XLU;
             self.is_holding_ocarina = false;
-            self.shadow_alpha = 0;
+            self.actor.shape_shadow_alpha = 0;
         } else {
             self.animation_change(play, ANIM_WAIT_ON_BRIDGE, ANIMMODE_LOOP, 0.0, false);
             self.action = DEMOSA_ACTION_BRIDGE_LOOKING_SAD;
             self.draw_config = DEMOSA_DRAW_OPA;
             self.is_holding_ocarina = false;
-            self.shadow_alpha = 255;
+            self.actor.shape_shadow_alpha = 255;
         }
         self.set_eyes(SARIA_EYE_SAD);
     }
@@ -354,7 +350,7 @@ impl DemoSa {
             self.action = DEMOSA_ACTION_BRIDGE_LOOKING_SAD;
             self.draw_config = DEMOSA_DRAW_OPA;
             self.is_holding_ocarina = false;
-            self.shadow_alpha = 255;
+            self.actor.shape_shadow_alpha = 255;
         }
     }
 
@@ -364,7 +360,7 @@ impl DemoSa {
         self.action = DEMOSA_ACTION_BRIDGE_CLUTCH_OCARINA;
         self.draw_config = DEMOSA_DRAW_OPA;
         self.is_holding_ocarina = true;
-        self.shadow_alpha = 255;
+        self.actor.shape_shadow_alpha = 255;
         self.set_eyes(SARIA_EYE_CLOSED);
     }
 
@@ -374,7 +370,7 @@ impl DemoSa {
         self.action = DEMOSA_ACTION_BRIDGE_GIVE_OCARINA;
         self.draw_config = DEMOSA_DRAW_OPA;
         self.is_holding_ocarina = true;
-        self.shadow_alpha = 255;
+        self.actor.shape_shadow_alpha = 255;
     }
 
     /// `DemoSa_CsBridge_HoldOutOcarina`.
@@ -445,15 +441,15 @@ impl ActorImpl for DemoSa {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         rs.switches = vec![self.draw_config as u32, self.eye_index as u32, self.mouth_index as u32, self.is_holding_ocarina as u32];
-        rs.values = vec![self.alpha as f32, self.shadow_alpha as f32];
+        rs.values = vec![self.alpha as f32];
         rs
     }
 
     /// `DemoSa_Draw`: by `drawConfig`, nothing, `DemoSa_DrawOpa` (its env alpha 255) or
     /// `DemoSa_DrawXlu` (its alpha), the face's textures and the hand by `isHoldingOcarina`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(skeleton), Some(joints)) = (&self.skeleton, &rs.joints) else { return };
-        if rs.switches.len() < 4 || rs.values.len() < 2 {
+        if rs.switches.len() < 4 || rs.values.is_empty() {
             return;
         }
         let draw_config = rs.switches[rs::DRAW_CONFIG] as i32;
@@ -482,13 +478,6 @@ impl ActorImpl for DemoSa {
             out.xlu.push(cmd);
         } else {
             out.opa.push(cmd);
-        }
-        // ActorShadow_DrawCircle (shadowScale 30, shadowAlpha): the circle shadow's stand-in, at
-        // full strength once it shows.
-        if rs.values[rs::SHADOW_ALPHA] > 0.0 {
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
         }
     }
 

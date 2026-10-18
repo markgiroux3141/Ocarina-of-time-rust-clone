@@ -407,8 +407,6 @@ pub struct EnIn {
     /// `fidgetVec[i].y`, `.z`.
     pub fidget_y: [i16; INGO_LIMB_MAX],
     pub fidget_z: [i16; INGO_LIMB_MAX],
-    /// `shape.shadowScale`.
-    pub shadow_scale: f32,
     animations: Vec<Anim>,
     horseback: Vec<Anim>,
     /// `AnimTaskQueue_AddActorMovement` queued this frame (`EnIn_Stagger`).
@@ -481,7 +479,6 @@ impl EnIn {
             interact_info: NpcTrack::default(),
             fidget_y: [0; INGO_LIMB_MAX],
             fidget_z: [0; INGO_LIMB_MAX],
-            shadow_scale: 0.0,
             animations,
             horseback,
             movement_queued: false,
@@ -826,9 +823,7 @@ impl EnIn {
         if !(loaded || TYPE.get(self.actor.params) <= 0) {
             return;
         }
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 36).
-        self.actor.shape_y_offset = 0.0;
-        self.shadow_scale = 36.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 36.0);
         self.collider = ColliderCylinder::new(&CYLINDER_INIT);
         self.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         if self.starting_race(play) {
@@ -939,11 +934,10 @@ mod rs {
     pub const TORSO: usize = 2;
     pub const SWAY: usize = 4;
     pub const ANGLES: usize = 10;
-    /// `switches`: the eye, the adult-era body, working (the basket and pitchfork), the shadow.
+    /// `switches`: the eye, the adult-era body, working (the basket and pitchfork).
     pub const EYE: usize = 0;
     pub const ADULT_ERA: usize = 1;
     pub const WORKING: usize = 2;
-    pub const SHADOW: usize = 3;
 }
 
 impl ActorImpl for EnIn {
@@ -1032,14 +1026,14 @@ impl ActorImpl for EnIn {
         let t = &self.interact_info;
         let sway = Self::sway_of(&self.fidget_y, &self.fidget_z);
         rs.angles = vec![t.head[0], t.head[1], t.torso[0], t.torso[1], sway[0].1, sway[0].2, sway[1].1, sway[1].2, sway[2].1, sway[2].2];
-        rs.switches = vec![self.eye_index.clamp(0, 3) as u32, (TYPE.get(self.actor.params) > 0) as u32, self.skel.is(WORKING_ANIM) as u32, self.shadow_scale.to_bits()];
+        rs.switches = vec![self.eye_index.clamp(0, 3) as u32, (TYPE.get(self.actor.params) > 0) as u32, self.skel.is(WORKING_ANIM) as u32];
         rs
     }
     /// `EnIn_Draw`: `Gfx_SetupDL_25Opa`, the eyes on 8, `gIngoHeadGradient2Tex` on 9, the
     /// skeleton; `EnIn_PostLimbDraw`'s basket and pitchfork.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
-        if rs.angles.len() < rs::ANGLES || rs.switches.len() < 4 {
+        if rs.angles.len() < rs::ANGLES || rs.switches.len() < 3 {
             return;
         }
         let a = &rs.angles;
@@ -1059,11 +1053,6 @@ impl ActorImpl for EnIn {
             }
         }
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye, rs.switches[rs::ADULT_ERA] != 0))), transform: m, bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 36): the circle shadow's stand-in.
-        let s = f32::from_bits(rs.switches[rs::SHADOW]);
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(s, 1.0, s));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

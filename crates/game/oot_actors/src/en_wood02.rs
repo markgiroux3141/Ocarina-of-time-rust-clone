@@ -374,8 +374,7 @@ impl EnWood02 {
                 return Box::new(this);
             }
         }
-        // ActorShape_Init(&shape, 0, NULL, 0).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         this.actor.home_rot.y = 0;
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         Box::new(this)

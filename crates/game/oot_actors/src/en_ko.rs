@@ -604,8 +604,7 @@ impl EnKo {
             self.actor.kill();
             return;
         }
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 18).
-        self.actor.shape_y_offset = 0.0;
+        self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 18.0);
         self.collider = ColliderCylinder::new(&CYLINDER_INIT);
         self.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         let ty = self.ty();
@@ -1020,8 +1019,10 @@ impl ActorImpl for EnKo {
         self.collider.update(&self.actor);
         play.collision_check_set_oc(&self.actor, 0, &mut self.collider);
     }
+    /// `EnKo_Draw`'s `shape.shadowAlpha = modelAlpha` (before `Actor_Draw`'s shadow reads it), and
     /// `EnKo_PostLimbDraw`, limb 15: the focus at the head.
     fn draw_update(&mut self, _play: &mut PlayState) {
+        self.actor.shape_shadow_alpha = self.model_alpha as i32 as u8;
         let (Some(skel), Some(skeleton)) = (&self.skel, &self.skeleton) else { return };
         let t = &self.interact_info;
         let bones = Self::pose(skeleton, &skel.joint_table, [t.head[0], t.head[1]], [t.torso[0], t.torso[1]], &Self::sway_of(&self.fidget_table_y, &self.fidget_table_z));
@@ -1044,7 +1045,7 @@ impl ActorImpl for EnKo {
         rs
     }
     /// `EnKo_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(skeleton), Some(joints)) = (&self.skeleton, &rs.joints) else { return };
         if rs.angles.len() < 10 || rs.values.is_empty() || rs.switches.is_empty() {
             return;
@@ -1070,11 +1071,6 @@ impl ActorImpl for EnKo {
         } else {
             out.opa.push(cmd);
         }
-        // ActorShadow_DrawCircle (shadowScale 18, shadowAlpha = modelAlpha): the circle
-        // shadow's stand-in, at full strength.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(18.0, 1.0, 18.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

@@ -127,7 +127,8 @@ pub trait PlayerIface {
     /// trigger, or `unk_6AD == 4`).
     fn in_cs_mode(&self) -> bool;
     /// Player's part of `Player_InBlockingCsMode` (`z_player_lib.c`): everything but
-    /// `play->transitionTrigger == TRANS_TRIGGER_START` (magic isn't ported).
+    /// `play->transitionTrigger == TRANS_TRIGGER_START` and a spell cast with the meter busy (the
+    /// spells aren't ported, BACKLOG #85).
     fn in_blocking_cs_mode(&self) -> bool {
         false
     }
@@ -314,6 +315,9 @@ pub struct ActorContext {
     /// `unk_02`: the hammer's shock wave (`func_80842A28`), counted down by `Actor_UpdateAll`; it
     /// stuns enemies that check it. Nothing sets it here (the hammer isn't ported).
     pub unk_02: u8,
+    /// `lensActive`: the Lens of Truth is on. Nothing turns it on yet (the lens isn't ported); the
+    /// magic meter turns it off (`crate::magic`).
+    pub lens_active: bool,
 }
 
 /// `PLAYER_STATE1_*` (`player.h`) that freeze actors' updates (`sCategoryFreezeMasks`).

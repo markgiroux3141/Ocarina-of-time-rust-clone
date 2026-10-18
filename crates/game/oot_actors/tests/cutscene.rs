@@ -254,7 +254,7 @@ fn the_opening_plays_from_the_file_selects_new_file() {
     // (Player_ActionHandler_0): at its start (0, 2, 116) facing 0x8000, asleep.
     d.until(&mut w, 30, "mode 38", |w| w.player().cue_id == 0x1C);
     let p = w.player();
-    assert_eq!((p.cs_mode, p.actor.world_pos, p.actor.shape_rot.y, w.data.anim_name(p.skel.animation), p.shadow_feet), (6, Vec3::new(0.0, 2.0, 116.0), -0x8000, "clink_op3_wait1", false));
+    assert_eq!((p.cs_mode, p.actor.world_pos, p.actor.shape_rot.y, w.data.anim_name(p.skel.animation), p.actor.shape_shadow_draw), (6, Vec3::new(0.0, 2.0, 116.0), -0x8000, "clink_op3_wait1", oot_game::shadow::ShadowDraw::None));
     // The first text at 41; the fill stays black until the FX lowers it.
     d.until(&mut w, 60, "0x109D", |w| w.msg_ctx.text_id == 0x109D);
     assert_eq!((w.cs_ctx.frames, w.screen_fill()), (41, Some([0, 0, 0, 255])));
@@ -291,7 +291,7 @@ fn the_opening_plays_from_the_file_selects_new_file() {
         // A negative sCueToCsActionMap mode: no move to the cue's start.
         assert_eq!(w.data.anim_name(w.player().skel.animation), anim, "cue {cue:#x}, mode {mode}");
         if cue == 0x1F {
-            assert!(w.player().shadow_feet, "func_80851FB0 put the shadow back");
+            assert!(w.player().actor.shape_shadow_draw == oot_game::shadow::ShadowDraw::Feet, "func_80851FB0 put the shadow back");
         }
     }
     // Cue 5 at 645: held at (0, 0, 60); CS_MISC 14 (645) and 12 (647): the end.

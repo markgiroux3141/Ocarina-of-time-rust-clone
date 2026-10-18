@@ -106,8 +106,7 @@ impl EnExRuppy {
     pub fn init(actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
         let mut this = EnExRuppy { action: Action::None, color_idx: 0, ty: TYPE.get(actor.params), invisible: 0, timer: 0, rupee_value: 0, throw_distance: 0, gallery_flag: 0, scale: 0.0, actor };
         log::debug!("☆☆☆☆☆ Index ☆☆☆☆☆ {:x}", this.ty);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 25): no shadow drawn.
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 25.0);
         match this.ty {
             ENEXRUPPY_TYPE_DIVING_GAME => {
                 this.scale = 0.01;
@@ -137,6 +136,7 @@ impl EnExRuppy {
                     this.rupee_value = value;
                     this.color_idx = color;
                 }
+                this.actor.shape_shadow_scale = 7.0;
                 this.actor.shape_y_offset = 700.0;
                 this.throw_distance = THROW_DISTANCE.get(this.actor.world_rot.z);
                 this.actor.world_rot.z = 0;
@@ -154,6 +154,7 @@ impl EnExRuppy {
                 }
                 this.actor.gravity = -3.0;
                 log::debug!("☆☆☆☆☆ Wow Coin ☆☆☆☆☆");
+                this.actor.shape_shadow_scale = 6.0;
                 this.actor.shape_y_offset = 700.0;
                 this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 this.action = Action::WaitToBlowUp;
@@ -168,6 +169,7 @@ impl EnExRuppy {
                 }
                 this.actor.gravity = -3.0;
                 log::debug!("☆☆☆☆☆ Normal rupee ☆☆☆☆☆");
+                this.actor.shape_shadow_scale = 6.0;
                 this.actor.shape_y_offset = 700.0;
                 this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 this.action = Action::WaitAsCollectible;
@@ -176,6 +178,7 @@ impl EnExRuppy {
                 this.actor.gravity = -3.0;
                 this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
                 this.actor.scale = Vec3::splat(0.01);
+                this.actor.shape_shadow_scale = 6.0;
                 this.actor.shape_y_offset = -700.0;
                 this.action = Action::GalleryTarget;
             }

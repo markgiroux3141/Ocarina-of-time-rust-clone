@@ -356,10 +356,12 @@ fn sword_hits_hurt_it_and_its_death_brings_the_others_to_mourn() {
     let (mut w, [ra, b, rc]) = tomb(&a, "kakariko-letter", HOME_B - Vec3::new(0.0, 0.0, 35.0), 0);
     idle(&mut w, 5);
     // EnRd_Draw at alpha 255: the opaque skeleton (ACTOR_SETUP_OPA_DL, env alpha 255), and the
-    // circle shadow's stand-in.
+    // circle func_80033C30 puts under it (POLY_OPA_DISP, 0.25, alpha 255).
     let out = draw(&w, b);
-    assert_eq!((out.opa.len(), out.xlu.len()), (1, 1));
+    assert_eq!((out.opa.len(), out.xlu.len()), (2, 0));
     assert_eq!(out.opa[0].mesh, bake_key(false, false));
+    assert_eq!(out.opa[1].mesh, eng_gfx::MeshKey::named(oot_game::pack::keys::bake(oot_game::shadow::BAKE_CIRCLE)));
+    assert_eq!(out.opa[1].params.segments.as_ref().unwrap().prim[0x0B], Some([0, 0, 0, 255]));
     let mut hit = None;
     let pad = PadState { button: BTN_B, ..Default::default() };
     for i in 0..20 {
@@ -428,10 +430,12 @@ fn sword_hits_hurt_it_and_its_death_brings_the_others_to_mourn() {
             assert!(w.flags.get_switch(0x3F) && w.flags.get_switch(0x7F));
             // Fading: the translucent skeleton (gActorSetupXluDL) at its alpha, scale.y down
             // 0.000075 a step (16 steps from 255 to 175).
+            // func_80033C30's circle at the same alpha, still in POLY_OPA_DISP.
             let out = draw(&w, b);
-            assert_eq!((out.opa.len(), out.xlu.len()), (0, 2));
+            assert_eq!((out.opa.len(), out.xlu.len()), (1, 1));
             assert_eq!(out.xlu[0].mesh, bake_key(false, true));
             assert_eq!(out.xlu[0].params.segments.as_ref().unwrap().env[0x0E], Some([0, 0, 0, 175]));
+            assert_eq!(out.opa[0].params.segments.as_ref().unwrap().prim[0x0B], Some([0, 0, 0, 175]));
             assert!((rd(&w, b).actor.scale.y - (0.01 - 16.0 * 0.000075)).abs() < 1e-6);
         }
         if redeads(&w).len() == 2 {

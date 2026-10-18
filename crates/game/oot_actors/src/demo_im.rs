@@ -181,8 +181,6 @@ pub struct DemoIm {
     /// `unk_2D0`: the pointing hand drawn.
     pub unk_2d0: i32,
     pub interact_info: NpcTrack,
-    /// `actor.shape.shadowAlpha`: the circle shadow's alpha (the port's actors keep no shadow state).
-    pub shadow_alpha: u8,
     idle: Anim,
     whistling: Anim,
     start_whistling: Anim,
@@ -247,7 +245,6 @@ impl DemoIm {
             collider: ColliderCylinder::new(&CYLINDER_INIT),
             unk_2d0: 0,
             interact_info: NpcTrack::default(),
-            shadow_alpha: 0,
             idle,
             whistling,
             start_whistling,
@@ -256,9 +253,7 @@ impl DemoIm {
             not_ported_logged: false,
             actor,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
-        this.actor.shape_y_offset = 0.0;
-        this.shadow_alpha = 255;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         this.collider.update(&this.actor);
         this.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         match TYPE.get(this.actor.params) {
@@ -575,7 +570,7 @@ impl DemoIm {
     fn func_809869b0(&mut self) {
         self.change_anim(self.idle.clone(), ANIMMODE_LOOP, 0.0, false);
         self.action = 18;
-        self.shadow_alpha = 0;
+        self.actor.shape_shadow_alpha = 0;
     }
 
     /// `func_809869F8`: Link 30 west of her, she out of the culling volume.
@@ -618,7 +613,7 @@ impl DemoIm {
             self.action = 21;
             self.draw_config = 1;
             self.unk_280 = 1;
-            self.shadow_alpha = 255;
+            self.actor.shape_shadow_alpha = 255;
         }
     }
 
@@ -628,7 +623,7 @@ impl DemoIm {
             self.action = 24;
             self.draw_config = 1;
             self.unk_280 = 1;
-            self.shadow_alpha = 255;
+            self.actor.shape_shadow_alpha = 255;
         }
     }
 
@@ -649,7 +644,7 @@ impl DemoIm {
             self.action = 26;
             self.draw_config = 1;
             self.unk_280 = 1;
-            self.shadow_alpha = 255;
+            self.actor.shape_shadow_alpha = 255;
         }
     }
 
@@ -860,21 +855,14 @@ impl ActorImpl for DemoIm {
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         let (h, t) = (self.interact_info.head, self.interact_info.torso);
         rs.angles = vec![h[0], h[1], h[2], t[0], t[1], t[2]];
-        rs.switches = vec![self.draw_config.max(0) as u32, self.eye_index.clamp(0, 2) as u32, self.unk_280 as u32, self.unk_2d0 as u32, self.shadow_alpha as u32];
+        rs.switches = vec![self.draw_config.max(0) as u32, self.eye_index.clamp(0, 2) as u32, self.unk_280 as u32, self.unk_2d0 as u32];
         rs
     }
     /// `DemoIm_Draw`: by `drawConfig`, nothing or `DemoIm_DrawSolid` (the translucent draw is type 2's
     /// and 6's, not ported).
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
-        if rs.switches.len() < 5 {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+        if rs.switches.len() < 4 {
             return;
-        }
-        // ActorShadow_DrawCircle (shadowScale 30, at shape.shadowAlpha), drawn by Actor_Draw whatever
-        // her draw config: the circle shadow's stand-in.
-        if rs.switches[4] != 0 {
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
         }
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 6 || rs.switches[0] != 1 {

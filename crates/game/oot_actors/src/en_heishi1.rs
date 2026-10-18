@@ -12,8 +12,8 @@
 //! the drain by night (after 17:17, by night, or once Zelda has fled), only stand and catch Link
 //! within 100. Nothing moves while Player is frozen (`Camera_Special6`'s screen change).
 //!
-//! The whole overlay is ported. The guard's skeleton is `En_Heishi4`'s bake; the circle shadow
-//! (`func_80033C30`) is the shadow stand-in.
+//! The whole overlay is ported. The guard's skeleton is `En_Heishi4`'s bake; its draw puts the
+//! circle shadow down itself (`func_80033C30`, 0.3: `oot_game::shadow::func_80033c30`).
 //!
 //! Params: `type` bits 8 to 15 (0 to 3: a day patrol, its animation parameters
 //! `sAnimParamsInit`, 2 and 3 using the middle points; 5: a night guard, whose parameters are read
@@ -28,7 +28,7 @@ use std::sync::Arc;
 use eng_anim::skeleton::Skeleton;
 use eng_gfx::{DrawCmd, MeshKey};
 use eng_math::{approach_f, approach_zero_f, smooth_step_to_s};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
@@ -589,9 +589,7 @@ impl ActorImpl for EnHeishi1 {
         let head = rs.angles.first().copied().unwrap_or(0);
         let bones = EnHeishi4::pose(&self.skeleton, &joints.rot, [0, head, 0], [0, 0, 0]);
         out.opa.push(DrawCmd { mesh: MeshKey::named(oot_game::pack::keys::bake(en_heishi4::BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
+        out.opa.push(oot_game::shadow::func_80033c30(&play.col, rs.pos, Vec3::splat(0.3), 0xFF));
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

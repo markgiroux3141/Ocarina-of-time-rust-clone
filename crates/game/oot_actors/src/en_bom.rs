@@ -15,8 +15,10 @@
 //! sphere of `DMG_EXPLOSIVE` (damage 8 and `shape.rot.z`'s high byte) growing by 8 and the low
 //! byte a frame, centred where the bomb last drew. Gone in Link's hand, it lets go of him itself.
 //!
-//! Not ported: `Rumble_Request` (BACKLOG #60), the circle shadow (`ActorShadow_DrawCircle`, the
-//! shadows' debt), the shine (`func_8002EBCC`'s look-at: the renderer's texgen reads the view).
+//! The circle shadow (16) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
+//!
+//! Not ported: `Rumble_Request` (BACKLOG #60), the shine (`func_8002EBCC`'s look-at: the
+//! renderer's texgen reads the view).
 //!
 //! Params: `type` (`EnBomType`: 0 `BOMB_BODY`, the bomb; 1 `BOMB_EXPLOSION` once it blows, which
 //! `func_80033684` and the actors that check for a blast read). `shape.rot.z`'s high byte
@@ -136,8 +138,7 @@ impl EnBom {
         actor.scale = Vec3::ZERO;
         actor.target_arrow_offset = 2000.0;
         actor.gravity = -4.0;
-        // ActorShape_Init(&shape, 700, ActorShadow_DrawCircle, 16): the shadow isn't drawn.
-        actor.shape_y_offset = 700.0;
+        actor.shape_init(700.0, oot_game::shadow::ShadowDraw::Circle, 16.0);
         actor.col_chk_info.mass = 200;
         actor.col_chk_info.cyl_radius = 5;
         actor.col_chk_info.cyl_height = 10;

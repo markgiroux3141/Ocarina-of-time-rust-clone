@@ -44,8 +44,8 @@
 //! Drawn as `EnDu_Draw` does: his eyes on segment 8, mouth on 9, nose on 0xA (texture swaps on
 //! one bake, `DrawParams::texture_images`), the skeleton (`gDaruniaSkel`) opaque at full alpha
 //! (`func_80034BA0`), the head (limb 16) turned about 2400 along it and the torso (limb 8)
-//! (`EnDu_OverrideLimbDraw`), the focus 1000 below the head (`EnDu_PostLimbDraw`); with the circle
-//! shadow's stand-in (scale 30).
+//! (`EnDu_OverrideLimbDraw`), the focus 1000 below the head (`EnDu_PostLimbDraw`). The circle
+//! shadow (30) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! The whole overlay is ported; one-point cutscene 3330 logs (`OnePointCutscene_Init`, not
 //! ported).
@@ -453,8 +453,7 @@ impl EnDu {
             animations,
             face,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         // Collider_SetCylinder (sCylinderInit), CollisionCheck_SetInfo2(DamageTable_Get(0x16)).
         this.actor.col_chk_info.set_info2(Some(&crate::en_ma1::S_DAMAGE_TABLE_PRESET_22), &COL_CHK_INFO_INIT);
         if !Self::is_here(play) {
@@ -881,15 +880,11 @@ impl ActorImpl for EnDu {
 
     /// `EnDu_Draw`: the eyes on segment 8, the mouth on 9, the nose on 0xA; `func_80034BA0` at
     /// alpha 255.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 6 || rs.switches.len() < 3 {
             return;
         }
-        // ActorShadow_DrawCircle (shadowScale 30): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
 
         let a = &rs.angles;
         let bones = Self::pose(&self.skeleton, &joints.rot, [a[rs::HEAD], a[rs::HEAD + 1], a[rs::HEAD + 2]], [a[rs::TORSO], a[rs::TORSO + 1], a[rs::TORSO + 2]]);

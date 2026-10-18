@@ -60,6 +60,7 @@ echo   132  test-bombs           GAME-09's bomb tests: the bomb, the Bomb Flower
 echo   135  test-goron           GAME-09's trail and Goron City tests: Gorons, Darunia, Tektites, the boulder, the urn, the runs
 echo   138  test-cavern          GAME-09's cavern tests: the skull, Lizalfos, Poes, Armos, pillars, trails, the runs
 echo   141  test-kingdodongo     GAME-09's King Dodongo tests: the boss, his breath, the lava, the Ruby's actors, the runs
+echo   144  test-summit          GAME-09's summit tests: the magic meter, the Great Fairy, the spin, the rocks, the runs
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -110,6 +111,7 @@ echo   133  game-bombs           Dodongo's Cavern's entrance with the bracelet a
 echo   136  game-goron           Death Mountain Trail and Goron City (asks: or city, darunia, cliff, cavern, bombs)
 echo   139  game-cavern          Dodongo's Cavern, the whole loop (asks: or lizalfos, pillar, upper, web, bag, skull, gravestone, boss)
 echo   142  game-kingdodongo     King Dodongo's room (asks: or fight, beaten, ruby, trail)
+echo   145  game-summit          Death Mountain's summit and the Great Fairy (asks: or rocks, wall, fountain, revisit, owl)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -154,6 +156,7 @@ echo   134  sandbox-bombs        The bombs run's trace and screenshots (the flow
 echo   137  sandbox-goron        The Darunia and boulder runs' traces and screenshots, into out\run
 echo   140  sandbox-cavern       The cavern's four runs' traces and screenshots (pillar, bag, skull, gravestone), into out\run
 echo   143  sandbox-kingdodongo  King Dodongo's two runs' traces and screenshots (the intro, the Ruby), into out\run
+echo   146  sandbox-summit       The summit's three runs' traces and screenshots (the wall, the fairy, the owl), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -307,6 +310,9 @@ if "%pick%"=="140" set "script=sandbox-cavern"
 if "%pick%"=="141" set "script=test-kingdodongo"
 if "%pick%"=="142" goto kingdodongo
 if "%pick%"=="143" set "script=sandbox-kingdodongo"
+if "%pick%"=="144" set "script=test-summit"
+if "%pick%"=="145" goto summit
+if "%pick%"=="146" set "script=sandbox-summit"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -328,6 +334,14 @@ set "which="
 set /p "which=Which (empty: the cavern's entrance; lizalfos, pillar, upper, web, bag, skull, gravestone or boss): "
 call "%~dp0game-cavern.bat" %which%
 echo game-cavern finished (exit code %errorlevel%).
+pause
+goto menu
+
+:summit
+set "which="
+set /p "which=Which (empty: the trail by Goron City's door; rocks, wall, fountain, revisit or owl): "
+call "%~dp0game-summit.bat" %which%
+echo game-summit finished (exit code %errorlevel%).
 pause
 goto menu
 

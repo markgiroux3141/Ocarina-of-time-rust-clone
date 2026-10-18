@@ -1,5 +1,5 @@
 //! Drawing helpers for the play mode: collision meshes as unlit vertex-coloured draw lists,
-//! a blob shadow, and Link, from the pack's meshes, posed with Player's look/lean overrides.
+//! and Link, from the pack's meshes, posed with Player's look/lean overrides.
 
 use std::collections::HashMap;
 
@@ -153,24 +153,6 @@ pub fn water_draw_list(h: &CollisionHeader) -> DrawList {
         for i in [0, 1, 2, 0, 2, 3] {
             verts.push(vtx(q[i], col));
         }
-    }
-    let mut d = DrawList::default();
-    d.materials.push(shade_material(BlendMode::Translucent));
-    d.batches.push(Batch { material: 0, vertices: verts, sources: Vec::new() });
-    d
-}
-
-/// A soft dark disc (radius 1, at the origin) for the blob shadow; place it with the root
-/// matrix.
-pub fn shadow_draw_list() -> DrawList {
-    let mut verts = Vec::new();
-    let n = 24;
-    for i in 0..n {
-        let a0 = i as f32 / n as f32 * std::f32::consts::TAU;
-        let a1 = (i + 1) as f32 / n as f32 * std::f32::consts::TAU;
-        verts.push(vtx(Vec3::ZERO, [0, 0, 0, 140]));
-        verts.push(vtx(Vec3::new(a0.cos(), 0.0, a0.sin()), [0, 0, 0, 0]));
-        verts.push(vtx(Vec3::new(a1.cos(), 0.0, a1.sin()), [0, 0, 0, 0]));
     }
     let mut d = DrawList::default();
     d.materials.push(shade_material(BlendMode::Translucent));

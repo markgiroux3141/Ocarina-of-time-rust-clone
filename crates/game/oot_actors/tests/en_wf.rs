@@ -158,7 +158,7 @@ fn it_rises_when_link_is_within_240_across() {
         let r = wf(&w, h);
         assert_eq!(r.timer, 5 - i);
         assert!((r.actor.scale.y - 0.0015 * i as f32).abs() < 1e-6, "{i}: {}", r.actor.scale.y);
-        assert!((r.shadow_scale - 14.0 * i as f32).abs() < 1e-3);
+        assert!((r.actor.shape_shadow_scale - 14.0 * i as f32).abs() < 1e-3);
     }
     assert_eq!(sfx_frames(&w, NA_SE_EN_WOLFOS_APPEAR), [w.audio.frames]);
     // Then the howl to frame 7 at half speed; its end: scale.y = scale.x, gravity -2,

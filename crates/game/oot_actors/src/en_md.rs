@@ -23,7 +23,9 @@
 //! head and torso turns and sway, from meshes baked per eye and pass
 //! (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported: his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder), the circle shadow's alpha.
+//! The circle shadow (24) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`), at his alpha.
+//!
+//! Not ported: his fairy (`En_Elf`, `FAIRY_KOKIRI`: a placeholder).
 //!
 //! Params: `ENMD_GET_PATH_INDEX` bits 8 to 15 (his path, walked away along and stood at the end
 //! of; 0xFF `ENMD_PATH_NONE`). Where he is and what he does is the scene's (Kokiri Forest, his
@@ -295,8 +297,7 @@ impl EnMd {
             fidget_table_z: [0; MIDO_LIMB_MAX],
             animations,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 24).
-        m.actor.shape_y_offset = 0.0;
+        m.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 24.0);
         m.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         if !m.should_spawn(play) {
             m.actor.kill();
@@ -493,7 +494,7 @@ impl EnMd {
         } else {
             self.alpha = 255;
         }
-        // shape.shadowAlpha = alpha.
+        self.actor.shape_shadow_alpha = self.alpha as u8;
     }
 
     /// `EnMd_UpdateTalking`: the head and torso tracking, and talking (`Npc_UpdateTalking`).
@@ -908,7 +909,7 @@ impl ActorImpl for EnMd {
         rs
     }
     /// `EnMd_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         if rs.angles.len() < 10 || rs.values.is_empty() || rs.switches.is_empty() {
             return;
@@ -930,11 +931,6 @@ impl ActorImpl for EnMd {
         } else {
             out.opa.push(cmd);
         }
-        // ActorShadow_DrawCircle (shadowScale 24, shadowAlpha = alpha): the circle shadow's
-        // stand-in, at full strength.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(24.0, 1.0, 24.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

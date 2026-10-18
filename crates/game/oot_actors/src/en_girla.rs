@@ -638,7 +638,8 @@ impl EnGirlA {
         self.actor.flags &= !ACTOR_FLAG_ATTENTION_ENABLED;
         self.actor.scale = Vec3::splat(0.25);
         self.actor.shape_y_offset = 24.0;
-        // shape.shadowScale = 4.
+        // (No ActorShape_Init: shadowDraw stays Actor_Init's NULL.)
+        self.actor.shape_shadow_scale = 4.0;
         self.actor.floor_height = self.actor.home_pos.y;
         self.actor.gravity = 0.0;
         // EnGirlA_SetupAction(this, EnGirlA_Noop).
@@ -653,6 +654,7 @@ impl EnGirlA {
     fn update2(&mut self, play: &PlayState) {
         self.actor.scale = Vec3::splat(0.25);
         self.actor.shape_y_offset = 24.0;
+        self.actor.shape_shadow_scale = 4.0;
         self.try_set_mask_item_description(&play.save);
         // actionFunc: EnGirlA_Noop.
         self.actor.set_focus(5.0);

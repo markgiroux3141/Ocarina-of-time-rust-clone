@@ -10,7 +10,8 @@
 //! screen in the screen's space (`DrawParams::screen`), its texture coordinates the rectangle's
 //! (0.13671875 a pixel, t falling); `SETUPDL_64` turns texturing off for the triangles it doesn't
 //! draw, so the quad's commands turn it on (`gSPTexture`), as the rectangle is textured
-//! regardless. `Magic_Reset` and Nayru's Love's restore aren't (no magic, no spells).
+//! regardless. Its destroy's `Magic_Reset` is ported; Nayru's Love's restore never applies (no
+//! spells).
 //!
 //! Params: `params` whole (1: only the screen of rain, forever; any other: the storm, its
 //! `En_Okarina_Effect` spawned); `Message_DrawMain` spawns it with 0.

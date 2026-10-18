@@ -21,7 +21,8 @@
 //!   and drops three from table 4.
 //!
 //! The whole overlay is ported (its explosion's `En_Bom` since GAME-09 milestone 1, BACKLOG #33).
-//! Its blades dig only while it's in its culling volume (ADR 0058). The circle shadow isn't drawn (`shadowScale` kept).
+//! Its blades dig only while it's in its culling volume (ADR 0058). The circle shadow (27) is the
+//! shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Params: `params` whole, the type (`PeahatType`: -1 `PEAHAT_TYPE_GROUNDED`, 0
 //! `PEAHAT_TYPE_FLYING`, 1 `PEAHAT_TYPE_LARVA`, spawned by the other two; any other gets no
@@ -331,8 +332,6 @@ pub struct EnPeehat {
     pub collider_cylinder: ColliderCylinder,
     pub collider_jnt_sph: ColliderJntSph,
     pub collider_quad: ColliderQuad,
-    /// `shape.shadowScale` (the circle shadow isn't drawn).
-    pub shadow_scale: f32,
 }
 
 const COL_CYLINDER: u8 = 0;
@@ -384,8 +383,7 @@ impl EnPeehat {
         let skeleton = play.assets.clone().and_then(|a| a.skeleton(OBJECT, SKEL).map_err(|e| log::error!("En_Peehat: {e:#}")).ok());
         let anims = Anims::load(play);
         let skel = SkelAnimeStd::init_flex(24, anims.as_ref().map(|a| a.rising.clone()));
-        // ActorShape_Init(100, ActorShadow_DrawCircle, 27).
-        actor.shape_y_offset = 100.0;
+        actor.shape_init(100.0, oot_game::shadow::ShadowDraw::Circle, 27.0);
         actor.focus_pos = actor.world_pos;
         actor.world_rot.y = 0;
         actor.col_chk_info.mass = MASS_HEAVY;
@@ -425,7 +423,6 @@ impl EnPeehat {
             collider_cylinder,
             collider_jnt_sph,
             collider_quad,
-            shadow_scale: 27.0,
         };
         match TYPE.get(this.actor.params) {
             PEAHAT_TYPE_GROUNDED => this.ground_set_state_ground(),

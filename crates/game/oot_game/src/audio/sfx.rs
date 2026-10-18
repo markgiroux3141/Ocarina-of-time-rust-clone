@@ -1729,6 +1729,10 @@ pub const NA_SE_EN_GOMA_BJR_LAND: u16 = 0x39E3;
 pub const NA_SE_EN_GOMA_BJR_LAND2: u16 = 0x39E4;
 pub const NA_SE_EN_GOMA_JR_LAND: u16 = 0x39E5;
 pub const NA_SE_EN_GOMA_JR_LAND2: u16 = 0x39E6;
+/// `En_Encount2`'s and `En_Fire_Rock`'s (`environmentbank_table.h`, `enemybank_table.h`).
+pub const NA_SE_EV_EXPLOSION: u16 = 0x2802;
+pub const NA_SE_EV_VOLCANO: u16 = 0x2849;
+pub const NA_SE_EN_VALVAISA_ROCK: u16 = 0x38D7;
 /// The constants above with their names, for the pack's test.
 pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_PL_WALK_GROUND", NA_SE_PL_WALK_GROUND),
@@ -1973,4 +1977,7 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_EN_GOMA_BJR_LAND2", NA_SE_EN_GOMA_BJR_LAND2),
     ("NA_SE_EN_GOMA_JR_LAND", NA_SE_EN_GOMA_JR_LAND),
     ("NA_SE_EN_GOMA_JR_LAND2", NA_SE_EN_GOMA_JR_LAND2),
+    ("NA_SE_EV_EXPLOSION", NA_SE_EV_EXPLOSION),
+    ("NA_SE_EV_VOLCANO", NA_SE_EV_VOLCANO),
+    ("NA_SE_EN_VALVAISA_ROCK", NA_SE_EN_VALVAISA_ROCK),
 ];

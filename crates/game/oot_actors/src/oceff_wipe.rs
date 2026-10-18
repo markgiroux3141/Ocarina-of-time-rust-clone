@@ -9,8 +9,8 @@
 //! colours from them (`FrustumVertices`, as `Demo_Effect`'s, ADR 0053). The other wipes
 //! (`oceff_wipe2`, `_3`, `_4`) share this file's helpers.
 //!
-//! The whole overlay is ported. `Magic_Reset` (no magic yet) and Nayru's Love's restore (no
-//! spells) are logged.
+//! The whole overlay is ported, its destroy's `Magic_Reset` too; Nayru's Love's restore never
+//! applies (the spells aren't ported: `nayrusLoveTimer` stays 0).
 //!
 //! Params: `params` whole (`OceffWipeType`: 0 `OCEFF_WIPE_ZL` Zelda's Lullaby's colours, any other
 //! `OCEFF_WIPE_SOT`'s, the Song of Time's); only spawned, by `Message_DrawMain`
@@ -124,9 +124,10 @@ pub fn wipe_cmd(bake: &str, m: Mat4, sv: SegmentValues, vertex_colors: Option<Ve
 }
 
 /// The song effects' destroy: `Magic_Reset`, and Nayru's Love's restore while its timer runs
-/// (`PLAYER_STATE3_RESTORE_NAYRUS_LOVE`). Neither magic nor the spells are ported: nothing to do.
-pub fn destroy_magic_reset(_play: &PlayState, name: &str) {
-    log::trace!("{name}: Magic_Reset (magic isn't ported)");
+/// (`PLAYER_STATE3_RESTORE_NAYRUS_LOVE`). The spells aren't ported: `nayrusLoveTimer` is never
+/// set, so the restore never applies.
+pub fn destroy_magic_reset(play: &mut PlayState, _name: &str) {
+    play.magic_reset();
 }
 
 pub struct OceffWipe {

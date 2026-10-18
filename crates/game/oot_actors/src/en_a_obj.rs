@@ -13,8 +13,9 @@
 //! - The rest stand (gravity -2) and can be read if they have a text.
 //!
 //! The whole file is ported. `A_OBJ_UNKNOWN_6` reads `object_d_hsblock`'s hookshot post, which
-//! the actor doesn't load (@bug (game), never placed): logged and dropped. The circle shadow
-//! (`ActorShadow_DrawCircle`) isn't drawn, as for the other ported actors.
+//! the actor doesn't load (@bug (game), never placed): logged and dropped. The circle shadow (6, 12
+//! for the signposts and up) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw` once a
+//! falling one has found its floor).
 //!
 //! Params: `params` bits 0 to 7, the type (`AObjType`: 0 to 4 the blocks, 5 a small cube, 6
 //! unknown, 7 a grass clump, 8 a tree stump, 9 and 0xA the signposts, 0xB a boulder's fragment
@@ -193,9 +194,9 @@ impl EnAObj {
             _ => 0.01,
         };
         actor.scale = Vec3::splat(scale);
-        // ActorShape_Init(0, ActorShadow_DrawCircle, 6, or 12 for the signposts and up): the circle
-        // shadow isn't drawn.
-        actor.shape_y_offset = 0.0;
+        // ActorShape_Init(0, ActorShadow_DrawCircle, 6, or 12 for the signposts and up).
+        let shadow_scale = if TYPE.get(actor.params) >= A_OBJ_SIGNPOST_OBLONG { 12.0 } else { 6.0 };
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, shadow_scale);
         actor.focus_pos = actor.world_pos;
         actor.culling_volume_downward = 1200.0;
         actor.culling_volume_scale = 200.0;

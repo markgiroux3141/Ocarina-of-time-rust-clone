@@ -38,8 +38,8 @@
 //! head's sphere on limb 13 (`Skin_GetLimbPos`) and registers it for OC (`@bug (game)`, as
 //! `EnHorse_SkinCallback1`'s: from the draw, after the frame's collision check).
 //!
-//! The whole overlay is ported. Not drawn: her shadow (`ActorShadow_DrawHorse`, not ported for any
-//! horse).
+//! The whole overlay is ported. Her shadow (20) is the shape's (`ActorShape_Init`'s
+//! `ActorShadow_DrawHorse`, drawn by `Actor_Draw`).
 //!
 //! Params: none read (her placements' are 0xFFFF). `world.rot.z`: placed 3 (the ranch), zeroed
 //! by the init (`home`, `world` and `shape`), read by nothing.
@@ -245,8 +245,7 @@ impl EnHorseLinkChild {
         actor.culling_volume_scale = 1200.0;
         actor.scale = Vec3::splat(0.005);
         actor.gravity = -3.5;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawHorse, 20): the shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Horse, 20.0);
         actor.speed_xz = 0.0;
         actor.focus_pos = actor.world_pos + Vec3::Y * 70.0;
         // Skin_Init(.., &gChildEponaSkel, &gChildEponaGallopingAnim): SkelAnime_InitSkin plays it

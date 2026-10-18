@@ -221,8 +221,11 @@ City to the bracelet, [ADR 0073](adr/0073-death-mountain-trail-goron-city-and-th
 milestone 3 (the cavern's route, [ADR 0074](adr/0074-dodongos-cavern-route-the-skull-and-effect-blure.md):
 the loop to the skull's bridge, the skull, `EffectBlure`) are done, and milestone 4 (King Dodongo
 and the Goron's Ruby, [ADR 0075](adr/0075-king-dodongo-the-room-texture-the-cameras-up-and-the-ruby.md))
-is built: **the phase's exit is met** (waiting on the user's hand test). Milestones 5 (the rest of
-the cavern) and 6 (the summit and magic) start from the `goron-ruby` preset.
+is done: **the phase's exit is met**. Milestone 6 (the summit, the Great Fairy and magic,
+[ADR 0076](adr/0076-the-magic-meter-the-great-fairy-the-spin-attack-and-the-return-entrances.md):
+the magic meter, the Great Fairy, the spin attack, the return entrances; after the hand test the
+actors' shadows the C's way) was taken before 5 and is done; milestone 5 (the rest of the cavern) starts from its
+`fairy-magic` preset.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -727,6 +730,16 @@ recommendations taken): the split below, the critical path first and the exit at
 6. **The summit:** the magic meter, `Bg_Dy_Yoseizo`, `En_Dy_Extra`, `En_M_Thunder`,
    `SDC_GREAT_FAIRYS_FOUNTAIN`, the return entrances, `En_Encount2`, `En_Fire_Rock`; the owl's
    flight to Kakariko.
+   - **Done** (2026-10-17, ADR 0076), before milestone 5 (the user's order): the magic meter
+     (`oot_game::magic`: the state on the save context, `Interface_Update` runs it, `Magic_DrawMeter`
+     after the rupees; #49 closed), `Bg_Dy_Yoseizo` whole with every reward, `En_Dy_Extra`, the
+     orange warp, one-points 8603 and 8604; the return entrances (all of `sReturnEntranceGroupData`);
+     Player's charged spin and the C's combo window, `En_M_Thunder`, `Eff_Dust`, `Camera_Battle4`;
+     `En_Encount2`, `En_Fire_Rock`; `SDC_GREAT_FAIRYS_FOUNTAIN`. Three short runs from debug starts
+     (`Route::FairyWall`: a bomb breaks the Great Fairy's wall; `Route::GreatFairy`: the lullaby,
+     her cutscene, the magic, out by the return entrance; `Route::SummitOwl`: the owl's flight to
+     Kakariko) and the presets `fairy-fountain` and `fairy-magic` (milestone 5's and Phase 11's
+     start). The climb through the falling rocks is hand-tested.
 
 ## Cross-cutting debts
 
@@ -734,7 +747,7 @@ Pick these up when a milestone touches them, or as filler:
 - **Camera:** the quakes are in (GAME-05 milestone 4a, ADR 0039), ~~but the camera's roll isn't
   drawn (the renderer keeps Y up)~~ (the up modelled in GAME-09 milestone 4, ADR 0075); the shake
   isn't applied to the prerendered backgrounds and the skybox.
-- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), shadows (`ActorShadow_Draw*`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); ~~the sword's and the Skulltula's trails (`EffectBlure`)~~ (GAME-09 milestone 3); next to want: the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
+- **Rendering:** actor culling (`Actor_CullingCheck` / `Actor_CullingVolumeTest` in `Actor_DrawAll`; Hyrule Field's spawned trees and Peahats wait on it, BACKLOG #32), ~~shadows (`ActorShadow_Draw*`)~~ (GAME-09 milestone 6's hand test: `oot_game::shadow`), ~~the exit's circle wipe (`TransitionCircle`)~~ (GAME-07 milestone 2). The effect systems are in (GAME-05 milestone 3a, ADR 0033; four more overlays in 3b, ADR 0037) with the overlays their callers needed (the bushes', rocks' and crates' pieces, `Effect_Ss_Kakera`, in 4b); ~~the sword's and the Skulltula's trails (`EffectBlure`)~~ (GAME-09 milestone 3); next to want: the Gold Skulltula's and its token's shine (`func_8002EBCC`'s and `func_8002ED80`'s look-at for texgen: lit from the camera's view for now).
 - **World:** ~~time passing, day/night~~ (GAME-06 milestone 3); weather.
 - **HUD and messages:** the minimap (its data is in since GAME-05 milestone 4a: `MapState`, `table/map`); the item icons and backgrounds in text; ~~the ocarina modes~~ (GAME-07 milestone 3).
 - **Randomness:** the effects' `Rand` calls in the C's order, where effects are ported. Unchecked: the order of several `Rand` calls in one call's arguments (`En_Goma`'s hatch debris and its hurt colours assume IDO evaluates them left to right); check it against the disassembly.

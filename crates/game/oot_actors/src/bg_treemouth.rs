@@ -201,8 +201,7 @@ impl BgTreemouth {
                 BG_ACTOR_MAX
             }
         };
-        // ActorShape_Init(&shape, 0.0f, NULL, 0.0f), Actor_SetFocus(50).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         actor.set_focus(50.0);
         let mut m = BgTreemouth { actor, bg, unk_168: 0.0, action: Action::Wait };
         let adult = play.save.adult;

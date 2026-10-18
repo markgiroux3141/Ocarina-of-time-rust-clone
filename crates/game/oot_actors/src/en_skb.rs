@@ -20,7 +20,8 @@
 //!
 //! The whole overlay is ported. Its limb draws are one skeleton (its head's pulsing env colour
 //! for all its limbs: the C's sets it before the head, and no other limb reads it), with and
-//! without the head and jaw. The circle shadow isn't drawn (`shadowScale` kept).
+//! without the head and jaw. The circle shadow is the shape's (`ActorShape_Init`'s, drawn by
+//! `Actor_Draw`), growing to 25 as it rises and shrinking to 0 as it sinks.
 //!
 //! Params: `params` whole (its size: scale `(params × 0.1 + 1) × 0.01`, spheres 10 + params and 20
 //! + 2 params, its attack's reach 60 + 6 params; `En_Encount1` spawns 0, and every tenth after the
@@ -264,8 +265,6 @@ pub struct EnSkb {
     pub headless_yaw_offset: i16,
     pub body_break: BodyBreak,
     pub collider: ColliderJntSph,
-    /// `shape.shadowScale` (the circle shadow isn't drawn).
-    pub shadow_scale: f32,
 }
 
 impl EnSkb {
@@ -279,6 +278,7 @@ impl EnSkb {
         actor.target_arrow_offset = 2000.0;
         actor.gravity = -2.0;
         actor.col_chk_info.damage_table = Some(&S_DAMAGE_TABLE);
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 0.0);
         actor.focus_pos = actor.world_pos;
         actor.col_chk_info.mass = MASS_HEAVY;
         actor.col_chk_info.health = 2;
@@ -313,7 +313,6 @@ impl EnSkb {
             headless_yaw_offset: 0,
             body_break: BodyBreak::default(),
             collider,
-            shadow_scale: 0.0,
         };
         this.setup_rise_from_ground(play);
         Box::new(this)
@@ -371,7 +370,7 @@ impl EnSkb {
             self.actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
         }
         smooth_step_to_f(&mut self.actor.shape_y_offset, 0.0, 1.0, 800.0, 0.0);
-        smooth_step_to_f(&mut self.shadow_scale, 25.0, 1.0, 2.5, 0.0);
+        smooth_step_to_f(&mut self.actor.shape_shadow_scale, 25.0, 1.0, 2.5, 0.0);
         if play.gameplay_frames & 1 != 0 {
             let pos = self.actor.world_pos;
             self.spawn_debris(play, pos);
@@ -401,7 +400,7 @@ impl EnSkb {
             let pos = self.actor.world_pos;
             self.spawn_debris(play, pos);
         }
-        smooth_step_to_f(&mut self.shadow_scale, 0.0, 1.0, 2.5, 0.0);
+        smooth_step_to_f(&mut self.actor.shape_shadow_scale, 0.0, 1.0, 2.5, 0.0);
         if self.skel.update() {
             self.actor.kill();
         }

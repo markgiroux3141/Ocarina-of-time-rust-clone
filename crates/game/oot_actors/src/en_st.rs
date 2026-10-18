@@ -40,8 +40,8 @@
 //! (`ACTOR_FLAG_ATTACHED_TO_ARROW` is never set, and no arrow hits it), a burning Deku Stick
 //! (Player's `unk_860` stays 0), the hammer's shock wave (`play->actorCtx.unk_02`). The spin's
 //! trail (`EnSt_CreateBlureEffect`, `EnSt_AddBlurVertex`, `EnSt_AddBlurSpace`) is
-//! `oot_game::effect::blure`'s (GAME-09 milestone 3). The generic circle shadow
-//! (`ActorShadow_DrawCircle`) isn't ported for any actor.
+//! `oot_game::effect::blure`'s (GAME-09 milestone 3). The circle shadow (14) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Params: `params` the whole params (0 the normal one; 1 the big one, 1.4 times the size: its
 //! scale, colliders and hover height, and Navi's `NAVI_ENEMY_BIG_SKULLTULA`; 2 the invisible one,
@@ -342,8 +342,7 @@ pub struct EnSt {
 impl EnSt {
     /// `EnSt_Init`.
     pub fn init(mut actor: Actor, play: &mut PlayState) -> Box<dyn ActorImpl> {
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 14): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 14.0);
         let (skeleton, anims) = match play.assets.clone() {
             Some(a) => {
                 let s = a.skeleton(OBJECT, SKEL).map_err(|e| log::error!("En_St: {e:#}")).ok();

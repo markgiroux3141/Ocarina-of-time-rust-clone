@@ -15,8 +15,10 @@
 //! deep water. At 0 the blast as `En_Bom`'s (scale step 19), then ten frames of a
 //! `DMG_EXPLOSIVE` sphere (damage 8) growing 8 a frame round where it is.
 //!
-//! Not ported: `Rumble_Request` (BACKLOG #60), the circle shadow (`ActorShadow_DrawCircle`),
-//! `DREG(6)` (a debug register set round its floor checks).
+//! The circle shadow (12) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
+//!
+//! Not ported: `Rumble_Request` (BACKLOG #60), `DREG(6)` (a debug register set round its floor
+//! checks).
 //!
 //! Params: `type` (`EnBombfType`: -1 `BOMBFLOWER_FLOWER`, every placement; 0 `BOMBFLOWER_BODY`,
 //! the bomb it spawns; 1 `BOMBFLOWER_EXPLOSION` once that blows). `shape.rot.x` tilts a flower
@@ -139,8 +141,8 @@ impl EnBombf {
         let ty = TYPE.get(actor.params);
         let bomb_collider = ColliderCylinder::new(&CYLINDER_INIT);
         let explosion_collider = ColliderJntSph::new(&JNT_SPH_INIT, &JNT_SPH_ELEMENTS);
-        // ActorShape_Init(&shape, shapeUnk10, ActorShadow_DrawCircle, 12): the shadow isn't drawn.
-        actor.shape_y_offset = if ty == BOMBFLOWER_BODY { 1000.0 } else { 0.0 };
+        // ActorShape_Init(&shape, shapeUnk10, ActorShadow_DrawCircle, 12): shapeUnk10 1000 for the bomb.
+        actor.shape_init(if ty == BOMBFLOWER_BODY { 1000.0 } else { 0.0 }, oot_game::shadow::ShadowDraw::Circle, 12.0);
         actor.focus_pos = actor.world_pos;
         if actor_find_nearby(play, &actor, None, ACTOR_BG_DDAN_KD, ACTORCAT_BG, 10000.0).is_some() {
             actor.flags |= ACTOR_FLAG_DRAW_CULLING_DISABLED;

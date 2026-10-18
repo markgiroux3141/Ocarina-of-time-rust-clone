@@ -161,6 +161,9 @@ pub const CHARACTERS: &[Character] = &[
     // GAME-09 milestone 4: King Dodongo (Demo_Du's Darunia and Demo_Go's Gorons are En_Du's and
     // En_Go2's bakes: the rows above).
     c("King Dodongo", "Boss_Dodongo/skel", Some(("object_kingdodongo", "object_kingdodongo_Anim_00F0D8")), &[], &[], &[]),
+    // GAME-09 milestone 6: the Great Fairy (Bg_Dy_Yoseizo), eyes open, mouth closed, sitting as in her
+    // magic fountain; her arms gGreatFairyLeftUpperArmLimb to ...HandLimb and the right ones.
+    c("Great Fairy", "Bg_Dy_Yoseizo/eye0_mouth0", Some(("object_dy_obj", "gGreatFairySittingAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

@@ -310,8 +310,7 @@ impl EnOwl {
         this.actor.culling_volume_distance = 1400.0;
         this.actor.culling_volume_scale = 2000.0;
         this.actor.culling_volume_downward = 2400.0;
-        // ActorShape_Init(0, ActorShadow_DrawCircle, 36).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 36.0);
         if let Some(a) = play.assets.clone() {
             match (a.skeleton(OBJECT, "gOwlFlyingSkel"), a.skeleton(OBJECT, "gOwlPerchingSkel")) {
                 (Ok(fly), Ok(perch)) => {
@@ -1485,12 +1484,16 @@ impl ActorImpl for EnOwl {
         rs.joints = Some(eng_anim::anim::JointTable { rot: joints.clone(), face: 0 });
         rs.angles = vec![self.unk_3f0, self.unk_3ec, self.unk_3f2, (self.action_flags & 8 != 0) as i16];
         rs.switches = vec![(self.cur == Skel::Perching) as u32, self.eye_tex_index.clamp(0, 2) as u32, self.drawn as u32];
+        // The shape's shadow: none while draw is NULL (Actor_Draw isn't called).
+        if !self.drawn {
+            rs.shadow = None;
+        }
         rs
     }
 
     /// `EnOwl_Draw`: `Gfx_SetupDL_37Opa`, the eyes on 8, the current skeleton with
-    /// `EnOwl_OverrideLimbDraw`'s turns; the circle shadow.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// `EnOwl_OverrideLimbDraw`'s turns.
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(skeletons), Some(joints)) = (&self.skeletons, &rs.joints) else { return };
         if rs.switches.len() < 3 || rs.angles.len() < 4 || rs.switches[2] == 0 {
             return;
@@ -1504,10 +1507,6 @@ impl ActorImpl for EnOwl {
             params: eng_gfx::DrawParams { segments: Some(SegmentValues::default()), ..Default::default() },
         };
         out.opa.push(cmd);
-        // ActorShadow_DrawCircle (shadowScale 36): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(36.0, 1.0, 36.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
 
     /// `EnOwl_Destroy`.

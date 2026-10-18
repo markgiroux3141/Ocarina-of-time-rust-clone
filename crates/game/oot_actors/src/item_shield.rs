@@ -106,13 +106,12 @@ impl ItemShield {
         };
         match PARAMS.get(actor.params) {
             0 => {
-                // ActorShape_Init(&shape, 1400, NULL, 0).
-                actor.shape_y_offset = 1400.0;
+                actor.shape_init(1400.0, oot_game::shadow::ShadowDraw::None, 0.0);
                 actor.shape_rot.x = 0x4000;
                 s.action = Action::Lying;
             }
             1 => {
-                actor.shape_y_offset = 0.0;
+                actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
                 s.action = Action::TakePlace;
                 s.unk_19c |= 2;
                 for i in 0..8 {

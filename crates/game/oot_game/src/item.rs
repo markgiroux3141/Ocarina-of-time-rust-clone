@@ -7,8 +7,7 @@
 //!
 //! `Item_Give` is ported whole. What it can't do here: `Interface_LoadItemIcon1/2` load
 //! nothing (every button icon is a bake, picked by the item when the HUD draws), the water
-//! medallion's `Horse_FixLakeHyliaPosition` (the Water Temple's water level) and the magic jars'
-//! `Magic_Fill`/`Magic_RequestChange` (no magic meter) are logged.
+//! medallion's `Horse_FixLakeHyliaPosition` (the Water Temple's water level) is logged.
 //!
 //! The audio both take is the play state's (`None` where there's none to play on: the debug
 //! save presets, `Play_Init`'s triggers, tests).
@@ -756,8 +755,12 @@ pub fn item_give(save: &mut SaveContext, audio: Option<&mut GameAudio>, mut item
         health_change_by(save, audio, 0x10);
         return item;
     } else if item == ITEM_MAGIC_JAR_SMALL || item == ITEM_MAGIC_JAR_BIG {
-        // Magic_Fill / Magic_RequestChange(12 or 24, MAGIC_ADD): no magic meter.
-        log::debug!("Item_Give({item:#04x}): the magic meter isn't ported");
+        // Magic_Fill only to keep the state to come back to (unless already adding: PAL 1.0 and
+        // up): Magic_RequestChange(12 or 24, MAGIC_ADD) puts MAGIC_STATE_ADD in its place.
+        if save.magic_state != crate::magic::MAGIC_STATE_ADD {
+            crate::magic::magic_fill(save);
+        }
+        crate::magic::magic_request_add(save, if item == ITEM_MAGIC_JAR_SMALL { 12 } else { 24 });
         if !save.get_inf_table(INFTABLE_198) {
             save.set_inf_table(INFTABLE_198);
             return ITEM_NONE;

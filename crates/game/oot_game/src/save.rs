@@ -222,7 +222,8 @@ pub struct SaveContext {
     pub health_capacity: i16,
     pub health: i16,
     pub health_accumulator: i16,
-    /// `magicLevel`, `magic` (the meter isn't ported; they're kept as the saves set them).
+    /// `magicLevel` (0: none, or a file just loaded; 1 the meter; 2 double), `magic` (what's left;
+    /// `crate::magic`).
     pub magic_level: i8,
     pub magic: i8,
     /// `isMagicAcquired`, `isDoubleMagicAcquired`, `isDoubleDefenseAcquired`.
@@ -272,6 +273,15 @@ pub struct SaveContext {
     pub hud_visibility_mode: u16,
     pub hud_visibility_mode_timer: u16,
     pub prev_hud_visibility_mode: u16,
+    /// `magicState`, `prevMagicState` (`crate::magic`'s `MAGIC_STATE_*`), `magicCapacity` (the
+    /// meter's width), `magicFillTarget` (where a fill stops: the whole meter, or the saved amount
+    /// after a load), `magicTarget` (where an addition or a consumption stops): the meter's state,
+    /// outside the save.
+    pub magic_state: i16,
+    pub prev_magic_state: i16,
+    pub magic_capacity: i16,
+    pub magic_fill_target: i16,
+    pub magic_target: i16,
     /// `language`: English.
     pub language: u8,
     /// `soundSetting`, `zTargetSetting`: the SRAM header's (`Sram_InitSram`); stereo and
@@ -804,6 +814,16 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: goron_ruby,
     },
     SavePreset {
+        name: "fairy-fountain",
+        about: "goron-ruby, and GAME-09 milestone 6's wall run over: the Great Fairy's wall on Death Mountain's summit bombed open (Bg_Bombwall 0x8003's switch flag 3, 16 bombs left): her fountain's way in (GAME-09 milestone 6's fountain run starts from it)",
+        apply: fairy_fountain,
+    },
+    SavePreset {
+        name: "fairy-magic",
+        about: "fairy-fountain, and GAME-09 milestone 6's fountain run over: Zelda's Lullaby on the Triforce, gGreatFairyMagicCs and the magic meter (isMagicAcquired, the meter grown and full: magicLevel 1, 0x30), out by the return entrance to the summit (milestone 5 and Phase 11 start from it)",
+        apply: fairy_magic,
+    },
+    SavePreset {
         name: "cavern-jaw",
         about: "cavern-bomb-bag, and GAME-09 milestone 3's skull run over: the bombs on C-Right, two of them dropped through the bridge's holes (18 left), both of the skull's eyes lit and its jaw open (Bg_Dodoago 0x001A's switch flag)",
         apply: cavern_jaw,
@@ -961,6 +981,26 @@ fn goron_ruby(s: &mut SaveContext) {
     s.health = s.health_capacity;
     s.set_event_chk_inf(0x25);
     crate::item::item_give(s, None, 0x6D);
+}
+
+/// `fairy-fountain`'s save (`Route::FairyWall`'s end): Death Mountain Trail's (SCENE_DEATH_MOUNTAIN_TRAIL
+/// 0x60) switch flag 3, the Great Fairy's wall (`Bg_Bombwall` 0x8003), and the bomb it took.
+fn fairy_fountain(s: &mut SaveContext) {
+    goron_ruby(s);
+    s.scene_flags[0x60].swch |= 1 << 3;
+    crate::item::inventory_change_ammo(s, crate::item::ITEM_BOMB, -1);
+}
+
+/// `fairy-magic`'s save (`Route::GreatFairy`'s end): `isMagicAcquired` (`Bg_Dy_Yoseizo`'s reward on
+/// her cue 0x0A), and the meter as `Interface_Update` and `Magic_Update` leave it: `magicLevel` 1,
+/// its capacity and `magic` 0x30 (`magicFillTarget` 0x30).
+fn fairy_magic(s: &mut SaveContext) {
+    fairy_fountain(s);
+    s.is_magic_acquired = true;
+    s.magic_level = 1;
+    s.magic = MAGIC_NORMAL_METER;
+    s.magic_capacity = MAGIC_NORMAL_METER as i16;
+    s.magic_fill_target = MAGIC_NORMAL_METER as i16;
 }
 
 /// `goron-bracelet`'s save (`cavern-open` builds on it).
@@ -1137,6 +1177,11 @@ impl SaveContext {
             hud_visibility_mode: 0,
             hud_visibility_mode_timer: 0,
             prev_hud_visibility_mode: 0,
+            magic_state: 0,
+            prev_magic_state: 0,
+            magic_capacity: 0,
+            magic_fill_target: 0,
+            magic_target: 0,
             language: LANGUAGE_ENG,
             sound_setting: 0,
             z_target_setting: 0,
@@ -1388,9 +1433,13 @@ impl SaveContext {
         let mut s = SaveContext::blank(entrance_index, adult, day_time);
         s.file_num = 0xFF;
         s.init_debug_save();
-        // MapSelect_LoadGame: the entrance picked; magicCapacity, magicLevel and magic to 0 (to
-        // grow back), every button enabled, the interface's alpha types cleared.
+        // MapSelect_LoadGame: the entrance picked; the fill target the saved magic, then
+        // magicCapacity, magicLevel and magic 0 (to grow back), every button enabled, the
+        // interface's alpha types cleared.
         s.entrance_index = entrance_index;
+        s.magic_fill_target = s.magic as i16;
+        s.magic_capacity = 0;
+        s.magic_level = 0;
         s.magic = 0;
         s.button_status = [crate::interface::BTN_ENABLED; 5];
         s

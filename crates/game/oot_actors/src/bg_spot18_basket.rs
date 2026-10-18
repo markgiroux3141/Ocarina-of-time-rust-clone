@@ -27,8 +27,8 @@
 //! The colliders' spheres are placed in its draw (`BgSpot18Basket_Draw`'s
 //! `Collider_UpdateSpheres`): the port's `draw_update`, through the actor's model matrix.
 //!
-//! The whole overlay is ported. Not drawn: its circle shadow (`ActorShadow_DrawCircle`, 15), as
-//! for the other DynaPoly actors.
+//! The whole overlay is ported. Its circle shadow (15) is the shape's (`ActorShape_Init`'s, drawn
+//! by `Actor_Draw` on the floor its update finds).
 //!
 //! Params: `collectibleFlag` bits 0 to 5 (`PARAMS_GET_U(params, 0, 6)`: the piece of heart's;
 //! set, a purple rupee in its place); `switchFlag` bits 8 to 13 (`PARAMS_GET_U(params, 8, 6)`:
@@ -227,8 +227,7 @@ impl BgSpot18Basket {
         this.actor.culling_volume_distance = 1000.0;
         this.actor.culling_volume_scale = 500.0;
         this.actor.culling_volume_downward = 1000.0;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 15): the shadow isn't drawn.
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 15.0);
         this.actor.home_pos.y += 0.01;
         this.actor.world_pos.y = this.actor.home_pos.y;
 

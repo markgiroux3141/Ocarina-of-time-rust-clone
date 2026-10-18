@@ -228,8 +228,7 @@ impl BgDodoago {
             Some(h) => play.col.dyna.set_bg_actor(h, source(&actor), 0),
             None => BG_ACTOR_MAX,
         };
-        // ActorShape_Init(&shape, 0, NULL, 0).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::None, 0.0);
         let mut this = BgDodoago {
             actor,
             bg,

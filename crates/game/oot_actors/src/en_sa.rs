@@ -40,8 +40,8 @@
 //! swapped in per draw by their textures' segments (`DrawParams::texture_images`), her head and
 //! torso turned (`EnSa_OverrideLimbDraw`), her right hand holding the ocarina in the meadow
 //! (`gSariaRightHandAndOcarinaDL`), the focus 400 along her head (`EnSa_PostLimbDraw`); from four
-//! bakes (pass and hand, docs/adr/0012-actor-bakes.md), with the circle shadow's stand-in (scale
-//! 12).
+//! bakes (pass and hand, docs/adr/0012-actor-bakes.md). The circle shadow (12, at her alpha) is
+//! the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! The whole overlay is ported. `MaskReaction_GetTextId(play, MASK_REACTION_SET_SARIA)` gives 0 (no
 //! masks yet); `Actor_UpdateAlphaByDistance` is the module's own (its cutscene distance, a
@@ -525,8 +525,7 @@ impl EnSa {
             animations2,
             face,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 12).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 12.0);
         // Collider_SetCylinder (sCylinderInit, above), CollisionCheck_SetInfo2.
         this.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
 
@@ -992,7 +991,7 @@ impl ActorImpl for EnSa {
         } else {
             self.alpha = 255;
         }
-        // shape.shadowAlpha = alpha (the render state's alpha).
+        self.actor.shape_shadow_alpha = self.alpha as u8;
         if self.action == Action::HandleCutscene {
             self.actor.world_pos += self.actor.velocity;
         } else {
@@ -1045,11 +1044,6 @@ impl ActorImpl for EnSa {
         if alpha == 0 {
             return;
         }
-        // ActorShadow_DrawCircle (shadowScale 12, shadowAlpha = alpha): the circle shadow's
-        // stand-in, at full strength.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(12.0, 1.0, 12.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
 
         let a = &rs.angles;
         let bones = Self::pose(&self.skeleton, &joints.rot, [a[rs::HEAD], a[rs::HEAD + 1], a[rs::HEAD + 2]], [a[rs::TORSO], a[rs::TORSO + 1], a[rs::TORSO + 2]]);

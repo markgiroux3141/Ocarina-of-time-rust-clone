@@ -13,8 +13,9 @@
 //!
 //! Drawn as `EnNiw_Draw` does: the skeleton with its head, tail and wings turned
 //! (`EnNiw_OverrideLimbDraw`), a second circle shadow while it waits to be picked up
-//! (`func_80033C30`), and the feathers (`EnNiw_DrawEffects`); from baked meshes
-//! (docs/adr/0012-actor-bakes.md).
+//! (`func_80033C30`, 0.15), and the feathers (`EnNiw_DrawEffects`); from baked meshes
+//! (docs/adr/0012-actor-bakes.md). Its circle shadow (25, then 15 from its first update) is the
+//! shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Carried (`Actor_OfferCarry`, Player's lift), it flaps over Link's head and slows his fall
 //! (Player's glide, `Player_UpperAction_CarryActor`); thrown, it flutters down.
@@ -439,8 +440,7 @@ impl EnNiw {
         a.gravity = -2.0;
         a.target_arrow_offset = 0.0;
         a.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 25).
-        a.shape_y_offset = 0.0;
+        a.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 25.0);
 
         if play.scene_id == SCENE_KAKARIKO_VILLAGE {
             for (i, p) in KAKARIKO_POS_LIST.iter().enumerate() {
@@ -1233,7 +1233,7 @@ impl ActorImpl for EnNiw {
         }
 
         self.actor.shape_rot = self.actor.world_rot;
-        // shape.shadowScale = 15 (drawn by the stand-in below).
+        self.actor.shape_shadow_scale = 15.0;
         self.run_action(play);
         if self.actor.killed {
             return;
@@ -1372,13 +1372,9 @@ impl ActorImpl for EnNiw {
         let a = &rs.angles;
         let bones = Self::pose(&self.skeleton, &joints.rot, [a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]]);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 15), and func_80033C30 (scale 0.15) while it waits
-        // to be picked up: the circle shadow's stand-ins.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(15.0, 1.0, 15.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
+        // func_80033C30 (0.15) while it waits to be picked up (func_80AB6450).
         if rs.switches[0] != 0 {
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
+            out.opa.push(oot_game::shadow::func_80033c30(&play.col, rs.pos, Vec3::splat(0.15), 255));
         }
         // EnNiw_DrawEffects: Translate(pos), ReplaceRotation(billboard), Scale(scale, scale, 1),
         // RotateZ(unk_30), Translate(0, -1000, 0).

@@ -18,7 +18,7 @@ use std::sync::Arc;
 use eng_anim::skeleton::Skeleton;
 use eng_collision::math3d::Cylinder16;
 use eng_gfx::{DrawCmd, MeshKey};
-use glam::{Mat4, Vec3};
+use glam::Vec3;
 use oot_game::actor::{Actor, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
 use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
@@ -173,8 +173,7 @@ impl EnHeishi3 {
             actor,
         };
         this.actor.scale = Vec3::splat(0.01);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 30).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 30.0);
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         this.actor.target_mode = ATTENTION_RANGE_6;
         log::debug!("☆☆☆☆☆ Castle gate soldier power-up ☆☆☆☆☆");
@@ -326,14 +325,10 @@ impl ActorImpl for EnHeishi3 {
     /// `EnHeishi3_Draw`: `EnHeishi3_OverrideLimbDraw` adds `unk_26E` to limb 9's x and `unk_262`,
     /// `unk_264` to limb 16's x and z: `En_Heishi4`'s turns with the head's yaw and roll and the
     /// torso's yaw in those places.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
         let bones = EnHeishi4::pose(&self.skeleton, &joints.rot, [0, self.unk_262, self.unk_264], [0, self.unk_26e, 0]);
         out.opa.push(DrawCmd { mesh: MeshKey::named(oot_game::pack::keys::bake(en_heishi4::BAKE)), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 30): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(30.0, 1.0, 30.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

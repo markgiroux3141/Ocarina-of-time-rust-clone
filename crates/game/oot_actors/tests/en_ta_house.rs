@@ -200,7 +200,7 @@ fn by_night_talon_sleeps_and_spawns_no_cuccos() {
     // !IS_DAY: EnTa_IdleAsleepInLonLonHouse, gTalonSleepAnim, shadow 54; no super cuccos.
     assert_eq!(t.action, Action::IdleAsleepInLonLonHouse);
     assert_eq!(t.anim_func, AnimFunc::Sleeping);
-    assert_eq!(t.shadow_scale, 54.0);
+    assert_eq!(t.actor.shape_shadow_scale, 54.0);
     assert_eq!(t.super_cuccos, [None; 3]);
     assert!(super_cuccos(&w).is_empty());
 }

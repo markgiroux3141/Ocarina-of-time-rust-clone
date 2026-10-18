@@ -19,8 +19,9 @@
 //! body's cylinder (AC) and the head's (AT and OC), their sizes changing with its state.
 //! `DamageTable_Get(1)` is its table, though only `AC_HIT` is read.
 //!
-//! The whole overlay is ported. Not ported: the generic circle shadow (`ActorShadow_DrawCircle`,
-//! not ported for any actor; its own shadow at home, `EnKarebaba_DrawCenterShadow`, is drawn).
+//! The whole overlay is ported. The circle shadow (22; 3 as a stick, 0 while gone) is the shape's
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`); its draw puts its own shadow at home too
+//! (`EnKarebaba_DrawCenterShadow`).
 //!
 //! Params: `params` the whole params (0: it starts by growing, `EnKarebaba_Grow`; any other:
 //! already grown, `EnKarebaba_Idle`); from then on the params are its timer (the C's own use),
@@ -191,8 +192,7 @@ impl EnKarebaba {
         actor.target_arrow_offset = 2500.0;
         actor.target_mode = 1;
         actor.navi_enemy_id = NAVI_ENEMY_WITHERED_DEKU_BABA;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 22): the circle shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 22.0);
         let (skeleton, chomp) = match play.assets.clone() {
             Some(a) => {
                 let s = a.skeleton(OBJECT, "gDekubabaHeadSkel").map_err(|e| log::error!("En_Karebaba: {e:#}")).ok();
@@ -298,7 +298,7 @@ impl EnKarebaba {
         self.actor.shape_y_offset = 1000.0;
         self.actor.gravity = 0.0;
         self.actor.velocity.y = 0.0;
-        // (shape.shadowScale = 3.)
+        self.actor.shape_shadow_scale = 3.0;
         // Actor_ChangeCategory(play, &play->actorCtx, &this->actor, ACTORCAT_MISC).
         self.actor.category = ACTORCAT_MISC;
         if let Some(me) = play.cur_actor {
@@ -328,7 +328,7 @@ impl EnKarebaba {
         self.actor.shape_rot.x = -0x4000;
         self.actor.params = 200;
         self.actor.parent = None;
-        // (shape.shadowScale = 0.)
+        self.actor.shape_shadow_scale = 0.0;
         self.actor.world_pos = self.actor.home_pos;
         self.action = Action::Dead;
     }
@@ -336,7 +336,7 @@ impl EnKarebaba {
     /// `EnKarebaba_SetupRegrow`.
     fn setup_regrow(&mut self) {
         self.actor.shape_y_offset = 0.0;
-        // (shape.shadowScale = 22.)
+        self.actor.shape_shadow_scale = 22.0;
         self.head_collider.dim.radius = HEAD_INIT.dim.radius;
         self.actor.scale = Vec3::ZERO;
         self.action = Action::Regrow;
@@ -676,13 +676,12 @@ impl ActorImpl for EnKarebaba {
             let m = leaves * Mat4::from_rotation_y(eng_math::binang_to_rad(rs.rot[1].wrapping_sub(*home_rot_y))) * Mat4::from_rotation_x(eng_math::binang_to_rad(-0x4000));
             out.opa.push(DrawCmd { mesh: mesh("gDekubabaStem2DL"), transform: m, bones: Vec::new(), params: fog });
         }
-        // EnKarebaba_DrawCenterShadow: gCircleShadowDL (radius 74) on the floor's plane at home
-        // (func_80038A28), scaled by 0.15; drawn as the builtin disc.
+        // EnKarebaba_DrawCenterShadow: Gfx_SetupDL_44Xlu, prim (0, 0, 0, 255), gCircleShadowDL on
+        // the floor's plane at home (func_80038A28), scaled by 0.15, in POLY_XLU_DISP. (No shadow
+        // combiner: SETUPDL_44's G_CC_MODULATEIA_PRIM with the black prim is the same black.)
         if let Some(f) = self.bound_floor {
-            let n = play.col.poly(f).normal;
-            let r = 74.0 * 0.15;
-            let m = crate::en_dekubaba::floor_matrix([n[0], n[1], n[2]], home) * Mat4::from_scale(Vec3::new(r, 1.0, r));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
+            let m = oot_game::shadow::func_80038a28(play.col.poly(f).normal, home) * Mat4::from_scale(Vec3::new(0.15, 1.0, 0.15));
+            out.xlu.push(oot_game::shadow::shadow_cmd(oot_game::shadow::BAKE_CIRCLE, m, [0, 0, 0], 255));
         }
     }
 

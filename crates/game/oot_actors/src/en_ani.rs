@@ -23,8 +23,8 @@
 //! (`EnAni_PostLimbDraw`). From a baked mesh per eye (docs/adr/0012-actor-bakes.md).
 //!
 //! Not ported here: the mask reactions (`MaskReaction_GetTextId` with
-//! `MASK_REACTION_SET_KAKARIKO_ROOF_MAN`: no masks yet, so none). The circle shadow is the
-//! port's stand-in.
+//! `MASK_REACTION_SET_KAKARIKO_ROOF_MAN`: no masks yet, so none). The circle shadow (36) is the
+//! shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`; the knockback takes it away).
 //!
 //! Params: none (Kakariko places him with 0).
 //! Flags: reads and sets ITEMGETINF_15 (the piece of heart given); reads EVENTCHKINF_2F (an
@@ -88,8 +88,6 @@ pub const TEXT_HEART_PIECE_GIVEN: u16 = 0x5056;
 const HEAD_LIMB: usize = 15;
 /// `EnAni_PostLimbDraw`'s `sMultVec`.
 const FOCUS_IN_HEAD: Vec3 = Vec3::new(800.0, 500.0, 0.0);
-/// `ActorShape_Init(.., ActorShadow_DrawCircle, 36)`.
-const SHADOW_SCALE: f32 = 36.0;
 
 /// `sCylinderInit`.
 const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
@@ -167,8 +165,6 @@ pub struct EnAni {
     pub eye_index: i16,
     pub blink_timer: i16,
     pub action: Action,
-    /// `shape.shadowDraw` is `ActorShadow_DrawCircle` (else `NULL`).
-    pub shadow: bool,
     anims: Anims,
 }
 
@@ -215,15 +211,13 @@ impl EnAni {
             blink_timer: 0,
             // !LINK_IS_ADULT: func_809B064C; else func_809B07F8.
             action: if adult { Action::AdultIdle } else { Action::ChildIdle },
-            shadow: true,
             anims,
             actor,
         };
         // sInitChain: scale 0.01, cullingVolumeDistance 850.
         this.actor.scale = Vec3::splat(0.01);
         this.actor.culling_volume_distance = 850.0;
-        // ActorShape_Init(&shape, -2800, ActorShadow_DrawCircle, 36).
-        this.actor.shape_y_offset = -2800.0;
+        this.actor.shape_init(-2800.0, oot_game::shadow::ShadowDraw::Circle, 36.0);
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         this.actor.min_velocity_y = -1.0;
         this.actor.velocity.y = -1.0;
@@ -341,7 +335,7 @@ impl EnAni {
             let last = anim.last_frame();
             self.skel.change(anim, 1.0, 0.0, last, ANIMMODE_ONCE, -4.0);
             self.unk_2aa += 1;
-            self.shadow = true;
+            self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::Circle;
         }
     }
 
@@ -361,7 +355,7 @@ impl EnAni {
             let anim = self.anims.knockback.clone();
             let last = anim.last_frame();
             self.skel.change(anim, 1.0, 0.0, last, ANIMMODE_ONCE, 0.0);
-            self.shadow = false;
+            self.actor.shape_shadow_draw = oot_game::shadow::ShadowDraw::None;
             self.unk_2aa += 1;
         }
     }
@@ -454,22 +448,16 @@ impl ActorImpl for EnAni {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         rs.angles = self.unk_29c.to_vec();
-        rs.switches = vec![self.eye_index as u32, self.shadow as u32];
+        rs.switches = vec![self.eye_index as u32];
         rs
     }
     /// `EnAni_Draw`: `Gfx_SetupDL_37Opa`, the eyes on segment 8, the skeleton.
-    fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
-        let ([h0, h1, h2], [eye, shadow]) = (rs.angles.as_slice(), rs.switches.as_slice()) else { return };
+        let ([h0, h1, h2], [eye]) = (rs.angles.as_slice(), rs.switches.as_slice()) else { return };
         let bones = Self::pose(&self.skeleton, &joints.rot, [*h0, *h1, *h2]);
         let eye = (*eye as usize).min(EYE_TEXTURES.len() - 1);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye))), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale 36): the circle shadow's stand-in.
-        if *shadow != 0 {
-            let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-            let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(SHADOW_SCALE, 1.0, SHADOW_SCALE));
-            out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
-        }
     }
     /// `EnAni_Destroy`: `Collider_DestroyCylinder`.
     fn destroy(&mut self, _play: &mut PlayState) {}

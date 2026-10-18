@@ -281,7 +281,9 @@ fn script(name: &str) -> Result<(Vec<PadState>, Option<(Vec3, i16)>)> {
             s.extend(rep(stick(0, 0), 8));
             start = None;
         }
-        // B three times (draw the sword and slash, slash, combo finisher), then A puts it away.
+        // B three times, 15 frames apart (draw the sword and slash, then two more slashes: each
+        // press comes after the combo's window, unk_844's 8 frames from B's release, so each
+        // is a first slash), then A puts it away.
         "sword" => {
             let b = PadState { button: BTN_B, stick_x: 0, stick_y: 0 };
             s.extend(rep(stick(0, 0), 2));
@@ -292,6 +294,17 @@ fn script(name: &str) -> Result<(Vec<PadState>, Option<(Vec3, i16)>)> {
             s.extend(rep(stick(0, 0), 10));
             s.push(PadState { button: BTN_A, stick_x: 0, stick_y: 0 });
             s.extend(rep(stick(0, 0), 16));
+            start = None;
+        }
+        // The charged spin attack: B (the sword out, a slash), held on through the slash's 8
+        // frames (Player_ActionHandler_8: the charge, Player_Action_80844E68, `unk_858` up 0.02 a
+        // frame past its start), let go at 75: the big spin past 0.85, and En_M_Thunder's effect
+        // with magic (the charge's glow, the spin's trail).
+        "spin" => {
+            let b = PadState { button: BTN_B, stick_x: 0, stick_y: 0 };
+            s.extend(rep(stick(0, 0), 2));
+            s.extend(rep(b, 75));
+            s.extend(rep(stick(0, 0), 40));
             start = None;
         }
         // Run down the pool's ramp into deep water, tread water, dive holding A, rise and

@@ -51,8 +51,10 @@
 //! points: `vec`, the focus, `firePos`, `mouthPos`, his feet; the collider's spheres) run in
 //! `draw_update`.
 //!
-//! Not ported: the circle shadow (`ActorShadow_DrawCircle`; `shape.shadowScale` is kept), the
-//! rumble (`Rumble_Override`, logged).
+//! His circle shadow is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`; the death shrinks
+//! `shape.shadowScale`).
+//!
+//! Not ported: the rumble (`Rumble_Override`, logged).
 //!
 //! **@bug (game)**, kept: his profile's id is `ACTOR_EN_DODONGO` (0x12), so his actor's `id` is the
 //! Dodongo's; the decay reads `D_808C7000[256]` past the table's 254 entries (the padding's two
@@ -547,8 +549,6 @@ pub struct BossDodongo {
     pub sub_cam_at: Vec3,
     pub collider: ColliderJntSph,
     pub effects: [BossDodongoEffect; BOSS_DODONGO_EFFECT_COUNT],
-    /// `shape.shadowScale` (the shadow isn't drawn).
-    pub shadow_scale: f32,
     /// The overlay's `sLavaFloorLavaTex` (its first 2048 texels, the ones read) and
     /// `sLavaFloorRockTex`: loaded with the overlay.
     pub lava_tex: Vec<u16>,
@@ -563,8 +563,7 @@ impl BossDodongo {
         actor.navi_enemy_id = NAVI_ENEMY_KING_DODONGO;
         actor.gravity = -3.0;
         actor.target_arrow_offset = 8200.0;
-        // ActorShape_Init(&shape, 9200, ActorShadow_DrawCircle, 250).
-        actor.shape_y_offset = 9200.0;
+        actor.shape_init(9200.0, oot_game::shadow::ShadowDraw::Circle, 250.0);
         actor.scale = Vec3::splat(0.01);
         let mut anims = Anims::default();
         let mut skeleton = None;
@@ -671,7 +670,6 @@ impl BossDodongo {
             sub_cam_at: Vec3::ZERO,
             collider: ColliderJntSph::new(&JNT_SPH_INIT, &JNT_SPH_ELEMENTS),
             effects: [BossDodongoEffect::default(); BOSS_DODONGO_EFFECT_COUNT],
-            shadow_scale: 250.0,
             lava_tex,
             rock_tex,
         };
@@ -1531,7 +1529,7 @@ impl BossDodongo {
             audio_play_actor_sfx2(play, NA_SE_EN_DODO_K_LAVA);
         }
         if self.unk_1da < 960 {
-            smooth_step_to_f(&mut self.shadow_scale, 0.0, 1.0, 10.0, 0.0);
+            smooth_step_to_f(&mut self.actor.shape_shadow_scale, 0.0, 1.0, 10.0, 0.0);
             if self.unk_1da >= 710 {
                 if self.unk_1da == 710 {
                     const SP124: [Vec3; 4] = [Vec3::new(-440.0, 0.0, -3304.0), Vec3::new(-890.0, 0.0, -3754.0), Vec3::new(-1340.0, 0.0, -3304.0), Vec3::new(-890.0, 0.0, -2854.0)];

@@ -760,7 +760,6 @@ impl MeshSource for Meshes<'_> {
         match n {
             COURSE_MESH => Some(gfx::collision_draw_list(&self.col.header)),
             WATER_MESH => Some(gfx::water_draw_list(&self.a.collision)),
-            oot_game::play::builtin::SHADOW => Some(gfx::shadow_draw_list()),
             oot_game::play::builtin::TARGET_BOX => Some(gfx::target_draw_list()),
             oot_game::play::builtin::PLACEHOLDER => Some(gfx::placeholder_draw_list()),
             _ => self.a.pack.assets.try_get::<DrawList>(n).ok().flatten(),
@@ -769,8 +768,8 @@ impl MeshSource for Meshes<'_> {
 }
 
 /// Draws one frame: `Play_Draw`'s OPA buffer (the sky, the sun and the moon and the skybox
-/// filters, the rooms, then actors), then its XLU buffer (rooms, then actors' translucent parts
-/// such as the circle shadow, then the lens flare). On the course there are no rooms: the
+/// filters, the rooms, then actors and their shadows), then its XLU buffer (rooms, then actors'
+/// translucent parts, then the lens flare). On the course there are no rooms: the
 /// course's collision mesh draws first and its water boxes last. A play state's frame starts
 /// black (`Gfx_SetupFrame(gfxCtx, 0, 0, 0)`); the spikes' views keep the fog's colour.
 ///

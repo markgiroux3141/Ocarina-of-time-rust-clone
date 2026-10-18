@@ -405,10 +405,8 @@ impl ActorImpl for EnNiwGirl {
         let bones = Self::pose(&self.skeleton, &joints.rot, [a[0], a[1], a[2]], [a[3], a[4], a[5]]);
         let eye = (rs.switches[0] as usize).min(EYE_TEXTURES.len() - 1);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye))), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // func_80033C30(&world.pos, (0.2, 0.2, 0.2), 255): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(20.0, 1.0, 20.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
+        // func_80033C30(&world.pos, sConstVec3f (0.2, 0.2, 0.2), 255).
+        out.opa.push(oot_game::shadow::func_80033c30(&play.col, rs.pos, Vec3::splat(0.2), 255));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

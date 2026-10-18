@@ -46,8 +46,8 @@
 //! `Gfx_SetupDL_44Xlu`, black).
 //!
 //! The whole overlay is ported (`D_80A6D428`, `D_80A6D470`, two unused path tables, aren't).
-//! Not ported: the horse's own shadow (`ActorShadow_DrawHorse`, not ported for any horse). The
-//! sounds the C plays at positions of its own (`unk_204`: `projectedPos` 120 up; the clone's
+//! The horse's own shadow (20) is the shape's (`ActorShape_Init`'s `ActorShadow_DrawHorse`, drawn by
+//! `Actor_Draw`). The sounds the C plays at positions of its own (`unk_204`: `projectedPos` 120 up; the clone's
 //! `unk_1E8` and `unk_1F4`) play at the actor's `projectedPos` (the port's sound positions are
 //! the actors', the sources' and the effects').
 //!
@@ -227,9 +227,6 @@ const D_80A6D4F4: [i32; 7] = [0, 1, 4, 5, 6, 2, 3];
 /// `D_80A6D510`: each animation's kind in the wander: 0 standing, 1 moving, 2 and 3 neither.
 const D_80A6D510: [i32; 9] = [0, 0, 2, 2, 1, 1, 1, 3, 3];
 
-/// `shape.shadowScale` (`ActorShape_Init(.., 20)`).
-const SHADOW_SCALE: f32 = 20.0;
-
 /// The horse's mesh: the skin as `func_800A6330` draws it.
 pub const BAKE: &str = "En_Horse_Normal/skin";
 /// The clone's shadow: `gHorseShadowDL` after `Gfx_SetupDL_44Xlu` and
@@ -315,8 +312,7 @@ impl EnHorseNormal {
         actor.culling_volume_downward = 300.0;
         actor.scale = Vec3::splat(0.01);
         actor.gravity = -3.5;
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawHorse, 20): the shadow isn't ported.
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Horse, 20.0);
         actor.speed_xz = 0.0;
         actor.focus_pos = actor.world_pos + Vec3::Y * 70.0;
         let mut this = EnHorseNormal {
@@ -842,7 +838,7 @@ impl ActorImpl for EnHorseNormal {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         let dist_from_ground = self.actor.world_pos.y - self.actor.floor_height;
-        rs.values = vec![(1.0 - (dist_from_ground * 0.01)) * SHADOW_SCALE];
+        rs.values = vec![(1.0 - (dist_from_ground * 0.01)) * self.actor.shape_shadow_scale];
         rs
     }
 
@@ -864,7 +860,7 @@ impl ActorImpl for EnHorseNormal {
             out.opa.push(DrawCmd { mesh, transform: clone, bones, params: DrawParams::default() });
             // The shadow: Matrix_Translate(clonePos), Matrix_Scale(scale.x * t, 1, scale.z * t),
             // Matrix_RotateY(cloneRotY).
-            let t = rs.values.get(rs::SHADOW).copied().unwrap_or(SHADOW_SCALE);
+            let t = rs.values.get(rs::SHADOW).copied().unwrap_or(self.actor.shape_shadow_scale);
             let m = Mat4::from_translation(clone_pos) * Mat4::from_scale(Vec3::new(rs.scale.x * t, 1.0, rs.scale.z * t)) * Mat4::from_rotation_y(binang_to_rad(clone_rot_y));
             out.xlu.push(DrawCmd::new(MeshKey::named(keys::bake(BAKE_SHADOW)), m));
         }

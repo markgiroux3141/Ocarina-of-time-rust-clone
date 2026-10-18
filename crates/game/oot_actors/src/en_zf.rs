@@ -48,8 +48,9 @@
 //! alpha), the sword's hand and the sheath swapped for the sheathed lists
 //! (`gLizalfosRightHandDL`, `gLizalfosSheathedSwordDL`) while `isSwordSheathed`
 //! (`EnZf_OverrideLimbDraw`): eight bakes. `draw_update` is `EnZf_PostLimbDraw`: the sword's
-//! quad, the trail's vertices, the feet, the frozen body parts and their ice. The feet shadow
-//! (`ActorShadow_DrawFeet`) is a disc under each foot (the usual stand-in); `func_8002EBCC`'s
+//! quad, the trail's vertices, the feet (`Actor_SetFeetPos` too), the frozen body parts and their
+//! ice. The feet shadow (90, at `shadowAlpha`) is the shape's (`ActorShape_Init`'s
+//! `ActorShadow_DrawFeet`, drawn by `Actor_Draw`); `func_8002EBCC`'s
 //! highlight (segment 7, the sword's shine) is its tile at a fixed place, the renderer's texgen. `D_80B4A2F8` (segment 8, a
 //! `gSPTexture` with `IREG(0)`, `IREG(1)`) is called by none of the object's lists. Not ported:
 //! the bombchu (`En_Bom_Chu`, the Dinolfos's check of one) and the hookshot
@@ -709,8 +710,6 @@ pub struct EnZf {
     pub right_foot_pos: Vec3,
     pub left_foot_pos: Vec3,
     pub body_parts_pos: [Vec3; 9],
-    /// `shape.shadowAlpha`.
-    pub shadow_alpha: u8,
 }
 
 impl EnZf {
@@ -773,8 +772,7 @@ impl EnZf {
         let switch_flag = SWITCH_FLAG.get(actor.params);
         // PARAMS_GET_U(params, 0, 8), sign-extended from bit 7.
         actor.params = TYPE.get(actor.params);
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawFeet, 90).
-        actor.shape_y_offset = 0.0;
+        actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Feet, 90.0);
         actor.col_chk_info.mass = MASS_HEAVY;
         actor.col_chk_info.damage_table = Some(&S_DAMAGE_TABLE);
         // EFFECT_BLURE1: white, p1 alpha 255 and p2 64 to 0, elemDuration 8, unkFlag 0, calcMode 2.
@@ -835,7 +833,6 @@ impl EnZf {
             right_foot_pos: Vec3::ZERO,
             left_foot_pos: Vec3::ZERO,
             body_parts_pos: [Vec3::ZERO; 9],
-            shadow_alpha: 255,
         };
         if !is_type_paired(ty) {
             this.cur_platform = -1;
@@ -1008,7 +1005,7 @@ impl EnZf {
         self.change(|a| &a.jump, 0.0, 9.0, Some(last), ANIMMODE_LOOP, 0.0);
         self.actor.world_pos.y = self.actor.floor_height + 300.0;
         self.alpha = 0;
-        self.shadow_alpha = 0;
+        self.actor.shape_shadow_alpha = 0;
         self.timer = 10;
         self.action_state = 1;
         self.action = ENZF_ACTION_WAIT_APPEAR;
@@ -1058,7 +1055,7 @@ impl EnZf {
                 self.setup_idle(play);
             }
         }
-        self.shadow_alpha = self.alpha;
+        self.actor.shape_shadow_alpha = self.alpha;
     }
 
     /// The landing's dust at both feet (`Actor_SpawnFloorDustRing(.., 3, 2, 2, 0, 0, false)`).
@@ -2159,7 +2156,7 @@ impl EnZf {
             }
             if self.alpha != 0 {
                 self.alpha = self.alpha.wrapping_sub(5);
-                self.shadow_alpha = self.alpha;
+                self.actor.shape_shadow_alpha = self.alpha;
             } else {
                 self.actor.kill();
             }
@@ -2383,9 +2380,6 @@ impl EnZf {
 /// `rs.values`, `rs.switches`.
 mod rs {
     pub const ALPHA: usize = 0;
-    pub const SHADOW_ALPHA: usize = 1;
-    pub const LEFT_FOOT: usize = 2;
-    pub const RIGHT_FOOT: usize = 5;
     pub const DINOLFOS: usize = 0;
     pub const SHEATHED: usize = 1;
 }
@@ -2518,10 +2512,17 @@ impl ActorImpl for EnZf {
                     }
                 }
             }
-            // (Actor_SetFeetPos on the other limbs: the feet shadow's places, the same as these.)
+            // Actor_SetFeetPos (on the limbs but the sword's hand: the feet shadow's places, the
+            // same as leftFootPos and rightFootPos).
             match limb {
-                ZF_LIMB_LEFT_FOOT_CLAWS => self.left_foot_pos = m.transform_point3(D_80B4A298),
-                ZF_LIMB_RIGHT_FOOT_CLAWS => self.right_foot_pos = m.transform_point3(D_80B4A298),
+                ZF_LIMB_LEFT_FOOT_CLAWS => {
+                    self.actor.shape_feet_pos[0] = m.transform_point3(D_80B4A298);
+                    self.left_foot_pos = m.transform_point3(D_80B4A298);
+                }
+                ZF_LIMB_RIGHT_FOOT_CLAWS => {
+                    self.actor.shape_feet_pos[1] = m.transform_point3(D_80B4A298);
+                    self.right_foot_pos = m.transform_point3(D_80B4A298);
+                }
                 _ => {}
             }
             if self.frozen_timer != 0
@@ -2547,19 +2548,18 @@ impl ActorImpl for EnZf {
         let mut st = RenderState::of(&self.actor);
         st.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         st.angles = vec![self.head_rot];
-        let (l, r) = (self.left_foot_pos, self.right_foot_pos);
-        st.values = vec![self.alpha as f32, self.shadow_alpha as f32, l.x, l.y, l.z, r.x, r.y, r.z];
+        st.values = vec![self.alpha as f32];
         st.switches = vec![self.dinolfos() as u32, self.is_sword_sheathed as u32];
         st
     }
 
     /// `EnZf_Draw`: the skeleton, opaque at alpha 255 (`ACTOR_SETUP_OPA_DL`), else translucent
-    /// (`gActorSetupXluDL`), its env alpha; the head turned; the feet shadow's stand-in.
-    fn draw(&self, st: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
+    /// (`gActorSetupXluDL`), its env alpha; the head turned.
+    fn draw(&self, st: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(joints), Some(skeleton)) = (&st.joints, &self.skeleton) else { return };
         let [head_rot] = st.angles.as_slice() else { return };
         let (v, sw) = (&st.values, &st.switches);
-        if v.len() < 8 || sw.len() < 2 {
+        if v.is_empty() || sw.len() < 2 {
             return;
         }
         let (dinolfos, sheathed) = (&sw[rs::DINOLFOS], &sw[rs::SHEATHED]);
@@ -2577,15 +2577,6 @@ impl ActorImpl for EnZf {
             out.xlu.push(cmd);
         } else {
             out.opa.push(cmd);
-        }
-        if v[rs::SHADOW_ALPHA] > 0.0 {
-            // ActorShadow_DrawFeet's stand-in: a disc under each foot.
-            for i in [rs::LEFT_FOOT, rs::RIGHT_FOOT] {
-                let foot = Vec3::new(v[i], v[i + 1], v[i + 2]);
-                let (floor, _) = play.col.entity_raycast_down(foot + Vec3::Y * 20.0);
-                let m = Mat4::from_translation(Vec3::new(foot.x, floor + 0.3, foot.z)) * Mat4::from_scale(Vec3::new(12.0, 1.0, 12.0));
-                out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), m));
-            }
         }
     }
 

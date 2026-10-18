@@ -341,8 +341,6 @@ pub struct EnTa {
     pub nod_off_timer: i16,
     /// `currentAnimation`: what `EnTa_AnimRepeatCurrent` replays.
     pub current_animation: Anim,
-    /// `shape.shadowScale`.
-    pub shadow_scale: f32,
     anims: Anims,
 }
 
@@ -454,12 +452,10 @@ impl EnTa {
             state_flags: 0,
             nod_off_timer: 0,
             current_animation: anims.stand.clone(),
-            // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 36).
-            shadow_scale: 36.0,
             anims,
             actor,
         };
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 36.0);
         this.actor.col_chk_info.mass = MASS_IMMOVABLE;
         this.actor.scale = Vec3::splat(0.01);
         this.actor.target_mode = ATTENTION_RANGE_6;
@@ -547,7 +543,7 @@ impl EnTa {
         self.eye_index = TALON_EYE_INDEX_CLOSED;
         self.skel.play_once(self.anims.sleep.clone());
         self.current_animation = self.anims.sleep.clone();
-        self.shadow_scale = 54.0;
+        self.actor.shape_shadow_scale = 54.0;
     }
 
     /// `EnTa_SetupAction`.
@@ -558,8 +554,8 @@ impl EnTa {
 
     /// `EnTa_DecreaseShadowSize`: 0.8 a frame back to 36.
     fn decrease_shadow_size(&mut self) {
-        if self.shadow_scale > 36.0 {
-            self.shadow_scale -= 0.8;
+        if self.actor.shape_shadow_scale > 36.0 {
+            self.actor.shape_shadow_scale -= 0.8;
         }
     }
 
@@ -1652,21 +1648,16 @@ impl ActorImpl for EnTa {
         let mut rs = RenderState::of(&self.actor);
         rs.joints = Some(eng_anim::anim::JointTable { rot: self.skel.joint_table.clone(), face: 0 });
         rs.angles = vec![self.head_rot[0], self.head_rot[1], self.head_rot[2], self.torso_rot[0], self.torso_rot[1], self.torso_rot[2]];
-        rs.switches = vec![self.eye_index as u32, self.shadow_scale.to_bits()];
+        rs.switches = vec![self.eye_index as u32];
         rs
     }
     /// `EnTa_Draw`: `Gfx_SetupDL_37Opa`, the eyes on 8, the head's skin on 9, the skeleton.
     fn draw(&self, rs: &RenderState, play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let Some(joints) = &rs.joints else { return };
-        let ([eye, shadow], [h0, h1, h2, t0, t1, t2]) = (rs.switches.as_slice(), rs.angles.as_slice()) else { return };
+        let ([eye], [h0, h1, h2, t0, t1, t2]) = (rs.switches.as_slice(), rs.angles.as_slice()) else { return };
         let bones = Self::pose(&self.skeleton, &joints.rot, [*h0, *h1, *h2], [*t0, *t1, *t2], play.state_frames);
         let eye = (*eye as usize).min(EYE_TEXTURES.len() - 1);
         out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake_name(eye))), transform: oot_game::play::actor_draw_matrix(rs), bones, params: Default::default() });
-        // ActorShadow_DrawCircle (shadowScale): the circle shadow's stand-in.
-        let s = f32::from_bits(*shadow);
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(s, 1.0, s));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

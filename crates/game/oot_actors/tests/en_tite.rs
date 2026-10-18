@@ -184,7 +184,7 @@ fn the_trails_four_red_tektites_spawn_with_2_health() {
         // MASS_HEAVY; ActorShape_Init(-200, ActorShadow_DrawCircle, 70).
         assert_eq!((t.actor.params, t.actor.col_chk_info.health, t.actor.navi_enemy_id), (TEKTITE_RED, 2, 0x45));
         assert_eq!((t.actor.target_arrow_offset, t.actor.min_velocity_y, t.actor.target_mode), (2000.0, -40.0, 3));
-        assert_eq!((t.actor.scale, t.actor.col_chk_info.mass, t.actor.shape_y_offset, t.shadow_scale), (Vec3::splat(0.01), MASS_HEAVY, -200.0, 70.0));
+        assert_eq!((t.actor.scale, t.actor.col_chk_info.mass, t.actor.shape_y_offset, t.actor.shape_shadow_scale), (Vec3::splat(0.01), MASS_HEAVY, -200.0, 70.0));
         // UPDBGCHECKINFO_FLAG_0 | _2 | _3 | _4 (no _6: the red one's ripples are the engine's).
         assert_eq!(t.unk_2dc, 0x1D);
         assert_eq!((t.flip_state, t.body_break.val), (TEKTITE_INITIAL, 0));

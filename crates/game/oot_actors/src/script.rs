@@ -39,5 +39,7 @@ pub fn exit_centre(play: &PlayState, exit: u32) -> Option<Vec3> {
 /// floor is: the first exit list entry for it that some floor leads to.
 pub fn exit_to(play: &PlayState, name: &str) -> Option<(u32, Vec3)> {
     let e = play.assets.as_ref()?.scenes.entrance_index(name)?;
-    play.exit_list().iter().enumerate().filter(|(_, x)| **x == e).find_map(|(i, _)| exit_centre(play, i as u32 + 1).map(|c| (i as u32 + 1, c)))
+    // A return entrance (0x7FF9 to 0x7FFE) leads where Player's sReturnEntranceGroupData says for
+    // the spawn the scene was entered at.
+    play.exit_list().iter().enumerate().filter(|(_, x)| **x == e || crate::player::return_entrance(**x, play.cur_spawn) == Some(e)).find_map(|(i, _)| exit_centre(play, i as u32 + 1).map(|c| (i as u32 + 1, c)))
 }

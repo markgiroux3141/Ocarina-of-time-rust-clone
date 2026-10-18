@@ -42,8 +42,8 @@
 //! (`EnTk_OverrideLimbDraw`, which also reads `h_21E`, the animation's yaw of limbs 15 and 16),
 //! the focus at limb 16 and the shovel (`gDampeShovelDL`, `func_80B1D200`) at limb 14, with the
 //! blade's point (0, 0, 4600) on it (`EnTk_PostLimbDraw`). From baked meshes
-//! (docs/adr/0012-actor-bakes.md), one per eye and per dust frame. The circle shadow
-//! (`ActorShadow_DrawCircle`, 24) is the usual stand-in.
+//! (docs/adr/0012-actor-bakes.md), one per eye and per dust frame. The circle shadow (24) is the
+//! shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Faithful bugs: `EnTk_Rest` reads `v1` uninitialised when he starts walking (taken as 0 here);
 //! `EnTk_Dig` gives `Matrix_RotateY` his yaw in binary angle units as radians, so the prize lands
@@ -317,8 +317,7 @@ impl EnTk {
             eff: [EnTkEff::default(); 20],
             actor,
         };
-        // ActorShape_Init(&shape, 0, ActorShadow_DrawCircle, 24).
-        this.actor.shape_y_offset = 0.0;
+        this.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 24.0);
         this.actor.col_chk_info.set_info2(None, &COL_CHK_INFO_INIT);
         let t = play.save.day_time as i32;
         if t <= oot_game::env::clock_time(18, 0) || t >= oot_game::env::clock_time(21, 0) || play.save.adult || play.scene_id != SCENE_GRAVEYARD {
@@ -794,7 +793,7 @@ impl ActorImpl for EnTk {
         rs
     }
     /// `EnTk_Draw`.
-    fn draw(&self, rs: &RenderState, play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
+    fn draw(&self, rs: &RenderState, _play: &PlayState, view: &ViewInfo, out: &mut DrawOut) {
         self.eff_draw(view, out);
         let Some(joints) = &rs.joints else { return };
         let (Some(&head_rot), Some(&eye)) = (rs.angles.first(), rs.switches.first()) else { return };
@@ -807,10 +806,6 @@ impl ActorImpl for EnTk {
         if let Some(m) = shovel {
             out.opa.push(DrawCmd::new(MeshKey::named(keys::mesh(OBJECT, "gDampeShovelDL")), m));
         }
-        // ActorShadow_DrawCircle (shadowScale 24): the circle shadow's stand-in.
-        let (floor, _) = play.col.entity_raycast_down(rs.pos + Vec3::Y * 20.0);
-        let shadow = Mat4::from_translation(Vec3::new(rs.pos.x, floor + 0.3, rs.pos.z)) * Mat4::from_scale(Vec3::new(24.0, 1.0, 24.0));
-        out.xlu.push(DrawCmd::new(MeshKey::named(oot_game::play::builtin::SHADOW), shadow));
     }
     fn collider_mut(&mut self, id: u8) -> Option<ColliderMut<'_>> {
         (id == 0).then_some(ColliderMut::Cylinder(&mut self.collider))

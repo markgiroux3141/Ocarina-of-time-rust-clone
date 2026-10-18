@@ -25,7 +25,7 @@
 //!
 //! The whole overlay is ported (the trails are `oot_game::effect::blure`'s, GAME-09 milestone
 //! 3), but: the magic arrows' children (`Arrow_Fire`, `Arrow_Ice`, `Arrow_Light`) are logged, not
-//! spawned; `Player_InBlockingCsMode`'s magic part isn't (magic isn't ported).
+//! spawned; `Player_InBlockingCsMode`'s spell part isn't (no spells, BACKLOG #85).
 //!
 //! Params (none placed: Player shoots it or throws a nut, `En_Arow_Trap` shoots silent arrows,
 //! the cutscenes' Impa (`Demo_Im`) and Sheik (`En_Xc`) throw nuts): `params` the whole (`ArrowType`: -10 `ARROW_CS_NUT`, -1 `ARROW_NORMAL_SILENT`, 0
@@ -219,7 +219,7 @@ fn decr(t: &mut u8) -> u8 {
 }
 
 /// What `En_Arrow` reads of Player: his handle, `unk_A73` and `Player_InBlockingCsMode` (the
-/// transition's part with Player's; magic isn't ported).
+/// transition's part with Player's; no spells, BACKLOG #85).
 fn player_state(play: &PlayState) -> (Option<ActorHandle>, u8, bool) {
     let h = play.player;
     let p = h.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player());

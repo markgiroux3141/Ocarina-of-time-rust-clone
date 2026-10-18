@@ -48,6 +48,23 @@ impl TileDescriptor {
     pub fn image_height(&self) -> u32 {
         Self::axis_dim(self.tile_height(), self.maskt, self.cmt)
     }
+    /// The texel an image coordinate along one axis reads. A clamped axis with a mask is masked
+    /// (and mirrored, with the mirror bit) inside the tile: the RDP clamps to the tile's size, then
+    /// masks, so a tile wider than its mask repeats the texture up to its edge (the owl's chest:
+    /// a 16-texel texture on a 640-texel clamped tile). Otherwise the coordinate itself.
+    fn axis_texel(x: u32, mask: u8, cm: u8) -> u32 {
+        if mask == 0 || cm & 2 == 0 {
+            return x;
+        }
+        let period = 1u32 << mask.min(10);
+        let m = x & (period - 1);
+        if cm & 1 != 0 && (x >> mask.min(10)) & 1 != 0 { period - 1 - m } else { m }
+    }
+    /// How many texels along one axis an image reads from TMEM: the image's size, or a clamped
+    /// axis's mask period when the tile is wider.
+    fn axis_read(image_dim: u32, mask: u8, cm: u8) -> u32 {
+        if mask != 0 && cm & 2 != 0 { image_dim.min(1 << mask.min(10)) } else { image_dim }
+    }
     pub fn wrap_s(&self) -> WrapMode {
         WrapMode::from_cm(self.cms, self.masks)
     }
@@ -97,7 +114,8 @@ impl Tmem {
     /// The TMEM byte ranges (start, length) `decode` reads for this tile, before wrapping at
     /// 4 KiB.
     pub fn footprint(tile: &TileDescriptor) -> Vec<(usize, usize)> {
-        let (w, h) = (tile.image_width() as usize, tile.image_height() as usize);
+        let w = TileDescriptor::axis_read(tile.image_width(), tile.masks, tile.cms) as usize;
+        let h = TileDescriptor::axis_read(tile.image_height(), tile.maskt, tile.cmt) as usize;
         let stride = Self::row_stride(tile);
         let row_bytes = (w * bits_per_texel(tile.siz)).div_ceil(8).max(1);
         (0..h).map(|t| (tile.tmem as usize * 8 + t * stride, row_bytes)).collect()
@@ -116,9 +134,10 @@ impl Tmem {
             let e = self.tlut[idx & 0xFF];
             if tlut_mode == TLUT_IA16 { ia16(e) } else { rgba16(e) }
         };
-        for t in 0..h as usize {
-            let row = base + t * stride;
-            for s in 0..w as usize {
+        for t in 0..h {
+            let row = base + TileDescriptor::axis_texel(t, tile.maskt, tile.cmt) as usize * stride;
+            for s in 0..w {
+                let s = TileDescriptor::axis_texel(s, tile.masks, tile.cms) as usize;
                 let px = match (tile.fmt, tile.siz) {
                     (G_IM_FMT_RGBA, G_IM_SIZ_16B) => rgba16(rd16(row + s * 2)),
                     (G_IM_FMT_RGBA, G_IM_SIZ_32B) => {
@@ -214,4 +233,41 @@ pub fn decode_linear(data: &[u8], fmt: u8, siz: u8, width: u32, height: u32, tlu
         }
     }
     tmem.decode(&tile, TLUT_RGBA16)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 16x1 RGBA16 texture in TMEM whose texel n has red n.
+    fn ramp() -> Tmem {
+        let mut tmem = Tmem::default();
+        for n in 0..16u16 {
+            let v = (n << 11) | 1;
+            tmem.bytes[n as usize * 2..n as usize * 2 + 2].copy_from_slice(&v.to_be_bytes());
+        }
+        tmem
+    }
+
+    fn tile(cms: u8, masks: u8, width: u16) -> TileDescriptor {
+        TileDescriptor { fmt: G_IM_FMT_RGBA, siz: G_IM_SIZ_16B, line: 4, cms, masks, lrs: (width - 1) << 2, ..Default::default() }
+    }
+
+    #[test]
+    fn a_clamped_tile_wider_than_its_mask_repeats_the_texture() {
+        // G_TX_CLAMP with mask 4 on a 40-texel tile: clamped to the tile, masked inside it.
+        let img = ramp().decode(&tile(2, 4, 40), TLUT_NONE);
+        assert_eq!((img.width, img.height), (40, 1));
+        let red = |s: usize| img.rgba[s * 4];
+        assert_eq!((red(0), red(15), red(16), red(31), red(32), red(39)), (red(0), red(15), red(0), red(15), red(0), red(7)));
+        // G_TX_MIRROR | G_TX_CLAMP: every other period backwards.
+        let img = ramp().decode(&tile(3, 4, 40), TLUT_NONE);
+        let red = |s: usize| img.rgba[s * 4];
+        assert_eq!((red(16), red(31), red(32)), (red(15), red(0), red(0)));
+        // Only the mask's texels are read from TMEM.
+        assert_eq!(Tmem::footprint(&tile(2, 4, 40)), vec![(0, 32)]);
+        // A clamped tile no wider than its mask, and a wrapped one, as before.
+        assert_eq!(ramp().decode(&tile(2, 4, 16), TLUT_NONE).width, 16);
+        assert_eq!(ramp().decode(&tile(0, 4, 40), TLUT_NONE).width, 16);
+    }
 }
