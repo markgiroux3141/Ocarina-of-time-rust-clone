@@ -25,10 +25,9 @@
 //! turned 100 degrees about z); from meshes baked per eye (docs/adr/0012-actor-bakes.md). The
 //! circle shadow (19) is the shape's (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
-//! Not ported here: the masks themselves (Player's `currentMask` is always `PLAYER_MASK_NONE`,
-//! so 0x2023 and the trade aren't reached in play; BACKLOG #39), and the mask reactions
-//! (`MaskReaction_GetTextId(play, MASK_REACTION_SET_GRAVEYARD_KID)`: 0). Both branches are
-//! ported ([`EnCs::text_id_for`]).
+//! Not ported here: the mask reactions (`MaskReaction_GetTextId(play,
+//! MASK_REACTION_SET_GRAVEYARD_KID)`: 0; BACKLOG #39). Player's `currentMask` is read, so with the
+//! Spooky Mask on he asks for it (0x2023) and the trade follows ([`EnCs::text_id_for`]).
 //!
 //! Params: `path` bits 0 to 7 (the scene path he walks: spot02's 0).
 //! Flags: reads and sets ITEMGETINF_3A (the Spooky Mask sold to him).
@@ -42,7 +41,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR;
 use oot_game::collision_check::*;
 use oot_game::item::{ITEM_SOLD_OUT, item_give, rupees_change_by};
@@ -73,6 +72,14 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(item_get_inf!(ITEMGETINF_3A)).reads().sets().note("the Spooky Mask sold to him")],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x2022).cond("before he has the Spooky Mask, Link wearing no Spooky Mask").note("imitating Dampé all day"),
+        TextLine::new(0x2023).cond("before he has it, Link wearing the Spooky Mask").note("it's Dampé! give me that mask? (a choice)"),
+        TextLine::new(0x2026).cond("answered Yes").note("here's my money"),
+        TextLine::new(0x2027).cond("after 0x2026: the mask sold").note("sold for 30 rupees"),
+        TextLine::new(0x2024).cond("answered No").note("I really do have some money"),
+        TextLine::new(0x2028).cond("once he has the Spooky Mask").note("I'm gonna dig and dig"),
+    ],
 };
 
 /// `ITEMGETINF_3A` (`save.h`: 0x3A): the Spooky Mask sold to the graveyard kid.
@@ -220,7 +227,7 @@ pub struct EnCs {
     anims: Vec<Anim>,
 }
 
-/// Player's `currentMask` (`PLAYER_MASK_NONE` here: masks aren't ported, BACKLOG #39).
+/// Player's `currentMask` (worn, not drawn).
 fn player_mask(play: &PlayState) -> u8 {
     play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).map_or(0, |p| p.current_mask())
 }

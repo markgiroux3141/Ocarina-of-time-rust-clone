@@ -48,7 +48,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::audio::sfx::*;
 use oot_game::camera::{CAM_ID_MAIN, f_atan2f};
 use oot_game::collision_check::*;
@@ -113,6 +113,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new(HINTNUTS).when("type", &[-1, 0]).note("the target scrub's skeleton and animations"),
         ObjectNeed::new(DNK).when("type", &[1, 2, 3, 4, 5, 6, 7, 8, 9]).note("the audience scrubs' skeleton and animations"),
     ],
+    texts: &[TextLine::new(0x10AF).when("type", &[-1, 0]).cond("three bullseyes in a row, Link a child, before the bullet bag").note("three bullseyes: take this present")],
 };
 
 /// `ENDNTNOMAL_TARGET`, `ENDNTNOMAL_STAGE` (`z_en_dnt_nomal.h`).

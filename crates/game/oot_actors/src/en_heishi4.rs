@@ -29,7 +29,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::{event_chk_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT};
@@ -66,6 +66,22 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x5065).when("type", &[0, 4]).cond("after Zelda fled the castle").note("the time; \"do you know what happened in the castle?\""),
+        TextLine::new(0x5068).when("type", &[0, 4]).cond("after the Master Sword, before Zelda fled").note("the strange guy in the Windmill"),
+        TextLine::new(0x5079).when("type", &[4]).cond("before the Master Sword, the first time").note("Impa's house, open to all"),
+        TextLine::new(0x507A).when("type", &[4]).cond("before the Master Sword, once he's been talked to").note("a Sheikah village, opened to everyone"),
+        TextLine::new(0x5063).when("type", &[0]).cond("before the Master Sword, by day, the first time").note("the clock soldier: the trail up Death Mountain"),
+        TextLine::new(0x5064).when("type", &[0]).cond("before the Master Sword, by day, once he's been talked to").note("\"Ding dong\": the time"),
+        TextLine::new(0x5066).when("type", &[0]).cond("before the Master Sword, at night, the first time").note("testing your courage? the graveyard"),
+        TextLine::new(0x5067).when("type", &[0]).cond("before the Master Sword, at night, once he's been talked to").note("the time; the graveyard and the royal song"),
+        TextLine::new(0x7004).when("type", &[8]).cond("only in the guard house, by day").note("bored; break the jars"),
+        TextLine::new(0x709A).when("type", &[8]).cond("only in the guard house, at night").note("the night watch; ghosts his hobby"),
+        TextLine::new(0x7002).when("type", &[8]).cond("by day, not in the guard house or the market by night").note("welcome to Hyrule Castle Town"),
+        TextLine::new(0x7003).when("type", &[8]).cond("at night, or in the market by night").note("kids shouldn't be out at night"),
+        TextLine::new(0x7007).when("type", &[7]).cond("after Zelda fled, before his last words are heard").note("the dying guard: Ganondorf's betrayal, Impa and Zelda"),
+        TextLine::new(0x7008).when("type", &[7]).cond("once his last words are heard").note("he's not moving anymore"),
+    ],
 };
 
 // `Heishi4Type`.

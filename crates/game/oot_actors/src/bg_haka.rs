@@ -32,7 +32,7 @@ use eng_math::{cos_s, sin_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::Actor;
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, SFX_FLAG};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo, actor_draw_matrix};
@@ -74,6 +74,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("0x23")).reads().note("at Lake Hylia, a child can't pull it before it's set")],
     todo: false,
     objects: &[],
+    texts: &[TextLine::new(0x5073).cond("pulled by a child by day, only in the graveyard").note("the Graveyard Boy: I'll tell Dampé")],
 };
 
 /// `actionFunc`.

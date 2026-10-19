@@ -23,7 +23,7 @@
 //! (docs/adr/0012-actor-bakes.md). The circle shadow (20) is the shape's (`ActorShape_Init`'s,
 //! drawn by `Actor_Draw`).
 //!
-//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none), the
+//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: taken as 0, so none), the
 //! debug count override (`BREG(7)`, 0).
 //!
 //! Params: none read (placed as 0xFFFF, unused: her scene and Link's age decide).
@@ -41,7 +41,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::audio::sfx::{NA_SE_SY_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -90,6 +90,28 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     todo: false,
     // `OBJECT_OS_ANIME`: her animations; without it she is gone at once
     objects: &[ObjectNeed::new("object_os_anime").note("her animations")],
+    texts: &[
+        TextLine::new(0x5036).cond("Link a child, no cuccos in the pen").note("my cuccos have flown away; bring them back"),
+        TextLine::new(0x5070).cond("Link a child, one cucco in the pen").note("catch six more"),
+        TextLine::new(0x5072).cond("Link a child, two in the pen").note("five more"),
+        TextLine::new(0x5037).cond("Link a child, three in the pen").note("the other four"),
+        TextLine::new(0x5038).cond("Link a child, four in the pen").note("the other three"),
+        TextLine::new(0x5039).cond("Link a child, five in the pen").note("the other two"),
+        TextLine::new(0x503A).cond("Link a child, six in the pen").note("the last one"),
+        TextLine::new(0x503B).cond("Link a child, all seven in the pen, the first time").note("thank you; the Empty Bottle (a purple rupee once it's got)"),
+        TextLine::new(0x503D).cond("Link a child, all seven in the pen again after the reward").note("don't tease my cuccos"),
+        TextLine::new(0x503C).cond("Link a child, fewer than seven in the pen after the reward").note("round them up or pay for them"),
+        TextLine::new(0x503E).cond("Link an adult, before the Pocket Egg, the first time").note("the Pocket Cucco; will you try?"),
+        TextLine::new(0x503F).cond("Link an adult, before the Pocket Egg, once she's been talked to").note("will you try?"),
+        TextLine::new(0x5040).cond("answered No to the Pocket Egg").note("were you pecked by a cucco?"),
+        TextLine::new(0x5042).cond("Link an adult, after the Pocket Egg, before Cojiro").note("please make my cucco happy"),
+        TextLine::new(0x5027).cond("Link an adult, after Talon's woken, once he's turned down Cojiro").note("is your cucco happy?"),
+        TextLine::new(0x5047).cond("Link an adult, after Cojiro").note("my brother must have been lonely"),
+        TextLine::new(0x5043).cond("Link showing her the Pocket Cucco, after Talon's woken").note("a good Cucco Keeper; keep Cojiro?"),
+        TextLine::new(0x5045).cond("answered No to Cojiro").note("you like that other cucco; keep it a while"),
+        TextLine::new(0x00CF).cond("Link showing her another item").note("that item doesn't work here"),
+        TextLine::new(0x503D).cond("only in Impa's house, at night").note("don't tease my cuccos"),
+    ],
 };
 
 /// `SCENE_IMPAS_HOUSE` (`scene_table.h`: 0x37, `labo_scene`).
@@ -143,7 +165,10 @@ const LIMB_HEAD: usize = 15;
 /// 9 fewer than seven after the reward.
 pub const MISSING_CUCCO_TEXT_IDS: [u16; 10] = [0x5036, 0x5070, 0x5072, 0x5037, 0x5038, 0x5039, 0x503A, 0x503B, 0x503D, 0x503C];
 
-/// `sTradeItemTextIds`.
+/// `sTradeItemTextIds`: by the adult's text index (`unk_27A`): 0 the first time, 1 again, 2 after
+/// Cojiro, 4 and 9 after the Pocket Egg, 10 after Cojiro turned down; 3 the Pocket Egg turned down,
+/// 5 the Pocket Cucco shown, 7 another item shown, 8 Cojiro turned down.
+// schema: 0x5044 (index 6) is never used (0x5043 goes on to it)
 pub const TRADE_ITEM_TEXT_IDS: [u16; 11] = [0x503E, 0x503F, 0x5047, 0x5040, 0x5042, 0x5043, 0x5044, 0x00CF, 0x5045, 0x5042, 0x5027];
 
 /// `D_80ABB3B4`: each cucco's bit in `infTable[25]` (`INFTABLE_MASK(INFTABLE_199)` to
@@ -286,7 +311,7 @@ pub struct EnNiwLady {
     anims: Option<Anims>,
 }
 
-/// `MaskReaction_GetTextId(play, MASK_REACTION_SET_CUCCO_LADY)`: no masks, so 0 (BACKLOG #39).
+/// `MaskReaction_GetTextId(play, MASK_REACTION_SET_CUCCO_LADY)`: not ported, 0 (BACKLOG #39).
 fn mask_reaction_text(_play: &PlayState) -> u16 {
     0
 }

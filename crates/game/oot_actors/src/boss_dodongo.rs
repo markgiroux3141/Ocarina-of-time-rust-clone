@@ -126,6 +126,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `NAVI_ENEMY_KING_DODONGO` (`actor.h`).

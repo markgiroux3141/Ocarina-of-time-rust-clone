@@ -126,6 +126,11 @@ pub mod keys {
     pub fn scene_collision(file: &str, layer: usize) -> String {
         format!("col/{file}/layer{layer}")
     }
+    /// `message_text::SceneTexts`: a scene's own texts over the game's (a custom level's, from the
+    /// editor: docs/adr/0079-the-level-texts.md). The game's scenes have none.
+    pub fn scene_texts(file: &str) -> String {
+        format!("texts/{file}")
+    }
     /// `scene::RoomData`.
     pub fn room(file: &str, layer: usize, room: usize) -> String {
         format!("room/{file}/{layer}/{room}")

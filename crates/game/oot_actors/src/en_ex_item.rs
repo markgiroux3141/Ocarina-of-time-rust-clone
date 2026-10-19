@@ -115,6 +115,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_gi_goddess").when("type", &[16, 17, 18]).note("the Great Fairies' magic"),
         ObjectNeed::new("object_gi_dekupouch").when("type", &[19]).note("the bullet bag"),
     ],
+    texts: &[],
 };
 
 // `EnExItemType` (`z_en_ex_item.h`).

@@ -49,7 +49,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::collision_check::*;
 use oot_game::event_chk_inf;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -96,6 +96,13 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     objects: &[
         ObjectNeed::new("object_ahg").when("params", &[0]).note("the father's body"),
         ObjectNeed::new("object_boj").when("params", &[1, 2, 3, 4, 5]).note("the children's bodies"),
+    ],
+    texts: &[
+        TextLine::new(0x28).when("params", &[0]).note("the curse broken: a token of my appreciation (the gold rupee)"),
+        TextLine::new(0x23).when("params", &[0]).cond("once he's given the gold rupee").note("we'll be careful not to get cursed again"),
+        TextLine::new(0x21).when("params", &[1, 2, 3, 4, 5]).cond("before its reward").note("the curse broken: here's a reward"),
+        TextLine::new(0x20).when("params", &[1, 2, 3, 4, 5]).cond("after its reward, fewer than 50 tokens").note("please save my other brothers"),
+        TextLine::new(0x1F).when("params", &[1, 2, 3, 4, 5]).cond("after its reward, 50 tokens or more").note("so happy everyone is back to normal"),
     ],
 };
 

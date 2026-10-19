@@ -84,6 +84,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `DarkmeiroType` (`z_bg_gnd_darkmeiro.h`).

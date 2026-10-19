@@ -111,6 +111,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         .indirect("not ported: DemoDu_CsFireMedallion_AdvanceTo01 (the Fire Medallion, Phase 15)")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `CS_GORONSRUBY_SUBSCENE(x)`: `sUpdateFuncs`' index of `DemoDu_UpdateCs_GR_xx`.

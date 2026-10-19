@@ -56,7 +56,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_KAREBABA, name: "E
 pub const PARAMS: Field = Field::whole("params", Kind::Named(&[(0, "grows first"), (1, "already grown")]), "whether it starts by growing (0) or already grown; then its timer");
 
 /// En_Karebaba's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `NAVI_ENEMY_WITHERED_DEKU_BABA` (`actor.h`).
 const NAVI_ENEMY_WITHERED_DEKU_BABA: u8 = 0x09;

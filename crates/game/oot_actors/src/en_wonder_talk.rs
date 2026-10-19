@@ -18,7 +18,7 @@
 
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::message::{TEXT_STATE_CHOICE, TEXT_STATE_DONE, TEXT_STATE_EVENT};
 use oot_game::npc::{offer_talk, process_talk_request};
@@ -75,6 +75,18 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x7040).when("unk_150", &[1]).cond("Link a child").note("the altar's slate: three hollows and an inscription"),
+        TextLine::new(0x7088).when("unk_150", &[1]).cond("Link an adult").note("the altar's slate: the Hero of Time descended here"),
+        TextLine::new(0x5002).when("unk_150", &[2]).note("the gravekeeper's diary: read it?"),
+        TextLine::new(0x5001).when("unk_150", &[2]).cond("answered Yes, Link a child").note("the diary: the treasure that stretches and shrinks"),
+        TextLine::new(0x5003).when("unk_150", &[2]).cond("answered Yes, Link an adult").note("the diary: enter my grave"),
+        TextLine::new(0x5004).when("unk_150", &[2]).cond("answered No").note("you decide not to read it"),
+        TextLine::new(0x501E).when("unk_150", &[3]).note("Sharp the Elder's grave; a Poe comes"),
+        TextLine::new(0x5020).when("unk_150", &[4]).cond("before the royal tomb is open").note("the Royal Family's Tomb"),
+        TextLine::new(0x501F).when("unk_150", &[5]).note("Flat the Younger's grave; a Poe comes"),
+        TextLine::new(0x7072).when("unk_150", &[0, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]).note("any other kind: \"Give me 10 Rupees...\""),
+    ],
 };
 
 /// `actionFunc`.

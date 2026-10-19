@@ -76,3 +76,33 @@ fn actors_are_exported_standing_on_the_level() {
     assert_eq!(back.actors[1].yaw(), 90.0);
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[test]
+fn texts_are_exported_by_id_and_kept_in_order() {
+    use overworld::doc::Text;
+    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/sketch");
+    let mut doc: Doc = serde_json::from_str(&std::fs::read_to_string(examples.join("sketch_village.json")).unwrap()).unwrap();
+    let theme = Theme::for_doc(&doc, None).unwrap();
+    let lvl = build(&doc, &theme).unwrap();
+    let out = std::env::temp_dir().join(format!("overworld_export_texts_{}", std::process::id()));
+    let read = |out: &Path| -> serde_json::Value { serde_json::from_str(&std::fs::read_to_string(out.join("level.json")).unwrap()).unwrap() };
+    export::write(&doc, &theme, &lvl, None, &out).unwrap();
+    assert!(read(&out).get("texts").is_none());
+    assert!(!serde_json::to_string(&doc).unwrap().contains("\"texts\""));
+
+    let t = |text: &str| Text { id: 0, box_type: 0, box_pos: 0, text: text.into() };
+    doc.set_text(0x5036, Some(t("Help!\n{COLOR:RED}Cuccos{COLOR:DEFAULT}!")));
+    doc.set_text(0x0300, Some(Text { box_type: 1, ..t("A sign.") }));
+    doc.set_text(0x5036, Some(t("Help me!")));
+    assert_eq!(doc.texts.iter().map(|t| t.id).collect::<Vec<_>>(), vec![0x0300, 0x5036]);
+    export::write(&doc, &theme, &lvl, None, &out).unwrap();
+    let j = &read(&out)["texts"];
+    assert_eq!(j[0], serde_json::json!({"id": 0x0300, "type": 1, "pos": 0, "text": "A sign."}));
+    assert_eq!(j[1]["text"], "Help me!");
+    // back to the game's
+    doc.set_text(0x0300, None);
+    assert_eq!(doc.text(0x0300), None);
+    let back: Doc = serde_json::from_str(&serde_json::to_string(&doc).unwrap()).unwrap();
+    assert_eq!(back.texts, doc.texts);
+    let _ = std::fs::remove_dir_all(&out);
+}

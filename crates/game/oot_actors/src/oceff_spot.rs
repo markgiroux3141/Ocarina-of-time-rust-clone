@@ -45,6 +45,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 pub const BAKE: &str = "Oceff_Spot/cylinder";

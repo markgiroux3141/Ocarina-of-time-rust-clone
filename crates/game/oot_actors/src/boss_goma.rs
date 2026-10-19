@@ -92,6 +92,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `WARP_DUNGEON_CHILD` (`DoorWarp1Type`).

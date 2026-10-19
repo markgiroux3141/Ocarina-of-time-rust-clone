@@ -46,7 +46,7 @@ use eng_math::{smooth_step_to_f, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::collision_check::*;
 use oot_game::inf_table;
 use oot_game::message::TEXT_STATE_DONE;
@@ -91,6 +91,16 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x5075).when("type", &[0]).cond("by day (only in Kakariko or the potion shop)").note("Ichiro: money without effort, thievery?"),
+        TextLine::new(0x5076).when("type", &[0]).cond("at night (only in the guest house or the potion shop)").note("Ichiro: the boss's house behind this one"),
+        TextLine::new(0x502A).when("type", &[1]).cond("only in Kakariko (by day)").note("Sabooro: the poor cucco girl"),
+        TextLine::new(0x5074).when("type", &[1]).cond("only in the guest house (at night) or the potion shop").note("Sabooro: his worn-out hands"),
+        TextLine::new(0x506A).when("type", &[2]).cond("only in Kakariko (by day)").note("Jiro: the village's construction"),
+        TextLine::new(0x506B).when("type", &[2]).cond("only in the guest house (at night) or the potion shop").note("Jiro: I'm starving"),
+        TextLine::new(0x5077).when("type", &[3]).cond("only in Kakariko (by day)").note("Shiro: Dampé asleep; kill some time"),
+        TextLine::new(0x5078).when("type", &[3]).cond("only in the guest house (at night) or the potion shop").note("Shiro: isn't dinner ready yet?"),
+    ],
 };
 
 // `KakarikoCarpenterType`.
@@ -378,8 +388,8 @@ impl EnDaikuKakariko {
         let mut talk_state = 2;
         if play.message_state() == TEXT_STATE_DONE && play.message_should_advance() {
             match self.actor.text_id {
-                0x6061 => play.save.set_inf_table(INFTABLE_176),
-                0x6064 => play.save.set_inf_table(INFTABLE_178),
+                0x6061 => play.save.set_inf_table(INFTABLE_176), // schema: En_Daiku's, only compared
+                0x6064 => play.save.set_inf_table(INFTABLE_178), // schema: En_Daiku's, only compared
                 _ => {}
             }
             talk_state = 0;

@@ -100,6 +100,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new(BWALL_OBJECT).when("wallType", &[0, 1]).note("the bombable wall's model and collision"),
         ObjectNeed::new(KINGDODONGO_OBJECT).when("wallType", &[2, 3]).note("King Dodongo's floor and lava cover"),
     ],
+    texts: &[],
 };
 
 /// `BombableWallInfo`: the object (file), `colHeader`, `dList` and `colType`.

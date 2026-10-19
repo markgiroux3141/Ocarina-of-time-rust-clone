@@ -47,7 +47,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HATA, name: "En_Ha
 pub const PARAMS: Field = Field::whole("params", Kind::Unused, "0xFFFF in every placement; read by nothing");
 
 /// En_Hata's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `FlagpoleLimb` (`object_hata.h`, the skeleton's limb order): the cloths' bases and hoist ends.
 pub const FLAGPOLE_LIMB_FLAG_1_BASE: usize = 3;

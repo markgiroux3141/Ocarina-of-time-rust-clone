@@ -31,7 +31,7 @@ pub const KIND: Field = Field::whole(
 );
 
 /// En_Tana's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[KIND], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[KIND], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `sShelfDLists`.
 const SHELF_DLISTS: [&str; 3] = ["gShopDungenWoodenShelvesDL", "gShopDungenStoneShelvesDL", "gShopDungenStoneShelvesDL"];

@@ -71,6 +71,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: broken, gone at init; set when it breaks")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `sFallTimerDurations`.

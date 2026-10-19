@@ -34,7 +34,7 @@ use eng_math::{atan2_s, cos_s, sin_s, smooth_step_to_f, smooth_step_to_s, step_t
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_ITEMACTION, ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, PLAYER_BODYPART_HAT, PLAYER_BODYPART_HEAD, PLAYER_BODYPART_WAIST, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, TextLine};
 use oot_game::audio::sfx::*;
 use oot_game::cutscene::CS_STATE_IDLE;
 use oot_game::lights::{LightInfo, LightNode};
@@ -64,7 +64,67 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Elf's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
+///
+/// Navi's lines: the text Player gives her (`naviTextId`): her C-Up hint (`QuestHint_GetNaviTextId`,
+/// the scene's `naviQuestHints`: the overworld's `gOverworldNaviQuestHints`, the first step not
+/// done, called out now and then by `naviTimer`; a dungeon's and a custom level's none), an
+/// `Elf_Msg`'s (that actor's lines), or 0x00E0 after Saria's Song (`z_message.c`); then her
+/// talk's (`func_80A052F4` ... `func_80A05040`): Saria's (`QuestHint_GetSariaTextId`), and the
+/// hint again for Yes to 0x00E1.
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE],
+    flags: &[],
+    todo: false,
+    objects: &[],
+    texts: &[
+        TextLine::new(0x0140).when("params", &[0]).cond("only in the overworld, before the Deku Tree's talk").note("the Deku Tree has summoned you"),
+        TextLine::new(0x0141).when("params", &[0]).cond("only in the overworld, before the Kokiri Emerald").note("let's go into the Deku Tree"),
+        TextLine::new(0x0142).when("params", &[0]).cond("only in the overworld, before the Weird Egg").note("visit the princess at the castle"),
+        TextLine::new(0x0143).when("params", &[0]).cond("only in the overworld, before Talon's back from the castle").note("find the ranch girl's father"),
+        TextLine::new(0x0144).when("params", &[0]).cond("only in the overworld, before Zelda's Letter").note("where's the princess in the castle?"),
+        TextLine::new(0x0145).when("params", &[0]).cond("only in the overworld, without Saria's Song").note("what would Saria say?"),
+        TextLine::new(0x0146).when("params", &[0]).cond("only in the overworld, without the Goron's Bracelet").note("the Stone of Fire is on Death Mountain"),
+        TextLine::new(0x0147).when("params", &[0]).cond("only in the overworld, before the Goron's Ruby").note("into Dodongo's Cavern with a Bomb Flower"),
+        TextLine::new(0x0148).when("params", &[0]).cond("only in the overworld, without magic").note("a fairy on top of Death Mountain"),
+        TextLine::new(0x0149).when("params", &[0]).cond("only in the overworld, before Ruto's Letter is given to King Zora").note("does Saria know of the other stone?"),
+        TextLine::new(0x014A).when("params", &[0]).cond("only in the overworld, before the Zora's Sapphire").note("Ruto's inside Jabu-Jabu's belly"),
+        TextLine::new(0x014B).when("params", &[0]).cond("only in the overworld, before Zelda fled the castle").note("three stones: back to the castle"),
+        TextLine::new(0x014C).when("params", &[0]).cond("only in the overworld, before the Ocarina of Time").note("they threw something into the moat"),
+        TextLine::new(0x014D).when("params", &[0]).cond("only in the overworld, before the Master Sword").note("check inside the Temple of Time"),
+        TextLine::new(0x014E).when("params", &[0]).cond("only in the overworld, without the Hookshot").note("go to Kakariko, as Sheik said?"),
+        TextLine::new(0x0150).when("params", &[0]).cond("only in the overworld, without the Forest Medallion").note("worried about the forest and Saria"),
+        TextLine::new(0x0151).when("params", &[0]).cond("only in the overworld, without the Fire Medallion").note("the cloud over Death Mountain"),
+        TextLine::new(0x0152).when("params", &[0]).cond("only in the overworld, without the Iron Boots").note("an arctic wind from Zora's River"),
+        TextLine::new(0x0153).when("params", &[0]).cond("only in the overworld, without the Water Medallion").note("the Iron Boots walk the lake's bottom"),
+        TextLine::new(0x0154).when("params", &[0]).cond("only in the overworld, before Kakariko burns").note("look for someone who knows the Sages"),
+        TextLine::new(0x0155).when("params", &[0]).cond("only in the overworld, without the Lens of Truth").note("the monster came out of the well"),
+        TextLine::new(0x0157).when("params", &[0]).cond("only in the overworld, without the Shadow Medallion").note("play the Nocturne of Shadow"),
+        TextLine::new(0x0158).when("params", &[0]).cond("only in the overworld, without the Requiem of Spirit").note("the desert, Ganondorf's birthplace"),
+        TextLine::new(0x0156).when("params", &[0]).cond("only in the overworld, with the Goron's Bracelet, not the Silver Gauntlets").note("who built the Spirit Temple?"),
+        TextLine::new(0x015A).when("params", &[0]).cond("only in the overworld, without the Spirit Medallion").note("equip the Silver Gauntlets"),
+        TextLine::new(0x015B).when("params", &[0]).cond("only in the overworld, without the Light Arrows").note("the one waiting at the Temple of Time"),
+        TextLine::new(0x015C).when("params", &[0]).cond("only in the overworld, before Ganon's Tower's barrier is gone").note("save Zelda in Ganon's Castle"),
+        TextLine::new(0x00E0).when("params", &[0]).cond("after Saria's Song").note("talk to Saria?"),
+        TextLine::new(0x00E2).when("params", &[0]).cond("answered Talk to Saria").note("this is Saria, can you hear me?"),
+        TextLine::new(0x0160).when("params", &[0]).cond("Saria's, Link a child, with Saria within 800").note("talk to me face to face"),
+        TextLine::new(0x0161).when("params", &[0]).cond("Saria's, Link a child, without the Goron's Bracelet, before the Zora's Sapphire").note("the forest connects to many places"),
+        TextLine::new(0x0164).when("params", &[0]).cond("Saria's, Link a child, without the Goron's Bracelet, with the Zora's Sapphire").note("one more stone: Fire"),
+        TextLine::new(0x0162).when("params", &[0]).cond("Saria's, Link a child, before the Goron's Ruby").note("Darunia loved my song"),
+        TextLine::new(0x0163).when("params", &[0]).cond("Saria's, Link a child, before the Zora's Sapphire").note("one more stone: Water"),
+        TextLine::new(0x0165).when("params", &[0]).cond("Saria's, Link a child, before the Ocarina of Time").note("a feeling of dread at the castle"),
+        TextLine::new(0x0166).when("params", &[0]).cond("Saria's, Link a child, without the Forest, Fire or Water Medallion").note("your ocarina sounds different"),
+        TextLine::new(0x0167).when("params", &[0]).cond("Saria's, Link a child, without the Song of Storms").note("eyes that see through darkness"),
+        TextLine::new(0x0168).when("params", &[0]).cond("Saria's, Link a child, without the Spirit or Shadow Medallion").note("go to the desert"),
+        TextLine::new(0x0169).when("params", &[0]).cond("Saria's, Link a child, with them all").note("found all the temples yet?"),
+        TextLine::new(0x016A).when("params", &[0]).cond("Saria's, Link an adult, without the Forest Medallion").note("I'm in the Forest Temple"),
+        TextLine::new(0x016B).when("params", &[0]).cond("Saria's, Link an adult, without the Fire or Water Medallion").note("the Sage of the Forest"),
+        TextLine::new(0x016C).when("params", &[0]).cond("Saria's, Link an adult, without the Spirit or Shadow Medallion").note("six Sages and a seventh"),
+        TextLine::new(0x016D).when("params", &[0]).cond("Saria's, Link an adult, with them all").note("the Six Sages' power"),
+        TextLine::new(0x00E3).when("params", &[0]).cond("after Saria's text").note("talk to Saria again?"),
+        TextLine::new(0x00E1).when("params", &[0]).cond("answered No to Saria").note("then talk to me?"),
+        TextLine::new(0x015F).when("params", &[0]).cond("answered Yes to her, without a hint: all done, a dungeon, a custom level").note("try to keep moving"),
+    ],
+};
 
 // `FairyType`.
 pub const FAIRY_NAVI: i16 = 0;
@@ -1263,6 +1323,7 @@ impl EnElf {
         self.func_80a04de4(play);
         if play.message_state() == TEXT_STATE_CHOICE && play.message_should_advance() {
             if play.msg_ctx.choice_index == 0 {
+                // The scene's hint (0x0140..0x015C in the overworld), or 0x15F.
                 let t = play.elf_message_get_c_up_text();
                 play.continue_textbox(if t != 0 { t } else { 0x15F });
                 self.update_fn = Update::Talk;
@@ -1279,6 +1340,7 @@ impl EnElf {
         use oot_game::message::{TEXT_STATE_EVENT};
         self.func_80a04de4(play);
         if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {
+            // 0x0160..0x016D (`sChildSariaQuestHints`, `sAdultSariaQuestHints`).
             let t = play.elf_message_get_saria_text();
             play.continue_textbox(t);
             self.update_fn = Update::SariaMore;
@@ -1332,14 +1394,14 @@ impl EnElf {
             self.actor.flags |= ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED;
         }
         if oot_game::npc::process_talk_request(&mut self.actor) {
-            play.audio.func_800f4524(SfxPos::Default, NA_SE_VO_SK_LAUGH, 0x20);
+            play.audio.func_800f4524(SfxPos::Default, NA_SE_VO_SK_LAUGH, 0x20); // schema: the sfx's arg, not a text
             self.actor.focus_pos = self.actor.world_pos;
             if self.actor.text_id == play.elf_message_get_c_up_text() {
-                self.fairy_flags |= 0x80;
+                self.fairy_flags |= 0x80; // schema: fairyFlags bits, not texts
                 play.save.navi_timer = 3001;
             }
-            self.fairy_flags |= 0x10;
-            self.fairy_flags |= 0x20;
+            self.fairy_flags |= 0x10; // schema: fairyFlags bits, not texts
+            self.fairy_flags |= 0x20; // schema: fairyFlags bits, not texts
             self.update_fn = Update::Talk;
             self.func_80a01c38(3);
             // The Elf_Msg that set her text this frame ends with the talk.

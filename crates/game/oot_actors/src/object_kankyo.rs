@@ -76,6 +76,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_spot02_objects").when("params", &[4]).note("the Sun's Song grave's spark"),
         ObjectNeed::new("object_demo_kekkai").when("params", &[5]).note("Ganon's castle's beams (not ported)"),
     ],
+    texts: &[],
 };
 
 /// `SCENE_KOKIRI_FOREST` (Kokiri Forest), `ENTR_KOKIRI_FOREST_0`.

@@ -127,6 +127,9 @@ impl App {
         if self.captures.poll(Path::new(ROOT), repaint.clone()) || busy {
             self.status = self.captures.status.clone();
         }
+        if let Some(b) = self.text_boxes.as_mut() {
+            b.new_frame();
+        }
         if let Some(v3) = self.v3.as_mut() {
             v3.new_frame();
             if let Some(m) = &self.captures.manifest {
@@ -773,6 +776,7 @@ impl App {
         self.placement_section(ui, i, &e);
         self.settings_section(ui, i, &e);
         self.flags_section(ui, i, &e);
+        self.dialogue_section(ui, i, &e);
         self.layers_section(ui, i);
         self.game_section(ui, i, &e);
         self.raw_section(ui, i, Some(&e));

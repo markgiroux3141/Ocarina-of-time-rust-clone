@@ -42,7 +42,7 @@ use eng_math::{approach_f, approach_s, cos_s, scaled_step_to_s, sin_s, smooth_st
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_ENEMY, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_EVENT;
@@ -69,6 +69,7 @@ pub const PARAMS: Field = Field::params(
     "its place in the puzzle, or the flower (0xA, spawned by it)",
 );
 /// `PARAMS_GET_U(this->actor.params, 8, 8)`: `Actor_SetTextWithPrefix`'s `baseTextId`.
+// schema: the Deku Tree's prefix, not a text
 pub const BASE_TEXT_ID: Field = Field::params("baseTextId", 8, 8, Kind::Range(0, 0xFF), "its text, added to the scene's prefix (0x1000 in the Deku Tree)");
 
 /// En_Hintnuts' configuration (docs/adr/0066-the-actor-schema.md).
@@ -77,6 +78,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Clear).reads().sets().note("reads room 9's (text 0x109B: gone); the puzzle's third sets its room's")],
     todo: false,
     objects: &[],
+    // `Actor_SetTextWithPrefix`: the scene's prefix | `baseTextId`; a custom level's prefix is 0,
+    // so there its text is `baseTextId` itself (0: it doesn't talk).
+    texts: &[TextLine::field(0x0000, "baseTextId")
+        .when("params", &[0, 3])
+        .cond("caught after its own nut knocked it out (the puzzle's third: the last, in order); the scene's prefix or-ed in: 0x1000 in the Deku Tree, 0 in a custom level")
+        .note("its hint")],
 };
 
 /// The flower's params (`0xA` in the C).
@@ -239,6 +246,7 @@ impl EnHintnuts {
         actor.params &= 0xFF;
         *puzzle_counter(play) = 0;
         let mut n = EnHintnuts { actor, skel, skeleton, anims, action: Action::Wait, anim_flag_and_timer: 0, unk_196: 0, text_id_copy, collider };
+        // schema: compared only (the Deku Tree's 0x1000 | 0x9B, the line `baseTextId` gives)
         if n.actor.text_id == 0x109B && play.flags.get_clear(0x9) {
             n.actor.kill();
             return Box::new(n);

@@ -54,7 +54,7 @@ use eng_math::{approach_f, step_to_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::audio::sfx::{NA_SE_SY_CURSOR, NA_SE_SY_DECIDE, NA_SE_SY_ERROR, NA_SE_SY_MESSAGE_PASS};
 use oot_game::collision_check::MASS_IMMOVABLE;
@@ -148,6 +148,17 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_oF1d_map").when("params", &[8]).note("the Goron shopkeeper's skeleton"),
         ObjectNeed::new("object_mastergolon").when("params", &[8]).note("the Goron shopkeeper's animations"),
         ObjectNeed::new("object_os").when("params", &[10]).note("the Happy Mask Salesman"),
+    ],
+    // The Kokiri shopkeeper's (the only one ported); the items' descriptions and buy prompts are
+    // their En_GirlA's.
+    texts: &[
+        TextLine::new(0x009E).when("params", &[0]).note("welcome!"),
+        TextLine::new(0x0083).when("params", &[0]).note("shop around: talk to the owner, or quit"),
+        TextLine::new(0x10BA).when("params", &[0]).cond("chose Talk to the owner").note("we sell shields, but not swords!"),
+        TextLine::new(0x0084).when("params", &[0]).cond("chose Buy, an item already had").note("thanks a lot!"),
+        TextLine::new(0x0086).when("params", &[0]).cond("chose Buy, the item not to be had now").note("you can't get this now"),
+        TextLine::new(0x0085).when("params", &[0]).cond("chose Buy, without the rupees").note("you don't have enough Rupees!"),
+        TextLine::new(0x006B).when("params", &[0]).cond("after a new item's get").note("would you like to buy something else?"),
     ],
 };
 
@@ -999,9 +1010,9 @@ impl EnOssan {
             let s = &play.save;
             // schema: ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3B
             if [ITEMGETINF_38, ITEMGETINF_39, ITEMGETINF_3A, ITEMGETINF_3B].iter().all(|&f| s.get_item_get_inf(f)) {
-                play.continue_textbox(0x70AD);
+                play.continue_textbox(0x70AD); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
             } else {
-                play.continue_textbox(0x70A2);
+                play.continue_textbox(0x70A2); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
             }
         } else {
             play.continue_textbox(0x83);
@@ -1106,14 +1117,14 @@ impl EnOssan {
     fn try_payback_mask(&mut self, play: &mut PlayState) {
         let price = MASK_PAYMENT_PRICE[(self.happy_mask_shop_state as usize).min(3)];
         if play.save.rupees < price {
-            play.continue_textbox(0x70A8);
+            play.continue_textbox(0x70A8); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
             self.happy_mask_shopkeeper_eye_idx = 1;
             self.happy_mask_shop_state = OSSAN_HAPPY_STATE_ANGRY;
         } else {
             oot_game::item::rupees_change_by(&mut play.save, -price);
             if self.happy_mask_shop_state == OSSAN_HAPPY_STATE_REQUEST_PAYMENT_BUNNY_HOOD {
                 play.save.set_event_chk_inf(EVENTCHKINF_PAID_BACK_BUNNY_HOOD);
-                play.continue_textbox(0x70A9);
+                play.continue_textbox(0x70A9); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
                 self.happy_mask_shop_state = OSSAN_HAPPY_STATE_ALL_MASKS_SOLD;
                 return;
             }
@@ -1123,7 +1134,7 @@ impl EnOssan {
                 OSSAN_HAPPY_STATE_REQUEST_PAYMENT_SKULL_MASK => play.save.set_event_chk_inf(EVENTCHKINF_PAID_BACK_SKULL_MASK),
                 _ => {}
             }
-            play.continue_textbox(0x70A7);
+            play.continue_textbox(0x70A7); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
             self.happy_mask_shop_state = OSSAN_HAPPY_STATE_NONE;
         }
         self.state_flag = OSSAN_STATE_START_CONVERSATION;
@@ -1144,7 +1155,7 @@ impl EnOssan {
             play.audio.play_sfx_centered(NA_SE_SY_MESSAGE_PASS);
             match self.happy_mask_shop_state {
                 OSSAN_HAPPY_STATE_ALL_MASKS_SOLD => {
-                    play.continue_textbox(0x70AA);
+                    play.continue_textbox(0x70AA); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
                     self.state_flag = OSSAN_STATE_LEND_MASK_OF_TRUTH;
                     return;
                 }
@@ -1388,7 +1399,7 @@ impl EnOssan {
         let a = self.camera_face_angle;
         self.update_camera_direction(play, a);
         if self.camera_face_angle == 0.0 {
-            play.continue_textbox(0x3010);
+            play.continue_textbox(0x3010); // schema: not ported (the Goron shop's: only the Kokiri shopkeeper is)
             self.state_flag = OSSAN_STATE_WAIT_FOR_DISPLAY_ONLY_BOMB_DIALOG;
         }
     }
@@ -1485,7 +1496,7 @@ impl EnOssan {
         let Some((result, _)) = self.selected_can_buy(play) else { return };
         match result {
             CANBUY_RESULT_SUCCESS_FANFARE => {
-                play.continue_textbox(0x9C);
+                play.continue_textbox(0x9C); // schema: not ported (Lon Lon Milk, Talon's and Ingo's: only the Kokiri shopkeeper is)
                 self.state_flag = OSSAN_STATE_GIVE_LON_LON_MILK;
                 self.draw_cursor = 0;
             }
@@ -1701,7 +1712,7 @@ impl EnOssan {
                 self.selected_restock(play);
                 if temp_params == Some(SI_MASK_OF_TRUTH) && !play.save.get_item_get_inf(ITEMGETINF_3F) {
                     play.save.set_item_get_inf(ITEMGETINF_3F);
-                    play.continue_textbox(0x70AB);
+                    play.continue_textbox(0x70AB); // schema: not ported (the Happy Mask Shop's: only the Kokiri shopkeeper is)
                     self.happy_mask_shop_state = OSSAN_HAPPY_STATE_BORROWED_FIRST_MASK;
                     self.update_shop_offerings(play);
                     self.state_flag = OSSAN_STATE_START_CONVERSATION;
@@ -1772,7 +1783,7 @@ impl EnOssan {
     fn state_21(&mut self, play: &mut PlayState) {
         if play.message_state() == TEXT_STATE_DONE_HAS_NEXT && play.message_should_advance() {
             self.state_flag = OSSAN_STATE_22;
-            play.continue_textbox(0x3012);
+            play.continue_textbox(0x3012); // schema: not ported (the Goron shop's, unreachable: only the Kokiri shopkeeper is)
             play.save.set_inf_table(INFTABLE_FC);
         }
     }
@@ -1802,7 +1813,7 @@ impl EnOssan {
 
     /// `EnOssan_SetStateGiveDiscountDialog`.
     fn set_state_give_discount_dialog(&mut self, play: &mut PlayState) {
-        play.continue_textbox(0x71B2);
+        play.continue_textbox(0x71B2); // schema: not ported (the Hylian Shield's discount, the Kokiri shop doesn't sell it: only the Kokiri shopkeeper is)
         self.state_flag = OSSAN_STATE_DISCOUNT_DIALOG;
     }
 

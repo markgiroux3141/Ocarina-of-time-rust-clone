@@ -103,7 +103,7 @@ use eng_math::{cos_s, scaled_step_to_s, sin_s, step_to_f, vec3f_yaw};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_MISC, ActorImpl, ActorProfile, audio_play_actor_sfx2, cur_sfx_pos, enemy_start_finishing_blow};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::audio::sfx::{NA_SE_EN_EXTINCT, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::gbi::Dl;
@@ -144,6 +144,18 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     objects: &[
         ObjectNeed::new(POH).when("params", &[0, 1]).note("a Poe's skeleton and lantern"),
         ObjectNeed::new(PO_COMPOSER).when("params", &[2, 3]).note("Sharp's and Flat's skeleton and lantern"),
+    ],
+    texts: &[
+        TextLine::new(TEXT_POE_SOUL).when("params", &[0, 1]).cond("Link touching its soul").note("you defeated Poe! catch it in a bottle? (a choice)"),
+        TextLine::new(TEXT_POE_BOTTLED).when("params", &[0, 1]).cond("answered Yes, with an empty bottle").note("you caught a Poe!"),
+        TextLine::new(TEXT_POE_NO_BOTTLE).when("params", &[0, 1]).cond("answered Yes, with no empty bottle").note("no empty bottle"),
+        TextLine::new(TEXT_POE_NO).when("params", &[0, 1]).cond("answered No").note("you let it go"),
+        TextLine::new(TEXT_COMPOSER_SUNS_SONG).when("params", &[2, 3]).cond("Link has the Sun's Song").note("did you try the Sun's Song? (both brothers then gone)"),
+        TextLine::new(TEXT_COMPOSER_FIRST).when("params", &[2, 3]).cond("neither brother heard out").note("you killed me! goes on to their tale (0x5010)"),
+        TextLine::new(TEXT_COMPOSER_OWN_ANSWERED).when("params", &[2, 3]).cond("he's been heard out").note("you again? goes on to the songs (0x5014)"),
+        TextLine::new(TEXT_COMPOSER_OTHER_ANSWERED).when("params", &[2, 3]).cond("only his brother heard out").note("you again? a little more of our tale"),
+        TextLine::new(TEXT_COMPOSER_YES_FIRST).when("params", &[2, 3]).cond("answered Yes to hearing it again, neither brother heard out").note("the composer brothers' tale"),
+        TextLine::new(TEXT_COMPOSER_YES_AGAIN).when("params", &[2, 3]).cond("answered Yes to hearing it again, a brother heard out").note("the songs of sun and moon; the royal tombstone"),
     ],
 };
 

@@ -76,7 +76,7 @@ pub const PARAMS: Field = Field::whole(
 );
 
 /// En_Goma's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `GomaType`.
 pub const ENGOMA_NORMAL: i16 = 0;

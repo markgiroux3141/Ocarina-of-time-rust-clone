@@ -21,6 +21,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
+use oot_game::actor_schema::{ActorSchema, TextLine};
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_CLOSING;
 use oot_game::npc::talk_update;
@@ -33,7 +34,21 @@ pub const ACTOR_EN_TG: i16 = 0x01AC;
 pub const OBJECT: &str = "object_mu";
 
 /// `En_Tg_Profile`.
-pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TG, name: "En_Tg", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &oot_game::actor_schema::ActorSchema::NONE };
+pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_TG, name: "En_Tg", category: ACTORCAT_NPC, flags: ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_FRIENDLY, object: OBJECT, schema: &SCHEMA };
+
+/// En_Tg's configuration (docs/adr/0066-the-actor-schema.md): no params or flags, its texts.
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[],
+    flags: &[],
+    todo: false,
+    objects: &[],
+    texts: &[
+        TextLine::new(0x5089).cond("only in Kakariko, every other time").note("what an annoying person"),
+        TextLine::new(0x508A).cond("only in Kakariko, every other time").note("violating our personal space"),
+        TextLine::new(0x7025).cond("not in Kakariko, every other time").note("so handsome, like the King of Hyrule"),
+        TextLine::new(0x7026).cond("not in Kakariko, every other time").note("more beautiful than Princess Zelda"),
+    ],
+};
 
 /// `SCENE_KAKARIKO_VILLAGE` (`scene_table.h`: 0x52).
 const SCENE_KAKARIKO_VILLAGE: u16 = 0x52;

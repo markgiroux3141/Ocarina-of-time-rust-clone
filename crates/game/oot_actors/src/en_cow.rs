@@ -40,7 +40,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -86,6 +86,11 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x2006).when("type", &[0]).cond("Epona's Song played to it").note("what a nice song"),
+        TextLine::new(0x2007).when("type", &[0]).cond("Link with an empty bottle").note("have some milk"),
+        TextLine::new(0x2013).when("type", &[0]).cond("Link without an empty bottle").note("nothing to put it in"),
+    ],
 };
 
 /// `GI_MILK` (`item.h`: 0x50).

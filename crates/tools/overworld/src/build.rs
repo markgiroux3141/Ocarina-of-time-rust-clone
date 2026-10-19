@@ -3118,6 +3118,7 @@ mod tests {
             lines: vec![],
             game: Default::default(),
             actors: vec![],
+            texts: vec![],
         }
     }
 
@@ -3256,6 +3257,7 @@ mod tests {
             lines: vec![],
             game: Default::default(),
             actors: vec![],
+            texts: vec![],
         }
     }
 
@@ -4458,6 +4460,7 @@ mod tests {
                 lines: vec![],
                 game: Default::default(),
                 actors: vec![],
+                texts: vec![],
             };
             let th = Theme::for_doc(&doc, None).unwrap();
             let lvl = build(&doc, &th).unwrap();

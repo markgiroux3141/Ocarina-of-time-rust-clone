@@ -41,7 +41,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4,
 };
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::camera::{CAM_ID_MAIN, CAM_STAT_ACTIVE, CAM_STAT_WAIT};
@@ -107,6 +107,27 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x7006).when("type", &[2]).cond("with the three Spiritual Stones").note("not even a dog gets into the castle"),
+        TextLine::new(0x7002).when("type", &[2]).cond("at night").note("welcome to Hyrule Castle Town"),
+        TextLine::new(0x7099).when("type", &[2]).cond("by day, once he's let Link through (until the scene's left)").note("keep it a secret"),
+        TextLine::new(0x7071).when("type", &[2]).cond("by day, after the Weird Egg").note("the bribe; goes on to 10 rupees? (0x7072, a choice)"),
+        TextLine::new(0x7029).when("type", &[2]).cond("by day, before the Weird Egg").note("you want to see Princess Zelda? go home!"),
+        TextLine::new(0x7098).when("type", &[2]).cond("answered Yes, with 10 rupees").note("I'll let you pass: the fence opens"),
+        TextLine::new(0x7097).when("type", &[2]).cond("answered Yes, with under 10 rupees").note("too much for a kid"),
+        TextLine::new(0x7096).when("type", &[2]).cond("answered No").note("tsk tsk"),
+        TextLine::new(0x200E).when("type", &[5]).cond("before the gate's opened").note("the road is closed; can't you read?"),
+        TextLine::new(0x2010).when("type", &[5]).cond("shown Zelda's Letter").note("the Princess's handwriting: the gate opens"),
+        TextLine::new(0x200F).when("type", &[5]).cond("shown anything else").note("I don't want that"),
+        TextLine::new(0x2015).when("type", &[5]).cond("once the gate's opened for the letter").note("a proper shield; a favor: the mask for his boy"),
+        TextLine::new(0x2016).when("type", &[5]).cond("after the gate's opened, Link not wearing the Keaton Mask").note("the mask shop: a present for his kid"),
+        TextLine::new(0x200A).when("type", &[5]).cond("after the gate's opened, Link wearing the Keaton Mask, the first time").note("a \"Kee...something\" mask; goes on to the choice"),
+        TextLine::new(0x200B).when("type", &[5]).cond("Link wearing the Keaton Mask, asked before").note("will you sell it to me? (a choice)"),
+        TextLine::new(0x2020).when("type", &[5]).cond("answered Yes; after, whenever he talks").note("my boy will be happy"),
+        TextLine::new(0x2021).when("type", &[5]).cond("after selling the mask").note("sold for 15 rupees"),
+        TextLine::new(0x200C).when("type", &[5]).cond("answered No").note("I won't give up"),
+        TextLine::new(0x708F).when("type", &[9]).note("\"don't cause any trouble!\": the bomb"),
+    ],
 };
 
 /// `EXCH_ITEM_ZELDAS_LETTER` (`item.h`: 0x01).
@@ -442,6 +463,7 @@ impl EnHeishi2 {
                 self.unk_30e = 1;
             } else {
                 log::debug!(" ☆☆☆☆☆ Start under the second sleeve! ☆☆☆☆☆ ");
+                // schema: never reached (unk_30E zeroed above); 0x7071 goes on to 0x7072 by itself
                 self.actor.text_id = 0x7072;
             }
             self.unk_300 = TEXT_STATE_CHOICE;

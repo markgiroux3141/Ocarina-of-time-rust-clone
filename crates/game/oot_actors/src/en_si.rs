@@ -27,7 +27,7 @@ use eng_math::smooth_step_to_f;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::NA_BGM_SMALL_ITEM_GET;
 use oot_game::collision_check::*;
 use oot_game::item::{ITEM_SKULL_TOKEN, item_give};
@@ -57,6 +57,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Other("gSaveContext.save.info.gsFlags")).sets().note("once collected: its Gold Skulltula is gone for good")],
     todo: false,
     objects: &[],
+    texts: &[TextLine::new(0x00B4).cond("once collected").note("you got a Gold Skulltula Token: the count")],
 };
 
 /// `GID_SKULL_TOKEN_2` (`item.h`): the token in `object_st` (`gSkulltulaTokenDL`,

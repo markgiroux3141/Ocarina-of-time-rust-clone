@@ -42,7 +42,7 @@ pub const TYPE: Field =
     Field::whole("params", Kind::Named(&[(0, "OCEFF_WIPE4_SCARECROWS"), (1, "OCEFF_WIPE4_UNUSED")]), "the Scarecrow's Song's material, or the other one (1, En_Zl3's)");
 
 /// Oceff_Wipe4's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[], texts: &[] };
 
 pub const BAKE: &str = "Oceff_Wipe4/frustum";
 pub const BAKE_UNUSED: &str = "Oceff_Wipe4/frustum_unused";

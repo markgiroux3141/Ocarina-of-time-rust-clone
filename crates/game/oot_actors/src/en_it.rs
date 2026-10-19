@@ -29,7 +29,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_IT, name: "En_It",
 pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; EnIt_Init writes 0x0D05 over it unread");
 
 /// En_It's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// The params `EnIt_Init` sets.
 pub const EN_IT_PARAMS: i16 = 0x0D05;

@@ -99,6 +99,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `EVENTCHKINF_1D` (`save.h`: 0x1D): the royal tomb opened.

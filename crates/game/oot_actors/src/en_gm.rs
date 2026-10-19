@@ -42,7 +42,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
 use oot_game::inf_table;
@@ -93,6 +93,17 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     todo: false,
     // `Object_GetSlot(OBJECT_GM)` at init: he waits for it (no draw) and never appears without it
     objects: &[ObjectNeed::new(OBJECT_GM_FILE).note("his skeleton and animation")],
+    texts: &[
+        TextLine::new(0x3049).cond("before his switch flag is set (the wall bombed)").note("tight fit..."),
+        TextLine::new(0x304A).cond("Link a child, before he's been talked to").note("working on something cool; goes on to 0x304B"),
+        TextLine::new(0x304B).cond("Link a child, once he's been talked to").note("wait five or six years"),
+        TextLine::new(0x304C).cond("Link an adult without the Giant's Knife, the first time").note("a small weapon; goes on to the sale"),
+        TextLine::new(0x304F).cond("Link an adult without the knife, offered before").note("the knife for 200 rupees? (a choice)"),
+        TextLine::new(0x304E).cond("the Giant's Knife broken").note("a problem with its durability; goes on to the sale"),
+        TextLine::new(0x304D).cond("with the Giant's Knife whole or Biggoron's Sword").note("how do you like the feel of it?"),
+        TextLine::new(0x00C8).cond("answered Buy, with under 200 rupees").note("not enough rupees"),
+        TextLine::new(0x3050).cond("answered Don't buy").note("come back again"),
+    ],
 };
 
 /// `GI_SWORD_KNIFE` (`item.h`: 0x28): the Giant's Knife.

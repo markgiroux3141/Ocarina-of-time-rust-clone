@@ -46,6 +46,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `PAUSE_STATE_OFF`, `GAMEOVER_INACTIVE`, `TRANS_MODE_OFF`, `GAMEMODE_NORMAL`, `CS_STATE_IDLE`.

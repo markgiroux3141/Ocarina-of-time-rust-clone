@@ -24,6 +24,7 @@ use std::process::{Child, Command};
 use std::sync::Arc;
 
 mod actor_ui;
+mod dialogue_ui;
 mod chrome;
 mod icons;
 mod inspector;
@@ -188,6 +189,8 @@ pub struct App {
     /// The point on the selected path under the pointer in the profile.
     profile_hover: Option<P2>,
     v3: Option<View3d>,
+    /// The game's text boxes for the Dialogue section (`crate::text_box`).
+    text_boxes: Option<crate::text_box::TextBoxes>,
     layout: Layout,
     gesture3: Gesture3,
     menu3_at: Option<P2>,
@@ -344,6 +347,7 @@ impl App {
     pub fn new(cc: &eframe::CreationContext, opts: Options) -> App {
         style::apply(&cc.egui_ctx);
         let v3 = cc.wgpu_render_state.as_ref().map(View3d::new);
+        let text_boxes = cc.wgpu_render_state.as_ref().map(crate::text_box::TextBoxes::new);
         let ctx = cc.egui_ctx.clone();
         let worker = Worker::new(move || ctx.request_repaint());
         let mut status = String::new();
@@ -488,6 +492,7 @@ impl App {
             profile_hover: None,
             layout: if v3.is_some() { Layout::Split } else { Layout::Plan },
             v3,
+            text_boxes,
             gesture3: Gesture3::None,
             menu3_at: None,
             brush: Brush::default(),

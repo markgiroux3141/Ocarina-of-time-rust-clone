@@ -15,7 +15,7 @@
 //! neutral one: `mouthIndex` stays 0), her thighs not drawn, her head and chest turned to Link;
 //! from meshes baked per eye (docs/adr/0012-actor-bakes.md).
 //!
-//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: no masks yet, so none).
+//! Not ported here: the mask reactions (`MaskReaction_GetTextId`: taken as 0, so none).
 //!
 //! Params: `params` unused (placed -1, read by nothing). `shape.rot.z`: 3 the ranch's Malon (by
 //! day after Talon's return, and in the ranch's layer 5); else 0.
@@ -40,7 +40,7 @@ use oot_game::actor::{
     Actor, UPDBGCHECKINFO_FLAG_2,
 };
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, Source, TextLine};
 use oot_game::{event_chk_inf, inf_table};
 use oot_game::audio::NA_BGM_LONLON;
 use oot_game::collision_check::*;
@@ -92,6 +92,17 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x2041).cond("the first time").note("a fairy boy from the forest; her name and the ranch's"),
+        TextLine::new(0x2042).cond("once she's been talked to, before she's at the castle").note("her dad went to the castle"),
+        TextLine::new(0x2043).cond("once she's been talked to, at the castle").note("find my dad; then the Weird Egg"),
+        TextLine::new(0x2044).cond("after the Weird Egg").note("set the egg to incubate it"),
+        TextLine::new(0x2047).cond("after Talon's return").note("you found my dad; this is Epona"),
+        TextLine::new(0x2048).cond("after she's introduced Epona").note("Epona is afraid of you"),
+        TextLine::new(0x2049).cond("after she's said Epona is afraid").note("my mother's song; let's sing"),
+        TextLine::new(0x204A).cond("after Epona's Song").note("Epona's grown fond of you"),
+        TextLine::new(0x2061).cond("Link taking out his ocarina near her, once she'll teach the song").note("play this song with that ocarina?"),
+    ],
 };
 
 // `SCENE_*` (`scene_table.h`).
@@ -289,7 +300,7 @@ impl EnMa1 {
 
     /// `EnMa1_GetTextId`.
     pub fn get_text_id(play: &PlayState) -> u16 {
-        // MaskReaction_GetTextId(play, MASK_REACTION_SET_MALON): no masks, so 0.
+        // MaskReaction_GetTextId(play, MASK_REACTION_SET_MALON): not ported, 0.
         let s = &play.save;
         if s.check_quest_item(QUEST_SONG_EPONA) {
             return 0x204A;

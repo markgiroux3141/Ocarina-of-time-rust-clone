@@ -802,7 +802,7 @@ In stages:
 |---|---|---|---|
 | E1 | The overworld builder: regions, kits and themes, paths, stairs, ceilings | ADR 0035, ADR 0036, [OVERWORLD-EDITOR-IDEAS.md](OVERWORLD-EDITOR-IDEAS.md) | Built (2026-10-05 to 10-11) |
 | E2 | Play in the real game: a level is a scene of its own, entered by `Play_Init` | [EDITOR-PLAY-IN-THE-GAME.md](EDITOR-PLAY-IN-THE-GAME.md) steps 1 to 4 | Built (2026-10-11) |
-| E3 | The actors tab: any ported actor placed, its params and flags as named fields (from each actor's schema, ADR 0066), its objects added to the room, flags handed out | [EDITOR-ACTORS.md](EDITOR-ACTORS.md), ADR 0077, ADR 0078 | First built 2026-10-17 (the user's call to start it): the tool, palette, inspector, layers, object needs, Play. 2026-10-19: the actors as the game draws them (captured from their own draw code by `oot capture-actors`, drawn by the game's renderer in 3D, thumbnails, outlines in the plan, invisible actors' areas). Next the tuning pass, texts, paths, the flags board |
+| E3 | The actors tab: any ported actor placed, its params and flags as named fields (from each actor's schema, ADR 0066), its objects added to the room, flags handed out | [EDITOR-ACTORS.md](EDITOR-ACTORS.md), ADR 0077, ADR 0078, ADR 0079 | First built 2026-10-17 (the user's call to start it): the tool, palette, inspector, layers, object needs, Play. 2026-10-19: the actors as the game draws them (captured from their own draw code by `oot capture-actors`, drawn by the game's renderer in 3D, thumbnails, outlines in the plan, invisible actors' areas). 2026-10-19: the texts (ADR 0079: each actor's lines in its schema, the Dialogue section drawing them with the game's message box, a level's edited lines played in its own scene). Next the tuning pass, paths, the flags board |
 | E4 | Exits and rooms: exits between levels and the game's scenes, transition actors, levels of several rooms | EDITOR-PLAY-IN-THE-GAME.md, "outside this plan" | Planned |
 | E5 | Inside and down: seeing inside, storeys, dungeon mode (rooms and portals, the generated map), flags wiring, the completability check | [EDITOR-ROOFS-STOREYS-DUNGEONS.md](EDITOR-ROOFS-STOREYS-DUNGEONS.md) steps 2 to 5 | Step 1 built |
 | E6 | A scene's data: paths, cameras (bg cameras by polygon), water boxes, lights and the environment, the sky, the clock, music and ambience, the restrictions | To plan | |
@@ -830,8 +830,8 @@ anything that's theirs (asked, not assumed). The phase doc (`docs/GAME-NN-<name>
 2. Each new actor's module docs end with its **Params** and **Flags** paragraphs (ADR 0062), and
    the module has its **schema** (`pub const SCHEMA`, the profile's `schema`; ADR 0066): every
    field checked against the decomp, the code reading its params through the fields, and
-   `oot_actors --test schemas` passing (the code, the flag calls and every placement in the
-   game's data).
+   `oot_actors --test schemas` passing (the code, the flag calls, the text ids its code uses
+   as the schema's `texts`, ADR 0079, and every placement in the game's data).
 3. Its tests have expectations from the C, and a short scripted exit run is a golden (a trace and
    screenshots), the same over two runs. Every changed golden hash is proven by taking its cause
    out, and logged in `golden/README.md` field by field, with the outputs saved before recording.

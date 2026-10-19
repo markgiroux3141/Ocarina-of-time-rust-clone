@@ -44,7 +44,7 @@ use oot_game::actor::{
     ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_2,
 };
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, FlagUse};
+use oot_game::actor_schema::{ActorSchema, FlagUse, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::audio::ocarina::OCARINA_INSTRUMENT_HARP;
 use oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME;
@@ -96,6 +96,13 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x5032).cond("Link a child, before the well is drained").note("go around and around: a music man"),
+        TextLine::new(0x5033).cond("Link a child, once the well is drained").note("it's going way too fast!"),
+        TextLine::new(0x5034).cond("Link an adult, before the Song of Storms").note("grr: that ocarina kid's fault"),
+        TextLine::new(0x5035).cond("Link an adult taking out the ocarina, before the Song of Storms").note("you've got an ocarina: the song's lesson"),
+        TextLine::new(0x508E).cond("Link an adult, once he's taught the Song of Storms").note("a storm again: you played it again"),
+    ],
 };
 /// `OCARINA_ACTION_PLAYBACK_STORMS` (`ocarina.h`: 0x1A).
 pub const OCARINA_ACTION_PLAYBACK_STORMS: u16 = 0x1A;

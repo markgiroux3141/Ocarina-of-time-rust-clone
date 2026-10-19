@@ -64,6 +64,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `NAVI_ENEMY_BUSINESS_SCRUB` (`actor.h`).

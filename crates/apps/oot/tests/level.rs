@@ -194,3 +194,42 @@ fn a_levels_actors_spawn_in_their_layers_with_their_objects() {
     assert!(w.object_ctx.ids().contains(&st.object_id("object_kanban").unwrap()));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_levels_texts_are_what_its_scene_shows_and_the_real_scenes_keep_theirs() {
+    if !pack_is_current() {
+        return;
+    }
+    let dir = temp_dir("texts");
+    write_level(&dir, "spot04", 0.0);
+    let path = dir.join("level.json");
+    let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    // the fishing pond's sign (0x0300) said otherwise, in a wooden box at the top; a new text; one
+    // that won't encode (left out: the game's stays)
+    j["texts"] = serde_json::json!([
+        {"id": 0x0300, "type": 1, "pos": 1, "text": "{COLOR:RED}Keep out!{COLOR:DEFAULT}\nBy order of {NAME}."},
+        {"id": 0x8000, "type": 0, "pos": 0, "text": "A line of the level's own."},
+        {"id": 0x0301, "type": 0, "pos": 0, "text": "{NOPE}"},
+    ]);
+    j["actors"] = serde_json::json!([{"actor": "En_Kanban", "pos": [-300, 200, 0], "rot": [0, 16384, 0], "params": 0x0300}]);
+    std::fs::write(&path, j.to_string()).unwrap();
+    let (a, mut w) = enter(&dir);
+    idle(&mut w, 3);
+    let game = a.game.as_ref().unwrap();
+    let played = w.messages.clone().expect("the level's messages");
+    let decode = |t: &oot_game::message::MessageTable, id: u16| oot_game::message_text::decode(t.raw(id).unwrap());
+    assert_eq!(decode(&played, 0x0300), "{COLOR:RED}Keep out!{COLOR:DEFAULT}\nBy order of {NAME}.");
+    assert_eq!(played.entry(0x0300).unwrap().type_pos, 0x11);
+    assert_eq!(decode(&played, 0x8000), "A line of the level's own.");
+    assert_eq!(decode(&played, 0x0301), decode(&game.messages, 0x0301), "the text that won't encode is the game's");
+    // the game's scenes play with the game's: Kakariko, and the pond's own sign
+    let kakariko = game.messages_for("spot01_scene");
+    assert!(std::sync::Arc::ptr_eq(&kakariko, &game.messages));
+    assert_ne!(decode(&kakariko, 0x0300), decode(&played, 0x0300));
+    // and the message box opens it: its bytes are the level's
+    w.start_textbox(0x0300, None);
+    idle(&mut w, 1);
+    assert_eq!(w.msg_ctx.font.msg_buf, played.raw(0x0300).unwrap());
+    assert_eq!(w.msg_ctx.text_box_type, 1);
+    let _ = std::fs::remove_dir_all(&dir);
+}

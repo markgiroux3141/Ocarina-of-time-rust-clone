@@ -95,7 +95,7 @@ use eng_math::{approach_f, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_ENEMY, ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::NATURE_ID_KOKIRI_REGION;
 use oot_game::audio::ocarina::{OCARINA_INSTRUMENT_FLUTE, OCARINA_SONG_MEMORY_GAME};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, NA_SE_SY_METRONOME, NA_SE_SY_OCARINA_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
@@ -168,6 +168,22 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x1020).when("type", &[0]).cond("after Saria's Song, once the Skull Mask is sold to him").note("my buddies really want this mask!"),
+        TextLine::new(0x10BC).when("type", &[0]).cond("after Saria's Song, Link wearing no mask").note("hi! is my face kind of plain?"),
+        TextLine::new(0x101B).when("type", &[0]).cond("after Saria's Song, Link wearing the Skull Mask").note("under that mask, aren't you that Kokiri kid?"),
+        TextLine::new(0x1041).when("type", &[0]).cond("another song played on the stump, before Saria's Song").note("that's not quite Saria's Song"),
+        TextLine::new(0x10BB).when("type", &[0]).cond("Saria's Song played on the stump, the first time").note("you know Saria's Song! take this (the piece of heart)"),
+        TextLine::new(0x10BD).when("type", &[0]).cond("a song played on the stump, after Saria's Song").note("let's play again sometime!"),
+        TextLine::new(0x101C).when("type", &[0]).cond("talked to wearing the Skull Mask, before it's sold").note("an unusual mask: give it to me?"),
+        TextLine::new(0x101E).when("type", &[0]).cond("answered Yes").note("yowza! I'm gonna wear this all the time"),
+        TextLine::new(0x101F).when("type", &[0]).cond("after 0x101E, the mask sold").note("he gave you 10 Rupees for this 20-Rupee mask"),
+        TextLine::new(0x101D).when("type", &[0]).cond("answered No").note("doh! that's too bad for me"),
+        TextLine::new(0x10BE).when("type", &[6]).cond("the ocarina out on the stump").note("follow along with our song"),
+        TextLine::new(0x102D).when("type", &[6]).cond("a wrong note, or too slow").note("too bad... heh heh!"),
+        TextLine::new(0x10BF).when("type", &[6]).cond("the round played right").note("a nice session: take this (the round's reward)"),
+        TextLine::new(0x102E).when("type", &[6]).cond("after 0x102D or 0x10BF").note("do you want to play some more?"),
+    ],
 };
 
 /// `NAVI_ENEMY_SKULL_KID_ADULT`, `_SKULL_KID`, `_SKULL_KID_FRIENDLY`, `_SKULL_KID_MASK` (`actor.h`).

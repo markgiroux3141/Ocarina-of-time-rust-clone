@@ -1,13 +1,13 @@
 //! `En_Gs` (`ovl_En_Gs/z_en_gs.c`): a gossip stone. `params & 0xFF` is its hint (text 0x400 +
 //! it), `(params >> 8) & 0x3F` the switch flag a song sets.
 //!
-//! It talks (`func_80A4E648`): "a strange stone" (0x2053), or with the Mask of Truth on, its hint
+//! It talks (`func_80A4E648`): "this statue's one-eyed gaze" (0x2053), or with the Mask of Truth on, its hint
 //! (0x2054, then the hint). Played a song beside it (`func_80A4E470`, the ocarina's free play) it
 //! gives a fairy: a timed one for Saria's, Epona's, Zelda's Lullaby, the Sun's and Time's songs,
 //! a big one for the Song of Storms; then its switch flag is set and it gives no more.
 //!
 //! Struck, it reacts by the damage table's reaction (`EnGs_Update`): the sword's wobble
-//! (`func_80A4E910`, then "it doesn't seem to want to talk" 0x71B1), the slingshot's, arrows' and
+//! (`func_80A4E910`, then "BOINNG! BOINNG!" and the time, 0x71B1), the slingshot's, arrows' and
 //! hookshot's twist (`func_80A4EA08`), the hammer's squash (`func_80A4EB3C`), magic's spin and
 //! stretch (`func_80A4F13C`); a bomb's countdown, flashing blue then red, and launch into the sky
 //! (`func_80A4ED34`) until it hits something and explodes (`func_80A4F700`).
@@ -33,7 +33,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_1,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::{NA_SE_EN_STALKID_ATTACK, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_DONE;
@@ -63,6 +63,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as the fairy comes: no more")],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x2053).cond("Link not wearing the Mask of Truth").note("this statue's one-eyed gaze pierces into your mind"),
+        TextLine::new(0x2054).cond("Link wearing the Mask of Truth").note("responding to your mask: I overheard this..."),
+        TextLine::field(0x0400, "textId - 0x400").cond("Link wearing the Mask of Truth, after 0x2054").note("its hint"),
+        TextLine::new(0x71B1).cond("struck with a sword").note("BOINNG! BOINNG! The current time"),
+    ],
 };
 
 // Sound effects (`sfx/*_table.h`).
@@ -379,7 +385,7 @@ impl EnGs {
         sp2c
     }
 
-    /// `func_80A4E910`: the sword's wobble, then "it doesn't seem to want to talk".
+    /// `func_80A4E910`: the sword's wobble, then "BOINNG! BOINNG!" and the time (0x71B1).
     fn func_80a4e910(&mut self, play: &mut PlayState) {
         if self.unk_19f == 0 {
             audio_play_actor_sfx2(play, NA_SE_EN_STALKID_ATTACK);

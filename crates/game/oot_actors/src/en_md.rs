@@ -45,7 +45,7 @@ use eng_math::{binang_to_rad, cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::{event_chk_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::item::{EQUIP_TYPE_SHIELD, EQUIP_TYPE_SWORD, EQUIP_VALUE_SHIELD_DEKU, EQUIP_VALUE_SWORD_KOKIRI};
@@ -82,6 +82,23 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // `EnMd_GetTextId`: every line is a scene's (Kokiri Forest, his house, the Lost Woods), so in
+    // a custom level he says nothing. The mask reactions aren't ported.
+    texts: &[
+        TextLine::new(0x1045).cond("only in Kokiri Forest, with the Kokiri Emerald").note("what did you do to the Deku Tree?"),
+        TextLine::new(0x1034).cond("only in Kokiri Forest, once he's let Link by").note("I'll never accept you"),
+        TextLine::new(0x1033).cond("only in Kokiri Forest, wearing the Kokiri Sword and Deku Shield").note("he lets Link by and walks off"),
+        TextLine::new(0x1030).cond("only in Kokiri Forest, once he's been talked to").note("equip a sword and shield"),
+        TextLine::new(0x102F).cond("only in Kokiri Forest, the first time").note("Mr. No Fairy: you can't pass"),
+        TextLine::new(0x1028).cond("only in his house, after Zelda's Letter").note("Saria's in the Lost Woods"),
+        TextLine::new(0x1046).cond("only in his house").note("what are you doing in my house?"),
+        TextLine::new(0x1071).cond("only in the Lost Woods, after the Forest Medallion, once he's been talked to").note("let him know"),
+        TextLine::new(0x1070).cond("only in the Lost Woods, after the Forest Medallion, the first time").note("Saria won't ever come back"),
+        TextLine::new(0x1068).cond("only in the Lost Woods, once he's let Link by").note("you remind me of him"),
+        TextLine::new(0x1061).cond("only in the Lost Woods, once he's been talked to").note("I promised Saria to let nobody through"),
+        TextLine::new(0x1060).cond("only in the Lost Woods, the first time").note("you can't fool me"),
+        TextLine::new(0x1067).cond("only in the Lost Woods, Saria's Song played to him").note("that melody: he lets Link by"),
+    ],
 };
 
 /// `En_Md_Profile`.

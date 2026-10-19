@@ -33,7 +33,7 @@ use eng_math::smooth_step_to_f;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ACTORCAT_PROP, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, TextLine};
 use oot_game::audio::sfx::{NA_SE_EV_ROCK_SLIDE, SFX_FLAG};
 use oot_game::collision_check::*;
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -71,7 +71,13 @@ pub const TYPE: Field = Field::params(
 pub const TEXT_ID: Field = Field::params("textId", 8, 8, Kind::Range(0, 0xFF), "a signpost's text, 0x300 | it");
 
 /// En_A_Obj's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, TEXT_ID], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[TYPE, TEXT_ID],
+    flags: &[],
+    todo: false,
+    objects: &[],
+    texts: &[TextLine::field(0x0300, "textId").when("params", &[A_OBJ_SIGNPOST_OBLONG as i32, A_OBJ_SIGNPOST_ARROW as i32]).note("the signpost's text")],
+};
 
 
 /// `AObjType`.

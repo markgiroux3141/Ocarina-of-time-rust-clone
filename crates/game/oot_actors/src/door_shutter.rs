@@ -45,7 +45,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile, DOORLOCK_BOSS, DOORLOCK_NORMAL, DOORLOCK_NORMAL_SPIRIT, actor_draw_door_lock, actor_spawn_floor_dust_ring, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::audio::sfx::*;
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::event_chk_inf;
@@ -101,6 +101,14 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_gnd").when("type", &[0x04, 0x08]).note("Phantom Ganon's bars"),
         ObjectNeed::new("object_bdoor").when("type", &[0x05]).note("the boss door"),
         ObjectNeed::new("object_goma").when("type", &[0x06]).note("Gohma's slab"),
+    ],
+    // Navi's, at once (a negative `naviTextId`), while Link stands at the door.
+    texts: &[
+        TextLine::new(0x0202).when("type", &[1, 7]).cond("barred till the room is cleared").note("Navi: strong iron bars block the door"),
+        TextLine::new(0x0204).when("type", &[5]).cond("without the boss key").note("Navi: you need a special key"),
+        TextLine::new(0x0203).when("type", &[0x0B]).cond("locked, with no small key").note("Navi: you need a key"),
+        TextLine::new(0x020B).when("type", &[2, 7]).cond("barred till its switch flag, only in Jabu-Jabu's Belly").note("Navi: solve the puzzle in this room"),
+        TextLine::new(0x0202).when("type", &[2, 7]).cond("barred till its switch flag, not in Jabu-Jabu's Belly").note("Navi: strong iron bars block the door"),
     ],
 };
 

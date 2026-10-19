@@ -43,6 +43,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_DRAINED_WELL)).reads().note("the well drained: the water low")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `EVENTCHKINF_DRAINED_WELL` (`save.h`: 0x67).

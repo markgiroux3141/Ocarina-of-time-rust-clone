@@ -65,6 +65,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 /// `SCENE_LON_LON_BUILDINGS` (`scene_table.h`: 0x4C).
 const SCENE_LON_LON_BUILDINGS: u16 = 0x4C;

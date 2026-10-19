@@ -107,6 +107,10 @@ pub fn write(doc: &Doc, theme: &Theme, lvl: &Level, lib: Option<&Library>, out: 
         j["actors"] = actors(doc, lvl, &mut problems).into();
         j["problems"] = problems.clone().into();
     }
+    // its own texts, as the editor keeps them (oot_import::level encodes them for the game)
+    if !doc.texts.is_empty() {
+        j["texts"] = doc.texts.iter().map(|t| serde_json::json!({"id": t.id, "type": t.box_type, "pos": t.box_pos, "text": t.text})).collect::<Vec<_>>().into();
+    }
     let (obj, mtl) = lvl.mesh.to_obj("level.mtl", &tex);
     // the MTL first and the OBJ last: a viewer reloads on the OBJ
     put(&out.join("level.json"), serde_json::to_string(&j).unwrap())?;

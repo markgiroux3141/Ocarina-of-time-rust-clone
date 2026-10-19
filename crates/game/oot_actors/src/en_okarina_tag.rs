@@ -24,7 +24,7 @@
 
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::audio::sfx::NA_SE_SY_CORRECT_CHIME;
 use oot_game::message::{
@@ -91,6 +91,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[TextLine::new(0x5021).when("type", &[5]).note("the royal tomb's poem; the Sun's Song taught after it until known")],
 };
 
 /// `OcarinaMode`s past `OCARINA_MODE_04` (`ocarina.h`): a wrong song's (5 to 13), and 0xE.

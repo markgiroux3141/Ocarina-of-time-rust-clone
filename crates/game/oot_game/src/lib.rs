@@ -43,6 +43,7 @@ pub mod magic;
 pub mod lights;
 pub mod map;
 pub mod message;
+pub mod message_text;
 pub mod npc;
 pub mod object_ctx;
 pub mod onepoint;

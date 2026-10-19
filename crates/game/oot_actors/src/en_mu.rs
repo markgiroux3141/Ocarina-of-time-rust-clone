@@ -25,7 +25,7 @@ use eng_math::{cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::event_inf;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_CLOSING;
@@ -64,6 +64,13 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x7042).cond("the next one not heard yet, picked at random").note("it's mine, I found it first"),
+        TextLine::new(0x7043).cond("the next one not heard yet, picked at random").note("who bumped me"),
+        TextLine::new(0x703F).cond("the next one not heard yet, picked at random").note("shoo, kid"),
+        TextLine::new(0x7041).cond("the next one not heard yet, picked at random").note("make it any cheaper"),
+        TextLine::new(0x703E).cond("the next one not heard yet, picked at random").note("Zelda's prophetic dreams"),
+    ],
 };
 
 /// `EVENTINF_INDEX_HAGGLING_TOWNSFOLK` (`save.h`: 0x2).
@@ -98,7 +105,9 @@ const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {
 /// `D_80AB0BFC`: immovable.
 const COL_CHK_INFO_INIT: CollisionCheckInfoInit2 = CollisionCheckInfoInit2 { health: 0, cyl_radius: 0, cyl_height: 0, cyl_y_shift: 0, mass: MASS_IMMOVABLE };
 
-/// `EnMu_Interact`'s `textIdOffset`: the five texts' low bytes (0x70xx).
+/// `EnMu_Interact`'s `textIdOffset`: the five texts' low bytes (0x7042, 0x7043, 0x703F, 0x7041,
+/// 0x703E).
+// schema: low bytes, 0x7000 or-ed in
 const TEXT_ID_OFFSET: [u8; 5] = [0x42, 0x43, 0x3F, 0x41, 0x3E];
 /// `EnMu_Interact`'s `bitmask`: `EVENTINF_MASK(EVENTINF_HAGGLING_TOWNSFOLK_MESG_0..4)`.
 const BITMASK: [u8; 5] = [1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4];
@@ -204,6 +213,7 @@ impl EnMu {
         }
 
         if i == 5 {
+            // schema: 0x7000, the texts' base
             if self.default_text_id == (TEXT_ID_OFFSET[random_index as usize] as u16 | 0x7000) {
                 random_index += 1;
                 if random_index >= 5 {
@@ -214,6 +224,7 @@ impl EnMu {
         }
 
         talk_flags |= BITMASK[random_index as usize];
+        // schema: 0x7000, the texts' base
         self.default_text_id = TEXT_ID_OFFSET[random_index as usize] as u16 | 0x7000;
         play.save.event_inf[EVENTINF_INDEX_HAGGLING_TOWNSFOLK] |= talk_flags as u16; // schema: SET_EVENTINF_ENMU_TALK_FLAGS
     }

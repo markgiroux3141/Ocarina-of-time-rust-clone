@@ -519,3 +519,127 @@ fn needed_objects_are_in_the_rooms_that_place_them() {
     let report: Vec<String> = missing.iter().map(|(k, v)| format!("{k}: {} rooms: {}", v.len(), v.iter().cloned().collect::<Vec<_>>().join(", "))).collect();
     assert!(missing.is_empty(), "{} needs not met by the rooms placing them:\n{}", missing.len(), report.join("\n"));
 }
+
+/// Where a module's text ids are: the hex literals that are ids of the game's messages, on a line
+/// that shows or sets one (`start_textbox`, `continue_textbox`, `text_id =`, `text_id ==`, Navi's
+/// `set_navi_text_id`) or inside a block about them: a function with `text` in its name, a `match`
+/// or `if` on a `text_id`, a `const` or table with `TEXT` in its name (`MISSING_CUCCO_TEXT_IDS`).
+/// Each with its line and whether it carries a `schema:` note.
+fn text_literals(code: &Code, ids: &BTreeSet<u16>) -> Vec<(usize, u16, bool)> {
+    let call = regex::Regex::new(r"start_textbox\(|continue_textbox\(|text_id\s*(=|==|!=)|set_navi_text_id\(|text_id:").unwrap();
+    let func = regex::Regex::new(r"fn\s+[a-z0-9_]*text[a-z0-9_]*\s*[<(]").unwrap();
+    let block = regex::Regex::new(r"text_id\b.*\{\s*$|(const|static)\s+[A-Z0-9_]*TEXT[A-Z0-9_]*\s*:").unwrap();
+    let hex = regex::Regex::new(r"\b0x([0-9A-Fa-f]{2,4})\b").unwrap();
+    let mut out = vec![];
+    // An open text block: the depth it began at, and whether its body has (the bracket that opens
+    // it: a function's or a `match`'s `{`, a `const`'s first after its `=`). It closes with that
+    // bracket; one whose body never opened closes with its line.
+    struct Block {
+        base: i32,
+        body: bool,
+        konst: bool,
+    }
+    let mut blocks: Vec<Block> = vec![];
+    let mut depth = 0i32;
+    for (n, line, note) in &code.lines {
+        let is_const = !func.is_match(line) && (line.contains("const ") || line.contains("static ")) && block.is_match(line);
+        let starts = func.is_match(line) || block.is_match(line);
+        if !blocks.is_empty() || starts || call.is_match(line) {
+            for c in hex.captures_iter(line) {
+                let v = u16::from_str_radix(&c[1], 16).unwrap();
+                if ids.contains(&v) {
+                    out.push((*n, v, *note));
+                }
+            }
+        }
+        if starts {
+            blocks.push(Block { base: depth, body: false, konst: is_const });
+        }
+        let mut after_eq = false;
+        for ch in line.chars() {
+            match ch {
+                '=' => after_eq = true,
+                '{' | '[' | '(' => {
+                    if let Some(b) = blocks.last_mut()
+                        && b.base == depth
+                        && !b.body
+                        && if b.konst { after_eq && ch != '(' } else { ch == '{' }
+                    {
+                        b.body = true;
+                    }
+                    depth += 1;
+                }
+                '}' | ']' | ')' => {
+                    depth -= 1;
+                    if blocks.last().is_some_and(|b| b.base == depth && b.body) {
+                        blocks.pop();
+                    }
+                }
+                _ => {}
+            }
+        }
+        if starts && blocks.last().is_some_and(|b| b.base == depth && !b.body && b.konst) {
+            blocks.pop();
+        }
+    }
+    out
+}
+
+/// The lines an actor can say (`ActorSchema::texts`, docs/EDITOR-ACTORS.md "Texts"): every text id
+/// its module uses (`text_literals`) is one of its schema's lines (or carries a `// schema:` note:
+/// an id compared but never shown, a number that only looks like one); every line's id is a
+/// message of the game's and is in the module's source; `when` and `plus` name real fields.
+#[test]
+fn text_ids_are_the_schemas_lines() {
+    let Ok(pack) = oot_game::pack::GamePack::open_default() else {
+        eprintln!("skipping: no pack");
+        return;
+    };
+    let table = pack.messages().expect("the messages");
+    let ids: BTreeSet<u16> = table.entries.iter().map(|e| e.text_id).filter(|&id| id < 0xFFFC).collect();
+    let mut errors = Vec::new();
+    let (mut with_lines, mut lines) = (0, 0);
+    for p in ported().filter(|p| !p.schema.todo) {
+        let s = p.schema;
+        let code = read_code(p);
+        let listed: BTreeSet<u16> = s.texts.iter().map(|t| t.id).collect();
+        for (n, id, note) in text_literals(&code, &ids) {
+            if !note && !listed.contains(&id) {
+                errors.push(format!("{}:{n}: text {id:#06x} isn't one of its schema's `texts`", p.name));
+            }
+        }
+        let src = std::fs::read_to_string(module_path(p)).unwrap().to_ascii_uppercase();
+        for t in s.texts {
+            let e = |m: String| format!("{}: text {:#06x}: {m}", p.name, t.id);
+            if t.plus.is_none() && !ids.contains(&t.id) {
+                errors.push(e("no such message in the game".into()));
+            }
+            if t.plus.is_none() && !src.contains(&format!("0X{:04X}", t.id)) && !src.contains(&format!("0X{:X}", t.id)) {
+                errors.push(e("not in the module's source (code, docs or a comment)".into()));
+            }
+            if let Some(f) = t.plus
+                && s.field(f).is_none()
+            {
+                errors.push(e(format!("`plus` names no field `{f}`")));
+            }
+            if let Some(w) = t.when {
+                match s.field(w.field) {
+                    None => errors.push(e(format!("`when` names no field `{}`", w.field))),
+                    Some(g) => {
+                        for v in w.values {
+                            if !fits(g, *v) {
+                                errors.push(e(format!("`when` value {v} doesn't fit `{}`", g.name)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !s.texts.is_empty() {
+            with_lines += 1;
+            lines += s.texts.len();
+        }
+    }
+    eprintln!("{with_lines} actors with {lines} lines");
+    assert!(errors.is_empty(), "{} problems:\n{}", errors.len(), errors.join("\n"));
+}

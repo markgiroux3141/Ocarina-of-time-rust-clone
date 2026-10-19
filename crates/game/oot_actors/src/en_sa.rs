@@ -65,7 +65,7 @@ use eng_math::binang_to_rad;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, Rot, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Flag, FlagUse};
+use oot_game::actor_schema::{ActorSchema, Flag, FlagUse, TextLine};
 use oot_game::audio::sfx::{NA_SE_PL_WALK_GROUND, SfxPos};
 use oot_game::collision_check::*;
 use oot_game::cutscene::CS_STATE_IDLE;
@@ -124,6 +124,19 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // `EnSa_GetTextId`, by the save alone; but she's only there in Kokiri Forest, her house and
+    // the Sacred Forest Meadow (`EnSa_GetType`: killed in any other scene, a custom level's
+    // too). The mask reactions aren't ported.
+    texts: &[
+        TextLine::new(0x10AD).cond("with Saria's Song").note("play my song to talk to me"),
+        TextLine::new(0x1048).cond("with the Kokiri Emerald, once she's been talked to").note("friends forever"),
+        TextLine::new(0x1047).cond("with the Kokiri Emerald, the first time").note("you're safe!"),
+        TextLine::new(0x1032).cond("after Mido turned Link away, once she's been talked to").note("a shield at the shop, a sword hidden"),
+        TextLine::new(0x1031).cond("after Mido turned Link away, the first time").note("Mido won't let you see the Deku Tree?"),
+        TextLine::new(0x1003).cond("after her greeting, once she's been talked to").note("go see the Great Deku Tree"),
+        TextLine::new(0x1002).cond("after her greeting, the first time").note("wow, a fairy!"),
+        TextLine::new(0x1001).cond("before her greeting").note("Yahoo! Hi!"),
+    ],
 };
 
 // `SCENE_*` (`scene_table.h`).

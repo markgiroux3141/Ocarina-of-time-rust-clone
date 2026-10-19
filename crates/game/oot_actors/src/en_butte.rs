@@ -45,7 +45,7 @@ pub const FAIRY: Field =
     Field::params("PARAMS_GET_U(params, 0, 1)", 0, 1, Kind::Named(&[(0, "a butterfly"), (1, "turns into a fairy for a Deku Stick")]), "whether it turns into a fairy (a params of -1: made 0, a butterfly)");
 
 /// En_Butte's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[FAIRY], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[FAIRY], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `NA_SE_EV_BUTTERFRY_TO_FAIRY` (`sfx/environmentbank_table.h`: 0x28E7).
 const NA_SE_EV_BUTTERFRY_TO_FAIRY: u16 = 0x28E7;

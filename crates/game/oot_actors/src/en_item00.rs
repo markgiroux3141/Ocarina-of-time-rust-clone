@@ -78,6 +78,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_gi_clothes").when("params", &[0x17, 0x18]).note("the Zora and Goron Tunics"),
         ObjectNeed::new("object_gi_heart").when("params", &[0x03]).note("a placed recovery heart (not spawnParam8000): invisible without it"),
     ],
+    texts: &[],
 };
 
 // `Item00Type` (actor.h).

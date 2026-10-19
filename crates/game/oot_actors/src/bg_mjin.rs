@@ -63,6 +63,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_mjin_soul").when("params", &[5]).note("the Spirit Medallion's platform texture"),
         ObjectNeed::new("object_mjin_wind").when("params", &[6]).note("the Forest Medallion's platform texture"),
     ],
+    texts: &[],
 };
 
 /// `OBJECT_MJIN`, `OBJECT_MJIN_OKA` (`object_table.h`: 0x0061, 0x0068).

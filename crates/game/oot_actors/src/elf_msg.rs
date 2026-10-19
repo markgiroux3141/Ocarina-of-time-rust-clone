@@ -35,7 +35,7 @@
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 use crate::en_elf::EnElf;
@@ -81,6 +81,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[TextLine::field(0x0100, "text").note("Navi's text: she calls at once, or with cUpHint a C-Up hint")],
 };
 
 /// `R_NAVI_MSG_REGION_ALPHA` (`regs.h`: `nREG(87)`), a debug register: 0 in the game.

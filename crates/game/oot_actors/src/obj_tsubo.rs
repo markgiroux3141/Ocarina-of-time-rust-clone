@@ -59,6 +59,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("gameplay_dangeon_keep").when("objectIndex", &[0]).note("the dungeons' pot"),
         ObjectNeed::new("object_tsubo").when("objectIndex", &[1]).note("its own pot"),
     ],
+    texts: &[],
 };
 
 /// `sObjectIds`: `OBJECT_GAMEPLAY_DANGEON_KEEP`, `OBJECT_TSUBO` (`object_table.h`: 0x0003, 0x012C),

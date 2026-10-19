@@ -31,7 +31,7 @@ use eng_math::{approach_f, approach_zero_f, smooth_step_to_s};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::env::clock_time;
 use oot_game::interface::DO_ACTION_STOP;
@@ -84,6 +84,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[TextLine::new(0x702D).note("\"Hey you! Stop!\": Link caught, kicked out")],
 };
 
 /// `PLAYER_CSACTION_1`: Link stands still.

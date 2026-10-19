@@ -50,7 +50,7 @@ pub const PROFILE: ActorProfile =
 pub const PARAMS: Field = Field::whole("params", Kind::Range(-1, 0x7FFF), "below 0: the flame at his mouth; 0 and up: a fire ball, its order in the breath (smaller, fainter and shorter-lived the later)");
 
 /// En_Bdfire's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `D_809BCB10`: the flame's eight textures (`object_kingdodongo`, IA8 64 by 64).
 const TEXTURES: [&str; 8] = [

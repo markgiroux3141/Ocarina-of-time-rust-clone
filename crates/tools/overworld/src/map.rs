@@ -506,6 +506,7 @@ mod tests {
             lines: vec![],
             game: Default::default(),
             actors: vec![],
+            texts: vec![],
         }
     }
 

@@ -91,6 +91,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `sMainColliderCylinderInit`: hit by anything but the shield and the mirror's ray

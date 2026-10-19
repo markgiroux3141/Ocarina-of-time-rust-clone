@@ -77,7 +77,7 @@ use eng_math::{approach_f, approach_s, approach_zero_f, atan2_s, sin_s, smooth_s
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_DRAW_CULLING_DISABLED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor};
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Flag, FlagUse};
+use oot_game::actor_schema::{ActorSchema, Flag, FlagUse, TextLine};
 use oot_game::audio::sfx::SFX_FLAG;
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::cutscene::{CS_STATE_IDLE, CsCmdActorCue};
@@ -130,6 +130,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // The revisit's (`BgDyYoseizo_Revisit_SetupTalk`, `_RefillPlayerEnergy`); the rewards' lines
+    // are their cutscenes'.
+    texts: &[
+        TextLine::new(0x00DB).cond("after Zelda's Lullaby, once her fountain's reward is given").note("welcome: I will soothe your wounds"),
+        TextLine::new(0x00DA).cond("after Zelda's Lullaby, once her fountain's reward is given, Link healed").note("when you are weary, come back to visit me"),
+    ],
 };
 
 /// `SCENE_GREAT_FAIRYS_FOUNTAIN_MAGIC` (`scene_table.h`: 0x3B).

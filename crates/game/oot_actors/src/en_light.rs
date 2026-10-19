@@ -62,6 +62,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("bit 10: lights it or puts it out")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `GAMEMODE_END_CREDITS` (`save.h`: 3).

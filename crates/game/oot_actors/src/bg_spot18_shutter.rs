@@ -75,6 +75,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// How far the child's door rises (`func_808B9698`) and the adult's slides (`func_808B971C`).

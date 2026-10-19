@@ -72,6 +72,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Collectible("collectibleFlag")).reads().sets().indirect("by the En_Item00 it drops")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `sCylinderInit`: 31 by 48, hit only by `0x40000040` (`DMG_HAMMER_JUMP | DMG_HAMMER_SWING`).

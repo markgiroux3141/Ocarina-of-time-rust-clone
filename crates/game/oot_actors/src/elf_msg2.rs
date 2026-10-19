@@ -31,7 +31,7 @@
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_TALK_WITH_C_UP, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 use crate::elf_msg::{R_NAVI_MSG_REGION_ALPHA, kill_check};
@@ -76,6 +76,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[TextLine::field(0x0100, "text").note("what Navi says, asked with C-Up")],
 };
 
 /// `actionFunc`.
@@ -145,6 +146,7 @@ impl ElfMsg2 {
             if ROT_Z.get(self.actor.world_rot.z) != 1 {
                 self.actor.kill();
                 let switch_flag = SWITCH_FLAG.get(self.actor.params) as i32;
+                // schema: 0x3F, no switch flag
                 if switch_flag != 0x3F {
                     play.flags.set_switch(switch_flag);
                 }

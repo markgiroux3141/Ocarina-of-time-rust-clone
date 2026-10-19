@@ -96,6 +96,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     // `func_808B4E58`: the pieces (0 to 5) ask for OBJECT_BOMBIWA and are gone without it; the
     // boulder (0xFF) draws from its own object, but its pieces, spawned as it breaks, need it there
     objects: &[ObjectNeed::new("object_bombiwa").when("type", &[0, 1, 2, 3, 4, 5]).note("the pieces' model")],
+    texts: &[],
 };
 
 /// `params` 0xFF: the boulder whole.

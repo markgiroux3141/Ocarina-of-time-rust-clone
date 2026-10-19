@@ -79,7 +79,7 @@ pub const INVISIBLE: Field = Field::params("params & 0x8000", 15, 1, Kind::Named
 pub const ROT_X: Field = Field::rot("shape.rot.x", Source::RotX, 0, 16, Kind::Rotation, "its pitch on its perch (0x4000), until it flies");
 
 /// En_Firefly's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, INVISIBLE, ROT_X], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, INVISIBLE, ROT_X], flags: &[], todo: false, objects: &[], texts: &[] };
 const OBJECT: &str = "object_firefly";
 
 /// `ACTOR_FLAG_IGNORE_QUAKE`, `ACTOR_FLAG_CAN_ATTACH_TO_ARROW`, `ACTOR_FLAG_ATTACHED_TO_ARROW`

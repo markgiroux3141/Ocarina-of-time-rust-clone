@@ -66,7 +66,7 @@ use eng_math::binang_to_rad;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, Rot, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::{NA_SE_EV_CHAIN_KEY_UNLOCK_B, NA_SE_EV_SLIDE_DOOR_CLOSE, NA_SE_EV_SLIDE_DOOR_OPEN, NA_SE_EV_STONE_BOUND, NA_SE_SY_CORRECT_CHIME};
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::collision_check::*;
@@ -120,6 +120,22 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // `EnDu_GetTextId` (the mask reactions first), then the Fire Temple's meeting
+    // (`func_809FE6CC`) and Saria's Song's end (`func_809FEB08`). His init kills him anywhere but
+    // Goron City (a child) and the Fire Temple (an adult), so none of them show in a custom level.
+    texts: &[
+        TextLine::new(0x7199).cond("only in Goron City, Link wearing the Keaton Mask").note("trying to make me laugh?"),
+        TextLine::new(0x719A).cond("only in Goron City, Link wearing the Skull, Goron or Zora Mask").note("you're making me mad!"),
+        TextLine::new(0x7198).cond("only in Goron City, Link wearing the Spooky Mask, Bunny Hood or Mask of Truth").note("leave me alone!"),
+        TextLine::new(0x719B).cond("only in Goron City, Link wearing the Gerudo Mask").note("I hate Gerudos!!"),
+        TextLine::new(0x301E).cond("only in Goron City, after the Goron's Ruby").note("play that tune again sometime"),
+        TextLine::new(0x301D).cond("only in Goron City, with the Goron's Bracelet").note("destroy the monsters in Dodongo's Cavern"),
+        TextLine::new(0x301B).cond("only in Goron City, once he's been talked to").note("a Goron problem: no strangers!"),
+        TextLine::new(0x301A).cond("only in Goron City, the first time").note("who are you?! the Royal Family's messenger?"),
+        TextLine::new(0x3039).cond("only in the Fire Temple, Link an adult").note("you've grown so big: a man-to-man talk"),
+        TextLine::new(0x301C).cond("only in Goron City, after Saria's Song, without the Goron's Bracelet").note("what a nice tune! (then the bracelet)"),
+        TextLine::new(0x301F).cond("only in Goron City, after Saria's Song, with the Goron's Bracelet").note("that song doesn't get old"),
+    ],
 };
 
 // `SCENE_*` (`scene_table.h`).
@@ -374,6 +390,7 @@ fn update_talk_state(play: &mut PlayState, actor: &Actor) -> i16 {
             match actor.text_id {
                 0x301A => play.save.set_inf_table(INFTABLE_113),
                 0x301C | 0x301F => return NPC_TALK_STATE_ACTION,
+                // schema: 0x3020 is the wrong song cutscene's text, never his (compared only).
                 0x3020 => play.save.set_event_chk_inf(EVENTCHKINF_22),
                 _ => {}
             }

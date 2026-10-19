@@ -74,6 +74,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_spot01_matoya").when("type", &[0, 1, 2, 4]).note("the posters and the finished gallery"),
         ObjectNeed::new("object_spot01_matoyab").when("type", &[3]).note("the unfinished gallery"),
     ],
+    texts: &[],
 };
 
 /// The types (`PARAMS_GET_U(params, 0, 3)`).

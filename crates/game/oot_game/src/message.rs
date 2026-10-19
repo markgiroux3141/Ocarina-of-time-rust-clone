@@ -253,7 +253,7 @@ pub const MESSAGE_STATIC_TEX_SIZE: u32 = 0x1000;
 pub const FONT_GLYPHS: u8 = 140;
 
 /// `MESSAGE_SPACE_WIDTH`.
-const MESSAGE_SPACE_WIDTH: i16 = 6;
+pub const MESSAGE_SPACE_WIDTH: i16 = 6;
 
 /// `sFontWidths`: each glyph's advance at scale 100.
 #[rustfmt::skip]
@@ -268,6 +268,11 @@ const S_FONT_WIDTHS: [f32; 144] = [
     8.0, 8.0, 8.0, 8.0, 8.0, 9.0, 9.0, 9.0, 9.0, 6.0, 9.0, 9.0, 9.0, 9.0, 9.0, 14.0,
     14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0, 14.0,
 ];
+
+/// A character's advance at scale 100 (`sFontWidths[character - ' ']`); 0 outside the font.
+pub fn char_width(character: u8) -> f32 {
+    S_FONT_WIDTHS.get(character.wrapping_sub(b' ') as usize).copied().unwrap_or(0.0)
+}
 
 /// One `MessageTableEntry` of `sNesMessageEntryTable`: the text id, the box's type and
 /// position (`typePos`), and its segment-7 address in `nes_message_data_static`.

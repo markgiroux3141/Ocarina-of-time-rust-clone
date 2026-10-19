@@ -100,6 +100,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_horse_ganon").when("type", &[4, 6]).note("Ganondorf's horse"),
         ObjectNeed::new("object_ganon").when("type", &[9]).note("Ganondorf, the Ganon's Castle model"),
     ],
+    texts: &[],
 };
 
 /// `EnViewerType`.

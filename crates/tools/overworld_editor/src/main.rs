@@ -9,6 +9,7 @@ mod captures;
 mod edit;
 mod profile;
 mod scene;
+mod text_box;
 mod view3d;
 mod worker;
 

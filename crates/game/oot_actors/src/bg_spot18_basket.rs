@@ -77,6 +77,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `NA_SE_EV_ELEVATOR_MOVE` (`environmentbank_table.h`: 0x2824).

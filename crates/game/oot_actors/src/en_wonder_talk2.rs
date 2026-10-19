@@ -25,7 +25,7 @@
 
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::message::{TEXT_STATE_DONE, TEXT_STATE_EVENT, TEXT_STATE_NONE};
 use oot_game::npc::{EXCH_ITEM_NONE, offer_talk_range, process_talk_request};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
@@ -68,6 +68,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone; set once its text is read (not in modes 2 and 4)")],
     todo: false,
     objects: &[],
+    texts: &[TextLine::field(0x0200, "baseMsgId").when("talkMode", &[0, 1, 2]).note("its text: checked, or opening by itself (talkMode 1)")],
 };
 
 /// `SCENE_GERUDO_TRAINING_GROUND` (the Gerudo Training Ground).

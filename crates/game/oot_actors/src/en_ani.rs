@@ -39,7 +39,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, FlagUse};
+use oot_game::actor_schema::{ActorSchema, FlagUse, TextLine};
 use oot_game::collision_check::*;
 use oot_game::cutscene::CS_STATE_IDLE;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -67,6 +67,15 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x5050).cond("Link a child, by day, in front of him").note("all I can do is look at Death Mountain"),
+        TextLine::new(0x5051).cond("Link a child, at night, in front of him").note("all I can do is look at the stars"),
+        TextLine::new(0x5052).cond("Link an adult, in front of him, Death Mountain not calmed yet").note("something is happening on Death Mountain"),
+        TextLine::new(0x5053).cond("Link an adult, in front of him, Death Mountain calmed").note("Death Mountain is back to normal"),
+        TextLine::new(0x5054).cond("Link an adult, in front of him, Death Mountain calmed, the piece of heart given").note("I'll keep watching from up here"),
+        TextLine::new(0x5055).cond("beside him on the roof, the piece of heart not given yet").note("a memento: the piece of heart"),
+        TextLine::new(0x5056).cond("beside him on the roof, the piece of heart given").note("C-Up for a good view"),
+    ],
 };
 
 /// `ITEMGETINF_15` (`save.h`: 0x15): the roof man's piece of heart given.

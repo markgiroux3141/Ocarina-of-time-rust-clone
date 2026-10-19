@@ -45,6 +45,40 @@ pub struct Doc {
     /// The game's actors placed in it: pots, bushes, enemies, characters, switches...
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub actors: Vec<Actor>,
+    /// Its own texts: what the game's text ids say while the level is played (the actors' lines
+    /// edited in the editor's Dialogue section), and new ids of its own. By id, one each.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub texts: Vec<Text>,
+}
+
+/// A text of the level's (docs/EDITOR-ACTORS.md, "Texts"; ADR 0079): the game's message of that
+/// id while the level is played (the real scenes keep theirs), or a new one from 0x8000. The text
+/// is in the editor's readable form (`oot_game::message_text`: `{COLOR:RED}`, `{NAME}`, `[A]`, a
+/// newline a line), the box the game's `TEXTBOX_TYPE_*` and `TEXTBOX_POS_*`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Text {
+    pub id: u16,
+    #[serde(default)]
+    pub box_type: u8,
+    #[serde(default)]
+    pub box_pos: u8,
+    pub text: String,
+}
+
+impl Doc {
+    /// The level's text for `id`, if it has one.
+    pub fn text(&self, id: u16) -> Option<&Text> {
+        self.texts.iter().find(|t| t.id == id)
+    }
+
+    /// Sets the level's text for `id` (kept in id order), or with `None` gives it back to the game.
+    pub fn set_text(&mut self, id: u16, text: Option<Text>) {
+        self.texts.retain(|t| t.id != id);
+        if let Some(t) = text {
+            let at = self.texts.partition_point(|x| x.id < id);
+            self.texts.insert(at, Text { id, ..t });
+        }
+    }
 }
 
 /// How the level plays in the game (docs/EDITOR-PLAY-IN-THE-GAME.md). The theme chooses the look

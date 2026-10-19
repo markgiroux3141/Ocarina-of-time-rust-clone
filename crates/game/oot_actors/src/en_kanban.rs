@@ -24,7 +24,7 @@ use eng_math::{approach_f, approach_s, approach_zero_f, binang_to_rad, cos_s, si
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_UPDATE_DURING_OCARINA, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER_TOUCH};
 use oot_game::actor_ctx::{ACTORCAT_EXPLOSIVE, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, TextLine};
 use oot_game::audio::sfx::{NA_SE_EV_BOMB_DROP_WATER, NA_SE_EV_WOODPLATE_BOUND, NA_SE_IT_SWORD_STRIKE};
 use oot_game::camera::f_atan2f;
 use oot_game::collision_check::*;
@@ -44,7 +44,17 @@ pub const PARAMS: Field = Field::whole(
 );
 
 /// En_Kanban's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[],
+    todo: false,
+    objects: &[],
+    texts: &[
+        TextLine::new(0x409D).when("params", &[0x300]).cond("Link a child").note("the fishing pond's rules"),
+        TextLine::new(0x4090).when("params", &[0x300]).cond("Link an adult").note("the fishing pond's rules"),
+        TextLine::field(0x0300, "params").note("the sign's text (any params but the fishing pond's)"),
+    ],
+};
 
 /// `ENKANBAN_PIECE`, `ENKANBAN_FISHING`.
 pub const ENKANBAN_PIECE: i16 = 0xFFDD_u16 as i16;

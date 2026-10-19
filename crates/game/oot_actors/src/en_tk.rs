@@ -68,7 +68,7 @@ use eng_math::{sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ACTORCAT_PROP, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::{NA_SE_SY_CORRECT_CHIME, NA_SE_SY_ERROR, NA_SE_SY_TRE_BOX_APPEAR};
 use oot_game::collision_check::*;
 use oot_game::gbi::setup_dl;
@@ -105,6 +105,13 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x5018).cond("only in the graveyard, before he's been talked to").note("Dampé's gravedigging tour; goes on to 0x5019"),
+        TextLine::new(0x5019).cond("only in the graveyard, once he's been talked to").note("dig here? 10 rupees a hole (a choice)"),
+        TextLine::new(0x0084).cond("answered Don't do it").note("thanks a lot!"),
+        TextLine::new(0x0085).cond("answered Yes, with under 10 rupees").note("not enough rupees"),
+        TextLine::new(0x501A).cond("answered Yes, a dig with nothing found").note("nope, nothing here!"),
+    ],
 };
 
 /// `SCENE_GRAVEYARD` (`scene_table.h`: 0x53).
@@ -528,6 +535,7 @@ impl EnTk {
             TEXT_STATE_CLOSING => {
                 // @bug (game) 0x5028 ("I am the boss of the carpenters ...") isn't his text, so
                 // INFTABLE_D8 is never set here.
+                // schema: En_Toryo's, only compared
                 if thisx.text_id == 0x5028 {
                     play.save.set_inf_table(INFTABLE_D8);
                 }

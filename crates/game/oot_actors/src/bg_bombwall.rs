@@ -54,6 +54,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as it's hit; set at init, it's broken")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// One of `sTrisElementsInit`'s elements: hit by `0x40000048`.

@@ -24,7 +24,7 @@ use eng_math::{approach_f, approach_zero_f, binang_to_rad, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::camera::f_atan2f;
 use oot_game::collision_check::*;
@@ -57,6 +57,14 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_ZELDA_FLED_CASTLE)).reads().note("her text")],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x7000).note("she can't catch that cucco"),
+        TextLine::new(0x70EA).cond("after Zelda fled the castle, the first time").note("the scary-looking man ran off"),
+        TextLine::new(0x7118).cond("Link wearing the Keaton Mask").note("hi, Keaton"),
+        TextLine::new(0x7119).cond("Link wearing the Spooky Mask").note("a boy in Kakariko wants that mask"),
+        TextLine::new(0x711A).cond("Link wearing the Bunny Hood, Zora Mask or Gerudo Mask").note("no other masks?"),
+        TextLine::new(0x711B).cond("Link wearing the Skull Mask, Goron Mask or Mask of Truth").note("what a strange mask"),
+    ],
 };
 /// `ATTENTION_RANGE_6`.
 const ATTENTION_RANGE_6: u8 = 6;

@@ -92,6 +92,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().note("at init: gone or there; on a floor switch of the same flag, held down (or up)")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `PushBlockType` (`z_obj_oshihiki.h`).

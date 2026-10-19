@@ -233,6 +233,49 @@ impl ObjectNeed {
     }
 }
 
+/// A line an actor can say: a text id its code shows (`Message_StartTextbox`,
+/// `Message_ContinueTextbox`, the `textId` it offers to talk with), when, and a note. The lines
+/// of a schema are in the order its code uses them; the texts a message goes on to by itself
+/// (its `{TEXTID}`) aren't listed, the editor follows them.
+///
+/// The ids are the ones a custom level plays (a scene of its own: docs/EDITOR-PLAY-IN-THE-GAME.md);
+/// lines only some scenes show say so in `cond`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct TextLine {
+    /// The text id; with `plus`, the base the field's value goes into (`0x300 | params`).
+    pub id: u16,
+    /// A field whose value is or-ed into `id` (a sign's text, a Gossip Stone's): the C's
+    /// `0x300 | params`, `0x100 + text` (the same, its bits being below the base's).
+    pub plus: Option<&'static str>,
+    /// Only for some values of a field (a type's).
+    pub when: Option<When>,
+    /// When, in words, as the code decides it: "none of the cuccos in the pen", "after the Kokiri
+    /// Sword". Empty: whenever it talks.
+    pub cond: &'static str,
+    /// What it's for, in a few words.
+    pub note: &'static str,
+}
+
+impl TextLine {
+    pub const fn new(id: u16) -> Self {
+        TextLine { id, plus: None, when: None, cond: "", note: "" }
+    }
+    /// `base | field`'s value.
+    pub const fn field(base: u16, field: &'static str) -> Self {
+        TextLine { id: base, plus: Some(field), when: None, cond: "", note: "" }
+    }
+    /// Only for some values of a field.
+    pub const fn when(self, field: &'static str, values: &'static [i32]) -> Self {
+        TextLine { when: Some(When { field, values }), ..self }
+    }
+    pub const fn cond(self, cond: &'static str) -> Self {
+        TextLine { cond, ..self }
+    }
+    pub const fn note(self, note: &'static str) -> Self {
+        TextLine { note, ..self }
+    }
+}
+
 /// An actor's configuration: its fields, its flags, and the objects it needs besides its
 /// profile's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -243,13 +286,15 @@ pub struct ActorSchema {
     pub todo: bool,
     /// The objects it finds slots for itself, beyond its profile's (`ObjectNeed`).
     pub objects: &'static [ObjectNeed],
+    /// The lines it can say (`TextLine`), in the order its code uses them.
+    pub texts: &'static [TextLine],
 }
 
 impl ActorSchema {
     /// An actor that takes nothing from its placement and uses no flags.
-    pub const NONE: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: false, objects: &[] };
+    pub const NONE: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: false, objects: &[], texts: &[] };
     /// Not written yet.
-    pub const TODO: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: true, objects: &[] };
+    pub const TODO: ActorSchema = ActorSchema { fields: &[], flags: &[], todo: true, objects: &[], texts: &[] };
 
     pub fn field(&self, name: &str) -> Option<&Field> {
         self.fields.iter().find(|f| f.name == name)
@@ -274,6 +319,16 @@ impl ActorSchema {
             .iter()
             .filter(|n| n.when.is_none_or(|w| self.value_of(w.field, params, rot).is_some_and(|v| w.values.contains(&v))))
             .map(|n| n.object)
+            .collect()
+    }
+
+    /// The lines a placement with these params and rotation can say: each one whose `when` holds,
+    /// with its id (`plus`'s field or-ed in).
+    pub fn lines(&self, params: i16, rot: [i16; 3]) -> Vec<(u16, &'static TextLine)> {
+        self.texts
+            .iter()
+            .filter(|t| t.when.is_none_or(|w| self.value_of(w.field, params, rot).is_some_and(|v| w.values.contains(&v))))
+            .map(|t| (t.plus.and_then(|f| self.value_of(f, params, rot)).map_or(t.id, |v| t.id | v as u16), t))
             .collect()
     }
 

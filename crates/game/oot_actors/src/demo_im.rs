@@ -36,7 +36,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_INSIDE_CULLING_VOLUME, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_PL_WALK_GROUND, SfxPos};
 use oot_game::collision_check::*;
@@ -92,6 +92,8 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // `func_80986AD0`: her only line (the lullaby's ocarina texts are the cutscene's).
+    texts: &[TextLine::new(0x708E).when("params", &[5]).cond("once Zelda's Lullaby is known, before Zelda flees").note("let me lead you out of the castle")],
 };
 /// `ITEM_SONG_LULLABY` (`item.h`).
 const ITEM_SONG_LULLABY: u8 = 0x60;

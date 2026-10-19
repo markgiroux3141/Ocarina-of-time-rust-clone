@@ -86,6 +86,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Clear).reads().note("in Dodongo's Cavern's boss room: cleared, it's gone")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `RiverSoundType` (`z_en_river_sound.h`).

@@ -38,7 +38,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::{event_chk_inf, inf_table};
 use oot_game::audio::SEQ_PLAYER_FANFARE;
 use oot_game::audio::bgm::seq_cmd1;
@@ -100,6 +100,45 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // By type, as `EnOwl_Init` picks his wait: the first text (`EnOwl_CheckInitTalk`,
+    // `func_80ACA558`), then the question ("hear it again?") and its answers' replies.
+    texts: &[
+        TextLine::new(0x2064).when("owlType", &[0x01, 0x3F]).note("Hoo hoot! the time has come for your adventure"),
+        TextLine::new(0x2065).when("owlType", &[0x01, 0x3F]).cond("answered No to did you get all that").note("the castle and its princess"),
+        TextLine::new(0x2067).when("owlType", &[0x01, 0x3F]).cond("answered Yes").note("see you around!"),
+        TextLine::new(0x2068).when("owlType", &[0x02]).note("this way! the princess is inside the castle"),
+        TextLine::new(0x2069).when("owlType", &[0x02]).note("time flows on this ground (also answered Yes)"),
+        TextLine::new(0x206A).when("owlType", &[0x02]).note("hear what I said again?"),
+        TextLine::new(0x206B).when("owlType", &[0x02]).cond("answered No").note("you're a smart kid"),
+        TextLine::new(0x206C).when("owlType", &[0x03]).note("wait a second! Kakariko and Death Mountain (also answered Yes, before Zelda's Letter)"),
+        TextLine::new(0x206A).when("owlType", &[0x03]).note("hear what I said again?"),
+        TextLine::new(0x206D).when("owlType", &[0x03]).cond("answered Yes, after Zelda's Letter").note("look over here! Kakariko and Death Mountain"),
+        TextLine::new(0x206E).when("owlType", &[0x03]).cond("answered No").note("only you can complete the quest"),
+        TextLine::new(0x206F).when("owlType", &[0x04]).note("wait up! south to the lake, west to the valley (also answered Yes)"),
+        TextLine::new(0x206A).when("owlType", &[0x04]).note("hear what I said again?"),
+        TextLine::new(0x2070).when("owlType", &[0x04]).cond("answered No").note("don't get discouraged"),
+        TextLine::new(0x2071).when("owlType", &[0x05]).note("Lake Hylia and the Zoras (also answered Yes)"),
+        TextLine::new(0x206A).when("owlType", &[0x05]).note("hear what I said again?"),
+        TextLine::new(0x2072).when("owlType", &[0x05]).cond("answered No").note("be careful and go!"),
+        TextLine::new(0x4031).when("owlType", &[0x06]).cond("with Saria's Song and Zelda's Lullaby").note("you've gotten bigger and stronger"),
+        TextLine::new(0x4017).when("owlType", &[0x06]).cond("with Saria's Song, without Zelda's Lullaby").note("getting more comfortable"),
+        TextLine::new(0x4002).when("owlType", &[0x06]).cond("without Saria's Song").note("this way! what is Saria doing now?"),
+        TextLine::new(0x4004).when("owlType", &[0x07]).cond("once he's been talked to").note("back to the castle: hold on to come with me"),
+        TextLine::new(0x4003).when("owlType", &[0x07]).cond("the first time").note("you've come a long way: look at the map"),
+        TextLine::new(0x3062).when("owlType", &[0x08, 0x09]).cond("Link without magic").note("you've done well to come up here"),
+        TextLine::new(0x3063).when("owlType", &[0x08, 0x09]).cond("Link with magic").note("you've grown: hold on to come with me"),
+        TextLine::new(0x6079).when("owlType", &[0x0A]).note("surprised to see me? you have matured"),
+        TextLine::new(0x607A).when("owlType", &[0x0A]).cond("answered Yes").note("Hyrule's future is on your shoulders"),
+        TextLine::new(0x607C).when("owlType", &[0x0A]).cond("answered No").note("I will continue to watch you"),
+        TextLine::new(0x10C0).when("owlType", &[0x0B]).note("good to see you: through the Lost Woods"),
+        TextLine::new(0x10C2).when("owlType", &[0x0B]).note("hear what I said again?"),
+        TextLine::new(0x10C1).when("owlType", &[0x0B]).cond("answered Yes").note("the Lost Woods lead to the Sacred Forest Meadow"),
+        TextLine::new(0x10C3).when("owlType", &[0x0B]).cond("answered No").note("if you are courageous"),
+        TextLine::new(0x10C4).when("owlType", &[0x0C]).note("did you learn a song from Saria?"),
+        TextLine::new(0x10C6).when("owlType", &[0x0C]).note("hear what I said again?"),
+        TextLine::new(0x10C5).when("owlType", &[0x0C]).cond("answered Yes").note("hold the ocarina where a melody is needed"),
+        TextLine::new(0x10C7).when("owlType", &[0x0C]).cond("answered No").note("the songs on the Quest Status"),
+    ],
 };
 
 /// `EnOwlType`.
@@ -438,13 +477,13 @@ impl EnOwl {
     fn check_init_talk(&mut self, play: &mut PlayState, text_id: u16, target_dist: f32, flags: u16) -> bool {
         if oot_game::npc::process_talk_request(&mut self.actor) {
             let timer = if self.actor.params == 0xFFF { // schema: the whole params 0xFFF, the owl outside Kokiri
-                self.action_flags |= 0x40;
+                self.action_flags |= 0x40; // schema: an action flag (which way he turns), not a text
                 -100
             } else if play.rand.zero_one() < 0.5 {
-                self.action_flags |= 0x40;
+                self.action_flags |= 0x40; // schema: an action flag, not a text
                 if flags & 1 != 0 { -97 } else { -99 }
             } else {
-                self.action_flags &= !0x40;
+                self.action_flags &= !0x40; // schema: an action flag, not a text
                 if flags & 1 != 0 { -96 } else { -98 }
             };
             let me = play.cur_actor.map(|h| play.cam_actor_of(h, &self.actor));

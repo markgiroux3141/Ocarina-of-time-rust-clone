@@ -28,7 +28,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ITEM_B_HEART, name: "
 
 /// Item_B_Heart's configuration (docs/adr/0066-the-actor-schema.md).
 pub const SCHEMA: ActorSchema =
-    ActorSchema { fields: &[], flags: &[FlagUse::new(Flag::Collectible("0x1F")).reads().sets().note("the heart container taken: not spawned again")], todo: false, objects: &[] };
+    ActorSchema { fields: &[], flags: &[FlagUse::new(Flag::Collectible("0x1F")).reads().sets().note("the heart container taken: not spawned again")], todo: false, objects: &[], texts: &[] };
 
 /// The room's collectible flag a heart container taken sets.
 const COLLECTIBLE_FLAG: i32 = 0x1F;

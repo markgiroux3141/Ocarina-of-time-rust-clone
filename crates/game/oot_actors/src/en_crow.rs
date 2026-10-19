@@ -91,7 +91,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "a Guay"), (1, "a big Guay")]), "a Guay or a big one (scale 0.03, a red rupee); placed 0, the respawn after the tenth death writes 1");
 
 /// En_Crow's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `NAVI_ENEMY_GUAY` (`actor.h`: 0x58).
 const NAVI_ENEMY_GUAY: u8 = 0x58;

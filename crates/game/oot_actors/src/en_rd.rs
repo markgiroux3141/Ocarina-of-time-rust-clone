@@ -131,6 +131,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 // The sounds (`include/tables/sfx/enemybank_table.h`; none in `oot_game::audio::sfx` yet).

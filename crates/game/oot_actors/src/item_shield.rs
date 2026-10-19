@@ -41,7 +41,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_ITEM_SHIELD, name: "I
 pub const PARAMS: Field = Field::whole("params", Kind::Named(&[(0, "a shield lying about"), (1, "Link's burnt shield")]), "which shield: lying about or burning");
 
 /// Item_Shield's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[], texts: &[] };
 
 const OBJECT: &str = "object_link_child";
 

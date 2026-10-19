@@ -105,6 +105,32 @@ pub struct Level {
     pub game: Dynamics,
     /// The game's actors placed in it (`write_scene` puts them in the room).
     pub actors: Vec<LevelActor>,
+    /// Its own texts, by id: the game's lines it changes and new ones (`write_scene` encodes them
+    /// into the scene's texts, over the game's).
+    pub texts: Vec<LevelText>,
+}
+
+/// A text a level gives an id (`level.json`'s `texts`, the editor's Dialogue section): in place of
+/// the game's message of that id while the level is played, or a new one
+/// (`oot_game::message_text::FIRST_NEW_TEXT_ID` on). The text is in the readable form
+/// (`oot_game::message_text`), the box its type and position (`TEXTBOX_TYPE_*`, `TEXTBOX_POS_*`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelText {
+    pub id: u16,
+    pub box_type: u8,
+    pub box_pos: u8,
+    pub text: String,
+}
+
+impl LevelText {
+    fn read(j: &Value) -> Option<LevelText> {
+        Some(LevelText {
+            id: u16::try_from(j["id"].as_u64()?).ok()?,
+            box_type: j["type"].as_u64().unwrap_or(0) as u8 & 0xF,
+            box_pos: j["pos"].as_u64().unwrap_or(0) as u8 & 0xF,
+            text: j["text"].as_str()?.to_string(),
+        })
+    }
 }
 
 /// An actor placed in a level (`level.json`'s `actors`, the editor's actors tab): by its
@@ -463,7 +489,14 @@ pub fn load(dir: &Path) -> Result<Level> {
             None => notes.push(format!("actor {i}: no overlay name or position: left out")),
         }
     }
-    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene, game, actors })
+    let mut texts = vec![];
+    for (i, t) in j["texts"].as_array().map(Vec::as_slice).unwrap_or_default().iter().enumerate() {
+        match LevelText::read(t) {
+            Some(t) => texts.push(t),
+            None => notes.push(format!("text {i}: no id or text: left out")),
+        }
+    }
+    Ok(Level { name, room, collision, spawn: (Vec3::new(mid.x, y, mid.z), -0x8000), triangles, notes, scene, game, actors, texts })
 }
 
 /// Connected patches of water triangles (sharing corners): their (x, z) bounds and surface height.
@@ -796,8 +829,23 @@ pub fn write_scene(level: &Level, pack: &oot_game::pack::GamePack, src: &eng_ass
     }
     let scene = SceneData { name: SCENE_FILE.to_string(), id: 0, draw_config: "SDC_DEFAULT".to_string(), layers };
     src.put(&keys::scene(SCENE_FILE), &scene)?;
+    src.put(&keys::scene_texts(SCENE_FILE), &scene_texts(&level.texts))?;
     src.put(&collision, &level.collision)?;
     Ok(())
+}
+
+/// A level's texts as the game's bytes (`oot_game::message_text::encode`), for its scene's texts
+/// over the game's; one that won't encode is left out, with a warning (the editor shows why).
+pub fn scene_texts(texts: &[LevelText]) -> oot_game::message_text::SceneTexts {
+    use oot_game::message_text::{SceneTexts, TextOverride, encode};
+    let mut out = SceneTexts::default();
+    for t in texts {
+        match encode(&t.text) {
+            Ok(bytes) => out.texts.push(TextOverride { text_id: t.id, type_pos: (t.box_type << 4) | t.box_pos, bytes }),
+            Err(e) => log::warn!("text {:#06x} left out: {e}", t.id),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

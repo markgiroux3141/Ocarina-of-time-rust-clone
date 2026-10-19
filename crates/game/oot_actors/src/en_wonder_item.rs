@@ -148,6 +148,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set: gone; set when it drops or is triggered")],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `EnWonderItemMode`.

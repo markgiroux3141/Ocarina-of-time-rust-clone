@@ -111,6 +111,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 // `NA_SE_EV_KID_HORSE_*` (`environmentbank_table.h`: 0x2842 to 0x2845).

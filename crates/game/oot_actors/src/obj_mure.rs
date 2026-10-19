@@ -58,7 +58,7 @@ pub const PTN: Field = Field::params("ptn", 8, 3, Kind::Range(0, 3), "the patter
 pub const CH_NUM: Field = Field::params("chNum", 12, 4, Kind::Range(0, 15), "how many (0: the pattern's)");
 
 /// Obj_Mure's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, SV_NUM, PTN, CH_NUM], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, SV_NUM, PTN, CH_NUM], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `OBJMURE_MAX_SPAWNS`.
 pub const OBJMURE_MAX_SPAWNS: usize = 15;

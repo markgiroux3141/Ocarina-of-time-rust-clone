@@ -718,7 +718,7 @@ mod tests {
     #[test]
     fn setting_rotations_are_kept_and_the_rest_dropped() {
         static FIELDS: [Field; 2] = [Field::rot("rotZ", Source::RotZ, 0, 8, Kind::Range(0, 255), ""), Field::rot("tilt", Source::RotX, 0, 16, Kind::Rotation, "")];
-        static S: ActorSchema = ActorSchema { fields: &FIELDS, flags: &[], todo: false, objects: &[] };
+        static S: ActorSchema = ActorSchema { fields: &FIELDS, flags: &[], todo: false, objects: &[], texts: &[] };
         assert_eq!(setting_rot(&S, [0x1234, 0x4000, 0x0305]), [0, 0, 0x0005]);
         let (mut p, mut r) = (0u16, [0i16; 3]);
         set_value(&FIELDS[0], &mut p, &mut r, 7);

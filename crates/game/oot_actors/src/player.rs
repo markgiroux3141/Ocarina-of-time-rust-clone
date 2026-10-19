@@ -33,7 +33,7 @@ use eng_math::*;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTOR_PLAYER, ACTORCAT_NPC, ACTORCAT_PLAYER, ActorContext, ActorHandle, ActorImpl, PLAYER_BODYPART_WAIST, PlayerIface};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::camera::CAM_ID_MAIN;
 use oot_game::cutscene::CsCmdActorCue;
 use oot_game::play_scene::{PlayIo, SCENE_GANONS_TOWER_COLLAPSE_EXTERIOR, SCENE_SHADOW_TEMPLE, SCENE_KOKIRI_FOREST};
@@ -10082,6 +10082,7 @@ impl Player {
         let sp24 = checkable(sp30);
         let mut sp28 = false;
         if sp24 || self.navi_text_id != 0 {
+            // schema: 0x200, Navi's 0x2xx texts (the doors') compared, not shown
             sp28 = self.navi_text_id < 0 && ((self.navi_text_id as i32).abs() & 0xFF00) != 0x200;
             if sp28 || !sp24 {
                 sp2c = navi_actor;
@@ -10197,12 +10198,14 @@ impl Player {
             self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
         }
         if self.skel.animation == backspace {
+            // schema: 0x19, the anim movement's flags
             self.start_anim_movement(0x19);
         }
         self.func_80832224();
         self.state1 |= STATE1_6 | STATE1_29;
         // Navi's own text (not a 0x2xx one): her talk request, and the camera turns round to
         // her (Player_SetTurnAroundCamera(play, 0xB)).
+        // schema: 0x200, Navi's 0x2xx texts (the doors') compared, not shown
         if is_navi && self.target_actor == Some(h) && (text_id & 0xFF00) != 0x200 {
             self.play_requests.push(PlayRequest::TalkRequest(h));
             self.set_turn_around_camera(0xB);
@@ -11578,6 +11581,14 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // The ones Player itself starts (the item-get texts are the items'; Navi's and the talked-to
+    // actors' theirs).
+    texts: &[
+        TextLine::new(0x305F).cond("the Deku Shield burned").note("your shield is gone!"),
+        TextLine::new(0x00D0).cond("A at an ajar door").note("it won't open!"),
+        TextLine::new(0x4005).cond("Ruto's Letter shown to no one").note("something already inside this bottle"),
+        TextLine::new(0x00CF).cond("another item shown to no one").note("this item doesn't work here"),
+    ],
 };
 
 /// Indices into Player's `RenderState` extras.

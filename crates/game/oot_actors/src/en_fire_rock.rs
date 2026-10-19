@@ -93,7 +93,7 @@ pub const TYPE: Field = Field::whole(
 );
 
 /// En_Fire_Rock's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `PLAYER_STATE1_26`: hurt.
 const PLAYER_STATE1_26: u32 = crate::player::STATE1_26;

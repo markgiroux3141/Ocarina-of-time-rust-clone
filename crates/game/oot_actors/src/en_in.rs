@@ -40,8 +40,9 @@
 //! `EnIn_RentalTimeExpired`. Where `EnIn_WaitForObject` would start the race (`EnIn_StartingRace`)
 //! or an adult's start mode (`_RUNNING_RANCH` that stays, `_OBEDIENT`, `_SLEEPING`), his init
 //! spawns a placeholder instead (the port can't turn a live actor into one on its first update, so
-//! `EnIn_Init` makes the same checks). The mask reactions (`MaskReaction_GetTextId`: no masks yet,
-//! so none).
+//! `EnIn_Init` makes the same checks), so the adult's texts (`EnIn_GetTextIdAdult`, his choices'
+//! replies) are here but never show. The mask reactions (`MaskReaction_GetTextId`, 0x717C to
+//! 0x717F: taken as 0, so none).
 //!
 //! Params: `params` whole: -1 placed (the scene, the age, the time and rot.z decide); 1 the race's
 //! rider (`En_Horse` spawns him); 2 the ranch's adult Ingo offering the rental or the race (race
@@ -71,7 +72,7 @@ use eng_math::{binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::{event_chk_inf, event_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::message::*;
@@ -182,6 +183,12 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x203F).when("shape.rot.z", &[1, 2]).cond("Link a child, only at Lon Lon Ranch, the first time").note("I'm Ingo; that lazy bum Talon"),
+        TextLine::new(0x2040).when("shape.rot.z", &[1, 2]).cond("Link a child, only at Lon Lon Ranch, once he's been talked to").note("tough to be a working man"),
+        TextLine::new(0x2045).when("shape.rot.z", &[3, 4]).cond("Link a child, only in the stable, the first time").note("I do all the work around here"),
+        TextLine::new(0x2046).when("shape.rot.z", &[3, 4]).cond("Link a child, only in the stable, once he's been talked to").note("I should be in charge"),
+    ],
 };
 
 // `SCENE_*` (`scene_table.h`).
@@ -537,41 +544,41 @@ impl EnIn {
 
     /// `EnIn_GetTextIdAdult`.
     pub fn get_text_id_adult(play: &PlayState) -> u16 {
-        // MaskReaction_GetTextId(play, MASK_REACTION_SET_INGO): no masks, so 0.
+        // MaskReaction_GetTextId(play, MASK_REACTION_SET_INGO): not ported, 0.
         let s = &play.save;
         if s.get_event_chk_inf(EVENTCHKINF_EPONA_OBTAINED) {
-            return if s.is_day() { 0x205F } else { 0x2057 };
+            return if s.is_day() { 0x205F } else { 0x2057 }; // schema: not ported (the adult's Ingo)
         }
         if !s.is_day() {
-            return 0x204E;
+            return 0x204E; // schema: not ported (the adult's Ingo)
         }
         match race_state(play) {
             INGO_RACE_STATE_HORSE_RENTAL_PERIOD => {
                 if player_state1(play) & PLAYER_STATE1_23 == 0 {
-                    0x2036
+                    0x2036 // schema: not ported (the adult's Ingo)
                 } else if s.get_event_chk_inf(EVENTCHKINF_1B) {
-                    if s.get_inf_table(INFTABLE_A2) { 0x2036 } else { 0x2038 }
+                    if s.get_inf_table(INFTABLE_A2) { 0x2036 } else { 0x2038 } // schema: not ported (the adult's Ingo)
                 } else {
-                    0x2037
+                    0x2037 // schema: not ported (the adult's Ingo)
                 }
             }
             INGO_RACE_STATE_PLAYER_LOSE => {
                 if s.get_event_inf(EVENTINF_INGO_RACE_SECOND_RACE) || s.get_event_inf(EVENTINF_INGO_RACE_LOST_ONCE) {
-                    0x203E
+                    0x203E // schema: not ported (the adult's Ingo)
                 } else {
-                    0x203D
+                    0x203D // schema: not ported (the adult's Ingo)
                 }
             }
-            INGO_RACE_STATE_FIRST_WIN => 0x203A,
-            INGO_RACE_STATE_TRAPPED_WIN_UNUSED | INGO_RACE_STATE_TRAPPED_WIN_EPONA => 0x203C,
+            INGO_RACE_STATE_FIRST_WIN => 0x203A, // schema: not ported (the adult's Ingo)
+            INGO_RACE_STATE_TRAPPED_WIN_UNUSED | INGO_RACE_STATE_TRAPPED_WIN_EPONA => 0x203C, // schema: not ported (the adult's Ingo)
             // Ask to race again after losing the race.
-            INGO_RACE_STATE_REMATCH => 0x205B,
+            INGO_RACE_STATE_REMATCH => 0x205B, // schema: not ported (the adult's Ingo)
             // INGO_RACE_STATE_RACING and the rest: pay to ride, or his first words first.
             _ => {
                 if s.get_inf_table(INFTABLE_INGO_TALKED_TO_ADULT_LINK) {
-                    0x2031
+                    0x2031 // schema: not ported (the adult's Ingo)
                 } else {
-                    0x2030
+                    0x2030 // schema: not ported (the adult's Ingo)
                 }
             }
         }
@@ -579,7 +586,7 @@ impl EnIn {
 
     /// `EnIn_GetTextId`.
     pub fn get_text_id(play: &PlayState) -> u16 {
-        // MaskReaction_GetTextId(play, MASK_REACTION_SET_INGO): no masks, so 0.
+        // MaskReaction_GetTextId(play, MASK_REACTION_SET_INGO): not ported, 0.
         if !play.save.adult { Self::get_text_id_child(play) } else { Self::get_text_id_adult(play) }
     }
 
@@ -588,7 +595,7 @@ impl EnIn {
         let mut talk_state = NPC_TALK_STATE_IDLE;
         match actor.text_id {
             0x2045 => play.save.set_inf_table(INFTABLE_INGO_TALKED_TO_CHILD_LINK_AFTER_TALON_RETURNED),
-            0x203E => talk_state = NPC_TALK_STATE_ACTION,
+            0x203E => talk_state = NPC_TALK_STATE_ACTION, // schema: not ported (the adult's Ingo)
             0x203F => {
                 play.save.set_event_chk_inf(EVENTCHKINF_11);
                 play.save.set_inf_table(INFTABLE_INGO_TALKED_TO_CHILD_LINK_BEFORE_TALON_RETURNED);
@@ -603,48 +610,48 @@ impl EnIn {
         let mut talk_state = NPC_TALK_STATE_TALKING;
         let choice = play.msg_ctx.choice_index;
         match actor.text_id {
-            0x2030 | 0x2031 => {
+            0x2030 | 0x2031 => { // schema: not ported (the adult's Ingo)
                 actor.text_id = if choice == 1 {
-                    0x2032
+                    0x2032 // schema: not ported (the adult's Ingo)
                 } else if play.save.rupees < 10 {
-                    0x2033
+                    0x2033 // schema: not ported (the adult's Ingo)
                 } else {
-                    0x2034
+                    0x2034 // schema: not ported (the adult's Ingo)
                 };
                 play.continue_textbox(actor.text_id);
                 play.save.set_inf_table(INFTABLE_INGO_TALKED_TO_ADULT_LINK);
             }
-            0x2034 => {
+            0x2034 => { // schema: not ported (the adult's Ingo)
                 if choice == 1 {
                     oot_game::item::rupees_change_by(&mut play.save, -10);
-                    actor.text_id = 0x205C;
+                    actor.text_id = 0x205C; // schema: not ported (the adult's Ingo)
                 } else {
-                    actor.text_id = 0x2035;
+                    actor.text_id = 0x2035; // schema: not ported (the adult's Ingo)
                 }
                 play.continue_textbox(actor.text_id);
             }
-            0x2036 | 0x2037 => {
+            0x2036 | 0x2037 => { // schema: not ported (the adult's Ingo)
                 if choice == 1 {
                     talk_state = NPC_TALK_STATE_ACTION;
                 } else {
-                    actor.text_id = 0x201F;
+                    actor.text_id = 0x201F; // schema: not ported (the adult's Ingo)
                     play.continue_textbox(actor.text_id);
                 }
             }
-            0x2038 => {
+            0x2038 => { // schema: not ported (the adult's Ingo)
                 if choice == 0 && play.save.rupees >= 50 {
                     talk_state = NPC_TALK_STATE_ACTION;
                 } else {
-                    actor.text_id = 0x2039;
+                    actor.text_id = 0x2039; // schema: not ported (the adult's Ingo)
                     play.continue_textbox(actor.text_id);
                     play.save.set_inf_table(INFTABLE_A2);
                 }
             }
-            0x205B => {
+            0x205B => { // schema: not ported (the adult's Ingo)
                 if choice == 0 && play.save.rupees >= 50 {
                     talk_state = NPC_TALK_STATE_ACTION;
                 } else {
-                    actor.text_id = 0x2039;
+                    actor.text_id = 0x2039; // schema: not ported (the adult's Ingo)
                     play.continue_textbox(actor.text_id);
                     set_race_state(play, INGO_RACE_STATE_OFFER_RENTAL);
                     play.save.clear_event_inf(EVENTINF_INGO_RACE_LOST_ONCE);
@@ -660,9 +667,9 @@ impl EnIn {
 
     /// `EnIn_UpdateTalkStateOnEvent`.
     fn update_talk_state_on_event(play: &mut PlayState, actor: &mut Actor) -> i16 {
-        if actor.text_id == 0x2035 {
+        if actor.text_id == 0x2035 { // schema: not ported (the adult's Ingo)
             oot_game::item::rupees_change_by(&mut play.save, -10);
-            actor.text_id = 0x205C;
+            actor.text_id = 0x205C; // schema: not ported (the adult's Ingo)
             play.continue_textbox(actor.text_id);
             NPC_TALK_STATE_TALKING
         } else {

@@ -27,7 +27,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_M_FIRE1, name: "En
 pub const ITEM_ACTION: Field = Field::params("params < 0", 15, 1, Kind::Named(&[(0, "a misc actor"), (1, "an item action (ACTORCAT_ITEMACTION)")]), "its actor category");
 
 /// En_M_Fire1's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[ITEM_ACTION], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[ITEM_ACTION], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `sCylinderInit`.
 pub const CYLINDER_INIT: ColliderCylinderInit = ColliderCylinderInit {

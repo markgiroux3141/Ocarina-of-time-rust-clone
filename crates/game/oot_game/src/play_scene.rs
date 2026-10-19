@@ -71,6 +71,8 @@ pub struct GameAssets {
     pub overlays: Overlays,
     /// The English messages.
     pub messages: Arc<crate::message::MessageTable>,
+    /// The messages as scenes with texts of their own play them (`messages_for`), by scene file.
+    scene_messages: std::sync::Mutex<std::collections::HashMap<String, Arc<crate::message::MessageTable>>>,
     /// The random drops' tables.
     pub item_drops: crate::item::ItemDropTables,
     /// `sRestrictionFlags`.
@@ -100,6 +102,7 @@ impl GameAssets {
             actors: pack.actor_table()?,
             env: pack.env_tables()?,
             messages: Arc::new(pack.messages()?),
+            scene_messages: Default::default(),
             item_drops: pack.item_drops()?,
             interface: pack.interface()?,
             items: pack.items()?,
@@ -114,6 +117,28 @@ impl GameAssets {
             skeletons: Default::default(),
             animations: Default::default(),
         })
+    }
+
+    /// The messages a scene is played with: the game's, with the scene's own texts over them where
+    /// it has some (`keys::scene_texts`: a custom level's edited lines), read once. The game's scenes
+    /// have none, so the real Kakariko keeps its own text whatever a level changes.
+    pub fn messages_for(&self, scene_file: &str) -> Arc<crate::message::MessageTable> {
+        if let Some(m) = self.scene_messages.lock().unwrap().get(scene_file) {
+            return m.clone();
+        }
+        let own: Option<crate::message_text::SceneTexts> = match self.pack.assets.try_get(&crate::pack::keys::scene_texts(scene_file)) {
+            Ok(t) => t,
+            Err(e) => {
+                log::warn!("{scene_file}'s texts: {e:#}");
+                None
+            }
+        };
+        let m = match own.filter(|t| !t.texts.is_empty()) {
+            Some(t) => Arc::new(self.messages.layered(&t.texts)),
+            None => self.messages.clone(),
+        };
+        self.scene_messages.lock().unwrap().insert(scene_file.to_string(), m.clone());
+        m
     }
 
     /// The cutscene script named `name` (`gDekuTreeMeetingCs`, `gDekuTreeIntroCs`), read once.
@@ -451,7 +476,8 @@ impl PlayState {
         play.audio.set_extra_filter(0);
         play.quake.quake_init();
         play.assets = Some(assets.clone());
-        play.messages = Some(assets.messages.clone());
+        // The scene's own texts over the game's (a custom level's), the game's elsewhere.
+        play.messages = Some(assets.messages_for(&scene_file));
         play.scene_id = scene_id;
         play.cur_spawn = spawn;
         play.object_ctx = ObjectContext::init_bank();

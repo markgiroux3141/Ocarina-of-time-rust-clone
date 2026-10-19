@@ -72,6 +72,15 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   palette and the inspector its thumbnail; an actor not captured in its own settings shows the nearest captured, an
   invisible one (a Navi spot, a song spot, a weather tag) the area it watches, and one that draws nothing a marker. The
   inspector says which, and why. Click a model in 3D to select it.
+  An actor that talks has a **Dialogue** section (ADR 0079): every line its code can show, in the order
+  it shows them and under what condition ("Link a child, no cuccos in the pen"; "only in Kakariko" ones
+  don't show in a custom level), each drawn as the game's message box draws it (the game's own box,
+  font, colours, icons and choices, typed out by the game's message code), with the texts it goes on
+  to. *Edit* opens the text in a readable form (`{COLOR:RED}`, `{NAME}`, `{BOX_BREAK}`, `[A]`, a newline
+  a line; *The codes a text can use* lists them) with its box's type and position: the box redraws as
+  you type, and it says when a line is too long for the box or a code is wrong. The edit is the level's
+  (saved in the document, played when the level is: the game's own scenes keep their text); *Back to
+  the game's* undoes it.
 - **Moving a whole thing:** drag a line (a rock or a hedge from anywhere inside its shape, an arch, fence or dirt path along
   it) to move it whole, in whole units; it's selected as you do. Select a region or a path first, then drag it by its body
   (not a node) to move it whole: a region takes the nodes it shares with the outline or other regions along, so it stays

@@ -35,7 +35,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR;
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -71,6 +71,19 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x606A).cond("only in Gerudo Valley (Link an adult), before he's been talked to").note("the Gerudo broke the bridge; his workers gone"),
+        TextLine::new(0x606B).cond("only in Gerudo Valley, once he's been talked to").note("find out what my workers are doing"),
+        TextLine::new(0x606C).cond("only in Gerudo Valley, the four carpenters rescued").note("they built this bridge"),
+        TextLine::new(0x5028).cond("only in Kakariko (Link a child, by day), before he's been talked to").note("the boss of the carpenters Impa hired"),
+        TextLine::new(0x5029).cond("only in Kakariko, once he's been talked to").note("they're all worthless"),
+        TextLine::new(0x506C).cond("only in Kakariko's guest house (Link a child, at night)").note("lazy slackers"),
+        TextLine::new(0x606D).cond("shown the Poacher's Saw, before refusing it").note("that saw's mine! goes on to the choice"),
+        TextLine::new(0x606E).cond("shown the Poacher's Saw, refused before").note("will you give me my saw? (a choice)"),
+        TextLine::new(0x200F).cond("shown anything else").note("I don't want that"),
+        TextLine::new(0x601B).cond("answered Yes").note("thanks! the Broken Goron's Sword"),
+        TextLine::new(0x606F).cond("answered No").note("you dirty, rotten thief!"),
+    ],
 };
 
 // `SCENE_*` (`scene_table.h`).

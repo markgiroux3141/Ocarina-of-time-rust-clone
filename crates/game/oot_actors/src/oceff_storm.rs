@@ -47,7 +47,7 @@ pub const PROFILE: ActorProfile = ActorProfile {
 pub const TYPE: Field = Field::whole("params", Kind::Named(&[(0, "the storm"), (1, "only the screen of rain (never ends)")]), "the storm, or only its screen of rain (1)");
 
 /// Oceff_Storm's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE], flags: &[], todo: false, objects: &[], texts: &[] };
 
 /// `ACTOR_EN_OKARINA_EFFECT` (`actor_table.h`: 0x0170).
 const ACTOR_EN_OKARINA_EFFECT: i16 = 0x0170;

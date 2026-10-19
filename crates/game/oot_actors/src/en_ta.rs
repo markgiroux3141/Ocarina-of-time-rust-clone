@@ -45,9 +45,9 @@
 //! bottle, `GI_MILK`, else 0x208A); a loss 0x2085 (again for 5 rupees?).
 //!
 //! **Ported:** the whole overlay. Kakariko's Talon is killed for a child, so his talk
-//! (`EXCH_ITEM_POCKET_CUCCO`) waits for the adult. `MaskReaction_GetTextId` reads Player's mask,
-//! which is always none until the masks are ported (BACKLOG #39): the mask texts (0x7178 to 0x717B)
-//! never show.
+//! (`EXCH_ITEM_POCKET_CUCCO`) waits for the adult. `MaskReaction_GetTextId` reads Player's mask
+//! (Talon's row only, BACKLOG #69): in the ranch house by day a mask's text (0x7178 to 0x717B)
+//! comes before his own.
 //!
 //! Params: `params` whole (`EnTaType`: -1 `ENTA_CHILD_ERA` the child's Talon, at Hyrule Castle or
 //! in the ranch's house by the scene, and anything else not below; 1 `ENTA_IN_KAKARIKO` the adult's
@@ -68,7 +68,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK, ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2, func_80033480};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::{event_chk_inf, event_inf, inf_table, item_get_inf};
 use oot_game::audio::bgm::seq_cmd1;
 use oot_game::audio::sfx::{NA_SE_PL_WALK_GROUND, NA_SE_SY_FOUND};
@@ -190,6 +190,35 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x702A).when("params", &[-1]).cond("asleep; or shown any item but the Cucco").note("mumbling in his sleep"),
+        TextLine::new(0x702B).when("params", &[-1]).cond("shown the Cucco").note("what in tarnation? (he wakes)"),
+        TextLine::new(0x702C).when("params", &[-1]).cond("once he's woken").note("I'm Talon; Malon must be worried (he runs home)"),
+        TextLine::new(0x204B).when("params", &[-1]).cond("only in the ranch house, at night").note("asleep"),
+        TextLine::new(0x7178).when("params", &[-1]).cond("only in the ranch house, by day: Link wearing the Keaton Mask").note("you're Kin-ton!"),
+        TextLine::new(0x7179).when("params", &[-1]).cond("only in the ranch house, by day: Link wearing the Skull or Spooky Mask").note("almost as scary as Ingo"),
+        TextLine::new(0x717A).when("params", &[-1]).cond("only in the ranch house, by day: Link wearing the Goron or Gerudo Mask").note("that reminds me of my wife"),
+        TextLine::new(0x717B).when("params", &[-1]).cond("only in the ranch house, by day: Link wearing the Bunny Hood, Zora Mask or Mask of Truth").note("show it to me later"),
+        TextLine::new(0x207E).when("params", &[-1]).cond("only in the ranch house, by day, the first time").note("the forest kid; the Super Cucco game for 10 rupees?"),
+        TextLine::new(0x207F).when("params", &[-1]).cond("only in the ranch house, by day, once he's been talked to").note("got some free time? the Super Cucco game"),
+        TextLine::new(0x208B).when("params", &[-1]).cond("only in the ranch house, by day, after his bottle of milk").note("buy milk, play the game, or not"),
+        TextLine::new(0x0085).when("params", &[-1]).cond("short of rupees for the milk or the game").note("not enough rupees"),
+        TextLine::new(0x208A).when("params", &[-1]).cond("buying milk, or the game won again, without an empty bottle").note("you don't have an empty bottle"),
+        TextLine::new(0x2080).when("params", &[-1]).cond("answered to play").note("30 seconds; here go the Super Cuccos"),
+        TextLine::new(0x2082).when("params", &[-1]).cond("the first super cucco found").note("two more to find"),
+        TextLine::new(0x2083).when("params", &[-1]).cond("the second found").note("one more to find"),
+        TextLine::new(0x2084).when("params", &[-1]).cond("the third found").note("you've found them all"),
+        TextLine::new(0x2081).when("params", &[-1]).cond("the time run out").note("time's up"),
+        TextLine::new(0x2085).when("params", &[-1]).cond("after a lost game").note("try again for 5 rupees?"),
+        TextLine::new(0x2086).when("params", &[-1]).cond("after a won game, before his bottle of milk").note("how'd you like to marry Malon?"),
+        TextLine::new(0x2087).when("params", &[-1]).cond("either answer").note("just kidding; a bottle of Lon Lon Milk"),
+        TextLine::new(0x2088).when("params", &[-1]).cond("after a won game, after his bottle of milk").note("an honest face; milk into an empty bottle"),
+        TextLine::new(0x5015).when("params", &[1]).cond("asleep; or shown any item but the Pocket Cucco").note("mumbling about Malon in his sleep"),
+        TextLine::new(0x702B).when("params", &[1]).cond("shown the Pocket Cucco").note("what in tarnation? (he wakes)"),
+        TextLine::new(0x5016).when("params", &[1]).cond("once he's woken, before Epona").note("Ingo took over the ranch"),
+        TextLine::new(0x5017).when("params", &[1]).cond("once he's woken, after Epona").note("did you save Malon? back to the ranch"),
+        TextLine::new(0x2055).when("params", &[2]).note("I'll work real hard from now on"),
+    ],
 };
 
 /// `EXCH_ITEM_CHICKEN`, `EXCH_ITEM_POCKET_CUCCO` (`item.h`: 0x03, 0x06).
@@ -378,8 +407,7 @@ fn message_close_textbox(play: &mut PlayState) {
 
 // shared: MaskReaction_GetTextId
 /// `MaskReaction_GetTextId` (`z_face_reaction.c`): `sMaskReactionSetTextIds[set][Player_GetMask]`,
-/// here only Talon's row (`MASK_REACTION_SET_TALON`). Player wears no mask until the masks are
-/// ported (BACKLOG #39): 0.
+/// here only Talon's row (`MASK_REACTION_SET_TALON`); 0 without a mask.
 fn mask_reaction_get_text_id(play: &PlayState, set: usize) -> u16 {
     let mask = play.player.and_then(|h| play.actors.get(h)).and_then(|p| p.as_player()).map_or(0, |p| p.current_mask()) as usize;
     match set {
@@ -1353,7 +1381,7 @@ impl EnTa {
         }
     }
 
-    /// `EnTa_ContinueTalkInLonLonHouse`: another text's event (a mask's: never here), then 0x208B or
+    /// `EnTa_ContinueTalkInLonLonHouse`: another text's event (none reaches it), then 0x208B or
     /// 0x207F.
     fn continue_talk_in_lon_lon_house(&mut self, play: &mut PlayState) {
         if play.message_state() == TEXT_STATE_EVENT && play.message_should_advance() {

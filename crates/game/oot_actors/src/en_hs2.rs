@@ -25,7 +25,7 @@ use eng_math::smooth_step_to_s;
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Kind, TextLine};
 use oot_game::collision_check::*;
 use oot_game::npc::{actor_track_player, offer_talk, process_talk_request, textbox_is_closing};
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
@@ -44,7 +44,13 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_HS2, name: "En_Hs2
 pub const PARAMS: Field = Field::whole("params", Kind::Unused, "placed as 0xFFFF; read by nothing");
 
 /// En_Hs2's configuration (docs/adr/0066-the-actor-schema.md).
-pub const SCHEMA: ActorSchema = ActorSchema { fields: &[PARAMS], flags: &[], todo: false, objects: &[] };
+pub const SCHEMA: ActorSchema = ActorSchema {
+    fields: &[PARAMS],
+    flags: &[],
+    todo: false,
+    objects: &[],
+    texts: &[TextLine::new(0x5069).note("people are disgusting, you too")],
+};
 
 /// `ENHS2_TRACKING_PLAYER`.
 pub const ENHS2_TRACKING_PLAYER: u16 = 1 << 0;

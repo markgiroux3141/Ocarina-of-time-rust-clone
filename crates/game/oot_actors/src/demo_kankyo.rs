@@ -107,6 +107,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_gi_melody").when("params", &[0x08, 0x09, 0x0A, 0x0B, 0x0C]).note("the removed types' (they draw nothing)"),
         ObjectNeed::new("object_toki_objects").when("params", &[0x0D, 0x0E]).note("the Door of Time and the light plane"),
     ],
+    texts: &[],
 };
 
 

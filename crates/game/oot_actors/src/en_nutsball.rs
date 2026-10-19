@@ -67,6 +67,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_dns").when("type", &[3]).note("object_dns's nut (no scrub fires it)"),
         ObjectNeed::new("object_dnk").when("type", &[4]).note("the Lost Woods target game scrub's (En_Dnt_Nomal)"),
     ],
+    texts: &[],
 };
 
 /// `EnNutsballType`.

@@ -72,6 +72,9 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // None of its own: the tree's talk (0x107D, 0x1015, 0x1017, 0x1018) is its cutscenes' text
+    // commands, and its `textId` 0x905 is no message (it never offers to talk).
+    texts: &[],
 };
 
 /// `DynaPolyActor_Init`'s flags: 0, no `DYNA_TRANSFORM_*` (the mouth carries nothing standing on it).
@@ -215,6 +218,7 @@ impl BgTreemouth {
             m.unk_168 = 1.0;
             m.action = Action::Open;
         }
+        // schema: no message (it never offers to talk)
         m.actor.text_id = 0x905;
         Box::new(m)
     }

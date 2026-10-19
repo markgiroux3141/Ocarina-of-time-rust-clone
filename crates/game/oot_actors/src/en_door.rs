@@ -38,7 +38,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, ACTOR_FLAG_LOCK_ON_DISABLED, Actor};
 use oot_game::actor_ctx::{ACTORCAT_DOOR, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::audio::sfx::{NA_SE_EV_CHAIN_KEY_UNLOCK, NA_SE_EV_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_CLOSE, NA_SE_EV_IRON_DOOR_OPEN, NA_SE_OC_DOOR_OPEN};
 use oot_game::pack::{BakeBody, LimbOverride, MeshBake, keys};
@@ -56,6 +56,7 @@ pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_EN_DOOR, name: "En_Do
 /// `ENDOOR_GET_LOCKED_SWITCH_FLAG`: `PARAMS_GET_U(params, 0, 6)`, a locked door's.
 pub const SWITCH_FLAG: Field = Field::params("switchFlag", 0, 6, Kind::SwitchFlag, "set: unlocked (set when a key opens it)").when("type", &[1]);
 /// `ENDOOR_GET_CHECKABLE_TEXT_ID`: `PARAMS_GET_U(params, 0, 6)`, a checkable door's text, `+ 0x0200`.
+// schema: 0x3F, the field's range
 pub const CHECKABLE_TEXT_ID: Field = Field::params("checkableTextId", 0, 6, Kind::Range(0, 0x3F), "its text, 0x0200 + this").when("type", &[5, 6]);
 /// Bits 0 to 5 of the other types: read by nothing.
 pub const NO_DATA: Field = Field::params("data", 0, 6, Kind::Unused, "0x3F in the data (ENDOOR_PARAMS_NODATA); read by nothing").when("type", &[0, 2, 3, 4, 7]);
@@ -89,6 +90,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[TextLine::field(0x0200, "checkableTextId").when("type", &[5, 6]).note("the checkable door's text (type 6: outside 18:00 to 21:00; 0x0229, Talon's house: once Talon's back)")],
 };
 
 /// `DOOR_AJAR_SLAM_RANGE`, `DOOR_AJAR_OPEN_RANGE`.
@@ -320,6 +322,7 @@ impl EnDoor {
             }
         } else if door_type == DOOR_CHECKABLE {
             self.actor.text_id = CHECKABLE_TEXT_ID.get(self.actor.params) as u16 + 0x0200;
+            // schema: 0x0229, the field's 0x29 (Talon's house)
             if self.actor.text_id == 0x0229 && !play.save.get_event_chk_inf(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE) {
                 // Talon's house door: openable at any time until Talon's woken at the castle.
                 door_type = DOOR_SCENEEXIT;

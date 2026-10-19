@@ -61,7 +61,7 @@ use eng_math::{cos_s, sin_s, smooth_step_to_f, smooth_step_to_s};
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
 use oot_game::effect::EffectInit;
@@ -112,6 +112,14 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x0029).when("params", &[0]).cond("Link holding 50 tokens or more").note("thank you for saving my kids"),
+        TextLine::new(0x0024).when("params", &[0]).cond("Link holding 10 to 49 tokens, once 0x0025's been heard").note("the curse is starting to weaken"),
+        TextLine::new(0x0025).when("params", &[0]).cond("Link holding 10 to 49 tokens, the first time").note("the spider's curse, but... (on to 0x0024)"),
+        TextLine::new(0x0027).when("params", &[0]).cond("Link holding under 10 tokens, once 0x0026's been heard").note("break the curse: we'll make you very rich"),
+        TextLine::new(0x0026).when("params", &[0]).cond("Link holding under 10 tokens, the first time").note("the spider's curse: destroy every Spider of the Curse"),
+        TextLine::new(0x0022).when("params", &[1, 2, 3, 4, 5]).note("yeaaarrgh! I'm cursed!!"),
+    ],
 };
 
 /// `ENSSH_FATHER`.

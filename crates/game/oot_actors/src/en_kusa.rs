@@ -68,6 +68,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("gameplay_field_keep").when("type", &[0]).note("the field's bush"),
         ObjectNeed::new("object_kusa").when("type", &[1, 2]).note("its own bush"),
     ],
+    texts: &[],
 };
 
 /// `OBJECT_GAMEPLAY_FIELD_KEEP`, `OBJECT_KUSA` (`object_table.h`).

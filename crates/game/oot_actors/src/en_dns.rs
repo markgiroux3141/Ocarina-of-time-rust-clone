@@ -40,7 +40,7 @@ use eng_math::smooth_step_to_s;
 use glam::Vec3;
 use oot_game::actor::*;
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile, PLAYER_STATE1_10, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::{inf_table, item_get_inf};
 use oot_game::audio::sfx::*;
 use oot_game::collision_check::*;
@@ -87,6 +87,26 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    // `sStartingTextIds` by type, each a choice; then the reply to it.
+    texts: &[
+        TextLine::new(0x10A0).when("type", &[0]).note("I surrender! Deku Nuts: buy?"),
+        TextLine::new(0x10A1).when("type", &[1]).note("you win! a Deku Stick: buy?"),
+        TextLine::new(0x10A2).when("type", &[2]).note("you win! a Piece of Heart: buy?"),
+        TextLine::new(0x10CA).when("type", &[3]).note("you win! Deku Seeds: buy?"),
+        TextLine::new(0x10CA).when("type", &[6]).cond("Link a child (he sells Deku Seeds)").note("you win! Deku Seeds: buy?"),
+        TextLine::new(0x10CB).when("type", &[4]).note("I give up! a Deku Shield: buy?"),
+        TextLine::new(0x10CC).when("type", &[5]).note("I quit! Bombs: buy?"),
+        TextLine::new(0x10CD).when("type", &[6]).cond("Link an adult").note("knock it off! Arrows: buy?"),
+        TextLine::new(0x10CE).when("type", &[7]).note("you win! a Red Potion: buy?"),
+        TextLine::new(0x10CF).when("type", &[8]).note("you win! a Green Potion: buy?"),
+        TextLine::new(0x10DC).when("type", &[9]).note("I surrender! more Deku Sticks: buy?"),
+        TextLine::new(0x10DD).when("type", &[10]).note("I surrender! more Deku Nuts: buy?"),
+        TextLine::new(0x10A5).cond("answered Yes, without the rupees").note("not enough Rupees! come back again"),
+        TextLine::new(0x10A6).cond("answered Yes, the item full or owned").note("you can't have this now!"),
+        TextLine::new(0x10DE).cond("answered Yes, the item not usable yet").note("so sorry! you can't buy that right now"),
+        TextLine::new(0x10A7).cond("answered Yes, a sale").note("thank you very much! (the item offered)"),
+        TextLine::new(0x10A4).cond("answered No").note("yikes! I'm going home then"),
+    ],
 };
 
 /// `EnDnsType`.

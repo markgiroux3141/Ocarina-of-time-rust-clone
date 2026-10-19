@@ -146,6 +146,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_gi_jewel").when("effectType", &[0x13, 0x14, 0x15, 0x16]).note("the spiritual stones (and the dust)"),
         ObjectNeed::new("object_gi_m_arrow").when("effectType", &[0x17]).note("the Light Arrow"),
     ],
+    texts: &[],
 };
 
 /// `DemoEffectType`.

@@ -21,7 +21,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::Vec3;
 use oot_game::actor::{Actor, UPDBGCHECKINFO_FLAG_2, UPDBGCHECKINFO_FLAG_3, UPDBGCHECKINFO_FLAG_4};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::collision_check::*;
 use oot_game::message::TEXT_STATE_EVENT;
@@ -56,6 +56,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_CAUGHT_BY_CASTLE_GUARDS)).sets().note("Link caught (read by nothing)")],
     todo: false,
     objects: &[],
+    texts: &[TextLine::new(0x702D).note("\"Hey you! Stop!\": Link caught, thrown out")],
 };
 /// `TRANS_TYPE_CIRCLE(TCA_STARBURST, TCC_WHITE, TCS_FAST)`.
 pub const TRANS_TYPE_CAUGHT: u8 = trans_type_circle(TCA_STARBURST, TCC_WHITE, TCS_FAST);

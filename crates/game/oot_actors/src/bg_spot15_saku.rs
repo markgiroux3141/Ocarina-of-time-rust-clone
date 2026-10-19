@@ -36,7 +36,7 @@ pub const PARAMS: Field = Field::whole("params", Kind::Unused, "0xFFFF in the da
 
 /// Bg_Spot15_Saku's configuration (docs/adr/0066-the-actor-schema.md).
 pub const SCHEMA: ActorSchema =
-    ActorSchema { fields: &[PARAMS], flags: &[FlagUse::new(inf_table!(INFTABLE_71)).reads().note("open from the start")], todo: false, objects: &[] };
+    ActorSchema { fields: &[PARAMS], flags: &[FlagUse::new(inf_table!(INFTABLE_71)).reads().note("open from the start")], todo: false, objects: &[], texts: &[] };
 /// `NA_SE_EV_METALGATE_OPEN`, `NA_SE_EV_BRIDGE_OPEN_STOP` (`environmentbank_table.h`: 0x2867,
 /// 0x280E).
 pub const NA_SE_EV_METALGATE_OPEN: u16 = 0x2867;

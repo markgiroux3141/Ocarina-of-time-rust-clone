@@ -91,7 +91,7 @@ use oot_game::actor::{
     UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2,
 };
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, actor_set_player_knockback_large_no_damage, audio_play_actor_sfx2, audio_play_actor_sfx_at};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::audio::sfx::{NA_SE_EN_DODO_M_GND, NA_SE_EV_BIGBALL_ROLL, NA_SE_PL_BODY_HIT, NA_SE_SY_CORRECT_CHIME, SFX_FLAG, SfxPos};
 use oot_game::collision_check::*;
 use oot_game::gbi::setup_dl;
@@ -227,6 +227,49 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[
+        TextLine::new(0x3013).when("GoronType", &[0x00]).cond("once he's given the bomb bag").note("his thanks: more wild rolling"),
+        TextLine::new(0x3012).when("GoronType", &[0x00]).cond("stopped at waypoint 8 to 11 with the 20 bomb bag or bigger").note("his gift for your courage (the bigger bomb bag)"),
+        TextLine::new(0x3011).when("GoronType", &[0x00]).cond("stopped anywhere else").note("why did you stop me?"),
+        TextLine::new(0x3027).when("GoronType", &[0x04]).cond("after the Goron's Ruby").note("Big Brother, destroyer of Dodongos"),
+        TextLine::new(0x300A).when("GoronType", &[0x04]).cond("before the Goron's Ruby").note("shading the Bomb Flowers: a question?"),
+        TextLine::new(0x300B).when("GoronType", &[0x04]).cond("answered the Bomb Flowers, with the Goron's Bracelet").note("about the Bomb Flowers; he moves aside"),
+        TextLine::new(0x300C).when("GoronType", &[0x04]).cond("answered the Bomb Flowers, without the Goron's Bracelet").note("about the Bomb Flowers: you need the bracelet"),
+        TextLine::new(0x300D).when("GoronType", &[0x04]).cond("answered Dodongo's Cavern").note("about Dodongo's Cavern"),
+        TextLine::new(0x3027).when("GoronType", &[0x05]).cond("after the Goron's Ruby").note("Big Brother, destroyer of Dodongos"),
+        TextLine::new(0x3026).when("GoronType", &[0x05]).cond("once the cavern's boulder is blown up").note("we should have thrown the bomb from the cliff"),
+        TextLine::new(0x3009).when("GoronType", &[0x05]).cond("before the boulder is blown up").note("rolling down with a Bomb Flower"),
+        TextLine::new(0x3043).when("GoronType", &[0x06]).cond("Link an adult with the Fire Medallion").note("thank you"),
+        TextLine::new(0x3027).when("GoronType", &[0x06]).cond("after the Goron's Ruby").note("Big Brother, destroyer of Dodongos"),
+        TextLine::new(0x3021).when("GoronType", &[0x06]).cond("once the cavern's boulder is blown up").note("now we can enter the cavern"),
+        TextLine::new(0x302A).when("GoronType", &[0x06]).cond("once he's been talked to").note("head up to Goron City"),
+        TextLine::new(0x3008).when("GoronType", &[0x06]).cond("the first time").note("the Gorons and the blocked cavern"),
+        TextLine::new(0x3043).when("GoronType", &[0x07]).cond("Link an adult with the Fire Medallion").note("thank you"),
+        TextLine::new(0x3027).when("GoronType", &[0x07]).cond("after the Goron's Ruby").note("Big Brother, destroyer of Dodongos"),
+        TextLine::new(0x3015).when("GoronType", &[0x07]).cond("once he's been talked to").note("he wants the cavern's rocks"),
+        TextLine::new(0x3014).when("GoronType", &[0x07]).cond("the first time").note("so hungry: the food shortage"),
+        TextLine::new(0x3043).when("GoronType", &[0x08]).cond("Link an adult with the Fire Medallion").note("thank you"),
+        TextLine::new(0x3067).when("GoronType", &[0x08]).cond("after the Goron's Ruby").note("one little lick of the red stone?"),
+        TextLine::new(0x3017).when("GoronType", &[0x08]).cond("once he's been talked to").note("Big Brother shut in his room"),
+        TextLine::new(0x3016).when("GoronType", &[0x08]).cond("the first time").note("dangerous for a little kid"),
+        TextLine::new(0x3043).when("GoronType", &[0x09]).cond("Link an adult with the Fire Medallion").note("thank you"),
+        TextLine::new(0x3027).when("GoronType", &[0x09]).cond("after the Goron's Ruby").note("Big Brother, destroyer of Dodongos"),
+        TextLine::new(0x302C).when("GoronType", &[0x09]).cond("with the Goron's Bracelet").note("the floor's torches lit"),
+        TextLine::new(0x3017).when("GoronType", &[0x09]).cond("while Darunia's door is shut").note("Big Brother shut in his room"),
+        TextLine::new(0x3019).when("GoronType", &[0x09]).cond("Darunia's door open, once he's been talked to").note("Big Brother's music"),
+        TextLine::new(0x3018).when("GoronType", &[0x09]).cond("Darunia's door open, the first time").note("so hungry: ask Big Brother"),
+        TextLine::new(0x3022).when("GoronType", &[0x0A]).cond("Link a child, once he's been talked to").note("a trick to conserve sticks"),
+        TextLine::new(0x300E).when("GoronType", &[0x0A]).cond("Link a child, the first time").note("a visitor from the forest?"),
+        TextLine::new(0x3043).when("GoronType", &[0x0A]).cond("Link an adult").note("thank you"),
+        TextLine::new(0x302F).when("GoronType", &[0x0B]).cond("Link a child, once the Lost Woods' shortcut is open").note("how was Big Brother?"),
+        TextLine::new(0x3025).when("GoronType", &[0x0B]).cond("Link a child, once he's been talked to").note("bring fire from Big Brother's room"),
+        TextLine::new(0x3024).when("GoronType", &[0x0B]).cond("Link a child, the first time").note("so hungry: the Spiritual Stone?"),
+        TextLine::new(0x3043).when("GoronType", &[0x0B]).cond("Link an adult").note("thank you"),
+        TextLine::new(0x3065).when("GoronType", &[0x0C]).cond("Link a child, after the Goron's Ruby").note("a fairy on the summit: the way up"),
+        TextLine::new(0x3064).when("GoronType", &[0x0C]).cond("Link a child, before the Goron's Ruby").note("a beautiful fairy on the summit"),
+        TextLine::new(0x3043).when("GoronType", &[0x0C]).cond("Link an adult").note("thank you"),
+        TextLine::new(0x7122).when("GoronType", &[0x0D]).note("selling bombs"),
+    ],
 };
 
 /// `QUEST_MEDALLION_FIRE` (`item.h`: 0x01).
@@ -686,6 +729,7 @@ fn get_text_id(play: &PlayState, ctx: &TalkCtx) -> u16 {
                 0x3027
             } else if s.cur_upg_value(UPG_STRENGTH) != 0 {
                 0x302C
+            // schema: 0x1B is a switch flag (Darunia's door open), not a text.
             } else if !play.flags.get_switch(0x1B) {
                 0x3017
             } else if s.get_inf_table(INFTABLE_F8) {
@@ -705,6 +749,7 @@ fn get_text_id(play: &PlayState, ctx: &TalkCtx) -> u16 {
         // EnGo2_GetTextIdGoronCityLostWoods.
         GORON_CITY_LOST_WOODS => {
             if !s.adult {
+                // schema: 0x1C is a switch flag (the Lost Woods' shortcut open), not a text.
                 if play.flags.get_switch(0x1C) {
                     0x302F
                 } else if s.get_inf_table(INFTABLE_E6) {

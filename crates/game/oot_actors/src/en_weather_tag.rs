@@ -83,6 +83,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `EnWeatherTagType` (`z_en_weather_tag.h`).

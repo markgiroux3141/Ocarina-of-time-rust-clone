@@ -59,6 +59,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     ],
     todo: false,
     objects: &[],
+    texts: &[],
 };
 
 /// `BlockConfig`: the block's three places, what each does (`unk_24`: bit 0 the chime when the

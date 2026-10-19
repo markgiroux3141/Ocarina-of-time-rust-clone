@@ -51,7 +51,7 @@ use eng_math::{binang_to_rad, cos_s, sin_s, smooth_step_to_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, ObjectNeed, TextLine};
 use oot_game::{event_chk_inf, event_inf, inf_table};
 use oot_game::collision_check::*;
 use oot_game::get_item::{actor_has_parent, offer_get_item_range};
@@ -165,7 +165,7 @@ const INFTABLE_162: u16 = 0x162;
 const INFTABLE_163: u16 = 0x163;
 const INFTABLE_164: u16 = 0x164;
 const INFTABLE_191: u16 = 0x191;
-/// The dog lady's dog is out in the market (`EVENTINF_30`).
+/// The dog lady's dog near her on his path in the market (`EVENTINF_30`, set by `En_Dog`).
 pub const EVENTINF_30: u16 = 0x30;
 /// `QUEST_MEDALLION_SHADOW` (`item.h`).
 const QUEST_MEDALLION_SHADOW: u32 = 0x04;
@@ -211,8 +211,8 @@ pub const BITS_11_15: Field = Field::params("params bits 11 to 15", 11, 5, Kind:
 pub const SCHEMA: ActorSchema = ActorSchema {
     fields: &[TYPE, PATH_INDEX, BITS_11_15],
     flags: &[
-        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME)).reads().note("the young woman's (8) text"),
-        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("the young woman's (8) text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME)).reads().note("the bearded man's (2) text"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_CASTLE)).reads().note("the bearded man's (2) text"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_MASTER_SWORD)).reads().note("the back alley's bearded man (14): gone by day between Zelda's escape and the Master Sword"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_TALON_RETURNED_FROM_KAKARIKO))
             .reads()
@@ -241,7 +241,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(inf_table!(INFTABLE_163)).reads().sets().note("text 0x505D heard"),
         FlagUse::new(inf_table!(INFTABLE_164)).reads().sets().note("text 0x5060 heard"),
         FlagUse::new(inf_table!(INFTABLE_191)).reads().sets().note("the dog lady's reward: a piece of heart, then a blue rupee"),
-        FlagUse::new(event_inf!(EVENTINF_30)).reads().note("the dog lady (0): Richard is out in the market"),
+        FlagUse::new(event_inf!(EVENTINF_30)).reads().note("the dog lady (0): Richard near her on his path in the market"),
         FlagUse::new(Flag::Other("gSaveContext.dogIsLost")).reads().clears().note("the dog lady (0): a dog following Link; cleared as she takes Richard"),
         FlagUse::new(Flag::Other("gSaveContext.dogParams")).reads().clears().note("the dog lady (0): which dog follows Link; cleared as she takes one"),
     ],
@@ -258,6 +258,87 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_cne").when("type", &[8, 11]).note("the young woman's head and body"),
         ObjectNeed::new("object_bob").when("type", &[18]).note("woman 2's head and body"),
         ObjectNeed::new("object_os_anime").note("the townspeople's animations"),
+    ],
+    // `EnHy_GetTextId` by type, then the beggar's `EnHy_OfferBuyBottledItem`.
+    texts: &[
+        TextLine::new(0x508B).when("type", &[0]).cond("only in Kakariko's guest house, Talon not back at the ranch, the first time").note("the man with the beard was fired from the ranch"),
+        TextLine::new(0x508C).when("type", &[0]).cond("only in Kakariko's guest house, Talon not back at the ranch, once she's said so").note("he's always lazing around"),
+        TextLine::new(0x508D).when("type", &[0]).cond("only in Kakariko's guest house, Talon back at the ranch").note("he reminded me of my little Richard"),
+        TextLine::new(0x709B).when("type", &[0]).cond("only in the market by day, Richard near her").note("his fur coat is special"),
+        TextLine::new(0x709C).when("type", &[0]).cond("only in the market by day, Richard away down his path").note("he runs faster than other mutts"),
+        TextLine::new(0x709F).when("type", &[0]).cond("Richard lost and following Link").note("Richard! A reward for you"),
+        TextLine::new(0x709E).when("type", &[0]).cond("Richard lost, another dog following Link").note("that is not my dog"),
+        TextLine::new(0x709D).when("type", &[0]).cond("Richard lost, no dog following Link").note("look for my puppy"),
+        TextLine::new(0x70A0).when("type", &[0]).cond("Richard brought back (until the next day)").note("worried about the wild dogs at night"),
+        TextLine::new(0x7016).when("type", &[1]).cond("before Zelda fled the castle, the first time").note("have you been to Lon Lon Ranch"),
+        TextLine::new(0x7017).when("type", &[1]).cond("once she's told of the ranch, or of Zelda on the white horse").note("the way to Lon Lon Ranch"),
+        TextLine::new(0x7045).when("type", &[1]).cond("after Zelda fled the castle, the first time").note("wasn't that Princess Zelda on the white horse"),
+        TextLine::new(0x5086).when("type", &[2]).cond("only in Kakariko's guest house").note("the lady here is generous"),
+        TextLine::new(0x5085).when("type", &[2]).cond("only in Kakariko").note("the windmill and the dried-up well"),
+        TextLine::new(0x7047).when("type", &[2]).cond("after Zelda fled the castle, the first time").note("that was Ganondorf on the black horse"),
+        TextLine::new(0x701A).when("type", &[2]).cond("after Zelda fled the castle once he's said so; before, Talon back at the ranch or Malon not met at the castle").note("this beard is my pride and joy"),
+        TextLine::new(0x701B).when("type", &[2]).cond("before Zelda fled the castle, Malon met at the castle, Talon not back at the ranch").note("his beard, and the shabby-looking beard at the castle"),
+        TextLine::new(0x701C).when("type", &[2]).cond("before Zelda fled the castle, once he's told of his beard, Malon not met").note("a guy with a shabby beard delivering boxes to the castle"),
+        TextLine::new(0x7001).when("type", &[3]).cond("before Zelda fled the castle; after, once he's been scared").note("I'm late for a very important date"),
+        TextLine::new(0x70EB).when("type", &[3]).cond("after Zelda fled the castle, the first time").note("oh so scary"),
+        TextLine::new(0x7023).when("type", &[4]).cond("before Zelda fled the castle, the first time").note("forest boy, this is the city of Hyrule"),
+        TextLine::new(0x7024).when("type", &[4]).cond("before Zelda fled the castle, once he's welcomed Link").note("the castle to the right, the back alley to the left"),
+        TextLine::new(0x704B).when("type", &[4]).cond("after Zelda fled the castle").note("something happened in the castle"),
+        TextLine::new(0x700C).when("type", &[5]).cond("Link with Blue Fire, a fish or a bug in a bottle, showing none of them, wearing no mask").note("sell me the contents of a bottle"),
+        TextLine::new(0x70ED).when("type", &[5]).cond("Link with no Blue Fire, fish or bug in a bottle, wearing no mask").note("sell me something"),
+        TextLine::new(0x70EF).when("type", &[5]).cond("Link with no Blue Fire, fish or bug, showing a Poe, a Big Poe or Ruto's Letter").note("that's not what I want to buy"),
+        TextLine::new(0x70F0).when("type", &[5]).cond("Link showing Blue Fire").note("I'll buy it for 150 Rupees"),
+        TextLine::new(0x70F1).when("type", &[5]).cond("Link showing a fish").note("I'll buy it for 100 Rupees"),
+        TextLine::new(0x70F2).when("type", &[5]).cond("Link showing a bug").note("I'll buy it for 50 Rupees"),
+        TextLine::new(0x7021).when("type", &[6]).cond("before Zelda fled the castle, the first time").note("I made a lot of money"),
+        TextLine::new(0x7022).when("type", &[6]).cond("before Zelda fled the castle, once she's said so").note("things float down to Lake Hylia"),
+        TextLine::new(0x704A).when("type", &[6]).cond("after Zelda fled the castle").note("something terrible is going to happen"),
+        TextLine::new(0x5088).when("type", &[7]).cond("only in Kakariko's guest house").note("the fabulously rich family"),
+        TextLine::new(0x5087).when("type", &[7]).cond("only in Kakariko").note("the man with the eye that could see the truth"),
+        TextLine::new(0x7027).when("type", &[7]).cond("before Zelda fled the castle, the first time").note("the legend of the Shadow Folk"),
+        TextLine::new(0x7028).when("type", &[7]).cond("before Zelda fled the castle, once he's told the legend").note("a Sheikah woman lives in the castle"),
+        TextLine::new(0x704D).when("type", &[7]).cond("after Zelda fled the castle").note("wasn't that a legendary Sheikah on the white horse"),
+        TextLine::new(0x701D).when("type", &[8]).cond("before Zelda fled the castle, the first time").note("the Temple of Time in the northeast of town"),
+        TextLine::new(0x701E).when("type", &[8]).cond("once she's told of the temple, or once she's asked what happened").note("the Temple of Time is the entrance to the Sacred Realm"),
+        TextLine::new(0x7048).when("type", &[8]).cond("after Zelda fled the castle, the first time").note("what happened"),
+        TextLine::new(0x5081).when("type", &[9]).cond("only in Kakariko's guest house, before Kakariko's fire").note("funny-looking clothes"),
+        TextLine::new(0x5082).when("type", &[9]).cond("only in Kakariko's guest house, after Kakariko's fire").note("laughter is the best medicine"),
+        TextLine::new(0x507F).when("type", &[9]).cond("only in Kakariko, before the Shadow Medallion").note("he's become even more timid"),
+        TextLine::new(0x5080).when("type", &[9]).cond("only in Kakariko, with the Shadow Medallion").note("he must have been seeing things"),
+        TextLine::new(0x701F).when("type", &[9]).cond("before Zelda fled the castle, the first time").note("what a crazy guy, sneaking into the castle"),
+        TextLine::new(0x7020).when("type", &[9]).cond("before Zelda fled the castle, once he's laughed at him").note("they've tightened security at the castle"),
+        TextLine::new(0x7049).when("type", &[9]).cond("after Zelda fled the castle").note("look at that guy, so scared"),
+        TextLine::new(0x507D).when("type", &[10]).cond("only in Impa's house, before Kakariko's fire").note("nobody believes me"),
+        TextLine::new(0x507E).when("type", &[10]).cond("only in Impa's house, after Kakariko's fire").note("we put out the fire together"),
+        TextLine::new(0x507B).when("type", &[10]).cond("only in Kakariko, before the Shadow Medallion").note("I saw Dampé's ghost sink into his grave"),
+        TextLine::new(0x507C).when("type", &[10]).cond("only in Kakariko, with the Shadow Medallion").note("he dropped from the sky in a blue light"),
+        TextLine::new(0x7018).when("type", &[10]).cond("before Zelda fled the castle, the first time").note("I wanted to see Princess Zelda"),
+        TextLine::new(0x7019).when("type", &[10]).cond("before Zelda fled the castle, once he's told his tale").note("I got stuck in a small drain hole"),
+        TextLine::new(0x7046).when("type", &[10]).cond("after Zelda fled the castle").note("I almost got kicked by that black horse"),
+        TextLine::new(0x70A4).when("type", &[11]).cond("once Malon has come to the castle, the first time").note("I might have seen a cute little girl"),
+        TextLine::new(0x7014).when("type", &[11]).cond("before Malon has come to the castle, or once she's said so").note("I'm not dancing, my back itches"),
+        TextLine::new(0x5083).when("type", &[12]).cond("only in Kakariko, by day").note("I'm on top of the world"),
+        TextLine::new(0x5084).when("type", &[12]).cond("only in Kakariko, at night").note("if I fall asleep up here"),
+        TextLine::new(0x7015).when("type", &[12]).cond("before Zelda fled the castle").note("Hylians' big ears"),
+        TextLine::new(0x7044).when("type", &[12]).cond("after Zelda fled the castle").note("we don't see a lot of Gerudos"),
+        TextLine::new(0x7055).when("type", &[13]).note("what's wrong with loitering"),
+        TextLine::new(0x7089).when("type", &[14]).note("packs of dogs roam the streets at night"),
+        TextLine::new(0x708A).when("type", &[15]).note("a mysterious fountain near the castle"),
+        TextLine::new(0x700E).when("type", &[16]).note("taking forever for dawn"),
+        TextLine::new(0x5057).when("type", &[17]).cond("Link a child, by day, the first time").note("do you always enter other people's houses"),
+        TextLine::new(0x5058).when("type", &[17]).cond("Link a child, by day, once he's scolded him; or Link an adult at night").note("listen to the lady about chickens"),
+        TextLine::new(0x5059).when("type", &[17]).cond("Link a child, at night, the first time").note("visiting houses at this late hour"),
+        TextLine::new(0x505A).when("type", &[17]).cond("Link a child, at night, once he's scolded him").note("the lady is allergic to chickens"),
+        TextLine::new(0x505B).when("type", &[17]).cond("Link an adult, by day, the first time").note("a grown boy entering a house without permission"),
+        TextLine::new(0x505C).when("type", &[17]).cond("Link an adult, by day, once he's scolded him").note("the gravekeeper's ghost"),
+        TextLine::new(0x505D).when("type", &[18]).cond("Link a child, before Zelda fled the castle, the first time").note("Impa opened this village"),
+        TextLine::new(0x505E).when("type", &[18]).cond("Link a child, before Zelda fled the castle, once she's welcomed him").note("make yourself at home"),
+        TextLine::new(0x505F).when("type", &[18]).cond("Link a child, after Zelda fled the castle").note("the great Impa is not here"),
+        TextLine::new(0x5060).when("type", &[18]).cond("Link an adult, Talon not back at the ranch, the first time").note("all people have hardships"),
+        TextLine::new(0x5061).when("type", &[18]).cond("Link an adult, Talon not back at the ranch, once she's said so").note("the bearded man sleeping over there"),
+        TextLine::new(0x5062).when("type", &[18]).cond("Link an adult, Talon back at the ranch").note("the bearded guy went back to the ranch"),
+        TextLine::new(0x7120).when("type", &[19]).note("a Potion Shop that makes the ultimate medicine"),
+        TextLine::new(0x7121).when("type", &[20]).note("a monster that eats Hylian Shields"),
     ],
 };
 
@@ -1295,6 +1376,7 @@ fn en_hy_update_talk_state(play: &mut PlayState, actor: &mut Actor, played_sfx: 
                         *played_sfx = true;
                     }
                 }
+                // schema: 0x70F3 (the fairy's sale) is never offered: `beggarItems`' fairy is unused
                 0x70F0..=0x70F3 => {
                     if !anim_is_33b4 {
                         *anim = Some(ENHY_ANIM_23);
@@ -1306,6 +1388,7 @@ fn en_hy_update_talk_state(play: &mut PlayState, actor: &mut Actor, played_sfx: 
             NPC_TALK_STATE_TALKING
         }
         TEXT_STATE_CLOSING => {
+            // schema: 0x70F3 (the fairy's sale) is never offered: `beggarItems`' fairy is unused
             if (0x70F0..=0x70F3).contains(&actor.text_id) {
                 rupees_change_by(&mut play.save, BEGGAR_REWARDS[(actor.text_id - 0x70F0) as usize]);
                 *anim = Some(ENHY_ANIM_17);
@@ -1314,6 +1397,7 @@ fn en_hy_update_talk_state(play: &mut PlayState, actor: &mut Actor, played_sfx: 
             }
             let s = &mut play.save;
             match actor.text_id {
+                // schema: 0x70F3 (the fairy's sale) is never offered: `beggarItems`' fairy is unused
                 0x70F0..=0x70F3 => {}
                 0x7016 => s.set_inf_table(INFTABLE_C0),
                 0x7045 => s.set_inf_table(INFTABLE_C1),

@@ -40,7 +40,7 @@ use eng_gfx::{DrawCmd, DrawImage, DrawParams, MeshKey, SourceImage};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_TALK, ACTOR_FLAG_TALK_WITH_C_UP, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, FlagUse};
+use oot_game::actor_schema::{ActorSchema, FlagUse, TextLine};
 use oot_game::event_chk_inf;
 use oot_game::camera::{CAM_SET_CS_0, CAM_SET_FREE0, CAM_SET_NORMAL0};
 use oot_game::collision_check::*;
@@ -73,6 +73,47 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(event_chk_inf!(EVENTCHKINF_OBTAINED_ZELDAS_LETTER)).reads().sets().note("the letter given: she only talks")],
     todo: false,
     objects: &[],
+    // `EnZl4_GetTextId` (after the letter), then the meeting's own cutscene in its order
+    // (`EnZl4_CsMeetPlayer` .. `EnZl4_CsMakePlan`). The mask reactions aren't ported.
+    texts: &[
+        TextLine::new(0x703D).cond("after Zelda's Letter, with two Spiritual Stones or more").note("you finally found the Spiritual Stone"),
+        TextLine::new(0x703C).cond("after Zelda's Letter, with fewer").note("my attendant will guide you out"),
+        TextLine::new(0x702E).cond("before Zelda's Letter").note("Who?!"),
+        TextLine::new(0x702F).cond("before Zelda's Letter").note("who are you? how did you get past the guards?"),
+        TextLine::new(0x70F9).cond("before Zelda's Letter").note("oh? what's that? is that..."),
+        TextLine::new(0x70FA).cond("before Zelda's Letter").note("a fairy?! are you from the forest?"),
+        TextLine::new(0x70FB).cond("before Zelda's Letter").note("the Spiritual Stone of the Forest?"),
+        TextLine::new(0x7030).cond("before Zelda's Letter").note("do you have it?"),
+        TextLine::new(0x7032).cond("answered Yes").note("just as I thought!"),
+        TextLine::new(0x7031).cond("answered No (then the question again)").note("that's odd..."),
+        TextLine::new(0x70FC).cond("before Zelda's Letter").note("my dream: storm clouds and a ray of light"),
+        TextLine::new(0x70FD).cond("before Zelda's Letter").note("the prophecy: someone from the forest"),
+        TextLine::new(0x70FE).cond("before Zelda's Letter").note("I didn't introduce myself!"),
+        TextLine::new(0x70FF).cond("before Zelda's Letter").note("I am Zelda, Princess of Hyrule"),
+        TextLine::new(0x2073).cond("before Zelda's Letter").note("what is your name?"),
+        TextLine::new(0x2074).cond("before Zelda's Letter").note("Link... strange, it sounds familiar"),
+        TextLine::new(0x2075).cond("before Zelda's Letter").note("the secret of the Sacred Realm"),
+        TextLine::new(0x7033).cond("before Zelda's Letter").note("please keep this a secret"),
+        TextLine::new(0x7034).cond("answered No (then the question again)").note("don't be a blabber-mouth!"),
+        TextLine::new(0x7035).cond("answered OK").note("the legend goes like this... (then the legend's map)"),
+        TextLine::new(0x7037).cond("back from the legend").note("the Temple of Time, the Sacred Realm's entrance (also answered No)"),
+        TextLine::new(0x2076).cond("back from the legend").note("the Ocarina of Time! (also answered No)"),
+        TextLine::new(0x2077).cond("back from the legend").note("did you understand the story? (also answered No)"),
+        TextLine::new(0x7005).cond("answered Yes").note("that's great! I forgot to tell you..."),
+        TextLine::new(0x7038).cond("answered No (then the story again)").note("I'm not very good at storytelling"),
+        TextLine::new(0x2078).cond("back from the legend").note("spying through this window: look?"),
+        TextLine::new(0x700B).cond("answered No").note("if you don't hurry, he'll be gone!"),
+        TextLine::new(0x7039).cond("back from the legend").note("what happened? did he see you?"),
+        TextLine::new(0x2079).cond("back from the legend").note("I told my father about my dream"),
+        TextLine::new(0x207A).cond("back from the legend").note("Ganondorf is after the Triforce"),
+        TextLine::new(0x207B).cond("back from the legend").note("we're the only ones who can protect Hyrule"),
+        TextLine::new(0x703A).cond("back from the legend").note("please! (also answered I don't believe you)"),
+        TextLine::new(0x703B).cond("answered OK").note("thank you!"),
+        TextLine::new(0x7073).cond("answered I don't believe you (then the question again)").note("my prophecies have never been wrong"),
+        TextLine::new(0x7123).cond("back from the legend").note("I am afraid: that man will destroy Hyrule"),
+        TextLine::new(0x207C).cond("back from the legend").note("I will protect the Ocarina of Time"),
+        TextLine::new(0x207D).cond("back from the legend").note("take this letter"),
+    ],
 };
 /// `ENTR_CUTSCENE_MAP_0` (0x0A0), `ENTR_CASTLE_COURTYARD_ZELDA_1` (0x5F0) (`entrance_table.h`).
 const ENTR_CUTSCENE_MAP_0: u16 = 0x0A0;

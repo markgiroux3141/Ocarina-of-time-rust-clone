@@ -19,7 +19,7 @@ use eng_gfx::{DrawCmd, MeshKey};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_IGNORE_POINT_LIGHTS, Actor};
 use oot_game::actor_ctx::{ACTORCAT_BG, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, Source, TextLine};
 use oot_game::pack::keys;
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 use oot_game::sys_matrix::binang_to_rad;
@@ -51,6 +51,7 @@ pub const SCHEMA: ActorSchema = ActorSchema {
     flags: &[FlagUse::new(Flag::Switch("switchFlag")).reads().sets().note("set as a bean is planted")],
     todo: false,
     objects: &[],
+    texts: &[TextLine::new(0x002F).cond("no bean planted yet").note("the soft soil")],
 };
 
 /// `BEAN_STATE_*`.

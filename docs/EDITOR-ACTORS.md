@@ -161,6 +161,13 @@ faces or lights). Below, "Built (2026-10-19)".
   sharing. It needs a text encoder beside the game's decoder (control codes for colours, pauses,
   choices, icons, the player's name), with a round-trip test over the whole message table.
 
+**Built 2026-10-19** (ADR 0079), with three changes to this plan after the survey: no schema had a
+`TextId` field (the params-held texts were ranges whose meaning named a base), so a line can be
+`TextLine::field(0x300, "params")`, the base the field goes into; the readable form is the brace tags
+our `msgdis.py` port already prints, with the decomp's charmap, not the decomp's C macros; and the text
+box is drawn by running the game's own `MessageContext` headless and drawing its sprites with the
+game's renderer. Below, "Built (2026-10-19): the texts".
+
 ### Recommendations (not asked for, worth keeping in view)
 
 - **Warn about scene-bound actors.** Actors whose code branches on the scene (46 now) behave in a
@@ -244,12 +251,44 @@ Tests: `eng_gfx` `flatten::tests` (posed and baked, textures shared and replaced
 `captures::tests::the_nearest_captured_configuration_stands_in`, `hulls_keep_the_outside_points`,
 `actors::tests::invisible_actors_areas_come_from_their_settings`.
 
+## Built (2026-10-19): the texts
+
+- **The lines** (`oot_game::actor_schema::TextLine`, `ActorSchema::texts` and `lines`): each line's id
+  (or a base and the params field or-ed into it), `when`, its condition in words and a note, in the
+  order the code uses them, the ids as a custom level plays them. Filled for every ported actor by six
+  helpers by group, each id checked against the decomp's C: **54 actors, 701 lines**. Every text-id
+  literal the modules use is tied to a line or carries a `// schema:` note (a flag number that looks
+  like an id, an id only compared, a part not ported).
+- **The readable form** (`oot_game::message_text`): `decode` and `encode` (the decomp's charmap and
+  the brace tags), the measure (`measure`, `layout_warnings`: four lines a box, a line to the box's right
+  edge), `next_text_id`, `MessageTable::layered` (a level's texts over the game's), `preview` (the game's
+  `MessageContext` typing a line out box by box), `SceneTexts`, `FIRST_NEW_TEXT_ID` (0x8000).
+- **The level's texts**: `overworld::doc::Doc::texts` (`Text`: id, box type and position, the readable
+  text; `text`, `set_text`), the export's `texts` in `level.json`, `oot_import::level::LevelText` and
+  `scene_texts` into the record `texts/<scene file>` (`keys::scene_texts`), and
+  `GameAssets::messages_for`, which `Play_Init` plays a scene with: the level's texts in its own scene,
+  the game's everywhere else.
+- **The editor**: `text_box.rs` (the preview's sprites drawn by `eng_render` from the pack's bakes,
+  cropped to the box, a few a frame, kept), `app/dialogue_ui.rs` (the Dialogue section, between Flags and
+  Appears: the lines with their conditions, each drawn as the game's box, the texts it goes on to, and
+  per text the box type and position, the text unwrapped, why it won't encode, too long, back to the
+  game's). Screenshots: `out/editor/screens/7-dialogue-an-edited-line.png`, `8-...too-long...`,
+  `9-...back-to-the-games.png`.
+
+Tests: `oot_game` `message_text::tests` (codes and characters, the layout warnings, a layered table,
+the preview's boxes and icons, `the_games_own_messages_fit_their_boxes`, `every_message_round_trips`:
+2115 of 2115); `oot_actors` (schemas) `text_ids_are_the_schemas_lines`; `oot` (level)
+`a_levels_texts_are_what_its_scene_shows_and_the_real_scenes_keep_theirs`; `overworld` (export)
+`texts_are_exported_by_id_and_kept_in_order`.
+
+Left (BACKLOG #94 to #97): the mask reactions and Navi's enemy texts the port doesn't give, parts of
+actors not ported, the preview's fixed box position and name, the characters that only talk in their
+own scene.
+
 ## Next
 
-1. The hand test's feedback on the models, and the tuning pass with the user (BACKLOG #90 to
-   #92): what each uncaptured actor needs set before its spawn, the frame, the wrong ones.
-2. **Texts** (above): the schemas' `texts`, the Dialogue section, the level's text overrides, the
-   encoder. Handoff: docs/handoffs/editor-actors-texts.md.
+1. The hand test's feedback on the models and the texts, and the tuning pass with the user (BACKLOG
+   #90 to #92, #97): what each uncaptured actor needs set before its spawn, the frame, the wrong ones.
 4. **Paths** for the actors that follow one (the scene's paths: E6), drawn and picked.
 5. **Several selected**: move, copy and delete actors together; copy settings from one to others.
 6. **The flags board**: the level's switch, chest and collectible flags in one window, who sets

@@ -41,7 +41,7 @@ use eng_math::{binang_to_rad, cos_s, sin_s};
 use glam::{Mat4, Vec3};
 use oot_game::actor::{ACTOR_FLAG_ATTENTION_ENABLED, ACTOR_FLAG_FRIENDLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, UPDBGCHECKINFO_FLAG_2};
 use oot_game::actor_ctx::{ACTORCAT_NPC, ActorImpl, ActorProfile};
-use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, Source};
+use oot_game::actor_schema::{ActorSchema, Field, FlagUse, Kind, ObjectNeed, Source, TextLine};
 use oot_game::{event_chk_inf, inf_table, item_get_inf};
 use oot_game::collision_check::*;
 use oot_game::npc::{NpcTrack, track_point, actor_update_fidget_tables};
@@ -124,6 +124,82 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_km1").when("ENKO_TYPE", &[0, 2, 3, 4, 7, 8, 11]).note("a boy's skeleton and head"),
         ObjectNeed::new("object_kw1").when("ENKO_TYPE", &[1, 5, 6, 9, 10, 12]).note("a girl's skeleton (and head, but Fado's)"),
         ObjectNeed::new("object_fa").when("ENKO_TYPE", &[12]).note("Fado's head"),
+    ],
+    // `EnKo_GetTextIdChild`, then `EnKo_GetTextIdAdult`, by type; the questions' answers
+    // (`EnKo_UpdateTalkState`) after them. The mask reactions and Fado's trade aren't ported.
+    texts: &[
+        TextLine::new(0x10DA).when("ENKO_TYPE", &[12]).cond("Link a child, after Zelda's Letter").note("equip the right gear for the Lost Woods"),
+        TextLine::new(0x10D9).when("ENKO_TYPE", &[12]).cond("Link a child, with the Kokiri Emerald").note("what did you do to the Deku Tree?"),
+        TextLine::new(0x10D8).when("ENKO_TYPE", &[12]).cond("Link a child, once she's been talked to").note("look around with C-Up"),
+        TextLine::new(0x10D7).when("ENKO_TYPE", &[12]).cond("Link a child, the first time").note("you came all the way up here"),
+        TextLine::new(0x1025).when("ENKO_TYPE", &[0]).cond("Link a child, after Zelda's Letter").note("aiming the Slingshot"),
+        TextLine::new(0x1042).when("ENKO_TYPE", &[0]).cond("Link a child, with the Kokiri Emerald").note("Mido is very upset"),
+        TextLine::new(0x1004).when("ENKO_TYPE", &[0]).cond("Link a child").note("pick up the stones with A"),
+        TextLine::new(0x1023).when("ENKO_TYPE", &[1]).cond("Link a child, after Zelda's Letter").note("Saria waits at the usual spot"),
+        TextLine::new(0x1043).when("ENKO_TYPE", &[1]).cond("Link a child, with the Kokiri Emerald").note("where are you going?"),
+        TextLine::new(0x1006).when("ENKO_TYPE", &[1]).cond("Link a child, once she's been talked to").note("the Deku Tree gave life to the forest"),
+        TextLine::new(0x1005).when("ENKO_TYPE", &[1]).cond("Link a child, the first time").note("you have a fairy now"),
+        TextLine::new(0x1022).when("ENKO_TYPE", &[2]).cond("Link a child, after Zelda's Letter").note("rolling as you land"),
+        TextLine::new(0x1007).when("ENKO_TYPE", &[2]).cond("Link a child").note("jumping sideways and backflips"),
+        TextLine::new(0x1021).when("ENKO_TYPE", &[3]).cond("Link a child, after Zelda's Letter").note("you didn't leave the forest?"),
+        TextLine::new(0x1044).when("ENKO_TYPE", &[3]).cond("Link a child, with the Kokiri Emerald").note("Kokiri die if they leave the forest"),
+        TextLine::new(0x1009).when("ENKO_TYPE", &[3]).cond("Link a child, once he's been talked to").note("a Kokiri who leaves the woods dies"),
+        TextLine::new(0x1008).when("ENKO_TYPE", &[3]).cond("Link a child, the first time").note("you're not allowed to leave"),
+        TextLine::new(0x1097).when("ENKO_TYPE", &[4]).cond("Link a child, after Zelda's Letter").note("can you do a backflip?"),
+        TextLine::new(0x1042).when("ENKO_TYPE", &[4]).cond("Link a child, with the Kokiri Emerald").note("Mido is very upset"),
+        TextLine::new(0x100B).when("ENKO_TYPE", &[4]).cond("Link a child, once he's been talked to").note("help me cut the grass"),
+        TextLine::new(0x100A).when("ENKO_TYPE", &[4]).cond("Link a child, the first time").note("Mido made me cut Saria's grass"),
+        TextLine::new(0x10B0).when("ENKO_TYPE", &[5]).cond("Link a child, after Zelda's Letter").note("Mido might know where Saria is"),
+        TextLine::new(0x1043).when("ENKO_TYPE", &[5]).cond("Link a child, with the Kokiri Emerald").note("where are you going?"),
+        TextLine::new(0x100D).when("ENKO_TYPE", &[5]).cond("Link a child, once she's been talked to").note("looking and Z Targeting"),
+        TextLine::new(0x100C).when("ENKO_TYPE", &[5]).cond("Link a child, the first time").note("that's how you use a fairy"),
+        TextLine::new(0x10B5).when("ENKO_TYPE", &[6]).cond("Link a child, after Zelda's Letter").note("did Saria find you?"),
+        TextLine::new(0x1043).when("ENKO_TYPE", &[6]).cond("Link a child, with the Kokiri Emerald").note("where are you going?"),
+        TextLine::new(0x1019).when("ENKO_TYPE", &[6]).cond("Link a child, once she's been talked to").note("the Forest Training Center"),
+        TextLine::new(0x100E).when("ENKO_TYPE", &[6]).cond("Link a child, the first time").note("a fairy finally came to you"),
+        TextLine::new(0x1035).when("ENKO_TYPE", &[7]).cond("Link a child").note("the icons: yellow or blue?"),
+        TextLine::new(0x1036).when("ENKO_TYPE", &[7]).cond("answered the yellow icons").note("the C icons"),
+        TextLine::new(0x1037).when("ENKO_TYPE", &[7]).cond("answered the blue icon").note("the Action Icon"),
+        TextLine::new(0x1038).when("ENKO_TYPE", &[8]).cond("Link a child").note("the map, items, or don't ask?"),
+        TextLine::new(0x1039).when("ENKO_TYPE", &[8]).cond("answered the map").note("the map"),
+        TextLine::new(0x103A).when("ENKO_TYPE", &[8]).cond("answered items").note("the three kinds of items"),
+        TextLine::new(0x103B).when("ENKO_TYPE", &[8]).cond("answered don't ask").note("how to save"),
+        TextLine::new(0x104B).when("ENKO_TYPE", &[9]).cond("Link a child, with the Kokiri Emerald").note("are you going away?"),
+        TextLine::new(0x103C).when("ENKO_TYPE", &[9]).cond("Link a child").note("my sister went shopping"),
+        TextLine::new(0x104C).when("ENKO_TYPE", &[10]).cond("Link a child, with the Kokiri Emerald").note("will you come back?"),
+        TextLine::new(0x103D).when("ENKO_TYPE", &[10]).cond("Link a child").note("this shop sells what's free in the forest"),
+        TextLine::new(0x103E).when("ENKO_TYPE", &[11]).cond("Link a child").note("how to use C-Up?"),
+        TextLine::new(0x103F).when("ENKO_TYPE", &[11]).cond("answered Yes").note("C-Up changes the view"),
+        TextLine::new(0x1040).when("ENKO_TYPE", &[11]).cond("answered No").note("you'll figure it out"),
+        TextLine::new(0x10B9).when("ENKO_TYPE", &[12]).cond("Link an adult").note("are you going to be... too?"),
+        TextLine::new(0x1072).when("ENKO_TYPE", &[0]).cond("Link an adult, with the Forest Medallion").note("teach me some fancy fencing"),
+        TextLine::new(0x1056).when("ENKO_TYPE", &[0]).cond("Link an adult, once he's been talked to").note("bored to death in here"),
+        TextLine::new(0x1055).when("ENKO_TYPE", &[0]).cond("Link an adult, the first time").note("did the meanies bother you?"),
+        TextLine::new(0x1073).when("ENKO_TYPE", &[1]).cond("Link an adult, with the Forest Medallion").note("you look like somebody I've seen"),
+        TextLine::new(0x105A).when("ENKO_TYPE", &[1]).cond("Link an adult").note("haven't I seen you before?"),
+        TextLine::new(0x1074).when("ENKO_TYPE", &[2]).cond("Link an adult, with the Forest Medallion").note("I want to be like you"),
+        TextLine::new(0x105E).when("ENKO_TYPE", &[2]).cond("Link an adult, once he's been talked to").note("we Kokiri won't get bigger"),
+        TextLine::new(0x105D).when("ENKO_TYPE", &[2]).cond("Link an adult, the first time").note("it would be awesome to be big"),
+        TextLine::new(0x1075).when("ENKO_TYPE", &[3]).cond("Link an adult, with the Forest Medallion").note("will he come back?"),
+        TextLine::new(0x105B).when("ENKO_TYPE", &[3]).cond("Link an adult").note("do you know a boy named Link?"),
+        TextLine::new(0x1076).when("ENKO_TYPE", &[4]).cond("Link an adult, with the Forest Medallion").note("I feel I've known you a long time"),
+        TextLine::new(0x105F).when("ENKO_TYPE", &[4]).cond("Link an adult").note("why is that fairy following you?"),
+        TextLine::new(0x1057).when("ENKO_TYPE", &[5]).cond("Link an adult").note("arrows only with a bow"),
+        TextLine::new(0x1077).when("ENKO_TYPE", &[6]).cond("Link an adult, with the Forest Medallion").note("the Deku Tree's sprout is growing"),
+        TextLine::new(0x1059).when("ENKO_TYPE", &[6]).cond("Link an adult, once she's been talked to").note("maybe we misunderstood"),
+        TextLine::new(0x1058).when("ENKO_TYPE", &[6]).cond("Link an adult, the first time").note("have you met a boy named Link?"),
+        TextLine::new(0x1079).when("ENKO_TYPE", &[7]).cond("Link an adult, with the Forest Medallion").note("a fair wind has begun to blow"),
+        TextLine::new(0x104E).when("ENKO_TYPE", &[7]).cond("Link an adult").note("more meanies since the Deku Tree withered"),
+        TextLine::new(0x107A).when("ENKO_TYPE", &[8]).cond("Link an adult, with the Forest Medallion").note("Link will come back"),
+        TextLine::new(0x1050).when("ENKO_TYPE", &[8]).cond("Link an adult, once he's been talked to").note("where the Forest Temple is"),
+        TextLine::new(0x104F).when("ENKO_TYPE", &[8]).cond("Link an adult, the first time").note("an evil wind from the Forest Temple"),
+        TextLine::new(0x107B).when("ENKO_TYPE", &[9]).cond("Link an adult, with the Forest Medallion").note("will Saria come back?"),
+        TextLine::new(0x1051).when("ENKO_TYPE", &[9]).cond("Link an adult").note("Saria hasn't come back"),
+        TextLine::new(0x107C).when("ENKO_TYPE", &[10]).cond("Link an adult, with the Forest Medallion").note("Link will return someday"),
+        TextLine::new(0x1052).when("ENKO_TYPE", &[10]).cond("Link an adult").note("you can't use a Deku Shield"),
+        TextLine::new(0x107C).when("ENKO_TYPE", &[11]).cond("Link an adult, with the Forest Medallion").note("Link will return someday"),
+        TextLine::new(0x1054).when("ENKO_TYPE", &[11]).cond("Link an adult, once he's been talked to").note("where has Mido gone?"),
+        TextLine::new(0x1053).when("ENKO_TYPE", &[11]).cond("Link an adult, the first time").note("do you know Saria?"),
     ],
 };
 
@@ -1101,17 +1177,18 @@ fn update_talk_state(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16)
         TEXT_STATE_CLOSING => {
             // INFTABLE_* (save.h) are the bit numbers.
             let flag = match actor.text_id {
-                0x1005 => 0x1E,
-                0x1008 => 0x22,
-                0x100A => 0x24,
-                0x100C => 0x26,
-                0x100E => 0x28,
-                0x104F => 0x59,
-                0x1053 => 0x61,
-                0x1055 => 0x41,
-                0x1058 => 0x51,
-                0x105D => 0x47,
-                0x10D7 => 0xB7,
+                0x1005 => 0x1E, // schema: INFTABLE_1E
+                0x1008 => 0x22, // schema: INFTABLE_22
+                0x100A => 0x24, // schema: INFTABLE_24
+                0x100C => 0x26, // schema: INFTABLE_26
+                0x100E => 0x28, // schema: INFTABLE_28
+                0x104F => 0x59, // schema: INFTABLE_59
+                0x1053 => 0x61, // schema: INFTABLE_61
+                0x1055 => 0x41, // schema: INFTABLE_41
+                0x1058 => 0x51, // schema: INFTABLE_51
+                0x105D => 0x47, // schema: INFTABLE_47
+                0x10D7 => 0xB7, // schema: INFTABLE_B7
+                // schema: not ported (Fado's saw trade's text)
                 0x10BA => return 1,
                 _ => return 0,
             };
@@ -1120,6 +1197,7 @@ fn update_talk_state(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16)
             0
         }
         TEXT_STATE_DONE_FADING => {
+            // schema: not ported (Fado's saw trade's texts)
             if matches!(actor.text_id, 0x10B7 | 0x10B8) && *unk_210 == 0 {
                 play.audio.play_sfx_centered(oot_game::audio::sfx::NA_SE_SY_TRE_BOX_APPEAR);
                 *unk_210 = 1;
@@ -1133,11 +1211,14 @@ fn update_talk_state(play: &mut PlayState, actor: &mut Actor, unk_210: &mut i16)
                     0x1035 => Some(if ci == 0 { 0x1036 } else { 0x1037 }),
                     0x1038 => Some(if ci != 0 { if ci == 1 { 0x103A } else { 0x103B } } else { 0x1039 }),
                     0x103E => Some(if ci == 0 { 0x103F } else { 0x1040 }),
+                    // schema: not ported (Fado's saw trade's texts)
                     0x10B7 | 0x10B8 => {
+                        // schema: not ported (Fado's saw trade's texts)
                         if actor.text_id == 0x10B7 {
                             // schema: INFTABLE_BC
                             play.save.set_inf_table(0xBC);
                         }
+                        // schema: not ported (Fado's saw trade's texts)
                         actor.text_id = if ci == 0 { 0x10BA } else { 0x10B9 };
                         return if ci == 0 { 2 } else { 1 };
                     }
