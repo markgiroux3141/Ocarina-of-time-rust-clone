@@ -13,6 +13,7 @@
 //! world units; Link's model is drawn at actor scale 0.01.
 
 pub mod actor;
+pub mod actor_capture;
 pub mod actor_ctx;
 pub mod actor_schema;
 pub mod actor_table;

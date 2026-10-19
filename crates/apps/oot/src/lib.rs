@@ -12,6 +12,7 @@
 //! Nothing here reads the ROM or the decomp: `open_pack` builds the pack with `oot_import` if
 //! there's none (or it's stale), then everything comes from it.
 
+pub mod capture;
 pub mod gfx;
 pub mod rooms;
 

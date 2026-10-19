@@ -11,6 +11,9 @@ overworld.workspace = true
 # game's scenes place them (a tool may link the content crates, ADR 0002).
 oot_game.workspace = true
 oot_actors.workspace = true
+# The actors' captures drawn as the game draws them (docs/EDITOR-ACTORS.md, ADR 0078).
+eng_gfx.workspace = true
+eng_render.workspace = true
 eframe.workspace = true
 image.workspace = true
 glam.workspace = true

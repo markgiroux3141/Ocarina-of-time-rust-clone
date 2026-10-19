@@ -226,6 +226,12 @@ pub struct App {
     actor_query: String,
     actor_group: Option<Group>,
     actor_spawned: bool,
+    /// The actors as the game draws them (`captures`), and each placed actor's this frame (its own
+    /// configuration's capture, the nearest one, or its area), by index.
+    captures: crate::captures::Captures,
+    actor_found: Vec<Option<(crate::captures::Found, Arc<Vec<[f32; 2]>>)>>,
+    /// The level's configurations last asked of the capture.
+    actor_wanted: Vec<oot_game::actor_capture::CaptureKey>,
 }
 
 /// How ▶ Play starts the game (the menu beside it): Link's age, the time of day (`--time`), and a
@@ -507,6 +513,14 @@ impl App {
             actor_query: String::new(),
             actor_group: None,
             actor_spawned: false,
+            captures: {
+                let mut c = crate::captures::Captures::new(Path::new(ROOT));
+                let ctx = cc.egui_ctx.clone();
+                c.run(Path::new(ROOT), move || ctx.request_repaint());
+                c
+            },
+            actor_found: vec![],
+            actor_wanted: vec![],
         }
     }
 
@@ -1962,8 +1976,10 @@ impl App {
             }
         });
 
+        let draws = self.actor_draws();
         let v3 = self.v3.as_mut().unwrap();
         v3.cam = cam;
+        v3.set_actors(self.captures.generation, &draws);
         let ppp = ctx.pixels_per_point();
         let id = v3.render((rect.width() * ppp) as u32, (rect.height() * ppp) as u32);
         painter.image(id, rect, egui::Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
@@ -2764,6 +2780,7 @@ impl eframe::App for App {
         }
         self.keys(&ctx);
         self.refresh_shapes();
+        self.refresh_captures(&ctx);
 
         egui::Panel::top("top").frame(chrome::panel_frame(style::PANEL, egui::Margin::symmetric(10, 6))).show(ui, |ui| self.top_bar(ui));
         egui::Panel::bottom("status").frame(chrome::panel_frame(style::BG, egui::Margin::symmetric(12, 4))).show(ui, |ui| self.status_bar(ui));

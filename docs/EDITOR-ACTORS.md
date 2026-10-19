@@ -139,6 +139,14 @@ for each configuration, and every actor ported later gets its model for nothing.
   setting); actors that need Link nearby to show (put Link near); effects and particles (left
   out at first); animated actors caught mid-motion (pick the frame).
 
+**Built 2026-10-19** (ADR 0078), with three changes to this plan after the survey: the capture is
+the game binary's (`oot capture-actors`: a tool may not link the `oot` client, and the client
+already resolves meshes as it plays), run by the editor in the background as Play runs the game;
+the editor draws the captures with the game's own renderer (`eng_render`, the colour combiner) in
+the same pass as the level, not with its texture-times-colour shader; and the thumbnails are drawn
+the same way on the GPU, not by `overworld::thumb` (which can't combine env and prim colours,
+faces or lights). Below, "Built (2026-10-19)".
+
 ### Texts: what an actor says
 
 - **The lines**: each schema lists the text ids its code can show (a `texts` list, as `objects`:
@@ -163,6 +171,13 @@ for each configuration, and every actor ported later gets its model for nothing.
   actually appears in (its code's own age and day checks), not only the layers it's placed in.
 - **Captures are derived data**: rebuild them when the pack or an actor's module changes (a
   stamp per capture), never commit them (they come from the ROM, like the glb export).
+- **Any actor anywhere, later** (the user's question, 2026-10-19). Many actors decide in their
+  init whether they exist at all: Dampé (`En_Tk`) kills himself unless it's the graveyard, Link a
+  child and 18:00 to 21:00, so in a custom level (a scene of its own) he never appears; 46 check the
+  scene, others story flags or a cutscene. In the refactor pass (Decisions, 2) these checks become
+  an "appears when" setting per actor, the game's rule its default (so the real graveyard plays as
+  before) and a level free to change it. Actors with a job tied to their place (Dampé's path and
+  dig spots, Anju's pen) need that job made settings too. Not now: noted so it isn't lost.
 - **Text ids for new lines**: when custom actors come, they'll need text ids of their own; keep
   the level's override table able to hold new ids (above the game's last), not only replacements.
 
@@ -186,13 +201,55 @@ Tests: `oot_import` `room_actors_take_their_ids_and_objects`; `overworld` (expor
 `overworld_editor` `actors::tests` (names for every ported actor, labels, setting rotations, the
 game's placements read).
 
+## Built (2026-10-19): the actors as the game draws them
+
+- **The capture** (`crates/apps/oot/src/capture.rs`, `oot capture-actors [--all] [--only ...]
+  [--pngs]`): every placeable actor in params 0 and in the most placed 24 of the configurations the
+  game's scenes place it with, and the configurations a level asks for (`extra.json`); each in a
+  fresh play state in a flat level entered by `Play_Init`, its objects loaded (the actor table's by
+  its row, its schema's `ObjectNeed`s), Link 260 in front facing it, run to frame 10 (or the first
+  it draws, up to 40); its draw and its children's called once more, resolved by the game's
+  `Meshes` and flattened (`eng_gfx::flatten`). Drawing nothing as first placed, it's tried as if in
+  that scene (`sceneId`), the other age, the other time. 1314 configurations in about 4 s.
+- **The files** (`oot_game::actor_capture`): `out\editor\actors\<overlay>.bin` (an
+  `ActorCaptures`: one flattened `DrawList` per configuration, with its bounds) and
+  `manifest.json` (each configuration: captured, nothing drawn or failed, the setting or the
+  reason, its frame, triangles and size; the capture setting's lights). Stamped with the pack's id,
+  the game binary's and the module's last change; only stale ones are made again.
+- **The editor** (`captures.rs`): runs the game's capture at the start and whenever the level has
+  a configuration not tried yet; reads the manifest and each actor's file when needed; finds an
+  actor's capture (its own, else the nearest captured configuration), its outline from above, and
+  the areas of invisible actors (`actors::area`: Navi's spots, song, talk and weather spots,
+  spawners; hand-written from their settings and code constants). `view3d.rs` draws each placed
+  actor's capture with the game's renderer in the level's pass (`eng_render::Renderer::set_view`,
+  `draw_models`), lit by the capture setting's lights, fogged as the level; picks by the capture's
+  box (models before areas); shows the selected one's box and facing. The plan shows each capture's
+  outline under its dot (and picks by it). The palette's rows, its "New ..." list, the inspector's
+  header and its "In the game" list show GPU thumbnails (`View3d::actor_thumb`). The inspector says
+  how it's drawn: its own capture and the setting, the nearest one, its area, or a marker and why.
+- **The script**: `scripts\run\editor-actors.bat` (menu 148) runs the capture with `--pngs`:
+  every capture drawn to a picture and a contact sheet of them all.
+- **Found on the way**: the game's object table has empty duplicates of `object_md` and
+  `object_ny` before the real ones; `SceneTable::object_id` and the level importer now take the
+  last of a name (a level's extra `object_md` loaded the empty one).
+
+First run: 942 of 1314 configurations captured (889 in the plain setting, 53 only as if in their
+own scene), 372 drew nothing; 139 of the 175 placeable actors have a capture. The 36 without one:
+the invisible ones (drawn as their areas), what only other actors spawn (arrows, nuts, songs'
+effects), and characters and set pieces that need a flag, an item, a path or a cutscene (BACKLOG
+#90). Wrong ones to tune: BACKLOG #91; no shadows or per-theme lights: #92.
+
+Tests: `eng_gfx` `flatten::tests` (posed and baked, textures shared and replaced); `oot` (capture)
+`actors_are_captured_as_their_own_draw_code_draws_them`; `overworld_editor`
+`captures::tests::the_nearest_captured_configuration_stands_in`, `hulls_keep_the_outside_points`,
+`actors::tests::invisible_actors_areas_come_from_their_settings`.
+
 ## Next
 
-1. The hand test's feedback.
-2. **Models in the views** by capture (above): the capture tool, the 3D view's meshes, the
-   thumbnails, the areas of invisible actors. Handoff: docs/handoffs/editor-actors-models.md.
-3. **Texts** (above): the schemas' `texts`, the Dialogue section, the level's text overrides, the
-   encoder. After the models, or beside them.
+1. The hand test's feedback on the models, and the tuning pass with the user (BACKLOG #90 to
+   #92): what each uncaptured actor needs set before its spawn, the frame, the wrong ones.
+2. **Texts** (above): the schemas' `texts`, the Dialogue section, the level's text overrides, the
+   encoder. Handoff: docs/handoffs/editor-actors-texts.md.
 4. **Paths** for the actors that follow one (the scene's paths: E6), drawn and picked.
 5. **Several selected**: move, copy and delete actors together; copy settings from one to others.
 6. **The flags board**: the level's switch, chest and collectible flags in one window, who sets

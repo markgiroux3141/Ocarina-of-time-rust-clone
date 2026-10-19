@@ -5,8 +5,10 @@
 
 pub mod combiner;
 pub mod draw;
+pub mod flatten;
 pub mod submit;
 pub mod texture;
 
 pub use draw::*;
+pub use flatten::{bounds, flatten};
 pub use submit::{DrawCmd, DrawImage, DrawLists, DrawParams, FogOverride, LinePoint, MAX_POINT_LIGHTS, MeshKey, Perspective, PointLight, SourceImage};

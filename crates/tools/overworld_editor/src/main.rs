@@ -5,6 +5,7 @@
 
 mod actors;
 mod app;
+mod captures;
 mod edit;
 mod profile;
 mod scene;

@@ -29,6 +29,14 @@ impl Camera {
         let (n, f) = self.clip_planes();
         glam::camera::rh::proj::directx::perspective(self.fov_y, aspect, n, f)
     }
+
+    /// Looking at the box `lo`..`hi` from `yaw` and `pitch` (radians; yaw 0 from +z), far enough
+    /// back that the box fits a square view (a thumbnail's).
+    pub fn framing(lo: Vec3, hi: Vec3, yaw: f32, pitch: f32, fov_y: f32) -> Camera {
+        let r = ((hi - lo).length() * 0.5).max(1.0);
+        let distance = r / (fov_y * 0.5).sin() * 1.02;
+        Camera { target: (lo + hi) * 0.5, yaw, pitch, distance, fov_y, clip: Some(((distance - r * 1.5).max(distance * 0.05), distance + r * 1.5)), up: Vec3::Y }
+    }
 }
 
 /// N64 vertex fog (F3DEX2): each vertex's fog factor is `z_ndc * fm + fo` (in 1/256ths,

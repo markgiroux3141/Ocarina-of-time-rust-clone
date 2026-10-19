@@ -122,11 +122,35 @@ enum Cmd {
         #[arg(long)]
         loose: Option<PathBuf>,
     },
+    /// Capture what each actor draws, for the game editor's views and palette (docs/EDITOR-ACTORS.md,
+    /// "Models in the views"): every placeable actor in params 0 and the configurations the game
+    /// places it with, spawned headless and drawn by its own code. Only stale captures are made
+    /// again (the pack or the actor's module changed) unless --all.
+    CaptureActors {
+        /// The captures' folder.
+        #[arg(long, default_value = "out/editor/actors")]
+        out: PathBuf,
+        /// The source tree, for the actors' modules' stamps.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Make every capture again.
+        #[arg(long)]
+        all: bool,
+        /// Only these actors (overlay names, comma-separated).
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<String>,
+        /// Also draw each capture to <out>/png (and a contact sheet of them all).
+        #[arg(long)]
+        pngs: bool,
+    },
 }
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let cli = Cli::parse();
+    if let Some(Cmd::CaptureActors { out, root, all, only, pngs }) = cli.cmd {
+        return oot::capture::capture_actors(&oot::capture::CaptureOptions { out, root, all, only, pngs });
+    }
     if let Some(Cmd::Import { rom, decomp, loose }) = cli.cmd {
         let mut config = oot_import::project::Config::find(&std::env::current_dir()?).ok();
         if let (Some(r), Some(d)) = (&rom, &decomp) {

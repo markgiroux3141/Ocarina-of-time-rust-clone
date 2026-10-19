@@ -65,6 +65,13 @@ piece. The look is in `app/style.rs`: Segoe UI and Consolas where Windows has th
   configurations to take, and its raw params and rotation. Room objects (in the palette) counts what the actors need
   against the room's 16. Run it with `scripts\run\editor.bat` so it reads the scripts' pack and plays the game built
   beside it.
+  The actors show as the game draws them (docs/EDITOR-ACTORS.md, ADR 0078): at the start, and whenever the level has an
+  actor set up a way not captured yet, the editor runs the game beside it to capture what each actor's own draw code
+  submits (`oot capture-actors`, into `out/editor/actors`; a few seconds, in the background). The 3D view draws each
+  placed actor's capture with the game's renderer (its colours, faces and lights), the plan its outline from above, the
+  palette and the inspector its thumbnail; an actor not captured in its own settings shows the nearest captured, an
+  invisible one (a Navi spot, a song spot, a weather tag) the area it watches, and one that draws nothing a marker. The
+  inspector says which, and why. Click a model in 3D to select it.
 - **Moving a whole thing:** drag a line (a rock or a hedge from anywhere inside its shape, an arch, fence or dirt path along
   it) to move it whole, in whole units; it's selected as you do. Select a region or a path first, then drag it by its body
   (not a node) to move it whole: a region takes the nodes it shares with the outline or other regions along, so it stays
@@ -252,7 +259,11 @@ loops crossing) in the plan.
   under the cursor and ray casts against the floors (3D picking).
 - `profile.rs`: a path's side profile, with the painted terrain included (node drags convert back to design heights).
 - `view3d.rs` + `view3d.wgsl`: the 3D view, using the window's wgpu device (via `eframe::egui_wgpu`) to render offscreen
-  with 4x MSAA and mipmapped textures, shown as an egui image, the way the OoT Clone's `oot_viewer` does it.
+  with 4x MSAA and mipmapped textures, shown as an egui image, the way the OoT Clone's `oot_viewer` does it. The placed
+  actors' captures are drawn in the same pass by the game's renderer (`eng_render`), and their thumbnails with it.
+- `actors.rs`: the actors' catalogue (the port's profiles, the palette's names and groups, the game's placements) and the
+  invisible actors' areas. `captures.rs`: the game's captures of the actors (running `oot capture-actors`, reading the
+  manifest and the files, the nearest captured configuration, outlines from above, areas as meshes).
 - `app.rs`: the editor's state, tools, plan and 3D input, drawing the plan, undo, files and Play; its panels in `app/`:
   `chrome.rs` (top bar, tool rail, status bar, view overlays, keys sheet, level settings), `palette.rs`,
   `inspector.rs` (with a rock's shape cards and side view), `outliner.rs`, `widgets.rs` (sections, rows, segmented choices, cards, chips, theme-default fields),

@@ -77,6 +77,17 @@ pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
     bincode::deserialize(bytes).context("deserializing record")
 }
 
+/// A record serialized and compressed as a pack stores it, for a file of its own (derived data
+/// beside a pack, such as the editor's actor captures).
+pub fn encode_compressed<T: Serialize + ?Sized>(value: &T) -> Result<Vec<u8>> {
+    zstd::encode_all(&encode(value)?[..], ZSTD_LEVEL).context("compressing record")
+}
+
+/// A record from `encode_compressed`'s bytes.
+pub fn decode_compressed<T: DeserializeOwned>(bytes: &[u8]) -> Result<T> {
+    decode(&zstd::decode_all(bytes).context("decompressing record")?)
+}
+
 // ---------------------------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------------------------

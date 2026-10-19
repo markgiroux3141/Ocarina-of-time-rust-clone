@@ -1,7 +1,9 @@
 //! The 3D view: the built level in perspective, textured with its baked lighting as the N64
 //! draws it (texture x vertex colour; cutouts alpha-tested, water blended), with an orbit
 //! camera. Rendered offscreen with the window's own wgpu device and shown as an egui image,
-//! as the OoT Clone's viewer does.
+//! as the OoT Clone's viewer does. The placed actors are their captures (`crate::captures`),
+//! drawn in the same pass by the game's own renderer (`eng_render`: the colour combiner, the
+//! game's lights and fog), as are their thumbnails for the palette.
 
 use crate::scene::Mat;
 use bytemuck::{Pod, Zeroable};
@@ -12,6 +14,34 @@ use overworld::textures::Library;
 use overworld::Level;
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
+
+/// An actor's capture by key: its overlay, params and setting rotation.
+pub type ActorKey = (String, u16, [i16; 3]);
+
+/// A placed actor's capture to draw, and where: its editor-space transform.
+pub struct ActorDraw {
+    pub found: crate::captures::Found,
+    pub transform: Mat4,
+}
+
+/// The game's axes in the editor's: x stays, the game's y (up) is the editor's z, the game's z
+/// (south) is the editor's -y.
+pub const GAME_TO_EDITOR: Mat4 = Mat4::from_cols(Vec4::X, Vec4::Z, Vec4::NEG_Y, Vec4::W);
+
+/// An actor's transform in the editor: at `pos`, turned by its y rotation (binary angle) as the
+/// game turns it.
+pub fn actor_transform(pos: Vec3, rot_y: i16) -> Mat4 {
+    Mat4::from_translation(pos) * GAME_TO_EDITOR * Mat4::from_rotation_y(rot_y as f32 * std::f32::consts::PI / 32768.0)
+}
+
+/// A thumbnail's side, in pixels (drawn at twice the size it's shown).
+pub const THUMB: u32 = 96;
+
+/// The thumbnails' background: the palette's raised colour.
+const THUMB_BG: [f64; 4] = [0x26 as f64 / 255.0, 0x2e as f64 / 255.0, 0x2b as f64 / 255.0, 1.0];
+
+/// How many thumbnails are drawn per frame at most (the rest the next frames).
+const THUMBS_PER_FRAME: usize = 12;
 
 const COLOR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -181,6 +211,20 @@ pub struct View3d {
     pub framed: bool,
     /// The last rendered view's width / height.
     pub aspect: f32,
+    /// The game's renderer for the actors in the view, and another for their thumbnails (each
+    /// writes its own frame's globals).
+    game: eng_render::Renderer,
+    thumb_game: eng_render::Renderer,
+    /// The placed actors' meshes by capture, one posed instance per use, with the transform it was
+    /// posed with; this frame's in drawing order; and the captures' generation they're from.
+    actor_models: HashMap<ActorKey, Vec<(eng_render::GpuModel, Option<Mat4>)>>,
+    actor_order: Vec<(ActorKey, usize)>,
+    actor_gen: u64,
+    /// The lights the actors were captured under, in the game's axes (`set_capture_light`).
+    capture_light: eng_render::Lighting,
+    thumbs: HashMap<ActorKey, egui::TextureId>,
+    thumb_target: Option<eng_render::Target>,
+    thumb_budget: usize,
 }
 
 impl View3d {
@@ -265,7 +309,103 @@ impl View3d {
             game_fog: true,
             framed: false,
             aspect: 1.0,
+            game: eng_render::Renderer::new(device, &rs.queue),
+            thumb_game: eng_render::Renderer::new(device, &rs.queue),
+            actor_models: HashMap::new(),
+            actor_order: vec![],
+            actor_gen: u64::MAX,
+            capture_light: eng_render::Lighting::default(),
+            thumbs: HashMap::new(),
+            thumb_target: None,
+            thumb_budget: THUMBS_PER_FRAME,
         }
+    }
+
+    /// The lights the captures were made under (the manifest's), in the game's axes.
+    pub fn set_capture_light(&mut self, l: &oot_game::actor_capture::CaptureLight) {
+        let c = |v: [u8; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32) / 255.0;
+        let d = |v: [i8; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32);
+        self.capture_light = eng_render::Lighting { dir: d(l.dirs[0]), color: c(l.colors[0]), dir2: d(l.dirs[1]), color2: c(l.colors[1]), ambient: c(l.ambient), fog: None };
+    }
+
+    /// A new frame: the thumbnails' budget again.
+    pub fn new_frame(&mut self) {
+        self.thumb_budget = THUMBS_PER_FRAME;
+    }
+
+    /// Drops what was made from another generation of the captures (read again).
+    fn check_generation(&mut self, generation: u64) {
+        if generation != self.actor_gen {
+            self.actor_models.clear();
+            let mut er = self.rs.renderer.write();
+            for (_, id) in self.thumbs.drain() {
+                er.free_texture(&id);
+            }
+            self.actor_gen = generation;
+        }
+    }
+
+    /// The actors to draw in the next render: each capture uploaded once per use, posed when its
+    /// transform changes.
+    pub fn set_actors(&mut self, generation: u64, draws: &[ActorDraw]) {
+        self.check_generation(generation);
+        self.actor_order.clear();
+        let mut uses: HashMap<ActorKey, usize> = HashMap::new();
+        for d in draws {
+            let key = d.found.key();
+            let n = uses.entry(key.clone()).or_default();
+            let list = self.actor_models.entry(key.clone()).or_default();
+            while list.len() <= *n {
+                list.push((self.game.upload(&self.rs.device, &self.rs.queue, &d.found.capture().mesh), None));
+            }
+            let (m, t) = &mut list[*n];
+            if *t != Some(d.transform) {
+                m.pose(&[], d.transform);
+                *t = Some(d.transform);
+            }
+            self.actor_order.push((key, *n));
+            *n += 1;
+        }
+    }
+
+    /// A capture's thumbnail, drawn by the game's renderer from the front and a little to the
+    /// side (as the props' are), the first time it's asked for (a few per frame: `None` until
+    /// then).
+    pub fn actor_thumb(&mut self, generation: u64, f: &crate::captures::Found) -> Option<egui::TextureId> {
+        self.check_generation(generation);
+        let key = f.key();
+        if let Some(id) = self.thumbs.get(&key) {
+            return Some(*id);
+        }
+        if self.thumb_budget == 0 {
+            return None;
+        }
+        self.thumb_budget -= 1;
+        let device = self.rs.device.clone();
+        let queue = self.rs.queue.clone();
+        let target = self.thumb_target.get_or_insert_with(|| eng_render::Target::new(&device, THUMB, THUMB));
+        let c = f.capture();
+        let mut model = self.thumb_game.upload(&device, &queue, &c.mesh);
+        model.pose(&[], Mat4::IDENTITY);
+        let cam = eng_render::Camera::framing(Vec3::from(c.lo), Vec3::from(c.hi), 0.6, 0.35, 30f32.to_radians());
+        let mut enc = device.create_command_encoder(&Default::default());
+        self.thumb_game.render(&device, &queue, &mut enc, target, &[&model], &cam, &self.capture_light, &[], &[], THUMB_BG);
+        let size = wgpu::Extent3d { width: THUMB, height: THUMB, depth_or_array_layers: 1 };
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("actor thumbnail"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: COLOR,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        enc.copy_texture_to_texture(target.resolve.as_image_copy(), tex.as_image_copy(), size);
+        queue.submit([enc.finish()]);
+        let id = self.rs.renderer.write().register_native_texture(&device, &tex.create_view(&Default::default()), wgpu::FilterMode::Linear);
+        self.thumbs.insert(key, id);
+        Some(id)
     }
 
     /// A pipeline per alpha kind, culling and decal (drawn on the surface it lies on: pulled
@@ -452,6 +592,20 @@ impl View3d {
             game,
         };
         self.rs.queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&g));
+        if !self.actor_order.is_empty() {
+            // the game's lights turned into the editor's axes; its fog as the level's (measured from
+            // the same spot in front of the orbit target)
+            let l = &self.capture_light;
+            let to = |v: Vec3| GAME_TO_EDITOR.transform_vector3(v);
+            let fog = self.fog.as_ref().filter(|_| self.game_fog).map(|f| {
+                let (m, o) = fog_factor(f.near, 1000);
+                eng_render::Fog { color: Vec3::new(f.color[0] as f32, f.color[1] as f32, f.color[2] as f32) / 255.0, multiplier: m, offset: o, near: 10.0, far: f.far as f32 }
+            });
+            let light = eng_render::Lighting { dir: to(l.dir), color: l.color, dir2: to(l.dir2), color2: l.color2, ambient: l.ambient, fog };
+            let view = glam::camera::rh::view::look_at_mat4(eye, self.cam.target, Vec3::Z);
+            let fog_view = Mat4::from_translation(Vec3::new(0.0, 0.0, game[3])) * view;
+            self.game.set_view(&self.rs.queue, self.cam.view_proj(w as f32 / h as f32), fog_view, &light);
+        }
         let (t, id) = self.target.as_ref().unwrap();
         let mut enc = device.create_command_encoder(&Default::default());
         {
@@ -481,6 +635,10 @@ impl View3d {
                 pass.set_bind_group(1, &b.bind, &[]);
                 pass.set_vertex_buffer(0, b.vbuf.slice(..));
                 pass.draw(0..b.count, 0..1);
+            }
+            let models: Vec<&eng_render::GpuModel> = self.actor_order.iter().filter_map(|(k, n)| self.actor_models.get(k).and_then(|l| l.get(*n)).map(|m| &m.0)).collect();
+            if !models.is_empty() {
+                self.game.draw_models(&self.rs.queue, &mut pass, &models);
             }
         }
         self.rs.queue.submit([enc.finish()]);

@@ -62,6 +62,46 @@ pub struct Screen<'a> {
 }
 
 impl Renderer {
+    /// For drawing into a render pass of the caller's (`draw_models`): the view, its projection,
+    /// the lights and the fog the models are drawn with. `view` is what fog and texture generation
+    /// measure from (the eye's space).
+    pub fn set_view(&mut self, queue: &wgpu::Queue, view_proj: glam::Mat4, view: glam::Mat4, light: &Lighting) {
+        let fog = light.fog.unwrap_or(Fog { color: Vec3::ZERO, multiplier: 0.0, offset: 0.0, near: 1.0, far: 2.0 });
+        let globals = Globals {
+            view_proj: view_proj.to_cols_array_2d(),
+            view: view.to_cols_array_2d(),
+            light_dir: light.dir.normalize_or_zero().extend(0.0).to_array(),
+            light_color: light.color.extend(1.0).to_array(),
+            light2_dir: light.dir2.normalize_or_zero().extend(0.0).to_array(),
+            light2_color: light.color2.extend(1.0).to_array(),
+            ambient: light.ambient.extend(1.0).to_array(),
+            fog_color: fog.color.extend(1.0).to_array(),
+            fog: [fog.multiplier, fog.offset, fog.near, fog.far],
+        };
+        queue.write_buffer(&self.globals_buf, 0, bytemuck::bytes_of(&globals));
+    }
+
+    /// Records posed `models`, in order, into a pass of the caller's whose target has the
+    /// renderer's formats (`COLOR_FORMAT`, 32-bit float depth, `SAMPLES`), with what `set_view`
+    /// wrote: meshes drawn among another renderer's (a tool's view of its own scene).
+    pub fn draw_models(&self, queue: &wgpu::Queue, pass: &mut wgpu::RenderPass<'_>, models: &[&GpuModel]) {
+        for m in models {
+            if m.dirty.replace(false) {
+                queue.write_buffer(&m.vertex_buf, 0, bytemuck::cast_slice(&m.skinned));
+            }
+        }
+        pass.set_bind_group(0, &self.globals_bg, &[]);
+        for m in models {
+            pass.set_vertex_buffer(0, m.vertex_buf.slice(..));
+            for &(start, count, mat, tbg, key) in &m.draws {
+                pass.set_pipeline(&self.pipelines[&key]);
+                pass.set_bind_group(1, &m.material_bg, &[mat * MATERIAL_STRIDE as u32]);
+                pass.set_bind_group(2, m.texture_bg(tbg), &[]);
+                pass.draw(start..start + count, 0..1);
+            }
+        }
+    }
+
     /// Records the scene: the posed models (each in submission order, like the RDP) and debug
     /// lines.
     #[allow(clippy::too_many_arguments)]

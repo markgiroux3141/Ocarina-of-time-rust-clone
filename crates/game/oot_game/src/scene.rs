@@ -171,9 +171,10 @@ impl SceneTable {
         self.scenes.iter().find(|s| s.file == file)
     }
 
-    /// The `OBJECT_*` id of an object file.
+    /// The `OBJECT_*` id of an object file: the last of that name (`object_md` and `object_ny` have
+    /// empty duplicates before them, `OBJECT_MD_UNUSED` and `OBJECT_NY_UNUSED`).
     pub fn object_id(&self, file: &str) -> Option<i16> {
-        self.objects.iter().position(|o| o == file).map(|i| i as i16)
+        self.objects.iter().rposition(|o| o == file).map(|i| i as i16)
     }
 
     /// The room skybox with this `SKYBOX_*` id.

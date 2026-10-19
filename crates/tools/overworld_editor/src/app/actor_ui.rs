@@ -3,13 +3,19 @@
 //! the game places it with, and the room's objects), and the inspector, whose settings come from
 //! the actor's schema (ADR 0066): each field as the control its kind calls for, the flags it
 //! shares with the level's other actors, the layers it's in, and its raw params and rotation.
+//! Each actor shows as the game draws it where it has a capture (`crate::captures`): in 3D, as
+//! its outline from above in the plan, and as thumbnails in the palette.
 
 use super::icons::Icon;
 use super::style::{self, ACCENT, BAD, FAINT, FIELD, LINE, MUTED, PANEL2, RAISED, TEXT, WARN};
 use super::widgets::{self, field, section};
-use super::{ActorDrag, App, Sel, Tool, PICK};
+use super::{ActorDrag, App, Sel, Tool, PICK, ROOT};
 use crate::actors::{self, Entry, Group};
-use crate::view3d::Camera;
+use crate::captures::Found;
+use crate::view3d::{actor_transform, ActorDraw, Camera};
+use glam::{Mat4, Vec3};
+use oot_game::actor_capture::{CaptureKey, Outcome};
+use std::path::Path;
 use eframe::egui::{self, Align2, Color32, FontId, Margin, Pos2, Rect, RichText, Sense, Shape, Stroke, StrokeKind, Vec2};
 use oot_game::actor_schema::{Field, Flag, Kind, Source, GI_NAMES, ITEM00_NAMES};
 use overworld::doc::Actor;
@@ -85,7 +91,126 @@ fn flag_users(app: &App) -> BTreeMap<(&'static str, i32), Vec<(usize, String)>> 
     map
 }
 
+/// Where a ray (`o` + t `d`) first meets the box `lo`..`hi`, if it does (t from 0).
+fn ray_box(o: Vec3, d: Vec3, lo: Vec3, hi: Vec3) -> Option<f32> {
+    let (mut t0, mut t1) = (0.0f32, f32::MAX);
+    for k in 0..3 {
+        if d[k].abs() < 1e-9 {
+            if o[k] < lo[k] || o[k] > hi[k] {
+                return None;
+            }
+            continue;
+        }
+        let (a, b) = ((lo[k] - o[k]) / d[k], (hi[k] - o[k]) / d[k]);
+        t0 = t0.max(a.min(b));
+        t1 = t1.min(a.max(b));
+    }
+    (t1 >= t0).then_some(t0)
+}
+
+/// A capture's box, a little bigger, so a flat one (soft soil) can still be picked.
+fn capture_box(f: &Found) -> (Vec3, Vec3) {
+    let c = f.capture();
+    (Vec3::from(c.lo) - 3.0, Vec3::from(c.hi) + 3.0)
+}
+
 impl App {
+    // ---- the captures -----------------------------------------------------------------------
+
+    /// Each frame: the capture run's progress and its lights taken in, the level's own
+    /// configurations asked for (once the mouse is up), and each placed actor's capture (its own
+    /// configuration's, the nearest one captured, or its area) with its outline from above.
+    pub(super) fn refresh_captures(&mut self, ctx: &egui::Context) {
+        let c = ctx.clone();
+        let repaint = move || c.request_repaint();
+        let busy = self.captures.busy();
+        if self.captures.poll(Path::new(ROOT), repaint.clone()) || busy {
+            self.status = self.captures.status.clone();
+        }
+        if let Some(v3) = self.v3.as_mut() {
+            v3.new_frame();
+            if let Some(m) = &self.captures.manifest {
+                v3.set_capture_light(&m.light);
+            }
+        }
+        if !ctx.input(|i| i.pointer.any_down()) {
+            let keys: Vec<CaptureKey> = self
+                .doc
+                .actors
+                .iter()
+                .filter_map(|a| self.catalogue.get(&a.actor).map(|e| CaptureKey { actor: a.actor.clone(), params: a.params, rot: e.schema.setting_rot(a.rot) }))
+                .collect();
+            if keys != self.actor_wanted {
+                self.actor_wanted = keys.clone();
+                self.captures.want(keys, Path::new(ROOT), repaint);
+            }
+        }
+        self.actor_found = (0..self.doc.actors.len())
+            .map(|i| {
+                let f = self.find_capture(i)?;
+                let h = self.captures.hull(&f);
+                Some((f, h))
+            })
+            .collect();
+    }
+
+    /// An actor's capture: its configuration's, else the nearest captured; for an invisible one,
+    /// its area.
+    fn find_capture(&mut self, i: usize) -> Option<Found> {
+        let a = &self.doc.actors[i];
+        let e = self.catalogue.get(&a.actor)?;
+        if let Some(f) = self.captures.find(&a.actor, a.params, e.schema.setting_rot(a.rot)) {
+            return Some(f);
+        }
+        let area = actors::area(&a.actor, a.params, a.rot)?;
+        let c = group_colour(e.group);
+        Some(self.captures.area(&a.actor, a.params, a.rot, area, [c.r(), c.g(), c.b()]))
+    }
+
+    /// A capture for the palette's thumbnails: the configuration's, the nearest, or the area.
+    fn thumb(&mut self, name: &str, params: u16, rot: [i16; 3]) -> Option<egui::TextureId> {
+        let e = self.catalogue.get(name)?;
+        let f = match self.captures.find(name, params, rot) {
+            Some(f) => f,
+            None => {
+                let area = actors::area(name, params, rot)?;
+                let c = group_colour(e.group);
+                self.captures.area(name, params, rot, area, [c.r(), c.g(), c.b()])
+            }
+        };
+        let g = self.captures.generation;
+        self.v3.as_mut()?.actor_thumb(g, &f)
+    }
+
+    fn found(&self, i: usize) -> Option<&Found> {
+        self.actor_found.get(i).and_then(|f| f.as_ref()).map(|f| &f.0)
+    }
+
+    /// Where an actor's capture is drawn: at its place and height, turned as the game turns it.
+    fn actor_matrix(&self, i: usize) -> Option<Mat4> {
+        let a = self.doc.actors.get(i)?;
+        let z = self.actor_z(i).unwrap_or(0.0);
+        Some(actor_transform(Vec3::new(a.at[0] as f32, a.at[1] as f32, z as f32), a.rot[1]))
+    }
+
+    /// The placed actors' captures for the 3D view.
+    pub(super) fn actor_draws(&self) -> Vec<ActorDraw> {
+        (0..self.doc.actors.len()).filter_map(|i| Some(ActorDraw { found: self.found(i)?.clone(), transform: self.actor_matrix(i)? })).collect()
+    }
+
+    /// An actor's outline from above in the plan (its capture's, turned as it's turned).
+    fn actor_outline(&self, i: usize) -> Option<Vec<P2>> {
+        let (_, hull) = self.actor_found.get(i)?.as_ref()?;
+        let a = &self.doc.actors[i];
+        let t = a.rot[1] as f64 * std::f64::consts::PI / 32768.0;
+        let (sn, cs) = t.sin_cos();
+        // the game's x and z turned by its y rotation, then the editor's x and -y
+        Some(hull.iter().map(|&[x, z]| {
+            let (x, z) = (x as f64, z as f64);
+            [a.at[0] + x * cs + z * sn, a.at[1] - (-x * sn + z * cs)]
+        }).collect())
+    }
+
     // ---- placing and moving ---------------------------------------------------------------
 
     /// Where an actor stands: its own height, else the floor under it as last built.
@@ -94,10 +219,14 @@ impl App {
         a.z.or_else(|| self.scene.as_ref().and_then(|s| s.floor_z(a.at)))
     }
 
-    /// The actor whose marker is under p in the plan, the topmost (last) first.
+    /// The actor whose marker is under p in the plan, the topmost (last) first; else the one
+    /// whose outline it's in.
     pub(super) fn actor_at(&self, p: P2) -> Option<usize> {
         let reach = (PICK + 2.0) / self.view.scale;
-        (0..self.doc.actors.len()).rev().find(|&i| dist(p, self.doc.actors[i].at) <= reach)
+        (0..self.doc.actors.len())
+            .rev()
+            .find(|&i| dist(p, self.doc.actors[i].at) <= reach)
+            .or_else(|| (0..self.doc.actors.len()).rev().find(|&i| self.actor_outline(i).is_some_and(|o| o.len() >= 3 && overworld::geom::point_in_poly(p, &o))))
     }
 
     /// The selected actor's turn handle in the plan (none for one that reads its y rotation as a
@@ -201,6 +330,13 @@ impl App {
             let col = self.actor_colour(a);
             let sel = self.sel == Sel::Actor(i);
             let r = if hovered == Some(i) { 8.0 } else { 7.0 };
+            // its outline from above, as the game draws it
+            if let Some(out) = self.actor_outline(i).filter(|o| o.len() >= 3) {
+                let pts: Vec<Pos2> = out.iter().map(|&q| v.to_screen(q)).collect();
+                let fill = col.gamma_multiply(if sel { 0.35 } else { 0.22 });
+                let line = if sel { Color32::from_rgb(255, 150, 50) } else { col.gamma_multiply(0.75) };
+                painter.add(Shape::convex_polygon(pts, fill, Stroke::new(if sel { 1.5 } else { 1.0 }, line)));
+            }
             if sel {
                 painter.circle_stroke(o, 12.0, Stroke::new(5.0, Color32::from_black_alpha(110)));
                 painter.circle_stroke(o, 12.0, Stroke::new(2.0, Color32::from_rgb(255, 150, 50)));
@@ -257,13 +393,55 @@ impl App {
         out
     }
 
-    /// The actor whose marker (its post's top) is under s in the 3D view, the nearest first.
+    /// The actor under s in the 3D view, the nearest first: by its capture's box, or by its
+    /// marker (its post's top) for one without a capture.
     pub(super) fn actor_at_3d(&self, cam: &Camera, rect: Rect, s: Pos2) -> Option<usize> {
-        self.actor_marks_3d(cam, rect)
+        let marker = self
+            .actor_marks_3d(cam, rect)
             .into_iter()
-            .filter(|m| m.2.distance(s) <= 11.0 || (m.1.distance(s) <= 8.0))
+            .filter(|m| self.found(m.0).is_none() && (m.2.distance(s) <= 11.0 || m.1.distance(s) <= 8.0))
             .min_by(|a, b| a.3.total_cmp(&b.3))
-            .map(|m| m.0)
+            .map(|m| (m.0, m.3 as f32));
+        let ndc = [(s.x - rect.left()) / rect.width() * 2.0 - 1.0, 1.0 - (s.y - rect.top()) / rect.height() * 2.0];
+        let (o, d) = cam.ray(rect.width() / rect.height(), ndc);
+        // models first; an invisible actor's area only where no model is, and not from inside it
+        let hit = |areas: bool| {
+            (0..self.doc.actors.len())
+                .filter_map(|i| {
+                    let f = self.found(i)?;
+                    if f.file.actor.starts_with("area:") != areas {
+                        return None;
+                    }
+                    let (lo, hi) = capture_box(f);
+                    let inv = self.actor_matrix(i)?.inverse();
+                    ray_box(inv.transform_point3(o), inv.transform_vector3(d), lo, hi).filter(|&t| !areas || t > 0.0).map(|t| (i, t))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+        };
+        let boxed = hit(false).or_else(|| hit(true));
+        match (marker, boxed) {
+            (Some(m), Some(b)) => Some(if m.1 < b.1 { m.0 } else { b.0 }),
+            (m, b) => m.or(b).map(|x| x.0),
+        }
+    }
+
+    /// A captured actor's box in the 3D view: its 12 edges, as screen segments.
+    fn capture_box_lines(&self, cam: &Camera, rect: Rect, i: usize) -> Vec<(Pos2, Pos2)> {
+        let (Some(f), Some(m)) = (self.found(i), self.actor_matrix(i)) else { return vec![] };
+        let (lo, hi) = capture_box(f);
+        let c = |k: usize| m.transform_point3(Vec3::new(if k & 1 == 0 { lo.x } else { hi.x }, if k & 2 == 0 { lo.y } else { hi.y }, if k & 4 == 0 { lo.z } else { hi.z }));
+        let mut out = vec![];
+        for a in 0..8usize {
+            for bit in [1usize, 2, 4] {
+                let b = a | bit;
+                if b != a {
+                    if let (Some(p), Some(q)) = (cam.project(rect, c(a)), cam.project(rect, c(b))) {
+                        out.push((p, q));
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// The actors in 3D: a post from the ground with a disc on top in the group's colour, faint
@@ -288,6 +466,29 @@ impl App {
             let sel = self.sel == Sel::Actor(i);
             let col = self.actor_colour(a);
             let col = if hidden && !sel { col.gamma_multiply(0.35) } else { col };
+            if self.found(i).is_some() {
+                // drawn as the game draws it: its box when it's selected or under the pointer
+                if sel || hovered == Some(i) {
+                    let stroke = if sel { Stroke::new(1.5, Color32::from_rgb(255, 150, 50)) } else { Stroke::new(1.0, Color32::from_white_alpha(170)) };
+                    for (p, q) in self.capture_box_lines(cam, rect, i) {
+                        painter.line_segment([p, q], stroke);
+                    }
+                    let t = self.actor_label(a);
+                    painter.text(top + Vec2::new(9.0, 1.0), Align2::LEFT_CENTER, &t, FontId::proportional(12.5), Color32::from_black_alpha(220));
+                    painter.text(top + Vec2::new(8.0, 0.0), Align2::LEFT_CENTER, &t, FontId::proportional(12.5), Color32::WHITE);
+                }
+                if sel && self.actor_handle(i).is_some() {
+                    let f = overworld::props::facing(a.yaw());
+                    let zf = z - 69.0;
+                    if let (Some(p0), Some(p1)) = (
+                        cam.project(rect, glam::Vec3::new(a.at[0] as f32, a.at[1] as f32, zf as f32)),
+                        cam.project(rect, glam::Vec3::new((a.at[0] + f[0] * 60.0) as f32, (a.at[1] + f[1] * 60.0) as f32, zf as f32)),
+                    ) {
+                        painter.arrow(p0, p1 - p0, Stroke::new(2.0, col));
+                    }
+                }
+                continue;
+            }
             let r = (900.0 / d as f32).clamp(4.0, 9.0) + if hovered == Some(i) { 1.5 } else { 0.0 };
             painter.line_segment([foot, top], Stroke::new(2.0, col));
             if sel {
@@ -316,6 +517,10 @@ impl App {
     // ---- the palette ------------------------------------------------------------------------
 
     pub(super) fn actor_palette(&mut self, ui: &mut egui::Ui) {
+        if self.captures.busy() {
+            let s = self.captures.status.clone();
+            pad(ui, |ui| widgets::hint(ui, s));
+        }
         if self.catalogue.reading() {
             pad(ui, |ui| widgets::hint(ui, "Reading how the game places its actors…"));
         } else if let Some(e) = &self.catalogue.game_error {
@@ -337,6 +542,14 @@ impl App {
         let mut rows: Vec<_> = listed.into_iter().filter(|x| self.actor_group.is_none_or(|g| g == x.2)).collect();
         rows.sort_by(|a, b| (Group::ALL.iter().position(|g| *g == a.2), &a.1).cmp(&(Group::ALL.iter().position(|g| *g == b.2), &b.1)));
         let n = rows.len();
+        // each row's thumbnail: the configuration it starts as
+        let thumbs: Vec<Option<egui::TextureId>> = rows
+            .iter()
+            .map(|r| {
+                let (params, rot) = self.catalogue.placed(r.0).and_then(|p| p.variants.first()).map_or((0, [0; 3]), |v| (v.params, v.rot));
+                self.thumb(r.0, params, rot)
+            })
+            .collect();
         let mut pick: Option<&'static str> = None;
         section(ui, "pal actors", "Actors", Some(n.to_string()), true, |ui| {
             widgets::search(ui, &mut self.actor_query, "Search: pot, keese, En_Kusa…");
@@ -359,9 +572,9 @@ impl App {
                 .on_hover_text("Arrows, songs' effects, an enemy's pieces: the game never places them in a room. Placed, they do what they do when spawned.");
             egui::ScrollArea::vertical().id_salt("actor list").max_height(340.0).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                for (name, label, group, count, door) in &rows {
+                for ((name, label, group, count, door), thumb) in rows.iter().zip(&thumbs) {
                     let on = self.actor_pick == *name;
-                    let resp = list_row(ui, label, name, group_colour(*group), *count, on, *door);
+                    let resp = list_row(ui, label, name, group_colour(*group), *count, on, *door, *thumb);
                     let resp = if *door { resp.on_hover_text("The game places it only between rooms: it comes with rooms and exits (stage E4)") } else { resp.on_hover_text(format!("{name}: placed {count} times in the game")) };
                     if resp.clicked() && !door {
                         pick = Some(name);
@@ -393,20 +606,23 @@ impl App {
             .map(|p| p.variants.iter().take(24).map(|v| (v.params, v.rot, v.count, v.first.clone(), actors::describe(e, v.params, v.rot))).collect())
             .unwrap_or_default();
         let blank = actors::describe(e, 0, [0; 3]);
+        let name = e.name;
+        let thumbs: Vec<Option<egui::TextureId>> = variants.iter().map(|v| self.thumb(name, v.0, v.1)).collect();
+        let blank_thumb = self.thumb(name, 0, [0; 3]);
         let mut choose = None;
         section(ui, "pal astart", &title, None, true, |ui| {
             widgets::hint(ui, "Starts as one of the ways the game places it (most placed first). Change any of it after, in the inspector.");
             egui::ScrollArea::vertical().id_salt("actor variants").max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 2.0;
-                for (params, rot, count, first, what) in &variants {
+                for ((params, rot, count, first, what), thumb) in variants.iter().zip(&thumbs) {
                     let on = self.actor_start == (*params, *rot);
                     let sub = format!("×{count} · {first}");
-                    if variant_row(ui, what, &sub, on).on_hover_text(format!("params {params:#06x}, rotation {rot:?}")).clicked() {
+                    if variant_row(ui, what, &sub, on, *thumb).on_hover_text(format!("params {params:#06x}, rotation {rot:?}")).clicked() {
                         choose = Some((*params, *rot));
                     }
                 }
                 let on = self.actor_start == (0, [0; 3]) && !variants.iter().any(|v| (v.0, v.1) == (0, [0; 3]));
-                if variant_row(ui, &blank, "params 0", on).clicked() {
+                if variant_row(ui, &blank, "params 0", on, blank_thumb).clicked() {
                     choose = Some((0, [0; 3]));
                 }
             });
@@ -515,7 +731,21 @@ impl App {
         let objs = self.room_objects();
         let cut = objs.iter().enumerate().any(|(k, o)| k >= ROOM_OBJECTS && o.1.contains(&i));
         let loose = actors::loose_bits(e.schema, a.params);
+        let drawn = self.drawn_note(i, &e);
+        let thumb = self.found(i).cloned().and_then(|f| {
+            let g = self.captures.generation;
+            self.v3.as_mut()?.actor_thumb(g, &f)
+        });
         pad(ui, |ui| {
+            let w = ui.available_width();
+            // its thumbnail, and how the views draw it
+            let tw = if thumb.is_some() { 72.0 } else { 0.0 };
+            let g = ui.painter().layout(drawn.0.clone(), FontId::proportional(11.5), if drawn.1 { MUTED } else { WARN }, (w - tw).max(60.0));
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(w, g.size().y.max(if thumb.is_some() { 64.0 } else { 0.0 })), Sense::hover());
+            if let Some(t) = thumb {
+                ui.painter().image(t, Rect::from_min_size(rect.min, Vec2::splat(64.0)), Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+            }
+            ui.painter().galley(rect.min + Vec2::new(tw, 0.0), g, TEXT);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(5.0, 5.0);
                 widgets::chip(ui, e.name, None, false).on_hover_text("The overlay: the game's own name for it");
@@ -557,6 +787,31 @@ impl App {
         if delete {
             self.sel = Sel::Actor(i);
             self.delete_selection();
+        }
+    }
+
+    /// How the views draw an actor, in words, and whether that's as it is set up: its own
+    /// capture (and the setting it was caught in), another configuration's, its area, or a marker
+    /// (and why).
+    fn drawn_note(&self, i: usize, e: &Entry) -> (String, bool) {
+        let a = &self.doc.actors[i];
+        let rot = e.schema.setting_rot(a.rot);
+        let tried = self.captures.outcome(e.name, a.params, rot);
+        match (self.found(i), tried) {
+            (Some(f), Some((Outcome::Captured, note))) if f.exact => (format!("Drawn as the game draws it ({note})."), true),
+            (Some(f), _) if f.file.actor.starts_with("area:") => ("Draws nothing: shown as the area it watches.".into(), true),
+            (Some(f), t) => {
+                let c = f.capture();
+                let why = match t {
+                    Some((_, note)) => format!(" This one drew nothing: {note}."),
+                    None if self.captures.busy() => " This one is being captured.".into(),
+                    None => String::new(),
+                };
+                (format!("Shown as params {:#06x}, the nearest captured.{why}", c.params), false)
+            }
+            (None, Some((_, note))) => (format!("A marker: it drew nothing ({note})."), false),
+            (None, None) if self.captures.busy() => ("A marker until its capture is made…".into(), false),
+            (None, None) => ("A marker: no capture of it yet (the game's capture-actors makes them).".into(), false),
         }
     }
 
@@ -763,6 +1018,7 @@ impl App {
         let (rooms, transitions, total) = (p.rooms, p.transitions, p.count());
         let a = &self.doc.actors[i];
         let cur = (a.params, actors::setting_rot(e.schema, a.rot));
+        let thumbs: Vec<Option<egui::TextureId>> = variants.iter().map(|v| self.thumb(e.name, v.0, v.1)).collect();
         let mut apply = None;
         section(ui, "ins agame", "In the game", Some(format!("×{total}")), false, |ui| {
             let mut parts = vec![];
@@ -774,9 +1030,9 @@ impl App {
             }
             widgets::hint(ui, format!("Placed {total} times: {}. Its ways, most placed first (click one to take its settings):", parts.join(", ")));
             ui.spacing_mut().item_spacing.y = 2.0;
-            for (params, rot, count, first, what) in &variants {
+            for ((params, rot, count, first, what), thumb) in variants.iter().zip(&thumbs) {
                 let on = cur == (*params, *rot);
-                if variant_row(ui, what, &format!("×{count} · {first}"), on).on_hover_text(format!("params {params:#06x}, rotation {rot:?}")).clicked() {
+                if variant_row(ui, what, &format!("×{count} · {first}"), on, *thumb).on_hover_text(format!("params {params:#06x}, rotation {rot:?}")).clicked() {
                     apply = Some((*params, *rot));
                 }
             }
@@ -955,10 +1211,11 @@ fn pad(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
-/// A row of the palette's actor list: its group's dot, its name and overlay, and how often the
-/// game places it. Dimmed when it can't be placed.
-fn list_row(ui: &mut egui::Ui, label: &str, name: &str, col: Color32, count: usize, on: bool, dim: bool) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+/// A row of the palette's actor list: its thumbnail (as the game draws it) with its group's dot,
+/// its name and overlay, and how often the game places it. Dimmed when it can't be placed.
+#[allow(clippy::too_many_arguments)]
+fn list_row(ui: &mut egui::Ui, label: &str, name: &str, col: Color32, count: usize, on: bool, dim: bool, thumb: Option<egui::TextureId>) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), Sense::click());
     let p = ui.painter();
     if on {
         p.rect(rect, 6.0, style::soft(ACCENT, 0.14), Stroke::new(1.0, style::soft(ACCENT, 0.5)), StrokeKind::Inside);
@@ -966,27 +1223,46 @@ fn list_row(ui: &mut egui::Ui, label: &str, name: &str, col: Color32, count: usi
         p.rect_filled(rect, 6.0, RAISED);
     }
     let a = if dim { 0.45 } else { 1.0 };
-    p.circle(Pos2::new(rect.left() + 12.0, rect.center().y), 5.0, col.gamma_multiply(a), Stroke::new(1.0, Color32::from_black_alpha(160)));
-    p.text(Pos2::new(rect.left() + 24.0, rect.top() + 10.0), Align2::LEFT_CENTER, label, FontId::proportional(12.5), if on { ACCENT } else { TEXT.gamma_multiply(a) });
-    p.text(Pos2::new(rect.left() + 24.0, rect.bottom() - 9.0), Align2::LEFT_CENTER, name, FontId::monospace(10.5), FAINT);
+    let t = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.top() + 3.0), Vec2::splat(42.0));
+    match thumb {
+        Some(id) => {
+            p.image(id, t, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE.gamma_multiply(a));
+        }
+        None => {
+            p.rect_filled(t, 5.0, RAISED);
+        }
+    }
+    p.circle(Pos2::new(t.left() + 5.0, t.bottom() - 5.0), 4.0, col.gamma_multiply(a), Stroke::new(1.0, Color32::from_black_alpha(160)));
+    p.text(Pos2::new(rect.left() + 54.0, rect.top() + 16.0), Align2::LEFT_CENTER, label, FontId::proportional(12.5), if on { ACCENT } else { TEXT.gamma_multiply(a) });
+    p.text(Pos2::new(rect.left() + 54.0, rect.bottom() - 15.0), Align2::LEFT_CENTER, name, FontId::monospace(10.5), FAINT);
     if count > 0 {
         p.text(Pos2::new(rect.right() - 8.0, rect.center().y), Align2::RIGHT_CENTER, format!("×{count}"), FontId::monospace(10.5), FAINT);
     }
     resp
 }
 
-/// A row of a list of configurations: what it is, and a line under it.
-fn variant_row(ui: &mut egui::Ui, what: &str, sub: &str, on: bool) -> egui::Response {
+/// A row of a list of configurations: its thumbnail, what it is, and a line under it.
+fn variant_row(ui: &mut egui::Ui, what: &str, sub: &str, on: bool, thumb: Option<egui::TextureId>) -> egui::Response {
     let w = ui.available_width();
-    let g = ui.painter().layout(what.to_string(), FontId::proportional(12.0), TEXT, w - 16.0);
-    let h = g.size().y + 22.0;
+    let left = 52.0;
+    let g = ui.painter().layout(what.to_string(), FontId::proportional(12.0), TEXT, w - left - 8.0);
+    let h = (g.size().y + 22.0).max(48.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
     let p = ui.painter();
     let (fill, stroke) = if on { (style::soft(ACCENT, 0.12), style::soft(ACCENT, 0.55)) } else if resp.hovered() { (RAISED, LINE) } else { (PANEL2, LINE) };
     p.rect(rect, 6.0, fill, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    let t = Rect::from_min_size(Pos2::new(rect.left() + 4.0, rect.top() + 3.0), Vec2::splat(42.0));
+    match thumb {
+        Some(id) => {
+            p.image(id, t, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        }
+        None => {
+            p.rect_filled(t, 5.0, RAISED);
+        }
+    }
     let gh = g.size().y;
-    p.galley(Pos2::new(rect.left() + 8.0, rect.top() + 5.0), g, if on { ACCENT } else { TEXT });
-    p.text(Pos2::new(rect.left() + 8.0, rect.top() + 7.0 + gh), Align2::LEFT_TOP, sub, FontId::proportional(10.5), FAINT);
+    p.galley(Pos2::new(rect.left() + left, rect.top() + 5.0), g, if on { ACCENT } else { TEXT });
+    p.text(Pos2::new(rect.left() + left, rect.top() + 7.0 + gh), Align2::LEFT_TOP, sub, FontId::proportional(10.5), FAINT);
     resp
 }
 

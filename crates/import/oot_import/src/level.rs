@@ -674,14 +674,14 @@ pub fn room_actors(
             add(init.object_id, &mut list);
         }
         for o in needs(&a.actor, a.params, a.rot) {
-            match objects.iter().position(|f| f == o) {
+            match objects.iter().rposition(|f| f == o) {
                 Some(oid) => add(oid as i16, &mut list),
                 None => notes.push(format!("actor {i} ({}): no object {o:?} in the game's table", a.actor)),
             }
         }
     }
     for o in extra {
-        match objects.iter().position(|f| f == o) {
+        match objects.iter().rposition(|f| f == o) {
             Some(id) => add(id as i16, &mut list),
             None => notes.push(format!("no object {o:?} in the game's table: left out")),
         }

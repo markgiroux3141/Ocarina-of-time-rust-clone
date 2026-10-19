@@ -276,6 +276,22 @@ impl ActorSchema {
             .map(|n| n.object)
             .collect()
     }
+
+    /// The rotation components a placement's actor reads as settings, kept from its rotation
+    /// (the rest 0): what tells two of its configurations apart, beside the params.
+    pub fn setting_rot(&self, rot: [i16; 3]) -> [i16; 3] {
+        let mut out = [0i16; 3];
+        for f in self.fields.iter().filter(|f| f.kind != Kind::Rotation) {
+            let k = match f.source {
+                Source::Params => continue,
+                Source::RotX => 0,
+                Source::RotY => 1,
+                Source::RotZ => 2,
+            };
+            out[k] = ((out[k] as u16) | (rot[k] as u16 & f.mask())) as i16;
+        }
+        out
+    }
 }
 
 /// `Flag::EventChkInf` from a constant: its name and value.

@@ -453,19 +453,51 @@ fn module_docs(root: &Path, name: &str) -> (String, String, String) {
     (about, params, flags)
 }
 
+/// The area an invisible actor watches, drawn in its place in the views (it has nothing to
+/// capture): a cylinder or a box (half its width across), up from where it stands.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Area {
+    Cylinder { r: f32, h: f32 },
+    Box { half: f32, h: f32 },
+}
+
+/// The areas of the actors that draw nothing, from their settings or their code's constants
+/// (docs/EDITOR-ACTORS.md, "Invisible actors"). `None` for the rest, and for a range that's off.
+pub fn area(name: &str, params: u16, rot: [i16; 3]) -> Option<Area> {
+    let (rx, rz) = (rot[0] as f32, rot[2] as f32);
+    let cyl = |r: f32, h: f32| Some(Area::Cylinder { r, h });
+    match name {
+        // the radius (or half width) rot.x * 4, the height rot.z * 4 (0: 40); bit 14 a cuboid
+        "Elf_Msg" => {
+            let r = if rot[0] == 0 { 40.0 } else { rx * 4.0 };
+            let h = if rot[2] == 0 { 40.0 } else { rz * 4.0 };
+            if params & 0x4000 != 0 { Some(Area::Box { half: r, h }) } else { cyl(r, h) }
+        }
+        // past each 10 the next targetMode, the rest (1 to 10) times 40; 0 and below none
+        "En_Wonder_Talk2" => (rot[2] > 0).then(|| Area::Cylinder { r: (((rot[2] - 1) % 10) + 1) as f32 * 40.0, h: 80.0 }),
+        // the spot's range, 40 a unit
+        "En_Okarina_Tag" => (rot[2] > 0).then(|| Area::Cylinder { r: rz * 40.0, h: 80.0 }),
+        // its range, 120 plus 40 a unit
+        "En_Encount1" => cyl(120.0 + 40.0 * rz, 40.0),
+        // WEATHER_TAG_RANGE100: Link's distance across the ground under it
+        "En_Weather_Tag" => {
+            let range = ((params as i16) >> 8) as f32 * 100.0;
+            (range >= 1.0).then_some(Area::Cylinder { r: range, h: 100.0 })
+        }
+        // within 50 across and 30 up (its proximity mode)
+        "En_Wonder_Item" => cyl(50.0, 30.0),
+        // sCylinderInit
+        "Shot_Sun" => cyl(30.0, 60.0),
+        // spots: a small marker of their place
+        "En_Wonder_Talk" | "Elf_Msg2" => cyl(30.0, 60.0),
+        "En_River_Sound" | "Obj_Makekinsuta" | "Obj_Makeoshihiki" => cyl(20.0, 20.0),
+        _ => None,
+    }
+}
+
 /// The rotation components an actor reads as settings, kept from a placement's (the rest 0).
 pub fn setting_rot(schema: &ActorSchema, rot: [i16; 3]) -> [i16; 3] {
-    let mut out = [0i16; 3];
-    for f in schema.fields.iter().filter(|f| f.kind != Kind::Rotation) {
-        let k = match f.source {
-            Source::Params => continue,
-            Source::RotX => 0,
-            Source::RotY => 1,
-            Source::RotZ => 2,
-        };
-        out[k] = ((out[k] as u16) | (rot[k] as u16 & f.mask())) as i16;
-    }
-    out
+    schema.setting_rot(rot)
 }
 
 /// A scene's name from its enum: "SCENE_KOKIRI_FOREST" -> "Kokiri Forest".
@@ -716,6 +748,19 @@ mod tests {
         assert_eq!(c.objects.get(1).map(String::as_str), Some("gameplay_keep"));
         let pot = c.get("Obj_Tsubo").unwrap();
         assert!(pot.about.contains("a pot") && pot.params_doc.contains("dropParams") && !pot.flags_doc.is_empty(), "{:?}", (&pot.about, &pot.params_doc, &pot.flags_doc));
+    }
+
+    /// The invisible actors' areas, from their settings: Navi's spots by their rotation (4 a unit,
+    /// 0 is 40; bit 14 a cuboid), the song and talk spots' ranges, the weather's in hundreds.
+    #[test]
+    fn invisible_actors_areas_come_from_their_settings() {
+        assert_eq!(area("Elf_Msg", 0, [0; 3]), Some(Area::Cylinder { r: 40.0, h: 40.0 }));
+        assert_eq!(area("Elf_Msg", 0x4000, [20, 0, 10]), Some(Area::Box { half: 80.0, h: 40.0 }));
+        assert_eq!(area("En_Okarina_Tag", 0, [0; 3]), None);
+        assert_eq!(area("En_Okarina_Tag", 0, [0, 0, 3]), Some(Area::Cylinder { r: 120.0, h: 80.0 }));
+        assert_eq!(area("En_Wonder_Talk2", 0, [0, 0, 13]), Some(Area::Cylinder { r: 120.0, h: 80.0 }));
+        assert_eq!(area("En_Weather_Tag", 0x0607, [0; 3]), Some(Area::Cylinder { r: 600.0, h: 100.0 }));
+        assert_eq!(area("Obj_Tsubo", 0, [0; 3]), None);
     }
 
     #[test]
