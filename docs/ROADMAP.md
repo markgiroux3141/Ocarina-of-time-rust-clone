@@ -224,8 +224,10 @@ and the Goron's Ruby, [ADR 0075](adr/0075-king-dodongo-the-room-texture-the-came
 is done: **the phase's exit is met**. Milestone 6 (the summit, the Great Fairy and magic,
 [ADR 0076](adr/0076-the-magic-meter-the-great-fairy-the-spin-attack-and-the-return-entrances.md):
 the magic meter, the Great Fairy, the spin attack, the return entrances; after the hand test the
-actors' shadows the C's way) was taken before 5 and is done; milestone 5 (the rest of the cavern) starts from its
-`fairy-magic` preset.
+actors' shadows the C's way) was taken before 5 and is done, and milestone 5 (the rest of the
+cavern, [ADR 0080](adr/0080-the-rest-of-dodongos-cavern.md): the Dodongos, the Beamos, the silver
+rupees, the falling stairs) is built: every actor Phase 10's scenes place is ported. The phase's
+exit review is next.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -727,6 +729,14 @@ recommendations taken): the split below, the critical path first and the exit at
 5. **The rest of the cavern:** `En_Dodongo`, `En_Vm`, `En_G_Switch`, `Bg_Ddan_Kd`; `D_Fire`,
    `Dead_Dd`, `Dead_Ds`; one-point 3050; rooms 2, 5, 6, 13, 14 and 15 (`En_Zf`, `En_Am`, `En_Poh`,
    `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` and `Obj_Elevator` came in milestone 3).
+   - **Built** (2026-10-19, ADR 0080), last: `Bg_Ddan_Kd` and one-point 3050, `En_G_Switch` (every
+     type; the shooting gallery's writes logged, #98), `En_Dodongo`, `En_Vm`, `Effect_Ss_D_Fire`,
+     `Dead_Dd`, `Dead_Ds`; rooms 2, 5, 6, 13, 14 and 15 whole (every placement ported: Phase 10's
+     33 of 33). Four short runs from debug starts (`Route::FallingStairs`: room 2's Bomb Flowers
+     drop the stairs; `Route::SilverRupees`: the last rupee and door 17; `Route::ShieldChest`: room
+     14's gravestone and chest; `Route::TimeBlocks`: room 15's Song of Time), the presets
+     `cavern-stairs`, `cavern-rooms` (the milestone's end) and `cavern-song-of-time`. The fights
+     are hand-tested.
 6. **The summit:** the magic meter, `Bg_Dy_Yoseizo`, `En_Dy_Extra`, `En_M_Thunder`,
    `SDC_GREAT_FAIRYS_FOUNTAIN`, the return entrances, `En_Encount2`, `En_Fire_Rock`; the owl's
    flight to Kakariko.

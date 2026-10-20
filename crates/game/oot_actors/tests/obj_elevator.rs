@@ -32,11 +32,16 @@ const SCENE_DODONGOS_CAVERN: usize = 0x01;
 /// Child Link in the cavern (`cavern-open`, the entrance wall and Navi's word about the pit done),
 /// in room `room` (loaded from the lobby), three frames on, the audio logged.
 fn cavern_room(a: &Arc<GameAssets>, room: i8, at: Vec3) -> PlayState {
+    cavern_room_with(a, room, at, 0)
+}
+
+/// `cavern_room` with these switch flags set too.
+fn cavern_room_with(a: &Arc<GameAssets>, room: i8, at: Vec3, swch: u32) -> PlayState {
     let e = a.scenes.entrance_index("ENTR_DODONGOS_CAVERN_0").expect("entrance");
     let mut save = SaveContext::new(e, false, clock_time(10, 0) as u16);
     save.apply_preset("cavern-open").unwrap();
     save.set_event_chk_inf(oot_actors::bg_dodoago::EVENTCHKINF_B0);
-    save.scene_flags[SCENE_DODONGOS_CAVERN].swch |= (1 << 7) | (1 << 0x0C);
+    save.scene_flags[SCENE_DODONGOS_CAVERN].swch |= (1 << 7) | (1 << 0x0C) | swch;
     let mut w = oot_actors::play_entrance(a.clone(), data().unwrap(), rules().unwrap(), save).expect("Play_Init");
     w.audio.log = Some(Default::default());
     idle(&mut w, 2);
@@ -157,7 +162,9 @@ fn room_1_s_0x0001_never_moves() {
 fn room_2_s_0x2200_rises_160() {
     let Some(a) = assets() else { return };
     let home = Vec3::new(-1957.0, -97.0, -1800.0);
-    let mut w = cavern_room(&a, 2, Vec3::new(-1957.0, 0.0, -1600.0));
+    // The lift is a column whose top (480) is the falling stairs' (Bg_Ddan_Kd 0x000B) before they
+    // fall: with their flag 0x0B they start 220 down, the lift's top clear.
+    let mut w = cavern_room_with(&a, 2, Vec3::new(-1957.0, 0.0, -1600.0), 1 << 0x0B);
     let h = lift_at(&w, home);
     // Size 0 (scale 0.1), speed 2 (4 a frame), rise 2 (160): 40 frames up.
     assert_eq!((lift(&w, h).actor.scale.x, lift(&w, h).unk_16c), (0.1, 4.0));

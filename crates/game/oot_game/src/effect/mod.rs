@@ -26,7 +26,10 @@
 //! `Effect_Ss_Stone1` (where one hits); for GAME-07 milestone 4's courtyard guards,
 //! `Effect_Ss_Solder_Srch_Ball` (their look); for milestone 6's royal tomb, `Effect_Ss_Bomb2`
 //! (the gravestone's explosion); for GAME-08 milestone 2's target scrub, `Effect_Ss_Extra` (a
-//! mini-game's score); for GAME-09 milestone 1's bombs, `Effect_Ss_G_Spk` (the fuse's sparks). Spawning another type logs it and does nothing, as the C
+//! mini-game's score); for GAME-09 milestone 1's bombs, `Effect_Ss_G_Spk` (the fuse's sparks);
+//! for milestone 5's Dodongo, `Effect_Ss_D_Fire` (its fire), and its Beamos, `Effect_Ss_Dead_Dd`
+//! (the eye's flash) and `Effect_Ss_Dead_Ds` (the beam's scorch). Spawning another type logs it
+//! and does nothing, as the C
 //! does for a type with no init.
 //!
 //! ## `z_effect.c`
@@ -47,7 +50,10 @@
 pub mod blast;
 pub mod blure;
 pub mod bomb2;
+pub mod d_fire;
 pub mod dead_db;
+pub mod dead_dd;
+pub mod dead_ds;
 pub mod dead_sound;
 pub mod dust;
 pub mod en_fire;
@@ -86,6 +92,7 @@ pub const EFFECT_SS_KIRAKIRA: u8 = 0x01;
 pub const EFFECT_SS_BOMB2: u8 = 0x03;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_G_SPK: u8 = 0x05;
+pub const EFFECT_SS_D_FIRE: u8 = 0x06;
 pub const EFFECT_SS_G_MAGMA: u8 = 0x0B;
 pub const EFFECT_SS_G_MAGMA2: u8 = 0x13;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
@@ -103,6 +110,8 @@ pub const EFFECT_SS_EN_FIRE: u8 = 0x1D;
 pub const EFFECT_SS_EXTRA: u8 = 0x1E;
 pub const EFFECT_SS_FCIRCLE: u8 = 0x1F;
 pub const EFFECT_SS_DEAD_DB: u8 = 0x20;
+pub const EFFECT_SS_DEAD_DD: u8 = 0x21;
+pub const EFFECT_SS_DEAD_DS: u8 = 0x22;
 pub const EFFECT_SS_DEAD_SOUND: u8 = 0x23;
 pub const EFFECT_SS_TYPE_MAX: u8 = 0x25;
 
@@ -130,6 +139,10 @@ pub enum SsUpdate {
     EnIceFlying,
     /// `EffectSsDeadDb_Update`.
     DeadDb,
+    /// `EffectSsDeadDd_Update`.
+    DeadDd,
+    /// `EffectSsDeadDs_Update`.
+    DeadDs,
     /// `func_809AABF0` (`Effect_Ss_KiraKira`'s update mode 0).
     KiraKira,
     /// `func_809AACAC` (update mode 1).
@@ -170,6 +183,8 @@ pub enum SsUpdate {
     GMagma,
     /// `EffectSsGMagma2_Update`.
     GMagma2,
+    /// `EffectSsDFire_Update`.
+    DFire,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -191,6 +206,10 @@ pub enum SsDraw {
     EnIce,
     /// `EffectSsDeadDb_Draw`.
     DeadDb,
+    /// `EffectSsDeadDd_Draw`.
+    DeadDd,
+    /// `EffectSsDeadDs_Draw`.
+    DeadDs,
     /// `EffectSsKiraKira_Draw`.
     KiraKira,
     /// `EffectSsFireTail_Draw`.
@@ -221,6 +240,8 @@ pub enum SsDraw {
     GMagma,
     /// `EffectSsGMagma2_Draw`.
     GMagma2,
+    /// `EffectSsDFire_Draw`.
+    DFire,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -298,6 +319,8 @@ pub struct SsSpawn<'a> {
     pub objects: Option<&'a ObjectContext>,
     /// `Audio_StopSfxByPos` calls an `EffectSs_Delete` of a slot being reused asked for.
     pub stops: &'a mut Vec<SfxPos>,
+    /// `play->state.frames` (`Effect_Ss_D_Fire`'s first texture).
+    pub state_frames: u32,
 }
 
 /// An effect type's init parameters (`EffectSs*InitParams`).
@@ -310,6 +333,8 @@ pub enum SsInit {
     EnFire(en_fire::EnFireInit),
     EnIce(en_ice::EnIceInit),
     DeadDb(dead_db::DeadDbInit),
+    DeadDd(dead_dd::DeadDdInit),
+    DeadDs(dead_ds::DeadDsInit),
     KiraKira(kirakira::KiraKiraInit),
     DeadSound(dead_sound::DeadSoundInit),
     FireTail(fire_tail::FireTailInit),
@@ -326,6 +351,7 @@ pub enum SsInit {
     GSpk(g_spk::GSpkInit),
     GMagma(g_magma::GMagmaInit),
     GMagma2(g_magma2::GMagma2Init),
+    DFire(d_fire::DFireInit),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -408,6 +434,8 @@ impl SsSpawn<'_> {
             SsInit::EnFire(p) => en_fire::init(self, &mut e, &p),
             SsInit::EnIce(p) => en_ice::init(self, &mut e, &p),
             SsInit::DeadDb(p) => dead_db::init(&mut e, &p),
+            SsInit::DeadDd(p) => dead_dd::init(self, &mut e, &p),
+            SsInit::DeadDs(p) => dead_ds::init(&mut e, &p),
             SsInit::KiraKira(p) => kirakira::init(&mut e, &p),
             SsInit::DeadSound(p) => dead_sound::init(&mut e, &p),
             SsInit::FireTail(p) => fire_tail::init(&mut e, &p),
@@ -424,6 +452,7 @@ impl SsSpawn<'_> {
             SsInit::GSpk(p) => g_spk::init(&mut e, &p),
             SsInit::GMagma(p) => g_magma::init(self, &mut e, &p),
             SsInit::GMagma2(p) => g_magma2::init(self, &mut e, &p),
+            SsInit::DFire(p) => d_fire::init(self, &mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -697,6 +726,73 @@ impl SsSpawn<'_> {
         self.spawn(EFFECT_SS_DEAD_DB, 120, SsInit::DeadDb(p));
     }
 
+    /// `EffectSsDeadDd_Spawn`: type 0, priority 120.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dead_dd_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16, prim: [i16; 3], alpha: i16, env: [i16; 3], alpha_step: i16, life: i32) {
+        let p = dead_dd::DeadDdInit {
+            pos,
+            velocity,
+            accel,
+            scale,
+            scale_step,
+            prim_color: [prim[0] as u8, prim[1] as u8, prim[2] as u8],
+            alpha: alpha as u8,
+            env_color: [env[0] as u8, env[1] as u8, env[2] as u8],
+            alpha_step,
+            life,
+            rand_pos_scale: 0.0,
+            rand_iter: 0,
+            ty: 0,
+        };
+        self.spawn(EFFECT_SS_DEAD_DD, 120, SsInit::DeadDd(p));
+    }
+
+    /// `EffectSsDeadDd_SpawnRandYellow` (unused in the game): type 1, priority 120. The C leaves
+    /// the velocity, acceleration, colours and steps of its init params unset (type 1 doesn't
+    /// read them); zero here.
+    pub fn dead_dd_spawn_rand_yellow(&mut self, pos: Vec3, scale: i16, scale_step: i16, rand_pos_scale: f32, rand_iter: i32, life: i32) {
+        let p = dead_dd::DeadDdInit {
+            pos,
+            velocity: Vec3::ZERO,
+            accel: Vec3::ZERO,
+            scale,
+            scale_step,
+            prim_color: [0; 3],
+            alpha: 0,
+            env_color: [0; 3],
+            alpha_step: 0,
+            life,
+            rand_pos_scale,
+            rand_iter,
+            ty: 1,
+        };
+        self.spawn(EFFECT_SS_DEAD_DD, 120, SsInit::DeadDd(p));
+    }
+
+    /// `EffectSsDeadDs_Spawn`: priority 100.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dead_ds_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16, alpha: i16, life: i32) {
+        let p = dead_ds::DeadDsInit { pos, velocity, accel, scale, scale_step, alpha, life };
+        self.spawn(EFFECT_SS_DEAD_DS, 100, SsInit::DeadDs(p));
+    }
+
+    /// `EffectSsDeadDs_SpawnStationary`.
+    pub fn dead_ds_spawn_stationary(&mut self, pos: Vec3, scale: i16, scale_step: i16, alpha: i16, life: i32) {
+        self.dead_ds_spawn(pos, Vec3::ZERO, Vec3::ZERO, scale, scale_step, alpha, life);
+    }
+
+    /// `EffectSsDFire_Spawn`: at priority 128.
+    #[allow(clippy::too_many_arguments)]
+    pub fn d_fire_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, scale: i16, scale_step: i16, alpha: i16, fade_delay: i16, life: i32) {
+        let p = d_fire::DFireInit { pos, velocity, accel, scale, scale_step, alpha, fade_delay, life };
+        self.spawn(EFFECT_SS_D_FIRE, 128, SsInit::DFire(p));
+    }
+
+    /// `EffectSsDFire_SpawnFixedScale`: scale 100 growing 35, 8 frames.
+    pub fn d_fire_spawn_fixed_scale(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, alpha: i16, fade_delay: i16) {
+        self.d_fire_spawn(pos, velocity, accel, 100, 35, alpha, fade_delay, 8);
+    }
+
     /// `EffectSsDeadSound_Spawn`: priority 100, or 127 lower.
     #[allow(clippy::too_many_arguments)]
     pub fn dead_sound_spawn(&mut self, pos: Vec3, velocity: Vec3, accel: Vec3, sfx_id: u16, lower_priority: i16, repeat_mode: i16, life: i32) {
@@ -816,6 +912,8 @@ pub struct DrawCtx<'a> {
     pub player_body_parts: Option<Vec<Vec3>>,
     pub actors: &'a crate::actor_ctx::ActorContext,
     pub rand: &'a mut Rand,
+    /// `play->objectCtx` (`Effect_Ss_D_Fire`'s `Object_GetSlot`).
+    pub objects: Option<&'a ObjectContext>,
 }
 
 /// A draw of `bake` at `m` with the colours `prim` and `env` on the bake's colour segment.
@@ -857,6 +955,8 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(en_fire::bakes());
     v.extend(en_ice::bakes());
     v.extend(dead_db::bakes());
+    v.extend(dead_dd::bakes());
+    v.extend(dead_ds::bakes());
     v.extend(kirakira::bakes());
     v.extend(fhg_flash::bakes());
     v.extend(fcircle::bakes());
@@ -871,13 +971,14 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(g_magma::bakes());
     v.extend(g_magma2::bakes());
     v.extend(blure::bakes());
+    v.extend(d_fire::bakes());
     v
 }
 
 impl PlayState {
     /// The effects' spawner, on this play state's table and generator.
     pub fn ss(&mut self) -> (SsSpawn<'_>, &mut crate::audio::GameAudio) {
-        let s = SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: Some(&self.object_ctx), stops: &mut self.effect_ss_stops };
+        let s = SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: Some(&self.object_ctx), stops: &mut self.effect_ss_stops, state_frames: self.state_frames };
         (s, &mut self.audio)
     }
 
@@ -958,6 +1059,8 @@ impl PlayState {
             SsUpdate::EnIce => en_ice::update(&mut e),
             SsUpdate::EnIceFlying => en_ice::update_flying(self, &mut e),
             SsUpdate::DeadDb => dead_db::update(self, i, &mut e),
+            SsUpdate::DeadDd => dead_dd::update(&mut e),
+            SsUpdate::DeadDs => dead_ds::update(&mut e),
             SsUpdate::KiraKira => kirakira::update(self, &mut e),
             SsUpdate::KiraKiraFocused => kirakira::update_focused(self, &mut e),
             SsUpdate::KiraKiraGrow => kirakira::update_grow(&mut e),
@@ -978,6 +1081,7 @@ impl PlayState {
             SsUpdate::GSpkNoAccel => g_spk::update_no_accel(self, &mut e),
             SsUpdate::GMagma => g_magma::update(&mut e),
             SsUpdate::GMagma2 => g_magma2::update(&mut e),
+            SsUpdate::DFire => d_fire::update(&mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -1005,6 +1109,7 @@ impl PlayState {
             player_body_parts,
             actors: &self.actors,
             rand: &mut self.rand,
+            objects: Some(&self.object_ctx),
         };
         // Effect_DrawAll: the sparks, the trails, the shield particles.
         for s in self.effect_ctx.sparks.iter().flatten() {
@@ -1038,6 +1143,8 @@ impl PlayState {
                 SsDraw::EnFire => en_fire::draw(e, &ctx, &mut out),
                 SsDraw::EnIce => en_ice::draw(e, &ctx, &mut out),
                 SsDraw::DeadDb => dead_db::draw(e, ctx.billboard, &mut out),
+                SsDraw::DeadDd => dead_dd::draw(e, ctx.billboard, &mut out),
+                SsDraw::DeadDs => dead_ds::draw(e, &ctx, &mut out),
                 SsDraw::KiraKira => kirakira::draw(e, ctx.billboard, &mut out),
                 SsDraw::FireTail => fire_tail::draw(e, &ctx, &mut out),
                 SsDraw::FhgFlashShock => fhg_flash::draw_shock(e, ctx.billboard, &mut out),
@@ -1053,6 +1160,7 @@ impl PlayState {
                 SsDraw::GSpk => g_spk::draw(e, ctx.billboard, &mut out),
                 SsDraw::GMagma => g_magma::draw(e, ctx.billboard, &mut out),
                 SsDraw::GMagma2 => g_magma2::draw(e, ctx.billboard, &mut out),
+                SsDraw::DFire => d_fire::draw(e, &ctx, &mut out),
             }
         }
         for i in deleted {

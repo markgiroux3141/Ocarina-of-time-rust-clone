@@ -61,6 +61,7 @@ echo   135  test-goron           GAME-09's trail and Goron City tests: Gorons, D
 echo   138  test-cavern          GAME-09's cavern tests: the skull, Lizalfos, Poes, Armos, pillars, trails, the runs
 echo   141  test-kingdodongo     GAME-09's King Dodongo tests: the boss, his breath, the lava, the Ruby's actors, the runs
 echo   144  test-summit          GAME-09's summit tests: the magic meter, the Great Fairy, the spin, the rocks, the runs
+echo   149  test-cavern-rooms    GAME-09's rest of the cavern: the stairs, silver rupees, Dodongos, Beamos, the rooms, the runs
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -114,6 +115,7 @@ echo   142  game-kingdodongo     King Dodongo's room (asks: or fight, beaten, ru
 echo   145  game-summit          Death Mountain's summit and the Great Fairy (asks: or rocks, wall, fountain, revisit, owl)
 echo   147  editor               The game editor: levels, props and the game's actors; Play runs them in the game
 echo   148  editor-actors        The actors as the editor draws them: captured from the game, a contact sheet of them all
+echo   150  game-cavern-rooms    Dodongo's Cavern's rest from room 2 (asks: or stairs, rupees, beamos, dodongos, larvae, scrubs, poe, blocks)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -159,6 +161,7 @@ echo   137  sandbox-goron        The Darunia and boulder runs' traces and screen
 echo   140  sandbox-cavern       The cavern's four runs' traces and screenshots (pillar, bag, skull, gravestone), into out\run
 echo   143  sandbox-kingdodongo  King Dodongo's two runs' traces and screenshots (the intro, the Ruby), into out\run
 echo   146  sandbox-summit       The summit's three runs' traces and screenshots (the wall, the fairy, the owl), into out\run
+echo   151  sandbox-cavern-rooms The cavern's rest's four runs' traces and screenshots (stairs, rupees, chest, blocks), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -317,6 +320,9 @@ if "%pick%"=="145" goto summit
 if "%pick%"=="146" set "script=sandbox-summit"
 if "%pick%"=="147" set "script=editor"
 if "%pick%"=="148" set "script=editor-actors"
+if "%pick%"=="149" set "script=test-cavern-rooms"
+if "%pick%"=="150" goto cavernrooms
+if "%pick%"=="151" set "script=sandbox-cavern-rooms"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -338,6 +344,14 @@ set "which="
 set /p "which=Which (empty: the cavern's entrance; lizalfos, pillar, upper, web, bag, skull, gravestone or boss): "
 call "%~dp0game-cavern.bat" %which%
 echo game-cavern finished (exit code %errorlevel%).
+pause
+goto menu
+
+:cavernrooms
+set "which="
+set /p "which=Which (empty: room 2 by its south door; stairs, rupees, beamos, dodongos, larvae, scrubs, poe or blocks): "
+call "%~dp0game-cavern-rooms.bat" %which%
+echo game-cavern-rooms finished (exit code %errorlevel%).
 pause
 goto menu
 

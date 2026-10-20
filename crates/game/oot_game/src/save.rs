@@ -824,6 +824,25 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: fairy_magic,
     },
     SavePreset {
+        name: "cavern-stairs",
+        about: "fairy-magic, and GAME-09 milestone 5's falling stairs run over: Dodongo's Cavern's room 2 entered, a bomb by its Bomb Flowers' junction (15 bombs left), the stairs (Bg_Ddan_Kd 0x000B) down: switch 0x0B (the room 14 run starts from it)",
+        apply: cavern_stairs,
+    },
+    SavePreset {
+        name: "cavern-song-of-time",
+        about: "fairy-magic and the Song of Time (Item_Give(ITEM_SONG_TIME)): a debug start for Dodongo's Cavern's room 15's time blocks (GAME-09 milestone 5); a child learns it from Zelda at the castle's moat after the three stones",
+        apply: |s| {
+            fairy_magic(s);
+            // ITEM_SONG_TIME (item.h: 0x64).
+            item_give(s, None, 0x64);
+        },
+    },
+    SavePreset {
+        name: "cavern-rooms",
+        about: "cavern-stairs, and GAME-09 milestone 5's room 14 run over: its gravestone pulled and its chest (En_Box 0x5541, treasure flag 1) opened: GI_SHIELD_HYLIAN, a blue rupee to a Link who has the shield (5 rupees)",
+        apply: cavern_rooms,
+    },
+    SavePreset {
         name: "cavern-jaw",
         about: "cavern-bomb-bag, and GAME-09 milestone 3's skull run over: the bombs on C-Right, two of them dropped through the bridge's holes (18 left), both of the skull's eyes lit and its jaw open (Bg_Dodoago 0x001A's switch flag)",
         apply: cavern_jaw,
@@ -1001,6 +1020,27 @@ fn fairy_magic(s: &mut SaveContext) {
     s.magic = MAGIC_NORMAL_METER;
     s.magic_capacity = MAGIC_NORMAL_METER as i16;
     s.magic_fill_target = MAGIC_NORMAL_METER as i16;
+}
+
+/// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:
+/// 0x01): `Bg_Ddan_Kd` 0x000B's switch flag, room 2 on the map (`Map_InitRoomData`), a bomb.
+fn cavern_stairs(s: &mut SaveContext) {
+    fairy_magic(s);
+    let f = &mut s.scene_flags[0x01];
+    f.swch |= 1 << 0x0B;
+    f.rooms |= 1 << 2;
+    crate::item::inventory_change_ammo(s, crate::item::ITEM_BOMB, -1);
+}
+
+/// `cavern-rooms`' save (`Route::ShieldChest`'s end): room 14's chest (`En_Box` 0x5541: treasure
+/// flag 1, `GI_SHIELD_HYLIAN`, a blue rupee as Link has the shield: `Item_CheckObtainability`),
+/// room 14 on the map.
+fn cavern_rooms(s: &mut SaveContext) {
+    cavern_stairs(s);
+    let f = &mut s.scene_flags[0x01];
+    f.chest |= 1 << 1;
+    f.rooms |= 1 << 14;
+    s.rupees += 5;
 }
 
 /// `goron-bracelet`'s save (`cavern-open` builds on it).

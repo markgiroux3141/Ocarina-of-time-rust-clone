@@ -310,7 +310,7 @@ impl PlayIo {
     /// The effects' spawner on the lent table (no objects: Player spawns nothing that needs
     /// one).
     pub fn ss(&mut self) -> crate::effect::SsSpawn<'_> {
-        crate::effect::SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: None, stops: &mut self.effect_ss_stops }
+        crate::effect::SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: None, stops: &mut self.effect_ss_stops, state_frames: 0 }
     }
 }
 

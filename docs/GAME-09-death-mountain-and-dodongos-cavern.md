@@ -1299,3 +1299,216 @@ scripts\run\sandbox-summit.bat
 7. Anything that looks off: the Great Fairy's face, hair and particles, the fountain's water and
    light scrolls, the meter's look (its ends and colours), the spin's trails and glow, the rocks
    and the darkening, the owl's talk camera. Known: no rumble, no spells.
+
+## Milestone 5: The rest of Dodongo's Cavern
+
+**The answer:** Phase 10's four placed actors still missing are ported whole, `En_Dodongo` (the
+Dodongos), `En_Vm` (the Beamos), `En_G_Switch` (the silver rupees, and the shooting gallery's
+rupees and horseback archery's pots) and `Bg_Ddan_Kd` (the falling stairs), with their effects
+`Effect_Ss_D_Fire`, `Dead_Dd` and `Dead_Ds` and one-point 3050. Rooms 2, 5, 6, 13, 14 and 15 are
+whole: every placement in them is ported (a test checks it). Four short scripted runs from debug
+starts, no fights (the user's rule): **the falling stairs** (`Route::FallingStairs`, room 2 south of
+its Bomb Flowers on `fairy-magic`: a bomb at the rows' junction, both rows burning down to the
+stairs, 3050 and the fall), **the silver rupees** (`Route::SilverRupees`, room 2's balcony with four
+of the five taken and the room cleared: the last one's crate bombed, the rupee, flag 0x25 and door
+17's camera), **room 14's chest** (`Route::ShieldChest`, by the gravestone with the room cleared on
+`cavern-stairs`: the gravestone pulled, round it, the chest opened) and **room 15's blocks**
+(`Route::TimeBlocks`, inside its door with the room cleared on `cavern-song-of-time`: the Song of
+Time, the nearest block gone). The Dodongos, the Beamos, the larvae, the Mad Scrubs, the Poe and the
+Skulltulas are the hand test's. New presets `cavern-stairs` and `cavern-rooms` (the milestone's end,
+each checked against its run) and `cavern-song-of-time` (a debug start). Scripts:
+`scripts\run\test-cavern-rooms.bat`, `game-cavern-rooms.bat`, `sandbox-cavern-rooms.bat` (menu 149
+to 151). This was the last of Phase 10's milestones; the phase's exit review comes next.
+
+### Settled at the start (from the C)
+
+- **The falling stairs** (`BgDdanKd_CheckForExplosions`): two different explosions in its cylinder
+  (245 across, 180 high, from 400 below it: y 80 to 260), the second within 13 frames of the first
+  (the kept one's `timer`) and more than 80 from where the first was (on x and z). Each one caught
+  gets `params` 2, which stops its blast (`En_Bom` and `En_Bombf` register the explosion's AT only
+  with params 1) and its setting off of neighbours (`func_80033684` wants params 1). Room 2's two
+  rows of Bomb Flowers (x -2070 and -1844, z -1305 to -1665, joined at z -1305 by the junction's
+  two) are the fuse: lit at the junction, both rows burn down together and their last flowers blow
+  by the stairs, 226 apart, in the same frames. The stairs then sink 220 (the speed up 0.025 a
+  frame to 4, `Math_SmoothStepToF` at 0.075 of the way), with dust, sparkles, the main camera's
+  quake and `NA_SE_EV_PILLAR_SINK`, and set switch 0x0B; with 0x0B set at init they start down.
+  **One-point 3050** is a spline on `CAM_SET_CS_3` (`Camera_Demo9`): `D_8012013C` (the at) and
+  `D_8012021C` (the eye), 14 points from the top of the stairs down to the floor by room 2's wall,
+  210 frames (`D_80120300`), then 1020's return to Link (the action's 0x2000); Player held
+  (`PLAYER_CSACTION_5`); the main camera set to the points' 11th; this ROM's `PAL_1_0` branch: the
+  chime and a 200-frame quake. The C moves each list's point 10 halfway to point 11 in its static
+  data every time it plays; the ROM's two are the same, so nothing moves (kept as written).
+- **The silver rupees** (`En_G_Switch` types 0 and 1): the tracker 0x0165 and the five rupees
+  0x1165 share the overlay's `sCollectedCount`. The tracker's init zeroes it and reads the count
+  (bits 6 to 11: 5); a rupee within 30 of Link (`xyzDistToPlayerSq`) adds 1 and 5 rupees, and rides
+  over his head 15 frames. The tracker plays a note up the major scale for each (0, 2, 4, 5
+  semitones), and at 5 the chime, **switch flag 0x25**, the rupee sound, and goes. Every rupee
+  carries the same flag: with it set none spawns. 0x25 opens **door 17** (`Door_Shutter` 0x00A5,
+  `SHUTTER_FRONT_SWITCH`, barred from room 2's side), the upper level's way to room 5. 0x25 is a
+  temp flag: leaving the scene resets the puzzle. The count goes with the overlay (the last
+  `En_G_Switch` gone: 0 at the next load).
+- **The Dodongo and the Beamos:** nothing new of Player (his burning is ported; the fire's quad is
+  `HIT_SPECIAL_EFFECT_FIRE`). The framework had what they need: another actor's fuse written
+  (`Bg_Dodoago`'s bomb catcher's way: the Dodongo holds the swallowed bomb's or flower's `timer`),
+  the explosives list, `EffectBlure` (the tail's trail), the line test (`BgCheck_EntityLineTest1`,
+  the beam), `Actor_GetCollidedExplosive` (the Beamos's death), the dust and ice effects. **`Dead_Dd`
+  is the Beamos's, not the Dodongo's** (the survey's correction below): the flash at its eye as it
+  fires; `Dead_Ds` is the beam's scorch. The Dodongo's death is its own `En_Bom` with no fuse.
+- **Which rooms a child reaches, and from where:** room 2 from the lobby by door 21 (switch 0x03:
+  room 0's floor switch on the upper level's west side, or its golden torch by the door); room 5 from
+  room 2's balcony by door 17 (0x25); room 15 through room 2's bombable wall (0xA002) and door 15;
+  room 6 from room 9's trench by door 16 (0x27: room 9's three timed torches); room 13 from room 4
+  by door 14 (0x1E: room 4's second hidden switch, `En_Wonder_Item` 0x18DE); room 14 from room 8 by
+  door 13 (room 8 cleared). Room 2's rupees are under a Beamos, in three crates and in the air at y
+  627 (over the balcony's tongue: not settled how a child reaches it, the hand test's); the debug
+  starts go past them.
+
+### What was built
+
+- **`Bg_Ddan_Kd`** whole (above). **One-point 3050** (`OnePointCutscene_SetInfo`'s case, the
+  points' static write kept).
+- **`En_G_Switch`** whole: the tracker and the silver rupees (above); the archery pots (`object_tsubo`,
+  arrows only, 30 shards, the score); the gallery's rupees (their moves, the burst of 20 small
+  rupees, the 50 frames to go). `En_Syateki_Itm` (the gallery) isn't ported: its writes are logged
+  (BACKLOG #98).
+- **`En_Dodongo`** whole (by a helper): idle and walk round its home, the turn to Link within 400,
+  the fire within 100 (`Effect_Ss_D_Fire`, the burning quad), the tail's sweep after a hit (8, its
+  trail), the stun (Deku Nuts, ice), the bomb eaten (its fuse held, swallowed at frame 28, the blast
+  inside, the swelling) and the death in its own bomb, the drop from table 4; the head's metal
+  triangles turning swords away.
+- **`En_Vm`** whole (by a helper): the head turning for Link within its sight, ten frames, the aim,
+  the eye's flash (`Effect_Ss_Dead_Dd`), the beam (305 frames, growing to his feet, the line test
+  stopping it on a surface, the scorch `Effect_Ss_Dead_Ds`, the death flame at its end, 16 a hit),
+  the eye's stun (180 frames), death only by explosives (small 1, large 2), the head flying off
+  between two bombs.
+- **`Effect_Ss_D_Fire`**, **`Dead_Dd`** (both types), **`Dead_Ds`** whole, with their bakes.
+- **The framework:** `MtxF::to_zyx_rot_s` (`Matrix_MtxFToZYXRotS`) and `eng_math::vec3f_pitch`
+  (`Math_Vec3f_Pitch`, private copies in seven modules before); the effects' spawner carries
+  `play->state.frames` and their draw `play->objectCtx` (`D_Fire`'s); the sandbox's `--room` (the
+  game's debug start's).
+- **The runs:** `Route::FallingStairs`, `SilverRupees`, `ShieldChest`, `TimeBlocks`; the steps
+  `StairsFallen`, `CrateBroken`, `SilverRupees`, `ShieldChest`, `TimeSongPlayed`, `TimeBlockGone`;
+  `Cond::CrateGone`, `Cond::TimeBlockHidden`; the silver rupees' debug start (four taken). **The
+  presets** `cavern-stairs` (the stairs run's end), `cavern-rooms` (room 14's run's end: the
+  milestone's), `cavern-song-of-time` (a debug start).
+- **The characters** (`export-glb`): Dodongo and Beamos, checked in Blender (`out/bl_dodongo.png`,
+  `out/bl_beamos.png`).
+- Two helpers ported `En_Dodongo` with `D_Fire` and `En_Vm` with `Dead_Dd` and `Dead_Ds` in
+  worktrees (removed).
+
+### Results
+
+- Tests from the C: `tests/bg_ddan_kd.rs` (5: the init either way, one blast kept 13 frames and
+  quenched, two 80 apart dropping the stairs with 3050 frame by frame, too close or too late
+  dropping nothing, the Bomb Flower rows lit at their junction), `en_g_switch.rs` (7: the tracker
+  and rupees at init, a take, the fifth and flag 0x25 with door 17 unbarred, gone with the flag, the
+  count with a fresh overlay, a gallery rupee's hit and burst, an archery pot without its object),
+  `en_dodongo.rs` (14), `en_vm.rs` (10), `cavern_rooms.rs` (7: the four runs, the six rooms all
+  ported with a floor under each debug start, room 5's and room 6's room-clear chests); the effects'
+  own (`dead_ds`'s angles).
+- The runs (frames from their debug starts): the stairs 431 (the bomb out at 34, put down at 61,
+  the stairs down at 431); the silver rupees 188 (the crate broken at 103, the rupee and door 17's
+  camera to 188); room 14 277 (the stone pulled at 145, the chest's text 0x00CC, a blue rupee: Link
+  has the shield); room 15 235 (the ocarina at 48, the song heard at 92, the block gone at 235). No
+  hit taken.
+- Goldens: all 258 of milestone 6's hashes the same (nothing older changed); 11 new cases
+  (`falling_stairs`, `falling_stairs_chain`, `falling_stairs_fall`, `silver_rupees`,
+  `silver_rupees_door`, `shield_chest`, `shield_chest_pulled`, `time_blocks`, `time_blocks_warp`,
+  `cavern_dodongos`, `cavern_beamos`). 273 hashes, 207 cases (`out/golden_base30`), the same over
+  two runs.
+- 1,433 tests (one ignored) pass; `cargo test -p layering` passes; no warnings. The pack is still format 29
+  (`out/data26`), re-imported for the new bakes.
+
+### Decisions
+
+- Every type of `En_G_Switch` whole, the gallery's writes logged: the shooting gallery is Phase 20's.
+- The runs are four short debug starts. The silver rupees' starts with four taken (killed, the count
+  4) and the room cleared: the rest are under a Beamos (a fight), in crates and in the air, and a
+  Skulltula hangs over the balcony; the whole puzzle is the hand test's. Room 14's and room 15's
+  start with the room cleared (`Flags_SetClear`: their enemies don't spawn), the Poe and the
+  Skulltulas the hand test's.
+- The milestone's end is `cavern-rooms` (the stairs down, room 14's chest), checked against the
+  runs; the compass and the Deku Shield's chests come from fights (the hand test's), so no preset
+  holds them.
+- The helpers' shared functions went into the framework (above); `decr` stays file-local, as the
+  codebase keeps it.
+
+### Corrections to the survey and the brief
+
+- **`Effect_Ss_Dead_Dd` is the Beamos's eye flash**, not the Dodongo's death: only `En_Vm` spawns it
+  (and `Dead_Ds`). The Dodongo's smoke is `EffectSsDust`.
+- **`fairy-magic` has no Song of Time** (the brief's "every song up to the Song of Storms"): Zelda's
+  Lullaby, Epona's Song, Saria's Song and the Sun's Song. A child learns the Song of Time from Zelda
+  at the castle's moat after the three stones; room 15's run starts on `cavern-song-of-time`.
+- **The Beamos are small** (params 0x0401: `BEAMOS_SMALL`, health 1, sight 160).
+- **Room 2's lift is a column** (`Obj_Elevator` 0x2200 at y -97): its top at rest is at 480, level
+  with the falling stairs' top before they fall. The raycast down finds the stairs' (milestone 3's
+  lift test now starts with the stairs down).
+- Room 14's gravestone stands over its chest and the chest's front: pulled (north, its only way) it
+  uncovers the chest, which is opened from the south.
+
+### Known gaps
+
+- `En_Syateki_Itm` (the shooting gallery) isn't ported: its rupees' set-up and its count (#98).
+- A Bombchu swallowed by a Dodongo (the C's memory corruption, `@bug (game)`) waits on the Bombchus
+  (#99).
+- The rumble (#60). The Gold Skulltulas' shine (the roadmap's rendering debt).
+
+### Fixes found while building
+
+- `tests/obj_elevator.rs`' room 2 lift: it put Link on the falling stairs once they had collision
+  (both tops at 480); it starts with the stairs down now.
+
+### Golden proof
+
+- No existing hash changed: milestone 6's 258 the same with the merged code (`out/golden_g9m5_check1.txt`).
+- The new cases are this milestone's own: no older hash to prove.
+
+### The hand test
+
+The user (2026-10-20): everything good but the time blocks, which didn't go for the Song of Time
+played near them. Not a bug: room 15's blocks (0x88FF) take the song only within 100 of their
+centre (`sRanges[1]`, bits 11 to 13), and they fill the room's far half, so Link must stand
+pressed against the front row (64 to about 90 from its centres: tested from 45 spots, the song
+heard at all of them, a block gone wherever it was in range). Walked right up to a block, it works
+(the user's check). No change.
+
+### How to check
+
+```
+scripts\run\test-cavern-rooms.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-cavern-rooms.bat
+```
+
+### By hand
+
+1. `game-cavern-rooms` (room 2 by its south door, `fairy-magic`: magic, bombs on C-Right, the
+   Hylian Shield): the Beamos either side ahead. Walk into one's sight (160): its head turns to
+   Link, its eye flashes, the laser runs to his feet and scorches the floor (a heart a hit); slash
+   its eye: it stops, stunned; a bomb by it (or `game-cavern-rooms beamos`): it hops, spins and
+   blows apart. Its silver rupee is under it.
+2. `game-cavern-rooms stairs` (south of the Bomb Flowers): a bomb at the junction of the two rows:
+   both rows burn down; the stairs sink with the camera
+   following them down (3050), the room shaking. Then the lowered stairs join the two ledges at 300.
+3. The silver rupees: under the Beamos, in the crates (bomb them), on the west ledge, on the
+   balcony, and the one in the air over the balcony's tongue (tell me how you reach it). Each plays
+   a note; the fifth the chime and door 17's camera (the upper level's door to room 5). Or
+   `game-cavern-rooms rupees` by the last one's crate.
+4. `game-cavern-rooms dodongos` (room 5): the three Dodongos walk round; one near turns to Link and
+   breathes fire (Link burns); hit one: it sweeps its tail (a white trail); a bomb in front of its
+   mouth: it swallows it, swells and blows up; killed, it blows up in its own bomb. All three dead:
+   the compass's chest appears.
+5. `game-cavern-rooms larvae` (room 6): five Gohma eggs on the ceiling (params 8) fall when Link is
+   within 100 below one and hatch; the larvae; all
+   dead, the Deku Shield's chest (a blue rupee if he has the shield). The Gold Skulltula.
+6. `game-cavern-rooms scrubs` (room 13): the Mad Scrubs, the Keese, the Gold Skulltula.
+7. `game-cavern-rooms poe` (room 14): the Poe; the gravestone: pull it (north), round it to the chest
+   it covered.
+8. `game-cavern-rooms blocks` (room 15, with the Song of Time): the Skulltulas over the blocks; the
+   Song of Time within 100 of a block: it goes (the time warp, the camera on it); the Gold Skulltula
+   under the east block of the row furthest from the door.
+9. Anything that looks off: the Dodongos' walk, fire and tail; the Beamos's laser, flash, scorch and
+   flame; the stairs' fall and its camera; the silver rupees' spin and notes. Known: no rumble.

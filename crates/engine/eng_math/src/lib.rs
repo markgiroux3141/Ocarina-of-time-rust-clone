@@ -125,6 +125,13 @@ pub fn vec3f_yaw(from: glam::Vec3, to: glam::Vec3) -> i16 {
     atan2_s(to.z - from.z, to.x - from.x)
 }
 
+/// Pitch from `a` to `b` (`Math_Vec3f_Pitch`: `Math_Atan2S(Math_Vec3f_DistXZ(a, b), a.y - b.y)`),
+/// positive when `b` is below `a`.
+pub fn vec3f_pitch(a: glam::Vec3, b: glam::Vec3) -> i16 {
+    let dist_xz = ((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)).sqrt();
+    atan2_s(dist_xz, a.y - b.y)
+}
+
 /// `Math_SmoothStepToF` (`z_lib.c`): step `v` towards `target` by `fraction` of the gap,
 /// clamped to `step`, at least `min_step`. Returns the gap left.
 ///

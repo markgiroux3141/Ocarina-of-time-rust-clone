@@ -88,7 +88,8 @@ pub fn update(play: &mut PlayState, index: usize, this: &mut EffectSs) {
     }
 }
 
-fn bake_name(n: usize) -> String {
+/// The bake of `gEffEnemyDeathFlame{n}Tex` (1 to 10); `En_Vm`'s draw uses them too.
+pub fn bake_name(n: usize) -> String {
     format!("EffectSs/dead_db/{n}")
 }
 

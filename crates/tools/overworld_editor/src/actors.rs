@@ -239,11 +239,13 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Bg_Ddan_Jd", "Rising pillar", Group::SetPiece),
     ("Bg_Dodoago", "Dodongo skull", Group::SetPiece),
     ("En_Dodojr", "Baby Dodongo", Group::Enemy),
+    ("En_Dodongo", "Dodongo", Group::Enemy),
     ("Obj_Elevator", "Small lift", Group::Object),
     ("En_Zf", "Lizalfos or Dinolfos", Group::Enemy),
     ("Bg_Gnd_Darkmeiro", "Clear blocks", Group::Object),
     ("Bg_Hidan_Curtain", "Fire wall", Group::Object),
     ("En_Am", "Armos", Group::Enemy),
+    ("En_Vm", "Beamos", Group::Enemy),
     ("Boss_Dodongo", "King Dodongo", Group::Boss),
     ("En_Bdfire", "King Dodongo's fire", Group::Effect),
     ("Demo_Du", "Darunia, in cutscenes", Group::Character),
@@ -254,6 +256,8 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Dy_Extra", "Great Fairy's beam", Group::Effect),
     ("En_M_Thunder", "Spin attack", Group::Effect),
     ("Eff_Dust", "Sparkles", Group::Effect),
+    ("Bg_Ddan_Kd", "Falling stairs", Group::SetPiece),
+    ("En_G_Switch", "Silver rupee or tracker", Group::Trigger),
 ];
 
 /// An actor the editor can place.

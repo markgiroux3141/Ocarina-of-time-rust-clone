@@ -894,6 +894,45 @@ impl PlayState {
                 self.player_set_cs_action_with_halted_actors(None, 8);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
+            3050 => {
+                // Dodongo's Cavern's falling stairs (Bg_Ddan_Kd): a spline down the stairs to
+                // the floor by room 2's wall (D_8012013C the at's, D_8012021C the eye's, 14
+                // points), D_80120300 (210) frames, action D_80120304 (0) | 0x2000 (1020, the
+                // return to Link, after it), Player held (PLAYER_CSACTION_5) with the actors.
+                self.camera_change_setting(sub, CAM_SET_CS_3);
+                self.player_set_cs_action_with_halted_actors(None, 5);
+                let (at, eye) = (self.onepoint.point_list("D_8012013C"), self.onepoint.point_list("D_8012021C"));
+                let action = self.onepoint.short("D_80120304") | 0x2000;
+                let init_timer = self.onepoint.short("D_80120300");
+                if let Some(c) = self.camera_mut(sub) {
+                    c.set_cs_cam_points(action, init_timer, at, eye);
+                }
+                // OOT_VERSION >= PAL_1_0: the chime.
+                self.audio.play_sfx_centered(crate::audio::sfx::NA_SE_SY_CORRECT_CHIME);
+                // The main camera put at the splines' second-to-last points (D_801202FC 13: index
+                // 11), so 1020 returns from there.
+                let n = self.onepoint.short("D_801202FC") as usize;
+                let v = |p: &CutsceneCameraPoint| Vec3::new(p.pos[0] as f32, p.pos[1] as f32, p.pos[2] as f32);
+                if let (Some(a), Some(e)) = (at, eye) {
+                    let (pa, pe) = (self.onepoint.points[a][n - 2], self.onepoint.points[e][n - 2]);
+                    self.game_camera.at = v(&pa);
+                    self.game_camera.eye = v(&pe);
+                    // The C moves each list's point n - 3 halfway to point n - 2 in its static
+                    // data, every time 3050 plays (s16 maths): the ROM's two points are the same,
+                    // so it stays where it is.
+                    for l in [a, e] {
+                        let (p2, p3) = (self.onepoint.points[l][n - 2].pos, &mut self.onepoint.points[l][n - 3].pos);
+                        for k in 0..3 {
+                            p3[k] = (p3[k] as i32 + (p2[k] as i32 - p3[k] as i32) / 2) as i16;
+                        }
+                    }
+                }
+                // OOT_VERSION >= PAL_1_0: a quake on the main camera for 200 frames.
+                let i = self.quake_request(CAM_ID_MAIN, crate::quake::QUAKE_TYPE_3);
+                self.quake_set_speed(i, 30000);
+                self.quake_set_perturbations(i, 2, 1, 1, 0);
+                self.quake_set_duration(i, 200);
+            }
             3380 | 3065 => {
                 // Dodongo's Cavern's skull (Bg_Dodoago): an eye lit (3065) or the jaw opening
                 // (3380), the same two keyframes, Player held (PLAYER_CSACTION_8), a quake on

@@ -50,6 +50,10 @@ struct Cli {
     /// script's start; works in scenes too.
     #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
     at: Vec<f32>,
+    /// With --entrance: after entering, change to this room as walking into it would (a debug
+    /// start, the game's --room), before --at.
+    #[arg(long)]
+    room: Option<i8>,
     /// Headless: contact sheet frame stride.
     #[arg(long, default_value_t = 2)]
     step: usize,
@@ -505,6 +509,14 @@ fn script_play(a: &Assets, cli: &Cli) -> Result<PlayState> {
         && cli.at.is_empty()
     {
         r.debug_start(&mut w);
+    }
+    if let Some(room) = cli.room
+        && a.entrance.is_some()
+        && w.room_request(room)
+    {
+        // Room_RequestNewRoom, a frame for it to load, then Room_FinishRoomChange.
+        w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
+        w.room_change_done();
     }
     if let [x, y, z, yaw] = cli.at[..] {
         if a.entrance.is_some() {

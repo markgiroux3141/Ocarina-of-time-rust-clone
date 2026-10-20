@@ -546,6 +546,20 @@ pub enum Step {
     /// In Kakariko at the owl's landing (`ENTR_KAKARIKO_VILLAGE_14`, `gDMTOwlCs`'s terminator 66),
     /// standing.
     Kakariko14,
+    /// Dodongo's Cavern's falling stairs (`Bg_Ddan_Kd` 0x000B) down: switch 0x0B, one-point 3050
+    /// over, Link free.
+    StairsFallen,
+    /// The crate (`Obj_Kibako2`) a task waited on broken.
+    CrateBroken,
+    /// Dodongo's Cavern's silver rupees all taken: the tracker's flag 0x25, door 17's camera over,
+    /// Link free.
+    SilverRupees,
+    /// Dodongo's Cavern's room 14's chest opened, its text read, Link free.
+    ShieldChest,
+    /// The Song of Time played (the staff knows it).
+    TimeSongPlayed,
+    /// A Song of Time block (`Obj_Timeblock`) gone, its camera over, Link free.
+    TimeBlockGone,
 }
 
 impl Step {
@@ -755,6 +769,12 @@ impl Step {
             Step::Magic => "magic",
             Step::Trail4 => "trail_4",
             Step::Kakariko14 => "kakariko_14",
+            Step::StairsFallen => "stairs_fallen",
+            Step::CrateBroken => "crate_broken",
+            Step::SilverRupees => "silver_rupees",
+            Step::ShieldChest => "shield_chest",
+            Step::TimeSongPlayed => "time_song_played",
+            Step::TimeBlockGone => "time_block_gone",
         }
     }
 }
@@ -977,6 +997,26 @@ pub enum Route {
     /// acquired): his talk (0x3063), his flight (`gDMTOwlCs`) to Kakariko
     /// (`ENTR_KAKARIKO_VILLAGE_14`).
     SummitOwl,
+    /// Dodongo's Cavern's falling stairs (GAME-09 milestone 5), from a debug start in room 2 south
+    /// of its Bomb Flowers (`fairy-magic`): a bomb (C-Right) put down by the rows' junction, both
+    /// rows burning down to the stairs (`Bg_Ddan_Kd` 0x000B: two blasts 80 apart), one-point 3050
+    /// and the fall: switch 0x0B.
+    FallingStairs,
+    /// Dodongo's Cavern's silver rupees (GAME-09 milestone 5), from a debug start on room 2's
+    /// balcony with four of the five taken and the room cleared (`fairy-magic`; the rest are in
+    /// crates, under a Beamos and in the air, and a Skulltula hangs over the balcony: the hand
+    /// test's): the last one's crate bombed, the rupee taken, the tracker's flag 0x25 and door 17
+    /// to room 5 unbarred with its camera.
+    SilverRupees,
+    /// Dodongo's Cavern's room 14 (GAME-09 milestone 5), from a debug start by its gravestone with
+    /// the room cleared (its Poe the hand test's) on `cavern-stairs`: the gravestone (`Bg_Haka`)
+    /// pulled and the chest behind it (`En_Box` 0x5541, `GI_SHIELD_HYLIAN`) opened.
+    ShieldChest,
+    /// Dodongo's Cavern's room 15 (GAME-09 milestone 5), from a debug start by its door with the
+    /// room cleared (its Skulltulas the hand test's) on `cavern-song-of-time` (a child learns the
+    /// song only after the three stones): the Song of Time by the nearest block (`Obj_Timeblock`
+    /// 0x88FF, within 100): it goes.
+    TimeBlocks,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1356,6 +1396,74 @@ fn great_fairy_tasks() -> Vec<Task> {
         Task::Ocarina(1, OCARINA_SONG_LULLABY, Step::LullabyPlayed),
         Task::Texts(|w| w.save.is_magic_acquired && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && !w.player_in_cs_mode(), Step::Magic),
         Task::Exit("ENTR_DEATH_MOUNTAIN_TRAIL_4", Some(Step::Trail4)),
+    ]
+}
+
+/// Dodongo's Cavern's room 2: the Bomb Flower rows' junction (between `En_Bombf` (-2015, 20,
+/// -1305) and (-1903, 20, -1305)), on the strip 20 up.
+pub const DC_ROOM2_JUNCTION: Vec3 = Vec3::new(-1959.0, 20.0, -1305.0);
+/// The last silver rupee (`En_G_Switch` 0x1165 at (-1512, 531, -1083)) and its crate
+/// (`Obj_Kibako2` at (-1511, 531, -1084)) on the balcony's east end.
+pub const DC_ROOM2_LAST_RUPEE: Vec3 = Vec3::new(-1512.0, 531.0, -1083.0);
+pub const DC_ROOM2_RUPEE_CRATE: Vec3 = Vec3::new(-1511.0, 531.0, -1084.0);
+/// Room 14's gravestone (`Bg_Haka` 0x0000) and its chest (`En_Box` 0x5541, facing -z).
+pub const DC_ROOM14_GRAVESTONE: Vec3 = Vec3::new(1474.0, 76.0, -4558.0);
+pub const DC_ROOM14_CHEST: Vec3 = Vec3::new(1473.0, 76.0, -4575.0);
+/// Room 15's block nearest its door (`Obj_Timeblock` 0x88FF; the song's range 100: `sRanges[1]`).
+pub const DC_ROOM15_BLOCK: Vec3 = Vec3::new(-1958.0, 0.0, -470.0);
+
+/// `Route::FallingStairs`'s tasks: a bomb out, put down by the rows' junction (its blast reaches
+/// both junction flowers: `func_80033684`'s 80), back south out of the chain's way, and the stairs
+/// down (`Bg_Ddan_Kd`'s flag 0x0B, set as they land; one-point 3050 holds Link meanwhile).
+fn falling_stairs_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::TakeBomb(2, Step::BombOut),
+        Task::PutDown(vec![Vec3::new(-1959.0, 0.0, -1262.0)], DC_ROOM2_JUNCTION, Step::PutDown),
+        Task::Walk(vec![Vec3::new(-1959.0, 0.0, -1100.0)]),
+        Task::WaitFor(Cond::Switch(0x0B), Step::StairsFallen),
+        Task::WaitCameras,
+    ]
+}
+
+/// `Route::SilverRupees`'s tasks: a bomb out, put down by the last rupee's crate, back west out of
+/// its blast; the crate gone, onto the rupee: the tracker's flag 0x25 and door 17's camera.
+fn silver_rupees_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::TakeBomb(2, Step::BombOut),
+        Task::PutDown(vec![Vec3::new(-1565.0, 531.0, -1110.0)], DC_ROOM2_RUPEE_CRATE, Step::PutDown),
+        Task::Walk(vec![Vec3::new(-1800.0, 531.0, -1125.0)]),
+        Task::WaitFor(Cond::CrateGone(DC_ROOM2_RUPEE_CRATE), Step::CrateBroken),
+        Task::Walk(vec![Vec3::new(-1600.0, 531.0, -1110.0), DC_ROOM2_LAST_RUPEE]),
+        Task::WaitFor(Cond::Switch(0x25), Step::SilverRupees),
+        Task::WaitCameras,
+    ]
+}
+
+/// `Route::ShieldChest`'s tasks: the gravestone (its collision 60 deep, z -4590 to -4530, over
+/// the chest and its front) pulled north from its north face; round it to the chest's front
+/// (south: `En_Box`'s 0x8000 faces it north) and the chest opened.
+fn shield_chest_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::PullStone(DC_ROOM14_GRAVESTONE, Step::StonePulled),
+        Task::Walk(vec![Vec3::new(1540.0, 76.0, -4660.0), Vec3::new(1540.0, 76.0, -4515.0), Vec3::new(1473.0, 76.0, -4515.0)]),
+        Task::OpenChest(DC_ROOM14_CHEST, Some(Step::ShieldChest)),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::TimeBlocks`'s tasks: within 100 of the nearest block, the Song of Time (the ocarina on
+/// C-Down): the block's free play hears it, and 110 frames later it goes with its camera.
+fn time_blocks_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_TIME;
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(-1958.0, 0.0, -540.0)]),
+        Task::Ocarina(1, OCARINA_SONG_TIME, Step::TimeSongPlayed),
+        Task::WaitFor(Cond::TimeBlockHidden(DC_ROOM15_BLOCK), Step::TimeBlockGone),
+        Task::WaitCameras,
     ]
 }
 
@@ -1995,6 +2103,8 @@ impl Route {
             // The summit's spawn 4 (the fountain's return entrance, at the wall).
             Route::FairyWall | Route::SummitOwl => "ENTR_DEATH_MOUNTAIN_TRAIL_4",
             Route::GreatFairy => "ENTR_GREAT_FAIRYS_FOUNTAIN_MAGIC_0",
+            // The lobby, then the run's room (the debug start's --room).
+            Route::FallingStairs | Route::SilverRupees | Route::ShieldChest | Route::TimeBlocks => "ENTR_DODONGOS_CAVERN_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2035,6 +2145,9 @@ impl Route {
             Route::FairyWall => Some("goron-ruby"),
             Route::GreatFairy => Some("fairy-fountain"),
             Route::SummitOwl => Some("fairy-magic"),
+            Route::FallingStairs | Route::SilverRupees => Some("fairy-magic"),
+            Route::TimeBlocks => Some("cavern-song-of-time"),
+            Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
     }
@@ -2070,6 +2183,14 @@ impl Route {
             // On the summit 150 out from the Great Fairy's wall (spawn 4 faces out along 5097),
             // facing it.
             Route::FairyWall => Some((SUMMIT_WALL_FRONT, -27671)),
+            // Room 2's floor south of the Bomb Flowers' strip, facing the junction (north).
+            Route::FallingStairs => Some((Vec3::new(-1959.0, 0.0, -1180.0), -0x8000)),
+            // Room 2's balcony, west of the last rupee's crate, facing it (east).
+            Route::SilverRupees => Some((Vec3::new(-1650.0, 531.0, -1110.0), 0x4000)),
+            // Room 14, north of the gravestone and its chest, facing them (south).
+            Route::ShieldChest => Some((Vec3::new(1474.0, 76.0, -4680.0), 0)),
+            // Room 15 inside its door, facing the blocks (north).
+            Route::TimeBlocks => Some((Vec3::new(-1958.0, 0.0, -650.0), -0x8000)),
             _ => None,
         }
     }
@@ -2090,6 +2211,11 @@ impl Route {
         match self {
             Route::Slingshot => &[1],
             Route::BossRoom => &[9],
+            // Room 2's Skulltulas (one hangs over the balcony), room 14's Poe and room 15's
+            // Skulltulas: the hand test's.
+            Route::SilverRupees => &[2],
+            Route::ShieldChest => &[14],
+            Route::TimeBlocks => &[15],
             _ => &[],
         }
     }
@@ -2101,6 +2227,9 @@ impl Route {
             Route::Push => Some(3),
             Route::Slingshot => Some(1),
             Route::BossRoom => Some(9),
+            Route::FallingStairs | Route::SilverRupees => Some(2),
+            Route::ShieldChest => Some(14),
+            Route::TimeBlocks => Some(15),
             _ => None,
         }
     }
@@ -2123,6 +2252,12 @@ impl Route {
         }
         if let Some((p, y)) = self.start() {
             w.place_player(p, y);
+        }
+        if self == Route::SilverRupees {
+            // The room's actors initialised (the tracker zeroes the count), then four of the five
+            // rupees taken: gone, and the overlay's count at 4.
+            w.tick_with(oot_game::play::scripted_input(PadState::default(), PadState::default()));
+            silver_rupees_four_taken(w);
         }
     }
 
@@ -2233,6 +2368,10 @@ impl Route {
             Route::FairyWall => "fairy-wall",
             Route::GreatFairy => "great-fairy",
             Route::SummitOwl => "summit-owl",
+            Route::FallingStairs => "falling-stairs",
+            Route::SilverRupees => "silver-rupees",
+            Route::ShieldChest => "shield-chest",
+            Route::TimeBlocks => "time-blocks",
         }
     }
 
@@ -2284,6 +2423,10 @@ impl Route {
             Route::FairyWall => 1500,
             Route::GreatFairy => 5000,
             Route::SummitOwl => 4000,
+            Route::FallingStairs => 2000,
+            Route::SilverRupees => 1500,
+            Route::ShieldChest => 1500,
+            Route::TimeBlocks => 1500,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2291,13 +2434,31 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks].into_iter().find(|r| r.script() == name)
     }
+}
+
+/// `Route::SilverRupees`'s debug start: room 2's silver rupees but the last (on the balcony) gone and
+/// `sCollectedCount` 4, as if Link had taken them.
+pub fn silver_rupees_four_taken(w: &mut PlayState) {
+    use crate::en_g_switch::{ENGSWITCH_SILVER_RUPEE, EnGSwitch};
+    let taken: Vec<_> = w
+        .actors
+        .all()
+        .into_iter()
+        .filter(|&h| w.actors.downcast::<EnGSwitch>(h).is_some_and(|s| s.type_ == ENGSWITCH_SILVER_RUPEE && s.actor.home_pos.distance(DC_ROOM2_LAST_RUPEE) > 1.0))
+        .collect();
+    for h in &taken {
+        if let Some(a) = w.actors.actor_mut(*h) {
+            a.kill();
+        }
+    }
+    crate::en_g_switch::statics(w).collected_count = taken.len() as i16;
 }
 
 /// What the run does, one task at a time.
@@ -2606,6 +2767,10 @@ enum Cond {
     Switch(i32),
     /// The `Bg_Ddan_Jd` whose home is here idle this far above it, Link free.
     Pillar(Vec3, f32),
+    /// The crate (`Obj_Kibako2`) whose home is here gone.
+    CrateGone(Vec3),
+    /// The Song of Time block (`Obj_Timeblock`) whose home is here hidden (its collision off).
+    TimeBlockHidden(Vec3),
 }
 
 impl Cond {
@@ -2620,6 +2785,8 @@ impl Cond {
                 w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_spot18_shutter::BgSpot18Shutter>(h)).any(|d| d.actor.world_pos.y >= d.actor.home_pos.y + 180.0) && !w.player_in_cs_mode()
             }
             Cond::Switch(flag) => w.flags.get_switch(flag) && !w.player_in_cs_mode() && w.message_state() == oot_game::message::TEXT_STATE_NONE,
+            Cond::CrateGone(home) => !w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::obj_kibako2::ObjKibako2>(h)).any(|c| !c.actor.killed && c.actor.home_pos.distance(home) < 1.0),
+            Cond::TimeBlockHidden(home) => w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::obj_timeblock::ObjTimeblock>(h)).any(|t| t.actor.home_pos.distance(home) < 1.0 && !t.is_visible),
             Cond::Pillar(home, rise) => {
                 !w.player_in_cs_mode()
                     && w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_ddan_jd::BgDdanJd>(h)).any(|p| p.actor.home_pos.distance(home) < 1.0 && p.action == crate::bg_ddan_jd::Action::Idle && p.actor.world_pos.y == home.y + rise)
@@ -3008,6 +3175,10 @@ impl Playthrough {
             Route::FairyWall => fairy_wall_tasks(),
             Route::GreatFairy => great_fairy_tasks(),
             Route::SummitOwl => summit_owl_tasks(),
+            Route::FallingStairs => falling_stairs_tasks(),
+            Route::SilverRupees => silver_rupees_tasks(),
+            Route::ShieldChest => shield_chest_tasks(),
+            Route::TimeBlocks => time_blocks_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no

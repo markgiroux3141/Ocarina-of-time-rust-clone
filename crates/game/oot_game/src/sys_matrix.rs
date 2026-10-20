@@ -275,6 +275,42 @@ impl MtxF {
         r(&mut self.wx, &mut self.wy);
     }
 
+    /// `Matrix_MtxFToZYXRotS(mf, rotDest, flag)` (`sys_matrix.c`): the rotation as the angles
+    /// `Matrix_RotateZYX` takes, `[x, y, z]`.
+    pub fn to_zyx_rot_s(&self, flag: bool) -> [i16; 3] {
+        let mut temp = self.xx;
+        temp *= temp;
+        temp += self.yx * self.yx;
+        let y = rad_to_binang(f_atan2f(-self.zx, temp.sqrt()));
+        if y == 0x4000 || y == -0x4000 {
+            return [0, y, rad_to_binang(f_atan2f(-self.xy, self.yy))];
+        }
+        let z = rad_to_binang(f_atan2f(self.yx, self.xx));
+        let x = if !flag {
+            rad_to_binang(f_atan2f(self.zy, self.zz))
+        } else {
+            // see Matrix_MtxFToYXZRotS
+            let mut t = self.xy;
+            let mut t2 = self.yy;
+            let mut t3 = self.yz;
+            t *= t;
+            t += t2 * t2;
+            t2 = self.zy;
+            t += t2 * t2;
+            t = t.sqrt();
+            t = t2 / t;
+            t2 = self.xz;
+            t2 *= t2;
+            t2 += t3 * t3;
+            t3 = self.zz;
+            t2 += t3 * t3;
+            t2 = t2.sqrt();
+            t2 = t3 / t2;
+            rad_to_binang(f_atan2f(t, t2))
+        };
+        [x, y, z]
+    }
+
     /// `Matrix_MtxFToYXZRotS(mf, rotDest, flag)`: the rotation as Tait-Bryan YXZ angles,
     /// `[x, y, z]`.
     pub fn to_yxz_rot_s(&self, flag: bool) -> [i16; 3] {
