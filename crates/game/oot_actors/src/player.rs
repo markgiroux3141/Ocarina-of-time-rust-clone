@@ -461,6 +461,8 @@ pub enum PlayerSfx {
     StopById(u16),
     /// `Audio_SetBaseFilter`: the underwater filter (and the bubbling).
     BaseFilter(u8),
+    /// `Actor_PlaySfx(actor, sfxId)` on another actor (the held one).
+    AtActor(ActorHandle, u16),
 }
 
 /// `SurfaceMaterial` (`bgcheck.h`): the ones Player names.
@@ -807,6 +809,8 @@ const ACTOR_EN_NIW: i16 = 0x0019;
 const ACTOR_EN_BOMBF: i16 = 0x004C;
 const ACTOR_BG_TOKI_SWD: i16 = 0x006C;
 const ACTOR_EN_RU1: i16 = 0x00A1;
+/// `NA_SE_VO_RT_FALL` (`sfx/voicebank.h`: 0x6862): Ruto's cry, held, as Link falls.
+const NA_SE_VO_RT_FALL: u16 = 0x6862;
 const ACTOR_EN_BOM_CHU: i16 = 0x00DA;
 const ACTOR_EN_KUSA: i16 = 0x0125;
 const ACTOR_EN_ISHI: i16 = 0x014E;
@@ -6013,10 +6017,13 @@ impl Player {
         0
     }
 
-    /// `func_80843E14`: a fall's voice (Ruto, held, would cry too: `En_Ru1` isn't ported, nor is
-    /// holding).
-    fn func_80843E14(&mut self, sfx_id: u16) {
+    /// `func_80843E14`: a fall's voice, and Ruto's cry when she's the one held
+    /// (`Actor_PlaySfx(this->heldActor, NA_SE_VO_RT_FALL)`).
+    fn func_80843E14(&mut self, env: &Env, sfx_id: u16) {
         self.play_voice_sfx(sfx_id);
+        if let Some(h) = self.held_actor.filter(|&h| env.actors.actor(h).is_some_and(|a| a.id == ACTOR_EN_RU1)) {
+            self.sfx(PlayerSfx::AtActor(h, NA_SE_VO_RT_FALL));
+        }
     }
 
     /// `Player_Action_8084411C`: in the air.
@@ -6051,7 +6058,7 @@ impl Player {
                 if self.action_var2 >= 0 {
                     if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 || self.action_var2 == 0 || self.fall_distance > 0 {
                         if self.s.floor_dist > 800.0 || self.state1 & STATE1_2 != 0 {
-                            self.func_80843E14(NA_SE_VO_LI_FALL_S);
+                            self.func_80843E14(env, NA_SE_VO_LI_FALL_S);
                             self.state1 &= !STATE1_2;
                         }
                         let a = data.anim("link_normal_landing");
@@ -6061,7 +6068,7 @@ impl Player {
                 } else {
                     if self.action_var2 == -1 && self.fall_distance > 120 && self.s.floor_dist > 280.0 {
                         self.action_var2 = -2;
-                        self.func_80843E14(NA_SE_VO_LI_FALL_L);
+                        self.func_80843E14(env, NA_SE_VO_LI_FALL_L);
                     }
                     if self.actor.bg_check_flags & BGCHECKFLAG_PLAYER_WALL_INTERACT != 0
                         && self.state2 & STATE2_19 == 0
@@ -9348,10 +9355,14 @@ impl Player {
     /// (`Door_Shutter`, `PLAYER_DOORTYPE_SLIDING`) is walked through instead
     /// (`Player_Action_80845CA4`), its camera index kept for the door (`cv.slidingDoorBgCamIndex`).
     ///
-    /// Not ported: `Door_Killer`, holding Ruto (`ACTOR_EN_RU1`), and
-    /// `Player_Action_TryOpeningDoor` (a cutscene's door walk).
+    /// Nothing carried, or Ruto (`ACTOR_EN_RU1`): Link opens doors with her in his arms.
+    ///
+    /// Not ported: `Door_Killer` and `Player_Action_TryOpeningDoor` (a cutscene's door walk).
     fn action_handler_1(&mut self, env: &Env) -> bool {
-        if self.door_type == PLAYER_DOORTYPE_NONE || self.state1 & STATE1_11 != 0 {
+        if self.door_type == PLAYER_DOORTYPE_NONE {
+            return false;
+        }
+        if self.state1 & STATE1_11 != 0 && !self.held_actor.and_then(|h| env.actors.actor(h)).is_some_and(|a| a.id == ACTOR_EN_RU1) {
             return false;
         }
         if !self.input.press.held(BTN_A) {
@@ -13096,6 +13107,9 @@ impl PlayerIface for Player {
     fn invincibility_timer(&self) -> i8 {
         self.invincibility_timer
     }
+    fn set_invincibility_timer(&mut self, timer: i8) {
+        self.invincibility_timer = timer;
+    }
     fn change_state_flags2(&mut self, set: u32, clear: u32) {
         self.state2 = (self.state2 | set) & !clear;
     }
@@ -13374,6 +13388,7 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
                 PlayerSfx::CodeReverb(r) => a.set_code_reverb(r),
                 PlayerSfx::StopById(id) => a.stop_sfx_by_id(id),
                 PlayerSfx::BaseFilter(f) => a.set_base_filter(f),
+                PlayerSfx::AtActor(h, id) => a.play_sfx_at_pos(SfxPos::Actor(h), id),
             }
         }
     }

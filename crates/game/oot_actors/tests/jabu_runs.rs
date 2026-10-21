@@ -35,7 +35,7 @@ fn run(a: &Arc<GameAssets>, route: Route) -> (PlayState, Playthrough) {
         prev = p;
         if trace && w.gameplay_frames % 20 == 0 {
             let pl = oot_actors::PlayExt::player(&w);
-            eprintln!("f {} pos {} speed {} action {:?} state1 {:x} stick {} {}", w.gameplay_frames, pl.actor.world_pos, pl.linear_velocity, pl.action, pl.state1, p.stick_x, p.stick_y);
+            eprintln!("f {} pos {} speed {} action {:?} state1 {:x} stick {} {} item {} fire {} door {}", w.gameplay_frames, pl.actor.world_pos, pl.linear_velocity, pl.action, pl.state1, p.stick_x, p.stick_y, pl.held_item_ap, pl.unk_860, pl.door_type);
         }
     }
     eprintln!("steps {:?}", run.steps);
@@ -123,7 +123,7 @@ fn the_hand_tests_starts_stand_on_a_floor_in_their_room() {
     use oot_actors::PlayExt;
     let Some(a) = assets() else { return };
     let e = a.scenes.entrance_index("ENTR_JABU_JABU_0").unwrap();
-    for (name, preset, room, pos, yaw, clears) in oot_actors::playthrough::JABU_STARTS {
+    for (name, preset, room, pos, yaw, clears, switches) in oot_actors::playthrough::JABU_STARTS {
         let mut save = SaveContext::new(e, false, oot_game::env::clock_time(10, 0) as u16);
         save.apply_preset(preset).unwrap();
         let mut w = oot_actors::play_entrance(a.clone(), data().unwrap(), rules().unwrap(), save).unwrap();
@@ -135,13 +135,57 @@ fn the_hand_tests_starts_stand_on_a_floor_in_their_room() {
             w.tick_with(scripted_input(PadState::default(), PadState::default()));
             w.room_change_done();
         }
+        for &s in switches {
+            w.flags.set_switch(s);
+        }
         w.place_player(pos, yaw);
         for _ in 0..10 {
             w.tick_with(scripted_input(PadState::default(), PadState::default()));
         }
         let p = w.player_pos();
-        assert!((p.y - pos.y).abs() < 3.0 && (p.x - pos.x).abs() < 3.0 && (p.z - pos.z).abs() < 3.0, "{name}: Link at {p} from {pos}");
+        // Room 7's floor conveyors (speed 2) drift Link towards its middle: 5 or so in 10 frames.
+        let drift = if room == 7 { 10.0 } else { 3.0 };
+        assert!((p.y - pos.y).abs() < 3.0 && (p.x - pos.x).abs() < drift && (p.z - pos.z).abs() < drift, "{name}: Link at {p} from {pos}");
         assert_eq!(w.room_ctx.cur.num, room, "{name}");
         assert!(w.player().state1 & oot_game::play::PLAYER_STATE1_27 == 0, "{name}: swimming");
     }
+}
+
+#[test]
+fn room_5s_crystal_door_0_and_the_fall_to_barinade() {
+    let Some(a) = assets() else { return };
+    let (mut w, run) = run(&a, Route::JabuCrystal);
+    let steps: Vec<Step> = run.steps.iter().map(|s| s.0).collect();
+    assert_eq!(steps, vec![Step::DoorOpened, Step::ThroughDoor, Step::SlingshotDrawn, Step::CrystalShot, Step::DoorOpened, Step::BarinadesRoom]);
+    // SCENE_JABU_JABU_BOSS (scene_table.h: 0x13).
+    assert_eq!(w.scene_id, 0x13);
+    // Less the debug start's room 1 and 5 clears.
+    ends_as_preset(&mut w, "jabu-barinade", |s| s.scene_flags[0x02].clear &= !((1 << 1) | (1 << 5)));
+}
+
+#[test]
+fn room_11s_stick_lit_and_carried_to_room_7s_web() {
+    let Some(a) = assets() else { return };
+    let (mut w, run) = run(&a, Route::JabuWeb);
+    let steps: Vec<Step> = run.steps.iter().map(|s| s.0).collect();
+    assert_eq!(steps, vec![Step::StickChest, Step::MenuOpened, Step::CursorOnItem, Step::ItemEquipped, Step::MenuClosed, Step::StickOut, Step::StickLit, Step::DoorOpened, Step::ThroughDoor, Step::WebBurnt]);
+    // Bg_Ydan_Sp 0x1FD6: its isDestroyedSwitchFlag 0x16.
+    assert!(w.flags.get_switch(0x16));
+    assert_eq!(w.room_ctx.cur.num, 7);
+    ends_as_preset(&mut w, "jabu-web", |s| s.scene_flags[0x02].clear &= !(1 << 11));
+}
+
+#[test]
+fn room_2_ruto_met_and_the_cow_freed_open_door_4() {
+    let Some(a) = assets() else { return };
+    let (mut w, run) = run(&a, Route::JabuRuto);
+    let steps: Vec<Step> = run.steps.iter().map(|s| s.0).collect();
+    assert_eq!(
+        steps,
+        vec![Step::RutoMet, Step::MenuOpened, Step::CursorOnItem, Step::ItemEquipped, Step::MenuClosed, Step::BombOut, Step::FuseShort, Step::BombThrown, Step::BouldersBroken, Step::SlingshotDrawn, Step::CowShot, Step::DoorOpened, Step::ThroughDoor]
+    );
+    // Her texts in gRutoFirstMeetingCs: 0x404B, 0x401E.
+    assert!(run.texts.contains(&0x404B) && run.texts.contains(&0x401E), "{:x?}", run.texts);
+    assert_eq!(w.room_ctx.cur.num, 7);
+    ends_as_preset(&mut w, "jabu-room-7", |s| s.scene_flags[0x02].clear &= !(1 << 2));
 }

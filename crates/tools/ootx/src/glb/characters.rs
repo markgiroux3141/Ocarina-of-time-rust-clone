@@ -191,6 +191,9 @@ pub const CHARACTERS: &[Character] = &[
     // as drawn (not shocking); and the Flobbery (En_Brob) at its wobble's first frame.
     c("Biri", "En_Bili/tentacles0_normal", Some(("object_bl", "gBiriMainAnim")), &[], &[], &[]),
     skel("Flobbery", "object_brob", "gBrobSkel", Some(("object_brob", "gBrobWobbleAnim")), &[], &[]),
+    // GAME-10 milestone 5: child Ruto (En_Ru1), eyes open, mouth closed, standing (gRutoChildWait2Anim);
+    // her arms RUTO_CHILD_LEFT_UPPER_ARM to _LEFT_HAND and the right ones.
+    c("Ruto (child)", "En_Ru1/opa", Some(("object_ru1", "gRutoChildWait2Anim")), &[OPAQUE_0E], &[8, 9, 10], &[11, 12, 13]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

@@ -860,9 +860,10 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     },
     SavePreset {
         name: "zora-letter",
-        about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4), Ruto's letter taken (EVENTCHKINF_31) and in the first bottle on C-Left: a debug start for GAME-10 milestone 3's King Zora (show it to him: he moves aside)",
+        about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4), the diving game won (the silver scale, EVENTCHKINF_38), Ruto's letter taken (EVENTCHKINF_31) and in the first bottle on C-Left: a debug start for GAME-10 milestone 3's King Zora (show it to him: he moves aside)",
         apply: |s| {
             zoras_domain(s);
+            diving_game_won(s);
             s.set_event_chk_inf(0x31);
             s.inventory.items[crate::item::SLOT_BOTTLE_1] = crate::item::ITEM_BOTTLE_RUTOS_LETTER;
             s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_RUTOS_LETTER);
@@ -873,6 +874,7 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         about: "zora-letter's save after King Zora (EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA, 0x33: the bottle emptied), the fountain's intro seen (EVENTCHKINF_B7) and a fish in that bottle on C-Left: a debug start for GAME-10 milestone 3's Lord Jabu-Jabu (let the fish out by him: he swallows Link)",
         apply: |s| {
             zoras_domain(s);
+            diving_game_won(s);
             s.set_event_chk_inf(0x31);
             s.set_event_chk_inf(0x33);
             s.set_event_chk_inf(0xB7);
@@ -899,6 +901,26 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         name: "jabu-boomerang",
         about: "jabu-room-14 with room 14's chest opened (treasure flag 6: the boomerang, Item_Give(ITEM_BOOMERANG); the spouts of rooms 1 and 14 down for good): Route::JabuBoomerang's end",
         apply: jabu_boomerang,
+    },
+    SavePreset {
+        name: "jabu-room-7",
+        about: "jabu-boomerang after room 2: Ruto met (INFTABLE_RUTO_MET_FIRST_TIME), the bombs on C-Down (the ocarina off it), the cow's three boulders blown up (switch flags 0x06, 0x11, 0x1A, a bomb used) and its target shot (0x13: door 4 open, a seed used), rooms 2 and 7 visited: Route::JabuRuto's end, Route::JabuWeb's start",
+        apply: jabu_room_7,
+    },
+    SavePreset {
+        name: "jabu-web",
+        about: "jabu-room-7 with room 11's chest opened (treasure flag 9: a Deku Stick, on C-Left, the bottle off it), its torch lit (switch flag 0x01, the room's timer's) and room 7's web burnt with the stick (switch flag 0x16: door 11 to room 9's tentacle), room 11 visited: Route::JabuWeb's end",
+        apply: jabu_web,
+    },
+    SavePreset {
+        name: "jabu-crystal",
+        about: "jabu-web with the way's two tentacles killed with the boomerang (room 9's gray, switch flag 0x0A: room 7's gray barriers gone; room 8's red, 0x0B: the red barriers gone, door 9's among them) and room 7's boulders on the blue switch blown up (0x1C), rooms 8 and 9 visited: a debug start for Route::JabuCrystal (the tentacles are the hand test's)",
+        apply: jabu_crystal,
+    },
+    SavePreset {
+        name: "jabu-barinade",
+        about: "jabu-crystal with room 5's crystal switch shot (switch flag 0x14: door 0, a seed used), rooms 5 and 15 visited, and Link fallen into Barinade's room (exit 2): Route::JabuCrystal's end, GAME-10 milestone 6's start",
+        apply: jabu_barinade,
     },
     SavePreset {
         name: "boomerang",
@@ -1112,10 +1134,20 @@ fn zoras_domain(s: &mut SaveContext) {
     s.set_event_chk_inf(0xA4);
 }
 
+/// The diving game's win in the story (not a run, by the user's call of 2026-10-21): the
+/// silver scale (`EnDivingGame_GiveScale`: `GI_SCALE_SILVER`, `Item_Give(ITEM_SCALE_SILVER)`) and,
+/// once its text is read, `EVENTCHKINF_OBTAINED_SILVER_SCALE` (`save.h`: 0x38,
+/// `EnDivingGame_EndMinigameAfterScaleGiven`). Ruto's letter (`zora-letter` on) needs the scale.
+fn diving_game_won(s: &mut SaveContext) {
+    item_give(s, None, crate::item::ITEM_SCALE_SILVER);
+    s.set_event_chk_inf(0x38);
+}
+
 /// `jabu-jabu`'s save: `jabu-fish`'s once the fish is let out and Lord Jabu-Jabu has swallowed
 /// Link (`Route::JabuFish`'s end).
 fn jabu_jabu(s: &mut SaveContext) {
     zoras_domain(s);
+    diving_game_won(s);
     s.set_event_chk_inf(0x31);
     s.set_event_chk_inf(0x33);
     s.set_event_chk_inf(0xB7);
@@ -1161,6 +1193,48 @@ fn jabu_boomerang(s: &mut SaveContext) {
     let f = &mut s.scene_flags[SCENE_JABU_JABU];
     f.chest |= 1 << 6;
     f.rooms |= 1 << 14;
+}
+
+/// `jabu-room-7`'s save (`Route::JabuRuto`'s end): Ruto met, the bombs on C-Down, room 2's
+/// boulders and cow.
+fn jabu_room_7(s: &mut SaveContext) {
+    jabu_boomerang(s);
+    // INFTABLE_RUTO_MET_FIRST_TIME (save.h: 0x141).
+    s.set_inf_table(0x141);
+    s.equip_item_on_c(1, crate::item::ITEM_BOMB);
+    crate::item::inventory_change_ammo(s, crate::item::ITEM_BOMB, -1);
+    crate::item::inventory_change_ammo(s, crate::item::ITEM_SLINGSHOT, -1);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.swch |= (1 << 0x06) | (1 << 0x11) | (1 << 0x1A) | (1 << 0x13);
+    f.rooms |= (1 << 2) | (1 << 7);
+}
+
+/// `jabu-web`'s save (`Route::JabuWeb`'s end): room 11's stick, its torch, room 7's web.
+fn jabu_web(s: &mut SaveContext) {
+    jabu_room_7(s);
+    item_give(s, None, crate::item::ITEM_DEKU_STICK);
+    s.equip_item_on_c(0, crate::item::ITEM_DEKU_STICK);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.chest |= 1 << 9;
+    f.swch |= (1 << 0x01) | (1 << 0x16);
+    f.rooms |= 1 << 11;
+}
+
+/// `jabu-crystal`'s save: the way's tentacles (gray 0x0A, red 0x0B) and room 7's boulders (0x1C).
+fn jabu_crystal(s: &mut SaveContext) {
+    jabu_web(s);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.swch |= (1 << 0x0A) | (1 << 0x0B) | (1 << 0x1C);
+    f.rooms |= (1 << 8) | (1 << 9);
+}
+
+/// `jabu-barinade`'s save (`Route::JabuCrystal`'s end): the crystal's flag 0x14, rooms 5 and 15.
+fn jabu_barinade(s: &mut SaveContext) {
+    jabu_crystal(s);
+    crate::item::inventory_change_ammo(s, crate::item::ITEM_SLINGSHOT, -1);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.swch |= 1 << 0x14;
+    f.rooms |= (1 << 5) | (1 << 15);
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:
@@ -1798,6 +1872,10 @@ impl SaveContext {
     }
     pub fn set_inf_table(&mut self, flag: u16) {
         self.inf_table[(flag >> 4) as usize] |= 1 << (flag & 0xF);
+    }
+    /// `CLEAR_INFTABLE`.
+    pub fn clear_inf_table(&mut self, flag: u16) {
+        self.inf_table[(flag >> 4) as usize] &= !(1 << (flag & 0xF));
     }
 
     /// `CHECK_QUEST_ITEM` (`gBitFlags[item] & questItems`).

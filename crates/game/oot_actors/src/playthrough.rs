@@ -592,6 +592,21 @@ pub enum Step {
     YellowSwitch,
     /// Room 14: the boomerang's chest opened (`En_Box` 0x10C6, treasure flag 6).
     BoomerangChest,
+    /// Jabu-Jabu's room 2: Ruto's first meeting over (`gRutoFirstMeetingCs`, she dropped through a
+    /// hole: `INFTABLE_RUTO_MET_FIRST_TIME`), Link free.
+    RutoMet,
+    /// A held bomb's fuse short (`En_Bom`'s `timer`).
+    FuseShort,
+    /// A bomb thrown (Link's hands free again).
+    BombThrown,
+    /// Room 2: the cow's three boulders blown up (`Obj_Bombiwa` 0x0006, 0x0011, 0x001A).
+    BouldersBroken,
+    /// Room 11: its chest opened (`En_Box` 0x70E9, treasure flag 9: a Deku Stick).
+    StickChest,
+    /// Room 5: the crystal switch hit (`Obj_Switch` 0x1403: switch flag 0x14, door 0).
+    CrystalShot,
+    /// Barinade's room (`SCENE_JABU_JABU_BOSS`) entered, Link landed and standing.
+    BarinadesRoom,
 }
 
 impl Step {
@@ -823,6 +838,13 @@ impl Step {
             Step::Dived => "dived",
             Step::YellowSwitch => "yellow_switch",
             Step::BoomerangChest => "boomerang_chest",
+            Step::RutoMet => "ruto_met",
+            Step::FuseShort => "fuse_short",
+            Step::BombThrown => "bomb_thrown",
+            Step::BouldersBroken => "boulders_broken",
+            Step::StickChest => "stick_chest",
+            Step::CrystalShot => "crystal_shot",
+            Step::BarinadesRoom => "barinades_room",
         }
     }
 }
@@ -1094,6 +1116,20 @@ pub enum Route {
     /// (`jabu-boomerang`: the spout in front of door 14 down for good), through door 14 into room
     /// 14. Before the chest the spout pushes Link back short of the door.
     JabuDoor14,
+    /// GAME-10 milestone 5: Jabu-Jabu's room 2 inside door 2 (`jabu-boomerang`, the room marked
+    /// cleared): Ruto's first meeting (`gRutoFirstMeetingCs`, her drop through a hole), the bombs
+    /// put on C-Down, the cow's boulders blown up from below, its target shot (switch 0x13: door
+    /// 4) and through door 4 into room 7.
+    JabuRuto,
+    /// GAME-10 milestone 5: room 11 marked cleared (`jabu-room-7`: its chest out, its torch lit by
+    /// the room's timer), inside door 7: the chest's Deku Stick put on C-Left, lit at the golden
+    /// torch, carried through door 7 to room 7's web (`Bg_Ydan_Sp` 0x1FD6), which burns.
+    JabuWeb,
+    /// GAME-10 milestone 5: room 1 in front of door 9 with the tentacles' flags set
+    /// (`jabu-crystal`: the red barrier gone): through door 9 into room 5, its crystal switch shot
+    /// from the pool (switch 0x14), door 0 into room 15, whose floor is exit 2: the fall into
+    /// Barinade's room (`ENTR_JABU_JABU_BOSS_0`).
+    JabuCrystal,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1684,9 +1720,9 @@ fn jabu_door_14_tasks() -> Vec<Task> {
     vec![Task::Settle(None), Task::OpenSlidingDoor(JABU_DOOR_14, JABU_DOOR_14_FRONT, Step::DoorOpened), Task::WaitDoorShut(JABU_DOOR_14, Step::ThroughDoor), Task::Settle(None)]
 }
 
-/// The hand test's starts in Jabu-Jabu's Belly (GAME-10 milestone 4, `game-jabu.bat`):
-/// `(name, preset, room, position, yaw, rooms cleared)`. `oot_actors --test jabu_runs` checks each:
-/// Link stands, and the room doesn't change.
+/// The hand test's starts in Jabu-Jabu's Belly (GAME-10 milestones 4 and 5, `game-jabu.bat`):
+/// `(name, preset, room, position, yaw, rooms cleared, switch flags set)`. `oot_actors --test
+/// jabu_runs` checks each: Link stands, and the room doesn't change.
 /// - `cow`: room 0's spawn (the Shaboms, the Octorok; the west cow to shoot);
 /// - `elevator`: room 1 at the end of door 1's corridor, facing the elevator;
 /// - `flobbery`: room 1's west walkway by its three Flobberies (the Biris float over the shaft);
@@ -1699,17 +1735,44 @@ fn jabu_door_14_tasks() -> Vec<Task> {
 ///   switch 0x39 raising the water);
 /// - `boomerang`: room 14 cleared, in front of the boomerang's chest on its ledge;
 /// - `door14`: room 1's bottom after the chest (the spout down), facing door 14.
-pub const JABU_STARTS: [(&str, &str, i8, Vec3, i16, &[i8]); 10] = [
-    ("cow", "jabu-jabu", 0, Vec3::new(-18.0, -240.0, 302.0), i16::MIN, &[]),
-    ("elevator", "jabu-room-1", 1, Vec3::new(0.0, -320.0, -1500.0), i16::MIN, &[]),
-    ("flobbery", "jabu-room-1", 1, Vec3::new(-200.0, -325.0, -1600.0), i16::MIN, &[]),
-    ("pit", "jabu-room-1", 1, Vec3::new(160.0, -1233.0, -1703.0), -0x4000, &[]),
-    ("spout", "jabu-room-1", 1, Vec3::new(160.0, -1233.0, -1703.0), 0x4000, &[]),
-    ("platform", "jabu-room-1", 1, Vec3::new(0.0, 80.0, -1700.0), 0x4000, &[]),
-    ("room2", "jabu-room-14", 2, Vec3::new(0.0, -340.0, -2560.0), i16::MIN, &[]),
-    ("room14", "jabu-room-14", 14, Vec3::new(1000.0, -1293.0, -2450.0), 0, &[]),
-    ("boomerang", "jabu-room-14", 14, Vec3::new(780.0, -1073.0, -2376.0), -0x4000, &[14]),
-    ("door14", "jabu-boomerang", 1, Vec3::new(160.0, -1233.0, -1703.0), 0x4000, &[]),
+///
+/// Milestone 5's:
+/// - `ruto`: room 2 inside door 2, room 2 cleared: walk towards Ruto for her first meeting;
+/// - `carry`: room 3 by Ruto after the meeting (`jabu-room-7`): talk, lift her (A), carry her,
+///   throw her, drop her in the water; onto the blue switch 0x3C (door 12);
+/// - `stick`: room 11 cleared (its chest's Deku Stick, the torch lit by its timer's flag 0x01),
+///   inside door 7: the stick to room 7's web;
+/// - `barriers`: room 7 by its two gray barriers (`En_Bx` 0x0A82), its crates (`Obj_Kibako`)
+///   north of them;
+/// - `gray`, `red`, `green`: inside rooms 9, 8 and 10, facing their tentacle (`En_Ba`), the
+///   boomerang owned (`jabu-web`: none killed);
+/// - `crates`: room 7 by its crates with the blue switch's boulders blown (`jabu-crystal`): a crate
+///   on the blue switch 0x0D holds door 6 open;
+/// - `crystal`: room 1 in door 9's corridor with the tentacles' flags (`jabu-crystal`);
+/// - `door0`: room 5 in front of door 0 after the crystal (`jabu-barinade`): through, room 15's
+///   floor is the exit to Barinade.
+pub const JABU_STARTS: [(&str, &str, i8, Vec3, i16, &[i8], &[i32]); 21] = [
+    ("cow", "jabu-jabu", 0, Vec3::new(-18.0, -240.0, 302.0), i16::MIN, &[], &[]),
+    ("elevator", "jabu-room-1", 1, Vec3::new(0.0, -320.0, -1500.0), i16::MIN, &[], &[]),
+    ("flobbery", "jabu-room-1", 1, Vec3::new(-200.0, -325.0, -1600.0), i16::MIN, &[], &[]),
+    ("pit", "jabu-room-1", 1, Vec3::new(160.0, -1233.0, -1703.0), -0x4000, &[], &[]),
+    ("spout", "jabu-room-1", 1, Vec3::new(160.0, -1233.0, -1703.0), 0x4000, &[], &[]),
+    ("platform", "jabu-room-1", 1, Vec3::new(0.0, 80.0, -1700.0), 0x4000, &[], &[]),
+    ("room2", "jabu-room-14", 2, Vec3::new(0.0, -340.0, -2560.0), i16::MIN, &[], &[]),
+    ("room14", "jabu-room-14", 14, Vec3::new(1000.0, -1293.0, -2450.0), 0, &[], &[]),
+    ("boomerang", "jabu-room-14", 14, Vec3::new(780.0, -1073.0, -2376.0), -0x4000, &[14], &[]),
+    ("door14", "jabu-boomerang", 1, Vec3::new(160.0, -1233.0, -1703.0), 0x4000, &[], &[]),
+    ("ruto", "jabu-boomerang", 2, JABU_ROOM_2_START, i16::MIN, &[2], &[]),
+    ("carry", "jabu-room-7", 3, Vec3::new(140.0, -1113.0, -3270.0), 0x4000, &[], &[]),
+    ("stick", "jabu-room-7", 11, JABU_ROOM_11_START, i16::MIN, &[11], &[0x01]),
+    ("barriers", "jabu-web", 7, Vec3::new(-640.0, -340.0, -4800.0), -0x4000, &[], &[]),
+    ("gray", "jabu-web", 9, Vec3::new(1120.0, -340.0, -4683.0), 0x4000, &[], &[]),
+    ("red", "jabu-web", 8, Vec3::new(0.0, -340.0, -5370.0), i16::MIN, &[], &[]),
+    ("green", "jabu-web", 10, Vec3::new(-1120.0, -340.0, -4683.0), -0x4000, &[], &[]),
+    ("crates", "jabu-crystal", 7, Vec3::new(-560.0, -340.0, -4660.0), -0x4000, &[], &[]),
+    ("crystal", "jabu-crystal", 1, JABU_DOOR_9_START, 0x4000, &[1], &[]),
+    ("door0", "jabu-barinade", 5, Vec3::new(1360.0, -320.0, -2040.0), i16::MIN, &[5], &[]),
+    ("room5", "jabu-crystal", 5, Vec3::new(700.0, -320.0, -1703.0), 0x4000, &[], &[]),
 ];
 
 /// Room 14's boomerang chest (`En_Box` 0x10C6 at (699, -1073, -2376), facing -x: its front the
@@ -1720,6 +1783,154 @@ const JABU_BOOMERANG_CHEST: Vec3 = Vec3::new(699.0, -1073.0, -2376.0);
 /// opened; the boomerang's get-item.
 fn jabu_boomerang_tasks() -> Vec<Task> {
     vec![Task::Settle(None), Task::OpenChest(JABU_BOOMERANG_CHEST, Some(Step::BoomerangChest)), Task::Settle(None)]
+}
+
+/// Room 2 inside door 2 (door 2 at (0, -260, -2443): its floor -340).
+const JABU_ROOM_2_START: Vec3 = Vec3::new(0.0, -340.0, -2560.0);
+/// Room 2's cow's target (`En_Wonder_Item` 0x1953 at (248, -165, -2771): switch flag 0x13, door 4),
+/// in the wall's niche 175 over the floor behind three boulders (`Obj_Bombiwa` 0x0006, 0x0011,
+/// 0x001A at y -179 to -184); aimed a little up its middle (at its foot the seed meets the niche's
+/// wall).
+const JABU_ROOM_2_COW_TARGET: Vec3 = Vec3::new(248.0, -152.0, -2771.0);
+const JABU_ROOM_2_COW_FLAG: i32 = 0x13;
+/// Door 4 (transition 4, at (0, -260, -3983)), room 2's side.
+const JABU_DOOR_4: usize = 4;
+const JABU_DOOR_4_FRONT: Vec3 = Vec3::new(0.0, -340.0, -3940.0);
+/// `INFTABLE_RUTO_MET_FIRST_TIME` (`save.h`: 0x141).
+const INFTABLE_RUTO_MET_FIRST_TIME: u16 = 0x141;
+
+/// Whether Link holds a bomb whose fuse (`En_Bom`'s `timer`) is down to `t` or under.
+fn bomb_fuse_under(w: &PlayState, t: i16) -> bool {
+    w.player().held_actor.and_then(|h| w.actors.downcast::<crate::en_bom::EnBom>(h)).is_some_and(|b| b.timer <= t)
+}
+
+/// `Route::JabuRuto`'s tasks. Ruto (`En_Ru1` 0x0202 at (216, -340, -3072)) waits for Link to come
+/// within 265 of her along z (and no lower): her first meeting's cutscene, her texts (0x404B,
+/// 0x401E), her walk off and drop through a hole. The bombs onto C-Down from the item page; below
+/// the cow's niche a bomb held until its fuse is short and thrown up, to burst by the boulders
+/// (`Actor_FindNearbyExplosive`: within 80); the cow's target shot; door 4.
+fn jabu_ruto_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(120.0, -340.0, -2830.0)]),
+        Task::Texts(|w| w.save.get_inf_table(INFTABLE_RUTO_MET_FIRST_TIME) && w.player().state1 & oot_game::actor_ctx::PLAYER_STATE1_29 == 0, Step::RutoMet),
+        Task::WaitCameras,
+        Task::Settle(None),
+        // The bombs (SLOT_BOMB) onto C-Down from the item page.
+        Task::OpenMenu(Step::MenuOpened),
+        Task::MenuCursor(PAUSE_SLOT_BOMB, Step::CursorOnItem),
+        Task::EquipOnC(1, Step::ItemEquipped),
+        Task::CloseMenu(Step::MenuClosed),
+        Task::Walk(vec![Vec3::new(247.0, -340.0, -3010.0)]),
+        Task::TakeBomb(1, Step::BombOut),
+        Task::Texts(|w| bomb_fuse_under(w, JABU_BOMB_FUSE), Step::FuseShort),
+        Task::ThrowAtRun(vec![Vec3::new(247.0, -340.0, -2960.0), Vec3::new(247.0, -340.0, -2830.0)], JABU_BOMB_RELEASE, Step::BombThrown),
+        Task::WaitFor(Cond::Switch(0x06), Step::BouldersBroken),
+        Task::Settle(None),
+        // Far enough back that the seed's line clears the niche's lip (its floor about -184).
+        Task::Walk(vec![Vec3::new(247.0, -340.0, -3080.0)]),
+        Task::DrawSlingshot(Step::SlingshotDrawn),
+        Task::Shoot(JABU_ROOM_2_COW_TARGET, JABU_ROOM_2_COW_FLAG, Step::CowShot),
+        Task::LeaveFirstPerson,
+        Task::WaitCameras,
+        // Round the holes down to room 3 (x -80 to 0 at z -3040 to -3120, 180 to 220 at -3200 to
+        // -3240, 0 to 80 at -3280 to -3360, and two more south-west): down x 300, then west.
+        // Then under the arch at the corridor's mouth (its top -280, z -3680 to -3760).
+        Task::Walk(vec![Vec3::new(300.0, -340.0, -3100.0), Vec3::new(300.0, -340.0, -3620.0), Vec3::new(0.0, -340.0, -3630.0), Vec3::new(0.0, -340.0, -3880.0)]),
+        Task::OpenSlidingDoor(JABU_DOOR_4, JABU_DOOR_4_FRONT, Step::DoorOpened),
+        Task::WaitDoorShut(JABU_DOOR_4, Step::ThroughDoor),
+        Task::Settle(None),
+    ]
+}
+
+/// The item page's slots (`SLOT_BOMB` 2, `SLOT_DEKU_STICK` 0: `inventory.h`).
+const PAUSE_SLOT_BOMB: u16 = 2;
+const PAUSE_SLOT_STICK: u16 = 0;
+
+/// The bomb's fuse when Link sets off at a run from 170 south of the niche: the run, the throw
+/// and its flight to the niche's wall.
+const JABU_BOMB_FUSE: i16 = 30;
+/// Where Link throws it, running north (thrown at his speed plus 8, 12 up).
+const JABU_BOMB_RELEASE: Vec3 = Vec3::new(247.0, -340.0, -2920.0);
+
+/// Room 11 inside door 7 (door 7 at (660, -260, -5183), facing +z: room 11 behind it).
+const JABU_ROOM_11_START: Vec3 = Vec3::new(660.0, -340.0, -5260.0);
+/// Room 11's chest (`En_Box` 0x70E9 at (663, -340, -5933): `ROOM_CLEAR_SMALL`, a Deku Stick).
+const JABU_STICK_CHEST: Vec3 = Vec3::new(663.0, -340.0, -5933.0);
+/// Room 11's golden torch (`Obj_Syokudai` 0x03C1 on its wall: switch flag 0x01, the room's timer's).
+const JABU_TORCH: Vec3 = Vec3::new(790.0, -340.0, -5372.0);
+/// Door 7, room 11's side.
+const JABU_DOOR_7: usize = 7;
+const JABU_DOOR_7_FRONT: Vec3 = Vec3::new(660.0, -340.0, -5215.0);
+/// Room 7's web in front of door 11 (`Bg_Ydan_Sp` 0x1FD6 at (827, -340, -4687): burnt, switch
+/// flag 0x16).
+const JABU_WEB: Vec3 = Vec3::new(827.0, -340.0, -4687.0);
+
+/// `Route::JabuWeb`'s tasks: room 11's chest (its Deku Stick), the stick onto C-Left from the item
+/// page (the bottle off it), out (C-Left), lit at the torch, through door 7 into room 7 and at the
+/// web, burning, until it's gone.
+fn jabu_web_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::OpenChest(JABU_STICK_CHEST, Some(Step::StickChest)),
+        Task::OpenMenu(Step::MenuOpened),
+        Task::MenuCursor(PAUSE_SLOT_STICK, Step::CursorOnItem),
+        Task::EquipOnC(0, Step::ItemEquipped),
+        Task::CloseMenu(Step::MenuClosed),
+        Task::Walk(vec![Vec3::new(700.0, -340.0, -5400.0)]),
+        Task::TakeStick(Step::StickOut),
+        Task::LightStick(JABU_TORCH, Step::StickLit),
+        Task::Hurry(vec![Vec3::new(670.0, -340.0, -5300.0), Vec3::new(660.0, -340.0, -5225.0)]),
+        Task::OpenSlidingDoor(JABU_DOOR_7, JABU_DOOR_7_FRONT, Step::DoorOpened),
+        Task::WaitDoorShut(JABU_DOOR_7, Step::ThroughDoor),
+        // Room 7's east side is walled at x 740 north to z -4780; the web stands in the alcove
+        // beyond (z -4740 to -4660), facing west. The floor's conveyors (speed 2) drift Link back
+        // to the room's middle faster than a slow walk: at a run up to the web, whose plane the
+        // stick's tip crosses (BgYdanSp_WallWebIdle: its z under 1 in the web's frame).
+        Task::Hurry(vec![Vec3::new(700.0, -340.0, -4900.0), Vec3::new(700.0, -340.0, -4710.0), Vec3::new(812.0, -340.0, -4693.0)]),
+        Task::BurnWeb(JABU_WEB, Step::WebBurnt),
+        Task::Settle(None),
+    ]
+}
+
+/// Room 1 in door 9's corridor (door 9 at (620, -240, -1703), facing -x: room 5 behind it).
+const JABU_DOOR_9_START: Vec3 = Vec3::new(420.0, -320.0, -1703.0);
+const JABU_DOOR_9: usize = 9;
+const JABU_DOOR_9_FRONT: Vec3 = Vec3::new(580.0, -320.0, -1703.0);
+/// Room 5's crystal switch (`Obj_Switch` 0x1403 at (1456, -60, -1188): switch flag 0x14, door 0),
+/// 380 over the pool's floor (-440, under water to -420). Its sphere (`sCrystalJntSphElementsInit`:
+/// 20 across, 300 up at the actor's scale 0.1) is at y -30: aimed 8 over it for the seed's fall
+/// (`En_Arrow`'s gravity -0.4) over the 600 or so to it.
+const JABU_CRYSTAL: Vec3 = Vec3::new(1456.0, -22.0, -1188.0);
+const JABU_CRYSTAL_FLAG: i32 = 0x14;
+/// Door 0 (transition 0, at (1360, -240, -2119)), room 5's side.
+const JABU_DOOR_0: usize = 0;
+const JABU_DOOR_0_FRONT: Vec3 = Vec3::new(1360.0, -320.0, -2080.0);
+/// `SCENE_JABU_JABU_BOSS` (`scene_table.h`: 0x13).
+const SCENE_JABU_JABU_BOSS: u16 = 0x13;
+
+/// `Route::JabuCrystal`'s tasks: through door 9 (the red barrier gone with its flag); room 5's
+/// floor (-320) drops 70 to its pool's slope; from the pool (-440, 20 deep) the crystal shot with
+/// the slingshot (C-Right); back up the 62 step to the south floor, door 0 (barred until the
+/// crystal's flag) into room 15, whose whole floor (x 1220 to 1500, z -2119 to -2399) is exit 2's:
+/// Barinade's room, Link falling in from its ceiling.
+fn jabu_crystal_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::OpenSlidingDoor(JABU_DOOR_9, JABU_DOOR_9_FRONT, Step::DoorOpened),
+        Task::WaitDoorShut(JABU_DOOR_9, Step::ThroughDoor),
+        Task::Walk(vec![Vec3::new(1100.0, -320.0, -1720.0), Vec3::new(1300.0, -400.0, -1700.0), Vec3::new(1456.0, -440.0, -1650.0)]),
+        Task::DrawSlingshot(Step::SlingshotDrawn),
+        Task::Shoot(JABU_CRYSTAL, JABU_CRYSTAL_FLAG, Step::CrystalShot),
+        Task::LeaveFirstPerson,
+        Task::WaitCameras,
+        // The pool's south rim: a ramp from its east end (x 1700, -391) up to the south floor
+        // (x 1460, -320) along z -1900.
+        Task::Walk(vec![Vec3::new(1620.0, -440.0, -1800.0), Vec3::new(1700.0, -400.0, -1860.0), Vec3::new(1690.0, -390.0, -1910.0), Vec3::new(1460.0, -320.0, -1920.0), Vec3::new(1360.0, -320.0, -2000.0)]),
+        Task::OpenSlidingDoor(JABU_DOOR_0, JABU_DOOR_0_FRONT, Step::DoorOpened),
+        Task::Texts(|w| w.scene_id == SCENE_JABU_JABU_BOSS, Step::BarinadesRoom),
+        Task::Settle(None),
+    ]
 }
 
 /// `Route::JabuFish`'s tasks: from spawn 2 to 100 west of the feeding spot (`En_Jj`'s
@@ -2380,7 +2591,7 @@ impl Route {
             Route::KingZora => "ENTR_ZORAS_DOMAIN_1",
             Route::JabuFish => "ENTR_ZORAS_FOUNTAIN_2",
             // Spawn 0, room 0; the debug starts change room.
-            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 => "ENTR_JABU_JABU_0",
+            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => "ENTR_JABU_JABU_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2431,6 +2642,9 @@ impl Route {
             Route::JabuElevator => Some("jabu-room-1"),
             Route::JabuBoomerang => Some("jabu-room-14"),
             Route::JabuDoor14 => Some("jabu-boomerang"),
+            Route::JabuRuto => Some("jabu-boomerang"),
+            Route::JabuWeb => Some("jabu-room-7"),
+            Route::JabuCrystal => Some("jabu-crystal"),
             Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -2489,6 +2703,12 @@ impl Route {
             Route::JabuBoomerang => Some((Vec3::new(780.0, -1073.0, -2376.0), -0x4000)),
             // Room 1's bottom east of the pit, facing door 14 (+x).
             Route::JabuDoor14 => Some((Vec3::new(160.0, -1233.0, -1703.0), 0x4000)),
+            // Room 2 inside door 2, facing in (-z).
+            Route::JabuRuto => Some((JABU_ROOM_2_START, i16::MIN)),
+            // Room 11 inside door 7, facing in (-z).
+            Route::JabuWeb => Some((JABU_ROOM_11_START, i16::MIN)),
+            // Room 1 in door 9's corridor (the red barrier's place), facing the door (+x).
+            Route::JabuCrystal => Some((JABU_DOOR_9_START, 0x4000)),
             _ => None,
         }
     }
@@ -2497,6 +2717,10 @@ impl Route {
     pub fn start_switches(self) -> &'static [i32] {
         match self {
             Route::Stick => &[STICK_TORCH_FLAG],
+            // Room 11's clear comes with its timer's flag 0x01 (the golden torch), as on a save
+            // that beat it: Obj_Roomtimer 0x07FF is an enemy until its first update, so a room
+            // marked cleared never spawns it to set the flag.
+            Route::JabuWeb => &[0x01],
             _ => &[],
         }
     }
@@ -2520,6 +2744,12 @@ impl Route {
             Route::JabuCow => &[0],
             Route::JabuElevator | Route::JabuDoor14 => &[1],
             Route::JabuBoomerang => &[14],
+            // Room 2's Biris and Flobbery; room 11's two caged Like Likes (its clear brings the
+            // chest, ROOM_CLEAR_SMALL, and the timer's flag 0x01 lights the torch); rooms 1 and
+            // 5's (room 5's Like Likes and Skullwalltula).
+            Route::JabuRuto => &[2],
+            Route::JabuWeb => &[11],
+            Route::JabuCrystal => &[1, 5],
             _ => &[],
         }
     }
@@ -2536,6 +2766,9 @@ impl Route {
             Route::TimeBlocks => Some(15),
             Route::JabuElevator | Route::JabuDoor14 => Some(1),
             Route::JabuBoomerang => Some(14),
+            Route::JabuRuto => Some(2),
+            Route::JabuWeb => Some(11),
+            Route::JabuCrystal => Some(1),
             _ => None,
         }
     }
@@ -2686,6 +2919,9 @@ impl Route {
             Route::JabuElevator => "jabu-elevator",
             Route::JabuBoomerang => "jabu-boomerang",
             Route::JabuDoor14 => "jabu-door-14",
+            Route::JabuRuto => "jabu-ruto",
+            Route::JabuWeb => "jabu-web",
+            Route::JabuCrystal => "jabu-crystal",
         }
     }
 
@@ -2745,7 +2981,7 @@ impl Route {
             Route::ZorasRiver => 3000,
             Route::KingZora => 3000,
             Route::JabuFish => 3000,
-            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 => 3000,
+            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2758,7 +2994,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3525,6 +3761,9 @@ impl Playthrough {
             Route::JabuElevator => jabu_elevator_tasks(),
             Route::JabuBoomerang => jabu_boomerang_tasks(),
             Route::JabuDoor14 => jabu_door_14_tasks(),
+            Route::JabuRuto => jabu_ruto_tasks(),
+            Route::JabuWeb => jabu_web_tasks(),
+            Route::JabuCrystal => jabu_crystal_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no

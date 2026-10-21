@@ -733,3 +733,149 @@ scripts\run\sandbox-jabu-runs.bat
    takes the Deku Shield), the Lizalfos; the yellow switch by the water raises it for 100 frames
    (ticking). Look for a way up to the chest's ledge.
 9. `boomerang`: open the chest: the boomerang. `door14` (after it): through door 14.
+
+## Milestone 5: Jabu-Jabu's Belly to Barinade
+
+**Status:** committed 2026-10-21; **the hand test is owed** (the user deferred it:
+[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)), the list below under "By hand".
+
+**The answer:** Ruto (`En_Ru1`) whole, every type, with Player's two Ruto checks; the tentacles,
+the electric barriers, the crate and the room timers whole; the silver scale in the story's
+presets (BACKLOG #102); the way from the boomerang to Barinade's room settled by the search over
+the floors and three short scripted runs from debug starts, no fights:
+
+- **Ruto's first meeting and the cow** (`Route::JabuRuto`, room 2 inside door 2 on
+  `jabu-boomerang`, the room marked cleared): Link walks within 265 of Ruto, her cutscene
+  (`gRutoFirstMeetingCs`, texts 0x404B, 0x401E) and her drop through a hole; the bombs onto C-Down
+  from the item page; a bomb held until its fuse is short and thrown at a run, bursting by the
+  cow's three boulders; the cow's target shot (switch 0x13); round room 2's holes to door 4, into
+  room 7. Ruto met at frame 804, the boulders at 966, the cow at 1066, through door 4 at 1466.
+- **Room 11's stick to room 7's web** (`Route::JabuWeb`, room 11 cleared on `jabu-room-7`, inside
+  door 7): the chest's Deku Stick put on C-Left, lit at the golden torch, carried through door 7
+  at a run to room 7's web, which burns (switch 0x16). Lit at 629, through the door at 701, the web
+  burnt at 810: **the stick lasts** (it burns 210 frames; the way takes about 180 at a run).
+- **Room 5's crystal and the fall** (`Route::JabuCrystal`, room 1 in door 9's corridor on
+  `jabu-crystal`, the tentacles' flags set by the preset): through door 9 (its red barrier gone),
+  down into room 5's pool, the crystal shot with the slingshot (switch 0x14), up the pool's south
+  ramp, door 0, room 15's floor: Barinade's room. The crystal at 344, door 0 at 653, Barinade's
+  room at 683.
+
+Scripts: `scripts\run\game-jabu.bat` (menu 157) gains `ruto`, `carry`, `stick`, `barriers`,
+`gray`, `red`, `green`, `crates`, `crystal`, `room5`, `door0`; `test-jabu.bat` (158) and
+`sandbox-jabu-runs.bat` (159) gain the new tests and runs.
+
+### What was built
+
+- **The silver scale** (ADR 0083, the user's call on #102): `zora-letter`, `jabu-fish` and
+  `jabu-jabu` (and every preset after) apply the diving game's win: `Item_Give(ITEM_SCALE_SILVER)`
+  and `EVENTCHKINF_OBTAINED_SILVER_SCALE` (0x38).
+- **`En_Ru1`** whole, by a helper: Barinade's room's (rising through the blue warp she spawns as a
+  child), the fountain's (`gZorasFountainSapphireCs`' cues), room 2's (her meeting and drop),
+  room 3's (talk: 0x404C to 0x404E; sitting, lifted, carried, thrown, bouncing; in water she bobs,
+  sinks and fades; on a blue switch she holds it down), room 6's (`gRutoFoundSapphireCs`,
+  `gRutoObtainingSapphireCs`, the Sapphire, Big Octo's platform), the throne room's (0x402C and
+  the masks' reactions), beside the door switch, the debug type; her draw (opaque or translucent,
+  eyes and mouth, head and chest turned to Link). `Door_Warp1` gains the `rutoWarpState` she reads
+  and writes (its Ruto states are milestone 6's).
+- **Player:** doors open with Ruto carried (`Player_ActionHandler_1`); her cry on Link's falls
+  (`func_80843E14`, `PlayerSfx::AtActor`). `PlayerIface::set_invincibility_timer` (`En_Bx`'s).
+- **`En_Ba`** (the tentacles: only the boomerang hurts them, four hits; the swing at Link; the
+  blobs on death; their flag), **`En_Bx`** (the barriers: gone with their colour's flag; the quad's
+  shock and knock-back), **`Obj_Kibako`** (the crate: lifted, thrown, broken into splinters with
+  its drop; on a blue switch it holds it down), **`Obj_Roomtimer`** (the room's clear sets its
+  flag; a timed one runs the HUD timer and voids Link out at 0), by a second helper.
+- **The presets:** `jabu-room-7` (`Route::JabuRuto`'s end), `jabu-web` (`Route::JabuWeb`'s),
+  `jabu-crystal` (a debug start: the way's two tentacles killed, gray 0x0A and red 0x0B, and room
+  7's boulders on the blue switch, 0x1C), `jabu-barinade` (`Route::JabuCrystal`'s end: milestone
+  6's start).
+- **The runs** and `JABU_STARTS`' eleven new starts, each checked (with the switch flags a start
+  sets: room 11's timer's).
+
+### The way, settled
+
+- **Room 2:** door 4 and Ruto are reached on foot from door 2. Six holes drop to room 3 (x -80 to
+  0 at z -3040 to -3120, 180 to 220 at -3200 to -3240, 0 to 80 at -3280 to -3360, -280 to -240 at
+  -3400 to -3440, -100 to -60 at -3520 to -3560), and the floor's conveyors carry Link into them.
+  The cow is in a niche in the north wall, 156 over the floor, behind three boulders that break
+  only to an explosion within 80 (`Actor_FindNearbyExplosive`). Standing still, A puts a carried
+  bomb down; so the bomb is held until its fuse is down to 30 and thrown at a run 130 south of the
+  niche, and it bursts against the niche's wall 50 under the boulders. The target is shot from 330
+  back (nearer, the seed meets the niche's lip). The "rise" in front of door 4 is an arch over the
+  floor.
+- **Room 11 to room 7's web:** room 11's golden torch is lit by its timer's flag 0x01 (on the
+  room's clear). The stick burns 210 frames, enough for the torch, door 7 and room 7 at a run
+  (about 180). Room 7's east side is walled at x 740 north to z -4780; the web stands in the
+  alcove beyond. The floor's conveyors (speed 2, towards the room's middle) beat a slow walk: the
+  web is reached at a run, the stick's tip crossing its plane.
+- **Room 5:** door 9's floor (-320) drops 70 to the pool (its floor -440, the water 20 deep). The
+  crystal's sphere is small (20 across, at y -30): shot from the pool, aimed 8 over it for the
+  seed's fall. The posts (`Obj_Hsblock`) aren't needed. Link didn't take the step the search found
+  back up to the south floor (62 at its lowest, 67 to 71 where he met it); the pool's south rim
+  is a ramp from x 1700 (-391) up to x 1460 (-320).
+- **Room 15** has no actors: its floor is exit 2's (x 1220 to 1500, z -2119 to -2399), straight
+  through door 0.
+- A room marked cleared on a debug start doesn't spawn its timer (an enemy until its first update),
+  so the start also sets the flag a save that beat the room would have (room 11's 0x01).
+
+### Results
+
+- Tests: the helpers' `en_ru1` (9), `en_ba` (5), `en_bx` (5), `obj_kibako` (5), `obj_roomtimer`
+  (4); `jabu_runs` (8: the three new runs, each end checked against its preset, and the 21 starts).
+- 1,664 tests pass, 1 ignored; `cargo test -p layering` passes; no warnings. The pack is still
+  format 30, re-imported into `out/data27` for the new actors' bakes.
+- Goldens: against `out/golden_base33` 294 of 297 the same; `jabu_elevator`'s trace and shot (the
+  scale) and `king_zora`'s trace (Ruto's type 5 beside the king, killed at init without
+  `EVENTCHKINF_37`) differ, proven with run-time switches in `target/game26proof`
+  (`out/golden_proof_g10m5.txt`): with both causes out, all 297 are the base's. 8 new
+  (`jabu_ruto`, `jabu_ruto_meeting`, `jabu_web`, `jabu_crystal`, `jabu_tentacle_gray`): 305
+  hashes, 229 cases (`out/golden_base34`).
+- COVERAGE: Phase 11 28 of 35 (`Boss_Va`, `En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Tp`, `En_Vali`,
+  `Item_Ocarina` left); 211 ported overall.
+
+### Corrections
+
+- The silver scale is `UPG_SCALE` 1 (`Item_Give` adds `item - ITEM_SCALE_SILVER + 1`), not 2.
+- In Master Quest Ruto never sets `INFTABLE_RUTO_PLACED_ON_SWITCH`: she sets it only on a blue
+  switch with flag 0x38, and room 3's is 0x3C (she still holds it down: door 12 opens). Room 7's
+  Ruto (0x0206) wants that flag, and room 7 doesn't load her object: she never appears.
+- Ruto's other places: Zora's Fountain's layer 4 (type 1), Zora's Domain's room 0 in layers 0 and
+  1 (type 5, beside King Zora); Barinade's room places none (`Boss_Va` spawns her).
+
+### Known gaps
+
+- `Door_Warp1`'s Ruto states and `Boss_Va` (who spawns Barinade's-room Ruto) are milestone 6's;
+  Big Octo is still the platform's placeholder (milestone 8).
+- Ruto's first step of her walk to the Sapphire jumps 71 (her root motion; BACKLOG #104,
+  milestone 8).
+- The tentacles' and barriers' draws haven't been looked at on screen (the hand test).
+
+### How to check
+
+```
+scripts\run\test-jabu.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-jabu-runs.bat
+```
+
+### By hand
+
+`scripts\run\game-jabu.bat` (menu 157):
+
+1. `ruto`: walk towards Ruto (south-east of you): her meeting, her texts, she walks off and drops
+   through a hole. Put the bombs on a C button; hold a bomb under the cow's niche (north wall,
+   high up) until it flashes fast, then run and throw it up: the boulders go. Shoot the cow's
+   target: door 4 opens.
+2. `carry`: room 3 by Ruto: talk to her (she explains, then asks to be carried); lift her with A,
+   walk, throw her (she bounces, cries), put her in the water (she bobs, sinks and fades out). Carry her through a door; fall a little with her (her cry). Set her
+   on the blue switch: door 12 opens.
+3. `stick`: open room 11's chest (a Deku Stick), put it on a C button, light it at the golden
+   torch, run through door 7 and into room 7's web on the east side: it burns.
+4. `barriers`: room 7's gray barriers: touch one (a shock, knock-back).
+5. `gray`, `red`, `green`: each tentacle with the boomerang (put it on a C button): sword hits do
+   nothing, four boomerang hits kill it, its room clears, its barriers go. Let it swing at you.
+6. `crates`: lift a crate, throw it (it breaks); carry the other onto the blue switch between the
+   blown boulders: door 6 opens.
+7. `crystal`, `room5`: through door 9 into room 5, shoot the crystal over the pool (door 0's
+   camera), up the south ramp. `door0`: through door 0, the fall into Barinade's room.

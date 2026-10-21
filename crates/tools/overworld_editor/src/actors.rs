@@ -283,6 +283,11 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("Bg_Bdan_Objects", "Jabu-Jabu's lifts and water", Group::Object),
     ("En_Siofuki", "Water spout", Group::Object),
     ("En_Okuta", "Octorok", Group::Enemy),
+    ("En_Ba", "Parasitic tentacle", Group::Enemy),
+    ("En_Bx", "Electrified tentacle barrier", Group::Enemy),
+    ("Obj_Kibako", "Small crate", Group::Object),
+    ("Obj_Roomtimer", "Room clear (timer)", Group::Trigger),
+    ("En_Ru1", "Ruto, child", Group::Character),
 ];
 
 /// An actor the editor can place.

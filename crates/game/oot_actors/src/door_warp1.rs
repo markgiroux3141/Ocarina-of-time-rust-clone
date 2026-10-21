@@ -119,6 +119,20 @@ pub const WARP_ORANGE: i16 = 8;
 pub const WARP_GREEN: i16 = 9;
 pub const WARP_RED: i16 = 10;
 
+/// `DoorWarp1RutoState` (`z_door_warp1.h`): `rutoWarpState`, how `WARP_BLUE_RUTO` and `En_Ru1`
+/// talk to each other.
+pub const WARP_BLUE_RUTO_STATE_INITIAL: i32 = 0;
+/// Set by Ruto: the warp can work now.
+pub const WARP_BLUE_RUTO_STATE_READY: i32 = 1;
+/// Set by the warp: Link has stepped into it.
+pub const WARP_BLUE_RUTO_STATE_ENTERED: i32 = 2;
+/// Set by Ruto: folding her arms.
+pub const WARP_BLUE_RUTO_STATE_3: i32 = 3;
+/// Set by the warp: the dialog started.
+pub const WARP_BLUE_RUTO_STATE_TALKING: i32 = 4;
+/// Set by the warp: after the dialog closes.
+pub const WARP_BLUE_RUTO_STATE_WARPING: i32 = 5;
+
 /// `PLAYER_CSACTION_10` (`player.h`): walking to the warp's centre (`unk_450`).
 const PLAYER_CSACTION_10: u8 = 10;
 /// `SCENE_DEKU_TREE_BOSS`, `SCENE_DODONGOS_CAVERN_BOSS`, `SCENE_JABU_JABU_BOSS` (`scene_table.h`).
@@ -190,6 +204,9 @@ pub struct DoorWarp1 {
     pub unk_1bc: f32,
     pub upper_light: Option<LightNode>,
     pub lower_light: Option<LightNode>,
+    /// `rutoWarpState` (`DoorWarp1RutoState`): `En_Ru1` reads and writes it; the warp's own
+    /// Ruto states (`DoorWarp1_RutoWarpIdle`, `_RutoWarpOut`) aren't ported yet.
+    pub ruto_warp_state: i32,
 }
 
 impl DoorWarp1 {
@@ -224,6 +241,7 @@ impl DoorWarp1 {
             unk_1bc: 0.0,
             upper_light: None,
             lower_light: None,
+            ruto_warp_state: WARP_BLUE_RUTO_STATE_INITIAL,
         };
         let p = TYPE.get(w.actor.params);
         if p != WARP_SAGES && p != WARP_BLUE_CRYSTAL && p != WARP_YELLOW && p != WARP_DESTINATION {

@@ -1,0 +1,10 @@
+# Hand tests owed
+
+Milestones committed before the user played them by hand. Each row points at the milestone's
+"By hand" list (what to try) and its `game-*.bat` starts. When a hand test is done, strike its row
+and note the date; what it finds goes into the milestone's "Found by hand" section (and BACKLOG if
+it isn't fixed at once).
+
+| Milestone | Built and committed | The list | Starts | Status |
+|---|---|---|---|---|
+| GAME-10 milestone 5: Jabu-Jabu's Belly to Barinade ([ADR 0083](adr/0083-jabu-jabus-belly-to-barinade.md)) | 2026-10-21 (committed and pushed on the user's ask, the hand test deferred) | [GAME-10, Milestone 5, By hand](GAME-10-zoras-waters-and-jabu-jabu.md#by-hand-3): Ruto's meeting, carrying and throwing her, her water and the blue switch; the stick to room 7's web; the gray barriers; the three tentacles with the boomerang (their draws not yet seen on screen); the crates on the blue switch; room 5's crystal, door 0 and the fall into Barinade's room | `scripts\run\game-jabu.bat` (menu 157): `ruto`, `carry`, `stick`, `barriers`, `gray`, `red`, `green`, `crates`, `crystal`, `room5`, `door0` | Owed |

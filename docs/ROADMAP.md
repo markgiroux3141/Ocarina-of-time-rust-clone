@@ -233,7 +233,10 @@ Phase 11 (GAME-10, [GAME-10-zoras-waters-and-jabu-jabu.md](GAME-10-zoras-waters-
 surveyed and proposed (2026-10-20), nine milestones, every call the recommended one. Milestone 1
 (water and bottles, [ADR 0081](adr/0081-water-bottles-and-the-underwater-view.md)) is done;
 milestones 2 and 3 (the river, the Domain, the lake, the fountain: King Zora and Jabu-Jabu's mouth)
-are done (2026-10-21); milestone 4 (Jabu-Jabu to the boomerang) is next, Player's boomerang ported early.
+are done (2026-10-21); milestone 4 (Jabu-Jabu to the boomerang, [ADR 0082](adr/0082-jabu-jabus-belly-to-the-boomerang.md))
+is done; milestone 5 (to Barinade: Ruto whole, the tentacles, barriers, crates and room timers,
+[ADR 0083](adr/0083-jabu-jabus-belly-to-barinade.md)) is done, its hand test owed
+([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)); milestone 6 (Barinade and the Sapphire) is next.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -778,8 +781,11 @@ the fountain, Jabu-Jabu) with `game-zora.bat`'s debug starts; **milestones 2 and
 (2026-10-21: hand-tested, the river, King Zora and Jabu-Jabu runs). **Milestone 4**
 (2026-10-21, ADR 0082: Jabu-Jabu's draw config with the walls' pulse as site matrices, pack format
 30; its switches, lifts and spouts; the six enemies; the runs to room 1's yellow switch and the
-boomerang), **done** (2026-10-21, hand-tested; the elevator's foot shadows fixed). Next: milestone
-5. Found: in MQ neither Ruto nor Big Octo is on the way to
+boomerang), **done** (2026-10-21, hand-tested; the elevator's foot shadows fixed). **Milestone 5**
+(2026-10-21, ADR 0083: `En_Ru1` whole with Player's Ruto checks, `En_Ba`, `En_Bx`, `Obj_Kibako`,
+`Obj_Roomtimer`; the silver scale in the story's presets, BACKLOG #102; the runs to Ruto's meeting
+and the cow, room 11's stick to room 7's web, and room 5's crystal to Barinade's room) **done**
+(committed 2026-10-21; the hand test deferred by the user, owed: [HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)). Next: milestone 6 (Barinade and the Sapphire) from `jabu-barinade`. Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
 (room 1's spout across it drops only with the boomerang's chest).
 
