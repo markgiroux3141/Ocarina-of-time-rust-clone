@@ -55,6 +55,8 @@ use eng_collision::math3d::Cylinder16;
 
 // stateFlags1
 pub const STATE1_0: u32 = 1 << 0; // going through an exit
+/// `PLAYER_STATE1_SWINGING_BOTTLE`: the bottle swung, catching (`Player_Action_SwingBottle`'s first 8 frames).
+pub const STATE1_1: u32 = 1 << 1;
 pub const STATE1_2: u32 = 1 << 2;
 pub const STATE1_3: u32 = 1 << 3;
 /// `PLAYER_STATE1_9`: the bow's or slingshot's string drawn back (`func_8083442C`, `func_808351D4`).
@@ -243,6 +245,8 @@ pub enum PlayRequest {
     /// call on, as the C holds the actor; applied by Player's update, which puts the real handle
     /// in its place, or undoes the hold if the spawn failed (the C's NULL).
     SpawnHeldExplosive { id: i16, item: u8, pos: Vec3, yaw: i16, expected: ActorHandle },
+    /// `func_808359FC`'s `Actor_Spawn(ACTOR_EN_BOOM, ...)`, its `moveTo` and `returnTimer` 20.
+    SpawnBoomerang { pos: Vec3, rot: [i16; 3], move_to: Option<ActorHandle> },
     /// `heldActor->parent = NULL`: Player lets go of what he held (`Player_DetachHeldActor`,
     /// `func_808350A4`'s shot).
     ReleaseHeld(ActorHandle),
@@ -281,6 +285,17 @@ pub enum PlayRequest {
     /// the request runs, `crate::en_m_thunder::spawn_from_player`), and its write to his
     /// `stateFlags2` (`PLAYER_STATE2_17` off) is applied by Player's update after the spawn.
     SpawnMThunder { waist: Vec3, params: i16, shape_yaw: i16, state2: u32 },
+    /// `Player_UpdateBottleHeld`'s inventory half: `Inventory_UpdateBottleItem(play, item,
+    /// heldItemButton)` and the pause menu's cursor item (Player's half runs in his update).
+    UpdateBottleItem { item: u8, button: i8 },
+    /// `Player_SpawnFairy(play, this, &leftHandPos, &D_80854A1C, FAIRY_REVIVE_BOTTLE)`: a bottled
+    /// fairy let out, at `pos`.
+    SpawnBottleFairy(Vec3),
+    /// `Player_Action_8084EFC0`'s `Actor_Spawn(dropInfo->actorId, ..., dropInfo->actorParams)`:
+    /// what a bottle lets out (a fish, blue fire, bugs).
+    SpawnBottleDrop { id: i16, pos: Vec3, rot: [i16; 3], params: i16 },
+    /// `Health_ChangeBy(play, amount)`.
+    HealthChangeBy(i16),
 }
 
 /// `Player_UpdateBottleHeld` (`z_player_lib.c`): the bottle on the button Link used holds `item`
@@ -341,6 +356,10 @@ const D_80854398: [u16; 3] = [0x1807, 0x1821, 0x1827];
 const D_808543DC: [u16; 2] = [0x1830, 0x1835];
 /// `NA_SE_IT_HOOKSHOT_RECEIVE` (`itembank_table.h`: 0x1828).
 const NA_SE_IT_HOOKSHOT_RECEIVE: u16 = 0x1828;
+/// `NA_SE_IT_BOOMERANG_THROW` (`itembank_table.h`: 0x1805).
+const NA_SE_IT_BOOMERANG_THROW: u16 = 0x1805;
+/// `NA_SE_PL_CATCH_BOOMERANG` (`playerbank_table.h`: 0x836).
+const NA_SE_PL_CATCH_BOOMERANG: u16 = 0x836;
 /// `D_808543CC` and `D_808543D4`: the bow's and the hookshot's raise from walking, and their wait.
 const D_808543CC: [&str; 2] = ["link_bow_walk2ready", "link_hook_walk2ready"];
 const D_808543D4: [&str; 2] = ["link_bow_bow_wait", "link_hook_wait"];
@@ -384,7 +403,8 @@ fn ice_scroll(gameplay_frames: u32) -> Vec<(u32, u32)> {
 /// skeleton, its `gSPMatrix` of segment 0x0D's limb matrices putting it on the left forearm).
 const BRACELET_BAKE: &str = "Player/bracelet";
 
-/// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice, the child's bracelet.
+/// Player's own bakes (docs/adr/0012-actor-bakes.md): the frozen ice, the child's bracelet, the
+/// bottle in hand (`sBottleDLists`, its colour dynamic).
 pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     use oot_game::pack::{BakeBody, BakeSegment, MeshBake};
     vec![
@@ -401,6 +421,20 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
             segments: vec![(0x0D, BakeSegment::SkeletonMatrices { file: "object_link_child".into(), symbol: "gLinkChildSkel".into() })],
             prelude: vec![],
             body: BakeBody::DLists(vec![("object_link_child".into(), "gLinkChildGoronBraceletDL".into())]),
+        },
+        MeshBake {
+            name: BOTTLE_BAKES[0].into(),
+            object: "object_link_boy".into(),
+            segments: vec![(SEG_BOTTLE_COLOR, BakeSegment::DynamicColor { env: true, prim: false })],
+            prelude: vec![SEG_BOTTLE_COLOR],
+            body: BakeBody::DLists(vec![("object_link_boy".into(), "gLinkAdultBottleDL".into())]),
+        },
+        MeshBake {
+            name: BOTTLE_BAKES[1].into(),
+            object: "object_link_child".into(),
+            segments: vec![(SEG_BOTTLE_COLOR, BakeSegment::DynamicColor { env: true, prim: false })],
+            prelude: vec![SEG_BOTTLE_COLOR],
+            body: BakeBody::DLists(vec![("object_link_child".into(), "gLinkChildBottleDL".into())]),
         },
     ]
 }
@@ -435,6 +469,8 @@ const SURFACE_MATERIAL_WATER_SHALLOW: u16 = 4;
 const SURFACE_MATERIAL_WATER_DEEP: u16 = 5;
 /// `PLAYER_BOOTS_IRON` (`player.h`).
 const PLAYER_BOOTS_IRON: u8 = 1;
+/// `PLAYER_BOOTS_HOVER` (`player.h`).
+const PLAYER_BOOTS_HOVER: u8 = 2;
 use oot_game::audio::sfx::*;
 
 // floor properties (FLOOR_PROPERTY_*)
@@ -490,6 +526,8 @@ const FLOOR_PROPERTY_6: u32 = 6;
 const FLOOR_PROPERTY_7: u32 = 7;
 const FLOOR_PROPERTY_8: u32 = 8;
 const FLOOR_PROPERTY_9: u32 = 9;
+/// `FLOOR_PROPERTY_11`: a diving board (running off it over deep water dives).
+const FLOOR_PROPERTY_11: u32 = 11;
 const FLOOR_TYPE_6: u32 = 6;
 const FLOOR_TYPE_8: u32 = 8;
 const FLOOR_TYPE_7: u32 = 7;
@@ -610,8 +648,21 @@ pub enum Action {
     SwimTarget,
     /// `Player_Action_8084DC48`: diving.
     Dive,
+    /// `Player_Action_80844A44`: run off a diving board (`FLOOR_PROPERTY_11`) over deep water: the
+    /// dive's jump, falling (`link_normal_run_jump_water_fall_wait`); into the water it dives.
+    DiveJump,
     /// `Player_Action_8084E1EC`: surfacing after a dive.
     Surface,
+    /// `Player_Action_8084D7C4`: swimming in from an entrance in deep water.
+    SwimIn,
+    /// `Player_Action_SwingBottle`: the empty bottle swung (B), catching what's offered.
+    SwingBottle,
+    /// `Player_Action_8084EAC0`: drinking a potion, milk or a Poe.
+    Drink,
+    /// `Player_Action_8084EED8`: a bottled fairy let out.
+    FairyRelease,
+    /// `Player_Action_8084EFC0`: a fish, blue fire or bugs let out of the bottle.
+    BottleDrop,
     /// `Player_Action_80845CA4`: walking through an exit, or in from an entrance.
     ExitWalk,
     /// `Player_Action_8084F88C`: falling into a void.
@@ -806,6 +857,19 @@ pub enum UpperAction {
     BowLower,
     /// `Player_UpperAction_CarryActor`: carrying an actor overhead (`link_normal_carryB_wait`).
     Carry,
+    /// `func_80835800` (`sItemActionUpdateFuncs` for the boomerang): in hand; the shield, the
+    /// catch's wait while thrown, or raised.
+    Boomerang,
+    /// `func_80835884`: raising it (`link_boom_throw_wait2waitR`).
+    BoomerangRaise,
+    /// `func_808358F0`: raised (`link_boom_throw_waitR`), thrown when the button is let go.
+    BoomerangAim,
+    /// `func_808359FC`: the throw (`link_boom_throwR` / `L`), the boomerang spawned on frame 6.
+    BoomerangThrow,
+    /// `func_80835B60`: thrown, waiting for it.
+    BoomerangThrown,
+    /// `func_80835C08`: caught (`link_boom_catch`).
+    BoomerangCatch,
 }
 
 impl Action {
@@ -840,7 +904,13 @@ impl Action {
             Action::SwimMove => "Player_Action_8084D84C",
             Action::SwimTarget => "Player_Action_8084DAB4",
             Action::Dive => "Player_Action_8084DC48",
+            Action::DiveJump => "Player_Action_80844A44",
             Action::Surface => "Player_Action_8084E1EC",
+            Action::SwimIn => "Player_Action_8084D7C4",
+            Action::SwingBottle => "Player_Action_SwingBottle",
+            Action::Drink => "Player_Action_8084EAC0",
+            Action::FairyRelease => "Player_Action_8084EED8",
+            Action::BottleDrop => "Player_Action_8084EFC0",
             Action::ExitWalk => "Player_Action_80845CA4",
             Action::VoidFall => "Player_Action_8084F88C",
             Action::ItemPutAway => "Player_Action_WaitForPutAway",
@@ -919,6 +989,11 @@ pub struct PlayerStatics {
     pub held_item_button_is_held_down: bool,
     /// `D_80858AA0`: the animation's `moveFlags` when a cutscene mode starts.
     pub d_80858aa0: i32,
+    /// `sConveyorSpeed` (`CONVEYOR_SPEED_*`, 0 disabled), `sConveyorYaw` and `sIsFloorConveyor`:
+    /// the floor's current or conveyor, from `Player_ProcessSceneCollision`.
+    pub conveyor_speed: u32,
+    pub conveyor_yaw: i16,
+    pub is_floor_conveyor: bool,
     /// The main camera's mode after Player's own `Camera_RequestMode` calls this update (they're
     /// made on the camera after it, `PlayRequest::CamRequestMode`); `None` before any.
     pub cam_mode: Option<i16>,
@@ -1080,6 +1155,10 @@ pub struct Player {
     pub unk_89C: i16,
     pub unk_6C2: i16,
     pub unk_6C4: f32,
+    /// `unk_854`: how far the waist has moved in shallow water since the last ripple.
+    pub unk_854: f32,
+    /// `unk_A88`: the waist (`bodyPartsPos[PLAYER_BODYPART_WAIST]`) at the end of the last update.
+    pub unk_a88: Vec3,
     /// Which of the look/lean rotations were driven this frame (`func_80847298` decays the rest).
     pub unk_6AE_rot_flags: u16,
     pub idle_type: i8,
@@ -1304,6 +1383,11 @@ pub struct Player {
     pub unk_A73: u8,
     /// `heldActor`: the seed or arrow in hand (`En_Arrow`, Player's child), or what he carries.
     pub held_actor: Option<ActorHandle>,
+    /// `boomerangActor`: the boomerang thrown (`En_Boom`), the camera's target while it flies.
+    pub boomerang_actor: Option<ActorHandle>,
+    /// `func_808358F0`'s `AnimTaskQueue_AddCopy` this update: the upper skeleton takes the whole
+    /// body's pose at the frame's end (locked on or side-walking with the boomerang raised).
+    upper_copies_body: bool,
     /// The handle the next spawn gets, as this update began (`ActorContext::next_handle`): what
     /// Player holds from `Player_InitExplosiveIA` until its spawn runs at the update's end.
     next_spawn_handle: Option<ActorHandle>,
@@ -1385,6 +1469,8 @@ impl Player {
             unk_89C: 0,
             unk_6C2: 0,
             unk_6C4: 0.0,
+            unk_854: 0.0,
+            unk_a88: Vec3::ZERO,
             unk_6AE_rot_flags: 0,
             idle_type: 0,
             unk_6AD: 0,
@@ -1513,6 +1599,8 @@ impl Player {
             unk_A87: 0,
             unk_A73: 0,
             held_actor: None,
+            boomerang_actor: None,
+            upper_copies_body: false,
             next_spawn_handle: None,
             unk_3bc: [0; 3],
             unk_836: 0,
@@ -1696,13 +1784,17 @@ impl Player {
     /// `Player_SetStartingMovement`: the entrance walk `dist` ahead, or swimming if the spawn is in deep
     /// water. True for the walk.
     fn set_starting_movement(&mut self, data: &GameData, col: &CollisionContext, dist: f32) -> bool {
-        if let Some(y) = col.water_surface(self.actor.world_pos.x, self.actor.world_pos.z, col.water_room)
+        if let Some(y) = col.water_surface_all_hack(self.actor.world_pos.x, self.actor.world_pos.y, self.actor.world_pos.z, col.water_room)
             && y - self.actor.world_pos.y >= self.age.unk_24
         {
-            // Player_Action_8084D7C4 (swimming in from the entrance) isn't ported: tread water.
-            self.note("entrance into deep water: Player_Action_8084D7C4 not ported, treading water");
-            self.func_80838F18(data);
+            // Swimming in (Player_Action_8084D7C4) for 20 frames at 2; Player_SetBootData: the
+            // Kokiri boots keep their data in water.
+            self.setup_action(data, Action::SwimIn, 0);
+            let a = data.anim("link_swimer_swim");
+            self.anim_change_loop_slow_morph(data, a);
             self.state1 |= STATE1_27 | STATE1_29;
+            self.action_var2 = 20;
+            self.linear_velocity = 2.0;
             return false;
         }
         let yaw = self.actor.shape_rot.y;
@@ -1828,15 +1920,40 @@ impl Player {
             self.actor.speed_xz = self.linear_velocity;
             self.actor.world_rot.y = self.current_yaw;
             self.actor.update_velocity();
-            if self.pushed_speed != 0.0 {
+            // Not in a cutscene mode, on a ledge, a wall or a ladder, climbing up a ledge, or
+            // warping out by Farore's Wind (Player_Action_808507F4, not ported).
+            if self.pushed_speed != 0.0 && !self.player_in_cs_mode(env) && self.state1 & (STATE1_13 | STATE1_14 | STATE1_21) == 0 && self.action != Action::ClimbLedge {
                 self.actor.velocity.x += self.pushed_speed * sin_s(self.pushed_yaw);
                 self.actor.velocity.z += self.pushed_speed * cos_s(self.pushed_yaw);
             }
             self.actor.update_pos();
             self.process_scene_collision(env);
+        } else {
+            // The animation moves Link (ANIM_FLAG_OVERRIDE_MOVEMENT): no floor type or property,
+            // no current. (Riding's exits: Epona isn't ported.)
+            self.s.floor_type = 0;
+            self.floor_property = 0;
+            self.s.conveyor_speed = 0;
+            self.pushed_speed = 0.0;
         }
-        if self.pushed_speed != 0.0 {
-            step_to_f(&mut self.pushed_speed, 0.0, 1.0);
+        // The current pushes (pushedSpeed): water's (CONVEYOR_SPEED_* 1 to 3: sWaterConveyorSpeeds,
+        // a quarter out of the water) or a conveyor floor's (sFloorConveyorSpeeds), a tenth of
+        // the way a frame, turning 400 (swimming) or 800 a frame per unit; without one it eases off.
+        if self.s.conveyor_speed != 0 && self.current_boots != PLAYER_BOOTS_IRON {
+            const S_WATER_CONVEYOR_SPEEDS: [f32; 3] = [2.0, 4.0, 7.0];
+            const S_FLOOR_CONVEYOR_SPEEDS: [f32; 3] = [0.5, 1.0, 3.0];
+            let i = (self.s.conveyor_speed - 1) as usize;
+            let speed = if !self.s.is_floor_conveyor {
+                let s = S_WATER_CONVEYOR_SPEEDS[i];
+                if self.state1 & STATE1_27 == 0 { s * 0.25 } else { s }
+            } else {
+                S_FLOOR_CONVEYOR_SPEEDS[i]
+            };
+            step_to_f(&mut self.pushed_speed, speed, speed * 0.1);
+            let turn = if self.state1 & STATE1_27 != 0 { 400.0 } else { 800.0 } * speed;
+            scaled_step_to_s(&mut self.pushed_yaw, self.s.conveyor_yaw, turn as i16);
+        } else if self.pushed_speed != 0.0 {
+            step_to_f(&mut self.pushed_speed, 0.0, if self.state1 & STATE1_27 != 0 { 0.5 } else { 1.0 });
         }
 
         if !self.in_blocking_cs_mode(env) && self.state2 & STATE2_18 == 0 {
@@ -1889,7 +2006,7 @@ impl Player {
             self.prev_cs_mode = 0;
         }
 
-        self.func_8083D6EC();
+        self.func_8083D6EC(env);
 
         if self.focus_actor.is_none() && self.navi_text_id == 0 {
             self.state2 &= !(STATE2_1 | STATE2_21);
@@ -1919,13 +2036,13 @@ impl Player {
         self.update_shape_yaw(env);
         let _ = data;
         self.actor.home_pos = self.actor.world_pos;
+        self.unk_a88 = self.body_parts_pos[PLAYER_BODYPART_WAIST];
     }
 
     /// `Player_UpdateCamAndSeqModes`'s camera half: the mode Player asks the main camera for
     /// (`Camera_RequestMode`), with the actor it passes to `Camera_SetViewParam(camera, 8, ...)`,
     /// or `None` in first person (`PLAYER_STATE1_20`); `seq_mode` is its sequence half.
-    /// Hookshot, `Player_Action_8084377C`, and the bow, slingshot and boomerang aren't ported, so
-    /// their modes never come up.
+    /// Hookshot and `Player_Action_8084377C` aren't ported, so their modes never come up.
     pub fn update_cam_and_seq_modes(&self) -> Option<(i16, Option<ActorHandle>)> {
         use oot_game::camera::*;
         if self.cs_mode != 0 {
@@ -1952,6 +2069,7 @@ impl Player {
         } else if self.state1 & STATE1_12 != 0 {
             CAM_MODE_CHARGE
         } else if self.state1 & STATE1_25 != 0 {
+            target = self.boomerang_actor;
             CAM_MODE_FOLLOW_BOOMERANG
         } else if self.state1 & (STATE1_13 | STATE1_14) != 0 {
             // Player_FriendlyLockOnOrParallel.
@@ -1998,6 +2116,11 @@ impl Player {
     /// `AnimTaskQueue_Update`, run after all actors (only Player here) have updated.
     pub fn finish_frame(&mut self) {
         self.skel.run_queue(&mut self.actor);
+        // func_808358F0's AnimTaskQueue_AddCopy (queued before Player_UpdateUpperBody's copy back,
+        // which so changes nothing).
+        if std::mem::take(&mut self.upper_copies_body) {
+            self.skel2.joint = self.skel.joint;
+        }
     }
 
     /// The draw-time part of Player that changes its joint table: `func_8008F87C` (foot IK) for
@@ -2064,7 +2187,13 @@ impl Player {
             Action::SwimMove => self.action_8084d84c(env),
             Action::SwimTarget => self.action_8084dab4(env),
             Action::Dive => self.action_8084dc48(env),
+            Action::DiveJump => self.action_80844a44(env),
             Action::Surface => self.action_8084e1ec(env),
+            Action::SwimIn => self.action_8084d7c4(env),
+            Action::SwingBottle => self.action_swing_bottle(env),
+            Action::Drink => self.action_8084eac0(env),
+            Action::FairyRelease => self.action_8084eed8(env),
+            Action::BottleDrop => self.action_8084efc0(env),
             Action::ExitWalk => self.action_80845ca4(env),
             Action::VoidFall => self.action_8084f88c(env),
             Action::ItemPutAway => self.action_wait_for_put_away(env),
@@ -2110,9 +2239,84 @@ impl Player {
     }
 
     /// `func_8083D6EC`: gravity and terminal velocity (water/sand parts not modelled).
-    fn func_8083D6EC(&mut self) {
+    fn func_8083D6EC(&mut self, env: &Env) {
         self.actor.min_velocity_y = -20.0;
         self.actor.gravity = self.regs.reg(68) as f32 / 100.0;
+        // Sinking into sand or quicksand (func_8083816C's floors: FLOOR_TYPE_4, 7, 12): unk_6C4 the
+        // depth, down by twice the speed's (the hover boots' doubling the other way round on
+        // quicksand, the iron boots' 0.3), up towards its limit (FLOOR_TYPE_4's: at least 1300,
+        // else 20000) by a fiftieth of what's left (at most 300; twice in the iron boots); pulling
+        // Link down.
+        if func_8083816C(self.s.floor_type) {
+            let mut temp1 = self.linear_velocity.abs() * 20.0;
+            let mut temp3 = 0.0f32;
+            let temp2;
+            if self.s.floor_type == FLOOR_TYPE_4 {
+                temp2 = if self.unk_6C4 > 1300.0 { self.unk_6C4 } else { 1300.0 };
+                if self.current_boots == PLAYER_BOOTS_HOVER {
+                    temp1 += temp1;
+                } else if self.current_boots == PLAYER_BOOTS_IRON {
+                    temp1 *= 0.3;
+                }
+            } else {
+                temp2 = 20000.0;
+                if self.current_boots != PLAYER_BOOTS_HOVER {
+                    temp1 += temp1;
+                } else if self.s.floor_type == FLOOR_TYPE_7 || self.current_boots == PLAYER_BOOTS_IRON {
+                    temp1 = 0.0;
+                }
+            }
+            if self.current_boots != PLAYER_BOOTS_HOVER {
+                temp3 = ((temp2 - self.unk_6C4) * 0.02).clamp(0.0, 300.0);
+                if self.current_boots == PLAYER_BOOTS_IRON {
+                    temp3 += temp3;
+                }
+            }
+            self.unk_6C4 += temp3 - temp1;
+            self.unk_6C4 = self.unk_6C4.clamp(0.0, temp2);
+            self.actor.gravity -= self.unk_6C4 * 0.004;
+        } else {
+            self.unk_6C4 = 0.0;
+        }
+        if self.actor.bg_check_flags & BGCHECKFLAG_WATER != 0 {
+            // Wading (less than 50 deep): a ripple each 15 the waist moves (at most 4 a frame), a
+            // splash too running faster than 4 with the waist above the water.
+            if self.actor.y_dist_to_water < 50.0 {
+                let w = self.body_parts_pos[PLAYER_BODYPART_WAIST];
+                let temp4 = ((w.x - self.unk_a88.x).abs() + (w.y - self.unk_a88.y).abs() + (w.z - self.unk_a88.z).abs()).min(4.0);
+                self.unk_854 += temp4;
+                if self.unk_854 > 15.0 {
+                    self.unk_854 = 0.0;
+                    {
+                        let mut io = env.io.borrow_mut();
+                        let x = io.rand.zero_one() * 10.0 + self.actor.world_pos.x;
+                        let y = self.actor.world_pos.y + self.actor.y_dist_to_water;
+                        let z = io.rand.zero_one() * 10.0 + self.actor.world_pos.z;
+                        io.ss_col(env.col).g_ripple_spawn(Vec3::new(x, y, z), 100, 500, 0);
+                    }
+                    if self.linear_velocity > 4.0 && !self.func_808332B8() && self.actor.world_pos.y + self.actor.y_dist_to_water < w.y {
+                        let scale = (self.linear_velocity.abs() * 50.0 + self.actor.y_dist_to_water * 5.0) as i32;
+                        self.func_8083CFA8(env, 20.0, scale);
+                    }
+                }
+            }
+            // Deeper than 40: a bubble now and then (one in five frames still or rising), more
+            // sinking fast (twice the fall's speed).
+            if self.actor.y_dist_to_water > 40.0 {
+                let mut io = env.io.borrow_mut();
+                let mut num_bubbles = 0;
+                if self.actor.velocity.y > -1.0 || self.grounded() {
+                    if io.rand.zero_one() < 0.2 {
+                        num_bubbles = 1;
+                    }
+                } else {
+                    num_bubbles = (self.actor.velocity.y * -2.0) as i32;
+                }
+                for _ in 0..num_bubbles {
+                    io.ss_col(env.col).bubble_spawn(self.actor.world_pos, 20.0, 10.0, 20.0, 0.13);
+                }
+            }
+        }
     }
 
     /// `Player_ProcessControlStick`: stick processing, once per frame.
@@ -2198,6 +2402,7 @@ impl Player {
             self.actor.velocity.y = 0.0;
         }
         self.s.floor_dist = self.actor.world_pos.y - self.actor.floor_height;
+        self.s.conveyor_speed = 0;
         if let Some(fp) = self.actor.floor_poly {
             self.floor_property = col.floor_property(fp);
             self.prev_floor_sfx_offset = self.floor_sfx_offset;
@@ -2217,6 +2422,18 @@ impl Player {
                     self.play_requests.push(PlayRequest::ChangeLightSetting(col.light_setting(fp)));
                 } else {
                     col.dyna.set_interact_flag(self.actor.floor_bg_id, eng_collision::dyna::DYNA_INTERACT_PLAYER_ABOVE);
+                }
+            }
+            // The floor's current: water's while more than 20 deep (not in iron boots), a
+            // conveyor floor's while standing on it (CONVEYOR_DIRECTION_TO_BINANG: 0x10000 / 64 a
+            // step).
+            self.s.conveyor_speed = col.conveyor_speed(fp);
+            if self.s.conveyor_speed != 0 {
+                self.s.is_floor_conveyor = col.is_floor_conveyor(fp);
+                if (!self.s.is_floor_conveyor && self.actor.y_dist_to_water > 20.0 && self.current_boots != PLAYER_BOOTS_IRON) || (self.s.is_floor_conveyor && self.grounded()) {
+                    self.s.conveyor_yaw = (col.conveyor_direction(fp) * (0x10000 / 64)) as u16 as i16;
+                } else {
+                    self.s.conveyor_speed = 0;
                 }
             }
         }
@@ -2380,7 +2597,7 @@ impl Player {
                 self.actor.world_pos.z = self.actor.prev_pos.z;
                 return;
             }
-            if self.state3 & STATE3_1 == 0 && self.skel.move_flags & 0x80 == 0 && self.action != Action::Midair {
+            if self.state3 & STATE3_1 == 0 && self.skel.move_flags & 0x80 == 0 && self.action != Action::Midair && self.action != Action::DiveJump {
                 if self.s.floor_property == FLOOR_PROPERTY_7 || self.melee_weapon_state != 0 {
                     self.actor.world_pos = self.actor.prev_pos;
                     self.zero_speed_xz();
@@ -2403,7 +2620,20 @@ impl Player {
                     && abs16(sp5c) < 0x2000
                     && self.linear_velocity > 3.0
                 {
-                    // FLOOR_PROPERTY_11 jump into water: no water.
+                    // A diving board over water more than 50 deeper than the floor 100 ahead.
+                    if self.s.floor_property == FLOOR_PROPERTY_11 && self.state1 & STATE1_11 == 0 {
+                        let ahead = self.get_relative_position(self.actor.world_pos, Vec3::new(0.0, 0.0, 100.0));
+                        let sp40 = self.func_8083973C(env, Vec3::new(0.0, 0.0, 100.0));
+                        if let Some(water_surface_y) = env.col.water_surface_all_hack(ahead.x, self.actor.world_pos.y, ahead.z, env.col.water_room)
+                            && water_surface_y - sp40 > 50.0
+                        {
+                            // func_808389E8.
+                            let a = data.anim("link_normal_run_jump_water_fall");
+                            self.func_80838940(data, Some(a), 6.0, NA_SE_VO_LI_SWORD_N);
+                            self.setup_action(data, Action::DiveJump, 0);
+                            return;
+                        }
+                    }
                     self.func_8083A4A8(data);
                     return;
                 }
@@ -3052,6 +3282,11 @@ impl Player {
 
     // ================================================================================
     // Damage (func_808382DC) and the knockdown
+
+    /// `Player_InCsMode`: `Player_InBlockingCsMode`, or a cutscene item's action (`unk_6AD` 4).
+    fn player_in_cs_mode(&self, env: &Env) -> bool {
+        self.in_blocking_cs_mode(env) || self.unk_6AD == 4
+    }
 
     /// `Player_InBlockingCsMode`: dead or in a transition's walk, a cutscene action, a transition
     /// starting, an exit's, the hookshot's flight, or a spell cast with the meter busy.
@@ -6020,12 +6255,22 @@ impl Player {
         self.func_80836AB8_arg(arg1)
     }
 
-    /// `func_808334E4` / `func_80833528`: the locked-on wait animations (right / left foot forward).
+    /// `func_808334E4` / `func_80833528`: the locked-on wait animations (right / left foot forward),
+    /// the boomerang's raised (`func_808334B4`).
     fn func_808334E4(&self, data: &GameData) -> AnimId {
-        self.anim(data, group::TARGET_WAIT_R)
+        if self.func_808334b4() { data.anim("link_boom_throw_waitR") } else { self.anim(data, group::TARGET_WAIT_R) }
     }
     fn func_80833528(&self, data: &GameData) -> AnimId {
-        self.anim(data, group::TARGET_WAIT_L)
+        if self.func_808334b4() { data.anim("link_boom_throw_waitL") } else { self.anim(data, group::TARGET_WAIT_L) }
+    }
+
+    /// `func_808335B0` / `func_808335F4`: the side walks (`PLAYER_ANIMGROUP_side_walkR` / `L`), the
+    /// boomerang's raised.
+    fn func_808335b0(&self, data: &GameData) -> AnimId {
+        if self.func_808334b4() { data.anim("link_boom_throw_side_walkR") } else { self.anim(data, group::SIDESTEP_L) }
+    }
+    fn func_808335f4(&self, data: &GameData) -> AnimId {
+        if self.func_808334b4() { data.anim("link_boom_throw_side_walkL") } else { self.anim(data, group::SIDESTEP_R) }
     }
 
     /// `func_808401B0`: blend the two target waits by `unk_870`.
@@ -6786,7 +7031,9 @@ impl Player {
             return false;
         }
         // upperAnimInterpWeight (blend back out of skelAnime2) is only ever set to 0 in this decomp.
-        if self.check_for_idle_anim(data) == 0 || self.linear_velocity != 0.0 {
+        if self.upper_copies_body {
+            // func_808358F0 copied the body into the upper skeleton: the copy back is the same pose.
+        } else if self.check_for_idle_anim(data) == 0 || self.linear_velocity != 0.0 {
             let mask = data.items.upper_body;
             let src = self.skel2.joint;
             self.skel.request_copy_external(&src, Some(mask));
@@ -6832,11 +7079,16 @@ impl Player {
             UpperAction::BowShot => self.func_808353d8(env),
             UpperAction::BowLower => self.func_80835588(env),
             UpperAction::Carry => self.upper_action_carry_actor(env),
+            UpperAction::Boomerang => self.func_80835800(env),
+            UpperAction::BoomerangRaise => self.func_80835884(env),
+            UpperAction::BoomerangAim => self.func_808358f0(env),
+            UpperAction::BoomerangThrow => self.func_808359fc(env),
+            UpperAction::BoomerangThrown => self.func_80835b60(env),
+            UpperAction::BoomerangCatch => self.func_80835c08(env),
         }
     }
 
-    /// `sItemActionUpdateFuncs[actionParam]`: the upper-body action for a held item. The
-    /// boomerang's `func_80835800` (not ported) runs `func_8083485C`'s default here.
+    /// `sItemActionUpdateFuncs[actionParam]`: the upper-body action for a held item.
     fn upper_for(&self, data: &GameData, ap: i32) -> UpperAction {
         let it = &data.items;
         if (it.ap("SWORD_MASTER")..=it.ap("SWORD_BIGGORON")).contains(&ap) {
@@ -6845,6 +7097,8 @@ impl Player {
             UpperAction::Bow
         } else if ap == it.ap("BOMB") || ap == it.ap("BOMBCHU") {
             UpperAction::Carry
+        } else if ap == it.ap("BOOMERANG") {
+            UpperAction::Boomerang
         } else {
             UpperAction::Default
         }
@@ -7039,8 +7293,8 @@ impl Player {
     }
 
     /// `func_80834D2C`: the item raised: the bow's (or hookshot's) ready on the upper body, if
-    /// `func_8083442C` draws it; the boomerang's own wait (`func_80835884`: the boomerang's actions
-    /// aren't ported, they log). Standing, the body waits (riding: `link_uma_anim_walk`).
+    /// `func_8083442C` draws it; the boomerang's raise (`func_80835884`). Standing, the body waits
+    /// (riding: `link_uma_anim_walk`).
     fn func_80834d2c(&mut self, env: &Env) -> bool {
         let data = env.data;
         if self.held_item_ap != data.items.ap("BOOMERANG") {
@@ -7050,7 +7304,7 @@ impl Player {
             let anim = data.anim(if !self.holds_hookshot(data) { "link_bow_bow_ready" } else { "link_hook_shot_ready" });
             self.skel2.play_once(data, anim);
         } else {
-            self.note("func_80834D2C: the boomerang's wait (func_80835884) isn't ported");
+            self.set_upper_action_func(UpperAction::BoomerangRaise);
             self.unk_834 = 10;
             let a = data.anim("link_boom_throw_wait2waitR");
             self.skel2.play_once(data, a);
@@ -7096,6 +7350,109 @@ impl Player {
             return self.func_80834eb8(env);
         }
         false
+    }
+
+    /// `func_80835800` (`sItemActionUpdateFuncs` for the boomerang): the shield first; thrown, wait
+    /// for it (`func_80835B60`); else raised by the button (`func_80834F2C`).
+    fn func_80835800(&mut self, env: &Env) -> bool {
+        if self.func_80834758(env) {
+            return true;
+        }
+        if self.state1 & STATE1_25 != 0 {
+            self.set_upper_action_func(UpperAction::BoomerangThrown);
+        } else if self.func_80834f2c(env) {
+            return true;
+        }
+        false
+    }
+
+    /// `func_80835884`: raising it; at its end the raised loop (`link_boom_throw_waitR`).
+    fn func_80835884(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.skel2.update(data) {
+            self.set_upper_action_func(UpperAction::BoomerangAim);
+            let a = data.anim("link_boom_throw_waitR");
+            self.skel2.play_loop(data, a);
+        }
+        self.func_80834eb8(env);
+        true
+    }
+
+    /// `func_808358F0`: raised. Locked on or side-walking (the body on one of `func_808334E4`,
+    /// `func_80833528`, `func_808335B0`, `func_808335F4`'s animations), the upper body takes the
+    /// body's pose (`AnimTaskQueue_AddCopy`); else its own loop. The button let go throws it:
+    /// `link_boom_throwR`, or `L` with the left foot forward (`unk_870`).
+    fn func_808358f0(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        let anim_seg = self.skel.animation;
+        if self.func_808334E4(data) == anim_seg || self.func_80833528(data) == anim_seg || self.func_808335b0(data) == anim_seg || self.func_808335f4(data) == anim_seg {
+            self.upper_copies_body = true;
+        } else {
+            self.skel2.update(data);
+        }
+        self.func_80834eb8(env);
+        if !self.s.held_item_button_is_held_down {
+            self.set_upper_action_func(UpperAction::BoomerangThrow);
+            let a = data.anim(if self.unk_870 < 0.5 { "link_boom_throwR" } else { "link_boom_throwL" });
+            self.skel2.play_once(data, a);
+        }
+        true
+    }
+
+    /// `func_808359FC`: the throw. On frame 6 `En_Boom` is spawned 10 ahead and 30 up, pitched as
+    /// Player's focus, turned 14000 right when locked on; it flies to the actor locked on
+    /// (`moveTo`) and turns back after 20 frames (`PlayRequest::SpawnBoomerang`). Thrown, parallel
+    /// unless locked on to an enemy, `unk_A73` 4, the throw's sound and voice. At the end, lowered.
+    fn func_808359fc(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.skel2.update(data) {
+            self.set_upper_action_func(UpperAction::BoomerangThrown);
+            self.unk_834 = 0;
+        } else if self.skel2.on_frame(6.0) {
+            let pos_x = sin_s(self.actor.shape_rot.y) * 10.0 + self.actor.world_pos.x;
+            let pos_z = cos_s(self.actor.shape_rot.y) * 10.0 + self.actor.world_pos.z;
+            // s32 yaw, passed on as the spawn's s16.
+            let yaw = if self.focus_actor.is_some() { (self.actor.shape_rot.y as i32 + 14000) as i16 } else { self.actor.shape_rot.y };
+            let pos = Vec3::new(pos_x, self.actor.world_pos.y + 30.0, pos_z);
+            self.play_requests.push(PlayRequest::SpawnBoomerang { pos, rot: [self.actor.focus_rot.x, yaw, 0], move_to: self.focus_actor });
+            // The spawn's success assumed (the request undoes the flag on NULL).
+            self.state1 |= STATE1_25;
+            if !self.check_hostile_lock_on() {
+                self.set_parallel();
+            }
+            self.unk_A73 = 4;
+            self.play_sfx(NA_SE_IT_BOOMERANG_THROW);
+            self.play_voice_sfx(NA_SE_VO_LI_SWORD_N);
+        }
+        true
+    }
+
+    /// `func_80835B60`: thrown. The shield first; back (no longer thrown): caught
+    /// (`link_boom_catch`, the boomerang back in the left hand: `func_808357E8`), with its sound.
+    fn func_80835b60(&mut self, env: &Env) -> bool {
+        let data = env.data;
+        if self.func_80834758(env) {
+            return true;
+        }
+        if self.state1 & STATE1_25 == 0 {
+            self.set_upper_action_func(UpperAction::BoomerangCatch);
+            let a = data.anim("link_boom_catch");
+            self.skel2.play_once(data, a);
+            // func_808357E8(this, gPlayerLeftHandBoomerangDLs): the boomerang group's left hand,
+            // which the draw opens only while thrown.
+            self.play_sfx(NA_SE_PL_CATCH_BOOMERANG);
+            self.play_voice_sfx(NA_SE_VO_LI_SWORD_N);
+            return true;
+        }
+        false
+    }
+
+    /// `func_80835C08`: the catch, unless `func_80835800` takes over; at its end, in hand.
+    fn func_80835c08(&mut self, env: &Env) -> bool {
+        if !self.func_80835800(env) && self.skel2.update(env.data) {
+            self.set_upper_action_func(UpperAction::Boomerang);
+        }
+        true
     }
 
     /// `func_80834FBC`: the hookshot's hook back on it (`actor.child`): held again, with its sound.
@@ -7735,9 +8092,12 @@ impl Player {
         }
     }
 
-    /// `Player_ActionHandler_7` (interrupt 7): B with a melee weapon in hand attacks.
+    /// `Player_ActionHandler_7` (interrupt 7): B swings a bottle in hand (`func_8083C6B8`), or
+    /// with a melee weapon in hand attacks.
     fn action_handler_7(&mut self, env: &Env) -> bool {
-        // func_8083C6B8 (bottles, the fishing rod): not held.
+        if self.func_8083C6B8(env) {
+            return true;
+        }
         if self.func_8083BB20() {
             let sp24 = self.func_80837818(env);
             self.func_80837948(env.data, sp24);
@@ -8290,9 +8650,10 @@ impl Player {
         if a == Action::ClimbLedge || a == Action::ClimbUp {
             return;
         }
-        let swim_actions = matches!(a, Action::Swim | Action::SwimMove | Action::SwimTarget | Action::Dive | Action::Surface);
+        let swim_actions = matches!(a, Action::Swim | Action::SwimMove | Action::SwimTarget | Action::Dive | Action::Surface | Action::SwimIn);
         if self.age.unk_2C < self.actor.y_dist_to_water {
-            // Kokiri boots; Player_Action_8084E30C / Player_Action_8084E368 / Player_Action_8084D7C4 are not ported.
+            // Kokiri boots: the iron boots' Player_Action_8084E30C and Player_Action_8084E368 (an
+            // adult's) aren't ported.
             if self.state1 & STATE1_27 == 0 || !swim_actions {
                 self.func_8083D36C(env);
             }
@@ -8307,16 +8668,18 @@ impl Player {
     }
 
     /// `func_8083CFA8`: at more than 2 of vertical speed `arg2`, a splash at the waist where it
-    /// meets a water surface less than 100 above Link (`BgCheck_GetWaterSurfaceAllHack`): true if there
-    /// is one. (The splash, `EffectSsGSplash`, of kind 0 up to 10 of speed and 1 above, at
-    /// `splash_scale`, isn't drawn: the effects aren't ported.)
-    fn func_8083CFA8(&mut self, env: &Env, arg2: f32, _splash_scale: i32) -> bool {
+    /// meets a water surface less than 100 above Link (`BgCheck_GetWaterSurfaceAllHack`; the PAL
+    /// 1.0 and later value): `EffectSsGSplash` of kind 0 up to 10 of speed and 1 above, at
+    /// `splash_scale` (as the C's `s16` argument). True if there is one.
+    fn func_8083CFA8(&mut self, env: &Env, arg2: f32, splash_scale: i32) -> bool {
         let sp3c = arg2.abs();
         if sp3c > 2.0 {
             let waist = self.body_parts_pos[PLAYER_BODYPART_WAIST];
-            if let Some(sp34) = env.col.water_surface(waist.x, waist.z, env.col.water_room)
+            if let Some(sp34) = env.col.water_surface_all_hack(waist.x, self.actor.world_pos.y, waist.z, env.col.water_room)
                 && (sp34 - self.actor.world_pos.y) < 100.0
             {
+                let splash_type = if sp3c <= 10.0 { 0 } else { 1 };
+                env.io.borrow_mut().ss_col(env.col).g_splash_spawn(Vec3::new(waist.x, sp34, waist.z), None, None, splash_type, splash_scale as i16);
                 return true;
             }
         }
@@ -8331,8 +8694,10 @@ impl Player {
             self.state2 &= !STATE2_10;
             self.func_8083D12C(env, false);
             self.action_var1 = 1;
+        } else if self.action == Action::DiveJump {
+            self.setup_action(data, Action::Dive, 0);
+            self.func_8083D330(data);
         } else {
-            // (From Player_Action_80844A44, the hookshot flight, it would dive: not ported.)
             self.setup_action(data, Action::Swim, 1);
             let a = if self.grounded() { data.anim("link_swimer_wait2swim_wait") } else { data.anim("link_swimer_land2swim_wait") };
             self.anim_change_once_morph(data, a);
@@ -8387,10 +8752,13 @@ impl Player {
             self.state2 &= !STATE2_10;
             if input {
                 self.setup_action(data, Action::Surface, 1);
+                if self.state1 & STATE1_10 != 0 {
+                    self.state1 |= STATE1_10 | STATE1_11 | STATE1_29;
+                }
                 self.action_var2 = 2;
             }
             self.func_80832340();
-            let a = data.anim("link_swimer_swim_deep_end");
+            let a = data.anim(if self.state1 & STATE1_11 != 0 { "link_swimer_swim_get" } else { "link_swimer_swim_deep_end" });
             self.anim_change_once_morph(data, a);
             let vy = self.actor.velocity.y;
             if self.func_8083CFA8(env, vy, 500) {
@@ -8486,7 +8854,12 @@ impl Player {
         self.anim_change_loop_slow_morph(data, a);
     }
 
-    /// `Player_Action_8084D610`: treading water.
+    /// `Player_IsTalking`: Player's `ACTOR_FLAG_TALK`.
+    fn is_talking(&self) -> bool {
+        self.actor.flags & ACTOR_FLAG_TALK == ACTOR_FLAG_TALK
+    }
+
+    /// `Player_Action_8084D610`: treading water (still while talking: `Player_IsTalking`).
     fn action_8084d610(&mut self, env: &Env) {
         let data = env.data;
         // func_80832CB0.
@@ -8495,7 +8868,7 @@ impl Player {
             self.skel.play_loop(data, a);
         }
         self.func_8084B000();
-        if !self.try_action_handler_list(env, Self::S_ACTION_HANDLER_LIST11, true) && !self.func_8083D12C(env, true) {
+        if !self.is_talking() && !self.try_action_handler_list(env, Self::S_ACTION_HANDLER_LIST11, true) && !self.func_8083D12C(env, true) {
             if self.unk_6AD != 1 {
                 self.unk_6AD = 0;
             }
@@ -8587,6 +8960,24 @@ impl Player {
         false
     }
 
+    /// `Player_Action_80844A44`: the dive's jump; landing on the ground knocks Link down
+    /// (`PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE`, damage 0x10).
+    fn action_80844a44(&mut self, env: &Env) {
+        let data = env.data;
+        self.state2 |= STATE2_5;
+        if self.skel.update(data) {
+            let a = data.anim("link_normal_run_jump_water_fall_wait");
+            self.skel.play_loop(data, a);
+        }
+        step_to_f(&mut self.linear_velocity, 0.0, 0.05);
+        // Onto the ground instead of the water: knocked down.
+        if self.grounded() {
+            self.actor.col_chk_info.damage = 0x10;
+            let yaw = self.actor.shape_rot.y;
+            self.func_80837C0C(env, PLAYER_HIT_RESPONSE_KNOCKBACK_LARGE, 4.0, 5.0, yaw, 20);
+        }
+    }
+
     /// `func_8083D330`.
     fn func_8083D330(&mut self, data: &GameData) {
         let a = data.anim("link_swimer_swim");
@@ -8605,14 +8996,47 @@ impl Player {
         self.actor.velocity.y = self.func_8084AEEC(vy, arg2, cy);
     }
 
-    /// `Player_Action_8084DC48`: diving: the dive start, holding A to go deeper (to D_80854784[no scale]
-    /// = 120 below the surface), then pitching back up and rising.
+    /// `D_80854784`, by the scale (`CUR_UPG_VALUE(UPG_SCALE)`: none, silver, gold): how deep a
+    /// dive goes below the surface.
+    const D_80854784: [f32; 3] = [120.0, 240.0, 360.0];
+
+    /// `D_80854784[CUR_UPG_VALUE(UPG_SCALE)]`.
+    fn dive_depth(env: &Env) -> f32 {
+        let scale = env.io.borrow().save.cur_upg_value(oot_game::item::UPG_SCALE) as usize;
+        Self::D_80854784[scale.min(2)]
+    }
+
+    /// `Player_Action_8084D7C4`: swimming in from an entrance in deep water (`Player_SetStartingMovement`):
+    /// the stroke at the entrance's speed with no input, 20 frames, then treading.
+    fn action_8084d7c4(&mut self, env: &Env) {
+        if !self.action_handler_13(env) {
+            self.state2 |= STATE2_5;
+            let v = self.linear_velocity;
+            self.func_8084B158(env.data, false, v);
+            self.func_8084B000();
+            // DECR(av2.actionVar2) == 0.
+            if self.action_var2 != 0 {
+                self.action_var2 -= 1;
+            }
+            if self.action_var2 == 0 {
+                self.func_80838F18(env.data);
+            }
+        }
+    }
+
+    /// `Player_Action_8084DC48`: diving: the dive start, holding A to go deeper (to
+    /// `D_80854784` below the surface by the scale: 120, 240, 360), picking up what's offered on
+    /// the way (`Player_ActionHandler_2`: an item from the bottom, held up as he surfaces), then
+    /// pitching back up and rising (with no input while carrying). The iron boots' branch is an
+    /// adult's (not ported).
     fn action_8084dc48(&mut self, env: &Env) {
         let data = env.data;
         self.state2 |= STATE2_5;
         self.actor.gravity = 0.0;
         self.update_upper_body(env);
-        // Player_ActionHandler_13 (C-button items): none.
+        if self.action_handler_13(env) {
+            return;
+        }
         if self.action_var1 == 0 {
             if self.action_var2 == 0 {
                 if self.skel.update(data) || (self.skel.cur_frame >= 22.0 && !self.input.cur.held(BTN_A)) {
@@ -8626,8 +9050,7 @@ impl Player {
             let vy = self.actor.velocity.y;
             self.func_8084B158(data, true, vy);
             self.unk_6C2 = 16000;
-            // Player_ActionHandler_2 (picking up an item) is never taken; no scale upgrade.
-            if self.input.cur.held(BTN_A) && !self.grounded() && self.actor.y_dist_to_water < 120.0 {
+            if self.input.cur.held(BTN_A) && !self.action_handler_2(env) && !self.grounded() && self.actor.y_dist_to_water < Self::dive_depth(env) {
                 self.func_8084DBC4(env, -2.0);
             } else {
                 self.action_var1 += 1;
@@ -8645,23 +9068,34 @@ impl Player {
             }
         } else if !self.func_8083D12C(env, true) {
             let sp2c = (self.action_var2 as f32 * 0.018 + 4.0).min(8.0);
+            // Carrying (an item from the bottom), sControlInput is NULL from here on: the stroke
+            // reads no buttons.
+            let input = self.state1 & STATE1_11 == 0;
             let vy = self.actor.velocity.y.abs();
-            self.func_8084B158(data, true, vy);
+            self.func_8084B158(data, input, vy);
             scaled_step_to_s(&mut self.unk_6C2, -10000, 800);
             self.func_8084DBC4(env, sp2c);
         }
     }
 
-    /// `Player_Action_8084E1EC`: surfacing.
+    /// `Player_Action_8084E1EC`: surfacing. With an item from the bottom (`PLAYER_STATE1_10`), it
+    /// appears over his head on frame 10 with the turn-around camera (`CAM_ITEM_TYPE_8`), and at
+    /// the animation's end its text and `Item_Give` (`func_8084DFF4`) until the text closes; then
+    /// the item is put away (`func_8084DF6C`) and he treads.
     fn action_8084e1ec(&mut self, env: &Env) {
         let data = env.data;
         self.state2 |= STATE2_5;
         if self.skel.update(data) {
-            // Not holding an item from the bottom (PLAYER_STATE1_10).
-            self.func_80838F18(data);
+            if self.state1 & STATE1_10 == 0 || self.func_8084DFF4(env) {
+                self.func_8084DF6C();
+                self.func_80838F18(data);
+                self.func_80832340();
+            }
+        } else if self.state1 & STATE1_10 != 0 && self.skel.on_frame(10.0) {
+            self.func_808332F4(env);
             self.func_80832340();
+            self.set_turn_around_camera(8);
         } else if self.skel.on_frame(5.0) {
-            // (PLAYER_STATE1_10's frame 10, the item from the bottom: not ported.)
             self.play_voice_sfx(NA_SE_VO_LI_BREATH_DRINK);
         }
         self.func_8084B000();
@@ -8746,8 +9180,7 @@ impl Player {
                     }
                     let limit = self.regs.run_speed_limit();
                     io.save.entrance_speed = if v > limit { limit } else { v };
-                    // (Conveyor floors would give sConveyorYaw: not modelled.)
-                    let yaw = self.actor.world_rot.y;
+                    let yaw = if self.s.conveyor_speed != 0 { self.s.conveyor_yaw } else { self.actor.world_rot.y };
                     drop(io);
                     self.func_80838E70(env.data, 400.0, yaw);
                 } else {
@@ -9145,9 +9578,11 @@ impl Player {
     /// camera takes its mode (`func_8083AD4C`), with `NA_SE_SY_CAMERA_ZOOM_UP`, or the error.
     /// `unk_6AD` 4 is a cutscene item: a trade item, or a bottle's contents to show (the big Poe and
     /// Ruto's letter always; a Poe to whoever wants one, any to whoever wants blue fire), is shown
-    /// (`Player_Action_ExchangeItem`); the ocarina is taken out (`Player_Action_8084E3C4`, the
-    /// turn-around camera's ocarina kind, 91 when it's played to `unk_6A8`). Not ported, logged:
-    /// the spells (no magic) and the bottles' own uses (drinking, releasing, catching).
+    /// (`Player_Action_ExchangeItem`); a bottle's own use: a fairy let out
+    /// (`Player_Action_8084EED8`), a fish, blue fire or bugs let out (`Player_Action_8084EFC0`),
+    /// anything else drunk (`Player_Action_8084EAC0`); the ocarina is taken out
+    /// (`Player_Action_8084E3C4`, the turn-around camera's ocarina kind, 91 when it's played to
+    /// `unk_6A8`). Not ported, logged: the spells (#85).
     fn action_handler_13(&mut self, env: &Env) -> bool {
         if self.unk_6AD != 0 && (self.func_808332B8() || self.grounded() || self.state1 & STATE1_23 != 0) {
             if !self.start_cs_action(env.data) {
@@ -9173,9 +9608,29 @@ impl Player {
                         }
                         return true;
                     }
-                    if Self::action_to_bottle(env.data, item_action) >= 0 {
-                        self.note("Player_ActionHandler_13: the bottles' uses (drinking, releasing, catching) aren't ported");
-                        return false;
+                    let bottle = Self::action_to_bottle(env.data, item_action);
+                    if bottle >= 0 {
+                        let data = env.data;
+                        if bottle == 0xC {
+                            // The fairy.
+                            self.setup_action_preserve_item_action(data, Action::FairyRelease, 0);
+                            self.skel.play_once_set_speed(data, data.anim("link_bottle_bug_out"), 2.0 / 3.0);
+                            self.set_turn_around_camera(3);
+                        } else if bottle > 0 && bottle < 4 {
+                            // A fish, blue fire, bugs.
+                            self.setup_action_preserve_item_action(data, Action::BottleDrop, 0);
+                            self.skel.play_once_set_speed(data, data.anim("link_bottle_fish_out"), 2.0 / 3.0);
+                            self.set_turn_around_camera(if bottle == 1 { 1 } else { 5 });
+                        } else {
+                            // A potion, milk, a Poe.
+                            self.setup_action_preserve_item_action(data, Action::Drink, 0);
+                            let a = data.anim("link_bottle_drink_demo_start");
+                            self.anim_change_once_morph_adjusted(data, a);
+                            self.set_turn_around_camera(2);
+                        }
+                        self.state1 |= STATE1_28 | STATE1_29;
+                        self.func_80832224();
+                        return true;
                     }
                     self.setup_action_preserve_item_action(env.data, Action::Ocarina, 0);
                     self.skel.play_once_set_speed(env.data, env.data.anim("link_normal_okarina_start"), 2.0 / 3.0);
@@ -9207,6 +9662,207 @@ impl Player {
             return true;
         }
         false
+    }
+
+    /// `func_8083C6B8`: B with a bottle in hand (`sUseHeldItem`, `Player_GetBottleHeld`) swings it
+    /// (`Player_Action_SwingBottle`): the water's swing deeper than 12 (`av2.inWater`), else the
+    /// land's, with the sword's swish and Link's voice. The fishing rod's cast (the pond, Phase
+    /// 20) is logged.
+    fn func_8083C6B8(&mut self, env: &Env) -> bool {
+        if !self.s.use_held_item {
+            return false;
+        }
+        let data = env.data;
+        if Self::action_to_bottle(data, self.held_item_ap) >= 0 {
+            self.setup_action(data, Action::SwingBottle, 0);
+            if self.actor.y_dist_to_water > 12.0 {
+                self.action_var2 = 1;
+            }
+            let a = data.anim(S_BOTTLE_SWING_INFO[self.action_var2 as usize].miss);
+            self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+            self.play_sfx(NA_SE_IT_SWORD_SWING);
+            self.play_voice_sfx(NA_SE_VO_LI_AUTO_JUMP);
+            return true;
+        }
+        if self.held_item_ap == data.items.ap("FISHING_POLE") {
+            self.note("func_8083C6B8: the fishing rod's cast (the fishing pond) isn't ported");
+        }
+        false
+    }
+
+    /// `Player_UpdateBottleHeld`: Player's half now (the item in hand, unless emptied, and the item
+    /// action), the inventory's at the request.
+    fn player_update_bottle_held(&mut self, item: u8, item_action: i32) {
+        let button = self.update_bottle_held(item, item_action);
+        self.play_requests.push(PlayRequest::UpdateBottleItem { item, button });
+    }
+
+    /// `Player_Action_SwingBottle`: the swing (`av2.inWater` picks `sBottleSwingInfo`'s row each
+    /// frame). In its active frames (from `firstActiveFrame`, `numActiveFrames` more; the scoop's
+    /// sound on the first in water) an `interactRangeActor` that `sBottleCatchInfo` lists (a
+    /// fairy, a fish, blue fire, bugs: what offers itself with `GI_MAX`) is caught: Player its
+    /// parent, the bottle holds it (`Player_UpdateBottleHeld`), the catch's animation and the
+    /// turn-around camera (`CAM_ITEM_TYPE_4`). At the animation's end its text with the item
+    /// fanfare, until the text closes; with nothing caught, Link stands. The first 8 frames set
+    /// `PLAYER_STATE1_SWINGING_BOTTLE`. @bug (game): a changed animation's frame 0 sets it for a
+    /// frame too.
+    fn action_swing_bottle(&mut self, env: &Env) {
+        let data = env.data;
+        let swing = &S_BOTTLE_SWING_INFO[(self.action_var2 != 0) as usize];
+        self.decelerate_to_zero();
+        if self.skel.update(data) {
+            if self.action_var1 != 0 {
+                if self.action_var2 == 0 {
+                    let text = S_BOTTLE_CATCH_INFO[self.action_var1 as usize - 1].3;
+                    self.play_requests.push(PlayRequest::StartTextbox { text_id: text, actor: env.me });
+                    self.play_requests.push(PlayRequest::Audio(PlayerAudio::PlayFanfare(oot_game::audio::NA_BGM_ITEM_GET | 0x900)));
+                    self.action_var2 = 1;
+                } else if env.msg_state == oot_game::message::TEXT_STATE_CLOSING {
+                    self.action_var1 = 0;
+                    self.play_requests.push(PlayRequest::CamDone);
+                }
+            } else {
+                self.func_8083C0E8(data);
+            }
+        } else if self.action_var1 == 0 {
+            // s32 activeFrame = curFrame - firstActiveFrame: truncated.
+            let active = (self.skel.cur_frame - swing.first_active as f32) as i32;
+            if active >= 0 && active <= swing.num_active as i32 {
+                if self.action_var2 != 0 && active == 0 {
+                    self.play_sfx(NA_SE_IT_SCOOP_UP_WATER);
+                }
+                if let Some(ih) = self.interact_range_actor
+                    && let Some(id) = env.target(ih).map(|a| a.id)
+                    && let Some(i) = S_BOTTLE_CATCH_INFO.iter().position(|c| c.0 == id)
+                {
+                    let (_, item, item_action, _) = S_BOTTLE_CATCH_INFO[i];
+                    self.action_var1 = i as i8 + 1;
+                    self.action_var2 = 0;
+                    self.state1 |= STATE1_28 | STATE1_29;
+                    self.play_requests.push(PlayRequest::SetParent(ih));
+                    self.player_update_bottle_held(item, item_action.abs());
+                    let a = data.anim(swing.catch);
+                    self.skel.play_once_set_speed(data, a, 2.0 / 3.0);
+                    self.set_turn_around_camera(4);
+                }
+            }
+        }
+        if self.skel.cur_frame <= 7.0 {
+            self.state1 |= STATE1_1;
+        }
+    }
+
+    /// `Player_Action_8084EAC0`: drinking. At the start animation's end what it does (`D_808549FC`
+    /// by the potion: red 0x140 health, blue 0x140 and `Magic_Fill`, green `Magic_Fill`, milk 0x50;
+    /// a Poe by `Rand_S16Offset(-1, 3)`: -1 a quarter heart off (but at a heart or less: 3), 0 as 3,
+    /// else that many hearts) and the drink's loop; once the hearts have counted in and the meter
+    /// isn't filling, the end (`link_bottle_drink_demo_end`), the bottle emptied (half the milk);
+    /// the drink's voice meanwhile, the breath on frame 29 of the end. At its end, Link stands.
+    fn action_8084eac0(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            if self.action_var2 == 0 {
+                if self.item_ap == data.items.ap("BOTTLE_POE") {
+                    let mut io = env.io.borrow_mut();
+                    let mut rand = io.rand.s16_offset(-1, 3) as i32;
+                    if rand == 0 {
+                        rand = 3;
+                    }
+                    if rand < 0 && io.save.health <= 0x10 {
+                        rand = 3;
+                    }
+                    if rand < 0 {
+                        drop(io);
+                        self.play_requests.push(PlayRequest::HealthChangeBy(-0x10));
+                    } else {
+                        io.save.health_accumulator = (rand * 0x10) as i16;
+                    }
+                } else {
+                    // D_808549FC, by itemAction - PLAYER_IA_BOTTLE_POTION_RED.
+                    const D_808549FC: [u8; 5] = [0x01, 0x03, 0x02, 0x04, 0x04];
+                    let sp28 = D_808549FC[(self.item_ap - data.items.ap("BOTTLE_POTION_RED")) as usize];
+                    let mut io = env.io.borrow_mut();
+                    if sp28 & 1 != 0 {
+                        io.save.health_accumulator = 0x140;
+                    }
+                    if sp28 & 2 != 0 {
+                        oot_game::magic::magic_fill(&mut io.save);
+                    }
+                    if sp28 & 4 != 0 {
+                        io.save.health_accumulator = 0x50;
+                    }
+                }
+                let a = data.anim("link_bottle_drink_demo_wait");
+                self.skel.play_loop_set_speed(data, a, 2.0 / 3.0);
+                self.action_var2 = 1;
+            } else {
+                self.func_8083C0E8(data);
+                self.play_requests.push(PlayRequest::CamDone);
+            }
+        } else if self.action_var2 == 1 {
+            let (accumulator, magic_state) = {
+                let io = env.io.borrow();
+                (io.save.health_accumulator, io.save.magic_state)
+            };
+            if accumulator == 0 && magic_state != oot_game::magic::MAGIC_STATE_FILL {
+                let a = data.anim("link_bottle_drink_demo_end");
+                self.anim_change_once_morph_adjusted(data, a);
+                self.action_var2 = 2;
+                self.player_update_bottle_held(oot_game::item::ITEM_BOTTLE_EMPTY, data.items.ap("BOTTLE"));
+            }
+            self.play_voice_sfx(NA_SE_VO_LI_DRINK - SFX_FLAG);
+        } else if self.action_var2 == 2 && self.skel.on_frame(29.0) {
+            self.play_voice_sfx(NA_SE_VO_LI_BREATH_DRINK);
+        }
+    }
+
+    /// `Player_AnimChangeOnceMorphAdjusted`: the animation once at 2/3, from frame 0, a 6-frame morph.
+    fn anim_change_once_morph_adjusted(&mut self, data: &GameData, anim: AnimId) {
+        let last = data.anims[anim].last_frame();
+        self.skel.change(data, anim, 2.0 / 3.0, 0.0, last, ANIMMODE_ONCE, -6.0);
+    }
+
+    /// `Player_Action_8084EED8`: a fairy let out: on frame 37 it comes out of the bottle (by the
+    /// left hand, 5 ahead: `D_80854A1C`, `FAIRY_REVIVE_BOTTLE`), the bottle empty, the cap's and the
+    /// fairy's sounds; on 47, 0x140 health to count in. At the end, Link stands.
+    fn action_8084eed8(&mut self, env: &Env) {
+        let data = env.data;
+        if self.skel.update(data) {
+            self.func_8083C0E8(data);
+            self.play_requests.push(PlayRequest::CamDone);
+            return;
+        }
+        if self.skel.on_frame(37.0) {
+            // Player_SpawnFairy: Player_GetRelativePosition(this, &leftHandPos, &D_80854A1C).
+            let pos = self.get_relative_position(self.left_hand_pos, Vec3::new(0.0, 0.0, 5.0));
+            self.play_requests.push(PlayRequest::SpawnBottleFairy(pos));
+            self.player_update_bottle_held(oot_game::item::ITEM_BOTTLE_EMPTY, data.items.ap("BOTTLE"));
+            self.play_sfx(NA_SE_EV_BOTTLE_CAP_OPEN);
+            self.play_sfx(NA_SE_EV_FIATY_HEAL - SFX_FLAG);
+        } else if self.skel.on_frame(47.0) {
+            env.io.borrow_mut().save.health_accumulator = 0x140;
+        }
+    }
+
+    /// `Player_Action_8084EFC0`: a fish, blue fire or bugs let out (`D_80854A28` by the bottle): on
+    /// frame 76 it's spawned 5 ahead of the left hand, pitched 0x4000, turned with Link, and the
+    /// bottle is empty; before, the voice on 38 and the cap on 40 (`D_80854A34`). At the end, Link
+    /// stands. While it plays with the fish, `Player_IsDroppingFish` (Lord Jabu-Jabu's wait).
+    fn action_8084efc0(&mut self, env: &Env) {
+        let data = env.data;
+        self.decelerate_to_zero();
+        if self.skel.update(data) {
+            self.func_8083C0E8(data);
+            self.play_requests.push(PlayRequest::CamDone);
+        } else if self.skel.on_frame(76.0) {
+            let (id, params) = D_80854A28[(self.item_ap - data.items.ap("BOTTLE_FISH")) as usize];
+            let yaw = self.actor.shape_rot.y;
+            let pos = Vec3::new(sin_s(yaw) * 5.0 + self.left_hand_pos.x, self.left_hand_pos.y, cos_s(yaw) * 5.0 + self.left_hand_pos.z);
+            self.play_requests.push(PlayRequest::SpawnBottleDrop { id, pos, rot: [0x4000, yaw, 0], params });
+            self.player_update_bottle_held(oot_game::item::ITEM_BOTTLE_EMPTY, data.items.ap("BOTTLE"));
+        } else {
+            self.process_anim_sfx_list(env.audio.player_anim_sfx("D_80854A34"));
+        }
     }
 
     /// `Player_ActionToBottle`: the bottle's index (0 the empty one, to 12 the fairy), else -1.
@@ -9564,6 +10220,8 @@ impl Player {
         let data = env.data;
         match name {
             "func_808515A4" => self.func_808515A4(env),
+            "func_80851368" => self.func_80851368(data),
+            "func_808513BC" => self.func_808513BC(env),
             "func_808514C0" => self.func_808514C0(env),
             "func_8085157C" | "func_80852234" => {
                 self.skel.update(data);
@@ -9905,11 +10563,11 @@ impl Player {
     }
 
     /// `func_808515A4` (the start of modes 1, 8 and 0x31): Link stands in the cutscene's wait
-    /// (`PLAYER_ANIMGROUP_nwait`), looping. (Swimming, `func_80851368`, isn't ported.)
+    /// (`PLAYER_ANIMGROUP_nwait`), looping; swimming, he strokes in place (`func_80851368`).
     fn func_808515A4(&mut self, env: &Env) {
         let data = env.data;
         if self.func_808332B8() {
-            self.note("cutscene hold while swimming (func_80851368) not ported");
+            self.func_80851368(data);
             return;
         }
         let anim = self.anim(data, 44);
@@ -9940,7 +10598,7 @@ impl Player {
     fn func_808514C0(&mut self, env: &Env) {
         self.func_80851314(env);
         if self.func_808332B8() {
-            self.note("cutscene mode 1 while swimming (func_808513BC) not ported");
+            self.func_808513BC(env);
             return;
         }
         self.skel.update(env.data);
@@ -9963,13 +10621,54 @@ impl Player {
             return;
         }
         if self.func_808332B8() {
-            self.note("cutscene hold while swimming (func_808513BC) not ported");
+            self.func_808513BC(env);
             return;
         }
         self.skel.update(env.data);
         if self.state1 & STATE1_11 != 0 {
             self.update_upper_body(env);
         }
+    }
+
+    /// `func_80851368` (mode 0x22's start, and a held Link in water): swimming, under water
+    /// (`PLAYER_STATE2_10`, so `func_808513BC` surfaces him rather than diving), the stroke looping.
+    fn func_80851368(&mut self, data: &GameData) {
+        self.state1 |= STATE1_27;
+        self.state2 |= STATE2_10;
+        self.state1 &= !(STATE1_18 | STATE1_19);
+        let a = data.anim("link_swimer_swim");
+        self.skel.play_loop(data, a);
+    }
+
+    /// `func_808513BC` (mode 0x22, and the holds in water): no gravity; first rising (`unk_6C2`
+    /// pitching back, 4 up) until `func_8083D12C` surfaces him (with no input: no action change),
+    /// then treading (`link_swimer_swim_wait`), afloat, slowing to a stop.
+    fn func_808513BC(&mut self, env: &Env) {
+        let data = env.data;
+        self.actor.gravity = 0.0;
+        if self.action_var1 == 0 {
+            if self.func_8083D12C(env, false) {
+                self.action_var1 = 1;
+            } else {
+                let vy = self.actor.velocity.y.abs();
+                self.func_8084B158(data, false, vy);
+                scaled_step_to_s(&mut self.unk_6C2, -10000, 800);
+                let (vy, yaw) = (self.actor.velocity.y, self.current_yaw);
+                self.actor.velocity.y = self.func_8084AEEC(vy, 4.0, yaw);
+            }
+            return;
+        }
+        if self.skel.update(data) {
+            let a = data.anim("link_swimer_swim_wait");
+            if self.action_var1 == 1 {
+                self.anim_change_loop_slow_morph(data, a);
+            } else {
+                self.skel.play_loop(data, a);
+            }
+        }
+        self.func_8084B000();
+        let (v, y) = (self.linear_velocity, self.actor.shape_rot.y);
+        self.linear_velocity = self.func_8084AEEC(v, 0.0, y);
     }
 
     /// `func_80851998` (mode 3): `func_80845964(play, this, arg2, 0.0f, 0, 0)`.
@@ -11018,8 +11717,8 @@ impl Player {
                 } else if self.state1 & STATE1_27 == 0 && self.func_8083a0d4() && self.get_item_id < oot_game::item::GI_MAX {
                     do_action = DO_ACTION_GRAB;
                 } else if self.state2 & STATE2_11 != 0 {
-                    // D_80854784[CUR_UPG_VALUE(UPG_SCALE)] (no scale: 120) less the depth, per 40.
-                    let sp24 = ((120.0 - self.actor.y_dist_to_water) / 40.0) as i32;
+                    // D_80854784[CUR_UPG_VALUE(UPG_SCALE)] less the depth, per 40.
+                    let sp24 = ((Self::dive_depth(env) - self.actor.y_dist_to_water) / 40.0) as i32;
                     do_action = DO_ACTION_1 + sp24.clamp(0, 7) as u16;
                 } else if sp1c && self.state2 & STATE2_10 == 0 {
                     do_action = DO_ACTION_DIVE;
@@ -11218,7 +11917,7 @@ impl Player {
             let tips = self.calc_melee_weapon_tip_positions(hand, len);
             self.update_melee_weapon_info(play, hand, tips);
         }
-        // (A bottle in the left hand, PLAYER_MODELTYPE_LH_BOTTLE: the bottles aren't ported.)
+        // (A bottle in the left hand, PLAYER_MODELTYPE_LH_BOTTLE: drawn by `draw`.)
         if self.actor.scale.y >= 0.0 {
             if !self.holds_hookshot(&play.data)
                 && let Some(h) = self.held_actor
@@ -11631,6 +12330,11 @@ mod rs {
     pub const STRING: usize = 6;
     pub const FOCUS: usize = 7;
     pub const UNK_6AD: usize = 11;
+    /// `switches`: a bottle in the left hand (`leftHandType == PLAYER_MODELTYPE_LH_BOTTLE`, the
+    /// bottle model group): `Player_ActionToBottle(itemAction)` plus 2, 0 for none.
+    pub const BOTTLE: usize = 12;
+    /// `switches`: `PLAYER_STATE1_BOOMERANG_THROWN` (the boomerang's left hand open).
+    pub const BOOMERANG_THROWN: usize = 13;
 }
 
 impl LookRotations {
@@ -11749,6 +12453,73 @@ pub fn player_set_auto_lock_on_actor(play: &mut PlayState, actor: ActorHandle) {
     play.camera_sfx();
 }
 
+/// `BottleSwingInfo` (`sBottleSwingInfo`): the miss and catch animations and the frames the swing
+/// catches in, on land and in water.
+struct BottleSwingInfo {
+    miss: &'static str,
+    catch: &'static str,
+    first_active: u8,
+    num_active: u8,
+}
+
+/// `sBottleSwingInfo`: on land, in water.
+const S_BOTTLE_SWING_INFO: [BottleSwingInfo; 2] = [
+    BottleSwingInfo { miss: "link_bottle_bug_miss", catch: "link_bottle_bug_in", first_active: 2, num_active: 3 },
+    BottleSwingInfo { miss: "link_bottle_fish_miss", catch: "link_bottle_fish_in", first_active: 5, num_active: 3 },
+];
+
+/// `sBottleCatchInfo` (`BottleCatchInfo`: the actor, the bottle's item, its item action, the
+/// text), by `BottleCatchType` less one: a fairy, a fish, blue fire, bugs. Actor ids from
+/// `actor_table.h` (`ACTOR_EN_ELF` 0x0018, `ACTOR_EN_FISH` 0x0021, `ACTOR_EN_ICE_HONO` 0x00F0,
+/// `ACTOR_EN_INSECT` 0x0020), item actions from `player.h`.
+const S_BOTTLE_CATCH_INFO: [(i16, u8, i32, u16); 4] = [
+    (crate::en_elf::ACTOR_EN_ELF, oot_game::item::ITEM_BOTTLE_FAIRY, PLAYER_IA_BOTTLE_FAIRY, 0x46),
+    (0x0021, oot_game::item::ITEM_BOTTLE_FISH, PLAYER_IA_BOTTLE_FISH, 0x47),
+    (0x00F0, oot_game::item::ITEM_BOTTLE_BLUE_FIRE, PLAYER_IA_BOTTLE_FIRE, 0x5D),
+    (0x0020, oot_game::item::ITEM_BOTTLE_BUG, PLAYER_IA_BOTTLE_BUG, 0x7A),
+];
+
+/// `D_80854A28` (`BottleDropInfo`), by `itemAction - PLAYER_IA_BOTTLE_FISH`: the fish
+/// (`EN_FISH_TYPE_DROPPED`, `z_en_fish.h`: 0), blue fire (0), bugs (`INSECT_TYPE_FIRST_DROPPED`,
+/// `z_en_insect.h`: 2).
+const D_80854A28: [(i16, i16); 3] = [(0x0021, 0), (0x00F0, 0), (0x0020, 2)];
+
+/// `sBottleColors` (`z_player_lib.c`): the bottle in hand's colour by its contents (empty, fish,
+/// fire, bug, Poe, big Poe, letter, red, blue and green potions, milk, half milk, fairy).
+const S_BOTTLE_COLORS: [[u8; 3]; 13] = [
+    [255, 255, 255],
+    [80, 80, 255],
+    [255, 100, 255],
+    [0, 0, 255],
+    [255, 0, 255],
+    [255, 0, 255],
+    [200, 200, 100],
+    [255, 0, 0],
+    [0, 0, 255],
+    [0, 255, 0],
+    [255, 255, 255],
+    [255, 255, 255],
+    [80, 80, 255],
+];
+
+/// `sBottleColors[-1]` (@bug (game): `Player_ActionToBottle` is -1 while the shield's up): the
+/// last three bytes of the pointer before the array, `sBottleDLists[1]`, `gLinkChildBottleDL`
+/// (0x06018478, `object_link_child.xml`'s offset 0x18478): a dark teal.
+const BOTTLE_COLOR_UNDERFLOW: [u8; 3] = [0x01, 0x84, 0x78];
+
+/// `sBottleDLists` by `linkAge` (adult first): the bottle in the left hand, drawn in the XLU list
+/// with its colour as the env colour.
+const BOTTLE_BAKES: [&str; 2] = ["Player/bottle/adult", "Player/bottle/child"];
+const SEG_BOTTLE_COLOR: u8 = 0x0E;
+
+/// `PLAYER_IA_BOTTLE` (`player.h`: 0x1E), `_FISH` (0x1F), `_FIRE` (0x20), `_BUG` (0x21), `_FAIRY`
+/// (0x2A).
+pub const PLAYER_IA_BOTTLE: i32 = 0x1E;
+pub const PLAYER_IA_BOTTLE_FISH: i32 = 0x1F;
+pub const PLAYER_IA_BOTTLE_FIRE: i32 = 0x20;
+pub const PLAYER_IA_BOTTLE_BUG: i32 = 0x21;
+pub const PLAYER_IA_BOTTLE_FAIRY: i32 = 0x2A;
+
 /// `PLAYER_IA_DEKU_STICK` (`player.h`: 6), as `heldItemAction` (`held_item_ap`).
 pub const PLAYER_IA_DEKU_STICK: i32 = 6;
 
@@ -11860,6 +12631,24 @@ impl ActorImpl for Player {
                         if self.interact_range_actor == Some(expected) {
                             self.interact_range_actor = None;
                         }
+                    }
+                }
+                continue;
+            }
+            if let PlayRequest::SpawnBoomerang { pos, rot, move_to } = r {
+                // func_808359FC: boomerangActor set either way; on NULL none of the rest (undone).
+                match play.actor_spawn(crate::en_boom::ACTOR_EN_BOOM, pos, rot, 0) {
+                    Ok(h) => {
+                        if let Some(b) = play.actors.downcast_mut::<crate::en_boom::EnBoom>(h) {
+                            b.move_to = move_to;
+                            b.return_timer = 20;
+                        }
+                        self.boomerang_actor = Some(h);
+                    }
+                    Err(e) => {
+                        log::debug!("En_Boom: {e:?}");
+                        self.boomerang_actor = None;
+                        self.state1 &= !STATE1_25;
                     }
                 }
                 continue;
@@ -11985,8 +12774,12 @@ impl ActorImpl for Player {
         values[rs::Y_OFFSET] = self.actor.shape_y_offset;
         let r = self.get_item_ref_pos();
         values[rs::GET_ITEM_POS..rs::GET_ITEM_POS + 3].copy_from_slice(&[r.x, r.y, r.z]);
-        let mut switches = vec![0u32; 12];
+        let mut switches = vec![0u32; 14];
+        switches[rs::BOOMERANG_THROWN] = (self.state1 & STATE1_25 != 0) as u32;
         switches[rs::DEKU_STICK] = (self.item_ap == PLAYER_IA_DEKU_STICK) as u32;
+        // Player_ActionToBottle(itemAction): -1 while the shield's up (itemAction -1).
+        let bottle = self.item_ap - PLAYER_IA_BOTTLE;
+        switches[rs::BOTTLE] = (if (0..13).contains(&bottle) { bottle } else { -1 } + 2) as u32;
         switches[rs::UNK_6AD] = self.unk_6AD as u32;
         switches[rs::FACE] = self.face as u32;
         switches[rs::MODEL_GROUP] = self.models_group.unwrap_or(self.model_group) as u32;
@@ -12047,6 +12840,7 @@ impl ActorImpl for Player {
             moving_fast: fists,
             holding_shield: st.switches.get(rs::HOLDING_SHIELD).copied().unwrap_or(0) != 0,
             first_person: false,
+            boomerang_thrown: st.switches.get(rs::BOOMERANG_THROWN).copied().unwrap_or(0) != 0,
         };
         // In first person (unk_6AD), with the head (focus.pos) projected behind -4
         // (SkinMatrix_Vec3fMtxFMultXYZ with viewProjectionMtxF),
@@ -12089,6 +12883,18 @@ impl ActorImpl for Player {
                 let m = mf.to_mat4() * Mat4::from_scale(Vec3::new(1.0, st.values[rs::STICK_LENGTH], 1.0));
                 let stick = MeshKey::named(oot_game::pack::keys::mesh("object_link_child", "gLinkChildLinkDekuStickDL"));
                 out.opa.push(DrawCmd { mesh: stick, transform: m, bones: Vec::new(), params: eng_gfx::DrawParams { fog, ..Default::default() } });
+            }
+            // Player_PostLimbDrawGameplay, PLAYER_LIMB_L_HAND: a bottle in the left hand (the
+            // bottle model group's PLAYER_MODELTYPE_LH_BOTTLE), sBottleDLists[linkAge] at the
+            // hand's matrix in the XLU list, its contents' colour (sBottleColors) the env colour.
+            if group_name == "BOTTLE" {
+                let i = st.switches[rs::BOTTLE] as i32 - 2;
+                let c = if i >= 0 { S_BOTTLE_COLORS[i as usize] } else { BOTTLE_COLOR_UNDERFLOW };
+                let hand = root * bones[play.data.limb("L_HAND")];
+                let mut sv = eng_gfx::SegmentValues::default();
+                sv.env[SEG_BOTTLE_COLOR as usize] = Some([c[0], c[1], c[2], 0]);
+                let mesh = MeshKey::named(oot_game::pack::keys::bake(BOTTLE_BAKES[(!self.adult) as usize]));
+                out.xlu.push(DrawCmd { mesh, transform: hand, bones: Vec::new(), params: eng_gfx::DrawParams { segments: Some(sv), ..Default::default() } });
             }
             // Player_DrawImpl after the skeleton, with the default limb draw (not first person,
             // nor crawling behind the camera; the credits' game mode isn't ported): a child with
@@ -12208,6 +13014,13 @@ impl PlayerIface for Player {
     }
     fn unset_mask(&mut self) {
         self.current_mask = PLAYER_MASK_NONE;
+    }
+    /// `player->yaw = ...` (Player's own heading, which his update puts `world.rot.y` back to).
+    fn set_yaw(&mut self, yaw: i16) {
+        self.current_yaw = yaw;
+    }
+    fn is_dropping_fish(&self) -> bool {
+        self.action == Action::BottleDrop && self.item_ap == PLAYER_IA_BOTTLE_FISH
     }
     fn update_bottle_held(&mut self, item: u8, item_action: i32) -> i8 {
         if item != oot_game::item::ITEM_BOTTLE_EMPTY {
@@ -12424,6 +13237,28 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::FadeOutAllSeq(n) => play.audio.func_800f6964(n),
         PlayRequest::GameOverState(s) => play.game_over_ctx.state = s,
         PlayRequest::LetterboxSizeTarget(t) => play.letterbox.set_size_target(t),
+        PlayRequest::UpdateBottleItem { item, button } => {
+            if !(1..=3).contains(&button) {
+                // cButtonSlots[button - 1]: the C reads out of the array for B.
+                log::warn!("Player_UpdateBottleHeld: heldItemButton {button} isn't a C button");
+            } else {
+                let set = oot_game::item::inventory_update_bottle_item(&mut play.save, item, button as u8);
+                play.pause_ctx.cursor_item[oot_game::kaleido::PAUSE_ITEM as usize] = set as u16;
+            }
+        }
+        PlayRequest::SpawnBottleFairy(pos) => {
+            if let Err(e) = play.actor_spawn(crate::en_elf::ACTOR_EN_ELF, pos, [0; 3], crate::en_elf::FAIRY_REVIVE_BOTTLE) {
+                log::warn!("Player_SpawnFairy (FAIRY_REVIVE_BOTTLE): {e:?}");
+            }
+        }
+        PlayRequest::SpawnBottleDrop { id, pos, rot, params } => {
+            if let Err(e) = play.actor_spawn(id, pos, rot, params) {
+                log::warn!("Player_Action_8084EFC0: spawning actor {id:#x}: {e:?}");
+            }
+        }
+        PlayRequest::HealthChangeBy(amount) => {
+            oot_game::item::health_change_by(&mut play.save, Some(&mut play.audio), amount);
+        }
         PlayRequest::SpawnReviveFairy(pos) => {
             if let Err(e) = play.actor_spawn(crate::en_elf::ACTOR_EN_ELF, pos, [0; 3], crate::en_elf::FAIRY_REVIVE_DEATH) {
                 log::debug!("the revival's fairy: {e:?}");
@@ -12457,7 +13292,7 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
             play.title_ctx.clear();
         }
         // Handled by Player's update, which keeps the handle.
-        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldExplosive { .. } | PlayRequest::SpawnMThunder { .. } => {}
+        PlayRequest::SpawnHeldArrow { .. } | PlayRequest::SpawnHeldExplosive { .. } | PlayRequest::SpawnMThunder { .. } | PlayRequest::SpawnBoomerang { .. } => {}
         PlayRequest::ReleaseHeld(h) => {
             if let Some(a) = play.actors.actor_mut(h) {
                 a.parent = None;

@@ -16,9 +16,7 @@
 //! baked mesh (docs/adr/0012-actor-bakes.md). The circle shadow is the shape's (`ActorShape_Init`'s,
 //! drawn by `Actor_Draw`).
 //!
-//! Not ported here: the splash in water (`EffectSsGSplash_Spawn`: the effect isn't ported; it still
-//! flies off).
-//!
+
 //! Params: `params` whole, as an `s16`: made 0 if negative, then read by nothing (`En_Niw`
 //! spawns it with 0).
 //! Flags: none.
@@ -503,9 +501,10 @@ impl ActorImpl for EnAttackNiw {
         }
 
         if self.actor.bg_check_flags & BGCHECKFLAG_WATER != 0 && self.action != Action::Func809B5C18 {
-            // EffectSsGSplash_Spawn(play, &pos + depthInWater, NULL, NULL, 0, 400): the splash
-            // isn't ported.
-            log::debug!("En_Attack_Niw: splash (EffectSsGSplash not ported)");
+            // EffectSsGSplash_Spawn(play, &sp30, NULL, NULL, 0, 0x190): at the surface.
+            let mut sp30 = self.actor.world_pos;
+            sp30.y += self.actor.y_dist_to_water;
+            play.with_ss(|s| s.g_splash_spawn(sp30, None, None, 0, 0x190));
             self.unk_2dc = 0.0;
             self.actor.gravity = 0.0;
             self.unk_2e0 = 0.0;

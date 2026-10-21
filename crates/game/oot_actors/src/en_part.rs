@@ -7,9 +7,8 @@
 //! 13 fall and stay (13 till its maker goes); a part spawned by `Actor_SpawnPartsOnDeath`-like
 //! callers with action 2 is a shock wave (`func_80ACE5C8`) or a Stalfos' head (`func_80ACE7E8`).
 //!
-//! The whole overlay is ported. `EffectSsDtBubble` (kind 4's bubbles) isn't: its `Rand` calls
-//! are made. The Iron Knuckle's segment colours (kinds 5 to 7 with `object_ik`'s lists) aren't
-//! set: its actor isn't ported. The Tektite's body (`object_tite_DL_002FF0`, the one list of
+//! The whole overlay is ported. The Iron Knuckle's segment colours (kinds 5 to 7 with
+//! `object_ik`'s lists) aren't set: its actor isn't ported. The Tektite's body (`object_tite_DL_002FF0`, the one list of
 //! `object_tite` on segments 8 to 10) gets the blue's textures as kind 9 and the red's as kind 10
 //! (a bake of each); another kind leaves the segments as the last draw set them, which the bake
 //! can't keep: it draws the red's (logged). `func_8002EBCC` (the lists' shine) isn't, as for
@@ -235,15 +234,20 @@ impl EnPart {
                 1 | 9 | 10 | 14 => play.with_ss(|s| s.dead_db_spawn(pos, zero, zero, scale, 7, [255, 255, 255, 255], [0, 255, 0], 1, 9, 1)),
                 3 | 11 => play.with_ss(|s| s.dead_db_spawn(pos, zero, zero, scale, 7, [255, 255, 255, 255], [0, 0, 255], 1, 9, 1)),
                 4 => {
-                    for _ in 0..8 {
-                        // EffectSsDtBubble_SpawnColorProfile isn't ported: its Rand calls.
-                        let _x = play.rand.centered_float(60.0);
-                        let _y = play.rand.centered_float(50.0);
-                        let _z = play.rand.centered_float(60.0);
-                        let _vy = play.rand.zero_one() + 1.0;
-                        let _scale = play.rand.s16_offset(80, 100);
-                    }
-                    log::debug!("En_Part: EffectSsDtBubble isn't ported");
+                    // Eight bubbles about the part (60 across, 50 up and down from its model's
+                    // offset), rising at 1 to 2, profile 0, wobbling, 25 frames.
+                    let (mut velocity, accel) = (Vec3::ZERO, Vec3::ZERO);
+                    let y_offset = self.actor.shape_y_offset * self.actor.scale.y;
+                    play.with_ss(|s| {
+                        for _ in 0..8 {
+                            let x = pos.x + s.rand.centered_float(60.0);
+                            let y = pos.y + y_offset + s.rand.centered_float(50.0);
+                            let z = pos.z + s.rand.centered_float(60.0);
+                            velocity.y = s.rand.zero_one() + 1.0;
+                            let scale = s.rand.s16_offset(80, 100);
+                            s.dt_bubble_spawn_color_profile(Vec3::new(x, y, z), velocity, accel, scale, 25, 0, 1);
+                        }
+                    });
                 }
                 5..=8 => {
                     for _ in 0..5 {

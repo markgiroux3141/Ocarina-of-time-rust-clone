@@ -84,7 +84,7 @@ fn setting_changes_follow_camera_change_setting_flags() {
     let col = eng_collision::bgcheck::CollisionContext::new(h);
     let mut cam = camera::GameCamera::new(c, &pv);
     // func_80057FC4 for a prerendered room: CAM_SET_FREE0, bgCamIndex -1.
-    cam.func_80057fc4(camera::CamRoom { image: true, behavior_type1: 0 });
+    cam.func_80057fc4(camera::CamRoom { image: true, behavior_type1: 0, env_type: 0 });
     assert_eq!((cam.setting, cam.prev_setting, cam.bg_cam_index), (camera::CAM_SET_FREE0, camera::CAM_SET_FREE0, -1));
     // Camera_RequestBgCam(1): the bg camera's setting with flags 5 (the index kept),
     // behaviorFlags 0x40 | 0x10 | 4 (and 1: flags without 2); prevSetting FREE0.

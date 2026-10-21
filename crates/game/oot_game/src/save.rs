@@ -446,18 +446,8 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     },
     SavePreset {
         name: "deku-tree-dead",
-        about: "deku-tree-open, and the Deku Tree dead with the Kokiri Emerald (EVENTCHKINF_07, EVENTCHKINF_09, QUEST_KOKIRI_EMERALD), as after Gohma's blue warp",
-        apply: |s| {
-            kokiri_sword_and_deku_shield(s);
-            s.set_event_chk_inf(EVENTCHKINF_04);
-            s.set_event_chk_inf(EVENTCHKINF_0C);
-            s.set_event_chk_inf(EVENTCHKINF_05);
-            // Door_Warp1 (SCENE_DEKU_TREE_BOSS): Flags_SetEventChkInf(EVENTCHKINF_07) and (_09),
-            // Item_Give(play, ITEM_KOKIRI_EMERALD).
-            s.set_event_chk_inf(EVENTCHKINF_07);
-            s.set_event_chk_inf(EVENTCHKINF_09);
-            item_give(s, None, ITEM_KOKIRI_EMERALD);
-        },
+        about: "deku-tree-open, and the Deku Tree dead with the Kokiri Emerald (EVENTCHKINF_07, EVENTCHKINF_09, QUEST_KOKIRI_EMERALD), as after Gohma's blue warp: her heart container taken first (four hearts; her room cleared, its collectible flag 0x1F)",
+        apply: deku_tree_dead,
     },
     SavePreset {
         name: "deku-tree-inside",
@@ -843,6 +833,68 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: cavern_rooms,
     },
     SavePreset {
+        name: "zora-bottle",
+        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4) and the bottle of milk on C-Left (the pause menu's): a debug start in the Domain's shallows by the fish for GAME-10 milestone 1's bottle run (the story's empty bottle is King Zora's, milestone 3)",
+        apply: |s| {
+            fairy_magic(s);
+            s.set_event_chk_inf(0xA4);
+            s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_MILK_FULL);
+        },
+    },
+    SavePreset {
+        name: "lake-dive",
+        about: "fairy-magic, Lake Hylia's intro seen (EVENTCHKINF_B1) and the silver scale (Item_Give(ITEM_SCALE_SILVER): dives to 240): a debug start for GAME-10 milestone 1's dive (the story's scale is the diving game's, milestone 2)",
+        apply: |s| {
+            fairy_magic(s);
+            s.set_event_chk_inf(0xB1);
+            // ITEM_SCALE_SILVER (item.h: 0x53).
+            item_give(s, None, 0x53);
+        },
+    },
+    SavePreset {
+        name: "zora-diving",
+        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4) and 50 rupees: a debug start for GAME-10 milestone 2's diving game (20 rupees a game; five rupees fetched win the silver scale)",
+        apply: |s| {
+            fairy_magic(s);
+            s.set_event_chk_inf(0xA4);
+            s.rupees = 50;
+        },
+    },
+    SavePreset {
+        name: "zora-letter",
+        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4), Ruto's letter taken (EVENTCHKINF_31) and in the first bottle on C-Left: a debug start for GAME-10 milestone 3's King Zora (show it to him: he moves aside)",
+        apply: |s| {
+            fairy_magic(s);
+            s.set_event_chk_inf(0xA4);
+            s.set_event_chk_inf(0x31);
+            s.inventory.items[crate::item::SLOT_BOTTLE_1] = crate::item::ITEM_BOTTLE_RUTOS_LETTER;
+            s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_RUTOS_LETTER);
+        },
+    },
+    SavePreset {
+        name: "jabu-fish",
+        about: "zora-letter's save after King Zora (EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA, 0x33: the bottle emptied), the fountain's intro seen (EVENTCHKINF_B7) and a fish in that bottle on C-Left: a debug start for GAME-10 milestone 3's Lord Jabu-Jabu (let the fish out by him: he swallows Link)",
+        apply: |s| {
+            fairy_magic(s);
+            s.set_event_chk_inf(0xA4);
+            s.set_event_chk_inf(0x31);
+            s.set_event_chk_inf(0x33);
+            s.set_event_chk_inf(0xB7);
+            s.inventory.items[crate::item::SLOT_BOTTLE_1] = crate::item::ITEM_BOTTLE_FISH;
+            s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_FISH);
+        },
+    },
+    SavePreset {
+        name: "boomerang",
+        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
+        apply: |s| {
+            fairy_magic(s);
+            s.set_event_chk_inf(0xA4);
+            item_give(s, None, crate::item::ITEM_BOOMERANG);
+            s.equip_item_on_c_left(crate::item::ITEM_BOOMERANG);
+        },
+    },
+    SavePreset {
         name: "cavern-jaw",
         about: "cavern-bomb-bag, and GAME-09 milestone 3's skull run over: the bombs on C-Right, two of them dropped through the bridge's holes (18 left), both of the skull's eyes lit and its jaw open (Bg_Dodoago 0x001A's switch flag)",
         apply: cavern_jaw,
@@ -851,13 +903,7 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         name: "ocarina-songs",
         about: "deku-tree-dead, the Fairy Ocarina (ITEM_OCARINA_FAIRY) on C-Left and Zelda's Lullaby, Epona's Song, Saria's Song, the Sun's Song, the Song of Time and the Song of Storms (ITEM_SONG_LULLABY .. ITEM_SONG_STORMS: Item_Give's quest bits) (GAME-07 milestone 3)",
         apply: |s| {
-            kokiri_sword_and_deku_shield(s);
-            s.set_event_chk_inf(EVENTCHKINF_04);
-            s.set_event_chk_inf(EVENTCHKINF_0C);
-            s.set_event_chk_inf(EVENTCHKINF_05);
-            s.set_event_chk_inf(EVENTCHKINF_07);
-            s.set_event_chk_inf(EVENTCHKINF_09);
-            item_give(s, None, ITEM_KOKIRI_EMERALD);
+            deku_tree_dead(s);
             item_give(s, None, crate::item::ITEM_OCARINA_FAIRY);
             s.equip_item_on_c_left(crate::item::ITEM_OCARINA_FAIRY);
             // ITEM_SONG_LULLABY (0x60) .. ITEM_SONG_STORMS (0x65), item.h.
@@ -867,6 +913,26 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
 ];
+
+/// `deku-tree-dead`'s save (the castle's presets and `ocarina-songs` build on it): Queen Gohma's
+/// heart container taken (`GI_HEART_CONTAINER_2`: `Item_Give(ITEM_HEART_CONTAINER)`, 0x10 more
+/// capacity and health; her room, `SCENE_DEKU_TREE_BOSS` 0x11 room 1, cleared by
+/// `BossGoma_Defeated`'s `Flags_SetClear` and `Item_B_Heart`'s `Flags_SetCollectible(0x1F)`, as
+/// `Play_SaveSceneFlags` keeps them), then her blue warp (`Door_Warp1`: `EVENTCHKINF_07` and
+/// `_09`, `Item_Give(ITEM_KOKIRI_EMERALD)`). Before GAME-10 the castle's presets left the
+/// container out (three hearts where the game has four).
+fn deku_tree_dead(s: &mut SaveContext) {
+    kokiri_sword_and_deku_shield(s);
+    s.set_event_chk_inf(EVENTCHKINF_04);
+    s.set_event_chk_inf(EVENTCHKINF_0C);
+    s.set_event_chk_inf(EVENTCHKINF_05);
+    s.scene_flags[0x11].clear |= 1 << 1;
+    s.scene_flags[0x11].collect |= 1 << 0x1F;
+    item_give(s, None, crate::item::ITEM_HEART_CONTAINER);
+    s.set_event_chk_inf(EVENTCHKINF_07);
+    s.set_event_chk_inf(EVENTCHKINF_09);
+    item_give(s, None, ITEM_KOKIRI_EMERALD);
+}
 
 /// `graveyard-sun`'s save (`meadow-saria` builds on it).
 fn graveyard_sun(s: &mut SaveContext) {
@@ -1108,13 +1174,7 @@ fn castle_preset(s: &mut SaveContext) {
     // EVENTCHKINF_A5 (sEntranceCutsceneTable's flag for ENTR_HYRULE_CASTLE_0); the Malon flags
     // (save.h: INFTABLE_TALKED_TO_MALON_FIRST_TIME 0x84, INFTABLE_MALON_SPAWNED_AT_HYRULE_CASTLE
     // 0x8B, EVENTCHKINF_TALKED_TO_MALON_FIRST_TIME 0x10, EVENTCHKINF_RECEIVED_WEIRD_EGG 0x12).
-    kokiri_sword_and_deku_shield(s);
-    s.set_event_chk_inf(EVENTCHKINF_04);
-    s.set_event_chk_inf(EVENTCHKINF_0C);
-    s.set_event_chk_inf(EVENTCHKINF_05);
-    s.set_event_chk_inf(EVENTCHKINF_07);
-    s.set_event_chk_inf(EVENTCHKINF_09);
-    item_give(s, None, ITEM_KOKIRI_EMERALD);
+    deku_tree_dead(s);
     s.set_event_chk_inf(0xA5);
     s.set_inf_table(0x84);
     s.set_inf_table(0x8B);

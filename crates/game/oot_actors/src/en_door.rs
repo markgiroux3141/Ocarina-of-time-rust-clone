@@ -17,9 +17,9 @@
 //! A checkable door (a shop closed at night, a locked house) has text instead
 //! (`EnDoor_WaitForCheck` offers to talk within 40; `EnDoor_Check` waits for the box to close).
 //!
-//! A locked door's chains and lock are drawn (`Actor_DrawDoorLock`). Not ported: opening it
-//! with a small key (no En_Door is locked in the ported scenes), and the bubbles of a door
-//! opened underwater (`EffectSsBubble`, with their count's `Rand_ZeroOne`).
+//! A locked door's chains and lock are drawn (`Actor_DrawDoorLock`); opened underwater (the slow
+//! animation, Player swimming) it lets out 50 to 79 bubbles (`EffectSsBubble`). Not ported:
+//! opening it with a small key (no En_Door is locked in the ported scenes).
 //!
 //! Params: `type` bits 7 to 9 (`ENDOOR_GET_TYPE`, `EnDoorType`: 0 `DOOR_ROOMLOAD`, 1
 //! `DOOR_LOCKED`, 2 `DOOR_ROOMLOAD2`, 3 `DOOR_SCENEEXIT`, 4 `DOOR_AJAR`, 5 `DOOR_CHECKABLE`, 6
@@ -397,7 +397,16 @@ impl EnDoor {
                 self.player_is_opening = false;
             } else if self.skel.on_frame(DOOR_ANIM_OPEN_FRAMES[self.open_anim as usize & 3]) {
                 audio_play_actor_sfx2(play, if iron { NA_SE_EV_IRON_DOOR_OPEN } else { NA_SE_OC_DOOR_OPEN });
-                // The bubbles when opened underwater (playSpeed < 1.5): not ported.
+                if self.skel.play_speed < 1.5 {
+                    // Opened underwater.
+                    let num_effects = (play.rand.zero_one() * 30.0) as i32 + 50;
+                    let pos = self.actor.world_pos;
+                    play.with_ss(|s| {
+                        for _ in 0..num_effects {
+                            s.bubble_spawn(pos, 60.0, 100.0, 50.0, 0.15);
+                        }
+                    });
+                }
             } else if self.skel.on_frame(DOOR_ANIM_CLOSE_FRAMES[self.open_anim as usize & 3]) {
                 audio_play_actor_sfx2(play, if iron { NA_SE_EV_IRON_DOOR_CLOSE } else { NA_SE_EV_DOOR_CLOSE });
             }

@@ -560,6 +560,12 @@ pub enum Step {
     TimeSongPlayed,
     /// A Song of Time block (`Obj_Timeblock`) gone, its camera over, Link free.
     TimeBlockGone,
+    /// A bottle drunk (`Player_Action_8084EAC0` over), Link free.
+    MilkDrunk,
+    /// A fish caught in a bottle, its text read, Link free.
+    FishCaught,
+    /// A fish let out of the bottle (`Player_Action_8084EFC0` over), Link free.
+    FishLetOut,
 }
 
 impl Step {
@@ -775,6 +781,9 @@ impl Step {
             Step::ShieldChest => "shield_chest",
             Step::TimeSongPlayed => "time_song_played",
             Step::TimeBlockGone => "time_block_gone",
+            Step::MilkDrunk => "milk_drunk",
+            Step::FishCaught => "fish_caught",
+            Step::FishLetOut => "fish_let_out",
         }
     }
 }
@@ -1017,6 +1026,10 @@ pub enum Route {
     /// song only after the three stones): the Song of Time by the nearest block (`Obj_Timeblock`
     /// 0x88FF, within 100): it goes.
     TimeBlocks,
+    /// GAME-10 milestone 1: in Zora's Domain's shallows by the fish (a debug start, `zora-bottle`:
+    /// the milk on C-Left), the milk drunk twice (half, then the bottle empty), a fish caught in the
+    /// empty bottle with a swing, and let out again.
+    Bottle,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1464,6 +1477,19 @@ fn time_blocks_tasks() -> Vec<Task> {
         Task::Ocarina(1, OCARINA_SONG_TIME, Step::TimeSongPlayed),
         Task::WaitFor(Cond::TimeBlockHidden(DC_ROOM15_BLOCK), Step::TimeBlockGone),
         Task::WaitCameras,
+    ]
+}
+
+/// `Route::Bottle`'s tasks: the milk (C-Left) drunk twice, the empty bottle out and a fish caught
+/// in it, then let out.
+fn bottle_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::UseItem(0, Step::MilkDrunk),
+        Task::UseItem(0, Step::MilkDrunk),
+        Task::CatchInBottle(0, Step::FishCaught),
+        Task::UseItem(0, Step::FishLetOut),
+        Task::Settle(None),
     ]
 }
 
@@ -2105,6 +2131,8 @@ impl Route {
             Route::GreatFairy => "ENTR_GREAT_FAIRYS_FOUNTAIN_MAGIC_0",
             // The lobby, then the run's room (the debug start's --room).
             Route::FallingStairs | Route::SilverRupees | Route::ShieldChest | Route::TimeBlocks => "ENTR_DODONGOS_CAVERN_0",
+            // Spawn 0, room 1 (the intro is EVENTCHKINF_A4's: the preset has it seen).
+            Route::Bottle => "ENTR_ZORAS_DOMAIN_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2147,6 +2175,7 @@ impl Route {
             Route::SummitOwl => Some("fairy-magic"),
             Route::FallingStairs | Route::SilverRupees => Some("fairy-magic"),
             Route::TimeBlocks => Some("cavern-song-of-time"),
+            Route::Bottle => Some("zora-bottle"),
             Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -2191,6 +2220,9 @@ impl Route {
             Route::ShieldChest => Some((Vec3::new(1474.0, 76.0, -4680.0), 0)),
             // Room 15 inside its door, facing the blocks (north).
             Route::TimeBlocks => Some((Vec3::new(-1958.0, 0.0, -650.0), -0x8000)),
+            // Room 1's shallows (20 deep, the floor at -20), west of the fish (Obj_Mure 0x5322 at
+            // (653, -10, -485)), facing them (east).
+            Route::Bottle => Some((Vec3::new(560.0, -20.0, -420.0), 0x4000)),
             _ => None,
         }
     }
@@ -2372,6 +2404,7 @@ impl Route {
             Route::SilverRupees => "silver-rupees",
             Route::ShieldChest => "shield-chest",
             Route::TimeBlocks => "time-blocks",
+            Route::Bottle => "bottle",
         }
     }
 
@@ -2427,6 +2460,7 @@ impl Route {
             Route::SilverRupees => 1500,
             Route::ShieldChest => 1500,
             Route::TimeBlocks => 1500,
+            Route::Bottle => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2439,7 +2473,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -2479,6 +2513,14 @@ enum Task {
     PutDown(Vec<Vec3>, Vec3, Step),
     /// This C button (0 C-Left) once, until Link stands holding a bomb (`En_Bom`).
     TakeBomb(usize, Step),
+    /// This C button (0 C-Left) once: an item used in place (a bottle drunk or let out), A through
+    /// any text; done when Link stands again with no box open.
+    UseItem(usize, Step),
+    /// With an empty bottle on this C button: out (the button), at the nearest fish (`En_Fish`)
+    /// slowly until it offers itself (Player's `interactRangeActor`), the button again (the swing),
+    /// A through the catch's text; done when Link stands with a fish in the bottle. A miss tries
+    /// again.
+    CatchInBottle(usize, Step),
     /// Carrying, through the points at a run (`Task::Walk`'s), then on towards the last; within 20
     /// of the release point (the second `Vec3`), running (faster than 1.1: Player throws rather
     /// than puts down), A, until his hands are free.
@@ -3017,9 +3059,11 @@ impl Playthrough {
                 // talk (OWL_KAKARIKO, text 0x206C) and his flight; then up the stairs.
                 Task::Walk(vec![Vec3::new(2600.0, -50.0, 1680.0), Vec3::new(3350.0, -50.0, 1680.0)]),
                 // (More rise round him there: frozen through the talk, PLAYER_STATE1_TALKING; the
-                // owl's task fights them while he flies off.)
+                // owl's task fights them while he flies off.) Then straight up the stairs past
+                // them (GAME-10 milestone 1: crossing the stream, its current, sWaterConveyorSpeeds,
+                // carries Link, and a scripted fight with the ones round the tree was a matter of
+                // luck; fights are the hand test's).
                 Task::Owl(Step::OwlFlown),
-                Task::FightStalchildren(0, Step::StalchildrenGone),
                 Task::Exit("ENTR_KAKARIKO_VILLAGE_0", Some(Step::Kakariko)),
             ],
             Route::Market => vec![
@@ -3179,6 +3223,7 @@ impl Playthrough {
             Route::SilverRupees => silver_rupees_tasks(),
             Route::ShieldChest => shield_chest_tasks(),
             Route::TimeBlocks => time_blocks_tasks(),
+            Route::Bottle => bottle_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -3647,6 +3692,8 @@ impl Playthrough {
             Task::LiftBombFlower(near, step) => self.lift_bomb_flower(w, near, step),
             Task::PutDown(points, face, step) => self.put_down(w, &points, face, step),
             Task::TakeBomb(c, step) => self.take_bomb(w, c, step),
+            Task::UseItem(c, step) => self.use_item(w, c, step),
+            Task::CatchInBottle(c, step) => self.catch_in_bottle(w, c, step),
             Task::ThrowAtRun(points, release, step) => self.throw_at_run(w, &points, release, step),
             Task::Throw(at, step) => self.throw(w, at, step),
             Task::Glide(points, step) => self.glide(w, &points, step),
@@ -6585,6 +6632,96 @@ impl Playthrough {
             return Some(self.press(C_BUTTONS[c]));
         }
         Some(PadState::default())
+    }
+
+    /// `Task::UseItem`: `sub` 0 the press, 1 until Link has left standing, 2 back.
+    fn use_item(&mut self, w: &PlayState, c: usize, step: Step) -> Option<PadState> {
+        const C_BUTTONS: [u16; 3] = [eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT];
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some(format!("the item on C button {c} never ended (Link {:?})", w.player().action));
+            return None;
+        }
+        let p = w.player();
+        let standing = p.action == PA::StandingStill || p.action == PA::Swim;
+        match self.sub {
+            0 => {
+                self.sub = 1;
+                Some(self.press(C_BUTTONS[c]))
+            }
+            1 => {
+                if !standing {
+                    self.sub = 2;
+                }
+                Some(PadState::default())
+            }
+            _ => {
+                if w.message_state() != oot_game::message::TEXT_STATE_NONE {
+                    return Some(self.press(BTN_A));
+                }
+                if standing && !w.player_in_cs_mode() {
+                    self.finish(Some(step));
+                    return None;
+                }
+                Some(PadState::default())
+            }
+        }
+    }
+
+    /// `Task::CatchInBottle`: `sub` 0 the bottle out, 1 at a fish, 2 the swing.
+    fn catch_in_bottle(&mut self, w: &PlayState, c: usize, step: Step) -> Option<PadState> {
+        const C_BUTTONS: [u16; 3] = [eng_input::pad::BTN_CLEFT, eng_input::pad::BTN_CDOWN, eng_input::pad::BTN_CRIGHT];
+        self.wait += 1;
+        if self.wait > 1500 {
+            self.failure = Some(format!("no fish caught (Link {:?})", w.player().action));
+            return None;
+        }
+        let p = w.player();
+        let on_button = w.save.equips.button_items[c + 1];
+        let standing = p.action == PA::StandingStill || p.action == PA::Swim;
+        if on_button == oot_game::item::ITEM_BOTTLE_FISH && standing && w.message_state() == oot_game::message::TEXT_STATE_NONE && !w.player_in_cs_mode() {
+            self.finish(Some(step));
+            return None;
+        }
+        match self.sub {
+            0 => {
+                if p.held_item_ap == crate::player::PLAYER_IA_BOTTLE && p.upper != crate::player::UpperAction::Change && p.state1 & crate::player::STATE1_8 == 0 {
+                    self.sub = 1;
+                    return Some(PadState::default());
+                }
+                Some(self.press(C_BUTTONS[c]))
+            }
+            1 => {
+                let fish = p.interact_range_actor.and_then(|h| w.actors.actor(h)).is_some_and(|a| a.id == crate::en_fish::ACTOR_EN_FISH);
+                if fish {
+                    self.sub = 2;
+                    return Some(self.press(C_BUTTONS[c]));
+                }
+                let link = p.actor.world_pos;
+                let nearest = w
+                    .actors
+                    .all()
+                    .into_iter()
+                    .filter_map(|h| w.actors.actor(h))
+                    .filter(|a| a.id == crate::en_fish::ACTOR_EN_FISH && !a.killed)
+                    .map(|a| a.world_pos)
+                    .min_by(|a, b| Self::xz_dist(*a, link).total_cmp(&Self::xz_dist(*b, link)));
+                match nearest {
+                    Some(f) => Some(stick_towards(w, f, SLOW)),
+                    None => Some(PadState::default()),
+                }
+            }
+            _ => {
+                if w.message_state() != oot_game::message::TEXT_STATE_NONE {
+                    return Some(self.press(BTN_A));
+                }
+                if p.action != PA::SwingBottle && standing {
+                    // A miss: at a fish again.
+                    self.sub = 1;
+                }
+                Some(PadState::default())
+            }
+        }
     }
 
     /// `Task::Glide`: `sub` counts the points passed; `tries` is 1 once Link is in the air.

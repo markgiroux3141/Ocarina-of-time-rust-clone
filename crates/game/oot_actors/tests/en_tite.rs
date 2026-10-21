@@ -22,7 +22,7 @@ use oot_game::actor::*;
 use oot_game::actor_ctx::ActorHandle;
 use oot_game::audio::sfx::{NA_SE_EN_DODO_M_GND, NA_SE_EN_GOMA_JR_FREEZE, NA_SE_PL_BODY_HIT, SfxPos};
 use oot_game::collision_check::{AC_HIT, AT_HIT, MASS_HEAVY};
-use oot_game::effect::{EFFECT_SS_DEAD_SOUND, EFFECT_SS_EN_ICE, EFFECT_SS_KIRAKIRA};
+use oot_game::effect::{EFFECT_SS_DEAD_SOUND, EFFECT_SS_EN_ICE, EFFECT_SS_G_RIPPLE, EFFECT_SS_KIRAKIRA, g_ripple};
 use oot_game::play::{DrawOut, PlayState, ViewInfo, scripted_input};
 use oot_game::play_scene::GameAssets;
 use oot_game::save::SaveContext;
@@ -537,6 +537,25 @@ fn a_blue_one_floats_on_zoras_river() {
         idle(&mut w, 30);
         let t = tite(&w, h);
         assert!((t.actor.world_pos.y - y).abs() < 0.01, "it stays on the surface");
+        // Its feet on the water (EnTite_Update): a foot at or under the surface is put on it with a
+        // ripple (EffectSsGRipple_Spawn(.., 0, 220, 0)), each foot every 8 frames (its own phase).
+        // The feet are where the last draw put them (EnTite_PostLimbDraw): held 5 under the
+        // surface here, round it, for 8 frames.
+        let pos = t.actor.world_pos;
+        let offsets = [Vec3::new(13.0, -5.0, -11.0), Vec3::new(-13.0, -5.0, -11.0), Vec3::new(-13.0, -5.0, 11.0), Vec3::new(13.0, -5.0, 11.0)];
+        for _ in 0..8 {
+            let t = tite_mut(&mut w, h);
+            t.back_right_foot_pos = pos + offsets[0];
+            t.back_left_foot_pos = pos + offsets[1];
+            t.front_left_foot_pos = pos + offsets[2];
+            t.front_right_foot_pos = pos + offsets[3];
+            idle(&mut w, 1);
+        }
+        for o in offsets {
+            let foot = Vec3::new(pos.x + o.x, y, pos.z + o.z);
+            let n = w.effect_ss.table.iter().filter(|e| e.life > -1 && e.ty == EFFECT_SS_G_RIPPLE && e.regs[g_ripple::R_RADIUS_MAX] == 220 && e.pos.distance(foot) < 0.01).count();
+            assert!(n >= 1, "a ripple on the surface under the foot at {foot}");
+        }
     }
     // Link 150 in front of one: it turns to him on the water and lunges off the surface (its
     // depthInWater added back, NA_SE_EN_TEKU_JUMP_WATER), 8 up and 4 on, landing back on it

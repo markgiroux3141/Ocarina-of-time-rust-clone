@@ -127,7 +127,9 @@ impl PlayerRules {
         let shield_max = self.shields.len();
 
         let mut left = g.left;
-        if left == t("LH_OPEN") && lo.moving_fast {
+        if left == t("LH_BOOMERANG") && lo.boomerang_thrown {
+            left = t("LH_OPEN");
+        } else if left == t("LH_OPEN") && lo.moving_fast {
             left = t("LH_CLOSED");
         }
 
@@ -216,6 +218,9 @@ pub struct Loadout {
     /// `Player_OverrideLimbDrawGameplayFirstPerson` aiming: only the arms.
     #[serde(default)]
     pub first_person: bool,
+    /// `PLAYER_STATE1_BOOMERANG_THROWN`: the boomerang's left hand drawn open.
+    #[serde(default)]
+    pub boomerang_thrown: bool,
 }
 
 impl Loadout {
@@ -235,6 +240,7 @@ impl Loadout {
             moving_fast: false,
             holding_shield: false,
             first_person: false,
+            boomerang_thrown: false,
         }
     }
 }

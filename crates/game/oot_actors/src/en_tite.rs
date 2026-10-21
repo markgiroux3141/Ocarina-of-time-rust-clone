@@ -34,9 +34,8 @@
 //! or the blue textures on segments 8 to 10 (two bakes), the circle shadow (70) the shape's
 //! (`ActorShape_Init`'s, drawn by `Actor_Draw`);
 //! `draw_update` (`EnTite_PostLimbDraw`) puts its sphere, its feet (2800 along limbs 8, 13, 18 and
-//! 23) and the body break's pieces, and spawns the ice chunks. Not ported: the water ripples
-//! (`EffectSsGRipple`, logged where the C spawns one). Nothing sets the hammer's `unk_02` yet (the
-//! hammer isn't ported).
+//! 23) and the body break's pieces, and spawns the ice chunks. Nothing sets the hammer's `unk_02`
+//! yet (the hammer isn't ported).
 //!
 //! Params: `params` whole, the type (`EnTiteType`: -2 `TEKTITE_BLUE`, walks on water, 4 health;
 //! -1 `TEKTITE_RED`, 2 health; another value is a red one whose parts are `En_Part` kind
@@ -135,8 +134,6 @@ pub const NAVI_ENEMY_BLUE_TEKTITE: u8 = 0x46;
 
 /// `ATTENTION_RANGE_3` (`actor.h`).
 const ATTENTION_RANGE_3: u8 = 3;
-/// `UPDBGCHECKINFO_FLAG_6` (`actor.h`: 1 << 6, no water ripples from `Actor_UpdateBgCheckInfo`).
-const UPDBGCHECKINFO_FLAG_6: u32 = 1 << 6;
 /// `DEADSOUND_REPEAT_MODE_OFF` (`z_eff_ss_dead_sound.h`: 1).
 const DEADSOUND_REPEAT_MODE_OFF: i16 = 1;
 
@@ -456,9 +453,9 @@ impl EnTite {
         Box::new(this)
     }
 
-    /// `EffectSsGRipple_Spawn`: not ported.
-    fn effect_ss_g_ripple_spawn(pos: Vec3, radius: i16, radius_max: i16, life: i16) {
-        log::debug!("En_Tite: EffectSsGRipple isn't ported (at {pos}, {radius} to {radius_max}, after {life})");
+    /// `EffectSsGRipple_Spawn`.
+    fn effect_ss_g_ripple_spawn(play: &mut PlayState, pos: Vec3, radius: i16, radius_max: i16, life: i16) {
+        play.with_ss(|s| s.g_ripple_spawn(pos, radius, radius_max, life));
     }
 
     /// `func_80033480` at the four feet: their dust.
@@ -568,7 +565,7 @@ impl EnTite {
                                 self.action_var1 += 1;
                                 self.actor.velocity.y *= 0.75;
                                 attack_state = self.action_var1;
-                                Self::effect_ss_g_ripple_spawn(ripple_pos, 0, 500, 0);
+                                Self::effect_ss_g_ripple_spawn(play, ripple_pos, 0, 500, 0);
                             } else {
                                 self.actor.velocity.y = 0.0;
                                 self.actor.speed_xz = 0.0;
@@ -806,7 +803,7 @@ impl EnTite {
                 ripple_pos.y += self.actor.y_dist_to_water;
                 self.actor.gravity = 0.0;
                 self.actor.velocity.y *= 0.75;
-                Self::effect_ss_g_ripple_spawn(ripple_pos, 0, 500, 0);
+                Self::effect_ss_g_ripple_spawn(play, ripple_pos, 0, 500, 0);
                 return;
             } else {
                 // Submerged: float to the surface.
@@ -1109,13 +1106,13 @@ impl EnTite {
 
     /// A foot on the water (`EnTite_Update`): every 8 frames (`gameplayFrames + phase`) or every
     /// frame falling, a foot at or under the surface is put on it and ripples.
-    fn foot_on_water(play: &PlayState, foot: &mut Vec3, phase: u32, falling: bool) {
+    fn foot_on_water(play: &mut PlayState, foot: &mut Vec3, phase: u32, falling: bool) {
         if (play.gameplay_frames.wrapping_add(phase) % 8 == 0 || falling)
             && let Some(water_surface_y) = play.col.water_surface(foot.x, foot.z, play.col.water_room)
             && foot.y <= water_surface_y
         {
             foot.y = water_surface_y;
-            Self::effect_ss_g_ripple_spawn(*foot, 0, 220, 0);
+            Self::effect_ss_g_ripple_spawn(play, *foot, 0, 220, 0);
         }
     }
 

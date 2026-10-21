@@ -265,6 +265,10 @@ impl Dl {
     pub fn cycle_type(&mut self, ty: u32) {
         self.othermode_h(20, 2, ty);
     }
+    /// `gDPSetAlphaDither(mode)`: `G_SETOTHERMODE_H` from `G_MDSFT_ALPHADITHER` (4), 2 bits.
+    pub fn alpha_dither(&mut self, mode: u32) {
+        self.othermode_h(4, 2, mode);
+    }
     /// `gDPSetColorDither(mode)`: `G_SETOTHERMODE_H` from `G_MDSFT_RGBDITHER` (6), 2 bits.
     pub fn color_dither(&mut self, mode: u32) {
         self.othermode_h(6, 2, mode);
@@ -320,6 +324,9 @@ pub const G_SHADING_SMOOTH: u32 = 0x0020_0000;
 pub const G_CYC_1CYCLE: u32 = 0;
 pub const G_CYC_2CYCLE: u32 = 1 << 20;
 pub const G_CD_DISABLE: u32 = 3 << 6;
+/// `G_CD_NOISE` (`2 << G_MDSFT_RGBDITHER`), `G_AD_NOISE` (`2 << G_MDSFT_ALPHADITHER`) (`gbi.h`).
+pub const G_CD_NOISE: u32 = 2 << 6;
+pub const G_AD_NOISE: u32 = 2 << 4;
 
 /// `CALC_DXT(width, b_txl)`: `TXL2WORDS` is `MAX(1, width * b_txl / 8)`, `G_TX_DXT_FRAC` 11.
 fn calc_dxt(width: u32, b_txl: u32) -> u32 {

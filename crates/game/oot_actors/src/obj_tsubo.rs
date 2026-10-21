@@ -11,7 +11,7 @@
 //! thrown it tumbles until it hits the ground, a wall or an actor (its `AT`), or water.
 //!
 //! The whole overlay is ported. Player doesn't lift yet (BACKLOG #4), so the lifted and thrown
-//! states aren't reached; the splash (`EffectSsGSplash`) isn't ported (BACKLOG #40).
+//! states aren't reached.
 //!
 //! Params: `dropParams` bits 0 to 4 (the collectible dropped as it breaks, `ITEM00_*`; 0x1A and
 //! up none); bit 5 unused (the data writes "no drop" as 0x3F, six bits); bits 6 and 7 unused; bit 8 the pot (`sObjectIds`: 0 `gameplay_dangeon_keep`'s, 1
@@ -225,13 +225,13 @@ impl ObjTsubo {
         func_80033480(play, wp, 30.0, 4, 20, 50, 1);
     }
 
-    /// `ObjTsubo_WaterBreak`: the splash at the water's surface (`EffectSsGSplash`, not ported), and 15
-    /// pieces sinking (gravity -180/256, 70 frames).
+    /// `ObjTsubo_WaterBreak`: the splash at the water's surface (400), and 15 pieces sinking
+    /// (gravity -180/256, 70 frames).
     fn water_break(&self, play: &mut PlayState) {
         let wp = self.actor.world_pos;
         let mut splash = wp;
         splash.y += self.actor.y_dist_to_water;
-        log::debug!("Obj_Tsubo: EffectSsGSplash_Spawn at {splash} isn't ported (BACKLOG #40)");
+        play.with_ss(|s| s.g_splash_spawn(splash, None, None, 0, 400));
         let k = self.kind();
         let (obj_id, file) = OBJECT_IDS[k];
         play.with_ss(|ss| {

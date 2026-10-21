@@ -139,6 +139,18 @@ pub const CHARACTERS: &[Character] = &[
         .with(&[part("En_Peehat/body", 2, &[]), part("En_Peehat/top", 22, &[])]),
     c("Stalchild", "En_Skb/skeleton", Some(("object_skb", "gStalchildWalkingAnim")), &[(0x0B, Env, [160, 160, 160, 255])], &[15, 16, 17], &[12, 13, 14]),
     c("Butterfly", "En_Butte/skel", Some(("gameplay_field_keep", "gButterflyAnim")), &[], &[], &[]),
+    // GAME-10 milestone 1: a bug (En_Insect), crawling.
+    c("Bug", "En_Insect/skel", Some(("gameplay_keep", "gBugCrawlAnim")), &[], &[], &[]),
+    // GAME-10 milestone 2: the diving game's Zora (En_Diving_Game), eyes open; his arms
+    // gZoraLeftArmLimb to ...HandLimb and the right ones.
+    // GAME-10 milestone 2: Zora's Domain. King Zora, eyes open, on his throne (his arms are his
+    // cloak's: no arm limbs to stretch); a Zora standing (gZoraLeftArmLimb to ...HandLimb and the
+    // right ones), opaque.
+    c("King Zora", "En_Kz/eye0", Some(("object_kz", "gKzIdleAnim")), &[], &[], &[]),
+    c("Zora", "En_Zo/opa_eye0", Some(("object_zo", "gZoraIdleAnim")), &[OPAQUE_0E], &[8, 9, 10], &[11, 12, 13]),
+    // GAME-10 milestone 3: the lakeside professor (En_Mk), idle.
+    c("Lakeside Professor", "En_Mk/skel", Some(("object_mk", "object_mk_Anim_000D88")), &[], &[], &[]),
+    c("Zora (diving game)", "En_Diving_Game/eye0", Some(("object_zo", "gZoraIdleAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Talon", "En_Ta/eye0", Some(("object_ta", "gTalonStandAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Malon (child)", "En_Ma1/eye0", Some(("object_ma1", "gMalonChildSingAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     c("Cow", "En_Cow/body", Some(("object_cow", "gCowBodyChewAnim")), &[], &[], &[]),
@@ -168,6 +180,11 @@ pub const CHARACTERS: &[Character] = &[
     c("Great Fairy", "Bg_Dy_Yoseizo/eye0_mouth0", Some(("object_dy_obj", "gGreatFairySittingAnim")), &[], &[8, 9, 10], &[11, 12, 13]),
     // GAME-09 milestone 5: the Beamos (En_Vm), its eye at gBeamosAnim's first frame.
     skel("Beamos", "object_vm", "gBeamosSkel", Some(("object_vm", "gBeamosAnim")), &[], &[]),
+    // GAME-10 milestone 3: Lord Jabu-Jabu (En_Jj), eyes open, his mouth closed, at gJabuJabuAnim's
+    // first frame (the draw's x10 isn't the bake's).
+    c("Lord Jabu-Jabu", "En_Jj/eye0", Some(("object_jj", "gJabuJabuAnim")), &[], &[], &[]),
+    // GAME-10 milestone 2: the Octorok (En_Okuta), floating.
+    skel("Octorok", "object_okuta", "gOctorokSkel", Some(("object_okuta", "gOctorokFloatAnim")), &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

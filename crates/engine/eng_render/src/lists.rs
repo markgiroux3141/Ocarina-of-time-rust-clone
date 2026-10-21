@@ -168,6 +168,7 @@ impl Renderer {
             xlu_fill: lists.xlu_fill,
             overlay_fill: lists.overlay_fill,
             depth_probe: lists.depth_probe,
+            distortion: lists.distortion,
         };
         self.render_screen(device, queue, encoder, target, &models, camera, light, world_lines, &overlay, clear, &screen);
     }

@@ -209,13 +209,29 @@ pub mod en_encount2;
 pub mod en_fire_rock;
 pub mod bg_ddan_kd;
 pub mod en_g_switch;
+pub mod en_fish;
+pub mod en_insect;
+pub mod en_boom;
+pub mod en_diving_game;
+pub mod en_jj;
+pub mod bg_spot08_bakudankabe;
+pub mod bg_spot03_taki;
+pub mod en_okuta;
+pub mod en_kz;
+pub mod en_zo;
+pub mod obj_comb;
+pub mod bg_spot07_taki;
+pub mod item_etcetera;
+pub mod bg_spot06_objects;
+pub mod en_mk;
+pub mod en_ms;
 use bg_ydan_hasi::BgYdanHasi;
 use dummy_target::DummyTarget;
 use player::Player;
 
 /// The profiles of the actors this crate ports.
 pub const PROFILES: &[ActorProfile] =
-    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE, en_heishi3::PROFILE, en_heishi2::PROFILE, bg_spot15_saku::PROFILE, bg_gate_shutter::PROFILE, en_light::PROFILE, obj_tsubo::PROFILE, bg_spot15_rrbox::PROFILE, en_ta::PROFILE, oceff_wipe::PROFILE, oceff_wipe2::PROFILE, oceff_wipe3::PROFILE, oceff_wipe4::PROFILE, oceff_spot::PROFILE, oceff_storm::PROFILE, en_okarina_effect::PROFILE, shot_sun::PROFILE, en_okarina_tag::PROFILE, en_heishi1::PROFILE, en_ex_ruppy::PROFILE, en_zl4::PROFILE, demo_im::PROFILE, en_cow::PROFILE, en_fu::PROFILE, bg_relay_objects::PROFILE, en_niw_lady::PROFILE, en_attack_niw::PROFILE, en_daiku_kakariko::PROFILE, en_toryo::PROFILE, en_hs2::PROFILE, en_ani::PROFILE, bg_spot01_fusya::PROFILE, bg_spot01_idohashira::PROFILE, bg_spot01_idomizu::PROFILE, bg_spot01_objects2::PROFILE, en_ssh::PROFILE, en_sth::PROFILE, en_cs::PROFILE, obj_makekinsuta::PROFILE, bg_spot02_objects::PROFILE, en_weather_tag::PROFILE, bg_breakwall::PROFILE, en_tk::PROFILE, en_it::PROFILE, en_rd::PROFILE, bg_spot05_soko::PROFILE, en_wf::PROFILE, en_sa::PROFILE, en_skj::PROFILE, en_skjneedle::PROFILE, en_dnt_nomal::PROFILE, en_ex_item::PROFILE, en_crow::PROFILE, en_in::PROFILE, en_ma2::PROFILE, en_horse_link_child::PROFILE, en_horse_normal::PROFILE, en_bom::PROFILE, en_bombf::PROFILE, en_tite::PROFILE, bg_spot18_obj::PROFILE, bg_spot18_shutter::PROFILE, en_du::PROFILE, bg_bombwall::PROFILE, bg_spot16_bombstone::PROFILE, en_hata::PROFILE, en_go2::PROFILE, bg_spot18_basket::PROFILE, bg_spot18_futa::PROFILE, en_gm::PROFILE, obj_hamishi::PROFILE, obj_hsblock::PROFILE, en_poh::PROFILE, bg_ddan_jd::PROFILE, bg_dodoago::PROFILE, en_dodojr::PROFILE, obj_elevator::PROFILE, en_zf::PROFILE, bg_gnd_darkmeiro::PROFILE, bg_hidan_curtain::PROFILE, en_am::PROFILE, boss_dodongo::PROFILE, en_bdfire::PROFILE, demo_du::PROFILE, demo_go::PROFILE, en_encount2::PROFILE, en_fire_rock::PROFILE, bg_dy_yoseizo::PROFILE, en_dy_extra::PROFILE, en_m_thunder::PROFILE, eff_dust::PROFILE, bg_ddan_kd::PROFILE, en_g_switch::PROFILE, en_vm::PROFILE, en_dodongo::PROFILE];
+    &[player::PROFILE, en_holl::PROFILE, bg_ydan_hasi::PROFILE, dummy_target::PROFILE, obj_hana::PROFILE, en_ishi::PROFILE, en_kusa::PROFILE, en_kanban::PROFILE, en_ko::PROFILE, en_door::PROFILE, en_wonder_talk2::PROFILE, en_item00::PROFILE, bg_treemouth::PROFILE, en_box::PROFILE, en_wonder_item::PROFILE, en_goroiwa::PROFILE, en_md::PROFILE, en_ossan::PROFILE, en_girla::PROFILE, en_tana::PROFILE, en_elf::PROFILE, en_river_sound::PROFILE, demo_tre_lgt::PROFILE, bg_spot00_hanebasi::PROFILE, en_viewer::PROFILE, object_kankyo::PROFILE, en_dekubaba::PROFILE, en_karebaba::PROFILE, en_firefly::PROFILE, en_nutsball::PROFILE, item_shield::PROFILE, en_dekunuts::PROFILE, en_hintnuts::PROFILE, en_shopnuts::PROFILE, en_dns::PROFILE, en_st::PROFILE, en_goma::PROFILE, en_sw::PROFILE, en_si::PROFILE, door_shutter::PROFILE, bg_ydan_sp::PROFILE, obj_switch::PROFILE, obj_syokudai::PROFILE, elf_msg::PROFILE, elf_msg2::PROFILE, obj_kibako2::PROFILE, obj_lift::PROFILE, bg_ydan_maruta::PROFILE, obj_oshihiki::PROFILE, obj_makeoshihiki::PROFILE, bg_haka::PROFILE, obj_timeblock::PROFILE, obj_bombiwa::PROFILE, en_arrow::PROFILE, en_m_fire1::PROFILE, boss_goma::PROFILE, item_b_heart::PROFILE, door_warp1::PROFILE, demo_effect::PROFILE, demo_kankyo::PROFILE, bg_spot09_obj::PROFILE, bg_spot16_doughnut::PROFILE, demo_sa::PROFILE, obj_bean::PROFILE, en_owl::PROFILE, en_wood02::PROFILE, obj_mure2::PROFILE, en_a_obj::PROFILE, door_ana::PROFILE, en_encount1::PROFILE, en_part::PROFILE, en_skb::PROFILE, en_peehat::PROFILE, en_hy::PROFILE, en_heishi4::PROFILE, en_dog::PROFILE, en_ma1::PROFILE, en_mu::PROFILE, en_tg::PROFILE, en_niw::PROFILE, en_niw_girl::PROFILE, en_gs::PROFILE, en_butte::PROFILE, obj_mure::PROFILE, en_wonder_talk::PROFILE, bg_toki_hikari::PROFILE, bg_mjin::PROFILE, en_heishi3::PROFILE, en_heishi2::PROFILE, bg_spot15_saku::PROFILE, bg_gate_shutter::PROFILE, en_light::PROFILE, obj_tsubo::PROFILE, bg_spot15_rrbox::PROFILE, en_ta::PROFILE, oceff_wipe::PROFILE, oceff_wipe2::PROFILE, oceff_wipe3::PROFILE, oceff_wipe4::PROFILE, oceff_spot::PROFILE, oceff_storm::PROFILE, en_okarina_effect::PROFILE, shot_sun::PROFILE, en_okarina_tag::PROFILE, en_heishi1::PROFILE, en_ex_ruppy::PROFILE, en_zl4::PROFILE, demo_im::PROFILE, en_cow::PROFILE, en_fu::PROFILE, bg_relay_objects::PROFILE, en_niw_lady::PROFILE, en_attack_niw::PROFILE, en_daiku_kakariko::PROFILE, en_toryo::PROFILE, en_hs2::PROFILE, en_ani::PROFILE, bg_spot01_fusya::PROFILE, bg_spot01_idohashira::PROFILE, bg_spot01_idomizu::PROFILE, bg_spot01_objects2::PROFILE, en_ssh::PROFILE, en_sth::PROFILE, en_cs::PROFILE, obj_makekinsuta::PROFILE, bg_spot02_objects::PROFILE, en_weather_tag::PROFILE, bg_breakwall::PROFILE, en_tk::PROFILE, en_it::PROFILE, en_rd::PROFILE, bg_spot05_soko::PROFILE, en_wf::PROFILE, en_sa::PROFILE, en_skj::PROFILE, en_skjneedle::PROFILE, en_dnt_nomal::PROFILE, en_ex_item::PROFILE, en_crow::PROFILE, en_in::PROFILE, en_ma2::PROFILE, en_horse_link_child::PROFILE, en_horse_normal::PROFILE, en_bom::PROFILE, en_bombf::PROFILE, en_tite::PROFILE, bg_spot18_obj::PROFILE, bg_spot18_shutter::PROFILE, en_du::PROFILE, bg_bombwall::PROFILE, bg_spot16_bombstone::PROFILE, en_hata::PROFILE, en_go2::PROFILE, bg_spot18_basket::PROFILE, bg_spot18_futa::PROFILE, en_gm::PROFILE, obj_hamishi::PROFILE, obj_hsblock::PROFILE, en_poh::PROFILE, bg_ddan_jd::PROFILE, bg_dodoago::PROFILE, en_dodojr::PROFILE, obj_elevator::PROFILE, en_zf::PROFILE, bg_gnd_darkmeiro::PROFILE, bg_hidan_curtain::PROFILE, en_am::PROFILE, boss_dodongo::PROFILE, en_bdfire::PROFILE, demo_du::PROFILE, demo_go::PROFILE, en_encount2::PROFILE, en_fire_rock::PROFILE, bg_dy_yoseizo::PROFILE, en_dy_extra::PROFILE, en_m_thunder::PROFILE, eff_dust::PROFILE, bg_ddan_kd::PROFILE, en_g_switch::PROFILE, en_vm::PROFILE, en_dodongo::PROFILE, en_fish::PROFILE, en_insect::PROFILE, en_boom::PROFILE, en_diving_game::PROFILE, en_jj::PROFILE, bg_spot08_bakudankabe::PROFILE, bg_spot03_taki::PROFILE, en_okuta::PROFILE, en_kz::PROFILE, en_zo::PROFILE, obj_comb::PROFILE, bg_spot07_taki::PROFILE, item_etcetera::PROFILE, bg_spot06_objects::PROFILE, en_mk::PROFILE, en_ms::PROFILE];
 
 /// The constructors `Actor_Spawn` uses for ids this crate ports.
 pub fn overlays() -> Overlays {
@@ -401,6 +417,22 @@ pub fn overlays() -> Overlays {
     o.register(en_g_switch::ACTOR_EN_G_SWITCH, en_g_switch::EnGSwitch::init);
     o.register(en_vm::ACTOR_EN_VM, en_vm::EnVm::init);
     o.register(en_dodongo::ACTOR_EN_DODONGO, en_dodongo::EnDodongo::init);
+    o.register(en_fish::ACTOR_EN_FISH, en_fish::EnFish::init);
+    o.register(en_insect::ACTOR_EN_INSECT, en_insect::EnInsect::init);
+    o.register(en_boom::ACTOR_EN_BOOM, en_boom::EnBoom::init);
+    o.register(en_diving_game::ACTOR_EN_DIVING_GAME, en_diving_game::EnDivingGame::init);
+    o.register(en_jj::ACTOR_EN_JJ, en_jj::EnJj::init);
+    o.register(bg_spot08_bakudankabe::ACTOR_BG_SPOT08_BAKUDANKABE, bg_spot08_bakudankabe::BgSpot08Bakudankabe::init);
+    o.register(bg_spot03_taki::ACTOR_BG_SPOT03_TAKI, bg_spot03_taki::BgSpot03Taki::init);
+    o.register(en_okuta::ACTOR_EN_OKUTA, en_okuta::EnOkuta::init);
+    o.register(en_kz::ACTOR_EN_KZ, en_kz::EnKz::init);
+    o.register(en_zo::ACTOR_EN_ZO, en_zo::EnZo::init);
+    o.register(obj_comb::ACTOR_OBJ_COMB, obj_comb::ObjComb::init);
+    o.register(bg_spot07_taki::ACTOR_BG_SPOT07_TAKI, bg_spot07_taki::BgSpot07Taki::init);
+    o.register(item_etcetera::ACTOR_ITEM_ETCETERA, item_etcetera::ItemEtcetera::init);
+    o.register(bg_spot06_objects::ACTOR_BG_SPOT06_OBJECTS, bg_spot06_objects::BgSpot06Objects::init);
+    o.register(en_mk::ACTOR_EN_MK, en_mk::EnMk::init);
+    o.register(en_ms::ACTOR_EN_MS, en_ms::EnMs::init);
     o
 }
 
@@ -531,6 +563,17 @@ pub fn bakes() -> Vec<oot_game::pack::MeshBake> {
     v.extend(bg_hidan_curtain::bakes());
     v.extend(bg_gnd_darkmeiro::bakes());
     v.extend(en_vm::bakes());
+    v.extend(en_fish::bakes());
+    v.extend(en_insect::bakes());
+    v.extend(en_boom::bakes());
+    v.extend(en_diving_game::bakes());
+    v.extend(en_jj::bakes());
+    v.extend(bg_spot03_taki::bakes());
+    v.extend(en_kz::bakes());
+    v.extend(en_zo::bakes());
+    v.extend(bg_spot07_taki::bakes());
+    v.extend(bg_spot06_objects::bakes());
+    v.extend(en_mk::bakes());
     v
 }
 
@@ -612,6 +655,7 @@ pub fn new_play(data: Arc<GameData>, rules: Arc<PlayerRules>, col: CollisionCont
 pub fn foreign_anims() -> Vec<oot_game::pack::ForeignAnim> {
     let mut v = en_viewer::foreign_anims();
     v.extend(en_gm::foreign_anims());
+    v.extend(en_ossan::foreign_anims());
     v
 }
 

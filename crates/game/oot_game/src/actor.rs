@@ -38,6 +38,9 @@ pub const ACTOR_FLAG_INSIDE_CULLING_VOLUME: u32 = 1 << 6;
 pub const ACTOR_FLAG_REACT_TO_LENS: u32 = 1 << 7;
 /// A talk request was made (`Actor_TalkOfferAccepted` answers it).
 pub const ACTOR_FLAG_TALK: u32 = 1 << 8;
+/// The hookshot pulls the actor to Link rather than Link to it (`actor.h`: 1 << 9; the hookshot
+/// isn't ported).
+pub const ACTOR_FLAG_HOOKSHOT_PULLS_ACTOR: u32 = 1 << 9;
 /// Talking starts without A (`Player_ActionHandler_Talk`: the actor's offer is taken at once).
 pub const ACTOR_FLAG_TALK_OFFER_AUTO_ACCEPTED: u32 = 1 << 16;
 /// With `ACTOR_FLAG_ATTENTION_ENABLED`: Navi can be asked about it with C-Up (`Player_ActionHandler_Talk`).
@@ -84,6 +87,8 @@ pub const UPDBGCHECKINFO_FLAG_2: u32 = 1 << 2; // floor and water
 pub const UPDBGCHECKINFO_FLAG_3: u32 = 1 << 3;
 pub const UPDBGCHECKINFO_FLAG_4: u32 = 1 << 4;
 pub const UPDBGCHECKINFO_FLAG_5: u32 = 1 << 5;
+/// `UPDBGCHECKINFO_FLAG_6` (`actor.h`): no water ripples on entering the water.
+pub const UPDBGCHECKINFO_FLAG_6: u32 = 1 << 6;
 pub const UPDBGCHECKINFO_FLAG_7: u32 = 1 << 7;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -122,6 +127,10 @@ pub struct Actor {
     pub carried_yaw: i16,
     pub wall_yaw: i16,
     pub y_dist_to_water: f32,
+    /// The ripples `Actor_UpdateBgCheckInfo` spawns where the actor enters the water (their
+    /// position; three each), waiting for `Actor_UpdateAll` to spawn them after the update (or
+    /// init) that checked: the check has no play state here (`PlayState::spawn_bg_check_ripples`).
+    pub bg_check_ripples: Vec<Vec3>,
     /// `shape.yOffset`: model offset along y, in model units (× `scale.y` when drawn).
     pub shape_y_offset: f32,
     /// `shape.shadowDraw`, `shape.shadowScale`, `shape.shadowAlpha` (`ActorShape_Init`'s; drawn by
@@ -240,6 +249,7 @@ impl Actor {
             carried_yaw: 0,
             wall_yaw: 0,
             y_dist_to_water: BGCHECK_Y_MIN,
+            bg_check_ripples: Vec::new(),
             shape_y_offset: 0.0,
             shape_shadow_draw: crate::shadow::ShadowDraw::None,
             shape_shadow_scale: 0.0,
@@ -540,7 +550,10 @@ impl Actor {
         true
     }
 
-    /// `Actor_UpdateBgCheckInfo`.
+    /// `Actor_UpdateBgCheckInfo`. Entering the water without `UPDBGCHECKINFO_FLAG_6` it spawns three
+    /// ripples at the surface (`EffectSsGRipple_Spawn(.., 100, 500, 0)`, then 4 and 8): kept in
+    /// `bg_check_ripples` and spawned by `Actor_UpdateAll` once the actor's update (or init) is
+    /// done, the same three, their slots taken after any the rest of the update spawned.
     pub fn update_bg_check_info(&mut self, col: &CollisionContext, wall_check_height: f32, wall_check_radius: f32, ceiling_check_height: f32, flags: u32) {
         self.update_bg_check_info_of(col, wall_check_height, wall_check_radius, ceiling_check_height, flags, None);
     }
@@ -589,8 +602,8 @@ impl Actor {
         if flags & UPDBGCHECKINFO_FLAG_2 != 0 {
             let p = Vec3::new(self.world_pos.x, self.prev_pos.y, self.world_pos.z);
             self.update_floor(col, p, flags, ceiling_bg, own_bg);
-            // BgCheck_GetWaterSurfaceAllHack (ripples not modelled).
-            match col.water_surface(self.world_pos.x, self.world_pos.z, col.water_room) {
+            // BgCheck_GetWaterSurfaceAllHack.
+            match col.water_surface_all_hack(self.world_pos.x, self.world_pos.y, self.world_pos.z, col.water_room) {
                 Some(y) => {
                     self.y_dist_to_water = y - self.world_pos.y;
                     if self.y_dist_to_water < 0.0 {
@@ -598,6 +611,12 @@ impl Actor {
                     } else {
                         if self.bg_check_flags & BGCHECKFLAG_WATER == 0 {
                             self.bg_check_flags |= BGCHECKFLAG_WATER_TOUCH;
+                            if flags & UPDBGCHECKINFO_FLAG_6 == 0 {
+                                // EffectSsGRipple_Spawn(play, &ripplePos, 100, 500, 0 / 4 / 8) at
+                                // the surface: spawned once the update's done
+                                // (PlayState::spawn_bg_check_ripples).
+                                self.bg_check_ripples.push(Vec3::new(self.world_pos.x, y, self.world_pos.z));
+                            }
                         }
                         self.bg_check_flags |= BGCHECKFLAG_WATER;
                     }

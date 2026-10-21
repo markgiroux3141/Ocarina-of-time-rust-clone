@@ -525,6 +525,15 @@ impl PlayState {
                 CamRequest::OnePointInit { cs_id, timer, parent } => {
                     self.onepoint_cutscene_init(cs_id, timer, None, parent);
                 }
+                CamRequest::UnderwaterLights(Some(index)) => self.env_ctx.enable_underwater_lights(&mut self.env_statics, index),
+                CamRequest::UnderwaterLights(None) => self.env_ctx.disable_underwater_lights(&self.env_statics),
+                CamRequest::ExtraFilter(filter) => self.audio.set_extra_filter(filter),
+                CamRequest::ViewDistortion { orientation, scale, speed } => {
+                    self.view_distortion.set_orientation(orientation);
+                    self.view_distortion.set_scale(scale);
+                    self.view_distortion.set_speed(speed);
+                }
+                CamRequest::ViewClearDistortion => self.view_distortion.clear(),
             }
         }
     }
@@ -534,7 +543,7 @@ impl PlayState {
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
     /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908;
-    /// Phase 10's 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604). The
+    /// Phase 10's 3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604; Phase 11's 4100). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
     pub fn onepoint_cutscene_set_info(&mut self, sub: i16, cs_id: i16, actor: Option<CamActor>, timer: i16) -> i32 {
@@ -958,6 +967,24 @@ impl PlayState {
                 // side, then on Link (0x2121) until the camera is told it's done.
                 set_cs_info(self, if cs_id == 8603 { "D_801232CC" } else { "D_80123394" }, 5);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            4100 => {
+                // Zora's River's waterfall opening (Bg_Spot03_Taki): five keyframes (D_801225D4:
+                // Link held, PLAYER_CSACTION_8, then 59, the falls from the east, back on Link),
+                // Link turned east first (shape.rot.y, world.rot.y and yaw 0x3FFC), held
+                // (PLAYER_CSACTION_8) with the actors.
+                set_cs_info(self, "D_801225D4", 5);
+                if let Some(h) = player {
+                    if let Some(a) = self.actors.actor_mut(h) {
+                        a.shape_rot.y = 0x3FFC;
+                        a.world_rot.y = 0x3FFC;
+                    }
+                    if let Some(pi) = self.actors.get_mut(h).and_then(|p| p.as_player_mut()) {
+                        pi.set_yaw(0x3FFC);
+                    }
+                }
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+                self.player_set_cs_action_with_halted_actors(None, 8);
             }
             _ => log::warn!("onepointdemo camera: demo number not found !! ({cs_id}): not ported"),
         }

@@ -355,7 +355,7 @@ struct Fight {
     hits_given: u32,
 }
 
-/// Child Link (the Kokiri Sword, the Deku Shield, three hearts) fights the meadow's Wolfos as a
+/// Child Link (the Kokiri Sword, the Deku Shield, four hearts) fights the meadow's Wolfos as a
 /// player would, reading only what's on screen: he walks at it from the entrance; once it's up
 /// he turns to it and Z-targets it, keeps within 75 of it, holds the shield (R) while it runs,
 /// circles, blocks or slashes, and slashes (B, a press every other frame) when it can't block:
@@ -435,7 +435,8 @@ fn a_child_with_the_kokiri_sword_kills_the_meadows_wolfos() {
     let Some(a) = assets() else { return };
     let mut w = meadow(&a);
     let h = the_wolfos(&w);
-    assert_eq!(w.save.health, 0x30, "three hearts");
+    // Four hearts: the castle's presets on have Queen Gohma's heart container (GAME-10 milestone 1).
+    assert_eq!(w.save.health, 0x40, "four hearts");
     let f = fight(&mut w, h, 6000);
     println!("{f:?}, Link's health left {:#x}", w.save.health);
     let blow = f.death_blow.expect("the Wolfos never died");

@@ -46,6 +46,11 @@ pub trait SurfaceType {
     fn floor_effect(&self, id: PolyId) -> u32;
     /// `SurfaceType_GetConveyorSpeed`.
     fn conveyor_speed(&self, id: PolyId) -> u32;
+    /// `SurfaceType_GetConveyorDirection`: in 64ths of a turn (`CONVEYOR_DIRECTION_TO_BINANG`).
+    fn conveyor_direction(&self, id: PolyId) -> u32;
+    /// `SurfaceType_IsFloorConveyor`: the poly's `COLPOLY_IS_FLOOR_CONVEYOR` (`bgcheck.h`: 1 << 0,
+    /// in its second vertex's top bits); a water current otherwise.
+    fn is_floor_conveyor(&self, id: PolyId) -> bool;
     /// `func_80042108`: surface data[1] bit 27.
     fn flag27(&self, id: PolyId) -> bool;
     /// `SurfaceType_GetEcho`: the floor's reverb (`Audio_SetCodeReverb`).
@@ -88,6 +93,12 @@ impl SurfaceType for CollisionContext {
     }
     fn conveyor_speed(&self, id: PolyId) -> u32 {
         self.surface_word(id, 1) >> 18 & 7
+    }
+    fn conveyor_direction(&self, id: PolyId) -> u32 {
+        self.surface_word(id, 1) >> 21 & 0x3F
+    }
+    fn is_floor_conveyor(&self, id: PolyId) -> bool {
+        self.poly(id).vtx[1] & (1 << 13) != 0
     }
     fn flag27(&self, id: PolyId) -> bool {
         self.surface_word(id, 1) & 0x0800_0000 != 0

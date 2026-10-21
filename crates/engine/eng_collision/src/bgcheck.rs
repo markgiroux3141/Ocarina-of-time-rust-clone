@@ -81,6 +81,18 @@ pub struct CollisionContext {
     /// The room water boxes are filtered by (`BgCheck_GetWaterSurface` compares with the
     /// current room); set by whoever owns the rooms.
     pub water_room: u32,
+    /// A water box of finite depth checked before the scene's (`BgCheck_GetWaterSurfaceAllHack`:
+    /// the game sets one for one scene); `None` for every other scene.
+    pub special_water_box: Option<SpecialWaterBox>,
+}
+
+/// A finite water box: a point strictly inside `min`..`max` is in water whose surface is
+/// `y_surface`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpecialWaterBox {
+    pub min: Vec3,
+    pub max: Vec3,
+    pub y_surface: f32,
 }
 
 /// `COLPOLY_VTX_CHECK_FLAGS_ANY`.
@@ -166,6 +178,7 @@ impl CollisionContext {
             header,
             dyna: Dyna::default(),
             water_room: 0,
+            special_water_box: None,
         };
         // `StaticLookup_AddPoly`: floor if ny > 0.5, ceiling if ny < -0.8, else wall.
         let snormal = |x: f32| (x * 32767.0) as i16;
@@ -968,6 +981,52 @@ impl CollisionContext {
             }
         }
         None
+    }
+
+    /// `BgCheck_GetWaterSurfaceAllHack`: the special finite water box's surface for a point
+    /// strictly inside it, else `water_surface`.
+    pub fn water_surface_all_hack(&self, x: f32, y: f32, z: f32, room: u32) -> Option<f32> {
+        if let Some(w) = self.special_water_box
+            && w.min.x < x
+            && x < w.max.x
+            && w.min.y < y
+            && y < w.max.y
+            && w.min.z < z
+            && z < w.max.z
+        {
+            return Some(w.y_surface);
+        }
+        self.water_surface(x, z, room)
+    }
+
+    /// `BgCheck_FindWaterBox`: the index of the first water box (for `room`, `curRoom.num`, or one
+    /// marked for all rooms, `WATERBOX_ROOM_ALL` 0x3F; not `WATERBOX_IS_DISABLED`, `1 << 19`,
+    /// `bgcheck.h`) whose x/z extent holds `pos` and whose surface is less than
+    /// `surface_chk_dist` above or below it; -1 for none (or no water boxes).
+    pub fn find_water_box(&self, pos: Vec3, surface_chk_dist: f32, room: u32) -> i32 {
+        for (i, w) in self.header.water_boxes.iter().enumerate() {
+            let r = (w.properties >> 13) & 0x3F;
+            if r != room && r != 0x3F {
+                continue;
+            }
+            if w.properties & (1 << 19) != 0 {
+                continue;
+            }
+            // @bug (game) (`BgCheck_GetWaterSurface`'s): a point exactly on an edge is outside.
+            let (x0, z0) = (w.x_min as f32, w.z_min as f32);
+            if x0 < pos.x && pos.x < x0 + w.x_length as f32 && z0 < pos.z && pos.z < z0 + w.z_length as f32 {
+                let y = w.y_surface as f32;
+                if pos.y - surface_chk_dist < y && y < pos.y + surface_chk_dist {
+                    return i as i32;
+                }
+            }
+        }
+        -1
+    }
+
+    /// `colCtx->colHeader->waterBoxes.len()`: `numWaterBoxes`.
+    pub fn num_water_boxes(&self) -> usize {
+        self.header.water_boxes.len()
     }
 
     /// `colCtx->colHeader->waterBoxes[index].ySurface`, if the scene has that many water boxes.

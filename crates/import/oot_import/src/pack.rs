@@ -705,6 +705,19 @@ fn import_link(p: &Project, rules: &PlayerRules, w: &PackWriter, tally: &mut Tal
                 }
             }
         }
+        // The boomerang thrown (PLAYER_STATE1_BOOMERANG_THROWN): its left hand open.
+        for (gi, g) in rules.model_groups.iter().enumerate() {
+            for fists in [false, true] {
+                for shield in 0..rules.shields.len() {
+                    for sword in [true, false] {
+                        for holding_shield in [false, true] {
+                            let lo = Loadout { model_group: gi, moving_fast: fists, shield, child_has_kokiri_sword: sword, holding_shield, boomerang_thrown: true, ..default.clone() };
+                            loadouts.push((g, fists, lo));
+                        }
+                    }
+                }
+            }
+        }
         // Aiming in first person (Player_OverrideLimbDrawGameplayFirstPerson): only the arms.
         for (gi, g) in rules.model_groups.iter().enumerate() {
             loadouts.push((g, false, Loadout { model_group: gi, first_person: true, ..default.clone() }));

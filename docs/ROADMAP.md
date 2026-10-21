@@ -226,8 +226,13 @@ is done: **the phase's exit is met**. Milestone 6 (the summit, the Great Fairy a
 the magic meter, the Great Fairy, the spin attack, the return entrances; after the hand test the
 actors' shadows the C's way) was taken before 5 and is done, and milestone 5 (the rest of the
 cavern, [ADR 0080](adr/0080-the-rest-of-dodongos-cavern.md): the Dodongos, the Beamos, the silver
-rupees, the falling stairs) is built: every actor Phase 10's scenes place is ported. The phase's
-exit review is next.
+rupees, the falling stairs) is done: every actor Phase 10's scenes place is ported. **Phase 10 is
+done** with its exit review (2026-10-20): Phase 11 starts from the `fairy-magic` preset.
+
+Phase 11 (GAME-10, [GAME-10-zoras-waters-and-jabu-jabu.md](GAME-10-zoras-waters-and-jabu-jabu.md)):
+surveyed and proposed (2026-10-20), nine milestones, every call the recommended one. Milestone 1
+(water and bottles, [ADR 0081](adr/0081-water-bottles-and-the-underwater-view.md)) is done;
+milestones 2's and 3's actors and Player's boomerang are merged, their runs next.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -707,15 +712,15 @@ recommendations taken): the split below, the critical path first and the exit at
      `cavern-open` (milestone 3's start). The story chain up the trail is hand-tested.
 3. **Dodongo's Cavern's route:** `SDC_DODONGOS_CAVERN`, `Bg_Dodoago`, `Bg_Ddan_Jd`, `En_Dodojr` and
    what the way the collision search finds needs; one-points 3060, 3065, 3380.
-   - **Built** (2026-10-16, ADR 0074), route B (the user's call): the collision search's way (the
+   - **Done** (2026-10-16, ADR 0074), route B (the user's call): the collision search's way (the
      shortcut pillar is the only way up; room 3's levels apart; the bag from room 4), and with it
      `En_Zf` (with `EffectBlure`, wired to Link's sword, the Skulltulas and the arrows), `En_Poh`,
      `En_Am`, `Obj_Elevator`, `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` from milestone 5. Four short
      runs from debug starts (the pillar, the bag, the skull's eyes and jaw, the gravestone and
      the fall; the fights are hand-tested) with their goldens; the presets `cavern-upper`,
      `cavern-bomb-bag`, `cavern-jaw` and `cavern-boss` (milestone 4's start) checked against them.
-     Open: no way found for a child to bring fire to room 10's web (GAME-09's milestone 3
-     section; `cavern-web` starts past it). The loop is hand-tested.
+     No way found for a child to bring fire to room 10's web (GAME-09's milestone 3 section):
+     dropped at the hand test, `cavern-web` starts past it. The loop is hand-tested.
 4. **King Dodongo and the Goron's Ruby:** `Boss_Dodongo`, `En_Bdfire`, the magma effects, the room
    texture's write, `Play_SetCameraAtEyeUp`, `MREG(64)`; `Door_Warp1`'s branch, `Demo_Du`, `Demo_Go`.
    The phase's exit.
@@ -729,7 +734,7 @@ recommendations taken): the split below, the critical path first and the exit at
 5. **The rest of the cavern:** `En_Dodongo`, `En_Vm`, `En_G_Switch`, `Bg_Ddan_Kd`; `D_Fire`,
    `Dead_Dd`, `Dead_Ds`; one-point 3050; rooms 2, 5, 6, 13, 14 and 15 (`En_Zf`, `En_Am`, `En_Poh`,
    `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` and `Obj_Elevator` came in milestone 3).
-   - **Built** (2026-10-19, ADR 0080), last: `Bg_Ddan_Kd` and one-point 3050, `En_G_Switch` (every
+   - **Done** (2026-10-19, hand-tested 2026-10-20, ADR 0080), last: `Bg_Ddan_Kd` and one-point 3050, `En_G_Switch` (every
      type; the shooting gallery's writes logged, #98), `En_Dodongo`, `En_Vm`, `Effect_Ss_D_Fire`,
      `Dead_Dd`, `Dead_Ds`; rooms 2, 5, 6, 13, 14 and 15 whole (every placement ported: Phase 10's
      33 of 33). Four short runs from debug starts (`Route::FallingStairs`: room 2's Bomb Flowers
@@ -750,6 +755,26 @@ recommendations taken): the split below, the critical path first and the exit at
      her cutscene, the magic, out by the return entrance; `Route::SummitOwl`: the owl's flight to
      Kakariko) and the presets `fairy-fountain` and `fairy-magic` (milestone 5's and Phase 11's
      start). The climb through the falling rocks is hand-tested.
+
+**Phase 10 done** (2026-10-20): its six milestones built and hand-tested, and its exit review
+(GAME-09's last section): `fairy-magic` is Phase 11's start (checked against the owl run's end, the
+story's last), what's left and where. Phase 11 starts with its survey.
+
+## Phase 11: Zora's River, Zora's Domain, Lake Hylia, Zora's Fountain and Jabu-Jabu (GAME-10)
+
+**Goal:** child Link up Zora's River (the waterfall's lullaby) to Zora's Domain, the silver scale
+from the diving game, Ruto's letter from Lake Hylia's bottom, King Zora moved aside, a fish for Lord
+Jabu-Jabu, Jabu-Jabu's Belly (Master Quest) and its boomerang, Barinade, Ruto's warp and the Zora's
+Sapphire; then Zelda's escape, the Ocarina of Time in the moat and the Song of Time. Exit: the
+Zora's Sapphire, then the Ocarina of Time. See [GAME-10](GAME-10-zoras-waters-and-jabu-jabu.md)'s
+survey. **Surveyed and proposed** (2026-10-20): nine milestones (water and bottles; the river and
+the Domain to the silver scale; the letter, King Zora and Jabu-Jabu's mouth; Jabu-Jabu to the
+boomerang; to Barinade; Barinade and the Sapphire; the moat; the rest of Jabu-Jabu; the frogs and
+scarecrows). Decided 2026-10-20 (every recommendation). **Milestone 1 done** (2026-10-20: Player's
+water and bottles, the fish and bugs, the water's effects, the currents, the underwater view);
+milestones 2's and 3's actors merged (the river, the Domain, the diving game, the lake, the lab,
+the fountain, Jabu-Jabu) with `game-zora.bat`'s debug starts, their scripted runs next. Found: in MQ neither Ruto nor Big Octo is on the way to
+Barinade; the silver scale is required for Ruto's letter.
 
 ## Cross-cutting debts
 

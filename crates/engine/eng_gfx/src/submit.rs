@@ -164,6 +164,9 @@ pub struct DrawLists {
     /// centre) whose depth the renderer reads back once the frame is drawn
     /// (`Renderer::read_depth_probe`): the game's `Environment_GraphCallback`.
     pub depth_probe: Option<[i32; 2]>,
+    /// What the 3D lists' projection is multiplied by on the right (the game's view distortion:
+    /// under water, a hot room, Jabu-Jabu's breathing); the identity for none.
+    pub distortion: glam::Mat4,
 }
 
 impl DrawLists {

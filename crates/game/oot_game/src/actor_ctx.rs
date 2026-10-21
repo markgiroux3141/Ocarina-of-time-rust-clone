@@ -117,6 +117,11 @@ pub trait PlayerIface {
     }
     /// `Player_UnsetMask`: `currentMask = PLAYER_MASK_NONE`.
     fn unset_mask(&mut self) {}
+    /// `Player_IsDroppingFish` (`play->isPlayerDroppingFish`): letting a fish out of a bottle
+    /// (`Player_Action_8084EFC0` with `PLAYER_IA_BOTTLE_FISH`).
+    fn is_dropping_fish(&self) -> bool {
+        false
+    }
     /// `Player_UpdateBottleHeld`'s Player half: unless `item` is the empty bottle, the item in hand
     /// becomes it (`heldItemId`, `heldItemAction`); `itemAction` becomes `item_action`. Returns
     /// `heldItemButton`, the button `Inventory_UpdateBottleItem` updates.
@@ -198,6 +203,10 @@ pub trait PlayerIface {
     /// An outside write of `stateFlags1`: `set` bits on, then `clear` bits off (`Camera_Finish`
     /// and `Camera_Demo5`'s `PLAYER_STATE1_29`).
     fn change_state_flags1(&mut self, _set: u32, _clear: u32) {}
+    /// An outside write of `yaw` (`OnePointCutscene_SetInfo`'s `player->actor.shape.rot.y =
+    /// player->actor.world.rot.y = player->yaw = ..`: the caller writes the actor's two). Player
+    /// doesn't take it yet: its `current_yaw` keeps its own.
+    fn set_yaw(&mut self, _yaw: i16) {}
     /// `av1.actionVar1` (`Door_Ana` reads it: 0 while falling into its hole).
     fn action_var1(&self) -> i16 {
         0

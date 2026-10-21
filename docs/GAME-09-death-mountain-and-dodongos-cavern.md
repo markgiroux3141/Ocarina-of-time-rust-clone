@@ -5,8 +5,9 @@ Trail to Goron City, Darunia's dance and the Goron's Bracelet, the bomb flower t
 Cavern (Master Quest), the cavern and its bomb bag, King Dodongo, the blue warp and the Goron's
 Ruby; the summit's Great Fairy and the magic meter. Exit: the Goron's Ruby.
 
-**Status:** surveyed, proposed and decided (2026-10-15; the user's calls at the end of this doc).
-The phase starts from the `ranch-epona` preset (GAME-08's exit review).
+**Status:** done (2026-10-20): its six milestones built and hand-tested, and its exit review (the
+last section). The phase started from the `ranch-epona` preset (GAME-08's exit review); Phase 11
+starts from `fairy-magic`.
 
 | # | Milestone | Status |
 |---|---|---|
@@ -14,7 +15,7 @@ The phase starts from the `ranch-epona` preset (GAME-08's exit review).
 | 2 | The trail and Goron City to the bracelet, and the cavern's mouth | done (2026-10-15) |
 | 3 | Dodongo's Cavern's route | done (2026-10-16) |
 | 4 | King Dodongo and the Goron's Ruby (the phase's exit) | done (2026-10-17): the exit met |
-| 5 | The rest of the cavern | next (from `fairy-magic`) |
+| 5 | The rest of the cavern | done (2026-10-20) |
 | 6 | The summit: the Great Fairy and magic | done (2026-10-17), before 5 |
 
 ## The survey
@@ -1512,3 +1513,122 @@ scripts\run\sandbox-cavern-rooms.bat
    under the east block of the row furthest from the door.
 9. Anything that looks off: the Dodongos' walk, fire and tail; the Beamos's laser, flash, scorch and
    flame; the stairs' fall and its camera; the silver rupees' spin and notes. Known: no rumble.
+
+## Phase 10's end (the exit review, 2026-10-20)
+
+**The exit, met:** the Goron's Ruby (milestone 4, `Route::Ruby`: after King Dodongo the heart, the
+blue warp, `EVENTCHKINF_25` and the Ruby, `gDMTGoronRubyCs` to the trail's spawn 5). The phase's
+other places are played through too: the trail and Goron City to the bracelet (milestone 2), the
+cavern's route and its other rooms (3 and 5), the summit's Great Fairy and magic (6). Commits:
+ec22e9f (1), 3050f4f (2), 430e1e2 (3), 1e7de8d (4), e626b1e (6, before 5), 0d97540 (5). The game
+editor's actors tab (796c9af, 7266d53, 0d8f2aa: ADRs 0077 to 0079) came between milestones 6 and 5
+and isn't the phase's.
+
+### What the phase built
+
+- **Actors, whole:** `En_Bom`, `En_Bombf` (1); `En_Go2` (its adult types placeholders chosen in its
+  init), `En_Du`, `Bg_Spot18_Shutter`, `Bg_Spot18_Obj`, `Bg_Spot18_Basket`, `Bg_Spot18_Futa`,
+  `En_Gm`, `Obj_Hamishi`, `Obj_Hsblock`, `En_Tite`, `Bg_Spot16_Bombstone`, `Bg_Bombwall`, `En_Hata`
+  (2); `Bg_Dodoago`, `Bg_Ddan_Jd`, `En_Dodojr`, `Obj_Elevator`, `En_Zf`, `En_Poh`, `En_Am`,
+  `Bg_Hidan_Curtain`, `Bg_Gnd_Darkmeiro` (3); `Boss_Dodongo`, `En_Bdfire`, `Demo_Du` (the Ruby's
+  part; its other cutscenes placeholders), `Demo_Go` (4); `Bg_Dy_Yoseizo` (every reward),
+  `En_Dy_Extra`, `En_M_Thunder`, `Eff_Dust`, `En_Encount2`, `En_Fire_Rock` (6); `Bg_Ddan_Kd`,
+  `En_G_Switch` (every type; the gallery's writes logged), `En_Dodongo`, `En_Vm` (5). The effects
+  `G_Spk`, `G_Magma`, `G_Magma2`, `D_Fire`, `Dead_Dd`, `Dead_Ds`. 143 ported actors at the phase's
+  start, 181 at its end (38: placed and ported 119 to 151, only spawned 23 to 29); every actor the
+  phase's scenes place is ported (COVERAGE: 33 of 33).
+- **Systems:** bombs and Player's explosives (the bomb in hand through a predicted handle, the Bomb
+  Flower's hand-over `func_8002F5C4`, the actors' writes into Player: ADR 0072); the room's wind
+  command (pack format 29) and the child's bracelet on Link (ADR 0073); `EffectBlure`, wired to
+  Link's sword, the Lizalfos, the Skulltulas and the arrows (ADR 0074); the room RAM the game writes
+  (`RoomRam`), the camera's up (`CAM_VIEW_UP`), `MREG(64)`'s fill (ADR 0075); the magic meter, the
+  return entrances, Player's charged spin and the C's combo window, `Camera_Battle4` (ADR 0076);
+  the shadows the C's way (`oot_game::shadow`, every ported actor's `ActorShape_Init`) and the
+  texture decoder's clamp-and-mask fix (milestone 6's hand test); no attention search in a
+  cutscene mode (milestone 2's); Player's idle fidget by the room's environment; the one-points
+  3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603 and 8604; the draw configs
+  `SDC_GORON_CITY`, `SDC_DODONGOS_CAVERN`, `SDC_GREAT_FAIRYS_FOUNTAIN`; `eng_math::vec3f_pitch`,
+  `MtxF::to_zyx_rot_s` and the sandbox's `--room` (ADR 0080).
+- **Runs** (16, each a short debug start of one moment; the fights and the story chain between
+  them are the hand tests'): `Route::Bombs` (572 frames), `Darunia` (2,609), `Boulder` (258),
+  `Pillar` (819), `BombBag` (358), `Skull` (470), `Gravestone` (447), `KingDodongo` (731), `Ruby`
+  (3,057), `FairyWall` (215), `GreatFairy` (2,157), `SummitOwl` (983), `FallingStairs` (431),
+  `SilverRupees` (188), `ShieldChest` (277), `TimeBlocks` (235). Their ends are the presets
+  `goron-bracelet`, `cavern-open`, `cavern-upper`, `cavern-bomb-bag`, `cavern-jaw`, `cavern-boss`,
+  `cavern-boss-fight`, `goron-ruby`, `fairy-fountain`, `fairy-magic`, `cavern-stairs` and
+  `cavern-rooms`, each checked against its run; the debug starts `cavern-bombs`, `cavern-lobby`,
+  `cavern-loop`, `cavern-web`, `cavern-boss-beaten` and `cavern-song-of-time`.
+- **Numbers:** 1,106 tests at the phase's start, 1,433 at its end (one ignored); goldens 210 hashes
+  and 161 cases (`out/golden_base22`), then 273 and 207 (`out/golden_base30`). Menu entries 132 to
+  146 and 149 to 151 (147 and 148 are the editor's). ADRs 0072 to 0076 and 0080.
+
+### Phase 11's start: the `fairy-magic` preset
+
+The phase's story ends with milestone 6's runs: the Great Fairy's magic, out by the return entrance,
+and the owl's flight to Kakariko (`Route::SummitOwl`, ending at Kakariko's spawn 14). The flight
+changes nothing in the save (no flag, item or scene flag), so the save the story leaves is `fairy-magic`:
+`tests/summit.rs` now checks the owl run's end against it, as it checked the fountain run's. Not
+`cavern-rooms`: milestone 5's runs are debug starts of single moments in the cavern's optional
+rooms (room 14's starts with the room cleared, past room 8's fight), so its two additions (room 2's
+stairs down, room 14's chest and its 5 rupees) are a slice of the optional rooms, not where the
+story leaves Link; the compass's and the Deku Shield's chests come from fights, which no preset
+holds. No preset's name changes.
+
+With it (read from the preset, not from the briefs), Link has:
+- **Equipment:** the Kokiri Sword on B; the Deku Shield and the Hylian Shield, the Hylian worn; the
+  Kokiri Tunic and Boots.
+- **Items:** bombs on C-Right (16 in the 20 bomb bag), the Fairy Ocarina on C-Down, Zelda's Letter
+  on C-Left (shown at Kakariko's gate), the Fairy Slingshot (40 seeds, the 40 seed bag; on no
+  button), and one bottle, of milk. No Deku Sticks or Nuts.
+- **Upgrades:** the Goron's Bracelet, the 20 bomb bag, the 40 seed bag, the child's wallet (16
+  rupees).
+- **Songs:** Zelda's Lullaby, Epona's Song, Saria's Song and the Sun's Song. **No Song of Time**
+  and no Song of Storms (milestone 5's brief said "every song up to the Song of Storms": wrong; the
+  Song of Time comes at the castle's moat after the three stones).
+- **Stones:** the Kokiri Emerald and the Goron's Ruby.
+- **Hearts:** four (health 64 of 64) and two pieces of heart. **Magic:** the normal meter, full
+  (level 1, 0x30).
+
+**Found while checking:** the story's presets from the castle on leave out Queen Gohma's heart
+container. `castle_preset` builds on the Deku Tree dead (`EVENTCHKINF_07`, `_09`, the Kokiri
+Emerald) without the container (`Item_Give(ITEM_HEART_CONTAINER)`) or her room's flags (room 1's
+clear and collectible 0x1F in `SCENE_DEKU_TREE_BOSS`), which only `deku-tree-gohma-cleared` gives.
+In the game Link leaves the Deku Tree with four hearts, so he'd have five here, not four. Fixing it
+moves every golden whose HUD shows the hearts from the castle's runs on: a call for the user, at
+Phase 11's start (GAME-10).
+
+### Left for later (all in BACKLOG or the phases' scopes)
+
+- **The adult's parts, placeholders chosen at init:** `En_Go2`'s adult types (Link the Goron,
+  Biggoron, the Fire Temple's Gorons, #72), Darunia's one-point 3330 (#73), `Demo_Du`'s other
+  cutscenes (the Fire Medallion, the Chamber after Ganon, the credits, #83); with them the hammer's
+  floor hit (#76), `En_M_Thunder` with the hammer (#86) and the Fire Temple's fire walls' one-points
+  (#82): Phase 15, and #83's endings Phase 19. `Obj_Ice_Poly` (#75): Phase 16.
+- **Phase 11's:** the blue Tektites' ripples (`EffectSsGRipple`, #74); the attention search's
+  category order (#79), with the first enemies among NPCs.
+- **The Bombchus** (#70, and a Dodongo swallowing one, #99), **the masks' reactions** (#78, #94),
+  **the shooting gallery and horseback archery** (#98): Phase 20. **The spells** and the magic
+  arrows' cost (#85): with the spells' fountains (Phase 20's) and the bow.
+- **The lens and the rumble** (#60): the lens with the Bottom of the Well (Phase 17), the rumble
+  with the controller's options.
+- **Room 10's web:** no way found for a child to bring fire to it (milestone 3); dropped at the
+  hand test (coverage over completability), `cavern-web` starts past it.
+- **The editor track:** a custom level's doors (#89, with E4), the actors that draw nothing or
+  wrongly in the capture (#90, #91: the tuning pass), their shadows, lights and fog (#92), the id
+  chip (#93), Navi's enemy texts (#95: Player's C-Up branch), the lines of parts not ported (#96,
+  each with its phase), the Dialogue section's polish (#97).
+- **Fidelity and polish:** a slow walk up the cavern's ramps (#71, by hand), an offer taken a
+  frame late after a talk (#77), the point lights (#80, with #31's glows), the Poe's lantern pieces
+  (#81, the importer), a sign's shadow (#88); the Gold Skulltulas' shine (the rendering debt).
+- **Tools:** the tests' audio never plays a cutscene's fanfare (#87).
+- Closed in the phase: #33 (milestone 1), #49 (6), #84 (6's hand test), and #65 (5's sandbox
+  `--room`: struck in this review, it had been left open).
+
+### Checked
+
+- ROADMAP (Phase 10 done, its milestones' entries, "Where things stand"), COVERAGE (Phase 10
+  done in `coverage.py`'s `SCENES`, regenerated with `ootx census`: 33 of 33), the ADR index (0072
+  to 0076 and 0080; 0075's row had lost its status column) and BACKLOG (#65 struck; #70 to #99 as
+  above) agree with this doc.
+- `cargo test --release --workspace --no-fail-fast` passes (1,433, one ignored; no warnings),
+  `cargo test -p layering` passes, the goldens check: 273 of 273 the same (`out/golden_base30`).

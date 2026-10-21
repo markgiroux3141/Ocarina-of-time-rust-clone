@@ -654,7 +654,7 @@ fn d_fire_update_and_draw() {
     // Without OBJECT_DODONGO (no slot), nothing spawns.
     let mut stops = Vec::new();
     let before = w.effect_ss.table.iter().filter(|e| e.life > -1).count();
-    let mut s = oot_game::effect::SsSpawn { info: &mut w.effect_ss, rand: &mut w.rand, objects: None, stops: &mut stops, state_frames: 0 };
+    let mut s = oot_game::effect::SsSpawn { info: &mut w.effect_ss, rand: &mut w.rand, objects: None, stops: &mut stops, state_frames: 0, col: None };
     s.d_fire_spawn_fixed_scale(pos, Vec3::ZERO, accel, 255, 3);
     assert_eq!(w.effect_ss.table.iter().filter(|e| e.life > -1).count(), before);
 }

@@ -20,9 +20,7 @@
 //! Carried (`Actor_OfferCarry`, Player's lift), it flaps over Link's head and slows his fall
 //! (Player's glide, `Player_UpperAction_CarryActor`); thrown, it flutters down.
 //!
-//! Not ported here: the splash and ripples in water (`EffectSsGSplash`, `EffectSsGRipple`: the
-//! effects aren't ported).
-//!
+
 //! Params: `params` whole, the kind (negative: 0 at init; 0, 6 and 9 the usual cucco, 8 one that
 //! wanders nearer home; 1, 3 the ranch's before and after Talon's return; 5, 7 before and after
 //! Epona; 2 by night only; 4 to pick up, 0 once picked; 0xA the market girl's (`En_Niw_Girl`'s,
@@ -950,8 +948,9 @@ impl EnNiw {
             }
             if self.timer4 == 0 {
                 self.timer4 = 30;
-                // EffectSsGRipple_Spawn(play, &pos + depthInWater, 100, 500, 30): the ripples
-                // aren't ported.
+                let mut pos = self.actor.world_pos;
+                pos.y += self.actor.y_dist_to_water;
+                play.with_ss(|s| s.g_ripple_spawn(pos, 100, 500, 30));
             }
             if self.actor.bg_check_flags & BGCHECKFLAG_WALL != 0 {
                 self.actor.velocity.y = 10.0;
@@ -1294,8 +1293,9 @@ impl ActorImpl for EnNiw {
             self.actor.velocity.y = 0.0;
             self.actor.gravity = 0.0;
             self.timer4 = 30;
-            // EffectSsGSplash_Spawn(play, &pos + depthInWater, NULL, NULL, 0, 400): the splash
-            // isn't ported.
+            let mut pos = self.actor.world_pos;
+            pos.y += self.actor.y_dist_to_water;
+            play.with_ss(|s| s.g_splash_spawn(pos, None, None, 0, 400));
             self.timer5 = 0;
             log::debug!("En_Niw: bubbling");
             self.action = Action::Func80AB6F04;

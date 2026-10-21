@@ -59,6 +59,8 @@ pub struct Screen<'a> {
     /// `eng_gfx::DrawLists::depth_probe`: the screen pixel whose depth is read back once the
     /// frame is drawn (crate::probe).
     pub depth_probe: Option<[i32; 2]>,
+    /// `eng_gfx::DrawLists::distortion`: after the 3D projection (`Mat4::default()`: none).
+    pub distortion: glam::Mat4,
 }
 
 impl Renderer {
@@ -144,7 +146,7 @@ impl Renderer {
         let (near, far) = camera.clip_planes();
         let fog = light.fog.unwrap_or(Fog { color: Vec3::ZERO, multiplier: 0.0, offset: 0.0, near, far });
         let globals = Globals {
-            view_proj: (camera.proj(aspect) * view).to_cols_array_2d(),
+            view_proj: (camera.proj(aspect) * screen.distortion * view).to_cols_array_2d(),
             view: view.to_cols_array_2d(),
             light_dir: light.dir.normalize_or_zero().extend(0.0).to_array(),
             light_color: light.color.extend(1.0).to_array(),

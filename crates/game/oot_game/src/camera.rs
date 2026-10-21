@@ -262,12 +262,16 @@ pub struct CameraGlobals {
     pub oob_timer: u32,
     /// `sNextUID`.
     pub next_uid: i16,
+    /// `Camera_UpdateDistortion`'s statics `depthPhase` (0x3F0 at boot) and `screenPlanePhase`
+    /// (0x156).
+    pub depth_phase: i16,
+    pub screen_plane_phase: i16,
 }
 
 impl CameraGlobals {
     /// As `Camera_Init` then `Camera_InitDataUsingPlayer` leave them for the main camera.
     pub fn main_init() -> CameraGlobals {
-        let mut g = CameraGlobals { interface_flags: 0, interface_alpha: 0, scene_init_letterbox_timer: 0, oob_timer: 0, next_uid: 0 };
+        let mut g = CameraGlobals { interface_flags: 0, interface_alpha: 0, scene_init_letterbox_timer: 0, oob_timer: 0, next_uid: 0, depth_phase: 0x3F0, screen_plane_phase: 0x156 };
         g.camera_init();
         // Camera_InitDataUsingPlayer, for the main camera.
         g.interface_flags = 0xB200u16 as i16;
@@ -1224,6 +1228,16 @@ pub enum CamRequest {
     ChangeModeFlags { cam: i16, mode: i16, flags: u8 },
     /// `OnePointCutscene_Init(play, cs_id, timer, NULL, parent)`.
     OnePointInit { cs_id: i16, timer: i16, parent: i16 },
+    /// `Environment_EnableUnderwaterLights(play, waterLightsIndex)` (`Some`) or
+    /// `Environment_DisableUnderwaterLights` (`None`): the eye going under or out of water.
+    UnderwaterLights(Option<u8>),
+    /// `Audio_SetExtraFilter(filter)`: 0x20 with the eye under water, else 0.
+    ExtraFilter(u8),
+    /// `View_SetDistortionOrientation`, `View_SetDistortionScale`, `View_SetDistortionSpeed` on
+    /// `play->view` (`Camera_UpdateDistortion`).
+    ViewDistortion { orientation: Vec3, scale: Vec3, speed: f32 },
+    /// `View_ClearDistortion(&play->view)`.
+    ViewClearDistortion,
 }
 
 /// What `Camera_Update` is given each frame besides the camera data.
@@ -1297,6 +1311,9 @@ pub struct CamRoom {
     pub image: bool,
     /// `behaviorType1` (`ROOM_BEHAVIOR_TYPE1_*`).
     pub behavior_type1: u8,
+    /// `environmentType` (`behaviorType2`: `ROOM_ENV_HOT` gives `Camera_UpdateHotRoom`'s
+    /// distortion).
+    pub env_type: u8,
 }
 
 /// `BgCamFuncData` (`bgcheck.h`): a bg camera's `Vec3s` data as position, rotation, fov and
@@ -1383,16 +1400,39 @@ const CAM_REQUEST_SETTING_PRESERVE_BG_CAM_INDEX: i16 = 1 << 2;
 /// `JUMP3_FLAG_2`, `JUMP3_FLAG_4` (`camera.h`).
 const JUMP3_FLAG_2: i16 = 1 << 2;
 const JUMP3_FLAG_4: i16 = 1 << 4;
-/// `SCENE_ZORAS_DOMAIN` (`scene_table.h`: 0x58).
+/// `SCENE_ZORAS_DOMAIN` (`scene_table.h`: 0x58), `SCENE_FISHING_POND` (0x49).
 const SCENE_ZORAS_DOMAIN: u16 = 0x58;
+const SCENE_FISHING_POND: u16 = 0x49;
+/// `DISTORTION_*` (`camera.h`).
+pub const DISTORTION_HOT_ROOM: i16 = 1 << 0;
+pub const DISTORTION_UNDERWATER_WEAK: i16 = 1 << 1;
+pub const DISTORTION_UNDERWATER_MEDIUM: i16 = 1 << 2;
+pub const DISTORTION_UNDERWATER_STRONG: i16 = 1 << 3;
+pub const DISTORTION_UNDERWATER_FISHING: i16 = 1 << 4;
+/// `CAM_STATE_DISTORTION` (`camera.h`: 1 << 6).
+const CAM_STATE_DISTORTION: i16 = 1 << 6;
+/// `ROOM_ENV_HOT` (`room.h`).
+const ROOM_ENV_HOT: u8 = 3;
 
 /// `BgCheck_GetWaterSurfaceAllHack`: Zora's Domain's own box (King Zora's room, finite in depth:
-/// `sZorasDomainWaterBox`, bg camera 4, its surface 877) for a point inside it, else the water box
-/// at x, z (`BgCheck_GetWaterSurface`) in the current room: its surface and its bg camera index
-/// (`WaterBox_GetBgCamIndex`).
+/// `sZorasDomainWaterBox`, bg camera 4, light index 1, its surface 877) for a point inside it, else
+/// the water box at x, z (`BgCheck_GetWaterSurface`) in the current room: its surface and its bg
+/// camera index (`WaterBox_GetBgCamIndex`).
 fn water_surface_all_hack(f: &CamFrame, x: f32, z: f32, y: f32) -> Option<(f32, u32)> {
+    water_box_all_hack(f, x, z, y).map(|(y, props)| (y, props & 0xFF))
+}
+
+/// `water_surface_all_hack` with the box's light index (`WaterBox_GetLightIndex`: properties bits
+/// 8 to 12) instead.
+fn water_light_all_hack(f: &CamFrame, x: f32, z: f32, y: f32) -> Option<(f32, u8)> {
+    water_box_all_hack(f, x, z, y).map(|(y, props)| (y, (props >> 8 & 0x1F) as u8))
+}
+
+/// `BgCheck_GetWaterSurfaceAllHack`: the surface and the box's properties.
+fn water_box_all_hack(f: &CamFrame, x: f32, z: f32, y: f32) -> Option<(f32, u32)> {
+    // WATERBOX_PROPERTIES(4, 1, 1, false).
     if f.scene_id == SCENE_ZORAS_DOMAIN && -348.0 < x && x < 205.0 && 777.0 < y && y < 977.0 && -1746.0 < z && z < -967.0 {
-        return Some((877.0, 4));
+        return Some((877.0, 4 | 1 << 8 | 1 << 13));
     }
     let room = f.col.water_room;
     f.col.header.water_boxes.iter().find_map(|w| {
@@ -1400,7 +1440,7 @@ fn water_surface_all_hack(f: &CamFrame, x: f32, z: f32, y: f32) -> Option<(f32, 
         if (r == room || r == 0x3F) && w.properties & (1 << 19) == 0 {
             let (x0, z0) = (w.x_min as f32, w.z_min as f32);
             if x0 < x && x < x0 + w.x_length as f32 && z0 < z && z < z0 + w.z_length as f32 {
-                return Some((w.y_surface as f32, w.properties & 0xFF));
+                return Some((w.y_surface as f32, w.properties));
             }
         }
         None
@@ -1528,8 +1568,12 @@ pub struct GameCamera {
     pub water_cam_setting: i16,
     /// `bgCamIndexBeforeUnderwater`.
     pub bg_cam_index_before_underwater: i16,
-    /// `waterQuakeIndex` (the quake while the eye is under water: not ported).
+    /// `waterQuakeIndex`: the quake while the eye is under water (`QUAKE_TYPE_5`).
     pub water_quake_index: i16,
+    /// `waterDistortionTimer`: the strong distortion's frames left after the eye goes under.
+    pub water_distortion_timer: i16,
+    /// `distortionFlags` (`DISTORTION_*`): what `Camera_UpdateDistortion` distorts the view for.
+    pub distortion_flags: i16,
     uniq1_ro: Uniq1Ro,
     uniq1_rw: Uniq1Rw,
     ro: Norm1Ro,
@@ -1667,6 +1711,8 @@ impl GameCamera {
             water_cam_setting: 0,
             bg_cam_index_before_underwater: 0,
             water_quake_index: 0,
+            water_distortion_timer: 0,
+            distortion_flags: 0,
             uniq1_ro: Uniq1Ro::default(),
             uniq1_rw: Uniq1Rw::default(),
             ro: Norm1Ro::default(),
@@ -3036,10 +3082,13 @@ impl GameCamera {
     /// (`PLAYER_STATE2_11`) `PIVOT_WATER_SURFACE`, back to the water's setting after; swimming
     /// (`PLAYER_STATE1_27`) in a water box, its bg camera (`NORMAL3` for a box without one), the
     /// surface kept in `waterYPos`; leaving the water, the bg camera from before, or the room's.
-    /// The eye under the water sets `waterYPos` and `CAM_STATE_CAMERA_IN_WATER`; what comes with it
-    /// isn't ported (BACKLOG #43: `Environment_EnableUnderwaterLights`, the quake `QUAKE_TYPE_5`,
-    /// the distortion, `Audio_SetExtraFilter`).
-    fn update_water(&mut self, d: &CameraData, f: &CamFrame) {
+    /// The eye under the water (`Camera_GetWaterSurface`): `waterYPos`; going under, the water box's
+    /// lights (`Environment_EnableUnderwaterLights`) and 80 frames of the strong distortion; every
+    /// frame there the muffled sound (`Audio_SetExtraFilter(0x20)`), the water's sway (a
+    /// `QUAKE_TYPE_5` quake, renewed with 10 frames left: speed 550, 1 and 1 up and across, 180 of
+    /// fov, 1000 frames) and the distortion's kind (strong, then the fishing pond's or the weak).
+    /// Out of it: the lights back, the quake off, no distortion, the sound clear (0, every frame).
+    fn update_water(&mut self, d: &CameraData, f: &CamFrame, quake: &mut crate::quake::QuakeStatics, rand: &mut crate::play::Rand) {
         if self.state_flags & CAM_STATE_CHECK_WATER == 0 || d.setting_flags(self.setting) & 0x4000_0000 != 0 {
             return;
         }
@@ -3102,20 +3151,107 @@ impl GameCamera {
             }
         }
         // Process camera in water (Camera_GetWaterSurface at the eye, its y Player's to start).
-        match water_surface_all_hack(f, self.eye.x, self.eye.z, p.pos.y).filter(|&(y, _)| self.eye.y <= y) {
-            Some((water_y, _)) => {
+        match water_light_all_hack(f, self.eye.x, self.eye.z, p.pos.y).filter(|&(y, _)| self.eye.y <= y) {
+            Some((water_y, lights_index)) => {
                 self.water_y_pos = water_y;
                 if self.state_flags & CAM_STATE_CAMERA_IN_WATER == 0 {
                     self.state_flags |= CAM_STATE_CAMERA_IN_WATER;
-                    log::info!("camera: the eye under water: Environment_EnableUnderwaterLights, the quake (QUAKE_TYPE_5), the distortion and Audio_SetExtraFilter(0x20) aren't ported");
+                    log::debug!("kankyo changed water, sound on");
+                    self.requests.push(CamRequest::UnderwaterLights(Some(lights_index)));
+                    self.water_distortion_timer = 80;
+                }
+                self.requests.push(CamRequest::ExtraFilter(0x20));
+                // (PREG(81), a debug register, is 0.)
+                if self.water_quake_index == -1 || quake.quake_get_time_left(self.water_quake_index) == 10 {
+                    let quake_index = quake.quake_request(self.cam_id, crate::quake::QUAKE_TYPE_5, rand);
+                    self.water_quake_index = quake_index;
+                    if quake_index != 0 {
+                        quake.quake_set_speed(quake_index, 550);
+                        quake.quake_set_perturbations(quake_index, 1, 1, 180, 0);
+                        quake.quake_set_duration(quake_index, 1000);
+                    }
+                }
+                if self.water_distortion_timer > 0 {
+                    self.water_distortion_timer -= 1;
+                    self.distortion_flags |= DISTORTION_UNDERWATER_STRONG;
+                } else if f.scene_id == SCENE_FISHING_POND {
+                    self.distortion_flags |= DISTORTION_UNDERWATER_FISHING;
+                } else {
+                    self.distortion_flags |= DISTORTION_UNDERWATER_WEAK;
                 }
             }
             None => {
                 if self.state_flags & CAM_STATE_CAMERA_IN_WATER != 0 {
                     self.state_flags &= !CAM_STATE_CAMERA_IN_WATER;
                     log::debug!("kankyo changed water off, sound off");
+                    self.requests.push(CamRequest::UnderwaterLights(None));
+                    if self.water_quake_index != 0 {
+                        quake.quake_remove_request(self.water_quake_index);
+                    }
+                    self.water_distortion_timer = 0;
+                    self.distortion_flags = 0;
                 }
+                self.requests.push(CamRequest::ExtraFilter(0));
             }
+        }
+    }
+
+    /// `Camera_UpdateHotRoom`: the hot room's distortion in a `ROOM_ENV_HOT` room.
+    fn update_hot_room(&mut self, f: &CamFrame) {
+        self.distortion_flags &= !DISTORTION_HOT_ROOM;
+        if f.room.env_type == ROOM_ENV_HOT {
+            self.distortion_flags |= DISTORTION_HOT_ROOM;
+        }
+    }
+
+    /// `Camera_UpdateDistortion`: for the strongest kind flagged, the view's scale swaying on two
+    /// phases (`depthPhase`, `screenPlanePhase`: statics stepping by the kind's degrees a frame),
+    /// by an amount (the strong one fading with `waterDistortionTimer`; the weak one by the eye's
+    /// depth under the surface, at most 150, and the camera's speed) at a speed; the fishing pond's
+    /// none. The orientation is always 0 (each term times 0.0f). With no flag, once, cleared.
+    fn update_distortion(&mut self, g: &mut CameraGlobals) {
+        if self.distortion_flags != 0 {
+            let (depth_phase_step, screen_plane_phase_step, x_scale, y_scale, z_scale, speed, scale_factor, speed_factor);
+            if self.distortion_flags & DISTORTION_UNDERWATER_MEDIUM != 0 {
+                (depth_phase_step, screen_plane_phase_step) = (0.0, 170.0);
+                (x_scale, y_scale, z_scale) = (-0.01, 0.01, 0.0);
+                speed = 0.6;
+                scale_factor = self.water_distortion_timer as f32 / 60.0;
+                speed_factor = 1.0;
+            } else if self.distortion_flags & DISTORTION_UNDERWATER_STRONG != 0 {
+                (depth_phase_step, screen_plane_phase_step) = (248.0, -90.0);
+                (x_scale, y_scale, z_scale) = (-0.3, 0.3, 0.2);
+                speed = 0.2;
+                scale_factor = self.water_distortion_timer as f32 / 80.0;
+                speed_factor = 1.0;
+            } else if self.distortion_flags & DISTORTION_UNDERWATER_WEAK != 0 {
+                (depth_phase_step, screen_plane_phase_step) = (359.2, -18.5);
+                (x_scale, y_scale, z_scale) = (0.09, 0.09, 0.01);
+                speed = 0.08;
+                let depth = self.water_y_pos - self.eye.y;
+                scale_factor = (if depth > 150.0 { 1.0 } else { depth / 150.0 }) * 0.45 + self.speed_ratio * 0.45;
+                speed_factor = scale_factor;
+            } else if self.distortion_flags & DISTORTION_HOT_ROOM != 0 {
+                // A small mirage-like sway.
+                (depth_phase_step, screen_plane_phase_step) = (0.0, 150.0);
+                (x_scale, y_scale, z_scale) = (-0.01, 0.01, 0.01);
+                speed = 0.6;
+                speed_factor = 1.0;
+                scale_factor = 1.0;
+            } else {
+                // DISTORTION_UNDERWATER_FISHING.
+                return;
+            }
+            g.depth_phase = g.depth_phase.wrapping_add(cam_deg_to_binang(depth_phase_step));
+            g.screen_plane_phase = g.screen_plane_phase.wrapping_add(cam_deg_to_binang(screen_plane_phase_step));
+            let (dp, sp) = (g.depth_phase, g.screen_plane_phase);
+            let orientation = Vec3::new(eng_math::cos_s(dp) * 0.0, eng_math::sin_s(dp) * 0.0, eng_math::sin_s(sp) * 0.0);
+            let scale = Vec3::new(eng_math::sin_s(sp) * (x_scale * scale_factor) + 1.0, eng_math::cos_s(sp) * (y_scale * scale_factor) + 1.0, eng_math::cos_s(dp) * (z_scale * scale_factor) + 1.0);
+            self.requests.push(CamRequest::ViewDistortion { orientation, scale, speed: speed * speed_factor });
+            self.state_flags |= CAM_STATE_DISTORTION;
+        } else if self.state_flags & CAM_STATE_DISTORTION != 0 {
+            self.requests.push(CamRequest::ViewClearDistortion);
+            self.state_flags &= !CAM_STATE_DISTORTION;
         }
     }
 
@@ -3493,7 +3629,7 @@ impl GameCamera {
         }
         self.update_direction = false;
         if self.has_player {
-            self.update_player(d, f);
+            self.update_player(d, f, quake, rand);
         }
         if self.status == CAM_STAT_WAIT {
             return;
@@ -3572,7 +3708,7 @@ impl GameCamera {
 
         // Quake_Update, with this camera's eye and at as its mode function left them, and the
         // view (View_LookAt) shaken by the quakes on it, unless the setting is TURN_AROUND.
-        // (Camera_UpdateDistortion and Hyrule Field's View_SetScale aren't modelled.)
+        // (Hyrule Field's View_SetScale isn't modelled.)
         let mut cams = f.cameras;
         if let Some(c) = usize::try_from(self.cam_id).ok().and_then(|i| cams.get_mut(i)) {
             *c = Some((self.eye, self.at));
@@ -3599,6 +3735,7 @@ impl GameCamera {
             self.up = view_up;
         }
         self.quake_offset = cam_shake.eye_offset;
+        self.update_distortion(g);
         self.cam_dir = [angle.pitch, angle.yaw, 0];
         if !self.update_direction {
             self.input_dir = [angle.pitch, angle.yaw, 0];
@@ -3611,7 +3748,7 @@ impl GameCamera {
 
     /// `Camera_Update`'s part for a camera with a player (`camera->player != NULL`): his speed
     /// and floor, and the floor's bg camera.
-    fn update_player(&mut self, d: &CameraData, f: &CamFrame) {
+    fn update_player(&mut self, d: &CameraData, f: &CamFrame, quake: &mut crate::quake::QuakeStatics, rand: &mut crate::play::Rand) {
         let (col, p) = (f.col, &f.player);
         let cur = p.pos;
         self.xz_speed = dist_xz(cur, self.player_pos);
@@ -3635,8 +3772,8 @@ impl GameCamera {
 
         if self.oob_timer < 200 {
             if self.status == CAM_STAT_ACTIVE {
-                self.update_water(d, f);
-                // (Camera_UpdateHotRoom: the hot room's distortion isn't ported.)
+                self.update_water(d, f, quake, rand);
+                self.update_hot_room(f);
             }
             if self.state_flags & 4 == 0 {
                 self.next_bg_cam_index = -1;

@@ -345,6 +345,8 @@ pub struct PlayState {
     pub respawn_player: Option<fn(&mut PlayState)>,
     /// `viewProjectionMtxF`: the view the last frame was drawn with.
     pub view_proj: Mat4,
+    /// `play->view`'s distortion (`crate::view`), as the camera and the scene's draw config set it.
+    pub view_distortion: crate::view::ViewDistortion,
     /// `gSaveContext`.
     pub save: SaveContext,
     /// The cartridge's SRAM (`Sram_WriteSave` writes the save there): carried from play state
@@ -538,6 +540,8 @@ impl PlayState {
             spawn,
             respawn_player: None,
             view_proj: Mat4::IDENTITY,
+            // View_Init: View_InitDistortion.
+            view_distortion: crate::view::ViewDistortion::init(),
             // The spikes' view of a scene (no Play_Init) plays on the map select's file, whose
             // Link has the sword and shield (docs/adr/0019-inventory-and-saves.md).
             save: SaveContext::debug(0, adult, crate::env::clock_time(10, 0) as u16),
@@ -685,6 +689,13 @@ impl PlayState {
         }
     }
 
+    /// `BgCheck_GetWaterSurfaceAllHack` in the current room: Zora's Domain's finite box
+    /// (`CollisionContext::special_water_box`, set with the scene), else the water box at x, z. The
+    /// surface, if any.
+    pub fn bg_check_get_water_surface_all_hack(&self, x: f32, z: f32, y: f32) -> Option<f32> {
+        self.col.water_surface_all_hack(x, y, z, self.col.water_room)
+    }
+
     /// Switches between the game camera and the follow camera.
     pub fn toggle_camera(&mut self) {
         self.camera_kind = match self.camera_kind {
@@ -783,6 +794,8 @@ impl PlayState {
             self.cur_actor = Some(h);
             a.update(self);
             self.cur_actor = None;
+            // Actor_UpdateBgCheckInfo's ripples, from the update just run.
+            self.spawn_bg_check_ripples(a.base_mut());
             // DynaPoly_UnsetAllInteractFlags.
             if let Some(bg) = a.dyna_bg_id() {
                 self.col.dyna.unset_all_interact_flags(bg);
@@ -924,7 +937,9 @@ impl PlayState {
         // Play_Draw: Actor_DrawAll with the view Play_Draw set up (View_Apply's
         // play->viewProjectionMtxF): each actor's projectedPos and projectedW, its culling test
         // (Actor_CullingCheck), and the draw-time state of those it draws (Player's foot IK).
-        // View_Apply: play->viewProjectionMtxF, whatever the pause background's state.
+        // View_Apply: play->viewProjectionMtxF, whatever the pause background's state, its
+        // projection distorted (View_StepDistortion: once per Play_Draw).
+        self.view_distortion.step();
         let vp = self.camera_view_proj();
         self.view_proj = vp;
         if draw_scene {
@@ -949,12 +964,15 @@ impl PlayState {
             }
             let frames = self.gameplay_frames;
             let tree_dead = self.save.get_event_chk_inf(crate::save::EVENTCHKINF_07);
+            // EVENTCHKINF_RESTORED_LAKE_HYLIA (save.h: 0x69).
+            let restored_lake_hylia = self.save.get_event_chk_inf(0x69);
             // INV_CONTENT(ITEM_COJIRO) == ITEM_COJIRO (item.h: 0x2F).
             let cojiro = self.save.inv_content(0x2F) == 0x2F;
             let (day_time, night) = (self.save.day_time, self.save.night_flag);
             let mut chicken_cry = false;
             if let Some(s) = &mut self.scene {
                 s.draw.event_chk_inf_07 = tree_dead;
+                s.draw.restored_lake_hylia = restored_lake_hylia;
                 s.draw.cojiro = cojiro;
                 s.draw.day_time = day_time;
                 s.draw.night = night;
@@ -1539,7 +1557,7 @@ impl PlayState {
     /// What `func_80057FC4` reads of the current room.
     pub fn cam_room(&self) -> crate::camera::CamRoom {
         let room = self.scene.as_ref().and_then(|s| s.room(self.room_ctx.cur.num));
-        crate::camera::CamRoom { image: room.is_some_and(|r| r.shape == Some(crate::scene::ShapeKind::Image)), behavior_type1: self.room_ctx.cur.behavior_type1 }
+        crate::camera::CamRoom { image: room.is_some_and(|r| r.shape == Some(crate::scene::ShapeKind::Image)), behavior_type1: self.room_ctx.cur.behavior_type1, env_type: self.room_ctx.cur.behavior_type2 }
     }
 
     /// `Actor_UpdateAll`.
@@ -1638,7 +1656,8 @@ impl PlayState {
             CameraKind::Follow => (self.follow_camera.eye(), self.follow_camera.at, 50.0, Vec3::Y),
         };
         let z_far = self.scene.as_ref().map_or(12800.0, |s| s.lights.fog_far as f32);
-        eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, z_far) * glam::camera::rh::view::look_at_mat4(eye, at, up)
+        // View_StepDistortion's turn and scale after the perspective (play->view's projection).
+        eng_math::gu_perspective(fov, 4.0 / 3.0, 10.0, z_far) * self.view_distortion.matrix() * glam::camera::rh::view::look_at_mat4(eye, at, up)
     }
 
     /// The render state of every actor and the camera now.
@@ -1818,6 +1837,7 @@ impl PlayState {
         }
         self.msg_ctx.draw(out);
         out.letterbox_rows = frame.letterbox;
+        out.distortion = self.view_distortion.matrix();
         // The game's frame is 4:3: its culling (`Actor_CullingVolumeTest` through the 4:3
         // `viewProjectionMtxF`) and its prerendered pictures stop at its edges, so a wider target
         // shows that middle and black beside it (ADR 0059).

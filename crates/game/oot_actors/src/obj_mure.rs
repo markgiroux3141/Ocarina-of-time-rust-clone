@@ -8,7 +8,7 @@
 //! when he stays near; `ObjMure_GroupBehavior1` for butterflies), through each child's
 //! `actor.child`. The first of a butterfly group is the one that turns into a fairy (params 1).
 //!
-//! Its children: `En_Butte` (ported), `En_Fish` and `En_Insect` (not ported: placeholders).
+//! Its children: `En_Butte`, `En_Fish` and `En_Insect` (`INSECT_TYPE_PERMANENT`), all ported.
 //!
 //! Params: `type` bits 0 to 4 (`ObjMureType`: 2 fish, `En_Fish`; 3 bugs, `En_Insect`; 4
 //! butterflies, `En_Butte`; 0 grass and 1 nothing get no culling and are killed, as is 5 and up);
@@ -25,13 +25,13 @@ use oot_game::actor_schema::{ActorSchema, Field, Kind};
 use oot_game::play::{DrawOut, PlayState, RenderState, ViewInfo};
 
 use crate::en_butte::ACTOR_EN_BUTTE;
+use crate::en_fish::{ACTOR_EN_FISH, EN_FISH_TYPE_NORMAL};
 use crate::en_kusa::{ACTOR_EN_KUSA, ACTOR_FLAG_GRASS_DESTROYED};
 
 /// `ACTOR_OBJ_MURE` (`actor_table.h`: 0x0094).
 pub const ACTOR_OBJ_MURE: i16 = 0x0094;
-/// `ACTOR_EN_INSECT`, `ACTOR_EN_FISH` (`actor_table.h`: 0x0020, 0x0021).
+/// `ACTOR_EN_INSECT` (`actor_table.h`: 0x0020).
 const ACTOR_EN_INSECT: i16 = 0x0020;
-const ACTOR_EN_FISH: i16 = 0x0021;
 
 /// `Obj_Mure_Profile`.
 pub const PROFILE: ActorProfile = ActorProfile { id: ACTOR_OBJ_MURE, name: "Obj_Mure", category: ACTORCAT_ITEMACTION, flags: 0, object: "gameplay_keep", schema: &SCHEMA };
@@ -81,7 +81,7 @@ const MAX_CHILD_SPAWNS: [i32; 4] = [12, 9, 8, 0];
 /// `sSpawnActorIds`.
 const SPAWN_ACTOR_IDS: [i16; 5] = [ACTOR_EN_KUSA, 0, ACTOR_EN_FISH, ACTOR_EN_INSECT, ACTOR_EN_BUTTE];
 /// `sSpawnParams`: `EN_FISH_TYPE_NORMAL` (-1), `INSECT_TYPE_PERMANENT` (0).
-const SPAWN_PARAMS: [i16; 5] = [0, 2, -1, 0, -1];
+const SPAWN_PARAMS: [i16; 5] = [0, 2, EN_FISH_TYPE_NORMAL, 0, -1];
 
 /// `actionFunc`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

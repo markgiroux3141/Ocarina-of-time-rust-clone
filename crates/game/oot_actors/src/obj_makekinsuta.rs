@@ -5,8 +5,8 @@
 //! type 3 after `EnSw_Init`'s conversion, which jumps out) at its position facing its yaw, and
 //! does nothing more (`ObjMakekinsuta_DoNothing`). Until `unk_152` is set its timer stays 0.
 //!
-//! The whole overlay is ported. Nothing sets `unk_152` yet: the bugs (`En_Insect`,
-//! `z_en_insect.c`'s `EnInsect_Update`) aren't ported.
+//! The whole overlay is ported. `unk_152` is set by a dropped bug (`En_Insect`'s
+//! `EnInsect_Dig`) ending its dig within 8 of the soil.
 //!
 //! Params: `params` whole, the Gold Skulltula's params (spawned with 0x8000 set): bits 0 to 7 its
 //! flag (its bit in `gsFlags`), bits 8 to 12 its `gsFlags` index plus 1, bits 13 and 14
@@ -71,8 +71,7 @@ pub struct ObjMakekinsuta {
     /// `unk_152`: a bug is in the soil. Written by `En_Insect` (`z_en_insect.c`): a released bug
     /// finds the nearest soil in its room within 80 (`EnInsect_TryFindNearbySoil`, its
     /// `soilActor`), walks to it and digs in (`EnInsect_Dig`); at the dig's end, within 8 of the
-    /// soil, it sets `soilActor->unk_152 = 1`. The bugs aren't ported yet: nothing sets it but
-    /// tests.
+    /// soil, it sets `soilActor->unk_152 = 1`.
     pub unk_152: i16,
 }
 

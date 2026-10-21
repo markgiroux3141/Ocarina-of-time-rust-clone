@@ -1538,6 +1538,9 @@ pub const NA_SE_EV_BUYOSHUTTER_CLOSE: u16 = 0x2892;
 pub const NA_SE_EV_EARTHQUAKE: u16 = 0x2898;
 pub const NA_SE_EV_SARIA_MELODY: u16 = 0x28A6;
 pub const NA_SE_EV_FIATY_HEAL: u16 = 0x28A8;
+/// `environmentbank_table.h`: 0x2868, 0x286C.
+pub const NA_SE_IT_SCOOP_UP_WATER: u16 = 0x2868;
+pub const NA_SE_EV_BOTTLE_CAP_OPEN: u16 = 0x286C;
 pub const NA_SE_EV_CHAIN_KEY_UNLOCK_B: u16 = 0x28A9;
 pub const NA_SE_EV_DOG_CRY_EVENING: u16 = 0x28AE;
 pub const NA_SE_EV_BURNING: u16 = 0x28B3;
@@ -1633,6 +1636,8 @@ pub const NA_SE_VO_LI_FREEZE: u16 = 0x6806;
 pub const NA_SE_VO_LI_FALL_S: u16 = 0x6807;
 pub const NA_SE_VO_LI_FALL_L: u16 = 0x6808;
 pub const NA_SE_VO_LI_BREATH_DRINK: u16 = 0x680A;
+/// `voicebank_table.h`: 0x6810.
+pub const NA_SE_VO_LI_DRINK: u16 = 0x6810;
 pub const NA_SE_VO_LI_DOWN: u16 = 0x680B;
 pub const NA_SE_VO_LI_TAKEN_AWAY: u16 = 0x680C;
 pub const NA_SE_VO_LI_HELD: u16 = 0x680D;
@@ -1875,6 +1880,9 @@ pub const NAMED_SFX: &[(&str, u16)] = &[
     ("NA_SE_VO_LI_FALL_S", NA_SE_VO_LI_FALL_S),
     ("NA_SE_VO_LI_FALL_L", NA_SE_VO_LI_FALL_L),
     ("NA_SE_VO_LI_BREATH_DRINK", NA_SE_VO_LI_BREATH_DRINK),
+    ("NA_SE_VO_LI_DRINK", NA_SE_VO_LI_DRINK),
+    ("NA_SE_IT_SCOOP_UP_WATER", NA_SE_IT_SCOOP_UP_WATER),
+    ("NA_SE_EV_BOTTLE_CAP_OPEN", NA_SE_EV_BOTTLE_CAP_OPEN),
     ("NA_SE_VO_LI_TAKEN_AWAY", NA_SE_VO_LI_TAKEN_AWAY),
     ("NA_SE_VO_LI_HELD", NA_SE_VO_LI_HELD),
     ("NA_SE_VO_LI_SNEEZE", NA_SE_VO_LI_SNEEZE),

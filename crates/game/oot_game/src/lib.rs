@@ -74,3 +74,4 @@ pub mod timer;
 pub mod title_card;
 pub mod weather;
 pub mod transition;
+pub mod view;

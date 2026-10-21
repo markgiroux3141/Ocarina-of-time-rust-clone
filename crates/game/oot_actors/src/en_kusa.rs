@@ -10,8 +10,7 @@
 //! types 0 and 2 go, type 1 leaves its root, 9 down, which rises from frame 120 and regrows from
 //! 170 (`EnKusa_UprootedWaitRegrow`).
 //!
-//! Not ported: the splash and ripples where it falls in water (`EffectSsGSplash`,
-//! `EffectSsGRipple`). The bugs spawn as `En_Insect` (a placeholder).
+//! The bugs are `En_Insect`s (`INSECT_TYPE_SPAWNED`).
 //!
 //! Params: `type` bits 0 and 1 (`EnKusaType`: 0 `ENKUSA_TYPE_0`, `gFieldBushDL` from
 //! `gameplay_field_keep`, gone when cut; 1 `ENKUSA_TYPE_1`, `object_kusa`'s bush, regrowing; 2
@@ -146,7 +145,8 @@ pub struct Statics {
 /// (`environmentbank_table.h`: 0x28C5).
 const NA_SE_PL_PULL_UP_PLANT: u16 = 0x0869;
 const NA_SE_EV_DIVE_INTO_WATER_L: u16 = 0x28C5;
-/// `Actor_UpdateBgCheckInfo`'s flags for the falling bush (`UPDBGCHECKINFO_FLAG_6`: no splash).
+/// `Actor_UpdateBgCheckInfo`'s flags for the falling bush (`UPDBGCHECKINFO_FLAG_6`, `1 << 6`: not
+/// its ripples, `EnKusa_Fall` makes its own).
 const FALL_BGCHECK: u32 = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2 | (1 << 6) | UPDBGCHECKINFO_FLAG_7;
 
 pub struct EnKusa {
@@ -369,8 +369,8 @@ impl EnKusa {
     }
 
     /// `EnKusa_Fall`: landing or hitting a wall it breaks (its sound out of water, its leaves, its
-    /// drop): types 0 and 2 go, type 1 waits to regrow. Entering water it slows (a splash and
-    /// ripples in the C) and tumbles half as fast. Otherwise it falls, tumbling, slowed by the air.
+    /// drop): types 0 and 2 go, type 1 waits to regrow. Entering water it splashes (400, three
+    /// ripples), slows and tumbles half as fast. Otherwise it falls, tumbling, slowed by the air.
     fn fall(&mut self, play: &mut PlayState) {
         if self.actor.bg_check_flags & (BGCHECKFLAG_GROUND | BGCHECKFLAG_GROUND_TOUCH | BGCHECKFLAG_WALL) != 0 {
             if self.actor.bg_check_flags & BGCHECKFLAG_WATER == 0 {
@@ -386,7 +386,13 @@ impl EnKusa {
             return;
         }
         if self.actor.bg_check_flags & BGCHECKFLAG_WATER_TOUCH != 0 {
-            // EffectSsGSplash_Spawn and three EffectSsGRipple_Spawn at the surface: not ported.
+            let contact_pos = Vec3::new(self.actor.world_pos.x, self.actor.world_pos.y + self.actor.y_dist_to_water, self.actor.world_pos.z);
+            play.with_ss(|s| {
+                s.g_splash_spawn(contact_pos, None, None, 0, 400);
+                s.g_ripple_spawn(contact_pos, 150, 650, 0);
+                s.g_ripple_spawn(contact_pos, 400, 800, 4);
+                s.g_ripple_spawn(contact_pos, 500, 1100, 8);
+            });
             self.actor.min_velocity_y = -3.0;
             let s = play.overlay_static::<Statics>(ACTOR_EN_KUSA);
             s.rot_speed_x >>= 1;

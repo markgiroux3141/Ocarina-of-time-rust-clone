@@ -319,6 +319,14 @@ fn the_window_textures_are_loaded_through_the_segments_the_draw_configs_swap() {
             "frame {f}"
         );
     }
+    // Scene_DrawConfigZorasDomain: segment 8 (XLU) sZorasDomainEntranceTextures[nightFlag] (its
+    // OPA segment 0xC is a scroll). The Domain's child layers share one header (layer 1's is
+    // layer 0's), baked by day: the night's only by the swap.
+    let z0 = room_textures_from(&pack, "spot07_scene", 0, 0x0800_0000);
+    assert!(!z0.is_empty() && z0.iter().all(|t| *t == tex("spot07_scene", "gZorasDomainDayEntranceTex")), "Zora's Domain's day entrance");
+    let t = scene_table::segment_textures("SDC_ZORAS_DOMAIN", &st(true));
+    assert_eq!((t.len(), t[0].segment, t[0].xlu, t[0].symbol), (1, 0x08, true, "gZorasDomainNightEntranceTex"));
+    assert!(pack.texture("spot07_scene", "gZorasDomainNightEntranceTex").is_ok(), "the night's entrance in the pack");
 }
 
 #[test]

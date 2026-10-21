@@ -1,5 +1,5 @@
 //! `En_Ossan` (`ovl_En_Ossan/z_en_ossan.c`): a shopkeeper. The Kokiri shop's
-//! (`OSSAN_TYPE_KOKIRI`, 0) is the one ported.
+//! (`OSSAN_TYPE_KOKIRI`, 0) and the Zora shop's (`OSSAN_TYPE_ZORA`, 7) are the ones ported.
 //!
 //! **The Kokiri shopkeeper** stands behind the counter (33 in front of his placement) until
 //! Link talks to him (within 100: `Actor_OfferTalk`). Then:
@@ -23,11 +23,19 @@
 //!
 //! The shop's items are `En_GirlA`s on the `En_Tana` shelves (`EnOssan_SpawnItemsOnShelves`).
 //!
+//! **The Zora shopkeeper** (`EnOssan_InitZoraShopkeeper`) is `object_zo`'s `gZoraSkel` playing
+//! `object_masterzoora`'s `gZoraShopkeeperAnim` looped, 36 in front of his placement; his head
+//! (limb 15) turns towards Link while he waits (`EnOssan_OverrideLimbDrawZoraShopkeeper`: the
+//! limb's x by `headRot`), and he blinks with the Zoras' eyes on segment 8
+//! (`EnOssan_DrawZoraShopkeeper`). Talking to the owner: 0x403A for a child, 0x403B for an adult
+//! (`EnOssan_TalkZoraShopkeeper`). His shelves: the Zora Tunic (300), 10 arrows (20), a heart
+//! (10), 30 arrows (60), 5 Deku nuts (15), 50 arrows (90), a fish (200) and a red potion (50).
+//!
 //! Every state is ported (the milk, egg, bomb, mask and discount ones too), but only the
-//! Kokiri shopkeeper's init, objects and draw: the other types log that they aren't ported and
-//! stand as placeholders (`EnOssan_InitPotionShopkeeper`, `_BombchuShopkeeper`,
-//! `_BazaarShopkeeper`, `_ZoraShopkeeper`, `_GoronShopkeeper`, `_HappyMaskShopkeeper` and their
-//! draws). Left out: the prints, and the unused collider.
+//! Kokiri and Zora shopkeepers' inits, objects and draws: the other types log that they aren't
+//! ported and stand as placeholders (`EnOssan_InitPotionShopkeeper`, `_BombchuShopkeeper`,
+//! `_BazaarShopkeeper`, `_GoronShopkeeper`, `_HappyMaskShopkeeper` and their draws). Left out:
+//! the prints, and the unused collider.
 //!
 //! Params: the whole `params` the shop (`OssanType`: 0 `OSSAN_TYPE_KOKIRI`, 1
 //! `OSSAN_TYPE_KAKARIKO_POTION` (an adult's only), 2 `OSSAN_TYPE_BOMBCHUS` (once Dodongo's Cavern
@@ -149,16 +157,18 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         ObjectNeed::new("object_mastergolon").when("params", &[8]).note("the Goron shopkeeper's animations"),
         ObjectNeed::new("object_os").when("params", &[10]).note("the Happy Mask Salesman"),
     ],
-    // The Kokiri shopkeeper's (the only one ported); the items' descriptions and buy prompts are
-    // their En_GirlA's.
+    // The Kokiri and Zora shopkeepers' (the ones ported); the items' descriptions and buy
+    // prompts are their En_GirlA's.
     texts: &[
-        TextLine::new(0x009E).when("params", &[0]).note("welcome!"),
-        TextLine::new(0x0083).when("params", &[0]).note("shop around: talk to the owner, or quit"),
+        TextLine::new(0x009E).when("params", &[0, 7]).note("welcome!"),
+        TextLine::new(0x0083).when("params", &[0, 7]).note("shop around: talk to the owner, or quit"),
         TextLine::new(0x10BA).when("params", &[0]).cond("chose Talk to the owner").note("we sell shields, but not swords!"),
-        TextLine::new(0x0084).when("params", &[0]).cond("chose Buy, an item already had").note("thanks a lot!"),
-        TextLine::new(0x0086).when("params", &[0]).cond("chose Buy, the item not to be had now").note("you can't get this now"),
-        TextLine::new(0x0085).when("params", &[0]).cond("chose Buy, without the rupees").note("you don't have enough Rupees!"),
-        TextLine::new(0x006B).when("params", &[0]).cond("after a new item's get").note("would you like to buy something else?"),
+        TextLine::new(0x403A).when("params", &[7]).cond("chose Talk to the owner, Link a child").note("the Zora shopkeeper's talk"),
+        TextLine::new(0x403B).when("params", &[7]).cond("chose Talk to the owner, Link an adult").note("the Zora shopkeeper's talk"),
+        TextLine::new(0x0084).when("params", &[0, 7]).cond("chose Buy, an item already had").note("thanks a lot!"),
+        TextLine::new(0x0086).when("params", &[0, 7]).cond("chose Buy, the item not to be had now").note("you can't get this now"),
+        TextLine::new(0x0085).when("params", &[0, 7]).cond("chose Buy, without the rupees").note("you don't have enough Rupees!"),
+        TextLine::new(0x006B).when("params", &[0, 7]).cond("after a new item's get").note("would you like to buy something else?"),
     ],
 };
 
@@ -428,6 +438,8 @@ const SEG_BOOTS: u8 = 0x09;
 const SEG_EYES: u8 = 0x0A;
 const SEG_EMPTY: u8 = 0x0C;
 const SEG_ENV: u8 = 0x0E;
+/// The Zora shopkeeper's eyes' segment.
+const SEG_ZORA_EYES: u8 = 0x08;
 
 /// `gsDPSetEnvColor(r, g, b, a)`.
 const fn set_env_color(r: u8, g: u8, b: u8, a: u8) -> (u32, u32) {
@@ -438,6 +450,26 @@ fn kokiri_bake(eye: usize) -> String {
     format!("En_Ossan/kokiri_eye{eye}")
 }
 
+// The Zora shopkeeper's draw (`EnOssan_DrawZoraShopkeeper`).
+/// His skeleton's object and skeleton, and his animation's (`object_masterzoora`, no skeleton).
+const ZORA_OBJECT: &str = "object_zo";
+const ZORA_SKEL: &str = "gZoraSkel";
+const ZORA_ANIM_OBJECT: &str = "object_masterzoora";
+const ZORA_ANIM: &str = "gZoraShopkeeperAnim";
+/// `sZoraShopkeeperEyeTextures` (`object_zo`), on segment 0x08.
+const ZORA_EYES: [&str; 3] = ["gZoraEyeOpenTex", "gZoraEyeHalfTex", "gZoraEyeClosedTex"];
+/// `EnOssan_OverrideLimbDrawZoraShopkeeper`'s head (`limbIndex` 15).
+const ZORA_LIMB_HEAD: usize = 15;
+
+fn zora_bake(eye: usize) -> String {
+    format!("En_Ossan/zora_eye{eye}")
+}
+
+/// `gZoraShopkeeperAnim`, in `object_masterzoora` (no skeleton there), on `gZoraSkel`.
+pub fn foreign_anims() -> Vec<oot_game::pack::ForeignAnim> {
+    vec![oot_game::pack::ForeignAnim { anim_file: ZORA_ANIM_OBJECT.into(), anim: ZORA_ANIM.into(), skel_file: ZORA_OBJECT.into(), skel: ZORA_SKEL.into() }]
+}
+
 /// The cursor and the stick prompts' sprites (`EnOssan_DrawCursor`,
 /// `EnOssan_DrawStickDirectionPrompts`).
 pub const CURSOR_SPRITE: &str = "En_Ossan/cursor";
@@ -445,8 +477,9 @@ pub const ARROW_SPRITE: &str = "En_Ossan/arrow";
 pub const STICK_SPRITE: &str = "En_Ossan/stick";
 
 /// The meshes: the Kokiri shopkeeper with each eye (`object_km1`'s `gKm1Skel`, his head
-/// `gKokiriShopkeeperHeadDL` from `object_masterkokirihead` on limb 15), and the cursor's and
-/// prompts' sprites.
+/// `gKokiriShopkeeperHeadDL` from `object_masterkokirihead` on limb 15), the Zora shopkeeper with
+/// each eye (`object_zo`'s `gZoraSkel`: `gDPSetEnvColor(0, 0, 0, 255)` first, segment 0x0C the
+/// empty list, the eye on 0x08), and the cursor's and prompts' sprites.
 pub fn bakes() -> Vec<MeshBake> {
     let mut v: Vec<MeshBake> = KOKIRI_EYES
         .iter()
@@ -469,6 +502,17 @@ pub fn bakes() -> Vec<MeshBake> {
             },
         })
         .collect();
+    v.extend(ZORA_EYES.iter().enumerate().map(|(eye, tex)| MeshBake {
+        name: zora_bake(eye),
+        object: ZORA_OBJECT.into(),
+        segments: vec![
+            (SEG_EMPTY, BakeSegment::Commands(Vec::new())),
+            (SEG_ZORA_EYES, BakeSegment::Texture { file: ZORA_OBJECT.into(), symbol: (*tex).into() }),
+            (SEG_ENV, BakeSegment::Commands(vec![set_env_color(0, 0, 0, 255)])),
+        ],
+        prelude: vec![SEG_ENV],
+        body: BakeBody::Skeleton { file: ZORA_OBJECT.into(), symbol: ZORA_SKEL.into(), limbs: Vec::new() },
+    }));
     v.extend(sprite_bakes().iter().map(|b| b.mesh_bake()));
     v
 }
@@ -694,7 +738,7 @@ impl EnOssan {
             o.actor.kill();
             return Box::new(o);
         }
-        if TYPE.get(o.actor.params) != OSSAN_TYPE_KOKIRI {
+        if !matches!(TYPE.get(o.actor.params), OSSAN_TYPE_KOKIRI | OSSAN_TYPE_ZORA) {
             log::info!("En_Ossan: the {} shopkeeper (type {}) isn't ported: a placeholder", SHOPKEEPER_NAMES[o.ty()], TYPE.get(o.actor.params));
             return oot_game::spawn::Placeholder::init(o.actor, play);
         }
@@ -747,7 +791,12 @@ impl EnOssan {
         let off = SHOPKEEPER_POSITION_OFFSETS[self.ty()];
         self.actor.world_pos += Vec3::from(off);
         self.actor.shape_init(0.0, oot_game::shadow::ShadowDraw::Circle, 20.0);
-        if !self.init_kokiri_shopkeeper(play) {
+        // sInitFuncs[params].
+        let ok = match TYPE.get(self.actor.params) {
+            OSSAN_TYPE_ZORA => self.init_zora_shopkeeper(play),
+            _ => self.init_kokiri_shopkeeper(play),
+        };
+        if !ok {
             return;
         }
         self.actor.text_id = self.setup_hello_dialog(play);
@@ -805,6 +854,28 @@ impl EnOssan {
         if let Err(e) = play.actor_spawn_as_child(&mut self.actor, ACTOR_EN_ELF, pos, [0; 3], FAIRY_KOKIRI) {
             log::debug!("En_Ossan's fairy: {e:?}");
         }
+        true
+    }
+
+    /// `EnOssan_InitZoraShopkeeper`: `object_zo`'s `gZoraSkel` playing
+    /// `object_masterzoora`'s `gZoraShopkeeperAnim` looped (read with segment 6 on
+    /// `object_masterzoora`: the pack's animations need none).
+    fn init_zora_shopkeeper(&mut self, play: &mut PlayState) -> bool {
+        let Some(assets) = play.assets.clone() else { return false };
+        let loaded = assets.skeleton(ZORA_OBJECT, ZORA_SKEL).and_then(|s| Ok((s, assets.animation(ZORA_ANIM_OBJECT, ZORA_ANIM)?)));
+        let (skeleton, anim) = match loaded {
+            Ok(x) => x,
+            Err(e) => {
+                log::error!("En_Ossan: {e:#}");
+                self.actor.kill();
+                return false;
+            }
+        };
+        let mut skel = SkelAnimeStd::init_flex(skeleton.limbs.len(), None);
+        let last = anim.last_frame();
+        skel.change(anim, 1.0, 0.0, last, ANIMMODE_LOOP, 0.0);
+        self.skel = Some(skel);
+        self.skeleton = Some(skeleton);
         true
     }
 
@@ -2125,18 +2196,33 @@ impl ActorImpl for EnOssan {
         }
         rs.values = values;
         rs.switches = vec![self.eye_texture_idx.clamp(0, 2) as u32, self.draw_cursor as u32, self.stick_left_prompt.is_enabled as u32, self.stick_right_prompt.is_enabled as u32];
+        rs.angles = vec![self.head_rot];
         rs
     }
-    /// `EnOssan_DrawKokiriShopkeeper`: the shopkeeper, then the cursor and the stick prompts
-    /// (`EnOssan_DrawCursor`, `EnOssan_DrawStickDirectionPrompts`) into the overlay.
+    /// `EnOssan_DrawKokiriShopkeeper`, `EnOssan_DrawZoraShopkeeper`: the shopkeeper, then the
+    /// cursor and the stick prompts (`EnOssan_DrawCursor`, `EnOssan_DrawStickDirectionPrompts`)
+    /// into the overlay.
     fn draw(&self, rs: &RenderState, _play: &PlayState, _view: &ViewInfo, out: &mut DrawOut) {
         let (Some(skeleton), Some(joints)) = (&self.skeleton, &rs.joints) else { return };
         if rs.switches.len() < 4 || rs.values.len() < rs::PROMPTS + 2 * rs::PROMPT_LEN {
             return;
         }
-        let bones = skeleton.pose(&eng_anim::anim::JointTable { rot: joints.rot.clone(), face: 0 });
         let m = oot_game::play::actor_draw_matrix(rs);
-        out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&kokiri_bake(rs.switches[rs::EYE] as usize))), transform: m, bones, params: Default::default() });
+        let eye = rs.switches[rs::EYE] as usize;
+        let (bake, bones) = if TYPE.get(self.actor.params) == OSSAN_TYPE_ZORA {
+            // EnOssan_OverrideLimbDrawZoraShopkeeper: the head's x by headRot.
+            let head_rot = rs.angles.first().copied().unwrap_or(0);
+            let bones = skeleton.pose_override(&joints.rot, |limb, _pos, rot| {
+                if limb == ZORA_LIMB_HEAD {
+                    rot[0] = rot[0].wrapping_add(head_rot);
+                }
+                glam::Mat4::IDENTITY
+            });
+            (zora_bake(eye), bones)
+        } else {
+            (kokiri_bake(eye), skeleton.pose(&eng_anim::anim::JointTable { rot: joints.rot.clone(), face: 0 }))
+        };
+        out.opa.push(DrawCmd { mesh: MeshKey::named(keys::bake(&bake)), transform: m, bones, params: Default::default() });
         let v = &rs.values;
         let color = |i: usize| [v[i] as u8, v[i + 1] as u8, v[i + 2] as u8, v[i + 3] as u8];
         // EnOssan_DrawCursor: 16 * z either side, the IA4 cursor mirrored across 32 texels

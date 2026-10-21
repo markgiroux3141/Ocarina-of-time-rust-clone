@@ -10,7 +10,7 @@
 //!   fire arrows' chest and their cutscene (`gLakeHyliaFireArrowsCS`), or once they're owned a
 //!   large magic jar that stays 6000 frames.
 //!
-//! The whole overlay is ported. `Item_Etcetera` (the fire arrows) isn't: a placeholder.
+//! The whole overlay is ported, and `Item_Etcetera`'s fire arrows with it.
 //!
 //! Params: `params` bits 0 to 7 (0x40: a fairy for the Sun's Song; 0x41: a fairy for the Song
 //! of Storms; any other, 1 in the data: Lake Hylia's sun); bits 8 to 15 unused (0xFF in the data).
@@ -50,8 +50,7 @@ pub const HIGH_BYTE: Field = Field::params("params bits 8 to 15", 8, 8, Kind::Un
 /// Shot_Sun's configuration (docs/adr/0066-the-actor-schema.md).
 pub const SCHEMA: ActorSchema = ActorSchema { fields: &[TYPE, HIGH_BYTE], flags: &[], todo: false, objects: &[], texts: &[] };
 
-/// `ACTOR_ITEM_ETCETERA` (`actor_table.h`: 0x010F).
-const ACTOR_ITEM_ETCETERA: i16 = 0x010F;
+use crate::item_etcetera::{ACTOR_ITEM_ETCETERA, ITEM_ETC_ARROW_FIRE};
 
 /// `FairySpawnerState`.
 pub const SPAWNER_OUT_OF_RANGE: u8 = 0;
@@ -181,7 +180,7 @@ impl ShotSun {
             log::debug!("SHOT_SUN HIT!!!!!!!");
             // INV_CONTENT(ITEM_ARROW_FIRE): SLOT_ARROW_FIRE is 4.
             if play.save.inventory.items[4] == oot_game::item::ITEM_NONE {
-                if let Err(e) = play.actor_spawn(ACTOR_ITEM_ETCETERA, Vec3::new(700.0, -800.0, 7261.0), [0, 0, 0], 7) {
+                if let Err(e) = play.actor_spawn(ACTOR_ITEM_ETCETERA, Vec3::new(700.0, -800.0, 7261.0), [0, 0, 0], ITEM_ETC_ARROW_FIRE) {
                     log::warn!("Shot_Sun: Item_Etcetera: {e:?}");
                 }
                 play.cs_ctx.segment = play.cutscene_script("gLakeHyliaFireArrowsCS");

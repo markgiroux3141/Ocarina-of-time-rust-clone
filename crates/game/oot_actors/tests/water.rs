@@ -165,8 +165,11 @@ fn dive_holds_then_rises_and_surfaces() {
         frames.push(x);
     }
     assert!(pitched);
-    // Holding A keeps swimming down only while yDistToWater < 120 (D_80854784[0], no scale).
-    assert!(depth > 110.0 && depth < 130.0, "max depth {depth}");
+    // Holding A keeps swimming down only while yDistToWater < D_80854784[CUR_UPG_VALUE(UPG_SCALE)]:
+    // the spikes' debug save (Sram_InitDebugSave's upgrades 0x125249) has the silver scale, 240,
+    // deeper than the course's pool, whose floor stops the dive.
+    assert_eq!(w.save.cur_upg_value(oot_game::item::UPG_SCALE), 1);
+    assert!(depth > 120.0 && depth < 135.0, "max depth {depth}");
     // Rising (phase 2) at up to min(depth·0.018 + 4, 8), and func_8083D12C surfaces once
     // rising with yDistToWater < unk_30 (68).
     let s = frames.iter().position(|x| x.action == "Surface").expect("surfaced");

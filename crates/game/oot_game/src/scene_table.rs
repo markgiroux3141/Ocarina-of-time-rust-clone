@@ -45,6 +45,8 @@ pub struct DrawConfigState {
     pub room_draw_params: [i16; 2],
     /// `GET_EVENTCHKINF(EVENTCHKINF_07)`.
     pub event_chk_inf_07: bool,
+    /// `GET_EVENTCHKINF(EVENTCHKINF_RESTORED_LAKE_HYLIA)`.
+    pub restored_lake_hylia: bool,
     /// `INV_CONTENT(ITEM_COJIRO) == ITEM_COJIRO`.
     pub cojiro: bool,
     /// Out: the Lost Woods' config asked for `Player_PlaySfx(NA_SE_EV_CHICKEN_CRY_M)` this
@@ -146,6 +148,17 @@ pub fn gfx_two_tex_scroll(tile1: u32, x1: u32, y1: u32, width1: i32, height1: i3
         g_dp_set_tile_size(tile2, x2, y2, x2.wrapping_add(((width2 - 1) << 2) as u32), y2.wrapping_add(((height2 - 1) << 2) as u32)),
         g_sp_end_display_list(),
     ]
+}
+
+/// `Gfx_TwoTexScrollEnvColor` (`z_rcp.c`): `Gfx_TwoTexScroll`'s tile sizes, then
+/// `gDPSetEnvColor(r, g, b, a)`.
+#[allow(clippy::too_many_arguments)]
+pub fn gfx_two_tex_scroll_env_color(tile1: u32, x1: u32, y1: u32, width1: i32, height1: i32, tile2: u32, x2: u32, y2: u32, width2: i32, height2: i32, r: u32, g: u32, b: u32, a: u32) -> Dl {
+    let mut dl = gfx_two_tex_scroll(tile1, x1, y1, width1, height1, tile2, x2, y2, width2, height2);
+    let end = dl.pop();
+    dl.push(g_dp_set_env_color(r, g, b, a));
+    dl.extend(end);
+    dl
 }
 
 /// `Scene_DrawConfigDefault`: `sDefaultDisplayList` into both buffers, no segments.
@@ -410,6 +423,34 @@ fn draw_config_souko(_st: &mut DrawConfigState, _b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `Scene_DrawConfigLakesideLaboratory` (the lakeside laboratory): scrolls on segment 8 in the
+/// OPA buffer, 0xA and 9 in the XLU one (the tank's water).
+fn draw_config_hylia_labo(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.opa.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 0, 32, 32, 1, 0, f % 128, 32, 32));
+    b.xlu.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, f % 128, 32, 32, 1, f % 128, f % 128, 32, 32));
+    b.xlu.insert(0x09, gfx_tex_scroll(0, 255 - f.wrapping_mul(10) % 256, 32, 64));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigLakeHylia` (Lake Hylia): in a cutscene layer, or for an adult before the Water
+/// Temple (`EVENTCHKINF_RESTORED_LAKE_HYLIA`), `roomCtx.drawParams[0]` becomes 87 (and stays);
+/// scrolls on segments 8 and 9 in the OPA buffer with the env colour's alpha `drawParams[0] + 168`
+/// (`Gfx_TwoTexScrollEnvColor`): 168 for a child's lake, 255 (87 + 168) for the drained one.
+fn draw_config_spot06(st: &mut DrawConfigState, b: &mut Buffers) {
+    if st.is_cutscene_layer() || (!st.child && !st.restored_lake_hylia) {
+        st.room_draw_params[0] = 87;
+    }
+    let f = st.gameplay_frames;
+    // The alpha through _SHIFTL(a, 0, 8): the s32's low byte.
+    let a = (st.room_draw_params[0] as i32 + 168) as u32;
+    b.opa.insert(0x08, gfx_two_tex_scroll_env_color(G_TX_RENDERTILE, f, f, 32, 32, 1, 0, 0, 32, 32, 0, 0, 0, a));
+    b.opa.insert(0x09, gfx_two_tex_scroll_env_color(G_TX_RENDERTILE, f.wrapping_neg(), f.wrapping_neg(), 32, 32, 1, 0, 0, 16, 64, 0, 0, 0, a));
+    // gDPSetEnvColor(POLY_OPA_DISP, 255, 255, 255, 128): straight into the buffer, so already in
+    // the meshes.
+}
+
 /// `Scene_DrawConfigGoronCity` (Goron City): a scroll on segment 8 in the OPA buffer, and its
 /// entrance on segment 8 in the XLU buffer (`segment_textures`).
 fn draw_config_spot18(st: &mut DrawConfigState, b: &mut Buffers) {
@@ -417,6 +458,17 @@ fn draw_config_spot18(st: &mut DrawConfigState, b: &mut Buffers) {
     b.opa.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 127 - f % 128, 32, 32, 1, f % 128, 0, 32, 32));
     // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
     // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigZorasDomain` (Zora's Domain): a scroll on segment 0xC in the OPA buffer (its
+/// second tile down by `127 - gameplayFrames % 128`, still for an adult: the ice), and its
+/// entrance on segment 8 in the XLU buffer (`segment_textures`).
+fn draw_config_spot07(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    let var = if !st.child { 0 } else { 127 - f % 128 };
+    b.opa.insert(0x0C, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 0, 64, 32, 1, 0, var, 64, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP, 128, 128, 128, 128): straight into the buffer, so already in
+    // the meshes.
 }
 
 /// `Scene_DrawConfigDodongosCavern` (Dodongo's Cavern): a scroll on segment 9 in the XLU buffer
@@ -434,6 +486,30 @@ fn draw_config_ddan(st: &mut DrawConfigState, b: &mut Buffers) {
         // gDPSetEnvColor's alpha through _SHIFTL(a, 0, 8): the s16's low byte.
         b.opa.insert(seg, vec![g_dp_pipe_sync(), g_dp_set_env_color(255, 255, 255, st.room_draw_params[eye] as u32), g_sp_end_display_list()]);
     }
+}
+
+/// `Scene_DrawConfigZorasRiver` (Zora's River): the river's and the falls' scrolls on segments 8,
+/// 9 and 0xA in the XLU buffer, the same but for their speed down the texture (6, 3 and 1 a
+/// frame).
+fn draw_config_spot03(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    for (seg, speed) in [(0x08, 6u32), (0x09, 3), (0x0A, 1)] {
+        let y = f.wrapping_mul(speed) % 128;
+        b.xlu.insert(seg, gfx_two_tex_scroll(G_TX_RENDERTILE, 127 - f % 128, y, 32, 32, 1, f % 128, y, 32, 32));
+    }
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+}
+
+/// `Scene_DrawConfigZorasFountain` (Zora's Fountain): a scroll on segment 8 in the OPA buffer, and
+/// two on segments 9 (64 by 64) and 0xA (32 by 32) in the XLU buffer.
+fn draw_config_spot08(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    b.opa.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, f % 128, 0, 32, 32, 1, 0, 0, 32, 32));
+    b.xlu.insert(0x09, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 255 - f.wrapping_mul(2) % 256, 64, 64, 1, 0, 255 - f.wrapping_mul(2) % 256, 64, 64));
+    b.xlu.insert(0x0A, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, f % 128, 32, 32, 1, 0, f % 128, 32, 32));
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
 }
 
 /// `BgDodoagoEye` (`z_bg_dodoago.h`): the index of each eye's glow in `roomCtx.drawParams`.
@@ -497,6 +573,15 @@ fn textures_spot18(st: &DrawConfigState) -> Vec<SegmentTexture> {
     vec![SegmentTexture { segment: 0x08, xlu: true, file: "spot18_scene", symbol: GORON_CITY_ENTRANCE_TEXTURES[st.night as usize] }]
 }
 
+/// `sZorasDomainEntranceTextures` (by `nightFlag`).
+const ZORAS_DOMAIN_ENTRANCE_TEXTURES: [&str; 2] = ["gZorasDomainDayEntranceTex", "gZorasDomainNightEntranceTex"];
+
+/// `Scene_DrawConfigZorasDomain`'s segment 8 (XLU): the Domain's entrance, the light through it by
+/// `nightFlag`.
+fn textures_spot07(st: &DrawConfigState) -> Vec<SegmentTexture> {
+    vec![SegmentTexture { segment: 0x08, xlu: true, file: "spot07_scene", symbol: ZORAS_DOMAIN_ENTRANCE_TEXTURES[st.night as usize] }]
+}
+
 /// `gDCEntranceTextures` (by `nightFlag`).
 const DC_ENTRANCE_TEXTURES: [&str; 2] = ["gDCDayEntranceTex", "gDCNightEntranceTex"];
 /// `sDCLavaFloorTextures`.
@@ -523,6 +608,7 @@ const TEXTURES: &[(&str, TexturesFn)] = &[
     ("SDC_LON_LON_BUILDINGS", textures_souko),
     ("SDC_GORON_CITY", textures_spot18),
     ("SDC_DODONGOS_CAVERN", textures_ddan),
+    ("SDC_ZORAS_DOMAIN", textures_spot07),
 ];
 
 /// The textures the draw config `sdc` points segments at this frame (empty for the others).
@@ -556,6 +642,11 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_LON_LON_BUILDINGS", draw_config_souko),
     ("SDC_GORON_CITY", draw_config_spot18),
     ("SDC_DODONGOS_CAVERN", draw_config_ddan),
+    ("SDC_ZORAS_DOMAIN", draw_config_spot07),
+    ("SDC_LAKESIDE_LABORATORY", draw_config_hylia_labo),
+    ("SDC_LAKE_HYLIA", draw_config_spot06),
+    ("SDC_ZORAS_RIVER", draw_config_spot03),
+    ("SDC_ZORAS_FOUNTAIN", draw_config_spot08),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.

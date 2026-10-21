@@ -704,6 +704,44 @@ impl Default for LightningBolt {
     }
 }
 
+impl EnvCtx {
+    /// `Environment_EnableUnderwaterLights`: the water box's light setting (none given: 0), by
+    /// time (the config, the one to come back to kept in `gLightConfigAfterUnderwater`) or at once
+    /// as an override.
+    pub fn enable_underwater_lights(&mut self, statics: &mut EnvStatics, water_lights_index: u8) {
+        // WATERBOX_LIGHT_INDEX_NONE (bgcheck.h: 0x1F).
+        let index = if water_lights_index == 0x1F {
+            log::warn!("Underwater color is not set in the water poly data!");
+            0
+        } else {
+            water_lights_index
+        };
+        if self.light_mode == LIGHT_MODE_TIME {
+            statics.light_config_after_underwater = self.change_light_next_config as u8;
+            if self.light_config != index as usize {
+                self.light_config = index as usize;
+                self.change_light_next_config = index as usize;
+            }
+        } else {
+            // Instantly switch to the water's lights.
+            self.light_blend_enabled = false;
+            self.light_setting_override = index;
+        }
+    }
+
+    /// `Environment_DisableUnderwaterLights`: the config from before, or the override off at once.
+    pub fn disable_underwater_lights(&mut self, statics: &EnvStatics) {
+        if self.light_mode == LIGHT_MODE_TIME {
+            self.light_config = statics.light_config_after_underwater as usize;
+            self.change_light_next_config = statics.light_config_after_underwater as usize;
+        } else {
+            self.light_blend_enabled = false;
+            self.light_setting_override = LIGHT_SETTING_OVERRIDE_NONE;
+            self.light_blend = 1.0;
+        }
+    }
+}
+
 /// `z_kankyo.c`'s statics that outlive a scene: `gWeatherMode`, `gLightningStrike` (reset by
 /// `Environment_Init`) and `sLightningBolts`.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

@@ -10,8 +10,7 @@
 //! drops between points of different heights (bit 10 clear: `EnGoroiwa_MoveUp`,
 //! `EnGoroiwa_MoveDown`, with its drop's quake), the round trip and the breaking loop with its
 //! fragments (`EffectSsKakera`) and dust. Its circle shadow (9.4, alpha 200) is the shape's
-//! (`ActorShape_Init`'s, drawn by `Actor_Draw`). Not ported: the splashes and ripples (the
-//! effects; their `Rand_ZeroOne` calls in the overlay are made).
+//! (`ActorShape_Init`'s, drawn by `Actor_Draw`).
 //!
 //! Params: `pathIdx` bits 0 to 7 (the path, `play->pathList`; 0xFF, or a path of fewer than 2
 //! points: killed); `loopMode` bits 8 and 9 (`ENGOROIWA_LOOPMODE_ONEWAY` 0, round the path and
@@ -408,8 +407,8 @@ impl EnGoroiwa {
     }
 
     /// `EnGoroiwa_MoveDownToNextWaypoint`: dropping to the next point, bouncing once at 0.3;
-    /// into water, slowed; the first landing within 600 of Link shakes the active camera. (The
-    /// dust and the splashes aren't ported.)
+    /// into water, slowed, with its splashes and ripples (`EnGoroiwa_SpawnWaterEffects`); the first
+    /// landing within 600 of Link shakes the active camera.
     fn move_down_to_next_waypoint(&mut self, play: &mut PlayState) -> bool {
         let next = self.point(play, self.next_waypoint);
         let next_y = next.y;
@@ -450,7 +449,8 @@ impl EnGoroiwa {
         {
             self.state_flags |= ENGOROIWA_IN_WATER;
             if y_surface < this_y {
-                // EnGoroiwa_SpawnWaterEffects: the splashes and ripples (not ported).
+                let water_hit_pos = Vec3::new(self.actor.world_pos.x, y_surface, self.actor.world_pos.z);
+                Self::spawn_water_effects(play, water_hit_pos);
                 self.actor.velocity.y *= 0.2;
             }
             if self.actor.velocity.y < -8.0 {
@@ -458,6 +458,22 @@ impl EnGoroiwa {
             }
         }
         false
+    }
+
+    /// `EnGoroiwa_SpawnWaterEffects`: eleven splashes (350) 55 out round `contact_pos`, a step of
+    /// 0x1746 apart from 0x1746, and three ripples.
+    fn spawn_water_effects(play: &mut PlayState, contact_pos: Vec3) {
+        play.with_ss(|s| {
+            let mut angle: i16 = 0;
+            for _ in 0..11 {
+                angle = angle.wrapping_add(0x1746);
+                let splash_pos = Vec3::new(contact_pos.x + (eng_math::sin_s(angle) * 55.0), contact_pos.y, contact_pos.z + (eng_math::cos_s(angle) * 55.0));
+                s.g_splash_spawn(splash_pos, None, None, 0, 350);
+            }
+            s.g_ripple_spawn(contact_pos, 300, 700, 0);
+            s.g_ripple_spawn(contact_pos, 500, 900, 4);
+            s.g_ripple_spawn(contact_pos, 500, 1300, 8);
+        });
     }
 
     /// `EnGoroiwa_UpdateRotation`: rolls by the distance moved over the radius (59.5) about the

@@ -308,9 +308,15 @@ pub struct PlayIo {
 
 impl PlayIo {
     /// The effects' spawner on the lent table (no objects: Player spawns nothing that needs
-    /// one).
+    /// one; no collision: a ripple spawned through it finds no water box, see `ss_col`).
     pub fn ss(&mut self) -> crate::effect::SsSpawn<'_> {
-        crate::effect::SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: None, stops: &mut self.effect_ss_stops, state_frames: 0 }
+        crate::effect::SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: None, stops: &mut self.effect_ss_stops, state_frames: 0, col: None }
+    }
+
+    /// `ss` with the scene's collision (`play->colCtx`), for an effect whose init reads it
+    /// (`Effect_Ss_G_Ripple`'s `BgCheck_FindWaterBox`).
+    pub fn ss_col<'a>(&'a mut self, col: &'a eng_collision::bgcheck::CollisionContext) -> crate::effect::SsSpawn<'a> {
+        crate::effect::SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: None, stops: &mut self.effect_ss_stops, state_frames: 0, col: Some(col) }
     }
 }
 
@@ -469,7 +475,13 @@ impl PlayState {
         // Play_SpawnScene → Play_InitScene → Scene_ExecuteCommands.
         let scene = SceneState::load(&assets.pack, &assets.env, &scene_file, save.scene_layer, !save.adult, save.night_flag, save.day_time)?;
         let ld = scene.layer_data().clone();
-        let col = CollisionContext::new(assets.pack.collision(&ld.collision)?);
+        let mut col = CollisionContext::new(assets.pack.collision(&ld.collision)?);
+        // BgCheck_GetWaterSurfaceAllHack's sZorasDomainWaterBox (SCENE_ZORAS_DOMAIN, scene_table.h:
+        // 0x58): King Zora's pool, a box of finite depth (x -348 to 205, y 777 to 977, z -1746 to
+        // -967: its effective bounds, z_bgcheck.c), surface 877.
+        if scene_id == 0x58 {
+            col.special_water_box = Some(eng_collision::bgcheck::SpecialWaterBox { min: Vec3::new(-348.0, 777.0, -1746.0), max: Vec3::new(205.0, 977.0, -967.0), y_surface: 877.0 });
+        }
         let mut play = PlayState::new(data, rules, col, (Vec3::ZERO, 0), save.adult);
         play.audio = audio;
         // Audio_SetExtraFilter(0), before the scene; then Quake_Init.

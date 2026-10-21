@@ -15,7 +15,8 @@
 //!   red from the charge's 0.85 (`unk_858`). Once the parent or the charge is gone, ten frames
 //!   (by 0.2) and gone. Type 4 is kept over room changes (`room` -1).
 //!
-//! Spawned by `En_M_Thunder` (types 2 to 4), `Demo_6K` and `En_Jj` (not ported).
+//! Spawned by `En_M_Thunder` (types 2 to 4), `Demo_6K` (not ported) and `En_Jj` (type 0, on
+//! his cue 2 in `gJabuInhalingCs`).
 //!
 //! **@bug (game)**: any other params frees the actor's memory without killing it
 //! (`SYSTEM_ARENA_FREE`, in the wrong arena): here it's killed (logged), a placeholder for that.

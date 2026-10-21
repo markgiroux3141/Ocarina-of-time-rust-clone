@@ -549,7 +549,13 @@ impl EnKanban {
             self.bounce_x = 0;
             self.bounce_z = 0;
             self.actor.world_pos.y += self.actor.y_dist_to_water;
-            // The splash and ripples: effects, not ported.
+            let pos = self.actor.world_pos;
+            let splash_scale = (self.part_count as i32 * 20 + 300) as i16;
+            play.with_ss(|s| {
+                s.g_splash_spawn(pos, None, None, 0, splash_scale);
+                s.g_ripple_spawn(pos, 150, 650, 0);
+                s.g_ripple_spawn(pos, 300, 800, 5);
+            });
             self.actor.velocity.y = 0.0;
             self.actor.gravity = 0.0;
             return;
@@ -741,7 +747,26 @@ impl EnKanban {
         approach_s(&mut self.spin_rot[2], (cos_s(3000i16.wrapping_mul(fc)) * 500.0) as i16, 2, 0x1000);
         approach_zero_f(&mut self.floor_rot.x, 0.5, 0.2);
         approach_zero_f(&mut self.floor_rot.z, 0.5, 0.2);
-        // The ripples: effects, not ported.
+        // A ripple every frame moving faster than 1, every 4th faster than 0.5, else every 8th;
+        // bigger with more of the sign's parts.
+        let ripple_delay: u8 = if self.actor.speed_xz.abs() > 1.0 {
+            0
+        } else if self.actor.speed_xz.abs() > 0.5 {
+            3
+        } else {
+            7
+        };
+        if self.frame_count & ripple_delay == 0 {
+            let ripple_scale: i16 = if self.part_count < 3 {
+                0
+            } else if self.part_count < 6 {
+                100
+            } else {
+                200
+            };
+            let pos = self.actor.world_pos;
+            play.with_ss(|s| s.g_ripple_spawn(pos, ripple_scale, ripple_scale + 500, 0));
+        }
     }
 
     /// The piece's model matrix (`EnKanban_Draw`, `actionState != ENKANBAN_SIGN`).

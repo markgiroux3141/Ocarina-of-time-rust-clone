@@ -105,13 +105,16 @@ fn the_great_fairy_gives_magic_and_the_return_entrance_leads_back() {
 #[test]
 fn with_magic_the_owl_flies_link_to_kakariko() {
     let Some(a) = assets() else { return };
-    let (w, run) = run(&a, Route::SummitOwl);
+    let (mut w, run) = run(&a, Route::SummitOwl);
     assert_eq!(steps(&run), vec![Step::OwlTalk, Step::Kakariko14]);
     // EnOwl_WaitDeathMountainShortcut with isMagicAcquired: 0x3063 (func_80ACB22C, then the flight,
     // gDMTOwlCs, whose terminator 66 is ENTR_KAKARIKO_VILLAGE_14).
     assert!(run.texts.contains(&0x3063), "{:x?}", run.texts);
     assert_eq!(w.scene_id, SCENE_KAKARIKO_VILLAGE);
     assert_eq!(Some(w.save.entrance_index), a.scenes.entrance_index("ENTR_KAKARIKO_VILLAGE_14"));
+    // The flight changes nothing in the save: the phase's story ends with the save this run
+    // started from, `fairy-magic`, Phase 11's start (GAME-09's exit review).
+    ends_as_preset(&mut w, "fairy-magic");
 }
 
 #[test]

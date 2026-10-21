@@ -31,8 +31,8 @@ PHASES = {
     7: ("The road out of the forest (GAME-06)", "done"),
     8: ("Castle Town, Hyrule Castle and Kakariko (GAME-07)", "done"),
     9: ("The Lost Woods, the Sacred Forest Meadow and Lon Lon Ranch (GAME-08)", "done"),
-    10: ("Death Mountain, Goron City and Dodongo's Cavern (GAME-09)", "in progress"),
-    11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu", "planned"),
+    10: ("Death Mountain, Goron City and Dodongo's Cavern (GAME-09)", "done"),
+    11: ("Zora's River, Zora's Domain, Lake Hylia and Jabu-Jabu (GAME-10)", "in progress"),
     12: ("The Temple of Time and the adult world", "planned"),
     13: ("Epona and the adult Hyrule Field", "planned"),
     14: ("The Forest Temple", "planned"),
@@ -68,9 +68,11 @@ SCENES = {
     "kokiri_home_scene": (3, 12, 3), "kokiri_home3_scene": (3, 12, 3), "kokiri_home4_scene": (3, 12, 3),
     "kokiri_home5_scene": (3, 12, 3), "kokiri_shop_scene": (4, 20, 4),
     # Hyrule Field, the cutscene map, the forest's neighbours.
-    # Hyrule Field: 7 the title screen's, 8 and 11 Epona's jumps, 9 Zelda after Ganon, 12
-    # Impa's escort.
-    "spot00_scene": (7, 13, 7, {7: 20, 8: 13, 10: 13, 11: 19, 12: 8}), "hiral_demo_scene": (7, 12, 12),
+    # Hyrule Field: 1 a child with the three stones (z_play.c forces it: the moat's ocarina), 5
+    # Zelda's escape, 6 the flashback, 7 the title screen's, 8 the Ocarina of Time's (the map
+    # select's only: in play it runs on layer 1), 9 the credits, 10 Epona's jump, 11 before the
+    # credits, 12 Impa's escort.
+    "spot00_scene": (7, 13, 7, {1: 11, 5: 11, 6: 19, 7: 20, 8: None, 9: 19, 10: 13, 11: 19, 12: 8}), "hiral_demo_scene": (7, 12, 12),
     # The meadow: 4 Sheik's minuet, 5 Saria's song.
     "spot10_scene": (9, 14, 7), "spot05_scene": (9, 14, 9, {4: 14, 5: 9}),
     # Castle Town, the castle, the Temple of Time.
@@ -80,7 +82,7 @@ SCENES = {
     "shrine_scene": (8, 12, 8), "shrine_n_scene": (8, 12, 8), "shrine_r_scene": (12, 12, 12),
     # The Temple of Time: 5 and 12 to 14 the ending's. The Chamber of the Sages: 6 the sages
     # together (the ending's).
-    "tokinoma_scene": (8, 12, 12, {5: 19, 12: 19, 13: 19, 14: 19}), "kenjyanoma_scene": (12, 12, 12, {6: 19}),
+    "tokinoma_scene": (8, 12, 12, {5: 19, 11: 11, 12: 19, 13: 19, 14: 19}), "kenjyanoma_scene": (12, 12, 12, {6: 19}),
     "spot15_scene": (8, 19, 8), "hairal_niwa_scene": (8, None, 8), "hairal_niwa_n_scene": (8, None, 8),
     "nakaniwa_scene": (8, None, 19), "miharigoya_scene": (8, 20, 8),
     # Kakariko and the graveyard (Kakariko's 7: the mountain's eruption).
@@ -100,9 +102,11 @@ SCENES = {
     # adult), 6 double defence (outside Ganon's Castle).
     "spot16_scene": (10, 15, 10, {4: 7, 6: None, 7: 19, 8: 19}), "spot18_scene": (10, 15, 10, {5: 19}), "spot17_scene": (15, 15, 15),
     "daiyousei_izumi_scene": (10, 15, 10, {5: 15, 6: 19}),
-    # Zora's waters.
-    "spot03_scene": (11, 16, 11), "spot07_scene": (11, 16, 16), "spot08_scene": (11, 16, 11),
-    "spot06_scene": (11, 16, 16), "hylia_labo_scene": (11, 16, 11),
+    # Zora's waters: the Domain's 4 and the lake's 5 the credits', the lake's 4 the water's
+    # return; the fountain's 4 the Sapphire's, 5 and 6 unused (the map select's only).
+    "spot03_scene": (11, 16, 11), "spot07_scene": (11, 16, 16, {4: 19}),
+    "spot08_scene": (11, 16, 11, {5: None, 6: None}),
+    "spot06_scene": (11, 16, 16, {5: 19}), "hylia_labo_scene": (11, 16, 11),
     # Lon Lon Ranch: 4 Ingo's race, 5 Epona's Song (the child's), 6 on the credits'.
     "spot20_scene": (9, 13, 19, {4: 13, 5: 9}), "malon_stable_scene": (9, 13, 9), "souko_scene": (9, 13, 9),
     # The desert.
@@ -137,6 +141,10 @@ ACTORS = {
     # is in none of its rooms' object lists (Actor_Spawn refuses it); first met in Zora's River
     "En_Fire_Rock": 10,  # Death Mountain Trail's falling rocks: En_Encount2 spawns them for a child
     # too (only an adult with EVENTCHKINF_49 kills the spawner); placed only in Ganon's Castle
+    "En_Fish": 11,  # Lord Jabu-Jabu's bait: in Phase 11's scenes Obj_Mure spawns the fish; the
+    # fountain's unused layers place it, and a grotto (kakusiana, Phase 20)
+    "Bg_Spot08_Iceblock": 16,  # Zora's Fountain's ice: placed in the child layers but killed
+    # for a child (BgSpot08Iceblock_Init); the adult's frozen fountain
 }
 
 # What a ported actor's module docs say when it leaves something out.

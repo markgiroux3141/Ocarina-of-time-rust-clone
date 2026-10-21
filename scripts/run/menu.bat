@@ -62,6 +62,7 @@ echo   138  test-cavern          GAME-09's cavern tests: the skull, Lizalfos, Po
 echo   141  test-kingdodongo     GAME-09's King Dodongo tests: the boss, his breath, the lava, the Ruby's actors, the runs
 echo   144  test-summit          GAME-09's summit tests: the magic meter, the Great Fairy, the spin, the rocks, the runs
 echo   149  test-cavern-rooms    GAME-09's rest of the cavern: the stairs, silver rupees, Dodongos, Beamos, the rooms, the runs
+echo   152  test-water           GAME-10's water and bottles: the dive, currents, the underwater view, bottles, fish, bugs, the run
 echo.
 echo   Play (a window; close it to come back)
 echo     6  game                 Kokiri Forest
@@ -116,6 +117,8 @@ echo   145  game-summit          Death Mountain's summit and the Great Fairy (as
 echo   147  editor               The game editor: levels, props and the game's actors; Play runs them in the game
 echo   148  editor-actors        The actors as the editor draws them: captured from the game, a contact sheet of them all
 echo   150  game-cavern-rooms    Dodongo's Cavern's rest from room 2 (asks: or stairs, rupees, beamos, dodongos, larvae, scrubs, poe, blocks)
+echo   153  game-water           Zora's Domain's shallows with milk and the fish (asks: or lake, river, tunnel)
+echo   155  game-zora            The diving game (asks: or shop, king, jabu, lake, lab, river, boomerang)
 echo.
 echo   Headless
 echo    10  sandbox-playthrough  The playthrough's trace and screenshots, into out\run
@@ -162,6 +165,7 @@ echo   140  sandbox-cavern       The cavern's four runs' traces and screenshots 
 echo   143  sandbox-kingdodongo  King Dodongo's two runs' traces and screenshots (the intro, the Ruby), into out\run
 echo   146  sandbox-summit       The summit's three runs' traces and screenshots (the wall, the fairy, the owl), into out\run
 echo   151  sandbox-cavern-rooms The cavern's rest's four runs' traces and screenshots (stairs, rupees, chest, blocks), into out\run
+echo   154  sandbox-water        The bottle run's trace and screenshots (the milk, the fish caught and let out), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -323,6 +327,10 @@ if "%pick%"=="148" set "script=editor-actors"
 if "%pick%"=="149" set "script=test-cavern-rooms"
 if "%pick%"=="150" goto cavernrooms
 if "%pick%"=="151" set "script=sandbox-cavern-rooms"
+if "%pick%"=="152" set "script=test-water"
+if "%pick%"=="153" goto water
+if "%pick%"=="154" set "script=sandbox-water"
+if "%pick%"=="155" goto zora
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -352,6 +360,22 @@ set "which="
 set /p "which=Which (empty: room 2 by its south door; stairs, rupees, beamos, dodongos, larvae, scrubs, poe or blocks): "
 call "%~dp0game-cavern-rooms.bat" %which%
 echo game-cavern-rooms finished (exit code %errorlevel%).
+pause
+goto menu
+
+:water
+set "which="
+set /p "which=Which (empty: Zora's Domain's shallows; lake, river or tunnel): "
+call "%~dp0game-water.bat" %which%
+echo game-water finished (exit code %errorlevel%).
+pause
+goto menu
+
+:zora
+set "which="
+set /p "which=Which (empty: the diving game; shop, king, jabu, lake, lab, river or boomerang): "
+call "%~dp0game-zora.bat" %which%
+echo game-zora finished (exit code %errorlevel%).
 pause
 goto menu
 

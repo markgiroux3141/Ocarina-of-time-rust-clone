@@ -507,7 +507,7 @@ fn exit_hyrule_field_at_night_past_stalchildren_to_kakariko() {
     }
     let (run, w) = run_route(Route::FieldNight);
     let steps: Vec<Step> = run.steps.iter().map(|s| s.0).collect();
-    assert_eq!(steps, vec![Step::StalchildrenKilled, Step::OwlTalk, Step::OwlFlown, Step::StalchildrenGone, Step::Kakariko]);
+    assert_eq!(steps, vec![Step::StalchildrenKilled, Step::OwlTalk, Step::OwlFlown, Step::Kakariko]);
     assert_eq!(w.scene_id, SCENE_KAKARIKO_VILLAGE);
     assert!(w.save.health > 0);
 }

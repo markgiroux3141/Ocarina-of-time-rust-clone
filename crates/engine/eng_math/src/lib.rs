@@ -192,6 +192,36 @@ pub fn step_to_s(v: &mut i16, target: i16, step: i16) -> bool {
     false
 }
 
+/// `Math_StepToAngleS`: steps an angle `step` towards `target` the short way round (a difference
+/// of 0x8000 or more, either way, is taken the other way, `0xFFFF` off). It lands on the target
+/// only when the difference (taken before the step) times the step is at most 0: when it was
+/// already there. @bug (game): anywhere else the step always overshoots, so the angle settles
+/// swinging a step either side of the target and the function never returns true for it.
+pub fn step_to_angle_s(v: &mut i16, target: i16, step: i16) -> bool {
+    let mut diff = target as i32 - *v as i32;
+    let mut step = step;
+    if diff < 0 {
+        step = step.wrapping_neg();
+    }
+    if diff >= 0x8000 {
+        step = step.wrapping_neg();
+        diff = -0xFFFF + diff;
+    } else if diff <= -0x8000 {
+        diff += 0xFFFF;
+        step = step.wrapping_neg();
+    }
+    if step != 0 {
+        *v = v.wrapping_add(step);
+        if diff * step as i32 <= 0 {
+            *v = target;
+            return true;
+        }
+    } else if target == *v {
+        return true;
+    }
+    false
+}
+
 /// `Math_AsymStepToF`: `incr` when rising towards the target, `decr` when falling.
 pub fn asym_step_to_f(v: &mut f32, target: f32, incr: f32, decr: f32) -> bool {
     let step = if target >= *v { incr } else { decr };

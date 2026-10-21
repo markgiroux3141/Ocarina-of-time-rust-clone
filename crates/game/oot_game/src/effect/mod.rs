@@ -28,9 +28,17 @@
 //! (the gravestone's explosion); for GAME-08 milestone 2's target scrub, `Effect_Ss_Extra` (a
 //! mini-game's score); for GAME-09 milestone 1's bombs, `Effect_Ss_G_Spk` (the fuse's sparks);
 //! for milestone 5's Dodongo, `Effect_Ss_D_Fire` (its fire), and its Beamos, `Effect_Ss_Dead_Dd`
-//! (the eye's flash) and `Effect_Ss_Dead_Ds` (the beam's scorch). Spawning another type logs it
-//! and does nothing, as the C
-//! does for a type with no init.
+//! (the eye's flash) and `Effect_Ss_Dead_Ds` (the beam's scorch); for GAME-10 milestone 1's
+//! waters, `Effect_Ss_G_Ripple` (a ring on the water, `Actor_UpdateBgCheckInfo`'s three where an
+//! actor enters it), `Effect_Ss_G_Splash`, `Effect_Ss_Bubble` (rising to a ripple),
+//! `Effect_Ss_Dt_Bubble` (a dying enemy's coloured bubbles) and `Effect_Ss_Lightning` (its
+//! branching bolts, inserted with `EffectSs_Insert`). Spawning another type logs it and does
+//! nothing, as the C does for a type with no init.
+//!
+//! An update that spawns (`Effect_Ss_G_Splash`'s second splash, `Effect_Ss_Bubble`'s ripple,
+//! `Effect_Ss_Lightning`'s bolts) works on its slot itself, as the C's `this` is
+//! (`PlayState::effect_ss_spawn_in_update`): with the table full, the spawn can take that very
+//! slot.
 //!
 //! ## `z_effect.c`
 //!
@@ -50,11 +58,13 @@
 pub mod blast;
 pub mod blure;
 pub mod bomb2;
+pub mod bubble;
 pub mod d_fire;
 pub mod dead_db;
 pub mod dead_dd;
 pub mod dead_ds;
 pub mod dead_sound;
+pub mod dt_bubble;
 pub mod dust;
 pub mod en_fire;
 pub mod en_ice;
@@ -64,12 +74,15 @@ pub mod fhg_flash;
 pub mod fire_tail;
 pub mod g_magma;
 pub mod g_magma2;
+pub mod g_ripple;
+pub mod g_splash;
 pub mod g_spk;
 pub mod hahen;
 pub mod hitmark;
 pub mod k_fire;
 pub mod kakera;
 pub mod kirakira;
+pub mod lightning;
 pub mod shield_particle;
 pub mod sibuki;
 pub mod solder_srch_ball;
@@ -93,7 +106,12 @@ pub const EFFECT_SS_BOMB2: u8 = 0x03;
 pub const EFFECT_SS_BLAST: u8 = 0x04;
 pub const EFFECT_SS_G_SPK: u8 = 0x05;
 pub const EFFECT_SS_D_FIRE: u8 = 0x06;
+pub const EFFECT_SS_BUBBLE: u8 = 0x07;
+pub const EFFECT_SS_G_RIPPLE: u8 = 0x09;
+pub const EFFECT_SS_G_SPLASH: u8 = 0x0A;
 pub const EFFECT_SS_G_MAGMA: u8 = 0x0B;
+pub const EFFECT_SS_LIGHTNING: u8 = 0x0D;
+pub const EFFECT_SS_DT_BUBBLE: u8 = 0x0E;
 pub const EFFECT_SS_G_MAGMA2: u8 = 0x13;
 pub const EFFECT_SS_HAHEN: u8 = 0x0F;
 pub const EFFECT_SS_STICK: u8 = 0x10;
@@ -185,6 +203,16 @@ pub enum SsUpdate {
     GMagma2,
     /// `EffectSsDFire_Update`.
     DFire,
+    /// `EffectSsGRipple_Update`.
+    GRipple,
+    /// `EffectSsGSplash_Update`.
+    GSplash,
+    /// `EffectSsBubble_Update`.
+    Bubble,
+    /// `EffectSsDtBubble_Update`.
+    DtBubble,
+    /// `EffectSsLightning_Update`.
+    Lightning,
 }
 
 /// An effect's draw (`EffectSs.draw`): the overlay's function.
@@ -242,6 +270,16 @@ pub enum SsDraw {
     GMagma2,
     /// `EffectSsDFire_Draw`.
     DFire,
+    /// `EffectSsGRipple_Draw`.
+    GRipple,
+    /// `EffectSsGSplash_Draw`.
+    GSplash,
+    /// `EffectSsBubble_Draw`.
+    Bubble,
+    /// `EffectSsDtBubble_Draw`.
+    DtBubble,
+    /// `EffectSsLightning_Draw`.
+    Lightning,
 }
 
 /// `EffectSs.gfx` where it's a display list from an object (`EffectSsHahen_Spawn`'s `dList`):
@@ -311,8 +349,8 @@ impl Default for EffectSsInfo {
 }
 
 /// What an effect's init reads besides its parameters: the game's random numbers, the objects
-/// loaded (`Object_GetSlot`), and where to stop sounds (`EffectSs_Delete`'s, run by whoever
-/// holds the audio).
+/// loaded (`Object_GetSlot`), where to stop sounds (`EffectSs_Delete`'s, run by whoever holds
+/// the audio), and the scene's collision (`Effect_Ss_G_Ripple`'s water box).
 pub struct SsSpawn<'a> {
     pub info: &'a mut EffectSsInfo,
     pub rand: &'a mut Rand,
@@ -321,6 +359,8 @@ pub struct SsSpawn<'a> {
     pub stops: &'a mut Vec<SfxPos>,
     /// `play->state.frames` (`Effect_Ss_D_Fire`'s first texture).
     pub state_frames: u32,
+    /// `play->colCtx` (`BgCheck_FindWaterBox`); `None` finds no water box.
+    pub col: Option<&'a eng_collision::bgcheck::CollisionContext>,
 }
 
 /// An effect type's init parameters (`EffectSs*InitParams`).
@@ -352,6 +392,11 @@ pub enum SsInit {
     GMagma(g_magma::GMagmaInit),
     GMagma2(g_magma2::GMagma2Init),
     DFire(d_fire::DFireInit),
+    GRipple(g_ripple::GRippleInit),
+    GSplash(g_splash::GSplashInit),
+    Bubble(bubble::BubbleInit),
+    DtBubble(dt_bubble::DtBubbleInit),
+    Lightning(lightning::LightningInit),
 }
 
 /// An actor an effect is spawned for (`initParams->actor`), as its init reads it: its handle,
@@ -413,6 +458,18 @@ impl EffectSsInfo {
     }
 }
 
+impl EffectSsInfo {
+    /// `EffectSs_Insert`: `effect_ss` copied as it is into a slot for its priority (no init, no
+    /// `EffectSs_Delete` of what was there; `FrameAdvance_IsEnabled`, a debug feature, is never
+    /// on); nothing without one.
+    pub fn insert(&mut self, effect_ss: EffectSs) {
+        if let Some(index) = self.find_slot(effect_ss.priority as i32) {
+            self.search_start_index = index as i32 + 1;
+            self.table[index] = effect_ss;
+        }
+    }
+}
+
 impl SsSpawn<'_> {
     /// `EffectSs_Spawn`: a slot for `ty` at `priority`, the slot's last effect deleted, and the
     /// type's init; a failed init resets the slot.
@@ -453,6 +510,11 @@ impl SsSpawn<'_> {
             SsInit::GMagma(p) => g_magma::init(self, &mut e, &p),
             SsInit::GMagma2(p) => g_magma2::init(self, &mut e, &p),
             SsInit::DFire(p) => d_fire::init(self, &mut e, &p),
+            SsInit::GRipple(p) => g_ripple::init(self, &mut e, &p),
+            SsInit::GSplash(p) => g_splash::init(&mut e, &p),
+            SsInit::Bubble(p) => bubble::init(self, &mut e, &p),
+            SsInit::DtBubble(p) => dt_bubble::init(self, &mut e, &p),
+            SsInit::Lightning(p) => lightning::init(&mut e, &p),
         };
         // "Construction failed for some reason": EffectSs_Reset.
         self.info.table[index] = if ok { e } else { EffectSs::default() };
@@ -972,13 +1034,17 @@ pub fn bakes() -> Vec<MeshBake> {
     v.extend(g_magma2::bakes());
     v.extend(blure::bakes());
     v.extend(d_fire::bakes());
+    v.extend(g_ripple::bakes());
+    v.extend(g_splash::bakes());
+    v.extend(bubble::bakes());
+    v.extend(lightning::bakes());
     v
 }
 
 impl PlayState {
     /// The effects' spawner, on this play state's table and generator.
     pub fn ss(&mut self) -> (SsSpawn<'_>, &mut crate::audio::GameAudio) {
-        let s = SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: Some(&self.object_ctx), stops: &mut self.effect_ss_stops, state_frames: self.state_frames };
+        let s = SsSpawn { info: &mut self.effect_ss, rand: &mut self.rand, objects: Some(&self.object_ctx), stops: &mut self.effect_ss_stops, state_frames: self.state_frames, col: Some(&self.col) };
         (s, &mut self.audio)
     }
 
@@ -1015,6 +1081,31 @@ impl PlayState {
             crate::actor_ctx::audio_play_actor_sfx_at(self, a.handle, crate::audio::sfx::NA_SE_PL_FREEZE_S);
         }
         self.with_ss(|s| s.en_ice_spawn_flying_vec3f(actor, pos, prim, env, scale));
+    }
+
+    /// A spawn from the update of the effect in slot `index` (`this`, the update's working copy):
+    /// written back to its slot first and read back after, as the C's `this` is the slot itself,
+    /// which the spawn can take when the table is full.
+    pub(crate) fn effect_ss_spawn_in_update(&mut self, index: usize, this: &mut EffectSs, f: impl FnOnce(&mut SsSpawn<'_>)) {
+        self.effect_ss.table[index] = this.clone();
+        self.with_ss(f);
+        *this = self.effect_ss.table[index].clone();
+    }
+
+    /// The ripples `Actor_UpdateBgCheckInfo` left on `actor` (`Actor::bg_check_ripples`), spawned:
+    /// for each, `EffectSsGRipple_Spawn(play, &ripplePos, 100, 500, 0)`, then with 4 and 8.
+    pub fn spawn_bg_check_ripples(&mut self, actor: &mut crate::actor::Actor) {
+        if actor.bg_check_ripples.is_empty() {
+            return;
+        }
+        let ripples = std::mem::take(&mut actor.bg_check_ripples);
+        self.with_ss(|s| {
+            for ripple_pos in ripples {
+                s.g_ripple_spawn(ripple_pos, 100, 500, 0);
+                s.g_ripple_spawn(ripple_pos, 100, 500, 4);
+                s.g_ripple_spawn(ripple_pos, 100, 500, 8);
+            }
+        });
     }
 
     /// `EffectSs_Delete` of slot `i`, its sounds stopped.
@@ -1082,6 +1173,11 @@ impl PlayState {
             SsUpdate::GMagma => g_magma::update(&mut e),
             SsUpdate::GMagma2 => g_magma2::update(&mut e),
             SsUpdate::DFire => d_fire::update(&mut e),
+            SsUpdate::GRipple => g_ripple::update(&mut e),
+            SsUpdate::GSplash => g_splash::update(self, i, &mut e),
+            SsUpdate::Bubble => bubble::update(self, i, &mut e),
+            SsUpdate::DtBubble => dt_bubble::update(self, &mut e),
+            SsUpdate::Lightning => lightning::update(self, i, &mut e),
         }
         self.effect_ss.table[i] = e;
     }
@@ -1161,6 +1257,11 @@ impl PlayState {
                 SsDraw::GMagma => g_magma::draw(e, ctx.billboard, &mut out),
                 SsDraw::GMagma2 => g_magma2::draw(e, ctx.billboard, &mut out),
                 SsDraw::DFire => d_fire::draw(e, &ctx, &mut out),
+                SsDraw::GRipple => g_ripple::draw(e, &ctx, &mut out),
+                SsDraw::GSplash => g_splash::draw(e, ctx.billboard, &mut out),
+                SsDraw::Bubble => bubble::draw(e, ctx.billboard, &mut out),
+                SsDraw::DtBubble => dt_bubble::draw(e, ctx.billboard, &mut out),
+                SsDraw::Lightning => lightning::draw(e, ctx.billboard, &mut out),
             }
         }
         for i in deleted {

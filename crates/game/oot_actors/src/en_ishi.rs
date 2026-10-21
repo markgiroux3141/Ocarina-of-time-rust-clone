@@ -8,11 +8,10 @@
 //! Within 90 it offers itself to Player's lift (`Actor_OfferGetItem` with `GI_NONE`: 50 across
 //! and 10 up for a small rock, 80 and 20 for a boulder, which Player lifts only with the silver
 //! gauntlets). Lifted (`EnIshi_LiftedUp`) it plays its pull-up sound and, with bugs under it,
-//! lets three out (`En_Insect`, a placeholder); thrown (`EnIshi_Fly`) it tumbles and breaks where
+//! lets three out (`En_Insect`, `INSECT_TYPE_SPAWNED`); thrown (`EnIshi_Fly`) it tumbles and breaks where
 //! it lands or hits a wall, a boulder setting its switch flag and shaking the camera.
 //!
-//! Not ported: the splash and ripples where it falls in water (`EffectSsGSplash`,
-//! `EffectSsGRipple`) and the boulder's rumble (`Rumble_Request`).
+//! Not ported: the boulder's rumble (`Rumble_Request`).
 //!
 //! Params: `type` bit 0 (`EnIshiType`: 0 `ROCK_SMALL`, 1 `ROCK_LARGE`, a silver boulder); `bugs`
 //! bit 4 (1: bugs under it, three let out when lifted); `noSnapToFloor` bit 5 (1: not set on the
@@ -27,7 +26,7 @@ use eng_collision::math3d::Cylinder16;
 use glam::Vec3;
 use oot_game::actor::{
     ACTOR_FLAG_THROW_ONLY, ACTOR_FLAG_UPDATE_CULLING_DISABLED, Actor, BGCHECKFLAG_GROUND, BGCHECKFLAG_WALL, BGCHECKFLAG_WATER, BGCHECKFLAG_WATER_TOUCH, UPDBGCHECKINFO_FLAG_0, UPDBGCHECKINFO_FLAG_2,
-    UPDBGCHECKINFO_FLAG_7,
+    UPDBGCHECKINFO_FLAG_6, UPDBGCHECKINFO_FLAG_7,
 };
 use oot_game::actor_ctx::{ACTORCAT_PROP, ActorImpl, ActorProfile, func_80033480};
 use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
@@ -142,9 +141,8 @@ const NA_SE_EV_DIVE_INTO_WATER_L: u16 = 0x28C5;
 /// `ACTOR_EN_INSECT` (`actor_table.h`: 0x0020), `INSECT_TYPE_SPAWNED` (`z_en_insect.h`).
 const ACTOR_EN_INSECT: i16 = 0x0020;
 const INSECT_TYPE_SPAWNED: i16 = 1;
-/// `UPDBGCHECKINFO_FLAG_6` (`actor.h`): no splash on entering water (the port draws none).
-const UPDBGCHECKINFO_FLAG_6: u32 = 1 << 6;
-/// `Actor_UpdateBgCheckInfo`'s flags for the lifted and thrown rock.
+/// `Actor_UpdateBgCheckInfo`'s flags for the lifted and thrown rock (`UPDBGCHECKINFO_FLAG_6`: not
+/// its ripples, `EnIshi_Fly` makes its own).
 const FLY_BGCHECK: u32 = UPDBGCHECKINFO_FLAG_0 | UPDBGCHECKINFO_FLAG_2 | UPDBGCHECKINFO_FLAG_6 | UPDBGCHECKINFO_FLAG_7;
 
 pub struct EnIshi {
@@ -304,8 +302,8 @@ impl EnIshi {
     }
 
     /// `EnIshi_Fly`: landing or hitting a wall it breaks (its drop, its pieces, and out of water
-    /// its sound and dust; a boulder shakes the camera); entering water it slows (a splash and
-    /// ripples in the C) and tumbles a quarter as fast. Otherwise it falls, slowed by the air,
+    /// its sound and dust; a boulder shakes the camera); entering water it splashes (350; three
+    /// ripples, a boulder's bigger), slows and tumbles a quarter as fast. Otherwise it falls, slowed by the air,
     /// tumbling, its model's lift easing to 0.
     fn fly(&mut self, play: &mut PlayState) {
         let ty = self.ty();
@@ -328,7 +326,19 @@ impl EnIshi {
             return;
         }
         if self.actor.bg_check_flags & BGCHECKFLAG_WATER_TOUCH != 0 {
-            // EffectSsGSplash_Spawn and three EffectSsGRipple_Spawn at the surface: not ported.
+            let contact_pos = Vec3::new(self.actor.world_pos.x, self.actor.world_pos.y + self.actor.y_dist_to_water, self.actor.world_pos.z);
+            play.with_ss(|s| {
+                s.g_splash_spawn(contact_pos, None, None, 0, 350);
+                if ty == ROCK_SMALL {
+                    s.g_ripple_spawn(contact_pos, 150, 650, 0);
+                    s.g_ripple_spawn(contact_pos, 400, 800, 4);
+                    s.g_ripple_spawn(contact_pos, 500, 1100, 8);
+                } else {
+                    s.g_ripple_spawn(contact_pos, 300, 700, 0);
+                    s.g_ripple_spawn(contact_pos, 500, 900, 4);
+                    s.g_ripple_spawn(contact_pos, 500, 1300, 8);
+                }
+            });
             self.actor.min_velocity_y = -6.0;
             let s = play.overlay_static::<Statics>(ACTOR_EN_ISHI);
             s.rot_speed_x >>= 2;
