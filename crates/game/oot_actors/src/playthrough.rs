@@ -566,6 +566,18 @@ pub enum Step {
     FishCaught,
     /// A fish let out of the bottle (`Player_Action_8084EFC0` over), Link free.
     FishLetOut,
+    /// Zora's River's falls open (`Bg_Spot03_Taki`: switch 0x38), one-point 4100 over.
+    WaterfallOpened,
+    /// In Zora's Domain (through the falls, `ENTR_ZORAS_DOMAIN_0`), settled.
+    ZorasDomain,
+    /// Zora's Domain's intro seen (`EVENTCHKINF_A4`), Link free.
+    DomainIntro,
+    /// Ruto's letter shown to King Zora, his texts read.
+    KingZoraLetter,
+    /// King Zora moved aside (`EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA`), Link free.
+    KingMoved,
+    /// Inside Lord Jabu-Jabu (`SCENE_JABU_JABU`).
+    JabuSwallowed,
 }
 
 impl Step {
@@ -784,6 +796,12 @@ impl Step {
             Step::MilkDrunk => "milk_drunk",
             Step::FishCaught => "fish_caught",
             Step::FishLetOut => "fish_let_out",
+            Step::WaterfallOpened => "waterfall_opened",
+            Step::ZorasDomain => "zoras_domain",
+            Step::DomainIntro => "domain_intro",
+            Step::KingZoraLetter => "king_zora_letter",
+            Step::KingMoved => "king_moved",
+            Step::JabuSwallowed => "jabu_swallowed",
         }
     }
 }
@@ -1030,6 +1048,18 @@ pub enum Route {
     /// the milk on C-Left), the milk drunk twice (half, then the bottle empty), a fish caught in the
     /// empty bottle with a swing, and let out again.
     Bottle,
+    /// GAME-10 milestone 2: on Zora's River's platform by the falls (`ENTR_ZORAS_RIVER_2`'s spawn,
+    /// `fairy-magic`), Zelda's Lullaby at the song spot (`En_Okarina_Tag` 0x07F8: switch 0x38),
+    /// the falls open (`Bg_Spot03_Taki`, one-point 4100), through them into Zora's Domain and its
+    /// intro.
+    ZorasRiver,
+    /// GAME-10 milestone 3: in King Zora's room (`ENTR_ZORAS_DOMAIN_1`, `zora-letter`: Ruto's
+    /// letter on C-Left), the letter shown to him (0x401A, 0x401B, 0x401C), his mweep aside
+    /// (`EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA`) and the bottle empty.
+    KingZora,
+    /// GAME-10 milestone 3: in Zora's Fountain (`ENTR_ZORAS_FOUNTAIN_2`, `jabu-fish`: a fish on
+    /// C-Left), the fish let out by Lord Jabu-Jabu (`En_Jj`), `gJabuInhalingCs`, and inside.
+    JabuFish,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1489,6 +1519,57 @@ fn bottle_tasks() -> Vec<Task> {
         Task::UseItem(0, Step::MilkDrunk),
         Task::CatchInBottle(0, Step::FishCaught),
         Task::UseItem(0, Step::FishLetOut),
+        Task::Settle(None),
+    ]
+}
+
+/// Zora's River's song spot (`En_Okarina_Tag` 0x07F8 at (4096, 921, -1400)), on the platform.
+const RIVER_SONG_SPOT: Vec3 = Vec3::new(4110.0, 920.0, -1400.0);
+
+/// `Route::ZorasRiver`'s tasks: on the song spot, Zelda's Lullaby (the ocarina on C-Down); the
+/// falls open (switch 0x38, one-point 4100 holding Link); east at a run off the ledge (the run-off
+/// jump over the falls' gap) into the tunnel and its exit 3 (`ENTR_ZORAS_DOMAIN_0`), and the
+/// Domain's intro.
+fn zoras_river_tasks() -> Vec<Task> {
+    use oot_game::audio::ocarina::OCARINA_SONG_LULLABY;
+    vec![
+        Task::Settle(None),
+        Task::Ocarina(1, OCARINA_SONG_LULLABY, Step::LullabyPlayed),
+        Task::WaitFor(Cond::Switch(0x38), Step::WaterfallOpened),
+        // One-point 4100 (it starts a few frames after the flag) over, Link let go.
+        Task::WaitCameras,
+        Task::Hurry(vec![Vec3::new(4300.0, 920.0, -1400.0)]),
+        Task::Exit("ENTR_ZORAS_DOMAIN_0", Some(Step::ZorasDomain)),
+        Task::Texts(|w| w.save.get_event_chk_inf(0xA4) && w.cs_ctx.state == oot_game::cutscene::CS_STATE_IDLE && !w.player_in_cs_mode(), Step::DomainIntro),
+    ]
+}
+
+/// 300 in front of King Zora's throne (`En_Kz` 0x0100 at (628, 996, -1780), facing +z), dropped
+/// to the floor below it.
+const KING_ZORA_FRONT: Vec3 = Vec3::new(628.0, 996.0, -1480.0);
+
+/// `Route::KingZora`'s tasks: from 300 in front of the throne, at the king until he
+/// offers his talk, Ruto's letter shown from C-Left (`EXCH_ITEM_BOTTLE_RUTOS_LETTER`), his texts;
+/// then his mweep along path 1 until the flag is set and Link let go.
+fn king_zora_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::ShowItem(Who::KingZora, KING_ZORA_FRONT, 0, Step::KingZoraLetter),
+        Task::WaitFor(Cond::EventChkInf(crate::en_kz::EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA), Step::KingMoved),
+        Task::Settle(None),
+    ]
+}
+
+/// `Route::JabuFish`'s tasks: from spawn 2 to 100 west of the feeding spot (`En_Jj`'s
+/// (-1589, 53, -43): within 300 across), the fish let out from C-Left (`Player_IsDroppingFish`);
+/// 100 frames later `gJabuInhalingCs`, and its end's transition into Jabu-Jabu.
+fn jabu_fish_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::Walk(vec![Vec3::new(-1689.0, 20.0, -43.0)]),
+        Task::UseItem(0, Step::FishLetOut),
+        // SCENE_JABU_JABU (scene_table.h: 0x02).
+        Task::Texts(|w| w.scene_id == 0x02, Step::JabuSwallowed),
         Task::Settle(None),
     ]
 }
@@ -2133,6 +2214,9 @@ impl Route {
             Route::FallingStairs | Route::SilverRupees | Route::ShieldChest | Route::TimeBlocks => "ENTR_DODONGOS_CAVERN_0",
             // Spawn 0, room 1 (the intro is EVENTCHKINF_A4's: the preset has it seen).
             Route::Bottle => "ENTR_ZORAS_DOMAIN_0",
+            Route::ZorasRiver => "ENTR_ZORAS_RIVER_2",
+            Route::KingZora => "ENTR_ZORAS_DOMAIN_1",
+            Route::JabuFish => "ENTR_ZORAS_FOUNTAIN_2",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2176,6 +2260,9 @@ impl Route {
             Route::FallingStairs | Route::SilverRupees => Some("fairy-magic"),
             Route::TimeBlocks => Some("cavern-song-of-time"),
             Route::Bottle => Some("zora-bottle"),
+            Route::ZorasRiver => Some("fairy-magic"),
+            Route::KingZora => Some("zora-letter"),
+            Route::JabuFish => Some("jabu-fish"),
             Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -2223,6 +2310,11 @@ impl Route {
             // Room 1's shallows (20 deep, the floor at -20), west of the fish (Obj_Mure 0x5322 at
             // (653, -10, -485)), facing them (east).
             Route::Bottle => Some((Vec3::new(560.0, -20.0, -420.0), 0x4000)),
+            // On the song ledge in front of the falls (x 4060 to 4140; the spawn is in the tunnel
+            // behind them, across the falls' gap), facing them.
+            Route::ZorasRiver => Some((RIVER_SONG_SPOT, 0x4000)),
+            // 300 in front of the throne (it faces +z; the spawn is behind it), facing the king.
+            Route::KingZora => Some((KING_ZORA_FRONT, i16::MIN)),
             _ => None,
         }
     }
@@ -2405,6 +2497,9 @@ impl Route {
             Route::ShieldChest => "shield-chest",
             Route::TimeBlocks => "time-blocks",
             Route::Bottle => "bottle",
+            Route::ZorasRiver => "zoras-river",
+            Route::KingZora => "king-zora",
+            Route::JabuFish => "jabu-fish",
         }
     }
 
@@ -2461,6 +2556,9 @@ impl Route {
             Route::ShieldChest => 1500,
             Route::TimeBlocks => 1500,
             Route::Bottle => 3000,
+            Route::ZorasRiver => 3000,
+            Route::KingZora => 3000,
+            Route::JabuFish => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2468,12 +2566,12 @@ impl Route {
     /// Whether it needs the audio side running (the ocarina's routes: `AudioOcarina_Update` runs in
     /// `Audio_Update`, which a scene's audio spec holds until the audio side has loaded it).
     pub fn needs_audio(self) -> bool {
-        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks)
+        matches!(self, Route::Ocarina | Route::Zelda | Route::ZeldaTalk | Route::Graveyard | Route::Meadow | Route::LostWoods | Route::Ranch | Route::Darunia | Route::GreatFairy | Route::TimeBlocks | Route::ZorasRiver)
     }
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -2813,6 +2911,8 @@ enum Cond {
     CrateGone(Vec3),
     /// The Song of Time block (`Obj_Timeblock`) whose home is here hidden (its collision off).
     TimeBlockHidden(Vec3),
+    /// The `eventChkInf` flag set, Link free (no cutscene or text holding him).
+    EventChkInf(u16),
 }
 
 impl Cond {
@@ -2827,6 +2927,7 @@ impl Cond {
                 w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::bg_spot18_shutter::BgSpot18Shutter>(h)).any(|d| d.actor.world_pos.y >= d.actor.home_pos.y + 180.0) && !w.player_in_cs_mode()
             }
             Cond::Switch(flag) => w.flags.get_switch(flag) && !w.player_in_cs_mode() && w.message_state() == oot_game::message::TEXT_STATE_NONE,
+            Cond::EventChkInf(flag) => w.save.get_event_chk_inf(flag) && !w.player_in_cs_mode() && w.message_state() == oot_game::message::TEXT_STATE_NONE,
             Cond::CrateGone(home) => !w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::obj_kibako2::ObjKibako2>(h)).any(|c| !c.actor.killed && c.actor.home_pos.distance(home) < 1.0),
             Cond::TimeBlockHidden(home) => w.actors.all().into_iter().filter_map(|h| w.actors.downcast::<crate::obj_timeblock::ObjTimeblock>(h)).any(|t| t.actor.home_pos.distance(home) < 1.0 && !t.is_visible),
             Cond::Pillar(home, rise) => {
@@ -2867,6 +2968,8 @@ enum Who {
     Dampe,
     /// An owl (`En_Owl`).
     Owl,
+    /// King Zora (`En_Kz`).
+    KingZora,
 }
 
 const SETTLE_FRAMES: usize = 10;
@@ -3224,6 +3327,9 @@ impl Playthrough {
             Route::ShieldChest => shield_chest_tasks(),
             Route::TimeBlocks => time_blocks_tasks(),
             Route::Bottle => bottle_tasks(),
+            Route::ZorasRiver => zoras_river_tasks(),
+            Route::KingZora => king_zora_tasks(),
+            Route::JabuFish => jabu_fish_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -7272,6 +7378,7 @@ impl Playthrough {
             Who::GateGuard => w.actors.downcast::<crate::en_heishi2::EnHeishi2>(h).is_some_and(|a| !a.actor.killed && a.ty == 5),
             Who::Dampe => w.actors.downcast::<crate::en_tk::EnTk>(h).is_some_and(|a| !a.actor.killed),
             Who::Owl => w.actors.downcast::<crate::en_owl::EnOwl>(h).is_some_and(|a| !a.actor.killed),
+            Who::KingZora => w.actors.downcast::<crate::en_kz::EnKz>(h).is_some_and(|a| !a.actor.killed),
             Who::SongWall => w.actors.downcast::<crate::en_okarina_tag::EnOkarinaTag>(h).is_some_and(|a| !a.actor.killed && a.type_ == 5),
         })
     }

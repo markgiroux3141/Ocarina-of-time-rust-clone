@@ -834,10 +834,9 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     },
     SavePreset {
         name: "zora-bottle",
-        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4) and the bottle of milk on C-Left (the pause menu's): a debug start in the Domain's shallows by the fish for GAME-10 milestone 1's bottle run (the story's empty bottle is King Zora's, milestone 3)",
+        about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and the bottle of milk on C-Left (the pause menu's): a debug start in the Domain's shallows by the fish for GAME-10 milestone 1's bottle run (the story's empty bottle is King Zora's, milestone 3)",
         apply: |s| {
-            fairy_magic(s);
-            s.set_event_chk_inf(0xA4);
+            zoras_domain(s);
             s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_MILK_FULL);
         },
     },
@@ -853,19 +852,17 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     },
     SavePreset {
         name: "zora-diving",
-        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4) and 50 rupees: a debug start for GAME-10 milestone 2's diving game (20 rupees a game; five rupees fetched win the silver scale)",
+        about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and 50 rupees: a debug start for GAME-10 milestone 2's diving game (20 rupees a game; five rupees fetched win the silver scale)",
         apply: |s| {
-            fairy_magic(s);
-            s.set_event_chk_inf(0xA4);
+            zoras_domain(s);
             s.rupees = 50;
         },
     },
     SavePreset {
         name: "zora-letter",
-        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4), Ruto's letter taken (EVENTCHKINF_31) and in the first bottle on C-Left: a debug start for GAME-10 milestone 3's King Zora (show it to him: he moves aside)",
+        about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4), Ruto's letter taken (EVENTCHKINF_31) and in the first bottle on C-Left: a debug start for GAME-10 milestone 3's King Zora (show it to him: he moves aside)",
         apply: |s| {
-            fairy_magic(s);
-            s.set_event_chk_inf(0xA4);
+            zoras_domain(s);
             s.set_event_chk_inf(0x31);
             s.inventory.items[crate::item::SLOT_BOTTLE_1] = crate::item::ITEM_BOTTLE_RUTOS_LETTER;
             s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_RUTOS_LETTER);
@@ -875,8 +872,7 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         name: "jabu-fish",
         about: "zora-letter's save after King Zora (EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA, 0x33: the bottle emptied), the fountain's intro seen (EVENTCHKINF_B7) and a fish in that bottle on C-Left: a debug start for GAME-10 milestone 3's Lord Jabu-Jabu (let the fish out by him: he swallows Link)",
         apply: |s| {
-            fairy_magic(s);
-            s.set_event_chk_inf(0xA4);
+            zoras_domain(s);
             s.set_event_chk_inf(0x31);
             s.set_event_chk_inf(0x33);
             s.set_event_chk_inf(0xB7);
@@ -886,10 +882,9 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
     },
     SavePreset {
         name: "boomerang",
-        about: "fairy-magic, Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
+        about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
         apply: |s| {
-            fairy_magic(s);
-            s.set_event_chk_inf(0xA4);
+            zoras_domain(s);
             item_give(s, None, crate::item::ITEM_BOOMERANG);
             s.equip_item_on_c_left(crate::item::ITEM_BOOMERANG);
         },
@@ -1086,6 +1081,15 @@ fn fairy_magic(s: &mut SaveContext) {
     s.magic = MAGIC_NORMAL_METER;
     s.magic_capacity = MAGIC_NORMAL_METER as i16;
     s.magic_fill_target = MAGIC_NORMAL_METER as i16;
+}
+
+/// fairy-magic's save as the way into Zora's Domain leaves it (`Route::ZorasRiver`'s end):
+/// Zelda's Lullaby played at Zora's River's falls (`En_Okarina_Tag` type 1: EVENTCHKINF_39) and the
+/// Domain's intro seen (EVENTCHKINF_A4).
+fn zoras_domain(s: &mut SaveContext) {
+    fairy_magic(s);
+    s.set_event_chk_inf(0x39);
+    s.set_event_chk_inf(0xA4);
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:

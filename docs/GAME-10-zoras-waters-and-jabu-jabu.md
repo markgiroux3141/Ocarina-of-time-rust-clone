@@ -13,9 +13,9 @@ last section). The phase starts from the `fairy-magic` preset (GAME-09's exit re
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Water and bottles | done (2026-10-20) |
-| 2 | Zora's River and Zora's Domain to the silver scale | next: the actors merged, the runs to write |
-| 3 | Ruto's letter, King Zora and Lord Jabu-Jabu | the actors merged, the runs to write |
-| 4 | Jabu-Jabu to the boomerang | `En_Boom` and Player's boomerang done early |
+| 2 | Zora's River and Zora's Domain to the silver scale | done (2026-10-21) |
+| 3 | Ruto's letter, King Zora and Lord Jabu-Jabu | done (2026-10-21) |
+| 4 | Jabu-Jabu to the boomerang | next (`En_Boom` and Player's boomerang done early) |
 | 5 | Jabu-Jabu to Barinade | |
 | 6 | Barinade and the Zora's Sapphire (the exit's first part) | |
 | 7 | The Ocarina of Time and the Song of Time (the exit's second part) | |
@@ -507,3 +507,73 @@ scripts\run\sandbox-water.bat
 5. `game-water tunnel` (Lake Hylia from Zora's Domain's tunnel): Link swims in from under water.
 6. Anything that looks off: the bottle in hand, the ripples, splashes and bubbles, the fish and the
    bugs (lift a rock in Kakariko or cut grass for bugs: catch them with a bottle too).
+
+## Milestones 2 and 3: Zora's River, Zora's Domain, the letter, King Zora and Jabu-Jabu's mouth
+
+**The answer:** every actor the river, the Domain, the lake, the lab and the fountain place for a
+child, ported by helpers and merged (2026-10-20), hand-tested by the user (2026-10-21), and three
+short scripted runs from debug starts, no fights:
+
+- **The river** (`Route::ZorasRiver`, on the song ledge in front of the falls on `fairy-magic`):
+  Zelda's Lullaby at the song spot, the falls open (one-point 4100), the run-off jump over the
+  falls' gap into the tunnel and Zora's Domain with its intro. 633 frames.
+- **King Zora** (`Route::KingZora`, 300 in front of the throne on `zora-letter`): Ruto's letter
+  shown (0x401B, 0x401C), his mweep aside, the bottle empty. 1,300 frames.
+- **Jabu-Jabu** (`Route::JabuFish`, Zora's Fountain on `jabu-fish`): the fish let out by Lord
+  Jabu-Jabu, `gJabuInhalingCs`, inside (`SCENE_JABU_JABU`). 843 frames.
+
+The diving game's run was left out by the user's call (2026-10-21): its tests play the whole game
+frame by frame, and the user played it. Scripts: `scripts\run\game-zora.bat` (menu 155: the diving
+game, `shop`, `king`, `jabu`, `lake`, `lab`, `river`, `boomerang`), `sandbox-zora-runs.bat` (156).
+
+### What was built
+
+- **Zora's River:** `En_Okuta` (every state, its rock), `Bg_Spot03_Taki` and one-point 4100,
+  `SDC_ZORAS_RIVER`, `En_Ms` (the bean seller, from milestone 9).
+- **Zora's Domain:** `En_Kz` (the child's whole; the adult's a placeholder until `Bg_Ice_Shelter`),
+  `En_Zo` (types 0 to 8), `Obj_Comb`, `Bg_Spot07_Taki`, `En_Diving_Game` and `En_Ex_Ruppy`'s
+  game, `En_Ossan`'s Zora shopkeeper (his shelves through `EnOssan_SpawnItemsOnShelves`),
+  `SDC_ZORAS_DOMAIN`.
+- **Lake Hylia and the lab:** `Item_Etcetera` (every type: the letter, the fire arrows, the
+  treasure game's), `Bg_Spot06_Objects` (the child's parts; the adult's lock and drained lake
+  placeholders until Phase 16), `En_Mk`, `SDC_LAKE_HYLIA`, `SDC_LAKESIDE_LABORATORY`.
+- **Zora's Fountain:** `En_Jj` (all three types), `Bg_Spot08_Bakudankabe`, `SDC_ZORAS_FOUNTAIN`.
+- **Player:** the dive's jump off a diving board (`Player_Action_80844A44`, `FLOOR_PROPERTY_11`:
+  the top of the Domain's falls) into a dive; surfacing with the bottom's item held up
+  (`func_8083D12C`: `link_swimer_swim_get`); `PlayerIface::set_yaw` (4100's turn).
+- **The presets:** `zoras_domain` (fairy-magic, `EVENTCHKINF_39` and `_A4`) under `zora-bottle`,
+  `zora-diving`, `zora-letter`, `jabu-fish` and `boomerang`.
+- **The runs:** the three routes, `Who::KingZora`, `Cond::EventChkInf`, their steps.
+
+### Results
+
+- Tests: `tests/zora_runs.rs` (3: the runs, each end checked against the next start's preset),
+  `dive_jump.rs`, `zora_shop.rs` (4), `en_ms.rs` (6), and the helpers' (`en_okuta` 12,
+  `bg_spot03_taki` 2, `en_kz` 7, `en_zo` 5, `obj_comb` 5, `bg_spot07_taki` 4, `en_diving_game` 7,
+  `item_etcetera` 5, `bg_spot06_objects` 4, `en_mk` 3, `en_jj` 5, `bg_spot08_bakudankabe` 3).
+- Goldens: all 277 of milestone 1's hashes the same (the presets' new flag changes no run); 7
+  new cases: `zoras_river` (the trace, 633 frames), `zoras_river_falls` 320 (one-point 4100, the
+  falls parting), `zoras_river_jump` 406 (over the gap), `king_zora` (the trace, 1,300 frames),
+  `king_zora_mweep` 1000, `jabu_fish` (the trace, 843 frames), `jabu_fish_inhale` 500. 287
+  hashes, 217 cases, the same over two runs (`out/golden_base32`).
+
+### Found by hand (2026-10-21)
+
+- The diving game's dive off the falls was a plain jump (`Player_Action_80844A44` unported);
+  surfacing with Ruto's letter didn't hold it up (`func_8083D12C` skipped the carrying flags);
+  the bean seller and the Zora shop's keeper and shelves were missing. All fixed.
+- The other shops' keepers (the potion shop, the bombchu shop, the bazaar, the Goron shop, the
+  Happy Mask shop) are placeholders too: BACKLOG #100.
+
+### Corrections
+
+- Playing Zelda's Lullaby at the falls sets `EVENTCHKINF_39` (`z_en_okarina_tag.c`, type 1; the
+  river's owl reads it): the Domain's presets lacked it.
+- `ENTR_ZORAS_RIVER_2`'s spawn is in the tunnel behind the falls, across their gap from the song
+  ledge: the river run starts on the ledge.
+- King Zora's throne faces +z: `ENTR_ZORAS_DOMAIN_1`'s spawn is behind it; the run starts in front.
+
+### By hand
+
+`scripts\run\game-zora.bat` (menu 155), as tested on 2026-10-21; `shop` and the bean seller in
+`river` are new since.

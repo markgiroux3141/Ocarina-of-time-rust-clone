@@ -166,6 +166,7 @@ echo   143  sandbox-kingdodongo  King Dodongo's two runs' traces and screenshots
 echo   146  sandbox-summit       The summit's three runs' traces and screenshots (the wall, the fairy, the owl), into out\run
 echo   151  sandbox-cavern-rooms The cavern's rest's four runs' traces and screenshots (stairs, rupees, chest, blocks), into out\run
 echo   154  sandbox-water        The bottle run's trace and screenshots (the milk, the fish caught and let out), into out\run
+echo   156  sandbox-zora-runs    The river, King Zora and Jabu-Jabu runs' traces and screenshots, into outun
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -331,6 +332,7 @@ if "%pick%"=="152" set "script=test-water"
 if "%pick%"=="153" goto water
 if "%pick%"=="154" set "script=sandbox-water"
 if "%pick%"=="155" goto zora
+if "%pick%"=="156" set "script=sandbox-zora-runs"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"

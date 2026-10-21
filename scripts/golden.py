@@ -326,6 +326,15 @@ CASES = [
     ("bottle", S, ["--entrance", "ENTR_ZORAS_DOMAIN_0", "--child", "--preset", "zora-bottle", "--script", "bottle", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("bottle_drink", S, ["--entrance", "ENTR_ZORAS_DOMAIN_0", "--child", "--preset", "zora-bottle", "--script", "bottle", "--frames", "90", "--screenshot", "{shot}"]),
     ("bottle_catch", S, ["--entrance", "ENTR_ZORAS_DOMAIN_0", "--child", "--preset", "zora-bottle", "--script", "bottle", "--frames", "560", "--screenshot", "{shot}"]),
+    # GAME-10 milestones 2 and 3: the lullaby at Zora's River's falls into the Domain; Ruto's letter
+    # to King Zora; a fish for Lord Jabu-Jabu.
+    ("zoras_river", S, ["--entrance", "ENTR_ZORAS_RIVER_2", "--child", "--preset", "fairy-magic", "--script", "zoras-river", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("zoras_river_falls", S, ["--entrance", "ENTR_ZORAS_RIVER_2", "--child", "--preset", "fairy-magic", "--script", "zoras-river", "--frames", "320", "--screenshot", "{shot}"]),
+    ("zoras_river_jump", S, ["--entrance", "ENTR_ZORAS_RIVER_2", "--child", "--preset", "fairy-magic", "--script", "zoras-river", "--frames", "406", "--screenshot", "{shot}"]),
+    ("king_zora", S, ["--entrance", "ENTR_ZORAS_DOMAIN_1", "--child", "--preset", "zora-letter", "--script", "king-zora", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("king_zora_mweep", S, ["--entrance", "ENTR_ZORAS_DOMAIN_1", "--child", "--preset", "zora-letter", "--script", "king-zora", "--frames", "1000", "--screenshot", "{shot}"]),
+    ("jabu_fish", S, ["--entrance", "ENTR_ZORAS_FOUNTAIN_2", "--child", "--preset", "jabu-fish", "--script", "jabu-fish", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_fish_inhale", S, ["--entrance", "ENTR_ZORAS_FOUNTAIN_2", "--child", "--preset", "jabu-fish", "--script", "jabu-fish", "--frames", "500", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

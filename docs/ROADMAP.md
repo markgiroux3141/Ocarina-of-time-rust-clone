@@ -232,7 +232,8 @@ done** with its exit review (2026-10-20): Phase 11 starts from the `fairy-magic`
 Phase 11 (GAME-10, [GAME-10-zoras-waters-and-jabu-jabu.md](GAME-10-zoras-waters-and-jabu-jabu.md)):
 surveyed and proposed (2026-10-20), nine milestones, every call the recommended one. Milestone 1
 (water and bottles, [ADR 0081](adr/0081-water-bottles-and-the-underwater-view.md)) is done;
-milestones 2's and 3's actors and Player's boomerang are merged, their runs next.
+milestones 2 and 3 (the river, the Domain, the lake, the fountain: King Zora and Jabu-Jabu's mouth)
+are done (2026-10-21); milestone 4 (Jabu-Jabu to the boomerang) is next, Player's boomerang ported early.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -773,7 +774,8 @@ boomerang; to Barinade; Barinade and the Sapphire; the moat; the rest of Jabu-Ja
 scarecrows). Decided 2026-10-20 (every recommendation). **Milestone 1 done** (2026-10-20: Player's
 water and bottles, the fish and bugs, the water's effects, the currents, the underwater view);
 milestones 2's and 3's actors merged (the river, the Domain, the diving game, the lake, the lab,
-the fountain, Jabu-Jabu) with `game-zora.bat`'s debug starts, their scripted runs next. Found: in MQ neither Ruto nor Big Octo is on the way to
+the fountain, Jabu-Jabu) with `game-zora.bat`'s debug starts; **milestones 2 and 3 done**
+(2026-10-21: hand-tested, the river, King Zora and Jabu-Jabu runs). Next: milestone 4. Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter.
 
 ## Cross-cutting debts
