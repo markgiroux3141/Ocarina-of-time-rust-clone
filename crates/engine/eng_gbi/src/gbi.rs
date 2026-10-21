@@ -23,12 +23,19 @@ pub enum Segment {
     Matrices(Vec<BoneId>),
     /// A display list supplied by the engine rather than the ROM (e.g. segment 0x0C).
     Builtin(Vec<(u32, u32)>),
+    /// A matrix the draw computes every frame, which the lists multiply onto their own
+    /// (`gSPMatrix(.., G_MTX_MUL)`: Jabu-Jabu's pulsing walls on segment 0x0D): each load of it
+    /// gets a bone of its own (the next after `DrawList::site_bases`' last), the matrix it was
+    /// multiplied onto recorded there, and the vertices loaded under it stay in their own space.
+    SiteMatrix,
 }
 
 #[derive(Clone, Copy)]
 struct ModelView {
     bone: BoneId,
     local: Mat4,
+    /// The bone is a site matrix's (`Segment::SiteMatrix`): a matrix loaded over it ends it.
+    site: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -96,7 +103,7 @@ impl Interpreter {
             segments: Default::default(),
             draw: DrawList::default(),
             vtx: [RawVertex::default(); 64],
-            mv: ModelView { bone: NO_BONE, local: Mat4::IDENTITY },
+            mv: ModelView { bone: NO_BONE, local: Mat4::IDENTITY, site: false },
             mv_stack: Vec::new(),
             geometry_mode: 0,
             othermode_h: 0,
@@ -154,7 +161,7 @@ impl Interpreter {
 
     /// Attach subsequent vertex loads to `bone` with an identity local transform.
     pub fn set_bone(&mut self, bone: BoneId) {
-        self.mv = ModelView { bone, local: Mat4::IDENTITY };
+        self.mv = ModelView { bone, local: Mat4::IDENTITY, site: false };
         self.mv_stack.clear();
     }
 
@@ -443,13 +450,31 @@ impl Interpreter {
             if push {
                 self.mv_stack.push(self.mv);
             }
-            self.mv = ModelView { bone, local: Mat4::IDENTITY };
+            self.mv = ModelView { bone, local: Mat4::IDENTITY, site: false };
+            return;
+        }
+        if let Some(Segment::SiteMatrix) = &self.segments[seg] {
+            let base = if load { Mat4::IDENTITY } else { self.mv.local };
+            let bone = self.draw.site_bases.len() as BoneId;
+            self.draw.site_bases.push(base.to_cols_array());
+            if push {
+                self.mv_stack.push(self.mv);
+            }
+            self.mv = ModelView { bone, local: Mat4::IDENTITY, site: true };
             return;
         }
         let Some((buf, off)) = self.resolve(w1, 64) else { return };
         let m = read_n64_mtx(&buf[off..off + 64]);
         if push {
             self.mv_stack.push(self.mv);
+        }
+        if self.mv.site {
+            // A site matrix's bone carries the matrices it was multiplied onto: what's loaded or
+            // multiplied after it can't be put under it (no list does this yet).
+            if !load {
+                *self.draw.stats.unresolved_addresses.entry(format!("{w1:08X} (matrix after a site matrix)")).or_default() += 1;
+            }
+            self.mv = ModelView { bone: NO_BONE, local: Mat4::IDENTITY, site: false };
         }
         self.mv.local = if load { m } else { self.mv.local * m };
     }

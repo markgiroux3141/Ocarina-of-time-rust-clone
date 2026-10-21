@@ -578,6 +578,20 @@ pub enum Step {
     KingMoved,
     /// Inside Lord Jabu-Jabu (`SCENE_JABU_JABU`).
     JabuSwallowed,
+    /// Jabu-Jabu's room 0: the west cow's target shot (`En_Wonder_Item` 0x1915: switch flag 0x15).
+    CowShot,
+    /// Room 1: the elevator level with door 1's corridor on its way down.
+    ElevatorLevel,
+    /// Room 1: on the elevator (`Bg_Bdan_Objects` type 1).
+    OnElevator,
+    /// Room 1: the elevator at the bottom.
+    ElevatorDown,
+    /// Under a wall in the water and up on its far side.
+    Dived,
+    /// Room 1: the yellow switch 0x19 down (door 2).
+    YellowSwitch,
+    /// Room 14: the boomerang's chest opened (`En_Box` 0x10C6, treasure flag 6).
+    BoomerangChest,
 }
 
 impl Step {
@@ -802,6 +816,13 @@ impl Step {
             Step::KingZoraLetter => "king_zora_letter",
             Step::KingMoved => "king_moved",
             Step::JabuSwallowed => "jabu_swallowed",
+            Step::CowShot => "cow_shot",
+            Step::ElevatorLevel => "elevator_level",
+            Step::OnElevator => "on_elevator",
+            Step::ElevatorDown => "elevator_down",
+            Step::Dived => "dived",
+            Step::YellowSwitch => "yellow_switch",
+            Step::BoomerangChest => "boomerang_chest",
         }
     }
 }
@@ -1060,6 +1081,19 @@ pub enum Route {
     /// GAME-10 milestone 3: in Zora's Fountain (`ENTR_ZORAS_FOUNTAIN_2`, `jabu-fish`: a fish on
     /// C-Left), the fish let out by Lord Jabu-Jabu (`En_Jj`), `gJabuInhalingCs`, and inside.
     JabuFish,
+    /// GAME-10 milestone 4: Jabu-Jabu's room 0 (`ENTR_JABU_JABU_0`, `jabu-jabu`, the room marked
+    /// cleared): the west cow's target shot with the slingshot (switch 0x15), door 1 into room 1.
+    JabuCow,
+    /// GAME-10 milestone 4: room 1 from the end of door 1's corridor (`jabu-room-1`, the room marked
+    /// cleared): onto the elevator, down, across the pit's water, the yellow switch 0x19 (door 2).
+    JabuElevator,
+    /// GAME-10 milestone 4: room 14 marked cleared (`jabu-room-14`), in front of the boomerang's
+    /// chest on its ledge: the chest opened (`GI_BOOMERANG`).
+    JabuBoomerang,
+    /// GAME-10 milestone 4: room 1's bottom east of the pit after the boomerang's chest
+    /// (`jabu-boomerang`: the spout in front of door 14 down for good), through door 14 into room
+    /// 14. Before the chest the spout pushes Link back short of the door.
+    JabuDoor14,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1558,6 +1592,134 @@ fn king_zora_tasks() -> Vec<Task> {
         Task::WaitFor(Cond::EventChkInf(crate::en_kz::EVENTCHKINF_GAVE_LETTER_TO_KING_ZORA), Step::KingMoved),
         Task::Settle(None),
     ]
+}
+
+/// Jabu-Jabu's room 0: the west cow's target (`En_Wonder_Item` 0x1915 at (-201, -188, -538), on
+/// the cow at (-224, -211, -581)), a little up its middle; its flag (door 1's, transition 1).
+const JABU_COW_TARGET: Vec3 = Vec3::new(-201.0, -178.0, -538.0);
+const JABU_COW_FLAG: i32 = 0x15;
+const JABU_DOOR_1: usize = 1;
+/// Door 1 (at (0, -240, -1127): Jabu-Jabu's doors stand 80 over their floor), room 0's side.
+const JABU_DOOR_1_FRONT: Vec3 = Vec3::new(0.0, -320.0, -1090.0);
+
+/// `Route::JabuCow`'s tasks: the slingshot put on C-Right; from the spawn down into the bowl (its floor -340), the slingshot
+/// drawn there and the cow's target shot; the attention camera on door 1 (it unbars), down the
+/// corridor (its floor -320) and through.
+fn jabu_cow_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        // The story's save has the slingshot on no button (the bottle, the ocarina, the bombs):
+        // onto C-Right from the item page, as Route::Pause.
+        Task::OpenMenu(Step::MenuOpened),
+        Task::MenuCursor(PAUSE_SLOT, Step::CursorOnItem),
+        Task::EquipOnC(PAUSE_C_BUTTON, Step::ItemEquipped),
+        Task::CloseMenu(Step::MenuClosed),
+        Task::Walk(vec![Vec3::new(-18.0, -300.0, 150.0), Vec3::new(-40.0, -340.0, -150.0)]),
+        Task::DrawSlingshot(Step::SlingshotDrawn),
+        Task::Shoot(JABU_COW_TARGET, JABU_COW_FLAG, Step::CowShot),
+        Task::LeaveFirstPerson,
+        Task::WaitCameras,
+        Task::Walk(vec![Vec3::new(0.0, -340.0, -400.0), Vec3::new(0.0, -320.0, -800.0)]),
+        Task::OpenSlidingDoor(JABU_DOOR_1, JABU_DOOR_1_FRONT, Step::DoorOpened),
+        Task::WaitDoorShut(JABU_DOOR_1, Step::ThroughDoor),
+    ]
+}
+
+/// Room 1's elevator's `timer` (512 to 0: its height `home - sin(timer × π/256) × 471.24`, at
+/// the top at 384, at the bottom at 128), if it's there.
+fn jabu_elevator_timer(w: &PlayState) -> Option<i16> {
+    use crate::bg_bdan_objects::{Action, BgBdanObjects};
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<BgBdanObjects>(h).filter(|o| o.action == Action::ElevatorOscillate).map(|o| o.timer))
+}
+
+/// The C button the slingshot is on (C-Right, where the Deku Tree's runs put it, if it's on none).
+fn slingshot_button(w: &PlayState) -> u16 {
+    use eng_input::pad::{BTN_CDOWN, BTN_CLEFT, BTN_CRIGHT};
+    match w.save.equips.button_items[1..4].iter().position(|&i| i == oot_game::item::ITEM_SLINGSHOT) {
+        Some(0) => BTN_CLEFT,
+        Some(1) => BTN_CDOWN,
+        _ => BTN_CRIGHT,
+    }
+}
+
+/// Link's height.
+fn link_y(w: &PlayState) -> f32 {
+    w.player().actor.world_pos.y
+}
+
+/// `Route::JabuElevator`'s tasks. The corridor from door 1 (floor -320) ends 95 short of the
+/// elevator (x -60 to 60, z -1650 to -1760; its top -299 to -1242): Link runs off its end as the
+/// elevator comes level with it on the way down, and lands on it. Ridden to the bottom; off it to
+/// the west into the pit's water (`waterBoxes[1]`, -1248), across to the west ledge (-1233: 160
+/// over the pit's ramp, only joined to it by water), out, and onto the yellow switch 0x19.
+fn jabu_elevator_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        // timer 360: the elevator's top at -320 and sinking (Link's run and jump take about 30
+        // frames: it's about 60 lower when he lands).
+        Task::Texts(|w| jabu_elevator_timer(w) == Some(360), Step::ElevatorLevel),
+        Task::Hurry(vec![Vec3::new(0.0, -320.0, -1705.0)]),
+        Task::Texts(|w| (link_y(w) - (-771.0 - (jabu_elevator_timer(w).unwrap_or(0) as f32 * (std::f32::consts::PI / 256.0)).sin() * 471.24)).abs() < 2.0, Step::OnElevator),
+        Task::Settle(None),
+        Task::Texts(|w| jabu_elevator_timer(w).is_some_and(|t| t <= 132) && link_y(w) < -1200.0, Step::ElevatorDown),
+        // The shaft is walled round (x -300 here) from 62 under the water's surface up: west to
+        // the wall, under it (the dive, 120 without a scale), up in the west pool, out onto the
+        // west ledge at its middle, south to the switch.
+        Task::Walk(vec![Vec3::new(-180.0, -1248.0, -1700.0)]),
+        Task::DiveUnder(Vec3::new(-420.0, -1300.0, -1700.0), -1248.0, Step::Dived),
+        Task::Walk(vec![Vec3::new(-620.0, -1233.0, -1700.0), Vec3::new(-612.0, -1233.0, -1836.0)]),
+        Task::WaitFor(Cond::Switch(0x19), Step::YellowSwitch),
+        Task::WaitCameras,
+        Task::Settle(None),
+    ]
+}
+
+/// Door 14 (transition 14, at (313, -1153, -1703) facing -x), room 1's side.
+const JABU_DOOR_14: usize = 14;
+const JABU_DOOR_14_FRONT: Vec3 = Vec3::new(270.0, -1233.0, -1703.0);
+
+/// `Route::JabuDoor14`'s tasks: east to door 14 (room 1's spout 0x15C6 at (341, -1233, -1704), 200
+/// wide, stands across it: down at -45 since the chest) and through.
+fn jabu_door_14_tasks() -> Vec<Task> {
+    vec![Task::Settle(None), Task::OpenSlidingDoor(JABU_DOOR_14, JABU_DOOR_14_FRONT, Step::DoorOpened), Task::WaitDoorShut(JABU_DOOR_14, Step::ThroughDoor), Task::Settle(None)]
+}
+
+/// The hand test's starts in Jabu-Jabu's Belly (GAME-10 milestone 4, `game-jabu.bat`):
+/// `(name, preset, room, position, yaw, rooms cleared)`. `oot_actors --test jabu_runs` checks each:
+/// Link stands, and the room doesn't change.
+/// - `cow`: room 0's spawn (the Shaboms, the Octorok; the west cow to shoot);
+/// - `elevator`: room 1 at the end of door 1's corridor, facing the elevator;
+/// - `flobbery`: room 1's west walkway by its three Flobberies (the Biris float over the shaft);
+/// - `pit`: room 1's bottom east of the pit, facing it (the Stinger in the water, the tall switch
+///   on the bottom, the wall to dive under to the yellow switch);
+/// - `spout`: the same place facing the spout across door 14 (it lifts Link, pushes him back);
+/// - `platform`: room 1's walkway (y 80) west of the falling platform, facing it;
+/// - `room2`: room 2 inside door 2 (the Biris, the Flobbery, the floor drifting to its holes);
+/// - `room14`: room 14's floor south of the Stingers (the Like Like, the Lizalfos, the yellow
+///   switch 0x39 raising the water);
+/// - `boomerang`: room 14 cleared, in front of the boomerang's chest on its ledge;
+/// - `door14`: room 1's bottom after the chest (the spout down), facing door 14.
+pub const JABU_STARTS: [(&str, &str, i8, Vec3, i16, &[i8]); 10] = [
+    ("cow", "jabu-jabu", 0, Vec3::new(-18.0, -240.0, 302.0), i16::MIN, &[]),
+    ("elevator", "jabu-room-1", 1, Vec3::new(0.0, -320.0, -1500.0), i16::MIN, &[]),
+    ("flobbery", "jabu-room-1", 1, Vec3::new(-200.0, -325.0, -1600.0), i16::MIN, &[]),
+    ("pit", "jabu-room-1", 1, Vec3::new(160.0, -1233.0, -1703.0), -0x4000, &[]),
+    ("spout", "jabu-room-1", 1, Vec3::new(160.0, -1233.0, -1703.0), 0x4000, &[]),
+    ("platform", "jabu-room-1", 1, Vec3::new(0.0, 80.0, -1700.0), 0x4000, &[]),
+    ("room2", "jabu-room-14", 2, Vec3::new(0.0, -340.0, -2560.0), i16::MIN, &[]),
+    ("room14", "jabu-room-14", 14, Vec3::new(1000.0, -1293.0, -2450.0), 0, &[]),
+    ("boomerang", "jabu-room-14", 14, Vec3::new(780.0, -1073.0, -2376.0), -0x4000, &[14]),
+    ("door14", "jabu-boomerang", 1, Vec3::new(160.0, -1233.0, -1703.0), 0x4000, &[]),
+];
+
+/// Room 14's boomerang chest (`En_Box` 0x10C6 at (699, -1073, -2376), facing -x: its front the
+/// side away from that, +x).
+const JABU_BOOMERANG_CHEST: Vec3 = Vec3::new(699.0, -1073.0, -2376.0);
+
+/// `Route::JabuBoomerang`'s tasks: the chest (there with the room cleared, `ROOM_CLEAR_BIG`)
+/// opened; the boomerang's get-item.
+fn jabu_boomerang_tasks() -> Vec<Task> {
+    vec![Task::Settle(None), Task::OpenChest(JABU_BOOMERANG_CHEST, Some(Step::BoomerangChest)), Task::Settle(None)]
 }
 
 /// `Route::JabuFish`'s tasks: from spawn 2 to 100 west of the feeding spot (`En_Jj`'s
@@ -2217,6 +2379,8 @@ impl Route {
             Route::ZorasRiver => "ENTR_ZORAS_RIVER_2",
             Route::KingZora => "ENTR_ZORAS_DOMAIN_1",
             Route::JabuFish => "ENTR_ZORAS_FOUNTAIN_2",
+            // Spawn 0, room 0; the debug starts change room.
+            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 => "ENTR_JABU_JABU_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2263,6 +2427,10 @@ impl Route {
             Route::ZorasRiver => Some("fairy-magic"),
             Route::KingZora => Some("zora-letter"),
             Route::JabuFish => Some("jabu-fish"),
+            Route::JabuCow => Some("jabu-jabu"),
+            Route::JabuElevator => Some("jabu-room-1"),
+            Route::JabuBoomerang => Some("jabu-room-14"),
+            Route::JabuDoor14 => Some("jabu-boomerang"),
             Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -2315,6 +2483,12 @@ impl Route {
             Route::ZorasRiver => Some((RIVER_SONG_SPOT, 0x4000)),
             // 300 in front of the throne (it faces +z; the spawn is behind it), facing the king.
             Route::KingZora => Some((KING_ZORA_FRONT, i16::MIN)),
+            // Room 1 at the end of door 1's corridor, facing the elevator (-z).
+            Route::JabuElevator => Some((Vec3::new(0.0, -320.0, -1500.0), i16::MIN)),
+            // Room 14's ledge east of the boomerang's chest, facing it (-x).
+            Route::JabuBoomerang => Some((Vec3::new(780.0, -1073.0, -2376.0), -0x4000)),
+            // Room 1's bottom east of the pit, facing door 14 (+x).
+            Route::JabuDoor14 => Some((Vec3::new(160.0, -1233.0, -1703.0), 0x4000)),
             _ => None,
         }
     }
@@ -2340,6 +2514,12 @@ impl Route {
             Route::SilverRupees => &[2],
             Route::ShieldChest => &[14],
             Route::TimeBlocks => &[15],
+            // Jabu-Jabu: room 0's Shaboms and Octorok, room 1's Biris, Flobberies and Stinger,
+            // room 14's Stingers, Like Like and Lizalfos (the hand test's); room 14's clear also
+            // brings the boomerang's chest (ROOM_CLEAR_BIG).
+            Route::JabuCow => &[0],
+            Route::JabuElevator | Route::JabuDoor14 => &[1],
+            Route::JabuBoomerang => &[14],
             _ => &[],
         }
     }
@@ -2354,6 +2534,8 @@ impl Route {
             Route::FallingStairs | Route::SilverRupees => Some(2),
             Route::ShieldChest => Some(14),
             Route::TimeBlocks => Some(15),
+            Route::JabuElevator | Route::JabuDoor14 => Some(1),
+            Route::JabuBoomerang => Some(14),
             _ => None,
         }
     }
@@ -2500,6 +2682,10 @@ impl Route {
             Route::ZorasRiver => "zoras-river",
             Route::KingZora => "king-zora",
             Route::JabuFish => "jabu-fish",
+            Route::JabuCow => "jabu-cow",
+            Route::JabuElevator => "jabu-elevator",
+            Route::JabuBoomerang => "jabu-boomerang",
+            Route::JabuDoor14 => "jabu-door-14",
         }
     }
 
@@ -2559,6 +2745,7 @@ impl Route {
             Route::ZorasRiver => 3000,
             Route::KingZora => 3000,
             Route::JabuFish => 3000,
+            Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 => 3000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2571,7 +2758,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -2689,6 +2876,10 @@ enum Task {
     CutBushes(Vec<Vec3>),
     /// Steer through the points at full tilt.
     Hurry(Vec<Vec3>),
+    /// Swimming: A held (the dive) steering at the point until within reach of it across, then let
+    /// go until Link is back at the water's surface (this height, within 40): under a wall that
+    /// stops short of the bottom.
+    DiveUnder(Vec3, f32, Step),
     /// Into a crawlspace and through it: walk to the first point, lined up with the mouth;
     /// towards the mouth (the second point) until A says "Enter" (`PLAYER_STATE2_DO_ACTION_ENTER`); A; the
     /// stick forward until Link is out and standing.
@@ -2796,9 +2987,9 @@ enum Task {
     /// A held and the stick forward until this switch flag is set, holding on again if he lets
     /// go (a text that opens is read first).
     PushBlock(Vec3, i32, Step),
-    /// C-Right held until the slingshot is drawn with a seed in hand in first person.
+    /// The slingshot's C button (C-Right if it's on none) held until the slingshot is drawn with a seed in hand in first person.
     DrawSlingshot(Step),
-    /// C-Right still held, the stick steering the aim until the seed in hand points at this
+    /// Its C button still held, the stick steering the aim until the seed in hand points at this
     /// position, then let go, until this switch flag is set (a miss draws again).
     Shoot(Vec3, i32, Step),
     /// `Task::Shoot` until the condition holds instead of a switch flag.
@@ -3330,6 +3521,10 @@ impl Playthrough {
             Route::ZorasRiver => zoras_river_tasks(),
             Route::KingZora => king_zora_tasks(),
             Route::JabuFish => jabu_fish_tasks(),
+            Route::JabuCow => jabu_cow_tasks(),
+            Route::JabuElevator => jabu_elevator_tasks(),
+            Route::JabuBoomerang => jabu_boomerang_tasks(),
+            Route::JabuDoor14 => jabu_door_14_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -3896,6 +4091,7 @@ impl Playthrough {
                 self.settle(w, Some(step))
             }
             Task::Hurry(points) => self.walk(w, &points, FULL),
+            Task::DiveUnder(to, surface, step) => self.dive_under(w, to, surface, step),
             Task::Sneak(points) => self.sneak(w, &points),
             Task::WaitGuards(ready, what) => {
                 self.wait += 1;
@@ -4972,7 +5168,7 @@ impl Playthrough {
         if p.held_item_id == oot_game::item::ITEM_DEKU_STICK { Some(PadState::default()) } else { Some(self.press(eng_input::pad::BTN_CLEFT)) }
     }
 
-    /// `Task::DrawSlingshot`: C-Right held until the slingshot is drawn (`unk_836` set, the wait)
+    /// `Task::DrawSlingshot`: its C button held until the slingshot is drawn (`unk_836` set, the wait)
     /// with a seed in hand, in first person.
     fn draw_slingshot(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
         let p = w.player();
@@ -4982,10 +5178,10 @@ impl Playthrough {
         }
         self.wait += 1;
         if self.wait > 120 {
-            self.failure = Some(format!("the slingshot was never drawn (held {}, C-Right {:#x}, seeds {})", p.held_item_ap, w.save.equips.button_items[3], w.save.ammo(oot_game::item::ITEM_SLINGSHOT)));
+            self.failure = Some(format!("the slingshot was never drawn (held {}, C buttons {:x?}, seeds {})", p.held_item_ap, &w.save.equips.button_items[1..4], w.save.ammo(oot_game::item::ITEM_SLINGSHOT)));
             return None;
         }
-        Some(PadState { button: eng_input::pad::BTN_CRIGHT, ..Default::default() })
+        Some(PadState { button: slingshot_button(w), ..Default::default() })
     }
 
     /// `Task::Shoot`: aiming in first person, C-Right held: the seed in hand's direction (its
@@ -5005,7 +5201,7 @@ impl Playthrough {
             return None;
         }
         let p = w.player();
-        let held = PadState { button: eng_input::pad::BTN_CRIGHT, ..Default::default() };
+        let held = PadState { button: slingshot_button(w), ..Default::default() };
         match self.sub {
             0 => {
                 if p.held_actor.is_some() && p.unk_836 > 0 && p.unk_6AD == 2 {
@@ -5034,7 +5230,7 @@ impl Playthrough {
                     if s == 0 { 0 } else { ((s + 7) * err.signum()) as i8 }
                 };
                 // A negative stick x turns the focus's yaw up; a positive stick y pitches it down.
-                Some(PadState { button: eng_input::pad::BTN_CRIGHT, stick_x: -stick(ey), stick_y: stick(ep) })
+                Some(PadState { button: slingshot_button(w), stick_x: -stick(ey), stick_y: stick(ep) })
             }
             _ => {
                 self.tries += 1;
@@ -6939,6 +7135,30 @@ impl Playthrough {
         // Link (Player's cutscene mode 8) until it's read: A through it, as a player would.
         if w.message_state() != TEXT_STATE_NONE && Self::text_waits(w) {
             pad.button = self.press(BTN_A).button;
+        }
+        Some(pad)
+    }
+
+    /// `Task::DiveUnder`: A pressed at the surface and held under it, steering at `to` (sub 0); within `WAYPOINT_RADIUS` of it across,
+    /// let go, still steering, until Link is within 40 of the surface (sub 1).
+    fn dive_under(&mut self, w: &PlayState, to: Vec3, surface: f32, step: Step) -> Option<PadState> {
+        let link = w.player().actor.world_pos;
+        self.wait += 1;
+        if self.wait > 600 {
+            self.failure = Some(format!("the dive never reached {to} (at {link}, sub {})", self.sub));
+            return None;
+        }
+        if self.sub == 0 && Self::xz_dist(link, to) < WAYPOINT_RADIUS {
+            self.sub = 1;
+        }
+        if self.sub == 1 && link.y > surface - 40.0 {
+            self.finish(Some(step));
+            return None;
+        }
+        let mut pad = stick_towards(w, to, FULL);
+        if self.sub == 0 {
+            // The dive starts on a press at the surface; under it, A held keeps it going.
+            pad.button = if w.player().action == crate::player::Action::Dive || link.y < surface - 45.0 { BTN_A } else { self.press(BTN_A).button };
         }
         Some(pad)
     }

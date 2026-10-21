@@ -52,6 +52,11 @@ pub struct ShadowRs {
     pub floor_poly: Option<PolyId>,
     /// `shape.feetPos` (`Actor_SetFeetPos`): left, right.
     pub feet_pos: [Vec3; 2],
+    /// The floor under each foot (`func_800BFCB8`'s height, and its poly's normal: none without
+    /// a floor), found when the game frame is captured, as the C's `ActorShadow_DrawFeet` finds it
+    /// once a game frame; blended with the rest, so a foot's shadow keeps to a moving floor's
+    /// blended place between game frames. `None`: found at the draw.
+    pub feet_floor: Option<[(f32, Option<[f32; 3]>); 2]>,
 }
 
 impl ShadowRs {
@@ -64,6 +69,10 @@ impl ShadowRs {
             floor_height: self.floor_height + (next.floor_height - self.floor_height) * t,
             floor_poly: pick.floor_poly,
             feet_pos: [self.feet_pos[0].lerp(next.feet_pos[0], t), self.feet_pos[1].lerp(next.feet_pos[1], t)],
+            feet_floor: match (self.feet_floor, next.feet_floor) {
+                (Some(a), Some(b)) => Some([0, 1].map(|k| (a[k].0 + (b[k].0 - a[k].0) * t, if t < 0.5 { a[k].1 } else { b[k].1 }))),
+                (_, b) => b,
+            },
         }
     }
 }
@@ -158,16 +167,26 @@ pub fn func_80038a28(normal: [i16; 3], t: Vec3) -> Mat4 {
 /// so the matrix leans a little off the plane on a slope; kept. With no floor the matrix is the
 /// identity's rotation at the floor's `BGCHECK_Y_MIN`.
 pub fn func_800bfcb8(col: &CollisionContext, pos: Vec3) -> (f32, Mat4) {
+    let (floor_y, normal) = floor_under(col, pos);
+    (floor_y, floor_matrix(pos, floor_y, normal))
+}
+
+/// `func_800BFCB8`'s raycast: the floor's height under `pos`, and its poly's normal if it has one.
+pub fn floor_under(col: &CollisionContext, pos: Vec3) -> (f32, Option<[f32; 3]>) {
     let (floor_y, poly) = col.raycast_down(pos, IGNORE_NONE, DOWN_CHECK_WALLS_SIMPLE | DOWN_CHECK_FLOORS | DOWN_CHECK_GROUND_ONLY, 1.0);
-    match poly.filter(|_| floor_y > eng_collision::bgcheck::BGCHECK_Y_MIN) {
-        Some(p) => {
-            let [nx, ny, nz] = normal_f(col.poly(p).normal);
+    (floor_y, poly.filter(|_| floor_y > eng_collision::bgcheck::BGCHECK_Y_MIN).map(|p| normal_f(col.poly(p).normal)))
+}
+
+/// `func_800BFCB8`'s matrix, from its raycast's height and normal.
+pub fn floor_matrix(pos: Vec3, floor_y: f32, normal: Option<[f32; 3]>) -> Mat4 {
+    match normal {
+        Some([nx, ny, nz]) => {
             let temp1 = (1.0 - nx * nx).sqrt();
             let (temp2, temp3) = if temp1 != 0.0 { (ny * temp1, -nz * temp1) } else { (0.0, 0.0) };
             let m = MtxF { xx: temp1, yx: -nx * temp2, zx: nx * temp3, wx: 0.0, xy: nx, yy: ny, zy: nz, wy: 0.0, xz: 0.0, yz: temp3, zz: temp2, wz: 0.0, xw: pos.x, yw: floor_y, zw: pos.z, ww: 1.0 };
-            (floor_y, m.to_mat4())
+            m.to_mat4()
         }
-        None => (floor_y, Mat4::from_translation(Vec3::new(pos.x, floor_y, pos.z))),
+        None => Mat4::from_translation(Vec3::new(pos.x, floor_y, pos.z)),
     }
 }
 
@@ -233,8 +252,10 @@ pub fn draw(s: &ShadowRs, pos: Vec3, scale: Vec3, yaw: i16, col: &CollisionConte
             }
             if dist_to_floor < 200.0 {
                 let num_lights = lights.len().saturating_sub(2);
-                for foot in s.feet_pos {
-                    let (floor_height, floor_mtx) = func_800bfcb8(col, foot + Vec3::Y * 50.0);
+                for (k, foot) in s.feet_pos.into_iter().enumerate() {
+                    let at = foot + Vec3::Y * 50.0;
+                    let (floor_height, normal) = s.feet_floor.map_or_else(|| floor_under(col, at), |f| f[k]);
+                    let floor_mtx = floor_matrix(at, floor_height, normal);
                     let mut d = foot.y - floor_height;
                     if (-1.0..500.0).contains(&d) {
                         if d > 30.0 {

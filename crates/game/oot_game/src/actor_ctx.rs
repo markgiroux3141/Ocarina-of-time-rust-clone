@@ -207,6 +207,14 @@ pub trait PlayerIface {
     /// player->actor.world.rot.y = player->yaw = ..`: the caller writes the actor's two). Player
     /// doesn't take it yet: its `current_yaw` keeps its own.
     fn set_yaw(&mut self, _yaw: i16) {}
+    /// `player->speedXZ` (Player's own speed, not `actor.speed`), and an outside write of it
+    /// (`En_Siofuki`'s spout slowing him).
+    fn player_speed(&self) -> f32 {
+        0.0
+    }
+    fn set_player_speed(&mut self, _speed: f32) {}
+    /// An outside write of `pushedYaw` and `pushedSpeed` (`En_Siofuki`'s spout).
+    fn set_pushed(&mut self, _yaw: i16, _speed: f32) {}
     /// `av1.actionVar1` (`Door_Ana` reads it: 0 while falling into its hole).
     fn action_var1(&self) -> i16 {
         0

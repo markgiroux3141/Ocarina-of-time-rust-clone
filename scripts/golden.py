@@ -335,6 +335,16 @@ CASES = [
     ("king_zora_mweep", S, ["--entrance", "ENTR_ZORAS_DOMAIN_1", "--child", "--preset", "zora-letter", "--script", "king-zora", "--frames", "1000", "--screenshot", "{shot}"]),
     ("jabu_fish", S, ["--entrance", "ENTR_ZORAS_FOUNTAIN_2", "--child", "--preset", "jabu-fish", "--script", "jabu-fish", "--trace", "{trace}", "--screenshot", "{shot}"]),
     ("jabu_fish_inhale", S, ["--entrance", "ENTR_ZORAS_FOUNTAIN_2", "--child", "--preset", "jabu-fish", "--script", "jabu-fish", "--frames", "500", "--screenshot", "{shot}"]),
+    # GAME-10 milestone 4: Jabu-Jabu's Belly (Master Quest): room 0's cow (the slingshot equipped,
+    # the shot, door 1), room 1's elevator (on it, down, under the wall, the yellow switch), room
+    # 14's chest, door 14 after it; room 2's walls on their own bones (SDC_JABU_JABU's segment 0x0D).
+    ("jabu_cow", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-jabu", "--script", "jabu-cow", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_cow_shot", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-jabu", "--script", "jabu-cow", "--frames", "175", "--screenshot", "{shot}"]),
+    ("jabu_elevator", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-1", "--script", "jabu-elevator", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_elevator_ride", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-1", "--script", "jabu-elevator", "--frames", "300", "--screenshot", "{shot}"]),
+    ("jabu_boomerang", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-14", "--script", "jabu-boomerang", "--trace", "{trace}", "--screenshot", "{shot}"]),
+    ("jabu_door_14", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-boomerang", "--script", "jabu-door-14", "--trace", "{trace}"]),
+    ("jabu_room2_walls", S, ["--entrance", "ENTR_JABU_JABU_0", "--child", "--preset", "jabu-room-14", "--room", "2", "--at=0,-340,-2560,-32768", "--script", "still", "--frames", "45", "--screenshot", "{shot}"]),
     ("cavern_dodongos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "5", "--at=-1960,531,-650,0", "--script", "still", "--frames", "120", "--screenshot", "{shot}"]),
     ("cavern_beamos", S, ["--entrance", "ENTR_DODONGOS_CAVERN_0", "--child", "--preset", "fairy-magic", "--room", "2", "--at=-1645,0,-1242,-32768", "--script", "still", "--frames", "54", "--screenshot", "{shot}"]),
     ("ranch_guays", S, ["--entrance", "ENTR_LON_LON_RANCH_0", "--child", "--preset", "lost-woods-games", "--time", "22:00", "--at=-727,0,550,0", "--script", "still", "--frames", "420", "--trace", "{trace}", "--screenshot", "{shot}"]),

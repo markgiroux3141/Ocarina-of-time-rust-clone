@@ -166,7 +166,10 @@ echo   143  sandbox-kingdodongo  King Dodongo's two runs' traces and screenshots
 echo   146  sandbox-summit       The summit's three runs' traces and screenshots (the wall, the fairy, the owl), into out\run
 echo   151  sandbox-cavern-rooms The cavern's rest's four runs' traces and screenshots (stairs, rupees, chest, blocks), into out\run
 echo   154  sandbox-water        The bottle run's trace and screenshots (the milk, the fish caught and let out), into out\run
-echo   156  sandbox-zora-runs    The river, King Zora and Jabu-Jabu runs' traces and screenshots, into outun
+echo   156  sandbox-zora-runs    The river, King Zora and Jabu-Jabu runs' traces and screenshots, into out\run
+echo   157  game-jabu            Jabu-Jabu's room 0 (asks: or elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14)
+echo   158  test-jabu            Jabu-Jabu's draw config, switches, lifts, spouts, enemies and runs (cargo test)
+echo   159  sandbox-jabu-runs    The Jabu-Jabu runs' traces and screenshots (the cow, the elevator, the boomerang, door 14), into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -333,6 +336,9 @@ if "%pick%"=="153" goto water
 if "%pick%"=="154" set "script=sandbox-water"
 if "%pick%"=="155" goto zora
 if "%pick%"=="156" set "script=sandbox-zora-runs"
+if "%pick%"=="157" goto jabu
+if "%pick%"=="158" set "script=test-jabu"
+if "%pick%"=="159" set "script=sandbox-jabu-runs"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -378,6 +384,14 @@ set "which="
 set /p "which=Which (empty: the diving game; shop, king, jabu, lake, lab, river or boomerang): "
 call "%~dp0game-zora.bat" %which%
 echo game-zora finished (exit code %errorlevel%).
+pause
+goto menu
+
+:jabu
+set "which="
+set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang or door14): "
+call "%~dp0game-jabu.bat" %which%
+echo game-jabu finished (exit code %errorlevel%).
 pause
 goto menu
 

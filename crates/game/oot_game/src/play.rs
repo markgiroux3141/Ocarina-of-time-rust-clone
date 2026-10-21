@@ -181,6 +181,7 @@ impl RenderState {
                 floor_height: a.floor_height,
                 floor_poly: a.floor_poly,
                 feet_pos: a.shape_feet_pos,
+                feet_floor: None,
             }),
             ..Default::default()
         }
@@ -969,8 +970,11 @@ impl PlayState {
             // INV_CONTENT(ITEM_COJIRO) == ITEM_COJIRO (item.h: 0x2F).
             let cojiro = self.save.inv_content(0x2F) == 0x2F;
             let (day_time, night) = (self.save.day_time, self.save.night_flag);
+            let cur_room = self.room_ctx.cur.num;
             let mut chicken_cry = false;
+            let mut distortion = None;
             if let Some(s) = &mut self.scene {
+                s.draw.cur_room = cur_room;
                 s.draw.event_chk_inf_07 = tree_dead;
                 s.draw.restored_lake_hylia = restored_lake_hylia;
                 s.draw.cojiro = cojiro;
@@ -978,6 +982,14 @@ impl PlayState {
                 s.draw.night = night;
                 s.run_draw_config(frames);
                 chicken_cry = std::mem::take(&mut s.draw.chicken_cry);
+                distortion = s.draw.distortion;
+            }
+            // Scene_DrawConfigJabuJabu's View_SetDistortionOrientation, _Scale and _Speed (after
+            // this frame's View_StepDistortion, as Scene_Draw comes after View_Apply).
+            if let Some(d) = distortion {
+                self.view_distortion.set_orientation(glam::Vec3::from(d.orientation));
+                self.view_distortion.set_scale(glam::Vec3::from(d.scale));
+                self.view_distortion.set_speed(d.speed);
             }
             // Scene_DrawConfigLostWoods's Player_PlaySfx(GET_PLAYER(play), NA_SE_EV_CHICKEN_CRY_M).
             if chicken_cry && let Some(h) = self.player {
@@ -1670,6 +1682,12 @@ impl PlayState {
             {
                 let mut rs = a.render_state();
                 rs.color_filter = (a.base().color_filter_params, a.base().color_filter_timer);
+                // ActorShadow_DrawFeet's floors, found once a game frame (crate::shadow).
+                if let Some(s) = &mut rs.shadow
+                    && s.draw == crate::shadow::ShadowDraw::Feet
+                {
+                    s.feet_floor = Some(s.feet_pos.map(|f| crate::shadow::floor_under(&self.col, f + Vec3::Y * 50.0)));
+                }
                 actors.push((h, rs));
                 a.base_mut().teleported = false;
             }

@@ -22,7 +22,7 @@
 use std::collections::BTreeMap;
 
 use eng_gfx::SegmentValues;
-use eng_math::step_to_s;
+use eng_math::{cos_s, sin_s, step_to_s};
 
 use crate::env::clock_time;
 
@@ -59,6 +59,42 @@ pub struct DrawConfigState {
     /// `gLensFlareColorIntensity`, `gLensFlareGlareStrength`). Nothing draws it yet
     /// (`Environment_DrawCustomLensFlare` isn't ported, `crate::env_draw`).
     pub custom_lens_flare: Option<CustomLensFlare>,
+    /// `play->roomCtx.curRoom.num`.
+    pub cur_room: i8,
+    /// `Scene_DrawConfigJabuJabu`'s statics: the code segment's, so they carry over scene
+    /// changes.
+    pub jabu: JabuStatics,
+    /// Out: the view's distortion the config set this frame (`View_SetDistortionOrientation`,
+    /// `_Scale`, `_Speed` on `play->view`), if it did.
+    pub distortion: Option<DistortionSet>,
+    /// Out: the matrix the config put on segment 0x0D of the OPA buffer this frame
+    /// (`MATRIX_FINALIZE`), which the rooms' lists multiply onto theirs (their site matrices,
+    /// `eng_gfx::DrawList::site_bases`).
+    pub segment_matrix: Option<glam::Mat4>,
+}
+
+/// `Scene_DrawConfigJabuJabu`'s statics (`z_scene_table.c`): `D_8012A39C` and `D_8012A3A0`, the
+/// breathing's two phases, and `D_8012A398`, the walls' pulse.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct JabuStatics {
+    pub d_8012a39c: i16,
+    pub d_8012a3a0: i16,
+    pub d_8012a398: f32,
+}
+
+impl Default for JabuStatics {
+    fn default() -> JabuStatics {
+        JabuStatics { d_8012a39c: 538, d_8012a3a0: 4272, d_8012a398: 0.0 }
+    }
+}
+
+/// The view's distortion a draw config sets (`View_SetDistortionOrientation`, `_Scale`,
+/// `_Speed`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DistortionSet {
+    pub orientation: [f32; 3],
+    pub scale: [f32; 3],
+    pub speed: f32,
 }
 
 /// The custom lens flare's globals (`z_kankyo.c`), as a draw config sets them.
@@ -512,6 +548,68 @@ fn draw_config_spot08(st: &mut DrawConfigState, b: &mut Buffers) {
     // buffers, so already in the meshes.
 }
 
+/// `SCENE_JABU_JABU` (`scene_table.h`: 0x02).
+const SCENE_JABU_JABU: u16 = 0x02;
+
+/// `MATRIX_FINALIZE`'s fixed point (`Matrix_ToMtx`: s15.16, the fraction truncated).
+fn mtx_fixed(v: f32) -> f32 {
+    (v * 65536.0) as i32 as f32 / 65536.0
+}
+
+/// `Scene_DrawConfigJabuJabu` (Jabu-Jabu's Belly, and Barinade's room): in Jabu-Jabu two scrolls
+/// on segments 8 and 0xB in the OPA buffer, elsewhere one on 8; the view's breathing
+/// (`View_SetDistortion*`, its two phases a 36th of a turn on each frame); the pulse quickened
+/// after a hit on the flesh (`func_8002F9EC` sets `roomCtx.drawParams[0]` 1: `drawParams[1]` up
+/// 200 a frame to 1200, then down 30 a frame to 0) and the walls' pulse on segment 0x0D: a scale
+/// of `sin(D_8012A398) × 0.8` up (1.005 across but in room 2), `D_8012A398` 0.15 on each frame
+/// plus `drawParams[1]` thousandths. `FrameAdvance_IsEnabled` is never on.
+fn draw_config_jabu_jabu(st: &mut DrawConfigState, b: &mut Buffers) {
+    let f = st.gameplay_frames;
+    if st.scene_id == SCENE_JABU_JABU {
+        b.opa.insert(0x08, gfx_two_tex_scroll(G_TX_RENDERTILE, f % 128, f.wrapping_mul(2) % 128, 32, 32, 1, 127 - f % 128, f.wrapping_mul(2) % 128, 32, 32));
+        b.opa.insert(0x0B, gfx_two_tex_scroll(G_TX_RENDERTILE, 0, 255 - f.wrapping_mul(4) % 256, 32, 64, 1, 0, 255 - f.wrapping_mul(4) % 256, 32, 64));
+    } else {
+        b.opa.insert(0x08, gfx_tex_scroll(127u32.wrapping_sub(f) % 128, f % 128, 32, 32));
+    }
+    // gDPSetEnvColor(POLY_OPA_DISP / POLY_XLU_DISP, 128, 128, 128, 128): straight into the
+    // buffers, so already in the meshes.
+    let j = &mut st.jabu;
+    j.d_8012a39c = j.d_8012a39c.wrapping_add(1820);
+    j.d_8012a3a0 = j.d_8012a3a0.wrapping_add(1820);
+    let temp = 0.020000001f32;
+    // (360.00018f / 65535.0f) * (M_PI / 180.0f), M_PI a float (libc/math.h).
+    let turn = (360.00018f32 / 65535.0) * (3.14159265358979323846f32 / 180.0);
+    let (a, c) = (j.d_8012a39c, j.d_8012a3a0);
+    st.distortion = Some(DistortionSet {
+        orientation: [turn * temp * cos_s(a), turn * temp * sin_s(a), turn * temp * sin_s(c)],
+        scale: [1.0 + 0.79999995 * temp * sin_s(c), 1.0 + 0.39999998 * temp * cos_s(c), 1.0 + 1.0 * temp * cos_s(a)],
+        speed: 0.95,
+    });
+    let dp = &mut st.room_draw_params;
+    match dp[0] {
+        1 => {
+            if dp[1] < 1200 {
+                dp[1] += 200;
+            } else {
+                dp[0] += 1;
+            }
+        }
+        2 => {
+            if dp[1] > 0 {
+                dp[1] -= 30;
+            } else {
+                dp[1] = 0;
+                dp[0] = 0;
+            }
+        }
+        _ => {}
+    }
+    st.jabu.d_8012a398 += 0.15 + dp[1] as f32 * 0.001;
+    let up = st.jabu.d_8012a398.sin() * 0.8;
+    let across = if st.cur_room == 2 { 1.0 } else { 1.005 };
+    st.segment_matrix = Some(glam::Mat4::from_scale(glam::Vec3::new(mtx_fixed(across), mtx_fixed(up), mtx_fixed(across))));
+}
+
 /// `BgDodoagoEye` (`z_bg_dodoago.h`): the index of each eye's glow in `roomCtx.drawParams`.
 pub const BGDODOAGO_EYE_LEFT: usize = 0;
 pub const BGDODOAGO_EYE_RIGHT: usize = 1;
@@ -647,6 +745,7 @@ const PORTED: &[(&str, DrawConfigFn)] = &[
     ("SDC_LAKE_HYLIA", draw_config_spot06),
     ("SDC_ZORAS_RIVER", draw_config_spot03),
     ("SDC_ZORAS_FOUNTAIN", draw_config_spot08),
+    ("SDC_JABU_JABU", draw_config_jabu_jabu),
 ];
 
 /// Whether the draw config `sdc` (an `SDC_*` name) is ported.
@@ -665,6 +764,8 @@ pub fn ported() -> impl Iterator<Item = &'static str> {
 /// frame.
 pub fn segment_values(sdc: &str, st: &mut DrawConfigState) -> Option<[SegmentValues; 2]> {
     let f = PORTED.iter().find(|(n, _)| *n == sdc)?.1;
+    st.distortion = None;
+    st.segment_matrix = None;
     let mut b = Buffers::default();
     f(st, &mut b);
     Some(b.values())

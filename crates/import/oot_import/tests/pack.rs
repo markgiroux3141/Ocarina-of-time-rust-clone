@@ -124,7 +124,7 @@ fn ported_draw_configs_match_the_c_interpreter() {
     let Some(c) = ctx() else { return };
     // One scene per ported draw config.
     // The guards' courtyard's config reads the scene: its day and night scenes both.
-    let scenes: [(&str, &str); 29] = [
+    let scenes: [(&str, &str); 31] = [
         ("SDC_KOKIRI_FOREST", "spot04_scene"),
         ("SDC_HYRULE_FIELD", "spot00_scene"),
         ("SDC_DEKU_TREE", "ydan_scene"),
@@ -154,6 +154,9 @@ fn ported_draw_configs_match_the_c_interpreter() {
         ("SDC_LAKE_HYLIA", "spot06_scene"),
         ("SDC_ZORAS_RIVER", "spot03_scene"),
         ("SDC_ZORAS_FOUNTAIN", "spot08_scene"),
+        // Jabu-Jabu's config reads the scene: Jabu-Jabu's two scrolls, Barinade's room's one.
+        ("SDC_JABU_JABU", "bdan_scene"),
+        ("SDC_JABU_JABU", "bdan_boss_scene"),
     ];
     assert!(scene_table::ported().all(|sdc| scenes.iter().any(|(s, _)| *s == sdc)), "a ported draw config without a scene here");
     for (sdc, file) in scenes {
@@ -171,10 +174,14 @@ fn ported_draw_configs_match_the_c_interpreter() {
                 if st.event_chk_inf_07 {
                     continue;
                 }
+                // Scene_DrawConfigJabuJabu outside Jabu-Jabu scrolls by (127 - gameplayFrames) % 128
+                // with gameplayFrames a u32: unsigned, 127 - frames % 128. The interpreter does the
+                // subtraction signed (negative past frame 127), so it's asked for frames % 128.
+                let f_c = if sdc == "SDC_JABU_JABU" && file != "bdan_scene" { f % 128 } else { f };
                 let mut want = sd.segment_values(
                     &c.p,
                     &c.tables,
-                    &State { gameplay_frames: f, child: st.child, night: st.night, scene_layer: st.scene_layer as i64, day_time: st.day_time },
+                    &State { gameplay_frames: f_c, child: st.child, night: st.night, scene_layer: st.scene_layer as i64, day_time: st.day_time },
                 );
                 // Scene_DrawConfigHyruleField after 18:30 runs Math_StepToS(&roomCtx.drawParams[0], 255, 5)
                 // before using it as the prim alpha. The interpreter doesn't run function calls

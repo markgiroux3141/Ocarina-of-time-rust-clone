@@ -20,7 +20,7 @@
 use glam::Vec3;
 
 use crate::actor_ctx::{ACTORCAT_DOOR, ActorHandle};
-use crate::camera::{
+use crate::camera::{CAM_SET_PIVOT_VERTICAL, 
     CAM_ID_MAIN, CAM_ID_NONE, CAM_ID_SUB_FIRST, CAM_MODE_FOLLOW_BOOMERANG, CAM_MODE_NORMAL, CAM_SET_CS_ATTENTION, CAM_STAT_ACTIVE, CAM_STAT_UNK3, CAM_STAT_WAIT, CamActor, CamRequest, KeyFramesRef,
     OnePointCsFull, OnePointData, VecSphGeo, cam_binang_to_deg, diff_to_sph_geo, sph_geo_add, sph_geo_to_vec3,
 };
@@ -543,7 +543,7 @@ impl PlayState {
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
     /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908;
-    /// Phase 10's 3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604; Phase 11's 4100). The
+    /// Phase 10's 3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604; Phase 11's 4100 and 3100). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
     pub fn onepoint_cutscene_set_info(&mut self, sub: i16, cs_id: i16, actor: Option<CamActor>, timer: i16) -> i32 {
@@ -967,6 +967,20 @@ impl PlayState {
                 // side, then on Link (0x2121) until the camera is told it's done.
                 set_cs_info(self, if cs_id == 8603 { "D_801232CC" } else { "D_80123394" }, 5);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            3100 => {
+                // Jabu-Jabu's falling platform (Bg_Bdan_Objects type 3): the camera at (0, -280,
+                // -1400), under room 1's platform, looking at it (Actor_GetFocus), on
+                // CAM_SET_PIVOT_VERTICAL (Camera_Special0 follows it down), roll 0, fov 70; Player
+                // held (PLAYER_CSACTION_8) with the actors.
+                let Some(focus) = actor.map(|a| a.focus_pos) else { return 0 };
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_PIVOT_VERTICAL);
+                self.camera_set_at_eye(sub, focus, Vec3::new(0.0, -280.0, -1400.0));
+                if let Some(c) = self.camera_mut(sub) {
+                    c.roll = 0;
+                    c.fov = 70.0;
+                }
+                self.player_set_cs_action_with_halted_actors(None, 8);
             }
             4100 => {
                 // Zora's River's waterfall opening (Bg_Spot03_Taki): five keyframes (D_801225D4:

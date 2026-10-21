@@ -185,6 +185,12 @@ pub const CHARACTERS: &[Character] = &[
     c("Lord Jabu-Jabu", "En_Jj/eye0", Some(("object_jj", "gJabuJabuAnim")), &[], &[], &[]),
     // GAME-10 milestone 2: the Octorok (En_Okuta), floating.
     skel("Octorok", "object_okuta", "gOctorokSkel", Some(("object_okuta", "gOctorokFloatAnim")), &[], &[]),
+    // GAME-10 milestone 4: the Stinger (En_Eiyer, En_Weiyer), gliding.
+    skel("Stinger", "object_ei", "gStingerSkel", Some(("object_ei", "gStingerHitAnim")), &[], &[]),
+    // GAME-10 milestone 4: the Biri (En_Bili), its tentacles' first picture, its core's colours
+    // as drawn (not shocking); and the Flobbery (En_Brob) at its wobble's first frame.
+    c("Biri", "En_Bili/tentacles0_normal", Some(("object_bl", "gBiriMainAnim")), &[], &[], &[]),
+    skel("Flobbery", "object_brob", "gBrobSkel", Some(("object_brob", "gBrobWobbleAnim")), &[], &[]),
 
     // Castle Town and Hyrule Castle.
     c("Hylian (Dog Lady)", "En_Hy/type0_eye0", Some(("object_os_anime", "gObjOsAnim_092C")), &[], &[8, 9, 10], &[11, 12, 13]),

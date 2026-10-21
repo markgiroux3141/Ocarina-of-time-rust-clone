@@ -180,6 +180,8 @@ pub const CAM_SET_SCENE_TRANSITION: i16 = 0x2F;
 pub const CAM_SET_MEADOW_BIRDS_EYE: i16 = 0x35;
 pub const CAM_SET_MEADOW_UNUSED: i16 = 0x36;
 pub const CAM_SET_TURN_AROUND: i16 = 0x38;
+/// `CAM_SET_PIVOT_VERTICAL` ("CIRCLE6"): lowering platforms (`Camera_Special0`).
+pub const CAM_SET_PIVOT_VERTICAL: i16 = 0x39;
 pub const CAM_SET_MAX: i16 = 0x42;
 
 /// The mode functions ported (`CAM_FUNC_*`); the others fall back (`GameCamera::update`).
@@ -196,6 +198,7 @@ const PORTED: &[&str] = &[
     "CAM_FUNC_DATA4",
     "CAM_FUNC_UNIQ0",
     "CAM_FUNC_UNIQ2",
+    "CAM_FUNC_SPEC0",
     "CAM_FUNC_UNIQ3",
     "CAM_FUNC_UNIQ6",
     "CAM_FUNC_UNIQ7",
@@ -3681,6 +3684,7 @@ impl GameCamera {
                 Some("CAM_FUNC_BATT1") => self.battle1(d, col, p, f),
                 Some("CAM_FUNC_BATT4") => self.battle4(d, p),
                 Some("CAM_FUNC_SPEC6") => self.special6(d, col),
+                Some("CAM_FUNC_SPEC0") => self.special0(d, f.target.as_ref()),
                 _ => self.normal1(d, col, p, (CAM_SET_NORMAL0, CAM_MODE_NORMAL), frames),
             }
         } else if self.has_player {
@@ -5889,6 +5893,34 @@ impl GameCamera {
     /// plane, halfway along x to Player and a fifth of his climb up; `at` 100 ahead along the bg
     /// camera's rotation. A new bg camera (a new "screen") freezes Player 12 frames
     /// (`player_freeze`) while the eye eases over to it, the HUD down to the hearts.
+    /// `Camera_Special0` (`CAM_SET_PIVOT_VERTICAL`'s, one-point 3100's): the eye stays where it was
+    /// put, the at eases to the target's focus (`Camera_LERPCeilVec3f`, `lerpAtScale` across and up,
+    /// 0.1 off). With no target, or one killed, it lets go of it.
+    fn special0(&mut self, d: &CameraData, target: Option<&CamActor>) {
+        let key = self.cur();
+        // GET_NEXT_SCALED_RO_DATA, GET_NEXT_RO_DATA (the same each frame).
+        let lerp_at_scale = d.value(key, 0) as f32 * 0.01;
+        self.interface_flags = d.value(key, 1);
+        if self.anim_state == 0 {
+            self.anim_state += 1;
+        }
+        let Some(t) = target.filter(|t| t.alive) else {
+            if target.is_none() {
+                log::warn!("camera: warning: circle: target is not valid, stop!");
+            }
+            self.target = None;
+            return;
+        };
+        self.target_pos = t.focus_pos;
+        lerp_ceil_vec3(t.focus_pos, &mut self.at, lerp_at_scale, lerp_at_scale, 0.1);
+        self.pos_offset = self.at - self.player_pos;
+        self.dist = self.at.distance(self.eye);
+        self.xz_speed = 0.0;
+        if self.timer > 0 {
+            self.timer -= 1;
+        }
+    }
+
     fn special6(&mut self, d: &CameraData, col: &CollisionContext) {
         if matches!(self.anim_state, 0 | 10 | 20) {
             self.spec6.interface_field = d.value(self.cur(), 0);

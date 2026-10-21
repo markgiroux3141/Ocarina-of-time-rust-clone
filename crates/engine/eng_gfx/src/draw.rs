@@ -213,6 +213,10 @@ pub struct DrawList {
     pub materials: Vec<Material>,
     pub textures: Vec<TextureImage>,
     pub stats: Stats,
+    /// For each bone `k` a site matrix gave (`eng_gbi`'s `Segment::SiteMatrix`: a matrix the draw
+    /// computes every frame, multiplied onto the list's own), the matrix it was multiplied onto
+    /// (column-major): the draw's bone `k` is this times its matrix of the frame.
+    pub site_bases: Vec<[f32; 16]>,
     #[serde(skip)]
     material_lookup: HashMap<Material, usize>,
     #[serde(skip)]
@@ -223,7 +227,7 @@ pub struct DrawList {
 /// are only an index of those).
 impl PartialEq for DrawList {
     fn eq(&self, o: &DrawList) -> bool {
-        self.batches == o.batches && self.materials == o.materials && self.textures == o.textures && self.stats == o.stats
+        self.batches == o.batches && self.materials == o.materials && self.textures == o.textures && self.stats == o.stats && self.site_bases == o.site_bases
     }
 }
 

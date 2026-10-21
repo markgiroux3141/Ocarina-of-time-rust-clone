@@ -273,6 +273,15 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Jj", "Lord Jabu-Jabu", Group::Character),
     ("Bg_Spot08_Bakudankabe", "Fountain's bombable wall", Group::Object),
     ("Bg_Spot03_Taki", "Zora's River waterfall", Group::SetPiece),
+    ("En_Rr", "Like Like", Group::Enemy),
+    ("En_Bubble", "Shabom", Group::Enemy),
+    ("En_Bili", "Biri", Group::Enemy),
+    ("En_Brob", "Flobbery", Group::Enemy),
+    ("En_Weiyer", "Stinger (water)", Group::Enemy),
+    ("En_Eiyer", "Stinger (ground)", Group::Enemy),
+    ("Bg_Bdan_Switch", "Jabu-Jabu's switch", Group::Trigger),
+    ("Bg_Bdan_Objects", "Jabu-Jabu's lifts and water", Group::Object),
+    ("En_Siofuki", "Water spout", Group::Object),
     ("En_Okuta", "Octorok", Group::Enemy),
 ];
 

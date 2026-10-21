@@ -103,4 +103,7 @@ fn a_fish_for_lord_jabu_jabu_and_he_swallows_link() {
     assert_eq!(w.scene_id, 0x02);
     assert!(w.save.get_event_chk_inf(0x3A));
     assert_eq!(w.save.inventory.items[SLOT_BOTTLE_1], ITEM_BOTTLE_EMPTY);
+    // GAME-10 milestone 4 starts from this save.
+    let mut w = w;
+    ends_as_preset(&mut w, "jabu-jabu", |_| {});
 }

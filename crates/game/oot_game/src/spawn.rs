@@ -221,6 +221,15 @@ impl PlayState {
         Ok(h)
     }
 
+    /// `actor->parent = this` from `this`'s init for an actor it didn't spawn itself (`En_Eiyer`'s
+    /// leader taking its clones' clones): the initing actor has no handle yet, so `h` is linked to
+    /// it once it's spawned, as the children it spawns are. Outside an init, nothing.
+    pub fn adopt_from_init(&mut self, h: ActorHandle) {
+        if let Some(v) = self.init_children.last_mut() {
+            v.push(h);
+        }
+    }
+
     /// `Actor_SpawnEntry`.
     pub fn actor_spawn_entry(&mut self, e: &ActorEntry) -> Result<ActorHandle, SpawnFailure> {
         let p = Vec3::new(e.pos[0] as f32, e.pos[1] as f32, e.pos[2] as f32);

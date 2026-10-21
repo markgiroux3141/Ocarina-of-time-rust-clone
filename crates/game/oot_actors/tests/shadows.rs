@@ -116,7 +116,7 @@ fn the_circle_lies_on_a_sloped_floor_shrinking_and_fading_with_height() {
     let (at, poly) = find_floor(&w, 0.6..0.97);
     let n = normal_f(w.col.poly(poly).normal);
     let scale = Vec3::splat(0.01);
-    let s = ShadowRs { draw: ShadowDraw::Circle, scale: 30.0, alpha: 255, floor_height: at.y, floor_poly: Some(poly), feet_pos: [at; 2] };
+    let s = ShadowRs { draw: ShadowDraw::Circle, scale: 30.0, alpha: 255, floor_height: at.y, floor_poly: Some(poly), feet_pos: [at; 2], feet_floor: None };
     let draw = |s: &ShadowRs, h: f32, yaw: i16| {
         let mut out = Vec::new();
         shadow::draw(s, at + Vec3::Y * h, scale, yaw, &w.col, &[], &mut out);
@@ -186,4 +186,25 @@ fn actor_draw_puts_a_lying_rupee_s_circle_in_the_opaque_list() {
     assert!((c.transform.transform_vector3(Vec3::Y) - normal_f(w.col.poly(poly).normal)).length() < 1e-3);
     assert!((c.transform.transform_vector3(Vec3::X).length() - k * 6.0 * r.scale.x).abs() < 1e-4);
     assert!(!out.xlu.iter().any(|c| c.mesh == key), "no shadow in the translucent list");
+}
+
+#[test]
+fn the_feet_s_shadows_keep_to_a_moving_floor_between_game_frames() {
+    let Some(a) = assets() else { return };
+    let w = trail(&a);
+    // Two game frames on a floor sinking 4 (Jabu-Jabu's elevator): each frame's floors under the
+    // feet found when it's captured (ActorShadow_DrawFeet's func_800BFCB8, once a game frame).
+    // Drawn half way between them, each foot's shadow lies half way between those floors, whatever
+    // the collision holds now (here: no floor at all under the feet).
+    let feet = [Vec3::new(-10.0, -400.0, 0.0), Vec3::new(10.0, -400.0, 0.0)];
+    let s0 = ShadowRs { draw: ShadowDraw::Feet, scale: 1.0, alpha: 255, floor_height: -400.0, floor_poly: None, feet_pos: feet, feet_floor: Some([(-400.0, Some([0.0, 1.0, 0.0])); 2]) };
+    let s1 = ShadowRs { floor_height: -404.0, feet_pos: feet.map(|f| f - Vec3::Y * 4.0), feet_floor: Some([(-404.0, Some([0.0, 1.0, 0.0])); 2]), ..s0 };
+    let half = s0.lerp(&s1, 0.5);
+    let light = shadow::FootLight { dir: [0, 100, 0], color: [255, 255, 255] };
+    let mut out = Vec::new();
+    shadow::draw(&half, Vec3::new(0.0, -402.0, 0.0), Vec3::splat(0.01), 0, &w.col, &[light, light], &mut out);
+    assert!(!out.is_empty());
+    for c in &out {
+        assert!((c.transform.w_axis.y - -402.0).abs() < 1e-3, "{}", c.transform.w_axis);
+    }
 }

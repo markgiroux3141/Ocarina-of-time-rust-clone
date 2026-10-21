@@ -542,7 +542,9 @@ impl SceneCtx<'_> {
                     dynamic |= 1 << (s & 0xF);
                     Some(Segment::Data { buf: cmds_to_bytes(&self.materialize(cmds, notes)).into(), base: 0 })
                 }
-                drawcfg::Bind::Mtx => Some(Segment::Data { buf: identity_mtx(), base: 0 }),
+                // A matrix the config computes every frame (Jabu-Jabu's pulsing walls): the
+                // vertices under it get a bone of their own, which the room draw poses.
+                drawcfg::Bind::Mtx => Some(Segment::SiteMatrix),
                 drawcfg::Bind::Unknown(_) => None,
             };
             if seg.is_some() {

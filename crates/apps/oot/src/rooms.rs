@@ -104,8 +104,14 @@ pub fn submit_rooms(play: &PlayState, s: &SceneState, view: Mat4, out: &mut Draw
         for i in order {
             let e = &room.entries[i];
             for (k, (d, list)) in [(&e.opa, &mut out.opa), (&e.xlu, &mut out.xlu)].into_iter().enumerate() {
-                if d.as_ref().is_some_and(|d| !d.batches.is_empty()) {
+                if let Some(d) = d.as_ref().filter(|d| !d.batches.is_empty()) {
                     let mut cmd = DrawCmd::new(MeshKey::named(entry_key(s, room.index, i, k == 1)), Mat4::IDENTITY);
+                    // The lists' site matrices (Jabu-Jabu's pulsing walls): each the matrix it
+                    // was multiplied onto times the draw config's segment matrix of the frame.
+                    if !d.site_bases.is_empty() {
+                        let m = if k == 0 { s.draw.segment_matrix } else { None }.unwrap_or(Mat4::IDENTITY);
+                        cmd.bones = d.site_bases.iter().map(|b| Mat4::from_cols_array(b) * m).collect();
+                    }
                     cmd.params.segments = s.segments.as_ref().map(|v| v[k].clone());
                     cmd.params.texture_images = s.segment_textures[k].iter().chain(&written).cloned().collect();
                     list.push(cmd);

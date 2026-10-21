@@ -15,7 +15,7 @@ last section). The phase starts from the `fairy-magic` preset (GAME-09's exit re
 | 1 | Water and bottles | done (2026-10-20) |
 | 2 | Zora's River and Zora's Domain to the silver scale | done (2026-10-21) |
 | 3 | Ruto's letter, King Zora and Lord Jabu-Jabu | done (2026-10-21) |
-| 4 | Jabu-Jabu to the boomerang | next (`En_Boom` and Player's boomerang done early) |
+| 4 | Jabu-Jabu to the boomerang | done (2026-10-21) |
 | 5 | Jabu-Jabu to Barinade | |
 | 6 | Barinade and the Zora's Sapphire (the exit's first part) | |
 | 7 | The Ocarina of Time and the Song of Time (the exit's second part) | |
@@ -577,3 +577,159 @@ game, `shop`, `king`, `jabu`, `lake`, `lab`, `river`, `boomerang`), `sandbox-zor
 
 `scripts\run\game-zora.bat` (menu 155), as tested on 2026-10-21; `shop` and the bean seller in
 `river` are new since.
+
+## Milestone 4: Jabu-Jabu's Belly to the boomerang
+
+**The answer:** Jabu-Jabu's draw config (the flesh's scrolls, the view's breathing, the walls'
+pulse on matrices of their own), its switches, moving parts and spouts, and the six enemies on the
+way, all whole; the climbs settled by a search over the floors and the water; four short scripted
+runs from debug starts, no fights (the rooms marked cleared):
+
+- **Room 0's cow** (`Route::JabuCow`, the entrance on `jabu-jabu`): the slingshot put on C-Right
+  from the item page (the story's save has it on no button), the west cow's target shot (switch
+  0x15), door 1 unbarred with its attention camera, through into room 1. 591 frames.
+- **Room 1's elevator** (`Route::JabuElevator`, the end of door 1's corridor on `jabu-room-1`):
+  the elevator met coming level on its way down by a run-off jump, ridden to the bottom, into the
+  pit's water, under the shaft's wall (a dive), out onto the west ledge, the yellow switch 0x19
+  (door 2, its attention camera). 728 frames.
+- **Room 14's chest** (`Route::JabuBoomerang`, room 14 cleared on `jabu-room-14`, on the chest's
+  ledge): the boomerang (`GI_BOOMERANG`, text 0x35, treasure flag 6).
+- **Door 14** (`Route::JabuDoor14`, room 1's bottom on `jabu-boomerang`): through door 14 once the
+  chest has dropped the spout in front of it.
+
+Scripts: `scripts\run\game-jabu.bat` (menu 157: room 0, `elevator`, `flobbery`, `pit`, `spout`,
+`platform`, `room2`, `room14`, `boomerang`, `door14`), `test-jabu.bat` (158),
+`sandbox-jabu-runs.bat` (159).
+
+### What was built
+
+- **`SDC_JABU_JABU`** (ADR 0082): the scrolls (segments 8 and 0xB in Jabu-Jabu, 8 in Barinade's
+  room), the view's distortion every frame (`View_SetDistortion*`), the pulse quickened by a hit
+  on the flesh (`roomCtx.drawParams`, from `func_8002F9EC`: seeds, the boomerang, now the sword),
+  and the walls' pulse: segment 0x0D's matrix, which the rooms multiply onto their own before the
+  flesh panels' vertices, as a **site matrix** (`eng_gbi::Segment::SiteMatrix`, the pack's
+  `DrawList::site_bases`: format 30, `out/data27`) posed by the room draw every frame. Its statics
+  carry over a scene change. Added to the importer's draw-config comparison.
+- **`Bg_Bdan_Switch`** whole (blue, yellow, heavy, tall, the toggle), **`Bg_Bdan_Objects`** whole
+  (Big Octo's platform, its Big Octo a placeholder until milestone 8; the elevator; room 14's
+  water box; the falling platform), **`En_Siofuki`** whole (the spouts: the column lifts and pushes
+  Link), **one-point 3100** with **`Camera_Special0`**.
+- **The enemies** whole, by three helpers: `En_Bubble` (Shabom), `En_Bili` (Biri), `En_Brob`
+  (Flobbery), `En_Weiyer` and `En_Eiyer` (Stingers), `En_Rr` (Like Like: the grab, the swallow,
+  the theft of the shield or tunic, the drops).
+- **Player:** `PlayerIface::player_speed`, `set_player_speed`, `set_pushed` (the spout's writes);
+  the sword's `func_8002F9EC` sets `roomCtx.drawParams[0]`.
+- **The presets:** `jabu-jabu` (Jabu-Jabu's start: `Route::JabuFish`'s end), `jabu-room-1`,
+  `jabu-room-14`, `jabu-boomerang`, each a run's end.
+- **The runs:** `Route::JabuCow`, `JabuElevator`, `JabuBoomerang`, `JabuDoor14`; the tasks
+  `Task::DiveUnder` (A pressed at the surface and held under it, steering), and the slingshot's
+  tasks on whichever C button holds it; `JABU_STARTS` (the hand test's starts, each checked).
+
+### The way, settled
+
+A search over the floors (every floor of each 20-unit cell; walks, climbs to 71, falls; walls by
+line tests) and the scene's water boxes settled what the survey left open:
+
+- **Room 1's elevator** (x -60 to 60, z -1650 to -1760; its top -299 to -1242) stops 95 short of
+  door 1's corridor (-320) and of door 2's (-340): it's met by a run-off jump as it comes level.
+  Its shaft is walled (x about -300) from 62 under the water up. The pit (-1553) is water to -1248
+  (`waterBoxes[1]`): the west ledge (-1233, the yellow switch 0x19: door 2) is 160 over the pit's
+  ramp, joined to the rest only by the water west of the wall: dive under it. The yellow switch
+  opens **door 2** (to room 2), not door 14.
+- **Door 14 is shut to Link from room 1 until the boomerang's chest:** room 1's spout 0x15C6 (200
+  high, 200 wide) stands across it and pushes him back short of the door (x 257 of the door's
+  313). Its switch 0x17 is set by nothing in this ROM's Jabu-Jabu; it drops for good with the
+  chest's flag 6 (both room 14's spouts too). So door 14 is room 14's way *out*; the way *in* is
+  room 3's door 12 (Ruto on the blue switch 0x3C: milestones 5 and 8).
+- **Room 14's chest ledge** (-1073) is joined to nothing a walk, climb or swim reaches: 220 over
+  the floor, 135 over the water raised by the yellow switch 0x39 (`waterBoxes[7]`, -1283 to
+  -1208). The run starts on it, as the brief planned; how a child gets up there is the hand
+  test's (one to look for).
+- **Jabu's 106 floor-conveyor polygons** ("Things to check") are room 2's 80 (speed 3, each pointing
+  at one of its six holes down to room 3: the floor carries Link into them) and room 7's 26 (speed
+  2, drifting its floor to its middle and south door). Milestone 1's currents already push Link
+  along them (a test).
+
+### Results
+
+- Tests: `tests/jabu_objects.rs` (10: the yellow, blue and tall switches, the elevator and its
+  camera, the falling platform and one-point 3100, room 14's water, Big Octo's platform as far as
+  Ruto's part, the lowering and rising spouts, room 2's floor drifting into a hole),
+  `tests/jabu_runs.rs` (5: the four runs, each end checked against the next start's preset, and the
+  hand test's ten starts standing in their rooms), `oot_game`'s `scene` (2: the config's numbers;
+  the rooms' site matrices), the importer's draw-config comparison (Jabu-Jabu and Barinade's room
+  added), and the helpers' `en_bubble` (8), `en_bili` (13), `en_brob` (8), `en_weiyer` (5),
+  `en_eiyer` (8), `en_rr` (9). `zora_runs`' Jabu-Jabu run now ends as `jabu-jabu`.
+- The runs: room 0's cow 591 frames (shot at 181), the elevator 728 (on it at 183, down at 382,
+  under the wall at 530), the boomerang's chest 337 (text 0x35), door 14 135.
+- 1,632 tests pass, 1 ignored; `cargo test -p layering` passes; no warnings. The pack is format 30
+  (`out/data27`).
+- Goldens: against `out/golden_base32` 286 of 287 the same; `jabu_fish/shot.png` (its last frame
+  inside Jabu-Jabu) differs, proved in `target/game26proof` with run-time switches
+  (`out/golden_proof_g10m4.txt`): with Jabu-Jabu's draw config and its new actors both taken out
+  it's the base's again; either alone still differs. Its trace is the same. 7 new cases
+  (`jabu_cow`, `jabu_cow_shot` 175, `jabu_elevator`, `jabu_elevator_ride` 300, `jabu_boomerang`,
+  `jabu_door_14`, `jabu_room2_walls`): 297 hashes, 224 cases (`out/golden_base33`).
+
+### Found by hand (2026-10-21)
+
+- **Link's shadow z-fought on the moving elevator** (the port's): his feet's shadows took their
+  floor from a raycast at every drawn frame (60 a second) against the latest game frame's
+  collision, while the platform and his feet are drawn blended between game frames: on a platform
+  sinking 4 to 5 a frame the shadow fell up to that far under the drawn floor. The floors under the
+  feet are now found when each game frame is captured (as the C's `ActorShadow_DrawFeet` finds them
+  once a game frame) and blended with the rest (`ShadowRs::feet_floor`); a test. No golden moved.
+- **Link stutters slightly up and down on the elevator** (the C's): moving collision is stored as
+  whole numbers (`DynaPoly_ExpandSRT`: `BgCheck_Vec3fToVec3s`, `z_bgcheck.c:2963`), so Link stands
+  0 to 1 above the drawn platform, a different amount each frame (his steps down 3, 4 or 5 where
+  the platform's are 3.6 to 5.3). Left as the game has it (the user's call, 2026-10-21: for now; a draw-only smoothing onto the platform's exact height is the option).
+
+### Corrections to the survey
+
+- Yellow 0x19 opens door 2 (room 2), and door 14 can't be used from room 1 before the chest (above).
+- Room 1's pit is water (-1248), the shaft walled: the west ledge is reached under water.
+- The story's save has the slingshot on no C button (the bottle, the ocarina, the bombs).
+- The story's presets after the diving game (`zora-letter`, `jabu-fish`, `jabu-jabu`) lack the
+  silver scale the letter needs (BACKLOG #102): the dive under room 1's wall needs none.
+
+### Known gaps
+
+- Big Octo (`En_Bigokuta`) is a placeholder on its platform until milestone 8; one-points 3070,
+  3080, 3090 log until then. Ruto (`En_Ru1`) is milestone 5's.
+- The rumble (`Rumble_Request`) isn't modelled.
+- `eng_math::rad_to_binang` rounds where the C's `RAD_TO_BINANG` truncates (BACKLOG #101; the spout
+  truncates in its own module).
+
+### How to check
+
+```
+scripts\run\test-jabu.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-jabu-runs.bat
+```
+
+### By hand
+
+`scripts\run\game-jabu.bat` (menu 157):
+
+1. Empty (room 0, `jabu-jabu`): watch the walls breathe and the floor's flesh scroll; the side
+   panels' thickness pulses. Fight the Shaboms (they burst on touch: sword them) and the Octorok
+   in the water. Put the slingshot on a C button and shoot the west cow's target: door 1 opens with
+   a camera on it.
+2. `elevator`: run off the corridor's end onto the elevator as it comes down past you, ride it to
+   the bottom, swim west, dive under the wall (A at the surface, held), climb out, step on the
+   yellow switch (a camera on door 2). The elevator's camera (`CAM_SET_NORMAL2`) while you ride.
+3. `flobbery`: the three Flobberies on the west walkway (they rise round you and throw you off;
+   the Kokiri Sword stuns them, the boomerang too); the Biris over the shaft (their shock).
+4. `pit`: the Stinger in the water (it comes at you swimming, jumps out after you); the tall switch
+   on the pit's bottom (the compass's chest).
+5. `spout`: walk into the spout across door 14: it lifts you to its top and pushes you back.
+6. `platform`: step on the falling platform: the camera under it looking up, the platform drops
+   400.
+7. `room2`: the Biris, the Flobbery; stand still on the floor: it carries you into a hole (room 3).
+8. `room14`: the two Stingers (they come up from the floor), the Like Like (let it swallow you: it
+   takes the Deku Shield), the Lizalfos; the yellow switch by the water raises it for 100 frames
+   (ticking). Look for a way up to the chest's ledge.
+9. `boomerang`: open the chest: the boomerang. `door14` (after it): through door 14.

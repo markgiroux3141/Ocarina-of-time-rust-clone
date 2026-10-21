@@ -881,6 +881,26 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         },
     },
     SavePreset {
+        name: "jabu-jabu",
+        about: "jabu-fish's save as Route::JabuFish leaves it: the fish let out (the bottle empty on C-Left), Lord Jabu-Jabu opened (EVENTCHKINF_OPENED_JABU_JABU, 0x3A) and his belly's intro seen (EVENTCHKINF_B5): GAME-10 milestone 4's start, inside at the entrance",
+        apply: jabu_jabu,
+    },
+    SavePreset {
+        name: "jabu-room-1",
+        about: "jabu-jabu with the slingshot on C-Right (the bombs off it) and room 0's west cow shot (Jabu-Jabu's switch flag 0x15: door 1 open, a seed used), room 1 visited: Route::JabuCow's end, Route::JabuElevator's start",
+        apply: jabu_room_1,
+    },
+    SavePreset {
+        name: "jabu-room-14",
+        about: "jabu-room-1 with room 1's yellow switch stepped on (switch flag 0x19: door 2 open): Route::JabuElevator's end",
+        apply: jabu_room_14,
+    },
+    SavePreset {
+        name: "jabu-boomerang",
+        about: "jabu-room-14 with room 14's chest opened (treasure flag 6: the boomerang, Item_Give(ITEM_BOOMERANG); the spouts of rooms 1 and 14 down for good): Route::JabuBoomerang's end",
+        apply: jabu_boomerang,
+    },
+    SavePreset {
         name: "boomerang",
         about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
         apply: |s| {
@@ -1090,6 +1110,57 @@ fn zoras_domain(s: &mut SaveContext) {
     fairy_magic(s);
     s.set_event_chk_inf(0x39);
     s.set_event_chk_inf(0xA4);
+}
+
+/// `jabu-jabu`'s save: `jabu-fish`'s once the fish is let out and Lord Jabu-Jabu has swallowed
+/// Link (`Route::JabuFish`'s end).
+fn jabu_jabu(s: &mut SaveContext) {
+    zoras_domain(s);
+    s.set_event_chk_inf(0x31);
+    s.set_event_chk_inf(0x33);
+    s.set_event_chk_inf(0xB7);
+    // EVENTCHKINF_OPENED_JABU_JABU (save.h: 0x3A), EVENTCHKINF_B5 (gJabuIntroCs seen).
+    s.set_event_chk_inf(0x3A);
+    s.set_event_chk_inf(0xB5);
+    s.inventory.items[crate::item::SLOT_BOTTLE_1] = crate::item::ITEM_BOTTLE_EMPTY;
+    s.equip_item_on_c_left(crate::item::ITEM_BOTTLE_EMPTY);
+    // Room 0 on the map (Map_InitRoomData: room 0, its floor's bit 6).
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.rooms |= 1 << 0;
+    f.floors |= 1 << 6;
+}
+
+/// `SCENE_JABU_JABU` (`scene_table.h`: 0x02).
+const SCENE_JABU_JABU: usize = 0x02;
+
+/// `jabu-room-1`'s save (`Route::JabuCow`'s end): the slingshot on C-Right (the bombs off it),
+/// a seed shot, the west cow's flag 0x15.
+fn jabu_room_1(s: &mut SaveContext) {
+    jabu_jabu(s);
+    s.equip_item_on_c(2, crate::item::ITEM_SLINGSHOT);
+    crate::item::inventory_change_ammo(s, crate::item::ITEM_SLINGSHOT, -1);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.swch |= 1 << 0x15;
+    f.rooms |= 1 << 1;
+}
+
+/// `jabu-room-14`'s save (`Route::JabuElevator`'s end): the yellow switch's flag 0x19.
+fn jabu_room_14(s: &mut SaveContext) {
+    jabu_room_1(s);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.swch |= 1 << 0x19;
+    // The pit's floor on the map (Map_InitRoomData: room 1's lower floor, bit 7).
+    f.floors |= 1 << 7;
+}
+
+/// `jabu-boomerang`'s save (`Route::JabuBoomerang`'s end): the chest's treasure flag 6 and the
+/// boomerang, room 14 visited.
+fn jabu_boomerang(s: &mut SaveContext) {
+    jabu_room_14(s);
+    item_give(s, None, crate::item::ITEM_BOOMERANG);
+    let f = &mut s.scene_flags[SCENE_JABU_JABU];
+    f.chest |= 1 << 6;
+    f.rooms |= 1 << 14;
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:

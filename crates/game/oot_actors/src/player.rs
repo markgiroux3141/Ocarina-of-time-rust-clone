@@ -229,6 +229,9 @@ pub enum PlayRequest {
     FreezeFlash,
     /// `sBloodFuncs[kind]` at `pos` (`func_8002F9EC`'s `CollisionCheck_BlueBlood`).
     Blood { kind: u8, pos: Vec3 },
+    /// `func_8002F9EC`'s `play->roomCtx.drawParams[0] = 1` (Jabu-Jabu's draw config quickens its
+    /// pulse).
+    RoomDrawParam0,
     /// `Player_RequestQuake(play, speed, y, duration)`: a decaying quake (type 3) on the main
     /// camera (`crate::quake`).
     Quake { speed: i32, y: i32, duration: i32 },
@@ -4975,9 +4978,10 @@ impl Player {
     }
 
     /// `func_8002F9EC` (`z_actor.c`): the sword on a `FLOOR_TYPE_8` surface (Jabu-Jabu's
-    /// flesh): blue blood and `NA_SE_IT_WALL_HIT_BUYO`. (`roomCtx.drawParams[0]` isn't modelled.)
+    /// flesh): `roomCtx.drawParams[0]` 1, blue blood and `NA_SE_IT_WALL_HIT_BUYO`.
     fn func_8002f9ec(&mut self, env: &Env, poly: eng_collision::bgcheck::PolyId, pos: Vec3) -> bool {
         if env.col.floor_type(poly) == FLOOR_TYPE_8 {
+            self.play_requests.push(PlayRequest::RoomDrawParam0);
             self.play_requests.push(PlayRequest::Blood { kind: cc::BLOOD_BLUE, pos });
             self.play_sfx(NA_SE_IT_WALL_HIT_BUYO);
             return true;
@@ -13019,6 +13023,16 @@ impl PlayerIface for Player {
     fn set_yaw(&mut self, yaw: i16) {
         self.current_yaw = yaw;
     }
+    fn player_speed(&self) -> f32 {
+        self.linear_velocity
+    }
+    fn set_player_speed(&mut self, speed: f32) {
+        self.linear_velocity = speed;
+    }
+    fn set_pushed(&mut self, yaw: i16, speed: f32) {
+        self.pushed_yaw = yaw;
+        self.pushed_speed = speed;
+    }
     fn is_dropping_fish(&self) -> bool {
         self.action == Action::BottleDrop && self.item_ap == PLAYER_IA_BOTTLE_FISH
     }
@@ -13278,6 +13292,11 @@ fn apply_play_request(play: &mut PlayState, r: PlayRequest) {
         PlayRequest::FreezeFlash => {
             if play.actors.freeze_flash_timer == 0 {
                 play.actors.freeze_flash_timer = 1;
+            }
+        }
+        PlayRequest::RoomDrawParam0 => {
+            if let Some(s) = &mut play.scene {
+                s.draw.room_draw_params[0] = 1;
             }
         }
         PlayRequest::Blood { kind, pos } => play.collision_check_hit_fx(vec![cc::HitFx::Blood(kind, pos)]),

@@ -700,6 +700,10 @@ impl PlayState {
                 // So is sQuakeRequests, which Play_Init's Quake_Init clears.
                 next.quake = self.quake;
                 next.quake.quake_init();
+                // So are Scene_DrawConfigJabuJabu's statics.
+                if let (Some(n), Some(s)) = (&mut next.scene, &self.scene) {
+                    n.draw.jabu = s.draw.jabu;
+                }
                 // gWeatherMode and the lightning bolts are z_kankyo.c's (Environment_Init resets the
                 // strike and the bolts, which play_init_with did on next's defaults).
                 next.env_statics.weather_mode = self.env_statics.weather_mode;

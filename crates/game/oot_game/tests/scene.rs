@@ -402,3 +402,81 @@ fn rooms_carry_their_wind_settings() {
     assert_eq!(room("spot16_scene", 0, 0).wind, Some(([-100, -1, 20], 130)));
     assert!((0..4).all(|i| room("spot18_scene", 0, i).wind.is_none()));
 }
+
+#[test]
+fn jabu_jabu_breathes_and_its_pulse_quickens_after_a_hit() {
+    // Scene_DrawConfigJabuJabu (z_scene_table.c): the statics start at D_8012A39C 538,
+    // D_8012A3A0 4272, D_8012A398 0.0; each frame both phases go up 1820 and the pulse 0.15 plus
+    // drawParams[1] thousandths.
+    let mut st = DrawConfigState { scene_id: 0x02, ..state(0) };
+    scene_table::segment_values("SDC_JABU_JABU", &mut st).unwrap();
+    assert_eq!((st.jabu.d_8012a39c, st.jabu.d_8012a3a0), (538 + 1820, 4272 + 1820));
+    let temp = 0.020000001f32;
+    let turn = (360.00018f32 / 65535.0) * (std::f32::consts::PI / 180.0);
+    let (a, c) = (2358i16, 6092i16);
+    let d = st.distortion.expect("View_SetDistortion*");
+    assert_eq!(d.orientation, [turn * temp * eng_math::cos_s(a), turn * temp * eng_math::sin_s(a), turn * temp * eng_math::sin_s(c)]);
+    assert_eq!(d.scale, [1.0 + 0.79999995 * temp * eng_math::sin_s(c), 1.0 + 0.39999998 * temp * eng_math::cos_s(c), 1.0 + temp * eng_math::cos_s(a)]);
+    assert_eq!(d.speed, 0.95);
+    // Matrix_Scale(1.005f, sinf(D_8012A398) * 0.8f, 1.005f) but in room 2, as MATRIX_FINALIZE's s15.16.
+    let fixed = |v: f32| (v * 65536.0) as i32 as f32 / 65536.0;
+    assert_eq!(st.jabu.d_8012a398, 0.15);
+    let m = st.segment_matrix.expect("segment 0x0D");
+    assert_eq!(m, glam::Mat4::from_scale(Vec3::new(fixed(1.005), fixed(0.15f32.sin() * 0.8), fixed(1.005))));
+    assert_eq!(fixed(1.005), 65863.0 / 65536.0);
+    st.cur_room = 2;
+    scene_table::segment_values("SDC_JABU_JABU", &mut st).unwrap();
+    assert_eq!(st.segment_matrix.unwrap().x_axis.x, 1.0);
+    // A hit on the flesh (func_8002F9EC: drawParams[0] 1): drawParams[1] up 200 a frame to 1200,
+    // then (drawParams[0] 2) down 30 a frame to 0, and back to 0, 0.
+    st.room_draw_params = [1, 0];
+    let mut seen = Vec::new();
+    let mut pulse = st.jabu.d_8012a398;
+    for _ in 0..50 {
+        scene_table::segment_values("SDC_JABU_JABU", &mut st).unwrap();
+        pulse += 0.15 + st.room_draw_params[1] as f32 * 0.001;
+        assert_eq!(st.jabu.d_8012a398, pulse);
+        seen.push(st.room_draw_params);
+    }
+    assert_eq!(&seen[..7], &[[1, 200], [1, 400], [1, 600], [1, 800], [1, 1000], [1, 1200], [2, 1200]]);
+    assert_eq!(seen[7], [2, 1170]);
+    assert_eq!(seen[46], [2, 0]);
+    assert_eq!(seen[47], [0, 0]);
+    // Barinade's room (SCENE_JABU_JABU_BOSS 0x13): one scroll on segment 8, Gfx_TexScroll((127 -
+    // frames) % 128, frames % 128, 32, 32) with the frames a u32.
+    let mut boss = DrawConfigState { scene_id: 0x13, ..state(130) };
+    let [opa, xlu] = scene_table::segment_values("SDC_JABU_JABU", &mut boss).unwrap();
+    assert_eq!(opa, { let mut v = eng_gfx::SegmentValues::default(); v.read(8, &scene_table::gfx_tex_scroll(125, 2, 32, 32)); v });
+    assert_eq!(xlu, eng_gfx::SegmentValues::default());
+}
+
+#[test]
+fn jabu_jabu_s_flesh_pulses_on_bones_of_its_own() {
+    let Ok(pack) = GamePack::open_default() else { return };
+    // The rooms' lists multiply the matrix of segment 0x0D (gSPMatrix(0x0D000000, G_MTX_NOPUSH |
+    // G_MTX_MUL | G_MTX_MODELVIEW)) onto one they load from the room's file: Jabu-Jabu's rooms 2
+    // (8 times) and 8 to 12 (17 each), Barinade's room 1 (8), all in their OPA lists. Each load
+    // is a bone, its base the room's matrix (bdan_room_2's first, at 0x3070: a translation to
+    // (-75.6, -340, -2825)), the vertices under it in their own space (the panels 20 thick).
+    let check = |scene: &str, want: &[(usize, usize)]| {
+        let s = pack.scene(scene).expect("scene");
+        for (i, k) in s.layers[0].rooms.iter().enumerate() {
+            let r = pack.room(k).expect("room");
+            let n: usize = r.entries.iter().filter_map(|e| e.opa.as_ref()).map(|d| d.site_bases.len()).sum();
+            let n_xlu: usize = r.entries.iter().filter_map(|e| e.xlu.as_ref()).map(|d| d.site_bases.len()).sum();
+            assert_eq!(n, want.iter().find(|(w, _)| *w == i).map_or(0, |(_, n)| *n), "{scene} room {i}");
+            assert_eq!(n_xlu, 0, "{scene} room {i}");
+        }
+    };
+    check("bdan_scene", &[(2, 8), (8, 17), (9, 17), (10, 17), (11, 17), (12, 17)]);
+    check("bdan_boss_scene", &[(1, 8)]);
+    let s = pack.scene("bdan_scene").unwrap();
+    let r = pack.room(&s.layers[0].rooms[2]).unwrap();
+    let d = r.entries[0].opa.as_ref().unwrap();
+    let base = glam::Mat4::from_cols_array(&d.site_bases[0]);
+    assert!(base.w_axis.truncate().abs_diff_eq(Vec3::new(-75.60287, -340.0, -2824.9805), 0.001), "{base}");
+    let under: Vec<_> = d.batches.iter().flat_map(|b| &b.vertices).filter(|v| v.bone == 0).collect();
+    assert!(!under.is_empty());
+    assert!(under.iter().all(|v| v.pos.y.abs() <= 10.0), "the panel in its own space");
+    assert!(d.batches.iter().flat_map(|b| &b.vertices).all(|v| v.bone == eng_gfx::NO_BONE || (v.bone as usize) < d.site_bases.len()));
+}

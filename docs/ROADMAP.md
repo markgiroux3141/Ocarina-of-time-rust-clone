@@ -775,8 +775,13 @@ scarecrows). Decided 2026-10-20 (every recommendation). **Milestone 1 done** (20
 water and bottles, the fish and bugs, the water's effects, the currents, the underwater view);
 milestones 2's and 3's actors merged (the river, the Domain, the diving game, the lake, the lab,
 the fountain, Jabu-Jabu) with `game-zora.bat`'s debug starts; **milestones 2 and 3 done**
-(2026-10-21: hand-tested, the river, King Zora and Jabu-Jabu runs). Next: milestone 4. Found: in MQ neither Ruto nor Big Octo is on the way to
-Barinade; the silver scale is required for Ruto's letter.
+(2026-10-21: hand-tested, the river, King Zora and Jabu-Jabu runs). **Milestone 4**
+(2026-10-21, ADR 0082: Jabu-Jabu's draw config with the walls' pulse as site matrices, pack format
+30; its switches, lifts and spouts; the six enemies; the runs to room 1's yellow switch and the
+boomerang), **done** (2026-10-21, hand-tested; the elevator's foot shadows fixed). Next: milestone
+5. Found: in MQ neither Ruto nor Big Octo is on the way to
+Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
+(room 1's spout across it drops only with the boomerang's chest).
 
 ## Cross-cutting debts
 
