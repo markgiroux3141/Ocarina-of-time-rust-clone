@@ -605,8 +605,20 @@ pub enum Step {
     StickChest,
     /// Room 5: the crystal switch hit (`Obj_Switch` 0x1403: switch flag 0x14, door 0).
     CrystalShot,
-    /// Barinade's room (`SCENE_JABU_JABU_BOSS`) entered, Link landed and standing.
+    /// Barinade's room (`SCENE_JABU_JABU_BOSS`) entered (his intro takes Link at once).
     BarinadesRoom,
+    /// Barinade's intro over (`EVENTCHKINF_BEGAN_BARINADE_BATTLE`, the camera back, Link free):
+    /// the fight begins.
+    BarinadeBattle,
+    /// Link in Ruto's warp (`DoorWarp1_RutoWarpIdle` done: `WARP_BLUE_RUTO_STATE_ENTERED`).
+    RutoWarpEntered,
+    /// Ruto's words in her warp read (`WARP_BLUE_RUTO_STATE_WARPING`): the warp takes them.
+    RutoWarpTalked,
+    /// The Zora's Sapphire's cutscene (`gZorasFountainSapphireCs`) over: its terminator's
+    /// transition started.
+    SapphireOver,
+    /// Zora's Fountain (`ENTR_ZORAS_FOUNTAIN_0`: in the water by Jabu-Jabu), Link free.
+    ZorasFountain,
 }
 
 impl Step {
@@ -845,6 +857,11 @@ impl Step {
             Step::StickChest => "stick_chest",
             Step::CrystalShot => "crystal_shot",
             Step::BarinadesRoom => "barinades_room",
+            Step::BarinadeBattle => "barinade_battle",
+            Step::RutoWarpEntered => "ruto_warp_entered",
+            Step::RutoWarpTalked => "ruto_warp_talked",
+            Step::SapphireOver => "sapphire_over",
+            Step::ZorasFountain => "zoras_fountain",
         }
     }
 }
@@ -1130,6 +1147,16 @@ pub enum Route {
     /// from the pool (switch 0x14), door 0 into room 15, whose floor is exit 2: the fall into
     /// Barinade's room (`ENTR_JABU_JABU_BOSS_0`).
     JabuCrystal,
+    /// GAME-10 milestone 6: Barinade's room as Link falls in (`jabu-barinade`): his intro
+    /// (`BossVa_BodyIntro`: the door shut, the Bari called, the title card) to the fight's start.
+    /// No fight: that's the hand test's.
+    Barinade,
+    /// GAME-10 milestone 6: Barinade's room after his defeat (`barinade-beaten`, a debug start: his
+    /// cleared room's init leaves Ruto, who rises through her blue warp, and the heart container):
+    /// the heart container, into Ruto's warp, her words, the warp out (`EVENTCHKINF_37`, the Zora's
+    /// Sapphire), `gZorasFountainSapphireCs` on Zora's Fountain's layer 4 to its terminator, and the
+    /// fountain: Phase 11's exit, part 1.
+    Sapphire,
 }
 
 /// `Route::Meadow`'s tasks. The Lost Woods' rooms are clearings about 400 across on a grid of
@@ -1913,7 +1940,7 @@ const SCENE_JABU_JABU_BOSS: u16 = 0x13;
 /// floor (-320) drops 70 to its pool's slope; from the pool (-440, 20 deep) the crystal shot with
 /// the slingshot (C-Right); back up the 62 step to the south floor, door 0 (barred until the
 /// crystal's flag) into room 15, whose whole floor (x 1220 to 1500, z -2119 to -2399) is exit 2's:
-/// Barinade's room, Link falling in from its ceiling.
+/// Barinade's room, entered.
 fn jabu_crystal_tasks() -> Vec<Task> {
     vec![
         Task::Settle(None),
@@ -1928,9 +1955,55 @@ fn jabu_crystal_tasks() -> Vec<Task> {
         // (x 1460, -320) along z -1900.
         Task::Walk(vec![Vec3::new(1620.0, -440.0, -1800.0), Vec3::new(1700.0, -400.0, -1860.0), Vec3::new(1690.0, -390.0, -1910.0), Vec3::new(1460.0, -320.0, -1920.0), Vec3::new(1360.0, -320.0, -2000.0)]),
         Task::OpenSlidingDoor(JABU_DOOR_0, JABU_DOOR_0_FRONT, Step::DoorOpened),
+        // Barinade's intro takes Link at once (his init's INTRO_START): the run ends as the room
+        // is entered, before it sets EVENTCHKINF_BEGAN_BARINADE_BATTLE (Route::Barinade's).
         Task::Texts(|w| w.scene_id == SCENE_JABU_JABU_BOSS, Step::BarinadesRoom),
-        Task::Settle(None),
     ]
+}
+
+/// `EVENTCHKINF_BEGAN_BARINADE_BATTLE` (`save.h`: 0x76).
+const EVENTCHKINF_BEGAN_BARINADE_BATTLE: u16 = 0x76;
+
+/// `Route::Barinade`'s tasks: Link falls into the room and Barinade's intro takes him at once
+/// (`INTRO_START`: `PLAYER_CSACTION_8`, turned to face him); the door shut, the Bari called down
+/// and attached, the title card; until it hands the camera back and the fight begins.
+fn barinade_tasks() -> Vec<Task> {
+    vec![Task::Texts(
+        |w| w.save.get_event_chk_inf(EVENTCHKINF_BEGAN_BARINADE_BATTLE) && !w.player_in_cs_mode() && w.active_cam_id == oot_game::camera::CAM_ID_MAIN,
+        Step::BarinadeBattle,
+    )]
+}
+
+/// `SCENE_ZORAS_FOUNTAIN` (`scene_table.h`: 0x59).
+const SCENE_ZORAS_FOUNTAIN: u16 = 0x59;
+
+/// `Route::Sapphire`'s tasks, from the room's spawn after Barinade's defeat: the heart container
+/// (its get-item text; 160 east of where he hung), Ruto's warp once she has risen (into it: she
+/// marks Link's spot and turns him to her), A through her words (0x4022) until the warp warps,
+/// the warp out to Zora's Fountain (`ENTR_ZORAS_FOUNTAIN_0`, `CS_INDEX_0`: layer 4),
+/// `gZorasFountainSapphireCs` with A through its texts (0x4025's choice: the first answer) until
+/// its terminator (13) starts the transition, and the fountain (layer 0), Link treading water.
+fn sapphire_tasks() -> Vec<Task> {
+    vec![
+        Task::Settle(None),
+        Task::TakeHeart(Step::HeartTaken),
+        Task::IntoRutoWarp(Step::RutoWarpEntered),
+        Task::Texts(|w| ruto_warp(w).is_some_and(|d| d.ruto_warp_state == crate::door_warp1::WARP_BLUE_RUTO_STATE_WARPING), Step::RutoWarpTalked),
+        Task::WarpOut(Step::WarpedOut),
+        Task::WarpCutscene(4000, Step::SapphireOver),
+        // ENTR_ZORAS_FOUNTAIN_0's spawn (layer 0's spawn 0, -1480, -10, 1755) is in the water by
+        // Jabu-Jabu: Link treads water there, so no standing settle.
+        Task::Texts(
+            |w| w.scene_id == SCENE_ZORAS_FOUNTAIN && w.save.scene_layer == 0 && w.transition.trigger == TRANS_TRIGGER_OFF && w.transition.mode == TRANS_MODE_OFF && !w.player_in_cs_mode(),
+            Step::ZorasFountain,
+        ),
+    ]
+}
+
+/// Ruto's blue warp (`Door_Warp1` `WARP_BLUE_RUTO`), if it's there.
+fn ruto_warp(w: &PlayState) -> Option<&crate::door_warp1::DoorWarp1> {
+    use crate::door_warp1::{DoorWarp1, WARP_BLUE_RUTO};
+    w.actors.all().into_iter().find_map(|h| w.actors.downcast::<DoorWarp1>(h).filter(|d| d.actor.params == WARP_BLUE_RUTO && !d.actor.killed))
 }
 
 /// `Route::JabuFish`'s tasks: from spawn 2 to 100 west of the feeding spot (`En_Jj`'s
@@ -2592,6 +2665,8 @@ impl Route {
             Route::JabuFish => "ENTR_ZORAS_FOUNTAIN_2",
             // Spawn 0, room 0; the debug starts change room.
             Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => "ENTR_JABU_JABU_0",
+            // Spawn 0, room 1: Link falls in from room 15.
+            Route::Barinade | Route::Sapphire => "ENTR_JABU_JABU_BOSS_0",
             _ => "ENTR_LINKS_HOUSE_0",
         }
     }
@@ -2645,6 +2720,8 @@ impl Route {
             Route::JabuRuto => Some("jabu-boomerang"),
             Route::JabuWeb => Some("jabu-room-7"),
             Route::JabuCrystal => Some("jabu-crystal"),
+            Route::Barinade => Some("jabu-barinade"),
+            Route::Sapphire => Some("barinade-beaten"),
             Route::ShieldChest => Some("cavern-stairs"),
             Route::SwordChest | Route::MidoShop | Route::NewSaveDekuTree | Route::NewFileDekuTree => None,
         }
@@ -2922,6 +2999,8 @@ impl Route {
             Route::JabuRuto => "jabu-ruto",
             Route::JabuWeb => "jabu-web",
             Route::JabuCrystal => "jabu-crystal",
+            Route::Barinade => "barinade",
+            Route::Sapphire => "sapphire",
         }
     }
 
@@ -2982,6 +3061,8 @@ impl Route {
             Route::KingZora => 3000,
             Route::JabuFish => 3000,
             Route::JabuCow | Route::JabuElevator | Route::JabuBoomerang | Route::JabuDoor14 | Route::JabuRuto | Route::JabuWeb | Route::JabuCrystal => 3000,
+            Route::Barinade => 3000,
+            Route::Sapphire => 5000,
             _ => Playthrough::MAX_FRAMES,
         }
     }
@@ -2994,7 +3075,7 @@ impl Route {
 
     /// The route a sandbox script names.
     pub fn from_script(name: &str) -> Option<Route> {
-        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal].into_iter().find(|r| r.script() == name)
+        [Route::DekuTree, Route::SwordChest, Route::MidoShop, Route::NewSaveDekuTree, Route::NewFileDekuTree, Route::DekuBaba, Route::Combat, Route::Scrub, Route::Shutter, Route::Stick, Route::Push, Route::Slingshot, Route::Pause, Route::DungeonMap, Route::GameOver, Route::Save, Route::Gohma, Route::BlueWarp, Route::BossRoom, Route::Emerald, Route::Creation, Route::Farewell, Route::Dusk, Route::Field, Route::FieldNight, Route::Market, Route::Castle, Route::CastleCaught, Route::Ocarina, Route::Zelda, Route::ZeldaTalk, Route::Kakariko, Route::Graveyard, Route::Meadow, Route::LostWoods, Route::Ranch, Route::Bombs, Route::Darunia, Route::Boulder, Route::BombBag, Route::Gravestone, Route::Pillar, Route::Skull, Route::KingDodongo, Route::Ruby, Route::FairyWall, Route::GreatFairy, Route::SummitOwl, Route::FallingStairs, Route::SilverRupees, Route::ShieldChest, Route::TimeBlocks, Route::Bottle, Route::ZorasRiver, Route::KingZora, Route::JabuFish, Route::JabuCow, Route::JabuElevator, Route::JabuBoomerang, Route::JabuDoor14, Route::JabuRuto, Route::JabuWeb, Route::JabuCrystal, Route::Barinade, Route::Sapphire].into_iter().find(|r| r.script() == name)
     }
 }
 
@@ -3250,6 +3331,9 @@ enum Task {
     /// Until the blue warp (`Door_Warp1` 0) has grown in, then into it until it takes Link
     /// (`DoorWarp1_ChildWarpOut`).
     IntoWarp(Step),
+    /// Until Ruto's blue warp (`Door_Warp1` `WARP_BLUE_RUTO`) is ready (she has risen through it),
+    /// then into it until it holds Link (`DoorWarp1_RutoWarpIdle` done).
+    IntoRutoWarp(Step),
     /// Idle until the scene changes.
     WarpOut(Step),
     /// Kokiri Forest's arrival: idle as Link falls (`Step::Arrived` once he's landed), A through
@@ -3764,6 +3848,8 @@ impl Playthrough {
             Route::JabuRuto => jabu_ruto_tasks(),
             Route::JabuWeb => jabu_web_tasks(),
             Route::JabuCrystal => jabu_crystal_tasks(),
+            Route::Barinade => barinade_tasks(),
+            Route::Sapphire => sapphire_tasks(),
             Route::Ocarina => vec![
                 Task::Settle(None),
                 // Saria's Song: Navi talks (0xE0, naviTextId -0xE0): yes, Saria's text, then no
@@ -4891,6 +4977,7 @@ impl Playthrough {
             Task::GohmaWaitGone(step) => self.gohma_wait_gone(w, step),
             Task::TakeHeart(step) => self.take_heart(w, step),
             Task::IntoWarp(step) => self.into_warp(w, step),
+            Task::IntoRutoWarp(step) => self.into_ruto_warp(w, step),
             Task::WarpOut(step) => {
                 if self.sub == 0 {
                     self.scene_changes = w.scene_changes;
@@ -5815,6 +5902,25 @@ impl Playthrough {
                 None
             }
             Some(d) if d.action == WA::ChildWarpIdle => Some(stick_towards(w, d.actor.world_pos, SLOW)),
+            _ => Some(idle),
+        }
+    }
+
+    /// `Task::IntoRutoWarp`.
+    fn into_ruto_warp(&mut self, w: &PlayState, step: Step) -> Option<PadState> {
+        use crate::door_warp1::{Action as WA, WARP_BLUE_RUTO_STATE_INITIAL};
+        let idle = PadState::default();
+        self.wait += 1;
+        if self.wait > 900 {
+            self.failure = Some("Ruto's warp never took Link".into());
+            return None;
+        }
+        match ruto_warp(w) {
+            Some(d) if d.action == WA::RutoWarpIdle && d.ruto_warp_state != WARP_BLUE_RUTO_STATE_INITIAL => Some(stick_towards(w, d.actor.world_pos, SLOW)),
+            Some(d) if d.action != WA::RutoWarpIdle && d.action != WA::WarpAppear => {
+                self.finish(Some(step));
+                None
+            }
             _ => Some(idle),
         }
     }

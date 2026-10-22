@@ -12,7 +12,18 @@
 //!   cutscene 0xFFF1 (the Deku Tree's emerald, part 1); later `ENTR_KOKIRI_FOREST_11`; the slow
 //!   white fade, white in. King Dodongo's room's: the first time `EVENTCHKINF_25`, the Goron's Ruby,
 //!   `ENTR_DEATH_MOUNTAIN_TRAIL_0` with 0xFFF1 (`gDMTGoronRubyCs`); later
-//!   `ENTR_DEATH_MOUNTAIN_TRAIL_5`. (Barinade's room's, `ENTR_ZORAS_FOUNTAIN_0`, ported with it.)
+//!   `ENTR_DEATH_MOUNTAIN_TRAIL_5`. Barinade's room's, `ENTR_ZORAS_FOUNTAIN_0` (a plain warp: his
+//!   cleared room's init spawns it once `EVENTCHKINF_37` is set).
+//! - **`WARP_BLUE_RUTO` (5)**, Ruto's (`En_Ru1` type 0 spawns it under her in Barinade's room):
+//!   grown in as the child's, it waits (`DoorWarp1_RutoWarpIdle`) until Ruto has set its
+//!   `rutoWarpState` and Link stands in it: `ENTERED`, Link walking to its centre
+//!   (`PLAYER_CSACTION_10`); when Ruto folds her arms (state 3, `func_80999EE0`) a sub camera at
+//!   eye height (at the warp, from Link, fov 90), `TALKING` and her text 0x4022; the text closed
+//!   (`func_80999FE4`): `NA_SE_EV_LINK_WARP`, one-point 9705, the sub camera copied into the
+//!   one-point's and set waiting, `WARPING`; then (`DoorWarp1_RutoWarpOut`) Link floats up (his
+//!   gravity 0.02 from 60 frames on) and 100 frames on: `EVENTCHKINF_37`, the Zora's Sapphire
+//!   (`Item_Give`), `ENTR_ZORAS_FOUNTAIN_0` with `CS_INDEX_0` (`gZorasFountainSapphireCs`), the
+//!   slow white fade (the next transition left as it is, unlike the child's warp).
 //! - **`WARP_DESTINATION` (6)**, at a blue warp's arrival (Kokiri Forest's layer 5): killed at its
 //!   init unless the entrance is an adult warp's arrival or a cutscene layer's, Link arrived by
 //!   blue warp, and he's within 100; else it fades in and out over 80 frames
@@ -31,7 +42,7 @@
 //!
 //! Not this ROM's Deku Tree, logged: the adult dungeons' warp and its crystal
 //! (`DoorWarp1_SetupAdultDungeonWarp` and its actions), the blue and purple crystals, the clear
-//! flag's warp, Ruto's warp, `WARP_UNK_7`, the adult bosses' rooms (`DoorWarp1_AdultWarpOut`).
+//! flag's warp, `WARP_UNK_7`, the adult bosses' rooms (`DoorWarp1_AdultWarpOut`).
 //!
 //! Params (placed as `WARP_DESTINATION` at the blue warps' arrivals; the bosses, the Sages, Ruto
 //! and Zelda spawn the others): `params` the whole (`DoorWarp1Type`: -2 `WARP_BLUE_CRYSTAL`, -1
@@ -39,18 +50,19 @@
 //! `WARP_PURPLE_CRYSTAL`, 4 `WARP_YELLOW`, 5 `WARP_BLUE_RUTO`, 6 `WARP_DESTINATION`, 7
 //! `WARP_UNK_7`, 8 `WARP_ORANGE`, 9 `WARP_GREEN`, 10 `WARP_RED`).
 //! Flags: reads and sets EVENTCHKINF_07 and sets EVENTCHKINF_09 (Queen Gohma's warp, the first
-//! time); reads and sets EVENTCHKINF_25 (King Dodongo's). Not ported: `WARP_CLEAR_FLAG`'s read of
-//! the temp clear flag; Ruto's warp's EVENTCHKINF_37 (set), the adult dungeons'
-//! EVENTCHKINF_48, `_49` and `_4A` (read and set).
+//! time); reads and sets EVENTCHKINF_25 (King Dodongo's); sets EVENTCHKINF_37 (Ruto's warp: the
+//! Zora's Sapphire). Not ported: `WARP_CLEAR_FLAG`'s read of the temp clear flag; the adult
+//! dungeons' EVENTCHKINF_48, `_49` and `_4A` (read and set).
 
 use eng_gfx::{DrawCmd, DrawParams, MeshKey, SegmentValues};
 use eng_math::{smooth_step_to_f, step_to_f};
 use glam::{Mat4, Vec3};
 use oot_game::actor::*;
-use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorImpl, ActorProfile, audio_play_actor_sfx2};
-use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind};
+use oot_game::actor_ctx::{ACTORCAT_ITEMACTION, ActorHandle, ActorImpl, ActorProfile, audio_play_actor_sfx2};
+use oot_game::actor_schema::{ActorSchema, Field, Flag, FlagUse, Kind, TextLine};
 use oot_game::audio::sfx::*;
-use oot_game::camera::CAM_ID_MAIN;
+use oot_game::camera::{CAM_ID_MAIN, CAM_STAT_ACTIVE, CAM_STAT_WAIT};
+use oot_game::message::TEXT_STATE_NONE;
 use oot_game::event_chk_inf;
 use oot_game::lights::{LightInfo, LightNode};
 use oot_game::pack::{BakeBody, BakeSegment, MeshBake, keys};
@@ -94,14 +106,14 @@ pub const SCHEMA: ActorSchema = ActorSchema {
         FlagUse::new(event_chk_inf!(EVENTCHKINF_09)).sets().note("Queen Gohma's warp: the first time"),
         FlagUse::new(Flag::TempClear).reads().note("WARP_CLEAR_FLAG: appears once the room is cleared").indirect("not ported: DoorWarp1_AwaitClearFlag"),
         FlagUse::new(event_chk_inf!(EVENTCHKINF_25)).reads().sets().note("King Dodongo's warp: the first time the Goron's Ruby and the Ruby's cutscene"),
-        FlagUse::new(Flag::EventChkInf("EVENTCHKINF_37", 0x37)).sets().note("Barinade's warp").indirect("not ported: Jabu-Jabu's boss room"),
+        FlagUse::new(event_chk_inf!(EVENTCHKINF_37)).sets().note("Ruto's warp (Barinade's room): the Zora's Sapphire and its cutscene"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_48", 0x48)).reads().sets().note("Phantom Ganon's warp").indirect("not ported: the Forest Temple's boss room"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_49", 0x49)).reads().sets().note("Volvagia's warp").indirect("not ported: the Fire Temple's boss room"),
         FlagUse::new(Flag::EventChkInf("EVENTCHKINF_4A", 0x4A)).reads().sets().note("Morpha's warp").indirect("not ported: the Water Temple's boss room"),
     ],
     todo: false,
     objects: &[],
-    texts: &[],
+    texts: &[TextLine::new(0x4022).when("params", &[5]).cond("Ruto's warp: Link in it and Ruto's arms folded")],
 };
 
 /// `DoorWarp1Type`.
@@ -145,7 +157,10 @@ const EVENTCHKINF_25: u16 = 0x25;
 const ITEM_GORON_RUBY: u8 = 0x6D;
 /// `ITEM_KOKIRI_EMERALD` (`item.h`).
 const ITEM_KOKIRI_EMERALD: u8 = 0x6C;
-/// `CS_INDEX_1`, `NEXT_CS_INDEX_NONE`, `CS_INDEX_NONE` (`save.h`).
+/// `EVENTCHKINF_37` (`save.h`): Ruto's warp taken (the Zora's Sapphire given).
+const EVENTCHKINF_37: u16 = 0x37;
+/// `CS_INDEX_0`, `CS_INDEX_1`, `NEXT_CS_INDEX_NONE`, `CS_INDEX_NONE` (`save.h`).
+const CS_INDEX_0: u16 = 0xFFF0;
 const CS_INDEX_1: u16 = 0xFFF1;
 const NEXT_CS_INDEX_NONE: u16 = 0xFFEF;
 const CS_INDEX_NONE: u16 = 0xFFEF;
@@ -160,6 +175,10 @@ pub enum Action {
     ChildWarpOut,
     Destination,
     Func809998A4,
+    RutoWarpIdle,
+    Func80999EE0,
+    Func80999FE4,
+    RutoWarpOut,
     DoNothing,
     /// An action of a warp this ROM's Deku Tree never makes (logged at its setup): nothing.
     NotPorted(&'static str),
@@ -173,16 +192,21 @@ impl Action {
             Action::ChildWarpOut => "DoorWarp1_ChildWarpOut",
             Action::Destination => "DoorWarp1_Destination",
             Action::Func809998A4 => "func_809998A4",
+            Action::RutoWarpIdle => "DoorWarp1_RutoWarpIdle",
+            Action::Func80999EE0 => "func_80999EE0",
+            Action::Func80999FE4 => "func_80999FE4",
+            Action::RutoWarpOut => "DoorWarp1_RutoWarpOut",
             Action::DoNothing => "DoorWarp1_DoNothing",
             Action::NotPorted(n) => n,
         }
     }
 }
 
-/// The overlay's statics: `sWarpTimerTarget`.
+/// The overlay's statics: `sWarpTimerTarget`, `sRutoWarpSubCamId`.
 #[derive(Debug, Default)]
 struct Statics {
     warp_timer_target: i16,
+    ruto_warp_sub_cam_id: i16,
 }
 
 pub struct DoorWarp1 {
@@ -204,8 +228,8 @@ pub struct DoorWarp1 {
     pub unk_1bc: f32,
     pub upper_light: Option<LightNode>,
     pub lower_light: Option<LightNode>,
-    /// `rutoWarpState` (`DoorWarp1RutoState`): `En_Ru1` reads and writes it; the warp's own
-    /// Ruto states (`DoorWarp1_RutoWarpIdle`, `_RutoWarpOut`) aren't ported yet.
+    /// `rutoWarpState` (`DoorWarp1RutoState`): `En_Ru1` and the warp's Ruto states read and
+    /// write it.
     pub ruto_warp_state: i32,
 }
 
@@ -367,7 +391,7 @@ impl DoorWarp1 {
             if self.unk_1b0 < 230 {
                 self.unk_1b0 += 4;
             } else if p == WARP_BLUE_RUTO {
-                self.not_ported("DoorWarp1_RutoWarpIdle");
+                self.action = Action::RutoWarpIdle;
             } else if p != WARP_SAGES && p != WARP_YELLOW {
                 self.action = Action::ChildWarpIdle;
             } else {
@@ -475,12 +499,100 @@ impl DoorWarp1 {
         }
         step_to_f(&mut self.unk_194, 2.0, 0.01);
         step_to_f(&mut self.unk_198, 10.0, 0.02);
+        self.lights_round_player(play, ph);
+        smooth_step_to_f(&mut self.actor.shape_y_offset, 0.0, 0.5, 2.0, 0.1);
+    }
+
+    /// `DoorWarp1_RutoWarpIdle`: once Ruto has set its state, Link in it: `ENTERED`, his walk to
+    /// its centre (`PLAYER_CSACTION_10`; `unk_450` isn't set here, unlike the child's warp).
+    fn ruto_warp_idle(&mut self, play: &mut PlayState) {
+        audio_play_actor_sfx2(play, NA_SE_EV_WARP_HOLE - SFX_FLAG);
+        if self.ruto_warp_state != WARP_BLUE_RUTO_STATE_INITIAL && self.player_in_range(play) {
+            self.ruto_warp_state = WARP_BLUE_RUTO_STATE_ENTERED;
+            let cur = play.cur_actor;
+            play.player_set_cs_action_with_halted_actors(cur, PLAYER_CSACTION_10);
+            self.unk_1b2 = 1;
+            self.action = Action::Func80999EE0;
+        }
+    }
+
+    /// `func_80999EE0`: Ruto's arms folded (state 3): the main camera waiting, a sub camera at the
+    /// warp from Link (both at eye height: at y 49, eye y 43), fov 90; `TALKING`, her text 0x4022.
+    fn func_80999ee0(&mut self, play: &mut PlayState) {
+        if self.ruto_warp_state == WARP_BLUE_RUTO_STATE_3 {
+            play.change_camera_status(CAM_ID_MAIN, CAM_STAT_WAIT);
+            let sub = play.create_sub_camera();
+            Self::statics(play).ruto_warp_sub_cam_id = sub;
+            play.change_camera_status(sub, CAM_STAT_ACTIVE);
+            let pp = play.player.and_then(|h| play.actors.actor(h)).map(|p| p.world_pos).unwrap_or_default();
+            let at = Vec3::new(self.actor.world_pos.x, 49.0, self.actor.world_pos.z);
+            let eye = Vec3::new(pp.x, 43.0, pp.z);
+            play.camera_set_at_eye(sub, at, eye);
+            play.camera_set_fov(sub, 90.0);
+            self.ruto_warp_state = WARP_BLUE_RUTO_STATE_TALKING;
+            play.start_textbox(0x4022, None);
+            self.action = Action::Func80999FE4;
+        }
+    }
+
+    /// `func_80999FE4`: the text closed: `NA_SE_EV_LINK_WARP`, one-point 9705 for 999 frames,
+    /// the sub camera copied into the active one (`CAM_ID_NONE`: the one-point's) and set
+    /// waiting; `WARPING`.
+    fn func_80999fe4(&mut self, play: &mut PlayState) {
+        if play.message_state() == TEXT_STATE_NONE {
+            if let Some(me) = play.cur_actor {
+                // SFX_PLAY_AT_POS(&this->actor.projectedPos, NA_SE_EV_LINK_WARP).
+                play.audio.play_sfx_at_pos(SfxPos::Actor(me), NA_SE_EV_LINK_WARP);
+            }
+            let me = play.cur_actor.map(|h| play.cam_actor_of(h, &self.actor));
+            play.onepoint_cutscene_init(9705, 999, me, CAM_ID_MAIN);
+            let sub = Self::statics(play).ruto_warp_sub_cam_id;
+            // Using `CAM_ID_NONE` here defaults to the active camera.
+            let active = play.active_cam_id;
+            play.copy_camera(active, sub);
+            play.change_camera_status(sub, CAM_STAT_WAIT);
+            self.ruto_warp_state = WARP_BLUE_RUTO_STATE_WARPING;
+            self.action = Action::RutoWarpOut;
+        }
+    }
+
+    /// `DoorWarp1_RutoWarpOut`: as the child's warp out, Link's gravity 0.02 from frame 61; past
+    /// `sWarpTimerTarget` with no next cutscene: `EVENTCHKINF_37`, the Zora's Sapphire,
+    /// `ENTR_ZORAS_FOUNTAIN_0` with `CS_INDEX_0`, the slow white fade.
+    fn ruto_warp_out(&mut self, play: &mut PlayState) {
+        let Some(ph) = play.player else { return };
+        if self.unk_1b2 >= 61 {
+            if let Some(p) = play.actors.actor_mut(ph) {
+                p.gravity = if p.velocity.y < 10.0 { 0.02 } else { 0.0 };
+            }
+        } else {
+            self.unk_1b2 += 1;
+        }
+        smooth_step_to_f(&mut self.light_ray_alpha, 0.0, 0.2, 6.0, 0.01);
+        self.warp_timer = self.warp_timer.wrapping_add(1);
+        let target = Self::statics(play).warp_timer_target;
+        if self.warp_timer as i32 > target as i32 && play.save.next_cutscene_index == NEXT_CS_INDEX_NONE {
+            play.save.set_event_chk_inf(EVENTCHKINF_37);
+            oot_game::item::item_give(&mut play.save, Some(&mut play.audio), oot_game::item::ITEM_ZORA_SAPPHIRE);
+            self.go(play, "ENTR_ZORAS_FOUNTAIN_0");
+            play.save.next_cutscene_index = CS_INDEX_0;
+            play.transition.trigger = oot_game::transition::TRANS_TRIGGER_START;
+            play.transition.ty = oot_game::transition::TRANS_TYPE_FADE_WHITE_SLOW;
+        }
+        step_to_f(&mut self.unk_194, 2.0, 0.01);
+        step_to_f(&mut self.unk_198, 10.0, 0.02);
+        self.lights_round_player(play, ph);
+        smooth_step_to_f(&mut self.actor.shape_y_offset, 0.0, 0.5, 2.0, 0.1);
+    }
+
+    /// The warp out's two lights round Link: `Lights_PointNoGlowSetInfo` at
+    /// `(s16)player->actor.world.pos +/- 10`, (235, 255, 255), radius 255.
+    fn lights_round_player(&self, play: &mut PlayState, ph: ActorHandle) {
         let pp = play.actors.actor(ph).map(|p| p.world_pos).unwrap_or_default();
         // (s16)player->actor.world.pos.x + 10.0f, as the light's s16 coordinates.
         let at = |v: f32, d: f32| ((v as i16) as f32 + d) as i16;
         play.light_ctx.set_info(self.upper_light, LightInfo::point_no_glow(at(pp.x, 10.0), at(pp.y, 10.0), at(pp.z, 10.0), [235, 255, 255], 255));
         play.light_ctx.set_info(self.lower_light, LightInfo::point_no_glow(at(pp.x, -10.0), at(pp.y, -10.0), at(pp.z, -10.0), [235, 255, 255], 255));
-        smooth_step_to_f(&mut self.actor.shape_y_offset, 0.0, 0.5, 2.0, 0.1);
     }
 
     /// `play->nextEntranceIndex = entrance`.
@@ -572,6 +684,10 @@ impl ActorImpl for DoorWarp1 {
             Action::ChildWarpOut => self.child_warp_out(play),
             Action::Destination => self.destination(play),
             Action::Func809998A4 => self.func_809998a4(play),
+            Action::RutoWarpIdle => self.ruto_warp_idle(play),
+            Action::Func80999EE0 => self.func_80999ee0(play),
+            Action::Func80999FE4 => self.func_80999fe4(play),
+            Action::RutoWarpOut => self.ruto_warp_out(play),
             Action::DoNothing | Action::NotPorted(_) => {}
         }
         if TYPE.get(self.actor.params) != WARP_PURPLE_CRYSTAL {

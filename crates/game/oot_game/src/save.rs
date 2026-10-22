@@ -923,6 +923,21 @@ pub const SAVE_PRESETS: &[SavePreset] = &[
         apply: jabu_barinade,
     },
     SavePreset {
+        name: "barinade-fight",
+        about: "jabu-barinade, and GAME-10 milestone 6's Barinade run over: his intro and title card (EVENTCHKINF_BEGAN_BARINADE_BATTLE): the fight's start (re-entered, his init calls the Bari down at once); the boomerang on C-Down for the fight (the run leaves the bombs there)",
+        apply: barinade_fight,
+    },
+    SavePreset {
+        name: "barinade-beaten",
+        about: "barinade-fight and Barinade beaten (the room's clear flag: his init leaves Ruto, who rises through her blue warp, and the heart container) (GAME-10 milestone 6's Sapphire run's start, a debug start)",
+        apply: barinade_beaten,
+    },
+    SavePreset {
+        name: "zora-sapphire",
+        about: "barinade-beaten, and GAME-10 milestone 6's Sapphire run over: the heart container, Ruto's warp (EVENTCHKINF_37, the Zora's Sapphire), gZorasFountainSapphireCs, at Zora's Fountain (the three spiritual stones: Phase 11's exit, part 1; milestone 7 starts from it)",
+        apply: zora_sapphire,
+    },
+    SavePreset {
         name: "boomerang",
         about: "fairy-magic, Zora's River's falls opened (EVENTCHKINF_39), Zora's Domain's intro seen (EVENTCHKINF_A4) and the boomerang on C-Left (Item_Give(ITEM_BOOMERANG)): a debug start for Player's boomerang (GAME-10 milestone 4's item, ported early)",
         apply: |s| {
@@ -1235,6 +1250,37 @@ fn jabu_barinade(s: &mut SaveContext) {
     let f = &mut s.scene_flags[SCENE_JABU_JABU];
     f.swch |= 1 << 0x14;
     f.rooms |= (1 << 5) | (1 << 15);
+}
+
+/// `SCENE_JABU_JABU_BOSS` (`scene_table.h`: 0x13).
+const SCENE_JABU_JABU_BOSS: usize = 0x13;
+
+/// `barinade-fight`'s save (`Route::Barinade`'s end): `EVENTCHKINF_BEGAN_BARINADE_BATTLE` (0x76),
+/// set by his intro as the title card shows; and, for the fight's debug starts, the boomerang on
+/// C-Down in place of the bombs (no use against him), as the pause menu's item page would put it.
+fn barinade_fight(s: &mut SaveContext) {
+    jabu_barinade(s);
+    s.set_event_chk_inf(0x76);
+    s.equip_item_on_c(1, crate::item::ITEM_BOOMERANG);
+}
+
+/// `barinade-beaten`'s save: Barinade's room (room 1) cleared (`Flags_SetClear` at his death).
+fn barinade_beaten(s: &mut SaveContext) {
+    barinade_fight(s);
+    s.scene_flags[SCENE_JABU_JABU_BOSS].clear |= 1 << 1;
+}
+
+/// `zora-sapphire`'s save (`Route::Sapphire`'s end): the heart container (its flag 0x1F,
+/// Item_Give(ITEM_HEART_CONTAINER): 0x10 more capacity, the health refilled), EVENTCHKINF_37 and the
+/// Zora's Sapphire (`DoorWarp1_RutoWarpOut`), at Zora's Fountain after `gZorasFountainSapphireCs`.
+fn zora_sapphire(s: &mut SaveContext) {
+    barinade_beaten(s);
+    // Item_B_Heart taken: its collectible flag 0x1F (ItemBHeart_Update's Flags_SetCollectible).
+    s.scene_flags[SCENE_JABU_JABU_BOSS].collect |= 1 << 0x1F;
+    s.health_capacity += 0x10;
+    s.health = s.health_capacity;
+    s.set_event_chk_inf(0x37);
+    crate::item::item_give(s, None, crate::item::ITEM_ZORA_SAPPHIRE);
 }
 
 /// `cavern-stairs`' save (`Route::FallingStairs`' end): `SCENE_DODONGOS_CAVERN` (`scene_table.h`:

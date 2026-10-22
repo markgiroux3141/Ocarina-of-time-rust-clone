@@ -170,6 +170,9 @@ echo   156  sandbox-zora-runs    The river, King Zora and Jabu-Jabu runs' traces
 echo   157  game-jabu            Jabu-Jabu's room 0 (asks: or elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5, door0)
 echo   158  test-jabu            Jabu-Jabu's draw config, switches, lifts, spouts, enemies, Ruto, tentacles and runs (cargo test)
 echo   159  sandbox-jabu-runs    The Jabu-Jabu runs' traces and screenshots (the cow, the elevator, the boomerang, door 14, Ruto, the web, the crystal), into out\run
+echo   160  game-barinade        Barinade's room (asks: or fight, beaten, fountain, sapphire)
+echo   161  test-barinade        Barinade, Ruto's warp, the Sapphire's cutscene and the runs (cargo test)
+echo   162  sandbox-barinade     The Barinade and Sapphire runs' traces and screenshots, into out\run
 echo.
 echo     0  quit (or an empty line)
 echo.
@@ -339,6 +342,9 @@ if "%pick%"=="156" set "script=sandbox-zora-runs"
 if "%pick%"=="157" goto jabu
 if "%pick%"=="158" set "script=test-jabu"
 if "%pick%"=="159" set "script=sandbox-jabu-runs"
+if "%pick%"=="160" goto barinade
+if "%pick%"=="161" set "script=test-barinade"
+if "%pick%"=="162" set "script=sandbox-barinade"
 if not defined script goto menu
 echo.
 call "%~dp0%script%.bat"
@@ -392,6 +398,14 @@ set "which="
 set /p "which=Which (empty: room 0; elevator, flobbery, pit, spout, platform, room2, room14, boomerang, door14, ruto, carry, stick, barriers, gray, red, green, crates, crystal, room5 or door0): "
 call "%~dp0game-jabu.bat" %which%
 echo game-jabu finished (exit code %errorlevel%).
+pause
+goto menu
+
+:barinade
+set "which="
+set /p "which=Which (empty: the fall into his room; fight, beaten, fountain or sapphire): "
+call "%~dp0game-barinade.bat" %which%
+echo game-barinade finished (exit code %errorlevel%).
 pause
 goto menu
 

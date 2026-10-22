@@ -9,8 +9,8 @@
 //!   (`unk_450`), and once he stands still there (3 frames on) he's turned to face her; then "what
 //!   took you so long" (`WARP_BLUE_RUTO_STATE_3`: arms and legs crossed, then sitting while the
 //!   warp talks), and when the warp warps (`WARP_BLUE_RUTO_STATE_WARPING`) she rises with Link, at
-//!   her distance along his facing. The warp's own Ruto states (`DoorWarp1_RutoWarpIdle`,
-//!   `_RutoWarpOut`, `EVENTCHKINF_37`) are a later milestone's.
+//!   her distance along his facing. The warp's own Ruto states (`DoorWarp1_RutoWarpIdle` to
+//!   `_RutoWarpOut`) hold Link, open the warp's text 0x4022 and give the Sapphire.
 //! - **Zora's Fountain** (type 1, `gZorasFountainSapphireCs`'s cues on channel 3): gazing at Link
 //!   (hands behind her back, at cue 2's place; a giggle on frame 130, Link's splash on 205); past
 //!   cue 2 a dive (hidden, a splash and three ripples at the surface, `NA_SE_EV_DIVE_INTO_WATER`);

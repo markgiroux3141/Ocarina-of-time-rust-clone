@@ -542,7 +542,7 @@ impl PlayState {
     ///
     /// Ported: the cutscenes of the scenes played so far and Phase 6's Deku Tree, and the
     /// generic ones Player, `z_play.c` and the cameras start (1000, 1010, 1020, 1030, 1100, 3010,
-    /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9806, 9908;
+    /// 3020, 3040, 3140, 4500, 4510, 5000, 5010, 5110, 5120, 9500, 9601, 9602, 9703, 9705, 9806, 9908;
     /// Phase 10's 3050, 3060, 3065, 3380, 4180, 4210, 4220, 4221, 8603, 8604; Phase 11's 4100 and 3100). The
     /// others are logged as the C logs an unknown number (the camera keeps `Camera_Init`'s
     /// `CAM_SET_FREE0`).
@@ -738,6 +738,18 @@ impl PlayState {
                     k.eye_target_init.y = 52.0;
                 }
                 set_cs_info(self, "D_80123894", 3);
+                self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
+            }
+            9705 => {
+                // Door_Warp1's Ruto warp: as 9703's, from the other side (no adult change).
+                let t = self.onepoint.table("D_8012395C");
+                {
+                    let k = self.onepoint.kf(t, 0);
+                    k.at_target_init = view.at;
+                    k.eye_target_init = view.eye;
+                    k.fov_target_init = view.fov;
+                }
+                set_cs_info(self, "D_8012395C", 3);
                 self.play_init_camera_data_using_player(sub, player, CAM_SET_CS_C);
             }
             3140 => {

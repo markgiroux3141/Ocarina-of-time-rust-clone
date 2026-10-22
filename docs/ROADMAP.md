@@ -236,7 +236,9 @@ milestones 2 and 3 (the river, the Domain, the lake, the fountain: King Zora and
 are done (2026-10-21); milestone 4 (Jabu-Jabu to the boomerang, [ADR 0082](adr/0082-jabu-jabus-belly-to-the-boomerang.md))
 is done; milestone 5 (to Barinade: Ruto whole, the tentacles, barriers, crates and room timers,
 [ADR 0083](adr/0083-jabu-jabus-belly-to-barinade.md)) is done, its hand test owed
-([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)); milestone 6 (Barinade and the Sapphire) is next.
+([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)); milestone 6 (Barinade and the Sapphire,
+[ADR 0084](adr/0084-barinade-rutos-warp-and-the-zoras-sapphire.md)) is done, its hand test owed;
+milestone 7 (the Ocarina of Time and the Song of Time) is next.
 
 **Priorities (2026-10-01):** the cutscenes are finished properly now, as their own phase, so later
 work doesn't have to think about them (the user decided against skipping them). This replaces
@@ -785,7 +787,11 @@ boomerang), **done** (2026-10-21, hand-tested; the elevator's foot shadows fixed
 (2026-10-21, ADR 0083: `En_Ru1` whole with Player's Ruto checks, `En_Ba`, `En_Bx`, `Obj_Kibako`,
 `Obj_Roomtimer`; the silver scale in the story's presets, BACKLOG #102; the runs to Ruto's meeting
 and the cow, room 11's stick to room 7's web, and room 5's crystal to Barinade's room) **done**
-(committed 2026-10-21; the hand test deferred by the user, owed: [HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)). Next: milestone 6 (Barinade and the Sapphire) from `jabu-barinade`. Found: in MQ neither Ruto nor Big Octo is on the way to
+(committed 2026-10-21; the hand test deferred by the user, owed: [HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)). **Milestone 6**
+(2026-10-21, ADR 0084: `Boss_Va` whole, `Door_Warp1`'s Ruto warp, the fountain's Sapphire cutscene;
+the runs Barinade's intro and the Sapphire; the three stones at `zora-sapphire`) **done** (committed
+2026-10-21; the hand test deferred by the user, owed). Next: milestone 7 (the Ocarina of Time) from
+`zora-sapphire`. Found: in MQ neither Ruto nor Big Octo is on the way to
 Barinade; the silver scale is required for Ruto's letter; door 14 is room 14's way out, not in
 (room 1's spout across it drops only with the boomerang's chest).
 

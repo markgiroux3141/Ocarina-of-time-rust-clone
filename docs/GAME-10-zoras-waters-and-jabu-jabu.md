@@ -16,8 +16,8 @@ last section). The phase starts from the `fairy-magic` preset (GAME-09's exit re
 | 2 | Zora's River and Zora's Domain to the silver scale | done (2026-10-21) |
 | 3 | Ruto's letter, King Zora and Lord Jabu-Jabu | done (2026-10-21) |
 | 4 | Jabu-Jabu to the boomerang | done (2026-10-21) |
-| 5 | Jabu-Jabu to Barinade | |
-| 6 | Barinade and the Zora's Sapphire (the exit's first part) | |
+| 5 | Jabu-Jabu to Barinade | committed (2026-10-21), hand test owed |
+| 6 | Barinade and the Zora's Sapphire (the exit's first part) | committed (2026-10-21), hand test owed |
 | 7 | The Ocarina of Time and the Song of Time (the exit's second part) | |
 | 8 | The rest of Jabu-Jabu | |
 | 9 | The frogs and the scarecrows | |
@@ -147,8 +147,8 @@ fish, the boomerang. **The diving game costs 20 rupees; the save has 16.**
    exit 5, Farore's Wind's Great Fairy (`yousei_izumi_yoko`, Phase 20; `Bg_Dy_Yoseizo` is ported
    whole), two gossip stones, pots, butterflies, the fish.
 10. **Jabu-Jabu's Belly** (below), **Barinade** (below).
-11. **The Sapphire:** Barinade's death spawns `En_Ru1` type 0 at the nearest of three `sWarpPos`
-    (`z_boss_va.c:1675-1682`), unconditionally; she spawns `Door_Warp1` **`WARP_BLUE_RUTO`**
+11. **The Sapphire:** Barinade's death spawns `En_Ru1` type 0 at one of three `sWarpPos`, away
+    from Link (not the nearest: milestone 6's corrections; `z_boss_va.c:1675-1682`), unconditionally; she spawns `Door_Warp1` **`WARP_BLUE_RUTO`**
     (`z_en_ru1.c:1089-1105`); `DoorWarp1_RutoWarpOut` sets **`EVENTCHKINF_37`**, **`Item_Give(ITEM_ZORA_SAPPHIRE)`**
     and goes to `ENTR_ZORAS_FOUNTAIN_0` with `CS_INDEX_0` (`z_door_warp1.c:558-641`; the port logs
     `RutoWarpIdle`, `door_warp1.rs:351-352`): spot08 layer 4, **`gZorasFountainSapphireCs`** (2,452
@@ -879,3 +879,116 @@ scripts\run\sandbox-jabu-runs.bat
    blown boulders: door 6 opens.
 7. `crystal`, `room5`: through door 9 into room 5, shoot the crystal over the pool (door 0's
    camera), up the south ramp. `door0`: through door 0, the fall into Barinade's room.
+
+## Milestone 6: Barinade and the Zora's Sapphire
+
+**Status:** committed 2026-10-21; **the hand test is owed** (the user deferred it:
+[HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)), the list below under "By hand".
+
+**The answer:** Barinade (`Boss_Va`) whole, `Door_Warp1`'s Ruto warp whole, and the fountain's
+`gZorasFountainSapphireCs` played through with what was already ported; two short scripted runs
+from debug starts, no fights:
+
+- **Barinade's intro** (`Route::Barinade`, from `jabu-barinade`): Link falls into the room and the
+  intro takes him at once (`INTRO_START`); the door shut, the Bari called down and attached, the
+  title card, until the camera comes back with `EVENTCHKINF_BEGAN_BARINADE_BATTLE` (0x76) set and
+  the boss music on: the fight's start, at frame 555.
+- **The Sapphire** (`Route::Sapphire`, from `barinade-beaten`, a debug start: the room's clear flag,
+  as his death leaves it): his cleared init leaves Ruto (type 0) where he hung and the heart 160
+  east; the heart taken (535), Ruto risen through her blue warp, Link into it (590), her words
+  (0x4022) read (760), the warp out (913): `EVENTCHKINF_37`, the Zora's Sapphire,
+  `ENTR_ZORAS_FOUNTAIN_0` with `CS_INDEX_0`; the fountain's cutscene with its texts (0x4025's choice,
+  0x4026, 0x4027, 0x0082, 0x4035 with the Ruby held, 0x4028) to its terminator (2768), and the
+  fountain's layer 0, Link treading water by Jabu-Jabu (2812). **The three spiritual stones.**
+
+Scripts: `scripts\run\game-barinade.bat` (menu 160: empty, `fight`, `beaten`, `fountain`,
+`sapphire`), `test-barinade.bat` (161), `sandbox-barinade.bat` (162).
+
+### What was built
+
+- **`Boss_Va`** whole, by a helper (ADR 0084): every params type (the body, three supports, three
+  zappers, three stumps, ten Bari, the door's eight pieces) and every state; the damage tables
+  (the supports and the body only the boomerang; stunned, the sword, boomerang and stick);
+  `BossVa_FindBoomerang`; the intro and death on his own sub camera, the title card (`object_bv`
+  0x1230, 128 by 40), the boss and clear music, the quake, `Item_B_Heart`, Ruto at his death; the
+  cleared room's init (Ruto, or with `EVENTCHKINF_37` a plain warp, and the heart), the begun
+  battle's init (the Bari called at once); his 400-particle system (`boss_va_effects.rs`: sparks,
+  spark balls, the zappers' charge, blood, tumours, gore with its floor raycast) and its draws;
+  the light, fog and screen-fill overrides (`EnvCtx::screen_fill_color`, new); every part's draw
+  (six skeletons, also characters in `ootx`'s table). The overlay's statics are
+  `PlayState::overlay_statics`.
+- **`Door_Warp1`'s Ruto warp** (`DoorWarp1_RutoWarpIdle`, `func_80999EE0`, `func_80999FE4`,
+  `DoorWarp1_RutoWarpOut`) and **one-point 9705** (the warp's rise behind Link).
+- **The presets:** `barinade-fight` (`Route::Barinade`'s end; for the fight's starts it also puts
+  the boomerang on C-Down in place of the bombs), `barinade-beaten` (a debug start: the room
+  cleared), `zora-sapphire` (`Route::Sapphire`'s end: the heart container, `EVENTCHKINF_37`, the
+  Sapphire; milestone 7's start).
+- **`Route::JabuCrystal`** now ends as Barinade's room is entered (`jabu-barinade`): his intro takes
+  Link at once, so the standing settle it ended with let the intro set 0x76.
+
+### Results
+
+- Tests: the helper's `boss_va` (11: the parts spawned, a second try at the Bari call, the intro to
+  the title card and the battle, a support cut only by the boomerang, phase 2's Bari, the stunned
+  body and the sword, his death to the clear, the music and Ruto, the cleared room, the particles,
+  the light overrides, the bakes); `ruto_warp` (4: the warp grown in and waiting, Link in it to the
+  Sapphire and the fountain, one-point 9705, the fountain's cutscene to its terminator);
+  `barinade_runs` (2: the two runs, each end checked against its preset).
+- 1,681 tests pass, 1 ignored; `cargo test -p layering` passes; no warnings. The pack is still
+  format 30, re-imported into `out/data27` for Barinade's bakes and title card.
+- Goldens: against `out/golden_base34` 303 of 305 the same; `jabu_crystal`'s trace and shot differ (the run
+  now ends as Barinade's room is entered, and Barinade is there instead of a placeholder), proven with
+  run-time switches in `target/game26proof` (`out/golden_proof_g10m6.txt`, `out/handoff_m6/proof_m6.py`):
+  with both causes out the two are the base's, with either alone they differ. 6 new cases (`barinade`,
+  `barinade_intro`, `barinade_fight`, `sapphire`, `sapphire_ruto`, `sapphire_fountain`): 314 hashes,
+  235 cases (`out/golden_base35`).
+- COVERAGE: Phase 11 29 of 35 (`En_Fr`, `En_Kakasi`, `En_Kakasi3`, `En_Tp`, `En_Vali`, `Item_Ocarina`
+  left); 212 ported overall.
+
+### Corrections
+
+- Barinade's death doesn't put Ruto at the warp spot nearest Link: the loop (`z_boss_va.c:1674-1679`)
+  takes spot `i - 1` whenever `i` is nearer than `i - 1`, from 2 down, so she comes up away from
+  him (Link at spot 1: spot 0; at spot 0: spot 2 or 1). Ported as written.
+- Barinade's title card in this ROM (`object_bv_pal.xml`): an IA8 128 by 120 texture at 0x1230, its
+  English block 128 by 40 (the other XMLs say 128 by 80).
+- The fountain's `ENTR_ZORAS_FOUNTAIN_0` (the cutscene's way out) puts Link in the water by
+  Jabu-Jabu (-1480, -10, 1755): he treads water there, as after the original's cutscene.
+
+### Known gaps
+
+- Approximated in `Boss_Va` (ADR 0084): the fog swaps round a stunned Bari's shadow; a tumour's
+  sound position; the blast sparks' setup; the body's translucent pass's segment 8 and
+  environment colour. The fight's look hasn't been seen on screen (the hand test).
+- Milestones 5's and 6's hand tests are owed ([HAND-TESTS-OWED.md](HAND-TESTS-OWED.md)).
+
+### How to check
+
+```
+scripts\run\test-barinade.bat
+cargo test --release --workspace
+cargo test -p layering
+python scripts\golden.py check --bin-dir target\game26\release
+scripts\run\sandbox-barinade.bat
+```
+
+### By hand
+
+`scripts\run\game-barinade.bat` (menu 160):
+
+1. Empty: fall into Barinade's room: the intro (the door shuts, the camera on him, the Bari come
+   down and attach, the title card "Barinade"), then the fight's start. Pause and put the
+   boomerang on a C button from the item page.
+2. `fight` (the boomerang on C-Down; the short intro, the Bari called at once): the boomerang at
+   the three supports on the ceiling (Z-target: each cut leaves a stump and drops the body lower;
+   sword hits do nothing); the zappers' lightning (stay out of it); the body: boomerang to stun
+   him, then the sword or a stick; the Bari spinning round him, sent out, then on their own;
+   the body's last phase. His death: the tumours, the zappers' bursts, the white flash, the clear
+   music, the heart, and Ruto rising at a warp spot away from you. Watch the sparks, the zappers'
+   charge, the blood and the gore.
+3. `beaten`: Ruto rises through her blue warp; take the heart container; walk into her warp: she
+   turns you to her and talks (0x4022); the warp takes you both up, white out; at Zora's Fountain
+   the Sapphire's cutscene (Ruto in the water, the Sapphire, its choice), and the fountain: you
+   tread water by Jabu-Jabu.
+4. `fountain`: the Sapphire's cutscene alone. `sapphire`: the fountain afterwards (the three stones
+   on the pause menu's quest page, if it's drawn).

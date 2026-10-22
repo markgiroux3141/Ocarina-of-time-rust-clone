@@ -250,6 +250,7 @@ pub const NAMES: &[(&str, &str, Group)] = &[
     ("En_Am", "Armos", Group::Enemy),
     ("En_Vm", "Beamos", Group::Enemy),
     ("Boss_Dodongo", "King Dodongo", Group::Boss),
+    ("Boss_Va", "Barinade", Group::Boss),
     ("En_Bdfire", "King Dodongo's fire", Group::Effect),
     ("Demo_Du", "Darunia, in cutscenes", Group::Character),
     ("Demo_Go", "Gorons, in cutscenes", Group::Character),

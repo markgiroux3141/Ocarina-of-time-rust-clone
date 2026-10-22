@@ -295,6 +295,9 @@ pub struct EnvCtx {
     pub adj_fog_color: [i16; 3],
     pub adj_fog_near: i16,
     pub adj_fog_far: i16,
+    /// `screenFillColor` while `fillScreen` is off (on, `TransitionState::screen_fill` holds it):
+    /// what an actor writes to it then (Barinade's intro) waits there for the fill.
+    pub screen_fill_color: [u8; 4],
     /// `precipitation[PRECIP_MAX]`, `stormRequest`, `lightningState`, `sandstormState`.
     pub precipitation: [u8; 5],
     pub storm_request: u8,
@@ -370,6 +373,7 @@ impl EnvCtx {
             adj_fog_color: [0; 3],
             adj_fog_near: 0,
             adj_fog_far: 0,
+            screen_fill_color: [0; 4],
             precipitation: [0; 5],
             storm_request: STORM_REQUEST_NONE,
             wind_direction: [80, 80, 80],
